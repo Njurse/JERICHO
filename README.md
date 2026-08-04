@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # REDRIVER2 (Reverse-Engineered Driver 2)
 [![Build status (Master)](https://ci.appveyor.com/api/projects/status/p3smpt14elwlpcad/branch/master?svg=true)](https://ci.appveyor.com/project/SoapyMan/redriver2/branch/master)
 
@@ -43,3 +44,7 @@ See [Contributing to project](https://github.com/OpenDriver2/REDRIVER2/wiki/Cont
 - **Gh0stBlade** - HLE Emulator code used as a base for Psy-Cross [(link)](https://github.com/TOMB5/TOMB5/tree/master/EMULATOR)
 - **Ben Lincoln** - [This Dust Remembers What It Once Was](https://www.beneaththewaves.net/Software/This_Dust_Remembers_What_It_Once_Was.html) (*TDR*)
 - **Stohrendorf** - [Symdump](https://github.com/stohrendorf/symdump) utility
+=======
+# REDRIVER2
+Fork of REDRIVER2 for personal testing
+>>>>>>> origin/main
