@@ -22,6 +22,7 @@
 #include "glaunch.h"
 #include "shadow.h"
 #include "players.h"
+#include "overlay.h"
 
 struct BOUND_BOX
 {
@@ -1167,6 +1168,10 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	if (pad & CAR_PAD_HANDBRAKE)
 	{
 		cp->handbrake = 1;
+		if (g_PlayerControlMode > 5)
+			g_PlayerControlMode++;
+		else
+			g_PlayerControlMode = 0;
 	}
 	else
 	{

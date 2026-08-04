@@ -1,6 +1,6 @@
 #ifndef PLAYERS_H
 #define PLAYERS_H
-
+#include "overlay.h"
 extern PLAYER player[MAX_PLAYERS];
 
 #define MainPlayer		player[0]

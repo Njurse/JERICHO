@@ -3526,6 +3526,20 @@ int CityCutOffScreen(int bSetup)
 	return 0;
 }
 
+void ForceStartLevel()
+{
+	GameType = GAME_TAKEADRIVE;
+
+	// Set the city to Havana (index 1, as seen in FEscreens.inc)
+	GameLevel = 1; // 0=Chicago, 1=Havana, 2=Vegas, 3=Rio
+
+	// Ensure other necessary variables are reset
+	gCurrentMissionNumber = 0; // Not a mission
+	gSubGameNumber = 0;        // No sub-game
+
+	// Trigger the game to start
+	SetState(STATE_GAMESTART);
+}
 
 char* contNames[2] = {
 	"DATA\\CARCONT.RAW",
@@ -3565,6 +3579,7 @@ int ControllerScreen(int bSetup)
 // [D] [T]
 int MainScreen(int bSetup)
 {
+	ForceStartLevel();
 	if (bSetup) 
 	{
 		if (numPadsConnected == 2) 

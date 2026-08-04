@@ -1,6 +1,6 @@
 #ifndef HANDLING_H
 #define HANDLING_H
-
+#include "overlay.h"
 extern int ghost_mode;
 extern int playerghost;
 extern int playerhitcopsanyway;

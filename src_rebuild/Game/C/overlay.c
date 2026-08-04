@@ -45,6 +45,11 @@ PERCENTAGE_BAR ProxyBar;
 int gDoOverlays = 1;
 int gWidescreenOverlayAlign = 0; // [A] custom widescreen alignment by PSX hack
 
+
+// Nattdy edits: Adding information about the control mode (which probably should be moved to the car or player side and then accessed here as an external variable
+int g_PlayerControlMode = 0; // 0=Manual, 1=Traffic, 2=Cop, 3=Lead
+
+
 #define PERCENTAGE_BAR_WIDTH 102
 #define PERCENTAGE_BAR_HEIGHT 10
 
@@ -120,6 +125,8 @@ void InitOverlays(void)
 	
 		gInvincibleCar = 1;
 	}
+
+
 }
 
 // [D] [T]
@@ -704,7 +711,16 @@ void DisplayOverlays(void)
 
 		SetFullscreenDrawing(2);
 	}
-
+	// Inside the drawing function (e.g., DrawDrivingGameOverlays)
+	char modeText[64];
+	switch (g_PlayerControlMode) {
+	case 0: sprintf(modeText, "Control: Manual"); break;
+	case 1: sprintf(modeText, "Control: Traffic AI"); break;
+	case 2: sprintf(modeText, "Control: Police AI"); break;
+	case 3: sprintf(modeText, "Control: Lead AI"); break;
+	default: sprintf(modeText, "Control: Unknown"); break;
+	}
+	PrintString(modeText, 10, 30); // X, Y coordinates on screen
 	UpdateFlashValue();
 
 	if (gShowMap == 0)

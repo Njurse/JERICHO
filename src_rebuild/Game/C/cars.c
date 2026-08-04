@@ -567,6 +567,8 @@ void DrawWheelObject(MODEL* model, SVECTOR* verts, int transparent, int wheelnum
 	clut = texture_cluts[src->texture_set][src->texture_id];
 	tpage = texture_pages[src->texture_set] | 0x20;
 
+
+	// This controls the color of the wheels
 	if (gTimeOfDay > -1)
 	{
 		if (gTimeOfDay < TIME_NIGHT)
