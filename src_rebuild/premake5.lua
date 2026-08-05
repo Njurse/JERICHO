@@ -264,9 +264,9 @@ project "REDRIVER2"
         }
 
         includedirs { 
-            SDL2_DIR.."/include",
-            OPENAL_DIR.."/include",
-			JPEG_DIR.."/",
+            SDL2_DIR.."/dependencies/SDL2-2.30.2/include",
+            OPENAL_DIR.."/dependencies/openal-soft-1.23.1-bin/include",
+			JPEG_DIR.."/dependencies/jpeg",
         }
     
         linkoptions {

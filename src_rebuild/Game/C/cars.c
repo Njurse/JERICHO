@@ -1,4 +1,4 @@
-#include "driver2.h"
+﻿#include "driver2.h"
 #include "cars.h"
 #include "texture.h"
 #include "overmap.h"
@@ -19,6 +19,7 @@
 #include "convert.h"
 #include "glaunch.h"
 #include "ASM/rndrasm.h"
+#include "dr2math.h"
 
 struct plotCarGlobals
 {
@@ -99,6 +100,10 @@ CAR_POLY carPolyBuffer[MAX_CAR_POLYS + 1];
 char LeftLight = 0;
 char RightLight = 0;
 char TransparentObject = 0;
+
+// At the top of cars.c, outside any function
+float gBouncePhase = 0.0f;
+float gBounceAmp = 1.0f;
 
 // [D] [T]
 void plotCarPolyB3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *pg)
@@ -1390,6 +1395,57 @@ void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR
 	plotNewCarModel(car, palette);
 }
 
+// Nattdy
+// Potentially we could strip the car data to just the model info 
+// WIP bug 	gBouncePhase = RSIN(FrameCnt); is global and needs to be placed somewhere its not instantiated every car because i'd like to hold off on modifying the car struct
+// Current bug: feedback loop as it keeps reading the distorted model since we overwrite the original car model pointer
+CAR_MODEL* fiddleWithTheModel(CAR_DATA* cp, CAR_MODEL* CarModelPtr)
+{
+	// Grab the original (clean) model data - this is read-only
+	MODEL* srcModel = gCarCleanModelPtr[cp->ap.model];
+	int numVerts = srcModel->num_vertices;
+
+	// Get the vertex pointer using the game's macro
+	SVECTOR* srcVerts = GET_MODEL_DATA(SVECTOR, srcModel, vertices);  // Correct way for REDRIVER2
+	SVECTOR* dstVerts = CarModelPtr->vlist;   // per-car temp buffer
+
+	// Copy fresh each frame to avoid feedback loop
+	for (int i = 0; i < numVerts; i++) {
+		dstVerts[i] = srcVerts[i];
+	}
+
+	// Bounce phase (4096 = full circle in PS1 fixed-point)
+	int phase = (FrameCnt * 4) & 4095;
+	int sinFixed = RSIN(phase*50);
+	float bounce = (float)sinFixed / 4096.0f;
+
+	float scaleY = 1.0f + bounce * gBounceAmp;
+	float scaleX = 1.0f - bounce * (gBounceAmp);
+
+	// Safety caps
+	if (scaleX < 0.5f) scaleX = 0.5f;
+	if (scaleX > 2.0f) scaleX = 2.0f;
+	if (scaleY < 0.5f) scaleY = 0.5f;
+	if (scaleY > 2.0f) scaleY = 2.0f;
+
+	// Apply scaling to the copied vertices
+	for (int i = 0; i < numVerts; i++) {
+		dstVerts[i].vx = (short)(dstVerts[i].vx * scaleX);
+		dstVerts[i].vy = (short)(dstVerts[i].vy * scaleY);
+	}
+
+	// Add whatever vertical offset is needed to keep the car above the ground and give a stretch effect
+	for (int i = 0; i < numVerts; i++) {
+		printf("placeholder");
+		//dstVerts[i].vy = (short)(dstVerts[i].vy * scaleY);
+	}
+
+	// Debug display
+	UpdateBounceDisplay(bounce, scaleX, scaleY);
+
+	return CarModelPtr;
+}
+
 // [D] [T] [A]
 void DrawCar(CAR_DATA* cp, int view)
 {
@@ -1406,9 +1462,8 @@ void DrawCar(CAR_DATA* cp, int view)
 	MATRIX workmatrix;
 
 	D_CHECK_ERROR(cp < car_data, "Invalid car");
-
+	
 	model = cp->ap.model;
-
 	// draw car lights in for InCar camera
 	if (player[view].cameraView == 2 && cp->id == player[view].cameraCarId)
 	{
@@ -1580,11 +1635,14 @@ void DrawCar(CAR_DATA* cp, int view)
 		PlaceShadowForCar(corners, 4, 10, yVal < 0 ? 0 : 2);
 
 		ComputeCarLightingLevels(cp, 1);
-
 		gTempCarUVPtr = gTempHDCarUVDump[cp->id];
 		CarModelPtr = &NewCarModel[model];
 		CarModelPtr->vlist = gTempCarVertDump[cp->id];
 		CarModelPtr->nlist = gTempCarVertDump[cp->id];
+
+		CAR_MODEL* ModifiedCarModelPtr = fiddleWithTheModel(cp, CarModelPtr);
+
+		CarModelPtr = ModifiedCarModelPtr;
 
 		FindCarLightFade(&workmatrix);
 

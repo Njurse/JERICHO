@@ -46,6 +46,8 @@ extern void DrawProximityBar(PERCENTAGE_BAR* bar);
 extern void SetColourByValue(COLOUR_BAND *pColourBand, int value, CVECTOR *pOut); // 0x00015F6C
 extern void TransparencyOn(void *potz, unsigned short tpage); // 0x00016098
 
+extern void UpdateBounceDisplay(float bounce, float scaleX, float scaleY);
+
 // Extra bullshit I added (Nattdy)
 extern int g_PlayerControlMode;
 

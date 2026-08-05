@@ -1,4 +1,4 @@
-#ifndef CARS_H
+﻿#ifndef CARS_H
 #define CARS_H
 
 
@@ -55,5 +55,8 @@ extern void MangleWheelModels(); // 0x000230C8
 
 extern char GetCarPalIndex(int tpage); // 0x00023390
 
+// This just says "these exist somewhere" so bounce info is global (may move all this to a totally custom library for organization)
+extern float gBouncePhase;
+extern float gBounceAmp;
 
 #endif

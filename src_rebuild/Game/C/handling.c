@@ -301,6 +301,8 @@ void GlobalTimeStep(void)
 	int carsDentedThisFrame;
 	short *felony;
 
+	gBouncePhase = RSIN(FrameCnt);
+
 	felony = GetPlayerFelony(&MainPlayer);
 
 	StepCars();
@@ -1164,6 +1166,16 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	if (cp->hd.autoBrake > 90)
 		cp->hd.autoBrake = 90;
 
+	if (pad & CAR_PAD_WHEELSPIN)
+		if(gBounceAmp < 1.0)
+			gBounceAmp = 1.15;          // Do the Yaris Bounce when held
+	else
+	{
+		if (gBounceAmp > 1.0)
+			gBounceAmp *= 0.95f;         // Smooth decay when released
+		else
+			gBounceAmp = 1.0;
+	}
 	// handle burnouts or handbrake
 	if (pad & CAR_PAD_HANDBRAKE)
 	{
@@ -1178,7 +1190,7 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 		cp->handbrake = 0;
 
 		if (pad & CAR_PAD_WHEELSPIN)
-			cp->wheelspin = 1;
+			cp->wheelspin = 0;
 		else
 			cp->wheelspin = 0;
 
