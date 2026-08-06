@@ -93,8 +93,9 @@ CRUMPLE_PARAMS gCrumpleParams =
 	// wheel draw
 	14506,		// wheelCamberScale     max lateral bend -> ~15deg camber (roll)
 	19370,		// wheelToeScale        max longitudinal bend -> ~20deg toe (yaw)
-	38827,		// wheelSteerScale      RETCONNED/unused (kept for a possible
-					//                      draw-only visual disjointing re-enable)
+	38827,		// wheelSteerScale      FRONT max lateral bend -> ~40deg steering deviation
+	3883,		// wheelSteerScaleRear  REAR max lateral bend -> ~4deg (twist only,
+					//                      must not steer the car or distort the drive)
 
 	// debug / repair
 	1000000,	// simHowHard           d-pad simulate impact strength (edge)

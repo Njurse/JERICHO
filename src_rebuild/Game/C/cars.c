@@ -663,14 +663,10 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	int numWheelVerts;
 
 #ifdef PSX
-	MATRIX& FrontMatrix = *(MATRIX*)(u_char*)getScratchAddr(0);
-	MATRIX& SteerMatrix = *(MATRIX*)((u_char*)getScratchAddr(0) + sizeof(MATRIX));
-	VECTOR& WheelPos = *(VECTOR*)((u_char*)getScratchAddr(0) + sizeof(MATRIX) * 2);
+	MATRIX& WheelPos = *(MATRIX*)((u_char*)getScratchAddr(0) + sizeof(MATRIX) * 2);
 	SVECTOR& sWheelPos = *(SVECTOR*)((u_char*)getScratchAddr(0) + sizeof(MATRIX) * 2 + sizeof(VECTOR));
 	static_assert(sizeof(MATRIX) * 2 + sizeof(VECTOR) + sizeof(SVECTOR) * 25 < 1024 - sizeof(_pct), "Scratchpad overflow");
 #else
-	MATRIX FrontMatrix;
-	MATRIX SteerMatrix;
 	VECTOR WheelPos;
 	SVECTOR sWheelPos;
 #endif
@@ -794,21 +790,9 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	VertPtr[17].vy = -wheelSize;
 	VertPtr[16].vy = -wheelSize;
 
-	// steering transform — the ORIGINAL one. Wheel damage is deliberately NOT
-	// applied here (retconned): a bend-derived yaw made damaged cars yank,
-	// drift and flip. The wheels always follow this steering matrix exactly;
-	// damage shows as the bent position (sWheelPos) + camber/toe vert lean.
-	SteerMatrix.m[0][0] = RCOS(cp->wheel_angle);
-	SteerMatrix.m[0][2] = RSIN(cp->wheel_angle);
-	SteerMatrix.m[1][1] = ONE;
-	SteerMatrix.m[2][1] = 0;
-	SteerMatrix.m[1][2] = 0;
-	SteerMatrix.m[1][0] = 0;
-	SteerMatrix.m[0][1] = 0;
-	SteerMatrix.m[2][0] = -SteerMatrix.m[0][2];
-	SteerMatrix.m[2][2] = SteerMatrix.m[0][0];
-
-	MulMatrix0(RearMatrix, &SteerMatrix, &FrontMatrix);
+	// per-wheel yaw: built per wheel in the draw loop below, so each wheel's
+	// rotation matrix is its own (steering input for the fronts, none for the
+	// rears, plus that wheel's own damage deviation)
 
 	wheelDisp = car_cosmetics[cp->ap.model].wheelDisp;
 	wheel = cp->hd.wheel;
@@ -873,9 +857,36 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 
 		gte_SetTransVector(&WheelPos);
 
-		if ((wheelnum & 1) == 0)
+		// Nattdy - crumple wheel damage: every wheel gets its OWN yaw matrix.
+		// Front wheels follow the steering input (cp->wheel_angle), rear
+		// wheels are unsteered; a bent wheel adds its steering deviation
+		// (lateral bend -> up to wheelSteerScale degrees) so it visibly
+		// BREAKS from the transform it normally follows, and a hit spanning
+		// an axle skews each wheel by its own damage.
 		{
-			gte_SetRotMatrix(&FrontMatrix);
+			MATRIX wheelMat, steerMat;
+			int steerAngle = 0;
+			int steerScale = (wheelnum & 1) ? gCrumpleParams.wheelSteerScaleRear
+											: gCrumpleParams.wheelSteerScale;
+
+			if (bend != NULL)
+				steerAngle += FIXEDH(bend[wheelnum].vx * steerScale);
+
+			if ((wheelnum & 1) == 0)
+				steerAngle += cp->wheel_angle;
+
+			steerMat.m[0][0] = RCOS(steerAngle);
+			steerMat.m[0][2] = RSIN(steerAngle);
+			steerMat.m[1][1] = ONE;
+			steerMat.m[2][1] = 0;
+			steerMat.m[1][2] = 0;
+			steerMat.m[1][0] = 0;
+			steerMat.m[0][1] = 0;
+			steerMat.m[2][0] = -steerMat.m[0][2];
+			steerMat.m[2][2] = steerMat.m[0][0];
+
+			MulMatrix0(RearMatrix, &steerMat, &wheelMat);
+			gte_SetRotMatrix(&wheelMat);
 		}
 
 		// Nattdy - crumple wheel damage: slant this wheel's mesh by its bend
