@@ -32,6 +32,8 @@ struct BOUND_BOX
 
 BOUND_BOX bbox[MAX_CARS];
 
+VECTOR gCrumpleLastCollisionPoint = { 0.0, 0.0, 0.0 };
+
 inline void UpdateCarDrawMatrix(CAR_DATA* cp)
 {
 	cp->hd.drawCarMat.m[0][0] = -cp->hd.where.m[0][0];
@@ -477,7 +479,12 @@ void GlobalTimeStep(void)
 					lever1[0] = collisionpoint[0] - c1->hd.where.t[0];
 					lever1[1] = collisionpoint[1] - c1->hd.where.t[1];
 					lever1[2] = collisionpoint[2] - c1->hd.where.t[2];
-
+					if (mayBeCollidingBits)
+					{
+						gCrumpleLastCollisionPoint.vx = ((VECTOR*)collisionpoint)->vx;
+						gCrumpleLastCollisionPoint.vy = ((VECTOR*)collisionpoint)->vy;
+						gCrumpleLastCollisionPoint.vz = ((VECTOR*)collisionpoint)->vz;
+					}
 					strength = 47 - (lever0[1] + lever1[1]) / 2;
 
 					lever0[1] += strength;
@@ -734,7 +741,10 @@ void GlobalTimeStep(void)
 
 		if (cp->ap.needsDenting != 0 && ((CameraCnt + i & 3U) == 0 || carsDentedThisFrame < 5))
 		{
-			DentCar(cp);
+			gCrumpleLastCollisionPoint.vx = collisionpoint[0];
+			gCrumpleLastCollisionPoint.vy = collisionpoint[1];
+			gCrumpleLastCollisionPoint.vz = collisionpoint[2];
+			DentCarDirectional(cp, gCrumpleLastCollisionPoint);
 
 			cp->ap.needsDenting = 0;
 			carsDentedThisFrame++;
@@ -1166,20 +1176,11 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	if (cp->hd.autoBrake > 90)
 		cp->hd.autoBrake = 90;
 
-	if (pad & CAR_PAD_WHEELSPIN)
-		if(gBounceAmp < 1.0)
-			gBounceAmp = 1.15;          // Do the Yaris Bounce when held
-	else
-	{
-		if (gBounceAmp > 1.0)
-			gBounceAmp *= 0.95f;         // Smooth decay when released
-		else
-			gBounceAmp = 1.0;
-	}
 	// handle burnouts or handbrake
 	if (pad & CAR_PAD_HANDBRAKE)
 	{
 		cp->handbrake = 1;
+		// to do: come back to this and get the ai control mode working - nattdy
 		if (g_PlayerControlMode > 5)
 			g_PlayerControlMode++;
 		else
@@ -1190,7 +1191,7 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 		cp->handbrake = 0;
 
 		if (pad & CAR_PAD_WHEELSPIN)
-			cp->wheelspin = 0;
+			cp->wheelspin = 1;
 		else
 			cp->wheelspin = 0;
 

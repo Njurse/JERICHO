@@ -11,9 +11,13 @@
 #include "debris.h"
 #include "players.h"
 #include "main.h"
+#include "pad.h"
 
+#include "handling.h"
+#include "nattdymath.h"
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
+
 
 // [A] loads car model from file
 char* LoadCustomCarDentingFromFile(char* dest, int modelNumber)
@@ -61,7 +65,8 @@ void InitialiseDenting(void)
 }
 
 // [D] [T]
-void DentCar(CAR_DATA *cp)
+
+void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 {
 	int Zone;
 	int Damage;
@@ -111,17 +116,26 @@ void DentCar(CAR_DATA *cp)
 		} 
 	}
 
-	// update vertices positon
-	if (gCarCleanModelPtr[model] != NULL && gCarDamModelPtr[model] != NULL) 
+	// update vertices position
+	if (gCarCleanModelPtr[model] != NULL && gCarDamModelPtr[model] != NULL)
 	{
 		DamVertPtr = GET_MODEL_DATA(SVECTOR, gCarDamModelPtr[model], vertices);
 		CleanVertPtr = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[model], vertices);
 
+		// For testing: use the global crumple point
+		VECTOR collisionpoint = gCrumpleLastCollisionPoint;
+
 		for (VertNo = 0; VertNo < pCleanModel->num_vertices; VertNo++, DamVertPtr++, CleanVertPtr++)
 		{
-			gTempCarVertDump[cp->id][VertNo].vx = CleanVertPtr->vx + FIXEDH((DamVertPtr->vx - CleanVertPtr->vx) * tempDamage[VertNo] / 2);
-			gTempCarVertDump[cp->id][VertNo].vy = CleanVertPtr->vy + FIXEDH((DamVertPtr->vy - CleanVertPtr->vy) * tempDamage[VertNo] / 2);
-			gTempCarVertDump[cp->id][VertNo].vz = CleanVertPtr->vz + FIXEDH((DamVertPtr->vz - CleanVertPtr->vz) * tempDamage[VertNo] / 2);
+			// Direction from collision point to vertex (push OUTWARD)
+			int dx = CleanVertPtr->vx - collisionpoint.vx;
+			int dy = CleanVertPtr->vy - collisionpoint.vy;
+			int dz = CleanVertPtr->vz - collisionpoint.vz;
+
+			// Move vertex AWAY from collision point
+			gTempCarVertDump[cp->id][VertNo].vx = CleanVertPtr->vx + FIXEDH(dx * tempDamage[VertNo] / 12);
+			gTempCarVertDump[cp->id][VertNo].vy = CleanVertPtr->vy + FIXEDH(dy * tempDamage[VertNo] / 12);
+			gTempCarVertDump[cp->id][VertNo].vz = CleanVertPtr->vz + FIXEDH(dz * tempDamage[VertNo] / 12);
 		}
 	}
 
@@ -169,7 +183,10 @@ void DentCar(CAR_DATA *cp)
 		}
 	}
 }
-
+void DentCar(CAR_DATA* cp)
+{
+	DentCarDirectional(cp, gCrumpleLastCollisionPoint);
+}
 // [D] [T]
 void CreateDentableCar(CAR_DATA *cp)
 {

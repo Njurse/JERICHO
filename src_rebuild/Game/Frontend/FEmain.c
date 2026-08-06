@@ -3531,7 +3531,7 @@ void ForceStartLevel()
 	GameType = GAME_TAKEADRIVE;
 
 	// Set the city to Havana (index 1, as seen in FEscreens.inc)
-	GameLevel = 1; // 0=Chicago, 1=Havana, 2=Vegas, 3=Rio
+	GameLevel = 2; // 0=Chicago, 1=Havana, 2=Vegas, 3=Rio
 
 	// Ensure other necessary variables are reset
 	gCurrentMissionNumber = 0; // Not a mission

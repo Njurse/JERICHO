@@ -13,6 +13,6 @@ extern void HandlePlayerHubcaps(int playerId);
 extern void MoveHubcap(); // 0x0003AB4C
 
 extern void SetupSpecDenting(char *loadbuffer); // 0x0003B240
-
-
+extern void DentCar(CAR_DATA* cp);
+extern void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint);
 #endif

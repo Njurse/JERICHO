@@ -25,7 +25,7 @@
 #include "overlay.h"
 #include "cutrecorder.h"
 #include "draw.h"
-
+#include "job_fx.h"
 const u_char speedLimits[3] = { 56, 97, 138 };
 
 #ifdef DEBUG
@@ -2883,6 +2883,10 @@ void SetUpCivCollFlags(void)
 
 				if (dont)
 				{
+					VECTOR bombpos;
+					bombpos.vx = cp0->hd.oBox.location.vx;
+					bombpos.vy = cp0->hd.oBox.location.vy;
+					bombpos.vz = cp0->hd.oBox.location.vz;
 					continue;
 				}
 
@@ -2897,11 +2901,12 @@ void SetUpCivCollFlags(void)
 
 						sample = GetCarBankSample(cp0->ap.model);
 
+						// Disable this annoying ass horn in a very quick and dirty way because I don't want to outright remove it - Nattdy
 						// [A] use tracking sound
-						Start3DTrackingSound(hornchanflag[i], SOUND_BANK_CARS, sample * 3 + 2, 
+						/*Start3DTrackingSound(hornchanflag[i], SOUND_BANK_CARS, sample * 3 + 2,
 							(VECTOR*)cp0->hd.where.t,
 							(LONGVECTOR3*)cp0->st.n.linearVelocity);
-								
+						*/
 						SetChannelVolume(hornchanflag[i], -2000, 0);
 
 						horncarflag[i] = cp0;

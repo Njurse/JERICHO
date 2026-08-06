@@ -15,6 +15,7 @@
 #include "camera.h"
 #include "felony.h"
 #include "scores.h"
+#include "handling.h"
 
 COLOUR_BAND felonyColour[3] =
 {
@@ -684,6 +685,19 @@ void DrawDrivingGameOverlays(void)
 	}
 }
 
+void DrawCrumpleDebugInfo()
+{
+	// Inside the drawing function (e.g., DrawDrivingGameOverlays)
+	char modeText[64];
+	sprintf(modeText, "Col");
+	PrintString(modeText, 10, 150); // X, Y coordinates on screen
+	sprintf(modeText, "X : %i",gCrumpleLastCollisionPoint.vx);
+	PrintString(modeText, 10, 170); // X, Y coordinates on screen
+	sprintf(modeText, "Y : %i", gCrumpleLastCollisionPoint.vy);
+	PrintString(modeText, 10, 190); // X, Y coordinates on screen
+	sprintf(modeText, "Z : %i", gCrumpleLastCollisionPoint.vz);
+	PrintString(modeText, 10, 210); // X, Y coordinates on screen
+}
 
 // [D] [T]
 void DisplayOverlays(void)
@@ -721,6 +735,8 @@ void DisplayOverlays(void)
 
 		SetFullscreenDrawing(2);
 	}
+
+	DrawCrumpleDebugInfo();
 
 	// Inside the drawing function (e.g., DrawDrivingGameOverlays)
 	char modeText[64];
