@@ -136,9 +136,16 @@ typedef struct CRUMPLE_PARAMS
 	// -- wheel draw --------------------------------------------------------
 	// Camber/toe angle scale (4096-fixed rotation units per world unit of
 	// lateral / longitudinal bend). Positive = one direction; flip the sign
-	// to reverse the lean.
+	// to reverse the lean. Sized so a MAX bend (wheelBendMax*) reads as real
+	// degrees: e.g. 19370 -> 48 units * 19370 >> 12 = 227 = 20 deg.
 	int wheelCamberScale;
 	int wheelToeScale;
+	// Steering-deviation scale: per-wheel yaw offset (4096-fixed rotation
+	// units per unit of LATERAL bend) added to the wheel's normal steering
+	// transform in the draw AND to its heading in the physics — a T-boned
+	// wheel visibly breaks from the steering and drags the car. 38827 -> 48
+	// units * 38827 >> 12 = 455 = 40 deg.
+	int wheelSteerScale;
 
 	// -- debug / repair ----------------------------------------------------
 	// howHard used by the pause-menu "simulate impact" (d-pad) feature.

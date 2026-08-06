@@ -415,16 +415,23 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 			}
 			else
 			{
-				if (i & 1)
-				{
-					lfz = -cdx;
-					lfx = cdz;
-				}
-				else
-				{
-					lfz = -sdx;
-					lfx = sdz;
-				}
+				int wdir = dir;
+
+				// front axle follows the steering input
+				if (!(i & 1))
+					wdir += cp->wheel_angle;
+
+				// Nattdy - crumple: a bent wheel deviates from its normal
+				// heading by its lateral-bend steering deviation, so a broken
+				// wheel physically scrubs and drags the car — front damage
+				// pulls the nose, rear damage drags the tail. Same scale as
+				// the draw (wheelSteerScale), so it looks as crooked as it
+				// behaves.
+				if (bend != NULL)
+					wdir += FIXEDH(bend[i].vx * gCrumpleParams.wheelSteerScale);
+
+				lfz = -RSIN(wdir);
+				lfx = RCOS(wdir);
 			}
 
 			slidevel = (pointVel[0] / 64) * (lfx / 64) + (pointVel[2] / 64) * (lfz / 64);

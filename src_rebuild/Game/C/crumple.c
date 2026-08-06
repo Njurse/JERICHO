@@ -40,8 +40,8 @@ CRUMPLE_PARAMS gCrumpleParams =
 {
 	// impact strength
 	90000,		// impactNormalize     howHard that counts as a full-scale dent
-	2048,		// impactMinHowHard    below this: no deformation
-	3000,		// maxDisplacement     max push per impact (world units) — dramatic
+	768,		// impactMinHowHard    below this: no deformation
+	13000,		// maxDisplacement     max push per impact (world units) — dramatic
 					//                      crumple at the impact point
 	3500,		// compoundCap         max TOTAL per-vertex push across all impacts
 	0,			// damageBoostScale    zone-damage amplification (0 = impact-shaped only,
@@ -71,10 +71,12 @@ CRUMPLE_PARAMS gCrumpleParams =
 	192,		// damageModelMix      fraction of baked damaged-model delta (~4.7%)
 
 	// wheels
-	180,		// wheelProximity      impact distance that counts as near a wheel
+	340, 		// wheelProximity      impact distance that counts as near a wheel
 	30000,		// wheelMinHowHard     threshold before a wheel bends (above damage threshold ~56k... tuned down so the d-pad sim can bend wheels)
 	90000,		// wheelNormalize      howHard for a full bend kick
-	10,			// wheelBendStep       damage level added per full kick
+	24,			// wheelBendStep       damage level added per full kick — 2-3 kicks
+					//                      reach max, so one absolute T-bone
+					//                      (a few frames of contact) breaks a wheel
 	48,			// wheelBendMaxLevel   max cumulative damage level (bend = level * direction)
 	48,			// wheelBendMaxX       max lateral bend (component clamp)
 	24,			// wheelBendMaxY       max vertical bend (visual sag only)
@@ -85,18 +87,21 @@ CRUMPLE_PARAMS gCrumpleParams =
 
 	// wheel physics
 	192,		// wheelScrubForce      ~4.7% lateral drag per unit of bend
-	30,			// wheelBendCooldown    frames between wheel-bend kicks
+	10,			// wheelBendCooldown    frames between wheel-bend kicks (a real
+					//                      crash lasts several frames of contact)
 
 	// wheel draw
-	6,			// wheelCamberScale     1 lateral unit -> ~0.5deg camber
-	6,			// wheelToeScale        1 toe unit -> ~0.5deg toe
+	14506,		// wheelCamberScale     max lateral bend -> ~15deg camber (roll)
+	19370,		// wheelToeScale        max longitudinal bend -> ~20deg toe (yaw)
+	38827,		// wheelSteerScale      max lateral bend -> ~40deg steering deviation
 
 	// debug / repair
 	1000000,	// simHowHard           d-pad simulate impact strength (edge)
 	90000,		// simTickHowHard       d-pad held per-frame strength (grinding)
 	40,			// simJitter            simulated-hit position jitter (world units)
 	2048,		// simAngleJitter       simulated-hit normal tilt (up to ~7deg)
-	128,		// repairRate           zone damage removed per frame
+	8,			// repairRate           zone damage removed per frame (small = slow,
+					//                      watchable morph while driving)
 };
 
 //-----------------------------------------------------------------------------
@@ -212,13 +217,13 @@ static void crumpleAccumulateWheelBend(CAR_DATA* cp, const VECTOR* worldPoint, i
 
 	crumpleWorldToLocal(&cp->hd.where, worldPoint, &lx, &ly, &lz);
 
-	strength = howHard / p->wheelNormalize;
+	strength = (int)(((long long)howHard << 12) / p->wheelNormalize);
 	if (strength > 4096)
 		strength = 4096;
 
-	// same impact curve as the body deformation: hard hits bend wheels more
-	if (p->impactCurve >= 2)
-		strength = FIXEDH(strength * strength);
+	// wheel strength is LINEAR (unlike the body's squared impact curve):
+	// a single absolute T-bone must climb toward max bend, not need dozens
+	// of merged hits. A full howHard (>= wheelNormalize) -> strength 4096.
 
 	for (i = 0; i < 4; i++)
 	{
@@ -226,14 +231,21 @@ static void crumpleAccumulateWheelBend(CAR_DATA* cp, const VECTOR* worldPoint, i
 		int dy = ly - cos->wheelDisp[i].vy;
 		int dz = lz - cos->wheelDisp[i].vz;
 		int prox = p->wheelProximity;
+		int dist2 = dx * dx + dy * dy + dz * dz;
 
-		if (dx * dx + dy * dy + dz * dz <= prox * prox)
+		if (dist2 <= prox * prox)
 		{
 			int kick = FIXEDH(strength * p->wheelBendStep);
 			SVECTOR* b = &st->wheelBend[i];
 
 			// master multiplier (gCrumpleGlobalScale, 4096 = 1.0x)
 			kick = FIXEDH(kick * gCrumpleGlobalScale);
+
+			// distance falloff: wheels closer to the impact bend hardest, so
+			// a hit spanning several wheels deforms each one appropriately
+			// (full at the impact point, easing to nothing at the radius edge)
+			if (prox > 0)
+				kick = FIXEDH(kick * (4096 - (dist2 * 4096 / (prox * prox))));
 
 			// compounding: the damage LEVEL only grows; the applied bend is
 			// level * direction-of-latest-kick, so hits from any side keep
@@ -990,7 +1002,6 @@ void crumple_simulateImpact(int carId, int area, int howHard)
 	CAR_DATA* cp;
 	CAR_COSMETICS* cos;
 	VECTOR point, normal;
-	int hx, hy, hz;
 	int lpx = 0, lpy = 0, lpz = 0;
 	int lnx = 0, lny = 0, lnz = 0;
 
@@ -1003,39 +1014,61 @@ void crumple_simulateImpact(int carId, int area, int howHard)
 	if (cos == NULL)
 		return;
 
-	// impact point sits on the collision-box face, ~1/3 up the body;
-	// normals point OUTWARD (crumple_recordImpact flips them inward)
-	hx = cos->colBox.vx / 2;
-	hy = cos->colBox.vy / 3;
-	hz = cos->colBox.vz / 2;
-
-	switch (area)
+	// impact points sit AT the wheels the pad points at: up/down aim at that
+	// axle's two wheels, left/right at that side's two wheels, so the debug
+	// pad directly bends the wheel you press toward. Normals point OUTWARD
+	// from the car centre at each wheel (crumple_recordImpact flips them
+	// inward for the body dent); wheel proximity + distance falloff in
+	// crumpleAccumulateWheelBend then bend the near wheels hardest, so a hit
+	// spanning an axle/side deforms all the wheels it touches.
 	{
-		case 0:	lpx = 0;	lpy = hy;	lpz = hz;	lnz = 4096;		break;	// front
-		case 1:	lpx = 0;	lpy = hy;	lpz = -hz;	lnz = -4096;	break;	// rear
-		case 2:	lpx = -hx;	lpy = hy;	lpz = 0;	lnx = -4096;	break;	// left
-		case 3:	lpx = hx;	lpy = hy;	lpz = 0;	lnx = 4096;		break;	// right
-		default: return;
+		int targets[2];
+		int i;
+
+		switch (area)
+		{
+			case 0: targets[0] = 0; targets[1] = 2; break;	// front axle
+			case 1: targets[0] = 1; targets[1] = 3; break;	// rear axle
+			case 2: targets[0] = 2; targets[1] = 3; break;	// left side
+			case 3: targets[0] = 0; targets[1] = 1; break;	// right side
+			default: return;
+		}
+
+		for (i = 0; i < 2; i++)
+		{
+			int w = targets[i];
+			SVECTOR* wd = &cos->wheelDisp[w];
+
+			lpx = wd->vx;
+			lpy = wd->vy;
+			lpz = wd->vz;
+
+			// outward normal at this wheel: away from the car centre, horizontal
+			lnx = (wd->vx > 0) ? 4096 : -4096;
+			lnz = (wd->vz > 0) ? 4096 : -4096;
+			lny = 0;
+
+			// small random deviation so repeated simulations land slightly
+			// off-centre and off-perpendicular (more organic than dead-on hits)
+			lpx += ((rand() % (2 * gCrumpleParams.simJitter + 1)) - gCrumpleParams.simJitter);
+			lpz += ((rand() % (2 * gCrumpleParams.simJitter + 1)) - gCrumpleParams.simJitter);
+
+			lnx += ((rand() % 2049) - 1024) * gCrumpleParams.simAngleJitter >> 12;
+			lny += ((rand() % 2049) - 1024) * gCrumpleParams.simAngleJitter >> 12;
+			lnz += ((rand() % 2049) - 1024) * gCrumpleParams.simAngleJitter >> 12;
+			crumpleNormalizeApprox(&lnx, &lny, &lnz);
+
+			crumpleLocalToWorldPoint(&cp->hd.where, lpx, lpy, lpz, &point);
+
+			// rotate the outward local normal into world space (no translation)
+			normal.vx = FIXEDH(lnx * cp->hd.where.m[0][0] + lny * cp->hd.where.m[1][0] + lnz * cp->hd.where.m[2][0]);
+			normal.vy = FIXEDH(lnx * cp->hd.where.m[0][1] + lny * cp->hd.where.m[1][1] + lnz * cp->hd.where.m[2][1]);
+			normal.vz = FIXEDH(lnx * cp->hd.where.m[0][2] + lny * cp->hd.where.m[1][2] + lnz * cp->hd.where.m[2][2]);
+
+			crumple_recordImpact(cp, NULL, &point, &normal, howHard);
+		}
 	}
 
-	// small random deviation so repeated simulations land slightly off-centre
-	// and off-perpendicular (more organic than dead-on hits)
-	lpx += ((rand() % (2 * gCrumpleParams.simJitter + 1)) - gCrumpleParams.simJitter);
-	lpz += ((rand() % (2 * gCrumpleParams.simJitter + 1)) - gCrumpleParams.simJitter);
-
-	lnx += ((rand() % 2049) - 1024) * gCrumpleParams.simAngleJitter >> 12;
-	lny += ((rand() % 2049) - 1024) * gCrumpleParams.simAngleJitter >> 12;
-	lnz += ((rand() % 2049) - 1024) * gCrumpleParams.simAngleJitter >> 12;
-	crumpleNormalizeApprox(&lnx, &lny, &lnz);
-
-	crumpleLocalToWorldPoint(&cp->hd.where, lpx, lpy, lpz, &point);
-
-	// rotate the outward local normal into world space (no translation)
-	normal.vx = FIXEDH(lnx * cp->hd.where.m[0][0] + lny * cp->hd.where.m[1][0] + lnz * cp->hd.where.m[2][0]);
-	normal.vy = FIXEDH(lnx * cp->hd.where.m[0][1] + lny * cp->hd.where.m[1][1] + lnz * cp->hd.where.m[2][1]);
-	normal.vz = FIXEDH(lnx * cp->hd.where.m[0][2] + lny * cp->hd.where.m[1][2] + lnz * cp->hd.where.m[2][2]);
-
-	crumple_recordImpact(cp, NULL, &point, &normal, howHard);
 	cp->ap.needsDenting = 1;
 }
 
@@ -1118,20 +1151,20 @@ void crumple_debugTick(void)
 		{
 			if (st->impacts[z].howHard > 0)
 			{
-				st->impacts[z].howHard -= st->impacts[z].howHard >> 2;
+				st->impacts[z].howHard -= st->impacts[z].howHard >> 5;
 
 				if (st->impacts[z].howHard < p->impactMinHowHard)
 					st->impacts[z].howHard = 0;
 			}
 		}
 
-		st->howHard -= st->howHard >> 2;
+		st->howHard -= st->howHard >> 5;
 
 		for (z = 0; z < 4; z++)
 		{
 			// decay the cumulative damage level; re-derive the applied bend
 			// so the visual/physics offset and the damage stay in sync
-			st->wheelDamage[z] -= st->wheelDamage[z] >> 3;
+			st->wheelDamage[z] -= st->wheelDamage[z] >> 5;
 
 			if (st->wheelDamage[z] <= 0)
 			{
