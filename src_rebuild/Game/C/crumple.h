@@ -207,6 +207,10 @@ void crumple_deform(CAR_DATA* cp, const short* tempDamage);
 // rear-right, rear-left). Read-only for physics (wheelforces.c) and draw (cars.c).
 SVECTOR* crumple_getWheelBend(int carId);
 
+// Cumulative wheel damage for a car, 0..4096 (4096 = all four wheels at
+// maximum bend). Used to amplify surface roughness for damaged cars.
+int crumple_getWheelDamageTotal(int carId);
+
 // Non-zero if the car has any bent wheel (quick check for draw/physics).
 int crumple_hasWheelDamage(int carId);
 

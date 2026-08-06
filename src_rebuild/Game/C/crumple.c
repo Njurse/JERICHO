@@ -48,9 +48,9 @@ CRUMPLE_PARAMS gCrumpleParams =
 					//                      avoids zone-boundary seams)
 
 	// falloff
-	350,		// falloffRadius       dent radius (world units) — concentrated, so
+	700,		// falloffRadius       dent radius (world units) — concentrated, so
 					//                      a hit crumples locally instead of translating
-					//                      the whole body
+					//                      the whole body (x2)
 	1024,		// contactDeepen       extra depth for oblique (pole/edge) impacts
 	1,			// falloffSmooth       0 = linear, 1 = squared
 
@@ -80,7 +80,8 @@ CRUMPLE_PARAMS gCrumpleParams =
 	31,			// wheelBendMaxLevel   max cumulative damage level (bend = level * direction) — x0.65
 	31,			// wheelBendMaxX       max lateral bend (component clamp) — x0.65
 	16,			// wheelBendMaxY       max vertical bend (visual sag only) — x0.65
-	31,			// wheelBendMaxZ       max toe bend (component clamp) — x0.65
+	16,			// wheelBendMaxZ       max toe bend (component clamp) — x0.5, so the
+					//                      wheels don't distort as far longitudinally
 
 	// impact curve
 	2,			// impactCurve          squared: hard hits dent much deeper
@@ -429,6 +430,40 @@ SVECTOR* crumple_getWheelBend(int carId)
 		return NULL;
 
 	return crumpleCarState[carId].wheelBend;
+}
+
+// Cumulative "how screwed up are the wheels" for a car, normalized to
+// 0..4096 (0 = pristine, 4096 = all four wheels at their maximum bend).
+// Used to amplify surface roughness etc. for damaged cars.
+int crumple_getWheelDamageTotal(int carId)
+{
+	CRUMPLE_CAR_STATE* st;
+	CRUMPLE_PARAMS* p = &gCrumpleParams;
+	int maxPerWheel;
+	int total = 0;
+	int i;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return 0;
+
+	st = &crumpleCarState[carId];
+
+	for (i = 0; i < 4; i++)
+	{
+		total += ABS(st->wheelBend[i].vx) + ABS(st->wheelBend[i].vy) + ABS(st->wheelBend[i].vz);
+	}
+
+	maxPerWheel = p->wheelBendMaxX + p->wheelBendMaxY + p->wheelBendMaxZ;
+
+	if (maxPerWheel > 0)
+	{
+		total = total * 4096 / (4 * maxPerWheel);
+
+		if (total > 4096)
+			total = 4096;
+	}
+
+	return total;
 }
 
 // Rotate a wheel's vertex buffer for camber/toe from the wheel-damage bend.

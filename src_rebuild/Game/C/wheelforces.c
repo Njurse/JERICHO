@@ -302,6 +302,11 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 			int roughness;
 			roughness = RSIN((surfacePoint[0] + surfacePoint[2]) * 2) >> 8;
 
+			// Nattdy - crumple: screwed-up wheels transmit more of the surface
+			// roughness to the body (up to ~2x at full wheel damage); pristine
+			// cars are unaffected
+			roughness = FIXEDH(roughness * (4096 + crumple_getWheelDamageTotal(cp->id)));
+
 			surfacePoint[1] += oldCutRoughness ? (roughness >> 1) : (roughness / 3);
 
 			forcefac = 2048;
@@ -705,7 +710,12 @@ void StepOneCar(CAR_DATA* cp)
 
 		if (SurfacePtr && SurfacePtr->surface == SURF_GRASS)
 		{
-			surfacePoint[1] += (RSIN((surfacePoint[0] + surfacePoint[2]) * 2) >> 8) / 3;
+			int roughness = (RSIN((surfacePoint[0] + surfacePoint[2]) * 2) >> 8) / 3;
+
+			// Nattdy - crumple: damaged wheels transmit more surface roughness
+			roughness = FIXEDH(roughness * (4096 + crumple_getWheelDamageTotal(cp->id)));
+
+			surfacePoint[1] += roughness;
 		}
 
 		if ((surfacePoint[1] - pointPos[1]) - 1U < 799)
