@@ -415,7 +415,12 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 			}
 			else
 			{
-				int wdir = dir;
+				// base heading: cp->hd.direction, NOT the loop's `dir` —
+				// dir has already had wheel_angle folded in above (it feeds
+				// sdx/sdz), so using it here would steer the REAR wheels too
+				// (all four wheels pushing the same way). Rears stay on the
+				// unsteered direction; only the front axle adds the input.
+				int wdir = cp->hd.direction;
 
 				// front axle follows the steering input
 				if (!(i & 1))
