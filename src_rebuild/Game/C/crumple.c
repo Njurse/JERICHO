@@ -136,9 +136,9 @@ typedef struct CRUMPLE_CAR_STATE
 	int otherCarId;			// other car involved, -1 = world/static
 	int wheelBendTimer;		// frames until the next wheel-bend kick
 	// Wheel damage COMPOUNDS like body damage: a monotonic damage level per
-	// wheel plus the direction of the latest kick. The applied bend is
-	// wheelBend[i] = wheelDamage[i] * wheelDir[i], so repeated hits only ever
-	// add damage (opposite-direction hits re-point the wheel, never reset it).
+	// wheel plus a running bend that accumulates each kick's own directional
+	// push, so hits from opposite edges drive the wheel deeper while the net
+	// bend partially cancels (straightens) back out.
 	int wheelDamage[4];
 	SVECTOR wheelDir[4];
 	SVECTOR wheelBend[4];	// applied local-space offset per wheel (drawn + raycast)
@@ -255,9 +255,10 @@ static void crumpleAccumulateWheelBend(CAR_DATA* cp, const VECTOR* worldPoint, i
 			if (prox > 0)
 				kick = FIXEDH(kick * (4096 - (dist2 * 4096 / (prox * prox))));
 
-			// compounding: the damage LEVEL only grows; the applied bend is
-			// level * direction-of-latest-kick, so hits from any side keep
-			// adding damage instead of cancelling back toward zero
+			// compounding: the damage LEVEL always grows (deeper damage), but
+			// the applied bend accumulates each kick's own DIRECTIONAL push —
+			// hits from opposite edges of a wheel drive it deeper while the
+			// net bend partially cancels (straightens) back out
 			st->wheelDamage[i] += kick;
 			if (st->wheelDamage[i] > p->wheelBendMaxLevel)
 				st->wheelDamage[i] = p->wheelBendMaxLevel;
@@ -266,9 +267,9 @@ static void crumpleAccumulateWheelBend(CAR_DATA* cp, const VECTOR* worldPoint, i
 			st->wheelDir[i].vy = lny;
 			st->wheelDir[i].vz = lnz;
 
-			b->vx = FIXEDH(st->wheelDamage[i] * lnx);
-			b->vy = FIXEDH(st->wheelDamage[i] * lny);
-			b->vz = FIXEDH(st->wheelDamage[i] * lnz);
+			b->vx += FIXEDH(kick * lnx);
+			b->vy += FIXEDH(kick * lny);
+			b->vz += FIXEDH(kick * lnz);
 
 			if (b->vx > p->wheelBendMaxX) b->vx = p->wheelBendMaxX;
 			else if (b->vx < -p->wheelBendMaxX) b->vx = -p->wheelBendMaxX;
@@ -905,10 +906,13 @@ void crumple_deform(CAR_DATA* cp, const short* tempDamage)
 
 			// signed projection of the current->collision offset onto the
 			// INWARD normal: positive = vertex on the attacker side of the
-			// contact plane, i.e. exactly the verts that should move inward
+			// contact plane, i.e. exactly the verts that should move inward.
+			// Verts exactly ON the plane (grill / tail-light silhouettes) are
+			// still allowed in — they must cave with the surrounding panels;
+			// only verts already past the plane are left alone.
 			proj = FIXEDH(ddx * lnx + ddy * lny + ddz * lnz);
 
-			if (proj <= 0)
+			if (proj < 0)
 				continue;
 
 			// radial falloff, optionally smoothed
@@ -938,11 +942,15 @@ void crumple_deform(CAR_DATA* cp, const short* tempDamage)
 
 			disp = FIXEDH(h * maxDisp);
 
-			// clamp: hard cap, and never travel past the impact plane
+			// clamp: hard cap, and never travel past the impact plane — EXCEPT
+			// verts coplanar with the contact (the panel silhouettes): the
+			// no-overshoot clamp would freeze them at zero movement, which is
+			// why grill / tail-light outlines resisted denting while the rest
+			// of the panels caved around them
 			if (disp > maxDisp)
 				disp = maxDisp;
 
-			if (disp > proj)
+			if (proj > 32 && disp > proj)
 				disp = proj;
 
 			if (disp > 0)
@@ -1175,9 +1183,27 @@ void crumple_debugTick(void)
 
 		for (z = 0; z < 4; z++)
 		{
-			// decay the cumulative damage level; re-derive the applied bend
-			// so the visual/physics offset and the damage stay in sync
-			st->wheelDamage[z] -= st->wheelDamage[z] >> 5;
+			// decay the cumulative damage level and the accumulated bend (the
+			// bend IS the summed directional pushes now — nothing to
+			// re-derive). A minimum decrement keeps small values from stalling
+			// above zero, so repair always fully completes.
+			if (st->wheelDamage[z] > 0)
+				st->wheelDamage[z] -= MAX(1, st->wheelDamage[z] >> 5);
+
+			if (st->wheelBend[z].vx > 0)
+				st->wheelBend[z].vx -= MAX(1, st->wheelBend[z].vx >> 5);
+			else if (st->wheelBend[z].vx < 0)
+				st->wheelBend[z].vx += MAX(1, -st->wheelBend[z].vx >> 5);
+
+			if (st->wheelBend[z].vy > 0)
+				st->wheelBend[z].vy -= MAX(1, st->wheelBend[z].vy >> 5);
+			else if (st->wheelBend[z].vy < 0)
+				st->wheelBend[z].vy += MAX(1, -st->wheelBend[z].vy >> 5);
+
+			if (st->wheelBend[z].vz > 0)
+				st->wheelBend[z].vz -= MAX(1, st->wheelBend[z].vz >> 5);
+			else if (st->wheelBend[z].vz < 0)
+				st->wheelBend[z].vz += MAX(1, -st->wheelBend[z].vz >> 5);
 
 			if (st->wheelDamage[z] <= 0)
 			{
@@ -1188,12 +1214,6 @@ void crumple_debugTick(void)
 				st->wheelDir[z].vx = 0;
 				st->wheelDir[z].vy = 0;
 				st->wheelDir[z].vz = 0;
-			}
-			else
-			{
-				st->wheelBend[z].vx = FIXEDH(st->wheelDamage[z] * st->wheelDir[z].vx);
-				st->wheelBend[z].vy = FIXEDH(st->wheelDamage[z] * st->wheelDir[z].vy);
-				st->wheelBend[z].vz = FIXEDH(st->wheelDamage[z] * st->wheelDir[z].vz);
 			}
 		}
 

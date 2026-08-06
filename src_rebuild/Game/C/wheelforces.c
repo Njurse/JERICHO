@@ -172,15 +172,32 @@ void ConvertTorqueToAngularAcceleration(CAR_DATA* cp, CAR_LOCALS* cl)
 	int twistY, twistZ;
 	int zd;
 	int i;
+	SVECTOR* bend;
 
 	twistY = car_cosmetics[cp->ap.model].twistRateY;
 	twistZ = car_cosmetics[cp->ap.model].twistRateZ;
 
 	zd = (twistZ - twistY) * FIXEDH(cp->hd.where.m[0][2] * cp->hd.aacc[0] + cp->hd.where.m[1][2] * cp->hd.aacc[1] + cp->hd.where.m[2][2] * cp->hd.aacc[2]);
 
+	// Nattdy - crumple: a car with bent wheels no longer sits on the perfect
+	// rectangle the stock leveling assumes, so the roll/pitch correction
+	// fights the damaged equilibrium and can rock the car. Damp roll (x) and
+	// pitch (z) harder for bent cars so the body settles smoothly into the
+	// slump; yaw is untouched so steering stays responsive.
+	bend = crumple_getWheelBend(cp->id);
+
 	for (i = 0; i < 3; i++)
 	{
 		cp->hd.aacc[i] = cp->hd.aacc[i] * twistY + FIXEDH(cp->hd.where.m[i][2] * zd - cl->avel[i] * 128);
+
+		if (bend != NULL && i != 1 &&
+			(bend[0].vx | bend[0].vy | bend[0].vz |
+			 bend[1].vx | bend[1].vy | bend[1].vz |
+			 bend[2].vx | bend[2].vy | bend[2].vz |
+			 bend[3].vx | bend[3].vy | bend[3].vz))
+		{
+			cp->hd.aacc[i] -= cl->avel[i] / 12;
+		}
 
 		if (cl->extraangulardamping == 1)
 			cp->hd.aacc[i] -= cl->avel[i] / 8;
