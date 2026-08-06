@@ -519,7 +519,7 @@ void GlobalTimeStep(void)
 						// world point + normal + strength for BOTH cars at the single
 						// call site (crumple flips the normal per car so the deformation
 						// is always INWARD, and folds in mass/health asymmetry).
-						crumple_recordImpact(cp, c1, (VECTOR*)collisionpoint, (VECTOR*)normal, howHard);
+						crumple_recordImpact(cp, c1, (VECTOR*)collisionpoint, (VECTOR*)normal, howHard, 0xF);
 
 						if (howHard > 0x32000)
 						{

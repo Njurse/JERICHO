@@ -185,9 +185,13 @@ void crumple_resetCar(int carId);
 //                 car toward the wall for world hits). crumple flips it per
 //                 car so the deformation is always INWARD.
 //   howHard     - impact strength (car-car howHard / world strikeVel).
+//   wheelMask   - bitmask of wheels that MAY bend (0 = none, 0xF = any
+//                 wheel within wheelProximity). Real collisions pass 0xF;
+//                 the d-pad debug sim passes only its target wheels so a
+//                 press bends exactly the wheels it points at.
 // Also accumulates wheel bends for any wheel within wheelProximity when the
 // hit is hard enough.
-void crumple_recordImpact(CAR_DATA* cp0, CAR_DATA* cp1, const VECTOR* worldPoint, const VECTOR* worldNormal, int howHard);
+void crumple_recordImpact(CAR_DATA* cp0, CAR_DATA* cp1, const VECTOR* worldPoint, const VECTOR* worldNormal, int howHard, int wheelMask);
 
 // Deform cp's clean model vertices into gTempCarVertDump[cp->id].
 //   tempDamage - per-vertex accumulated zone damage (0..~6142) from denting.c.

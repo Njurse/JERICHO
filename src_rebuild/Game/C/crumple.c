@@ -189,7 +189,7 @@ static void crumpleRotateToLocal(const MATRIX* m, const VECTOR* worldDir, int* l
 // offset (lateral/camber + toe + lift) pushed along the inward normal.
 // The wheel raycast (wheelforces.c) and the draw (cars.c) both consume it,
 // so a bent wheel scrubs and fights the driver.
-static void crumpleAccumulateWheelBend(CAR_DATA* cp, const VECTOR* worldPoint, int lnx, int lny, int lnz, int howHard)
+static void crumpleAccumulateWheelBend(CAR_DATA* cp, const VECTOR* worldPoint, int lnx, int lny, int lnz, int howHard, int wheelMask)
 {
 	CRUMPLE_CAR_STATE* st;
 	CAR_COSMETICS* cos;
@@ -232,6 +232,12 @@ static void crumpleAccumulateWheelBend(CAR_DATA* cp, const VECTOR* worldPoint, i
 		int dz = lz - cos->wheelDisp[i].vz;
 		int prox = p->wheelProximity;
 		int dist2 = dx * dx + dy * dy + dz * dz;
+
+		// wheel mask: only the listed wheels may bend (the d-pad debug sim
+		// passes just its target wheels, so a front press can't skew the
+		// rears through the wide proximity radius)
+		if ((wheelMask & (1 << i)) == 0)
+			continue;
 
 		if (dist2 <= prox * prox)
 		{
@@ -582,7 +588,7 @@ static void crumpleAddImpact(CRUMPLE_CAR_STATE* st, const VECTOR* worldPoint, co
 	}
 }
 
-void crumple_recordImpact(CAR_DATA* cp0, CAR_DATA* cp1, const VECTOR* worldPoint, const VECTOR* worldNormal, int howHard)
+void crumple_recordImpact(CAR_DATA* cp0, CAR_DATA* cp1, const VECTOR* worldPoint, const VECTOR* worldNormal, int howHard, int wheelMask)
 {
 	CRUMPLE_CAR_STATE* st0;
 	VECTOR inward;
@@ -611,7 +617,7 @@ void crumple_recordImpact(CAR_DATA* cp0, CAR_DATA* cp1, const VECTOR* worldPoint
 	crumpleRotateToLocal(&cp0->hd.where, &inward, &nx, &ny, &nz);
 
 	crumpleAddImpact(st0, worldPoint, &inward, howHard, lx, ly, lz, nx, ny, nz);
-	crumpleAccumulateWheelBend(cp0, worldPoint, nx, ny, nz, howHard);
+	crumpleAccumulateWheelBend(cp0, worldPoint, nx, ny, nz, howHard, wheelMask);
 
 	if (cp1 != NULL)
 	{
@@ -633,7 +639,7 @@ void crumple_recordImpact(CAR_DATA* cp0, CAR_DATA* cp1, const VECTOR* worldPoint
 		crumpleRotateToLocal(&cp1->hd.where, &inward, &nx, &ny, &nz);
 
 		crumpleAddImpact(st1, worldPoint, &inward, howHard, lx, ly, lz, nx, ny, nz);
-		crumpleAccumulateWheelBend(cp1, worldPoint, nx, ny, nz, howHard);
+		crumpleAccumulateWheelBend(cp1, worldPoint, nx, ny, nz, howHard, wheelMask);
 	}
 }
 
@@ -1004,6 +1010,7 @@ void crumple_simulateImpact(int carId, int area, int howHard)
 	VECTOR point, normal;
 	int lpx = 0, lpy = 0, lpz = 0;
 	int lnx = 0, lny = 0, lnz = 0;
+	int wheelMask;
 
 	if (carId < 0 || carId >= MAX_CARS)
 		return;
@@ -1033,6 +1040,10 @@ void crumple_simulateImpact(int carId, int area, int howHard)
 			case 3: targets[0] = 0; targets[1] = 1; break;	// right side
 			default: return;
 		}
+
+		// bend ONLY the two wheels this press points at (mask), so a front
+		// press can't skew the rear axle through the wide proximity radius
+		wheelMask = (1 << targets[0]) | (1 << targets[1]);
 
 		for (i = 0; i < 2; i++)
 		{
@@ -1065,7 +1076,7 @@ void crumple_simulateImpact(int carId, int area, int howHard)
 			normal.vy = FIXEDH(lnx * cp->hd.where.m[0][1] + lny * cp->hd.where.m[1][1] + lnz * cp->hd.where.m[2][1]);
 			normal.vz = FIXEDH(lnx * cp->hd.where.m[0][2] + lny * cp->hd.where.m[1][2] + lnz * cp->hd.where.m[2][2]);
 
-			crumple_recordImpact(cp, NULL, &point, &normal, howHard);
+			crumple_recordImpact(cp, NULL, &point, &normal, howHard, wheelMask);
 		}
 	}
 

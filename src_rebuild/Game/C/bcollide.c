@@ -967,7 +967,7 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 				// pass was reusing the stale last car-car point. Now the actual
 				// world-space hit point + surface normal + strength go to crumple
 				// (crumple flips the normal inward for this car).
-				crumple_recordImpact(cp, NULL, &collisionResult.hit, &collisionResult.surfNormal, strikeVel);
+				crumple_recordImpact(cp, NULL, &collisionResult.hit, &collisionResult.surfNormal, strikeVel, 0xF);
 
 				displacement = FIXEDH(lever[0] * collisionResult.surfNormal.vx + lever[1] * collisionResult.surfNormal.vy + lever[2] * collisionResult.surfNormal.vz);
 				displacement = FIXEDH(((lever[0] * lever[0] + lever[2] * lever[2]) - displacement * displacement) * car_cos->twistRateY) + 4096;
