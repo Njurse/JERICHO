@@ -30,7 +30,7 @@
 #include "pad.h"
 #include "players.h"
 
-int gCrumpleBuddha = 0;
+int gCrumpleBuddha = 1;
 int gCrumpleGlobalScale = 4096;
 
 //-----------------------------------------------------------------------------
@@ -41,9 +41,9 @@ CRUMPLE_PARAMS gCrumpleParams =
 	// impact strength
 	90000,		// impactNormalize     howHard that counts as a full-scale dent
 	768,		// impactMinHowHard    below this: no deformation
-	13000,		// maxDisplacement     max push per impact (world units) — dramatic
-					//                      crumple at the impact point
-	3500,		// compoundCap         max TOTAL per-vertex push across all impacts
+	26000,		// maxDisplacement     max push per impact (world units) — dramatic
+					//                      crumple at the impact point (x2)
+	7000,		// compoundCap         max TOTAL per-vertex push across all impacts (x2)
 	0,			// damageBoostScale    zone-damage amplification (0 = impact-shaped only,
 					//                      avoids zone-boundary seams)
 

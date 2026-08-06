@@ -249,18 +249,19 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 		// Nattdy - crumple wheel damage: a hard impact near a wheel bends it
 		// permanently (local-space offset). Offsetting the raycast origin makes
 		// the suspension read a displaced contact point, so a crooked wheel
-		// scrubs and naturally resists steering/thrust. The force/torque lever
-		// arm below stays on the UN-bent hub so the suspension geometry never
-		// wanders (that was tipping cars onto their sides). The vertical (vy)
-		// bend is deliberately excluded here too — feeding it into the
-		// suspension jacked/unloaded the corner and rolled the car onto its
-		// side or back; it remains a purely visual sag in DrawCarWheels.
+		// scrubs and naturally resists steering/thrust. The vertical (vy)
+		// bend IS included now so the raycast height follows the wheel; the
+		// compression then backs the bend back out (below) so the BODY droops
+		// toward the damaged wheel instead of jacking/stilting. The force/
+		// torque lever arm stays on the UN-bent hub so the suspension geometry
+		// never wanders (that was tipping cars onto their sides).
 		{
 			SVECTOR wheelDispBent = car_cos->wheelDisp[i];
 
 			if (bend != NULL)
 			{
 				wheelDispBent.vx += bend[i].vx;
+				wheelDispBent.vy += bend[i].vy;
 				wheelDispBent.vz += bend[i].vz;
 			}
 
@@ -339,6 +340,15 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 
 		oldCompression = wheel->susCompression;
 		newCompression = FIXEDH((surfacePoint[1] - wheelPos[1]) * surfaceNormal[1]) + 14;
+
+		// Nattdy - wheel damage slump: the raycast height already followed the
+		// wheel's vertical displacement (vy included above), which alone would
+		// JACK the corner for a wheel pushed DOWN (longer leg) and UNLOAD it
+		// for one pushed UP. Back the displacement out of the compression so
+		// the body droops toward the damaged wheel either way: net effect is
+		// always -|vy| of compression at that corner (bounded by the floor).
+		if (bend != NULL && bend[i].vy != 0)
+			newCompression += bend[i].vy - ABS(bend[i].vy);
 
 		if (newCompression < 0)
 			newCompression = 0;
