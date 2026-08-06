@@ -140,11 +140,13 @@ typedef struct CRUMPLE_PARAMS
 	// degrees: e.g. 19370 -> 48 units * 19370 >> 12 = 227 = 20 deg.
 	int wheelCamberScale;
 	int wheelToeScale;
-	// Steering-deviation scale: per-wheel yaw offset (4096-fixed rotation
-	// units per unit of LATERAL bend) added to the wheel's normal steering
-	// transform in the draw AND to its heading in the physics — a T-boned
-	// wheel visibly breaks from the steering and drags the car. 38827 -> 48
-	// units * 38827 >> 12 = 455 = 40 deg.
+	// Steering-deviation scale (RETCONNED — currently UNUSED). Was: per-wheel
+	// yaw offset added to the steering transform in the draw and the force
+	// heading in the physics, so a T-boned wheel broke from the steering and
+	// dragged the car. Feeding it into the physics made damaged cars yank,
+	// drift and flip, so both couplings were removed — the wheels always
+	// follow the stock steering matrix. Keep the value for a possible
+	// DRAW-ONLY re-enable (visual disjointing without any physics effect).
 	int wheelSteerScale;
 
 	// -- debug / repair ----------------------------------------------------
