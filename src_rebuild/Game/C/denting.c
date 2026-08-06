@@ -1,5 +1,6 @@
 #include "driver2.h"
 #include "denting.h"
+#include "crumple.h"
 #include "system.h"
 #include "mission.h"
 #include "cars.h"
@@ -60,6 +61,7 @@ u_char gHDCarDamageLevels[MAX_CAR_RESIDENT_MODELS][MAX_DAMAGE_LEVELS];	// the da
 // [D] [T]
 void InitialiseDenting(void)
 {
+	crumple_init();
 	LoadDenting(GameLevel);
 	InitHubcap();
 }
@@ -72,10 +74,8 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 	int Damage;
 	int MaxDamage;
 	DENTUVS *dentptr;
-	SVECTOR *CleanVertPtr;
 	int VertNo;
 	unsigned char *DamPtr;
-	SVECTOR *DamVertPtr;
 	MODEL *pCleanModel;
 	int model;
 	int Poly;
@@ -116,27 +116,13 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 		} 
 	}
 
-	// update vertices position
-	if (gCarCleanModelPtr[model] != NULL && gCarDamModelPtr[model] != NULL)
+	// deform the body vertices via the crumple library (impact-driven,
+	// mass/health/structural-resistance aware). denting keeps the zone-damage
+	// accumulation above; crumple consumes cp's pending collision impact and
+	// writes the result into gTempCarVertDump[cp->id].
+	if (pCleanModel != NULL)
 	{
-		DamVertPtr = GET_MODEL_DATA(SVECTOR, gCarDamModelPtr[model], vertices);
-		CleanVertPtr = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[model], vertices);
-
-		// For testing: use the global crumple point
-		VECTOR collisionpoint = gCrumpleLastCollisionPoint;
-
-		for (VertNo = 0; VertNo < pCleanModel->num_vertices; VertNo++, DamVertPtr++, CleanVertPtr++)
-		{
-			// Direction from collision point to vertex (push OUTWARD)
-			int dx = CleanVertPtr->vx - collisionpoint.vx;
-			int dy = CleanVertPtr->vy - collisionpoint.vy;
-			int dz = CleanVertPtr->vz - collisionpoint.vz;
-
-			// Move vertex AWAY from collision point
-			gTempCarVertDump[cp->id][VertNo].vx = CleanVertPtr->vx + FIXEDH(dx * tempDamage[VertNo] / 12);
-			gTempCarVertDump[cp->id][VertNo].vy = CleanVertPtr->vy + FIXEDH(dy * tempDamage[VertNo] / 12);
-			gTempCarVertDump[cp->id][VertNo].vz = CleanVertPtr->vz + FIXEDH(dz * tempDamage[VertNo] / 12);
-		}
+		crumple_deform(cp, tempDamage);
 	}
 
 	// update polygon UVs
@@ -196,6 +182,11 @@ void CreateDentableCar(CAR_DATA *cp)
 	SVECTOR *src;
 	int vcount;
 	int model;
+
+	// Nattdy - clear the per-car crumple state (pending impact + wheel bends)
+	// alongside the denting state; zone damage below is preserved when
+	// gDontResetCarDamage is set, matching the original behaviour.
+	crumple_resetCar(cp->id);
 
 	model = cp->ap.model;
 

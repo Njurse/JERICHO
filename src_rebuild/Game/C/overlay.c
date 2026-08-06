@@ -16,6 +16,7 @@
 #include "felony.h"
 #include "scores.h"
 #include "handling.h"
+#include "crumple.h"
 
 COLOUR_BAND felonyColour[3] =
 {
@@ -688,15 +689,36 @@ void DrawDrivingGameOverlays(void)
 void DrawCrumpleDebugInfo()
 {
 	// Inside the drawing function (e.g., DrawDrivingGameOverlays)
+	// Compact layout, high on screen: 16px rows starting at y=90.
 	char modeText[64];
+	int howHard = 0;
+	VECTOR impactPoint = { 0, 0, 0 };
+	VECTOR impactNormal = { 0, 0, 0 };
+
 	sprintf(modeText, "Col");
-	PrintString(modeText, 10, 150); // X, Y coordinates on screen
-	sprintf(modeText, "X : %i",gCrumpleLastCollisionPoint.vx);
-	PrintString(modeText, 10, 170); // X, Y coordinates on screen
+	PrintString(modeText, 10, 90);
+	sprintf(modeText, "X : %i", gCrumpleLastCollisionPoint.vx);
+	PrintString(modeText, 10, 106);
 	sprintf(modeText, "Y : %i", gCrumpleLastCollisionPoint.vy);
-	PrintString(modeText, 10, 190); // X, Y coordinates on screen
+	PrintString(modeText, 10, 122);
 	sprintf(modeText, "Z : %i", gCrumpleLastCollisionPoint.vz);
-	PrintString(modeText, 10, 210); // X, Y coordinates on screen
+	PrintString(modeText, 10, 138);
+
+	// Nattdy - crumple impact debug: pending impact (inward normal + strength)
+	// for the player's car, straight from the crumple state.
+	if (MainPlayer.playerCarId >= 0)
+	{
+		crumple_getImpactInfo(MainPlayer.playerCarId, &impactPoint, &impactNormal, &howHard);
+
+		sprintf(modeText, "Nrm - %i", howHard);
+		PrintString(modeText, 10, 154);
+		sprintf(modeText, "X : %i", impactNormal.vx);
+		PrintString(modeText, 10, 170);
+		sprintf(modeText, "Y : %i", impactNormal.vy);
+		PrintString(modeText, 10, 186);
+		sprintf(modeText, "Z : %i", impactNormal.vz);
+		PrintString(modeText, 10, 202);
+	}
 }
 
 // [D] [T]

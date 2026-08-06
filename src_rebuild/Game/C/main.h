@@ -3,6 +3,8 @@
 
 extern int game_over;
 extern int gDemoLevel;
+// Set to 0 to skip the boot splash screens and intro FMV (straight to menu).
+extern int gPlayBootFMV;
 
 extern XZPAIR gStartPos;
 

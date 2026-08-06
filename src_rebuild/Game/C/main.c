@@ -118,6 +118,10 @@ enum LevLumpType
 int gStopPadReads = 0;
 int gDieWithFade = 0;
 
+// Set to 0 to skip the boot splash screens and the intro FMV, jumping
+// straight to the main menu.
+int gPlayBootFMV = 1;
+
 int game_over = 0;
 int saved_counter = 0;
 int saved_leadcar_pos = 0;
@@ -1873,11 +1877,12 @@ int redriver2_main(int argc, char** argv)
 
 	// TODO: divide game by the states, place main loop here.
 	
-	if (argc <= 1)
+	if (argc <= 1 && gPlayBootFMV)
 #elif !defined(PSX)
 	
 	InitStringMng();
 	
+	if (gPlayBootFMV)
 #endif
 	{
 		//PlayFMV(99);	// [A] don't show publisher logo

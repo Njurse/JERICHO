@@ -18,6 +18,7 @@
 #include "cutscene.h"
 #include "convert.h"
 #include "glaunch.h"
+#include "crumple.h"
 #include "ASM/rndrasm.h"
 #include "dr2math.h"
 #include "nattdymath.h"
@@ -657,6 +658,9 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	MODEL* WheelModelBack;
 	MODEL* WheelModelFront;
 	MODEL* model;
+	SVECTOR* bend;
+	SVECTOR wheelVerts[24];	// per-wheel copy for the damage transform
+	int numWheelVerts;
 
 #ifdef PSX
 	MATRIX& FrontMatrix = *(MATRIX*)(u_char*)getScratchAddr(0);
@@ -806,6 +810,8 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	wheel = cp->hd.wheel;
 	wheelnum = 0;
 
+	bend = crumple_getWheelBend(cp->id);
+
 	do {
 		if ((wheelnum & 1) != 0)
 			model = WheelModelBack;
@@ -814,18 +820,41 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 
 		VertPtr = GET_MODEL_DATA(SVECTOR, model, vertices);
 
+		// per-wheel copy: both wheels of an axle share the model's vertex
+		// buffer, so the crumple damage transform needs its own buffer
+		numWheelVerts = 0;
+		if (model->num_vertices > 0 && model->num_vertices <= 24)
+		{
+			numWheelVerts = model->num_vertices;
+			memcpy(wheelVerts, VertPtr, numWheelVerts * sizeof(SVECTOR));
+		}
+
 		if (cp->ap.flags & (1 << wheelnum)) // [A] used appearance flags to store hubcap presence
 		{
 			model = gDamWheelModelPtr;
 		}
 
-		if ((wheelnum & 2) == 0) 
-			sWheelPos.vx = 17 - wheelDisp->vx;
-		else
-			sWheelPos.vx = -17 - wheelDisp->vx;
+		// Nattdy - crumple wheel damage: draw the wheel at the same bent local
+		// position the physics raycast uses (wheelDisp + bend), so a crooked
+		// wheel looks exactly as crooked as it behaves.
+		{
+			SVECTOR wheelDispBent = *wheelDisp;
 
-		sWheelPos.vz = -wheelDisp->vz;
-		sWheelPos.vy = (-wheelSize - wheelDisp->vy) - wheel->susCompression + 14;
+			if (bend != NULL)
+			{
+				wheelDispBent.vx += bend[wheelnum].vx;
+				wheelDispBent.vy += bend[wheelnum].vy;
+				wheelDispBent.vz += bend[wheelnum].vz;
+			}
+
+			if ((wheelnum & 2) == 0)
+				sWheelPos.vx = 17 - wheelDispBent.vx;
+			else
+				sWheelPos.vx = -17 - wheelDispBent.vx;
+
+			sWheelPos.vz = -wheelDispBent.vz;
+			sWheelPos.vy = (-wheelSize - wheelDispBent.vy) - wheel->susCompression + 14;
+		}
 
 		gte_SetRotMatrix(RearMatrix);
 		gte_ldv0(&sWheelPos);
@@ -845,7 +874,19 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 			gte_SetRotMatrix(&FrontMatrix);
 		}
 
-		DrawWheelObject(model, VertPtr, TransparentObject, wheelnum);
+		// Nattdy - crumple wheel damage: slant this wheel's mesh by its bend
+		// (camber from the lateral bend, toe from the longitudinal bend),
+		// applied to the per-wheel copy AFTER the spin rotation. The wheel
+		// position itself already includes the bend via sWheelPos above.
+		if (numWheelVerts > 0)
+		{
+			crumple_transformWheelVerts(cp->id, wheelnum, wheelVerts, numWheelVerts);
+			DrawWheelObject(model, wheelVerts, TransparentObject, wheelnum);
+		}
+		else
+		{
+			DrawWheelObject(model, VertPtr, TransparentObject, wheelnum);
+		}
 
 		wheelDisp++;
 		wheel++;

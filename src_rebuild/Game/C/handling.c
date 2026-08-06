@@ -8,6 +8,7 @@
 #include "wheelforces.h"
 #include "objcoll.h"
 #include "denting.h"
+#include "crumple.h"
 #include "camera.h"
 #include "felony.h"
 #include "debris.h"
@@ -184,7 +185,7 @@ void FixCarCos(CAR_COSMETICS* carCos, int externalModelNumber)
 	doWheels = 1;
 
 	UpdateCarPoints(carCos);
-
+	carCos->twistRateZ <<= 1;
 	if (ActiveCheats.cheat10) // [A] cheat for secret car - Fireboyd78
 	{
 		if (carCos == &car_cosmetics[SPECIAL_CAR_SLOT] && externalModelNumber == 12)
@@ -479,6 +480,7 @@ void GlobalTimeStep(void)
 					lever1[0] = collisionpoint[0] - c1->hd.where.t[0];
 					lever1[1] = collisionpoint[1] - c1->hd.where.t[1];
 					lever1[2] = collisionpoint[2] - c1->hd.where.t[2];
+					// Nattdy - current trigger for updating the collision point that can be used for the vertex deformation
 					if (mayBeCollidingBits)
 					{
 						gCrumpleLastCollisionPoint.vx = ((VECTOR*)collisionpoint)->vx;
@@ -512,6 +514,12 @@ void GlobalTimeStep(void)
 
 						if (DamageCar3D(cp, &lever0, howHard >> 1, c1))
 							cp->ap.needsDenting = 1;
+
+						// Nattdy - record the impact for the crumple deformation system:
+						// world point + normal + strength for BOTH cars at the single
+						// call site (crumple flips the normal per car so the deformation
+						// is always INWARD, and folds in mass/health asymmetry).
+						crumple_recordImpact(cp, c1, (VECTOR*)collisionpoint, (VECTOR*)normal, howHard);
 
 						if (howHard > 0x32000)
 						{
@@ -732,6 +740,9 @@ void GlobalTimeStep(void)
 	// second sub frame passed, update matrices and physics direction
 	// dent cars - no more than 5 cars in per frame
 	carsDentedThisFrame = 0;
+
+	// crumple debug: d-pad deformation simulation + repair animation
+	crumple_debugTick();
 
 	for (i = 0; i < num_active_cars; i++)
 	{
@@ -1326,7 +1337,7 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 			}
 			else
 			{
-				cp->thrust = FIXEDH(cp->ap.carCos->powerRatio * 4915);
+				cp->thrust = FIXEDH(cp->ap.carCos->powerRatio * 4915*4);
 			}
 
 			if (cp->controlType == CONTROL_TYPE_PLAYER)

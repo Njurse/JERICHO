@@ -1,5 +1,6 @@
 #include "driver2.h"
 #include "loadsave.h"
+#include "crumple.h"
 #include "replays.h"
 #include "system.h"
 #include "glaunch.h"
@@ -248,6 +249,11 @@ int LoadCurrentGame()
 		if (fileSize <= CalcGameDataSize())
 		{
 			ShowSavingWaitMessage(G_LTXT(GTXT_LoadingProgress), 0);
+
+			// fresh crumple state on load: pending impacts/wheel bends from the
+			// old session must not bleed into the restored cars (deformation is
+			// rebuilt from the restored zone damage by the fallback path)
+			crumple_init();
 
 			LoadGameData((char*)_other_buffer);
 			return 1;

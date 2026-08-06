@@ -18,9 +18,9 @@ table.insert(premake.option.get("os").allowed, { "emscripten", "Emscripten" })
 ------------------------------------------
 
 -- you can redefine dependencies
-SDL2_DIR = os.getenv("SDL2_DIR") or "dependencies/SDL2"
-OPENAL_DIR = os.getenv("OPENAL_DIR") or "dependencies/openal-soft"
-JPEG_DIR = os.getenv("JPEG_DIR") or "dependencies/jpeg"
+SDL2_DIR = os.getenv("SDL2_DIR") or "dependencies/SDL2-2.30.2"
+OPENAL_DIR = os.getenv("OPENAL_DIR") or "dependencies/openal-soft-1.23.1-bin"
+JPEG_DIR = os.getenv("JPEG_DIR") or "dependencies/jpeg-9d"
 
 WEBDEMO_DIR = os.getenv("WEBDEMO_DIR") or "../../web_demo@/"	-- FIXME: make it better
 RED2_DIR = os.getenv("RED2_DIR") or "../../data@/"
@@ -264,11 +264,30 @@ project "REDRIVER2"
         }
 
         includedirs { 
-            SDL2_DIR.."/dependencies/SDL2-2.30.2/include",
-            OPENAL_DIR.."/dependencies/openal-soft-1.23.1-bin/include",
-			JPEG_DIR.."/dependencies/jpeg",
+            SDL2_DIR.."/include",
+            OPENAL_DIR.."/include",
+			JPEG_DIR.."/",
         }
-    
+
+        links { 
+            "opengl32",
+            "SDL2", 
+            "OpenAL32",
+        }
+
+    filter {"system:Windows", "platforms:x86"}
+        libdirs { 
+            SDL2_DIR.."/lib/x86",
+            OPENAL_DIR.."/libs/Win32",
+        }
+
+    filter {"system:Windows", "platforms:x64"}
+        libdirs { 
+            SDL2_DIR.."/lib/x64",
+            OPENAL_DIR.."/libs/Win64",
+        }
+
+    filter "system:Windows"
         linkoptions {
 			"/SAFESEH:NO", -- Image Has Safe Exception Handers: No. Because of openal-soft
         }

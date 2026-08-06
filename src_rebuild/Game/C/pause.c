@@ -1,5 +1,6 @@
 #include "driver2.h"
 #include "pause.h"
+#include "crumple.h"
 #include "system.h"
 #include "mission.h"
 #include "overlay.h"
@@ -144,6 +145,28 @@ void ToggleOverlays(int direction)
 	gDoOverlays ^= 1;
 }
 
+// Crumple debug: d-pad deformation simulation + smooth repair (crumple.c)
+static char CrumpleDpadText[32] = "D-Pad Deform: OFF";
+static char CrumpleBuddhaText[32] = "Buddha Mode: OFF";
+
+void CrumpleToggleDpad(int direction)
+{
+	gCrumpleDpadDeform ^= 1;
+	sprintf(CrumpleDpadText, "D-Pad Deform: %s", gCrumpleDpadDeform ? "ON" : "OFF");
+}
+
+void CrumpleToggleBuddha(int direction)
+{
+	gCrumpleBuddha ^= 1;
+	sprintf(CrumpleBuddhaText, "Buddha Mode: %s", gCrumpleBuddha ? "ON" : "OFF");
+}
+
+void CrumpleRepairCar(int direction)
+{
+	gCrumpleRepairCar = 1;
+	PauseReturnValue = MENU_QUIT_CONTINUE;
+}
+
 int lastCar = -1;
 
 void ToggleSecretCarFun(int direction)
@@ -256,6 +279,17 @@ MENU_ITEM DebugJustForFunItems[] =
 MENU_HEADER DebugJustForFunHeader =
 { "Just for fun", { 0, 0, 0, 0 }, 0u, DebugJustForFunItems };
 
+MENU_ITEM CrumpleDebugItems[] =
+{
+	{ CrumpleDpadText, PAUSE_TYPE_FUNC, 2u, CrumpleToggleDpad, MENU_QUIT_NONE, NULL },
+	{ CrumpleBuddhaText, PAUSE_TYPE_FUNC, 2u, CrumpleToggleBuddha, MENU_QUIT_NONE, NULL },
+	{ "Repair Car", PAUSE_TYPE_FUNC, 2u, CrumpleRepairCar, MENU_QUIT_CONTINUE, NULL },
+	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
+};
+
+MENU_HEADER CrumpleDebugHeader =
+{ "Crumple Debug", { 0, 0, 0, 0 }, 0u, CrumpleDebugItems };
+
 MENU_ITEM DebugOptionsItems[] =
 {
 #ifdef CUTSCENE_RECORDER
@@ -265,6 +299,7 @@ MENU_ITEM DebugOptionsItems[] =
 	{ "Back on Wheels",	PAUSE_TYPE_FUNC, 	2,	SetRightWayUp,		MENU_QUIT_NONE,		NULL},
 	{ "Time of Day", 	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&DebugTimeOfDayHeader },
 	{ "Fun Cheats", 	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&DebugJustForFunHeader },
+	{ "Crumple Debug",	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&CrumpleDebugHeader },
 	{ "Invincibility", 	PAUSE_TYPE_FUNC, 	2,  ToggleInvincibility,MENU_QUIT_NONE,		NULL},
 	{ "Immunity", 		PAUSE_TYPE_FUNC, 	2,  ToggleImmunity,		MENU_QUIT_NONE,		NULL},
 	{ "Puppy Dog Cops",	PAUSE_TYPE_FUNC,	2,  TogglePuppyDogCops,	MENU_QUIT_NONE,		NULL },

@@ -13,6 +13,7 @@
 #include "glaunch.h"
 #include "system.h"
 #include "cutscene.h"
+#include "crumple.h"
 
 #define GRAVITY_FORCE		(-7456)			// D1 has -10922
 
@@ -202,6 +203,7 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 	int friction_coef;
 	int oldSpeed, wheelspd;
 	LONGVECTOR4 wheelPos, surfacePoint, surfaceNormal;
+	LONGVECTOR4 leverPos;	// un-bent hub position: force/torque lever arm
 	VECTOR force;
 	LONGVECTOR4 pointVel;
 	int frontFS, rearFS;
@@ -242,10 +244,38 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 	i = 3;
 	wheel = cp->hd.wheel + 3;
 	do {
-		gte_ldv0(&car_cos->wheelDisp[i]);
+		SVECTOR* bend = crumple_getWheelBend(cp->id);
+
+		// Nattdy - crumple wheel damage: a hard impact near a wheel bends it
+		// permanently (local-space offset). Offsetting the raycast origin makes
+		// the suspension read a displaced contact point, so a crooked wheel
+		// scrubs and naturally resists steering/thrust. The force/torque lever
+		// arm below stays on the UN-bent hub so the suspension geometry never
+		// wanders (that was tipping cars onto their sides). The vertical (vy)
+		// bend is deliberately excluded here too — feeding it into the
+		// suspension jacked/unloaded the corner and rolled the car onto its
+		// side or back; it remains a purely visual sag in DrawCarWheels.
+		{
+			SVECTOR wheelDispBent = car_cos->wheelDisp[i];
+
+			if (bend != NULL)
+			{
+				wheelDispBent.vx += bend[i].vx;
+				wheelDispBent.vz += bend[i].vz;
+			}
+
+			gte_ldv0(&wheelDispBent);
+		}
 
 		gte_rtv0tr();
 		gte_stlvnl(wheelPos);
+
+		// un-bent hub in world space: the suspension force and its torque are
+		// applied here, so a bent wheel changes the contact (compression) but
+		// not the vehicle's roll/pitch geometry
+		gte_ldv0(&car_cos->wheelDisp[i]);
+		gte_rtv0tr();
+		gte_stlvnl(leverPos);
 
 		FindSurfaceD2((VECTOR*)&wheelPos, (VECTOR*)&surfaceNormal, (VECTOR*)&surfacePoint, &SurfacePtr);
 
@@ -313,6 +343,12 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 		if (newCompression < 0)
 			newCompression = 0;
 
+		// a bent wheel can never fully unload: keep a minimum contact so the
+		// damaged corner still supports the car instead of dumping it (the old
+		// vertical bend drove compression to 0 -> permanent tilt/roll)
+		if (bend != NULL && (bend[i].vx | bend[i].vy | bend[i].vz) && newCompression < 4)
+			newCompression = 4;
+
 		if (newCompression > 800)
 			newCompression = 12;
 
@@ -350,15 +386,15 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 		}
 		else
 		{
-			wheelPos[2] = wheelPos[2] - cp->hd.where.t[2];
-			wheelPos[1] = wheelPos[1] - cp->hd.where.t[1];
-			wheelPos[0] = wheelPos[0] - cp->hd.where.t[0];
+			leverPos[2] = leverPos[2] - cp->hd.where.t[2];
+			leverPos[1] = leverPos[1] - cp->hd.where.t[1];
+			leverPos[0] = leverPos[0] - cp->hd.where.t[0];
 
 			force.vz = 0;
 			force.vx = 0;
 
-			pointVel[0] = FIXEDH(cl->avel[1] * wheelPos[2] - cl->avel[2] * wheelPos[1]) + cl->vel[0];
-			pointVel[2] = FIXEDH(cl->avel[0] * wheelPos[1] - cl->avel[1] * wheelPos[0]) + cl->vel[2];
+			pointVel[0] = FIXEDH(cl->avel[1] * leverPos[2] - cl->avel[2] * leverPos[1]) + cl->vel[0];
+			pointVel[2] = FIXEDH(cl->avel[0] * leverPos[1] - cl->avel[1] * leverPos[0]) + cl->vel[2];
 
 			// that's our spring
 			susForce = newCompression * 230 - oldCompression * 100;
@@ -465,6 +501,16 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 			force.vx += (susForce * surfaceNormal[0] - sidevel * lfx) - cl->vel[0] * 12;
 			force.vz += (susForce * surfaceNormal[2] - sidevel * lfz) - cl->vel[2] * 12;
 
+			// bent wheels scrub: the misaligned contact patch resists lateral
+			// motion, scaled by the bend magnitude (wheelScrubForce per unit)
+			if (bend != NULL && (bend[i].vx != 0 || bend[i].vz != 0))
+			{
+				int scrub = (ABS(bend[i].vx) + ABS(bend[i].vz)) * gCrumpleParams.wheelScrubForce;
+
+				force.vx -= (cl->vel[0] >> 4) * scrub >> 8;
+				force.vz -= (cl->vel[2] >> 4) * scrub >> 8;
+			}
+
 			// apply speed reduction by water
 			if ((wheel->surface & 7) == 1)
 			{
@@ -497,18 +543,18 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 			if (cp->controlType == CONTROL_TYPE_PURSUER_AI)
 			{
 				if (gCopDifficultyLevel == 2)
-					wheelPos[1] = (wheelPos[1] * 12) / 32;
+					leverPos[1] = (leverPos[1] * 12) / 32;
 				else
-					wheelPos[1] = (wheelPos[1] * 19) / 32;
+					leverPos[1] = (leverPos[1] * 19) / 32;
 			}
 
 			cp->hd.acc[0] += force.vx;
 			cp->hd.acc[1] += force.vy;
 			cp->hd.acc[2] += force.vz;
-	
-			cp->hd.aacc[0] += FIXEDH(wheelPos[1] * force.vz - wheelPos[2] * force.vy);
-			cp->hd.aacc[1] += FIXEDH(wheelPos[2] * force.vx - wheelPos[0] * force.vz);
-			cp->hd.aacc[2] += FIXEDH(wheelPos[0] * force.vy - wheelPos[1] * force.vx);
+
+			cp->hd.aacc[0] += FIXEDH(leverPos[1] * force.vz - leverPos[2] * force.vy);
+			cp->hd.aacc[1] += FIXEDH(leverPos[2] * force.vx - leverPos[0] * force.vz);
+			cp->hd.aacc[2] += FIXEDH(leverPos[0] * force.vy - leverPos[1] * force.vx);
 
 			wheel->susCompression = newCompression;
 		}

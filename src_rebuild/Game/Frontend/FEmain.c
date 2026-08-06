@@ -3531,12 +3531,15 @@ void ForceStartLevel()
 	GameType = GAME_TAKEADRIVE;
 
 	// Set the city to Havana (index 1, as seen in FEscreens.inc)
-	GameLevel = 2; // 0=Chicago, 1=Havana, 2=Vegas, 3=Rio
+	GameLevel = 1; // 0=Chicago, 1=Havana, 2=Vegas, 3=Rio
+
+	// Which car to spawn in as (resident model index; see car_cosmetics /
+	// the level's car list). Change this to force a specific car.
+	wantedCar[0] = 1;
 
 	// Ensure other necessary variables are reset
 	gCurrentMissionNumber = 0; // Not a mission
 	gSubGameNumber = 0;        // No sub-game
-
 	// Trigger the game to start
 	SetState(STATE_GAMESTART);
 }

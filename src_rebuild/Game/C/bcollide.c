@@ -12,6 +12,7 @@
 #include "handling.h"
 #include "camera.h"
 #include "objanim.h"
+#include "crumple.h"
 #include "system.h"
 #include "cutscene.h"
 
@@ -365,6 +366,20 @@ void ApplyDamage(CAR_DATA *cp, char region, int value, char fakeDamage)
 
 			*pRegion = value;
 		}
+	}
+
+	// Buddha mode (crumple debug): the player car can still be damaged and
+	// crumpled, but totalDamage is clamped just below the totaled threshold
+	// so it never catches fire / explodes — de-facto invulnerability.
+	if (!fakeDamage && gCrumpleBuddha && cp->controlType == CONTROL_TYPE_PLAYER)
+	{
+		int maxDamage = MaxPlayerDamage[0];
+
+		if (cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2)
+			maxDamage = MaxPlayerDamage[*cp->ai.padid];
+
+		if (maxDamage > 1 && cp->totalDamage >= maxDamage)
+			cp->totalDamage = maxDamage - 1;
 	}
 }
 
@@ -946,6 +961,13 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 				}
 
 				DamageCar(cp, cd, &collisionResult, strikeVel);
+
+				// Nattdy - record the impact for the crumple deformation system.
+				// World collisions previously only set needsDenting, so the dent
+				// pass was reusing the stale last car-car point. Now the actual
+				// world-space hit point + surface normal + strength go to crumple
+				// (crumple flips the normal inward for this car).
+				crumple_recordImpact(cp, NULL, &collisionResult.hit, &collisionResult.surfNormal, strikeVel);
 
 				displacement = FIXEDH(lever[0] * collisionResult.surfNormal.vx + lever[1] * collisionResult.surfNormal.vy + lever[2] * collisionResult.surfNormal.vz);
 				displacement = FIXEDH(((lever[0] * lever[0] + lever[2] * lever[2]) - displacement * displacement) * car_cos->twistRateY) + 4096;
