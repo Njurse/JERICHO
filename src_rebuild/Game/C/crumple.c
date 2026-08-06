@@ -41,9 +41,9 @@ CRUMPLE_PARAMS gCrumpleParams =
 	// impact strength
 	90000,		// impactNormalize     howHard that counts as a full-scale dent
 	768,		// impactMinHowHard    below this: no deformation
-	26000,		// maxDisplacement     max push per impact (world units) — dramatic
-					//                      crumple at the impact point (x2)
-	7000,		// compoundCap         max TOTAL per-vertex push across all impacts (x2)
+	42900,		// maxDisplacement     max push per impact (world units) — dramatic
+					//                      crumple at the impact point (x1.65)
+	11550,		// compoundCap         max TOTAL per-vertex push across all impacts (x1.65)
 	0,			// damageBoostScale    zone-damage amplification (0 = impact-shaped only,
 					//                      avoids zone-boundary seams)
 
@@ -77,10 +77,10 @@ CRUMPLE_PARAMS gCrumpleParams =
 	24,			// wheelBendStep       damage level added per full kick — 2-3 kicks
 					//                      reach max, so one absolute T-bone
 					//                      (a few frames of contact) breaks a wheel
-	48,			// wheelBendMaxLevel   max cumulative damage level (bend = level * direction)
-	48,			// wheelBendMaxX       max lateral bend (component clamp)
-	24,			// wheelBendMaxY       max vertical bend (visual sag only)
-	48,			// wheelBendMaxZ       max toe bend (component clamp)
+	31,			// wheelBendMaxLevel   max cumulative damage level (bend = level * direction) — x0.65
+	31,			// wheelBendMaxX       max lateral bend (component clamp) — x0.65
+	16,			// wheelBendMaxY       max vertical bend (visual sag only) — x0.65
+	31,			// wheelBendMaxZ       max toe bend (component clamp) — x0.65
 
 	// impact curve
 	2,			// impactCurve          squared: hard hits dent much deeper
