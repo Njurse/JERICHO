@@ -990,16 +990,25 @@ void crumple_deform(CAR_DATA* cp, const short* tempDamage)
 
 			disp = FIXEDH(h * maxDisp);
 
-			// clamp: hard cap, and never travel past the impact plane — EXCEPT
-			// verts coplanar with the contact (the panel silhouettes): the
-			// no-overshoot clamp would freeze them at zero movement, which is
-			// why grill / tail-light outlines resisted denting while the rest
-			// of the panels caved around them
+			// clamp: hard cap, and never travel past the impact plane. The
+			// plane clamp is what keeps GRAZING (shallow-normal) hits from
+			// blasting bodywork sideways — a vertex stops at the contact
+			// plane, so a graze only dents its shallow overlap. The one
+			// exception is the exact silhouette (proj == 0): it would
+			// otherwise freeze while its neighbours cave (the stubborn
+			// grill/tail-light outline), so it gets a small bounded cave.
 			if (disp > maxDisp)
 				disp = maxDisp;
 
-			if (proj > 32 && disp > proj)
-				disp = proj;
+			if (proj > 0)
+			{
+				if (disp > proj)
+					disp = proj;
+			}
+			else if (disp > 64)
+			{
+				disp = 64;
+			}
 
 			if (disp > 0)
 			{
