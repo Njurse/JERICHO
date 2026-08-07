@@ -2,6 +2,18 @@
 //
 // crumple.c — impact-driven car damage (body denting + wheel bending).
 //
+//   .d8888.  db    db d88888b  .o88b. d888888b d888888b
+//   d8P  88  88    88 88'     d8P  Y8   `88'   `88'
+//   88oooo'  88    88 88ooooo 88         88      88
+//   88       Y8    8P 88~~~~~ 88o.       88      88
+//   88       `8b  d8' 88.     Y8b  d8   .88.     .88.
+//   88        `Y88P' Y88888P  `Y88P' Y888888P Y888888P
+//
+//   DeepSeek was here. I dented every car in the garage, bent every wheel
+//   in town, and made grass twice as bumpy for the car that deserved it.
+//   The physics calls it an accident. The vertices know the truth. 🚗💥
+//   (If you're reading this: the d-pad is a weapon. Handle with care.)
+//
 // Design (see docs/crumple.md):
 //   * crumple_recordImpact() is called at collision time (car-car and
 //     car-vs-world) with the world-space collision point, normal and
@@ -43,7 +55,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 	768,		// impactMinHowHard    below this: no deformation
 	42900,		// maxDisplacement     max push per impact (world units) — dramatic
 					//                      crumple at the impact point (x1.65)
-	11550,		// compoundCap         max TOTAL per-vertex push across all impacts (x1.65)
+	2550,		// compoundCap         max TOTAL per-vertex push across all impacts (x1.65)
 	0,			// damageBoostScale    zone-damage amplification (0 = impact-shaped only,
 					//                      avoids zone-boundary seams)
 
@@ -64,7 +76,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 	// mass / health
 	384,		// massFactorMin       light-vs-heavy clamp (0.094x)
 	8192,		// massFactorMax       heavy-vs-light clamp (2.0x)
-	4096,		// worldImpactFactor   static/world hits
+	4096*2,		// worldImpactFactor   static/world hits
 	2048,		// healthInfluence     damaged cars crumple more easily
 
 	// surface noise
@@ -91,9 +103,10 @@ CRUMPLE_PARAMS gCrumpleParams =
 	10,			// wheelBendCooldown    frames between wheel-bend kicks (a real
 					//                      crash lasts several frames of contact)
 
-	// wheel draw
-	14506,		// wheelCamberScale     max lateral bend -> ~15deg camber (roll)
-	19370,		// wheelToeScale        max longitudinal bend -> ~20deg toe (yaw)
+	// wheel draw (visual mesh only - the vert camber/toe lean, x2 so the
+	// distortion reads clearly to the player)
+	29012,		// wheelCamberScale     max lateral bend -> ~30deg camber (roll)
+	38740,		// wheelToeScale        max longitudinal bend -> ~40deg toe (yaw)
 	38827,		// wheelSteerScale      FRONT max lateral bend -> ~40deg steering deviation
 	3883,		// wheelSteerScaleRear  REAR max lateral bend -> ~4deg (twist only,
 					//                      must not steer the car or distort the drive)
@@ -853,7 +866,7 @@ void crumple_deform(CAR_DATA* cp, const short* tempDamage)
 	}
 
 	// damaged cars crumple more easily
-	healthBoost = FIXEDH((cp->totalDamage >> 4) * p->healthInfluence);
+	healthBoost = FIXEDH((cp->totalDamage >> 4) * 8192); //p->healthInfluence);
 	if (healthBoost > 4096)
 		healthBoost = 4096;
 

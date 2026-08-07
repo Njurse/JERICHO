@@ -375,11 +375,12 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 		if (newCompression < 0)
 			newCompression = 0;
 
-		// a bent wheel can never fully unload: keep a minimum contact so the
-		// damaged corner still supports the car instead of dumping it (the old
-		// vertical bend drove compression to 0 -> permanent tilt/roll)
-		if (bend != NULL && (bend[i].vx | bend[i].vy | bend[i].vz) && newCompression < 4)
-			newCompression = 4;
+		// NOTE: no minimum-compression floor for bent wheels here anymore.
+		// Forcing compression to 4 when the corner unloads turned the damaged
+		// wheel into a pogo stick — every bounce top injected a spring push
+		// that sustained side-to-side / pitch rocking on parked cars (seen
+		// when exiting a vehicle). The droop compensation above keeps the
+		// vertical unload bounded, so the plain 0-clamp suffices.
 
 		if (newCompression > 800)
 			newCompression = 12;
