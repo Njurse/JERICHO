@@ -1337,7 +1337,7 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 			}
 			else
 			{
-				cp->thrust = FIXEDH(cp->ap.carCos->powerRatio * 4915*4);
+				cp->thrust = FIXEDH(cp->ap.carCos->powerRatio * 4915);
 			}
 
 			if (cp->controlType == CONTROL_TYPE_PLAYER)

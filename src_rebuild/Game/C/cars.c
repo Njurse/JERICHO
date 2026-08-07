@@ -18,9 +18,11 @@
 #include "cutscene.h"
 #include "convert.h"
 #include "glaunch.h"
-#include "crumple.h"
 #include "ASM/rndrasm.h"
 #include "dr2math.h"
+
+// Main CRUMPLE library import and my small math library (i dont see stdlib math just dr2math, clearly means if i need external libs i write them in an engine appropriate way)
+#include "crumple.h"
 #include "nattdymath.h"
 
 struct plotCarGlobals

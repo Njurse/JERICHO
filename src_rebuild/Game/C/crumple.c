@@ -1,14 +1,48 @@
 // MAIN CALCULATIONS FOR VERTEX DEFORMATION SYSTEM
 //
 // crumple.c — impact-driven car damage (body denting + wheel bending).
-//
-//   .d8888.  db    db d88888b  .o88b. d888888b d888888b
-//   d8P  88  88    88 88'     d8P  Y8   `88'   `88'
-//   88oooo'  88    88 88ooooo 88         88      88
-//   88       Y8    8P 88~~~~~ 88o.       88      88
-//   88       `8b  d8' 88.     Y8b  d8   .88.     .88.
-//   88        `Y88P' Y88888P  `Y88P' Y888888P Y888888P
-//
+// the math inspiration came from reading through DETHRACE decompiled source code, crush.cpp :] thanks magicians that did that
+// but this was able to be implemented because REDRIVER2 is C and more familiar to me that I pretty quickly figured out how the
+// damage system calculated severity and direction when you crash but also interestingly the game applies a stronger blend
+// between clean and damaged for that specific panel, but no two panels seem to get dented at the exact same time.
+// CRUMPLE still allows the vanilla processing for texture/UV changes and uses the original dented models as reference for
+// an initial blend of how the hood or other body panels buckle so subsequent displacement from CRUMPLE has a pre-existing guide
+// to keep crushing the model in a way that still looks like a car thats actually getting smashed up instead of a jello cube 
+// 
+// an MVP/proof of concept that did raw vertex calculation and a distance evaulation
+// from the collisionLocation in cars.c, which reliably dented the cars, but the direction and amplitude
+// were not reliable and would often overshoot or move the vertices along the wrong normal
+// The version after that included these normal calculations and this pushed the vertices in the correct direction
+// but the edges of the bodywork wouldn't distort until more svere crumple, causing a weird stretching
+// 
+// In short, the collision location, involved cars (or car if world/scenery collision), and surface normal of the opposing vehicle
+// get used along with vehicle stats like speed, mass, and current health (vehicles currently dent more as they become more damaged to prevent instant crumpling
+// which might become a setting toggle for people who want them to completely wreck after a hard crash
+// 
+// Then came adding an invisible cage for roughly approximating the cabin of a vehicle so the entire thing didnt crumple totally uniformly and had some structure
+// this might be expanded to quarter panels and rear fenders, a b c d e f g pillars, but I wouldn't say expect me to do quite that much - the modifications here
+// might actually conceptualize how you'd do it easier than deciphering the original source (denting.c and cars.c in particular)
+// 
+// The wheels got a bit more complex because the game flips cars on their side if the wheels aren't a proper 4-tire wheelbase, and displacing the wheels
+// causes that issue. so currently theres a simulated transform offset, but then the rotation matrix of each tire is independently offset by a different one
+// that accumulates based on the intensity of the collision, if it is close enough to the wheel or the collision is extreme enough to offset the wheels.
+// The raycasts still point downward to prevent this weird flipping behavior but I do want to figure out how to make the tires completely disconnect
+// but that would probably be a custom hubcap.c based object rather than an actual physics object, and likely would have a state for the tire to change its
+// behavior to 'missing' since we probably dont want to delete the wheels.
+// 
+// DeepSeek also probably documents both its and my code better than i typically might, so consider this project AI assisted rather than completely AI written :)
+// Lots of hours spent combing over everything to make sure it meets my bar for quality and exactly how I want to implement it
+// 
+// It started off as modifying denting.c and cars.c collision detection but quickly grew to where I created at first just a custom library here to
+// minimize the contamination to the original code and instead minimally intercept it with at most a couple inserted external function calls to CRUMPLE
+// and a small few extra global variables. I absolutely did not want to modify any of the original game structs and haven't adjusted their schema
+// but due to the new applied transform and rotation matrices there is still some devation from normal driving behavior at full health/no crumple
+// that does seem to interfere with the pre-recorded replays/demos that were not recorded with CRUMPLE installed, but the AI seems to fully compensate
+// for the altered physics behavior when driving around in CIV, LEAD, PURSUIT, and so on. 
+// 
+// The concept is something I've outlined before, and I've done suspension systems for several game engines. But, I'm rusty as fuck with C syntax, so The Help
+// deserves to tag this code file below for correcting my weird syntax foibles.
+// 
 //   DeepSeek was here. I dented every car in the garage, bent every wheel
 //   in town, and made grass twice as bumpy for the car that deserved it.
 //   The physics calls it an accident. The vertices know the truth. 🚗💥
@@ -42,7 +76,9 @@
 #include "pad.h"
 #include "players.h"
 
-int gCrumpleBuddha = 1;
+
+// Buddha mode is like Source engine's -- you can take damage down to 1HP, this avoids death so the damage can still be extensively tested without full Invulnerability cheat
+int gCrumpleBuddha = 0;
 int gCrumpleGlobalScale = 4096;
 
 //-----------------------------------------------------------------------------
@@ -51,8 +87,8 @@ int gCrumpleGlobalScale = 4096;
 CRUMPLE_PARAMS gCrumpleParams =
 {
 	// impact strength
-	90000,		// impactNormalize     howHard that counts as a full-scale dent
-	768,		// impactMinHowHard    below this: no deformation
+	100000,		// impactNormalize     howHard that counts as a full-scale dent
+	1024,		// impactMinHowHard    below this: no deformation
 	42900,		// maxDisplacement     max push per impact (world units) — dramatic
 					//                      crumple at the impact point (x1.65)
 	2550,		// compoundCap         max TOTAL per-vertex push across all impacts (x1.65)
@@ -76,14 +112,14 @@ CRUMPLE_PARAMS gCrumpleParams =
 	// mass / health
 	384,		// massFactorMin       light-vs-heavy clamp (0.094x)
 	8192,		// massFactorMax       heavy-vs-light clamp (2.0x)
-	4096*2,		// worldImpactFactor   static/world hits
+	4096,		// worldImpactFactor   static/world hits
 	2048,		// healthInfluence     damaged cars crumple more easily
 
 	// surface noise
 	192,		// damageModelMix      fraction of baked damaged-model delta (~4.7%)
 
 	// wheels
-	340, 		// wheelProximity      impact distance that counts as near a wheel
+	150, 		// wheelProximity      impact distance that counts as near a wheel
 	30000,		// wheelMinHowHard     threshold before a wheel bends (above damage threshold ~56k... tuned down so the d-pad sim can bend wheels)
 	90000,		// wheelNormalize      howHard for a full bend kick
 	24,			// wheelBendStep       damage level added per full kick — 2-3 kicks
@@ -115,7 +151,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 	1000000,	// simHowHard           d-pad simulate impact strength (edge)
 	90000,		// simTickHowHard       d-pad held per-frame strength (grinding)
 	40,			// simJitter            simulated-hit position jitter (world units)
-	2048,		// simAngleJitter       simulated-hit normal tilt (up to ~7deg)
+	2048*4,		// simAngleJitter       simulated-hit normal tilt (up to ~28deg) ----- to do: some basic fucking arithmetic, dude (me)
 	8,			// repairRate           zone damage removed per frame (small = slow,
 					//                      watchable morph while driving)
 };

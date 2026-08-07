@@ -101,3 +101,4 @@ dkms.conf
 # debug information files
 *.dwo
 >>>>>>> origin/main
+/.reasonix

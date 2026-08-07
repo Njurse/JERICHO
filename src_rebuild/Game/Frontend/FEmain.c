@@ -41,6 +41,7 @@ OUT_FN2RANGE gHiresFEFontRanges[4];
 OUT_FN2INFO gHiresFEFontCharData[4][224];
 int gHiresFEFontRangeCount = 0;
 
+
 void InitHiresFEFont()
 {
 	char namebuffer[64];
@@ -1853,7 +1854,6 @@ void InitFrontendDisplay(void)
 	SetFEDrawMode();
 
 	EnableDisplay();
-
 #ifdef PSX
 	DrawScreen(pCurrScreen);
 	EndFrame();
@@ -3526,23 +3526,6 @@ int CityCutOffScreen(int bSetup)
 	return 0;
 }
 
-void ForceStartLevel()
-{
-	GameType = GAME_TAKEADRIVE;
-
-	// Set the city to Havana (index 1, as seen in FEscreens.inc)
-	GameLevel = 1; // 0=Chicago, 1=Havana, 2=Vegas, 3=Rio
-
-	// Which car to spawn in as (resident model index; see car_cosmetics /
-	// the level's car list). Change this to force a specific car.
-	wantedCar[0] = 1;
-
-	// Ensure other necessary variables are reset
-	gCurrentMissionNumber = 0; // Not a mission
-	gSubGameNumber = 0;        // No sub-game
-	// Trigger the game to start
-	SetState(STATE_GAMESTART);
-}
 
 char* contNames[2] = {
 	"DATA\\CARCONT.RAW",
@@ -3578,11 +3561,25 @@ int ControllerScreen(int bSetup)
 
 	return 0;
 }
+// To do: specify toggle, and car/level/gamemode arguments
+void ForceStartLevel()
+{
+	GameType = GAME_SURVIVAL;
 
+	// Set the city to Havana (index 1, as seen in FEscreens.inc)
+	GameLevel = 3; // 0=Chicago, 1=Havana, 2=Vegas, 3=Rio
+	carSelection = 5;
+
+	// Ensure other necessary variables are reset
+	gCurrentMissionNumber = 0; // Not a mission
+	gSubGameNumber = 0;        // No sub-game
+	// Trigger the game to start
+	SetState(STATE_GAMESTART);
+}
 // [D] [T]
 int MainScreen(int bSetup)
 {
-	ForceStartLevel();
+
 	if (bSetup) 
 	{
 		if (numPadsConnected == 2) 
@@ -3594,7 +3591,7 @@ int MainScreen(int bSetup)
 			pCurrScreen->buttons[3].action = FE_MAKEVAR(BTN_DISABLED, 0);
 		}
 	}
-
+	//ForceStartLevel();
 	return 0;
 }
 
