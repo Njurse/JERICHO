@@ -1626,6 +1626,10 @@ void DrawGame(void)
 		ObjectDrawnValue = FrameCnt;
 		DrawPauseMenus();
 
+		// JERICHO-HOOK: module overlays (e.g. the sandbox menu) draw here,
+		// into the display buffer like the pause menu
+		jer_fire(JER_EVENT_DRAW_OVERLAY, NULL);
+
 		RenderGame2(0);
 		SwapDrawBuffers();
 	}

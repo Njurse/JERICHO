@@ -210,6 +210,22 @@ void CrumpleRepairCar(int direction)
 	PauseReturnValue = MENU_QUIT_CONTINUE;
 }
 
+// JERICHO-HOOK: opens the sandbox module's overlay menu. The game unpauses
+// (the world keeps running) only if the module claims the press by opening
+// its menu; otherwise we stay in the pause menu.
+void SandboxMenuOpen(int direction)
+{
+	JER_ARGS_PAUSE_MENU jerArgs;
+
+	(void)direction;
+
+	jerArgs.action = JER_PAUSE_SANDBOX_OPEN;
+	jerArgs.result = NULL;
+
+	if (jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs) == JER_RESULT_STOP)
+		PauseReturnValue = MENU_QUIT_CONTINUE;
+}
+
 int lastCar = -1;
 
 void ToggleSecretCarFun(int direction)
@@ -344,6 +360,7 @@ MENU_ITEM DebugOptionsItems[] =
 	{ "Time of Day", 	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&DebugTimeOfDayHeader },
 	{ "Fun Cheats", 	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&DebugJustForFunHeader },
 	{ "Crumple Debug",	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&CrumpleDebugHeader },
+	{ "Sandbox Menu",	PAUSE_TYPE_FUNC, 	2,  SandboxMenuOpen,	MENU_QUIT_NONE,		NULL },
 	{ "Invincibility", 	PAUSE_TYPE_FUNC, 	2,  ToggleInvincibility,MENU_QUIT_NONE,		NULL},
 	{ "Immunity", 		PAUSE_TYPE_FUNC, 	2,  ToggleImmunity,		MENU_QUIT_NONE,		NULL},
 	{ "Puppy Dog Cops",	PAUSE_TYPE_FUNC,	2,  TogglePuppyDogCops,	MENU_QUIT_NONE,		NULL },
