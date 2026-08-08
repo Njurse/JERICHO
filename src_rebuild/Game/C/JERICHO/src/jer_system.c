@@ -1,0 +1,496 @@
+/*
+ * jer_system.c — JERICHO runtime: hook registry, dispatch, module
+ * activation, override slots, logging.
+ *
+ * Compiled into the game. The generated module registry (JERICHO/gen/
+ * jer_registry.c, built by premake from --with-mods) lives in the game
+ * project and provides the list of compiled-in modules; this file drives
+ * them: read mods/modlist.json, activate the enabled modules just-in-time
+ * at boot, fire JER_EVENT_BOOT, and dispatch every event the engine fires.
+ */
+#include "jericho.h"
+#include "jer_internal.h"
+
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+
+/* Generated registry — compiled into the game, links all modules.
+ * The registry TU is C++-compiled and wraps its definitions in extern "C",
+ * so these declarations must match. */
+#if defined(__cplusplus)
+extern "C" {
+#endif
+extern const JER_REGISTRY_ENTRY jer_registry_modules[];
+extern const int jer_registry_module_count;
+#if defined(__cplusplus)
+}
+#endif
+
+#define JER_MAX_HANDLERS 64
+#define JER_MAX_MODULES 16
+
+typedef struct JER_MODULE JER_MODULE;
+
+typedef struct JER_HANDLER
+{
+	int event;
+	JER_HOOK_FN fn;
+	void* userdata;
+	int priority;
+	JER_MODULE* module;	/* owning module (NULL = engine-side handler) */
+} JER_HANDLER;
+
+typedef struct JER_MODULE
+{
+	const char* id;
+	JER_MODULE_ENTRY entry;
+	const char* name;
+	const char* version;
+	const char* author;
+	const char* description;
+	const char* deps;
+	int enabled;
+	int activated;
+	int metadataSet;
+	int sdkVersion;
+	int valid;		/* passes SDK + dependency validation */
+	int defaultEnabled;
+} JER_MODULE;
+
+static JER_HANDLER gHandlers[JER_MAX_HANDLERS];
+static int gHandlerCount;
+static JER_MODULE gModules[JER_MAX_MODULES];
+static int gModuleCount;
+static JER_MODULE* gCurrentModule;	/* module whose entry is running */
+static void* gOverrideSlots[JER_OVERRIDE_SLOTS];
+static JERICHO_CONTEXT gCtx;
+static int gCtxBuilt;
+static void (*gLogger)(const char* msg);
+static char gModsDir[512];		/* dir passed to jer_init (for the manager) */
+
+/* ------------------------------------------------------------------ */
+/* Internal helpers                                                    */
+/* ------------------------------------------------------------------ */
+
+static void jerEmit(const char* msg)
+{
+	if (gLogger != NULL)
+		gLogger(msg);
+	else
+		printf("%s", msg);
+}
+
+static void jerLog(const char* fmt, ...)
+{
+	char buf[512];
+	va_list va;
+
+	va_start(va, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, va);
+	va_end(va);
+
+	buf[sizeof(buf) - 1] = 0;
+	jerEmit(buf);
+}
+
+static JER_MODULE* jerFindModule(const char* id)
+{
+	int i;
+
+	for (i = 0; i < gModuleCount; i++)
+	{
+		if (gModules[i].id != NULL && strcmp(gModules[i].id, id) == 0)
+			return &gModules[i];
+	}
+
+	return NULL;
+}
+
+static void jerSnapshotModules(void)
+{
+	int i;
+
+	/* modules[] mirrors the generated registry */
+	gModuleCount = 0;
+
+	for (i = 0; i < jer_registry_module_count && gModuleCount < JER_MAX_MODULES; i++)
+	{
+		gModules[gModuleCount].id = jer_registry_modules[i].id;
+		gModules[gModuleCount].entry = jer_registry_modules[i].entry;
+		gModules[gModuleCount].defaultEnabled = jer_registry_modules[i].defaultEnabled;
+		gModules[gModuleCount].name = NULL;
+		gModules[gModuleCount].version = NULL;
+		gModules[gModuleCount].author = NULL;
+		gModules[gModuleCount].description = NULL;
+		gModules[gModuleCount].deps = NULL;
+		gModules[gModuleCount].enabled = 0;
+		gModules[gModuleCount].activated = 0;
+		gModules[gModuleCount].metadataSet = 0;
+		gModules[gModuleCount].sdkVersion = 0;
+		gModules[gModuleCount].valid = 1;
+		gModuleCount++;
+	}
+}
+
+/* ------------------------------------------------------------------ */
+/* MOD_CONTEXT function pointers (called by modules)                   */
+/* ------------------------------------------------------------------ */
+
+static void jerCtxRegisterHook(JERICHO_CONTEXT* ctx, int event, JER_HOOK_FN fn, void* userdata, int priority)
+{
+	int i;
+
+	(void)ctx;
+
+	if (fn == NULL || gHandlerCount >= JER_MAX_HANDLERS)
+		return;
+
+	/* insert keeping (event, priority) order — lower priority runs first */
+	for (i = gHandlerCount; i > 0; i--)
+	{
+		if (gHandlers[i - 1].event < event ||
+			(gHandlers[i - 1].event == event && gHandlers[i - 1].priority <= priority))
+		{
+			break;
+		}
+
+		gHandlers[i] = gHandlers[i - 1];
+	}
+
+	gHandlers[i].event = event;
+	gHandlers[i].fn = fn;
+	gHandlers[i].userdata = userdata;
+	gHandlers[i].priority = priority;
+	gHandlers[i].module = gCurrentModule;
+	gHandlerCount++;
+}
+
+static int jerCtxFire(JERICHO_CONTEXT* ctx, int event, void* args)
+{
+	int result = JER_RESULT_CONTINUE;
+	int i;
+
+	(void)ctx;
+
+	for (i = 0; i < gHandlerCount; i++)
+	{
+		if (gHandlers[i].event != event)
+			continue;
+
+		/* skip handlers owned by modules that failed validation */
+		if (gHandlers[i].module != NULL && !gHandlers[i].module->valid)
+			continue;
+
+		result = gHandlers[i].fn(gHandlers[i].userdata, args);
+
+		if (result == JER_RESULT_STOP)
+			break;
+	}
+
+	return result;
+}
+
+static void jerCtxOverride(JERICHO_CONTEXT* ctx, int slot, void* fn)
+{
+	(void)ctx;
+
+	if (slot < 0 || slot >= JER_OVERRIDE_SLOTS)
+		return;
+
+	gOverrideSlots[slot] = fn;
+}
+
+static void jerCtxLog(JERICHO_CONTEXT* ctx, const char* fmt, ...)
+{
+	char buf[512];
+	va_list va;
+
+	(void)ctx;
+
+	va_start(va, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, va);
+	va_end(va);
+
+	buf[sizeof(buf) - 1] = 0;
+	jerEmit(buf);
+}
+
+static void jerCtxRegisterModule(JERICHO_CONTEXT* ctx,
+	const char* id, const char* name, const char* version,
+	const char* author, const char* description, const char* deps,
+	int sdkVersion)
+{
+	JER_MODULE* m;
+
+	(void)ctx;
+
+	m = jerFindModule(id);
+
+	if (m == NULL)
+	{
+		jerLog("[jericho] warning: module \"%s\" registered itself but is not in the build registry\n", id);
+		return;
+	}
+
+	m->name = name;
+	m->version = version;
+	m->author = author;
+	m->description = description;
+	m->deps = deps;
+	m->sdkVersion = sdkVersion;
+	m->metadataSet = 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* Activation                                                          */
+/* ------------------------------------------------------------------ */
+
+static void jerActivateModules(const char* modsDir)
+{
+	JER_MODLIST_STATE modlist;
+	const char* order[JER_MAX_MODULES];
+	int orderCount = 0;
+	int active = 0;
+	int i, j;
+
+	/*
+	 * Resolve the load order: modlist.json entries first (in file order),
+	 * then any built-in modules not mentioned (enabled by default, in
+	 * registry order). Modules listed with "enabled": false are skipped.
+	 */
+	if (jer_manager_read(modsDir, &modlist) != 0)
+	{
+		jerLog("[jericho] warning: could not read %s/modlist.json — defaulting to all-enabled\n", modsDir);
+		memset(&modlist, 0, sizeof(modlist));	/* error: treat as empty state */
+	}
+
+	/* apply the modlist enable flags to the module table */
+	for (i = 0; i < modlist.count; i++)
+	{
+		JER_MODULE* m = jerFindModule(modlist.items[i].id);
+
+		if (m == NULL)
+		{
+			jerLog("[jericho] modlist references unknown module \"%s\" (not built in)\n", modlist.items[i].id);
+			continue;
+		}
+
+		m->enabled = modlist.items[i].enabled;
+
+		if (m->enabled && orderCount < JER_MAX_MODULES)
+			order[orderCount++] = m->id;
+	}
+
+	/* unlisted modules default to their registered defaultEnabled */
+	for (i = 0; i < gModuleCount; i++)
+	{
+		int listed = 0;
+
+		for (j = 0; j < modlist.count; j++)
+		{
+			if (gModules[i].id != NULL && strcmp(gModules[i].id, modlist.items[j].id) == 0)
+			{
+				listed = 1;
+				break;
+			}
+		}
+
+		if (!listed && orderCount < JER_MAX_MODULES)
+		{
+			gModules[i].enabled = gModules[i].defaultEnabled;
+
+			if (gModules[i].enabled)
+				order[orderCount++] = gModules[i].id;
+		}
+	}
+
+	/* activate in order */
+	for (i = 0; i < orderCount; i++)
+	{
+		JER_MODULE* m = jerFindModule(order[i]);
+
+		if (m == NULL || !m->enabled)
+			continue;
+
+		jerLog("[jericho] activating \"%s\"\n", order[i]);
+		gCurrentModule = m;
+		m->entry(&gCtx);
+		gCurrentModule = NULL;
+		m->activated = 1;
+		active++;
+	}
+
+	/* validate: SDK-version match + dependency resolution. Modules that
+	 * fail are marked invalid; their handlers are skipped at dispatch and
+	 * they are reported with a clear reason. */
+	for (i = 0; i < gModuleCount; i++)
+	{
+		JER_MODULE* m = &gModules[i];
+
+		if (!m->activated)
+			continue;
+
+		if (m->sdkVersion != 0 && m->sdkVersion != JERICHO_SDK_VERSION)
+		{
+			jerLog("[jericho] module \"%s\" needs SDK v%d but host is v%d — DISABLED\n",
+				m->id, m->sdkVersion, JERICHO_SDK_VERSION);
+			m->valid = 0;
+			continue;
+		}
+
+		if (m->deps != NULL && m->deps[0] != 0)
+		{
+			char dep[40];
+			const char* p = m->deps;
+			int missing = 0;
+
+			while (*p != 0 && !missing)
+			{
+				const char* comma = strchr(p, ',');
+				int len = comma != NULL ? (int)(comma - p) : (int)strlen(p);
+
+				if (len > 0 && len < (int)sizeof(dep))
+				{
+					JER_MODULE* depModule;
+
+					memcpy(dep, p, (size_t)len);
+					dep[len] = 0;
+
+					depModule = jerFindModule(dep);
+
+					if (depModule == NULL || !depModule->enabled || !depModule->activated)
+						missing = 1;
+				}
+
+				p = comma != NULL ? comma + 1 : p + strlen(p);
+			}
+
+			if (missing)
+			{
+				jerLog("[jericho] module \"%s\" DISABLED: missing dependency (\"%s\")\n", m->id, m->deps);
+				m->valid = 0;
+				continue;
+			}
+		}
+	}
+
+	jerLog("[jericho] %d module(s) active (SDK v%d)\n", active, JERICHO_SDK_VERSION);
+}
+
+/* ------------------------------------------------------------------ */
+/* Public host-side API                                                */
+/* ------------------------------------------------------------------ */
+
+void jer_init(const char* modsDir)
+{
+	if (!gCtxBuilt)
+	{
+		gCtx.sdkVersion = JERICHO_SDK_VERSION;
+		gCtx.jer_register_hook = jerCtxRegisterHook;
+		gCtx.jer_fire = jerCtxFire;
+		gCtx.jer_override = jerCtxOverride;
+		gCtx.jer_log = jerCtxLog;
+		gCtx.jer_register_module = jerCtxRegisterModule;
+		gCtxBuilt = 1;
+	}
+
+	if (modsDir != NULL)
+	{
+		snprintf(gModsDir, sizeof(gModsDir), "%s", modsDir);
+	}
+	else
+	{
+		gModsDir[0] = 0;
+	}
+
+	jerLog("== JERICHO v%d (build %s) == Just-in-Time Extensible Runtime Interface for Compiled Hooks & Overrides\n", JERICHO_SDK_VERSION, JERICHO_BUILD_VERSION);
+
+	jerSnapshotModules();
+	jerActivateModules(modsDir);
+
+	jer_fire(JER_EVENT_BOOT, NULL);
+}
+
+int jer_fire(int event, void* args)
+{
+	if (!gCtxBuilt || gHandlerCount == 0)
+		return JER_RESULT_CONTINUE;
+
+	return jerCtxFire(&gCtx, event, args);
+}
+
+void jer_log(const char* fmt, ...)
+{
+	char buf[512];
+	va_list va;
+
+	va_start(va, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, va);
+	va_end(va);
+
+	buf[sizeof(buf) - 1] = 0;
+	jerEmit(buf);
+}
+
+void jer_set_logger(void (*fn)(const char* msg))
+{
+	gLogger = fn;
+}
+
+void jer_override(int slot, void* fn)
+{
+	jerCtxOverride(&gCtx, slot, fn);
+}
+
+void* jer_get_override(int slot)
+{
+	if (slot < 0 || slot >= JER_OVERRIDE_SLOTS)
+		return NULL;
+
+	return gOverrideSlots[slot];
+}
+
+/* Re-read modlist.json and re-activate (used after manager toggles). */
+void jer_manager_reload(const char* modsDir)
+{
+	/* deactivate by clearing handlers; also drop all override slots so a
+	 * module disabled from the Mods menu can't leave its override behind */
+	gHandlerCount = 0;
+	memset(gOverrideSlots, 0, sizeof(gOverrideSlots));
+
+	jerSnapshotModules();
+	jerActivateModules(modsDir);
+}
+
+/* ------------------------------------------------------------------ */
+/* Module inventory                                                    */
+/* ------------------------------------------------------------------ */
+
+int jer_module_count(void)
+{
+	return gModuleCount;
+}
+
+int jer_module_list(JER_MODULE_INFO* out, int max)
+{
+	int i;
+	int n = 0;
+
+	for (i = 0; i < gModuleCount && n < max; i++)
+	{
+		out[n].id = gModules[i].id;
+		out[n].name = gModules[i].name != NULL ? gModules[i].name : gModules[i].id;
+		out[n].version = gModules[i].version != NULL ? gModules[i].version : "?";
+		out[n].enabled = gModules[i].enabled && gModules[i].valid;
+		n++;
+	}
+
+	return n;
+}
+
+/* The mods dir passed to jer_init ("mods" in the vanilla call site). */
+const char* jer_mods_dir(void)
+{
+	return gModsDir[0] != 0 ? gModsDir : "mods";
+}

@@ -1,5 +1,6 @@
 #include "driver2.h"
 #include "main.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 
 #include "ASM/rndrasm.h"
 #include "ASM/d2mapasm.h"
@@ -1433,7 +1434,17 @@ void StepGame(void)
 	}
 	else
 	{
-		StepSim();
+		// JERICHO-HOOK: the world step is an override slot, so modules can
+		// time-scale or replace it (default = the builtin StepSim).
+		{
+			void (*stepSim)(void) = (void (*)(void))jer_get_override(JER_OVERRIDE_SLOT_SIM);
+
+			if (stepSim != NULL)
+				stepSim();
+			else
+				StepSim();
+		}
+
 		UpdatePlayerInformation();
 
 		if (FastForward == 0)
@@ -1820,6 +1831,17 @@ int redriver2_main(int argc, char** argv)
 #endif
 
 	SetDispMask(0);
+
+	// JERICHO-HOOK: boot the mod runtime. The mods dir follows the game's
+	// data folder (mods/modlist.json lives next to the game's runtime files);
+	// inert without compiled-in modules.
+	{
+		char modsDir[96];
+
+		sprintf(modsDir, "%smods", gDataFolder);
+		jer_init(modsDir);
+	}
+
 	StopCallback();
 	ResetCallback();
 	ResetGraph(0);
