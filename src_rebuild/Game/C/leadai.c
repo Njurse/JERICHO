@@ -863,7 +863,10 @@ void PosToIndex(int* normal, int* tangent, int intention, CAR_DATA* cp)
 			if (myspeed > 100)
 				w80 = LeadValues.hWidth80 + myspeed * LeadValues.hWidth80Mul;
 			else
-				w80 = LeadValues.tWidth80 + myspeed / LeadValues.tWidth80Mul;
+				// [A] guard: LeadValues is only loaded for route missions — in
+				// free-roam/sandbox it is all zeros, so tWidth80Mul == 0
+				// would divide by zero here
+				w80 = LeadValues.tWidth80 + (LeadValues.tWidth80Mul != 0 ? myspeed / LeadValues.tWidth80Mul : 0);
 			
 			if (myspeed > 100)
 				t = LeadValues.hDist + (myspeed - 100) * LeadValues.hDistMul;

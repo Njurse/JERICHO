@@ -24,9 +24,11 @@
 #include "camera.h"
 #include "dr2math.h"
 
-#define CAM_DIST 900		/* pull the camera in toward Tanner */
-#define CAM_LATERAL 400		/* shift it left of his facing */
-#define CAM_LEFT_SIGN 1		/* -1 for the other shoulder */
+
+// Tanner is small so the distances away from him will be a lot smaller than 4096
+#define CAM_DIST 90		/* pull the camera in toward Tanner */
+#define CAM_LATERAL 19		/* shift it left of his facing */
+#define CAM_LEFT_SIGN -1		/* -1 for the other shoulder */
 
 static int CameraOnCameraEvent(void* userdata, void* args)
 {

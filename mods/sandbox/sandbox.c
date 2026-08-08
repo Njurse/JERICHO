@@ -997,16 +997,12 @@ static void SandboxDrawPanel(void)
 /* straight into the display buffer like the pause menu                */
 /* ------------------------------------------------------------------ */
 
-/* camera helpers used by the preview (defined in draw.c) */
-extern void Apply_Inv_CameraMatrix(VECTOR* v);
-
 static void SandboxDrawPreview(void)
 {
 	CAR_DATA* cp = NULL;
 	CAR_MODEL* CarModelPtr;
 	MODEL* model = NULL;
 	MATRIX turntable;
-	MATRIX workmatrix;
 	VECTOR pos;
 	int angle;
 
@@ -1059,31 +1055,17 @@ static void SandboxDrawPreview(void)
 		}
 	}
 
-	/* The model must render through the game's own camera transform: a raw
-	 * matrix would feed the polygon plotters out-of-range OT depths (the
-	 * projection is baked into the camera matrix). Place the preview ABOVE
-	 * the player's position, offset to the right — far enough to render
-	 * small, high enough to sit against the sky so nothing covers it. */
-	{
-		int dx = player[0].pos[0] - camera_position.vx;
-		int dz = player[0].pos[2] - camera_position.vz;
-		int dist = SquareRoot0(dx * dx + dz * dz);
-
-		if (dist > 0)
-		{
-			pos.vx = player[0].pos[0] + (dz * 420) / dist;
-			pos.vy = player[0].pos[1] - 340;
-			pos.vz = player[0].pos[2] - (dx * 420) / dist;
-		}
-		else
-		{
-			pos.vx = player[0].pos[0];
-			pos.vy = player[0].pos[1];
-			pos.vz = player[0].pos[2];
-		}
-	}
-
-	Apply_Inv_CameraMatrix(&pos);
+	/* The overlay-layer preview (as originally shipped): a FIXED view-space
+	 * position + the raw turntable matrix. The GTE projection (already set
+	 * for the frame, H=256) places the model at a constant screen spot and
+	 * size — an overlay element, not anchored to the world. The camera-
+	 * anchored version (player-relative + inv_camera composition) ended up
+	 * at the player's own depth, so the real car drew over it and it was
+	 * invisible. Position: center-right inside the sandbox panel —
+	 * (375, -100, 1600) view space lands at ~(220, 112) on screen. */
+	pos.vx = 375;
+	pos.vy = -100;
+	pos.vz = 1600;
 
 	InitMatrix(turntable);
 	angle = (gFrameCount * 24) & 4095;
@@ -1092,20 +1074,21 @@ static void SandboxDrawPreview(void)
 	if (cp != NULL)
 	{
 		/* the player's car with its final (crumpled) geometry */
-		MulMatrix0(&inv_camera_matrix, &turntable, &workmatrix);
-
 		CarModelPtr = &NewCarModel[cp->ap.model];
 		CarModelPtr->vlist = gTempCarVertDump[cp->id];
 		CarModelPtr->nlist = gTempCarVertDump[cp->id];
 		gTempCarUVPtr = gTempHDCarUVDump[cp->id];
 
-		DrawCarObject(CarModelPtr, &workmatrix, &pos, cp->ap.palette, cp, 1);
-		DrawCarWheels(cp, &workmatrix, &pos, 0);
+		DrawCarObject(CarModelPtr, &turntable, &pos, cp->ap.palette, cp, 1);
+		DrawCarWheels(cp, &turntable, &pos, 0);
 	}
 	else
 	{
-		/* the selected model / player ped */
-		RenderModel(model, &turntable, &pos, 0, PLOT_NO_CULL, 1, 0);
+		/* the selected model / player ped: the GTE is already set to the
+		 * turntable + view-space trans; RenderModel skips its matrix setup */
+		gte_SetRotMatrix(&turntable);
+		gte_SetTransVector(&pos);
+		RenderModel(model, NULL, NULL, 0, PLOT_NO_CULL, 1, 0);
 	}
 }
 
