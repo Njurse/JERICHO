@@ -386,9 +386,10 @@ int JerichoModsScreen(int bSetup);
 
 // JERICHO-HOOK: frontend Mods manager screen (built into a spare screen slot)
 #define JERICHO_MODS_SCREEN 41
-#define JERICHO_MODS_MAX_MODULE_BUTTONS 7	// 7 modules + Back = 8 (screen cap)
+#define JERICHO_MODS_MODULES_PER_PAGE 5	// 5 modules + Prev/Next + Back = 8 (screen cap)
 
 static int gJerichoOptionsButtonAdded;
+static int gJerichoModsPage;		// paginated mod list: current page
 
 screenFunc fpUserFunctions[] = {
 	CentreScreen,
@@ -3923,54 +3924,117 @@ int JerichoModsScreen(int bSetup)
 {
 	JER_MODULE_INFO mods[JER_MAX_MODULES];
 	int count;
+	int pageCount;
+	int pageStart;
+	int shown;
+	int hasPrev;
+	int hasNext;
 	int i;
 
 	count = jer_module_list(mods, JER_MAX_MODULES);
 
-	if (count > JERICHO_MODS_MAX_MODULE_BUTTONS)
-		count = JERICHO_MODS_MAX_MODULE_BUTTONS;
+	pageCount = (count + JERICHO_MODS_MODULES_PER_PAGE - 1) / JERICHO_MODS_MODULES_PER_PAGE;
+
+	if (pageCount == 0)
+		pageCount = 1;
+
+	if (gJerichoModsPage >= pageCount)
+		gJerichoModsPage = pageCount - 1;
+
+	pageStart = gJerichoModsPage * JERICHO_MODS_MODULES_PER_PAGE;
+	shown = count - pageStart;
+
+	if (shown > JERICHO_MODS_MODULES_PER_PAGE)
+		shown = JERICHO_MODS_MODULES_PER_PAGE;
+
+	hasPrev = gJerichoModsPage > 0;
+	hasNext = gJerichoModsPage + 1 < pageCount;
 
 	if (bSetup)
 	{
 		PSXBUTTON* btn;
+		int numButtons = shown;		// module buttons first
+		int backIdx = shown + (hasPrev ? 1 : 0) + (hasNext ? 1 : 0);
 
-		pCurrScreen->numButtons = count + 1;	// modules + Back
+		pCurrScreen->numButtons = backIdx + 1;
 
-		for (i = 0; i < count; i++)
+		for (i = 0; i < shown; i++)
 		{
 			btn = &pCurrScreen->buttons[i];
 
 			/* explicit layout (screen 41 is a template copy): a vertical list */
 			btn->x = 167;
-			btn->y = 200 + i * 41;
+			btn->y = 180 + i * 36;
 			btn->w = 256;
 			btn->h = 36;
 			btn->s_x = 370;
-			btn->s_y = 200 + i * 41;
+			btn->s_y = 180 + i * 36;
 
-			sprintf(btn->Name, "%s [%s]", mods[i].name, mods[i].enabled ? "ON" : "OFF");
+			sprintf(btn->Name, "%s [%s]", mods[pageStart + i].name, mods[pageStart + i].enabled ? "ON" : "OFF");
 
-			btn->u = (u_char)((i == 0) ? count + 1 : i);	// prev (wrap to Back)
-			btn->d = (u_char)(i + 2);						// next
+			btn->u = (u_char)(i == 0 ? backIdx : i);	// prev (wrap to Back)
+			btn->d = (u_char)(i + 1);			// next (first nav button)
 			btn->l = 0;
 			btn->r = 0;
 			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
 			btn->var = -1;
 		}
 
-		btn = &pCurrScreen->buttons[count];
+		if (hasPrev)
+		{
+			btn = &pCurrScreen->buttons[numButtons++];
+
+			btn->x = 167;
+			btn->y = 180 + numButtons * 30 + 8;
+			btn->w = 256;
+			btn->h = 26;
+			btn->s_x = 370;
+			btn->s_y = 180 + numButtons * 30 + 8;
+
+			sprintf(btn->Name, "< Prev Page");
+
+			btn->u = (u_char)(backIdx);
+			btn->d = (u_char)0;
+			btn->l = 0;
+			btn->r = 0;
+			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
+			btn->var = -1;
+		}
+
+		if (hasNext)
+		{
+			btn = &pCurrScreen->buttons[numButtons++];
+
+			btn->x = 167;
+			btn->y = 180 + numButtons * 30 + 8;
+			btn->w = 256;
+			btn->h = 26;
+			btn->s_x = 370;
+			btn->s_y = 180 + numButtons * 30 + 8;
+
+			sprintf(btn->Name, "Next Page >");
+
+			btn->u = (u_char)(hasPrev ? numButtons - 2 : 0);
+			btn->d = (u_char)0;
+			btn->l = 0;
+			btn->r = 0;
+			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
+			btn->var = -1;
+		}
+
+		btn = &pCurrScreen->buttons[backIdx];
 
 		btn->x = 167;
-		btn->y = 200 + count * 41;
+		btn->y = 180 + (backIdx + 1) * 30 + 8;
 		btn->w = 256;
-		btn->h = 36;
+		btn->h = 26;
 		btn->s_x = 370;
-		btn->s_y = 200 + count * 41;
+		btn->s_y = 180 + (backIdx + 1) * 30 + 8;
 
 		sprintf(btn->Name, "Back");
 
-		btn->u = (u_char)(count == 0 ? 1 : count);
-		btn->d = 1;
+		btn->u = (u_char)(shown == 0 ? 0 : shown - 1);
+		btn->d = (u_char)1;
 		btn->l = 0;
 		btn->r = 0;
 		btn->action = FE_MAKEVAR(BTN_PREVIOUS_SCREEN, 0);
@@ -3981,17 +4045,17 @@ int JerichoModsScreen(int bSetup)
 		return 1;
 	}
 
-	/* per-frame: claim cross (toggle) and left/right (reorder) on module
+	/* per-frame: claim cross (toggle/page) and left/right (reorder) on module
 	 * buttons; everything else (up/down nav, Back cross) goes to the engine */
 	if (pCurrButton != NULL)
 	{
 		int idx = (int)(pCurrButton - pCurrScreen->buttons);
 
-		if (idx >= 0 && idx < count)
+		if (idx >= 0 && idx < shown)
 		{
 			if (feNewPad & MPAD_CROSS)
 			{
-				jer_manager_set_enabled(jer_mods_dir(), mods[idx].id, mods[idx].enabled ? 0 : 1);
+				jer_manager_set_enabled(jer_mods_dir(), mods[pageStart + idx].id, mods[pageStart + idx].enabled ? 0 : 1);
 				jer_manager_reload(jer_mods_dir());
 				jer_mods_rebuild_button_names();
 				bRedrawFrontend = 1;
@@ -4000,9 +4064,27 @@ int JerichoModsScreen(int bSetup)
 
 			if (feNewPad & (MPAD_D_LEFT | MPAD_D_RIGHT))
 			{
-				jer_manager_move(jer_mods_dir(), mods[idx].id, (feNewPad & MPAD_D_LEFT) ? -1 : 1);
+				jer_manager_move(jer_mods_dir(), mods[pageStart + idx].id, (feNewPad & MPAD_D_LEFT) ? -1 : 1);
 				jer_manager_reload(jer_mods_dir());
 				jer_mods_rebuild_button_names();
+				bRedrawFrontend = 1;
+				return 1;
+			}
+		}
+		else if (hasPrev && idx == shown)
+		{
+			if (feNewPad & MPAD_CROSS)
+			{
+				gJerichoModsPage--;
+				bRedrawFrontend = 1;
+				return 1;
+			}
+		}
+		else if (hasNext && idx == shown + (hasPrev ? 1 : 0))
+		{
+			if (feNewPad & MPAD_CROSS)
+			{
+				gJerichoModsPage++;
 				bRedrawFrontend = 1;
 				return 1;
 			}
@@ -4018,13 +4100,15 @@ static void jer_mods_rebuild_button_names(void)
 {
 	JER_MODULE_INFO mods[JER_MAX_MODULES];
 	int count = jer_module_list(mods, JER_MAX_MODULES);
+	int pageStart = gJerichoModsPage * JERICHO_MODS_MODULES_PER_PAGE;
+	int shown = count - pageStart;
 	int i;
 
-	if (count > JERICHO_MODS_MAX_MODULE_BUTTONS)
-		count = JERICHO_MODS_MAX_MODULE_BUTTONS;
+	if (shown > JERICHO_MODS_MODULES_PER_PAGE)
+		shown = JERICHO_MODS_MODULES_PER_PAGE;
 
-	for (i = 0; i < count; i++)
-		sprintf(pCurrScreen->buttons[i].Name, "%s [%s]", mods[i].name, mods[i].enabled ? "ON" : "OFF");
+	for (i = 0; i < shown; i++)
+		sprintf(pCurrScreen->buttons[i].Name, "%s [%s]", mods[pageStart + i].name, mods[pageStart + i].enabled ? "ON" : "OFF");
 }
 
 // [D] [T]

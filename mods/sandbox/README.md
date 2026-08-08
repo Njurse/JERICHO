@@ -15,21 +15,19 @@ A demo of the full JERICHO module surface with **zero vanilla edits**:
 Open: Pause → Debug Options → **Sandbox Menu**.
 
 ```
-SANDBOX
-DAMAGE: 0
+SANDBOX                    (main page — categories)
+DAMAGE: 0                  (current-vehicle readouts)
 FELONY: 0
-> Spawn Car          (spawns a copy of your current car model)
-  Spawn Object       (page: level objects — cones, barriers, phone boxes...)
-  Spawn AI Car       (spawns a civ car)
-  Repair Car         (full repair incl. CRUMPLE reset)
-  Make Car Upright   (Back on Wheels)
-  Set Damage         (select, then Left/Right to change, Cross to leave)
-  Set Felony
-  Set Time of Day    (Dawn → Day → Dusk → Night)
-  Set Weather        (Dry → Rain → Wet)
-  Set Cheats         (invincibility cheat toggle)
-  Close              (or Triangle)
+> Vehicle                  Vehicle:  Repair Car / Make Car Upright /
+  Spawn                            Set Damage / Set Felony
+  World                    Spawn:    Spawn Car / Spawn Object / Spawn AI Car
+  Cheats                   World:    Set Time of Day / Set Weather
+  Close                    Cheats:   Set Cheats
 ```
+
+L1/R1 flips between the category sub-pages, Triangle backs up (and closes on the
+main page), Left/Right adjusts the SET items once selected. The Spawn Object
+page lists the level's objects (12 per page — L1/R1 pages through them).
 
 The right side of the screen shows a **live preview**: the player's car drawn
 with its *final geometry* (CRUMPLE-deformed vertices + damage UVs), rotating

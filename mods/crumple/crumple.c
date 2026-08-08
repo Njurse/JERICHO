@@ -1521,6 +1521,13 @@ static int crumpleOnPauseMenu(void* userdata, void* args)
 			gCrumpleBuddha ^= 1;
 			break;
 
+		case JER_PAUSE_CRUMPLE_TOGGLE_COL:
+			/* Col debug overlay (collision boxes): off <-> on */
+			extern int gShowCollisionDebug;
+
+			gShowCollisionDebug = (gShowCollisionDebug == 1) ? 0 : 1;
+			break;
+
 		case JER_PAUSE_CRUMPLE_REPAIR:
 			gCrumpleRepairCar = 1;
 			break;
@@ -1532,6 +1539,14 @@ static int crumpleOnPauseMenu(void* userdata, void* args)
 		case JER_PAUSE_CRUMPLE_GET_BUDDHA_TEXT:
 			a->result = (void*)(gCrumpleBuddha ? "Buddha Mode: ON" : "Buddha Mode: OFF");
 			break;
+
+		case JER_PAUSE_CRUMPLE_GET_COL_TEXT:
+		{
+			extern int gShowCollisionDebug;
+
+			a->result = (void*)(gShowCollisionDebug == 1 ? "Col Debug: ON" : "Col Debug: OFF");
+			break;
+		}
 
 		default:
 			break;

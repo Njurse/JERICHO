@@ -16,6 +16,9 @@
 
 #include "jericho.h"
 
+
+// To do: Separate CRUMPLE functions from jericho events and try to use vanilla-bound function hooks
+
 /* JER_EVENT_COLLISION — car-car / car-world collision.
  * car0/car1: CAR_DATA* (car1 NULL for world hits); point/normal: VECTOR*;
  * howHard: impact strength; wheelMask: wheels eligible to bend (0xF = all). */
@@ -102,8 +105,10 @@ enum
 {
 	JER_PAUSE_CRUMPLE_GET_DPAD_TEXT = 0,	/* result: const char* label */
 	JER_PAUSE_CRUMPLE_GET_BUDDHA_TEXT,	/* result: const char* label */
+	JER_PAUSE_CRUMPLE_GET_COL_TEXT,		/* result: const char* label */
 	JER_PAUSE_CRUMPLE_TOGGLE_DPAD,
 	JER_PAUSE_CRUMPLE_TOGGLE_BUDDHA,
+	JER_PAUSE_CRUMPLE_TOGGLE_COL,
 	JER_PAUSE_CRUMPLE_REPAIR,
 
 	JER_PAUSE_SANDBOX_GET_LABEL,		/* result: const char* label or NULL */
