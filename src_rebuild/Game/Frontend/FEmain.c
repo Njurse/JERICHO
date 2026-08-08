@@ -1360,8 +1360,11 @@ void LoadFrontendScreens(int full)
 
 		// JERICHO-HOOK: the frontend Mods manager screen (slot 41). Reuses a
 		// spare screen's graphics; JerichoModsScreen lays out its own buttons.
+		// The screens were just (re)loaded, so the Options-screen injection
+		// must be re-done (this also covers exit-to-menu, which reloads them).
 		PsxScreens[JERICHO_MODS_SCREEN] = PsxScreens[31];
 		PsxScreens[JERICHO_MODS_SCREEN].userFunctionNum = 25;	// JerichoModsScreen
+		gJerichoOptionsButtonAdded = 0;
 	}
 #endif
 

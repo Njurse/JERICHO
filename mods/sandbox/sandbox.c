@@ -22,7 +22,6 @@ static JERICHO_CONTEXT* gCtx;
 static int gFrameCount;
 static int gNoDamage;
 static int gTimeScale = 4096;	/* 4096 = 1.0x */
-static int gSpawnEvery = 300;	/* frames between spawns; 0 = off */
 static void (*gOriginalStepSim)(void);
 
 extern void StepSim(void);
@@ -97,7 +96,7 @@ static int SandboxSpawnCar(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Frame hook: no-damage + periodic spawns                             */
+/* Frame hook: no-damage                                               */
 /* ------------------------------------------------------------------ */
 
 static int SandboxOnFrame(void* userdata, void* args)
@@ -121,9 +120,6 @@ static int SandboxOnFrame(void* userdata, void* args)
 		for (z = 0; z < 6; z++)
 			playerCar->ap.damage[z] = 0;
 	}
-
-	if (gSpawnEvery > 0 && (gFrameCount % gSpawnEvery) == 0)
-		SandboxSpawnCar();
 
 	return JER_RESULT_CONTINUE;
 }
@@ -167,5 +163,5 @@ JER_MODULE_ENTRY(jer_module_sandbox_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, SandboxOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, SANDBOX_CUSTOM_TOGGLE, SandboxOnToggle, NULL, 0);
 
-	ctx->jer_log(ctx, "[sandbox] registered — no-damage ON, time-scale 1.0x, spawn every %d frames\n", gSpawnEvery);
+	ctx->jer_log(ctx, "[sandbox] registered — no-damage ON, time-scale 1.0x\n");
 }
