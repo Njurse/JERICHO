@@ -50,7 +50,8 @@ int gWidescreenOverlayAlign = 0; // [A] custom widescreen alignment by PSX hack
 
 
 // Nattdy edits: Adding information about the control mode (which probably should be moved to the car or player side and then accessed here as an external variable
-int g_PlayerControlMode = 0; // 0=Manual, 1=Traffic, 2=Cop, 3=Lead
+int g_PlayerControlMode = 0;
+int gCrumpleDebugOverlay = 0;	// "Col/Nrm + xyz" impact readout (default off)
 
 
 #define PERCENTAGE_BAR_WIDTH 102
@@ -689,7 +690,13 @@ void DrawDrivingGameOverlays(void)
 
 void DrawCrumpleDebugInfo()
 {
-	// Inside the drawing function (e.g., DrawDrivingGameOverlays)
+	// the "Col/Nrm + xyz" impact-debug readout — off by default, toggled
+	// from the Crumble Debug pause submenu
+	extern int gCrumpleDebugOverlay;
+
+	if (gCrumpleDebugOverlay == 0)
+		return;
+
 	// Compact layout, high on screen: 16px rows starting at y=90.
 	char modeText[64];
 	int howHard = 0;

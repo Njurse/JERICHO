@@ -1528,6 +1528,13 @@ static int crumpleOnPauseMenu(void* userdata, void* args)
 			gShowCollisionDebug = (gShowCollisionDebug == 1) ? 0 : 1;
 			break;
 
+		case JER_PAUSE_CRUMPLE_TOGGLE_OVERLAY:
+			/* the "Col/Nrm + xyz" impact readout: off <-> on (default off) */
+			extern int gCrumpleDebugOverlay;
+
+			gCrumpleDebugOverlay ^= 1;
+			break;
+
 		case JER_PAUSE_CRUMPLE_REPAIR:
 			gCrumpleRepairCar = 1;
 			break;
@@ -1545,6 +1552,14 @@ static int crumpleOnPauseMenu(void* userdata, void* args)
 			extern int gShowCollisionDebug;
 
 			a->result = (void*)(gShowCollisionDebug == 1 ? "Col Debug: ON" : "Col Debug: OFF");
+			break;
+		}
+
+		case JER_PAUSE_CRUMPLE_GET_OVERLAY_TEXT:
+		{
+			extern int gCrumpleDebugOverlay;
+
+			a->result = (void*)(gCrumpleDebugOverlay ? "Impact Overlay: ON" : "Impact Overlay: OFF");
 			break;
 		}
 

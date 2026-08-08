@@ -1206,8 +1206,11 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	if (pad & CAR_PAD_HANDBRAKE)
 	{
 		cp->handbrake = 1;
-		// cycle the player's AI mode (manual -> traffic -> cop -> lead)
-		g_PlayerControlMode = (g_PlayerControlMode + 1) & 3;
+
+		// cycle the player's AI mode (manual -> traffic -> cop -> lead),
+		// edge-triggered so holding the handbrake doesn't spin it per frame
+		if ((cp->lastPad & CAR_PAD_HANDBRAKE) == 0)
+			g_PlayerControlMode = (g_PlayerControlMode + 1) & 3;
 	}
 	else
 	{

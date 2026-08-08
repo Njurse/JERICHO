@@ -152,6 +152,7 @@ void ToggleOverlays(int direction)
 static char CrumpleDpadText[32] = "D-Pad Deform: OFF";
 static char CrumpleBuddhaText[32] = "Buddha Mode: OFF";
 static char CrumpleColText[32] = "Col Debug: OFF";
+static char CrumpleOverlayText[32] = "Impact Overlay: OFF";
 
 static void CrumpleRefreshLabels(void)
 {
@@ -177,6 +178,13 @@ static void CrumpleRefreshLabels(void)
 
 	if (jerArgs.result != NULL)
 		sprintf(CrumpleColText, "%s", (const char*)jerArgs.result);
+
+	jerArgs.action = JER_PAUSE_CRUMPLE_GET_OVERLAY_TEXT;
+	jerArgs.result = NULL;
+	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
+
+	if (jerArgs.result != NULL)
+		sprintf(CrumpleOverlayText, "%s", (const char*)jerArgs.result);
 }
 
 void CrumpleToggleDpad(int direction)
@@ -212,6 +220,19 @@ void CrumpleToggleCol(int direction)
 	(void)direction;
 
 	jerArgs.action = JER_PAUSE_CRUMPLE_TOGGLE_COL;
+	jerArgs.result = NULL;
+	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
+
+	CrumpleRefreshLabels();
+}
+
+void CrumpleToggleOverlay(int direction)
+{
+	JER_ARGS_PAUSE_MENU jerArgs;
+
+	(void)direction;
+
+	jerArgs.action = JER_PAUSE_CRUMPLE_TOGGLE_OVERLAY;
 	jerArgs.result = NULL;
 	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
 
@@ -364,6 +385,7 @@ MENU_ITEM CrumpleDebugItems[] =
 {
 	{ CrumpleDpadText, PAUSE_TYPE_FUNC, 2u, CrumpleToggleDpad, MENU_QUIT_NONE, NULL },
 	{ CrumpleBuddhaText, PAUSE_TYPE_FUNC, 2u, CrumpleToggleBuddha, MENU_QUIT_NONE, NULL },
+	{ CrumpleOverlayText, PAUSE_TYPE_FUNC, 2u, CrumpleToggleOverlay, MENU_QUIT_NONE, NULL },
 	{ CrumpleColText, PAUSE_TYPE_FUNC, 2u, CrumpleToggleCol, MENU_QUIT_NONE, NULL },
 	{ "Repair Car", PAUSE_TYPE_FUNC, 2u, CrumpleRepairCar, MENU_QUIT_CONTINUE, NULL },
 	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }

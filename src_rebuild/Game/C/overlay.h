@@ -50,5 +50,6 @@ extern void UpdateBounceDisplay(float bounce, float scaleX, float scaleY);
 
 // Extra bullshit I added (Nattdy)
 extern int g_PlayerControlMode;
+extern int gCrumpleDebugOverlay;	// "Col/Nrm + xyz" impact readout (default off)
 
 #endif

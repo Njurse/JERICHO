@@ -106,9 +106,11 @@ enum
 	JER_PAUSE_CRUMPLE_GET_DPAD_TEXT = 0,	/* result: const char* label */
 	JER_PAUSE_CRUMPLE_GET_BUDDHA_TEXT,	/* result: const char* label */
 	JER_PAUSE_CRUMPLE_GET_COL_TEXT,		/* result: const char* label */
+	JER_PAUSE_CRUMPLE_GET_OVERLAY_TEXT,	/* result: const char* label */
 	JER_PAUSE_CRUMPLE_TOGGLE_DPAD,
 	JER_PAUSE_CRUMPLE_TOGGLE_BUDDHA,
 	JER_PAUSE_CRUMPLE_TOGGLE_COL,
+	JER_PAUSE_CRUMPLE_TOGGLE_OVERLAY,
 	JER_PAUSE_CRUMPLE_REPAIR,
 
 	JER_PAUSE_SANDBOX_GET_LABEL,		/* result: const char* label or NULL */

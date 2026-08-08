@@ -28,6 +28,7 @@
 #include "main.h"
 #include "map.h"
 #include "overlay.h"
+#include "pause.h"
 #include "cop_ai.h"
 #include "leadai.h"
 #include "pedest.h"
@@ -231,6 +232,10 @@ static int gSandboxObjectCursor;	/* object-list cursor */
 static int gSandboxAdjust;		/* 1 = adjusting a SET item */
 static int gSandboxPreviewModel;	/* car model shown in the preview (future car page) */
 
+/* HUD elements hidden while the sandbox menu is open (restored on close) */
+static int gSandboxSavedShowMap;
+static int gSandboxSavedDoOverlays;
+
 /* AI car submenu state */
 static int gSandboxAIModel;		/* internal car model to spawn */
 static int gSandboxAIMode;		/* 0 = civilian, 1 = cop, 2 = lead */
@@ -250,6 +255,10 @@ static void SandboxMenuClose(void)
 	gSandboxMenuOpen = 0;
 	gSandboxAdjust = 0;
 	gStopPadReads = 0;
+
+	/* bring the map + damage/felony bars back */
+	gShowMap = gSandboxSavedShowMap;
+	gDoOverlays = gSandboxSavedDoOverlays;
 }
 
 static CAR_DATA* SandboxPlayerCar(void)
@@ -413,13 +422,10 @@ static void SandboxSetPlayerAiMode(int mode)
 		break;
 
 	case 1:	/* Traffic AI */
-	{
-		EXTRA_CIV_DATA civDat;
-
-		memset(&civDat, 0, sizeof(civDat));
-		InitCivState(pc, &civDat);
+		/* NULL lets InitCivState query the surface under the car (a zeroed
+		 * EXTRA_CIV_DATA would feed surfInd=0, an arbitrary surface) */
+		InitCivState(pc, NULL);
 		break;
-	}
 
 	case 2:	/* Cop AI */
 		InitCopState(pc, NULL);
@@ -920,8 +926,8 @@ static void SandboxPrint(int x, int y, const char* text)
 
 /* semi-transparent panel behind the whole sandbox overlay (same style as the
  * pause menu's box: dark, half-transparent). Sized to cover the normal HUD
- * region and the preview, and added at OT level 3 so it draws behind the
- * menu text (OT 0) AND the spinning preview (OT 2). */
+ * region, capped at ~66% of the screen height, and added at OT level 3 so it
+ * draws behind the menu text (OT 0/1). */
 static void SandboxDrawPanel(void)
 {
 	POLY_F4* poly;
@@ -935,9 +941,9 @@ static void SandboxDrawPanel(void)
 	poly->x1 = 294;
 	poly->y1 = 6;
 	poly->x2 = 6;
-	poly->y2 = 238;
+	poly->y2 = 162;
 	poly->x3 = 294;
-	poly->y3 = 238;
+	poly->y3 = 162;
 
 	poly->r0 = 16;
 	poly->g0 = 16;
@@ -967,12 +973,6 @@ static void SandboxDrawPreview(void)
 	MATRIX workmatrix;
 	VECTOR pos;
 	int angle;
-	OTTYPE* savedOt;
-
-	/* draw the preview into the UI layer (near the 2D text, over the
-	 * world) by shifting the render context's OT base for the call */
-	savedOt = current->ot;
-	current->ot = savedOt - 26;
 
 	/* The preview is persistent: while the sandbox menu is open, every page
 	 * shows a spinning model — the player's car (final crumpled geometry),
@@ -998,10 +998,7 @@ static void SandboxDrawPreview(void)
 		}
 
 		if (model == NULL)
-		{
-			current->ot = savedOt;
 			return;
-		}
 	}
 	else if (gSandboxPage == SBX_PAGE_AICAR)
 	{
@@ -1010,10 +1007,7 @@ static void SandboxDrawPreview(void)
 			model = gCarCleanModelPtr[gSandboxAIModel];
 
 		if (model == NULL)
-		{
-			current->ot = savedOt;
 			return;
-		}
 	}
 	else
 	{
@@ -1025,10 +1019,7 @@ static void SandboxDrawPreview(void)
 			model = pmTannerModels[0];
 
 			if (model == NULL)
-			{
-				current->ot = savedOt;
 				return;
-			}
 		}
 	}
 
@@ -1037,7 +1028,9 @@ static void SandboxDrawPreview(void)
 	 * projection is baked into the camera matrix). We place the preview at
 	 * the player's world position — the point the camera is already looking
 	 * at — transform it to view space, then nudge it to the side in view
-	 * space so it reads as a status/selection element. */
+	 * space so it reads as a status/selection element. The preview draws at
+	 * its natural OT depth (no base shift — a fixed shift would go negative
+	 * for near geometry and write before the OT array). */
 	pos.vx = player[0].pos[0];
 	pos.vy = player[0].pos[1];
 	pos.vz = player[0].pos[2];
@@ -1069,8 +1062,6 @@ static void SandboxDrawPreview(void)
 		/* the selected model / player ped */
 		RenderModel(model, &turntable, &pos, 0, PLOT_NO_CULL, 1, 0);
 	}
-
-	current->ot = savedOt;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1116,30 +1107,40 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 		{
 			sprintf(text, "%s %s", i == gSandboxObjectCursor - pageStart ? ">" : " ", gSandboxObjectNames[pageStart + i]);
 			SetTextColour(i == gSandboxObjectCursor - pageStart ? 255, 255, 0 : 255, 255, 255);
-			SandboxPrint(10, 48 + i * SBX_LINE, text);
+			SandboxPrint(10, 60 + i * SBX_LINE, text);
 		}
 
 		SandboxDrawPreview();
 		return JER_RESULT_CONTINUE;
 	}
 
-	/* header + current-vehicle readouts */
+	/* header + current-vehicle readouts (mockup: model / damage / felony /
+	 * AI mode), shown on the main page so it reads as a status block */
 	SetTextColour(255, 255, 0);
 	sprintf(text, "%s", gSandboxPageTitles[gSandboxPage]);
 	SandboxPrint(10, 14, text);
 
 	if (pc != NULL)
 	{
-		sprintf(text, "DAMAGE: %d", pc->totalDamage);
+		sprintf(text, "Car %d", pc->ap.model);
 		SetTextColour(255, 255, 255);
-		SandboxPrint(10, 26, text);
+		SandboxPrint(10, 24, text);
+
+		sprintf(text, "DAMAGE: %d", pc->totalDamage);
+		SandboxPrint(10, 33, text);
 
 		sprintf(text, "FELONY: %d", pc->felonyRating);
-		SandboxPrint(10, 36, text);
+		SandboxPrint(10, 42, text);
+
+		sprintf(text, "AI: %s",
+			g_PlayerControlMode == 1 ? "Traffic" :
+			g_PlayerControlMode == 2 ? "Cop" :
+			g_PlayerControlMode == 3 ? "Lead" : "Manual");
+		SandboxPrint(10, 51, text);
 	}
 	else
 	{
-		SandboxPrint(10, 26, "(on foot)");
+		SandboxPrint(10, 24, "(on foot)");
 	}
 
 	/* items */
@@ -1168,7 +1169,7 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 			else
 				SetTextColour(255, 255, 255);
 
-			SandboxPrint(10, 50 + i * SBX_LINE, text);
+			SandboxPrint(10, 62 + i * SBX_LINE, text);
 		}
 
 		if (gSandboxPage != SBX_PAGE_MAIN)
@@ -1181,7 +1182,7 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 				sprintf(text, "(L1/R1: menu page %d/4, Triangle: back)", gSandboxPage - SBX_PAGE_VEHICLE + 1);
 
 			SetTextColour(180, 180, 180);
-			SandboxPrint(10, 50 + itemCount * SBX_LINE + 4, text);
+			SandboxPrint(10, 62 + itemCount * SBX_LINE + 4, text);
 		}
 	}
 
@@ -1207,6 +1208,13 @@ static int SandboxOnPauseMenu(void* userdata, void* args)
 
 	if (jerArgs->action == JER_PAUSE_SANDBOX_OPEN)
 	{
+		/* hide the minimap + damage/felony bars while the menu is open so
+		 * the overlay stays clear */
+		gSandboxSavedShowMap = gShowMap;
+		gSandboxSavedDoOverlays = gDoOverlays;
+		gShowMap = 0;
+		gDoOverlays = 0;
+
 		gSandboxMenuOpen = 1;
 		gSandboxPage = 0;
 		gSandboxSubPage = 0;
