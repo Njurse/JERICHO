@@ -42,19 +42,21 @@ premake5.exe --with-mods="crumple,example" vs2019
 
 ## The runtime
 
-At boot the game calls `jer_init("mods")`:
+At boot the game calls `jer_init("<dataFolder>mods")`:
 
-1. Reads `mods/modlist.json` (created by the in-game Mods menu / `/mod`
-   console commands). Absent file = every compiled-in module enabled, in
-   registry order.
+1. Reads `mods/modlist.json` (created/edited by the frontend **JERICHO** menu
+   under Options). Absent file = every compiled-in module follows its
+   `default-enabled` flag from `mods/<id>/mod.toml`.
 2. Activates each enabled module in load order: calls its
    `jer_module_<id>_entry(ctx)`.
 3. Fires `JER_EVENT_BOOT`.
 4. Prints the banner:
    `== JERICHO v1 (build 8.0-18-g0f35465f-dirty) == ...`
 
-Toggling a module (enable/disable/order) is a **runtime** operation — it only
-rewrites `modlist.json` and takes effect at the next boot. No rebuild needed.
+Module management happens in the **frontend** (Options → JERICHO): cross
+toggles a module, left/right moves its load order, all persisted to
+`modlist.json` and re-applied immediately (safe there — no session is
+running). No rebuild needed for toggles.
 
 ## Writing a module
 

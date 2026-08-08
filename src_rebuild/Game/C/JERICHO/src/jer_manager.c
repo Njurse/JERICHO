@@ -307,6 +307,24 @@ int jer_manager_move(const char* modsDir, const char* id, int direction)
 	if (jer_manager_read(modsDir, &st) != 0)
 		return -1;
 
+	/* unlisted module: append it first (keeps its current state), so a
+	 * reorder from the manager works even before the first toggle */
+	for (i = 0; i < st.count; i++)
+	{
+		if (strcmp(st.items[i].id, id) == 0)
+			break;
+	}
+
+	if (i == st.count)
+	{
+		if (st.count >= JER_MAX_MODULES)
+			return -1;
+
+		snprintf(st.items[st.count].id, sizeof(st.items[st.count].id), "%s", id);
+		st.items[st.count].enabled = 1;
+		st.count++;
+	}
+
 	for (i = 0; i < st.count; i++)
 	{
 		if (strcmp(st.items[i].id, id) == 0)

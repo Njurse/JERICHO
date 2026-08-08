@@ -68,6 +68,8 @@ static JERICHO_CONTEXT gCtx;
 static int gCtxBuilt;
 static void (*gLogger)(const char* msg);
 static char gModsDir[512];		/* dir passed to jer_init (for the manager) */
+static const char* gLoadOrder[JER_MAX_MODULES];	/* effective load order */
+static int gLoadOrderCount;
 
 /* ------------------------------------------------------------------ */
 /* Internal helpers                                                    */
@@ -376,6 +378,17 @@ static void jerActivateModules(const char* modsDir)
 	}
 
 	jerLog("[jericho] %d module(s) active (SDK v%d)\n", active, JERICHO_SDK_VERSION);
+
+	/* record the effective load order for the manager UI */
+	gLoadOrderCount = 0;
+
+	for (i = 0; i < orderCount && gLoadOrderCount < JER_MAX_MODULES; i++)
+	{
+		JER_MODULE* m = jerFindModule(order[i]);
+
+		if (m != NULL && m->enabled)
+			gLoadOrder[gLoadOrderCount++] = m->id;
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -469,21 +482,59 @@ void jer_manager_reload(const char* modsDir)
 
 int jer_module_count(void)
 {
+	/* all compiled-in modules (the full manager list, disabled included) */
 	return gModuleCount;
 }
 
 int jer_module_list(JER_MODULE_INFO* out, int max)
 {
-	int i;
+	JER_MODLIST_STATE modlist;
 	int n = 0;
+	int i, j;
+
+	memset(&modlist, 0, sizeof(modlist));
+
+	/* the manager shows the FULL list in modlist.json order (disabled
+	 * modules included, so they can be re-enabled), with unlisted modules
+	 * appended per their default-enabled state */
+	if (jer_manager_read(gModsDir, &modlist) == 0)
+	{
+		for (i = 0; i < modlist.count && n < max; i++)
+		{
+			JER_MODULE* m = jerFindModule(modlist.items[i].id);
+
+			if (m == NULL)
+				continue;
+
+			out[n].id = m->id;
+			out[n].name = m->name != NULL ? m->name : m->id;
+			out[n].version = m->version != NULL ? m->version : "?";
+			out[n].enabled = modlist.items[i].enabled && m->valid;
+			n++;
+		}
+	}
 
 	for (i = 0; i < gModuleCount && n < max; i++)
 	{
-		out[n].id = gModules[i].id;
-		out[n].name = gModules[i].name != NULL ? gModules[i].name : gModules[i].id;
-		out[n].version = gModules[i].version != NULL ? gModules[i].version : "?";
-		out[n].enabled = gModules[i].enabled && gModules[i].valid;
-		n++;
+		int listed = 0;
+
+		for (j = 0; j < modlist.count; j++)
+		{
+			if (gModules[i].id != NULL && strcmp(gModules[i].id, modlist.items[j].id) == 0)
+			{
+				listed = 1;
+				break;
+			}
+		}
+
+		if (!listed)
+		{
+			out[n].id = gModules[i].id;
+			out[n].name = gModules[i].name != NULL ? gModules[i].name : gModules[i].id;
+			out[n].version = gModules[i].version != NULL ? gModules[i].version : "?";
+			out[n].enabled = gModules[i].defaultEnabled && gModules[i].valid;
+			n++;
+		}
 	}
 
 	return n;

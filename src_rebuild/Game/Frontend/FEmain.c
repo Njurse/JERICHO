@@ -22,6 +22,8 @@
 #include "C/spool.h"
 #include "C/state.h"
 
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (mods manager frontend)
+
 #ifndef PSX
 
 #include "PsyX/PsyX_render.h"
@@ -380,6 +382,13 @@ int UserReplaySelectScreen(int bSetup);
 int TimeOfDaySelectScreen(int bSetup);
 int DemoScreen(int bSetup);
 int MiniCarsOnOffScreen(int bSetup);
+int JerichoModsScreen(int bSetup);
+
+// JERICHO-HOOK: frontend Mods manager screen (built into a spare screen slot)
+#define JERICHO_MODS_SCREEN 41
+#define JERICHO_MODS_MAX_MODULE_BUTTONS 7	// 7 modules + Back = 8 (screen cap)
+
+static int gJerichoOptionsButtonAdded;
 
 screenFunc fpUserFunctions[] = {
 	CentreScreen,
@@ -405,7 +414,8 @@ screenFunc fpUserFunctions[] = {
 	UserReplaySelectScreen,
 	TimeOfDaySelectScreen,
 	DemoScreen,
-	MiniCarsOnOffScreen
+	MiniCarsOnOffScreen,
+	JerichoModsScreen
 };
 
 char* gfxNames[4] = {
@@ -1347,6 +1357,11 @@ void LoadFrontendScreens(int full)
 		PsxScreens[40].buttons[0].var = FE_MAKEVAR(15, 1);
 		PsxScreens[40].buttons[1].var = FE_MAKEVAR(15, 0);
 #endif
+
+		// JERICHO-HOOK: the frontend Mods manager screen (slot 41). Reuses a
+		// spare screen's graphics; JerichoModsScreen lays out its own buttons.
+		PsxScreens[JERICHO_MODS_SCREEN] = PsxScreens[31];
+		PsxScreens[JERICHO_MODS_SCREEN].userFunctionNum = 25;	// JerichoModsScreen
 	}
 #endif
 
@@ -3590,6 +3605,52 @@ int MainScreen(int bSetup)
 		{
 			pCurrScreen->buttons[3].action = FE_MAKEVAR(BTN_DISABLED, 0);
 		}
+
+		// JERICHO-HOOK: hang the Mods manager off the Options screen (once)
+		if (!gJerichoOptionsButtonAdded)
+		{
+			int optionsIdx = PsxScreens[0].buttons[4].action & 0xFF;
+			PSXSCREEN* options;
+			PSXBUTTON* last;
+
+			/* only wire in when the main screen's button 4 really navigates */
+			if ((PsxScreens[0].buttons[4].action >> 8) != BTN_NEXT_SCREEN)
+				return 0;
+
+			options = &PsxScreens[optionsIdx];
+
+			if (options->numButtons > 0 && options->numButtons < 8)
+			{
+				PSXBUTTON* b = &options->buttons[options->numButtons];
+
+				last = &options->buttons[options->numButtons - 1];
+
+				memset(b, 0, sizeof(PSXBUTTON));
+
+				b->x = last->x;
+				b->y = last->y + 41;
+				b->w = last->w;
+				b->h = last->h;
+				b->s_x = last->s_x;
+				b->s_y = b->y;
+
+				sprintf(b->Name, "JERICHO");
+
+				options->numButtons++;
+				last->d = options->numButtons;			// last button -> JERICHO
+				b->u = options->numButtons - 1;			// JERICHO -> last button
+				b->d = 1;								// wrap to the first
+
+				/* first button wraps up to the new last entry too */
+				options->buttons[0].u = options->numButtons;
+
+				b->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
+				b->var = -1;
+			}
+
+			/* only mark done after a successful injection (retry next entry) */
+			gJerichoOptionsButtonAdded = (options != NULL && options->numButtons < 8) ? 0 : 1;
+		}
 	}
 	//ForceStartLevel();
 	return 0;
@@ -3844,6 +3905,120 @@ int MiniCarsOnOffScreen(int bSetup)
 		return 1;
 	}
 	return 0;
+}
+
+// JERICHO-HOOK: the frontend Mods manager. Modules are toggled and reordered
+// here (pre-session, so re-activating the runtime is safe) instead of the
+// in-game pause menu. Cross = toggle, Left/Right = move load order,
+// up/down navigates, Back returns.
+static void jer_mods_rebuild_button_names(void);
+
+int JerichoModsScreen(int bSetup)
+{
+	JER_MODULE_INFO mods[JER_MAX_MODULES];
+	int count;
+	int i;
+
+	count = jer_module_list(mods, JER_MAX_MODULES);
+
+	if (count > JERICHO_MODS_MAX_MODULE_BUTTONS)
+		count = JERICHO_MODS_MAX_MODULE_BUTTONS;
+
+	if (bSetup)
+	{
+		PSXBUTTON* btn;
+
+		pCurrScreen->numButtons = count + 1;	// modules + Back
+
+		for (i = 0; i < count; i++)
+		{
+			btn = &pCurrScreen->buttons[i];
+
+			/* explicit layout (screen 41 is a template copy): a vertical list */
+			btn->x = 167;
+			btn->y = 200 + i * 41;
+			btn->w = 256;
+			btn->h = 36;
+			btn->s_x = 370;
+			btn->s_y = 200 + i * 41;
+
+			sprintf(btn->Name, "%s [%s]", mods[i].name, mods[i].enabled ? "ON" : "OFF");
+
+			btn->u = (u_char)((i == 0) ? count + 1 : i);	// prev (wrap to Back)
+			btn->d = (u_char)(i + 2);						// next
+			btn->l = 0;
+			btn->r = 0;
+			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
+			btn->var = -1;
+		}
+
+		btn = &pCurrScreen->buttons[count];
+
+		btn->x = 167;
+		btn->y = 200 + count * 41;
+		btn->w = 256;
+		btn->h = 36;
+		btn->s_x = 370;
+		btn->s_y = 200 + count * 41;
+
+		sprintf(btn->Name, "Back");
+
+		btn->u = (u_char)(count == 0 ? 1 : count);
+		btn->d = 1;
+		btn->l = 0;
+		btn->r = 0;
+		btn->action = FE_MAKEVAR(BTN_PREVIOUS_SCREEN, 0);
+		btn->var = -1;
+
+		pCurrButton = &pCurrScreen->buttons[0];
+
+		return 1;
+	}
+
+	/* per-frame: claim cross (toggle) and left/right (reorder) on module
+	 * buttons; everything else (up/down nav, Back cross) goes to the engine */
+	if (pCurrButton != NULL)
+	{
+		int idx = (int)(pCurrButton - pCurrScreen->buttons);
+
+		if (idx >= 0 && idx < count)
+		{
+			if (feNewPad & MPAD_CROSS)
+			{
+				jer_manager_set_enabled(jer_mods_dir(), mods[idx].id, mods[idx].enabled ? 0 : 1);
+				jer_manager_reload(jer_mods_dir());
+				jer_mods_rebuild_button_names();
+				bRedrawFrontend = 1;
+				return 1;
+			}
+
+			if (feNewPad & (MPAD_D_LEFT | MPAD_D_RIGHT))
+			{
+				jer_manager_move(jer_mods_dir(), mods[idx].id, (feNewPad & MPAD_D_LEFT) ? -1 : 1);
+				jer_manager_reload(jer_mods_dir());
+				jer_mods_rebuild_button_names();
+				bRedrawFrontend = 1;
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+// JERICHO-HOOK: refresh the mods screen button labels after a toggle/reorder.
+// Re-queries the module list so ordering and state changes show up too.
+static void jer_mods_rebuild_button_names(void)
+{
+	JER_MODULE_INFO mods[JER_MAX_MODULES];
+	int count = jer_module_list(mods, JER_MAX_MODULES);
+	int i;
+
+	if (count > JERICHO_MODS_MAX_MODULE_BUTTONS)
+		count = JERICHO_MODS_MAX_MODULE_BUTTONS;
+
+	for (i = 0; i < count; i++)
+		sprintf(pCurrScreen->buttons[i].Name, "%s [%s]", mods[i].name, mods[i].enabled ? "ON" : "OFF");
 }
 
 // [D] [T]

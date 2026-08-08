@@ -204,7 +204,7 @@ int jer_manager_set_enabled(const char* modsDir, const char* id, int enabled);
 int jer_manager_move(const char* modsDir, const char* id, int direction);
 
 /* ------------------------------------------------------------------ */
-/* Module inventory (for the in-game Mods manager)                     */
+/* Module inventory (for the frontend Mods manager)                    */
 /* ------------------------------------------------------------------ */
 
 /* One compiled-in module's info (id/name/version + current enabled state). */
