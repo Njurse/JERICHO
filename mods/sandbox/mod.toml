@@ -1,0 +1,7 @@
+id = "sandbox"
+name = "Sandbox"
+version = "0.1.0"
+author = "DeepSeek"
+description = "Demo package: no-damage, time-scale (world-step override slot), periodic car spawns. Pure hooks + extern globals, zero vanilla edits."
+dependencies = []
+default-enabled = false
