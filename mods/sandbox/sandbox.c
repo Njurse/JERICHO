@@ -30,6 +30,7 @@
 #include "overlay.h"
 #include "cop_ai.h"
 #include "leadai.h"
+#include "pedest.h"
 #include "engine/mdl.h"
 #include "engine/cell.h"
 
@@ -952,9 +953,9 @@ static void SandboxDrawPanel(int itemCount, int bottomY)
 
 static void SandboxDrawPreview(void)
 {
-	CAR_DATA* cp = SandboxPlayerCar();
+	CAR_DATA* cp = NULL;
 	CAR_MODEL* CarModelPtr;
-	MODEL* objModel;
+	MODEL* model = NULL;
 	MATRIX turntable;
 	VECTOR pos;
 	int angle;
@@ -965,46 +966,30 @@ static void SandboxDrawPreview(void)
 	savedOt = current->ot;
 	current->ot = savedOt - 26;
 
-	if (cp == NULL && gSandboxPage == SBX_PAGE_MAIN)
-	{
-		current->ot = savedOt;
-		return;		/* on foot: no car preview */
-	}
-
-	if (gSandboxPage == SBX_PAGE_AICAR)
-	{
-		/* AI car page: preview the selected spawn model */
-		MODEL* model = gCarCleanModelPtr[gSandboxAIModel];
-
-		if (model != NULL)
-		{
-			InitMatrix(turntable);
-			angle = (gFrameCount * 24) & 4095;
-			RotMatrixY(angle, &turntable);
-
-			pos.vx = 0;
-			pos.vy = -200;
-			pos.vz = 1400;
-
-			gte_SetRotMatrix(&turntable);
-			gte_SetTransVector(&pos);
-
-			RenderModel(model, NULL, NULL, 0, PLOT_NO_CULL, 1, 0);
-		}
-
-		current->ot = savedOt;
-		return;
-	}
-
+	/* The preview is persistent: while the sandbox menu is open, every page
+	 * shows a spinning model — the player's car (final crumpled geometry),
+	 * the player ped when on foot, or the selected spawn model on the spawn
+	 * pages. Every lookup is bounds- and NULL-checked; an unsafe lookup
+	 * simply skips the preview instead of drawing garbage. */
 	if (gSandboxPage == SBX_PAGE_OBJECTS)
 	{
-		/* object preview: the level object model */
-		int idx = gSandboxObjectIdx[gSandboxObjectCursor];
-		int modelIdx = FindModelIdxWithName(smashable[idx].name);
+		/* the selected spawn object */
+		if (gSandboxObjectCursor >= 0 && gSandboxObjectCursor < gSandboxObjectCount)
+		{
+			int sIdx = gSandboxObjectIdx[gSandboxObjectCursor];
+			int mIdx;
 
-		objModel = modelpointers[modelIdx];
+			if (sIdx >= 0 && sIdx < SBX_SMASHABLE_COUNT &&
+				smashable[sIdx].name != NULL && smashable[sIdx].name[0] != 0)
+			{
+				mIdx = FindModelIdxWithName(smashable[sIdx].name);
 
-		if (objModel == NULL)
+				if (mIdx >= 0 && mIdx < MAX_MODEL_SLOTS)
+					model = modelpointers[mIdx];
+			}
+		}
+
+		if (model == NULL)
 		{
 			current->ot = savedOt;
 			return;
@@ -1021,34 +1006,81 @@ static void SandboxDrawPreview(void)
 		gte_SetRotMatrix(&turntable);
 		gte_SetTransVector(&pos);
 
-		RenderModel(objModel, NULL, NULL, 0, PLOT_NO_CULL, 1, 0);
+		RenderModel(model, NULL, NULL, 0, PLOT_NO_CULL, 1, 0);
 
 		current->ot = savedOt;
 		return;
 	}
 
-	if (cp == NULL)
+	if (gSandboxPage == SBX_PAGE_AICAR)
 	{
+		/* the selected spawn car model */
+		if (gSandboxAIModel >= 0 && gSandboxAIModel < MAX_CAR_RESIDENT_MODELS)
+			model = gCarCleanModelPtr[gSandboxAIModel];
+
+		if (model != NULL)
+		{
+			InitMatrix(turntable);
+			angle = (gFrameCount * 24) & 4095;
+			RotMatrixY(angle, &turntable);
+
+			pos.vx = 0;
+			pos.vy = -250;
+			pos.vz = 1500;
+
+			gte_SetRotMatrix(&turntable);
+			gte_SetTransVector(&pos);
+
+			RenderModel(model, NULL, NULL, 0, PLOT_NO_CULL, 1, 0);
+		}
+
 		current->ot = savedOt;
 		return;
 	}
 
-	InitMatrix(turntable);
-	angle = (gFrameCount * 24) & 4095;
-	RotMatrixY(angle, &turntable);
+	cp = SandboxPlayerCar();
 
-	pos.vx = 0;
-	pos.vy = -250;
-	pos.vz = 1500;
+	if (cp != NULL)
+	{
+		/* the player's car with its final (crumpled) geometry */
+		InitMatrix(turntable);
+		angle = (gFrameCount * 24) & 4095;
+		RotMatrixY(angle, &turntable);
 
-	/* the same final-geometry setup DrawCar uses */
-	CarModelPtr = &NewCarModel[cp->ap.model];
-	CarModelPtr->vlist = gTempCarVertDump[cp->id];
-	CarModelPtr->nlist = gTempCarVertDump[cp->id];
-	gTempCarUVPtr = gTempHDCarUVDump[cp->id];
+		pos.vx = 0;
+		pos.vy = -250;
+		pos.vz = 1500;
 
-	DrawCarObject(CarModelPtr, &turntable, &pos, cp->ap.palette, cp, 1);
-	DrawCarWheels(cp, &turntable, &pos, 0);
+		CarModelPtr = &NewCarModel[cp->ap.model];
+		CarModelPtr->vlist = gTempCarVertDump[cp->id];
+		CarModelPtr->nlist = gTempCarVertDump[cp->id];
+		gTempCarUVPtr = gTempHDCarUVDump[cp->id];
+
+		DrawCarObject(CarModelPtr, &turntable, &pos, cp->ap.palette, cp, 1);
+		DrawCarWheels(cp, &turntable, &pos, 0);
+
+		current->ot = savedOt;
+		return;
+	}
+
+	/* on foot: the player ped model (torso), if loaded */
+	model = pmTannerModels[0];
+
+	if (model != NULL)
+	{
+		InitMatrix(turntable);
+		angle = (gFrameCount * 24) & 4095;
+		RotMatrixY(angle, &turntable);
+
+		pos.vx = 0;
+		pos.vy = -250;
+		pos.vz = 1000;
+
+		gte_SetRotMatrix(&turntable);
+		gte_SetTransVector(&pos);
+
+		RenderModel(model, NULL, NULL, 0, PLOT_NO_CULL, 1, 0);
+	}
 
 	current->ot = savedOt;
 }
