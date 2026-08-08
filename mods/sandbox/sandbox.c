@@ -202,7 +202,7 @@ enum
 #define SBX_WORLD_ITEMS 2	/* Time of Day, Weather */
 #define SBX_AICAR_ITEMS 6	/* Vehicle, Mode, Param, Spawn, Remove AI Cars, Back */
 #define SBX_CHEATS_ITEMS 9	/* invincibility, immunity, secret car, jericho, mini, bonus, buddha, unlock all, back */
-#define SBX_TUNE_ITEMS 10	/* power, traction, mass, suspension, cog x/y/z, twist x/y/z */
+#define SBX_TUNE_ITEMS 12	/* power, traction, mass, suspension, cog x/y/z, twist x/y/z, wheelbase, track */
 
 static const char* const gSandboxMainItems[SBX_MAIN_ITEMS] = {
 	"Vehicle Properties", "Spawn Menu", "World Settings", "Cheats Menu", "Close"
@@ -222,7 +222,7 @@ static const char* const gSandboxCheatsItems[SBX_CHEATS_ITEMS] = {
 };
 static const char* const gSandboxTuneItems[SBX_TUNE_ITEMS] = {
 	"Power Ratio", "Traction", "Mass", "Suspension", "COG X", "COG Y", "COG Z",
-	"Twist X", "Twist Y", "Twist Z"
+	"Twist X", "Twist Y", "Twist Z", "Wheelbase", "Track Width"
 };
 
 static const char* const gSandboxPageTitles[SBX_PAGE_COUNT] = {
@@ -446,7 +446,29 @@ static void SandboxTuneAdjust(CAR_DATA* pc, int cursor, int step)
 	case 7: p = &gSandboxTunedCos.twistRateX; min = 0; max = 4096; break;
 	case 8: p = &gSandboxTunedCos.twistRateY; min = 0; max = 4096; break;
 	case 9: p = &gSandboxTunedCos.twistRateZ; min = 0; max = 4096; break;
+	case 10: p = &gSandboxTunedCos.wheelDisp[0].vz; min = 0; max = 4096; break;
+	case 11: p = &gSandboxTunedCos.wheelDisp[0].vx; min = 0; max = 4096; break;
 	default: return;
+	}
+
+	if (cursor == 10)
+	{
+		/* wheelbase: both axles spread apart symmetrically (front +z, rear -z) */
+		gSandboxTunedCos.wheelDisp[0].vz += step * 16;
+		gSandboxTunedCos.wheelDisp[1].vz -= step * 16;
+		gSandboxTunedCos.wheelDisp[2].vz += step * 16;
+		gSandboxTunedCos.wheelDisp[3].vz -= step * 16;
+		return;
+	}
+
+	if (cursor == 11)
+	{
+		/* track width: left wheels out, right wheels out */
+		gSandboxTunedCos.wheelDisp[0].vx -= step * 8;
+		gSandboxTunedCos.wheelDisp[1].vx -= step * 8;
+		gSandboxTunedCos.wheelDisp[2].vx += step * 8;
+		gSandboxTunedCos.wheelDisp[3].vx += step * 8;
+		return;
 	}
 
 	*p += step * 32;
@@ -547,7 +569,9 @@ static const char* SandboxTuneLabel(int cursor)
 	case 6: sprintf(buf, "COG Z: %d", gSandboxTunedCos.cog.vz); break;
 	case 7: sprintf(buf, "Twist X: %d", gSandboxTunedCos.twistRateX); break;
 	case 8: sprintf(buf, "Twist Y: %d", gSandboxTunedCos.twistRateY); break;
-	default: sprintf(buf, "Twist Z: %d", gSandboxTunedCos.twistRateZ); break;
+	case 9: sprintf(buf, "Twist Z: %d", gSandboxTunedCos.twistRateZ); break;
+	case 10: sprintf(buf, "Wheelbase: %d", gSandboxTunedCos.wheelDisp[0].vz - gSandboxTunedCos.wheelDisp[1].vz); break;
+	default: sprintf(buf, "Track: %d", gSandboxTunedCos.wheelDisp[2].vx - gSandboxTunedCos.wheelDisp[0].vx); break;
 	}
 
 	return buf;
