@@ -1,5 +1,5 @@
 #ifndef GAME_VERSION_N
-#define GAME_VERSION_N		"67 (8.0)"
+#define GAME_VERSION_N		"8.0 JERICHO"
 #endif
 
 #ifndef GAME_VERSION_RES

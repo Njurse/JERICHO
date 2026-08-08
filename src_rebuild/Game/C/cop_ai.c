@@ -653,7 +653,12 @@ void CopControl1(CAR_DATA *cp)
 				}
 			}
 
-			desiredSteerAngle = (steerDif * 512) / path[1].t;
+			// [A] guard: a zero forward-distance to the target would divide by
+			// zero (a player car switched to COP can face a t==0 target)
+			if (path[1].t != 0)
+				desiredSteerAngle = (steerDif * 512) / path[1].t;
+			else
+				desiredSteerAngle = 0;
 		}
 		else if (targetZone == zoneBack)
 		{

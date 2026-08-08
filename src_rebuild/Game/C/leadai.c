@@ -731,7 +731,8 @@ void FakeMotion(CAR_DATA* cp)
 			
 			if (DIFF_ANGLES(angle, curve->end) >= 0) // ((curve->end - angle & 0xfff) + 2048 & 0xfff) - 2048 > -1) 
 			{
-				dir = angle + 0x13193 / radius;
+				// [A] guard: a tight curve can give radius == 0
+				dir = angle + (radius != 0 ? 0x13193 / radius : 0);
 
 				cp->ai.l.targetDir = (dir + 1024) & 0xfff;
 				
@@ -748,7 +749,8 @@ void FakeMotion(CAR_DATA* cp)
 		{
 			if (DIFF_ANGLES(curve->start, angle) >= 0) //if (((angle - curve->start & 0xfff) + 2048 & 0xfff) - 2048 > -1)
 			{
-				dir = angle - 0x13193 / radius;
+				// [A] guard: a tight curve can give radius == 0
+				dir = angle - (radius != 0 ? 0x13193 / radius : 0);
 
 				cp->ai.l.targetDir = (dir - 1024) & 0xfff;
 				
@@ -882,7 +884,11 @@ void PosToIndex(int* normal, int* tangent, int intention, CAR_DATA* cp)
 			}
 			else if (w80 < *normal)
 			{
-				temp = ((*normal - w80) * (t - t80)) / (w - w80) + t80;
+				// [A] guard: w == w80 would divide by zero
+				if (w != w80)
+					temp = ((*normal - w80) * (t - t80)) / (w - w80) + t80;
+				else
+					temp = t80;
 				
 				*normal = temp - *tangent;
 				*tangent = temp;

@@ -970,15 +970,16 @@ static void SandboxDrawPanel(void)
 
 	setPolyF4(poly);
 
-	/* centered on the 320-wide PSX viewport */
+	/* centered on the 320-wide PSX viewport; vertically centered too (the
+	 * 240-tall screen, capped at ~66% height) */
 	poly->x0 = 30;
-	poly->y0 = 6;
+	poly->y0 = 42;
 	poly->x1 = 290;
-	poly->y1 = 6;
+	poly->y1 = 42;
 	poly->x2 = 30;
-	poly->y2 = 162;
+	poly->y2 = 198;
 	poly->x3 = 290;
-	poly->y3 = 162;
+	poly->y3 = 198;
 
 	poly->r0 = 16;
 	poly->g0 = 16;
@@ -1060,21 +1061,19 @@ static void SandboxDrawPreview(void)
 
 	/* The model must render through the game's own camera transform: a raw
 	 * matrix would feed the polygon plotters out-of-range OT depths (the
-	 * projection is baked into the camera matrix). Place the preview ~1000
-	 * units along the camera's look ray — NEARER than the player's car, so
-	 * its OT depth bucket sits near the front and it draws OVER the world
-	 * (at the player's own depth it was hidden behind the real car). */
+	 * projection is baked into the camera matrix). Place the preview ABOVE
+	 * the player's position, offset to the right — far enough to render
+	 * small, high enough to sit against the sky so nothing covers it. */
 	{
 		int dx = player[0].pos[0] - camera_position.vx;
-		int dy = player[0].pos[1] - camera_position.vy;
 		int dz = player[0].pos[2] - camera_position.vz;
 		int dist = SquareRoot0(dx * dx + dz * dz);
 
 		if (dist > 0)
 		{
-			pos.vx = camera_position.vx + (dx * 1000) / dist;
-			pos.vy = camera_position.vy + (dy * 1000) / dist;
-			pos.vz = camera_position.vz + (dz * 1000) / dist;
+			pos.vx = player[0].pos[0] + (dz * 420) / dist;
+			pos.vy = player[0].pos[1] - 340;
+			pos.vz = player[0].pos[2] - (dx * 420) / dist;
 		}
 		else
 		{
@@ -1085,9 +1084,6 @@ static void SandboxDrawPreview(void)
 	}
 
 	Apply_Inv_CameraMatrix(&pos);
-
-	pos.vx += 160;	/* right of the screen centre */
-	pos.vy += 20;	/* a touch lower */
 
 	InitMatrix(turntable);
 	angle = (gFrameCount * 24) & 4095;
@@ -1142,12 +1138,12 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 		char pageText[24];
 
 		SetTextColour(255, 255, 255);
-		SandboxPrint(38, 14, "SPAWN OBJECT");
+		SandboxPrint(34, 50, "SPAWN OBJECT");
 
 		sprintf(pageText, "(L1/R1: page %d/%d)", gSandboxObjectPage + 1,
 			(gSandboxObjectCount + 11) / 12);
-		SandboxPrint(38, 26, pageText);
-		SandboxPrint(38, 36, "(Triangle: back)");
+		SandboxPrint(34, 60, pageText);
+		SandboxPrint(34, 68, "(Triangle: back)");
 
 		if (shown > 12)
 			shown = 12;
@@ -1156,7 +1152,7 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 		{
 			sprintf(text, "%s %s", i == gSandboxObjectCursor - pageStart ? ">" : " ", gSandboxObjectNames[pageStart + i]);
 			SetTextColour(i == gSandboxObjectCursor - pageStart ? 255, 255, 0 : 255, 255, 255);
-			SandboxPrint(38, 60 + i * SBX_LINE, text);
+			SandboxPrint(34, 76 + i * SBX_LINE, text);
 		}
 
 		SandboxDrawPreview();
@@ -1167,29 +1163,29 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 	 * AI mode), shown on the main page so it reads as a status block */
 	SetTextColour(255, 255, 0);
 	sprintf(text, "%s", gSandboxPageTitles[gSandboxPage]);
-	SandboxPrint(38, 14, text);
+	SandboxPrint(34, 50, text);
 
 	if (pc != NULL)
 	{
 		sprintf(text, "Car %d", pc->ap.model);
 		SetTextColour(255, 255, 255);
-		SandboxPrint(38, 24, text);
+		SandboxPrint(34, 60, text);
 
 		sprintf(text, "DAMAGE: %d", pc->totalDamage);
-		SandboxPrint(38, 33, text);
+		SandboxPrint(34, 69, text);
 
 		sprintf(text, "FELONY: %d", pc->felonyRating);
-		SandboxPrint(38, 42, text);
+		SandboxPrint(34, 78, text);
 
 		sprintf(text, "AI: %s",
 			g_PlayerControlMode == 1 ? "Traffic" :
 			g_PlayerControlMode == 2 ? "Cop" :
 			g_PlayerControlMode == 3 ? "Lead" : "Manual");
-		SandboxPrint(38, 51, text);
+		SandboxPrint(34, 87, text);
 	}
 	else
 	{
-		SandboxPrint(38, 24, "(on foot)");
+		SandboxPrint(34, 60, "(on foot)");
 	}
 
 	/* items */
@@ -1218,7 +1214,7 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 			else
 				SetTextColour(255, 255, 255);
 
-			SandboxPrint(38, 62 + i * SBX_LINE, text);
+			SandboxPrint(34, 98 + i * SBX_LINE, text);
 		}
 
 		if (gSandboxPage != SBX_PAGE_MAIN)
@@ -1231,7 +1227,7 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 				sprintf(text, "(L1/R1: menu page %d/4, Triangle: back)", gSandboxPage - SBX_PAGE_VEHICLE + 1);
 
 			SetTextColour(180, 180, 180);
-			SandboxPrint(38, 62 + itemCount * SBX_LINE + 4, text);
+			SandboxPrint(34, 98 + itemCount * SBX_LINE + 4, text);
 		}
 	}
 
@@ -1265,7 +1261,7 @@ static int SandboxOnPauseMenu(void* userdata, void* args)
 		gDoOverlays = 0;
 
 		gSandboxMenuOpen = 1;
-		gSandboxInputDebounce = 2;
+		gSandboxInputDebounce = 4;
 		gSandboxPage = 0;
 		gSandboxSubPage = 0;
 		gSandboxCursor = 0;
