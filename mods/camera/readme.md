@@ -5,21 +5,24 @@ Demonstrates the new `JER_EVENT_CAMERA` hook (fired at the end of
 
 When Tanner is **on foot**, the module shifts the chase camera:
 
-- **closer** to him (`CAM_DIST = 1000` — the default chase distance is
-  ~1500–2000), and
-- **to the left** of his facing (`CAM_LATERAL = 450`).
+- **closer** to him (`CAM_DIST = 900` — the offset subtracts along his facing,
+  pulling the camera in), and
+- **to the left** of his facing (`CAM_LATERAL = 400`).
 
-The camera keeps aiming at the look target ahead of Tanner, so his view
-direction stays lined up with the screen centre while his silhouette sits
-about a third of the half-width off-centre — over-the-shoulder framing.
-Flip `CAM_LEFT_SIGN` to `-1` for the other shoulder.
+The offset uses Tanner's **body direction** (`lp->dir`, the same angle the
+game's chase cam uses via `baseDir`) — not the head/look angle — so it rotates
+with his movement. The camera keeps aiming at the look target ahead of him,
+so his view direction stays lined up with the screen centre while his
+silhouette sits off-centre — over-the-shoulder framing. Flip
+`CAM_LEFT_SIGN` to `-1` for the other shoulder.
 
-The offset math (world x/z plane, heading `h`):
+The offset math (world x/z plane, body direction `h`):
 
 ```
-facing  f = (RSIN h, RCOS h)
+facing  f = (RSIN h, RCOS h)          (the chase cam sits at +cameraDist*f,
+                                       so pulling in is -DIST*f)
 left    l = (RCOS h, -RSIN h)
-offset  = CAM_DIST * f + CAM_LATERAL * CAM_LEFT_SIGN * l
+offset  = -CAM_DIST * f + CAM_LATERAL * CAM_LEFT_SIGN * l
 ```
 
 Toggle the module off in the frontend JERICHO Config menu (or remove

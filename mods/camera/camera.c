@@ -24,8 +24,8 @@
 #include "camera.h"
 #include "dr2math.h"
 
-#define CAM_DIST 1000		/* pull the camera in toward Tanner */
-#define CAM_LATERAL 450		/* shift it left of his facing */
+#define CAM_DIST 900		/* pull the camera in toward Tanner */
+#define CAM_LATERAL 400		/* shift it left of his facing */
 #define CAM_LEFT_SIGN 1		/* -1 for the other shoulder */
 
 static int CameraOnCameraEvent(void* userdata, void* args)
@@ -41,11 +41,16 @@ static int CameraOnCameraEvent(void* userdata, void* args)
 	if (lp->playerCarId >= 0)
 		return JER_RESULT_CONTINUE;
 
-	heading = lp->headPos >> 16;
+	/* use the BODY direction (lp->dir), not the head/look angle, so the
+	 * offset rotates with Tanner's movement */
+	heading = lp->dir;
 
-	camPos->vx += FIXEDH(RSIN(heading) * CAM_DIST)
+	/* The chase cam sits at basePos + cameraDist*f with f = (RSIN, RCOS)
+	 * of the direction, so pulling in is -DIST*f; the lateral shift is
+	 * along the perpendicular l = (RCOS, -RSIN). */
+	camPos->vx += -FIXEDH(RSIN(heading) * CAM_DIST)
 		+ FIXEDH(RCOS(heading) * CAM_LATERAL * CAM_LEFT_SIGN);
-	camPos->vz += FIXEDH(RCOS(heading) * CAM_DIST)
+	camPos->vz += -FIXEDH(RCOS(heading) * CAM_DIST)
 		- FIXEDH(RSIN(heading) * CAM_LATERAL * CAM_LEFT_SIGN);
 
 	return JER_RESULT_CONTINUE;

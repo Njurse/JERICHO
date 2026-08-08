@@ -914,9 +914,11 @@ static void SandboxPrint(int x, int y, const char* text)
 	PrintStringHiresScaled((char*)text, x, y, SBX_TEXT_SCALE);
 }
 
-/* semi-transparent panel behind the menu (same style as the pause menu's
- * box: dark, half-transparent) with a margin around the text */
-static void SandboxDrawPanel(int itemCount, int bottomY)
+/* semi-transparent panel behind the whole sandbox overlay (same style as the
+ * pause menu's box: dark, half-transparent). Sized to cover the normal HUD
+ * region and the preview, and added at OT level 3 so it draws behind the
+ * menu text (OT 0) AND the spinning preview (OT 2). */
+static void SandboxDrawPanel(void)
 {
 	POLY_F4* poly;
 
@@ -924,14 +926,14 @@ static void SandboxDrawPanel(int itemCount, int bottomY)
 
 	setPolyF4(poly);
 
-	poly->x0 = 4;
-	poly->y0 = 8;
-	poly->x1 = 158;
-	poly->y1 = 8;
-	poly->x2 = 4;
-	poly->y2 = bottomY;
-	poly->x3 = 158;
-	poly->y3 = bottomY;
+	poly->x0 = 6;
+	poly->y0 = 6;
+	poly->x1 = 294;
+	poly->y1 = 6;
+	poly->x2 = 6;
+	poly->y2 = 238;
+	poly->x3 = 294;
+	poly->y3 = 238;
 
 	poly->r0 = 16;
 	poly->g0 = 16;
@@ -939,10 +941,8 @@ static void SandboxDrawPanel(int itemCount, int bottomY)
 
 	setSemiTrans(poly, 1);
 
-	addPrim(current->ot, poly);
+	addPrim(current->ot + 3, poly);
 	current->primptr += sizeof(POLY_F4);
-
-	(void)itemCount;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1103,14 +1103,15 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 
 	pc = SandboxPlayerCar();
 
+	/* the backdrop: one full-size panel behind everything */
+	SandboxDrawPanel();
+
 	if (gSandboxPage == SBX_PAGE_OBJECTS)
 	{
 		/* spawn-object list (page-based, 12 per page) */
 		int pageStart = gSandboxObjectPage * 12;
 		int shown = gSandboxObjectCount - pageStart;
 		char pageText[24];
-
-		SandboxDrawPanel(12, 48 + 12 * SBX_LINE + 6);
 
 		SetTextColour(255, 255, 255);
 		SandboxPrint(10, 14, "SPAWN OBJECT");
@@ -1135,12 +1136,6 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 	}
 
 	/* header + current-vehicle readouts */
-	{
-		int itemCount = SandboxMenuItemCount(gSandboxPage);
-
-		SandboxDrawPanel(itemCount, 50 + itemCount * SBX_LINE + 8);
-	}
-
 	SetTextColour(255, 255, 0);
 	sprintf(text, "%s", gSandboxPageTitles[gSandboxPage]);
 	SandboxPrint(10, 14, text);
@@ -1163,8 +1158,6 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 	{
 		int itemCount = SandboxPageVisibleCount(gSandboxPage);
 		int start = SandboxPageVisibleStart(gSandboxPage);
-
-		SandboxDrawPanel(itemCount, 50 + itemCount * SBX_LINE + 8);
 
 		for (i = 0; i < itemCount; i++)
 		{
