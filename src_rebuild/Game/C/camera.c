@@ -6,6 +6,8 @@
 #include "glaunch.h"
 #include "cutscene.h"
 #include "main.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "cars.h"
 #include "pause.h"
 #include "director.h"
@@ -184,6 +186,18 @@ void InitCamera(PLAYER *lp)
 		CameraCar = lp->cameraCarId;
 
 		lp->snd_cam_ang = camera_angle.vy;
+
+		// JERICHO-HOOK: modules may adjust the camera position/angle
+		// (e.g. the over-the-shoulder example mod)
+		{
+			JER_ARGS_CAMERA jerArgs;
+
+			jerArgs.player = lp;
+			jerArgs.cameraPosition = &camera_position;
+			jerArgs.cameraAngle = &camera_angle;
+			jerArgs.cameraView = lp->cameraView;
+			jer_fire(JER_EVENT_CAMERA, &jerArgs);
+		}
 	}
 	else 
 	{

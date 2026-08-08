@@ -1206,11 +1206,8 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	if (pad & CAR_PAD_HANDBRAKE)
 	{
 		cp->handbrake = 1;
-		// to do: come back to this and get the ai control mode working - nattdy
-		if (g_PlayerControlMode > 5)
-			g_PlayerControlMode++;
-		else
-			g_PlayerControlMode = 0;
+		// cycle the player's AI mode (manual -> traffic -> cop -> lead)
+		g_PlayerControlMode = (g_PlayerControlMode + 1) & 3;
 	}
 	else
 	{

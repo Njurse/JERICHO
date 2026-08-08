@@ -12,22 +12,31 @@ A demo of the full JERICHO module surface with **zero vanilla edits**:
 
 ## Sandbox Menu
 
-Open: Pause → Debug Options → **Sandbox Menu**.
+Open: Pause → **Sandbox Menu** (right below Continue).
 
 ```
 SANDBOX                    (main page — categories)
 DAMAGE: 0                  (current-vehicle readouts)
 FELONY: 0
 > Vehicle                  Vehicle:  Repair Car / Make Car Upright /
-  Spawn                            Set Damage / Set Felony
-  World                    Spawn:    Spawn Car / Spawn Object / Spawn AI Car
-  Cheats                   World:    Set Time of Day / Set Weather
-  Close                    Cheats:   Set Cheats
+  Spawn                            Set Damage / Set Felony /
+  World                            Player AI Mode (Manual→Traffic→Cop→Lead)
+  Cheats                   Spawn:    Spawn Car / Spawn Object / AI Car
+  Close                    World:    Set Time of Day / Set Weather
+                           Cheats:   the real Driver 2 cheats
+                                     (Invincibility, Immunity, Secret Car,
+                                     Play as Jericho, Mini Cars, Bonus Cars)
+                                     + Unlock All
+                           AI Car:   Vehicle model (live preview) /
+                                     Mode (Civilian/Cop/Lead) /
+                                     mode parameter / Spawn
 ```
 
-L1/R1 flips between the category sub-pages, Triangle backs up (and closes on the
-main page), Left/Right adjusts the SET items once selected. The Spawn Object
-page lists the level's objects (12 per page — L1/R1 pages through them).
+The menu renders in a smaller HQ-font scale behind a semi-transparent panel
+(in-game UI style). L1/R1 flips pages — every submenu paginates (6 items per
+page; the Spawn Object list pages 12 per page) — Triangle backs up (and closes
+on the main page), Left/Right adjusts the SET items and the AI Car choices.
+
 
 The right side of the screen shows a **live preview**: the player's car drawn
 with its *final geometry* (CRUMPLE-deformed vertices + damage UVs), rotating

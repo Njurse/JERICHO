@@ -766,16 +766,6 @@ void DisplayOverlays(void)
 
 	DrawCrumpleDebugInfo();
 
-	// Inside the drawing function (e.g., DrawDrivingGameOverlays)
-	char modeText[64];
-	switch (g_PlayerControlMode) {
-	case 0: sprintf(modeText, "Control: Manual"); break;
-	case 1: sprintf(modeText, "Control: Traffic AI"); break;
-	case 2: sprintf(modeText, "Control: Police AI"); break;
-	case 3: sprintf(modeText, "Control: Lead AI"); break;
-	default: sprintf(modeText, "Control: Unknown"); break;
-	}
-	PrintString(modeText, 10, 30); // X, Y coordinates on screen
 	UpdateFlashValue();
 
 	if (gShowMap == 0)

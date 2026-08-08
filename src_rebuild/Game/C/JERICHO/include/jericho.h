@@ -67,6 +67,7 @@ enum
 	JER_EVENT_DRAW_WHEEL,		/* wheel draw: allow visual mesh distortion */
 	JER_EVENT_PAUSE_MENU,		/* pause menu draw/update */
 	JER_EVENT_DRAW_OVERLAY,		/* per-frame overlay draw (menus over the world) */
+	JER_EVENT_CAMERA,			/* camera position/angle adjusted by modules */
 
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };

@@ -1,0 +1,7 @@
+id = "camera"
+name = "Over-the-Shoulder Camera"
+version = "0.1.0"
+author = "DeepSeek"
+description = "Example package: pulls the on-foot chase camera in and to the left of Tanner's facing (over-the-shoulder view). Demonstrates JER_EVENT_CAMERA."
+dependencies = []
+default-enabled = true

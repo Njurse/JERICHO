@@ -27,6 +27,9 @@
 #include "pad.h"
 #include "main.h"
 #include "map.h"
+#include "overlay.h"
+#include "cop_ai.h"
+#include "leadai.h"
 #include "engine/mdl.h"
 #include "engine/cell.h"
 
@@ -185,43 +188,54 @@ enum
 	SBX_PAGE_SPAWN,
 	SBX_PAGE_WORLD,
 	SBX_PAGE_CHEATS,
+	SBX_PAGE_AICAR,
 	SBX_PAGE_OBJECTS,
 	SBX_PAGE_COUNT
 };
 
 #define SBX_MAIN_ITEMS 5	/* Vehicle, Spawn, World, Cheats, Close */
-#define SBX_VEHICLE_ITEMS 4	/* Repair, Upright, Set Damage, Set Felony */
+#define SBX_VEHICLE_ITEMS 5	/* Repair, Upright, Set Damage, Set Felony, Player AI Mode */
 #define SBX_SPAWN_ITEMS 3	/* Car, Object, AI Car */
 #define SBX_WORLD_ITEMS 2	/* Time of Day, Weather */
-#define SBX_CHEATS_ITEMS 1	/* Cheats */
+#define SBX_AICAR_ITEMS 5	/* Vehicle, Mode, Param, Spawn, Back */
+#define SBX_CHEATS_ITEMS 8	/* invincibility, immunity, secret car, jericho, mini, bonus, unlock all, back */
 
 static const char* const gSandboxMainItems[SBX_MAIN_ITEMS] = {
 	"Vehicle", "Spawn", "World", "Cheats", "Close"
 };
 static const char* const gSandboxVehicleItems[SBX_VEHICLE_ITEMS] = {
-	"Repair Car", "Make Car Upright", "Set Damage", "Set Felony"
+	"Repair Car", "Make Car Upright", "Set Damage", "Set Felony", "Player AI Mode"
 };
 static const char* const gSandboxSpawnItems[SBX_SPAWN_ITEMS] = {
-	"Spawn Car", "Spawn Object", "Spawn AI Car"
+	"Spawn Car", "Spawn Object", "AI Car"
 };
 static const char* const gSandboxWorldItems[SBX_WORLD_ITEMS] = {
 	"Set Time of Day", "Set Weather"
 };
 static const char* const gSandboxCheatsItems[SBX_CHEATS_ITEMS] = {
-	"Set Cheats"
+	"Invincibility", "Immunity", "Secret Car", "Play as Jericho",
+	"Mini Cars", "Bonus Cars", "Unlock All", "Back"
 };
 
 static const char* const gSandboxPageTitles[SBX_PAGE_COUNT] = {
-	"SANDBOX", "VEHICLE", "SPAWN", "WORLD", "CHEATS", "SPAWN OBJECT"
+	"SANDBOX", "VEHICLE", "SPAWN", "WORLD", "CHEATS", "AI CAR", "SPAWN OBJECT"
 };
 
 static int gSandboxMenuOpen;
 static int gSandboxPage;		/* current page */
-static int gSandboxCursor;		/* cursor within the current page */
+static int gSandboxSubPage;		/* sub-page within the current page */
+static int gSandboxCursor;		/* cursor (absolute item index) */
 static int gSandboxObjectPage;	/* object-list page (12 per page) */
 static int gSandboxObjectCursor;	/* object-list cursor */
 static int gSandboxAdjust;		/* 1 = adjusting a SET item */
 static int gSandboxPreviewModel;	/* car model shown in the preview (future car page) */
+
+/* AI car submenu state */
+static int gSandboxAIModel;		/* internal car model to spawn */
+static int gSandboxAIMode;		/* 0 = civilian, 1 = cop, 2 = lead */
+static int gSandboxAIParam;		/* mode-specific parameter */
+
+static const char* const gSandboxAIModeNames[3] = { "Civilian", "Cop", "Lead" };
 
 /* the level-object list for the spawn page (smashable[] with a name) */
 #define SBX_SMASHABLE_COUNT 37	/* sizeof(smashable)/sizeof(smashable[0]) in objanim.c */
@@ -302,8 +316,36 @@ static int SandboxMenuItemCount(int page)
 	case SBX_PAGE_SPAWN: return SBX_SPAWN_ITEMS;
 	case SBX_PAGE_WORLD: return SBX_WORLD_ITEMS;
 	case SBX_PAGE_CHEATS: return SBX_CHEATS_ITEMS;
+	case SBX_PAGE_AICAR: return SBX_AICAR_ITEMS;
 	default: return 0;
 	}
+}
+
+/* pagination: every submenu is capped at SBX_PAGE_ITEMS visible items */
+#define SBX_PAGE_ITEMS 6
+
+static int SandboxPageCount(int page)
+{
+	int total = SandboxMenuItemCount(page);
+
+	return (total + SBX_PAGE_ITEMS - 1) / SBX_PAGE_ITEMS;
+}
+
+static int SandboxPageVisibleStart(int page)
+{
+	return gSandboxSubPage * SBX_PAGE_ITEMS;
+}
+
+static int SandboxPageVisibleCount(int page)
+{
+	int total = SandboxMenuItemCount(page);
+	int start = SandboxPageVisibleStart(page);
+	int count = total - start;
+
+	if (count > SBX_PAGE_ITEMS)
+		count = SBX_PAGE_ITEMS;
+
+	return count;
 }
 
 static const char* SandboxMenuItemLabel(int page, int cursor)
@@ -319,6 +361,173 @@ static const char* SandboxMenuItemLabel(int page, int cursor)
 	}
 }
 
+/* cheats page label: the toggle items show their live state */
+static const char* SandboxCheatLabel(int cursor)
+{
+	switch (cursor)
+	{
+	case 0: return ActiveCheats.cheat3 ? "Invincibility: ON" : "Invincibility: OFF";
+	case 1: return ActiveCheats.cheat4 ? "Immunity: ON" : "Immunity: OFF";
+	case 2: return ActiveCheats.cheat10 ? "Secret Car: ON" : "Secret Car: OFF";
+	case 3: return ActiveCheats.cheat12 ? "Play as Jericho: ON" : "Play as Jericho: OFF";
+	case 4: return ActiveCheats.cheat13 ? "Mini Cars: ON" : "Mini Cars: OFF";
+	case 5: return (ActiveCheats.cheat5 | ActiveCheats.cheat6 |
+			ActiveCheats.cheat7 | ActiveCheats.cheat8) ? "Bonus Cars: ON" : "Bonus Cars: OFF";
+	case 6: return "Unlock All";
+	default: return "Back";
+	}
+}
+
+/* unlock every bonus track/car/mission in the save (persists on next save) */
+static void SandboxMenuUnlockAll(void)
+{
+	extern ACTIVE_CHEATS AvailableCheats;
+	extern int gFurthestMission;
+
+	AvailableCheats.cheat1 = 1;
+	AvailableCheats.cheat2 = 1;
+	AvailableCheats.cheat3 = 1;
+	AvailableCheats.cheat4 = 1;
+	AvailableCheats.cheat5 = 1;
+	AvailableCheats.cheat6 = 1;
+	AvailableCheats.cheat7 = 1;
+	AvailableCheats.cheat8 = 1;
+	gFurthestMission = 40;
+}
+
+/* switch the player's car between Manual and the AI modes */
+static void SandboxSetPlayerAiMode(int mode)
+{
+	CAR_DATA* pc = SandboxPlayerCar();
+
+	if (pc == NULL)
+		return;
+
+	g_PlayerControlMode = mode;
+
+	switch (mode)
+	{
+	case 0:	/* Manual */
+		pc->controlType = CONTROL_TYPE_PLAYER;
+		break;
+
+	case 1:	/* Traffic AI */
+	{
+		EXTRA_CIV_DATA civDat;
+
+		memset(&civDat, 0, sizeof(civDat));
+		InitCivState(pc, &civDat);
+		break;
+	}
+
+	case 2:	/* Cop AI */
+		InitCopState(pc, NULL);
+		break;
+
+	case 3:	/* Lead AI */
+		InitLead(pc);
+		break;
+	}
+}
+
+/* vehicle page label: the Player AI Mode item shows the live mode */
+static const char* SandboxVehicleLabel(int cursor)
+{
+	if (cursor == 4)
+	{
+		switch (g_PlayerControlMode)
+		{
+		case 1: return "Player AI Mode: Traffic";
+		case 2: return "Player AI Mode: Cop";
+		case 3: return "Player AI Mode: Lead";
+		default: return "Player AI Mode: Manual";
+		}
+	}
+
+	return SandboxMenuItemLabel(SBX_PAGE_VEHICLE, cursor);
+}
+
+/* AI car page labels (items 0-2 are dynamic) */
+static const char* SandboxAICarLabel(int cursor)
+{
+	static char buf[32];
+
+	switch (cursor)
+	{
+	case 0: sprintf(buf, "Vehicle: Car %d", gSandboxAIModel); return buf;
+	case 1: sprintf(buf, "Mode: %s", gSandboxAIModeNames[gSandboxAIMode]); return buf;
+	case 2:
+		switch (gSandboxAIMode)
+		{
+		case 0: sprintf(buf, "Palette: %d", gSandboxAIParam); break;
+		case 1: sprintf(buf, "Desired Speed: %d", gSandboxAIParam); break;
+		default: sprintf(buf, "Road Pos: %d", gSandboxAIParam); break;
+		}
+		return buf;
+	case 3: return "Spawn";
+	default: return "Back";
+	}
+}
+
+/* spawn an AI car with the chosen model, mode and parameter */
+static void SandboxSpawnAICar(void)
+{
+	CAR_DATA* carCnt;
+	CAR_DATA* pNewCar = NULL;
+	CAR_DATA* pc;
+	EXTRA_CIV_DATA civDat;
+	LONGVECTOR4 pos;
+	int direction;
+	int control;
+
+	pc = SandboxPlayerCar();
+
+	if (pc == NULL)
+		return;
+
+	carCnt = car_data;
+
+	do
+	{
+		if (carCnt->controlType == CONTROL_TYPE_NONE)
+		{
+			pNewCar = carCnt;
+			break;
+		}
+
+		carCnt++;
+	} while (carCnt < &car_data[MAX_CARS]);
+
+	if (pNewCar == NULL)
+		return;
+
+	direction = pc->hd.direction;
+
+	pos[0] = pc->hd.where.t[0] + FIXEDH(RSIN(direction) * 2500);
+	pos[1] = pc->hd.where.t[1];
+	pos[2] = pc->hd.where.t[2] + FIXEDH(RCOS(direction) * 2500);
+
+	control = (gSandboxAIMode == 1) ? CONTROL_TYPE_PURSUER_AI
+		: (gSandboxAIMode == 2) ? CONTROL_TYPE_LEAD_AI
+		: CONTROL_TYPE_CIV_AI;
+
+	if (gSandboxAIMode == 0)
+	{
+		memset(&civDat, 0, sizeof(civDat));
+		civDat.palette = (u_char)gSandboxAIParam;
+	}
+
+	InitCar(pNewCar, direction, &pos, (u_char)control, gSandboxAIModel,
+		gSandboxAIMode == 0 ? gSandboxAIParam : 0,
+		gSandboxAIMode == 0 ? (char*)&civDat : NULL);
+
+	/* mode-specific parameters applied after the init */
+	if (gSandboxAIMode == 1)
+		pNewCar->ai.p.desiredSpeed = (short)gSandboxAIParam;
+	else if (gSandboxAIMode == 2)
+		pNewCar->ai.l.roadPosition = gSandboxAIParam;
+}
+
 static void SandboxMenuDoAction(int page, int cursor)
 {
 	CAR_DATA* pc = SandboxPlayerCar();
@@ -328,10 +537,10 @@ static void SandboxMenuDoAction(int page, int cursor)
 	case SBX_PAGE_MAIN:
 		switch (cursor)
 		{
-		case 0: gSandboxPage = SBX_PAGE_VEHICLE; gSandboxCursor = 0; break;
-		case 1: gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; break;
-		case 2: gSandboxPage = SBX_PAGE_WORLD; gSandboxCursor = 0; break;
-		case 3: gSandboxPage = SBX_PAGE_CHEATS; gSandboxCursor = 0; break;
+		case 0: gSandboxPage = SBX_PAGE_VEHICLE; gSandboxCursor = 0; gSandboxSubPage = 0; break;
+		case 1: gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
+		case 2: gSandboxPage = SBX_PAGE_WORLD; gSandboxCursor = 0; gSandboxSubPage = 0; break;
+		case 3: gSandboxPage = SBX_PAGE_CHEATS; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		case 4: SandboxMenuClose(); break;
 		}
 		break;
@@ -342,6 +551,7 @@ static void SandboxMenuDoAction(int page, int cursor)
 		case 0: SandboxMenuRepair(); break;
 		case 1: SetRightWayUp(1); break;
 		case 2: case 3: gSandboxAdjust = 1; break;
+		case 4: SandboxSetPlayerAiMode((g_PlayerControlMode + 1) & 3); break;
 		}
 		break;
 
@@ -359,14 +569,44 @@ static void SandboxMenuDoAction(int page, int cursor)
 			gSandboxPage = SBX_PAGE_OBJECTS;
 			break;
 		case 2:
-			SandboxSpawnCarModel(1);
+			gSandboxPage = SBX_PAGE_AICAR;
+			gSandboxCursor = 0;
+			gSandboxSubPage = 0;
 			break;
 		}
 		break;
 
-	case SBX_PAGE_WORLD:
 	case SBX_PAGE_CHEATS:
-		gSandboxAdjust = 1;
+		switch (cursor)
+		{
+		case 0: ActiveCheats.cheat3 ^= 1; break;	/* invincibility */
+		case 1: ActiveCheats.cheat4 ^= 1; break;	/* immunity */
+		case 2: ActiveCheats.cheat10 ^= 1; break;	/* secret car */
+		case 3: ActiveCheats.cheat12 ^= 1; break;	/* play as Jericho */
+		case 4: ActiveCheats.cheat13 ^= 1; break;	/* mini cars */
+		case 5:	/* bonus cars */
+		{
+			int on = !(ActiveCheats.cheat5 | ActiveCheats.cheat6 |
+				ActiveCheats.cheat7 | ActiveCheats.cheat8);
+
+			ActiveCheats.cheat5 = (u_char)on;
+			ActiveCheats.cheat6 = (u_char)on;
+			ActiveCheats.cheat7 = (u_char)on;
+			ActiveCheats.cheat8 = (u_char)on;
+			break;
+		}
+		case 6: SandboxMenuUnlockAll(); break;
+		default: gSandboxPage = SBX_PAGE_MAIN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
+		}
+		break;
+
+	case SBX_PAGE_AICAR:
+		switch (cursor)
+		{
+		case 3: SandboxSpawnAICar(); break;
+		case 4: gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
+		default: break;	/* items 0-2 adjust via left/right */
+		}
 		break;
 
 	default:
@@ -409,6 +649,7 @@ static void SandboxMenuInput(int padnew)
 		{
 			gSandboxPage = SBX_PAGE_SPAWN;
 			gSandboxCursor = 0;
+			gSandboxSubPage = 0;
 			return;
 		}
 
@@ -437,10 +678,63 @@ static void SandboxMenuInput(int padnew)
 		return;
 	}
 
+	if (gSandboxPage == SBX_PAGE_AICAR)
+	{
+		/* AI car page: left/right adjusts the top three items */
+		if (padnew & (MPAD_D_LEFT | MPAD_D_RIGHT))
+		{
+			int step = (padnew & MPAD_D_LEFT) ? -1 : 1;
+
+			switch (gSandboxCursor)
+			{
+			case 0:
+				gSandboxAIModel += step;
+
+				if (gSandboxAIModel < 0)
+					gSandboxAIModel = MAX_CAR_RESIDENT_MODELS - 1;
+				else if (gSandboxAIModel >= MAX_CAR_RESIDENT_MODELS)
+					gSandboxAIModel = 0;
+				break;
+
+			case 1:
+				gSandboxAIMode = (gSandboxAIMode + step + 3) % 3;
+				break;
+
+			case 2:
+			{
+				int maxParam = (gSandboxAIMode == 0) ? 7
+					: (gSandboxAIMode == 1) ? 2048 : 1024;
+				int minParam = (gSandboxAIMode == 1) ? 0 : 0;
+
+				gSandboxAIParam += step * 64;
+
+				if (gSandboxAIParam < minParam)
+					gSandboxAIParam = maxParam;
+				else if (gSandboxAIParam > maxParam)
+					gSandboxAIParam = minParam;
+				break;
+			}
+			}
+
+			return;
+		}
+
+		/* up/down/cross fall through to the standard navigation */
+	}
+
 	if (gSandboxAdjust)
 	{
 		/* adjusting a SET item: left/right change the value, cross exits */
 		CAR_DATA* pc = SandboxPlayerCar();
+
+		/* left/right on the Player AI Mode item cycles without adjust */
+		if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 4)
+		{
+			if (padnew & (MPAD_D_LEFT | MPAD_D_RIGHT))
+				SandboxSetPlayerAiMode((g_PlayerControlMode + 1) & 3);
+
+			return;
+		}
 
 		if (padnew & MPAD_D_LEFT)
 		{
@@ -466,8 +760,6 @@ static void SandboxMenuInput(int padnew)
 					gWeather--;
 				wantedWeather = gWeather;
 			}
-			else if (gSandboxPage == SBX_PAGE_CHEATS)
-				ActiveCheats.cheat1 = 0;
 		}
 
 		if (padnew & MPAD_D_RIGHT)
@@ -494,8 +786,6 @@ static void SandboxMenuInput(int padnew)
 					gWeather++;
 				wantedWeather = gWeather;
 			}
-			else if (gSandboxPage == SBX_PAGE_CHEATS)
-				ActiveCheats.cheat1 = 1;
 		}
 
 		if (padnew & (MPAD_CROSS | MPAD_TRIANGLE))
@@ -504,8 +794,8 @@ static void SandboxMenuInput(int padnew)
 		return;
 	}
 
-	/* page navigation: L1/R1 cycle the category pages (main and object
-	 * pages handle their own nav above); Triangle goes back */
+	/* page navigation: L1/R1 first flip this page's sub-pages, then cycle
+	 * the category pages; Triangle goes back */
 	if (gSandboxPage == SBX_PAGE_MAIN)
 	{
 		if (padnew & MPAD_TRIANGLE)
@@ -520,39 +810,62 @@ static void SandboxMenuInput(int padnew)
 		{
 			gSandboxPage = SBX_PAGE_MAIN;
 			gSandboxCursor = 0;
+			gSandboxSubPage = 0;
 			return;
 		}
 
 		if (padnew & (MPAD_L1 | MPAD_R1))
 		{
-			pageCount = SBX_PAGE_OBJECTS - SBX_PAGE_VEHICLE;	/* 4 submenus */
+			int subPageCount = SandboxPageCount(gSandboxPage);
 
-			if (padnew & MPAD_L1)
-				gSandboxPage = SBX_PAGE_VEHICLE + ((gSandboxPage - SBX_PAGE_VEHICLE - 1 + pageCount) % pageCount);
+			if (subPageCount > 1)
+			{
+				if (padnew & MPAD_L1)
+				{
+					if (gSandboxSubPage > 0)
+						gSandboxSubPage--;
+				}
+				else if (gSandboxSubPage < subPageCount - 1)
+					gSandboxSubPage++;
+
+				gSandboxCursor = SandboxPageVisibleStart(gSandboxPage);
+			}
 			else
-				gSandboxPage = SBX_PAGE_VEHICLE + ((gSandboxPage - SBX_PAGE_VEHICLE + 1) % pageCount);
+			{
+				pageCount = SBX_PAGE_OBJECTS - SBX_PAGE_VEHICLE;	/* 4 submenus */
 
-			gSandboxCursor = 0;
+				if (padnew & MPAD_L1)
+					gSandboxPage = SBX_PAGE_VEHICLE + ((gSandboxPage - SBX_PAGE_VEHICLE - 1 + pageCount) % pageCount);
+				else
+					gSandboxPage = SBX_PAGE_VEHICLE + ((gSandboxPage - SBX_PAGE_VEHICLE + 1) % pageCount);
+
+				gSandboxCursor = 0;
+				gSandboxSubPage = 0;
+			}
+
 			return;
 		}
 	}
 
-	itemCount = SandboxMenuItemCount(gSandboxPage);
-
-	if (padnew & MPAD_D_UP)
+	itemCount = SandboxPageVisibleCount(gSandboxPage);
 	{
-		if (gSandboxCursor > 0)
-			gSandboxCursor--;
-		else
-			gSandboxCursor = itemCount - 1;
-	}
+		int start = SandboxPageVisibleStart(gSandboxPage);
 
-	if (padnew & MPAD_D_DOWN)
-	{
-		if (gSandboxCursor < itemCount - 1)
-			gSandboxCursor++;
-		else
-			gSandboxCursor = 0;
+		if (padnew & MPAD_D_UP)
+		{
+			if (gSandboxCursor > start)
+				gSandboxCursor--;
+			else
+				gSandboxCursor = start + itemCount - 1;
+		}
+
+		if (padnew & MPAD_D_DOWN)
+		{
+			if (gSandboxCursor < start + itemCount - 1)
+				gSandboxCursor++;
+			else
+				gSandboxCursor = start;
+		}
 	}
 
 	if (padnew & MPAD_CROSS)
@@ -591,6 +904,46 @@ static int SandboxOnFrame(void* userdata, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* sandbox menu text: scaled HQ font so much more fits per page */
+#define SBX_TEXT_SCALE 0.20f
+#define SBX_LINE 9		/* line step in PSX pixels */
+
+static void SandboxPrint(int x, int y, const char* text)
+{
+	PrintStringHiresScaled((char*)text, x, y, SBX_TEXT_SCALE);
+}
+
+/* semi-transparent panel behind the menu (same style as the pause menu's
+ * box: dark, half-transparent) with a margin around the text */
+static void SandboxDrawPanel(int itemCount, int bottomY)
+{
+	POLY_F4* poly;
+
+	poly = (POLY_F4*)current->primptr;
+
+	setPolyF4(poly);
+
+	poly->x0 = 4;
+	poly->y0 = 8;
+	poly->x1 = 158;
+	poly->y1 = 8;
+	poly->x2 = 4;
+	poly->y2 = bottomY;
+	poly->x3 = 158;
+	poly->y3 = bottomY;
+
+	poly->r0 = 16;
+	poly->g0 = 16;
+	poly->b0 = 16;
+
+	setSemiTrans(poly, 1);
+
+	addPrim(current->ot, poly);
+	current->primptr += sizeof(POLY_F4);
+
+	(void)itemCount;
+}
+
 /* ------------------------------------------------------------------ */
 /* Preview: the player's car, drawn with the FINAL geometry            */
 /* (crumple-deformed verts + damage UVs) and a turntable camera,       */
@@ -616,6 +969,31 @@ static void SandboxDrawPreview(void)
 	{
 		current->ot = savedOt;
 		return;		/* on foot: no car preview */
+	}
+
+	if (gSandboxPage == SBX_PAGE_AICAR)
+	{
+		/* AI car page: preview the selected spawn model */
+		MODEL* model = gCarCleanModelPtr[gSandboxAIModel];
+
+		if (model != NULL)
+		{
+			InitMatrix(turntable);
+			angle = (gFrameCount * 24) & 4095;
+			RotMatrixY(angle, &turntable);
+
+			pos.vx = 0;
+			pos.vy = -200;
+			pos.vz = 1400;
+
+			gte_SetRotMatrix(&turntable);
+			gte_SetTransVector(&pos);
+
+			RenderModel(model, NULL, NULL, 0, PLOT_NO_CULL, 1, 0);
+		}
+
+		current->ot = savedOt;
+		return;
 	}
 
 	if (gSandboxPage == SBX_PAGE_OBJECTS)
@@ -700,13 +1078,15 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 		int shown = gSandboxObjectCount - pageStart;
 		char pageText[24];
 
+		SandboxDrawPanel(12, 48 + 12 * SBX_LINE + 6);
+
 		SetTextColour(255, 255, 255);
-		PrintString("SPAWN OBJECT", 10, 16);
+		SandboxPrint(10, 14, "SPAWN OBJECT");
 
 		sprintf(pageText, "(L1/R1: page %d/%d)", gSandboxObjectPage + 1,
 			(gSandboxObjectCount + 11) / 12);
-		PrintString(pageText, 10, 28);
-		PrintString("(Triangle: back)", 10, 40);
+		SandboxPrint(10, 26, pageText);
+		SandboxPrint(10, 36, "(Triangle: back)");
 
 		if (shown > 12)
 			shown = 12;
@@ -715,7 +1095,7 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 		{
 			sprintf(text, "%s %s", i == gSandboxObjectCursor - pageStart ? ">" : " ", gSandboxObjectNames[pageStart + i]);
 			SetTextColour(i == gSandboxObjectCursor - pageStart ? 255, 255, 0 : 255, 255, 255);
-			PrintString(text, 10, 54 + i * 12);
+			SandboxPrint(10, 48 + i * SBX_LINE, text);
 		}
 
 		SandboxDrawPreview();
@@ -723,45 +1103,72 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 	}
 
 	/* header + current-vehicle readouts */
+	{
+		int itemCount = SandboxMenuItemCount(gSandboxPage);
+
+		SandboxDrawPanel(itemCount, 50 + itemCount * SBX_LINE + 8);
+	}
+
 	SetTextColour(255, 255, 0);
 	sprintf(text, "%s", gSandboxPageTitles[gSandboxPage]);
-	PrintString(text, 10, 16);
+	SandboxPrint(10, 14, text);
 
 	if (pc != NULL)
 	{
 		sprintf(text, "DAMAGE: %d", pc->totalDamage);
 		SetTextColour(255, 255, 255);
-		PrintString(text, 10, 28);
+		SandboxPrint(10, 26, text);
 
 		sprintf(text, "FELONY: %d", pc->felonyRating);
-		PrintString(text, 10, 38);
+		SandboxPrint(10, 36, text);
 	}
 	else
 	{
-		PrintString("(on foot)", 10, 28);
+		SandboxPrint(10, 26, "(on foot)");
 	}
 
 	/* items */
 	{
-		int itemCount = SandboxMenuItemCount(gSandboxPage);
+		int itemCount = SandboxPageVisibleCount(gSandboxPage);
+		int start = SandboxPageVisibleStart(gSandboxPage);
+
+		SandboxDrawPanel(itemCount, 50 + itemCount * SBX_LINE + 8);
 
 		for (i = 0; i < itemCount; i++)
 		{
-			sprintf(text, "%s %s", i == gSandboxCursor ? ">" : " ", SandboxMenuItemLabel(gSandboxPage, i));
+			int idx = start + i;
+			const char* label;
 
-			if (i == gSandboxCursor)
+			if (gSandboxPage == SBX_PAGE_CHEATS)
+				label = SandboxCheatLabel(idx);
+			else if (gSandboxPage == SBX_PAGE_VEHICLE)
+				label = SandboxVehicleLabel(idx);
+			else if (gSandboxPage == SBX_PAGE_AICAR)
+				label = SandboxAICarLabel(idx);
+			else
+				label = SandboxMenuItemLabel(gSandboxPage, idx);
+
+			sprintf(text, "%s %s", idx == gSandboxCursor ? ">" : " ", label);
+
+			if (idx == gSandboxCursor)
 				SetTextColour(gSandboxAdjust ? 0 : 255, 255, gSandboxAdjust ? 255 : 0);
 			else
 				SetTextColour(255, 255, 255);
 
-			PrintString(text, 10, 54 + i * 12);
+			SandboxPrint(10, 50 + i * SBX_LINE, text);
 		}
 
 		if (gSandboxPage != SBX_PAGE_MAIN)
 		{
-			sprintf(text, "(L1/R1: page %d/4, Triangle: back)", gSandboxPage - SBX_PAGE_VEHICLE + 1);
+			int subPages = SandboxPageCount(gSandboxPage);
+
+			if (subPages > 1)
+				sprintf(text, "(L1/R1: page %d/%d, Triangle: back)", gSandboxSubPage + 1, subPages);
+			else
+				sprintf(text, "(L1/R1: menu page %d/4, Triangle: back)", gSandboxPage - SBX_PAGE_VEHICLE + 1);
+
 			SetTextColour(180, 180, 180);
-			PrintString(text, 10, 54 + itemCount * 12 + 4);
+			SandboxPrint(10, 50 + itemCount * SBX_LINE + 4, text);
 		}
 	}
 
@@ -789,6 +1196,7 @@ static int SandboxOnPauseMenu(void* userdata, void* args)
 	{
 		gSandboxMenuOpen = 1;
 		gSandboxPage = 0;
+		gSandboxSubPage = 0;
 		gSandboxCursor = 0;
 		gSandboxAdjust = 0;
 		gStopPadReads = 1;	/* the pad drives the menu, not the car */

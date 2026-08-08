@@ -137,14 +137,19 @@ void SetHiresDigitsTexture(int enabled)
 	current->primptr += sizeof(DR_PSYX_TEX);
 }
 
+void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, FONT_QUAD* q, float scale);
+
 void GetHiresBakedQuad(int char_index, float* xpos, float* ypos, FONT_QUAD* q)
+{
+	GetHiresBakedQuadScaled(char_index, xpos, ypos, q, 0.275f);
+}
+
+void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, FONT_QUAD* q, float scale)
 {
 	float ipw = 1.0f / (float)HIRES_FONT_SIZE_W;
 	float iph = 1.0f / (float)HIRES_FONT_SIZE_H;
 
 	const OUT_FN2INFO* b = gHiresFontCharData[0] + char_index - gHiresFontRanges[0].start;
-
-	float scale = 0.275f;
 
 	float s_x = b->x1 - b->x0;
 	float s_y = b->y1 - b->y0;
@@ -159,7 +164,7 @@ void GetHiresBakedQuad(int char_index, float* xpos, float* ypos, FONT_QUAD* q)
 	q->s1 = s_x * 255.0f * ipw;
 	q->t1 = s_y * 255.0f * iph;
 
-	q->y0 += 14.0f;
+	q->y0 += 14.0f * scale;
 
 	*xpos += b->xadvance * scale;
 }
@@ -236,6 +241,101 @@ int PrintStringHires(char* string, int x, int y)
 		fy = y;
 		FONT_QUAD q;
 		GetHiresBakedQuad(chr, &fx, &fy, &q);
+
+		fontFT4 = (POLY_FT4*)current->primptr;
+
+		setPolyFT4(fontFT4);
+		setSemiTrans(fontFT4, 1);
+
+		setUVWH(fontFT4, q.s0, q.t0, q.s1, q.t1);
+
+		fontFT4->clut = fontclutid;
+		fontFT4->tpage = fonttpage;
+
+		if (showMap == 0)
+		{
+			setRGB0(fontFT4, gFontColour.r, gFontColour.g, gFontColour.b);
+			setXYWH(fontFT4, q.x0, q.y0, q.x1, q.y1);
+
+			addPrim(current->ot, fontFT4);
+			current->primptr += sizeof(POLY_FT4);
+
+			shadowFT4 = (POLY_FT4*)current->primptr;
+
+			// add shadow poly
+			memcpy(shadowFT4, fontFT4, sizeof(POLY_FT4));
+			setRGB0(shadowFT4, 0, 0, 0);
+			setXYWH(shadowFT4, q.x0 + 0.5f, q.y0 + 0.5f, q.x1, q.y1);
+
+			addPrim(current->ot, shadowFT4);
+			current->primptr += sizeof(POLY_FT4);
+		}
+		else
+		{
+			setRGB0(fontFT4, 0, 0, 0);
+			setXYWH(fontFT4, q.x0 + 0.5f, q.y0 + 0.5f, q.x1, q.y1);
+			DrawPrim(fontFT4);
+
+			setRGB0(fontFT4, gFontColour.r, gFontColour.g, gFontColour.b);
+			setXYWH(fontFT4, q.x0, q.y0, q.x1, q.y1);
+			DrawPrim(fontFT4);
+		}
+
+		width += fx - width;
+	}
+
+	SetHiresFontTexture(showMap == 0);
+	if(showMap)
+		DrawSync(0);
+
+	return width;
+}
+
+/* Scaled variant of PrintStringHires: same HQ font, but the glyphs are
+ * drawn at `scale` (0.275f is the default size). Used by overlay menus
+ * that need more text on screen (e.g. the sandbox menu). */
+int PrintStringHiresScaled(char* string, int x, int y, float scale)
+{
+	u_char chr;
+	float width;
+	u_int index;
+	int showMap;
+
+	showMap = gShowMap;
+	width = x;
+
+	SetHiresFontTexture(showMap);
+
+	while ((chr = *string++) != 0)
+	{
+		if (chr >= 128 && chr <= 138)
+		{
+			if(showMap)
+				SetHiresFontTexture(0);
+			else
+				SetHiresFontTexture(1);
+
+			current->primptr = (char*)DrawButton(chr, current->primptr, width, y);
+
+			if (showMap)
+				SetHiresFontTexture(1);
+			else
+				SetHiresFontTexture(0);
+
+			width += 24;
+			x += 24;
+			continue;
+		}
+
+		chr = (chr >= 32 && chr < 128 || chr > 138) ? chr : '?';
+
+		POLY_FT4* fontFT4;
+		POLY_FT4* shadowFT4;
+		float fx, fy;
+		fx = width;
+		fy = y;
+		FONT_QUAD q;
+		GetHiresBakedQuadScaled(chr, &fx, &fy, &q, scale);
 
 		fontFT4 = (POLY_FT4*)current->primptr;
 

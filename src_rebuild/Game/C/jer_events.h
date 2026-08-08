@@ -121,4 +121,14 @@ typedef struct JER_ARGS_PAUSE_MENU
 	void* result;	/* out: const char* for the GET_*_TEXT actions */
 } JER_ARGS_PAUSE_MENU;
 
+/* JER_EVENT_CAMERA — fired at the end of InitCamera once camera_position is
+ * set; modules adjust the position/angle in place (stock = no handler). */
+typedef struct JER_ARGS_CAMERA
+{
+	void* player;		/* PLAYER* whose camera was just updated */
+	void* cameraPosition;	/* VECTOR* (camera_position) — modules may move it */
+	void* cameraAngle;	/* SVECTOR* (camera_angle) — modules may re-aim it */
+	int cameraView;		/* the player's camera view */
+} JER_ARGS_CAMERA;
+
 #endif /* JERICHO_JER_EVENTS_H */
