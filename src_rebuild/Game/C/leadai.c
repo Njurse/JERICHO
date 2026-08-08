@@ -1046,6 +1046,10 @@ void BlockToMap(MAP_DATA* data)
 		}
 		case 1:
 		{
+			// [A] guard: only read the curve table for a valid curve surface
+			if (!IS_CURVED_SURFACE(data->cp->ai.l.currentRoad))
+				break;
+
 			curve = GET_CURVE(data->cp->ai.l.currentRoad);
 
 			dx = data->pos->vx - curve->Midx;
@@ -1422,6 +1426,10 @@ int IsOnMap(int x, int z, VECTOR* basePos, int intention, CAR_DATA* cp)
 		}
 		case 1:
 		{
+			// [A] guard: only read the curve table for a valid curve surface
+			if (!IS_CURVED_SURFACE(cp->ai.l.currentRoad))
+				break;
+
 			curve = GET_CURVE(cp->ai.l.currentRoad);
 
 			dx = x - curve->Midx;
@@ -2025,7 +2033,11 @@ void UpdateRoadPosition(CAR_DATA* cp, VECTOR* basePos, int intention)
 				if (cp->ai.l.roadForward > -21)
 					return;
 
-				SelectExit(cp, &Driver2JunctionsPtr[cp->ai.l.nextJunction - 8192]);
+				// [A] guard: nextJunction must be a real junction surface before
+				// it is used as a table index (clearer LEAD_CAR state makes the
+				// garbage case rarer, but a stray value would still index out)
+				if (IS_JUNCTION_SURFACE(cp->ai.l.nextJunction))
+					SelectExit(cp, &Driver2JunctionsPtr[cp->ai.l.nextJunction - 8192]);
 
 				return;
 			}
