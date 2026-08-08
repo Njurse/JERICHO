@@ -1,0 +1,7 @@
+id = "example"
+name = "Example Module"
+version = "0.1.0"
+author = "DeepSeek"
+description = "JERICHO smoke-test: logs at boot and fires a custom event every 60 frames."
+dependencies = []
+default-enabled = false

@@ -6,9 +6,10 @@
 #include "cars.h"
 #include "main.h"
 #include "wheelforces.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "objcoll.h"
 #include "denting.h"
-#include "crumple.h"
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "camera.h"
 #include "felony.h"
 #include "debris.h"
@@ -306,6 +307,9 @@ void GlobalTimeStep(void)
 
 	gBouncePhase = RSIN(FrameCnt);
 
+	// JERICHO-HOOK: every-frame event (modules observe the game loop).
+	jer_fire(JER_EVENT_FRAME, NULL);
+
 	felony = GetPlayerFelony(&MainPlayer);
 
 	StepCars();
@@ -515,11 +519,19 @@ void GlobalTimeStep(void)
 						if (DamageCar3D(cp, &lever0, howHard >> 1, c1))
 							cp->ap.needsDenting = 1;
 
-						// Nattdy - record the impact for the crumple deformation system:
-						// world point + normal + strength for BOTH cars at the single
-						// call site (crumple flips the normal per car so the deformation
-						// is always INWARD, and folds in mass/health asymmetry).
-						crumple_recordImpact(cp, c1, (VECTOR*)collisionpoint, (VECTOR*)normal, howHard, 0xF);
+						// JERICHO-HOOK: collision (car-car) -> modules (crumple package)
+						{
+							JER_ARGS_COLLISION jerArgs;
+
+							jerArgs.car0 = cp;
+							jerArgs.car1 = c1;
+							jerArgs.point = (VECTOR*)collisionpoint;
+							jerArgs.normal = (VECTOR*)normal;
+							jerArgs.howHard = howHard;
+							jerArgs.wheelMask = 0xF;
+
+							jer_fire(JER_EVENT_COLLISION, &jerArgs);
+						}
 
 						if (howHard > 0x32000)
 						{
@@ -741,8 +753,11 @@ void GlobalTimeStep(void)
 	// dent cars - no more than 5 cars in per frame
 	carsDentedThisFrame = 0;
 
-	// crumple debug: d-pad deformation simulation + repair animation
-	crumple_debugTick();
+	// JERICHO-HOOK: per-frame debug/tuning tick -> modules
+	jer_fire(JER_EVENT_DEBUG_TICK, NULL);
+
+	// (the crumple d-pad simulation + repair animation moved into the
+	//  crumple JERICHO package; this tick feeds it)
 
 	for (i = 0; i < num_active_cars; i++)
 	{

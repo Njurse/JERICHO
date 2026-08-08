@@ -170,92 +170,10 @@ typedef struct CRUMPLE_PARAMS
 extern CRUMPLE_PARAMS gCrumpleParams;
 
 //-----------------------------------------------------------------------------
-// Public API
+// JERICHO module internals — this package (mods/crumple) is a compiled-in
+// JERICHO module: the engine never calls crumple directly, it fires events
+// (JER_EVENT_*) and this module's handlers implement the behavior. See
+// crumple.c -> jer_module_crumple_entry() for the hook registration.
 //-----------------------------------------------------------------------------
-
-// Zero all per-car crumple state and invalidate the per-model caches.
-// Call once at level load (hooked into InitialiseDenting).
-void crumple_init(void);
-
-// Clear pending impact + wheel bends for one car (car respawn / damage reset).
-void crumple_resetCar(int carId);
-
-// Record an impact for one or two cars.
-//   cp0  - first car involved (always recorded)
-//   cp1  - second car involved, or NULL for world/static collisions
-//   worldPoint  - collision point in world space (y-down, engine convention)
-//   worldNormal - collision normal in world space, magnitude ~4096 (ONE).
-//                 Engine convention: points FROM cp0 TOWARD cp1 (or from the
-//                 car toward the wall for world hits). crumple flips it per
-//                 car so the deformation is always INWARD.
-//   howHard     - impact strength (car-car howHard / world strikeVel).
-//   wheelMask   - bitmask of wheels that MAY bend (0 = none, 0xF = any
-//                 wheel within wheelProximity). Real collisions pass 0xF;
-//                 the d-pad debug sim passes only its target wheels so a
-//                 press bends exactly the wheels it points at.
-// Also accumulates wheel bends for any wheel within wheelProximity when the
-// hit is hard enough.
-void crumple_recordImpact(CAR_DATA* cp0, CAR_DATA* cp1, const VECTOR* worldPoint, const VECTOR* worldNormal, int howHard, int wheelMask);
-
-// Deform cp's clean model vertices into gTempCarVertDump[cp->id].
-//   tempDamage - per-vertex accumulated zone damage (0..~6142) from denting.c.
-// Uses the car's pending impact when one exists; otherwise falls back to the
-// original clean->damaged interpolation so scripted damage still works.
-void crumple_deform(CAR_DATA* cp, const short* tempDamage);
-
-// Per-wheel bend state (local-space offsets, 4 entries: front-right, front-left,
-// rear-right, rear-left). Read-only for physics (wheelforces.c) and draw (cars.c).
-SVECTOR* crumple_getWheelBend(int carId);
-
-// Cumulative wheel damage for a car, 0..4096 (4096 = all four wheels at
-// maximum bend). Used to amplify surface roughness for damaged cars.
-int crumple_getWheelDamageTotal(int carId);
-
-// Non-zero if the car has any bent wheel (quick check for draw/physics).
-int crumple_hasWheelDamage(int carId);
-
-// Debug/tuning aid: current pending impact for a car (overlay.c).
-void crumple_getImpactInfo(int carId, VECTOR* point, VECTOR* normal, int* howHard);
-
-// Apply the wheel-damage transform to one wheel's vertex buffer (called from
-// DrawCarWheels AFTER the spin rotation). Rotates the wheel mesh for camber
-// (from lateral bend, about the forward axis) and toe (from longitudinal
-// bend, about the vertical axis) around the wheel centre, and adds the
-// vertical sag. verts must be a per-wheel copy — the two wheels of an axle
-// share the model's vertex buffer.
-void crumple_transformWheelVerts(int carId, int wheelnum, SVECTOR* verts, int numVerts);
-
-//-----------------------------------------------------------------------------
-// Pause-menu debug features (lightweight, gameplay-free)
-//-----------------------------------------------------------------------------
-
-// When set, the d-pad simulates a deform collision on the player's car while
-// driving: up = front, down = rear, left = left side, right = right side.
-extern int gCrumpleDpadDeform;
-
-// When set, the player's car smoothly repairs: zone damage/health ease back to
-// 0, the body verts transform back toward their clean positions, the UV damage
-// panels clear, and the bent wheels straighten.
-extern int gCrumpleRepairCar;
-
-// When set, the player's car can be damaged (and crumpled) but its totalDamage
-// is clamped just below the "totaled" threshold, so it never catches fire /
-// explodes — de-facto invulnerability while still testing the crumple.
-extern int gCrumpleBuddha;
-
-// Master deformation multiplier (4096 = 1.0x) — exaggerate all crumple
-// calculations for faster testing.
-extern int gCrumpleGlobalScale;
-
-// Simulate a collision on one body area of a car (0 = front, 1 = rear,
-// 2 = left side, 3 = right side). howHard uses the same scale as the real
-// collision paths (see impactNormalize). Records a synthetic impact on the
-// car's collision-box face and flags the car for denting.
-void crumple_simulateImpact(int carId, int area, int howHard);
-
-// Per-frame hook (call once per frame from GlobalTimeStep): handles the
-// d-pad deformation simulation, the repair animation, and ticks the per-car
-// wheel-bend cooldowns.
-void crumple_debugTick(void);
 
 #endif /* CRUMPLE_H */

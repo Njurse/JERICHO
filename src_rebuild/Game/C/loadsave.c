@@ -1,6 +1,7 @@
 #include "driver2.h"
 #include "loadsave.h"
-#include "crumple.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "replays.h"
 #include "system.h"
 #include "glaunch.h"
@@ -250,10 +251,9 @@ int LoadCurrentGame()
 		{
 			ShowSavingWaitMessage(G_LTXT(GTXT_LoadingProgress), 0);
 
-			// fresh crumple state on load: pending impacts/wheel bends from the
-			// old session must not bleed into the restored cars (deformation is
-			// rebuilt from the restored zone damage by the fallback path)
-			crumple_init();
+			// JERICHO-HOOK: fresh module state on load (pending impacts/wheel
+			// bends from the old session must not bleed into restored cars)
+			jer_fire(JER_EVENT_INIT, NULL);
 
 			LoadGameData((char*)_other_buffer);
 			return 1;

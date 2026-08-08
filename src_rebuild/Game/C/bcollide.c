@@ -3,6 +3,8 @@
 #include "pad.h"
 #include "debris.h"
 #include "models.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "sound.h"
 #include "gamesnd.h"
 #include "glaunch.h"
@@ -12,7 +14,7 @@
 #include "handling.h"
 #include "camera.h"
 #include "objanim.h"
-#include "crumple.h"
+
 #include "system.h"
 #include "cutscene.h"
 
@@ -371,15 +373,23 @@ void ApplyDamage(CAR_DATA *cp, char region, int value, char fakeDamage)
 	// Buddha mode (crumple debug): the player car can still be damaged and
 	// crumpled, but totalDamage is clamped just below the totaled threshold
 	// so it never catches fire / explodes — de-facto invulnerability.
-	if (!fakeDamage && gCrumpleBuddha && cp->controlType == CONTROL_TYPE_PLAYER)
+	// JERICHO-HOOK: the flag is owned by the crumple module now
 	{
-		int maxDamage = MaxPlayerDamage[0];
+		JER_ARGS_QUERY_FLAG jerArgs;
 
-		if (cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2)
-			maxDamage = MaxPlayerDamage[*cp->ai.padid];
+		jerArgs.result = 0;
+		jer_fire(JER_EVENT_GET_BUDDHA, &jerArgs);
 
-		if (maxDamage > 1 && cp->totalDamage >= maxDamage)
-			cp->totalDamage = maxDamage - 1;
+		if (!fakeDamage && jerArgs.result && cp->controlType == CONTROL_TYPE_PLAYER)
+		{
+			int maxDamage = MaxPlayerDamage[0];
+
+			if (cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2)
+				maxDamage = MaxPlayerDamage[*cp->ai.padid];
+
+			if (maxDamage > 1 && cp->totalDamage >= maxDamage)
+				cp->totalDamage = maxDamage - 1;
+		}
 	}
 }
 
@@ -962,12 +972,19 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 
 				DamageCar(cp, cd, &collisionResult, strikeVel);
 
-				// Nattdy - record the impact for the crumple deformation system.
-				// World collisions previously only set needsDenting, so the dent
-				// pass was reusing the stale last car-car point. Now the actual
-				// world-space hit point + surface normal + strength go to crumple
-				// (crumple flips the normal inward for this car).
-				crumple_recordImpact(cp, NULL, &collisionResult.hit, &collisionResult.surfNormal, strikeVel, 0xF);
+				// JERICHO-HOOK: collision (world) -> modules (crumple package)
+				{
+					JER_ARGS_COLLISION jerArgs;
+
+					jerArgs.car0 = cp;
+					jerArgs.car1 = NULL;
+					jerArgs.point = &collisionResult.hit;
+					jerArgs.normal = &collisionResult.surfNormal;
+					jerArgs.howHard = strikeVel;
+					jerArgs.wheelMask = 0xF;
+
+					jer_fire(JER_EVENT_COLLISION, &jerArgs);
+				}
 
 				displacement = FIXEDH(lever[0] * collisionResult.surfNormal.vx + lever[1] * collisionResult.surfNormal.vy + lever[2] * collisionResult.surfNormal.vz);
 				displacement = FIXEDH(((lever[0] * lever[0] + lever[2] * lever[2]) - displacement * displacement) * car_cos->twistRateY) + 4096;

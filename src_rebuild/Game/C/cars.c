@@ -22,7 +22,8 @@
 #include "dr2math.h"
 
 // Main CRUMPLE library import and my small math library (i dont see stdlib math just dr2math, clearly means if i need external libs i write them in an engine appropriate way)
-#include "crumple.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "nattdymath.h"
 
 struct plotCarGlobals
@@ -800,7 +801,15 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	wheel = cp->hd.wheel;
 	wheelnum = 0;
 
-	bend = crumple_getWheelBend(cp->id);
+	// JERICHO-HOOK: query per-wheel damage bend -> modules (crumple package)
+	{
+		JER_ARGS_QUERY_PTR jerArgs;
+
+		jerArgs.carId = cp->id;
+		jerArgs.result = NULL;
+		jer_fire(JER_EVENT_GET_WHEEL_BEND, &jerArgs);
+		bend = (SVECTOR*)jerArgs.result;
+	}
 
 	do {
 		if ((wheelnum & 1) != 0)
@@ -865,11 +874,20 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		// (lateral bend -> up to wheelSteerScale degrees) so it visibly
 		// BREAKS from the transform it normally follows, and a hit spanning
 		// an axle skews each wheel by its own damage.
+		// JERICHO-HOOK: the deviation scales are owned by the crumple module
 		{
 			MATRIX wheelMat, steerMat;
+			JER_ARGS_WHEEL_PARAMS jerScales;
 			int steerAngle = 0;
-			int steerScale = (wheelnum & 1) ? gCrumpleParams.wheelSteerScaleRear
-											: gCrumpleParams.wheelSteerScale;
+			int steerScale;
+
+			jerScales.carId = cp->id;
+			jerScales.frontScale = 0;
+			jerScales.rearScale = 0;
+			jerScales.scrubForce = 0;
+			jer_fire(JER_EVENT_GET_WHEEL_PARAMS, &jerScales);
+
+			steerScale = (wheelnum & 1) ? jerScales.rearScale : jerScales.frontScale;
 
 			if (bend != NULL)
 				steerAngle += FIXEDH(bend[wheelnum].vx * steerScale);
@@ -897,7 +915,17 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		// position itself already includes the bend via sWheelPos above.
 		if (numWheelVerts > 0)
 		{
-			crumple_transformWheelVerts(cp->id, wheelnum, wheelVerts, numWheelVerts);
+			// JERICHO-HOOK: wheel draw -> modules (crumple package, visual mesh)
+			{
+				JER_ARGS_DRAW_WHEEL jerArgs;
+
+				jerArgs.carId = cp->id;
+				jerArgs.wheelnum = wheelnum;
+				jerArgs.verts = wheelVerts;
+				jerArgs.numVerts = numWheelVerts;
+				jer_fire(JER_EVENT_DRAW_WHEEL, &jerArgs);
+			}
+
 			DrawWheelObject(model, wheelVerts, TransparentObject, wheelnum);
 		}
 		else

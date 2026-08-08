@@ -16,7 +16,8 @@
 #include "felony.h"
 #include "scores.h"
 #include "handling.h"
-#include "crumple.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 
 COLOUR_BAND felonyColour[3] =
 {
@@ -704,11 +705,16 @@ void DrawCrumpleDebugInfo()
 	sprintf(modeText, "Z : %i", gCrumpleLastCollisionPoint.vz);
 	PrintString(modeText, 10, 138);
 
-	// Nattdy - crumple impact debug: pending impact (inward normal + strength)
-	// for the player's car, straight from the crumple state.
+	// JERICHO-HOOK: crumple impact debug query -> modules (crumple package)
 	if (MainPlayer.playerCarId >= 0)
 	{
-		crumple_getImpactInfo(MainPlayer.playerCarId, &impactPoint, &impactNormal, &howHard);
+		JER_ARGS_IMPACT_INFO jerArgs;
+
+		jerArgs.carId = MainPlayer.playerCarId;
+		jerArgs.point = &impactPoint;
+		jerArgs.normal = &impactNormal;
+		jerArgs.howHard = &howHard;
+		jer_fire(JER_EVENT_GET_IMPACT_INFO, &jerArgs);
 
 		sprintf(modeText, "Nrm - %i", howHard);
 		PrintString(modeText, 10, 154);

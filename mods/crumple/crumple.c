@@ -75,6 +75,8 @@
 #include "cars.h"
 #include "pad.h"
 #include "players.h"
+#include "jericho.h"	// JERICHO: module API (this file is the crumple package)
+#include "jer_events.h"	// JERICHO: event argument structs
 
 
 // Buddha mode is like Source engine's -- you can take damage down to 1HP, this avoids death so the damage can still be extensively tested without full Invulnerability cheat
@@ -337,7 +339,7 @@ static void crumpleAccumulateWheelBend(CAR_DATA* cp, const VECTOR* worldPoint, i
 // Public API
 //-----------------------------------------------------------------------------
 
-void crumple_init(void)
+static void crumpleInitInternal(void)
 {
 	int i;
 
@@ -348,7 +350,7 @@ void crumple_init(void)
 		crumpleCarState[i].otherCarId = -1;
 }
 
-void crumple_resetCar(int carId)
+static void crumpleResetCarInternal(int carId)
 {
 	if (carId < 0 || carId >= MAX_CARS)
 		return;
@@ -473,7 +475,7 @@ static int crumpleGetResistance(int model, int vertNo)
 	return md->resistance[vertNo];
 }
 
-SVECTOR* crumple_getWheelBend(int carId)
+static SVECTOR* crumpleGetWheelBendInternal(int carId)
 {
 	if (carId < 0 || carId >= MAX_CARS)
 		return NULL;
@@ -484,7 +486,7 @@ SVECTOR* crumple_getWheelBend(int carId)
 // Cumulative "how screwed up are the wheels" for a car, normalized to
 // 0..4096 (0 = pristine, 4096 = all four wheels at their maximum bend).
 // Used to amplify surface roughness etc. for damaged cars.
-int crumple_getWheelDamageTotal(int carId)
+static int crumpleGetWheelDamageTotalInternal(int carId)
 {
 	CRUMPLE_CAR_STATE* st;
 	CRUMPLE_PARAMS* p = &gCrumpleParams;
@@ -522,9 +524,9 @@ int crumple_getWheelDamageTotal(int carId)
 // space: spin around X, tire in the YZ plane. Camber (lateral bend) rolls
 // the tire about the forward (Z) axis; toe (longitudinal bend) yaws it about
 // the vertical (Y) axis. Position/sag are handled by sWheelPos in the draw.
-void crumple_transformWheelVerts(int carId, int wheelnum, SVECTOR* verts, int numVerts)
+static void crumpleTransformWheelVertsInternal(int carId, int wheelnum, SVECTOR* verts, int numVerts)
 {
-	SVECTOR* bend = crumple_getWheelBend(carId);
+	SVECTOR* bend = crumpleGetWheelBendInternal(carId);
 	CRUMPLE_PARAMS* p = &gCrumpleParams;
 	int camberAngle, toeAngle;
 	int cosC, sinC, cosT, sinT;
@@ -575,26 +577,7 @@ void crumple_transformWheelVerts(int carId, int wheelnum, SVECTOR* verts, int nu
 	}
 }
 
-int crumple_hasWheelDamage(int carId)
-{
-	int i;
-	SVECTOR* bend;
-
-	if (carId < 0 || carId >= MAX_CARS)
-		return 0;
-
-	bend = crumpleCarState[carId].wheelBend;
-
-	for (i = 0; i < 4; i++)
-	{
-		if (bend[i].vx != 0 || bend[i].vy != 0 || bend[i].vz != 0)
-			return 1;
-	}
-
-	return 0;
-}
-
-void crumple_getImpactInfo(int carId, VECTOR* point, VECTOR* normal, int* howHard)
+static void crumpleGetImpactInfoInternal(int carId, VECTOR* point, VECTOR* normal, int* howHard)
 {
 	if (carId < 0 || carId >= MAX_CARS)
 		return;
@@ -675,7 +658,7 @@ static void crumpleAddImpact(CRUMPLE_CAR_STATE* st, const VECTOR* worldPoint, co
 	}
 }
 
-void crumple_recordImpact(CAR_DATA* cp0, CAR_DATA* cp1, const VECTOR* worldPoint, const VECTOR* worldNormal, int howHard, int wheelMask)
+static void crumpleRecordImpactInternal(CAR_DATA* cp0, CAR_DATA* cp1, const VECTOR* worldPoint, const VECTOR* worldNormal, int howHard, int wheelMask)
 {
 	CRUMPLE_CAR_STATE* st0;
 	VECTOR inward;
@@ -801,7 +784,7 @@ static int crumpleResolveImpactNormal(CRUMPLE_IMPACT* im, const SVECTOR* cleanV,
 	return 1;
 }
 
-void crumple_deform(CAR_DATA* cp, const short* tempDamage)
+static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 {
 	CRUMPLE_CAR_STATE* st;
 	CRUMPLE_PARAMS* p;
@@ -1106,7 +1089,7 @@ static void crumpleLocalToWorldPoint(const MATRIX* m, int lx, int ly, int lz, VE
 	out->vz = m->t[2] + FIXEDH(lx * m->m[0][2] + ly * m->m[1][2] + lz * m->m[2][2]);
 }
 
-void crumple_simulateImpact(int carId, int area, int howHard)
+static void crumpleSimulateImpactInternal(int carId, int area, int howHard)
 {
 	CAR_DATA* cp;
 	CAR_COSMETICS* cos;
@@ -1179,14 +1162,14 @@ void crumple_simulateImpact(int carId, int area, int howHard)
 			normal.vy = FIXEDH(lnx * cp->hd.where.m[0][1] + lny * cp->hd.where.m[1][1] + lnz * cp->hd.where.m[2][1]);
 			normal.vz = FIXEDH(lnx * cp->hd.where.m[0][2] + lny * cp->hd.where.m[1][2] + lnz * cp->hd.where.m[2][2]);
 
-			crumple_recordImpact(cp, NULL, &point, &normal, howHard, wheelMask);
+			crumpleRecordImpactInternal(cp, NULL, &point, &normal, howHard, wheelMask);
 		}
 	}
 
 	cp->ap.needsDenting = 1;
 }
 
-void crumple_debugTick(void)
+static void crumpleDebugTickInternal(void)
 {
 	int i;
 	int playerCarId;
@@ -1222,7 +1205,7 @@ void crumple_debugTick(void)
 			area = 3;
 
 		if (area >= 0)
-			crumple_simulateImpact(playerCarId, area, gCrumpleParams.simTickHowHard);
+			crumpleSimulateImpactInternal(playerCarId, area, gCrumpleParams.simTickHowHard);
 	}
 
 	// ---- repair animation ----
@@ -1373,4 +1356,217 @@ void crumple_debugTick(void)
 			gCrumpleRepairCar = 0;
 		}
 	}
+}
+
+//=============================================================================
+// JERICHO module: event handlers + entry point
+//=============================================================================
+
+static int crumpleOnInit(void* userdata, void* args)
+{
+	(void)userdata;
+	(void)args;
+
+	crumpleInitInternal();
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnResetCar(void* userdata, void* args)
+{
+	JER_ARGS_RESET_CAR* a = (JER_ARGS_RESET_CAR*)args;
+
+	(void)userdata;
+
+	if (a != NULL)
+		crumpleResetCarInternal(a->carId);
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnCollision(void* userdata, void* args)
+{
+	JER_ARGS_COLLISION* a = (JER_ARGS_COLLISION*)args;
+
+	(void)userdata;
+
+	if (a != NULL)
+	{
+		crumpleRecordImpactInternal((CAR_DATA*)a->car0, (CAR_DATA*)a->car1,
+			(const VECTOR*)a->point, (const VECTOR*)a->normal,
+			a->howHard, a->wheelMask);
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnDentPass(void* userdata, void* args)
+{
+	JER_ARGS_DENT_PASS* a = (JER_ARGS_DENT_PASS*)args;
+
+	(void)userdata;
+
+	if (a != NULL)
+		crumpleDeformInternal((CAR_DATA*)a->car, (const short*)a->damage);
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnDebugTick(void* userdata, void* args)
+{
+	(void)userdata;
+	(void)args;
+
+	crumpleDebugTickInternal();
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnGetWheelBend(void* userdata, void* args)
+{
+	JER_ARGS_QUERY_PTR* a = (JER_ARGS_QUERY_PTR*)args;
+
+	(void)userdata;
+
+	if (a != NULL)
+		a->result = crumpleGetWheelBendInternal(a->carId);
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnGetWheelDamage(void* userdata, void* args)
+{
+	JER_ARGS_QUERY_INT* a = (JER_ARGS_QUERY_INT*)args;
+
+	(void)userdata;
+
+	if (a != NULL)
+		a->result = crumpleGetWheelDamageTotalInternal(a->carId);
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnGetImpactInfo(void* userdata, void* args)
+{
+	JER_ARGS_IMPACT_INFO* a = (JER_ARGS_IMPACT_INFO*)args;
+
+	(void)userdata;
+
+	if (a != NULL && a->point != NULL && a->normal != NULL && a->howHard != NULL)
+	{
+		crumpleGetImpactInfoInternal(a->carId,
+			(VECTOR*)a->point, (VECTOR*)a->normal, (int*)a->howHard);
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnDrawWheel(void* userdata, void* args)
+{
+	JER_ARGS_DRAW_WHEEL* a = (JER_ARGS_DRAW_WHEEL*)args;
+
+	(void)userdata;
+
+	if (a != NULL)
+	{
+		crumpleTransformWheelVertsInternal(a->carId, a->wheelnum,
+			(SVECTOR*)a->verts, a->numVerts);
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnGetWheelParams(void* userdata, void* args)
+{
+	JER_ARGS_WHEEL_PARAMS* a = (JER_ARGS_WHEEL_PARAMS*)args;
+
+	(void)userdata;
+
+	if (a != NULL)
+	{
+		a->frontScale = gCrumpleParams.wheelSteerScale;
+		a->rearScale = gCrumpleParams.wheelSteerScaleRear;
+		a->scrubForce = gCrumpleParams.wheelScrubForce;
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnGetBuddha(void* userdata, void* args)
+{
+	JER_ARGS_QUERY_FLAG* a = (JER_ARGS_QUERY_FLAG*)args;
+
+	(void)userdata;
+
+	if (a != NULL)
+		a->result = gCrumpleBuddha;
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int crumpleOnPauseMenu(void* userdata, void* args)
+{
+	JER_ARGS_PAUSE_MENU* a = (JER_ARGS_PAUSE_MENU*)args;
+
+	(void)userdata;
+
+	if (a == NULL)
+		return JER_RESULT_CONTINUE;
+
+	switch (a->action)
+	{
+		case JER_PAUSE_CRUMPLE_TOGGLE_DPAD:
+			gCrumpleDpadDeform ^= 1;
+			break;
+
+		case JER_PAUSE_CRUMPLE_TOGGLE_BUDDHA:
+			gCrumpleBuddha ^= 1;
+			break;
+
+		case JER_PAUSE_CRUMPLE_REPAIR:
+			gCrumpleRepairCar = 1;
+			break;
+
+		case JER_PAUSE_CRUMPLE_GET_DPAD_TEXT:
+			a->result = (void*)(gCrumpleDpadDeform ? "D-Pad Deform: ON" : "D-Pad Deform: OFF");
+			break;
+
+		case JER_PAUSE_CRUMPLE_GET_BUDDHA_TEXT:
+			a->result = (void*)(gCrumpleBuddha ? "Buddha Mode: ON" : "Buddha Mode: OFF");
+			break;
+
+		default:
+			break;
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+/*
+ * JERICHO module entry — the generated registry calls this as
+ * jer_module_crumple_entry() when the module is enabled.
+ */
+JER_MODULE_ENTRY(jer_module_crumple_entry)(JERICHO_CONTEXT* ctx)
+{
+	ctx->jer_register_module(ctx,
+		"crumple",			/* id */
+		"CRUMPLE",			/* name */
+		"1.0.0",			/* version */
+		"Nattdy + DeepSeek",	/* author */
+		"Impact-driven vertex deformation + wheel damage. The flagship JERICHO package.",	/* description */
+		"",					/* dependencies */
+		JERICHO_SDK_VERSION);	/* SDK this module was built against */
+
+	ctx->jer_register_hook(ctx, JER_EVENT_INIT, crumpleOnInit, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_COLLISION, crumpleOnCollision, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_DENT_PASS, crumpleOnDentPass, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, crumpleOnResetCar, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_DEBUG_TICK, crumpleOnDebugTick, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_WHEEL_BEND, crumpleOnGetWheelBend, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_WHEEL_DAMAGE, crumpleOnGetWheelDamage, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_IMPACT_INFO, crumpleOnGetImpactInfo, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WHEEL, crumpleOnDrawWheel, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_WHEEL_PARAMS, crumpleOnGetWheelParams, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_BUDDHA, crumpleOnGetBuddha, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_PAUSE_MENU, crumpleOnPauseMenu, NULL, 0);
+
+	ctx->jer_log(ctx, "[crumple] registered (SDK v%d)\n", ctx->sdkVersion);
 }

@@ -1,0 +1,7 @@
+id = "crumple"
+name = "CRUMPLE"
+version = "1.0.0"
+author = "Nattdy + DeepSeek"
+description = "Impact-driven vertex deformation + wheel damage. The flagship JERICHO package: dents, crumples, bent wheels, surface-roughness amplification, and the Crumple Debug pause submenu."
+dependencies = []
+default-enabled = true

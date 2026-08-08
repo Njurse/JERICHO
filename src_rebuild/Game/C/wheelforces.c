@@ -13,7 +13,8 @@
 #include "glaunch.h"
 #include "system.h"
 #include "cutscene.h"
-#include "crumple.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 
 #define GRAVITY_FORCE		(-7456)			// D1 has -10922
 
@@ -184,7 +185,15 @@ void ConvertTorqueToAngularAcceleration(CAR_DATA* cp, CAR_LOCALS* cl)
 	// fights the damaged equilibrium and can rock the car. Damp roll (x) and
 	// pitch (z) harder for bent cars so the body settles smoothly into the
 	// slump; yaw is untouched so steering stays responsive.
-	bend = crumple_getWheelBend(cp->id);
+	// JERICHO-HOOK: query per-wheel damage bend -> modules (crumple package)
+	{
+		JER_ARGS_QUERY_PTR jerArgs;
+
+		jerArgs.carId = cp->id;
+		jerArgs.result = NULL;
+		jer_fire(JER_EVENT_GET_WHEEL_BEND, &jerArgs);
+		bend = (SVECTOR*)jerArgs.result;
+	}
 
 	for (i = 0; i < 3; i++)
 	{
@@ -224,6 +233,7 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 	VECTOR force;
 	LONGVECTOR4 pointVel;
 	int frontFS, rearFS;
+	JER_ARGS_WHEEL_PARAMS wheelParams;
 	sdPlane* SurfacePtr;
 	int i;
 	int cdx, cdz;
@@ -260,8 +270,31 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 
 	i = 3;
 	wheel = cp->hd.wheel + 3;
+
+	// JERICHO-HOOK: wheel-damage physics params (deviation scales + scrub)
+	{
+		JER_ARGS_WHEEL_PARAMS jerParams;
+
+		jerParams.carId = cp->id;
+		jerParams.frontScale = 0;
+		jerParams.rearScale = 0;
+		jerParams.scrubForce = 0;
+		jer_fire(JER_EVENT_GET_WHEEL_PARAMS, &jerParams);
+
+		wheelParams = jerParams;
+	}
+
 	do {
-		SVECTOR* bend = crumple_getWheelBend(cp->id);
+		// JERICHO-HOOK: query per-wheel damage bend -> modules (crumple package)
+		SVECTOR* bend;
+		{
+			JER_ARGS_QUERY_PTR jerArgs;
+
+			jerArgs.carId = cp->id;
+			jerArgs.result = NULL;
+			jer_fire(JER_EVENT_GET_WHEEL_BEND, &jerArgs);
+			bend = (SVECTOR*)jerArgs.result;
+		}
 
 		// Nattdy - crumple wheel damage: a hard impact near a wheel bends it
 		// permanently (local-space offset). Offsetting the raycast origin makes
@@ -305,7 +338,15 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 			// Nattdy - crumple: screwed-up wheels transmit more of the surface
 			// roughness to the body (up to ~2x at full wheel damage); pristine
 			// cars are unaffected
-			roughness = FIXEDH(roughness * (4096 + crumple_getWheelDamageTotal(cp->id)));
+			// JERICHO-HOOK: query cumulative wheel damage -> modules
+			{
+				JER_ARGS_QUERY_INT jerArgs;
+
+				jerArgs.carId = cp->id;
+				jerArgs.result = 0;
+				jer_fire(JER_EVENT_GET_WHEEL_DAMAGE, &jerArgs);
+				roughness = FIXEDH(roughness * (4096 + jerArgs.result));
+			}
 
 			surfacePoint[1] += oldCutRoughness ? (roughness >> 1) : (roughness / 3);
 
@@ -466,9 +507,10 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 				// so it looks as crooked as it behaves. Rear wheels use a
 				// much smaller scale: they twist but must not steer the car
 				// or distort the drive nearly as much as the fronts.
+				// JERICHO-HOOK: scales come from the wheel-damage module
 				if (bend != NULL)
-					wdir += FIXEDH(bend[i].vx * ((i & 1) ? gCrumpleParams.wheelSteerScaleRear
-														 : gCrumpleParams.wheelSteerScale));
+					wdir += FIXEDH(bend[i].vx * ((i & 1) ? wheelParams.rearScale
+														 : wheelParams.frontScale));
 
 				lfz = -RSIN(wdir);
 				lfx = RCOS(wdir);
@@ -550,9 +592,10 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 
 			// bent wheels scrub: the misaligned contact patch resists lateral
 			// motion, scaled by the bend magnitude (wheelScrubForce per unit)
-			if (bend != NULL && (bend[i].vx != 0 || bend[i].vz != 0))
+			// JERICHO-HOOK: scrub force comes from the wheel-damage module
+			if (bend != NULL && (bend[i].vx != 0 || bend[i].vz != 0) && wheelParams.scrubForce != 0)
 			{
-				int scrub = (ABS(bend[i].vx) + ABS(bend[i].vz)) * gCrumpleParams.wheelScrubForce;
+				int scrub = (ABS(bend[i].vx) + ABS(bend[i].vz)) * wheelParams.scrubForce;
 
 				force.vx -= (cl->vel[0] >> 4) * scrub >> 8;
 				force.vz -= (cl->vel[2] >> 4) * scrub >> 8;
@@ -714,7 +757,15 @@ void StepOneCar(CAR_DATA* cp)
 			int roughness = (RSIN((surfacePoint[0] + surfacePoint[2]) * 2) >> 8) / 3;
 
 			// Nattdy - crumple: damaged wheels transmit more surface roughness
-			roughness = FIXEDH(roughness * (4096 + crumple_getWheelDamageTotal(cp->id)));
+			// JERICHO-HOOK: query cumulative wheel damage -> modules
+			{
+				JER_ARGS_QUERY_INT jerArgs;
+
+				jerArgs.carId = cp->id;
+				jerArgs.result = 0;
+				jer_fire(JER_EVENT_GET_WHEEL_DAMAGE, &jerArgs);
+				roughness = FIXEDH(roughness * (4096 + jerArgs.result));
+			}
 
 			surfacePoint[1] += roughness;
 		}

@@ -1,6 +1,7 @@
 #include "driver2.h"
 #include "pause.h"
-#include "crumple.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "system.h"
 #include "mission.h"
 #include "overlay.h"
@@ -145,25 +146,67 @@ void ToggleOverlays(int direction)
 	gDoOverlays ^= 1;
 }
 
-// Crumple debug: d-pad deformation simulation + smooth repair (crumple.c)
+// Crumple debug: d-pad deformation simulation + smooth repair.
+// JERICHO-HOOK: the module owns the state and labels; this shell only
+// bridges the menu items to the crumple package via JER_EVENT_PAUSE_MENU.
 static char CrumpleDpadText[32] = "D-Pad Deform: OFF";
 static char CrumpleBuddhaText[32] = "Buddha Mode: OFF";
 
+static void CrumpleRefreshLabels(void)
+{
+	JER_ARGS_PAUSE_MENU jerArgs;
+
+	jerArgs.action = JER_PAUSE_CRUMPLE_GET_DPAD_TEXT;
+	jerArgs.result = NULL;
+	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
+
+	if (jerArgs.result != NULL)
+		sprintf(CrumpleDpadText, "%s", (const char*)jerArgs.result);
+
+	jerArgs.action = JER_PAUSE_CRUMPLE_GET_BUDDHA_TEXT;
+	jerArgs.result = NULL;
+	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
+
+	if (jerArgs.result != NULL)
+		sprintf(CrumpleBuddhaText, "%s", (const char*)jerArgs.result);
+}
+
 void CrumpleToggleDpad(int direction)
 {
-	gCrumpleDpadDeform ^= 1;
-	sprintf(CrumpleDpadText, "D-Pad Deform: %s", gCrumpleDpadDeform ? "ON" : "OFF");
+	JER_ARGS_PAUSE_MENU jerArgs;
+
+	(void)direction;
+
+	jerArgs.action = JER_PAUSE_CRUMPLE_TOGGLE_DPAD;
+	jerArgs.result = NULL;
+	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
+
+	CrumpleRefreshLabels();
 }
 
 void CrumpleToggleBuddha(int direction)
 {
-	gCrumpleBuddha ^= 1;
-	sprintf(CrumpleBuddhaText, "Buddha Mode: %s", gCrumpleBuddha ? "ON" : "OFF");
+	JER_ARGS_PAUSE_MENU jerArgs;
+
+	(void)direction;
+
+	jerArgs.action = JER_PAUSE_CRUMPLE_TOGGLE_BUDDHA;
+	jerArgs.result = NULL;
+	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
+
+	CrumpleRefreshLabels();
 }
 
 void CrumpleRepairCar(int direction)
 {
-	gCrumpleRepairCar = 1;
+	JER_ARGS_PAUSE_MENU jerArgs;
+
+	(void)direction;
+
+	jerArgs.action = JER_PAUSE_CRUMPLE_REPAIR;
+	jerArgs.result = NULL;
+	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
+
 	PauseReturnValue = MENU_QUIT_CONTINUE;
 }
 
@@ -256,6 +299,113 @@ void DebugTimeOfDayRain(int direction)
 	LoadSky();
 }
 
+// JERICHO Mods Manager: lists compiled-in modules, toggles enable/disable
+// (persisted to mods/modlist.json, applied at next boot), and moves load
+// order. Toggling needs no rebuild.
+static char ModItemText[JER_MAX_MODULES][48];
+static MENU_ITEM ModsManagerItems[JER_MAX_MODULES + 3];
+extern MENU_HEADER ModsManagerHeader;	/* defined below the handlers */
+static int ModsMoveIndex = -1;
+
+static void ModsToggleItem(int direction);
+static void ModsMoveUp(int direction);
+static void ModsMoveDown(int direction);
+
+static void ModsManagerRefresh(void)
+{
+	JER_MODULE_INFO mods[JER_MAX_MODULES];
+	int count = jer_module_list(mods, JER_MAX_MODULES);
+	int i;
+
+	for (i = 0; i < count; i++)
+	{
+		sprintf(ModItemText[i], "%s v%s [%s]", mods[i].name, mods[i].version,
+			mods[i].enabled ? "ON" : "OFF");
+
+		ModsManagerItems[i].Text = ModItemText[i];
+		ModsManagerItems[i].Type = PAUSE_TYPE_FUNC;
+		ModsManagerItems[i].Justify = 2u;
+		ModsManagerItems[i].func = ModsToggleItem;
+		ModsManagerItems[i].ExitValue = MENU_QUIT_NONE;
+		ModsManagerItems[i].SubMenu = NULL;
+	}
+
+	ModsManagerItems[count].Text = "Move Up";
+	ModsManagerItems[count].Type = PAUSE_TYPE_FUNC;
+	ModsManagerItems[count].Justify = 2u;
+	ModsManagerItems[count].func = ModsMoveUp;
+	ModsManagerItems[count].ExitValue = MENU_QUIT_NONE;
+	ModsManagerItems[count].SubMenu = NULL;
+
+	ModsManagerItems[count + 1].Text = "Move Down";
+	ModsManagerItems[count + 1].Type = PAUSE_TYPE_FUNC;
+	ModsManagerItems[count + 1].Justify = 2u;
+	ModsManagerItems[count + 1].func = ModsMoveDown;
+	ModsManagerItems[count + 1].ExitValue = MENU_QUIT_NONE;
+	ModsManagerItems[count + 1].SubMenu = NULL;
+
+	ModsManagerItems[count + 2].Text = NULL;
+	ModsManagerItems[count + 2].Type = PAUSE_TYPE_ENDITEMS;
+	ModsManagerItems[count + 2].Justify = 0u;
+	ModsManagerItems[count + 2].func = NULL;
+	ModsManagerItems[count + 2].ExitValue = MENU_QUIT_NONE;
+	ModsManagerItems[count + 2].SubMenu = NULL;
+
+	ModsManagerHeader.NumItems = count + 2;
+}
+
+static void ModsToggleItem(int direction)
+{
+	JER_MODULE_INFO mods[JER_MAX_MODULES];
+	int count = jer_module_list(mods, JER_MAX_MODULES);
+	MENU_ITEM* active = ActiveItem[VisibleMenu];
+	int idx = (active != NULL) ? (int)(active - ModsManagerItems) : -1;
+
+	(void)direction;
+
+	if (idx >= 0 && idx < count)
+	{
+		ModsMoveIndex = idx;
+
+		jer_manager_set_enabled(jer_mods_dir(), mods[idx].id, mods[idx].enabled ? 0 : 1);
+		jer_manager_reload(jer_mods_dir());
+		ModsManagerRefresh();
+	}
+}
+
+static void ModsMoveUp(int direction)
+{
+	JER_MODULE_INFO mods[JER_MAX_MODULES];
+	int count = jer_module_list(mods, JER_MAX_MODULES);
+
+	(void)direction;
+
+	if (ModsMoveIndex >= 0 && ModsMoveIndex < count)
+	{
+		jer_manager_move(jer_mods_dir(), mods[ModsMoveIndex].id, -1);
+		jer_manager_reload(jer_mods_dir());
+		ModsManagerRefresh();
+	}
+}
+
+static void ModsMoveDown(int direction)
+{
+	JER_MODULE_INFO mods[JER_MAX_MODULES];
+	int count = jer_module_list(mods, JER_MAX_MODULES);
+
+	(void)direction;
+
+	if (ModsMoveIndex >= 0 && ModsMoveIndex < count)
+	{
+		jer_manager_move(jer_mods_dir(), mods[ModsMoveIndex].id, 1);
+		jer_manager_reload(jer_mods_dir());
+		ModsManagerRefresh();
+	}
+}
+
+MENU_HEADER ModsManagerHeader =
+{ "Mods Manager", { 0, 0, 0, 0 }, 0u, ModsManagerItems };
+
 MENU_ITEM DebugTimeOfDayItems[] =
 {
 	{ "Day",	PAUSE_TYPE_FUNC, 	2,	DebugTimeOfDayDay,	MENU_QUIT_NONE,		NULL },
@@ -300,6 +450,7 @@ MENU_ITEM DebugOptionsItems[] =
 	{ "Time of Day", 	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&DebugTimeOfDayHeader },
 	{ "Fun Cheats", 	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&DebugJustForFunHeader },
 	{ "Crumple Debug",	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&CrumpleDebugHeader },
+	{ "Mods Manager",	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&ModsManagerHeader },
 	{ "Invincibility", 	PAUSE_TYPE_FUNC, 	2,  ToggleInvincibility,MENU_QUIT_NONE,		NULL},
 	{ "Immunity", 		PAUSE_TYPE_FUNC, 	2,  ToggleImmunity,		MENU_QUIT_NONE,		NULL},
 	{ "Puppy Dog Cops",	PAUSE_TYPE_FUNC,	2,  TogglePuppyDogCops,	MENU_QUIT_NONE,		NULL },
@@ -905,6 +1056,13 @@ void InitaliseMenu(PAUSEMODE mode)
 		ActiveItem[i] = NULL;
 		VisibleMenus[i] = NULL;
 	}
+
+	// JERICHO-HOOK: refresh the module list + crumple labels when the pause
+	// menu opens so the manager and the debug submenu show live state.
+#if defined(_DEBUG) || defined(DEBUG_OPTIONS)
+	ModsManagerRefresh();
+	CrumpleRefreshLabels();
+#endif
 
 	pNewMenu = NULL;
 
