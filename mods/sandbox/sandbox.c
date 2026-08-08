@@ -192,21 +192,23 @@ enum
 	SBX_PAGE_CHEATS,
 	SBX_PAGE_AICAR,
 	SBX_PAGE_OBJECTS,
+	SBX_PAGE_TUNE,
 	SBX_PAGE_COUNT
 };
 
 #define SBX_MAIN_ITEMS 5	/* Vehicle, Spawn, World, Cheats, Close */
-#define SBX_VEHICLE_ITEMS 5	/* Repair, Upright, Set Damage, Set Felony, Player AI Mode */
+#define SBX_VEHICLE_ITEMS 6	/* Repair, Upright, Set Damage, Set Felony, Player AI Mode, Tune Car */
 #define SBX_SPAWN_ITEMS 3	/* Car, Object, AI Car */
 #define SBX_WORLD_ITEMS 2	/* Time of Day, Weather */
-#define SBX_AICAR_ITEMS 5	/* Vehicle, Mode, Param, Spawn, Back */
-#define SBX_CHEATS_ITEMS 8	/* invincibility, immunity, secret car, jericho, mini, bonus, unlock all, back */
+#define SBX_AICAR_ITEMS 6	/* Vehicle, Mode, Param, Spawn, Remove AI Cars, Back */
+#define SBX_CHEATS_ITEMS 9	/* invincibility, immunity, secret car, jericho, mini, bonus, buddha, unlock all, back */
+#define SBX_TUNE_ITEMS 10	/* power, traction, mass, suspension, cog x/y/z, twist x/y/z */
 
 static const char* const gSandboxMainItems[SBX_MAIN_ITEMS] = {
-	"Vehicle", "Spawn", "World", "Cheats", "Close"
+	"Vehicle Properties", "Spawn Menu", "World Settings", "Cheats Menu", "Close"
 };
 static const char* const gSandboxVehicleItems[SBX_VEHICLE_ITEMS] = {
-	"Repair Car", "Make Car Upright", "Set Damage", "Set Felony", "Player AI Mode"
+	"Repair Car", "Make Car Upright", "Set Damage", "Set Felony", "Player AI Mode", "Tune Car"
 };
 static const char* const gSandboxSpawnItems[SBX_SPAWN_ITEMS] = {
 	"Spawn Car", "Spawn Object", "AI Car"
@@ -216,11 +218,15 @@ static const char* const gSandboxWorldItems[SBX_WORLD_ITEMS] = {
 };
 static const char* const gSandboxCheatsItems[SBX_CHEATS_ITEMS] = {
 	"Invincibility", "Immunity", "Secret Car", "Play as Jericho",
-	"Mini Cars", "Bonus Cars", "Unlock All", "Back"
+	"Mini Cars", "Unlock Bonus Cars", "Buddha Mode", "Unlock All", "Back"
+};
+static const char* const gSandboxTuneItems[SBX_TUNE_ITEMS] = {
+	"Power Ratio", "Traction", "Mass", "Suspension", "COG X", "COG Y", "COG Z",
+	"Twist X", "Twist Y", "Twist Z"
 };
 
 static const char* const gSandboxPageTitles[SBX_PAGE_COUNT] = {
-	"SANDBOX", "VEHICLE", "SPAWN", "WORLD", "CHEATS", "AI CAR", "SPAWN OBJECT"
+	"SANDBOX", "VEHICLE", "SPAWN", "WORLD", "CHEATS", "AI CAR", "SPAWN OBJECT", "TUNE"
 };
 
 static int gSandboxMenuOpen;
@@ -244,6 +250,12 @@ static int gSandboxAIModel;		/* internal car model to spawn */
 static int gSandboxAIMode;		/* 0 = civilian, 1 = cop, 2 = lead */
 static int gSandboxAIParam;		/* mode-specific parameter */
 
+/* per-car tuning: a temporary CAR_COSMETICS copy so edits never touch the
+ * shared car_cosmetics[model] that every car of the same model uses */
+static CAR_COSMETICS gSandboxTunedCos;
+static CAR_COSMETICS* gSandboxOrigCos;
+static int gSandboxTunedActive;
+
 static const char* const gSandboxAIModeNames[3] = { "Civilian", "Cop", "Lead" };
 
 /* the level-object list for the spawn page (smashable[] with a name) */
@@ -253,11 +265,17 @@ static int gSandboxObjectCount;
 static int gSandboxObjectIdx[SBX_SMASHABLE_COUNT];
 static const char* gSandboxObjectNames[SBX_SMASHABLE_COUNT];
 
+/* the per-car tuning helpers (defined below) — the close path needs them */
+static void SandboxTuneEnter(void);
+static void SandboxTuneRestore(void);
+
 static void SandboxMenuClose(void)
 {
 	gSandboxMenuOpen = 0;
 	gSandboxAdjust = 0;
 	gStopPadReads = 0;
+
+	SandboxTuneRestore();
 
 	/* bring the map + damage/felony bars back */
 	gShowMap = gSandboxSavedShowMap;
@@ -312,11 +330,131 @@ static void SandboxMenuRepair(void)
 static void SandboxMenuSetFelony(int delta)
 {
 	CAR_DATA* pc = SandboxPlayerCar();
+	int val;
 
 	if (pc != NULL)
-		pc->felonyRating += delta;
+	{
+		val = pc->felonyRating + delta;
+
+		if (val < 0)
+			val = 0;
+		else if (val > FELONY_MAX_VALUE)
+			val = FELONY_MAX_VALUE;
+
+		pc->felonyRating = (short)val;
+	}
 	else if (player[0].playerCarId < 0)
-		pedestrianFelony += delta;
+	{
+		val = pedestrianFelony + delta;
+
+		if (val < 0)
+			val = 0;
+		else if (val > FELONY_MAX_VALUE)
+			val = FELONY_MAX_VALUE;
+
+		pedestrianFelony = (short)val;
+	}
+}
+
+/* remove every non-player AI car (the ones the sandbox can spawn) */
+static void SandboxMenuRemoveAICars(void)
+{
+	CAR_DATA* pc;
+	CAR_DATA* cp;
+	int i;
+
+	pc = SandboxPlayerCar();
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		cp = &car_data[i];
+
+		if (cp == pc)
+			continue;
+
+		if (cp->controlType == CONTROL_TYPE_CIV_AI ||
+			cp->controlType == CONTROL_TYPE_PURSUER_AI ||
+			cp->controlType == CONTROL_TYPE_LEAD_AI)
+		{
+			/* keep the spawner counters in sync: PingOutCar only decrements
+			 * them for civilian cars — without this, cops and traffic would
+			 * stop respawning for the rest of the level */
+			if (cp->controlType == CONTROL_TYPE_PURSUER_AI)
+			{
+				numCopCars--;
+
+				if (cp->ai.p.dying == 0)
+					numActiveCops--;
+			}
+
+			PingOutCar(cp);
+			cp->controlType = CONTROL_TYPE_NONE;
+		}
+	}
+}
+
+/* ---- per-car tuning: the temp cosmetic copy ---- */
+static void SandboxTuneEnter(void)
+{
+	CAR_DATA* pc = SandboxPlayerCar();
+
+	if (pc == NULL)
+		return;
+
+	gSandboxOrigCos = pc->ap.carCos;
+	gSandboxTunedCos = *gSandboxOrigCos;
+	pc->ap.carCos = &gSandboxTunedCos;
+	gSandboxTunedActive = 1;
+}
+
+static void SandboxTuneRestore(void)
+{
+	CAR_DATA* pc;
+
+	if (!gSandboxTunedActive)
+		return;
+
+	/* re-point at the model's shared cosmetics (the car may have changed) */
+	extern CAR_COSMETICS car_cosmetics[];
+
+	pc = SandboxPlayerCar();
+
+	if (pc != NULL)
+		pc->ap.carCos = &car_cosmetics[pc->ap.model];
+
+	gSandboxTunedActive = 0;
+}
+
+static void SandboxTuneAdjust(CAR_DATA* pc, int cursor, int step)
+{
+	short* p;
+	int min;
+	int max;
+
+	if (pc == NULL || gSandboxTunedActive == 0)
+		return;
+
+	switch (cursor)
+	{
+	case 0: p = &gSandboxTunedCos.powerRatio; min = 0; max = 4096; break;
+	case 1: p = &gSandboxTunedCos.traction; min = 0; max = 4096; break;
+	case 2: p = &gSandboxTunedCos.mass; min = 16; max = 4096; break;
+	case 3: p = &gSandboxTunedCos.susCoeff; min = 0; max = 4096; break;
+	case 4: p = &gSandboxTunedCos.cog.vx; min = -1024; max = 1024; break;
+	case 5: p = &gSandboxTunedCos.cog.vy; min = -1024; max = 1024; break;
+	case 6: p = &gSandboxTunedCos.cog.vz; min = -1024; max = 1024; break;
+	case 7: p = &gSandboxTunedCos.twistRateX; min = 0; max = 4096; break;
+	case 8: p = &gSandboxTunedCos.twistRateY; min = 0; max = 4096; break;
+	case 9: p = &gSandboxTunedCos.twistRateZ; min = 0; max = 4096; break;
+	default: return;
+	}
+
+	*p += step * 32;
+
+	if (*p < min)
+		*p = max;
+	else if (*p > max)
+		*p = min;
 }
 
 /* count of items on a page (main pages only; the object page is special) */
@@ -330,6 +468,7 @@ static int SandboxMenuItemCount(int page)
 	case SBX_PAGE_WORLD: return SBX_WORLD_ITEMS;
 	case SBX_PAGE_CHEATS: return SBX_CHEATS_ITEMS;
 	case SBX_PAGE_AICAR: return SBX_AICAR_ITEMS;
+	case SBX_PAGE_TUNE: return SBX_TUNE_ITEMS;
 	default: return 0;
 	}
 }
@@ -385,10 +524,33 @@ static const char* SandboxCheatLabel(int cursor)
 	case 3: return ActiveCheats.cheat12 ? "Play as Jericho: ON" : "Play as Jericho: OFF";
 	case 4: return ActiveCheats.cheat13 ? "Mini Cars: ON" : "Mini Cars: OFF";
 	case 5: return (ActiveCheats.cheat5 | ActiveCheats.cheat6 |
-			ActiveCheats.cheat7 | ActiveCheats.cheat8) ? "Bonus Cars: ON" : "Bonus Cars: OFF";
-	case 6: return "Unlock All";
+			ActiveCheats.cheat7 | ActiveCheats.cheat8) ? "Unlock Bonus Cars: ON" : "Unlock Bonus Cars: OFF";
+	case 6: return gNoDamage ? "Buddha Mode: ON" : "Buddha Mode: OFF";
+	case 7: return "Unlock All";
 	default: return "Back";
 	}
+}
+
+/* tune page label: each item shows its live value */
+static const char* SandboxTuneLabel(int cursor)
+{
+	static char buf[32];
+
+	switch (cursor)
+	{
+	case 0: sprintf(buf, "Power Ratio: %d", gSandboxTunedCos.powerRatio); break;
+	case 1: sprintf(buf, "Traction: %d", gSandboxTunedCos.traction); break;
+	case 2: sprintf(buf, "Mass: %d", gSandboxTunedCos.mass); break;
+	case 3: sprintf(buf, "Suspension: %d", gSandboxTunedCos.susCoeff); break;
+	case 4: sprintf(buf, "COG X: %d", gSandboxTunedCos.cog.vx); break;
+	case 5: sprintf(buf, "COG Y: %d", gSandboxTunedCos.cog.vy); break;
+	case 6: sprintf(buf, "COG Z: %d", gSandboxTunedCos.cog.vz); break;
+	case 7: sprintf(buf, "Twist X: %d", gSandboxTunedCos.twistRateX); break;
+	case 8: sprintf(buf, "Twist Y: %d", gSandboxTunedCos.twistRateY); break;
+	default: sprintf(buf, "Twist Z: %d", gSandboxTunedCos.twistRateZ); break;
+	}
+
+	return buf;
 }
 
 /* unlock every bonus track/car/mission in the save (persists on next save) */
@@ -565,8 +727,15 @@ static void SandboxMenuDoAction(int page, int cursor)
 		{
 		case 0: SandboxMenuRepair(); break;
 		case 1: SetRightWayUp(1); break;
-		case 2: case 3: gSandboxAdjust = 1; break;
+		case 2: gSandboxAdjust = 1; gNoDamage = 0; break;	/* Set Damage — switch the no-damage protection off so it sticks */
+		case 3: gSandboxAdjust = 1; break;				/* Set Felony */
 		case 4: SandboxSetPlayerAiMode((g_PlayerControlMode + 1) & 3); break;
+		case 5:	/* Tune Car — edit a private cosmetic copy of this car */
+			SandboxTuneEnter();
+			gSandboxPage = SBX_PAGE_TUNE;
+			gSandboxCursor = 0;
+			gSandboxSubPage = 0;
+			break;
 		}
 		break;
 
@@ -610,7 +779,8 @@ static void SandboxMenuDoAction(int page, int cursor)
 			ActiveCheats.cheat8 = (u_char)on;
 			break;
 		}
-		case 6: SandboxMenuUnlockAll(); break;
+		case 6: gNoDamage ^= 1; break;	/* Buddha mode */
+		case 7: SandboxMenuUnlockAll(); break;
 		default: gSandboxPage = SBX_PAGE_MAIN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		}
 		break;
@@ -619,7 +789,8 @@ static void SandboxMenuDoAction(int page, int cursor)
 		switch (cursor)
 		{
 		case 3: SandboxSpawnAICar(); break;
-		case 4: gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
+		case 4: SandboxMenuRemoveAICars(); break;
+		case 5: gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		default: break;	/* items 0-2 adjust via left/right */
 		}
 		break;
@@ -643,6 +814,28 @@ static void SandboxMenuInput(int padnew)
 	{
 		gSandboxInputDebounce--;
 		return;
+	}
+	if (gSandboxPage == SBX_PAGE_TUNE)
+	{
+		/* tuning page: left/right adjust the item under the cursor, up/down
+		 * move (handled by the generic navigation below), cross/triangle
+		 * exits back to the vehicle page and restores the shared cosmetics */
+		CAR_DATA* pc = SandboxPlayerCar();
+
+		if (gSandboxTunedActive == 0 && pc != NULL)
+			SandboxTuneEnter();	/* belt: entered some other way */
+
+		if (padnew & (MPAD_D_LEFT | MPAD_D_RIGHT))
+			SandboxTuneAdjust(pc, gSandboxCursor, (padnew & MPAD_D_RIGHT) ? 1 : -1);
+
+		if (padnew & (MPAD_CROSS | MPAD_TRIANGLE))
+		{
+			SandboxTuneRestore();
+			gSandboxPage = SBX_PAGE_VEHICLE;
+			gSandboxCursor = 0;
+			gSandboxSubPage = 0;
+			return;
+		}
 	}
 	if (gSandboxPage == SBX_PAGE_OBJECTS)
 	{
@@ -731,8 +924,9 @@ static void SandboxMenuInput(int padnew)
 				int maxParam = (gSandboxAIMode == 0) ? 7
 					: (gSandboxAIMode == 1) ? 2048 : 1024;
 				int minParam = (gSandboxAIMode == 1) ? 0 : 0;
+				int stepSize = (gSandboxAIMode == 0) ? 1 : 64;	/* palette is 0..7 */
 
-				gSandboxAIParam += step * 64;
+				gSandboxAIParam += step * stepSize;
 
 				if (gSandboxAIParam < minParam)
 					gSandboxAIParam = maxParam;
@@ -766,8 +960,17 @@ static void SandboxMenuInput(int padnew)
 		{
 			if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 2)
 			{
-				if (pc != NULL && pc->totalDamage >= 512)
-					pc->totalDamage -= 512;
+				int nd;
+
+				if (pc != NULL)
+				{
+					nd = pc->totalDamage - 512;
+
+					if (nd < 0)
+						nd = 0;
+
+					pc->totalDamage = (u_short)nd;
+				}
 			}
 			else if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 3)
 				SandboxMenuSetFelony(-64);
@@ -792,8 +995,17 @@ static void SandboxMenuInput(int padnew)
 		{
 			if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 2)
 			{
+				int nd;
+
 				if (pc != NULL)
-					pc->totalDamage += 512;
+				{
+					nd = pc->totalDamage + 512;
+
+					if (nd > 65535)
+						nd = 65535;
+
+					pc->totalDamage = (u_short)nd;
+				}
 			}
 			else if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 3)
 				SandboxMenuSetFelony(64);
@@ -914,6 +1126,8 @@ static int SandboxOnGameStart(void* userdata, void* args)
 		gSandboxAdjust = 0;
 		gSandboxInputDebounce = 0;
 		gStopPadReads = 0;
+
+		SandboxTuneRestore();
 
 		/* bring the map + damage/felony bars back */
 		gShowMap = gSandboxSavedShowMap;
@@ -1220,6 +1434,8 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 				label = SandboxVehicleLabel(idx);
 			else if (gSandboxPage == SBX_PAGE_AICAR)
 				label = SandboxAICarLabel(idx);
+			else if (gSandboxPage == SBX_PAGE_TUNE)
+				label = SandboxTuneLabel(idx);
 			else
 				label = SandboxMenuItemLabel(gSandboxPage, idx);
 
