@@ -47,6 +47,15 @@ static int gNoDamage;
 static int gTimeScale = 4096;	/* 4096 = 1.0x */
 static void (*gOriginalStepSim)(void);
 
+/* spawn position for the spawn pages: 0 = in front, 1 = at the player's
+ * position (warping the player into the car) */
+static int gSandboxSpawnMode;
+
+/* hold-to-repeat state for the left/right adjusters */
+static int gSandboxHoldDir;		/* -1 left, 1 right, 0 none */
+static int gSandboxHoldFrames;	/* frames the direction has been held */
+static int gSandboxHoldInterval;	/* current repeat interval (frames) */
+
 extern void StepSim(void);
 extern void SetRightWayUp(int direction);
 
@@ -78,7 +87,7 @@ static void SandboxStepSim(void)
 /* ------------------------------------------------------------------ */
 
 /* spawn a car with the given internal model in front of the player */
-static int SandboxSpawnCarModel(int model)
+static int SandboxSpawnCarModel(int model, int palette)
 {
 	CAR_DATA* carCnt;
 	CAR_DATA* pNewCar = NULL;
@@ -112,6 +121,20 @@ static int SandboxSpawnCarModel(int model)
 		return -1;
 
 	direction = pc->hd.direction;
+
+	if (gSandboxSpawnMode == 1)
+	{
+		/* teleport-in: the new car replaces the player's, same spot */
+		pos[0] = pc->hd.where.t[0];
+		pos[1] = pc->hd.where.t[1];
+		pos[2] = pc->hd.where.t[2];
+
+		InitCar(pNewCar, direction, &pos, CONTROL_TYPE_CIV_AI, model, palette, NULL);
+		ChangePedPlayerToCar(0, pNewCar);
+		PingOutCar(pc);
+
+		return 0;
+	}
 
 	/* a couple of car-lengths in front of the player */
 	pos[0] = pc->hd.where.t[0] + FIXEDH(RSIN(direction) * 250);
@@ -198,9 +221,9 @@ enum
 
 #define SBX_MAIN_ITEMS 5	/* Vehicle, Spawn, World, Cheats, Close */
 #define SBX_VEHICLE_ITEMS 6	/* Repair, Upright, Set Damage, Set Felony, Player AI Mode, Tune Car */
-#define SBX_SPAWN_ITEMS 3	/* Car, Object, AI Car */
+#define SBX_SPAWN_ITEMS 4	/* Position, Spawn Car, Object, AI Car */
 #define SBX_WORLD_ITEMS 2	/* Time of Day, Weather */
-#define SBX_AICAR_ITEMS 6	/* Vehicle, Mode, Param, Spawn, Remove AI Cars, Back */
+#define SBX_AICAR_ITEMS 7	/* Vehicle, Mode, Param, Position, Spawn, Remove, Back */
 #define SBX_CHEATS_ITEMS 9	/* invincibility, immunity, secret car, jericho, mini, bonus, buddha, unlock all, back */
 #define SBX_TUNE_ITEMS 12	/* power, traction, mass, suspension, cog x/y/z, twist x/y/z, wheelbase, track */
 
@@ -211,7 +234,7 @@ static const char* const gSandboxVehicleItems[SBX_VEHICLE_ITEMS] = {
 	"Repair Car", "Make Car Upright", "Set Damage", "Set Felony", "Player AI Mode", "Tune Car"
 };
 static const char* const gSandboxSpawnItems[SBX_SPAWN_ITEMS] = {
-	"Spawn Car", "Spawn Object", "AI Car"
+	"Spawn Position", "Spawn Car", "Spawn Object", "AI Car"
 };
 static const char* const gSandboxWorldItems[SBX_WORLD_ITEMS] = {
 	"Set Time of Day", "Set Weather"
@@ -255,6 +278,27 @@ static int gSandboxAIParam;		/* mode-specific parameter */
 static CAR_COSMETICS gSandboxTunedCos;
 static CAR_COSMETICS* gSandboxOrigCos;
 static int gSandboxTunedActive;
+
+/* a private OT for the preview: the model renders on its own layer (between
+ * the menu text at ot+0 and the background panel at ot+3) instead of at
+ * world depths, where the world geometry cut it off and the panel's
+ * semi-transparency flickered over it */
+static OTTYPE gSandboxPreviewOt[2048];
+static DENTUVS gSandboxCleanUv;		/* zeroed damage-UV table for clean previews */
+static CAR_DATA gSandboxPreviewCar;	/* scratch car for palette'd model previews */
+
+/* point the scratch car at a model + palette (clean geometry, no damage) */
+static void SandboxPreviewScratchCar(int model, int palette)
+{
+	extern CAR_COSMETICS car_cosmetics[];
+
+	memset(&gSandboxPreviewCar, 0, sizeof(gSandboxPreviewCar));
+
+	gSandboxPreviewCar.id = -1;	/* no crumple bend/damage lookup */
+	gSandboxPreviewCar.ap.model = (u_char)model;
+	gSandboxPreviewCar.ap.palette = (u_char)palette;
+	gSandboxPreviewCar.ap.carCos = &car_cosmetics[model];
+}
 
 static const char* const gSandboxAIModeNames[3] = { "Civilian", "Cop", "Lead" };
 
@@ -665,9 +709,20 @@ static const char* SandboxAICarLabel(int cursor)
 		default: sprintf(buf, "Road Pos: %d", gSandboxAIParam); break;
 		}
 		return buf;
-	case 3: return "Spawn";
+	case 3: return gSandboxSpawnMode ? "Spawn Position: Teleport In" : "Spawn Position: In Front";
+	case 4: return "Spawn AI Car";
+	case 5: return "Remove AI Cars";
 	default: return "Back";
 	}
+}
+
+/* spawn page label: the position item shows the live mode */
+static const char* SandboxSpawnLabel(int cursor)
+{
+	if (cursor == 0)
+		return gSandboxSpawnMode ? "Spawn Position: Teleport In" : "Spawn Position: In Front";
+
+	return SandboxMenuItemLabel(SBX_PAGE_SPAWN, cursor);
 }
 
 /* spawn an AI car with the chosen model, mode and parameter */
@@ -703,6 +758,30 @@ static void SandboxSpawnAICar(void)
 		return;
 
 	direction = pc->hd.direction;
+
+	if (gSandboxSpawnMode == 1)
+	{
+		/* teleport-in: the new car spawns at the player's position and the
+		 * player is warped inside — the chosen AI routine takes over */
+		pos[0] = pc->hd.where.t[0];
+		pos[1] = pc->hd.where.t[1];
+		pos[2] = pc->hd.where.t[2];
+
+		InitCar(pNewCar, direction, &pos, CONTROL_TYPE_CIV_AI, gSandboxAIModel,
+			gSandboxAIMode == 0 ? gSandboxAIParam : 0, NULL);
+
+		ChangePedPlayerToCar(0, pNewCar);
+		PingOutCar(pc);
+
+		if (gSandboxAIMode == 0)
+			InitCivState(pNewCar, NULL);
+		else if (gSandboxAIMode == 1)
+			InitCopState(pNewCar, NULL);
+		else
+			InitLead(pNewCar);
+
+		return;
+	}
 
 	pos[0] = pc->hd.where.t[0] + FIXEDH(RSIN(direction) * 2500);
 	pos[1] = pc->hd.where.t[1];
@@ -766,17 +845,19 @@ static void SandboxMenuDoAction(int page, int cursor)
 	case SBX_PAGE_SPAWN:
 		switch (cursor)
 		{
-		case 0:
-			/* spawn a copy of the player's own car model */
-			SandboxSpawnCarModel(pc != NULL ? pc->ap.model : 0);
-			break;
+		case 0: gSandboxSpawnMode ^= 1; break;	/* spawn position */
 		case 1:
+			/* spawn a copy of the player's own car model + palette */
+			SandboxSpawnCarModel(pc != NULL ? pc->ap.model : 0,
+				pc != NULL ? pc->ap.palette : 0);
+			break;
+		case 2:
 			SandboxMenuBuildObjectList();
 			gSandboxObjectPage = 0;
 			gSandboxObjectCursor = 0;
 			gSandboxPage = SBX_PAGE_OBJECTS;
 			break;
-		case 2:
+		case 3:
 			gSandboxPage = SBX_PAGE_AICAR;
 			gSandboxCursor = 0;
 			gSandboxSubPage = 0;
@@ -812,9 +893,10 @@ static void SandboxMenuDoAction(int page, int cursor)
 	case SBX_PAGE_AICAR:
 		switch (cursor)
 		{
-		case 3: SandboxSpawnAICar(); break;
-		case 4: SandboxMenuRemoveAICars(); break;
-		case 5: gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
+		case 3: gSandboxSpawnMode ^= 1; break;	/* spawn position */
+		case 4: SandboxSpawnAICar(); break;
+		case 5: SandboxMenuRemoveAICars(); break;
+		case 6: gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		default: break;	/* items 0-2 adjust via left/right */
 		}
 		break;
@@ -824,6 +906,129 @@ static void SandboxMenuDoAction(int page, int cursor)
 	}
 
 	(void)pc;
+}
+
+/* left/right adjust for the current page + cursor. Shared by the edge
+ * press and the hold-to-repeat path. */
+static void SandboxAdjustItem(int dir)
+{
+	CAR_DATA* pc = SandboxPlayerCar();
+
+	if (gSandboxPage == SBX_PAGE_TUNE)
+	{
+		SandboxTuneAdjust(pc, gSandboxCursor, dir);
+		return;
+	}
+
+	if (gSandboxPage == SBX_PAGE_AICAR && gSandboxCursor <= 3)
+	{
+		switch (gSandboxCursor)
+		{
+		case 0:
+			gSandboxAIModel += dir;
+
+			if (gSandboxAIModel < 0)
+				gSandboxAIModel = MAX_CAR_RESIDENT_MODELS - 1;
+			else if (gSandboxAIModel >= MAX_CAR_RESIDENT_MODELS)
+				gSandboxAIModel = 0;
+			break;
+
+		case 1:
+			gSandboxAIMode = (gSandboxAIMode + dir + 3) % 3;
+			break;
+
+		case 2:
+		{
+			int maxParam = (gSandboxAIMode == 0) ? 7
+				: (gSandboxAIMode == 1) ? 2048 : 1024;
+			int minParam = 0;
+			int stepSize = (gSandboxAIMode == 0) ? 1 : 64;	/* palette is 0..7 */
+
+			gSandboxAIParam += dir * stepSize;
+
+			if (gSandboxAIParam < minParam)
+				gSandboxAIParam = maxParam;
+			else if (gSandboxAIParam > maxParam)
+				gSandboxAIParam = minParam;
+			break;
+		}
+
+		case 3:	/* spawn position */
+			gSandboxSpawnMode ^= 1;
+			break;
+		}
+
+		return;
+	}
+
+	if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 4)
+	{
+		/* Player AI Mode cycles on either direction */
+		SandboxSetPlayerAiMode((g_PlayerControlMode + 1) & 3);
+		return;
+	}
+
+	if (!gSandboxAdjust)
+		return;
+
+	if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 2)
+	{
+		int nd;
+
+		if (pc != NULL)
+		{
+			nd = pc->totalDamage + dir * 512;
+
+			if (nd < 0)
+				nd = 0;
+			else if (nd > 65535)
+				nd = 65535;
+
+			pc->totalDamage = (u_short)nd;
+		}
+
+		return;
+	}
+
+	if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 3)
+	{
+		SandboxMenuSetFelony(dir * 64);
+		return;
+	}
+
+	if (gSandboxPage == SBX_PAGE_WORLD && gSandboxCursor == 0)
+	{
+		if (dir < 0)
+		{
+			if (gTimeOfDay > TIME_DAWN)
+			{
+				gTimeOfDay--;
+				wantedTimeOfDay = gTimeOfDay;
+				LoadSky();
+			}
+		}
+		else if (gTimeOfDay < TIME_NIGHT)
+		{
+			gTimeOfDay++;
+			wantedTimeOfDay = gTimeOfDay;
+			LoadSky();
+		}
+
+		return;
+	}
+
+	if (gSandboxPage == SBX_PAGE_WORLD && gSandboxCursor == 1)
+	{
+		if (dir < 0)
+		{
+			if (gWeather > WEATHER_NONE)
+				gWeather--;
+		}
+		else if (gWeather < WEATHER_WET)
+			gWeather++;
+
+		wantedWeather = gWeather;
+	}
 }
 
 /* pad input for the overlay menu (world keeps running underneath) */
@@ -841,16 +1046,13 @@ static void SandboxMenuInput(int padnew)
 	}
 	if (gSandboxPage == SBX_PAGE_TUNE)
 	{
-		/* tuning page: left/right adjust the item under the cursor, up/down
-		 * move (handled by the generic navigation below), cross/triangle
-		 * exits back to the vehicle page and restores the shared cosmetics */
+		/* tuning page: left/right adjust (via SandboxAdjustItem below),
+		 * up/down move (generic navigation), cross/triangle exits back to
+		 * the vehicle page and restores the shared cosmetics */
 		CAR_DATA* pc = SandboxPlayerCar();
 
 		if (gSandboxTunedActive == 0 && pc != NULL)
 			SandboxTuneEnter();	/* belt: entered some other way */
-
-		if (padnew & (MPAD_D_LEFT | MPAD_D_RIGHT))
-			SandboxTuneAdjust(pc, gSandboxCursor, (padnew & MPAD_D_RIGHT) ? 1 : -1);
 
 		if (padnew & (MPAD_CROSS | MPAD_TRIANGLE))
 		{
@@ -921,140 +1123,10 @@ static void SandboxMenuInput(int padnew)
 		return;
 	}
 
-	if (gSandboxPage == SBX_PAGE_AICAR)
-	{
-		/* AI car page: left/right adjusts the top three items */
-		if (padnew & (MPAD_D_LEFT | MPAD_D_RIGHT))
-		{
-			int step = (padnew & MPAD_D_LEFT) ? -1 : 1;
-
-			switch (gSandboxCursor)
-			{
-			case 0:
-				gSandboxAIModel += step;
-
-				if (gSandboxAIModel < 0)
-					gSandboxAIModel = MAX_CAR_RESIDENT_MODELS - 1;
-				else if (gSandboxAIModel >= MAX_CAR_RESIDENT_MODELS)
-					gSandboxAIModel = 0;
-				break;
-
-			case 1:
-				gSandboxAIMode = (gSandboxAIMode + step + 3) % 3;
-				break;
-
-			case 2:
-			{
-				int maxParam = (gSandboxAIMode == 0) ? 7
-					: (gSandboxAIMode == 1) ? 2048 : 1024;
-				int minParam = (gSandboxAIMode == 1) ? 0 : 0;
-				int stepSize = (gSandboxAIMode == 0) ? 1 : 64;	/* palette is 0..7 */
-
-				gSandboxAIParam += step * stepSize;
-
-				if (gSandboxAIParam < minParam)
-					gSandboxAIParam = maxParam;
-				else if (gSandboxAIParam > maxParam)
-					gSandboxAIParam = minParam;
-				break;
-			}
-			}
-
-			return;
-		}
-
-		/* up/down/cross fall through to the standard navigation */
-	}
-
-	if (gSandboxAdjust)
-	{
-		/* adjusting a SET item: left/right change the value, cross exits */
-		CAR_DATA* pc = SandboxPlayerCar();
-
-		/* left/right on the Player AI Mode item cycles without adjust */
-		if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 4)
-		{
-			if (padnew & (MPAD_D_LEFT | MPAD_D_RIGHT))
-				SandboxSetPlayerAiMode((g_PlayerControlMode + 1) & 3);
-
-			return;
-		}
-
-		if (padnew & MPAD_D_LEFT)
-		{
-			if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 2)
-			{
-				int nd;
-
-				if (pc != NULL)
-				{
-					nd = pc->totalDamage - 512;
-
-					if (nd < 0)
-						nd = 0;
-
-					pc->totalDamage = (u_short)nd;
-				}
-			}
-			else if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 3)
-				SandboxMenuSetFelony(-64);
-			else if (gSandboxPage == SBX_PAGE_WORLD && gSandboxCursor == 0)
-			{
-				if (gTimeOfDay > TIME_DAWN)
-				{
-					gTimeOfDay--;
-					wantedTimeOfDay = gTimeOfDay;
-					LoadSky();
-				}
-			}
-			else if (gSandboxPage == SBX_PAGE_WORLD && gSandboxCursor == 1)
-			{
-				if (gWeather > WEATHER_NONE)
-					gWeather--;
-				wantedWeather = gWeather;
-			}
-		}
-
-		if (padnew & MPAD_D_RIGHT)
-		{
-			if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 2)
-			{
-				int nd;
-
-				if (pc != NULL)
-				{
-					nd = pc->totalDamage + 512;
-
-					if (nd > 65535)
-						nd = 65535;
-
-					pc->totalDamage = (u_short)nd;
-				}
-			}
-			else if (gSandboxPage == SBX_PAGE_VEHICLE && gSandboxCursor == 3)
-				SandboxMenuSetFelony(64);
-			else if (gSandboxPage == SBX_PAGE_WORLD && gSandboxCursor == 0)
-			{
-				if (gTimeOfDay < TIME_NIGHT)
-				{
-					gTimeOfDay++;
-					wantedTimeOfDay = gTimeOfDay;
-					LoadSky();
-				}
-			}
-			else if (gSandboxPage == SBX_PAGE_WORLD && gSandboxCursor == 1)
-			{
-				if (gWeather < WEATHER_WET)
-					gWeather++;
-				wantedWeather = gWeather;
-			}
-		}
-
-		if (padnew & (MPAD_CROSS | MPAD_TRIANGLE))
-			gSandboxAdjust = 0;
-
-		return;
-	}
+	/* left/right edge: adjust the current item (Tune, AI-car params, the
+	 * SET items, the AI-mode cycle) */
+	if (padnew & (MPAD_D_LEFT | MPAD_D_RIGHT))
+		SandboxAdjustItem((padnew & MPAD_D_LEFT) ? -1 : 1);
 
 	/* page navigation: L1/R1 first flip this page's sub-pages, then cycle
 	 * the category pages; Triangle goes back */
@@ -1132,6 +1204,45 @@ static void SandboxMenuInput(int padnew)
 
 	if (padnew & MPAD_CROSS)
 		SandboxMenuDoAction(gSandboxPage, gSandboxCursor);
+
+	/* hold-to-repeat: a held left/right starts repeating after ~1s and the
+	 * interval shrinks (8 -> 6 -> 4 -> 2 frames) so big value swings are
+	 * fast. Uses the pad's held (level) state, not the edge. */
+	{
+		int heldLeft = Pads[0].mapped & MPAD_D_LEFT;
+		int heldRight = Pads[0].mapped & MPAD_D_RIGHT;
+		int dir = heldLeft ? -1 : (heldRight ? 1 : 0);
+
+		if (dir != 0)
+		{
+			if (gSandboxHoldDir == dir)
+				gSandboxHoldFrames++;
+			else
+			{
+				gSandboxHoldDir = dir;
+				gSandboxHoldFrames = 0;
+				gSandboxHoldInterval = 8;
+			}
+
+			if (gSandboxHoldFrames > 60)
+			{
+				if (gSandboxHoldFrames > 180)
+					gSandboxHoldInterval = 2;
+				else if (gSandboxHoldFrames > 120)
+					gSandboxHoldInterval = 4;
+				else if (gSandboxHoldFrames > 90)
+					gSandboxHoldInterval = 6;
+
+				if (gSandboxHoldFrames % gSandboxHoldInterval == 0)
+					SandboxAdjustItem(dir);
+			}
+		}
+		else
+		{
+			gSandboxHoldDir = 0;
+			gSandboxHoldFrames = 0;
+		}
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -1252,9 +1363,9 @@ static void SandboxDrawPanel(void)
 	poly->x3 = 290;
 	poly->y3 = 198;
 
-	poly->r0 = 16;
-	poly->g0 = 16;
-	poly->b0 = 16;
+	poly->r0 = 6;
+	poly->g0 = 6;
+	poly->b0 = 6;
 
 	setSemiTrans(poly, 1);
 
@@ -1275,13 +1386,16 @@ static void SandboxDrawPreview(void)
 	MODEL* model = NULL;
 	MATRIX turntable;
 	VECTOR pos;
+	OTTYPE* savedOt;
 	int angle;
+	int scratch = 0;	/* 1 = the scratch car (clean model + palette) */
 
 	/* The preview is persistent: while the sandbox menu is open, every page
 	 * shows a spinning model — the player's car (final crumpled geometry),
-	 * the player ped when on foot, or the selected spawn model on the spawn
-	 * pages. Every lookup is bounds- and NULL-checked; an unsafe lookup
-	 * simply skips the preview instead of drawing garbage. */
+	 * the player ped when on foot, the object/car the spawn pages will
+	 * create (clean, in the chosen palette). Every lookup is bounds- and
+	 * NULL-checked; an unsafe lookup simply skips the preview instead of
+	 * drawing garbage. */
 	if (gSandboxPage == SBX_PAGE_OBJECTS)
 	{
 		/* the selected spawn object */
@@ -1305,12 +1419,35 @@ static void SandboxDrawPreview(void)
 	}
 	else if (gSandboxPage == SBX_PAGE_AICAR)
 	{
-		/* the selected spawn car model */
-		if (gSandboxAIModel >= 0 && gSandboxAIModel < MAX_CAR_RESIDENT_MODELS)
-			model = gCarCleanModelPtr[gSandboxAIModel];
-
-		if (model == NULL)
+		/* the AI car about to be spawned: model + chosen palette */
+		if (gSandboxAIModel >= 0 && gSandboxAIModel < MAX_CAR_RESIDENT_MODELS &&
+			gCarCleanModelPtr[gSandboxAIModel] != NULL)
+		{
+			SandboxPreviewScratchCar(gSandboxAIModel,
+				gSandboxAIMode == 0 ? gSandboxAIParam : 0);
+			cp = &gSandboxPreviewCar;
+			scratch = 1;
+		}
+		else
 			return;
+	}
+	else if (gSandboxPage == SBX_PAGE_SPAWN)
+	{
+		/* the car the Spawn Car button will create: the player's own model,
+		 * clean, in the player's palette */
+		CAR_DATA* pc = SandboxPlayerCar();
+
+		if (pc == NULL)
+			return;
+
+		/* never feed a missing clean model into the preview (gCarCleanModelPtr
+		 * can be NULL for an unloaded model — DrawCarObject would read it) */
+		if (gCarCleanModelPtr[pc->ap.model] == NULL)
+			return;
+
+		SandboxPreviewScratchCar(pc->ap.model, pc->ap.palette);
+		cp = &gSandboxPreviewCar;
+		scratch = 1;
 	}
 	else
 	{
@@ -1329,29 +1466,51 @@ static void SandboxDrawPreview(void)
 	/* The overlay-layer preview (as originally shipped): a FIXED view-space
 	 * position + the raw turntable matrix. The GTE projection (already set
 	 * for the frame, H=256) places the model at a constant screen spot and
-	 * size — an overlay element, not anchored to the world. The camera-
-	 * anchored version (player-relative + inv_camera composition) ended up
-	 * at the player's own depth, so the real car drew over it and it was
-	 * invisible. Position: center-right inside the sandbox panel —
-	 * (375, -100, 1600) view space lands at ~(220, 112) on screen. */
-	pos.vx = 375;
+	 * size — an overlay element, not anchored to the world. Position:
+	 * center-right inside the sandbox panel, scaled down so it fits the
+	 * panel: (750, -200, 3200) view space lands at ~(220, 112) at ~56px. */
+	pos.vx = 750;
 	pos.vy = -200;
-	pos.vz = 1600;
+	pos.vz = 3200;
 
 	InitMatrix(turntable);
 	angle = (gFrameCount * 24) & 4095;
 	RotMatrixY(angle, &turntable);
 
+	/* draw the model into the private OT, then splice that OT into the main
+	 * one at bucket 2 — over the panel (bucket 3), under the text (bucket 0) */
+	savedOt = current->ot;
+
+	ClearOTagR((u_long*)gSandboxPreviewOt, 2048);
+	current->ot = gSandboxPreviewOt;
+
 	if (cp != NULL)
 	{
-		/* the player's car with its final (crumpled) geometry */
 		CarModelPtr = &NewCarModel[cp->ap.model];
-		CarModelPtr->vlist = gTempCarVertDump[cp->id];
-		CarModelPtr->nlist = gTempCarVertDump[cp->id];
-		gTempCarUVPtr = gTempHDCarUVDump[cp->id];
+
+		if (scratch)
+		{
+			/* clean geometry + zeroed damage UVs (the spawn target) */
+			CarModelPtr->vlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[cp->ap.model], vertices);
+			CarModelPtr->nlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[cp->ap.model], vertices);
+			gTempCarUVPtr = &gSandboxCleanUv;
+		}
+		else
+		{
+			/* the player's car with its final (crumpled) geometry */
+			CarModelPtr->vlist = gTempCarVertDump[cp->id];
+			CarModelPtr->nlist = gTempCarVertDump[cp->id];
+			gTempCarUVPtr = gTempHDCarUVDump[cp->id];
+		}
 
 		DrawCarObject(CarModelPtr, &turntable, &pos, cp->ap.palette, cp, 1);
-		DrawCarWheels(cp, &turntable, &pos, 0);
+
+		/* the wheels are skipped for the scratch car: CAR_INDEX() derives the
+		 * slot from cp - car_data, and the scratch static is not in car_data
+		 * (a wild index into the wheel-rotation arrays). The live car keeps
+		 * its wheels. */
+		if (!scratch)
+			DrawCarWheels(cp, &turntable, &pos, 0);
 	}
 	else
 	{
@@ -1361,7 +1520,16 @@ static void SandboxDrawPreview(void)
 		gte_SetTransVector(&pos);
 		RenderModel(model, NULL, NULL, 0, PLOT_NO_CULL, 1, 0);
 	}
-}
+
+	current->ot = savedOt;
+
+	/* Splice the private OT into the main chain at bucket 2 — over the panel
+	 * (bucket 3), under the text (bucket 0). The main entry points at the
+	 * preview's HEAD (entry 2047 — ClearOTagR threads i -> i-1, so the head
+	 * is the far end, drawn first), and the preview's TAIL (entry 0) carries
+	 * on into the text bucket so the walk never stops inside the preview. */
+	setaddr(&savedOt[2], &gSandboxPreviewOt[2047]);
+	setaddr(&gSandboxPreviewOt[0], &savedOt[1]);}
 
 /* ------------------------------------------------------------------ */
 /* Draw-overlay hook: the menu 2D text + the live preview              */
@@ -1396,9 +1564,10 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 
 		sprintf(pageText, "(L1/R1: page %d/%d)", gSandboxObjectPage + 1,
 			(gSandboxObjectCount + 11) / 12);
+		SetTextColour(255, 255, 190);
 		SandboxPrint(34, 60, pageText);
 		SandboxPrint(34, 68, "(Triangle: back)");
-
+		
 		if (shown > 12)
 			shown = 12;
 
@@ -1458,6 +1627,8 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 				label = SandboxVehicleLabel(idx);
 			else if (gSandboxPage == SBX_PAGE_AICAR)
 				label = SandboxAICarLabel(idx);
+			else if (gSandboxPage == SBX_PAGE_SPAWN)
+				label = SandboxSpawnLabel(idx);
 			else if (gSandboxPage == SBX_PAGE_TUNE)
 				label = SandboxTuneLabel(idx);
 			else
@@ -1480,7 +1651,7 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 			if (subPages > 1)
 				sprintf(text, "(L1/R1: page %d/%d, Triangle: back)", gSandboxSubPage + 1, subPages);
 			else
-				sprintf(text, "(L1/R1: menu page %d/4, Triangle: back)", gSandboxPage - SBX_PAGE_VEHICLE + 1);
+				sprintf(text, "(L1/R1: menu page %d/5, Triangle: back)", gSandboxPage - SBX_PAGE_VEHICLE + 1);
 
 			SetTextColour(180, 180, 180);
 			SandboxPrint(34, 98 + itemCount * SBX_LINE + 4, text);

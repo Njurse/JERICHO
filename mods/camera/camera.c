@@ -23,12 +23,14 @@
 #include "players.h"
 #include "camera.h"
 #include "dr2math.h"
+#include "main.h"
 
 
 // Tanner is small so the distances away from him will be a lot smaller than 4096
-#define CAM_DIST 90		/* pull the camera in toward Tanner */
-#define CAM_LATERAL 19		/* shift it left of his facing */
-#define CAM_LEFT_SIGN -1		/* -1 for the other shoulder */
+#define CAM_DIST 700		/* pull the camera in toward Tanner (closer) */
+#define CAM_LATERAL 380		/* shift it to his shoulder */
+#define CAM_HEIGHT -170	/* drop it to shoulder height (was too high) */
+#define CAM_LEFT_SIGN -1	/* -1 for the other shoulder */
 
 static int CameraOnCameraEvent(void* userdata, void* args)
 {
@@ -54,6 +56,27 @@ static int CameraOnCameraEvent(void* userdata, void* args)
 		+ FIXEDH(RCOS(heading) * CAM_LATERAL * CAM_LEFT_SIGN);
 	camPos->vz += -FIXEDH(RCOS(heading) * CAM_DIST)
 		- FIXEDH(RSIN(heading) * CAM_LATERAL * CAM_LEFT_SIGN);
+
+	/* single offset — the previous `vy += vy + CAM_HEIGHT` doubled the
+	 * height every frame, which is why it sat way above Tanner */
+	camPos->vy += CAM_HEIGHT;
+
+	/* subtle view bob/sway while Tanner moves (still when idle): the bob
+	 * rides the step cycle, the sway drifts gently sideways */
+	{
+		static int lastX;
+		static int lastZ;
+		int speed = ABS(lp->pos[0] - lastX) + ABS(lp->pos[2] - lastZ);
+
+		lastX = lp->pos[0];
+		lastZ = lp->pos[2];
+
+		if (speed > 8)
+		{
+			camPos->vy += FIXEDH(RSIN(FrameCnt * 3) * 40);
+			camPos->vx += FIXEDH(RCOS(FrameCnt * 2) * 24);
+		}
+	}
 
 	return JER_RESULT_CONTINUE;
 }
