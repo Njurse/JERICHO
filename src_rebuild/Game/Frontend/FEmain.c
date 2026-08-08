@@ -3619,7 +3619,10 @@ int MainScreen(int bSetup)
 
 			options = &PsxScreens[optionsIdx];
 
-			if (options->numButtons > 0 && options->numButtons < 8)
+			if (options->numButtons == 0)
+				return 0;		/* odd screen; retry next entry */
+
+			if (options->numButtons < 8)
 			{
 				PSXBUTTON* b = &options->buttons[options->numButtons];
 
@@ -3634,7 +3637,7 @@ int MainScreen(int bSetup)
 				b->s_x = last->s_x;
 				b->s_y = b->y;
 
-				sprintf(b->Name, "JERICHO");
+				sprintf(b->Name, "JERICHO Config Menu");
 
 				options->numButtons++;
 				last->d = options->numButtons;			// last button -> JERICHO
@@ -3648,8 +3651,8 @@ int MainScreen(int bSetup)
 				b->var = -1;
 			}
 
-			/* only mark done after a successful injection (retry next entry) */
-			gJerichoOptionsButtonAdded = (options != NULL && options->numButtons < 8) ? 0 : 1;
+			/* injected (or the screen is full): never add a duplicate */
+			gJerichoOptionsButtonAdded = 1;
 		}
 	}
 	//ForceStartLevel();
