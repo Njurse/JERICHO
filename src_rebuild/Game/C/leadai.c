@@ -1,4 +1,5 @@
 #include "driver2.h"
+#include "system.h"
 #include "leadai.h"
 #include "overlay.h"
 #include "gamesnd.h"
@@ -78,6 +79,12 @@ void InitLead(CAR_DATA* cp)
 	int x, z;
 	int i;
 
+	// [A] clear the whole LEAD state first: ai.l is a union member and every
+	// uninitialised field (lastRoad, nextJunction, direction, ...) was left as
+	// the previous mode's bytes — those fed unguarded road-table accesses and,
+	// on the return to Manual, the same union bytes were read as ai.padid
+	ClearMem((char*)&cp->ai.l, sizeof(LEAD_CAR));
+
 	cp->hndType = 5;
 	cp->controlType = CONTROL_TYPE_LEAD_AI;
 	cp->ai.l.roadPosition = 512;
@@ -132,7 +139,7 @@ void InitLead(CAR_DATA* cp)
 
 			if (dx <= 1000 && dz <= 1000 && (sqrdist < min || min == -1))
 			{
-				cp->ai.l.currentRoad = i & 0x4000;
+				cp->ai.l.currentRoad = i | 0x4000;	// [A] was i & 0x4000 (always 0)
 				min = sqrdist;
 			}
 		}

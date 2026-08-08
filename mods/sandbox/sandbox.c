@@ -420,8 +420,13 @@ static void SandboxSetPlayerAiMode(int mode)
 
 	switch (mode)
 	{
-	case 0:	/* Manual */
+	case 0:	/* Manual — restore everything the AI inits clobbered: the union
+		 * (ai.padid is read as a char* pointer by the player path, main.c:999;
+		 * the LEAD/CIV/COP bytes made it a garbage pointer like 0x00FF0003,
+		 * the ~0xFFFFFF access violation) and the handling profile */
 		pc->controlType = CONTROL_TYPE_PLAYER;
+		pc->hndType = 0;
+		pc->ai.padid = &player[0].padid;
 		break;
 
 	case 1:	/* Traffic AI */
@@ -959,6 +964,34 @@ static void SandboxPrint(int x, int y, const char* text)
 	PrintStringHiresScaled((char*)text, x, y, SBX_TEXT_SCALE);
 }
 
+/* HQ font metrics (defined in pres.c) — used to centre the scaled title */
+struct FONT_QUAD
+{
+	float x0, y0, s0, t0;
+	float x1, y1, s1, t1;
+};
+extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, struct FONT_QUAD* q, float scale);
+
+/* print a scaled line centred on the 320-wide viewport */
+static void SandboxPrintCentred(int y, const char* text)
+{
+	const char* p = text;
+	struct FONT_QUAD q;
+	float fx = 0.0f;
+	float fy = 0.0f;
+	u_char chr;
+
+	while ((chr = (u_char)*p++) != 0)
+	{
+		if (chr >= 128 && chr <= 138)
+			fx += 24.0f * SBX_TEXT_SCALE;
+		else
+			GetHiresBakedQuadScaled((chr >= 32 && chr < 128 || chr > 138) ? chr : '?', &fx, &fy, &q, SBX_TEXT_SCALE);
+	}
+
+	SandboxPrint((int)(160.0f - fx * 0.5f), y, text);
+}
+
 /* semi-transparent panel behind the whole sandbox overlay (same style as the
  * pause menu's box: dark, half-transparent). A centered box capped at ~66%
  * of the screen height, at OT level 3 so it draws behind the menu text. */
@@ -1064,7 +1097,7 @@ static void SandboxDrawPreview(void)
 	 * invisible. Position: center-right inside the sandbox panel —
 	 * (375, -100, 1600) view space lands at ~(220, 112) on screen. */
 	pos.vx = 375;
-	pos.vy = -100;
+	pos.vy = -200;
 	pos.vz = 1600;
 
 	InitMatrix(turntable);
@@ -1121,7 +1154,7 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 		char pageText[24];
 
 		SetTextColour(255, 255, 255);
-		SandboxPrint(34, 50, "SPAWN OBJECT");
+		SandboxPrintCentred(50, "SPAWN OBJECT");
 
 		sprintf(pageText, "(L1/R1: page %d/%d)", gSandboxObjectPage + 1,
 			(gSandboxObjectCount + 11) / 12);
@@ -1146,7 +1179,7 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 	 * AI mode), shown on the main page so it reads as a status block */
 	SetTextColour(255, 255, 0);
 	sprintf(text, "%s", gSandboxPageTitles[gSandboxPage]);
-	SandboxPrint(34, 50, text);
+	SandboxPrintCentred(50, text);
 
 	if (pc != NULL)
 	{
