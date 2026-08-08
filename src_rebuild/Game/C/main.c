@@ -794,6 +794,11 @@ void State_GameInit(void* param)
 	InitControllers();
 	VSync(0);
 
+	// JERICHO-HOOK: a level is starting (fresh launch, restart, or next
+	// mission) — modules reset their transient state here (e.g. the sandbox
+	// menu must close so it doesn't reopen unprompted)
+	jer_fire(JER_EVENT_GAME_START, NULL);
+
 	for (i = 0; i < 5; i++)
 	{
 		ReadControllers();

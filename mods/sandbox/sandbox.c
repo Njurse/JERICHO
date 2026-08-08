@@ -884,6 +884,30 @@ static void SandboxMenuInput(int padnew)
 }
 
 /* ------------------------------------------------------------------ */
+/* Game-start hook: the level (re)launched — the sandbox menu must not   */
+/* carry over, and the pad/HUD state must be restored                  */
+/* ------------------------------------------------------------------ */
+
+static int SandboxOnGameStart(void* userdata, void* args)
+{
+	(void)userdata;
+	(void)args;
+
+	if (gSandboxMenuOpen)
+	{
+		gSandboxMenuOpen = 0;
+		gSandboxAdjust = 0;
+		gStopPadReads = 0;
+
+		/* bring the map + damage/felony bars back */
+		gShowMap = gSandboxSavedShowMap;
+		gDoOverlays = gSandboxSavedDoOverlays;
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+/* ------------------------------------------------------------------ */
 /* Frame hook: no-damage + sandbox-menu input                          */
 /* ------------------------------------------------------------------ */
 
@@ -1265,6 +1289,7 @@ JER_MODULE_ENTRY(jer_module_sandbox_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_override(ctx, JER_OVERRIDE_SLOT_SIM, (void*)SandboxStepSim);
 
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, SandboxOnFrame, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, SandboxOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, SandboxOnDrawOverlay, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PAUSE_MENU, SandboxOnPauseMenu, NULL, 0);
 	ctx->jer_register_hook(ctx, SANDBOX_CUSTOM_TOGGLE, SandboxOnToggle, NULL, 0);
