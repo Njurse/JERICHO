@@ -144,6 +144,7 @@ enum
 	D2PL_ITEM_INVERT_V,	/* invert vertical look */
 	D2PL_ITEM_FOV,		/* base FOV override (55-90 degrees) */
 	D2PL_ITEM_LASER,	/* laser sight color cycle (0 = off) */
+	D2PL_ITEM_CAMERA,	/* camera mod on/off (diagnostics kill-switch) */
 	D2PL_ITEM_COUNT
 };
 

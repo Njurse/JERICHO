@@ -317,6 +317,7 @@ static void D2plAdjInvertH(int direction) { D2plAdjustItem(D2PL_ITEM_INVERT_H, d
 static void D2plAdjInvertV(int direction) { D2plAdjustItem(D2PL_ITEM_INVERT_V, direction); }
 static void D2plAdjFov(int direction) { D2plAdjustItem(D2PL_ITEM_FOV, direction); }
 static void D2plAdjLaser(int direction) { D2plAdjustItem(D2PL_ITEM_LASER, direction); }
+static void D2plAdjCamera(int direction) { D2plAdjustItem(D2PL_ITEM_CAMERA, direction); }
 
 MENU_ITEM D2plSettingsItems[] =
 {
@@ -331,6 +332,7 @@ MENU_ITEM D2plSettingsItems[] =
 	{ D2plLabels[D2PL_ITEM_INVERT_V], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjInvertV, MENU_QUIT_NONE, NULL },
 	{ D2plLabels[D2PL_ITEM_FOV], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjFov, MENU_QUIT_NONE, NULL },
 	{ D2plLabels[D2PL_ITEM_LASER], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjLaser, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_CAMERA], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjCamera, MENU_QUIT_NONE, NULL },
 	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
 };
 

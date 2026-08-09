@@ -73,6 +73,7 @@ typedef struct D2PL_SETTINGS
 	int fovEnabled;		/* 1 = override the engine FOV */
 	int fovDeg;		/* target horizontal FOV (degrees) */
 	int laserColor;		/* D2PL_LASER_* index (0 = off) */
+	int cameraEnabled;	/* 1 = the mod's camera/movement run (kill-switch) */
 } D2PL_SETTINGS;
 
 #define D2PL_CFG_MOD "d2pl"
@@ -90,7 +91,8 @@ static D2PL_SETTINGS gS = {
 	0,			/* invertV */
 	1,			/* fovEnabled */
 	72,			/* fovDeg */
-	D2PL_LASER_DEFAULT	/* laserColor (red) */
+	D2PL_LASER_DEFAULT,	/* laserColor (red) */
+	1			/* cameraEnabled */
 };
 
 static void D2plLoadSettings(void)
@@ -107,6 +109,7 @@ static void D2plLoadSettings(void)
 	gS.fovEnabled = jer_config_get_int(D2PL_CFG_MOD, "fov_enabled", gS.fovEnabled);
 	gS.fovDeg = jer_config_get_int(D2PL_CFG_MOD, "fov_deg", gS.fovDeg);
 	gS.laserColor = jer_config_get_int(D2PL_CFG_MOD, "laser_color", gS.laserColor);
+	gS.cameraEnabled = jer_config_get_int(D2PL_CFG_MOD, "camera_enabled", gS.cameraEnabled);
 
 	/* clamp so a hand-edited file can't break the camera */
 	gS.sensX = jer_clamp_int(gS.sensX, 16, 160);
@@ -135,6 +138,7 @@ static void D2plSaveSettings(void)
 	jer_config_set_int(D2PL_CFG_MOD, "fov_enabled", gS.fovEnabled);
 	jer_config_set_int(D2PL_CFG_MOD, "fov_deg", gS.fovDeg);
 	jer_config_set_int(D2PL_CFG_MOD, "laser_color", gS.laserColor);
+	jer_config_set_int(D2PL_CFG_MOD, "camera_enabled", gS.cameraEnabled);
 }
 
 /* ================================================================== */
@@ -148,10 +152,11 @@ static void D2plSaveSettings(void)
 				   per frame (smooth start/stop, not linear) */
 #define LOOK_PITCH_SIGN -1	/* -1 = pushing up RAISES the camera on its
 				   orbit around the player (see the header note) */
-#define PITCH_MAX 700		/* ~61 degrees of pitch up/down each way —
-				   a proper TPS camera never points straight up/down */
-#define FOV_PITCH_SCALE 8	/* scr_z delta per 128 pitch units (GTA4-style:
-				   looking down narrows the FOV, up widens it) */
+#define PITCH_MAX 512		/* ~45 degrees of pitch up/down each way — the
+				   vertical is deliberately tamer than the horizontal so it
+				   doesn't feel janky at full deflection */
+#define FOV_PITCH_SCALE 4	/* scr_z delta per 128 pitch units (GTA4-style:
+				   looking down from above narrows the FOV, up widens) */
 #define LOOK_SETTLE_FOOT 100	/* frames idle before settling back (on foot) */
 #define LOOK_SETTLE_CAR 45	/* cars settle back sooner */
 #define LOW_SPEED_GRACE 4	/* car wheel_speed at/below which the orbit stays
@@ -165,8 +170,8 @@ static void D2plSaveSettings(void)
 #define PIVOT_TURN_LIMIT 256	/* standstill pivot speed (~22.5 deg/frame) */
 
 #define CAR_HEIGHT -60		/* in-car camera drop (more grounded) */
-#define CAM_HEIGHT -5		/* on-foot camera height: a little low, over
-				   the shoulder (single digits) */
+#define CAM_HEIGHT 2		/* on-foot camera height: just above the base
+				   (never underground — the base is at ground level) */
 #define CAR_SPEED_DIV 2		/* car pull-in fades with speed (GTA4 zoom-out) */
 
 /* aim camera (on foot) */
@@ -339,6 +344,9 @@ static int D2plOnLook(void* userdata, void* args)
 	int usingStick;
 	int stockLook;
 
+	if (gS.cameraEnabled == 0)
+		return JER_RESULT_CONTINUE;
+
 	(void)userdata;
 
 	if (lp->padid < 0)
@@ -417,7 +425,7 @@ static int D2plOnLook(void* userdata, void* args)
 	}
 
 	/* smooth the pitch toward its target (yaw is applied directly) */
-	gLookPitch = jer_lerp_int(gLookPitch, gLookPitchTarget, 4);
+	gLookPitch = jer_lerp_int(gLookPitch, gLookPitchTarget, 6);
 
 	return JER_RESULT_CONTINUE;
 }
@@ -439,6 +447,9 @@ static int D2plOnPedInput(void* userdata, void* args)
 	int delta;
 	int limit;
 	int mag;
+
+	if (gS.cameraEnabled == 0)
+		return JER_RESULT_CONTINUE;
 
 	(void)userdata;
 
@@ -493,26 +504,119 @@ static int D2plOnPedInput(void* userdata, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
-/* keep the camera out of world geometry: the engine's collision query
- * reports whether camera_position is inside a solid collision box. Push the
- * camera back toward the chased point (at body height on foot so it never
- * sinks into the ground/feet) until it clears. */
-static void D2plPushOutOfGeometry(VECTOR* camPos, int* base, int inCar)
+/* Smooth the camera toward its desired position with a preference for
+ * responsive-but-smooth reactivity. If the desired position clips into
+ * world geometry (the engine's collision query reports it), the target is
+ * pushed clear toward the player and the camera SNAPS there — a fast
+ * transform is allowed when it prevents clipping, so the camera never
+ * renders inside a wall. On a huge jump (level switch / teleport) it snaps
+ * too. The on-foot camera is always kept above the player's ground level.
+ * Returns 1 when a clip push happened (for diagnostics). */
+static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar)
 {
-	int steps = 0;
-	int targetY = base[1] + (inCar ? 0 : 8);	/* on foot: aim at the body */
+	static VECTOR gSmooth;
+	static int gSmoothValid;
+	int div = 5;	/* responsive smoothness (1/div toward target per frame) */
+	int targetY = base[1] + (inCar ? 0 : 8);
+	int clipped = 0;
+	int i;
 
-	while (steps < 8 && CameraCollisionCheck())
+	if (!gSmoothValid)
 	{
-		camPos->vx -= (camPos->vx - base[0]) / 3;
-		camPos->vy -= (camPos->vy - targetY) / 3;
-		camPos->vz -= (camPos->vz - base[2]) / 3;
-		steps++;
+		/* first frame after boot/level switch: place it, no lerp */
+		gSmooth.vx = camPos->vx;
+		gSmooth.vy = camPos->vy;
+		gSmooth.vz = camPos->vz;
+		gSmoothValid = 1;
+	}
+
+	/* clipping: push the target clear; snap there only if the push actually
+	 * cleared it (a failed push means the camera stays where it is) */
+	if (CameraCollisionCheck())
+	{
+		int steps = 0;
+
+		clipped = 1;
+
+		while (steps < 8)
+		{
+			camPos->vx -= (camPos->vx - base[0]) / 3;
+			camPos->vy -= (camPos->vy - targetY) / 3;
+			camPos->vz -= (camPos->vz - base[2]) / 3;
+			steps++;
+
+			if (!CameraCollisionCheck())
+				break;
+		}
+
+		if (steps < 8)
+			div = 1;	/* cleared: snap to the safe position */
+		else
+			clipped = 2;	/* could not clear: keep the desired position */
 	}
 
 	/* never let the on-foot camera drop below the player's ground level */
 	if (!inCar && camPos->vy < base[1] + 1)
 		camPos->vy = base[1] + 1;
+
+	/* huge jump (level switch / teleport): snap instead of lerping */
+	if (ABS(gSmooth.vx - camPos->vx) + ABS(gSmooth.vy - camPos->vy) +
+		ABS(gSmooth.vz - camPos->vz) > 4096)
+	{
+		div = 1;
+	}
+
+	/* move toward the target, rounding so small deltas don't stall */
+	for (i = 0; i < 3; i++)
+	{
+		int* smooth = ((int*)&gSmooth) + i;
+		int* target = ((int*)camPos) + i;
+
+		*smooth += (*target - *smooth + div / 2) / div;
+	}
+
+	camPos->vx = gSmooth.vx;
+	camPos->vy = gSmooth.vy;
+	camPos->vz = gSmooth.vz;
+
+	return clipped;
+}
+
+/* Diagnostics: log the camera state every 60 frames (and once on a clip)
+ * so a solid-black / broken view can be traced — is the position sane, is
+ * the angle sane, is the collision check tripping, is scr_z sane. */
+static int gCamLogTimer = 0;
+
+static void D2plLogCamera(VECTOR* camPos, SVECTOR* camAngle, int clipped)
+{
+	gCamLogTimer--;
+
+	if (gCamLogTimer > 0 && clipped == 0)
+		return;
+
+	gCamLogTimer = 60;
+
+	jer_log("[d2pl] cam: pos=(%d,%d,%d) ang=(%d,%d) scr_z=%d collide=%d\n",
+		camPos->vx, camPos->vy, camPos->vz,
+		camAngle->vx, camAngle->vy, scr_z, clipped);
+}
+
+/* The orbit looks INWARD: point the view straight at the player from the
+ * final camera position. Uses the engine's own PointAtTarget (the same
+ * function the in-game cameras use to aim at a point) so the convention is
+ * guaranteed to match the render — the player stays the focus of the view
+ * at every orbit angle, and pressing up leaves the camera looking DOWN at
+ * him from above. On foot the aim point sits slightly above the base (the
+ * body, not the feet). */
+static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base)
+{
+	VECTOR target;
+
+	target.vx = base[0];
+	target.vy = base[1];
+	target.vz = base[2];
+
+	PointAtTarget(camPos, &target, camAngle);
 }
 
 /* ================================================================== */
@@ -531,6 +635,10 @@ static int D2plOnCamera(void* userdata, void* args)
 
 	/* chase camera only */
 	if (a->cameraView != 0)
+		return JER_RESULT_CONTINUE;
+
+	/* kill-switch: stock camera when disabled */
+	if (gS.cameraEnabled == 0)
 		return JER_RESULT_CONTINUE;
 
 	/* view-relative heading: the direction the camera looks */
@@ -552,7 +660,11 @@ static int D2plOnCamera(void* userdata, void* args)
 		camPos->vz += -FIXEDH(RSIN(heading) * AIM_LATERAL * gS.shoulder);
 
 		if (a->basePos != NULL)
-			D2plPushOutOfGeometry(camPos, (int*)a->basePos, a->inCar);
+		{
+			int clip = D2plSmoothCamera(camPos, (int*)a->basePos, a->inCar);
+
+			D2plLogCamera(camPos, camAngle, clip);
+		}
 
 		SetGeomScreen(scr_z = gCameraDefaultScrZ + AIM_ZOOM);
 
@@ -613,6 +725,12 @@ static int D2plOnCamera(void* userdata, void* args)
 				- FIXEDH(RSIN(heading) * gS.footLat * gS.shoulder));
 			camPos->vy = base[1] + CAM_HEIGHT;
 
+			/* keep the camera above the player's ground level BEFORE the
+			 * collision pass — a camera under the feet trips the clip check
+			 * every frame and the snap would fight itself */
+			if (camPos->vy < base[1] + 1)
+				camPos->vy = base[1] + 1;
+
 			/* subtle view bob/sway while Tanner moves (still when idle) —
 			 * kept to a fraction of a unit at this scale */
 			{
@@ -634,10 +752,9 @@ static int D2plOnCamera(void* userdata, void* args)
 
 	/* --- "orbit looking INWARD": pushing up LIFTS the camera up around the
 	 * player/vehicle (a true sphere orbit — elevation), so you see them from
-	 * above; pushing down drops it below them. The offset vector is rotated
-	 * by the elevation angle in the vertical plane containing the view, and
-	 * the view is re-tilted by the *change* in the true down-angle to the
-	 * target — the focus point (the player) never moves off-center. --- */
+	 * above; pushing down drops it below them. Position only: the offset
+	 * vector is rotated by the elevation angle in the vertical plane, then
+	 * the view is aimed straight back at the player below. --- */
 	if (gLookPitch != 0 && a->basePos != NULL)
 	{
 		int* base = (int*)a->basePos;
@@ -647,16 +764,9 @@ static int D2plOnCamera(void* userdata, void* args)
 		int cosP = RCOS(gLookPitch);		/* cos(elevation): 0..4096 */
 		int sinP = RSIN(gLookPitch);		/* -sin(elevation) */
 		int distH = SquareRoot0(ox * ox + oz * oz);
-		int aim0;
-		int aim1;
 
 		if (distH > 0)
 		{
-			/* true down-angle to the target before and after the orbit
-			 * (ratan2 returns signed -2048..2048; the unwrapped signed
-			 * difference is used so the aim stays consistent) */
-			aim0 = ratan2(camPos->vy - base[1], distH);
-
 			/* rotate the offset (ox, oy, oz) around the horizontal axis by
 			 * the elevation: h' = h*cosP + oy*sinP, oy' = oy*cosP - distH*sinP.
 			 * Sphere rotation — the distance to the player never changes.
@@ -684,22 +794,19 @@ static int D2plOnCamera(void* userdata, void* args)
 					camPos->vz += (hShift * oz) / distH;
 				}
 			}
-
-			aim1 = ratan2(camPos->vy - base[1], SquareRoot0(
-				(camPos->vx - base[0]) * (camPos->vx - base[0]) +
-				(camPos->vz - base[2]) * (camPos->vz - base[2])));
-
-			/* add only the pitch-induced change to whatever the engine set
-			 * (25 on foot, terrain-clamped in cars) so the rest pose stays
-			 * identical and the transition is continuous */
-			camAngle->vx += jer_angle_diff(aim0, aim1);
 		}
 	}
 
-	/* keep the camera out of walls/ground (applies to the neutral path
-	 * after the framing + orbit; the aiming branch pushes earlier) */
+	/* smooth the final position (responsive but smooth; faster + pushed
+	 * clear when it would clip) and aim the view straight at the player */
 	if (a->basePos != NULL)
-		D2plPushOutOfGeometry(camPos, (int*)a->basePos, a->inCar);
+	{
+		int* base = (int*)a->basePos;
+		int clip = D2plSmoothCamera(camPos, base, a->inCar);
+
+		D2plAimAtPlayer(camAngle, camPos, base);
+		D2plLogCamera(camPos, camAngle, clip);
+	}
 
 	a->override = 1;
 
@@ -993,6 +1100,10 @@ static const char* D2plItemLabel(int item)
 		sprintf(gD2plLabelBuf[item], "Laser Sight: %s",
 			gLaserNames[gS.laserColor]);
 		break;
+	case D2PL_ITEM_CAMERA:
+		sprintf(gD2plLabelBuf[item], "Camera Mod: %s",
+			gS.cameraEnabled ? "ON" : "OFF");
+		break;
 	default:
 		gD2plLabelBuf[item][0] = 0;
 		break;
@@ -1044,6 +1155,10 @@ static void D2plAdjustItem(int item, int direction)
 		if (direction != 0)
 			gS.laserColor = (gS.laserColor + (direction > 0 ? 1 : D2PL_LASER_COUNT - 1))
 				% D2PL_LASER_COUNT;
+		break;
+	case D2PL_ITEM_CAMERA:
+		if (direction != 0)
+			gS.cameraEnabled = !gS.cameraEnabled;
 		break;
 	default:
 		break;

@@ -42,9 +42,30 @@ Pause → **D2PL Settings** (right below Restart):
 - Invert Look X / Invert Look Y
 - Base FOV — target horizontal FOV (55–90°) + on/off
 - Laser Sight — Off / Red / Green / Blue / White
+- Camera Mod — ON/OFF kill-switch (disables the mod's camera + movement,
+  back to the stock camera — use it to isolate a broken view)
 
 Everything persists to **`mods/config/d2pl.ini`** via the JERICHO config
 API and is restored on the next boot.
+
+## Camera diagnostics
+
+While in-game the module logs the camera state to **`REDRIVER2.log`** every
+60 frames (and immediately on a collision push):
+
+```
+[d2pl] cam: pos=(x,y,z) ang=(vx,vy) scr_z=290 collide=0
+```
+
+- `pos` / `ang` — the final camera position and angle; sanity-check them
+  (huge values or wildly changing angles = a broken transform)
+- `scr_z` — the projection distance (≈216–290 with the FOV override on)
+- `collide` — 0 = clear, 1 = a clip push happened, 2 = could not clear
+
+If the view is solid black, check these lines: a `collide` that stays 1-2
+or a `pos` stuck at the player's coordinates points at the clip logic;
+wild `ang` values point at the orbit math. The **Camera Mod** toggle
+isolates the mod camera from the stock one.
 
 ## Tuning
 
