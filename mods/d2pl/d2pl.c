@@ -85,18 +85,17 @@ typedef struct D2PL_SETTINGS
 } D2PL_SETTINGS;
 
 #define D2PL_CFG_MOD "d2pl"
-#define D2PL_CFG_VERSION 2	/* bump when defaults change so stale values
+#define D2PL_CFG_VERSION 3	/* bump when defaults change so stale values
 				   (e.g. the old single-digit on-foot era) reset */
 
 static D2PL_SETTINGS gS = {
 	64,			/* sensX */
 	64,			/* sensY */
 	1,			/* joyCamera — right-stick look/orbit on by default */
-	110,			/* footDist — the ped anchors ~130 units above the ground
-				   (AnimatePed), so a proper TPS frame is ~1 ped-length
-				   behind; the old single-digit units were ~10x too small */
-	30,			/* footLat (shoulder) */
-	-45,			/* footHeight — slightly below the body centre, looking up */
+	450,			/* footDist — GTA-like on-foot camera: ~1.6 ped-heights
+				   back (the ped is ~278 units tall) */
+	90,			/* footLat (shoulder) */
+	-60,			/* footHeight — a little below the body centre */
 	500,			/* carDist */
 	28,			/* carLatPct */
 	-1,			/* shoulder (left) */
@@ -134,9 +133,9 @@ static void D2plLoadSettings(void)
 	if (storedVersion < D2PL_CFG_VERSION)
 	{
 		/* stale profile from before the scale fix: re-default the framing */
-		gS.footDist = 110;
-		gS.footLat = 30;
-		gS.footHeight = -45;
+		gS.footDist = 450;
+		gS.footLat = 90;
+		gS.footHeight = -60;
 		gS.carDist = 500;
 		gS.carLatPct = 28;
 	}
@@ -144,12 +143,12 @@ static void D2plLoadSettings(void)
 	gS.sensX = jer_clamp_int(gS.sensX, 16, 160);
 	gS.sensY = jer_clamp_int(gS.sensY, 16, 160);
 	gS.joyCamera = (gS.joyCamera != 0) ? 1 : 0;
-	if (gS.footDist < 20 || gS.footDist > 400)
-		gS.footDist = 110;
-	if (gS.footLat < 0 || gS.footLat > 120)
-		gS.footLat = 30;
-	if (gS.footHeight < -80 || gS.footHeight > 0)
-		gS.footHeight = -45;
+	if (gS.footDist < 80 || gS.footDist > 800)
+		gS.footDist = 450;
+	if (gS.footLat < 0 || gS.footLat > 250)
+		gS.footLat = 90;
+	if (gS.footHeight < -140 || gS.footHeight > 0)
+		gS.footHeight = -60;
 	gS.carDist = jer_clamp_int(gS.carDist, 100, 1000);
 	gS.carLatPct = jer_clamp_int(gS.carLatPct, 5, 60);
 	gS.shoulder = (gS.shoulder > 0) ? 1 : -1;
@@ -208,8 +207,10 @@ static void D2plSaveSettings(void)
 #define MOVE_TURN_SIGN 1	/* +1 = positive angle delta turns right */
 #define MOVE_STICK_SIGN_X 1	/* flip if your pad's X axis is inverted */
 #define MOVE_STICK_SIGN_Y 1	/* flip if your pad's Y axis is inverted */
-#define RUN_TURN_LIMIT 32	/* max turn per frame while moving (~2.8 deg) */
-#define PIVOT_TURN_LIMIT 256	/* standstill pivot speed (~22.5 deg/frame) */
+#define RUN_TURN_LIMIT 20	/* max turn per frame while moving (~1.8 deg) —
+				   gentler than before: the player's heading eases
+				   toward the camera direction instead of snapping */
+#define PIVOT_TURN_LIMIT 128	/* standstill pivot speed (~11 deg/frame) */
 
 #define CAR_HEIGHT -60		/* in-car camera drop (more grounded) */
 #define CAR_ORBIT_UP -160	/* raise the vehicle orbit/focal point (Driver 2
@@ -743,15 +744,17 @@ static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
 		int diff;
 		int blendTarget;
 
-		/* orbit/focal point: above the car's base (raised so the camera
-		 * sits higher and looks over the roof) */
+		/* orbit/focal point: above the car's base in the CAMERA frame
+		 * (base y is RAW; up = -y). The old raw-frame focal pointed
+		 * 160 units BELOW the car, tilting the view down so the car fell
+		 * out of render at the bottom of the screen. */
 		carPoint.vx = base[0];
-		carPoint.vy = base[1] + CAR_ORBIT_UP;
+		carPoint.vy = baseY + CAR_ORBIT_UP;
 		carPoint.vz = base[2];
 
 		/* settled focal point: ahead of the car, where you're driving */
 		aheadPoint.vx = base[0] + FIXEDH(RSIN(baseDir) * CAR_LOOK_AHEAD);
-		aheadPoint.vy = base[1] + CAR_ORBIT_UP;
+		aheadPoint.vy = baseY + CAR_ORBIT_UP;
 		aheadPoint.vz = base[2] + FIXEDH(RCOS(baseDir) * CAR_LOOK_AHEAD);
 
 		/* gravitate toward looking AHEAD of the car only very close to the
@@ -1121,15 +1124,24 @@ static int D2plOnFrame(void* userdata, void* args)
 	{
 		CAR_DATA* cp;
 
-		jer_log("[d2pl] -onfoot: swapping spawn car for the player on foot\n");
-
-		gBootOnFoot = 0;
-
 		cp = &car_data[lp->playerCarId];
 
+		/* activate the pedestrian beside the car first; only swap control
+		 * and delete the car when the ped is actually there, and only then
+		 * consume the flag (retried next frame otherwise — a failed
+		 * activation must never reach ChangeCarPlayerToPed, which would
+		 * deref a NULL ped) */
 		ActivatePlayerPedestrian(cp, NULL, 0, NULL, TANNER_MODEL);
-		ChangeCarPlayerToPed(0);
-		PingOutCar(cp);		/* delete the spawn car */
+
+		if (lp->pPed != NULL)
+		{
+			jer_log("[d2pl] -onfoot: swapping spawn car for the player on foot\n");
+
+			ChangeCarPlayerToPed(0);
+			PingOutCar(cp);		/* delete the spawn car */
+
+			gBootOnFoot = 0;
+		}
 	}
 
 	if (lp->padid >= 0)
@@ -1151,8 +1163,8 @@ static int D2plOnFrame(void* userdata, void* args)
 #ifndef PSX
 		/* laser-sight line from Tanner's hand to the evaluated aim point
 		 * while aiming. Depth-sorted: it respects Z order (walls occlude
-		 * it) instead of drawing over everything. A player aid — color
-		 * from the settings, default red. */
+		 * it). The hand/aim positions are in the render (negated) frame
+		 * while Debug_AddLine expects y-up world coords — negate y here. */
 	if (gAiming && gS.laserColor != D2PL_LASER_OFF && gCurrentWeapon != NULL &&
 		(gHandPos[0] != 0 || gHandPos[1] != 0 || gHandPos[2] != 0))
 	{
@@ -1163,11 +1175,11 @@ static int D2plOnFrame(void* userdata, void* args)
 		D2plLaserColor(&col);
 
 		from.vx = gHandPos[0];
-		from.vy = gHandPos[1];
+		from.vy = -gHandPos[1];
 		from.vz = gHandPos[2];
 
 		to.vx = gAimPoint[0];
-		to.vy = gAimPoint[1];
+		to.vy = -gAimPoint[1];
 		to.vz = gAimPoint[2];
 
 		Debug_AddLineDepth(from, to, col);
@@ -1185,7 +1197,7 @@ static int D2plOnFrame(void* userdata, void* args)
 		int dist;
 
 		c.vx = gMarkerPos[0];
-		c.vy = gMarkerPos[1];
+		c.vy = -gMarkerPos[1];	/* render frame -> y-up for Debug_AddLine */
 		c.vz = gMarkerPos[2];
 
 		/* size scales with the distance from the camera */
@@ -1367,13 +1379,13 @@ static void D2plAdjustItem(int item, int direction)
 			gS.joyCamera = !gS.joyCamera;
 		break;
 	case D2PL_ITEM_FOOT_DIST:
-		gS.footDist = jer_clamp_int(gS.footDist + direction * 10, 20, 400);
+		gS.footDist = jer_clamp_int(gS.footDist + direction * 20, 80, 800);
 		break;
 	case D2PL_ITEM_FOOT_LAT:
-		gS.footLat = jer_clamp_int(gS.footLat + direction * 5, 0, 120);
+		gS.footLat = jer_clamp_int(gS.footLat + direction * 10, 0, 250);
 		break;
 	case D2PL_ITEM_FOOT_HEIGHT:
-		gS.footHeight = jer_clamp_int(gS.footHeight - direction * 5, -80, 0);
+		gS.footHeight = jer_clamp_int(gS.footHeight - direction * 5, -140, 0);
 		break;
 	case D2PL_ITEM_CAR_DIST:
 		gS.carDist = jer_clamp_int(gS.carDist + direction * 20, 100, 1000);

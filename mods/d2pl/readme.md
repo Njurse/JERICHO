@@ -65,11 +65,12 @@ REDRIVER2_dev.exe -nointro -nofmv -level chicago -onfoot
 ## Ped vs vehicle scale
 
 Driver 2 anchors the player ped ~130 units above the ground (`AnimatePed`
-in pedest.c) while a car is roughly 6–8× larger (its collision box is the
-reference the car framing uses). The on-foot camera therefore works in the
-ped's own scale — ~110 units back / ~30 to the side / ~45 below the body
-centre (a standard TPS frame) — so on foot and in a car feel cohesive
-instead of the on-foot camera being parked 10× too close.
+in pedest.c) — the whole ped is ~278 units tall (measured from the skeleton
+extent), while a car is roughly 4× taller. The on-foot camera works in the
+ped's own scale at a GTA-like distance — ~450 units back / ~90 to the side
+/ ~60 below the body centre (~1.6 ped-heights behind) — so on foot and in
+a car feel cohesive instead of the on-foot camera being parked 10× too
+close.
 
 ## Camera diagnostics
 

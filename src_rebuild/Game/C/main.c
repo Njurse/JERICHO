@@ -1751,6 +1751,11 @@ void SsSetSerialVol(short s_num, short voll, short volr)
 #if !defined(PSX) && !defined(__EMSCRIPTEN__)
 #include <SDL_messagebox.h>
 
+/* -onfoot: defined unconditionally (the d2pl module references it from
+ * every build config, not just dev builds); only the argument parsing is
+ * DEBUG_OPTIONS-gated below. */
+int gBootOnFoot = 0;
+
 #ifdef DEBUG_OPTIONS
 /* --- frontend-bypass boot arguments (testing convenience) ---
  * -level <name|0-3> is the anchor; -car/-gamemode/-weather/-time need it.
@@ -1761,9 +1766,6 @@ static char gBootCarStr[32];		/* raw -car value (resolved once level is known) *
 static int gBootCar = -1;		/* wanted car model index */
 static int gBootWeather = -1;		/* WEATHER_* or -1 = mission default */
 static int gBootTime = -1;		/* TIMEOFDAY_* or -1 = mission default */
-int gBootOnFoot = 0;			/* -onfoot: eject the player from the car after
-					   the level loads (testing convenience — the d2pl
-					   module performs the one-shot eject) */
 
 /* case-insensitive compare helper for arg values */
 static int BootEq(const char* a, const char* b)
