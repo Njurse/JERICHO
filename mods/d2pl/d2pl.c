@@ -85,18 +85,18 @@ typedef struct D2PL_SETTINGS
 } D2PL_SETTINGS;
 
 #define D2PL_CFG_MOD "d2pl"
-#define D2PL_CFG_VERSION 3	/* bump when defaults change so stale values
+#define D2PL_CFG_VERSION 4	/* bump when defaults change so stale values
 				   (e.g. the old single-digit on-foot era) reset */
 
 static D2PL_SETTINGS gS = {
 	64,			/* sensX */
 	64,			/* sensY */
 	1,			/* joyCamera — right-stick look/orbit on by default */
-	450,			/* footDist — GTA-like on-foot camera: ~1.6 ped-heights
-				   back (the ped is ~278 units tall) */
+	520,			/* footDist — GTA-like on-foot camera: ~1.9 ped-heights
+				   back (the ped is ~278 units tall; +15% per request) */
 	90,			/* footLat (shoulder) */
-	-60,			/* footHeight — a little below the body centre */
-	500,			/* carDist */
+	-70,			/* footHeight — a little below the body centre (+15% up) */
+	575,			/* carDist (+15% default distance) */
 	28,			/* carLatPct */
 	-1,			/* shoulder (left) */
 	0,			/* invertH */
@@ -133,10 +133,10 @@ static void D2plLoadSettings(void)
 	if (storedVersion < D2PL_CFG_VERSION)
 	{
 		/* stale profile from before the scale fix: re-default the framing */
-		gS.footDist = 450;
+		gS.footDist = 520;
 		gS.footLat = 90;
-		gS.footHeight = -60;
-		gS.carDist = 500;
+		gS.footHeight = -70;
+		gS.carDist = 575;
 		gS.carLatPct = 28;
 	}
 
@@ -144,11 +144,11 @@ static void D2plLoadSettings(void)
 	gS.sensY = jer_clamp_int(gS.sensY, 16, 160);
 	gS.joyCamera = (gS.joyCamera != 0) ? 1 : 0;
 	if (gS.footDist < 80 || gS.footDist > 800)
-		gS.footDist = 450;
+		gS.footDist = 520;
 	if (gS.footLat < 0 || gS.footLat > 250)
 		gS.footLat = 90;
 	if (gS.footHeight < -140 || gS.footHeight > 0)
-		gS.footHeight = -60;
+		gS.footHeight = -70;
 	gS.carDist = jer_clamp_int(gS.carDist, 100, 1000);
 	gS.carLatPct = jer_clamp_int(gS.carLatPct, 5, 60);
 	gS.shoulder = (gS.shoulder > 0) ? 1 : -1;
@@ -207,6 +207,9 @@ static void D2plSaveSettings(void)
 #define MOVE_TURN_SIGN 1	/* +1 = positive angle delta turns right */
 #define MOVE_STICK_SIGN_X 1	/* flip if your pad's X axis is inverted */
 #define MOVE_STICK_SIGN_Y 1	/* flip if your pad's Y axis is inverted */
+#define MOVE_LERP_DIV 8		/* responsive exponential heading lerp: 1/8 of the
+				   remaining gap toward the stick-derived heading each
+				   frame (fast when far, eases in) */
 #define RUN_TURN_LIMIT 20	/* max turn per frame while moving (~1.8 deg) —
 				   gentler than before: the player's heading eases
 				   toward the camera direction instead of snapping */
@@ -259,6 +262,9 @@ static int gLookPitch;		/* smoothed pitch */
 static int gLookPitchTarget;
 static int gYawSpeed;		/* current orbit speed (momentum: ramps toward
 				   the stick's max over ~1/3 s, decays on release) */
+static int gGripDist;		/* orbit radius frozen for the whole pan (the
+				   spherical-pan grip) — hoisted so level resets can
+				   clear it */
 
 /* ped was moving last frame (run-vs-pivot turn limit) */
 static int gPedWasMoving;
@@ -428,20 +434,26 @@ static int D2plOnLook(void* userdata, void* args)
 
 	if (usingStick)
 	{
-		int yawMax = (YAW_RATE * gS.sensX) / 64;
-		int pitchMax = (PITCH_MAX * gS.sensY) / 64;
-		int sX = gS.invertH ? -stickX : stickX;
-		int sY = gS.invertV ? -stickY : stickY;
-		int targetSpeed;
+		if (gLookIdle > 0 || gGripDist == 0)
+			gGripDist = lp->cameraDist;	/* grip just started: freeze now */
 
-		/* orbit: the angle moves by a momentum-driven speed. The speed
-		 * ramps from 0 up to the stick's max (proportional to deflection)
-		 * over ~1/3 of a second (YAW_RAMP frames) — the view "gains
-		 * momentum" instead of jumping to full speed. The orbit stays
-		 * gripped so the engine's settle-back lerp can't fight it;
-		 * vertical is clamped below. */
-		gLookIdle = 0;
-		a->suppress = 1;
+		lp->cameraDist = gGripDist;	/* hold the radius every frame */
+
+		{
+			int yawMax = (YAW_RATE * gS.sensX) / 64;
+			int pitchMax = (PITCH_MAX * gS.sensY) / 64;
+			int sX = gS.invertH ? -stickX : stickX;
+			int sY = gS.invertV ? -stickY : stickY;
+			int targetSpeed;
+
+			/* orbit: the angle moves by a momentum-driven speed. The speed
+			 * ramps from 0 up to the stick's max (proportional to deflection)
+			 * over ~1/3 of a second (YAW_RAMP frames) — the view "gains
+			 * momentum" instead of jumping to full speed. The orbit stays
+			 * gripped so the engine's settle-back lerp can't fight it;
+			 * vertical is clamped below. */
+			gLookIdle = 0;
+			a->suppress = 1;
 		a->gripOrbit = 1;
 
 		targetSpeed = (LOOK_YAW_SIGN * sX * yawMax) / 127;
@@ -464,6 +476,7 @@ static int D2plOnLook(void* userdata, void* args)
 
 		gLookPitchTarget = jer_clamp_int(
 			(LOOK_PITCH_SIGN * sY * pitchMax) / 128, -pitchMax, pitchMax);
+		}
 	}
 	else if (stockLook)
 	{
@@ -572,15 +585,30 @@ static int D2plOnPedInput(void* userdata, void* args)
 	stickHeading = ratan2(MOVE_STICK_SIGN_X * stickX, MOVE_STICK_SIGN_Y * -stickY);
 
 	desired = (camHeading + stickHeading) & 0xfff;
-	delta = DIFF_ANGLES(lp->dir, desired) * MOVE_TURN_SIGN;
 
-	/* interpolate the heading toward the target: while running the turn is
-	 * limited (can't snap), from standstill the pivot is much quicker */
+	/* while running the turn is limited (can't snap), from standstill the
+	 * pivot is much quicker */
 	limit = (gPedWasMoving || ABS(lp->pPed->speed) > 4) ? RUN_TURN_LIMIT : PIVOT_TURN_LIMIT;
-	delta = jer_clamp_int(delta, -limit, limit);
 
-	lp->dir = (lp->dir + delta) & 0xfff;
-	lp->pPed->dir.vy = (lp->dir + 2048) & 0xfff;
+	/* interpolate the heading toward the target: an exponential lerp
+	 * (1/MOVE_LERP_DIV of the remaining gap per frame — responsive: fast
+	 * when far, eases in), capped by the run/standstill turn limits. Only
+	 * applied when NOT aiming — while aiming the body follows the aim
+	 * direction instead of the movement stick. */
+	if (gAiming == 0)
+	{
+		int gap = DIFF_ANGLES(lp->dir, desired) * MOVE_TURN_SIGN;
+
+		delta = gap / MOVE_LERP_DIV;
+
+		if (delta == 0 && gap != 0)
+			delta = (gap > 0) ? 1 : -1;	/* converge exactly */
+
+		delta = jer_clamp_int(delta, -limit, limit);
+
+		lp->dir = (lp->dir + delta) & 0xfff;
+		lp->pPed->dir.vy = (lp->dir + 2048) & 0xfff;
+	}
 
 	/* rewrite the movement bits: clear the engine's D-pad synth + tank
 	 * steer, then apply camera-relative forward/back */
@@ -728,7 +756,7 @@ static void D2plLogCamera(VECTOR* camPos, SVECTOR* camAngle, int clipped)
 static int gAimLookBlend = 0;	/* 0 = settled (forward), 4096 = free-looking */
 
 static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
-	int inCar, int baseDir, int camYaw)
+	int inCar, int baseDir, int camYaw, int gripping)
 {
 	VECTOR target;
 	int baseY = -base[1];	/* camera-frame anchor y (base y is RAW) */
@@ -762,17 +790,26 @@ static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
 		 * settled angle, and onto the car itself much earlier while
 		 * view-panning: the ahead zone spans ~5.6 degrees and falls off
 		 * fully to the car by ~22.5 degrees, so plenty of angles that
-		 * should look at the car do. The settled orbit angle is
-		 * baseDir + gCameraAngle (the camera parked BEHIND the car,
-		 * facing forward — camera.c:560); measure against THAT. */
-		diff = ABS(jer_angle_diff(camYaw, (baseDir + gCameraAngle) & 0xfff));
-
-		if (diff <= 64)
-			blendTarget = 0;	/* settled: look ahead of the car */
-		else if (diff >= 256)
-			blendTarget = 4096;	/* panning: look at the car */
+		 * should look at the car do. While the stick is actually being
+		 * held (gripping) the focal snaps STRAIGHT to the car — a pure
+		 * spherical pan, no stretching toward the ahead point. The settled
+		 * orbit angle is baseDir + gCameraAngle (the camera parked BEHIND
+		 * the car, facing forward — camera.c:560); measure against THAT. */
+		if (gripping)
+		{
+			blendTarget = 4096;	/* panning: look at the car, always */
+		}
 		else
-			blendTarget = ((diff - 64) * 4096) / 192;
+		{
+			diff = ABS(jer_angle_diff(camYaw, (baseDir + gCameraAngle) & 0xfff));
+
+			if (diff <= 64)
+				blendTarget = 0;	/* settled: look ahead of the car */
+			else if (diff >= 256)
+				blendTarget = 4096;	/* panning: look at the car */
+			else
+				blendTarget = ((diff - 64) * 4096) / 192;
+		}
 
 		gAimLookBlend = jer_lerp_int(gAimLookBlend, blendTarget, 4);
 
@@ -975,7 +1012,8 @@ static int D2plOnCamera(void* userdata, void* args)
 		int pen = 0;
 		int clip = D2plSmoothCamera(camPos, base, a->inCar, &pen);
 
-		D2plAimAtPlayer(camAngle, camPos, base, a->inCar, a->baseDir, lp->cameraAngle);
+		D2plAimAtPlayer(camAngle, camPos, base, a->inCar, a->baseDir,
+			lp->cameraAngle, (gLookIdle < 4 || gYawSpeed != 0));
 
 		/* ground-slide forced look-up: the harder the terrain cap pins the
 		 * camera (deep would-be intersection), the more the view tilts up —
@@ -1462,6 +1500,7 @@ static void D2plReset(void)
 	gLookPitch = 0;
 	gLookPitchTarget = 0;
 	gYawSpeed = 0;
+	gGripDist = 0;
 	gPedWasMoving = 0;
 	gAimLookBlend = 0;
 
