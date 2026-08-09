@@ -55,6 +55,27 @@ static int jerConfigModLoaded(const char* mod)
 	return 0;
 }
 
+/* helper: drop every cached entry belonging to a module (its file is then
+ * regenerated from scratch on the next set_*) */
+static void jerConfigDropEntries(const char* mod)
+{
+	int i;
+
+	i = 0;
+	while (i < gEntryCount)
+	{
+		if (strcmp(gEntries[i].mod, mod) == 0)
+		{
+			gEntries[i] = gEntries[gEntryCount - 1];
+			gEntryCount--;
+		}
+		else
+		{
+			i++;
+		}
+	}
+}
+
 /* helper: index of the slot for (mod,key), or -1 */
 static int jerConfigFind(const char* mod, const char* key)
 {
@@ -272,6 +293,20 @@ const char* jer_config_get_str(const char* mod, const char* key, const char* def
 	return gEntries[i].val;
 }
 
+void jer_config_clear(const char* mod)
+{
+	char path[512];
+
+	/* drop the module's file entirely; the next set_* call regenerates it
+	 * from whatever the caller re-seeds — used to flush stale profiles
+	 * when defaults change */
+	jerConfigDropEntries(mod);
+
+	snprintf(path, sizeof(path), "%s/%s/%s.ini", gModsDir, JER_CONFIG_PATH, mod);
+
+	(void)remove(path);	/* the file may not exist yet */
+}
+
 void jer_config_set_str(const char* mod, const char* key, const char* value)
 {
 	int i;
@@ -350,6 +385,11 @@ void jer_config_set_str(const char* mod, const char* key, const char* value)
 	(void)mod;
 	(void)key;
 	(void)value;
+}
+
+void jer_config_clear(const char* mod)
+{
+	(void)mod;
 }
 
 #endif /* PSX */

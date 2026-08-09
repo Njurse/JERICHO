@@ -62,6 +62,23 @@ playable):
 REDRIVER2_dev.exe -nointro -nofmv -level chicago -onfoot
 ```
 
+## Camera behaviour (GTA IV-style)
+
+- **Two states**: Natural (the camera eases toward a blended natural heading
+  — for cars that's a speed-weighted blend of the car body heading and its
+  ground velocity, with a slip-angle boost during drifts) and View
+  Manipulation (right stick drives the orbit directly; the pan is a pure
+  spherical arc at a frozen radius, focal snapped to the car). Release
+  holds for a moment, then settles back lazily.
+- **On foot**: the camera sits high and far (~1040 back, ~300 up) looking
+  down at the player; movement is camera-relative and the player ALWAYS
+  runs forward toward the stick heading (never walks backward) — from a
+  standstill he pivots almost instantly, while running he arcs around
+  (even a 180). While the right stick is held, the movement reference
+  frame freezes so panning can't bend the running line.
+- **Speed lens**: smoothed speed subtly pulls the car camera back, raises
+  it, and widens the FOV (base FOV default 82°).
+
 ## Ped vs vehicle scale
 
 Driver 2 anchors the player ped ~130 units above the ground (`AnimatePed`

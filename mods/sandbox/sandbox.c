@@ -1759,7 +1759,11 @@ static int SandboxOnToggle(void* userdata, void* args)
 JER_MODULE_ENTRY(jer_module_sandbox_entry)(JERICHO_CONTEXT* ctx)
 {
 	gCtx = ctx;
-	gNoDamage = 1;
+	gNoDamage = 0;	/* the Buddha-mode no-damage toggle must be OFF by default:
+			   the frame hook otherwise zeroes the player car's damage
+			   EVERY frame, which reads as default invulnerability in a
+			   car. It is only applied once the player toggles it in the
+			   sandbox menu (or fires the toggle event). */
 
 	/* persisted setting: does START open the sandbox overlay? */
 	gSandboxReplacePause = jer_config_get_bool("sandbox", "replace_pause", 0);

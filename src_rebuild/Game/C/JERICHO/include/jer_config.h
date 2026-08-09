@@ -57,6 +57,11 @@ const char* jer_config_get_str(const char* mod, const char* key, const char* def
 /* Persist a string value (truncated to the store's slot size). */
 void jer_config_set_str(const char* mod, const char* key, const char* value);
 
+/* Delete a module's entire profile (file + cache). The next set_* call
+ * regenerates it from scratch — use to flush stale configs when defaults
+ * change. No-op on PSX. */
+void jer_config_clear(const char* mod);
+
 #ifdef __cplusplus
 }
 #endif
