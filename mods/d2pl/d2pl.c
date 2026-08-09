@@ -54,6 +54,9 @@
 /* the debug line API used by the engine's collision overlays (PC only) */
 #ifndef PSX
 extern void Debug_AddLine(VECTOR& pointA, VECTOR& pointB, CVECTOR& color);
+/* JERICHO-HOOK (DebugOverlay.cpp): depth-sorted variant — the line joins
+ * the world's ordering table at its Z bucket, so walls occlude it */
+extern void Debug_AddLineDepth(VECTOR& pointA, VECTOR& pointB, CVECTOR& color);
 #endif
 
 /* ================================================================== */
@@ -66,6 +69,7 @@ typedef struct D2PL_SETTINGS
 	int sensY;		/* view-change sensitivity, vertical (64 = default) */
 	int footDist;		/* on-foot camera pull-in distance */
 	int footLat;		/* on-foot shoulder offset */
+	int footHeight;		/* on-foot camera height (inverted y: below the body) */
 	int carDist;		/* in-car pull-in (fraction of the view axis) */
 	int carLatPct;		/* in-car lateral, % of the car's bbox width */
 	int shoulder;		/* -1 = left shoulder, +1 = right */
@@ -78,13 +82,17 @@ typedef struct D2PL_SETTINGS
 } D2PL_SETTINGS;
 
 #define D2PL_CFG_MOD "d2pl"
+#define D2PL_CFG_VERSION 2	/* bump when defaults change so stale values
+				   (e.g. the old single-digit on-foot era) reset */
 
 static D2PL_SETTINGS gS = {
 	64,			/* sensX */
 	64,			/* sensY */
-	8,			/* footDist — the ped is tiny; the on-foot camera sits a
-				   few units behind him (absolute, single-digit) */
-	4,			/* footLat */
+	110,			/* footDist — the ped anchors ~130 units above the ground
+				   (AnimatePed), so a proper TPS frame is ~1 ped-length
+				   behind; the old single-digit units were ~10x too small */
+	30,			/* footLat (shoulder) */
+	-45,			/* footHeight — slightly below the body centre, looking up */
 	500,			/* carDist */
 	28,			/* carLatPct */
 	-1,			/* shoulder (left) */
@@ -98,10 +106,13 @@ static D2PL_SETTINGS gS = {
 
 static void D2plLoadSettings(void)
 {
+	int storedVersion = jer_config_get_int(D2PL_CFG_MOD, "cfg_version", 1);
+
 	gS.sensX = jer_config_get_int(D2PL_CFG_MOD, "sens_x", gS.sensX);
 	gS.sensY = jer_config_get_int(D2PL_CFG_MOD, "sens_y", gS.sensY);
 	gS.footDist = jer_config_get_int(D2PL_CFG_MOD, "foot_dist", gS.footDist);
 	gS.footLat = jer_config_get_int(D2PL_CFG_MOD, "foot_lat", gS.footLat);
+	gS.footHeight = jer_config_get_int(D2PL_CFG_MOD, "foot_height", gS.footHeight);
 	gS.carDist = jer_config_get_int(D2PL_CFG_MOD, "car_dist", gS.carDist);
 	gS.carLatPct = jer_config_get_int(D2PL_CFG_MOD, "car_lat_pct", gS.carLatPct);
 	gS.shoulder = jer_config_get_int(D2PL_CFG_MOD, "shoulder", gS.shoulder);
@@ -112,11 +123,27 @@ static void D2plLoadSettings(void)
 	gS.laserColor = jer_config_get_int(D2PL_CFG_MOD, "laser_color", gS.laserColor);
 	gS.cameraEnabled = jer_config_get_int(D2PL_CFG_MOD, "camera_enabled", gS.cameraEnabled);
 
-	/* clamp so a hand-edited file can't break the camera */
+	/* clamp so a hand-edited file can't break the camera. Values stored by
+	 * older builds (the single-digit on-foot era) fall outside the new
+	 * ranges and are reset to the defaults instead of being clamped. */
+	if (storedVersion < D2PL_CFG_VERSION)
+	{
+		/* stale profile from before the scale fix: re-default the framing */
+		gS.footDist = 110;
+		gS.footLat = 30;
+		gS.footHeight = -45;
+		gS.carDist = 500;
+		gS.carLatPct = 28;
+	}
+
 	gS.sensX = jer_clamp_int(gS.sensX, 16, 160);
 	gS.sensY = jer_clamp_int(gS.sensY, 16, 160);
-	gS.footDist = jer_clamp_int(gS.footDist, 1, 30);
-	gS.footLat = jer_clamp_int(gS.footLat, 0, 12);
+	if (gS.footDist < 20 || gS.footDist > 400)
+		gS.footDist = 110;
+	if (gS.footLat < 0 || gS.footLat > 120)
+		gS.footLat = 30;
+	if (gS.footHeight < -80 || gS.footHeight > 0)
+		gS.footHeight = -45;
 	gS.carDist = jer_clamp_int(gS.carDist, 100, 1000);
 	gS.carLatPct = jer_clamp_int(gS.carLatPct, 5, 60);
 	gS.shoulder = (gS.shoulder > 0) ? 1 : -1;
@@ -127,10 +154,12 @@ static void D2plLoadSettings(void)
 
 static void D2plSaveSettings(void)
 {
+	jer_config_set_int(D2PL_CFG_MOD, "cfg_version", D2PL_CFG_VERSION);
 	jer_config_set_int(D2PL_CFG_MOD, "sens_x", gS.sensX);
 	jer_config_set_int(D2PL_CFG_MOD, "sens_y", gS.sensY);
 	jer_config_set_int(D2PL_CFG_MOD, "foot_dist", gS.footDist);
 	jer_config_set_int(D2PL_CFG_MOD, "foot_lat", gS.footLat);
+	jer_config_set_int(D2PL_CFG_MOD, "foot_height", gS.footHeight);
 	jer_config_set_int(D2PL_CFG_MOD, "car_dist", gS.carDist);
 	jer_config_set_int(D2PL_CFG_MOD, "car_lat_pct", gS.carLatPct);
 	jer_config_set_int(D2PL_CFG_MOD, "shoulder", gS.shoulder);
@@ -148,9 +177,11 @@ static void D2plSaveSettings(void)
 
 #define LOOK_DEADZONE 24	/* stick counts below this are "idle" */
 #define LOOK_YAW_SIGN -1	/* -1 = push right orbits the camera right */
-#define YAW_RATE 64		/* orbit speed at full stick, sensX = 64 */
-#define YAW_SMOOTH 4		/* eased yaw: 1/div of the way to the stick target
-				   per frame (smooth start/stop, not linear) */
+#define YAW_RATE 256		/* max orbit speed at full stick, sensX = 64
+				   (x4: the default was too slow) */
+#define YAW_RAMP 20		/* frames to reach full orbit speed (~1/3 s at
+				   60 fps) — the yaw "gains momentum" instead of
+				   jumping to its max immediately */
 #define LOOK_PITCH_SIGN -1	/* -1 = pushing up RAISES the camera on its
 				   orbit around the player (see the header note) */
 #define PITCH_MAX 512		/* ~45 degrees of pitch up/down each way — the
@@ -159,7 +190,10 @@ static void D2plSaveSettings(void)
 #define FOV_PITCH_SCALE 4	/* scr_z delta per 128 pitch units (GTA4-style:
 				   looking down from above narrows the FOV, up widens) */
 #define LOOK_SETTLE_FOOT 100	/* frames idle before settling back (on foot) */
-#define LOOK_SETTLE_CAR 45	/* cars settle back sooner */
+#define LOOK_SETTLE_CAR 45	/* cars settle back after this long idle... */
+#define LOOK_SETTLE_CAR_MOVING 8	/* ...but a car in motion resets almost
+				   immediately: it interpolates back to its default
+				   angle after a few frames of stick silence */
 #define LOW_SPEED_GRACE 4	/* car wheel_speed at/below which the orbit stays
 				   gripped (no camera swing at a standstill) */
 
@@ -171,8 +205,10 @@ static void D2plSaveSettings(void)
 #define PIVOT_TURN_LIMIT 256	/* standstill pivot speed (~22.5 deg/frame) */
 
 #define CAR_HEIGHT -60		/* in-car camera drop (more grounded) */
-#define CAR_ORBIT_UP -100	/* raise the vehicle orbit/focal point a little
-				   (Driver 2 uses INVERTED y — up = -y) */
+#define CAR_ORBIT_UP -160	/* raise the vehicle orbit/focal point (Driver 2
+				   uses INVERTED y — up = -y); the camera gravitates
+				   toward looking AHEAD of the car near the forward
+				   angle so view-panning in isn't jarring */
 #define CAR_LOOK_AHEAD 5000	/* the settled camera focuses this far AHEAD of
 				   the car so you see where you're driving */
 
@@ -182,15 +218,19 @@ static void D2plSaveSettings(void)
  * camera stays at-or-above the terrain line and slides along the surface. */
 #define TERRAIN_CLEAR_FOOT 15
 #define TERRAIN_CLEAR_CAR 50
-#define CAM_HEIGHT 2		/* on-foot camera height: just above the base
-				   (never underground — the base is at ground level) */
+/* ground-slide "forced look-up": when the terrain cap pins the camera (it
+ * would sink into the ground), the view tilts slightly upward — a fraction
+ * of the would-be intersection depth, capped — so the camera reads as
+ * being pushed up out of the ground instead of boring into it. */
+#define GROUND_LOOKUP_SCALE 8	/* angle units per 256 units of penetration */
+#define GROUND_LOOKUP_MAX 200	/* cap the forced up-tilt (~17.5 deg) */
 #define CAR_SPEED_DIV 2		/* car pull-in fades with speed (GTA4 zoom-out) */
 
 /* aim camera (on foot) */
 #define AIM_PULL 2000		/* /4096: pull toward Tanner while aiming */
 #define AIM_HEIGHT -2
 #define AIM_ZOOM 160		/* scr_z increase -> FOV decrease (focus) */
-#define AIM_LATERAL 2		/* shoulder bias while aiming (ped scale) */
+#define AIM_LATERAL 25		/* shoulder bias while aiming (ped scale ~130) */
 
 /* impact marker: a big black X at the aim point, 1 second (60 frames) */
 #define MARKER_LIFETIME 60
@@ -207,6 +247,8 @@ static void D2plSaveSettings(void)
 static int gLookIdle;		/* frames since the stick was last used */
 static int gLookPitch;		/* smoothed pitch */
 static int gLookPitchTarget;
+static int gYawSpeed;		/* current orbit speed (momentum: ramps toward
+				   the stick's max over ~1/3 s, decays on release) */
 
 /* ped was moving last frame (run-vs-pivot turn limit) */
 static int gPedWasMoving;
@@ -222,6 +264,7 @@ static int gAimPoint[3];	/* world aim point at weapon range */
 /* impact marker state */
 static int gMarkerTimer;	/* frames left until the marker fades */
 static int gMarkerPos[3];
+static int gPedScaleLogged;	/* one-shot per-level ped-scale diagnostic */
 
 /* ================================================================== */
 /* Helpers                                                             */
@@ -374,25 +417,26 @@ static int D2plOnLook(void* userdata, void* args)
 
 	if (usingStick)
 	{
-		int yawRate = (YAW_RATE * gS.sensX) / 64;
+		int yawMax = (YAW_RATE * gS.sensX) / 64;
 		int pitchMax = (PITCH_MAX * gS.sensY) / 64;
 		int sX = gS.invertH ? -stickX : stickX;
 		int sY = gS.invertV ? -stickY : stickY;
+		int targetSpeed;
 
-		/* orbit: drive the camera orbit angle toward the stick's target and
-		 * EASE the motion (jer_lerp_angle) instead of stepping it linearly,
-		 * so the view accelerates into/out of a change in look input. The
-		 * orbit stays gripped so the engine's settle-back lerp can't fight
-		 * it; vertical is clamped below. */
+		/* orbit: the angle moves by a momentum-driven speed. The speed
+		 * ramps from 0 up to the stick's max (proportional to deflection)
+		 * over ~1/3 of a second (YAW_RAMP frames) — the view "gains
+		 * momentum" instead of jumping to full speed. The orbit stays
+		 * gripped so the engine's settle-back lerp can't fight it;
+		 * vertical is clamped below. */
 		gLookIdle = 0;
 		a->suppress = 1;
 		a->gripOrbit = 1;
 
-		{
-			int target = (lp->cameraAngle + (LOOK_YAW_SIGN * sX * yawRate) / 128) & 0xfff;
+		targetSpeed = (LOOK_YAW_SIGN * sX * yawMax) / 127;
 
-			lp->cameraAngle = jer_lerp_angle(lp->cameraAngle, target, YAW_SMOOTH);
-		}
+		gYawSpeed += (targetSpeed - gYawSpeed) / YAW_RAMP;
+		lp->cameraAngle = (lp->cameraAngle + gYawSpeed) & 0xfff;
 
 		/* clamp so the camera can never swing past straight up/down even at
 		 * the highest sensitivity setting */
@@ -405,13 +449,23 @@ static int D2plOnLook(void* userdata, void* args)
 	{
 		/* yield to the stock look buttons */
 		gLookIdle = 0;
+		gYawSpeed = 0;
 		a->gripOrbit = 0;
 	}
 	else
 	{
+		/* stick released: the momentum decays quickly so the settle-back
+		 * doesn't jerk; a vehicle in motion resets almost immediately */
+		gYawSpeed -= gYawSpeed / 8;
 		gLookIdle++;
 
-		if (gLookIdle > (inCar ? LOOK_SETTLE_CAR : LOOK_SETTLE_FOOT))
+		{
+			int settleFrames = inCar
+				? (D2plCarSpeed(lp) > LOW_SPEED_GRACE
+					? LOOK_SETTLE_CAR_MOVING : LOOK_SETTLE_CAR)
+				: LOOK_SETTLE_FOOT;
+
+			if (gLookIdle > settleFrames)
 		{
 			/* released: settle back behind the player — EXCEPT at a
 			 * standstill in a car, where the camera holds still (reverse
@@ -426,6 +480,8 @@ static int D2plOnLook(void* userdata, void* args)
 			{
 				a->gripOrbit = 0;
 				gLookPitchTarget = 0;
+				gYawSpeed = 0;	/* kill the stale momentum so re-gripping
+						   the stick doesn't jump */
 			}
 		}
 		else
@@ -433,6 +489,7 @@ static int D2plOnLook(void* userdata, void* args)
 			/* still inside the hold window: keep the orbit + pitch */
 			a->suppress = 1;
 			a->gripOrbit = 1;
+		}
 		}
 	}
 
@@ -523,15 +580,20 @@ static int D2plOnPedInput(void* userdata, void* args)
  * transform is allowed when it prevents clipping, so the camera never
  * renders inside a wall. On a huge jump (level switch / teleport) it snaps
  * too. The on-foot camera is always kept above the player's ground level.
- * Returns 1 when a clip push happened (for diagnostics). */
-static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar)
+ * Returns 1 when a clip push happened (for diagnostics); *penOut, when
+ * non-NULL, receives the terrain penetration (how far the desired position
+ * would sink into the ground, for the forced look-up effect). */
+static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 {
 	static VECTOR gSmooth;
 	static int gSmoothValid;
 	int div = 5;	/* responsive smoothness (1/div toward target per frame) */
-	int targetY = base[1] - (inCar ? 0 : 8);	/* inverted y: up = -y */
+	int targetY = base[1] + (inCar ? 0 : gS.footHeight);	/* inverted y */
 	int clipped = 0;
 	int i;
+
+	if (penOut != NULL)
+		*penOut = 0;
 
 	if (!gSmoothValid)
 	{
@@ -588,12 +650,18 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar)
 	camPos->vz = gSmooth.vz;
 
 	/* cap the camera to the terrain (inverted y): the camera may not sink
-	 * below the road surface — clamp it back up to the surface line */
+	 * below the road surface — clamp it back up to the surface line and
+	 * report how deep it would have gone (the ground-slide effect) */
 	{
 		int camMaxY = MapHeight(camPos) - (inCar ? TERRAIN_CLEAR_CAR : TERRAIN_CLEAR_FOOT);
 
 		if (camPos->vy > camMaxY)
+		{
+			if (penOut != NULL)
+				*penOut = camPos->vy - camMaxY;
+
 			camPos->vy = camMaxY;
+		}
 	}
 
 	return clipped;
@@ -628,7 +696,7 @@ static void D2plLogCamera(VECTOR* camPos, SVECTOR* camAngle, int clipped)
 static int gAimLookBlend = 0;	/* 0 = settled (forward), 4096 = free-looking */
 
 static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
-	int inCar, int baseDir, int looking)
+	int inCar, int baseDir, int camYaw)
 {
 	VECTOR target;
 
@@ -640,8 +708,11 @@ static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
 	{
 		VECTOR carPoint;
 		VECTOR aheadPoint;
+		int diff;
+		int blendTarget;
 
-		/* orbit/focal point: a little above the car's base */
+		/* orbit/focal point: above the car's base (raised so the camera
+		 * sits higher and looks over the roof) */
 		carPoint.vx = base[0];
 		carPoint.vy = base[1] + CAR_ORBIT_UP;
 		carPoint.vz = base[2];
@@ -651,9 +722,23 @@ static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
 		aheadPoint.vy = base[1] + CAR_ORBIT_UP;
 		aheadPoint.vz = base[2] + FIXEDH(RCOS(baseDir) * CAR_LOOK_AHEAD);
 
-		/* blend smoothly between looking-around (at the car) and settled
-		 * (ahead of the car) */
-		gAimLookBlend = jer_lerp_int(gAimLookBlend, looking ? 4096 : 0, 6);
+		/* gravitate toward looking AHEAD of the car as the camera returns
+		 * to the forward angle (diff -> 0), and toward the car itself while
+		 * view-panning. Proximity-based so entering/leaving view-pan mode
+		 * is a smooth pull — but the ahead zone is deliberately tight (only
+		 * within ~11 degrees) and falls off to the car by ~45 degrees, so
+		 * orbiting the car keeps the focal on the car instead of bobbing
+		 * around it staring 5000 units down the road. */
+		diff = ABS(jer_angle_diff(camYaw, baseDir));
+
+		if (diff <= 128)
+			blendTarget = 4096;
+		else if (diff >= 512)
+			blendTarget = 0;
+		else
+			blendTarget = ((512 - diff) * 4096) / 384;
+
+		gAimLookBlend = jer_lerp_int(gAimLookBlend, blendTarget, 4);
 
 		target.vx = jer_lerp(aheadPoint.vx, carPoint.vx, gAimLookBlend);
 		target.vy = jer_lerp(aheadPoint.vy, carPoint.vy, gAimLookBlend);
@@ -709,7 +794,7 @@ static int D2plOnCamera(void* userdata, void* args)
 
 		if (a->basePos != NULL)
 		{
-			int clip = D2plSmoothCamera(camPos, (int*)a->basePos, a->inCar);
+			int clip = D2plSmoothCamera(camPos, (int*)a->basePos, a->inCar, NULL);
 
 			D2plLogCamera(camPos, camAngle, clip);
 		}
@@ -760,9 +845,10 @@ static int D2plOnCamera(void* userdata, void* args)
 	}
 	else
 	{
-		/* --- on foot: the ped is tiny, so the camera is PLACED a few units
-		 * behind him (absolute, view-relative) instead of nudging the
-		 * engine's ~850-unit chase position — he fills the view. --- */
+		/* --- on foot: place the camera a proper TPS distance behind the
+		 * ped (he anchors ~130 units above the ground — AnimatePed — so
+		 * the framing is ~1 ped-length back, ~1/4 length to the side,
+		 * slightly below the body centre). --- */
 		int* base = (int*)a->basePos;
 
 		if (base != NULL)
@@ -771,11 +857,9 @@ static int D2plOnCamera(void* userdata, void* args)
 				+ FIXEDH(RCOS(heading) * gS.footLat * gS.shoulder));
 			camPos->vz = base[2] + (-FIXEDH(RCOS(heading) * gS.footDist)
 				- FIXEDH(RSIN(heading) * gS.footLat * gS.shoulder));
-			camPos->vy = base[1] + CAM_HEIGHT;
+			camPos->vy = base[1] + gS.footHeight;
 
-
-			/* subtle view bob/sway while Tanner moves (still when idle) —
-			 * kept to a fraction of a unit at this scale */
+			/* subtle view bob/sway while Tanner moves (still when idle) */
 			{
 				static int lastX;
 				static int lastZ;
@@ -845,10 +929,24 @@ static int D2plOnCamera(void* userdata, void* args)
 	if (a->basePos != NULL)
 	{
 		int* base = (int*)a->basePos;
-		int clip = D2plSmoothCamera(camPos, base, a->inCar);
-		int looking = (gLookIdle < LOOK_SETTLE_CAR || gLookPitch != 0);
+		int pen = 0;
+		int clip = D2plSmoothCamera(camPos, base, a->inCar, &pen);
 
-		D2plAimAtPlayer(camAngle, camPos, base, a->inCar, a->baseDir, looking);
+		D2plAimAtPlayer(camAngle, camPos, base, a->inCar, a->baseDir, lp->cameraAngle);
+
+		/* ground-slide forced look-up: the harder the terrain cap pins the
+		 * camera (deep would-be intersection), the more the view tilts up —
+		 * a small fraction of the penetration depth, capped. */
+		if (pen > 0)
+		{
+			int boost = (pen * GROUND_LOOKUP_SCALE) / 256;
+
+			if (boost > GROUND_LOOKUP_MAX)
+				boost = GROUND_LOOKUP_MAX;
+
+			camAngle->vx -= boost;
+		}
+
 		D2plLogCamera(camPos, camAngle, clip);
 	}
 
@@ -894,6 +992,35 @@ static int D2plOnSkeleton(void* userdata, void* args)
 	}
 	else if (a->phase == 1 && !a->shadow)
 	{
+		/* one-shot per-level diagnostic: the ped's real world scale vs the
+		 * camera framing, so the on-foot camera units stay in sync with
+		 * the ped (Driver's inverted y makes vy extent the height) */
+		if (!gPedScaleLogged)
+		{
+			int i;
+			int minX = 32767, maxX = -32767, minY = 32767, maxY = -32767;
+			int minZ = 32767, maxZ = -32767;
+
+			for (i = 0; i < 23; i++)
+			{
+				if (vJPos[i].vx < minX) minX = vJPos[i].vx;
+				if (vJPos[i].vx > maxX) maxX = vJPos[i].vx;
+				if (vJPos[i].vy < minY) minY = vJPos[i].vy;
+				if (vJPos[i].vy > maxY) maxY = vJPos[i].vy;
+				if (vJPos[i].vz < minZ) minZ = vJPos[i].vz;
+				if (vJPos[i].vz > maxZ) maxZ = vJPos[i].vz;
+			}
+
+			jer_log("[d2pl] ped: head_pos=%d skel X[%d..%d] Y[%d..%d] Z[%d..%d] H=%d W=%d camDelta=(%d,%d) player=(%d,%d,%d)\n",
+				((LPPEDESTRIAN)a->ped)->head_pos,
+				minX, maxX, minY, maxY, minZ, maxZ,
+				maxY - minY, maxX - minX,
+				cameraPos->vx - playerPos->vx, cameraPos->vz - playerPos->vz,
+				playerPos->vx, playerPos->vy, playerPos->vz);
+
+			gPedScaleLogged = 1;
+		}
+
 		/* world-space hand position (muzzle origin) */
 		gHandPos[0] = vJPos[handLimb].vx + playerPos->vx;
 		gHandPos[1] = vJPos[handLimb].vy + playerPos->vy;
@@ -961,9 +1088,10 @@ static int D2plOnFrame(void* userdata, void* args)
 	gAiming = (gCurrentWeapon != NULL && (pad & MPAD_L1) != 0);
 
 #ifndef PSX
-	/* laser-sight line from Tanner's hand to the evaluated aim point while
-	 * aiming (flushed by the engine's DrawDebugOverlays each frame). A
-	 * player aid — color from the settings, default red. */
+		/* laser-sight line from Tanner's hand to the evaluated aim point
+		 * while aiming. Depth-sorted: it respects Z order (walls occlude
+		 * it) instead of drawing over everything. A player aid — color
+		 * from the settings, default red. */
 	if (gAiming && gS.laserColor != D2PL_LASER_OFF && gCurrentWeapon != NULL &&
 		(gHandPos[0] != 0 || gHandPos[1] != 0 || gHandPos[2] != 0))
 	{
@@ -981,7 +1109,7 @@ static int D2plOnFrame(void* userdata, void* args)
 		to.vy = gAimPoint[1];
 		to.vz = gAimPoint[2];
 
-		Debug_AddLine(from, to, col);
+		Debug_AddLineDepth(from, to, col);
 	}
 
 	/* impact marker: a big black X at the last shot's aim point, visible
@@ -1121,6 +1249,9 @@ static const char* D2plItemLabel(int item)
 	case D2PL_ITEM_FOOT_LAT:
 		sprintf(gD2plLabelBuf[item], "Foot Offset: %d", gS.footLat);
 		break;
+	case D2PL_ITEM_FOOT_HEIGHT:
+		sprintf(gD2plLabelBuf[item], "Foot Height: %d", gS.footHeight);
+		break;
 	case D2PL_ITEM_CAR_DIST:
 		sprintf(gD2plLabelBuf[item], "Car Distance: %d", gS.carDist);
 		break;
@@ -1167,10 +1298,13 @@ static void D2plAdjustItem(int item, int direction)
 		gS.sensY = jer_clamp_int(gS.sensY + direction * 4, 16, 160);
 		break;
 	case D2PL_ITEM_FOOT_DIST:
-		gS.footDist = jer_clamp_int(gS.footDist + direction * 1, 1, 30);
+		gS.footDist = jer_clamp_int(gS.footDist + direction * 10, 20, 400);
 		break;
 	case D2PL_ITEM_FOOT_LAT:
-		gS.footLat = jer_clamp_int(gS.footLat + direction * 1, 0, 12);
+		gS.footLat = jer_clamp_int(gS.footLat + direction * 5, 0, 120);
+		break;
+	case D2PL_ITEM_FOOT_HEIGHT:
+		gS.footHeight = jer_clamp_int(gS.footHeight - direction * 5, -80, 0);
 		break;
 	case D2PL_ITEM_CAR_DIST:
 		gS.carDist = jer_clamp_int(gS.carDist + direction * 20, 100, 1000);
@@ -1245,6 +1379,7 @@ static void D2plReset(void)
 	gLookIdle = 0;
 	gLookPitch = 0;
 	gLookPitchTarget = 0;
+	gYawSpeed = 0;
 	gPedWasMoving = 0;
 	gAimLookBlend = 0;
 
@@ -1252,6 +1387,7 @@ static void D2plReset(void)
 	gAimPoint[0] = gAimPoint[1] = gAimPoint[2] = 0;
 	gAiming = 0;
 	gMarkerTimer = 0;
+	gPedScaleLogged = 0;
 
 	for (i = 0; i < gWeaponCount; i++)
 	{
@@ -1338,11 +1474,11 @@ JER_MODULE_ENTRY(jer_module_d2pl_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, D2plOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_INIT, D2plOnGameStart, NULL, 0);
 
-	ctx->jer_log(ctx, "[d2pl] Driver 2 Parallel Lines ready (%d weapon(s): %s; sens %d/%d, foot %d/%d, car %d/%d%%, shoulder %s, fov %d(%s), laser %s)\n",
+	ctx->jer_log(ctx, "[d2pl] Driver 2 Parallel Lines ready (%d weapon(s): %s; sens %d/%d, foot %d/%d/%d, car %d/%d%%, shoulder %s, fov %d(%s), laser %s)\n",
 		gWeaponCount,
 		gCurrentWeapon != NULL ? gCurrentWeapon->id : "none",
 		gS.sensX, gS.sensY,
-		gS.footDist, gS.footLat,
+		gS.footDist, gS.footLat, gS.footHeight,
 		gS.carDist, gS.carLatPct,
 		gS.shoulder > 0 ? "right" : "left",
 		gS.fovDeg, gS.fovEnabled ? "on" : "off",

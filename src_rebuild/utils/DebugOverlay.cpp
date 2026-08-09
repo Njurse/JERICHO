@@ -21,6 +21,7 @@ struct LineDef_t
 {
 	VECTOR posA, posB;
 	CVECTOR color;
+	int depthTested;	// JERICHO-HOOK: 1 = sort into the OT by depth (Z order)
 };
 
 LineDef_t gDebug_Lines[512];
@@ -62,7 +63,23 @@ void DrawDebugOverlays()
 			line->g0 = ld.color.g;
 			line->b0 = ld.color.b;
 
-			addPrim(current->ot + 2, line);
+			// JERICHO-HOOK: depth-tested lines join the world's ordering
+			// table at their Z bucket (the engine maps Z >> 1 to the OT for
+			// 3D prims in draw.c), so walls between camera and line occlude
+			// it; the plain debug overlays stay pinned near the top.
+			if (ld.depthTested)
+			{
+				int otIdx = z >> 1;
+
+				if (otIdx >= OTSIZE)
+					otIdx = OTSIZE - 1;
+
+				addPrim(current->ot + otIdx, line);
+			}
+			else
+			{
+				addPrim(current->ot + 2, line);
+			}
 
 			current->primptr += sizeof(LINE_F2);
 		}
@@ -206,6 +223,31 @@ void DrawDebugOverlays()
 	}
 }
 
+// JERICHO-HOOK: depth-sorted variant of Debug_AddLine — the line is added
+// to the ordering table at the bucket matching its Z distance, so nearer
+// geometry draws over it (it respects Z order) instead of always being
+// pinned to the top of the OT like the debug overlays.
+void Debug_AddLineDepth(VECTOR& pointA, VECTOR& pointB, CVECTOR& color)
+{
+	if (gDebug_numLines + 1 > 512)
+		return;
+
+	int dx = camera_position.vx - pointA.vx;
+	int dz = camera_position.vz - pointA.vz;
+
+	if (dx * dx + dz * dz > (15000*15000))
+		return;
+
+	LineDef_t& ld = gDebug_Lines[gDebug_numLines++];
+	ld.posA = pointA;
+	ld.posB = pointB;
+	ld.color = color;
+	ld.depthTested = 1;
+
+	ld.posA.vy *= -1;
+	ld.posB.vy *= -1;
+}
+
 void Debug_AddLine(VECTOR& pointA, VECTOR& pointB, CVECTOR& color)
 {
 	if (gDebug_numLines + 1 > 512)
@@ -221,6 +263,7 @@ void Debug_AddLine(VECTOR& pointA, VECTOR& pointB, CVECTOR& color)
 	ld.posA = pointA;
 	ld.posB = pointB;
 	ld.color = color;
+	ld.depthTested = 0;
 
 	ld.posA.vy *= -1;
 	ld.posB.vy *= -1;

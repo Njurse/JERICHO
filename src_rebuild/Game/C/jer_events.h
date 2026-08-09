@@ -137,6 +137,7 @@ enum
 	D2PL_ITEM_SENS_Y,	/* view-change sensitivity (vertical) */
 	D2PL_ITEM_FOOT_DIST,	/* on-foot camera pull-in distance */
 	D2PL_ITEM_FOOT_LAT,	/* on-foot shoulder offset */
+	D2PL_ITEM_FOOT_HEIGHT,	/* on-foot camera height (below the body) */
 	D2PL_ITEM_CAR_DIST,	/* in-car pull-in */
 	D2PL_ITEM_CAR_LAT,	/* in-car lateral (% of the car's bbox width) */
 	D2PL_ITEM_SHOULDER,	/* camera shoulder side */

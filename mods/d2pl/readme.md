@@ -36,7 +36,7 @@ The big camera + weapon mod for Driver 2, as a single JERICHO module.
 
 Pause → **D2PL Settings** (right below Restart):
 - Look Sens X / Look Sens Y — view-change sensitivity
-- Foot Distance / Foot Offset — on-foot camera framing
+- Foot Distance / Foot Offset / Foot Height — on-foot camera framing
 - Car Distance / Car Offset (%) — in-car framing
 - Shoulder — which shoulder the camera (and the aiming arm) sits on
 - Invert Look X / Invert Look Y
@@ -46,7 +46,17 @@ Pause → **D2PL Settings** (right below Restart):
   back to the stock camera — use it to isolate a broken view)
 
 Everything persists to **`mods/config/d2pl.ini`** via the JERICHO config
-API and is restored on the next boot.
+API and is restored on the next boot (a config version bump resets stale
+values from older builds).
+
+## Ped vs vehicle scale
+
+Driver 2 anchors the player ped ~130 units above the ground (`AnimatePed`
+in pedest.c) while a car is roughly 6–8× larger (its collision box is the
+reference the car framing uses). The on-foot camera therefore works in the
+ped's own scale — ~110 units back / ~30 to the side / ~45 below the body
+centre (a standard TPS frame) — so on foot and in a car feel cohesive
+instead of the on-foot camera being parked 10× too close.
 
 ## Camera diagnostics
 
