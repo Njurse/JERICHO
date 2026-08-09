@@ -1761,6 +1761,9 @@ static char gBootCarStr[32];		/* raw -car value (resolved once level is known) *
 static int gBootCar = -1;		/* wanted car model index */
 static int gBootWeather = -1;		/* WEATHER_* or -1 = mission default */
 static int gBootTime = -1;		/* TIMEOFDAY_* or -1 = mission default */
+int gBootOnFoot = 0;			/* -onfoot: eject the player from the car after
+					   the level loads (testing convenience — the d2pl
+					   module performs the one-shot eject) */
 
 /* case-insensitive compare helper for arg values */
 static int BootEq(const char* a, const char* b)
@@ -2264,6 +2267,10 @@ int redriver2_main(int argc, char** argv)
 
 			i++;
 		}
+		else if (!strcmp(argv[i], "-onfoot"))
+		{
+			gBootOnFoot = 1;
+		}
 #endif // _DEBUG_OPTIONS
 		else if (!strcmp(argv[i], "-replay"))
 		{
@@ -2392,9 +2399,9 @@ int redriver2_main(int argc, char** argv)
 		{
 			static const char* bootLevelNames[4] = { "chicago", "havana", "lasvegas", "rio" };
 
-			printInfo("[boot] frontend bypass: level=%d (%s) gamemode=%d car=%d time=%d weather=%d\n",
+			printInfo("[boot] frontend bypass: level=%d (%s) gamemode=%d car=%d time=%d weather=%d onfoot=%d\n",
 				gBootLevel, bootLevelNames[gBootLevel], (int)GameType,
-				gBootCar, gBootTime, gBootWeather);
+				gBootCar, gBootTime, gBootWeather, gBootOnFoot);
 		}
 
 		if (gBootCar >= 0)

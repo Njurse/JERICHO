@@ -36,6 +36,8 @@ The big camera + weapon mod for Driver 2, as a single JERICHO module.
 
 Pause → **D2PL Settings** (right below Restart):
 - Look Sens X / Look Sens Y — view-change sensitivity
+- Joystick Look — right-stick orbit/look control (ON by default; turn it
+  off to fall back to the stock look buttons)
 - Foot Distance / Foot Offset / Foot Height — on-foot camera framing
 - Car Distance / Car Offset (%) — in-car framing
 - Shoulder — which shoulder the camera (and the aiming arm) sits on
@@ -48,6 +50,17 @@ Pause → **D2PL Settings** (right below Restart):
 Everything persists to **`mods/config/d2pl.ini`** via the JERICHO config
 API and is restored on the next boot (a config version bump resets stale
 values from older builds).
+
+## Testing on foot: `-onfoot`
+
+Boot args spawn the player in a car; add `-onfoot` to imperceptibly swap
+that spawn car out for the player walking (the d2pl module activates the
+pedestrian, switches control, and pings the car out once the level is
+playable):
+
+```
+REDRIVER2_dev.exe -nointro -nofmv -level chicago -onfoot
+```
 
 ## Ped vs vehicle scale
 

@@ -135,6 +135,7 @@ enum
 {
 	D2PL_ITEM_SENS_X = 0,	/* view-change sensitivity (horizontal) */
 	D2PL_ITEM_SENS_Y,	/* view-change sensitivity (vertical) */
+	D2PL_ITEM_JOYSTICK,	/* right-stick orbit/look control on/off */
 	D2PL_ITEM_FOOT_DIST,	/* on-foot camera pull-in distance */
 	D2PL_ITEM_FOOT_LAT,	/* on-foot shoulder offset */
 	D2PL_ITEM_FOOT_HEIGHT,	/* on-foot camera height (below the body) */
