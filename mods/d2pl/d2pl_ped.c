@@ -220,27 +220,29 @@ int D2plOnPedInput(void* userdata, void* args)
 		}
 	}
 
-	/* while running the turn is limited (the player arcs around, even for
-	 * a 180 — a small circular path, never a snap); from standstill the
-	 * pivot is near-instant so the player starts running the new way
-	 * immediately */
-	limit = (gPedWasMoving || ABS(lp->pPed->speed) > 4) ? RUN_TURN_LIMIT : PIVOT_TURN_LIMIT;
-
 	/* interpolate the heading toward the target: an exponential lerp
-	 * (1/MOVE_LERP_DIV of the remaining gap per frame — responsive: fast
-	 * when far, eases in), capped by the run/standstill turn limits. Only
-	 * applied when NOT aiming — while aiming the body follows the aim
-	 * direction instead of the movement stick. */
-	if (gAiming == 0)
+	 * (1/div of the remaining gap per frame — responsive: fast when far,
+	 * eases in), capped by the run/standstill turn limits when running
+	 * free. While AIMING the lerp is FAST (the third-person feel — he
+	 * snaps toward the new camera-relative run direction instead of
+	 * tank-arcs) and the turn limits don't apply. The clamp + backpedal
+	 * above already pinned the target to the aim cone, so the fast lerp
+	 * only sweeps the legs within it. */
 	{
+		int div = gAiming ? AIM_MOVE_LERP_DIV : MOVE_LERP_DIV;
 		int gap = DIFF_ANGLES(lp->dir, desired) * MOVE_TURN_SIGN;
 
-		delta = gap / MOVE_LERP_DIV;
+		delta = gap / div;
 
 		if (delta == 0 && gap != 0)
 			delta = (gap > 0) ? 1 : -1;	/* converge exactly */
 
-		delta = jer_clamp_int(delta, -limit, limit);
+		if (!gAiming)
+		{
+			limit = (gPedWasMoving || ABS(lp->pPed->speed) > 4)
+				? RUN_TURN_LIMIT : PIVOT_TURN_LIMIT;
+			delta = jer_clamp_int(delta, -limit, limit);
+		}
 
 		lp->dir = (lp->dir + delta) & 0xfff;
 		lp->pPed->dir.vy = (lp->dir + 2048) & 0xfff;

@@ -7,13 +7,15 @@ extern "C" {
 void jer_module_crumple_entry(JERICHO_CONTEXT* ctx);
 void jer_module_sandbox_entry(JERICHO_CONTEXT* ctx);
 void jer_module_d2pl_entry(JERICHO_CONTEXT* ctx);
+void jer_module_levelhacks_entry(JERICHO_CONTEXT* ctx);
 
 extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "crumple", jer_module_crumple_entry, 1 },
 	{ "sandbox", jer_module_sandbox_entry, 0 },
 	{ "d2pl", jer_module_d2pl_entry, 1 },
+	{ "levelhacks", jer_module_levelhacks_entry, 1 },
 };
-extern const int jer_registry_module_count = 3;
+extern const int jer_registry_module_count = 4;
 #ifdef __cplusplus
 }
 #endif

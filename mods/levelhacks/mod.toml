@@ -1,0 +1,7 @@
+id = "levelhacks"
+name = "Level Hacks"
+version = "1.0.0"
+author = "DeepSeek"
+description = "Take-a-Ride level hacks: after the city select, ask Singleplayer or Multiplayer; Multiplayer starts the chosen city's multiplayer map in singleplayer take-a-ride (small maps testable)."
+dependencies = []
+default-enabled = true

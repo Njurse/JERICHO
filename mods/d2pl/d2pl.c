@@ -34,22 +34,22 @@ extern void Debug_AddLineDepth(VECTOR& pointA, VECTOR& pointB, CVECTOR& color);
 static void D2plSaveSettings(void);	/* forward (load regenerates on stale) */
 
 D2PL_SETTINGS gS = {
-	18,			/* sensX — baseline sensitivity, ~10% under the 64
+	21,			/* sensX — baseline sensitivity, ~10% under the 64
 				   reference (the persisted config is regenerated) */
-	14,			/* sensY */
+	18,			/* sensY */
 	1,			/* joyCamera — right-stick look/orbit on by default */
-	930,			/* footDist — doubled: a high, wide GTA-like view that
+	910,			/* footDist — doubled: a high, wide GTA-like view that
 				   can pitch down steeper and show more around the ped */
 	120,			/* footLat (shoulder) */
-	-300,			/* footHeight — the orbit moved up (camera ~300 units
+	-240,			/* footHeight — the orbit moved up (camera ~300 units
 				   above the waist anchor, still aiming at the player) */
 	575,			/* carDist (+15% default distance) */
 	28,			/* carLatPct */
-	-105,			/* carHeight (in-car camera lift; adjustable for
+	-108,			/* carHeight (in-car camera lift; adjustable for
 				   taller cars via the settings menu) and remember Y is inverted in this engine so negative = higher */
 	-1,			/* shoulder (left) */
 	0,			/* invertH */
-	0,			/* invertV */
+	1,			/* invertV */
 	1,			/* fovEnabled */
 	82,			/* fovDeg (+10 from the old 72 default) */
 	D2PL_LASER_DEFAULT,	/* laserColor (red) */
@@ -292,8 +292,8 @@ static int D2plOnLook(void* userdata, void* args)
 		gMoveRefActive = 1;
 
 		{
-			int yawMax = (YAW_RATE * gS.sensX) / 64;
-			int pitchMax = (PITCH_MAX * gS.sensY) / 64;
+			int yawMax = (CAM_ORBIT_SPEED_MAX * gS.sensX) / 64;
+			int pitchMax = (CAM_PITCH_MAX * gS.sensY) / 64;
 			int sX = gS.invertH ? -stickX : stickX;
 			int sY = gS.invertV ? -stickY : stickY;
 			int aimDiv = gAiming ? AIM_LOOK_DIV : 1;	/* slower while aiming */
@@ -301,7 +301,7 @@ static int D2plOnLook(void* userdata, void* args)
 
 			/* orbit: the angle moves by a momentum-driven speed. The speed
 			 * ramps from 0 up to the stick's max (proportional to deflection)
-			 * over ~1/6 of a second (YAW_RAMP frames) — the view "gains
+			 * over ~1/6 of a second (CAM_ORBIT_RAMP_FRAMES frames) — the view "gains
 			 * momentum" instead of jumping to full speed. The orbit stays
 			 * gripped so the engine's settle-back lerp can't fight it;
 			 * vertical is clamped below. */
@@ -313,7 +313,7 @@ static int D2plOnLook(void* userdata, void* args)
 
 		/* ramp with a minimum step of 1 so tiny deflections still move */
 		{
-			int step = (targetSpeed - gYawSpeed) / YAW_RAMP;
+			int step = (targetSpeed - gYawSpeed) / CAM_ORBIT_RAMP_FRAMES;
 
 			if (step == 0 && targetSpeed != gYawSpeed)
 				step = (targetSpeed > gYawSpeed) ? 1 : -1;
@@ -328,7 +328,7 @@ static int D2plOnLook(void* userdata, void* args)
 		pitchMax = jer_clamp_int(pitchMax, 0, 900);
 
 		gLookPitchTarget = jer_clamp_int(
-			(LOOK_PITCH_SIGN * sY * pitchMax) / (128 * aimDiv), -pitchMax, pitchMax);
+			(CAM_PITCH_STICK_SIGN * sY * pitchMax) / (128 * aimDiv), -pitchMax, pitchMax);
 
 		/* mouse motion nudges the orbit/pitch on top of the stick — direct
 		 * (not momentum-ramped): a flick is a flick, smooth but immediate.
@@ -345,7 +345,7 @@ static int D2plOnLook(void* userdata, void* args)
 				(-LOOK_YAW_SIGN * mX * gS.sensX * MOUSE_YAW) / (64 * 128 * aimDiv)) & 0xfff;
 
 			gLookPitchTarget = jer_clamp_int(gLookPitchTarget +
-				(LOOK_PITCH_SIGN * mY * gS.sensY * MOUSE_PITCH) / (64 * 128 * aimDiv),
+				(CAM_PITCH_STICK_SIGN * mY * gS.sensY * MOUSE_PITCH) / (64 * 128 * aimDiv),
 				-pitchMax, pitchMax);
 		}
 
@@ -389,9 +389,9 @@ static int D2plOnLook(void* userdata, void* args)
 			 * not cumulative, so a held button lands once and stays) */
 			int natural = D2plNaturalHeading(lp, inCar);
 			int side = (a->paddCamera & CAMERA_PAD_LOOK_LEFT) != 0 ? -1 : 1;
-			int target = (natural + gCameraAngle + side * LOOK_SIDE_ANGLE) & 0xfff;
+			int target = (natural + gCameraAngle + side * CAM_LOOK_SIDE_ANGLE) & 0xfff;
 
-			lp->cameraAngle = jer_lerp_angle(lp->cameraAngle, target, LOOK_SIDE_DIV);
+			lp->cameraAngle = jer_lerp_angle(lp->cameraAngle, target, CAM_LOOK_SIDE_DIV);
 		}
 	}
 	else
@@ -419,9 +419,9 @@ static int D2plOnLook(void* userdata, void* args)
 
 		{
 			int settleFrames = inCar
-				? (D2plCarSpeed(lp) > LOW_SPEED_GRACE
-					? LOOK_SETTLE_CAR_MOVING : LOOK_SETTLE_CAR)
-				: LOOK_SETTLE_FOOT;
+				? (D2plCarSpeed(lp) > CAM_LOW_SPEED_GRIP
+					? CAM_SETTLE_IDLE_CAR_MOVING : CAM_SETTLE_IDLE_CAR)
+				: CAM_SETTLE_IDLE_FOOT;
 
 			if (gLookIdle > settleFrames)
 		{
@@ -438,7 +438,7 @@ static int D2plOnLook(void* userdata, void* args)
 				a->gripOrbit = 1;
 				gSettleInfluence = 0;	/* fresh fade when stability returns */
 			}
-			else if (inCar && D2plCarSpeed(lp) <= LOW_SPEED_GRACE && gLookForceSettle == 0)
+			else if (inCar && D2plCarSpeed(lp) <= CAM_LOW_SPEED_GRIP && gLookForceSettle == 0)
 			{
 				/* reverse grace: hold at standstill — EXCEPT right after a
 				 * look-button release, which must return immediately
@@ -513,8 +513,8 @@ int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 				   frame) — a car turning sharply gets a little (subtle)
 				   runway lag, but tighter than before so the player can
 				   still see around the turn */
-	else if (!gAiming && gFootSpeedSmooth < FOOT_LAG_SPEED)
-		div = FOOT_LAG_DIV;	/* on foot, not aiming, just starting to
+	else if (!gAiming && gFootSpeedSmooth < CAM_FOOT_LAG_SPEED)
+		div = CAM_FOOT_LAG_DIV;	/* on foot, not aiming, just starting to
 				   move: a touch MORE lag gives him the semblance of
 				   momentum as he accelerates; once he's moving the
 				   camera tightens up (div 5 below) */
@@ -702,7 +702,7 @@ static int D2plOnCamera(void* userdata, void* args)
 	{
 		int fovScrZ = gS.fovEnabled ? D2plFovScrZ(gS.fovDeg) : gCameraDefaultScrZ;
 
-		SetGeomScreen(scr_z = fovScrZ + (gLookPitch * FOV_PITCH_SCALE) / 128
+		SetGeomScreen(scr_z = fovScrZ + (gLookPitch * CAM_FOV_PITCH_SCALE) / 128
 			- (gSpeedSmooth * FOV_SPEED_SCALE) / 4096);
 
 		if (scr_z < 96)
@@ -1062,7 +1062,7 @@ static void D2plAdjustItem(int item, int direction)
 		break;
 	}
 
-	D2plSaveSettings();
+	//D2plSaveSettings();
 }
 
 static int D2plOnPauseMenu(void* userdata, void* args)
@@ -1198,6 +1198,7 @@ JER_MODULE_ENTRY(jer_module_d2pl_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, D2plOnCamera, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_INPUT, D2plOnPedInput, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_MOVE, D2plOnPedMove, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_PED_POSE, D2plOnPedPose, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_SKELETON, D2plOnSkeleton, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, D2plOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, D2plOnOverlay, NULL, 0);

@@ -23,6 +23,7 @@
 #include "C/state.h"
 
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (mods manager frontend)
+#include "../C/jer_events.h"	// JERICHO-HOOK: event argument structs
 
 #ifndef PSX
 
@@ -1894,6 +1895,11 @@ void InitFrontendDisplay(void)
 // [D] [T]
 void State_FrontEnd(void* param)
 {
+	// JERICHO-HOOK: the frontend ticks the game-frame event every frame so
+	// module menus (e.g. levelhacks' SP/MP prompt) can read input + draw
+	// while the frontend is frozen behind them
+	jer_fire(JER_EVENT_FRAME, NULL);
+
 	PadChecks();
 
 	if (currPlayer == 2)
@@ -3045,6 +3051,27 @@ int CutSceneCitySelectScreen(int bSetup)
 
 	if (feNewPad & MPAD_CROSS)
 	{
+		// JERICHO-HOOK: the take-a-ride city confirm — modules may defer the
+		// start (their own menu runs over the frozen frontend) or rewrite
+		// the pending level/gametype/player count
+		{
+			JER_ARGS_FRONTEND jerFe;
+
+			jerFe.gameLevel = GameLevel;
+			jerFe.gameType = GameType;
+			jerFe.numPlayers = NumPlayers;
+			jerFe.defer = 0;
+
+			jer_fire(JER_EVENT_FRONTEND, &jerFe);
+
+			GameLevel = jerFe.gameLevel;
+			GameType = (GAMETYPE)jerFe.gameType;
+			NumPlayers = jerFe.numPlayers;
+
+			if (jerFe.defer)
+				return 0;	/* the module starts the game itself */
+		}
+
 		lastCity = -1;
 		lastCutCity = GameLevel;
 

@@ -1,10 +1,10 @@
 /*
- * jericho.h — JERICHO: Just-in-Time Extensible Runtime Interface for
+ * jericho.h -- JERICHO: Just-in-Time Extensible Runtime Interface for
  * Compiled Hooks & Overrides.
  *
  * A tiny, platform-neutral C API that turns the game into a HOST for
  * compiled-in modules ("packages"). Modules are built from source with the
- * same toolchain as the game itself — there is NO runtime loading, no
+ * same toolchain as the game itself -- there is NO runtime loading, no
  * dlopen/LoadLibrary, no platform-specific code anywhere. Whatever lives in
  * mods/ at build time is linked straight into the binary, and the JERICHO
  * runtime activates modules just-in-time at boot according to
@@ -69,14 +69,17 @@ enum
 	JER_EVENT_DRAW_OVERLAY,		/* per-frame overlay draw (menus over the world) */
 	JER_EVENT_CAMERA,			/* camera position/angle adjusted by modules */
 	JER_EVENT_GAME_START,		/* a level is starting (fresh/restart/next) */
-	JER_EVENT_CAMERA_LOOK,		/* per-frame look handling (TurnHead) — modules
+	JER_EVENT_CAMERA_LOOK,		/* per-frame look handling (TurnHead) -- modules
 								   may drive/suppress the free-look */
-	JER_EVENT_PED_INPUT,		/* on-foot pad input before it drives the ped —
+	JER_EVENT_PED_INPUT,		/* on-foot pad input before it drives the ped --
 								   modules may remap to camera-relative movement */
 	JER_EVENT_PED_MOVE,		/* inside AnimatePed() before the player ped's
-								   position advances — the one spot a module
+								   position advances -- the one spot a module
 								   speed write survives (runner re-arms 40/frame) */
-	JER_EVENT_PED_SKELETON,		/* player ped skeleton posed for draw — modules
+	JER_EVENT_PED_POSE,		/* DrawTanner: between SetupTannerSkeleton and
+								   newRotateBones (per-bone rotation window) */
+	JER_EVENT_FRONTEND,		/* frontend take-a-ride city confirm (defer hook) */
+	JER_EVENT_PED_SKELETON,		/* player ped skeleton posed for draw -- modules
 								   may override bone rotations (arm holds) and
 								   read joint world positions (vJPos) */
 
@@ -113,7 +116,7 @@ enum
 	JER_OVERRIDE_SLOTS = 8,
 
 	/* Slot meanings (engine-defined): */
-	JER_OVERRIDE_SLOT_SIM = 0	/* the world step (StepSim) — modules may
+	JER_OVERRIDE_SLOT_SIM = 0	/* the world step (StepSim) -- modules may
 								   time-scale or replace it */
 };
 

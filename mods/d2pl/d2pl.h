@@ -44,6 +44,138 @@
 #include "pad.h"	/* MPAD_R1/MPAD_R2 fire buttons */
 #include "jer_math.h"	/* game types (VECTOR) must be defined first */
 
+ /* ------------------------------------------------------------------ */
+ /* Shared tuning constants                                                */
+ /* ------------------------------------------------------------------ */
+
+#define LOOK_DEADZONE 24	/* stick counts below this are "idle" */
+#define LOOK_YAW_SIGN 1	/* -1 = push right orbits the camera right */
+
+/* aim mode: the look speed is halved while aiming for finer control */
+#define AIM_LOOK_DIV 2
+
+/* the L2/R2 look buttons: the camera eases to the car's left/right side
+ * view (90 degrees, car-relative) — the stock TurnHead head-rot path
+ * breaks the module's transforms, so the module owns the buttons */
+#define CAM_LOOK_SIDE_ANGLE 1024
+#define CAM_LOOK_SIDE_DIV 4		/* ease divisor: ~0.1 s to reach the side view */
+
+ /* on-foot startup momentum: while the ped is just starting to move (speed
+  * below this) the camera eases with a touch more lag, then tightens up */
+#define CAM_FOOT_LAG_SPEED 6
+#define CAM_FOOT_LAG_DIV 8
+#define CAM_ORBIT_SPEED_MAX 256		/* max orbit speed at full stick, sensX = 64
+				   (x4: the default was too slow) */
+#define CAM_ORBIT_RAMP_FRAMES 20		/* frames to reach full orbit speed (~1/6 s —
+				   the ramp speed was doubled) — the yaw "gains
+				   momentum" instead of jumping to its max */
+#define CAM_PITCH_STICK_SIGN -1	/* -1 = pushing up RAISES the camera on its
+				   orbit around the player (see the header note) */
+#define CAM_PITCH_MAX 1600		/* ~45 degrees of pitch up/down each way — the
+				   vertical is deliberately tamer than the horizontal so it
+				   doesn't feel janky at full deflection */
+#define CAM_FOV_PITCH_SCALE 4	/* scr_z delta per 128 pitch units (GTA4-style:
+				   looking down from above narrows the FOV, up widens) */
+#define CAM_SETTLE_IDLE_FOOT 130	/* frames idle before settling back (on foot) */
+#define CAM_SETTLE_IDLE_CAR 105	/* cars settle back after this long idle... */
+#define CAM_SETTLE_IDLE_CAR_MOVING 30	/* ...but a car in motion resets almost
+				   immediately: it interpolates back to its default
+				   angle after a few frames of stick silence */
+#define CAM_LOW_SPEED_GRIP 8	/* car wheel_speed at/below which the orbit stays
+				   gripped (no camera swing at a standstill) */
+
+#define MOVE_DEADZONE 24	/* left-stick deadzone */
+#define PED_MAX_SPEED 40	/* the engine's run speed (SetupRunner) — the
+				   analog magnitude scales toward this */
+#define PED_SPEED_LERP 8	/* lerp divisor — geometric: ~15 frames to reach
+				   the target each way (the stand-start momentum) */
+#define MOVE_TURN_SIGN 1	/* +1 = positive angle delta turns right */
+#define MOVE_STICK_SIGN_X 1	/* flip if your pad's X axis is inverted */
+#define MOVE_STICK_SIGN_Y 1	/* flip if your pad's Y axis is inverted */
+#define MOVE_LERP_DIV 16
+#define AIM_MOVE_LERP_DIV 3	/* aiming: the heading lerps FAST (third-person —
+				   he snaps to the camera-relative run direction) */		/* responsive exponential heading lerp: 1/8 of the
+				   remaining gap toward the stick-derived heading each
+				   frame (fast when far, eases in) */
+#define RUN_TURN_LIMIT 256	/* max turn per frame while running (~11.25 deg,
+				   ~675 deg/s): well beyond the original 32-unit
+				   restriction so Tanner decisively turns toward
+				   the stick heading (even a 180) instead of
+				   creeping around; the exponential lerp keeps it
+				   smooth, the cap keeps it from snapping */
+#define PIVOT_TURN_LIMIT 376	/* standstill pivot speed (~22.5 deg/frame):
+				   near-instant so the player starts running the new
+				   way immediately, GTA-style */
+
+#define CAR_ORBIT_UP -160	/* raise the vehicle orbit/focal point (Driver 2
+				   uses INVERTED y — up = -y); the camera gravitates
+				   toward looking AHEAD of the car near the forward
+				   angle so view-panning in isn't jarring */
+
+				   /* ground cap: Driver 2 uses INVERTED y (vy grows downward), so the road is
+					* a heightfield the camera must not sink below. Mirror the engine's own
+					* chase-cam clamp (camera.c: cammapht = carheight - MapHeight - 100) — the
+					* camera stays at-or-above the terrain line and slides along the surface. */
+#define TERRAIN_CLEAR_FOOT 15
+#define TERRAIN_CLEAR_CAR 50
+					/* ground-slide "forced look-up": when the terrain cap pins the camera (it
+					 * would sink into the ground), the view tilts slightly upward — a fraction
+					 * of the would-be intersection depth, capped — so the camera reads as
+					 * being pushed up out of the ground instead of boring into it. */
+#define GROUND_LOOKUP_SCALE 8	/* angle units per 256 units of penetration */
+#define GROUND_LOOKUP_MAX 400	/* cap the forced up-tilt (~17.5 deg) */
+					 // ON FOOT AIMING CAMERA HEIGHT
+#define FOOT_AIM_HEIGHT 270	/* on-foot aim point: the torso ~90 units above
+				   the waist anchor (camera frame: up = -y) */
+#define CAR_SPEED_DIV 3		/* car pull-in fades with speed (GTA4 zoom-out) */
+
+				   /* natural settle-back (GTA IV State A): the module eases the orbit toward
+					* the blended natural heading instead of the engine's fixed-rate settle */
+#define SETTLE_DIV 12		/* 1/12 of the gap per frame — lazy, cinematic */
+#define VEL_NOISE 16		/* base-delta noise floor before velocity counts */
+#define VEL_BLEND_SPEED_SCALE 24	/* velocity-blend weight per speed unit */
+#define VEL_BLEND_MAX 2900	/* cap the base blend weight (~0.7 of 4096);
+				   the drift boost may push past this */
+#define VEL_BLEND_ABS_MAX 3500	/* absolute ceiling (~0.85) — never full weight,
+				   so the heading vector never fully cancels */
+#define VEL_BLEND_SLIP_MIN 384	/* slip angle where the drift boost starts */
+#define VEL_BLEND_SLIP_DIV 2	/* slip boost per unit of slip */
+#define FOV_SPEED_SCALE 512	/* subtle FOV widening with smoothed speed */
+#define HEIGHT_SPEED_SCALE 256	/* subtle camera height rise with speed */
+#define FOOT_WALK_SPEED 14	/* on-foot speed at which the camera sits at its
+				   base distance (pull in when slower, extend when
+				   running — relative-framing doc) */
+#define FOOT_SPEED_DIST 4	/* distance units added per unit of run speed */
+#define MAX_POS_STEP 600	/* the camera position NEVER snaps during play: a
+				   big correction travels at a bounded rate — the
+				   writeup's 'never snap, always blend' applies to the
+				   position rig as well as the rotation */
+#define CONTEXT_JUMP 30000	/* a target jump bigger than this is a context
+				   switch (level load, intro sweep -> play, spawn):
+				   re-place instantly instead of flying across the
+				   map at MAX_POS_STEP */
+
+				   /* Instability Governor (spin-out recovery, GTA IV §4): when the car's
+					* angular rate spikes (spin, crash), the camera stops trying to be clever
+					* and holds its orientation until the car settles. Hysteresis: trigger
+					* above the upper threshold, release only after the rate has stayed below
+					* the lower threshold for a confirmation window. Priority below Manual
+					* Look, above Natural. */
+#define INSTAB_TRIGGER 256	/* smoothed deg-ish units/frame that claims focus */
+#define INSTAB_RELEASE 32	/* must drop below this to release */
+#define INSTAB_CONFIRM 32	/* frames of calm before releasing */
+
+					/* aim camera (on foot) */
+#define AIM_PULL 2000		/* /4096: pull toward Tanner while aiming */
+#define AIM_HEIGHT -100
+#define AIM_ZOOM 160		/* scr_z increase -> FOV decrease (focus) */
+#define AIM_LATERAL 55		/* shoulder bias while aiming (ped scale ~130) */
+
+/* impact marker: a big black X at the aim point, 1 second (60 frames) */
+#define MARKER_LIFETIME 600
+#define MARKER_MIN_SIZE 150
+#define MARKER_MAX_SIZE 800
+
 /* --- limb ids (must match motion_c.c's enum LIMBS) ------------------- */
 enum WeaponLimbs
 {
@@ -333,9 +465,7 @@ static inline void D2plRotatePose(int* px, int* pz, int h)
 		int side = left ? -1 : 1;
 		int sx, sz, ex, ez, hx, hz;
 
-		/* fix the shoulder at its REST offset, rotated into the facing
-		 * frame, so the walk/idle keyframes can't swing the arm — the
-		 * whole chain stays steadied */
+		// --- Shoulder: Fixed at rest position ---
 		sx = skel[shoulder].vOffset.vx;
 		sz = skel[shoulder].vOffset.vz;
 		D2plRotatePose(&sx, &sz, facing);
@@ -343,20 +473,24 @@ static inline void D2plRotatePose(int* px, int* pz, int h)
 		skel[shoulder].vCurrPos.vy = skel[shoulder].vOffset.vy;
 		skel[shoulder].vCurrPos.vz = sz;
 
-		/* parent-relative pose offsets, rotated into the facing frame:
-		 * elbow in front of the shoulder, hand in front of the elbow */
-		ex = pose.elbowX * side;
-		ez = pose.elbowZ;
+		// --- Elbow: Small forward offset ---
+		// Use a small, fixed offset (e.g., 20-50 units) to position the elbow.
+		// The pose values are treated as angles (0-4096), but we use them as
+		// small position offsets here.
+		ex = (pose.elbowX * side) / 64;  // Scale down to prevent folding
+		ez = pose.elbowZ / 64;
 		D2plRotatePose(&ex, &ez, facing);
 		skel[elbow].vCurrPos.vx = ex;
-		skel[elbow].vCurrPos.vy = pose.elbowY;
+		skel[elbow].vCurrPos.vy = -pose.elbowY; // Invert Y and scale
 		skel[elbow].vCurrPos.vz = ez;
 
-		hx = pose.handX * side;
-		hz = pose.handZ;
+		// --- Hand: Further forward from the elbow ---
+		// Use a larger forward offset to extend the arm.
+		hx = (pose.handX * side)  ;  // Scale down
+		hz = pose.handZ ;
 		D2plRotatePose(&hx, &hz, facing);
 		skel[hand].vCurrPos.vx = hx;
-		skel[hand].vCurrPos.vy = pose.handY;
+		skel[hand].vCurrPos.vy = -pose.handY; // Invert Y and scale
 		skel[hand].vCurrPos.vz = hz;
 	}
 
@@ -442,134 +576,7 @@ typedef struct D2PL_SETTINGS
 
 extern D2PL_SETTINGS gS;
 
-/* ------------------------------------------------------------------ */
-/* Shared tuning constants                                                */
-/* ------------------------------------------------------------------ */
 
-#define LOOK_DEADZONE 24	/* stick counts below this are "idle" */
-#define LOOK_YAW_SIGN -1	/* -1 = push right orbits the camera right */
-
-/* aim mode: the look speed is halved while aiming for finer control */
-#define AIM_LOOK_DIV 2
-
-/* the L2/R2 look buttons: the camera eases to the car's left/right side
- * view (90 degrees, car-relative) — the stock TurnHead head-rot path
- * breaks the module's transforms, so the module owns the buttons */
-#define LOOK_SIDE_ANGLE 1024
-#define LOOK_SIDE_DIV 4		/* ease divisor: ~0.1 s to reach the side view */
-
-/* on-foot startup momentum: while the ped is just starting to move (speed
- * below this) the camera eases with a touch more lag, then tightens up */
-#define FOOT_LAG_SPEED 6
-#define FOOT_LAG_DIV 8
-#define YAW_RATE 256		/* max orbit speed at full stick, sensX = 64
-				   (x4: the default was too slow) */
-#define YAW_RAMP 10		/* frames to reach full orbit speed (~1/6 s —
-				   the ramp speed was doubled) — the yaw "gains
-				   momentum" instead of jumping to its max */
-#define LOOK_PITCH_SIGN -1	/* -1 = pushing up RAISES the camera on its
-				   orbit around the player (see the header note) */
-#define PITCH_MAX 512		/* ~45 degrees of pitch up/down each way — the
-				   vertical is deliberately tamer than the horizontal so it
-				   doesn't feel janky at full deflection */
-#define FOV_PITCH_SCALE 4	/* scr_z delta per 128 pitch units (GTA4-style:
-				   looking down from above narrows the FOV, up widens) */
-#define LOOK_SETTLE_FOOT 100	/* frames idle before settling back (on foot) */
-#define LOOK_SETTLE_CAR 45	/* cars settle back after this long idle... */
-#define LOOK_SETTLE_CAR_MOVING 8	/* ...but a car in motion resets almost
-				   immediately: it interpolates back to its default
-				   angle after a few frames of stick silence */
-#define LOW_SPEED_GRACE 4	/* car wheel_speed at/below which the orbit stays
-				   gripped (no camera swing at a standstill) */
-
-#define MOVE_DEADZONE 24	/* left-stick deadzone */
-#define PED_MAX_SPEED 40	/* the engine's run speed (SetupRunner) — the
-				   analog magnitude scales toward this */
-#define PED_SPEED_LERP 6	/* lerp divisor — geometric: ~15 frames to reach
-				   the target each way (the stand-start momentum) */
-#define MOVE_TURN_SIGN 1	/* +1 = positive angle delta turns right */
-#define MOVE_STICK_SIGN_X 1	/* flip if your pad's X axis is inverted */
-#define MOVE_STICK_SIGN_Y 1	/* flip if your pad's Y axis is inverted */
-#define MOVE_LERP_DIV 8		/* responsive exponential heading lerp: 1/8 of the
-				   remaining gap toward the stick-derived heading each
-				   frame (fast when far, eases in) */
-#define RUN_TURN_LIMIT 128	/* max turn per frame while running (~11.25 deg,
-				   ~675 deg/s): well beyond the original 32-unit
-				   restriction so Tanner decisively turns toward
-				   the stick heading (even a 180) instead of
-				   creeping around; the exponential lerp keeps it
-				   smooth, the cap keeps it from snapping */
-#define PIVOT_TURN_LIMIT 256	/* standstill pivot speed (~22.5 deg/frame):
-				   near-instant so the player starts running the new
-				   way immediately, GTA-style */
-
-#define CAR_ORBIT_UP -160	/* raise the vehicle orbit/focal point (Driver 2
-				   uses INVERTED y — up = -y); the camera gravitates
-				   toward looking AHEAD of the car near the forward
-				   angle so view-panning in isn't jarring */
-
-/* ground cap: Driver 2 uses INVERTED y (vy grows downward), so the road is
- * a heightfield the camera must not sink below. Mirror the engine's own
- * chase-cam clamp (camera.c: cammapht = carheight - MapHeight - 100) — the
- * camera stays at-or-above the terrain line and slides along the surface. */
-#define TERRAIN_CLEAR_FOOT 15
-#define TERRAIN_CLEAR_CAR 50
-/* ground-slide "forced look-up": when the terrain cap pins the camera (it
- * would sink into the ground), the view tilts slightly upward — a fraction
- * of the would-be intersection depth, capped — so the camera reads as
- * being pushed up out of the ground instead of boring into it. */
-#define GROUND_LOOKUP_SCALE 8	/* angle units per 256 units of penetration */
-#define GROUND_LOOKUP_MAX 200	/* cap the forced up-tilt (~17.5 deg) */
-#define FOOT_AIM_HEIGHT 90	/* on-foot aim point: the torso ~90 units above
-				   the waist anchor (camera frame: up = -y) */
-#define CAR_SPEED_DIV 2		/* car pull-in fades with speed (GTA4 zoom-out) */
-
-/* natural settle-back (GTA IV State A): the module eases the orbit toward
- * the blended natural heading instead of the engine's fixed-rate settle */
-#define SETTLE_DIV 12		/* 1/12 of the gap per frame — lazy, cinematic */
-#define VEL_NOISE 16		/* base-delta noise floor before velocity counts */
-#define VEL_BLEND_SPEED_SCALE 24	/* velocity-blend weight per speed unit */
-#define VEL_BLEND_MAX 2900	/* cap the base blend weight (~0.7 of 4096);
-				   the drift boost may push past this */
-#define VEL_BLEND_ABS_MAX 3500	/* absolute ceiling (~0.85) — never full weight,
-				   so the heading vector never fully cancels */
-#define VEL_BLEND_SLIP_MIN 384	/* slip angle where the drift boost starts */
-#define VEL_BLEND_SLIP_DIV 2	/* slip boost per unit of slip */
-#define FOV_SPEED_SCALE 512	/* subtle FOV widening with smoothed speed */
-#define HEIGHT_SPEED_SCALE 256	/* subtle camera height rise with speed */
-#define FOOT_WALK_SPEED 14	/* on-foot speed at which the camera sits at its
-				   base distance (pull in when slower, extend when
-				   running — relative-framing doc) */
-#define FOOT_SPEED_DIST 4	/* distance units added per unit of run speed */
-#define MAX_POS_STEP 600	/* the camera position NEVER snaps during play: a
-				   big correction travels at a bounded rate — the
-				   writeup's 'never snap, always blend' applies to the
-				   position rig as well as the rotation */
-#define CONTEXT_JUMP 30000	/* a target jump bigger than this is a context
-				   switch (level load, intro sweep -> play, spawn):
-				   re-place instantly instead of flying across the
-				   map at MAX_POS_STEP */
-
-/* Instability Governor (spin-out recovery, GTA IV §4): when the car's
- * angular rate spikes (spin, crash), the camera stops trying to be clever
- * and holds its orientation until the car settles. Hysteresis: trigger
- * above the upper threshold, release only after the rate has stayed below
- * the lower threshold for a confirmation window. Priority below Manual
- * Look, above Natural. */
-#define INSTAB_TRIGGER 384	/* smoothed deg-ish units/frame that claims focus */
-#define INSTAB_RELEASE 96	/* must drop below this to release */
-#define INSTAB_CONFIRM 90	/* frames of calm before releasing */
-
-/* aim camera (on foot) */
-#define AIM_PULL 2000		/* /4096: pull toward Tanner while aiming */
-#define AIM_HEIGHT -2
-#define AIM_ZOOM 160		/* scr_z increase -> FOV decrease (focus) */
-#define AIM_LATERAL 25		/* shoulder bias while aiming (ped scale ~130) */
-
-/* impact marker: a big black X at the aim point, 1 second (60 frames) */
-#define MARKER_LIFETIME 60
-#define MARKER_MIN_SIZE 150
-#define MARKER_MAX_SIZE 800
 
 /* ================================================================== */
 /* Module state                                                        */
@@ -699,7 +706,9 @@ void D2plCarCamera(void* args, int heading);
 
 /* ped (d2pl_ped.c) */
 int D2plOnPedInput(void* userdata, void* args);
-int D2plOnPedMove(void* userdata, void* args);	/* JER_EVENT_PED_MOVE: the
+int D2plOnPedMove(void* userdata, void* args);
+int D2plOnPedPose(void* userdata, void* args);	/* JER_EVENT_PED_POSE: the
+				   torso-aim + head-lock (the only effective rotation channel) */	/* JER_EVENT_PED_MOVE: the
 				   last word on the run speed before the position advances */
 void D2plPedCamera(void* args, int heading);
 

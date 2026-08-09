@@ -18,6 +18,7 @@
 
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "jer_anim.h"	// JERICHO-HOOK: jer_anim_bone_rotation (defined here)
 
 #if USE_PGXP
 #include <math.h>
@@ -143,6 +144,19 @@ PED_DATA MainPed[NUM_BONES] =
 
 
 // FIXME: could be incorrect
+/* jer_anim helper (declared in jer_anim.h): resolve a limb's writable
+ * per-frame rotation. Defined here, not in the JERICHO core, because only
+ * the game sees the real BONE layout. */
+JER_BONE_ROT* jer_anim_bone_rotation(void* skel, int limb)
+{
+	BONE* bones = (BONE*)skel;
+
+	if (bones == NULL || limb < 0 || limb >= NUM_BONES)
+		return NULL;
+
+	return (JER_BONE_ROT*)bones[limb].pvRotation;
+}
+
 BONE Skel[NUM_BONES] =
 {
 	{
@@ -1669,6 +1683,18 @@ void DrawTanner(LPPEDESTRIAN pPed)
 
 	SetSkelModelPointers(pPed->pedType);
 	SetupTannerSkeleton(pPed);
+
+	// JERICHO-HOOK: the pose hook — the ONLY window where a per-bone
+	// ROTATION write (mutating *Skel[i].pvRotation, read by
+	// newRotateBones right below) takes effect
+	if (pPed->pedType == TANNER_MODEL && pPed->padId >= 0)
+	{
+		JER_ARGS_PED_POSE jerPose;
+
+		jerPose.ped = pPed;
+		jerPose.skel = Skel;
+		jer_fire(JER_EVENT_PED_POSE, &jerPose);
+	}
 
 	newRotateBones(pPed, &Skel[LOWERBACK]);
 

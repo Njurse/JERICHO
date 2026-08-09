@@ -322,6 +322,17 @@ static const char* gSandboxObjectNames[SBX_SMASHABLE_COUNT];
 static void SandboxTuneEnter(void);
 static void SandboxTuneRestore(void);
 
+/* first visit to the spawn page: default the Car ID to the player's own
+ * car (the historical Spawn Car behavior) */
+static void SandboxSpawnPageEnter(CAR_DATA* pc)
+{
+	if (gSandboxSpawnModel < 0)
+		gSandboxSpawnModel = pc != NULL ? pc->ap.model : 0;
+
+	gSandboxPage = SBX_PAGE_SPAWN;
+	gSandboxCursor = 0;
+	gSandboxSubPage = 0;
+}
 static void SandboxMenuClose(void)
 {
 	gSandboxMenuOpen = 0;
@@ -841,11 +852,8 @@ static void SandboxMenuDoAction(int page, int cursor)
 		{
 		case 0: gSandboxPage = SBX_PAGE_VEHICLE; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		case 1:
-			/* first visit to the spawn page: default the Car ID to the
-			 * player's own car (the historical Spawn Car behavior) */
-			if (gSandboxSpawnModel < 0)
-				gSandboxSpawnModel = pc != NULL ? pc->ap.model : 0;
-			gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
+			SandboxSpawnPageEnter(pc);
+			break;
 		case 2: gSandboxPage = SBX_PAGE_WORLD; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		case 3: gSandboxPage = SBX_PAGE_CHEATS; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		case 4:
@@ -943,7 +951,7 @@ static void SandboxMenuDoAction(int page, int cursor)
 		case 3: gSandboxSpawnMode ^= 1; break;	/* spawn position */
 		case 4: SandboxSpawnAICar(); break;
 		case 5: SandboxMenuRemoveAICars(); break;
-		case 6: gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
+		case 6: SandboxSpawnPageEnter(SandboxPlayerCar()); break;
 		default: break;	/* items 0-2 adjust via left/right */
 		}
 		break;
@@ -1147,9 +1155,7 @@ static void SandboxMenuInput(int padnew)
 
 		if (padnew & MPAD_TRIANGLE)
 		{
-			gSandboxPage = SBX_PAGE_SPAWN;
-			gSandboxCursor = 0;
-			gSandboxSubPage = 0;
+			SandboxSpawnPageEnter(SandboxPlayerCar());
 			return;
 		}
 
@@ -1438,6 +1444,122 @@ static void SandboxDrawPanel(void)
 /* straight into the display buffer like the pause menu                */
 /* ------------------------------------------------------------------ */
 
+/* the common 'draw a 3D model in HUD space' helper. Callers say WHAT
+ * (a MODEL*, or a CAR_DATA* for a palette'd/damaged car — pass one, NULL
+ * the other), WHERE (the target screen point) and HOW BIG (target pixels
+ * + the model's extent). It computes the auto-centred view-space position,
+ * the spinning turntable, draws into the private OT (spliced over the
+ * world, under the menu text), and — for preview cars — calculates the
+ * vehicle lights (a preview car lives OUTSIDE car_data, so the per-frame
+ * FX loop never lit it). */
+static void SandboxDrawHudModel(MODEL* model, CAR_DATA* car, int screenX, int screenY, int targetPixels, int extent, int scratch)
+{
+	MATRIX turntable;
+	VECTOR pos;
+	OTTYPE* savedOt;
+	int z;
+	int angle;
+
+	if (extent < 16)
+		extent = 16;
+	if (targetPixels < 8)
+		targetPixels = 8;
+
+	z = (256 * extent) / targetPixels;
+
+	if (z < 512)
+		z = 512;
+
+	pos.vx = ((screenX - 160) * z) / 256;
+	pos.vy = -((screenY - 120) * z) / 256;	/* view Y is up */
+	pos.vz = z;
+
+	extern void AddNightLights(CAR_DATA* cp);
+
+	InitMatrix(turntable);
+	angle = (gFrameCount * 24) & 4095;
+	RotMatrixY(angle, &turntable);
+
+	savedOt = current->ot;
+
+	ClearOTagR((u_long*)gSandboxPreviewOt, 2048);
+	current->ot = gSandboxPreviewOt;
+
+	if (car != NULL)
+	{
+		CAR_MODEL* CarModelPtr = &NewCarModel[car->ap.model];
+
+		if (scratch)
+		{
+			/* clean geometry + zeroed damage UVs (the spawn target) */
+			CarModelPtr->vlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[car->ap.model], vertices);
+			CarModelPtr->nlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[car->ap.model], vertices);
+			gTempCarUVPtr = gSandboxCleanUv;
+
+			/* the preview car's lights: the scratch car is not in the
+			 * car_data FX loop, so they were never calculated. Borrow a
+			 * free car slot's id (the light tables are MAX_CARS-sized),
+			 * add the night lights into this OT, then restore the
+			 * "no crumple/damage" -1. */
+			if (gLightsOn)
+			{
+				int savedId = car->id;
+				int slot = 0;
+
+				while (slot < MAX_CARS && car_data[slot].controlType != CONTROL_TYPE_NONE)
+					slot++;
+
+				if (slot >= MAX_CARS)
+					slot = 0;
+
+				car->id = (short)slot;
+				AddNightLights(car);
+				car->id = savedId;
+			}
+		}
+		else
+		{
+			/* the player's car with its final (crumpled) geometry */
+			CarModelPtr->vlist = gTempCarVertDump[car->id];
+			CarModelPtr->nlist = gTempCarVertDump[car->id];
+			gTempCarUVPtr = gTempHDCarUVDump[car->id];
+		}
+
+		DrawCarObject(CarModelPtr, &turntable, &pos, car->ap.palette, car, 1);
+
+		/* the wheels are skipped for the scratch car: CAR_INDEX() derives
+		 * the slot from cp - car_data, and the scratch static is not in
+		 * car_data (a wild index into the wheel-rotation arrays) */
+		if (!scratch)
+			DrawCarWheels(car, &turntable, &pos, 0);
+	}
+	else
+	{
+		/* the GTE is already set to the turntable + view-space trans;
+		 * RenderModel skips its matrix setup */
+		gte_SetRotMatrix(&turntable);
+		gte_SetTransVector(&pos);
+		RenderModel(model, NULL, NULL, 0, PLOT_NO_CULL, 1, 0);
+	}
+
+	current->ot = savedOt;
+
+	/* Splice the private OT into the main chain at bucket 0 — the NEAREST
+	 * layer: the world (any depth) and the panel (bucket 3) draw before
+	 * it, so the model can never sit behind world geometry. The main
+	 * entry points at the preview's HEAD (entry 2047 — ClearOTagR threads
+	 * i -> i-1, so the head is the far end, drawn first), and the TAIL
+	 * (entry 0) carries on into the ORIGINAL bucket-0 chain (the menu
+	 * text, captured BEFORE the splice overwrites the entry) so the
+	 * labels render on top — and the walk never loops. */
+	{
+		OTTYPE* textChain = (OTTYPE*)getaddr(&savedOt[0]);
+
+		setaddr(&savedOt[0], &gSandboxPreviewOt[2047]);
+		setaddr(&gSandboxPreviewOt[0], textChain);
+	}
+}
+
 static void SandboxDrawPreview(void)
 {
 	CAR_DATA* cp = NULL;
@@ -1521,18 +1643,13 @@ static void SandboxDrawPreview(void)
 		}
 	}
 
-	/* Auto-centre the preview: given the model's extent (its largest
-	 * dimension) and a target screen point/size, compute the view-space
-	 * position that centres the model there. This replaces the old fixed
-	 * (750,-200,3200) guess — the position now derives from the target
-	 * point + the model's real size, so it stays centred and correctly
-	 * sized no matter what is previewed. H = the GTE projection constant
-	 * (256); the screen is 320x240 centred at (160,120); screen Y is
-	 * DOWN, view Y is UP (negate). */
+	/* WHAT/WHERE/HOW-BIG: hand the selection to the common HUD-model
+	 * helper (auto-centre + turntable + lights + OT splice). The car
+	 * preview sits centre-right inside the panel at ~72px; the head at
+	 * ~44px. */
 	{
-		int extent;
-		int targetPixels;
-		int z;
+		int extent = 90;		/* the head model ~90 units */
+		int targetPixels = 44;
 
 		if (cp != NULL && cp->ap.carCos != NULL)
 		{
@@ -1545,97 +1662,10 @@ static void SandboxDrawPreview(void)
 			extent = hx > hy ? (hx > hz ? hx : hz) : (hy > hz ? hy : hz);
 			targetPixels = 72;	/* the car ~72px tall inside the panel */
 		}
-		else
-		{
-			extent = 90;		/* the head model ~90 units */
-			targetPixels = 44;
-		}
 
-		if (extent < 16)
-			extent = 16;
-		if (targetPixels < 8)
-			targetPixels = 8;
-
-		z = (256 * extent) / targetPixels;
-
-		if (z < 512)
-			z = 512;
-
-		pos.vx = ((220 - 160) * z) / 256;
-		pos.vy = -((112 - 120) * z) / 256;
-		pos.vz = z;
+		SandboxDrawHudModel(model, cp, 220, 112, targetPixels, extent, scratch);
 	}
-
-	InitMatrix(turntable);
-	angle = (gFrameCount * 24) & 4095;
-	RotMatrixY(angle, &turntable);
-
-	/* draw the model into the private OT, then splice that OT into the main
-	 * one at bucket 2 — over the panel (bucket 3), under the text (bucket 0) */
-	savedOt = current->ot;
-
-	ClearOTagR((u_long*)gSandboxPreviewOt, 2048);
-	current->ot = gSandboxPreviewOt;
-
-	if (cp != NULL)
-	{
-		CarModelPtr = &NewCarModel[cp->ap.model];
-
-		if (scratch)
-		{
-			/* clean geometry + zeroed damage UVs (the spawn target) */
-			CarModelPtr->vlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[cp->ap.model], vertices);
-			CarModelPtr->nlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[cp->ap.model], vertices);
-			gTempCarUVPtr = gSandboxCleanUv;
-		}
-		else
-		{
-			/* the player's car with its final (crumpled) geometry */
-			CarModelPtr->vlist = gTempCarVertDump[cp->id];
-			CarModelPtr->nlist = gTempCarVertDump[cp->id];
-			gTempCarUVPtr = gTempHDCarUVDump[cp->id];
-		}
-
-		DrawCarObject(CarModelPtr, &turntable, &pos, cp->ap.palette, cp, 1);
-
-		/* the wheels are skipped for the scratch car: CAR_INDEX() derives the
-		 * slot from cp - car_data, and the scratch static is not in car_data
-		 * (a wild index into the wheel-rotation arrays). The live car keeps
-		 * its wheels. */
-		if (!scratch)
-			DrawCarWheels(cp, &turntable, &pos, 0);
-	}
-	else
-	{
-		/* the selected model / player ped: the GTE is already set to the
-		 * turntable + view-space trans; RenderModel skips its matrix setup */
-		gte_SetRotMatrix(&turntable);
-		gte_SetTransVector(&pos);
-		RenderModel(model, NULL, NULL, 0, PLOT_NO_CULL, 1, 0);
-	}
-
-	current->ot = savedOt;
-
-	/* Splice the private OT into the main chain at bucket 0 — the NEAREST
-	 * layer: the world (any depth) and the panel (bucket 3) are all drawn
-	 * before it, so the model can never wind up behind world geometry (the
-	 * old bucket-2 splice let the world's near prims — buckets 1-0 — draw
-	 * over the preview). The main entry points at the preview's HEAD
-	 * (entry 2047 — ClearOTagR threads i -> i-1, so the head is the far
-	 * end, drawn first), and the preview's TAIL (entry 0) carries on into
-	 * the ORIGINAL bucket-0 chain (the menu text, captured BEFORE the
-	 * splice overwrites the entry) so the labels still render on top of
-	 * the model — and the walk never loops (a cycle would hang the OT). */
-	{
-		OTTYPE* textChain = (OTTYPE*)getaddr(&savedOt[0]);
-
-		setaddr(&savedOt[0], &gSandboxPreviewOt[2047]);
-		setaddr(&gSandboxPreviewOt[0], textChain);
-	}}
-
-/* ------------------------------------------------------------------ */
-/* Draw-overlay hook: the menu 2D text + the live preview              */
-/* ------------------------------------------------------------------ */
+}
 
 static int SandboxOnDrawOverlay(void* userdata, void* args)
 {
@@ -1644,42 +1674,11 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 	CAR_DATA* pc;
 
 	(void)userdata;
-	(void)args;
-
-	if (!gSandboxMenuOpen)
-		return JER_RESULT_CONTINUE;
 
 	pc = SandboxPlayerCar();
 
-	/* the backdrop: one full-size panel behind everything */
-	SandboxDrawPanel();
-
-	if (gSandboxPage == SBX_PAGE_OBJECTS)
+	if (gSandboxPage == SBX_PAGE_OBJECTS || gSandboxPage == SBX_PAGE_TUNE)
 	{
-		/* spawn-object list (page-based, 12 per page) */
-		int pageStart = gSandboxObjectPage * 12;
-		int shown = gSandboxObjectCount - pageStart;
-		char pageText[24];
-
-		SetTextColour(255, 255, 255);
-		SandboxPrintCentred(50, "SPAWN OBJECT");
-
-		sprintf(pageText, "(L1/R1: page %d/%d)", gSandboxObjectPage + 1,
-			(gSandboxObjectCount + 11) / 12);
-		SetTextColour(255, 255, 190);
-		SandboxPrint(34, 60, pageText);
-		SandboxPrint(34, 68, "(Triangle: back)");
-		
-		if (shown > 12)
-			shown = 12;
-
-		for (i = 0; i < shown; i++)
-		{
-			sprintf(text, "%s %s", i == gSandboxObjectCursor - pageStart ? ">" : " ", gSandboxObjectNames[pageStart + i]);
-			SetTextColour(i == gSandboxObjectCursor - pageStart ? 255, 255, 0 : 255, 255, 255);
-			SandboxPrint(34, 76 + i * SBX_LINE, text);
-		}
-
 		SandboxDrawPreview();
 		return JER_RESULT_CONTINUE;
 	}

@@ -2,6 +2,7 @@
  * d2pl_weapon.c — Driver 2 Parallel Lines (weapon system: registry, aim camera, arm pose, HUD, laser).
  */
 #include "d2pl.h"
+#include "jer_anim.h"	/* JER_LIMB_*, jer_anim_bone_rotation, jer_anim_aim_diff */
 
 #include "players.h"
 #include "cars.h"
@@ -292,6 +293,96 @@ int D2plAimCamera(void* args, int heading)
 /* JER_EVENT_PED_SKELETON - arm pose + weapon mesh at RHAND               */
 /* ================================================================== */
 
+/* JER_EVENT_PED_POSE — the torso faces the camera while aiming. This is
+ * the ONLY effective rotation channel: the hook fires between
+ * SetupTannerSkeleton and newRotateBones, so mutating the JOINT_1 (upper-
+ * body root) rotation here propagates through the neck to the head, and
+ * the arms follow because they hang off the same root. The HEAD is locked
+ * to the torso (local yaw 0) so the walk/aim cycle can't turn it away. */
+static JER_BONE_ROT gSavedJoint1;	/* the shared motion buffer's original
+					   rotations (snapshotted at aim start,
+					   restored when aiming stops) */
+static JER_BONE_ROT gSavedHead;
+static int gPoseSaved;
+
+int D2plOnPedPose(void* userdata, void* args)
+{
+	JER_ARGS_PED_POSE* a = (JER_ARGS_PED_POSE*)args;
+	JER_BONE_ROT* joint1;
+	JER_BONE_ROT* head;
+
+	(void)userdata;
+
+	if (a->ped == NULL || a->skel == NULL)
+		return JER_RESULT_CONTINUE;
+
+	joint1 = jer_anim_bone_rotation(a->skel, JER_LIMB_JOINT_1);
+	head = jer_anim_bone_rotation(a->skel, JER_LIMB_HEAD);
+
+	if (gAiming)
+	{
+		/* the pvRotation bytes point into the SHARED per-type motion buffer:
+		 * snapshot the originals on the first aim frame so we can restore
+		 * them when aiming stops (the walk cycle must not keep the twist) */
+		if (!gPoseSaved)
+		{
+			if (joint1 != NULL)
+				gSavedJoint1 = *joint1;
+			if (head != NULL)
+				gSavedHead = *head;
+			gPoseSaved = 1;
+		}
+
+		if (joint1 != NULL)
+		{
+			LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
+			int aimYaw = (-camera_angle.vy) & 0xfff;
+
+			joint1->vy = (short)jer_anim_aim_diff(pPed->dir.vy, aimYaw);
+		}
+
+		/* head lock: keep the head aligned with the (rotated) torso */
+		if (head != NULL)
+			head->vy = 0;
+	}
+	else if (gPoseSaved)
+	{
+		/* restore the walk cycle's own rotations on the first non-aim frame */
+		if (joint1 != NULL)
+			*joint1 = gSavedJoint1;
+		if (head != NULL)
+			*head = gSavedHead;
+		gPoseSaved = 0;
+	}
+
+	/* bone debug: log the RELATIVE transform chain while aiming — the
+	 * ped's body yaw, the aim yaw, the diff written into the upper-body
+	 * root, and the root/head local rotations as the engine reads them.
+	 * Every transform here is LOCAL (parent-relative): the root matrix
+	 * carries pPed->dir, and each bone's pvRotation is its own yaw
+	 * relative to its parent. pdir is the engine's body heading
+	 * (pPed->dir.vy); pdir - 2048 is the movement heading. */
+	{
+		static int gBoneLogTimer;
+
+		if (--gBoneLogTimer <= 0 && gAiming)
+		{
+			LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
+			int aimYaw = (-camera_angle.vy) & 0xfff;
+
+			gBoneLogTimer = 90;
+
+			jer_log("[d2pl] bone: pedDir=%d aim=%d diff=%d | JOINT1 rot=(%d,%d,%d) | HEAD rot=(%d,%d,%d)\n",
+				pPed->dir.vy, aimYaw, jer_anim_aim_diff(pPed->dir.vy, aimYaw),
+				joint1 ? joint1->vx : 0, joint1 ? joint1->vy : 0, joint1 ? joint1->vz : 0,
+				head ? head->vx : 0, head ? head->vy : 0, head ? head->vz : 0);
+		}
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+
 int D2plOnSkeleton(void* userdata, void* args)
 {
 	JER_ARGS_PED_SKELETON* a = (JER_ARGS_PED_SKELETON*)args;
@@ -315,22 +406,10 @@ int D2plOnSkeleton(void* userdata, void* args)
 
 	if (a->phase == 0)
 	{
-		/* aiming: the torso faces the aim direction (the camera-forward,
-		 * i.e. AWAY from the camera) — rotate the upper-body root by the
-		 * diff between the body heading and the aim yaw, so the back is
-		 * to the camera while the hips/legs stay free to run. JOINT_1
-		 * (index 2) is the root both shoulders and the neck hang from;
-		 * the diff composes with the walk, and resets to 0 when not
-		 * aiming so the animation re-owns the torso. */
-		{
-			LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
-			WeaponBone* skel = (WeaponBone*)a->skel;
-			int aimYaw = (-camera_angle.vy) & 0xfff;
-			int diff = DIFF_ANGLES(pPed->dir.vy, aimYaw);
-
-			if (skel[2].pvRotation != NULL)
-				skel[2].pvRotation->vy = gAiming ? diff : 0;
-		}
+		/* NOTE: the TORSO rotation no longer happens here — a pvRotation
+		 * write in this phase is DEAD (newRotateBones, the only reader,
+		 * already ran). The torso faces the camera in D2plOnPedPose (the
+		 * JER_EVENT_PED_POSE hook, which fires BEFORE newRotateBones). */
 
 		/* force the arm into a holding pose: override the accumulated
 		 * offsets of the upper arm / forearm / hand bones so the arm

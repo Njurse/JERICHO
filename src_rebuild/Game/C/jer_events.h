@@ -237,6 +237,32 @@ typedef struct JER_ARGS_PED_MOVE
 	int padId;		/* the pad driving this ped (>= 0 = player) */
 } JER_ARGS_PED_MOVE;
 
+/* JER_EVENT_PED_POSE — fired in DrawTanner() between SetupTannerSkeleton
+ * and newRotateBones for the player ped (TANNER_MODEL + padId >= 0).
+ * Modules mutate the per-bone ROTATION here: each Skel[i].pvRotation
+ * points into the raw motion frame bytes, and newRotateBones reads them
+ * immediately after the hook — a write made here is the last word on that
+ * frame's bone rotation (PED_SKELETON phase-0 remains the POSITION
+ * channel). Use the jer_anim helpers (jer_anim.h) to resolve bones. */
+typedef struct JER_ARGS_PED_POSE
+{
+	void* ped;		/* LPPEDESTRIAN being drawn */
+	void* skel;		/* BONE* Skel[] (index with JER_LIMB_*) */
+} JER_ARGS_PED_POSE;
+
+/* JER_EVENT_FRONTEND — fired in the frontend's take-a-ride city-select
+ * confirm (CutSceneCitySelectScreen, after GameLevel = currCity). A module
+ * may set defer = 1 to take over the start (its own menu runs over the
+ * frozen frontend); otherwise it may rewrite gameLevel/gameType/numPlayers
+ * and the stock flow continues. */
+typedef struct JER_ARGS_FRONTEND
+{
+	int gameLevel;		/* in/out: the pending level */
+	int gameType;		/* in/out: the pending gametype */
+	int numPlayers;		/* in/out */
+	int defer;		/* out: 1 = the module handles the start itself */
+} JER_ARGS_FRONTEND;
+
 /* JER_EVENT_PED_SKELETON — fired while the player ped is being drawn
  * (newShowTanner), after the skeleton was posed from motion data. A module
  * may override bone rotations in skel (BONE*) to force poses (e.g. an arm
