@@ -85,17 +85,18 @@ typedef struct D2PL_SETTINGS
 } D2PL_SETTINGS;
 
 #define D2PL_CFG_MOD "d2pl"
-#define D2PL_CFG_VERSION 5	/* bump when defaults change — a stale profile is
+#define D2PL_CFG_VERSION 6	/* bump when defaults change — a stale profile is
 				   deleted and regenerated from scratch */
 
 static D2PL_SETTINGS gS = {
-	48,			/* sensX */
-	40,			/* sensY */
+	58,			/* sensX — baseline sensitivity, ~10% under the 64
+				   reference (the persisted config is regenerated) */
+	58,			/* sensY */
 	1,			/* joyCamera — right-stick look/orbit on by default */
-	640,			/* footDist — doubled: a high, wide GTA-like view that
+	1040,			/* footDist — doubled: a high, wide GTA-like view that
 				   can pitch down steeper and show more around the ped */
 	120,			/* footLat (shoulder) */
-	-100,			/* footHeight — the orbit moved up (camera ~300 units
+	-300,			/* footHeight — the orbit moved up (camera ~300 units
 				   above the waist anchor, still aiming at the player) */
 	575,			/* carDist (+15% default distance) */
 	28,			/* carLatPct */
@@ -103,7 +104,7 @@ static D2PL_SETTINGS gS = {
 	0,			/* invertH */
 	0,			/* invertV */
 	1,			/* fovEnabled */
-	85,			/* fovDeg (+10 from the old 72 default) */
+	82,			/* fovDeg (+10 from the old 72 default) */
 	D2PL_LASER_DEFAULT,	/* laserColor (red) */
 	1			/* cameraEnabled */
 };
@@ -186,6 +187,14 @@ static void D2plSaveSettings(void)
 
 #define LOOK_DEADZONE 24	/* stick counts below this are "idle" */
 #define LOOK_YAW_SIGN -1	/* -1 = push right orbits the camera right */
+
+/* aim mode: the look speed is halved while aiming for finer control */
+#define AIM_LOOK_DIV 2
+
+/* on-foot startup momentum: while the ped is just starting to move (speed
+ * below this) the camera eases with a touch more lag, then tightens up */
+#define FOOT_LAG_SPEED 6
+#define FOOT_LAG_DIV 8
 #define YAW_RATE 256		/* max orbit speed at full stick, sensX = 64
 				   (x4: the default was too slow) */
 #define YAW_RAMP 20		/* frames to reach full orbit speed (~1/3 s at
@@ -653,6 +662,7 @@ static int D2plOnLook(void* userdata, void* args)
 			int pitchMax = (PITCH_MAX * gS.sensY) / 64;
 			int sX = gS.invertH ? -stickX : stickX;
 			int sY = gS.invertV ? -stickY : stickY;
+			int aimDiv = gAiming ? AIM_LOOK_DIV : 1;	/* slower while aiming */
 			int targetSpeed;
 
 			/* orbit: the angle moves by a momentum-driven speed. The speed
@@ -665,7 +675,7 @@ static int D2plOnLook(void* userdata, void* args)
 			a->suppress = 1;
 		a->gripOrbit = 1;
 
-		targetSpeed = (LOOK_YAW_SIGN * sX * yawMax) / 127;
+		targetSpeed = (LOOK_YAW_SIGN * sX * yawMax) / (127 * aimDiv);
 
 		/* ramp with a minimum step of 1 so tiny deflections still move */
 		{
@@ -684,19 +694,22 @@ static int D2plOnLook(void* userdata, void* args)
 		pitchMax = jer_clamp_int(pitchMax, 0, 900);
 
 		gLookPitchTarget = jer_clamp_int(
-			(LOOK_PITCH_SIGN * sY * pitchMax) / 128, -pitchMax, pitchMax);
+			(LOOK_PITCH_SIGN * sY * pitchMax) / (128 * aimDiv), -pitchMax, pitchMax);
 
 		/* mouse motion nudges the orbit/pitch on top of the stick — direct
-		 * (not momentum-ramped): a flick is a flick, smooth but immediate */
+		 * (not momentum-ramped): a flick is a flick, smooth but immediate.
+		 * NOTE: the mouse YAW sign is deliberately the opposite of the
+		 * stick's (-LOOK_YAW_SIGN) — the user's live test showed the
+		 * mouse horizontal was mirrored. Don't "fix" it back. */
 		{
 			int mX = gS.invertH ? -gMouseDX : gMouseDX;
 			int mY = gS.invertV ? -gMouseDY : gMouseDY;
 
 			lp->cameraAngle = (lp->cameraAngle +
-				(LOOK_YAW_SIGN * mX * gS.sensX * MOUSE_YAW) / (64 * 128)) & 0xfff;
+				(-LOOK_YAW_SIGN * mX * gS.sensX * MOUSE_YAW) / (64 * 128 * aimDiv)) & 0xfff;
 
 			gLookPitchTarget = jer_clamp_int(gLookPitchTarget +
-				(LOOK_PITCH_SIGN * mY * gS.sensY * MOUSE_PITCH) / (64 * 128),
+				(LOOK_PITCH_SIGN * mY * gS.sensY * MOUSE_PITCH) / (64 * 128 * aimDiv),
 				-pitchMax, pitchMax);
 		}
 
@@ -972,10 +985,20 @@ static int D2plOnPedInput(void* userdata, void* args)
  * would sink into the ground, for the forced look-up effect). */
 static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 {
-	int div = inCar ? 4 : 5;	/* responsive smoothness (1/div toward target per
+	int div;
+
+	if (inCar)
+		div = 4;	/* responsive smoothness (1/div toward target per
 				   frame) — a car turning sharply gets a little (subtle)
 				   runway lag, but tighter than before so the player can
 				   still see around the turn */
+	else if (!gAiming && gFootSpeedSmooth < FOOT_LAG_SPEED)
+		div = FOOT_LAG_DIV;	/* on foot, not aiming, just starting to
+				   move: a touch MORE lag gives him the semblance of
+				   momentum as he accelerates; once he's moving the
+				   camera tightens up (div 5 below) */
+	else
+		div = 5;
 	int baseY = -base[1];	/* basePos y is RAW (un-negated); the camera frame
 				   negates it (camera.c: carheight - basePos[1]) */
 	int targetY = baseY + (inCar ? 0 : gS.footHeight);
