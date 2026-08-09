@@ -261,7 +261,10 @@ static void D2plSaveSettings(void)
 #define SETTLE_DIV 12		/* 1/12 of the gap per frame — lazy, cinematic */
 #define VEL_NOISE 16		/* base-delta noise floor before velocity counts */
 #define VEL_BLEND_SPEED_SCALE 24	/* velocity-blend weight per speed unit */
-#define VEL_BLEND_MAX 2900	/* cap the blend weight (~0.7 of 4096) */
+#define VEL_BLEND_MAX 2900	/* cap the base blend weight (~0.7 of 4096);
+				   the drift boost may push past this */
+#define VEL_BLEND_ABS_MAX 3500	/* absolute ceiling (~0.85) — never full weight,
+				   so the heading vector never fully cancels */
 #define VEL_BLEND_SLIP_MIN 384	/* slip angle where the drift boost starts */
 #define VEL_BLEND_SLIP_DIV 2	/* slip boost per unit of slip */
 #define FOV_SPEED_SCALE 512	/* subtle FOV widening with smoothed speed */
@@ -320,6 +323,8 @@ static int gMoveRefHeading;	/* camera heading frozen at view-manipulation start
 static int gMoveRefActive;	/* 1 while that freeze is in effect */
 static int gVelAngle;		/* smoothed ground-velocity heading (0..4095) */
 static int gSpeedSmooth;	/* smoothed wheel speed (FIXEDH units, 0 on foot) */
+static int gBobLastX;	/* last on-foot base position (view bob motion) */
+static int gBobLastZ;
 static int gLastBaseX, gLastBaseZ;
 static int gCamInitialized;	/* one-shot: snap the spawn orbit angle behind */
 static int gSettleInfluence;	/* natural-settle influence fade (0..4096): ramps
@@ -511,8 +516,10 @@ static int D2plNaturalHeading(PLAYER* lp, int inCar)
 		if (slip > VEL_BLEND_SLIP_MIN)
 			w += (slip - VEL_BLEND_SLIP_MIN) / VEL_BLEND_SLIP_DIV;
 
-		if (w > VEL_BLEND_MAX)
-			w = VEL_BLEND_MAX;
+		/* cap the TOTAL so the boost can push past the base cap but never
+		 * reach full velocity weight */
+		if (w > VEL_BLEND_ABS_MAX)
+			w = VEL_BLEND_ABS_MAX;
 
 		{
 			int bx = FIXEDH(RSIN(natural) * (4096 - w) + RSIN(gVelAngle) * w);
@@ -702,8 +709,10 @@ static int D2plOnLook(void* userdata, void* args)
 		 * stick's (-LOOK_YAW_SIGN) — the user's live test showed the
 		 * mouse horizontal was mirrored. Don't "fix" it back. */
 		{
-			int mX = gS.invertH ? -gMouseDX : gMouseDX;
-			int mY = gS.invertV ? -gMouseDY : gMouseDY;
+			/* clamp the per-frame delta so a warp/flick spike can't overflow
+			 * the fixed-point products below */
+			int mX = jer_clamp_int(gS.invertH ? -gMouseDX : gMouseDX, -512, 512);
+			int mY = jer_clamp_int(gS.invertV ? -gMouseDY : gMouseDY, -512, 512);
 
 			lp->cameraAngle = (lp->cameraAngle +
 				(-LOOK_YAW_SIGN * mX * gS.sensX * MOUSE_YAW) / (64 * 128 * aimDiv)) & 0xfff;
@@ -1001,7 +1010,7 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 		div = 5;
 	int baseY = -base[1];	/* basePos y is RAW (un-negated); the camera frame
 				   negates it (camera.c: carheight - basePos[1]) */
-	int targetY = baseY + (inCar ? 0 : gS.footHeight);
+	int targetY = baseY + (inCar ? CAR_HEIGHT : gS.footHeight);
 	int clipped = 0;
 	int i;
 
@@ -1062,7 +1071,7 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 		int* target = ((int*)camPos) + i;
 		int delta = (*target - *smooth + div / 2) / div;
 
-		if (clipped == 0)
+		if (clipped != 1)
 		{
 			if (delta > MAX_POS_STEP)
 				delta = MAX_POS_STEP;
@@ -1081,10 +1090,10 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 	 * may not sink below the road surface — clamp it back up to the
 	 * surface line and report how deep it would have gone (the
 	 * ground-slide effect). MapHeight returns the RAW terrain height, so
-	 * in the negated camera frame the ground line is -MapHeight and the
-	 * cap becomes TERRAIN_CLEAR - MapHeight. */
+	 * in the negated camera frame the ground line is -MapHeight and
+	 * 'stay CLEAR above it' = vy <= -MapHeight - CLEAR. */
 	{
-		int camMaxY = (inCar ? TERRAIN_CLEAR_CAR : TERRAIN_CLEAR_FOOT) - MapHeight(camPos);
+		int camMaxY = -(inCar ? TERRAIN_CLEAR_CAR : TERRAIN_CLEAR_FOOT) - MapHeight(camPos);
 
 		if (camPos->vy > camMaxY)
 		{
@@ -1247,7 +1256,10 @@ static int D2plOnCamera(void* userdata, void* args)
 		camPos->vx += (lp->pos[0] - camPos->vx) * AIM_PULL / 4096;
 		camPos->vz += (lp->pos[2] - camPos->vz) * AIM_PULL / 4096;
 
-		camPos->vy += AIM_HEIGHT;
+		/* rebase into the module (negated) frame like the other branches —
+		 * the engine hands the aim path RAW y (camera.c:570), and the
+		 * shared smooth/cap/collision math below expects -rawY */
+		camPos->vy = -((int*)a->basePos)[1] + AIM_HEIGHT;
 
 		camPos->vx += FIXEDH(RCOS(heading) * AIM_LATERAL * gS.shoulder);
 		camPos->vz += -FIXEDH(RSIN(heading) * AIM_LATERAL * gS.shoulder);
@@ -1276,7 +1288,7 @@ static int D2plOnCamera(void* userdata, void* args)
 	{
 		int fovScrZ = gS.fovEnabled ? D2plFovScrZ(gS.fovDeg) : gCameraDefaultScrZ;
 
-		SetGeomScreen(scr_z = fovScrZ - (gLookPitch * FOV_PITCH_SCALE) / 128
+		SetGeomScreen(scr_z = fovScrZ + (gLookPitch * FOV_PITCH_SCALE) / 128
 			- (gSpeedSmooth * FOV_SPEED_SCALE) / 4096);
 
 		if (scr_z < 96)
@@ -1286,6 +1298,8 @@ static int D2plOnCamera(void* userdata, void* args)
 	if (lp->playerCarId >= 0)
 	{
 		/* --- GTA4-style chase cam for vehicles --- */
+		int* base = (int*)a->basePos;	/* RAW y: rebased below into the
+						   camera (negated) frame */
 		CAR_COSMETICS* car_cos = car_data[lp->playerCarId].ap.carCos;
 		int lateral = 120;
 		int speed = gSpeedSmooth;	/* smoothed: no distance jitter (§5) */
@@ -1303,7 +1317,11 @@ static int D2plOnCamera(void* userdata, void* args)
 		camPos->vx += (lp->pos[0] - camPos->vx) * pull / 4096;
 		camPos->vz += (lp->pos[2] - camPos->vz) * pull / 4096;
 
-		camPos->vy += CAR_HEIGHT - (gSpeedSmooth * HEIGHT_SPEED_SCALE) / 4096;
+		/* rebase y into the module frame (vy = -rawY) so the terrain cap,
+		 * collision push, aim target and pitch-orbit anchor all agree;
+		 * the engine's own carheight - basePos[1] frame (per-car ride
+		 * height) was silently fighting the cap on flat ground */
+		camPos->vy = -base[1] + CAR_HEIGHT - (gSpeedSmooth * HEIGHT_SPEED_SCALE) / 4096;
 
 		camPos->vx += FIXEDH(RCOS(heading) * lateral * gS.shoulder);
 		camPos->vz += -FIXEDH(RSIN(heading) * lateral * gS.shoulder);
@@ -1332,12 +1350,10 @@ static int D2plOnCamera(void* userdata, void* args)
 
 			/* subtle view bob/sway while Tanner moves (still when idle) */
 			{
-				static int lastX;
-				static int lastZ;
-				int speed = ABS(lp->pos[0] - lastX) + ABS(lp->pos[2] - lastZ);
+				int speed = ABS(lp->pos[0] - gBobLastX) + ABS(lp->pos[2] - gBobLastZ);
 
-				lastX = lp->pos[0];
-				lastZ = lp->pos[2];
+				gBobLastX = lp->pos[0];
+				gBobLastZ = lp->pos[2];
 
 				if (speed > 8)
 				{
@@ -1943,6 +1959,8 @@ static void D2plReset(void)
 	gSpeedSmooth = 0;
 	gLastBaseX = 0;
 	gLastBaseZ = 0;
+	gBobLastX = 0;
+	gBobLastZ = 0;
 	gCamInitialized = 0;
 	gSettleInfluence = 0;
 	gAngRate = 0;
