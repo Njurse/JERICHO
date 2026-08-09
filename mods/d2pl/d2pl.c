@@ -213,9 +213,12 @@ static void D2plSaveSettings(void)
 #define MOVE_LERP_DIV 8		/* responsive exponential heading lerp: 1/8 of the
 				   remaining gap toward the stick-derived heading each
 				   frame (fast when far, eases in) */
-#define RUN_TURN_LIMIT 20	/* max turn per frame while moving (~1.8 deg) —
-				   gentler than before: the player's heading eases
-				   toward the camera direction instead of snapping */
+#define RUN_TURN_LIMIT 128	/* max turn per frame while running (~11.25 deg,
+				   ~675 deg/s): well beyond the original 32-unit
+				   restriction so Tanner decisively turns toward
+				   the stick heading (even a 180) instead of
+				   creeping around; the exponential lerp keeps it
+				   smooth, the cap keeps it from snapping */
 #define PIVOT_TURN_LIMIT 256	/* standstill pivot speed (~22.5 deg/frame):
 				   near-instant so the player starts running the new
 				   way immediately, GTA-style */
@@ -254,6 +257,20 @@ static void D2plSaveSettings(void)
 #define VEL_BLEND_SLIP_DIV 2	/* slip boost per unit of slip */
 #define FOV_SPEED_SCALE 512	/* subtle FOV widening with smoothed speed */
 #define HEIGHT_SPEED_SCALE 256	/* subtle camera height rise with speed */
+#define FOOT_WALK_SPEED 14	/* on-foot speed at which the camera sits at its
+				   base distance (pull in when slower, extend when
+				   running — relative-framing doc) */
+#define FOOT_SPEED_DIST 4	/* distance units added per unit of run speed */
+
+/* Instability Governor (spin-out recovery, GTA IV §4): when the car's
+ * angular rate spikes (spin, crash), the camera stops trying to be clever
+ * and holds its orientation until the car settles. Hysteresis: trigger
+ * above the upper threshold, release only after the rate has stayed below
+ * the lower threshold for a confirmation window. Priority below Manual
+ * Look, above Natural. */
+#define INSTAB_TRIGGER 192	/* smoothed deg-ish units/frame that claims focus */
+#define INSTAB_RELEASE 64	/* must drop below this to release */
+#define INSTAB_CONFIRM 20	/* frames of calm before releasing */
 
 /* aim camera (on foot) */
 #define AIM_PULL 2000		/* /4096: pull toward Tanner while aiming */
@@ -288,6 +305,17 @@ static int gVelAngle;		/* smoothed ground-velocity heading (0..4095) */
 static int gSpeedSmooth;	/* smoothed wheel speed (FIXEDH units, 0 on foot) */
 static int gLastBaseX, gLastBaseZ;
 static int gCamInitialized;	/* one-shot: snap the spawn orbit angle behind */
+static int gSettleInfluence;	/* natural-settle influence fade (0..4096): ramps
+				   in on release so the ease eases IN — no correction
+				   snap at the handoff, live target throughout */
+static int gAngRate;		/* smoothed car-body angular rate (units/frame) */
+static int gLastCarDir;		/* previous car heading for the rate delta */
+static int gInstability;	/* 1 = the Instability Governor holds the camera */
+static int gInstabConfirm;	/* frames the rate has stayed calm (hysteresis) */
+static int gFootSpeedSmooth;	/* smoothed on-foot speed (pPed->speed) */
+static int gTrackedCarId = -2;	/* the car the governor is sampling (seeds the
+				   angular-rate delta on car entry, so the first
+				   in-car frame can't false-trigger a spin) */
 
 /* ped was moving last frame (run-vs-pivot turn limit) */
 static int gPedWasMoving;
@@ -428,6 +456,41 @@ int* WeaponSystem_HandPos(void)
 /* JER_EVENT_CAMERA_LOOK — right-stick orbit + pitch free-look         */
 /* ================================================================== */
 
+/* the natural heading the settled camera tracks behind: for a car it's
+ * the speed-weighted blend of the body heading and the ground-velocity
+ * heading; on foot it's the ped's facing. Computed FRESH every call from
+ * live state — never a snapshot — so resuming automatic tracking after a
+ * pause (manual look, spin-out) never corrects against a stale target.
+ *
+ * The blend weights the direction VECTORS (RSIN/RCOS components), not
+ * the angles directly, so a heading crossing 0/360 cannot snap. */
+static int D2plNaturalHeading(PLAYER* lp, int inCar)
+{
+	int natural = inCar ? car_data[lp->playerCarId].hd.direction : lp->dir;
+
+	if (inCar)
+	{
+		int w = jer_clamp_int(gSpeedSmooth * VEL_BLEND_SPEED_SCALE, 0, VEL_BLEND_MAX);
+		int slip = ABS(DIFF_ANGLES(natural, gVelAngle));
+
+		if (slip > VEL_BLEND_SLIP_MIN)
+			w += (slip - VEL_BLEND_SLIP_MIN) / VEL_BLEND_SLIP_DIV;
+
+		if (w > VEL_BLEND_MAX)
+			w = VEL_BLEND_MAX;
+
+		{
+			int bx = FIXEDH(RSIN(natural) * (4096 - w) + RSIN(gVelAngle) * w);
+			int bz = FIXEDH(RCOS(natural) * (4096 - w) + RCOS(gVelAngle) * w);
+
+			if (ABS(bx) + ABS(bz) > 16)
+				natural = ratan2(bx, bz);
+		}
+	}
+
+	return natural;
+}
+
 static int D2plOnLook(void* userdata, void* args)
 {
 	JER_ARGS_CAMERA_LOOK* a = (JER_ARGS_CAMERA_LOOK*)args;
@@ -462,6 +525,59 @@ static int D2plOnLook(void* userdata, void* args)
 			gVelAngle = (gVelAngle + DIFF_ANGLES(gVelAngle, ratan2(dx, dz)) / 6) & 0xfff;
 
 		gSpeedSmooth += ((inCar ? D2plCarSpeed(lp) : 0) - gSpeedSmooth) / 8;
+
+		if (!inCar && lp->pPed != NULL)
+			gFootSpeedSmooth += (ABS(lp->pPed->speed) - gFootSpeedSmooth) / 8;
+		else
+			gFootSpeedSmooth = 0;
+	}
+
+	/* Instability Governor tracking: smoothed car-body angular rate with
+	 * hysteresis (trigger high, release low after a confirmation window) */
+	if (inCar)
+	{
+		int dir = car_data[lp->playerCarId].hd.direction;
+
+		if (gTrackedCarId != lp->playerCarId)
+		{
+			/* just entered this car: seed the delta so the first sample
+			 * can't read a huge fake rate from an uninitialized last */
+			gTrackedCarId = lp->playerCarId;
+			gLastCarDir = dir;
+			gAngRate = 0;
+		}
+		else
+		{
+			gAngRate += (ABS(DIFF_ANGLES(gLastCarDir, dir)) - gAngRate) / 4;
+			gLastCarDir = dir;
+		}
+
+		if (gInstability == 0 && gAngRate > INSTAB_TRIGGER)
+		{
+			gInstability = 1;
+			gInstabConfirm = 0;
+		}
+		else if (gInstability != 0)
+		{
+			if (gAngRate <= INSTAB_RELEASE)
+			{
+				gInstabConfirm++;
+
+				if (gInstabConfirm >= INSTAB_CONFIRM)
+					gInstability = 0;
+			}
+			else
+			{
+				gInstabConfirm = 0;
+			}
+		}
+	}
+	else
+	{
+		gAngRate = 0;
+		gInstability = 0;
+		gInstabConfirm = 0;
+		gTrackedCarId = -2;
 	}
 
 	/* one-shot at spawn: the engine starts the orbit 45 degrees off
@@ -486,6 +602,8 @@ static int D2plOnLook(void* userdata, void* args)
 
 	if (usingStick)
 	{
+		gSettleInfluence = 0;	/* a new grip aborts the fade: fresh start */
+
 		if (gLookIdle > 0 || gGripDist == 0)
 			gGripDist = lp->cameraDist;	/* grip just started: freeze now */
 
@@ -569,41 +687,38 @@ static int D2plOnLook(void* userdata, void* args)
 			if (gLookIdle > settleFrames)
 		{
 			/* released: the module's NATURAL settle takes over (GTA IV
-			 * §1 State A) — ease the orbit toward the blended natural
-			 * heading (velocity-weighted for cars, §2) instead of letting
-			 * the engine's fixed-rate settle fight the blend. EXCEPT at a
-			 * standstill in a car, where the camera holds still (reverse
-			 * grace: no auto swing unless the player is deliberately
-			 * moving backward). */
-			if (inCar && D2plCarSpeed(lp) <= LOW_SPEED_GRACE)
+			 * §1 State A) — ease the orbit toward the live blended natural
+			 * heading via an influence fade. EXCEPT while the Instability
+			 * Governor holds (the car is spinning/crashing: the camera
+			 * stabilizes instead of trying to be clever) and at a
+			 * standstill in a car (reverse grace: no auto swing unless the
+			 * player is deliberately moving backward). */
+			if (gInstability)
+			{
+				a->suppress = 1;
+				a->gripOrbit = 1;
+				gSettleInfluence = 0;	/* fresh fade when stability returns */
+			}
+			else if (inCar && D2plCarSpeed(lp) <= LOW_SPEED_GRACE)
 			{
 				a->suppress = 1;
 				a->gripOrbit = 1;
 			}
 			else
 			{
-				int natural = inCar ? car_data[lp->playerCarId].hd.direction : lp->dir;
+				int natural = D2plNaturalHeading(lp, inCar);
+				int delta;
 
-				if (inCar)
-				{
-					/* §2: speed-weighted blend toward the velocity vector,
-					 * with a slip-angle boost so drifting holds the
-					 * direction of travel while the car rotates */
-					int spd = gSpeedSmooth;
-					int w = jer_clamp_int(spd * VEL_BLEND_SPEED_SCALE, 0, VEL_BLEND_MAX);
-					int slip = ABS(DIFF_ANGLES(natural, gVelAngle));
+				/* influence fade (the shared underlying trick): ramp how
+				 * much of the live target is applied from 0 -> 1 instead of
+				 * starting a fresh point-to-point blend — the target kept
+				 * computing during the pan, so there is no correction snap */
+				gSettleInfluence += (4096 - gSettleInfluence) / 16;
 
-					if (slip > VEL_BLEND_SLIP_MIN)
-						w += (slip - VEL_BLEND_SLIP_MIN) / VEL_BLEND_SLIP_DIV;
+				delta = (DIFF_ANGLES(lp->cameraAngle, (natural + gCameraAngle) & 0xfff)
+					* gSettleInfluence) / SETTLE_DIV / 4096;
 
-					if (w > VEL_BLEND_MAX)
-						w = VEL_BLEND_MAX;
-
-					natural = (natural + ((DIFF_ANGLES(natural, gVelAngle) * w) >> 12)) & 0xfff;
-				}
-
-				lp->cameraAngle = jer_lerp_angle(lp->cameraAngle,
-					(natural + gCameraAngle) & 0xfff, SETTLE_DIV);
+				lp->cameraAngle = (lp->cameraAngle + delta) & 0xfff;
 
 				a->suppress = 1;
 				a->gripOrbit = 1;	/* the module owns the settle now */
@@ -688,6 +803,23 @@ static int D2plOnPedInput(void* userdata, void* args)
 	stickHeading = ratan2(MOVE_STICK_SIGN_X * stickX, MOVE_STICK_SIGN_Y * -stickY);
 
 	desired = (camHeading + stickHeading) & 0xfff;
+
+	/* diagnostics: log the heading math every 60 frames while input is
+	 * live — 'stick down should make desired ~ baseDir+2048, and pdir
+	 * should track dir' — so a pad-axis quirk or heading-convention
+	 * error (running perpendicular to the camera) is readable at a glance */
+	{
+		static int gMoveLogTimer;
+
+		if (--gMoveLogTimer <= 0)
+		{
+			gMoveLogTimer = 60;
+
+			jer_log("[d2pl] move: cam=%d stick=%d desired=%d dir=%d pdir=%d ref=%d/%d\n",
+				camHeading, stickHeading, desired, lp->dir,
+				lp->pPed->dir.vy, gMoveRefActive, gMoveRefHeading);
+		}
+	}
 
 	/* while running the turn is limited (the player arcs around, even for
 	 * a 180 — a small circular path, never a snap); from standstill the
@@ -831,11 +963,14 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 }
 
 /* Diagnostics: log the camera state every 60 frames (and once on a clip)
- * so a solid-black / broken view can be traced — is the position sane, is
- * the angle sane, is the collision check tripping, is scr_z sane. */
+ * so a broken view can be traced — position, angle, the input axes, and
+ * Tanner's facing vs the camera heading (the 'running perpendicular'
+ * style issues show up here: stick down should make desired = baseDir,
+ * and pdir should track dir). */
 static int gCamLogTimer = 0;
 
-static void D2plLogCamera(VECTOR* camPos, SVECTOR* camAngle, int clipped)
+static void D2plLogCamera(PLAYER* lp, int baseDirIn, VECTOR* camPos,
+	SVECTOR* camAngle, int clipped)
 {
 	gCamLogTimer--;
 
@@ -844,9 +979,17 @@ static void D2plLogCamera(VECTOR* camPos, SVECTOR* camAngle, int clipped)
 
 	gCamLogTimer = 60;
 
-	jer_log("[d2pl] cam: pos=(%d,%d,%d) ang=(%d,%d) scr_z=%d collide=%d\n",
+	jer_log("[d2pl] cam: pos=(%d,%d,%d) ang=(%d,%d) scr_z=%d collide=%d | "
+		"tanner: dir=%d pdir=%d pos=(%d,%d,%d) | stick=%d,%d | "
+		"camYaw=%d baseDir=%d ref=%d/%d\n",
 		camPos->vx, camPos->vy, camPos->vz,
-		camAngle->vx, camAngle->vy, scr_z, clipped);
+		camAngle->vx, camAngle->vy, scr_z, clipped,
+		lp->dir, (lp->pPed != NULL) ? lp->pPed->dir.vy : -9999,
+		lp->pos[0], lp->pos[1], lp->pos[2],
+		(lp->padid >= 0) ? Pads[lp->padid].mapanalog[0] : -9999,
+		(lp->padid >= 0) ? Pads[lp->padid].mapanalog[1] : -9999,
+		lp->cameraAngle, baseDirIn,
+		gMoveRefActive, gMoveRefHeading);
 }
 
 /* The orbit looks INWARD: point the view at the focal point from the final
@@ -977,7 +1120,7 @@ static int D2plOnCamera(void* userdata, void* args)
 		{
 			int clip = D2plSmoothCamera(camPos, (int*)a->basePos, a->inCar, NULL);
 
-			D2plLogCamera(camPos, camAngle, clip);
+			D2plLogCamera(lp, a->baseDir, camPos, camAngle, clip);
 		}
 
 		SetGeomScreen(scr_z = gCameraDefaultScrZ + AIM_ZOOM);
@@ -1039,9 +1182,14 @@ static int D2plOnCamera(void* userdata, void* args)
 
 		if (base != NULL)
 		{
-			camPos->vx = base[0] + (-FIXEDH(RSIN(heading) * gS.footDist)
+			/* the distance modulates with run speed: pulls in when
+			 * stationary/walking, extends when running (framing doc) */
+			int footDist = gS.footDist
+				+ (gFootSpeedSmooth - FOOT_WALK_SPEED) * FOOT_SPEED_DIST;
+
+			camPos->vx = base[0] + (-FIXEDH(RSIN(heading) * footDist)
 				+ FIXEDH(RCOS(heading) * gS.footLat * gS.shoulder));
-			camPos->vz = base[2] + (-FIXEDH(RCOS(heading) * gS.footDist)
+			camPos->vz = base[2] + (-FIXEDH(RCOS(heading) * footDist)
 				- FIXEDH(RSIN(heading) * gS.footLat * gS.shoulder));
 			camPos->vy = -base[1] + gS.footHeight;	/* base y is RAW: negate
 							   it to the camera frame */
@@ -1136,7 +1284,7 @@ static int D2plOnCamera(void* userdata, void* args)
 			camAngle->vx -= boost;
 		}
 
-		D2plLogCamera(camPos, camAngle, clip);
+		D2plLogCamera(lp, a->baseDir, camPos, camAngle, clip);
 	}
 
 	a->override = 1;
@@ -1616,6 +1764,13 @@ static void D2plReset(void)
 	gLastBaseX = 0;
 	gLastBaseZ = 0;
 	gCamInitialized = 0;
+	gSettleInfluence = 0;
+	gAngRate = 0;
+	gLastCarDir = 0;
+	gInstability = 0;
+	gInstabConfirm = 0;
+	gTrackedCarId = -2;
+	gFootSpeedSmooth = 0;
 	gPedWasMoving = 0;
 	gAimLookBlend = 0;
 

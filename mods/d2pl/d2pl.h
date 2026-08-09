@@ -40,8 +40,6 @@
 #include "camera.h"	/* camera_position/camera_angle for aimPoint() */
 #include "draw.h"	/* RenderModel */
 #include "models.h"	/* FindModelPtrWithName */
-#include "sound.h"	/* FESound */
-#include "gamesnd.h"	/* LoadBankFromLump, SBK_ID_MENU/SFX */
 #include "pad.h"	/* MPAD_R1/MPAD_R2 fire buttons */
 #include "jer_math.h"	/* game types (VECTOR) must be defined first */
 
@@ -391,15 +389,14 @@ static inline void D2plRotatePose(int* px, int* pz, int h)
 		}
 	}
 
-	/* The frontend menu samples (accept = 2, backout = 0) live in the menu
-	 * SFX bank, but in-game the SFX bank slot holds the game's own sounds
-	 * (loaded at level start). Swap the menu bank in for the play and put
-	 * the game's SFX bank back immediately so gameplay sounds keep working. */
+	/* Weapon audio is intentionally DISABLED for now: swapping the SFX
+	 * soundbank (LoadBankFromLump(SOUND_BANK_SFX, SBK_ID_MENU)) around
+	 * every shot caused problems in-game, so we play nothing rather than
+	 * risk corrupting the bank state. The call sites stay wired so audio
+	 * can be re-added cleanly later. */
 	void playSound(int sample)
 	{
-		LoadBankFromLump(SOUND_BANK_SFX, SBK_ID_MENU);
-		FESound(sample);
-		LoadBankFromLump(SOUND_BANK_SFX, SBK_ID_SFX);
+		(void)sample;
 	}
 };
 
