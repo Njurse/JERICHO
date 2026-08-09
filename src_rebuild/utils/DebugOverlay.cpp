@@ -83,6 +83,9 @@ void DrawDebugOverlays()
 
 				otIdx = z >> 1;
 
+				if (otIdx < 0)
+					otIdx = 0;	/* the muzzle can project behind the camera */
+
 				if (otIdx >= OTSIZE)
 					otIdx = OTSIZE - 1;
 

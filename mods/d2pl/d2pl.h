@@ -507,8 +507,6 @@ extern D2PL_SETTINGS gS;
 				   uses INVERTED y — up = -y); the camera gravitates
 				   toward looking AHEAD of the car near the forward
 				   angle so view-panning in isn't jarring */
-#define CAR_LOOK_AHEAD 5000	/* the settled camera focuses this far AHEAD of
-				   the car so you see where you're driving */
 
 /* ground cap: Driver 2 uses INVERTED y (vy grows downward), so the road is
  * a heightfield the camera must not sink below. Mirror the engine's own

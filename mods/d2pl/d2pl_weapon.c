@@ -189,10 +189,11 @@ void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
 		carPoint.vy = baseY + CAR_ORBIT_UP;
 		carPoint.vz = base[2];
 
-		/* settled focal point: ahead of the car, where you're driving */
-		aheadPoint.vx = base[0] + FIXEDH(RSIN(baseDir) * CAR_LOOK_AHEAD);
+		/* settled focal point: was looking ahead of where you're driving but trying sole focus on car after reviewing GTA4 footage. */
+		// Update - this fixed the shitty driving camera problem that made it too much like a mobile game, I like this a lot more
+		aheadPoint.vx = base[0] + FIXEDH(RSIN(baseDir));
 		aheadPoint.vy = baseY + CAR_ORBIT_UP;
-		aheadPoint.vz = base[2] + FIXEDH(RCOS(baseDir) * CAR_LOOK_AHEAD);
+		aheadPoint.vz = base[2] + FIXEDH(RCOS(baseDir));
 
 		/* gravitate toward looking AHEAD of the car only very close to the
 		 * settled angle, and onto the car itself much earlier while
@@ -265,7 +266,8 @@ int D2plAimCamera(void* args, int heading)
 		/* rebase into the module (negated) frame like the other branches —
 		 * the engine hands the aim path RAW y (camera.c:570), and the
 		 * shared smooth/cap/collision math below expects -rawY */
-		camPos->vy = -((int*)a->basePos)[1] + AIM_HEIGHT;
+		if (a->basePos != NULL)
+			camPos->vy = -((int*)a->basePos)[1] + AIM_HEIGHT;
 
 		camPos->vx += FIXEDH(RCOS(heading) * AIM_LATERAL * gS.shoulder);
 		camPos->vz += -FIXEDH(RSIN(heading) * AIM_LATERAL * gS.shoulder);
@@ -368,19 +370,26 @@ int D2plOnSkeleton(void* userdata, void* args)
 			pos.vy = vJPos[handLimb].vy + playerPos->vy - cameraPos->vy;
 			pos.vz = vJPos[handLimb].vz + playerPos->vz - cameraPos->vz;
 
+			/* InitMatrix(ident) sets the identity ROTATION (the macro only
+			 * touches the 3x3; the translation comes from the pos arg) — the
+			 * old code never initialized the matrix, so SetRotMatrix loaded
+			 * stack garbage into the GTE rotation; every later draw (the
+			 * engine's bone models) then projected through it and the OT
+			 * writes went out of bounds (the weapon access violation) */
+			InitMatrix(ident);
+
 			SetRotMatrix(&ident);
-			ident.t[0] = 0;
-			ident.t[1] = 0;
-			ident.t[2] = 0;
 
 			RenderModel(w->meshModel, &ident, &pos, 1, PLOT_NO_SHADE, 0, 0);
 
-			/* restore the GTE translation the engine's own bone draws rely
-			 * on ({0,0,0} set at the top of newShowTanner) — otherwise
-			 * Tanner's body would be drawn offset by the hand position */
+			/* restore the GTE state the engine's own bone draws rely on —
+			 * the camera rotation it set at the top of newShowTanner plus
+			 * the zero translation — otherwise Tanner's body would be drawn
+			 * with the weapon's identity rotation and the hand's offset */
 			{
 				VECTOR zero = { 0, 0, 0 };
 
+				gte_SetRotMatrix(&inv_camera_matrix);
 				gte_SetTransVector(&zero);
 			}
 		}

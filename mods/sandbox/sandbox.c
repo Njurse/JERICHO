@@ -222,7 +222,7 @@ enum
 
 #define SBX_MAIN_ITEMS 7	/* Vehicle, Spawn, World, Cheats, Replace Pause, Open Pause, Close */
 #define SBX_VEHICLE_ITEMS 6	/* Repair, Upright, Set Damage, Set Felony, Player AI Mode, Tune Car */
-#define SBX_SPAWN_ITEMS 4	/* Position, Spawn Car, Object, AI Car */
+#define SBX_SPAWN_ITEMS 5	/* Position, Car ID, Spawn Car, Object, AI Car */
 #define SBX_WORLD_ITEMS 2	/* Time of Day, Weather */
 #define SBX_AICAR_ITEMS 7	/* Vehicle, Mode, Param, Position, Spawn, Remove, Back */
 #define SBX_CHEATS_ITEMS 9	/* invincibility, immunity, secret car, jericho, mini, bonus, buddha, unlock all, back */
@@ -236,7 +236,7 @@ static const char* const gSandboxVehicleItems[SBX_VEHICLE_ITEMS] = {
 	"Repair Car", "Make Car Upright", "Set Damage", "Set Felony", "Player AI Mode", "Tune Car"
 };
 static const char* const gSandboxSpawnItems[SBX_SPAWN_ITEMS] = {
-	"Spawn Position", "Spawn Car", "Spawn Object", "AI Car"
+	"Spawn Position", "Car ID", "Spawn Car", "Spawn Object", "AI Car"
 };
 static const char* const gSandboxWorldItems[SBX_WORLD_ITEMS] = {
 	"Set Time of Day", "Set Weather"
@@ -272,6 +272,9 @@ static int gSandboxSavedDoOverlays;
 static int gSandboxInputDebounce;
 
 /* AI car submenu state */
+static int gSandboxSpawnModel = -1;	/* car model the Spawn Car button creates
+				   (the Car ID item cycles this; -1 = first use,
+				   defaults to the player's own car) */
 static int gSandboxAIModel;		/* internal car model to spawn */
 static int gSandboxAIMode;		/* 0 = civilian, 1 = cop, 2 = lead */
 static int gSandboxAIParam;		/* mode-specific parameter */
@@ -287,7 +290,10 @@ static int gSandboxTunedActive;
  * world depths, where the world geometry cut it off and the panel's
  * semi-transparency flickered over it */
 static OTTYPE gSandboxPreviewOt[2048];
-static DENTUVS gSandboxCleanUv;		/* zeroed damage-UV table for clean previews */
+static DENTUVS gSandboxCleanUv[MAX_DENTING_UVS];	/* zeroed damage-UV
+				   table for clean previews (one entry per denting UV slot —
+				   plotCarPoly indexes damageLevel[src->originalindex] for
+				   EVERY poly, so a single DENTUVS would read OOB) */
 static CAR_DATA gSandboxPreviewCar;	/* scratch car for palette'd model previews */
 
 /* point the scratch car at a model + palette (clean geometry, no damage) */
@@ -723,13 +729,22 @@ static const char* SandboxAICarLabel(int cursor)
 	}
 }
 
-/* spawn page label: the position item shows the live mode */
+/* spawn page label: the position item shows the live mode, the Car ID
+ * item shows the cycled model index */
 static const char* SandboxSpawnLabel(int cursor)
 {
-	if (cursor == 0)
-		return gSandboxSpawnMode ? "Spawn Position: Teleport In" : "Spawn Position: In Front";
+	static char buf[24];
 
-	return SandboxMenuItemLabel(SBX_PAGE_SPAWN, cursor);
+	switch (cursor)
+	{
+	case 0:
+		return gSandboxSpawnMode ? "Spawn Position: Teleport In" : "Spawn Position: In Front";
+	case 1:
+		sprintf(buf, "Car ID: %d", gSandboxSpawnModel);
+		return buf;
+	default:
+		return SandboxMenuItemLabel(SBX_PAGE_SPAWN, cursor);
+	}
 }
 
 /* spawn an AI car with the chosen model, mode and parameter */
@@ -825,7 +840,12 @@ static void SandboxMenuDoAction(int page, int cursor)
 		switch (cursor)
 		{
 		case 0: gSandboxPage = SBX_PAGE_VEHICLE; gSandboxCursor = 0; gSandboxSubPage = 0; break;
-		case 1: gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
+		case 1:
+			/* first visit to the spawn page: default the Car ID to the
+			 * player's own car (the historical Spawn Car behavior) */
+			if (gSandboxSpawnModel < 0)
+				gSandboxSpawnModel = pc != NULL ? pc->ap.model : 0;
+			gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		case 2: gSandboxPage = SBX_PAGE_WORLD; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		case 3: gSandboxPage = SBX_PAGE_CHEATS; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		case 4:
@@ -864,18 +884,27 @@ static void SandboxMenuDoAction(int page, int cursor)
 		switch (cursor)
 		{
 		case 0: gSandboxSpawnMode ^= 1; break;	/* spawn position */
-		case 1:
-			/* spawn a copy of the player's own car model + palette */
-			SandboxSpawnCarModel(pc != NULL ? pc->ap.model : 0,
-				pc != NULL ? pc->ap.palette : 0);
-			break;
+		case 1: break;				/* Car ID — cycled with L/R */
 		case 2:
+			/* spawn the car selected with the Car ID item, clean, in the
+			 * player's palette (matches the preview — the same NULL guard
+			 * so the button can't spawn a non-resident model the preview
+			 * hides) */
+			if (gSandboxSpawnModel >= 0 &&
+				gSandboxSpawnModel < MAX_CAR_RESIDENT_MODELS &&
+				gCarCleanModelPtr[gSandboxSpawnModel] != NULL)
+			{
+				SandboxSpawnCarModel(gSandboxSpawnModel,
+					pc != NULL ? pc->ap.palette : 0);
+			}
+			break;
+		case 3:
 			SandboxMenuBuildObjectList();
 			gSandboxObjectPage = 0;
 			gSandboxObjectCursor = 0;
 			gSandboxPage = SBX_PAGE_OBJECTS;
 			break;
-		case 3:
+		case 4:
 			gSandboxPage = SBX_PAGE_AICAR;
 			gSandboxCursor = 0;
 			gSandboxSubPage = 0;
@@ -976,6 +1005,18 @@ static void SandboxAdjustItem(int dir)
 			break;
 		}
 
+		return;
+	}
+
+	if (gSandboxPage == SBX_PAGE_SPAWN && gSandboxCursor == 1)
+	{
+		/* Car ID: cycle the model to spawn (left/right) */
+		gSandboxSpawnModel += dir;
+
+		if (gSandboxSpawnModel < 0)
+			gSandboxSpawnModel = MAX_CAR_RESIDENT_MODELS - 1;
+		else if (gSandboxSpawnModel >= MAX_CAR_RESIDENT_MODELS)
+			gSandboxSpawnModel = 0;
 		return;
 	}
 
@@ -1451,19 +1492,17 @@ static void SandboxDrawPreview(void)
 	}
 	else if (gSandboxPage == SBX_PAGE_SPAWN)
 	{
-		/* the car the Spawn Car button will create: the player's own model,
-		 * clean, in the player's palette */
+		/* the car the Spawn Car button will create: the model selected with
+		 * the Car ID item, clean, in the player's palette */
 		CAR_DATA* pc = SandboxPlayerCar();
+		int model = gSandboxSpawnModel;
+		int palette = pc != NULL ? pc->ap.palette : 0;
 
-		if (pc == NULL)
+		if (model < 0 || model >= MAX_CAR_RESIDENT_MODELS ||
+			gCarCleanModelPtr[model] == NULL)
 			return;
 
-		/* never feed a missing clean model into the preview (gCarCleanModelPtr
-		 * can be NULL for an unloaded model — DrawCarObject would read it) */
-		if (gCarCleanModelPtr[pc->ap.model] == NULL)
-			return;
-
-		SandboxPreviewScratchCar(pc->ap.model, pc->ap.palette);
+		SandboxPreviewScratchCar(model, palette);
 		cp = &gSandboxPreviewCar;
 		scratch = 1;
 	}
@@ -1473,23 +1512,59 @@ static void SandboxDrawPreview(void)
 
 		if (cp == NULL)
 		{
-			/* on foot: the player ped model (torso), if loaded */
-			model = pmTannerModels[0];
+			/* on foot: the player ped's HEAD model (pmTannerModels[1];
+			 * index 0 is the torso/hips) — the head reads best at a glance */
+			model = pmTannerModels[1];
 
 			if (model == NULL)
 				return;
 		}
 	}
 
-	/* The overlay-layer preview (as originally shipped): a FIXED view-space
-	 * position + the raw turntable matrix. The GTE projection (already set
-	 * for the frame, H=256) places the model at a constant screen spot and
-	 * size — an overlay element, not anchored to the world. Position:
-	 * center-right inside the sandbox panel, scaled down so it fits the
-	 * panel: (750, -200, 3200) view space lands at ~(220, 112) at ~56px. */
-	pos.vx = 750;
-	pos.vy = -200;
-	pos.vz = 3200;
+	/* Auto-centre the preview: given the model's extent (its largest
+	 * dimension) and a target screen point/size, compute the view-space
+	 * position that centres the model there. This replaces the old fixed
+	 * (750,-200,3200) guess — the position now derives from the target
+	 * point + the model's real size, so it stays centred and correctly
+	 * sized no matter what is previewed. H = the GTE projection constant
+	 * (256); the screen is 320x240 centred at (160,120); screen Y is
+	 * DOWN, view Y is UP (negate). */
+	{
+		int extent;
+		int targetPixels;
+		int z;
+
+		if (cp != NULL && cp->ap.carCos != NULL)
+		{
+			/* the car's full extent: the collision box is the FULL box
+			 * (the engine halves it for the half-lengths) */
+			int hx = cp->ap.carCos->colBox.vx;
+			int hy = cp->ap.carCos->colBox.vy;
+			int hz = cp->ap.carCos->colBox.vz;
+
+			extent = hx > hy ? (hx > hz ? hx : hz) : (hy > hz ? hy : hz);
+			targetPixels = 72;	/* the car ~72px tall inside the panel */
+		}
+		else
+		{
+			extent = 90;		/* the head model ~90 units */
+			targetPixels = 44;
+		}
+
+		if (extent < 16)
+			extent = 16;
+		if (targetPixels < 8)
+			targetPixels = 8;
+
+		z = (256 * extent) / targetPixels;
+
+		if (z < 512)
+			z = 512;
+
+		pos.vx = ((220 - 160) * z) / 256;
+		pos.vy = -((112 - 120) * z) / 256;
+		pos.vz = z;
+	}
 
 	InitMatrix(turntable);
 	angle = (gFrameCount * 24) & 4095;
@@ -1511,7 +1586,7 @@ static void SandboxDrawPreview(void)
 			/* clean geometry + zeroed damage UVs (the spawn target) */
 			CarModelPtr->vlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[cp->ap.model], vertices);
 			CarModelPtr->nlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[cp->ap.model], vertices);
-			gTempCarUVPtr = &gSandboxCleanUv;
+			gTempCarUVPtr = gSandboxCleanUv;
 		}
 		else
 		{
@@ -1541,13 +1616,22 @@ static void SandboxDrawPreview(void)
 
 	current->ot = savedOt;
 
-	/* Splice the private OT into the main chain at bucket 2 — over the panel
-	 * (bucket 3), under the text (bucket 0). The main entry points at the
-	 * preview's HEAD (entry 2047 — ClearOTagR threads i -> i-1, so the head
-	 * is the far end, drawn first), and the preview's TAIL (entry 0) carries
-	 * on into the text bucket so the walk never stops inside the preview. */
-	setaddr(&savedOt[2], &gSandboxPreviewOt[2047]);
-	setaddr(&gSandboxPreviewOt[0], &savedOt[1]);}
+	/* Splice the private OT into the main chain at bucket 0 — the NEAREST
+	 * layer: the world (any depth) and the panel (bucket 3) are all drawn
+	 * before it, so the model can never wind up behind world geometry (the
+	 * old bucket-2 splice let the world's near prims — buckets 1-0 — draw
+	 * over the preview). The main entry points at the preview's HEAD
+	 * (entry 2047 — ClearOTagR threads i -> i-1, so the head is the far
+	 * end, drawn first), and the preview's TAIL (entry 0) carries on into
+	 * the ORIGINAL bucket-0 chain (the menu text, captured BEFORE the
+	 * splice overwrites the entry) so the labels still render on top of
+	 * the model — and the walk never loops (a cycle would hang the OT). */
+	{
+		OTTYPE* textChain = (OTTYPE*)getaddr(&savedOt[0]);
+
+		setaddr(&savedOt[0], &gSandboxPreviewOt[2047]);
+		setaddr(&gSandboxPreviewOt[0], textChain);
+	}}
 
 /* ------------------------------------------------------------------ */
 /* Draw-overlay hook: the menu 2D text + the live preview              */
