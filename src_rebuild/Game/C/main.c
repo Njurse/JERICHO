@@ -1140,12 +1140,14 @@ void StepSim(void)
 
 			jerPad.player = pl;
 			jerPad.pad = t0;
-			/* the left stick lives on analog channels 2/3 (mapanalog[2]/[3]
-			 * after the game's right-stick-first mapping) — read it from
-			 * the pad struct DIRECTLY: t1 was the left-stick X but
-			 * cjpRecord() overwrites it (steering nibble / 0) before we
-			 * get here, which is exactly why left/right analog presses
-			 * were never detected on foot */
+			/* the movement channels are mapanalog[2]/[3] in BOTH swap
+			 * configurations (analog[2]/[3] are the left stick per
+			 * PsyX_pad.cpp; swap_analog just feeds the physical right
+			 * stick into those channels) — read them from the pad struct
+			 * DIRECTLY: t1 was the left-stick X but cjpRecord() overwrites
+			 * it (steering nibble / 0) before we get here, which is
+			 * exactly why left/right analog presses were never detected
+			 * on foot */
 			jerPad.stickX = Pads[stream].mapanalog[2];	/* left-stick X */
 			jerPad.stickY = Pads[stream].mapanalog[3];	/* left-stick Y */
 			jerPad.cameraYaw = camera_angle.vy;

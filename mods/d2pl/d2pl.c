@@ -797,6 +797,11 @@ static int D2plOnPedInput(void* userdata, void* args)
 		gLastTannerPad = a->pad;
 		a->pad &= ~MPAD_CROSS;
 	}
+	else
+	{
+		gLastTannerPad = 0;	/* in a car: clear the edge tracker so the
+					   first on-foot frame reads a clean X press */
+	}
 
 	mag = ABS(stickX) + ABS(stickY);
 
