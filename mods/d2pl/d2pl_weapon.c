@@ -315,6 +315,23 @@ int D2plOnSkeleton(void* userdata, void* args)
 
 	if (a->phase == 0)
 	{
+		/* aiming: the torso faces the aim direction (the camera-forward,
+		 * i.e. AWAY from the camera) — rotate the upper-body root by the
+		 * diff between the body heading and the aim yaw, so the back is
+		 * to the camera while the hips/legs stay free to run. JOINT_1
+		 * (index 2) is the root both shoulders and the neck hang from;
+		 * the diff composes with the walk, and resets to 0 when not
+		 * aiming so the animation re-owns the torso. */
+		{
+			LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
+			WeaponBone* skel = (WeaponBone*)a->skel;
+			int aimYaw = (-camera_angle.vy) & 0xfff;
+			int diff = DIFF_ANGLES(pPed->dir.vy, aimYaw);
+
+			if (skel[2].pvRotation != NULL)
+				skel[2].pvRotation->vy = gAiming ? diff : 0;
+		}
+
 		/* force the arm into a holding pose: override the accumulated
 		 * offsets of the upper arm / forearm / hand bones so the arm
 		 * extends forward. Values are in the ped's local frame. */
@@ -547,8 +564,8 @@ int D2plOnOverlay(void* userdata, void* args)
 	if (player[0].playerCarId >= 0)
 		return JER_RESULT_CONTINUE;
 
-	/* weapon name + ammo bottom-left */
-	sprintf(text, "%s  [%d/%d]", w->name, w->clip, w->reserve);
+	/* ammo bottom-left, will be creating a stylized D2 appropriate version soon. */
+	sprintf(text, "[%d/%d]", w->clip, w->reserve);
 	SetTextColour(255, 255, 255);
 	PrintString(text, 20, 220);
 

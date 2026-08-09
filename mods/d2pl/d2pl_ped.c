@@ -38,6 +38,8 @@ int gPedWasMoving;
 int gPedRunSpeed;	/* smoothed run speed 0..40 (the analog
 				   magnitude, lerped — the press-off momentum) */
 int gPedStickMove;	/* 1 while the left stick drives the movement */
+static int gPedBackpedal;	/* 1 = aim-stick past 70 degrees: run speed is
+				   negated so he backpedals (set/cleared per frame) */
 
 /* weapon state */
 
@@ -125,6 +127,38 @@ int D2plOnPedInput(void* userdata, void* args)
 	stickHeading = ratan2(MOVE_STICK_SIGN_X * stickX, MOVE_STICK_SIGN_Y * -stickY);
 
 	desired = (camHeading + stickHeading) & 0xfff;
+
+	/* aiming: the legs only run up to 70 degrees (796 of 4096) off the
+	 * torso-forward — the aim yaw is the camera-forward, i.e. AWAY from
+	 * the camera. If the stick asks for more, reflect onto the far side's
+	 * 70 degrees and mark the backpedal: D2plOnPedMove then reverses the
+	 * run speed, so he walks backward toward the stick while the legs stay
+	 * at the far limit — the backpedal illusion, no new animation data. */
+	if (gAiming)
+	{
+		int off = DIFF_ANGLES(camHeading, desired);	/* -2048..2048 */
+
+		if (off > 796)
+		{
+			off = 796 - (off - 796);
+			gPedBackpedal = 1;
+		}
+		else if (off < -796)
+		{
+			off = -796 - (off + 796);
+			gPedBackpedal = 1;
+		}
+		else
+		{
+			gPedBackpedal = 0;
+		}
+
+		desired = (camHeading + off) & 0xfff;
+	}
+	else
+	{
+		gPedBackpedal = 0;
+	}
 
 	/* the writeup's "flattened to the ground plane": project the desired
 	 * direction onto the SURFACE plane at Tanner's feet, so a slope with
@@ -278,7 +312,7 @@ int D2plOnPedMove(void* userdata, void* args)
 		else
 			gPedRunSpeed += delta / PED_SPEED_LERP;
 
-		pPed->speed = gPedRunSpeed;
+		pPed->speed = (gPedBackpedal && gAiming) ? -gPedRunSpeed : gPedRunSpeed;
 	}
 	else if (pPed->speed == 0)
 	{
