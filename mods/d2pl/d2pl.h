@@ -87,23 +87,25 @@ struct WeaponBone
 	MODEL** pModel;
 };
 
-/* --- arm-hold pose tuning (ped local frame, parent-relative offsets) - */
-/* The ped unit scale is small (~200 units tall), so the arm needs big
- * offsets to visibly reach forward. */
+/* --- arm-hold pose tuning (ped local frame, parent-relative offsets). --- */
+/* The ped's skeleton offsets are single-digit units, so the pose values are
+ * too: the arm reaches forward ~7 units from the shoulder at full extension.
+ * The shoulder bone is also fixated at its rest offset (vOffset) so the walk
+ * cycle can't swing the arm — the whole chain is steadied. */
 #define POSE_ELBOW_X 0
-#define POSE_ELBOW_Y 80		/* lower the forearm a little */
-#define POSE_ELBOW_Z 220	/* reach forward */
+#define POSE_ELBOW_Y 2		/* lower the forearm a little */
+#define POSE_ELBOW_Z 3		/* reach forward */
 #define POSE_HAND_X 0
-#define POSE_HAND_Y -60		/* hand slightly higher than the elbow */
-#define POSE_HAND_Z 260		/* extend to arm's length */
+#define POSE_HAND_Y -1		/* hand slightly higher than the elbow */
+#define POSE_HAND_Z 4		/* extend to arm's length */
 
 /* --- presenting (aiming) pose: arm raised to eye level, fully forward - */
 #define AIM_ELBOW_X 0
-#define AIM_ELBOW_Y -60
-#define AIM_ELBOW_Z 260
+#define AIM_ELBOW_Y -2
+#define AIM_ELBOW_Z 4
 #define AIM_HAND_X 0
-#define AIM_HAND_Y -200		/* hand at eye/shoulder height */
-#define AIM_HAND_Z 520		/* arm fully extended */
+#define AIM_HAND_Y -4		/* hand at eye/shoulder height */
+#define AIM_HAND_Z 6		/* arm fully extended */
 
 /* ------------------------------------------------------------------ */
 /* Settings (persisted via the JERICHO config API into                 */
@@ -282,48 +284,99 @@ public:
 
 	virtual void onAmmoChanged(void) { /* HUD refresh hook */ }
 
+/* rotate a local (x, z) offset by the ped's facing yaw. newRotateBones
+ * builds the skeleton's vCurrPos frame as the model rotated by dir.vy, so
+ * the arm pose must be rotated the same way to point where Tanner faces.
+ * Convention matches the engine: facing h -> forward = (RSIN h, RCOS h). */
+static inline void D2plRotatePose(int* px, int* pz, int h)
+{
+	int x = *px;
+	int z = *pz;
+	int c = RCOS(h);
+	int s = RSIN(h);
+
+	*px = (x * c + z * s) >> 12;
+	*pz = (-x * s + z * c) >> 12;
+}
+
 	/* force the arm into a holding pose (phase-0 skeleton hook). Override
-	 * to pose different bones or add recoil; the base reaches the right
-	 * arm forward and up to hold the weapon at shoulder height. */
-	virtual void poseArmSide(void* skelVoid, int left)
+	 * to pose different bones or add recoil; the base fixates the shoulder
+	 * at its (facing-rotated) rest offset and reaches the arm forward and
+	 * up to hold the weapon — a local transform that follows Tanner's
+	 * rotation. `facing` is the ped's yaw (pPed->dir.vy, 0..4095). */
+	virtual void poseArmSide(void* skelVoid, int left, int facing)
 	{
 		WeaponBone* skel = (WeaponBone*)skelVoid;
+		int shoulder = left ? WL_LSHOULDER : WL_RSHOULDER;
 		int elbow = left ? WL_LELBOW : WL_RELBOW;
 		int hand = left ? WL_LHAND : WL_RHAND;
 		int side = left ? -1 : 1;
+		int sx, sz, ex, ez, hx, hz;
 
-		/* parent-relative offsets: elbow in front of the shoulder, hand in
-		 * front of the elbow — tuning constants at the top of this file */
-		skel[elbow].vCurrPos.vx = POSE_ELBOW_X * side;
+		/* fix the shoulder at its REST offset, rotated into the facing
+		 * frame, so the walk/idle keyframes can't swing the arm — the
+		 * whole chain stays steadied */
+		sx = skel[shoulder].vOffset.vx;
+		sz = skel[shoulder].vOffset.vz;
+		D2plRotatePose(&sx, &sz, facing);
+		skel[shoulder].vCurrPos.vx = sx;
+		skel[shoulder].vCurrPos.vy = skel[shoulder].vOffset.vy;
+		skel[shoulder].vCurrPos.vz = sz;
+
+		/* parent-relative pose offsets, rotated into the facing frame:
+		 * elbow in front of the shoulder, hand in front of the elbow —
+		 * tuning constants at the top of this file */
+		ex = POSE_ELBOW_X * side;
+		ez = POSE_ELBOW_Z;
+		D2plRotatePose(&ex, &ez, facing);
+		skel[elbow].vCurrPos.vx = ex;
 		skel[elbow].vCurrPos.vy = POSE_ELBOW_Y;
-		skel[elbow].vCurrPos.vz = POSE_ELBOW_Z;
+		skel[elbow].vCurrPos.vz = ez;
 
-		skel[hand].vCurrPos.vx = POSE_HAND_X * side;
+		hx = POSE_HAND_X * side;
+		hz = POSE_HAND_Z;
+		D2plRotatePose(&hx, &hz, facing);
+		skel[hand].vCurrPos.vx = hx;
 		skel[hand].vCurrPos.vy = POSE_HAND_Y;
-		skel[hand].vCurrPos.vz = POSE_HAND_Z;
+		skel[hand].vCurrPos.vz = hz;
 	}
 
-	virtual void poseArm(void* skelVoid)
+	virtual void poseArm(void* skelVoid, int facing)
 	{
 		/* hip carry: whichever arm matches the camera shoulder */
-		poseArmSide(skelVoid, shoulderSide > 0);
+		poseArmSide(skelVoid, shoulderSide > 0, facing);
 	}
 
-	virtual void poseArmAim(void* skelVoid)
+	virtual void poseArmAim(void* skelVoid, int facing)
 	{
 		/* presenting: arm raised to eye level and fully extended forward */
 		WeaponBone* skel = (WeaponBone*)skelVoid;
+		int shoulder = (shoulderSide > 0) ? WL_LSHOULDER : WL_RSHOULDER;
 		int elbow = (shoulderSide > 0) ? WL_LELBOW : WL_RELBOW;
 		int hand = (shoulderSide > 0) ? WL_LHAND : WL_RHAND;
 		int side = (shoulderSide > 0) ? -1 : 1;
+		int sx, sz, ex, ez, hx, hz;
 
-		skel[elbow].vCurrPos.vx = AIM_ELBOW_X * side;
+		sx = skel[shoulder].vOffset.vx;
+		sz = skel[shoulder].vOffset.vz;
+		D2plRotatePose(&sx, &sz, facing);
+		skel[shoulder].vCurrPos.vx = sx;
+		skel[shoulder].vCurrPos.vy = skel[shoulder].vOffset.vy;
+		skel[shoulder].vCurrPos.vz = sz;
+
+		ex = AIM_ELBOW_X * side;
+		ez = AIM_ELBOW_Z;
+		D2plRotatePose(&ex, &ez, facing);
+		skel[elbow].vCurrPos.vx = ex;
 		skel[elbow].vCurrPos.vy = AIM_ELBOW_Y;
-		skel[elbow].vCurrPos.vz = AIM_ELBOW_Z;
+		skel[elbow].vCurrPos.vz = ez;
 
-		skel[hand].vCurrPos.vx = AIM_HAND_X * side;
+		hx = AIM_HAND_X * side;
+		hz = AIM_HAND_Z;
+		D2plRotatePose(&hx, &hz, facing);
+		skel[hand].vCurrPos.vx = hx;
 		skel[hand].vCurrPos.vy = AIM_HAND_Y;
-		skel[hand].vCurrPos.vz = AIM_HAND_Z;
+		skel[hand].vCurrPos.vz = hz;
 	}
 
 	/* --- helpers --- */

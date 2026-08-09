@@ -80,8 +80,9 @@ typedef struct D2PL_SETTINGS
 static D2PL_SETTINGS gS = {
 	64,			/* sensX */
 	64,			/* sensY */
-	400,			/* footDist */
-	170,			/* footLat */
+	8,			/* footDist — the ped is tiny; the on-foot camera sits a
+				   few units behind him (absolute, single-digit) */
+	4,			/* footLat */
 	500,			/* carDist */
 	28,			/* carLatPct */
 	-1,			/* shoulder (left) */
@@ -110,8 +111,8 @@ static void D2plLoadSettings(void)
 	/* clamp so a hand-edited file can't break the camera */
 	gS.sensX = jer_clamp_int(gS.sensX, 16, 160);
 	gS.sensY = jer_clamp_int(gS.sensY, 16, 160);
-	gS.footDist = jer_clamp_int(gS.footDist, 120, 900);
-	gS.footLat = jer_clamp_int(gS.footLat, 0, 500);
+	gS.footDist = jer_clamp_int(gS.footDist, 1, 30);
+	gS.footLat = jer_clamp_int(gS.footLat, 0, 12);
 	gS.carDist = jer_clamp_int(gS.carDist, 100, 1000);
 	gS.carLatPct = jer_clamp_int(gS.carLatPct, 5, 60);
 	gS.shoulder = (gS.shoulder > 0) ? 1 : -1;
@@ -145,7 +146,8 @@ static void D2plSaveSettings(void)
 #define YAW_RATE 64		/* orbit speed at full stick, sensX = 64 */
 #define YAW_SMOOTH 4		/* eased yaw: 1/div of the way to the stick target
 				   per frame (smooth start/stop, not linear) */
-#define LOOK_PITCH_SIGN 1	/* +1 = push down pitches down (vx up) */
+#define LOOK_PITCH_SIGN -1	/* -1 = pushing up RAISES the camera on its
+				   orbit around the player (see the header note) */
 #define PITCH_MAX 700		/* ~61 degrees of pitch up/down each way —
 				   a proper TPS camera never points straight up/down */
 #define FOV_PITCH_SCALE 8	/* scr_z delta per 128 pitch units (GTA4-style:
@@ -163,14 +165,15 @@ static void D2plSaveSettings(void)
 #define PIVOT_TURN_LIMIT 256	/* standstill pivot speed (~22.5 deg/frame) */
 
 #define CAR_HEIGHT -60		/* in-car camera drop (more grounded) */
-#define CAM_HEIGHT -110		/* on-foot camera height (shoulder level) */
+#define CAM_HEIGHT -5		/* on-foot camera height: a little low, over
+				   the shoulder (single digits) */
 #define CAR_SPEED_DIV 2		/* car pull-in fades with speed (GTA4 zoom-out) */
 
 /* aim camera (on foot) */
 #define AIM_PULL 2000		/* /4096: pull toward Tanner while aiming */
-#define AIM_HEIGHT -60
+#define AIM_HEIGHT -2
 #define AIM_ZOOM 160		/* scr_z increase -> FOV decrease (focus) */
-#define AIM_LATERAL 90		/* shoulder bias while aiming */
+#define AIM_LATERAL 2		/* shoulder bias while aiming (ped scale) */
 
 /* impact marker: a big black X at the aim point, 1 second (60 frames) */
 #define MARKER_LIFETIME 60
@@ -490,6 +493,28 @@ static int D2plOnPedInput(void* userdata, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* keep the camera out of world geometry: the engine's collision query
+ * reports whether camera_position is inside a solid collision box. Push the
+ * camera back toward the chased point (at body height on foot so it never
+ * sinks into the ground/feet) until it clears. */
+static void D2plPushOutOfGeometry(VECTOR* camPos, int* base, int inCar)
+{
+	int steps = 0;
+	int targetY = base[1] + (inCar ? 0 : 8);	/* on foot: aim at the body */
+
+	while (steps < 8 && CameraCollisionCheck())
+	{
+		camPos->vx -= (camPos->vx - base[0]) / 3;
+		camPos->vy -= (camPos->vy - targetY) / 3;
+		camPos->vz -= (camPos->vz - base[2]) / 3;
+		steps++;
+	}
+
+	/* never let the on-foot camera drop below the player's ground level */
+	if (!inCar && camPos->vy < base[1] + 1)
+		camPos->vy = base[1] + 1;
+}
+
 /* ================================================================== */
 /* JER_EVENT_CAMERA — framing + FOV override + aim camera              */
 /* ================================================================== */
@@ -525,6 +550,9 @@ static int D2plOnCamera(void* userdata, void* args)
 
 		camPos->vx += FIXEDH(RCOS(heading) * AIM_LATERAL * gS.shoulder);
 		camPos->vz += -FIXEDH(RSIN(heading) * AIM_LATERAL * gS.shoulder);
+
+		if (a->basePos != NULL)
+			D2plPushOutOfGeometry(camPos, (int*)a->basePos, a->inCar);
 
 		SetGeomScreen(scr_z = gCameraDefaultScrZ + AIM_ZOOM);
 
@@ -572,27 +600,34 @@ static int D2plOnCamera(void* userdata, void* args)
 	}
 	else
 	{
-		/* --- on foot: pull in + shoulder shift, rotating with the view --- */
-		camPos->vx += -FIXEDH(RSIN(heading) * gS.footDist)
-			+ FIXEDH(RCOS(heading) * gS.footLat * gS.shoulder);
-		camPos->vz += -FIXEDH(RCOS(heading) * gS.footDist)
-			- FIXEDH(RSIN(heading) * gS.footLat * gS.shoulder);
+		/* --- on foot: the ped is tiny, so the camera is PLACED a few units
+		 * behind him (absolute, view-relative) instead of nudging the
+		 * engine's ~850-unit chase position — he fills the view. --- */
+		int* base = (int*)a->basePos;
 
-		camPos->vy += CAM_HEIGHT;
-
-		/* subtle view bob/sway while Tanner moves (still when idle) */
+		if (base != NULL)
 		{
-			static int lastX;
-			static int lastZ;
-			int speed = ABS(lp->pos[0] - lastX) + ABS(lp->pos[2] - lastZ);
+			camPos->vx = base[0] + (-FIXEDH(RSIN(heading) * gS.footDist)
+				+ FIXEDH(RCOS(heading) * gS.footLat * gS.shoulder));
+			camPos->vz = base[2] + (-FIXEDH(RCOS(heading) * gS.footDist)
+				- FIXEDH(RSIN(heading) * gS.footLat * gS.shoulder));
+			camPos->vy = base[1] + CAM_HEIGHT;
 
-			lastX = lp->pos[0];
-			lastZ = lp->pos[2];
-
-			if (speed > 8)
+			/* subtle view bob/sway while Tanner moves (still when idle) —
+			 * kept to a fraction of a unit at this scale */
 			{
-				camPos->vy += FIXEDH(RSIN(FrameCnt * 3) * 40);
-				camPos->vx += FIXEDH(RCOS(FrameCnt * 2) * 24);
+				static int lastX;
+				static int lastZ;
+				int speed = ABS(lp->pos[0] - lastX) + ABS(lp->pos[2] - lastZ);
+
+				lastX = lp->pos[0];
+				lastZ = lp->pos[2];
+
+				if (speed > 8)
+				{
+					camPos->vy += FIXEDH(RSIN(FrameCnt * 3) * 20);
+					camPos->vx += FIXEDH(RCOS(FrameCnt * 2) * 12);
+				}
 			}
 		}
 	}
@@ -617,18 +652,37 @@ static int D2plOnCamera(void* userdata, void* args)
 
 		if (distH > 0)
 		{
-			/* true down-angle to the target before and after the orbit */
+			/* true down-angle to the target before and after the orbit
+			 * (ratan2 returns signed -2048..2048; the unwrapped signed
+			 * difference is used so the aim stays consistent) */
 			aim0 = ratan2(camPos->vy - base[1], distH);
 
 			/* rotate the offset (ox, oy, oz) around the horizontal axis by
 			 * the elevation: h' = h*cosP + oy*sinP, oy' = oy*cosP - distH*sinP.
-			 * Sphere rotation — the distance to the player never changes. */
+			 * Sphere rotation — the distance to the player never changes.
+			 * The vertical->horizontal spill (hShift) is a small correction;
+			 * at extreme pitch distH shrinks toward zero and dividing by it
+			 * blows the camera away (the "freaks out at full stick" bug),
+			 * so it is clamped and only applied while the correction stays
+			 * small relative to the horizontal distance. */
 			{
 				int hShift = (oy * sinP) >> 12;	/* vertical -> horizontal spill */
 
-				camPos->vx = base[0] + FIXEDH(ox * cosP) + (hShift * ox) / distH;
-				camPos->vz = base[2] + FIXEDH(oz * cosP) + (hShift * oz) / distH;
+				if (hShift > 64)
+					hShift = 64;
+				if (hShift < -64)
+					hShift = -64;
+
+				camPos->vx = base[0] + FIXEDH(ox * cosP);
+				camPos->vz = base[2] + FIXEDH(oz * cosP);
 				camPos->vy = base[1] + FIXEDH(oy * cosP) - FIXEDH(distH * sinP);
+
+				/* |hShift*ox/distH| <= |ox|/4 while distH > 4*|hShift| */
+				if (distH > 4 * ABS(hShift))
+				{
+					camPos->vx += (hShift * ox) / distH;
+					camPos->vz += (hShift * oz) / distH;
+				}
 			}
 
 			aim1 = ratan2(camPos->vy - base[1], SquareRoot0(
@@ -638,9 +692,14 @@ static int D2plOnCamera(void* userdata, void* args)
 			/* add only the pitch-induced change to whatever the engine set
 			 * (25 on foot, terrain-clamped in cars) so the rest pose stays
 			 * identical and the transition is continuous */
-			camAngle->vx += (aim1 - aim0);
+			camAngle->vx += jer_angle_diff(aim0, aim1);
 		}
 	}
+
+	/* keep the camera out of walls/ground (applies to the neutral path
+	 * after the framing + orbit; the aiming branch pushes earlier) */
+	if (a->basePos != NULL)
+		D2plPushOutOfGeometry(camPos, (int*)a->basePos, a->inCar);
 
 	a->override = 1;
 
@@ -678,9 +737,9 @@ static int D2plOnSkeleton(void* userdata, void* args)
 		 * offsets of the upper arm / forearm / hand bones so the arm
 		 * extends forward. Values are in the ped's local frame. */
 		if (gAiming)
-			w->poseArmAim(a->skel);		/* presenting: raised, extended */
+			w->poseArmAim(a->skel, ((LPPEDESTRIAN)a->ped)->dir.vy);
 		else
-			w->poseArm(a->skel);		/* hip carry */
+			w->poseArm(a->skel, ((LPPEDESTRIAN)a->ped)->dir.vy);
 	}
 	else if (a->phase == 1 && !a->shadow)
 	{
@@ -953,10 +1012,10 @@ static void D2plAdjustItem(int item, int direction)
 		gS.sensY = jer_clamp_int(gS.sensY + direction * 4, 16, 160);
 		break;
 	case D2PL_ITEM_FOOT_DIST:
-		gS.footDist = jer_clamp_int(gS.footDist + direction * 20, 120, 900);
+		gS.footDist = jer_clamp_int(gS.footDist + direction * 1, 1, 30);
 		break;
 	case D2PL_ITEM_FOOT_LAT:
-		gS.footLat = jer_clamp_int(gS.footLat + direction * 10, 0, 500);
+		gS.footLat = jer_clamp_int(gS.footLat + direction * 1, 0, 12);
 		break;
 	case D2PL_ITEM_CAR_DIST:
 		gS.carDist = jer_clamp_int(gS.carDist + direction * 20, 100, 1000);
