@@ -114,23 +114,131 @@ enum
 	JER_PAUSE_CRUMPLE_REPAIR,
 
 	JER_PAUSE_SANDBOX_GET_LABEL,		/* result: const char* label or NULL */
-	JER_PAUSE_SANDBOX_OPEN			/* handler returns JER_RESULT_STOP if opened */
+	JER_PAUSE_SANDBOX_OPEN,			/* handler returns JER_RESULT_STOP if opened */
+
+	/* fired when the player presses START (single-player): a module that
+	 * replaces the pause menu (e.g. the sandbox overlay) claims the press
+	 * by returning JER_RESULT_STOP, and the engine pause never opens */
+	JER_PAUSE_OPEN,
+
+	/* d2pl (Driver 2 Parallel Lines) settings bridge: one GET_LABEL and one
+	 * ADJUST action, multiplexed by the item id in JER_ARGS_PAUSE_MENU.value.
+	 * GET_LABEL -> result: const char* label. ADJUST -> value carries the
+	 * item id, result carries the direction (-1/0/+1). */
+	JER_PAUSE_D2PL_GET_LABEL,
+	JER_PAUSE_D2PL_ADJUST
+};
+
+/* d2pl settings item ids (JER_ARGS_PAUSE_MENU.value for the d2pl actions).
+ * Shared between the pause-menu shell (pause.c) and the d2pl module. */
+enum
+{
+	D2PL_ITEM_SENS_X = 0,	/* view-change sensitivity (horizontal) */
+	D2PL_ITEM_SENS_Y,	/* view-change sensitivity (vertical) */
+	D2PL_ITEM_FOOT_DIST,	/* on-foot camera pull-in distance */
+	D2PL_ITEM_FOOT_LAT,	/* on-foot shoulder offset */
+	D2PL_ITEM_CAR_DIST,	/* in-car pull-in */
+	D2PL_ITEM_CAR_LAT,	/* in-car lateral (% of the car's bbox width) */
+	D2PL_ITEM_SHOULDER,	/* camera shoulder side */
+	D2PL_ITEM_INVERT_H,	/* invert horizontal look */
+	D2PL_ITEM_INVERT_V,	/* invert vertical look */
+	D2PL_ITEM_FOV,		/* base FOV override (55-90 degrees) */
+	D2PL_ITEM_LASER,	/* laser sight color cycle (0 = off) */
+	D2PL_ITEM_COUNT
+};
+
+/* d2pl laser-sight colors (D2PL_ITEM_LASER values) */
+enum
+{
+	D2PL_LASER_OFF = 0,
+	D2PL_LASER_RED,
+	D2PL_LASER_GREEN,
+	D2PL_LASER_BLUE,
+	D2PL_LASER_WHITE,
+	D2PL_LASER_COUNT
 };
 
 typedef struct JER_ARGS_PAUSE_MENU
 {
 	int action;
 	void* result;	/* out: const char* for the GET_*_TEXT actions */
+	int value;	/* item id for the d2pl actions (and any future multiplexed ones) */
 } JER_ARGS_PAUSE_MENU;
 
 /* JER_EVENT_CAMERA — fired at the end of InitCamera once camera_position is
- * set; modules adjust the position/angle in place (stock = no handler). */
+ * set; modules adjust the position/angle in place (stock = no handler).
+ * Set override = 1 when a module takes full control: the engine then rebuilds
+ * the view matrices from the (possibly changed) camera_angle so nothing
+ * downstream (BuildWorldMatrix) fights the module's values. */
 typedef struct JER_ARGS_CAMERA
 {
 	void* player;		/* PLAYER* whose camera was just updated */
 	void* cameraPosition;	/* VECTOR* (camera_position) — modules may move it */
 	void* cameraAngle;	/* SVECTOR* (camera_angle) — modules may re-aim it */
 	int cameraView;		/* the player's camera view */
+	int override;		/* out: 1 = rebuild the view matrices from our values */
+
+	/* chase-cam inputs the engine computed this frame — a module that sets
+	 * override can use these to run its own full chase-cam math instead of
+	 * poking at the stock result */
+	void* basePos;		/* LONGVECTOR4* (x,y,z) — where the camera chases */
+	int baseDir;		/* the chased object's facing (0..4095) */
+	int carSpeed;		/* the chased car's hd.wheel_speed — raw fixed point,
+				   FIXEDH() it to get world units (0 on foot) */
+	int inCar;		/* 1 when chasing a car, 0 on foot */
 } JER_ARGS_CAMERA;
+
+/* JER_EVENT_CAMERA_LOOK — fired at the top of TurnHead() every frame the
+ * chase/bumper camera is about to apply look input. A module may drive the
+ * look by writing PLAYER.headTarget (smoothed by the engine via headPos) and
+ * may set suppress to skip the stock L2/R2 look-left/right/back handling
+ * (e.g. while aiming). stickX/stickY are the right-stick analog, signed.
+ * gripOrbit = 1 takes over the camera orbit: the engine skips its own
+ * "settle back behind the player" lerp on lp->cameraAngle so a module can
+ * orbit the camera freely (GTA-style) and only ease it back once released. */
+typedef struct JER_ARGS_CAMERA_LOOK
+{
+	void* player;		/* PLAYER* (write lp->headTarget / headTimer) */
+	int paddCamera;		/* in: current camera pad bits (L2/R2/L3 look) */
+	int stickX;		/* in: right-stick X analog, signed -128..127 */
+	int stickY;		/* in: right-stick Y analog, signed -128..127 */
+	int suppress;		/* out: nonzero = skip stock L2/R2 look handling */
+	int gripOrbit;		/* out: 1 = module owns the camera orbit (skip the
+				   engine's settle-back lerp this frame) */
+} JER_ARGS_CAMERA_LOOK;
+
+/* JER_EVENT_PED_INPUT — fired in the ped-input loop right before
+ * ProcessTannerPad(), after the engine synthesized D-pad bits from the left
+ * stick. A module may rewrite pad (in/out) to implement camera-relative
+ * movement: combine stickX/stickY with cameraYaw to produce movement. */
+typedef struct JER_ARGS_PED_INPUT
+{
+	void* player;		/* PLAYER* whose pad is being processed */
+	int pad;		/* in/out: tannerPad bits (TANNER_PAD_*) */
+	int stickX;		/* in: left-stick X analog, signed -128..127 */
+	int stickY;		/* in: left-stick Y analog, signed -128..127 */
+	int cameraYaw;		/* in: current camera facing, 0..4095 (PSX angle) */
+} JER_ARGS_PED_INPUT;
+
+/* JER_EVENT_PED_SKELETON — fired while the player ped is being drawn
+ * (newShowTanner), after the skeleton was posed from motion data. A module
+ * may override bone rotations in skel (BONE*) to force poses (e.g. an arm
+ * holding a weapon) and may read jointPos (SVECTOR* vJPos[NUM_BONES]) for
+ * the world offsets of joints such as RHAND (add playerPos for world pos).
+ * phase 0 = before the joint positions are accumulated (pose overrides land
+ * here, in skel[i].vCurrPos); phase 1 = after accumulation (hand positions
+ * are valid, draw the weapon mesh). shadow = 1 while drawing the ped's
+ * shadow (modules usually skip extra meshes then). All pointers are the
+ * engine's own structures cast to void*. */
+typedef struct JER_ARGS_PED_SKELETON
+{
+	void* ped;		/* LPPEDESTRIAN being drawn */
+	void* skel;		/* BONE* Skel[NUM_BONES] — writeable rotations/positions */
+	void* jointPos;		/* SVECTOR* vJPos[NUM_BONES] — absolute joint offsets */
+	void* playerPos;	/* VECTOR* model origin in world space */
+	void* cameraPos;	/* VECTOR* camera_position */
+	int phase;		/* 0 = pre-accumulation (pose), 1 = post (draw) */
+	int shadow;		/* 1 while the ped's shadow is being drawn */
+} JER_ARGS_PED_SKELETON;
 
 #endif /* JERICHO_JER_EVENTS_H */

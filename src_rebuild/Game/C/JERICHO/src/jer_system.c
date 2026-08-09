@@ -10,6 +10,7 @@
  */
 #include "jericho.h"
 #include "jer_internal.h"
+#include "jer_config.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -245,6 +246,95 @@ static void jerCtxRegisterModule(JERICHO_CONTEXT* ctx,
 }
 
 /* ------------------------------------------------------------------ */
+/* Boot inventory                                                      */
+/* ------------------------------------------------------------------ */
+
+/* Human-readable names for the engine-defined events (diagnostics). */
+static const char* jerEventName(int event)
+{
+	switch (event)
+	{
+	case JER_EVENT_BOOT:			return "BOOT";
+	case JER_EVENT_FRAME:			return "FRAME";
+	case JER_EVENT_INIT:			return "INIT";
+	case JER_EVENT_COLLISION:		return "COLLISION";
+	case JER_EVENT_DENT_PASS:		return "DENT_PASS";
+	case JER_EVENT_RESET_CAR:		return "RESET_CAR";
+	case JER_EVENT_DEBUG_TICK:		return "DEBUG_TICK";
+	case JER_EVENT_GET_WHEEL_BEND:	return "GET_WHEEL_BEND";
+	case JER_EVENT_GET_WHEEL_DAMAGE:return "GET_WHEEL_DAMAGE";
+	case JER_EVENT_GET_IMPACT_INFO:	return "GET_IMPACT_INFO";
+	case JER_EVENT_GET_WHEEL_PARAMS:return "GET_WHEEL_PARAMS";
+	case JER_EVENT_GET_BUDDHA:		return "GET_BUDDHA";
+	case JER_EVENT_DRAW_WHEEL:		return "DRAW_WHEEL";
+	case JER_EVENT_PAUSE_MENU:		return "PAUSE_MENU";
+	case JER_EVENT_DRAW_OVERLAY:	return "DRAW_OVERLAY";
+	case JER_EVENT_CAMERA:			return "CAMERA";
+	case JER_EVENT_GAME_START:		return "GAME_START";
+	case JER_EVENT_CAMERA_LOOK:		return "CAMERA_LOOK";
+	case JER_EVENT_PED_INPUT:		return "PED_INPUT";
+	case JER_EVENT_PED_SKELETON:	return "PED_SKELETON";
+	default:
+		if (event >= JER_EVENT_MODULE_CUSTOM)
+		{
+			static char customName[24];
+
+			snprintf(customName, sizeof(customName), "CUSTOM(%d)", event);
+			return customName;
+		}
+
+		return "UNKNOWN";
+	}
+}
+
+/*
+ * Emit the boot diagnostics: one line per compiled-in module (state + reason)
+ * and one per registered hook handler. Re-emitted whenever modules are
+ * (re)activated, so a manager reload also re-reports what is actually live.
+ */
+static void jerLogInventory(void)
+{
+	int i;
+
+	jerLog("[jericho] --- module inventory (%d built-in) ---\n", gModuleCount);
+
+	for (i = 0; i < gModuleCount; i++)
+	{
+		JER_MODULE* m = &gModules[i];
+		const char* state;
+
+		if (!m->enabled)
+			state = "disabled";
+		else if (!m->activated)
+			state = "not-activated";
+		else if (!m->valid)
+			state = "INVALID";
+		else
+			state = "active";
+
+		jerLog("[jericho]   %-10s v%-6s enabled=%d state=%-14s author=\"%s\" deps=\"%s\"\n",
+			m->id,
+			m->version != NULL ? m->version : "?",
+			m->enabled,
+			state,
+			m->author != NULL ? m->author : "?",
+			m->deps != NULL && m->deps[0] != 0 ? m->deps : "-");
+	}
+
+	jerLog("[jericho] --- hook inventory (%d handler(s)) ---\n", gHandlerCount);
+
+	for (i = 0; i < gHandlerCount; i++)
+	{
+		JER_HANDLER* h = &gHandlers[i];
+
+		jerLog("[jericho]   event=%-20s module=%-10s priority=%d\n",
+			jerEventName(h->event),
+			h->module != NULL ? h->module->id : "(engine)",
+			h->priority);
+	}
+}
+
+/* ------------------------------------------------------------------ */
 /* Activation                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -389,6 +479,10 @@ static void jerActivateModules(const char* modsDir)
 		if (m != NULL && m->enabled)
 			gLoadOrder[gLoadOrderCount++] = m->id;
 	}
+
+	/* boot diagnostics: what is built in, what is live, and which hooks
+	 * are registered (re-emitted on manager reload too) */
+	jerLogInventory();
 }
 
 /* ------------------------------------------------------------------ */
@@ -418,6 +512,9 @@ void jer_init(const char* modsDir)
 	}
 
 	jerLog("== JERICHO v%d (build %s) == Just-in-Time Extensible Runtime Interface for Compiled Hooks & Overrides\n", JERICHO_SDK_VERSION, JERICHO_BUILD_VERSION);
+
+	/* persistent module config lives under <mods>/config/ */
+	jer_config_init(modsDir);
 
 	jerSnapshotModules();
 	jerActivateModules(modsDir);

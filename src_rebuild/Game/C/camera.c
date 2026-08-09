@@ -53,6 +53,11 @@ char tracking_car = 0;
 
 int gCameraAngle = 2048; // offset 0xAA104
 
+/* JERICHO-HOOK: set by TurnHead from the CAMERA_LOOK handlers each frame;
+ * when a module owns the orbit (gripOrbit), PlaceCameraFollowCar skips its
+ * settle-back lerp so the module's camera angle isn't fought. */
+static int jerLookGripOrbit = 0;
+
 int TargetCar = 0;
 int CameraCar = 0;
 
@@ -188,7 +193,10 @@ void InitCamera(PLAYER *lp)
 		lp->snd_cam_ang = camera_angle.vy;
 
 		// JERICHO-HOOK: modules may adjust the camera position/angle
-		// (e.g. the over-the-shoulder example mod)
+		// (e.g. the over-the-shoulder example mod). A module sets
+		// args->override to take full control; the engine then rebuilds
+		// the view matrices from the new camera_angle so nothing else
+		// fights the module's transform.
 		{
 			JER_ARGS_CAMERA jerArgs;
 
@@ -196,7 +204,15 @@ void InitCamera(PLAYER *lp)
 			jerArgs.cameraPosition = &camera_position;
 			jerArgs.cameraAngle = &camera_angle;
 			jerArgs.cameraView = lp->cameraView;
+			jerArgs.override = 0;
+			jerArgs.basePos = &basePos;
+			jerArgs.baseDir = baseDir;
+			jerArgs.carSpeed = (lp->cameraCarId >= 0) ? car_data[lp->cameraCarId].hd.wheel_speed : 0;
+			jerArgs.inCar = (lp->cameraCarId >= 0) ? 1 : 0;
 			jer_fire(JER_EVENT_CAMERA, &jerArgs);
+
+			if (jerArgs.override)
+				BuildWorldMatrix();
 		}
 	}
 	else 
@@ -377,8 +393,45 @@ int CameraCollisionCheck(void)
 void TurnHead(PLAYER *lp)
 {
 	LPPEDESTRIAN pPlayerPed;
+	int jerLookSuppressed = 0;
 	
 	pPlayerPed = lp->pPed;
+
+	// JERICHO-HOOK: modules may drive or suppress the look before the stock
+	// L2/R2/L3 handling runs (e.g. right-stick free-look, aim suspension).
+	// A handler writes args->suppress to skip the stock look-left/right/back
+	// branches below AND to keep the free-look target it wrote into
+	// lp->headTarget alive (the engine smooths it via headPos below).
+	{
+		JER_ARGS_CAMERA_LOOK jerLook;
+
+		jerLook.player = lp;
+		jerLook.paddCamera = paddCamera;
+		jerLook.stickX = 0;
+		jerLook.stickY = 0;
+		jerLook.suppress = 0;
+		jerLook.gripOrbit = 0;
+
+		if (lp->padid >= 0)
+		{
+			jerLook.stickX = Pads[lp->padid].mapanalog[0];
+			jerLook.stickY = Pads[lp->padid].mapanalog[1];
+		}
+
+		jer_fire(JER_EVENT_CAMERA_LOOK, &jerLook);
+
+		/* any handler's suppression sticks (OR, not last-writer-wins) so a
+		 * module that suspends the look (e.g. aiming) can't be re-enabled by
+		 * another module's later "release" in the same frame */
+		jerLookSuppressed |= jerLook.suppress;
+		jerLookGripOrbit = jerLook.gripOrbit;
+
+		if (jerLookSuppressed)
+		{
+			paddCamera &= ~(CAMERA_PAD_LOOK_LEFT | CAMERA_PAD_LOOK_RIGHT |
+				CAMERA_PAD_LOOK_BACK | CAMERA_PAD_LOOK_BACK_DED);
+		}
+	}
 
 	// [A] handle REDRIVER2 dedicated look back button
 	if ((paddCamera & CAMERA_PAD_LOOK_BACK) == CAMERA_PAD_LOOK_BACK || (paddCamera & CAMERA_PAD_LOOK_BACK_DED))
@@ -412,7 +465,12 @@ void TurnHead(PLAYER *lp)
 			pPlayerPed->head_rot = 0;
 
 		lp->headTimer = 0;
-		lp->headTarget = 0;
+
+		// JERICHO-HOOK: a module driving the free-look set lp->headTarget
+		// above (and suppressed the stock look); keep it so the smoothing
+		// below eases headPos toward it instead of snapping it back.
+		if (jerLookSuppressed == 0)
+			lp->headTarget = 0;
 	}
 
 	lp->headPos += (lp->headTarget - lp->headPos) / 2;
@@ -494,9 +552,15 @@ void PlaceCameraFollowCar(PLAYER *lp)
 		}
 		else
 		{
-			angleDelta = DIFF_ANGLES(lp->cameraAngle, baseDir + gCameraAngle); // (((baseDir + gCameraAngle) - lp->cameraAngle) + 2048U & 0xfff) - 2048;
+			// JERICHO-HOOK: a module owns the orbit (gripOrbit) — skip the
+			// engine's settle-back lerp so the module's camera angle (set in
+			// TurnHead) is used as-is; the lerp resumes once released.
+			if (jerLookGripOrbit == 0)
+			{
+				angleDelta = DIFF_ANGLES(lp->cameraAngle, baseDir + gCameraAngle); // (((baseDir + gCameraAngle) - lp->cameraAngle) + 2048U & 0xfff) - 2048;
 
-			lp->cameraAngle += (angleDelta >> 3) & 0xfff;
+				lp->cameraAngle += (angleDelta >> 3) & 0xfff;
+			}
 		}
 	}
 

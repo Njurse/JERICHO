@@ -16,6 +16,9 @@
 #include "cars.h"
 #include "convert.h"
 
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
+
 #if USE_PGXP
 #include <math.h>
 #endif
@@ -1075,6 +1078,24 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 	vJPos[ROOT].vy = -Skel[ROOT].pvOrigPos->vy;
 	vJPos[ROOT].vz = Skel[ROOT].pvOrigPos->vz;
 
+	// JERICHO-HOOK: player-ped skeleton — phase 0 lets modules force a pose
+	// (write Skel[i].vCurrPos for e.g. the arm holding a weapon) before the
+	// joint offsets below are accumulated.
+	if (pDrawingPed->pedType == TANNER_MODEL && pDrawingPed->padId >= 0)
+	{
+		JER_ARGS_PED_SKELETON jerSkel;
+
+		jerSkel.ped = pDrawingPed;
+		jerSkel.skel = Skel;
+		jerSkel.jointPos = vJPos;
+		jerSkel.playerPos = playerPos;
+		jerSkel.cameraPos = cameraPos;
+		jerSkel.phase = 0;
+		jerSkel.shadow = bDoingShadow;
+
+		jer_fire(JER_EVENT_PED_SKELETON, &jerSkel);
+	}
+
 	VECTOR v = { 0, 0, 0 };
 
 	gte_SetTransVector(&v);
@@ -1132,6 +1153,24 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 				pBone->id = (LIMBS)(pBone->id | 0x80);
 			}
 		}
+	}
+
+	// JERICHO-HOOK: player-ped skeleton — phase 1 lets modules read the
+	// accumulated joint offsets (vJPos[RHAND] = hand position) and draw
+	// extra meshes attached to them (e.g. a weapon in Tanner's hand).
+	if (pDrawingPed->pedType == TANNER_MODEL && pDrawingPed->padId >= 0)
+	{
+		JER_ARGS_PED_SKELETON jerSkel;
+
+		jerSkel.ped = pDrawingPed;
+		jerSkel.skel = Skel;
+		jerSkel.jointPos = vJPos;
+		jerSkel.playerPos = playerPos;
+		jerSkel.cameraPos = cameraPos;
+		jerSkel.phase = 1;
+		jerSkel.shadow = bDoingShadow;
+
+		jer_fire(JER_EVENT_PED_SKELETON, &jerSkel);
 	}
 
 	if(bDoingShadow || draw)

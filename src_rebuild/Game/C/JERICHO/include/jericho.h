@@ -69,6 +69,13 @@ enum
 	JER_EVENT_DRAW_OVERLAY,		/* per-frame overlay draw (menus over the world) */
 	JER_EVENT_CAMERA,			/* camera position/angle adjusted by modules */
 	JER_EVENT_GAME_START,		/* a level is starting (fresh/restart/next) */
+	JER_EVENT_CAMERA_LOOK,		/* per-frame look handling (TurnHead) — modules
+								   may drive/suppress the free-look */
+	JER_EVENT_PED_INPUT,		/* on-foot pad input before it drives the ped —
+								   modules may remap to camera-relative movement */
+	JER_EVENT_PED_SKELETON,		/* player ped skeleton posed for draw — modules
+								   may override bone rotations (arm holds) and
+								   read joint world positions (vJPos) */
 
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };

@@ -122,8 +122,8 @@ CRUMPLE_PARAMS gCrumpleParams =
 
 	// wheels
 	150, 		// wheelProximity      impact distance that counts as near a wheel
-	30000,		// wheelMinHowHard     threshold before a wheel bends (above damage threshold ~56k... tuned down so the d-pad sim can bend wheels)
-	90000,		// wheelNormalize      howHard for a full bend kick
+	60000,		// wheelMinHowHard     threshold before a wheel bends (above damage threshold ~56k... tuned down so the d-pad sim can bend wheels)
+	120000,		// wheelNormalize      howHard for a full bend kick
 	24,			// wheelBendStep       damage level added per full kick — 2-3 kicks
 					//                      reach max, so one absolute T-bone
 					//                      (a few frames of contact) breaks a wheel

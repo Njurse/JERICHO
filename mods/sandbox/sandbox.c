@@ -9,6 +9,7 @@
  */
 #include "jericho.h"
 #include "jer_events.h"
+#include "jer_config.h"
 
 #include "driver2.h"
 #include "cars.h"
@@ -219,7 +220,7 @@ enum
 	SBX_PAGE_COUNT
 };
 
-#define SBX_MAIN_ITEMS 5	/* Vehicle, Spawn, World, Cheats, Close */
+#define SBX_MAIN_ITEMS 7	/* Vehicle, Spawn, World, Cheats, Replace Pause, Open Pause, Close */
 #define SBX_VEHICLE_ITEMS 6	/* Repair, Upright, Set Damage, Set Felony, Player AI Mode, Tune Car */
 #define SBX_SPAWN_ITEMS 4	/* Position, Spawn Car, Object, AI Car */
 #define SBX_WORLD_ITEMS 2	/* Time of Day, Weather */
@@ -228,7 +229,8 @@ enum
 #define SBX_TUNE_ITEMS 12	/* power, traction, mass, suspension, cog x/y/z, twist x/y/z, wheelbase, track */
 
 static const char* const gSandboxMainItems[SBX_MAIN_ITEMS] = {
-	"Vehicle Properties", "Spawn Menu", "World Settings", "Cheats Menu", "Close"
+	"Vehicle Properties", "Spawn Menu", "World Settings", "Cheats Menu",
+	"Replace Pause Menu: OFF", "Open Pause Menu", "Close"
 };
 static const char* const gSandboxVehicleItems[SBX_VEHICLE_ITEMS] = {
 	"Repair Car", "Make Car Upright", "Set Damage", "Set Felony", "Player AI Mode", "Tune Car"
@@ -253,6 +255,7 @@ static const char* const gSandboxPageTitles[SBX_PAGE_COUNT] = {
 };
 
 static int gSandboxMenuOpen;
+static int gSandboxReplacePause;	/* START opens the sandbox overlay instead of the engine pause (persisted) */
 static int gSandboxPage;		/* current page */
 static int gSandboxSubPage;		/* sub-page within the current page */
 static int gSandboxCursor;		/* cursor (absolute item index) */
@@ -570,7 +573,11 @@ static const char* SandboxMenuItemLabel(int page, int cursor)
 {
 	switch (page)
 	{
-	case SBX_PAGE_MAIN: return gSandboxMainItems[cursor];
+	case SBX_PAGE_MAIN:
+		/* the Replace Pause Menu toggle shows its live state */
+		if (cursor == 4)
+			return gSandboxReplacePause ? "Replace Pause Menu: ON" : "Replace Pause Menu: OFF";
+		return gSandboxMainItems[cursor];
 	case SBX_PAGE_VEHICLE: return gSandboxVehicleItems[cursor];
 	case SBX_PAGE_SPAWN: return gSandboxSpawnItems[cursor];
 	case SBX_PAGE_WORLD: return gSandboxWorldItems[cursor];
@@ -821,7 +828,18 @@ static void SandboxMenuDoAction(int page, int cursor)
 		case 1: gSandboxPage = SBX_PAGE_SPAWN; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		case 2: gSandboxPage = SBX_PAGE_WORLD; gSandboxCursor = 0; gSandboxSubPage = 0; break;
 		case 3: gSandboxPage = SBX_PAGE_CHEATS; gSandboxCursor = 0; gSandboxSubPage = 0; break;
-		case 4: SandboxMenuClose(); break;
+		case 4:
+			/* toggle whether START opens the sandbox overlay instead of the
+			 * engine pause menu (persisted via the JERICHO config API) */
+			gSandboxReplacePause ^= 1;
+			jer_config_set_bool("sandbox", "replace_pause", gSandboxReplacePause);
+			break;
+		case 5:
+			/* close the sandbox overlay and open the normal pause menu */
+			SandboxMenuClose();
+			ShowPauseMenu(PAUSEMODE_PAUSE);
+			break;
+		case 6: SandboxMenuClose(); break;
 		}
 		break;
 
@@ -1666,6 +1684,23 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 /* Pause-menu hook: the 'Sandbox Menu' item                           */
 /* ------------------------------------------------------------------ */
 
+/* open the sandbox overlay: hide the HUD, grab the pad, run the world */
+static void SandboxOpenOverlay(void)
+{
+	gSandboxSavedShowMap = gShowMap;
+	gSandboxSavedDoOverlays = gDoOverlays;
+	gShowMap = 0;
+	gDoOverlays = 0;
+
+	gSandboxMenuOpen = 1;
+	gSandboxInputDebounce = 4;
+	gSandboxPage = 0;
+	gSandboxSubPage = 0;
+	gSandboxCursor = 0;
+	gSandboxAdjust = 0;
+	gStopPadReads = 1;	/* the pad drives the menu, not the car */
+}
+
 static int SandboxOnPauseMenu(void* userdata, void* args)
 {
 	JER_ARGS_PAUSE_MENU* jerArgs = (JER_ARGS_PAUSE_MENU*)args;
@@ -1678,22 +1713,23 @@ static int SandboxOnPauseMenu(void* userdata, void* args)
 		return JER_RESULT_CONTINUE;
 	}
 
+	/* START pressed: when "replace pause menu" is on, open the overlay
+	 * instead of the engine pause (claimed with JER_RESULT_STOP so the
+	 * engine pause never opens) */
+	if (jerArgs->action == JER_PAUSE_OPEN)
+	{
+		if (gSandboxReplacePause)
+		{
+			SandboxOpenOverlay();
+			return JER_RESULT_STOP;
+		}
+
+		return JER_RESULT_CONTINUE;
+	}
+
 	if (jerArgs->action == JER_PAUSE_SANDBOX_OPEN)
 	{
-		/* hide the minimap + damage/felony bars while the menu is open so
-		 * the overlay stays clear */
-		gSandboxSavedShowMap = gShowMap;
-		gSandboxSavedDoOverlays = gDoOverlays;
-		gShowMap = 0;
-		gDoOverlays = 0;
-
-		gSandboxMenuOpen = 1;
-		gSandboxInputDebounce = 4;
-		gSandboxPage = 0;
-		gSandboxSubPage = 0;
-		gSandboxCursor = 0;
-		gSandboxAdjust = 0;
-		gStopPadReads = 1;	/* the pad drives the menu, not the car */
+		SandboxOpenOverlay();
 
 		return JER_RESULT_STOP;	/* claim the press: unpause + world runs */
 	}
@@ -1724,6 +1760,9 @@ JER_MODULE_ENTRY(jer_module_sandbox_entry)(JERICHO_CONTEXT* ctx)
 {
 	gCtx = ctx;
 	gNoDamage = 1;
+
+	/* persisted setting: does START open the sandbox overlay? */
+	gSandboxReplacePause = jer_config_get_bool("sandbox", "replace_pause", 0);
 
 	ctx->jer_register_module(ctx,
 		"sandbox",			/* id */

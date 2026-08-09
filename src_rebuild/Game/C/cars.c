@@ -24,7 +24,7 @@
 // Main CRUMPLE library import and my small math library (i dont see stdlib math just dr2math, clearly means if i need external libs i write them in an engine appropriate way)
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
-#include "nattdymath.h"
+#include "jer_math.h"
 
 struct plotCarGlobals
 {

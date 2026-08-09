@@ -1,6 +1,13 @@
-﻿#ifndef NATTDYMATH_H
-#define NATTDYMATH_H
+﻿#ifndef JER_MATH_H
+#define JER_MATH_H
 
+/* jer_math — the JERICHO core math helpers.
+ *
+ * Originated as Nattdy's nattdymath (soft clamps, interpolations, radial
+ * collision test) and now lives inside the JERICHO SDK as a core element
+ * so both the game and every module share one home for small math helpers.
+ * The game's vanilla files include it too (cars.c, denting.c).
+ */
 
 // ALERT: MESSY HO SHIT IN CODE I NEED TO WRITE AN EXPONENT FUNCTION
 
@@ -96,8 +103,65 @@ extern "C" {
 
 
 
+    // ------------------------------------------------------------------
+    // Int helpers shared by the JERICHO modules (camera free-look, weapon
+    // aim, etc.). Fixed-point friendly: no floats.
+    // ------------------------------------------------------------------
+
+    static inline int jer_clamp_int(int v, int lo, int hi) {
+        if (v < lo) return lo;
+        if (v > hi) return hi;
+        return v;
+    }
+
+    // Exponential approach: value moves 1/div of the way to target each call.
+    // Used for the camera settle-back and pitch smoothing (div ~ 2..8).
+    static inline int jer_lerp_int(int from, int to, int div) {
+        if (div <= 0)
+            return to;
+        return from + (to - from) / div;
+    }
+
+    // Signed angular difference in PSX angle units (0..4095 = full circle),
+    // result in -2048..2047, matching the game's DIFF_ANGLES(A, B).
+    static inline int jer_angle_diff(int a, int b) {
+        return ((((b) - (a)) + 2048) & 4095) - 2048;
+    }
+
+    // Linear interpolation between two ints; t is 0..4096 (0 = from, 4096 = to).
+    // Use for value tweens that need an explicit progress.
+    static inline int jer_lerp(int from, int to, int t) {
+        if (t <= 0) return from;
+        if (t >= 4096) return to;
+        return from + ((to - from) * t >> 12);
+    }
+
+    // Smooth an angle toward a target on the shortest path: moves 1/div of
+    // the remaining signed difference per call. div ~ 2..8; larger = slower.
+    // Handles the 0..4095 wraparound (unlike jer_lerp_int on angles).
+    static inline int jer_lerp_angle(int from, int to, int div) {
+        int diff;
+
+        if (div <= 0)
+            return to & 4095;
+
+        diff = jer_angle_diff(from, to);
+        return (from + diff / div) & 4095;
+    }
+
+    // Smooth step on an int over [0..range]; returns 0..range.
+    static inline int jer_smooth_step(int t, int range) {
+        int x = jer_clamp_int(t, 0, range);
+
+        // x * x * (3*range - 2*x) / range^2 in int math (range > 0)
+        if (range <= 0)
+            return 0;
+
+        return (x * x * (3 * range - 2 * x)) / (range * range);
+    }
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* NATTDYMATH_H */
+#endif /* JER_MATH_H */

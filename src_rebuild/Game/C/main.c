@@ -1,6 +1,8 @@
 #include "driver2.h"
 #include "main.h"
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
 #include "ASM/rndrasm.h"
 #include "ASM/d2mapasm.h"
@@ -1129,6 +1131,24 @@ void StepSim(void)
 				continue;
 		}
 
+		// JERICHO-HOOK: modules may rewrite the on-foot pad before it drives
+		// the ped (camera-relative movement, aim gating). pad is in/out; the
+		// analog sticks are signed -128..127; cameraYaw is the current camera
+		// facing (0..4095) so movement can be remapped relative to the view.
+		{
+			JER_ARGS_PED_INPUT jerPad;
+
+			jerPad.player = pl;
+			jerPad.pad = t0;
+			jerPad.stickX = t1;					/* left-stick X */
+			jerPad.stickY = Pads[stream].mapanalog[3];	/* left-stick Y */
+			jerPad.cameraYaw = camera_angle.vy;
+
+			jer_fire(JER_EVENT_PED_INPUT, &jerPad);
+
+			t0 = jerPad.pad;
+		}
+
 		ProcessTannerPad(pl->pPed, t0, t1, t2);
 	}
 
@@ -1501,7 +1521,17 @@ void CheckForPause(void)
 			{
 				if (paddp == MPAD_START && bMissionTitleFade == 0) // [A] && gInGameCutsceneActive == 0)		// allow pausing during cutscene
 				{
-					EnablePause(PAUSEMODE_PAUSE);
+					// JERICHO-HOOK: a module may replace the engine pause menu
+					// (e.g. the sandbox overlay). It claims the START press by
+					// returning JER_RESULT_STOP, and the engine pause never opens.
+					JER_ARGS_PAUSE_MENU jerPause;
+
+					jerPause.action = JER_PAUSE_OPEN;
+					jerPause.result = NULL;
+					jerPause.value = 0;
+
+					if (jer_fire(JER_EVENT_PAUSE_MENU, &jerPause) != JER_RESULT_STOP)
+						EnablePause(PAUSEMODE_PAUSE);
 				}
 			}
 			else if (paddp == MPAD_START)
@@ -1720,6 +1750,89 @@ void SsSetSerialVol(short s_num, short voll, short volr)
 
 #if !defined(PSX) && !defined(__EMSCRIPTEN__)
 #include <SDL_messagebox.h>
+
+#ifdef DEBUG_OPTIONS
+/* --- frontend-bypass boot arguments (testing convenience) ---
+ * -level <name|0-3> is the anchor; -car/-gamemode/-weather/-time need it.
+ * Game mode defaults to Take a Ride when not overridden. */
+static int gBootLevel = -1;		/* 0=Chicago, 1=Havana, 2=Las Vegas, 3=Rio */
+static int gBootGameMode = -1;		/* GAMETYPE (default GAME_TAKEADRIVE) */
+static char gBootCarStr[32];		/* raw -car value (resolved once level is known) */
+static int gBootCar = -1;		/* wanted car model index */
+static int gBootWeather = -1;		/* WEATHER_* or -1 = mission default */
+static int gBootTime = -1;		/* TIMEOFDAY_* or -1 = mission default */
+
+/* case-insensitive compare helper for arg values */
+static int BootEq(const char* a, const char* b)
+{
+	while (*a != 0 && *b != 0)
+	{
+		char ca = *a++;
+		char cb = *b++;
+
+		if (ca >= 'A' && ca <= 'Z') ca += 32;
+		if (cb >= 'A' && cb <= 'Z') cb += 32;
+
+		if (ca != cb)
+			return 0;
+	}
+
+	return *a == *b;
+}
+
+static int BootParseLevel(const char* s)
+{
+	if (BootEq(s, "chicago")) return 0;
+	if (BootEq(s, "havana")) return 1;
+	if (BootEq(s, "vegas") || BootEq(s, "lasvegas")) return 2;
+	if (BootEq(s, "rio")) return 3;
+
+	if (s[0] >= '0' && s[0] <= '9')
+	{
+		int v = atoi(s);
+
+		if (v >= 0 && v <= 3)
+			return v;
+	}
+
+	return -1;
+}
+
+static int BootParseGameMode(const char* s)
+{
+	if (BootEq(s, "takeadrive") || BootEq(s, "free") || BootEq(s, "freeroam")) return GAME_TAKEADRIVE;
+	if (BootEq(s, "pursuit") || BootEq(s, "cop")) return GAME_PURSUIT;
+	if (BootEq(s, "getaway")) return GAME_GETAWAY;
+	if (BootEq(s, "gaterace") || BootEq(s, "gate")) return GAME_GATERACE;
+	if (BootEq(s, "checkpoint")) return GAME_CHECKPOINT;
+	if (BootEq(s, "trailblazer")) return GAME_TRAILBLAZER;
+	if (BootEq(s, "survival")) return GAME_SURVIVAL;
+	if (BootEq(s, "copsandrobbers")) return GAME_COPSANDROBBERS;
+	if (BootEq(s, "capturetheflag") || BootEq(s, "ctf")) return GAME_CAPTURETHEFLAG;
+
+	return -1;
+}
+
+static int BootParseWeather(const char* s)
+{
+	if (BootEq(s, "none") || BootEq(s, "clear")) return WEATHER_NONE;
+	if (BootEq(s, "rain")) return WEATHER_RAIN;
+	if (BootEq(s, "wet")) return WEATHER_WET;
+
+	return -1;
+}
+
+static int BootParseTime(const char* s)
+{
+	if (BootEq(s, "dawn")) return TIME_DAWN;
+	if (BootEq(s, "day")) return TIME_DAY;
+	if (BootEq(s, "dusk")) return TIME_DUSK;
+	if (BootEq(s, "night")) return TIME_NIGHT;
+
+	return -1;
+}
+#endif // DEBUG_OPTIONS
+
 void PrintCommandLineArguments()
 {
 	const char* argumentsMessage =
@@ -1733,6 +1846,13 @@ void PrintCommandLineArguments()
 		"  -playercar <number>, -player2car <number> : set player wanted car\n"
 		"  -chase <number> : using specified chase number for mission\n"
 		"  -mission <number> : starts specified mission\n"
+		"  -level <chicago|havana|lasvegas|rio|0-3> : boot straight into a city,\n"
+		"        bypassing the frontend (game mode defaults to Take A Ride)\n"
+		"  -car <number|slot1..slot10> : player car (model index or frontend slot)\n"
+		"  -gamemode <takeadrive|pursuit|getaway|gaterace|checkpoint|trailblazer|\n"
+		"        survival|copsandrobbers|capturetheflag> : game mode override\n"
+		"  -weather <none|rain|wet> : weather override (with -level)\n"
+		"  -time <dawn|day|dusk|night> : time-of-day override (with -level)\n"
 #endif // DEBUG_OPTIONS
 		"  -replay <filename.d2rp> : starts replay from file\n"
 #ifdef CUTSCENE_RECORDER
@@ -1745,6 +1865,27 @@ void PrintCommandLineArguments()
 	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "REDRIVER 2 command line arguments", argumentsMessage, NULL);
 }
 #endif
+
+/*
+ * JERICHO-HOOK: route the mod runtime's logs into REDRIVER2.log through the
+ * PsyX logger (console spew in _DEBUG builds + the log file) instead of plain
+ * stdout. JERICHO messages carry their own context ([jericho], [module]...),
+ * so the log level is picked from the message's own keywords — a failed
+ * module (DISABLED) or explicit error is an error, "warning:" is a warning,
+ * everything else is informational.
+ */
+static void JerichoLogBridge(const char* msg)
+{
+	if (msg == NULL)
+		return;
+
+	if (strstr(msg, "DISABLED") != NULL || strstr(msg, "error") != NULL)
+		printError("%s", msg);
+	else if (strstr(msg, "warning") != NULL)
+		printWarning("%s", msg);
+	else
+		printInfo("%s", msg);
+}
 
 // [D] [T]
 #ifdef PSX
@@ -1841,9 +1982,11 @@ int redriver2_main(int argc, char** argv)
 
 	SetDispMask(0);
 
-	// JERICHO-HOOK: boot the mod runtime. The mods dir follows the game's
-	// data folder (mods/modlist.json lives next to the game's runtime files);
-	// inert without compiled-in modules.
+	// JERICHO-HOOK: boot the mod runtime. Route JERICHO/module logs into
+	// REDRIVER2.log via the PsyX logger first, then activate the modules.
+	// The mods dir follows the game's data folder (mods/modlist.json lives
+	// next to the game's runtime files); inert without compiled-in modules.
+	jer_set_logger(JerichoLogBridge);
 	{
 		char modsDir[96];
 
@@ -2037,6 +2180,90 @@ int redriver2_main(int argc, char** argv)
 			GameType = GAME_TAKEADRIVE;
 			SetState(STATE_GAMELAUNCH);
 		}
+		else if (!strcmp(argv[i], "-level"))
+		{
+			if (argc - i < 2)
+			{
+				printError("-level missing argument! (chicago|havana|lasvegas|rio|0-3)");
+				return -1;
+			}
+
+			gBootLevel = BootParseLevel(argv[i + 1]);
+
+			if (gBootLevel < 0)
+			{
+				printError("Unknown -level '%s'! (chicago|havana|lasvegas|rio|0-3)\n", argv[i + 1]);
+				return -1;
+			}
+
+			i++;
+		}
+		else if (!strcmp(argv[i], "-car"))
+		{
+			if (argc - i < 2)
+			{
+				printError("-car missing argument! (model number or slot1..slot10)");
+				return -1;
+			}
+
+			strncpy(gBootCarStr, argv[i + 1], sizeof(gBootCarStr) - 1);
+			gBootCarStr[sizeof(gBootCarStr) - 1] = 0;
+			i++;
+		}
+		else if (!strcmp(argv[i], "-gamemode"))
+		{
+			if (argc - i < 2)
+			{
+				printError("-gamemode missing argument!");
+				return -1;
+			}
+
+			gBootGameMode = BootParseGameMode(argv[i + 1]);
+
+			if (gBootGameMode < 0)
+			{
+				printError("Unknown -gamemode '%s'!\n", argv[i + 1]);
+				return -1;
+			}
+
+			i++;
+		}
+		else if (!strcmp(argv[i], "-weather"))
+		{
+			if (argc - i < 2)
+			{
+				printError("-weather missing argument! (none|rain|wet)");
+				return -1;
+			}
+
+			gBootWeather = BootParseWeather(argv[i + 1]);
+
+			if (gBootWeather < 0)
+			{
+				printError("Unknown -weather '%s'! (none|rain|wet)\n", argv[i + 1]);
+				return -1;
+			}
+
+			i++;
+		}
+		else if (!strcmp(argv[i], "-time"))
+		{
+			if (argc - i < 2)
+			{
+				printError("-time missing argument! (dawn|day|dusk|night)");
+				return -1;
+			}
+
+			gBootTime = BootParseTime(argv[i + 1]);
+
+			if (gBootTime < 0)
+			{
+				printError("Unknown -time '%s'! (dawn|day|dusk|night)\n", argv[i + 1]);
+				return -1;
+			}
+
+			i++;
+		}
 #endif // _DEBUG_OPTIONS
 		else if (!strcmp(argv[i], "-replay"))
 		{
@@ -2116,6 +2343,93 @@ int redriver2_main(int argc, char** argv)
 		}
 	}
 #endif // PSX
+
+#if !defined(PSX) && !defined(__EMSCRIPTEN__)
+#ifdef DEBUG_OPTIONS
+	/* Frontend-bypass boot (testing convenience): -level [options...].
+	 * Game mode defaults to Take A Ride; -car/-gamemode/-weather/-time all
+	 * need -level. A -car "slotN" is resolved against the frontend's car
+	 * table for the selected city. */
+	if (gBootLevel >= 0)
+	{
+		if (gBootCarStr[0] != 0)
+		{
+			extern char carNumLookup[4][10];
+
+			if (gBootCarStr[0] >= '0' && gBootCarStr[0] <= '9')
+			{
+				gBootCar = atoi(gBootCarStr);
+			}
+			else if (strncmp(gBootCarStr, "slot", 4) == 0)
+			{
+				int n = atoi(gBootCarStr + 4);
+
+				if (n >= 1 && n <= 10)
+					gBootCar = carNumLookup[gBootLevel][n - 1];
+				else
+					gBootCar = -2;
+			}
+			else
+			{
+				gBootCar = -2;
+			}
+
+			if (gBootCar == -2)
+			{
+				printError("Unknown -car '%s'! (model number or slot1..slot10)\n", gBootCarStr);
+				return -1;
+			}
+		}
+
+		SetFEDrawMode();
+		gInFrontend = 0;
+		AttractMode = 0;
+
+		GameLevel = gBootLevel;
+		GameType = (gBootGameMode >= 0) ? (GAMETYPE)gBootGameMode : GAME_TAKEADRIVE;
+		NumPlayers = 1;
+
+		{
+			static const char* bootLevelNames[4] = { "chicago", "havana", "lasvegas", "rio" };
+
+			printInfo("[boot] frontend bypass: level=%d (%s) gamemode=%d car=%d time=%d weather=%d\n",
+				gBootLevel, bootLevelNames[gBootLevel], (int)GameType,
+				gBootCar, gBootTime, gBootWeather);
+		}
+
+		if (gBootCar >= 0)
+			wantedCar[0] = gBootCar;
+
+		if (gBootTime >= 0)
+		{
+			wantedTimeOfDay = gBootTime;
+			gWantNight = (gBootTime == TIME_DUSK || gBootTime == TIME_NIGHT);
+		}
+
+		if (gBootWeather >= 0)
+			wantedWeather = gBootWeather;
+
+		/* GameLaunch computes the mission number from GameType/GameLevel/
+		 * gWantNight/gSubGameNumber (see glaunch.c) */
+		gCurrentMissionNumber = 0;
+		gSubGameNumber = 0;
+
+		SetState(STATE_GAMESTART);
+	}
+	else if (gBootCarStr[0] != 0 || gBootGameMode >= 0 || gBootWeather >= 0 || gBootTime >= 0)
+	{
+		/* dependent options: at least a level is required */
+		printError("-car / -gamemode / -weather / -time need -level (e.g. -level havana)\n");
+
+#if !defined(PSX) && !defined(__EMSCRIPTEN__)
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "REDRIVER 2",
+			"-car / -gamemode / -weather / -time need -level.\n"
+			"Example: REDRIVER2 -level havana -car slot3 -gamemode takeadrive -time dusk -weather rain",
+			NULL);
+#endif
+	}
+#endif // DEBUG_OPTIONS
+#endif // !PSX && !EMSCRIPTEN
 
 	DoStateLoop();
 

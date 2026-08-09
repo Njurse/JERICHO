@@ -7,3 +7,7 @@ boot, and its hooks fire every frame (logging at boot and firing a custom
 event every 60 frames).
 
 Build id: `example` (must match `mods/example/` in `--with-mods`).
+
+All module output goes to **`REDRIVER2.log`** (via the JERICHO logger,
+wired at boot); the boot inventory at startup lists this module and its
+hooks, so a missing log line means it isn't compiled in or is disabled.

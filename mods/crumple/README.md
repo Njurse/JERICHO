@@ -23,3 +23,7 @@ no other changes needed.
 Build id: `crumple` (must match `mods/crumple/` in `--with-mods`).
 
 Tuning: `CRUMPLE_PARAMS gCrumpleParams` at the top of `crumple.c`.
+
+All module output goes to **`REDRIVER2.log`** (via the JERICHO logger,
+wired at boot); look for the `[crumple]` lines right after the JERICHO
+boot inventory (which lists this module's ~12 hooks).

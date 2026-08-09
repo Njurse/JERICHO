@@ -1,0 +1,6 @@
+id = "d2pl"
+name = "Driver 2 Parallel Lines"
+version = "1.0.0"
+author = "DeepSeek"
+description = "Modern dual-stick camera (free-look orbit, GTA-style framing, FOV override) + overridable weapon system with aim/fire/ammo/laser/impact markers."
+dependencies = ""

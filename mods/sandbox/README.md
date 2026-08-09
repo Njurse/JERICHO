@@ -12,7 +12,11 @@ A demo of the full JERICHO module surface with **zero vanilla edits**:
 
 ## Sandbox Menu
 
-Open: Pause → **Sandbox Menu** (right below Continue).
+Open: Pause → **Sandbox Menu** (right below Continue). With **Replace Pause
+Menu** on (a toggle in the sandbox's main page), pressing START in-game opens
+the sandbox overlay directly instead of the engine pause; the **Open Pause
+Menu** button below it closes the overlay and opens the normal pause menu.
+The toggle persists via the JERICHO config API (`mods/config/sandbox.ini`).
 
 ```
 SANDBOX                    (main page — categories)
@@ -22,9 +26,9 @@ FELONY: 0
   Spawn                            Set Damage / Set Felony /
   World                            Player AI Mode (Manual→Traffic→Cop→Lead)
   Cheats                   Spawn:    Spawn Car / Spawn Object / AI Car
-  Close                    World:    Set Time of Day / Set Weather
-                           Cheats:   the real Driver 2 cheats
-                                     (Invincibility, Immunity, Secret Car,
+  Replace Pause Menu       World:    Set Time of Day / Set Weather
+  Open Pause Menu          Cheats:   the real Driver 2 cheats
+  Close                              (Invincibility, Immunity, Secret Car,
                                      Play as Jericho, Mini Cars, Bonus Cars)
                                      + Unlock All
                            AI Car:   Vehicle model (live preview) /
@@ -52,3 +56,7 @@ menu).
 
 Firing `JER_EVENT_MODULE_CUSTOM + 10` (SANDBOX_CUSTOM_TOGGLE) flips
 no-damage — any module or future console command can toggle it.
+
+All module output goes to **`REDRIVER2.log`** (via the JERICHO logger,
+wired at boot) — look for the `[sandbox]` lines right after the JERICHO
+boot inventory in the log file.

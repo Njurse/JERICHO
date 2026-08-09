@@ -268,6 +268,75 @@ void SandboxMenuOpen(int direction)
 		PauseReturnValue = MENU_QUIT_CONTINUE;
 }
 
+// JERICHO-HOOK: D2PL Settings (Driver 2 Parallel Lines). The module owns
+// the values + labels; this shell only bridges the menu items via
+// JER_EVENT_PAUSE_MENU (GET_LABEL / ADJUST multiplexed by item id).
+static char D2plLabels[D2PL_ITEM_COUNT][40];
+
+static void D2plRefreshLabels(void)
+{
+	JER_ARGS_PAUSE_MENU jerArgs;
+	int i;
+
+	for (i = 0; i < D2PL_ITEM_COUNT; i++)
+	{
+		jerArgs.action = JER_PAUSE_D2PL_GET_LABEL;
+		jerArgs.value = i;
+		jerArgs.result = NULL;
+		jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
+
+		if (jerArgs.result != NULL)
+			sprintf(D2plLabels[i], "%s", (const char*)jerArgs.result);
+		else
+			D2plLabels[i][0] = 0;
+	}
+}
+
+static void D2plAdjustItem(int item, int direction)
+{
+	JER_ARGS_PAUSE_MENU jerArgs;
+
+	jerArgs.action = JER_PAUSE_D2PL_ADJUST;
+	jerArgs.value = item;
+	jerArgs.result = (void*)(size_t)direction;
+	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
+
+	D2plRefreshLabels();
+}
+
+/* one bridge per item so the engine's item->func pointer can tell them
+ * apart (the item id is passed through to the module) */
+static void D2plAdjSensX(int direction) { D2plAdjustItem(D2PL_ITEM_SENS_X, direction); }
+static void D2plAdjSensY(int direction) { D2plAdjustItem(D2PL_ITEM_SENS_Y, direction); }
+static void D2plAdjFootDist(int direction) { D2plAdjustItem(D2PL_ITEM_FOOT_DIST, direction); }
+static void D2plAdjFootLat(int direction) { D2plAdjustItem(D2PL_ITEM_FOOT_LAT, direction); }
+static void D2plAdjCarDist(int direction) { D2plAdjustItem(D2PL_ITEM_CAR_DIST, direction); }
+static void D2plAdjCarLat(int direction) { D2plAdjustItem(D2PL_ITEM_CAR_LAT, direction); }
+static void D2plAdjShoulder(int direction) { D2plAdjustItem(D2PL_ITEM_SHOULDER, direction); }
+static void D2plAdjInvertH(int direction) { D2plAdjustItem(D2PL_ITEM_INVERT_H, direction); }
+static void D2plAdjInvertV(int direction) { D2plAdjustItem(D2PL_ITEM_INVERT_V, direction); }
+static void D2plAdjFov(int direction) { D2plAdjustItem(D2PL_ITEM_FOV, direction); }
+static void D2plAdjLaser(int direction) { D2plAdjustItem(D2PL_ITEM_LASER, direction); }
+
+MENU_ITEM D2plSettingsItems[] =
+{
+	{ D2plLabels[D2PL_ITEM_SENS_X], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjSensX, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_SENS_Y], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjSensY, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_FOOT_DIST], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjFootDist, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_FOOT_LAT], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjFootLat, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_CAR_DIST], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjCarDist, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_CAR_LAT], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjCarLat, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_SHOULDER], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjShoulder, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_INVERT_H], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjInvertH, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_INVERT_V], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjInvertV, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_FOV], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjFov, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_LASER], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjLaser, MENU_QUIT_NONE, NULL },
+	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
+};
+
+MENU_HEADER D2plSettingsHeader =
+{ "D2PL Settings", { 0, 0, 0, 0 }, 0u, D2plSettingsItems };
+
 int lastCar = -1;
 
 void ToggleSecretCarFun(int direction)
@@ -440,7 +509,10 @@ MENU_HEADER YesNoQuitHeader =
 MENU_ITEM MainPauseItems[] =
 {
 	{ G_LTXT_ID(GTXT_Continue), 1u, 2u, NULL, MENU_QUIT_CONTINUE, NULL },
+#if defined(_DEBUG) || defined(DEBUG_OPTIONS)
 	{ "Sandbox Menu", PAUSE_TYPE_FUNC, 2u, SandboxMenuOpen, MENU_QUIT_NONE, NULL },
+	{ "D2PL Settings", PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &D2plSettingsHeader },
+#endif
 	{ G_LTXT_ID(GTXT_ShowMap), PAUSE_TYPE_FUNC, 2u, (pauseFunc)&PauseMap, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_Restart), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoRestartHeader },
 	{ G_LTXT_ID(GTXT_SfxVolume), PAUSE_TYPE_SFXVOLUME | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&SfxVolume, MENU_QUIT_NONE, NULL },
@@ -1011,10 +1083,11 @@ void InitaliseMenu(PAUSEMODE mode)
 		VisibleMenus[i] = NULL;
 	}
 
-	// JERICHO-HOOK: refresh the crumple labels when the pause menu opens so
-	// the debug submenu shows live state.
+	// JERICHO-HOOK: refresh the crumple + d2pl labels when the pause menu
+	// opens so the submenus show live state.
 #if defined(_DEBUG) || defined(DEBUG_OPTIONS)
 	CrumpleRefreshLabels();
+	D2plRefreshLabels();
 #endif
 
 	pNewMenu = NULL;

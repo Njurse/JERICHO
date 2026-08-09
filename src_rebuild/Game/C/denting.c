@@ -16,7 +16,7 @@
 #include "pad.h"
 
 #include "handling.h"
-#include "nattdymath.h"
+#include "jer_math.h"
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
 
