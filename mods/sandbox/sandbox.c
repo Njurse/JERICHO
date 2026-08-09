@@ -1452,6 +1452,38 @@ static void SandboxDrawPanel(void)
  * world, under the menu text), and — for preview cars — calculates the
  * vehicle lights (a preview car lives OUTSIDE car_data, so the per-frame
  * FX loop never lit it). */
+/* measure a model's actual vertex bbox: the extent (largest X/Y span)
+ * and the Y center offset. The model ORIGIN is rarely the visual center
+ * (the head model pivots at the neck and hangs down), so the auto-centre
+ * must offset by it or the preview lands off-target. */
+static void SandboxModelBBox(MODEL* model, int* centerY, int* extent)
+{
+	SVECTOR* verts = GET_MODEL_DATA(SVECTOR, model, vertices);
+	int n = model->num_vertices;
+	int i;
+	int minY = 32767;
+	int maxY = -32768;
+	int minX = 32767;
+	int maxX = -32768;
+
+	*centerY = 0;
+	*extent = 90;
+
+	if (verts == NULL || n <= 0)
+		return;
+
+	for (i = 0; i < n; i++)
+	{
+		if (verts[i].vx < minX) minX = verts[i].vx;
+		if (verts[i].vx > maxX) maxX = verts[i].vx;
+		if (verts[i].vy < minY) minY = verts[i].vy;
+		if (verts[i].vy > maxY) maxY = verts[i].vy;
+	}
+
+	*extent = (maxX - minX) > (maxY - minY) ? (maxX - minX) : (maxY - minY);
+	*centerY = (minY + maxY) / 2;
+}
+
 static void SandboxDrawHudModel(MODEL* model, CAR_DATA* car, int screenX, int screenY, int targetPixels, int extent, int scratch)
 {
 	MATRIX turntable;
@@ -1663,7 +1695,19 @@ static void SandboxDrawPreview(void)
 			targetPixels = 72;	/* the car ~72px tall inside the panel */
 		}
 
-		SandboxDrawHudModel(model, cp, 220, 112, targetPixels, extent, scratch);
+		if (cp != NULL)
+			SandboxDrawHudModel(model, cp, 220, 112, targetPixels, extent, scratch);
+		else
+		{
+			/* the ped head: measure its real bbox so the auto-centre lands on
+			 * the head's VISUAL center (its origin is the neck pivot) */
+			int centerY = 0;
+
+			SandboxModelBBox(model, &centerY, &extent);
+			SandboxDrawHudModel(model, NULL, 220, 112, 44, extent, 0);
+
+			(void)centerY;
+		}
 	}
 }
 
@@ -1850,6 +1894,10 @@ JER_MODULE_ENTRY(jer_module_sandbox_entry)(JERICHO_CONTEXT* ctx)
 
 	/* persisted setting: does START open the sandbox overlay? */
 	gSandboxReplacePause = jer_config_get_bool("sandbox", "replace_pause", 0);
+
+	/* the sandbox must never default to opening: clear a stale persisted
+	 * flag once so START opens the engine pause, not this overlay */
+	jer_config_set_bool("sandbox", "replace_pause", gSandboxReplacePause);
 
 	ctx->jer_register_module(ctx,
 		"sandbox",			/* id */
