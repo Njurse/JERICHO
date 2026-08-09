@@ -46,6 +46,7 @@
 #include "draw.h"
 #include "models.h"
 #include "pres.h"
+#include "dr2roads.h"	/* MapHeight — terrain height for the ground cap */
 #include "PsyX/PsyX_public.h"	/* PsyX_GetScreenSize (FOV math) */
 
 #include <math.h>
@@ -170,6 +171,16 @@ static void D2plSaveSettings(void)
 #define PIVOT_TURN_LIMIT 256	/* standstill pivot speed (~22.5 deg/frame) */
 
 #define CAR_HEIGHT -60		/* in-car camera drop (more grounded) */
+#define CAR_ORBIT_UP 100	/* raise the vehicle orbit/focal point a little
+				   (the camera sat too low on the car) */
+#define CAR_LOOK_AHEAD 5000	/* the settled camera focuses this far AHEAD of
+				   the car so you see where you're driving */
+
+/* ground cap: the road is a heightfield (MapHeight), not a collision box,
+ * so the camera must be clamped to it or it phases through the road. The
+ * clearance keeps it just kissing the surface while sliding along it. */
+#define TERRAIN_CLEAR_FOOT 15
+#define TERRAIN_CLEAR_CAR 50
 #define CAM_HEIGHT 2		/* on-foot camera height: just above the base
 				   (never underground — the base is at ground level) */
 #define CAR_SPEED_DIV 2		/* car pull-in fades with speed (GTA4 zoom-out) */
@@ -579,6 +590,15 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar)
 	camPos->vy = gSmooth.vy;
 	camPos->vz = gSmooth.vz;
 
+	/* cap the camera above the terrain (road heightfield) so it slides
+	 * along the surface instead of phasing through it */
+	{
+		int minVy = MapHeight(camPos) + (inCar ? TERRAIN_CLEAR_CAR : TERRAIN_CLEAR_FOOT);
+
+		if (camPos->vy < minVy)
+			camPos->vy = minVy;
+	}
+
 	return clipped;
 }
 
@@ -601,20 +621,51 @@ static void D2plLogCamera(VECTOR* camPos, SVECTOR* camAngle, int clipped)
 		camAngle->vx, camAngle->vy, scr_z, clipped);
 }
 
-/* The orbit looks INWARD: point the view straight at the player from the
- * final camera position. Uses the engine's own PointAtTarget (the same
- * function the in-game cameras use to aim at a point) so the convention is
- * guaranteed to match the render — the player stays the focus of the view
- * at every orbit angle, and pressing up leaves the camera looking DOWN at
- * him from above. On foot the aim point sits slightly above the base (the
- * body, not the feet). */
-static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base)
+/* The orbit looks INWARD: point the view at the focal point from the final
+ * camera position, using the engine's own PointAtTarget so the convention
+ * is guaranteed to match the render. On foot the focal point is the player.
+ * In a vehicle the focal point sits a little ABOVE the car (orbit point up)
+ * and, when the player is not free-looking, AHEAD of the car — so the
+ * settled camera points where you're driving. Releasing the look stick
+ * blends the focal point back to the forward point smoothly. */
+static int gAimLookBlend = 0;	/* 0 = settled (forward), 4096 = free-looking */
+
+static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
+	int inCar, int baseDir, int looking)
 {
 	VECTOR target;
 
 	target.vx = base[0];
 	target.vy = base[1];
 	target.vz = base[2];
+
+	if (inCar)
+	{
+		VECTOR carPoint;
+		VECTOR aheadPoint;
+
+		/* orbit/focal point: a little above the car's base */
+		carPoint.vx = base[0];
+		carPoint.vy = base[1] + CAR_ORBIT_UP;
+		carPoint.vz = base[2];
+
+		/* settled focal point: ahead of the car, where you're driving */
+		aheadPoint.vx = base[0] + FIXEDH(RSIN(baseDir) * CAR_LOOK_AHEAD);
+		aheadPoint.vy = base[1] + CAR_ORBIT_UP;
+		aheadPoint.vz = base[2] + FIXEDH(RCOS(baseDir) * CAR_LOOK_AHEAD);
+
+		/* blend smoothly between looking-around (at the car) and settled
+		 * (ahead of the car) */
+		gAimLookBlend = jer_lerp_int(gAimLookBlend, looking ? 4096 : 0, 6);
+
+		target.vx = jer_lerp(aheadPoint.vx, carPoint.vx, gAimLookBlend);
+		target.vy = jer_lerp(aheadPoint.vy, carPoint.vy, gAimLookBlend);
+		target.vz = jer_lerp(aheadPoint.vz, carPoint.vz, gAimLookBlend);
+	}
+	else
+	{
+		gAimLookBlend = 0;
+	}
 
 	PointAtTarget(camPos, &target, camAngle);
 }
@@ -803,8 +854,9 @@ static int D2plOnCamera(void* userdata, void* args)
 	{
 		int* base = (int*)a->basePos;
 		int clip = D2plSmoothCamera(camPos, base, a->inCar);
+		int looking = (gLookIdle < LOOK_SETTLE_CAR || gLookPitch != 0);
 
-		D2plAimAtPlayer(camAngle, camPos, base);
+		D2plAimAtPlayer(camAngle, camPos, base, a->inCar, a->baseDir, looking);
 		D2plLogCamera(camPos, camAngle, clip);
 	}
 
@@ -1202,6 +1254,7 @@ static void D2plReset(void)
 	gLookPitch = 0;
 	gLookPitchTarget = 0;
 	gPedWasMoving = 0;
+	gAimLookBlend = 0;
 
 	gHandPos[0] = gHandPos[1] = gHandPos[2] = 0;
 	gAimPoint[0] = gAimPoint[1] = gAimPoint[2] = 0;
