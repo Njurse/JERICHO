@@ -238,7 +238,7 @@ static void D2plSaveSettings(void)
 				   near-instant so the player starts running the new
 				   way immediately, GTA-style */
 
-#define CAR_HEIGHT -60		/* in-car camera drop (more grounded) */
+#define CAR_HEIGHT -105		/* in-car camera drop (more grounded) */
 #define CAR_ORBIT_UP -160	/* raise the vehicle orbit/focal point (Driver 2
 				   uses INVERTED y — up = -y); the camera gravitates
 				   toward looking AHEAD of the car near the forward
