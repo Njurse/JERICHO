@@ -338,7 +338,12 @@ int D2plOnPedPose(void* userdata, void* args)
 			LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
 			int aimYaw = (-camera_angle.vy) & 0xfff;
 
-			joint1->vy = (short)jer_anim_aim_diff(pPed->dir.vy, aimYaw);
+			/* the JOINT_1 local yaw COMPOSES with the body (the engine adds
+			 * it to the root matrix built from pPed->dir), so it must be
+			 * "from the body TOWARD the aim": aimYaw - bodyYaw. The old
+			 * bodyYaw - aimYaw rotated the other way — a ~180 degree
+			 * twist (with the arm matching, since it hangs off the root) */
+			joint1->vy = (short)-jer_anim_aim_diff(pPed->dir.vy, aimYaw);
 		}
 
 		/* head lock: keep the head aligned with the (rotated) torso */
