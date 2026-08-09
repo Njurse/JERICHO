@@ -261,6 +261,14 @@ static void D2plSaveSettings(void)
 				   base distance (pull in when slower, extend when
 				   running — relative-framing doc) */
 #define FOOT_SPEED_DIST 4	/* distance units added per unit of run speed */
+#define MAX_POS_STEP 600	/* the camera position NEVER snaps during play: a
+				   big correction travels at a bounded rate — the
+				   writeup's 'never snap, always blend' applies to the
+				   position rig as well as the rotation */
+#define CONTEXT_JUMP 30000	/* a target jump bigger than this is a context
+				   switch (level load, intro sweep -> play, spawn):
+				   re-place instantly instead of flying across the
+				   map at MAX_POS_STEP */
 
 /* Instability Governor (spin-out recovery, GTA IV §4): when the car's
  * angular rate spikes (spin, crash), the camera stops trying to be clever
@@ -316,6 +324,9 @@ static int gFootSpeedSmooth;	/* smoothed on-foot speed (pPed->speed) */
 static int gTrackedCarId = -2;	/* the car the governor is sampling (seeds the
 				   angular-rate delta on car entry, so the first
 				   in-car frame can't false-trigger a spin) */
+static VECTOR gCamSmooth;	/* smoothed camera position (live target + bounded
+				   rate; hoisted so level starts re-place it) */
+static int gCamSmoothValid;
 
 /* ped was moving last frame (run-vs-pivot turn limit) */
 static int gPedWasMoving;
@@ -804,6 +815,38 @@ static int D2plOnPedInput(void* userdata, void* args)
 
 	desired = (camHeading + stickHeading) & 0xfff;
 
+	/* the writeup's "flattened to the ground plane": project the desired
+	 * direction onto the SURFACE plane at Tanner's feet, so a slope with
+	 * a weird normal can't make him fail to move along it — the movement
+	 * follows the terrain the same way the heading blend follows the
+	 * velocity vector. Flat ground (normal straight up) leaves it unchanged. */
+	if (lp->pPed != NULL)
+	{
+		VECTOR normal;
+		VECTOR surf;
+		VECTOR pp;
+		sdPlane* plane;
+		int dx = RSIN(desired);
+		int dz = RCOS(desired);
+		long long dot;
+		int dpx;
+		int dpz;
+
+		pp.vx = lp->pPed->position.vx;
+		pp.vy = lp->pPed->position.vy;
+		pp.vz = lp->pPed->position.vz;
+
+		FindSurfaceD2(&pp, &normal, &surf, &plane);
+
+		dot = (long long)dx * normal.vx + (long long)dz * normal.vz;
+
+		dpx = (int)(dx - ((long long)normal.vx * dot >> 24));
+		dpz = (int)(dz - ((long long)normal.vz * dot >> 24));
+
+		if (ABS(dpx) + ABS(dpz) > 16)
+			desired = ratan2(dpx, dpz);
+	}
+
 	/* diagnostics: log the heading math every 60 frames while input is
 	 * live — 'stick down should make desired ~ baseDir+2048, and pdir
 	 * should track dir' — so a pad-axis quirk or heading-convention
@@ -863,17 +906,17 @@ static int D2plOnPedInput(void* userdata, void* args)
 /* Smooth the camera toward its desired position with a preference for
  * responsive-but-smooth reactivity. If the desired position clips into
  * world geometry (the engine's collision query reports it), the target is
- * pushed clear toward the player and the camera SNAPS there — a fast
- * transform is allowed when it prevents clipping, so the camera never
- * renders inside a wall. On a huge jump (level switch / teleport) it snaps
- * too. The on-foot camera is always kept above the player's ground level.
+ * pushed clear toward the player and the camera moves there UNBOUNDED —
+ * a fast transform is allowed when it prevents clipping, so the camera
+ * never keeps rendering inside a wall. On a context jump (level switch,
+ * intro sweep -> play) the camera re-places instantly; during play a
+ * correction travels at the bounded MAX_POS_STEP rate (never a snap).
+ * The on-foot camera is always kept above the player's ground level.
  * Returns 1 when a clip push happened (for diagnostics); *penOut, when
  * non-NULL, receives the terrain penetration (how far the desired position
  * would sink into the ground, for the forced look-up effect). */
 static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 {
-	static VECTOR gSmooth;
-	static int gSmoothValid;
 	int div = inCar ? 4 : 5;	/* responsive smoothness (1/div toward target per
 				   frame) — a car turning sharply gets a little (subtle)
 				   runway lag, but tighter than before so the player can
@@ -887,17 +930,28 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 	if (penOut != NULL)
 		*penOut = 0;
 
-	if (!gSmoothValid)
 	{
-		/* first frame after boot/level switch: place it, no lerp */
-		gSmooth.vx = camPos->vx;
-		gSmooth.vy = camPos->vy;
-		gSmooth.vz = camPos->vz;
-		gSmoothValid = 1;
+		int jump = ABS(gCamSmooth.vx - camPos->vx)
+			+ ABS(gCamSmooth.vy - camPos->vy)
+			+ ABS(gCamSmooth.vz - camPos->vz);
+
+		if (!gCamSmoothValid || jump > CONTEXT_JUMP)
+		{
+			/* first frame after boot/level switch — or the target jumped
+			 * more than a context change (intro sweep -> play, spawn):
+			 * place it, no lerp. A fresh context, not a correction (the
+			 * no-snap rule covers in-frame corrections, not context
+			 * switches — flying 190k units at MAX_POS_STEP is worse). */
+			gCamSmooth.vx = camPos->vx;
+			gCamSmooth.vy = camPos->vy;
+			gCamSmooth.vz = camPos->vz;
+			gCamSmoothValid = 1;
+		}
 	}
 
-	/* clipping: push the target clear; snap there only if the push actually
-	 * cleared it (a failed push means the camera stays where it is) */
+	/* clipping: push the target clear; the position rig then eases there
+	 * at the bounded MAX_POS_STEP rate (a failed push keeps the desired
+	 * position) */
 	if (CameraCollisionCheck())
 	{
 		int steps = 0;
@@ -915,31 +969,35 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 				break;
 		}
 
-		if (steps < 8)
-			div = 1;	/* cleared: snap to the safe position */
-		else
+		if (steps >= 8)
 			clipped = 2;	/* could not clear: keep the desired position */
 	}
 
-	/* huge jump (level switch / teleport): snap instead of lerping */
-	if (ABS(gSmooth.vx - camPos->vx) + ABS(gSmooth.vy - camPos->vy) +
-		ABS(gSmooth.vz - camPos->vz) > 4096)
-	{
-		div = 1;
-	}
-
-	/* move toward the target, rounding so small deltas don't stall */
+	/* move toward the target, rounding so small deltas don't stall, and
+	 * clamping each axis to MAX_POS_STEP so even a huge correction
+	 * travels instead of teleporting — EXCEPT on the frame the collision
+	 * push cleared, where the move is unbounded: the camera must never
+	 * keep rendering inside a wall */
 	for (i = 0; i < 3; i++)
 	{
-		int* smooth = ((int*)&gSmooth) + i;
+		int* smooth = ((int*)&gCamSmooth) + i;
 		int* target = ((int*)camPos) + i;
+		int delta = (*target - *smooth + div / 2) / div;
 
-		*smooth += (*target - *smooth + div / 2) / div;
+		if (clipped == 0)
+		{
+			if (delta > MAX_POS_STEP)
+				delta = MAX_POS_STEP;
+			if (delta < -MAX_POS_STEP)
+				delta = -MAX_POS_STEP;
+		}
+
+		*smooth += delta;
 	}
 
-	camPos->vx = gSmooth.vx;
-	camPos->vy = gSmooth.vy;
-	camPos->vz = gSmooth.vz;
+	camPos->vx = gCamSmooth.vx;
+	camPos->vy = gCamSmooth.vy;
+	camPos->vz = gCamSmooth.vz;
 
 	/* cap the camera to the terrain (camera frame, negated y): the camera
 	 * may not sink below the road surface — clamp it back up to the
@@ -977,7 +1035,7 @@ static void D2plLogCamera(PLAYER* lp, int baseDirIn, VECTOR* camPos,
 	if (gCamLogTimer > 0 && clipped == 0)
 		return;
 
-	gCamLogTimer = 60;
+	gCamLogTimer = 30;
 
 	jer_log("[d2pl] cam: pos=(%d,%d,%d) ang=(%d,%d) scr_z=%d collide=%d | "
 		"tanner: dir=%d pdir=%d pos=(%d,%d,%d) | stick=%d,%d | "
@@ -1771,6 +1829,7 @@ static void D2plReset(void)
 	gInstabConfirm = 0;
 	gTrackedCarId = -2;
 	gFootSpeedSmooth = 0;
+	gCamSmoothValid = 0;	/* level start: the first camera frame re-places */
 	gPedWasMoving = 0;
 	gAimLookBlend = 0;
 
