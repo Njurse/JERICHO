@@ -35,6 +35,7 @@
 
 #include "jericho.h"
 #include "jer_events.h"
+#include "jer_config.h"
 
 #include "driver2.h"
 #include "camera.h"	/* camera_position/camera_angle for aimPoint() */
@@ -404,6 +405,301 @@ static inline void D2plRotatePose(int* px, int* pz, int h)
 /* Registry                                                            */
 /* ------------------------------------------------------------------ */
 
+void D2plWeaponInit(void);
+void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
+	int inCar, int baseDir, int cameraAngle, int freeLook);
+void WeaponSystem_Register(WeaponBase* weapon);
+void WeaponSystem_Equip(WeaponBase* weapon);
+void WeaponSystem_Cycle(int direction);
+WeaponBase* WeaponSystem_Current(void);
+int* WeaponSystem_HandPos(void);
+
+
+
+/* ------------------------------------------------------------------ */
+/* Settings (persisted via the JERICHO config API into                 */
+/* mods/config/d2pl.ini)                                               */
+/* ------------------------------------------------------------------ */
+
+typedef struct D2PL_SETTINGS
+{
+	int sensX;		/* view-change sensitivity, horizontal (64 = default) */
+	int sensY;		/* view-change sensitivity, vertical (64 = default) */
+	int joyCamera;		/* 1 = right-stick orbit/look control (default on) */
+	int footDist;		/* on-foot camera pull-in distance */
+	int footLat;		/* on-foot shoulder offset */
+	int footHeight;		/* on-foot camera height (inverted y: below the body) */
+	int carDist;		/* in-car pull-in (fraction of the view axis) */
+	int carLatPct;		/* in-car lateral, % of the car's bbox width */
+	int carHeight;		/* in-car camera height offset (taller cars need
+				   a higher cam) */
+	int shoulder;		/* -1 = left shoulder, +1 = right */
+	int invertH;		/* 1 = invert horizontal look */
+	int invertV;		/* 1 = invert vertical look */
+	int fovEnabled;		/* 1 = override the engine FOV */
+	int fovDeg;		/* target horizontal FOV (degrees) */
+	int laserColor;		/* D2PL_LASER_* index (0 = off) */
+	int cameraEnabled;	/* 1 = the mod's camera/movement run (kill-switch) */
+} D2PL_SETTINGS;
+
+#define D2PL_CFG_MOD "d2pl"
+#define D2PL_CFG_VERSION 6	/* bump when defaults change — a stale profile is
+				   deleted and regenerated from scratch */
+
+extern D2PL_SETTINGS gS;
+
+/* ------------------------------------------------------------------ */
+/* Shared tuning constants                                                */
+/* ------------------------------------------------------------------ */
+
+#define LOOK_DEADZONE 24	/* stick counts below this are "idle" */
+#define LOOK_YAW_SIGN -1	/* -1 = push right orbits the camera right */
+
+/* aim mode: the look speed is halved while aiming for finer control */
+#define AIM_LOOK_DIV 2
+
+/* the L2/R2 look buttons: the camera eases to the car's left/right side
+ * view (90 degrees, car-relative) — the stock TurnHead head-rot path
+ * breaks the module's transforms, so the module owns the buttons */
+#define LOOK_SIDE_ANGLE 1024
+#define LOOK_SIDE_DIV 4		/* ease divisor: ~0.1 s to reach the side view */
+
+/* on-foot startup momentum: while the ped is just starting to move (speed
+ * below this) the camera eases with a touch more lag, then tightens up */
+#define FOOT_LAG_SPEED 6
+#define FOOT_LAG_DIV 8
+#define YAW_RATE 256		/* max orbit speed at full stick, sensX = 64
+				   (x4: the default was too slow) */
+#define YAW_RAMP 10		/* frames to reach full orbit speed (~1/6 s —
+				   the ramp speed was doubled) — the yaw "gains
+				   momentum" instead of jumping to its max */
+#define LOOK_PITCH_SIGN -1	/* -1 = pushing up RAISES the camera on its
+				   orbit around the player (see the header note) */
+#define PITCH_MAX 512		/* ~45 degrees of pitch up/down each way — the
+				   vertical is deliberately tamer than the horizontal so it
+				   doesn't feel janky at full deflection */
+#define FOV_PITCH_SCALE 4	/* scr_z delta per 128 pitch units (GTA4-style:
+				   looking down from above narrows the FOV, up widens) */
+#define LOOK_SETTLE_FOOT 100	/* frames idle before settling back (on foot) */
+#define LOOK_SETTLE_CAR 45	/* cars settle back after this long idle... */
+#define LOOK_SETTLE_CAR_MOVING 8	/* ...but a car in motion resets almost
+				   immediately: it interpolates back to its default
+				   angle after a few frames of stick silence */
+#define LOW_SPEED_GRACE 4	/* car wheel_speed at/below which the orbit stays
+				   gripped (no camera swing at a standstill) */
+
+#define MOVE_DEADZONE 24	/* left-stick deadzone */
+#define MOVE_TURN_SIGN 1	/* +1 = positive angle delta turns right */
+#define MOVE_STICK_SIGN_X 1	/* flip if your pad's X axis is inverted */
+#define MOVE_STICK_SIGN_Y 1	/* flip if your pad's Y axis is inverted */
+#define MOVE_LERP_DIV 8		/* responsive exponential heading lerp: 1/8 of the
+				   remaining gap toward the stick-derived heading each
+				   frame (fast when far, eases in) */
+#define RUN_TURN_LIMIT 128	/* max turn per frame while running (~11.25 deg,
+				   ~675 deg/s): well beyond the original 32-unit
+				   restriction so Tanner decisively turns toward
+				   the stick heading (even a 180) instead of
+				   creeping around; the exponential lerp keeps it
+				   smooth, the cap keeps it from snapping */
+#define PIVOT_TURN_LIMIT 256	/* standstill pivot speed (~22.5 deg/frame):
+				   near-instant so the player starts running the new
+				   way immediately, GTA-style */
+
+#define CAR_ORBIT_UP -160	/* raise the vehicle orbit/focal point (Driver 2
+				   uses INVERTED y — up = -y); the camera gravitates
+				   toward looking AHEAD of the car near the forward
+				   angle so view-panning in isn't jarring */
+#define CAR_LOOK_AHEAD 5000	/* the settled camera focuses this far AHEAD of
+				   the car so you see where you're driving */
+
+/* ground cap: Driver 2 uses INVERTED y (vy grows downward), so the road is
+ * a heightfield the camera must not sink below. Mirror the engine's own
+ * chase-cam clamp (camera.c: cammapht = carheight - MapHeight - 100) — the
+ * camera stays at-or-above the terrain line and slides along the surface. */
+#define TERRAIN_CLEAR_FOOT 15
+#define TERRAIN_CLEAR_CAR 50
+/* ground-slide "forced look-up": when the terrain cap pins the camera (it
+ * would sink into the ground), the view tilts slightly upward — a fraction
+ * of the would-be intersection depth, capped — so the camera reads as
+ * being pushed up out of the ground instead of boring into it. */
+#define GROUND_LOOKUP_SCALE 8	/* angle units per 256 units of penetration */
+#define GROUND_LOOKUP_MAX 200	/* cap the forced up-tilt (~17.5 deg) */
+#define FOOT_AIM_HEIGHT 90	/* on-foot aim point: the torso ~90 units above
+				   the waist anchor (camera frame: up = -y) */
+#define CAR_SPEED_DIV 2		/* car pull-in fades with speed (GTA4 zoom-out) */
+
+/* natural settle-back (GTA IV State A): the module eases the orbit toward
+ * the blended natural heading instead of the engine's fixed-rate settle */
+#define SETTLE_DIV 12		/* 1/12 of the gap per frame — lazy, cinematic */
+#define VEL_NOISE 16		/* base-delta noise floor before velocity counts */
+#define VEL_BLEND_SPEED_SCALE 24	/* velocity-blend weight per speed unit */
+#define VEL_BLEND_MAX 2900	/* cap the base blend weight (~0.7 of 4096);
+				   the drift boost may push past this */
+#define VEL_BLEND_ABS_MAX 3500	/* absolute ceiling (~0.85) — never full weight,
+				   so the heading vector never fully cancels */
+#define VEL_BLEND_SLIP_MIN 384	/* slip angle where the drift boost starts */
+#define VEL_BLEND_SLIP_DIV 2	/* slip boost per unit of slip */
+#define FOV_SPEED_SCALE 512	/* subtle FOV widening with smoothed speed */
+#define HEIGHT_SPEED_SCALE 256	/* subtle camera height rise with speed */
+#define FOOT_WALK_SPEED 14	/* on-foot speed at which the camera sits at its
+				   base distance (pull in when slower, extend when
+				   running — relative-framing doc) */
+#define FOOT_SPEED_DIST 4	/* distance units added per unit of run speed */
+#define MAX_POS_STEP 600	/* the camera position NEVER snaps during play: a
+				   big correction travels at a bounded rate — the
+				   writeup's 'never snap, always blend' applies to the
+				   position rig as well as the rotation */
+#define CONTEXT_JUMP 30000	/* a target jump bigger than this is a context
+				   switch (level load, intro sweep -> play, spawn):
+				   re-place instantly instead of flying across the
+				   map at MAX_POS_STEP */
+
+/* Instability Governor (spin-out recovery, GTA IV §4): when the car's
+ * angular rate spikes (spin, crash), the camera stops trying to be clever
+ * and holds its orientation until the car settles. Hysteresis: trigger
+ * above the upper threshold, release only after the rate has stayed below
+ * the lower threshold for a confirmation window. Priority below Manual
+ * Look, above Natural. */
+#define INSTAB_TRIGGER 384	/* smoothed deg-ish units/frame that claims focus */
+#define INSTAB_RELEASE 96	/* must drop below this to release */
+#define INSTAB_CONFIRM 90	/* frames of calm before releasing */
+
+/* aim camera (on foot) */
+#define AIM_PULL 2000		/* /4096: pull toward Tanner while aiming */
+#define AIM_HEIGHT -2
+#define AIM_ZOOM 160		/* scr_z increase -> FOV decrease (focus) */
+#define AIM_LATERAL 25		/* shoulder bias while aiming (ped scale ~130) */
+
+/* impact marker: a big black X at the aim point, 1 second (60 frames) */
+#define MARKER_LIFETIME 60
+#define MARKER_MIN_SIZE 150
+#define MARKER_MAX_SIZE 800
+
+/* ================================================================== */
+/* Module state                                                        */
+/* ================================================================== */
+
+#define MAX_WEAPONS 8
+
+/* ------------------------------------------------------------------ */
+/* Shared module state (defined in d2pl.c / d2pl_car.c / d2pl_ped.c /       */
+/* d2pl_weapon.c — extern here so the theme files stay independent)          */
+/* ------------------------------------------------------------------ */
+
+extern int gLookIdle;		/* frames since the stick was last used */
+extern int gLookPitch;		/* smoothed pitch */
+extern int gLookPitchTarget;
+extern int gYawSpeed;		/* current orbit speed (momentum: ramps toward
+				   the stick's max over ~1/3 s, decays on release) */
+extern int gGripDist;		/* orbit radius frozen for the whole pan (the
+				   spherical-pan grip) — hoisted so level resets can
+				   clear it */
+extern int gMoveRefHeading;	/* camera heading frozen at view-manipulation start
+				   (the on-foot movement reference frame, GTA IV §8) */
+extern int gMoveRefActive;	/* 1 while that freeze is in effect */
+extern int gVelAngle;		/* smoothed ground-velocity heading (0..4095) */
+extern int gSpeedSmooth;	/* smoothed wheel speed (FIXEDH units, 0 on foot) */
+extern int gBobLastX;	/* last on-foot base position (view bob motion) */
+extern int gBobLastZ;
+extern int gLastBaseX, gLastBaseZ;
+extern int gCamInitialized;	/* one-shot: snap the spawn orbit angle behind */
+extern int gSettleInfluence;	/* natural-settle influence fade (0..4096): ramps
+				   in on release so the ease eases IN — no correction
+				   snap at the handoff, live target throughout */
+extern int gSettlePitch0;	/* the pitch held when the settle began — it
+				   returns to level IN SYNC with the angle fade
+				   (the old fast 1/6 pitch snap-back was what made
+				   follow <-> orbit switching feel disjointed) */
+extern int gAngRate;		/* smoothed car-body angular rate (units/frame) */
+extern int gLastCarDir;		/* previous car heading for the rate delta */
+extern int gInstability;	/* 1 = the Instability Governor holds the camera */
+extern int gInstabConfirm;	/* frames the rate has stayed calm (hysteresis) */
+extern int gFootSpeedSmooth;	/* smoothed on-foot speed (pPed->speed) */
+extern int gLastTannerPad;	/* previous frame's on-foot pad — the hook carries
+				   no padNew, so the X-reload edge is tracked here */
+extern int gTrackedCarId;	/* the car the governor is sampling (seeds the
+				   angular-rate delta on car entry, so the first
+				   in-car frame can't false-trigger a spin) */
+extern VECTOR gCamSmooth;	/* smoothed camera position (live target + bounded
+				   rate; hoisted so level starts re-place it) */
+extern int gCamSmoothValid;
+
+/* ped was moving last frame (run-vs-pivot turn limit) */
+extern int gPedWasMoving;
+
+/* weapon state */
+extern WeaponBase* gWeapons[MAX_WEAPONS];
+extern int gWeaponCount;
+extern WeaponBase* gCurrentWeapon;
+extern int gAiming;
+extern int gHandPos[3];		/* world RHAND position (muzzle origin) */
+extern int gAimPoint[3];	/* world aim point at weapon range */
+
+/* impact marker state */
+extern int gMarkerTimer;	/* frames left until the marker fades */
+extern int gMarkerPos[3];
+extern int gPedScaleLogged;
+extern int gAimLookBlend;	/* 0 = settled (forward), 4096 = free-looking */
+
+/* mouse integration: relative motion consumed by the look handler (yaw/pitch
+ * nudges on top of the stick); buttons map to aim (right), primary fire
+ * (left), secondary fire (middle). Per-pixel nudge at sens 64:
+ * (dx * sens * MOUSE_YAW) / (64*128). */
+#include <SDL.h>
+
+#define MOUSE_YAW	1152
+#define MOUSE_PITCH	1152
+
+/* input-device authority: the mouse only drives the view while it is the
+ * recent input device (motion/click grants ~0.75 s; live controller
+ * analog revokes it immediately) — a connected controller + an idle mouse
+ * must never fight over the camera */
+#define MOUSE_AUTHORITY_FRAMES 45
+
+extern int gMouseDX;	/* relative mouse motion this frame (look) */
+extern int gMouseDY;
+extern Uint32 gLastMouseButtons;	/* for synthesized press edges */
+extern int gMouseActive;	/* frames of remaining mouse authority */
+extern int gLookForceSettle;	/* a L2/R2/L3 look-button release returns
+				   the camera to the normal view immediately —
+				   no hold-window delay, and past the standstill
+				   reverse-grace (armed while the button is held) */
+
+
+/* ------------------------------------------------------------------ */
+/* Cross-file prototypes                                                 */
+/* ------------------------------------------------------------------ */
+
+/* main (d2pl.c) */
+int D2plFovScrZ(int degrees);
+int D2plOnLook(void* userdata, void* args);
+int D2plOnCamera(void* userdata, void* args);
+int D2plOnFrame(void* userdata, void* args);
+int D2plOnPauseMenu(void* userdata, void* args);
+int D2plOnGameStart(void* userdata, void* args);
+int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut);
+void D2plLogCamera(PLAYER* lp, int baseDirIn, VECTOR* camPos,
+	SVECTOR* camAngle, int clipped);
+void D2plReset(void);
+void D2plAdjustItem(int item, int direction);
+const char* D2plItemLabel(int item);
+
+/* car (d2pl_car.c) */
+int D2plCarSpeed(PLAYER* lp);
+int D2plNaturalHeading(PLAYER* lp, int inCar);
+void D2plTrackInstability(PLAYER* lp, int inCar);
+void D2plCarCamera(void* args, int heading);
+
+/* ped (d2pl_ped.c) */
+int D2plOnPedInput(void* userdata, void* args);
+void D2plPedCamera(void* args, int heading);
+
+/* weapon (d2pl_weapon.c) */
+int D2plOnSkeleton(void* userdata, void* args);
+int D2plOnOverlay(void* userdata, void* args);
+void D2plWeaponFrame(PLAYER* lp, int pad, int padNew);
+int D2plAimCamera(void* args, int heading);
+void D2plLaserColor(CVECTOR* out);
 void WeaponSystem_Register(WeaponBase* weapon);
 void WeaponSystem_Equip(WeaponBase* weapon);
 void WeaponSystem_Cycle(int direction);

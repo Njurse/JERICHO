@@ -1,42 +1,8 @@
 /*
- * d2pl.c — Driver 2 Parallel Lines (d2pl): the big weapon + camera mod.
- *
- * Merges the former camera + weapons packages into one module so the
- * free-look camera, the GTA-style on-foot/in-car framing, and the weapon
- * system share one settings store and never fight each other.
- *
- * What this module does:
- *   camera — right-stick orbit + pitch free-look (dual-stick TPS style),
- *            smooth settle-back, pitch-linked FOV, configurable base FOV
- *            override (~72 degrees), camera-relative on-foot movement with
- *            run/pivot turn limits, GTA4-style in-car framing scaled to the
- *            car's bounding box, low-speed orbit grip (no auto camera swing
- *            at a standstill), configurable sensitivity/invert/offsets.
- *   weapons — overridable WeaponBase template + registry, arm-hold (pose
- *            the ped arm, attach the mesh at RHAND), L1 aim (zoom + FOV +
- *            presenting pose), R1/R2 fire, ammo/reload, HUD, laser sight
- *            (color-cycled, default red), 1-second impact marker on fire.
- *
- * All tunables live in mods/config/d2pl.ini (see the settings block below)
- * and are editable from Pause -> D2PL Settings.
- *
- * Hook usage:
- *   JER_EVENT_CAMERA_LOOK  — right-stick free-look + aim look suppression
- *   JER_EVENT_CAMERA       — framing offsets + FOV override + aim camera
- *   JER_EVENT_PED_INPUT    — camera-relative on-foot movement
- *   JER_EVENT_PED_SKELETON — arm pose + weapon mesh at RHAND
- *   JER_EVENT_FRAME        — weapon update + laser line + impact marker
- *   JER_EVENT_DRAW_OVERLAY — HUD (weapon name + ammo)
- *   JER_EVENT_PAUSE_MENU   — D2PL Settings bridge (labels + adjust)
- *   JER_EVENT_GAME_START / JER_EVENT_INIT — reset per-level state
+ * d2pl_main.c — Driver 2 Parallel Lines (module entry, settings/config/pause shell, shared camera core).
  */
-#include "jericho.h"
-#include "jer_events.h"
-#include "jer_config.h"
-
 #include "d2pl.h"
 
-#include "driver2.h"
 #include "players.h"
 #include "cars.h"
 #include "camera.h"
@@ -46,10 +12,10 @@
 #include "draw.h"
 #include "models.h"
 #include "pres.h"
-#include "pedest.h"		/* ActivatePlayerPedestrian (-onfoot harness) */
-#include "civ_ai.h"		/* PingOutCar (-onfoot harness) */
-#include "dr2roads.h"	/* MapHeight — terrain height for the ground cap */
-#include "PsyX/PsyX_public.h"	/* PsyX_GetScreenSize (FOV math) */
+#include "pedest.h"
+#include "civ_ai.h"
+#include "dr2roads.h"
+#include "PsyX/PsyX_public.h"
 
 #include <math.h>
 
@@ -62,35 +28,12 @@ extern void Debug_AddLineDepth(VECTOR& pointA, VECTOR& pointB, CVECTOR& color);
 #endif
 
 /* ================================================================== */
-/* Settings (persisted to mods/config/d2pl.ini)                       */
+/* Settings (persisted via the JERICHO config API; schema in d2pl.h)     */
 /* ================================================================== */
 
-typedef struct D2PL_SETTINGS
-{
-	int sensX;		/* view-change sensitivity, horizontal (64 = default) */
-	int sensY;		/* view-change sensitivity, vertical (64 = default) */
-	int joyCamera;		/* 1 = right-stick orbit/look control (default on) */
-	int footDist;		/* on-foot camera pull-in distance */
-	int footLat;		/* on-foot shoulder offset */
-	int footHeight;		/* on-foot camera height (inverted y: below the body) */
-	int carDist;		/* in-car pull-in (fraction of the view axis) */
-	int carLatPct;		/* in-car lateral, % of the car's bbox width */
-	int carHeight;		/* in-car camera height offset (taller cars need
-				   a higher cam) */
-	int shoulder;		/* -1 = left shoulder, +1 = right */
-	int invertH;		/* 1 = invert horizontal look */
-	int invertV;		/* 1 = invert vertical look */
-	int fovEnabled;		/* 1 = override the engine FOV */
-	int fovDeg;		/* target horizontal FOV (degrees) */
-	int laserColor;		/* D2PL_LASER_* index (0 = off) */
-	int cameraEnabled;	/* 1 = the mod's camera/movement run (kill-switch) */
-} D2PL_SETTINGS;
+static void D2plSaveSettings(void);	/* forward (load regenerates on stale) */
 
-#define D2PL_CFG_MOD "d2pl"
-#define D2PL_CFG_VERSION 6	/* bump when defaults change — a stale profile is
-				   deleted and regenerated from scratch */
-
-static D2PL_SETTINGS gS = {
+D2PL_SETTINGS gS = {
 	58,			/* sensX — baseline sensitivity, ~10% under the 64
 				   reference (the persisted config is regenerated) */
 	58,			/* sensY */
@@ -112,8 +55,6 @@ static D2PL_SETTINGS gS = {
 	D2PL_LASER_DEFAULT,	/* laserColor (red) */
 	1			/* cameraEnabled */
 };
-
-static void D2plSaveSettings(void);	/* forward (load regenerates on stale) */
 
 static void D2plLoadSettings(void)
 {
@@ -188,233 +129,50 @@ static void D2plSaveSettings(void)
 	jer_config_set_int(D2PL_CFG_MOD, "camera_enabled", gS.cameraEnabled);
 }
 
-/* ================================================================== */
-/* Camera tuning constants                                             */
-/* ================================================================== */
-
-#define LOOK_DEADZONE 24	/* stick counts below this are "idle" */
-#define LOOK_YAW_SIGN -1	/* -1 = push right orbits the camera right */
-
-/* aim mode: the look speed is halved while aiming for finer control */
-#define AIM_LOOK_DIV 2
-
-/* the L2/R2 look buttons: the camera eases to the car's left/right side
- * view (90 degrees, car-relative) — the stock TurnHead head-rot path
- * breaks the module's transforms, so the module owns the buttons */
-#define LOOK_SIDE_ANGLE 1024
-#define LOOK_SIDE_DIV 4		/* ease divisor: ~0.1 s to reach the side view */
-
-/* on-foot startup momentum: while the ped is just starting to move (speed
- * below this) the camera eases with a touch more lag, then tightens up */
-#define FOOT_LAG_SPEED 6
-#define FOOT_LAG_DIV 8
-#define YAW_RATE 256		/* max orbit speed at full stick, sensX = 64
-				   (x4: the default was too slow) */
-#define YAW_RAMP 10		/* frames to reach full orbit speed (~1/6 s —
-				   the ramp speed was doubled) — the yaw "gains
-				   momentum" instead of jumping to its max */
-#define LOOK_PITCH_SIGN -1	/* -1 = pushing up RAISES the camera on its
-				   orbit around the player (see the header note) */
-#define PITCH_MAX 512		/* ~45 degrees of pitch up/down each way — the
-				   vertical is deliberately tamer than the horizontal so it
-				   doesn't feel janky at full deflection */
-#define FOV_PITCH_SCALE 4	/* scr_z delta per 128 pitch units (GTA4-style:
-				   looking down from above narrows the FOV, up widens) */
-#define LOOK_SETTLE_FOOT 100	/* frames idle before settling back (on foot) */
-#define LOOK_SETTLE_CAR 45	/* cars settle back after this long idle... */
-#define LOOK_SETTLE_CAR_MOVING 8	/* ...but a car in motion resets almost
-				   immediately: it interpolates back to its default
-				   angle after a few frames of stick silence */
-#define LOW_SPEED_GRACE 4	/* car wheel_speed at/below which the orbit stays
-				   gripped (no camera swing at a standstill) */
-
-#define MOVE_DEADZONE 24	/* left-stick deadzone */
-#define MOVE_TURN_SIGN 1	/* +1 = positive angle delta turns right */
-#define MOVE_STICK_SIGN_X 1	/* flip if your pad's X axis is inverted */
-#define MOVE_STICK_SIGN_Y 1	/* flip if your pad's Y axis is inverted */
-#define MOVE_LERP_DIV 8		/* responsive exponential heading lerp: 1/8 of the
-				   remaining gap toward the stick-derived heading each
-				   frame (fast when far, eases in) */
-#define RUN_TURN_LIMIT 128	/* max turn per frame while running (~11.25 deg,
-				   ~675 deg/s): well beyond the original 32-unit
-				   restriction so Tanner decisively turns toward
-				   the stick heading (even a 180) instead of
-				   creeping around; the exponential lerp keeps it
-				   smooth, the cap keeps it from snapping */
-#define PIVOT_TURN_LIMIT 256	/* standstill pivot speed (~22.5 deg/frame):
-				   near-instant so the player starts running the new
-				   way immediately, GTA-style */
-
-#define CAR_ORBIT_UP -160	/* raise the vehicle orbit/focal point (Driver 2
-				   uses INVERTED y — up = -y); the camera gravitates
-				   toward looking AHEAD of the car near the forward
-				   angle so view-panning in isn't jarring */
-#define CAR_LOOK_AHEAD 5000	/* the settled camera focuses this far AHEAD of
-				   the car so you see where you're driving */
-
-/* ground cap: Driver 2 uses INVERTED y (vy grows downward), so the road is
- * a heightfield the camera must not sink below. Mirror the engine's own
- * chase-cam clamp (camera.c: cammapht = carheight - MapHeight - 100) — the
- * camera stays at-or-above the terrain line and slides along the surface. */
-#define TERRAIN_CLEAR_FOOT 15
-#define TERRAIN_CLEAR_CAR 50
-/* ground-slide "forced look-up": when the terrain cap pins the camera (it
- * would sink into the ground), the view tilts slightly upward — a fraction
- * of the would-be intersection depth, capped — so the camera reads as
- * being pushed up out of the ground instead of boring into it. */
-#define GROUND_LOOKUP_SCALE 8	/* angle units per 256 units of penetration */
-#define GROUND_LOOKUP_MAX 200	/* cap the forced up-tilt (~17.5 deg) */
-#define FOOT_AIM_HEIGHT 90	/* on-foot aim point: the torso ~90 units above
-				   the waist anchor (camera frame: up = -y) */
-#define CAR_SPEED_DIV 2		/* car pull-in fades with speed (GTA4 zoom-out) */
-
-/* natural settle-back (GTA IV State A): the module eases the orbit toward
- * the blended natural heading instead of the engine's fixed-rate settle */
-#define SETTLE_DIV 12		/* 1/12 of the gap per frame — lazy, cinematic */
-#define VEL_NOISE 16		/* base-delta noise floor before velocity counts */
-#define VEL_BLEND_SPEED_SCALE 24	/* velocity-blend weight per speed unit */
-#define VEL_BLEND_MAX 2900	/* cap the base blend weight (~0.7 of 4096);
-				   the drift boost may push past this */
-#define VEL_BLEND_ABS_MAX 3500	/* absolute ceiling (~0.85) — never full weight,
-				   so the heading vector never fully cancels */
-#define VEL_BLEND_SLIP_MIN 384	/* slip angle where the drift boost starts */
-#define VEL_BLEND_SLIP_DIV 2	/* slip boost per unit of slip */
-#define FOV_SPEED_SCALE 512	/* subtle FOV widening with smoothed speed */
-#define HEIGHT_SPEED_SCALE 256	/* subtle camera height rise with speed */
-#define FOOT_WALK_SPEED 14	/* on-foot speed at which the camera sits at its
-				   base distance (pull in when slower, extend when
-				   running — relative-framing doc) */
-#define FOOT_SPEED_DIST 4	/* distance units added per unit of run speed */
-#define MAX_POS_STEP 600	/* the camera position NEVER snaps during play: a
-				   big correction travels at a bounded rate — the
-				   writeup's 'never snap, always blend' applies to the
-				   position rig as well as the rotation */
-#define CONTEXT_JUMP 30000	/* a target jump bigger than this is a context
-				   switch (level load, intro sweep -> play, spawn):
-				   re-place instantly instead of flying across the
-				   map at MAX_POS_STEP */
-
-/* Instability Governor (spin-out recovery, GTA IV §4): when the car's
- * angular rate spikes (spin, crash), the camera stops trying to be clever
- * and holds its orientation until the car settles. Hysteresis: trigger
- * above the upper threshold, release only after the rate has stayed below
- * the lower threshold for a confirmation window. Priority below Manual
- * Look, above Natural. */
-#define INSTAB_TRIGGER 384	/* smoothed deg-ish units/frame that claims focus */
-#define INSTAB_RELEASE 96	/* must drop below this to release */
-#define INSTAB_CONFIRM 90	/* frames of calm before releasing */
-
-/* aim camera (on foot) */
-#define AIM_PULL 2000		/* /4096: pull toward Tanner while aiming */
-#define AIM_HEIGHT -2
-#define AIM_ZOOM 160		/* scr_z increase -> FOV decrease (focus) */
-#define AIM_LATERAL 25		/* shoulder bias while aiming (ped scale ~130) */
-
-/* impact marker: a big black X at the aim point, 1 second (60 frames) */
-#define MARKER_LIFETIME 60
-#define MARKER_MIN_SIZE 150
-#define MARKER_MAX_SIZE 800
 
 /* ================================================================== */
-/* Module state                                                        */
+/* Shared camera/mouse state (defined here; extern in d2pl.h)             */
 /* ================================================================== */
 
-#define MAX_WEAPONS 8
-
-/* free-look state (reset per level) */
-static int gLookIdle;		/* frames since the stick was last used */
-static int gLookPitch;		/* smoothed pitch */
-static int gLookPitchTarget;
-static int gYawSpeed;		/* current orbit speed (momentum: ramps toward
+int gLookIdle;		/* frames since the stick was last used */
+int gLookPitch;		/* smoothed pitch */
+int gLookPitchTarget;
+int gYawSpeed;		/* current orbit speed (momentum: ramps toward
 				   the stick's max over ~1/3 s, decays on release) */
-static int gGripDist;		/* orbit radius frozen for the whole pan (the
+int gGripDist;		/* orbit radius frozen for the whole pan (the
 				   spherical-pan grip) — hoisted so level resets can
 				   clear it */
-static int gMoveRefHeading;	/* camera heading frozen at view-manipulation start
+int gMoveRefHeading;	/* camera heading frozen at view-manipulation start
 				   (the on-foot movement reference frame, GTA IV §8) */
-static int gMoveRefActive;	/* 1 while that freeze is in effect */
-static int gVelAngle;		/* smoothed ground-velocity heading (0..4095) */
-static int gSpeedSmooth;	/* smoothed wheel speed (FIXEDH units, 0 on foot) */
-static int gBobLastX;	/* last on-foot base position (view bob motion) */
-static int gBobLastZ;
-static int gLastBaseX, gLastBaseZ;
-static int gCamInitialized;	/* one-shot: snap the spawn orbit angle behind */
-static int gSettleInfluence;	/* natural-settle influence fade (0..4096): ramps
+int gMoveRefActive;	/* 1 while that freeze is in effect */
+int gCamInitialized;	/* one-shot: snap the spawn orbit angle behind */
+int gSettleInfluence;	/* natural-settle influence fade (0..4096): ramps
 				   in on release so the ease eases IN — no correction
 				   snap at the handoff, live target throughout */
-static int gSettlePitch0;	/* the pitch held when the settle began — it
+int gSettlePitch0;	/* the pitch held when the settle began — it
 				   returns to level IN SYNC with the angle fade
 				   (the old fast 1/6 pitch snap-back was what made
 				   follow <-> orbit switching feel disjointed) */
-static int gAngRate;		/* smoothed car-body angular rate (units/frame) */
-static int gLastCarDir;		/* previous car heading for the rate delta */
-static int gInstability;	/* 1 = the Instability Governor holds the camera */
-static int gInstabConfirm;	/* frames the rate has stayed calm (hysteresis) */
-static int gFootSpeedSmooth;	/* smoothed on-foot speed (pPed->speed) */
-static int gLastTannerPad;	/* previous frame's on-foot pad — the hook carries
-				   no padNew, so the X-reload edge is tracked here */
-static int gTrackedCarId = -2;	/* the car the governor is sampling (seeds the
-				   angular-rate delta on car entry, so the first
-				   in-car frame can't false-trigger a spin) */
-static VECTOR gCamSmooth;	/* smoothed camera position (live target + bounded
+VECTOR gCamSmooth;	/* smoothed camera position (live target + bounded
 				   rate; hoisted so level starts re-place it) */
-static int gCamSmoothValid;
+int gCamSmoothValid;
 
 /* ped was moving last frame (run-vs-pivot turn limit) */
-static int gPedWasMoving;
-
-/* weapon state */
-static WeaponBase* gWeapons[MAX_WEAPONS];
-static int gWeaponCount = 0;
-static WeaponBase* gCurrentWeapon = NULL;
-static int gAiming = 0;
-static int gHandPos[3];		/* world RHAND position (muzzle origin) */
-static int gAimPoint[3];	/* world aim point at weapon range */
-
-/* impact marker state */
-static int gMarkerTimer;	/* frames left until the marker fades */
-static int gMarkerPos[3];
-static int gPedScaleLogged;	/* one-shot per-level ped-scale diagnostic */
-
-/* mouse integration: relative motion consumed by the look handler (yaw/pitch
- * nudges on top of the stick); buttons map to aim (right), primary fire
- * (left), secondary fire (middle). Per-pixel nudge at sens 64:
- * (dx * sens * MOUSE_YAW) / (64*128). */
-#include <SDL.h>
-
-#define MOUSE_YAW	1152
-#define MOUSE_PITCH	1152
-
-/* input-device authority: the mouse only drives the view while it is the
- * recent input device (motion/click grants ~0.75 s; live controller
- * analog revokes it immediately) — a connected controller + an idle mouse
- * must never fight over the camera */
-#define MOUSE_AUTHORITY_FRAMES 45
-
-static int gMouseDX = 0;	/* relative mouse motion this frame (look) */
-static int gMouseDY = 0;
-static Uint32 gLastMouseButtons = 0;	/* for synthesized press edges */
-static int gMouseActive = 0;	/* frames of remaining mouse authority */
-static int gLookForceSettle = 0;	/* a L2/R2/L3 look-button release returns
+int gMouseDX = 0;	/* relative mouse motion this frame (look) */
+int gMouseDY = 0;
+Uint32 gLastMouseButtons = 0;	/* for synthesized press edges */
+int gMouseActive = 0;	/* frames of remaining mouse authority */
+int gLookForceSettle = 0;	/* a L2/R2/L3 look-button release returns
 				   the camera to the normal view immediately —
 				   no hold-window delay, and past the standstill
 				   reverse-grace (armed while the button is held) */
 
+
 /* ================================================================== */
-/* Helpers                                                             */
+/* D2plFovScrZ - invert the user-facing FOV degrees into the GTE lens     */
 /* ================================================================== */
 
-static int D2plCarSpeed(PLAYER* lp)
-{
-	if (lp->playerCarId < 0)
-		return 0;
-
-	return ABS(FIXEDH(car_data[lp->playerCarId].hd.wheel_speed));
-}
-
-/* scr_z that yields `degrees` of horizontal FOV at the current aspect
- * ratio, inverting the engine's FrAng = ratan2(160, scr_z * aspect * 1.35) */
-static int D2plFovScrZ(int degrees)
+int D2plFovScrZ(int degrees)
 {
 	int w = 640;
 	int h = 480;
@@ -441,124 +199,10 @@ static int D2plFovScrZ(int degrees)
 }
 
 /* laser color for the current setting (index into the CVECTOR table) */
-static void D2plLaserColor(CVECTOR* out)
-{
-	switch (gS.laserColor)
-	{
-	case D2PL_LASER_GREEN:
-		out->r = 0; out->g = 250; out->b = 0; break;
-	case D2PL_LASER_BLUE:
-		out->r = 0; out->g = 90; out->b = 250; break;
-	case D2PL_LASER_WHITE:
-		out->r = 250; out->g = 250; out->b = 250; break;
-	case D2PL_LASER_RED:
-	default:
-		out->r = 250; out->g = 0; out->b = 0; break;
-	}
-}
 
 /* ================================================================== */
-/* Weapon registry                                                     */
+/* JER_EVENT_CAMERA_LOOK - the two-state orbit authority                  */
 /* ================================================================== */
-
-void WeaponSystem_Register(WeaponBase* weapon)
-{
-	if (weapon == NULL || gWeaponCount >= MAX_WEAPONS)
-		return;
-
-	gWeapons[gWeaponCount++] = weapon;
-}
-
-void WeaponSystem_Equip(WeaponBase* weapon)
-{
-	if (gCurrentWeapon == weapon)
-		return;
-
-	if (gCurrentWeapon != NULL)
-		gCurrentWeapon->onHolster();
-
-	gCurrentWeapon = weapon;
-
-	if (weapon != NULL)
-		weapon->onEquip();
-}
-
-void WeaponSystem_Cycle(int direction)
-{
-	int i;
-
-	if (gWeaponCount == 0)
-		return;
-
-	if (gCurrentWeapon == NULL)
-	{
-		WeaponSystem_Equip(gWeapons[0]);
-		return;
-	}
-
-	for (i = 0; i < gWeaponCount; i++)
-	{
-		if (gWeapons[i] == gCurrentWeapon)
-			break;
-	}
-
-	if (i >= gWeaponCount)
-		i = 0;
-
-	i = (i + direction + gWeaponCount) % gWeaponCount;
-	WeaponSystem_Equip(gWeapons[i]);
-}
-
-WeaponBase* WeaponSystem_Current(void)
-{
-	return gCurrentWeapon;
-}
-
-int* WeaponSystem_HandPos(void)
-{
-	return gHandPos;
-}
-
-/* ================================================================== */
-/* JER_EVENT_CAMERA_LOOK — right-stick orbit + pitch free-look         */
-/* ================================================================== */
-
-/* the natural heading the settled camera tracks behind: for a car it's
- * the speed-weighted blend of the body heading and the ground-velocity
- * heading; on foot it's the ped's facing. Computed FRESH every call from
- * live state — never a snapshot — so resuming automatic tracking after a
- * pause (manual look, spin-out) never corrects against a stale target.
- *
- * The blend weights the direction VECTORS (RSIN/RCOS components), not
- * the angles directly, so a heading crossing 0/360 cannot snap. */
-static int D2plNaturalHeading(PLAYER* lp, int inCar)
-{
-	int natural = inCar ? car_data[lp->playerCarId].hd.direction : lp->dir;
-
-	if (inCar)
-	{
-		int w = jer_clamp_int(gSpeedSmooth * VEL_BLEND_SPEED_SCALE, 0, VEL_BLEND_MAX);
-		int slip = ABS(DIFF_ANGLES(natural, gVelAngle));
-
-		if (slip > VEL_BLEND_SLIP_MIN)
-			w += (slip - VEL_BLEND_SLIP_MIN) / VEL_BLEND_SLIP_DIV;
-
-		/* cap the TOTAL so the boost can push past the base cap but never
-		 * reach full velocity weight */
-		if (w > VEL_BLEND_ABS_MAX)
-			w = VEL_BLEND_ABS_MAX;
-
-		{
-			int bx = FIXEDH(RSIN(natural) * (4096 - w) + RSIN(gVelAngle) * w);
-			int bz = FIXEDH(RCOS(natural) * (4096 - w) + RCOS(gVelAngle) * w);
-
-			if (ABS(bx) + ABS(bz) > 16)
-				natural = ratan2(bx, bz);
-		}
-	}
-
-	return natural;
-}
 
 static int D2plOnLook(void* userdata, void* args)
 {
@@ -600,54 +244,7 @@ static int D2plOnLook(void* userdata, void* args)
 		else
 			gFootSpeedSmooth = 0;
 	}
-
-	/* Instability Governor tracking: smoothed car-body angular rate with
-	 * hysteresis (trigger high, release low after a confirmation window) */
-	if (inCar)
-	{
-		int dir = car_data[lp->playerCarId].hd.direction;
-
-		if (gTrackedCarId != lp->playerCarId)
-		{
-			/* just entered this car: seed the delta so the first sample
-			 * can't read a huge fake rate from an uninitialized last */
-			gTrackedCarId = lp->playerCarId;
-			gLastCarDir = dir;
-			gAngRate = 0;
-		}
-		else
-		{
-			gAngRate += (ABS(DIFF_ANGLES(gLastCarDir, dir)) - gAngRate) / 4;
-			gLastCarDir = dir;
-		}
-
-		if (gInstability == 0 && gAngRate > INSTAB_TRIGGER)
-		{
-			gInstability = 1;
-			gInstabConfirm = 0;
-		}
-		else if (gInstability != 0)
-		{
-			if (gAngRate <= INSTAB_RELEASE)
-			{
-				gInstabConfirm++;
-
-				if (gInstabConfirm >= INSTAB_CONFIRM)
-					gInstability = 0;
-			}
-			else
-			{
-				gInstabConfirm = 0;
-			}
-		}
-	}
-	else
-	{
-		gAngRate = 0;
-		gInstability = 0;
-		gInstabConfirm = 0;
-		gTrackedCarId = -2;
-	}
+	D2plTrackInstability(lp, inCar);
 
 	/* one-shot at spawn: the engine starts the orbit 45 degrees off
 	 * (direction + 1536, players.c) — snap it straight behind the
@@ -896,183 +493,13 @@ static int D2plOnLook(void* userdata, void* args)
 /* JER_EVENT_PED_INPUT — camera-relative on-foot movement              */
 /* ================================================================== */
 
-static int D2plOnPedInput(void* userdata, void* args)
-{
-	JER_ARGS_PED_INPUT* a = (JER_ARGS_PED_INPUT*)args;
-	PLAYER* lp = (PLAYER*)a->player;
-	int stickX = a->stickX;
-	int stickY = a->stickY;
-	int fx, fz;
-	int camHeading;
-	int stickHeading;
-	int desired;
-	int delta;
-	int limit;
-	int mag;
 
-	if (gS.cameraEnabled == 0)
-		return JER_RESULT_CONTINUE;
+/* ================================================================== */
+/* Smooth the camera toward its desired position (bounded rate,          */
+/* collision push-clear, terrain cap)                                     */
+/* ================================================================== */
 
-	(void)userdata;
-
-	if (lp->padid < 0 || lp->pPed == NULL)
-		return JER_RESULT_CONTINUE;
-
-	/* on foot, the CROSS (X) button RELOADS the weapon instead of walking
-	 * forward (stock: X = run). The press edge is tracked locally since
-	 * the hook carries no padNew; D-pad up still walks forward. */
-	if (lp->playerCarId < 0)
-	{
-		if ((a->pad & MPAD_CROSS) != 0 && (gLastTannerPad & MPAD_CROSS) == 0 &&
-			gCurrentWeapon != NULL)
-		{
-			gCurrentWeapon->reload();
-		}
-
-		gLastTannerPad = a->pad;
-		a->pad &= ~MPAD_CROSS;
-	}
-	else
-	{
-		gLastTannerPad = 0;	/* in a car: clear the edge tracker so the
-					   first on-foot frame reads a clean X press */
-	}
-
-	mag = ABS(stickX) + ABS(stickY);
-
-	if (mag <= MOVE_DEADZONE)
-	{
-		gPedWasMoving = 0;
-		return JER_RESULT_CONTINUE;	/* stock handling */
-	}
-
-	/* where the camera looks, as a world heading (movement convention:
-	 * heading h moves along (RSIN h, RCOS h)) — direction from the camera
-	 * to Tanner, the same vector the chase cam aims along. While the
-	 * player is actively view-manipulating (right stick), the reference
-	 * frame is FROZEN to the camera heading at manipulation start so
-	 * panning the camera can't bend the character's path (GTA IV §8). */
-	if (gMoveRefActive)
-	{
-		camHeading = gMoveRefHeading;
-	}
-	else
-	{
-		fx = lp->pos[0] - camera_position.vx;
-		fz = lp->pos[2] - camera_position.vz;
-
-		if (fx == 0 && fz == 0)
-			return JER_RESULT_CONTINUE;
-
-		camHeading = ratan2(fx, fz);
-	}
-
-	/* stick direction relative to the screen: up = forward, right = right */
-	stickHeading = ratan2(MOVE_STICK_SIGN_X * stickX, MOVE_STICK_SIGN_Y * -stickY);
-
-	desired = (camHeading + stickHeading) & 0xfff;
-
-	/* the writeup's "flattened to the ground plane": project the desired
-	 * direction onto the SURFACE plane at Tanner's feet, so a slope with
-	 * a weird normal can't make him fail to move along it — the movement
-	 * follows the terrain the same way the heading blend follows the
-	 * velocity vector. Flat ground (normal straight up) leaves it unchanged. */
-	if (lp->pPed != NULL)
-	{
-		VECTOR normal;
-		VECTOR surf;
-		VECTOR pp;
-		sdPlane* plane;
-		int dx = RSIN(desired);
-		int dz = RCOS(desired);
-		long long dot;
-		int dpx;
-		int dpz;
-
-		pp.vx = lp->pPed->position.vx;
-		pp.vy = lp->pPed->position.vy;
-		pp.vz = lp->pPed->position.vz;
-
-		FindSurfaceD2(&pp, &normal, &surf, &plane);
-
-		dot = (long long)dx * normal.vx + (long long)dz * normal.vz;
-
-		dpx = (int)(dx - ((long long)normal.vx * dot >> 24));
-		dpz = (int)(dz - ((long long)normal.vz * dot >> 24));
-
-		if (ABS(dpx) + ABS(dpz) > 16)
-			desired = ratan2(dpx, dpz);
-	}
-
-	/* diagnostics: log the heading math every 60 frames while input is
-	 * live — 'stick down should make desired ~ baseDir+2048, and pdir
-	 * should track dir' — so a pad-axis quirk or heading-convention
-	 * error (running perpendicular to the camera) is readable at a glance */
-	{
-		static int gMoveLogTimer;
-
-		if (--gMoveLogTimer <= 0)
-		{
-			gMoveLogTimer = 60;
-
-			jer_log("[d2pl] move: cam=%d stick=%d desired=%d dir=%d pdir=%d ref=%d/%d\n",
-				camHeading, stickHeading, desired, lp->dir,
-				lp->pPed->dir.vy, gMoveRefActive, gMoveRefHeading);
-		}
-	}
-
-	/* while running the turn is limited (the player arcs around, even for
-	 * a 180 — a small circular path, never a snap); from standstill the
-	 * pivot is near-instant so the player starts running the new way
-	 * immediately */
-	limit = (gPedWasMoving || ABS(lp->pPed->speed) > 4) ? RUN_TURN_LIMIT : PIVOT_TURN_LIMIT;
-
-	/* interpolate the heading toward the target: an exponential lerp
-	 * (1/MOVE_LERP_DIV of the remaining gap per frame — responsive: fast
-	 * when far, eases in), capped by the run/standstill turn limits. Only
-	 * applied when NOT aiming — while aiming the body follows the aim
-	 * direction instead of the movement stick. */
-	if (gAiming == 0)
-	{
-		int gap = DIFF_ANGLES(lp->dir, desired) * MOVE_TURN_SIGN;
-
-		delta = gap / MOVE_LERP_DIV;
-
-		if (delta == 0 && gap != 0)
-			delta = (gap > 0) ? 1 : -1;	/* converge exactly */
-
-		delta = jer_clamp_int(delta, -limit, limit);
-
-		lp->dir = (lp->dir + delta) & 0xfff;
-		lp->pPed->dir.vy = (lp->dir + 2048) & 0xfff;
-	}
-
-	/* rewrite the movement bits: clear the engine's D-pad synth + tank
-	 * steer, then RUN FORWARD toward the stick heading — the body turns
-	 * (lerped above) rather than ever walking backward, GTA-style */
-	a->pad &= ~(TANNER_PAD_GOFORWARD | TANNER_PAD_GOBACK |
-		TANNER_PAD_TURNLEFT | TANNER_PAD_TURNRIGHT);
-
-	a->pad |= TANNER_PAD_GOFORWARD;
-
-	gPedWasMoving = 1;
-
-	return JER_RESULT_CONTINUE;
-}
-
-/* Smooth the camera toward its desired position with a preference for
- * responsive-but-smooth reactivity. If the desired position clips into
- * world geometry (the engine's collision query reports it), the target is
- * pushed clear toward the player and the camera moves there UNBOUNDED —
- * a fast transform is allowed when it prevents clipping, so the camera
- * never keeps rendering inside a wall. On a context jump (level switch,
- * intro sweep -> play) the camera re-places instantly; during play a
- * correction travels at the bounded MAX_POS_STEP rate (never a snap).
- * The on-foot camera is always kept above the player's ground level.
- * Returns 1 when a clip push happened (for diagnostics); *penOut, when
- * non-NULL, receives the terrain penetration (how far the desired position
- * would sink into the ground, for the forced look-up effect). */
-static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
+int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 {
 	int div;
 
@@ -1192,9 +619,11 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
  * Tanner's facing vs the camera heading (the 'running perpendicular'
  * style issues show up here: stick down should make desired = baseDir,
  * and pdir should track dir). */
+
 static int gCamLogTimer = 0;
 
-static void D2plLogCamera(PLAYER* lp, int baseDirIn, VECTOR* camPos,
+
+void D2plLogCamera(PLAYER* lp, int baseDirIn, VECTOR* camPos,
 	SVECTOR* camAngle, int clipped)
 {
 	gCamLogTimer--;
@@ -1224,85 +653,9 @@ static void D2plLogCamera(PLAYER* lp, int baseDirIn, VECTOR* camPos,
  * and, when the player is not free-looking, AHEAD of the car — so the
  * settled camera points where you're driving. Releasing the look stick
  * blends the focal point back to the forward point smoothly. */
-static int gAimLookBlend = 0;	/* 0 = settled (forward), 4096 = free-looking */
-
-static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
-	int inCar, int baseDir, int camYaw, int gripping)
-{
-	VECTOR target;
-	int baseY = -base[1];	/* camera-frame anchor y (base y is RAW) */
-
-	target.vx = base[0];
-	target.vy = baseY;
-	target.vz = base[2];
-
-	if (inCar)
-	{
-		VECTOR carPoint;
-		VECTOR aheadPoint;
-		int diff;
-		int blendTarget;
-
-		/* orbit/focal point: above the car's base in the CAMERA frame
-		 * (base y is RAW; up = -y). The old raw-frame focal sat 160
-		 * units below the car in the camera frame, so the view pitched
-		 * down at a point under the car and the car drifted out of the
-		 * frame — now it aims at roof height. */
-		carPoint.vx = base[0];
-		carPoint.vy = baseY + CAR_ORBIT_UP;
-		carPoint.vz = base[2];
-
-		/* settled focal point: ahead of the car, where you're driving */
-		aheadPoint.vx = base[0] + FIXEDH(RSIN(baseDir) * CAR_LOOK_AHEAD);
-		aheadPoint.vy = baseY + CAR_ORBIT_UP;
-		aheadPoint.vz = base[2] + FIXEDH(RCOS(baseDir) * CAR_LOOK_AHEAD);
-
-		/* gravitate toward looking AHEAD of the car only very close to the
-		 * settled angle, and onto the car itself much earlier while
-		 * view-panning: the ahead zone spans ~5.6 degrees and falls off
-		 * fully to the car by ~22.5 degrees, so plenty of angles that
-		 * should look at the car do. While the stick is actually being
-		 * held (gripping) the focal snaps STRAIGHT to the car — a pure
-		 * spherical pan, no stretching toward the ahead point. The settled
-		 * orbit angle is baseDir + gCameraAngle (the camera parked BEHIND
-		 * the car, facing forward — camera.c:560); measure against THAT. */
-		if (gripping)
-		{
-			blendTarget = 4096;	/* panning: look at the car, always */
-		}
-		else
-		{
-			diff = ABS(jer_angle_diff(camYaw, (baseDir + gCameraAngle) & 0xfff));
-
-			if (diff <= 64)
-				blendTarget = 0;	/* settled: look ahead of the car */
-			else if (diff >= 256)
-				blendTarget = 4096;	/* panning: look at the car */
-			else
-				blendTarget = ((diff - 64) * 4096) / 192;
-		}
-
-		gAimLookBlend = jer_lerp_int(gAimLookBlend, blendTarget, 4);
-
-		target.vx = jer_lerp(aheadPoint.vx, carPoint.vx, gAimLookBlend);
-		target.vy = jer_lerp(aheadPoint.vy, carPoint.vy, gAimLookBlend);
-		target.vz = jer_lerp(aheadPoint.vz, carPoint.vz, gAimLookBlend);
-	}
-	else
-	{
-		gAimLookBlend = 0;
-
-		/* aim at the torso: the chest sits FOOT_AIM_HEIGHT above the
-		 * waist anchor in the camera frame (negated, so up = -y) — the
-		 * camera sits a little low and looks up at his chest */
-		target.vy = baseY - FOOT_AIM_HEIGHT;
-	}
-
-	PointAtTarget(camPos, &target, camAngle);
-}
 
 /* ================================================================== */
-/* JER_EVENT_CAMERA — framing + FOV override + aim camera              */
+/* JER_EVENT_CAMERA - dispatch to the theme placements                    */
 /* ================================================================== */
 
 static int D2plOnCamera(void* userdata, void* args)
@@ -1326,39 +679,10 @@ static int D2plOnCamera(void* userdata, void* args)
 	/* view-relative heading: the direction the camera looks */
 	heading = (-camAngle->vy) & 0xfff;
 
+	/* aiming: the weapon module owns the whole placement (over the
+	 * shoulder, camera-relative aim, narrower FOV) */
 	if (gAiming && gCurrentWeapon != NULL && lp->playerCarId < 0)
-	{
-		/* --- aiming: "orbit looking OUTWARD" — the view tilts with the
-		 * stick (camera-relative aim, crosshair centered on screen) and the
-		 * player sits over the shoulder; conventional shooter behavior --- */
-		camAngle->vx += gLookPitch;
-
-		camPos->vx += (lp->pos[0] - camPos->vx) * AIM_PULL / 4096;
-		camPos->vz += (lp->pos[2] - camPos->vz) * AIM_PULL / 4096;
-
-		/* rebase into the module (negated) frame like the other branches —
-		 * the engine hands the aim path RAW y (camera.c:570), and the
-		 * shared smooth/cap/collision math below expects -rawY */
-		camPos->vy = -((int*)a->basePos)[1] + AIM_HEIGHT;
-
-		camPos->vx += FIXEDH(RCOS(heading) * AIM_LATERAL * gS.shoulder);
-		camPos->vz += -FIXEDH(RSIN(heading) * AIM_LATERAL * gS.shoulder);
-
-		if (a->basePos != NULL)
-		{
-			int clip = D2plSmoothCamera(camPos, (int*)a->basePos, a->inCar, NULL);
-
-			D2plLogCamera(lp, a->baseDir, camPos, camAngle, clip);
-		}
-
-		SetGeomScreen(scr_z = gCameraDefaultScrZ + AIM_ZOOM);
-
-		gCurrentWeapon->aimPoint(gAimPoint);
-
-		a->override = 1;
-
-		return JER_RESULT_CONTINUE;
-	}
+		return D2plAimCamera(args, heading);
 
 	/* --- neutral camera: base FOV override + pitch link + speed lens. The
 	 * pitch is the camera's ELEVATION around the player (up lifts the
@@ -1375,74 +699,11 @@ static int D2plOnCamera(void* userdata, void* args)
 			scr_z = 96;	/* the speed lens must never collapse the lens */
 	}
 
+
 	if (lp->playerCarId >= 0)
-	{
-		/* --- GTA4-style chase cam for vehicles --- */
-		int* base = (int*)a->basePos;	/* RAW y: rebased below into the
-						   camera (negated) frame */
-		CAR_COSMETICS* car_cos = car_data[lp->playerCarId].ap.carCos;
-		int lateral = 120;
-		int speed = gSpeedSmooth;	/* smoothed: no distance jitter (§5) */
-		int pull = (gS.carDist * 2048) / (2048 + speed * CAR_SPEED_DIV);
-
-		if (pull < 100)
-			pull = 100;
-
-		if (car_cos != NULL)
-		{
-			lateral = jer_clamp_int(
-				(car_cos->colBox.vx * 2 * gS.carLatPct) / 100, 60, 320);
-		}
-
-		camPos->vx += (lp->pos[0] - camPos->vx) * pull / 4096;
-		camPos->vz += (lp->pos[2] - camPos->vz) * pull / 4096;
-
-		/* rebase y into the module frame (vy = -rawY) so the terrain cap,
-		 * collision push, aim target and pitch-orbit anchor all agree;
-		 * the engine's own carheight - basePos[1] frame (per-car ride
-		 * height) was silently fighting the cap on flat ground */
-		camPos->vy = -base[1] + gS.carHeight - (gSpeedSmooth * HEIGHT_SPEED_SCALE) / 4096;
-
-		camPos->vx += FIXEDH(RCOS(heading) * lateral * gS.shoulder);
-		camPos->vz += -FIXEDH(RSIN(heading) * lateral * gS.shoulder);
-	}
+		D2plCarCamera(args, heading);
 	else
-	{
-		/* --- on foot: place the camera a proper TPS distance behind the
-		 * ped (he anchors ~130 units above the ground — AnimatePed — so
-		 * the framing is ~1 ped-length back, ~1/4 length to the side,
-		 * slightly below the body centre). --- */
-		int* base = (int*)a->basePos;
-
-		if (base != NULL)
-		{
-			/* the distance modulates with run speed: pulls in when
-			 * stationary/walking, extends when running (framing doc) */
-			int footDist = gS.footDist
-				+ (gFootSpeedSmooth - FOOT_WALK_SPEED) * FOOT_SPEED_DIST;
-
-			camPos->vx = base[0] + (-FIXEDH(RSIN(heading) * footDist)
-				+ FIXEDH(RCOS(heading) * gS.footLat * gS.shoulder));
-			camPos->vz = base[2] + (-FIXEDH(RCOS(heading) * footDist)
-				- FIXEDH(RSIN(heading) * gS.footLat * gS.shoulder));
-			camPos->vy = -base[1] + gS.footHeight;	/* base y is RAW: negate
-							   it to the camera frame */
-
-			/* subtle view bob/sway while Tanner moves (still when idle) */
-			{
-				int speed = ABS(lp->pos[0] - gBobLastX) + ABS(lp->pos[2] - gBobLastZ);
-
-				gBobLastX = lp->pos[0];
-				gBobLastZ = lp->pos[2];
-
-				if (speed > 8)
-				{
-					camPos->vy += FIXEDH(RSIN(FrameCnt * 3) * 20);
-					camPos->vx += FIXEDH(RCOS(FrameCnt * 2) * 12);
-				}
-			}
-		}
-	}
+		D2plPedCamera(args, heading);
 
 	/* --- "orbit looking INWARD": pushing up LIFTS the camera up around the
 	 * player/vehicle (a true sphere orbit — elevation), so you see them from
@@ -1528,107 +789,10 @@ static int D2plOnCamera(void* userdata, void* args)
 /* JER_EVENT_PED_SKELETON — arm pose + weapon mesh at RHAND            */
 /* ================================================================== */
 
-static int D2plOnSkeleton(void* userdata, void* args)
-{
-	JER_ARGS_PED_SKELETON* a = (JER_ARGS_PED_SKELETON*)args;
-	WeaponBase* w = gCurrentWeapon;
-	SVECTOR* vJPos = (SVECTOR*)a->jointPos;
-	VECTOR* playerPos = (VECTOR*)a->playerPos;
-	VECTOR* cameraPos = (VECTOR*)a->cameraPos;
-	int handLimb = WL_RHAND;
-
-	(void)userdata;
-
-	if (w == NULL)
-		return JER_RESULT_CONTINUE;
-
-	/* weapons are on-foot only */
-	if (player[0].playerCarId >= 0)
-		return JER_RESULT_CONTINUE;
-
-	/* the arm that holds the weapon follows the camera shoulder */
-	handLimb = (w->shoulderSide > 0) ? WL_LHAND : WL_RHAND;
-
-	if (a->phase == 0)
-	{
-		/* force the arm into a holding pose: override the accumulated
-		 * offsets of the upper arm / forearm / hand bones so the arm
-		 * extends forward. Values are in the ped's local frame. */
-		if (gAiming)
-			w->poseArmAim(a->skel, ((LPPEDESTRIAN)a->ped)->dir.vy);
-		else
-			w->poseArm(a->skel, ((LPPEDESTRIAN)a->ped)->dir.vy);
-	}
-	else if (a->phase == 1 && !a->shadow)
-	{
-		/* one-shot per-level diagnostic: the ped's real world scale vs the
-		 * camera framing, so the on-foot camera units stay in sync with
-		 * the ped (Driver's inverted y makes vy extent the height) */
-		if (!gPedScaleLogged)
-		{
-			int i;
-			int minX = 32767, maxX = -32767, minY = 32767, maxY = -32767;
-			int minZ = 32767, maxZ = -32767;
-
-			for (i = 0; i < 23; i++)
-			{
-				if (vJPos[i].vx < minX) minX = vJPos[i].vx;
-				if (vJPos[i].vx > maxX) maxX = vJPos[i].vx;
-				if (vJPos[i].vy < minY) minY = vJPos[i].vy;
-				if (vJPos[i].vy > maxY) maxY = vJPos[i].vy;
-				if (vJPos[i].vz < minZ) minZ = vJPos[i].vz;
-				if (vJPos[i].vz > maxZ) maxZ = vJPos[i].vz;
-			}
-
-			jer_log("[d2pl] ped: head_pos=%d skel X[%d..%d] Y[%d..%d] Z[%d..%d] H=%d W=%d camDelta=(%d,%d) player=(%d,%d,%d)\n",
-				((LPPEDESTRIAN)a->ped)->head_pos,
-				minX, maxX, minY, maxY, minZ, maxZ,
-				maxY - minY, maxX - minX,
-				cameraPos->vx - playerPos->vx, cameraPos->vz - playerPos->vz,
-				playerPos->vx, playerPos->vy, playerPos->vz);
-
-			gPedScaleLogged = 1;
-		}
-
-		/* world-space hand position (muzzle origin) */
-		gHandPos[0] = vJPos[handLimb].vx + playerPos->vx;
-		gHandPos[1] = vJPos[handLimb].vy + playerPos->vy;
-		gHandPos[2] = vJPos[handLimb].vz + playerPos->vz;
-
-		/* draw the weapon mesh at the hand, camera-relative, barrel along
-		 * the view axis (identity matrix -> camera-aligned) */
-		if (w->meshModel != NULL)
-		{
-			VECTOR pos;
-			MATRIX ident;
-
-			pos.vx = vJPos[handLimb].vx + playerPos->vx - cameraPos->vx;
-			pos.vy = vJPos[handLimb].vy + playerPos->vy - cameraPos->vy;
-			pos.vz = vJPos[handLimb].vz + playerPos->vz - cameraPos->vz;
-
-			SetRotMatrix(&ident);
-			ident.t[0] = 0;
-			ident.t[1] = 0;
-			ident.t[2] = 0;
-
-			RenderModel(w->meshModel, &ident, &pos, 1, PLOT_NO_SHADE, 0, 0);
-
-			/* restore the GTE translation the engine's own bone draws rely
-			 * on ({0,0,0} set at the top of newShowTanner) — otherwise
-			 * Tanner's body would be drawn offset by the hand position */
-			{
-				VECTOR zero = { 0, 0, 0 };
-
-				gte_SetTransVector(&zero);
-			}
-		}
-	}
-
-	return JER_RESULT_CONTINUE;
-}
 
 /* ================================================================== */
-/* JER_EVENT_FRAME — weapon update + laser line + impact marker        */
+/* JER_EVENT_FRAME - pad diagnostics, -onfoot harness, mouse authority,   */
+/* then the weapon frame update                                          */
 /* ================================================================== */
 
 static int D2plOnFrame(void* userdata, void* args)
@@ -1749,154 +913,14 @@ static int D2plOnFrame(void* userdata, void* args)
 		gLastMouseButtons = mbuttons;
 	}
 
-	/* weapons only work on foot */
-	if (lp->playerCarId >= 0)
-	{
-		gAiming = 0;
-		return JER_RESULT_CONTINUE;
-	}
-
-	/* L1 = aim (only with a weapon equipped) */
-	gAiming = (gCurrentWeapon != NULL && (pad & MPAD_L1) != 0);
-
-#ifndef PSX
-		/* laser-sight line from Tanner's hand to the evaluated aim point
-		 * while aiming. Depth-sorted: it respects Z order (walls occlude
-		 * it). The hand/aim positions are in the render (negated) frame
-		 * while Debug_AddLine expects y-up world coords — negate y here. */
-	if (gAiming && gS.laserColor != D2PL_LASER_OFF && gCurrentWeapon != NULL &&
-		(gHandPos[0] != 0 || gHandPos[1] != 0 || gHandPos[2] != 0))
-	{
-		VECTOR from;
-		VECTOR to;
-		CVECTOR col;
-
-		D2plLaserColor(&col);
-
-		from.vx = gHandPos[0];
-		from.vy = -gHandPos[1];
-		from.vz = gHandPos[2];
-
-		to.vx = gAimPoint[0];
-		to.vy = -gAimPoint[1];
-		to.vz = gAimPoint[2];
-
-		Debug_AddLineDepth(from, to, col);
-	}
-
-	/* impact marker: a big black X at the last shot's aim point, visible
-	 * for MARKER_LIFETIME frames so the player can trace where the weapon
-	 * is hitting */
-	if (gMarkerTimer > 0)
-	{
-		VECTOR c;
-		CVECTOR black = { 0, 0, 0 };
-		int dx, dz;
-		int size;
-		int dist;
-
-		c.vx = gMarkerPos[0];
-		c.vy = -gMarkerPos[1];	/* render frame -> y-up for Debug_AddLine */
-		c.vz = gMarkerPos[2];
-
-		/* size scales with the distance from the camera */
-		dist = ABS(gMarkerPos[0] - camera_position.vx)
-			+ ABS(gMarkerPos[1] - camera_position.vy)
-			+ ABS(gMarkerPos[2] - camera_position.vz);
-
-		size = jer_clamp_int(dist / 8, MARKER_MIN_SIZE, MARKER_MAX_SIZE);
-
-		dx = size;
-		dz = size;
-
-		/* an asterisk: both diagonals + horizontal + vertical */
-		{
-			VECTOR p;
-
-			p.vx = c.vx - dx; p.vy = c.vy - dz; p.vz = c.vz;
-			Debug_AddLine(p, c, black);
-
-			p.vx = c.vx + dx; p.vy = c.vy - dz; p.vz = c.vz;
-			Debug_AddLine(p, c, black);
-
-			p.vx = c.vx - dx; p.vy = c.vy + dz; p.vz = c.vz;
-			Debug_AddLine(p, c, black);
-
-			p.vx = c.vx + dx; p.vy = c.vy + dz; p.vz = c.vz;
-			Debug_AddLine(p, c, black);
-
-			p.vx = c.vx - dx; p.vy = c.vy; p.vz = c.vz;
-			Debug_AddLine(p, c, black);
-
-			p.vx = c.vx + dx; p.vy = c.vy; p.vz = c.vz;
-			Debug_AddLine(p, c, black);
-
-			p.vx = c.vx; p.vy = c.vy - dz; p.vz = c.vz;
-			Debug_AddLine(p, c, black);
-
-			p.vx = c.vx; p.vy = c.vy + dz; p.vz = c.vz;
-			Debug_AddLine(p, c, black);
-		}
-
-		gMarkerTimer--;
-	}
-#endif
-
-	if (gCurrentWeapon != NULL)
-	{
-		/* lazily resolve the weapon mesh once models are loaded */
-		if (gCurrentWeapon->meshModel == NULL)
-			gCurrentWeapon->init();
-
-		gCurrentWeapon->aiming = gAiming;
-
-		/* clear the fired flag the weapon may have set last frame */
-		gCurrentWeapon->fired = 0;
-
-		gCurrentWeapon->update(pad, padNew);
-
-		/* a round was fired this frame: stamp the impact marker */
-		if (gCurrentWeapon->fired)
-		{
-			gMarkerTimer = MARKER_LIFETIME;
-			gMarkerPos[0] = gAimPoint[0];
-			gMarkerPos[1] = gAimPoint[1];
-			gMarkerPos[2] = gAimPoint[2];
-		}
-	}
+	/* the weapon state (aim toggle, laser, marker, fire/reload) */
+	D2plWeaponFrame(lp, pad, padNew);
 
 	return JER_RESULT_CONTINUE;
 }
 
 /* ================================================================== */
-/* JER_EVENT_DRAW_OVERLAY — HUD                                        */
-/* ================================================================== */
-
-static int D2plOnOverlay(void* userdata, void* args)
-{
-	WeaponBase* w = gCurrentWeapon;
-	char text[64];
-
-	(void)userdata;
-	(void)args;
-
-	if (w == NULL)
-		return JER_RESULT_CONTINUE;
-
-	/* HUD only while on foot */
-	if (player[0].playerCarId >= 0)
-		return JER_RESULT_CONTINUE;
-
-	/* weapon name + ammo bottom-left */
-	sprintf(text, "%s  [%d/%d]", w->name, w->clip, w->reserve);
-	SetTextColour(255, 255, 255);
-	PrintString(text, 20, 220);
-
-	return JER_RESULT_CONTINUE;
-}
-
-/* ================================================================== */
-/* JER_EVENT_PAUSE_MENU — D2PL Settings bridge                         */
+/* Pause-menu bridge (labels + adjustment)                               */
 /* ================================================================== */
 
 static const char* gLaserNames[D2PL_LASER_COUNT] = {
@@ -2058,7 +1082,12 @@ static int D2plOnPauseMenu(void* userdata, void* args)
 /* Level start: reset                                                  */
 /* ================================================================== */
 
-static void D2plReset(void)
+
+/* ================================================================== */
+/* Reset + game-start hook                                               */
+/* ================================================================== */
+
+void D2plReset(void)
 {
 	int i;
 
@@ -2106,7 +1135,8 @@ static void D2plReset(void)
 	}
 }
 
-static int D2plOnGameStart(void* userdata, void* args)
+
+int D2plOnGameStart(void* userdata, void* args)
 {
 	(void)userdata;
 	(void)args;
@@ -2127,28 +1157,10 @@ static int D2plOnGameStart(void* userdata, void* args)
  * in the data files, so it holds the "BOMB" model as a placeholder until a
  * real pistol model is added — just point meshName at it.
  */
-class DemoPistol : public WeaponBase
-{
-public:
-	DemoPistol()
-	{
-		id = "pistol";
-		name = "9mm Pistol";
-		damage = 100;
-		fireMode = 0;		/* semi-auto */
-		clipSize = 12;
-		maxReserve = 60;
-		fireRate = 6;
-		reloadTime = 45;
-		range = 30000;
-		spread = 0;
-		meshName = "BOMB";	/* placeholder mesh */
-		shoulderSide = -1;
-		aimZoom = 0;
-	}
-};
 
-static DemoPistol gDemoPistol;
+/* ================================================================== */
+/* Module entry: register every hook once                                */
+/* ================================================================== */
 
 JER_MODULE_ENTRY(jer_module_d2pl_entry)(JERICHO_CONTEXT* ctx)
 {
@@ -2166,10 +1178,8 @@ JER_MODULE_ENTRY(jer_module_d2pl_entry)(JERICHO_CONTEXT* ctx)
 	D2plLoadSettings();
 	D2plSaveSettings();
 
-	/* build the demo pistol and register it */
-	gDemoPistol.init();
-	WeaponSystem_Register(&gDemoPistol);
-	WeaponSystem_Equip(&gDemoPistol);
+	/* build the demo pistol and register it (d2pl_weapon.c) */
+	D2plWeaponInit();
 
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA_LOOK, D2plOnLook, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, D2plOnCamera, NULL, 0);
