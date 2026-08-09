@@ -321,6 +321,8 @@ static int gLastCarDir;		/* previous car heading for the rate delta */
 static int gInstability;	/* 1 = the Instability Governor holds the camera */
 static int gInstabConfirm;	/* frames the rate has stayed calm (hysteresis) */
 static int gFootSpeedSmooth;	/* smoothed on-foot speed (pPed->speed) */
+static int gLastTannerPad;	/* previous frame's on-foot pad — the hook carries
+				   no padNew, so the X-reload edge is tracked here */
 static int gTrackedCarId = -2;	/* the car the governor is sampling (seeds the
 				   angular-rate delta on car entry, so the first
 				   in-car frame can't false-trigger a spin) */
@@ -780,6 +782,21 @@ static int D2plOnPedInput(void* userdata, void* args)
 
 	if (lp->padid < 0 || lp->pPed == NULL)
 		return JER_RESULT_CONTINUE;
+
+	/* on foot, the CROSS (X) button RELOADS the weapon instead of walking
+	 * forward (stock: X = run). The press edge is tracked locally since
+	 * the hook carries no padNew; D-pad up still walks forward. */
+	if (lp->playerCarId < 0)
+	{
+		if ((a->pad & MPAD_CROSS) != 0 && (gLastTannerPad & MPAD_CROSS) == 0 &&
+			gCurrentWeapon != NULL)
+		{
+			gCurrentWeapon->reload();
+		}
+
+		gLastTannerPad = a->pad;
+		a->pad &= ~MPAD_CROSS;
+	}
 
 	mag = ABS(stickX) + ABS(stickY);
 
@@ -1830,6 +1847,7 @@ static void D2plReset(void)
 	gTrackedCarId = -2;
 	gFootSpeedSmooth = 0;
 	gCamSmoothValid = 0;	/* level start: the first camera frame re-places */
+	gLastTannerPad = 0;
 	gPedWasMoving = 0;
 	gAimLookBlend = 0;
 
