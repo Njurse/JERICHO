@@ -287,6 +287,7 @@ static int gMoveRefActive;	/* 1 while that freeze is in effect */
 static int gVelAngle;		/* smoothed ground-velocity heading (0..4095) */
 static int gSpeedSmooth;	/* smoothed wheel speed (FIXEDH units, 0 on foot) */
 static int gLastBaseX, gLastBaseZ;
+static int gCamInitialized;	/* one-shot: snap the spawn orbit angle behind */
 
 /* ped was moving last frame (run-vs-pivot turn limit) */
 static int gPedWasMoving;
@@ -451,7 +452,8 @@ static int D2plOnLook(void* userdata, void* args)
 	{
 		int dx = lp->pos[0] - gLastBaseX;
 		int dz = lp->pos[2] - gLastBaseZ;
-		int dist = SquareRoot0(dx * dx + dz * dz);
+		long long d2 = (long long)dx * dx + (long long)dz * dz;
+		int dist = (d2 > 0x7fffffffLL) ? 32767 : SquareRoot0((int)d2);
 
 		gLastBaseX = lp->pos[0];
 		gLastBaseZ = lp->pos[2];
@@ -460,6 +462,17 @@ static int D2plOnLook(void* userdata, void* args)
 			gVelAngle = (gVelAngle + DIFF_ANGLES(gVelAngle, ratan2(dx, dz)) / 6) & 0xfff;
 
 		gSpeedSmooth += ((inCar ? D2plCarSpeed(lp) : 0) - gSpeedSmooth) / 8;
+	}
+
+	/* one-shot at spawn: the engine starts the orbit 45 degrees off
+	 * (direction + 1536, players.c) — snap it straight behind the
+	 * player/car so the default angle isn't off to the side */
+	if (!gCamInitialized)
+	{
+		int facing = inCar ? car_data[lp->playerCarId].hd.direction : lp->dir;
+
+		gCamInitialized = 1;
+		lp->cameraAngle = (facing + gCameraAngle) & 0xfff;
 	}
 
 	/* while aiming the L2/R2 stock look buttons must not fire */
@@ -480,7 +493,7 @@ static int D2plOnLook(void* userdata, void* args)
 
 		/* view manipulation is live: freeze the on-foot movement
 		 * reference frame to the camera heading at grip start (GTA IV §8) */
-		if (gLookIdle > 0)
+		if (gLookIdle > 0 || gMoveRefActive == 0)
 		{
 			int rfx = lp->pos[0] - camera_position.vx;
 			int rfz = lp->pos[2] - camera_position.vz;
@@ -986,6 +999,9 @@ static int D2plOnCamera(void* userdata, void* args)
 
 		SetGeomScreen(scr_z = fovScrZ - (gLookPitch * FOV_PITCH_SCALE) / 128
 			- (gSpeedSmooth * FOV_SPEED_SCALE) / 4096);
+
+		if (scr_z < 96)
+			scr_z = 96;	/* the speed lens must never collapse the lens */
 	}
 
 	if (lp->playerCarId >= 0)
@@ -1599,6 +1615,7 @@ static void D2plReset(void)
 	gSpeedSmooth = 0;
 	gLastBaseX = 0;
 	gLastBaseZ = 0;
+	gCamInitialized = 0;
 	gPedWasMoving = 0;
 	gAimLookBlend = 0;
 

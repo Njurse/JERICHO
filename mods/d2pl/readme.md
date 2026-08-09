@@ -12,7 +12,7 @@ The big camera + weapon mod for Driver 2, as a single JERICHO module.
 - **Reverse grace**: at a standstill in a car the camera holds completely
   still — no auto swing behind the car until you're deliberately moving
   backward.
-- **Base FOV override** (default ON, 72° horizontal) with a pitch-linked
+- **Base FOV override** (default ON, 82° horizontal) with a pitch-linked
   adjustment: looking down narrows the FOV, looking up widens it.
 - **On foot**: camera-relative movement — the left stick moves Tanner
   relative to where the camera looks, with limited turn rate while running
