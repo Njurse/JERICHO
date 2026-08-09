@@ -191,6 +191,12 @@ static void D2plSaveSettings(void)
 /* aim mode: the look speed is halved while aiming for finer control */
 #define AIM_LOOK_DIV 2
 
+/* the L2/R2 look buttons: the camera eases to the car's left/right side
+ * view (90 degrees, car-relative) — the stock TurnHead head-rot path
+ * breaks the module's transforms, so the module owns the buttons */
+#define LOOK_SIDE_ANGLE 1024
+#define LOOK_SIDE_DIV 4		/* ease divisor: ~0.1 s to reach the side view */
+
 /* on-foot startup momentum: while the ped is just starting to move (speed
  * below this) the camera eases with a touch more lag, then tightens up */
 #define FOOT_LAG_SPEED 6
@@ -369,9 +375,18 @@ static int gPedScaleLogged;	/* one-shot per-level ped-scale diagnostic */
 #define MOUSE_YAW	1152
 #define MOUSE_PITCH	1152
 
+/* input-device authority: the mouse only drives the view while it is the
+ * recent input device (motion/click grants ~0.75 s; live controller
+ * analog revokes it immediately) — a connected controller + an idle mouse
+ * must never fight over the camera */
+#define MOUSE_AUTHORITY_FRAMES 45
+
 static int gMouseDX = 0;	/* relative mouse motion this frame (look) */
 static int gMouseDY = 0;
 static Uint32 gLastMouseButtons = 0;	/* for synthesized press edges */
+static int gMouseActive = 0;	/* frames of remaining mouse authority */
+static int gLookBackHeld = 0;	/* L2+R2/L3 look-back was held last frame (a
+				   release must swing back even at standstill) */
 
 /* ================================================================== */
 /* Helpers                                                             */
@@ -639,7 +654,7 @@ static int D2plOnLook(void* userdata, void* args)
 
 	usingStick = gS.joyCamera &&
 		(ABS(stickX) > LOOK_DEADZONE || ABS(stickY) > LOOK_DEADZONE ||
-		 gMouseDX != 0 || gMouseDY != 0);
+		 (gMouseActive > 0 && (gMouseDX != 0 || gMouseDY != 0)));
 	stockLook = (a->paddCamera & (CAMERA_PAD_LOOK_LEFT | CAMERA_PAD_LOOK_RIGHT |
 		CAMERA_PAD_LOOK_BACK | CAMERA_PAD_LOOK_BACK_DED)) != 0;
 
@@ -728,12 +743,43 @@ static int D2plOnLook(void* userdata, void* args)
 		gMouseDY = 0;
 		}
 	}
-	else if (stockLook)
+	else if (stockLook && gAiming == 0)
 	{
-		/* yield to the stock look buttons */
+		/* the module OWNS the L2/R2/L3 look buttons — the stock TurnHead
+		 * head-rot/headTarget path fights the module's transforms, so
+		 * instead of yielding we orbit the camera itself: quickly to the
+		 * left/right side view (L2/R2), instantly 180 degrees to look
+		 * behind (L3 or L2+R2 together). The suppress masks the LOOK bits
+		 * so the stock branches never run; gripOrbit stops the engine's
+		 * settle-back lerp from fighting the swing. */
+		int lookBack = (a->paddCamera & CAMERA_PAD_LOOK_BACK) == CAMERA_PAD_LOOK_BACK
+			|| (a->paddCamera & CAMERA_PAD_LOOK_BACK_DED) != 0;
+
 		gLookIdle = 0;
 		gYawSpeed = 0;
-		a->gripOrbit = 0;
+		a->suppress = 1;
+		a->gripOrbit = 1;
+		gLookBackHeld = lookBack;
+
+		if (lookBack)
+		{
+			/* the classic rear view, IDEMPOTENT while held: the camera sits
+			 * in front of the car looking back (the engine's own look-back
+			 * uses the same camAngle = baseDir) — an absolute target, so a
+			 * held L2+R2/L3 holds the view instead of toggling 180 degrees
+			 * every frame */
+			lp->cameraAngle = D2plNaturalHeading(lp, inCar);
+		}
+		else
+		{
+			/* quickly ease to the car-relative side view (absolute target,
+			 * not cumulative, so a held button lands once and stays) */
+			int natural = D2plNaturalHeading(lp, inCar);
+			int side = (a->paddCamera & CAMERA_PAD_LOOK_LEFT) != 0 ? -1 : 1;
+			int target = (natural + gCameraAngle + side * LOOK_SIDE_ANGLE) & 0xfff;
+
+			lp->cameraAngle = jer_lerp_angle(lp->cameraAngle, target, LOOK_SIDE_DIV);
+		}
 	}
 	else
 	{
@@ -767,8 +813,11 @@ static int D2plOnLook(void* userdata, void* args)
 				a->gripOrbit = 1;
 				gSettleInfluence = 0;	/* fresh fade when stability returns */
 			}
-			else if (inCar && D2plCarSpeed(lp) <= LOW_SPEED_GRACE)
+			else if (inCar && D2plCarSpeed(lp) <= LOW_SPEED_GRACE && gLookBackHeld == 0)
 			{
+				/* reverse grace: hold at standstill — EXCEPT right after a
+				 * look-back release, which must swing back out of the
+				 * rear view (gLookBackHeld is cleared by the settle below) */
 				a->suppress = 1;
 				a->gripOrbit = 1;
 			}
@@ -776,6 +825,8 @@ static int D2plOnLook(void* userdata, void* args)
 			{
 				int natural = D2plNaturalHeading(lp, inCar);
 				int delta;
+
+				gLookBackHeld = 0;	/* the rear view is released: settle */
 
 				/* influence fade (the shared underlying trick): ramp how
 				 * much of the live target is applied from 0 -> 1 instead of
@@ -1611,10 +1662,12 @@ static int D2plOnFrame(void* userdata, void* args)
 	}
 
 	/* mouse integration: read EVERY frame so the relative motion and the
-	 * button edges never go stale (in-car/menu frames consume the motion
-	 * as 0); the button mapping only applies on foot. Right-click aims
-	 * (L1), left-click fires (R1), middle fires secondary (R2). The press
-	 * edges are synthesized so semi-auto weapons fire once per click. */
+	 * button edges never go stale; the button mapping only applies on
+	 * foot. INPUT-DEVICE AUTHORITY: the mouse only drives the view while
+	 * it is the recent input device — motion/click grants ~0.75 s of
+	 * authority, live controller analog (the keyboard leaves the analog
+	 * channels at 0) revokes it immediately. Right-click aims (L1),
+	 * left-click fires (R1), middle fires secondary (R2). */
 	{
 		int mdx, mdy;
 		Uint32 mbuttons = SDL_GetRelativeMouseState(&mdx, &mdy);
@@ -1623,7 +1676,33 @@ static int D2plOnFrame(void* userdata, void* args)
 		gMouseDX = mdx;
 		gMouseDY = mdy;
 
-		if (lp->playerCarId < 0)
+		if (mdx != 0 || mdy != 0 ||
+			(mbuttons & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK | SDL_BUTTON_MMASK)) != 0)
+		{
+			gMouseActive = MOUSE_AUTHORITY_FRAMES;
+		}
+		else if (gMouseActive > 0)
+		{
+			int p = lp->padid >= 0 ? lp->padid : 0;
+			int anyAnalog = ABS(Pads[p].mapanalog[0]) > 8
+				|| ABS(Pads[p].mapanalog[1]) > 8
+				|| ABS(Pads[p].mapanalog[2]) > 8
+				|| ABS(Pads[p].mapanalog[3]) > 8;
+
+			if (anyAnalog)
+				gMouseActive = 0;	/* the controller took over */
+			else
+				gMouseActive--;
+		}
+
+		/* no authority: never let stale motion reach the look handler */
+		if (gMouseActive == 0)
+		{
+			gMouseDX = 0;
+			gMouseDY = 0;
+		}
+
+		if (lp->playerCarId < 0 && gMouseActive > 0)
 		{
 			if ((mbuttons & SDL_BUTTON_RMASK) != 0)
 				pad |= MPAD_L1;
@@ -1961,6 +2040,7 @@ static void D2plReset(void)
 	gLastBaseZ = 0;
 	gBobLastX = 0;
 	gBobLastZ = 0;
+	gLookBackHeld = 0;
 	gCamInitialized = 0;
 	gSettleInfluence = 0;
 	gAngRate = 0;
