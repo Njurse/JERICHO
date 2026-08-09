@@ -1506,8 +1506,6 @@ static void SandboxDrawHudModel(MODEL* model, CAR_DATA* car, int screenX, int sc
 	pos.vy = -((screenY - 120) * z) / 256;	/* view Y is up */
 	pos.vz = z;
 
-	extern void AddNightLights(CAR_DATA* cp);
-
 	InitMatrix(turntable);
 	angle = (gFrameCount * 24) & 4095;
 	RotMatrixY(angle, &turntable);
@@ -1523,31 +1521,16 @@ static void SandboxDrawHudModel(MODEL* model, CAR_DATA* car, int screenX, int sc
 
 		if (scratch)
 		{
-			/* clean geometry + zeroed damage UVs (the spawn target) */
+			/* clean geometry + zeroed damage UVs (the spawn target).
+			 * NOTE: the preview car's lights are NOT calculated here —
+			 * the scratch car is outside car_data, so AddNightLights would
+			 * position its polys from the zeroed hd.where (the world
+			 * origin) and smear them across the screen. The preview is
+			 * lit by the frame's own light matrices (the DrawCarObject
+			 * shading); the headlight/brake polys are skipped. */
 			CarModelPtr->vlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[car->ap.model], vertices);
 			CarModelPtr->nlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[car->ap.model], vertices);
 			gTempCarUVPtr = gSandboxCleanUv;
-
-			/* the preview car's lights: the scratch car is not in the
-			 * car_data FX loop, so they were never calculated. Borrow a
-			 * free car slot's id (the light tables are MAX_CARS-sized),
-			 * add the night lights into this OT, then restore the
-			 * "no crumple/damage" -1. */
-			if (gLightsOn)
-			{
-				int savedId = car->id;
-				int slot = 0;
-
-				while (slot < MAX_CARS && car_data[slot].controlType != CONTROL_TYPE_NONE)
-					slot++;
-
-				if (slot >= MAX_CARS)
-					slot = 0;
-
-				car->id = (short)slot;
-				AddNightLights(car);
-				car->id = savedId;
-			}
 		}
 		else
 		{
@@ -1718,6 +1701,16 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 	CAR_DATA* pc;
 
 	(void)userdata;
+
+	/* the overlay draws ONLY while the menu is open — the DRAW_OVERLAY
+	 * hook fires every frame, so without this gate the menu text and the
+	 * live preview would render over the game constantly and never go
+	 * away (the close button only flips gSandboxMenuOpen) */
+	if (!gSandboxMenuOpen)
+		return JER_RESULT_CONTINUE;
+
+	/* the semi-transparent shadow backdrop behind the whole overlay */
+	SandboxDrawPanel();
 
 	pc = SandboxPlayerCar();
 
