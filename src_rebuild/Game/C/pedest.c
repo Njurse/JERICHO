@@ -10,6 +10,8 @@
 #include "convert.h"
 #include "sound.h"
 #include "pad.h"
+#include "jericho.h"
+#include "jer_events.h"
 #include "civ_ai.h"
 #include "glaunch.h"
 #include "cutscene.h"
@@ -622,6 +624,18 @@ void AnimatePed(LPPEDESTRIAN pPed)
 			pPed->position.vy = -60 - MapHeight(&vec);
 		else
 			pPed->position.vy = -130 - MapHeight(&vec);
+	}
+
+	// JERICHO-HOOK: the module's final word on the run speed before the
+	// position advances — ProcessTannerPad and the runner re-armed
+	// MAXRUNSPEED above, so only a write made HERE survives the advance
+	if (pPed->pedType == TANNER_MODEL && pPed->padId >= 0)
+	{
+		JER_ARGS_PED_MOVE jerMove;
+
+		jerMove.ped = pPed;
+		jerMove.padId = pPed->padId;
+		jer_fire(JER_EVENT_PED_MOVE, &jerMove);
 	}
 
 	if (pPed->speed < 0)

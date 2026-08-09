@@ -73,6 +73,9 @@ enum
 								   may drive/suppress the free-look */
 	JER_EVENT_PED_INPUT,		/* on-foot pad input before it drives the ped —
 								   modules may remap to camera-relative movement */
+	JER_EVENT_PED_MOVE,		/* inside AnimatePed() before the player ped's
+								   position advances — the one spot a module
+								   speed write survives (runner re-arms 40/frame) */
 	JER_EVENT_PED_SKELETON,		/* player ped skeleton posed for draw — modules
 								   may override bone rotations (arm holds) and
 								   read joint world positions (vJPos) */

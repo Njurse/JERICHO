@@ -224,6 +224,19 @@ typedef struct JER_ARGS_PED_INPUT
 	int cameraYaw;		/* in: current camera facing, 0..4095 (PSX angle) */
 } JER_ARGS_PED_INPUT;
 
+/* JER_EVENT_PED_MOVE — fired inside AnimatePed() for the player ped,
+ * right before its position is advanced by pPed->speed. This is the ONE
+ * point where a module write to pPed->speed survives: ProcessTannerPad
+ * AND the runner state (PedUserRunner) re-arm speed = MAXRUNSPEED every
+ * frame, and the position advance uses the final value. A module may
+ * scale the run speed here (e.g. analog deflection magnitude, lerped for
+ * stand-start momentum). */
+typedef struct JER_ARGS_PED_MOVE
+{
+	void* ped;		/* LPPEDESTRIAN whose position is about to move */
+	int padId;		/* the pad driving this ped (>= 0 = player) */
+} JER_ARGS_PED_MOVE;
+
 /* JER_EVENT_PED_SKELETON — fired while the player ped is being drawn
  * (newShowTanner), after the skeleton was posed from motion data. A module
  * may override bone rotations in skel (BONE*) to force poses (e.g. an arm

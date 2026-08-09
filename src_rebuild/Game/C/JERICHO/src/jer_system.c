@@ -273,6 +273,7 @@ static const char* jerEventName(int event)
 	case JER_EVENT_GAME_START:		return "GAME_START";
 	case JER_EVENT_CAMERA_LOOK:		return "CAMERA_LOOK";
 	case JER_EVENT_PED_INPUT:		return "PED_INPUT";
+	case JER_EVENT_PED_MOVE:		return "PED_MOVE";
 	case JER_EVENT_PED_SKELETON:	return "PED_SKELETON";
 	default:
 		if (event >= JER_EVENT_MODULE_CUSTOM)

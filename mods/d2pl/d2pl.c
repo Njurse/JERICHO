@@ -166,6 +166,7 @@ int gLookForceSettle = 0;	/* a L2/R2/L3 look-button release returns
 				   the camera to the normal view immediately —
 				   no hold-window delay, and past the standstill
 				   reverse-grace (armed while the button is held) */
+int gLookBackActive = 0;	/* 1 while the R3/L2+R2 look-behind is held */
 
 
 /* ================================================================== */
@@ -271,6 +272,7 @@ static int D2plOnLook(void* userdata, void* args)
 	{
 		gSettleInfluence = 0;	/* a new grip aborts the fade: fresh start */
 		gLookForceSettle = 0;	/* a pan supersedes an armed look-release */
+		gLookBackActive = 0;	/* ... and any look-behind */
 
 		if (gLookIdle > 0 || gGripDist == 0)
 			gGripDist = lp->cameraDist;	/* grip just started: freeze now */
@@ -370,6 +372,7 @@ static int D2plOnLook(void* userdata, void* args)
 		a->suppress = 1;
 		a->gripOrbit = 1;
 		gLookForceSettle = 1;	/* armed: the release returns immediately */
+		gLookBackActive = lookBack;
 
 		if (lookBack)
 		{
@@ -411,6 +414,8 @@ static int D2plOnLook(void* userdata, void* args)
 		{
 			gLookIdle++;
 		}
+
+		gLookBackActive = 0;	/* any released frame clears the look-behind */
 
 		{
 			int settleFrames = inCar
@@ -552,7 +557,12 @@ int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 
 		clipped = 1;
 
-		while (steps < 8)
+		/* push the camera clear of the collision toward the player.
+		 * SKIPPED while looking behind: the push would slam the front
+		 * camera onto the car (the pursuit "zoom focus") — the rear view
+		 * is momentary, so brief clipping is preferable to the camera
+		 * zooming into the car's face */
+		while (steps < 8 && gLookBackActive == 0)
 		{
 			camPos->vx -= (camPos->vx - base[0]) / 3;
 			camPos->vy -= (camPos->vy - targetY) / 3;
@@ -1105,6 +1115,7 @@ void D2plReset(void)
 	gBobLastX = 0;
 	gBobLastZ = 0;
 	gLookForceSettle = 0;
+	gLookBackActive = 0;
 	gCamInitialized = 0;
 	gSettleInfluence = 0;
 	gAngRate = 0;
@@ -1116,6 +1127,8 @@ void D2plReset(void)
 	gCamSmoothValid = 0;	/* level start: the first camera frame re-places */
 	gLastTannerPad = 0;
 	gPedWasMoving = 0;
+	gPedRunSpeed = 0;
+	gPedStickMove = 0;
 	gAimLookBlend = 0;
 	gSettlePitch0 = 0;
 
@@ -1184,6 +1197,7 @@ JER_MODULE_ENTRY(jer_module_d2pl_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA_LOOK, D2plOnLook, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, D2plOnCamera, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_INPUT, D2plOnPedInput, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_PED_MOVE, D2plOnPedMove, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_SKELETON, D2plOnSkeleton, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, D2plOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, D2plOnOverlay, NULL, 0);

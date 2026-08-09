@@ -69,7 +69,19 @@ void DrawDebugOverlays()
 			// it; the plain debug overlays stay pinned near the top.
 			if (ld.depthTested)
 			{
-				int otIdx = z >> 1;
+				/* sort by the NEAR endpoint's Z, not the average: the laser
+				 * spans hand -> aim point (up to 30000 units), so the
+				 * average Z would bury it in the far OT bucket behind the
+				 * whole world (invisible). The muzzle is right at the
+				 * camera, so the near bucket keeps it visible while still
+				 * ordering it with the world. */
+				int otIdx;
+
+				gte_ldv0(&a);
+				gte_rtps();
+				gte_stopz(&z);
+
+				otIdx = z >> 1;
 
 				if (otIdx >= OTSIZE)
 					otIdx = OTSIZE - 1;

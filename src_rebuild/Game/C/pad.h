@@ -30,7 +30,7 @@ enum ECameraPad
 	CAMERA_PAD_LOOK_RIGHT		= MPAD_R2,
 
 	CAMERA_PAD_LOOK_BACK		= MPAD_L2 | MPAD_R2,
-	CAMERA_PAD_LOOK_BACK_DED	= MPAD_L3
+	CAMERA_PAD_LOOK_BACK_DED	= MPAD_R3,	// hold R3: look behind
 };
 
 enum ETannerPad
@@ -42,7 +42,7 @@ enum ETannerPad
 	TANNER_PAD_TURNLEFT		= MPAD_D_LEFT,
 	TANNER_PAD_TURNRIGHT	= MPAD_D_RIGHT,
 
-	TANNER_PAD_ACTION_DED	= MPAD_R3,		// R3 mapped for car entrance
+	TANNER_PAD_ACTION_DED	= MPAD_L3,		// L3 mapped for car entrance (R3 is the look-behind)
 };
 
 enum ECarPads
@@ -56,7 +56,7 @@ enum ECarPads
 	CAR_PAD_LEFT			= MPAD_D_LEFT,
 	CAR_PAD_RIGHT			= MPAD_D_RIGHT,
 
-	CAR_PAD_LEAVECAR_DED	= MPAD_R3,		// R3 mapped
+	CAR_PAD_LEAVECAR_DED	= MPAD_L3,		// L3 mapped (R3 is the look-behind now)
 
 	CAR_PAD_LEAVECAR		= (MPAD_D_UP | MPAD_TRIANGLE),
 };

@@ -35,6 +35,9 @@ int gFootSpeedSmooth;	/* smoothed on-foot speed (pPed->speed) */
 int gLastTannerPad;	/* previous frame's on-foot pad — the hook carries
 				   no padNew, so the X-reload edge is tracked here */
 int gPedWasMoving;
+int gPedRunSpeed;	/* smoothed run speed 0..40 (the analog
+				   magnitude, lerped — the press-off momentum) */
+int gPedStickMove;	/* 1 while the left stick drives the movement */
 
 /* weapon state */
 
@@ -89,8 +92,13 @@ int D2plOnPedInput(void* userdata, void* args)
 	if (mag <= MOVE_DEADZONE)
 	{
 		gPedWasMoving = 0;
+		gPedStickMove = 0;	/* the stick is not the movement source: the
+					   stock D-pad/keyboard handling stays */
 		return JER_RESULT_CONTINUE;	/* stock handling */
 	}
+
+	gPedStickMove = 1;	/* the stick drives the movement: the momentum
+				   speed is the source of truth this frame */
 
 	/* where the camera looks, as a world heading (movement convention:
 	 * heading h moves along (RSIN h, RCOS h)) — direction from the camera
@@ -151,9 +159,11 @@ int D2plOnPedInput(void* userdata, void* args)
 	}
 
 	/* diagnostics: log the heading math every 60 frames while input is
-	 * live — 'stick down should make desired ~ baseDir+2048, and pdir
-	 * should track dir' — so a pad-axis quirk or heading-convention
-	 * error (running perpendicular to the camera) is readable at a glance */
+	 * live — stick down should make desired ~ baseDir+2048, and pdir
+	 * should track dir; spd shows the momentum lerp (smoothed vs the
+	 * engine's current speed) — so a pad-axis quirk or heading or
+	 * speed error (running perpendicular to the camera, teleporting
+	 * to full speed) is readable at a glance */
 	{
 		static int gMoveLogTimer;
 
@@ -161,9 +171,18 @@ int D2plOnPedInput(void* userdata, void* args)
 		{
 			gMoveLogTimer = 60;
 
-			jer_log("[d2pl] move: cam=%d stick=%d desired=%d dir=%d pdir=%d ref=%d/%d\n",
-				camHeading, stickHeading, desired, lp->dir,
-				lp->pPed->dir.vy, gMoveRefActive, gMoveRefHeading);
+			/* mag = the dominant axis (matches the speed path in
+			 * D2plOnPedMove — a straight push is full deflection) */
+			{
+				int mmx = ABS(stickX);
+				int mmy = ABS(stickY);
+				int mLog = (mmx > mmy) ? mmx : mmy;
+
+				jer_log("[d2pl] move: cam=%d stick=(%d,%d) mag=%d desired=%d dir=%d pdir=%d spd=%d/%d ref=%d/%d\n",
+					camHeading, stickX, stickY, mLog, desired, lp->dir,
+					lp->pPed->dir.vy, gPedRunSpeed, lp->pPed->speed,
+					gMoveRefActive, gMoveRefHeading);
+			}
 		}
 	}
 
@@ -202,6 +221,78 @@ int D2plOnPedInput(void* userdata, void* args)
 	a->pad |= TANNER_PAD_GOFORWARD;
 
 	gPedWasMoving = 1;
+
+	return JER_RESULT_CONTINUE;
+}
+
+/* JER_EVENT_PED_MOVE — fired inside AnimatePed() right before the player
+ * ped's position advances (the ONE write that survives the runner's
+ * per-frame MAXRUNSPEED re-arm). The left-stick deflection magnitude sets
+ * a target run speed (0 at the deadzone .. PED_MAX_SPEED at the edge) and
+ * a short lerp interpolates toward it — Tanner presses off from a
+ * stand-start and eases through sharp turns instead of snapping to the
+ * fixed run speed. */
+int D2plOnPedMove(void* userdata, void* args)
+{
+	JER_ARGS_PED_MOVE* a = (JER_ARGS_PED_MOVE*)args;
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
+	int m;
+	int target = 0;
+
+	(void)userdata;
+
+	if (pPed == NULL)
+		return JER_RESULT_CONTINUE;
+
+	if (gS.cameraEnabled == 0)
+		return JER_RESULT_CONTINUE;
+
+	/* the dominant axis: a straight push to the edge is full speed
+	 * (the sum would only reach full speed on a diagonal) */
+	{
+		int mx = ABS(Pads[a->padId].mapanalog[2]);
+		int my = ABS(Pads[a->padId].mapanalog[3]);
+
+		m = (mx > my) ? mx : my;
+	}
+
+	if (m > MOVE_DEADZONE)
+	{
+		target = (m - MOVE_DEADZONE) * PED_MAX_SPEED
+			/ (127 - MOVE_DEADZONE);
+
+		if (target > PED_MAX_SPEED)
+			target = PED_MAX_SPEED;
+	}
+
+	if (gPedStickMove)
+	{
+		/* the stick drives the movement: lerp the momentum toward the
+		 * target (snap once the gap is under one step so the integer
+		 * truncation can't stall the decay above zero — the creep) and
+		 * write it as the run speed */
+		int delta = target - gPedRunSpeed;
+
+		if (ABS(delta) < PED_SPEED_LERP)
+			gPedRunSpeed = target;
+		else
+			gPedRunSpeed += delta / PED_SPEED_LERP;
+
+		pPed->speed = gPedRunSpeed;
+	}
+	else if (pPed->speed == 0)
+	{
+		/* fully stopped: bleed the momentum off so the next press-off
+		 * starts from a stand. While the engine is still moving him
+		 * (D-pad run/walk-back), the momentum is FROZEN — no mid-run
+		 * slow-start hitch when the stick re-engages. */
+		gPedRunSpeed -= gPedRunSpeed / 8;
+
+		if (gPedRunSpeed < 1)
+			gPedRunSpeed = 0;
+	}
+	/* else: the stick is centered — leave the engine's value (the runner
+	 * 40, the walk-back -10, or 0) so D-pad/keyboard movement still works */
 
 	return JER_RESULT_CONTINUE;
 }
@@ -250,7 +341,9 @@ void D2plPedCamera(void* args, int heading)
 			camPos->vy = -base[1] + gS.footHeight;	/* base y is RAW: negate
 							   it to the camera frame */
 
-			/* subtle view bob/sway while Tanner moves (still when idle) */
+			/* subtle view bob/sway: a gentle bounce while Tanner runs
+			 * (the steps), and a tiny breathing sway while he stands —
+			 * both should be barely perceptible */
 			{
 				int speed = ABS(lp->pos[0] - gBobLastX) + ABS(lp->pos[2] - gBobLastZ);
 
@@ -259,9 +352,15 @@ void D2plPedCamera(void* args, int heading)
 
 				if (speed > 8)
 				{
-					camPos->vy += FIXEDH(RSIN(FrameCnt * 3) * 20);
-					camPos->vx += FIXEDH(RCOS(FrameCnt * 2) * 12);
-}
+					camPos->vy += FIXEDH(RSIN(FrameCnt * 3) * 10);
+					camPos->vx += FIXEDH(RCOS(FrameCnt * 2) * 8);
+				}
+				else
+				{
+					/* natural standing sway (idle breathing) */
+					camPos->vx += FIXEDH(RSIN(FrameCnt) * 3);
+					camPos->vy += FIXEDH(RCOS(FrameCnt >> 1) * 4);
+				}
 		}
 	}
 }

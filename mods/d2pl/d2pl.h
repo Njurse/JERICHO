@@ -86,25 +86,44 @@ struct WeaponBone
 	MODEL** pModel;
 };
 
-/* --- arm-hold pose tuning (ped local frame, parent-relative offsets). --- */
-/* The ped's skeleton offsets are single-digit units, so the pose values are
- * too: the arm reaches forward ~7 units from the shoulder at full extension.
- * The shoulder bone is also fixated at its rest offset (vOffset) so the walk
- * cycle can't swing the arm — the whole chain is steadied. */
-#define POSE_ELBOW_X 0
-#define POSE_ELBOW_Y 2		/* lower the forearm a little */
-#define POSE_ELBOW_Z 3		/* reach forward */
-#define POSE_HAND_X 0
-#define POSE_HAND_Y -1		/* hand slightly higher than the elbow */
-#define POSE_HAND_Z 4		/* extend to arm's length */
+/* --- arm-pose tuning (ped local frame, parent-relative offsets) --- */
+/* The ped's skeleton offsets are single-digit units, so the pose values
+ * are too: the arm reaches forward ~7 units from the shoulder at full
+ * extension. The shoulder bone is also fixated at its rest offset
+ * (vOffset) so the walk cycle can't swing the arm — the whole chain is
+ * steadied. Each pose is ONE row below — to add a pose (e.g. a lowered
+ * "ready" carry), add a D2PL_POSE row here and a method that calls
+ * poseArmPose() with it. */
+/* ------------------------------------------------------------------ */
+/* AXIS CONVENTIONS — read before touching any pose/camera offset.    */
+/*                                                                     */
+/*   * The RAW world frame has +Y UP: raw basePos[1], MapHeight() and  */
+/*     FindSurfaceD2 normals are in it.                                */
+/*   * The RENDER frame (the ped skeleton AND this module's camera     */
+/*     positions) has Y INVERTED: +Y is DOWN (the GTE screen          */
+/*     convention). The skeleton's vOffset/vCurrPos/vJPos and the      */
+/*     module's camPos->vy all use this inverted frame — the module    */
+/*     converts with `camPos->vy = -base[1] + offset`.                 */
+/*   * X/Z in the pose offsets are parent-relative; X mirrors with the */
+/*     shoulder side (left flips it), and D2plRotatePose() rotates the */
+/*     pair by the ped's facing (pPed->dir.vy) so the pose follows     */
+/*     his rotation. +Z in the pose reaches toward the facing.         */
+/*     Therefore: elbowY +2 LOWERS the forearm (render y-down),        */
+/*     handY -1 raises it, and the hand Z must EXCEED the elbow Z for  */
+/*     the arm to extend (a hand Z <= elbow Z folds the arm back — the */
+/*     "stuck folded" look).                                           */
+/* ------------------------------------------------------------------ */
+typedef struct D2PL_POSE
+{
+	int elbowX, elbowY, elbowZ;	/* forearm, relative to the shoulder */
+	int handX, handY, handZ;	/* hand, relative to the elbow */
+} D2PL_POSE;
 
-/* --- presenting (aiming) pose: arm raised to eye level, fully forward - */
-#define AIM_ELBOW_X 0
-#define AIM_ELBOW_Y -2
-#define AIM_ELBOW_Z 4
-#define AIM_HAND_X 0
-#define AIM_HAND_Y -4		/* hand at eye/shoulder height */
-#define AIM_HAND_Z 6		/* arm fully extended */
+/* hip carry: forearm low, hand at the side, muzzle forward */
+static const D2PL_POSE POSE_CARRY = { 0, 2, 3, 0, -1, 4 };
+
+/* presenting (aiming): arm raised to eye level, fully extended forward */
+static const D2PL_POSE POSE_AIM = { 0, -2, 4, 0, -4, 6 };
 
 /* ------------------------------------------------------------------ */
 /* Settings (persisted via the JERICHO config API into                 */
@@ -302,8 +321,10 @@ static inline void D2plRotatePose(int* px, int* pz, int h)
 	 * to pose different bones or add recoil; the base fixates the shoulder
 	 * at its (facing-rotated) rest offset and reaches the arm forward and
 	 * up to hold the weapon — a local transform that follows Tanner's
-	 * rotation. `facing` is the ped's yaw (pPed->dir.vy, 0..4095). */
-	virtual void poseArmSide(void* skelVoid, int left, int facing)
+	 * rotation. `facing` is the ped's yaw (pPed->dir.vy, 0..4095).
+	 * poseArmPose() is the ONE shared implementation — the pose rows at
+	 * the top of this header are the only tuning needed for a new pose. */
+	virtual void poseArmPose(void* skelVoid, int left, int facing, const D2PL_POSE& pose)
 	{
 		WeaponBone* skel = (WeaponBone*)skelVoid;
 		int shoulder = left ? WL_LSHOULDER : WL_RSHOULDER;
@@ -323,59 +344,32 @@ static inline void D2plRotatePose(int* px, int* pz, int h)
 		skel[shoulder].vCurrPos.vz = sz;
 
 		/* parent-relative pose offsets, rotated into the facing frame:
-		 * elbow in front of the shoulder, hand in front of the elbow —
-		 * tuning constants at the top of this file */
-		ex = POSE_ELBOW_X * side;
-		ez = POSE_ELBOW_Z;
+		 * elbow in front of the shoulder, hand in front of the elbow */
+		ex = pose.elbowX * side;
+		ez = pose.elbowZ;
 		D2plRotatePose(&ex, &ez, facing);
 		skel[elbow].vCurrPos.vx = ex;
-		skel[elbow].vCurrPos.vy = POSE_ELBOW_Y;
+		skel[elbow].vCurrPos.vy = pose.elbowY;
 		skel[elbow].vCurrPos.vz = ez;
 
-		hx = POSE_HAND_X * side;
-		hz = POSE_HAND_Z;
+		hx = pose.handX * side;
+		hz = pose.handZ;
 		D2plRotatePose(&hx, &hz, facing);
 		skel[hand].vCurrPos.vx = hx;
-		skel[hand].vCurrPos.vy = POSE_HAND_Y;
+		skel[hand].vCurrPos.vy = pose.handY;
 		skel[hand].vCurrPos.vz = hz;
 	}
 
 	virtual void poseArm(void* skelVoid, int facing)
 	{
 		/* hip carry: whichever arm matches the camera shoulder */
-		poseArmSide(skelVoid, shoulderSide > 0, facing);
+		poseArmPose(skelVoid, shoulderSide > 0, facing, POSE_CARRY);
 	}
 
 	virtual void poseArmAim(void* skelVoid, int facing)
 	{
 		/* presenting: arm raised to eye level and fully extended forward */
-		WeaponBone* skel = (WeaponBone*)skelVoid;
-		int shoulder = (shoulderSide > 0) ? WL_LSHOULDER : WL_RSHOULDER;
-		int elbow = (shoulderSide > 0) ? WL_LELBOW : WL_RELBOW;
-		int hand = (shoulderSide > 0) ? WL_LHAND : WL_RHAND;
-		int side = (shoulderSide > 0) ? -1 : 1;
-		int sx, sz, ex, ez, hx, hz;
-
-		sx = skel[shoulder].vOffset.vx;
-		sz = skel[shoulder].vOffset.vz;
-		D2plRotatePose(&sx, &sz, facing);
-		skel[shoulder].vCurrPos.vx = sx;
-		skel[shoulder].vCurrPos.vy = skel[shoulder].vOffset.vy;
-		skel[shoulder].vCurrPos.vz = sz;
-
-		ex = AIM_ELBOW_X * side;
-		ez = AIM_ELBOW_Z;
-		D2plRotatePose(&ex, &ez, facing);
-		skel[elbow].vCurrPos.vx = ex;
-		skel[elbow].vCurrPos.vy = AIM_ELBOW_Y;
-		skel[elbow].vCurrPos.vz = ez;
-
-		hx = AIM_HAND_X * side;
-		hz = AIM_HAND_Z;
-		D2plRotatePose(&hx, &hz, facing);
-		skel[hand].vCurrPos.vx = hx;
-		skel[hand].vCurrPos.vy = AIM_HAND_Y;
-		skel[hand].vCurrPos.vz = hz;
+		poseArmPose(skelVoid, shoulderSide > 0, facing, POSE_AIM);
 	}
 
 	/* --- helpers --- */
@@ -489,6 +483,10 @@ extern D2PL_SETTINGS gS;
 				   gripped (no camera swing at a standstill) */
 
 #define MOVE_DEADZONE 24	/* left-stick deadzone */
+#define PED_MAX_SPEED 40	/* the engine's run speed (SetupRunner) — the
+				   analog magnitude scales toward this */
+#define PED_SPEED_LERP 6	/* lerp divisor — geometric: ~15 frames to reach
+				   the target each way (the stand-start momentum) */
 #define MOVE_TURN_SIGN 1	/* +1 = positive angle delta turns right */
 #define MOVE_STICK_SIGN_X 1	/* flip if your pad's X axis is inverted */
 #define MOVE_STICK_SIGN_Y 1	/* flip if your pad's Y axis is inverted */
@@ -626,6 +624,13 @@ extern int gCamSmoothValid;
 
 /* ped was moving last frame (run-vs-pivot turn limit) */
 extern int gPedWasMoving;
+extern int gPedRunSpeed;	/* smoothed run speed (0..40): the analog
+				   deflection magnitude scaled to the engine's
+				   run speed, interpolated so Tanner presses
+				   off from a stand-start (written to pPed->speed by D2plOnPedMove) */
+extern int gPedStickMove;	/* 1 while the left stick is the movement source
+				   (D2plOnPedMove only writes the speed then, so the
+				   stock D-pad/keyboard movement keeps the engine speed) */
 
 /* weapon state */
 extern WeaponBase* gWeapons[MAX_WEAPONS];
@@ -660,7 +665,11 @@ extern int gMouseDX;	/* relative mouse motion this frame (look) */
 extern int gMouseDY;
 extern Uint32 gLastMouseButtons;	/* for synthesized press edges */
 extern int gMouseActive;	/* frames of remaining mouse authority */
-extern int gLookForceSettle;	/* a L2/R2/L3 look-button release returns
+extern int gLookForceSettle;
+extern int gLookBackActive;	/* 1 while the R3/L2+R2 look-behind is held: the
+				   camera extends to the full chase distance and the
+				   collision push is skipped, so the rear view never zooms
+				   onto the car (no pursuit "zoom focus") */	/* a L2/R2/L3 look-button release returns
 				   the camera to the normal view immediately —
 				   no hold-window delay, and past the standstill
 				   reverse-grace (armed while the button is held) */
@@ -692,6 +701,8 @@ void D2plCarCamera(void* args, int heading);
 
 /* ped (d2pl_ped.c) */
 int D2plOnPedInput(void* userdata, void* args);
+int D2plOnPedMove(void* userdata, void* args);	/* JER_EVENT_PED_MOVE: the
+				   last word on the run speed before the position advances */
 void D2plPedCamera(void* args, int heading);
 
 /* weapon (d2pl_weapon.c) */

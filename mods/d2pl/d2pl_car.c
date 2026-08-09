@@ -167,6 +167,11 @@ void D2plCarCamera(void* args, int heading)
 		if (pull < 100)
 			pull = 100;
 
+		if (gLookBackActive)
+			pull = 0;	/* looking behind: keep the camera at the FULL
+				   chase distance — no pull-in, so the rear view
+				   opens up instead of zooming onto the car */
+
 		if (car_cos != NULL)
 		{
 			lateral = jer_clamp_int(
