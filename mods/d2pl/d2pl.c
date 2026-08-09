@@ -171,14 +171,15 @@ static void D2plSaveSettings(void)
 #define PIVOT_TURN_LIMIT 256	/* standstill pivot speed (~22.5 deg/frame) */
 
 #define CAR_HEIGHT -60		/* in-car camera drop (more grounded) */
-#define CAR_ORBIT_UP 100	/* raise the vehicle orbit/focal point a little
-				   (the camera sat too low on the car) */
+#define CAR_ORBIT_UP -100	/* raise the vehicle orbit/focal point a little
+				   (Driver 2 uses INVERTED y — up = -y) */
 #define CAR_LOOK_AHEAD 5000	/* the settled camera focuses this far AHEAD of
 				   the car so you see where you're driving */
 
-/* ground cap: the road is a heightfield (MapHeight), not a collision box,
- * so the camera must be clamped to it or it phases through the road. The
- * clearance keeps it just kissing the surface while sliding along it. */
+/* ground cap: Driver 2 uses INVERTED y (vy grows downward), so the road is
+ * a heightfield the camera must not sink below. Mirror the engine's own
+ * chase-cam clamp (camera.c: cammapht = carheight - MapHeight - 100) — the
+ * camera stays at-or-above the terrain line and slides along the surface. */
 #define TERRAIN_CLEAR_FOOT 15
 #define TERRAIN_CLEAR_CAR 50
 #define CAM_HEIGHT 2		/* on-foot camera height: just above the base
@@ -528,7 +529,7 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar)
 	static VECTOR gSmooth;
 	static int gSmoothValid;
 	int div = 5;	/* responsive smoothness (1/div toward target per frame) */
-	int targetY = base[1] + (inCar ? 0 : 8);
+	int targetY = base[1] - (inCar ? 0 : 8);	/* inverted y: up = -y */
 	int clipped = 0;
 	int i;
 
@@ -566,10 +567,6 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar)
 			clipped = 2;	/* could not clear: keep the desired position */
 	}
 
-	/* never let the on-foot camera drop below the player's ground level */
-	if (!inCar && camPos->vy < base[1] + 1)
-		camPos->vy = base[1] + 1;
-
 	/* huge jump (level switch / teleport): snap instead of lerping */
 	if (ABS(gSmooth.vx - camPos->vx) + ABS(gSmooth.vy - camPos->vy) +
 		ABS(gSmooth.vz - camPos->vz) > 4096)
@@ -590,13 +587,13 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar)
 	camPos->vy = gSmooth.vy;
 	camPos->vz = gSmooth.vz;
 
-	/* cap the camera above the terrain (road heightfield) so it slides
-	 * along the surface instead of phasing through it */
+	/* cap the camera to the terrain (inverted y): the camera may not sink
+	 * below the road surface — clamp it back up to the surface line */
 	{
-		int minVy = MapHeight(camPos) + (inCar ? TERRAIN_CLEAR_CAR : TERRAIN_CLEAR_FOOT);
+		int camMaxY = MapHeight(camPos) - (inCar ? TERRAIN_CLEAR_CAR : TERRAIN_CLEAR_FOOT);
 
-		if (camPos->vy < minVy)
-			camPos->vy = minVy;
+		if (camPos->vy > camMaxY)
+			camPos->vy = camMaxY;
 	}
 
 	return clipped;
@@ -776,11 +773,6 @@ static int D2plOnCamera(void* userdata, void* args)
 				- FIXEDH(RSIN(heading) * gS.footLat * gS.shoulder));
 			camPos->vy = base[1] + CAM_HEIGHT;
 
-			/* keep the camera above the player's ground level BEFORE the
-			 * collision pass — a camera under the feet trips the clip check
-			 * every frame and the snap would fight itself */
-			if (camPos->vy < base[1] + 1)
-				camPos->vy = base[1] + 1;
 
 			/* subtle view bob/sway while Tanner moves (still when idle) —
 			 * kept to a fraction of a unit at this scale */
