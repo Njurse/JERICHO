@@ -1748,13 +1748,13 @@ void SsSetSerialVol(short s_num, short voll, short volr)
 
 //-------------------------------------------
 
+/* -onfoot: defined unconditionally (the d2pl module references it from
+ * every PC build config, including plain Release and emscripten; only
+ * the argument parsing is DEBUG_OPTIONS-gated below). */
+int gBootOnFoot = 0;
+
 #if !defined(PSX) && !defined(__EMSCRIPTEN__)
 #include <SDL_messagebox.h>
-
-/* -onfoot: defined unconditionally (the d2pl module references it from
- * every build config, not just dev builds); only the argument parsing is
- * DEBUG_OPTIONS-gated below. */
-int gBootOnFoot = 0;
 
 #ifdef DEBUG_OPTIONS
 /* --- frontend-bypass boot arguments (testing convenience) ---

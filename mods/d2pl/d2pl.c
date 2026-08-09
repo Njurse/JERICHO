@@ -745,9 +745,10 @@ static void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
 		int blendTarget;
 
 		/* orbit/focal point: above the car's base in the CAMERA frame
-		 * (base y is RAW; up = -y). The old raw-frame focal pointed
-		 * 160 units BELOW the car, tilting the view down so the car fell
-		 * out of render at the bottom of the screen. */
+		 * (base y is RAW; up = -y). The old raw-frame focal sat 160
+		 * units below the car in the camera frame, so the view pitched
+		 * down at a point under the car and the car drifted out of the
+		 * frame — now it aims at roof height. */
 		carPoint.vx = base[0];
 		carPoint.vy = baseY + CAR_ORBIT_UP;
 		carPoint.vz = base[2];
