@@ -89,13 +89,13 @@ typedef struct D2PL_SETTINGS
 				   deleted and regenerated from scratch */
 
 static D2PL_SETTINGS gS = {
-	64,			/* sensX */
-	64,			/* sensY */
+	48,			/* sensX */
+	40,			/* sensY */
 	1,			/* joyCamera — right-stick look/orbit on by default */
-	1040,			/* footDist — doubled: a high, wide GTA-like view that
+	640,			/* footDist — doubled: a high, wide GTA-like view that
 				   can pitch down steeper and show more around the ped */
 	120,			/* footLat (shoulder) */
-	-300,			/* footHeight — the orbit moved up (camera ~300 units
+	-100,			/* footHeight — the orbit moved up (camera ~300 units
 				   above the waist anchor, still aiming at the player) */
 	575,			/* carDist (+15% default distance) */
 	28,			/* carLatPct */
@@ -103,7 +103,7 @@ static D2PL_SETTINGS gS = {
 	0,			/* invertH */
 	0,			/* invertV */
 	1,			/* fovEnabled */
-	82,			/* fovDeg (+10 from the old 72 default) */
+	85,			/* fovDeg (+10 from the old 72 default) */
 	D2PL_LASER_DEFAULT,	/* laserColor (red) */
 	1			/* cameraEnabled */
 };
@@ -345,6 +345,19 @@ static int gAimPoint[3];	/* world aim point at weapon range */
 static int gMarkerTimer;	/* frames left until the marker fades */
 static int gMarkerPos[3];
 static int gPedScaleLogged;	/* one-shot per-level ped-scale diagnostic */
+
+/* mouse integration: relative motion consumed by the look handler (yaw/pitch
+ * nudges on top of the stick); buttons map to aim (right), primary fire
+ * (left), secondary fire (middle). Per-pixel nudge at sens 64:
+ * (dx * sens * MOUSE_YAW) / (64*128). */
+#include <SDL.h>
+
+#define MOUSE_YAW	1152
+#define MOUSE_PITCH	1152
+
+static int gMouseDX = 0;	/* relative mouse motion this frame (look) */
+static int gMouseDY = 0;
+static Uint32 gLastMouseButtons = 0;	/* for synthesized press edges */
 
 /* ================================================================== */
 /* Helpers                                                             */
@@ -609,7 +622,8 @@ static int D2plOnLook(void* userdata, void* args)
 		a->suppress = 1;
 
 	usingStick = gS.joyCamera &&
-		(ABS(stickX) > LOOK_DEADZONE || ABS(stickY) > LOOK_DEADZONE);
+		(ABS(stickX) > LOOK_DEADZONE || ABS(stickY) > LOOK_DEADZONE ||
+		 gMouseDX != 0 || gMouseDY != 0);
 	stockLook = (a->paddCamera & (CAMERA_PAD_LOOK_LEFT | CAMERA_PAD_LOOK_RIGHT |
 		CAMERA_PAD_LOOK_BACK | CAMERA_PAD_LOOK_BACK_DED)) != 0;
 
@@ -671,6 +685,25 @@ static int D2plOnLook(void* userdata, void* args)
 
 		gLookPitchTarget = jer_clamp_int(
 			(LOOK_PITCH_SIGN * sY * pitchMax) / 128, -pitchMax, pitchMax);
+
+		/* mouse motion nudges the orbit/pitch on top of the stick — direct
+		 * (not momentum-ramped): a flick is a flick, smooth but immediate */
+		{
+			int mX = gS.invertH ? -gMouseDX : gMouseDX;
+			int mY = gS.invertV ? -gMouseDY : gMouseDY;
+
+			lp->cameraAngle = (lp->cameraAngle +
+				(LOOK_YAW_SIGN * mX * gS.sensX * MOUSE_YAW) / (64 * 128)) & 0xfff;
+
+			gLookPitchTarget = jer_clamp_int(gLookPitchTarget +
+				(LOOK_PITCH_SIGN * mY * gS.sensY * MOUSE_PITCH) / (64 * 128),
+				-pitchMax, pitchMax);
+		}
+
+		/* consumed (or ignored while joystick look is off) — never let the
+		 * deltas linger into the next frame */
+		gMouseDX = 0;
+		gMouseDY = 0;
 		}
 	}
 	else if (stockLook)
@@ -1488,6 +1521,19 @@ static int D2plOnFrame(void* userdata, void* args)
 	(void)userdata;
 	(void)args;
 
+	/* one-shot pad diagnostics after the pads are mapped (type is 0 at
+	 * INIT — MapPad fills it on the first update frames) */
+	{
+		static int gPad0Logged = 0;
+
+		if (!gPad0Logged && FrameCnt > 60)
+		{
+			gPad0Logged = 1;
+			jer_log("[d2pl] pad0: type=%d analog=%s (id 0x41 digital / 0x73 analog)\n",
+				Pads[0].type, (Pads[0].type & 4) != 0 ? "ON" : "OFF");
+		}
+	}
+
 	/* -onfoot test harness: the level spawns the player in a car; once the
 	 * world is playable we imperceptibly swap that spawn car out for the
 	 * player on foot — activate the pedestrian beside the car, switch
@@ -1523,6 +1569,37 @@ static int D2plOnFrame(void* userdata, void* args)
 	{
 		pad = Pads[lp->padid].mapped;
 		padNew = Pads[lp->padid].mapnew;
+	}
+
+	/* mouse integration: read EVERY frame so the relative motion and the
+	 * button edges never go stale (in-car/menu frames consume the motion
+	 * as 0); the button mapping only applies on foot. Right-click aims
+	 * (L1), left-click fires (R1), middle fires secondary (R2). The press
+	 * edges are synthesized so semi-auto weapons fire once per click. */
+	{
+		int mdx, mdy;
+		Uint32 mbuttons = SDL_GetRelativeMouseState(&mdx, &mdy);
+		Uint32 mnew = mbuttons & ~gLastMouseButtons;
+
+		gMouseDX = mdx;
+		gMouseDY = mdy;
+
+		if (lp->playerCarId < 0)
+		{
+			if ((mbuttons & SDL_BUTTON_RMASK) != 0)
+				pad |= MPAD_L1;
+			if ((mbuttons & SDL_BUTTON_LMASK) != 0)
+				pad |= MPAD_R1;
+			if ((mbuttons & SDL_BUTTON_MMASK) != 0)
+				pad |= MPAD_R2;
+
+			if ((mnew & SDL_BUTTON_LMASK) != 0)
+				padNew |= MPAD_R1;
+			if ((mnew & SDL_BUTTON_MMASK) != 0)
+				padNew |= MPAD_R2;
+		}
+
+		gLastMouseButtons = mbuttons;
 	}
 
 	/* weapons only work on foot */
