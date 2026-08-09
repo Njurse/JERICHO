@@ -1399,6 +1399,21 @@ static int crumpleOnCollision(void* userdata, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* pre-recorded keypress AI (CONTROL_TYPE_CUTSCENE — the story-mode opponents
+ * driving a pre-recorded route): the crumple PHYSICS alterations are
+ * suspended. The wheel-damage steering deviation (GET_WHEEL_PARAMS), the
+ * wheel-bend raycast offset (GET_WHEEL_BEND) and the cumulative wheel
+ * damage all report stock values, so the recorded route isn't broken by
+ * the altered driving behavior. The car still COSMETICALLY crumples:
+ * DENT_PASS body dents and DRAW_WHEEL vertex distortion (which read the
+ * bend state internally) keep running — only the bend POSITION offset
+ * (shared by the raycast and the wheel-mesh draw) is dropped. */
+static int crumpleSuspendedPhysics(int carId)
+{
+	return carId >= 0 && carId < MAX_CARS &&
+		car_data[carId].controlType == CONTROL_TYPE_CUTSCENE;
+}
+
 static int crumpleOnDentPass(void* userdata, void* args)
 {
 	JER_ARGS_DENT_PASS* a = (JER_ARGS_DENT_PASS*)args;
@@ -1426,7 +1441,7 @@ static int crumpleOnGetWheelBend(void* userdata, void* args)
 
 	(void)userdata;
 
-	if (a != NULL)
+	if (a != NULL && crumpleSuspendedPhysics(a->carId) == 0)
 		a->result = crumpleGetWheelBendInternal(a->carId);
 
 	return JER_RESULT_CONTINUE;
@@ -1438,7 +1453,7 @@ static int crumpleOnGetWheelDamage(void* userdata, void* args)
 
 	(void)userdata;
 
-	if (a != NULL)
+	if (a != NULL && crumpleSuspendedPhysics(a->carId) == 0)
 		a->result = crumpleGetWheelDamageTotalInternal(a->carId);
 
 	return JER_RESULT_CONTINUE;
@@ -1480,7 +1495,7 @@ static int crumpleOnGetWheelParams(void* userdata, void* args)
 
 	(void)userdata;
 
-	if (a != NULL)
+	if (a != NULL && crumpleSuspendedPhysics(a->carId) == 0)
 	{
 		a->frontScale = gCrumpleParams.wheelSteerScale;
 		a->rearScale = gCrumpleParams.wheelSteerScaleRear;

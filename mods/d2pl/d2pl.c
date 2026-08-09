@@ -203,9 +203,9 @@ static void D2plSaveSettings(void)
 #define FOOT_LAG_DIV 8
 #define YAW_RATE 256		/* max orbit speed at full stick, sensX = 64
 				   (x4: the default was too slow) */
-#define YAW_RAMP 20		/* frames to reach full orbit speed (~1/3 s at
-				   60 fps) — the yaw "gains momentum" instead of
-				   jumping to its max immediately */
+#define YAW_RAMP 10		/* frames to reach full orbit speed (~1/6 s —
+				   the ramp speed was doubled) — the yaw "gains
+				   momentum" instead of jumping to its max */
 #define LOOK_PITCH_SIGN -1	/* -1 = pushing up RAISES the camera on its
 				   orbit around the player (see the header note) */
 #define PITCH_MAX 512		/* ~45 degrees of pitch up/down each way — the
@@ -385,8 +385,10 @@ static int gMouseDX = 0;	/* relative mouse motion this frame (look) */
 static int gMouseDY = 0;
 static Uint32 gLastMouseButtons = 0;	/* for synthesized press edges */
 static int gMouseActive = 0;	/* frames of remaining mouse authority */
-static int gLookBackHeld = 0;	/* L2+R2/L3 look-back was held last frame (a
-				   release must swing back even at standstill) */
+static int gLookForceSettle = 0;	/* a L2/R2/L3 look-button release returns
+				   the camera to the normal view immediately —
+				   no hold-window delay, and past the standstill
+				   reverse-grace (armed while the button is held) */
 
 /* ================================================================== */
 /* Helpers                                                             */
@@ -661,6 +663,7 @@ static int D2plOnLook(void* userdata, void* args)
 	if (usingStick)
 	{
 		gSettleInfluence = 0;	/* a new grip aborts the fade: fresh start */
+		gLookForceSettle = 0;	/* a pan supersedes an armed look-release */
 
 		if (gLookIdle > 0 || gGripDist == 0)
 			gGripDist = lp->cameraDist;	/* grip just started: freeze now */
@@ -689,7 +692,7 @@ static int D2plOnLook(void* userdata, void* args)
 
 			/* orbit: the angle moves by a momentum-driven speed. The speed
 			 * ramps from 0 up to the stick's max (proportional to deflection)
-			 * over ~1/3 of a second (YAW_RAMP frames) — the view "gains
+			 * over ~1/6 of a second (YAW_RAMP frames) — the view "gains
 			 * momentum" instead of jumping to full speed. The orbit stays
 			 * gripped so the engine's settle-back lerp can't fight it;
 			 * vertical is clamped below. */
@@ -759,7 +762,7 @@ static int D2plOnLook(void* userdata, void* args)
 		gYawSpeed = 0;
 		a->suppress = 1;
 		a->gripOrbit = 1;
-		gLookBackHeld = lookBack;
+		gLookForceSettle = 1;	/* armed: the release returns immediately */
 
 		if (lookBack)
 		{
@@ -790,7 +793,17 @@ static int D2plOnLook(void* userdata, void* args)
 		if (ABS(gYawSpeed) < 8)
 			gYawSpeed = 0;	/* kill the residual truncation drift */
 
-		gLookIdle++;
+		if (gLookForceSettle)
+		{
+			/* a look-button release: return to the normal camera WITHOUT
+			 * the usual hold delay (that delay is for the free-look pan —
+			 * a deliberate L2/R2 view returns at once) */
+			gLookIdle = 10000;
+		}
+		else
+		{
+			gLookIdle++;
+		}
 
 		{
 			int settleFrames = inCar
@@ -813,11 +826,11 @@ static int D2plOnLook(void* userdata, void* args)
 				a->gripOrbit = 1;
 				gSettleInfluence = 0;	/* fresh fade when stability returns */
 			}
-			else if (inCar && D2plCarSpeed(lp) <= LOW_SPEED_GRACE && gLookBackHeld == 0)
+			else if (inCar && D2plCarSpeed(lp) <= LOW_SPEED_GRACE && gLookForceSettle == 0)
 			{
 				/* reverse grace: hold at standstill — EXCEPT right after a
-				 * look-back release, which must swing back out of the
-				 * rear view (gLookBackHeld is cleared by the settle below) */
+				 * look-button release, which must return immediately
+				 * (gLookForceSettle is cleared by the settle below) */
 				a->suppress = 1;
 				a->gripOrbit = 1;
 			}
@@ -826,7 +839,7 @@ static int D2plOnLook(void* userdata, void* args)
 				int natural = D2plNaturalHeading(lp, inCar);
 				int delta;
 
-				gLookBackHeld = 0;	/* the rear view is released: settle */
+				gLookForceSettle = 0;	/* the forced return ran: re-arm */
 
 				/* influence fade (the shared underlying trick): ramp how
 				 * much of the live target is applied from 0 -> 1 instead of
@@ -2040,7 +2053,7 @@ static void D2plReset(void)
 	gLastBaseZ = 0;
 	gBobLastX = 0;
 	gBobLastZ = 0;
-	gLookBackHeld = 0;
+	gLookForceSettle = 0;
 	gCamInitialized = 0;
 	gSettleInfluence = 0;
 	gAngRate = 0;
