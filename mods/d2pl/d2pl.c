@@ -75,6 +75,8 @@ typedef struct D2PL_SETTINGS
 	int footHeight;		/* on-foot camera height (inverted y: below the body) */
 	int carDist;		/* in-car pull-in (fraction of the view axis) */
 	int carLatPct;		/* in-car lateral, % of the car's bbox width */
+	int carHeight;		/* in-car camera height offset (taller cars need
+				   a higher cam) */
 	int shoulder;		/* -1 = left shoulder, +1 = right */
 	int invertH;		/* 1 = invert horizontal look */
 	int invertV;		/* 1 = invert vertical look */
@@ -100,6 +102,8 @@ static D2PL_SETTINGS gS = {
 				   above the waist anchor, still aiming at the player) */
 	575,			/* carDist (+15% default distance) */
 	28,			/* carLatPct */
+	-105,			/* carHeight (in-car camera drop; adjustable for
+				   taller cars via the settings menu) */
 	-1,			/* shoulder (left) */
 	0,			/* invertH */
 	0,			/* invertV */
@@ -133,6 +137,7 @@ static void D2plLoadSettings(void)
 		gS.footHeight = jer_config_get_int(D2PL_CFG_MOD, "foot_height", gS.footHeight);
 		gS.carDist = jer_config_get_int(D2PL_CFG_MOD, "car_dist", gS.carDist);
 		gS.carLatPct = jer_config_get_int(D2PL_CFG_MOD, "car_lat_pct", gS.carLatPct);
+		gS.carHeight = jer_config_get_int(D2PL_CFG_MOD, "car_height", gS.carHeight);
 		gS.shoulder = jer_config_get_int(D2PL_CFG_MOD, "shoulder", gS.shoulder);
 		gS.invertH = jer_config_get_int(D2PL_CFG_MOD, "invert_h", gS.invertH);
 		gS.invertV = jer_config_get_int(D2PL_CFG_MOD, "invert_v", gS.invertV);
@@ -155,6 +160,7 @@ static void D2plLoadSettings(void)
 		gS.footHeight = -300;
 	gS.carDist = jer_clamp_int(gS.carDist, 100, 1000);
 	gS.carLatPct = jer_clamp_int(gS.carLatPct, 5, 60);
+	gS.carHeight = jer_clamp_int(gS.carHeight, -250, 50);
 	gS.shoulder = (gS.shoulder > 0) ? 1 : -1;
 	gS.fovDeg = jer_clamp_int(gS.fovDeg, 55, 90);
 	gS.laserColor = (gS.laserColor < 0 || gS.laserColor >= D2PL_LASER_COUNT)
@@ -172,6 +178,7 @@ static void D2plSaveSettings(void)
 	jer_config_set_int(D2PL_CFG_MOD, "foot_height", gS.footHeight);
 	jer_config_set_int(D2PL_CFG_MOD, "car_dist", gS.carDist);
 	jer_config_set_int(D2PL_CFG_MOD, "car_lat_pct", gS.carLatPct);
+	jer_config_set_int(D2PL_CFG_MOD, "car_height", gS.carHeight);
 	jer_config_set_int(D2PL_CFG_MOD, "shoulder", gS.shoulder);
 	jer_config_set_int(D2PL_CFG_MOD, "invert_h", gS.invertH);
 	jer_config_set_int(D2PL_CFG_MOD, "invert_v", gS.invertV);
@@ -238,7 +245,6 @@ static void D2plSaveSettings(void)
 				   near-instant so the player starts running the new
 				   way immediately, GTA-style */
 
-#define CAR_HEIGHT -105		/* in-car camera drop (more grounded) */
 #define CAR_ORBIT_UP -160	/* raise the vehicle orbit/focal point (Driver 2
 				   uses INVERTED y — up = -y); the camera gravitates
 				   toward looking AHEAD of the car near the forward
@@ -294,9 +300,9 @@ static void D2plSaveSettings(void)
  * above the upper threshold, release only after the rate has stayed below
  * the lower threshold for a confirmation window. Priority below Manual
  * Look, above Natural. */
-#define INSTAB_TRIGGER 192	/* smoothed deg-ish units/frame that claims focus */
-#define INSTAB_RELEASE 64	/* must drop below this to release */
-#define INSTAB_CONFIRM 20	/* frames of calm before releasing */
+#define INSTAB_TRIGGER 384	/* smoothed deg-ish units/frame that claims focus */
+#define INSTAB_RELEASE 96	/* must drop below this to release */
+#define INSTAB_CONFIRM 90	/* frames of calm before releasing */
 
 /* aim camera (on foot) */
 #define AIM_PULL 2000		/* /4096: pull toward Tanner while aiming */
@@ -336,6 +342,10 @@ static int gCamInitialized;	/* one-shot: snap the spawn orbit angle behind */
 static int gSettleInfluence;	/* natural-settle influence fade (0..4096): ramps
 				   in on release so the ease eases IN — no correction
 				   snap at the handoff, live target throughout */
+static int gSettlePitch0;	/* the pitch held when the settle began — it
+				   returns to level IN SYNC with the angle fade
+				   (the old fast 1/6 pitch snap-back was what made
+				   follow <-> orbit switching feel disjointed) */
 static int gAngRate;		/* smoothed car-body angular rate (units/frame) */
 static int gLastCarDir;		/* previous car heading for the rate delta */
 static int gInstability;	/* 1 = the Instability Governor holds the camera */
@@ -845,6 +855,12 @@ static int D2plOnLook(void* userdata, void* args)
 				 * much of the live target is applied from 0 -> 1 instead of
 				 * starting a fresh point-to-point blend — the target kept
 				 * computing during the pan, so there is no correction snap */
+				if (gSettleInfluence < 64)
+					gSettlePitch0 = gLookPitchTarget;	/* first settle frame
+									   (capture BEFORE the
+									   ramp: 0 -> 256 on the
+									   first step) */
+
 				gSettleInfluence += (4096 - gSettleInfluence) / 16;
 
 				delta = (DIFF_ANGLES(lp->cameraAngle, (natural + gCameraAngle) & 0xfff)
@@ -854,7 +870,7 @@ static int D2plOnLook(void* userdata, void* args)
 
 				a->suppress = 1;
 				a->gripOrbit = 1;	/* the module owns the settle now */
-				gLookPitchTarget = 0;
+				gLookPitchTarget = (gSettlePitch0 * (4096 - gSettleInfluence)) / 4096;
 				gYawSpeed = 0;	/* kill the stale momentum so re-gripping
 							   the stick doesn't jump */
 				gMoveRefActive = 0;	/* the settle has begun: re-sync the
@@ -1074,7 +1090,7 @@ static int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 		div = 5;
 	int baseY = -base[1];	/* basePos y is RAW (un-negated); the camera frame
 				   negates it (camera.c: carheight - basePos[1]) */
-	int targetY = baseY + (inCar ? CAR_HEIGHT : gS.footHeight);
+	int targetY = baseY + (inCar ? gS.carHeight : gS.footHeight);
 	int clipped = 0;
 	int i;
 
@@ -1385,7 +1401,7 @@ static int D2plOnCamera(void* userdata, void* args)
 		 * collision push, aim target and pitch-orbit anchor all agree;
 		 * the engine's own carheight - basePos[1] frame (per-car ride
 		 * height) was silently fighting the cap on flat ground */
-		camPos->vy = -base[1] + CAR_HEIGHT - (gSpeedSmooth * HEIGHT_SPEED_SCALE) / 4096;
+		camPos->vy = -base[1] + gS.carHeight - (gSpeedSmooth * HEIGHT_SPEED_SCALE) / 4096;
 
 		camPos->vx += FIXEDH(RCOS(heading) * lateral * gS.shoulder);
 		camPos->vz += -FIXEDH(RSIN(heading) * lateral * gS.shoulder);
@@ -1918,6 +1934,9 @@ static const char* D2plItemLabel(int item)
 	case D2PL_ITEM_CAR_LAT:
 		sprintf(gD2plLabelBuf[item], "Car Offset: %d%%", gS.carLatPct);
 		break;
+	case D2PL_ITEM_CAR_HEIGHT:
+		sprintf(gD2plLabelBuf[item], "Car Height: %d", gS.carHeight);
+		break;
 	case D2PL_ITEM_SHOULDER:
 		sprintf(gD2plLabelBuf[item], "Shoulder: %s", gS.shoulder > 0 ? "Right" : "Left");
 		break;
@@ -1975,6 +1994,9 @@ static void D2plAdjustItem(int item, int direction)
 		break;
 	case D2PL_ITEM_CAR_LAT:
 		gS.carLatPct = jer_clamp_int(gS.carLatPct + direction * 2, 5, 60);
+		break;
+	case D2PL_ITEM_CAR_HEIGHT:
+		gS.carHeight = jer_clamp_int(gS.carHeight - direction * 10, -250, 50);
 		break;
 	case D2PL_ITEM_SHOULDER:
 		if (direction != 0)
@@ -2066,6 +2088,7 @@ static void D2plReset(void)
 	gLastTannerPad = 0;
 	gPedWasMoving = 0;
 	gAimLookBlend = 0;
+	gSettlePitch0 = 0;
 
 	gHandPos[0] = gHandPos[1] = gHandPos[2] = 0;
 	gAimPoint[0] = gAimPoint[1] = gAimPoint[2] = 0;

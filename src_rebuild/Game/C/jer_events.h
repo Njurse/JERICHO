@@ -141,6 +141,7 @@ enum
 	D2PL_ITEM_FOOT_HEIGHT,	/* on-foot camera height (below the body) */
 	D2PL_ITEM_CAR_DIST,	/* in-car pull-in */
 	D2PL_ITEM_CAR_LAT,	/* in-car lateral (% of the car's bbox width) */
+	D2PL_ITEM_CAR_HEIGHT,	/* in-car camera height offset (taller cars) */
 	D2PL_ITEM_SHOULDER,	/* camera shoulder side */
 	D2PL_ITEM_INVERT_H,	/* invert horizontal look */
 	D2PL_ITEM_INVERT_V,	/* invert vertical look */

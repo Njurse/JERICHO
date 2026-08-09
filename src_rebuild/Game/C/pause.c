@@ -314,6 +314,7 @@ static void D2plAdjFootLat(int direction) { D2plAdjustItem(D2PL_ITEM_FOOT_LAT, d
 static void D2plAdjFootHeight(int direction) { D2plAdjustItem(D2PL_ITEM_FOOT_HEIGHT, direction); }
 static void D2plAdjCarDist(int direction) { D2plAdjustItem(D2PL_ITEM_CAR_DIST, direction); }
 static void D2plAdjCarLat(int direction) { D2plAdjustItem(D2PL_ITEM_CAR_LAT, direction); }
+static void D2plAdjCarHeight(int direction) { D2plAdjustItem(D2PL_ITEM_CAR_HEIGHT, direction); }
 static void D2plAdjShoulder(int direction) { D2plAdjustItem(D2PL_ITEM_SHOULDER, direction); }
 static void D2plAdjInvertH(int direction) { D2plAdjustItem(D2PL_ITEM_INVERT_H, direction); }
 static void D2plAdjInvertV(int direction) { D2plAdjustItem(D2PL_ITEM_INVERT_V, direction); }
@@ -331,6 +332,7 @@ MENU_ITEM D2plSettingsItems[] =
 	{ D2plLabels[D2PL_ITEM_FOOT_HEIGHT], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjFootHeight, MENU_QUIT_NONE, NULL },
 	{ D2plLabels[D2PL_ITEM_CAR_DIST], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjCarDist, MENU_QUIT_NONE, NULL },
 	{ D2plLabels[D2PL_ITEM_CAR_LAT], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjCarLat, MENU_QUIT_NONE, NULL },
+	{ D2plLabels[D2PL_ITEM_CAR_HEIGHT], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjCarHeight, MENU_QUIT_NONE, NULL },
 	{ D2plLabels[D2PL_ITEM_SHOULDER], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjShoulder, MENU_QUIT_NONE, NULL },
 	{ D2plLabels[D2PL_ITEM_INVERT_H], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjInvertH, MENU_QUIT_NONE, NULL },
 	{ D2plLabels[D2PL_ITEM_INVERT_V], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjInvertV, MENU_QUIT_NONE, NULL },
