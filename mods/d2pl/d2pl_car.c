@@ -162,7 +162,7 @@ void D2plCarCamera(void* args, int heading)
 		CAR_COSMETICS* car_cos = car_data[lp->playerCarId].ap.carCos;
 		int lateral = 120;
 		int speed = gSpeedSmooth;	/* smoothed: no distance jitter (§5) */
-		int pull = (gS.carDist * 2048) / (2048 + speed * CAR_SPEED_DIV);
+		int pull = (gS.carDist * 2048) / (4096 + speed * CAR_SPEED_DIV);
 
 		if (pull < 100)
 			pull = 100;

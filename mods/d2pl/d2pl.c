@@ -34,19 +34,19 @@ extern void Debug_AddLineDepth(VECTOR& pointA, VECTOR& pointB, CVECTOR& color);
 static void D2plSaveSettings(void);	/* forward (load regenerates on stale) */
 
 D2PL_SETTINGS gS = {
-	58,			/* sensX — baseline sensitivity, ~10% under the 64
+	18,			/* sensX — baseline sensitivity, ~10% under the 64
 				   reference (the persisted config is regenerated) */
-	58,			/* sensY */
+	14,			/* sensY */
 	1,			/* joyCamera — right-stick look/orbit on by default */
-	1040,			/* footDist — doubled: a high, wide GTA-like view that
+	930,			/* footDist — doubled: a high, wide GTA-like view that
 				   can pitch down steeper and show more around the ped */
 	120,			/* footLat (shoulder) */
 	-300,			/* footHeight — the orbit moved up (camera ~300 units
 				   above the waist anchor, still aiming at the player) */
 	575,			/* carDist (+15% default distance) */
 	28,			/* carLatPct */
-	-105,			/* carHeight (in-car camera drop; adjustable for
-				   taller cars via the settings menu) */
+	-105,			/* carHeight (in-car camera lift; adjustable for
+				   taller cars via the settings menu) and remember Y is inverted in this engine so negative = higher */
 	-1,			/* shoulder (left) */
 	0,			/* invertH */
 	0,			/* invertV */
@@ -509,7 +509,7 @@ int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 	int div;
 
 	if (inCar)
-		div = 4;	/* responsive smoothness (1/div toward target per
+		div = 2;	/* responsive smoothness (1/div toward target per
 				   frame) — a car turning sharply gets a little (subtle)
 				   runway lag, but tighter than before so the player can
 				   still see around the turn */
@@ -519,7 +519,7 @@ int D2plSmoothCamera(VECTOR* camPos, int* base, int inCar, int* penOut)
 				   momentum as he accelerates; once he's moving the
 				   camera tightens up (div 5 below) */
 	else
-		div = 5;
+		div = 4;
 	int baseY = -base[1];	/* basePos y is RAW (un-negated); the camera frame
 				   negates it (camera.c: carheight - basePos[1]) */
 	int targetY = baseY + (inCar ? gS.carHeight : gS.footHeight);
