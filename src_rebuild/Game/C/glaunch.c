@@ -158,6 +158,19 @@ void State_GameStart(void* param)
 	jer_d1_log("[d1] State_GameStart: GameLevel=%d gDriver1Level=%d gWantNight=%d\n",
 		GameLevel, gDriver1Level, gWantNight);
 
+	// [D1] boot -level 4..7 with no Driver 1 assets would hit the
+	// LEVELFILE veto with stale citylumps and crash — bail to the frontend
+	// instead so the failure is recoverable.
+	if (gDriver1Level && !jer_d1_available())
+	{
+		jer_d1_log("[d1] State_GameStart: D1 data missing, returning to frontend\n");
+
+		gDriver1Level = 0;
+		GameLevel = 0;
+		SetState(STATE_INITFRONTEND);
+		return;
+	}
+
 	if (GameType != GAME_CONTINUEMISSION &&
 		GameType != GAME_MISSION &&
 		GameType != GAME_REPLAYMISSION)
