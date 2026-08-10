@@ -303,6 +303,8 @@ static JER_BONE_ROT gSavedJoint1;	/* the shared motion buffer's original
 					   rotations (snapshotted at aim start,
 					   restored when aiming stops) */
 static JER_BONE_ROT gSavedHead;
+static JER_BONE_ROT* gSavedJoint1Slot;	/* the motion slot we last wrote */
+static JER_BONE_ROT* gSavedHeadSlot;
 static int gPoseSaved;
 
 int D2plOnPedPose(void* userdata, void* args)

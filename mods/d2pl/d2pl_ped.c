@@ -126,9 +126,44 @@ int D2plOnPedInput(void* userdata, void* args)
 
 	desired = (camHeading + stickHeading) & 0xfff;
 
-	/* rewrite the movement bits: clear the engine's D-pad synth + tank
-	 * steer, then RUN FORWARD toward the stick heading — the body turns
-	 * (lerped above) rather than ever walking backward, GTA-style */
+	/* turn the body toward the stick heading. While AIMING the camera owns
+	 * the reference: the heading is written DIRECTLY (no lerp) so the aim
+	 * axis and the movement axis stay one — the walk cycle plays at
+	 * whatever heading the stick demands, the full-360 GTA illusion with
+	 * zero tank controls. Not aiming: the GTA chase limits (fast turn
+	 * while running, quick pivot from a standstill). */
+	{
+		int diff = DIFF_ANGLES(lp->dir, desired);
+
+		if (gAiming)
+		{
+			/* instant, direct: the stick IS the direction */
+			lp->dir = desired;
+		}
+		else
+		{
+			/* the ped is the one that MOVES: the player struct carries no
+			 * speed (only the pad), so the standstill pivot check reads
+			 * the ped’s own speed (0 = planted) */
+			LPPEDESTRIAN runPed = lp->pPed;
+			int runLimit = (gPedWasMoving ||
+				(runPed != NULL && runPed->speed != 0)) ?
+				RUN_TURN_LIMIT : PIVOT_TURN_LIMIT;
+
+			if (ABS(diff) > runLimit)
+				lp->dir += (diff >= 0) ? runLimit : -runLimit;
+			else
+				lp->dir = desired;
+		}
+
+		lp->dir &= 0xfff;
+
+		if (lp->pPed != NULL)
+			lp->pPed->dir.vy = lp->dir;
+
+		gPedWasMoving = 1;
+	}
+
 	a->pad &= ~(TANNER_PAD_GOFORWARD | TANNER_PAD_GOBACK |
 		TANNER_PAD_TURNLEFT | TANNER_PAD_TURNRIGHT);
 

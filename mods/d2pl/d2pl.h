@@ -93,7 +93,7 @@
 #define MOVE_STICK_SIGN_X 1	/* flip if your pad's X axis is inverted */
 #define MOVE_STICK_SIGN_Y 1	/* flip if your pad's Y axis is inverted */
 #define MOVE_LERP_DIV 16
-#define AIM_MOVE_LERP_DIV 3	/* aiming: the heading lerps FAST (third-person —
+#define AIM_MOVE_LERP_DIV 2	/* aiming: the heading lerps VERY fast (third-person —
 				   he snaps to the camera-relative run direction) */		/* responsive exponential heading lerp: 1/8 of the
 				   remaining gap toward the stick-derived heading each
 				   frame (fast when far, eases in) */
