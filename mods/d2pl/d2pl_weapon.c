@@ -343,7 +343,13 @@ int D2plOnPedPose(void* userdata, void* args)
 			 * "from the body TOWARD the aim": aimYaw - bodyYaw. The old
 			 * bodyYaw - aimYaw rotated the other way — a ~180 degree
 			 * twist (with the arm matching, since it hangs off the root) */
-			joint1->vy = (short)-jer_anim_aim_diff(pPed->dir.vy, aimYaw);
+			/* the ANIMATION limit: the spine can only twist ~70 degrees
+			 * off the body heading (796 of 4096) — beyond that the body
+			 * itself turns (the movement is full 360). The sign: the
+			 * local rotation composes with the body, so it is
+			 * -(bodyYaw - aimYaw) = aimYaw - bodyYaw. */
+			joint1->vy = (short)jer_clamp_int(
+				-jer_anim_aim_diff(pPed->dir.vy, aimYaw), -796, 796);
 		}
 
 		/* head lock: keep the head aligned with the (rotated) torso */

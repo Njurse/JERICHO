@@ -38,8 +38,6 @@ int gPedWasMoving;
 int gPedRunSpeed;	/* smoothed run speed 0..40 (the analog
 				   magnitude, lerped — the press-off momentum) */
 int gPedStickMove;	/* 1 while the left stick drives the movement */
-static int gPedBackpedal;	/* 1 = aim-stick past 70 degrees: run speed is
-				   negated so he backpedals (set/cleared per frame) */
 
 /* weapon state */
 
@@ -128,126 +126,6 @@ int D2plOnPedInput(void* userdata, void* args)
 
 	desired = (camHeading + stickHeading) & 0xfff;
 
-	/* aiming: the legs only run up to 70 degrees (796 of 4096) off the
-	 * torso-forward — the aim yaw is the camera-forward, i.e. AWAY from
-	 * the camera. If the stick asks for more, reflect onto the far side's
-	 * 70 degrees and mark the backpedal: D2plOnPedMove then reverses the
-	 * run speed, so he walks backward toward the stick while the legs stay
-	 * at the far limit — the backpedal illusion, no new animation data. */
-	if (gAiming)
-	{
-		int off = DIFF_ANGLES(camHeading, desired);	/* -2048..2048 */
-
-		if (off > 796)
-		{
-			off = 796 - (off - 796);
-			gPedBackpedal = 1;
-		}
-		else if (off < -796)
-		{
-			off = -796 - (off + 796);
-			gPedBackpedal = 1;
-		}
-		else
-		{
-			gPedBackpedal = 0;
-		}
-
-		desired = (camHeading + off) & 0xfff;
-	}
-	else
-	{
-		gPedBackpedal = 0;
-	}
-
-	/* the writeup's "flattened to the ground plane": project the desired
-	 * direction onto the SURFACE plane at Tanner's feet, so a slope with
-	 * a weird normal can't make him fail to move along it — the movement
-	 * follows the terrain the same way the heading blend follows the
-	 * velocity vector. Flat ground (normal straight up) leaves it unchanged. */
-	if (lp->pPed != NULL)
-	{
-		VECTOR normal;
-		VECTOR surf;
-		VECTOR pp;
-		sdPlane* plane;
-		int dx = RSIN(desired);
-		int dz = RCOS(desired);
-		long long dot;
-		int dpx;
-		int dpz;
-
-		pp.vx = lp->pPed->position.vx;
-		pp.vy = lp->pPed->position.vy;
-		pp.vz = lp->pPed->position.vz;
-
-		FindSurfaceD2(&pp, &normal, &surf, &plane);
-
-		dot = (long long)dx * normal.vx + (long long)dz * normal.vz;
-
-		dpx = (int)(dx - ((long long)normal.vx * dot >> 24));
-		dpz = (int)(dz - ((long long)normal.vz * dot >> 24));
-
-		if (ABS(dpx) + ABS(dpz) > 16)
-			desired = ratan2(dpx, dpz);
-	}
-
-	/* diagnostics: log the heading math every 60 frames while input is
-	 * live — stick down should make desired ~ baseDir+2048, and pdir
-	 * should track dir; spd shows the momentum lerp (smoothed vs the
-	 * engine's current speed) — so a pad-axis quirk or heading or
-	 * speed error (running perpendicular to the camera, teleporting
-	 * to full speed) is readable at a glance */
-	{
-		static int gMoveLogTimer;
-
-		if (--gMoveLogTimer <= 0)
-		{
-			gMoveLogTimer = 60;
-
-			/* mag = the dominant axis (matches the speed path in
-			 * D2plOnPedMove — a straight push is full deflection) */
-			{
-				int mmx = ABS(stickX);
-				int mmy = ABS(stickY);
-				int mLog = (mmx > mmy) ? mmx : mmy;
-
-				jer_log("[d2pl] move: cam=%d stick=(%d,%d) mag=%d desired=%d dir=%d pdir=%d spd=%d/%d ref=%d/%d\n",
-					camHeading, stickX, stickY, mLog, desired, lp->dir,
-					lp->pPed->dir.vy, gPedRunSpeed, lp->pPed->speed,
-					gMoveRefActive, gMoveRefHeading);
-			}
-		}
-	}
-
-	/* interpolate the heading toward the target: an exponential lerp
-	 * (1/div of the remaining gap per frame — responsive: fast when far,
-	 * eases in), capped by the run/standstill turn limits when running
-	 * free. While AIMING the lerp is FAST (the third-person feel — he
-	 * snaps toward the new camera-relative run direction instead of
-	 * tank-arcs) and the turn limits don't apply. The clamp + backpedal
-	 * above already pinned the target to the aim cone, so the fast lerp
-	 * only sweeps the legs within it. */
-	{
-		int div = gAiming ? AIM_MOVE_LERP_DIV : MOVE_LERP_DIV;
-		int gap = DIFF_ANGLES(lp->dir, desired) * MOVE_TURN_SIGN;
-
-		delta = gap / div;
-
-		if (delta == 0 && gap != 0)
-			delta = (gap > 0) ? 1 : -1;	/* converge exactly */
-
-		if (!gAiming)
-		{
-			limit = (gPedWasMoving || ABS(lp->pPed->speed) > 4)
-				? RUN_TURN_LIMIT : PIVOT_TURN_LIMIT;
-			delta = jer_clamp_int(delta, -limit, limit);
-		}
-
-		lp->dir = (lp->dir + delta) & 0xfff;
-		lp->pPed->dir.vy = (lp->dir + 2048) & 0xfff;
-	}
-
 	/* rewrite the movement bits: clear the engine's D-pad synth + tank
 	 * steer, then RUN FORWARD toward the stick heading — the body turns
 	 * (lerped above) rather than ever walking backward, GTA-style */
@@ -314,7 +192,7 @@ int D2plOnPedMove(void* userdata, void* args)
 		else
 			gPedRunSpeed += delta / PED_SPEED_LERP;
 
-		pPed->speed = (gPedBackpedal && gAiming) ? -gPedRunSpeed : gPedRunSpeed;
+		pPed->speed = gPedRunSpeed;
 	}
 	else if (pPed->speed == 0)
 	{
