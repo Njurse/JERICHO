@@ -150,10 +150,18 @@ int D2plOnPedInput(void* userdata, void* args)
 				(runPed != NULL && runPed->speed != 0)) ?
 				RUN_TURN_LIMIT : PIVOT_TURN_LIMIT;
 
-			if (ABS(diff) > runLimit)
-				lp->dir += (diff >= 0) ? runLimit : -runLimit;
-			else
-				lp->dir = desired;
+			/* a small deadband: the chase camera’s settle jitter makes
+			 * `desired` flip a few degrees around the turn threshold —
+			 * without this the body twitches left/right every frame
+			 * (the rapid oscillation when NOT aiming). Inside the
+			 * deadband the body is close enough: leave it be. */
+			if (ABS(diff) > 32)
+			{
+				if (ABS(diff) > runLimit)
+					lp->dir += (diff >= 0) ? runLimit : -runLimit;
+				else
+					lp->dir = desired;
+			}
 		}
 
 		lp->dir &= 0xfff;
