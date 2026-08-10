@@ -161,15 +161,14 @@ int D2plOnPedInput(void* userdata, void* args)
 		if (lp->pPed != NULL)
 			lp->pPed->dir.vy = lp->dir;
 
-		gPedWasMoving = 1;
+		if (lp->pPed != NULL && lp->pPed->speed != 0)
+			gPedWasMoving = 1;
 	}
 
 	a->pad &= ~(TANNER_PAD_GOFORWARD | TANNER_PAD_GOBACK |
 		TANNER_PAD_TURNLEFT | TANNER_PAD_TURNRIGHT);
 
 	a->pad |= TANNER_PAD_GOFORWARD;
-
-	gPedWasMoving = 1;
 
 	return JER_RESULT_CONTINUE;
 }
