@@ -210,10 +210,20 @@ const char* jer_d1_folder(void)
 static int jer_d1_file_exists(const char* relpath)
 {
 	char name[96];
+	FILE* fp;
 
+	/* NOTE: must NOT go through FileExists() — the game's FileExists
+	 * prepends gDataFolder ("DRIVER2\"), but the D1 data folder is a
+	 * sibling of it. SetCityType opens level files with a raw fopen too,
+	 * so use the same CWD-relative access here. */
 	sprintf(name, "%s%s", jer_d1_folder(), relpath);
 
-	return FileExists(name) != 0;
+	fp = fopen(name, "rb");
+	if (fp == NULL)
+		return 0;
+
+	fclose(fp);
+	return 1;
 }
 
 int jer_d1_available(void)
