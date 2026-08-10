@@ -162,6 +162,39 @@ is laid out exactly as the engine's 236-byte CAR_COSMETICS
 4 shorts; SVECTOR = {vx, vy, vz, pad}). `LoadCosmetics` fills all resident
 slots + the 5 spec-vehicle slots and runs `FixCarCos` on each.
 
+## 5c. Spooled cell/object chain contract (validated against real files)
+
+Driver 1's per-region spooled data (region 15 of MIAMI checked by hand
+against `OpenDriver2Tools` `regions_d1.cpp`):
+
+- packed cell pointers carry an 8-byte header: `[4B ?][4B packtype]`;
+  packtype 1 = dense 1024 u16s, packtype 2 = bit-packed (set-bit ->
+  next word is the pointer, clear-bit -> 0xFFFF). Pointer values are
+  **region-local**; the engine's `unpack_cellpointers` adds the barrel's
+  cumulative `cell_slots_add` base so `cell_ptrs[]` holds global indices.
+- cells are 4-byte `{num u16, next_ptr u16}`; `next_ptr` is a **global
+  index** into the engine's cells array (cumulative slot base +
+  region-local offset), 0xFFFF ends the chain.
+- `num` is a **global object index**: `num < num_straddlers` -> a
+  straddler; else `num - (cumulative cell_objects_add[barrel] +
+  num_straddlers)` = region-local index into the 16-byte CELL_OBJECTs.
+- pointer table has 1024 slots per region but only `region_size^2`
+  (e.g. 900 for 30x30) are real; slots 900..1023 contain filler
+  (`0x4544/0x2153` runs) the engine never indexes (MAP_REGION_SIZE =
+  `cell_header.region_size` on PC).
+- Validation: all 33072 non-empty MIAMI cells walk their chains cleanly
+  (0 broken) with the engine's global-index scheme.
+
+## 5d. Gotcha: the game's FileExists prefixes gDataFolder
+
+`FileExists()`/`LoadfileSeg()` prepend `gDataFolder` ("DRIVER2\") to every
+path, but the D1 data folder is its **sibling** ("DRIVER\"). The D1
+availability probe and SetCityType must therefore use raw CWD-relative
+`fopen` (SetCityType/loadsectorsPC already do). The headless harness
+stubbed FileExists with a raw fopen, which masked this until the real game
+was run — the injected menu entry never appeared until jer_d1_file_exists
+stopped using FileExists().
+
 ## 6. Known limitations (v1)
 
 - **No AI traffic routing**: D1 roads/junctions/bounds are parsed but the
