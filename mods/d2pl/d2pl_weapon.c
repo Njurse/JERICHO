@@ -323,35 +323,47 @@ int D2plOnPedPose(void* userdata, void* args)
 
 	if (gAiming)
 	{
-		/* the pvRotation bytes point into the SHARED per-type motion buffer:
-		 * snapshot the originals on the first aim frame so we can restore
-		 * them when aiming stops (the walk cycle must not keep the twist) */
-		if (!gPoseSaved)
+		/* the pvRotation bytes point into the SHARED per-type motion buffer,
+		 * and the walk cycle ADVANCES the motion frame during the aim — so
+		 * every slot we touch must be restored, or the twist persists in
+		 * the other frames. Restore the PREVIOUS aim frame’s slot first,
+		 * then snapshot + write the CURRENT one; the final slot is put
+		 * back on the first non-aim frame. */
+		if (gPoseSaved)
 		{
-			if (joint1 != NULL)
-				gSavedJoint1 = *joint1;
-			if (head != NULL)
-				gSavedHead = *head;
-			gPoseSaved = 1;
+			if (gSavedJoint1Slot != NULL)
+				*gSavedJoint1Slot = gSavedJoint1;
+			if (gSavedHeadSlot != NULL)
+				*gSavedHeadSlot = gSavedHead;
+			gPoseSaved = 0;
 		}
+
+		if (joint1 != NULL)
+		{
+			gSavedJoint1 = *joint1;
+			gSavedJoint1Slot = joint1;
+		}
+		if (head != NULL)
+		{
+			gSavedHead = *head;
+			gSavedHeadSlot = head;
+		}
+		gPoseSaved = 1;
 
 		if (joint1 != NULL)
 		{
 			LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
 			int aimYaw = (-camera_angle.vy) & 0xfff;
 
-			/* the JOINT_1 local yaw COMPOSES with the body (the engine adds
-			 * it to the root matrix built from pPed->dir), so it must be
-			 * "from the body TOWARD the aim": aimYaw - bodyYaw. The old
-			 * bodyYaw - aimYaw rotated the other way — a ~180 degree
-			 * twist (with the arm matching, since it hangs off the root) */
-			/* the ANIMATION limit: the spine can only twist ~70 degrees
-			 * off the body heading (796 of 4096) — beyond that the body
-			 * itself turns (the movement is full 360). The sign: the
-			 * local rotation composes with the body, so it is
-			 * -(bodyYaw - aimYaw) = aimYaw - bodyYaw. */
+			/* The torso faces the camera-forward (the back to the camera).
+			 * Engine convention (pedest.c: the forward branch moves along
+			 * dir.vy - 2048 and the model’s face is -z): a body that FACES
+			 * the aim runs at dir = aimYaw - 2048, so the twist off the
+			 * body is the shortest signed angle DIFF(body, aimYaw - 2048),
+			 * clamped to the ~70 degree spine limit (796/4096). Beyond
+			 * that the BODY turns (the movement is full 360). */
 			joint1->vy = (short)jer_clamp_int(
-				-jer_anim_aim_diff(pPed->dir.vy, aimYaw), -796, 796);
+				DIFF_ANGLES(pPed->dir.vy, aimYaw - 2048), -796, 796);
 		}
 
 		/* head lock: keep the head aligned with the (rotated) torso */
@@ -360,11 +372,11 @@ int D2plOnPedPose(void* userdata, void* args)
 	}
 	else if (gPoseSaved)
 	{
-		/* restore the walk cycle's own rotations on the first non-aim frame */
-		if (joint1 != NULL)
-			*joint1 = gSavedJoint1;
-		if (head != NULL)
-			*head = gSavedHead;
+		/* the aim stopped: restore the LAST touched slot */
+		if (gSavedJoint1Slot != NULL)
+			*gSavedJoint1Slot = gSavedJoint1;
+		if (gSavedHeadSlot != NULL)
+			*gSavedHeadSlot = gSavedHead;
 		gPoseSaved = 0;
 	}
 

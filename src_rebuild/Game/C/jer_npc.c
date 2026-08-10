@@ -33,14 +33,13 @@ JerNpc* jer_npc_spawn(int x, int z)
 	pPed->dir.vz = 0;
 	pPed->type = PED_ACTION_WALK;
 	pPed->flags = 0;
-	pPed->fpRestState = fpPedPersonalityFunctions[12];
 
 	return (JerNpc*)pPed;
 }
 
 void jer_npc_despawn(JerNpc* n)
 {
-	LPPEDESTRIAN pPed = (LPPEDESTRIAN)(n ? n->ped : NULL);
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
 
 	if (pPed != NULL)
 		DestroyPedestrian(pPed);
@@ -48,7 +47,7 @@ void jer_npc_despawn(JerNpc* n)
 
 void jer_npc_face(JerNpc* n, int heading)
 {
-	LPPEDESTRIAN pPed = (LPPEDESTRIAN)(n ? n->ped : NULL);
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
 
 	if (pPed == NULL)
 		return;
@@ -59,7 +58,7 @@ void jer_npc_face(JerNpc* n, int heading)
 
 void jer_npc_set_speed(JerNpc* n, int speed)
 {
-	LPPEDESTRIAN pPed = (LPPEDESTRIAN)(n ? n->ped : NULL);
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
 
 	if (pPed == NULL)
 		return;
@@ -69,14 +68,14 @@ void jer_npc_set_speed(JerNpc* n, int speed)
 
 int jer_npc_speed(const JerNpc* n)
 {
-	LPPEDESTRIAN pPed = (LPPEDESTRIAN)(n ? n->ped : NULL);
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
 
 	return pPed ? pPed->speed : 0;
 }
 
 void jer_npc_move_to(JerNpc* n, int x, int z, int speed)
 {
-	LPPEDESTRIAN pPed = (LPPEDESTRIAN)(n ? n->ped : NULL);
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
 
 	if (pPed == NULL)
 		return;
@@ -86,19 +85,19 @@ void jer_npc_move_to(JerNpc* n, int x, int z, int speed)
 	pPed->speed = (char)speed;
 	pPed->type = PED_ACTION_WALK;
 
-	if (pPed->fpAgitatedState == NULL)
-		pPed->fpAgitatedState = fpPedPersonalityFunctions[2];	/* runner */
+	/* the civ personality table is pedest-internal; the walk/run states
+	 * are driven by the speed + type fields alone for the scaffold */
 }
 
 void jer_npc_stop(JerNpc* n)
 {
-	LPPEDESTRIAN pPed = (LPPEDESTRIAN)(n ? n->ped : NULL);
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
 
 	if (pPed == NULL)
 		return;
 
 	pPed->speed = 0;
-	pPed->type = PED_ACTION_STAND;
+	pPed->type = PED_ACTION_WALK;	/* speed 0 = standing */
 	pPed->fpAgitatedState = NULL;
 }
 

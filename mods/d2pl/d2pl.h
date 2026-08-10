@@ -90,7 +90,7 @@
 #define PED_SPEED_LERP 8	/* lerp divisor — geometric: ~15 frames to reach
 				   the target each way (the stand-start momentum) */
 #define MOVE_TURN_SIGN 1	/* +1 = positive angle delta turns right */
-#define MOVE_STICK_SIGN_X 1	/* flip if your pad's X axis is inverted */
+#define MOVE_STICK_SIGN_X -1	/* the stick X was mirrored against the camera (flipped 2026-08-10) */
 #define MOVE_STICK_SIGN_Y 1	/* flip if your pad's Y axis is inverted */
 #define MOVE_LERP_DIV 16
 #define AIM_MOVE_LERP_DIV 2	/* aiming: the heading lerps VERY fast (third-person —
