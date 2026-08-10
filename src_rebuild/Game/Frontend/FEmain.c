@@ -393,6 +393,7 @@ int Driver1CitySelectScreen(int bSetup);
 #define JERICHO_MODS_MODULES_PER_PAGE 5	// 5 modules + Prev/Next + Back = 8 (screen cap)
 
 static int gJerichoOptionsButtonAdded;
+static int gJerichoD1EntryAdded;
 static int gJerichoModsPage;		// paginated mod list: current page
 
 screenFunc fpUserFunctions[] = {
@@ -1371,6 +1372,7 @@ void LoadFrontendScreens(int full)
 		PsxScreens[JERICHO_MODS_SCREEN] = PsxScreens[31];
 		PsxScreens[JERICHO_MODS_SCREEN].userFunctionNum = 25;	// JerichoModsScreen
 		gJerichoOptionsButtonAdded = 0;
+		gJerichoD1EntryAdded = 0;
 
 		// JERICHO-HOOK: the Driver 1 city page (slot 42) reuses the
 		// take-a-ride city screen's geometry; Driver1CitySelectScreen lays
@@ -2999,7 +3001,7 @@ int CutSceneCitySelectScreen(int bSetup)
 			feVariableSave[0] = -1;
 		}
 
-		pCurrScreen->buttons[0].u = 4;
+		pCurrScreen->buttons[0].u = (u_char)(PsxScreens[1].numButtons > 4 ? PsxScreens[1].numButtons : 4);
 		pCurrScreen->buttons[3].d = 1;
 
 		if (gFurthestMission == 0) 
@@ -3058,21 +3060,6 @@ int CutSceneCitySelectScreen(int bSetup)
 				LoadImage(&rect, (u_long*)(_frontend_buffer + currCity * 0x8000));
 
 			DrawSync(0);
-		}
-
-		// JERICHO-HOOK: take-a-ride city screen setup — modules may inject
-		// extra buttons into the live screen (e.g. the driver1 mod's
-		// "Driver 1 Cities…" entry) and adjust the navigation ring.
-		{
-			JER_ARGS_FRONTEND_SCREEN jerFs;
-
-			jerFs.bSetup = 1;
-			jerFs.screen = pCurrScreen;
-			jerFs.numButtons = pCurrScreen->numButtons;
-
-			jer_fire(JER_EVENT_FRONTEND_SCREEN, &jerFs);
-
-			pCurrScreen->numButtons = jerFs.numButtons;
 		}
 
 		return 0;
@@ -3723,6 +3710,42 @@ int MainScreen(int bSetup)
 
 			/* injected (or the screen is full): never add a duplicate */
 			gJerichoOptionsButtonAdded = 1;
+		}
+
+		// JERICHO-HOOK: hang the Driver 1 cities page off the take-a-ride
+		// city screen (screen 1) — same pattern as the JERICHO Config
+		// button above. Only when the Driver 1 data folder is present.
+		if (!gJerichoD1EntryAdded)
+		{
+			PSXSCREEN* city = &PsxScreens[1];
+
+			if (city->numButtons >= 1 && city->numButtons < 8 && jer_d1_available())
+			{
+				PSXBUTTON* b = &city->buttons[city->numButtons];
+				PSXBUTTON* last = &city->buttons[city->numButtons - 1];
+
+				memset(b, 0, sizeof(PSXBUTTON));
+
+				b->x = last->x;
+				b->y = last->y + 41;
+				b->w = last->w;
+				b->h = last->h;
+				b->s_x = last->s_x;
+				b->s_y = b->y;
+
+				strcpy(b->Name, "Driver 1 Cities");
+
+				city->numButtons++;
+				last->d = city->numButtons;			// last city -> D1
+				b->u = city->numButtons - 1;		// D1 -> last city
+				b->d = 1;					// D1 -> first city
+				city->buttons[0].u = city->numButtons;	// first city -> D1
+
+				b->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_D1_SCREEN);
+				b->var = -1;
+			}
+
+			gJerichoD1EntryAdded = 1;
 		}
 	}
 	//ForceStartLevel();

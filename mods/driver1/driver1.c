@@ -74,73 +74,9 @@ static int Driver1Available(void)
 	return gD1Available;
 }
 
-/* JER_EVENT_FRONTEND_SCREEN — the take-a-ride city screen was set up.
- * Inject the "Driver 1 Cities…" entry as the last button and rewire the
- * navigation ring (first city's up and last city's down wrap through it). */
-static int Driver1OnFrontendScreen(void* userdata, void* args)
-{
-	JER_ARGS_FRONTEND_SCREEN* a = (JER_ARGS_FRONTEND_SCREEN*)args;
-	D1PSXSCREEN* scr;
-	int numButtons;
-	int idx;
-
-	(void)userdata;
-
-	if (a == NULL || a->screen == NULL || !a->bSetup)
-		return JER_RESULT_CONTINUE;
-
-	if (GameType != GAME_TAKEADRIVE)
-		return JER_RESULT_CONTINUE;
-
-	if (!Driver1Available())
-		return JER_RESULT_CONTINUE;
-
-	scr = (D1PSXSCREEN*)a->screen;
-	numButtons = scr->numButtons;
-
-	if (numButtons < 1 || numButtons >= 8)
-		return JER_RESULT_CONTINUE;
-
-	/* already injected? */
-	idx = numButtons - 1;
-
-	if (scr->buttons[idx].var == -1 &&
-		(scr->buttons[idx].action >> 8) == D1_BTN_NEXT_SCREEN &&
-		strncmp(scr->buttons[idx].Name, D1_ENTRY_NAME, 8) == 0)
-	{
-		return JER_RESULT_CONTINUE;
-	}
-
-	/* append the entry below the last city */
-	idx = numButtons;
-
-	scr->buttons[idx] = scr->buttons[numButtons - 1];	/* copy geometry */
-	strcpy(scr->buttons[idx].Name, D1_ENTRY_NAME);
-	scr->buttons[idx].y = (short)(scr->buttons[numButtons - 1].y + 40);
-	scr->buttons[idx].u = (u_char)numButtons;		/* up -> last city */
-	scr->buttons[idx].d = 1;				/* down -> first city */
-	scr->buttons[idx].action = D1_FE_MAKEVAR(D1_BTN_NEXT_SCREEN, D1_SCREEN_SLOT);
-	scr->buttons[idx].var = -1;
-
-	/* navigation ring: first city's up and previous-last city's down now
-	 * wrap through the D1 entry (u/d are "button index + 1") */
-	scr->buttons[0].u = (u_char)(idx + 1);
-	scr->buttons[numButtons - 1].d = (u_char)(idx + 1);
-
-	scr->numButtons = (u_char)(idx + 1);
-
-	if (a->numButtons < scr->numButtons)
-		a->numButtons = scr->numButtons;
-
-	printInfo("[driver1] take-a-ride city screen: injected '%s' at button %d\n",
-		D1_ENTRY_NAME, idx);
-
-	return JER_RESULT_CONTINUE;
-}
-
-/* JER_EVENT_LEVELFILE — SetCityType resolved the level path. Driver 1
- * cities live under their own data folder (DRIVER\ by default), so rewrite
- * the path for GameLevel 4-7. If the D1 data is missing, veto the load. */
+/* JER_EVENT_LEVELFILE — SetCityType asks for the level file path.
+ * Driver 1 cities live under the D1 data folder (sibling of DRIVER2);
+ * rewrite the path and veto when the assets are missing. */
 static int Driver1OnLevelFile(void* userdata, void* args)
 {
 	JER_ARGS_LEVELFILE* a = (JER_ARGS_LEVELFILE*)args;
@@ -206,7 +142,6 @@ JER_MODULE_ENTRY(jer_module_driver1_entry)(JERICHO_CONTEXT* ctx)
 {
 	(void)ctx;
 
-	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_SCREEN, Driver1OnFrontendScreen, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND, Driver1OnFrontend, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_LEVELFILE, Driver1OnLevelFile, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, Driver1OnGameStart, NULL, 0);
