@@ -92,6 +92,11 @@ void ProcessCosmeticsLump(char *lump_ptr, int lump_size)
 // [D] [T]
 void LoadCosmetics(int level)
 {
+	// [D1] Driver 1 cities have no .LCF cosmetic files; the cars use their
+	// default (zeroed) cosmetics until a D1-compat cosmetics path exists.
+	if (gDriver1Level)
+		return;
+
 	LoadfileSeg(CosmeticFiles[level], (char*)_other_buffer, 0, 3120);
 	ProcessCosmeticsLump((char*)_other_buffer, 0);
 }

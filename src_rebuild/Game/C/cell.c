@@ -3,6 +3,7 @@
 #include "system.h"
 #include "map.h"
 #include "spool.h"
+#include "main.h"	// gDriver1Level
 
 int cell_object_index = 0;
 CELL_OBJECT cell_object_buffer[1024];
@@ -10,6 +11,15 @@ CELL_OBJECT cell_object_buffer[1024];
 u_char cell_object_computed_values[2048];
 
 extern u_char NumPlayers;
+
+/* [D1] the converted D1 sentinel object (a cell with no real data) is
+ * pos(-1,-1,-1), model type 0xffff — after conversion:
+ * pos.vx/vz == 0xFFFF, value >> 6 == 0x3FF. */
+static int D1IsSentinel(const PACKED_CELL_OBJECT* ppco)
+{
+	return ppco->pos.vx == 0xFFFF && ppco->pos.vz == 0xFFFF &&
+		(ppco->value >> 6) == 0x3FF;
+}
 
 // [D] [T]
 void ClearCopUsage(void)
@@ -49,6 +59,51 @@ PACKED_CELL_OBJECT * GetFirstPackedCop(int cellx, int cellz, CELL_ITERATOR *pci,
 	
 	if (ptr == 0xffff)
 		return NULL;
+
+	// [D1] Driver 1 cells are 4-byte {num, next_ptr} entries chained by
+	// next_ptr (D2 uses 2-byte cells with in-band 0x4000/0x8000 markers).
+	// The first object is the cell's num; the chain is followed in
+	// GetNextPackedCop. There are no level lists in D1, so `level` is
+	// ignored.
+	if (gDriver1Level)
+	{
+		const ushort* d1cell = (const ushort*)cells + ptr * 2;
+		ushort cellnum = d1cell[0];
+
+		pci->nearCell.x = (cellx - (cells_across / 2)) * MAP_CELL_SIZE;
+		pci->nearCell.z = (cellz - (cells_down / 2)) * MAP_CELL_SIZE;
+		pci->use_computed = use_computed;
+		pci->pcd = (CELL_DATA*)d1cell;
+
+		if (cellnum == 0xffff)
+			return NULL;
+
+		num = cellnum & 16383;
+		ppco = &cell_objects[num];
+
+		if (D1IsSentinel(ppco))
+		{
+			ppco = GetNextPackedCop(pci);
+		}
+		else if (use_computed)
+		{
+			value = 1 << (num & 7);
+
+			if (cell_object_computed_values[num / 8] & value) // get cached value
+			{
+				ppco = GetNextPackedCop(pci);
+				pci->ppco = ppco;
+
+				return ppco;
+			}
+
+			cell_object_computed_values[num / 8] |= value;
+		}
+
+		pci->ppco = ppco;
+
+		return ppco;
+	}
 
 	cell = &cells[ptr];
 
@@ -121,6 +176,31 @@ PACKED_CELL_OBJECT* GetNextPackedCop(CELL_ITERATOR* pci)
 	u_int value;
 	PACKED_CELL_OBJECT* ppco;
 	CELL_DATA* celld;
+
+	// [D1] follow the 4-byte cell linked list: next_ptr is an absolute
+	// index into the (4-byte) cells array; 0xffff ends the chain.
+	if (gDriver1Level)
+	{
+		const ushort* d1cell = (const ushort*)pci->pcd;
+		ushort next;
+
+		do {
+			next = d1cell[1];
+
+			if (next == 0xffff)
+				return NULL;
+
+			d1cell = (const ushort*)cells + next * 2;
+			num = d1cell[0] & 16383;
+
+			ppco = &cell_objects[num];
+		} while (D1IsSentinel(ppco));
+
+		pci->pcd = (CELL_DATA*)d1cell;
+		pci->ppco = ppco;
+
+		return ppco;
+	}
 
 	celld = pci->pcd;
 	

@@ -24,6 +24,7 @@
 
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (mods manager frontend)
 #include "../C/jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
 
 #ifndef PSX
 
@@ -322,7 +323,7 @@ enum FEButtonAction
 #ifdef USE_EMBEDDED_FRONTEND_SCREENS
 #include "FEscreens.inc"
 #else
-PSXSCREEN PsxScreens[42];
+PSXSCREEN PsxScreens[43];
 #endif
 
 #define FE_OTSIZE 16
@@ -384,9 +385,11 @@ int TimeOfDaySelectScreen(int bSetup);
 int DemoScreen(int bSetup);
 int MiniCarsOnOffScreen(int bSetup);
 int JerichoModsScreen(int bSetup);
+int Driver1CitySelectScreen(int bSetup);
 
 // JERICHO-HOOK: frontend Mods manager screen (built into a spare screen slot)
 #define JERICHO_MODS_SCREEN 41
+#define JERICHO_D1_SCREEN 42
 #define JERICHO_MODS_MODULES_PER_PAGE 5	// 5 modules + Prev/Next + Back = 8 (screen cap)
 
 static int gJerichoOptionsButtonAdded;
@@ -417,7 +420,8 @@ screenFunc fpUserFunctions[] = {
 	TimeOfDaySelectScreen,
 	DemoScreen,
 	MiniCarsOnOffScreen,
-	JerichoModsScreen
+	JerichoModsScreen,
+	Driver1CitySelectScreen
 };
 
 char* gfxNames[4] = {
@@ -1367,6 +1371,13 @@ void LoadFrontendScreens(int full)
 		PsxScreens[JERICHO_MODS_SCREEN] = PsxScreens[31];
 		PsxScreens[JERICHO_MODS_SCREEN].userFunctionNum = 25;	// JerichoModsScreen
 		gJerichoOptionsButtonAdded = 0;
+
+		// JERICHO-HOOK: the Driver 1 city page (slot 42) reuses the
+		// take-a-ride city screen's geometry; Driver1CitySelectScreen lays
+		// out the four D1 cities + Back. Unreachable unless the driver1 mod
+		// injects its "Driver 1 Cities…" entry into the city screen.
+		PsxScreens[JERICHO_D1_SCREEN] = PsxScreens[1];
+		PsxScreens[JERICHO_D1_SCREEN].userFunctionNum = 26;	// Driver1CitySelectScreen
 	}
 #endif
 
@@ -3046,11 +3057,36 @@ int CutSceneCitySelectScreen(int bSetup)
 			DrawSync(0);
 		}
 
+		// JERICHO-HOOK: take-a-ride city screen setup — modules may inject
+		// extra buttons into the live screen (e.g. the driver1 mod's
+		// "Driver 1 Cities…" entry) and adjust the navigation ring.
+		{
+			JER_ARGS_FRONTEND_SCREEN jerFs;
+
+			jerFs.bSetup = 1;
+			jerFs.screen = pCurrScreen;
+			jerFs.numButtons = pCurrScreen->numButtons;
+
+			jer_fire(JER_EVENT_FRONTEND_SCREEN, &jerFs);
+
+			pCurrScreen->numButtons = jerFs.numButtons;
+		}
+
 		return 0;
 	}
 
 	if (feNewPad & MPAD_CROSS)
 	{
+		// JERICHO-HOOK: a navigation button (the mod-injected
+		// "Driver 1 Cities…" entry has var == -1 + BTN_NEXT_SCREEN) must
+		// open its page, not start a take-a-ride.
+		if (pCurrButton != NULL &&
+			pCurrButton->var == -1 &&
+			(pCurrButton->action >> 8) == BTN_NEXT_SCREEN)
+		{
+			return 0;
+		}
+
 		// JERICHO-HOOK: the take-a-ride city confirm — modules may defer the
 		// start (their own menu runs over the frozen frontend) or rewrite
 		// the pending level/gametype/player count
@@ -4136,6 +4172,53 @@ static void jer_mods_rebuild_button_names(void)
 
 	for (i = 0; i < shown; i++)
 		sprintf(pCurrScreen->buttons[i].Name, "%s [%s]", mods[pageStart + i].name, mods[pageStart + i].enabled ? "ON" : "OFF");
+}
+
+/* JERICHO-HOOK: the Driver 1 city page (screen slot 42). Reuses the
+ * take-a-ride city screen's geometry; the buttons are laid out at setup:
+ * the four Driver 1 cities (GameLevel 4-7, start on CROSS) + Back.
+ * Driver 1 data availability is checked when the driver1 mod injects the
+ * "Driver 1 Cities…" entry into the stock city screen, so this screen is
+ * only reachable when the assets exist. */
+int Driver1CitySelectScreen(int bSetup)
+{
+	if (bSetup)
+	{
+		int i;
+
+		pCurrScreen->numButtons = JER_D1_CITY_COUNT + 1;
+
+		for (i = 0; i < JER_D1_CITY_COUNT; i++)
+		{
+			PSXBUTTON* btn = &pCurrScreen->buttons[i];
+
+			strcpy(btn->Name, jer_d1_level_name(i));
+
+			/* nav ring: 0..3 cities, index 4 = Back */
+			btn->u = (u_char)(i == 0 ? JER_D1_CITY_COUNT + 1 : i);
+			btn->d = (u_char)(i + 2);
+
+			btn->action = FE_MAKEVAR(BTN_START_GAME, 0);
+			btn->var = FE_MAKEVAR(1, 4 + i);	/* GameLevel = 4 + city */
+		}
+
+		/* Back button */
+		{
+			PSXBUTTON* btn = &pCurrScreen->buttons[JER_D1_CITY_COUNT];
+
+			strcpy(btn->Name, "Back");
+			btn->u = (u_char)JER_D1_CITY_COUNT;	/* up -> last city */
+			btn->d = 1;				/* down -> first city */
+			btn->action = FE_MAKEVAR(BTN_PREVIOUS_SCREEN, 0);
+			btn->var = -1;
+		}
+
+		pCurrButton = &pCurrScreen->buttons[0];
+
+		return 1;
+	}
+
+	return 0;
 }
 
 // [D] [T]

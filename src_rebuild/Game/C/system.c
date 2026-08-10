@@ -1,5 +1,9 @@
 #include "driver2.h"
 
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
+
 #ifndef PSX
 #include <stdint.h>
 #include <SDL.h>
@@ -132,6 +136,10 @@ char* LevelNames[] = {
 	"HAVANA",
 	"VEGAS",
 	"RIO",
+	"MIAMI",
+	"FRISCO",
+	"LA",
+	"NEWYORK",
 };
 
 char* LevelFiles[] = {
@@ -139,6 +147,10 @@ char* LevelFiles[] = {
 	"LEVELS\\HAVANA.LEV",
 	"LEVELS\\VEGAS.LEV",
 	"LEVELS\\RIO.LEV",
+	"LEVELS\\MIAMI.LEV",
+	"LEVELS\\FRISCO.LEV",
+	"LEVELS\\LA.LEV",
+	"LEVELS\\NEWYORK.LEV",
 };
 
 char* LoadingScreenNames[] = {
@@ -146,6 +158,10 @@ char* LoadingScreenNames[] = {
 	"GFX\\LOADHAVA.TIM",
 	"GFX\\LOADVEGA.TIM",
 	"GFX\\LOADRIO.TIM",
+	"GFX\\LOADCHIC.TIM",	// [D1] Driver 1 cities reuse a D2 loading screen
+	"GFX\\LOADCHIC.TIM",	//      (D1's own GLOAD.TIM lives in DRIVER\GFX;
+	"GFX\\LOADCHIC.TIM",	//      the real D1 loading art could be wired via
+	"GFX\\LOADCHIC.TIM",	//      the d1DataFolder later)
 };
 
 CdlFILE currentfileinfo;
@@ -901,6 +917,28 @@ void SetCityType(CITYTYPE type)
 
 	sprintf(filename, format, gDataFolder, LevelFiles[GameLevel]);
 	FS_FixPathSlashes(filename);
+
+	// JERICHO-HOOK: level-file resolution — a module may rewrite the path
+	// (e.g. Driver 1 cities that live under a separate data folder) or veto
+	// the open (result < 0; SetCityType then leaves the lump table stale and
+	// returns — the caller is expected to have bailed out already).
+	{
+		JER_ARGS_LEVELFILE jerLf;
+
+		jerLf.gameLevel = GameLevel;
+		jerLf.cityType = type;
+		jerLf.filename = filename;
+		jerLf.filenameSize = sizeof(filename);
+		jerLf.result = 0;
+
+		jer_fire(JER_EVENT_LEVELFILE, &jerLf);
+
+		jer_d1_log("[d1] SetCityType: level=%d type=%d -> '%s' result=%d gDriver1Level=%d\n",
+			GameLevel, type, filename, jerLf.result, gDriver1Level);
+
+		if (jerLf.result < 0)
+			return;
+	}
 
 	FILE* levFp = fopen(filename, "rb");
 

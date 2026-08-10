@@ -3,6 +3,11 @@
 
 extern int game_over;
 extern int gDemoLevel;
+// Set when the current level is a Driver 1 city (GameLevel 4-7). The engine
+// gates the D1 loading paths (lump counts, pallets, spooling, cell iteration,
+// surface queries, per-city table guards) on this; it is set in
+// State_GameStart from (GameLevel >= 4) and is 0 for every Driver 2 level.
+extern int gDriver1Level;
 // Set to 0 to skip the boot splash screens and intro FMV (straight to menu).
 extern int gPlayBootFMV;
 

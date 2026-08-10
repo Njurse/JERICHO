@@ -79,6 +79,8 @@ enum
 	JER_EVENT_PED_POSE,		/* DrawTanner: between SetupTannerSkeleton and
 								   newRotateBones (per-bone rotation window) */
 	JER_EVENT_FRONTEND,		/* frontend take-a-ride city confirm (defer hook) */
+	JER_EVENT_FRONTEND_SCREEN,	/* take-a-ride city screen setup/frame (button injection) */
+	JER_EVENT_LEVELFILE,		/* SetCityType: level file path resolution (rewrite/veto) */
 	JER_EVENT_PED_SKELETON,		/* player ped skeleton posed for draw -- modules
 								   may override bone rotations (arm holds) and
 								   read joint world positions (vJPos) */

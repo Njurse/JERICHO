@@ -24,6 +24,7 @@
 // Main CRUMPLE library import and my small math library (i dont see stdlib math just dr2math, clearly means if i need external libs i write them in an engine appropriate way)
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
 #include "jer_math.h"
 
 struct plotCarGlobals
@@ -1062,6 +1063,12 @@ char* LoadCarModelFromFile(char* dest, int modelNumber, int type)
 	char* mem;
 	char filename[64];
 
+	// [D1] Driver 1 cities have no per-city CARMODEL_*.MDL files — every
+	// car comes from the level's own LUMP_CAR_MODELS, so the file fallback
+	// is skipped (LevelNames[GameLevel] would be the D1 folder anyway).
+	if (gDriver1Level)
+		return NULL;
+
 	sprintf(filename, "LEVELS\\%s\\CARMODEL_%d_%s.MDL", LevelNames[GameLevel], modelNumber, CarModelTypeNames[type - 1]);
 	if (FileExists(filename))
 	{
@@ -1414,6 +1421,15 @@ void ProcessPalletLump(char *lump_ptr, int lump_size)
 	int tpageindex;
 	int total_cluts;
 	int clut_number;
+
+	// JERICHO-HOOK: Driver 1 pallet lumps use 3-int entries
+	// {palette, texnum, tpage} with the clut always inline and a
+	// count-bounded walk — handled by the D1 library.
+	if (gDriver1Level)
+	{
+		jer_d1_process_pallet(lump_ptr);
+		return;
+	}
 
 	total_cluts = *(int*)lump_ptr;
 	

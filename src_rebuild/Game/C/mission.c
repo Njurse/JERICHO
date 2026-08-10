@@ -19,6 +19,7 @@
 #include "scores.h"
 #include "ai.h"
 #include "main.h"
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
 #include "mc_snd.h"
 #include "cop_ai.h"
 #include "gamesnd.h"
@@ -498,7 +499,16 @@ void LoadMission(int missionnum)
 	gMultiplayerLevels = (MissionHeader->region != 0);
 	doSpooling = (MissionHeader->region == 0);
 	Mission.active = 1;
-	GameLevel = MissionHeader->city;
+
+	// [D1] Driver 1 take-a-ride cities (GameLevel 4-7) must NOT be
+	// overwritten by the D2 mission header — the computed take-a-ride
+	// mission number for a D1 city lands in the D2 multiplayer range,
+	// which would reset GameLevel to Chicago and flip gMultiplayerLevels.
+	if (!gDriver1Level)
+		GameLevel = MissionHeader->city;
+
+	jer_d1_log("[d1] LoadMission: mission=%d GameLevel=%d gMultiplayerLevels=%d\n",
+		gCurrentMissionNumber, GameLevel, gMultiplayerLevels);
 
 	// player start position init
 	if(!_CutRec_InitMission(filename))

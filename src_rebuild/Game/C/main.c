@@ -2,6 +2,7 @@
 #include "main.h"
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
 #include "ASM/rndrasm.h"
@@ -184,6 +185,7 @@ void InitModelNames(void)
 }
 
 int gDemoLevel = 0;
+int gDriver1Level = 0;	// 1 while a Driver 1 city level is the active level
 
 // [D] [T]
 void ProcessLumps(char* lump_ptr, int lump_size)
@@ -195,8 +197,30 @@ void ProcessLumps(char* lump_ptr, int lump_size)
 	int* ptr;
 
 	int numLumps = -1;
+	int d1Lumps = -1;	// Driver 1 section lump count (no 0xff terminator)
 
 	quit = 0;
+
+	// JERICHO-HOOK: Driver 1 sections begin with a 32-bit lump count
+	// (Driver 2 sections are terminated by a 0xff lump instead).
+	if (gDriver1Level)
+	{
+		d1Lumps = jer_d1_lump_count(lump_ptr);
+
+		if (d1Lumps > 0)
+			lump_ptr += 4;
+
+		jer_d1_log("[d1] ProcessLumps: count=%d first=(%d,%d) next=(%d,%d)\n",
+			d1Lumps,
+			*(int*)lump_ptr, *(int*)(lump_ptr + 4),
+			*(int*)(lump_ptr + 8), *(int*)(lump_ptr + 12));
+	}
+	else
+	{
+		printInfo("[d1] ProcessLumps: D2 mode, first=(%d,%d)\n",
+			*(int*)lump_ptr, *(int*)(lump_ptr + 4));
+	}
+
 	do {
 		lump_type = *(int*)lump_ptr;
 		seg_size = *(int*)(lump_ptr + 4);
@@ -311,6 +335,9 @@ void ProcessLumps(char* lump_ptr, int lump_size)
 		{
 			printInfo("LUMP_JUNCTIONS: size: %d\n", seg_size);
 			ProcessJunctionsLump((char*)ptr, seg_size);
+
+			if (gDriver1Level)
+				jer_d1_process_junctions((char*)ptr, seg_size);
 		}
 		else if (lump_type == LUMP_CAR_MODELS)
 		{
@@ -336,16 +363,25 @@ void ProcessLumps(char* lump_ptr, int lump_size)
 		{
 			printInfo("LUMP_ROADS: size: %d\n", seg_size);
 			ProcessRoadsLump((char*)ptr, seg_size);
+
+			if (gDriver1Level)
+				jer_d1_process_roads((char*)ptr, seg_size);
 		}
 		else if (lump_type == LUMP_ROADBOUNDS)
 		{
 			printInfo("LUMP_ROADBOUNDS: size: %d\n", seg_size);
 			ProcessRoadBoundsLump((char*)ptr, seg_size);
+
+			if (gDriver1Level)
+				jer_d1_process_roadbounds((char*)ptr, seg_size);
 		}
 		else if (lump_type == LUMP_JUNCBOUNDS)
 		{
 			printInfo("LUMP_JUNCBOUNDS: size: %d\n", seg_size);
 			ProcessJuncBoundsLump((char*)ptr, seg_size);
+
+			if (gDriver1Level)
+				jer_d1_process_juncbounds((char*)ptr, seg_size);
 		}
 		else if (lump_type == LUMP_SUBDIVISION)
 		{
@@ -355,6 +391,9 @@ void ProcessLumps(char* lump_ptr, int lump_size)
 		else if (lump_type == LUMP_ROADSURF)
 		{
 			printInfo("LUMP_ROADSURF: size: %d\n", seg_size);
+
+			if (gDriver1Level)
+				jer_d1_process_roadsurf((char*)ptr, seg_size);
 		}
 		else if (lump_type == LUMP_MODELNAMES)
 		{
@@ -379,7 +418,15 @@ void ProcessLumps(char* lump_ptr, int lump_size)
 		if (quit)
 			return;
 
-		numLumps--;
+		if (gDriver1Level)
+		{
+			if (--d1Lumps <= 0)
+				return;
+		}
+		else
+		{
+			numLumps--;
+		}
 	} while (numLumps != 0);
 }
 
@@ -461,7 +508,8 @@ void LoadGameLevel(void)
 void State_GameInit(void* param)
 {
 	STREAM_SOURCE* plStart;
-	int i, musicType;
+	int i;
+	int musicType = 0;
 	char padid;
 
 	if (NewLevel)
@@ -588,6 +636,12 @@ void State_GameInit(void* param)
 
 		if ((gCurrentMissionNumber & 1U) != 0)
 			musicType = 7;
+	}
+	else if (gDriver1Level)
+	{
+		// [D1] Driver 1 cities: use the D2 track list as a placeholder
+		// (D1MUSIC.BIN support could map these to the D1 soundtrack).
+		musicType = (GameLevel - 4) & 7;
 	}
 
 	InitMusic(musicType);
@@ -1800,11 +1854,17 @@ static int BootParseLevel(const char* s)
 	if (BootEq(s, "vegas") || BootEq(s, "lasvegas")) return 2;
 	if (BootEq(s, "rio")) return 3;
 
+	// [D1] Driver 1 cities (GameLevel 4-7)
+	if (BootEq(s, "miami")) return 4;
+	if (BootEq(s, "frisco") || BootEq(s, "sanfrancisco") || BootEq(s, "sf")) return 5;
+	if (BootEq(s, "la") || BootEq(s, "losangeles")) return 6;
+	if (BootEq(s, "newyork") || BootEq(s, "ny")) return 7;
+
 	if (s[0] >= '0' && s[0] <= '9')
 	{
 		int v = atoi(s);
 
-		if (v >= 0 && v <= 3)
+		if (v >= 0 && v <= 7)
 			return v;
 	}
 
@@ -2407,7 +2467,10 @@ int redriver2_main(int argc, char** argv)
 		NumPlayers = 1;
 
 		{
-			static const char* bootLevelNames[4] = { "chicago", "havana", "lasvegas", "rio" };
+			static const char* bootLevelNames[8] = {
+				"chicago", "havana", "lasvegas", "rio",
+				"miami", "frisco", "la", "newyork"	// [D1]
+			};
 
 			printInfo("[boot] frontend bypass: level=%d (%s) gamemode=%d car=%d time=%d weather=%d onfoot=%d\n",
 				gBootLevel, bootLevelNames[gBootLevel], (int)GameType,

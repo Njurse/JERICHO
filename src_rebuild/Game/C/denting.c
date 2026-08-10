@@ -2,6 +2,7 @@
 #include "denting.h"
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
 #include "system.h"
 #include "mission.h"
 #include "cars.h"
@@ -504,6 +505,11 @@ void SetupSpecDenting(char *loadbuffer)
 // [D] [T]
 void LoadDenting(int level)
 {
+	// [D1] Driver 1 cities have no .DEN dent files; damage stays
+	// non-deforming for those cities.
+	if (gDriver1Level)
+		return;
+
 	LoadfileSeg(DentingFiles[level], (char*)_other_buffer, 0, 12727);
 	ProcessDentLump((char*)_other_buffer, 0);
 }

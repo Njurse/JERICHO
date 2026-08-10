@@ -51,8 +51,8 @@ static int LevelhacksOnFrontend(void* userdata, void* args)
 
 	(void)userdata;
 
-	if (a->gameType != GAME_TAKEADRIVE || gLhDone)
-		return JER_RESULT_CONTINUE;
+	if (a->gameType != GAME_TAKEADRIVE || gLhDone || a->gameLevel >= 4)
+		return JER_RESULT_CONTINUE;	/* [D1] Driver 1 cities are handled by the driver1 mod */
 
 	/* defer on EVERY confirm until the mod starts the game — the stock
 	 * take-a-ride would otherwise slip through on the next CROSS */

@@ -8,6 +8,7 @@
 #include "mission.h"
 #include "handling.h"
 #include "main.h"
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
 #include "ASM/d2mapasm.h"
 
 sdPlane default_plane = { SURF_CONCRETE, 0, 0, 0, 2048 };
@@ -333,6 +334,12 @@ sdPlane* sdGetCell(VECTOR *pos)
 #ifndef PSX
 	if (gDemoLevel)
 		return sdGetCell_alpha16(pos);
+
+	// [D1] Driver 1 has no PVS/BSP heightmap — the height comes from the
+	// D1 road map via FindSurfaceD2; this query returns flat concrete so
+	// the D2-only readers (AI, events) stay safe.
+	if (gDriver1Level)
+		return &default_plane;
 #endif
 
 	sdLevel = 0;
@@ -460,6 +467,10 @@ int RoadInCell(VECTOR *pos)
 	{
 		return RoadInCell_alpha16(pos);
 	}
+
+	// [D1] D1 roads are parsed but not wired into the D2 road tables.
+	if (gDriver1Level)
+		return 0;
 #endif
 
 	cellPos.x = pos->vx - 512;
@@ -535,6 +546,17 @@ int MapHeight(VECTOR *pos)
 {
 	sdPlane *plane;
 
+	// [D1] height from the D1 road map
+	if (gDriver1Level)
+	{
+		int nx, ny, nz, y, surface;
+
+		jer_d1_find_surface(pos->vx, pos->vy, pos->vz,
+			&nx, &ny, &nz, &y, &surface);
+
+		return y;
+	}
+
 	plane = sdGetCell(pos);
 
 	if (plane)
@@ -544,9 +566,50 @@ int MapHeight(VECTOR *pos)
 }
 
 // [D] [T]
+static sdPlane gDriver1SurfacePlane;	// stable storage for the D1 plane
+
 void FindSurfaceD2(VECTOR *pos, VECTOR *normal, VECTOR *out, sdPlane **plane)
 {
 	sdPlane* pl;
+
+	// JERICHO-HOOK: Driver 1 cities use the D1 road-map height query
+	// (the D2 PVS/BSP heightmap never gets spooled for them).
+	if (gDriver1Level)
+	{
+		int nx, ny, nz, y, surface;
+
+		jer_d1_find_surface(pos->vx, pos->vy, pos->vz,
+			&nx, &ny, &nz, &y, &surface);
+
+		gDriver1SurfacePlane.surface = (short)surface;
+		gDriver1SurfacePlane.a = (short)(nx >> 2);
+		gDriver1SurfacePlane.b = (short)(ny >> 2);
+		gDriver1SurfacePlane.c = (short)(nz >> 2);
+		gDriver1SurfacePlane.d = y;
+
+		pl = &gDriver1SurfacePlane;
+
+		*plane = pl;
+		out->vx = pos->vx;
+		out->vz = pos->vz;
+		out->vy = y;
+
+		if (pl->b == 0)
+		{
+			normal->vx = 0;
+			normal->vy = 4096;
+			normal->vz = 0;
+		}
+		else
+		{
+			normal->vx = (int)pl->a >> 2;
+			normal->vy = (int)pl->b >> 2;
+			normal->vz = (int)pl->c >> 2;
+		}
+
+		return;
+	}
+
 	pl = sdGetCell(pos);
 
 	*plane = pl;

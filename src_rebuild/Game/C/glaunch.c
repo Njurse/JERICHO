@@ -3,6 +3,7 @@
 
 #include "system.h"
 #include "main.h"
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
 #include "E3stuff.h"
 #include "pad.h"
 #include "sound.h"
@@ -145,6 +146,18 @@ void RestoreGameVars()
 // [D] [T]
 void State_GameStart(void* param)
 {
+	// JERICHO-HOOK: Driver 1 cities are GameLevel 4-7. The whole D1 loading
+	// path (lump counts, pallets, spooling, cell iteration, surface queries,
+	// per-city table guards) keys off this flag; it must be set before the
+	// level load runs in State_GameInit. Driver 1 has no night mode.
+	gDriver1Level = (GameLevel >= 4);
+
+	if (gDriver1Level)
+		gWantNight = 0;
+
+	jer_d1_log("[d1] State_GameStart: GameLevel=%d gDriver1Level=%d gWantNight=%d\n",
+		GameLevel, gDriver1Level, gWantNight);
+
 	if (GameType != GAME_CONTINUEMISSION &&
 		GameType != GAME_MISSION &&
 		GameType != GAME_REPLAYMISSION)
@@ -179,6 +192,14 @@ void State_GameStart(void* param)
 				gCurrentMissionNumber = 58;
 
 			gCurrentMissionNumber += GameLevel * 2 + gWantNight + gSubGameNumber * 440;
+
+			// [D1] Driver 1 cities (GameLevel 4-7) would land in the D2
+			// multiplayer mission range (58+); remap them onto the D2
+			// single-player take-a-ride missions so the mission header
+			// keeps spooling/multiplayer flags sane (GameLevel itself is
+			// protected in LoadMission).
+			if (gDriver1Level)
+				gCurrentMissionNumber = 50 + (GameLevel - 4) * 2 + gWantNight;
 
 			SetState(STATE_GAMELAUNCH);
 		

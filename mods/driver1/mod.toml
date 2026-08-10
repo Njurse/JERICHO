@@ -1,0 +1,7 @@
+id = "driver1"
+name = "Driver 1 Cities"
+version = "1.0.0"
+author = "DeepSeek"
+description = "Take-a-Ride Driver 1 support: adds a 'Driver 1 Cities...' page (Miami, San Francisco, Los Angeles, New York) to the take-a-ride city select and loads the Driver 1 PS1 level files (DRIVER folder) with on-foot support. Requires the Driver 1 data; the page is hidden when the files are missing."
+dependencies = []
+default-enabled = true

@@ -263,6 +263,32 @@ typedef struct JER_ARGS_FRONTEND
 	int defer;		/* out: 1 = the module handles the start itself */
 } JER_ARGS_FRONTEND;
 
+/* JER_EVENT_FRONTEND_SCREEN — fired from the take-a-ride city screen
+ * (CutSceneCitySelectScreen): bSetup = 1 when the screen is entered/set up
+ * (modules may inject extra buttons into the live screen data), bSetup = 0
+ * every following frame. screen is the PSXSCREEN* being shown; numButtons
+ * is the current button count (a module may raise it, max 8). */
+typedef struct JER_ARGS_FRONTEND_SCREEN
+{
+	int bSetup;		/* 1 = screen setup, 0 = per-frame */
+	void* screen;		/* PSXSCREEN* */
+	int numButtons;		/* in/out: button count */
+} JER_ARGS_FRONTEND_SCREEN;
+
+/* JER_EVENT_LEVELFILE — fired from SetCityType() right before the level
+ * file is opened, after the engine resolved its default path. A module may
+ * rewrite filename (e.g. Driver 1 cities that live under a separate data
+ * folder) and/or veto the load (result < 0 — SetCityType then bails out
+ * instead of erroring, so a missing D1 install can be skipped gracefully). */
+typedef struct JER_ARGS_LEVELFILE
+{
+	int gameLevel;		/* in */
+	int cityType;		/* in: CITYTYPE_* being requested */
+	char* filename;		/* in/out: resolved path buffer */
+	int filenameSize;	/* in: capacity of filename */
+	int result;		/* out: 0 = continue, -1 = module vetoed the load */
+} JER_ARGS_LEVELFILE;
+
 /* JER_EVENT_PED_SKELETON — fired while the player ped is being drawn
  * (newShowTanner), after the skeleton was posed from motion data. A module
  * may override bone rotations in skel (BONE*) to force poses (e.g. an arm

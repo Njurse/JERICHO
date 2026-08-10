@@ -10,6 +10,7 @@
 #include "glaunch.h"
 #include "players.h"
 #include "main.h"
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
 
 char *map_lump = NULL;
 int initarea = 0;
@@ -63,7 +64,17 @@ void InitCellData(void)
 
 	// (mallocptr + 8192);
 	cell_objects = (PACKED_CELL_OBJECT*)D_MALLOC((num_straddlers + cell_objects_add[4]) * sizeof(PACKED_CELL_OBJECT));
-	cells = (CELL_DATA*)D_MALLOC(cell_slots_add[4] * sizeof(CELL_DATA));
+
+	// [D1] Driver 1 cells are 4-byte {num, next_ptr} entries (the linked
+	// list lives in the spooled region data), twice the D2 2-byte cell.
+	if (gDriver1Level)
+	{
+		cells = (CELL_DATA*)D_MALLOC(cell_slots_add[4] * sizeof(ushort) * 2);
+	}
+	else
+	{
+		cells = (CELL_DATA*)D_MALLOC(cell_slots_add[4] * sizeof(CELL_DATA));
+	}
 
 	D_MALLOC_END();
 
@@ -113,7 +124,18 @@ void ProcessMapLump(char* lump_ptr, int lump_size)
 	num_straddlers = *(int*)lump_ptr;
 
 	InitCellData();
-	memcpy((u_char*)cell_objects, (u_char*)lump_ptr + 4, num_straddlers * sizeof(PACKED_CELL_OBJECT));
+
+	if (gDriver1Level)
+	{
+		// [D1] D1 straddlers are 16-byte CELL_OBJECTs (absolute pos, raw
+		// model type); convert them into the engine's packed format.
+		jer_d1_convert_straddlers((u_char*)lump_ptr + 4, num_straddlers, (u_char*)cell_objects);
+		jer_d1_set_grid(cell_header.cell_size, cell_header.region_size);
+	}
+	else
+	{
+		memcpy((u_char*)cell_objects, (u_char*)lump_ptr + 4, num_straddlers * sizeof(PACKED_CELL_OBJECT));
+	}
 }
 
 
@@ -123,8 +145,17 @@ void NewProcessRoadMapLump(ROAD_MAP_LUMP_DATA *pRoadMapLumpData, char *pLumpFile
 	Getlong((char*)&pRoadMapLumpData->width, pLumpFile);
 	Getlong((char*)&pRoadMapLumpData->height, pLumpFile + 4);
 
-	pRoadMapLumpData->unitXMid = (pRoadMapLumpData->width + 1) * 512;
-	pRoadMapLumpData->unitZMid = pRoadMapLumpData->height * 512;
+	if (gDriver1Level)
+	{
+		// [D1] Driver 1 road maps use 750-unit half-cells
+		pRoadMapLumpData->unitXMid = (pRoadMapLumpData->width + 1) * 750;
+		pRoadMapLumpData->unitZMid = pRoadMapLumpData->height * 750;
+	}
+	else
+	{
+		pRoadMapLumpData->unitXMid = (pRoadMapLumpData->width + 1) * 512;
+		pRoadMapLumpData->unitZMid = pRoadMapLumpData->height * 512;
+	}
 }
 
 // [D] [T]
@@ -601,9 +632,9 @@ void GetPVSRegionCell2(int source_region, int region, int cell, char *output)
 	ushort length;
 
 #ifndef PSX
-	if (gDemoLevel)
+	if (gDemoLevel || gDriver1Level)
 	{
-		// don't draw non-loaded regions
+		// don't draw non-loaded regions (D1 levels carry no PVS data)
 		for (k = 0; k < pvs_square_sq; k++)
 			output[k] = 1;
 

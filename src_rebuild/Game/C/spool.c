@@ -23,6 +23,7 @@
 #include "civ_ai.h"
 #include "camera.h"
 #include "dr2roads.h"
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
 
 #define SPOOL_REGION	0
 #define SPOOL_TPAGE		1
@@ -1419,6 +1420,35 @@ void GotRegion(void)
 	}
 }
 
+// JERICHO-HOOK: Driver 1 region arrival — the spooled chunks were requested
+// in LoadRegionData's D1 branch (roadm RLE, roadh RLE, packed cell pointers,
+// cell data, cell objects). All have landed by the time this runs on PC
+// (SIMPLE_SPOOL = synchronous memcpy); decode the RLE streams and convert
+// the raw 16-byte cell objects into the engine's packed format. D1 levels
+// carry no PVS chunk, so the D2 PVS/RoadMapDataRegions hand-off is skipped.
+static void D1GotRegion(void)
+{
+	SPL_REGIONINFO* spool;
+	u_int target_barrel_reg;
+
+	spool = &spool_regioninfo[spool_regionpos];
+
+	unpack_cellpointers(spool->region_to_unpack, spool->target_barrel_region, spool->cell_addr);
+
+	target_barrel_reg = spool->target_barrel_region;
+	spool_regionpos++;
+
+	jer_d1_region_finish(target_barrel_reg);
+
+	loading_region[target_barrel_reg] = -1;
+
+	if (spool_regionpos == spool_regioncounter)
+	{
+		spool_regioncounter = 0;
+		spool_regionpos = 0;
+	}
+}
+
 #if defined(SIMPLE_SPOOL)
 extern char g_CurrentLevelFileName[64];
 extern char* g_CurrentLevelSpoolData;
@@ -1597,7 +1627,35 @@ int LoadRegionData(int region, int target_region)
 	offset = spoolptr->offset;
 
 #ifndef PSX
-	if (gDemoLevel)
+	if (gDriver1Level)
+	{
+		// [D1] region spool layout: roadm RLE, roadh RLE, packed cell
+		// pointers, 4-byte linked cell data, 16-byte cell objects.
+		// No PVS chunk. See jer_d1.c for the RLE decode + conversion.
+		int barrel = target_region;
+
+		if (jer_d1_region_begin(barrel, spoolptr->roadm_size, spoolptr->roadh_size, spoolptr->cell_data_size[2]) != 0)
+			return 0;
+
+		RequestSpool(SPOOL_REGION, 0, offset, spoolptr->roadm_size, jer_d1_region_roadm_scratch(barrel), NULL);
+		offset += spoolptr->roadm_size;
+
+		RequestSpool(SPOOL_REGION, 0, offset, spoolptr->roadh_size, jer_d1_region_roadh_scratch(barrel), NULL);
+		offset += spoolptr->roadh_size;
+
+		RequestSpool(SPOOL_REGION, 0, offset, spoolptr->cell_data_size[1], cell_buffer, NULL);
+		offset += spoolptr->cell_data_size[1];
+
+		// D1 cells are 4-byte entries: slot index * 2 u16s
+		RequestSpool(SPOOL_REGION, 0, offset, spoolptr->cell_data_size[0],
+			(char*)((ushort*)cells + cell_slots_add[target_region] * 2), NULL);
+		offset += spoolptr->cell_data_size[0];
+
+		RequestSpool(SPOOL_REGION, 0, offset, spoolptr->cell_data_size[2],
+			jer_d1_region_cell_object_scratch(barrel), D1GotRegion);
+		offset += spoolptr->cell_data_size[2];
+	}
+	else if (gDemoLevel)
 	{
 		RequestSpool(SPOOL_REGION, 0, offset, spoolptr->roadm_size, PVS_Buffers[target_region], NULL);
 		offset += spoolptr->roadm_size;
@@ -2241,6 +2299,14 @@ void PrepareSecretCar(void)
 void InitSpecSpool(void)
 {
 	allowSpecSpooling = 1;
+
+	// [D1] no special-car spooling for Driver 1 cities (the special car
+	// texture pages / models do not exist there)
+	if (gDriver1Level)
+	{
+		allowSpecSpooling = 0;
+		return;
+	}
 
 	if (GameType == GAME_SECRET)
 		allowSpecSpooling = 0;
