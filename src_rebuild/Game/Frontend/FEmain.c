@@ -1378,6 +1378,9 @@ void LoadFrontendScreens(int full)
 		// injects its "Driver 1 Cities…" entry into the city screen.
 		PsxScreens[JERICHO_D1_SCREEN] = PsxScreens[1];
 		PsxScreens[JERICHO_D1_SCREEN].userFunctionNum = 26;	// Driver1CitySelectScreen
+
+		jer_d1_log("[d1] LoadFrontendScreens: D1 page slot %d ready (userFunc %d)\n",
+			JERICHO_D1_SCREEN, PsxScreens[JERICHO_D1_SCREEN].userFunctionNum);
 	}
 #endif
 

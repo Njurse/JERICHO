@@ -148,6 +148,20 @@ Tests:
 - `src_rebuild/tests/d1/` — headless harness (d1test.c + d1stubs.c + bat),
   see §7
 
+## 5b. Car cosmetics compatibility
+
+Driver 1 stores car cosmetics inside the executable (there is no COSMETICS
+lump in the .LEV and no per-city .LCF like Driver 2). The ISO assets carry
+no profile data, so D1 traffic cars are filled with a sane default
+D2-format profile (`jer_d1_default_car_cosmetics`): D2-only fields that do
+not exist in the D1 profile (colBox, cog, mass, susCoeff, traction,
+wheelSize, twistRate, cPoints, powerRatio) get plausible defaults so
+collision, weight and suspension behave instead of being zeroed. The blob
+is laid out exactly as the engine's 236-byte CAR_COSMETICS
+(9 SVECTOR + wheelDisp[4] + 6 shorts + cPoints[12] + colBox + cog +
+4 shorts; SVECTOR = {vx, vy, vz, pad}). `LoadCosmetics` fills all resident
+slots + the 5 spec-vehicle slots and runs `FixCarCos` on each.
+
 ## 6. Known limitations (v1)
 
 - **No AI traffic routing**: D1 roads/junctions/bounds are parsed but the

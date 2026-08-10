@@ -881,3 +881,51 @@ int jer_d1_find_surface(int posX, int posY, int posZ,
 
 	return 1;
 }
+
+/* ------------------------------------------------------------------ */
+/* D1 car-cosmetics compatibility                                      */
+/*                                                                    */
+/* Driver 1 stores car cosmetics inside the executable (there is no   */
+/* COSMETICS lump in the .LEV, unlike Driver 2's per-city .LCF). The  */
+/* ISO assets therefore carry no profile data, so D1 traffic cars get */
+/* a sane default D2-format profile. D2-only fields (colBox, cog,     */
+/* mass, susCoeff, traction, wheelSize, twistRate, cPoints, power...) */
+/* that do not exist in the D1 profile are filled with defaults so    */
+/* collision, weight and suspension behave instead of being zeroed.   */
+/*                                                                    */
+/* The blob below is laid out exactly as the engine's 236-byte        */
+/* CAR_COSMETICS (9 SVECTOR + wheelDisp[4] + 6 shorts + cPoints[12] + */
+/* colBox + cog + 4 shorts; SVECTOR = {vx, vy, vz, pad}).             */
+/* ------------------------------------------------------------------ */
+
+void jer_d1_default_car_cosmetics(void* dest)
+{
+	static const short d1Cos[118] = {
+		/* headLight, frontInd, backInd, brakeLight, revLight,
+		 * policeLight, exhaust, smoke, fire */
+		 93,  14, -351, 0,    98,  56, -353, 0,
+		 97,  29,  368, 0,    70,  29,  368, 0,
+		 44,  32,  359, 0,    34,   0,    0, 0,
+		 68,  68,  359, 0,     0,  -4, -335, 0,
+		  0,  -4, -341, 0,
+		/* wheelDisp[4] */
+		  128, -30,  217, 0,   128, -30, -181, 0,
+		 -129, -30,  217, 0,  -129, -30, -181, 0,
+		/* extraInfo, powerRatio, cbYoffset, susCoeff, traction, wheelSize */
+		  0, 4096, 0, 4096, 4096, 52,
+		/* cPoints[12] (corners of the collision box; FixCarCos/
+		 * UpdateCarPoints recomputes the wheel points) */
+		 -126, 2,  370, 0,   125, 2,  370, 0,
+		 -126, 2, -370, 0,   125, 2, -370, 0,
+		 -126, 89, 370, 0,   125, 89, 370, 0,
+		 -126, 89, -370, 0,  125, 89, -370, 0,
+		 -126, 89, 370, 0,   125, 89, 370, 0,
+		 -126, 89, -370, 0,  125, 89, -370, 0,
+		/* colBox, cog */
+		  252, 178, 740, 0,    0, -10, 0, 0,
+		/* twistRateX/Y/Z, mass */
+		  11, 11, 11, 2200,
+	};
+
+	memcpy(dest, d1Cos, sizeof(d1Cos));
+}

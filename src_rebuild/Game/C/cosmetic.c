@@ -9,6 +9,7 @@
 #include "camera.h"
 #include "director.h"
 #include "main.h"
+#include "jer_d1.h"	// JERICHO-HOOK: Driver 1 asset support library
 
 char* CosmeticFiles[] = {
 	"LEVELS\\CHICAGO.LCF",
@@ -92,10 +93,33 @@ void ProcessCosmeticsLump(char *lump_ptr, int lump_size)
 // [D] [T]
 void LoadCosmetics(int level)
 {
-	// [D1] Driver 1 cities have no .LCF cosmetic files; the cars use their
-	// default (zeroed) cosmetics until a D1-compat cosmetics path exists.
+	int i;
+
+	// [D1] Driver 1 cities have no .LCF cosmetic files (Driver 1 stored
+	// car cosmetics in the executable). Fill a D2-format compat profile
+	// instead so D1 traffic cars get real collision boxes, mass,
+	// suspension and wheel data (see jer_d1_default_car_cosmetics).
 	if (gDriver1Level)
+	{
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		{
+			if (residentCarModels[i] == -1)
+				continue;
+
+			jer_d1_default_car_cosmetics(&car_cosmetics[i]);
+			FixCarCos(&car_cosmetics[i], residentCarModels[i]);
+		}
+
+#if ENABLE_GAME_FIXES
+		for (i = 0; i < 5; i++)
+			jer_d1_default_car_cosmetics(&levelSpecCosmetics[i]);
+#endif
+
+		jer_d1_log("[d1] LoadCosmetics: D1 compat profiles filled (%d slots)\n",
+			MAX_CAR_RESIDENT_MODELS);
+
 		return;
+	}
 
 	LoadfileSeg(CosmeticFiles[level], (char*)_other_buffer, 0, 3120);
 	ProcessCosmeticsLump((char*)_other_buffer, 0);

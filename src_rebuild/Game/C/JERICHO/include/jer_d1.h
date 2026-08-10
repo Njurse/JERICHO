@@ -50,6 +50,13 @@ int jer_d1_lump_count(const void* section);
 /* unbuffered D1 trace (survives crashes; goes to d1_debug.log) */
 void jer_d1_log(const char* fmt, ...);
 
+/* D1 car-cosmetics compatibility: fills a 160-byte D2-format
+ * CAR_COSMETICS profile (D2 fields D1 lacks get sane defaults so D1
+ * traffic cars have real collision boxes, mass, suspension and wheel
+ * data instead of all-zero structs). dest must hold 160 bytes. */
+#define JER_D1_CAR_COSMETICS_SIZE 160
+void jer_d1_default_car_cosmetics(void* dest);
+
 /* D1 car/ped palette lump (3-int entries, clut inline) -> engine civ_clut */
 void jer_d1_process_pallet(const void* lump);
 
