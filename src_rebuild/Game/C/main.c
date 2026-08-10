@@ -2132,10 +2132,33 @@ int redriver2_main(int argc, char** argv)
 	if (gPlayBootFMV)
 #endif
 	{
+#if !defined(PSX) && USE_PC_FILESYSTEM
+		// The intro FMV path (prebuilt VideoPlayer) falls back to the CD
+		// filesystem and crashes with a NULL call when the CD image is
+		// absent ("install/Driver2CD1.bin" not found in the log). Skip the
+		// movie in that case so booting without the CD image still reaches
+		// the frontend; with the image present the FMVs play as before.
+		{
+			FILE* fp = fopen("install\\Driver2CD1.bin", "rb");
+
+			if (fp == NULL)
+			{
+				jer_d1_log("[d1] boot: CD image not found, skipping intro FMV\n");
+				gPlayBootFMV = 0;
+			}
+			else
+			{
+				fclose(fp);
+			}
+		}
+#endif
 		//PlayFMV(99);	// [A] don't show publisher logo
 
-		ShowHiresScreens(ScreenNames, 300, 0); // [A]
-		PlayFMV(0);		// play intro movie
+		if (gPlayBootFMV)
+		{
+			ShowHiresScreens(ScreenNames, 300, 0); // [A]
+			PlayFMV(0);		// play intro movie
+		}
 	}
 
 	CheckForCorrectDisc(0);
