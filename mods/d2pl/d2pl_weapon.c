@@ -297,110 +297,178 @@ int D2plAimCamera(void* args, int heading)
  * the ONLY effective rotation channel: the hook fires between
  * SetupTannerSkeleton and newRotateBones, so mutating the JOINT_1 (upper-
  * body root) rotation here propagates through the neck to the head, and
- * the arms follow because they hang off the same root. The HEAD is locked
- * to the torso (local yaw 0) so the walk/aim cycle can't turn it away. */
-static JER_BONE_ROT gSavedJoint1;	/* the shared motion buffer's original
-					   rotations (snapshotted at aim start,
-					   restored when aiming stops) */
-static JER_BONE_ROT gSavedHead;
-static JER_BONE_ROT* gSavedJoint1Slot;	/* the motion slot we last wrote */
-static JER_BONE_ROT* gSavedHeadSlot;
-static int gPoseSaved;
+ * the arms follow because they hang off the same root.
+ *
+ * HEAD CHANNEL WARNING: HEAD.pvRotation is DEAD — newRotateBones builds
+ * the head matrix from NECK.pvRotation.vy - pPed->head_rot (motion_c.c:
+ * 1419-1420) and never reads the leaf's own slot. The head lock therefore
+ * writes the NECK slot (aligned with the twisted torso) and zeroes
+ * pPed->head_rot (the stock L2/R2 look channel, TurnHead). Both are
+ * per-frame slots in the SHARED per-type motion buffer, so every touched
+ * slot is restored (see JERICHO/docs/ped-animation.md §7). */
+/* the rotation slots a pose touches, with their original values — they
+ * point into the SHARED per-type motion buffer (ped-animation.md §7), so
+ * every dirty slot must be restored or the walk cycle keeps the pose when
+ * the animation loops back to that frame. Restored every frame before the
+ * current slots are written, and again on the first non-posing frame. */
+#define D2PL_POSE_SLOT_MAX 4	/* JOINT_1 + NECK + weapon arm x2 */
+static struct
+{
+	JER_BONE_ROT* slot;
+	JER_BONE_ROT  saved;
+} gPoseSlots[D2PL_POSE_SLOT_MAX];
+static int gPoseSlotCount;
+
+static void D2plPoseRestoreAll(void)
+{
+	int i;
+
+	for (i = 0; i < gPoseSlotCount; i++)
+	{
+		if (gPoseSlots[i].slot != NULL)
+			*gPoseSlots[i].slot = gPoseSlots[i].saved;
+		gPoseSlots[i].slot = NULL;
+	}
+
+	gPoseSlotCount = 0;
+}
+
+static void D2plPoseTrack(JER_BONE_ROT* slot)
+{
+	if (slot == NULL)
+		return;
+
+	if (gPoseSlotCount >= D2PL_POSE_SLOT_MAX)
+	{
+		/* a dropped slot is never restored -> permanent corruption of the
+		 * shared motion buffer; make it loud instead of silent */
+		jer_log("[d2pl] pose: %d rotation slots touched (max %d) — pose will not restore cleanly\n",
+			gPoseSlotCount + 1, D2PL_POSE_SLOT_MAX);
+		return;
+	}
+
+	gPoseSlots[gPoseSlotCount].slot = slot;
+	gPoseSlots[gPoseSlotCount].saved = *slot;
+	gPoseSlotCount++;
+}
 
 int D2plOnPedPose(void* userdata, void* args)
 {
 	JER_ARGS_PED_POSE* a = (JER_ARGS_PED_POSE*)args;
-	JER_BONE_ROT* joint1;
-	JER_BONE_ROT* head;
+	WeaponBase* w = gCurrentWeapon;
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
+	JER_BONE_ROT* joint1 = NULL;
+	JER_BONE_ROT* neck = NULL;
+	JER_BONE_ROT* shoulder = NULL;
+	JER_BONE_ROT* elbow = NULL;
+	int left;
 
 	(void)userdata;
 
 	if (a->ped == NULL || a->skel == NULL)
 		return JER_RESULT_CONTINUE;
 
+	/* weapons are on-foot only: nothing to pose — restore any dirty slots */
+	if (w == NULL || player[0].playerCarId >= 0)
+	{
+		D2plPoseRestoreAll();
+		return JER_RESULT_CONTINUE;
+	}
+
+	/* the weapon hangs off whichever arm matches the camera shoulder
+	 * (the same convention poseArm/poseArmAim use) */
+	left = (w->shoulderSide > 0);
+
 	joint1 = jer_anim_bone_rotation(a->skel, JER_LIMB_JOINT_1);
-	head = jer_anim_bone_rotation(a->skel, JER_LIMB_HEAD);
+	neck = jer_anim_bone_rotation(a->skel, JER_LIMB_NECK);
+	shoulder = jer_anim_bone_rotation(a->skel, left ? JER_LIMB_LSHOULDER : JER_LIMB_RSHOULDER);
+	elbow = jer_anim_bone_rotation(a->skel, left ? JER_LIMB_LELBOW : JER_LIMB_RELBOW);
+
+	/* restore the slots dirtied LAST frame first, then snapshot + write
+	 * the CURRENT frame's slots: the pvRotation bytes point into the
+	 * SHARED per-type motion buffer and the animation advances the frame
+	 * every draw, so an un-restored write reappears when the cycle loops
+	 * back to that frame (and is visible to every ped sharing the type) */
+	D2plPoseRestoreAll();
+
+	/* arm pose: parent-relative vOffset written pre-newRotateBones, so
+	 * the engine composes it through the body + torso-twist chain — the
+	 * arm tracks the aim axis automatically while aiming */
+	if (gAiming)
+		w->poseArmAim(a->skel, pPed->dir.vy);
+	else
+		w->poseArm(a->skel, pPed->dir.vy);
+
+	/* zero the weapon-side arm ROTATIONS (slot-tracked + restored) so the
+	 * walk cycle's arm swing can't rotate the posed hand */
+	D2plPoseTrack(shoulder);
+	D2plPoseTrack(elbow);
+
+	if (shoulder != NULL)
+		shoulder->vx = shoulder->vy = shoulder->vz = 0;
+	if (elbow != NULL)
+		elbow->vx = elbow->vy = elbow->vz = 0;
 
 	if (gAiming)
 	{
-		/* the pvRotation bytes point into the SHARED per-type motion buffer,
-		 * and the walk cycle ADVANCES the motion frame during the aim — so
-		 * every slot we touch must be restored, or the twist persists in
-		 * the other frames. Restore the PREVIOUS aim frame’s slot first,
-		 * then snapshot + write the CURRENT one; the final slot is put
-		 * back on the first non-aim frame. */
-		if (gPoseSaved)
-		{
-			if (gSavedJoint1Slot != NULL)
-				*gSavedJoint1Slot = gSavedJoint1;
-			if (gSavedHeadSlot != NULL)
-				*gSavedHeadSlot = gSavedHead;
-			gPoseSaved = 0;
-		}
+		int aimYaw = (-camera_angle.vy) & 0xfff;
+
+		/* The torso faces the camera-forward (the back to the camera).
+		 * Engine convention (pedest.c: the forward branch moves along
+		 * dir.vy - 2048 and the model's face is -z): a body that FACES
+		 * the aim runs at dir = aimYaw - 2048, so the twist off the
+		 * body is the shortest signed angle DIFF(body, aimYaw - 2048),
+		 * clamped to the ~70 degree spine limit (796/4096). Beyond
+		 * that the BODY turns (the movement is full 360). The twist is
+		 * measured against the COMPOSED torso yaw (jer_anim_torso_yaw:
+		 * dir + ROOT + LOWERBACK animation yaws), so the walk cycle's
+		 * own torso sway can't push the aim axis off the camera line
+		 * (ped-animation.md §7). */
+		D2plPoseTrack(joint1);
+		D2plPoseTrack(neck);
 
 		if (joint1 != NULL)
-		{
-			gSavedJoint1 = *joint1;
-			gSavedJoint1Slot = joint1;
-		}
-		if (head != NULL)
-		{
-			gSavedHead = *head;
-			gSavedHeadSlot = head;
-		}
-		gPoseSaved = 1;
-
-		if (joint1 != NULL)
-		{
-			LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
-			int aimYaw = (-camera_angle.vy) & 0xfff;
-
-			/* The torso faces the camera-forward (the back to the camera).
-			 * Engine convention (pedest.c: the forward branch moves along
-			 * dir.vy - 2048 and the model’s face is -z): a body that FACES
-			 * the aim runs at dir = aimYaw - 2048, so the twist off the
-			 * body is the shortest signed angle DIFF(body, aimYaw - 2048),
-			 * clamped to the ~70 degree spine limit (796/4096). Beyond
-			 * that the BODY turns (the movement is full 360). */
 			joint1->vy = (short)jer_clamp_int(
-				DIFF_ANGLES(pPed->dir.vy, aimYaw - 2048), -796, 796);
-		}
+				jer_anim_twist_to_aim(a->skel, pPed->dir.vy, aimYaw), -796, 796);
 
-		/* head lock: keep the head aligned with the (rotated) torso */
-		if (head != NULL)
-			head->vy = 0;
-	}
-	else if (gPoseSaved)
-	{
-		/* the aim stopped: restore the LAST touched slot */
-		if (gSavedJoint1Slot != NULL)
-			*gSavedJoint1Slot = gSavedJoint1;
-		if (gSavedHeadSlot != NULL)
-			*gSavedHeadSlot = gSavedHead;
-		gPoseSaved = 0;
+		/* head lock: keep the head aligned with the (rotated) torso.
+		 * The NECK slot is the effective head-yaw channel (HEAD's own
+		 * slot is never read); zeroing it aims the head straight along
+		 * the twisted torso. head_rot is the stock L2/R2 look channel
+		 * (TurnHead, camera.c:440-465) — neutralize it so a held look
+		 * button can't turn the head while aiming. */
+		pPed->head_rot = 0;
+
+		if (neck != NULL)
+			neck->vy = 0;
 	}
 
 	/* bone debug: log the RELATIVE transform chain while aiming — the
-	 * ped's body yaw, the aim yaw, the diff written into the upper-body
-	 * root, and the root/head local rotations as the engine reads them.
-	 * Every transform here is LOCAL (parent-relative): the root matrix
-	 * carries pPed->dir, and each bone's pvRotation is its own yaw
-	 * relative to its parent. pdir is the engine's body heading
-	 * (pPed->dir.vy); pdir - 2048 is the movement heading. */
+	 * ped's body yaw, the COMPOSED torso yaw (dir + ROOT + LOWERBACK
+	 * animation yaws), the aim yaw, the head channels (NECK slot +
+	 * head_rot), and the written rotations (JOINT1 = the twist, which
+	 * should satisfy torso + twist ~= aimYaw - 2048 mod 4096; NECK and
+	 * the weapon-arm slots should read 0 while posing). Every transform
+	 * here is LOCAL (parent-relative): the root matrix carries
+	 * pPed->dir, and each bone's pvRotation is the yaw the engine
+	 * composes for that bone's CHILDREN. pdir is the engine's body
+	 * heading (pPed->dir.vy); pdir - 2048 is the movement heading. */
 	{
 		static int gBoneLogTimer;
 
 		if (--gBoneLogTimer <= 0 && gAiming)
 		{
-			LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
 			int aimYaw = (-camera_angle.vy) & 0xfff;
+			int torso = jer_anim_torso_yaw(a->skel, pPed->dir.vy);
 
 			gBoneLogTimer = 90;
 
-			jer_log("[d2pl] bone: pedDir=%d aim=%d diff=%d | JOINT1 rot=(%d,%d,%d) | HEAD rot=(%d,%d,%d)\n",
-				pPed->dir.vy, aimYaw, jer_anim_aim_diff(pPed->dir.vy, aimYaw),
+			jer_log("[d2pl] bone: pedDir=%d torso=%d aim=%d head_rot=%d | JOINT1 rot=(%d,%d,%d) | NECK rot=(%d,%d,%d) | SHOULDER rot=(%d,%d,%d) ELBOW rot=(%d,%d,%d)\n",
+				pPed->dir.vy, torso, aimYaw, pPed->head_rot,
 				joint1 ? joint1->vx : 0, joint1 ? joint1->vy : 0, joint1 ? joint1->vz : 0,
-				head ? head->vx : 0, head ? head->vy : 0, head ? head->vz : 0);
+				neck ? neck->vx : 0, neck ? neck->vy : 0, neck ? neck->vz : 0,
+				shoulder ? shoulder->vx : 0, shoulder ? shoulder->vy : 0, shoulder ? shoulder->vz : 0,
+				elbow ? elbow->vx : 0, elbow ? elbow->vy : 0, elbow ? elbow->vz : 0);
 		}
 	}
 
@@ -431,18 +499,13 @@ int D2plOnSkeleton(void* userdata, void* args)
 
 	if (a->phase == 0)
 	{
-		/* NOTE: the TORSO rotation no longer happens here — a pvRotation
-		 * write in this phase is DEAD (newRotateBones, the only reader,
-		 * already ran). The torso faces the camera in D2plOnPedPose (the
-		 * JER_EVENT_PED_POSE hook, which fires BEFORE newRotateBones). */
-
-		/* force the arm into a holding pose: override the accumulated
-		 * offsets of the upper arm / forearm / hand bones so the arm
-		 * extends forward. Values are in the ped's local frame. */
-		if (gAiming)
-			w->poseArmAim(a->skel, ((LPPEDESTRIAN)a->ped)->dir.vy);
-		else
-			w->poseArm(a->skel, ((LPPEDESTRIAN)a->ped)->dir.vy);
+		/* NOTE: the arm pose moved to D2plOnPedPose (JER_EVENT_PED_POSE,
+		 * BEFORE newRotateBones): it is written as parent-relative vOffset
+		 * + zeroed shoulder/elbow pvRotation slots, so the engine composes
+		 * it through the body + torso-twist chain (ped-animation.md §6).
+		 * Nothing happens here — a pvRotation write in this phase is DEAD
+		 * (newRotateBones, the only reader, already ran) and a vCurrPos
+		 * write would be a model-frame poke. */
 	}
 	else if (a->phase == 1 && !a->shadow)
 	{

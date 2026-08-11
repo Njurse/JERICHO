@@ -59,6 +59,23 @@ JER_BONE_ROT* jer_anim_bone_rotation(void* skel, int limb);
  * alignment. */
 int jer_anim_aim_diff(int bodyHeading, int aimYaw);
 
+/* the COMPOSED upper-body yaw — the direction the torso actually faces:
+ * bodyYaw + ROOT.pvRotation.vy + LOWERBACK.pvRotation.vy. The walk/run
+ * cycle's own torso sway composes into the upper-body frame (newRotateBones
+ * builds matrix(LOWERBACK) from ROOT.pvRotation and matrix(JOINT_1) from
+ * LOWERBACK.pvRotation; bReverseYRotation is 0 in normal play so the ROOT
+ * yaw is not negated). Measuring the aim twist against this instead of the
+ * raw body heading keeps the aim axis on the camera line even mid-stride. */
+int jer_anim_torso_yaw(void* skel, int bodyYaw);
+
+/* the twist to write into JOINT_1.pvRotation.vy so the upper body faces
+ * aimYaw (camera-forward), in the engine's model-face convention: a body
+ * that FACES the aim runs at dir = aimYaw - 2048 (pedest.c AnimatePed
+ * moves along dir.vy - 2048 and the model face is -z). Computed against
+ * the composed torso yaw, returned as the signed shortest path
+ * (-2048..2047); the caller clamps to the spine limit. */
+int jer_anim_twist_to_aim(void* skel, int bodyYaw, int aimYaw);
+
 #ifdef __cplusplus
 }
 #endif

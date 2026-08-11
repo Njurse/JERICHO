@@ -218,14 +218,18 @@ struct WeaponBone
 	MODEL** pModel;
 };
 
-/* --- arm-pose tuning (ped local frame, parent-relative offsets) --- */
+/* --- arm-pose tuning (torso-frame, parent-relative offsets) --- */
 /* The ped's skeleton offsets are single-digit units, so the pose values
  * are too: the arm reaches forward ~7 units from the shoulder at full
- * extension. The shoulder bone is also fixated at its rest offset
- * (vOffset) so the walk cycle can't swing the arm — the whole chain is
- * steadied. Each pose is ONE row below — to add a pose (e.g. a lowered
- * "ready" carry), add a D2PL_POSE row here and a method that calls
- * poseArmPose() with it. */
+ * extension. The pose is written as vOffset from the PED_POSE hook and
+ * the engine (newRotateBones) composes it through the body + torso-twist
+ * chain (ped-animation.md §6) — the offsets live in the TORSO frame, so
+ * the arm always reaches where the torso faces (the aim while aiming).
+ * The shoulder stays at its static rest offset and the shoulder/elbow
+ * ROTATION slots are zeroed by the pose handler, so the walk cycle can't
+ * swing the arm. Each pose is ONE row below — to add a pose (e.g. a
+ * lowered "ready" carry), add a D2PL_POSE row here and a method that
+ * calls poseArmPose() with it. */
 /* ------------------------------------------------------------------ */
 /* AXIS CONVENTIONS — read before touching any pose/camera offset.    */
 /*                                                                     */
@@ -236,10 +240,12 @@ struct WeaponBone
 /*     convention). The skeleton's vOffset/vCurrPos/vJPos and the      */
 /*     module's camPos->vy all use this inverted frame — the module    */
 /*     converts with `camPos->vy = -base[1] + offset`.                 */
-/*   * X/Z in the pose offsets are parent-relative; X mirrors with the */
-/*     shoulder side (left flips it), and D2plRotatePose() rotates the */
-/*     pair by the ped's facing (pPed->dir.vy) so the pose follows     */
-/*     his rotation. +Z in the pose reaches toward the facing.         */
+/*   * X/Z in the pose offsets are parent-relative, in the bone's frame: */
+/*     the shoulder's frame is the TORSO, so +Z reaches where the torso */
+/*     faces (the aim while aiming) and the chain (newRotateBones)     */
+/*     rotates the offsets by the body + torso twist automatically — no */
+/*     manual facing rotation (the old D2plRotatePose pre-rotation is   */
+/*     obsolete). X mirrors with the shoulder side (left flips it).     */
 /*     Therefore: elbowY +2 LOWERS the forearm (render y-down),        */
 /*     handY -1 raises it, and the hand Z must EXCEED the elbow Z for  */
 /*     the arm to extend (a hand Z <= elbow Z folds the arm back — the */
@@ -434,10 +440,10 @@ public:
 
 	virtual void onAmmoChanged(void) { /* HUD refresh hook */ }
 
-/* rotate a local (x, z) offset by the ped's facing yaw. newRotateBones
- * builds the skeleton's vCurrPos frame as the model rotated by dir.vy, so
- * the arm pose must be rotated the same way to point where Tanner faces.
- * Convention matches the engine: facing h -> forward = (RSIN h, RCOS h). */
+/* OBSOLETE since the arm pose moved to parent-relative vOffset (the
+ * engine composes it through the body + torso chain). Kept as the
+ * documented facing->model-frame conversion for any direct vCurrPos
+ * pokes: facing h -> forward = (RSIN h, RCOS h). */
 static inline void D2plRotatePose(int* px, int* pz, int h)
 {
 	int x = *px;
@@ -449,49 +455,40 @@ static inline void D2plRotatePose(int* px, int* pz, int h)
 	*pz = (-x * s + z * c) >> 12;
 }
 
-	/* force the arm into a holding pose (phase-0 skeleton hook). Override
-	 * to pose different bones or add recoil; the base fixates the shoulder
-	 * at its (facing-rotated) rest offset and reaches the arm forward and
-	 * up to hold the weapon — a local transform that follows Tanner's
-	 * rotation. `facing` is the ped's yaw (pPed->dir.vy, 0..4095).
-	 * poseArmPose() is the ONE shared implementation — the pose rows at
-	 * the top of this header are the only tuning needed for a new pose. */
+	/* force the arm into a holding pose (PED_POSE hook, pre-newRotateBones).
+	 * Armature-correct: the engine composes each bone as
+	 * parentWorld x Rot(parent.pvRotation) x Translate(bone.vOffset), so
+	 * writing the arm bones' vOffset (parent-relative, torso frame) makes
+	 * the whole chain follow the body + the JOINT_1 torso twist
+	 * automatically — no manual facing rotation, and the arm tracks the
+	 * aim axis while aiming. The shoulder keeps its static rest vOffset
+	 * (no write); the caller zeroes the shoulder/elbow ROTATION slots so
+	 * the walk cycle's swing can't rotate the posed hand. vOffset is
+	 * re-derived by SetupTannerSkeleton every draw, so these writes are
+	 * frame-local (no restore needed). `facing` is kept for the subclass
+	 * signature but unused by the base. */
 	virtual void poseArmPose(void* skelVoid, int left, int facing, const D2PL_POSE& pose)
 	{
 		WeaponBone* skel = (WeaponBone*)skelVoid;
-		int shoulder = left ? WL_LSHOULDER : WL_RSHOULDER;
 		int elbow = left ? WL_LELBOW : WL_RELBOW;
 		int hand = left ? WL_LHAND : WL_RHAND;
 		int side = left ? -1 : 1;
-		int sx, sz, ex, ez, hx, hz;
 
-		// --- Shoulder: Fixed at rest position ---
-		sx = skel[shoulder].vOffset.vx;
-		sz = skel[shoulder].vOffset.vz;
-		D2plRotatePose(&sx, &sz, facing);
-		skel[shoulder].vCurrPos.vx = sx;
-		skel[shoulder].vCurrPos.vy = skel[shoulder].vOffset.vy;
-		skel[shoulder].vCurrPos.vz = sz;
+		(void)facing;
 
-		// --- Elbow: Small forward offset ---
-		// Use a small, fixed offset (e.g., 20-50 units) to position the elbow.
-		// The pose values are treated as angles (0-4096), but we use them as
-		// small position offsets here.
-		ex = (pose.elbowX * side) / 64;  // Scale down to prevent folding
-		ez = pose.elbowZ / 64;
-		D2plRotatePose(&ex, &ez, facing);
-		skel[elbow].vCurrPos.vx = ex;
-		skel[elbow].vCurrPos.vy = -pose.elbowY; // Invert Y and scale
-		skel[elbow].vCurrPos.vz = ez;
+		/* shoulder: fixated at its static rest vOffset (no write — the
+		 * bind pose already put it there) */
 
-		// --- Hand: Further forward from the elbow ---
-		// Use a larger forward offset to extend the arm.
-		hx = (pose.handX * side)  ;  // Scale down
-		hz = pose.handZ ;
-		D2plRotatePose(&hx, &hz, facing);
-		skel[hand].vCurrPos.vx = hx;
-		skel[hand].vCurrPos.vy = -pose.handY; // Invert Y and scale
-		skel[hand].vCurrPos.vz = hz;
+		/* --- Elbow: up/forward from the shoulder (render y-down:
+		 * -elbowY raises the forearm) --- */
+		skel[elbow].vOffset.vx = pose.elbowX * side;
+		skel[elbow].vOffset.vy = -pose.elbowY;
+		skel[elbow].vOffset.vz = pose.elbowZ;
+
+		/* --- Hand: further forward (and up) from the elbow --- */
+		skel[hand].vOffset.vx = pose.handX * side;
+		skel[hand].vOffset.vy = -pose.handY;
+		skel[hand].vOffset.vz = pose.handZ;
 	}
 
 	virtual void poseArm(void* skelVoid, int facing)

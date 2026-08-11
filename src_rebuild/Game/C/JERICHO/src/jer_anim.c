@@ -18,3 +18,30 @@ int jer_anim_aim_diff(int bodyHeading, int aimYaw)
 
 	return d;
 }
+
+int jer_anim_torso_yaw(void* skel, int bodyYaw)
+{
+	JER_BONE_ROT* root = jer_anim_bone_rotation(skel, JER_LIMB_ROOT);
+	JER_BONE_ROT* lowerback = jer_anim_bone_rotation(skel, JER_LIMB_LOWERBACK);
+	int y = bodyYaw;
+
+	if (root != NULL)
+		y += root->vy;
+	if (lowerback != NULL)
+		y += lowerback->vy;
+
+	return y & 0xfff;
+}
+
+/* matches the validated baseline when the animation yaws are zero:
+ * DIFF_ANGLES(dir, aimYaw - 2048) = wrap((aimYaw - 2048) - dir) */
+int jer_anim_twist_to_aim(void* skel, int bodyYaw, int aimYaw)
+{
+	int torso = jer_anim_torso_yaw(skel, bodyYaw);
+	int d = ((aimYaw - 2048) - torso) & 0xfff;
+
+	if (d >= 2048)
+		d -= 4096;
+
+	return d;
+}
