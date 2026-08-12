@@ -37,6 +37,12 @@ int gAiming = 0;
 int gHandPos[3];		/* world RHAND position (muzzle origin) */
 int gAimPoint[3];	/* world aim point at weapon range */
 
+/* aim-line state (extern in d2pl.h): while aiming the module owns the aim
+ * heading/pitch — see the header comment */
+int gAimYaw = 0;
+int gAimPitch = 0;
+int gAimPitchTarget = 0;
+
 /* impact marker state */
 int gMarkerTimer;	/* frames left until the marker fades */
 int gMarkerPos[3];
@@ -159,10 +165,32 @@ void D2plLaserColor(CVECTOR* out)
 
 
 /* ================================================================== */
-/* Aim camera: the over-the-shoulder aim view + the aim-point evaluation  */
+/* Aim camera: the GTA4 over-the-shoulder aim view + the aim-line state */
 /* ================================================================== */
 
 int gAimLookBlend = 0;	/* 0 = settled (forward), 4096 = free-looking */
+
+/* aim pressed: snapshot the aim line from the CURRENT camera so entering
+ * aim never swings the view — the camera then eases (via D2plSmoothCamera)
+ * from the chase view into the shoulder rig while keeping the same look
+ * heading. Pitch is NORMALIZED (no free-look drift carryover). */
+void D2plAimEnter(PLAYER* lp)
+{
+	(void)lp;
+
+	gAimYaw = (-camera_angle.vy) & 0xfff;
+	gAimPitch = 0;
+	gAimPitchTarget = 0;
+	gYawSpeed = 0;
+}
+
+/* aim released: park the engine orbit at the last aim heading so the
+ * chase camera resumes FROM the aim view (orbit angle A puts the camera at
+ * A around the player and it LOOKS back, so look heading = A + 2048). */
+void D2plAimExit(PLAYER* lp)
+{
+	lp->cameraAngle = (gAimYaw - 2048) & 0xfff;
+}
 
 void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
 	int inCar, int baseDir, int camYaw, int gripping)
@@ -255,38 +283,94 @@ int D2plAimCamera(void* args, int heading)
 	PLAYER* lp = (PLAYER*)a->player;
 	VECTOR* camPos = (VECTOR*)a->cameraPosition;
 	SVECTOR* camAngle = (SVECTOR*)a->cameraAngle;
+	int* base = (int*)a->basePos;
+	VECTOR anchor;
+	VECTOR lookAt;
+	int baseY;
+	int ox, oy, oz;
+	int cosP, sinP;
+	int distH;
 
-		/* --- aiming: "orbit looking OUTWARD" — the view tilts with the
-		 * stick (camera-relative aim, crosshair centered on screen) and the
-		 * player sits over the shoulder; conventional shooter behavior --- */
-		camAngle->vx += gLookPitch;
+	(void)heading;
 
-		camPos->vx += (lp->pos[0] - camPos->vx) * AIM_PULL / 4096;
-		camPos->vz += (lp->pos[2] - camPos->vz) * AIM_PULL / 4096;
-
-		/* rebase into the module (negated) frame like the other branches —
-		 * the engine hands the aim path RAW y (camera.c:570), and the
-		 * shared smooth/cap/collision math below expects -rawY */
-		if (a->basePos != NULL)
-			camPos->vy = -((int*)a->basePos)[1] + AIM_HEIGHT;
-
-		camPos->vx += FIXEDH(RCOS(heading) * AIM_LATERAL * gS.shoulder);
-		camPos->vz += -FIXEDH(RSIN(heading) * AIM_LATERAL * gS.shoulder);
-
-		if (a->basePos != NULL)
-		{
-			int clip = D2plSmoothCamera(camPos, (int*)a->basePos, a->inCar, NULL);
-
-			D2plLogCamera(lp, a->baseDir, camPos, camAngle, clip);
-		}
-
-		SetGeomScreen(scr_z = gCameraDefaultScrZ + AIM_ZOOM);
-
-		gCurrentWeapon->aimPoint(gAimPoint);
-
-		a->override = 1;
-
+	/* the rig needs the chase anchor; without it let the stock camera stand */
+	if (base == NULL)
 		return JER_RESULT_CONTINUE;
+
+	/* --- GTA4 over-the-shoulder rig: an ABSOLUTE camera behind the
+	 * module's aim line (gAimYaw/gAimPitch), not a pull of the chase
+	 * position. The anchor is the character's torso; the camera sits
+	 * standoff behind, shoulder-lateral and slightly above, and looks at a
+	 * frame point AHEAD of the anchor so the character reads ~1/3 from the
+	 * screen edge with the aim line running camera -> frame point -> aim
+	 * point at weapon range. The pitch elevates the camera offset around
+	 * the anchor; the rendered view pitch is then FORCED to the module's
+	 * gAimPitch (see below) so the stick pitch and the rendered angle stay
+	 * one. --- */
+	baseY = -base[1];	/* camera-frame anchor y (base y is RAW) */
+
+	anchor.vx = base[0];
+	anchor.vy = baseY - FOOT_AIM_HEIGHT;	/* the torso */
+	anchor.vz = base[2];
+
+	/* offset in the aim frame: behind (-forward) + lateral (shoulder
+	 * side) + height above the anchor (render y-down: negative = up) */
+	ox = -FIXEDH(RSIN(gAimYaw) * AIM_STANDOFF)
+		+ FIXEDH(RCOS(gAimYaw) * AIM_SHOULDER_LAT * gS.shoulder);
+	oz = -FIXEDH(RCOS(gAimYaw) * AIM_STANDOFF)
+		- FIXEDH(RSIN(gAimYaw) * AIM_SHOULDER_LAT * gS.shoulder);
+	oy = AIM_HEIGHT;
+
+	/* pitch-elevate the offset around the anchor: the camera rises/falls
+	 * in the vertical plane while staying on the behind-shoulder line
+	 * (distH*sinP vertical swing; deliberately NO horizontal spill — the
+	 * shoulder camera must not drift sideways off the aim axis) */
+	cosP = RCOS(gAimPitch);
+	sinP = RSIN(gAimPitch);
+	distH = SquareRoot0(ox * ox + oz * oz);
+
+	camPos->vx = anchor.vx + FIXEDH(ox * cosP);
+	camPos->vz = anchor.vz + FIXEDH(oz * cosP);
+	camPos->vy = anchor.vy + FIXEDH(oy * cosP) - FIXEDH(distH * sinP);
+
+	/* look at a frame point ahead of the anchor along the aim heading
+	 * (slightly above the anchor, so the character sits low/off-centre in
+	 * the frame like GTA4) */
+	lookAt.vx = anchor.vx + FIXEDH(RSIN(gAimYaw) * AIM_FRAME_DIST);
+	lookAt.vz = anchor.vz + FIXEDH(RCOS(gAimYaw) * AIM_FRAME_DIST);
+	lookAt.vy = anchor.vy - AIM_FRAME_UP;
+
+	/* smooth + collision-push + terrain-cap the position FIRST (the shared
+	 * rig), then aim at the frame point from the smoothed position — the
+	 * same order as the normal path, so the enter/exit transitions blend
+	 * through D2plSmoothCamera's bounded-rate position. PointAtTarget
+	 * derives the yaw from the frame point; its derived PITCH is
+	 * deliberately overridden with the module's aim pitch (the lookAt
+	 * geometry pitch would be damped by the camera's own elevation — the
+	 * reticle line and the rendered view must be one). */
+	{
+		int clip = D2plSmoothCamera(camPos, base, a->inCar, NULL);
+
+		PointAtTarget(camPos, &lookAt, camAngle);
+		camAngle->vx = (short)(-gAimPitch & 0xfff);
+
+		D2plLogCamera(lp, a->baseDir, camPos, camAngle, clip);
+	}
+
+	/* aim FOV: the base-FOV override is RESPECTED (the old code used
+	 * gCameraDefaultScrZ, silently discarding the user's setting) plus the
+	 * aim zoom for the focus effect */
+	{
+		int fovScrZ = gS.fovEnabled ? D2plFovScrZ(gS.fovDeg) : gCameraDefaultScrZ;
+
+		SetGeomScreen(scr_z = fovScrZ + AIM_ZOOM);
+	}
+
+	gCurrentWeapon->aimPoint(gAimPoint);
+
+	a->override = 1;
+
+	return JER_RESULT_CONTINUE;
 }
 
 /* ================================================================== */
@@ -411,7 +495,7 @@ int D2plOnPedPose(void* userdata, void* args)
 
 	if (gAiming)
 	{
-		int aimYaw = (-camera_angle.vy) & 0xfff;
+		int aimYaw = gAimYaw;
 
 		/* The torso faces the camera-forward (the back to the camera).
 		 * Engine convention (pedest.c: the forward branch moves along
@@ -458,7 +542,7 @@ int D2plOnPedPose(void* userdata, void* args)
 
 		if (--gBoneLogTimer <= 0 && gAiming)
 		{
-			int aimYaw = (-camera_angle.vy) & 0xfff;
+			int aimYaw = gAimYaw;
 			int torso = jer_anim_torso_yaw(a->skel, pPed->dir.vy);
 
 			gBoneLogTimer = 90;
@@ -597,12 +681,26 @@ void D2plWeaponFrame(PLAYER* lp, int pad, int padNew)
 	/* weapons only work on foot */
 	if (lp->playerCarId >= 0)
 	{
+		if (gAiming)
+			D2plAimExit(lp);	/* got in a car while aiming: release the aim line */
+
 		gAiming = 0;
 		return;
 	}
 
-	/* L1 = aim (only with a weapon equipped) */
-	gAiming = (gCurrentWeapon != NULL && (pad & MPAD_L1) != 0);
+	/* L1 = aim (only with a weapon equipped); edge-detect the enter/exit
+	 * so the aim line snapshots at entry (no view swing) and the orbit
+	 * parks at the last aim heading on exit (no snap back) */
+	{
+		int newAiming = (gCurrentWeapon != NULL && (pad & MPAD_L1) != 0);
+
+		if (newAiming && !gAiming)
+			D2plAimEnter(lp);
+		else if (!newAiming && gAiming)
+			D2plAimExit(lp);
+
+		gAiming = newAiming;
+	}
 
 #ifndef PSX
 		/* laser-sight line from Tanner's hand to the evaluated aim point

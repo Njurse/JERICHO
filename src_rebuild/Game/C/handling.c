@@ -334,7 +334,7 @@ void GlobalTimeStep(void)
 		cp->hd.aacc[1] = 0;
 		cp->hd.aacc[2] = 0;
 
-		if (st->n.linearVelocity[1] > 200000) // reduce vertical velocity
+		if (st->n.linearVelocity[1] > 2000000) // reduce vertical velocity
 			st->n.linearVelocity[1] = (st->n.linearVelocity[1] * 3) / 4;
 
 		if (cp->hd.speed == 0)

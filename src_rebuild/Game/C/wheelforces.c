@@ -65,11 +65,11 @@ void GetFrictionScalesDriver1(CAR_DATA* cp, CAR_LOCALS* cl, int* frontFS, int* r
 	hp = &handlingType[cp->hndType];
 
 	if (cp->thrust < 0)
-		*frontFS = 1453;
+		*frontFS = 1453*0.8;
 	else if (cp->thrust < 1)
-		*frontFS = 937;
+		*frontFS = 937 * 0.8;
 	else
-		*frontFS = 820;
+		*frontFS = 820 * 0.8;
 
 	autoBrake = cp->hd.autoBrake;
 
@@ -126,7 +126,7 @@ void GetFrictionScalesDriver1(CAR_DATA* cp, CAR_LOCALS* cl, int* frontFS, int* r
 
 	if (cp->hd.wheel_speed < 0 && cp->thrust > -1 && cp->handbrake == 0)
 	{
-		*frontFS -= 400;
+		*frontFS -= 400*0.8;
 	}
 
 	*rearFS = 0x780 - *frontFS;
@@ -191,6 +191,7 @@ void ConvertTorqueToAngularAcceleration(CAR_DATA* cp, CAR_LOCALS* cl)
 
 		jerArgs.carId = cp->id;
 		jerArgs.result = NULL;
+		// To do: Add this to some common hook for wheel manipulation/vehicle element manipulation and avoid using this hook name as its too CRUMPLE specific.
 		jer_fire(JER_EVENT_GET_WHEEL_BEND, &jerArgs);
 		bend = (SVECTOR*)jerArgs.result;
 	}

@@ -292,67 +292,150 @@ static int D2plOnLook(void* userdata, void* args)
 		gMoveRefActive = 1;
 
 		{
-			int yawMax = (CAM_ORBIT_SPEED_MAX * gS.sensX) / 64;
-			int pitchMax = (CAM_PITCH_MAX * gS.sensY) / 64;
-			int sX = gS.invertH ? -stickX : stickX;
-			int sY = gS.invertV ? -stickY : stickY;
-			int aimDiv = gAiming ? AIM_LOOK_DIV : 1;	/* slower while aiming */
-			int targetSpeed;
+			if (gAiming)
+			{
+				/* AIM: the right stick drives the module's aim line
+				 * (gAimYaw/gAimPitch) — the reticle moves first, the camera
+				 * follows (the free-aim box lands in the aim phase). The
+				 * movement reference freezes to the aim axis so panning the
+				 * aim can't bend the running line. */
+				int yawMax = (CAM_ORBIT_SPEED_MAX * gS.sensX) / 64;
+				int pitchMax = (AIM_PITCH_MAX * gS.sensY) / 64;
+				int sX = gS.invertH ? -stickX : stickX;
+				int sY = gS.invertV ? -stickY : stickY;
+				int targetSpeed;
 
-			/* orbit: the angle moves by a momentum-driven speed. The speed
-			 * ramps from 0 up to the stick's max (proportional to deflection)
-			 * over ~1/6 of a second (CAM_ORBIT_RAMP_FRAMES frames) — the view "gains
-			 * momentum" instead of jumping to full speed. The orbit stays
-			 * gripped so the engine's settle-back lerp can't fight it;
-			 * vertical is clamped below. */
-			gLookIdle = 0;
-			a->suppress = 1;
-		a->gripOrbit = 1;
+				gLookIdle = 0;
+				a->suppress = 1;
+				a->gripOrbit = 1;
 
-		targetSpeed = (LOOK_YAW_SIGN * sX * yawMax) / (127 * aimDiv);
+				targetSpeed = (LOOK_YAW_SIGN * sX * yawMax) / (127 * AIM_LOOK_DIV);
 
-		/* ramp with a minimum step of 1 so tiny deflections still move */
-		{
-			int step = (targetSpeed - gYawSpeed) / CAM_ORBIT_RAMP_FRAMES;
+				/* ramp with a minimum step of 1 so tiny deflections still
+				 * move */
+				{
+					int step = (targetSpeed - gYawSpeed) / CAM_ORBIT_RAMP_FRAMES;
 
-			if (step == 0 && targetSpeed != gYawSpeed)
-				step = (targetSpeed > gYawSpeed) ? 1 : -1;
+					if (step == 0 && targetSpeed != gYawSpeed)
+						step = (targetSpeed > gYawSpeed) ? 1 : -1;
 
-			gYawSpeed += step;
-		}
+					gYawSpeed += step;
+				}
 
-		lp->cameraAngle = (lp->cameraAngle + gYawSpeed) & 0xfff;
+				gAimYaw = (gAimYaw + gYawSpeed) & 0xfff;
 
-		/* clamp so the camera can never swing past straight up/down even at
-		 * the highest sensitivity setting */
-		pitchMax = jer_clamp_int(pitchMax, 0, 900);
+				/* GTA4 aim pitch: pushing up aims UP (reticle up). Full
+				 * sign chain (all verified against the engine):
+				 *   push up -> stickY = -128 (pad.c:185, analog-128)
+				 *   invertV=1 (default) -> sY = -stickY = +128
+				 *   gAimPitchTarget = (sY * pitchMax) -> POSITIVE
+				 *   gAimPitch positive = aiming UP (header convention)
+				 *   view: camAngle->vx = -gAimPitch & 0xfff = 3584,
+				 *   which PointAtTarget (camera.c:643: vx = 1024 -
+				 *   ratan2(d, dy)) uses for a target ABOVE the camera.
+				 * The pitch is clamped to the aim limit so the reticle
+				 * can never swing past the ceiling/floor. (invertV=0
+				 * inverts the aim like it inverts the chase look.) */
+				pitchMax = jer_clamp_int(pitchMax, 0, AIM_PITCH_MAX);
 
-		gLookPitchTarget = jer_clamp_int(
-			(CAM_PITCH_STICK_SIGN * sY * pitchMax) / (128 * aimDiv), -pitchMax, pitchMax);
+				gAimPitchTarget = jer_clamp_int(
+					(sY * pitchMax) / (128 * AIM_LOOK_DIV),
+					-pitchMax, pitchMax);
 
-		/* mouse motion nudges the orbit/pitch on top of the stick — direct
-		 * (not momentum-ramped): a flick is a flick, smooth but immediate.
-		 * NOTE: the mouse YAW sign is deliberately the opposite of the
-		 * stick's (-LOOK_YAW_SIGN) — the user's live test showed the
-		 * mouse horizontal was mirrored. Don't "fix" it back. */
-		{
-			/* clamp the per-frame delta so a warp/flick spike can't overflow
-			 * the fixed-point products below */
-			int mX = jer_clamp_int(gS.invertH ? -gMouseDX : gMouseDX, -512, 512);
-			int mY = jer_clamp_int(gS.invertV ? -gMouseDY : gMouseDY, -512, 512);
+				/* mouse motion nudges the aim line on top of the stick —
+				 * direct (not momentum-ramped): a flick is a flick, smooth
+				 * but immediate. NOTE: the mouse YAW sign is deliberately
+				 * the opposite of the stick's (-LOOK_YAW_SIGN) — the user's
+				 * live test showed the mouse horizontal was mirrored. Don't
+				 * "fix" it back. */
+				{
+					/* clamp the per-frame delta so a warp/flick spike can't
+					 * overflow the fixed-point products below */
+					int mX = jer_clamp_int(gS.invertH ? -gMouseDX : gMouseDX, -512, 512);
+					int mY = jer_clamp_int(gS.invertV ? -gMouseDY : gMouseDY, -512, 512);
 
-			lp->cameraAngle = (lp->cameraAngle +
-				(-LOOK_YAW_SIGN * mX * gS.sensX * MOUSE_YAW) / (64 * 128 * aimDiv)) & 0xfff;
+					gAimYaw = (gAimYaw +
+						(-LOOK_YAW_SIGN * mX * gS.sensX * MOUSE_YAW) / (64 * 128 * AIM_LOOK_DIV)) & 0xfff;
 
-			gLookPitchTarget = jer_clamp_int(gLookPitchTarget +
-				(CAM_PITCH_STICK_SIGN * mY * gS.sensY * MOUSE_PITCH) / (64 * 128 * aimDiv),
-				-pitchMax, pitchMax);
-		}
+					gAimPitchTarget = jer_clamp_int(gAimPitchTarget +
+						(mY * gS.sensY * MOUSE_PITCH) / (64 * 128 * AIM_LOOK_DIV),
+						-pitchMax, pitchMax);
+				}
 
-		/* consumed (or ignored while joystick look is off) — never let the
-		 * deltas linger into the next frame */
-		gMouseDX = 0;
-		gMouseDY = 0;
+				/* consumed (or ignored while joystick look is off) — never
+				 * let the deltas linger into the next frame */
+				gMouseDX = 0;
+				gMouseDY = 0;
+
+				/* freeze the on-foot movement reference to the aim axis */
+				gMoveRefHeading = gAimYaw;
+				gMoveRefActive = 1;
+			}
+			else
+			{
+				int yawMax = (CAM_ORBIT_SPEED_MAX * gS.sensX) / 64;
+				int pitchMax = (CAM_PITCH_MAX * gS.sensY) / 64;
+				int sX = gS.invertH ? -stickX : stickX;
+				int sY = gS.invertV ? -stickY : stickY;
+				int targetSpeed;
+
+				/* orbit: the angle moves by a momentum-driven speed. The speed
+				 * ramps from 0 up to the stick's max (proportional to deflection)
+				 * over ~1/6 of a second (CAM_ORBIT_RAMP_FRAMES frames) — the view "gains
+				 * momentum" instead of jumping to full speed. The orbit stays
+				 * gripped so the engine's settle-back lerp can't fight it;
+				 * vertical is clamped below. */
+				gLookIdle = 0;
+				a->suppress = 1;
+				a->gripOrbit = 1;
+
+				targetSpeed = (LOOK_YAW_SIGN * sX * yawMax) / 127;
+
+				/* ramp with a minimum step of 1 so tiny deflections still
+				 * move */
+				{
+					int step = (targetSpeed - gYawSpeed) / CAM_ORBIT_RAMP_FRAMES;
+
+					if (step == 0 && targetSpeed != gYawSpeed)
+						step = (targetSpeed > gYawSpeed) ? 1 : -1;
+
+					gYawSpeed += step;
+				}
+
+				lp->cameraAngle = (lp->cameraAngle + gYawSpeed) & 0xfff;
+
+				/* clamp so the camera can never swing past straight up/down
+				 * even at the highest sensitivity setting */
+				pitchMax = jer_clamp_int(pitchMax, 0, 900);
+
+				gLookPitchTarget = jer_clamp_int(
+					(CAM_PITCH_STICK_SIGN * sY * pitchMax) / 128, -pitchMax, pitchMax);
+
+				/* mouse motion nudges the orbit/pitch on top of the stick —
+				 * direct (not momentum-ramped): a flick is a flick, smooth
+				 * but immediate. NOTE: the mouse YAW sign is deliberately
+				 * the opposite of the stick's (-LOOK_YAW_SIGN) — the user's
+				 * live test showed the mouse horizontal was mirrored. Don't
+				 * "fix" it back. */
+				{
+					/* clamp the per-frame delta so a warp/flick spike can't
+					 * overflow the fixed-point products below */
+					int mX = jer_clamp_int(gS.invertH ? -gMouseDX : gMouseDX, -512, 512);
+					int mY = jer_clamp_int(gS.invertV ? -gMouseDY : gMouseDY, -512, 512);
+
+					lp->cameraAngle = (lp->cameraAngle +
+						(-LOOK_YAW_SIGN * mX * gS.sensX * MOUSE_YAW) / (64 * 128)) & 0xfff;
+
+					gLookPitchTarget = jer_clamp_int(gLookPitchTarget +
+						(CAM_PITCH_STICK_SIGN * mY * gS.sensY * MOUSE_PITCH) / (64 * 128),
+						-pitchMax, pitchMax);
+				}
+
+				/* consumed (or ignored while joystick look is off) — never
+				 * let the deltas linger into the next frame */
+				gMouseDX = 0;
+				gMouseDY = 0;
+			}
 		}
 	}
 	else if (stockLook && gAiming == 0)
@@ -488,8 +571,13 @@ static int D2plOnLook(void* userdata, void* args)
 	}
 	}
 
-	/* smooth the pitch toward its target (yaw is applied directly) */
-	gLookPitch = jer_lerp_int(gLookPitch, gLookPitchTarget, 6);
+	/* smooth the pitch toward its target (yaw is applied directly): the
+	 * aim line has its own pitch state so the free-look pitch and the aim
+	 * pitch never fight */
+	if (gAiming)
+		gAimPitch = jer_lerp_int(gAimPitch, gAimPitchTarget, 6);
+	else
+		gLookPitch = jer_lerp_int(gLookPitch, gLookPitchTarget, 6);
 
 	return JER_RESULT_CONTINUE;
 }
@@ -1135,6 +1223,9 @@ void D2plReset(void)
 	gHandPos[0] = gHandPos[1] = gHandPos[2] = 0;
 	gAimPoint[0] = gAimPoint[1] = gAimPoint[2] = 0;
 	gAiming = 0;
+	gAimYaw = 0;
+	gAimPitch = 0;
+	gAimPitchTarget = 0;
 	gMarkerTimer = 0;
 	gPedScaleLogged = 0;
 

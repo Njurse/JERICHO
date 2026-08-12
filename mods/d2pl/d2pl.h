@@ -97,13 +97,13 @@
 				   he snaps to the camera-relative run direction) */		/* responsive exponential heading lerp: 1/8 of the
 				   remaining gap toward the stick-derived heading each
 				   frame (fast when far, eases in) */
-#define RUN_TURN_LIMIT 256	/* max turn per frame while running (~11.25 deg,
+#define RUN_TURN_LIMIT 128	/* max turn per frame while running (~11.25 deg,
 				   ~675 deg/s): well beyond the original 32-unit
 				   restriction so Tanner decisively turns toward
 				   the stick heading (even a 180) instead of
 				   creeping around; the exponential lerp keeps it
 				   smooth, the cap keeps it from snapping */
-#define PIVOT_TURN_LIMIT 376	/* standstill pivot speed (~22.5 deg/frame):
+#define PIVOT_TURN_LIMIT 192	/* standstill pivot speed (~22.5 deg/frame):
 				   near-instant so the player starts running the new
 				   way immediately, GTA-style */
 
@@ -165,11 +165,21 @@
 #define INSTAB_RELEASE 32	/* must drop below this to release */
 #define INSTAB_CONFIRM 32	/* frames of calm before releasing */
 
-					/* aim camera (on foot) */
-#define AIM_PULL 2000		/* /4096: pull toward Tanner while aiming */
-#define AIM_HEIGHT -100
+					/* aim camera (on foot) — GTA4 over-the-shoulder rig: an ABSOLUTE camera
+ * placed behind the module's aim heading (gAimYaw/gAimPitch), not a pull
+ * of the chase position. The anchor is the torso (FOOT_AIM_HEIGHT above
+ * the waist base); the camera sits standoff behind, shoulder-lateral,
+ * slightly above, and looks at a frame point AHEAD of the anchor so the
+ * character reads ~1/3 from the screen edge (the aim line runs
+ * camera -> frame point -> aimPoint at weapon range). */
+#define AIM_STANDOFF 380	/* camera distance behind the torso anchor */
+#define AIM_SHOULDER_LAT 95	/* lateral shoulder bias (perp. to the aim) */
+#define AIM_HEIGHT -60		/* camera height above the anchor (y-down) */
+#define AIM_FRAME_DIST 600	/* look-at point ahead of the anchor */
+#define AIM_FRAME_UP 140	/* look-at point above the anchor (y-down: -) */
+#define AIM_PITCH_MAX 512	/* aim-pitch clamp (signed, ~45 deg each way;
+				   positive = aiming UP, GTA4 reticle convention) */
 #define AIM_ZOOM 160		/* scr_z increase -> FOV decrease (focus) */
-#define AIM_LATERAL 55		/* shoulder bias while aiming (ped scale ~130) */
 
 /* impact marker: a big black X at the aim point, 1 second (60 frames) */
 #define MARKER_LIFETIME 600
@@ -273,6 +283,13 @@ static const D2PL_POSE POSE_AIM = { 0, -2, 4, 0, -4, 6 };
 /* ------------------------------------------------------------------ */
 
 #define D2PL_LASER_DEFAULT D2PL_LASER_RED
+
+/* aim-line state (defined in d2pl_weapon.c): the WeaponBase methods below
+ * read these, so they are declared before the class (the full documented
+ * block lives in the shared-state section) */
+extern int gAimYaw;		/* the aim heading (camera-forward), 0..4095 */
+extern int gAimPitch;		/* smoothed aim pitch (signed, 0 = level) */
+extern int gAimPitchTarget;	/* the stick/mouse-derived pitch target */
 
 /* ------------------------------------------------------------------ */
 /* The overridable weapon base                                         */
@@ -420,14 +437,17 @@ public:
 		}
 	}
 
-	/* aim point: where the camera-centre ray reaches at `range`. The default
-	 * derives it from the current camera position + angle (yaw = the free-look
-	 * heading, pitch from camera_angle.vx). Override for custom ballistic
-	 * behaviour. out3 receives world (x, y, z). */
+	/* aim point: where the aim line reaches at `range`. The default
+	 * derives it from the module's aim line (gAimYaw/gAimPitch) — the
+	 * SAME line the shoulder rig renders (the camera looks along gAimYaw
+	 * and the rendered pitch is forced to gAimPitch), so the
+	 * reticle/crosshair and the impact point stay one. Override for
+	 * custom ballistic behaviour. out3 receives world (x, y, z). */
 	virtual void aimPoint(int* out3)
 	{
-		int yawH = -camera_angle.vy & 0xfff;	/* camera forward heading */
-		int pitch = camera_angle.vx & 0xfff;	/* 0 = level, + = down */
+		int yawH = gAimYaw;	/* aim forward heading (camera-forward) */
+		int pitch = -gAimPitch;	/* gAimPitch: + = aim UP; negate to the
+					   camera_angle.vx convention (+ = down) */
 		int cosP = RCOS(pitch);
 		int dirX = FIXEDH(RSIN(yawH) * cosP);
 		int dirY = FIXEDH(RSIN(pitch));
@@ -531,6 +551,8 @@ static inline void D2plRotatePose(int* px, int* pz, int h)
 /* ------------------------------------------------------------------ */
 
 void D2plWeaponInit(void);
+void D2plAimEnter(PLAYER* lp);	/* aim pressed: snapshot the aim line from the camera */
+void D2plAimExit(PLAYER* lp);	/* aim released: park the orbit at the last aim heading */
 void D2plAimAtPlayer(SVECTOR* camAngle, VECTOR* camPos, int* base,
 	int inCar, int baseDir, int cameraAngle, int freeLook);
 void WeaponSystem_Register(WeaponBase* weapon);
@@ -641,6 +663,16 @@ extern WeaponBase* gCurrentWeapon;
 extern int gAiming;
 extern int gHandPos[3];		/* world RHAND position (muzzle origin) */
 extern int gAimPoint[3];	/* world aim point at weapon range */
+
+/* aim-line state (defined in d2pl_weapon.c): while aiming the module OWNS
+ * the aim heading/pitch (gAimYaw/gAimPitch) — the right stick drives them
+ * (D2plOnLook), the over-the-shoulder camera rig renders from them, the aim
+ * ray (aimPoint) and the torso/head twist follow them. gAimPitch is signed,
+ * positive = aiming UP (the GTA4 reticle convention; the OPPOSITE of the
+ * chase camera's gLookPitch where positive = camera up = looking down). */
+extern int gAimYaw;		/* the aim heading (camera-forward), 0..4095 */
+extern int gAimPitch;		/* smoothed aim pitch (signed, + = up) */
+extern int gAimPitchTarget;	/* the stick/mouse-derived pitch target */
 
 /* impact marker state */
 extern int gMarkerTimer;	/* frames left until the marker fades */
