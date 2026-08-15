@@ -44,3 +44,5 @@ src_rebuild/build*
 src_rebuild/*.make
 src_rebuild/Makefile
 /.reasonix
+*bin/
+*x64libs/
