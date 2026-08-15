@@ -149,9 +149,10 @@ void ToggleOverlays(int direction)
 // Crumple debug: d-pad deformation simulation + smooth repair.
 // JERICHO-HOOK: the module owns the state and labels; this shell only
 // bridges the menu items to the crumple package via JER_EVENT_PAUSE_MENU.
+// To do: Isolate this to CRUMPLE, there's still hardcoding contamination here
 static char CrumpleDpadText[32] = "D-Pad Deform: OFF";
 static char CrumpleBuddhaText[32] = "Buddha Mode: OFF";
-static char CrumpleColText[32] = "Col Debug: OFF";
+static char CrumpleColText[32] = "Collision Debug: OFF";
 static char CrumpleOverlayText[32] = "Impact Overlay: OFF";
 
 static void CrumpleRefreshLabels(void)
@@ -518,8 +519,8 @@ MENU_ITEM MainPauseItems[] =
 {
 	{ G_LTXT_ID(GTXT_Continue), 1u, 2u, NULL, MENU_QUIT_CONTINUE, NULL },
 #if defined(_DEBUG) || defined(DEBUG_OPTIONS)
-	{ "Sandbox Menu", PAUSE_TYPE_FUNC, 2u, SandboxMenuOpen, MENU_QUIT_NONE, NULL },
-	{ "D2PL Settings", PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &D2plSettingsHeader },
+	{ "Sandbox Menu", PAUSE_TYPE_FUNC, 2u, SandboxMenuOpen, MENU_QUIT_CONTINUE, NULL },
+	{ "D2PL Settings", PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_CONTINUE, &D2plSettingsHeader },
 #endif
 	{ G_LTXT_ID(GTXT_ShowMap), PAUSE_TYPE_FUNC, 2u, (pauseFunc)&PauseMap, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_Restart), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoRestartHeader },

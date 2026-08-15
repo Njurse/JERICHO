@@ -155,7 +155,8 @@ int D2plOnPedInput(void* userdata, void* args)
 			 * without this the body twitches left/right every frame
 			 * (the rapid oscillation when NOT aiming). Inside the
 			 * deadband the body is close enough: leave it be. */
-			if (ABS(diff) > 32)
+			if (ABS(diff) > ONE*32)
+				
 			{
 				if (ABS(diff) > runLimit)
 					lp->dir += (diff >= 0) ? runLimit : -runLimit;
@@ -308,14 +309,14 @@ void D2plPedCamera(void* args, int heading)
 
 				if (speed > 8)
 				{
-					camPos->vy += FIXEDH(RSIN(FrameCnt * 3) * 10);
-					camPos->vx += FIXEDH(RCOS(FrameCnt * 2) * 8);
+					camPos->vy += FIXEDH(RSIN(FrameCnt * 3) * 100);
+					camPos->vx += FIXEDH(RCOS(FrameCnt * 2) * 80);
 				}
 				else
 				{
 					/* natural standing sway (idle breathing) */
-					camPos->vx += FIXEDH(RSIN(FrameCnt) * 3);
-					camPos->vy += FIXEDH(RCOS(FrameCnt >> 1) * 4);
+					camPos->vx += FIXEDH(RSIN(FrameCnt) * 30);
+					camPos->vy += FIXEDH(RCOS(FrameCnt >> 1) * 40);
 				}
 		}
 	}
