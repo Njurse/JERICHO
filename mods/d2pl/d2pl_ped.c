@@ -106,20 +106,14 @@ int D2plOnPedInput(void* userdata, void* args)
 	 * player is actively view-manipulating (right stick), the reference
 	 * frame is FROZEN to the camera heading at manipulation start so
 	 * panning the camera can't bend the character's path (GTA IV §8). */
-	if (gMoveRefActive)
-	{
-		camHeading = gMoveRefHeading;
-	}
-	else
-	{
-		fx = lp->pos[0] - camera_position.vx;
-		fz = lp->pos[2] - camera_position.vz;
+	//camHeading = gMoveRefHeading;
+	fx = lp->pos[0] - camera_position.vx;
+	fz = lp->pos[2] - camera_position.vz;
 
-		if (fx == 0 && fz == 0)
-			return JER_RESULT_CONTINUE;
+	if (fx == 0 && fz == 0)
+		return JER_RESULT_CONTINUE;
 
-		camHeading = ratan2(fx, fz);
-	}
+	camHeading = ratan2(fx, fz);
 
 	/* stick direction relative to the screen: up = forward, right = right */
 	stickHeading = ratan2(MOVE_STICK_SIGN_X * stickX, MOVE_STICK_SIGN_Y * -stickY);
@@ -146,23 +140,14 @@ int D2plOnPedInput(void* userdata, void* args)
 			 * speed (only the pad), so the standstill pivot check reads
 			 * the ped’s own speed (0 = planted) */
 			LPPEDESTRIAN runPed = lp->pPed;
-			int runLimit = (gPedWasMoving ||
-				(runPed != NULL && runPed->speed != 0)) ?
-				RUN_TURN_LIMIT : PIVOT_TURN_LIMIT;
+			int runLimit = RUN_TURN_LIMIT;
 
 			/* a small deadband: the chase camera’s settle jitter makes
 			 * `desired` flip a few degrees around the turn threshold —
 			 * without this the body twitches left/right every frame
 			 * (the rapid oscillation when NOT aiming). Inside the
 			 * deadband the body is close enough: leave it be. */
-			if (ABS(diff) > ONE*32)
-				
-			{
-				if (ABS(diff) > runLimit)
-					lp->dir += (diff >= 0) ? runLimit : -runLimit;
-				else
-					lp->dir = desired;
-			}
+			lp->dir = desired;
 		}
 
 		lp->dir &= 0xfff;

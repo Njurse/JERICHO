@@ -91,19 +91,19 @@
 				   the target each way (the stand-start momentum) */
 #define MOVE_TURN_SIGN 1	/* +1 = positive angle delta turns right */
 #define MOVE_STICK_SIGN_X -1	/* the stick X was mirrored against the camera (flipped 2026-08-10) */
-#define MOVE_STICK_SIGN_Y 1	/* flip if your pad's Y axis is inverted */
+#define MOVE_STICK_SIGN_Y -1	/* flip if your pad's Y axis is inverted */
 #define MOVE_LERP_DIV 16
 #define AIM_MOVE_LERP_DIV 2	/* aiming: the heading lerps VERY fast (third-person —
 				   he snaps to the camera-relative run direction) */		/* responsive exponential heading lerp: 1/8 of the
 				   remaining gap toward the stick-derived heading each
 				   frame (fast when far, eases in) */
-#define RUN_TURN_LIMIT 256	/* max turn per frame while running (~11.25 deg,
+#define RUN_TURN_LIMIT 2	/* max turn per frame while running (~11.25 deg,
 				   ~675 deg/s): well beyond the original 32-unit
 				   restriction so Tanner decisively turns toward
 				   the stick heading (even a 180) instead of
 				   creeping around; the exponential lerp keeps it
 				   smooth, the cap keeps it from snapping */
-#define PIVOT_TURN_LIMIT 376	/* standstill pivot speed (~22.5 deg/frame):
+#define PIVOT_TURN_LIMIT 3	/* standstill pivot speed (~22.5 deg/frame):
 				   near-instant so the player starts running the new
 				   way immediately, GTA-style */
 
