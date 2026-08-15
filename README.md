@@ -1,4 +1,5 @@
 **This repo is still a heavy work in progress and many components won't function correctly yet. This demonstrates, at its current stage, a proof of concept. The project is actively being developed and a comprehensive event hook library will be available.**
+Some precompiled libraries may be present in the repository, these will be removed as the repo is cleaned up.
 # REDRIVER2 (Reverse-Engineered Driver 2)
 [![Build status (Master)](https://ci.appveyor.com/api/projects/status/p3smpt14elwlpcad/branch/master?svg=true)](https://ci.appveyor.com/project/SoapyMan/redriver2/branch/master)
 
