@@ -81,7 +81,7 @@
 
 // Buddha mode is like Source engine's -- you can take damage down to 1HP, this avoids death so the damage can still be extensively tested without full Invulnerability cheat
 int gCrumpleBuddha = 0;
-int gCrumpleGlobalScale = 4096000;
+int gCrumpleGlobalScale = 4096;
 
 //-----------------------------------------------------------------------------
 // Central tuning surface — tweak everything here.
@@ -121,7 +121,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 	192,		// damageModelMix      fraction of baked damaged-model delta (~4.7%)
 
 	// wheels
-	250, 		// wheelProximity      impact distance that counts as near a wheel
+	160, 		// wheelProximity      impact distance that counts as near a wheel
 	60000,		// wheelMinHowHard     threshold before a wheel bends (above damage threshold ~56k... tuned down so the d-pad sim can bend wheels)
 	120000,		// wheelNormalize      howHard for a full bend kick
 	24,			// wheelBendStep       damage level added per full kick — 2-3 kicks
@@ -134,7 +134,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 					//                      wheels don't distort as far longitudinally
 
 	// impact curve
-	3,			// impactCurve          cubic: hard hits dent much deeper
+	2,			// impactCurve          squared: hard hits dent much deeper
 
 	// wheel physics
 	192,		// wheelScrubForce      ~4.7% lateral drag per unit of bend

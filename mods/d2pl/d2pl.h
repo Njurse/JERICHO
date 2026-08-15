@@ -66,7 +66,7 @@
 #define CAM_FOOT_LAG_DIV 8
 #define CAM_ORBIT_SPEED_MAX 256		/* max orbit speed at full stick, sensX = 64
 				   (x4: the default was too slow) */
-#define CAM_ORBIT_RAMP_FRAMES 20		/* frames to reach full orbit speed (~1/6 s —
+#define CAM_ORBIT_RAMP_FRAMES 10		/* frames to reach full orbit speed (~1/6 s —
 				   the ramp speed was doubled) — the yaw "gains
 				   momentum" instead of jumping to its max */
 #define CAM_PITCH_STICK_SIGN -1	/* -1 = pushing up RAISES the camera on its
@@ -122,7 +122,7 @@
 					 * would sink into the ground), the view tilts slightly upward — a fraction
 					 * of the would-be intersection depth, capped — so the camera reads as
 					 * being pushed up out of the ground instead of boring into it. */
-#define GROUND_LOOKUP_SCALE 8	/* angle units per 256 units of penetration */
+#define GROUND_LOOKUP_SCALE 4	/* angle units per 256 units of penetration */
 #define GROUND_LOOKUP_MAX 400	/* cap the forced up-tilt (~17.5 deg) */
 					 // ON FOOT AIMING CAMERA HEIGHT
 #define FOOT_AIM_HEIGHT 270	/* on-foot aim point: the torso ~90 units above
@@ -433,21 +433,21 @@ public:
 	}
 
 	virtual void onAmmoChanged(void) { /* HUD refresh hook */ }
-
-/* rotate a local (x, z) offset by the ped's facing yaw. newRotateBones
+	/* rotate a local (x, z) offset by the ped's facing yaw. newRotateBones
  * builds the skeleton's vCurrPos frame as the model rotated by dir.vy, so
  * the arm pose must be rotated the same way to point where Tanner faces.
  * Convention matches the engine: facing h -> forward = (RSIN h, RCOS h). */
-static inline void D2plRotatePose(int* px, int* pz, int h)
-{
-	int x = *px;
-	int z = *pz;
-	int c = RCOS(h);
-	int s = RSIN(h);
+	static inline void D2plRotatePose(int* px, int* pz, int h)
+	{
+		int x = *px;
+		int z = *pz;
+		int c = RCOS(h);
+		int s = RSIN(h);
 
-	*px = (x * c + z * s) >> 12;
-	*pz = (-x * s + z * c) >> 12;
-}
+		/* fixed‑point multiply: both cos/sin are scaled by 4096 (2^12) */
+		*px = (x * c + z * s) >> 12;
+		*pz = (-x * s + z * c) >> 12;
+	}
 
 	/* force the arm into a holding pose (phase-0 skeleton hook). Override
 	 * to pose different bones or add recoil; the base fixates the shoulder
@@ -464,6 +464,8 @@ static inline void D2plRotatePose(int* px, int* pz, int h)
 		int hand = left ? WL_LHAND : WL_RHAND;
 		int side = left ? -1 : 1;
 		int sx, sz, ex, ez, hx, hz;
+		int shoulderX, shoulderY, shoulderZ;
+		int elbowX, elbowY, elbowZ;
 
 		// --- Shoulder: Fixed at rest position ---
 		sx = skel[shoulder].vOffset.vx;
@@ -473,25 +475,29 @@ static inline void D2plRotatePose(int* px, int* pz, int h)
 		skel[shoulder].vCurrPos.vy = skel[shoulder].vOffset.vy;
 		skel[shoulder].vCurrPos.vz = sz;
 
-		// --- Elbow: Small forward offset ---
-		// Use a small, fixed offset (e.g., 20-50 units) to position the elbow.
-		// The pose values are treated as angles (0-4096), but we use them as
-		// small position offsets here.
-		ex = (pose.elbowX * side) / 64;  // Scale down to prevent folding
-		ez = pose.elbowZ / 64;
-		D2plRotatePose(&ex, &ez, facing);
-		skel[elbow].vCurrPos.vx = ex;
-		skel[elbow].vCurrPos.vy = -pose.elbowY; // Invert Y and scale
-		skel[elbow].vCurrPos.vz = ez;
+		shoulderX = skel[shoulder].vCurrPos.vx;
+		shoulderY = skel[shoulder].vCurrPos.vy;
+		shoulderZ = skel[shoulder].vCurrPos.vz;
 
-		// --- Hand: Further forward from the elbow ---
-		// Use a larger forward offset to extend the arm.
-		hx = (pose.handX * side)  ;  // Scale down
-		hz = pose.handZ ;
+		// --- Elbow: Offset from shoulder (small forward and slightly outward) ---
+		// Scale the pose values to prevent folding; adjust divisor as needed.
+		ex = (pose.elbowX * side) >> 2;   // lateral offset (outward)
+		ez = pose.elbowZ >> 2;            // forward offset
+		D2plRotatePose(&ex, &ez, facing);
+		elbowX = shoulderX + ex;
+		elbowY = shoulderY + (pose.elbowY >> 2); // vertical offset (up)
+		elbowZ = shoulderZ + 32 + ez;
+		skel[elbow].vCurrPos.vx = elbowX;
+		skel[elbow].vCurrPos.vy = elbowY;
+		skel[elbow].vCurrPos.vz = elbowZ;
+
+		// --- Hand: Offset from elbow (longer forward extension) ---
+		hx = (pose.handX * side) >> 2;   // lateral offset (outward)
+		hz = pose.handZ >> 2;            // forward offset (larger for extension)
 		D2plRotatePose(&hx, &hz, facing);
-		skel[hand].vCurrPos.vx = hx;
-		skel[hand].vCurrPos.vy = -pose.handY; // Invert Y and scale
-		skel[hand].vCurrPos.vz = hz;
+		skel[hand].vCurrPos.vx = elbowX + hx;
+		skel[hand].vCurrPos.vy = elbowY - (pose.handY >> 2); // raise hand upward (negate Y)
+		skel[hand].vCurrPos.vz = elbowZ + hz;
 	}
 
 	virtual void poseArm(void* skelVoid, int facing)

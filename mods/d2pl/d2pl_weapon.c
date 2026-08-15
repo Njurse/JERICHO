@@ -440,9 +440,9 @@ int D2plOnSkeleton(void* userdata, void* args)
 		 * offsets of the upper arm / forearm / hand bones so the arm
 		 * extends forward. Values are in the ped's local frame. */
 		if (gAiming)
-			w->poseArmAim(a->skel, ((LPPEDESTRIAN)a->ped)->dir.vy);
+			w->poseArmAim(a->skel, ((LPPEDESTRIAN)a->ped)->dir.vz);
 		else
-			w->poseArm(a->skel, ((LPPEDESTRIAN)a->ped)->dir.vy);
+			w->poseArm(a->skel, ((LPPEDESTRIAN)a->ped)->dir.vz);
 	}
 	else if (a->phase == 1 && !a->shadow)
 	{
