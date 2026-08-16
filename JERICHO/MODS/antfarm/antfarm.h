@@ -56,6 +56,7 @@ enum
 #define ANTFARM_CAR_WAIT_MS	4000	/* black cap while traffic populates */
 #define ANTFARM_LEAD_END_MS	4000	/* hold on a totaled lead car */
 #define ANTFARM_STREAM_TIMEOUT_MS 6000	/* black cap while regions stream */
+#define ANTFARM_BLACK_CAP_MS	12000	/* hard cap on any single black hold */
 
 /* interval config (seconds) */
 #define ANTFARM_MIN_INTERVAL	10
