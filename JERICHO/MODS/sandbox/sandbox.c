@@ -10,6 +10,7 @@
 #include "jericho.h"
 #include "jer_events.h"
 #include "jer_config.h"
+#include "jer_pause_menu.h"
 
 #include "driver2.h"
 #include "cars.h"
@@ -1858,6 +1859,38 @@ static int SandboxOnPauseMenu(void* userdata, void* args)
 }
 
 /* ------------------------------------------------------------------ */
+/* Pause menu item — opens the Sandbox overlay. Registered via         */
+/* jer_pause_menu.h, so nothing is hardcoded into the game's pause.    */
+/* ------------------------------------------------------------------ */
+
+static int SandboxActivateMenu(void* userdata, int direction)
+{
+	JER_ARGS_PAUSE_MENU jerArgs;
+
+	(void)userdata;
+	(void)direction;
+
+	jerArgs.action = JER_PAUSE_SANDBOX_OPEN;
+	jerArgs.result = NULL;
+	jerArgs.value = 0;
+
+	/* if the overlay opened (module claimed the event), unpause so the
+	 * world keeps running; otherwise stay in the pause menu */
+	if (gCtx->jer_fire(gCtx, JER_EVENT_PAUSE_MENU, &jerArgs) == JER_RESULT_STOP)
+		return JER_PAUSE_QUIT_CONTINUE;
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static const JER_PAUSE_MENU_ITEM SandboxMenuItems[] =
+{
+	{ "Open Sandbox Menu", NULL, SandboxActivateMenu, NULL, NULL, 0 },
+};
+
+static const JER_PAUSE_MENU SandboxPauseMenu =
+{ "Sandbox", SandboxMenuItems, 1 };
+
+/* ------------------------------------------------------------------ */
 /* Custom event: firing SANDBOX_CUSTOM_TOGGLE flips no-damage          */
 /* ------------------------------------------------------------------ */
 
@@ -1909,6 +1942,9 @@ JER_MODULE_ENTRY(jer_module_sandbox_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, SandboxOnDrawOverlay, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PAUSE_MENU, SandboxOnPauseMenu, NULL, 0);
 	ctx->jer_register_hook(ctx, SANDBOX_CUSTOM_TOGGLE, SandboxOnToggle, NULL, 0);
+
+	/* pause menu: provided by this module, not hardcoded in the game */
+	jer_pause_menu_register(&SandboxPauseMenu);
 
 	ctx->jer_log(ctx, "[sandbox] registered — no-damage ON, time-scale 1.0x\n");
 }

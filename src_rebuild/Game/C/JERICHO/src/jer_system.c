@@ -12,6 +12,7 @@
 #include "jericho.h"
 #include "jer_internal.h"
 #include "jer_config.h"
+#include "jer_pause_menu.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -397,6 +398,10 @@ static void jerActivateModules(const char* rootDir)
 		jerLog("[jericho] warning: could not read %s/%s/modlist.ini — defaulting to all-enabled\n", rootDir, JER_CONFIG_PATH);
 		memset(&modlist, 0, sizeof(modlist));	/* error: treat as empty state */
 	}
+
+	/* module-provided pause menus re-register during activation: clear the
+	 * registry first so a Mods-menu reload doesn't accumulate duplicates */
+	jer_pause_menu_reset();
 
 	/* apply the modlist enable flags to the module table */
 	for (i = 0; i < modlist.count; i++)

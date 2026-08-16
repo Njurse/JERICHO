@@ -36,6 +36,7 @@
 #include "jericho.h"
 #include "jer_events.h"
 #include "jer_config.h"
+#include "jer_pause_menu.h"
 
 #include "driver2.h"
 #include "camera.h"	/* camera_position/camera_angle for aimPoint() */

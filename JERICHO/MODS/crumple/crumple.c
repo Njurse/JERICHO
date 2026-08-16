@@ -77,6 +77,7 @@
 #include "players.h"
 #include "jericho.h"	// JERICHO: module API (this file is the crumple package)
 #include "jer_events.h"	// JERICHO: event argument structs
+#include "jer_pause_menu.h"	// JERICHO: module pause menu (Crumple Debug)
 
 
 // Buddha mode is like Source engine's -- you can take damage down to 1HP, this avoids death so the damage can still be extensively tested without full Invulnerability cheat
@@ -1517,73 +1518,98 @@ static int crumpleOnGetBuddha(void* userdata, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
-static int crumpleOnPauseMenu(void* userdata, void* args)
+/* ------------------------------------------------------------------ */
+/* Pause menu (Crumple Debug) — registered via jer_pause_menu.h, so    */
+/* nothing is hardcoded into the game's pause code.                    */
+/* ------------------------------------------------------------------ */
+
+static void CrumpleLabelDpad(void* userdata, char* out, int max)
 {
-	JER_ARGS_PAUSE_MENU* a = (JER_ARGS_PAUSE_MENU*)args;
+	(void)userdata;
+	snprintf(out, max, "D-Pad Deform: %s", gCrumpleDpadDeform ? "ON" : "OFF");
+}
+
+static void CrumpleLabelBuddha(void* userdata, char* out, int max)
+{
+	(void)userdata;
+	snprintf(out, max, "Buddha Mode: %s", gCrumpleBuddha ? "ON" : "OFF");
+}
+
+static void CrumpleLabelCol(void* userdata, char* out, int max)
+{
+	extern int gShowCollisionDebug;
 
 	(void)userdata;
-
-	if (a == NULL)
-		return JER_RESULT_CONTINUE;
-
-	switch (a->action)
-	{
-		case JER_PAUSE_CRUMPLE_TOGGLE_DPAD:
-			gCrumpleDpadDeform ^= 1;
-			break;
-
-		case JER_PAUSE_CRUMPLE_TOGGLE_BUDDHA:
-			gCrumpleBuddha ^= 1;
-			break;
-
-		case JER_PAUSE_CRUMPLE_TOGGLE_COL:
-			/* Col debug overlay (collision boxes): off <-> on */
-			extern int gShowCollisionDebug;
-
-			gShowCollisionDebug = (gShowCollisionDebug == 1) ? 0 : 1;
-			break;
-
-		case JER_PAUSE_CRUMPLE_TOGGLE_OVERLAY:
-			/* the "Col/Nrm + xyz" impact readout: off <-> on (default off) */
-			extern int gCrumpleDebugOverlay;
-
-			gCrumpleDebugOverlay ^= 1;
-			break;
-
-		case JER_PAUSE_CRUMPLE_REPAIR:
-			gCrumpleRepairCar = 1;
-			break;
-
-		case JER_PAUSE_CRUMPLE_GET_DPAD_TEXT:
-			a->result = (void*)(gCrumpleDpadDeform ? "D-Pad Deform: ON" : "D-Pad Deform: OFF");
-			break;
-
-		case JER_PAUSE_CRUMPLE_GET_BUDDHA_TEXT:
-			a->result = (void*)(gCrumpleBuddha ? "Buddha Mode: ON" : "Buddha Mode: OFF");
-			break;
-
-		case JER_PAUSE_CRUMPLE_GET_COL_TEXT:
-		{
-			extern int gShowCollisionDebug;
-
-			a->result = (void*)(gShowCollisionDebug == 1 ? "Col Debug: ON" : "Col Debug: OFF");
-			break;
-		}
-
-		case JER_PAUSE_CRUMPLE_GET_OVERLAY_TEXT:
-		{
-			extern int gCrumpleDebugOverlay;
-
-			a->result = (void*)(gCrumpleDebugOverlay ? "Impact Overlay: ON" : "Impact Overlay: OFF");
-			break;
-		}
-
-		default:
-			break;
-	}
-
-	return JER_RESULT_CONTINUE;
+	snprintf(out, max, "Col Debug: %s", gShowCollisionDebug == 1 ? "ON" : "OFF");
 }
+
+static void CrumpleLabelOverlay(void* userdata, char* out, int max)
+{
+	extern int gCrumpleDebugOverlay;
+
+	(void)userdata;
+	snprintf(out, max, "Impact Overlay: %s", gCrumpleDebugOverlay ? "ON" : "OFF");
+}
+
+static int CrumpleToggleDpad(void* userdata, int direction)
+{
+	(void)userdata;
+	(void)direction;
+	gCrumpleDpadDeform ^= 1;
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static int CrumpleToggleBuddha(void* userdata, int direction)
+{
+	(void)userdata;
+	(void)direction;
+	gCrumpleBuddha ^= 1;
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static int CrumpleToggleCol(void* userdata, int direction)
+{
+	extern int gShowCollisionDebug;
+
+	(void)userdata;
+	(void)direction;
+
+	/* Col debug overlay (collision boxes): off <-> on */
+	gShowCollisionDebug = (gShowCollisionDebug == 1) ? 0 : 1;
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static int CrumpleToggleOverlay(void* userdata, int direction)
+{
+	extern int gCrumpleDebugOverlay;
+
+	(void)userdata;
+	(void)direction;
+
+	/* the "Col/Nrm + xyz" impact readout: off <-> on (default off) */
+	gCrumpleDebugOverlay ^= 1;
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static int CrumpleRepairCar(void* userdata, int direction)
+{
+	(void)userdata;
+	(void)direction;
+	gCrumpleRepairCar = 1;
+	return JER_PAUSE_QUIT_CONTINUE;
+}
+
+static const JER_PAUSE_MENU_ITEM CrumpleMenuItems[] =
+{
+	{ NULL, CrumpleLabelDpad, CrumpleToggleDpad, NULL, NULL, 0 },
+	{ NULL, CrumpleLabelBuddha, CrumpleToggleBuddha, NULL, NULL, 0 },
+	{ NULL, CrumpleLabelOverlay, CrumpleToggleOverlay, NULL, NULL, 0 },
+	{ NULL, CrumpleLabelCol, CrumpleToggleCol, NULL, NULL, 0 },
+	{ "Repair Car", NULL, CrumpleRepairCar, NULL, NULL, 0 },
+};
+
+static const JER_PAUSE_MENU CrumplePauseMenu =
+{ "Crumple Debug", CrumpleMenuItems, 5 };
 
 /*
  * JERICHO module entry — the generated registry calls this as
@@ -1611,7 +1637,9 @@ JER_MODULE_ENTRY(jer_module_crumple_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WHEEL, crumpleOnDrawWheel, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_WHEEL_PARAMS, crumpleOnGetWheelParams, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_BUDDHA, crumpleOnGetBuddha, NULL, 0);
-	ctx->jer_register_hook(ctx, JER_EVENT_PAUSE_MENU, crumpleOnPauseMenu, NULL, 0);
+
+	/* pause menu: provided by this module, not hardcoded in the game */
+	jer_pause_menu_register(&CrumplePauseMenu);
 
 	ctx->jer_log(ctx, "[crumple] registered (SDK v%d)\n", ctx->sdkVersion);
 }

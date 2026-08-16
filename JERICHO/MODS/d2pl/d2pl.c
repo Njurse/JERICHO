@@ -1065,27 +1065,44 @@ static void D2plAdjustItem(int item, int direction)
 	//D2plSaveSettings();
 }
 
-static int D2plOnPauseMenu(void* userdata, void* args)
+/* ------------------------------------------------------------------ */
+/* Pause menu (D2PL Settings) — registered via jer_pause_menu.h, so    */
+/* nothing is hardcoded into the game's pause code.                    */
+/* ------------------------------------------------------------------ */
+
+static void D2plMenuItemLabel(void* userdata, char* out, int max)
 {
-	JER_ARGS_PAUSE_MENU* a = (JER_ARGS_PAUSE_MENU*)args;
+	int id = (int)(intptr_t)userdata;
 
-	(void)userdata;
+	snprintf(out, max, "%s", D2plItemLabel(id));
+}
 
-	switch (a->action)
+static int D2plMenuItemActivate(void* userdata, int direction)
+{
+	int id = (int)(intptr_t)userdata;
+
+	D2plAdjustItem(id, direction);
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static JER_PAUSE_MENU_ITEM D2plMenuItems[D2PL_ITEM_COUNT];
+static JER_PAUSE_MENU D2plPauseMenu = { "D2PL Settings", NULL, D2PL_ITEM_COUNT };
+
+static void D2plMenuBuild(void)
+{
+	int i;
+
+	for (i = 0; i < D2PL_ITEM_COUNT; i++)
 	{
-		case JER_PAUSE_D2PL_GET_LABEL:
-			if (a->value >= 0 && a->value < D2PL_ITEM_COUNT)
-				a->result = (void*)D2plItemLabel(a->value);
-			break;
-		case JER_PAUSE_D2PL_ADJUST:
-			if (a->value >= 0 && a->value < D2PL_ITEM_COUNT)
-				D2plAdjustItem(a->value, (int)(intptr_t)a->result);
-			break;
-		default:
-			break;
+		D2plMenuItems[i].label = NULL;
+		D2plMenuItems[i].get_label = D2plMenuItemLabel;
+		D2plMenuItems[i].on_activate = D2plMenuItemActivate;
+		D2plMenuItems[i].userdata = (void*)(intptr_t)i;
+		D2plMenuItems[i].submenu = NULL;
+		D2plMenuItems[i].adjust = 1;
 	}
 
-	return JER_RESULT_CONTINUE;
+	D2plPauseMenu.items = D2plMenuItems;
 }
 
 /* ================================================================== */
@@ -1202,9 +1219,12 @@ JER_MODULE_ENTRY(jer_module_d2pl_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_SKELETON, D2plOnSkeleton, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, D2plOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, D2plOnOverlay, NULL, 0);
-	ctx->jer_register_hook(ctx, JER_EVENT_PAUSE_MENU, D2plOnPauseMenu, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, D2plOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_INIT, D2plOnGameStart, NULL, 0);
+
+	/* pause menu: provided by this module, not hardcoded in the game */
+	D2plMenuBuild();
+	jer_pause_menu_register(&D2plPauseMenu);
 
 	ctx->jer_log(ctx, "[d2pl] Driver 2 Parallel Lines ready (%d weapon(s): %s; sens %d/%d, foot %d/%d/%d, car %d/%d%%, shoulder %s, fov %d(%s), laser %s)\n",
 		gWeaponCount,

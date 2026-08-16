@@ -2,6 +2,7 @@
 #include "pause.h"
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "jer_pause_menu.h"	// JERICHO-HOOK: module pause menus
 #include "system.h"
 #include "mission.h"
 #include "overlay.h"
@@ -21,7 +22,7 @@
 #define REPLAY_NAME_LEN		16
 #define SCORE_NAME_LEN		5
 
-#define PAUSE_MENU_LEVELS 3
+#define PAUSE_MENU_LEVELS 4	/* root + Modules container + module menu + one submenu */
 
 static int gScoreEntered = 0;
 static char EnterNameText[32] = { 0 };		// translated text
@@ -146,205 +147,9 @@ void ToggleOverlays(int direction)
 	gDoOverlays ^= 1;
 }
 
-// Crumple debug: d-pad deformation simulation + smooth repair.
-// JERICHO-HOOK: the module owns the state and labels; this shell only
-// bridges the menu items to the crumple package via JER_EVENT_PAUSE_MENU.
-// To do: Isolate this to CRUMPLE, there's still hardcoding contamination here
-static char CrumpleDpadText[32] = "D-Pad Deform: OFF";
-static char CrumpleBuddhaText[32] = "Buddha Mode: OFF";
-static char CrumpleColText[32] = "Collision Debug: OFF";
-static char CrumpleOverlayText[32] = "Impact Overlay: OFF";
-
-static void CrumpleRefreshLabels(void)
-{
-	JER_ARGS_PAUSE_MENU jerArgs;
-
-	jerArgs.action = JER_PAUSE_CRUMPLE_GET_DPAD_TEXT;
-	jerArgs.result = NULL;
-	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-	if (jerArgs.result != NULL)
-		sprintf(CrumpleDpadText, "%s", (const char*)jerArgs.result);
-
-	jerArgs.action = JER_PAUSE_CRUMPLE_GET_BUDDHA_TEXT;
-	jerArgs.result = NULL;
-	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-	if (jerArgs.result != NULL)
-		sprintf(CrumpleBuddhaText, "%s", (const char*)jerArgs.result);
-
-	jerArgs.action = JER_PAUSE_CRUMPLE_GET_COL_TEXT;
-	jerArgs.result = NULL;
-	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-	if (jerArgs.result != NULL)
-		sprintf(CrumpleColText, "%s", (const char*)jerArgs.result);
-
-	jerArgs.action = JER_PAUSE_CRUMPLE_GET_OVERLAY_TEXT;
-	jerArgs.result = NULL;
-	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-	if (jerArgs.result != NULL)
-		sprintf(CrumpleOverlayText, "%s", (const char*)jerArgs.result);
-}
-
-void CrumpleToggleDpad(int direction)
-{
-	JER_ARGS_PAUSE_MENU jerArgs;
-
-	(void)direction;
-
-	jerArgs.action = JER_PAUSE_CRUMPLE_TOGGLE_DPAD;
-	jerArgs.result = NULL;
-	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-	CrumpleRefreshLabels();
-}
-
-void CrumpleToggleBuddha(int direction)
-{
-	JER_ARGS_PAUSE_MENU jerArgs;
-
-	(void)direction;
-
-	jerArgs.action = JER_PAUSE_CRUMPLE_TOGGLE_BUDDHA;
-	jerArgs.result = NULL;
-	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-	CrumpleRefreshLabels();
-}
-
-void CrumpleToggleCol(int direction)
-{
-	JER_ARGS_PAUSE_MENU jerArgs;
-
-	(void)direction;
-
-	jerArgs.action = JER_PAUSE_CRUMPLE_TOGGLE_COL;
-	jerArgs.result = NULL;
-	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-	CrumpleRefreshLabels();
-}
-
-void CrumpleToggleOverlay(int direction)
-{
-	JER_ARGS_PAUSE_MENU jerArgs;
-
-	(void)direction;
-
-	jerArgs.action = JER_PAUSE_CRUMPLE_TOGGLE_OVERLAY;
-	jerArgs.result = NULL;
-	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-	CrumpleRefreshLabels();
-}
-
-void CrumpleRepairCar(int direction)
-{
-	JER_ARGS_PAUSE_MENU jerArgs;
-
-	(void)direction;
-
-	jerArgs.action = JER_PAUSE_CRUMPLE_REPAIR;
-	jerArgs.result = NULL;
-	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-	PauseReturnValue = MENU_QUIT_CONTINUE;
-}
-
-// JERICHO-HOOK: opens the sandbox module's overlay menu. The game unpauses
-// (the world keeps running) only if the module claims the press by opening
-// its menu; otherwise we stay in the pause menu.
-void SandboxMenuOpen(int direction)
-{
-	JER_ARGS_PAUSE_MENU jerArgs;
-
-	(void)direction;
-
-	jerArgs.action = JER_PAUSE_SANDBOX_OPEN;
-	jerArgs.result = NULL;
-
-	if (jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs) == JER_RESULT_STOP)
-		PauseReturnValue = MENU_QUIT_CONTINUE;
-}
-
-// JERICHO-HOOK: D2PL Settings (Driver 2 Parallel Lines). The module owns
-// the values + labels; this shell only bridges the menu items via
-// JER_EVENT_PAUSE_MENU (GET_LABEL / ADJUST multiplexed by item id).
-static char D2plLabels[D2PL_ITEM_COUNT][40];
-
-static void D2plRefreshLabels(void)
-{
-	JER_ARGS_PAUSE_MENU jerArgs;
-	int i;
-
-	for (i = 0; i < D2PL_ITEM_COUNT; i++)
-	{
-		jerArgs.action = JER_PAUSE_D2PL_GET_LABEL;
-		jerArgs.value = i;
-		jerArgs.result = NULL;
-		jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-		if (jerArgs.result != NULL)
-			sprintf(D2plLabels[i], "%s", (const char*)jerArgs.result);
-		else
-			D2plLabels[i][0] = 0;
-	}
-}
-
-static void D2plAdjustItem(int item, int direction)
-{
-	JER_ARGS_PAUSE_MENU jerArgs;
-
-	jerArgs.action = JER_PAUSE_D2PL_ADJUST;
-	jerArgs.value = item;
-	jerArgs.result = (void*)(size_t)direction;
-	jer_fire(JER_EVENT_PAUSE_MENU, &jerArgs);
-
-	D2plRefreshLabels();
-}
-
-/* one bridge per item so the engine's item->func pointer can tell them
- * apart (the item id is passed through to the module) */
-static void D2plAdjSensX(int direction) { D2plAdjustItem(D2PL_ITEM_SENS_X, direction); }
-static void D2plAdjSensY(int direction) { D2plAdjustItem(D2PL_ITEM_SENS_Y, direction); }
-static void D2plAdjJoystick(int direction) { D2plAdjustItem(D2PL_ITEM_JOYSTICK, direction); }
-static void D2plAdjFootDist(int direction) { D2plAdjustItem(D2PL_ITEM_FOOT_DIST, direction); }
-static void D2plAdjFootLat(int direction) { D2plAdjustItem(D2PL_ITEM_FOOT_LAT, direction); }
-static void D2plAdjFootHeight(int direction) { D2plAdjustItem(D2PL_ITEM_FOOT_HEIGHT, direction); }
-static void D2plAdjCarDist(int direction) { D2plAdjustItem(D2PL_ITEM_CAR_DIST, direction); }
-static void D2plAdjCarLat(int direction) { D2plAdjustItem(D2PL_ITEM_CAR_LAT, direction); }
-static void D2plAdjCarHeight(int direction) { D2plAdjustItem(D2PL_ITEM_CAR_HEIGHT, direction); }
-static void D2plAdjShoulder(int direction) { D2plAdjustItem(D2PL_ITEM_SHOULDER, direction); }
-static void D2plAdjInvertH(int direction) { D2plAdjustItem(D2PL_ITEM_INVERT_H, direction); }
-static void D2plAdjInvertV(int direction) { D2plAdjustItem(D2PL_ITEM_INVERT_V, direction); }
-static void D2plAdjFov(int direction) { D2plAdjustItem(D2PL_ITEM_FOV, direction); }
-static void D2plAdjLaser(int direction) { D2plAdjustItem(D2PL_ITEM_LASER, direction); }
-static void D2plAdjCamera(int direction) { D2plAdjustItem(D2PL_ITEM_CAMERA, direction); }
-
-MENU_ITEM D2plSettingsItems[] =
-{
-	{ D2plLabels[D2PL_ITEM_SENS_X], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjSensX, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_SENS_Y], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjSensY, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_JOYSTICK], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjJoystick, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_FOOT_DIST], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjFootDist, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_FOOT_LAT], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjFootLat, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_FOOT_HEIGHT], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjFootHeight, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_CAR_DIST], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjCarDist, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_CAR_LAT], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjCarLat, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_CAR_HEIGHT], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjCarHeight, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_SHOULDER], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjShoulder, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_INVERT_H], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjInvertH, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_INVERT_V], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjInvertV, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_FOV], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjFov, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_LASER], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjLaser, MENU_QUIT_NONE, NULL },
-	{ D2plLabels[D2PL_ITEM_CAMERA], PAUSE_TYPE_FUNC | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&D2plAdjCamera, MENU_QUIT_NONE, NULL },
-	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
-};
-
-MENU_HEADER D2plSettingsHeader =
-{ "D2PL Settings", { 0, 0, 0, 0 }, 0u, D2plSettingsItems };
+// JERICHO-HOOK: module pause menus are registered by the modules themselves
+// (jer_pause_menu.h) and bridged by JerPauseBuildModuleMenus() below — no
+// per-module shells live in this file anymore.
 
 int lastCar = -1;
 
@@ -459,19 +264,6 @@ MENU_ITEM DebugJustForFunItems[] =
 MENU_HEADER DebugJustForFunHeader =
 { "Just for fun", { 0, 0, 0, 0 }, 0u, DebugJustForFunItems };
 
-MENU_ITEM CrumpleDebugItems[] =
-{
-	{ CrumpleDpadText, PAUSE_TYPE_FUNC, 2u, CrumpleToggleDpad, MENU_QUIT_NONE, NULL },
-	{ CrumpleBuddhaText, PAUSE_TYPE_FUNC, 2u, CrumpleToggleBuddha, MENU_QUIT_NONE, NULL },
-	{ CrumpleOverlayText, PAUSE_TYPE_FUNC, 2u, CrumpleToggleOverlay, MENU_QUIT_NONE, NULL },
-	{ CrumpleColText, PAUSE_TYPE_FUNC, 2u, CrumpleToggleCol, MENU_QUIT_NONE, NULL },
-	{ "Repair Car", PAUSE_TYPE_FUNC, 2u, CrumpleRepairCar, MENU_QUIT_CONTINUE, NULL },
-	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
-};
-
-MENU_HEADER CrumpleDebugHeader =
-{ "Crumple Debug", { 0, 0, 0, 0 }, 0u, CrumpleDebugItems };
-
 MENU_ITEM DebugOptionsItems[] =
 {
 #ifdef CUTSCENE_RECORDER
@@ -481,7 +273,6 @@ MENU_ITEM DebugOptionsItems[] =
 	{ "Back on Wheels",	PAUSE_TYPE_FUNC, 	2,	SetRightWayUp,		MENU_QUIT_NONE,		NULL},
 	{ "Time of Day", 	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&DebugTimeOfDayHeader },
 	{ "Fun Cheats", 	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&DebugJustForFunHeader },
-	{ "Crumple Debug",	PAUSE_TYPE_SUBMENU, 2,  NULL,		  		MENU_QUIT_NONE,		&CrumpleDebugHeader },
 	{ "Invincibility", 	PAUSE_TYPE_FUNC, 	2,  ToggleInvincibility,MENU_QUIT_NONE,		NULL},
 	{ "Immunity", 		PAUSE_TYPE_FUNC, 	2,  ToggleImmunity,		MENU_QUIT_NONE,		NULL},
 	{ "Puppy Dog Cops",	PAUSE_TYPE_FUNC,	2,  TogglePuppyDogCops,	MENU_QUIT_NONE,		NULL },
@@ -518,10 +309,6 @@ MENU_HEADER YesNoQuitHeader =
 MENU_ITEM MainPauseItems[] =
 {
 	{ G_LTXT_ID(GTXT_Continue), 1u, 2u, NULL, MENU_QUIT_CONTINUE, NULL },
-#if defined(_DEBUG) || defined(DEBUG_OPTIONS)
-	{ "Sandbox Menu", PAUSE_TYPE_FUNC, 2u, SandboxMenuOpen, MENU_QUIT_CONTINUE, NULL },
-	{ "D2PL Settings", PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_CONTINUE, &D2plSettingsHeader },
-#endif
 	{ G_LTXT_ID(GTXT_ShowMap), PAUSE_TYPE_FUNC, 2u, (pauseFunc)&PauseMap, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_Restart), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoRestartHeader },
 	{ G_LTXT_ID(GTXT_SfxVolume), PAUSE_TYPE_SFXVOLUME | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&SfxVolume, MENU_QUIT_NONE, NULL },
@@ -1080,6 +867,274 @@ void SetupMenu(MENU_HEADER *menu, int back)
 	ActiveItem[VisibleMenu] = &ActiveMenu->MenuItems[ActiveMenuItem];
 }
 
+/* ------------------------------------------------------------------ */
+/* JERICHO-HOOK: bridge module-provided pause menus (jer_pause_menu.h) */
+/*                                                                     */
+/* Modules register JER_PAUSE_MENU trees; we translate them into the   */
+/* engine's static MENU_ITEM/MENU_HEADER form each time the pause      */
+/* opens and collect them under a "Modules" submenu spliced into the   */
+/* root menu. No per-module code lives here.                           */
+/* ------------------------------------------------------------------ */
+
+#define JER_PAUSE_MAX_MENUS 8		/* registered menus (incl. submenus) */
+#define JER_PAUSE_MAX_ITEMS 64		/* bridge items (incl. terminators) */
+#define JER_PAUSE_ITEM_TEXT 48		/* label buffer per bridge item */
+#define JER_PAUSE_ROOT_ITEMS 24		/* dynamic root copy capacity */
+
+static MENU_ITEM gJerModuleItems[JER_PAUSE_MAX_ITEMS];
+static char gJerModuleText[JER_PAUSE_MAX_ITEMS][JER_PAUSE_ITEM_TEXT];
+static MENU_HEADER gJerModuleHeaders[JER_PAUSE_MAX_MENUS];
+static MENU_ITEM gJerModulesItems[JER_PAUSE_MAX_MENUS + 1];	/* "Modules" container */
+static char gJerModulesText[JER_PAUSE_MAX_MENUS][JER_PAUSE_ITEM_TEXT];
+static MENU_HEADER gJerModulesHeader;				/* "Modules" container */
+static MENU_ITEM gJerPauseRootItems[JER_PAUSE_ROOT_ITEMS];	/* root copy + Modules */
+static MENU_HEADER gJerPauseRoot;				/* dynamic root when modules exist */
+
+/* bridge slot -> owning (menu, item index): set for activatable items */
+typedef struct JER_PAUSE_BRIDGE { const JER_PAUSE_MENU* menu; int item; } JER_PAUSE_BRIDGE;
+static JER_PAUSE_BRIDGE gJerBridge[JER_PAUSE_MAX_ITEMS];
+static int gJerBridgeCount;		/* items used (incl. terminators) */
+static int gJerModuleHeaderCount;
+static MENU_HEADER* gJerTopHeaders[JER_PAUSE_MAX_MENUS];	/* registered top-level menus */
+static int gJerTopCount;
+
+static EXIT_VALUE JerPauseMapQuit(int q)
+{
+	switch (q)
+	{
+		case JER_PAUSE_QUIT_CONTINUE:	return MENU_QUIT_CONTINUE;
+		case JER_PAUSE_QUIT_QUIT:		return MENU_QUIT_QUIT;
+		case JER_PAUSE_QUIT_RESTART:	return MENU_QUIT_RESTART;
+		case JER_PAUSE_QUIT_DIRECTOR:	return MENU_QUIT_DIRECTOR;
+		case JER_PAUSE_QUIT_QUICKREPLAY:return MENU_QUIT_QUICKREPLAY;
+		case JER_PAUSE_QUIT_BACKMENU:	return MENU_QUIT_BACKMENU;
+		case JER_PAUSE_QUIT_NEXTMISSION:return MENU_QUIT_NEXTMISSION;
+		default:						return MENU_QUIT_NONE;
+	}
+}
+
+/* generic engine pauseFunc for module items: dispatch to the module's
+ * on_activate, apply the returned quit code, refresh every module label */
+static void JerPauseBridgeFunc(int direction)
+{
+	MENU_ITEM* item = ActiveItem[VisibleMenu];
+	int idx;
+	const JER_PAUSE_MENU* menu;
+	const JER_PAUSE_MENU_ITEM* mi;
+	int quit;
+	int i;
+
+	if (item == NULL)
+		return;
+
+	idx = (int)(item - gJerModuleItems);
+
+	if (idx < 0 || idx >= gJerBridgeCount || gJerBridge[idx].menu == NULL)
+		return;
+
+	menu = gJerBridge[idx].menu;
+
+	if (gJerBridge[idx].item < 0 || gJerBridge[idx].item >= menu->item_count)
+		return;
+
+	mi = &menu->items[gJerBridge[idx].item];
+
+	quit = mi->on_activate != NULL ? mi->on_activate(mi->userdata, direction) : JER_PAUSE_QUIT_NONE;
+
+	item->ExitValue = JerPauseMapQuit(quit);
+
+	/* toggles/adjustments change labels: refresh all module labels */
+	for (i = 0; i < gJerBridgeCount; i++)
+	{
+		const JER_PAUSE_MENU* m = gJerBridge[i].menu;
+
+		if (m != NULL)
+		{
+			const JER_PAUSE_MENU_ITEM* mit = &m->items[gJerBridge[i].item];
+
+			if (mit->get_label != NULL)
+				mit->get_label(mit->userdata, gJerModuleText[i], JER_PAUSE_ITEM_TEXT);
+		}
+	}
+}
+
+/* build the bridge header for one module menu (recursively its submenus).
+ * Items + terminators come from the single shared pool. depth counts from
+ * the module menu (0); submenus may only nest one level (the engine's
+ * pause stack is PAUSE_MENU_LEVELS = root/Modules/menu/submenu). */
+static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
+{
+	MENU_HEADER* hdr;
+	MENU_ITEM* items;
+	int j;
+
+	if (menu == NULL || depth > 1)
+		return NULL;
+
+	/* no room for another header, or for its items + terminator */
+	if (gJerModuleHeaderCount >= JER_PAUSE_MAX_MENUS || gJerBridgeCount >= JER_PAUSE_MAX_ITEMS)
+		return NULL;
+
+	hdr = &gJerModuleHeaders[gJerModuleHeaderCount++];
+	items = &gJerModuleItems[gJerBridgeCount];
+
+	hdr->Title = (char*)menu->title;
+	hdr->Bound.x = hdr->Bound.y = hdr->Bound.w = hdr->Bound.h = 0;
+	hdr->NumItems = 0;		/* SetupMenu computes */
+	hdr->MenuItems = items;
+
+	for (j = 0; j < menu->item_count; j++)
+	{
+		const JER_PAUSE_MENU_ITEM* mi = &menu->items[j];
+		MENU_ITEM* it;
+		int idx;
+
+		if (gJerBridgeCount >= JER_PAUSE_MAX_ITEMS - 1)
+			break;
+
+		idx = gJerBridgeCount;
+		it = &gJerModuleItems[gJerBridgeCount++];
+
+		memset(it, 0, sizeof(*it));
+		it->Text = gJerModuleText[idx];
+		it->Justify = 2;
+		it->ExitValue = MENU_QUIT_NONE;
+		gJerBridge[idx].menu = NULL;
+		gJerBridge[idx].item = 0;
+
+		if (mi->submenu != NULL)
+		{
+			MENU_HEADER* sub = JerPauseBuildMenuRec(mi->submenu, depth + 1);
+
+			if (sub != NULL)
+			{
+				it->Type = PAUSE_TYPE_SUBMENU;
+				it->SubMenu = sub;
+			}
+			else
+			{
+				/* submenu couldn't be built (pool/depth): dead entry, so the
+				 * engine never dereferences a NULL SubMenu on CROSS */
+				it->Type = 0;
+				it->ExitValue = MENU_QUIT_NONE;
+			}
+		}
+		else
+		{
+			it->Type = (u_char)(PAUSE_TYPE_FUNC | (mi->adjust ? PAUSE_TYPE_DIRFUNC : 0));
+			it->func = JerPauseBridgeFunc;
+			gJerBridge[idx].menu = menu;
+			gJerBridge[idx].item = j;
+		}
+
+		if (mi->get_label != NULL)
+			mi->get_label(mi->userdata, gJerModuleText[idx], JER_PAUSE_ITEM_TEXT);
+		else if (mi->label != NULL)
+			snprintf(gJerModuleText[idx], JER_PAUSE_ITEM_TEXT, "%s", mi->label);
+		else
+			gJerModuleText[idx][0] = 0;
+	}
+
+	/* ENDITEMS terminator */
+	memset(&gJerModuleItems[gJerBridgeCount], 0, sizeof(MENU_ITEM));
+	gJerModuleItems[gJerBridgeCount].Type = PAUSE_TYPE_ENDITEMS;
+	gJerBridgeCount++;
+
+	return hdr;
+}
+
+/* rebuild all module bridges (and refresh labels); returns 1 when any
+ * module menu is registered */
+static int JerPauseBuildModuleMenus(void)
+{
+	int i;
+	int count = jer_pause_menu_count();
+
+	gJerBridgeCount = 0;
+	gJerModuleHeaderCount = 0;
+	gJerTopCount = 0;
+
+	for (i = 0; i < count && gJerTopCount < JER_PAUSE_MAX_MENUS; i++)
+	{
+		MENU_HEADER* h = JerPauseBuildMenuRec(jer_pause_menu_get(i), 0);
+
+		if (h != NULL)
+			gJerTopHeaders[gJerTopCount++] = h;
+	}
+
+	return gJerTopCount;
+}
+
+/* splice a "Modules" submenu into a copy of the root pause menu; returns
+ * the dynamic root (or the original when no module menus are registered) */
+static MENU_HEADER* JerPauseRootOr(MENU_HEADER* original)
+{
+	MENU_ITEM* src;
+	int n = 0;
+	int i;
+
+	if (gJerTopCount == 0)
+		return original;
+
+	gJerPauseRoot = *original;
+	gJerPauseRoot.MenuItems = gJerPauseRootItems;
+
+	src = original->MenuItems;
+	n = 0;
+
+	/* copy the first item (Continue), then splice "Modules" right after it
+	 * (where the old per-module shells used to live), then the rest */
+	if (src->Type != PAUSE_TYPE_ENDITEMS && n < JER_PAUSE_ROOT_ITEMS - 2)
+	{
+		gJerPauseRootItems[n++] = *src++;
+	}
+
+	/* "Modules" container: one SUBMENU entry per registered menu */
+	gJerModulesHeader.Title = "Modules";
+	gJerModulesHeader.Bound.x = gJerModulesHeader.Bound.y = 0;
+	gJerModulesHeader.Bound.w = gJerModulesHeader.Bound.h = 0;
+	gJerModulesHeader.NumItems = 0;
+	gJerModulesHeader.MenuItems = gJerModulesItems;
+
+	for (i = 0; i < gJerTopCount; i++)
+	{
+		MENU_ITEM* it = &gJerModulesItems[i];
+
+		memset(it, 0, sizeof(*it));
+		snprintf(gJerModulesText[i], JER_PAUSE_ITEM_TEXT, "%s", gJerTopHeaders[i]->Title);
+		it->Text = gJerModulesText[i];
+		it->Type = PAUSE_TYPE_SUBMENU;
+		it->Justify = 2;
+		it->ExitValue = MENU_QUIT_NONE;
+		it->SubMenu = gJerTopHeaders[i];
+	}
+
+	memset(&gJerModulesItems[gJerTopCount], 0, sizeof(MENU_ITEM));
+	gJerModulesItems[gJerTopCount].Type = PAUSE_TYPE_ENDITEMS;
+
+	/* the Modules entry inside the root copy (right after the first item) */
+	if (n < JER_PAUSE_ROOT_ITEMS - 2)
+	{
+		memset(&gJerPauseRootItems[n], 0, sizeof(MENU_ITEM));
+		gJerPauseRootItems[n].Text = "Modules";
+		gJerPauseRootItems[n].Type = PAUSE_TYPE_SUBMENU;
+		gJerPauseRootItems[n].Justify = 2;
+		gJerPauseRootItems[n].SubMenu = &gJerModulesHeader;
+		n++;
+	}
+
+	/* remaining engine items */
+	while (src->Type != PAUSE_TYPE_ENDITEMS && n < JER_PAUSE_ROOT_ITEMS - 1)
+	{
+		gJerPauseRootItems[n++] = *src++;
+	}
+
+	memset(&gJerPauseRootItems[n], 0, sizeof(MENU_ITEM));
+	gJerPauseRootItems[n].Type = PAUSE_TYPE_ENDITEMS;
+
+	return &gJerPauseRoot;
+}
+
 // [D] [T]
 void InitaliseMenu(PAUSEMODE mode)
 {
@@ -1092,12 +1147,9 @@ void InitaliseMenu(PAUSEMODE mode)
 		VisibleMenus[i] = NULL;
 	}
 
-	// JERICHO-HOOK: refresh the crumple + d2pl labels when the pause menu
-	// opens so the submenus show live state.
-#if defined(_DEBUG) || defined(DEBUG_OPTIONS)
-	CrumpleRefreshLabels();
-	D2plRefreshLabels();
-#endif
+	// JERICHO-HOOK: (re)build the module-provided pause menus whenever the
+	// pause opens (this also refreshes their dynamic labels).
+	JerPauseBuildModuleMenus();
 
 	pNewMenu = NULL;
 
@@ -1111,7 +1163,7 @@ void InitaliseMenu(PAUSEMODE mode)
 			if (NumPlayers == 1 && gMultiplayerLevels == 0) 
 			{
 				if (gInGameCutsceneActive == 0)
-					pNewMenu = &PauseMenuHeader;
+					pNewMenu = JerPauseRootOr(&PauseMenuHeader);
 				else 
 					pNewMenu = &CutscenePauseMenuHeader;
 			}

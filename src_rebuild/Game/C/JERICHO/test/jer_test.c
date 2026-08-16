@@ -4,6 +4,7 @@
  * with MODS/ + CONFIG/; pass a sandbox copy to avoid touching the repo).
  */
 #include "jericho.h"
+#include "jer_pause_menu.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -77,6 +78,10 @@ int main(int argc, char** argv)
 	/* restore the original enabled state so re-runs stay deterministic */
 	if (origEnabled >= 0)
 		jer_manager_set_enabled(root, "example", origEnabled);
+
+	/* module pause menus: the registry is empty until a module registers;
+	 * example registers none, so count must be 0 here */
+	printf("--- jer_test: pause menu count=%d (expected 0, example registers none) ---\n", jer_pause_menu_count());
 
 	printf("--- jer_test: firing JER_EVENT_FRAME ---\n");
 	jer_fire(JER_EVENT_FRAME, NULL);

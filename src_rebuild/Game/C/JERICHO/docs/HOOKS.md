@@ -58,14 +58,48 @@ The runtime reads `JERICHO/CONFIG/modlist.ini` (regenerated on first boot)
 and activates the enabled modules in load order, logging one line per
 module and per hook into `REDRIVER2.log`.
 
+## Module pause menus
+
+Modules add their own entries to the in-game pause screen with
+`jer_pause_menu.h` — no game code needs editing:
+
+```c
+#include "jer_pause_menu.h"
+
+static void MyToggleLabel(void* ud, char* out, int max) { snprintf(out, max, "My Toggle: %s", gMyToggle ? "ON" : "OFF"); }
+static int  MyToggleAct(void* ud, int dir)              { gMyToggle ^= 1; return JER_PAUSE_QUIT_NONE; }
+
+static const JER_PAUSE_MENU_ITEM items[] = {
+    { NULL,        MyToggleLabel, MyToggleAct, NULL, NULL, 0 },  /* dynamic label + toggle */
+    { "Open Sub",  NULL,          NULL,        NULL, &sub, 0 },  /* opens a submenu */
+    { "Sensitivity", NULL,        MyAdjust,    NULL, NULL, 1 },  /* left/right adjusts */
+};
+static const JER_PAUSE_MENU myMenu = { "My Mod", items, 3 };
+
+/* in the module entry: */
+jer_pause_menu_register(&myMenu);
+```
+
+- The engine collects registered menus under a **"Modules"** submenu in the
+  pause screen (`Continue` → `Modules` → your menu → items).
+- `get_label` is re-queried every time the pause opens and after every
+  activation, so toggles/adjustments show live state.
+- `on_activate` returns a `JER_PAUSE_QUIT_*` code (e.g.
+  `JER_PAUSE_QUIT_CONTINUE` to leave the pause, `JER_PAUSE_QUIT_NONE` to
+  stay). With `adjust = 1` it receives `-1`/`1` on left/right.
+- Depth: root → Modules → your menu → one submenu level.
+- `crumple`, `d2pl` and `sandbox` are the worked examples — their old
+  hardcoded shells were removed from `pause.c`.
+
 ## What a module can do
 
 - **React to events** — see `events.md` for the full table. The engine
   call sites are inert when no module handles them, so a vanilla game (no
   modules) behaves exactly stock.
-- **Own pause-menu items** — bridge via `JER_EVENT_PAUSE_MENU` (see
-  `pause.c`'s crumple/d2pl shells for the pattern). The engine keeps the
-  `MENU_ITEM` shells; the module owns the state and the label text.
+- **Own pause-menu items** — register menus/submenus with
+  `jer_pause_menu_register()` from `jer_pause_menu.h` (see the "Module
+  pause menus" section). The engine collects everything under a "Modules"
+  submenu in the pause screen — no per-module code in `pause.c`.
 - **Replace whole behaviors** — `ctx->jer_override(ctx, SLOT, fn)`
   swaps an engine function-pointer slot (`JER_OVERRIDE_SLOT_SIM` today);
   `jer_get_override(slot)` returns the previous one so a module can chain.

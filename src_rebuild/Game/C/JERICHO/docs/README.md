@@ -33,6 +33,7 @@ src_rebuild/Game/C/JERICHO/        the SDK (ships inside the game dev area)
     include/jericho.h              public API + JER_EVENT_* + MOD_CONTEXT
     include/jer_math.h             core math helpers (ex-Nattdy's nattdymath)
     include/jer_config.h           persistent config API (CONFIG/*.ini)
+    include/jer_pause_menu.h       module pause menus/submenus (pause screen)
     src/jer_system.c               registry, dispatch, activation, banner
     src/jer_manager.c              CONFIG/modlist.ini read/write (tiny INI)
     src/jer_config.c               persistent config store (PC only)
