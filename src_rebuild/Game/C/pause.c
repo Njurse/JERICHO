@@ -961,11 +961,13 @@ static void JerPauseBridgeFunc(int direction)
 /* build the bridge header for one module menu (recursively its submenus).
  * Items + terminators come from the single shared pool. depth counts from
  * the module menu (0); submenus may only nest one level (the engine's
- * pause stack is PAUSE_MENU_LEVELS = root/Modules/menu/submenu). */
+ * pause stack is PAUSE_MENU_LEVELS = root/Modules/menu/submenu). Returns
+ * NULL when nothing fits — callers must treat that as "no submenu". */
 static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
 {
 	MENU_HEADER* hdr;
 	MENU_ITEM* items;
+	int built = 0;
 	int j;
 
 	if (menu == NULL || depth > 1)
@@ -975,13 +977,8 @@ static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
 	if (gJerModuleHeaderCount >= JER_PAUSE_MAX_MENUS || gJerBridgeCount >= JER_PAUSE_MAX_ITEMS)
 		return NULL;
 
-	hdr = &gJerModuleHeaders[gJerModuleHeaderCount++];
+	hdr = &gJerModuleHeaders[gJerModuleHeaderCount];
 	items = &gJerModuleItems[gJerBridgeCount];
-
-	hdr->Title = (char*)menu->title;
-	hdr->Bound.x = hdr->Bound.y = hdr->Bound.w = hdr->Bound.h = 0;
-	hdr->NumItems = 0;		/* SetupMenu computes */
-	hdr->MenuItems = items;
 
 	for (j = 0; j < menu->item_count; j++)
 	{
@@ -1033,7 +1030,23 @@ static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
 			snprintf(gJerModuleText[idx], JER_PAUSE_ITEM_TEXT, "%s", mi->label);
 		else
 			gJerModuleText[idx][0] = 0;
+
+		built++;
 	}
+
+	if (built == 0)
+	{
+		/* nothing fit: don't claim a header slot — the engine must never
+		 * see an empty submenu (its nav would wrap to MenuItems[-1]) */
+		return NULL;
+	}
+
+	/* commit the header now that it has real items */
+	hdr->Title = (char*)menu->title;
+	hdr->Bound.x = hdr->Bound.y = hdr->Bound.w = hdr->Bound.h = 0;
+	hdr->NumItems = 0;		/* SetupMenu computes */
+	hdr->MenuItems = items;
+	gJerModuleHeaderCount++;
 
 	/* ENDITEMS terminator */
 	memset(&gJerModuleItems[gJerBridgeCount], 0, sizeof(MENU_ITEM));

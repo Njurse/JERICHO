@@ -491,18 +491,14 @@ static void SandboxTuneEnter(void)
 static void SandboxTuneRestore(void)
 {
 	extern CAR_COSMETICS car_cosmetics[];
-	CAR_DATA* pc;
 
 	if (!gSandboxTunedActive)
 		return;
 
-	pc = SandboxPlayerCar();
-
-	/* only restore the model we actually tuned: the player can't switch
-	 * cars mid-pause, but guard anyway so another model never gets the
-	 * saved values clobbered */
-	if (pc != NULL && pc->ap.model == gSandboxTunedModel)
-		car_cosmetics[pc->ap.model] = gSandboxOrigCos;
+	/* always restore the model we tuned: the tune page runs with the world
+	 * live, so the player car may be wrecked/gone by now — the SHARED
+	 * cosmetics must not stay edited for the rest of the level */
+	car_cosmetics[gSandboxTunedModel] = gSandboxOrigCos;
 
 	gSandboxTunedActive = 0;
 }
@@ -542,21 +538,41 @@ static void SandboxTuneAdjust(CAR_DATA* pc, int cursor, int step)
 
 	if (cursor == 10)
 	{
+		int i;
+
 		/* wheelbase: both axles spread apart symmetrically (front +z, rear -z) */
 		gSandboxTunedCos->wheelDisp[0].vz += step * 16;
 		gSandboxTunedCos->wheelDisp[1].vz -= step * 16;
 		gSandboxTunedCos->wheelDisp[2].vz += step * 16;
 		gSandboxTunedCos->wheelDisp[3].vz -= step * 16;
+
+		/* clamp to short range so long holds can't overflow */
+		for (i = 0; i < 4; i++)
+		{
+			if (gSandboxTunedCos->wheelDisp[i].vz > 16000) gSandboxTunedCos->wheelDisp[i].vz = 16000;
+			if (gSandboxTunedCos->wheelDisp[i].vz < -16000) gSandboxTunedCos->wheelDisp[i].vz = -16000;
+		}
+
 		return;
 	}
 
 	if (cursor == 11)
 	{
+		int i;
+
 		/* track width: left wheels out, right wheels out */
 		gSandboxTunedCos->wheelDisp[0].vx -= step * 8;
 		gSandboxTunedCos->wheelDisp[1].vx -= step * 8;
 		gSandboxTunedCos->wheelDisp[2].vx += step * 8;
 		gSandboxTunedCos->wheelDisp[3].vx += step * 8;
+
+		/* clamp to short range so long holds can't overflow */
+		for (i = 0; i < 4; i++)
+		{
+			if (gSandboxTunedCos->wheelDisp[i].vx > 16000) gSandboxTunedCos->wheelDisp[i].vx = 16000;
+			if (gSandboxTunedCos->wheelDisp[i].vx < -16000) gSandboxTunedCos->wheelDisp[i].vx = -16000;
+		}
+
 		return;
 	}
 
@@ -1936,6 +1952,7 @@ static int gSandboxTeleportActive;	/* cursor mode on the map */
 static int gSandboxTpCursorX;		/* cursor offset from screen centre (px) */
 static int gSandboxTpCursorZ;
 static int gSandboxMapHandledFrame;	/* dedupe the two per-frame INPUT hooks */
+static int gSandboxTpStartFrame;	/* frame the teleport mode started (debounce) */
 
 /* the game's road network is baked into the region BSP: RoadInCell is the
  * node query, so find the nearest road by sampling expanding rings around
@@ -2072,15 +2089,23 @@ static int SandboxOnMap(void* userdata, void* args)
 		return JER_RESULT_CONTINUE;
 	}
 
+	/* keep the map unrotated + un-scrolled so the cursor maps 1:1. Runs on
+	 * every INPUT call (even the deduped second one) so an R1 press inside
+	 * DrawFullscreenMap can't leave the map rotated for a frame. */
+	gUseRotatedMap = 0;
+	map_x_shift = 0;
+	map_z_shift = 0;
+
 	if (gSandboxMapHandledFrame == FrameCnt)
 		return JER_RESULT_STOP;
 
 	gSandboxMapHandledFrame = FrameCnt;
 
-	/* keep the map unrotated + un-scrolled so the cursor maps 1:1 */
-	gUseRotatedMap = 0;
-	map_x_shift = 0;
-	map_z_shift = 0;
+	/* the frame the mode just started: the pause-menu CROSS that selected
+	 * "Teleport to Map" is still in dirnew — swallow it so we don't
+	 * instantly teleport to the map centre */
+	if (FrameCnt == gSandboxTpStartFrame)
+		return JER_RESULT_STOP;
 
 	/* cursor movement: held d-pad, 8 px/frame (matches the map scroll) */
 	if (Pads[0].direct & MPAD_D_LEFT) gSandboxTpCursorX -= 8;
@@ -2113,12 +2138,15 @@ static int SandboxOnMap(void* userdata, void* args)
 
 static int SandboxTeleportStart(void* userdata, int direction)
 {
+	extern int FrameCnt;
+
 	(void)userdata;
 	(void)direction;
 
 	gSandboxTpCursorX = 0;
 	gSandboxTpCursorZ = 0;
 	gSandboxTeleportActive = 1;
+	gSandboxTpStartFrame = FrameCnt;
 	gShowMap = 1;	/* open the fullscreen map; the cursor takes over */
 
 	return JER_PAUSE_QUIT_NONE;

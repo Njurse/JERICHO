@@ -173,7 +173,9 @@ typedef struct JER_ARGS_PAUSE_MENU
  * in-game map (gShowMap) is up; modules return JER_RESULT_STOP on the INPUT
  * action to claim the pad (e.g. a teleport cursor), and draw their cursor on
  * the DRAWN action (after the map, so it lands on top).
- *   action JER_MAP_ACTION_INPUT: value = the pad bits (Pads[0].direct);
+ *   action JER_MAP_ACTION_INPUT: value = current pad bits (caller-dependent:
+ *     Pads[0].direct in overmap.c, dirnew in pause.c — handlers should read
+ *     Pads[0] directly instead of relying on it);
  *   action JER_MAP_ACTION_DRAWN: value = 0 (draw into the display buffer). */
 #define JER_MAP_ACTION_INPUT 0
 #define JER_MAP_ACTION_DRAWN 1
