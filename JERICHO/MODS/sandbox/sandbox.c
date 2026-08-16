@@ -2013,7 +2013,7 @@ static void SandboxTeleportToCursor(void)
 	/* land the car on the road the same way InitCar does */
 	ground.vx = road.vx;
 	ground.vz = road.vz;
-	ground.vy = 0;
+	ground.vy = 100;
 
 	pos[0] = road.vx;
 	pos[1] = MapHeight(&ground) - pc->ap.carCos->wheelDisp[0].vy;
