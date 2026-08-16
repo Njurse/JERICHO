@@ -15,6 +15,10 @@
  *       TRIPOD   : parked roadside camera watching a junction/road
  *       FLYOVER  : slow eased dolly along a long straight
  *     Static/overhead styles are weighted over the chase cam.
+ *   - while focusing on a car, the camera cycles through multiple angles
+ *     (chase behind, chase front, side, overhead, static) every few seconds,
+ *     inspired by the replay director's camera modes, before cutting to a
+ *     new area.
  *   - optional rogue-car events (off by default): a tiny chance per cut that
  *     the car of interest becomes LEAD AI and tears across the map, with
  *     cops giving chase; the camera follows it until it is totaled.
@@ -91,6 +95,15 @@ extern int regions_unpacked[];
 /* module state                                                       */
 /* ------------------------------------------------------------------ */
 
+/* Car camera modes (angles) - inspired by replay director */
+#define CAR_MODE_CHASE_BEHIND 0
+#define CAR_MODE_CHASE_FRONT  1
+#define CAR_MODE_SIDE_LEFT    2
+#define CAR_MODE_SIDE_RIGHT   3
+#define CAR_MODE_OVERHEAD     4
+#define CAR_MODE_STATIC       5
+#define CAR_MODE_COUNT        6
+
 typedef struct ANTFARM_STATE
 {
 	JERICHO_CONTEXT* ctx;
@@ -106,7 +119,9 @@ typedef struct ANTFARM_STATE
 	unsigned long stateStart;	/* when the current state began (ms) */
 	unsigned long shotStart;	/* when the current shot's fade-in began (ms) */
 
-	int intervalMs;					/* seconds per visible shot */
+	int intervalMs;					/* seconds per visible shot (cut interval) */
+	int carModeIntervalMs;			/* seconds per car mode change */
+	int carModesPerCut;				/* number of mode changes before a cut */
 	int stylesEnabled[ANTFARM_STYLE_COUNT];
 	int leadEnabled;	/* rogue-car events allowed */
 	int leadChance;		/* percent chance per cut */
@@ -120,7 +135,7 @@ typedef struct ANTFARM_STATE
 	VECTOR targetPos;	/* world-space focus (also the spool content) */
 	VECTOR areaPos;		/* the far-area anchor of the current cut */
 
-	/* per-shot framing */
+	/* per-shot framing (these are modified by car modes) */
 	int shotSideSign;	/* +1/-1 — which side of the road the camera sits */
 	int shotMargin;		/* clearance from the road half-width edge */
 	int shotHeight;		/* camera elevation above the road/ground */
@@ -129,6 +144,12 @@ typedef struct ANTFARM_STATE
 	int shotOrbitPhase;	/* orbit phase seed */
 	int shotScrZ;		/* per-shot FOV (projection distance) */
 	int armFrac;		/* smoothed LOS pull-back fraction (256 = full arm) */
+
+	/* Car mode cycling */
+	int carMode;				/* current CAR_MODE_* */
+	int carModeIndex;			/* how many modes have been shown this cut */
+	unsigned long carModeStart;	/* when the current car mode began */
+	int carModeDurationMs;		/* configurable duration per mode */
 
 	VECTOR trackCamPos;	/* STATIC style: the fixed roadside camera spot */
 	int trackPlaced;	/* the static spot has been placed */
@@ -183,6 +204,7 @@ static int AntFarmPickFarArea(void);
 static int AntFarmPickRoadNear(int x, int z);
 static void AntFarmPickStyleAndTarget(void);
 static void AntFarmBuildRoadCache(void);
+static void AntFarmStaticTrack(CAR_DATA* cp, VECTOR* desired);
 
 /* ------------------------------------------------------------------ */
 /* timing                                                             */
@@ -201,6 +223,12 @@ static unsigned long AntTicks(void)
 static int AntIntervalMs(void)
 {
 	return (s.intervalMs > 0) ? s.intervalMs : ANTFARM_DEFAULT_INTERVAL * 1000;
+}
+
+/* car mode interval */
+static int AntCarModeIntervalMs(void)
+{
+	return (s.carModeIntervalMs > 0) ? s.carModeIntervalMs : 6000; /* default 6 sec */
 }
 
 /* ------------------------------------------------------------------ */
@@ -416,6 +444,10 @@ static int AntFarmRegionOf(const VECTOR* pos)
  * soon as roads and basic geometry are available. */
 static int AntFarmRegionsReady(int centerRegion)
 {
+	int totalRegions = regions_across * regions_down;
+	if (centerRegion < 0 || centerRegion >= totalRegions)
+		return 0;
+
 	int rx = centerRegion / regions_across;
 	int rz = centerRegion % regions_across;
 	int offsets[5][2] = { {0,0}, {1,0}, {-1,0}, {0,1}, {0,-1} };
@@ -426,9 +458,11 @@ static int AntFarmRegionsReady(int centerRegion)
 		if (nrx < 0 || nrx >= regions_across || nrz < 0 || nrz >= regions_down)
 			return 0;
 		int idx = nrx + nrz * regions_across;
-		if (spoolinfo_offsets[idx] == 0xffff)  // no geometry at all
+		// Check if region has data
+		if (spoolinfo_offsets[idx] == 0xffff)
 			return 0;
-		if (!regions_unpacked[idx])            // not yet loaded
+		// Check if region is unpacked (loaded)
+		if (!regions_unpacked[idx])
 			return 0;
 	}
 	return 1;
@@ -438,10 +472,19 @@ static int AntFarmRegionsReady(int centerRegion)
  * would show a void forever) */
 static int AntFarmRegionHasData(int region)
 {
-	if (region < 0 || region >= regions_across * regions_down)
+	int totalRegions = regions_across * regions_down;
+	if (region < 0 || region >= totalRegions)
 		return 0;
-
 	return spoolinfo_offsets[region] != 0xffff;
+}
+
+/* Check if a given world position is safe (its region has data and is unpacked) */
+static int AntFarmPositionLoaded(const VECTOR* pos)
+{
+	int region = AntFarmRegionOf(pos);
+	if (!AntFarmRegionHasData(region))
+		return 0;
+	return AntFarmRegionsReady(region);
 }
 
 /* pick the NEAREST usable straight to the camera so the very first shot
@@ -480,11 +523,12 @@ static void AntFarmPickNearArea(void)
 	AntFarmClampToWorld(&s.areaPos);
 }
 
-/* pick a road – preferably in a different region, but never give up */
+/* pick a road – preferably in a different region, and ensure the region is loaded.
+ * If no loaded region can be found, fallback to the current camera position (which is definitely loaded). */
 static int AntFarmPickFarArea(void)
 {
 	if (g_numUsableRoads == 0) {
-		/* No usable roads at all – fallback to camera position */
+		/* No usable roads at all – fallback to camera position (which is loaded) */
 		s.areaPos.vx = camera_position.vx;
 		s.areaPos.vz = camera_position.vz;
 		s.areaPos.vy = AntFarmMapHeight(s.areaPos.vx, s.areaPos.vz);
@@ -494,8 +538,8 @@ static int AntFarmPickFarArea(void)
 
 	int curRegion = AntFarmRegionOf(&s.targetPos);
 
-	/* Try up to 50 times to find a road in a different region */
-	for (int attempt = 0; attempt < 50; attempt++) {
+	/* Try up to 40 times to find a road in a different region that is loaded */
+	for (int attempt = 0; attempt < 40; attempt++) {
 		int idx = g_usableRoads[Random2(0) % g_numUsableRoads];
 		DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[idx];
 		if (rd->length < 200) continue;   // skip very short ones
@@ -506,25 +550,34 @@ static int AntFarmPickFarArea(void)
 		pos.vz = rd->Midz;
 		AntFarmClampToWorld(&pos);
 
-		if (AntFarmRegionOf(&pos) != curRegion) {
+		/* Check if this position's region is loaded */
+		if (!AntFarmPositionLoaded(&pos))
+			continue;
+
+		/* Try to move to a different region if possible, but if not, accept any loaded region */
+		if (AntFarmRegionOf(&pos) != curRegion || attempt > 20) {
 			s.areaPos = pos;
 			return 1;
 		}
 	}
 
-	/* Fallback: pick any usable road (even in same region) – never fail */
+	/* Fallback: try any usable road that is loaded, even if same region */
 	for (int attempt = 0; attempt < 30; attempt++) {
 		int idx = g_usableRoads[Random2(0) % g_numUsableRoads];
 		DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[idx];
 		if (rd->length < 200) continue;
-		s.areaPos.vx = rd->Midx;
-		s.areaPos.vy = AntFarmMapHeight(rd->Midx, rd->Midz);
-		s.areaPos.vz = rd->Midz;
-		AntFarmClampToWorld(&s.areaPos);
-		return 1;
+		VECTOR pos;
+		pos.vx = rd->Midx;
+		pos.vy = AntFarmMapHeight(rd->Midx, rd->Midz);
+		pos.vz = rd->Midz;
+		AntFarmClampToWorld(&pos);
+		if (AntFarmPositionLoaded(&pos)) {
+			s.areaPos = pos;
+			return 1;
+		}
 	}
 
-	/* Ultimate fallback: use current camera position (clamped) */
+	/* Ultimate fallback: use current camera position (loaded) */
 	s.areaPos.vx = camera_position.vx;
 	s.areaPos.vz = camera_position.vz;
 	s.areaPos.vy = AntFarmMapHeight(s.areaPos.vx, s.areaPos.vz);
@@ -658,8 +711,8 @@ static int AntFarmPickStyle(int carOnly)
 static void AntFarmInitShotVars(void)
 {
 	s.shotSideSign = (Random2(0) & 1) ? 1 : -1;
-	s.shotMargin = 240 + (Random2(0) % 160);	/* 240..400 clear of the kerb */
-	s.shotLookAhead = 560 + (Random2(0) % 640);	/* 560..1200 */
+	s.shotMargin = 180 + (Random2(0) % 180);	/* 220..400 clear of kerb */
+	s.shotLookAhead = 800 + (Random2(0) % 300);	/* 800..1400 – stable range */
 	s.shotOrbitAmp = 0;
 	s.armFrac = 256;
 	s.shotOrbitPhase = AntTicks() & 4095;
@@ -667,34 +720,166 @@ static void AntFarmInitShotVars(void)
 	switch (s.style)
 	{
 	case ANTFARM_STYLE_CHASE:
-		s.shotHeight = 240 + (Random2(0) % 120);
-		s.shotScrZ = 240 + (Random2(0) % 20);
+		s.shotHeight = 140 + (Random2(0) % 160);	/* 180..340 – follow cam, not too high */
+		s.shotScrZ = 290 + (Random2(0) % 16);		/* 260..276 – tighter FOV */
 		break;
 
 	case ANTFARM_STYLE_STATIC:
-		s.shotHeight = 220 + (Random2(0) % 90);
-		s.shotScrZ = 244 + (Random2(0) % 20);
+		s.shotHeight = 180 + (Random2(0) % 120);	/* 180..300 – ground level */
+		s.shotScrZ = 260 + (Random2(0) % 20);		/* 260..280 – natural perspective */
 		break;
 
 	case ANTFARM_STYLE_OVERHEAD:
-		s.shotHeight = 360 + (Random2(0) % 260);	/* scenic high view */
-		s.shotScrZ = 36 + (Random2(0) % 24);
+		s.shotHeight = 400 + (Random2(0) % 300);	/* 400..700 – high scenic view */
+		s.shotScrZ = 218 + (Random2(0) % 22);		/* 218..240 – wider FOV for context */
 		break;
 
 	case ANTFARM_STYLE_FLYOVER:
-		s.shotHeight = 500 + (Random2(0) % 250);
-		s.shotScrZ = 218 + (Random2(0) % 24);
+		s.shotHeight = 400 + (Random2(0) % 250);	/* 400..650 – smooth dolly height */
+		s.shotScrZ = 248 + (Random2(0) % 22);		/* 218..240 – same as overhead */
 		break;
 
 	default:	/* ANTFARM_STYLE_TRIPOD */
-		s.shotHeight = 240 + (Random2(0) % 140);
-
-		if (Random2(0) % 3 == 0)
-			s.shotOrbitAmp = 284 + (Random2(0) % 384);	/* ±34°..±67° */
-
-		s.shotScrZ = 80 + (Random2(0) % 24);
+		/* Lower height for tripod to be more ground-level, and give a more directed angle */
+		s.shotHeight = 140 + (Random2(0) % 120);	/* 140..260 – knee‑level to slightly above */
+		if (Random2(0) % 2 == 0)
+			s.shotOrbitAmp = 820 + (Random2(0) % 320);	/* ±32°..±64° – gentle pan */
+		s.shotScrZ = 240 + (Random2(0) % 28);		/* 240..268 – moderate FOV */
 		break;
 	}
+
+	/* Safety clamp: never allow extreme wide angle */
+	if (s.shotScrZ < 210)
+		s.shotScrZ = 210;
+	if (s.shotScrZ > 290)
+		s.shotScrZ = 290;
+}
+
+/* ------------------------------------------------------------------ */
+/* Car mode cycling                                                   */
+/* ------------------------------------------------------------------ */
+
+/* Pick a new car mode, avoiding repetition if possible */
+static int AntFarmPickCarMode(void)
+{
+	int modes[CAR_MODE_COUNT];
+	int num = 0;
+	int i;
+
+	/* Build list of available modes (exclude static if road not suitable?) */
+	for (i = 0; i < CAR_MODE_COUNT; i++) {
+		modes[num++] = i;
+	}
+
+	/* If we have a previous mode, try to avoid it */
+	int prev = s.carMode;
+	int attempts = 0;
+	int pick;
+	while (attempts < 20) {
+		pick = modes[Random2(0) % num];
+		if (pick != prev || num == 1)
+			break;
+		attempts++;
+	}
+	return pick;
+}
+
+/* Compute desired camera position for a car mode */
+static void AntFarmComputeCarMode(CAR_DATA* cp, const VECTOR* carPos, int dir, int h,
+	VECTOR* desired, int* outLerp)
+{
+	int dist, height, sideOff;
+	int baseDist, baseHeight;
+	VECTOR offset;
+
+	/* Get base framing distances for this car */
+	int vz = 300, vy = 120;
+	if (cp->ap.carCos) {
+		vz = cp->ap.carCos->colBox.vz;
+		vy = cp->ap.carCos->colBox.vy;
+	}
+	if (vz < 200) vz = 200;
+	if (vy < 80) vy = 80;
+	baseDist = vz * 2 + vy + 380;
+	if (baseDist < 700) baseDist = 700;
+	if (baseDist > 1350) baseDist = 1350;
+	baseHeight = 170 + vy / 2;
+	if (baseHeight > 460) baseHeight = 460;
+
+	/* Mode-specific offsets */
+	switch (s.carMode)
+	{
+	case CAR_MODE_CHASE_BEHIND:
+		/* Classic chase: behind and above */
+		dist = baseDist;
+		height = baseHeight;
+		offset.vx = FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
+		offset.vz = FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
+		offset.vy = -h - height;
+		*outLerp = 8;
+		break;
+
+	case CAR_MODE_CHASE_FRONT:
+		/* Forward-looking: in front of the car */
+		dist = baseDist;
+		height = baseHeight;
+		offset.vx = FIXEDH(RSIN(dir) * dist);
+		offset.vz = FIXEDH(RCOS(dir) * dist);
+		offset.vy = -h - height;
+		*outLerp = 8;
+		break;
+
+	case CAR_MODE_SIDE_LEFT:
+		/* Left side, slightly elevated */
+		dist = baseDist * 2 / 3;
+		height = baseHeight * 3 / 4;
+		sideOff = dist;
+		offset.vx = FIXEDH(RSIN((dir + 1024) & 0xfff) * sideOff);
+		offset.vz = FIXEDH(RCOS((dir + 1024) & 0xfff) * sideOff);
+		offset.vy = -h - height;
+		*outLerp = 7;
+		break;
+
+	case CAR_MODE_SIDE_RIGHT:
+		/* Right side, slightly elevated */
+		dist = baseDist * 2 / 3;
+		height = baseHeight * 3 / 4;
+		sideOff = dist;
+		offset.vx = FIXEDH(RSIN((dir + 3072) & 0xfff) * sideOff);
+		offset.vz = FIXEDH(RCOS((dir + 3072) & 0xfff) * sideOff);
+		offset.vy = -h - height;
+		*outLerp = 7;
+		break;
+
+	case CAR_MODE_OVERHEAD:
+		/* High overhead, close to car */
+		dist = 400 + vz;
+		height = 550 + vy;
+		if (dist > 600) dist = 600;
+		if (height > 720) height = 720;
+		offset.vx = FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
+		offset.vz = FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
+		offset.vy = -h - height;
+		*outLerp = 9;
+		break;
+
+	case CAR_MODE_STATIC:
+	default:
+		/* Static roadside: place a fixed camera, use existing static track logic */
+	{
+		VECTOR staticPos;
+		AntFarmStaticTrack(cp, &staticPos);
+		desired->vx = staticPos.vx;
+		desired->vy = staticPos.vy;
+		desired->vz = staticPos.vz;
+		*outLerp = 4;
+		return;
+	}
+	}
+
+	desired->vx = carPos->vx + offset.vx;
+	desired->vy = offset.vy;
+	desired->vz = carPos->vz + offset.vz;
 }
 
 /* ------------------------------------------------------------------ */
@@ -710,6 +895,9 @@ static void AntFarmSetupRoadShot(void)
 	int nLanes;
 	int roll;
 	int len;
+
+	if (g_numUsableRoads == 0 || g_usableRoadsAlloc < NumDriver2Straights)
+		AntFarmBuildRoadCache();
 
 	if (s.roadSurfId < 0 || s.roadSurfId >= NumDriver2Straights)
 	{
@@ -756,10 +944,10 @@ static void AntFarmSetupRoadShot(void)
 	{
 		/* Start the dolly at a negative offset so it begins before the road start,
 		 * and aim further ahead to avoid the camera pointing straight down at the end. */
-		int offset = 300 + (Random2(0) % 200);
+		int offset = 800 + (Random2(0) % 200);
 		s.roadDist = -offset;   /* start before the road */
 		s.junctionCorner = 0;
-		s.shotLookAhead = 800 + (Random2(0) % 400);
+		s.shotLookAhead = 1000 + (Random2(0) % 400);
 	}
 	else	/* OVERHEAD (road) */
 	{
@@ -768,11 +956,11 @@ static void AntFarmSetupRoadShot(void)
 	}
 
 	/* corner shots may sit just past either end of the road */
-	if (s.roadDist < -200)
-		s.roadDist = -200;
+	if (s.roadDist < -150)
+		s.roadDist = -150;
 
-	if (s.roadDist > len + 200)
-		s.roadDist = len + 200;
+	if (s.roadDist > len + 150)
+		s.roadDist = len + 150;
 
 	{
 		int x, z, heading;
@@ -838,6 +1026,13 @@ static void AntFarmPlanShot(void)
 		s.targetPos = s.areaPos;
 	}
 	AntFarmInitShotVars();
+
+	/* If we have a car target, initialize car mode */
+	if (s.targetKind == ANTFARM_TARGET_CAR) {
+		s.carMode = CAR_MODE_CHASE_BEHIND; /* initial mode */
+		s.carModeIndex = 0;
+		s.carModeStart = AntTicks();
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -925,6 +1120,9 @@ static void AntFarmStartLead(void)
 	s.style = ANTFARM_STYLE_CHASE;
 	s.targetKind = ANTFARM_TARGET_CAR;
 	s.trackPlaced = 0;
+	s.carMode = CAR_MODE_CHASE_BEHIND;
+	s.carModeIndex = 0;
+	s.carModeStart = AntTicks();
 	AntFarmInitShotVars();
 
 	CopsAllowed = 1;
@@ -968,7 +1166,7 @@ static void AntFarmStaticTrack(CAR_DATA* cp, VECTOR* desired)
 		int side = (Random2(0) & 1) ? 1024 : 3072;
 		int spotDist = 1000 + (Random2(0) % 400);
 		int sideDist = 650 + (Random2(0) % 450);
-		int hgt = 230 + (Random2(0) % 90);
+		int hgt = 130 + (Random2(0) % 90);
 
 		s.trackCamPos.vx = carX + FIXEDH(RSIN((dir + 2048) & 0xfff) * spotDist);
 		s.trackCamPos.vz = carZ + FIXEDH(RCOS((dir + 2048) & 0xfff) * spotDist);
@@ -983,6 +1181,129 @@ static void AntFarmStaticTrack(CAR_DATA* cp, VECTOR* desired)
 	*desired = s.trackCamPos;
 }
 
+/* Improved camera position finder: tries to find a clear line-of-sight
+ * position near the desired, using multiple candidate offsets. */
+static int AntFarmFindClearCamera(const VECTOR* aim, const VECTOR* desired, VECTOR* outCam)
+{
+	VECTOR candidates[32];
+	int numCandidates = 0;
+	VECTOR delta;
+	int dist, dx, dz;
+	int i;
+
+	/* compute vector from aim to desired */
+	delta.vx = desired->vx - aim->vx;
+	delta.vy = desired->vy - aim->vy;
+	delta.vz = desired->vz - aim->vz;
+	dist = sqrt(delta.vx * delta.vx + delta.vy * delta.vy + delta.vz * delta.vz);
+	if (dist < 1) dist = 1;
+
+	/* 1) Try the desired position itself */
+	candidates[numCandidates++] = *desired;
+
+	/* 2) Pull back fractions: 0.9, 0.8, ..., 0.1 */
+	for (int frac = 9; frac >= 1; frac--) {
+		VECTOR pos;
+		float t = frac / 10.0f;
+		pos.vx = aim->vx + (int)(delta.vx * t);
+		pos.vy = aim->vy + (int)(delta.vy * t);
+		pos.vz = aim->vz + (int)(delta.vz * t);
+		candidates[numCandidates++] = pos;
+		if (numCandidates >= 32) break;
+	}
+
+	/* 3) Rotate around aim: try different azimuth angles (0, 45, 90, ...) at 80% and 120% distance */
+	for (int ang = 0; ang < 360; ang += 45) {
+		float rad = ang * 3.14159f / 180.0f;
+		float cosA = cos(rad);
+		float sinA = sin(rad);
+		/* rotate the delta vector around the Y axis */
+		int rx = (int)(delta.vx * cosA - delta.vz * sinA);
+		int rz = (int)(delta.vx * sinA + delta.vz * cosA);
+		/* two distances: 0.8 and 1.2 of original */
+		for (int dscale = 8; dscale <= 12; dscale += 4) {
+			VECTOR pos;
+			pos.vx = aim->vx + (rx * dscale) / 10;
+			pos.vy = aim->vy + (delta.vy * dscale) / 10;  /* keep same vertical ratio */
+			pos.vz = aim->vz + (rz * dscale) / 10;
+			candidates[numCandidates++] = pos;
+			if (numCandidates >= 32) break;
+		}
+		if (numCandidates >= 32) break;
+	}
+
+	/* 4) Try higher/lower positions */
+	for (int hoff = -200; hoff <= 200; hoff += 100) {
+		VECTOR pos = *desired;
+		pos.vy += hoff;
+		candidates[numCandidates++] = pos;
+		if (numCandidates >= 32) break;
+	}
+
+	/* Now test each candidate */
+	for (i = 0; i < numCandidates; i++) {
+		VECTOR cam = candidates[i];
+		VECTOR camWorld = cam;
+		VECTOR aimWorld = *aim;
+		camWorld.vy = -camWorld.vy;
+		aimWorld.vy = -aimWorld.vy;
+
+		/* Clamp above ground */
+		AntFarmClampAboveGround(&cam);
+
+		/* Check line-of-sight */
+		if (lineClear(&camWorld, &aimWorld) == 0)
+			continue;
+
+		/* Additional check: ensure camera is not too low or too high */
+		int ground = -AntFarmMapHeight(cam.vx, cam.vz);
+		if (cam.vy > ground - 40)  /* at least 40 units above ground */
+			continue;
+
+		/* Also ensure the camera is not inside geometry by using the collider */
+		CAR_DATA* jcam = &car_data[CAMERA_COLLIDER_CARID];
+		ClearMem((char*)jcam, sizeof(CAR_DATA));
+		jcam->controlType = CONTROL_TYPE_CAMERACOLLIDER;
+		jcam->hd.direction = s.camAngle.vy & 0xfff;
+
+		jcam->hd.where.t[0] = cam.vx;
+		jcam->hd.where.t[1] = -cam.vy;
+		jcam->hd.where.t[2] = cam.vz;
+
+		jcam->hd.oBox.location.vx = cam.vx;
+		jcam->hd.oBox.location.vy = -cam.vy;
+		jcam->hd.oBox.location.vz = cam.vz;
+
+		CheckScenaryCollisions(jcam);
+
+		cam.vx = jcam->hd.where.t[0];
+		cam.vy = -jcam->hd.where.t[1];
+		cam.vz = jcam->hd.where.t[2];
+
+		/* Clamp after collider */
+		AntFarmClampAboveGround(&cam);
+
+		/* Re-check LOS after collider */
+		camWorld = cam;
+		camWorld.vy = -camWorld.vy;
+		if (lineClear(&camWorld, &aimWorld) == 0)
+			continue;
+
+		/* Valid position found */
+		*outCam = cam;
+		return 1;
+	}
+
+	/* Fallback: just use a position directly above the aim at a safe height */
+	{
+		int ground = -AntFarmMapHeight(aim->vx, aim->vz);
+		outCam->vx = aim->vx;
+		outCam->vz = aim->vz;
+		outCam->vy = ground - 150;
+		return 1;
+	}
+}
+
 static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 {
 	VECTOR desired = { 0, 0, 0 };
@@ -994,7 +1315,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 	{
 		CAR_DATA* cp = AntFarmValidCar();
 		VECTOR carPos;
-		int dir, dist, height, h;
+		int dir, h;
 
 		if (cp == NULL)
 		{
@@ -1010,38 +1331,8 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 		dir = cp->hd.direction;
 		h = AntFarmMapHeight(carPos.vx, carPos.vz);
 
-		switch (s.style)
-		{
-		case ANTFARM_STYLE_CHASE:
-			AntFarmCarFraming(cp, &dist, &height);
-
-			desired.vx = carPos.vx + FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
-			desired.vy = -h - height;
-			desired.vz = carPos.vz + FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
-			lerp = 8;
-			break;
-
-		case ANTFARM_STYLE_OVERHEAD:
-			dist = 520 + AntFarmCarSize(cp) / 2;
-			height = 540 + AntFarmCarSize(cp) / 2;
-
-			if (dist > 950)
-				dist = 250;
-
-			if (height > 820)
-				height = 820;
-
-			desired.vx = carPos.vx + FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
-			desired.vy = -h - height;
-			desired.vz = carPos.vz + FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
-			lerp = 9;
-			break;
-
-		default:	/* ANTFARM_STYLE_STATIC */
-			AntFarmStaticTrack(cp, &desired);
-			lerp = 8;
-			break;
-		}
+		/* Use car mode to compute desired position */
+		AntFarmComputeCarMode(cp, &carPos, dir, h, &desired, &lerp);
 
 		aim = carPos;
 		aim.vy = -(carPos.vy + 50);
@@ -1049,7 +1340,8 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 		s.spool = carPos;
 		s.targetPos = carPos;
 
-		lerp = (s.style == ANTFARM_STYLE_STATIC) ? 4 : lerp;
+		/* if static mode, lerp slower */
+		if (s.carMode == CAR_MODE_STATIC) lerp = 4;
 	}
 	else	/* ANTFARM_TARGET_ROAD */
 	{
@@ -1085,11 +1377,19 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 				int sway = RSIN((now / 200) & 4095) >> 9;
 				int bobY = RSIN((now / 130) & 4095) >> 10;
 
-				if (s.shotOrbitAmp > 0 && s.style == ANTFARM_STYLE_TRIPOD)
+				/* For tripod, we want a more direct angle: place camera on the side,
+				 * but compute the look-at point further ahead or at the junction */
+				if (s.style == ANTFARM_STYLE_TRIPOD)
 				{
-					int sweepPhase = (s.shotOrbitPhase + now / 100) & 4095;
-					int sweep = FIXEDH(RSIN(sweepPhase) * s.shotOrbitAmp);
-					side = (side + 4096 + sweep) & 0xfff;
+					/* Use the orbit amplitude to gently pan, but keep a fixed side */
+					if (s.shotOrbitAmp > 0)
+					{
+						int sweepPhase = (s.shotOrbitPhase + now / 100) & 4095;
+						int sweep = FIXEDH(RSIN(sweepPhase) * s.shotOrbitAmp);
+						side = (side + 4096 + sweep) & 0xfff;
+					}
+					/* Reduce the offset to be closer to the road, and lower height */
+					off = (off * 3) / 4;   /* closer to road */
 				}
 
 				desired.vx = roadPt.vx + FIXEDH(RSIN(side) * off) + sway;
@@ -1152,6 +1452,20 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 	}
 
 	s.aimPos = aim;
+
+	/* Use the new clear camera finder to avoid scenery collisions */
+	{
+		VECTOR clearCam;
+		if (AntFarmFindClearCamera(&aim, &desired, &clearCam))
+		{
+			desired = clearCam;
+		}
+		else
+		{
+			/* fallback: use desired as is, but clamped */
+			AntFarmClampAboveGround(&desired);
+		}
+	}
 
 	if (!s.camSnapped)
 	{
@@ -1231,6 +1545,9 @@ static void AntFarmSetActive(int on)
 		s.leadEnding = 0;
 		s.targetCarId = -1;
 		s.roadSurfId = -1;
+		s.carMode = CAR_MODE_CHASE_BEHIND;
+		s.carModeIndex = 0;
+		s.carModeStart = AntTicks();
 
 		s.camPos.vx = camera_position.vx;
 		s.camPos.vy = camera_position.vy;
@@ -1270,8 +1587,10 @@ static void AntFarmSetActive(int on)
 		s.shotStart = s.stateStart;
 
 		s.ctx->jer_log(s.ctx,
-			"[antfarm] enabled (interval %ds, styles %d%d%d%d%d, lead=%d%%)\n",
+			"[antfarm] enabled (interval %ds, mode interval %ds, modes/cut %d, styles %d%d%d%d%d, lead=%d%%)\n",
 			AntIntervalMs() / 1000,
+			AntCarModeIntervalMs() / 1000,
+			s.carModesPerCut,
 			s.stylesEnabled[ANTFARM_STYLE_CHASE],
 			s.stylesEnabled[ANTFARM_STYLE_STATIC],
 			s.stylesEnabled[ANTFARM_STYLE_OVERHEAD],
@@ -1429,6 +1748,30 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			break;
 		}
 
+		/* Handle car mode cycling */
+		if (!s.leadMode && s.targetKind == ANTFARM_TARGET_CAR && AntFarmValidCar() != NULL)
+		{
+			if (now - s.carModeStart >= (unsigned long)AntCarModeIntervalMs())
+			{
+				/* Switch to a new mode */
+				s.carMode = AntFarmPickCarMode();
+				s.carModeStart = now;
+				s.carModeIndex++;
+				/* Reset snap to allow smooth transition (or we can keep lerp) */
+				// s.camSnapped = 0;  // keep snapped for smooth lerp
+				s.ctx->jer_log(s.ctx, "[antfarm] car mode changed to %d\n", s.carMode);
+			}
+
+			/* If we've exceeded the number of modes per cut, force a cut */
+			if (s.carModeIndex >= s.carModesPerCut)
+			{
+				s.state = ANTFARM_STATE_FADE_OUT;
+				s.stateStart = now;
+				break;
+			}
+		}
+
+		/* Also obey the normal cut interval */
 		if (!s.leadEnding && now - s.stateStart >= (unsigned long)AntIntervalMs())
 		{
 			s.state = ANTFARM_STATE_FADE_OUT;
@@ -1463,19 +1806,25 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			{
 				s.style = AntFarmPickStyle(1);
 				s.trackPlaced = 0;
+				s.carMode = CAR_MODE_CHASE_BEHIND;
+				s.carModeIndex = 0;
+				s.carModeStart = now;
 				AntFarmInitShotVars();
 				s.shotPlanned = 1;
 			}
 			else
 			{
-				if (!AntFarmPickFarArea())
-				{
-					s.areaPos = s.targetPos;
-				}
+				/* Pick a far area that is loaded; if none, it will fallback to current position */
+				AntFarmPickFarArea();
 				s.spool = s.areaPos;
 				s.targetPos = s.areaPos;
 				AntFarmPickStyleAndTarget();
 				s.cutWaitForCar = (s.targetKind == ANTFARM_TARGET_CAR);
+				if (s.targetKind == ANTFARM_TARGET_CAR) {
+					s.carMode = CAR_MODE_CHASE_BEHIND;
+					s.carModeIndex = 0;
+					s.carModeStart = now;
+				}
 			}
 			s.camSnapped = 0;
 		}
@@ -1497,16 +1846,25 @@ static int AntFarmOnFrame(void* userdata, void* args)
 						s.streamRetries++;
 						s.cutStart = now;
 
+						/* Attempt to pick a new loaded area; if fails, keep current position */
 						if (AntFarmPickFarArea())
 						{
 							s.spool = s.areaPos;
 							s.targetPos = s.areaPos;
 						}
+						/* else keep existing spool (which is loaded) */
 						s.camSnapped = 0;
 					}
 					else
 					{
-						s.ctx->jer_log(s.ctx, "[antfarm] warning: area stream timeout — forcing progression\n");
+						s.ctx->jer_log(s.ctx, "[antfarm] warning: area stream timeout — forcing progression with fallback position\n");
+						/* Force use of current camera position as fallback (which is loaded) */
+						s.areaPos.vx = camera_position.vx;
+						s.areaPos.vz = camera_position.vz;
+						s.areaPos.vy = AntFarmMapHeight(s.areaPos.vx, s.areaPos.vz);
+						AntFarmClampToWorld(&s.areaPos);
+						s.spool = s.areaPos;
+						s.targetPos = s.areaPos;
 						s.streamDone = 1;
 						s.cutStart = now;
 					}
@@ -1514,7 +1872,14 @@ static int AntFarmOnFrame(void* userdata, void* args)
 
 				if (now - s.cutEnter >= ANTFARM_BLACK_CAP_MS)
 				{
-					s.ctx->jer_log(s.ctx, "[antfarm] warning: black cap hit — forcing progression\n");
+					s.ctx->jer_log(s.ctx, "[antfarm] warning: black cap hit — forcing progression with fallback position\n");
+					/* Use current camera position as fallback */
+					s.areaPos.vx = camera_position.vx;
+					s.areaPos.vz = camera_position.vz;
+					s.areaPos.vy = AntFarmMapHeight(s.areaPos.vx, s.areaPos.vz);
+					AntFarmClampToWorld(&s.areaPos);
+					s.spool = s.areaPos;
+					s.targetPos = s.areaPos;
 					s.streamDone = 1;
 					s.cutStart = now;
 				}
@@ -1540,6 +1905,9 @@ static int AntFarmOnFrame(void* userdata, void* args)
 					{
 						s.targetCarId = car;
 						s.cutWaitForCar = 0;
+						s.carMode = CAR_MODE_CHASE_BEHIND;
+						s.carModeIndex = 0;
+						s.carModeStart = now;
 						AntFarmPlanShot();
 						s.shotPlanned = 1;
 					}
@@ -1591,6 +1959,10 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.fade = 0;
 			s.state = ANTFARM_STATE_SHOW;
 			s.stateStart = now;
+			/* If car target, reset mode timer */
+			if (s.targetKind == ANTFARM_TARGET_CAR) {
+				s.carModeStart = now;
+			}
 		}
 		break;
 	}
@@ -1675,155 +2047,6 @@ static void AntFarmPinPlayerCar(void)
 	}
 }
 
-/* Keep the camera clear of scenery:
- *  (1) line-of-sight: if a building blocks the camera→aim ray, pull the
- *      camera in toward the aim until the ray is clear (smoothed so the
- *      pull doesn't jitter between frames);
- *  (2) push-out: run the engine's camera collider at the final position so
- *      the camera can never sit inside a building.
- *  (3) Extra safety: after collider, clamp above ground and re-check LOS.
- */
-static void AntFarmSceneryPass(VECTOR* camPos, const VECTOR* aim)
-{
-	VECTOR wa, wb;
-	int arm = 256; /* 256 = full camera arm retained */
-	int i;
-	static const int fracs[4] = { 192, 128, 80, 40 };
-
-	/* world-space copies of the sight line */
-	wa = *camPos;
-	wa.vy = -wa.vy;
-	wb = *aim;
-	wb.vy = -wb.vy;
-
-	/* (1) LOS pull-back */
-	if (lineClear(&wa, &wb) == 0) {
-		arm = fracs[3]; /* worst case: close shot */
-		for (i = 0; i < 4; i++) {
-			VECTOR test;
-			test.vx = wb.vx + (wa.vx - wb.vx) * fracs[i] / 256;
-			test.vy = wb.vy + (wa.vy - wb.vy) * fracs[i] / 256;
-			test.vz = wb.vz + (wa.vz - wb.vz) * fracs[i] / 256;
-			if (lineClear(&test, &wb) != 0) {
-				arm = fracs[i];
-				break;
-			}
-		}
-	}
-
-	/* smooth the pull so consecutive fractions blend instead of popping */
-	s.armFrac += (arm - s.armFrac) * 30 / 100;   /* was 30/10 – fixed */
-	if (s.armFrac > 256) s.armFrac = 256;
-	arm = s.armFrac;
-
-	/* Apply arm to camera position */
-	camPos->vx = aim->vx + (camPos->vx - aim->vx) * arm / 256;
-	camPos->vy = aim->vy + (camPos->vy - aim->vy) * arm / 256;
-	camPos->vz = aim->vz + (camPos->vz - aim->vz) * arm / 256;
-
-	/* (2) camera collider push-out */
-	{
-		CAR_DATA* jcam = &car_data[CAMERA_COLLIDER_CARID];
-		ClearMem((char*)jcam, sizeof(CAR_DATA));
-
-		jcam->controlType = CONTROL_TYPE_CAMERACOLLIDER;
-		jcam->hd.direction = s.camAngle.vy & 0xfff;
-
-		jcam->hd.where.t[0] = camPos->vx;
-		jcam->hd.where.t[1] = -camPos->vy;
-		jcam->hd.where.t[2] = camPos->vz;
-
-		jcam->hd.oBox.location.vx = camPos->vx;
-		jcam->hd.oBox.location.vy = -camPos->vy;
-		jcam->hd.oBox.location.vz = camPos->vz;
-
-		CheckScenaryCollisions(jcam);
-
-		camPos->vx = jcam->hd.where.t[0];
-		camPos->vy = -jcam->hd.where.t[1];
-		camPos->vz = jcam->hd.where.t[2];
-	}
-
-	/* (3) Clamp above ground after collider */
-	AntFarmClampAboveGround(camPos);
-
-	/* (4) Re-check LOS; if still blocked, try alternative positions */
-	{
-		VECTOR test = *camPos;
-		test.vy = -test.vy;
-		if (lineClear(&test, &wb) == 0) {
-			/* Try multiple offsets around the aim */
-			int offsets[8][2] = {
-				{ 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 },
-				{ 1, 1 }, { -1, 1 }, { 1, -1 }, { -1, -1 }
-			};
-			int bestIdx = -1;
-			int bestDist = -1;
-			int curArm = arm;   /* current arm fraction (0-256) */
-			int radius = (curArm * 300) / 256;   /* try positions within this radius */
-
-			for (i = 0; i < 8; i++) {
-				VECTOR cand;
-				cand.vx = aim->vx + (offsets[i][0] * radius) / 4;
-				cand.vz = aim->vz + (offsets[i][1] * radius) / 4;
-				cand.vy = aim->vy;   /* start at aim height */
-				AntFarmClampAboveGround(&cand);
-
-				/* Re-apply collider to this candidate? For speed we just check LOS */
-				VECTOR candW = cand;
-				candW.vy = -candW.vy;
-				if (lineClear(&candW, &wb) != 0) {
-					/* This candidate has clear LOS – choose it */
-					*camPos = cand;
-					/* Also re-run the collider to ensure it's not inside geometry */
-					{
-						CAR_DATA* jcam2 = &car_data[CAMERA_COLLIDER_CARID];
-						ClearMem((char*)jcam2, sizeof(CAR_DATA));
-						jcam2->controlType = CONTROL_TYPE_CAMERACOLLIDER;
-						jcam2->hd.direction = s.camAngle.vy & 0xfff;
-						jcam2->hd.where.t[0] = cand.vx;
-						jcam2->hd.where.t[1] = -cand.vy;
-						jcam2->hd.where.t[2] = cand.vz;
-						jcam2->hd.oBox.location.vx = cand.vx;
-						jcam2->hd.oBox.location.vy = -cand.vy;
-						jcam2->hd.oBox.location.vz = cand.vz;
-						CheckScenaryCollisions(jcam2);
-						camPos->vx = jcam2->hd.where.t[0];
-						camPos->vy = -jcam2->hd.where.t[1];
-						camPos->vz = jcam2->hd.where.t[2];
-					}
-					AntFarmClampAboveGround(camPos);
-					return;   /* success */
-				}
-			}
-
-			/* If no side offset works, fallback to a position directly above the aim */
-			{
-				int ground = -AntFarmMapHeight(aim->vx, aim->vz);
-				camPos->vx = aim->vx;
-				camPos->vz = aim->vz;
-				camPos->vy = ground - 120;   /* 120 units above ground */
-				/* Run collider one last time */
-				CAR_DATA* jcam3 = &car_data[CAMERA_COLLIDER_CARID];
-				ClearMem((char*)jcam3, sizeof(CAR_DATA));
-				jcam3->controlType = CONTROL_TYPE_CAMERACOLLIDER;
-				jcam3->hd.direction = s.camAngle.vy & 0xfff;
-				jcam3->hd.where.t[0] = camPos->vx;
-				jcam3->hd.where.t[1] = -camPos->vy;
-				jcam3->hd.where.t[2] = camPos->vz;
-				jcam3->hd.oBox.location.vx = camPos->vx;
-				jcam3->hd.oBox.location.vy = -camPos->vy;
-				jcam3->hd.oBox.location.vz = camPos->vz;
-				CheckScenaryCollisions(jcam3);
-				camPos->vx = jcam3->hd.where.t[0];
-				camPos->vy = -jcam3->hd.where.t[1];
-				camPos->vz = jcam3->hd.where.t[2];
-				AntFarmClampAboveGround(camPos);
-			}
-		}
-	}
-}
-
 /* render-time: take over the camera */
 static int AntFarmOnCamera(void* userdata, void* args)
 {
@@ -1849,23 +2072,6 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	}
 
 	AntFarmPinPlayerCar();
-
-	AntFarmSceneryPass(&cam, &s.aimPos);
-
-	if (s.targetKind == ANTFARM_TARGET_ROAD)
-	{
-		int groundY = AntFarmMapHeight(cam.vx, cam.vz);
-		if (groundY == 0 && (cam.vy < -10 || cam.vy > 10))
-			groundY = -cam.vy;
-
-		s.spool.vx = cam.vx;
-		s.spool.vz = cam.vz;
-		s.spool.vy = groundY;
-
-		s.targetPos.vx = cam.vx;
-		s.targetPos.vy = groundY;
-		s.targetPos.vz = cam.vz;
-	}
 
 	AntFarmClampToWorld(&cam);
 	AntFarmClampToWorld(&s.aimPos);
@@ -2068,6 +2274,54 @@ static int AntIntervalAdjust(void* userdata, int direction)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void AntModeIntervalLabel(void* userdata, char* out, int max)
+{
+	(void)userdata;
+
+	snprintf(out, max, "Mode interval: %ds", AntCarModeIntervalMs() / 1000);
+}
+
+static int AntModeIntervalAdjust(void* userdata, int direction)
+{
+	int secs;
+
+	(void)userdata;
+
+	secs = AntCarModeIntervalMs() / 1000 + direction * 2;
+
+	if (secs < 2)
+		secs = 2;
+	if (secs > 30)
+		secs = 30;
+
+	s.carModeIntervalMs = secs * 1000;
+	jer_config_set_int(ANT_MOD_ID, "mode_interval", secs);
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void AntModesPerCutLabel(void* userdata, char* out, int max)
+{
+	(void)userdata;
+
+	snprintf(out, max, "Modes per cut: %d", s.carModesPerCut);
+}
+
+static int AntModesPerCutAdjust(void* userdata, int direction)
+{
+	int val = s.carModesPerCut + direction;
+
+	if (val < 1)
+		val = 1;
+	if (val > 20)
+		val = 20;
+
+	s.carModesPerCut = val;
+	jer_config_set_int(ANT_MOD_ID, "modes_per_cut", val);
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void AntStyleLabel(int style, const char* name, char* out, int max)
 {
 	snprintf(out, max, "%s: %s", name, s.stylesEnabled[style] ? "ON" : "OFF");
@@ -2167,6 +2421,8 @@ static int AntLeadToggle(void* userdata, int direction)
 static const JER_PAUSE_MENU_ITEM antMenuItems[] = {
 	{ NULL, AntMenuLabel, AntMenuToggle, NULL, NULL, 0 },
 	{ NULL, AntIntervalLabel, AntIntervalAdjust, NULL, NULL, 1 },
+	{ NULL, AntModeIntervalLabel, AntModeIntervalAdjust, NULL, NULL, 1 },
+	{ NULL, AntModesPerCutLabel, AntModesPerCutAdjust, NULL, NULL, 1 },
 	{ NULL, AntChaseLabel,    AntChaseToggle,    NULL, NULL, 0 },
 	{ NULL, AntStaticLabel,   AntStaticToggle,   NULL, NULL, 0 },
 	{ NULL, AntOverheadLabel, AntOverheadToggle, NULL, NULL, 0 },
@@ -2175,7 +2431,7 @@ static const JER_PAUSE_MENU_ITEM antMenuItems[] = {
 	{ NULL, AntLeadLabel,     AntLeadToggle,     NULL, NULL, 0 },
 };
 
-static const JER_PAUSE_MENU antFarmMenu = { "Ant Farm", antMenuItems, 8 };
+static const JER_PAUSE_MENU antFarmMenu = { "Ant Farm", antMenuItems, 10 };
 
 /* ------------------------------------------------------------------ */
 /* boot + entry                                                       */
@@ -2183,7 +2439,7 @@ static const JER_PAUSE_MENU antFarmMenu = { "Ant Farm", antMenuItems, 8 };
 
 static int AntFarmOnBoot(void* userdata, void* args)
 {
-	int secs;
+	int secs, modeSecs, modesPerCut;
 
 	(void)userdata;
 	(void)args;
@@ -2197,6 +2453,17 @@ static int AntFarmOnBoot(void* userdata, void* args)
 		secs = ANTFARM_MAX_INTERVAL;
 
 	s.intervalMs = secs * 1000;
+
+	modeSecs = jer_config_get_int(ANT_MOD_ID, "mode_interval", 6);
+	if (modeSecs < 2) modeSecs = 2;
+	if (modeSecs > 30) modeSecs = 30;
+	s.carModeIntervalMs = modeSecs * 1000;
+
+	modesPerCut = jer_config_get_int(ANT_MOD_ID, "modes_per_cut", 5);
+	if (modesPerCut < 1) modesPerCut = 1;
+	if (modesPerCut > 20) modesPerCut = 20;
+	s.carModesPerCut = modesPerCut;
+
 	s.stylesEnabled[ANTFARM_STYLE_CHASE] = jer_config_get_bool(ANT_MOD_ID, "style_chase", 1);
 	s.stylesEnabled[ANTFARM_STYLE_STATIC] = jer_config_get_bool(ANT_MOD_ID, "style_static", 1);
 	s.stylesEnabled[ANTFARM_STYLE_OVERHEAD] = jer_config_get_bool(ANT_MOD_ID, "style_overhead", 1);
@@ -2210,8 +2477,10 @@ static int AntFarmOnBoot(void* userdata, void* args)
 	AntFarmBuildRoadCache();
 
 	s.ctx->jer_log(s.ctx,
-		"[antfarm] ready: interval %ds, styles %d%d%d%d%d, lead=%d\n",
+		"[antfarm] ready: interval %ds, mode interval %ds, modes/cut %d, styles %d%d%d%d%d, lead=%d\n",
 		s.intervalMs / 1000,
+		s.carModeIntervalMs / 1000,
+		s.carModesPerCut,
 		s.stylesEnabled[ANTFARM_STYLE_CHASE],
 		s.stylesEnabled[ANTFARM_STYLE_STATIC],
 		s.stylesEnabled[ANTFARM_STYLE_OVERHEAD],
@@ -2227,13 +2496,15 @@ JER_MODULE_ENTRY(jer_module_antfarm_entry)(JERICHO_CONTEXT* ctx)
 	memset(&s, 0, sizeof(s));
 	s.ctx = ctx;
 	s.intervalMs = ANTFARM_DEFAULT_INTERVAL * 1000;
+	s.carModeIntervalMs = 6000;
+	s.carModesPerCut = 5;
 
 	ctx->jer_register_module(ctx,
 		"antfarm",
 		"Ant Farm Screensaver",
 		"0.1.0",
 		"REDRIVER2 community",
-		"City-observer screensaver: diverse cinematic camera styles touring the whole map, with optional rogue-car chases.",
+		"City-observer screensaver with dynamic car-mode cycling, diverse cinematic camera styles touring the whole map, with optional rogue-car chases.",
 		"",
 		JERICHO_SDK_VERSION);
 

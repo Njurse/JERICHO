@@ -33,11 +33,11 @@ enum
 
 /* timing (milliseconds) */
 #define ANTFARM_FADE_MS     600
-#define ANTFARM_CUT_HOLD_MS 500
+#define ANTFARM_CUT_HOLD_MS 1500
 #define ANTFARM_CAR_WAIT_MS 5000
 #define ANTFARM_LEAD_END_MS 4000
-#define ANTFARM_STREAM_TIMEOUT_MS 2600
-#define ANTFARM_BLACK_CAP_MS    1200
+#define ANTFARM_STREAM_TIMEOUT_MS 1500
+#define ANTFARM_BLACK_CAP_MS    1500
 
 /* interval config (seconds) */
 #define ANTFARM_MIN_INTERVAL    5    /* changed from 10 */
@@ -45,12 +45,12 @@ enum
 #define ANTFARM_DEFAULT_INTERVAL 20
 
 /* far-area hop distance */
-#define ANTFARM_FAR_DIST    3000
+#define ANTFARM_FAR_DIST    12000
 
 /* lead-car wreck threshold */
 #define ANTFARM_LEAD_TOTAL    6000
 
 /* default lead-AI trigger chance (percent) */
-#define ANTFARM_LEAD_CHANCE    11
+#define ANTFARM_LEAD_CHANCE    100
 
 #endif /* ANTFARM_H */
