@@ -587,12 +587,16 @@ project "REDRIVER2"
     -- gDataFolder). The repo copy is the source of truth; this mirrors it
     -- into the build. Post-build commands run from the project dir
     -- (build/), so the repo root is two levels up.
+    -- MODS is always mirrored; CONFIG is only seeded when missing, so
+    -- runtime changes to modlist.ini / module settings survive rebuilds.
     filter { "system:Windows" }
         postbuildcommands {
-            "xcopy /E /I /Y \"..\\..\\JERICHO\" \"%{cfg.buildtarget.directory}JERICHO\"",
+            "xcopy /E /I /Y \"..\\..\\JERICHO\\MODS\" \"%{cfg.buildtarget.directory}JERICHO\\MODS\"",
+            "if not exist \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\" xcopy /E /I \"..\\..\\JERICHO\\CONFIG\" \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\"",
         }
 
     filter { "system:linux" }
         postbuildcommands {
-            "mkdir -p \"%{cfg.buildtarget.directory}JERICHO\" && cp -R ../../JERICHO/. \"%{cfg.buildtarget.directory}JERICHO/\"",
+            "mkdir -p \"%{cfg.buildtarget.directory}JERICHO/MODS\" && cp -R ../../JERICHO/MODS/. \"%{cfg.buildtarget.directory}JERICHO/MODS/\"",
+            "mkdir -p \"%{cfg.buildtarget.directory}JERICHO/CONFIG\" && cp -Rn ../../JERICHO/CONFIG/. \"%{cfg.buildtarget.directory}JERICHO/CONFIG/\"",
         }

@@ -50,7 +50,12 @@
 #include "civ_ai.h"	/* reservedSlots, InitCar */
 #include "felony.h"	/* GetPlayerFelony */
 #include "sound.h"	/* gMasterVolume, SetMasterVolume */
-#include "map.h"	/* units_across_halved, units_down_halved */
+#include "map.h"	/* units_across_halved, units_down_halved, current_region, regions_across */
+#include "spool.h"	/* spoolinfo_offsets, regions_unpacked */
+
+/* spool.c:171 — 1 when the barrel regions around the current spool position
+ * are all unpacked. Not in a header; the module brings its own extern. */
+extern int check_regions_present(void);
 
 #include "antfarm.h"
 
@@ -126,6 +131,9 @@ typedef struct ANTFARM_STATE
 	int cutInit;		/* CUT state has planned this cut */
 	int cutWaitForCar;	/* CUT is waiting for traffic near the new area */
 	unsigned long cutStart;	/* when the CUT state began (ms) */
+	int expectedRegion;	/* region ControlMap must reach for this cut */
+	int streamRetries;	/* far-area re-picks on streaming timeouts */
+	int streamDone;		/* the new area's regions have been accepted+loaded */
 
 	/* rogue-car (lead AI) event */
 	int leadMode;		/* following a rogue car until it is totaled */
@@ -329,6 +337,27 @@ static void AntFarmClampToWorld(VECTOR* v)
 		v->vy = ground - 60;
 }
 
+/* the region index ControlMap computes for a world position */
+static int AntFarmRegionOf(const VECTOR* pos)
+{
+	int cellx = (pos->vx + units_across_halved) / MAP_CELL_SIZE;
+	int cellz = (pos->vz + units_down_halved) / MAP_CELL_SIZE;
+	int rx = cellx / MAP_REGION_SIZE;
+	int rz = cellz / MAP_REGION_SIZE;
+
+	return rx + rz * regions_across;
+}
+
+/* does this region have spool data at all? (0xffff = none — approaching it
+ * would show a void forever) */
+static int AntFarmRegionHasData(int region)
+{
+	if (region < 0 || region >= regions_across * regions_down)
+		return 0;
+
+	return spoolinfo_offsets[region] != 0xffff;
+}
+
 /* pick a straight at least FAR_DIST from the current focus, so every cut
  * tours a genuinely different part of the map */
 static int AntFarmPickFarArea(void)
@@ -356,7 +385,10 @@ static int AntFarmPickFarArea(void)
 				s.areaPos.vy = AntFarmMapHeight(rd->Midx, rd->Midz);
 				s.areaPos.vz = rd->Midz;
 				AntFarmClampToWorld(&s.areaPos);
-				return 1;
+
+				/* only tour areas the game actually has geometry for */
+				if (AntFarmRegionHasData(AntFarmRegionOf(&s.areaPos)))
+					return 1;
 			}
 		}
 	}
@@ -1230,6 +1262,8 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.cutInit = 1;
 			s.cutStart = now;
 			s.cutWaitForCar = 0;
+			s.streamRetries = 0;
+			s.streamDone = 0;
 
 			if (s.leadMode)
 			{
@@ -1247,9 +1281,56 @@ static int AntFarmOnFrame(void* userdata, void* args)
 				}
 
 				AntFarmPlanShot();
+				s.expectedRegion = AntFarmRegionOf(&s.areaPos);
 			}
 
 			s.camSnapped = 0;	/* snap hidden by the black */
+		}
+
+		/* region streaming gate: wait until ControlMap has accepted the new
+		 * spool (current_region matches) AND the barrel regions are unpacked
+		 * — never fade into an unloaded void. On a long timeout, re-pick a
+		 * different area (up to a few tries), then proceed regardless. */
+		if (!s.leadMode)
+		{
+			int regionsReady = (current_region == s.expectedRegion) && check_regions_present();
+
+			if (!regionsReady)
+			{
+				if (now - s.cutStart >= ANTFARM_STREAM_TIMEOUT_MS)
+				{
+					if (s.streamRetries < 3)
+					{
+						s.streamRetries++;
+						s.cutStart = now;
+
+						if (AntFarmPickFarArea())
+						{
+							s.spool = s.areaPos;
+							s.targetPos = s.areaPos;
+						}
+
+						AntFarmPlanShot();
+						s.expectedRegion = AntFarmRegionOf(&s.areaPos);
+						s.camSnapped = 0;
+					}
+					else
+					{
+						/* best effort — every candidate area failed to stream */
+						s.ctx->jer_log(s.ctx, "[antfarm] warning: area never streamed — proceeding\n");
+						s.streamDone = 1;
+						s.cutStart = now;
+					}
+				}
+
+				break;	/* keep the black */
+			}
+
+			if (!s.streamDone)
+			{
+				s.streamDone = 1;
+				s.cutStart = now;	/* start the car-wait/hold clock now */
+			}
 		}
 
 		/* car shots wait for traffic to populate the new area */
