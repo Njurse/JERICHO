@@ -1103,7 +1103,7 @@ static MENU_HEADER* JerPauseRootOr(MENU_HEADER* original)
 	}
 
 	/* "Modules" container: one SUBMENU entry per registered menu */
-	gJerModulesHeader.Title = "Modules";
+	gJerModulesHeader.Title = "JERICHO Addons";
 	gJerModulesHeader.Bound.x = gJerModulesHeader.Bound.y = 0;
 	gJerModulesHeader.Bound.w = gJerModulesHeader.Bound.h = 0;
 	gJerModulesHeader.NumItems = 0;
