@@ -2,24 +2,30 @@
  * antfarm.c — "Ant Farm" screensaver / idle mode (JERICHO module).
  *
  * A passive city observer for REDRIVER2. When enabled it:
- *   - cuts off player input (gStopPadReads — the car brakes and stays put,
- *     on-foot pads are zeroed) and hides the HUD (gDoOverlays = 0),
- *   - redirects the region spool (MainPlayer.spoolXZ) to the camera focus so
- *     map geometry + traffic stream to wherever the camera is looking,
- *   - cycles a cinematic camera between three shot types:
- *       ANTFARM_MODE_TRIPOD  : parked elevated camera watching traffic flow
- *       ANTFARM_MODE_FOLLOW  : chase-cam attached to a random moving civilian
- *       ANTFARM_MODE_FLYOVER : slow dolly/pan down a long straight
- *   - transitions with a soft fade (semi-transparent wash, same style as the
- *     stock FadeGameScreen) and reselects the target while the screen is
- *     fully washed so the new area streams in without popping.
+ *   - cuts off player input (gStopPadReads), hides the HUD (gDoOverlays),
+ *     mutes all car/player SFX (SetMasterVolume), disables cop aggression
+ *     (CopsAllowed = 0),
+ *   - pins the hidden player car to the camera focus and redirects the
+ *     region spool there, so geometry + traffic stream to every shot,
+ *   - hops to a FAR area of the map on every cut (touring the whole city)
+ *     and picks a diverse cinematic shot:
+ *       CHASE    : behind-follow on a traffic car, framed to vehicle size
+ *       STATIC   : a fixed roadside camera tracking a car as it passes
+ *       OVERHEAD : scenic elevated 3/4 view down onto traffic (car or road)
+ *       TRIPOD   : parked roadside camera watching a junction/road
+ *       FLYOVER  : slow eased dolly along a long straight
+ *     Static/overhead styles are weighted over the chase cam.
+ *   - optional rogue-car events (off by default): a tiny chance per cut that
+ *     the car of interest becomes LEAD AI and tears across the map, with
+ *     cops giving chase; the camera follows it until it is totaled.
+ *
+ * Transitions fade through a semi-transparent wash (the stock FadeGameScreen
+ * look) and reselect while black, so the new area streams in without popping.
  *
  * Toggle: F9 (keyboard, PC) or Pause -> Modules -> Ant Farm. Pressing START
- * during the screensaver hands control back and opens the normal pause.
+ * hands control back and opens the normal pause.
  *
- * Pure JERICHO module — no game files are edited. Follows the d2pl /
- * sandbox module patterns (game headers, C linkage entry, pause menus,
- * persistent config).
+ * Pure JERICHO module — no game files are edited.
  */
 
 #include "jericho.h"
@@ -29,7 +35,7 @@
 
 #include "driver2.h"
 #include "dr2math.h"
-#include "players.h"	/* player[] / MainPlayer (spoolXZ) */
+#include "players.h"	/* player[] / MainPlayer (spoolXZ, playerType) */
 #include "cars.h"		/* car_data[] */
 #include "camera.h"		/* camera_position, camera_angle, CameraCar, PointAtTarget */
 #include "dr2roads.h"	/* Driver2StraightsPtr, MapHeight */
@@ -38,11 +44,12 @@
 #include "system.h"		/* current (prim buffer) */
 #include "cutscene.h"	/* gInGameCutsceneActive */
 #include "glaunch.h"	/* quick_replay, NoPlayerControl */
-#include "mission.h"	/* NumPlayers */
+#include "mission.h"	/* NumPlayers, CopsAllowed */
 #include "convert.h"	/* Random2 */
 #include "objcoll.h"	/* lineClear, CheckScenaryCollisions */
-#include "civ_ai.h"	/* reservedSlots */
-#include "mc_snd.h"	/* SilenceThisCar */
+#include "civ_ai.h"	/* reservedSlots, InitCar */
+#include "felony.h"	/* GetPlayerFelony */
+#include "sound.h"	/* gMasterVolume, SetMasterVolume */
 
 #include "antfarm.h"
 
@@ -61,6 +68,9 @@ extern int GetNodePos(DRIVER2_STRAIGHT* straight, DRIVER2_JUNCTION* junction,
 
 #define ANT_MOD_ID "antfarm"
 
+/* style pick weighting — static/overhead dominate the chase cam */
+static const int antStyleWeights[ANTFARM_STYLE_COUNT] = { 10, 30, 30, 15, 15 };
+
 /* ------------------------------------------------------------------ */
 /* module state                                                       */
 /* ------------------------------------------------------------------ */
@@ -72,31 +82,38 @@ typedef struct ANTFARM_STATE
 	int active;		/* screensaver running */
 	int camSnapped;		/* camera has been snapped to the current target */
 
-	int mode;		/* ANTFARM_MODE_* */
+	int style;		/* ANTFARM_STYLE_* */
+	int targetKind;		/* ANTFARM_TARGET_* */
 	int state;		/* ANTFARM_STATE_* */
 	int fade;		/* 0..255 overlay wash intensity */
 	unsigned long stateStart;	/* when the current state began (ms) */
 	unsigned long shotStart;	/* when the current shot's fade-in began (ms) */
 
 	int intervalMs;					/* seconds per visible shot */
-	int modesEnabled[ANTFARM_MODE_COUNT];
+	int stylesEnabled[ANTFARM_STYLE_COUNT];
+	int leadEnabled;	/* rogue-car events allowed */
+	int leadChance;		/* percent chance per cut */
 
-	int targetCarId;	/* mode FOLLOW: car_data index */
-	int targetRoadIdx;	/* modes TRIPOD/FLYOVER: straight index (== surfId) */
-	VECTOR targetPos;	/* aim anchor — also the spool content for static shots */
-
-	/* per-shot framing (modes TRIPOD/FLYOVER road reference) */
-	int roadSurfId;		/* chosen straight's surfId (== index) */
+	/* the shot's subject */
+	int targetCarId;	/* CAR targets: car_data index */
+	int roadSurfId;		/* ROAD targets: straight index (== surfId) */
 	int roadLane;		/* lane index sampled on that road */
 	int roadDist;		/* distAlongPath on the road (world units) */
+	VECTOR targetPos;	/* world-space focus (also the spool content) */
+	VECTOR areaPos;		/* the far-area anchor of the current cut */
+
+	/* per-shot framing */
 	int shotSideSign;	/* +1/-1 — which side of the road the camera sits */
 	int shotSideDist;	/* camera distance from the sampled lane point */
-	int shotHeight;		/* camera elevation above the road */
+	int shotHeight;		/* camera elevation above the road/ground */
 	int shotLookAhead;	/* how far ahead of the camera the aim sits */
 	int shotOrbitAmp;	/* tripod azimuth sweep amplitude (0 = static) */
 	int shotOrbitPhase;	/* orbit phase seed */
 	int shotScrZ;		/* per-shot FOV (projection distance) */
 	int armFrac;		/* smoothed LOS pull-back fraction (256 = full arm) */
+
+	VECTOR trackCamPos;	/* STATIC style: the fixed roadside camera spot */
+	int trackPlaced;	/* the static spot has been placed */
 
 	VECTOR spool;		/* what MainPlayer.spoolXZ points at while active */
 
@@ -104,15 +121,28 @@ typedef struct ANTFARM_STATE
 	VECTOR aimPos;		/* current aim point (render space) */
 	SVECTOR camAngle;	/* smoothed camera angle */
 
+	/* cut staging */
+	int cutInit;		/* CUT state has planned this cut */
+	int cutWaitForCar;	/* CUT is waiting for traffic near the new area */
+	unsigned long cutStart;	/* when the CUT state began (ms) */
+
+	/* rogue-car (lead AI) event */
+	int leadMode;		/* following a rogue car until it is totaled */
+	int leadEnding;		/* totaled — holding on the wreck before moving on */
+	unsigned long leadEndStart;
+
 	/* engine state saved/restored around activation */
 	int savedStopPadReads;
 	int savedDoOverlays;
 	VECTOR* savedSpoolXZ;
+	int savedCopsAllowed;
+	int savedMasterVolume;
 
 	/* player car saved/restored around activation (teleport + hide) */
 	int savedPlayerCarControlType;
 	int savedPlayerReservedSlot;
 	long savedPlayerCarPos[3];
+	int savedPlayerFelony;	/* short on the car; int here */
 
 	int cutCount;		/* diagnostic counter */
 	int f9Down;		/* F9 edge detection */
@@ -151,7 +181,8 @@ static CAR_DATA* AntFarmValidCar(void)
 
 	CAR_DATA* cp = &car_data[s.targetCarId];
 
-	if (cp->controlType != CONTROL_TYPE_CIV_AI)
+	if (cp->controlType != CONTROL_TYPE_CIV_AI &&
+	    cp->controlType != CONTROL_TYPE_LEAD_AI)
 		return NULL;
 
 	return cp;
@@ -171,7 +202,8 @@ static int AntFarmMapHeight(int x, int z)
 /* pick a straight at least minLen world units long (surfId == straight
  * index); falls back to the longest road, then any road (bounded scans,
  * big cities have thousands of straights) */
-static int AntFarmPickSurface(int minLen){
+static int AntFarmPickSurface(int minLen)
+{
 	int i;
 	int n = NumDriver2Straights;
 	int best = -1;
@@ -269,194 +301,245 @@ static int AntFarmShotRoadRender(int distAlong, VECTOR* roadPt, int* heading)
 	return 1;
 }
 
-/* randomize the framing of a freshly picked shot so no two cuts look alike */
-static void AntFarmInitShotVars(void)
+/* pick a straight at least FAR_DIST from the current focus, so every cut
+ * tours a genuinely different part of the map */
+static int AntFarmPickFarArea(void)
 {
-	s.shotSideSign = (Random2(0) & 1) ? 1 : -1;
-	s.shotSideDist = 620 + (Random2(0) % 380);	/* 620..1000 */
-	s.shotLookAhead = 520 + (Random2(0) % 620);	/* 520..1140 */
-	s.shotOrbitAmp = 0;
-	s.armFrac = 256;
-	s.shotOrbitPhase = AntTicks() & 4095;
+	int i;
 
-	if (s.mode == ANTFARM_MODE_FLYOVER)
+	for (i = 0; i < 12; i++)
 	{
-		s.shotHeight = 430 + (Random2(0) % 240);	/* high, cinematic */
-		s.shotScrZ = 218 + (Random2(0) % 24);		/* wider lens */
-	}
-	else if (s.mode == ANTFARM_MODE_FOLLOW)
-	{
-		s.shotHeight = 165 + (Random2(0) % 40);		/* chase height */
-		s.shotScrZ = 240 + (Random2(0) % 20);
-	}
-	else	/* tripod */
-	{
-		s.shotHeight = 185 + (Random2(0) % 140);	/* 185..325 */
-		s.shotScrZ = 240 + (Random2(0) % 24);
+		int idx = AntFarmPickSurface(400);
+		DRIVER2_STRAIGHT* rd;
 
-		/* roughly a third of tripod shots get a slow cinematic orbit */
-		if (Random2(0) % 3 == 0)
-			s.shotOrbitAmp = 384 + (Random2(0) % 384);	/* ±34°..±67° */
-	}
-}
+		if (idx < 0)
+			break;
 
-/* count moving civilian cars (drivable traffic) */
-static int AntFarmCountMovingCars(void)
-{
-	int i, n = 0;
+		rd = &Driver2StraightsPtr[idx];
 
-	for (i = 0; i < MAX_CARS; i++)
-	{
-		CAR_DATA* cp = &car_data[i];
-
-		if (cp->controlType == CONTROL_TYPE_CIV_AI && ABS(cp->hd.speed) > 8)
-			n++;
-	}
-
-	return n;
-}
-
-/* pick a random moving civilian car, or -1 when none */
-static int AntFarmPickCar(void)
-{
-	int i, n = 0;
-	int pick;
-
-	for (i = 0; i < MAX_CARS; i++)
-	{
-		CAR_DATA* cp = &car_data[i];
-
-		if (cp->controlType == CONTROL_TYPE_CIV_AI && ABS(cp->hd.speed) > 8)
 		{
-			if (Random2(0) % (n + 1) == 0)	/* reservoir sampling */
-				pick = i;
-			n++;
+			long long dx = (long long)rd->Midx - s.targetPos.vx;
+			long long dz = (long long)rd->Midz - s.targetPos.vz;
+
+			if (dx * dx + dz * dz >= (long long)ANTFARM_FAR_DIST * ANTFARM_FAR_DIST)
+			{
+				s.roadSurfId = idx;
+				s.areaPos.vx = rd->Midx;
+				s.areaPos.vy = AntFarmMapHeight(rd->Midx, rd->Midz);
+				s.areaPos.vz = rd->Midz;
+				return 1;
+			}
 		}
 	}
 
-	if (n == 0)
-		return -1;
+	/* fallback: a random road wherever it is */
+	s.roadSurfId = AntFarmPickSurface(400);
+
+	if (s.roadSurfId >= 0)
+	{
+		DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[s.roadSurfId];
+
+		s.areaPos.vx = rd->Midx;
+		s.areaPos.vy = AntFarmMapHeight(rd->Midx, rd->Midz);
+		s.areaPos.vz = rd->Midz;
+		return 1;
+	}
+
+	return 0;
+}
+
+/* pick a moving civilian car near a point (world units), or -1 */
+static int AntFarmPickCarNear(const VECTOR* area, int radius)
+{
+	int i, n = 0, pick = -1;
+	long long r2 = (long long)radius * radius;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		CAR_DATA* cp = &car_data[i];
+		long long dx, dz;
+
+		if (cp->controlType != CONTROL_TYPE_CIV_AI)
+			continue;
+
+		if (ABS(cp->hd.speed) <= 8)
+			continue;
+
+		dx = (long long)cp->hd.where.t[0] - area->vx;
+		dz = (long long)cp->hd.where.t[2] - area->vz;
+
+		if (dx * dx + dz * dz > r2)
+			continue;
+
+		if (Random2(0) % (n + 1) == 0)
+			pick = i;
+
+		n++;
+	}
 
 	return pick;
 }
 
-/* ------------------------------------------------------------------ */
-/* target selection                                                   */
-/* ------------------------------------------------------------------ */
-
-static void AntFarmPickRoadShot(void);	/* defined below (needs the pickers) */
-
-static void AntFarmPickTarget(void)
+/* vehicle length/height for framing (colBox half-lengths, may be halved in
+ * place by FixCarCos — read at runtime) */
+static int AntFarmCarSize(CAR_DATA* cp)
 {
-	int modeCandidates[ANTFARM_MODE_COUNT];
-	int count = 0;
-	int i;
-	int pick;
+	if (cp->ap.carCos)
+		return cp->ap.carCos->colBox.vz;
 
-	/* only modes that are both enabled AND have candidates right now */
-	if (s.modesEnabled[ANTFARM_MODE_TRIPOD] && NumDriver2Straights > 0)
-		modeCandidates[count++] = ANTFARM_MODE_TRIPOD;
-
-	if (s.modesEnabled[ANTFARM_MODE_FLYOVER] && AntFarmPickSurface(4500) >= 0)
-		modeCandidates[count++] = ANTFARM_MODE_FLYOVER;
-
-	if (s.modesEnabled[ANTFARM_MODE_FOLLOW] && AntFarmCountMovingCars() > 0)
-		modeCandidates[count++] = ANTFARM_MODE_FOLLOW;
-
-	/* relax the availability filter if nothing was usable */
-	if (count == 0)
-	{
-		if (NumDriver2Straights > 0)
-			modeCandidates[count++] = ANTFARM_MODE_TRIPOD;
-
-		if (AntFarmCountMovingCars() > 0)
-			modeCandidates[count++] = ANTFARM_MODE_FOLLOW;
-
-		if (NumDriver2Straights > 0)
-			modeCandidates[count++] = ANTFARM_MODE_FLYOVER;
-	}
-
-	if (count == 0)
-	{
-		s.mode = ANTFARM_MODE_TRIPOD;
-		s.targetRoadIdx = -1;
-		s.targetCarId = -1;
-		AntFarmInitShotVars();
-		return;
-	}
-
-	pick = Random2(0) % count;
-	s.mode = modeCandidates[pick];
-	s.targetCarId = -1;
-	s.targetRoadIdx = -1;
-
-	if (s.mode == ANTFARM_MODE_FOLLOW)
-	{
-		CAR_DATA* cp;
-
-		s.targetCarId = AntFarmPickCar();
-		cp = AntFarmValidCar();
-
-		if (cp)
-		{
-			s.targetPos.vx = cp->hd.where.t[0];
-			s.targetPos.vy = cp->hd.where.t[1];
-			s.targetPos.vz = cp->hd.where.t[2];
-		}
-		else
-		{
-			/* no car after all — degrade to a tripod */
-			s.mode = ANTFARM_MODE_TRIPOD;
-			s.targetCarId = -1;
-			AntFarmPickRoadShot();
-		}
-	}
-	else
-	{
-		AntFarmPickRoadShot();
-	}
-
-	AntFarmInitShotVars();
-
-	/* diagnostics */
-	s.ctx->jer_log(s.ctx, "[antfarm] cut #%d -> mode %s (%s%s)\n",
-		++s.cutCount,
-		s.mode == ANTFARM_MODE_TRIPOD ? "tripod" :
-		s.mode == ANTFARM_MODE_FOLLOW ? "follow" : "flyover",
-		s.mode == ANTFARM_MODE_FOLLOW ? "car" : "road",
-		s.mode == ANTFARM_MODE_FOLLOW ? "" : " lane-based");
+	return 300;
 }
 
-/* pick a concrete road + lane + distance for TRIPOD/FLYOVER shots and set
- * the spool anchor. Sampling near a straight's END frames junctions */
-static void AntFarmPickRoadShot(void)
+static void AntFarmCarFraming(CAR_DATA* cp, int* outDist, int* outHeight)
+{
+	int vz = 300, vy = 120;
+
+	if (cp->ap.carCos)
+	{
+		vz = cp->ap.carCos->colBox.vz;
+		vy = cp->ap.carCos->colBox.vy;
+	}
+
+	if (vz < 200)
+		vz = 200;
+
+	if (vy < 80)
+		vy = 80;
+
+	*outDist = vz * 2 + vy + 380;	/* well back from the traffic */
+	*outHeight = 240 + vy / 2;	/* well above it */
+
+	if (*outDist < 700)
+		*outDist = 700;
+
+	if (*outDist > 1350)
+		*outDist = 1350;
+
+	if (*outHeight > 460)
+		*outHeight = 460;
+}
+
+/* weighted style pick. carOnly: 1 = chase/static/overhead, 0 = overhead/
+ * tripod/flyover, -1 = any. Overhead fits both. */
+static int AntFarmPickStyle(int carOnly)
+{
+	int total = 0, i, roll;
+
+	for (i = 0; i < ANTFARM_STYLE_COUNT; i++)
+	{
+		int isCar = (i == ANTFARM_STYLE_CHASE || i == ANTFARM_STYLE_STATIC);
+		int isRoad = (i == ANTFARM_STYLE_TRIPOD || i == ANTFARM_STYLE_FLYOVER);
+
+		if (!s.stylesEnabled[i])
+			continue;
+
+		if (carOnly == 1 && isRoad)
+			continue;
+
+		if (carOnly == 0 && isCar)
+			continue;
+
+		total += antStyleWeights[i];
+	}
+
+	if (total == 0)
+		return ANTFARM_STYLE_TRIPOD;
+
+	roll = Random2(0) % total;
+
+	for (i = 0; i < ANTFARM_STYLE_COUNT; i++)
+	{
+		int isCar = (i == ANTFARM_STYLE_CHASE || i == ANTFARM_STYLE_STATIC);
+		int isRoad = (i == ANTFARM_STYLE_TRIPOD || i == ANTFARM_STYLE_FLYOVER);
+
+		if (!s.stylesEnabled[i])
+			continue;
+
+		if (carOnly == 1 && isRoad)
+			continue;
+
+		if (carOnly == 0 && isCar)
+			continue;
+
+		roll -= antStyleWeights[i];
+
+		if (roll < 0)
+			return i;
+	}
+
+	return ANTFARM_STYLE_TRIPOD;
+}
+
+/* randomize the framing of a freshly picked shot so no two cuts look alike */
+static void AntFarmInitShotVars(void)
+{
+	s.shotSideSign = (Random2(0) & 1) ? 1 : -1;
+	s.shotSideDist = 620 + (Random2(0) % 420);	/* 620..1040 */
+	s.shotLookAhead = 560 + (Random2(0) % 640);	/* 560..1200 */
+	s.shotOrbitAmp = 0;
+	s.armFrac = 256;
+	s.shotOrbitPhase = AntTicks() & 4095;
+
+	switch (s.style)
+	{
+	case ANTFARM_STYLE_CHASE:
+		s.shotHeight = 240 + (Random2(0) % 120);
+		s.shotScrZ = 240 + (Random2(0) % 20);
+		break;
+
+	case ANTFARM_STYLE_STATIC:
+		s.shotHeight = 220 + (Random2(0) % 90);
+		s.shotScrZ = 244 + (Random2(0) % 20);
+		break;
+
+	case ANTFARM_STYLE_OVERHEAD:
+		s.shotHeight = 560 + (Random2(0) % 260);	/* scenic high view */
+		s.shotScrZ = 236 + (Random2(0) % 24);
+		break;
+
+	case ANTFARM_STYLE_FLYOVER:
+		s.shotHeight = 500 + (Random2(0) % 250);
+		s.shotScrZ = 218 + (Random2(0) % 24);
+		break;
+
+	default:	/* ANTFARM_STYLE_TRIPOD */
+		s.shotHeight = 240 + (Random2(0) % 140);
+
+		if (Random2(0) % 3 == 0)
+			s.shotOrbitAmp = 384 + (Random2(0) % 384);	/* ±34°..±67° */
+
+		s.shotScrZ = 240 + (Random2(0) % 24);
+		break;
+	}
+}
+
+/* ------------------------------------------------------------------ */
+/* shot planning (called during the black CUT)                        */
+/* ------------------------------------------------------------------ */
+
+/* point the shot's road reference at s.roadSurfId (the area road): pick a
+ * lane + distance and set the spool anchor. Sampling near a straight's END
+ * frames junctions (junctions have no centre of their own). */
+static void AntFarmSetupRoadShot(void)
 {
 	DRIVER2_STRAIGHT* rd;
 	int nLanes;
 	int roll;
 	int len;
 
-	s.roadSurfId = AntFarmPickSurface(s.mode == ANTFARM_MODE_FLYOVER ? 4500 : 400);
-
 	if (s.roadSurfId < 0)
 	{
-		s.targetPos.vx = camera_position.vx;
-		s.targetPos.vy = camera_position.vy;
-		s.targetPos.vz = camera_position.vz;
+		s.targetPos = s.areaPos;
 		return;
 	}
 
 	rd = &Driver2StraightsPtr[s.roadSurfId];
 	len = rd->length;
 
-	/* the sampled lane: random across the full carriageway */
 	nLanes = ROAD_WIDTH_IN_LANES(rd);
 	s.roadLane = (nLanes > 0) ? (Random2(0) % nLanes) : 0;
 
-	/* where along the road the tripod stands: bias toward the ends so the
-	 * shot sits beside an intersection (junctions have no centre of their
-	 * own, but straight ends connect to them) */
-	if (s.mode == ANTFARM_MODE_TRIPOD)
+	if (s.style == ANTFARM_STYLE_TRIPOD)
 	{
 		roll = Random2(0) % 100;
 
@@ -467,9 +550,13 @@ static void AntFarmPickRoadShot(void)
 		else
 			s.roadDist = len / 2 + (Random2(0) % (len / 4)) - len / 8;	/* middle */
 	}
-	else
+	else if (s.style == ANTFARM_STYLE_FLYOVER)
 	{
-		s.roadDist = 0;	/* flyover starts at one end of the road */
+		s.roadDist = 0;	/* dolly starts at one end of the road */
+	}
+	else	/* OVERHEAD (road) */
+	{
+		s.roadDist = len / 2 + (Random2(0) % (len / 4)) - len / 8;
 	}
 
 	if (s.roadDist < 0)
@@ -478,7 +565,6 @@ static void AntFarmPickRoadShot(void)
 	if (s.roadDist > len)
 		s.roadDist = len;
 
-	/* spool anchor = the sampled road point (world space; only x/z matter) */
 	{
 		int x, z, heading;
 
@@ -490,16 +576,152 @@ static void AntFarmPickRoadShot(void)
 		}
 		else
 		{
-			s.targetPos.vx = camera_position.vx;
-			s.targetPos.vy = camera_position.vy;
-			s.targetPos.vz = camera_position.vz;
+			s.targetPos = s.areaPos;
 		}
 	}
 }
 
+/* plan the next shot in the new far area (default touring behaviour) */
+static void AntFarmPlanShot(void)
+{
+	s.trackPlaced = 0;
+	s.targetCarId = -1;
+	s.cutWaitForCar = 0;
+
+	s.style = AntFarmPickStyle(-1);
+
+	if (s.style == ANTFARM_STYLE_CHASE || s.style == ANTFARM_STYLE_STATIC)
+	{
+		s.targetKind = ANTFARM_TARGET_CAR;
+		s.cutWaitForCar = 1;
+	}
+	else if (s.style == ANTFARM_STYLE_OVERHEAD)
+	{
+		if (Random2(0) & 1)
+		{
+			s.targetKind = ANTFARM_TARGET_CAR;
+			s.cutWaitForCar = 1;
+		}
+		else
+		{
+			s.targetKind = ANTFARM_TARGET_ROAD;
+			AntFarmSetupRoadShot();
+		}
+	}
+	else	/* TRIPOD / FLYOVER */
+	{
+		s.targetKind = ANTFARM_TARGET_ROAD;
+		AntFarmSetupRoadShot();
+	}
+
+	AntFarmInitShotVars();
+}
+
 /* ------------------------------------------------------------------ */
-/* per-shot camera computation                                         */
+/* rogue-car (lead AI) events                                         */
 /* ------------------------------------------------------------------ */
+
+static int AntFarmLeadTotaled(void)
+{
+	CAR_DATA* cp;
+
+	if (s.targetCarId < 0 || s.targetCarId >= MAX_CARS)
+		return 1;
+
+	cp = &car_data[s.targetCarId];
+
+	if (cp->controlType != CONTROL_TYPE_LEAD_AI)
+		return 1;	/* pinged out or switched */
+
+	if (cp->totalDamage >= ANTFARM_LEAD_TOTAL)
+		return 1;
+
+	return 0;
+}
+
+static void AntFarmStartLead(void)
+{
+	CAR_DATA* cp = &car_data[s.targetCarId];
+	LONGVECTOR4 pos;
+
+	pos[0] = cp->hd.where.t[0];
+	pos[1] = cp->hd.where.t[1];
+	pos[2] = cp->hd.where.t[2];
+	pos[3] = 0;
+
+	/* InitCar with CONTROL_TYPE_LEAD_AI runs InitLead (hndType=5, ai.l
+	 * state, currentRoad) — leadai drives it across the map (FreeRoamer) */
+	InitCar(cp, cp->hd.direction & 0xfff, &pos, CONTROL_TYPE_LEAD_AI,
+		cp->ap.model, cp->ap.palette & 255, NULL);
+
+	s.leadMode = 1;
+	s.leadEnding = 0;
+	s.style = ANTFARM_STYLE_CHASE;
+	s.targetKind = ANTFARM_TARGET_CAR;
+	s.trackPlaced = 0;
+	AntFarmInitShotVars();
+
+	/* cops chase the (invisible) player car — which is pinned to the rogue
+	 * car — so the pursuit lands on the rogue car */
+	CopsAllowed = 1;
+	*GetPlayerFelony(&MainPlayer) = 2500;
+
+	s.ctx->jer_log(s.ctx, "[antfarm] rogue car #%d went rogue — cops engaged\n", s.targetCarId);
+}
+
+static void AntFarmEndLead(void)
+{
+	CopsAllowed = s.savedCopsAllowed;
+	*GetPlayerFelony(&MainPlayer) = (short)s.savedPlayerFelony;
+
+	/* retire the wrecked slot so the city can reuse it (leadai has no
+	 * retire path of its own; the spawner never reuses non-NONE slots) */
+	if (s.targetCarId >= 0 && s.targetCarId < MAX_CARS)
+		car_data[s.targetCarId].controlType = CONTROL_TYPE_NONE;
+
+	s.targetCarId = -1;
+	s.leadMode = 0;
+	s.leadEnding = 0;
+
+	s.ctx->jer_log(s.ctx, "[antfarm] rogue car ended — back to touring\n");
+}
+
+/* ------------------------------------------------------------------ */
+/* camera                                                             */
+/* ------------------------------------------------------------------ */
+
+/* STATIC style: a fixed roadside camera the target car drives past. The
+ * camera only rotates; it re-places itself (gently) when the car passes it
+ * or drives out of reach. */
+static void AntFarmStaticTrack(CAR_DATA* cp, VECTOR* desired)
+{
+	int carX = cp->hd.where.t[0];
+	int carZ = cp->hd.where.t[2];
+	int dir = cp->hd.direction;
+	int dx = carX - s.trackCamPos.vx;
+	int dz = carZ - s.trackCamPos.vz;
+	int passed = FIXEDH(dx * RSIN(dir) + dz * RCOS(dir)) < 0;
+	int far = dx * dx + dz * dz > 2200 * 2200;
+
+	if (!s.trackPlaced || passed || far)
+	{
+		int side = (Random2(0) & 1) ? 1024 : 3072;
+		int spotDist = 1000 + (Random2(0) % 400);	/* ahead of the car */
+		int sideDist = 650 + (Random2(0) % 450);
+		int hgt = 230 + (Random2(0) % 90);
+
+		s.trackCamPos.vx = carX + FIXEDH(RSIN((dir + 2048) & 0xfff) * spotDist);
+		s.trackCamPos.vz = carZ + FIXEDH(RCOS((dir + 2048) & 0xfff) * spotDist);
+		s.trackCamPos.vy = -(AntFarmMapHeight(s.trackCamPos.vx, s.trackCamPos.vz) + hgt);
+
+		s.trackCamPos.vx += FIXEDH(RSIN((dir + side) & 0xfff) * sideDist);
+		s.trackCamPos.vz += FIXEDH(RCOS((dir + side) & 0xfff) * sideDist);
+
+		s.trackPlaced = 1;
+	}
+
+	*desired = s.trackCamPos;
+}
 
 static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 {
@@ -508,11 +730,11 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 	unsigned long now = AntTicks();
 	int lerp;
 
-	if (s.mode == ANTFARM_MODE_FOLLOW)
+	if (s.targetKind == ANTFARM_TARGET_CAR)
 	{
 		CAR_DATA* cp = AntFarmValidCar();
 		VECTOR carPos;
-		int dir, dist, h;
+		int dir, dist, height, h;
 
 		if (cp == NULL)
 		{
@@ -528,38 +750,56 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 		carPos.vz = cp->hd.where.t[2];
 
 		dir = cp->hd.direction;
-
-		dist = 560 + FIXEDH(ABS(cp->hd.speed)) / 3;
-
-		if (dist > 900)
-			dist = 900;
-
-		/* render space is Y-flipped vs the world (camera.c:604 negates the
-		 * camera Y for the world-space collider): a camera above the ground
-		 * has a negative vy here. MapHeight()/hd.where.t[] use the world
-		 * convention — negate Y for the render camera. */
 		h = AntFarmMapHeight(carPos.vx, carPos.vz);
 
-		desired.vx = carPos.vx + FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
-		desired.vy = -h - s.shotHeight;
-		desired.vz = carPos.vz + FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
+		switch (s.style)
+		{
+		case ANTFARM_STYLE_CHASE:
+			AntFarmCarFraming(cp, &dist, &height);
+
+			desired.vx = carPos.vx + FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
+			desired.vy = -h - height;
+			desired.vz = carPos.vz + FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
+			lerp = 22;
+			break;
+
+		case ANTFARM_STYLE_OVERHEAD:
+			/* high behind-above follow: scenic, not chase */
+			dist = 520 + AntFarmCarSize(cp) / 2;
+			height = 540 + AntFarmCarSize(cp) / 2;
+
+			if (dist > 950)
+				dist = 950;
+
+			if (height > 820)
+				height = 820;
+
+			desired.vx = carPos.vx + FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
+			desired.vy = -h - height;
+			desired.vz = carPos.vz + FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
+			lerp = 20;
+			break;
+
+		default:	/* ANTFARM_STYLE_STATIC */
+			AntFarmStaticTrack(cp, &desired);
+			lerp = 8;
+			break;
+		}
 
 		aim = carPos;
-		aim.vy = -(carPos.vy + 60);
+		aim.vy = -(carPos.vy + 50);
 
-		/* keep the spool pinned to the moving car */
+		/* keep the spool + player car pinned to the moving car */
 		s.spool = carPos;
 		s.targetPos = carPos;
 
-		lerp = 25;
+		lerp = (s.style == ANTFARM_STYLE_STATIC) ? 8 : lerp;
 	}
-	else
+	else	/* ANTFARM_TARGET_ROAD */
 	{
 		VECTOR roadPt = { 0, 0, 0 };
 		int heading = 0;
 
-		/* re-resolve the road reference every frame (cheap) so the shot
-		 * stays glued to the lane while the camera eases around it */
 		if (AntFarmShotRoadRender(s.roadDist, &roadPt, &heading) == 0)
 		{
 			*outPos = s.camPos;
@@ -567,16 +807,27 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			return;
 		}
 
-		if (s.mode == ANTFARM_MODE_TRIPOD)
+		if (s.style == ANTFARM_STYLE_OVERHEAD)
 		{
-			/* elevated camera on the side of the road, watching the flow */
+			/* scenic elevated 3/4 view down the road at the traffic */
 			int side = (heading + (s.shotSideSign > 0 ? 1024 : 3072)) & 0xfff;
-			int sway = RSIN((now / 7) & 4095) >> 8;			/* -16..16 */
-			int bobY = RSIN((now / 13) & 4095) >> 9;		/* -8..8 */
+
+			desired.vx = roadPt.vx + FIXEDH(RSIN(side) * (s.shotSideDist + 300));
+			desired.vy = roadPt.vy - s.shotHeight;
+			desired.vz = roadPt.vz + FIXEDH(RCOS(side) * (s.shotSideDist + 300));
+
+			aim.vx = roadPt.vx + FIXEDH(RSIN(heading) * s.shotLookAhead);
+			aim.vy = roadPt.vy - 50;
+			aim.vz = roadPt.vz + FIXEDH(RCOS(heading) * s.shotLookAhead);
+		}
+		else if (s.style == ANTFARM_STYLE_TRIPOD)
+		{
+			int side = (heading + (s.shotSideSign > 0 ? 1024 : 3072)) & 0xfff;
+			int sway = RSIN((now / 7) & 4095) >> 8;
+			int bobY = RSIN((now / 13) & 4095) >> 9;
 
 			if (s.shotOrbitAmp > 0)
 			{
-				/* slow cinematic orbit: one sweep per ~2 shot lengths */
 				int sweepPhase = (s.shotOrbitPhase + now / (AntIntervalMs() * 2)) & 4095;
 				int sweep = FIXEDH(RSIN(sweepPhase) * s.shotOrbitAmp);
 
@@ -591,9 +842,8 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			aim.vy = roadPt.vy - 40;
 			aim.vz = roadPt.vz + FIXEDH(RCOS(heading) * s.shotLookAhead);
 		}
-		else	/* ANTFARM_MODE_FLYOVER */
+		else	/* ANTFARM_STYLE_FLYOVER */
 		{
-			/* slow dolly along the lane, high up, looking ahead */
 			VECTOR startPt = { 0, 0, 0 };
 			VECTOR endPt = { 0, 0, 0 };
 			VECTOR aimPt = { 0, 0, 0 };
@@ -606,7 +856,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			    : (int)(shotElapsed * 1000 / (unsigned long)AntIntervalMs());
 
 			/* smoothstep — eases the dolly in and out of each end */
-			tt = t * t * (3000 - 2 * t) / 1000000;	/* t,tt in 0..1000 */
+			tt = t * t * (3000 - 2 * t) / 1000000;
 
 			AntFarmShotRoadRender(0, &startPt, &dummyHeading);
 			AntFarmShotRoadRender(len, &endPt, &dummyHeading);
@@ -616,7 +866,6 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			desired.vy = -(AntFarmMapHeight(desired.vx, desired.vz)) - s.shotHeight
 				+ (RSIN((now / 11) & 4095) >> 6);
 
-			/* aim ahead of the dolly, glued to the road */
 			curDist = (long)len * tt / 1000;
 			aimDist = curDist + s.shotLookAhead;
 
@@ -628,13 +877,10 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			aim.vy = aimPt.vy - 60;
 		}
 
-		/* static shots keep the spool on the road anchor */
 		s.spool = s.targetPos;
-
 		lerp = 14;
 	}
 
-	/* remember the aim for the scenery pass + re-aim */
 	s.aimPos = aim;
 
 	/* snap on a fresh target (hidden by the black), otherwise ease */
@@ -674,10 +920,19 @@ static void AntFarmSetActive(int on)
 			return;
 		}
 
-		/* save + cut off input and HUD */
+		/* save + cut off input, HUD, cops, sound */
 		s.savedStopPadReads = gStopPadReads;
 		s.savedDoOverlays = gDoOverlays;
 		s.savedSpoolXZ = MainPlayer.spoolXZ;
+		s.savedCopsAllowed = CopsAllowed;
+		s.savedMasterVolume = gMasterVolume;
+		s.savedPlayerFelony = *GetPlayerFelony(&MainPlayer);
+
+		gStopPadReads = 1;
+		gDoOverlays = 0;
+		CopsAllowed = 0;	/* no felony/cop aggression while touring */
+		SetMasterVolume(-10000);	/* mute cars/player SFX (music stays) */
+
 		s.savedPlayerCarControlType = 0;
 
 		if (MainPlayer.playerType == PLAYER_TYPE_CAR &&
@@ -692,9 +947,6 @@ static void AntFarmSetActive(int on)
 			s.savedPlayerCarPos[2] = pcar->hd.where.t[2];
 		}
 
-		gStopPadReads = 1;	/* player car brakes; on-foot pads zeroed */
-		gDoOverlays = 0;	/* hide the HUD */
-
 		s.active = 1;
 		s.camSnapped = 0;
 		s.fade = 0;
@@ -702,30 +954,43 @@ static void AntFarmSetActive(int on)
 		s.stateStart = AntTicks();
 		s.shotStart = s.stateStart;
 		s.cutCount = 0;
+		s.leadMode = 0;
+		s.leadEnding = 0;
 		s.targetCarId = -1;
-		s.targetRoadIdx = -1;
+		s.roadSurfId = -1;
 
 		s.camPos.vx = camera_position.vx;
 		s.camPos.vy = camera_position.vy;
 		s.camPos.vz = camera_position.vz;
 		s.camAngle = camera_angle;
 
-		/* start from where the player was looking */
-		s.targetPos = s.camPos;
+		s.targetPos.vx = camera_position.vx;
+		s.targetPos.vy = camera_position.vy;
+		s.targetPos.vz = camera_position.vz;
 
-		AntFarmPickTarget();
+		/* first cut: hop somewhere far and plan */
+		s.state = ANTFARM_STATE_FADE_OUT;
+		s.stateStart = AntTicks() - ANTFARM_FADE_MS;	/* immediate cut */
 
 		s.ctx->jer_log(s.ctx,
-			"[antfarm] enabled (interval %ds, tripod=%d follow=%d flyover=%d)\n",
-			s.intervalMs / 1000,
-			s.modesEnabled[ANTFARM_MODE_TRIPOD],
-			s.modesEnabled[ANTFARM_MODE_FOLLOW],
-			s.modesEnabled[ANTFARM_MODE_FLYOVER]);
+			"[antfarm] enabled (interval %ds, styles %d%d%d%d%d, lead=%d%%)\n",
+			AntIntervalMs() / 1000,
+			s.stylesEnabled[ANTFARM_STYLE_CHASE],
+			s.stylesEnabled[ANTFARM_STYLE_STATIC],
+			s.stylesEnabled[ANTFARM_STYLE_OVERHEAD],
+			s.stylesEnabled[ANTFARM_STYLE_TRIPOD],
+			s.stylesEnabled[ANTFARM_STYLE_FLYOVER],
+			s.leadEnabled ? s.leadChance : 0);
 	}
 	else
 	{
+		if (s.leadMode)
+			AntFarmEndLead();
+
 		gStopPadReads = s.savedStopPadReads;
 		gDoOverlays = s.savedDoOverlays;
+		CopsAllowed = s.savedCopsAllowed;
+		SetMasterVolume(s.savedMasterVolume);
 
 		/* restore the spool pointer (UpdatePlayers would re-point it to the
 		 * player car next frame anyway — restoring keeps the contract exact) */
@@ -758,8 +1023,9 @@ static void AntFarmSetActive(int on)
 		s.fade = 0;
 
 		s.ctx->jer_log(s.ctx,
-			"[antfarm] disabled (cuts: %d; restored pads=%d overlays=%d)\n",
-			s.cutCount, s.savedStopPadReads, s.savedDoOverlays);
+			"[antfarm] disabled (cuts: %d; restored pads=%d overlays=%d cops=%d vol=%d)\n",
+			s.cutCount, s.savedStopPadReads, s.savedDoOverlays,
+			s.savedCopsAllowed, s.savedMasterVolume);
 	}
 }
 
@@ -785,7 +1051,7 @@ static void AntFarmCheckF9(void)
 /* JERICHO hooks                                                      */
 /* ------------------------------------------------------------------ */
 
-/* every world step: F9 toggle, cut state machine, follow-car guard */
+/* every world step: F9 toggle, cut state machine, rogue-car lifecycle */
 static int AntFarmOnFrame(void* userdata, void* args)
 {
 	unsigned long now;
@@ -807,18 +1073,50 @@ static int AntFarmOnFrame(void* userdata, void* args)
 
 	now = AntTicks();
 
+	/* rogue-car lifecycle runs before the state machine so it wins even
+	 * mid-transition */
+	if (s.leadMode)
+	{
+		if (AntFarmLeadTotaled())
+		{
+			if (!s.leadEnding)
+			{
+				s.leadEnding = 1;
+				s.leadEndStart = now;
+
+				s.ctx->jer_log(s.ctx, "[antfarm] rogue car wrecked — holding\n");
+			}
+
+			if (now - s.leadEndStart >= ANTFARM_LEAD_END_MS)
+			{
+				AntFarmEndLead();
+
+				/* cut to a fresh far area, back to touring */
+				s.state = ANTFARM_STATE_FADE_OUT;
+				s.stateStart = now;
+			}
+
+			return JER_RESULT_CONTINUE;
+		}
+
+		/* still chasing: keep cops hot on the rogue car */
+		CopsAllowed = 1;
+		*GetPlayerFelony(&MainPlayer) = 2500;
+	}
+
 	switch (s.state)
 	{
 	case ANTFARM_STATE_SHOW:
-		/* the followed car vanished/died — cut early */
-		if (s.mode == ANTFARM_MODE_FOLLOW && AntFarmValidCar() == NULL)
+		/* the followed car vanished/died — cut early (touring only) */
+		if (!s.leadMode && s.targetKind == ANTFARM_TARGET_CAR &&
+		    AntFarmValidCar() == NULL)
 		{
 			s.state = ANTFARM_STATE_FADE_OUT;
 			s.stateStart = now;
 			break;
 		}
 
-		if (now - s.stateStart >= (unsigned long)AntIntervalMs())
+		if (!s.leadEnding && now - s.stateStart >= (unsigned long)AntIntervalMs())
 		{
 			s.state = ANTFARM_STATE_FADE_OUT;
 			s.stateStart = now;
@@ -830,18 +1128,73 @@ static int AntFarmOnFrame(void* userdata, void* args)
 
 		if (s.fade >= 255)
 		{
-			AntFarmPickTarget();
-			s.camSnapped = 0;	/* snap hidden by the black */
 			s.fade = 255;
 			s.state = ANTFARM_STATE_CUT;
 			s.stateStart = now;
+			s.cutInit = 0;
 		}
 		break;
 
 	case ANTFARM_STATE_CUT:
-		/* hold the black while regions/traffic stream to the new focus */
-		if (now - s.stateStart >= ANTFARM_CUT_HOLD_MS)
+		if (!s.cutInit)
 		{
+			s.cutInit = 1;
+			s.cutStart = now;
+			s.cutWaitForCar = 0;
+
+			if (s.leadMode)
+			{
+				/* keep the same rogue car; rotate the camera style */
+				s.style = AntFarmPickStyle(1);
+				s.trackPlaced = 0;
+				AntFarmInitShotVars();
+			}
+			else
+			{
+				if (AntFarmPickFarArea())
+				{
+					s.spool = s.areaPos;
+					s.targetPos = s.areaPos;
+				}
+
+				AntFarmPlanShot();
+			}
+
+			s.camSnapped = 0;	/* snap hidden by the black */
+		}
+
+		/* car shots wait for traffic to populate the new area */
+		if (!s.leadMode && s.cutWaitForCar)
+		{
+			int car = AntFarmPickCarNear(&s.areaPos, 14000);
+
+			if (car >= 0)
+			{
+				s.targetCarId = car;
+				s.cutWaitForCar = 0;
+			}
+			else if (now - s.cutStart >= ANTFARM_CAR_WAIT_MS)
+			{
+				/* quiet area — scenic road shot instead */
+				s.targetKind = ANTFARM_TARGET_ROAD;
+				s.style = AntFarmPickStyle(0);
+				AntFarmSetupRoadShot();
+				s.cutWaitForCar = 0;
+			}
+		}
+
+		if (!s.cutWaitForCar && now - s.cutStart >= ANTFARM_CUT_HOLD_MS)
+		{
+			/* tiny chance for a rogue-car event (needs the player in a car so
+			 * the cops have something to chase) */
+			if (!s.leadMode && s.leadEnabled &&
+			    s.targetKind == ANTFARM_TARGET_CAR &&
+			    MainPlayer.playerType == PLAYER_TYPE_CAR &&
+			    (Random2(0) % 100) < s.leadChance)
+			{
+				AntFarmStartLead();
+			}
+
 			s.state = ANTFARM_STATE_FADE_IN;
 			s.stateStart = now;
 			s.shotStart = now;
@@ -866,7 +1219,8 @@ static int AntFarmOnFrame(void* userdata, void* args)
 /* Pin the player's car to the camera focus while the screensaver runs:
  * teleport it there (so the region spool naturally follows the focus via
  * UpdatePlayers), reserve the slot and flip it to CONTROL_TYPE_NONE so it
- * is neither drawn nor simulated nor reusable, and mute its engine. */
+ * is neither drawn nor simulated nor reusable. SFX are globally muted by
+ * SetMasterVolume, so nothing else is needed for silence. */
 static void AntFarmPinPlayerCar(void)
 {
 	int carId;
@@ -882,8 +1236,8 @@ static void AntFarmPinPlayerCar(void)
 
 	cp = &car_data[carId];
 
-	/* s.targetPos is the world-space focus (static shots: the road anchor;
-	 * follow: the followed car) */
+	/* s.targetPos is the world-space focus (road anchor, followed car, or
+	 * the rogue car during lead events) */
 	cp->hd.where.t[0] = s.targetPos.vx;
 	cp->hd.where.t[1] = s.targetPos.vy;
 	cp->hd.where.t[2] = s.targetPos.vz;
@@ -908,8 +1262,6 @@ static void AntFarmPinPlayerCar(void)
 		cp->controlType = CONTROL_TYPE_NONE;
 		reservedSlots[carId] = 1;
 	}
-
-	SilenceThisCar(carId);
 }
 
 /* Keep the camera clear of scenery:
@@ -1012,7 +1364,7 @@ static int AntFarmOnCamera(void* userdata, void* args)
 
 	AntFarmComputeCamera(&cam, &ang);
 
-	/* pin the player car to the focus (streaming follows it; hidden/muted) */
+	/* pin the player car to the focus (streaming follows it; hidden) */
 	AntFarmPinPlayerCar();
 
 	/* scenery: pull in for a clear sight-line, push out of buildings */
@@ -1033,7 +1385,7 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	SetGeomScreen(scr_z = s.shotScrZ);
 
 	/* audio follows the filmed car when chasing one */
-	if (s.mode == ANTFARM_MODE_FOLLOW && s.targetCarId >= 0)
+	if (s.targetKind == ANTFARM_TARGET_CAR && s.targetCarId >= 0)
 		CameraCar = s.targetCarId;
 
 	a->override = 1;
@@ -1137,7 +1489,7 @@ static int AntIntervalAdjust(void* userdata, int direction)
 
 	(void)userdata;
 
-	secs = s.intervalMs / 1000 + direction;
+	secs = AntIntervalMs() / 1000 + direction * 5;	/* 5s steps, 10..60 */
 
 	if (secs < ANTFARM_MIN_INTERVAL)
 		secs = ANTFARM_MIN_INTERVAL;
@@ -1151,66 +1503,113 @@ static int AntIntervalAdjust(void* userdata, int direction)
 	return JER_PAUSE_QUIT_NONE;
 }
 
-static void AntModeLabel(int mode, const char* name, char* out, int max)
+static void AntStyleLabel(int style, const char* name, char* out, int max)
 {
-	snprintf(out, max, "%s: %s", name, s.modesEnabled[mode] ? "ON" : "OFF");
+	snprintf(out, max, "%s: %s", name, s.stylesEnabled[style] ? "ON" : "OFF");
 }
 
-static int AntModeToggle(int mode, const char* key)
+static int AntStyleToggle(int style, const char* key)
 {
-	s.modesEnabled[mode] = !s.modesEnabled[mode];
-	jer_config_set_bool(ANT_MOD_ID, key, s.modesEnabled[mode]);
+	s.stylesEnabled[style] = !s.stylesEnabled[style];
+	jer_config_set_bool(ANT_MOD_ID, key, s.stylesEnabled[style]);
 
 	return JER_PAUSE_QUIT_NONE;
+}
+
+static void AntChaseLabel(void* userdata, char* out, int max)
+{
+	(void)userdata;
+	AntStyleLabel(ANTFARM_STYLE_CHASE, "Chase cam", out, max);
+}
+
+static int AntChaseToggle(void* userdata, int direction)
+{
+	(void)userdata;
+	(void)direction;
+	return AntStyleToggle(ANTFARM_STYLE_CHASE, "style_chase");
+}
+
+static void AntStaticLabel(void* userdata, char* out, int max)
+{
+	(void)userdata;
+	AntStyleLabel(ANTFARM_STYLE_STATIC, "Static track", out, max);
+}
+
+static int AntStaticToggle(void* userdata, int direction)
+{
+	(void)userdata;
+	(void)direction;
+	return AntStyleToggle(ANTFARM_STYLE_STATIC, "style_static");
+}
+
+static void AntOverheadLabel(void* userdata, char* out, int max)
+{
+	(void)userdata;
+	AntStyleLabel(ANTFARM_STYLE_OVERHEAD, "Overhead", out, max);
+}
+
+static int AntOverheadToggle(void* userdata, int direction)
+{
+	(void)userdata;
+	(void)direction;
+	return AntStyleToggle(ANTFARM_STYLE_OVERHEAD, "style_overhead");
 }
 
 static void AntTripodLabel(void* userdata, char* out, int max)
 {
 	(void)userdata;
-	AntModeLabel(ANTFARM_MODE_TRIPOD, "Junction", out, max);
+	AntStyleLabel(ANTFARM_STYLE_TRIPOD, "Tripod", out, max);
 }
 
 static int AntTripodToggle(void* userdata, int direction)
 {
 	(void)userdata;
 	(void)direction;
-	return AntModeToggle(ANTFARM_MODE_TRIPOD, "mode_tripod");
-}
-
-static void AntFollowLabel(void* userdata, char* out, int max)
-{
-	(void)userdata;
-	AntModeLabel(ANTFARM_MODE_FOLLOW, "Car follow", out, max);
-}
-
-static int AntFollowToggle(void* userdata, int direction)
-{
-	(void)userdata;
-	(void)direction;
-	return AntModeToggle(ANTFARM_MODE_FOLLOW, "mode_follow");
+	return AntStyleToggle(ANTFARM_STYLE_TRIPOD, "style_tripod");
 }
 
 static void AntFlyoverLabel(void* userdata, char* out, int max)
 {
 	(void)userdata;
-	AntModeLabel(ANTFARM_MODE_FLYOVER, "Flyover", out, max);
+	AntStyleLabel(ANTFARM_STYLE_FLYOVER, "Flyover", out, max);
 }
 
 static int AntFlyoverToggle(void* userdata, int direction)
 {
 	(void)userdata;
 	(void)direction;
-	return AntModeToggle(ANTFARM_MODE_FLYOVER, "mode_flyover");
+	return AntStyleToggle(ANTFARM_STYLE_FLYOVER, "style_flyover");
+}
+
+static void AntLeadLabel(void* userdata, char* out, int max)
+{
+	(void)userdata;
+
+	snprintf(out, max, "Rogue cars: %s", s.leadEnabled ? "ON" : "OFF");
+}
+
+static int AntLeadToggle(void* userdata, int direction)
+{
+	(void)userdata;
+	(void)direction;
+
+	s.leadEnabled = !s.leadEnabled;
+	jer_config_set_bool(ANT_MOD_ID, "lead_mode", s.leadEnabled);
+
+	return JER_PAUSE_QUIT_NONE;
 }
 
 static const JER_PAUSE_MENU_ITEM antSettingsItems[] = {
 	{ NULL, AntIntervalLabel, AntIntervalAdjust, NULL, NULL, 1 },
+	{ NULL, AntChaseLabel,    AntChaseToggle,    NULL, NULL, 0 },
+	{ NULL, AntStaticLabel,   AntStaticToggle,   NULL, NULL, 0 },
+	{ NULL, AntOverheadLabel, AntOverheadToggle, NULL, NULL, 0 },
 	{ NULL, AntTripodLabel,   AntTripodToggle,   NULL, NULL, 0 },
-	{ NULL, AntFollowLabel,   AntFollowToggle,   NULL, NULL, 0 },
 	{ NULL, AntFlyoverLabel,  AntFlyoverToggle,  NULL, NULL, 0 },
+	{ NULL, AntLeadLabel,     AntLeadToggle,     NULL, NULL, 0 },
 };
 
-static const JER_PAUSE_MENU antSettingsMenu = { "Ant Farm Settings", antSettingsItems, 4 };
+static const JER_PAUSE_MENU antSettingsMenu = { "Ant Farm Settings", antSettingsItems, 7 };
 
 static const JER_PAUSE_MENU_ITEM antMenuItems[] = {
 	{ NULL, AntMenuLabel, AntMenuToggle, NULL, NULL, 0 },
@@ -1239,16 +1638,23 @@ static int AntFarmOnBoot(void* userdata, void* args)
 		secs = ANTFARM_MAX_INTERVAL;
 
 	s.intervalMs = secs * 1000;
-	s.modesEnabled[ANTFARM_MODE_TRIPOD] = jer_config_get_bool(ANT_MOD_ID, "mode_tripod", 1);
-	s.modesEnabled[ANTFARM_MODE_FOLLOW] = jer_config_get_bool(ANT_MOD_ID, "mode_follow", 1);
-	s.modesEnabled[ANTFARM_MODE_FLYOVER] = jer_config_get_bool(ANT_MOD_ID, "mode_flyover", 1);
+	s.stylesEnabled[ANTFARM_STYLE_CHASE] = jer_config_get_bool(ANT_MOD_ID, "style_chase", 1);
+	s.stylesEnabled[ANTFARM_STYLE_STATIC] = jer_config_get_bool(ANT_MOD_ID, "style_static", 1);
+	s.stylesEnabled[ANTFARM_STYLE_OVERHEAD] = jer_config_get_bool(ANT_MOD_ID, "style_overhead", 1);
+	s.stylesEnabled[ANTFARM_STYLE_TRIPOD] = jer_config_get_bool(ANT_MOD_ID, "style_tripod", 1);
+	s.stylesEnabled[ANTFARM_STYLE_FLYOVER] = jer_config_get_bool(ANT_MOD_ID, "style_flyover", 1);
+	s.leadEnabled = jer_config_get_bool(ANT_MOD_ID, "lead_mode", 0);
+	s.leadChance = ANTFARM_LEAD_CHANCE;
 
 	s.ctx->jer_log(s.ctx,
-		"[antfarm] ready: interval %ds, tripod=%d follow=%d flyover=%d\n",
+		"[antfarm] ready: interval %ds, styles %d%d%d%d%d, lead=%d\n",
 		s.intervalMs / 1000,
-		s.modesEnabled[ANTFARM_MODE_TRIPOD],
-		s.modesEnabled[ANTFARM_MODE_FOLLOW],
-		s.modesEnabled[ANTFARM_MODE_FLYOVER]);
+		s.stylesEnabled[ANTFARM_STYLE_CHASE],
+		s.stylesEnabled[ANTFARM_STYLE_STATIC],
+		s.stylesEnabled[ANTFARM_STYLE_OVERHEAD],
+		s.stylesEnabled[ANTFARM_STYLE_TRIPOD],
+		s.stylesEnabled[ANTFARM_STYLE_FLYOVER],
+		s.leadEnabled);
 
 	return JER_RESULT_CONTINUE;
 }
@@ -1264,7 +1670,7 @@ JER_MODULE_ENTRY(jer_module_antfarm_entry)(JERICHO_CONTEXT* ctx)
 		"Ant Farm Screensaver",	/* name */
 		"0.1.0",		/* version */
 		"REDRIVER2 community",	/* author */
-		"Passive city observer: cycling tripod/follow/flyover camera cuts with gentle fades.",	/* description */
+		"City-observer screensaver: diverse cinematic camera styles touring the whole map, with optional rogue-car chases.",	/* description */
 		"",			/* dependencies */
 		JERICHO_SDK_VERSION);
 

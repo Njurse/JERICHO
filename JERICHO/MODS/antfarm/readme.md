@@ -1,29 +1,26 @@
 # Ant Farm — screensaver / idle mode (JERICHO module)
 
 A passive city observer for REDRIVER2. Turn it on and the game becomes a
-screensaver: player input is cut off, the HUD hides, and a cinematic camera
-cycles between three shot types while the city keeps living around it.
+screensaver: player input is cut off, the HUD hides, all car/player SFX are
+muted (music stays), and cop aggression is disabled while a cinematic camera
+tours the whole map — every cut hops to a far area and picks a fresh shot:
 
-- **Junction / Tripod** — a parked, gently swaying (and sometimes slowly
-  orbiting) elevated camera watches traffic flow. Shots anchor to the road
-  network's actual **lanes** (`GetNodePos` + `ROAD_LANE_DIR`), often beside
-  an intersection, and aim down the lane cars actually drive in.
-- **Car Follow** — the camera chases a random moving civilian car
-  (chase-cam), and audio follows it too. If the car despawns or is wrecked
-  mid-shot, the shot cuts early.
-- **Boulevard Flyover** — a slow, eased, high dolly along a long straight,
-  glued to a lane and looking ahead along the road.
+- **Chase** — behind-follow on a traffic car, framed to the vehicle's size.
+- **Static track** — a fixed roadside camera a car drives past; the camera
+  pans to follow, then relocates when the car leaves its reach.
+- **Overhead** — scenic elevated 3/4 view down onto traffic (either
+  high-following a car or watching a whole road).
+- **Tripod** — parked, swaying (sometimes orbiting) roadside camera at a
+  junction, aimed down the lane cars actually drive in.
+- **Flyover** — a slow, eased dolly along a long straight.
 
-Every cut fades out, switches target **during the black**, and fades back
-in — the region spool is redirected to the new focus inside the black frame,
-so map geometry and traffic stream in without pop-in.
+Static/overhead styles are weighted more heavily than the chase cam, and
+cuts last 10–60 s (default 20). Each shot runs a scenery pass (line-of-sight
+pull-back + camera-collider push-out) so buildings never obscure the view.
 
-**Clear shots:** before rendering, the camera runs a scenery pass — a
-`lineClear` line-of-sight check pulls the camera in when a building blocks
-the view, and the engine's camera collider (`CheckScenaryCollisions`) pushes
-it out of anything it would sit inside. Each shot also gets its own framing
-(side, height, distance, look-ahead) and a subtle per-shot FOV, so no two
-cuts look alike.
+**Rogue cars** (optional, off by default): a tiny chance per cut that the
+car of interest turns rogue — it becomes LEAD AI and tears across the map,
+cops give chase, and the camera follows it until it is totaled.
 
 ## Install
 
