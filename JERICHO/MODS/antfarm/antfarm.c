@@ -1828,6 +1828,12 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	*(VECTOR*)a->cameraPosition = cam;
 	*(SVECTOR*)a->cameraAngle = ang;
 
+	/* keep the engine globals in sync — the sound listener derives from
+	 * camera_position (gamesnd.c:1009) and HUD/ped systems read them, so
+	 * world audio follows the shot instead of the stale player view */
+	camera_position = cam;
+	camera_angle = ang;
+
 	/* per-shot FOV (the engine re-seeds scr_z each frame; this is the last
 	 * word before the draw — same pattern as d2pl's CAMERA hook) */
 	SetGeomScreen(scr_z = s.shotScrZ);
@@ -2149,7 +2155,7 @@ JER_MODULE_ENTRY(jer_module_antfarm_entry)(JERICHO_CONTEXT* ctx)
 	/* CAMERA/PED_INPUT at a higher priority so the screensaver wins over
 	 * other camera/pad modules (d2pl registers these at priority 0; the
 	 * runtime runs higher priorities later, so our takeover is last word) */
-	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, AntFarmOnCamera, NULL, 10);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, AntFarmOnCamera, NULL, 100);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_INPUT, AntFarmOnPedInput, NULL, 10);
 	ctx->jer_register_hook(ctx, JER_EVENT_PAUSE_MENU, AntFarmOnPauseMenu, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, AntFarmOnDrawOverlay, NULL, 0);
