@@ -5,7 +5,8 @@
  * jer_config.h — lightweight persistent configuration for JERICHO
  * modules.
  *
- * Each module gets its own text file in <mods>/config/<modid>.ini:
+ * Each module gets its own text file in <root>/CONFIG/<modid>.ini
+ * (root = the central JERICHO folder passed to jer_init):
  *
  *     # Driver 2 Parallel Lines (d2pl)
  *     sens_x = 64
@@ -22,13 +23,13 @@
  * the JERICHO runtime (called from the game loop).
  * ------------------------------------------------------------------ */
 
-/* Initialise the config store; modsDir is the directory containing
- * modlist.json ("" or NULL keeps the store inert). Called by jer_init,
- * so modules never need to call this. */
-int jer_config_init(const char* modsDir);
+/* Initialise the config store; rootDir is the central JERICHO folder
+ * containing MODS/ and CONFIG/ ("" or NULL keeps the store inert). Called
+ * by jer_init, so modules never need to call this. */
+int jer_config_init(const char* rootDir);
 
-/* Where config files live, relative to the mods dir. */
-#define JER_CONFIG_PATH "config"
+/* Where config files live, relative to the JERICHO root. */
+#define JER_CONFIG_PATH "CONFIG"
 
 /* The runtime is compiled as C inside JERICHO.lib while the game + modules
  * are C++ — keep the linkage consistent (same pattern as jericho.h). */

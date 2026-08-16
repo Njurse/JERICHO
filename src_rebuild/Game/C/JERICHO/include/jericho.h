@@ -4,11 +4,12 @@
  *
  * A tiny, platform-neutral C API that turns the game into a HOST for
  * compiled-in modules ("packages"). Modules are built from source with the
- * same toolchain as the game itself -- there is NO runtime loading, no
- * dlopen/LoadLibrary, no platform-specific code anywhere. Whatever lives in
- * mods/ at build time is linked straight into the binary, and the JERICHO
- * runtime activates modules just-in-time at boot according to
- * mods/modlist.json.
+ * same toolchain as the game itself — there is NO runtime loading, no
+ * dlopen/LoadLibrary, no platform-specific code anywhere. Every folder
+ * under JERICHO/MODS (at build time) is linked straight into the binary —
+ * the core is agnostic: it auto-discovers installed mods, compiles them in,
+ * and the JERICHO runtime activates them just-in-time at boot according to
+ * JERICHO/CONFIG/modlist.ini.
  *
  * Why compile-in? Three properties fall out of it:
  *   - Deterministic security: audit the module source -> build it with your
@@ -38,7 +39,7 @@ extern "C" {
 #define JERICHO_SDK_VERSION 1
 
 /* Maximum number of compiled-in modules (registry + modlist capacity). */
-#define JER_MAX_MODULES 16
+#define JER_MAX_MODULES 32
 
 /* ------------------------------------------------------------------ */
 /* Events                                                              */
@@ -151,7 +152,7 @@ struct JERICHO_CONTEXT
  * Module entry point. Every compiled-in module exports
  *     void jer_module_<id>_entry(JERICHO_CONTEXT* ctx);
  * which the generated registry (Game/C/JERICHO/gen/jer_registry.c) calls at
- * boot, in modlist.json load order, only for enabled modules. Inside, the
+ * boot, in modlist.ini load order, only for enabled modules. Inside, the
  * module registers its metadata and its hook handlers.
  */
 typedef void (*JER_MODULE_ENTRY)(JERICHO_CONTEXT* ctx);
@@ -176,7 +177,7 @@ typedef struct JER_REGISTRY_ENTRY
 {
 	const char* id;
 	JER_MODULE_ENTRY entry;
-	int defaultEnabled;	/* enabled by default when modlist.json omits it */
+	int defaultEnabled;	/* enabled by default when modlist.ini omits it */
 } JER_REGISTRY_ENTRY;
 
 /* ------------------------------------------------------------------ */
@@ -184,11 +185,13 @@ typedef struct JER_REGISTRY_ENTRY
 /* ------------------------------------------------------------------ */
 
 /*
- * Initialise JERICHO: read modsDir/modlist.json, activate the enabled
- * compiled-in modules in load order, then fire JER_EVENT_BOOT. Safe to call
- * once per game boot; call again after modules were toggled to re-apply.
+ * Initialise JERICHO: read <root>/CONFIG/modlist.ini, activate the enabled
+ * compiled-in modules in load order, then fire JER_EVENT_BOOT. rootDir is
+ * the central JERICHO folder (the game passes "<dataFolder>JERICHO"). Safe
+ * to call once per game boot; call again after modules were toggled to
+ * re-apply.
  */
-void jer_init(const char* modsDir);
+void jer_init(const char* rootDir);
 
 /* Fire an event through the runtime (the engine's thin entry point). */
 int jer_fire(int event, void* args);
@@ -207,17 +210,17 @@ void* jer_get_override(int slot);
 
 /*
  * Module manager (jer_manager.c): enable/disable and load-order state,
- * persisted to modsDir/modlist.json. Toggling needs no rebuild.
+ * persisted to <root>/CONFIG/modlist.ini. Toggling needs no rebuild.
  */
 
-/* Re-read modlist.json and re-activate modules (used after toggles). */
-void jer_manager_reload(const char* modsDir);
+/* Re-read modlist.ini and re-activate modules (used after toggles). */
+void jer_manager_reload(const char* rootDir);
 
-/* Set a module's enabled state; persists to modlist.json. Returns 0 on ok. */
-int jer_manager_set_enabled(const char* modsDir, const char* id, int enabled);
+/* Set a module's enabled state; persists to modlist.ini. Returns 0 on ok. */
+int jer_manager_set_enabled(const char* rootDir, const char* id, int enabled);
 
 /* Move a module up/down in the load order; persists. Returns 0 on ok. */
-int jer_manager_move(const char* modsDir, const char* id, int direction);
+int jer_manager_move(const char* rootDir, const char* id, int direction);
 
 /* ------------------------------------------------------------------ */
 /* Module inventory (for the frontend Mods manager)                    */
@@ -238,8 +241,8 @@ int jer_module_count(void);
 /* Fill up to max entries with the compiled-in modules. Returns count. */
 int jer_module_list(JER_MODULE_INFO* out, int max);
 
-/* The mods dir passed to jer_init (used by the manager functions). */
-const char* jer_mods_dir(void);
+/* The central JERICHO folder passed to jer_init (used by the manager). */
+const char* jer_root_dir(void);
 
 #ifdef __cplusplus
 }

@@ -47,7 +47,7 @@ Pause → **D2PL Settings** (right below Restart):
 - Camera Mod — ON/OFF kill-switch (disables the mod's camera + movement,
   back to the stock camera — use it to isolate a broken view)
 
-Everything persists to **`mods/config/d2pl.ini`** via the JERICHO config
+Everything persists to **`JERICHO/CONFIG/d2pl.ini`** via the JERICHO config
 API and is restored on the next boot (a config version bump resets stale
 values from older builds).
 

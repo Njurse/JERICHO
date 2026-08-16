@@ -95,7 +95,7 @@ are reserved for future whole-behavior replacement.
 
 Modules get a persistent key/value store via the JERICHO config API
 (`jer_config.h`): each module owns a text file in
-**`mods/config/<modid>.ini`** (the folder is created at boot). Files are
+**`JERICHO/CONFIG/<modid>.ini`** (the folder is created at boot). Files are
 read lazily on first access and rewritten on every `set`, so values survive
 restarts with no flush step. On PSX the API is a no-op returning the
 provided defaults. d2pl persists its camera/weapon settings there; the

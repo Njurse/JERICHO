@@ -1186,7 +1186,7 @@ JER_MODULE_ENTRY(jer_module_d2pl_entry)(JERICHO_CONTEXT* ctx)
 		"",			/* dependencies */
 		JERICHO_SDK_VERSION);	/* SDK this module was built against */
 
-	/* settings from mods/config/d2pl.ini; write them back so the file
+	/* settings from JERICHO/CONFIG/d2pl.ini; write them back so the file
 	 * exists on first boot (hand-editable tuning surface) */
 	D2plLoadSettings();
 	D2plSaveSettings();

@@ -13,19 +13,58 @@ newoption {
    description = "adds specific define for compiling on Raspberry Pi"
 }
 
--- JERICHO: comma-separated list of module ids (folders under ../mods) to
--- compile into the game. Example: --with-mods="example,crumple"
+-- JERICHO: modules are auto-discovered from JERICHO/MODS (every subfolder
+-- with a mod.toml is compiled in). --with-mods is an OPTIONAL filter that
+-- restricts the build to a comma-separated subset of ids — omit it to
+-- compile every installed mod.
 newoption {
    trigger     = "with-mods",
    value       = "LIST",
-   description = "JERICHO modules to build (comma-separated ids, folders under ../mods)"
+   description = "JERICHO module filter (comma-separated ids from JERICHO/MODS; default = all installed)"
 }
 
-JERICHO_MODS = {}
-if _OPTIONS["with-mods"] then
-   for m in string.gmatch(_OPTIONS["with-mods"], "[^,%s]+") do
-      table.insert(JERICHO_MODS, m)
+-- Scan JERICHO/MODS for module folders (a folder counts as a module when it
+-- carries a mod.toml). The core is agnostic: whatever is installed there is
+-- what gets compiled in — no per-mod premake edits needed.
+local function jericho_scan_mods()
+   local mods = {}
+   local dirs = os.matchdirs("../JERICHO/MODS/*")
+
+   table.sort(dirs)	-- stable, deterministic registry order
+
+   for _, d in ipairs(dirs) do
+      local id = d:gsub("[/\\]+$", ""):match("[^/\\]+$")
+
+      if id and os.isfile("../JERICHO/MODS/" .. id .. "/mod.toml") then
+         if id:match("^[A-Za-z_][A-Za-z0-9_]*$") then
+            table.insert(mods, id)
+         else
+            print("** JERICHO: skipping '" .. id .. "' — module ids must match [A-Za-z_][A-Za-z0-9_]* (the folder name becomes the C entry symbol)")
+         end
+      end
    end
+
+   return mods
+end
+
+JERICHO_MODS = jericho_scan_mods()
+
+if _OPTIONS["with-mods"] then
+   local want = {}
+
+   for m in string.gmatch(_OPTIONS["with-mods"], "[^,%s]+") do
+      want[m] = true
+   end
+
+   local filtered = {}
+
+   for _, m in ipairs(JERICHO_MODS) do
+      if want[m] then
+         table.insert(filtered, m)
+      end
+   end
+
+   JERICHO_MODS = filtered
 end
 
 -- Generate JERICHO/gen/jer_registry.c listing the compiled-in modules.
@@ -62,7 +101,7 @@ local function jericho_generate_registry(mods)
    for _, m in ipairs(mods) do
       -- default-enabled comes from the module's mod.toml (default true)
       local defaultEnabled = 1
-      local toml = io.open(string.format("../mods/%s/mod.toml", m), "r")
+      local toml = io.open(string.format("../JERICHO/MODS/%s/mod.toml", m), "r")
 
       if toml then
          local line = toml:read("*l")
@@ -370,12 +409,12 @@ for _, JER_MOD in ipairs(JERICHO_MODS) do
 		}
 
 		files {
-			("../mods/" .. JER_MOD .. "/**.c"),
-			("../mods/" .. JER_MOD .. "/**.h"),
+			("../JERICHO/MODS/" .. JER_MOD .. "/**.c"),
+			("../JERICHO/MODS/" .. JER_MOD .. "/**.h"),
 		}
 
 		includedirs {
-			("../mods/" .. JER_MOD),
+			("../JERICHO/MODS/" .. JER_MOD),
 		}
 
 		targetdir "bin/%{cfg.buildcfg}"
@@ -541,3 +580,19 @@ project "REDRIVER2"
 
     filter { "files:**.c", "files:**.C" }
         compileas "C++"
+
+    -- JERICHO is a self-contained framework folder (MODS + CONFIG) that
+    -- ships next to the exe, so the runtime finds it from the game's
+    -- working directory (which the game resolves everything from, same as
+    -- gDataFolder). The repo copy is the source of truth; this mirrors it
+    -- into the build. Post-build commands run from the project dir
+    -- (build/), so the repo root is two levels up.
+    filter { "system:Windows" }
+        postbuildcommands {
+            "xcopy /E /I /Y \"..\\..\\JERICHO\" \"%{cfg.buildtarget.directory}JERICHO\"",
+        }
+
+    filter { "system:linux" }
+        postbuildcommands {
+            "mkdir -p \"%{cfg.buildtarget.directory}JERICHO\" && cp -R ../../JERICHO/. \"%{cfg.buildtarget.directory}JERICHO/\"",
+        }

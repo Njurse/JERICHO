@@ -10,6 +10,7 @@ cl /nologo /EHsc /TP ^
   src_rebuild\Game\C\JERICHO\test\jer_test.c ^
   src_rebuild\Game\C\JERICHO\src\jer_system.c ^
   src_rebuild\Game\C\JERICHO\src\jer_manager.c ^
+  src_rebuild\Game\C\JERICHO\src\jer_config.c ^
   src_rebuild\Game\C\JERICHO\test\test_registry.c ^
-  mods\example\example.c ^
+  JERICHO\MODS\example\example.c ^
   /Fe:jer_test.exe

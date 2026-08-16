@@ -259,7 +259,7 @@ static const D2PL_POSE POSE_AIM = { 0, -2, 4, 0, -4, 6 };
 
 /* ------------------------------------------------------------------ */
 /* Settings (persisted via the JERICHO config API into                 */
-/* mods/config/d2pl.ini)                                               */
+/* JERICHO/CONFIG/d2pl.ini)                                               */
 /*                                                                     */
 /* The D2PL_ITEM_* item ids and D2PL_LASER_* colors live in            */
 /* jer_events.h (they are the pause-menu <-> module contract shared    */
@@ -552,7 +552,7 @@ int* WeaponSystem_HandPos(void);
 
 /* ------------------------------------------------------------------ */
 /* Settings (persisted via the JERICHO config API into                 */
-/* mods/config/d2pl.ini)                                               */
+/* JERICHO/CONFIG/d2pl.ini)                                               */
 /* ------------------------------------------------------------------ */
 
 typedef struct D2PL_SETTINGS

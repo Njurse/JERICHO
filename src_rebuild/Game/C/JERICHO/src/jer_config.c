@@ -2,7 +2,8 @@
  * jer_config.c — lightweight persistent configuration for JERICHO
  * modules (see jer_config.h for the API).
  *
- * Storage: <mods>/config/<modid>.ini, one key=value pair per line.
+ * Storage: <root>/CONFIG/<modid>.ini, one key=value pair per line (root
+ * is the central JERICHO folder passed to jer_init).
  * Every set() rewrites the whole file for that module, which is fine
  * for the handful of settings a mod keeps (a dozen lines at most).
  *
@@ -38,7 +39,7 @@ typedef struct JER_CONFIG_ENTRY
 
 static JER_CONFIG_ENTRY gEntries[JER_CONFIG_MAX_ENTRIES];
 static int gEntryCount;
-static char gModsDir[512];			/* mods dir ("" = inert) */
+static char gRootDir[512];			/* central JERICHO folder ("" = inert) */
 static int gInitDone;
 
 /* helper: does the module have a file in the cache yet? */
@@ -106,20 +107,20 @@ static char* jerConfigTrim(char* s)
 	return s;
 }
 
-/* load <mods>/config/<mod>.ini into the cache (last value wins on dupes) */
+/* load <root>/CONFIG/<mod>.ini into the cache (last value wins on dupes) */
 static void jerConfigLoadMod(const char* mod)
 {
 	char path[512];
 	FILE* f;
 	char line[192];
 
-	if (!gInitDone || gModsDir[0] == 0 || mod == NULL || mod[0] == 0)
+	if (!gInitDone || gRootDir[0] == 0 || mod == NULL || mod[0] == 0)
 		return;
 
 	if (jerConfigModLoaded(mod))
 		return;
 
-	snprintf(path, sizeof(path), "%s/%s/%s.ini", gModsDir, JER_CONFIG_PATH, mod);
+	snprintf(path, sizeof(path), "%s/%s/%s.ini", gRootDir, JER_CONFIG_PATH, mod);
 
 	f = fopen(path, "r");
 	if (f == NULL)
@@ -186,10 +187,10 @@ static void jerConfigEnsureDir(void)
 {
 	char path[512];
 
-	if (!gInitDone || gModsDir[0] == 0)
+	if (!gInitDone || gRootDir[0] == 0)
 		return;
 
-	snprintf(path, sizeof(path), "%s/%s", gModsDir, JER_CONFIG_PATH);
+	snprintf(path, sizeof(path), "%s/%s", gRootDir, JER_CONFIG_PATH);
 
 #if defined(_WIN32)
 	_mkdir(path);
@@ -198,18 +199,18 @@ static void jerConfigEnsureDir(void)
 #endif
 }
 
-/* rewrite <mods>/config/<mod>.ini from the cache (called on every set) */
+/* rewrite <root>/CONFIG/<mod>.ini from the cache (called on every set) */
 static void jerConfigSaveMod(const char* mod)
 {
 	char path[512];
 	FILE* f;
 	int i;
 
-	if (!gInitDone || gModsDir[0] == 0 || mod == NULL || mod[0] == 0)
+	if (!gInitDone || gRootDir[0] == 0 || mod == NULL || mod[0] == 0)
 		return;
 
 	jerConfigEnsureDir();
-	snprintf(path, sizeof(path), "%s/%s/%s.ini", gModsDir, JER_CONFIG_PATH, mod);
+	snprintf(path, sizeof(path), "%s/%s/%s.ini", gRootDir, JER_CONFIG_PATH, mod);
 
 	f = fopen(path, "w");
 	if (f == NULL)
@@ -227,16 +228,16 @@ static void jerConfigSaveMod(const char* mod)
 
 /* public API ------------------------------------------------------ */
 
-int jer_config_init(const char* modsDir)
+int jer_config_init(const char* rootDir)
 {
-	if (modsDir == NULL || modsDir[0] == 0)
+	if (rootDir == NULL || rootDir[0] == 0)
 	{
-		gModsDir[0] = 0;
+		gRootDir[0] = 0;
 		gInitDone = 0;
 		return 0;
 	}
 
-	snprintf(gModsDir, sizeof(gModsDir), "%s", modsDir);
+	snprintf(gRootDir, sizeof(gRootDir), "%s", rootDir);
 	gInitDone = 1;
 	gEntryCount = 0;	/* a re-init (mods menu reload) re-reads fresh */
 
@@ -297,12 +298,16 @@ void jer_config_clear(const char* mod)
 {
 	char path[512];
 
+	/* same inert guard as the other API — don't touch disk before init */
+	if (!gInitDone || gRootDir[0] == 0 || mod == NULL || mod[0] == 0)
+		return;
+
 	/* drop the module's file entirely; the next set_* call regenerates it
 	 * from whatever the caller re-seeds — used to flush stale profiles
 	 * when defaults change */
 	jerConfigDropEntries(mod);
 
-	snprintf(path, sizeof(path), "%s/%s/%s.ini", gModsDir, JER_CONFIG_PATH, mod);
+	snprintf(path, sizeof(path), "%s/%s/%s.ini", gRootDir, JER_CONFIG_PATH, mod);
 
 	(void)remove(path);	/* the file may not exist yet */
 }
@@ -339,9 +344,9 @@ void jer_config_set_str(const char* mod, const char* key, const char* value)
 
 #else /* PSX: no filesystem — everything returns the default */
 
-int jer_config_init(const char* modsDir)
+int jer_config_init(const char* rootDir)
 {
-	(void)modsDir;
+	(void)rootDir;
 	return 0;
 }
 

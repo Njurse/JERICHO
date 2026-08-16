@@ -6,10 +6,10 @@ events, their argument structs, and the engine-side bridges is in
 
 ## Module anatomy
 
-Every module folder under `mods/` has:
+Every module folder under `JERICHO/MODS/` has:
 
 ```
-mods/<id>/
+JERICHO/MODS/<id>/
     mod.toml      metadata: id, name, version, author, description
     <id>.c        the module source (and .h for shared types)
     readme.md     what it does, how to configure it
@@ -45,15 +45,18 @@ static int MyOnFrame(void* userdata, void* args)
 }
 ```
 
-Enable it at premake time:
+Compile it: premake auto-scans `JERICHO/MODS` and builds every installed
+module — no list to maintain. `--with-mods="myid,crumple"` is an optional
+filter for building only a subset:
 
 ```
-premake5.exe --with-mods="myid,crumple,sandbox,d2pl" vs2019
+premake5.exe vs2019
+premake5.exe --with-mods="myid,crumple" vs2019   # optional filter
 ```
 
-The runtime reads `mods/modlist.json` in the data folder (regenerated on
-first boot) and activates the enabled modules in load order, logging one
-line per module and per hook into `REDRIVER2.log`.
+The runtime reads `JERICHO/CONFIG/modlist.ini` (regenerated on first boot)
+and activates the enabled modules in load order, logging one line per
+module and per hook into `REDRIVER2.log`.
 
 ## What a module can do
 
@@ -67,7 +70,7 @@ line per module and per hook into `REDRIVER2.log`.
   swaps an engine function-pointer slot (`JER_OVERRIDE_SLOT_SIM` today);
   `jer_get_override(slot)` returns the previous one so a module can chain.
 - **Persist settings** — `jer_config_get_int/set_int/...` from
-  `jer_config.h`. Each module owns `mods/config/<modid>.ini`. d2pl writes
+  `jer_config.h`. Each module owns `JERICHO/CONFIG/<modid>.ini`. d2pl writes
   every setting there; hand-editing the file while the game is closed works.
 - **Custom events** — values `>= JER_EVENT_MODULE_CUSTOM` are free for
   module-to-module messaging (the sandbox uses one for its no-damage

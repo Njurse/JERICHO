@@ -16,7 +16,7 @@ Open: Pause → **Sandbox Menu** (right below Continue). With **Replace Pause
 Menu** on (a toggle in the sandbox's main page), pressing START in-game opens
 the sandbox overlay directly instead of the engine pause; the **Open Pause
 Menu** button below it closes the overlay and opens the normal pause menu.
-The toggle persists via the JERICHO config API (`mods/config/sandbox.ini`).
+The toggle persists via the JERICHO config API (`JERICHO/CONFIG/sandbox.ini`).
 
 ```
 SANDBOX                    (main page — categories)

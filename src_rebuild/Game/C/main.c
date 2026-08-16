@@ -1997,15 +1997,12 @@ int redriver2_main(int argc, char** argv)
 
 	// JERICHO-HOOK: boot the mod runtime. Route JERICHO/module logs into
 	// REDRIVER2.log via the PsyX logger first, then activate the modules.
-	// The mods dir follows the game's data folder (mods/modlist.json lives
-	// next to the game's runtime files); inert without compiled-in modules.
+	// The central JERICHO framework folder (MODS + CONFIG) sits next to the
+	// exe — mirrored there from the repo by premake's postbuild. Paths are
+	// resolved the same way the game resolves everything else (relative to
+	// the working dir, like gDataFolder); inert without compiled-in modules.
 	jer_set_logger(JerichoLogBridge);
-	{
-		char modsDir[96];
-
-		sprintf(modsDir, "%smods", gDataFolder);
-		jer_init(modsDir);
-	}
+	jer_init("JERICHO");
 
 	StopCallback();
 	ResetCallback();

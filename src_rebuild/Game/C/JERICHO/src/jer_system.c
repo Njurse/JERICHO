@@ -3,10 +3,11 @@
  * activation, override slots, logging.
  *
  * Compiled into the game. The generated module registry (JERICHO/gen/
- * jer_registry.c, built by premake from --with-mods) lives in the game
- * project and provides the list of compiled-in modules; this file drives
- * them: read mods/modlist.json, activate the enabled modules just-in-time
- * at boot, fire JER_EVENT_BOOT, and dispatch every event the engine fires.
+ * jer_registry.c, auto-built by premake from a scan of JERICHO/MODS) lives
+ * in the game project and provides the list of compiled-in modules; this
+ * file drives them: read JERICHO/CONFIG/modlist.ini (status + load order),
+ * activate the enabled modules just-in-time at boot, fire JER_EVENT_BOOT,
+ * and dispatch every event the engine fires.
  */
 #include "jericho.h"
 #include "jer_internal.h"
@@ -29,7 +30,6 @@ extern const int jer_registry_module_count;
 #endif
 
 #define JER_MAX_HANDLERS 64
-#define JER_MAX_MODULES 16
 
 typedef struct JER_MODULE JER_MODULE;
 
@@ -68,7 +68,7 @@ static void* gOverrideSlots[JER_OVERRIDE_SLOTS];
 static JERICHO_CONTEXT gCtx;
 static int gCtxBuilt;
 static void (*gLogger)(const char* msg);
-static char gModsDir[512];		/* dir passed to jer_init (for the manager) */
+static char gJerichoRoot[512];		/* central JERICHO folder passed to jer_init */
 static const char* gLoadOrder[JER_MAX_MODULES];	/* effective load order */
 static int gLoadOrderCount;
 
@@ -112,26 +112,64 @@ static JER_MODULE* jerFindModule(const char* id)
 
 static void jerSnapshotModules(void)
 {
+	JER_MODULE prev[JER_MAX_MODULES];
+	int prevCount = gModuleCount;
 	int i;
+
+	/* save the current table so display metadata survives a reload: a
+	 * module re-registers its name/version only when its entry RUNS, so
+	 * without this a module disabled from the Mods menu would lose its
+	 * pretty name (falling back to the bare id) on every toggle */
+	memcpy(prev, gModules, sizeof(prev));
 
 	/* modules[] mirrors the generated registry */
 	gModuleCount = 0;
 
 	for (i = 0; i < jer_registry_module_count && gModuleCount < JER_MAX_MODULES; i++)
 	{
-		gModules[gModuleCount].id = jer_registry_modules[i].id;
-		gModules[gModuleCount].entry = jer_registry_modules[i].entry;
-		gModules[gModuleCount].defaultEnabled = jer_registry_modules[i].defaultEnabled;
-		gModules[gModuleCount].name = NULL;
-		gModules[gModuleCount].version = NULL;
-		gModules[gModuleCount].author = NULL;
-		gModules[gModuleCount].description = NULL;
-		gModules[gModuleCount].deps = NULL;
-		gModules[gModuleCount].enabled = 0;
-		gModules[gModuleCount].activated = 0;
-		gModules[gModuleCount].metadataSet = 0;
-		gModules[gModuleCount].sdkVersion = 0;
-		gModules[gModuleCount].valid = 1;
+		JER_MODULE* m = &gModules[gModuleCount];
+		JER_MODULE* old = NULL;
+		int j;
+
+		for (j = 0; j < prevCount; j++)
+		{
+			if (prev[j].id != NULL && prev[j].metadataSet &&
+				strcmp(prev[j].id, jer_registry_modules[i].id) == 0)
+			{
+				old = &prev[j];
+				break;
+			}
+		}
+
+		m->id = jer_registry_modules[i].id;
+		m->entry = jer_registry_modules[i].entry;
+		m->defaultEnabled = jer_registry_modules[i].defaultEnabled;
+
+		if (old != NULL)
+		{
+			/* same module as before: keep its registered metadata */
+			m->name = old->name;
+			m->version = old->version;
+			m->author = old->author;
+			m->description = old->description;
+			m->deps = old->deps;
+			m->sdkVersion = old->sdkVersion;
+			m->metadataSet = 1;
+		}
+		else
+		{
+			m->name = NULL;
+			m->version = NULL;
+			m->author = NULL;
+			m->description = NULL;
+			m->deps = NULL;
+			m->metadataSet = 0;
+			m->sdkVersion = 0;
+		}
+
+		m->enabled = 0;
+		m->activated = 0;
+		m->valid = 1;
 		gModuleCount++;
 	}
 }
@@ -341,7 +379,7 @@ static void jerLogInventory(void)
 /* Activation                                                          */
 /* ------------------------------------------------------------------ */
 
-static void jerActivateModules(const char* modsDir)
+static void jerActivateModules(const char* rootDir)
 {
 	JER_MODLIST_STATE modlist;
 	const char* order[JER_MAX_MODULES];
@@ -350,13 +388,13 @@ static void jerActivateModules(const char* modsDir)
 	int i, j;
 
 	/*
-	 * Resolve the load order: modlist.json entries first (in file order),
+	 * Resolve the load order: modlist.ini entries first (in file order),
 	 * then any built-in modules not mentioned (enabled by default, in
-	 * registry order). Modules listed with "enabled": false are skipped.
+	 * registry order). Modules listed with enabled=0 are skipped.
 	 */
-	if (jer_manager_read(modsDir, &modlist) != 0)
+	if (jer_manager_read(rootDir, &modlist) != 0)
 	{
-		jerLog("[jericho] warning: could not read %s/modlist.json — defaulting to all-enabled\n", modsDir);
+		jerLog("[jericho] warning: could not read %s/%s/modlist.ini — defaulting to all-enabled\n", rootDir, JER_CONFIG_PATH);
 		memset(&modlist, 0, sizeof(modlist));	/* error: treat as empty state */
 	}
 
@@ -492,7 +530,7 @@ static void jerActivateModules(const char* modsDir)
 /* Public host-side API                                                */
 /* ------------------------------------------------------------------ */
 
-void jer_init(const char* modsDir)
+void jer_init(const char* rootDir)
 {
 	if (!gCtxBuilt)
 	{
@@ -505,22 +543,22 @@ void jer_init(const char* modsDir)
 		gCtxBuilt = 1;
 	}
 
-	if (modsDir != NULL)
+	if (rootDir != NULL)
 	{
-		snprintf(gModsDir, sizeof(gModsDir), "%s", modsDir);
+		snprintf(gJerichoRoot, sizeof(gJerichoRoot), "%s", rootDir);
 	}
 	else
 	{
-		gModsDir[0] = 0;
+		gJerichoRoot[0] = 0;
 	}
 
 	jerLog("== JERICHO v%d (build %s) == Just-in-Time Extensible Runtime Interface for Compiled Hooks & Overrides\n", JERICHO_SDK_VERSION, JERICHO_BUILD_VERSION);
 
-	/* persistent module config lives under <mods>/config/ */
-	jer_config_init(modsDir);
+	/* persistent module config lives under <root>/CONFIG/ */
+	jer_config_init(rootDir);
 
 	jerSnapshotModules();
-	jerActivateModules(modsDir);
+	jerActivateModules(rootDir);
 
 	jer_fire(JER_EVENT_BOOT, NULL);
 }
@@ -564,8 +602,8 @@ void* jer_get_override(int slot)
 	return gOverrideSlots[slot];
 }
 
-/* Re-read modlist.json and re-activate (used after manager toggles). */
-void jer_manager_reload(const char* modsDir)
+/* Re-read JERICHO/CONFIG/modlist.ini and re-activate (used after toggles). */
+void jer_manager_reload(const char* rootDir)
 {
 	/* deactivate by clearing handlers; also drop all override slots so a
 	 * module disabled from the Mods menu can't leave its override behind */
@@ -573,7 +611,7 @@ void jer_manager_reload(const char* modsDir)
 	memset(gOverrideSlots, 0, sizeof(gOverrideSlots));
 
 	jerSnapshotModules();
-	jerActivateModules(modsDir);
+	jerActivateModules(rootDir);
 }
 
 /* ------------------------------------------------------------------ */
@@ -594,10 +632,10 @@ int jer_module_list(JER_MODULE_INFO* out, int max)
 
 	memset(&modlist, 0, sizeof(modlist));
 
-	/* the manager shows the FULL list in modlist.json order (disabled
+	/* the manager shows the FULL list in modlist.ini order (disabled
 	 * modules included, so they can be re-enabled), with unlisted modules
 	 * appended per their default-enabled state */
-	if (jer_manager_read(gModsDir, &modlist) == 0)
+	if (jer_manager_read(gJerichoRoot, &modlist) == 0)
 	{
 		for (i = 0; i < modlist.count && n < max; i++)
 		{
@@ -640,8 +678,9 @@ int jer_module_list(JER_MODULE_INFO* out, int max)
 	return n;
 }
 
-/* The mods dir passed to jer_init ("mods" in the vanilla call site). */
-const char* jer_mods_dir(void)
+/* The central JERICHO folder passed to jer_init ("JERICHO" in the game's
+ * call site — contains MODS/ and CONFIG/). */
+const char* jer_root_dir(void)
 {
-	return gModsDir[0] != 0 ? gModsDir : "mods";
+	return gJerichoRoot[0] != 0 ? gJerichoRoot : "JERICHO";
 }

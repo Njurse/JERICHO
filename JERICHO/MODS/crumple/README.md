@@ -17,10 +17,10 @@ The flagship JERICHO package: impact-driven car damage for REDRIVER2.
 The engine never calls CRUMPLE directly. It fires JERICHO events
 (`JER_EVENT_COLLISION`, `JER_EVENT_DENT_PASS`, `JER_EVENT_GET_WHEEL_BEND`, ...)
 and this module's handlers (registered in `jer_module_crumple_entry`) do the
-work. Remove this package from `--with-mods` and the game is vanilla denting —
+work. Remove this package from `JERICHO/MODS` and the game is vanilla denting —
 no other changes needed.
 
-Build id: `crumple` (must match `mods/crumple/` in `--with-mods`).
+Build id: `crumple` (the folder `JERICHO/MODS/crumple/` is auto-discovered by premake).
 
 Tuning: `CRUMPLE_PARAMS gCrumpleParams` at the top of `crumple.c`.
 

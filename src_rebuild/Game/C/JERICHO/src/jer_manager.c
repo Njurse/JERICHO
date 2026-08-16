@@ -1,267 +1,164 @@
 /*
- * jer_manager.c — the module manager: reads/writes mods/modlist.json
- * (a tiny JSON subset) and exposes enable/disable/order operations for the
- * in-game Mods menu and the Release_dev console. Toggling a module is a
- * runtime operation — no rebuild needed; only install/remove requires
- * touching the build (drop the source folder + one premake line).
+ * jer_manager.c — the module manager: reads/writes the module list
+ * (JERICHO/CONFIG/modlist.ini — a tiny flat INI: one "id = 1|0" line per
+ * module, file order = load order) and exposes enable/disable/order
+ * operations for the in-game Mods menu and the Release_dev console.
+ * Toggling a module is a runtime operation — no rebuild needed; only
+ * install/remove requires touching the build (drop/remove the folder in
+ * JERICHO/MODS + rebuild).
  */
 #include "jer_internal.h"
 
 #include <stdio.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
+
 /* ------------------------------------------------------------------ */
-/* Minimal JSON reader (subset sufficient for our fixed shape):        */
+/* Tiny INI subset sufficient for our fixed shape:                     */
 /*                                                                     */
-/*   { "modules": [ { "id": "crumple", "enabled": true }, ... ] }     */
+/*   # comment                                                         */
+/*   crumple = 1        (1/0; true/false/enabled/disabled/on/off too)  */
+/*   d2pl = 0                                                          */
+/*                                                                     */
+/* Line order is the load order; comments and blanks are ignored.      */
 /* ------------------------------------------------------------------ */
 
-typedef struct JER_JSON
+static char* jerIniTrim(char* s)
 {
-	const char* p;
-	int error;
-} JER_JSON;
+	char* end;
 
-static void jerJsonSkipWs(JER_JSON* j)
-{
-	while (*j->p == ' ' || *j->p == '\t' || *j->p == '\n' || *j->p == '\r')
-		j->p++;
+	while (*s == ' ' || *s == '\t')
+		s++;
+
+	end = s + strlen(s);
+	while (end > s && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n'))
+		*--end = 0;
+
+	return s;
 }
 
-static int jerJsonExpect(JER_JSON* j, char c)
+/* parse an enabled token: false-ish -> 0, everything else -> 1 */
+static int jerIniBool(const char* v)
 {
-	jerJsonSkipWs(j);
-
-	if (*j->p != c)
-	{
-		j->error = 1;
+	if (strcmp(v, "0") == 0 || strcmp(v, "false") == 0 ||
+		strcmp(v, "disabled") == 0 || strcmp(v, "off") == 0)
 		return 0;
-	}
 
-	j->p++;
 	return 1;
 }
 
-static int jerJsonString(JER_JSON* j, char* out, int outSize)
-{
-	int n = 0;
-
-	jerJsonSkipWs(j);
-
-	if (*j->p != '"')
-	{
-		j->error = 1;
-		return 0;
-	}
-
-	j->p++;
-
-	while (*j->p != '"' && *j->p != 0)
-	{
-		if (*j->p == '\\' && j->p[1] != 0)
-			j->p++;
-
-		if (n + 1 < outSize)
-			out[n++] = *j->p;
-
-		j->p++;
-	}
-
-	if (*j->p != '"')
-	{
-		j->error = 1;
-		return 0;
-	}
-
-	j->p++;
-	out[n] = 0;
-	return 1;
-}
-
-static int jerJsonBool(JER_JSON* j, int* out)
-{
-	jerJsonSkipWs(j);
-
-	if (strncmp(j->p, "true", 4) == 0)
-	{
-		j->p += 4;
-		*out = 1;
-		return 1;
-	}
-
-	if (strncmp(j->p, "false", 5) == 0)
-	{
-		j->p += 5;
-		*out = 0;
-		return 1;
-	}
-
-	j->error = 1;
-	return 0;
-}
-
-int jer_manager_read(const char* modsDir, JER_MODLIST_STATE* st)
+/* make sure JERICHO/CONFIG exists so the manager can write into it */
+static void jerManagerEnsureDir(const char* rootDir)
 {
 	char path[512];
-	char buf[8192];
+
+	if (rootDir == NULL || rootDir[0] == 0)
+		return;
+
+	snprintf(path, sizeof(path), "%s/%s", rootDir, JER_CONFIG_PATH);
+
+#if defined(_WIN32)
+	_mkdir(path);
+#else
+	mkdir(path, 0755);
+#endif
+}
+
+int jer_manager_read(const char* rootDir, JER_MODLIST_STATE* st)
+{
+	char path[512];
+	char line[256];
 	FILE* f;
-	long size;
-	JER_JSON j;
 	int n = 0;
 
 	memset(st, 0, sizeof(*st));
 
-	if (modsDir == NULL || modsDir[0] == 0)
+	if (rootDir == NULL || rootDir[0] == 0)
 		return -1;
 
-	snprintf(path, sizeof(path), "%s/%s", modsDir, JER_MODLIST_PATH);
+	snprintf(path, sizeof(path), "%s/%s/%s", rootDir, JER_CONFIG_PATH, JER_MODLIST_PATH);
 
 	f = fopen(path, "rb");
 
 	if (f == NULL)
 		return 0;	/* no file = default state (everything enabled) */
 
-	fseek(f, 0, SEEK_END);
-	size = ftell(f);
-	fseek(f, 0, SEEK_SET);
-
-	if (size <= 0 || size >= (long)sizeof(buf))
+	while (fgets(line, sizeof(line), f) != NULL)
 	{
-		fclose(f);
-		return -1;
-	}
-
-	if (fread(buf, 1, (size_t)size, f) != (size_t)size)
-	{
-		fclose(f);
-		return -1;
-	}
-
-	fclose(f);
-	buf[size] = 0;
-
-	j.p = buf;
-	j.error = 0;
-
-	if (!jerJsonExpect(&j, '{') || !jerJsonString(&j, buf, sizeof(buf)) || strcmp(buf, "modules") != 0 || !jerJsonExpect(&j, ':'))
-		return -1;
-
-	if (!jerJsonExpect(&j, '['))
-		return -1;
-
-	jerJsonSkipWs(&j);
-
-	while (*j.p != ']' && !j.error)
-	{
-		char key[40];
+		char* eq;
+		char* key;
+		char* val;
 		JER_MODLIST_ITEM* it;
+
+		/* strip comments and blanks */
+		{
+			char* hash = strchr(line, '#');
+
+			if (hash != NULL)
+				*hash = 0;
+		}
+
+		key = jerIniTrim(line);
+
+		if (key[0] == 0)
+			continue;
+
+		eq = strchr(key, '=');
+		if (eq == NULL)
+			continue;	/* not a key=value line */
+
+		*eq = 0;
+		key = jerIniTrim(key);
+		val = jerIniTrim(eq + 1);
+
+		if (key[0] == 0 || val[0] == 0)
+			continue;
 
 		if (n >= JER_MAX_MODULES)
 			break;
 
 		it = &st->items[n];
-
-		if (!jerJsonExpect(&j, '{'))
-			break;
-
-		while (!j.error)
-		{
-			if (!jerJsonString(&j, key, sizeof(key)))
-				break;
-
-			if (!jerJsonExpect(&j, ':'))
-				break;
-
-			if (strcmp(key, "id") == 0)
-			{
-				if (!jerJsonString(&j, it->id, sizeof(it->id)))
-					break;
-			}
-			else if (strcmp(key, "enabled") == 0)
-			{
-				if (!jerJsonBool(&j, &it->enabled))
-					break;
-			}
-			else
-			{
-				/* unknown key: skip its value */
-				char dummy[64];
-
-				if (!jerJsonString(&j, dummy, sizeof(dummy)))
-					break;
-			}
-
-			jerJsonSkipWs(&j);
-
-			if (*j.p == ',')
-			{
-				j.p++;
-				continue;
-			}
-
-			break;
-		}
-
-		if (j.error)
-			break;
-
-		if (!jerJsonExpect(&j, '}'))
-			break;
-
-		/* keep only items that actually have an id */
-		if (it->id[0] != 0)
-		{
-			n++;
-			st->count = n;
-		}
-
-		jerJsonSkipWs(&j);
-
-		if (*j.p == ',')
-		{
-			j.p++;
-			continue;
-		}
-
-		break;
+		snprintf(it->id, sizeof(it->id), "%s", key);
+		it->enabled = jerIniBool(val);
+		n++;
 	}
 
-	if (j.error)
-		return -1;
-
-	jerJsonExpect(&j, ']');
-	jerJsonExpect(&j, '}');
+	fclose(f);
+	st->count = n;
 
 	return 0;
 }
 
-int jer_manager_write(const char* modsDir, const JER_MODLIST_STATE* st)
+int jer_manager_write(const char* rootDir, const JER_MODLIST_STATE* st)
 {
 	char path[512];
 	FILE* f;
 	int i;
 
-	if (modsDir == NULL || modsDir[0] == 0)
+	if (rootDir == NULL || rootDir[0] == 0)
 		return -1;
 
-	snprintf(path, sizeof(path), "%s/%s", modsDir, JER_MODLIST_PATH);
+	jerManagerEnsureDir(rootDir);
+	snprintf(path, sizeof(path), "%s/%s/%s", rootDir, JER_CONFIG_PATH, JER_MODLIST_PATH);
 
 	f = fopen(path, "wb");
 
 	if (f == NULL)
 		return -1;
 
-	fprintf(f, "{\n  \"modules\": [\n");
+	fprintf(f, "# JERICHO module list — load order and enabled state.\n");
+	fprintf(f, "# Line order = load order. Values: 1/0 (true/false/enabled/disabled also accepted).\n");
 
 	for (i = 0; i < st->count; i++)
 	{
-		fprintf(f, "    { \"id\": \"%s\", \"enabled\": %s }%s\n",
-			st->items[i].id,
-			st->items[i].enabled ? "true" : "false",
-			(i + 1 < st->count) ? "," : "");
+		fprintf(f, "%s = %d\n", st->items[i].id, st->items[i].enabled ? 1 : 0);
 	}
 
-	fprintf(f, "  ]\n}\n");
 	fclose(f);
 
 	return 0;
@@ -271,12 +168,12 @@ int jer_manager_write(const char* modsDir, const JER_MODLIST_STATE* st)
 /* Public manager API (jericho.h)                                      */
 /* ------------------------------------------------------------------ */
 
-int jer_manager_set_enabled(const char* modsDir, const char* id, int enabled)
+int jer_manager_set_enabled(const char* rootDir, const char* id, int enabled)
 {
 	JER_MODLIST_STATE st;
 	int i;
 
-	if (jer_manager_read(modsDir, &st) != 0)
+	if (jer_manager_read(rootDir, &st) != 0)
 		return -1;
 
 	for (i = 0; i < st.count; i++)
@@ -284,7 +181,7 @@ int jer_manager_set_enabled(const char* modsDir, const char* id, int enabled)
 		if (strcmp(st.items[i].id, id) == 0)
 		{
 			st.items[i].enabled = enabled;
-			return jer_manager_write(modsDir, &st);
+			return jer_manager_write(rootDir, &st);
 		}
 	}
 
@@ -293,18 +190,18 @@ int jer_manager_set_enabled(const char* modsDir, const char* id, int enabled)
 		snprintf(st.items[st.count].id, sizeof(st.items[st.count].id), "%s", id);
 		st.items[st.count].enabled = enabled;
 		st.count++;
-		return jer_manager_write(modsDir, &st);
+		return jer_manager_write(rootDir, &st);
 	}
 
 	return -1;
 }
 
-int jer_manager_move(const char* modsDir, const char* id, int direction)
+int jer_manager_move(const char* rootDir, const char* id, int direction)
 {
 	JER_MODLIST_STATE st;
 	int i;
 
-	if (jer_manager_read(modsDir, &st) != 0)
+	if (jer_manager_read(rootDir, &st) != 0)
 		return -1;
 
 	/* unlisted module: append it first (keeps its current state), so a
@@ -336,7 +233,7 @@ int jer_manager_move(const char* modsDir, const char* id, int direction)
 				JER_MODLIST_ITEM tmp = st.items[i];
 				st.items[i] = st.items[j];
 				st.items[j] = tmp;
-				return jer_manager_write(modsDir, &st);
+				return jer_manager_write(rootDir, &st);
 			}
 
 			return -1;
