@@ -165,6 +165,7 @@ typedef struct ANTFARM_STATE
 	int cutWaitForCar;	/* CUT is waiting for traffic near the new area */
 	unsigned long cutStart;	/* when the CUT state began (ms) */
 	unsigned long cutEnter;	/* when this CUT first began (never reset) */
+	long long jumpDist2;	/* squared jump distance (for hold scaling) */
 	int streamRetries;	/* far-area re-picks on streaming timeouts */
 	int streamDone;		/* the new area's regions have been accepted+loaded */
 	int shotPlanned;	/* 1 when the shot for this cut has been fully planned */
@@ -421,6 +422,27 @@ static void AntFarmClampAboveGround(VECTOR* v)
 
 	if (v->vy > ground - 60)
 		v->vy = ground - 60;
+}
+
+/* the world is actually present around a point when the ground cells are
+ * loaded — MapHeight (via sdGetCell) returns 0 for any unloaded cell, so
+ * probe a ring around the spot: the gate only opens when the visible
+ * ground is really there (no grey/nodraw void at the fade-in) */
+static int AntFarmWorldPresent(const VECTOR* pos)
+{
+	static const int probes[9][2] = {
+		{ 0, 0 }, { 1200, 0 }, { -1200, 0 }, { 0, 1200 }, { 0, -1200 },
+		{ 2400, 0 }, { -2400, 0 }, { 0, 2400 }, { 0, -2400 }
+	};
+	int i;
+
+	for (i = 0; i < 9; i++)
+	{
+		if (AntFarmMapHeight(pos->vx + probes[i][0], pos->vz + probes[i][1]) == 0)
+			return 0;	/* this cell is not loaded yet */
+	}
+
+	return 1;
 }
 
 /* the region index ControlMap computes for a world position */
@@ -1802,6 +1824,20 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.streamDone = 0;
 			s.shotPlanned = 0;
 
+			{
+				long long dx = (long long)s.areaPos.vx - camera_position.vx;
+				long long dz = (long long)s.areaPos.vz - camera_position.vz;
+
+				s.jumpDist2 = dx * dx + dz * dz;
+			}
+
+			/* FORCE the region-swap trigger: old_region == -1 makes the next
+			 * ControlMap/CheckLoadAreaData take the fresh full-area-load path
+			 * (LoadedArea = new super_region, spool.c:766) instead of the
+			 * incremental boundary swap — teleporting the spool far otherwise
+			 * skips the area swap and only partially loads the world */
+			old_region = -1;
+
 			if (s.leadMode)
 			{
 				s.style = AntFarmPickStyle(1);
@@ -1834,10 +1870,11 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			int spoolRegion = AntFarmRegionOf(&s.spool);
 			int regionsReady = (AntFarmRegionHasData(spoolRegion) && AntFarmRegionsReady(spoolRegion));
 			int nodesReady = (NumDriver2Straights > 0);
+			int worldReady = AntFarmWorldPresent(&s.spool);
 
 			MainPlayer.spoolXZ = &s.spool;
 
-			if (!(regionsReady && nodesReady) && !s.streamDone)
+			if (!(regionsReady && nodesReady && worldReady) && !s.streamDone)
 			{
 				if (now - s.cutStart >= ANTFARM_STREAM_TIMEOUT_MS)
 				{
@@ -1851,6 +1888,7 @@ static int AntFarmOnFrame(void* userdata, void* args)
 						{
 							s.spool = s.areaPos;
 							s.targetPos = s.areaPos;
+							old_region = -1;	/* force the area swap for the new pick */
 						}
 						/* else keep existing spool (which is loaded) */
 						s.camSnapped = 0;
@@ -1927,7 +1965,8 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			}
 		}
 
-		if (s.shotPlanned && now - s.cutStart >= ANTFARM_CUT_HOLD_MS)
+		if (s.shotPlanned && now - s.cutStart >= (unsigned long)(ANTFARM_CUT_HOLD_MS
+			+ (s.jumpDist2 > 0 ? (s.jumpDist2 / 30000 > 1500 ? 1500 : (int)(s.jumpDist2 / 30000)) : 0)))
 		{
 			if (!s.leadMode && s.leadEnabled &&
 				s.targetKind == ANTFARM_TARGET_CAR &&
