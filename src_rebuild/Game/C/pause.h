@@ -18,6 +18,10 @@ extern int gDrawPauseMenus;
 extern int pauseflag;
 extern int gMissionCompletionState;
 
+/* JERICHO-HOOK: set to an EXIT_VALUE (e.g. MENU_QUIT_CONTINUE) to unpause
+ * from a module (used by the sandbox's map teleport) */
+extern int PauseReturnValue;
+
 extern int UpdatePauseMenu(PAUSEMODE mode);
 extern void ShowPauseMenu(PAUSEMODE mode);
 

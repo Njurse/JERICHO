@@ -83,6 +83,8 @@ enum
 	JER_EVENT_PED_SKELETON,		/* player ped skeleton posed for draw -- modules
 								   may override bone rotations (arm holds) and
 								   read joint world positions (vJPos) */
+	JER_EVENT_MAP,			/* fullscreen map: INPUT claim + DRAWN cursor
+								   (see JER_ARGS_MAP in jer_events.h) */
 
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };

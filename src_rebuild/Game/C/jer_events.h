@@ -169,6 +169,22 @@ typedef struct JER_ARGS_PAUSE_MENU
 	int value;	/* item id for the d2pl actions (and any future multiplexed ones) */
 } JER_ARGS_PAUSE_MENU;
 
+/* JER_EVENT_MAP — fullscreen map hooks. The engine fires it twice while the
+ * in-game map (gShowMap) is up; modules return JER_RESULT_STOP on the INPUT
+ * action to claim the pad (e.g. a teleport cursor), and draw their cursor on
+ * the DRAWN action (after the map, so it lands on top).
+ *   action JER_MAP_ACTION_INPUT: value = the pad bits (Pads[0].direct);
+ *   action JER_MAP_ACTION_DRAWN: value = 0 (draw into the display buffer). */
+#define JER_MAP_ACTION_INPUT 0
+#define JER_MAP_ACTION_DRAWN 1
+
+typedef struct JER_ARGS_MAP
+{
+	int action;	/* JER_MAP_ACTION_* */
+	void* result;	/* unused */
+	int value;	/* pad bits on INPUT */
+} JER_ARGS_MAP;
+
 /* JER_EVENT_CAMERA — fired at the end of InitCamera once camera_position is
  * set; modules adjust the position/angle in place (stock = no handler).
  * Set override = 1 when a module takes full control: the engine then rebuilds

@@ -18,6 +18,10 @@
 #include "civ_ai.h"
 #include "pres.h"
 #include "system.h"
+#include "overmap.h"		/* fullscreen map (teleport cursor) */
+#include "dr2roads.h"		/* RoadInCell / MapHeight (nearest road) */
+#include "handling.h"		/* InitCarPhysics (teleport) */
+#include "pause.h"		/* gShowMap / PauseReturnValue */
 #include "mission.h"
 #include "sky.h"
 #include "debris.h"
@@ -131,7 +135,12 @@ static int SandboxSpawnCarModel(int model, int palette)
 		pos[1] = pc->hd.where.t[1];
 		pos[2] = pc->hd.where.t[2];
 
-		InitCar(pNewCar, direction, &pos, CONTROL_TYPE_CIV_AI, model, palette, NULL);
+		/* extraData must carry the palette: InitCar's CIV_AI branch
+		 * force-resets ap.palette = 0 when extraData is NULL */
+		memset(&civDat, 0, sizeof(civDat));
+		civDat.palette = palette;
+
+		InitCar(pNewCar, direction, &pos, CONTROL_TYPE_CIV_AI, model, palette, (char*)&civDat);
 		ChangePedPlayerToCar(0, pNewCar);
 		PingOutCar(pc);
 
@@ -144,8 +153,9 @@ static int SandboxSpawnCarModel(int model, int palette)
 	pos[2] = pc->hd.where.t[2] + FIXEDH(RCOS(direction) * 250);
 
 	memset(&civDat, 0, sizeof(civDat));
+	civDat.palette = palette;
 
-	InitCar(pNewCar, direction, &pos, CONTROL_TYPE_CIV_AI, model, 0, (char*)&civDat);
+	InitCar(pNewCar, direction, &pos, CONTROL_TYPE_CIV_AI, model, palette, (char*)&civDat);
 
 	return 0;
 }
@@ -282,9 +292,10 @@ static int gSandboxAIParam;		/* mode-specific parameter */
 
 /* per-car tuning: a temporary CAR_COSMETICS copy so edits never touch the
  * shared car_cosmetics[model] that every car of the same model uses */
-static CAR_COSMETICS gSandboxTunedCos;
-static CAR_COSMETICS* gSandboxOrigCos;
+static CAR_COSMETICS gSandboxOrigCos;	/* saved model cosmetics (restored on exit) */
+static CAR_COSMETICS* gSandboxTunedCos;	/* points at car_cosmetics[model] while tuning */
 static int gSandboxTunedActive;
+static int gSandboxTunedModel;		/* model the tuning started on */
 
 /* a private OT for the preview: the model renders on its own layer (between
  * the menu text at ot+0 and the background panel at ot+3) instead of at
@@ -458,34 +469,40 @@ static void SandboxMenuRemoveAICars(void)
 	}
 }
 
-/* ---- per-car tuning: the temp cosmetic copy ---- */
+/* ---- per-car tuning: edits the model's SHARED cosmetics live. The engine
+ * reads most fields from car_cosmetics[model] (wheelDisp, cog, twistRate*), so
+ * a private per-car copy never reached the physics — same approach as the
+ * engine's own mini-cars cheat (FixCarCos). The original values are restored
+ * when the tune page closes. ---- */
 static void SandboxTuneEnter(void)
 {
+	extern CAR_COSMETICS car_cosmetics[];
 	CAR_DATA* pc = SandboxPlayerCar();
 
 	if (pc == NULL)
 		return;
 
-	gSandboxOrigCos = pc->ap.carCos;
-	gSandboxTunedCos = *gSandboxOrigCos;
-	pc->ap.carCos = &gSandboxTunedCos;
+	gSandboxOrigCos = car_cosmetics[pc->ap.model];
+	gSandboxTunedCos = &car_cosmetics[pc->ap.model];
+	gSandboxTunedModel = pc->ap.model;
 	gSandboxTunedActive = 1;
 }
 
 static void SandboxTuneRestore(void)
 {
+	extern CAR_COSMETICS car_cosmetics[];
 	CAR_DATA* pc;
 
 	if (!gSandboxTunedActive)
 		return;
 
-	/* re-point at the model's shared cosmetics (the car may have changed) */
-	extern CAR_COSMETICS car_cosmetics[];
-
 	pc = SandboxPlayerCar();
 
-	if (pc != NULL)
-		pc->ap.carCos = &car_cosmetics[pc->ap.model];
+	/* only restore the model we actually tuned: the player can't switch
+	 * cars mid-pause, but guard anyway so another model never gets the
+	 * saved values clobbered */
+	if (pc != NULL && pc->ap.model == gSandboxTunedModel)
+		car_cosmetics[pc->ap.model] = gSandboxOrigCos;
 
 	gSandboxTunedActive = 0;
 }
@@ -499,40 +516,47 @@ static void SandboxTuneAdjust(CAR_DATA* pc, int cursor, int step)
 	if (pc == NULL || gSandboxTunedActive == 0)
 		return;
 
+	/* keep tracking the current car's model in case the player switched */
+	{
+		extern CAR_COSMETICS car_cosmetics[];
+
+		gSandboxTunedCos = &car_cosmetics[pc->ap.model];
+	}
+
 	switch (cursor)
 	{
-	case 0: p = &gSandboxTunedCos.powerRatio; min = 0; max = 4096; break;
-	case 1: p = &gSandboxTunedCos.traction; min = 0; max = 4096; break;
-	case 2: p = &gSandboxTunedCos.mass; min = 16; max = 4096; break;
-	case 3: p = &gSandboxTunedCos.susCoeff; min = 0; max = 4096; break;
-	case 4: p = &gSandboxTunedCos.cog.vx; min = -1024; max = 1024; break;
-	case 5: p = &gSandboxTunedCos.cog.vy; min = -1024; max = 1024; break;
-	case 6: p = &gSandboxTunedCos.cog.vz; min = -1024; max = 1024; break;
-	case 7: p = &gSandboxTunedCos.twistRateX; min = 0; max = 4096; break;
-	case 8: p = &gSandboxTunedCos.twistRateY; min = 0; max = 4096; break;
-	case 9: p = &gSandboxTunedCos.twistRateZ; min = 0; max = 4096; break;
-	case 10: p = &gSandboxTunedCos.wheelDisp[0].vz; min = 0; max = 4096; break;
-	case 11: p = &gSandboxTunedCos.wheelDisp[0].vx; min = 0; max = 4096; break;
+	case 0: p = &gSandboxTunedCos->powerRatio; min = 0; max = 4096; break;
+	case 1: p = &gSandboxTunedCos->traction; min = 0; max = 4096; break;
+	case 2: p = &gSandboxTunedCos->mass; min = 16; max = 4096; break;
+	case 3: p = &gSandboxTunedCos->susCoeff; min = 0; max = 4096; break;
+	case 4: p = &gSandboxTunedCos->cog.vx; min = -1024; max = 1024; break;
+	case 5: p = &gSandboxTunedCos->cog.vy; min = -1024; max = 1024; break;
+	case 6: p = &gSandboxTunedCos->cog.vz; min = -1024; max = 1024; break;
+	case 7: p = &gSandboxTunedCos->twistRateX; min = 0; max = 4096; break;
+	case 8: p = &gSandboxTunedCos->twistRateY; min = 0; max = 4096; break;
+	case 9: p = &gSandboxTunedCos->twistRateZ; min = 0; max = 4096; break;
+	case 10: p = &gSandboxTunedCos->wheelDisp[0].vz; min = 0; max = 4096; break;
+	case 11: p = &gSandboxTunedCos->wheelDisp[0].vx; min = 0; max = 4096; break;
 	default: return;
 	}
 
 	if (cursor == 10)
 	{
 		/* wheelbase: both axles spread apart symmetrically (front +z, rear -z) */
-		gSandboxTunedCos.wheelDisp[0].vz += step * 16;
-		gSandboxTunedCos.wheelDisp[1].vz -= step * 16;
-		gSandboxTunedCos.wheelDisp[2].vz += step * 16;
-		gSandboxTunedCos.wheelDisp[3].vz -= step * 16;
+		gSandboxTunedCos->wheelDisp[0].vz += step * 16;
+		gSandboxTunedCos->wheelDisp[1].vz -= step * 16;
+		gSandboxTunedCos->wheelDisp[2].vz += step * 16;
+		gSandboxTunedCos->wheelDisp[3].vz -= step * 16;
 		return;
 	}
 
 	if (cursor == 11)
 	{
 		/* track width: left wheels out, right wheels out */
-		gSandboxTunedCos.wheelDisp[0].vx -= step * 8;
-		gSandboxTunedCos.wheelDisp[1].vx -= step * 8;
-		gSandboxTunedCos.wheelDisp[2].vx += step * 8;
-		gSandboxTunedCos.wheelDisp[3].vx += step * 8;
+		gSandboxTunedCos->wheelDisp[0].vx -= step * 8;
+		gSandboxTunedCos->wheelDisp[1].vx -= step * 8;
+		gSandboxTunedCos->wheelDisp[2].vx += step * 8;
+		gSandboxTunedCos->wheelDisp[3].vx += step * 8;
 		return;
 	}
 
@@ -629,18 +653,18 @@ static const char* SandboxTuneLabel(int cursor)
 
 	switch (cursor)
 	{
-	case 0: sprintf(buf, "Power Ratio: %d", gSandboxTunedCos.powerRatio); break;
-	case 1: sprintf(buf, "Traction: %d", gSandboxTunedCos.traction); break;
-	case 2: sprintf(buf, "Mass: %d", gSandboxTunedCos.mass); break;
-	case 3: sprintf(buf, "Suspension: %d", gSandboxTunedCos.susCoeff); break;
-	case 4: sprintf(buf, "COG X: %d", gSandboxTunedCos.cog.vx); break;
-	case 5: sprintf(buf, "COG Y: %d", gSandboxTunedCos.cog.vy); break;
-	case 6: sprintf(buf, "COG Z: %d", gSandboxTunedCos.cog.vz); break;
-	case 7: sprintf(buf, "Twist X: %d", gSandboxTunedCos.twistRateX); break;
-	case 8: sprintf(buf, "Twist Y: %d", gSandboxTunedCos.twistRateY); break;
-	case 9: sprintf(buf, "Twist Z: %d", gSandboxTunedCos.twistRateZ); break;
-	case 10: sprintf(buf, "Wheelbase: %d", gSandboxTunedCos.wheelDisp[0].vz - gSandboxTunedCos.wheelDisp[1].vz); break;
-	default: sprintf(buf, "Track: %d", gSandboxTunedCos.wheelDisp[2].vx - gSandboxTunedCos.wheelDisp[0].vx); break;
+	case 0: sprintf(buf, "Power Ratio: %d", gSandboxTunedCos->powerRatio); break;
+	case 1: sprintf(buf, "Traction: %d", gSandboxTunedCos->traction); break;
+	case 2: sprintf(buf, "Mass: %d", gSandboxTunedCos->mass); break;
+	case 3: sprintf(buf, "Suspension: %d", gSandboxTunedCos->susCoeff); break;
+	case 4: sprintf(buf, "COG X: %d", gSandboxTunedCos->cog.vx); break;
+	case 5: sprintf(buf, "COG Y: %d", gSandboxTunedCos->cog.vy); break;
+	case 6: sprintf(buf, "COG Z: %d", gSandboxTunedCos->cog.vz); break;
+	case 7: sprintf(buf, "Twist X: %d", gSandboxTunedCos->twistRateX); break;
+	case 8: sprintf(buf, "Twist Y: %d", gSandboxTunedCos->twistRateY); break;
+	case 9: sprintf(buf, "Twist Z: %d", gSandboxTunedCos->twistRateZ); break;
+	case 10: sprintf(buf, "Wheelbase: %d", gSandboxTunedCos->wheelDisp[0].vz - gSandboxTunedCos->wheelDisp[1].vz); break;
+	default: sprintf(buf, "Track: %d", gSandboxTunedCos->wheelDisp[2].vx - gSandboxTunedCos->wheelDisp[0].vx); break;
 	}
 
 	return buf;
@@ -801,8 +825,17 @@ static void SandboxSpawnAICar(void)
 		pos[1] = pc->hd.where.t[1];
 		pos[2] = pc->hd.where.t[2];
 
+		/* extraData must carry the palette: InitCar's CIV_AI branch
+		 * force-resets ap.palette = 0 when extraData is NULL */
+		if (gSandboxAIMode == 0)
+		{
+			memset(&civDat, 0, sizeof(civDat));
+			civDat.palette = (u_char)gSandboxAIParam;
+		}
+
 		InitCar(pNewCar, direction, &pos, CONTROL_TYPE_CIV_AI, gSandboxAIModel,
-			gSandboxAIMode == 0 ? gSandboxAIParam : 0, NULL);
+			gSandboxAIMode == 0 ? gSandboxAIParam : 0,
+			gSandboxAIMode == 0 ? (char*)&civDat : NULL);
 
 		ChangePedPlayerToCar(0, pNewCar);
 		PingOutCar(pc);
@@ -1882,13 +1915,214 @@ static int SandboxActivateMenu(void* userdata, int direction)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+/* forward (defined with the teleport code below) */
+static int SandboxTeleportStart(void* userdata, int direction);
+
 static const JER_PAUSE_MENU_ITEM SandboxMenuItems[] =
 {
 	{ "Open Sandbox Menu", NULL, SandboxActivateMenu, NULL, NULL, 0 },
+	{ "Teleport to Map", NULL, SandboxTeleportStart, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU SandboxPauseMenu =
-{ "Sandbox", SandboxMenuItems, 1 };
+{ "Sandbox", SandboxMenuItems, 2 };
+
+/* ------------------------------------------------------------------ */
+/* Map teleport: opens the fullscreen map, moves a cursor, teleports   */
+/* the player car to the nearest road under the cursor.                */
+/* ------------------------------------------------------------------ */
+
+static int gSandboxTeleportActive;	/* cursor mode on the map */
+static int gSandboxTpCursorX;		/* cursor offset from screen centre (px) */
+static int gSandboxTpCursorZ;
+static int gSandboxMapHandledFrame;	/* dedupe the two per-frame INPUT hooks */
+
+/* the game's road network is baked into the region BSP: RoadInCell is the
+ * node query, so find the nearest road by sampling expanding rings around
+ * the target until one lands on a road surface */
+static int SandboxNearestRoad(const VECTOR* from, VECTOR* out)
+{
+	static const int RING_DX[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
+	static const int RING_DZ[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+	int r, i;
+
+	for (r = 0; r <= 2000; r += 50)
+	{
+		for (i = 0; i < 8; i++)
+		{
+			VECTOR p;
+			int diag = (RING_DX[i] != 0 && RING_DZ[i] != 0);
+			int d = diag ? (r * 7) / 10 : r;
+
+			p.vx = from->vx + RING_DX[i] * d;
+			p.vz = from->vz + RING_DZ[i] * d;
+			p.vy = from->vy;
+
+			if (RoadInCell(&p))
+			{
+				*out = p;
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+static void SandboxTeleportToCursor(void)
+{
+	CAR_DATA* pc = SandboxPlayerCar();
+	VECTOR cursorPos;
+	VECTOR road;
+	VECTOR ground;
+	LONGVECTOR4 pos;
+	int scale;
+
+	if (pc == NULL)
+		return;
+
+	scale = FullscreenMapScale();
+
+	/* cursor offset (screen px from centre) -> world offset: the fullscreen
+	 * map is unrotated and drawn at `scale` world units per px; screen down
+	 * is -Z */
+	cursorPos.vx = pc->hd.where.t[0] + gSandboxTpCursorX * scale;
+	cursorPos.vz = pc->hd.where.t[2] - gSandboxTpCursorZ * scale;
+	cursorPos.vy = pc->hd.where.t[1];
+
+	if (!SandboxNearestRoad(&cursorPos, &road))
+		return;
+
+	/* land the car on the road the same way InitCar does */
+	ground.vx = road.vx;
+	ground.vz = road.vz;
+	ground.vy = 0;
+
+	pos[0] = road.vx;
+	pos[1] = MapHeight(&ground) - pc->ap.carCos->wheelDisp[0].vy;
+	pos[2] = road.vz;
+	pos[3] = 0;
+
+	pc->hd.where.t[0] = pos[0];
+	pc->hd.where.t[1] = pos[1];
+	pc->hd.where.t[2] = pos[2];
+
+	InitCarPhysics(pc, &pos, pc->hd.direction);
+
+	/* back to the game, driving */
+	gShowMap = 0;
+	gSandboxTeleportActive = 0;
+	PauseReturnValue = MENU_QUIT_CONTINUE;
+}
+
+static void SandboxDrawTeleportCursor(void)
+{
+	POLY_F4* poly;
+	int cx = 160 + gSandboxTpCursorX;
+	int cz = 128 + gSandboxTpCursorZ;
+	char buf[64];
+
+	/* crosshair: two thin bars */
+	poly = (POLY_F4*)current->primptr;
+	setPolyF4(poly);
+	poly->x0 = cx - 10; poly->y0 = cz - 1;
+	poly->x1 = cx + 10; poly->y1 = cz - 1;
+	poly->x2 = cx - 10; poly->y2 = cz + 1;
+	poly->x3 = cx + 10; poly->y3 = cz + 1;
+	poly->r0 = 128; poly->g0 = 255; poly->b0 = 128;
+	addPrim(current->ot + 3, poly);
+	current->primptr += sizeof(POLY_F4);
+
+	poly = (POLY_F4*)current->primptr;
+	setPolyF4(poly);
+	poly->x0 = cx - 1; poly->y0 = cz - 10;
+	poly->x1 = cx + 1; poly->y1 = cz - 10;
+	poly->x2 = cx - 1; poly->y2 = cz + 10;
+	poly->x3 = cx + 1; poly->y3 = cz + 10;
+	poly->r0 = 128; poly->g0 = 255; poly->b0 = 128;
+	addPrim(current->ot + 3, poly);
+	current->primptr += sizeof(POLY_F4);
+
+	snprintf(buf, sizeof(buf), "Teleport: X=%d Z=%d   O = go   /\\ = cancel", gSandboxTpCursorX, gSandboxTpCursorZ);
+	SandboxPrint(8, 6, buf);
+}
+
+static int SandboxOnMap(void* userdata, void* args)
+{
+	JER_ARGS_MAP* a = (JER_ARGS_MAP*)args;
+	extern int FrameCnt;
+	extern int gUseRotatedMap;
+	extern int map_x_shift;
+	extern int map_z_shift;
+
+	(void)userdata;
+
+	if (a->action == JER_MAP_ACTION_DRAWN)
+	{
+		if (gSandboxTeleportActive && gShowMap)
+			SandboxDrawTeleportCursor();
+
+		return JER_RESULT_CONTINUE;
+	}
+
+	/* INPUT — fired twice per frame (pause loop + map draw): dedupe */
+	if (!gSandboxTeleportActive || !gShowMap)
+	{
+		gSandboxTeleportActive = 0;
+		return JER_RESULT_CONTINUE;
+	}
+
+	if (gSandboxMapHandledFrame == FrameCnt)
+		return JER_RESULT_STOP;
+
+	gSandboxMapHandledFrame = FrameCnt;
+
+	/* keep the map unrotated + un-scrolled so the cursor maps 1:1 */
+	gUseRotatedMap = 0;
+	map_x_shift = 0;
+	map_z_shift = 0;
+
+	/* cursor movement: held d-pad, 8 px/frame (matches the map scroll) */
+	if (Pads[0].direct & MPAD_D_LEFT) gSandboxTpCursorX -= 8;
+	if (Pads[0].direct & MPAD_D_RIGHT) gSandboxTpCursorX += 8;
+	if (Pads[0].direct & MPAD_D_UP) gSandboxTpCursorZ -= 8;
+	if (Pads[0].direct & MPAD_D_DOWN) gSandboxTpCursorZ += 8;
+
+	if (gSandboxTpCursorX < -160) gSandboxTpCursorX = -160;
+	if (gSandboxTpCursorX > 160) gSandboxTpCursorX = 160;
+	if (gSandboxTpCursorZ < -128) gSandboxTpCursorZ = -128;
+	if (gSandboxTpCursorZ > 128) gSandboxTpCursorZ = 128;
+
+	/* CROSS = teleport to the nearest road under the cursor */
+	if (Pads[0].dirnew & MPAD_CROSS)
+	{
+		SandboxTeleportToCursor();
+		return JER_RESULT_STOP;
+	}
+
+	/* TRIANGLE = cancel */
+	if (Pads[0].dirnew & MPAD_TRIANGLE)
+	{
+		gShowMap = 0;
+		gSandboxTeleportActive = 0;
+		return JER_RESULT_STOP;
+	}
+
+	return JER_RESULT_STOP;	/* claim while active: no map scroll / close */
+}
+
+static int SandboxTeleportStart(void* userdata, int direction)
+{
+	(void)userdata;
+	(void)direction;
+
+	gSandboxTpCursorX = 0;
+	gSandboxTpCursorZ = 0;
+	gSandboxTeleportActive = 1;
+	gShowMap = 1;	/* open the fullscreen map; the cursor takes over */
+
+	return JER_PAUSE_QUIT_NONE;
+}
 
 /* ------------------------------------------------------------------ */
 /* Custom event: firing SANDBOX_CUSTOM_TOGGLE flips no-damage          */
@@ -1941,6 +2175,7 @@ JER_MODULE_ENTRY(jer_module_sandbox_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, SandboxOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, SandboxOnDrawOverlay, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PAUSE_MENU, SandboxOnPauseMenu, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_MAP, SandboxOnMap, NULL, 0);
 	ctx->jer_register_hook(ctx, SANDBOX_CUSTOM_TOGGLE, SandboxOnToggle, NULL, 0);
 
 	/* pause menu: provided by this module, not hardcoded in the game */

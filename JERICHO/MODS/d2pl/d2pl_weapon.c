@@ -501,7 +501,21 @@ int D2plOnSkeleton(void* userdata, void* args)
 
 			SetRotMatrix(&ident);
 
-			RenderModel(w->meshModel, &ident, &pos, 1, PLOT_NO_SHADE, 0, 0);
+			/* flat-shaded, so dim it at night like the engine's ped heads
+			 * (motion_c.c: the game keeps combointensity at day level even
+			 * at night, which otherwise leaves the weapon always-bright) */
+			{
+				extern int gNight;
+				extern int combointensity;
+				int oldCombo = combointensity;
+
+				if (gNight)
+					combointensity = 0x404040;
+
+				RenderModel(w->meshModel, &ident, &pos, 1, PLOT_NO_SHADE, 0, 0);
+
+				combointensity = oldCombo;
+			}
 
 			/* restore the GTE state the engine's own bone draws rely on —
 			 * the camera rotation it set at the top of newShowTanner plus

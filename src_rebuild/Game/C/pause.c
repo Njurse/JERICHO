@@ -27,7 +27,7 @@
 static int gScoreEntered = 0;
 static char EnterNameText[32] = { 0 };		// translated text
 
-static int PauseReturnValue;
+int PauseReturnValue;	// JERICHO-HOOK: exported so modules can unpause (e.g. after a map teleport)
 
 int pauseflag = 0;
 int gShowMap = 0;
@@ -1480,6 +1480,19 @@ void ControlMenu(void)
 	// toggle map off
 	if (gShowMap)
 	{
+		// JERICHO-HOOK: modules may claim the map input (e.g. a teleport
+		// cursor) — the engine then leaves the map open to them.
+		{
+			JER_ARGS_MAP jerArgs;
+
+			jerArgs.action = JER_MAP_ACTION_INPUT;
+			jerArgs.value = paddata;
+			jerArgs.result = NULL;
+
+			if (jer_fire(JER_EVENT_MAP, &jerArgs) == JER_RESULT_STOP)
+				return;
+		}
+
 		if (paddata & (MPAD_CROSS | MPAD_TRIANGLE))
 			PauseMap(0);
 

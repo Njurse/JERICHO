@@ -16,6 +16,8 @@
 #include "felony.h"
 #include "pad.h"
 #include "ASM/rnc_2.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime
+#include "jer_events.h"	// JERICHO-HOOK: map input/draw hooks
 
 struct MAPTEX
 {
@@ -1468,6 +1470,13 @@ void SetFullscreenMapMatrix(void)
 }
 
 // [D] [T]
+/* JERICHO-HOOK: map scale (world units per px) for the fullscreen map —
+ * lets modules convert cursor offsets back to world units */
+int FullscreenMapScale(void)
+{
+	return overlaidmaps[GameLevel].scale;
+}
+
 void DrawFullscreenMap(void)
 {
 	char str[64];
@@ -1536,6 +1545,17 @@ void DrawFullscreenMap(void)
 	WorldToFullscreenMap((VECTOR *)player->pos, &player_position);
 
 	// do map movement
+	// JERICHO-HOOK: modules may claim the map input (e.g. a teleport cursor);
+	// the engine then leaves scrolling/toggles to the module.
+	{
+		JER_ARGS_MAP jerArgs;
+
+		jerArgs.action = JER_MAP_ACTION_INPUT;
+		jerArgs.value = Pads[0].direct;
+		jerArgs.result = NULL;
+
+		if (jer_fire(JER_EVENT_MAP, &jerArgs) != JER_RESULT_STOP)
+		{
 	if (gUseRotatedMap) 
 	{
 		if (Pads[0].direct & 0x8000)
@@ -1621,6 +1641,8 @@ void DrawFullscreenMap(void)
 
 		map_x_offset += map_x_shift;
 		map_z_offset += map_z_shift;
+	}
+	}
 	}
 
 
@@ -1803,6 +1825,17 @@ void DrawFullscreenMap(void)
 	// print string with special characters representing some images inserted into it
 	sprintf(str, "\x80 %s \x81 %s \x8a %s", G_LTXT(GTXT_Back), G_LTXT(GTXT_Rotation), G_LTXT(GTXT_Move));
 	PrintStringCentred(str, SCREEN_H - 30); // 226
+
+	// JERICHO-HOOK: modules draw their map cursor here (after the map, so it
+	// lands on top of the tiles).
+	{
+		JER_ARGS_MAP jerArgs;
+
+		jerArgs.action = JER_MAP_ACTION_DRAWN;
+		jerArgs.value = 0;
+		jerArgs.result = NULL;
+		jer_fire(JER_EVENT_MAP, &jerArgs);
+	}
 }
 
 // [D] [T]
