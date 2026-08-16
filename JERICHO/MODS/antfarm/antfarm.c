@@ -303,11 +303,13 @@ static int AntFarmShotRoadRender(int distAlong, VECTOR* roadPt, int* heading)
 }
 
 /* keep positions inside the playable map so the camera never reaches the
- * nodraw skybox extremes at the world edge */
+ * nodraw skybox extremes at the world edge, and never dives below the
+ * ground into the void (render Y is negative-up: ground = -MapHeight) */
 static void AntFarmClampToWorld(VECTOR* v)
 {
 	int maxX = units_across_halved - 4000;
 	int maxZ = units_down_halved - 4000;
+	int ground;
 
 	if (v->vx < -maxX)
 		v->vx = -maxX;
@@ -320,6 +322,11 @@ static void AntFarmClampToWorld(VECTOR* v)
 
 	if (v->vz > maxZ)
 		v->vz = maxZ;
+
+	ground = -AntFarmMapHeight(v->vx, v->vz);
+
+	if (v->vy > ground - 60)
+		v->vy = ground - 60;
 }
 
 /* pick a straight at least FAR_DIST from the current focus, so every cut
@@ -656,6 +663,32 @@ static int AntFarmLeadTotaled(void)
 		return 1;	/* pinged out or switched */
 
 	if (cp->totalDamage >= ANTFARM_LEAD_TOTAL)
+		return 1;
+
+	return 0;
+}
+
+/* the rogue car left the playable world (drove off the map or fell into
+ * the void) — the event must end immediately, before the camera or the
+ * pinned player car follow it out */
+static int AntFarmLeadEscaped(void)
+{
+	CAR_DATA* cp;
+	int maxX, maxZ;
+
+	if (s.targetCarId < 0 || s.targetCarId >= MAX_CARS)
+		return 0;
+
+	cp = &car_data[s.targetCarId];
+
+	maxX = units_across_halved - 3000;
+	maxZ = units_down_halved - 3000;
+
+	if (cp->hd.where.t[0] < -maxX || cp->hd.where.t[0] > maxX ||
+	    cp->hd.where.t[2] < -maxZ || cp->hd.where.t[2] > maxZ)
+		return 1;
+
+	if (cp->hd.where.t[1] < -6000 || cp->hd.where.t[1] > 8000)
 		return 1;
 
 	return 0;
@@ -1122,6 +1155,17 @@ static int AntFarmOnFrame(void* userdata, void* args)
 	 * mid-transition */
 	if (s.leadMode)
 	{
+		if (AntFarmLeadEscaped())
+		{
+			/* left the world — wrap up now (no hold in the void) */
+			AntFarmEndLead();
+
+			s.state = ANTFARM_STATE_FADE_OUT;
+			s.stateStart = now;
+
+			return JER_RESULT_CONTINUE;
+		}
+
 		if (AntFarmLeadTotaled())
 		{
 			if (!s.leadEnding)
@@ -1280,6 +1324,31 @@ static void AntFarmPinPlayerCar(void)
 		return;
 
 	cp = &car_data[carId];
+
+	/* never let the player car leave the playable world — if it fell out
+	 * of bounds the game would end (the rogue car can overrun the map) */
+	{
+		int maxX = units_across_halved - 2000;
+		int maxZ = units_down_halved - 2000;
+		int ground;
+
+		if (s.targetPos.vx < -maxX)
+			s.targetPos.vx = -maxX;
+
+		if (s.targetPos.vx > maxX)
+			s.targetPos.vx = maxX;
+
+		if (s.targetPos.vz < -maxZ)
+			s.targetPos.vz = -maxZ;
+
+		if (s.targetPos.vz > maxZ)
+			s.targetPos.vz = maxZ;
+
+		ground = AntFarmMapHeight(s.targetPos.vx, s.targetPos.vz);
+
+		if (s.targetPos.vy < ground - 100)
+			s.targetPos.vy = ground;
+	}
 
 	/* s.targetPos is the world-space focus (road anchor, followed car, or
 	 * the rogue car during lead events) */

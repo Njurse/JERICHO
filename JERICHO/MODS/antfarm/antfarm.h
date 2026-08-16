@@ -52,7 +52,7 @@ enum
 
 /* timing (milliseconds) */
 #define ANTFARM_FADE_MS		600
-#define ANTFARM_CUT_HOLD_MS	1200
+#define ANTFARM_CUT_HOLD_MS	2500
 #define ANTFARM_CAR_WAIT_MS	4000	/* black cap while traffic populates */
 #define ANTFARM_LEAD_END_MS	4000	/* hold on a totaled lead car */
 
