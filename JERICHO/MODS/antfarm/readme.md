@@ -66,8 +66,10 @@ Then enable the module (Options -> JERICHO -> antfarm, or edit
 - Aimed at **single-player free drive** (take-a-drive / survival). It refuses
   to engage during cutscenes, replays or multi-player, and auto-exits if a
   cutscene or replay starts while it is running.
-- The player's car stays where you left it: it brakes (handbrake) when the
-  mode engages and is not moved. Traffic may bump into it.
+- The player's car is **pinned to the camera focus** while the mode runs:
+  teleported there each frame (so region streaming follows the action),
+  hidden (`CONTROL_TYPE_NONE` + slot reserved so traffic can't reuse it),
+  and muted. On exit it's restored to where you left it.
 - The spool follows the camera, so the player car can end up far from the
   action; when the mode ends you are back at your car wherever it is.
 - The fade uses the game's stock semi-transparent wash look (brightens to a

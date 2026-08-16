@@ -41,6 +41,8 @@
 #include "mission.h"	/* NumPlayers */
 #include "convert.h"	/* Random2 */
 #include "objcoll.h"	/* lineClear, CheckScenaryCollisions */
+#include "civ_ai.h"	/* reservedSlots */
+#include "mc_snd.h"	/* SilenceThisCar */
 
 #include "antfarm.h"
 
@@ -107,6 +109,11 @@ typedef struct ANTFARM_STATE
 	int savedDoOverlays;
 	VECTOR* savedSpoolXZ;
 
+	/* player car saved/restored around activation (teleport + hide) */
+	int savedPlayerCarControlType;
+	int savedPlayerReservedSlot;
+	long savedPlayerCarPos[3];
+
 	int cutCount;		/* diagnostic counter */
 	int f9Down;		/* F9 edge detection */
 } ANTFARM_STATE;
@@ -124,6 +131,13 @@ static unsigned long AntTicks(void)
 #else
 	return (unsigned long)FrameCnt * 1000 / 30;
 #endif
+}
+
+/* the cut interval is config-driven; the module state can be zeroed by a
+ * reload before BOOT re-runs, so never divide by the raw field */
+static int AntIntervalMs(void)
+{
+	return (s.intervalMs > 0) ? s.intervalMs : ANTFARM_DEFAULT_INTERVAL * 1000;
 }
 
 /* ------------------------------------------------------------------ */
@@ -563,7 +577,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			if (s.shotOrbitAmp > 0)
 			{
 				/* slow cinematic orbit: one sweep per ~2 shot lengths */
-				int sweepPhase = (s.shotOrbitPhase + now / (s.intervalMs * 2)) & 4095;
+				int sweepPhase = (s.shotOrbitPhase + now / (AntIntervalMs() * 2)) & 4095;
 				int sweep = FIXEDH(RSIN(sweepPhase) * s.shotOrbitAmp);
 
 				side = (side + 4096 + sweep) & 0xfff;
@@ -588,8 +602,8 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			int t, tt, curDist, aimDist;
 			unsigned long shotElapsed = now - s.shotStart;
 
-			t = (shotElapsed >= (unsigned long)s.intervalMs) ? 1000
-			    : (int)(shotElapsed * 1000 / (unsigned long)s.intervalMs);
+			t = (shotElapsed >= (unsigned long)AntIntervalMs()) ? 1000
+			    : (int)(shotElapsed * 1000 / (unsigned long)AntIntervalMs());
 
 			/* smoothstep — eases the dolly in and out of each end */
 			tt = t * t * (3000 - 2 * t) / 1000000;	/* t,tt in 0..1000 */
@@ -664,6 +678,19 @@ static void AntFarmSetActive(int on)
 		s.savedStopPadReads = gStopPadReads;
 		s.savedDoOverlays = gDoOverlays;
 		s.savedSpoolXZ = MainPlayer.spoolXZ;
+		s.savedPlayerCarControlType = 0;
+
+		if (MainPlayer.playerType == PLAYER_TYPE_CAR &&
+		    MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+		{
+			CAR_DATA* pcar = &car_data[MainPlayer.playerCarId];
+
+			s.savedPlayerCarControlType = pcar->controlType;
+			s.savedPlayerReservedSlot = reservedSlots[MainPlayer.playerCarId];
+			s.savedPlayerCarPos[0] = pcar->hd.where.t[0];
+			s.savedPlayerCarPos[1] = pcar->hd.where.t[1];
+			s.savedPlayerCarPos[2] = pcar->hd.where.t[2];
+		}
 
 		gStopPadReads = 1;	/* player car brakes; on-foot pads zeroed */
 		gDoOverlays = 0;	/* hide the HUD */
@@ -703,6 +730,29 @@ static void AntFarmSetActive(int on)
 		/* restore the spool pointer (UpdatePlayers would re-point it to the
 		 * player car next frame anyway — restoring keeps the contract exact) */
 		MainPlayer.spoolXZ = s.savedSpoolXZ;
+
+		/* bring the player car back: unhide, unreserve, and put it where
+		 * it was (frozen) */
+		if (s.savedPlayerCarControlType != 0 &&
+		    MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+		{
+			CAR_DATA* pcar = &car_data[MainPlayer.playerCarId];
+
+			pcar->controlType = (u_char)s.savedPlayerCarControlType;
+			reservedSlots[MainPlayer.playerCarId] = (u_char)s.savedPlayerReservedSlot;
+			pcar->hd.where.t[0] = s.savedPlayerCarPos[0];
+			pcar->hd.where.t[1] = s.savedPlayerCarPos[1];
+			pcar->hd.where.t[2] = s.savedPlayerCarPos[2];
+			pcar->st.n.fposition[0] = s.savedPlayerCarPos[0] << 4;
+			pcar->st.n.fposition[1] = s.savedPlayerCarPos[1] << 4;
+			pcar->st.n.fposition[2] = s.savedPlayerCarPos[2] << 4;
+			pcar->st.n.linearVelocity[0] = 0;
+			pcar->st.n.linearVelocity[1] = 0;
+			pcar->st.n.linearVelocity[2] = 0;
+			pcar->st.n.angularVelocity[0] = 0;
+			pcar->st.n.angularVelocity[1] = 0;
+			pcar->st.n.angularVelocity[2] = 0;
+		}
 
 		s.active = 0;
 		s.fade = 0;
@@ -768,7 +818,7 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			break;
 		}
 
-		if (now - s.stateStart >= (unsigned long)s.intervalMs)
+		if (now - s.stateStart >= (unsigned long)AntIntervalMs())
 		{
 			s.state = ANTFARM_STATE_FADE_OUT;
 			s.stateStart = now;
@@ -811,6 +861,55 @@ static int AntFarmOnFrame(void* userdata, void* args)
 	}
 
 	return JER_RESULT_CONTINUE;
+}
+
+/* Pin the player's car to the camera focus while the screensaver runs:
+ * teleport it there (so the region spool naturally follows the focus via
+ * UpdatePlayers), reserve the slot and flip it to CONTROL_TYPE_NONE so it
+ * is neither drawn nor simulated nor reusable, and mute its engine. */
+static void AntFarmPinPlayerCar(void)
+{
+	int carId;
+	CAR_DATA* cp;
+
+	if (MainPlayer.playerType != PLAYER_TYPE_CAR)
+		return;	/* on foot: the spool redirect covers streaming */
+
+	carId = MainPlayer.playerCarId;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return;
+
+	cp = &car_data[carId];
+
+	/* s.targetPos is the world-space focus (static shots: the road anchor;
+	 * follow: the followed car) */
+	cp->hd.where.t[0] = s.targetPos.vx;
+	cp->hd.where.t[1] = s.targetPos.vy;
+	cp->hd.where.t[2] = s.targetPos.vz;
+
+	cp->st.n.fposition[0] = s.targetPos.vx << 4;
+	cp->st.n.fposition[1] = s.targetPos.vy << 4;
+	cp->st.n.fposition[2] = s.targetPos.vz << 4;
+
+	cp->st.n.linearVelocity[0] = 0;
+	cp->st.n.linearVelocity[1] = 0;
+	cp->st.n.linearVelocity[2] = 0;
+	cp->st.n.angularVelocity[0] = 0;
+	cp->st.n.angularVelocity[1] = 0;
+	cp->st.n.angularVelocity[2] = 0;
+
+	if (cp->controlType != CONTROL_TYPE_NONE)
+	{
+		/* hide + take the slot out of the sim; reservedSlots stops the civ
+		 * spawner (civ_ai.c:1724/1812/2014) from reusing it */
+		s.savedPlayerCarControlType = cp->controlType;
+		s.savedPlayerReservedSlot = reservedSlots[carId];
+		cp->controlType = CONTROL_TYPE_NONE;
+		reservedSlots[carId] = 1;
+	}
+
+	SilenceThisCar(carId);
 }
 
 /* Keep the camera clear of scenery:
@@ -912,6 +1011,9 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	MainPlayer.spoolXZ = &s.spool;
 
 	AntFarmComputeCamera(&cam, &ang);
+
+	/* pin the player car to the focus (streaming follows it; hidden/muted) */
+	AntFarmPinPlayerCar();
 
 	/* scenery: pull in for a clear sight-line, push out of buildings */
 	AntFarmSceneryPass(&cam, &s.aimPos);
@@ -1026,7 +1128,7 @@ static void AntIntervalLabel(void* userdata, char* out, int max)
 {
 	(void)userdata;
 
-	snprintf(out, max, "Cut interval: %ds", s.intervalMs / 1000);
+	snprintf(out, max, "Cut interval: %ds", AntIntervalMs() / 1000);
 }
 
 static int AntIntervalAdjust(void* userdata, int direction)
@@ -1155,6 +1257,7 @@ JER_MODULE_ENTRY(jer_module_antfarm_entry)(JERICHO_CONTEXT* ctx)
 {
 	memset(&s, 0, sizeof(s));
 	s.ctx = ctx;
+	s.intervalMs = ANTFARM_DEFAULT_INTERVAL * 1000;	/* valid before BOOT runs */
 
 	ctx->jer_register_module(ctx,
 		"antfarm",		/* id */

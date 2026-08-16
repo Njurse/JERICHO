@@ -40,7 +40,7 @@ enum
 
 /* timing (milliseconds) */
 #define ANTFARM_FADE_MS		600
-#define ANTFARM_CUT_HOLD_MS	900
+#define ANTFARM_CUT_HOLD_MS	1500
 
 /* config limits (seconds) */
 #define ANTFARM_MIN_INTERVAL	8
