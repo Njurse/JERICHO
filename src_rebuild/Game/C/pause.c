@@ -1129,7 +1129,7 @@ static MENU_HEADER* JerPauseRootOr(MENU_HEADER* original)
 	if (n < JER_PAUSE_ROOT_ITEMS - 2)
 	{
 		memset(&gJerPauseRootItems[n], 0, sizeof(MENU_ITEM));
-		gJerPauseRootItems[n].Text = "Modules";
+		gJerPauseRootItems[n].Text = "JERICHO Addons";
 		gJerPauseRootItems[n].Type = PAUSE_TYPE_SUBMENU;
 		gJerPauseRootItems[n].Justify = 2;
 		gJerPauseRootItems[n].SubMenu = &gJerModulesHeader;
