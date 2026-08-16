@@ -50,6 +50,7 @@
 #include "civ_ai.h"	/* reservedSlots, InitCar */
 #include "felony.h"	/* GetPlayerFelony */
 #include "sound.h"	/* gMasterVolume, SetMasterVolume */
+#include "map.h"	/* units_across_halved, units_down_halved */
 
 #include "antfarm.h"
 
@@ -301,6 +302,26 @@ static int AntFarmShotRoadRender(int distAlong, VECTOR* roadPt, int* heading)
 	return 1;
 }
 
+/* keep positions inside the playable map so the camera never reaches the
+ * nodraw skybox extremes at the world edge */
+static void AntFarmClampToWorld(VECTOR* v)
+{
+	int maxX = units_across_halved - 4000;
+	int maxZ = units_down_halved - 4000;
+
+	if (v->vx < -maxX)
+		v->vx = -maxX;
+
+	if (v->vx > maxX)
+		v->vx = maxX;
+
+	if (v->vz < -maxZ)
+		v->vz = -maxZ;
+
+	if (v->vz > maxZ)
+		v->vz = maxZ;
+}
+
 /* pick a straight at least FAR_DIST from the current focus, so every cut
  * tours a genuinely different part of the map */
 static int AntFarmPickFarArea(void)
@@ -327,6 +348,7 @@ static int AntFarmPickFarArea(void)
 				s.areaPos.vx = rd->Midx;
 				s.areaPos.vy = AntFarmMapHeight(rd->Midx, rd->Midz);
 				s.areaPos.vz = rd->Midz;
+				AntFarmClampToWorld(&s.areaPos);
 				return 1;
 			}
 		}
@@ -641,19 +663,42 @@ static int AntFarmLeadTotaled(void)
 
 static void AntFarmStartLead(void)
 {
-	CAR_DATA* cp = &car_data[s.targetCarId];
+	int newSlot = -1, i;
+	CAR_DATA* src = &car_data[s.targetCarId];
 	LONGVECTOR4 pos;
 
-	pos[0] = cp->hd.where.t[0];
-	pos[1] = cp->hd.where.t[1];
-	pos[2] = cp->hd.where.t[2];
+	/* spawn the rogue car into a FRESH slot (the standard civ-spawn path).
+	 * Re-initing a live slot with InitCar would re-run CreateDentableCar on
+	 * an already-registered model and corrupt the dentable list. */
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		if (car_data[i].controlType == CONTROL_TYPE_NONE && reservedSlots[i] == 0)
+		{
+			newSlot = i;
+			break;
+		}
+	}
+
+	if (newSlot < 0)
+	{
+		s.ctx->jer_log(s.ctx, "[antfarm] no free slot — rogue event skipped\n");
+		return;
+	}
+
+	pos[0] = src->hd.where.t[0];
+	pos[1] = src->hd.where.t[1];
+	pos[2] = src->hd.where.t[2];
 	pos[3] = 0;
 
 	/* InitCar with CONTROL_TYPE_LEAD_AI runs InitLead (hndType=5, ai.l
 	 * state, currentRoad) — leadai drives it across the map (FreeRoamer) */
-	InitCar(cp, cp->hd.direction & 0xfff, &pos, CONTROL_TYPE_LEAD_AI,
-		cp->ap.model, cp->ap.palette & 255, NULL);
+	InitCar(&car_data[newSlot], src->hd.direction & 0xfff, &pos,
+		CONTROL_TYPE_LEAD_AI, src->ap.model, src->ap.palette & 255, NULL);
 
+	/* retire the original civ car (it "becomes" the rogue) */
+	src->controlType = CONTROL_TYPE_NONE;
+
+	s.targetCarId = newSlot;
 	s.leadMode = 1;
 	s.leadEnding = 0;
 	s.style = ANTFARM_STYLE_CHASE;
@@ -666,7 +711,7 @@ static void AntFarmStartLead(void)
 	CopsAllowed = 1;
 	*GetPlayerFelony(&MainPlayer) = 2500;
 
-	s.ctx->jer_log(s.ctx, "[antfarm] rogue car #%d went rogue — cops engaged\n", s.targetCarId);
+	s.ctx->jer_log(s.ctx, "[antfarm] rogue car went rogue — cops engaged\n");
 }
 
 static void AntFarmEndLead(void)
@@ -1370,6 +1415,10 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	/* scenery: pull in for a clear sight-line, push out of buildings */
 	AntFarmSceneryPass(&cam, &s.aimPos);
 
+	/* never wander past the world edge into the nodraw skybox extremes */
+	AntFarmClampToWorld(&cam);
+	AntFarmClampToWorld(&s.aimPos);
+
 	/* keep the smoothed state consistent so next frame eases from the
 	 * corrected position, then re-aim at the unchanged focus */
 	s.camPos = cam;
@@ -1599,7 +1648,8 @@ static int AntLeadToggle(void* userdata, int direction)
 	return JER_PAUSE_QUIT_NONE;
 }
 
-static const JER_PAUSE_MENU_ITEM antSettingsItems[] = {
+static const JER_PAUSE_MENU_ITEM antMenuItems[] = {
+	{ NULL, AntMenuLabel, AntMenuToggle, NULL, NULL, 0 },
 	{ NULL, AntIntervalLabel, AntIntervalAdjust, NULL, NULL, 1 },
 	{ NULL, AntChaseLabel,    AntChaseToggle,    NULL, NULL, 0 },
 	{ NULL, AntStaticLabel,   AntStaticToggle,   NULL, NULL, 0 },
@@ -1609,14 +1659,7 @@ static const JER_PAUSE_MENU_ITEM antSettingsItems[] = {
 	{ NULL, AntLeadLabel,     AntLeadToggle,     NULL, NULL, 0 },
 };
 
-static const JER_PAUSE_MENU antSettingsMenu = { "Ant Farm Settings", antSettingsItems, 7 };
-
-static const JER_PAUSE_MENU_ITEM antMenuItems[] = {
-	{ NULL, AntMenuLabel, AntMenuToggle, NULL, NULL, 0 },
-	{ "Settings", NULL, NULL, NULL, &antSettingsMenu, 0 },
-};
-
-static const JER_PAUSE_MENU antFarmMenu = { "Ant Farm", antMenuItems, 2 };
+static const JER_PAUSE_MENU antFarmMenu = { "Ant Farm", antMenuItems, 8 };
 
 /* ------------------------------------------------------------------ */
 /* boot + entry                                                       */
