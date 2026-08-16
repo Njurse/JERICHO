@@ -88,7 +88,7 @@ int map_z_shift = 0;
 
 static unsigned short MapTPage = 0;
 
-static int gUseRotatedMap = 0;
+int gUseRotatedMap = 0;
 
 int gMapXOffset = 249;
 int gMapYOffset = 181;
