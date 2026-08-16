@@ -1002,8 +1002,8 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			int camOffFromCentre = s.shotSideSign * (count * 512 + s.shotMargin);
 			int side = (heading + (s.shotSideSign > 0 ? 1024 : 3072)) & 0xfff;
 			int off = camOffFromCentre - laneSideFromC;
-			int sway = RSIN((now / 7) & 4095) >> 8;
-			int bobY = RSIN((now / 13) & 4095) >> 9;
+			int sway = RSIN((now / 7) & 4095) >> 9;
+			int bobY = RSIN((now / 13) & 4095) >> 10;
 
 			if (s.shotOrbitAmp > 0 && s.style == ANTFARM_STYLE_TRIPOD)
 			{
@@ -1072,7 +1072,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 		}
 
 		s.spool = s.targetPos;
-		lerp = 14;
+		lerp = 12;
 	}
 
 	s.aimPos = aim;
@@ -1090,10 +1090,16 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 		s.camPos.vz += (desired.vz - s.camPos.vz) * lerp / 100;
 	}
 
-	PointAtTarget(&s.camPos, &aim, &s.camAngle);
+	/* the hook owns s.camAngle (temporal smoothing) — only return the raw
+	 * angle here; the early-return paths still hand out the last-good one */
+	{
+		SVECTOR ang;
 
-	*outPos = s.camPos;
-	*outAngle = s.camAngle;
+		PointAtTarget(&s.camPos, &aim, &ang);
+
+		*outPos = s.camPos;
+		*outAngle = ang;
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -1282,6 +1288,8 @@ static void AntFarmCheckF9(void)
 /* ------------------------------------------------------------------ */
 
 /* every world step: F9 toggle, cut state machine, rogue-car lifecycle */
+static void AntFarmPinPlayerCar(void);
+
 static int AntFarmOnFrame(void* userdata, void* args)
 {
 	unsigned long now;
@@ -1544,6 +1552,12 @@ static int AntFarmOnFrame(void* userdata, void* args)
 		break;
 	}
 
+	/* freeze the hidden player car BEFORE the sim step runs, so the
+	 * physics can never accumulate gravity/motion on it (the CAMERA hook
+	 * re-pins it after the step, for the draw) */
+	if (s.active)
+		AntFarmPinPlayerCar();
+
 	return JER_RESULT_CONTINUE;
 }
 
@@ -1608,6 +1622,18 @@ static void AntFarmPinPlayerCar(void)
 	cp->st.n.angularVelocity[0] = 0;
 	cp->st.n.angularVelocity[1] = 0;
 	cp->st.n.angularVelocity[2] = 0;
+
+	cp->hd.speed = 0;	/* suspend physics: nothing to roll or fall with */
+
+	/* never let the (hidden) car sit below the ground plane */
+	{
+		int g = AntFarmMapHeight(cp->hd.where.t[0], cp->hd.where.t[2]);
+
+		if (cp->hd.where.t[1] < g)
+			cp->hd.where.t[1] = g;
+
+		cp->st.n.fposition[1] = cp->hd.where.t[1] << 4;
+	}
 
 	if (cp->controlType != CONTROL_TYPE_NONE)
 	{
@@ -1738,15 +1764,66 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	/* never wander past the world edge into the nodraw skybox extremes */
 	AntFarmClampToWorld(&cam);
 	AntFarmClampToWorld(&s.aimPos);
-	AntFarmClampAboveGround(&cam);
 	AntFarmClampAboveGround(&s.aimPos);
+
+	/* keep the camera clear of the ground/kerb — the LOS pull-back can drag
+	 * it down to the road surface, so raise it to a comfortable viewing
+	 * height whenever the raycast corrections left it too low */
+	{
+		int ground = -AntFarmMapHeight(cam.vx, cam.vz);
+
+		if (cam.vy > ground - 90)
+			cam.vy = ground - 90;
+	}
 
 	/* keep the smoothed state consistent so next frame eases from the
 	 * corrected position, then re-aim at the unchanged focus */
 	s.camPos = cam;
 
-	PointAtTarget(&cam, &s.aimPos, &ang);
-	s.camAngle = ang;
+	/* smooth the rotation: recompute the aim from the corrected position,
+	 * then lerp the angles (0..4095 wraparound) instead of snapping to the
+	 * fresh value — kills the per-frame angle shakiness from position jitter */
+	{
+		SVECTOR tgt;
+
+		PointAtTarget(&cam, &s.aimPos, &tgt);
+
+		{
+			int cur, d;
+
+			cur = s.camAngle.vx;
+			d = tgt.vx - cur;
+
+			if (d > 2048)
+				d -= 4096;
+			else if (d < -2048)
+				d += 4096;
+
+			s.camAngle.vx = (short)((cur + d * 18 / 100) & 0xfff);
+
+			cur = s.camAngle.vy;
+			d = tgt.vy - cur;
+
+			if (d > 2048)
+				d -= 4096;
+			else if (d < -2048)
+				d += 4096;
+
+			s.camAngle.vy = (short)((cur + d * 18 / 100) & 0xfff);
+
+			cur = s.camAngle.vz;
+			d = tgt.vz - cur;
+
+			if (d > 2048)
+				d -= 4096;
+			else if (d < -2048)
+				d += 4096;
+
+			s.camAngle.vz = (short)((cur + d * 18 / 100) & 0xfff);
+		}
+
+		ang = s.camAngle;
+	}
 
 	*(VECTOR*)a->cameraPosition = cam;
 	*(SVECTOR*)a->cameraAngle = ang;
