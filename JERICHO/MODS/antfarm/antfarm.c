@@ -364,46 +364,44 @@ static int AntFarmRegionHasData(int region)
 	return spoolinfo_offsets[region] != 0xffff;
 }
 
-/* pick a road in the ALREADY-LOADED area around the player so the very
- * first shot starts instantly and can never be a void (subsequent cuts tour
- * far areas through the stream-gated CUT) */
+/* pick the NEAREST usable straight to the camera so the very first shot
+ * starts instantly on a real road that is always inside the loaded area —
+ * the camera ALWAYS moves on enable, it never keeps the player's old view
+ * until the first cut. (Subsequent cuts tour far areas via the stream-gated
+ * CUT.) */
 static void AntFarmPickNearArea(void)
 {
+	int bestIdx = -1;
+	long long bestD2 = -1;
 	int i;
 
-	for (i = 0; i < 12; i++)
+	for (i = 0; i < NumDriver2Straights; i++)
 	{
-		int idx = AntFarmPickSurface(400);
-		DRIVER2_STRAIGHT* rd;
+		DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[i];
+		long long dx, dz, d2;
 
-		if (idx < 0)
-			break;
+		if (rd->length <= 400 || rd->angle >= 2048)
+			continue;	/* unusable for a shot (GetNodePos writes x/z) */
 
-		rd = &Driver2StraightsPtr[idx];
+		dx = (long long)rd->Midx - camera_position.vx;
+		dz = (long long)rd->Midz - camera_position.vz;
+		d2 = dx * dx + dz * dz;
 
+		if (bestD2 < 0 || d2 < bestD2)
 		{
-			long long dx = (long long)rd->Midx - camera_position.vx;
-			long long dz = (long long)rd->Midz - camera_position.vz;
-			long long d2 = dx * dx + dz * dz;
-
-			/* near = comfortably inside the loaded draw radius */
-			if (d2 <= (long long)30000 * 30000)
-			{
-				s.roadSurfId = idx;
-				s.areaPos.vx = rd->Midx;
-				s.areaPos.vy = AntFarmMapHeight(rd->Midx, rd->Midz);
-				s.areaPos.vz = rd->Midz;
-				AntFarmClampToWorld(&s.areaPos);
-				return;
-			}
+			bestD2 = d2;
+			bestIdx = i;
 		}
 	}
 
-	/* fallback: the current position itself */
-	s.roadSurfId = -1;
-	s.areaPos.vx = camera_position.vx;
-	s.areaPos.vy = -camera_position.vy;	/* render -> world Y */
-	s.areaPos.vz = camera_position.vz;
+	if (bestIdx < 0)
+		return;	/* no usable road anywhere — keep the current view (impossible in a city) */
+
+	s.roadSurfId = bestIdx;
+	s.areaPos.vx = Driver2StraightsPtr[bestIdx].Midx;
+	s.areaPos.vy = AntFarmMapHeight(s.areaPos.vx, s.areaPos.vz);
+	s.areaPos.vz = Driver2StraightsPtr[bestIdx].Midz;
+	AntFarmClampToWorld(&s.areaPos);
 }
 
 /* pick a straight at least FAR_DIST from the current focus, so every cut
@@ -989,22 +987,23 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 		if (s.style == ANTFARM_STYLE_OVERHEAD || s.style == ANTFARM_STYLE_TRIPOD)
 		{
+			/* PATH-SAMPLED placement: start from the sampled lane point
+			 * (GetNodePos, already on the road) and offset it to exactly
+			 * margin beyond the road EDGE on the chosen side — using the
+			 * lane heading's perpendicular, which is the SAME convention
+			 * GetNodePos uses (perp unit = (RSIN(h+1024), RCOS(h+1024))).
+			 * Correct for any road width and for curves, where a fixed
+			 * centreline formula would drift off the path. */
 			DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[s.roadSurfId];
-			int halfW = ROAD_LANES_COUNT(rd) * 512;
-			int margin = s.shotMargin;	/* stable per shot, clear of the kerb */
+			int count = ROAD_LANES_COUNT(rd);
+			int sideShift = count * 512 - (s.roadLane * 512 + 256);
+			int dirBit = ROAD_LANE_DIR(rd, s.roadLane);
+			int laneSideFromC = sideShift * ((dirBit == 0) ? 1 : -1);
+			int camOffFromCentre = s.shotSideSign * (count * 512 + s.shotMargin);
 			int side = (heading + (s.shotSideSign > 0 ? 1024 : 3072)) & 0xfff;
+			int off = camOffFromCentre - laneSideFromC;
 			int sway = RSIN((now / 7) & 4095) >> 8;
 			int bobY = RSIN((now / 13) & 4095) >> 9;
-			VECTOR centre = { 0, 0, 0 };
-
-			/* camera sits exactly halfWidth+margin off the road CENTRELINE
-			 * (never inside the carriageway), so the framing is geometry-
-			 * correct on any road width. Note: GetNodePos measures straights
-			 * from the CENTRE (distFromCentre = distAlong - length/2), so
-			 * the centreline must use the same convention. */
-			centre.vx = rd->Midx + FIXEDH((s.roadDist - rd->length / 2) * RSIN(rd->angle));
-			centre.vz = rd->Midz + FIXEDH((s.roadDist - rd->length / 2) * RCOS(rd->angle));
-			centre.vy = roadPt.vy;	/* ground level at this point */
 
 			if (s.shotOrbitAmp > 0 && s.style == ANTFARM_STYLE_TRIPOD)
 			{
@@ -1016,9 +1015,9 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 				side = (side + 4096 + sweep) & 0xfff;
 			}
 
-			desired.vx = centre.vx + FIXEDH(RSIN(side) * (halfW + margin)) + sway;
-			desired.vy = centre.vy - s.shotHeight + bobY;
-			desired.vz = centre.vz + FIXEDH(RCOS(side) * (halfW + margin));
+			desired.vx = roadPt.vx + FIXEDH(RSIN(side) * off) + sway;
+			desired.vy = roadPt.vy - s.shotHeight + bobY;
+			desired.vz = roadPt.vz + FIXEDH(RCOS(side) * off);
 
 			int aimDist = s.junctionCorner ? (s.roadDist - s.shotLookAhead)
 						     : (s.roadDist + s.shotLookAhead);
