@@ -235,17 +235,17 @@ enum
 	SBX_PAGE_COUNT
 };
 
-#define SBX_MAIN_ITEMS 7	/* Vehicle, Spawn, World, Cheats, Replace Pause, Open Pause, Close */
+#define SBX_MAIN_ITEMS 8	/* Vehicle, Spawn, World, Cheats, Replace Pause, Open Pause, Teleport, Close */
 #define SBX_VEHICLE_ITEMS 6	/* Repair, Upright, Set Damage, Set Felony, Player AI Mode, Tune Car */
 #define SBX_SPAWN_ITEMS 5	/* Position, Car ID, Spawn Car, Object, AI Car */
 #define SBX_WORLD_ITEMS 2	/* Time of Day, Weather */
 #define SBX_AICAR_ITEMS 7	/* Vehicle, Mode, Param, Position, Spawn, Remove, Back */
 #define SBX_CHEATS_ITEMS 9	/* invincibility, immunity, secret car, jericho, mini, bonus, buddha, unlock all, back */
-#define SBX_TUNE_ITEMS 12	/* power, traction, mass, suspension, cog x/y/z, twist x/y/z, wheelbase, track */
+#define SBX_TUNE_ITEMS 13	/* multiplier, power, traction, mass, suspension, cog x/y/z, twist x/y/z, wheelbase, track */
 
 static const char* const gSandboxMainItems[SBX_MAIN_ITEMS] = {
 	"Vehicle Properties", "Spawn Menu", "World Settings", "Cheats Menu",
-	"Replace Pause Menu: OFF", "Open Pause Menu", "Close"
+	"Replace Pause Menu: OFF", "Open Pause Menu", "Teleport to Map", "Close"
 };
 static const char* const gSandboxVehicleItems[SBX_VEHICLE_ITEMS] = {
 	"Repair Car", "Make Car Upright", "Set Damage", "Set Felony", "Player AI Mode", "Tune Car"
@@ -261,7 +261,7 @@ static const char* const gSandboxCheatsItems[SBX_CHEATS_ITEMS] = {
 	"Mini Cars", "Unlock Bonus Cars", "Buddha Mode", "Unlock All", "Back"
 };
 static const char* const gSandboxTuneItems[SBX_TUNE_ITEMS] = {
-	"Power Ratio", "Traction", "Mass", "Suspension", "COG X", "COG Y", "COG Z",
+	"Spec Multiplier", "Power Ratio", "Traction", "Mass", "Suspension", "COG X", "COG Y", "COG Z",
 	"Twist X", "Twist Y", "Twist Z", "Wheelbase", "Track Width"
 };
 
@@ -300,6 +300,7 @@ static CAR_COSMETICS gSandboxOrigCos;	/* saved model cosmetics (restored on exit
 static CAR_COSMETICS* gSandboxTunedCos;	/* points at car_cosmetics[model] while tuning */
 static int gSandboxTunedActive;
 static int gSandboxTunedModel;		/* model the tuning started on */
+static int gSandboxTuneMult = 1;	/* spec multiplier (1..16) rescaling the strength specs */
 
 /* a private OT for the preview: the model renders on its own layer (between
  * the menu text at ot+0 and the background panel at ot+3) instead of at
@@ -337,6 +338,9 @@ static const char* gSandboxObjectNames[SBX_SMASHABLE_COUNT];
 /* the per-car tuning helpers (defined below) — the close path needs them */
 static void SandboxTuneEnter(void);
 static void SandboxTuneRestore(void);
+
+/* the map-teleport starter (defined below) — the main menu opens it */
+static int SandboxTeleportStart(void* userdata, int direction);
 
 /* first visit to the spawn page: default the Car ID to the player's own
  * car (the historical Spawn Car behavior) */
@@ -489,6 +493,7 @@ static void SandboxTuneEnter(void)
 	gSandboxOrigCos = car_cosmetics[pc->ap.model];
 	gSandboxTunedCos = &car_cosmetics[pc->ap.model];
 	gSandboxTunedModel = pc->ap.model;
+	gSandboxTuneMult = 1;	/* each tune session starts unscaled */
 	gSandboxTunedActive = 1;
 }
 
@@ -505,6 +510,30 @@ static void SandboxTuneRestore(void)
 	car_cosmetics[gSandboxTunedModel] = gSandboxOrigCos;
 
 	gSandboxTunedActive = 0;
+}
+
+/* rescale every strength spec (not the geometry: COG / wheelbase / track
+ * are positions) from the ORIGINAL values, so changing the multiplier
+ * never compounds on top of manual tweaks — it always lands on orig*mult */
+static void SandboxTuneApplyMult(void)
+{
+#define SBX_MULT_FIELD(field) \
+	do { \
+		int v = gSandboxOrigCos.field * gSandboxTuneMult; \
+		if (v > 32000) v = 32000; \
+		else if (v < -32000) v = -32000; \
+		gSandboxTunedCos->field = (short)v; \
+	} while (0)
+
+	SBX_MULT_FIELD(powerRatio);
+	SBX_MULT_FIELD(traction);
+	SBX_MULT_FIELD(susCoeff);
+	SBX_MULT_FIELD(mass);
+	SBX_MULT_FIELD(twistRateX);
+	SBX_MULT_FIELD(twistRateY);
+	SBX_MULT_FIELD(twistRateZ);
+
+#undef SBX_MULT_FIELD
 }
 
 static void SandboxTuneAdjust(CAR_DATA* pc, int cursor, int step)
@@ -525,22 +554,32 @@ static void SandboxTuneAdjust(CAR_DATA* pc, int cursor, int step)
 
 	switch (cursor)
 	{
-	case 0: p = &gSandboxTunedCos->powerRatio; min = 0; max = 4096; break;
-	case 1: p = &gSandboxTunedCos->traction; min = 0; max = 4096; break;
-	case 2: p = &gSandboxTunedCos->mass; min = 16; max = 4096; break;
-	case 3: p = &gSandboxTunedCos->susCoeff; min = 0; max = 4096; break;
-	case 4: p = &gSandboxTunedCos->cog.vx; min = -1024; max = 1024; break;
-	case 5: p = &gSandboxTunedCos->cog.vy; min = -1024; max = 1024; break;
-	case 6: p = &gSandboxTunedCos->cog.vz; min = -1024; max = 1024; break;
-	case 7: p = &gSandboxTunedCos->twistRateX; min = 0; max = 4096; break;
-	case 8: p = &gSandboxTunedCos->twistRateY; min = 0; max = 4096; break;
-	case 9: p = &gSandboxTunedCos->twistRateZ; min = 0; max = 4096; break;
-	case 10: p = &gSandboxTunedCos->wheelDisp[0].vz; min = 0; max = 4096; break;
-	case 11: p = &gSandboxTunedCos->wheelDisp[0].vx; min = 0; max = 4096; break;
+	case 0:	/* Spec Multiplier: rescale all strength specs from the originals */
+		gSandboxTuneMult += step;
+
+		if (gSandboxTuneMult < 1)
+			gSandboxTuneMult = 16;
+		else if (gSandboxTuneMult > 16)
+			gSandboxTuneMult = 1;
+
+		SandboxTuneApplyMult();
+		return;
+	case 1: p = &gSandboxTunedCos->powerRatio; min = 0; max = 32000; break;
+	case 2: p = &gSandboxTunedCos->traction; min = 0; max = 32000; break;
+	case 3: p = &gSandboxTunedCos->mass; min = 16; max = 32000; break;
+	case 4: p = &gSandboxTunedCos->susCoeff; min = 0; max = 32000; break;
+	case 5: p = &gSandboxTunedCos->cog.vx; min = -1024; max = 1024; break;
+	case 6: p = &gSandboxTunedCos->cog.vy; min = -1024; max = 1024; break;
+	case 7: p = &gSandboxTunedCos->cog.vz; min = -1024; max = 1024; break;
+	case 8: p = &gSandboxTunedCos->twistRateX; min = 0; max = 32000; break;
+	case 9: p = &gSandboxTunedCos->twistRateY; min = 0; max = 32000; break;
+	case 10: p = &gSandboxTunedCos->twistRateZ; min = 0; max = 32000; break;
+	case 11: p = &gSandboxTunedCos->wheelDisp[0].vz; min = 0; max = 4096; break;
+	case 12: p = &gSandboxTunedCos->wheelDisp[0].vx; min = 0; max = 4096; break;
 	default: return;
 	}
 
-	if (cursor == 10)
+	if (cursor == 11)
 	{
 		int i;
 
@@ -560,7 +599,7 @@ static void SandboxTuneAdjust(CAR_DATA* pc, int cursor, int step)
 		return;
 	}
 
-	if (cursor == 11)
+	if (cursor == 12)
 	{
 		int i;
 
@@ -671,19 +710,23 @@ static const char* SandboxTuneLabel(int cursor)
 {
 	static char buf[32];
 
+	if (gSandboxTunedCos == NULL)
+		return gSandboxTuneItems[0];	/* defensive: no active tune target */
+
 	switch (cursor)
 	{
-	case 0: sprintf(buf, "Power Ratio: %d", gSandboxTunedCos->powerRatio); break;
-	case 1: sprintf(buf, "Traction: %d", gSandboxTunedCos->traction); break;
-	case 2: sprintf(buf, "Mass: %d", gSandboxTunedCos->mass); break;
-	case 3: sprintf(buf, "Suspension: %d", gSandboxTunedCos->susCoeff); break;
-	case 4: sprintf(buf, "COG X: %d", gSandboxTunedCos->cog.vx); break;
-	case 5: sprintf(buf, "COG Y: %d", gSandboxTunedCos->cog.vy); break;
-	case 6: sprintf(buf, "COG Z: %d", gSandboxTunedCos->cog.vz); break;
-	case 7: sprintf(buf, "Twist X: %d", gSandboxTunedCos->twistRateX); break;
-	case 8: sprintf(buf, "Twist Y: %d", gSandboxTunedCos->twistRateY); break;
-	case 9: sprintf(buf, "Twist Z: %d", gSandboxTunedCos->twistRateZ); break;
-	case 10: sprintf(buf, "Wheelbase: %d", gSandboxTunedCos->wheelDisp[0].vz - gSandboxTunedCos->wheelDisp[1].vz); break;
+	case 0: sprintf(buf, "Spec Multiplier: x%d", gSandboxTuneMult); break;
+	case 1: sprintf(buf, "Power Ratio: %d", gSandboxTunedCos->powerRatio); break;
+	case 2: sprintf(buf, "Traction: %d", gSandboxTunedCos->traction); break;
+	case 3: sprintf(buf, "Mass: %d", gSandboxTunedCos->mass); break;
+	case 4: sprintf(buf, "Suspension: %d", gSandboxTunedCos->susCoeff); break;
+	case 5: sprintf(buf, "COG X: %d", gSandboxTunedCos->cog.vx); break;
+	case 6: sprintf(buf, "COG Y: %d", gSandboxTunedCos->cog.vy); break;
+	case 7: sprintf(buf, "COG Z: %d", gSandboxTunedCos->cog.vz); break;
+	case 8: sprintf(buf, "Twist X: %d", gSandboxTunedCos->twistRateX); break;
+	case 9: sprintf(buf, "Twist Y: %d", gSandboxTunedCos->twistRateY); break;
+	case 10: sprintf(buf, "Twist Z: %d", gSandboxTunedCos->twistRateZ); break;
+	case 11: sprintf(buf, "Wheelbase: %d", gSandboxTunedCos->wheelDisp[0].vz - gSandboxTunedCos->wheelDisp[1].vz); break;
 	default: sprintf(buf, "Track: %d", gSandboxTunedCos->wheelDisp[2].vx - gSandboxTunedCos->wheelDisp[0].vx); break;
 	}
 
@@ -921,7 +964,13 @@ static void SandboxMenuDoAction(int page, int cursor)
 			SandboxMenuClose();
 			ShowPauseMenu(PAUSEMODE_PAUSE);
 			break;
-		case 6: SandboxMenuClose(); break;
+		case 6:
+			/* close the overlay and open the fullscreen map teleport (the
+			 * world keeps running; the map hook takes over the pad) */
+			SandboxMenuClose();
+			SandboxTeleportStart(NULL, 0);
+			break;
+		case 7: SandboxMenuClose(); break;
 		}
 		break;
 
@@ -938,10 +987,13 @@ static void SandboxMenuDoAction(int page, int cursor)
 		case 3: gSandboxAdjust = 1; break;				/* Set Felony */
 		case 4: SandboxSetPlayerAiMode((g_PlayerControlMode + 1) & 3); break;
 		case 5:	/* Tune Car — edit a private cosmetic copy of this car */
-			SandboxTuneEnter();
-			gSandboxPage = SBX_PAGE_TUNE;
-			gSandboxCursor = 0;
-			gSandboxSubPage = 0;
+			if (pc != NULL)
+			{
+				SandboxTuneEnter();
+				gSandboxPage = SBX_PAGE_TUNE;
+				gSandboxCursor = 0;
+				gSandboxSubPage = 0;
+			}
 			break;
 		}
 		break;
@@ -1251,57 +1303,54 @@ static void SandboxMenuInput(int padnew)
 	if (padnew & (MPAD_D_LEFT | MPAD_D_RIGHT))
 		SandboxAdjustItem((padnew & MPAD_D_LEFT) ? -1 : 1);
 
-	/* page navigation: L1/R1 first flip this page's sub-pages, then cycle
-	 * the category pages; Triangle goes back */
-	if (gSandboxPage == SBX_PAGE_MAIN)
+	/* page navigation: L1/R1 flip this page's sub-pages (the main page has
+	 * 8 items now, so it paginates like the submenus), then cycle the
+	 * category pages from a single-page submenu; Triangle goes back
+	 * (closes from the main page) */
+	if (padnew & MPAD_TRIANGLE)
 	{
-		if (padnew & MPAD_TRIANGLE)
+		if (gSandboxPage == SBX_PAGE_MAIN)
 		{
 			SandboxMenuClose();
 			return;
 		}
+
+		gSandboxPage = SBX_PAGE_MAIN;
+		gSandboxCursor = 0;
+		gSandboxSubPage = 0;
+		return;
 	}
-	else
+
+	if (padnew & (MPAD_L1 | MPAD_R1))
 	{
-		if (padnew & MPAD_TRIANGLE)
+		int subPageCount = SandboxPageCount(gSandboxPage);
+
+		if (subPageCount > 1)
 		{
-			gSandboxPage = SBX_PAGE_MAIN;
+			if (padnew & MPAD_L1)
+			{
+				if (gSandboxSubPage > 0)
+					gSandboxSubPage--;
+			}
+			else if (gSandboxSubPage < subPageCount - 1)
+				gSandboxSubPage++;
+
+			gSandboxCursor = SandboxPageVisibleStart(gSandboxPage);
+		}
+		else
+		{
+			pageCount = SBX_PAGE_OBJECTS - SBX_PAGE_VEHICLE;	/* 4 submenus */
+
+			if (padnew & MPAD_L1)
+				gSandboxPage = SBX_PAGE_VEHICLE + ((gSandboxPage - SBX_PAGE_VEHICLE - 1 + pageCount) % pageCount);
+			else
+				gSandboxPage = SBX_PAGE_VEHICLE + ((gSandboxPage - SBX_PAGE_VEHICLE + 1) % pageCount);
+
 			gSandboxCursor = 0;
 			gSandboxSubPage = 0;
-			return;
 		}
 
-		if (padnew & (MPAD_L1 | MPAD_R1))
-		{
-			int subPageCount = SandboxPageCount(gSandboxPage);
-
-			if (subPageCount > 1)
-			{
-				if (padnew & MPAD_L1)
-				{
-					if (gSandboxSubPage > 0)
-						gSandboxSubPage--;
-				}
-				else if (gSandboxSubPage < subPageCount - 1)
-					gSandboxSubPage++;
-
-				gSandboxCursor = SandboxPageVisibleStart(gSandboxPage);
-			}
-			else
-			{
-				pageCount = SBX_PAGE_OBJECTS - SBX_PAGE_VEHICLE;	/* 4 submenus */
-
-				if (padnew & MPAD_L1)
-					gSandboxPage = SBX_PAGE_VEHICLE + ((gSandboxPage - SBX_PAGE_VEHICLE - 1 + pageCount) % pageCount);
-				else
-					gSandboxPage = SBX_PAGE_VEHICLE + ((gSandboxPage - SBX_PAGE_VEHICLE + 1) % pageCount);
-
-				gSandboxCursor = 0;
-				gSandboxSubPage = 0;
-			}
-
-			return;
-		}
+		return;
 	}
 
 	itemCount = SandboxPageVisibleCount(gSandboxPage);
@@ -1772,7 +1821,7 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 
 	pc = SandboxPlayerCar();
 
-	if (gSandboxPage == SBX_PAGE_OBJECTS || gSandboxPage == SBX_PAGE_TUNE)
+	if (gSandboxPage == SBX_PAGE_OBJECTS)
 	{
 		SandboxDrawPreview();
 		return JER_RESULT_CONTINUE;
@@ -1840,12 +1889,17 @@ static int SandboxOnDrawOverlay(void* userdata, void* args)
 			SandboxPrint(34, 98 + i * SBX_LINE, text);
 		}
 
-		if (gSandboxPage != SBX_PAGE_MAIN)
-		{
-			int subPages = SandboxPageCount(gSandboxPage);
+		int subPages = SandboxPageCount(gSandboxPage);
 
+		if (gSandboxPage != SBX_PAGE_MAIN || subPages > 1)
+		{
 			if (subPages > 1)
-				sprintf(text, "(L1/R1: page %d/%d, Triangle: back)", gSandboxSubPage + 1, subPages);
+			{
+				if (gSandboxPage == SBX_PAGE_MAIN)
+					sprintf(text, "(L1/R1: page %d/%d, Triangle: close)", gSandboxSubPage + 1, subPages);
+				else
+					sprintf(text, "(L1/R1: page %d/%d, Triangle: back)", gSandboxSubPage + 1, subPages);
+			}
 			else
 				sprintf(text, "(L1/R1: menu page %d/5, Triangle: back)", gSandboxPage - SBX_PAGE_VEHICLE + 1);
 
@@ -1938,9 +1992,6 @@ static int SandboxActivateMenu(void* userdata, int direction)
 
 	return JER_PAUSE_QUIT_NONE;
 }
-
-/* forward (defined with the teleport code below) */
-static int SandboxTeleportStart(void* userdata, int direction);
 
 static const JER_PAUSE_MENU_ITEM SandboxMenuItems[] =
 {
@@ -2047,7 +2098,9 @@ static void SandboxDrawTeleportCursor(void)
 	int cz = 128 + gSandboxTpCursorZ;
 	char buf[64];
 
-	/* crosshair: two thin bars */
+	/* crosshair: two thin bars. Both go into the NEAREST OT bucket (0) —
+	 * the map tiles/compass/targets draw at bucket 1+ or immediate, so
+	 * without this the cursor would sit under them. */
 	poly = (POLY_F4*)current->primptr;
 	setPolyF4(poly);
 	poly->x0 = cx - 10; poly->y0 = cz - 1;
@@ -2055,7 +2108,7 @@ static void SandboxDrawTeleportCursor(void)
 	poly->x2 = cx - 10; poly->y2 = cz + 1;
 	poly->x3 = cx + 10; poly->y3 = cz + 1;
 	poly->r0 = 128; poly->g0 = 255; poly->b0 = 128;
-	addPrim(current->ot + 3, poly);
+	addPrim(current->ot, poly);
 	current->primptr += sizeof(POLY_F4);
 
 	poly = (POLY_F4*)current->primptr;
@@ -2065,7 +2118,7 @@ static void SandboxDrawTeleportCursor(void)
 	poly->x2 = cx - 1; poly->y2 = cz + 10;
 	poly->x3 = cx + 1; poly->y3 = cz + 10;
 	poly->r0 = 128; poly->g0 = 255; poly->b0 = 128;
-	addPrim(current->ot + 3, poly);
+	addPrim(current->ot, poly);
 	current->primptr += sizeof(POLY_F4);
 
 	snprintf(buf, sizeof(buf), "Teleport: X=%d Z=%d   O = go   /\\ = cancel", gSandboxTpCursorX, gSandboxTpCursorZ);

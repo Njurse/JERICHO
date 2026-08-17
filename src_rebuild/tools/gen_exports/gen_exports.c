@@ -219,6 +219,14 @@ int main(int argc, char** argv)
 				(name[3] == 'E' || name[3] == 'G'))
 				continue;
 
+			/* string-literal COMDATs (??_C@...) are compiler-generated and
+			 * useless to mod DLLs; they churn on EVERY rebuild (time.c's
+			 * __DATE__/__TIME__ change each compile), so a committed def
+			 * would go stale and break the link */
+			if (name[0] == '?' && name[1] == '?' && name[2] == '_' &&
+				name[3] == 'C' && name[4] == '@')
+				continue;
+
 			fprintf(out, "\t%s%s\n", name, (isCode || kindFn) ? "" : " DATA");
 			emitted++;
 
