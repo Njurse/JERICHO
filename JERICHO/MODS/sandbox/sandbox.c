@@ -294,9 +294,10 @@ static int gSandboxAIModel;		/* internal car model to spawn */
 static int gSandboxAIMode;		/* 0 = civilian, 1 = cop, 2 = lead */
 static int gSandboxAIParam;		/* mode-specific parameter */
 
-/* per-car tuning: a temporary CAR_COSMETICS copy so edits never touch the
- * shared car_cosmetics[model] that every car of the same model uses */
-static CAR_COSMETICS gSandboxOrigCos;	/* saved model cosmetics (restored on exit) */
+/* per-model tuning: pristine cosmetics captured ONCE per model per session —
+ * the multiplier always scales from these, never from the live (tuned) values */
+static CAR_COSMETICS gSandboxOrigCos[MAX_CAR_RESIDENT_MODELS];
+static u_char gSandboxOrigValid[MAX_CAR_RESIDENT_MODELS];
 static CAR_COSMETICS* gSandboxTunedCos;	/* points at car_cosmetics[model] while tuning */
 static int gSandboxTunedActive;
 static int gSandboxTunedModel;		/* model the tuning started on */
@@ -491,10 +492,17 @@ static void SandboxTuneEnter(void)
 	if (pc == NULL)
 		return;
 
-	gSandboxOrigCos = car_cosmetics[pc->ap.model];
+	/* capture the pristine cosmetics once per model per session — never
+	 * overwrite them, or the persisted tuning would feed the multiplier
+	 * (a feedback loop that makes normal stats unrecoverable) */
+	if (!gSandboxOrigValid[pc->ap.model])
+	{
+		gSandboxOrigCos[pc->ap.model] = car_cosmetics[pc->ap.model];
+		gSandboxOrigValid[pc->ap.model] = 1;
+	}
+
 	gSandboxTunedCos = &car_cosmetics[pc->ap.model];
 	gSandboxTunedModel = pc->ap.model;
-	gSandboxTuneMult = 1;	/* each tune session starts unscaled */
 	gSandboxTunedActive = 1;
 }
 
@@ -505,10 +513,9 @@ static void SandboxTuneRestore(void)
 	if (!gSandboxTunedActive)
 		return;
 
-	/* always restore the model we tuned: the tune page runs with the world
-	 * live, so the player car may be wrecked/gone by now — the SHARED
-	 * cosmetics must not stay edited for the rest of the level */
-	car_cosmetics[gSandboxTunedModel] = gSandboxOrigCos;
+	/* restore the model we tuned to its PRISTINE values (only reached on a
+	 * new level/game start — tuning persists within the session) */
+	car_cosmetics[gSandboxTunedModel] = gSandboxOrigCos[gSandboxTunedModel];
 
 	gSandboxTunedActive = 0;
 }
@@ -518,9 +525,11 @@ static void SandboxTuneRestore(void)
  * never compounds on top of manual tweaks — it always lands on orig*mult */
 static void SandboxTuneApplyMult(void)
 {
+	CAR_COSMETICS* orig = &gSandboxOrigCos[gSandboxTunedModel];
+
 #define SBX_MULT_FIELD(field) \
 	do { \
-		int v = gSandboxOrigCos.field * gSandboxTuneMult; \
+		int v = orig->field * gSandboxTuneMult; \
 		if (v > 32000) v = 32000; \
 		else if (v < -32000) v = -32000; \
 		gSandboxTunedCos->field = (short)v; \
@@ -1441,6 +1450,11 @@ static int SandboxOnGameStart(void* userdata, void* args)
 		gShowMap = gSandboxSavedShowMap;
 		gDoOverlays = gSandboxSavedDoOverlays;
 	}
+
+	/* new level = new session: drop the pristine-cosmetics cache and the
+	 * multiplier so the next tune session starts from the level's values */
+	memset(gSandboxOrigValid, 0, sizeof(gSandboxOrigValid));
+	gSandboxTuneMult = 1;
 
 	return JER_RESULT_CONTINUE;
 }
