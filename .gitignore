@@ -45,4 +45,8 @@ src_rebuild/*.make
 src_rebuild/Makefile
 /.reasonix
 *bin/
-*x64libs/
+*x64libs/*.dll
+*.exp
+*.dll
+*.exp
+/DriverLevelTool

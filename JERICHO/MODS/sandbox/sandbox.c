@@ -63,7 +63,11 @@ static int gSandboxHoldFrames;	/* frames the direction has been held */
 static int gSandboxHoldInterval;	/* current repeat interval (frames) */
 
 extern void StepSim(void);
+
+/* pause.c defines these only in _DEBUG / DEBUG_OPTIONS builds */
+#if defined(_DEBUG) || defined(DEBUG_OPTIONS)
 extern void SetRightWayUp(int direction);
+#endif
 
 /* cars.c exports these but does not declare them in cars.h */
 extern void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR_DATA* cp, int detail);
@@ -925,7 +929,11 @@ static void SandboxMenuDoAction(int page, int cursor)
 		switch (cursor)
 		{
 		case 0: SandboxMenuRepair(); break;
+#if defined(_DEBUG) || defined(DEBUG_OPTIONS)
 		case 1: SetRightWayUp(1); break;
+#else
+		case 1: break;	/* debug-only action in Release builds */
+#endif
 		case 2: gSandboxAdjust = 1; gNoDamage = 0; break;	/* Set Damage — switch the no-damage protection off so it sticks */
 		case 3: gSandboxAdjust = 1; break;				/* Set Felony */
 		case 4: SandboxSetPlayerAiMode((g_PlayerControlMode + 1) & 3); break;

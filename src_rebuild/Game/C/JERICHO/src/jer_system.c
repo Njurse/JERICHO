@@ -1,13 +1,14 @@
 /*
- * jer_system.c — JERICHO runtime: hook registry, dispatch, module
- * activation, override slots, logging.
+ * jer_system.c — JERICHO runtime: module table + activation, hook registry,
+ * dispatch, override slots, logging.
  *
- * Compiled into the game. The generated module registry (JERICHO/gen/
- * jer_registry.c, auto-built by premake from a scan of JERICHO/MODS) lives
- * in the game project and provides the list of compiled-in modules; this
- * file drives them: read JERICHO/CONFIG/modlist.ini (status + load order),
- * activate the enabled modules just-in-time at boot, fire JER_EVENT_BOOT,
- * and dispatch every event the engine fires.
+ * Compiled into the game. Modules are NOT compiled in anymore: the loader
+ * (jer_loader.c) scans JERICHO/MODS at runtime, loads each compiled
+ * <id>.dll/.so and fills the module table. This file drives them: read
+ * JERICHO/CONFIG/modlist.ini (status + load order), activate the enabled
+ * modules just-in-time at boot, fire JER_EVENT_BOOT, and dispatch every
+ * event the engine fires. Adding a mod = drop folder + compiled binary;
+ * no exe rebuild.
  */
 #include "jericho.h"
 #include "jer_internal.h"
@@ -18,9 +19,12 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Generated registry — compiled into the game, links all modules.
- * The registry TU is C++-compiled and wraps its definitions in extern "C",
- * so these declarations must match. */
+#define JER_MAX_HANDLERS 64
+
+/* Generated registry — compiled-in modules (deep mods, auto-scanned by
+ * premake). The registry TU is C++-compiled and wraps its definitions in
+ * extern "C", so these declarations must match. The runtime merges these
+ * with the loader's runtime DLL addons below. */
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -30,10 +34,6 @@ extern const int jer_registry_module_count;
 }
 #endif
 
-#define JER_MAX_HANDLERS 64
-
-typedef struct JER_MODULE JER_MODULE;
-
 typedef struct JER_HANDLER
 {
 	int event;
@@ -42,23 +42,6 @@ typedef struct JER_HANDLER
 	int priority;
 	JER_MODULE* module;	/* owning module (NULL = engine-side handler) */
 } JER_HANDLER;
-
-typedef struct JER_MODULE
-{
-	const char* id;
-	JER_MODULE_ENTRY entry;
-	const char* name;
-	const char* version;
-	const char* author;
-	const char* description;
-	const char* deps;
-	int enabled;
-	int activated;
-	int metadataSet;
-	int sdkVersion;
-	int valid;		/* passes SDK + dependency validation */
-	int defaultEnabled;
-} JER_MODULE;
 
 static JER_HANDLER gHandlers[JER_MAX_HANDLERS];
 static int gHandlerCount;
@@ -104,74 +87,63 @@ static JER_MODULE* jerFindModule(const char* id)
 
 	for (i = 0; i < gModuleCount; i++)
 	{
-		if (gModules[i].id != NULL && strcmp(gModules[i].id, id) == 0)
+		if (gModules[i].id[0] != 0 && strcmp(gModules[i].id, id) == 0)
 			return &gModules[i];
 	}
 
 	return NULL;
 }
 
-static void jerSnapshotModules(void)
+/* (Re)fill the module table: compiled-in modules from the generated
+ * registry first, then runtime-loaded DLL addons from the loader that
+ * aren't already compiled in. Called at boot and on manager reload. */
+static void jerSnapshotModules(const char* rootDir)
 {
-	JER_MODULE prev[JER_MAX_MODULES];
-	int prevCount = gModuleCount;
-	int i;
+	JER_MODULE loaded[JER_MAX_MODULES];
+	int loadedCount;
+	int i, j;
 
-	/* save the current table so display metadata survives a reload: a
-	 * module re-registers its name/version only when its entry RUNS, so
-	 * without this a module disabled from the Mods menu would lose its
-	 * pretty name (falling back to the bare id) on every toggle */
-	memcpy(prev, gModules, sizeof(prev));
-
-	/* modules[] mirrors the generated registry */
+	jer_loader_unload(gModules, gModuleCount);
 	gModuleCount = 0;
 
+	/* 1) compiled-in modules (the game's registry — deep mods) */
 	for (i = 0; i < jer_registry_module_count && gModuleCount < JER_MAX_MODULES; i++)
 	{
 		JER_MODULE* m = &gModules[gModuleCount];
-		JER_MODULE* old = NULL;
-		int j;
 
-		for (j = 0; j < prevCount; j++)
+		memset(m, 0, sizeof(*m));
+		snprintf(m->id, sizeof(m->id), "%s", jer_registry_modules[i].id != NULL ? jer_registry_modules[i].id : "");
+		snprintf(m->name, sizeof(m->name), "%s", m->id);
+		m->entry = jer_registry_modules[i].entry;
+		m->defaultEnabled = jer_registry_modules[i].defaultEnabled;
+		m->valid = 1;
+		gModuleCount++;
+	}
+
+	/* 2) runtime DLL addons not already compiled in */
+	loadedCount = jer_loader_scan(rootDir, loaded, JER_MAX_MODULES);
+
+	for (i = 0; i < loadedCount && gModuleCount < JER_MAX_MODULES; i++)
+	{
+		int dup = 0;
+
+		for (j = 0; j < gModuleCount; j++)
 		{
-			if (prev[j].id != NULL && prev[j].metadataSet &&
-				strcmp(prev[j].id, jer_registry_modules[i].id) == 0)
+			if (strcmp(gModules[j].id, loaded[i].id) == 0)
 			{
-				old = &prev[j];
+				dup = 1;
 				break;
 			}
 		}
 
-		m->id = jer_registry_modules[i].id;
-		m->entry = jer_registry_modules[i].entry;
-		m->defaultEnabled = jer_registry_modules[i].defaultEnabled;
-
-		if (old != NULL)
+		if (dup)
 		{
-			/* same module as before: keep its registered metadata */
-			m->name = old->name;
-			m->version = old->version;
-			m->author = old->author;
-			m->description = old->description;
-			m->deps = old->deps;
-			m->sdkVersion = old->sdkVersion;
-			m->metadataSet = 1;
-		}
-		else
-		{
-			m->name = NULL;
-			m->version = NULL;
-			m->author = NULL;
-			m->description = NULL;
-			m->deps = NULL;
-			m->metadataSet = 0;
-			m->sdkVersion = 0;
+			/* already compiled in — drop the loader copy (and its handle) */
+			jer_loader_unload(&loaded[i], 1);
+			continue;
 		}
 
-		m->enabled = 0;
-		m->activated = 0;
-		m->valid = 1;
-		gModuleCount++;
+		gModules[gModuleCount++] = loaded[i];
 	}
 }
 
@@ -271,15 +243,27 @@ static void jerCtxRegisterModule(JERICHO_CONTEXT* ctx,
 
 	if (m == NULL)
 	{
-		jerLog("[jericho] warning: module \"%s\" registered itself but is not in the build registry\n", id);
+		jerLog("[jericho] warning: module \"%s\" registered itself but is not in the runtime table\n", id);
 		return;
 	}
 
-	m->name = name;
-	m->version = version;
-	m->author = author;
-	m->description = description;
-	m->deps = deps;
+	/* copy into the owned buffers: the strings live in the DLL image and
+	 * would dangle after a reload unloads the binary */
+	if (name != NULL)
+		snprintf(m->name, sizeof(m->name), "%s", name);
+
+	if (version != NULL)
+		snprintf(m->version, sizeof(m->version), "%s", version);
+
+	if (author != NULL)
+		snprintf(m->author, sizeof(m->author), "%s", author);
+
+	if (description != NULL)
+		snprintf(m->description, sizeof(m->description), "%s", description);
+
+	if (deps != NULL)
+		snprintf(m->deps, sizeof(m->deps), "%s", deps);
+
 	m->sdkVersion = sdkVersion;
 	m->metadataSet = 1;
 }
@@ -338,7 +322,7 @@ static void jerLogInventory(void)
 {
 	int i;
 
-	jerLog("[jericho] --- module inventory (%d built-in) ---\n", gModuleCount);
+	jerLog("[jericho] --- module inventory (%d loaded) ---\n", gModuleCount);
 
 	for (i = 0; i < gModuleCount; i++)
 	{
@@ -356,11 +340,11 @@ static void jerLogInventory(void)
 
 		jerLog("[jericho]   %-10s v%-6s enabled=%d state=%-14s author=\"%s\" deps=\"%s\"\n",
 			m->id,
-			m->version != NULL ? m->version : "?",
+			m->version[0] != 0 ? m->version : "?",
 			m->enabled,
 			state,
-			m->author != NULL ? m->author : "?",
-			m->deps != NULL && m->deps[0] != 0 ? m->deps : "-");
+			m->author[0] != 0 ? m->author : "?",
+			m->deps[0] != 0 ? m->deps : "-");
 	}
 
 	jerLog("[jericho] --- hook inventory (%d handler(s)) ---\n", gHandlerCount);
@@ -390,8 +374,8 @@ static void jerActivateModules(const char* rootDir)
 
 	/*
 	 * Resolve the load order: modlist.ini entries first (in file order),
-	 * then any built-in modules not mentioned (enabled by default, in
-	 * registry order). Modules listed with enabled=0 are skipped.
+	 * then any modules not mentioned (enabled by default, in scan
+	 * order). Modules listed with enabled=0 are skipped.
 	 */
 	if (jer_manager_read(rootDir, &modlist) != 0)
 	{
@@ -410,7 +394,7 @@ static void jerActivateModules(const char* rootDir)
 
 		if (m == NULL)
 		{
-			jerLog("[jericho] modlist references unknown module \"%s\" (not built in)\n", modlist.items[i].id);
+			jerLog("[jericho] modlist references unknown module \"%s\" (not installed)\n", modlist.items[i].id);
 			continue;
 		}
 
@@ -420,14 +404,14 @@ static void jerActivateModules(const char* rootDir)
 			order[orderCount++] = m->id;
 	}
 
-	/* unlisted modules default to their registered defaultEnabled */
+	/* unlisted modules default to their mod.toml defaultEnabled */
 	for (i = 0; i < gModuleCount; i++)
 	{
 		int listed = 0;
 
 		for (j = 0; j < modlist.count; j++)
 		{
-			if (gModules[i].id != NULL && strcmp(gModules[i].id, modlist.items[j].id) == 0)
+			if (gModules[i].id[0] != 0 && strcmp(gModules[i].id, modlist.items[j].id) == 0)
 			{
 				listed = 1;
 				break;
@@ -450,6 +434,12 @@ static void jerActivateModules(const char* rootDir)
 
 		if (m == NULL || !m->enabled)
 			continue;
+
+		if (m->entry == NULL)
+		{
+			jerLog("[jericho] \"%s\" enabled but no compiled binary found (compile it first)\n", order[i]);
+			continue;
+		}
 
 		jerLog("[jericho] activating \"%s\"\n", order[i]);
 		gCurrentModule = m;
@@ -477,7 +467,7 @@ static void jerActivateModules(const char* rootDir)
 			continue;
 		}
 
-		if (m->deps != NULL && m->deps[0] != 0)
+		if (m->deps[0] != 0)
 		{
 			char dep[40];
 			const char* p = m->deps;
@@ -562,7 +552,7 @@ void jer_init(const char* rootDir)
 	/* persistent module config lives under <root>/CONFIG/ */
 	jer_config_init(rootDir);
 
-	jerSnapshotModules();
+	jerSnapshotModules(rootDir);
 	jerActivateModules(rootDir);
 
 	jer_fire(JER_EVENT_BOOT, NULL);
@@ -615,7 +605,7 @@ void jer_manager_reload(const char* rootDir)
 	gHandlerCount = 0;
 	memset(gOverrideSlots, 0, sizeof(gOverrideSlots));
 
-	jerSnapshotModules();
+	jerSnapshotModules(rootDir);
 	jerActivateModules(rootDir);
 }
 
@@ -651,7 +641,7 @@ int jer_module_list(JER_MODULE_INFO* out, int max)
 
 			out[n].id = m->id;
 			out[n].name = m->name != NULL ? m->name : m->id;
-			out[n].version = m->version != NULL ? m->version : "?";
+			out[n].version = m->version[0] != 0 ? m->version : "?";
 			out[n].enabled = modlist.items[i].enabled && m->valid;
 			n++;
 		}
@@ -663,7 +653,7 @@ int jer_module_list(JER_MODULE_INFO* out, int max)
 
 		for (j = 0; j < modlist.count; j++)
 		{
-			if (gModules[i].id != NULL && strcmp(gModules[i].id, modlist.items[j].id) == 0)
+			if (gModules[i].id[0] != 0 && strcmp(gModules[i].id, modlist.items[j].id) == 0)
 			{
 				listed = 1;
 				break;
@@ -674,7 +664,7 @@ int jer_module_list(JER_MODULE_INFO* out, int max)
 		{
 			out[n].id = gModules[i].id;
 			out[n].name = gModules[i].name != NULL ? gModules[i].name : gModules[i].id;
-			out[n].version = gModules[i].version != NULL ? gModules[i].version : "?";
+			out[n].version = gModules[i].version[0] != 0 ? gModules[i].version : "?";
 			out[n].enabled = gModules[i].defaultEnabled && gModules[i].valid;
 			n++;
 		}

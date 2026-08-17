@@ -387,7 +387,13 @@ int JerichoModsScreen(int bSetup);
 
 // JERICHO-HOOK: frontend Mods manager screen (built into a spare screen slot)
 #define JERICHO_MODS_SCREEN 41
-#define JERICHO_MODS_MODULES_PER_PAGE 5	// 5 modules + Prev/Next + Back = 8 (screen cap)
+// 8 buttons max (PSXSCREEN::buttons[8]): modules + Prev/Next + Compile + Back.
+// Windows shows a Compile Mods button, so one less module fits per page.
+#if defined(_WIN32)
+#define JERICHO_MODS_MODULES_PER_PAGE 4
+#else
+#define JERICHO_MODS_MODULES_PER_PAGE 5
+#endif
 
 static int gJerichoOptionsButtonAdded;
 static int gJerichoModsPage;		// paginated mod list: current page
@@ -3985,7 +3991,12 @@ int JerichoModsScreen(int bSetup)
 	{
 		PSXBUTTON* btn;
 		int numButtons = shown;		// module buttons first
-		int backIdx = shown + (hasPrev ? 1 : 0) + (hasNext ? 1 : 0);
+		int hasCompile = 0;			// Compile Mods button (Windows only)
+#if defined(_WIN32)
+		hasCompile = 1;
+#endif
+		int compileIdx = shown + (hasPrev ? 1 : 0) + (hasNext ? 1 : 0);
+		int backIdx = compileIdx + (hasCompile ? 1 : 0);
 
 		gJerichoModsNeedSetup = 0;
 
@@ -4007,7 +4018,7 @@ int JerichoModsScreen(int bSetup)
 
 			/* u/d are 1-based button indices (0 = no move): up/down walk the
 			 * vertical list, first module wraps to Back, last module drops to
-			 * the first nav button (Prev/Next/Back) */
+			 * the first nav button (Prev/Next/Compile/Back) */
 			btn->u = (u_char)(i == 0 ? backIdx + 1 : i);
 			btn->d = (u_char)(i == shown - 1 ? shown + 1 : i + 2);
 			btn->l = 0;
@@ -4029,9 +4040,9 @@ int JerichoModsScreen(int bSetup)
 
 			sprintf(btn->Name, "< Prev Page");
 
-			/* up -> last module; down -> Next (or wrap to the first) */
+			/* up -> last module; down -> Next (or Compile when no Next) */
 			btn->u = (u_char)shown;
-			btn->d = (u_char)(hasNext ? shown + 2 : 1);
+			btn->d = (u_char)(hasNext ? shown + 2 : shown + 2);
 			btn->l = 0;
 			btn->r = 0;
 			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
@@ -4051,9 +4062,31 @@ int JerichoModsScreen(int bSetup)
 
 			sprintf(btn->Name, "Next Page >");
 
-			/* up -> last module; down wraps to the first */
-			btn->u = (u_char)shown;
-			btn->d = (u_char)1;
+			/* up -> Prev (or last module when no Prev); down -> Compile (or wrap) */
+			btn->u = (u_char)(hasPrev ? shown + 1 : shown);
+			btn->d = (u_char)(hasCompile ? shown + 3 : 1);
+			btn->l = 0;
+			btn->r = 0;
+			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
+			btn->var = -1;
+		}
+
+		if (hasCompile)
+		{
+			btn = &pCurrScreen->buttons[numButtons++];
+
+			btn->x = 167;
+			btn->y = 180 + numButtons * 30 + 8;
+			btn->w = 256;
+			btn->h = 26;
+			btn->s_x = 370;
+			btn->s_y = 180 + numButtons * 30 + 8;
+
+			sprintf(btn->Name, "Compile Mods");
+
+			/* up -> Next (or Prev); down -> Back */
+			btn->u = (u_char)(hasNext ? shown + 2 : shown + 1);
+			btn->d = (u_char)(backIdx + 1);
 			btn->l = 0;
 			btn->r = 0;
 			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
@@ -4071,8 +4104,8 @@ int JerichoModsScreen(int bSetup)
 
 		sprintf(btn->Name, "Back");
 
-		/* up -> last module; down wraps to the first (1-based fields) */
-		btn->u = (u_char)shown;
+		/* up -> Compile (or Next/last module); down wraps to the first (1-based) */
+		btn->u = (u_char)backIdx;
 		btn->d = (u_char)1;
 		btn->l = 0;
 		btn->r = 0;
@@ -4135,6 +4168,22 @@ int JerichoModsScreen(int bSetup)
 				return 1;
 			}
 		}
+#if defined(_WIN32)
+		/* Compile Mods: build every installed module into a DLL, then reload
+		 * so freshly compiled (or newly dropped) mods appear immediately */
+		else if (idx == shown + (hasPrev ? 1 : 0) + (hasNext ? 1 : 0))
+		{
+			if (feNewPad & MPAD_CROSS)
+			{
+				FESound(2);
+				jer_compile_mods();
+				jer_manager_reload(jer_root_dir());
+				jer_mods_rebuild_button_names();
+				bRedrawFrontend = 1;
+				return 1;
+			}
+		}
+#endif
 	}
 
 	return 0;
