@@ -245,7 +245,7 @@ enum
 
 static const char* const gSandboxMainItems[SBX_MAIN_ITEMS] = {
 	"Vehicle Properties", "Spawn Menu", "World Settings", "Cheats Menu",
-	"Replace Pause Menu: OFF", "Open Pause Menu", "Teleport to Map", "Close"
+	"Replace Pause Menu: OFF", "Teleport to Map", "Open Pause Menu", "Close"
 };
 static const char* const gSandboxVehicleItems[SBX_VEHICLE_ITEMS] = {
 	"Repair Car", "Make Car Upright", "Set Damage", "Set Felony", "Player AI Mode", "Tune Car"
@@ -960,15 +960,15 @@ static void SandboxMenuDoAction(int page, int cursor)
 			jer_config_set_bool("sandbox", "replace_pause", gSandboxReplacePause);
 			break;
 		case 5:
-			/* close the sandbox overlay and open the normal pause menu */
-			SandboxMenuClose();
-			ShowPauseMenu(PAUSEMODE_PAUSE);
-			break;
-		case 6:
 			/* close the overlay and open the fullscreen map teleport (the
 			 * world keeps running; the map hook takes over the pad) */
 			SandboxMenuClose();
 			SandboxTeleportStart(NULL, 0);
+			break;
+		case 6:
+			/* close the sandbox overlay and open the normal pause menu */
+			SandboxMenuClose();
+			ShowPauseMenu(PAUSEMODE_PAUSE);
 			break;
 		case 7: SandboxMenuClose(); break;
 		}
