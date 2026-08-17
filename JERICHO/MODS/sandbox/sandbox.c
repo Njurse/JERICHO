@@ -359,7 +359,7 @@ static void SandboxMenuClose(void)
 	gSandboxAdjust = 0;
 	gStopPadReads = 0;
 
-	SandboxTuneRestore();
+	/* tuning edits stay live for the gameplay session (see SandboxTuneEnter) */
 
 	/* bring the map + damage/felony bars back */
 	gShowMap = gSandboxSavedShowMap;
@@ -480,8 +480,9 @@ static void SandboxMenuRemoveAICars(void)
 /* ---- per-car tuning: edits the model's SHARED cosmetics live. The engine
  * reads most fields from car_cosmetics[model] (wheelDisp, cog, twistRate*), so
  * a private per-car copy never reached the physics — same approach as the
- * engine's own mini-cars cheat (FixCarCos). The original values are restored
- * when the tune page closes. ---- */
+ * engine's own mini-cars cheat (FixCarCos). Tuned values persist for the
+ * gameplay session — only a fresh level reload (LoadCosmetics) resets them.
+ * ---- */
 static void SandboxTuneEnter(void)
 {
 	extern CAR_COSMETICS car_cosmetics[];
@@ -1233,7 +1234,7 @@ static void SandboxMenuInput(int padnew)
 
 		if (padnew & (MPAD_CROSS | MPAD_TRIANGLE))
 		{
-			SandboxTuneRestore();
+			/* leave the tuned cosmetics in place — they persist this session */
 			gSandboxPage = SBX_PAGE_VEHICLE;
 			gSandboxCursor = 0;
 			gSandboxSubPage = 0;
