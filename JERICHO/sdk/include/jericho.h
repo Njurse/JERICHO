@@ -51,6 +51,13 @@ enum
 {
 	JER_EVENT_BOOT = 0,			/* fired once after all modules are activated */
 	JER_EVENT_FRAME,			/* every game frame (global step) */
+	JER_EVENT_PRE_SIM,			/* top of the world step (StepSim), BEFORE the
+								   car-control loop reads the pads -- the one
+								   spot modules may inject/replace pad input or
+								   block for external input (e.g. an ML agent in
+								   wait-for-input lockstep). JER_EVENT_FRAME
+								   fires inside GlobalTimeStep, after the car
+								   loop, so it is too late for input. */
 	JER_EVENT_INIT,				/* game / damage system (re)initialisation */
 	JER_EVENT_COLLISION,		/* car-car / car-world collision */
 	JER_EVENT_DENT_PASS,		/* vertex deformation pass */
@@ -81,6 +88,8 @@ enum
 								   read joint world positions (vJPos) */
 	JER_EVENT_MAP,			/* fullscreen map: INPUT claim + DRAWN cursor
 								   (see JER_ARGS_MAP in jer_events.h) */
+	JER_EVENT_SHUTDOWN,		/* the game is exiting (after the state loop) --
+								   modules release resources (sockets, files) */
 
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };

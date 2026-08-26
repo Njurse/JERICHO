@@ -1,3 +1,6 @@
 [submodule "src_rebuild/PsyCross"]
 	path = src_rebuild/PsyCross
 	url = https://github.com/OpenDriver2/PsyCross.git
+[submodule "JERICHO/MODS/gaildrv2"]
+	path = JERICHO/MODS/gaildrv2
+	url = https://github.com/Njurse/gailredriver2.git

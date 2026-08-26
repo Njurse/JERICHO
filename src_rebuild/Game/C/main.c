@@ -865,6 +865,13 @@ void StepSim(void)
 		DawnCount++;
 	}
 
+	// JERICHO-HOOK: top of the world step, BEFORE the car-control loop
+	// reads the pads (Pads[]) and before the traffic/AI work. Modules may
+	// inject/replace pad input here or block for external input (an ML
+	// agent in wait-for-input lockstep); the pads they write are what the
+	// CONTROL_TYPE_PLAYER branch passes to ProcessCarPad below.
+	jer_fire(JER_EVENT_PRE_SIM, NULL);
+
 	SetUpTrafficLightPhase();
 	MoveSmashable_object();
 	//animate_garage_door();
@@ -2446,6 +2453,11 @@ int redriver2_main(int argc, char** argv)
 #endif // !PSX && !EMSCRIPTEN
 
 	DoStateLoop();
+
+	// JERICHO-HOOK: the state loop has ended and the game is exiting --
+	// modules release resources (sockets, files) here, after the last
+	// state ran and before the process tears down.
+	jer_fire(JER_EVENT_SHUTDOWN, NULL);
 
 #ifndef PSX
 	SaveCurrentProfile(1);

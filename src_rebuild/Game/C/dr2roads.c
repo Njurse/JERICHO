@@ -347,6 +347,11 @@ sdPlane* sdGetCell(VECTOR *pos)
 								(cellPos.y >> 15 & 2) ^ (regions_down & 2)];
 
 	plane = GetSeaPlane();
+
+	/* region not streamed in yet (loading screen / returning to the menu):
+	 * treat it as plain land instead of dereferencing a NULL buffer */
+	if (buffer == NULL)
+		return &default_plane;
 	
 	if (*buffer != 2)
 		return &default_plane;
@@ -467,6 +472,11 @@ int RoadInCell(VECTOR *pos)
 
 	buffer = RoadMapDataRegions[(cellPos.x >> 16 & 1) ^ (regions_across / 2 & 1) + 
 								(cellPos.y >> 15 & 2) ^ (regions_down & 2)];
+
+	/* region not streamed in yet (loading screen / returning to the menu):
+	 * report "not a road" instead of dereferencing a NULL buffer */
+	if (buffer == NULL)
+		return -1;
 
 	if (*buffer == 2)
 	{

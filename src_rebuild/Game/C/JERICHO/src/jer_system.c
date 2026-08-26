@@ -279,6 +279,7 @@ static const char* jerEventName(int event)
 	{
 	case JER_EVENT_BOOT:			return "BOOT";
 	case JER_EVENT_FRAME:			return "FRAME";
+	case JER_EVENT_PRE_SIM:			return "PRE_SIM";
 	case JER_EVENT_INIT:			return "INIT";
 	case JER_EVENT_COLLISION:		return "COLLISION";
 	case JER_EVENT_DENT_PASS:		return "DENT_PASS";
@@ -300,6 +301,7 @@ static const char* jerEventName(int event)
 	case JER_EVENT_PED_POSE:		return "PED_POSE";
 	case JER_EVENT_FRONTEND:		return "FRONTEND";
 	case JER_EVENT_PED_SKELETON:	return "PED_SKELETON";
+	case JER_EVENT_SHUTDOWN:		return "SHUTDOWN";
 	default:
 		if (event >= JER_EVENT_MODULE_CUSTOM)
 		{
