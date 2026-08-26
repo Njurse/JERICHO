@@ -8,6 +8,7 @@ inert no-ops when no module handles them.
 |---|---|---|---|
 | `JER_EVENT_BOOT` | — | `jer_init` | once, after all modules activated |
 | `JER_EVENT_FRAME` | — | `GlobalTimeStep` | every game frame |
+| `JER_EVENT_PRE_SIM` | — | top of `StepSim`, before the car-control loop reads the pads | inject/replace pad input, or block for external input (wait-for-input lockstep) |
 | `JER_EVENT_INIT` | — | `InitialiseDenting`, game-load | damage system (re)init |
 | `JER_EVENT_COLLISION` | `JER_ARGS_COLLISION` | car-car (`handling.c`) + car-world (`bcollide.c`) | record an impact |
 | `JER_EVENT_DENT_PASS` | `JER_ARGS_DENT_PASS` | deferred denting pass (`denting.c`) | deform car verts |
@@ -25,6 +26,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_PED_SKELETON` | `JER_ARGS_PED_SKELETON` | `newShowTanner` | pose Tanner's skeleton (phase 0) + draw extras (phase 1) |
 | `JER_EVENT_DRAW_OVERLAY` | — | `DrawDebugOverlays` / HUD path | 2D overlay / HUD drawing |
 | `JER_EVENT_PAUSE_MENU` | `JER_ARGS_PAUSE_MENU` | pause menu shell | module-owned menu state (labels + actions) |
+| `JER_EVENT_SHUTDOWN` | — | `redriver2_main`, after the state loop | the game is exiting — release resources (sockets, files) |
 | `>= JER_EVENT_MODULE_CUSTOM` | module-defined | modules | custom events |
 
 ## Query events
