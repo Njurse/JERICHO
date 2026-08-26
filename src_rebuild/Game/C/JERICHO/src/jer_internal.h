@@ -26,6 +26,10 @@
  */
 #define JER_MODLIST_PATH "modlist.ini"
 
+/* Shared whitespace trimmer (in place; returns the new start). Used by the
+ * modlist parser, the mod.toml parser and the ini config loader. */
+char* jerTrim(char* s);
+
 /* Parsed JERICHO/CONFIG/modlist.ini state (module id + enabled flag, in
  * file order = load order). */
 typedef struct JER_MODLIST_ITEM

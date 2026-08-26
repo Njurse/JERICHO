@@ -28,7 +28,7 @@
 /* Line order is the load order; comments and blanks are ignored.      */
 /* ------------------------------------------------------------------ */
 
-static char* jerIniTrim(char* s)
+char* jerTrim(char* s)
 {
 	char* end;
 
@@ -103,7 +103,7 @@ int jer_manager_read(const char* rootDir, JER_MODLIST_STATE* st)
 				*hash = 0;
 		}
 
-		key = jerIniTrim(line);
+		key = jerTrim(line);
 
 		if (key[0] == 0)
 			continue;
@@ -113,8 +113,8 @@ int jer_manager_read(const char* rootDir, JER_MODLIST_STATE* st)
 			continue;	/* not a key=value line */
 
 		*eq = 0;
-		key = jerIniTrim(key);
-		val = jerIniTrim(eq + 1);
+		key = jerTrim(key);
+		val = jerTrim(eq + 1);
 
 		if (key[0] == 0 || val[0] == 0)
 			continue;

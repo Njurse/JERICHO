@@ -41,7 +41,7 @@
 /*   dependencies = ["a", "b"]   or   dependencies = "a,b"             */
 /* ------------------------------------------------------------------ */
 
-static char* jerTomlTrim(char* s)
+static char* jerTrim(char* s)
 {
 	char* end;
 
@@ -60,7 +60,7 @@ static void jerTomlValue(char* v, char* out, size_t outSize)
 {
 	char* q;
 
-	v = jerTomlTrim(v);
+	v = jerTrim(v);
 
 	if (v[0] == '"')
 	{
@@ -81,7 +81,7 @@ static void jerTomlDeps(char* v, char* out, size_t outSize)
 	char* p;
 	char* dst = out;
 
-	v = jerTomlTrim(v);
+	v = jerTrim(v);
 	snprintf(tmp, sizeof(tmp), "%s", v);
 
 	/* strip [ ] and quotes */
@@ -128,7 +128,6 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 {
 	FILE* f;
 	char line[512];
-	char v[256];
 
 	m->defaultEnabled = 1;
 
@@ -150,7 +149,7 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 				*hash = 0;
 		}
 
-		key = jerTomlTrim(line);
+		key = jerTrim(line);
 
 		if (key[0] == 0)
 			continue;
@@ -161,8 +160,8 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 			continue;
 
 		*eq = 0;
-		key = jerTomlTrim(key);
-		val = jerTomlTrim(eq + 1);
+		key = jerTrim(key);
+		val = jerTrim(eq + 1);
 
 		if (strcmp(key, "id") == 0)
 			jerTomlValue(val, m->id, sizeof(m->id));
@@ -176,7 +175,7 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 			jerTomlValue(val, m->description, sizeof(m->description));
 		else if (strcmp(key, "default-enabled") == 0)
 		{
-			val = jerTomlTrim(val);
+			val = jerTrim(val);
 
 			if (strcmp(val, "false") == 0 || strcmp(val, "0") == 0 || strcmp(val, "disabled") == 0)
 				m->defaultEnabled = 0;
@@ -190,7 +189,6 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 	fclose(f);
 
 	/* a missing id falls back to the folder name (set by the caller) */
-	(void)v;
 }
 
 /* ------------------------------------------------------------------ */

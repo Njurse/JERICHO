@@ -277,7 +277,6 @@ static int gSandboxCursor;		/* cursor (absolute item index) */
 static int gSandboxObjectPage;	/* object-list page (12 per page) */
 static int gSandboxObjectCursor;	/* object-list cursor */
 static int gSandboxAdjust;		/* 1 = adjusting a SET item */
-static int gSandboxPreviewModel;	/* car model shown in the preview (future car page) */
 
 /* HUD elements hidden while the sandbox menu is open (restored on close) */
 static int gSandboxSavedShowMap;

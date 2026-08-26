@@ -18,7 +18,6 @@ typedef struct EXAMPLE_STATE
 {
 	JERICHO_CONTEXT* ctx;	/* saved so the module can fire custom events */
 	int frames;
-	int ticks;
 } EXAMPLE_STATE;
 
 static int exampleOnBoot(void* userdata, void* args)
@@ -45,7 +44,6 @@ static int exampleOnFrame(void* userdata, void* args)
 		int result = st->ctx->jer_fire(st->ctx, EXAMPLE_EVENT_TICK, NULL);
 
 		if (result == JER_RESULT_STOP)
-			st->ticks++;
 
 		st->ctx->jer_log(st->ctx, "[example] fired custom event %d (frame %d)\n", EXAMPLE_EVENT_TICK, st->frames);
 	}

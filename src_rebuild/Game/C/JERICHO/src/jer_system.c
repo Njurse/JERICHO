@@ -215,19 +215,26 @@ static void jerCtxOverride(JERICHO_CONTEXT* ctx, int slot, void* fn)
 	gOverrideSlots[slot] = fn;
 }
 
-static void jerCtxLog(JERICHO_CONTEXT* ctx, const char* fmt, ...)
+/* the global (non-context) logger: same body as jerCtxLog, used by legacy
+ * module code that predates the context API -- delegate to keep one copy */
+static void jerLogV(const char* fmt, va_list va)
 {
 	char buf[512];
+
+	vsnprintf(buf, sizeof(buf), fmt, va);
+	buf[sizeof(buf) - 1] = 0;
+	jerEmit(buf);
+}
+
+static void jerCtxLog(JERICHO_CONTEXT* ctx, const char* fmt, ...)
+{
 	va_list va;
 
 	(void)ctx;
 
 	va_start(va, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, va);
+	jerLogV(fmt, va);
 	va_end(va);
-
-	buf[sizeof(buf) - 1] = 0;
-	jerEmit(buf);
 }
 
 static void jerCtxRegisterModule(JERICHO_CONTEXT* ctx,
@@ -570,15 +577,11 @@ int jer_fire(int event, void* args)
 
 void jer_log(const char* fmt, ...)
 {
-	char buf[512];
 	va_list va;
 
 	va_start(va, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, va);
+	jerLogV(fmt, va);
 	va_end(va);
-
-	buf[sizeof(buf) - 1] = 0;
-	jerEmit(buf);
 }
 
 void jer_set_logger(void (*fn)(const char* msg))

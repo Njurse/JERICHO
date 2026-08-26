@@ -93,7 +93,7 @@ static int jerConfigFind(const char* mod, const char* key)
 }
 
 /* helper: trim leading + trailing whitespace in place; returns the new start */
-static char* jerConfigTrim(char* s)
+static char* jerTrim(char* s)
 {
 	char* end;
 
@@ -149,8 +149,8 @@ static void jerConfigLoadMod(const char* mod)
 			continue;
 
 		*eq = 0;
-		key = jerConfigTrim(line);
-		val = jerConfigTrim(eq + 1);
+		key = jerTrim(line);
+		val = jerTrim(eq + 1);
 
 		if (key[0] == 0 || val[0] == 0)
 			continue;
