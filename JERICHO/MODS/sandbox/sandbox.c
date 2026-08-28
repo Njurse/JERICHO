@@ -238,7 +238,7 @@ enum
 #define SBX_MAIN_ITEMS 8	/* Vehicle, Spawn, World, Cheats, Replace Pause, Open Pause, Teleport, Close */
 #define SBX_VEHICLE_ITEMS 6	/* Repair, Upright, Set Damage, Set Felony, Player AI Mode, Tune Car */
 #define SBX_SPAWN_ITEMS 5	/* Position, Car ID, Spawn Car, Object, AI Car */
-#define SBX_WORLD_ITEMS 2	/* Time of Day, Weather */
+#define SBX_WORLD_ITEMS 3	/* Time of Day, Weather, Auto-Retry Game Over */
 #define SBX_AICAR_ITEMS 7	/* Vehicle, Mode, Param, Position, Spawn, Remove, Back */
 #define SBX_CHEATS_ITEMS 9	/* invincibility, immunity, secret car, jericho, mini, bonus, buddha, unlock all, back */
 #define SBX_TUNE_ITEMS 13	/* multiplier, power, traction, mass, suspension, cog x/y/z, twist x/y/z, wheelbase, track */
@@ -254,7 +254,7 @@ static const char* const gSandboxSpawnItems[SBX_SPAWN_ITEMS] = {
 	"Spawn Position", "Car ID", "Spawn Car", "Spawn Object", "AI Car"
 };
 static const char* const gSandboxWorldItems[SBX_WORLD_ITEMS] = {
-	"Set Time of Day", "Set Weather"
+	"Set Time of Day", "Set Weather", "Auto-Retry Game Over"
 };
 static const char* const gSandboxCheatsItems[SBX_CHEATS_ITEMS] = {
 	"Invincibility", "Immunity", "Secret Car", "Play as Jericho",
@@ -271,6 +271,7 @@ static const char* const gSandboxPageTitles[SBX_PAGE_COUNT] = {
 
 static int gSandboxMenuOpen;
 static int gSandboxReplacePause;	/* START opens the sandbox overlay instead of the engine pause (persisted) */
+static int gSandboxAutoRetry;		/* restart the game mode when it hits game over (persisted) */
 static int gSandboxPage;		/* current page */
 static int gSandboxSubPage;		/* sub-page within the current page */
 static int gSandboxCursor;		/* cursor (absolute item index) */
@@ -691,7 +692,11 @@ static const char* SandboxMenuItemLabel(int page, int cursor)
 		return gSandboxMainItems[cursor];
 	case SBX_PAGE_VEHICLE: return gSandboxVehicleItems[cursor];
 	case SBX_PAGE_SPAWN: return gSandboxSpawnItems[cursor];
-	case SBX_PAGE_WORLD: return gSandboxWorldItems[cursor];
+	case SBX_PAGE_WORLD:
+		/* the Auto-Retry toggle shows its live state */
+		if (cursor == 2)
+			return gSandboxAutoRetry ? "Auto-Retry Game Over: ON" : "Auto-Retry Game Over: OFF";
+		return gSandboxWorldItems[cursor];
 	case SBX_PAGE_CHEATS: return gSandboxCheatsItems[cursor];
 	default: return "";
 	}
@@ -1216,6 +1221,13 @@ static void SandboxAdjustItem(int dir)
 
 		wantedWeather = gWeather;
 	}
+
+	if (gSandboxPage == SBX_PAGE_WORLD && gSandboxCursor == 2)
+	{
+		/* Auto-Retry Game Over: restart the game mode when it fails */
+		gSandboxAutoRetry ^= 1;
+		jer_config_set_bool("sandbox", "auto_retry", gSandboxAutoRetry);
+	}
 }
 
 /* pad input for the overlay menu (world keeps running underneath) */
@@ -1532,6 +1544,17 @@ static int SandboxOnFrame(void* userdata, void* args)
 			if (pc->ai.c.maxSpeed < 0)
 				pc->ai.c.maxSpeed = 0;
 		}
+	}
+
+	/* Auto-Retry: when the episode fails (game over), restart the game mode
+	 * immediately instead of sitting on the failed screen — same exit the
+	 * 'Retry Mission' item triggers (EndGame(GAMEMODE_RESTART)) */
+	if (gSandboxAutoRetry)
+	{
+		extern MR_MISSION Mission;
+
+		if (Mission.gameover_delay != -1 && Mission.gameover_mode == PAUSEMODE_GAMEOVER)
+			EndGame(GAMEMODE_RESTART);
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -2304,10 +2327,12 @@ JER_MODULE_ENTRY(jer_module_sandbox_entry)(JERICHO_CONTEXT* ctx)
 
 	/* persisted setting: does START open the sandbox overlay? */
 	gSandboxReplacePause = jer_config_get_bool("sandbox", "replace_pause", 0);
+	gSandboxAutoRetry = jer_config_get_bool("sandbox", "auto_retry", 0);
 
 	/* the sandbox must never default to opening: clear a stale persisted
 	 * flag once so START opens the engine pause, not this overlay */
 	jer_config_set_bool("sandbox", "replace_pause", gSandboxReplacePause);
+	jer_config_set_bool("sandbox", "auto_retry", gSandboxAutoRetry);
 
 	ctx->jer_register_module(ctx,
 		"sandbox",			/* id */
