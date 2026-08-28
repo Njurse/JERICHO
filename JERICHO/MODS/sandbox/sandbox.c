@@ -301,6 +301,7 @@ static CAR_COSMETICS* gSandboxTunedCos;	/* points at car_cosmetics[model] while 
 static int gSandboxTunedActive;
 static int gSandboxTunedModel;		/* model the tuning started on */
 static int gSandboxTuneMult = 1;	/* spec multiplier (1..16) rescaling the strength specs */
+static int gSandboxAIRoadLimit = 56;	/* civ-AI road speed limit (engine-set, recaptured per road) */
 
 /* a private OT for the preview: the model renders on its own layer (between
  * the menu text at ot+0 and the background panel at ot+3) instead of at
@@ -1485,6 +1486,38 @@ static int SandboxOnFrame(void* userdata, void* args)
 
 		for (z = 0; z < 6; z++)
 			playerCar->ap.damage[z] = 0;
+	}
+
+	/* Player Traffic-AI: drive like a player learning the car — keep a pace
+	 * above the traffic, but let the cornering demand (how hard the AI has
+	 * to steer) pull the pace back, so the car's own handling — not the
+	 * walls — decides how fast a turn can be taken. The engine rewrites
+	 * maxSpeed to the road's limit (56/97/138) whenever the civ state
+	 * re-inits; only then is the base recaptured, so the boost never
+	 * compounds on itself. */
+	if (g_PlayerControlMode == 1)
+	{
+		CAR_DATA* pc = SandboxPlayerCar();
+
+		if (pc != NULL && pc->controlType == CONTROL_TYPE_CIV_AI)
+		{
+			int steer = pc->wheel_angle;		/* 0..maxSteer (512) */
+			if (steer < 0)
+				steer = -steer;
+
+			if (pc->ai.c.maxSpeed == 56 || pc->ai.c.maxSpeed == 97 || pc->ai.c.maxSpeed == 138)
+				gSandboxAIRoadLimit = pc->ai.c.maxSpeed;
+
+			/* a confident pace: a quarter over the road's traffic limit */
+			pc->ai.c.maxSpeed = gSandboxAIRoadLimit + gSandboxAIRoadLimit / 4;
+
+			/* back off as the steering demand climbs: straight roads keep
+			 * the boosted pace, a full-lock corner halves it */
+			pc->ai.c.maxSpeed -= (pc->ai.c.maxSpeed * steer) / (2 * 512);
+
+			if (pc->ai.c.maxSpeed < 0)
+				pc->ai.c.maxSpeed = 0;
+		}
 	}
 
 	return JER_RESULT_CONTINUE;
