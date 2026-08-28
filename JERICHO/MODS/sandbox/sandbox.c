@@ -1459,6 +1459,20 @@ static int SandboxOnGameStart(void* userdata, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* camera look hook: while the sandbox AI is at the wheel, suppress the
+ * stock L2/R2 look so stray pad bits can't flick the camera view */
+static int SandboxOnCameraLook(void* userdata, void* args)
+{
+	JER_ARGS_CAMERA_LOOK* look = (JER_ARGS_CAMERA_LOOK*)args;
+
+	(void)userdata;
+
+	if (g_PlayerControlMode != 0)
+		look->suppress = 1;
+
+	return JER_RESULT_CONTINUE;
+}
+
 /* ------------------------------------------------------------------ */
 /* Frame hook: no-damage + sandbox-menu input                          */
 /* ------------------------------------------------------------------ */
@@ -2308,6 +2322,7 @@ JER_MODULE_ENTRY(jer_module_sandbox_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_override(ctx, JER_OVERRIDE_SLOT_SIM, (void*)SandboxStepSim);
 
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, SandboxOnFrame, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA_LOOK, SandboxOnCameraLook, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, SandboxOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, SandboxOnDrawOverlay, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PAUSE_MENU, SandboxOnPauseMenu, NULL, 0);
