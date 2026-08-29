@@ -3001,7 +3001,7 @@ int CivAccel(CAR_DATA * cp)
 				tmpret = 0;
 			}
 
-			tmpret = 100 * (newAccel * tmpret) / 100;
+			tmpret = (newAccel * tmpret) / 100;
 			brakeDist = (-cp->hd.wheel_speed) / 4;
 
 			if (tmpret >= brakeDist)
