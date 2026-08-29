@@ -1552,15 +1552,14 @@ static int SandboxOnFrame(void* userdata, void* args)
 	if (gSandboxAutoRetry)
 	{
 		extern MR_MISSION Mission;
-		extern int PauseMode;
 
 		/* mission failure: restart as soon as the game-over flow starts */
 		if (Mission.gameover_delay != -1 && Mission.gameover_mode == PAUSEMODE_GAMEOVER)
 			EndGame(GAMEMODE_RESTART);
 
-		/* any game-over / finished pause screen (mission fail, chase,
-		 * driving game, take-a-ride...): auto-confirm the restart */
-		if (gDrawPauseMenus && PauseMode == PAUSEMODE_GAMEOVER)
+		/* any game-over / finished pause screen (chase, driving game,
+		 * take-a-ride...): auto-confirm the restart */
+		if (gDrawPauseMenus && gMissionCompletionState == PAUSEMODE_GAMEOVER)
 			PauseReturnValue = MENU_QUIT_RESTART;
 	}
 
