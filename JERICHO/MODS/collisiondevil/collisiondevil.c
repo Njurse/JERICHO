@@ -159,13 +159,19 @@ static int cdOnCarEngine(void* ud, void* args)
 	if (!gCdCfg.enabled)
 		return JER_RESULT_CONTINUE;
 
-	// Acceleration only — braking/reverse stays stock so brake-tap drift entry
-	// and the reverse gear feel are untouched.
+	// Acceleration: overclock engine force (raises accel + emergent top speed).
 	if (a->thrust > 0)
 	{
 		int aggressionScale = 4096 + cdPercent(gCdCfg.aggression) / 2;  // 1.0x..1.5x
 		int boostScale      = 4096 + cdPercent(gCdCfg.boost) / 2;       // 1.0x..1.5x
 		a->thrust = cdScale(cdScale(a->thrust, aggressionScale), boostScale);
+	}
+	// Braking/reverse: soften it so the brake rotates the car into a drift
+	// instead of killing its momentum (thrust stays < 0 so drift entry still
+	// sees a braking state).
+	else if (a->thrust < 0)
+	{
+		a->thrust = cdScale(a->thrust, CD_BRAKE_SOFTEN);
 	}
 
 	// Sharper turn-in: widen the existing steering angle as eagerness rises
@@ -223,12 +229,16 @@ static int cdOnCarStep(void* ud, void* args)
 	int rollTarget = 0, pitchTarget = 0, yawTarget = 0;
 	if (dramaFrac > 0)
 	{
-		// roll: lean into the corner (scaled by steering, speed, drama)
-		rollTarget = -cdScale(steer, dramaFrac) >> CD_DRAMA_ROLL_SHIFT;
-		rollTarget = cdScale(rollTarget, speedNorm);
+		// roll: steering input + lateral momentum (side slip) — the body leans
+		// into the corner and rolls further as it slides.
+		int steerRoll = -cdScale(steer, dramaFrac) >> CD_DRAMA_ROLL_SHIFT;
+		int slipRoll = cdScale(a->velX >> CD_SLIP_SHIFT, dramaFrac);
+		rollTarget = cdScale(steerRoll + slipRoll, speedNorm);
 
-		// pitch: nose up under power, nose down under brake
-		int pitchSign = cp->thrust > 0 ? 1 : (cp->thrust < 0 ? -1 : 0);
+		// pitch: nose UP under power (rear squats), nose DOWN under brake
+		// (dive). Accel is now the negative branch, fixing the "rear sits
+		// higher by default" attitude.
+		int pitchSign = cp->thrust > 0 ? -1 : (cp->thrust < 0 ? 1 : 0);
 		pitchTarget = cdScale(pitchSign * CD_DRAMA_PITCH_BASE, dramaFrac);
 		pitchTarget = cdScale(pitchTarget, speedNorm);
 

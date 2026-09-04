@@ -31,7 +31,7 @@
 #define CD_BLEND_LERP       4
 
 // Visual smoothing divisor (higher = slower body roll/pitch/yaw settle).
-#define CD_VISUAL_LERP      3
+#define CD_VISUAL_LERP      2
 
 // Grip drop: fraction of the REAR friction removed at full eagerness
 // (4096 = 100%). 2253/4096 ~= 0.55 -> rear grip ~0.45x — the manifesto's
@@ -45,9 +45,16 @@
 
 // Visual drama magnitudes (PSX angle units; 4096 = 360 deg, ~11.4 units/deg).
 #define CD_DRAMA_ROLL_SHIFT 2     // |wheel_angle| * drama >> 2 (~8 deg max)
-#define CD_DRAMA_PITCH_BASE 90    // nose up/down angle at full drama + speed
+#define CD_DRAMA_PITCH_BASE 60    // nose up/down angle at full drama + speed
 #define CD_DRAMA_YAW_SHIFT  4     // drift blend * drama >> 4 (~14 deg max)
 #define CD_DRAMA_REF_SPEED  60    // speed (world units) at which drama saturates
+// Side-slip -> body roll gain: lateral velocity (fixed point) >> shift gives
+// a PSX-angle-unit lean. 9 => ~10 m/s side slip leans ~7 deg.
+#define CD_SLIP_SHIFT       9
+
+// Brake force scale while braking/reversing (4096 = stock, 2458 ~= 0.6x) —
+// a gentler brake that lets the car rotate into a drift instead of stopping.
+#define CD_BRAKE_SOFTEN     2458
 
 // FOV pull: scr_z reduction (from gCameraDefaultScrZ = 256) at full pull+speed.
 #define CD_FOV_PULL_SCRZ    80

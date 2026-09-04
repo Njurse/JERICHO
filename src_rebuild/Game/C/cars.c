@@ -1558,6 +1558,7 @@ void DrawCar(CAR_DATA* cp, int view)
 	VECTOR pos, dist;
 	VECTOR corners[4];
 	MATRIX workmatrix;
+	MATRIX wheelmatrix;
 
 	D_CHECK_ERROR(cp < car_data, "Invalid car");
 	
@@ -1674,16 +1675,19 @@ void DrawCar(CAR_DATA* cp, int view)
 
 	// JERICHO-HOOK: car body draw — visual pitch/roll/yaw on a render-only
 	// copy of the draw matrix (physics/collision matrices are untouched).
+	// The rotation applies to the BODY model only; the wheels keep the
+	// un-rotated draw matrix so they stay level.
 	{
-		MATRIX visualMatrix = cp->hd.drawCarMat;
+		MATRIX bodyMatrix = cp->hd.drawCarMat;
 		JER_ARGS_CAR_DRAW jerArgs;
 
 		jerArgs.car = cp;
-		jerArgs.matrix = &visualMatrix;
+		jerArgs.matrix = &bodyMatrix;
 		jerArgs.view = view;
 		jer_fire(JER_EVENT_CAR_DRAW, &jerArgs);
 
-		MulMatrix0(&inv_camera_matrix, &visualMatrix, &workmatrix);
+		MulMatrix0(&inv_camera_matrix, &bodyMatrix, &workmatrix);
+		MulMatrix0(&inv_camera_matrix, &cp->hd.drawCarMat, &wheelmatrix);
 	}
 
 	// [A] there was mini cars cheat
@@ -1766,7 +1770,7 @@ void DrawCar(CAR_DATA* cp, int view)
 			MulMatrix0(&inv_camera_matrix, &cp->hd.drawCarMat, &workmatrix);
 		}
 
-		DrawCarWheels(cp, &workmatrix, &pos, view);
+		DrawCarWheels(cp, &wheelmatrix, &pos, view);
 	}
 	else
 	{
