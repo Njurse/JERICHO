@@ -91,6 +91,17 @@ enum
 	JER_EVENT_SHUTDOWN,		/* the game is exiting (after the state loop) --
 								   modules release resources (sockets, files) */
 
+	JER_EVENT_CAR_ENGINE,		/* end of ProcessCarPad: transform thrust and
+								   steering (see JER_ARGS_CAR_ENGINE) */
+	JER_EVENT_CAR_FRICTION,		/* end of GetFrictionScalesDriver1: transform
+								   front/rear grip (see JER_ARGS_CAR_FRICTION) */
+	JER_EVENT_CAR_STEP,		/* top of StepOneCar: observe car state
+								   (see JER_ARGS_CAR_STEP) */
+	JER_EVENT_CAR_TORQUE,		/* after torque->angular accel: inject yaw
+								   (see JER_ARGS_CAR_TORQUE) */
+	JER_EVENT_CAR_DRAW,		/* car body draw: visual pitch/roll/yaw on the
+								   render matrix (see JER_ARGS_CAR_DRAW) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

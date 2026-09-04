@@ -302,4 +302,59 @@ typedef struct JER_ARGS_PED_SKELETON
 	int shadow;		/* 1 while the ped's shadow is being drawn */
 } JER_ARGS_PED_SKELETON;
 
+/* JER_EVENT_CAR_ENGINE — fired at the end of ProcessCarPad, after the engine
+ * force (thrust) and steering (wheel_angle) are computed. A module scales
+ * them in place to overclock acceleration / widen steering. handbrake/
+ * wheelspin are read-only input state. */
+typedef struct JER_ARGS_CAR_ENGINE
+{
+	void* car;		/* CAR_DATA* */
+	int thrust;		/* in/out: engine force (fixed point) */
+	int wheelAngle;		/* in/out: steering angle (fixed point) */
+	int handbrake;		/* in: 1 while the handbrake is held */
+	int wheelspin;		/* in: 1 while burnout/wheelspin is active */
+	int speed;		/* in: cp->hd.speed */
+	int wheelSpeed;		/* in: cp->hd.wheel_speed */
+} JER_ARGS_CAR_ENGINE;
+
+/* JER_EVENT_CAR_FRICTION — fired at the end of GetFrictionScalesDriver1.
+ * A module scales the front/rear friction scales in place (e.g. drop rear
+ * grip to induce oversteer/drift). */
+typedef struct JER_ARGS_CAR_FRICTION
+{
+	void* car;		/* CAR_DATA* */
+	int frontFS;		/* in/out: front friction scale */
+	int rearFS;		/* in/out: rear friction scale */
+} JER_ARGS_CAR_FRICTION;
+
+/* JER_EVENT_CAR_STEP — fired at the top of StepOneCar once per car per
+ * physics frame. Observation only; a module reads state for drift detection
+ * and G-force capture. */
+typedef struct JER_ARGS_CAR_STEP
+{
+	void* car;		/* CAR_DATA* */
+	int speed;		/* in: cp->hd.speed */
+	int velX;		/* in: linear velocity X (fixed point) */
+	int velZ;		/* in: linear velocity Z (fixed point) */
+	int avelY;		/* in: angular velocity Y (fixed point) */
+} JER_ARGS_CAR_STEP;
+
+/* JER_EVENT_CAR_TORQUE — fired after ConvertTorqueToAngularAcceleration.
+ * A module adds yaw torque (angular acceleration about Y) for drift kicks. */
+typedef struct JER_ARGS_CAR_TORQUE
+{
+	void* car;		/* CAR_DATA* */
+	int yawTorque;		/* in/out: added to cp->hd.aacc[1] */
+} JER_ARGS_CAR_TORQUE;
+
+/* JER_EVENT_CAR_DRAW — fired in DrawCar before the body matrix is built.
+ * A module rotates the render-only matrix (pitch/roll/yaw) without touching
+ * physics or collision. */
+typedef struct JER_ARGS_CAR_DRAW
+{
+	void* car;		/* CAR_DATA* */
+	void* matrix;		/* MATRIX* — render matrix to rotate in place */
+	int view;		/* in: camera view */
+} JER_ARGS_CAR_DRAW;
+
 #endif /* JERICHO_JER_EVENTS_H */

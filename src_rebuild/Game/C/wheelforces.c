@@ -165,6 +165,18 @@ void GetFrictionScalesDriver1(CAR_DATA* cp, CAR_LOCALS* cl, int* frontFS, int* r
 		*frontFS = FIXEDH(*frontFS * traction);
 		*rearFS = FIXEDH(*rearFS * traction);
 	}
+
+	// JERICHO-HOOK: transform front/rear grip after GetFrictionScalesDriver1.
+	{
+		JER_ARGS_CAR_FRICTION jerArgs;
+
+		jerArgs.car = cp;
+		jerArgs.frontFS = *frontFS;
+		jerArgs.rearFS = *rearFS;
+		jer_fire(JER_EVENT_CAR_FRICTION, &jerArgs);
+		*frontFS = jerArgs.frontFS;
+		*rearFS = jerArgs.rearFS;
+	}
 }
 
 // [D] [T]
@@ -719,6 +731,18 @@ void StepOneCar(CAR_DATA* cp)
 
 	cp->hd.speed = speed;
 
+	// JERICHO-HOOK: observe car state at the top of StepOneCar.
+	{
+		JER_ARGS_CAR_STEP jerArgs;
+
+		jerArgs.car = cp;
+		jerArgs.speed = speed;
+		jerArgs.velX = _cl.vel[0];
+		jerArgs.velZ = _cl.vel[2];
+		jerArgs.avelY = _cl.avel[1];
+		jer_fire(JER_EVENT_CAR_STEP, &jerArgs);
+	}
+
 	car_cos = cp->ap.carCos;
 	lift = 0;
 
@@ -903,6 +927,16 @@ void StepOneCar(CAR_DATA* cp)
 
 	AddWheelForcesDriver1(cp, &_cl);
 	ConvertTorqueToAngularAcceleration(cp, &_cl);
+
+	// JERICHO-HOOK: inject yaw torque after ConvertTorqueToAngularAcceleration.
+	{
+		JER_ARGS_CAR_TORQUE jerArgs;
+
+		jerArgs.car = cp;
+		jerArgs.yawTorque = 0;
+		jer_fire(JER_EVENT_CAR_TORQUE, &jerArgs);
+		cp->hd.aacc[1] += jerArgs.yawTorque;
+	}
 
 	cp->hd.mayBeColliding = 0;
 }

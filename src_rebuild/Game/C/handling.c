@@ -1402,6 +1402,22 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 		}
 	}
 
+	// JERICHO-HOOK: transform engine force / steering after ProcessCarPad.
+	{
+		JER_ARGS_CAR_ENGINE jerArgs;
+
+		jerArgs.car = cp;
+		jerArgs.thrust = cp->thrust;
+		jerArgs.wheelAngle = cp->wheel_angle;
+		jerArgs.handbrake = cp->handbrake;
+		jerArgs.wheelspin = cp->wheelspin;
+		jerArgs.speed = cp->hd.speed;
+		jerArgs.wheelSpeed = cp->hd.wheel_speed;
+		jer_fire(JER_EVENT_CAR_ENGINE, &jerArgs);
+		cp->thrust = (short)jerArgs.thrust;
+		cp->wheel_angle = (short)jerArgs.wheelAngle;
+	}
+
 	cp->lastPad = pad;
 }
 

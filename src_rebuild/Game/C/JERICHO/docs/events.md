@@ -27,6 +27,11 @@ inert no-ops when no module handles them.
 | `JER_EVENT_DRAW_OVERLAY` | — | `DrawDebugOverlays` / HUD path | 2D overlay / HUD drawing |
 | `JER_EVENT_PAUSE_MENU` | `JER_ARGS_PAUSE_MENU` | pause menu shell | module-owned menu state (labels + actions) |
 | `JER_EVENT_SHUTDOWN` | — | `redriver2_main`, after the state loop | the game is exiting — release resources (sockets, files) |
+| `JER_EVENT_CAR_ENGINE` | `JER_ARGS_CAR_ENGINE` | end of `ProcessCarPad` (`handling.c`) | transform engine force (thrust) + steering (wheel_angle) |
+| `JER_EVENT_CAR_FRICTION` | `JER_ARGS_CAR_FRICTION` | end of `GetFrictionScalesDriver1` (`wheelforces.c`) | transform front/rear friction (grip) |
+| `JER_EVENT_CAR_STEP` | `JER_ARGS_CAR_STEP` | top of `StepOneCar` (`wheelforces.c`) | observe car state (speed / velocity) |
+| `JER_EVENT_CAR_TORQUE` | `JER_ARGS_CAR_TORQUE` | after `ConvertTorqueToAngularAcceleration` (`wheelforces.c`) | inject yaw torque (`aacc[1]`) |
+| `JER_EVENT_CAR_DRAW` | `JER_ARGS_CAR_DRAW` | `DrawCar` (`cars.c`) | rotate the render-only body matrix (visual pitch/roll/yaw) |
 | `>= JER_EVENT_MODULE_CUSTOM` | module-defined | modules | custom events |
 
 ## Query events
@@ -59,6 +64,34 @@ reads the (possibly updated) fields back. No handler = stock behavior.
   `Skel[i].vCurrPos` to pose the arm), phase 1 after (read `vJPos` for
   world-space joint positions and draw extra meshes). `shadow` is set when
   the pass is for the shadow, so modules can skip there.
+
+## The car handling events (collisiondevil uses these)
+
+Five transform/observe hooks added for handling overhauls. Each fires once
+per car per physics frame (or per draw, for `CAR_DRAW`) and is a no-op with
+no handler.
+
+- **`JER_EVENT_CAR_ENGINE`** fires at the end of `ProcessCarPad` after
+  `cp->thrust` and `cp->wheel_angle` are computed. A module scales
+  `args->thrust` (engine force — derived from `car_cosmetics[].powerRatio`)
+  and `args->wheel_angle` (steering) in place; the engine writes them back
+  to `cp->thrust` / `cp->wheel_angle`.
+- **`JER_EVENT_CAR_FRICTION`** fires at the end of
+  `GetFrictionScalesDriver1` once the front/rear friction scales are
+  finalized. A module scales `args->frontFS` / `args->rearFS` in place
+  (e.g. drop rear grip to induce oversteer). Values are derived from
+  `car_cosmetics[].traction` × `handlingType[].frictionScaleRatio`.
+- **`JER_EVENT_CAR_STEP`** fires at the top of `StepOneCar`; read-only —
+  `args->speed`, `velX`, `velZ`, `avelY` let a module detect drift and
+  capture G-force without writing anything.
+- **`JER_EVENT_CAR_TORQUE`** fires after
+  `ConvertTorqueToAngularAcceleration`; a module sets `args->yawTorque`,
+  which is added to `cp->hd.aacc[1]` (yaw angular acceleration) for a
+  predictable powerslide kick.
+- **`JER_EVENT_CAR_DRAW`** fires in `DrawCar` over a render-only copy of
+  `cp->hd.drawCarMat`. A module rotates `args->matrix` (a `MATRIX*`) for
+  visual pitch/roll/yaw; the physics matrix (`cp->hd.where`) and collision
+  box are never touched.
 
 ## The pause menu bridge
 

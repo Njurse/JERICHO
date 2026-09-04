@@ -1672,7 +1672,19 @@ void DrawCar(CAR_DATA* cp, int view)
 
 	num_cars_drawn++;
 
-	MulMatrix0(&inv_camera_matrix, &cp->hd.drawCarMat, &workmatrix);
+	// JERICHO-HOOK: car body draw — visual pitch/roll/yaw on a render-only
+	// copy of the draw matrix (physics/collision matrices are untouched).
+	{
+		MATRIX visualMatrix = cp->hd.drawCarMat;
+		JER_ARGS_CAR_DRAW jerArgs;
+
+		jerArgs.car = cp;
+		jerArgs.matrix = &visualMatrix;
+		jerArgs.view = view;
+		jer_fire(JER_EVENT_CAR_DRAW, &jerArgs);
+
+		MulMatrix0(&inv_camera_matrix, &visualMatrix, &workmatrix);
+	}
 
 	// [A] there was mini cars cheat
 	// we need full blown mini cars with physics support
