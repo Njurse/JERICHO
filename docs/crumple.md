@@ -219,20 +219,31 @@ The bend is consumed in two places, using the **same** local-space
 `wheelDisp + bend`:
 
 - **Physics** — `wheelforces.c AddWheelForcesDriver1`: the raycast origin
-  passed to `FindSurfaceD2` is offset laterally and longitudinally (moved
-  inward / toe), so the suspension reads a displaced contact point →
-  asymmetric compression → scrub. To stop cars rolling onto their sides or
-  back after a hit:
+  passed to `FindSurfaceD2` is offset by the **full** local-space bend
+  (lateral `vx`, vertical `vy`, toe `vz`), so the suspension reads a
+  displaced contact point → asymmetric compression → scrub. To stop cars
+  rolling onto their sides or back after a hit:
   - the suspension force and its torque lever arm stay on the **un-bent**
     hub (`leverPos`), so the vehicle's roll/pitch geometry never wanders;
-  - the **vertical (vy) bend is excluded from the raycast entirely** —
-    feeding it into the suspension jacked/unloaded a corner and rolled the
-    car; it survives as a purely visual sag in `DrawCarWheels`;
-  - a bent wheel gets a compression **floor** (min 4) so a damaged corner
-    can never fully unload;
+  - the vertical `vy` bend IS fed into the raycast (so the contact height
+    follows the wheel) but is then **backed out of the compression**
+    (`newCompression += vy − |vy|`), so the body *droops* toward the
+    damaged wheel (net `−|vy|` of compression at that corner) instead of
+    jacking a pushed-down wheel or fully unloading a pushed-up one;
+  - there is **no minimum-compression floor** for bent wheels — the old
+    min-4 floor made an unloading corner pogo-stick and sustained rocking,
+    so the plain 0-clamp plus the droop back-out above is used instead;
+  - a bent wheel deviates from its heading by its lateral bend (a
+    **steering deviation**: `wheelSteerScale` on the fronts, the far
+    smaller `wheelSteerScaleRear` on the rears) so a broken wheel scrubs
+    and drags the car;
   - a lateral **scrub force** (∝ bend magnitude · `wheelScrubForce`)
     opposes the wheel's sideways velocity, so a crooked wheel naturally
     creates resistance while driving.
+  `ConvertTorqueToAngularAcceleration` also damps roll/pitch harder while
+  any wheel is bent (`aacc[i] −= avel[i]/12` for `i != 1`), so the body
+  settles into the slump instead of rocking. This per-wheel damping — not a
+  global `twistRateZ` change — is what keeps damaged cars stable (see §11).
 - **Draw** — `cars.c DrawCarWheels`: the wheel model is placed at the same
   bent position (including the visual sag) and a per-wheel **slant matrix**
   is composed into the wheel matrix: camber from the lateral bend (roll
@@ -243,9 +254,10 @@ The bend is consumed in two places, using the **same** local-space
 
 Wheel damage **compounds** like body damage: each wheel carries a monotonic
 `wheelDamage` level plus the direction of the latest kick; the applied bend
-is `wheelBend = wheelDamage · wheelDir`. Repeated hits only ever add damage
-— an opposite-side hit re-points the wheel, it never cancels back toward
-zero — and `crumple_resetCar` / repair clear it with the car.
+accumulates each kick's own directional push (`wheelBend += kick·wheelDir`,
+clamped per component). Repeated hits only ever add damage — an opposite-side
+hit re-points the wheel, it never cancels back toward zero — and
+`crumple_resetCar` / repair clear it with the car.
 
 Wheel index order is consistent everywhere: `0 = front-right, 1 = rear-right,
 2 = front-left, 3 = rear-left` (matches `wheelDisp[]` usage in both files).
@@ -260,7 +272,7 @@ Wheel index order is consistent everywhere: `0 = front-right, 1 = rear-right,
 | `denting.c` | `DentCarDirectional`: vertex loop → `crumple_deform(cp, tempDamage)`; `InitialiseDenting` → `crumple_init()`; `CreateDentableCar` → `crumple_resetCar(cp->id)` |
 | `handling.c` | car-car collision: `crumple_recordImpact(cp, c1, point, normal, howHard)` inside the `howHard > 0` block |
 | `bcollide.c` | world collision: `crumple_recordImpact(cp, NULL, hit, surfNormal, strikeVel)` after `DamageCar` (fixes the old stale-point world dent) |
-| `wheelforces.c` | wheel raycast origin offset by the bend; force/torque lever stays on the un-bent hub; bent-wheel compression floor + lateral scrub force |
+| `wheelforces.c` | wheel raycast origin offset by the full bend (vertical droop backed out of compression); force/torque lever stays on the un-bent hub; steering deviation + lateral scrub; bent-wheel roll/pitch damping |
 | `cars.c` | `DrawCarWheels` places the wheel at the bent position and transforms a per-wheel vert copy (`crumple_transformWheelVerts`) for camber/toe |
 | `pause.c` | **Crumple Debug** submenu (Debug Options): `D-Pad Deform`, `Buddha Mode` toggles + `Repair Car` |
 | `handling.c` | car-car `crumple_recordImpact`; `crumple_debugTick()` once per frame before the denting pass |
@@ -290,22 +302,24 @@ Wheel index order is consistent everywhere: `0 = front-right, 1 = rear-right,
 | `worldImpactFactor` | 4096 | strength multiplier for hits against static geometry |
 | `healthInfluence` | 2048 | how much `totalDamage` softens a car |
 | `damageModelMix` | 192 | fraction (~4.7%) of the baked damaged-model delta mixed as surface noise |
-| `wheelProximity` | 180 | distance (car-local) from a wheel that counts as "near the wheel" |
-| `wheelMinHowHard` | 30000 | threshold before a wheel bends (tuned down so the d-pad simulator can bend wheels) |
-| `wheelNormalize` | 90000 | `howHard` for a full bend kick |
-| `wheelBendStep` | 10 | damage level added per full kick (level compounds, see §6) |
-| `wheelBendMaxLevel` | 48 | max cumulative wheel-damage level (bend = level × latest-kick direction) |
-| `wheelBendMaxX/Y/Z` | 48 / 24 / 48 | per-component bend clamps (lateral / visual sag / toe) |
+| `wheelProximity` | 160 | distance (car-local) from a wheel that counts as "near the wheel" |
+| `wheelMinHowHard` | 60000 | threshold before a wheel bends (just above the ~56k damage threshold; tuned so the d-pad sim can bend wheels) |
+| `wheelNormalize` | 120000 | `howHard` for a full bend kick |
+| `wheelBendStep` | 24 | damage level added per full kick — 2-3 kicks reach max, so one T-bone breaks a wheel |
+| `wheelBendMaxLevel` | 31 | max cumulative wheel-damage level |
+| `wheelBendMaxX/Y/Z` | 31 / 16 / 16 | per-component bend clamps (lateral / visual sag / toe) |
 | `impactCurve` | 2 | 1 = linear, 2 = squared strength response (hard hits deform much deeper) |
 | `wheelScrubForce` | 192 | lateral drag coefficient per unit of lateral+toe bend (0..4096) |
-| `wheelBendCooldown` | 30 | frames between wheel-bend kicks (sustained-contact guard) |
-| `wheelCamberScale` | 6 | camber angle per unit of lateral bend (4096 = full circle); negate to flip the lean |
-| `wheelToeScale` | 6 | toe angle per unit of longitudinal bend (4096 = full circle) |
+| `wheelBendCooldown` | 10 | frames between wheel-bend kicks (sustained-contact guard — a real crash lasts several frames) |
+| `wheelCamberScale` | 29012 | max lateral bend → ~30° camber (roll); negate to flip the lean |
+| `wheelToeScale` | 38740 | max longitudinal bend → ~40° toe (yaw) |
+| `wheelSteerScale` | 38827 | FRONT max lateral bend → ~40° steering deviation |
+| `wheelSteerScaleRear` | 3883 | REAR max lateral bend → ~4° (twist only, must not steer the car) |
 | `simHowHard` | 1000000 | one-shot simulated-impact strength (kept for reference; the d-pad now grinds with `simTickHowHard`) |
 | `simTickHowHard` | 90000 | per-frame howHard while a d-pad direction is HELD — full-strength ticks that the impact ring merges into a deep local crumple |
 | `simJitter` | 40 | simulated-hit position jitter (world units) — hits land slightly off-centre |
-| `simAngleJitter` | 2048 | simulated-hit normal tilt (4096-fixed, ~7°) — hits land off-perpendicular, more organic |
-| `repairRate` | 128 | zone damage removed per frame during repair (4095 max → ~1s) |
+| `simAngleJitter` | 8192 | simulated-hit normal tilt (4096-fixed, up to ~28°) — hits land off-perpendicular, more organic |
+| `repairRate` | 8 | zone damage removed per frame during repair (small = slow, watchable morph) |
 
 ---
 
@@ -347,7 +361,22 @@ Three features live under **Debug Options → Crumble Debug** (compiled in with
 - The impact ring holds up to `CRUMPLE_MAX_IMPACTS` (8) unapplied/merging
   impacts; once baked they persist in the mesh regardless of the ring.
 - Wheel bends are local offsets plus a draw-side camber/toe rotation; the
-  tyre contact patch is approximated by the compression floor + scrub force,
+  tyre contact patch is approximated by the steering deviation + scrub force,
   not a full tire model.
 - Detachable parts (mirrors, bumpers, tyres) are out of scope — the hubcap
   system in denting.c is the existing base if they're ever wanted.
+
+---
+
+## 11. Roll-stability fix (`twistRateZ`)
+
+An early CRUMPLE experiment doubled the engine's roll rate for **every** car
+by adding `carCos->twistRateZ <<= 1;` to `FixCarCos()` (`handling.c`).
+`twistRateZ` is the **roll rate** consumed by
+`ConvertTorqueToAngularAcceleration` (`wheelforces.c`): doubling it halves a
+car's effective roll inertia, so any car — damaged or not, and with CRUMPLE
+enabled *or* disabled — would tip onto its side after a hit instead of
+settling back upright. The line has been **removed**. Roll stability for
+damaged cars now comes solely from the per-wheel damping inside
+`ConvertTorqueToAngularAcceleration` (the `bend != NULL` branch, see §6),
+and vanilla roll physics is untouched whenever no wheel is bent.

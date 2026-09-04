@@ -186,7 +186,15 @@ void FixCarCos(CAR_COSMETICS* carCos, int externalModelNumber)
 	doWheels = 1;
 
 	UpdateCarPoints(carCos);
-	carCos->twistRateZ <<= 1;
+
+	// NOTE: do NOT scale twistRateZ here. The CRUMPLE work briefly doubled it
+	// (carCos->twistRateZ <<= 1) to try to settle damaged cars, but twistRateZ
+	// is the ROLL rate consumed by ConvertTorqueToAngularAcceleration
+	// (wheelforces.c): doubling it halves the car's effective roll inertia and
+	// makes every car — damaged or not, CRUMPLE on or off — tip onto its side
+	// after a hit instead of settling back upright. Roll damping for bent
+	// wheels already lives inside ConvertTorqueToAngularAcceleration (the
+	// bend != NULL branch), so the global scale here must stay stock.
 	if (ActiveCheats.cheat10) // [A] cheat for secret car - Fireboyd78
 	{
 		if (carCos == &car_cosmetics[SPECIAL_CAR_SLOT] && externalModelNumber == 12)
