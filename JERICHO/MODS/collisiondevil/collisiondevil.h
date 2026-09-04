@@ -36,29 +36,29 @@
 // Grip drop: fraction of the REAR friction removed at full eagerness
 // (4096 = 100%). 2253/4096 ~= 0.55 -> rear grip ~0.45x — the manifesto's
 // "Drift Grip = base_friction * 0.45".
-#define CD_GRIP_DROP_FRAC   2867
+#define CD_GRIP_DROP_FRAC   3277
 
 // Yaw kick: yaw angular-acceleration added per frame during a drift, derived
 // from the car's yaw inertia (twistRateY). kick = twistRateY * SCALE / 2 at
 // full drift blend + full eagerness. 16 -> ~8000 units/frame for a mid car.
-#define CD_YAW_KICK_SCALE   56
+#define CD_YAW_KICK_SCALE   96
 
 // Visual drama magnitudes (PSX angle units; 4096 = 360 deg, ~11.4 units/deg).
-#define CD_DRAMA_ROLL_SHIFT 3     // |wheel_angle| * drama >> 3 (~4 deg max)
-#define CD_DRAMA_PITCH_BASE 60    // nose up/down angle at full drama + speed
+#define CD_DRAMA_ROLL_SHIFT 4     // |wheel_angle| * drama >> 4 (~2 deg max)
+#define CD_DRAMA_PITCH_BASE 30    // nose up/down angle at full drama + speed
 #define CD_DRAMA_YAW_SHIFT  5     // drift blend * drama >> 5 (~11 deg max)
 #define CD_DRAMA_REF_SPEED  60    // speed (world units) at which drama saturates
 // Side-slip -> body roll gain: lateral velocity (fixed point) >> shift gives
 // a PSX-angle-unit lean. 9 => ~10 m/s side slip leans ~7 deg.
-#define CD_SLIP_SHIFT       10
+#define CD_SLIP_SHIFT       11
 
 // Brake force scale while braking/reversing (4096 = stock, 2458 ~= 0.6x) —
 // a gentler brake that lets the car rotate into a drift instead of stopping.
 #define CD_BRAKE_SOFTEN     2458
 
 // Clamp the visual body angle (PSX angle units; ~11.4 units/deg).
-#define CD_BODY_MAX_ROLL     60    // ~5 deg lean
-#define CD_BODY_MAX_PITCH    45    // ~4 deg nose dive/lift
+#define CD_BODY_MAX_ROLL     30    // ~2.6 deg lean
+#define CD_BODY_MAX_PITCH    22    // ~2 deg nose dive/lift
 
 // Crash reactivity: impact force >> shift = angular-velocity kick on collision.
 #define CD_CRASH_SPIN_SHIFT  6

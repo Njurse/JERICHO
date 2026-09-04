@@ -232,7 +232,7 @@ static int cdOnCarStep(void* ud, void* args)
 		// roll: steering input + lateral momentum (side slip) — the body leans
 		// into the corner and rolls further as it slides.
 		int steerRoll = -cdScale(steer, dramaFrac) >> CD_DRAMA_ROLL_SHIFT;
-		int slipRoll = cdScale(a->velX >> CD_SLIP_SHIFT, dramaFrac);
+		int slipRoll = cdScale(a->velX >> CD_SLIP_SHIFT, dramaFrac) * -1;
 		rollTarget = cdScale(steerRoll + slipRoll, speedNorm);
 
 		// pitch: nose UP under power (rear squats), nose DOWN under brake.
