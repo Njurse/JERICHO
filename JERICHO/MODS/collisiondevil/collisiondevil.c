@@ -293,14 +293,23 @@ static int cdOnCarTorque(void* ud, void* args)
 	cp->hd.aacc[1] += cp->st.n.angularVelocity[1] >> CD_DAMP_SHIFT;
 	cp->hd.aacc[2] += cp->st.n.angularVelocity[2] >> CD_DAMP_SHIFT;
 
-	// drift yaw kick (only while drifting)
+	// drift yaw kick (only while drifting) — speed-gated so the car arcs
+	// instead of snapping around and jackknifing at speed
 	int blend = gDrift[cp->id].blend;
 	if (blend > 0)
 	{
 		int eagernessFrac = cdPercent(gCdCfg.eagerness);
+
+		// full authority near standstill, taper to CD_YAW_KICK_FLOOR at speed
+		int spd = cp->hd.speed;
+		int over = spd - CD_YAW_KICK_LOW_SPEED;
+		int range = CD_YAW_KICK_HIGH_SPEED - CD_YAW_KICK_LOW_SPEED;
+		int taper = 4096 - (over * (4096 - CD_YAW_KICK_FLOOR)) / range;
+		taper = jer_clamp_int(taper, CD_YAW_KICK_FLOOR, 4096);
+
 		int kick = cp->ap.carCos->twistRateY * CD_YAW_KICK_SCALE / 2;  // derived from yaw inertia
 		kick *= gDrift[cp->id].direction;
-		kick = cdScale(cdScale(kick, blend), eagernessFrac);
+		kick = cdScale(cdScale(cdScale(kick, blend), eagernessFrac), taper);
 		a->yawTorque = kick;
 	}
 

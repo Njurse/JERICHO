@@ -67,6 +67,12 @@
 // (6 halves the settle so cars twist/flip longer).
 #define CD_DAMP_SHIFT        6
 
+// Yaw-kick speed gate: full drift yaw authority near standstill, tapering to
+// a floor as speed rises so drifts slide instead of jackknifing the car.
+#define CD_YAW_KICK_LOW_SPEED   10
+#define CD_YAW_KICK_HIGH_SPEED  55
+#define CD_YAW_KICK_FLOOR       1638   // ~0.4x kick at/above high speed
+
 // FOV pull: scr_z reduction (from gCameraDefaultScrZ = 256) at full pull+speed.
 #define CD_FOV_PULL_SCRZ    80
 
