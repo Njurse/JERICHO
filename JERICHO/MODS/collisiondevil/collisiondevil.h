@@ -56,6 +56,17 @@
 // a gentler brake that lets the car rotate into a drift instead of stopping.
 #define CD_BRAKE_SOFTEN     2458
 
+// Clamp the visual body angle (PSX angle units; ~11.4 units/deg).
+#define CD_BODY_MAX_ROLL     60    // ~5 deg lean
+#define CD_BODY_MAX_PITCH    45    // ~4 deg nose dive/lift
+
+// Crash reactivity: impact force >> shift = angular-velocity kick on collision.
+#define CD_CRASH_SPIN_SHIFT  6
+
+// Angular damping soften: counter the stock -avel*128/4096 with +avel>>shift
+// (6 halves the settle so cars twist/flip longer).
+#define CD_DAMP_SHIFT        6
+
 // FOV pull: scr_z reduction (from gCameraDefaultScrZ = 256) at full pull+speed.
 #define CD_FOV_PULL_SCRZ    80
 

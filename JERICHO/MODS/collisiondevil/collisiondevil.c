@@ -226,7 +226,7 @@ static int cdOnCarStep(void* ud, void* args)
 	int dramaFrac = cdPercent(gCdCfg.drama);
 	int speedNorm = jer_clamp_int(a->speed, 0, CD_DRAMA_REF_SPEED) * 4096 / CD_DRAMA_REF_SPEED;
 
-	int rollTarget = 0, pitchTarget = 0, yawTarget = 0;
+	int rollTarget = 0, pitchTarget = 0;
 	if (dramaFrac > 0)
 	{
 		// roll: steering input + lateral momentum (side slip) — the body leans
@@ -235,20 +235,18 @@ static int cdOnCarStep(void* ud, void* args)
 		int slipRoll = cdScale(a->velX >> CD_SLIP_SHIFT, dramaFrac);
 		rollTarget = cdScale(steerRoll + slipRoll, speedNorm);
 
-		// pitch: nose UP under power (rear squats), nose DOWN under brake
-		// (dive). Accel is now the negative branch, fixing the "rear sits
-		// higher by default" attitude.
+		// pitch: nose UP under power (rear squats), nose DOWN under brake.
 		int pitchSign = cp->thrust > 0 ? -1 : (cp->thrust < 0 ? 1 : 0);
 		pitchTarget = cdScale(pitchSign * CD_DRAMA_PITCH_BASE, dramaFrac);
 		pitchTarget = cdScale(pitchTarget, speedNorm);
-
-		// yaw: rear steps out in the drift direction
-		yawTarget = (d->direction * cdScale(d->blend, dramaFrac)) >> CD_DRAMA_YAW_SHIFT;
 	}
+
+	// Clamp the body angle — snappy arcade lean, never absurd.
+	rollTarget = jer_clamp_int(rollTarget, -CD_BODY_MAX_ROLL, CD_BODY_MAX_ROLL);
+	pitchTarget = jer_clamp_int(pitchTarget, -CD_BODY_MAX_PITCH, CD_BODY_MAX_PITCH);
 
 	v->roll  = jer_lerp_int(v->roll,  rollTarget,  CD_VISUAL_LERP);
 	v->pitch = jer_lerp_int(v->pitch, pitchTarget, CD_VISUAL_LERP);
-	v->yaw   = jer_lerp_int(v->yaw,   yawTarget,   CD_VISUAL_LERP);
 
 	return JER_RESULT_CONTINUE;
 }
@@ -289,15 +287,22 @@ static int cdOnCarTorque(void* ud, void* args)
 	if (!gCdCfg.enabled || cp->id < 0 || cp->id >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
-	int blend = gDrift[cp->id].blend;
-	if (blend <= 0)
-		return JER_RESULT_CONTINUE;
+	// Lower the general angular damping so cars twist and flip more freely
+	// (ConvertTorqueToAngularAcceleration damps with -avel*128/4096).
+	cp->hd.aacc[0] += cp->st.n.angularVelocity[0] >> CD_DAMP_SHIFT;
+	cp->hd.aacc[1] += cp->st.n.angularVelocity[1] >> CD_DAMP_SHIFT;
+	cp->hd.aacc[2] += cp->st.n.angularVelocity[2] >> CD_DAMP_SHIFT;
 
-	int eagernessFrac = cdPercent(gCdCfg.eagerness);
-	int kick = cp->ap.carCos->twistRateY * CD_YAW_KICK_SCALE / 2;  // derived from yaw inertia
-	kick *= gDrift[cp->id].direction;
-	kick = cdScale(cdScale(kick, blend), eagernessFrac);
-	a->yawTorque = kick;
+	// drift yaw kick (only while drifting)
+	int blend = gDrift[cp->id].blend;
+	if (blend > 0)
+	{
+		int eagernessFrac = cdPercent(gCdCfg.eagerness);
+		int kick = cp->ap.carCos->twistRateY * CD_YAW_KICK_SCALE / 2;  // derived from yaw inertia
+		kick *= gDrift[cp->id].direction;
+		kick = cdScale(cdScale(kick, blend), eagernessFrac);
+		a->yawTorque = kick;
+	}
 
 	return JER_RESULT_CONTINUE;
 }
@@ -320,8 +325,6 @@ static int cdOnCarDraw(void* ud, void* args)
 		_RotMatrixX(m, (short)v->pitch);
 	if (v->roll != 0)
 		_RotMatrixZ(m, (short)v->roll);
-	if (v->yaw != 0)
-		_RotMatrixY(m, (short)v->yaw);
 
 	return JER_RESULT_CONTINUE;
 }
@@ -340,6 +343,38 @@ static int cdOnCamera(void* ud, void* args)
 	int pull = spd * gCdCfg.fovPull * CD_FOV_PULL_SCRZ / (CD_DRAMA_REF_SPEED * 100);
 
 	SetGeomScreen(gCameraDefaultScrZ - pull);
+	return JER_RESULT_CONTINUE;
+}
+
+// COLLISION: throw more angular momentum into a car on impact so crashes
+// twist and flip instead of bouncing flat.
+static int cdOnCollision(void* ud, void* args)
+{
+	JER_ARGS_COLLISION* a = (JER_ARGS_COLLISION*)args;
+	CAR_DATA* cp0 = (CAR_DATA*)a->car0;
+	CAR_DATA* cp1 = (CAR_DATA*)a->car1;
+	(void)ud;
+
+	if (!gCdCfg.enabled || cp0 == NULL)
+		return JER_RESULT_CONTINUE;
+
+	int spin = a->howHard >> CD_CRASH_SPIN_SHIFT;
+	if (spin <= 0)
+		return JER_RESULT_CONTINUE;
+
+	if (cp0->id >= 0 && cp0->id < MAX_CARS)
+	{
+		cp0->st.n.angularVelocity[0] += (cp0->id & 1) ? spin : -spin;
+		cp0->st.n.angularVelocity[1] += (cp0->id & 2) ? spin : -spin;
+		cp0->st.n.angularVelocity[2] += spin;
+	}
+	if (cp1 != NULL && cp1->id >= 0 && cp1->id < MAX_CARS)
+	{
+		cp1->st.n.angularVelocity[0] -= (cp1->id & 1) ? spin : -spin;
+		cp1->st.n.angularVelocity[1] -= (cp1->id & 2) ? spin : -spin;
+		cp1->st.n.angularVelocity[2] -= spin;
+	}
+
 	return JER_RESULT_CONTINUE;
 }
 
@@ -430,6 +465,7 @@ JER_MODULE_ENTRY(jer_module_collisiondevil_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_FRICTION, cdOnCarFriction, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, cdOnCarTorque, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW, cdOnCarDraw, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_COLLISION, cdOnCollision, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, cdOnCamera, NULL, 0);
 
 	jer_pause_menu_register(&cdMainMenu);
