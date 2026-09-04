@@ -54,12 +54,12 @@ static const char* const kPresetNames[] = { "Burnout 3", "Paradise", "Custom" };
 static void cdLoadConfig(void)
 {
 	gCdCfg.enabled    = jer_config_get_bool("collisiondevil", "enabled", 1);
-	gCdCfg.aggression = jer_config_get_int("collisiondevil", "aggression", 50);
-	gCdCfg.eagerness  = jer_config_get_int("collisiondevil", "eagerness", 50);
-	gCdCfg.drama      = jer_config_get_int("collisiondevil", "drama", 50);
-	gCdCfg.boost      = jer_config_get_int("collisiondevil", "boost", 50);
+	gCdCfg.aggression = jer_config_get_int("collisiondevil", "aggression", 65);
+	gCdCfg.eagerness  = jer_config_get_int("collisiondevil", "eagerness", 65);
+	gCdCfg.drama      = jer_config_get_int("collisiondevil", "drama", 65);
+	gCdCfg.boost      = jer_config_get_int("collisiondevil", "boost", 65);
 	gCdCfg.preset     = jer_config_get_int("collisiondevil", "preset", CD_PRESET_BURNOUT);
-	gCdCfg.fovPull    = jer_config_get_int("collisiondevil", "fov_pull", 0);
+	gCdCfg.fovPull    = jer_config_get_int("collisiondevil", "fov_pull", 40);
 
 	gCdCfg.enabled    = gCdCfg.enabled ? 1 : 0;
 	gCdCfg.aggression = jer_clamp_int(gCdCfg.aggression, 0, 100);
@@ -86,18 +86,18 @@ static void cdApplyPreset(void)
 	switch (gCdCfg.preset)
 	{
 		case CD_PRESET_BURNOUT:
-			gCdCfg.aggression = 70;
-			gCdCfg.eagerness  = 80;
-			gCdCfg.boost      = 70;
-			gCdCfg.drama      = 55;
-			gCdCfg.fovPull    = 40;
+			gCdCfg.aggression = 85;
+			gCdCfg.eagerness  = 90;
+			gCdCfg.boost      = 85;
+			gCdCfg.drama      = 70;
+			gCdCfg.fovPull    = 55;
 			break;
 		case CD_PRESET_PARADISE:
-			gCdCfg.aggression = 40;
-			gCdCfg.eagerness  = 50;
-			gCdCfg.boost      = 30;
-			gCdCfg.drama      = 85;
-			gCdCfg.fovPull    = 20;
+			gCdCfg.aggression = 50;
+			gCdCfg.eagerness  = 60;
+			gCdCfg.boost      = 40;
+			gCdCfg.drama      = 90;
+			gCdCfg.fovPull    = 30;
 			break;
 		case CD_PRESET_CUSTOM:
 			break;
@@ -129,6 +129,7 @@ static int cdOnBoot(void* ud, void* args)
 	(void)args;
 	cdLoadConfig();
 	cdApplyPreset();
+	cdSaveConfig();
 	return JER_RESULT_CONTINUE;
 }
 
@@ -396,6 +397,13 @@ static const JER_PAUSE_MENU cdMainMenu =
 
 JER_MODULE_ENTRY(jer_module_collisiondevil_entry)(JERICHO_CONTEXT* ctx)
 {
+	// Load + apply config here, not just on JER_EVENT_BOOT: the Mods menu
+	// enables/reloads modules via jer_manager_reload, which re-runs this entry
+	// but does NOT re-fire JER_EVENT_BOOT. Without this, a module enabled
+	// mid-session would leave gCdCfg zero-initialised and stay inert.
+	cdLoadConfig();
+	cdApplyPreset();
+
 	ctx->jer_register_module(ctx,
 		"collisiondevil",			/* id */
 		"COLLISIONDEVIL",			/* name */

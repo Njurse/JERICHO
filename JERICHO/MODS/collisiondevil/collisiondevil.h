@@ -36,21 +36,21 @@
 // Grip drop: fraction of the REAR friction removed at full eagerness
 // (4096 = 100%). 2253/4096 ~= 0.55 -> rear grip ~0.45x — the manifesto's
 // "Drift Grip = base_friction * 0.45".
-#define CD_GRIP_DROP_FRAC   2253
+#define CD_GRIP_DROP_FRAC   2458
 
 // Yaw kick: yaw angular-acceleration added per frame during a drift, derived
 // from the car's yaw inertia (twistRateY). kick = twistRateY * SCALE / 2 at
 // full drift blend + full eagerness. 16 -> ~8000 units/frame for a mid car.
-#define CD_YAW_KICK_SCALE   16
+#define CD_YAW_KICK_SCALE   28
 
 // Visual drama magnitudes (PSX angle units; 4096 = 360 deg, ~11.4 units/deg).
-#define CD_DRAMA_ROLL_SHIFT 3     // |wheel_angle| * drama >> 3 (~4 deg max)
-#define CD_DRAMA_PITCH_BASE 44    // nose up/down angle at full drama + speed
-#define CD_DRAMA_YAW_SHIFT  5     // drift blend * drama >> 5 (~11 deg max)
+#define CD_DRAMA_ROLL_SHIFT 2     // |wheel_angle| * drama >> 2 (~8 deg max)
+#define CD_DRAMA_PITCH_BASE 90    // nose up/down angle at full drama + speed
+#define CD_DRAMA_YAW_SHIFT  4     // drift blend * drama >> 4 (~14 deg max)
 #define CD_DRAMA_REF_SPEED  60    // speed (world units) at which drama saturates
 
 // FOV pull: scr_z reduction (from gCameraDefaultScrZ = 256) at full pull+speed.
-#define CD_FOV_PULL_SCRZ    60
+#define CD_FOV_PULL_SCRZ    80
 
 // presets
 enum

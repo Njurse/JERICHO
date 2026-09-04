@@ -14,7 +14,7 @@ void jer_module_sandbox_entry(JERICHO_CONTEXT* ctx);
 
 extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "antfarm", jer_module_antfarm_entry, 0 },
-	{ "collisiondevil", jer_module_collisiondevil_entry, 0 },
+	{ "collisiondevil", jer_module_collisiondevil_entry, 1 },
 	{ "crumple", jer_module_crumple_entry, 1 },
 	{ "d2pl", jer_module_d2pl_entry, 1 },
 	{ "gaildrv2", jer_module_gaildrv2_entry, 0 },
