@@ -1,0 +1,7 @@
+id = "collisiondevil"
+name = "COLLISIONDEVIL"
+version = "0.1.0"
+author = "JERICHO"
+description = "Arcade handling overhaul: derived speed boost, brake-tap powerslides, render-only visual drama, and a clean 2-page pause menu."
+dependencies = []
+default-enabled = false
