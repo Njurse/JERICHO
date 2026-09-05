@@ -514,8 +514,10 @@ static int cd2OnCarTorque(void* ud, void* args)
 	int targetYaw;
 	if (tightActive && c->pivotDir != 0)
 	{
-		// forced acute rotation: handling floor up to tight rate (x control)
-		long long pivot = ((long long)CD2_TIGHT_RATE * s.control) >> 12;
+		// forced acute rotation: normal handling x CD2_TIGHT_MULT, so the
+		// pivot scales with the car's own steering authority; the strength
+		// slider blends between plain handling and the full pivot.
+		long long pivot = (handlingNow * CD2_TIGHT_MULT) >> 12;
 		pivot = handlingNow + ((pivot - handlingNow) * gCd2Cfg.tightStrength) / 100;
 		targetYaw = (int)pivot * c->pivotDir;
 	}
@@ -524,9 +526,15 @@ static int cd2OnCarTorque(void* ud, void* args)
 		targetYaw = (handlingNow * steerFp) >> 12;           // PSX-units/frame
 	}
 
-	// yaw accelerates toward the target; snappier onset during a pivot
-	int yawStep = s.angularAccel * (tightActive ? CD2_TIGHT_ANG_MULT : 1);
+	// yaw accelerates toward the target; snappier onset during a pivot, and a
+	// stronger step while returning to center so the car stops spinning
+	// promptly instead of carrying rotation (less angular momentum).
+	int yawStep = s.angularAccel;
+	if (tightActive)
+		yawStep = (int)(yawStep * CD2_TIGHT_ANG_MULT);
 	int yaw = c->yawRate;
+	if (ABS(targetYaw) < ABS(yaw))
+		yawStep = (int)(((long long)yawStep * CD2_YAW_DECAY) >> 12);
 	if (yaw < targetYaw)
 	{
 		yaw += yawStep;

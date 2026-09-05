@@ -41,22 +41,24 @@
 // angularVelocity[1] per unit of yaw rate (PSX-units/frame). Derived from the
 // quaternion integrator in GlobalTimeStep (handling.c): AV = avel >> 13 is the
 // half-angle in fixed point, so avel = yawRate × π × 8192.
-#define CD2_AV_PER_UNIT     25736 / 2
+#define CD2_AV_PER_UNIT     25736
 
 // wheel_angle magnitude treated as full-lock steer (stock regular max = 352).
 #define CD2_STEER_MAX       352
 
-// Tight Turn (TMB): an acute forced pivot on its OWN yaw authority — NOT a
-// steering amplification. Pivot direction comes from the (latched) steer
-// input; the pivot bleeds a little forward speed so holding gas produces a
-// short drift-slide instead of a dead stop, and at low speed it spins
-// nearly in place. The trigger is selectable so it stays rebindable:
+// Tight Turn (TMB): an acute forced pivot DERIVED from the car's normal turn
+// authority — pivot rate = normal handling x CD2_TIGHT_MULT, so it scales
+// with the car's own steering stat/control instead of a fixed extra spin.
+// Pivot direction comes from the (latched) steer input; the pivot bleeds a
+// little forward speed so holding gas produces a short drift-slide instead
+// of a dead stop, and at low speed it spins nearly in place. The trigger is
+// selectable so it stays rebindable:
 //   CD2_TIGHT_INPUT_HANDBRAKE = Triangle (engine's handbrake),
 //   CD2_TIGHT_INPUT_WHEELSPIN = Circle  (engine's wheelspin/burnout bit),
 //   CD2_TIGHT_INPUT_OFF       = disabled.
 // (Physical buttons themselves are remapped by the engine's config.ini.)
-#define CD2_TIGHT_RATE          50    // pivot yaw, PSX-units/frame (x control/4096)
-#define CD2_TIGHT_ANG_MULT      1.6      // yaw angular step multiplier during a pivot
+#define CD2_TIGHT_MULT          8192   // fp: pivot = normal handling x this (2.0x)
+#define CD2_TIGHT_ANG_MULT      1.6    // yaw angular step multiplier during a pivot
 #define CD2_TIGHT_BLEED         96     // fp/frame: horizontal speed lost while pivoting (~2.3%)
 #define CD2_SLIDE_BLEED         32     // fp/frame: bleed while tight-sliding (~0.8%).
                                         // Tight Turn is NOT a brake: on ice the car
@@ -68,7 +70,7 @@
 enum
 {
 	CD2_TIGHT_INPUT_HANDBRAKE = 0,
-	CD2_TIGHT_INPUT_WHEELSPIN = 0,
+	CD2_TIGHT_INPUT_WHEELSPIN = 1,
 	CD2_TIGHT_INPUT_OFF = 2
 };
 
@@ -124,8 +126,8 @@ enum
                                     // physics top is CD2_SPEED_SCALE x this)
 #define CD2_SPEED_SCALE     3072  // fp: effective top speed multiplier (~0.75x)
 #define CD2_REVERSE_SPEED   120    // reverse cap (≈ 33% of the effective top)
-#define CD2_ACCEL           2     // speed-units/frame² (0→top in ~1s)
-#define CD2_BRAKE           8    // PEAK brake decel, speed-units/frame², applied
+#define CD2_ACCEL           4     // speed-units/frame² (0→top in ~1s)
+#define CD2_BRAKE           10    // PEAK brake decel, speed-units/frame², applied
                                   // proportionally (strong at speed, taper near 0)
 #define CD2_BRAKE_FLOOR     1024  // fp: fraction of peak brake kept at standstill
                                   // (1024/4096 = 25%) so stopping is never asymptotic
@@ -133,19 +135,23 @@ enum
 #define CD2_DRAG            36    // fixed point /frame: 48/4096 ≈ 1.2%/frame (coast)
 
 // Yaw defaults (PSX-units/frame; 4096 = 360°):
-#define CD2_HANDLING        25    // max yaw rate  (≈ 120°/s at 30 fps)
-#define CD2_ANGULAR_ACCEL   50    // yaw accel toward target (≈ 360°/s²)
+#define CD2_HANDLING        20    // max yaw rate  (≈ 120°/s at 30 fps)
+#define CD2_ANGULAR_ACCEL   15    // yaw accel toward target (≈ 360°/s²)
+#define CD2_YAW_DECAY       2048  // fp: centering step multiplier while the yaw
+                                  // returns to center (2048 = 2x) — the car stops
+                                  // spinning promptly instead of carrying rotation
 
 // Grip default (fixed point /frame; 1800/4096 ≈ 0.44/frame ≈ 13 s⁻¹ — TMB keeps
 // skids short and sparse, so base grip is high and only drops a little):
 #define CD2_GRIP            1800
-#define CD2_SLIP_REDUCTION  6     // /10 → max 30% grip drop at full slip
-                                   // (skids are brief, never a loss-of-control spiral)
+#define CD2_SLIP_REDUCTION  6     // /10 → max 60% grip drop at full slip
+                                   // (skids are brief; never push past 6 - a drop
+                                   // over 100% makes grip negative = blow-up)
 
 // Visual: lateral velocity (speed units) → body roll (PSX angle units).
-#define CD2_ROLL_GAIN       6     // roll = -latVel * gain, clamped below
+#define CD2_ROLL_GAIN       16     // roll = -latVel * gain, clamped below
 #define CD2_BODY_MAX_ROLL   37    // ~2° lean (TMB: weight felt, not exaggerated)
-#define CD2_ROLL_LERP       4     // exponential settle divisor
+#define CD2_ROLL_LERP       14     // exponential settle divisor
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
 #define CD2_FOV_REF_SPEED   120
