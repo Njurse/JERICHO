@@ -407,6 +407,7 @@ for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
 
 		includedirs {
 			("../JERICHO/MODS/" .. JER_MOD),
+			("../JERICHO/MODS"),  -- sibling modules (combatd2media includes combatd2/combatd2.h)
 		}
 
 		targetdir "bin/%{cfg.buildcfg}"

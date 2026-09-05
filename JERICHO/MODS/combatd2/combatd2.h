@@ -324,4 +324,7 @@ typedef struct CD2_CAR
 
 extern CD2_CONFIG gCd2Cfg;
 
+// Exported for the presentation module (combatd2media):
+int cd2CarTopSpeed(void* cp);
+
 #endif /* COMBATD2_H */
