@@ -86,3 +86,25 @@ Now the `JER_EVENT_GET_WALL_RESTITUTION` hook applies `wallRest` to the
 - "too drifty" → raise `CD2_GRIP` / lower `CD2_SLIP_REDUCTION` (max 6).
 - "slides but then snaps hard" → soften `CD2_RECOVER_*`.
 - "hits walls and stops" → lower `CD2_WALL_KEEP` (already near 0).
+
+## Gravity, angular settling & suspension (engine physics)
+
+combatd2 also overrides the engine's per-car physics via
+`JER_EVENT_GET_PHYSICS_PARAMS`, so the whole chassis — not just the horizontal
+point-mass — can be re-tuned:
+
+| Tunable | Stock | Feeds |
+|---|---|---|
+| `CD2_GRAVITY` | `-7456` | vertical acceleration (`wheelforces.c`) |
+| `CD2_ANGULAR_DAMPING` | `128` | `ConvertTorqueToAngularAcceleration` — pitch/roll/yaw settle rate |
+| `CD2_SPRING_RATE` | `230` | suspension spring constant |
+| `CD2_SPRING_DAMPING` | `100` | suspension damper constant |
+
+- "floaty / soft suspension" → raise `CD2_SPRING_RATE` and `CD2_SPRING_DAMPING`.
+- "body rocks/rolls too long after bumps" → raise `CD2_ANGULAR_DAMPING`.
+- "jumps feel too floaty or too heavy" → lower/raise `CD2_GRAVITY` (more
+  negative = stronger gravity).
+
+These are compile-time macros; exposing them as config/menu sliders is a
+possible follow-up.
+

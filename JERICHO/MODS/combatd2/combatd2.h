@@ -107,7 +107,7 @@ enum
 
 // Grip default (fixed point /frame; 1800/4096 ≈ 0.44/frame ≈ 13 s⁻¹ — TMB keeps
 // skids short and sparse, so base grip is high and only drops a little):
-#define CD2_GRIP            1800
+#define CD2_GRIP            400
 #define CD2_SLIP_REDUCTION  6     // /10 → max 60% grip drop at full slip
                                     // (never past 6: a drop over 100% makes
                                     // grip negative = instant blow-up)
@@ -125,7 +125,7 @@ enum
 // CD2_SKID_LOCK_LAT, the car stops arcing toward the nose entirely and keeps
 // its ORIGINAL momentum line — grip drops to CD2_SKID_LOCK_GRIP so the
 // velocity is never scrubbed toward the rotated heading (pure TMB ice drift).
-#define CD2_SKID_LOCK_LAT    70      // speed units: lateral velocity threshold
+#define CD2_SKID_LOCK_LAT    40      // speed units: lateral velocity threshold
 #define CD2_SKID_LOCK_GRIP   96      // fp: grip multiplier once locked (~2.3%)
 
 
@@ -149,11 +149,11 @@ enum
 // --------------------------- default stats -------------------------------
 //
 // Speed defaults (world-units/frame):
-#define CD2_TOP_SPEED       260   // speed-units/frame (raw slider value; the
+#define CD2_TOP_SPEED       25   // speed-units/frame (raw slider value; the
                                     // physics top is CD2_SPEED_SCALE x this)
 #define CD2_SPEED_SCALE     2048  // fp: effective top speed multiplier (0.5x =
                                     // ~130 at the default slider value)
-#define CD2_REVERSE_SPEED   45    // reverse cap (≈ 1/3 of the effective top)
+#define CD2_REVERSE_SPEED   -CD2_TOP_SPEED    // The vehicles drive just as fast backwards in Twisted Metal as they do forwards
 #define CD2_ACCEL           4     // speed-units/frame² (0→top in ~1s)
 #define CD2_BRAKE           10    // PEAK brake decel, speed-units/frame², applied
                                   // proportionally (strong at speed, taper near 0)
@@ -176,13 +176,26 @@ enum
 
 
 // ==============================================================
+// SUSPENSION, GRAVITY & ANGULAR SETTLING  (JER_EVENT_GET_PHYSICS_PARAMS)
+// ==============================================================
+// These feed the engine's StepOneCar via JER_EVENT_GET_PHYSICS_PARAMS. Stock
+// constants are: gravity -7456, angular damping 128, spring rate 230, spring
+// damping 100 (wheelforces.c). Higher angularDamping settles pitch/roll/yaw
+// faster (less floaty). Higher springRate/springDamping = tighter, less
+// bouncy suspension. Values here are compile-time tunables.
+#define CD2_GRAVITY           -7456   // vertical accel (D1 used -10922)
+#define CD2_ANGULAR_DAMPING   256     // stock 128; 256 = 2x faster angular settle
+#define CD2_SPRING_RATE       320     // stock 230 (stiffer)
+#define CD2_SPRING_DAMPING    160     // stock 100 (less bounce)
+
+// ==============================================================
 // VISUALS: BODY ROLL, CAMERA & FOV
 // ==============================================================
 
 // Visual: lateral velocity (speed units) → body roll (PSX angle units).
-#define CD2_ROLL_GAIN       16     // roll = -latVel * gain, clamped below
-#define CD2_BODY_MAX_ROLL   37    // ~2° lean (TMB: weight felt, not exaggerated)
-#define CD2_ROLL_LERP       14     // exponential settle divisor
+#define CD2_ROLL_GAIN       160     // roll = -latVel * gain, clamped below
+#define CD2_BODY_MAX_ROLL   370    // ~2° lean (TMB: weight felt, not exaggerated)
+#define CD2_ROLL_LERP       4     // exponential settle divisor
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
 #define CD2_FOV_PULL_SCRZ   60
@@ -222,7 +235,7 @@ enum
 //   (the LAST gear tops out at 1.0 = top speed), and each lower gear hits
 //   CD2_GEAR_SHIFT_REVS just before the upshift so shifts sound punchy.
 #define CD2_GEAR_AUTO         1     // 0/1: retune player cars' gear tables
-#define CD2_WS_PER_SPEED      8192  // fp: ws per 1.0 speed unit (8192/4096 = 2x)
+#define CD2_WS_PER_SPEED      8192/5  // fp: ws per 1.0 speed unit (8192/4096 = 2x)
 #define CD2_GEAR_1_FRAC       500   // fp: gear0 tops here (≈ 12% of top speed)
 #define CD2_GEAR_2_FRAC       1100  // fp: gear1 tops here (≈ 27%)
 #define CD2_GEAR_3_FRAC       1750  // fp: gear2 tops here (≈ 43%)

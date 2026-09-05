@@ -685,6 +685,22 @@ static int cd2OnGetWallRestitution(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// GET_PHYSICS_PARAMS: gravity + faster angular settling + tighter suspension.
+static int cd2OnPhysicsParams(void* ud, void* args)
+{
+	JER_ARGS_PHYSICS_PARAMS* a = (JER_ARGS_PHYSICS_PARAMS*)args;
+	(void)ud;
+
+	if (!gCd2Cfg.enabled)
+		return JER_RESULT_CONTINUE;
+
+	a->gravity = CD2_GRAVITY;
+	a->angularDamping = CD2_ANGULAR_DAMPING;
+	a->springRate = CD2_SPRING_RATE;
+	a->springDamping = CD2_SPRING_DAMPING;
+	return JER_RESULT_CONTINUE;
+}
+
 // CAR_DRAW: render-only body lean into the slide (physics matrix untouched).
 static int cd2OnCarDraw(void* ud, void* args)
 {
@@ -826,6 +842,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2OnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, cd2OnCarTorque, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, cd2OnGetWallRestitution, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_PHYSICS_PARAMS, cd2OnPhysicsParams, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW, cd2OnCarDraw, NULL, 0);
 
 	jer_pause_menu_register(&cd2Menu);
