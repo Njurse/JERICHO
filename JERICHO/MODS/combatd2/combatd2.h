@@ -71,6 +71,16 @@ enum
 #define CD2_TIGHT_STRENGTH_DEFAULT  100   // 0..100 pivot authority
 #define CD2_TIGHT_INPUT_DEFAULT     CD2_TIGHT_INPUT_HANDBRAKE
 
+// Iconic TMB slide: while the Tight Turn is held AND the car is fast enough,
+// lateral traction is suspended (~CD2_SLIDE_GRIP_FRAC of normal grip) so the
+// car keeps moving along its ORIGINAL velocity vector while the pivot rotates
+// the heading underneath it — you steer through the slide instead of the car
+// arcing. Releasing the button (or dropping below CD2_SLIDE_MIN_SPEED) hooks
+// the car back up cleanly.
+#define CD2_SLIDE_MIN_SPEED  50     // speed units/frame (below: low-speed spin)
+#define CD2_SLIDE_GRIP_FRAC  64     // fp: grip multiplier during the slide
+                                    // (64/4096 ≈ 1.5% of normal grip)
+
 // --------------------------- default stats -------------------------------
 //
 // Speed defaults (world-units/frame):

@@ -396,6 +396,20 @@ static int cd2OnCarTorque(void* ud, void* args)
 	int gripDrop = (int)((slipFactor * CD2_SLIP_REDUCTION) / 10);
 	int grip = (int)(((long long)s.grip * (4096 - gripDrop)) >> 12);
 
+	// Iconic TMB slide: while the Tight Turn pivot is active and the car is
+	// fast enough, traction is suspended — grip drops to a few percent, so
+	// the car keeps travelling along its ORIGINAL velocity vector while the
+	// pivot rotates the heading underneath it (steerable slide). Full grip
+	// returns when the button is released or speed falls off.
+	if (tightActive && c->pivotDir != 0)
+	{
+		int ax = ABS(FIXEDH(velX));
+		int az = ABS(FIXEDH(velZ));
+		int speedNow = (ax < az) ? (az + ax / 2) : (ax + az / 2); // speed units
+		if (speedNow > CD2_SLIDE_MIN_SPEED)
+			grip = (int)(((long long)grip * CD2_SLIDE_GRIP_FRAC) >> 12);
+	}
+
 	// damp the lateral component: vel -= right * latVel * grip
 	velX -= (int)(((long long)rx * latVel * grip) >> 12);
 	velZ -= (int)(((long long)rz * latVel * grip) >> 12);
