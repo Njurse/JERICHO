@@ -99,6 +99,11 @@ enum
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
 #define CD2_FOV_REF_SPEED   120
 
+// Wall restitution scale (0..4096; 4096 = stock bounce). 700/4096 ≈ 17% kept,
+// i.e. walls absorb ~83% of the car's momentum on impact — TMB's hard stop,
+// with just enough carry to keep wall-scraping from feeling frozen.
+#define CD2_WALL_KEEP       700
+
 // Per-vehicle variety references (typical values in this data set):
 #define CD2_REF_PW          4096   // typical powerRatio/mass ratio (4096/4096)
 #define CD2_REF_MASS        4096   // typical car mass (fixed-point scale)

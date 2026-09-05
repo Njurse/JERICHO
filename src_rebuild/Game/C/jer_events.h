@@ -99,6 +99,17 @@ typedef struct JER_ARGS_QUERY_FLAG
 	int result;
 } JER_ARGS_QUERY_FLAG;
 
+/* JER_EVENT_GET_WALL_RESTITUTION — query: restitution scale for a car hitting
+ * building/scenery geometry, fired in CarBuildingCollision (bcollide.c) once
+ * a hit is detected. result is 0..4096 (4096 = stock bounce); a module that
+ * wants TMB-style "walls absorb momentum" (hard stop, little/no bounce)
+ * returns a low value. No handler = stock. */
+typedef struct JER_ARGS_WALL_RESTITUTION
+{
+	void* car;		/* CAR_DATA* that hit the building */
+	int result;		/* out: restitution scale 0..4096, default 4096 */
+} JER_ARGS_WALL_RESTITUTION;
+
 /* JER_EVENT_PAUSE_MENU — pause menu shell <-> module bridge. The engine
  * keeps the Crumple Debug menu items; the module owns their state. */
 enum

@@ -1000,24 +1000,48 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 				reaction[1] = denom * (collisionResult.surfNormal.vy / 64);
 				reaction[2] = denom * (collisionResult.surfNormal.vz / 64);
 
-				cp->hd.aacc[1] += FIXEDH(lever[2] * reaction[0]) - FIXEDH(lever[0] * reaction[2]);
-
-				// angular impulse calculation and modifiers
-				if (cp->controlType != CONTROL_TYPE_LEAD_AI)
+				// JERICHO-HOOK: wall restitution scale (0..4096; 4096 = stock).
+				// Modules (combatd2) return a low value so walls ABSORB the car's
+				// momentum — a hard stop with little/no bounce instead of the
+				// stock outward impulse + spin. No handler = stock behaviour.
 				{
-					int reduction;
-					reduction = (cp->controlType == CONTROL_TYPE_PURSUER_AI);
+					JER_ARGS_WALL_RESTITUTION jerRest;
+					int wallRest;
 
-					cp->hd.aacc[0] += FIXEDH(lever[1] * reaction[2]) >> reduction;
-					cp->hd.aacc[0] -= FIXEDH(lever[2] * reaction[1]) >> reduction;
-					cp->hd.aacc[2] += FIXEDH(lever[0] * reaction[1]) >> reduction;
-					cp->hd.aacc[2] -= FIXEDH(lever[1] * reaction[0]) >> reduction;
+					jerRest.car = cp;
+					jerRest.result = 4096;
+					jer_fire(JER_EVENT_GET_WALL_RESTITUTION, &jerRest);
+					wallRest = jerRest.result;
 
-					cp->st.n.linearVelocity[1] += reaction[1];
+					if (wallRest < 4096)
+					{
+						// hard stop: keep only `wallRest` of the horizontal
+						// momentum, and skip the outward impulse / wall spin
+						cp->st.n.linearVelocity[0] = (int)(((long long)cp->st.n.linearVelocity[0] * wallRest) >> 12);
+						cp->st.n.linearVelocity[2] = (int)(((long long)cp->st.n.linearVelocity[2] * wallRest) >> 12);
+					}
+					else
+					{
+						cp->hd.aacc[1] += FIXEDH(lever[2] * reaction[0]) - FIXEDH(lever[0] * reaction[2]);
+
+						// angular impulse calculation and modifiers
+						if (cp->controlType != CONTROL_TYPE_LEAD_AI)
+						{
+							int reduction;
+							reduction = (cp->controlType == CONTROL_TYPE_PURSUER_AI);
+
+							cp->hd.aacc[0] += FIXEDH(lever[1] * reaction[2]) >> reduction;
+							cp->hd.aacc[0] -= FIXEDH(lever[2] * reaction[1]) >> reduction;
+							cp->hd.aacc[2] += FIXEDH(lever[0] * reaction[1]) >> reduction;
+							cp->hd.aacc[2] -= FIXEDH(lever[1] * reaction[0]) >> reduction;
+
+							cp->st.n.linearVelocity[1] += reaction[1];
+						}
+
+						cp->st.n.linearVelocity[0] += reaction[0];
+						cp->st.n.linearVelocity[2] += reaction[2];
+					}
 				}
-
-				cp->st.n.linearVelocity[0] += reaction[0];
-				cp->st.n.linearVelocity[2] += reaction[2];
 			}
 		}
 

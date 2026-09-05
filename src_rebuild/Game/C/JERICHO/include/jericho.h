@@ -101,6 +101,8 @@ enum
 								   (see JER_ARGS_CAR_TORQUE) */
 	JER_EVENT_CAR_DRAW,		/* car body draw: visual pitch/roll/yaw on the
 								   render matrix (see JER_ARGS_CAR_DRAW) */
+	JER_EVENT_GET_WALL_RESTITUTION,	/* query: wall/scenery hit restitution
+									   scale 0..4096 (4096 = stock bounce) */
 
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };

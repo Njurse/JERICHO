@@ -420,6 +420,21 @@ static int cd2OnCarTorque(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// GET_WALL_RESTITUTION: TMB "walls absorb momentum". Returning a low scale
+// makes building/scenery hits a hard stop (momentum bled) instead of the stock
+// outward bounce + spin. No handler (combatd2 disabled) = stock behaviour.
+static int cd2OnGetWallRestitution(void* ud, void* args)
+{
+	JER_ARGS_WALL_RESTITUTION* a = (JER_ARGS_WALL_RESTITUTION*)args;
+	(void)ud;
+
+	if (!gCd2Cfg.enabled)
+		return JER_RESULT_CONTINUE;
+
+	a->result = CD2_WALL_KEEP;
+	return JER_RESULT_CONTINUE;
+}
+
 // CAR_DRAW: render-only body lean into the slide (physics matrix untouched).
 static int cd2OnCarDraw(void* ud, void* args)
 {
@@ -546,6 +561,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2OnResetCar, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2OnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, cd2OnCarTorque, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, cd2OnGetWallRestitution, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW, cd2OnCarDraw, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, cd2OnCamera, NULL, 0);
 
