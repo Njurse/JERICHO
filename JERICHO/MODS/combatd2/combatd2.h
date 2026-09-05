@@ -109,11 +109,15 @@ enum
 // sharp turn carries its speed (TMB "continues moving in the original velocity
 // direction").
 
-// Hook-up sharpness: the first CD2_HOOKUP_FRAMES after a slide ends use a
-// strong fixed grip (below 4096 so it can never overshoot), snapping the
-// velocity back onto the heading like TMB's clean, crisp recovery.
-#define CD2_HOOKUP_FRAMES    2
-#define CD2_HOOKUP_GRIP      3800   // fp (~93% of lateral velocity removed/frame)
+// Velocity recovery after a slide ends: the old "hookup" scrubbed the lateral
+// component at ~93%/frame, which killed the car's speed whenever the pivot had
+// rotated the heading away from the travel direction (it stopped dead). TMB
+// releases instead CARRY the momentum: for CD2_RECOVER_FRAMES after letting
+// off the Tight Turn, the velocity is rotated back onto the heading while its
+// magnitude is conserved (ice-like, forgiving), then normal grip resumes.
+#define CD2_RECOVER_FRAMES    8     // frames of magnitude-preserving recovery
+#define CD2_RECOVER_RATE      1024  // fp: fraction of the remaining heading gap
+                                    // closed per frame (1024/4096 = 25%)
 
 // --------------------------- default stats -------------------------------
 //
@@ -241,7 +245,7 @@ typedef struct CD2_CAR
 	int roll;          // smoothed body roll, PSX angle units
 	int throttle;      // +1/-1/0 raw throttle captured at CAR_STEP (see note)
 	int pivotDir;      // latched tight-turn direction +1/-1/0
-	int slideTicks;    // hook-up frames remaining after a traction-suspended slide
+	int slideTicks;    // recovery frames remaining after a slide ends
 } CD2_CAR;
 
 extern CD2_CONFIG gCd2Cfg;

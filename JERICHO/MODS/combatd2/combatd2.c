@@ -602,18 +602,49 @@ static int cd2OnCarTorque(void* ud, void* args)
 	// Iconic TMB slide: while the Tight Turn pivot is active and the car is
 	// fast enough, traction is suspended — grip drops to a few percent, so
 	// the car keeps travelling along its ORIGINAL velocity vector while the
-	// pivot rotates the heading underneath it (steerable slide). When the
-	// slide ends the next CD2_HOOKUP_FRAMES use a strong fixed grip so the
-	// velocity snaps back onto the heading (TMB's crisp recovery).
+	// pivot rotates the heading underneath it (steerable slide). Letting off
+	// RECOVERS the velocity toward the heading WITHOUT stopping: the old
+	// lateral wipe scrubbed the car dead once the pivot had rotated the
+	// heading away from the travel direction. The recovery instead rotates
+	// the velocity back onto the heading while conserving its magnitude, so
+	// you exit the turn carrying your speed (TMB momentum).
 	if (slideNow)
 	{
-		c->slideTicks = CD2_HOOKUP_FRAMES; // re-prime for the release
+		c->slideTicks = CD2_RECOVER_FRAMES; // re-prime for the release
 		grip = (int)(((long long)grip * CD2_SLIDE_GRIP_FRAC) >> 12);
 	}
 	else if (c->slideTicks > 0)
 	{
-		grip = CD2_HOOKUP_GRIP; // < 4096: strong but never overshoots
+		// velocity recovery: rotate toward the heading, keep the magnitude
 		c->slideTicks--;
+
+		{
+			int ax = ABS(velX);
+			int az = ABS(velZ);
+			int mag = (ax < az) ? (az + ax / 2) : (ax + az / 2);
+
+			if (mag > 0)
+			{
+				// target = heading scaled to the current speed
+				int tx = (int)(((long long)fx * mag) >> 12);
+				int tz = (int)(((long long)fz * mag) >> 12);
+				long long rate = CD2_RECOVER_RATE;
+				int nvx = (int)(velX + ((((long long)tx - velX) * rate) >> 12));
+				int nvz = (int)(velZ + ((((long long)tz - velZ) * rate) >> 12));
+				int nax = ABS(nvx);
+				int naz = ABS(nvz);
+				int nm = (nax < naz) ? (naz + nax / 2) : (nax + naz / 2);
+
+				if (nm > 0)
+				{
+					// renormalise: the slide's speed is carried out, not lost
+					velX = (int)(((long long)nvx * mag) / nm);
+					velZ = (int)(((long long)nvz * mag) / nm);
+				}
+			}
+		}
+
+		grip = 0; // rotation above replaces the lateral scrub this frame
 	}
 
 	// damp the lateral component: vel -= right * latVel * grip
