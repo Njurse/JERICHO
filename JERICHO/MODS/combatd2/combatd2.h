@@ -91,8 +91,9 @@ enum
 // the other one.
 #define CD2_TMB_TIGHT_DEFAULT       0
 // thrust magnitude the override writes for gas (- for brake); only the SIGN
-// matters to the combatd2 torque model (engine force is superseded).
-#define CD2_TMB_THRUST              4915 * 5
+// matters to the combatd2 torque model, but the magnitude feeds the stock
+// wheel/pitch pass, so it should sit near the stock accel force (~power*4915).
+#define CD2_TMB_THRUST              4915
 
 // Iconic TMB slide: while the Tight Turn is held AND the car is fast enough,
 // traction is only PARTIALLY released — the car keeps real friction
@@ -154,8 +155,8 @@ enum
 // to the car on the ground plane and eased LOWER toward the car's base. Both
 // are relative fractions of the gap (fixed point 4096) so they can never
 // overshoot into the car; 0 disables that axis. 4096 = keep the stock frame.
-#define CD2_CAM_PULL        600   // fp: fraction of the gap to the car closed
-#define CD2_CAM_LOW         180   // fp: fraction of the height gap closed
+#define CD2_CAM_PULL        350   // fp: fraction of the gap to the car closed
+#define CD2_CAM_LOW         0      // fp: fraction of the height gap closed (0 = keep stock height)
 
 // Wall restitution scale (0..4096; 4096 = stock bounce). 700/4096 ≈ 17% kept,
 // i.e. walls absorb ~83% of the car's momentum on impact — TMB's hard stop,
@@ -178,9 +179,9 @@ enum
 //   CD2_GEAR_SHIFT_REVS just before the upshift so shifts sound punchy.
 #define CD2_GEAR_AUTO         1     // 0/1: retune player cars' gear tables
 #define CD2_WS_PER_SPEED      8192  // fp: ws per 1.0 speed unit (8192/4096 = 2x)
-#define CD2_GEAR_1_FRAC       300   // fp: gear0 tops here (≈ 7% of top speed)
-#define CD2_GEAR_2_FRAC       700   // fp: gear1 tops here (≈ 17%)
-#define CD2_GEAR_3_FRAC       1300  // fp: gear2 tops here (≈ 32%)
+#define CD2_GEAR_1_FRAC       500   // fp: gear0 tops here (≈ 12% of top speed)
+#define CD2_GEAR_2_FRAC       1100  // fp: gear1 tops here (≈ 27%)
+#define CD2_GEAR_3_FRAC       1750  // fp: gear2 tops here (≈ 43%)
 #define CD2_GEAR_SHIFT_REVS   13500 // revs at the top of gears 0..2 (pitch peak)
 #define CD2_REV_CEILING       15000 // top-gear revs AT top speed; hard rev clamp
 #define CD2_GEAR_DOWN_FRAC    3686  // fp: downshift point = prev gear top x this
@@ -202,8 +203,8 @@ enum
 //     volume toward 0: add a POSITIVE CD2_SND_*_BIAS and/or raise the gain
 //     above 4096 (gain divides the remaining attenuation: 8192 ≈ twice as
 //     loud). Clamps keep everything in [-10000, 0].
-#define CD2_REV_RISE_SCALE    12288 // fp: rev rise slew multiplier (~3x stock)
-#define CD2_REV_DROP_SCALE    6144  // fp: rev fall slew multiplier (~1.5x stock)
+#define CD2_REV_RISE_SCALE    6144  // fp: rev rise slew multiplier (~1.5x stock)
+#define CD2_REV_DROP_SCALE    4096  // fp: rev fall slew multiplier (1.0x stock)
 #define CD2_SND_PITCH_SCALE   4096  // fp: rev+idle pitch multiplier (1.0)
 #define CD2_SND_PITCH_BIAS    1024  // additive rev-channel pitch (faster spin-up)
 #define CD2_SND_IDLE_PITCH_BIAS 512 // additive idle-channel pitch
