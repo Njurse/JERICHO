@@ -65,6 +65,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tightStrength = jer_config_get_int("combatd2", "tight_strength", CD2_TIGHT_STRENGTH_DEFAULT);
 	gCd2Cfg.tightInput    = jer_config_get_int("combatd2", "tight_input", CD2_TIGHT_INPUT_DEFAULT);
 	gCd2Cfg.tmbButtons    = jer_config_get_int("combatd2", "tmb_buttons", CD2_TMB_BUTTONS_DEFAULT);
+	gCd2Cfg.tmbTight      = jer_config_get_int("combatd2", "tmb_tight", CD2_TMB_TIGHT_DEFAULT);
 	gCd2Cfg.debugLog      = jer_config_get_int("combatd2", "debug_log", 0);
 
 	gCd2Cfg.enabled  = gCd2Cfg.enabled ? 1 : 0;
@@ -79,6 +80,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tightStrength = jer_clamp_int(gCd2Cfg.tightStrength, 0, 100);
 	gCd2Cfg.tightInput    = jer_clamp_int(gCd2Cfg.tightInput, CD2_TIGHT_INPUT_HANDBRAKE, CD2_TIGHT_INPUT_OFF);
 	gCd2Cfg.tmbButtons    = gCd2Cfg.tmbButtons ? 1 : 0;
+	gCd2Cfg.tmbTight      = gCd2Cfg.tmbTight ? 1 : 0;
 	gCd2Cfg.debugLog      = gCd2Cfg.debugLog ? 1 : 0;
 }
 
@@ -96,6 +98,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "tight_strength", gCd2Cfg.tightStrength);
 	jer_config_set_int("combatd2", "tight_input", gCd2Cfg.tightInput);
 	jer_config_set_int("combatd2", "tmb_buttons", gCd2Cfg.tmbButtons);
+	jer_config_set_int("combatd2", "tmb_tight", gCd2Cfg.tmbTight);
 	jer_config_set_int("combatd2", "debug_log", gCd2Cfg.debugLog);
 }
 
@@ -224,13 +227,23 @@ static int cd2OnResetCar(void* ud, void* args)
 //   X = Tight Turn (the engine's wheelspin action -> combatd2 reads it),
 //   Square = Gas, Circle = Brake. Triangle is left unbound for the car, and
 //   the dedicated L3 get-in/get-out bit is untouched.
-static u_short cd2TmbTranslate(u_short in)
+// tightLeft picks which PS-position face button carries the Tight Turn:
+//   0 -> Cross/bottom (PS X), 1 -> Square/left (Xbox "X"); gas is on the other.
+static u_short cd2TmbTranslate(u_short in, int tightLeft)
 {
 	u_short out = in & ~(MPAD_CROSS | MPAD_SQUARE | MPAD_CIRCLE | MPAD_TRIANGLE);
 
-	if (in & MPAD_SQUARE) out |= MPAD_CROSS;   // Square  -> CAR_PAD_ACCEL (gas)
-	if (in & MPAD_CIRCLE) out |= MPAD_SQUARE;  // Circle  -> CAR_PAD_BRAKE
-	if (in & MPAD_CROSS)  out |= MPAD_CIRCLE;  // X       -> CAR_PAD_WHEELSPIN (tight turn)
+	if (tightLeft)
+	{
+		if (in & MPAD_CROSS)  out |= MPAD_CROSS;  // Cross(bottom) -> gas
+		if (in & MPAD_SQUARE) out |= MPAD_CIRCLE; // Square(left)  -> tight turn
+	}
+	else
+	{
+		if (in & MPAD_SQUARE) out |= MPAD_CROSS;  // Square(left)  -> gas
+		if (in & MPAD_CROSS)  out |= MPAD_CIRCLE; // Cross(bottom) -> tight turn
+	}
+	if (in & MPAD_CIRCLE) out |= MPAD_SQUARE;     // Circle -> brake
 	return out;
 }
 
@@ -252,8 +265,19 @@ static int cd2OnPreSim(void* ud, void* args)
 		if (player[i].playerType == PLAYER_TYPE_CAR &&
 			player[i].padid >= 0 && player[i].padid < 2)
 		{
-			Pads[player[i].padid].mapped = cd2TmbTranslate(Pads[player[i].padid].mapped);
-			Pads[player[i].padid].mapnew = cd2TmbTranslate(Pads[player[i].padid].mapnew);
+			u_short mapped = Pads[player[i].padid].mapped;
+			u_short mapnew = Pads[player[i].padid].mapnew;
+
+			if (gCd2Cfg.debugLog && (player[i].padid == 0))
+			{
+				static unsigned int t = 0;
+				if ((t++ & 15) == 0)
+					printInfo("[combatd2] raw mapped=0x%04X (bits: Cross 0x%X / Square 0x%X / Circle 0x%X / Triangle 0x%X)\n",
+						mapped, MPAD_CROSS, MPAD_SQUARE, MPAD_CIRCLE, MPAD_TRIANGLE);
+			}
+
+			Pads[player[i].padid].mapped = cd2TmbTranslate(mapped, gCd2Cfg.tmbTight);
+			Pads[player[i].padid].mapnew = cd2TmbTranslate(mapnew, gCd2Cfg.tmbTight);
 		}
 	}
 	return JER_RESULT_CONTINUE;
@@ -395,10 +419,13 @@ static int cd2OnCarTorque(void* ud, void* args)
 	// ---- throttle / brake / reverse / drag --------------------------
 	if (throttle > 0)
 	{
+		int accel = s.accel;
+		if (slideNow)
+			accel = (int)(((long long)accel * CD2_SLIDE_ACCEL_FRAC) >> 12);
 		if (fwdSpeed < s.topSpeed)
 		{
-			velX += fx * s.accel;
-			velZ += fz * s.accel;
+			velX += fx * accel;
+			velZ += fz * accel;
 		}
 		else
 		{
@@ -443,11 +470,14 @@ static int cd2OnCarTorque(void* ud, void* args)
 	}
 
 	// tight-turn momentum bleed: the forced pivot sheds a little horizontal
-	// speed so holding gas yields a drift-slide arc rather than a dead stop
+	// speed so holding gas yields a drift-slide arc rather than a dead stop.
+	// While the slide is active the scrub is stronger: gas + Tight Turn must
+	// shed speed (TMB), not build it.
 	if (tightActive && c->pivotDir != 0)
 	{
-		velX = (int)(((long long)velX * (4096 - CD2_TIGHT_BLEED)) >> 12);
-		velZ = (int)(((long long)velZ * (4096 - CD2_TIGHT_BLEED)) >> 12);
+		int bleed = slideNow ? CD2_SLIDE_BLEED : CD2_TIGHT_BLEED;
+		velX = (int)(((long long)velX * (4096 - bleed)) >> 12);
+		velZ = (int)(((long long)velZ * (4096 - bleed)) >> 12);
 	}
 
 	// ---- lateral grip (drift) ---------------------------------------
@@ -485,6 +515,21 @@ static int cd2OnCarTorque(void* ud, void* args)
 
 	c->slip = (int)latVel; // for the visual lean
 
+	// hard ceiling: total horizontal speed never exceeds topSpeed. Without it,
+	// a tight slide with gas keeps adding speed along a rotating heading and
+	// can feel like it is accelerating out of control.
+	{
+		int ax = ABS(FIXEDH(velX));
+		int az = ABS(FIXEDH(velZ));
+		int mag = (ax < az) ? (az + ax / 2) : (ax + az / 2);
+		if (mag > s.topSpeed)
+		{
+			long long k = ((long long)s.topSpeed * 4096) / mag;
+			velX = (int)(((long long)velX * k) >> 12);
+			velZ = (int)(((long long)velZ * k) >> 12);
+		}
+	}
+
 	// ---- write the point-mass state ---------------------------------
 	cp->st.n.linearVelocity[0] = velX;
 	cp->st.n.linearVelocity[2] = velZ;
@@ -508,12 +553,16 @@ static int cd2OnCarTorque(void* ud, void* args)
 	if (gCd2Cfg.debugLog && cp->controlType == CONTROL_TYPE_PLAYER &&
 		(gDbgFrame++ & 7) == 0)
 	{
+		int padm = 0;
+		if (cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2)
+			padm = Pads[*cp->ai.padid].mapped; // post-remap action bits
 		printInfo("[combatd2] fr=%u thr=%d steer=%d tight=%d slide=%d "
-			"fwd=%d spd=%d lat=%d grip=%d yaw=%d hdspd=%d hdws=%d\n",
+			"fwd=%d spd=%d lat=%d grip=%d yaw=%d hb=%d ws=%d pad=0x%04X hdspd=%d hdws=%d\n",
 			gDbgFrame, c->throttle, steerFp / 4096,
-			tightActive ? (c->pivotDir) : 0, slideNow ? 1 : 0,
+			tightActive ? (c->pivotDir ? c->pivotDir : 8) : 0, slideNow ? 1 : 0,
 			(int)fwdSpeed, (int)(((long long)velX * fx + (long long)velZ * fz) >> 24),
-			(int)latVel, grip, yaw, cp->hd.speed, cp->hd.wheel_speed);
+			(int)latVel, grip, yaw, cp->handbrake, cp->wheelspin, padm,
+			cp->hd.speed, cp->hd.wheel_speed);
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -607,11 +656,26 @@ static void cd2LabelTightInput(void* ud, char* out, int max)
 {
 	(void)ud;
 	if (gCd2Cfg.tmbButtons)
-		snprintf(out, max, "Tight Turn Input: X (TMB)");
+	{
+		// PS-position reference: X/Cross (bottom) is the default Tight Turn,
+		// Square (left) is Gas. Flip for pads that label the left button "X".
+		snprintf(out, max, "Tight Turn Button: %s",
+			gCd2Cfg.tmbTight ? "Square (Gas on X/Cross)" : "X / Cross (Gas on Square)");
+	}
 	else
 		snprintf(out, max, "Tight Input: %s", kTightInputNames[gCd2Cfg.tightInput]);
 }
-static int  cd2CycleTightInput(void* ud, int dir) { (void)ud; (void)dir; gCd2Cfg.tightInput = (gCd2Cfg.tightInput + 1) % 3; cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
+static int  cd2CycleTightInput(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	if (gCd2Cfg.tmbButtons)
+		gCd2Cfg.tmbTight = !gCd2Cfg.tmbTight;
+	else
+		gCd2Cfg.tightInput = (gCd2Cfg.tightInput + 1) % 3;
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
 
 static void cd2LabelDebug(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Telemetry Log: %s", gCd2Cfg.debugLog ? "ON" : "OFF"); }
 static int  cd2ToggleDebug(void* ud, int dir) { (void)ud; (void)dir; gCd2Cfg.debugLog = !gCd2Cfg.debugLog; cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
@@ -665,7 +729,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_module(ctx,
 		"combatd2",					/* id */
 		"Combat D2",				/* name */
-		"0.1.0",					/* version */
+		"0.2.0",					/* version */
 		"JERICHO",					/* author */
 		"Twisted Metal: Black style handling: point-mass velocity + yaw, Tight Turn pivot, proportional brakes, brief skids, momentum-absorbing walls.",	/* description */
 		"",							/* dependencies */

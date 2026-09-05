@@ -55,9 +55,11 @@
 //   CD2_TIGHT_INPUT_WHEELSPIN = Circle  (engine's wheelspin/burnout bit),
 //   CD2_TIGHT_INPUT_OFF       = disabled.
 // (Physical buttons themselves are remapped by the engine's config.ini.)
-#define CD2_TIGHT_RATE          110    // pivot yaw, PSX-units/frame (x control/4096)
-#define CD2_TIGHT_ANG_MULT      3      // yaw angular step multiplier during a pivot
+#define CD2_TIGHT_RATE          50    // pivot yaw, PSX-units/frame (x control/4096)
+#define CD2_TIGHT_ANG_MULT      1.6      // yaw angular step multiplier during a pivot
 #define CD2_TIGHT_BLEED         96     // fp/frame: horizontal speed lost while pivoting (~2.3%)
+#define CD2_SLIDE_BLEED         480    // fp/frame: extra scrub while tight-sliding with gas (~11.7%)
+#define CD2_SLIDE_ACCEL_FRAC    1024   // fp: accel fraction allowed during a tight slide (0.25x)
 #define CD2_TIGHT_STEER_MIN     16     // |wheel_angle| that (re)latches a pivot direction
 
 enum
@@ -72,11 +74,17 @@ enum
 #define CD2_TIGHT_INPUT_DEFAULT     CD2_TIGHT_INPUT_HANDBRAKE
 
 // TMB Classic in-car face-button layout (default ON):
-//   X = Tight Turn, Square = Gas, Circle = Brake.
-// Triangle is left unbound for the car (in TMB it is rear-view / nothing
-// combat relevant here); get-in/get-out stays on the dedicated L3 exit so it
-// is not hijacked by the remap. On foot, ped controls are untouched.
+//   Square-position = Gas, Circle = Brake, and the other primary face button
+//   (Cross) = Tight Turn. Triangle is left unbound for the car (in TMB it is
+//   rear-view / nothing combat relevant here); get-in/get-out stays on the
+//   dedicated L3 exit so it is not hijacked by the remap. On foot, ped
+//   controls are untouched.
 #define CD2_TMB_BUTTONS_DEFAULT     1
+// Some pads label the LEFT face button "X" (Xbox X / PS Square). tmb_tight
+// picks which PHYSICAL button carries the Tight Turn when the TMB layout is
+// on: 0 = Cross/bottom (PS "X", Xbox A), 1 = Square/left (Xbox X). Gas is on
+// the other one.
+#define CD2_TMB_TIGHT_DEFAULT       0
 
 // Iconic TMB slide: while the Tight Turn is held AND the car is fast enough,
 // lateral traction is suspended (~CD2_SLIDE_GRIP_FRAC of normal grip) so the
@@ -102,19 +110,19 @@ enum
 // --------------------------- default stats -------------------------------
 //
 // Speed defaults (world-units/frame):
-#define CD2_TOP_SPEED       180   // speed-units/frame (~top gear; highway limit is 138)
-#define CD2_REVERSE_SPEED   60    // ≈ 33% of top
-#define CD2_ACCEL           6     // speed-units/frame² (0→top in ~1s)
-#define CD2_BRAKE           12    // PEAK brake decel, speed-units/frame², applied
+#define CD2_TOP_SPEED       360   // speed-units/frame (~top gear; highway limit is 138)
+#define CD2_REVERSE_SPEED   360    // ≈ 33% of top
+#define CD2_ACCEL           2     // speed-units/frame² (0→top in ~1s)
+#define CD2_BRAKE           8    // PEAK brake decel, speed-units/frame², applied
                                   // proportionally (strong at speed, taper near 0)
 #define CD2_BRAKE_FLOOR     1024  // fp: fraction of peak brake kept at standstill
                                   // (1024/4096 = 25%) so stopping is never asymptotic
 #define CD2_REVERSE_ACCEL_FRAC 2048 // fp: reverse accel = brake x this (2048/4096 = 0.5)
-#define CD2_DRAG            48    // fixed point /frame: 48/4096 ≈ 1.2%/frame (coast)
+#define CD2_DRAG            36    // fixed point /frame: 48/4096 ≈ 1.2%/frame (coast)
 
 // Yaw defaults (PSX-units/frame; 4096 = 360°):
-#define CD2_HANDLING        40    // max yaw rate  (≈ 120°/s at 30 fps)
-#define CD2_ANGULAR_ACCEL   80    // yaw accel toward target (≈ 360°/s²)
+#define CD2_HANDLING        25    // max yaw rate  (≈ 120°/s at 30 fps)
+#define CD2_ANGULAR_ACCEL   50    // yaw accel toward target (≈ 360°/s²)
 
 // Grip default (fixed point /frame; 1800/4096 ≈ 0.44/frame ≈ 13 s⁻¹ — TMB keeps
 // skids short and sparse, so base grip is high and only drops a little):
@@ -178,7 +186,8 @@ typedef struct CD2_CONFIG
 	int tightTurn;     // 0/1 master toggle
 	int tightStrength; // 0..100 pivot authority
 	int tightInput;    // CD2_TIGHT_INPUT_*
-	int tmbButtons;    // 0/1: TMB in-car button layout (X tight turn, Square gas, Circle brake)
+	int tmbButtons;    // 0/1: TMB in-car button layout (Square gas, Circle brake)
+	int tmbTight;      // 0/1: which face button is Tight Turn (0=Cross/bottom, 1=Square/left)
 	int debugLog;      // 0/1: log player-car input/velocity telemetry to REDRIVER2.log
 } CD2_CONFIG;
 
