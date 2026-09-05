@@ -28,6 +28,8 @@ inert no-ops when no module handles them.
 | `JER_EVENT_PAUSE_MENU` | `JER_ARGS_PAUSE_MENU` | pause menu shell | module-owned menu state (labels + actions) |
 | `JER_EVENT_SHUTDOWN` | — | `redriver2_main`, after the state loop | the game is exiting — release resources (sockets, files) |
 | `JER_EVENT_CAR_PAD` | `JER_ARGS_CAR_PAD` | inside `ProcessCarPad` (`handling.c`), before the pedal assignment | take over the car's pedal semantics: set `handled` + write `cp->thrust`/`handbrake`/`wheelspin` — stock binds are skipped |
+| `JER_EVENT_CAR_GEARBOX` | `JER_ARGS_CAR_GEARBOX` | `GetEngineRevs` (`gamesnd.c`) | retune the per-car gear/rev table (shift points + ratios + rev ceiling) |
+| `JER_EVENT_CAR_ENGINE_SOUND` | `JER_ARGS_CAR_ENGINE_SOUND` | `SoundTasks` (`gamesnd.c`) | scale/offset the player car's rev + idle channel pitch and volume |
 | `JER_EVENT_CAR_ENGINE` | `JER_ARGS_CAR_ENGINE` | end of `ProcessCarPad` (`handling.c`) | transform engine force (thrust) + steering (wheel_angle) |
 | `JER_EVENT_CAR_FRICTION` | `JER_ARGS_CAR_FRICTION` | end of `GetFrictionScalesDriver1` (`wheelforces.c`) | transform front/rear friction (grip) |
 | `JER_EVENT_CAR_STEP` | `JER_ARGS_CAR_STEP` | top of `StepOneCar` (`wheelforces.c`) | observe car state (speed / velocity) |

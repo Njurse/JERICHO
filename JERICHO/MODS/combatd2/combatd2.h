@@ -148,6 +148,41 @@ enum
 // with just enough carry to keep wall-scraping from feeling frozen.
 #define CD2_WALL_KEEP       700
 
+// ----------------------- engine audio / gearbox ---------------------------
+//
+// combatd2 drives speed directly, so the stock rev model (gamesnd geard)
+// keeps climbing with cp->hd.wheel_speed and would wind far past a sane
+// redline. While a player drives we retune the gear table via
+// JER_EVENT_CAR_GEARBOX: short, snappy lower gears, and a TALL top gear whose
+// ratio levels the pitch at the car's combatd2 top speed — revs then cap at
+// CD2_REV_CEILING no matter how fast the point-mass model goes.
+//   ws (rev-model speed) = car speed x CD2_WS_PER_SPEED/4096
+//   (wheel_speed is ~4096x speed and GetEngineRevs shifts it >> 11 => 2x)
+// Gear boundaries are fractions of the car's per-vehicle top speed:
+//   gear0..1 | gear1..2 | gear2..3 top out at those fractions of top speed
+//   (the LAST gear tops out at 1.0 = top speed), and each lower gear hits
+//   CD2_GEAR_SHIFT_REVS just before the upshift so shifts sound punchy.
+#define CD2_GEAR_AUTO         1     // 0/1: retune player cars' gear tables
+#define CD2_WS_PER_SPEED      8192  // fp: ws per 1.0 speed unit (8192/4096 = 2x)
+#define CD2_GEAR_1_FRAC       660   // fp: gear0 tops here (660/4096 ≈ 16% of top)
+#define CD2_GEAR_2_FRAC       1280  // fp: gear1 tops here (≈ 31%)
+#define CD2_GEAR_3_FRAC       2130  // fp: gear2 tops here (≈ 52%)
+#define CD2_GEAR_SHIFT_REVS   8200  // revs at the top of gears 0..2 (pitch peak)
+#define CD2_REV_CEILING       11000 // top-gear revs AT top speed; hard rev clamp
+#define CD2_GEAR_DOWN_FRAC    3686  // fp: downshift point = prev gear top x this
+                                    // (3686/4096 ≈ 0.9; hysteresis vs the upshift)
+// Engine channel audio tuners (applied per player car via
+// JER_EVENT_CAR_ENGINE_SOUND). Pitch is SPU pitch units (4096 = normal);
+// volume is PSX volume (0 loudest, -10000 silent). Scale = fixed point 4096.
+#define CD2_SND_PITCH_SCALE   4096  // fp: rev+idle pitch multiplier (1.0)
+#define CD2_SND_PITCH_BIAS    0     // additive pitch on the rev channel
+#define CD2_SND_IDLE_PITCH_BIAS 0   // additive pitch on the idle channel
+#define CD2_SND_VOLUME_SCALE  4096  // fp: rev volume multiplier (1.0)
+#define CD2_SND_VOLUME_BIAS   0     // additive rev volume (negative = quieter)
+#define CD2_SND_IDLE_VOLUME_BIAS 0  // additive idle volume (negative = quieter)
+#define CD2_SND_MIN_VOL      -10000  // clamp floor for the scaled volumes
+#define CD2_SND_MAX_VOL      0      // clamp ceiling
+
 // Per-vehicle variety references (typical values in this data set):
 #define CD2_REF_PW          4096   // typical powerRatio/mass ratio (4096/4096)
 #define CD2_REF_MASS        4096   // typical car mass (fixed-point scale)

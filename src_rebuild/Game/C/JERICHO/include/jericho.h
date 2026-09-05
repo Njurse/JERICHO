@@ -108,6 +108,11 @@ enum
 	JER_EVENT_GET_WALL_RESTITUTION,	/* query: wall/scenery hit restitution
 									   scale 0..4096 (4096 = stock bounce) */
 
+	JER_EVENT_CAR_GEARBOX,		/* inside GetEngineRevs (gamesnd.c): retune
+				   the gear/rev model per car (see JER_ARGS_CAR_GEARBOX) */
+	JER_EVENT_CAR_ENGINE_SOUND,	/* SoundTasks: scale/offset the player's
+				   rev + idle engine channel pitch/volume */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

@@ -1,6 +1,8 @@
 
 
 #include "driver2.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "gamesnd.h"
 
 #include "sound.h"
@@ -638,11 +640,10 @@ void StartGameSounds(void)
 ushort GetEngineRevs(CAR_DATA* cp)
 {
 	int acc;
-	GEAR_DESC* gd;
 	int gear;
-	int lastgear;
-	int ws, lws;
+	int ws;
 	int type;
+	int g;
 
 	gear = cp->hd.gear;
 	ws = cp->hd.wheel_speed;
@@ -656,49 +657,81 @@ ushort GetEngineRevs(CAR_DATA* cp)
 		if (gear > 3)
 			gear = 3;
 
-		gd = &geard[type][gear];
+		// JERICHO-HOOK: retune the gear/rev model per car (combatd2's short
+		// gears + tall top gear that levels pitch at the car's top speed).
+		// Prefilled with the stock row, so no handler = exactly stock.
+		{
+			JER_ARGS_CAR_GEARBOX gb;
+			int gi;
 
-		do {
-			if (acc < 1)
-				lws = gd->lowidl_ws;
-			else
-				lws = gd->low_ws;
+			gb.car = cp;
+			gb.type = type;
+			gb.wheelSpeed = ws;
+			gb.thrust = acc;
+			gb.revCeiling = 0;
 
-			lastgear = gear;
-
-			if (ws < lws)
+			for (gi = 0; gi < 4; gi++)
 			{
-				gd--;
-				lastgear = gear - 1;
+				gb.lowIdleWs[gi] = geard[type][gi].lowidl_ws;
+				gb.lowWs[gi] = geard[type][gi].low_ws;
+				gb.hiWs[gi] = geard[type][gi].hi_ws;
+				gb.ratioAc[gi] = geard[type][gi].ratio_ac;
+				gb.ratioIdle[gi] = geard[type][gi].ratio_id;
 			}
 
-			if (gd->hi_ws < ws)
+			jer_fire(JER_EVENT_CAR_GEARBOX, &gb);
+
+			// walk gears with the (possibly retuned) table: upshift past
+			// hiWs, downshift under lowWs/lowlidl (stock hysteresis shape)
+			g = gear;
+
+			do {
+				int lws = (acc < 1) ? gb.lowIdleWs[g] : gb.lowWs[g];
+				int ng = g;
+
+				if (ws < lws && g > 0)
+					ng = g - 1;
+				else if (gb.hiWs[g] < ws)
+					ng = g + 1;
+
+				if (ng == g)
+					break;
+
+				g = ng;
+			} while (g > 0 && g < 3);
+
+			if (g < 0) g = 0;
+			if (g > 3) g = 3;
+
+			cp->hd.gear = g;
+
+			if (acc != 0)
 			{
-				gd++;
-				lastgear++;
+				int revs = ws * gb.ratioAc[g];
+				if (gb.revCeiling > 0 && revs > gb.revCeiling)
+					revs = gb.revCeiling;
+				return (ushort)revs;
 			}
 
-			if (gear == lastgear)
-				break;
-
-			gear = lastgear;
-
-		} while (true);
-
-		cp->hd.gear = lastgear;
+			{
+				int revs = ws * gb.ratioIdle[g];
+				if (gb.revCeiling > 0 && revs > gb.revCeiling)
+					revs = gb.revCeiling;
+				return (ushort)revs;
+			}
+		}
 	}
 	else
 	{
 		ws = -ws / 2048;
-		lastgear = 0;
 
 		cp->hd.gear = 0;
+
+		if (acc != 0)
+			return ws * geard[type][0].ratio_ac;
+
+		return ws * geard[type][0].ratio_id;
 	}
-
-	if (acc != 0)
-		return ws * geard[type][lastgear].ratio_ac;
-
-	return ws * geard[type][lastgear].ratio_id;
 }
 
 const int maxrevdrop = 1440;
@@ -1666,21 +1699,35 @@ void SoundTasks(void)
 			position = (VECTOR*)cp->hd.where.t;
 			velocity = (LONGVECTOR3*)cp->st.n.linearVelocity;
 
-			if (lcp->car_is_sounding < 2)
-				vol = lcp->revsvol;
-			else
-				vol = -10000;
+			// JERICHO-HOOK: engine-audio tuners (combatd2): scale/offset the
+			// rev + idle channel pitch and volume before they are placed.
+			{
+				JER_ARGS_CAR_ENGINE_SOUND es;
+				int rvol;
+				int ivol;
 
-			chan = i * 3;
-			SetChannelPosition3(chan, position, velocity, vol, cp->hd.revs / 4 + lcp->revsvol / 64 + 1500, 0);
-			
-			if (lcp->car_is_sounding == 0)
-				vol = lcp->idlevol;
-			else
-				vol = -10000;
+				if (lcp->car_is_sounding < 2)
+					rvol = lcp->revsvol;
+				else
+					rvol = -10000;
 
-			chan = i * 3 + 1;
-			SetChannelPosition3(chan, position, velocity, vol, cp->hd.revs / 4 + 4096, 0);
+				if (lcp->car_is_sounding == 0)
+					ivol = lcp->idlevol;
+				else
+					ivol = -10000;
+
+				es.car = cp;
+				es.playerId = i;
+				es.revPitch = cp->hd.revs / 4 + lcp->revsvol / 64 + 1500;
+				es.revVolume = rvol;
+				es.idlePitch = cp->hd.revs / 4 + 4096;
+				es.idleVolume = ivol;
+
+				jer_fire(JER_EVENT_CAR_ENGINE_SOUND, &es);
+
+				SetChannelPosition3(i * 3, position, velocity, es.revVolume, es.revPitch, 0);
+				SetChannelPosition3(i * 3 + 1, position, velocity, es.idleVolume, es.idlePitch, 0);
+			}
 
 			// siren sound control
 			if (CarHasSiren(cp->ap.model) != 0)

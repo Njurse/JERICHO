@@ -21,6 +21,13 @@ stock wheel/suspension sim:
   menu to put the pivot on that button and Gas on X/Cross.
 - **Brief, forgiving skids** — high base grip that only sags ~30% at full
   slip, so you never spiral out of control.
+- **Short, punchy gears with a tall top** — the rev/gear model is retuned per
+  player car so low gears are short and shift quickly, while top gear is tall
+  enough that the pitch levels out at the car's top speed instead of revving
+  away (tunable via the `CD2_GEAR_*` / `CD2_REV_CEILING` macros in `combatd2.h`).
+- **Engine-audio tuners** — pitch/volume scaling for the rev + idle engine
+  channels live in `combatd2.h` as `CD2_SND_*` macros (SPU pitch 4096 = normal,
+  PSX volumes; all neutral by default).
 - **Walls absorb momentum** — scenery hits are a hard stop, not a bounce.
 - **Weight & Control spread** — derived from each chassis' power-to-weight and
   mass: light cars are instant and agile, trucks are slow but heavy and coast
@@ -42,7 +49,9 @@ then writes `linearVelocity[0..2]` and `angularVelocity[1]` directly.
 code zeroes it, `JER_EVENT_CAR_PAD` (new engine hook, fired inside
 `ProcessCarPad`) lets the module take over the car's pedal semantics for the
 TMB layout — the stock face-button assignment is skipped that frame, so the
-original binds never double-fire alongside the new ones — and
+original binds never double-fire alongside the new ones; `JER_EVENT_CAR_GEARBOX`
+retunes the gamesnd rev model (short gears, tall top) and
+`JER_EVENT_CAR_ENGINE_SOUND` scales the engine channel pitch/volume — and
 `JER_EVENT_GET_WALL_RESTITUTION` (new engine query) makes
 walls absorb momentum — the stock collision path is unchanged when combatd2
 is off. Vertical motion + roll/pitch stay stock so the car still rides terrain.

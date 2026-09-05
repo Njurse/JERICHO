@@ -332,6 +332,42 @@ typedef struct JER_ARGS_CAR_PAD
 	int handled;		/* out: set 1 to skip the stock pedal assignment */
 } JER_ARGS_CAR_PAD;
 
+/* JER_EVENT_CAR_GEARBOX — fired inside GetEngineRevs (gamesnd.c) once per
+ * active car per frame, right before the gear is selected from wheel speed.
+ * Fields default to the stock gear-table row for this car (units match the
+ * stock table: ws = wheel_speed>>11). A module may rewrite the four gears to
+ * retune the rev model (e.g. shorter gears, and a tall top gear whose ratio
+ * levels the pitch at the car's top speed instead of revving away) and/or set
+ * revCeiling to clamp the returned revs. wheelSpeed/thrust/type are inputs. */
+typedef struct JER_ARGS_CAR_GEARBOX
+{
+	void* car;		/* CAR_DATA* */
+	int type;		/* in: stock gear-table row (0/1) in use */
+	int wheelSpeed;		/* in: scaled wheel speed ws (wheel_speed>>11) */
+	int thrust;		/* in: accel state (cp->thrust) */
+	int lowIdleWs[4];	/* in/out per gear: downshift point while coasting */
+	int lowWs[4];		/* in/out per gear: downshift point while accelerating */
+	int hiWs[4];		/* in/out per gear: upshift point */
+	int ratioAc[4];		/* in/out: revs per ws while accelerating */
+	int ratioIdle[4];	/* in/out: revs per ws while coasting */
+	int revCeiling;		/* in/out: clamp returned revs when > 0 */
+} JER_ARGS_CAR_GEARBOX;
+
+/* JER_EVENT_CAR_ENGINE_SOUND — fired in SoundTasks (gamesnd.c) once per
+ * player's car, right before the rev and idle engine channels are placed.
+ * pitch values are the SPU pitches about to be used (4096 = normal speed);
+ * volume is in PSX volume units (negative; -10000 = silent). A module may
+ * scale/offset them for engine-audio tuning. */
+typedef struct JER_ARGS_CAR_ENGINE_SOUND
+{
+	void* car;		/* CAR_DATA* of the player's car */
+	int playerId;		/* in: player index (0/1) driving this car */
+	int revPitch;		/* in/out: rev channel pitch */
+	int revVolume;		/* in/out: rev channel volume */
+	int idlePitch;		/* in/out: idle channel pitch */
+	int idleVolume;		/* in/out: idle channel volume */
+} JER_ARGS_CAR_ENGINE_SOUND;
+
 /* JER_EVENT_CAR_ENGINE — fired at the end of ProcessCarPad, after the engine
  * force (thrust) and steering (wheel_angle) are computed. A module scales
  * them in place to overclock acceleration / widen steering. handbrake/
