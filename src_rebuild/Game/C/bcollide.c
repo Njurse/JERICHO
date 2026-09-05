@@ -1001,9 +1001,11 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 				reaction[2] = denom * (collisionResult.surfNormal.vz / 64);
 
 				// JERICHO-HOOK: wall restitution scale (0..4096; 4096 = stock).
-				// Modules (combatd2) return a low value so walls ABSORB the car's
-				// momentum — a hard stop with little/no bounce instead of the
-				// stock outward impulse + spin. No handler = stock behaviour.
+				// A module (combatd2) returns a low value so the wall cancels
+				// only the velocity INTO it (the normal component) and lets the
+				// car keep scraping tangentially along the wall — the TM2
+				// "collision forgiveness" — instead of the stock outward
+				// impulse + spin. No handler = stock behaviour.
 				{
 					JER_ARGS_WALL_RESTITUTION jerRest;
 					int wallRest;
@@ -1015,10 +1017,21 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 
 					if (wallRest < 4096)
 					{
-						// hard stop: keep only `wallRest` of the horizontal
-						// momentum, and skip the outward impulse / wall spin
-						cp->st.n.linearVelocity[0] = (int)(((long long)cp->st.n.linearVelocity[0] * wallRest) >> 12);
-						cp->st.n.linearVelocity[2] = (int)(((long long)cp->st.n.linearVelocity[2] * wallRest) >> 12);
+						// Cancel only the velocity INTO the wall (the normal
+						// component), keep the tangential component so the car
+						// scrapes along the wall instead of stopping dead, and
+						// reflect just `wallRest` of the normal back (0 = pure
+						// absorb, 4096 = full bounce). Skips the stock outward
+						// impulse and wall-spin.
+						int nx = collisionResult.surfNormal.vx;
+						int nz = collisionResult.surfNormal.vz;
+						long long s = (((long long)cp->st.n.linearVelocity[0] * nx) +
+							((long long)cp->st.n.linearVelocity[2] * nz)) >> 12; // normal speed (raw scale)
+						long long keep = (s * wallRest) >> 12;
+						long long drop = s - keep;
+
+						cp->st.n.linearVelocity[0] -= (int)((nx * drop) >> 12);
+						cp->st.n.linearVelocity[2] -= (int)((nz * drop) >> 12);
 					}
 					else
 					{
