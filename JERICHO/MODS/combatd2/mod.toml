@@ -1,0 +1,7 @@
+id = "combatd2"
+name = "Combat D2"
+version = "0.1.0"
+author = "JERICHO"
+description = "Twisted Metal 2 style arcade handling: point-mass physics with direct velocity/yaw control, drift-heavy grip, and forgiving collisions."
+dependencies = []
+default-enabled = true

@@ -1,0 +1,147 @@
+// COMBAT D2 — Twisted Metal 2 (1996) arcade handling for REDRIVER2.
+//
+// A compiled-in JERICHO deep mod. Unlike COLLISIONDEVIL (which scales the
+// stock wheel/suspension sim), Combat D2 replaces the *horizontal* motion
+// with a point-mass rigid body:
+//
+//   * velocity is controlled directly from throttle (no engine/gear/suspension)
+//   * yaw is controlled directly from steering (target yaw rate, works at zero
+//     speed — rotate in place)
+//   * lateral velocity is damped by a grip force; grip falls off when steering
+//     hard at speed, producing controlled drifts
+//
+// The override is applied at JER_EVENT_CAR_TORQUE (the end of StepOneCar,
+// right before the engine integrates velocity + orientation): we zero the
+// stock horizontal force (cp->hd.acc[0..2]) and yaw torque (cp->hd.aacc[1]),
+// then write cp->st.n.linearVelocity[0..2] and angularVelocity[1] directly.
+//
+// Vertical motion (gravity + ground lift, cp->hd.acc[1]) and roll/pitch
+// (cp->hd.aacc[0]/[2]) are left to the stock code so the car still rides the
+// terrain. Collision impulses are stock (mass-based "push"); our grip + drag
+// make the recovery forgiving, which is the TM2 feel.
+
+#ifndef COMBATD2_H
+#define COMBATD2_H
+
+// --------------------------- units --------------------------------------
+//
+// Two unit systems meet here:
+//   * speed  : "game speed units" == world-units per frame == cp->hd.speed.
+//              linearVelocity is that × 4096 (fixed point, ONE = 4096).
+//   * yaw    : PSX angle units, 4096 == 360° (the game's native angle).
+//
+// The TM2 reference gives SI values (topSpeed 20 m/s, handling 120°/s, …).
+// Those are quoted in the comments below; the active numbers are the game-unit
+// equivalents, folded to per-frame (the sim is frame-locked) so they can be
+// tuned by play exactly like the stock physics.
+
+// angularVelocity[1] per unit of yaw rate (PSX-units/frame). Derived from the
+// quaternion integrator in GlobalTimeStep (handling.c): AV = avel >> 13 is the
+// half-angle in fixed point, so avel = yawRate × π × 8192.
+#define CD2_AV_PER_UNIT     25736
+
+// wheel_angle magnitude treated as full-lock steer (stock regular max = 352).
+#define CD2_STEER_MAX       352
+
+// Tight Turn (TMB): an acute forced pivot on its OWN yaw authority — NOT a
+// steering amplification. Pivot direction comes from the (latched) steer
+// input; the pivot bleeds a little forward speed so holding gas produces a
+// short drift-slide instead of a dead stop, and at low speed it spins
+// nearly in place. The trigger is selectable so it stays rebindable:
+//   CD2_TIGHT_INPUT_HANDBRAKE = Triangle (engine's handbrake),
+//   CD2_TIGHT_INPUT_WHEELSPIN = Circle  (engine's wheelspin/burnout bit),
+//   CD2_TIGHT_INPUT_OFF       = disabled.
+// (Physical buttons themselves are remapped by the engine's config.ini.)
+#define CD2_TIGHT_RATE          110    // pivot yaw, PSX-units/frame (x control/4096)
+#define CD2_TIGHT_ANG_MULT      3      // yaw angular step multiplier during a pivot
+#define CD2_TIGHT_BLEED         320    // fp/frame: horizontal speed lost while pivoting (~8%)
+#define CD2_TIGHT_STEER_MIN     16     // |wheel_angle| that (re)latches a pivot direction
+
+enum
+{
+	CD2_TIGHT_INPUT_HANDBRAKE = 0,
+	CD2_TIGHT_INPUT_WHEELSPIN = 1,
+	CD2_TIGHT_INPUT_OFF = 2
+};
+
+#define CD2_TIGHT_ENABLED_DEFAULT   1
+#define CD2_TIGHT_STRENGTH_DEFAULT  100   // 0..100 pivot authority
+#define CD2_TIGHT_INPUT_DEFAULT     CD2_TIGHT_INPUT_HANDBRAKE
+
+// --------------------------- default stats -------------------------------
+//
+// Speed defaults (world-units/frame):
+#define CD2_TOP_SPEED       180   // speed-units/frame (~top gear; highway limit is 138)
+#define CD2_REVERSE_SPEED   60    // ≈ 33% of top
+#define CD2_ACCEL           6     // speed-units/frame² (0→top in ~1s)
+#define CD2_BRAKE           10    // speed-units/frame² (gentler → carries momentum)
+#define CD2_DRAG            48    // fixed point /frame: 48/4096 ≈ 1.2%/frame (coast)
+
+// Yaw defaults (PSX-units/frame; 4096 = 360°):
+#define CD2_HANDLING        40    // max yaw rate  (≈ 120°/s at 30 fps)
+#define CD2_ANGULAR_ACCEL   80    // yaw accel toward target (≈ 360°/s²)
+
+// Grip default (fixed point /frame; 1092/4096 ≈ 0.267/frame ≈ 8.0 s⁻¹):
+#define CD2_GRIP            1092
+#define CD2_SLIP_REDUCTION  7     // /10 → up to 70% grip drop at full slip
+
+// Visual: lateral velocity (speed units) → body roll (PSX angle units).
+#define CD2_ROLL_GAIN       3     // roll = -latVel * gain, clamped below
+#define CD2_BODY_MAX_ROLL   34    // ~3° lean
+#define CD2_ROLL_LERP       2     // exponential settle divisor
+
+// Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
+#define CD2_FOV_REF_SPEED   120
+#define CD2_FOV_PULL_SCRZ   60
+
+// presets
+enum
+{
+	CD2_PRESET_DEFAULT = 0,   // TM2 baseline
+	CD2_PRESET_TURBO = 1,     // faster + stiffer
+	CD2_PRESET_DRIFTY = 2,    // looser + more agile
+	CD2_PRESET_CUSTOM = 3,    // sliders were hand-tuned
+	CD2_PRESET_COUNT = 4
+};
+
+// --------------------------- state ---------------------------------------
+
+typedef struct CD2_STATS
+{
+	int topSpeed;      // speed-units/frame
+	int reverseSpeed;  // speed-units/frame
+	int accel;         // speed-units/frame²
+	int brake;         // speed-units/frame²
+	int drag;          // fixed point /frame
+	int handling;      // yaw, PSX-units/frame
+	int angularAccel;  // yaw, PSX-units/frame²
+	int grip;          // fixed point /frame
+	int control;       // steering/pivot authority, fixed point (4096 = average car)
+} CD2_STATS;
+
+typedef struct CD2_CONFIG
+{
+	int enabled;
+	int topSpeed;
+	int accel;
+	int handling;
+	int grip;
+	int preset;        // CD2_PRESET_*
+	int fovPull;       // 0..100
+	int tightTurn;     // 0/1 master toggle
+	int tightStrength; // 0..100 pivot authority
+	int tightInput;    // CD2_TIGHT_INPUT_*
+} CD2_CONFIG;
+
+typedef struct CD2_CAR
+{
+	int yawRate;       // current yaw rate, PSX-units/frame (signed)
+	int slip;          // lateral velocity, speed units (signed), for visuals
+	int roll;          // smoothed body roll, PSX angle units
+	int throttle;      // +1/-1/0 raw throttle captured at CAR_STEP (see note)
+	int pivotDir;      // latched tight-turn direction +1/-1/0
+} CD2_CAR;
+
+extern CD2_CONFIG gCd2Cfg;
+
+#endif /* COMBATD2_H */
