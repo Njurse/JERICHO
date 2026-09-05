@@ -1155,6 +1155,8 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	int int_steer;
 	int analog_angle;
 	PED_MODEL_TYPES whoExit;
+	JER_ARGS_CAR_PAD jerPadArgs;
+	int carPadHandled;
 
 	whoExit = TANNER_MODEL;
 
@@ -1210,6 +1212,27 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	if (cp->hd.autoBrake > 90)
 		cp->hd.autoBrake = 90;
 
+	// JERICHO-HOOK: car pad override. A module may take over this car's
+	// pedal semantics (thrust/handbrake/wheelspin) by setting handled = 1
+	// and writing those fields itself; the stock face-button assignment is
+	// then SKIPPED, so the physical buttons never double-fire their original
+	// binds. Steering below is unaffected. pad may also be edited in/out.
+	jerPadArgs.car = cp;
+	jerPadArgs.pad = pad;
+	jerPadArgs.padSteer = int_steer;
+	jerPadArgs.useAnalogue = use_analogue;
+	jerPadArgs.live = (cp->controlType == CONTROL_TYPE_PLAYER && NoPlayerControl == 0 &&
+		gStopPadReads == 0 && gCantDrive == 0 && cp->ai.padid != NULL &&
+		MaxPlayerDamage[*cp->ai.padid] > cp->totalDamage) ? 1 : 0;
+	jerPadArgs.handled = 0;
+	jer_fire(JER_EVENT_CAR_PAD, &jerPadArgs);
+	pad = (u_int)jerPadArgs.pad;
+	int_steer = jerPadArgs.padSteer;
+	use_analogue = (char)jerPadArgs.useAnalogue;
+	carPadHandled = jerPadArgs.handled;
+
+	if (carPadHandled == 0)
+	{
 	// handle burnouts or handbrake
 	if (pad & CAR_PAD_HANDBRAKE)
 	{
@@ -1237,6 +1260,7 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 		}
 	}
 
+	}
 	// handle steering
 	if (use_analogue == 0)
 	{
@@ -1318,6 +1342,8 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 			cp->wheel_angle -= 64;
 	}
 
+	if (carPadHandled == 0)
+	{
 	cp->thrust = 0;
 
 	//if (gTimeInWater != 0)
@@ -1402,6 +1428,7 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 		}
 	}
 
+	}
 	// JERICHO-HOOK: transform engine force / steering after ProcessCarPad.
 	{
 		JER_ARGS_CAR_ENGINE jerArgs;

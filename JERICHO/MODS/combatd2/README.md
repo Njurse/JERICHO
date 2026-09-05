@@ -28,7 +28,8 @@ stock wheel/suspension sim:
 
 Out of scope (no combat layer in Driver 2): turbo meter, energy attacks and
 ram-damage bonuses. Button layout: the optional TMB layout remaps the face
-buttons while driving (see above); the *physical* button → engine-binding
+buttons while driving (see above), replacing the original car
+binds while it is active; the *physical* button → engine-binding
 stays in the engine's own `config.ini`, so every bind remains rebindable
 there — combatd2 never hard-wires a physical key.
 
@@ -38,8 +39,11 @@ All physics runs in one hook, `JER_EVENT_CAR_TORQUE` (the tail of
 `StepOneCar`): the module zeros the stock horizontal force and yaw torque,
 then writes `linearVelocity[0..2]` and `angularVelocity[1]` directly.
 `JER_EVENT_CAR_STEP` snapshots the raw throttle before the stock handbrake
-code zeroes it, `JER_EVENT_PRE_SIM` rewrites the in-car pad mapping for the
-TMB layout, and `JER_EVENT_GET_WALL_RESTITUTION` (new engine query) makes
+code zeroes it, `JER_EVENT_CAR_PAD` (new engine hook, fired inside
+`ProcessCarPad`) lets the module take over the car's pedal semantics for the
+TMB layout — the stock face-button assignment is skipped that frame, so the
+original binds never double-fire alongside the new ones — and
+`JER_EVENT_GET_WALL_RESTITUTION` (new engine query) makes
 walls absorb momentum — the stock collision path is unchanged when combatd2
 is off. Vertical motion + roll/pitch stay stock so the car still rides terrain.
 

@@ -313,6 +313,25 @@ typedef struct JER_ARGS_PED_SKELETON
 	int shadow;		/* 1 while the ped's shadow is being drawn */
 } JER_ARGS_PED_SKELETON;
 
+/* JER_EVENT_CAR_PAD — fired inside ProcessCarPad right before the stock
+ * face-button assignment (handbrake/wheelspin/thrust). A module may take
+ * over the car's pedal semantics: set handled = 1 and write cp->thrust,
+ * cp->handbrake and cp->wheelspin directly — the stock binds are then
+ * SKIPPED for that car this frame, so a physical button never double-fires
+ * its original action. pad may also be rewritten in/out for pure input
+ * transforms. Engine steering (wheel_angle) is not affected by handled.
+ * live = 1 only while this is genuine live player input (not AI/lead/
+ * cutscene/replay pad, and not the clamped locked-car state). */
+typedef struct JER_ARGS_CAR_PAD
+{
+	void* car;		/* CAR_DATA* being controlled */
+	int pad;		/* in/out: CAR_PAD_* action bits for this car */
+	int padSteer;		/* in/out: analog steering input (-128..127) */
+	int useAnalogue;	/* in/out: 1 = analog steering (analogue stick) */
+	int live;		/* in: 1 = live player pad (override allowed) */
+	int handled;		/* out: set 1 to skip the stock pedal assignment */
+} JER_ARGS_CAR_PAD;
+
 /* JER_EVENT_CAR_ENGINE — fired at the end of ProcessCarPad, after the engine
  * force (thrust) and steering (wheel_angle) are computed. A module scales
  * them in place to overclock acceleration / widen steering. handbrake/

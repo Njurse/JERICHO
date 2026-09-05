@@ -27,6 +27,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_DRAW_OVERLAY` | — | `DrawDebugOverlays` / HUD path | 2D overlay / HUD drawing |
 | `JER_EVENT_PAUSE_MENU` | `JER_ARGS_PAUSE_MENU` | pause menu shell | module-owned menu state (labels + actions) |
 | `JER_EVENT_SHUTDOWN` | — | `redriver2_main`, after the state loop | the game is exiting — release resources (sockets, files) |
+| `JER_EVENT_CAR_PAD` | `JER_ARGS_CAR_PAD` | inside `ProcessCarPad` (`handling.c`), before the pedal assignment | take over the car's pedal semantics: set `handled` + write `cp->thrust`/`handbrake`/`wheelspin` — stock binds are skipped |
 | `JER_EVENT_CAR_ENGINE` | `JER_ARGS_CAR_ENGINE` | end of `ProcessCarPad` (`handling.c`) | transform engine force (thrust) + steering (wheel_angle) |
 | `JER_EVENT_CAR_FRICTION` | `JER_ARGS_CAR_FRICTION` | end of `GetFrictionScalesDriver1` (`wheelforces.c`) | transform front/rear friction (grip) |
 | `JER_EVENT_CAR_STEP` | `JER_ARGS_CAR_STEP` | top of `StepOneCar` (`wheelforces.c`) | observe car state (speed / velocity) |
@@ -70,6 +71,20 @@ reads the (possibly updated) fields back. No handler = stock behavior.
 Five transform/observe hooks added for handling overhauls. Each fires once
 per car per physics frame (or per draw, for `CAR_DRAW`) and is a no-op with
 no handler.
+
+- **`JER_EVENT_CAR_PAD`** fires inside `ProcessCarPad` right before the
+  stock face-button assignment (`handbrake`/`wheelspin`, then the
+  brake/accelerate `thrust` block), after leave-car/horn and the locked-car
+  clamp. A module that wants to rebind the car's buttons does it here:
+  `args->pad` carries the engine-native CAR_PAD_* bits for the car (for a
+  player these are exactly the physical→PS-bit mapping from `config.ini`).
+  Set `args->handled = 1` and write `cp->thrust` / `cp->handbrake` /
+  `cp->wheelspin` yourself — the stock pedal assignment is then skipped, so
+  a physical button never double-fires its original action. `args->live` is
+  1 only for genuine live player input (not AI/lead/cutscene/replay pads,
+  and not the clamped locked-car brake/handbrake state), which is the only
+  case an override should normally act on. Steering (`wheel_angle`) is
+  assigned after the hook and is unaffected by `handled`.
 
 - **`JER_EVENT_CAR_ENGINE`** fires at the end of `ProcessCarPad` after
   `cp->thrust` and `cp->wheel_angle` are computed. A module scales

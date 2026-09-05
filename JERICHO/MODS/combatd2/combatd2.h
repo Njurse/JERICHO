@@ -73,18 +73,23 @@ enum
 #define CD2_TIGHT_STRENGTH_DEFAULT  100   // 0..100 pivot authority
 #define CD2_TIGHT_INPUT_DEFAULT     CD2_TIGHT_INPUT_HANDBRAKE
 
-// TMB Classic in-car face-button layout (default ON):
+// TMB Classic in-car face-button layout (default ON). It is implemented as
+// a JER_EVENT_CAR_PAD override, NOT a rebinding of physical buttons: the
+// module writes the car's pedal state itself and the engine skips its stock
+// face-button assignment, so the original binds never double-fire.
 //   Square-position = Gas, Circle = Brake, and the other primary face button
 //   (Cross) = Tight Turn. Triangle is left unbound for the car (in TMB it is
 //   rear-view / nothing combat relevant here); get-in/get-out stays on the
-//   dedicated L3 exit so it is not hijacked by the remap. On foot, ped
-//   controls are untouched.
+//   dedicated L3 exit. On foot, ped controls are untouched.
 #define CD2_TMB_BUTTONS_DEFAULT     1
 // Some pads label the LEFT face button "X" (Xbox X / PS Square). tmb_tight
 // picks which PHYSICAL button carries the Tight Turn when the TMB layout is
 // on: 0 = Cross/bottom (PS "X", Xbox A), 1 = Square/left (Xbox X). Gas is on
 // the other one.
 #define CD2_TMB_TIGHT_DEFAULT       0
+// thrust magnitude the override writes for gas (- for brake); only the SIGN
+// matters to the combatd2 torque model (engine force is superseded).
+#define CD2_TMB_THRUST              4915
 
 // Iconic TMB slide: while the Tight Turn is held AND the car is fast enough,
 // lateral traction is suspended (~CD2_SLIDE_GRIP_FRAC of normal grip) so the

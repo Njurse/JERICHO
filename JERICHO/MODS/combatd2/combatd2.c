@@ -221,65 +221,56 @@ static int cd2OnResetCar(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
-// ---- TMB in-car button layout (PRE_SIM pad rewrite) -------------------
-
-// Translate the face buttons to the engine's driving-action bits:
-//   X = Tight Turn (the engine's wheelspin action -> combatd2 reads it),
-//   Square = Gas, Circle = Brake. Triangle is left unbound for the car, and
-//   the dedicated L3 get-in/get-out bit is untouched.
-// tightLeft picks which PS-position face button carries the Tight Turn:
-//   0 -> Cross/bottom (PS X), 1 -> Square/left (Xbox "X"); gas is on the other.
-static u_short cd2TmbTranslate(u_short in, int tightLeft)
+// ---- TMB in-car button layout (JER_EVENT_CAR_PAD override) --------------
+//
+// This module does NOT rebind physical buttons. Instead it takes over the
+// car's pedal semantics at JER_EVENT_CAR_PAD (ProcessCarPad): when the TMB
+// layout is on and the pad is a live player, we write cp->thrust/
+// cp->handbrake/cp->wheelspin ourselves and set handled=1, so the engine
+// SKIPS its stock face-button assignment for that car this frame -- the
+// original car binds can never double-fire alongside ours. Engine steering
+// (wheel_angle) is untouched, so the analog curve stays stock. On foot,
+// AI/lead/cutscene cars and the clamped locked-car state are never overridden.
+static int cd2OnCarPad(void* ud, void* args)
 {
-	u_short out = in & ~(MPAD_CROSS | MPAD_SQUARE | MPAD_CIRCLE | MPAD_TRIANGLE);
-
-	if (tightLeft)
-	{
-		if (in & MPAD_CROSS)  out |= MPAD_CROSS;  // Cross(bottom) -> gas
-		if (in & MPAD_SQUARE) out |= MPAD_CIRCLE; // Square(left)  -> tight turn
-	}
-	else
-	{
-		if (in & MPAD_SQUARE) out |= MPAD_CROSS;  // Square(left)  -> gas
-		if (in & MPAD_CROSS)  out |= MPAD_CIRCLE; // Cross(bottom) -> tight turn
-	}
-	if (in & MPAD_CIRCLE) out |= MPAD_SQUARE;     // Circle -> brake
-	return out;
-}
-
-// PRE_SIM: fires at the top of StepSim, right before the car-control loop
-// copies Pads[].mapped into ProcessCarPad, so the rewrite is same-frame.
-// Only applied while a player is actually driving a car (playerType CAR), so
-// on-foot Tanner controls are never affected.
-static int cd2OnPreSim(void* ud, void* args)
-{
+	JER_ARGS_CAR_PAD* a = (JER_ARGS_CAR_PAD*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car;
+	int pad, tight, gas, brake;
 	(void)ud;
-	(void)args;
-	int i;
 
-	if (!gCd2Cfg.enabled || !gCd2Cfg.tmbButtons)
+	if (!gCd2Cfg.enabled || !gCd2Cfg.tmbButtons || !a->live)
 		return JER_RESULT_CONTINUE;
 
-	for (i = 0; i < MAX_PLAYERS; i++)
+	pad = a->pad;
+
+	if (gCd2Cfg.debugLog)
 	{
-		if (player[i].playerType == PLAYER_TYPE_CAR &&
-			player[i].padid >= 0 && player[i].padid < 2)
-		{
-			u_short mapped = Pads[player[i].padid].mapped;
-			u_short mapnew = Pads[player[i].padid].mapnew;
-
-			if (gCd2Cfg.debugLog && (player[i].padid == 0))
-			{
-				static unsigned int t = 0;
-				if ((t++ & 15) == 0)
-					printInfo("[combatd2] raw mapped=0x%04X (bits: Cross 0x%X / Square 0x%X / Circle 0x%X / Triangle 0x%X)\n",
-						mapped, MPAD_CROSS, MPAD_SQUARE, MPAD_CIRCLE, MPAD_TRIANGLE);
-			}
-
-			Pads[player[i].padid].mapped = cd2TmbTranslate(mapped, gCd2Cfg.tmbTight);
-			Pads[player[i].padid].mapnew = cd2TmbTranslate(mapnew, gCd2Cfg.tmbTight);
-		}
+		static unsigned int t = 0;
+		if ((t++ & 15) == 0)
+			printInfo("[combatd2] pad=0x%04X (Cross 0x%X/Square 0x%X/Circle 0x%X/Triangle 0x%X)\n",
+				pad, MPAD_CROSS, MPAD_SQUARE, MPAD_CIRCLE, MPAD_TRIANGLE);
 	}
+
+	// PS-position reference (PlayStation face buttons):
+	//   default : Cross(bottom) = Tight Turn, Square(left) = Gas, Circle = Brake
+	//   tmbTight: Square(left)  = Tight Turn, Cross(bottom) = Gas, Circle = Brake
+	gas   = gCd2Cfg.tmbTight ? (pad & MPAD_CROSS)  : (pad & MPAD_SQUARE);
+	tight = gCd2Cfg.tmbTight ? (pad & MPAD_SQUARE) : (pad & MPAD_CROSS);
+	brake = pad & MPAD_CIRCLE;
+
+	cp->handbrake = 0;
+	cp->wheelspin = tight ? 1 : 0;
+
+	// sign convention matches stock (positive = drive force, negative =
+	// brake/reverse); combatd2's torque only reads the sign at CAR_STEP.
+	if (gas)
+		cp->thrust = (short)CD2_TMB_THRUST;
+	else if (brake)
+		cp->thrust = -(short)CD2_TMB_THRUST;
+	else
+		cp->thrust = 0;
+
+	a->handled = 1; // stock face-button binds are skipped this frame
 	return JER_RESULT_CONTINUE;
 }
 
@@ -343,7 +334,7 @@ static int cd2OnCarTorque(void* ud, void* args)
 	if (gCd2Cfg.tightTurn && cp->controlType == CONTROL_TYPE_PLAYER)
 	{
 		if (gCd2Cfg.tmbButtons)
-			tightActive = cp->wheelspin; // TMB layout: X is remapped to the wheelspin action
+			tightActive = cp->wheelspin; // TMB layout: the override sets wheelspin from the tight button
 		else if (gCd2Cfg.tightInput == CD2_TIGHT_INPUT_HANDBRAKE)
 			tightActive = cp->handbrake;
 		else if (gCd2Cfg.tightInput == CD2_TIGHT_INPUT_WHEELSPIN)
@@ -553,16 +544,16 @@ static int cd2OnCarTorque(void* ud, void* args)
 	if (gCd2Cfg.debugLog && cp->controlType == CONTROL_TYPE_PLAYER &&
 		(gDbgFrame++ & 7) == 0)
 	{
-		int padm = 0;
-		if (cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2)
-			padm = Pads[*cp->ai.padid].mapped; // post-remap action bits
-		printInfo("[combatd2] fr=%u thr=%d steer=%d tight=%d slide=%d "
-			"fwd=%d spd=%d lat=%d grip=%d yaw=%d hb=%d ws=%d pad=0x%04X hdspd=%d hdws=%d\n",
-			gDbgFrame, c->throttle, steerFp / 4096,
-			tightActive ? (c->pivotDir ? c->pivotDir : 8) : 0, slideNow ? 1 : 0,
-			(int)fwdSpeed, (int)(((long long)velX * fx + (long long)velZ * fz) >> 24),
-			(int)latVel, grip, yaw, cp->handbrake, cp->wheelspin, padm,
-			cp->hd.speed, cp->hd.wheel_speed);
+			int padm = 0;
+			if (cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2)
+				padm = Pads[*cp->ai.padid].mapped; // engine-native bits (raw, pre-override)
+			printInfo("[combatd2] fr=%u thr=%d steer=%d tight=%d slide=%d "
+				"fwd=%d spd=%d lat=%d grip=%d yaw=%d hb=%d ws=%d pad=0x%04X hdspd=%d hdws=%d\n",
+				gDbgFrame, c->throttle, steerFp / 4096,
+				tightActive ? (c->pivotDir ? c->pivotDir : 8) : 0, slideNow ? 1 : 0,
+				(int)fwdSpeed, (int)(((long long)velX * fx + (long long)velZ * fz) >> 24),
+				(int)latVel, grip, yaw, cp->handbrake, cp->wheelspin, padm,
+				cp->hd.speed, cp->hd.wheel_speed);
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -729,7 +720,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_module(ctx,
 		"combatd2",					/* id */
 		"Combat D2",				/* name */
-		"0.2.0",					/* version */
+		"0.3.0",					/* version */
 		"JERICHO",					/* author */
 		"Twisted Metal: Black style handling: point-mass velocity + yaw, Tight Turn pivot, proportional brakes, brief skids, momentum-absorbing walls.",	/* description */
 		"",							/* dependencies */
@@ -737,7 +728,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 
 	ctx->jer_register_hook(ctx, JER_EVENT_BOOT, cd2OnBoot, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2OnResetCar, NULL, 0);
-	ctx->jer_register_hook(ctx, JER_EVENT_PRE_SIM, cd2OnPreSim, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PAD, cd2OnCarPad, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2OnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, cd2OnCarTorque, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, cd2OnGetWallRestitution, NULL, 0);

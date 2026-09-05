@@ -91,6 +91,10 @@ enum
 	JER_EVENT_SHUTDOWN,		/* the game is exiting (after the state loop) --
 								   modules release resources (sockets, files) */
 
+	JER_EVENT_CAR_PAD,		/* inside ProcessCarPad before the stock pedal
+				   assignment: module may take over thrust/handbrake/
+				   wheelspin (handled) so original binds do not double-fire
+				   (see JER_ARGS_CAR_PAD) */
 	JER_EVENT_CAR_ENGINE,		/* end of ProcessCarPad: transform thrust and
 								   steering (see JER_ARGS_CAR_ENGINE) */
 	JER_EVENT_CAR_FRICTION,		/* end of GetFrictionScalesDriver1: transform
