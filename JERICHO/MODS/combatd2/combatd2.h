@@ -1,4 +1,4 @@
-// COMBAT D2 — Twisted Metal 2 (1996) arcade handling for REDRIVER2.
+// COMBAT D2 — Twisted Metal: Black style arcade handling for REDRIVER2.
 //
 // A compiled-in JERICHO deep mod. Unlike COLLISIONDEVIL (which scales the
 // stock wheel/suspension sim), Combat D2 replaces the *horizontal* motion
@@ -6,14 +6,17 @@
 //
 //   * velocity is controlled directly from throttle (no engine/gear/suspension)
 //   * yaw is controlled directly from steering (target yaw rate, works at zero
-//     speed — rotate in place)
-//   * lateral velocity is damped by a grip force; grip falls off when steering
-//     hard at speed, producing controlled drifts
+//     speed — rotate in place); steering authority never drops during a slide
+//   * the Tight Turn (Triangle / handbrake) is a separate acute-pivot
+//     authority — an intentional "cheat" against realism for combat positioning
+//   * brakes are fast and proportional (strong scrub at speed, smooth taper)
+//   * lateral grip is high and only slips a little, so skids are brief and
+//     never a loss-of-control spiral
+//   * walls absorb momentum (hard stop) instead of bouncing
 //
-// The override is applied at JER_EVENT_CAR_TORQUE (the end of StepOneCar,
-// right before the engine integrates velocity + orientation): we zero the
-// stock horizontal force (cp->hd.acc[0..2]) and yaw torque (cp->hd.aacc[1]),
-// then write cp->st.n.linearVelocity[0..2] and angularVelocity[1] directly.
+// Feel is engineered, not simulated: responsive and forgiving (TMB's north
+// star), with weight/control differentiated per vehicle from the chassis
+// stats so a light car is instant and a truck is slow but heavy.
 //
 // Vertical motion (gravity + ground lift, cp->hd.acc[1]) and roll/pitch
 // (cp->hd.aacc[0]/[2]) are left to the stock code so the car still rides the

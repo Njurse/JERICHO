@@ -1,5 +1,5 @@
 /*
- * combatd2.c — Combat D2: Twisted Metal 2 style arcade handling.
+ * combatd2.c — Combat D2: Twisted Metal: Black style arcade handling.
  *
  * A compiled-in JERICHO deep mod. It replaces the horizontal motion of the
  * stock Driver 2 sim with a point-mass rigid body at JER_EVENT_CAR_TORQUE
@@ -8,13 +8,17 @@
  *
  *   * throttle -> direct forward/backward velocity (no engine/gears)
  *   * steering -> direct yaw rate (target yaw = handling * steer, works at
- *     zero speed: rotate in place)
- *   * lateral velocity -> damped by a grip force that falls off when you
- *     steer hard at speed, producing controlled drifts
+ *     zero speed: rotate in place); authority is retained through any slide
+ *   * Tight Turn (Triangle/handbrake) -> an acute forced pivot, its own yaw
+ *     authority that bleeds a little speed (drift-slide with gas)
+ *   * brakes -> fast and proportional (strong at speed, smooth taper)
+ *   * lateral grip -> high and shallow-sagging, so skids are brief and never
+ *     a loss-of-control spiral
  *
  * Vertical motion (gravity + ground lift) and roll/pitch are left to the
- * stock code so the car still rides the terrain. Collisions stay stock
- * (mass-based push); the grip + drag make recovery forgiving — the TM2 feel.
+ * stock code so the car still rides the terrain. A gated engine query
+ * (JER_EVENT_GET_WALL_RESTITUTION) makes scenery hits absorb momentum;
+ * collisions are otherwise stock mass-based push.
  */
 
 #include "driver2.h"
@@ -553,7 +557,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 		"Combat D2",				/* name */
 		"0.1.0",					/* version */
 		"JERICHO",					/* author */
-		"Twisted Metal 2 style arcade handling: point-mass velocity + yaw control, drift-heavy grip.",	/* description */
+		"Twisted Metal: Black style handling: point-mass velocity + yaw, Tight Turn pivot, proportional brakes, brief skids, momentum-absorbing walls.",	/* description */
 		"",							/* dependencies */
 		JERICHO_SDK_VERSION);		/* SDK this module was built against */
 
