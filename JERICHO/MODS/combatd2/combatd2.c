@@ -40,6 +40,7 @@
 
 CD2_CONFIG gCd2Cfg;
 static CD2_CAR gCd2Car[MAX_CARS];
+static unsigned int gDbgFrame; // telemetry frame counter
 
 static const char* const kPresetNames[] = { "Default", "Turbo", "Drifty", "Custom" };
 static const char* const kTightInputNames[] = { "Handbrake", "Wheelspin", "Off" };
@@ -61,6 +62,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tightTurn     = jer_config_get_int("combatd2", "tight_enabled", CD2_TIGHT_ENABLED_DEFAULT);
 	gCd2Cfg.tightStrength = jer_config_get_int("combatd2", "tight_strength", CD2_TIGHT_STRENGTH_DEFAULT);
 	gCd2Cfg.tightInput    = jer_config_get_int("combatd2", "tight_input", CD2_TIGHT_INPUT_DEFAULT);
+	gCd2Cfg.debugLog      = jer_config_get_int("combatd2", "debug_log", 0);
 
 	gCd2Cfg.enabled  = gCd2Cfg.enabled ? 1 : 0;
 	gCd2Cfg.topSpeed = jer_clamp_int(gCd2Cfg.topSpeed, 60, 400);
@@ -73,6 +75,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tightTurn     = gCd2Cfg.tightTurn ? 1 : 0;
 	gCd2Cfg.tightStrength = jer_clamp_int(gCd2Cfg.tightStrength, 0, 100);
 	gCd2Cfg.tightInput    = jer_clamp_int(gCd2Cfg.tightInput, CD2_TIGHT_INPUT_HANDBRAKE, CD2_TIGHT_INPUT_OFF);
+	gCd2Cfg.debugLog      = gCd2Cfg.debugLog ? 1 : 0;
 }
 
 static void cd2SaveConfig(void)
@@ -88,6 +91,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "tight_enabled", gCd2Cfg.tightTurn);
 	jer_config_set_int("combatd2", "tight_strength", gCd2Cfg.tightStrength);
 	jer_config_set_int("combatd2", "tight_input", gCd2Cfg.tightInput);
+	jer_config_set_int("combatd2", "debug_log", gCd2Cfg.debugLog);
 }
 
 static void cd2ApplyPreset(void)
@@ -204,6 +208,7 @@ static int cd2OnResetCar(void* ud, void* args)
 		gCd2Car[a->carId].roll = 0;
 		gCd2Car[a->carId].throttle = 0;
 		gCd2Car[a->carId].pivotDir = 0;
+		gCd2Car[a->carId].slideTicks = 0;
 	}
 	return JER_RESULT_CONTINUE;
 }
@@ -264,6 +269,7 @@ static int cd2OnCarTorque(void* ud, void* args)
 	// the pivot keeps full authority through any slide (TMB: "overrides
 	// normal physics for a brief moment").
 	int tightActive = 0;
+	int slideNow = 0; // traction-suspended slide active (computed once per frame)
 	if (gCd2Cfg.tightTurn && gCd2Cfg.tightInput != CD2_TIGHT_INPUT_OFF &&
 		cp->controlType == CONTROL_TYPE_PLAYER)
 	{
@@ -322,6 +328,18 @@ static int cd2OnCarTorque(void* ud, void* args)
 
 	long long fwdSpeed = ((long long)velX * fx + (long long)velZ * fz) >> 24; // speed units (vel and the unit vector are both 4096-scaled)
 
+	// Current horizontal speed (magnitude), used for the slide decision.
+	// NOTE steering below is deliberately NOT inverted in reverse: like TMB
+	// ("you steer the front of the car as-is"), steer input rotates the nose
+	// the same way whether driving forward or backward — which is exactly what
+	// gives reversing its mirrored, rear-led feel.
+	{
+		int ax = ABS(FIXEDH(velX));
+		int az = ABS(FIXEDH(velZ));
+		int speedNow = (ax < az) ? (az + ax / 2) : (ax + az / 2); // speed units
+		slideNow = tightActive && c->pivotDir != 0 && speedNow > CD2_SLIDE_MIN_SPEED;
+	}
+
 	// throttle is snapshotted at CAR_STEP: the stock wheel-force code zeroes
 	// cp->thrust while the handbrake is held, which would otherwise read as
 	// "coast" mid tight turn.
@@ -370,14 +388,15 @@ static int cd2OnCarTorque(void* ud, void* args)
 			velZ -= (int)(((long long)velZ * s.drag) >> 12);
 		}
 	}
-	else
+	else if (!slideNow)
 	{
+		// no input: rolling drag — skipped during a slide so the car glides
 		velX -= (int)(((long long)velX * s.drag) >> 12);
 		velZ -= (int)(((long long)velZ * s.drag) >> 12);
 	}
 
-	// tight-turn momentum bleed: the forced pivot sheds horizontal speed, so
-	// holding gas yields a short drift-slide arc rather than a dead stop
+	// tight-turn momentum bleed: the forced pivot sheds a little horizontal
+	// speed so holding gas yields a drift-slide arc rather than a dead stop
 	if (tightActive && c->pivotDir != 0)
 	{
 		velX = (int)(((long long)velX * (4096 - CD2_TIGHT_BLEED)) >> 12);
@@ -399,15 +418,18 @@ static int cd2OnCarTorque(void* ud, void* args)
 	// Iconic TMB slide: while the Tight Turn pivot is active and the car is
 	// fast enough, traction is suspended — grip drops to a few percent, so
 	// the car keeps travelling along its ORIGINAL velocity vector while the
-	// pivot rotates the heading underneath it (steerable slide). Full grip
-	// returns when the button is released or speed falls off.
-	if (tightActive && c->pivotDir != 0)
+	// pivot rotates the heading underneath it (steerable slide). When the
+	// slide ends the next CD2_HOOKUP_FRAMES use a strong fixed grip so the
+	// velocity snaps back onto the heading (TMB's crisp recovery).
+	if (slideNow)
 	{
-		int ax = ABS(FIXEDH(velX));
-		int az = ABS(FIXEDH(velZ));
-		int speedNow = (ax < az) ? (az + ax / 2) : (ax + az / 2); // speed units
-		if (speedNow > CD2_SLIDE_MIN_SPEED)
-			grip = (int)(((long long)grip * CD2_SLIDE_GRIP_FRAC) >> 12);
+		c->slideTicks = CD2_HOOKUP_FRAMES; // re-prime for the release
+		grip = (int)(((long long)grip * CD2_SLIDE_GRIP_FRAC) >> 12);
+	}
+	else if (c->slideTicks > 0)
+	{
+		grip = CD2_HOOKUP_GRIP; // < 4096: strong but never overshoots
+		c->slideTicks--;
 	}
 
 	// damp the lateral component: vel -= right * latVel * grip
@@ -433,6 +455,18 @@ static int cd2OnCarTorque(void* ud, void* args)
 		int az = ABS(FIXEDH(velZ));
 		cp->hd.speed = (ax < az) ? (az + ax / 2) : (ax + az / 2);
 		cp->hd.wheel_speed = (int)(((long long)velX * fx + (long long)velZ * fz) >> 12);
+	}
+
+	// ---- telemetry (opt-in): export input/velocity/twist for tuning ----
+	if (gCd2Cfg.debugLog && cp->controlType == CONTROL_TYPE_PLAYER &&
+		(gDbgFrame++ & 7) == 0)
+	{
+		printInfo("[combatd2] fr=%u thr=%d steer=%d tight=%d slide=%d "
+			"fwd=%d spd=%d lat=%d grip=%d yaw=%d hdspd=%d hdws=%d\n",
+			gDbgFrame, c->throttle, steerFp / 4096,
+			tightActive ? (c->pivotDir) : 0, slideNow ? 1 : 0,
+			(int)fwdSpeed, (int)(((long long)velX * fx + (long long)velZ * fz) >> 24),
+			(int)latVel, grip, yaw, cp->hd.speed, cp->hd.wheel_speed);
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -522,6 +556,9 @@ static int  cd2AdjTightStrength(void* ud, int dir) { (void)ud; gCd2Cfg.tightStre
 static void cd2LabelTightInput(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Tight Input: %s", kTightInputNames[gCd2Cfg.tightInput]); }
 static int  cd2CycleTightInput(void* ud, int dir) { (void)ud; (void)dir; gCd2Cfg.tightInput = (gCd2Cfg.tightInput + 1) % 3; cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
 
+static void cd2LabelDebug(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Telemetry Log: %s", gCd2Cfg.debugLog ? "ON" : "OFF"); }
+static int  cd2ToggleDebug(void* ud, int dir) { (void)ud; (void)dir; gCd2Cfg.debugLog = !gCd2Cfg.debugLog; cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
+
 static void cd2LabelPreset(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Preset: %s", kPresetNames[gCd2Cfg.preset]); }
 static int  cd2CyclePreset(void* ud, int dir) { (void)ud; (void)dir; gCd2Cfg.preset = (gCd2Cfg.preset + 1) % 3; cd2ApplyPreset(); cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
 
@@ -546,12 +583,13 @@ static const JER_PAUSE_MENU_ITEM cd2MenuItems[] =
 	{ NULL, cd2LabelTightToggle,   cd2ToggleTight,      NULL, NULL, 0 },
 	{ NULL, cd2LabelTightStrength, cd2AdjTightStrength, NULL, NULL, 1 },
 	{ NULL, cd2LabelTightInput,    cd2CycleTightInput,  NULL, NULL, 1 },
+	{ NULL, cd2LabelDebug, cd2ToggleDebug, NULL, NULL, 0 },
 	{ NULL, cd2LabelPreset,   cd2CyclePreset,   NULL, NULL, 1 },
 	{ "Reset to Defaults", NULL, cd2ResetDefaults, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2Menu =
-{ "Combat D2", cd2MenuItems, 11 };
+{ "Combat D2", cd2MenuItems, 12 };
 
 // ---------------------------------------------------------------------------
 // Module entry

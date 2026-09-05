@@ -57,7 +57,7 @@
 // (Physical buttons themselves are remapped by the engine's config.ini.)
 #define CD2_TIGHT_RATE          110    // pivot yaw, PSX-units/frame (x control/4096)
 #define CD2_TIGHT_ANG_MULT      3      // yaw angular step multiplier during a pivot
-#define CD2_TIGHT_BLEED         320    // fp/frame: horizontal speed lost while pivoting (~8%)
+#define CD2_TIGHT_BLEED         96     // fp/frame: horizontal speed lost while pivoting (~2.3%)
 #define CD2_TIGHT_STEER_MIN     16     // |wheel_angle| that (re)latches a pivot direction
 
 enum
@@ -76,10 +76,21 @@ enum
 // car keeps moving along its ORIGINAL velocity vector while the pivot rotates
 // the heading underneath it — you steer through the slide instead of the car
 // arcing. Releasing the button (or dropping below CD2_SLIDE_MIN_SPEED) hooks
-// the car back up cleanly.
+// the car back up.
 #define CD2_SLIDE_MIN_SPEED  50     // speed units/frame (below: low-speed spin)
 #define CD2_SLIDE_GRIP_FRAC  64     // fp: grip multiplier during the slide
                                     // (64/4096 ≈ 1.5% of normal grip)
+
+// Friction inside a slide is intentionally tiny: the pivot bleed was dropped to
+// ~2.3%/frame and rolling drag is skipped entirely while sliding, so an off-gas
+// sharp turn carries its speed (TMB "continues moving in the original velocity
+// direction").
+
+// Hook-up sharpness: the first CD2_HOOKUP_FRAMES after a slide ends use a
+// strong fixed grip (below 4096 so it can never overshoot), snapping the
+// velocity back onto the heading like TMB's clean, crisp recovery.
+#define CD2_HOOKUP_FRAMES    2
+#define CD2_HOOKUP_GRIP      3800   // fp (~93% of lateral velocity removed/frame)
 
 // --------------------------- default stats -------------------------------
 //
@@ -160,6 +171,7 @@ typedef struct CD2_CONFIG
 	int tightTurn;     // 0/1 master toggle
 	int tightStrength; // 0..100 pivot authority
 	int tightInput;    // CD2_TIGHT_INPUT_*
+	int debugLog;      // 0/1: log player-car input/velocity telemetry to REDRIVER2.log
 } CD2_CONFIG;
 
 typedef struct CD2_CAR
@@ -169,6 +181,7 @@ typedef struct CD2_CAR
 	int roll;          // smoothed body roll, PSX angle units
 	int throttle;      // +1/-1/0 raw throttle captured at CAR_STEP (see note)
 	int pivotDir;      // latched tight-turn direction +1/-1/0
+	int slideTicks;    // hook-up frames remaining after a traction-suspended slide
 } CD2_CAR;
 
 extern CD2_CONFIG gCd2Cfg;
