@@ -165,6 +165,9 @@ enum
 // Yaw defaults (PSX-units/frame; 4096 = 360°):
 #define CD2_HANDLING        20    // max yaw rate  (≈ 120°/s at 30 fps)
 #define CD2_ANGULAR_ACCEL   15    // yaw accel toward target (≈ 360°/s²)
+#define CD2_YAW_SPEED_FALLOFF 0   // fp: TM2 speed-sensitive yaw falloff. 0 = off;
+                                  // ~1200-1600 turns down yaw authority as speed
+                                  // rises so the car can't spin out at top speed.
 #define CD2_YAW_DECAY       2048  // fp: centering step multiplier while the yaw
                                   // returns to center (2048 = 2x) — the car stops
                                   // spinning promptly instead of carrying rotation
@@ -198,10 +201,11 @@ enum
 // COLLISION: WALLS ABSORB MOMENTUM
 // ==============================================================
 
-// Wall restitution scale (0..4096; 4096 = stock bounce). 700/4096 ≈ 17% kept,
-// i.e. walls absorb ~83% of the car's momentum on impact — TMB's hard stop,
-// with just enough carry to keep wall-scraping from feeling frozen.
-#define CD2_WALL_KEEP       700
+// Wall collision: combatd2 returns this as the wall restitution, but the
+// engine now applies it to the INTO-wall (normal) component only: 0 = walls
+// fully absorb the impact and the car keeps scraping tangentially along the
+// wall (TM2 "collision forgiveness"), 4096 = stock outward bounce + spin.
+#define CD2_WALL_KEEP       256
 
 // ----------------------- engine audio / gearbox ---------------------------
 //

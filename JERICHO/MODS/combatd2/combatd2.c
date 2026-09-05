@@ -344,6 +344,20 @@ static int cd2OnCarTorque(void* ud, void* args)
 	int steerFp = (steer * 4096) / CD2_STEER_MAX;           // -4096..4096
 	int handlingNow = (int)(((long long)s.handling * s.control) >> 12);
 
+	// TM2 speed-sensitive yaw: turn authority tapers as speed rises so the
+	// car can't spin out at top speed (opt-in via CD2_YAW_SPEED_FALLOFF).
+	if (CD2_YAW_SPEED_FALLOFF)
+	{
+		int lvx = cp->st.n.linearVelocity[0];
+		int lvz = cp->st.n.linearVelocity[2];
+		int mag = (ABS(FIXEDH(lvx)) < ABS(FIXEDH(lvz)))
+			? (ABS(FIXEDH(lvz)) + ABS(FIXEDH(lvx)) / 2)
+			: (ABS(FIXEDH(lvx)) + ABS(FIXEDH(lvz)) / 2);
+		if (mag > s.topSpeed) mag = s.topSpeed;
+		int norm = (s.topSpeed > 0) ? (int)(((long long)mag * 4096) / s.topSpeed) : 0;
+		handlingNow = (int)(((long long)handlingNow * (4096 - ((CD2_YAW_SPEED_FALLOFF * norm) >> 12))) >> 12);
+	}
+
 	// ---- Tight Turn (TMB): acute pivot on its own yaw authority -----
 	// Player-only. While the trigger is held, steering picks/latches a pivot
 	// direction; releasing clears it. It is independent of the grip pass, so
