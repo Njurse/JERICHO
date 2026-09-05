@@ -85,13 +85,15 @@ enum
 #define CD2_HANDLING        40    // max yaw rate  (≈ 120°/s at 30 fps)
 #define CD2_ANGULAR_ACCEL   80    // yaw accel toward target (≈ 360°/s²)
 
-// Grip default (fixed point /frame; 1092/4096 ≈ 0.267/frame ≈ 8.0 s⁻¹):
-#define CD2_GRIP            1092
-#define CD2_SLIP_REDUCTION  7     // /10 → up to 70% grip drop at full slip
+// Grip default (fixed point /frame; 1800/4096 ≈ 0.44/frame ≈ 13 s⁻¹ — TMB keeps
+// skids short and sparse, so base grip is high and only drops a little):
+#define CD2_GRIP            1800
+#define CD2_SLIP_REDUCTION  3     // /10 → max 30% grip drop at full slip
+                                   // (skids are brief, never a loss-of-control spiral)
 
 // Visual: lateral velocity (speed units) → body roll (PSX angle units).
-#define CD2_ROLL_GAIN       3     // roll = -latVel * gain, clamped below
-#define CD2_BODY_MAX_ROLL   34    // ~3° lean
+#define CD2_ROLL_GAIN       2     // roll = -latVel * gain, clamped below
+#define CD2_BODY_MAX_ROLL   24    // ~2° lean (TMB: weight felt, not exaggerated)
 #define CD2_ROLL_LERP       2     // exponential settle divisor
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
