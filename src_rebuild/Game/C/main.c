@@ -1768,6 +1768,11 @@ void SsSetSerialVol(short s_num, short voll, short volr)
  * the argument parsing is DEBUG_OPTIONS-gated below). */
 int gBootOnFoot = 0;
 
+/* -mp: defined unconditionally (glaunch.c reads it when it computes the
+ * take-a-ride mission number); only the argument parsing is
+ * DEBUG_OPTIONS-gated below. */
+int gBootMpLevel = 0;
+
 #if !defined(PSX) && !defined(__EMSCRIPTEN__)
 #include <SDL_messagebox.h>
 
@@ -2285,6 +2290,10 @@ int redriver2_main(int argc, char** argv)
 		{
 			gBootOnFoot = 1;
 		}
+		else if (!strcmp(argv[i], "-mp"))
+		{
+			gBootMpLevel = 1;
+		}
 #endif // _DEBUG_OPTIONS
 		else if (!strcmp(argv[i], "-replay"))
 		{
@@ -2413,9 +2422,9 @@ int redriver2_main(int argc, char** argv)
 		{
 			static const char* bootLevelNames[4] = { "chicago", "havana", "lasvegas", "rio" };
 
-			printInfo("[boot] frontend bypass: level=%d (%s) gamemode=%d car=%d time=%d weather=%d onfoot=%d\n",
+			printInfo("[boot] frontend bypass: level=%d (%s) gamemode=%d car=%d time=%d weather=%d onfoot=%d mp=%d\n",
 				gBootLevel, bootLevelNames[gBootLevel], (int)GameType,
-				gBootCar, gBootTime, gBootWeather, gBootOnFoot);
+				gBootCar, gBootTime, gBootWeather, gBootOnFoot, gBootMpLevel);
 		}
 
 		if (gBootCar >= 0)

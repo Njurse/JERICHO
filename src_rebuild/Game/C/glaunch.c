@@ -21,6 +21,10 @@
 
 #include "Frontend/FEmain.h"
 
+/* -mp boot flag: set when the -level/-mission launch should use the small
+ * multiplayer map instead of the full single-player city (see main.c). */
+extern int gBootMpLevel;
+
 struct MISSION_STEP
 {
 	u_char flags : 3;
@@ -176,7 +180,10 @@ void State_GameStart(void* param)
 			break;
 		case GAME_TAKEADRIVE:
 
-			if (NumPlayers == 1)
+			/* M50..M57 are the single-player full-city take-a-ride missions;
+			 * M58..M65 are the same city/night as the small multiplayer map
+			 * (MLEVELS/MNLEVELS). -mp forces the multiplayer-map variant. */
+			if (NumPlayers == 1 && !gBootMpLevel)
 				gCurrentMissionNumber = 50;
 			else
 				gCurrentMissionNumber = 58;
