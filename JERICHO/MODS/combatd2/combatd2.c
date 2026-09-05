@@ -663,7 +663,15 @@ static int cd2OnCarTorque(void* ud, void* args)
 	if (slideNow)
 	{
 		c->slideTicks = CD2_RECOVER_FRAMES; // re-prime for the release
-		grip = (int)(((long long)grip * CD2_SLIDE_GRIP_FRAC) >> 12);
+		// grip during the slide: normal slides keep CD2_SLIDE_GRIP_FRAC of
+		// traction (they arc a little); once the skid is big enough to be
+		// sliding SIDEWAYS (|latVel| > CD2_SKID_LOCK_LAT) the slide LOCKS onto
+		// its original momentum line — grip near zero so the rotating heading
+		// never scrubs the velocity (pure TMB ice drift until you release).
+		if (ABS(latVel) > CD2_SKID_LOCK_LAT)
+			grip = (int)(((long long)grip * CD2_SKID_LOCK_GRIP) >> 12);
+		else
+			grip = (int)(((long long)grip * CD2_SLIDE_GRIP_FRAC) >> 12);
 	}
 	else if (c->slideTicks > 0)
 	{

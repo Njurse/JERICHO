@@ -121,6 +121,12 @@ enum
 #define CD2_SLIDE_MIN_SPEED  150     // speed units/frame (below: low-speed spin)
 #define CD2_SLIDE_GRIP_FRAC  900     // fp: grip multiplier during the slide
                                     // (900/4096 ≈ 22% of normal grip)
+// Big-skid ice lock: once the slide is sliding SIDEWAYS harder than
+// CD2_SKID_LOCK_LAT, the car stops arcing toward the nose entirely and keeps
+// its ORIGINAL momentum line — grip drops to CD2_SKID_LOCK_GRIP so the
+// velocity is never scrubbed toward the rotated heading (pure TMB ice drift).
+#define CD2_SKID_LOCK_LAT    70      // speed units: lateral velocity threshold
+#define CD2_SKID_LOCK_GRIP   96      // fp: grip multiplier once locked (~2.3%)
 
 
 #define CD2_SLIDE_BLEED         32     // fp/frame: bleed while tight-sliding (~0.8%).
@@ -143,10 +149,11 @@ enum
 // --------------------------- default stats -------------------------------
 //
 // Speed defaults (world-units/frame):
-#define CD2_TOP_SPEED       360   // speed-units/frame (raw slider value; the
+#define CD2_TOP_SPEED       260   // speed-units/frame (raw slider value; the
                                     // physics top is CD2_SPEED_SCALE x this)
-#define CD2_SPEED_SCALE     3072  // fp: effective top speed multiplier (~0.75x)
-#define CD2_REVERSE_SPEED   120    // reverse cap (≈ 33% of the effective top)
+#define CD2_SPEED_SCALE     2048  // fp: effective top speed multiplier (0.5x =
+                                    // ~130 at the default slider value)
+#define CD2_REVERSE_SPEED   45    // reverse cap (≈ 1/3 of the effective top)
 #define CD2_ACCEL           4     // speed-units/frame² (0→top in ~1s)
 #define CD2_BRAKE           10    // PEAK brake decel, speed-units/frame², applied
                                   // proportionally (strong at speed, taper near 0)
