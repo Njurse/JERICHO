@@ -58,7 +58,10 @@
 #define CD2_TIGHT_RATE          50    // pivot yaw, PSX-units/frame (x control/4096)
 #define CD2_TIGHT_ANG_MULT      1.6      // yaw angular step multiplier during a pivot
 #define CD2_TIGHT_BLEED         96     // fp/frame: horizontal speed lost while pivoting (~2.3%)
-#define CD2_SLIDE_BLEED         480    // fp/frame: extra scrub while tight-sliding with gas (~11.7%)
+#define CD2_SLIDE_BLEED         32     // fp/frame: bleed while tight-sliding (~0.8%).
+                                        // Tight Turn is NOT a brake: on ice the car
+                                        // keeps its momentum and sheds speed slowly
+                                        // (~half speed every 1.5s), forgiving to steer.
 #define CD2_SLIDE_ACCEL_FRAC    1024   // fp: accel fraction allowed during a tight slide (0.25x)
 #define CD2_TIGHT_STEER_MIN     16     // |wheel_angle| that (re)latches a pivot direction
 
