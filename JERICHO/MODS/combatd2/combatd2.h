@@ -149,6 +149,14 @@ enum
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
 #define CD2_FOV_REF_SPEED   120
 
+// TMB-style chase framing (applied every frame to the player's main chase
+// cam, cameraView 0): after the engine places the camera it is nudged CLOSER
+// to the car on the ground plane and eased LOWER toward the car's base. Both
+// are relative fractions of the gap (fixed point 4096) so they can never
+// overshoot into the car; 0 disables that axis. 4096 = keep the stock frame.
+#define CD2_CAM_PULL        600   // fp: fraction of the gap to the car closed
+#define CD2_CAM_LOW         180   // fp: fraction of the height gap closed
+
 // Wall restitution scale (0..4096; 4096 = stock bounce). 700/4096 ≈ 17% kept,
 // i.e. walls absorb ~83% of the car's momentum on impact — TMB's hard stop,
 // with just enough carry to keep wall-scraping from feeling frozen.

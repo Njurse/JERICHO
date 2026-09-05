@@ -774,7 +774,31 @@ static int cd2OnCamera(void* ud, void* args)
 	JER_ARGS_CAMERA* a = (JER_ARGS_CAMERA*)args;
 	(void)ud;
 
-	if (!gCd2Cfg.enabled || gCd2Cfg.fovPull <= 0 || !a->inCar)
+	if (!gCd2Cfg.enabled || !a->inCar)
+		return JER_RESULT_CONTINUE;
+
+	// TMB chase framing: after the engine places the main chase camera, pull
+	// it closer to the car on the ground plane and ease it lower. Relative
+	// nudges (fractions of the gap) applied to camera_position only, so the
+	// engine's own re-place each frame keeps this a stable framing offset.
+	if (a->cameraView == 0 && CD2_CAM_PULL > 0)
+	{
+		int* bp = (int*)a->basePos;
+		int* cp = (int*)a->cameraPosition;
+		long long dx = (long long)bp[0] - cp[0];
+		long long dz = (long long)bp[2] - cp[2];
+
+		cp[0] += (int)((dx * CD2_CAM_PULL) >> 12);
+		cp[2] += (int)((dz * CD2_CAM_PULL) >> 12);
+
+		if (CD2_CAM_LOW > 0)
+		{
+			long long dy = (long long)bp[1] - cp[1];
+			cp[1] += (int)((dy * CD2_CAM_LOW) >> 12);
+		}
+	}
+
+	if (gCd2Cfg.fovPull <= 0)
 		return JER_RESULT_CONTINUE;
 
 	int speed = FIXEDH(a->carSpeed);
