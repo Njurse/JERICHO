@@ -119,8 +119,10 @@ enum
 // --------------------------- default stats -------------------------------
 //
 // Speed defaults (world-units/frame):
-#define CD2_TOP_SPEED       360   // speed-units/frame (~top gear; highway limit is 138)
-#define CD2_REVERSE_SPEED   360    // ≈ 33% of top
+#define CD2_TOP_SPEED       360   // speed-units/frame (raw slider value; the
+                                    // physics top is CD2_SPEED_SCALE x this)
+#define CD2_SPEED_SCALE     3072  // fp: effective top speed multiplier (~0.75x)
+#define CD2_REVERSE_SPEED   120    // reverse cap (≈ 33% of the effective top)
 #define CD2_ACCEL           2     // speed-units/frame² (0→top in ~1s)
 #define CD2_BRAKE           8    // PEAK brake decel, speed-units/frame², applied
                                   // proportionally (strong at speed, taper near 0)
@@ -168,11 +170,11 @@ enum
 //   CD2_GEAR_SHIFT_REVS just before the upshift so shifts sound punchy.
 #define CD2_GEAR_AUTO         1     // 0/1: retune player cars' gear tables
 #define CD2_WS_PER_SPEED      8192  // fp: ws per 1.0 speed unit (8192/4096 = 2x)
-#define CD2_GEAR_1_FRAC       660   // fp: gear0 tops here (660/4096 ≈ 16% of top)
-#define CD2_GEAR_2_FRAC       1280  // fp: gear1 tops here (≈ 31%)
-#define CD2_GEAR_3_FRAC       2130  // fp: gear2 tops here (≈ 52%)
-#define CD2_GEAR_SHIFT_REVS   8200  // revs at the top of gears 0..2 (pitch peak)
-#define CD2_REV_CEILING       11000 // top-gear revs AT top speed; hard rev clamp
+#define CD2_GEAR_1_FRAC       300   // fp: gear0 tops here (≈ 7% of top speed)
+#define CD2_GEAR_2_FRAC       700   // fp: gear1 tops here (≈ 17%)
+#define CD2_GEAR_3_FRAC       1300  // fp: gear2 tops here (≈ 32%)
+#define CD2_GEAR_SHIFT_REVS   13500 // revs at the top of gears 0..2 (pitch peak)
+#define CD2_REV_CEILING       15000 // top-gear revs AT top speed; hard rev clamp
 #define CD2_GEAR_DOWN_FRAC    3686  // fp: downshift point = prev gear top x this
                                     // (3686/4096 ≈ 0.9; hysteresis vs the upshift)
 // Engine channel audio tuners (applied per player car via

@@ -187,6 +187,11 @@ static CD2_STATS cd2GetStats(CAR_DATA* cp)
 			s.grip = (int)(((long long)s.grip * traction) >> 12);
 	}
 
+	// combatd2 drives ~25% slower than the raw slider: the point-mass
+	// top speed would otherwise out-run the level scale and feel frantic.
+	// (Scales every preset + per-vehicle derivation uniformly.)
+	s.topSpeed = (int)(((long long)s.topSpeed * CD2_SPEED_SCALE) >> 12);
+
 	return s;
 }
 
