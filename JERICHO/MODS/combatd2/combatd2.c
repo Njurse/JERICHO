@@ -454,6 +454,18 @@ static int cd2OnCarTorque(void* ud, void* args)
 		slideNow = tightActive && c->pivotDir != 0 && speedNow > CD2_SLIDE_MIN_SPEED;
 	}
 
+	// Airborne: conserve momentum — no throttle/brake/drag and no tire
+	// friction (grip/bleed). Yaw above still applies, so the player can
+	// rotate mid-air (TM air control) without the car being "driven" or
+	// air-braked in flight.
+	int grounded = (cp->hd.wheel[0].susCompression | cp->hd.wheel[1].susCompression |
+	                cp->hd.wheel[2].susCompression | cp->hd.wheel[3].susCompression) != 0;
+
+	long long latVel = 0; // in scope for the telemetry below too
+	int grip = 0;
+
+	if (grounded)
+	{
 	// throttle is snapshotted at CAR_STEP: the stock wheel-force code zeroes
 	// cp->thrust while the handbrake is held, which would otherwise read as
 	// "coast" mid tight turn.
@@ -524,7 +536,7 @@ static int cd2OnCarTorque(void* ud, void* args)
 	}
 
 	// ---- lateral grip (drift) ---------------------------------------
-	long long latVel = ((long long)velX * rx + (long long)velZ * rz) >> 24; // speed units (4096-scaled dot)
+	latVel = ((long long)velX * rx + (long long)velZ * rz) >> 24; // speed units (4096-scaled dot)
 
 	int absSteer = steerFp < 0 ? -steerFp : steerFp;          // 0..4096
 	long long absSpeed = fwdSpeed < 0 ? -fwdSpeed : fwdSpeed;
@@ -533,7 +545,7 @@ static int cd2OnCarTorque(void* ud, void* args)
 	// slipFactor 0..4096: hard steer + high speed -> grip falls off
 	long long slipFactor = (absSteer * absSpeed) / s.topSpeed;
 	int gripDrop = (int)((slipFactor * CD2_SLIP_REDUCTION) / 10);
-	int grip = (int)(((long long)s.grip * (4096 - gripDrop)) >> 12);
+	grip = (int)(((long long)s.grip * (4096 - gripDrop)) >> 12);
 
 	// Iconic TMB slide: while the Tight Turn pivot is active and the car is
 	// fast enough, traction is suspended — grip drops to a few percent, so
@@ -606,6 +618,7 @@ static int cd2OnCarTorque(void* ud, void* args)
 	velZ -= (int)(((long long)rz * latVel * grip) >> 12);
 
 	c->slip = (int)latVel; // for the visual lean
+	}
 
 	// hard ceiling: total horizontal speed never exceeds topSpeed. Without it,
 	// a tight slide with gas keeps adding speed along a rotating heading and
