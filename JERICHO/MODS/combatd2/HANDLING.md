@@ -42,7 +42,7 @@ The actual mapping:
 |---|---|---|
 | `engine_accel` / `top_speed` | direct drive in torque | `CD2_ACCEL`, `CD2_TOP_SPEED`, `CD2_SPEED_SCALE`, `CD2_DRAG` |
 | velocity-dependent drag clamp | throttle/coast pass | `CD2_DRAG`, `CD2_TOP_SPEED` |
-| brake decel → reverse | brake pass | `CD2_BRAKE`, `CD2_REVERSE_SPEED` |
+| brake decel → reverse | brake pass | `CD2_BRAKE`, `CD2_REVERSE_FRAC` |
 | `max_yaw_rate` (direct yaw) | steering pass | `CD2_HANDLING` |
 | `steering_response` (rate limit) | yaw accel | `CD2_ANGULAR_ACCEL` |
 | speed-dependent yaw falloff | steering pass | `CD2_YAW_SPEED_FALLOFF` (opt-in) |

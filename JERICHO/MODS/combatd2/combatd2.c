@@ -140,7 +140,6 @@ static CD2_STATS cd2GetStats(CAR_DATA* cp)
 	CD2_STATS s;
 
 	s.topSpeed     = gCd2Cfg.topSpeed;
-	s.reverseSpeed = CD2_REVERSE_SPEED;
 	s.accel        = gCd2Cfg.accel;
 	s.brake        = gCd2Cfg.brake;
 	s.drag         = CD2_DRAG;
@@ -187,10 +186,13 @@ static CD2_STATS cd2GetStats(CAR_DATA* cp)
 			s.grip = (int)(((long long)s.grip * traction) >> 12);
 	}
 
-	// combatd2 drives ~25% slower than the raw slider: the point-mass
-	// top speed would otherwise out-run the level scale and feel frantic.
-	// (Scales every preset + per-vehicle derivation uniformly.)
-	s.topSpeed = (int)(((long long)s.topSpeed * CD2_SPEED_SCALE) >> 1);
+	// The raw slider is in "speed-units/frame"; apply the fixed-point
+	// CD2_SPEED_SCALE (2048/4096 = 0.5x) to get the effective top so the
+	// point-mass model doesn't out-run the level scale. Reverse is derived
+	// from the SAME scaled top (TM drives backwards as fast as forwards) and
+	// must stay POSITIVE: the brake pass tests `fwdSpeed > -reverseSpeed`.
+	s.topSpeed = (int)(((long long)s.topSpeed * CD2_SPEED_SCALE) >> 12);
+	s.reverseSpeed = (int)(((long long)s.topSpeed * CD2_REVERSE_FRAC) >> 12);
 
 	return s;
 }
