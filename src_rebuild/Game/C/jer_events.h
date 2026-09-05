@@ -435,4 +435,17 @@ typedef struct JER_ARGS_CAR_DRAW
 	int view;		/* in: camera view */
 } JER_ARGS_CAR_DRAW;
 
+/* JER_EVENT_LEVEL_LAUNCH — fired at the end of State_GameStart after the
+ * pending level/gametype/player count/mission number are finalised but
+ * before the level is loaded. All fields are in/out: a module rewrites them
+ * to redirect the launch (e.g. bump a take-a-ride mission number into the
+ * multiplayer-map range so gMultiplayerLevels ends up set). */
+typedef struct JER_ARGS_LEVEL_LAUNCH
+{
+	int gameLevel;		/* in/out: pending level (GameLevel) */
+	int gameType;		/* in/out: pending gametype (GAMETYPE) */
+	int numPlayers;		/* in/out: player count */
+	int missionNumber;	/* in/out: computed mission (gCurrentMissionNumber) */
+} JER_ARGS_LEVEL_LAUNCH;
+
 #endif /* JERICHO_JER_EVENTS_H */

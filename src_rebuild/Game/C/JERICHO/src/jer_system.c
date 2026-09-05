@@ -309,6 +309,7 @@ static const char* jerEventName(int event)
 	case JER_EVENT_FRONTEND:		return "FRONTEND";
 	case JER_EVENT_PED_SKELETON:	return "PED_SKELETON";
 	case JER_EVENT_SHUTDOWN:		return "SHUTDOWN";
+	case JER_EVENT_LEVEL_LAUNCH:	return "LEVEL_LAUNCH";
 	default:
 		if (event >= JER_EVENT_MODULE_CUSTOM)
 		{

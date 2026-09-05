@@ -1,6 +1,9 @@
 #include "driver2.h"
 #include "glaunch.h"
 
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
+
 #include "system.h"
 #include "main.h"
 #include "E3stuff.h"
@@ -283,6 +286,25 @@ void State_GameStart(void* param)
 			SetState(STATE_GAMELAUNCH);
 		
 			break;
+	}
+
+	// JERICHO-HOOK: level launch — the pending level/gametype/player count/
+	// mission number are finalised; modules may rewrite them before the level
+	// loads (e.g. bump a take-a-ride mission into the multiplayer-map range).
+	{
+		JER_ARGS_LEVEL_LAUNCH jerLaunch;
+
+		jerLaunch.gameLevel = GameLevel;
+		jerLaunch.gameType = GameType;
+		jerLaunch.numPlayers = NumPlayers;
+		jerLaunch.missionNumber = gCurrentMissionNumber;
+
+		jer_fire(JER_EVENT_LEVEL_LAUNCH, &jerLaunch);
+
+		GameLevel = jerLaunch.gameLevel;
+		GameType = (GAMETYPE)jerLaunch.gameType;
+		NumPlayers = jerLaunch.numPlayers;
+		gCurrentMissionNumber = jerLaunch.missionNumber;
 	}
 }
 

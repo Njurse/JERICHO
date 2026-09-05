@@ -117,6 +117,12 @@ enum
 				   how fast engine pitch slews to its target revs
 				   (see JER_ARGS_CAR_REVS) */
 
+	JER_EVENT_LEVEL_LAUNCH,		/* end of State_GameStart, after the pending
+				   level/gametype/player count/mission number are
+				   finalised but before the level loads -- modules
+				   may rewrite them (e.g. swap a take-a-ride
+				   mission for its multiplayer-map variant) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 
