@@ -74,7 +74,11 @@ enum
 #define CD2_TOP_SPEED       180   // speed-units/frame (~top gear; highway limit is 138)
 #define CD2_REVERSE_SPEED   60    // ≈ 33% of top
 #define CD2_ACCEL           6     // speed-units/frame² (0→top in ~1s)
-#define CD2_BRAKE           10    // speed-units/frame² (gentler → carries momentum)
+#define CD2_BRAKE           12    // PEAK brake decel, speed-units/frame², applied
+                                  // proportionally (strong at speed, taper near 0)
+#define CD2_BRAKE_FLOOR     1024  // fp: fraction of peak brake kept at standstill
+                                  // (1024/4096 = 25%) so stopping is never asymptotic
+#define CD2_REVERSE_ACCEL_FRAC 2048 // fp: reverse accel = brake x this (2048/4096 = 0.5)
 #define CD2_DRAG            48    // fixed point /frame: 48/4096 ≈ 1.2%/frame (coast)
 
 // Yaw defaults (PSX-units/frame; 4096 = 360°):
@@ -124,6 +128,7 @@ typedef struct CD2_CONFIG
 	int enabled;
 	int topSpeed;
 	int accel;
+	int brake;         // peak brake decel (speed-units/frame²)
 	int handling;
 	int grip;
 	int preset;        // CD2_PRESET_*

@@ -52,6 +52,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.enabled  = jer_config_get_bool("combatd2", "enabled", 1);
 	gCd2Cfg.topSpeed = jer_config_get_int("combatd2", "top_speed", CD2_TOP_SPEED);
 	gCd2Cfg.accel    = jer_config_get_int("combatd2", "accel", CD2_ACCEL);
+	gCd2Cfg.brake    = jer_config_get_int("combatd2", "brake", CD2_BRAKE);
 	gCd2Cfg.handling = jer_config_get_int("combatd2", "handling", CD2_HANDLING);
 	gCd2Cfg.grip     = jer_config_get_int("combatd2", "grip", CD2_GRIP);
 	gCd2Cfg.preset   = jer_config_get_int("combatd2", "preset", CD2_PRESET_DEFAULT);
@@ -63,6 +64,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.enabled  = gCd2Cfg.enabled ? 1 : 0;
 	gCd2Cfg.topSpeed = jer_clamp_int(gCd2Cfg.topSpeed, 60, 400);
 	gCd2Cfg.accel    = jer_clamp_int(gCd2Cfg.accel, 1, 24);
+	gCd2Cfg.brake    = jer_clamp_int(gCd2Cfg.brake, 2, 30);
 	gCd2Cfg.handling = jer_clamp_int(gCd2Cfg.handling, 10, 120);
 	gCd2Cfg.grip     = jer_clamp_int(gCd2Cfg.grip, 128, 4096);
 	gCd2Cfg.preset   = jer_clamp_int(gCd2Cfg.preset, CD2_PRESET_DEFAULT, CD2_PRESET_CUSTOM);
@@ -77,6 +79,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_bool("combatd2", "enabled", gCd2Cfg.enabled);
 	jer_config_set_int("combatd2", "top_speed", gCd2Cfg.topSpeed);
 	jer_config_set_int("combatd2", "accel", gCd2Cfg.accel);
+	jer_config_set_int("combatd2", "brake", gCd2Cfg.brake);
 	jer_config_set_int("combatd2", "handling", gCd2Cfg.handling);
 	jer_config_set_int("combatd2", "grip", gCd2Cfg.grip);
 	jer_config_set_int("combatd2", "preset", gCd2Cfg.preset);
@@ -88,6 +91,8 @@ static void cd2SaveConfig(void)
 
 static void cd2ApplyPreset(void)
 {
+	gCd2Cfg.brake = CD2_BRAKE; // brake peak is preset-independent
+
 	switch (gCd2Cfg.preset)
 	{
 		case CD2_PRESET_TURBO:
@@ -124,7 +129,7 @@ static CD2_STATS cd2GetStats(CAR_DATA* cp)
 	s.topSpeed     = gCd2Cfg.topSpeed;
 	s.reverseSpeed = CD2_REVERSE_SPEED;
 	s.accel        = gCd2Cfg.accel;
-	s.brake        = CD2_BRAKE;
+	s.brake        = gCd2Cfg.brake;
 	s.drag         = CD2_DRAG;
 	s.handling     = gCd2Cfg.handling;
 	s.angularAccel = CD2_ANGULAR_ACCEL;
@@ -319,8 +324,24 @@ static int cd2OnCarTorque(void* ud, void* args)
 	{
 		if (fwdSpeed > -s.reverseSpeed)
 		{
-			velX -= fx * s.brake;
-			velZ -= fz * s.brake;
+			// TMB "fast and proportional" brake: strong scrub at speed that
+			// tapers near zero (a small constant floor keeps it from being
+			// asymptotic), so stopping is quick but never a jarring dead stop.
+			int brake = s.brake;
+			if (fwdSpeed > 0)
+			{
+				long long ratio = fwdSpeed * 4096 / s.topSpeed;
+				if (ratio > 4096) ratio = 4096;
+				brake = (int)(((long long)s.brake *
+					(CD2_BRAKE_FLOOR + (4096 - CD2_BRAKE_FLOOR) * ratio / 4096)) >> 12);
+			}
+			else
+			{
+				// reversing: gentler, continuous push (no dead zone at 0)
+				brake = (int)(((long long)s.brake * CD2_REVERSE_ACCEL_FRAC) >> 12);
+			}
+			velX -= fx * brake;
+			velZ -= fz * brake;
 		}
 		else
 		{
@@ -433,6 +454,9 @@ static int  cd2AdjTopSpeed(void* ud, int dir) { (void)ud; gCd2Cfg.topSpeed = jer
 static void cd2LabelAccel(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Acceleration: %d", gCd2Cfg.accel); }
 static int  cd2AdjAccel(void* ud, int dir) { (void)ud; gCd2Cfg.accel = jer_clamp_int(gCd2Cfg.accel + dir, 1, 24); gCd2Cfg.preset = CD2_PRESET_CUSTOM; cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
 
+static void cd2LabelBrake(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Braking: %d", gCd2Cfg.brake); }
+static int  cd2AdjBrake(void* ud, int dir) { (void)ud; gCd2Cfg.brake = jer_clamp_int(gCd2Cfg.brake + dir, 2, 30); cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
+
 static void cd2LabelHandling(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Handling: %d", gCd2Cfg.handling); }
 static int  cd2AdjHandling(void* ud, int dir) { (void)ud; gCd2Cfg.handling = jer_clamp_int(gCd2Cfg.handling + dir * 5, 10, 120); gCd2Cfg.preset = CD2_PRESET_CUSTOM; cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
 
@@ -466,6 +490,7 @@ static const JER_PAUSE_MENU_ITEM cd2MenuItems[] =
 	{ NULL, cd2LabelEnabled,  cd2ToggleEnabled, NULL, NULL, 0 },
 	{ NULL, cd2LabelTopSpeed, cd2AdjTopSpeed,   NULL, NULL, 1 },
 	{ NULL, cd2LabelAccel,    cd2AdjAccel,      NULL, NULL, 1 },
+	{ NULL, cd2LabelBrake,    cd2AdjBrake,      NULL, NULL, 1 },
 	{ NULL, cd2LabelHandling, cd2AdjHandling,   NULL, NULL, 1 },
 	{ NULL, cd2LabelGrip,     cd2AdjGrip,       NULL, NULL, 1 },
 	{ NULL, cd2LabelTightToggle,   cd2ToggleTight,      NULL, NULL, 0 },
@@ -476,7 +501,7 @@ static const JER_PAUSE_MENU_ITEM cd2MenuItems[] =
 };
 
 static const JER_PAUSE_MENU cd2Menu =
-{ "Combat D2", cd2MenuItems, 10 };
+{ "Combat D2", cd2MenuItems, 11 };
 
 // ---------------------------------------------------------------------------
 // Module entry
