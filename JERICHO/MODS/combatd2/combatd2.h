@@ -26,6 +26,11 @@
 #ifndef COMBATD2_H
 #define COMBATD2_H
 
+
+// ==============================================================
+// UNITS & ENGINE-WRITE CONSTANTS
+// ==============================================================
+
 // --------------------------- units --------------------------------------
 //
 // Two unit systems meet here:
@@ -46,6 +51,11 @@
 // wheel_angle magnitude treated as full-lock steer (stock regular max = 352).
 #define CD2_STEER_MAX       352
 
+
+// ==============================================================
+// INPUT: TMB LAYOUT + TIGHT TURN TRIGGER (who presses what)
+// ==============================================================
+
 // Tight Turn (TMB): an acute forced pivot DERIVED from the car's normal turn
 // authority — pivot rate = normal handling x CD2_TIGHT_MULT, so it scales
 // with the car's own steering stat/control instead of a fixed extra spin.
@@ -60,11 +70,6 @@
 #define CD2_TIGHT_MULT          8192   // fp: pivot = normal handling x this (2.0x)
 #define CD2_TIGHT_ANG_MULT      1.6    // yaw angular step multiplier during a pivot
 #define CD2_TIGHT_BLEED         96     // fp/frame: horizontal speed lost while pivoting (~2.3%)
-#define CD2_SLIDE_BLEED         32     // fp/frame: bleed while tight-sliding (~0.8%).
-                                        // Tight Turn is NOT a brake: on ice the car
-                                        // keeps its momentum and sheds speed slowly
-                                        // (~half speed every 1.5s), forgiving to steer.
-#define CD2_SLIDE_ACCEL_FRAC    1024   // fp: accel fraction allowed during a tight slide (0.25x)
 #define CD2_TIGHT_STEER_MIN     16     // |wheel_angle| that (re)latches a pivot direction
 
 enum
@@ -97,6 +102,16 @@ enum
 // wheel/pitch pass, so it should sit near the stock accel force (~power*4915).
 #define CD2_TMB_THRUST              4915
 
+
+// ================ GRIP, SLIDE & RECOVERY ========================
+
+// Grip default (fixed point /frame; 1800/4096 ≈ 0.44/frame ≈ 13 s⁻¹ — TMB keeps
+// skids short and sparse, so base grip is high and only drops a little):
+#define CD2_GRIP            1800
+#define CD2_SLIP_REDUCTION  6     // /10 → max 60% grip drop at full slip
+                                    // (never past 6: a drop over 100% makes
+                                    // grip negative = instant blow-up)
+
 // Iconic TMB slide: while the Tight Turn is held AND the car is fast enough,
 // traction is only PARTIALLY released — the car keeps real friction
 // (CD2_SLIDE_GRIP_FRAC of full grip), so the skid itself scrubs speed and
@@ -107,6 +122,12 @@ enum
 #define CD2_SLIDE_GRIP_FRAC  900     // fp: grip multiplier during the slide
                                     // (900/4096 ≈ 22% of normal grip)
 
+
+#define CD2_SLIDE_BLEED         32     // fp/frame: bleed while tight-sliding (~0.8%).
+                                        // Tight Turn is NOT a brake: on ice the car
+                                        // keeps its momentum and sheds speed slowly
+                                        // (~half speed every 1.5s), forgiving to steer.
+#define CD2_SLIDE_ACCEL_FRAC    1024   // fp: accel fraction allowed during a tight slide (0.25x)
 // Velocity recovery after a slide ends: the old "hookup" scrubbed the lateral
 // component at ~93%/frame, which killed the car's speed whenever the pivot had
 // rotated the heading away from the travel direction (it stopped dead). TMB
@@ -141,12 +162,12 @@ enum
                                   // returns to center (2048 = 2x) — the car stops
                                   // spinning promptly instead of carrying rotation
 
-// Grip default (fixed point /frame; 1800/4096 ≈ 0.44/frame ≈ 13 s⁻¹ — TMB keeps
-// skids short and sparse, so base grip is high and only drops a little):
-#define CD2_GRIP            1800
-#define CD2_SLIP_REDUCTION  6     // /10 → max 60% grip drop at full slip
-                                   // (skids are brief; never push past 6 - a drop
-                                   // over 100% makes grip negative = blow-up)
+
+
+
+// ==============================================================
+// VISUALS: BODY ROLL, CAMERA & FOV
+// ==============================================================
 
 // Visual: lateral velocity (speed units) → body roll (PSX angle units).
 #define CD2_ROLL_GAIN       16     // roll = -latVel * gain, clamped below
@@ -154,6 +175,7 @@ enum
 #define CD2_ROLL_LERP       14     // exponential settle divisor
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
+#define CD2_FOV_PULL_SCRZ   60
 #define CD2_FOV_REF_SPEED   120
 
 // TMB-style chase framing (applied every frame to the player's main chase
@@ -163,6 +185,11 @@ enum
 // overshoot into the car; 0 disables that axis. 4096 = keep the stock frame.
 #define CD2_CAM_PULL        350   // fp: fraction of the gap to the car closed
 #define CD2_CAM_LOW         0      // fp: fraction of the height gap closed (0 = keep stock height)
+
+
+// ==============================================================
+// COLLISION: WALLS ABSORB MOMENTUM
+// ==============================================================
 
 // Wall restitution scale (0..4096; 4096 = stock bounce). 700/4096 ≈ 17% kept,
 // i.e. walls absorb ~83% of the car's momentum on impact — TMB's hard stop,
@@ -221,10 +248,19 @@ enum
 #define CD2_SND_MIN_VOL      -10000  // clamp floor for the scaled volumes
 #define CD2_SND_MAX_VOL      0      // clamp ceiling
 
+
+// ==============================================================
+// PER-VEHICLE SPREAD (weight/control)
+// ==============================================================
+
 // Per-vehicle variety references (typical values in this data set):
 #define CD2_REF_PW          4096   // typical powerRatio/mass ratio (4096/4096)
 #define CD2_REF_MASS        4096   // typical car mass (fixed-point scale)
-#define CD2_FOV_PULL_SCRZ   60
+
+
+// ==============================================================
+// PRESETS / CONFIG / STATE
+// ==============================================================
 
 // presets
 enum
