@@ -25,9 +25,13 @@ stock wheel/suspension sim:
   player car so low gears are short and shift quickly, while top gear is tall
   enough that the pitch levels out at the car's top speed instead of revving
   away (tunable via the `CD2_GEAR_*` / `CD2_REV_CEILING` macros in `combatd2.h`).
-- **Engine-audio tuners** — pitch/volume scaling for the rev + idle engine
-  channels live in `combatd2.h` as `CD2_SND_*` macros (SPU pitch 4096 = normal,
-  PSX volumes; all neutral by default).
+- **Engine-audio tuners** — the rev + idle channels run louder than stock and
+  the pitch slews to redline fast (shifts fall hard). Every knob lives in
+  `combatd2.h` as `CD2_REV_RISE_SCALE` / `CD2_REV_DROP_SCALE` (how FAST the
+  pitch moves; 4096 = stock lag) and `CD2_SND_*` (mixer pitch/volume: SPU
+  pitch 4096 = normal, PSX volume 0 = loudest / −10000 = silent, gain > 4096
+  = louder, positive bias = louder) — with a full explanation of units,
+  directions and typical ranges in the header itself.
 - **Walls absorb momentum** — scenery hits are a hard stop, not a bounce.
 - **Weight & Control spread** — derived from each chassis' power-to-weight and
   mass: light cars are instant and agile, trucks are slow but heavy and coast
