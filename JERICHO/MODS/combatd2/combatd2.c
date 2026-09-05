@@ -27,6 +27,8 @@
 #include "cosmetic.h"
 #include "camera.h"
 #include "convert.h"
+#include "players.h"
+#include "pad.h"
 #include "dr2math.h"
 #include "jericho.h"
 #include "jer_events.h"
@@ -62,6 +64,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tightTurn     = jer_config_get_int("combatd2", "tight_enabled", CD2_TIGHT_ENABLED_DEFAULT);
 	gCd2Cfg.tightStrength = jer_config_get_int("combatd2", "tight_strength", CD2_TIGHT_STRENGTH_DEFAULT);
 	gCd2Cfg.tightInput    = jer_config_get_int("combatd2", "tight_input", CD2_TIGHT_INPUT_DEFAULT);
+	gCd2Cfg.tmbButtons    = jer_config_get_int("combatd2", "tmb_buttons", CD2_TMB_BUTTONS_DEFAULT);
 	gCd2Cfg.debugLog      = jer_config_get_int("combatd2", "debug_log", 0);
 
 	gCd2Cfg.enabled  = gCd2Cfg.enabled ? 1 : 0;
@@ -75,6 +78,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tightTurn     = gCd2Cfg.tightTurn ? 1 : 0;
 	gCd2Cfg.tightStrength = jer_clamp_int(gCd2Cfg.tightStrength, 0, 100);
 	gCd2Cfg.tightInput    = jer_clamp_int(gCd2Cfg.tightInput, CD2_TIGHT_INPUT_HANDBRAKE, CD2_TIGHT_INPUT_OFF);
+	gCd2Cfg.tmbButtons    = gCd2Cfg.tmbButtons ? 1 : 0;
 	gCd2Cfg.debugLog      = gCd2Cfg.debugLog ? 1 : 0;
 }
 
@@ -91,6 +95,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "tight_enabled", gCd2Cfg.tightTurn);
 	jer_config_set_int("combatd2", "tight_strength", gCd2Cfg.tightStrength);
 	jer_config_set_int("combatd2", "tight_input", gCd2Cfg.tightInput);
+	jer_config_set_int("combatd2", "tmb_buttons", gCd2Cfg.tmbButtons);
 	jer_config_set_int("combatd2", "debug_log", gCd2Cfg.debugLog);
 }
 
@@ -213,6 +218,47 @@ static int cd2OnResetCar(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// ---- TMB in-car button layout (PRE_SIM pad rewrite) -------------------
+
+// Translate the face buttons to the engine's driving-action bits:
+//   X = Tight Turn (the engine's wheelspin action -> combatd2 reads it),
+//   Square = Gas, Circle = Brake. Triangle is left unbound for the car, and
+//   the dedicated L3 get-in/get-out bit is untouched.
+static u_short cd2TmbTranslate(u_short in)
+{
+	u_short out = in & ~(MPAD_CROSS | MPAD_SQUARE | MPAD_CIRCLE | MPAD_TRIANGLE);
+
+	if (in & MPAD_SQUARE) out |= MPAD_CROSS;   // Square  -> CAR_PAD_ACCEL (gas)
+	if (in & MPAD_CIRCLE) out |= MPAD_SQUARE;  // Circle  -> CAR_PAD_BRAKE
+	if (in & MPAD_CROSS)  out |= MPAD_CIRCLE;  // X       -> CAR_PAD_WHEELSPIN (tight turn)
+	return out;
+}
+
+// PRE_SIM: fires at the top of StepSim, right before the car-control loop
+// copies Pads[].mapped into ProcessCarPad, so the rewrite is same-frame.
+// Only applied while a player is actually driving a car (playerType CAR), so
+// on-foot Tanner controls are never affected.
+static int cd2OnPreSim(void* ud, void* args)
+{
+	(void)ud;
+	(void)args;
+	int i;
+
+	if (!gCd2Cfg.enabled || !gCd2Cfg.tmbButtons)
+		return JER_RESULT_CONTINUE;
+
+	for (i = 0; i < MAX_PLAYERS; i++)
+	{
+		if (player[i].playerType == PLAYER_TYPE_CAR &&
+			player[i].padid >= 0 && player[i].padid < 2)
+		{
+			Pads[player[i].padid].mapped = cd2TmbTranslate(Pads[player[i].padid].mapped);
+			Pads[player[i].padid].mapnew = cd2TmbTranslate(Pads[player[i].padid].mapnew);
+		}
+	}
+	return JER_RESULT_CONTINUE;
+}
+
 // CAR_STEP: capture the raw throttle BEFORE the stock wheel-force code can
 // change it. AddWheelForcesDriver1 -> GetFrictionScalesDriver1 forces
 // cp->thrust = 0 while the handbrake is held (so the handbrake alone would
@@ -270,10 +316,11 @@ static int cd2OnCarTorque(void* ud, void* args)
 	// normal physics for a brief moment").
 	int tightActive = 0;
 	int slideNow = 0; // traction-suspended slide active (computed once per frame)
-	if (gCd2Cfg.tightTurn && gCd2Cfg.tightInput != CD2_TIGHT_INPUT_OFF &&
-		cp->controlType == CONTROL_TYPE_PLAYER)
+	if (gCd2Cfg.tightTurn && cp->controlType == CONTROL_TYPE_PLAYER)
 	{
-		if (gCd2Cfg.tightInput == CD2_TIGHT_INPUT_HANDBRAKE)
+		if (gCd2Cfg.tmbButtons)
+			tightActive = cp->wheelspin; // TMB layout: X is remapped to the wheelspin action
+		else if (gCd2Cfg.tightInput == CD2_TIGHT_INPUT_HANDBRAKE)
 			tightActive = cp->handbrake;
 		else if (gCd2Cfg.tightInput == CD2_TIGHT_INPUT_WHEELSPIN)
 			tightActive = cp->wheelspin;
@@ -550,10 +597,20 @@ static int  cd2AdjGrip(void* ud, int dir) { (void)ud; gCd2Cfg.grip = jer_clamp_i
 static void cd2LabelTightToggle(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Tight Turn: %s", gCd2Cfg.tightTurn ? "ON" : "OFF"); }
 static int  cd2ToggleTight(void* ud, int dir) { (void)ud; (void)dir; gCd2Cfg.tightTurn = !gCd2Cfg.tightTurn; cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
 
+static void cd2LabelTmbButtons(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "TMB Buttons: %s", gCd2Cfg.tmbButtons ? "ON" : "OFF"); }
+static int  cd2ToggleTmbButtons(void* ud, int dir) { (void)ud; (void)dir; gCd2Cfg.tmbButtons = !gCd2Cfg.tmbButtons; cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
+
 static void cd2LabelTightStrength(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Tight Pivot: %d%%", gCd2Cfg.tightStrength); }
 static int  cd2AdjTightStrength(void* ud, int dir) { (void)ud; gCd2Cfg.tightStrength = jer_clamp_int(gCd2Cfg.tightStrength + dir * 5, 0, 100); cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
 
-static void cd2LabelTightInput(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Tight Input: %s", kTightInputNames[gCd2Cfg.tightInput]); }
+static void cd2LabelTightInput(void* ud, char* out, int max)
+{
+	(void)ud;
+	if (gCd2Cfg.tmbButtons)
+		snprintf(out, max, "Tight Turn Input: X (TMB)");
+	else
+		snprintf(out, max, "Tight Input: %s", kTightInputNames[gCd2Cfg.tightInput]);
+}
 static int  cd2CycleTightInput(void* ud, int dir) { (void)ud; (void)dir; gCd2Cfg.tightInput = (gCd2Cfg.tightInput + 1) % 3; cd2SaveConfig(); return JER_PAUSE_QUIT_NONE; }
 
 static void cd2LabelDebug(void* ud, char* out, int max) { (void)ud; snprintf(out, max, "Telemetry Log: %s", gCd2Cfg.debugLog ? "ON" : "OFF"); }
@@ -581,6 +638,7 @@ static const JER_PAUSE_MENU_ITEM cd2MenuItems[] =
 	{ NULL, cd2LabelHandling, cd2AdjHandling,   NULL, NULL, 1 },
 	{ NULL, cd2LabelGrip,     cd2AdjGrip,       NULL, NULL, 1 },
 	{ NULL, cd2LabelTightToggle,   cd2ToggleTight,      NULL, NULL, 0 },
+	{ NULL, cd2LabelTmbButtons,    cd2ToggleTmbButtons, NULL, NULL, 0 },
 	{ NULL, cd2LabelTightStrength, cd2AdjTightStrength, NULL, NULL, 1 },
 	{ NULL, cd2LabelTightInput,    cd2CycleTightInput,  NULL, NULL, 1 },
 	{ NULL, cd2LabelDebug, cd2ToggleDebug, NULL, NULL, 0 },
@@ -589,7 +647,7 @@ static const JER_PAUSE_MENU_ITEM cd2MenuItems[] =
 };
 
 static const JER_PAUSE_MENU cd2Menu =
-{ "Combat D2", cd2MenuItems, 12 };
+{ "Combat D2", cd2MenuItems, 13 };
 
 // ---------------------------------------------------------------------------
 // Module entry
@@ -615,6 +673,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 
 	ctx->jer_register_hook(ctx, JER_EVENT_BOOT, cd2OnBoot, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2OnResetCar, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_PRE_SIM, cd2OnPreSim, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2OnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, cd2OnCarTorque, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, cd2OnGetWallRestitution, NULL, 0);

@@ -71,6 +71,13 @@ enum
 #define CD2_TIGHT_STRENGTH_DEFAULT  100   // 0..100 pivot authority
 #define CD2_TIGHT_INPUT_DEFAULT     CD2_TIGHT_INPUT_HANDBRAKE
 
+// TMB Classic in-car face-button layout (default ON):
+//   X = Tight Turn, Square = Gas, Circle = Brake.
+// Triangle is left unbound for the car (in TMB it is rear-view / nothing
+// combat relevant here); get-in/get-out stays on the dedicated L3 exit so it
+// is not hijacked by the remap. On foot, ped controls are untouched.
+#define CD2_TMB_BUTTONS_DEFAULT     1
+
 // Iconic TMB slide: while the Tight Turn is held AND the car is fast enough,
 // lateral traction is suspended (~CD2_SLIDE_GRIP_FRAC of normal grip) so the
 // car keeps moving along its ORIGINAL velocity vector while the pivot rotates
@@ -171,6 +178,7 @@ typedef struct CD2_CONFIG
 	int tightTurn;     // 0/1 master toggle
 	int tightStrength; // 0..100 pivot authority
 	int tightInput;    // CD2_TIGHT_INPUT_*
+	int tmbButtons;    // 0/1: TMB in-car button layout (X tight turn, Square gas, Circle brake)
 	int debugLog;      // 0/1: log player-car input/velocity telemetry to REDRIVER2.log
 } CD2_CONFIG;
 
