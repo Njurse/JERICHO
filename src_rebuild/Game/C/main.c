@@ -1770,8 +1770,11 @@ int gBootOnFoot = 0;
 
 /* -mp: defined unconditionally (glaunch.c reads it when it computes the
  * take-a-ride mission number); only the argument parsing is
- * DEBUG_OPTIONS-gated below. */
+ * DEBUG_OPTIONS-gated below. gBootMpArena selects which of the two
+ * multiplayer maps per city (0 = the take-a-ride default arena, 1 = the
+ * second arena; becomes gSubGameNumber). */
 int gBootMpLevel = 0;
+int gBootMpArena = 0;
 
 #if !defined(PSX) && !defined(__EMSCRIPTEN__)
 #include <SDL_messagebox.h>
@@ -1878,6 +1881,8 @@ void PrintCommandLineArguments()
 		"        survival|copsandrobbers|capturetheflag> : game mode override\n"
 		"  -weather <none|rain|wet> : weather override (with -level)\n"
 		"  -time <dawn|day|dusk|night> : time-of-day override (with -level)\n"
+		"  -mp [0|1] : load the small multiplayer map instead of the full city\n"
+		"        (with -level; 0 = first arena, 1 = second arena per city)\n"
 #endif // DEBUG_OPTIONS
 		"  -replay <filename.d2rp> : starts replay from file\n"
 #ifdef CUTSCENE_RECORDER
@@ -2293,6 +2298,19 @@ int redriver2_main(int argc, char** argv)
 		else if (!strcmp(argv[i], "-mp"))
 		{
 			gBootMpLevel = 1;
+			gBootMpArena = 0;
+
+			/* optional arena: -mp 0 | -mp 1 (two multiplayer maps per city) */
+			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
+			{
+				int arena = atoi(argv[i + 1]);
+
+				if (arena == 0 || arena == 1)
+				{
+					gBootMpArena = arena;
+					i++;
+				}
+			}
 		}
 #endif // _DEBUG_OPTIONS
 		else if (!strcmp(argv[i], "-replay"))
@@ -2422,9 +2440,9 @@ int redriver2_main(int argc, char** argv)
 		{
 			static const char* bootLevelNames[4] = { "chicago", "havana", "lasvegas", "rio" };
 
-			printInfo("[boot] frontend bypass: level=%d (%s) gamemode=%d car=%d time=%d weather=%d onfoot=%d mp=%d\n",
+			printInfo("[boot] frontend bypass: level=%d (%s) gamemode=%d car=%d time=%d weather=%d onfoot=%d mp=%d arena=%d\n",
 				gBootLevel, bootLevelNames[gBootLevel], (int)GameType,
-				gBootCar, gBootTime, gBootWeather, gBootOnFoot, gBootMpLevel);
+				gBootCar, gBootTime, gBootWeather, gBootOnFoot, gBootMpLevel, gBootMpArena);
 		}
 
 		if (gBootCar >= 0)
@@ -2440,9 +2458,12 @@ int redriver2_main(int argc, char** argv)
 			wantedWeather = gBootWeather;
 
 		/* GameLaunch computes the mission number from GameType/GameLevel/
-		 * gWantNight/gSubGameNumber (see glaunch.c) */
+		 * gWantNight/gSubGameNumber (see glaunch.c). -mp picks the
+		 * multiplayer-map variant; its arena (0/1) becomes gSubGameNumber,
+		 * which State_GameStart offsets by 440 to reach M58..M65 (arena 0)
+		 * or M498..M505 (arena 1). */
 		gCurrentMissionNumber = 0;
-		gSubGameNumber = 0;
+		gSubGameNumber = gBootMpLevel ? gBootMpArena : 0;
 
 		SetState(STATE_GAMESTART);
 	}
