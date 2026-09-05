@@ -711,6 +711,18 @@ static int cd2OnCarTorque(void* ud, void* args)
 		int az = ABS(FIXEDH(velZ));
 		cp->hd.speed = (ax < az) ? (az + ax / 2) : (ax + az / 2);
 		cp->hd.wheel_speed = (int)(((long long)velX * fx + (long long)velZ * fz) >> 12);
+
+		// In-place turning at a COMPLETE standstill: the engine treats a car
+		// with hd.speed == 0 as fully stopped and wipes ALL angular velocity
+		// before it integrates orientation, so the car can't rotate until it
+		// rolls a tiny bit. While the driver is actually steering (or
+		// pivoting) and the car is motionless, flag it as barely rolling so
+		// the yaw we wrote above survives and the car spins on the spot.
+		if (cp->hd.speed == 0 && cp->controlType == CONTROL_TYPE_PLAYER &&
+			(steerFp != 0 || tightActive))
+		{
+			cp->hd.speed = 1;
+		}
 	}
 
 	// ---- telemetry (opt-in): export input/velocity/twist for tuning ----
