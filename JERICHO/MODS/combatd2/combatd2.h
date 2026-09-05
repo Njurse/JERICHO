@@ -41,7 +41,7 @@
 // angularVelocity[1] per unit of yaw rate (PSX-units/frame). Derived from the
 // quaternion integrator in GlobalTimeStep (handling.c): AV = avel >> 13 is the
 // half-angle in fixed point, so avel = yawRate × π × 8192.
-#define CD2_AV_PER_UNIT     25736
+#define CD2_AV_PER_UNIT     25736 / 2
 
 // wheel_angle magnitude treated as full-lock steer (stock regular max = 352).
 #define CD2_STEER_MAX       352
@@ -68,7 +68,7 @@
 enum
 {
 	CD2_TIGHT_INPUT_HANDBRAKE = 0,
-	CD2_TIGHT_INPUT_WHEELSPIN = 1,
+	CD2_TIGHT_INPUT_WHEELSPIN = 0,
 	CD2_TIGHT_INPUT_OFF = 2
 };
 
@@ -92,32 +92,29 @@ enum
 #define CD2_TMB_TIGHT_DEFAULT       0
 // thrust magnitude the override writes for gas (- for brake); only the SIGN
 // matters to the combatd2 torque model (engine force is superseded).
-#define CD2_TMB_THRUST              4915
+#define CD2_TMB_THRUST              4915 * 5
 
 // Iconic TMB slide: while the Tight Turn is held AND the car is fast enough,
-// lateral traction is suspended (~CD2_SLIDE_GRIP_FRAC of normal grip) so the
-// car keeps moving along its ORIGINAL velocity vector while the pivot rotates
-// the heading underneath it — you steer through the slide instead of the car
-// arcing. Releasing the button (or dropping below CD2_SLIDE_MIN_SPEED) hooks
-// the car back up.
-#define CD2_SLIDE_MIN_SPEED  50     // speed units/frame (below: low-speed spin)
-#define CD2_SLIDE_GRIP_FRAC  64     // fp: grip multiplier during the slide
-                                    // (64/4096 ≈ 1.5% of normal grip)
-
-// Friction inside a slide is intentionally tiny: the pivot bleed was dropped to
-// ~2.3%/frame and rolling drag is skipped entirely while sliding, so an off-gas
-// sharp turn carries its speed (TMB "continues moving in the original velocity
-// direction").
+// traction is only PARTIALLY released — the car keeps real friction
+// (CD2_SLIDE_GRIP_FRAC of full grip), so the skid itself scrubs speed and
+// arcs under the pivot like a stock friction skid. The heavy grip overrides
+// are walked back: combatd2 nudges the grip multiplier; it does not switch
+// the skids off.
+#define CD2_SLIDE_MIN_SPEED  150     // speed units/frame (below: low-speed spin)
+#define CD2_SLIDE_GRIP_FRAC  900     // fp: grip multiplier during the slide
+                                    // (900/4096 ≈ 22% of normal grip)
 
 // Velocity recovery after a slide ends: the old "hookup" scrubbed the lateral
 // component at ~93%/frame, which killed the car's speed whenever the pivot had
 // rotated the heading away from the travel direction (it stopped dead). TMB
 // releases instead CARRY the momentum: for CD2_RECOVER_FRAMES after letting
 // off the Tight Turn, the velocity is rotated back onto the heading while its
-// magnitude is conserved (ice-like, forgiving), then normal grip resumes.
+// magnitude is conserved, then grip returns GRADUALLY over CD2_GRIP_RAMP_FRAMES
+// (never a snap back to full grip).
 #define CD2_RECOVER_FRAMES    8     // frames of magnitude-preserving recovery
-#define CD2_RECOVER_RATE      1024  // fp: fraction of the remaining heading gap
-                                    // closed per frame (1024/4096 = 25%)
+#define CD2_RECOVER_RATE      256   // fp: fraction of the heading gap closed per
+                                    // recovery frame (256/4096 = 6.25%)
+#define CD2_GRIP_RAMP_FRAMES  10    // frames to ramp grip back up after recovery
 
 // --------------------------- default stats -------------------------------
 //
@@ -139,13 +136,13 @@ enum
 // Grip default (fixed point /frame; 1800/4096 ≈ 0.44/frame ≈ 13 s⁻¹ — TMB keeps
 // skids short and sparse, so base grip is high and only drops a little):
 #define CD2_GRIP            1800
-#define CD2_SLIP_REDUCTION  3     // /10 → max 30% grip drop at full slip
+#define CD2_SLIP_REDUCTION  6     // /10 → max 30% grip drop at full slip
                                    // (skids are brief, never a loss-of-control spiral)
 
 // Visual: lateral velocity (speed units) → body roll (PSX angle units).
-#define CD2_ROLL_GAIN       2     // roll = -latVel * gain, clamped below
-#define CD2_BODY_MAX_ROLL   24    // ~2° lean (TMB: weight felt, not exaggerated)
-#define CD2_ROLL_LERP       2     // exponential settle divisor
+#define CD2_ROLL_GAIN       6     // roll = -latVel * gain, clamped below
+#define CD2_BODY_MAX_ROLL   37    // ~2° lean (TMB: weight felt, not exaggerated)
+#define CD2_ROLL_LERP       4     // exponential settle divisor
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
 #define CD2_FOV_REF_SPEED   120
@@ -181,9 +178,9 @@ enum
 // Engine channel audio tuners (applied per player car via
 // JER_EVENT_CAR_ENGINE_SOUND). Pitch is SPU pitch units (4096 = normal);
 // volume is PSX volume (0 loudest, -10000 silent). Scale = fixed point 4096.
-#define CD2_SND_PITCH_SCALE   4096  // fp: rev+idle pitch multiplier (1.0)
-#define CD2_SND_PITCH_BIAS    0     // additive pitch on the rev channel
-#define CD2_SND_IDLE_PITCH_BIAS 0   // additive pitch on the idle channel
+#define CD2_SND_PITCH_SCALE   4096/10  // fp: rev+idle pitch multiplier (1.0)
+#define CD2_SND_PITCH_BIAS    1024     // additive pitch on the rev channel
+#define CD2_SND_IDLE_PITCH_BIAS 512   // additive pitch on the idle channel
 #define CD2_SND_VOLUME_SCALE  4096  // fp: rev volume multiplier (1.0)
 #define CD2_SND_VOLUME_BIAS   0     // additive rev volume (negative = quieter)
 #define CD2_SND_IDLE_VOLUME_BIAS 0  // additive idle volume (negative = quieter)

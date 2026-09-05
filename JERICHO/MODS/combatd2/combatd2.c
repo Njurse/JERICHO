@@ -259,7 +259,10 @@ static int cd2OnCarPad(void* ud, void* args)
 	brake = pad & MPAD_CIRCLE;
 
 	cp->handbrake = 0;
-	cp->wheelspin = tight ? 1 : 0;
+	// Deliberately never set cp->wheelspin: holding the tight button would
+	// trip the stock burnout path (rev scream, gear-0 wheelspin revs). The
+	// torque reads the tight button straight from the raw pad instead.
+	cp->wheelspin = 0;
 
 	// sign convention matches stock (positive = drive force, negative =
 	// brake/reverse); combatd2's torque only reads the sign at CAR_STEP.
@@ -450,7 +453,15 @@ static int cd2OnCarTorque(void* ud, void* args)
 	if (gCd2Cfg.tightTurn && cp->controlType == CONTROL_TYPE_PLAYER)
 	{
 		if (gCd2Cfg.tmbButtons)
-			tightActive = cp->wheelspin; // TMB layout: the override sets wheelspin from the tight button
+		{
+			// Tight Turn = the layout's tight face button, read from the raw
+			// pad (engine-native bits). NOT cp->wheelspin: the CAR_PAD
+			// override leaves wheelspin clear, so X never triggers burnout.
+			int padm = 0;
+			if (cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2)
+				padm = Pads[*cp->ai.padid].mapped;
+			tightActive = ((gCd2Cfg.tmbTight ? (padm & MPAD_SQUARE) : (padm & MPAD_CROSS)) != 0);
+		}
 		else if (gCd2Cfg.tightInput == CD2_TIGHT_INPUT_HANDBRAKE)
 			tightActive = cp->handbrake;
 		else if (gCd2Cfg.tightInput == CD2_TIGHT_INPUT_WHEELSPIN)
@@ -645,6 +656,16 @@ static int cd2OnCarTorque(void* ud, void* args)
 		}
 
 		grip = 0; // rotation above replaces the lateral scrub this frame
+
+		if (c->slideTicks == 0)
+			c->slideTicks = -CD2_GRIP_RAMP_FRAMES; // chain into the grip ramp
+	}
+	else if (c->slideTicks < 0)
+	{
+		// grip ramps back up gradually instead of snapping to full
+		grip = (int)(((long long)grip * (CD2_GRIP_RAMP_FRAMES + c->slideTicks)) /
+			CD2_GRIP_RAMP_FRAMES);
+		c->slideTicks++;
 	}
 
 	// damp the lateral component: vel -= right * latVel * grip
