@@ -92,6 +92,20 @@ typedef struct JER_ARGS_WHEEL_PARAMS
 	int scrubForce;
 } JER_ARGS_WHEEL_PARAMS;
 
+/* JER_EVENT_GET_PHYSICS_PARAMS — query: per-car physics tuning, fired once at
+ * the top of StepOneCar (wheelforces.c) before gravity/suspension/angular
+ * settling run. All fields are in/out, prefilled with the stock constants so
+ * a module edits in place; no handler = stock. */
+typedef struct JER_ARGS_PHYSICS_PARAMS
+{
+	void* car;			/* CAR_DATA* */
+	int gravity;		/* in/out: vertical accel (stock -7456; D1 -10922) */
+	int angularDamping;	/* in/out: angular velocity damping factor (stock 128;
+						   higher settles pitch/roll/yaw faster) */
+	int springRate;		/* in/out: suspension spring constant (stock 230) */
+	int springDamping;	/* in/out: suspension damper constant (stock 100) */
+} JER_ARGS_PHYSICS_PARAMS;
+
 /* JER_EVENT_GET_BUDDHA — query: clamp totalDamage below the totaled
  * threshold for the player car (Buddha mode); 0 = disabled. */
 typedef struct JER_ARGS_QUERY_FLAG

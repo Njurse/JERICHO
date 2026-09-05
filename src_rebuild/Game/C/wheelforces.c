@@ -24,6 +24,10 @@ struct CAR_LOCALS
 	LONGVECTOR4 avel;
 	int extraangulardamping;
 	int aggressive;
+	int gravity;
+	int angularDamping;
+	int springRate;
+	int springDamping;
 };
 
 HANDLING_TYPE handlingType[7] =
@@ -209,7 +213,7 @@ void ConvertTorqueToAngularAcceleration(CAR_DATA* cp, CAR_LOCALS* cl)
 
 	for (i = 0; i < 3; i++)
 	{
-		cp->hd.aacc[i] = cp->hd.aacc[i] * twistY + FIXEDH(cp->hd.where.m[i][2] * zd - cl->avel[i] * 128);
+		cp->hd.aacc[i] = cp->hd.aacc[i] * twistY + FIXEDH(cp->hd.where.m[i][2] * zd - cl->avel[i] * cl->angularDamping);
 
 		if (bend != NULL && i != 1 &&
 			(bend[0].vx | bend[0].vy | bend[0].vz |
@@ -483,7 +487,7 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 			pointVel[2] = FIXEDH(cl->avel[0] * leverPos[1] - cl->avel[1] * leverPos[0]) + cl->vel[2];
 
 			// that's our spring
-			susForce = newCompression * 230 - oldCompression * 100;
+			susForce = newCompression * cl->springRate - oldCompression * cl->springDamping;
 
 			if (wheel->locked)
 			{
@@ -708,6 +712,27 @@ void StepOneCar(CAR_DATA* cp)
 	_cl.aggressive = handlingType[cp->hndType].aggressiveBraking;
 	_cl.extraangulardamping = 0;
 
+	// JERICHO-HOOK: per-car physics tuning (gravity / angular settle / springs).
+	// Prefilled with the stock constants; no handler = stock.
+	_cl.gravity = GRAVITY_FORCE;
+	_cl.angularDamping = 128;
+	_cl.springRate = 230;
+	_cl.springDamping = 100;
+	{
+		JER_ARGS_PHYSICS_PARAMS jer;
+
+		jer.car = cp;
+		jer.gravity = _cl.gravity;
+		jer.angularDamping = _cl.angularDamping;
+		jer.springRate = _cl.springRate;
+		jer.springDamping = _cl.springDamping;
+		jer_fire(JER_EVENT_GET_PHYSICS_PARAMS, &jer);
+		_cl.gravity = jer.gravity;
+		_cl.angularDamping = jer.angularDamping;
+		_cl.springRate = jer.springRate;
+		_cl.springDamping = jer.springDamping;
+	}
+
 	for (i = 0; i < 3; i++)
 	{
 		_cl.vel[i] = cp->st.n.linearVelocity[i];
@@ -717,7 +742,7 @@ void StepOneCar(CAR_DATA* cp)
 	}
 
 	cp->hd.acc[0] = 0;
-	cp->hd.acc[1] = GRAVITY_FORCE; // apply gravity
+	cp->hd.acc[1] = _cl.gravity; // apply gravity
 	cp->hd.acc[2] = 0;
 
 	// calculate car speed

@@ -67,6 +67,8 @@ enum
 	JER_EVENT_GET_WHEEL_DAMAGE,	/* query: cumulative wheel damage 0..4096 */
 	JER_EVENT_GET_IMPACT_INFO,	/* query: newest impact for the overlay */
 	JER_EVENT_GET_WHEEL_PARAMS,	/* query: wheel-damage physics params (scales + scrub) */
+	JER_EVENT_GET_PHYSICS_PARAMS,	/* query: gravity + angular settling + suspension
+									   rate for a car (see JER_ARGS_PHYSICS_PARAMS) */
 	JER_EVENT_GET_BUDDHA,		/* query: damage-total clamp flag (Buddha mode) */
 	JER_EVENT_DRAW_WHEEL,		/* wheel draw: allow visual mesh distortion */
 	JER_EVENT_PAUSE_MENU,		/* pause menu draw/update */
