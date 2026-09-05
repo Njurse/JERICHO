@@ -185,15 +185,32 @@ enum
 #define CD2_REV_CEILING       15000 // top-gear revs AT top speed; hard rev clamp
 #define CD2_GEAR_DOWN_FRAC    3686  // fp: downshift point = prev gear top x this
                                     // (3686/4096 ≈ 0.9; hysteresis vs the upshift)
-// Engine channel audio tuners (applied per player car via
-// JER_EVENT_CAR_ENGINE_SOUND). Pitch is SPU pitch units (4096 = normal);
-// volume is PSX volume (0 loudest, -10000 silent). Scale = fixed point 4096.
-#define CD2_SND_PITCH_SCALE   4096/10  // fp: rev+idle pitch multiplier (1.0)
-#define CD2_SND_PITCH_BIAS    1024     // additive pitch on the rev channel
-#define CD2_SND_IDLE_PITCH_BIAS 512   // additive pitch on the idle channel
-#define CD2_SND_VOLUME_SCALE  4096  // fp: rev volume multiplier (1.0)
-#define CD2_SND_VOLUME_BIAS   0     // additive rev volume (negative = quieter)
-#define CD2_SND_IDLE_VOLUME_BIAS 0  // additive idle volume (negative = quieter)
+// Engine pitch is hd.revs, slewed every frame toward a target set by the
+// gearbox above (CD2_GEAR_SHIFT_REVS / CD2_REV_CEILING choose WHERE the
+// pitch sits). Two independent knobs shape the feel:
+//   * CD2_REV_RISE_SCALE / CD2_REV_DROP_SCALE change HOW FAST the pitch gets
+//     there. They multiply the engine's per-frame slew caps (stock
+//     maxrevrise = 1600, maxrevdrop = 1440 in gamesnd.c, exposed to modules
+//     by JER_EVENT_CAR_REVS). 4096 = stock lag. Raise to make the engine
+//     snap to redline and fall hard on shifts / let-off (≈ 2-4x =
+//     8192-16384); below 4096 is lazier.
+//   * The CD2_SND_* knobs adjust the two engine channels (rev + idle) at the
+//     mixer (JER_EVENT_CAR_ENGINE_SOUND). Pitch is SPU pitch (4096 = normal
+//     playback rate, 8192 = twice as fast). Volume is PSX attenuation:
+//     0 = loudest, -10000 = silent; the stock rev channel sits around -5500
+//     at full rev and fades toward -10000. To make it LOUDER, move the
+//     volume toward 0: add a POSITIVE CD2_SND_*_BIAS and/or raise the gain
+//     above 4096 (gain divides the remaining attenuation: 8192 ≈ twice as
+//     loud). Clamps keep everything in [-10000, 0].
+#define CD2_REV_RISE_SCALE    12288 // fp: rev rise slew multiplier (~3x stock)
+#define CD2_REV_DROP_SCALE    6144  // fp: rev fall slew multiplier (~1.5x stock)
+#define CD2_SND_PITCH_SCALE   4096  // fp: rev+idle pitch multiplier (1.0)
+#define CD2_SND_PITCH_BIAS    1024  // additive rev-channel pitch (faster spin-up)
+#define CD2_SND_IDLE_PITCH_BIAS 512 // additive idle-channel pitch
+#define CD2_SND_REV_GAIN      4096  // fp: rev loudness gain (>4096 = louder)
+#define CD2_SND_REV_BIAS      1800  // rev volume bias toward 0 (louder)
+#define CD2_SND_IDLE_GAIN     4096  // fp: idle loudness gain (>4096 = louder)
+#define CD2_SND_IDLE_BIAS     1800  // idle volume bias toward 0 (louder)
 #define CD2_SND_MIN_VOL      -10000  // clamp floor for the scaled volumes
 #define CD2_SND_MAX_VOL      0      // clamp ceiling
 

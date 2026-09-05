@@ -190,7 +190,7 @@ static CD2_STATS cd2GetStats(CAR_DATA* cp)
 	// combatd2 drives ~25% slower than the raw slider: the point-mass
 	// top speed would otherwise out-run the level scale and feel frantic.
 	// (Scales every preset + per-vehicle derivation uniformly.)
-	s.topSpeed = (int)(((long long)s.topSpeed * CD2_SPEED_SCALE) >> 12);
+	s.topSpeed = (int)(((long long)s.topSpeed * CD2_SPEED_SCALE) >> 1);
 
 	return s;
 }
@@ -383,17 +383,45 @@ static int cd2OnCarEngineSound(void* ud, void* args)
 	p = ((long long)e->idlePitch * CD2_SND_PITCH_SCALE) >> 12;
 	e->idlePitch = (int)p + CD2_SND_IDLE_PITCH_BIAS;
 
-	v = ((long long)e->revVolume * CD2_SND_VOLUME_SCALE) >> 12;
-	v += CD2_SND_VOLUME_BIAS;
+	// Volume is PSX attenuation (0 loudest, -10000 silent): gain divides the
+	// attenuation (8192 ≈ twice as loud), bias moves it toward 0 (louder).
+	v = -e->revVolume;
+	if (CD2_SND_REV_GAIN > 0 && v > 0)
+		v = (v * 4096) / CD2_SND_REV_GAIN;
+	v = -v + CD2_SND_REV_BIAS;
 	if (v < CD2_SND_MIN_VOL) v = CD2_SND_MIN_VOL;
 	if (v > CD2_SND_MAX_VOL) v = CD2_SND_MAX_VOL;
 	e->revVolume = (int)v;
 
-	v = ((long long)e->idleVolume * CD2_SND_VOLUME_SCALE) >> 12;
-	v += CD2_SND_IDLE_VOLUME_BIAS;
+	v = -e->idleVolume;
+	if (CD2_SND_IDLE_GAIN > 0 && v > 0)
+		v = (v * 4096) / CD2_SND_IDLE_GAIN;
+	v = -v + CD2_SND_IDLE_BIAS;
 	if (v < CD2_SND_MIN_VOL) v = CD2_SND_MIN_VOL;
 	if (v > CD2_SND_MAX_VOL) v = CD2_SND_MAX_VOL;
 	e->idleVolume = (int)v;
+
+	return JER_RESULT_CONTINUE;
+}
+
+// REV SLEW (JER_EVENT_CAR_REVS, gamesnd.c ControlCarRevs): scale how fast the
+// engine pitch climbs toward its target revs (CD2_REV_RISE_SCALE) and how
+// hard it falls on shifts / let-off (CD2_REV_DROP_SCALE). Applied to player
+// cars only; traffic keeps the stock lag.
+static int cd2OnCarRevs(void* ud, void* args)
+{
+	JER_ARGS_CAR_REVS* r = (JER_ARGS_CAR_REVS*)args;
+	CAR_DATA* cp = (CAR_DATA*)r->car;
+	(void)ud;
+
+	if (!gCd2Cfg.enabled || cp->controlType != CONTROL_TYPE_PLAYER)
+		return JER_RESULT_CONTINUE;
+
+	r->revRise = (int)(((long long)r->revRise * CD2_REV_RISE_SCALE) >> 12);
+	r->revDrop = (int)(((long long)r->revDrop * CD2_REV_DROP_SCALE) >> 12);
+
+	if (r->revRise < 0) r->revRise = 0;
+	if (r->revDrop < 0) r->revDrop = 0;
 
 	return JER_RESULT_CONTINUE;
 }
@@ -929,7 +957,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_module(ctx,
 		"combatd2",					/* id */
 		"Combat D2",				/* name */
-		"0.4.0",					/* version */
+		"0.5.0",					/* version */
 		"JERICHO",					/* author */
 		"Twisted Metal: Black style handling: point-mass velocity + yaw, Tight Turn pivot, proportional brakes, brief skids, momentum-absorbing walls.",	/* description */
 		"",							/* dependencies */
@@ -939,6 +967,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2OnResetCar, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PAD, cd2OnCarPad, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_GEARBOX, cd2OnCarGearbox, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_REVS, cd2OnCarRevs, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_ENGINE_SOUND, cd2OnCarEngineSound, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2OnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, cd2OnCarTorque, NULL, 0);

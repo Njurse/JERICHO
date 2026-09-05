@@ -1,6 +1,6 @@
 id = "combatd2"
 name = "Combat D2"
-version = "0.4.0"
+version = "0.5.0"
 author = "JERICHO"
 description = "Twisted Metal: Black style handling: point-mass velocity/yaw, Tight Turn pivot, proportional brakes, brief skids, walls absorb momentum."
 dependencies = []
