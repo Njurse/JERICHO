@@ -29,6 +29,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_SHUTDOWN` | — | `redriver2_main`, after the state loop | the game is exiting — release resources (sockets, files) |
 | `JER_EVENT_CAR_PAD` | `JER_ARGS_CAR_PAD` | inside `ProcessCarPad` (`handling.c`), before the pedal assignment | take over the car's pedal semantics: set `handled` + write `cp->thrust`/`handbrake`/`wheelspin` — stock binds are skipped |
 | `JER_EVENT_CAR_GEARBOX` | `JER_ARGS_CAR_GEARBOX` | `GetEngineRevs` (`gamesnd.c`) | retune the per-car gear/rev table (shift points + ratios + rev ceiling) |
+| `JER_EVENT_CAR_REVS` | `JER_ARGS_CAR_REVS` | `ControlCarRevs` (`gamesnd.c`) | scale how fast the engine pitch slews to its target revs (rise/drop per frame) |
 | `JER_EVENT_CAR_ENGINE_SOUND` | `JER_ARGS_CAR_ENGINE_SOUND` | `SoundTasks` (`gamesnd.c`) | scale/offset the player car's rev + idle channel pitch and volume |
 | `JER_EVENT_CAR_ENGINE` | `JER_ARGS_CAR_ENGINE` | end of `ProcessCarPad` (`handling.c`) | transform engine force (thrust) + steering (wheel_angle) |
 | `JER_EVENT_CAR_FRICTION` | `JER_ARGS_CAR_FRICTION` | end of `GetFrictionScalesDriver1` (`wheelforces.c`) | transform front/rear friction (grip) |
@@ -73,6 +74,13 @@ reads the (possibly updated) fields back. No handler = stock behavior.
 Five transform/observe hooks added for handling overhauls. Each fires once
 per car per physics frame (or per draw, for `CAR_DRAW`) and is a no-op with
 no handler.
+
+- **`JER_EVENT_CAR_REVS`** fires at the top of `ControlCarRevs` once per
+  active car per frame. `args->revRise` / `args->revDrop` default to the stock
+  slew limits (`maxrevrise` 1600, `maxrevdrop` 1440 — the maximum the pitch
+  may climb / fall toward its target revs each frame). Scaling them up makes
+  the engine rev up faster (and drop faster on shifts/let-off); no handler
+  leaves the stock behavior untouched.
 
 - **`JER_EVENT_CAR_PAD`** fires inside `ProcessCarPad` right before the
   stock face-button assignment (`handbrake`/`wheelspin`, then the

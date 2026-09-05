@@ -754,12 +754,30 @@ void ControlCarRevs(CAR_DATA* cp)
 {
 	char spin;
 	int player_id, acc, oldvol;
+	int revRise;
+	int revDrop;
 	short oldRevs, newRevs, desiredRevs;
 
 	acc = cp->thrust;
 	spin = cp->wheelspin;
 	oldRevs = cp->hd.revs;
 	player_id = GetPlayerId(cp);
+
+	// JERICHO-HOOK: module-controlled rev slew. A module scales how fast the
+	// engine pitch climbs (revRise) and falls (revDrop) toward its target;
+	// defaults are the stock limits, so no handler = exactly stock.
+	{
+		JER_ARGS_CAR_REVS revArgs;
+
+		revArgs.car = cp;
+		revArgs.revRise = maxrevrise;
+		revArgs.revDrop = maxrevdrop;
+
+		jer_fire(JER_EVENT_CAR_REVS, &revArgs);
+
+		revRise = revArgs.revRise;
+		revDrop = revArgs.revDrop;
+	}
 
 	cp->hd.changingGear = 0;
 
@@ -786,17 +804,17 @@ void ControlCarRevs(CAR_DATA* cp)
 	newRevs = desiredRevs;
 	desiredRevs = (oldRevs - newRevs);
 
-	if (maxrevdrop < desiredRevs)
+	if (revDrop < desiredRevs)
 	{
 		acc = 0;
 		cp->hd.changingGear = 1;
-		newRevs = oldRevs - maxrevdrop;
+		newRevs = oldRevs - revDrop;
 	}
 
 	desiredRevs = newRevs - oldRevs;
 
-	if (maxrevrise < desiredRevs)
-		newRevs = oldRevs + maxrevrise;
+	if (revRise < desiredRevs)
+		newRevs = oldRevs + revRise;
 
 	cp->hd.revs = newRevs;
 	if (player_id != -1)

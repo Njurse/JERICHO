@@ -113,6 +113,10 @@ enum
 	JER_EVENT_CAR_ENGINE_SOUND,	/* SoundTasks: scale/offset the player's
 				   rev + idle engine channel pitch/volume */
 
+	JER_EVENT_CAR_REVS,		/* top of ControlCarRevs (gamesnd.c): scale
+				   how fast engine pitch slews to its target revs
+				   (see JER_ARGS_CAR_REVS) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

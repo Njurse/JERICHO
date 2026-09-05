@@ -368,6 +368,18 @@ typedef struct JER_ARGS_CAR_ENGINE_SOUND
 	int idleVolume;		/* in/out: idle channel volume */
 } JER_ARGS_CAR_ENGINE_SOUND;
 
+/* JER_EVENT_CAR_REVS — fired at the top of ControlCarRevs (gamesnd.c) once
+ * per active car per frame. A module may change how fast the engine pitch
+ * slews toward its target revs: revRise is the maximum the pitch can climb
+ * per frame, revDrop the maximum it can fall (stock file constants:
+ * maxrevrise = 1600, maxrevdrop = 1440). No handler = exactly stock. */
+typedef struct JER_ARGS_CAR_REVS
+{
+	void* car;		/* CAR_DATA* whose revs are being slewed */
+	int revRise;		/* in/out: max revs gained per frame */
+	int revDrop;		/* in/out: max revs lost per frame */
+} JER_ARGS_CAR_REVS;
+
 /* JER_EVENT_CAR_ENGINE — fired at the end of ProcessCarPad, after the engine
  * force (thrust) and steering (wheel_angle) are computed. A module scales
  * them in place to overclock acceleration / widen steering. handbrake/
