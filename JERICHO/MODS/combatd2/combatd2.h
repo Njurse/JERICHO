@@ -98,6 +98,10 @@ enum
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
 #define CD2_FOV_REF_SPEED   120
+
+// Per-vehicle variety references (typical values in this data set):
+#define CD2_REF_PW          4096   // typical powerRatio/mass ratio (4096/4096)
+#define CD2_REF_MASS        4096   // typical car mass (fixed-point scale)
 #define CD2_FOV_PULL_SCRZ   60
 
 // presets

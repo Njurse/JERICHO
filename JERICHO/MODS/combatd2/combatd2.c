@@ -34,9 +34,6 @@
 // State
 // ---------------------------------------------------------------------------
 
-// reference powerRatio (short) that maps to a 1.0x accel/top-speed scale.
-#define CD2_REF_POWER 3000
-
 CD2_CONFIG gCd2Cfg;
 static CD2_CAR gCd2Car[MAX_CARS];
 
@@ -138,15 +135,35 @@ static CD2_STATS cd2GetStats(CAR_DATA* cp)
 
 	if (cp->ap.carCos != NULL)
 	{
-		// Vehicle variety from existing chassis stats (no hardcoded table):
-		//   powerRatio (short) -> accel + a milder top-speed nudge
+		// Per-vehicle axes derived from the existing chassis stats:
+		//   power-to-weight (powerRatio / mass) -> accel, top speed AND control
+		//     (light + powerful = fast & nimble like Spectre; heavy = slow & wide
+		//     like Darkside, but always kept driveable)
 		//   traction (fixed 4096 = stock) -> grip
+		//   mass -> drag (heavy cars coast longer: momentum is felt)
+		// Collision "push" is already mass-based in the engine's impulse code.
 		int power = cp->ap.carCos->powerRatio;
+		int mass  = cp->ap.carCos->mass;
+		if (mass < 1) mass = 1;
+
 		if (power > 0)
 		{
-			int ps = jer_clamp_int((power * 4096) / CD2_REF_POWER, 2048, 6144); // 0.5x..1.5x
-			s.accel    = (int)(((long long)s.accel * ps) >> 12);
-			s.topSpeed = (int)(((long long)s.topSpeed * (4096 + (ps - 4096) / 2)) >> 12);
+			// ~4096 for an average car in this data set
+			int pw = (int)(((long long)power * 4096) / mass);
+
+			// acceleration/top-speed scale: 0.375x .. 1.5x
+			int as = jer_clamp_int((pw * 4096) / CD2_REF_PW, 1536, 6144);
+			s.accel    = (int)(((long long)s.accel * as) >> 12);
+			s.topSpeed = (int)(((long long)s.topSpeed * (4096 + (as - 4096) / 2)) >> 12);
+
+			// steering/pivot authority: 0.5x .. 1.5x (heavy stays driveable)
+			s.control = jer_clamp_int(pw, 2048, 6144);
+		}
+
+		// heavy cars shed speed slower (coast = momentum), capped at normal drag
+		{
+			int dm = jer_clamp_int(((long long)CD2_REF_MASS * 4096) / mass, 2048, 4096);
+			s.drag = (int)(((long long)s.drag * dm) >> 12);
 		}
 
 		int traction = cp->ap.carCos->traction;
