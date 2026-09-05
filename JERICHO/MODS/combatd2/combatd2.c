@@ -69,7 +69,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.debugLog      = jer_config_get_int("combatd2", "debug_log", 0);
 
 	gCd2Cfg.enabled  = gCd2Cfg.enabled ? 1 : 0;
-	gCd2Cfg.topSpeed = jer_clamp_int(gCd2Cfg.topSpeed, 60, 400);
+	gCd2Cfg.topSpeed = jer_clamp_int(gCd2Cfg.topSpeed, 60, 600);
 	gCd2Cfg.accel    = jer_clamp_int(gCd2Cfg.accel, 1, 24);
 	gCd2Cfg.brake    = jer_clamp_int(gCd2Cfg.brake, 2, 30);
 	gCd2Cfg.handling = jer_clamp_int(gCd2Cfg.handling, 10, 120);

@@ -149,7 +149,7 @@ enum
 // --------------------------- default stats -------------------------------
 //
 // Speed defaults (world-units/frame):
-#define CD2_TOP_SPEED       260   // speed-units/frame (raw slider value; the
+#define CD2_TOP_SPEED       520   // speed-units/frame (raw slider value; the
                                     // physics top is CD2_SPEED_SCALE x this)
 #define CD2_SPEED_SCALE     2048  // fp: effective top speed multiplier (0.5x =
                                     // ~130 at the default slider value)
@@ -239,10 +239,11 @@ enum
 #define CD2_GEAR_AUTO         1     // 0/1: retune player cars' gear tables
 #define CD2_WS_PER_SPEED      8192  // fp: ws per 1.0 speed unit (8192/4096 = 2x)
 #define CD2_GEAR_1_FRAC       500   // fp: gear0 tops here (≈ 12% of top speed)
-#define CD2_GEAR_2_FRAC       600  // fp: gear1 tops here (≈ 27%)
-#define CD2_GEAR_3_FRAC       850  // fp: gear2 tops here (≈ 43%)
-#define CD2_GEAR_SHIFT_REVS   1300 // revs at the top of gears 0..2 (pitch peak)
-#define CD2_REV_CEILING       1500 // top-gear revs AT top speed; hard rev clamp
+#define CD2_GEAR_2_FRAC       1100  // fp: gear1 tops here (≈ 27%)
+#define CD2_GEAR_3_FRAC       1750  // fp: gear2 tops here (≈ 43%)
+#define CD2_GEAR_SHIFT_REVS   23000 // revs at the top of gears 0..2 (pitch peak;
+                                    // matches stock redline scale)
+#define CD2_REV_CEILING       23000 // top-gear revs AT top speed; hard rev clamp
 #define CD2_GEAR_DOWN_FRAC    3686  // fp: downshift point = prev gear top x this
                                     // (3686/4096 ≈ 0.9; hysteresis vs the upshift)
 // Engine pitch is hd.revs, slewed every frame toward a target set by the

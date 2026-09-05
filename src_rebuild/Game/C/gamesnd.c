@@ -739,10 +739,20 @@ ushort GetEngineRevs(CAR_DATA* cp)
 
 		cp->hd.gear = 0;
 
+		// reverse redline: reverse drives as fast as forward in combatd2, so
+		// the raw ws * ratio_ac can blow past redline (and overflow ushort)
 		if (acc != 0)
-			return ws * geard[type][0].ratio_ac;
+		{
+			int revs = ws * geard[type][0].ratio_ac;
+			if (revs > 23000) revs = 23000;
+			return (ushort)revs;
+		}
 
-		return ws * geard[type][0].ratio_id;
+		{
+			int revs = ws * geard[type][0].ratio_id;
+			if (revs > 23000) revs = 23000;
+			return (ushort)revs;
+		}
 	}
 }
 
