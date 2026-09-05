@@ -681,27 +681,39 @@ ushort GetEngineRevs(CAR_DATA* cp)
 
 			jer_fire(JER_EVENT_CAR_GEARBOX, &gb);
 
-			// walk gears with the (possibly retuned) table: upshift past
-			// hiWs, downshift under lowWs/lowlidl (stock hysteresis shape)
+			// walk gears with the (possibly retuned) table. Matches the stock
+			// algorithm exactly: a downshift is only accepted when the car is
+			// also slow enough for the lower gear (its hiWs is re-checked in
+			// the SAME iteration, so the walk can never oscillate between two
+			// gears when gear bands overlap, e.g. the CIV row). A hard
+			// iteration guard keeps a hostile table from hanging the game.
 			g = gear;
+			if (g < 0) g = 0;
+			if (g > 3) g = 3;
 
-			do {
-				int lws = (acc < 1) ? gb.lowIdleWs[g] : gb.lowWs[g];
+			for (gi = 0; gi < 8; gi++)
+			{
 				int ng = g;
+				int lws = (acc < 1) ? gb.lowIdleWs[g] : gb.lowWs[g];
 
 				if (ws < lws && g > 0)
-					ng = g - 1;
+				{
+					ng = g - 1;               // downshift candidate
+
+					if (gb.hiWs[ng] < ws)     // too fast for the lower gear
+						ng = g;               // stay in the current gear
+				}
 				else if (gb.hiWs[g] < ws)
-					ng = g + 1;
+					ng = g + 1;               // upshift
 
 				if (ng == g)
 					break;
 
-				g = ng;
-			} while (g > 0 && g < 3);
+				if (ng < 0) { g = 0; break; }
+				if (ng > 3) { g = 3; break; }
 
-			if (g < 0) g = 0;
-			if (g > 3) g = 3;
+				g = ng;
+			}
 
 			cp->hd.gear = g;
 
