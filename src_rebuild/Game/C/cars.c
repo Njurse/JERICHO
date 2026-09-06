@@ -913,7 +913,6 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		// (camber from the lateral bend, toe from the longitudinal bend),
 		// applied to the per-wheel copy AFTER the spin rotation. The wheel
 		// position itself already includes the bend via sWheelPos above.
-		if (numWheelVerts > 0)
 		{
 			// JERICHO-HOOK: wheel draw -> modules (crumple package, visual mesh;
 			// hide=1 skips the wheel entirely, e.g. a totaled wreck)
@@ -921,17 +920,18 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 
 			jerArgs.carId = cp->id;
 			jerArgs.wheelnum = wheelnum;
-			jerArgs.verts = wheelVerts;
+			jerArgs.verts = (numWheelVerts > 0) ? wheelVerts : NULL;
 			jerArgs.numVerts = numWheelVerts;
 			jerArgs.hide = 0;
 			jer_fire(JER_EVENT_DRAW_WHEEL, &jerArgs);
 
 			if (jerArgs.hide == 0)
-				DrawWheelObject(model, wheelVerts, TransparentObject, wheelnum);
-		}
-		else
-		{
-			DrawWheelObject(model, VertPtr, TransparentObject, wheelnum);
+			{
+				if (numWheelVerts > 0)
+					DrawWheelObject(model, wheelVerts, TransparentObject, wheelnum);
+				else
+					DrawWheelObject(model, VertPtr, TransparentObject, wheelnum);
+			}
 		}
 
 		wheelDisp++;
