@@ -43,6 +43,7 @@
 CD2_CONFIG gCd2Cfg;
 static CD2_CAR gCd2Car[MAX_CARS];
 static unsigned int gDbgFrame; // telemetry frame counter
+static char gPendingTotalCar;   // set by the pause-menu "Total Car", applied next physics frame
 
 static const char* const kPresetNames[] = { "Default", "Turbo", "Drifty", "Custom" };
 static const char* const kTightInputNames[] = { "Handbrake", "Wheelspin", "Off" };
@@ -308,6 +309,14 @@ static int cd2OnCarStep(void* ud, void* args)
 
 	if (!gCd2Cfg.enabled || cp->id < 0 || cp->id >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
+
+	// deferred "Total Car" debug: applied on the first physics frame after
+	// unpausing so the wreck/explosion don't fire while the pause menu is up.
+	if (gPendingTotalCar && cp->id == MainPlayer.playerCarId)
+	{
+		gPendingTotalCar = 0;
+		cp->totalDamage = 0xffff;
+	}
 
 	gCd2Car[cp->id].throttle = (cp->thrust > 0) ? 1 : (cp->thrust < 0) ? -1 : 0;
 	return JER_RESULT_CONTINUE;
@@ -826,9 +835,10 @@ static int cd2TotalCar(void* ud, int dir)
 	(void)ud;
 	(void)dir;
 
-	// max damage (0xffff) so combatd2combat's CAR_STEP edge fires the explosion
-	if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
-		car_data[MainPlayer.playerCarId].totalDamage = 0xffff;
+	// defer: the damage is applied on the next physics frame (after unpausing)
+	// so the wreck + explosion don't trigger while the pause menu is up.
+	if (MainPlayer.playerCarId >= 0)
+		gPendingTotalCar = 1;
 
 	return JER_PAUSE_QUIT_NONE;
 }
