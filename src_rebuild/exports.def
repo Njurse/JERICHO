@@ -66,7 +66,7 @@ EXPORTS
 	?buildNewCarFromModel@@YAXHHPEADPEAUMODEL@@@Z
 	?plotCarPolyGT3@@YAXHPEAUCAR_POLY@@PEAUSVECTOR@@1PEAUplotCarGlobals@@H@Z
 	?plotCarPolyGT3Lit@@YAXHPEAUCAR_POLY@@PEAUSVECTOR@@1PEAUplotCarGlobals@@H@Z
-	?plotNewCarModel@@YAXPEAUCAR_MODEL@@H@Z
+	?plotNewCarModel@@YAXPEAUCAR_MODEL@@HH@Z
 	?restoreLightingMatrices@@YAXXZ
 	?setupLightingMatrices@@YAXXZ
 	?startBuildNewCars@@YAXH@Z

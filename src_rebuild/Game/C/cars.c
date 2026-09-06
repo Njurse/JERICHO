@@ -915,18 +915,19 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		// position itself already includes the bend via sWheelPos above.
 		if (numWheelVerts > 0)
 		{
-			// JERICHO-HOOK: wheel draw -> modules (crumple package, visual mesh)
-			{
-				JER_ARGS_DRAW_WHEEL jerArgs;
+			// JERICHO-HOOK: wheel draw -> modules (crumple package, visual mesh;
+			// hide=1 skips the wheel entirely, e.g. a totaled wreck)
+			JER_ARGS_DRAW_WHEEL jerArgs;
 
-				jerArgs.carId = cp->id;
-				jerArgs.wheelnum = wheelnum;
-				jerArgs.verts = wheelVerts;
-				jerArgs.numVerts = numWheelVerts;
-				jer_fire(JER_EVENT_DRAW_WHEEL, &jerArgs);
-			}
+			jerArgs.carId = cp->id;
+			jerArgs.wheelnum = wheelnum;
+			jerArgs.verts = wheelVerts;
+			jerArgs.numVerts = numWheelVerts;
+			jerArgs.hide = 0;
+			jer_fire(JER_EVENT_DRAW_WHEEL, &jerArgs);
 
-			DrawWheelObject(model, wheelVerts, TransparentObject, wheelnum);
+			if (jerArgs.hide == 0)
+				DrawWheelObject(model, wheelVerts, TransparentObject, wheelnum);
 		}
 		else
 		{
@@ -964,7 +965,7 @@ void PlayerCarFX(CAR_DATA *cp)
 }
 
 // [D] [T]
-void plotNewCarModel(CAR_MODEL* car, int palette)
+void plotNewCarModel(CAR_MODEL* car, int palette, int flatBlack)
 {
 #ifdef PSX
 	plotCarGlobals& _pg = *(plotCarGlobals*)((u_char*)getScratchAddr(0) + 1024 - sizeof(plotCarGlobals) - sizeof(_pct));
@@ -1007,7 +1008,7 @@ void plotNewCarModel(CAR_MODEL* car, int palette)
 
 	// draw wheel arcs
 	plotCarPolyB3(car->numB3, car->pB3, car->vlist, &_pg);
-	_pg.intensity = underIntensity & 0xffffff;
+	_pg.intensity = flatBlack ? 0 : (underIntensity & 0xffffff);
 
 	// draw car bottom
 	_pg.ot = (OTTYPE*)(current->ot + 16);
@@ -1015,7 +1016,13 @@ void plotNewCarModel(CAR_MODEL* car, int palette)
 
 	// draw car body
 	_pg.ot = (OTTYPE*)(current->ot + 4);
-	if (gTimeOfDay == TIME_NIGHT)
+	if (flatBlack)
+	{
+		// totaled wreck: flat solid black, gouraud shading off ("damping off")
+		_pg.intensity = 0;
+		plotCarPolyGT3nolight(car->numGT3, car->pGT3, car->vlist, &_pg, palette);
+	}
+	else if (gTimeOfDay == TIME_NIGHT)
 	{
 		_pg.intensity = (combointensity & 0xfcfcf0U) >> 2;
 #ifdef DYNAMIC_LIGHTING
@@ -1457,6 +1464,19 @@ void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR
 {
 	VECTOR modelLocation;
 	SVECTOR cog;
+	int flatBlack;
+
+	// JERICHO-HOOK: body color — a module sets flatBlack to render a totaled
+	// wreck flat solid black (gouraud shading off).
+	flatBlack = 0;
+	{
+		JER_ARGS_CAR_DRAW_COLOR jer;
+
+		jer.car = cp;
+		jer.flatBlack = 0;
+		jer_fire(JER_EVENT_CAR_DRAW_COLOR, &jer);
+		flatBlack = jer.flatBlack;
+	}
 
 	cog = cp->ap.carCos->cog;
 
@@ -1479,7 +1499,7 @@ void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR
 
 	gte_SetTransVector(&modelLocation);
 
-	plotNewCarModel(car, palette);
+	plotNewCarModel(car, palette, flatBlack);
 }
 
 // Nattdy

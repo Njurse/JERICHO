@@ -20,7 +20,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_GET_PHYSICS_PARAMS` | `JER_ARGS_PHYSICS_PARAMS` | `StepOneCar` (`wheelforces.c`) | query: gravity / angular settling / suspension rate |
 | `JER_EVENT_GET_BUDDHA` | `JER_ARGS_QUERY_FLAG` | `bcollide.c` | query: damage-total clamp flag |
 | `JER_EVENT_GET_IMPACT_INFO` | `JER_ARGS_IMPACT_INFO` | debug overlay | query: newest impact |
-| `JER_EVENT_DRAW_WHEEL` | `JER_ARGS_DRAW_WHEEL` | `DrawCarWheels` | distort a wheel's vertex copy |
+| `JER_EVENT_DRAW_WHEEL` | `JER_ARGS_DRAW_WHEEL` | `DrawCarWheels` | distort a wheel's vertex copy, or `hide=1` to skip it |
 | `JER_EVENT_CAMERA` | `JER_ARGS_CAMERA` | `InitCamera` (chase cam) | adjust/override the camera transform |
 | `JER_EVENT_CAMERA_LOOK` | `JER_ARGS_CAMERA_LOOK` | `TurnHead` | right-stick look input, before the stock look handling |
 | `JER_EVENT_PED_INPUT` | `JER_ARGS_PED_INPUT` | ped control loop | rewrite the on-foot pad before it drives Tanner |
@@ -37,6 +37,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_CAR_STEP` | `JER_ARGS_CAR_STEP` | top of `StepOneCar` (`wheelforces.c`) | observe car state (speed / velocity) |
 | `JER_EVENT_CAR_TORQUE` | `JER_ARGS_CAR_TORQUE` | after `ConvertTorqueToAngularAcceleration` (`wheelforces.c`) | inject yaw torque (`aacc[1]`) |
 | `JER_EVENT_CAR_DRAW` | `JER_ARGS_CAR_DRAW` | `DrawCar` (`cars.c`) | rotate the render-only body matrix (visual pitch/roll/yaw) |
+| `JER_EVENT_CAR_DRAW_COLOR` | `JER_ARGS_CAR_DRAW_COLOR` | `DrawCarObject` (`cars.c`) | force a flat black body (totaled wreck) |
 | `>= JER_EVENT_MODULE_CUSTOM` | module-defined | modules | custom events |
 
 ## Query events

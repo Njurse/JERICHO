@@ -72,13 +72,15 @@ typedef struct JER_ARGS_IMPACT_INFO
 } JER_ARGS_IMPACT_INFO;
 
 /* JER_EVENT_DRAW_WHEEL — wheel draw; a module may distort the per-wheel
- * vertex copy (SVECTOR*) for camber/toe. */
+ * vertex copy (SVECTOR*) for camber/toe, or set hide=1 to skip drawing this
+ * wheel entirely (e.g. a totaled wreck with the wheels blown off). */
 typedef struct JER_ARGS_DRAW_WHEEL
 {
 	int carId;
 	int wheelnum;
 	void* verts;
 	int numVerts;
+	int hide;		/* out: set 1 to skip drawing this wheel */
 } JER_ARGS_DRAW_WHEEL;
 
 /* JER_EVENT_GET_WHEEL_PARAMS — query: wheel-damage physics parameters the
@@ -448,6 +450,15 @@ typedef struct JER_ARGS_CAR_DRAW
 	void* matrix;		/* MATRIX* — render matrix to rotate in place */
 	int view;		/* in: camera view */
 } JER_ARGS_CAR_DRAW;
+
+/* JER_EVENT_CAR_DRAW_COLOR — fired in DrawCarObject before the body model is
+ * plotted; a module sets flatBlack = 1 to render the body flat solid black
+ * (no gouraud shading, "damping off") for a totaled / burned-out wreck. */
+typedef struct JER_ARGS_CAR_DRAW_COLOR
+{
+	void* car;		/* CAR_DATA* */
+	int flatBlack;		/* out: 1 = draw the body flat black */
+} JER_ARGS_CAR_DRAW_COLOR;
 
 /* JER_EVENT_LEVEL_LAUNCH — fired at the end of State_GameStart after the
  * pending level/gametype/player count/mission number are finalised but
