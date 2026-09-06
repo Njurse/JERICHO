@@ -127,6 +127,12 @@ enum
 				   may rewrite them (e.g. swap a take-a-ride
 				   mission for its multiplayer-map variant) */
 
+	JER_EVENT_DRAW_WORLD,		/* mid-render world pass: fired inside
+				   RenderGame2 after DrawAllTheCars, while the
+				   camera matrices (inv_camera_matrix, ...) are
+				   live -- modules draw world-space extras
+				   (projectiles, pickups) into the real OT */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

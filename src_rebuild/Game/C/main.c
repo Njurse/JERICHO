@@ -2771,6 +2771,11 @@ void RenderGame2(int view)
 
 	DrawAllTheCars(view);
 
+	// JERICHO-HOOK: module world-space extras (projectiles, pickups) draw
+	// here, mid-render with the camera matrices live, into the real OT.
+	// Fires every view; no handler = no-op.
+	jer_fire(JER_EVENT_DRAW_WORLD, NULL);
+
 #ifndef PSX
 
 #ifdef DYNAMIC_LIGHTING
