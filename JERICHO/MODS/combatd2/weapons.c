@@ -61,6 +61,10 @@ static int gSelWeapon;		// CD2_WPN_* currently armed
 static int gPrimaryId;		// CD2_WPN_NONE or the weapon in the primary slot
 static int gPrimaryAmmo;	// rounds left in the primary slot
 
+// debugLog-gated diagnostic counter (throttles the per-frame printInfo lines)
+static unsigned int gWpnDbg;
+
+
 // ---------------------------------------------------------------------------
 // Tracers (drawn MG shots)
 // ---------------------------------------------------------------------------
@@ -130,9 +134,11 @@ static int cd2ProjectPoint(const VECTOR* p, int* sx, int* sy)
 	int z;
 	unsigned int xy;
 
-	// physics y-up -> render y-down, then camera-relative
+	// physics y-up -> render y-down: negate the world y FIRST, then subtract
+	// the (already y-down) camera position. This is the exact transform the
+	// engine's DrawDebugOverlays/DrawThrownBombs use for world prims.
 	v.vx = p->vx - camera_position.vx;
-	v.vy = -(p->vy - camera_position.vy);
+	v.vy = -p->vy - camera_position.vy;
 	v.vz = p->vz - camera_position.vz;
 
 	gte_SetRotMatrix(&inv_camera_matrix);
@@ -244,7 +250,7 @@ static void cd2DrawFlare3D(const VECTOR* p, int half, int r, int g, int bl)
 		int z;
 
 		v.vx = p->vx - camera_position.vx;
-		v.vy = -(p->vy - camera_position.vy);
+		v.vy = -p->vy - camera_position.vy;
 		v.vz = p->vz - camera_position.vz;
 
 		gte_SetRotMatrix(&inv_camera_matrix);
@@ -519,6 +525,10 @@ static void cd2FireMG(CAR_DATA* cp)
 
 	hitCar = cd2RayHitCar(cp, &o, w, CD2_MG_RANGE, &tip);
 
+	if (gCd2Cfg.debugLog)
+		printInfo("[combatd2] MG fired: hitCar=%d tip=%d,%d,%d muzzle=%d,%d,%d\n",
+			hitCar, tip.vx, tip.vy, tip.vz, o.vx, o.vy, o.vz);
+
 	if (hitCar >= 0)
 		cd2DamageCar(&car_data[hitCar], &tip, CD2_MG_DAMAGE);
 	else
@@ -770,6 +780,10 @@ static int cd2WpnOnFrame(void* ud, void* args)
 
 	if (!gCd2Cfg.enabled || !gCd2Cfg.tmbButtons)
 	{
+		if (gCd2Cfg.debugLog && (gWpnDbg++ & 31) == 0)
+			printInfo("[combatd2] weapons idle: enabled=%d tmbButtons=%d\n",
+				gCd2Cfg.enabled, gCd2Cfg.tmbButtons);
+
 		gPrevFire = 0;
 		gPrevCycle = 0;
 		return JER_RESULT_CONTINUE;
@@ -802,12 +816,22 @@ static int cd2WpnOnFrame(void* ud, void* args)
 
 	if (!cd2PlayerCar(&cp))
 	{
+		if (gCd2Cfg.debugLog && (gWpnDbg++ & 31) == 0)
+			printInfo("[combatd2] weapons idle: no player car (playerCarId=%d)\n",
+				player[0].playerCarId);
+
 		gPrevFire = 0;
 		gPrevCycle = 0;
 		return JER_RESULT_CONTINUE;
 	}
 
-	pad = Pads[player[0].padid].mapped;
+	pad = Pads[(unsigned char)*cp->ai.padid].mapped;
+
+	if (gCd2Cfg.debugLog && (gWpnDbg++ & 31) == 0)
+		printInfo("[combatd2] weapons frame: padid=%d pad=0x%04X (Tri %d/R1 %d) sel=%d ammo=%d carId=%d\n",
+			*cp->ai.padid, pad, (pad & MPAD_TRIANGLE) ? 1 : 0,
+			(pad & MPAD_R1) ? 1 : 0, gSelWeapon, gPrimaryAmmo,
+			player[0].playerCarId);
 
 	fireHold = (pad & CD2_WPN_FIRE) ? 1 : 0;
 	fireTap = fireHold && !gPrevFire;
@@ -868,6 +892,20 @@ static int cd2WpnOnDrawWorld(void* ud, void* args)
 
 	if (!gCd2Cfg.enabled)
 		return JER_RESULT_CONTINUE;
+
+	{
+		int nT = 0, nR = 0;
+
+		for (i = 0; i < CD2_MAX_TRACERS; i++)
+			if (gTracers[i].active) nT++;
+
+		for (i = 0; i < CD2_MAX_ROCKETS; i++)
+			if (gRockets[i].active) nR++;
+
+		if (gCd2Cfg.debugLog && (gWpnDbg++ & 31) == 0)
+			printInfo("[combatd2] draw world: tracers=%d rockets=%d camera=%d,%d,%d\n",
+				nT, nR, camera_position.vx, camera_position.vy, camera_position.vz);
+	}
 
 	// MG tracers: bright yellow streaks
 	for (i = 0; i < CD2_MAX_TRACERS; i++)
