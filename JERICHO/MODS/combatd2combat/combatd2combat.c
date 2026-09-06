@@ -1,0 +1,170 @@
+// combatd2combat.c — Combat D2: COMBAT module.
+//
+// Third module of the combatd2 split. Owns the combat damage effects:
+//
+//   * JER_EVENT_CAR_STEP       - edge-detect a car reaching the game's damage
+//                                cap ("totaled") and spawn a BIG_BANG explosion
+//                                once, at the moment it crosses the threshold.
+//   * JER_EVENT_CAR_DRAW_COLOR - render the totaled body flat solid black
+//                                (gouraud shading off, "damping off").
+//   * JER_EVENT_DRAW_WHEEL     - hide all four wheels once totaled (blown off).
+//   * JER_EVENT_PAUSE_MENU     - debug: total the player's car on demand.
+//
+// The damage cap is the same value the stock game uses to decide a car is
+// totaled (cars.c DrawCar): MaxPlayerDamage[padid] for the player, otherwise
+// MaxPlayerDamage[0].
+
+#include "driver2.h"
+#include "cars.h"
+#include "job_fx.h"
+#include "mission.h"
+#include "players.h"
+#include "jericho.h"
+#include "jer_events.h"
+#include "jer_pause_menu.h"
+
+// per-car latch: 1 once the car has crossed the damage cap (edge detection)
+static char gWasTotaled[MAX_CARS];
+
+// The canonical "totaled" cap, mirroring cars.c DrawCar.
+static int cd2cMaxDamage(CAR_DATA* cp)
+{
+	int maxDamage = MaxPlayerDamage[0];
+
+	if (cp->controlType == CONTROL_TYPE_PLAYER && cp->ai.padid != NULL &&
+		*cp->ai.padid >= 0 && *cp->ai.padid < 2)
+		maxDamage = MaxPlayerDamage[*cp->ai.padid];
+
+	return maxDamage;
+}
+
+static int cd2cIsTotaled(CAR_DATA* cp)
+{
+	return cp->totalDamage >= cd2cMaxDamage(cp);
+}
+
+// CAR_STEP: explode once when a car first reaches the damage cap.
+static int cd2cOnCarStep(void* ud, void* args)
+{
+	JER_ARGS_CAR_STEP* a = (JER_ARGS_CAR_STEP*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car;
+	(void)ud;
+
+	if (cp->id < 0 || cp->id >= MAX_CARS)
+		return JER_RESULT_CONTINUE;
+
+	if (cd2cIsTotaled(cp))
+	{
+		if (!gWasTotaled[cp->id])
+		{
+			VECTOR blastPos;
+
+			gWasTotaled[cp->id] = 1;
+			blastPos.vx = cp->hd.where.t[0];
+			blastPos.vy = cp->hd.where.t[1];
+			blastPos.vz = cp->hd.where.t[2];
+			AddExplosion(blastPos, BIG_BANG);
+		}
+	}
+	else
+	{
+		gWasTotaled[cp->id] = 0;
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+// CAR_DRAW_COLOR: totaled body renders flat solid black.
+static int cd2cOnCarDrawColor(void* ud, void* args)
+{
+	JER_ARGS_CAR_DRAW_COLOR* a = (JER_ARGS_CAR_DRAW_COLOR*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car;
+	(void)ud;
+
+	if (cp->id < 0 || cp->id >= MAX_CARS)
+		return JER_RESULT_CONTINUE;
+
+	if (cd2cIsTotaled(cp))
+		a->flatBlack = 1;
+
+	return JER_RESULT_CONTINUE;
+}
+
+// DRAW_WHEEL: totaled car has its wheels blown off (hidden).
+static int cd2cOnDrawWheel(void* ud, void* args)
+{
+	JER_ARGS_DRAW_WHEEL* a = (JER_ARGS_DRAW_WHEEL*)args;
+	CAR_DATA* cp;
+	(void)ud;
+
+	if (a->carId < 0 || a->carId >= MAX_CARS)
+		return JER_RESULT_CONTINUE;
+
+	cp = &car_data[a->carId];
+
+	if (cd2cIsTotaled(cp))
+		a->hide = 1;
+
+	return JER_RESULT_CONTINUE;
+}
+
+// RESET_CAR: clear the latch so a respawned car can explode again.
+static int cd2cOnResetCar(void* ud, void* args)
+{
+	JER_ARGS_RESET_CAR* a = (JER_ARGS_RESET_CAR*)args;
+	(void)ud;
+
+	if (a->carId >= 0 && a->carId < MAX_CARS)
+		gWasTotaled[a->carId] = 0;
+
+	return JER_RESULT_CONTINUE;
+}
+
+// ---- pause menu: debug "total the player's car" --------------------------
+
+static int cd2cTotalCar(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+	{
+		CAR_DATA* cp = &car_data[MainPlayer.playerCarId];
+
+		cp->totalDamage = cd2cMaxDamage(cp);
+		gWasTotaled[cp->id] = 0; // re-arm so the edge fires the explosion
+	}
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static const JER_PAUSE_MENU_ITEM cd2cMenuItems[] =
+{
+	{ "Total Car (Debug)", NULL, cd2cTotalCar, NULL, NULL, 0 },
+};
+
+static const JER_PAUSE_MENU cd2cMenu =
+{ "Combat D2 Combat", cd2cMenuItems, 1 };
+
+// ---------------------------------------------------------------------------
+
+JER_MODULE_ENTRY(jer_module_combatd2combat_entry)(JERICHO_CONTEXT* ctx)
+{
+	ctx->jer_register_module(ctx,
+		"combatd2combat",			/* id */
+		"Combat D2 - Combat",		/* name */
+		"0.1.0",					/* version */
+		"JERICHO",					/* author */
+		"Totaled cars explode (BIG_BANG), render flat black, and lose their wheels.",	/* description */
+		"",							/* dependencies */
+		JERICHO_SDK_VERSION);		/* SDK this module was built against */
+
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2cOnCarStep, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW_COLOR, cd2cOnCarDrawColor, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WHEEL, cd2cOnDrawWheel, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2cOnResetCar, NULL, 0);
+
+	jer_pause_menu_register(&cd2cMenu);
+
+	ctx->jer_log(ctx, "[combatd2combat] registered (SDK v%d)\n", ctx->sdkVersion);
+}

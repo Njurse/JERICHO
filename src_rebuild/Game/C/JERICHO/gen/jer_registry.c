@@ -7,6 +7,7 @@ extern "C" {
 void jer_module_antfarm_entry(JERICHO_CONTEXT* ctx);
 void jer_module_collisiondevil_entry(JERICHO_CONTEXT* ctx);
 void jer_module_combatd2_entry(JERICHO_CONTEXT* ctx);
+void jer_module_combatd2combat_entry(JERICHO_CONTEXT* ctx);
 void jer_module_combatd2media_entry(JERICHO_CONTEXT* ctx);
 void jer_module_crumple_entry(JERICHO_CONTEXT* ctx);
 void jer_module_d2pl_entry(JERICHO_CONTEXT* ctx);
@@ -18,6 +19,7 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "antfarm", jer_module_antfarm_entry, 0 },
 	{ "collisiondevil", jer_module_collisiondevil_entry, 1 },
 	{ "combatd2", jer_module_combatd2_entry, 1 },
+	{ "combatd2combat", jer_module_combatd2combat_entry, 1 },
 	{ "combatd2media", jer_module_combatd2media_entry, 1 },
 	{ "crumple", jer_module_crumple_entry, 1 },
 	{ "d2pl", jer_module_d2pl_entry, 1 },
@@ -25,7 +27,7 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "levelhacks", jer_module_levelhacks_entry, 1 },
 	{ "sandbox", jer_module_sandbox_entry, 0 },
 };
-extern const int jer_registry_module_count = 9;
+extern const int jer_registry_module_count = 10;
 #ifdef __cplusplus
 }
 #endif
