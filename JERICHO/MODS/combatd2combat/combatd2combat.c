@@ -21,7 +21,6 @@
 #include "players.h"
 #include "jericho.h"
 #include "jer_events.h"
-#include "jer_pause_menu.h"
 
 // per-car latch: 1 once the car has crossed the damage cap (edge detection)
 static char gWasTotaled[MAX_CARS];
@@ -120,32 +119,6 @@ static int cd2cOnResetCar(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
-// ---- pause menu: debug "total the player's car" --------------------------
-
-static int cd2cTotalCar(void* ud, int dir)
-{
-	(void)ud;
-	(void)dir;
-
-	if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
-	{
-		CAR_DATA* cp = &car_data[MainPlayer.playerCarId];
-
-		cp->totalDamage = cd2cMaxDamage(cp);
-		gWasTotaled[cp->id] = 0; // re-arm so the edge fires the explosion
-	}
-
-	return JER_PAUSE_QUIT_NONE;
-}
-
-static const JER_PAUSE_MENU_ITEM cd2cMenuItems[] =
-{
-	{ "Total Car (Debug)", NULL, cd2cTotalCar, NULL, NULL, 0 },
-};
-
-static const JER_PAUSE_MENU cd2cMenu =
-{ "Combat D2 Combat", cd2cMenuItems, 1 };
-
 // ---------------------------------------------------------------------------
 
 JER_MODULE_ENTRY(jer_module_combatd2combat_entry)(JERICHO_CONTEXT* ctx)
@@ -163,8 +136,6 @@ JER_MODULE_ENTRY(jer_module_combatd2combat_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW_COLOR, cd2cOnCarDrawColor, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WHEEL, cd2cOnDrawWheel, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2cOnResetCar, NULL, 0);
-
-	jer_pause_menu_register(&cd2cMenu);
 
 	ctx->jer_log(ctx, "[combatd2combat] registered (SDK v%d)\n", ctx->sdkVersion);
 }

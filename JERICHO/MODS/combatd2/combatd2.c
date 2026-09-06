@@ -809,6 +809,40 @@ static int cd2ResetDefaults(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+// ---- submenu: Tight Turn -------------------------------------------------
+static const JER_PAUSE_MENU_ITEM cd2TightItems[] =
+{
+	{ NULL, cd2LabelTightToggle,   cd2ToggleTight,      NULL, NULL, 0 },
+	{ NULL, cd2LabelTightStrength, cd2AdjTightStrength, NULL, NULL, 1 },
+	{ NULL, cd2LabelTightInput,    cd2CycleTightInput,  NULL, NULL, 1 },
+};
+
+static const JER_PAUSE_MENU cd2TightMenu =
+{ "Tight Turn", cd2TightItems, 3 };
+
+// ---- submenu: Debug ------------------------------------------------------
+static int cd2TotalCar(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	// max damage (0xffff) so combatd2combat's CAR_STEP edge fires the explosion
+	if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+		car_data[MainPlayer.playerCarId].totalDamage = 0xffff;
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
+{
+	{ NULL, cd2LabelDebug, cd2ToggleDebug, NULL, NULL, 0 },
+	{ "Total Car", NULL, cd2TotalCar, NULL, NULL, 0 },
+};
+
+static const JER_PAUSE_MENU cd2DebugMenu =
+{ "Debug", cd2DebugItems, 2 };
+
+// ---- main menu -----------------------------------------------------------
 static const JER_PAUSE_MENU_ITEM cd2MenuItems[] =
 {
 	{ NULL, cd2LabelEnabled,  cd2ToggleEnabled, NULL, NULL, 0 },
@@ -817,17 +851,15 @@ static const JER_PAUSE_MENU_ITEM cd2MenuItems[] =
 	{ NULL, cd2LabelBrake,    cd2AdjBrake,      NULL, NULL, 1 },
 	{ NULL, cd2LabelHandling, cd2AdjHandling,   NULL, NULL, 1 },
 	{ NULL, cd2LabelGrip,     cd2AdjGrip,       NULL, NULL, 1 },
-	{ NULL, cd2LabelTightToggle,   cd2ToggleTight,      NULL, NULL, 0 },
-	{ NULL, cd2LabelTmbButtons,    cd2ToggleTmbButtons, NULL, NULL, 0 },
-	{ NULL, cd2LabelTightStrength, cd2AdjTightStrength, NULL, NULL, 1 },
-	{ NULL, cd2LabelTightInput,    cd2CycleTightInput,  NULL, NULL, 1 },
-	{ NULL, cd2LabelDebug, cd2ToggleDebug, NULL, NULL, 0 },
+	{ NULL, cd2LabelTmbButtons, cd2ToggleTmbButtons, NULL, NULL, 0 },
+	{ "Tight Turn...", NULL, NULL, NULL, &cd2TightMenu, 0 },
 	{ NULL, cd2LabelPreset,   cd2CyclePreset,   NULL, NULL, 1 },
+	{ "Debug...", NULL, NULL, NULL, &cd2DebugMenu, 0 },
 	{ "Reset to Defaults", NULL, cd2ResetDefaults, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2Menu =
-{ "Combat D2", cd2MenuItems, 13 };
+{ "Combat D2", cd2MenuItems, 11 };
 
 // ---------------------------------------------------------------------------
 // Module entry
