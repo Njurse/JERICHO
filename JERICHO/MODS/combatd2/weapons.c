@@ -24,11 +24,10 @@
 //                  spawns pickups yet - grant one from the pause menu
 //                  (Combat D2 -> Debug) to try the rocket.
 //
-// Drawing conventions: engine physics/car positions are y-UP; the render
-// pipeline (camera_position / inv_camera_matrix / gte) is y-DOWN. Every
-// point handed to the draw helpers below is converted exactly like the
-// engine's DrawDebugOverlays path does (negate y, subtract the camera,
-// feed the inverse camera matrix with a zero translation).
+// Drawing conventions: engine physics/car positions are y-UP. World-space
+// visuals (tracers, rocket streaks, impact markers) are queued through the
+// engine's debug-line overlay (Debug_AddLineDepth / Debug_AddLine), which
+// performs the y-up -> y-down camera transform and OT depth-sorting itself.
 
 #include "driver2.h"
 #include "combatd2.h"
@@ -40,6 +39,8 @@
 #include "dr2roads.h"		/* MapHeight (rocket ground hits) */
 #include "job_fx.h"		/* AddExplosion */
 #include "bcollide.h"		/* ApplyDamage */
+#include "sound.h"		/* Start3DSoundVolPitch */
+#include "gamesnd.h"		/* SOUND_BANK_* */
 #include "pres.h"		/* HUD text */
 #include "draw.h"		/* inv_camera_matrix */
 #include "system.h"		/* current (OT + primptr) */
@@ -48,10 +49,6 @@
 #include "jer_math.h"
 
 #include <stdio.h>
-
-// zero translation for the gte projection helpers (points are pre-subtracted
-// from the camera, exactly like the engine's DrawDebugOverlays path)
-static VECTOR gZeroVec = { 0, 0, 0, 0 };
 
 // ---------------------------------------------------------------------------
 // Inventory state
@@ -80,6 +77,18 @@ typedef struct CD2_TRACER
 } CD2_TRACER;
 
 static CD2_TRACER gTracers[CD2_MAX_TRACERS];
+
+// Impact markers (the '+' cross shown for a few frames where a shot landed)
+#define CD2_MAX_MARKERS 24
+
+typedef struct CD2_MARKER
+{
+	int active;
+	int life;
+	VECTOR pos;	// y-up world
+} CD2_MARKER;
+
+static CD2_MARKER gMarkers[CD2_MAX_MARKERS];
 
 // ---------------------------------------------------------------------------
 // Rockets (moving projectiles)
@@ -123,164 +132,47 @@ typedef struct CD2_PICKUP
 static CD2_PICKUP gPickups[CD2_MAX_PICKUPS];
 
 // ---------------------------------------------------------------------------
-// Small drawing helpers (render frame = y-down; inputs are y-up world)
+// Drawing: we do NOT project world points by hand. Tracers, rocket streaks
+// and impact markers are world-space lines queued through the engine's
+// debug-line overlay (the same API d2pl's laser uses). It does the y-up ->
+// y-down camera transform + OT depth-sorting, so a tracer can't land
+// off-screen or behind the world.
+//   Debug_AddLineDepth  - depth-sorted (walls occlude it)  -> tracers/rockets
+//   Debug_AddLine       - drawn on top, always visible     -> impact markers
 // ---------------------------------------------------------------------------
 
-// Project one y-up world point to screen. Returns the OT-style z (> 0 when
-// in front of the camera) or 0 when it projects behind / fails.
-static int cd2ProjectPoint(const VECTOR* p, int* sx, int* sy)
+#ifndef PSX
+extern void Debug_AddLine(VECTOR& pointA, VECTOR& pointB, CVECTOR& color);
+extern void Debug_AddLineDepth(VECTOR& pointA, VECTOR& pointB, CVECTOR& color);
+#endif
+
+// Queue a depth-sorted world line (y-up coords), bright over the world.
+static void cd2Line(const VECTOR* a, const VECTOR* b, int r, int g, int bl)
 {
-	SVECTOR v;
-	int z;
-	unsigned int xy;
+#ifndef PSX
+	CVECTOR col = { (unsigned char)r, (unsigned char)g, (unsigned char)bl };
 
-	// physics y-up -> render y-down: negate the world y FIRST, then subtract
-	// the (already y-down) camera position. This is the exact transform the
-	// engine's DrawDebugOverlays/DrawThrownBombs use for world prims.
-	v.vx = p->vx - camera_position.vx;
-	v.vy = -p->vy - camera_position.vy;
-	v.vz = p->vz - camera_position.vz;
-
-	gte_SetRotMatrix(&inv_camera_matrix);
-	gte_SetTransVector(&gZeroVec);	/* zero translation: points are camera-relative */
-	gte_ldv3(&v, &v, &v);
-	gte_rtpt();
-	gte_avsz4();
-	gte_stopz(&z);
-
-	if (z <= 0)
-		return 0;
-
-	gte_stsxy0(&xy);
-	*sx = (short)(xy & 0xFFFF);
-	*sy = (short)((xy >> 16) & 0xFFFF);
-	return z;
+	Debug_AddLineDepth(*((VECTOR*)a), *((VECTOR*)b), col);
+#endif
 }
 
-// Draw a world-space line segment (two y-up points) into the OT at the depth
-// of its NEAR endpoint (so a long tracer never lands behind the whole world).
-static void cd2DrawLine3D(const VECTOR* a, const VECTOR* b, int r, int g, int bl, int bright)
+// Queue an always-on-top '+' cross at p (y-up) - a visible impact marker.
+static void cd2Mark(const VECTOR* p, int r, int g, int bl)
 {
-	LINE_F2* line;
-	int z;
-	int z2;
-	int sx0, sy0, sx1, sy1;
+#ifndef PSX
+	CVECTOR col = { (unsigned char)r, (unsigned char)g, (unsigned char)bl };
+	int s = 40;
+	VECTOR a;
+	VECTOR b;
 
-	(void)bright;
+	a.vx = p->vx - s; a.vy = p->vy; a.vz = p->vz;
+	b.vx = p->vx + s; b.vy = p->vy; b.vz = p->vz;
+	Debug_AddLine(a, b, col);
 
-	z = cd2ProjectPoint(a, &sx0, &sy0);
-	z2 = cd2ProjectPoint(b, &sx1, &sy1);
-
-	if (z <= 0 && z2 <= 0)
-		return;
-
-	line = (LINE_F2*)current->primptr;
-	setLineF2(line);
-	setSemiTrans(line, 1);
-
-	line->x0 = sx0;
-	line->y0 = sy0;
-	line->x1 = sx1;
-	line->y1 = sy1;
-	line->r0 = r;
-	line->g0 = g;
-	line->b0 = bl;
-
-	// depth-sort by whichever endpoint is nearer
-	if (z2 > 0 && (z <= 0 || z2 < z))
-		z = z2;
-
-	{
-		int otIdx = z >> 1;
-
-		if (otIdx < 0)
-			otIdx = 0;
-
-		if (otIdx >= OTSIZE)
-			otIdx = OTSIZE - 1;
-
-		addPrim(current->ot + otIdx, line);
-	}
-
-	current->primptr += sizeof(LINE_F2);
-}
-
-// Draw a camera-facing square "flare" of world size `half` at p (y-up).
-// Its on-screen size is taken from the projected vertical span, so it
-// shrinks with distance like a real 3D object.
-static void cd2DrawFlare3D(const VECTOR* p, int half, int r, int g, int bl)
-{
-	POLY_F4* poly;
-	VECTOR above;
-	int sx, sy, ax, ay;
-	int hpx;
-	unsigned int xy;
-
-	if (cd2ProjectPoint(p, &sx, &sy) <= 0)
-		return;
-
-	above.vx = p->vx;
-	above.vy = p->vy + half;
-	above.vz = p->vz;
-
-	if (cd2ProjectPoint(&above, &ax, &ay) <= 0)
-		return;
-
-	hpx = ABS(ay - sy);
-	if (hpx < 1)
-		hpx = 1;
-	if (hpx > 64)
-		hpx = 64;
-
-	poly = (POLY_F4*)current->primptr;
-	setPolyF4(poly);
-	setSemiTrans(poly, 1);
-
-	poly->x0 = sx - hpx; poly->y0 = sy - hpx;
-	poly->x1 = sx + hpx; poly->y1 = sy - hpx;
-	poly->x2 = sx + hpx; poly->y2 = sy + hpx;
-	poly->x3 = sx - hpx; poly->y3 = sy + hpx;
-	poly->r0 = r;
-	poly->g0 = g;
-	poly->b0 = bl;
-
-	// re-project the center for its depth bucket (needed for occlusion)
-	{
-		SVECTOR v;
-		int z;
-
-		v.vx = p->vx - camera_position.vx;
-		v.vy = -p->vy - camera_position.vy;
-		v.vz = p->vz - camera_position.vz;
-
-		gte_SetRotMatrix(&inv_camera_matrix);
-		gte_SetTransVector(&gZeroVec);
-		gte_ldv3(&v, &v, &v);
-		gte_rtpt();
-		gte_avsz4();
-		gte_stopz(&z);
-
-		if (z <= 0)
-		{
-			current->primptr = (char*)poly;	/* drop it */
-			return;
-		}
-
-		{
-			int otIdx = z >> 1;
-
-			if (otIdx < 0)
-				otIdx = 0;
-
-			if (otIdx >= OTSIZE)
-				otIdx = OTSIZE - 1;
-
-			addPrim(current->ot + otIdx, poly);
-		}
-	}
-
-	current->primptr += sizeof(POLY_F4);
-	(void)xy;
+	a.vx = p->vx; a.vy = p->vy - s; a.vz = p->vz;
+	b.vx = p->vx; b.vy = p->vy + s; b.vz = p->vz;
+	Debug_AddLine(a, b, col);
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -503,6 +395,25 @@ static void cd2AddTracer(const VECTOR* from, const VECTOR* to)
 	}
 }
 
+// Spawn a '+' impact marker at a world point (drawn for a few frames).
+static void cd2AddMarker(const VECTOR* p)
+{
+	int i;
+
+	for (i = 0; i < CD2_MAX_MARKERS; i++)
+	{
+		CD2_MARKER* m = &gMarkers[i];
+
+		if (!m->active)
+		{
+			m->active = 1;
+			m->life = CD2_MG_TRACER_LIFE + 5;
+			m->pos = *p;
+			return;
+		}
+	}
+}
+
 // Fire the machine gun: hitscan along the car's forward; damage the first
 // car in the way; always draw a tracer out to the hit (or the full range).
 static void cd2FireMG(CAR_DATA* cp)
@@ -525,12 +436,19 @@ static void cd2FireMG(CAR_DATA* cp)
 
 	hitCar = cd2RayHitCar(cp, &o, w, CD2_MG_RANGE, &tip);
 
+	// machine-gun report (SFX bank, a crash sample pitched up a bit)
+	Start3DSoundVolPitch(-1, SOUND_BANK_SFX, 5,
+		o.vx, o.vy, o.vz, -2000, 4096 + 2048);
+
 	if (gCd2Cfg.debugLog)
 		printInfo("[combatd2] MG fired: hitCar=%d tip=%d,%d,%d muzzle=%d,%d,%d\n",
 			hitCar, tip.vx, tip.vy, tip.vz, o.vx, o.vy, o.vz);
 
 	if (hitCar >= 0)
+	{
 		cd2DamageCar(&car_data[hitCar], &tip, CD2_MG_DAMAGE);
+		cd2AddMarker(&tip);	// visible '+' at the impact point
+	}
 	else
 	{
 		// tracer tip = range end
@@ -721,7 +639,7 @@ static void cd2PickupDraw(void)
 	int i;
 
 	// TODO(weapons): draw active pickups here (JER_EVENT_DRAW_WORLD) as a
-	// small bobbing weapon-coloured flare via cd2DrawFlare3D().
+	// small bobbing weapon-coloured marker via cd2Line / cd2Mark.
 	for (i = 0; i < CD2_MAX_PICKUPS; i++)
 	{
 		(void)gPickups[i];
@@ -811,6 +729,20 @@ static int cd2WpnOnFrame(void* ud, void* args)
 
 			if (t->life <= 0)
 				t->active = 0;
+		}
+	}
+
+	// decay impact markers
+	for (i = 0; i < CD2_MAX_MARKERS; i++)
+	{
+		CD2_MARKER* m = &gMarkers[i];
+
+		if (m->active)
+		{
+			m->life--;
+
+			if (m->life <= 0)
+				m->active = 0;
 		}
 	}
 
@@ -907,16 +839,16 @@ static int cd2WpnOnDrawWorld(void* ud, void* args)
 				nT, nR, camera_position.vx, camera_position.vy, camera_position.vz);
 	}
 
-	// MG tracers: bright yellow streaks
+	// MG tracers: bright yellow streaks (depth-sorted)
 	for (i = 0; i < CD2_MAX_TRACERS; i++)
 	{
 		t = &gTracers[i];
 
 		if (t->active)
-			cd2DrawLine3D(&t->from, &t->to, 255, 235, 110, 1);
+			cd2Line(&t->from, &t->to, 255, 235, 110);
 	}
 
-	// rockets: orange streak (prev->pos) + a nose flare
+	// rockets: orange streak (prev->pos) + a short bright nose
 	for (i = 0; i < CD2_MAX_ROCKETS; i++)
 	{
 		r = &gRockets[i];
@@ -924,7 +856,7 @@ static int cd2WpnOnDrawWorld(void* ud, void* args)
 		if (!r->active)
 			continue;
 
-		cd2DrawLine3D(&r->prev, &r->pos, 255, 130, 40, 1);
+		cd2Line(&r->prev, &r->pos, 255, 130, 40);
 
 		{
 			VECTOR ahead;
@@ -932,10 +864,17 @@ static int cd2WpnOnDrawWorld(void* ud, void* args)
 			ahead.vy = r->pos.vy + (int)(((long long)r->vel.vy * 12) / CD2_RKT_SPEED);
 			ahead.vz = r->pos.vz + (int)(((long long)r->vel.vz * 12) / CD2_RKT_SPEED);
 
-			cd2DrawLine3D(&r->pos, &ahead, 255, 200, 120, 1);
+			cd2Line(&r->pos, &ahead, 255, 200, 120);
 		}
+	}
 
-		cd2DrawFlare3D(&r->pos, 26, 255, 150, 60);
+	// impact markers: always-on-top '+' at each recent hit
+	for (i = 0; i < CD2_MAX_MARKERS; i++)
+	{
+		CD2_MARKER* m = &gMarkers[i];
+
+		if (m->active)
+			cd2Mark(&m->pos, 255, 255, 255);
 	}
 
 	cd2PickupDraw();

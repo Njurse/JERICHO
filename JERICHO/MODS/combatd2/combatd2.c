@@ -887,15 +887,35 @@ static int cd2TogglePrimary(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static int cd2AddAmmo(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	// grant +10 (equipping the rocket if it isn't armed yet)
+	cd2WpnGrantRocket((cd2WpnHavePrimary() ? cd2WpnAmmo() : 0) + CD2_RKT_AMMO_DEFAULT);
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
+// ---- submenu: Weapons ----------------------------------------------------
+static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
+{
+	{ NULL, cd2LabelPrimary, cd2TogglePrimary, NULL, NULL, 0 },	// press to give/drop the rocket
+	{ "Ammo +10", NULL, cd2AddAmmo, NULL, NULL, 0 },
+};
+
+static const JER_PAUSE_MENU cd2WeaponMenu =
+{ "Weapons", cd2WeaponItems, 2 };
+
 static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
 {
 	{ NULL, cd2LabelDebug, cd2ToggleDebug, NULL, NULL, 0 },
 	{ "Total Car", NULL, cd2TotalCar, NULL, NULL, 0 },
-	{ NULL, cd2LabelPrimary, cd2TogglePrimary, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2DebugMenu =
-{ "Debug", cd2DebugItems, 3 };
+{ "Debug", cd2DebugItems, 2 };
 
 // ---- main menu -----------------------------------------------------------
 static const JER_PAUSE_MENU_ITEM cd2MenuItems[] =
@@ -909,12 +929,13 @@ static const JER_PAUSE_MENU_ITEM cd2MenuItems[] =
 	{ NULL, cd2LabelTmbButtons, cd2ToggleTmbButtons, NULL, NULL, 0 },
 	{ "Tight Turn...", NULL, NULL, NULL, &cd2TightMenu, 0 },
 	{ NULL, cd2LabelPreset,   cd2CyclePreset,   NULL, NULL, 1 },
+	{ "Weapons...", NULL, NULL, NULL, &cd2WeaponMenu, 0 },
 	{ "Debug...", NULL, NULL, NULL, &cd2DebugMenu, 0 },
 	{ "Reset to Defaults", NULL, cd2ResetDefaults, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2Menu =
-{ "Combat D2", cd2MenuItems, 11 };
+{ "Combat D2", cd2MenuItems, 12 };
 
 // ---------------------------------------------------------------------------
 // Module entry
