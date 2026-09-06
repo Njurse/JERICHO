@@ -427,7 +427,19 @@ static int cd2OnCarTorque(void* ud, void* args)
 		yawStep = (int)(yawStep * CD2_TIGHT_ANG_MULT);
 	int yaw = c->yawRate;
 	if (ABS(targetYaw) < ABS(yaw))
-		yawStep = (int)(((long long)yawStep * CD2_YAW_DECAY) >> 12);
+	{
+		// stifle the tight-turn rotation velocity below speed: once the
+		// trigger is released a barely-rolling car shouldn't keep spinning
+		int lvx = cp->st.n.linearVelocity[0];
+		int lvz = cp->st.n.linearVelocity[2];
+		int mag = (ABS(FIXEDH(lvx)) < ABS(FIXEDH(lvz)))
+			? (ABS(FIXEDH(lvz)) + ABS(FIXEDH(lvx)) / 2)
+			: (ABS(FIXEDH(lvx)) + ABS(FIXEDH(lvz)) / 2);
+		if (!tightActive && mag < CD2_TIGHT_ROT_STOP_SPEED)
+			yaw = targetYaw; // snap the residual pivot spin off
+		else
+			yawStep = (int)(((long long)yawStep * CD2_YAW_DECAY) >> 12);
+	}
 	if (yaw < targetYaw)
 	{
 		yaw += yawStep;

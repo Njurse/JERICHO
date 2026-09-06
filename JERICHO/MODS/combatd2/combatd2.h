@@ -67,10 +67,12 @@
 //   CD2_TIGHT_INPUT_WHEELSPIN = Circle  (engine's wheelspin/burnout bit),
 //   CD2_TIGHT_INPUT_OFF       = disabled.
 // (Physical buttons themselves are remapped by the engine's config.ini.)
-#define CD2_TIGHT_MULT          8192   // fp: pivot = normal handling x this (2.0x)
+#define CD2_TIGHT_MULT          6230   // fp: pivot = normal handling x this (something like 1.5x but idk)
 #define CD2_TIGHT_ANG_MULT      1.6    // yaw angular step multiplier during a pivot
 #define CD2_TIGHT_BLEED         96     // fp/frame: horizontal speed lost while pivoting (~2.3%)
 #define CD2_TIGHT_STEER_MIN     16     // |wheel_angle| that (re)latches a pivot direction
+#define CD2_TIGHT_ROT_STOP_SPEED 100  // speed units/frame: below this, a released
+                                      // tight turn's residual spin is snapped off
 
 enum
 {
@@ -100,14 +102,14 @@ enum
 // thrust magnitude the override writes for gas (- for brake); only the SIGN
 // matters to the combatd2 torque model, but the magnitude feeds the stock
 // wheel/pitch pass, so it should sit near the stock accel force (~power*4915).
-#define CD2_TMB_THRUST              4915
+#define CD2_TMB_THRUST              4215
 
 
 // ================ GRIP, SLIDE & RECOVERY ========================
 
 // Grip default (fixed point /frame; 1800/4096 ≈ 0.44/frame ≈ 13 s⁻¹ — TMB keeps
 // skids short and sparse, so base grip is high and only drops a little):
-#define CD2_GRIP            1400
+#define CD2_GRIP            1100
 #define CD2_SLIP_REDUCTION  6     // /10 → max 60% grip drop at full slip
                                     // (never past 6: a drop over 100% makes
                                     // grip negative = instant blow-up)
@@ -141,23 +143,23 @@ enum
 // off the Tight Turn, the velocity is rotated back onto the heading while its
 // magnitude is conserved, then grip returns GRADUALLY over CD2_GRIP_RAMP_FRAMES
 // (never a snap back to full grip).
-#define CD2_RECOVER_FRAMES    32     // frames of magnitude-preserving recovery
+#define CD2_RECOVER_FRAMES    8     // frames of magnitude-preserving recovery
 #define CD2_RECOVER_RATE      256   // fp: fraction of the heading gap closed per
                                     // recovery frame (256/4096 = 6.25%)
-#define CD2_GRIP_RAMP_FRAMES  10    // frames to ramp grip back up after recovery
+#define CD2_GRIP_RAMP_FRAMES  14    // frames to ramp grip back up after recovery
 
 // --------------------------- default stats -------------------------------
 //
 // Speed defaults (world-units/frame):
-#define CD2_TOP_SPEED       520   // speed-units/frame (raw slider value; the
+#define CD2_TOP_SPEED       470   // speed-units/frame (raw slider value; the
                                     // physics top is CD2_SPEED_SCALE x this)
 #define CD2_SPEED_SCALE     2048  // fp: effective top speed multiplier (0.5x =
                                     // ~130 at the default slider value)
 #define CD2_REVERSE_FRAC    4096  // fp: reverse cap = forward top x this
                                     // (4096 = same as forward — TM drives
                                     // backwards as fast as it does forwards)
-#define CD2_ACCEL           4     // speed-units/frame² (0→top in ~1s)
-#define CD2_BRAKE           10    // PEAK brake decel, speed-units/frame², applied
+#define CD2_ACCEL           7     // speed-units/frame² (0→top in ~1s)
+#define CD2_BRAKE           7    // PEAK brake decel, speed-units/frame², applied
                                   // proportionally (strong at speed, taper near 0)
 #define CD2_BRAKE_FLOOR     1024  // fp: fraction of peak brake kept at standstill
                                   // (1024/4096 = 25%) so stopping is never asymptotic
@@ -165,9 +167,9 @@ enum
 #define CD2_DRAG            36    // fixed point /frame: 48/4096 ≈ 1.2%/frame (coast)
 
 // Yaw defaults (PSX-units/frame; 4096 = 360°):
-#define CD2_HANDLING        20    // max yaw rate  (≈ 120°/s at 30 fps)
-#define CD2_ANGULAR_ACCEL   15    // yaw accel toward target (≈ 360°/s²)
-#define CD2_YAW_SPEED_FALLOFF 0   // fp: TM2 speed-sensitive yaw falloff. 0 = off;
+#define CD2_HANDLING        35    // max yaw rate  (≈ 120°/s at 30 fps)
+#define CD2_ANGULAR_ACCEL   17    // yaw accel toward target (≈ 360°/s²)
+#define CD2_YAW_SPEED_FALLOFF 800   // fp: TM2 speed-sensitive yaw falloff. 0 = off;
                                   // ~1200-1600 turns down yaw authority as speed
                                   // rises so the car can't spin out at top speed.
 #define CD2_YAW_DECAY       2048  // fp: centering step multiplier while the yaw
@@ -185,18 +187,18 @@ enum
 // damping 100 (wheelforces.c). Higher angularDamping settles pitch/roll/yaw
 // faster (less floaty). Higher springRate/springDamping = tighter, less
 // bouncy suspension. Values here are compile-time tunables.
-#define CD2_GRAVITY           -12456   // vertical accel (D1 used -10922)
-#define CD2_ANGULAR_DAMPING   256     // stock 128; 256 = 2x faster angular settle
-#define CD2_SPRING_RATE       320     // stock 230 (stiffer)
-#define CD2_SPRING_DAMPING    160     // stock 100 (less bounce)
+#define CD2_GRAVITY           -10922   // vertical accel (D1 used -10922)
+#define CD2_ANGULAR_DAMPING   32     // stock 128; 256 = 2x faster angular settle
+#define CD2_SPRING_RATE       1520     // stock 230 (stiffer)
+#define CD2_SPRING_DAMPING    1360     // stock 100 (less bounce)
 
 // ==============================================================
 // VISUALS: BODY ROLL, CAMERA & FOV
 // ==============================================================
 
 // Visual: lateral velocity (speed units) → body roll (PSX angle units).
-#define CD2_ROLL_GAIN       4     // roll = -latVel * gain, clamped below
-#define CD2_BODY_MAX_ROLL   3    // ~2° lean (TMB: weight felt, not exaggerated)
+#define CD2_ROLL_GAIN       14     // roll = -latVel * gain, clamped below
+#define CD2_BODY_MAX_ROLL   13    // ~2° lean (TMB: weight felt, not exaggerated)
 #define CD2_ROLL_LERP       32     // exponential settle divisor
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
@@ -238,12 +240,12 @@ enum
 //   CD2_GEAR_SHIFT_REVS just before the upshift so shifts sound punchy.
 #define CD2_GEAR_AUTO         1     // 0/1: retune player cars' gear tables
 #define CD2_WS_PER_SPEED      8192  // fp: ws per 1.0 speed unit (8192/4096 = 2x)
-#define CD2_GEAR_1_FRAC       500   // fp: gear0 tops here (≈ 12% of top speed)
-#define CD2_GEAR_2_FRAC       1100  // fp: gear1 tops here (≈ 27%)
-#define CD2_GEAR_3_FRAC       1750  // fp: gear2 tops here (≈ 43%)
-#define CD2_GEAR_SHIFT_REVS   23000 // revs at the top of gears 0..2 (pitch peak;
+#define CD2_GEAR_1_FRAC       1000   // fp: gear0 tops here (≈ 12% of top speed)
+#define CD2_GEAR_2_FRAC       2100  // fp: gear1 tops here (≈ 27%)
+#define CD2_GEAR_3_FRAC       3250  // fp: gear2 tops here (≈ 43%)
+#define CD2_GEAR_SHIFT_REVS   23000 * 0.8 // revs at the top of gears 0..2 (pitch peak;
                                     // matches stock redline scale)
-#define CD2_REV_CEILING       23000 // top-gear revs AT top speed; hard rev clamp
+#define CD2_REV_CEILING       23000 * 0.8 // top-gear revs AT top speed; hard rev clamp
 #define CD2_GEAR_DOWN_FRAC    3686  // fp: downshift point = prev gear top x this
                                     // (3686/4096 ≈ 0.9; hysteresis vs the upshift)
 // Engine pitch is hd.revs, slewed every frame toward a target set by the
