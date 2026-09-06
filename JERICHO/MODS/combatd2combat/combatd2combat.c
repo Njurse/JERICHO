@@ -107,6 +107,42 @@ static int cd2cOnDrawWheel(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// CAR_ENGINE_SOUND: mute the totaled wreck's engine (idle hum).
+static int cd2cOnCarEngineSound(void* ud, void* args)
+{
+	JER_ARGS_CAR_ENGINE_SOUND* a = (JER_ARGS_CAR_ENGINE_SOUND*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car;
+	(void)ud;
+
+	if (cp->id < 0 || cp->id >= MAX_CARS)
+		return JER_RESULT_CONTINUE;
+
+	if (cd2cIsTotaled(cp))
+	{
+		a->revVolume = -10000;  // silent
+		a->idleVolume = -10000; // silent
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+// CAR_DRAW: drop the totaled wreck's body so it drags on the ground.
+static int cd2cOnCarDraw(void* ud, void* args)
+{
+	JER_ARGS_CAR_DRAW* a = (JER_ARGS_CAR_DRAW*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car;
+	MATRIX* m = (MATRIX*)a->matrix;
+	(void)ud;
+
+	if (cp->id < 0 || cp->id >= MAX_CARS)
+		return JER_RESULT_CONTINUE;
+
+	if (cd2cIsTotaled(cp))
+		m->t[1] -= (int)cp->ap.carCos->wheelSize; // body rests on the ground, wheels gone
+
+	return JER_RESULT_CONTINUE;
+}
+
 // RESET_CAR: clear the latch so a respawned car can explode again.
 static int cd2cOnResetCar(void* ud, void* args)
 {
@@ -135,6 +171,8 @@ JER_MODULE_ENTRY(jer_module_combatd2combat_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2cOnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW_COLOR, cd2cOnCarDrawColor, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WHEEL, cd2cOnDrawWheel, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_ENGINE_SOUND, cd2cOnCarEngineSound, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW, cd2cOnCarDraw, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2cOnResetCar, NULL, 0);
 
 	ctx->jer_log(ctx, "[combatd2combat] registered (SDK v%d)\n", ctx->sdkVersion);
