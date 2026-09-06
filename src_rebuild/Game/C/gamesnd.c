@@ -1607,7 +1607,7 @@ void ExplosionSound(VECTOR* pos, int type)
 	}
 
 	if (bang == 255)
-		return;
+		bang = phrase_top;	// no mission-specific sound: use the generic explosion sample
 
 	if (type == BIG_BANG)
 	{

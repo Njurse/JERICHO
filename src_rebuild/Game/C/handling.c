@@ -1591,6 +1591,13 @@ void CheckCarEffects(CAR_DATA* cp, int player_id)
 
 	skidsound = 0;
 
+	// totaled wreck: wheels are gone, so it never lays rubber or screeches
+	if (cp->totalDamage >= MaxPlayerDamage[0])
+	{
+		player[player_id].skidding.sound = -1;
+	}
+	else
+	{
 	// make tyre tracks and skid sound if needed
 	if (wheels_on_ground)
 	{
@@ -1620,6 +1627,7 @@ void CheckCarEffects(CAR_DATA* cp, int player_id)
 
 		tracks_and_smoke = (player_id < MAX_TYRE_TRACK_PLAYERS) && !(cp->hd.wheel[1].surface & 0x8) && !(cp->hd.wheel[3].surface & 0x8);
 	}
+	}	// end else (not a totaled wreck)
 
 	desired_skid = -1;
 
