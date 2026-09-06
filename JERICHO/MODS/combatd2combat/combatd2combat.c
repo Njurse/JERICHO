@@ -19,11 +19,16 @@
 #include "job_fx.h"
 #include "mission.h"
 #include "players.h"
+#include "convert.h"
 #include "jericho.h"
 #include "jer_events.h"
 
 // per-car latch: 1 once the car has crossed the damage cap (edge detection)
 static char gWasTotaled[MAX_CARS];
+
+// wreck toss (applied once, on the explosion edge)
+#define CD2C_TUMBLE_LAUNCH   0x18000  // upward velocity impulse (raw)
+#define CD2C_TUMBLE_SPIN     0x100000 // roll/pitch angular impulse range (raw)
 
 // The canonical "totaled" cap, mirroring cars.c DrawCar.
 static int cd2cMaxDamage(CAR_DATA* cp)
@@ -63,7 +68,17 @@ static int cd2cOnCarStep(void* ud, void* args)
 			blastPos.vy = cp->hd.where.t[1];
 			blastPos.vz = cp->hd.where.t[2];
 			AddExplosion(blastPos, BIG_BANG);
+
+			// toss the wreck so it tumbles and comes to rest: upward pop +
+			// random roll/pitch spin (yaw is re-owned by the handling module,
+			// but roll/pitch are free to tumble)
+			cp->st.n.linearVelocity[1] += CD2C_TUMBLE_LAUNCH;
+			cp->st.n.angularVelocity[0] += (Random2(CD2C_TUMBLE_SPIN) - (CD2C_TUMBLE_SPIN >> 1));
+			cp->st.n.angularVelocity[2] += (Random2(CD2C_TUMBLE_SPIN) - (CD2C_TUMBLE_SPIN >> 1));
 		}
+
+		// dead car: kill any residual throttle so AI traffic stops driving it
+		cp->thrust = 0;
 	}
 	else
 	{
@@ -168,7 +183,7 @@ JER_MODULE_ENTRY(jer_module_combatd2combat_entry)(JERICHO_CONTEXT* ctx)
 		"",							/* dependencies */
 		JERICHO_SDK_VERSION);		/* SDK this module was built against */
 
-	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2cOnCarStep, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2cOnCarStep, NULL, -1); // runs before combatd2's CAR_STEP
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW_COLOR, cd2cOnCarDrawColor, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WHEEL, cd2cOnDrawWheel, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_ENGINE_SOUND, cd2cOnCarEngineSound, NULL, 0);
