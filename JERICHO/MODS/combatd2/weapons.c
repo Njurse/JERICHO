@@ -59,7 +59,8 @@ static int gPrimaryId;		// CD2_WPN_NONE or the weapon in the primary slot
 static int gPrimaryAmmo;	// rounds left in the primary slot
 
 // debugLog-gated diagnostic counter (throttles the per-frame printInfo lines)
-static unsigned int gWpnDbg;
+static unsigned int gWpnDbg;      // FRAME-path logs
+static unsigned int gWpnDrawDbg;  // DRAW_WORLD-path logs
 
 
 // ---------------------------------------------------------------------------
@@ -354,6 +355,10 @@ static void cd2DamageCar(CAR_DATA* cp, const VECTOR* at, int value)
 	else region = (ly > 0) ? 4 : 5;
 
 	ApplyDamage(cp, (char)region, value, 0);
+
+	if (gCd2Cfg.debugLog)
+		printInfo("[combatd2] damage: car=%d value=%d total=%d\n",
+			cp->id, value, cp->totalDamage);
 }
 
 // ---------------------------------------------------------------------------
@@ -834,7 +839,7 @@ static int cd2WpnOnDrawWorld(void* ud, void* args)
 		for (i = 0; i < CD2_MAX_ROCKETS; i++)
 			if (gRockets[i].active) nR++;
 
-		if (gCd2Cfg.debugLog && (gWpnDbg++ & 31) == 0)
+		if (gCd2Cfg.debugLog && (gWpnDrawDbg++ & 31) == 0)
 			printInfo("[combatd2] draw world: tracers=%d rockets=%d camera=%d,%d,%d\n",
 				nT, nR, camera_position.vx, camera_position.vy, camera_position.vz);
 	}
