@@ -39,8 +39,10 @@
 // Registration helpers from the other source files of this (merged) module:
 //   combatd2combat.c — wreck/explosion effects   (cd2CombatRegister)
 //   combatd2media.c   — presentation tuners      (cd2MediaRegister)
+//   weapons.c         — weapon inventory/fire    (cd2WeaponsRegister)
 void cd2CombatRegister(JERICHO_CONTEXT* ctx);
 void cd2MediaRegister(JERICHO_CONTEXT* ctx);
+void cd2WeaponsRegister(JERICHO_CONTEXT* ctx);
 
 // ---------------------------------------------------------------------------
 // State
@@ -861,14 +863,39 @@ static int cd2TotalCar(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+// Weapon prototype debug: toggle the primary slot (grant / clear the rocket).
+static void cd2LabelPrimary(void* ud, char* out, int max)
+{
+	(void)ud;
+
+	if (cd2WpnHavePrimary())
+		snprintf(out, max, "Primary: Rocket (x%d)", cd2WpnAmmo());
+	else
+		snprintf(out, max, "Primary: None");
+}
+
+static int cd2TogglePrimary(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	if (cd2WpnHavePrimary())
+		cd2WpnClearPrimary();
+	else
+		cd2WpnGrantRocket(CD2_RKT_AMMO_DEFAULT);
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
 {
 	{ NULL, cd2LabelDebug, cd2ToggleDebug, NULL, NULL, 0 },
 	{ "Total Car", NULL, cd2TotalCar, NULL, NULL, 0 },
+	{ NULL, cd2LabelPrimary, cd2TogglePrimary, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2DebugMenu =
-{ "Debug", cd2DebugItems, 2 };
+{ "Debug", cd2DebugItems, 3 };
 
 // ---- main menu -----------------------------------------------------------
 static const JER_PAUSE_MENU_ITEM cd2MenuItems[] =
@@ -927,6 +954,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	// three-module layout is preserved: combat's CAR_STEP stays at priority -1)
 	cd2CombatRegister(ctx);
 	cd2MediaRegister(ctx);
+	cd2WeaponsRegister(ctx);
 
 	ctx->jer_log(ctx, "[combatd2] registered (SDK v%d)\n", ctx->sdkVersion);
 }

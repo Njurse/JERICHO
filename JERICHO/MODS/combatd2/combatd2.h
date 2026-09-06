@@ -224,6 +224,57 @@ enum
 // wall (TM2 "collision forgiveness"), 4096 = stock outward bounce + spin.
 #define CD2_WALL_KEEP       256
 
+// ==============================================================
+// WEAPONS (prototype): INVENTORY + PROJECTILE TUNERS
+// ==============================================================
+//
+// Car weapons prototype. The machine gun is the SIDEARM: every car always
+// has it and it never runs out. The rocket is an example PRIMARY weapon
+// (picked up around the map in the final design; today granted via the
+// pause-menu Debug item) with finite ammo; when the primary slot is empty
+// the inventory falls back to the MG. Weapon input is read in the module's
+// JER_EVENT_FRAME handler from the mapped pad: hold Triangle to fire
+// (auto for the MG, single-shot for the rocket), tap R1 to cycle between
+// the MG and an armed primary. Both need the TMB in-car layout ON (that is
+// the combat layout; Triangle is only free of the pedal binds there).
+//
+// Units: range/speed are world units (per frame for speed); damage is the
+// value handed to the engine's ApplyDamage(). Tune by play.
+
+// --- machine gun (sidearm, hitscan with a drawn tracer) ---
+#define CD2_MG_RANGE            1600  // hitscan reach (world units)
+#define CD2_MG_DAMAGE           90    // ApplyDamage value per bullet
+#define CD2_MG_INTERVAL         5     // frames between shots (auto fire)
+#define CD2_MG_TRACER_LIFE      3     // frames the tracer stays visible
+
+// --- rocket (primary, a moving drawn projectile) ---
+#define CD2_RKT_SPEED           85    // world units/frame
+#define CD2_RKT_RANGE           2400  // max travel before it fizzles
+#define CD2_RKT_DAMAGE          900   // direct hit damage
+#define CD2_RKT_SPLASH_RADIUS   500   // splash radius (world units)
+#define CD2_RKT_SPLASH_DAMAGE   800   // splash damage at the blast center
+#define CD2_RKT_AMMO_DEFAULT    10    // rounds a pickup/debug grant gives
+
+#define CD2_WPN_FIRE            MPAD_TRIANGLE  // hold/single-shot fire
+#define CD2_WPN_CYCLE           MPAD_R1        // tap: MG <-> primary
+
+// Weapon ids (inventory slots: 0 = sidearm MG, then primaries).
+enum
+{
+	CD2_WPN_MG = 0,
+	CD2_WPN_ROCKET = 1,
+	CD2_WPN_PRIMARY_FIRST = CD2_WPN_ROCKET,
+	CD2_WPN_PRIMARY_COUNT = 1,
+	CD2_WPN_COUNT = 2,
+	CD2_WPN_NONE = -1
+};
+
+// Debug / pause-menu API (implemented in weapons.c):
+void cd2WpnGrantRocket(int ammo);  // grant + auto-equip the primary
+void cd2WpnClearPrimary(void);     // drop the primary (falls back to MG)
+int  cd2WpnHavePrimary(void);      // 1 when the primary slot is armed
+int  cd2WpnAmmo(void);             // rounds left in the primary slot
+
 // ----------------------- engine audio / gearbox ---------------------------
 //
 // combatd2 drives speed directly, so the stock rev model (gamesnd geard)
