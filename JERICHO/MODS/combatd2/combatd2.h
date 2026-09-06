@@ -110,7 +110,7 @@ enum
 // Grip default (fixed point /frame; 1800/4096 ≈ 0.44/frame ≈ 13 s⁻¹ — TMB keeps
 // skids short and sparse, so base grip is high and only drops a little):
 #define CD2_GRIP            1100
-#define CD2_SLIP_REDUCTION  6     // /10 → max 60% grip drop at full slip
+#define CD2_SLIP_REDUCTION  3     // /10 → max 60% grip drop at full slip
                                     // (never past 6: a drop over 100% makes
                                     // grip negative = instant blow-up)
 
@@ -159,7 +159,7 @@ enum
                                     // (4096 = same as forward — TM drives
                                     // backwards as fast as it does forwards)
 #define CD2_ACCEL           7     // speed-units/frame² (0→top in ~1s)
-#define CD2_BRAKE           7    // PEAK brake decel, speed-units/frame², applied
+#define CD2_BRAKE           16    // PEAK brake decel, speed-units/frame², applied
                                   // proportionally (strong at speed, taper near 0)
 #define CD2_BRAKE_FLOOR     1024  // fp: fraction of peak brake kept at standstill
                                   // (1024/4096 = 25%) so stopping is never asymptotic
@@ -188,9 +188,9 @@ enum
 // faster (less floaty). Higher springRate/springDamping = tighter, less
 // bouncy suspension. Values here are compile-time tunables.
 #define CD2_GRAVITY           -10922   // vertical accel (D1 used -10922)
-#define CD2_ANGULAR_DAMPING   32     // stock 128; 256 = 2x faster angular settle
-#define CD2_SPRING_RATE       1520     // stock 230 (stiffer)
-#define CD2_SPRING_DAMPING    1360     // stock 100 (less bounce)
+#define CD2_ANGULAR_DAMPING   512     // stock 128; 256 = 2x faster angular settle
+#define CD2_SPRING_RATE       720     // stock 230 (stiffer)
+#define CD2_SPRING_DAMPING    360     // stock 100 (less bounce)
 
 // ==============================================================
 // VISUALS: BODY ROLL, CAMERA & FOV
@@ -199,7 +199,7 @@ enum
 // Visual: lateral velocity (speed units) → body roll (PSX angle units).
 #define CD2_ROLL_GAIN       14     // roll = -latVel * gain, clamped below
 #define CD2_BODY_MAX_ROLL   13    // ~2° lean (TMB: weight felt, not exaggerated)
-#define CD2_ROLL_LERP       32     // exponential settle divisor
+#define CD2_ROLL_LERP       3     // exponential settle divisor
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
 #define CD2_FOV_PULL_SCRZ   60
@@ -346,7 +346,8 @@ typedef struct CD2_CAR
 
 extern CD2_CONFIG gCd2Cfg;
 
-// Exported for the presentation module (combatd2media):
+// Exported for the presentation source file (combatd2media.c) of this merged
+// module: the effective top speed of a car (fixed-point speed-units/frame).
 int cd2CarTopSpeed(void* cp);
 
 #endif /* COMBATD2_H */

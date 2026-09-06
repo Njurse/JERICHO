@@ -1,6 +1,8 @@
-// combatd2combat.c — Combat D2: COMBAT module.
+// combatd2combat.c — Combat D2: COMBAT effects source file.
 //
-// Third module of the combatd2 split. Owns the combat damage effects:
+// One of the source files of the single combatd2 module (merged back from
+// the old separate "combatd2combat" module; registered by the module entry
+// in combatd2.c via cd2CombatRegister()). Owns the combat damage effects:
 //
 //   * JER_EVENT_CAR_STEP       - edge-detect a car reaching the game's damage
 //                                cap ("totaled") and spawn a BIG_BANG explosion
@@ -8,7 +10,6 @@
 //   * JER_EVENT_CAR_DRAW_COLOR - render the totaled body flat solid black
 //                                (gouraud shading off, "damping off").
 //   * JER_EVENT_DRAW_WHEEL     - hide all four wheels once totaled (blown off).
-//   * JER_EVENT_PAUSE_MENU     - debug: total the player's car on demand.
 //
 // The damage cap is the same value the stock game uses to decide a car is
 // totaled (cars.c DrawCar): MaxPlayerDamage[padid] for the player, otherwise
@@ -171,24 +172,17 @@ static int cd2cOnResetCar(void* ud, void* args)
 }
 
 // ---------------------------------------------------------------------------
+// Registration (called once by jer_module_combatd2_entry in combatd2.c)
+// ---------------------------------------------------------------------------
 
-JER_MODULE_ENTRY(jer_module_combatd2combat_entry)(JERICHO_CONTEXT* ctx)
+void cd2CombatRegister(JERICHO_CONTEXT* ctx)
 {
-	ctx->jer_register_module(ctx,
-		"combatd2combat",			/* id */
-		"Combat D2 - Combat",		/* name */
-		"0.1.0",					/* version */
-		"JERICHO",					/* author */
-		"Totaled cars explode (BIG_BANG), render flat black, and lose their wheels.",	/* description */
-		"",							/* dependencies */
-		JERICHO_SDK_VERSION);		/* SDK this module was built against */
-
-	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2cOnCarStep, NULL, -1); // runs before combatd2's CAR_STEP
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2cOnCarStep, NULL, -1); // runs before combatd2.c's CAR_STEP
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW_COLOR, cd2cOnCarDrawColor, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WHEEL, cd2cOnDrawWheel, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_ENGINE_SOUND, cd2cOnCarEngineSound, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW, cd2cOnCarDraw, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2cOnResetCar, NULL, 0);
 
-	ctx->jer_log(ctx, "[combatd2combat] registered (SDK v%d)\n", ctx->sdkVersion);
+	ctx->jer_log(ctx, "[combatd2] combat effects registered (SDK v%d)\n", ctx->sdkVersion);
 }

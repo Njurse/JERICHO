@@ -36,6 +36,12 @@
 #include "jer_config.h"
 #include "jer_math.h"
 
+// Registration helpers from the other source files of this (merged) module:
+//   combatd2combat.c — wreck/explosion effects   (cd2CombatRegister)
+//   combatd2media.c   — presentation tuners      (cd2MediaRegister)
+void cd2CombatRegister(JERICHO_CONTEXT* ctx);
+void cd2MediaRegister(JERICHO_CONTEXT* ctx);
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -198,9 +204,9 @@ static CD2_STATS cd2GetStats(CAR_DATA* cp)
 	return s;
 }
 
-// Exported for the sibling presentation module (combatd2media): the
-// effective top speed of a car (config slider x CD2_SPEED_SCALE x the
-// per-vehicle power/weight derivation), so its gearbox can level the
+// Exported for the presentation source file (combatd2media.c) of this merged
+// module: the effective top speed of a car (config slider x CD2_SPEED_SCALE x
+// the per-vehicle power/weight derivation), so its gearbox can level the
 // engine pitch at this car's real top speed.
 int cd2CarTopSpeed(void* vcp)
 {
@@ -899,9 +905,9 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_module(ctx,
 		"combatd2",					/* id */
 		"Combat D2",				/* name */
-		"0.5.0",					/* version */
+		"0.6.0",					/* version */
 		"JERICHO",					/* author */
-		"Twisted Metal: Black style handling: point-mass velocity + yaw, Tight Turn pivot, proportional brakes, brief skids, momentum-absorbing walls.",	/* description */
+		"Twisted Metal: Black style car combat: point-mass handling (velocity + yaw, Tight Turn pivot, TMB buttons, momentum-absorbing walls), totaled-car wreck effects, engine presentation tuners, and the weapon prototype.",	/* description */
 		"",							/* dependencies */
 		JERICHO_SDK_VERSION);		/* SDK this module was built against */
 
@@ -915,6 +921,12 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW, cd2OnCarDraw, NULL, 0);
 
 	jer_pause_menu_register(&cd2Menu);
+
+	// the merged sibling sources (kept as separate files, registered here in
+	// core -> combat -> presentation order so the dispatch order of the old
+	// three-module layout is preserved: combat's CAR_STEP stays at priority -1)
+	cd2CombatRegister(ctx);
+	cd2MediaRegister(ctx);
 
 	ctx->jer_log(ctx, "[combatd2] registered (SDK v%d)\n", ctx->sdkVersion);
 }

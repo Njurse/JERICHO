@@ -1,7 +1,9 @@
-// combatd2media.c — Combat D2: PRESENTATION module (split from combatd2).
+// combatd2media.c — Combat D2: PRESENTATION source file.
 //
-// The second of the combatd2 split modules. combatd2 (core) owns the car
-// feel: input layout, torque/physics, slides, walls. THIS module owns the
+// One of the source files of the single combatd2 module (merged back from
+// the old separate "combatd2media" module; registered by the module entry
+// in combatd2.c via cd2MediaRegister()). combatd2.c (core) owns the car
+// feel: input layout, torque/physics, slides, walls. THIS file owns the
 // presentation of that feel:
 //
 //   * JER_EVENT_CAR_GEARBOX      - short punchy gears, tall top gear whose
@@ -12,12 +14,12 @@
 //   * JER_EVENT_CAR_ENGINE_SOUND - louder rev + idle channels.
 //   * JER_EVENT_CAMERA           - TMB chase framing + speed FOV pull.
 //
-// All tuners are compile-time macros in combatd2/combatd2.h under the
-// "ENGINE AUDIO & GEARBOX" and "VISUALS" sections; the module reads the
+// All tuners are compile-time macros in combatd2.h under the
+// "ENGINE AUDIO & GEARBOX" and "VISUALS" sections; this file reads the
 // core's shared runtime config (gCd2Cfg) for master enable + the FOV slider.
 
 #include "driver2.h"
-#include "combatd2/combatd2.h"
+#include "combatd2.h"
 #include "cars.h"
 #include "cosmetic.h"
 #include "camera.h"
@@ -214,13 +216,15 @@ static int cd2mOnCamera(void* ud, void* args)
 }
 
 // ---------------------------------------------------------------------------
-// Module entry
+// Registration (called once by jer_module_combatd2_entry in combatd2.c)
 // ---------------------------------------------------------------------------
 
-JER_MODULE_ENTRY(jer_module_combatd2media_entry)(JERICHO_CONTEXT* ctx)
+void cd2MediaRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_GEARBOX, cd2mOnCarGearbox, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_REVS, cd2mOnCarRevs, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_ENGINE_SOUND, cd2mOnCarEngineSound, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, cd2mOnCamera, NULL, 0);
+
+	ctx->jer_log(ctx, "[combatd2] presentation registered (SDK v%d)\n", ctx->sdkVersion);
 }

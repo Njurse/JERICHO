@@ -1,7 +1,0 @@
-id = "combatd2media"
-name = "Combat D2 - Presentation"
-version = "0.5.0"
-author = "JERICHO"
-description = "Combat D2 presentation: engine gearbox/audio tuning (short gears, loud fast-rev pitch) + TMB chase camera framing. Tuners live in combatd2/combatd2.h (engine audio/gearbox + camera sections)."
-dependencies = []
-default-enabled = true

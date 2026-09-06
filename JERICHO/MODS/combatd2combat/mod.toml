@@ -1,7 +1,0 @@
-id = "combatd2combat"
-name = "Combat D2 - Combat"
-version = "0.1.0"
-author = "JERICHO"
-description = "Combat damage effects: a car that hits the game's damage cap explodes (BIG_BANG), renders flat solid black (gouraud off), and loses its wheels. Pause menu has a debug 'Total Car' item."
-dependencies = []
-default-enabled = true
