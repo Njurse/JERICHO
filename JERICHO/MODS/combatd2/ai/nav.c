@@ -739,7 +739,7 @@ int cd2NavRoute(int carId, const VECTOR* from, const VECTOR* goal, CD2_NAV_ROUTE
 	goalNode = cd2NavNodeAt(goal);
 
 	if (goalNode < 0)
-		goalNode = cd2NavNearestRoadNode(goal, 512);
+		goalNode = cd2NavNearestRoadNode(goal, 1500);
 
 	if (cache != NULL && cache->valid && cache->goalNode == goalNode &&
 	    ABS(cache->goalX - goal->vx) + ABS(cache->goalZ - goal->vz) < 1024)
@@ -813,7 +813,23 @@ int cd2NavRoute(int carId, const VECTOR* from, const VECTOR* goal, CD2_NAV_ROUTE
 		}
 
 		if (!roadOk)
-			return 0;
+		{
+			// Neither router could produce a path. That is normal in two places
+			// this AI spends a lot of time: right at an intersection, where the
+			// surface resolves to a junction node whose connections do not line
+			// up with where the car is pointing, and when the goal is already
+			// within a cell or two, where A* has nothing to search and the grid
+			// refuses a start cell on top of the goal.
+			//
+			// Returning nothing here is what made them look confused: the route
+			// vanished mid-chase and they fell back to a raw heading. A single
+			// direct waypoint is always drivable - pure pursuit steers at it and
+			// the local avoidance deals with whatever is in the way.
+			out->wp[0] = *goal;
+			out->count = 1;
+			out->source = CD2_NAV_SRC_DIRECT;
+			out->length = straight;
+		}
 
 		// always end at the actual goal position
 		if (out->count == 0 || out->wp[out->count - 1].vx != goal->vx || out->wp[out->count - 1].vz != goal->vz)
@@ -852,7 +868,9 @@ int cd2NavRoute(int carId, const VECTOR* from, const VECTOR* goal, CD2_NAV_ROUTE
 
 			if ((t++ & 31) == 0)
 				printInfo("[combatd2] nav route car=%d src=%s wp=%d len=%d straight=%d goalNode=%d expanded=%d\n",
-					carId, (out->source == CD2_NAV_SRC_SCENERY) ? "scenery" : "road",
+					carId,
+						(out->source == CD2_NAV_SRC_SCENERY) ? "scenery" :
+						(out->source == CD2_NAV_SRC_ROAD) ? "road" : "direct",
 					out->count, out->length, straight, goalNode, out->expanded);
 		}
 	}

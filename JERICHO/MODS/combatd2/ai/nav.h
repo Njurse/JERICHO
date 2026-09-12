@@ -26,6 +26,7 @@ enum
 	CD2_NAV_SRC_NONE = 0,
 	CD2_NAV_SRC_ROAD,	// A* over the road graph
 	CD2_NAV_SRC_SCENERY,	// A* over the off-road drivability grid
+	CD2_NAV_SRC_DIRECT,		// neither router could help: head at the goal
 	CD2_NAV_SRC_FLOW	// shared pursuit flow field
 };
 

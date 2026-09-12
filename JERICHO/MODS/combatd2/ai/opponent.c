@@ -44,10 +44,10 @@
 	#define CD2_AI_ENGAGE_RANGE	9000	// close to this and it commits to a fight
 	#define CD2_AI_ENGAGE_KEEP		18000	// ...and stays committed out to here (hysteresis)
 	#define CD2_AI_DISPERSE_TICKS	420	// how long the opening spread lasts
-	#define CD2_AI_DISPERSE_LEG		9000	// how far the opening spread drives
-	#define CD2_AI_ROAM_MIN			7000	// roam goal: nearest acceptable road node
-	#define CD2_AI_ROAM_MAX			22000	// roam goal: furthest acceptable road node
-	#define CD2_AI_GOAL_TICKS		600	// frames before a roam goal is re-picked
+	#define CD2_AI_DISPERSE_LEG		18000	// how far the opening spread drives
+	#define CD2_AI_ROAM_MIN			13000	// roam goal: nearest acceptable road node
+	#define CD2_AI_ROAM_MAX			45000	// roam goal: furthest acceptable road node
+	#define CD2_AI_GOAL_TICKS		1500	// frames before a roam goal is re-picked
 #define CD2_AI_LOOK		2560	// look-ahead probe distance
 #define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
@@ -74,7 +74,7 @@
 #define CD2_AI_SEPARATE_STEER	120	// steering nudge away from a nearby opponent
 #define CD2_AI_STATE_JITTER	60	// random extra frames between behaviour re-decisions
 #define CD2_AI_ENGAGE_JITTER	300	// random spread on the aggression burst length
-#define CD2_AI_WANDER_LEG	16000	// wander goal distance along the wander heading
+#define CD2_AI_WANDER_LEG	26000	// wander goal distance along the wander heading
 #define CD2_AI_NEAR_LOOK	380	// base imminent-collision probe distance
 #define CD2_AI_LOOK_PER_SPEED	3	// extra probe distance per unit/frame of speed
 #define CD2_AI_BRAKE_SPEED	60	// forward speed above which it brakes instead of pivoting
@@ -674,7 +674,9 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		if (gCd2Cfg.debugLog && (sLogTick % 120) == 0)
 			printInfo("[combatd2] nav flow: car=%d role=%s src=%s wp=%d flow=%d cells=%d goal=(%d,%d)\n",
 				cp->id, cd2AiRoleName(),
-				(sRoute.source == CD2_NAV_SRC_SCENERY) ? "scenery" : (sRoute.source == CD2_NAV_SRC_ROAD) ? "road" : "none",
+				(sRoute.source == CD2_NAV_SRC_SCENERY) ? "scenery" :
+				(sRoute.source == CD2_NAV_SRC_ROAD) ? "road" :
+				(sRoute.source == CD2_NAV_SRC_DIRECT) ? "direct" : "none",
 				sRoute.count, cd2FlowReady(), cd2FlowCoverage(), goalV.vx, goalV.vz);
 	}
 
