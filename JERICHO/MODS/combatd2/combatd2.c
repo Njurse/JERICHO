@@ -82,11 +82,17 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.debugLog      = jer_config_get_int("combatd2", "debug_log", 0);
 	gCd2Cfg.allWeapons    = jer_config_get_int("combatd2", "all_weapons", 1);
 	gCd2Cfg.rollLimit     = jer_config_get_int("combatd2", "roll_limit", CD2_ROLL_LIMIT_DEFAULT);
-	gCd2Cfg.sceneryDamage = jer_config_get_int("combatd2", "scenery_damage", 65);
+	gCd2Cfg.sceneryDamage = jer_config_get_int("combatd2", "scenery_damage", CD2_SCENERY_DAMAGE_DEFAULT);
 	gCd2Cfg.aiOpponent    = jer_config_get_int("combatd2", "ai_opponent", 1);
 	gCd2Cfg.aiForceState  = jer_config_get_int("combatd2", "ai_force_state", CD2_AI_AUTO);
 	gCd2Cfg.aiDebug       = jer_config_get_int("combatd2", "ai_debug", 0);
-	gCd2Cfg.carCarNerf    = jer_config_get_int("combatd2", "car_car_nerf", 33);
+
+	// car-vs-car damage as % of stock. Migrate the old car_car_nerf (% reduction).
+	gCd2Cfg.carCarDamage  = jer_config_get_int("combatd2", "car_car_damage", -1);
+
+	if (gCd2Cfg.carCarDamage < 0)
+		gCd2Cfg.carCarDamage = 100 - jer_config_get_int("combatd2", "car_car_nerf",
+			100 - CD2_CAR_CAR_DAMAGE_DEFAULT);
 
 	{
 		const char* mm = jer_config_get_str("combatd2", "missile_model", "BOMB");
@@ -116,7 +122,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.aiOpponent    = gCd2Cfg.aiOpponent ? 1 : 0;
 	gCd2Cfg.aiForceState  = jer_clamp_int(gCd2Cfg.aiForceState, 0, CD2_AI_STATE_COUNT - 1);
 	gCd2Cfg.aiDebug       = gCd2Cfg.aiDebug ? 1 : 0;
-	gCd2Cfg.carCarNerf    = jer_clamp_int(gCd2Cfg.carCarNerf, 0, 90);
+	gCd2Cfg.carCarDamage  = jer_clamp_int(gCd2Cfg.carCarDamage, 10, 100);
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
 	gCd2Cfg.missileSound  = jer_clamp_int(gCd2Cfg.missileSound, 0, 34);
 }
@@ -143,7 +149,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "ai_opponent", gCd2Cfg.aiOpponent);
 	jer_config_set_int("combatd2", "ai_force_state", gCd2Cfg.aiForceState);
 	jer_config_set_int("combatd2", "ai_debug", gCd2Cfg.aiDebug);
-	jer_config_set_int("combatd2", "car_car_nerf", gCd2Cfg.carCarNerf);
+	jer_config_set_int("combatd2", "car_car_damage", gCd2Cfg.carCarDamage);
 	jer_config_set_str("combatd2", "missile_model", gCd2Cfg.missileModel);
 	jer_config_set_int("combatd2", "missile_scale", gCd2Cfg.missileScale);
 	jer_config_set_int("combatd2", "missile_sound", gCd2Cfg.missileSound);
@@ -516,6 +522,15 @@ static int cd2OnDamageScale(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	a->result = (gCd2Cfg.sceneryDamage * 4096) / 100;
+
+	if (gCd2Cfg.debugLog)
+	{
+		static unsigned int t = 0;
+		if ((t++ & 63) == 0)
+			printInfo("[combatd2] scenery dmg scale: car=%d type=%d -> %d%% (%d)\n",
+				((CAR_DATA*)a->car)->id, ((CAR_DATA*)a->car)->controlType, gCd2Cfg.sceneryDamage, a->result);
+	}
+
 	return JER_RESULT_CONTINUE;
 }
 
@@ -536,7 +551,16 @@ static int cd2OnCarVsCar(void* ud, void* args)
 	if (cd2AiIsOpponent(a->car))
 		v = a->playerValue;
 
-	v = (v * (100 - gCd2Cfg.carCarNerf)) / 100;
+	v = (v * gCd2Cfg.carCarDamage) / 100;
+
+	if (gCd2Cfg.debugLog)
+	{
+		static unsigned int t = 0;
+		if ((t++ & 63) == 0)
+			printInfo("[combatd2] car-car dmg: car=%d type=%d opp=%d stock=%d -> %d (pct=%d)\n",
+				((CAR_DATA*)a->car)->id, ((CAR_DATA*)a->car)->controlType,
+				cd2AiIsOpponent(a->car), a->value, v, gCd2Cfg.carCarDamage);
+	}
 
 	a->value = v;
 	return JER_RESULT_CONTINUE;
@@ -1246,14 +1270,14 @@ static int cd2ToggleAiDebug(void* ud, int dir)
 static void cd2LabelCarCarNerf(void* ud, char* out, int max)
 {
 	(void)ud;
-	snprintf(out, max, "Car-Car Damage Nerf: %d%%", gCd2Cfg.carCarNerf);
+	snprintf(out, max, "Car-Car Damage: %d%%", gCd2Cfg.carCarDamage);
 }
 
 static int cd2CycleCarCarNerf(void* ud, int dir)
 {
 	(void)ud;
 	(void)dir;
-	gCd2Cfg.carCarNerf = (gCd2Cfg.carCarNerf + 5) % 95;
+	gCd2Cfg.carCarDamage = 10 + ((gCd2Cfg.carCarDamage - 10 + 5) % 91);
 	cd2SaveConfig();
 	return JER_PAUSE_QUIT_NONE;
 }

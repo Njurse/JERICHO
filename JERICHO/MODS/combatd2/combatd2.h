@@ -335,6 +335,17 @@ typedef struct CD2_STATS
 #define CD2_ROLL_MAX_AV         0x200000 // per-axis pitch/roll rate cap (raw)
 #define CD2_ROLL_RECOVER_DEG    6        // post-physics upright correction per frame
 
+// ---- damage multipliers (applied uniformly to EVERY car) -------------
+// Percent of the stock damage that is actually applied, for the player car
+// AND opponent cars alike (engine hook fires for every car). Opponents also
+// use the player damage model for car-vs-car hits instead of the harsher
+// traffic/civ multiplier (see cd2OnCarVsCar).
+//   car-vs-car  : CD2_CAR_CAR_DAMAGE_DEFAULT  (67% of stock = 33% nerf)
+//   car-vs-solid: CD2_SCENERY_DAMAGE_DEFAULT  (buildings/walls/objects)
+// Runtime-tunable via the pause menu / [combatd2] car_car_damage, scenery_damage.
+#define CD2_CAR_CAR_DAMAGE_DEFAULT 67    // % of stock car-vs-car damage (10..100)
+#define CD2_SCENERY_DAMAGE_DEFAULT 65    // % of stock car-vs-solid damage (0..100)
+
 // Prototype opponent-AI behaviour states (also CD2_CONFIG.aiForceState; 0 = let
 // the AI pick). See ai/opponent.c.
 enum
@@ -383,11 +394,11 @@ typedef struct CD2_CONFIG
 	int missileScale;      // fixed point model scale (4096 = 1x)
 	int missileSound;      // SOUND_BANK_SFX sample played on missile launch
 
-	int sceneryDamage;     // 0..100: % damage a car takes hitting solid scenery
+	int sceneryDamage;     // % of stock damage a car takes hitting solid scenery/objects
+	int carCarDamage;      // % of stock damage applied to car-vs-car hits
 	int aiOpponent;        // 0/1: spawn the prototype opponent car
 	int aiForceState;      // CD2_AI_AUTO (0) or a forced CD2_AI_* behaviour
 	int aiDebug;           // 0/1: draw the AI internal-value readout on screen
-	int carCarNerf;        // 0..90: % reduction applied to car-vs-car damage
 } CD2_CONFIG;
 
 typedef struct CD2_CAR
