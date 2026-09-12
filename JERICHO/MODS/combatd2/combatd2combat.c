@@ -28,8 +28,8 @@
 static char gWasTotaled[MAX_CARS];
 
 // wreck toss (applied once, on the explosion edge)
-#define CD2C_TUMBLE_LAUNCH   0x18000  // upward velocity impulse (raw)
-#define CD2C_TUMBLE_SPIN     0x100000 // roll/pitch angular impulse range (raw)
+#define CD2C_TUMBLE_LAUNCH   0x18000 * 5  // upward velocity impulse (raw)
+#define CD2C_TUMBLE_SPIN     0x100000 * 50 // roll/pitch angular impulse range (raw)
 
 // The canonical "totaled" cap, mirroring cars.c DrawCar.
 static int cd2cMaxDamage(CAR_DATA* cp)
@@ -43,8 +43,11 @@ static int cd2cMaxDamage(CAR_DATA* cp)
 	return maxDamage;
 }
 
-static int cd2cIsTotaled(CAR_DATA* cp)
+// Exported for the core (combatd2.c) + weapons files: is this car past the
+// damage cap (totaled)? Mirrors the cap cars.c DrawCar uses.
+int cd2CarTotaled(void* vcp)
 {
+	CAR_DATA* cp = (CAR_DATA*)vcp;
 	return cp->totalDamage >= cd2cMaxDamage(cp);
 }
 
@@ -58,7 +61,7 @@ static int cd2cOnCarStep(void* ud, void* args)
 	if (cp->id < 0 || cp->id >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
-	if (cd2cIsTotaled(cp))
+	if (cd2CarTotaled(cp))
 	{
 		if (!gWasTotaled[cp->id])
 		{
@@ -66,7 +69,7 @@ static int cd2cOnCarStep(void* ud, void* args)
 
 			gWasTotaled[cp->id] = 1;
 			blastPos.vx = cp->hd.where.t[0];
-			blastPos.vy = cp->hd.where.t[1];
+			blastPos.vy = cp->hd.where.t[1] + 1;
 			blastPos.vz = cp->hd.where.t[2];
 			AddExplosion(blastPos, BIG_BANG);
 
@@ -78,8 +81,11 @@ static int cd2cOnCarStep(void* ud, void* args)
 			cp->st.n.angularVelocity[2] += (Random2(CD2C_TUMBLE_SPIN) - (CD2C_TUMBLE_SPIN >> 1));
 		}
 
-		// dead car: kill any residual throttle so AI traffic stops driving it
+		// dead car: lock it — no throttle/steer/brake, handbrake on so the
+		// wreck rolls to a stop and can't be driven (weapons gate on this too)
 		cp->thrust = 0;
+		cp->wheel_angle = 0;
+		cp->handbrake = 1;
 	}
 	else
 	{
@@ -99,7 +105,7 @@ static int cd2cOnCarDrawColor(void* ud, void* args)
 	if (cp->id < 0 || cp->id >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
-	if (cd2cIsTotaled(cp))
+	if (cd2CarTotaled(cp))
 		a->flatBlack = 1;
 
 	return JER_RESULT_CONTINUE;
@@ -117,7 +123,7 @@ static int cd2cOnDrawWheel(void* ud, void* args)
 
 	cp = &car_data[a->carId];
 
-	if (cd2cIsTotaled(cp))
+	if (cd2CarTotaled(cp))
 		a->hide = 1;
 
 	return JER_RESULT_CONTINUE;
@@ -133,7 +139,7 @@ static int cd2cOnCarEngineSound(void* ud, void* args)
 	if (cp->id < 0 || cp->id >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
-	if (cd2cIsTotaled(cp))
+	if (cd2CarTotaled(cp))
 	{
 		a->revVolume = -10000;  // silent
 		a->idleVolume = -10000; // silent
@@ -153,7 +159,7 @@ static int cd2cOnCarDraw(void* ud, void* args)
 	if (cp->id < 0 || cp->id >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
-	if (cd2cIsTotaled(cp))
+	if (cd2CarTotaled(cp))
 		m->t[1] -= (int)cp->ap.carCos->wheelSize; // body rests on the ground, wheels gone
 
 	return JER_RESULT_CONTINUE;
