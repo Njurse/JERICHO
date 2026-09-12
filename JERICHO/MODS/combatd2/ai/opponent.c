@@ -70,6 +70,7 @@ static int sWanderTimer;
 static int sSteer;		// rate-limited steering actually applied
 static int sReverse;		// frames of backing up left (stuck recovery)
 static int sStuck;		// frames without forward progress
+static int sRole = CD2_AI_ROLE_CHASER;	// this opponent's role archetype
 static int sLastDamage;		// car totalDamage last frame (to count new hits)
 static int sHits;		// collisions observed on the opponent
 static unsigned int sLogTick;	// debugLog throttle counter
@@ -196,6 +197,7 @@ static int cd2AiSpawn(void)
 	sSteer = 0;
 	sReverse = 0;
 	sStuck = 0;
+	sRole = (gCd2Cfg.aiRole >= 0) ? gCd2Cfg.aiRole : (slot->id % CD2_AI_ROLE_COUNT);
 	sHits = 0;
 	sLastDamage = 0;
 	sWanderHeading = pcp->hd.direction;
@@ -316,20 +318,14 @@ static void cd2AiDrive(CAR_DATA* cp)
 
 	// --- navigator: goal, route and the shared flow field ---
 	{
-		if (sState == CD2_AI_HUNT && pcp != NULL)
-		{
-			goalV.vx = pcp->hd.where.t[0];
-			goalV.vy = pcp->hd.where.t[1];
-			goalV.vz = pcp->hd.where.t[2];
-		}
-		else if (sState == CD2_AI_FLEE && pcp != NULL)
-		{
-			// run away: a point mirrored through the car from the player
-			goalV.vx = carV.vx + (carV.vx - pcp->hd.where.t[0]);
-			goalV.vy = carV.vy;
-			goalV.vz = carV.vz + (carV.vz - pcp->hd.where.t[2]);
-		}
-		else
+		int useWander = 0;
+
+		if (sRole == CD2_AI_ROLE_HARVESTER)
+			useWander = 1;	// roam for pickups/caches (rally points until they exist)
+		else if (!(sState == CD2_AI_HUNT && pcp != NULL) && !(sState == CD2_AI_FLEE && pcp != NULL))
+			useWander = 1;	// WANDER state
+
+		if (useWander)
 		{
 			if (--sWanderTimer <= 0)
 			{
@@ -341,6 +337,36 @@ static void cd2AiDrive(CAR_DATA* cp)
 			goalV.vy = carV.vy;
 			goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_WANDER_LEG) >> 12);
 		}
+		else if (sState == CD2_AI_FLEE && pcp != NULL)
+		{
+			// run away: a point mirrored through the car from the player
+			goalV.vx = carV.vx + (carV.vx - pcp->hd.where.t[0]);
+			goalV.vy = carV.vy;
+			goalV.vz = carV.vz + (carV.vz - pcp->hd.where.t[2]);
+		}
+		else if (pcp != NULL)
+		{
+			// hunting: the player, with a role-specific offset
+			int ox = pcp->hd.where.t[0];
+			int oz = pcp->hd.where.t[2];
+
+			if (sRole == CD2_AI_ROLE_FLANKER)
+			{
+				// sweep to the player's right side of travel
+				ox += (int)(((long long)pcp->hd.where.m[0][0] * 2200) >> 12);
+				oz += (int)(((long long)pcp->hd.where.m[2][0] * 2200) >> 12);
+			}
+			else if (sRole == CD2_AI_ROLE_AMBUSHER)
+			{
+				// get ahead of the player and wait
+				ox += (int)(((long long)pcp->hd.where.m[0][2] * 5000) >> 12);
+				oz += (int)(((long long)pcp->hd.where.m[2][2] * 5000) >> 12);
+			}
+
+			goalV.vx = ox;
+			goalV.vy = pcp->hd.where.t[1];
+			goalV.vz = oz;
+		}
 
 		cd2NavRoute(cp->id, &carV, &goalV, &sRoute);
 
@@ -349,8 +375,8 @@ static void cd2AiDrive(CAR_DATA* cp)
 		cd2FlowUpdate(64);
 
 		if (gCd2Cfg.debugLog && (sLogTick % 120) == 0)
-			printInfo("[combatd2] nav flow: car=%d src=%s wp=%d flow=%d cells=%d goal=(%d,%d)\n",
-				cp->id,
+			printInfo("[combatd2] nav flow: car=%d role=%s src=%s wp=%d flow=%d cells=%d goal=(%d,%d)\n",
+				cp->id, cd2AiRoleName(),
 				(sRoute.source == CD2_NAV_SRC_SCENERY) ? "scenery" : (sRoute.source == CD2_NAV_SRC_ROAD) ? "road" : "none",
 				sRoute.count, cd2FlowReady(), cd2FlowCoverage(), goalV.vx, goalV.vz);
 	}
@@ -729,6 +755,16 @@ static int cd2AiOnGameStart(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+const char* cd2AiRoleName(void)
+{
+	static const char* names[] = { "Chaser", "Flanker", "Ambusher", "Harvester" };
+
+	if (sRole < 0 || sRole >= CD2_AI_ROLE_COUNT)
+		return "?";
+
+	return names[sRole];
+}
+
 int cd2AiActive(void)
 {
 	return (sAiCarId >= 0) ? 1 : 0;
@@ -785,7 +821,7 @@ static int cd2AiOnOverlay(void* ud, void* args)
 	if (!gCd2Cfg.enabled || !gCd2Cfg.aiDebug || !sDbg.valid)
 		return JER_RESULT_CONTINUE;
 
-	sprintf(text, "AI car %d  state=%s  evade=%d", sDbg.carId, cd2AiStateName(), sDbg.evadeLeft);
+	sprintf(text, "AI car %d %s state=%s evade=%d", sDbg.carId, cd2AiRoleName(), cd2AiStateName(), sDbg.evadeLeft);
 	PrintString(text, 20, y);
 	y += 12;
 

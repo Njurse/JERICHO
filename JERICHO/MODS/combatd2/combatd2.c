@@ -86,6 +86,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.aiOpponent    = jer_config_get_int("combatd2", "ai_opponent", 1);
 	gCd2Cfg.aiForceState  = jer_config_get_int("combatd2", "ai_force_state", CD2_AI_AUTO);
 	gCd2Cfg.aiDebug       = jer_config_get_int("combatd2", "ai_debug", 0);
+	gCd2Cfg.aiRole        = jer_config_get_int("combatd2", "ai_role", -1);
 	gCd2Cfg.navDebug      = jer_config_get_int("combatd2", "nav_debug", 0);
 
 	// car-vs-car damage as % of stock. Migrate the old car_car_nerf (% reduction).
@@ -123,6 +124,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.aiOpponent    = gCd2Cfg.aiOpponent ? 1 : 0;
 	gCd2Cfg.aiForceState  = jer_clamp_int(gCd2Cfg.aiForceState, 0, CD2_AI_STATE_COUNT - 1);
 	gCd2Cfg.aiDebug       = gCd2Cfg.aiDebug ? 1 : 0;
+	gCd2Cfg.aiRole        = jer_clamp_int(gCd2Cfg.aiRole, -1, CD2_AI_ROLE_COUNT - 1);
 	gCd2Cfg.navDebug      = gCd2Cfg.navDebug ? 1 : 0;
 	gCd2Cfg.carCarDamage  = jer_clamp_int(gCd2Cfg.carCarDamage, 10, 100);
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
@@ -151,6 +153,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "ai_opponent", gCd2Cfg.aiOpponent);
 	jer_config_set_int("combatd2", "ai_force_state", gCd2Cfg.aiForceState);
 	jer_config_set_int("combatd2", "ai_debug", gCd2Cfg.aiDebug);
+	jer_config_set_int("combatd2", "ai_role", gCd2Cfg.aiRole);
 	jer_config_set_int("combatd2", "nav_debug", gCd2Cfg.navDebug);
 	jer_config_set_int("combatd2", "car_car_damage", gCd2Cfg.carCarDamage);
 	jer_config_set_str("combatd2", "missile_model", gCd2Cfg.missileModel);
@@ -1279,6 +1282,32 @@ static int cd2ToggleAiDebug(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void cd2LabelAiRole(void* ud, char* out, int max)
+{
+	static const char* names[] = { "Auto", "Chaser", "Flanker", "Ambusher", "Harvester" };
+	int r = gCd2Cfg.aiRole;
+	(void)ud;
+
+	if (r < -1 || r >= CD2_AI_ROLE_COUNT)
+		r = -1;
+
+	snprintf(out, max, "Opponent Role: %s", names[r + 1]);
+}
+
+static int cd2CycleAiRole(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	gCd2Cfg.aiRole++;
+
+	if (gCd2Cfg.aiRole >= CD2_AI_ROLE_COUNT)
+		gCd2Cfg.aiRole = -1;
+
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void cd2LabelNavDebug(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -1332,6 +1361,7 @@ static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 	{ NULL, cd2LabelWeapon, cd2ToggleWeapon, (void*)(size_t)CD2_WID_MINE, NULL, 0 },
 	{ NULL, cd2LabelAi, cd2ToggleAi, NULL, NULL, 0 },
 	{ NULL, cd2LabelAiState, cd2CycleAiState, NULL, NULL, 0 },
+	{ NULL, cd2LabelAiRole, cd2CycleAiRole, NULL, NULL, 0 },
 	{ NULL, cd2LabelAiDebug, cd2ToggleAiDebug, NULL, NULL, 0 },
 	{ NULL, cd2LabelNavDebug, cd2ToggleNavDebug, NULL, NULL, 0 },
 	{ NULL, cd2LabelScenery, cd2CycleScenery, NULL, NULL, 0 },
@@ -1339,7 +1369,7 @@ static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 };
 
 static const JER_PAUSE_MENU cd2WeaponMenu =
-{ "Weapons", cd2WeaponItems, 10 };
+{ "Weapons", cd2WeaponItems, 11 };
 
 static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
 {

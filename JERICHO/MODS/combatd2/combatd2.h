@@ -167,7 +167,7 @@ enum
 #define CD2_DRAG            36    // fixed point /frame: 48/4096 ≈ 1.2%/frame (coast)
 
 // Yaw defaults (PSX-units/frame; 4096 = 360°):
-#define CD2_HANDLING        35    // max yaw rate  (≈ 120°/s at 30 fps)
+#define CD2_HANDLING        30    // max yaw rate  (≈ 120°/s at 30 fps)
 #define CD2_ANGULAR_ACCEL   17    // yaw accel toward target (≈ 360°/s²)
 #define CD2_YAW_SPEED_FALLOFF 800   // fp: TM2 speed-sensitive yaw falloff. 0 = off;
                                   // ~1200-1600 turns down yaw authority as speed
@@ -189,15 +189,15 @@ enum
 // bouncy suspension. Values here are compile-time tunables.
 #define CD2_GRAVITY           -10922   // vertical accel (D1 used -10922)
 #define CD2_ANGULAR_DAMPING   512     // stock 128; 256 = 2x faster angular settle
-#define CD2_SPRING_RATE       720     // stock 230 (stiffer)
-#define CD2_SPRING_DAMPING    360     // stock 100 (less bounce)
+#define CD2_SPRING_RATE       520     // stock 230 (stiffer)
+#define CD2_SPRING_DAMPING    320     // stock 100 (less bounce)
 
 // ==============================================================
 // VISUALS: BODY ROLL, CAMERA & FOV
 // ==============================================================
 
 // Visual: lateral velocity (speed units) → body roll (PSX angle units).
-#define CD2_ROLL_GAIN       14     // roll = -latVel * gain, clamped below
+#define CD2_ROLL_GAIN       22     // roll = -latVel * gain, clamped below
 #define CD2_BODY_MAX_ROLL   13    // ~2° lean (TMB: weight felt, not exaggerated)
 #define CD2_ROLL_LERP       3     // exponential settle divisor
 
@@ -345,7 +345,6 @@ typedef struct CD2_STATS
 // Runtime-tunable via the pause menu / [combatd2] car_car_damage, scenery_damage.
 #define CD2_CAR_CAR_DAMAGE_DEFAULT 67    // % of stock car-vs-car damage (10..100)
 #define CD2_SCENERY_DAMAGE_DEFAULT 65    // % of stock car-vs-solid damage (0..100)
-
 // Prototype opponent-AI behaviour states (also CD2_CONFIG.aiForceState; 0 = let
 // the AI pick). See ai/opponent.c.
 enum
@@ -356,6 +355,18 @@ enum
 	CD2_AI_RECOVER,		// heavily damaged: back off, stabilise
 	CD2_AI_WANDER,		// explore (looking for pickups / opponents)
 	CD2_AI_STATE_COUNT
+};
+
+// Opponent role archetypes (config ai_role; -1 = auto round-robin by car index).
+// The role only changes what goal the navigator is pointed at; the state machine
+// (HUNT/FLEE/EVADE/...) still overrides when it must.
+enum
+{
+	CD2_AI_ROLE_CHASER = 0,		// straight at the player, guns hot
+	CD2_AI_ROLE_FLANKER,		// sweep to the side of the player's travel
+	CD2_AI_ROLE_AMBUSHER,		// run ahead of the player and lie in wait
+	CD2_AI_ROLE_HARVESTER,		// roam for pickups/caches (rally points for now)
+	CD2_AI_ROLE_COUNT
 };
 
 // ---- pursuit theme --------------------------------------------------------
@@ -400,6 +411,7 @@ typedef struct CD2_CONFIG
 	int aiOpponent;        // 0/1: spawn the prototype opponent car
 	int aiForceState;      // CD2_AI_AUTO (0) or a forced CD2_AI_* behaviour
 	int aiDebug;           // 0/1: draw the AI internal-value readout on screen
+	int aiRole;            // CD2_AI_ROLE_* (-1 = auto round-robin by car index)
 } CD2_CONFIG;
 
 typedef struct CD2_CAR

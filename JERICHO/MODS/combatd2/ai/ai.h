@@ -17,6 +17,9 @@ int cd2AiActive(void);
 // Human-readable name of the AI's current behaviour (for the pause menu).
 const char* cd2AiStateName(void);
 
+// Human-readable name of this opponent's role archetype.
+const char* cd2AiRoleName(void);
+
 // Snapshot of the AI's internal decision values, for the on-screen readout /
 // logging ("what is it thinking?").
 typedef struct CD2_AI_DEBUG
