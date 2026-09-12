@@ -60,6 +60,9 @@
 #define CD2_AI_STUCK_TICKS	18	// frames with no forward progress before reversing
 #define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
 #define CD2_AI_WP_REACH		700	// route waypoints within this are "reached" and skipped
+#define CD2_AI_LOOKAHEAD_MIN	900	// pure-pursuit lookahead at a standstill
+#define CD2_AI_LOOKAHEAD_MAX	4200	// pure-pursuit lookahead cap
+#define CD2_AI_LOOKAHEAD_PER_SPEED 8	// extra lookahead per unit/frame of speed
 #define CD2_AI_WANDER_LEG	6000	// wander goal distance along the wander heading
 #define CD2_AI_NEAR_LOOK	380	// base imminent-collision probe distance
 #define CD2_AI_LOOK_PER_SPEED	3	// extra probe distance per unit/frame of speed
@@ -627,6 +630,11 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 				sRoute.count, cd2FlowReady(), cd2FlowCoverage(), goalV.vx, goalV.vz);
 	}
 
+	// --- forward speed (world units/frame, signed). Needed before the heading
+	// choice: pure pursuit scales its lookahead with it. ---
+	speedFwd = (int)(((long long)fx * FIXEDH(cp->st.n.linearVelocity[0])
+			+ (long long)fz * FIXEDH(cp->st.n.linearVelocity[2])) >> 12);
+
 	// --- desired heading: navigator look-ahead, else flow, else direct aim ---
 	if (sEvade > 0)
 	{
@@ -637,10 +645,21 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	}
 	else
 	{
-		int k, got = 0;
+		// --- pure pursuit: follow the route POLYLINE at a speed-scaled
+		// lookahead rather than charging at a fixed waypoint. Aiming at one
+		// point makes the car cut the corner between it and the previous one -
+		// into whatever scenery sits on the inside of the bend. Interpolating
+		// along the path keeps the car on the road through the turn. ---
+		int look = CD2_AI_LOOKAHEAD_MIN + speedFwd * CD2_AI_LOOKAHEAD_PER_SPEED;
+		int k, seg = -1, got = 0;
 
-		// steer at the first route waypoint beyond the reach radius, so the car
-		// follows the routed path instead of aiming straight at the goal
+		if (look < CD2_AI_LOOKAHEAD_MIN)
+			look = CD2_AI_LOOKAHEAD_MIN;
+
+		if (look > CD2_AI_LOOKAHEAD_MAX)
+			look = CD2_AI_LOOKAHEAD_MAX;
+
+		// the first waypoint past the reach radius starts the path ahead
 		for (k = 0; k < sRoute.count; k++)
 		{
 			int wdx = sRoute.wp[k].vx - carV.vx;
@@ -648,35 +667,60 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 
 			if (wdx * wdx + wdz * wdz > CD2_AI_WP_REACH * CD2_AI_WP_REACH)
 			{
-				desired = ratan2(wdx, wdz);
-				got = 1;
+				seg = k;
 				break;
 			}
 		}
 
+		if (seg >= 0)
+		{
+			int rem = look;
+			int px = carV.vx, pz = carV.vz;
+
+			for (k = seg; k < sRoute.count; k++)
+			{
+				int qx = sRoute.wp[k].vx, qz = sRoute.wp[k].vz;
+				int adx = ABS(qx - px), adz = ABS(qz - pz);
+				int d = (adx > adz) ? (adx + adz / 2) : (adz + adx / 2);
+				int tx = qx, tz = qz;
+
+				if (d > 0 && rem < d)
+				{
+					// part way along this leg
+					tx = px + (int)(((long long)(qx - px) * rem) / d);
+					tz = pz + (int)(((long long)(qz - pz) * rem) / d);
+				}
+
+				if ((d >= rem || k == sRoute.count - 1) &&
+				    (tx != carV.vx || tz != carV.vz))
+				{
+					desired = ratan2(tx - carV.vx, tz - carV.vz);
+					got = 1;
+					break;
+				}
+
+				rem -= d;
+				px = qx;
+				pz = qz;
+			}
+		}
+
+		// no usable route: shared flow field, then direct aim at the goal
 		if (!got)
 		{
 			int head;
 
 			if (cd2FlowDir(&carV, &head))
-			{
 				desired = head;
-				got = 1;
-			}
+			else
+				desired = ratan2(goalV.vx - carV.vx, goalV.vz - carV.vz);
 		}
-
-		if (!got)
-			desired = ratan2(goalV.vx - carV.vx, goalV.vz - carV.vz);
 	}
 
 	// --- steering ---
 	diff = desired - cp->hd.direction;
 	while (diff > 2048) diff -= 4096;
 	while (diff < -2048) diff += 4096;
-
-	// --- forward speed (world units/frame, signed) ---
-	speedFwd = (int)(((long long)fx * FIXEDH(cp->st.n.linearVelocity[0])
-			+ (long long)fz * FIXEDH(cp->st.n.linearVelocity[2])) >> 12);
 
 	// --- scenery probes: a fan of rays whose CLEAR LENGTH is measured, not just
 	// blocked/clear. Knowing how much room it actually has is what lets the AI
