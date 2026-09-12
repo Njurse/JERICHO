@@ -1014,6 +1014,21 @@ static int cd2AiOnOverlay(void* ud, void* args)
 
 	sprintf(text, "health dmg=%d hits=%d", sDbg.damage, sDbg.hits);
 	PrintString(text, 20, y);
+	y += 12;
+
+	if (sAi[0].carId >= 0)
+	{
+		const CD2_NAV_ROUTE* r = cd2NavLastRoute(sAi[0].carId);
+
+		if (r != NULL)
+			sprintf(text, "route %s wp=%d len=%d goal=%d",
+				(r->source == CD2_NAV_SRC_SCENERY) ? "scenery" : (r->source == CD2_NAV_SRC_ROAD) ? "road" : "none",
+				r->count, r->length, r->goalNode);
+		else
+			sprintf(text, "route none");
+
+		PrintString(text, 20, y);
+	}
 
 	return JER_RESULT_CONTINUE;
 }
