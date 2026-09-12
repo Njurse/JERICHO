@@ -192,6 +192,7 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 	VECTOR ppos, cand;
 	static char cd2AiPadId = 0;	// CUTSCENE car pad id (no replay stream)
 	int i, k, side, chosen = 0;
+	int chosenModel = 0, chosenPalette = 0;
 	int off = CD2_AI_SPAWN_OFFSET * (index + 1);	// fan each opponent out
 
 	cand.vx = 0;
@@ -245,7 +246,16 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 	// and (unlike CIV_AI) there is NO stock traffic AI to fight us - no
 	// road-node snapping and no CheckPingOut() reset when it leaves the road
 	// graph, which is what made the civ-AI car fidget in place.
-	InitCar(slot, pcp->hd.direction, &pos, CONTROL_TYPE_CUTSCENE, pcp->ap.model, 0, &cd2AiPadId);
+	//
+	// NOTE: PICKING A RANDOM MODEL IS NOT SAFE YET - only the models resident in
+	// this level (see the level's car model list) have valid gCarCleanModelPtr/
+	// gCarDamModelPtr entries; a random index can be NULL and fault while
+	// drawing. Until that list is read, use the player's own (always resident)
+	// model and palette.
+	InitCar(slot, pcp->hd.direction, &pos, CONTROL_TYPE_CUTSCENE, pcp->ap.model, pcp->ap.palette, &cd2AiPadId);
+
+	chosenModel = pcp->ap.model;
+	chosenPalette = pcp->ap.palette;
 
 	// claim an AI slot for it
 	{
@@ -284,8 +294,8 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		A->route.source = CD2_NAV_SRC_NONE;
 
 		if (gCd2Cfg.debugLog)
-			printInfo("[combatd2] AI opponent spawned (car=%d slot=%d role=%d side=%d)\n",
-				A->carId, s, A->role, side);
+			printInfo("[combatd2] AI opponent spawned (car=%d slot=%d role=%d side=%d model=%d palette=%d)\n",
+				A->carId, s, A->role, side, chosenModel, chosenPalette);
 	}
 
 	return 1;
