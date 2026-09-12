@@ -35,9 +35,14 @@ typedef struct CD2_AI_DEBUG
 	int threat;		// incoming-weapon detected this frame
 	int blockedAhead;	// 1 when the forward probe hit scenery
 	int padIn;		// pad the engine handed the car (should be forced to 0)
+	int reverse;		// 1 while backing up (stuck recovery)
+	int pivot;		// -1/0/+1 acute in-place pivot requested this frame
 } CD2_AI_DEBUG;
 
 // Fill *out with the latest AI values. Returns 1 when an opponent is active.
 int cd2AiGetDebug(CD2_AI_DEBUG* out);
+
+// 1 when `car` (a CAR_DATA*) is the opponent this module owns.
+int cd2AiIsOpponent(const void* car);
 
 #endif /* CD2_AI_H */

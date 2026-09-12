@@ -139,6 +139,13 @@ enum
 				   (bcollide.c) before ApplyDamage (see
 				   JER_ARGS_DAMAGE_SCALE) */
 
+	JER_EVENT_CAR_VS_CAR,		/* fired in DamageCar3D (bcollide.c) when two
+				   cars collide, before ApplyDamage: a module
+				   may retune the damage two cars exchange,
+				   e.g. give a non-player car the player damage
+				   model or scale the exchange (see
+				   JER_ARGS_CAR_VS_CAR) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

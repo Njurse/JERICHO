@@ -484,6 +484,34 @@ int DamageCar3D(CAR_DATA *cp, LONGVECTOR4* delta, int strikeVel, CAR_DATA *pOthe
 	// if cop cars colliding with themselves, only apply fake damage
 	fakeDamage = (cp->controlType == CONTROL_TYPE_PURSUER_AI && pOtherCar->controlType == CONTROL_TYPE_PURSUER_AI);
 
+	// JERICHO-HOOK: car-vs-car damage. Modules may retune the damage two cars
+	// exchange: the stock non-player branch above applies a harsher multiplier
+	// than the player one, so a module can give an owned opponent the player
+	// model, scale the exchange, etc.
+	{
+		int playerValue = (strikeVel / 350 + 512) * 3;
+
+		JER_ARGS_CAR_VS_CAR jerCc;
+
+		playerValue >>= 3;
+
+		if (playerValue > 1143)
+			playerValue = 1143;
+
+		jerCc.car = cp;
+		jerCc.other = pOtherCar;
+		jerCc.strikeVel = strikeVel;
+		jerCc.region = region;
+		jerCc.value = value;
+		jerCc.playerValue = playerValue;
+		jer_fire(JER_EVENT_CAR_VS_CAR, &jerCc);
+
+		value = jerCc.value;
+
+		if (value < 0)
+			value = 0;
+	}
+
 	ApplyDamage(cp, region, value, fakeDamage);
 
 	player_id = GetPlayerId(cp);

@@ -48,6 +48,11 @@
 #define CD2_AI_FIRE_RANGE	6600	// MG range when hunting
 #define CD2_AI_FIRE_COOLDOWN	10	// frames between AI MG shots
 #define CD2_AI_STEER_RATE	48	// max wheel_angle change per frame
+#define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
+#define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
+#define CD2_AI_REVERSE_TICKS	42	// frames of reversing after getting stuck
+#define CD2_AI_STUCK_TICKS	22	// frames with no forward progress before reversing
+#define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
 
 static int sAiCarId = -1;
 static int sSpawned;
@@ -58,6 +63,8 @@ static int sFireTimer;
 static int sWanderHeading;
 static int sWanderTimer;
 static int sSteer;		// rate-limited steering actually applied
+static int sReverse;		// frames of backing up left (stuck recovery)
+static int sStuck;		// frames without forward progress
 static CD2_AI_DEBUG sDbg;	// latest internal values (observability)
 
 static int cd2AiSqrt(int v)
@@ -172,6 +179,8 @@ static int cd2AiSpawn(void)
 	sEvade = 0;
 	sFireTimer = 0;
 	sSteer = 0;
+	sReverse = 0;
+	sStuck = 0;
 	sWanderHeading = pcp->hd.direction;
 	sWanderTimer = 60;
 
@@ -188,6 +197,7 @@ static void cd2AiDrive(CAR_DATA* cp)
 	int desired, diff, steer, thrust;
 	int fx, fz, rx, rz;
 	int threatFlag = 0, blockedAhead = 0;
+	int speedFwd = 0, pivotDir = 0;
 	int i;
 
 	tpos.vx = 0;
@@ -203,6 +213,9 @@ static void cd2AiDrive(CAR_DATA* cp)
 		cp->handbrake = 0;
 		cp->wheelspin = 0;
 		sSteer = 0;
+		sReverse = 0;
+		sStuck = 0;
+		cd2CarSetAiPivot(cp, 0);
 
 		sDbg.valid = 1;
 		sDbg.carId = cp->id;
@@ -217,6 +230,8 @@ static void cd2AiDrive(CAR_DATA* cp)
 		sDbg.playerDist = 0;
 		sDbg.threat = 0;
 		sDbg.blockedAhead = 0;
+		sDbg.reverse = 0;
+		sDbg.pivot = 0;
 		return;
 	}
 
@@ -301,79 +316,125 @@ static void cd2AiDrive(CAR_DATA* cp)
 	while (diff > 2048) diff -= 4096;
 	while (diff < -2048) diff += 4096;
 
-	steer = diff / CD2_AI_STEER_DIV;
+	// --- forward speed (world units/frame, signed) ---
+	speedFwd = (int)(((long long)fx * FIXEDH(cp->st.n.linearVelocity[0])
+			+ (long long)fz * FIXEDH(cp->st.n.linearVelocity[2])) >> 12);
 
-	// obstacle avoidance: scenery/wall ahead (lineClear: 0 = blocked)
+	// --- stuck detection: commanded forward but going nowhere -> back up ---
+	if (sReverse > 0)
 	{
-		VECTOR carPos, ahead, leftP, rightP;
-		int clearAhead, clearL, clearR;
-
-		cd2AiCarPos(cp, &carPos);
-		cd2AiPointAt(cp, cp->hd.direction, CD2_AI_LOOK, &ahead);
-		cd2AiPointAt(cp, cp->hd.direction + CD2_AI_PROBE_ANG, CD2_AI_LOOK, &leftP);
-		cd2AiPointAt(cp, cp->hd.direction - CD2_AI_PROBE_ANG, CD2_AI_LOOK, &rightP);
-
-		clearAhead = lineClear(&carPos, &ahead);
-		clearL = lineClear(&carPos, &leftP);
-		clearR = lineClear(&carPos, &rightP);
-
-		blockedAhead = (clearAhead == 0);
-
-		if (clearAhead == 0)
+		sReverse--;
+	}
+	else if (ABS(speedFwd) < CD2_AI_STUCK_SPEED)
+	{
+		if (++sStuck > CD2_AI_STUCK_TICKS)
 		{
-			if (clearL && !clearR)
-				steer += CD2_AI_AVOID_STEER;
-			else if (clearR && !clearL)
-				steer -= CD2_AI_AVOID_STEER;
-			else
-				steer += (steer >= 0) ? CD2_AI_AVOID_STEER : -CD2_AI_AVOID_STEER;
+			sReverse = CD2_AI_REVERSE_TICKS;
+			sStuck = 0;
+		}
+	}
+	else
+	{
+		sStuck = 0;
+	}
+
+	pivotDir = 0;
+
+	if (sReverse > 0)
+	{
+		// --- backing up: swing the nose toward the target while reversing ---
+		thrust = -CD2_TMB_THRUST;
+		steer = (diff >= 0) ? -CD2_STEER_MAX : CD2_STEER_MAX;
+		sSteer = steer;
+	}
+	else if (ABS(diff) > CD2_AI_PIVOT_DIFF && ABS(speedFwd) < CD2_AI_PIVOT_SPEED)
+	{
+		// --- stop and pivot on the spot (acute in-place turn) ---
+		pivotDir = (diff >= 0) ? 1 : -1;
+		steer = pivotDir * CD2_STEER_MAX;
+		thrust = 0;
+		sSteer = steer;
+	}
+	else
+	{
+		// --- normal steering ---
+		steer = diff / CD2_AI_STEER_DIV;
+
+		// obstacle avoidance: scenery/wall ahead (lineClear: 0 = blocked)
+		{
+			VECTOR carPos, ahead, leftP, rightP;
+			int clearAhead, clearL, clearR;
+
+			cd2AiCarPos(cp, &carPos);
+			cd2AiPointAt(cp, cp->hd.direction, CD2_AI_LOOK, &ahead);
+			cd2AiPointAt(cp, cp->hd.direction + CD2_AI_PROBE_ANG, CD2_AI_LOOK, &leftP);
+			cd2AiPointAt(cp, cp->hd.direction - CD2_AI_PROBE_ANG, CD2_AI_LOOK, &rightP);
+
+			clearAhead = lineClear(&carPos, &ahead);
+			clearL = lineClear(&carPos, &leftP);
+			clearR = lineClear(&carPos, &rightP);
+
+			blockedAhead = (clearAhead == 0);
+
+			if (clearAhead == 0)
+			{
+				if (clearL && !clearR)
+					steer += CD2_AI_AVOID_STEER;
+				else if (clearR && !clearL)
+					steer -= CD2_AI_AVOID_STEER;
+				else
+					steer += (steer >= 0) ? CD2_AI_AVOID_STEER : -CD2_AI_AVOID_STEER;
+			}
+		}
+
+		// obstacle avoidance: cars about to be hit
+		for (i = 0; i < MAX_CARS; i++)
+		{
+			CAR_DATA* o = &car_data[i];
+			int dx, dz, aheadDot, side;
+
+			if (o == cp || o->controlType == CONTROL_TYPE_NONE)
+				continue;
+
+			dx = o->hd.where.t[0] - cp->hd.where.t[0];
+			dz = o->hd.where.t[2] - cp->hd.where.t[2];
+
+			if (dx * dx + dz * dz > CD2_AI_LOOK * CD2_AI_LOOK)
+				continue;
+
+			aheadDot = dx * fx + dz * fz;
+			if (aheadDot <= 0)
+				continue;	// behind us
+
+			side = dx * rx + dz * rz;	// > 0 = obstacle on our right
+			steer += (side > 0) ? -CD2_AI_AVOID_STEER : CD2_AI_AVOID_STEER;
+		}
+
+		steer = jer_clamp_int(steer, -CD2_STEER_MAX, CD2_STEER_MAX);
+
+		// rate-limit the steering so an oscillating heading error can't slam
+		// the wheel full-lock one way then the other every frame (the "twitch")
+		if (steer > sSteer + CD2_AI_STEER_RATE)
+			steer = sSteer + CD2_AI_STEER_RATE;
+		else if (steer < sSteer - CD2_AI_STEER_RATE)
+			steer = sSteer - CD2_AI_STEER_RATE;
+
+		sSteer = steer;
+
+		// --- throttle ---
+		thrust = CD2_TMB_THRUST;
+
+		if (sEvade == 0)
+		{
+			if (ABS(diff) > 1700)
+				thrust = CD2_TMB_THRUST / 3;
+			else if (ABS(diff) > 1000)
+				thrust = CD2_TMB_THRUST / 2;
 		}
 	}
 
-	// obstacle avoidance: cars about to be hit
-	for (i = 0; i < MAX_CARS; i++)
-	{
-		CAR_DATA* o = &car_data[i];
-		int dx, dz, aheadDot, side;
-
-		if (o == cp || o->controlType == CONTROL_TYPE_NONE)
-			continue;
-
-		dx = o->hd.where.t[0] - cp->hd.where.t[0];
-		dz = o->hd.where.t[2] - cp->hd.where.t[2];
-
-		if (dx * dx + dz * dz > CD2_AI_LOOK * CD2_AI_LOOK)
-			continue;
-
-		aheadDot = dx * fx + dz * fz;
-		if (aheadDot <= 0)
-			continue;	// behind us
-
-		side = dx * rx + dz * rz;	// > 0 = obstacle on our right
-		steer += (side > 0) ? -CD2_AI_AVOID_STEER : CD2_AI_AVOID_STEER;
-	}
-
-	steer = jer_clamp_int(steer, -CD2_STEER_MAX, CD2_STEER_MAX);
-
-	// rate-limit the steering so an oscillating heading error can't slam the
-	// wheel full-lock one way then the other every frame (the "twitch")
-	if (steer > sSteer + CD2_AI_STEER_RATE)
-		steer = sSteer + CD2_AI_STEER_RATE;
-	else if (steer < sSteer - CD2_AI_STEER_RATE)
-		steer = sSteer - CD2_AI_STEER_RATE;
-
-	sSteer = steer;
-
-	// --- throttle ---
-	thrust = CD2_TMB_THRUST;
-
-	if (sEvade == 0)
-	{
-		if (ABS(diff) > 1700)
-			thrust = CD2_TMB_THRUST / 3;
-		else if (ABS(diff) > 1000)
-			thrust = CD2_TMB_THRUST / 2;
-	}
+	// tell combatd2's torque whether to pivot this frame
+	cd2CarSetAiPivot(cp, pivotDir);
 
 	cp->wheel_angle = (short)steer;
 	cp->thrust = (short)thrust;
@@ -427,6 +488,8 @@ static void cd2AiDrive(CAR_DATA* cp)
 		sDbg.playerDist = cd2AiSqrt(d2);
 		sDbg.threat = threatFlag;
 		sDbg.blockedAhead = blockedAhead;
+		sDbg.reverse = (sReverse > 0) ? 1 : 0;
+		sDbg.pivot = pivotDir;
 	}
 }
 
@@ -502,6 +565,8 @@ static int cd2AiOnGameStart(void* ud, void* args)
 	sEvade = 0;
 	sFireTimer = 0;
 	sSteer = 0;
+	sReverse = 0;
+	sStuck = 0;
 	sDbg.valid = 0;
 
 	// spawn as soon as the frame hook sees a player car (the player car may
@@ -512,6 +577,13 @@ static int cd2AiOnGameStart(void* ud, void* args)
 int cd2AiActive(void)
 {
 	return (sAiCarId >= 0) ? 1 : 0;
+}
+
+int cd2AiIsOpponent(const void* car)
+{
+	const CAR_DATA* cp = (const CAR_DATA*)car;
+
+	return (cp != NULL && sAiCarId >= 0 && cp->id == sAiCarId) ? 1 : 0;
 }
 
 int cd2AiGetDebug(CD2_AI_DEBUG* out)
@@ -546,7 +618,8 @@ static int cd2AiOnOverlay(void* ud, void* args)
 	PrintString(text, 20, y);
 	y += 12;
 
-	sprintf(text, "threat=%d wallAhead=%d padIn=0x%04X", sDbg.threat, sDbg.blockedAhead, sDbg.padIn);
+	sprintf(text, "threat=%d wallAhead=%d padIn=0x%04X rev=%d pivot=%d",
+		sDbg.threat, sDbg.blockedAhead, sDbg.padIn, sDbg.reverse, sDbg.pivot);
 	PrintString(text, 20, y);
 
 	return JER_RESULT_CONTINUE;

@@ -483,4 +483,21 @@ typedef struct JER_ARGS_DAMAGE_SCALE
 	int result;	/* in/out: damage scale, 4096 = stock */
 } JER_ARGS_DAMAGE_SCALE;
 
+/* JER_EVENT_CAR_VS_CAR — fired in DamageCar3D (bcollide.c) when two cars
+ * collide, right before ApplyDamage. `value` is the stock damage this car would
+ * take; `playerValue` is what a player-controlled car would take for the SAME
+ * impact (the non-player stock branch applies a harsher multiplier, which is
+ * what traffic/civ cars get). A module may set `value` — e.g. give an owned
+ * opponent the player model, or scale all car-to-car damage. No handler =
+ * stock. */
+typedef struct JER_ARGS_CAR_VS_CAR
+{
+	void* car;		/* CAR_DATA* taking the damage */
+	void* other;		/* CAR_DATA* it collided with */
+	int strikeVel;		/* impact velocity term (post-scale) */
+	int region;		/* 0..5 damage region */
+	int value;		/* in/out: damage to apply */
+	int playerValue;	/* in: damage a player car would take */
+} JER_ARGS_CAR_VS_CAR;
+
 #endif /* JERICHO_JER_EVENTS_H */

@@ -86,6 +86,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.aiOpponent    = jer_config_get_int("combatd2", "ai_opponent", 1);
 	gCd2Cfg.aiForceState  = jer_config_get_int("combatd2", "ai_force_state", CD2_AI_AUTO);
 	gCd2Cfg.aiDebug       = jer_config_get_int("combatd2", "ai_debug", 0);
+	gCd2Cfg.carCarNerf    = jer_config_get_int("combatd2", "car_car_nerf", 33);
 
 	{
 		const char* mm = jer_config_get_str("combatd2", "missile_model", "BOMB");
@@ -115,6 +116,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.aiOpponent    = gCd2Cfg.aiOpponent ? 1 : 0;
 	gCd2Cfg.aiForceState  = jer_clamp_int(gCd2Cfg.aiForceState, 0, CD2_AI_STATE_COUNT - 1);
 	gCd2Cfg.aiDebug       = gCd2Cfg.aiDebug ? 1 : 0;
+	gCd2Cfg.carCarNerf    = jer_clamp_int(gCd2Cfg.carCarNerf, 0, 90);
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
 	gCd2Cfg.missileSound  = jer_clamp_int(gCd2Cfg.missileSound, 0, 34);
 }
@@ -141,6 +143,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "ai_opponent", gCd2Cfg.aiOpponent);
 	jer_config_set_int("combatd2", "ai_force_state", gCd2Cfg.aiForceState);
 	jer_config_set_int("combatd2", "ai_debug", gCd2Cfg.aiDebug);
+	jer_config_set_int("combatd2", "car_car_nerf", gCd2Cfg.carCarNerf);
 	jer_config_set_str("combatd2", "missile_model", gCd2Cfg.missileModel);
 	jer_config_set_int("combatd2", "missile_scale", gCd2Cfg.missileScale);
 	jer_config_set_int("combatd2", "missile_sound", gCd2Cfg.missileSound);
@@ -253,6 +256,18 @@ int cd2CarTopSpeed(void* vcp)
 	return cd2GetStats(cp).topSpeed;
 }
 
+// AI-requested acute in-place pivot (tight turn) for a car. The torque reads
+// this at CAR_TORQUE; the AI sets it every frame in its CAR_STEP hook.
+void cd2CarSetAiPivot(void* vcp, int dir)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return;
+
+	gCd2Car[cp->id].aiPivot = dir;
+}
+
 // ---------------------------------------------------------------------------
 // Event handlers
 // ---------------------------------------------------------------------------
@@ -280,6 +295,7 @@ static int cd2OnResetCar(void* ud, void* args)
 		gCd2Car[a->carId].throttle = 0;
 		gCd2Car[a->carId].pivotDir = 0;
 		gCd2Car[a->carId].slideTicks = 0;
+		gCd2Car[a->carId].aiPivot = 0;
 	}
 	return JER_RESULT_CONTINUE;
 }
@@ -503,6 +519,29 @@ static int cd2OnDamageScale(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// JER_EVENT_CAR_VS_CAR: retune the damage two cars exchange. An owned opponent
+// uses the player damage model (not the harsher traffic multiplier), and every
+// car-to-car impact is scaled down by the car-to-car nerf.
+static int cd2OnCarVsCar(void* ud, void* args)
+{
+	JER_ARGS_CAR_VS_CAR* a = (JER_ARGS_CAR_VS_CAR*)args;
+	int v;
+	(void)ud;
+
+	if (!gCd2Cfg.enabled)
+		return JER_RESULT_CONTINUE;
+
+	v = a->value;
+
+	if (cd2AiIsOpponent(a->car))
+		v = a->playerValue;
+
+	v = (v * (100 - gCd2Cfg.carCarNerf)) / 100;
+
+	a->value = v;
+	return JER_RESULT_CONTINUE;
+}
+
 #if CD2_ENFORCE_PURSUIT_MUSIC
 // Force the music onto the "pursuit" segment each frame (see
 // CD2_ENFORCE_PURSUIT_MUSIC). FunkUpDaBGMTunez is idempotent, so this just
@@ -611,8 +650,15 @@ static int cd2OnCarTorque(void* ud, void* args)
 	// normal physics for a brief moment").
 	int tightActive = 0;
 	int slideNow = 0; // traction-suspended slide active (computed once per frame)
-	if (gCd2Cfg.tightTurn && cp->controlType == CONTROL_TYPE_PLAYER)
+	if (gCd2Cfg.tightTurn)
 	{
+		if (c->aiPivot != 0)
+		{
+			// An AI car asked for an acute in-place pivot this frame.
+			tightActive = 1;
+		}
+		else if (cp->controlType == CONTROL_TYPE_PLAYER)
+		{
 		if (gCd2Cfg.tmbButtons)
 		{
 			// Tight Turn = the layout's tight face button, read from the raw
@@ -627,6 +673,7 @@ static int cd2OnCarTorque(void* ud, void* args)
 			tightActive = cp->handbrake;
 		else if (gCd2Cfg.tightInput == CD2_TIGHT_INPUT_WHEELSPIN)
 			tightActive = cp->wheelspin;
+		}
 	}
 
 	if (tightActive)
@@ -1196,6 +1243,21 @@ static int cd2ToggleAiDebug(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void cd2LabelCarCarNerf(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Car-Car Damage Nerf: %d%%", gCd2Cfg.carCarNerf);
+}
+
+static int cd2CycleCarCarNerf(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gCd2Cfg.carCarNerf = (gCd2Cfg.carCarNerf + 5) % 95;
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void cd2LabelScenery(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -1221,10 +1283,11 @@ static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 	{ NULL, cd2LabelAiState, cd2CycleAiState, NULL, NULL, 0 },
 	{ NULL, cd2LabelAiDebug, cd2ToggleAiDebug, NULL, NULL, 0 },
 	{ NULL, cd2LabelScenery, cd2CycleScenery, NULL, NULL, 0 },
+	{ NULL, cd2LabelCarCarNerf, cd2CycleCarCarNerf, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2WeaponMenu =
-{ "Weapons", cd2WeaponItems, 8 };
+{ "Weapons", cd2WeaponItems, 9 };
 
 static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
 {
@@ -1286,6 +1349,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_PHYSICS_PARAMS, cd2OnPhysicsParams, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW, cd2OnCarDraw, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_DAMAGE_SCALE, cd2OnDamageScale, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_VS_CAR, cd2OnCarVsCar, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DEBUG_TICK, cd2OnDebugTick, NULL, 0);
 
 #if CD2_ENFORCE_PURSUIT_MUSIC

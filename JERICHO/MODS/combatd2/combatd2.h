@@ -387,6 +387,7 @@ typedef struct CD2_CONFIG
 	int aiOpponent;        // 0/1: spawn the prototype opponent car
 	int aiForceState;      // CD2_AI_AUTO (0) or a forced CD2_AI_* behaviour
 	int aiDebug;           // 0/1: draw the AI internal-value readout on screen
+	int carCarNerf;        // 0..90: % reduction applied to car-vs-car damage
 } CD2_CONFIG;
 
 typedef struct CD2_CAR
@@ -397,6 +398,7 @@ typedef struct CD2_CAR
 	int throttle;      // +1/-1/0 raw throttle captured at CAR_STEP (see note)
 	int pivotDir;      // latched tight-turn direction +1/-1/0
 	int slideTicks;    // recovery frames remaining after a slide ends
+	int aiPivot;       // AI-requested tight-turn direction +1/-1/0 (0 = none)
 } CD2_CAR;
 
 extern CD2_CONFIG gCd2Cfg;
@@ -408,5 +410,9 @@ int cd2CarTopSpeed(void* cp);
 // Exported for the core + weapons files: 1 when a car is past the damage cap
 // (totaled wreck — no driving input, no weapons).
 int cd2CarTotaled(void* cp);
+
+// Exported for the AI (ai/): request (dir = +1/-1) or clear (0) an acute
+// in-place "tight turn" pivot for a car this frame.
+void cd2CarSetAiPivot(void* cp, int dir);
 
 #endif /* COMBATD2_H */
