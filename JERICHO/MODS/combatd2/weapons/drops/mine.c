@@ -65,6 +65,7 @@ static CD2_WEAPON_DEF cd2MakeMineDef(void)
 
 	d.maxAmmo = 8;
 	d.fireInterval = 40;
+	d.refireCooldown = 120;	// 2s minimum between drops
 
 	d.damage = 700;		// damage on the triggering car
 	d.speed = 0;		// dropped, not flown

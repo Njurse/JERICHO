@@ -447,12 +447,58 @@ void cd2WpnMuzzle(const CAR_DATA* cp, int side, VECTOR* out)
 }
 
 // ---------------------------------------------------------------------------
+// Refire cooldown: every shot from every shooter passes through here, so a
+// primary weapon can enforce a minimum gap between refires no matter who
+// pulled the trigger (the player's trigger or an opponent's AI).
+// ---------------------------------------------------------------------------
+static unsigned int sWpnTick;				// frames since boot
+static unsigned int sNextFire[MAX_CARS][CD2_WID_COUNT];	// frame each car may next fire each weapon
+
+int cd2WpnTryFire(void* vcp, int weaponId)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+	const CD2_WEAPON_DEF* d;
+	int gap;
+
+	if (cp == NULL || weaponId < 0 || weaponId >= CD2_WID_COUNT)
+		return 0;
+
+	if (cp->id < 0 || cp->id >= MAX_CARS)
+		return 0;
+
+	d = cd2WpnDef(weaponId);
+
+	if (d == NULL || d->fire == NULL)
+		return 0;
+
+	// still cooling down? (unsigned, wrap-safe)
+	if ((int)(sNextFire[cp->id][weaponId] - sWpnTick) > 0)
+		return 0;
+
+	d->fire(cp);
+
+	gap = d->refireCooldown;
+
+	if (gap <= 0)
+		gap = d->fireInterval;
+
+	if (gap <= 0)
+		gap = 1;
+
+	sNextFire[cp->id][weaponId] = sWpnTick + (unsigned int)gap;
+
+	return 1;
+}
+
+// ---------------------------------------------------------------------------
 // JER_EVENT_FRAME: class step loop + weapon input
 // ---------------------------------------------------------------------------
 
 static int cd2WpnOnFrame(void* ud, void* args)
 {
 	static int prevRT, prevLB, prevRB;
+
+	sWpnTick++;
 	static int mgClock;
 	static unsigned int dbg;
 
@@ -542,13 +588,14 @@ static int cd2WpnOnFrame(void* ud, void* args)
 
 		if (d != NULL && cd2WpnOwns(gSelected) && gAmmo[gSelected] > 0)
 		{
-			if (d->fire != NULL)
-				d->fire(cp);
+			// burns a round only when the shot really goes out (refire cooldown)
+			if (cd2WpnTryFire(cp, gSelected))
+			{
+				gAmmo[gSelected]--;
 
-			gAmmo[gSelected]--;
-
-			if (gAmmo[gSelected] <= 0)
-				cd2WpnClear(gSelected);
+				if (gAmmo[gSelected] <= 0)
+					cd2WpnClear(gSelected);
+			}
 		}
 		else
 		{

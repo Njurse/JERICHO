@@ -56,6 +56,7 @@ static CD2_WEAPON_DEF cd2MakeMGDef(void)
 
 	d.maxAmmo = 0;		// infinite
 	d.fireInterval = 5;	// frames between shots (auto)
+	d.refireCooldown = 5;	// minimum gap between refires
 
 	d.damage = 390;
 	d.speed = 150;		// world units/frame (fast particle)

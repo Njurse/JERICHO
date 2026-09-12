@@ -61,9 +61,10 @@ static CD2_WEAPON_DEF cd2MakeMissileDef(void)
 
 	d.maxAmmo = 20;
 	d.fireInterval = 30;
+	d.refireCooldown = 90;	// 1.5s minimum between missiles
 
 	d.damage = 900;		// direct hit
-	d.speed = 485;		// world units/frame
+	d.speed = 1485;		// world units/frame
 	d.range = 10400;
 	d.life = 0;
 

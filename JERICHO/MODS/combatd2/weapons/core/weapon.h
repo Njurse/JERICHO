@@ -64,6 +64,7 @@ typedef struct CD2_WEAPON_DEF
 
 	int maxAmmo;		// capacity (0 = infinite / never tracked)
 	int fireInterval;	// frames between shots while the trigger is held
+	int refireCooldown;	// MINIMUM frames between refires, any shooter (0 = none)
 
 	int damage;		// direct-hit damage (ApplyDamage units)
 	int speed;		// world units / frame
@@ -94,7 +95,11 @@ int  cd2WpnAmmo(int weaponId);		// rounds left (0 for an infinite base weapon)
 int  cd2WpnSelected(void);		// CD2_WID_* currently armed (never a base weapon)
 
 int  cd2WpnCycle(int dir);		// move the selection (+1 next / -1 previous)
-void cd2WpnGrant(int weaponId, int ammo);	// give ammo (auto-select if new)
+
+// Fire `weaponId` from `car`, honouring that weapon's minimum refire cooldown
+// (per car). Returns 1 when the shot was made. Any shooter - the player's
+// trigger or the AI - goes through this.
+int  cd2WpnTryFire(void* car, int weaponId);void cd2WpnGrant(int weaponId, int ammo);	// give ammo (auto-select if new)
 void cd2WpnClear(int weaponId);		// drop a carried weapon
 
 void cd2WpnGrantAllMax(void);		// debug: every weapon to its max capacity
