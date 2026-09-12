@@ -61,8 +61,9 @@
 #define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
 #define CD2_AI_WP_REACH		700	// route waypoints within this are "reached" and skipped
 #define CD2_AI_WANDER_LEG	6000	// wander goal distance along the wander heading
-#define CD2_AI_NEAR_LOOK	780	// imminent-collision probe distance
-#define CD2_AI_BRAKE_SPEED	200	// forward speed above which it brakes instead of pivoting
+#define CD2_AI_NEAR_LOOK	780	// base imminent-collision probe distance
+#define CD2_AI_LOOK_PER_SPEED	14	// extra probe distance per unit/frame of speed
+#define CD2_AI_BRAKE_SPEED	60	// forward speed above which it brakes instead of pivoting
 
 // committed imminent-collision responses (hysteresis in cd2AiDrive)
 enum { CD2_AI_AVOID_NONE = 0, CD2_AI_AVOID_BRAKE, CD2_AI_AVOID_PIVOT };
@@ -589,20 +590,37 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	speedFwd = (int)(((long long)fx * FIXEDH(cp->st.n.linearVelocity[0])
 			+ (long long)fz * FIXEDH(cp->st.n.linearVelocity[2])) >> 12);
 
-	// --- scenery probes: far (route planning) + near (imminent collision) ---
+	// --- scenery probes: far (route planning) + near (imminent collision).
+	// The near probe and the two angled near probes grow with speed: a fast car
+	// has to see a wall much further out or it is already on top of it. ---
 	{
-		VECTOR carPos, ahead, nearP, leftP, rightP;
+		VECTOR carPos, ahead, nearP, leftP, rightP, nearL, nearR;
+		int nearLook = CD2_AI_NEAR_LOOK + speedFwd * CD2_AI_LOOK_PER_SPEED;
+
+		if (nearLook > CD2_AI_LOOK)
+			nearLook = CD2_AI_LOOK;
 
 		cd2AiCarPos(cp, &carPos);
 		cd2AiPointAt(cp, cp->hd.direction, CD2_AI_LOOK, &ahead);
-		cd2AiPointAt(cp, cp->hd.direction, CD2_AI_NEAR_LOOK, &nearP);
+		cd2AiPointAt(cp, cp->hd.direction, nearLook, &nearP);
 		cd2AiPointAt(cp, cp->hd.direction + CD2_AI_PROBE_ANG, CD2_AI_LOOK, &leftP);
 		cd2AiPointAt(cp, cp->hd.direction - CD2_AI_PROBE_ANG, CD2_AI_LOOK, &rightP);
+		cd2AiPointAt(cp, cp->hd.direction + CD2_AI_PROBE_ANG, nearLook, &nearL);
+		cd2AiPointAt(cp, cp->hd.direction - CD2_AI_PROBE_ANG, nearLook, &nearR);
 
 		clearAhead = lineClear(&carPos, &ahead);
 		clearL = lineClear(&carPos, &leftP);
 		clearR = lineClear(&carPos, &rightP);
 		nearBlocked = (lineClear(&carPos, &nearP) == 0);
+
+		// a wall just off the nose, on either side, is imminent too - and it
+		// tells the dodge which way to go
+		if (lineClear(&carPos, &nearL) == 0 && lineClear(&carPos, &nearR) == 0)
+			nearBlocked = 1;
+		else if (lineClear(&carPos, &nearL) == 0)
+			clearL = 0;
+		else if (lineClear(&carPos, &nearR) == 0)
+			clearR = 0;
 
 		blockedAhead = (clearAhead == 0);
 	}
@@ -628,7 +646,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		else if (speedFwd > CD2_AI_BRAKE_SPEED)
 		{
 			sAvoid = CD2_AI_AVOID_BRAKE;
-			sAvoidTicks = 16;
+			sAvoidTicks = 20;
 		}
 		else
 		{
