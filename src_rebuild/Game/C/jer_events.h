@@ -500,4 +500,14 @@ typedef struct JER_ARGS_CAR_VS_CAR
 	int playerValue;	/* in: damage a player car would take */
 } JER_ARGS_CAR_VS_CAR;
 
+/* JER_EVENT_DRAW_MAP — fired from overmap.c while the overhead map (and the
+ * fullscreen map) is being drawn, right after the player's own blip. Plot extra
+ * markers with DrawTargetBlip(pos, r, g, b, flags) using the same `flags` value
+ * so they land in the right place; `fullscreen` distinguishes the two. */
+typedef struct JER_ARGS_DRAW_MAP
+{
+	int flags;		/* flags the player blip was drawn with */
+	int fullscreen;		/* 1 = fullscreen map, 0 = overhead map */
+} JER_ARGS_DRAW_MAP;
+
 #endif /* JERICHO_JER_EVENTS_H */

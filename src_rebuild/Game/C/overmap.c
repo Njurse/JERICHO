@@ -1195,6 +1195,15 @@ void DrawOverheadMap(void)
 	}
 
 	DrawTargetBlip((VECTOR *)player->pos, 64, 64, 64, 3);
+
+	// JERICHO-HOOK: let modules plot their own markers on the overhead map
+	{
+		JER_ARGS_DRAW_MAP jerMap;
+
+		jerMap.flags = 3;
+		jerMap.fullscreen = 0;
+		jer_fire(JER_EVENT_DRAW_MAP, &jerMap);
+	}
 	
 	DrawCompass();
 
@@ -1791,6 +1800,15 @@ void DrawFullscreenMap(void)
 		DrawBigCompass(&target, 0);
 
 	DrawTargetBlip(&target, 64, 64, 64, 14);
+
+	// JERICHO-HOOK: let modules plot their own markers on the fullscreen map
+	{
+		JER_ARGS_DRAW_MAP jerMap;
+
+		jerMap.flags = 14;
+		jerMap.fullscreen = 1;
+		jer_fire(JER_EVENT_DRAW_MAP, &jerMap);
+	}
 
 	vec.vx = target.vx + map_x_offset;
 	vec.vz = target.vz + map_z_offset;

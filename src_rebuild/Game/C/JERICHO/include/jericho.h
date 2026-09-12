@@ -146,6 +146,12 @@ enum
 				   model or scale the exchange (see
 				   JER_ARGS_CAR_VS_CAR) */
 
+	JER_EVENT_DRAW_MAP,		/* fired while the overhead/fullscreen map is
+				   drawn (overmap.c), after the player blip:
+				   a module plots its own markers with
+				   DrawTargetBlip/DrawPlayerDot using the same
+				   flags (see JER_ARGS_DRAW_MAP) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 
