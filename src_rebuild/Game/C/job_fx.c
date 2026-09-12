@@ -142,6 +142,11 @@ void AddExplosion(VECTOR pos, int type)
 		newExplosion->colScale = a.colScale;
 	}
 
+	// a module may have set speed to 0 (which would divide by zero in
+	// ExplosionCollisionCheck/DrawExplosion and never expire) - floor it
+	if (newExplosion->speed < 1)
+		newExplosion->speed = 1;
+
 }
 
 

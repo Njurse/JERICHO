@@ -205,7 +205,7 @@ static void cd2ProjectileImpact(CD2_PROJECTILE* p, const CAR_DATA* carHit, const
 		cd2FxBarrage(&p->pos, (p->def->barrageStick ? carHit : NULL),
 			p->def->barrageFx, p->def->barrageCount, p->def->barrageInterval,
 			p->def->barrageJitter, p->def->barrageRadius,
-			p->def->barrageDamage, skip);
+			p->def->barrageDamage, p->owner);
 
 	p->active = 0;
 }
