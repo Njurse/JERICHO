@@ -38,6 +38,11 @@ void cd2WpnMuzzle(const CAR_DATA* cp, int side, VECTOR* out);
 // The car's forward unit vector *4096 (the m[][2] column).
 void cd2WpnForward(const CAR_DATA* cp, VECTOR* out);
 
+// The car's velocity in world units/frame (y-up). Weapons add this to their
+// muzzle velocity (inertial launch) so a shot always pulls ahead of the car
+// that fired it instead of lagging behind.
+void cd2WpnCarVelocity(const CAR_DATA* cp, VECTOR* out);
+
 // ---------------------------------------------------------------------------
 // From aoe/aoe.c — explosion FX + radial damage (shared by projectile/drop)
 // ---------------------------------------------------------------------------

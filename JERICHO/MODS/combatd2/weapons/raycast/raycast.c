@@ -20,7 +20,7 @@
 
 #define CD2_MAX_RAYCAST		64
 #define CD2_RAY_SUBSTEP		32	// world units per sub-step (tunneling guard)
-#define CD2_RAY_MAX_SUBSTEP	12
+#define CD2_RAY_MAX_SUBSTEP	16
 
 typedef struct CD2_RAYCAST
 {
@@ -48,6 +48,14 @@ void cd2RaycastSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 {
 	int i;
 	int speed = (def != NULL) ? def->speed : 0;
+	VECTOR carVel;
+
+	// inertial launch: the shot inherits the shooter's velocity so it always
+	// moves away from the car instead of trailing it at high speed
+	if (shooter != NULL)
+		cd2WpnCarVelocity(shooter, &carVel);
+	else
+		carVel.vx = carVel.vy = carVel.vz = 0;
 
 	for (i = 0; i < CD2_MAX_RAYCAST; i++)
 	{
@@ -61,9 +69,9 @@ void cd2RaycastSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		r->owner = shooter;
 		r->pos = *from;
 		r->prev = *from;
-		r->vel.vx = (int)(((long long)dir->vx * speed) >> 12);
-		r->vel.vy = (int)(((long long)dir->vy * speed) >> 12);
-		r->vel.vz = (int)(((long long)dir->vz * speed) >> 12);
+		r->vel.vx = (int)(((long long)dir->vx * speed) >> 12) + carVel.vx;
+		r->vel.vy = (int)(((long long)dir->vy * speed) >> 12) + carVel.vy;
+		r->vel.vz = (int)(((long long)dir->vz * speed) >> 12) + carVel.vz;
 		r->travelled = 0;
 		return;
 	}
@@ -83,13 +91,20 @@ void cd2RaycastStep(void)
 
 		r->prev = r->pos;
 
-		steps = r->def->speed / CD2_RAY_SUBSTEP;
-		if (steps < 1)
-			steps = 1;
-		if (steps > CD2_RAY_MAX_SUBSTEP)
-			steps = CD2_RAY_MAX_SUBSTEP;
+		// sub-step on the ACTUAL per-frame distance (which grows once the
+		// shooter's velocity is added) so a fast shot can't tunnel a car
+		{
+			int ax = ABS(r->vel.vx), ay = ABS(r->vel.vy), az = ABS(r->vel.vz);
+			int mag = ((ax < az) ? az : ax) + ((ax < az) ? ax : az) / 2 + ay / 2;
 
-		r->travelled += r->def->speed;
+			steps = mag / CD2_RAY_SUBSTEP;
+			if (steps < 1)
+				steps = 1;
+			if (steps > CD2_RAY_MAX_SUBSTEP)
+				steps = CD2_RAY_MAX_SUBSTEP;
+
+			r->travelled += mag;
+		}
 
 		for (s = 0; s < steps && r->active; s++)
 		{

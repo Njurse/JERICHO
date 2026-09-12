@@ -37,6 +37,7 @@
 #include "jericho.h"
 #include "jer_events.h"
 #include "jer_math.h"
+#include "dr2math.h"
 #include "weapon.h"
 #include "weapon_internal.h"
 
@@ -320,6 +321,14 @@ void cd2WpnForward(const CAR_DATA* cp, VECTOR* out)
 	out->vx = w->m[0][2];
 	out->vy = w->m[1][2];
 	out->vz = w->m[2][2];
+}
+
+void cd2WpnCarVelocity(const CAR_DATA* cp, VECTOR* out)
+{
+	// linearVelocity is fixed point (4096 = 1 world unit/frame)
+	out->vx = FIXEDH(cp->st.n.linearVelocity[0]);
+	out->vy = FIXEDH(cp->st.n.linearVelocity[1]);
+	out->vz = FIXEDH(cp->st.n.linearVelocity[2]);
 }
 
 void cd2WpnMuzzle(const CAR_DATA* cp, int side, VECTOR* out)

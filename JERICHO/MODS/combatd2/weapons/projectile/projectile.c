@@ -27,6 +27,8 @@
 #include <string.h>
 
 #define CD2_MAX_PROJECTILES	16
+#define CD2_PROJ_SUBSTEP	48	// world units per sub-step (tunneling guard)
+#define CD2_PROJ_MAX_SUBSTEP	12
 
 typedef struct CD2_PROJECTILE
 {
@@ -121,6 +123,14 @@ void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 			const VECTOR* from, const VECTOR* vel, const VECTOR* dir)
 {
 	int i;
+	VECTOR carVel;
+
+	// inertial launch: inherit the shooter's velocity so the missile pulls
+	// ahead of the car instead of lagging behind it
+	if (shooter != NULL)
+		cd2WpnCarVelocity(shooter, &carVel);
+	else
+		carVel.vx = carVel.vy = carVel.vz = 0;
 
 	for (i = 0; i < CD2_MAX_PROJECTILES; i++)
 	{
@@ -134,7 +144,9 @@ void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		p->owner = shooter;
 		p->pos = *from;
 		p->prev = *from;
-		p->vel = *vel;
+		p->vel.vx = vel->vx + carVel.vx;
+		p->vel.vy = vel->vy + carVel.vy;
+		p->vel.vz = vel->vz + carVel.vz;
 		p->dir = *dir;
 		p->travelled = 0;
 		return;
@@ -155,33 +167,53 @@ void cd2ProjectileStep(void)
 	for (i = 0; i < CD2_MAX_PROJECTILES; i++)
 	{
 		CD2_PROJECTILE* p = &gProj[i];
-		int j, gh;
+		int gh;
 
 		if (!p->active)
 			continue;
 
 		p->prev = p->pos;
-		p->pos.vx += p->vel.vx;
-		p->pos.vy += p->vel.vy;
-		p->pos.vz += p->vel.vz;
-		p->travelled += p->def->speed;
 
-		// car hit (skip the shooter): full direct damage, then explode
-		for (j = 0; j < MAX_CARS; j++)
+		// advance in sub-steps sized by the ACTUAL per-frame distance (which
+		// grows once the shooter's velocity is inherited) so a fast missile
+		// can't tunnel through a car
 		{
-			CAR_DATA* cp = &car_data[j];
+			int ax = ABS(p->vel.vx), ay = ABS(p->vel.vy), az = ABS(p->vel.vz);
+			int mag = ((ax < az) ? az : ax) + ((ax < az) ? ax : az) / 2 + ay / 2;
+			int steps = mag / CD2_PROJ_SUBSTEP;
+			int s;
 
-			if (cp == p->owner || cp->controlType == 0 ||
-			    cp->ap.carCos == NULL)
-				continue;
+			if (steps < 1) steps = 1;
+			if (steps > CD2_PROJ_MAX_SUBSTEP) steps = CD2_PROJ_MAX_SUBSTEP;
 
-			if (cd2WpnPointInCar(cp, &p->pos))
+			p->travelled += mag;
+
+			for (s = 0; s < steps && p->active; s++)
 			{
-				cd2WpnDamageCar(cp, &p->pos, p->def->damage);
-				cd2AoeBlast(&p->pos, p->def->splashRadius,
-					p->def->splashDamage, p->def->explosionEffect, cp);
-				p->active = 0;
-				break;
+				int j;
+
+				p->pos.vx += p->vel.vx / steps;
+				p->pos.vy += p->vel.vy / steps;
+				p->pos.vz += p->vel.vz / steps;
+
+				// car hit (skip the shooter): direct damage, then explode
+				for (j = 0; j < MAX_CARS; j++)
+				{
+					CAR_DATA* cp = &car_data[j];
+
+					if (cp == p->owner || cp->controlType == 0 ||
+					    cp->ap.carCos == NULL)
+						continue;
+
+					if (cd2WpnPointInCar(cp, &p->pos))
+					{
+						cd2WpnDamageCar(cp, &p->pos, p->def->damage);
+						cd2AoeBlast(&p->pos, p->def->splashRadius,
+							p->def->splashDamage, p->def->explosionEffect, cp);
+						p->active = 0;
+						break;
+					}
+				}
 			}
 		}
 
