@@ -74,7 +74,14 @@
 					//    anything but reverse - the root of the reversing)
 #define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
+#define CD2_AI_SWERVE_BASE	1400	// clearance at which it starts leaning around a wall
+#define CD2_AI_SWERVE_PER_SPEED	7	// ...plus this much per unit/frame of speed
+#define CD2_AI_SWERVE_GAP		450	// clearance difference that decides which way to go
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
+#define CD2_AI_STEER_DIV_SPEED	55	// extra divisor per unit/frame of speed: the gain
+					//    has to fall off with speed, or a fixed gain
+					//    overshoots every frame and the car weaves down
+					//    a straight road instead of tracking it.
 #define CD2_AI_EVADE_FRAMES	85	// ~1.5 s of evasive driving
 #define CD2_AI_HURT_FLEE	8000	// totalDamage above which it breaks off (rare)
 #define CD2_AI_FIRE_RANGE	9000	// MG range when pursuing
@@ -102,15 +109,19 @@
 					//    accelerating, which reads as timidity. 120 gets
 					//    there in ~35 frames (0.6s).
 #define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
-#define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
+#define CD2_AI_PIVOT_SPEED	150	// only pivot below this forward speed (units/frame).
+					//    Was 70, so it had to be almost stopped before it
+					//    would use the tight turn at all.
 #define CD2_AI_REVERSE_TICKS	12	// frames of reversing after getting stuck (a nudge,
 					//    not a manoeuvre: prefer stopping and pivoting)
 #define CD2_AI_STUCK_TICKS	70	// frames with no forward progress before reversing
 #define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
 #define CD2_AI_WP_REACH		700	// route waypoints within this are "reached" and skipped
-#define CD2_AI_LOOKAHEAD_MIN	900	// pure-pursuit lookahead at a standstill
-#define CD2_AI_LOOKAHEAD_MAX	4200	// pure-pursuit lookahead cap
-#define CD2_AI_LOOKAHEAD_PER_SPEED 8	// extra lookahead per unit/frame of speed
+#define CD2_AI_LOOKAHEAD_MIN	1400	// pure-pursuit lookahead at a standstill
+#define CD2_AI_LOOKAHEAD_MAX	6000	// pure-pursuit lookahead cap
+#define CD2_AI_LOOKAHEAD_PER_SPEED 12	// extra lookahead per unit/frame of speed. At 2500 a
+					//    car doing 200/frame aims barely a car length
+					//    ahead and saws at the wheel down a straight.
 #define CD2_AI_SEPARATE_RANGE	5200	// start spreading out within this of another opponent
 #define CD2_AI_SEPARATE_CLOSE	2600	// ease off the throttle if packed this tight
 #define CD2_AI_SEPARATE_STEER	120	// steering nudge away from a nearby opponent
@@ -123,6 +134,9 @@
 #define CD2_AI_BRAKE_SPEED	360	// forward speed above which it brakes instead of pivoting
 #define CD2_AI_ENGAGE_TICKS	900	// frames of sustained aggression before breaking off,
 					//    after which it goes travelling for ROAM_TICKS.
+#define CD2_AI_ROAM_INTERRUPT	3500	// a traveller still fights anything this close, so a
+					//    roam leg means going somewhere rather than
+					//    ignoring the car in front of it.
 #define CD2_AI_ROAM_TICKS	1500	// frames spent roaming/hunting for weapons
 #define CD2_AI_ROAM_JITTER	440	// random extra roam frames (so they desync)
 #define CD2_AI_STATE_TICKS	145	// frames between behaviour re-decisions
@@ -811,11 +825,13 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			want = CD2_AI_FLEE;
 			sFleeCooldown = CD2_AI_FLEE_COOLDOWN + cd2AiRand(CD2_AI_FLEE_COOLDOWN / 2);
 		}
-		else if (sRoamTicks > 0)
+		else if (sRoamTicks > 0 &&
+		         !(targetId >= 0 && targetD2 < (long long)CD2_AI_ROAM_INTERRUPT * CD2_AI_ROAM_INTERRUPT))
 		{
-			// Just came off a fight. Travel - and deliberately do NOT re-acquire
-			// a target while this runs, or it locks straight back on and never
-			// goes anywhere.
+			// Just came off a fight. Travel, and deliberately do NOT re-acquire a
+			// distant target while this runs, or it locks straight back on and
+			// never goes anywhere. Anything INSIDE the interrupt range is a
+			// different matter - it fights that, then carries on travelling.
 			want = CD2_AI_ROAM;
 		}
 		else if (targetId >= 0 && targetD2 < (long long)engage * engage)
@@ -1341,18 +1357,34 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		thrust = 0;
 		sSteer = steer;
 	}
+	else if (ABS(diff) > CD2_AI_PIVOT_DIFF && ABS(speedFwd) > CD2_AI_PIVOT_SPEED)
+	{
+		// --- the same acute turn, taken at speed: brake into it AND engage
+		// the tight turn. Steering alone at this heading error just runs wide
+		// into whatever is on the outside of the corner. ---
+		thrust = -CD2_TMB_THRUST / 2;
+		steer = (diff >= 0) ? CD2_STEER_MAX : -CD2_STEER_MAX;
+		sSteer = steer;
+		cd2CarSetAiPivot(cp, (diff >= 0) ? 1 : -1);
+	}
 	else
 	{
 		// --- normal steering ---
-		steer = diff / CD2_AI_STEER_DIV;
+		// Speed-scaled gain: a constant gain overshoots the heading every
+		// frame at speed, and that is what reads as weaving on a straight.
+		steer = diff / (CD2_AI_STEER_DIV + ABS(speedFwd) / CD2_AI_STEER_DIV_SPEED);
 
-		// obstacle avoidance: steer around scenery/wall dead ahead
-		if (clearAhead == 0)
+		// Obstacle avoidance driven by the MEASURED clearance rather than a
+		// blocked/clear flag. The flag only went false once the wall was inside
+		// one probe step (~450 units, about two frames of travel), so the swerve
+		// was arriving far too late to be a dodge. The threshold scales with
+		// speed, the same way the stopping distance does.
+		if (freeAhead < CD2_AI_SWERVE_BASE + ABS(speedFwd) * CD2_AI_SWERVE_PER_SPEED)
 		{
-			if (clearL && !clearR)
-				steer += CD2_AI_AVOID_STEER;
-			else if (clearR && !clearL)
-				steer -= CD2_AI_AVOID_STEER;
+			if (freeL > freeR + CD2_AI_SWERVE_GAP)
+				steer += CD2_AI_AVOID_STEER;	// more room to the left
+			else if (freeR > freeL + CD2_AI_SWERVE_GAP)
+				steer -= CD2_AI_AVOID_STEER;	// more room to the right
 			else
 				steer += (steer >= 0) ? CD2_AI_AVOID_STEER : -CD2_AI_AVOID_STEER;
 		}
