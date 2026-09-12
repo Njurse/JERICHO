@@ -447,6 +447,9 @@ int cd2CarTopSpeed(void* cp);
 // scale a damage value by a percentage (shared with the weapon core)
 int cd2ScaleDamage(int value, int pct);
 
+// scenery impacts taken by `car` this level (observability for the AI)
+int cd2SceneryHits(void* car);
+
 int cd2CarTotaled(void* cp);
 
 // Exported for the AI (ai/): request (dir = +1/-1) or clear (0) an acute

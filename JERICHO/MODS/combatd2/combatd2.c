@@ -54,6 +54,7 @@ void cd2WeaponsRegister(JERICHO_CONTEXT* ctx);
 
 CD2_CONFIG gCd2Cfg;
 static CD2_CAR gCd2Car[MAX_CARS];
+static int gCd2SceneryHits[MAX_CARS];	// scenery impacts per car this level
 static unsigned int gDbgFrame; // telemetry frame counter
 static char gPendingTotalCar;   // set by the pause-menu "Total Car", applied next physics frame
 
@@ -634,6 +635,7 @@ static int cd2OnGameStart(void* ud, void* args)
 	(void)args;
 
 	memset(gCd2Respawn, 0, sizeof(gCd2Respawn));
+	memset(gCd2SceneryHits, 0, sizeof(gCd2SceneryHits));
 
 	return JER_RESULT_CONTINUE;
 }
@@ -668,6 +670,17 @@ int cd2ScaleDamage(int value, int pct)
 	return (value * pct) / 100;
 }
 
+// Scenery impacts taken by `car` this level (see cd2OnDamageScale).
+int cd2SceneryHits(void* vcp)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return 0;
+
+	return gCd2SceneryHits[cp->id];
+}
+
 // Scenery (building/wall) damage scale: soften the damage a car takes from
 // hitting solid objects (the momentum-absorbing walls make these hits bite
 // hard). Fired from DamageCar (bcollide.c) before ApplyDamage.
@@ -685,7 +698,14 @@ static int cd2OnDamageScale(void* ud, void* args)
 	// an opponent that keeps clipping walls needs the extra cushion, or a
 	// single corner ends its run
 	if (cd2AiIsOpponent(a->car))
+	{
 		a->result = cd2ScaleDamage(a->result, gCd2Cfg.aiDamageTaken);
+
+		// count real scenery impacts per car, so "they keep smashing into
+		// walls" can be measured rather than guessed at
+		if (((CAR_DATA*)a->car)->id >= 0 && ((CAR_DATA*)a->car)->id < MAX_CARS)
+			gCd2SceneryHits[((CAR_DATA*)a->car)->id]++;
+	}
 
 	if (gCd2Cfg.debugLog)
 	{

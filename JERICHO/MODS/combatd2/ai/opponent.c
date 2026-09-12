@@ -57,16 +57,28 @@
 #define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
 #define CD2_AI_REVERSE_TICKS	42	// frames of reversing after getting stuck
-#define CD2_AI_STUCK_TICKS	12	// frames with no forward progress before reversing
+#define CD2_AI_STUCK_TICKS	8	// frames with no forward progress before reversing
 #define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
 #define CD2_AI_WP_REACH		700	// route waypoints within this are "reached" and skipped
 #define CD2_AI_WANDER_LEG	6000	// wander goal distance along the wander heading
 #define CD2_AI_NEAR_LOOK	780	// base imminent-collision probe distance
 #define CD2_AI_LOOK_PER_SPEED	14	// extra probe distance per unit/frame of speed
 #define CD2_AI_BRAKE_SPEED	60	// forward speed above which it brakes instead of pivoting
-#define CD2_AI_ENGAGE_TICKS	300	// frames of sustained aggression before breaking off
+#define CD2_AI_ENGAGE_TICKS	420	// frames of sustained aggression before breaking off
 #define CD2_AI_ROAM_TICKS	300	// frames spent roaming/hunting for weapons
 #define CD2_AI_ROAM_JITTER	240	// random extra roam frames (so they desync)
+#define CD2_AI_STATE_TICKS	45	// frames between behaviour re-decisions
+#define CD2_AI_MIN_STATE_TICKS	150	// minimum frames any new behaviour is held
+#define CD2_AI_IDLE_TICKS	90	// frames near-standstill before it must get moving
+#define CD2_AI_IDLE_SPEED	25	// forward speed counted as "sitting still"
+
+#define CD2_AI_FAN_RAYS		5	// rays in the forward scenery fan
+#define CD2_AI_FAN_STEPS	5	// length samples along each ray
+#define CD2_AI_STOP_FRAMES	22	// frames of travel the AI keeps in hand
+#define CD2_AI_GOVERN_SLACK	0	// speed grace before the governor bites
+#define CD2_AI_SIDE_MARGIN	1600	// clearance gap before it biases steering
+#define CD2_AI_SIDE_BIAS	384	// heading nudge away from the closer wall
+#define CD2_AI_NEAR_BLOCK_MIN	700	// room below which a wall counts as imminent at any speed
 
 // committed imminent-collision responses (hysteresis in cd2AiDrive)
 enum { CD2_AI_AVOID_NONE = 0, CD2_AI_AVOID_BRAKE, CD2_AI_AVOID_PIVOT };
@@ -86,6 +98,9 @@ typedef struct CD2_AI_CAR
 	int avoidCycles;	// consecutive avoid activations (escalates to reverse)
 	int engageTicks;	// frames of the current aggressive burst
 	int roamTicks;	// >0 while roaming (hit-and-run break-off period)
+	int logTick;		// per-opponent debug log throttle
+	int hold;		// frames a behaviour must be held before switching
+	int idle;		// consecutive frames spent near-standstill
 	int lastDamage, hits;
 	CD2_NAV_ROUTE route;
 } CD2_AI_CAR;
@@ -352,6 +367,9 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	int threatFlag = 0, blockedAhead = 0;
 	int speedFwd = 0, pivotDir = 0;
 	int clearAhead = 0, clearL = 0, clearR = 0, nearBlocked = 0, dodgeDir = 0;
+	int freeRun[CD2_AI_FAN_RAYS], freeL = 0, freeR = 0, freeAhead = 0;
+	int probeStep = 0;	// length of one fan segment (governor uses it as margin)
+	int governed = 0;
 	int targetId = -1;
 	long long targetD2 = 0;
 	VECTOR carV, goalV, targetV;
@@ -372,6 +390,9 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #define sAvoidCycles	A->avoidCycles
 #define sEngageTicks	A->engageTicks
 #define sRoamTicks	A->roamTicks
+#define sLogTick2	A->logTick
+#define sHold		A->hold
+#define sIdle		A->idle
 #define sLastDamage	A->lastDamage
 #define sHits		A->hits
 #define sRoute		A->route
@@ -465,25 +486,57 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	{
 		sState = gCd2Cfg.aiForceState;
 	}
+	else if (sHold > 0)
+	{
+		// minimum dwell: a freshly chosen behaviour sticks, so it can't ping-pong
+		sHold--;
+		sStateTimer = CD2_AI_STATE_TICKS;
+	}
 	else if (--sStateTimer <= 0)
 	{
+		int want;
+
 		if (sRoamTicks > 0)
 		{
 			// hit-and-run: mid-break-off it roams (looking for weapons or a
 			// better angle) rather than locking straight back on
-			sState = CD2_AI_WANDER;
+			want = CD2_AI_WANDER;
 		}
 		else if (targetId >= 0 && targetD2 < (long long)CD2_AI_HUNT_RANGE * CD2_AI_HUNT_RANGE)
 		{
 			// aggressive: pursue unless badly hurt, and break off only then
-			sState = (cp->totalDamage > CD2_AI_HURT_FLEE) ? CD2_AI_FLEE : CD2_AI_HUNT;
+			want = (cp->totalDamage > CD2_AI_HURT_FLEE) ? CD2_AI_FLEE : CD2_AI_HUNT;
 		}
 		else
 		{
-			sState = CD2_AI_WANDER;
+			want = CD2_AI_WANDER;
 		}
 
-		sStateTimer = 30;
+		if (want != sState)
+			sHold = CD2_AI_MIN_STATE_TICKS;
+
+		sState = want;
+		sStateTimer = CD2_AI_STATE_TICKS;
+	}
+
+	// --- never park. Sitting still just makes it a target: short stops to
+	// pivot or line up a shot are fine, a long idle is not. ---
+	if (ABS(speedFwd) < CD2_AI_IDLE_SPEED && sReverse == 0 && sEvade == 0)
+		++sIdle;
+	else
+		sIdle = 0;
+
+	if (sIdle > CD2_AI_IDLE_TICKS)
+	{
+		sIdle = 0;
+		sRoamTicks = CD2_AI_ROAM_TICKS;
+		sWanderHeading = (sWanderHeading + 1200 + Random2(1200)) & 0xfff;
+		sAvoid = CD2_AI_AVOID_NONE;
+		sAvoidTicks = 0;
+		sReverse = CD2_AI_REVERSE_TICKS;	// back out of whatever is holding it
+
+		if (gCd2Cfg.debugLog)
+			printInfo("[combatd2] AI car=%d idle too long - moving out\n", cp->id);
 	}
 
 	// --- run-and-gun rhythm: hit hard for a burst, then break off and roam
@@ -625,39 +678,57 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	speedFwd = (int)(((long long)fx * FIXEDH(cp->st.n.linearVelocity[0])
 			+ (long long)fz * FIXEDH(cp->st.n.linearVelocity[2])) >> 12);
 
-	// --- scenery probes: far (route planning) + near (imminent collision).
-	// The near probe and the two angled near probes grow with speed: a fast car
-	// has to see a wall much further out or it is already on top of it. ---
+	// --- scenery probes: a fan of rays whose CLEAR LENGTH is measured, not just
+	// blocked/clear. Knowing how much room it actually has is what lets the AI
+	// ease off and lean away from a wall instead of discovering it on contact.
+	// The fan reaches the full look-ahead, subdivided so the lengths are usable.
 	{
-		VECTOR carPos, ahead, nearP, leftP, rightP, nearL, nearR;
-		int nearLook = CD2_AI_NEAR_LOOK + speedFwd * CD2_AI_LOOK_PER_SPEED;
+		static const int fanOff[CD2_AI_FAN_RAYS] = { 900, 450, 0, -450, -900 };
+		VECTOR carPos;
+		int segLen = CD2_AI_LOOK / CD2_AI_FAN_STEPS;
+		int i, seg;
 
-		if (nearLook > CD2_AI_LOOK)
-			nearLook = CD2_AI_LOOK;
+		if (segLen < 1)
+			segLen = 1;
+
+		probeStep = segLen;
 
 		cd2AiCarPos(cp, &carPos);
-		cd2AiPointAt(cp, cp->hd.direction, CD2_AI_LOOK, &ahead);
-		cd2AiPointAt(cp, cp->hd.direction, nearLook, &nearP);
-		cd2AiPointAt(cp, cp->hd.direction + CD2_AI_PROBE_ANG, CD2_AI_LOOK, &leftP);
-		cd2AiPointAt(cp, cp->hd.direction - CD2_AI_PROBE_ANG, CD2_AI_LOOK, &rightP);
-		cd2AiPointAt(cp, cp->hd.direction + CD2_AI_PROBE_ANG, nearLook, &nearL);
-		cd2AiPointAt(cp, cp->hd.direction - CD2_AI_PROBE_ANG, nearLook, &nearR);
 
-		clearAhead = lineClear(&carPos, &ahead);
-		clearL = lineClear(&carPos, &leftP);
-		clearR = lineClear(&carPos, &rightP);
-		nearBlocked = (lineClear(&carPos, &nearP) == 0);
+		for (i = 0; i < CD2_AI_FAN_RAYS; i++)
+		{
+			int len = 0;
 
-		// a wall just off the nose, on either side, is imminent too - and it
-		// tells the dodge which way to go
-		if (lineClear(&carPos, &nearL) == 0 && lineClear(&carPos, &nearR) == 0)
-			nearBlocked = 1;
-		else if (lineClear(&carPos, &nearL) == 0)
-			clearL = 0;
-		else if (lineClear(&carPos, &nearR) == 0)
-			clearR = 0;
+			for (seg = 1; seg <= CD2_AI_FAN_STEPS; seg++)
+			{
+				VECTOR p;
+				int d = seg * segLen;
 
-		blockedAhead = (clearAhead == 0);
+				cd2AiPointAt(cp, cp->hd.direction + fanOff[i], d, &p);
+
+				if (lineClear(&carPos, &p) == 0)
+					break;		// this ray stops here
+
+				len = d;
+			}
+
+			freeRun[i] = len;
+		}
+
+		freeAhead = freeRun[2];
+		freeL = (freeRun[0] > freeRun[1]) ? freeRun[0] : freeRun[1];
+		freeR = (freeRun[3] > freeRun[4]) ? freeRun[3] : freeRun[4];
+
+		clearAhead = (freeAhead > 0);
+		clearL = (freeL > 0);
+		clearR = (freeR > 0);
+		blockedAhead = (freeAhead == 0);
+
+		// imminent when the room left is less than the room it needs to stop -
+		// or less than a car length, which catches the pinned case (stopped
+		// against a wall: speed 0, room 0, where the speed test alone is false)
+		nearBlocked = (freeAhead < ABS(speedFwd) * CD2_AI_STOP_FRAMES) ||
+		              (freeAhead < CD2_AI_NEAR_BLOCK_MIN);
 	}
 
 	// --- imminent-collision response with hysteresis. Preference order: swerve
@@ -671,8 +742,8 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	else if (nearBlocked)
 	{
 		// Pivoting in place next to a wall never clears the probe on its own, so
-		// after a couple of failed cycles back off instead of livelocking.
-		if (++sAvoidCycles > 2)
+		// after one failed cycle back off rather than scrape along the wall.
+		if (++sAvoidCycles > 1)
 		{
 			sReverse = CD2_AI_REVERSE_TICKS;
 			sAvoidCycles = 0;
@@ -718,8 +789,8 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		sStuck = 0;
 	}
 
-	// escape toward the clearer side (default to the right when both are equal)
-	dodgeDir = (clearL && !clearR) ? 1 : ((clearR && !clearL) ? -1 : 1);
+	// escape toward whichever side has more measured clearance
+	dodgeDir = (freeL >= freeR) ? 1 : -1;
 
 	pivotDir = 0;
 
@@ -798,8 +869,17 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			steer += (side > 0) ? -CD2_AI_AVOID_STEER : CD2_AI_AVOID_STEER;
 		}
 
-		steer = jer_clamp_int(steer, -CD2_STEER_MAX, CD2_STEER_MAX);
+		// bias the heading away from whichever side is walled in, so it leans
+		// off a wall well before the fan shows one dead ahead
+		if (freeAhead < CD2_AI_LOOK)
+		{
+			if (freeL > freeR + CD2_AI_SIDE_MARGIN)
+				steer += CD2_AI_SIDE_BIAS;
+			else if (freeR > freeL + CD2_AI_SIDE_MARGIN)
+				steer -= CD2_AI_SIDE_BIAS;
+		}
 
+		steer = jer_clamp_int(steer, -CD2_STEER_MAX, CD2_STEER_MAX);
 		// rate-limit the steering so an oscillating heading error can't slam
 		// the wheel full-lock one way then the other every frame (the "twitch")
 		if (steer > sSteer + CD2_AI_STEER_RATE)
@@ -809,10 +889,28 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 
 		sSteer = steer;
 
+		// proactive speed governor: judge the room ahead conservatively - the
+		// probes are only fine to one segment, so assume a wall could be at the
+		// near edge of the last clear one - and shed speed BEFORE the wall
+		// instead of arriving on it at full tilt
+		{
+			int room = freeAhead - probeStep;
+
+			if (room < 0)
+				room = 0;
+
+			if (speedFwd > room / CD2_AI_STOP_FRAMES + CD2_AI_GOVERN_SLACK)
+				governed = 1;
+		}
+
 		// --- throttle ---
 		thrust = CD2_TMB_THRUST;
 
-		if (sEvade == 0)
+		if (governed)
+		{
+			thrust = -CD2_TMB_THRUST;	// brake: no room to carry this speed
+		}
+		else if (sEvade == 0)
 		{
 			if (ABS(diff) > 1700)
 				thrust = CD2_TMB_THRUST / 3;
@@ -882,10 +980,10 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		sDbg.hits = sHits;
 	}
 
-	if (gCd2Cfg.debugLog && (sLogTick++ % 60) == 0)
-		printInfo("[combatd2] AI car=%d %s state=%s dmg=%d hits=%d spd=%d steer=%d rev=%d pivot=%d avoid=%d threat=%d wall=%d\n",
-			cp->id, cd2AiRoleNameOf(sRole), cd2AiStateName(), cp->totalDamage, sHits, speedFwd, sSteer,
-			(sReverse > 0) ? 1 : 0, pivotDir, sAvoid, threatFlag, blockedAhead);
+	if (gCd2Cfg.debugLog && (sLogTick2++ % 60) == 0)
+		printInfo("[combatd2] AI car=%d %s state=%s dmg=%d hits=%d walls=%d spd=%d steer=%d rev=%d pivot=%d avoid=%d gov=%d free=%d threat=%d wall=%d\n",
+			cp->id, cd2AiRoleNameOf(sRole), cd2AiStateName(), cp->totalDamage, sHits, cd2SceneryHits(cp),
+			speedFwd, sSteer, (sReverse > 0) ? 1 : 0, pivotDir, sAvoid, governed, freeAhead, threatFlag, blockedAhead);
 
 #undef sState
 #undef sStateTimer
@@ -902,6 +1000,9 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #undef sAvoidCycles
 #undef sEngageTicks
 #undef sRoamTicks
+#undef sLogTick2
+#undef sHold
+#undef sIdle
 #undef sLastDamage
 #undef sHits
 #undef sRoute
