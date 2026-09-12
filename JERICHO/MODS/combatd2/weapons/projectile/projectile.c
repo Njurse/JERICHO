@@ -192,12 +192,13 @@ void cd2ProjectileStep(void)
 			for (s = 0; s < steps && p->active; s++)
 			{
 				int j;
+				VECTOR stepPrev = p->pos;
 
 				p->pos.vx += p->vel.vx / steps;
 				p->pos.vy += p->vel.vy / steps;
 				p->pos.vz += p->vel.vz / steps;
 
-				// car hit (skip the shooter): direct damage, then explode
+				// vehicle hit (skip the shooter): direct damage + blast NOW
 				for (j = 0; j < MAX_CARS; j++)
 				{
 					CAR_DATA* cp = &car_data[j];
@@ -215,26 +216,29 @@ void cd2ProjectileStep(void)
 						break;
 					}
 				}
+
+				if (!p->active)
+					break;
+
+				// scenery hit on this sub-step -> detonate on the wall
+				if (p->def->collideScenery && lineClear(&stepPrev, &p->pos) == 0)
+				{
+					cd2ProjectileExplode(p);
+					break;
+				}
+
+				// ground hit on this sub-step
+				gh = MapHeight(&p->pos);
+				if (gh != 0 && p->pos.vy <= gh + 24)
+				{
+					cd2ProjectileExplode(p);
+					break;
+				}
 			}
 		}
 
 		if (!p->active)
 			continue;
-
-		// scenery collision (buildings/walls) -> detonate on the wall
-		if (p->def->collideScenery && lineClear(&p->prev, &p->pos) == 0)
-		{
-			cd2ProjectileExplode(p);
-			continue;
-		}
-
-		// ground hit
-		gh = MapHeight(&p->pos);
-		if (gh != 0 && p->pos.vy <= gh + 24)
-		{
-			cd2ProjectileExplode(p);
-			continue;
-		}
 
 		// max range
 		if (p->travelled >= p->def->range)

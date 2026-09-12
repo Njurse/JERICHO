@@ -384,15 +384,14 @@ static int cd2WpnOnFrame(void* ud, void* args)
 				player[p].horn.on = 0;
 	}
 
-	// simulate every class's live instances first (they fly on regardless
-	// of whether a player car exists)
-	cd2RaycastStep();
-	cd2ProjectileStep();
-	cd2DropStep();
-
 	if (!cd2WpnPlayerCar(&cp))
 	{
 		prevRT = prevLB = prevRB = 0;
+
+		// no player car: nothing to fire, but live shots keep flying
+		cd2RaycastStep();
+		cd2ProjectileStep();
+		cd2DropStep();
 		return JER_RESULT_CONTINUE;
 	}
 
@@ -471,6 +470,12 @@ static int cd2WpnOnFrame(void* ud, void* args)
 	prevRT = rt;
 	prevLB = lb;
 	prevRB = rb;
+
+	// advance the live shots AFTER the fire pass so a shot fired this frame
+	// registers its first move + impact immediately (not one frame late)
+	cd2RaycastStep();
+	cd2ProjectileStep();
+	cd2DropStep();
 
 	return JER_RESULT_CONTINUE;
 }

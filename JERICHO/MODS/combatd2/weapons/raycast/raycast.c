@@ -109,13 +109,14 @@ void cd2RaycastStep(void)
 
 		for (s = 0; s < steps && r->active; s++)
 		{
-			int j;
+			int j, gh;
+			VECTOR stepPrev = r->pos;
 
 			r->pos.vx += r->vel.vx / steps;
 			r->pos.vy += r->vel.vy / steps;
 			r->pos.vz += r->vel.vz / steps;
 
-			// car hit (skip the shooter)
+			// vehicle hit (skip the shooter): run the impact code now
 			for (j = 0; j < MAX_CARS; j++)
 			{
 				CAR_DATA* cp = &car_data[j];
@@ -136,26 +137,23 @@ void cd2RaycastStep(void)
 			if (!r->active)
 				break;
 
-			// ground hit
+			// scenery hit on this sub-step (walls stop the bullet immediately,
+			// before anything behind them)
+			if (r->def->collideScenery && lineClear(&stepPrev, &r->pos) == 0)
 			{
-				int gh = MapHeight(&r->pos);
-
-				if (gh != 0 && r->pos.vy <= gh + 8)
-				{
-					cd2WpnMark(&r->pos, 200, 200, 200);
-					r->active = 0;
-					break;
-				}
+				cd2WpnMark(&r->pos, 210, 210, 210);
+				r->active = 0;
+				break;
 			}
-		}
 
-		// scenery collision (buildings/walls): the depth-segment test the
-		// engine's pathfinder/look code uses (0 = blocked)
-		if (r->active && r->def->collideScenery &&
-		    lineClear(&r->prev, &r->pos) == 0)
-		{
-			cd2WpnMark(&r->pos, 210, 210, 210);
-			r->active = 0;
+			// ground hit
+			gh = MapHeight(&r->pos);
+			if (gh != 0 && r->pos.vy <= gh + 8)
+			{
+				cd2WpnMark(&r->pos, 200, 200, 200);
+				r->active = 0;
+				break;
+			}
 		}
 
 		if (r->active && r->travelled >= r->def->range)
