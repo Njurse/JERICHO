@@ -565,6 +565,20 @@ void DamageCar(CAR_DATA *cp, CDATA2D *cd, CRET2D *collisionResult, int strikeVel
 				value >>= 1;
 		}
 
+		// JERICHO-HOOK: scenery (building/wall) damage scale. A module can
+		// soften the damage a car takes from hitting solid objects; 4096 =
+		// stock, no handler = stock.
+		{
+			JER_ARGS_DAMAGE_SCALE jerDmg;
+
+			jerDmg.car = cp;
+			jerDmg.result = 4096;
+			jer_fire(JER_EVENT_GET_DAMAGE_SCALE, &jerDmg);
+
+			if (jerDmg.result < 4096)
+				value = (int)(((long long)value * jerDmg.result) >> 12);
+		}
+
 		ApplyDamage(cp, region, value, 0);
 		CollisionSound(player_id, cp, impact, 0);
 	}

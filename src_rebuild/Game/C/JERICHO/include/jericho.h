@@ -133,6 +133,12 @@ enum
 				   live -- modules draw world-space extras
 				   (projectiles, pickups) into the real OT */
 
+	JER_EVENT_GET_DAMAGE_SCALE,	/* query: scale 0..4096 (4096 = stock) applied
+				   to the damage a car takes from hitting solid
+				   scenery (buildings/walls), fired in DamageCar
+				   (bcollide.c) before ApplyDamage (see
+				   JER_ARGS_DAMAGE_SCALE) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

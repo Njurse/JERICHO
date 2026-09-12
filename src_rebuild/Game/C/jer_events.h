@@ -473,4 +473,14 @@ typedef struct JER_ARGS_LEVEL_LAUNCH
 	int missionNumber;	/* in/out: computed mission (gCurrentMissionNumber) */
 } JER_ARGS_LEVEL_LAUNCH;
 
+/* JER_EVENT_GET_DAMAGE_SCALE — query: scale (0..4096; 4096 = stock) applied to
+ * the damage a car takes from hitting solid scenery (buildings/walls), fired in
+ * DamageCar (bcollide.c) just before ApplyDamage. A module returning a lower
+ * value softens scenery hits. No handler = stock (4096). */
+typedef struct JER_ARGS_DAMAGE_SCALE
+{
+	void* car;	/* CAR_DATA* */
+	int result;	/* in/out: damage scale, 4096 = stock */
+} JER_ARGS_DAMAGE_SCALE;
+
 #endif /* JERICHO_JER_EVENTS_H */
