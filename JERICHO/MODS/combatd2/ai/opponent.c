@@ -98,6 +98,8 @@ static CD2_AI_CAR* cd2AiSlot(int carId)
 	return NULL;
 }
 
+extern void DrawTargetBlip(VECTOR* pos, unsigned char r, unsigned char g, unsigned char b, int flags);
+
 static int cd2AiSqrt(int v)
 {
 	int r = 0;
@@ -1057,12 +1059,51 @@ const char* cd2AiStateName(void)
 	return names[s];
 }
 
+// JER_EVENT_DRAW_MAP: plot every opponent on the overhead/fullscreen map, so
+// they are easy to keep track of. Colour is per role.
+static int cd2AiOnDrawMap(void* ud, void* args)
+{
+	JER_ARGS_DRAW_MAP* a = (JER_ARGS_DRAW_MAP*)args;
+	int i;
+	(void)ud;
+
+	if (!gCd2Cfg.enabled || !gCd2Cfg.aiOpponent)
+		return JER_RESULT_CONTINUE;
+
+	for (i = 0; i < CD2_AI_MAX; i++)
+	{
+		int id = sAi[i].carId;
+		VECTOR p;
+		unsigned char r, g, b;
+
+		if (id < 0 || id >= MAX_CARS)
+			continue;
+
+		p.vx = car_data[id].hd.where.t[0];
+		p.vy = car_data[id].hd.where.t[1];
+		p.vz = car_data[id].hd.where.t[2];
+
+		switch (sAi[i].role)
+		{
+			case CD2_AI_ROLE_FLANKER:   r = 255; g = 160; b = 0;   break;
+			case CD2_AI_ROLE_AMBUSHER:  r = 200; g = 60;  b = 255; break;
+			case CD2_AI_ROLE_HARVESTER: r = 60;  g = 255; b = 60;  break;
+			default:                    r = 255; g = 40;  b = 40;  break;
+		}
+
+		DrawTargetBlip(&p, r, g, b, a->flags);
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
 void cd2AiRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2AiOnFrame, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2AiOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2AiOnCarStep, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PAD, cd2AiOnCarPad, NULL, -1);
+	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_MAP, cd2AiOnDrawMap, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, cd2AiOnOverlay, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WORLD, cd2AiOnDrawWorld, NULL, 2);
 
