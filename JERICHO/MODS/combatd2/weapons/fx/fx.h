@@ -38,6 +38,7 @@ enum
 	CD2_FX_CLUSTER,			// cluster parent: deep orange
 	CD2_FX_BOMBLET,			// cluster sub-blast: small orange
 	CD2_FX_WRECK,			// dying car: spectacular but NO damage/collision
+	CD2_FX_ZOOMY,			// zoomy missile: small, cool blue
 	CD2_FX_COUNT
 };
 

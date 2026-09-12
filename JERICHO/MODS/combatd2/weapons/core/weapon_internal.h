@@ -74,6 +74,13 @@ void cd2RaycastSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		     const VECTOR* from, const VECTOR* dir);
 void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 			const VECTOR* from, const VECTOR* vel, const VECTOR* dir);
+
+// Volley launcher (zoomy missiles): spawns `count` projectiles of `def`,
+// `interval` frames apart, re-aimed from `shooter` each shot so the burst
+// trails the car. The pool tracks the volley; if all of them land on a car,
+// the last to land delivers def->volleyBonusDamage / volleyBonusKnock.
+void cd2ProjectileBurst(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
+			int count, int interval);
 void cd2DropSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		  const VECTOR* from, const VECTOR* vel);
 
@@ -97,5 +104,6 @@ extern const CD2_WEAPON_DEF cd2WdefMissile;	// projectile/missile.c
 extern const CD2_WEAPON_DEF cd2WdefMine;	// drops/mine.c
 extern const CD2_WEAPON_DEF cd2WdefHoming;	// projectile/homing.c
 extern const CD2_WEAPON_DEF cd2WdefCluster;	// projectile/cluster.c
+extern const CD2_WEAPON_DEF cd2WdefZoomy;	// projectile/zoomy.c
 
 #endif /* CD2_WEAPON_INTERNAL_H */

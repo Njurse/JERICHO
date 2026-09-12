@@ -36,6 +36,12 @@
 #define CD2_PROJ_SUBSTEP	48	// world units per sub-step (tunneling guard)
 #define CD2_PROJ_MAX_SUBSTEP	12
 
+// Volley tracking (zoomy missiles): a burst of shots that all share one
+// group. If every member lands on a car, the last one to land deals a bonus.
+#define CD2_MAX_BURSTS		4	// concurrent bursts
+#define CD2_MAX_VOLLEYS		4	// concurrent volleys (burst -> volley 1:1)
+#define CD2_VOLLEY_TTL		600	// frames a volley waits before it expires
+
 typedef struct CD2_PROJECTILE
 {
 	int active;
@@ -46,9 +52,40 @@ typedef struct CD2_PROJECTILE
 	VECTOR vel;	// world units / frame
 	VECTOR dir;	// unit*4096 travel direction (model orientation)
 	int travelled;
+	int volley;	// index into gVolley (-1 = an ordinary shot)
+	int vseq;	// this shot's position in the burst
+	int vgen;	// gVolley slot generation (guards against slot reuse)
 } CD2_PROJECTILE;
 
 static CD2_PROJECTILE gProj[CD2_MAX_PROJECTILES];
+
+// A burst in progress: spawns one projectile every `interval` frames.
+typedef struct CD2_PROJ_BURST
+{
+	int active;
+	int framesLeft;		// frames until the next spawn
+	int remaining;		// shots still to spawn
+	int interval;
+	int seq;		// next shot's sequence number
+	int volley;		// gVolley slot the members join (-1 = none)
+	const CD2_WEAPON_DEF* def;
+	const CAR_DATA* shooter;
+} CD2_PROJ_BURST;
+
+static CD2_PROJ_BURST gBurst[CD2_MAX_BURSTS];
+
+// A volley group: how many shots it has, how many have landed on a car.
+typedef struct CD2_VOLLEY
+{
+	int active;
+	int count;		// shots in the volley
+	int landed;		// shots that hit a car
+	int ttl;
+	int gen;		// bumped on (re)use so stale members are ignored
+} CD2_VOLLEY;
+
+static CD2_VOLLEY gVolley[CD2_MAX_VOLLEYS];
+static int sVolleyGen;		// monotonic volley generation
 
 // model lookup cache (reset per level; resolved after the level's models are
 // loaded, at first draw)
@@ -153,12 +190,20 @@ void cd2ProjectileReset(void)
 	for (i = 0; i < CD2_MAX_PROJECTILES; i++)
 		gProj[i].active = 0;
 
+	for (i = 0; i < CD2_MAX_BURSTS; i++)
+		gBurst[i].active = 0;
+
+	for (i = 0; i < CD2_MAX_VOLLEYS; i++)
+		gVolley[i].active = 0;
+
 	sMissileModel = NULL;
 	sMissileModelTried = 0;
 }
 
-void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
-			const VECTOR* from, const VECTOR* vel, const VECTOR* dir)
+// core spawn: volley / vseq tag the shot as a member of a burst (-1 = none)
+static void cd2ProjectileSpawnEx(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
+			const VECTOR* from, const VECTOR* vel, const VECTOR* dir,
+			int volley, int vseq)
 {
 	int i;
 	VECTOR carVel;
@@ -187,8 +232,17 @@ void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		p->vel.vz = vel->vz + carVel.vz;
 		p->dir = *dir;
 		p->travelled = 0;
+		p->volley = volley;
+		p->vseq = vseq;
+		p->vgen = (volley >= 0) ? gVolley[volley].gen : 0;
 		return;
 	}
+}
+
+void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
+			const VECTOR* from, const VECTOR* vel, const VECTOR* dir)
+{
+	cd2ProjectileSpawnEx(def, shooter, from, vel, dir, -1, 0);
 }
 
 // The impact: the parent blast always plays, then a barrage weapon (the
@@ -212,7 +266,15 @@ static void cd2ProjectileImpact(CD2_PROJECTILE* p, const CAR_DATA* carHit, const
 
 static void cd2ProjectileExplode(CD2_PROJECTILE* p)
 {
+	int v = p->volley;
+	int vg = p->vgen;
+
 	cd2ProjectileImpact(p, NULL, p->owner);
+
+	// a volley member that did NOT hit a car means the "all landed" bonus can
+	// never trigger, so retire the group
+	if (v >= 0 && gVolley[v].active && gVolley[v].gen == vg)
+		gVolley[v].active = 0;
 }
 
 // Integer square root (Newton on the bit pattern); the engine's own helpers
@@ -296,7 +358,13 @@ static void cd2ProjectileSeek(CD2_PROJECTILE* p)
 		return;
 
 	{
-		int t = CD2_PROJ_HOME_TURN;
+		// per-weapon homing strength (def->homingRate; 0 = the default). The
+		// zoomy missiles pass a very small rate for a weak, lazy track.
+		int t = (p->def->homingRate > 0) ? p->def->homingRate : CD2_PROJ_HOME_TURN;
+
+		if (t > 1024) t = 1024;
+		if (t < 1) t = 1;
+
 		long long nx = ((long long)p->vel.vx * (1024 - t)) / vm + ((long long)dx * t) / dm;
 		long long ny = ((long long)p->vel.vy * (1024 - t)) / vm + ((long long)dy * t) / dm;
 		long long nz = ((long long)p->vel.vz * (1024 - t)) / vm + ((long long)dz * t) / dm;
@@ -332,9 +400,123 @@ static void cd2ProjectileSeek(CD2_PROJECTILE* p)
 	}
 }
 
+void cd2ProjectileBurst(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
+			int count, int interval)
+{
+	int i, bi = -1, vi = -1;
+
+	if (def == NULL || count <= 0)
+		return;
+
+	if (count > CD2_MAX_PROJECTILES)
+		count = CD2_MAX_PROJECTILES;
+
+	if (interval < 1)
+		interval = 1;
+
+	for (i = 0; i < CD2_MAX_BURSTS; i++)
+	{
+		if (!gBurst[i].active)
+		{
+			bi = i;
+			break;
+		}
+	}
+
+	if (bi < 0)
+		return;		// all burst slots busy
+
+	for (i = 0; i < CD2_MAX_VOLLEYS; i++)
+	{
+		if (!gVolley[i].active)
+		{
+			vi = i;
+			break;
+		}
+	}
+
+	if (vi >= 0)
+	{
+		gVolley[vi].active = 1;
+		gVolley[vi].count = count;
+		gVolley[vi].landed = 0;
+		gVolley[vi].ttl = CD2_VOLLEY_TTL;
+		gVolley[vi].gen = ++sVolleyGen;
+	}
+
+	gBurst[bi].active = 1;
+	gBurst[bi].framesLeft = 0;	// first shot leaves immediately
+	gBurst[bi].remaining = count;
+	gBurst[bi].interval = interval;
+	gBurst[bi].seq = 0;
+	gBurst[bi].volley = vi;
+	gBurst[bi].def = def;
+	gBurst[bi].shooter = shooter;
+
+	if (gCd2Cfg.debugLog)
+		printInfo("[combatd2] volley start: %s x%d every %d frames (volley=%d)\n",
+			def->name, count, interval, vi);
+}
+
+// Spawn the next shot of every in-flight burst: the pool staggers a volley's
+// launch (re-aimed from the shooter) instead of firing all at once.
+static void cd2ProjBurstStep(void)
+{
+	int i;
+
+	for (i = 0; i < CD2_MAX_BURSTS; i++)
+	{
+		CD2_PROJ_BURST* b = &gBurst[i];
+		VECTOR muzzle, dir, vel;
+
+		if (!b->active)
+			continue;
+
+		if (b->framesLeft > 0)
+		{
+			b->framesLeft--;
+			continue;
+		}
+
+		// the shooter must still exist; the burst trails it frame by frame
+		if (b->shooter == NULL || b->shooter->controlType == CONTROL_TYPE_NONE ||
+		    b->shooter->ap.carCos == NULL)
+		{
+			b->active = 0;
+			continue;
+		}
+
+		cd2WpnMuzzle(b->shooter, 0, &muzzle);
+		cd2WpnForward(b->shooter, &dir);
+
+		vel.vx = (int)(((long long)dir.vx * b->def->speed) >> 12);
+		vel.vy = (int)(((long long)dir.vy * b->def->speed) >> 12);
+		vel.vz = (int)(((long long)dir.vz * b->def->speed) >> 12);
+
+		cd2ProjectileSpawnEx(b->def, b->shooter, &muzzle, &vel, &dir, b->volley, b->seq);
+
+		b->seq++;
+		b->remaining--;
+
+		if (b->remaining <= 0)
+			b->active = 0;
+		else
+			b->framesLeft = b->interval;
+	}
+}
+
 void cd2ProjectileStep(void)
 {
 	int i;
+
+	// launch any due burst shots, and expire volleys that never completed
+	cd2ProjBurstStep();
+
+	for (i = 0; i < CD2_MAX_VOLLEYS; i++)
+	{
+		if (gVolley[i].active && --gVolley[i].ttl <= 0)
+			gVolley[i].active = 0;
+	}
 
 	for (i = 0; i < CD2_MAX_PROJECTILES; i++)
 	{
@@ -383,9 +565,38 @@ void cd2ProjectileStep(void)
 
 					if (cd2WpnPointInCar(cp, &p->pos))
 					{
+						int v = p->volley;
+						int vg = p->vgen;
+						VECTOR at = p->pos;
+						VECTOR kdir = p->vel;
+
 						cd2WpnDamageCar(cp, &p->pos, p->def->damage);
 						cd2WpnKnock(cp, &p->pos, &p->vel, p->def->damage);
 						cd2ProjectileImpact(p, cp, cp);
+
+						// volley bookkeeping: every member that lands on a car counts;
+						// the shot that completes the set (all landed) deals the bonus
+						if (v >= 0 && gVolley[v].active && gVolley[v].gen == vg)
+						{
+							gVolley[v].landed++;
+
+							if (gCd2Cfg.debugLog)
+								printInfo("[combatd2] volley land %d/%d car=%d\n",
+									gVolley[v].landed, gVolley[v].count, cp->id);
+
+							if (gVolley[v].landed >= gVolley[v].count)
+							{
+								cd2WpnDamageCar(cp, &at, p->def->volleyBonusDamage);
+								cd2WpnKnock(cp, &at, &kdir, p->def->volleyBonusKnock);
+
+								if (gCd2Cfg.debugLog)
+									printInfo("[combatd2] volley COMPLETE %d/%d bonus dmg=%d car=%d\n",
+										gVolley[v].landed, gVolley[v].count,
+										p->def->volleyBonusDamage, cp->id);
+
+								gVolley[v].active = 0;
+							}
+						}
 						break;
 					}
 				}

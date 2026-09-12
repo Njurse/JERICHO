@@ -55,6 +55,8 @@ static const CD2_FX_DEF gFxDefs[] =
 	// a dying car: big and fiery (spectacular) but collide = 0 so it only
 	// looks the part — no push, no damage (the user asked for exactly this)
 	{ CD2_FX_WRECK,   "WRECK",   BIG_BANG,	90,   6000,  6000,  4096,    0,      40,    -1, -1, -1 },
+	// zoomy missile hits: deliberately small (the weapon is a spray)
+	{ CD2_FX_ZOOMY,   "ZOOMY",   LITTLE_BANG, 230, 950,   950,   2048,    0,      260,   140, 230, 255 },
 };
 
 #define CD2_FX_DEF_COUNT (int)(sizeof(gFxDefs) / sizeof(gFxDefs[0]))

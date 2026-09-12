@@ -46,6 +46,7 @@ enum
 	CD2_WID_MINE,		// hidden drop
 	CD2_WID_HOMING,		// primary (projectile) that homes in
 	CD2_WID_CLUSTER,	// primary (projectile): impact bursts into bomblets
+	CD2_WID_ZOOMY,		// primary (projectile): a burst of weakly-homing shots
 	CD2_WID_COUNT,
 	CD2_WID_NONE = -1
 };
@@ -85,6 +86,10 @@ typedef struct CD2_WEAPON_DEF
 				// (0 = use the stock explosionEffect above). See
 				// weapons/fx/fx.h. Themed so a hit reads as its weapon.
 	int homing;		// 1 = the shot steers itself toward a target
+	int homingRate;		// homing turn per frame (fraction of 1024 blended,
+				// same units as CD2_PROJ_HOME_TURN); 0 = use the
+				// default. Lower = weaker (the seeker's default 340;
+				// "extremely weak" is ~40).
 	int collideScenery;	// 1 = shots stop on buildings/scenery (default ON)
 
 	// -------------------------------------------------------------------
@@ -100,6 +105,17 @@ typedef struct CD2_WEAPON_DEF
 	int barrageRadius;	// burst blast radius (0 = FX only, no damage)
 	int barrageDamage;	// burst blast damage at centre
 	int barrageStick;	// 1 = stick the burst to a hit car's hit point
+
+	// -------------------------------------------------------------------
+	// Volley (zoomy missiles): when burstCount > 0 the trigger launches that
+	// many projectiles, burstInterval frames apart (the projectile pool runs
+	// the burst). If ALL of them land on a car, the last to land deals
+	// volleyBonusDamage and a volleyBonusKnock-sized shove.
+	// -------------------------------------------------------------------
+	int burstCount;		// projectiles per trigger (0 = single shot)
+	int burstInterval;	// frames between burst projectiles
+	int volleyBonusDamage;	// bonus damage the final landing shot deals
+	int volleyBonusKnock;	// bonus knockback strength for that final shot
 
 	int colR, colG, colB;	// draw colour
 
