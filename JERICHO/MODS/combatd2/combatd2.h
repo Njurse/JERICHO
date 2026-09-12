@@ -347,6 +347,15 @@ enum
 	CD2_AI_STATE_COUNT
 };
 
+// ---- pursuit theme --------------------------------------------------------
+// When set to 1, combatd2 forces the in-game music onto the "pursuit" segment
+// of the current track -- the tune the game plays while cops chase you
+// (FunkUpDaBGMTunez(1) -> Song_SetPos = xm_coptrackpos[current_music_id]).
+// Set to 0 to leave the music to the stock cop/felony logic.
+#ifndef CD2_ENFORCE_PURSUIT_MUSIC
+#define CD2_ENFORCE_PURSUIT_MUSIC 1
+#endif
+
 typedef struct CD2_CONFIG
 {
 	int enabled;

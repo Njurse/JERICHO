@@ -500,6 +500,22 @@ static int cd2OnDamageScale(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+#if CD2_ENFORCE_PURSUIT_MUSIC
+// Force the music onto the "pursuit" segment each frame (see
+// CD2_ENFORCE_PURSUIT_MUSIC). FunkUpDaBGMTunez is idempotent, so this just
+// re-asserts the pursuit tune if the stock cop/felony logic switched it off.
+static int cd2OnFramePursuit(void* ud, void* args)
+{
+	(void)ud;
+	(void)args;
+
+	if (gCd2Cfg.enabled)
+		FunkUpDaBGMTunez(1);
+
+	return JER_RESULT_CONTINUE;
+}
+#endif
+
 // CAR_STEP: capture the raw throttle BEFORE the stock wheel-force code can
 // change it. AddWheelForcesDriver1 -> GetFrictionScalesDriver1 forces
 // cp->thrust = 0 while the handbrake is held (so the handbrake alone would
@@ -1252,6 +1268,10 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW, cd2OnCarDraw, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_DAMAGE_SCALE, cd2OnDamageScale, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DEBUG_TICK, cd2OnDebugTick, NULL, 0);
+
+#if CD2_ENFORCE_PURSUIT_MUSIC
+	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFramePursuit, NULL, 0);
+#endif
 
 	jer_pause_menu_register(&cd2Menu);
 
