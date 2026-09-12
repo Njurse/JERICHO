@@ -21,6 +21,7 @@
 #include "cosmetic.h"
 #include "civ_ai.h"
 #include "players.h"
+#include "mission.h"	// residentCarModels: the per-level loaded-car table
 #include "objcoll.h"
 #include "convert.h"
 #include "system.h"
@@ -40,20 +41,20 @@
 #include <string.h>
 #include <stdio.h>
 
-#define CD2_AI_SPAWN_OFFSET	300	// how far beside the player to spawn
-	#define CD2_AI_ENGAGE_RANGE	9000	// close to this and it commits to a fight
-	#define CD2_AI_ENGAGE_KEEP		18000	// ...and stays committed out to here (hysteresis)
-	#define CD2_AI_DISPERSE_TICKS	420	// how long the opening spread lasts
-	#define CD2_AI_DISPERSE_LEG		26000	// how far the opening spread drives
-	#define CD2_AI_ROAM_MIN			18000	// roam goal: nearest acceptable road node
-	#define CD2_AI_ROAM_MAX			70000	// roam goal: furthest acceptable road node
-	#define CD2_AI_GOAL_TICKS		2400	// frames before a roam goal is re-picked
-#define CD2_AI_LOOK		2560	// look-ahead probe distance
+#define CD2_AI_SPAWN_OFFSET	900	// how far beside the player to spawn
+#define CD2_AI_ENGAGE_RANGE	3000	// close to this and it commits to a fight
+#define CD2_AI_ENGAGE_KEEP		18000	// ...and stays committed out to here (hysteresis)
+#define CD2_AI_DISPERSE_TICKS	420	// how long the opening spread lasts
+#define CD2_AI_DISPERSE_LEG		26000	// how far the opening spread drives
+#define CD2_AI_ROAM_MIN			800	// roam goal: nearest acceptable road node
+#define CD2_AI_ROAM_MAX			70000	// roam goal: furthest acceptable road node
+#define CD2_AI_GOAL_TICKS		240	// frames before a roam goal is re-picked
+#define CD2_AI_LOOK		480	// look-ahead probe distance
 #define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
 #define CD2_AI_EVADE_FRAMES	85	// ~1.5 s of evasive driving
-#define CD2_AI_HURT_FLEE	11000	// totalDamage above which it breaks off (rare)
+#define CD2_AI_HURT_FLEE	8000	// totalDamage above which it breaks off (rare)
 #define CD2_AI_FIRE_RANGE	9000	// MG range when pursuing
 #define CD2_AI_FIRE_CONE	420	// heading error it will still fire through
 #define CD2_AI_FIRE_COOLDOWN	1	// frames between AI MG shots
@@ -94,7 +95,7 @@
 #define CD2_AI_FAN_STEPS	5	// length samples along each ray
 #define CD2_AI_STOP_FRAMES	60	// frames of travel the AI keeps in hand
 #define CD2_AI_GOVERN_SLACK	0	// speed grace before the governor bites
-#define CD2_AI_SIDE_MARGIN	1600	// clearance gap before it biases steering
+#define CD2_AI_SIDE_MARGIN	250	// clearance gap before it biases steering
 #define CD2_AI_SIDE_BIAS	384	// heading nudge away from the closer wall
 #define CD2_AI_NEAR_BLOCK_MIN	350	// room below which a wall counts as imminent at any speed
 
@@ -153,6 +154,22 @@ static int cd2AiCone(const CD2_WEAPON_DEF* d)
 		return 0;
 
 	return (d->fireCone > 0) ? d->fireCone : CD2_AI_FIRE_CONE;
+}
+
+// Random2() is a pure function of the frame counter, so every call made in the
+// SAME frame returns the same value. All the opponents spawn on one frame, so
+// they were all drawing the identical "random" model and colour. Mix in a
+// per-caller salt (each spawner's index) to break the tie within a frame.
+static int cd2AiRandSalt(int n, int salt)
+{
+	unsigned int mix;
+
+	if (n <= 0)
+		return 0;
+
+	mix = (unsigned int)salt * 2654435761u;
+
+	return (int)(((unsigned int)Random2(n) ^ (mix >> 7)) % (unsigned int)n);
 }
 
 static CD2_AI_CAR* cd2AiSlot(int carId)
@@ -314,30 +331,51 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 	// road-node snapping and no CheckPingOut() reset when it leaves the road
 	// graph, which is what made the civ-AI car fidget in place.
 	//
-	// Random car model for variety - but only among slots THIS level actually
-	// loaded: a level can use fewer than MAX_CAR_RESIDENT_MODELS, and an unused
-	// slot has NULL model pointers, which faults while drawing.
+	// --- car and colour variety, chosen from what this level actually loaded.
+	//
+	// InitCar's model argument is a SLOT index (0..MAX_CAR_RESIDENT_MODELS-1)
+	// into the per-level resident-car tables - NOT a global model id. A level
+	// need not use every slot, and an unused slot has NULL model pointers which
+	// fault the moment the car is drawn or dented. The engine's own traffic
+	// spawner guards on exactly this (civ_ai.c PingInCivCar: if
+	// gCarCleanModelPtr[model] == NULL, bail). So ENUMERATE the loaded slots
+	// instead of guessing one at random, which is why every opponent previously
+	// came out as the player's car.
 	{
-		int model = pcp->ap.model;
-		int k;
+		int loaded[MAX_CAR_RESIDENT_MODELS];
+		int n = 0;
+		int model, palette = 0;
+		int i;
 
-		for (k = 0; k < 10; k++)
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 		{
-			int m = cd2AiRand(MAX_CAR_RESIDENT_MODELS);
-
-			if (gCarCleanModelPtr[m] != NULL && gCarDamModelPtr[m] != NULL)
-			{
-				model = m;
-				break;
-			}
+			if (gCarCleanModelPtr[i] != NULL && gCarDamModelPtr[i] != NULL &&
+			    i != pcp->ap.model)
+				loaded[n++] = i;
 		}
 
-		InitCar(slot, pcp->hd.direction, &pos, CONTROL_TYPE_CUTSCENE, model, pcp->ap.palette, &cd2AiPadId);
+		if (n == 0)
+			model = pcp->ap.model;		// the only car this level loaded
+		else
+			model = loaded[cd2AiRandSalt(n, index + 1)];
+
+		// Palette 0..5 for the recolourable civ bodies, 0 for single-palette
+		// ones (cop / special); index 0 is the original colour. Same rule the
+		// engine applies in PingInCivCar. NPC scar palette: a CUTSCENE car DOES
+		// take InitCar's palette argument - only CIV_AI overrides it from
+		// extraData, which is why ours never varied.
+		if (residentCarModels[model] != 0 && residentCarModels[model] <= 4)
+			palette = cd2AiRandSalt(6, index * 31 + 17);
+
+		InitCar(slot, pcp->hd.direction, &pos, CONTROL_TYPE_CUTSCENE, model, palette, &cd2AiPadId);
 
 		chosenModel = model;
-	}
+		chosenPalette = car_data[slot->id].ap.palette;
 
-	chosenPalette = pcp->ap.palette;
+		if (gCd2Cfg.debugLog)
+			printInfo("[combatd2] AI car variety: slot=%d ext=%d palette=%d (%d other loaded slots)\n",
+				model, residentCarModels[model], chosenPalette, n);
+	}
 
 	// claim an AI slot for it
 	{
