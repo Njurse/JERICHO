@@ -343,6 +343,11 @@ typedef struct CD2_CONFIG
 	int tmbTight;      // 0/1: which face button is Tight Turn (0=Cross/bottom, 1=Square/left)
 	int debugLog;      // 0/1: log player-car input/velocity telemetry to REDRIVER2.log
 	int allWeapons;    // 0/1: test grant - spawn with every weapon at max capacity
+
+	// missile presentation
+	char missileModel[24]; // model name for the missile body ("" = line fallback)
+	int missileScale;      // fixed point model scale (4096 = 1x)
+	int missileSound;      // SOUND_BANK_SFX sample played on missile launch
 } CD2_CONFIG;
 
 typedef struct CD2_CAR

@@ -389,6 +389,19 @@ static int cd2WpnOnFrame(void* ud, void* args)
 
 	pad = Pads[(unsigned char)*cp->ai.padid].mapped;
 
+	if (gCd2Cfg.debugLog)
+	{
+		static int probed = 0;
+
+		if (!probed)
+		{
+			probed = 1;
+			printInfo("[combatd2] missile model '%s' resolved=%d scale=%d sound=%d\n",
+				gCd2Cfg.missileModel, cd2ProjectileModelValid(),
+				gCd2Cfg.missileScale, gCd2Cfg.missileSound);
+		}
+	}
+
 	lt = (pad & CD2_WPN_FIRE_BASE) ? 1 : 0;
 	rt = (pad & CD2_WPN_FIRE_SEL) ? 1 : 0;
 	rb = (pad & CD2_WPN_NEXT) ? 1 : 0;

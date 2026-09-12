@@ -36,10 +36,12 @@ static void cd2MissileFire(void* vcp)
 	vel.vy = (int)(((long long)dir.vy * speed) >> 12);
 	vel.vz = (int)(((long long)dir.vz * speed) >> 12);
 
-	cd2ProjectileSpawn(&cd2WdefMissile, cp, &muzzle, &vel);
+	cd2ProjectileSpawn(&cd2WdefMissile, cp, &muzzle, &vel, &dir);
 
-	Start3DSoundVolPitch(-1, SOUND_BANK_SFX, 5,
-		muzzle.vx, muzzle.vy, muzzle.vz, -2000, 4096 + 2048);
+	// distinct launch sound (configurable sample; default 12 = a punchier
+	// SFX than the machine gun's 5)
+	Start3DSoundVolPitch(-1, SOUND_BANK_SFX, gCd2Cfg.missileSound,
+		muzzle.vx, muzzle.vy, muzzle.vz, -1600, 4096 + 1024);
 }
 
 static CD2_WEAPON_DEF cd2MakeMissileDef(void)
@@ -61,8 +63,8 @@ static CD2_WEAPON_DEF cd2MakeMissileDef(void)
 	d.fireInterval = 30;
 
 	d.damage = 900;		// direct hit
-	d.speed = 85;		// world units/frame
-	d.range = 2400;
+	d.speed = 485;		// world units/frame
+	d.range = 10400;
 	d.life = 0;
 
 	d.splashRadius = 500;

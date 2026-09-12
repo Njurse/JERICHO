@@ -63,9 +63,13 @@ void cd2DropDraw(void);
 void cd2RaycastSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		     const VECTOR* from, const VECTOR* dir);
 void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
-			const VECTOR* from, const VECTOR* vel);
+			const VECTOR* from, const VECTOR* vel, const VECTOR* dir);
 void cd2DropSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		  const VECTOR* from, const VECTOR* vel);
+
+// Diagnostic: forces + reports the missile model resolution (1 = a model was
+// found for CD2_CONFIG.missileModel).
+int cd2ProjectileModelValid(void);
 
 // ---------------------------------------------------------------------------
 // Per-weapon defs (one source folder each)

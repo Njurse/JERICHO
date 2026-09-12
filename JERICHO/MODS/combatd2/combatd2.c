@@ -38,6 +38,7 @@
 #include "sound.h"
 #include "gamesnd.h"
 #include "weapons/core/weapon.h"	/* CD2_WEAPON_DEF + inventory API */
+#include <string.h>
 // Registration helpers from the other source files of this (merged) module:
 //   combatd2combat.c — wreck/explosion effects   (cd2CombatRegister)
 //   combatd2media.c   — presentation tuners      (cd2MediaRegister)
@@ -80,6 +81,14 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.debugLog      = jer_config_get_int("combatd2", "debug_log", 0);
 	gCd2Cfg.allWeapons    = jer_config_get_int("combatd2", "all_weapons", 1);
 
+	{
+		const char* mm = jer_config_get_str("combatd2", "missile_model", "BOMB");
+		strncpy(gCd2Cfg.missileModel, (mm != NULL) ? mm : "", sizeof(gCd2Cfg.missileModel) - 1);
+		gCd2Cfg.missileModel[sizeof(gCd2Cfg.missileModel) - 1] = 0;
+	}
+	gCd2Cfg.missileScale  = jer_config_get_int("combatd2", "missile_scale", 4096);
+	gCd2Cfg.missileSound  = jer_config_get_int("combatd2", "missile_sound", 12);
+
 	gCd2Cfg.enabled  = gCd2Cfg.enabled ? 1 : 0;
 	gCd2Cfg.topSpeed = jer_clamp_int(gCd2Cfg.topSpeed, 60, 600);
 	gCd2Cfg.accel    = jer_clamp_int(gCd2Cfg.accel, 1, 24);
@@ -95,6 +104,8 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tmbTight      = gCd2Cfg.tmbTight ? 1 : 0;
 	gCd2Cfg.debugLog      = gCd2Cfg.debugLog ? 1 : 0;
 	gCd2Cfg.allWeapons    = gCd2Cfg.allWeapons ? 1 : 0;
+	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
+	gCd2Cfg.missileSound  = jer_clamp_int(gCd2Cfg.missileSound, 0, 34);
 }
 
 static void cd2SaveConfig(void)
@@ -114,6 +125,9 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "tmb_tight", gCd2Cfg.tmbTight);
 	jer_config_set_int("combatd2", "debug_log", gCd2Cfg.debugLog);
 	jer_config_set_int("combatd2", "all_weapons", gCd2Cfg.allWeapons);
+	jer_config_set_str("combatd2", "missile_model", gCd2Cfg.missileModel);
+	jer_config_set_int("combatd2", "missile_scale", gCd2Cfg.missileScale);
+	jer_config_set_int("combatd2", "missile_sound", gCd2Cfg.missileSound);
 }
 
 static void cd2ApplyPreset(void)
