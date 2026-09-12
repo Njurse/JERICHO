@@ -19,6 +19,7 @@ const char* cd2AiStateName(void);
 
 // Human-readable name of this opponent's role archetype.
 const char* cd2AiRoleName(void);
+const char* cd2AiRoleNameOf(int role);
 
 // Snapshot of the AI's internal decision values, for the on-screen readout /
 // logging ("what is it thinking?").

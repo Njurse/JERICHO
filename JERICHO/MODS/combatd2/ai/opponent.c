@@ -40,9 +40,9 @@
 #include <string.h>
 #include <stdio.h>
 
-#define CD2_AI_SPAWN_OFFSET	900	// how far beside the player to spawn
+#define CD2_AI_SPAWN_OFFSET	300	// how far beside the player to spawn
 #define CD2_AI_HUNT_RANGE	12200	// start hunting within this
-#define CD2_AI_LOOK		10560	// look-ahead probe distance
+#define CD2_AI_LOOK		8560	// look-ahead probe distance
 #define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
@@ -50,16 +50,16 @@
 #define CD2_AI_HURT		12000	// totalDamage above which it flees
 #define CD2_AI_FIRE_RANGE	6600	// MG range when hunting
 #define CD2_AI_FIRE_COOLDOWN	10	// frames between AI MG shots
-#define CD2_AI_STEER_RATE	48	// max wheel_angle change per frame
+#define CD2_AI_STEER_RATE	148	// max wheel_angle change per frame
 #define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
 #define CD2_AI_REVERSE_TICKS	42	// frames of reversing after getting stuck
-#define CD2_AI_STUCK_TICKS	22	// frames with no forward progress before reversing
+#define CD2_AI_STUCK_TICKS	12	// frames with no forward progress before reversing
 #define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
 #define CD2_AI_WP_REACH		700	// route waypoints within this are "reached" and skipped
 #define CD2_AI_WANDER_LEG	6000	// wander goal distance along the wander heading
 #define CD2_AI_NEAR_LOOK	780	// imminent-collision probe distance
-#define CD2_AI_BRAKE_SPEED	90	// forward speed above which it brakes instead of pivoting
+#define CD2_AI_BRAKE_SPEED	200	// forward speed above which it brakes instead of pivoting
 
 // committed imminent-collision responses (hysteresis in cd2AiDrive)
 enum { CD2_AI_AVOID_NONE = 0, CD2_AI_AVOID_BRAKE, CD2_AI_AVOID_PIVOT };
@@ -755,7 +755,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 
 	if (gCd2Cfg.debugLog && (sLogTick++ % 60) == 0)
 		printInfo("[combatd2] AI car=%d %s state=%s dmg=%d hits=%d spd=%d steer=%d rev=%d pivot=%d avoid=%d threat=%d wall=%d\n",
-			cp->id, cd2AiRoleName(), cd2AiStateName(), cp->totalDamage, sHits, speedFwd, sSteer,
+			cp->id, cd2AiRoleNameOf(sRole), cd2AiStateName(), cp->totalDamage, sHits, speedFwd, sSteer,
 			(sReverse > 0) ? 1 : 0, pivotDir, sAvoid, threatFlag, blockedAhead);
 
 #undef sState
@@ -930,15 +930,21 @@ static int cd2AiOnGameStart(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
-const char* cd2AiRoleName(void)
+const char* cd2AiRoleNameOf(int role)
 {
 	static const char* names[] = { "Chaser", "Flanker", "Ambusher", "Harvester" };
-	int r = (sAi[0].carId >= 0) ? sAi[0].role : CD2_AI_ROLE_CHASER;
 
-	if (r < 0 || r >= CD2_AI_ROLE_COUNT)
+	if (role < 0 || role >= CD2_AI_ROLE_COUNT)
 		return "?";
 
-	return names[r];
+	return names[role];
+}
+
+const char* cd2AiRoleName(void)
+{
+	int r = (sAi[0].carId >= 0) ? sAi[0].role : CD2_AI_ROLE_CHASER;
+
+	return cd2AiRoleNameOf(r);
 }
 
 int cd2AiActive(void)
