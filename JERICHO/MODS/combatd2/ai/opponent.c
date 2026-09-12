@@ -41,14 +41,15 @@
 #include <stdio.h>
 
 #define CD2_AI_SPAWN_OFFSET	300	// how far beside the player to spawn
-#define CD2_AI_HUNT_RANGE	12200	// start hunting within this
+#define CD2_AI_HUNT_RANGE	22000	// start pursuing a target within this
 #define CD2_AI_LOOK		8560	// look-ahead probe distance
 #define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
 #define CD2_AI_EVADE_FRAMES	85	// ~1.5 s of evasive driving
-#define CD2_AI_HURT		12000	// totalDamage above which it flees
-#define CD2_AI_FIRE_RANGE	6600	// MG range when hunting
+#define CD2_AI_HURT_FLEE	20000	// totalDamage above which it breaks off (rare)
+#define CD2_AI_FIRE_RANGE	9000	// MG range when pursuing
+#define CD2_AI_FIRE_CONE	420	// heading error it will still fire through
 #define CD2_AI_FIRE_COOLDOWN	10	// frames between AI MG shots
 #define CD2_AI_STEER_RATE	148	// max wheel_angle change per frame
 #define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
@@ -96,6 +97,45 @@ static CD2_AI_CAR* cd2AiSlot(int carId)
 			return &sAi[i];
 
 	return NULL;
+}
+
+// Nearest thing worth attacking: the player, or another opponent. Returns the
+// car id (-1 when alone) and copies its position into *out.
+static int cd2AiFindTarget(CAR_DATA* cp, VECTOR* out)
+{
+	int i, best = -1;
+	long long bestD = 0;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		CAR_DATA* o = &car_data[i];
+		long long dx, dz, d2;
+
+		if (o == cp || o->controlType == CONTROL_TYPE_NONE)
+			continue;
+
+		if (!(o->controlType == CONTROL_TYPE_PLAYER || cd2AiIsOpponent(o)))
+			continue;
+
+		dx = o->hd.where.t[0] - cp->hd.where.t[0];
+		dz = o->hd.where.t[2] - cp->hd.where.t[2];
+		d2 = dx * dx + dz * dz;
+
+		if (best < 0 || d2 < bestD)
+		{
+			bestD = d2;
+			best = i;
+		}
+	}
+
+	if (best >= 0 && out != NULL)
+	{
+		out->vx = car_data[best].hd.where.t[0];
+		out->vy = car_data[best].hd.where.t[1];
+		out->vz = car_data[best].hd.where.t[2];
+	}
+
+	return best;
 }
 
 extern void DrawTargetBlip(VECTOR* pos, unsigned char r, unsigned char g, unsigned char b, int flags);
@@ -279,7 +319,9 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	int threatFlag = 0, blockedAhead = 0;
 	int speedFwd = 0, pivotDir = 0;
 	int clearAhead = 0, clearL = 0, clearR = 0, nearBlocked = 0, dodgeDir = 0;
-	VECTOR carV, goalV;
+	int targetId = -1;
+	long long targetD2 = 0;
+	VECTOR carV, goalV, targetV;
 
 	// this opponent's state, aliased so the body below reads naturally
 #define sState		A->state
@@ -369,6 +411,20 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	if (sEvade > 0)
 		sEvade--;
 
+	// --- pick the nearest target (the player, or another opponent) ---
+	targetV.vx = 0;
+	targetV.vy = 0;
+	targetV.vz = 0;
+	targetId = cd2AiFindTarget(cp, &targetV);
+
+	if (targetId >= 0)
+	{
+		long long tx = targetV.vx - cp->hd.where.t[0];
+		long long tz = targetV.vz - cp->hd.where.t[2];
+
+		targetD2 = tx * tx + tz * tz;
+	}
+
 	// --- base state (forced, or decided from conditions) ---
 	if (gCd2Cfg.aiForceState != CD2_AI_AUTO)
 	{
@@ -376,24 +432,17 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	}
 	else if (--sStateTimer <= 0)
 	{
-		long long d2 = 0;
-
-		if (pcp != NULL)
+		if (targetId >= 0 && targetD2 < (long long)CD2_AI_HUNT_RANGE * CD2_AI_HUNT_RANGE)
 		{
-			long long px = pcp->hd.where.t[0] - cp->hd.where.t[0];
-			long long pz = pcp->hd.where.t[2] - cp->hd.where.t[2];
-			d2 = px * px + pz * pz;
+			// aggressive: pursue unless badly hurt, and break off only then
+			sState = (cp->totalDamage > CD2_AI_HURT_FLEE) ? CD2_AI_FLEE : CD2_AI_HUNT;
+		}
+		else
+		{
+			sState = CD2_AI_WANDER;
 		}
 
-		if (pcp != NULL && cp->totalDamage > CD2_AI_HURT &&
-		    d2 < (long long)CD2_AI_HUNT_RANGE * CD2_AI_HUNT_RANGE)
-			sState = CD2_AI_FLEE;
-		else if (pcp != NULL && d2 < (long long)CD2_AI_HUNT_RANGE * CD2_AI_HUNT_RANGE)
-			sState = CD2_AI_HUNT;
-		else
-			sState = CD2_AI_WANDER;
-
-		sStateTimer = 45;
+		sStateTimer = 30;
 	}
 
 	// --- navigator: goal, route and the shared flow field ---
@@ -402,7 +451,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 
 		if (sRole == CD2_AI_ROLE_HARVESTER)
 			useWander = 1;	// roam for pickups/caches (rally points until they exist)
-		else if (!(sState == CD2_AI_HUNT && pcp != NULL) && !(sState == CD2_AI_FLEE && pcp != NULL))
+		else if (!(sState == CD2_AI_HUNT && targetId >= 0) && !(sState == CD2_AI_FLEE && targetId >= 0))
 			useWander = 1;	// WANDER state
 
 		if (useWander)
@@ -417,34 +466,35 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			goalV.vy = carV.vy;
 			goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_WANDER_LEG) >> 12);
 		}
-		else if (sState == CD2_AI_FLEE && pcp != NULL)
+		else if (sState == CD2_AI_FLEE && targetId >= 0)
 		{
-			// run away: a point mirrored through the car from the player
-			goalV.vx = carV.vx + (carV.vx - pcp->hd.where.t[0]);
+			// break off: a point mirrored through the car from the target
+			goalV.vx = carV.vx + (carV.vx - targetV.vx);
 			goalV.vy = carV.vy;
-			goalV.vz = carV.vz + (carV.vz - pcp->hd.where.t[2]);
+			goalV.vz = carV.vz + (carV.vz - targetV.vz);
 		}
-		else if (pcp != NULL)
+		else if (targetId >= 0)
 		{
-			// hunting: the player, with a role-specific offset
-			int ox = pcp->hd.where.t[0];
-			int oz = pcp->hd.where.t[2];
+			// hunting: the target, with a role-specific offset
+			CAR_DATA* t = &car_data[targetId];
+			int ox = targetV.vx;
+			int oz = targetV.vz;
 
 			if (sRole == CD2_AI_ROLE_FLANKER)
 			{
-				// sweep to the player's right side of travel
-				ox += (int)(((long long)pcp->hd.where.m[0][0] * 2200) >> 12);
-				oz += (int)(((long long)pcp->hd.where.m[2][0] * 2200) >> 12);
+				// sweep to the target's right side of travel
+				ox += (int)(((long long)t->hd.where.m[0][0] * 2600) >> 12);
+				oz += (int)(((long long)t->hd.where.m[2][0] * 2600) >> 12);
 			}
 			else if (sRole == CD2_AI_ROLE_AMBUSHER)
 			{
-				// get ahead of the player and wait
-				ox += (int)(((long long)pcp->hd.where.m[0][2] * 5000) >> 12);
-				oz += (int)(((long long)pcp->hd.where.m[2][2] * 5000) >> 12);
+				// get ahead of the target and wait
+				ox += (int)(((long long)t->hd.where.m[0][2] * 5000) >> 12);
+				oz += (int)(((long long)t->hd.where.m[2][2] * 5000) >> 12);
 			}
 
 			goalV.vx = ox;
-			goalV.vy = pcp->hd.where.t[1];
+			goalV.vy = targetV.vy;
 			goalV.vz = oz;
 		}
 
@@ -703,13 +753,10 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	if (sFireTimer > 0)
 		sFireTimer--;
 
-	if (sState == CD2_AI_HUNT && sEvade == 0 && pcp != NULL && sFireTimer == 0)
+	if (sState == CD2_AI_HUNT && sEvade == 0 && targetId >= 0 && sFireTimer == 0)
 	{
-		long long dx = pcp->hd.where.t[0] - cp->hd.where.t[0];
-		long long dz = pcp->hd.where.t[2] - cp->hd.where.t[2];
-
-		if (dx * dx + dz * dz < (long long)CD2_AI_FIRE_RANGE * CD2_AI_FIRE_RANGE &&
-		    ABS(diff) < 260)
+		if (targetD2 < (long long)CD2_AI_FIRE_RANGE * CD2_AI_FIRE_RANGE &&
+		    ABS(diff) < CD2_AI_FIRE_CONE)
 		{
 			const CD2_WEAPON_DEF* mg = cd2WpnDef(CD2_WID_MG);
 
