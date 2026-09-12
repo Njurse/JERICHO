@@ -128,6 +128,7 @@ void cd2RaycastStep(void)
 				if (cd2WpnPointInCar(cp, &r->pos))
 				{
 					cd2WpnDamageCar(cp, &r->pos, r->def->damage);
+					cd2WpnKnock(cp, &r->pos, &r->vel, r->def->damage);
 					cd2WpnMark(&r->pos, 255, 255, 180);
 					r->active = 0;
 					break;
@@ -174,4 +175,36 @@ void cd2RaycastDraw(void)
 
 		cd2WpnLine(&r->prev, &r->pos, r->def->colR, r->def->colG, r->def->colB);
 	}
+}
+
+int cd2RaycastThreat(const CAR_DATA* car, VECTOR* pos, VECTOR* vel)
+{
+	int i;
+
+	for (i = 0; i < CD2_MAX_RAYCAST; i++)
+	{
+		CD2_RAYCAST* r = &gRcast[i];
+		int dx, dy, dz, dist2, closing;
+
+		if (!r->active || r->owner == car)
+			continue;
+
+		dx = car->hd.where.t[0] - r->pos.vx;
+		dy = car->hd.where.t[1] - r->pos.vy;
+		dz = car->hd.where.t[2] - r->pos.vz;
+		dist2 = dx * dx + dy * dy + dz * dz;
+
+		if (dist2 > CD2_THREAT_RANGE * CD2_THREAT_RANGE)
+			continue;
+
+		closing = r->vel.vx * dx + r->vel.vy * dy + r->vel.vz * dz;
+		if (closing <= 0)
+			continue;
+
+		if (pos != NULL) *pos = r->pos;
+		if (vel != NULL) *vel = r->vel;
+		return 1;
+	}
+
+	return 0;
 }

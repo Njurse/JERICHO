@@ -38,6 +38,7 @@
 #include "sound.h"
 #include "gamesnd.h"
 #include "weapons/core/weapon.h"	/* CD2_WEAPON_DEF + inventory API */
+#include "ai/ai.h"			/* opponent AI (ai/opponent.c) */
 #include <string.h>
 // Registration helpers from the other source files of this (merged) module:
 //   combatd2combat.c — wreck/explosion effects   (cd2CombatRegister)
@@ -81,6 +82,9 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.debugLog      = jer_config_get_int("combatd2", "debug_log", 0);
 	gCd2Cfg.allWeapons    = jer_config_get_int("combatd2", "all_weapons", 1);
 	gCd2Cfg.rollLimit     = jer_config_get_int("combatd2", "roll_limit", CD2_ROLL_LIMIT_DEFAULT);
+	gCd2Cfg.sceneryDamage = jer_config_get_int("combatd2", "scenery_damage", 65);
+	gCd2Cfg.aiOpponent    = jer_config_get_int("combatd2", "ai_opponent", 1);
+	gCd2Cfg.aiForceState  = jer_config_get_int("combatd2", "ai_force_state", CD2_AI_AUTO);
 
 	{
 		const char* mm = jer_config_get_str("combatd2", "missile_model", "BOMB");
@@ -106,6 +110,9 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.debugLog      = gCd2Cfg.debugLog ? 1 : 0;
 	gCd2Cfg.allWeapons    = gCd2Cfg.allWeapons ? 1 : 0;
 	gCd2Cfg.rollLimit     = jer_clamp_int(gCd2Cfg.rollLimit, 0, 89);
+	gCd2Cfg.sceneryDamage = jer_clamp_int(gCd2Cfg.sceneryDamage, 0, 100);
+	gCd2Cfg.aiOpponent    = gCd2Cfg.aiOpponent ? 1 : 0;
+	gCd2Cfg.aiForceState  = jer_clamp_int(gCd2Cfg.aiForceState, 0, CD2_AI_STATE_COUNT - 1);
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
 	gCd2Cfg.missileSound  = jer_clamp_int(gCd2Cfg.missileSound, 0, 34);
 }
@@ -128,6 +135,9 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "debug_log", gCd2Cfg.debugLog);
 	jer_config_set_int("combatd2", "all_weapons", gCd2Cfg.allWeapons);
 	jer_config_set_int("combatd2", "roll_limit", gCd2Cfg.rollLimit);
+	jer_config_set_int("combatd2", "scenery_damage", gCd2Cfg.sceneryDamage);
+	jer_config_set_int("combatd2", "ai_opponent", gCd2Cfg.aiOpponent);
+	jer_config_set_int("combatd2", "ai_force_state", gCd2Cfg.aiForceState);
 	jer_config_set_str("combatd2", "missile_model", gCd2Cfg.missileModel);
 	jer_config_set_int("combatd2", "missile_scale", gCd2Cfg.missileScale);
 	jer_config_set_int("combatd2", "missile_sound", gCd2Cfg.missileSound);
@@ -367,6 +377,127 @@ static void cd2LimitRoll(CAR_DATA* cp)
 		av[0] = 0;
 		av[2] = 0;
 	}
+}
+
+extern void RebuildCarMatrix(RigidBodyState* st, CAR_DATA* cp);
+
+static int cd2RollIsqrt(int v)
+{
+	int r = 0;
+	int bit = 1 << 30;
+
+	if (v <= 0)
+		return 0;
+
+	while (bit > v)
+		bit >>= 2;
+
+	while (bit != 0)
+	{
+		if (v >= r + bit)
+		{
+			v -= r + bit;
+			r = (r >> 1) + bit;
+		}
+		else
+			r >>= 1;
+
+		bit >>= 2;
+	}
+
+	return r;
+}
+
+// Post-physics roll recovery. JER_EVENT_DEBUG_TICK fires at the very end of
+// GlobalTimeStep, after collisions, so this catches a car the crash code has
+// already tipped past the limit: it rotates the car's up axis back toward world
+// up by CD2_ROLL_RECOVER_DEG and kills the tilt rates. Uses the engine's own
+// left-multiply quaternion convention (q += omega (x) q), axis = normalize(carUp
+// x worldUp) = normalize((-cz, 0, cx)).
+static void cd2RecoverRoll(CAR_DATA* cp)
+{
+	MATRIX* w = &cp->hd.where;
+	int cx = w->m[0][1], cy = w->m[1][1], cz = w->m[2][1];
+	int cosLimit, ax, az, len, ang, half, s, c, qx, qz, qw;
+	int ox, oy, oz, ow;
+	int* q = cp->st.n.orientation;
+
+	cosLimit = RCOS((gCd2Cfg.rollLimit * 4096) / 360);
+	if (cy >= cosLimit)
+		return;		// within the allowed lean
+
+	ax = -cz;
+	az = cx;
+	len = cd2RollIsqrt(ax * ax + az * az);
+	if (len < 1)
+		return;		// car is perfectly inverted on its forward axis: n/a
+
+	ax = (int)(((long long)ax * 4096) / len);
+	az = (int)(((long long)az * 4096) / len);
+
+	ang = (CD2_ROLL_RECOVER_DEG * 4096) / 360;
+	half = ang / 2;
+	s = RSIN(half);
+	c = RCOS(half);
+
+	// q_corr = (axis*sin(half), cos(half)) as (x,y,z,w)
+	qx = (int)(((long long)ax * s) >> 12);
+	qz = (int)(((long long)az * s) >> 12);
+	qw = c;
+
+	// q = q_corr (x) q
+	ox = q[0]; oy = q[1]; oz = q[2]; ow = q[3];
+	q[0] = (qw * ox + qx * ow - qz * oy) >> 12;
+	q[1] = (qw * oy - qx * oz + qz * ox) >> 12;
+	q[2] = (qw * oz + qx * oy + qz * ow) >> 12;
+	q[3] = (qw * ow - qx * ox - qz * oz) >> 12;
+
+	cp->st.n.angularVelocity[0] = 0;
+	cp->st.n.angularVelocity[2] = 0;
+
+	RebuildCarMatrix(&cp->st, cp);
+
+	if (gCd2Cfg.debugLog)
+		printInfo("[combatd2] roll recover: car=%d dotUp=%d\n", cp->id, cy);
+}
+
+static int cd2OnDebugTick(void* ud, void* args)
+{
+	int i;
+
+	(void)ud;
+	(void)args;
+
+	if (!gCd2Cfg.enabled || gCd2Cfg.rollLimit <= 0)
+		return JER_RESULT_CONTINUE;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		CAR_DATA* cp = &car_data[i];
+
+		if (cp->controlType == CONTROL_TYPE_NONE)
+			continue;
+
+		cd2RecoverRoll(cp);
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+// Scenery (building/wall) damage scale: soften the damage a car takes from
+// hitting solid objects (the momentum-absorbing walls make these hits bite
+// hard). Fired from DamageCar (bcollide.c) before ApplyDamage.
+static int cd2OnDamageScale(void* ud, void* args)
+{
+	JER_ARGS_DAMAGE_SCALE* a = (JER_ARGS_DAMAGE_SCALE*)args;
+
+	(void)ud;
+
+	if (!gCd2Cfg.enabled)
+		return JER_RESULT_CONTINUE;
+
+	a->result = (gCd2Cfg.sceneryDamage * 4096) / 100;
+	return JER_RESULT_CONTINUE;
 }
 
 // CAR_STEP: capture the raw throttle BEFORE the stock wheel-force code can
@@ -1000,16 +1131,65 @@ static int cd2ToggleWeapon(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+// ---- AI + balance test helpers -------------------------------------------
+static void cd2LabelAi(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Opponent AI: %s", gCd2Cfg.aiOpponent ? "ON" : "OFF");
+}
+
+static int cd2ToggleAi(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gCd2Cfg.aiOpponent = !gCd2Cfg.aiOpponent;
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void cd2LabelAiState(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "AI State: %s", cd2AiStateName());
+}
+
+static int cd2CycleAiState(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gCd2Cfg.aiForceState = (gCd2Cfg.aiForceState + 1) % CD2_AI_STATE_COUNT;
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void cd2LabelScenery(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Scenery Damage: %d%%", gCd2Cfg.sceneryDamage);
+}
+
+static int cd2CycleScenery(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gCd2Cfg.sceneryDamage = (gCd2Cfg.sceneryDamage + 5) % 105;
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 {
 	{ NULL, cd2LabelAllWeapons, cd2ToggleAllWeapons, NULL, NULL, 0 },
 	{ "Grant All Now", NULL, cd2GrantAllNow, NULL, NULL, 0 },
 	{ NULL, cd2LabelWeapon, cd2ToggleWeapon, (void*)(size_t)CD2_WID_MISSILE, NULL, 0 },
 	{ NULL, cd2LabelWeapon, cd2ToggleWeapon, (void*)(size_t)CD2_WID_MINE, NULL, 0 },
+	{ NULL, cd2LabelAi, cd2ToggleAi, NULL, NULL, 0 },
+	{ NULL, cd2LabelAiState, cd2CycleAiState, NULL, NULL, 0 },
+	{ NULL, cd2LabelScenery, cd2CycleScenery, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2WeaponMenu =
-{ "Weapons", cd2WeaponItems, 4 };
+{ "Weapons", cd2WeaponItems, 7 };
 
 static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
 {
@@ -1070,6 +1250,8 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, cd2OnGetWallRestitution, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_PHYSICS_PARAMS, cd2OnPhysicsParams, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW, cd2OnCarDraw, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_DAMAGE_SCALE, cd2OnDamageScale, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_DEBUG_TICK, cd2OnDebugTick, NULL, 0);
 
 	jer_pause_menu_register(&cd2Menu);
 
@@ -1079,6 +1261,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	cd2CombatRegister(ctx);
 	cd2MediaRegister(ctx);
 	cd2WeaponsRegister(ctx);
+	cd2AiRegister(ctx);
 
 	ctx->jer_log(ctx, "[combatd2] registered (SDK v%d)\n", ctx->sdkVersion);
 }

@@ -333,6 +333,19 @@ typedef struct CD2_STATS
 // can't flip it in one frame.
 #define CD2_ROLL_LIMIT_DEFAULT  60       // degrees (0 = off)
 #define CD2_ROLL_MAX_AV         0x200000 // per-axis pitch/roll rate cap (raw)
+#define CD2_ROLL_RECOVER_DEG    6        // post-physics upright correction per frame
+
+// Prototype opponent-AI behaviour states (also CD2_CONFIG.aiForceState; 0 = let
+// the AI pick). See ai/opponent.c.
+enum
+{
+	CD2_AI_AUTO = 0,	// decide from conditions
+	CD2_AI_HUNT,		// chase the player / nearest opponent
+	CD2_AI_FLEE,		// run from the threat
+	CD2_AI_RECOVER,		// heavily damaged: back off, stabilise
+	CD2_AI_WANDER,		// explore (looking for pickups / opponents)
+	CD2_AI_STATE_COUNT
+};
 
 typedef struct CD2_CONFIG
 {
@@ -360,6 +373,10 @@ typedef struct CD2_CONFIG
 	char missileModel[24]; // model name for the missile body ("" = line fallback)
 	int missileScale;      // fixed point model scale (4096 = 1x)
 	int missileSound;      // SOUND_BANK_SFX sample played on missile launch
+
+	int sceneryDamage;     // 0..100: % damage a car takes hitting solid scenery
+	int aiOpponent;        // 0/1: spawn the prototype opponent car
+	int aiForceState;      // CD2_AI_AUTO (0) or a forced CD2_AI_* behaviour
 } CD2_CONFIG;
 
 typedef struct CD2_CAR

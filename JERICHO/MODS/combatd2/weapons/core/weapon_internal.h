@@ -29,6 +29,11 @@ int  cd2WpnPointInCar(const CAR_DATA* cp, const VECTOR* p);
 // direction in the car's local frame).
 void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value);
 
+// Weapon impact "lever action": add reactive angular knockback (world-space
+// angular velocity) based on the impact point's offset from the car centre and
+// the shot direction. `strength` is typically the weapon damage.
+void cd2WpnKnock(CAR_DATA* cp, const VECTOR* at, const VECTOR* dir, int strength);
+
 // The local player's CAR_DATA, or 0 (out untouched) when there is none.
 int  cd2WpnPlayerCar(CAR_DATA** out);
 
@@ -75,6 +80,14 @@ void cd2DropSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 // Diagnostic: forces + reports the missile model resolution (1 = a model was
 // found for CD2_CONFIG.missileModel).
 int cd2ProjectileModelValid(void);
+
+// Weapon-threat queries (opponent-AI evasion): does an active shot, not owned
+// by `car`, sit within CD2_THREAT_RANGE and close in on it? On a hit the
+// nearest threat's position + velocity are written and 1 is returned.
+#define CD2_THREAT_RANGE	2000
+int cd2ProjectileThreat(const CAR_DATA* car, VECTOR* pos, VECTOR* vel);
+int cd2RaycastThreat(const CAR_DATA* car, VECTOR* pos, VECTOR* vel);
+int cd2WpnIncomingThreat(const CAR_DATA* car, VECTOR* pos, VECTOR* vel);
 
 // ---------------------------------------------------------------------------
 // Per-weapon defs (one source folder each)

@@ -150,6 +150,15 @@ void cd2DropStep(void)
 					continue;
 
 				cd2WpnDamageCar(cp, &d->pos, d->def->damage);
+				{
+					// blow the car outward from the mine (impulse direction)
+					VECTOR kdir;
+
+					kdir.vx = cp->hd.where.t[0] - d->pos.vx;
+					kdir.vy = cp->hd.where.t[1] - d->pos.vy;
+					kdir.vz = cp->hd.where.t[2] - d->pos.vz;
+					cd2WpnKnock(cp, &d->pos, &kdir, d->def->damage);
+				}
 				cd2AoeBlast(&d->pos, d->def->splashRadius,
 					d->def->splashDamage, d->def->explosionEffect, cp);
 				d->active = 0;

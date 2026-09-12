@@ -51,6 +51,11 @@
 #define CD2_WPN_NEXT		MPAD_R1	// right bumper: next weapon
 #define CD2_WPN_PREV		MPAD_L1	// left bumper: previous weapon
 
+// Weapon impact knockback tuning (lever action): spin = leverArm * strength *
+// CD2_KNOCK_SCALE, capped at CD2_KNOCK_MAX (world angular-velocity units).
+#define CD2_KNOCK_SCALE		6
+#define CD2_KNOCK_MAX		0x400000
+
 // ---------------------------------------------------------------------------
 // Registry (index == CD2_WID_*)
 // ---------------------------------------------------------------------------
@@ -297,6 +302,95 @@ void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value)
 	else region = (ly > 0) ? 4 : 5;
 
 	ApplyDamage(cp, (char)region, value, 0);
+}
+
+static int cd2Isqrt(int v)
+{
+	int r = 0;
+	int bit = 1 << 30;
+
+	if (v <= 0)
+		return 0;
+
+	while (bit > v)
+		bit >>= 2;
+
+	while (bit != 0)
+	{
+		if (v >= r + bit)
+		{
+			v -= r + bit;
+			r = (r >> 1) + bit;
+		}
+		else
+			r >>= 1;
+
+		bit >>= 2;
+	}
+
+	return r;
+}
+
+// Weapon impact "lever action": the impact point's offset from the car centre
+// (the lever) crossed with the shot direction gives the spin axis, so a shot on
+// a corner pitches/yaws the car while a dead-centre hit barely moves it. `dir`
+// is the impulse direction (the shot's velocity; any magnitude — normalised
+// here). Added straight to the world-space angular velocity, which the engine
+// integrates as q += (omega (*) q).
+void cd2WpnKnock(CAR_DATA* cp, const VECTOR* at, const VECTOR* dir, int strength)
+{
+	const MATRIX* w = &cp->hd.where;
+	int lx = at->vx - w->t[0];
+	int ly = at->vy - w->t[1];
+	int lz = at->vz - w->t[2];
+	int dmag = cd2Isqrt(dir->vx * dir->vx + dir->vy * dir->vy + dir->vz * dir->vz);
+	int* av = cp->st.n.angularVelocity;
+	int dnx, dny, dnz, cxi, cyi, czi, mag, rate, i;
+
+	if (dmag < 1 || strength <= 0)
+		return;
+
+	// unit*4096 shot direction
+	dnx = (int)(((long long)dir->vx * 4096) / dmag);
+	dny = (int)(((long long)dir->vy * 4096) / dmag);
+	dnz = (int)(((long long)dir->vz * 4096) / dmag);
+
+	// cross(lever, dir) >> 12 ~= lever arm (world units) per axis
+	cxi = (int)(((long long)ly * dnz - (long long)lz * dny) >> 12);
+	cyi = (int)(((long long)lz * dnx - (long long)lx * dnz) >> 12);
+	czi = (int)(((long long)lx * dny - (long long)ly * dnx) >> 12);
+
+	mag = cd2Isqrt(cxi * cxi + cyi * cyi + czi * czi);
+	if (mag < 1)
+		return;
+
+	// spin (world) = unit axis * (arm * hit strength * scale)
+	cxi = (int)(((long long)cxi * 4096) / mag);
+	cyi = (int)(((long long)cyi * 4096) / mag);
+	czi = (int)(((long long)czi * 4096) / mag);
+
+	rate = mag * strength * CD2_KNOCK_SCALE;
+	if (rate > CD2_KNOCK_MAX)
+		rate = CD2_KNOCK_MAX;
+
+	av[0] += (int)(((long long)cxi * rate) >> 12);
+	av[1] += (int)(((long long)cyi * rate) >> 12);
+	av[2] += (int)(((long long)czi * rate) >> 12);
+
+	for (i = 0; i < 3; i++)
+		av[i] = jer_clamp_int(av[i], -0x800000, 0x800000);
+}
+
+// Opponent-AI helper: any live hostile shot closing on `car`?
+int cd2WpnIncomingThreat(const CAR_DATA* car, VECTOR* pos, VECTOR* vel)
+{
+	if (cd2ProjectileThreat(car, pos, vel))
+		return 1;
+
+	if (cd2RaycastThreat(car, pos, vel))
+		return 1;
+
+	return 0;
 }
 
 int cd2WpnPlayerCar(CAR_DATA** out)

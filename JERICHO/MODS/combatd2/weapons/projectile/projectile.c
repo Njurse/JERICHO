@@ -109,6 +109,38 @@ int cd2ProjectileModelValid(void)
 	return (cd2MissileModel() != NULL) ? 1 : 0;
 }
 
+int cd2ProjectileThreat(const CAR_DATA* car, VECTOR* pos, VECTOR* vel)
+{
+	int i;
+
+	for (i = 0; i < CD2_MAX_PROJECTILES; i++)
+	{
+		CD2_PROJECTILE* p = &gProj[i];
+		int dx, dy, dz, dist2, closing;
+
+		if (!p->active || p->owner == car)
+			continue;
+
+		dx = car->hd.where.t[0] - p->pos.vx;
+		dy = car->hd.where.t[1] - p->pos.vy;
+		dz = car->hd.where.t[2] - p->pos.vz;
+		dist2 = dx * dx + dy * dy + dz * dz;
+
+		if (dist2 > CD2_THREAT_RANGE * CD2_THREAT_RANGE)
+			continue;
+
+		closing = p->vel.vx * dx + p->vel.vy * dy + p->vel.vz * dz;
+		if (closing <= 0)
+			continue;	// heading away
+
+		if (pos != NULL) *pos = p->pos;
+		if (vel != NULL) *vel = p->vel;
+		return 1;
+	}
+
+	return 0;
+}
+
 void cd2ProjectileReset(void)
 {
 	int i;
@@ -210,6 +242,7 @@ void cd2ProjectileStep(void)
 					if (cd2WpnPointInCar(cp, &p->pos))
 					{
 						cd2WpnDamageCar(cp, &p->pos, p->def->damage);
+						cd2WpnKnock(cp, &p->pos, &p->vel, p->def->damage);
 						cd2AoeBlast(&p->pos, p->def->splashRadius,
 							p->def->splashDamage, p->def->explosionEffect, cp);
 						p->active = 0;
