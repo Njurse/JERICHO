@@ -102,6 +102,15 @@ enum
 	JER_EVENT_CAR_DRAW,		/* car body draw: visual pitch/roll/yaw on the
 								   render matrix (see JER_ARGS_CAR_DRAW) */
 
+	/* Explosion FX (job_fx.c / bomberman.c): a module may attach a
+	 * parametric profile to any AddExplosion slot -- size, tint, spin,
+	 * collision -- and can draw its own explosion mesh. The authoritative
+	 * enum order lives in the game copy (src_rebuild/Game/C/JERICHO);
+	 * this SDK header lists the names modules compile against. */
+	JER_EVENT_EXPLOSION_SPAWN,	/* AddExplosion slot armed (JER_ARGS_EXPLOSION_SPAWN) */
+	JER_EVENT_EXPLOSION_DRAW,	/* explosion drawn (JER_ARGS_EXPLOSION_DRAW) */
+	JER_EVENT_EXPLOSION_COLLIDE,	/* query: push/damage this car? (JER_ARGS_EXPLOSION_COLLIDE) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

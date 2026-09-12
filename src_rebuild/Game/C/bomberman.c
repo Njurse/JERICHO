@@ -17,6 +17,9 @@
 #include "bcollide.h"
 #include "pedest.h"
 
+#include "jericho.h"		// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"		// JERICHO-HOOK: event argument structs
+
 #include "ASM/rndrasm.h"
 
 MODEL* gBombModel;
@@ -221,6 +224,26 @@ void ExplosionCollisionCheck(CAR_DATA *cp, EXOBJECT *pE)
 	LONGVECTOR4 pointVel;
 	LONGVECTOR4 reaction;
 	LONGVECTOR4 lever;
+	int colScale;
+
+	// JERICHO-HOOK: query whether this explosion may push/damage this car and
+	// at what collision-box scale. result defaults to the explosion's own
+	// collide flag; colScale defaults to its box scale (4096 = stock).
+	{
+		JER_ARGS_EXPLOSION_COLLIDE q;
+
+		q.car = cp;
+		q.explosion = pE;
+		q.result = (pE->collide != 0) ? 1 : 0;
+		q.colScale = (pE->colScale > 0) ? pE->colScale : 4096;
+
+		jer_fire(JER_EVENT_EXPLOSION_COLLIDE, &q);
+
+		if (!q.result)
+			return;		// visual-only explosion: no push/damage
+
+		colScale = q.colScale;
+	}
 
 	isCar = (cp != &car_data[TANNER_COLLIDER_CARID]);
 
@@ -290,6 +313,10 @@ void ExplosionCollisionCheck(CAR_DATA *cp, EXOBJECT *pE)
 		cd[0].vel.vx = 0;
 		cd[0].vel.vy = 0;
 		cd[0].vel.vz = 0;
+		// JERICHO-HOOK: scale the collision box (module colScale)
+		if (colScale > 0 && colScale != 4096)
+			cd[0].length[1] = (cd[0].length[1] * colScale) / 4096;
+
 		cd[0].length[0] = cd[0].length[1];
 
 		if (bcollided2d(cd))

@@ -314,6 +314,9 @@ static const char* jerEventName(int event)
 	case JER_EVENT_GET_DAMAGE_SCALE:	return "GET_DAMAGE_SCALE";
 	case JER_EVENT_CAR_VS_CAR:	return "CAR_VS_CAR";
 	case JER_EVENT_DRAW_MAP:	return "DRAW_MAP";
+	case JER_EVENT_EXPLOSION_SPAWN:	return "EXPLOSION_SPAWN";
+	case JER_EVENT_EXPLOSION_DRAW:	return "EXPLOSION_DRAW";
+	case JER_EVENT_EXPLOSION_COLLIDE:return "EXPLOSION_COLLIDE";
 	default:
 		if (event >= JER_EVENT_MODULE_CUSTOM)
 		{

@@ -152,6 +152,22 @@ enum
 				   DrawTargetBlip/DrawPlayerDot using the same
 				   flags (see JER_ARGS_DRAW_MAP) */
 
+	JER_EVENT_EXPLOSION_SPAWN,	/* an explosion slot was armed
+				   (AddExplosion, job_fx.c): a module may
+				   attach a parametric FX profile -- resize
+				   (speed/hscale/rscale), tint, spin rate,
+				   collision on/off -- and rewrite `type`
+				   (see JER_ARGS_EXPLOSION_SPAWN) */
+	JER_EVENT_EXPLOSION_DRAW,	/* an explosion is drawn (DrawExplosion,
+				   job_fx.c): a module may tint/spin the
+				   stock bang, or set override to draw its
+				   own mesh (see JER_ARGS_EXPLOSION_DRAW) */
+	JER_EVENT_EXPLOSION_COLLIDE,	/* query: may this explosion push/damage
+				   this car, and at what box scale
+				   (ExplosionCollisionCheck, bomberman.c).
+				   result 0 = visual only
+				   (see JER_ARGS_EXPLOSION_COLLIDE) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

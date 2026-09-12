@@ -364,7 +364,7 @@ EXPORTS
 	?initOBox@@YAXPEAU_CAR_DATA@@@Z
 	?AddExplosion@@YAXUVECTOR@@H@Z
 	?DrawAllExplosions@@YAXXZ
-	?DrawExplosion@@YAXHUVECTOR@@HH@Z
+	?DrawExplosion@@YAXPEAU_ExOBJECT@@@Z
 	?HandleExplosion@@YAXXZ
 	?InitExObjects@@YAXXZ
 	?initExplosion@@YAXXZ

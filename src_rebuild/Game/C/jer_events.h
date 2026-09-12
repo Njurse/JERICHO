@@ -510,4 +510,67 @@ typedef struct JER_ARGS_DRAW_MAP
 	int fullscreen;		/* 1 = fullscreen map, 0 = overhead map */
 } JER_ARGS_DRAW_MAP;
 
+/* JER_EVENT_EXPLOSION_SPAWN — an explosion slot was just armed in
+ * AddExplosion (job_fx.c). The engine seeds the stock values first; a module
+ * may override ANY of them and/or rewrite `type`. A custom `type` id
+ * (>= 1000) is free for modules to define; the engine has no size defaults for
+ * an unknown type, so a module MUST fill in speed/hscale/rscale for one.
+ *   fxId        : module profile id (out; the engine does not interpret it)
+ *   type        : in/out ExplosionType — rewrite to a stock bang
+ *                 (BIG_BANG / LITTLE_BANG / HEY_MOMMA) to keep the stock
+ *                 sound + collision branches
+ *   speed       : time units added per frame (bigger = shorter life)
+ *   hscale      : vertical mesh scale (1024 small / 4096 big / 16384 huge)
+ *   rscale      : radial mesh scale
+ *   tintR/G/B   : -1 = stock colour, else a 0..255 per-channel tint
+ *   yawRate     : extra spin, PSX angle units per frame (0 = none)
+ *   collide     : 1 = stock car push/damage, 0 = visual only
+ *   colScale    : fixed point collision-box scale (4096 = stock) */
+typedef struct JER_ARGS_EXPLOSION_SPAWN
+{
+	void* pos;	/* VECTOR* (world) — read only */
+	int type;	/* in/out: ExplosionType */
+	int fxId;	/* out: module profile id */
+	int speed;	/* in/out */
+	int hscale;	/* in/out */
+	int rscale;	/* in/out */
+	int tintR;	/* in/out: -1 = stock colour */
+	int tintG;
+	int tintB;
+	int yawRate;	/* in/out */
+	int collide;	/* in/out */
+	int colScale;	/* in/out */
+} JER_ARGS_EXPLOSION_SPAWN;
+
+/* JER_EVENT_EXPLOSION_DRAW — fired once per explosion per frame from
+ * DrawAllExplosions (job_fx.c), with the live camera matrices set. A module
+ * may tint/spin the stock hemisphere, or set `override` to 1 and draw its own
+ * effect (the engine then skips its stock mesh for this explosion). */
+typedef struct JER_ARGS_EXPLOSION_DRAW
+{
+	int time;	/* 0..0xfff life (in) */
+	void* pos;	/* VECTOR* (world) — read only */
+	int hscale;	/* in/out */
+	int rscale;	/* in/out */
+	int tintR;	/* in/out: -1 = stock colour */
+	int tintG;
+	int tintB;
+	int yaw;	/* in/out: extra spin applied this draw (PSX units) */
+	int fxId;	/* in: module profile id */
+	int override;	/* out: 1 = module drew its own, skip the stock mesh */
+} JER_ARGS_EXPLOSION_DRAW;
+
+/* JER_EVENT_EXPLOSION_COLLIDE — query fired in ExplosionCollisionCheck
+ * (bomberman.c) for every (car, explosion) pair. `result` defaults to 1 (the
+ * stock push/damage); colScale scales the collision box (fixed point,
+ * 4096 = stock). Set result = 0 for a visual-only explosion, or a smaller
+ * colScale for a tighter blast. */
+typedef struct JER_ARGS_EXPLOSION_COLLIDE
+{
+	void* car;	/* CAR_DATA* being tested */
+	void* explosion;	/* EXOBJECT* */
+	int result;	/* in/out: 1 = apply the stock push/damage */
+	int colScale;	/* in/out: collision-box scale, 4096 = stock */
+} JER_ARGS_EXPLOSION_COLLIDE;
+
 #endif /* JERICHO_JER_EVENTS_H */

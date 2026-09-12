@@ -9,6 +9,9 @@
 #include "debris.h"
 #include "system.h"
 
+#include "jericho.h"		// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"		// JERICHO-HOOK: event argument structs
+
 #include "ASM/rndrasm.h"
 
 EXOBJECT explosion[MAX_EXPLOSION_OBJECTS];
@@ -85,6 +88,58 @@ void AddExplosion(VECTOR pos, int type)
 		newExplosion->speed = 64;
 		newExplosion->hscale = 16384;
 		newExplosion->rscale = 16384;
+	}
+	else
+	{
+		// a module-defined type: seed the LITTLE_BANG values so the slot
+		// never inherits whatever the previous explosion left in it
+		newExplosion->speed = 192;
+		newExplosion->hscale = 1024;
+		newExplosion->rscale = 1024;
+	}
+
+	// stock FX defaults (no module attached): tint -1 keeps the stock
+	// colour, collide 1 = stock push/damage, colScale 4096 = stock box
+	newExplosion->fxId = 0;
+	newExplosion->tintR = -1;
+	newExplosion->tintG = -1;
+	newExplosion->tintB = -1;
+	newExplosion->fxYaw = 0;
+	newExplosion->collide = 1;
+	newExplosion->colScale = 4096;
+
+	// JERICHO-HOOK: a module may attach a parametric FX profile and rewrite
+	// any of these values. It also gets `type` to rewrite (usually to a stock
+	// bang so the engine's sound/collision branches stay valid).
+	{
+		JER_ARGS_EXPLOSION_SPAWN a;
+
+		a.pos = &newExplosion->pos;
+		a.type = (int)newExplosion->type;
+		a.fxId = 0;
+		a.speed = newExplosion->speed;
+		a.hscale = newExplosion->hscale;
+		a.rscale = newExplosion->rscale;
+		a.tintR = newExplosion->tintR;
+		a.tintG = newExplosion->tintG;
+		a.tintB = newExplosion->tintB;
+		a.yawRate = 0;
+		a.collide = 1;
+		a.colScale = 4096;
+
+		jer_fire(JER_EVENT_EXPLOSION_SPAWN, &a);
+
+		newExplosion->type = (ExplosionType)a.type;
+		newExplosion->fxId = a.fxId;
+		newExplosion->speed = a.speed;
+		newExplosion->hscale = a.hscale;
+		newExplosion->rscale = a.rscale;
+		newExplosion->tintR = a.tintR;
+		newExplosion->tintG = a.tintG;
+		newExplosion->tintB = a.tintB;
+		newExplosion->fxYaw = a.yawRate;
+		newExplosion->collide = a.collide;
+		newExplosion->colScale = a.colScale;
 	}
 
 }
@@ -229,8 +284,14 @@ void initExplosion(void)
 
 
 // [D] [T]
-void DrawExplosion(int time, VECTOR position, int hscale, int rscale)
+void DrawExplosion(EXOBJECT* e)
 {
+	int time = e->time;
+	VECTOR position = e->pos;
+	int hscale = e->hscale;
+	int rscale = e->rscale;
+	int tintR = e->tintR, tintG = e->tintG, tintB = e->tintB;
+	int yaw;
 	int j;
 	POLY_FT4 *poly;
 	SVECTOR *src;
@@ -244,6 +305,40 @@ void DrawExplosion(int time, VECTOR position, int hscale, int rscale)
 	VECTOR v;
 	MATRIX workmatrix;
 	int z;
+
+	// JERICHO-HOOK: a module may tint/spin this explosion, or draw its own
+	// effect and set override (the stock mesh is then skipped). The camera
+	// matrices are live here.
+	{
+		JER_ARGS_EXPLOSION_DRAW a;
+
+		// default spin: fxYaw is PSX angle units per FRAME and `time`
+		// advances by e->speed per frame, so frames elapsed = time / speed
+		yaw = (e->fxYaw != 0 && e->speed > 0) ? (e->fxYaw * (time / e->speed)) : 0;
+
+		a.time = time;
+		a.pos = &e->pos;
+		a.hscale = hscale;
+		a.rscale = rscale;
+		a.tintR = tintR;
+		a.tintG = tintG;
+		a.tintB = tintB;
+		a.yaw = yaw;
+		a.fxId = e->fxId;
+		a.override = 0;
+
+		jer_fire(JER_EVENT_EXPLOSION_DRAW, &a);
+
+		if (a.override)
+			return;		// the module drew this explosion itself
+
+		hscale = a.hscale;
+		rscale = a.rscale;
+		tintR = a.tintR;
+		tintG = a.tintG;
+		tintB = a.tintB;
+		yaw = a.yaw;
+	}
 
 	u0 = *(ushort*)&smoke_texture.coords.u0 + 0x200 | *(ushort*)&smoke_texture.clutid << 0x10;
 	u1 = *(ushort*)&smoke_texture.coords.u1 + 0x200 | (*(ushort*)&smoke_texture.tpageid | 0x20) << 0x10;
@@ -260,6 +355,17 @@ void DrawExplosion(int time, VECTOR position, int hscale, int rscale)
 		transparency | 
 		0x2e000000;
 
+	if (tintR >= 0 || tintG >= 0 || tintB >= 0)
+	{
+		int tr = (rgb >> 16) & 0xff, tg = (rgb >> 8) & 0xff, tb = rgb & 0xff;
+
+		if (tintR >= 0) tr = (tr * tintR) / 255;
+		if (tintG >= 0) tg = (tg * tintG) / 255;
+		if (tintB >= 0) tb = (tb * tintB) / 255;
+
+		rgb = (rgb & 0xff000000) | (tr << 16) | (tg << 8) | tb;
+	}
+
 	Apply_Inv_CameraMatrix(&v);
 	gte_SetTransVector(&v);
 
@@ -269,7 +375,7 @@ void DrawExplosion(int time, VECTOR position, int hscale, int rscale)
 
 	for (i = 0; i < 2; i++)
 	{
-		sf = CameraCnt * (64 - i * 90);
+		sf = CameraCnt * (64 - i * 90) + yaw;
 
 		SS.m[1][1] = FIXED(sf1 * hscale);
 		SS.m[0][0] = FIXEDH(FIXED(sf1 * rscale) * RCOS(sf));
@@ -350,9 +456,20 @@ void DrawExplosion(int time, VECTOR position, int hscale, int rscale)
 			rgb + ((255 - transparency) * (transparency >> 2) + transparency * rgb >> 8) >> 1) << 8 | 
 			rgb | 0x2e000000;
 
+	if (tintR >= 0 || tintG >= 0 || tintB >= 0)
+	{
+		int tr = (rgb >> 16) & 0xff, tg = (rgb >> 8) & 0xff, tb = rgb & 0xff;
+
+		if (tintR >= 0) tr = (tr * tintR) / 255;
+		if (tintG >= 0) tg = (tg * tintG) / 255;
+		if (tintB >= 0) tb = (tb * tintB) / 255;
+
+		rgb = (rgb & 0xff000000) | (tr << 16) | (tg << 8) | tb;
+	}
+
 	for (i = 0; i < 2; i++)
 	{
-		sf = CameraCnt * (i * -90 + 64);
+		sf = CameraCnt * (i * -90 + 64) + yaw;
 	
 		SS.m[1][1] = FIXED(sf2 * hscale);
 		SS.m[0][0] = FIXEDH(FIXED(sf2 * rscale) * RCOS(sf));
@@ -429,7 +546,7 @@ void DrawAllExplosions(void)
 	for (i = 0; i < MAX_EXPLOSION_OBJECTS; i++)
 	{
 		if (explosion[i].time != -1)
-			DrawExplosion(explosion[i].time, explosion[i].pos, explosion[i].hscale, explosion[i].rscale);
+			DrawExplosion(&explosion[i]);
 	}
 }
 

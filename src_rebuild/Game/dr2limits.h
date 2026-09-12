@@ -30,7 +30,10 @@
 #define MAX_PEDESTRIANS			28
 #define MAX_SEATED_PEDS			20
 #define MAX_PLACED_PEDS			15
-#define MAX_EXPLOSION_OBJECTS	5
+// JERICHO: raised from 5 so a weapon barrage (cluster missiles fire 5 delayed
+// bomblets) plus other concurrent impacts do not starve the pool. AddExplosion
+// recycles the oldest slot if it ever fills, so this is a ceiling, not a risk.
+#define MAX_EXPLOSION_OBJECTS	16
 #define MAX_THROWN_BOMBS		5
 #define MAX_MOTION_CAPTURE		24
 

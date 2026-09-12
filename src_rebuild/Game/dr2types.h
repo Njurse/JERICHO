@@ -1247,6 +1247,17 @@ typedef struct _ExOBJECT
 	int rscale;
 	ExplosionType type;
 	VECTOR pos;
+
+	/* JERICHO-HOOK: parametric FX a module may attach to an explosion (see
+	 * JER_EVENT_EXPLOSION_SPAWN / job_fx.c). Every field's zero/NULL value is
+	 * the stock engine behaviour, so a module-free build is unchanged. */
+	int fxId;		/* module profile id (0 = none) */
+	int tintR;		/* -1 = stock colour, else a 0..255 per-channel tint */
+	int tintG;
+	int tintB;
+	int fxYaw;		/* extra spin rate (PSX angle units per frame) */
+	int collide;		/* 1 = stock car push/damage, 0 = visual only */
+	int colScale;		/* fixed point collision-box scale (4096 = stock) */
 } EXOBJECT;
 
 struct BOMB

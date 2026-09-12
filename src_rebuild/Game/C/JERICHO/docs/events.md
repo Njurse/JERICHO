@@ -39,7 +39,36 @@ inert no-ops when no module handles them.
 | `JER_EVENT_CAR_DRAW` | `JER_ARGS_CAR_DRAW` | `DrawCar` (`cars.c`) | rotate the render-only body matrix (visual pitch/roll/yaw) |
 | `JER_EVENT_CAR_DRAW_COLOR` | `JER_ARGS_CAR_DRAW_COLOR` | `DrawCarObject` (`cars.c`) | force a flat black body (totaled wreck) |
 | `JER_EVENT_DRAW_WORLD` | — | `RenderGame2` (`main.c`), after `DrawAllTheCars` | draw world-space extras (projectiles, pickups) into the real OT — camera matrices are live; no handler = no-op |
+| `JER_EVENT_EXPLOSION_SPAWN` | `JER_ARGS_EXPLOSION_SPAWN` | `AddExplosion` (`job_fx.c`) | attach a parametric FX profile to a new explosion: size (`speed`/`hscale`/`rscale`), `tint*`, `yawRate`, `collide`, `colScale`, and rewrite `type` |
+| `JER_EVENT_EXPLOSION_DRAW` | `JER_ARGS_EXPLOSION_DRAW` | `DrawExplosion` (`job_fx.c`) | tint/spin the stock bang, or set `override` to draw your own effect |
+| `JER_EVENT_EXPLOSION_COLLIDE` | `JER_ARGS_EXPLOSION_COLLIDE` | `ExplosionCollisionCheck` (`bomberman.c`) | query: may this explosion push/damage this car, and at what box scale |
 | `>= JER_EVENT_MODULE_CUSTOM` | module-defined | modules | custom events |
+
+## The explosion FX events (combatd2 weapons use these)
+
+`AddExplosion(pos, type)` is the single spawn point for every explosion in
+the game (mission bangs, thrown bombs, weapon impacts). Three hooks turn one
+into a *parametric* effect without touching the engine's draw code:
+
+- **`JER_EVENT_EXPLOSION_SPAWN`** fires once, after the slot is armed and the
+  stock size for `type` seeded. The args carry the live values; a module may
+  rewrite any of them (and `type` — usually to a stock bang so the engine's
+  sound/collision branches stay valid). A custom `type` id (>= 1000) has no
+  engine size defaults, so a module that uses one MUST set
+  `speed`/`hscale`/`rscale` itself. `tint* = -1` keeps the stock colour,
+  `collide = 0` makes it visual-only, `colScale` scales the collision box
+  (4096 = stock), `yawRate` is extra spin in PSX angle units per frame, and
+  `fxId` is a free module tag carried on the explosion.
+- **`JER_EVENT_EXPLOSION_DRAW`** fires per explosion per frame while it is
+  drawn (camera matrices live). It writes `tint*`/`yaw` in place, or sets
+  `override = 1` after drawing its own effect (the stock hemisphere is then
+  skipped for this explosion).
+- **`JER_EVENT_EXPLOSION_COLLIDE`** is a query: `result` (defaulted from the
+  explosion's own `collide` flag) decides whether the stock push/damage runs,
+  and `colScale` tightens the collision box.
+
+The pool is `MAX_EXPLOSION_OBJECTS` (16; raised from 5 for barrage weapons);
+`AddExplosion` recycles the oldest slot if it ever fills.
 
 ## Query events
 

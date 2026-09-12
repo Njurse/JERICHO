@@ -357,4 +357,52 @@ typedef struct JER_ARGS_CAR_DRAW
 	int view;		/* in: camera view */
 } JER_ARGS_CAR_DRAW;
 
+/* JER_EVENT_EXPLOSION_SPAWN — an explosion slot was just armed in
+ * AddExplosion (job_fx.c). The module may resize (speed/hscale/rscale), tint,
+ * spin (yawRate), disable collision, and rewrite `type` (rewrite to a stock
+ * bang id to keep the stock sound). A custom `type` >= 1000 has no engine
+ * size defaults, so a module must fill speed/hscale/rscale itself. */
+typedef struct JER_ARGS_EXPLOSION_SPAWN
+{
+	void* pos;		/* VECTOR* (world) — read only */
+	int type;		/* in/out: ExplosionType */
+	int fxId;		/* out: module profile id */
+	int speed;		/* in/out */
+	int hscale;		/* in/out */
+	int rscale;		/* in/out */
+	int tintR;		/* in/out: -1 = stock colour */
+	int tintG;
+	int tintB;
+	int yawRate;		/* in/out: extra spin, PSX units/frame */
+	int collide;		/* in/out: 1 = push/damage, 0 = visual only */
+	int colScale;		/* in/out: collision-box scale, 4096 = stock */
+} JER_ARGS_EXPLOSION_SPAWN;
+
+/* JER_EVENT_EXPLOSION_DRAW — per explosion per frame (DrawExplosion,
+ * job_fx.c). Tint/spin the stock mesh, or set override = 1 and draw your own
+ * (the engine skips its stock mesh for this explosion). */
+typedef struct JER_ARGS_EXPLOSION_DRAW
+{
+	int time;		/* 0..0xfff life */
+	void* pos;		/* VECTOR* (world) */
+	int hscale;		/* in/out */
+	int rscale;		/* in/out */
+	int tintR;		/* in/out: -1 = stock colour */
+	int tintG;
+	int tintB;
+	int yaw;		/* in/out: extra spin this draw (PSX units) */
+	int fxId;		/* in: module profile id */
+	int override;		/* out: 1 = skip the stock mesh */
+} JER_ARGS_EXPLOSION_DRAW;
+
+/* JER_EVENT_EXPLOSION_COLLIDE — query (ExplosionCollisionCheck, bomberman.c).
+ * result 1 (default) = stock push/damage; colScale scales the box. */
+typedef struct JER_ARGS_EXPLOSION_COLLIDE
+{
+	void* car;		/* CAR_DATA* */
+	void* explosion;	/* EXOBJECT* */
+	int result;		/* in/out */
+	int colScale;		/* in/out */
+} JER_ARGS_EXPLOSION_COLLIDE;
+
 #endif /* JERICHO_JER_EVENTS_H */
