@@ -39,8 +39,8 @@
 
 #define CD2_AI_SPAWN_OFFSET	900	// how far beside the player to spawn
 #define CD2_AI_HUNT_RANGE	12200	// start hunting within this
-#define CD2_AI_LOOK		1560	// look-ahead probe distance
-#define CD2_AI_PROBE_ANG	400	// ~35 deg side probes
+#define CD2_AI_LOOK		10560	// look-ahead probe distance
+#define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
 #define CD2_AI_EVADE_FRAMES	85	// ~1.5 s of evasive driving
@@ -96,9 +96,13 @@ static int cd2AiSqrt(int v)
 
 static void cd2AiPointAt(const CAR_DATA* cp, int heading, int dist, VECTOR* out)
 {
-	out->vx = cp->hd.where.t[0] + (int)(((long long)RCOS(heading) * dist) >> 12);
+	// Engine convention: a heading maps to a direction as (x = RSIN, z = RCOS)
+	// (see civ_ai.c InitCar velocity). These were swapped, so every look-ahead
+	// probe pointed in a mirrored direction - the AI was blind to scenery that
+	// was not almost dead ahead.
+	out->vx = cp->hd.where.t[0] + (int)(((long long)RSIN(heading) * dist) >> 12);
 	out->vy = cp->hd.where.t[1];
-	out->vz = cp->hd.where.t[2] + (int)(((long long)RSIN(heading) * dist) >> 12);
+	out->vz = cp->hd.where.t[2] + (int)(((long long)RCOS(heading) * dist) >> 12);
 }
 
 static void cd2AiCarPos(const CAR_DATA* cp, VECTOR* out)
