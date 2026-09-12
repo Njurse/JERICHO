@@ -28,8 +28,10 @@
 static char gWasTotaled[MAX_CARS];
 
 // wreck toss (applied once, on the explosion edge)
-#define CD2C_TUMBLE_LAUNCH   0x18000 * 5  // upward velocity impulse (raw)
-#define CD2C_TUMBLE_SPIN     0x100000 * 50 // roll/pitch angular impulse range (raw)
+// Parenthesised: these are multiplications, and an unparenthesised macro body
+// silently reparenthesises when it is used in a wider expression.
+#define CD2C_TUMBLE_LAUNCH   (0x18000 * 5)  // upward velocity impulse (raw)
+#define CD2C_TUMBLE_SPIN     (0x100000 * 50) // roll/pitch angular impulse range (raw)
 
 // The canonical "totaled" cap, mirroring cars.c DrawCar.
 static int cd2cMaxDamage(CAR_DATA* cp)
