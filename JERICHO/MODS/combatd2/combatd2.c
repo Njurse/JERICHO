@@ -100,7 +100,7 @@ static void cd2LoadConfig(void)
 		gCd2Cfg.missileModel[sizeof(gCd2Cfg.missileModel) - 1] = 0;
 	}
 	gCd2Cfg.missileScale  = jer_config_get_int("combatd2", "missile_scale", 4096);
-	gCd2Cfg.missileSound  = jer_config_get_int("combatd2", "missile_sound", 14);
+	gCd2Cfg.missileSound  = jer_config_get_int("combatd2", "missile_sound", 11);
 
 	gCd2Cfg.enabled  = gCd2Cfg.enabled ? 1 : 0;
 	gCd2Cfg.topSpeed = jer_clamp_int(gCd2Cfg.topSpeed, 60, 600);
@@ -509,6 +509,13 @@ static int cd2OnDebugTick(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// Shared damage rediuction: `value` scaled to `pct` percent (both damage hooks
+// route through this so player and opponent cars are treated identically).
+static int cd2ScaleDamage(int value, int pct)
+{
+	return (value * pct) / 100;
+}
+
 // Scenery (building/wall) damage scale: soften the damage a car takes from
 // hitting solid objects (the momentum-absorbing walls make these hits bite
 // hard). Fired from DamageCar (bcollide.c) before ApplyDamage.
@@ -521,7 +528,7 @@ static int cd2OnDamageScale(void* ud, void* args)
 	if (!gCd2Cfg.enabled)
 		return JER_RESULT_CONTINUE;
 
-	a->result = (gCd2Cfg.sceneryDamage * 4096) / 100;
+	a->result = cd2ScaleDamage(4096, gCd2Cfg.sceneryDamage);
 
 	if (gCd2Cfg.debugLog)
 	{
@@ -551,7 +558,7 @@ static int cd2OnCarVsCar(void* ud, void* args)
 	if (cd2AiIsOpponent(a->car))
 		v = a->playerValue;
 
-	v = (v * gCd2Cfg.carCarDamage) / 100;
+	v = cd2ScaleDamage(v, gCd2Cfg.carCarDamage);
 
 	if (gCd2Cfg.debugLog)
 	{
