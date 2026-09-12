@@ -58,6 +58,11 @@
 #define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
 #define CD2_AI_WP_REACH		700	// route waypoints within this are "reached" and skipped
 #define CD2_AI_WANDER_LEG	6000	// wander goal distance along the wander heading
+#define CD2_AI_NEAR_LOOK	780	// imminent-collision probe distance
+#define CD2_AI_BRAKE_SPEED	90	// forward speed above which it brakes instead of pivoting
+
+// committed imminent-collision responses (hysteresis in cd2AiDrive)
+enum { CD2_AI_AVOID_NONE = 0, CD2_AI_AVOID_BRAKE, CD2_AI_AVOID_PIVOT };
 
 static int sAiCarId = -1;
 static int sSpawned;
@@ -71,6 +76,8 @@ static int sSteer;		// rate-limited steering actually applied
 static int sReverse;		// frames of backing up left (stuck recovery)
 static int sStuck;		// frames without forward progress
 static int sRole = CD2_AI_ROLE_CHASER;	// this opponent's role archetype
+static int sAvoid;		// committed avoid action (CD2_AI_AVOID_*)
+static int sAvoidTicks;		// frames the committed avoid action is held
 static int sLastDamage;		// car totalDamage last frame (to count new hits)
 static int sHits;		// collisions observed on the opponent
 static unsigned int sLogTick;	// debugLog throttle counter
@@ -217,6 +224,7 @@ static void cd2AiDrive(CAR_DATA* cp)
 	int fx, fz, rx, rz;
 	int threatFlag = 0, blockedAhead = 0;
 	int speedFwd = 0, pivotDir = 0;
+	int clearAhead = 0, clearL = 0, clearR = 0, nearBlocked = 0, dodgeDir = 0;
 	VECTOR carV, goalV;
 
 	carV.vx = cp->hd.where.t[0];
@@ -432,14 +440,58 @@ static void cd2AiDrive(CAR_DATA* cp)
 	speedFwd = (int)(((long long)fx * FIXEDH(cp->st.n.linearVelocity[0])
 			+ (long long)fz * FIXEDH(cp->st.n.linearVelocity[2])) >> 12);
 
+	// --- scenery probes: far (route planning) + near (imminent collision) ---
+	{
+		VECTOR carPos, ahead, nearP, leftP, rightP;
+
+		cd2AiCarPos(cp, &carPos);
+		cd2AiPointAt(cp, cp->hd.direction, CD2_AI_LOOK, &ahead);
+		cd2AiPointAt(cp, cp->hd.direction, CD2_AI_NEAR_LOOK, &nearP);
+		cd2AiPointAt(cp, cp->hd.direction + CD2_AI_PROBE_ANG, CD2_AI_LOOK, &leftP);
+		cd2AiPointAt(cp, cp->hd.direction - CD2_AI_PROBE_ANG, CD2_AI_LOOK, &rightP);
+
+		clearAhead = lineClear(&carPos, &ahead);
+		clearL = lineClear(&carPos, &leftP);
+		clearR = lineClear(&carPos, &rightP);
+		nearBlocked = (lineClear(&carPos, &nearP) == 0);
+
+		blockedAhead = (clearAhead == 0);
+	}
+
+	// --- imminent-collision response with hysteresis. Preference order: swerve
+	// (normal steering below) -> brake -> pivot in place -> reverse (stuck).
+	// The choice is held for a few frames so the car commits rather than
+	// flickering between braking and steering. ---
+	if (sAvoidTicks > 0)
+	{
+		sAvoidTicks--;
+	}
+	else if (nearBlocked)
+	{
+		if (speedFwd > CD2_AI_BRAKE_SPEED)
+		{
+			sAvoid = CD2_AI_AVOID_BRAKE;
+			sAvoidTicks = 16;
+		}
+		else
+		{
+			sAvoid = CD2_AI_AVOID_PIVOT;
+			sAvoidTicks = 12;
+		}
+	}
+	else
+	{
+		sAvoid = CD2_AI_AVOID_NONE;
+	}
+
 	// --- stuck detection: commanded forward but going nowhere -> back up ---
 	if (sReverse > 0)
 	{
 		sReverse--;
 	}
-	else if (ABS(diff) > CD2_AI_PIVOT_DIFF)
+	else if (ABS(diff) > CD2_AI_PIVOT_DIFF || sAvoid != CD2_AI_AVOID_NONE)
 	{
-		// A pivot on the spot is intentional, not "stuck".
+		// pivoting / avoiding on purpose is not "stuck"
 		sStuck = 0;
 	}
 	else if (ABS(speedFwd) < CD2_AI_STUCK_SPEED)
@@ -455,6 +507,9 @@ static void cd2AiDrive(CAR_DATA* cp)
 		sStuck = 0;
 	}
 
+	// escape toward the clearer side (default to the right when both are equal)
+	dodgeDir = (clearL && !clearR) ? 1 : ((clearR && !clearL) ? -1 : 1);
+
 	pivotDir = 0;
 
 	if (sReverse > 0)
@@ -462,6 +517,27 @@ static void cd2AiDrive(CAR_DATA* cp)
 		// --- backing up: swing the nose toward the target while reversing ---
 		thrust = -CD2_TMB_THRUST;
 		steer = (diff >= 0) ? -CD2_STEER_MAX : CD2_STEER_MAX;
+		sSteer = steer;
+	}
+	else if (sAvoid == CD2_AI_AVOID_PIVOT)
+	{
+		// --- too close and too slow to steer around it: stop and pivot away ---
+		pivotDir = dodgeDir;
+		steer = pivotDir * CD2_STEER_MAX;
+		thrust = 0;
+		sSteer = steer;
+	}
+	else if (sAvoid == CD2_AI_AVOID_BRAKE)
+	{
+		// --- closing on an obstacle at speed: brake hard and steer around it ---
+		thrust = -CD2_TMB_THRUST;
+		steer = dodgeDir * CD2_STEER_MAX;
+
+		if (steer > sSteer + CD2_AI_STEER_RATE)
+			steer = sSteer + CD2_AI_STEER_RATE;
+		else if (steer < sSteer - CD2_AI_STEER_RATE)
+			steer = sSteer - CD2_AI_STEER_RATE;
+
 		sSteer = steer;
 	}
 	else if (ABS(diff) > CD2_AI_PIVOT_DIFF && ABS(speedFwd) < CD2_AI_PIVOT_SPEED)
@@ -477,31 +553,15 @@ static void cd2AiDrive(CAR_DATA* cp)
 		// --- normal steering ---
 		steer = diff / CD2_AI_STEER_DIV;
 
-		// obstacle avoidance: scenery/wall ahead (lineClear: 0 = blocked)
+		// obstacle avoidance: steer around scenery/wall dead ahead
+		if (clearAhead == 0)
 		{
-			VECTOR carPos, ahead, leftP, rightP;
-			int clearAhead, clearL, clearR;
-
-			cd2AiCarPos(cp, &carPos);
-			cd2AiPointAt(cp, cp->hd.direction, CD2_AI_LOOK, &ahead);
-			cd2AiPointAt(cp, cp->hd.direction + CD2_AI_PROBE_ANG, CD2_AI_LOOK, &leftP);
-			cd2AiPointAt(cp, cp->hd.direction - CD2_AI_PROBE_ANG, CD2_AI_LOOK, &rightP);
-
-			clearAhead = lineClear(&carPos, &ahead);
-			clearL = lineClear(&carPos, &leftP);
-			clearR = lineClear(&carPos, &rightP);
-
-			blockedAhead = (clearAhead == 0);
-
-			if (clearAhead == 0)
-			{
-				if (clearL && !clearR)
-					steer += CD2_AI_AVOID_STEER;
-				else if (clearR && !clearL)
-					steer -= CD2_AI_AVOID_STEER;
-				else
-					steer += (steer >= 0) ? CD2_AI_AVOID_STEER : -CD2_AI_AVOID_STEER;
-			}
+			if (clearL && !clearR)
+				steer += CD2_AI_AVOID_STEER;
+			else if (clearR && !clearL)
+				steer -= CD2_AI_AVOID_STEER;
+			else
+				steer += (steer >= 0) ? CD2_AI_AVOID_STEER : -CD2_AI_AVOID_STEER;
 		}
 
 		// obstacle avoidance: cars about to be hit
@@ -612,9 +672,9 @@ static void cd2AiDrive(CAR_DATA* cp)
 	}
 
 	if (gCd2Cfg.debugLog && (sLogTick++ % 60) == 0)
-		printInfo("[combatd2] AI car=%d state=%s dmg=%d hits=%d spd=%d steer=%d rev=%d pivot=%d threat=%d wall=%d\n",
-			cp->id, cd2AiStateName(), cp->totalDamage, sHits, speedFwd, sSteer,
-			(sReverse > 0) ? 1 : 0, pivotDir, threatFlag, blockedAhead);
+		printInfo("[combatd2] AI car=%d %s state=%s dmg=%d hits=%d spd=%d steer=%d rev=%d pivot=%d avoid=%d threat=%d wall=%d\n",
+			cp->id, cd2AiRoleName(), cd2AiStateName(), cp->totalDamage, sHits, speedFwd, sSteer,
+			(sReverse > 0) ? 1 : 0, pivotDir, sAvoid, threatFlag, blockedAhead);
 
 }
 

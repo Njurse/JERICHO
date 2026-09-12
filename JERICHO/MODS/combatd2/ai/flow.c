@@ -20,6 +20,7 @@
 #define CD2_FLOW_SHIFT		8	// 256 = 1 << 8
 #define CD2_FLOW_DIM		96
 #define CD2_FLOW_CELLS		(CD2_FLOW_DIM * CD2_FLOW_DIM)
+#define CD2_FLOW_HEAP		(CD2_FLOW_CELLS * 4)	// slack for duplicate heap pushes
 #define CD2_FLOW_UNSET		0xFFFF
 #define CD2_FLOW_RECENTRE	2500	// goal move that re-centres the window
 #define CD2_FLOW_BUDGET		64	// default cells propagated per frame
@@ -34,7 +35,7 @@ static int sValidSeeded;
 static int sSeedCellX = -99999, sSeedCellZ = -99999;
 static int sSinceSeed;		// frames since the last re-seed (rate limit)
 
-static int sHeap[CD2_FLOW_CELLS];
+static int sHeap[CD2_FLOW_HEAP];
 static int sHeapSize;
 static int sPropagated;	// cells with a known distance (field coverage)
 
@@ -65,6 +66,12 @@ static int cd2FlowClear(int wx, int wz)
 static void cd2FlowHeapPush(int idx)
 {
 	int i = sHeapSize++;
+
+	if (i >= CD2_FLOW_HEAP)
+	{
+		sHeapSize = CD2_FLOW_HEAP;
+		return;	// heap full: drop this relaxation
+	}
 
 	sHeap[i] = idx;
 

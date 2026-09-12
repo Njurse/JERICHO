@@ -17,6 +17,7 @@
 #define CD2_GRID_CELL		512	// world units per cell
 #define CD2_GRID_MAXDIM		64	// cells per axis (window cap)
 #define CD2_GRID_MAXCELLS	(CD2_GRID_MAXDIM * CD2_GRID_MAXDIM)
+#define CD2_GRID_HEAP		(CD2_GRID_MAXCELLS * 4)	// slack for duplicate heap pushes
 #define CD2_GRID_MARGIN		6	// cells of margin around the bbox
 #define CD2_GRID_MAXSTEP	700	// max height change between neighbours (units)
 #define CD2_GRID_SAMPLE		160	// clearance radius tested per cell
@@ -32,7 +33,7 @@ static int  sG[CD2_GRID_MAXCELLS];
 static int  sF[CD2_GRID_MAXCELLS];
 static short sParent[CD2_GRID_MAXCELLS];
 static char sClosed[CD2_GRID_MAXCELLS];
-static int  sOpen[CD2_GRID_MAXCELLS];
+static int  sOpen[CD2_GRID_HEAP];
 static int  sOpenSize;
 
 static int sDimX, sDimZ;
@@ -160,6 +161,12 @@ static int cd2GridStep(int aidx, int bidx)
 static void cd2GridHeapPush(int node)
 {
 	int i = sOpenSize++;
+
+	if (i >= CD2_GRID_HEAP)
+	{
+		sOpenSize = CD2_GRID_HEAP;
+		return;	// heap full: drop (the search is best-effort at that point)
+	}
 
 	sOpen[i] = node;
 

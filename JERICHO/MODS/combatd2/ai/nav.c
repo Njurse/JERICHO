@@ -41,7 +41,7 @@ static int   sG[CD2_NAV_MAX_NODES];
 static int   sF[CD2_NAV_MAX_NODES];
 static short sParent[CD2_NAV_MAX_NODES];
 static char  sClosed[CD2_NAV_MAX_NODES];
-static int   sOpen[CD2_NAV_MAX_NODES];	// binary min-heap of node indices
+static int   sOpen[CD2_NAV_MAX_NODES * 4];	// slack for duplicate heap pushes
 static int   sOpenSize;
 
 typedef struct CD2_NAV_CACHE
@@ -388,6 +388,12 @@ static int cd2NavEdgeCost(int a, int b)
 static void cd2NavHeapPush(int node)
 {
 	int i = sOpenSize++;
+
+	if (i >= CD2_NAV_MAX_NODES * 4)
+	{
+		sOpenSize = CD2_NAV_MAX_NODES * 4;
+		return;	// heap full: drop (best-effort)
+	}
 
 	sOpen[i] = node;
 
