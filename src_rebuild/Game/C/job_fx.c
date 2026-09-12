@@ -39,10 +39,29 @@ void AddExplosion(VECTOR pos, int type)
 	i = 0;
 	newExplosion = explosion;
 
-	while (newExplosion->time != -1 && i < MAX_EXPLOSION_OBJECTS) 
+	// Walk to the first free slot, but never off the end of the array. The
+	// bound here used to be MAX_EXPLOSION_OBJECTS, so with every slot busy the
+	// loop stopped one PAST the last element and the write below landed outside
+	// explosion[] - quietly corrupting whatever the linker had placed after it.
+	while (newExplosion->time != -1 && i < MAX_EXPLOSION_OBJECTS - 1) 
 	{
 		newExplosion++;
 		i++;
+	}
+
+	// Still busy means the array is full. Recycle whichever slot is closest to
+	// expiring instead of dropping the newest blast or trampling memory.
+	if (newExplosion->time != -1)
+	{
+		EXOBJECT *oldest = &explosion[0];
+
+		for (i = 1; i < MAX_EXPLOSION_OBJECTS; i++)
+		{
+			if (explosion[i].time > oldest->time)
+				oldest = &explosion[i];
+		}
+
+		newExplosion = oldest;
 	}
 
 	newExplosion->time = 0;
