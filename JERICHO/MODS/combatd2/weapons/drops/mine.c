@@ -19,6 +19,8 @@
 #define CD2_MINE_THROW	30	// backward launch speed (world units/frame)
 #define CD2_MINE_POP	18	// initial upward pop (world units/frame)
 
+static int gMineChannel = -1;	// voice reserved for the mine's launch sound
+
 static void cd2MineDrop(void* vcp)
 {
 	CAR_DATA* cp = (CAR_DATA*)vcp;
@@ -44,7 +46,10 @@ static void cd2MineDrop(void* vcp)
 
 	cd2DropSpawn(&cd2WdefMine, cp, &p, &vel);
 
-	Start3DSoundVolPitch(-1, SOUND_BANK_SFX, 5,
+	if (gMineChannel < 0)
+		gMineChannel = GetFreeChannel();
+
+	Start3DSoundVolPitch(gMineChannel, SOUND_BANK_SFX, 5,
 		p.vx, p.vy, p.vz, -2000, 4096 + 2048);
 }
 

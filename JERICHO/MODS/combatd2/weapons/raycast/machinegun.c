@@ -18,6 +18,7 @@
 
 // alternate left/right fender each shot
 static int gMgSide = 1;
+static int gMgChannel = -1;	// voice reserved for the machine gun
 
 static void cd2MgFire(void* vcp)
 {
@@ -33,7 +34,13 @@ static void cd2MgFire(void* vcp)
 
 	cd2RaycastSpawn(&cd2WdefMG, cp, &muzzle, &dir);
 
-	Start3DSoundVolPitch(-1, SOUND_BANK_SFX, 5,
+	// One channel held for the whole burst. Auto-fire every few frames with
+	// channel -1 grabbed a fresh voice per shot and immediately stole its own
+	// channel back, which is what made the MG stutter instead of rip.
+	if (gMgChannel < 0)
+		gMgChannel = GetFreeChannel();
+
+	Start3DSoundVolPitch(gMgChannel, SOUND_BANK_SFX, 5,
 		muzzle.vx, muzzle.vy, muzzle.vz, -2000, 4096 + 2048);
 
 	gMgSide = -gMgSide;
@@ -59,7 +66,7 @@ static CD2_WEAPON_DEF cd2MakeMGDef(void)
 	d.refireCooldown = 5;	// minimum gap between refires
 
 	d.damage = 390;
-	d.speed = 150;		// world units/frame (fast particle)
+	d.speed = 450;		// world units/frame (fast particle; outruns a car at top speed)
 	d.range = 6400;
 	d.life = 2;
 

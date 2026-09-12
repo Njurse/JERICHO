@@ -22,7 +22,34 @@ void cd2AoeBlast(const VECTOR* at, int radius, int damage, int effect,
 	blast.vx = at->vx;
 	blast.vy = at->vy;
 	blast.vz = at->vz;
+
+	// AddExplosion fills the next free slot in job_fx's explosion[] list, which
+	// HandleExplosion ages (main.c) and DrawAllExplosions renders. explosion[]
+	// is exported, so verify from this side that a valid, in-bounds slot was
+	// actually armed rather than assuming it.
 	AddExplosion(blast, effect);
+
+	if (gCd2Cfg.debugLog)
+	{
+		int i, live = 0, slot = -1, chk;
+
+		for (i = 0; i < MAX_EXPLOSION_OBJECTS; i++)
+		{
+			if (explosion[i].time != -1)
+				live++;
+
+			if (slot < 0 && explosion[i].time == 0 &&
+			    explosion[i].pos.vx == blast.vx && explosion[i].pos.vz == blast.vz)
+				slot = i;
+		}
+
+		chk = (slot >= 0) ? slot : 0;
+
+		printInfo("[combatd2] aoe blast (%d,%d,%d) r=%d dmg=%d fx=%d -> slot=%d live=%d/%d armed(type=%d speed=%d hscale=%d)\n",
+			blast.vx, blast.vy, blast.vz, radius, damage, effect,
+			slot, live, MAX_EXPLOSION_OBJECTS,
+			explosion[chk].type, explosion[chk].speed, explosion[chk].hscale);
+	}
 
 	if (radius <= 0 || damage <= 0)
 		return;
