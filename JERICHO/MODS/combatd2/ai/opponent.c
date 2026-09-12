@@ -247,14 +247,29 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 	// road-node snapping and no CheckPingOut() reset when it leaves the road
 	// graph, which is what made the civ-AI car fidget in place.
 	//
-	// NOTE: PICKING A RANDOM MODEL IS NOT SAFE YET - only the models resident in
-	// this level (see the level's car model list) have valid gCarCleanModelPtr/
-	// gCarDamModelPtr entries; a random index can be NULL and fault while
-	// drawing. Until that list is read, use the player's own (always resident)
-	// model and palette.
-	InitCar(slot, pcp->hd.direction, &pos, CONTROL_TYPE_CUTSCENE, pcp->ap.model, pcp->ap.palette, &cd2AiPadId);
+	// Random car model for variety - but only among slots THIS level actually
+	// loaded: a level can use fewer than MAX_CAR_RESIDENT_MODELS, and an unused
+	// slot has NULL model pointers, which faults while drawing.
+	{
+		int model = pcp->ap.model;
+		int k;
 
-	chosenModel = pcp->ap.model;
+		for (k = 0; k < 10; k++)
+		{
+			int m = Random2(MAX_CAR_RESIDENT_MODELS);
+
+			if (gCarCleanModelPtr[m] != NULL && gCarDamModelPtr[m] != NULL)
+			{
+				model = m;
+				break;
+			}
+		}
+
+		InitCar(slot, pcp->hd.direction, &pos, CONTROL_TYPE_CUTSCENE, model, pcp->ap.palette, &cd2AiPadId);
+
+		chosenModel = model;
+	}
+
 	chosenPalette = pcp->ap.palette;
 
 	// claim an AI slot for it
