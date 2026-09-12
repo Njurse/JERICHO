@@ -597,7 +597,18 @@ static void cd2RespawnTick(CAR_DATA* cp)
 			r->waiting = 1;
 			r->timer = gCd2Cfg.respawnDelay;
 
-			printInfo("[combatd2] respawn: car=%d DESTROYED (type=%d) - returning in %d frames\n",
+			// Hand the car straight to the engine as a write-off instead of
+			// letting damage creep up to the cap: slam totalDamage to the
+			// engine's own maximum (the value ApplyDamage clamps to) and drop
+			// every control input, so the engine's lockup / kill-patrol
+			// handling takes over this frame.
+			cp->totalDamage = USHRT_MAX;
+			cp->thrust = 0;
+			cp->wheel_angle = 0;
+			cp->handbrake = 0;
+			cp->wheelspin = 0;
+
+			printInfo("[combatd2] respawn: car=%d DESTROYED (type=%d) - control stripped, returning in %d frames\n",
 				cp->id, cp->controlType, r->timer);
 		}
 	}
