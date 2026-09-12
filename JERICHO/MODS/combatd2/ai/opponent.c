@@ -53,10 +53,10 @@
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
 #define CD2_AI_EVADE_FRAMES	85	// ~1.5 s of evasive driving
-#define CD2_AI_HURT_FLEE	20000	// totalDamage above which it breaks off (rare)
+#define CD2_AI_HURT_FLEE	11000	// totalDamage above which it breaks off (rare)
 #define CD2_AI_FIRE_RANGE	9000	// MG range when pursuing
 #define CD2_AI_FIRE_CONE	420	// heading error it will still fire through
-#define CD2_AI_FIRE_COOLDOWN	10	// frames between AI MG shots
+#define CD2_AI_FIRE_COOLDOWN	1	// frames between AI MG shots
 #define CD2_AI_PRIMARY_MIN	2200	// too close to launch a missile (world units)
 #define CD2_AI_PRIMARY_RANGE	14000	// furthest it will launch a missile
 #define CD2_AI_STEER_RATE	148	// max wheel_angle change per frame
@@ -78,8 +78,8 @@
 #define CD2_AI_NEAR_LOOK	380	// base imminent-collision probe distance
 #define CD2_AI_LOOK_PER_SPEED	3	// extra probe distance per unit/frame of speed
 #define CD2_AI_BRAKE_SPEED	60	// forward speed above which it brakes instead of pivoting
-#define CD2_AI_ENGAGE_TICKS	620	// frames of sustained aggression before breaking off
-#define CD2_AI_ROAM_TICKS	500	// frames spent roaming/hunting for weapons
+#define CD2_AI_ENGAGE_TICKS	1620	// frames of sustained aggression before breaking off
+#define CD2_AI_ROAM_TICKS	1500	// frames spent roaming/hunting for weapons
 #define CD2_AI_ROAM_JITTER	440	// random extra roam frames (so they desync)
 #define CD2_AI_STATE_TICKS	145	// frames between behaviour re-decisions
 #define CD2_AI_MIN_STATE_TICKS	150	// minimum frames any new behaviour is held
@@ -88,7 +88,7 @@
 
 #define CD2_AI_FAN_RAYS		5	// rays in the forward scenery fan
 #define CD2_AI_FAN_STEPS	5	// length samples along each ray
-#define CD2_AI_STOP_FRAMES	22	// frames of travel the AI keeps in hand
+#define CD2_AI_STOP_FRAMES	60	// frames of travel the AI keeps in hand
 #define CD2_AI_GOVERN_SLACK	0	// speed grace before the governor bites
 #define CD2_AI_SIDE_MARGIN	1600	// clearance gap before it biases steering
 #define CD2_AI_SIDE_BIAS	384	// heading nudge away from the closer wall
@@ -98,7 +98,7 @@
 enum { CD2_AI_AVOID_NONE = 0, CD2_AI_AVOID_BRAKE, CD2_AI_AVOID_PIVOT };
 
 #define CD2_AI_MAX		4	// maximum simultaneous opponents
-#define CD2_AI_SPAWN_COUNT	3	// opponents spawned per level (<= CD2_AI_MAX)
+#define CD2_AI_SPAWN_COUNT	4	// opponents spawned per level (<= CD2_AI_MAX)
 
 // Per-opponent state (one slot per spawned opponent, so several can run at once
 // with independent behaviour, roles and routes).
@@ -139,6 +139,16 @@ static int cd2AiRand(int n)
 		return 0;
 
 	return Random2(n) % n;
+}
+
+// A weapon that leaves fireCone unset falls back to the old global tolerance
+// rather than becoming unfireable.
+static int cd2AiCone(const CD2_WEAPON_DEF* d)
+{
+	if (d == NULL)
+		return 0;
+
+	return (d->fireCone > 0) ? d->fireCone : CD2_AI_FIRE_CONE;
 }
 
 static CD2_AI_CAR* cd2AiSlot(int carId)
@@ -1058,21 +1068,35 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	// Both go through cd2WpnTryFire, so each weapon's own refire cooldown sets
 	// the cadence and the AI can't out-shoot what the player is allowed to do.
 	if (sEvade == 0 && targetId >= 0 &&
-	    targetD2 < (long long)CD2_AI_FIRE_RANGE * CD2_AI_FIRE_RANGE &&
-	    ABS(diff) < CD2_AI_FIRE_CONE)
+	    targetD2 < (long long)CD2_AI_FIRE_RANGE * CD2_AI_FIRE_RANGE)
 	{
+		const CD2_WEAPON_DEF* ms = cd2WpnDef(CD2_WID_MISSILE);
+		const CD2_WEAPON_DEF* hm = cd2WpnDef(CD2_WID_HOMING);
+		const CD2_WEAPON_DEF* mg = cd2WpnDef(CD2_WID_MG);
+		int inPrimary = (targetD2 > (long long)CD2_AI_PRIMARY_MIN * CD2_AI_PRIMARY_MIN &&
+		                 targetD2 < (long long)CD2_AI_PRIMARY_RANGE * CD2_AI_PRIMARY_RANGE);
 		int launched = 0;
+		int which = -1;
 
-		// primary first, so a launch is never starved by the MG cadence
-		if (targetD2 > (long long)CD2_AI_PRIMARY_MIN * CD2_AI_PRIMARY_MIN &&
-		    targetD2 < (long long)CD2_AI_PRIMARY_RANGE * CD2_AI_PRIMARY_RANGE)
+		// Each weapon states its own firing tolerance. Lined up, take the one
+		// that hits hardest; off to one side, take the one that steers.
+		if (inPrimary && ms != NULL && ABS(diff) < cd2AiCone(ms))
+		{
 			launched = cd2WpnTryFire(cp, CD2_WID_MISSILE);
+			which = CD2_WID_MISSILE;
+		}
+		else if (inPrimary && hm != NULL && ABS(diff) < cd2AiCone(hm))
+		{
+			launched = cd2WpnTryFire(cp, CD2_WID_HOMING);
+			which = CD2_WID_HOMING;
+		}
 
-		if (!launched)
+		if (!launched && (mg == NULL || ABS(diff) < cd2AiCone(mg)))
 			cd2WpnTryFire(cp, CD2_WID_MG);
 
 		if (launched && gCd2Cfg.debugLog)
-			printInfo("[combatd2] AI car=%d launched a missile at car=%d\n", cp->id, targetId);
+			printInfo("[combatd2] AI car=%d fired %s at car=%d (err=%d)\n",
+				cp->id, (which == CD2_WID_HOMING) ? "SEEKER" : "MISSILE", targetId, diff);
 	}
 
 	// --- observability snapshot (tracked opponent only) ---

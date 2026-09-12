@@ -27,6 +27,10 @@
 
 #include <string.h>
 
+// How hard a homing shot turns per frame, as a fraction of 1024 blended
+// toward the target. Deliberately not 1024: it should follow, not snap.
+#define CD2_PROJ_HOME_TURN	340
+
 #define CD2_MAX_PROJECTILES	16
 #define CD2_PROJ_SUBSTEP	48	// world units per sub-step (tunneling guard)
 #define CD2_PROJ_MAX_SUBSTEP	12
@@ -193,6 +197,123 @@ static void cd2ProjectileExplode(CD2_PROJECTILE* p)
 	p->active = 0;
 }
 
+// Integer square root (Newton on the bit pattern); the engine's own helpers
+// live in files the weapon core does not otherwise pull in.
+static int cd2ProjIsqrt(int v)
+{
+	int r = 0;
+	int bit = 1 << 30;
+
+	if (v <= 0)
+		return 0;
+
+	while (bit > v)
+		bit >>= 2;
+
+	while (bit != 0)
+	{
+		if (v >= r + bit)
+		{
+			v -= r + bit;
+			r = (r >> 1) + bit;
+		}
+		else
+		{
+			r >>= 1;
+		}
+
+		bit >>= 2;
+	}
+
+	return r;
+}
+
+// ---------------------------------------------------------------------------
+// Homing: bend the shot toward the nearest car that is not its launcher.
+// The turn is RATE LIMITED (CD2_PROJ_HOME_TURN), so a homing missile follows
+// you rather than being unavoidable - you can still out-drive it. Direction
+// changes, speed does not.
+// ---------------------------------------------------------------------------
+static void cd2ProjectileSeek(CD2_PROJECTILE* p)
+{
+	int i, best = -1;
+	long long bestD = 0;
+	int dx, dy, dz, dm, vm;
+	int tx, ty, tz;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		CAR_DATA* o = &car_data[i];
+		long long ox, oz, d2;
+
+		if (o == p->owner || o->controlType == CONTROL_TYPE_NONE || o->ap.carCos == NULL)
+			continue;
+
+		ox = o->hd.where.t[0] - p->pos.vx;
+		oz = o->hd.where.t[2] - p->pos.vz;
+		d2 = ox * ox + oz * oz;
+
+		if (best < 0 || d2 < bestD)
+		{
+			bestD = d2;
+			best = i;
+		}
+	}
+
+	if (best < 0)
+		return;
+
+	tx = car_data[best].hd.where.t[0];
+	ty = car_data[best].hd.where.t[1];
+	tz = car_data[best].hd.where.t[2];
+
+	dx = tx - p->pos.vx;
+	dy = ty - p->pos.vy;
+	dz = tz - p->pos.vz;
+
+	vm = cd2ProjIsqrt((int)(p->vel.vx * p->vel.vx + p->vel.vy * p->vel.vy + p->vel.vz * p->vel.vz));
+	dm = cd2ProjIsqrt(dx * dx + dy * dy + dz * dz);
+
+	if (vm <= 0 || dm <= 0)
+		return;
+
+	{
+		int t = CD2_PROJ_HOME_TURN;
+		long long nx = ((long long)p->vel.vx * (1024 - t)) / vm + ((long long)dx * t) / dm;
+		long long ny = ((long long)p->vel.vy * (1024 - t)) / vm + ((long long)dy * t) / dm;
+		long long nz = ((long long)p->vel.vz * (1024 - t)) / vm + ((long long)dz * t) / dm;
+		int nm = cd2ProjIsqrt((int)(nx * nx + ny * ny + nz * nz));
+
+		if (nm <= 0)
+			return;
+
+		// same speed, new heading
+		p->vel.vx = (int)((nx * vm) / nm);
+		p->vel.vy = (int)((ny * vm) / nm);
+		p->vel.vz = (int)((nz * vm) / nm);
+
+		// keep the model pointing along the travel direction (unit * 4096)
+		p->dir.vx = (int)(((long long)p->vel.vx << 12) / vm);
+		p->dir.vy = (int)(((long long)p->vel.vy << 12) / vm);
+		p->dir.vz = (int)(((long long)p->vel.vz << 12) / vm);
+
+		// observability: how much of the shot is now aimed at the target.
+		// 4096 = dead on, lower = still turning. It should climb.
+		if (gCd2Cfg.debugLog)
+		{
+			static unsigned int t2;
+
+			if ((t2++ % 40) == 0)
+			{
+				long long dot = (long long)p->vel.vx * dx + (long long)p->vel.vy * dy + (long long)p->vel.vz * dz;
+				int cosE = (int)(dot / (vm / 64) / dm);
+
+				printInfo("[combatd2] homing car=%d dist=%d aim=%d\n", best, (int)dm, cosE * 64);
+			}
+		}
+	}
+}
+
 void cd2ProjectileStep(void)
 {
 	int i;
@@ -206,6 +327,9 @@ void cd2ProjectileStep(void)
 			continue;
 
 		p->prev = p->pos;
+
+		if (p->def->homing)
+			cd2ProjectileSeek(p);
 
 		// advance in sub-steps sized by the ACTUAL per-frame distance (which
 		// grows once the shooter's velocity is inherited) so a fast missile

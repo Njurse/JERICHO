@@ -44,6 +44,7 @@ enum
 	CD2_WID_MG = 0,		// base sidearm (raycast) — always available
 	CD2_WID_MISSILE,	// primary (projectile)
 	CD2_WID_MINE,		// hidden drop
+	CD2_WID_HOMING,		// primary (projectile) that homes in
 	CD2_WID_COUNT,
 	CD2_WID_NONE = -1
 };
@@ -65,6 +66,10 @@ typedef struct CD2_WEAPON_DEF
 	int maxAmmo;		// capacity (0 = infinite / never tracked)
 	int fireInterval;	// frames between shots while the trigger is held
 	int refireCooldown;	// MINIMUM frames between refires, any shooter (0 = none)
+	int fireCone;		// firing tolerance: heading error the AI will still
+					// shoot through (PSX angle units). Belongs to the weapon, not
+					// to the AI: one that homes can be launched way off-axis, one
+					// that only flies where it is pointed cannot.
 
 	int damage;		// direct-hit damage (ApplyDamage units)
 	int speed;		// world units / frame
@@ -75,7 +80,7 @@ typedef struct CD2_WEAPON_DEF
 	int splashRadius;	// explosion radius
 	int splashDamage;	// explosion damage at the blast centre
 	int explosionEffect;	// BIG_BANG / LITTLE_BANG (dr2types.h)
-	int homing;		// RESERVED: field only, no logic this turn
+	int homing;		// 1 = the shot steers itself toward a target
 	int collideScenery;	// 1 = shots stop on buildings/scenery (default ON)
 
 	int colR, colG, colB;	// draw colour

@@ -95,5 +95,6 @@ int cd2WpnIncomingThreat(const CAR_DATA* car, VECTOR* pos, VECTOR* vel);
 extern const CD2_WEAPON_DEF cd2WdefMG;		// raycast/machinegun.c
 extern const CD2_WEAPON_DEF cd2WdefMissile;	// projectile/missile.c
 extern const CD2_WEAPON_DEF cd2WdefMine;	// drops/mine.c
+extern const CD2_WEAPON_DEF cd2WdefHoming;	// projectile/homing.c
 
 #endif /* CD2_WEAPON_INTERNAL_H */
