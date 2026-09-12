@@ -10,6 +10,7 @@
 #include "cars.h"
 #include "cosmetic.h"
 #include "dr2roads.h"
+#include "objcoll.h"
 #include "combatd2.h"
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
@@ -95,12 +96,24 @@ void cd2DropStep(void)
 
 		if (!d->armed)
 		{
+			VECTOR prev;
 			int gh, floorY;
+
+			prev = d->pos;
 
 			d->vel.vy -= CD2_DROP_GRAVITY;
 			d->pos.vx += d->vel.vx;
 			d->pos.vy += d->vel.vy;
 			d->pos.vz += d->vel.vz;
+
+			// scenery collision: land (arm) on a wall/roof instead of
+			// falling through it
+			if (d->def->collideScenery && lineClear(&prev, &d->pos) == 0)
+			{
+				d->vel.vx = d->vel.vy = d->vel.vz = 0;
+				d->armed = 1;
+				continue;
+			}
 
 			gh = MapHeight(&d->pos);
 			floorY = (gh != 0) ? (gh + 8) : (d->startY - 400);

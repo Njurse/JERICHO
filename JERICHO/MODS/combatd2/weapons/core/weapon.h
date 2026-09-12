@@ -75,6 +75,7 @@ typedef struct CD2_WEAPON_DEF
 	int splashDamage;	// explosion damage at the blast centre
 	int explosionEffect;	// BIG_BANG / LITTLE_BANG (dr2types.h)
 	int homing;		// RESERVED: field only, no logic this turn
+	int collideScenery;	// 1 = shots stop on buildings/scenery (default ON)
 
 	int colR, colG, colB;	// draw colour
 

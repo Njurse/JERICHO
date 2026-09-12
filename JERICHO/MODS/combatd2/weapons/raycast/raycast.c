@@ -11,6 +11,7 @@
 #include "cars.h"
 #include "cosmetic.h"
 #include "dr2roads.h"
+#include "objcoll.h"
 #include "jer_math.h"
 #include "combatd2.h"
 #include "weapons/core/weapon.h"
@@ -146,6 +147,15 @@ void cd2RaycastStep(void)
 					break;
 				}
 			}
+		}
+
+		// scenery collision (buildings/walls): the depth-segment test the
+		// engine's pathfinder/look code uses (0 = blocked)
+		if (r->active && r->def->collideScenery &&
+		    lineClear(&r->prev, &r->pos) == 0)
+		{
+			cd2WpnMark(&r->pos, 210, 210, 210);
+			r->active = 0;
 		}
 
 		if (r->active && r->travelled >= r->def->range)

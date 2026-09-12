@@ -77,6 +77,7 @@ static CD2_WEAPON_DEF cd2MakeMineDef(void)
 	d.explosionEffect = BIG_BANG;
 
 	d.homing = 0;		// RESERVED (no logic this turn)
+	d.collideScenery = 1;	// mine lands on walls/roofs instead of falling through
 
 	d.colR = 255; d.colG = 60; d.colB = 60;
 

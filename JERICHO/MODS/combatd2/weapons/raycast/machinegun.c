@@ -63,6 +63,7 @@ static CD2_WEAPON_DEF cd2MakeMGDef(void)
 	d.life = 2;
 
 	d.explosionEffect = LITTLE_BANG;
+	d.collideScenery = 1;	// bullets stop on walls/buildings
 	d.colR = 255; d.colG = 235; d.colB = 110;
 
 	d.fire = cd2MgFire;

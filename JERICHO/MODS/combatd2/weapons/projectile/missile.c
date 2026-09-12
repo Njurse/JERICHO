@@ -72,6 +72,7 @@ static CD2_WEAPON_DEF cd2MakeMissileDef(void)
 	d.explosionEffect = LITTLE_BANG;
 
 	d.homing = 0;		// RESERVED (no logic this turn)
+	d.collideScenery = 1;	// missiles detonate on walls/buildings
 
 	d.colR = 255; d.colG = 130; d.colB = 40;
 

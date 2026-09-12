@@ -20,6 +20,7 @@
 #include "drivinggames.h"
 #include "dr2math.h"
 #include "dr2roads.h"
+#include "objcoll.h"
 #include "combatd2.h"
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
@@ -219,6 +220,13 @@ void cd2ProjectileStep(void)
 
 		if (!p->active)
 			continue;
+
+		// scenery collision (buildings/walls) -> detonate on the wall
+		if (p->def->collideScenery && lineClear(&p->prev, &p->pos) == 0)
+		{
+			cd2ProjectileExplode(p);
+			continue;
+		}
 
 		// ground hit
 		gh = MapHeight(&p->pos);
