@@ -75,9 +75,16 @@
 #define CD2_AI_STATIONARY		60		// target speed below which it counts as parked
 #define CD2_AI_PRIMARY_MIN	2200	// too close to launch a missile (world units)
 #define CD2_AI_PRIMARY_RANGE	14000	// furthest it will launch a missile
-#define CD2_AI_STEER_RATE	60	// max wheel_angle change per frame (was 148:
-					//    ~42% of full lock per frame is a twitch, not steering)
-#define CD2_AI_THRUST_RATE	8	// max thrust change per frame
+#define CD2_AI_STEER_RATE	105	// max wheel_angle change per frame. Full lock is
+					//    CD2_STEER_MAX (352), so 60 needed ~6 frames to
+					//    wind on, and that understeer is what put them
+					//    into walls. 105 is ~3.4 frames: responsive, and
+					//    still smoothed enough not to twitch.
+#define CD2_AI_THRUST_RATE	120	// max thrust change per frame. Full throttle is
+					//    CD2_TMB_THRUST (4215), so 8 took ~527 frames
+					//    (~9 seconds) to reach - they were barely
+					//    accelerating, which reads as timidity. 120 gets
+					//    there in ~35 frames (0.6s).
 #define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
 #define CD2_AI_REVERSE_TICKS	12	// frames of reversing after getting stuck (a nudge,
@@ -109,8 +116,17 @@
 					//    most of why they kept deciding they were stuck)
 
 #define CD2_AI_FAN_RAYS		5	// rays in the forward scenery fan
-#define CD2_AI_FAN_STEPS	5	// length samples along each ray
-#define CD2_AI_STOP_FRAMES	60	// frames of travel the AI keeps in hand
+#define CD2_AI_FAN_STEPS	10	// length samples along each ray. Each sample is
+					//    CD2_AI_LOOK / FAN_STEPS long and freeAhead is
+					//    quantised to it, so a longer reach needs more
+					//    samples or the measured clearance goes coarse
+					//    (at LOOK 4500 this is 450, not 900).
+#define CD2_AI_STOP_FRAMES	8	// frames of travel kept in hand before the
+					//    'about to hit something' test trips. 60 was
+					//    nonsense: at speed it demands more clearance
+					//    than the fan can even see, so the test was true
+					//    permanently and every opponent drove on the
+					//    brakes the whole time.
 #define CD2_AI_GOVERN_SLACK	0	// speed grace before the governor bites
 #define CD2_AI_SIDE_MARGIN	900	// clearance gap before it biases steering (was 250:
 					//    too small to lean it off a wall before the fan saw one)
@@ -1077,9 +1093,21 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 
 		// imminent when the room left is less than the room it needs to stop -
 		// or less than a car length, which catches the pinned case (stopped
-		// against a wall: speed 0, room 0, where the speed test alone is false)
-		nearBlocked = (freeAhead < ABS(speedFwd) * CD2_AI_STOP_FRAMES) ||
-		              (freeAhead < CD2_AI_NEAR_BLOCK_MIN);
+		// against a wall: speed 0, room 0, where the speed test alone is false).
+		//
+		// Capped at what the fan can actually SEE. Without the cap a large
+		// STOP_FRAMES makes the first test true no matter how open the road is:
+		// you cannot keep more clearance in hand than you are capable of
+		// measuring, and the failure mode is silent, permanent caution.
+		{
+			int reach = CD2_AI_LOOK + ABS(speedFwd) * CD2_AI_LOOK_PER_SPEED;
+			int need = ABS(speedFwd) * CD2_AI_STOP_FRAMES;
+
+			if (need > reach)
+				need = reach;
+
+			nearBlocked = (freeAhead < need) || (freeAhead < CD2_AI_NEAR_BLOCK_MIN);
+		}
 	}
 
 	// --- imminent-collision response with hysteresis. Preference order: swerve
