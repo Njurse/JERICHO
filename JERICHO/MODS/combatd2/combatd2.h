@@ -146,7 +146,7 @@ enum
 #define CD2_RECOVER_FRAMES    8     // frames of magnitude-preserving recovery
 #define CD2_RECOVER_RATE      256   // fp: fraction of the heading gap closed per
                                     // recovery frame (256/4096 = 6.25%)
-#define CD2_GRIP_RAMP_FRAMES  14    // frames to ramp grip back up after recovery
+#define CD2_GRIP_RAMP_FRAMES  10    // frames to ramp grip back up after recovery
 
 // --------------------------- default stats -------------------------------
 //
@@ -158,8 +158,8 @@ enum
 #define CD2_REVERSE_FRAC    4096  // fp: reverse cap = forward top x this
                                     // (4096 = same as forward — TM drives
                                     // backwards as fast as it does forwards)
-#define CD2_ACCEL           7     // speed-units/frame² (0→top in ~1s)
-#define CD2_BRAKE           16    // PEAK brake decel, speed-units/frame², applied
+#define CD2_ACCEL           16     // speed-units/frame² (0→top in ~1s)
+#define CD2_BRAKE           14    // PEAK brake decel, speed-units/frame², applied
                                   // proportionally (strong at speed, taper near 0)
 #define CD2_BRAKE_FLOOR     1024  // fp: fraction of peak brake kept at standstill
                                   // (1024/4096 = 25%) so stopping is never asymptotic
@@ -168,7 +168,7 @@ enum
 
 // Yaw defaults (PSX-units/frame; 4096 = 360°):
 #define CD2_HANDLING        35    // max yaw rate  (≈ 120°/s at 30 fps)
-#define CD2_ANGULAR_ACCEL   17    // yaw accel toward target (≈ 360°/s²)
+#define CD2_ANGULAR_ACCEL   18    // yaw accel toward target (≈ 360°/s²)
 #define CD2_YAW_SPEED_FALLOFF 800   // fp: TM2 speed-sensitive yaw falloff. 0 = off;
                                   // ~1200-1600 turns down yaw authority as speed
                                   // rises so the car can't spin out at top speed.
@@ -222,7 +222,7 @@ enum
 // engine now applies it to the INTO-wall (normal) component only: 0 = walls
 // fully absorb the impact and the car keeps scraping tangentially along the
 // wall (TM2 "collision forgiveness"), 4096 = stock outward bounce + spin.
-#define CD2_WALL_KEEP       256
+#define CD2_WALL_KEEP       384
 
 // ==============================================================
 // WEAPONS
@@ -352,16 +352,16 @@ typedef struct CD2_STATS
 // the position it started the level at, after CD2_RESPAWN_DELAY_DEFAULT frames.
 // Spawn points come later; for now the start point is the respawn point.
 #define CD2_RESPAWN_DELAY_DEFAULT 300    // frames at 60fps = 5 seconds
-#define CD2_RESPAWN_DELAY_MAX     1800   // 30 seconds (clamp)
+#define CD2_RESPAWN_DELAY_MAX     300   // 30 seconds (clamp)
 // Prototype opponent-AI behaviour states (also CD2_CONFIG.aiForceState; 0 = let
 // the AI pick). See ai/opponent.c.
 enum
 {
 	CD2_AI_AUTO = 0,	// decide from conditions
-	CD2_AI_HUNT,		// chase the player / nearest opponent
-	CD2_AI_FLEE,		// run from the threat
+	CD2_AI_DISPERSE,	// opening move: break away from the spawn cluster
+	CD2_AI_ROAM,		// cruise (road-guided) looking for a fight
+	CD2_AI_ATTACK,		// engage the nearest target, on the move
 	CD2_AI_RECOVER,		// heavily damaged: back off, stabilise
-	CD2_AI_WANDER,		// explore (looking for pickups / opponents)
 	CD2_AI_STATE_COUNT
 };
 

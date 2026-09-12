@@ -41,7 +41,13 @@
 #include <stdio.h>
 
 #define CD2_AI_SPAWN_OFFSET	300	// how far beside the player to spawn
-#define CD2_AI_HUNT_RANGE	3200	// start pursuing a target within this
+	#define CD2_AI_ENGAGE_RANGE	9000	// close to this and it commits to a fight
+	#define CD2_AI_ENGAGE_KEEP		18000	// ...and stays committed out to here (hysteresis)
+	#define CD2_AI_DISPERSE_TICKS	420	// how long the opening spread lasts
+	#define CD2_AI_DISPERSE_LEG		9000	// how far the opening spread drives
+	#define CD2_AI_ROAM_MIN			7000	// roam goal: nearest acceptable road node
+	#define CD2_AI_ROAM_MAX			22000	// roam goal: furthest acceptable road node
+	#define CD2_AI_GOAL_TICKS		600	// frames before a roam goal is re-picked
 #define CD2_AI_LOOK		2560	// look-ahead probe distance
 #define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
@@ -68,7 +74,7 @@
 #define CD2_AI_SEPARATE_STEER	120	// steering nudge away from a nearby opponent
 #define CD2_AI_STATE_JITTER	60	// random extra frames between behaviour re-decisions
 #define CD2_AI_ENGAGE_JITTER	300	// random spread on the aggression burst length
-#define CD2_AI_WANDER_LEG	6000	// wander goal distance along the wander heading
+#define CD2_AI_WANDER_LEG	16000	// wander goal distance along the wander heading
 #define CD2_AI_NEAR_LOOK	380	// base imminent-collision probe distance
 #define CD2_AI_LOOK_PER_SPEED	3	// extra probe distance per unit/frame of speed
 #define CD2_AI_BRAKE_SPEED	60	// forward speed above which it brakes instead of pivoting
@@ -106,6 +112,9 @@ typedef struct CD2_AI_CAR
 	int avoidCycles;	// consecutive avoid activations (escalates to reverse)
 	int engageTicks;	// frames of the current aggressive burst
 	int engageLimit;	// this contestant's own aggression burst length
+	int disperseTicks;	// frames left of the opening spread
+	int goalX, goalZ;	// stored roam destination
+	int goalTimer;		// frames before the roam goal is re-picked
 	int roamTicks;	// >0 while roaming (hit-and-run break-off period)
 	int logTick;		// per-opponent debug log throttle
 	int hold;		// frames a behaviour must be held before switching
@@ -119,6 +128,18 @@ static int sAiCount;		// number of live opponents
 static unsigned int sLogTick;	// debugLog throttle counter
 static int sNavProbeDone;	// one-shot arbitration probe at level start
 static CD2_AI_DEBUG sDbg;	// latest values of the tracked (first) opponent
+
+// Random2() IGNORES its argument - convert.c returns a raw 16-bit value
+// regardless of the range you ask for. Every "jitter up to N" must reduce it
+// here, or you get values in the tens of thousands (an "up to 210 frames"
+// spread once came out as 28822 frames).
+static int cd2AiRand(int n)
+{
+	if (n <= 0)
+		return 0;
+
+	return Random2(n) % n;
+}
 
 static CD2_AI_CAR* cd2AiSlot(int carId)
 {
@@ -248,7 +269,7 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 	// Probe BOTH sides at this opponent's fan distance (then a little further
 	// out) and spawn on whichever is clear, so we never drop a car inside a
 	// wall. lineClear: 0 = blocked.
-	for (k = 0; k < 3 && !chosen; k++)
+	for (k = 0; k < 5 && !chosen; k++) // Upped test to five opponents for a total of six contestants
 	{
 		int d = off + k * CD2_AI_SPAWN_OFFSET;
 
@@ -288,7 +309,7 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 
 		for (k = 0; k < 10; k++)
 		{
-			int m = Random2(MAX_CAR_RESIDENT_MODELS);
+			int m = cd2AiRand(MAX_CAR_RESIDENT_MODELS);
 
 			if (gCarCleanModelPtr[m] != NULL && gCarDamModelPtr[m] != NULL)
 			{
@@ -322,7 +343,7 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 			return 0;	// no free slot
 
 		A->carId = slot->id;
-		A->state = CD2_AI_WANDER;
+		A->state = CD2_AI_DISPERSE;	// spawn scattered, not in formation
 		A->stateTimer = 0;
 		A->evade = 0;
 		A->fireTimer = 0;
@@ -339,6 +360,14 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		A->role = (gCd2Cfg.aiRole >= 0) ? gCd2Cfg.aiRole : (index % CD2_AI_ROLE_COUNT);
 		A->route.count = 0;
 		A->route.source = CD2_NAV_SRC_NONE;
+
+		// Opening move: they spawn clustered beside the player, and a
+		// cluster that keeps formation is one target instead of three. Send
+		// each contestant out on its own fanned heading, jittered so they
+		// do not all leave on the same bearing.
+		A->state = CD2_AI_DISPERSE;
+		A->disperseTicks = CD2_AI_DISPERSE_TICKS + cd2AiRand(CD2_AI_DISPERSE_TICKS / 2);
+		A->wanderHeading = (car_data[A->carId].hd.direction + index * 1000 + cd2AiRand(600)) & 0xfff;
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[combatd2] AI opponent spawned (car=%d slot=%d role=%d side=%d model=%d palette=%d)\n",
@@ -400,6 +429,10 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #define sAvoidCycles	A->avoidCycles
 #define sEngageTicks	A->engageTicks
 #define sEngageLimit	A->engageLimit
+#define sDisperseTicks	A->disperseTicks
+#define sGoalX		A->goalX
+#define sGoalZ		A->goalZ
+#define sGoalTimer	A->goalTimer
 #define sRoamTicks	A->roamTicks
 #define sLogTick2	A->logTick
 #define sHold		A->hold
@@ -503,36 +536,46 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		sHold--;
 		// jittered here too - a fixed window while holding would re-sync every
 		// contestant back onto the same behaviour clock
-		sStateTimer = CD2_AI_STATE_TICKS + Random2(CD2_AI_STATE_JITTER);
+		sStateTimer = CD2_AI_STATE_TICKS + cd2AiRand(CD2_AI_STATE_JITTER);
 	}
 	else if (--sStateTimer <= 0)
 	{
 		int want;
+		int engage = (sState == CD2_AI_ATTACK) ? CD2_AI_ENGAGE_KEEP : CD2_AI_ENGAGE_RANGE;
 
-		if (sRoamTicks > 0)
+		if (sDisperseTicks > 0)
 		{
-			// hit-and-run: mid-break-off it roams (looking for weapons or a
-			// better angle) rather than locking straight back on
-			want = CD2_AI_WANDER;
+			// Opening move. They spawn in a cluster and none of them has a
+			// fight yet, so the useful thing to do is break formation.
+			// (counted down per frame, above - not per re-decision)
+			want = CD2_AI_DISPERSE;
 		}
-		else if (targetId >= 0 && targetD2 < (long long)CD2_AI_HUNT_RANGE * CD2_AI_HUNT_RANGE)
+		else if (targetId >= 0 && targetD2 < (long long)engage * engage)
 		{
-			// aggressive: pursue unless badly hurt, and break off only then
-			want = (cp->totalDamage > CD2_AI_HURT_FLEE) ? CD2_AI_FLEE : CD2_AI_HUNT;
+			// Committed to the fight, and STAYING committed: the range it
+			// takes to get into an attack and the range it takes to stay in
+			// one are deliberately different. With a single threshold the AI
+			// crossed back and forth over it every few frames and flipped
+			// between hunting and driving away.
+			want = CD2_AI_ATTACK;
 		}
 		else
 		{
-			want = CD2_AI_WANDER;
+			want = CD2_AI_ROAM;
 		}
 
 		if (want != sState)
 			sHold = CD2_AI_MIN_STATE_TICKS;
 
 		sState = want;
-		// jittered window: without this every contestant re-decides on the same
-		// frame and they switch behaviour in lockstep like one actor, not a field
-		sStateTimer = CD2_AI_STATE_TICKS + Random2(CD2_AI_STATE_JITTER);
+		// jittered window: without this every contestant re-decides on the
+		// same frame and they switch behaviour in lockstep like one actor
+		sStateTimer = CD2_AI_STATE_TICKS + cd2AiRand(CD2_AI_STATE_JITTER);
 	}
+
+	// opening spread counts down in real frames
+	if (sDisperseTicks > 0)
+		sDisperseTicks--;
 
 	// --- never park. Sitting still just makes it a target: short stops to
 	// pivot or line up a shot are fine, a long idle is not. ---
@@ -544,8 +587,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	if (sIdle > CD2_AI_IDLE_TICKS)
 	{
 		sIdle = 0;
-		sRoamTicks = CD2_AI_ROAM_TICKS;
-		sWanderHeading = (sWanderHeading + 1200 + Random2(1200)) & 0xfff;
+			sWanderHeading = (sWanderHeading + 1200 + cd2AiRand(1200)) & 0xfff;
 		sAvoid = CD2_AI_AVOID_NONE;
 		sAvoidTicks = 0;
 		sReverse = CD2_AI_REVERSE_TICKS;	// back out of whatever is holding it
@@ -554,63 +596,11 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			printInfo("[combatd2] AI car=%d idle too long - moving out\n", cp->id);
 	}
 
-	// --- run-and-gun rhythm: hit hard for a burst, then break off and roam
-	// (weapons/repositioning) before locking on again ---
-	if (sRoamTicks > 0)
-		sRoamTicks--;
-
-	if (sState == CD2_AI_HUNT)
-	{
-		if (sEngageLimit < 1)
-			sEngageLimit = CD2_AI_ENGAGE_TICKS + Random2(CD2_AI_ENGAGE_JITTER);
-
-		if (++sEngageTicks > sEngageLimit)
-		{
-			sEngageTicks = 0;
-			sEngageLimit = CD2_AI_ENGAGE_TICKS + Random2(CD2_AI_ENGAGE_JITTER);
-			sRoamTicks = CD2_AI_ROAM_TICKS + Random2(CD2_AI_ROAM_JITTER);
-
-			if (gCd2Cfg.debugLog)
-				printInfo("[combatd2] AI car=%d breaking off to roam (%d frames)\n",
-					cp->id, sRoamTicks);
-		}
-	}
-	else
-	{
-		sEngageTicks = 0;
-	}
-
 	// --- navigator: goal, route and the shared flow field ---
 	{
-		int useWander = 0;
-
-		if (sRole == CD2_AI_ROLE_HARVESTER)
-			useWander = 1;	// roam for pickups/caches (rally points until they exist)
-		else if (!(sState == CD2_AI_HUNT && targetId >= 0) && !(sState == CD2_AI_FLEE && targetId >= 0))
-			useWander = 1;	// WANDER state
-
-		if (useWander)
+		if (sState == CD2_AI_ATTACK && targetId >= 0)
 		{
-			if (--sWanderTimer <= 0)
-			{
-				sWanderHeading = (sWanderHeading + 900 + Random2(1400)) & 0xfff;
-				sWanderTimer = 60 + Random2(90);
-			}
-
-			goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * CD2_AI_WANDER_LEG) >> 12);
-			goalV.vy = carV.vy;
-			goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_WANDER_LEG) >> 12);
-		}
-		else if (sState == CD2_AI_FLEE && targetId >= 0)
-		{
-			// break off: a point mirrored through the car from the target
-			goalV.vx = carV.vx + (carV.vx - targetV.vx);
-			goalV.vy = carV.vy;
-			goalV.vz = carV.vz + (carV.vz - targetV.vz);
-		}
-		else if (targetId >= 0)
-		{
-			// hunting: the target, with a role-specific offset
+			// attack: the target, with a role-specific offset
 			CAR_DATA* t = &car_data[targetId];
 			int ox = targetV.vx;
 			int oz = targetV.vz;
@@ -623,7 +613,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			}
 			else if (sRole == CD2_AI_ROLE_AMBUSHER)
 			{
-				// get ahead of the target and wait
+				// get ahead of the target
 				ox += (int)(((long long)t->hd.where.m[0][2] * 5000) >> 12);
 				oz += (int)(((long long)t->hd.where.m[2][2] * 5000) >> 12);
 			}
@@ -632,8 +622,50 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			goalV.vy = targetV.vy;
 			goalV.vz = oz;
 		}
+		else if (sState == CD2_AI_DISPERSE)
+		{
+			// opening spread: drive out along this contestant's own heading
+			goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * CD2_AI_DISPERSE_LEG) >> 12);
+			goalV.vy = carV.vy;
+			goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_DISPERSE_LEG) >> 12);
+		}
+		else
+		{
+			int gdx = sGoalX - carV.vx;
+			int gdz = sGoalZ - carV.vz;
 
-		cd2NavRoute(cp->id, &carV, &goalV, &sRoute);
+			// ROAM: cruise toward a road node, keeping the goal between
+			// frames so the car travels instead of re-aiming every frame.
+			// The road graph is a GUIDE here, not a cage - cd2NavRoute still
+			// A*s over it, and falls back to the off-road grid when the road
+			// detours badly.
+			if (--sGoalTimer <= 0 ||
+				    gdx * gdx + gdz * gdz < CD2_AI_WP_REACH * CD2_AI_WP_REACH)
+			{
+				if (!cd2NavRoamGoal(&carV, CD2_AI_ROAM_MIN, CD2_AI_ROAM_MAX, &goalV))
+				{
+					if (--sWanderTimer <= 0)
+					{
+						sWanderHeading = (sWanderHeading + 900 + cd2AiRand(1400)) & 0xfff;
+						sWanderTimer = 60 + cd2AiRand(90);
+					}
+
+					goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * CD2_AI_WANDER_LEG) >> 12);
+					goalV.vy = carV.vy;
+					goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_WANDER_LEG) >> 12);
+				}
+
+				sGoalX = goalV.vx;
+				sGoalZ = goalV.vz;
+				sGoalTimer = CD2_AI_GOAL_TICKS + cd2AiRand(CD2_AI_GOAL_TICKS);
+			}
+
+			goalV.vx = sGoalX;
+			goalV.vy = carV.vy;
+			goalV.vz = sGoalZ;
+		}
+
+	cd2NavRoute(cp->id, &carV, &goalV, &sRoute);
 
 		// shared pursuit field toward the same goal, budgeted per frame
 		cd2FlowSetGoal(&goalV);
@@ -942,7 +974,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		// --- separation: spread out from the other opponents unless actively
 		// engaging a target. A pack that drives as one blob reads as a single
 		// contestant; they should close on you from different directions. ---
-		if (!(sState == CD2_AI_HUNT && targetId >= 0))
+		if (sState != CD2_AI_ATTACK || targetId < 0)
 		{
 			for (i = 0; i < MAX_CARS; i++)
 			{
@@ -1023,7 +1055,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	// --- offensive: MG when lined up, plus a primary (missile) at range ---
 	// Both go through cd2WpnTryFire, so each weapon's own refire cooldown sets
 	// the cadence and the AI can't out-shoot what the player is allowed to do.
-	if (sState == CD2_AI_HUNT && sEvade == 0 && targetId >= 0 &&
+	if (sEvade == 0 && targetId >= 0 &&
 	    targetD2 < (long long)CD2_AI_FIRE_RANGE * CD2_AI_FIRE_RANGE &&
 	    ABS(diff) < CD2_AI_FIRE_CONE)
 	{
@@ -1074,8 +1106,8 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	}
 
 	if (gCd2Cfg.debugLog && (sLogTick2++ % 60) == 0)
-		printInfo("[combatd2] AI car=%d %s state=%s dmg=%d hits=%d walls=%d spd=%d steer=%d rev=%d pivot=%d avoid=%d gov=%d free=%d threat=%d wall=%d\n",
-			cp->id, cd2AiRoleNameOf(sRole), cd2AiStateName(), cp->totalDamage, sHits, cd2SceneryHits(cp),
+		printInfo("[combatd2] AI car=%d %s state=%s disp=%d dmg=%d hits=%d walls=%d spd=%d steer=%d rev=%d pivot=%d avoid=%d gov=%d free=%d threat=%d wall=%d\n",
+			cp->id, cd2AiRoleNameOf(sRole), cd2AiStateName(), sDisperseTicks, cp->totalDamage, sHits, cd2SceneryHits(cp),
 			speedFwd, sSteer, (sReverse > 0) ? 1 : 0, pivotDir, sAvoid, governed, freeAhead, threatFlag, blockedAhead);
 
 #undef sState
@@ -1093,6 +1125,10 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #undef sAvoidCycles
 #undef sEngageTicks
 #undef sEngageLimit
+#undef sDisperseTicks
+#undef sGoalX
+#undef sGoalZ
+#undef sGoalTimer
 #undef sRoamTicks
 #undef sLogTick2
 #undef sHold
@@ -1371,7 +1407,7 @@ const char* cd2AiStateName(void)
 {
 	static const char* const names[] =
 	{
-		"Auto", "Hunt", "Flee", "Recover", "Wander"
+		"Auto", "Disperse", "Roam", "Attack", "Recover"
 	};
 	int s = gCd2Cfg.aiForceState;
 
@@ -1380,10 +1416,10 @@ const char* cd2AiStateName(void)
 
 	if (s == CD2_AI_AUTO)
 	{
-		int cur = (sAi[0].carId >= 0) ? sAi[0].state : CD2_AI_WANDER;
+		int cur = (sAi[0].carId >= 0) ? sAi[0].state : CD2_AI_ROAM;
 
 		if (cur < 0 || cur >= CD2_AI_STATE_COUNT)
-			cur = CD2_AI_WANDER;
+			cur = CD2_AI_ROAM;
 
 		return names[cur];
 	}

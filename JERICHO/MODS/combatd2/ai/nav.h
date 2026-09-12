@@ -57,6 +57,13 @@ int  cd2NavNodePos(int node, VECTOR* out);
 // Returns out->count (0 = no route).
 int  cd2NavRoute(int carId, const VECTOR* from, const VECTOR* goal, CD2_NAV_ROUTE* out);
 
+// Pick a road-graph node to cruise toward: a node between minDist and maxDist
+// from `from`, scanning from a rotating start so successive goals differ. This
+// is how roads act as a GUIDE for roving rather than a cage - the route to the
+// goal is still A* (road graph first, off-road grid when the road detours
+// badly). Returns 0 when nothing fits, and the caller wanders instead.
+int  cd2NavRoamGoal(const VECTOR* from, int minDist, int maxDist, VECTOR* out);
+
 // Last route computed for a car (for the debug overlay), or NULL.
 const CD2_NAV_ROUTE* cd2NavLastRoute(int carId);
 

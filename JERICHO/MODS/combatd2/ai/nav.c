@@ -87,6 +87,44 @@ static int cd2NavIsqrt(int v)
 	return r;
 }
 
+// Road-anchored roam destination (see nav.h). A rotating start index keeps
+// successive picks from returning the same node, so a roving contestant
+// actually travels instead of orbiting one junction.
+static int cd2NavDist2D(int ax, int az, int bx, int bz);	// defined below
+
+int cd2NavRoamGoal(const VECTOR* from, int minDist, int maxDist, VECTOR* out)
+{
+	static int sRotate;
+	int pass, i, d;
+
+	if (sNodeCount <= 0 || out == NULL)
+		return 0;
+
+	if (sRotate >= sNodeCount)
+		sRotate = 0;
+
+	for (pass = 0; pass < sNodeCount; pass++)
+	{
+		i = (sRotate + pass) % sNodeCount;
+
+		if (!sNodes[i].hasPos)
+			continue;
+
+		d = cd2NavDist2D(from->vx, from->vz, sNodes[i].x, sNodes[i].z);
+
+		if (d >= minDist && d <= maxDist)
+		{
+			sRotate = i + 1;
+			out->vx = sNodes[i].x;
+			out->vy = from->vy;
+			out->vz = sNodes[i].z;
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 // ---------------------------------------------------------------------------
 // Densify: insert intermediate waypoints so no leg is longer than
 // CD2_NAV_WP_STEP. A road route is only the A* segment midpoints, which can be
