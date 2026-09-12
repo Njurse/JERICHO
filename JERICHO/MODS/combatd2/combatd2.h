@@ -151,7 +151,7 @@ enum
 // --------------------------- default stats -------------------------------
 //
 // Speed defaults (world-units/frame):
-#define CD2_TOP_SPEED       470   // speed-units/frame (raw slider value; the
+#define CD2_TOP_SPEED       440   // speed-units/frame (raw slider value; the
                                     // physics top is CD2_SPEED_SCALE x this)
 #define CD2_SPEED_SCALE     2048  // fp: effective top speed multiplier (0.5x =
                                     // ~130 at the default slider value)
@@ -164,10 +164,10 @@ enum
 #define CD2_BRAKE_FLOOR     1024  // fp: fraction of peak brake kept at standstill
                                   // (1024/4096 = 25%) so stopping is never asymptotic
 #define CD2_REVERSE_ACCEL_FRAC 2048 // fp: reverse accel = brake x this (2048/4096 = 0.5)
-#define CD2_DRAG            36    // fixed point /frame: 48/4096 ≈ 1.2%/frame (coast)
+#define CD2_DRAG            34    // fixed point /frame: 48/4096 ≈ 1.2%/frame (coast)
 
 // Yaw defaults (PSX-units/frame; 4096 = 360°):
-#define CD2_HANDLING        30    // max yaw rate  (≈ 120°/s at 30 fps)
+#define CD2_HANDLING        35    // max yaw rate  (≈ 120°/s at 30 fps)
 #define CD2_ANGULAR_ACCEL   17    // yaw accel toward target (≈ 360°/s²)
 #define CD2_YAW_SPEED_FALLOFF 800   // fp: TM2 speed-sensitive yaw falloff. 0 = off;
                                   // ~1200-1600 turns down yaw authority as speed
@@ -197,9 +197,9 @@ enum
 // ==============================================================
 
 // Visual: lateral velocity (speed units) → body roll (PSX angle units).
-#define CD2_ROLL_GAIN       22     // roll = -latVel * gain, clamped below
-#define CD2_BODY_MAX_ROLL   13    // ~2° lean (TMB: weight felt, not exaggerated)
-#define CD2_ROLL_LERP       3     // exponential settle divisor
+#define CD2_ROLL_GAIN       15     // roll = -latVel * gain, clamped below
+#define CD2_BODY_MAX_ROLL   14    // ~2° lean (TMB: weight felt, not exaggerated)
+#define CD2_ROLL_LERP       2     // exponential settle divisor
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
 #define CD2_FOV_PULL_SCRZ   60
@@ -345,6 +345,13 @@ typedef struct CD2_STATS
 // Runtime-tunable via the pause menu / [combatd2] car_car_damage, scenery_damage.
 #define CD2_CAR_CAR_DAMAGE_DEFAULT 67    // % of stock car-vs-car damage (10..100)
 #define CD2_SCENERY_DAMAGE_DEFAULT 65    // % of stock car-vs-solid damage (0..100)
+
+// ---- destroyed-car respawn -------------------------------------------
+// A wrecked car the module owns (the player and the AI opponents) returns to
+// the position it started the level at, after CD2_RESPAWN_DELAY_DEFAULT frames.
+// Spawn points come later; for now the start point is the respawn point.
+#define CD2_RESPAWN_DELAY_DEFAULT 300    // frames at 60fps = 5 seconds
+#define CD2_RESPAWN_DELAY_MAX     1800   // 30 seconds (clamp)
 // Prototype opponent-AI behaviour states (also CD2_CONFIG.aiForceState; 0 = let
 // the AI pick). See ai/opponent.c.
 enum
@@ -407,6 +414,8 @@ typedef struct CD2_CONFIG
 
 	int sceneryDamage;     // % of stock damage a car takes hitting solid scenery/objects
 	int carCarDamage;      // % of stock damage applied to car-vs-car hits
+	int respawn;           // 0/1: destroyed cars return to their start point
+	int respawnDelay;      // frames a destroyed car stays out (default ~5s)
 	int navDebug;          // 0/1: draw the navigation graph (nodes/edges/routes)
 	int aiOpponent;        // 0/1: spawn the prototype opponent car
 	int aiForceState;      // CD2_AI_AUTO (0) or a forced CD2_AI_* behaviour

@@ -91,6 +91,8 @@ static void cd2LoadConfig(void)
 
 	// car-vs-car damage as % of stock. Migrate the old car_car_nerf (% reduction).
 	gCd2Cfg.carCarDamage  = jer_config_get_int("combatd2", "car_car_damage", -1);
+	gCd2Cfg.respawn       = jer_config_get_int("combatd2", "respawn", 1);
+	gCd2Cfg.respawnDelay  = jer_config_get_int("combatd2", "respawn_delay", CD2_RESPAWN_DELAY_DEFAULT);
 
 	if (gCd2Cfg.carCarDamage < 0)
 		gCd2Cfg.carCarDamage = 100 - jer_config_get_int("combatd2", "car_car_nerf",
@@ -127,6 +129,8 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.aiRole        = jer_clamp_int(gCd2Cfg.aiRole, -1, CD2_AI_ROLE_COUNT - 1);
 	gCd2Cfg.navDebug      = gCd2Cfg.navDebug ? 1 : 0;
 	gCd2Cfg.carCarDamage  = jer_clamp_int(gCd2Cfg.carCarDamage, 10, 100);
+	gCd2Cfg.respawn       = gCd2Cfg.respawn ? 1 : 0;
+	gCd2Cfg.respawnDelay  = jer_clamp_int(gCd2Cfg.respawnDelay, 30, CD2_RESPAWN_DELAY_MAX);
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
 	gCd2Cfg.missileSound  = jer_clamp_int(gCd2Cfg.missileSound, 0, 34);
 }
@@ -156,6 +160,8 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "ai_role", gCd2Cfg.aiRole);
 	jer_config_set_int("combatd2", "nav_debug", gCd2Cfg.navDebug);
 	jer_config_set_int("combatd2", "car_car_damage", gCd2Cfg.carCarDamage);
+	jer_config_set_int("combatd2", "respawn", gCd2Cfg.respawn);
+	jer_config_set_int("combatd2", "respawn_delay", gCd2Cfg.respawnDelay);
 	jer_config_set_str("combatd2", "missile_model", gCd2Cfg.missileModel);
 	jer_config_set_int("combatd2", "missile_scale", gCd2Cfg.missileScale);
 	jer_config_set_int("combatd2", "missile_sound", gCd2Cfg.missileSound);
@@ -492,6 +498,132 @@ static void cd2RecoverRoll(CAR_DATA* cp)
 		printInfo("[combatd2] roll recover: car=%d dotUp=%d\n", cp->id, cy);
 }
 
+// ---- destroyed-car respawn ------------------------------------------------
+// Every car the module owns (the player and the AI opponents) remembers the
+// spot it started the level at; when it is wrecked (past the damage cap) it
+// comes back there after gCd2Cfg.respawnDelay frames. Spawn points are a later
+// feature - the start point stands in for now.
+
+typedef struct CD2_RESPAWN
+{
+	int valid;		// home recorded
+	int waiting;		// wrecked, counting down
+	int timer;		// frames left until it returns
+	int x, y, z;		// home position
+	int dir;		// home heading
+} CD2_RESPAWN;
+
+static CD2_RESPAWN gCd2Respawn[MAX_CARS];
+
+// 1 when this car is one the module drives (the player or an AI opponent).
+static int cd2OwnsCar(CAR_DATA* cp)
+{
+	return (cp->controlType == CONTROL_TYPE_PLAYER) || cd2AiIsOpponent(cp);
+}
+
+static void cd2RespawnCar(CAR_DATA* cp, CD2_RESPAWN* r)
+{
+	int i;
+
+	cp->totalDamage = 0;
+
+	for (i = 0; i < 6; i++)
+		cp->ap.damage[i] = 0;
+
+	cp->hd.where.t[0] = r->x;
+	cp->hd.where.t[1] = r->y;
+	cp->hd.where.t[2] = r->z;
+	cp->hd.direction = r->dir;
+
+	for (i = 0; i < 3; i++)
+	{
+		cp->st.n.linearVelocity[i] = 0;
+		cp->st.n.angularVelocity[i] = 0;
+	}
+
+	cp->thrust = 0;
+	cp->wheel_angle = 0;
+	cp->handbrake = 0;
+	cp->wheelspin = 0;
+	cp->hd.speed = 0;
+	cp->hd.wheel_speed = 0;
+
+	RebuildCarMatrix(&cp->st, cp);
+
+	// reset this module's per-car handling state so nothing carries over
+	gCd2Car[cp->id].yawRate = 0;
+	gCd2Car[cp->id].slip = 0;
+	gCd2Car[cp->id].roll = 0;
+	gCd2Car[cp->id].throttle = 0;
+	gCd2Car[cp->id].pivotDir = 0;
+	gCd2Car[cp->id].slideTicks = 0;
+	gCd2Car[cp->id].aiPivot = 0;
+
+	printInfo("[combatd2] respawn: car=%d back at start (%d,%d,%d)\n",
+		cp->id, r->x, r->y, r->z);
+}
+
+static void cd2RespawnTick(CAR_DATA* cp)
+{
+	CD2_RESPAWN* r = &gCd2Respawn[cp->id];
+
+	if (!cd2OwnsCar(cp))
+	{
+		r->valid = 0;
+		r->waiting = 0;
+		return;
+	}
+
+	// record the home spot the first time the car is seen alive at the start
+	if (!r->valid && !cd2CarTotaled(cp))
+	{
+		r->valid = 1;
+		r->x = cp->hd.where.t[0];
+		r->y = cp->hd.where.t[1];
+		r->z = cp->hd.where.t[2];
+		r->dir = cp->hd.direction;
+	}
+
+	if (!gCd2Cfg.respawn)
+	{
+		r->waiting = 0;
+		return;
+	}
+
+	if (cd2CarTotaled(cp))
+	{
+		if (!r->waiting)
+		{
+			r->waiting = 1;
+			r->timer = gCd2Cfg.respawnDelay;
+
+			printInfo("[combatd2] respawn: car=%d DESTROYED (type=%d) - returning in %d frames\n",
+				cp->id, cp->controlType, r->timer);
+		}
+	}
+	else if (r->waiting)
+	{
+		r->waiting = 0;		// recovered some other way
+	}
+
+	if (r->waiting && r->valid && --r->timer <= 0)
+	{
+		cd2RespawnCar(cp, r);
+		r->waiting = 0;
+	}
+}
+
+// New level: forget every home.
+static int cd2OnGameStart(void* ud, void* args)
+{
+	(void)ud;
+	(void)args;
+
+	memset(gCd2Respawn, 0, sizeof(gCd2Respawn));
+
+	return JER_RESULT_CONTINUE;
+}
+
 static int cd2OnDebugTick(void* ud, void* args)
 {
 	int i;
@@ -631,6 +763,9 @@ static int cd2OnCarStep(void* ud, void* args)
 	gCd2Car[cp->id].throttle = (cp->thrust > 0) ? 1 : (cp->thrust < 0) ? -1 : 0;
 
 	cd2LimitRoll(cp);
+
+	// wrecked cars return to their start after a delay
+	cd2RespawnTick(cp);
 
 	return JER_RESULT_CONTINUE;
 }
@@ -1282,6 +1417,41 @@ static int cd2ToggleAiDebug(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void cd2LabelRespawn(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Car Respawn: %s", gCd2Cfg.respawn ? "ON" : "OFF");
+}
+
+static int cd2ToggleRespawn(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gCd2Cfg.respawn = !gCd2Cfg.respawn;
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void cd2LabelRespawnDelay(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Respawn Delay: %d.%ds", gCd2Cfg.respawnDelay / 60, (gCd2Cfg.respawnDelay % 60) / 6);
+}
+
+static int cd2CycleRespawnDelay(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	gCd2Cfg.respawnDelay += 60;	// 1 second steps
+
+	if (gCd2Cfg.respawnDelay > CD2_RESPAWN_DELAY_MAX)
+		gCd2Cfg.respawnDelay = 30;
+
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void cd2LabelAiRole(void* ud, char* out, int max)
 {
 	static const char* names[] = { "Auto", "Chaser", "Flanker", "Ambusher", "Harvester" };
@@ -1363,13 +1533,15 @@ static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 	{ NULL, cd2LabelAiState, cd2CycleAiState, NULL, NULL, 0 },
 	{ NULL, cd2LabelAiRole, cd2CycleAiRole, NULL, NULL, 0 },
 	{ NULL, cd2LabelAiDebug, cd2ToggleAiDebug, NULL, NULL, 0 },
+	{ NULL, cd2LabelRespawn, cd2ToggleRespawn, NULL, NULL, 0 },
+	{ NULL, cd2LabelRespawnDelay, cd2CycleRespawnDelay, NULL, NULL, 0 },
 	{ NULL, cd2LabelNavDebug, cd2ToggleNavDebug, NULL, NULL, 0 },
 	{ NULL, cd2LabelScenery, cd2CycleScenery, NULL, NULL, 0 },
 	{ NULL, cd2LabelCarCarNerf, cd2CycleCarCarNerf, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2WeaponMenu =
-{ "Weapons", cd2WeaponItems, 11 };
+{ "Weapons", cd2WeaponItems, 13 };
 
 static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
 {
@@ -1433,6 +1605,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_DAMAGE_SCALE, cd2OnDamageScale, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_VS_CAR, cd2OnCarVsCar, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DEBUG_TICK, cd2OnDebugTick, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2OnGameStart, NULL, 0);
 
 #if CD2_ENFORCE_PURSUIT_MUSIC
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFramePursuit, NULL, 0);
