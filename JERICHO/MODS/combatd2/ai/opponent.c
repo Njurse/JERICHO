@@ -44,10 +44,10 @@
 	#define CD2_AI_ENGAGE_RANGE	9000	// close to this and it commits to a fight
 	#define CD2_AI_ENGAGE_KEEP		18000	// ...and stays committed out to here (hysteresis)
 	#define CD2_AI_DISPERSE_TICKS	420	// how long the opening spread lasts
-	#define CD2_AI_DISPERSE_LEG		18000	// how far the opening spread drives
-	#define CD2_AI_ROAM_MIN			13000	// roam goal: nearest acceptable road node
-	#define CD2_AI_ROAM_MAX			45000	// roam goal: furthest acceptable road node
-	#define CD2_AI_GOAL_TICKS		1500	// frames before a roam goal is re-picked
+	#define CD2_AI_DISPERSE_LEG		26000	// how far the opening spread drives
+	#define CD2_AI_ROAM_MIN			18000	// roam goal: nearest acceptable road node
+	#define CD2_AI_ROAM_MAX			70000	// roam goal: furthest acceptable road node
+	#define CD2_AI_GOAL_TICKS		2400	// frames before a roam goal is re-picked
 #define CD2_AI_LOOK		2560	// look-ahead probe distance
 #define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
@@ -57,13 +57,15 @@
 #define CD2_AI_FIRE_RANGE	9000	// MG range when pursuing
 #define CD2_AI_FIRE_CONE	420	// heading error it will still fire through
 #define CD2_AI_FIRE_COOLDOWN	1	// frames between AI MG shots
+#define CD2_AI_AIM_PULL_LIMIT	1100	// only bias the heading within this error (~97 deg)
+#define CD2_AI_AIM_PULL		2	// lean this fraction of the remaining error onto the target
 #define CD2_AI_PRIMARY_MIN	2200	// too close to launch a missile (world units)
 #define CD2_AI_PRIMARY_RANGE	14000	// furthest it will launch a missile
 #define CD2_AI_STEER_RATE	148	// max wheel_angle change per frame
 #define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
 #define CD2_AI_REVERSE_TICKS	22	// frames of reversing after getting stuck
-#define CD2_AI_STUCK_TICKS	18	// frames with no forward progress before reversing
+#define CD2_AI_STUCK_TICKS	40	// frames with no forward progress before reversing
 #define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
 #define CD2_AI_WP_REACH		700	// route waypoints within this are "reached" and skipped
 #define CD2_AI_LOOKAHEAD_MIN	900	// pure-pursuit lookahead at a standstill
@@ -74,7 +76,7 @@
 #define CD2_AI_SEPARATE_STEER	120	// steering nudge away from a nearby opponent
 #define CD2_AI_STATE_JITTER	60	// random extra frames between behaviour re-decisions
 #define CD2_AI_ENGAGE_JITTER	300	// random spread on the aggression burst length
-#define CD2_AI_WANDER_LEG	26000	// wander goal distance along the wander heading
+#define CD2_AI_WANDER_LEG	40000	// wander goal distance along the wander heading
 #define CD2_AI_NEAR_LOOK	380	// base imminent-collision probe distance
 #define CD2_AI_LOOK_PER_SPEED	3	// extra probe distance per unit/frame of speed
 #define CD2_AI_BRAKE_SPEED	60	// forward speed above which it brakes instead of pivoting
@@ -83,8 +85,10 @@
 #define CD2_AI_ROAM_JITTER	440	// random extra roam frames (so they desync)
 #define CD2_AI_STATE_TICKS	145	// frames between behaviour re-decisions
 #define CD2_AI_MIN_STATE_TICKS	150	// minimum frames any new behaviour is held
-#define CD2_AI_IDLE_TICKS	80	// frames near-standstill before it must get moving
-#define CD2_AI_IDLE_SPEED	45	// forward speed counted as "sitting still"
+#define CD2_AI_IDLE_TICKS	200	// frames near-standstill before it must get moving
+#define CD2_AI_IDLE_SPEED	15	// forward speed counted as "sitting still"
+					//    (45 counted a car doing 44 units/frame as parked, which is
+					//    most of why they kept deciding they were stuck)
 
 #define CD2_AI_FAN_RAYS		5	// rays in the forward scenery fan
 #define CD2_AI_FAN_STEPS	5	// length samples along each ray
@@ -775,6 +779,27 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			else
 				desired = ratan2(goalV.vx - carV.vx, goalV.vz - carV.vz);
 		}
+	}
+
+	// --- attack alignment: while engaging, lean the heading onto the target so
+	// the guns actually line up. Navigation keeps priority by construction: the
+	// pull is capped to CD2_AI_AIM_PULL_LIMIT, so a route that disagrees by more
+	// than that still wins outright, and the navigation heading is only ever
+	// nudged, never replaced. ---
+	if (sState == CD2_AI_ATTACK && sEvade == 0 && targetId >= 0 &&
+	    targetD2 < (long long)CD2_AI_FIRE_RANGE * CD2_AI_FIRE_RANGE)
+	{
+		int toTarget = ratan2(targetV.vx - carV.vx, targetV.vz - carV.vz);
+		int aimErr = toTarget - desired;
+
+		while (aimErr > 2048)
+			aimErr -= 4096;
+
+		while (aimErr < -2048)
+			aimErr += 4096;
+
+		if (ABS(aimErr) < CD2_AI_AIM_PULL_LIMIT)
+			desired = desired + aimErr / CD2_AI_AIM_PULL;
 	}
 
 	// --- steering ---
