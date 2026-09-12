@@ -51,6 +51,8 @@
 #define CD2_AI_FIRE_RANGE	9000	// MG range when pursuing
 #define CD2_AI_FIRE_CONE	420	// heading error it will still fire through
 #define CD2_AI_FIRE_COOLDOWN	10	// frames between AI MG shots
+#define CD2_AI_PRIMARY_MIN	2200	// too close to launch a missile (world units)
+#define CD2_AI_PRIMARY_RANGE	14000	// furthest it will launch a missile
 #define CD2_AI_STEER_RATE	148	// max wheel_angle change per frame
 #define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
@@ -774,23 +776,25 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	cp->handbrake = 0;
 	cp->wheelspin = 0;
 
-	// --- offensive: MG the player when lined up (hunt only, not while dodging) ---
-	if (sFireTimer > 0)
-		sFireTimer--;
-
-	if (sState == CD2_AI_HUNT && sEvade == 0 && targetId >= 0 && sFireTimer == 0)
+	// --- offensive: MG when lined up, plus a primary (missile) at range ---
+	// Both go through cd2WpnTryFire, so each weapon's own refire cooldown sets
+	// the cadence and the AI can't out-shoot what the player is allowed to do.
+	if (sState == CD2_AI_HUNT && sEvade == 0 && targetId >= 0 &&
+	    targetD2 < (long long)CD2_AI_FIRE_RANGE * CD2_AI_FIRE_RANGE &&
+	    ABS(diff) < CD2_AI_FIRE_CONE)
 	{
-		if (targetD2 < (long long)CD2_AI_FIRE_RANGE * CD2_AI_FIRE_RANGE &&
-		    ABS(diff) < CD2_AI_FIRE_CONE)
-		{
-			const CD2_WEAPON_DEF* mg = cd2WpnDef(CD2_WID_MG);
+		int launched = 0;
 
-			if (mg != NULL && mg->fire != NULL)
-			{
-				mg->fire(cp);
-				sFireTimer = CD2_AI_FIRE_COOLDOWN;
-			}
-		}
+		// primary first, so a launch is never starved by the MG cadence
+		if (targetD2 > (long long)CD2_AI_PRIMARY_MIN * CD2_AI_PRIMARY_MIN &&
+		    targetD2 < (long long)CD2_AI_PRIMARY_RANGE * CD2_AI_PRIMARY_RANGE)
+			launched = cd2WpnTryFire(cp, CD2_WID_MISSILE);
+
+		if (!launched)
+			cd2WpnTryFire(cp, CD2_WID_MG);
+
+		if (launched && gCd2Cfg.debugLog)
+			printInfo("[combatd2] AI car=%d launched a missile at car=%d\n", cp->id, targetId);
 	}
 
 	// --- observability snapshot (tracked opponent only) ---
