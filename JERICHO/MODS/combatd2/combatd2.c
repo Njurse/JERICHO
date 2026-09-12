@@ -91,6 +91,7 @@ static void cd2LoadConfig(void)
 
 	// car-vs-car damage as % of stock. Migrate the old car_car_nerf (% reduction).
 	gCd2Cfg.carCarDamage  = jer_config_get_int("combatd2", "car_car_damage", -1);
+	gCd2Cfg.aiDamageTaken = jer_config_get_int("combatd2", "ai_damage_taken", CD2_AI_DAMAGE_TAKEN_DEFAULT);
 	gCd2Cfg.respawn       = jer_config_get_int("combatd2", "respawn", 1);
 	gCd2Cfg.respawnDelay  = jer_config_get_int("combatd2", "respawn_delay", CD2_RESPAWN_DELAY_DEFAULT);
 
@@ -129,6 +130,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.aiRole        = jer_clamp_int(gCd2Cfg.aiRole, -1, CD2_AI_ROLE_COUNT - 1);
 	gCd2Cfg.navDebug      = gCd2Cfg.navDebug ? 1 : 0;
 	gCd2Cfg.carCarDamage  = jer_clamp_int(gCd2Cfg.carCarDamage, 10, 100);
+	gCd2Cfg.aiDamageTaken = jer_clamp_int(gCd2Cfg.aiDamageTaken, 10, 400);
 	gCd2Cfg.respawn       = gCd2Cfg.respawn ? 1 : 0;
 	gCd2Cfg.respawnDelay  = jer_clamp_int(gCd2Cfg.respawnDelay, 30, CD2_RESPAWN_DELAY_MAX);
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
@@ -160,6 +162,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "ai_role", gCd2Cfg.aiRole);
 	jer_config_set_int("combatd2", "nav_debug", gCd2Cfg.navDebug);
 	jer_config_set_int("combatd2", "car_car_damage", gCd2Cfg.carCarDamage);
+	jer_config_set_int("combatd2", "ai_damage_taken", gCd2Cfg.aiDamageTaken);
 	jer_config_set_int("combatd2", "respawn", gCd2Cfg.respawn);
 	jer_config_set_int("combatd2", "respawn_delay", gCd2Cfg.respawnDelay);
 	jer_config_set_str("combatd2", "missile_model", gCd2Cfg.missileModel);
@@ -660,7 +663,7 @@ static int cd2OnDebugTick(void* ud, void* args)
 
 // Shared damage rediuction: `value` scaled to `pct` percent (both damage hooks
 // route through this so player and opponent cars are treated identically).
-static int cd2ScaleDamage(int value, int pct)
+int cd2ScaleDamage(int value, int pct)
 {
 	return (value * pct) / 100;
 }
@@ -678,6 +681,11 @@ static int cd2OnDamageScale(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	a->result = cd2ScaleDamage(4096, gCd2Cfg.sceneryDamage);
+
+	// an opponent that keeps clipping walls needs the extra cushion, or a
+	// single corner ends its run
+	if (cd2AiIsOpponent(a->car))
+		a->result = cd2ScaleDamage(a->result, gCd2Cfg.aiDamageTaken);
 
 	if (gCd2Cfg.debugLog)
 	{
@@ -709,6 +717,10 @@ static int cd2OnCarVsCar(void* ud, void* args)
 		v = a->playerValue;
 
 	v = cd2ScaleDamage(v, gCd2Cfg.carCarDamage);
+
+	// opponents take a further cut so they survive long enough to be a threat
+	if (cd2AiIsOpponent(a->car))
+		v = cd2ScaleDamage(v, gCd2Cfg.aiDamageTaken);
 
 	if (gCd2Cfg.debugLog)
 	{

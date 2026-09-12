@@ -345,6 +345,7 @@ typedef struct CD2_STATS
 // Runtime-tunable via the pause menu / [combatd2] car_car_damage, scenery_damage.
 #define CD2_CAR_CAR_DAMAGE_DEFAULT 67    // % of stock car-vs-car damage (10..100)
 #define CD2_SCENERY_DAMAGE_DEFAULT 65    // % of stock car-vs-solid damage (0..100)
+#define CD2_AI_DAMAGE_TAKEN_DEFAULT 50   // % damage an opponent takes (10..400)
 
 // ---- destroyed-car respawn -------------------------------------------
 // A wrecked car the module owns (the player and the AI opponents) returns to
@@ -414,6 +415,7 @@ typedef struct CD2_CONFIG
 
 	int sceneryDamage;     // % of stock damage a car takes hitting solid scenery/objects
 	int carCarDamage;      // % of stock damage applied to car-vs-car hits
+	int aiDamageTaken;     // % damage an opponent takes (they were dying too fast)
 	int respawn;           // 0/1: destroyed cars return to their start point
 	int respawnDelay;      // frames a destroyed car stays out (default ~5s)
 	int navDebug;          // 0/1: draw the navigation graph (nodes/edges/routes)
@@ -442,6 +444,9 @@ int cd2CarTopSpeed(void* cp);
 
 // Exported for the core + weapons files: 1 when a car is past the damage cap
 // (totaled wreck — no driving input, no weapons).
+// scale a damage value by a percentage (shared with the weapon core)
+int cd2ScaleDamage(int value, int pct);
+
 int cd2CarTotaled(void* cp);
 
 // Exported for the AI (ai/): request (dir = +1/-1) or clear (0) an acute

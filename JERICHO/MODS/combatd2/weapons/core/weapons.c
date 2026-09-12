@@ -278,6 +278,9 @@ int cd2WpnPointInCar(const CAR_DATA* cp, const VECTOR* p)
 	return 1;
 }
 
+// opponent test lives with the AI (avoids pulling ai.h into the core)
+extern int cd2AiIsOpponent(const void* car);
+
 void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value)
 {
 	const MATRIX* w = &cp->hd.where;
@@ -300,6 +303,11 @@ void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value)
 	if (dom == lz) region = (lz > 0) ? 0 : 1;
 	else if (dom == lx) region = (lx > 0) ? 3 : 2;
 	else region = (ly > 0) ? 4 : 5;
+
+	// opponents take reduced damage (combatd2.h ai_damage_taken), so one
+	// weapon hit doesn't end their run outright
+	if (cd2AiIsOpponent(cp))
+		value = cd2ScaleDamage(value, gCd2Cfg.aiDamageTaken);
 
 	ApplyDamage(cp, (char)region, value, 0);
 }
@@ -678,7 +686,7 @@ static int cd2WpnOnOverlay(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	SetTextColour(200, 200, 200);
-	sprintf(text, "MG (LT)");
+	sprintf(text, "Machine Gun");
 	PrintString(text, 20, 210);
 
 	if (gSelected == CD2_WID_NONE)
@@ -690,7 +698,7 @@ static int cd2WpnOnOverlay(void* ud, void* args)
 	else
 	{
 		SetTextColour(255, 200, 90);
-		sprintf(text, "> %s x%d (RT)", cd2WpnName(gSelected), gAmmo[gSelected]);
+		sprintf(text, "> %s x%d", cd2WpnName(gSelected), gAmmo[gSelected]);
 		PrintString(text, 20, 222);
 	}
 
