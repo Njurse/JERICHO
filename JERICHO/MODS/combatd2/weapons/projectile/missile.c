@@ -70,7 +70,9 @@ static CD2_WEAPON_DEF cd2MakeMissileDef(void)
 
 	d.splashRadius = 500;
 	d.splashDamage = 800;
-	d.explosionEffect = LITTLE_BANG;
+	// BIG_BANG, not LITTLE_BANG: a little bang is hscale 1024 for ~21 frames,
+	// which at combat speed reads as nothing at all. This is the visible one.
+	d.explosionEffect = BIG_BANG;
 
 	d.homing = 0;		// RESERVED (no logic this turn)
 	d.collideScenery = 1;	// missiles detonate on walls/buildings
