@@ -63,6 +63,11 @@
 #define CD2_AI_LOOKAHEAD_MIN	900	// pure-pursuit lookahead at a standstill
 #define CD2_AI_LOOKAHEAD_MAX	4200	// pure-pursuit lookahead cap
 #define CD2_AI_LOOKAHEAD_PER_SPEED 8	// extra lookahead per unit/frame of speed
+#define CD2_AI_SEPARATE_RANGE	5200	// start spreading out within this of another opponent
+#define CD2_AI_SEPARATE_CLOSE	2600	// ease off the throttle if packed this tight
+#define CD2_AI_SEPARATE_STEER	120	// steering nudge away from a nearby opponent
+#define CD2_AI_STATE_JITTER	60	// random extra frames between behaviour re-decisions
+#define CD2_AI_ENGAGE_JITTER	300	// random spread on the aggression burst length
 #define CD2_AI_WANDER_LEG	6000	// wander goal distance along the wander heading
 #define CD2_AI_NEAR_LOOK	380	// base imminent-collision probe distance
 #define CD2_AI_LOOK_PER_SPEED	3	// extra probe distance per unit/frame of speed
@@ -100,6 +105,7 @@ typedef struct CD2_AI_CAR
 	int role, avoid, avoidTicks;
 	int avoidCycles;	// consecutive avoid activations (escalates to reverse)
 	int engageTicks;	// frames of the current aggressive burst
+	int engageLimit;	// this contestant's own aggression burst length
 	int roamTicks;	// >0 while roaming (hit-and-run break-off period)
 	int logTick;		// per-opponent debug log throttle
 	int hold;		// frames a behaviour must be held before switching
@@ -373,6 +379,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	int freeRun[CD2_AI_FAN_RAYS], freeL = 0, freeR = 0, freeAhead = 0;
 	int probeStep = 0;	// length of one fan segment (governor uses it as margin)
 	int governed = 0;
+	int crowded = 0;	// packed against another opponent (ease off)
 	int targetId = -1;
 	long long targetD2 = 0;
 	VECTOR carV, goalV, targetV;
@@ -392,6 +399,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #define sAvoidTicks	A->avoidTicks
 #define sAvoidCycles	A->avoidCycles
 #define sEngageTicks	A->engageTicks
+#define sEngageLimit	A->engageLimit
 #define sRoamTicks	A->roamTicks
 #define sLogTick2	A->logTick
 #define sHold		A->hold
@@ -493,7 +501,9 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	{
 		// minimum dwell: a freshly chosen behaviour sticks, so it can't ping-pong
 		sHold--;
-		sStateTimer = CD2_AI_STATE_TICKS;
+		// jittered here too - a fixed window while holding would re-sync every
+		// contestant back onto the same behaviour clock
+		sStateTimer = CD2_AI_STATE_TICKS + Random2(CD2_AI_STATE_JITTER);
 	}
 	else if (--sStateTimer <= 0)
 	{
@@ -519,7 +529,9 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			sHold = CD2_AI_MIN_STATE_TICKS;
 
 		sState = want;
-		sStateTimer = CD2_AI_STATE_TICKS;
+		// jittered window: without this every contestant re-decides on the same
+		// frame and they switch behaviour in lockstep like one actor, not a field
+		sStateTimer = CD2_AI_STATE_TICKS + Random2(CD2_AI_STATE_JITTER);
 	}
 
 	// --- never park. Sitting still just makes it a target: short stops to
@@ -549,9 +561,13 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 
 	if (sState == CD2_AI_HUNT)
 	{
-		if (++sEngageTicks > CD2_AI_ENGAGE_TICKS)
+		if (sEngageLimit < 1)
+			sEngageLimit = CD2_AI_ENGAGE_TICKS + Random2(CD2_AI_ENGAGE_JITTER);
+
+		if (++sEngageTicks > sEngageLimit)
 		{
 			sEngageTicks = 0;
+			sEngageLimit = CD2_AI_ENGAGE_TICKS + Random2(CD2_AI_ENGAGE_JITTER);
 			sRoamTicks = CD2_AI_ROAM_TICKS + Random2(CD2_AI_ROAM_JITTER);
 
 			if (gCd2Cfg.debugLog)
@@ -923,6 +939,35 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 				steer -= CD2_AI_SIDE_BIAS;
 		}
 
+		// --- separation: spread out from the other opponents unless actively
+		// engaging a target. A pack that drives as one blob reads as a single
+		// contestant; they should close on you from different directions. ---
+		if (!(sState == CD2_AI_HUNT && targetId >= 0))
+		{
+			for (i = 0; i < MAX_CARS; i++)
+			{
+				CAR_DATA* o = &car_data[i];
+				int odx, odz, od2;
+
+				if (i == cp->id || !cd2AiIsOpponent(o))
+					continue;
+
+				odx = o->hd.where.t[0] - cp->hd.where.t[0];
+				odz = o->hd.where.t[2] - cp->hd.where.t[2];
+				od2 = odx * odx + odz * odz;
+
+				if (od2 > CD2_AI_SEPARATE_RANGE * CD2_AI_SEPARATE_RANGE || od2 < 1)
+					continue;
+
+				// which side of us they are on decides which way "apart" is
+				steer -= (odx * rx + odz * rz > 0) ? CD2_AI_SEPARATE_STEER
+				                                   : -CD2_AI_SEPARATE_STEER;
+
+				if (od2 < CD2_AI_SEPARATE_CLOSE * CD2_AI_SEPARATE_CLOSE)
+					crowded = 1;
+			}
+		}
+
 		steer = jer_clamp_int(steer, -CD2_STEER_MAX, CD2_STEER_MAX);
 		// rate-limit the steering so an oscillating heading error can't slam
 		// the wheel full-lock one way then the other every frame (the "twitch")
@@ -953,6 +998,10 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		if (governed)
 		{
 			thrust = -CD2_TMB_THRUST;	// brake: no room to carry this speed
+		}
+		else if (crowded && thrust > CD2_TMB_THRUST / 2)
+		{
+			thrust = CD2_TMB_THRUST / 2;	// give the other contestant room
 		}
 		else if (sEvade == 0)
 		{
@@ -1043,6 +1092,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #undef sAvoidTicks
 #undef sAvoidCycles
 #undef sEngageTicks
+#undef sEngageLimit
 #undef sRoamTicks
 #undef sLogTick2
 #undef sHold
