@@ -325,6 +325,11 @@ static void cd2AiDrive(CAR_DATA* cp)
 	{
 		sReverse--;
 	}
+	else if (ABS(diff) > CD2_AI_PIVOT_DIFF)
+	{
+		// A pivot on the spot is intentional, not "stuck".
+		sStuck = 0;
+	}
 	else if (ABS(speedFwd) < CD2_AI_STUCK_SPEED)
 	{
 		if (++sStuck > CD2_AI_STUCK_TICKS)
