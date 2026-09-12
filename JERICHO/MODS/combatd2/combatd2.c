@@ -80,6 +80,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tmbTight      = jer_config_get_int("combatd2", "tmb_tight", CD2_TMB_TIGHT_DEFAULT);
 	gCd2Cfg.debugLog      = jer_config_get_int("combatd2", "debug_log", 0);
 	gCd2Cfg.allWeapons    = jer_config_get_int("combatd2", "all_weapons", 1);
+	gCd2Cfg.rollLimit     = jer_config_get_int("combatd2", "roll_limit", CD2_ROLL_LIMIT_DEFAULT);
 
 	{
 		const char* mm = jer_config_get_str("combatd2", "missile_model", "BOMB");
@@ -104,6 +105,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tmbTight      = gCd2Cfg.tmbTight ? 1 : 0;
 	gCd2Cfg.debugLog      = gCd2Cfg.debugLog ? 1 : 0;
 	gCd2Cfg.allWeapons    = gCd2Cfg.allWeapons ? 1 : 0;
+	gCd2Cfg.rollLimit     = jer_clamp_int(gCd2Cfg.rollLimit, 0, 89);
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
 	gCd2Cfg.missileSound  = jer_clamp_int(gCd2Cfg.missileSound, 0, 34);
 }
@@ -125,6 +127,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "tmb_tight", gCd2Cfg.tmbTight);
 	jer_config_set_int("combatd2", "debug_log", gCd2Cfg.debugLog);
 	jer_config_set_int("combatd2", "all_weapons", gCd2Cfg.allWeapons);
+	jer_config_set_int("combatd2", "roll_limit", gCd2Cfg.rollLimit);
 	jer_config_set_str("combatd2", "missile_model", gCd2Cfg.missileModel);
 	jer_config_set_int("combatd2", "missile_scale", gCd2Cfg.missileScale);
 	jer_config_set_int("combatd2", "missile_sound", gCd2Cfg.missileSound);
@@ -333,6 +336,39 @@ static int cd2OnCarPad(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// Roll-over suppression. Runs at CAR_STEP (after combatd2combat's wreck toss,
+// before the engine integrates velocity + orientation): the pitch/roll rates
+// are capped so no single impulse can flip a car in one frame, and the car is
+// stopped rolling once it leans past gCd2Cfg.rollLimit degrees. Weapons can
+// still knock a car onto two wheels, but it can't end up on its roof.
+static void cd2LimitRoll(CAR_DATA* cp)
+{
+	int* av = cp->st.n.angularVelocity;	// [0] pitch, [1] yaw, [2] roll
+	int dotUp, cosLimit;
+
+	if (gCd2Cfg.rollLimit <= 0)
+		return;
+
+	av[0] = jer_clamp_int(av[0], -CD2_ROLL_MAX_AV, CD2_ROLL_MAX_AV);
+	av[2] = jer_clamp_int(av[2], -CD2_ROLL_MAX_AV, CD2_ROLL_MAX_AV);
+
+	// car up . world up: 4096 upright, 0 fully on its side, -4096 on the roof
+	dotUp = cp->hd.where.m[1][1];
+	cosLimit = RCOS((gCd2Cfg.rollLimit * 4096) / 360);
+
+	if (dotUp < cosLimit)
+	{
+		if (gCd2Cfg.debugLog)
+			printInfo("[combatd2] roll clamp: car=%d dotUp=%d limit=%d\n",
+				cp->id, dotUp, cosLimit);
+
+		// past the allowed lean: stop rolling; the stock suspension + gravity
+		// settle the car back onto its wheels
+		av[0] = 0;
+		av[2] = 0;
+	}
+}
+
 // CAR_STEP: capture the raw throttle BEFORE the stock wheel-force code can
 // change it. AddWheelForcesDriver1 -> GetFrictionScalesDriver1 forces
 // cp->thrust = 0 while the handbrake is held (so the handbrake alone would
@@ -365,6 +401,9 @@ static int cd2OnCarStep(void* ud, void* args)
 	}
 
 	gCd2Car[cp->id].throttle = (cp->thrust > 0) ? 1 : (cp->thrust < 0) ? -1 : 0;
+
+	cd2LimitRoll(cp);
+
 	return JER_RESULT_CONTINUE;
 }
 

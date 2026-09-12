@@ -326,6 +326,14 @@ typedef struct CD2_STATS
 	int control;       // steering/pivot authority, fixed point (4096 = average car)
 } CD2_STATS;
 
+// ---- roll-over suppression -------------------------------------------
+// Tilt is the car's up axis . world up (4096 = upright, 0 = on its side).
+// A car may lean up to CD2_ROLL_LIMIT_DEFAULT degrees (two wheels) but is
+// stopped past that, and the pitch/roll rates are capped so a single impulse
+// can't flip it in one frame.
+#define CD2_ROLL_LIMIT_DEFAULT  60       // degrees (0 = off)
+#define CD2_ROLL_MAX_AV         0x200000 // per-axis pitch/roll rate cap (raw)
+
 typedef struct CD2_CONFIG
 {
 	int enabled;
@@ -343,6 +351,10 @@ typedef struct CD2_CONFIG
 	int tmbTight;      // 0/1: which face button is Tight Turn (0=Cross/bottom, 1=Square/left)
 	int debugLog;      // 0/1: log player-car input/velocity telemetry to REDRIVER2.log
 	int allWeapons;    // 0/1: test grant - spawn with every weapon at max capacity
+
+	// roll-over suppression: cars may tip onto two wheels but are stopped
+	// from rolling past this tilt (degrees; 0 = off)
+	int rollLimit;
 
 	// missile presentation
 	char missileModel[24]; // model name for the missile body ("" = line fallback)
