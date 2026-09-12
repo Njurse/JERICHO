@@ -64,27 +64,39 @@
 // committed imminent-collision responses (hysteresis in cd2AiDrive)
 enum { CD2_AI_AVOID_NONE = 0, CD2_AI_AVOID_BRAKE, CD2_AI_AVOID_PIVOT };
 
-static int sAiCarId = -1;
-static int sSpawned;
-static int sState = CD2_AI_WANDER;
-static int sStateTimer;
-static int sEvade;
-static int sFireTimer;
-static int sWanderHeading;
-static int sWanderTimer;
-static int sSteer;		// rate-limited steering actually applied
-static int sReverse;		// frames of backing up left (stuck recovery)
-static int sStuck;		// frames without forward progress
-static int sRole = CD2_AI_ROLE_CHASER;	// this opponent's role archetype
-static int sAvoid;		// committed avoid action (CD2_AI_AVOID_*)
-static int sAvoidTicks;		// frames the committed avoid action is held
-static int sLastDamage;		// car totalDamage last frame (to count new hits)
-static int sHits;		// collisions observed on the opponent
+#define CD2_AI_MAX		4	// maximum simultaneous opponents
+#define CD2_AI_SPAWN_COUNT	3	// opponents spawned per level (<= CD2_AI_MAX)
+
+// Per-opponent state (one slot per spawned opponent, so several can run at once
+// with independent behaviour, roles and routes).
+typedef struct CD2_AI_CAR
+{
+	int carId;
+	int state, stateTimer, evade, fireTimer;
+	int wanderHeading, wanderTimer;
+	int steer, reverse, stuck;
+	int role, avoid, avoidTicks;
+	int avoidCycles;	// consecutive avoid activations (escalates to reverse)
+	int lastDamage, hits;
+	CD2_NAV_ROUTE route;
+} CD2_AI_CAR;
+
+static CD2_AI_CAR sAi[CD2_AI_MAX];
+static int sAiCount;		// number of live opponents
 static unsigned int sLogTick;	// debugLog throttle counter
-static CD2_NAV_ROUTE sRoute;	// navigator route to the current goal
-static int sRouteSrc = -1;	// last logged route source
 static int sNavProbeDone;	// one-shot arbitration probe at level start
-static CD2_AI_DEBUG sDbg;	// latest internal values (observability)
+static CD2_AI_DEBUG sDbg;	// latest values of the tracked (first) opponent
+
+static CD2_AI_CAR* cd2AiSlot(int carId)
+{
+	int i;
+
+	for (i = 0; i < CD2_AI_MAX; i++)
+		if (sAi[i].carId == carId)
+			return &sAi[i];
+
+	return NULL;
+}
 
 static int cd2AiSqrt(int v)
 {
@@ -131,21 +143,18 @@ static void cd2AiCarPos(const CAR_DATA* cp, VECTOR* out)
 	out->vz = cp->hd.where.t[2];
 }
 
-static int cd2AiSpawn(void)
+static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 {
-	CAR_DATA* pcp = NULL;
 	CAR_DATA* slot = NULL;
 	LONGVECTOR4 pos;
 	VECTOR ppos, cand;
 	static char cd2AiPadId = 0;	// CUTSCENE car pad id (no replay stream)
 	int i, k, side, chosen = 0;
+	int off = CD2_AI_SPAWN_OFFSET * (index + 1);	// fan each opponent out
 
 	cand.vx = 0;
 	cand.vy = 0;
 	cand.vz = 0;
-
-	if (!cd2WpnPlayerCar(&pcp))
-		return 0;
 
 	for (i = 0; i < MAX_CARS; i++)
 	{
@@ -161,18 +170,18 @@ static int cd2AiSpawn(void)
 
 	cd2AiCarPos(pcp, &ppos);
 
-	// Probe BOTH sides of the player (each side, then a little further out)
-	// and spawn on whichever side is clear, so we don't drop the car inside a
-	// wall on tight maps. lineClear: 0 = blocked.
-	for (k = 0; k < 2 && !chosen; k++)
+	// Probe BOTH sides at this opponent's fan distance (then a little further
+	// out) and spawn on whichever is clear, so we never drop a car inside a
+	// wall. lineClear: 0 = blocked.
+	for (k = 0; k < 3 && !chosen; k++)
 	{
-		int off = CD2_AI_SPAWN_OFFSET * (k + 1);
+		int d = off + k * CD2_AI_SPAWN_OFFSET;
 
 		for (side = 1; side >= -1; side -= 2)
 		{
-			cand.vx = ppos.vx + (int)(((long long)pcp->hd.where.m[0][0] * off * side) >> 12);
+			cand.vx = ppos.vx + (int)(((long long)pcp->hd.where.m[0][0] * d * side) >> 12);
 			cand.vy = ppos.vy;
-			cand.vz = ppos.vz + (int)(((long long)pcp->hd.where.m[2][0] * off * side) >> 12);
+			cand.vz = ppos.vz + (int)(((long long)pcp->hd.where.m[2][0] * d * side) >> 12);
 
 			if (lineClear(&ppos, &cand))
 			{
@@ -183,7 +192,7 @@ static int cd2AiSpawn(void)
 	}
 
 	if (!chosen)
-		return 0;	// boxed in on both sides - try again next frame
+		return 0;	// boxed in - try again next frame
 
 	pos[0] = cand.vx;
 	pos[1] = cand.vy;
@@ -196,27 +205,70 @@ static int cd2AiSpawn(void)
 	// graph, which is what made the civ-AI car fidget in place.
 	InitCar(slot, pcp->hd.direction, &pos, CONTROL_TYPE_CUTSCENE, pcp->ap.model, 0, &cd2AiPadId);
 
-	sAiCarId = slot->id;
-	sState = CD2_AI_WANDER;
-	sStateTimer = 0;
-	sEvade = 0;
-	sFireTimer = 0;
-	sSteer = 0;
-	sReverse = 0;
-	sStuck = 0;
-	sRole = (gCd2Cfg.aiRole >= 0) ? gCd2Cfg.aiRole : (slot->id % CD2_AI_ROLE_COUNT);
-	sHits = 0;
-	sLastDamage = 0;
-	sWanderHeading = pcp->hd.direction;
-	sWanderTimer = 60;
+	// claim an AI slot for it
+	{
+		CD2_AI_CAR* A = NULL;
+		int s;
 
-	if (gCd2Cfg.debugLog)
-		printInfo("[combatd2] AI opponent spawned (car=%d side=%d)\n", sAiCarId, side);
+		for (s = 0; s < CD2_AI_MAX; s++)
+		{
+			if (sAi[s].carId < 0)
+			{
+				A = &sAi[s];
+				break;
+			}
+		}
+
+		if (A == NULL)
+			return 0;	// no free slot
+
+		A->carId = slot->id;
+		A->state = CD2_AI_WANDER;
+		A->stateTimer = 0;
+		A->evade = 0;
+		A->fireTimer = 0;
+		A->steer = 0;
+		A->reverse = 0;
+		A->stuck = 0;
+		A->avoid = 0;
+		A->avoidTicks = 0;
+		A->avoidCycles = 0;
+		A->lastDamage = 0;
+		A->hits = 0;
+		A->wanderHeading = pcp->hd.direction;
+		A->wanderTimer = 60;
+		A->role = (gCd2Cfg.aiRole >= 0) ? gCd2Cfg.aiRole : (index % CD2_AI_ROLE_COUNT);
+		A->route.count = 0;
+		A->route.source = CD2_NAV_SRC_NONE;
+
+		if (gCd2Cfg.debugLog)
+			printInfo("[combatd2] AI opponent spawned (car=%d slot=%d role=%d side=%d)\n",
+				A->carId, s, A->role, side);
+	}
 
 	return 1;
 }
 
-static void cd2AiDrive(CAR_DATA* cp)
+static int cd2AiSpawn(void)
+{
+	CAR_DATA* pcp = NULL;
+	int i, n = 0;
+
+	if (!cd2WpnPlayerCar(&pcp))
+		return 0;
+
+	for (i = 0; i < CD2_AI_MAX; i++)
+		sAi[i].carId = -1;
+
+	for (i = 0; i < CD2_AI_MAX && i < CD2_AI_SPAWN_COUNT; i++)
+		n += cd2AiSpawnOne(pcp, i);
+
+	sAiCount = n;
+
+	return n;
+}
+
+static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 {
 	CAR_DATA* pcp = NULL;
 	VECTOR tpos;
@@ -226,6 +278,24 @@ static void cd2AiDrive(CAR_DATA* cp)
 	int speedFwd = 0, pivotDir = 0;
 	int clearAhead = 0, clearL = 0, clearR = 0, nearBlocked = 0, dodgeDir = 0;
 	VECTOR carV, goalV;
+
+	// this opponent's state, aliased so the body below reads naturally
+#define sState		A->state
+#define sStateTimer	A->stateTimer
+#define sEvade		A->evade
+#define sFireTimer	A->fireTimer
+#define sWanderHeading	A->wanderHeading
+#define sWanderTimer	A->wanderTimer
+#define sSteer		A->steer
+#define sReverse	A->reverse
+#define sStuck		A->stuck
+#define sRole		A->role
+#define sAvoid		A->avoid
+#define sAvoidTicks	A->avoidTicks
+#define sAvoidCycles	A->avoidCycles
+#define sLastDamage	A->lastDamage
+#define sHits		A->hits
+#define sRoute		A->route
 
 	carV.vx = cp->hd.where.t[0];
 	carV.vy = cp->hd.where.t[1];
@@ -468,7 +538,15 @@ static void cd2AiDrive(CAR_DATA* cp)
 	}
 	else if (nearBlocked)
 	{
-		if (speedFwd > CD2_AI_BRAKE_SPEED)
+		// Pivoting in place next to a wall never clears the probe on its own, so
+		// after a couple of failed cycles back off instead of livelocking.
+		if (++sAvoidCycles > 2)
+		{
+			sReverse = CD2_AI_REVERSE_TICKS;
+			sAvoidCycles = 0;
+			sAvoid = CD2_AI_AVOID_NONE;
+		}
+		else if (speedFwd > CD2_AI_BRAKE_SPEED)
 		{
 			sAvoid = CD2_AI_AVOID_BRAKE;
 			sAvoidTicks = 16;
@@ -482,6 +560,7 @@ static void cd2AiDrive(CAR_DATA* cp)
 	else
 	{
 		sAvoid = CD2_AI_AVOID_NONE;
+		sAvoidCycles = 0;
 	}
 
 	// --- stuck detection: commanded forward but going nowhere -> back up ---
@@ -640,7 +719,8 @@ static void cd2AiDrive(CAR_DATA* cp)
 		}
 	}
 
-	// --- observability snapshot ---
+	// --- observability snapshot (tracked opponent only) ---
+	if (A == &sAi[0])
 	{
 		int dx = 0, dz = 0, d2;
 
@@ -676,6 +756,22 @@ static void cd2AiDrive(CAR_DATA* cp)
 			cp->id, cd2AiRoleName(), cd2AiStateName(), cp->totalDamage, sHits, speedFwd, sSteer,
 			(sReverse > 0) ? 1 : 0, pivotDir, sAvoid, threatFlag, blockedAhead);
 
+#undef sState
+#undef sStateTimer
+#undef sEvade
+#undef sFireTimer
+#undef sWanderHeading
+#undef sWanderTimer
+#undef sSteer
+#undef sReverse
+#undef sStuck
+#undef sRole
+#undef sAvoid
+#undef sAvoidTicks
+#undef sAvoidCycles
+#undef sLastDamage
+#undef sHits
+#undef sRoute
 }
 
 // --- hooks -----------------------------------------------------------------
@@ -744,13 +840,31 @@ static int cd2AiOnFrame(void* ud, void* args)
 		}
 	}
 
-	// drop a destroyed/removed opponent so the id doesn't go stale
-	if (sAiCarId >= 0 &&
-	    (sAiCarId >= MAX_CARS || car_data[sAiCarId].controlType == CONTROL_TYPE_NONE))
-		sAiCarId = -1;
+	// drop destroyed/removed opponents so their ids don't go stale
+	{
+		int k, live = 0;
 
-	if (sAiCarId < 0 && !sSpawned)
-		cd2AiSpawn();
+		for (k = 0; k < CD2_AI_MAX; k++)
+		{
+			int id = sAi[k].carId;
+
+			if (id < 0)
+				continue;
+
+			if (id >= MAX_CARS || car_data[id].controlType == CONTROL_TYPE_NONE)
+			{
+				sAi[k].carId = -1;
+				continue;
+			}
+
+			live++;
+		}
+
+		sAiCount = live;
+
+		if (live == 0)
+			cd2AiSpawn();
+	}
 
 	return JER_RESULT_CONTINUE;
 }
@@ -761,7 +875,7 @@ static int cd2AiOnCarPad(void* ud, void* args)
 	CAR_DATA* cp = (CAR_DATA*)a->car;
 	(void)ud;
 
-	if (sAiCarId < 0 || cp->id != sAiCarId)
+	if (!cd2AiIsOpponent(cp))
 		return JER_RESULT_CONTINUE;
 
 	// Capture what the engine handed the opponent before we blank it. A
@@ -783,31 +897,30 @@ static int cd2AiOnCarStep(void* ud, void* args)
 {
 	JER_ARGS_CAR_STEP* a = (JER_ARGS_CAR_STEP*)args;
 	CAR_DATA* cp = (CAR_DATA*)a->car;
+	CD2_AI_CAR* A;
 	(void)ud;
 
-	if (!gCd2Cfg.enabled || !gCd2Cfg.aiOpponent || sAiCarId < 0)
+	if (!gCd2Cfg.enabled || !gCd2Cfg.aiOpponent)
 		return JER_RESULT_CONTINUE;
 
-	if (cp->id == sAiCarId)
-		cd2AiDrive(cp);
+	A = cd2AiSlot(cp->id);
+
+	if (A != NULL)
+		cd2AiDrive(cp, A);
 
 	return JER_RESULT_CONTINUE;
 }
 
 static int cd2AiOnGameStart(void* ud, void* args)
 {
+	int i;
 	(void)ud;
 	(void)args;
 
-	sAiCarId = -1;
-	sSpawned = 0;
-	sState = CD2_AI_WANDER;
-	sStateTimer = 0;
-	sEvade = 0;
-	sFireTimer = 0;
-	sSteer = 0;
-	sReverse = 0;
-	sStuck = 0;
+	for (i = 0; i < CD2_AI_MAX; i++)
+		sAi[i].carId = -1;
+
+	sAiCount = 0;
 	sDbg.valid = 0;
 
 	// spawn as soon as the frame hook sees a player car (the player car may
@@ -818,23 +931,24 @@ static int cd2AiOnGameStart(void* ud, void* args)
 const char* cd2AiRoleName(void)
 {
 	static const char* names[] = { "Chaser", "Flanker", "Ambusher", "Harvester" };
+	int r = (sAi[0].carId >= 0) ? sAi[0].role : CD2_AI_ROLE_CHASER;
 
-	if (sRole < 0 || sRole >= CD2_AI_ROLE_COUNT)
+	if (r < 0 || r >= CD2_AI_ROLE_COUNT)
 		return "?";
 
-	return names[sRole];
+	return names[r];
 }
 
 int cd2AiActive(void)
 {
-	return (sAiCarId >= 0) ? 1 : 0;
+	return (sAiCount > 0) ? 1 : 0;
 }
 
 int cd2AiIsOpponent(const void* car)
 {
 	const CAR_DATA* cp = (const CAR_DATA*)car;
 
-	return (cp != NULL && sAiCarId >= 0 && cp->id == sAiCarId) ? 1 : 0;
+	return (cp != NULL && cd2AiSlot(cp->id) != NULL) ? 1 : 0;
 }
 
 int cd2AiGetDebug(CD2_AI_DEBUG* out)
@@ -917,10 +1031,10 @@ const char* cd2AiStateName(void)
 
 	if (s == CD2_AI_AUTO)
 	{
-		int cur = sState;
+		int cur = (sAi[0].carId >= 0) ? sAi[0].state : CD2_AI_WANDER;
 
 		if (cur < 0 || cur >= CD2_AI_STATE_COUNT)
-			cur = 0;
+			cur = CD2_AI_WANDER;
 
 		return names[cur];
 	}
