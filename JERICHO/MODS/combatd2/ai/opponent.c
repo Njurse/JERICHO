@@ -41,8 +41,8 @@
 #include <stdio.h>
 
 #define CD2_AI_SPAWN_OFFSET	300	// how far beside the player to spawn
-#define CD2_AI_HUNT_RANGE	22000	// start pursuing a target within this
-#define CD2_AI_LOOK		8560	// look-ahead probe distance
+#define CD2_AI_HUNT_RANGE	3200	// start pursuing a target within this
+#define CD2_AI_LOOK		2560	// look-ahead probe distance
 #define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
@@ -56,21 +56,21 @@
 #define CD2_AI_STEER_RATE	148	// max wheel_angle change per frame
 #define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
-#define CD2_AI_REVERSE_TICKS	42	// frames of reversing after getting stuck
-#define CD2_AI_STUCK_TICKS	8	// frames with no forward progress before reversing
+#define CD2_AI_REVERSE_TICKS	22	// frames of reversing after getting stuck
+#define CD2_AI_STUCK_TICKS	18	// frames with no forward progress before reversing
 #define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
 #define CD2_AI_WP_REACH		700	// route waypoints within this are "reached" and skipped
 #define CD2_AI_WANDER_LEG	6000	// wander goal distance along the wander heading
-#define CD2_AI_NEAR_LOOK	780	// base imminent-collision probe distance
-#define CD2_AI_LOOK_PER_SPEED	14	// extra probe distance per unit/frame of speed
+#define CD2_AI_NEAR_LOOK	380	// base imminent-collision probe distance
+#define CD2_AI_LOOK_PER_SPEED	3	// extra probe distance per unit/frame of speed
 #define CD2_AI_BRAKE_SPEED	60	// forward speed above which it brakes instead of pivoting
-#define CD2_AI_ENGAGE_TICKS	420	// frames of sustained aggression before breaking off
-#define CD2_AI_ROAM_TICKS	300	// frames spent roaming/hunting for weapons
-#define CD2_AI_ROAM_JITTER	240	// random extra roam frames (so they desync)
-#define CD2_AI_STATE_TICKS	45	// frames between behaviour re-decisions
+#define CD2_AI_ENGAGE_TICKS	620	// frames of sustained aggression before breaking off
+#define CD2_AI_ROAM_TICKS	500	// frames spent roaming/hunting for weapons
+#define CD2_AI_ROAM_JITTER	440	// random extra roam frames (so they desync)
+#define CD2_AI_STATE_TICKS	145	// frames between behaviour re-decisions
 #define CD2_AI_MIN_STATE_TICKS	150	// minimum frames any new behaviour is held
-#define CD2_AI_IDLE_TICKS	90	// frames near-standstill before it must get moving
-#define CD2_AI_IDLE_SPEED	25	// forward speed counted as "sitting still"
+#define CD2_AI_IDLE_TICKS	80	// frames near-standstill before it must get moving
+#define CD2_AI_IDLE_SPEED	45	// forward speed counted as "sitting still"
 
 #define CD2_AI_FAN_RAYS		5	// rays in the forward scenery fan
 #define CD2_AI_FAN_STEPS	5	// length samples along each ray
@@ -78,7 +78,7 @@
 #define CD2_AI_GOVERN_SLACK	0	// speed grace before the governor bites
 #define CD2_AI_SIDE_MARGIN	1600	// clearance gap before it biases steering
 #define CD2_AI_SIDE_BIAS	384	// heading nudge away from the closer wall
-#define CD2_AI_NEAR_BLOCK_MIN	700	// room below which a wall counts as imminent at any speed
+#define CD2_AI_NEAR_BLOCK_MIN	350	// room below which a wall counts as imminent at any speed
 
 // committed imminent-collision responses (hysteresis in cd2AiDrive)
 enum { CD2_AI_AVOID_NONE = 0, CD2_AI_AVOID_BRAKE, CD2_AI_AVOID_PIVOT };
@@ -1302,7 +1302,8 @@ const char* cd2AiStateName(void)
 static int cd2AiOnDrawMap(void* ud, void* args)
 {
 	JER_ARGS_DRAW_MAP* a = (JER_ARGS_DRAW_MAP*)args;
-	int i;
+	static unsigned int sMapLog;
+	int i, plotted = 0;
 	(void)ud;
 
 	if (!gCd2Cfg.enabled || !gCd2Cfg.aiOpponent)
@@ -1330,7 +1331,11 @@ static int cd2AiOnDrawMap(void* ud, void* args)
 		}
 
 		DrawTargetBlip(&p, r, g, b, a->flags);
+		plotted++;
 	}
+
+	if (gCd2Cfg.debugLog && (sMapLog++ % 120) == 0)
+		printInfo("[combatd2] map blips: flags=0x%02X plotted=%d\n", a->flags, plotted);
 
 	return JER_RESULT_CONTINUE;
 }
