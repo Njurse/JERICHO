@@ -1675,7 +1675,7 @@ static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 };
 
 static const JER_PAUSE_MENU cd2WeaponMenu =
-{ "Weapons", cd2WeaponItems, 13 };
+{ "Weapons", cd2WeaponItems, 12 };
 
 static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
 {
