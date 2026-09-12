@@ -94,7 +94,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.carCarDamage  = jer_config_get_int("combatd2", "car_car_damage", -1);
 	gCd2Cfg.aiDamageTaken = jer_config_get_int("combatd2", "ai_damage_taken", CD2_AI_DAMAGE_TAKEN_DEFAULT);
 	gCd2Cfg.respawn       = jer_config_get_int("combatd2", "respawn", 1);
-	gCd2Cfg.respawnDelay  = jer_config_get_int("combatd2", "respawn_delay", CD2_RESPAWN_DELAY_DEFAULT);
+	gCd2Cfg.respawnDelay  = CD2_RESPAWN_DELAY;	// fixed 5s, see CD2_RESPAWN_DELAY
 
 	if (gCd2Cfg.carCarDamage < 0)
 		gCd2Cfg.carCarDamage = 100 - jer_config_get_int("combatd2", "car_car_nerf",
@@ -133,7 +133,6 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.carCarDamage  = jer_clamp_int(gCd2Cfg.carCarDamage, 10, 100);
 	gCd2Cfg.aiDamageTaken = jer_clamp_int(gCd2Cfg.aiDamageTaken, 10, 400);
 	gCd2Cfg.respawn       = gCd2Cfg.respawn ? 1 : 0;
-	gCd2Cfg.respawnDelay  = jer_clamp_int(gCd2Cfg.respawnDelay, 30, CD2_RESPAWN_DELAY_MAX);
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
 	gCd2Cfg.missileSound  = jer_clamp_int(gCd2Cfg.missileSound, 0, 34);
 }
@@ -165,7 +164,6 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "car_car_damage", gCd2Cfg.carCarDamage);
 	jer_config_set_int("combatd2", "ai_damage_taken", gCd2Cfg.aiDamageTaken);
 	jer_config_set_int("combatd2", "respawn", gCd2Cfg.respawn);
-	jer_config_set_int("combatd2", "respawn_delay", gCd2Cfg.respawnDelay);
 	jer_config_set_str("combatd2", "missile_model", gCd2Cfg.missileModel);
 	jer_config_set_int("combatd2", "missile_scale", gCd2Cfg.missileScale);
 	jer_config_set_int("combatd2", "missile_sound", gCd2Cfg.missileSound);
@@ -1475,26 +1473,6 @@ static int cd2ToggleRespawn(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
-static void cd2LabelRespawnDelay(void* ud, char* out, int max)
-{
-	(void)ud;
-	snprintf(out, max, "Respawn Delay: %d.%ds", gCd2Cfg.respawnDelay / 60, (gCd2Cfg.respawnDelay % 60) / 6);
-}
-
-static int cd2CycleRespawnDelay(void* ud, int dir)
-{
-	(void)ud;
-	(void)dir;
-
-	gCd2Cfg.respawnDelay += 60;	// 1 second steps
-
-	if (gCd2Cfg.respawnDelay > CD2_RESPAWN_DELAY_MAX)
-		gCd2Cfg.respawnDelay = 30;
-
-	cd2SaveConfig();
-	return JER_PAUSE_QUIT_NONE;
-}
-
 static void cd2LabelAiRole(void* ud, char* out, int max)
 {
 	static const char* names[] = { "Auto", "Chaser", "Flanker", "Ambusher", "Harvester" };
@@ -1577,7 +1555,6 @@ static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 	{ NULL, cd2LabelAiRole, cd2CycleAiRole, NULL, NULL, 0 },
 	{ NULL, cd2LabelAiDebug, cd2ToggleAiDebug, NULL, NULL, 0 },
 	{ NULL, cd2LabelRespawn, cd2ToggleRespawn, NULL, NULL, 0 },
-	{ NULL, cd2LabelRespawnDelay, cd2CycleRespawnDelay, NULL, NULL, 0 },
 	{ NULL, cd2LabelNavDebug, cd2ToggleNavDebug, NULL, NULL, 0 },
 	{ NULL, cd2LabelScenery, cd2CycleScenery, NULL, NULL, 0 },
 	{ NULL, cd2LabelCarCarNerf, cd2CycleCarCarNerf, NULL, NULL, 0 },

@@ -349,10 +349,12 @@ typedef struct CD2_STATS
 
 // ---- destroyed-car respawn -------------------------------------------
 // A wrecked car the module owns (the player and the AI opponents) returns to
-// the position it started the level at, after CD2_RESPAWN_DELAY_DEFAULT frames.
+// the position it started the level at, after CD2_RESPAWN_DELAY frames.
 // Spawn points come later; for now the start point is the respawn point.
-#define CD2_RESPAWN_DELAY_DEFAULT 300    // frames at 60fps = 5 seconds
-#define CD2_RESPAWN_DELAY_MAX     300   // 30 seconds (clamp)
+// Respawn delay is FIXED at 5 seconds (300 frames at 60fps). Deliberately
+// not configurable: every car, player or opponent, comes back on the same
+// clock, and the old max/min knobs let it drift as low as half a second.
+#define CD2_RESPAWN_DELAY 300
 // Prototype opponent-AI behaviour states (also CD2_CONFIG.aiForceState; 0 = let
 // the AI pick). See ai/opponent.c.
 enum
