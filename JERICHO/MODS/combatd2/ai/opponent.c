@@ -64,6 +64,9 @@
 #define CD2_AI_NEAR_LOOK	780	// base imminent-collision probe distance
 #define CD2_AI_LOOK_PER_SPEED	14	// extra probe distance per unit/frame of speed
 #define CD2_AI_BRAKE_SPEED	60	// forward speed above which it brakes instead of pivoting
+#define CD2_AI_ENGAGE_TICKS	300	// frames of sustained aggression before breaking off
+#define CD2_AI_ROAM_TICKS	300	// frames spent roaming/hunting for weapons
+#define CD2_AI_ROAM_JITTER	240	// random extra roam frames (so they desync)
 
 // committed imminent-collision responses (hysteresis in cd2AiDrive)
 enum { CD2_AI_AVOID_NONE = 0, CD2_AI_AVOID_BRAKE, CD2_AI_AVOID_PIVOT };
@@ -81,6 +84,8 @@ typedef struct CD2_AI_CAR
 	int steer, reverse, stuck;
 	int role, avoid, avoidTicks;
 	int avoidCycles;	// consecutive avoid activations (escalates to reverse)
+	int engageTicks;	// frames of the current aggressive burst
+	int roamTicks;	// >0 while roaming (hit-and-run break-off period)
 	int lastDamage, hits;
 	CD2_NAV_ROUTE route;
 } CD2_AI_CAR;
@@ -365,6 +370,8 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #define sAvoid		A->avoid
 #define sAvoidTicks	A->avoidTicks
 #define sAvoidCycles	A->avoidCycles
+#define sEngageTicks	A->engageTicks
+#define sRoamTicks	A->roamTicks
 #define sLastDamage	A->lastDamage
 #define sHits		A->hits
 #define sRoute		A->route
@@ -460,7 +467,13 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	}
 	else if (--sStateTimer <= 0)
 	{
-		if (targetId >= 0 && targetD2 < (long long)CD2_AI_HUNT_RANGE * CD2_AI_HUNT_RANGE)
+		if (sRoamTicks > 0)
+		{
+			// hit-and-run: mid-break-off it roams (looking for weapons or a
+			// better angle) rather than locking straight back on
+			sState = CD2_AI_WANDER;
+		}
+		else if (targetId >= 0 && targetD2 < (long long)CD2_AI_HUNT_RANGE * CD2_AI_HUNT_RANGE)
 		{
 			// aggressive: pursue unless badly hurt, and break off only then
 			sState = (cp->totalDamage > CD2_AI_HURT_FLEE) ? CD2_AI_FLEE : CD2_AI_HUNT;
@@ -471,6 +484,28 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		}
 
 		sStateTimer = 30;
+	}
+
+	// --- run-and-gun rhythm: hit hard for a burst, then break off and roam
+	// (weapons/repositioning) before locking on again ---
+	if (sRoamTicks > 0)
+		sRoamTicks--;
+
+	if (sState == CD2_AI_HUNT)
+	{
+		if (++sEngageTicks > CD2_AI_ENGAGE_TICKS)
+		{
+			sEngageTicks = 0;
+			sRoamTicks = CD2_AI_ROAM_TICKS + Random2(CD2_AI_ROAM_JITTER);
+
+			if (gCd2Cfg.debugLog)
+				printInfo("[combatd2] AI car=%d breaking off to roam (%d frames)\n",
+					cp->id, sRoamTicks);
+		}
+	}
+	else
+	{
+		sEngageTicks = 0;
 	}
 
 	// --- navigator: goal, route and the shared flow field ---
@@ -865,6 +900,8 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #undef sAvoid
 #undef sAvoidTicks
 #undef sAvoidCycles
+#undef sEngageTicks
+#undef sRoamTicks
 #undef sLastDamage
 #undef sHits
 #undef sRoute
