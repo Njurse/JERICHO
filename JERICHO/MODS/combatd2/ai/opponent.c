@@ -35,17 +35,19 @@
 #include "ai/ai.h"
 
 #include <string.h>
+#include <stdio.h>
 
-#define CD2_AI_SPAWN_OFFSET	300	// how far beside the player to spawn
-#define CD2_AI_HUNT_RANGE	3200	// start hunting within this
-#define CD2_AI_LOOK		560	// look-ahead probe distance
+#define CD2_AI_SPAWN_OFFSET	900	// how far beside the player to spawn
+#define CD2_AI_HUNT_RANGE	12200	// start hunting within this
+#define CD2_AI_LOOK		1560	// look-ahead probe distance
 #define CD2_AI_PROBE_ANG	400	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
-#define CD2_AI_EVADE_FRAMES	45	// ~1.5 s of evasive driving
+#define CD2_AI_EVADE_FRAMES	85	// ~1.5 s of evasive driving
 #define CD2_AI_HURT		6000	// totalDamage above which it flees
-#define CD2_AI_FIRE_RANGE	2600	// MG range when hunting
+#define CD2_AI_FIRE_RANGE	6600	// MG range when hunting
 #define CD2_AI_FIRE_COOLDOWN	10	// frames between AI MG shots
+#define CD2_AI_STEER_RATE	48	// max wheel_angle change per frame
 
 static int sAiCarId = -1;
 static int sSpawned;
@@ -55,6 +57,35 @@ static int sEvade;
 static int sFireTimer;
 static int sWanderHeading;
 static int sWanderTimer;
+static int sSteer;		// rate-limited steering actually applied
+static CD2_AI_DEBUG sDbg;	// latest internal values (observability)
+
+static int cd2AiSqrt(int v)
+{
+	int r = 0;
+	int bit = 1 << 30;
+
+	if (v <= 0)
+		return 0;
+
+	while (bit > v)
+		bit >>= 2;
+
+	while (bit != 0)
+	{
+		if (v >= r + bit)
+		{
+			v -= r + bit;
+			r = (r >> 1) + bit;
+		}
+		else
+			r >>= 1;
+
+		bit >>= 2;
+	}
+
+	return r;
+}
 
 static void cd2AiPointAt(const CAR_DATA* cp, int heading, int dist, VECTOR* out)
 {
@@ -75,8 +106,13 @@ static int cd2AiSpawn(void)
 	CAR_DATA* pcp = NULL;
 	CAR_DATA* slot = NULL;
 	LONGVECTOR4 pos;
-	EXTRA_CIV_DATA dat;
-	int i;
+	VECTOR ppos, cand;
+	static char cd2AiPadId = 0;	// CUTSCENE car pad id (no replay stream)
+	int i, k, side, chosen = 0;
+
+	cand.vx = 0;
+	cand.vy = 0;
+	cand.vz = 0;
 
 	if (!cd2WpnPlayerCar(&pcp))
 		return 0;
@@ -93,27 +129,54 @@ static int cd2AiSpawn(void)
 	if (slot == NULL)
 		return 0;
 
-	// spawn beside the player, along the player's right axis
-	pos[0] = pcp->hd.where.t[0] + (int)(((long long)pcp->hd.where.m[0][0] * CD2_AI_SPAWN_OFFSET) >> 12);
-	pos[1] = pcp->hd.where.t[1];
-	pos[2] = pcp->hd.where.t[2] + (int)(((long long)pcp->hd.where.m[2][0] * CD2_AI_SPAWN_OFFSET) >> 12);
+	cd2AiCarPos(pcp, &ppos);
+
+	// Probe BOTH sides of the player (each side, then a little further out)
+	// and spawn on whichever side is clear, so we don't drop the car inside a
+	// wall on tight maps. lineClear: 0 = blocked.
+	for (k = 0; k < 2 && !chosen; k++)
+	{
+		int off = CD2_AI_SPAWN_OFFSET * (k + 1);
+
+		for (side = 1; side >= -1; side -= 2)
+		{
+			cand.vx = ppos.vx + (int)(((long long)pcp->hd.where.m[0][0] * off * side) >> 12);
+			cand.vy = ppos.vy;
+			cand.vz = ppos.vz + (int)(((long long)pcp->hd.where.m[2][0] * off * side) >> 12);
+
+			if (lineClear(&ppos, &cand))
+			{
+				chosen = 1;
+				break;
+			}
+		}
+	}
+
+	if (!chosen)
+		return 0;	// boxed in on both sides - try again next frame
+
+	pos[0] = cand.vx;
+	pos[1] = cand.vy;
+	pos[2] = cand.vz;
 	pos[3] = 0;
 
-	memset(&dat, 0, sizeof(dat));
-	dat.palette = 0;
-
-	InitCar(slot, pcp->hd.direction, &pos, CONTROL_TYPE_CIV_AI, pcp->ap.model, 0, (char*)&dat);
+	// CUTSCENE control: combatd2 drives it entirely from the inputs we write,
+	// and (unlike CIV_AI) there is NO stock traffic AI to fight us - no
+	// road-node snapping and no CheckPingOut() reset when it leaves the road
+	// graph, which is what made the civ-AI car fidget in place.
+	InitCar(slot, pcp->hd.direction, &pos, CONTROL_TYPE_CUTSCENE, pcp->ap.model, 0, &cd2AiPadId);
 
 	sAiCarId = slot->id;
 	sState = CD2_AI_WANDER;
 	sStateTimer = 0;
 	sEvade = 0;
 	sFireTimer = 0;
+	sSteer = 0;
 	sWanderHeading = pcp->hd.direction;
 	sWanderTimer = 60;
 
 	if (gCd2Cfg.debugLog)
-		printInfo("[combatd2] AI opponent spawned (car=%d)\n", sAiCarId);
+		printInfo("[combatd2] AI opponent spawned (car=%d side=%d)\n", sAiCarId, side);
 
 	return 1;
 }
@@ -124,7 +187,14 @@ static void cd2AiDrive(CAR_DATA* cp)
 	VECTOR tpos;
 	int desired, diff, steer, thrust;
 	int fx, fz, rx, rz;
+	int threatFlag = 0, blockedAhead = 0;
 	int i;
+
+	tpos.vx = 0;
+	tpos.vy = 0;
+	tpos.vz = 0;
+
+	sDbg.valid = 0;
 
 	if (cd2CarTotaled(cp))
 	{
@@ -132,6 +202,21 @@ static void cd2AiDrive(CAR_DATA* cp)
 		cp->wheel_angle = 0;
 		cp->handbrake = 0;
 		cp->wheelspin = 0;
+		sSteer = 0;
+
+		sDbg.valid = 1;
+		sDbg.carId = cp->id;
+		sDbg.state = CD2_AI_RECOVER;
+		sDbg.evadeLeft = 0;
+		sDbg.heading = cp->hd.direction;
+		sDbg.desired = cp->hd.direction;
+		sDbg.diff = 0;
+		sDbg.steer = 0;
+		sDbg.thrust = 0;
+		sDbg.speed = cp->hd.wheel_speed / 256;
+		sDbg.playerDist = 0;
+		sDbg.threat = 0;
+		sDbg.blockedAhead = 0;
 		return;
 	}
 
@@ -145,6 +230,7 @@ static void cd2AiDrive(CAR_DATA* cp)
 	// --- evade overlay: any incoming shot? ---
 	if (cd2WpnIncomingThreat(cp, &tpos, NULL))
 	{
+		threatFlag = 1;
 		sEvade = CD2_AI_EVADE_FRAMES;
 
 		if (gCd2Cfg.debugLog)
@@ -231,6 +317,8 @@ static void cd2AiDrive(CAR_DATA* cp)
 		clearL = lineClear(&carPos, &leftP);
 		clearR = lineClear(&carPos, &rightP);
 
+		blockedAhead = (clearAhead == 0);
+
 		if (clearAhead == 0)
 		{
 			if (clearL && !clearR)
@@ -266,6 +354,15 @@ static void cd2AiDrive(CAR_DATA* cp)
 	}
 
 	steer = jer_clamp_int(steer, -CD2_STEER_MAX, CD2_STEER_MAX);
+
+	// rate-limit the steering so an oscillating heading error can't slam the
+	// wheel full-lock one way then the other every frame (the "twitch")
+	if (steer > sSteer + CD2_AI_STEER_RATE)
+		steer = sSteer + CD2_AI_STEER_RATE;
+	else if (steer < sSteer - CD2_AI_STEER_RATE)
+		steer = sSteer - CD2_AI_STEER_RATE;
+
+	sSteer = steer;
 
 	// --- throttle ---
 	thrust = CD2_TMB_THRUST;
@@ -304,6 +401,33 @@ static void cd2AiDrive(CAR_DATA* cp)
 			}
 		}
 	}
+
+	// --- observability snapshot ---
+	{
+		int dx = 0, dz = 0, d2;
+
+		if (pcp != NULL)
+		{
+			dx = pcp->hd.where.t[0] - cp->hd.where.t[0];
+			dz = pcp->hd.where.t[2] - cp->hd.where.t[2];
+		}
+
+		d2 = dx * dx + dz * dz;
+
+		sDbg.valid = 1;
+		sDbg.carId = cp->id;
+		sDbg.state = sState;
+		sDbg.evadeLeft = sEvade;
+		sDbg.heading = cp->hd.direction;
+		sDbg.desired = desired;
+		sDbg.diff = diff;
+		sDbg.steer = sSteer;
+		sDbg.thrust = thrust;
+		sDbg.speed = cp->hd.wheel_speed / 256;
+		sDbg.playerDist = cd2AiSqrt(d2);
+		sDbg.threat = threatFlag;
+		sDbg.blockedAhead = blockedAhead;
+	}
 }
 
 // --- hooks -----------------------------------------------------------------
@@ -323,6 +447,30 @@ static int cd2AiOnFrame(void* ud, void* args)
 
 	if (sAiCarId < 0 && !sSpawned)
 		cd2AiSpawn();
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int cd2AiOnCarPad(void* ud, void* args)
+{
+	JER_ARGS_CAR_PAD* a = (JER_ARGS_CAR_PAD*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car;
+	(void)ud;
+
+	if (sAiCarId < 0 || cp->id != sAiCarId)
+		return JER_RESULT_CONTINUE;
+
+	// Capture what the engine handed the opponent before we blank it. A
+	// CUTSCENE car is fed cjpPlay stream 0 = the PLAYER's live replay, so
+	// without this the opponent would literally mirror the player's controls
+	// (the stock pedal path also runs because this car is not "live").
+	sDbg.padIn = a->pad;
+
+	// The opponent is driven only by the AI - never by a pad.
+	a->pad = 0;
+	a->padSteer = 0;
+	a->useAnalogue = 0;
+	a->handled = 1;	// skip the stock pedal assignment entirely
 
 	return JER_RESULT_CONTINUE;
 }
@@ -353,6 +501,8 @@ static int cd2AiOnGameStart(void* ud, void* args)
 	sStateTimer = 0;
 	sEvade = 0;
 	sFireTimer = 0;
+	sSteer = 0;
+	sDbg.valid = 0;
 
 	// spawn as soon as the frame hook sees a player car (the player car may
 	// not exist yet at GAME_START)
@@ -362,6 +512,44 @@ static int cd2AiOnGameStart(void* ud, void* args)
 int cd2AiActive(void)
 {
 	return (sAiCarId >= 0) ? 1 : 0;
+}
+
+int cd2AiGetDebug(CD2_AI_DEBUG* out)
+{
+	if (out != NULL)
+		*out = sDbg;
+
+	return sDbg.valid;
+}
+
+// JER_EVENT_DRAW_OVERLAY: an on-screen readout of the AI's internal values,
+// so you can watch what it is thinking while playing (config ai_debug / menu).
+static int cd2AiOnOverlay(void* ud, void* args)
+{
+	char text[128];
+	int y = 150;
+	(void)ud;
+	(void)args;
+
+	if (!gCd2Cfg.enabled || !gCd2Cfg.aiDebug || !sDbg.valid)
+		return JER_RESULT_CONTINUE;
+
+	sprintf(text, "AI car %d  state=%s  evade=%d", sDbg.carId, cd2AiStateName(), sDbg.evadeLeft);
+	PrintString(text, 20, y);
+	y += 12;
+
+	sprintf(text, "heading=%d desired=%d diff=%d steer=%d", sDbg.heading, sDbg.desired, sDbg.diff, sDbg.steer);
+	PrintString(text, 20, y);
+	y += 12;
+
+	sprintf(text, "thrust=%d speed=%d playerDist=%d", sDbg.thrust, sDbg.speed, sDbg.playerDist);
+	PrintString(text, 20, y);
+	y += 12;
+
+	sprintf(text, "threat=%d wallAhead=%d padIn=0x%04X", sDbg.threat, sDbg.blockedAhead, sDbg.padIn);
+	PrintString(text, 20, y);
+
+	return JER_RESULT_CONTINUE;
 }
 
 const char* cd2AiStateName(void)
@@ -393,6 +581,8 @@ void cd2AiRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2AiOnFrame, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2AiOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2AiOnCarStep, NULL, 1);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PAD, cd2AiOnCarPad, NULL, -1);
+	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, cd2AiOnOverlay, NULL, 1);
 
 	ctx->jer_log(ctx, "[combatd2] opponent AI registered (SDK v%d)\n", ctx->sdkVersion);
 }

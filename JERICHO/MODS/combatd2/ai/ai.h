@@ -17,4 +17,27 @@ int cd2AiActive(void);
 // Human-readable name of the AI's current behaviour (for the pause menu).
 const char* cd2AiStateName(void);
 
+// Snapshot of the AI's internal decision values, for the on-screen readout /
+// logging ("what is it thinking?").
+typedef struct CD2_AI_DEBUG
+{
+	int valid;		// 1 when an opponent is spawned and being driven
+	int carId;
+	int state;		// CD2_AI_* base behaviour
+	int evadeLeft;		// frames of the evade overlay remaining
+	int heading;		// current car heading (PSX angle)
+	int desired;		// heading the AI wants
+	int diff;		// shortest signed heading error
+	int steer;		// wheel_angle the AI wrote
+	int thrust;		// thrust the AI wrote
+	int speed;		// wheel_speed (scaled)
+	int playerDist;		// distance to the player
+	int threat;		// incoming-weapon detected this frame
+	int blockedAhead;	// 1 when the forward probe hit scenery
+	int padIn;		// pad the engine handed the car (should be forced to 0)
+} CD2_AI_DEBUG;
+
+// Fill *out with the latest AI values. Returns 1 when an opponent is active.
+int cd2AiGetDebug(CD2_AI_DEBUG* out);
+
 #endif /* CD2_AI_H */

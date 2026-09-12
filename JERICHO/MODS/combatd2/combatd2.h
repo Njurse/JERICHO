@@ -386,6 +386,7 @@ typedef struct CD2_CONFIG
 	int sceneryDamage;     // 0..100: % damage a car takes hitting solid scenery
 	int aiOpponent;        // 0/1: spawn the prototype opponent car
 	int aiForceState;      // CD2_AI_AUTO (0) or a forced CD2_AI_* behaviour
+	int aiDebug;           // 0/1: draw the AI internal-value readout on screen
 } CD2_CONFIG;
 
 typedef struct CD2_CAR

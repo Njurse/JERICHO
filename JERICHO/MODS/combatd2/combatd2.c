@@ -85,6 +85,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.sceneryDamage = jer_config_get_int("combatd2", "scenery_damage", 65);
 	gCd2Cfg.aiOpponent    = jer_config_get_int("combatd2", "ai_opponent", 1);
 	gCd2Cfg.aiForceState  = jer_config_get_int("combatd2", "ai_force_state", CD2_AI_AUTO);
+	gCd2Cfg.aiDebug       = jer_config_get_int("combatd2", "ai_debug", 0);
 
 	{
 		const char* mm = jer_config_get_str("combatd2", "missile_model", "BOMB");
@@ -92,7 +93,7 @@ static void cd2LoadConfig(void)
 		gCd2Cfg.missileModel[sizeof(gCd2Cfg.missileModel) - 1] = 0;
 	}
 	gCd2Cfg.missileScale  = jer_config_get_int("combatd2", "missile_scale", 4096);
-	gCd2Cfg.missileSound  = jer_config_get_int("combatd2", "missile_sound", 12);
+	gCd2Cfg.missileSound  = jer_config_get_int("combatd2", "missile_sound", 14);
 
 	gCd2Cfg.enabled  = gCd2Cfg.enabled ? 1 : 0;
 	gCd2Cfg.topSpeed = jer_clamp_int(gCd2Cfg.topSpeed, 60, 600);
@@ -113,6 +114,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.sceneryDamage = jer_clamp_int(gCd2Cfg.sceneryDamage, 0, 100);
 	gCd2Cfg.aiOpponent    = gCd2Cfg.aiOpponent ? 1 : 0;
 	gCd2Cfg.aiForceState  = jer_clamp_int(gCd2Cfg.aiForceState, 0, CD2_AI_STATE_COUNT - 1);
+	gCd2Cfg.aiDebug       = gCd2Cfg.aiDebug ? 1 : 0;
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
 	gCd2Cfg.missileSound  = jer_clamp_int(gCd2Cfg.missileSound, 0, 34);
 }
@@ -138,6 +140,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "scenery_damage", gCd2Cfg.sceneryDamage);
 	jer_config_set_int("combatd2", "ai_opponent", gCd2Cfg.aiOpponent);
 	jer_config_set_int("combatd2", "ai_force_state", gCd2Cfg.aiForceState);
+	jer_config_set_int("combatd2", "ai_debug", gCd2Cfg.aiDebug);
 	jer_config_set_str("combatd2", "missile_model", gCd2Cfg.missileModel);
 	jer_config_set_int("combatd2", "missile_scale", gCd2Cfg.missileScale);
 	jer_config_set_int("combatd2", "missile_sound", gCd2Cfg.missileSound);
@@ -1178,6 +1181,21 @@ static int cd2CycleAiState(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void cd2LabelAiDebug(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "AI Readout: %s", gCd2Cfg.aiDebug ? "ON" : "OFF");
+}
+
+static int cd2ToggleAiDebug(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gCd2Cfg.aiDebug = !gCd2Cfg.aiDebug;
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void cd2LabelScenery(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -1201,11 +1219,12 @@ static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 	{ NULL, cd2LabelWeapon, cd2ToggleWeapon, (void*)(size_t)CD2_WID_MINE, NULL, 0 },
 	{ NULL, cd2LabelAi, cd2ToggleAi, NULL, NULL, 0 },
 	{ NULL, cd2LabelAiState, cd2CycleAiState, NULL, NULL, 0 },
+	{ NULL, cd2LabelAiDebug, cd2ToggleAiDebug, NULL, NULL, 0 },
 	{ NULL, cd2LabelScenery, cd2CycleScenery, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2WeaponMenu =
-{ "Weapons", cd2WeaponItems, 7 };
+{ "Weapons", cd2WeaponItems, 8 };
 
 static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
 {
