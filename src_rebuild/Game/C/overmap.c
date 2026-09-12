@@ -1030,6 +1030,19 @@ void DrawMultiplayerMap(void)
 		g--;
 	}
 
+	// JERICHO-HOOK: let modules plot their own markers on the multiplayer map.
+	// This is the ONLY map a multiplayer level draws - DrawOverheadMap diverts
+	// here whenever MissionHeader->region != 0 (which is how the engine defines
+	// a multiplayer level), so a hook fired there is unreachable in MP.
+	// flags 0x20 = WorldToMultiplayerMap placement, 0x2 = small blip.
+	{
+		JER_ARGS_DRAW_MAP jerMap;
+
+		jerMap.flags = 0x20 | 0x2;
+		jerMap.fullscreen = 0;
+		jer_fire(JER_EVENT_DRAW_MAP, &jerMap);
+	}
+
 	draw_box(yPos, 64);
 
 	// draw map image
