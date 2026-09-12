@@ -396,6 +396,7 @@ typedef struct CD2_CONFIG
 
 	int sceneryDamage;     // % of stock damage a car takes hitting solid scenery/objects
 	int carCarDamage;      // % of stock damage applied to car-vs-car hits
+	int navDebug;          // 0/1: draw the navigation graph (nodes/edges/routes)
 	int aiOpponent;        // 0/1: spawn the prototype opponent car
 	int aiForceState;      // CD2_AI_AUTO (0) or a forced CD2_AI_* behaviour
 	int aiDebug;           // 0/1: draw the AI internal-value readout on screen

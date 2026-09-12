@@ -53,7 +53,7 @@
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
 #define CD2_AI_REVERSE_TICKS	42	// frames of reversing after getting stuck
 #define CD2_AI_STUCK_TICKS	22	// frames with no forward progress before reversing
-#define CD2_AI_STUCK_SPEED	15	// forward-speed magnitude counted as "stuck"
+#define CD2_AI_STUCK_SPEED	55	// forward-speed magnitude counted as "stuck"
 
 static int sAiCarId = -1;
 static int sSpawned;
@@ -629,6 +629,30 @@ int cd2AiGetDebug(CD2_AI_DEBUG* out)
 	return sDbg.valid;
 }
 
+// JER_EVENT_DRAW_WORLD: nav_debug - draw the navigation graph (nodes + edges)
+// around the player into the real OT.
+static int cd2AiOnDrawWorld(void* ud, void* args)
+{
+	CAR_DATA* pcp = NULL;
+	VECTOR c;
+	(void)ud;
+	(void)args;
+
+	if (!gCd2Cfg.enabled || !gCd2Cfg.navDebug)
+		return JER_RESULT_CONTINUE;
+
+	if (!cd2WpnPlayerCar(&pcp))
+		return JER_RESULT_CONTINUE;
+
+	c.vx = pcp->hd.where.t[0];
+	c.vy = pcp->hd.where.t[1];
+	c.vz = pcp->hd.where.t[2];
+
+	cd2NavDraw(&c, CD2_NAV_DRAW_RADIUS);
+
+	return JER_RESULT_CONTINUE;
+}
+
 // JER_EVENT_DRAW_OVERLAY: an on-screen readout of the AI's internal values,
 // so you can watch what it is thinking while playing (config ai_debug / menu).
 static int cd2AiOnOverlay(void* ud, void* args)
@@ -695,6 +719,7 @@ void cd2AiRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2AiOnCarStep, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PAD, cd2AiOnCarPad, NULL, -1);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, cd2AiOnOverlay, NULL, 1);
+	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WORLD, cd2AiOnDrawWorld, NULL, 2);
 
 	ctx->jer_log(ctx, "[combatd2] opponent AI registered (SDK v%d)\n", ctx->sdkVersion);
 }

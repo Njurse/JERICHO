@@ -26,6 +26,7 @@ typedef struct CD2_NAV_NODE
 	int   type;		// 0 straight, 1 curve, 2 junction
 	int   hasPos;		// 0 until a position is known (junctions)
 	int   x, z;
+	int   y;		// world height (MapHeight at build time)
 	short adj[4];		// undirected neighbour node indices
 } CD2_NAV_NODE;
 
@@ -252,6 +253,20 @@ static void cd2NavBuild(void)
 
 	sBuilt = 1;
 
+	// cache node heights (drawn / used as waypoint Y without a per-use MapHeight)
+	for (i = 0; i < sNodeCount; i++)
+	{
+		VECTOR p;
+
+		if (!sNodes[i].hasPos)
+			continue;
+
+		p.vx = sNodes[i].x;
+		p.vy = 0;
+		p.vz = sNodes[i].z;
+		sNodes[i].y = MapHeight(&p);
+	}
+
 	if (gCd2Cfg.debugLog)
 		printInfo("[combatd2] nav graph built: nodes=%d (S%d C%d J%d) edges=%d\n",
 			sNodeCount, NumDriver2Straights, NumDriver2Curves, NumDriver2Junctions, sEdgeCount);
@@ -300,7 +315,7 @@ int cd2NavNodePos(int node, VECTOR* out)
 		return 0;
 
 	out->vx = sNodes[node].x;
-	out->vy = MapHeight(out);
+	out->vy = sNodes[node].y;
 	out->vz = sNodes[node].z;
 
 	return 1;
@@ -628,4 +643,63 @@ const CD2_NAV_ROUTE* cd2NavLastRoute(int carId)
 		return NULL;
 
 	return &sLastRoute[carId];
+}
+
+// ---- debug draw ----------------------------------------------------------
+
+#ifndef PSX
+extern void Debug_AddLineDepth(VECTOR& pointA, VECTOR& pointB, CVECTOR& color);
+#endif
+
+void cd2NavDraw(const VECTOR* centre, int radius)
+{
+#ifndef PSX
+	static const CVECTOR colNode[3] =
+	{
+		{ 250, 250, 70 },	// straight
+		{ 70, 170, 250 },	// curve
+		{ 250, 130, 40 }	// junction
+	};
+	CVECTOR colEdge = { 90, 90, 90 };
+	int i, k;
+
+	if (centre == NULL)
+		return;
+
+	for (i = 0; i < sNodeCount; i++)
+	{
+		VECTOR a, b;
+
+		if (!sNodes[i].hasPos)
+			continue;
+
+		if (radius > 0 && cd2NavDist2D(centre->vx, centre->vz, sNodes[i].x, sNodes[i].z) > radius)
+			continue;
+
+		a.vx = sNodes[i].x;
+		a.vy = sNodes[i].y;
+		a.vz = sNodes[i].z;
+
+		b = a;
+		b.vy = a.vy + 220;
+		Debug_AddLineDepth(a, b, (CVECTOR&)colNode[sNodes[i].type]);
+
+		for (k = 0; k < 4; k++)
+		{
+			int nb = sNodes[i].adj[k];
+
+			if (nb <= i || !sNodes[nb].hasPos)
+				continue;	// draw each edge once
+
+			if (radius > 0 && cd2NavDist2D(centre->vx, centre->vz, sNodes[nb].x, sNodes[nb].z) > radius)
+				continue;
+
+			a.vy = sNodes[i].y + 60;
+			b.vx = sNodes[nb].x;
+			b.vy = sNodes[nb].y + 60;
+			b.vz = sNodes[nb].z;
+			Debug_AddLineDepth(a, b, colEdge);
+		}
+	}
+#endif
 }

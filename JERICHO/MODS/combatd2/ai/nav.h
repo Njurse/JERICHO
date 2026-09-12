@@ -17,6 +17,7 @@
 #define CD2_NAV_MAX_ROUTE	24	// waypoints in one route
 #define CD2_NAV_MAX_NODES	4096	// graph node capacity
 #define CD2_NAV_MAX_CARS	32	// route-cache slots (indexed by car id)
+#define CD2_NAV_DRAW_RADIUS	4500	// nav_debug: draw nodes/edges within this of the player
 
 // Where a route came from (also drawn by the nav debug overlay).
 enum
@@ -57,5 +58,9 @@ int  cd2NavRoute(int carId, const VECTOR* from, const VECTOR* goal, CD2_NAV_ROUT
 
 // Last route computed for a car (for the debug overlay), or NULL.
 const CD2_NAV_ROUTE* cd2NavLastRoute(int carId);
+
+// nav_debug: draw the graph (nodes as vertical ticks, edges as lines, colour by
+// road type) around `centre` within `radius` world units (0 = everything).
+void cd2NavDraw(const VECTOR* centre, int radius);
 
 #endif /* CD2_NAV_H */
