@@ -11,6 +11,12 @@
 
 void cd2AiRegister(JERICHO_CONTEXT* ctx);
 
+// Per-run RNG seed (a value that actually varies between launches, unlike the
+// engine's frame-counter Random2()). Cached for the process; other AI files
+// (nav.c) use it to vary their starting picks so opponents don't replay the
+// same routes every launch.
+unsigned int cd2AiRunSeed(void);
+
 // 1 when the prototype opponent is currently spawned.
 int cd2AiActive(void);
 

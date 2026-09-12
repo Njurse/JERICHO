@@ -41,6 +41,16 @@
 #include <string.h>
 #include <stdio.h>
 
+// A real entropy source for the per-run AI seed. NOTE: we cannot use <time.h>
+// here - the game's include path has its own Game/C/time.h, which shadows the
+// CRT header. On MSVC x86/x64 the CPU timestamp counter is reliable per-run;
+// elsewhere we fall back to ASLR addresses (still far better than the fixed
+// frame-counter Random2()).
+#if defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
+#include <intrin.h>
+#define CD2_AI_HAVE_RDTSC 1
+#endif
+
 #define CD2_AI_SPAWN_OFFSET	900	// how far beside the player to spawn
 #define CD2_AI_ENGAGE_RANGE	12000	// close to this and it commits to a fight
 					//    (was 3000 - so little of the map counted as
@@ -177,12 +187,65 @@ static CD2_AI_DEBUG sDbg;	// latest values of the tracked (first) opponent
 // regardless of the range you ask for. Every "jitter up to N" must reduce it
 // here, or you get values in the tens of thousands (an "up to 210 frames"
 // spread once came out as 28822 frames).
+//
+// Random2() is ALSO a pure function of the frame counter, so an AI driven only
+// by it replays the exact same routes, roles and jitter every launch (the
+// opponents spawn on the same frame each boot). So we run our own LCG seeded
+// once per RUN from a source that varies: the wall clock, this static's
+// address under ASLR, and the frame counter. Every cd2AiRand* call advances it.
+unsigned int cd2AiRunSeed(void)
+{
+	static unsigned int sSeed;
+	static int sDone;
+
+	if (!sDone)
+	{
+		unsigned int s = (unsigned int)(size_t)&sSeed;	// ASLR
+
+		{
+			int probe;
+			s ^= (unsigned int)(size_t)&probe;	// stack (ASLR)
+		}
+
+#if defined(CD2_AI_HAVE_RDTSC)
+		s ^= (unsigned int)__rdtsc();		// cycles since reset
+		s ^= (unsigned int)(__rdtsc() >> 32);
+#endif
+
+		s ^= (unsigned int)Random2(0) << 11;
+		s = s * 2654435761u + 2246822519u;	// avalanche
+
+		if (s == 0)
+			s = 0x9E3779B9u;
+
+		sSeed = s;
+		sDone = 1;
+	}
+
+	return sSeed;
+}
+
+static unsigned int cd2AiRngNext(void)
+{
+	static unsigned int sState;
+	static int sInit;
+
+	if (!sInit)
+	{
+		sState = cd2AiRunSeed();
+		sInit = 1;
+	}
+
+	sState = sState * 1664525u + 1013904223u;	// Numerical Recipes LCG
+	return sState;
+}
+
 static int cd2AiRand(int n)
 {
 	if (n <= 0)
 		return 0;
 
-	return Random2(n) % n;
+	return (int)((cd2AiRngNext() >> 16) % (unsigned int)n);
 }
 
 // A weapon that leaves fireCone unset falls back to the old global tolerance
@@ -195,10 +258,8 @@ static int cd2AiCone(const CD2_WEAPON_DEF* d)
 	return (d->fireCone > 0) ? d->fireCone : CD2_AI_FIRE_CONE;
 }
 
-// Random2() is a pure function of the frame counter, so every call made in the
-// SAME frame returns the same value. All the opponents spawn on one frame, so
-// they were all drawing the identical "random" model and colour. Mix in a
-// per-caller salt (each spawner's index) to break the tie within a frame.
+// All the opponents spawn on one frame, so a per-caller salt keeps their
+// "random" model/colour choices from colliding within that frame.
 static int cd2AiRandSalt(int n, int salt)
 {
 	unsigned int mix;
@@ -208,7 +269,7 @@ static int cd2AiRandSalt(int n, int salt)
 
 	mix = (unsigned int)salt * 2654435761u;
 
-	return (int)(((unsigned int)Random2(n) ^ (mix >> 7)) % (unsigned int)n);
+	return (int)(((cd2AiRngNext() >> 16) ^ (mix >> 7)) % (unsigned int)n);
 }
 
 // The damage ceiling the engine itself uses for this car (bcollide.c / cars.c).
@@ -489,7 +550,10 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		A->hits = 0;
 		A->wanderHeading = pcp->hd.direction;
 		A->wanderTimer = 60;
-		A->role = (gCd2Cfg.aiRole >= 0) ? gCd2Cfg.aiRole : (index % CD2_AI_ROLE_COUNT);
+		// round-robin so the four opponents differ, but rotate the assignment
+		// by a per-run offset so the same car isn't always the same role
+		A->role = (gCd2Cfg.aiRole >= 0) ? gCd2Cfg.aiRole
+			: (int)(((unsigned int)index + cd2AiRunSeed()) % CD2_AI_ROLE_COUNT);
 		A->route.count = 0;
 		A->route.source = CD2_NAV_SRC_NONE;
 

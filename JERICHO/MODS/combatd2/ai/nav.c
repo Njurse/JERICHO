@@ -15,6 +15,7 @@
 #include "system.h"
 #include "combatd2.h"
 #include "ai/nav.h"
+#include "ai/ai.h"
 #include "ai/grid.h"
 #include "objcoll.h"
 
@@ -94,11 +95,16 @@ static int cd2NavDist2D(int ax, int az, int bx, int bz);	// defined below
 
 int cd2NavRoamGoal(const VECTOR* from, int minDist, int maxDist, VECTOR* out)
 {
-	static int sRotate;
+	static int sRotate = -1;	// -1 = not yet seeded for this run
 	int pass, i, d;
 
 	if (sNodeCount <= 0 || out == NULL)
 		return 0;
+
+	// start the rotating scan at a per-run offset so the opening route isn't
+	// the same node every launch
+	if (sRotate < 0)
+		sRotate = (int)(cd2AiRunSeed() % (unsigned int)sNodeCount);
 
 	if (sRotate >= sNodeCount)
 		sRotate = 0;
