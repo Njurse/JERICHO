@@ -55,7 +55,9 @@
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
 #define CD2_AI_REVERSE_TICKS	42	// frames of reversing after getting stuck
 #define CD2_AI_STUCK_TICKS	22	// frames with no forward progress before reversing
-#define CD2_AI_STUCK_SPEED	55	// forward-speed magnitude counted as "stuck"
+#define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
+#define CD2_AI_WP_REACH		700	// route waypoints within this are "reached" and skipped
+#define CD2_AI_WANDER_LEG	6000	// wander goal distance along the wander heading
 
 static int sAiCarId = -1;
 static int sSpawned;
@@ -213,6 +215,12 @@ static void cd2AiDrive(CAR_DATA* cp)
 	int fx, fz, rx, rz;
 	int threatFlag = 0, blockedAhead = 0;
 	int speedFwd = 0, pivotDir = 0;
+	VECTOR carV, goalV;
+
+	carV.vx = cp->hd.where.t[0];
+	carV.vy = cp->hd.where.t[1];
+	carV.vz = cp->hd.where.t[2];
+	goalV = carV;
 
 	// health/collision tracking: totalDamage only ever rises, so a change means
 	// the opponent just took a hit this frame (from any source).
@@ -306,7 +314,48 @@ static void cd2AiDrive(CAR_DATA* cp)
 		sStateTimer = 45;
 	}
 
-	// --- desired heading ---
+	// --- navigator: goal, route and the shared flow field ---
+	{
+		if (sState == CD2_AI_HUNT && pcp != NULL)
+		{
+			goalV.vx = pcp->hd.where.t[0];
+			goalV.vy = pcp->hd.where.t[1];
+			goalV.vz = pcp->hd.where.t[2];
+		}
+		else if (sState == CD2_AI_FLEE && pcp != NULL)
+		{
+			// run away: a point mirrored through the car from the player
+			goalV.vx = carV.vx + (carV.vx - pcp->hd.where.t[0]);
+			goalV.vy = carV.vy;
+			goalV.vz = carV.vz + (carV.vz - pcp->hd.where.t[2]);
+		}
+		else
+		{
+			if (--sWanderTimer <= 0)
+			{
+				sWanderHeading = (sWanderHeading + 900 + Random2(1400)) & 0xfff;
+				sWanderTimer = 60 + Random2(90);
+			}
+
+			goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * CD2_AI_WANDER_LEG) >> 12);
+			goalV.vy = carV.vy;
+			goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_WANDER_LEG) >> 12);
+		}
+
+		cd2NavRoute(cp->id, &carV, &goalV, &sRoute);
+
+		// shared pursuit field toward the same goal, budgeted per frame
+		cd2FlowSetGoal(&goalV);
+		cd2FlowUpdate(64);
+
+		if (gCd2Cfg.debugLog && (sLogTick % 120) == 0)
+			printInfo("[combatd2] nav flow: car=%d src=%s wp=%d flow=%d cells=%d goal=(%d,%d)\n",
+				cp->id,
+				(sRoute.source == CD2_NAV_SRC_SCENERY) ? "scenery" : (sRoute.source == CD2_NAV_SRC_ROAD) ? "road" : "none",
+				sRoute.count, cd2FlowReady(), cd2FlowCoverage(), goalV.vx, goalV.vz);
+	}
+
+	// --- desired heading: navigator look-ahead, else flow, else direct aim ---
 	if (sEvade > 0)
 	{
 		// dodge toward the side the threat is NOT on
@@ -314,25 +363,38 @@ static void cd2AiDrive(CAR_DATA* cp)
 
 		desired = cp->hd.direction + ((side > 0) ? -1024 : 1024);
 	}
-	else if (sState == CD2_AI_HUNT && pcp != NULL)
-	{
-		desired = ratan2(pcp->hd.where.t[0] - cp->hd.where.t[0],
-				 pcp->hd.where.t[2] - cp->hd.where.t[2]);
-	}
-	else if (sState == CD2_AI_FLEE && pcp != NULL)
-	{
-		desired = ratan2(cp->hd.where.t[0] - pcp->hd.where.t[0],
-				 cp->hd.where.t[2] - pcp->hd.where.t[2]);
-	}
 	else
 	{
-		if (--sWanderTimer <= 0)
+		int k, got = 0;
+
+		// steer at the first route waypoint beyond the reach radius, so the car
+		// follows the routed path instead of aiming straight at the goal
+		for (k = 0; k < sRoute.count; k++)
 		{
-			sWanderHeading = (sWanderHeading + 900 + Random2(1400)) & 0xfff;
-			sWanderTimer = 60 + Random2(90);
+			int wdx = sRoute.wp[k].vx - carV.vx;
+			int wdz = sRoute.wp[k].vz - carV.vz;
+
+			if (wdx * wdx + wdz * wdz > CD2_AI_WP_REACH * CD2_AI_WP_REACH)
+			{
+				desired = ratan2(wdx, wdz);
+				got = 1;
+				break;
+			}
 		}
 
-		desired = sWanderHeading;
+		if (!got)
+		{
+			int head;
+
+			if (cd2FlowDir(&carV, &head))
+			{
+				desired = head;
+				got = 1;
+			}
+		}
+
+		if (!got)
+			desired = ratan2(goalV.vx - carV.vx, goalV.vz - carV.vz);
 	}
 
 	// --- steering ---
@@ -528,49 +590,6 @@ static void cd2AiDrive(CAR_DATA* cp)
 			cp->id, cd2AiStateName(), cp->totalDamage, sHits, speedFwd, sSteer,
 			(sReverse > 0) ? 1 : 0, pivotDir, threatFlag, blockedAhead);
 
-	// Navigator: keep a route to the current goal and log when the source
-	// changes (road vs off-road scenery). Steering still aims directly until the
-	// navigator is wired into the controller.
-	{
-		VECTOR carV, goalV;
-
-		carV.vx = cp->hd.where.t[0];
-		carV.vy = cp->hd.where.t[1];
-		carV.vz = cp->hd.where.t[2];
-
-		if (pcp != NULL && (sState == CD2_AI_HUNT || sState == CD2_AI_FLEE))
-		{
-			goalV.vx = pcp->hd.where.t[0];
-			goalV.vy = pcp->hd.where.t[1];
-			goalV.vz = pcp->hd.where.t[2];
-		}
-		else
-		{
-			goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * 5000) >> 12);
-			goalV.vy = carV.vy;
-			goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * 5000) >> 12);
-		}
-
-		cd2NavRoute(cp->id, &carV, &goalV, &sRoute);
-
-		// Shared pursuit flow field toward the same goal, budgeted per frame.
-		cd2FlowSetGoal(&goalV);
-		cd2FlowUpdate(64);
-
-		if (gCd2Cfg.debugLog && (sLogTick % 120) == 0)
-			printInfo("[combatd2] flow: ready=%d cells=%d goal=(%d,%d)\n",
-				cd2FlowReady(), cd2FlowCoverage(), goalV.vx, goalV.vz);
-
-		if (sRoute.source != sRouteSrc)
-		{
-			sRouteSrc = sRoute.source;
-
-			printInfo("[combatd2] nav route car=%d src=%s wp=%d len=%d expanded=%d\n",
-				cp->id,
-				(sRoute.source == CD2_NAV_SRC_SCENERY) ? "scenery" : (sRoute.source == CD2_NAV_SRC_ROAD) ? "road" : "none",
-				sRoute.count, sRoute.length, sRoute.expanded);
-		}
-	}
 }
 
 // --- hooks -----------------------------------------------------------------
