@@ -225,55 +225,14 @@ enum
 #define CD2_WALL_KEEP       256
 
 // ==============================================================
-// WEAPONS (prototype): INVENTORY + PROJECTILE TUNERS
+// WEAPONS
 // ==============================================================
 //
-// Car weapons prototype. The machine gun is the SIDEARM: every car always
-// has it and it never runs out. The rocket is an example PRIMARY weapon
-// (picked up around the map in the final design; today granted via the
-// pause-menu Debug item) with finite ammo; when the primary slot is empty
-// the inventory falls back to the MG. Weapon input is read in the module's
-// JER_EVENT_FRAME handler from the mapped pad: hold Triangle to fire
-// (auto for the MG, single-shot for the rocket), tap R1 to cycle between
-// the MG and an armed primary. Both need the TMB in-car layout ON (that is
-// the combat layout; Triangle is only free of the pedal binds there).
-//
-// Units: range/speed are world units (per frame for speed); damage is the
-// value handed to the engine's ApplyDamage(). Tune by play.
-
-// --- machine gun (sidearm, hitscan with a drawn tracer) ---
-#define CD2_MG_RANGE            1600  // hitscan reach (world units)
-#define CD2_MG_DAMAGE           90    // ApplyDamage value per bullet
-#define CD2_MG_INTERVAL         5     // frames between shots (auto fire)
-#define CD2_MG_TRACER_LIFE      3     // frames the tracer stays visible
-
-// --- rocket (primary, a moving drawn projectile) ---
-#define CD2_RKT_SPEED           85    // world units/frame
-#define CD2_RKT_RANGE           2400  // max travel before it fizzles
-#define CD2_RKT_DAMAGE          900   // direct hit damage
-#define CD2_RKT_SPLASH_RADIUS   500   // splash radius (world units)
-#define CD2_RKT_SPLASH_DAMAGE   800   // splash damage at the blast center
-#define CD2_RKT_AMMO_DEFAULT    10    // rounds a pickup/debug grant gives
-
-#define CD2_WPN_FIRE            MPAD_TRIANGLE  // hold/single-shot fire
-#define CD2_WPN_CYCLE           MPAD_R1        // tap: MG <-> primary
-
-// Weapon ids (inventory slots: 0 = sidearm MG, then primaries).
-enum
-{
-	CD2_WPN_MG = 0,
-	CD2_WPN_ROCKET = 1,
-	CD2_WPN_PRIMARY_FIRST = CD2_WPN_ROCKET,
-	CD2_WPN_PRIMARY_COUNT = 1,
-	CD2_WPN_COUNT = 2,
-	CD2_WPN_NONE = -1
-};
-
-// Debug / pause-menu API (implemented in weapons.c):
-void cd2WpnGrantRocket(int ammo);  // grant + auto-equip the primary
-void cd2WpnClearPrimary(void);     // drop the primary (falls back to MG)
-int  cd2WpnHavePrimary(void);      // 1 when the primary slot is armed
-int  cd2WpnAmmo(void);             // rounds left in the primary slot
+// Car weapons live in the weapon framework under weapons/. weapon.h owns
+// the public types: CD2_WEAPON_DEF (the consistent per-weapon field set)
+// grouped by functional class (raycast / projectile / aoe / drop). Each
+// weapon is one def row + a fire function in its own class folder; the
+// core pool code drives them. See weapons/core/weapon.h.
 
 // ----------------------- engine audio / gearbox ---------------------------
 //
@@ -294,7 +253,7 @@ int  cd2WpnAmmo(void);             // rounds left in the primary slot
 #define CD2_GEAR_1_FRAC       1000   // fp: gear0 tops here (≈ 12% of top speed)
 #define CD2_GEAR_2_FRAC       2100  // fp: gear1 tops here (≈ 27%)
 #define CD2_GEAR_3_FRAC       3250  // fp: gear2 tops here (≈ 43%)
-#define CD2_GEAR_SHIFT_REVS   23000 * 0.8 // revs at the top of gears 0..2 (pitch peak;
+#define CD2_GEAR_SHIFT_REVS   23000 * 0.7 // revs at the top of gears 0..2 (pitch peak;
                                     // matches stock redline scale)
 #define CD2_REV_CEILING       23000 * 0.8 // top-gear revs AT top speed; hard rev clamp
 #define CD2_GEAR_DOWN_FRAC    3686  // fp: downshift point = prev gear top x this
@@ -383,6 +342,7 @@ typedef struct CD2_CONFIG
 	int tmbButtons;    // 0/1: TMB in-car button layout (Square gas, Circle brake)
 	int tmbTight;      // 0/1: which face button is Tight Turn (0=Cross/bottom, 1=Square/left)
 	int debugLog;      // 0/1: log player-car input/velocity telemetry to REDRIVER2.log
+	int allWeapons;    // 0/1: test grant - spawn with every weapon at max capacity
 } CD2_CONFIG;
 
 typedef struct CD2_CAR
@@ -400,5 +360,9 @@ extern CD2_CONFIG gCd2Cfg;
 // Exported for the presentation source file (combatd2media.c) of this merged
 // module: the effective top speed of a car (fixed-point speed-units/frame).
 int cd2CarTopSpeed(void* cp);
+
+// Exported for the core + weapons files: 1 when a car is past the damage cap
+// (totaled wreck — no driving input, no weapons).
+int cd2CarTotaled(void* cp);
 
 #endif /* COMBATD2_H */

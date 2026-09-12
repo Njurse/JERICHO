@@ -35,11 +35,13 @@
 #include "jer_pause_menu.h"
 #include "jer_config.h"
 #include "jer_math.h"
-
+#include "sound.h"
+#include "gamesnd.h"
+#include "weapons/core/weapon.h"	/* CD2_WEAPON_DEF + inventory API */
 // Registration helpers from the other source files of this (merged) module:
 //   combatd2combat.c — wreck/explosion effects   (cd2CombatRegister)
 //   combatd2media.c   — presentation tuners      (cd2MediaRegister)
-//   weapons.c         — weapon inventory/fire    (cd2WeaponsRegister)
+//   weapons/core      — weapon framework         (cd2WeaponsRegister)
 void cd2CombatRegister(JERICHO_CONTEXT* ctx);
 void cd2MediaRegister(JERICHO_CONTEXT* ctx);
 void cd2WeaponsRegister(JERICHO_CONTEXT* ctx);
@@ -76,6 +78,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tmbButtons    = jer_config_get_int("combatd2", "tmb_buttons", CD2_TMB_BUTTONS_DEFAULT);
 	gCd2Cfg.tmbTight      = jer_config_get_int("combatd2", "tmb_tight", CD2_TMB_TIGHT_DEFAULT);
 	gCd2Cfg.debugLog      = jer_config_get_int("combatd2", "debug_log", 0);
+	gCd2Cfg.allWeapons    = jer_config_get_int("combatd2", "all_weapons", 1);
 
 	gCd2Cfg.enabled  = gCd2Cfg.enabled ? 1 : 0;
 	gCd2Cfg.topSpeed = jer_clamp_int(gCd2Cfg.topSpeed, 60, 600);
@@ -91,6 +94,7 @@ static void cd2LoadConfig(void)
 	gCd2Cfg.tmbButtons    = gCd2Cfg.tmbButtons ? 1 : 0;
 	gCd2Cfg.tmbTight      = gCd2Cfg.tmbTight ? 1 : 0;
 	gCd2Cfg.debugLog      = gCd2Cfg.debugLog ? 1 : 0;
+	gCd2Cfg.allWeapons    = gCd2Cfg.allWeapons ? 1 : 0;
 }
 
 static void cd2SaveConfig(void)
@@ -109,6 +113,7 @@ static void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "tmb_buttons", gCd2Cfg.tmbButtons);
 	jer_config_set_int("combatd2", "tmb_tight", gCd2Cfg.tmbTight);
 	jer_config_set_int("combatd2", "debug_log", gCd2Cfg.debugLog);
+	jer_config_set_int("combatd2", "all_weapons", gCd2Cfg.allWeapons);
 }
 
 static void cd2ApplyPreset(void)
@@ -266,7 +271,16 @@ static int cd2OnCarPad(void* ud, void* args)
 	int pad, tight, gas, brake;
 	(void)ud;
 
-	if (!gCd2Cfg.enabled || !gCd2Cfg.tmbButtons || !a->live)
+	if (!gCd2Cfg.enabled || !a->live)
+		return JER_RESULT_CONTINUE;
+
+	// The shoulders + triggers are the weapon controls now (L1/R1 = prev/next
+	// weapon, L2/R2 = fire). Strip them from the car's action bits so the
+	// stock fast-steer (L1) never fires alongside; the stock horn (R1) is
+	// cleared in the weapons FRAME handler.
+	a->pad &= ~(MPAD_L1 | MPAD_L2 | MPAD_R1 | MPAD_R2);
+
+	if (!gCd2Cfg.tmbButtons)
 		return JER_RESULT_CONTINUE;
 
 	pad = a->pad;
@@ -324,6 +338,16 @@ static int cd2OnCarStep(void* ud, void* args)
 	{
 		gPendingTotalCar = 0;
 		cp->totalDamage = 0xffff;
+		Start3DSoundVolPitch(
+			-1,
+			SOUND_BANK_MISSION,
+			29,
+			cp->hd.where.t[0],
+			cp->hd.where.t[1],
+			cp->hd.where.t[2],
+			-2000,
+			4096 + 2048
+		);
 	}
 
 	gCd2Car[cp->id].throttle = (cp->thrust > 0) ? 1 : (cp->thrust < 0) ? -1 : 0;
@@ -863,50 +887,76 @@ static int cd2TotalCar(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
-// Weapon prototype debug: toggle the primary slot (grant / clear the rocket).
-static void cd2LabelPrimary(void* ud, char* out, int max)
-{
-	(void)ud;
-
-	if (cd2WpnHavePrimary())
-		snprintf(out, max, "Primary: Rocket (x%d)", cd2WpnAmmo());
-	else
-		snprintf(out, max, "Primary: None");
-}
-
-static int cd2TogglePrimary(void* ud, int dir)
-{
-	(void)ud;
-	(void)dir;
-
-	if (cd2WpnHavePrimary())
-		cd2WpnClearPrimary();
-	else
-		cd2WpnGrantRocket(CD2_RKT_AMMO_DEFAULT);
-
-	return JER_PAUSE_QUIT_NONE;
-}
-
-static int cd2AddAmmo(void* ud, int dir)
-{
-	(void)ud;
-	(void)dir;
-
-	// grant +10 (equipping the rocket if it isn't armed yet)
-	cd2WpnGrantRocket((cd2WpnHavePrimary() ? cd2WpnAmmo() : 0) + CD2_RKT_AMMO_DEFAULT);
-
-	return JER_PAUSE_QUIT_NONE;
-}
-
 // ---- submenu: Weapons ----------------------------------------------------
+// Test/dev helpers: grant every weapon at once, plus a per-weapon grant/clear
+// toggle. Base weapons (the machine gun) are not listed - always carried.
+static void cd2LabelAllWeapons(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "All Weapons (Test): %s", gCd2Cfg.allWeapons ? "ON" : "OFF");
+}
+
+static int cd2ToggleAllWeapons(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gCd2Cfg.allWeapons = !gCd2Cfg.allWeapons;
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static int cd2GrantAllNow(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	cd2WpnGrantAllMax();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void cd2LabelWeapon(void* ud, char* out, int max)
+{
+	int id = (int)(size_t)ud;
+	const CD2_WEAPON_DEF* d = cd2WpnDef(id);
+
+	if (d == NULL)
+	{
+		snprintf(out, max, "(invalid)");
+		return;
+	}
+
+	if (d->isBase || cd2WpnAmmo(id) < 0)
+		snprintf(out, max, "%s: infinite", d->name);
+	else
+		snprintf(out, max, "%s: %d", d->name, cd2WpnAmmo(id));
+}
+
+static int cd2ToggleWeapon(void* ud, int dir)
+{
+	int id = (int)(size_t)ud;
+	const CD2_WEAPON_DEF* d = cd2WpnDef(id);
+	(void)dir;
+
+	if (d == NULL)
+		return JER_PAUSE_QUIT_NONE;
+
+	if (cd2WpnOwns(id))
+		cd2WpnClear(id);
+	else
+		cd2WpnGrant(id, (d->maxAmmo > 0) ? d->maxAmmo : 10);
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 {
-	{ NULL, cd2LabelPrimary, cd2TogglePrimary, NULL, NULL, 0 },	// press to give/drop the rocket
-	{ "Ammo +10", NULL, cd2AddAmmo, NULL, NULL, 0 },
+	{ NULL, cd2LabelAllWeapons, cd2ToggleAllWeapons, NULL, NULL, 0 },
+	{ "Grant All Now", NULL, cd2GrantAllNow, NULL, NULL, 0 },
+	{ NULL, cd2LabelWeapon, cd2ToggleWeapon, (void*)(size_t)CD2_WID_MISSILE, NULL, 0 },
+	{ NULL, cd2LabelWeapon, cd2ToggleWeapon, (void*)(size_t)CD2_WID_MINE, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2WeaponMenu =
-{ "Weapons", cd2WeaponItems, 2 };
+{ "Weapons", cd2WeaponItems, 4 };
 
 static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
 {

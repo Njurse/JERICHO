@@ -98,7 +98,8 @@ mission explosion (`GetMissionSound(12/29)`). No extra code needed.
 
 **Machine gun shot** — there is no dedicated gunshot in the bank, so audition
 a short percussive SFX. First candidates: the crash samples (`SOUND_BANK_SFX`
-`4`/`5`) pitched up a little. Wire it in `cd2FireMG` after the raycast:
+`4`/`5`) pitched up a little. Wire it in `cd2MgFire`
+(weapons/raycast/machinegun.c) at spawn time:
 
 ```c
 // one line, world-positioned, auto channel
@@ -110,7 +111,8 @@ Start3DSoundVolPitch(-1, SOUND_BANK_SFX, 5,
 - `SOUND_BANK_SFX` `12` (special siren, pitched way up) as a launch whistle, or
 - a cop siren bank sample (`SBK_COP_SIREN_START = 69` onward) pitched up.
 
-Wire it in `cd2LaunchRocket` with the muzzle position. For a looping/tracking
+Wire it in `cd2MissileFire` (weapons/projectile/missile.c) with the muzzle
+position. For a looping/tracking
 sound that follows the projectile, use `Start3DTrackingSound(channel, bank,
 sample, &rocket.pos, &rocket.vel)`.
 
