@@ -16,6 +16,7 @@
 #include "combatd2.h"
 #include "ai/nav.h"
 #include "ai/grid.h"
+#include "objcoll.h"
 
 #include <string.h>
 
@@ -95,6 +96,49 @@ static int cd2NavIsqrt(int v)
 // ---------------------------------------------------------------------------
 static int cd2NavDist2D(int ax, int az, int bx, int bz);	// defined below
 
+// A road route is node-to-node straight lines, and a straight line between two
+// midpoints can pass straight through the inside of a corner - a building, a
+// wall, a chunk of scenery. lineClear() is the same test the engine's
+// pathfinder and line-of-sight use (0 = blocked). When a leg is blocked, try
+// to bend it around the obstruction by testing a few points offset
+// perpendicular to the leg, and keep the first offset that is clear both ways.
+static int cd2NavRepairLeg(const VECTOR* a, const VECTOR* b, VECTOR* mid)
+{
+	static const int offs[6] = { 400, -400, 800, -800, 1400, -1400 };
+	int ax = a->vx, az = a->vz;
+	int bx = b->vx, bz = b->vz;
+	int dx = bx - ax, dz = bz - az;
+	int len = cd2NavDist2D(ax, az, bx, bz);
+	int nx, nz, i;
+
+	if (len < 1)
+		return 0;
+
+	// perpendicular to the leg, scaled to unit length
+	nx = -dz;
+	nz = dx;
+
+	for (i = 0; i < 6; i++)
+	{
+		VECTOR p, va, vb;
+
+		p.vx = (ax + bx) / 2 + (int)(((long long)nx * offs[i]) / len);
+		p.vz = (az + bz) / 2 + (int)(((long long)nz * offs[i]) / len);
+		p.vy = (a->vy + b->vy) / 2;
+
+		va.vx = ax; va.vy = a->vy; va.vz = az;
+		vb.vx = bx; vb.vy = b->vy; vb.vz = bz;
+
+		if (lineClear(&va, &p) != 0 && lineClear(&p, &vb) != 0)
+		{
+			*mid = p;
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 static void cd2NavDensify(CD2_NAV_ROUTE* out)
 {
 	VECTOR tmp[CD2_NAV_MAX_ROUTE];
@@ -103,24 +147,62 @@ static void cd2NavDensify(CD2_NAV_ROUTE* out)
 	if (out->count <= 1)
 		return;
 
+	// segments to walk: original legs, with a repair point spliced in wherever
+	// the straight line between two waypoints is blocked
 	for (i = 0; i < out->count - 1; i++)
 	{
-		int ax = out->wp[i].vx, ay = out->wp[i].vy, az = out->wp[i].vz;
-		int bx = out->wp[i + 1].vx, by = out->wp[i + 1].vy, bz = out->wp[i + 1].vz;
-		int dx = bx - ax, dz = bz - az;
-		int dist = cd2NavDist2D(ax, az, bx, bz);
-		int steps = dist / CD2_NAV_WP_STEP;
-		int s;
+		VECTOR leg[3];
+		int legs = 1;
 
-		if (n < CD2_NAV_MAX_ROUTE)
-			tmp[n++] = out->wp[i];
+		leg[0] = out->wp[i];
+		leg[1] = out->wp[i + 1];
 
-		for (s = 1; s < steps && n < CD2_NAV_MAX_ROUTE - 1; s++)
+		if (lineClear(&leg[0], &leg[1]) == 0)
 		{
-			tmp[n].vx = ax + (int)(((long long)dx * s) / steps);
-			tmp[n].vy = ay + (int)(((long long)(by - ay) * s) / steps);
-			tmp[n].vz = az + (int)(((long long)dz * s) / steps);
-			n++;
+			VECTOR mid;
+
+			if (cd2NavRepairLeg(&leg[0], &leg[1], &mid))
+			{
+				static unsigned int sRepairLog;
+
+				leg[1] = mid;
+				leg[2] = out->wp[i + 1];
+				legs = 2;
+
+				// observability: a route that needed bending around scenery
+				if (gCd2Cfg.debugLog && (sRepairLog++ % 20) == 0)
+					printInfo("[combatd2] nav: repaired blocked leg (%d,%d)->(%d,%d) via (%d,%d)\n",
+						out->wp[i].vx, out->wp[i].vz, out->wp[i + 1].vx, out->wp[i + 1].vz,
+						mid.vx, mid.vz);
+			}
+		}
+
+		{
+			int L;
+
+			for (L = 0; L < legs; L++)
+			{
+				int ax = leg[L].vx, ay = leg[L].vy, az = leg[L].vz;
+				int bx = leg[L + 1].vx, by = leg[L + 1].vy, bz = leg[L + 1].vz;
+				int dx = bx - ax, dz = bz - az;
+				int dist = cd2NavDist2D(ax, az, bx, bz);
+				int steps = dist / CD2_NAV_WP_STEP;
+				int s;
+
+				if (n < CD2_NAV_MAX_ROUTE)
+					tmp[n++] = leg[L];
+
+				for (s = 1; s < steps && n < CD2_NAV_MAX_ROUTE - 1; s++)
+				{
+					tmp[n].vx = ax + (int)(((long long)dx * s) / steps);
+					tmp[n].vy = ay + (int)(((long long)(by - ay) * s) / steps);
+					tmp[n].vz = az + (int)(((long long)dz * s) / steps);
+					n++;
+				}
+
+				if (n >= CD2_NAV_MAX_ROUTE - 1)
+					break;
+			}
 		}
 
 		if (n >= CD2_NAV_MAX_ROUTE - 1)
