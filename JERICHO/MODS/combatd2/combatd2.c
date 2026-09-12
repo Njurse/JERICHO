@@ -276,6 +276,18 @@ int cd2CarTopSpeed(void* vcp)
 	return cd2GetStats(cp).topSpeed;
 }
 
+// The car's own peak braking. The AI's speed governor needs this: a fixed
+// frame-count margin assumes stock brakes, and combatd2 overrides them.
+int cd2CarBrake(void* vcp)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+
+	if (cp == NULL)
+		return 0;
+
+	return cd2GetStats(cp).brake;
+}
+
 // AI-requested acute in-place pivot (tight turn) for a car. The torque reads
 // this at CAR_TORQUE; the AI sets it every frame in its CAR_STEP hook.
 void cd2CarSetAiPivot(void* vcp, int dir)

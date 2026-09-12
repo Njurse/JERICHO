@@ -60,9 +60,16 @@
 #define CD2_AI_FIRE_COOLDOWN	1	// frames between AI MG shots
 #define CD2_AI_AIM_PULL_LIMIT	1100	// only bias the heading within this error (~97 deg)
 #define CD2_AI_AIM_PULL		2	// lean this fraction of the remaining error onto the target
+#define CD2_AI_MASS_REF		1200	// car mass considered average (bravery reference)
+#define CD2_AI_HEALTH_REF	20000	// damage ceiling considered average
+#define CD2_AI_DANGER_RANGE	6500	// how close another car counts as a threat
+#define CD2_AI_STANDOFF		2600	// standoff a totally timid car keeps from its target
+#define CD2_AI_FLEE_COOLDOWN	900	// frames before it will break contact again
 #define CD2_AI_PRIMARY_MIN	2200	// too close to launch a missile (world units)
 #define CD2_AI_PRIMARY_RANGE	14000	// furthest it will launch a missile
-#define CD2_AI_STEER_RATE	148	// max wheel_angle change per frame
+#define CD2_AI_STEER_RATE	60	// max wheel_angle change per frame (was 148:
+					//    ~42% of full lock per frame is a twitch, not steering)
+#define CD2_AI_THRUST_RATE	8	// max thrust change per frame
 #define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
 #define CD2_AI_REVERSE_TICKS	22	// frames of reversing after getting stuck
@@ -79,8 +86,8 @@
 #define CD2_AI_ENGAGE_JITTER	300	// random spread on the aggression burst length
 #define CD2_AI_WANDER_LEG	40000	// wander goal distance along the wander heading
 #define CD2_AI_NEAR_LOOK	380	// base imminent-collision probe distance
-#define CD2_AI_LOOK_PER_SPEED	3	// extra probe distance per unit/frame of speed
-#define CD2_AI_BRAKE_SPEED	60	// forward speed above which it brakes instead of pivoting
+#define CD2_AI_LOOK_PER_SPEED	0	// extra probe distance per unit/frame of speed
+#define CD2_AI_BRAKE_SPEED	360	// forward speed above which it brakes instead of pivoting
 #define CD2_AI_ENGAGE_TICKS	1620	// frames of sustained aggression before breaking off
 #define CD2_AI_ROAM_TICKS	1500	// frames spent roaming/hunting for weapons
 #define CD2_AI_ROAM_JITTER	440	// random extra roam frames (so they desync)
@@ -113,11 +120,16 @@ typedef struct CD2_AI_CAR
 	int state, stateTimer, evade, fireTimer;
 	int wanderHeading, wanderTimer;
 	int steer, reverse, stuck;
+	int thrust;		// last throttle sent, for slew limiting
 	int role, avoid, avoidTicks;
 	int avoidCycles;	// consecutive avoid activations (escalates to reverse)
 	int engageTicks;	// frames of the current aggressive burst
 	int engageLimit;	// this contestant's own aggression burst length
 	int disperseTicks;	// frames left of the opening spread
+	int bravery;		// 0 = light and fragile, 100 = heavy and tough
+	int fleeDamage;	// damage at which THIS car breaks contact
+	int fleeThreats;	// threats nearby at which it breaks contact
+	int fleeCooldown;	// frames before it will break contact again
 	int goalX, goalZ;	// stored roam destination
 	int goalTimer;		// frames before the roam goal is re-picked
 	int roamTicks;	// >0 while roaming (hit-and-run break-off period)
@@ -170,6 +182,35 @@ static int cd2AiRandSalt(int n, int salt)
 	mix = (unsigned int)salt * 2654435761u;
 
 	return (int)(((unsigned int)Random2(n) ^ (mix >> 7)) % (unsigned int)n);
+}
+
+// The damage ceiling the engine itself uses for this car (bcollide.c / cars.c).
+static int cd2AiMaxDamage(CAR_DATA* cp)
+{
+	if (cp->controlType == CONTROL_TYPE_PLAYER && cp->ai.padid != NULL &&
+	    *cp->ai.padid >= 0 && *cp->ai.padid < 2)
+		return MaxPlayerDamage[*cp->ai.padid];
+
+	return MaxPlayerDamage[0];
+}
+
+// Disposition: how willing this contestant is to stand and trade rather than
+// break off and run. Derived from its MASS and its damage ceiling, so heavy
+// vehicles play brutishly and light ones run and gun - and it falls out of the
+// car data the engine already has, rather than a per-model table to maintain.
+// 0 = light and fragile, 100 = heavy and tough.
+static int cd2AiBravery(CAR_DATA* cp)
+{
+	int mass = (cp->ap.carCos != NULL) ? cp->ap.carCos->mass : CD2_AI_MASS_REF;
+	int m = mass * 50 / CD2_AI_MASS_REF;
+	int h = cd2AiMaxDamage(cp) * 50 / CD2_AI_HEALTH_REF;
+
+	if (m < 0) m = 0;
+	if (m > 100) m = 100;
+	if (h < 0) h = 0;
+	if (h > 100) h = 100;
+
+	return (m + h) / 2;
 }
 
 static CD2_AI_CAR* cd2AiSlot(int carId)
@@ -400,6 +441,7 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		A->evade = 0;
 		A->fireTimer = 0;
 		A->steer = 0;
+		A->thrust = 0;
 		A->reverse = 0;
 		A->stuck = 0;
 		A->avoid = 0;
@@ -420,6 +462,18 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		A->state = CD2_AI_DISPERSE;
 		A->disperseTicks = CD2_AI_DISPERSE_TICKS + cd2AiRand(CD2_AI_DISPERSE_TICKS / 2);
 		A->wanderHeading = (car_data[A->carId].hd.direction + index * 1000 + cd2AiRand(600)) & 0xfff;
+
+		// Disposition from mass + damage ceiling. Light and fragile cars bolt
+		// early and keep their distance; heavy tough ones shrug it off and
+		// barge in.
+		A->bravery = cd2AiBravery(&car_data[A->carId]);
+		A->fleeDamage = cd2AiMaxDamage(&car_data[A->carId]) * (20 + A->bravery * 80 / 100) / 100;
+		A->fleeThreats = 5 - A->bravery / 25;		// 5 = timid, 1 = brawler
+
+		if (gCd2Cfg.debugLog)
+			printInfo("[combatd2] AI temper: car=%d mass=%d maxDmg=%d bravery=%d fleeAt=%d fleeThreats=%d\n",
+				A->carId, (car_data[A->carId].ap.carCos != NULL) ? car_data[A->carId].ap.carCos->mass : -1,
+				cd2AiMaxDamage(&car_data[A->carId]), A->bravery, A->fleeDamage, A->fleeThreats);
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[combatd2] AI opponent spawned (car=%d slot=%d role=%d side=%d model=%d palette=%d)\n",
@@ -455,6 +509,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	int desired, diff, steer, thrust;
 	int fx, fz, rx, rz;
 	int threatFlag = 0, blockedAhead = 0;
+	int danger = 0;		// threats close enough to matter this frame
 	int speedFwd = 0, pivotDir = 0;
 	int clearAhead = 0, clearL = 0, clearR = 0, nearBlocked = 0, dodgeDir = 0;
 	int freeRun[CD2_AI_FAN_RAYS], freeL = 0, freeR = 0, freeAhead = 0;
@@ -473,6 +528,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #define sWanderHeading	A->wanderHeading
 #define sWanderTimer	A->wanderTimer
 #define sSteer		A->steer
+#define sThrust		A->thrust
 #define sReverse	A->reverse
 #define sStuck		A->stuck
 #define sRole		A->role
@@ -482,6 +538,10 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #define sEngageTicks	A->engageTicks
 #define sEngageLimit	A->engageLimit
 #define sDisperseTicks	A->disperseTicks
+#define sBravery		A->bravery
+#define sFleeDamage	A->fleeDamage
+#define sFleeThreats	A->fleeThreats
+#define sFleeCooldown	A->fleeCooldown
 #define sGoalX		A->goalX
 #define sGoalZ		A->goalZ
 #define sGoalTimer	A->goalTimer
@@ -563,6 +623,34 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	if (sEvade > 0)
 		sEvade--;
 
+	// --- danger assessment: how many hostile cars are close enough to
+	// matter, plus any shot already on its way. Feeds the flee decision,
+	// so being swarmed counts the same as being hurt. ---
+	{
+		int di;
+
+		for (di = 0; di < MAX_CARS; di++)
+		{
+			CAR_DATA* o = &car_data[di];
+			int ddx, ddz;
+
+			if (o == cp || o->controlType == CONTROL_TYPE_NONE || o->ap.carCos == NULL)
+				continue;
+
+			ddx = o->hd.where.t[0] - cp->hd.where.t[0];
+			ddz = o->hd.where.t[2] - cp->hd.where.t[2];
+
+			if (ddx * ddx + ddz * ddz < (long long)CD2_AI_DANGER_RANGE * CD2_AI_DANGER_RANGE)
+				danger++;
+		}
+
+		if (threatFlag)
+			danger += 2;		// a shot already in the air counts double
+	}
+
+	if (sFleeCooldown > 0)
+		sFleeCooldown--;
+
 	// --- pick the nearest target (the player, or another opponent) ---
 	targetV.vx = 0;
 	targetV.vy = 0;
@@ -601,6 +689,18 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			// fight yet, so the useful thing to do is break formation.
 			// (counted down per frame, above - not per re-decision)
 			want = CD2_AI_DISPERSE;
+		}
+		else if (sFleeCooldown <= 0 &&
+			         (cp->totalDamage > sFleeDamage || danger >= sFleeThreats))
+		{
+			// Hurt enough, or outnumbered enough, to break contact. The bars are
+			// per-car, derived from mass and the damage ceiling: a light fragile
+			// car bolts at a fraction of the beating a heavy one shrugs off.
+			//
+			// Cooldown-gated so it is a burst, not a life sentence - damage never
+			// heals, so without this a once-battered car would run forever.
+			want = CD2_AI_FLEE;
+			sFleeCooldown = CD2_AI_FLEE_COOLDOWN + cd2AiRand(CD2_AI_FLEE_COOLDOWN / 2);
 		}
 		else if (targetId >= 0 && targetD2 < (long long)engage * engage)
 		{
@@ -656,6 +756,19 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			CAR_DATA* t = &car_data[targetId];
 			int ox = targetV.vx;
 			int oz = targetV.vz;
+			int bdx = carV.vx - targetV.vx;
+			int bdz = carV.vz - targetV.vz;
+			int badx = ABS(bdx), badz = ABS(bdz);
+			int blen = (badx > badz) ? (badx + badz / 2) : (badz + badx / 2);
+			int stand = CD2_AI_STANDOFF * (100 - sBravery) / 100;
+
+			// Disposition decides the approach: a brawler takes it to the target,
+			// a light car holds station and shoots from range instead of trading.
+			if (blen > 0 && stand > 0)
+			{
+				ox = targetV.vx + (int)(((long long)bdx * stand) / blen);
+				oz = targetV.vz + (int)(((long long)bdz * stand) / blen);
+			}
 
 			if (sRole == CD2_AI_ROLE_FLANKER)
 			{
@@ -673,6 +786,45 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			goalV.vx = ox;
 			goalV.vy = targetV.vy;
 			goalV.vz = oz;
+		}
+		else if (sState == CD2_AI_FLEE)
+		{
+			// Run: aim at a point mirrored through the car from the centre of
+			// whatever is crowding it, so it opens the distance rather than just
+			// driving off in a straight line.
+			int cx = 0, cz = 0, cn = 0, ci;
+
+			for (ci = 0; ci < MAX_CARS; ci++)
+			{
+				CAR_DATA* o = &car_data[ci];
+				int fdx, fdz;
+
+				if (o == cp || o->controlType == CONTROL_TYPE_NONE || o->ap.carCos == NULL)
+					continue;
+
+				fdx = o->hd.where.t[0] - cp->hd.where.t[0];
+				fdz = o->hd.where.t[2] - cp->hd.where.t[2];
+
+				if (fdx * fdx + fdz * fdz < (long long)CD2_AI_DANGER_RANGE * CD2_AI_DANGER_RANGE)
+				{
+					cx += o->hd.where.t[0];
+					cz += o->hd.where.t[2];
+					cn++;
+				}
+			}
+
+			if (cn > 0)
+			{
+				goalV.vx = carV.vx + (carV.vx - cx / cn);
+				goalV.vy = carV.vy;
+				goalV.vz = carV.vz + (carV.vz - cz / cn);
+			}
+			else
+			{
+				goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * CD2_AI_DISPERSE_LEG) >> 12);
+				goalV.vy = carV.vy;
+				goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_DISPERSE_LEG) >> 12);
+			}
 		}
 		else if (sState == CD2_AI_DISPERSE)
 		{
@@ -1085,17 +1237,26 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 
 		sSteer = steer;
 
-		// proactive speed governor: judge the room ahead conservatively - the
-		// probes are only fine to one segment, so assume a wall could be at the
-		// near edge of the last clear one - and shed speed BEFORE the wall
-		// instead of arriving on it at full tilt
+		// proactive speed governor, driven by the car's OWN braking rather than
+		// a fixed frame-count margin. The fixed margin is what made them timid:
+		// it was stock-tuned, and combatd2 (a) raises top speed, so speedFwd
+		// clears any fixed threshold far more often, and (b) raises braking, so
+		// they do not actually need to slow nearly that early. Stopping distance
+		// is v^2 / 2a, which scales with both and needs no hand-tuning per preset.
 		{
+			int brake = cd2CarBrake(cp);
 			int room = freeAhead - probeStep;
+			int need;
 
 			if (room < 0)
 				room = 0;
 
-			if (speedFwd > room / CD2_AI_STOP_FRAMES + CD2_AI_GOVERN_SLACK)
+			if (brake < 1)
+				brake = 1;
+
+			need = (speedFwd * speedFwd) / (2 * brake) + CD2_AI_GOVERN_SLACK;
+
+			if (need > room)
 				governed = 1;
 		}
 
@@ -1121,6 +1282,27 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 
 	// tell combatd2's torque whether to pivot this frame
 	cd2CarSetAiPivot(cp, pivotDir);
+
+	// --- the one place the controls actually reach the car, so EVERY branch is
+	// smoothed here rather than per-branch. The pivot/brake branches set steer
+	// outright with no slew, and the throttle was bang-bang between +TMB and
+	// -TMB - which is the fidgeting: a square wave on the throttle and full-lock
+	// steering slam applied the instant a state changed.
+	{
+		if (steer > sSteer + CD2_AI_STEER_RATE)
+			steer = sSteer + CD2_AI_STEER_RATE;
+		else if (steer < sSteer - CD2_AI_STEER_RATE)
+			steer = sSteer - CD2_AI_STEER_RATE;
+
+		sSteer = steer;
+
+		if (thrust > sThrust + CD2_AI_THRUST_RATE)
+			thrust = sThrust + CD2_AI_THRUST_RATE;
+		else if (thrust < sThrust - CD2_AI_THRUST_RATE)
+			thrust = sThrust - CD2_AI_THRUST_RATE;
+
+		sThrust = thrust;
+	}
 
 	cp->wheel_angle = (short)steer;
 	cp->thrust = (short)thrust;
@@ -1206,6 +1388,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #undef sWanderHeading
 #undef sWanderTimer
 #undef sSteer
+#undef sThrust
 #undef sReverse
 #undef sStuck
 #undef sRole
@@ -1215,6 +1398,10 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #undef sEngageTicks
 #undef sEngageLimit
 #undef sDisperseTicks
+#undef sBravery
+#undef sFleeDamage
+#undef sFleeThreats
+#undef sFleeCooldown
 #undef sGoalX
 #undef sGoalZ
 #undef sGoalTimer
@@ -1496,7 +1683,7 @@ const char* cd2AiStateName(void)
 {
 	static const char* const names[] =
 	{
-		"Auto", "Disperse", "Roam", "Attack", "Recover"
+		"Auto", "Disperse", "Roam", "Attack", "Flee", "Recover"
 	};
 	int s = gCd2Cfg.aiForceState;
 

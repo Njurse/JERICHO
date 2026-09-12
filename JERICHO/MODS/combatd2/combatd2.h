@@ -363,6 +363,7 @@ enum
 	CD2_AI_DISPERSE,	// opening move: break away from the spawn cluster
 	CD2_AI_ROAM,		// cruise (road-guided) looking for a fight
 	CD2_AI_ATTACK,		// engage the nearest target, on the move
+	CD2_AI_FLEE,		// hurt, or outnumbered: break contact and run
 	CD2_AI_RECOVER,		// heavily damaged: back off, stabilise
 	CD2_AI_STATE_COUNT
 };
@@ -443,6 +444,7 @@ extern CD2_CONFIG gCd2Cfg;
 // Exported for the presentation source file (combatd2media.c) of this merged
 // module: the effective top speed of a car (fixed-point speed-units/frame).
 int cd2CarTopSpeed(void* cp);
+int cd2CarBrake(void* cp);		// speed-units/frame^2
 
 // Exported for the core + weapons files: 1 when a car is past the damage cap
 // (totaled wreck — no driving input, no weapons).
