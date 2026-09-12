@@ -47,7 +47,17 @@ static void cd2MineDrop(void* vcp)
 	cd2DropSpawn(&cd2WdefMine, cp, &p, &vel);
 
 	if (gMineChannel < 0)
-		gMineChannel = GetFreeChannel();
+	{
+		// GetFreeChannel(1), NOT GetFreeChannel(): sound.h declares it as
+		// 'int force = 1', a C++ default argument. Our module is C, so the
+		// default never applies and force arrives as garbage - which is why
+		// this returned -1 (no sound) whenever no voice happened to be idle.
+		gMineChannel = GetFreeChannel(1);
+		LockChannel(gMineChannel);
+
+		if (gCd2Cfg.debugLog)
+			printInfo("[combatd2] mine sound: channel=%d locked\n", gMineChannel);
+	}
 
 	Start3DSoundVolPitch(gMineChannel, SOUND_BANK_SFX, 5,
 		p.vx, p.vy, p.vz, -2000, 4096 + 2048);

@@ -16,6 +16,8 @@
 
 #include <string.h>
 
+static int gMissileChannel = -1;	// voice reserved for the missile launch
+
 static void cd2MissileFire(void* vcp)
 {
 	CAR_DATA* cp = (CAR_DATA*)vcp;
@@ -40,7 +42,24 @@ static void cd2MissileFire(void* vcp)
 
 	// distinct launch sound (configurable sample; default 12 = a punchier
 	// SFX than the machine gun's 5)
-	Start3DSoundVolPitch(-1, SOUND_BANK_SFX, gCd2Cfg.missileSound,
+	if (gMissileChannel < 0)
+	{
+		// GetFreeChannel(1), NOT GetFreeChannel(): sound.h declares it as
+		// 'int force = 1', a C++ default argument. Our module is C, so the
+		// default never applies and force arrives as garbage - which is why
+		// this returned -1 (no sound) whenever no voice happened to be idle.
+		gMissileChannel = GetFreeChannel(1);
+		LockChannel(gMissileChannel);
+
+		if (gCd2Cfg.debugLog)
+			printInfo("[combatd2] missile sound: channel=%d locked sample=%d\n",
+				gMissileChannel, gCd2Cfg.missileSound);
+	}
+
+	// SOUND_BANK_SFX, not MISSION: sample 29 in the mission bank is not
+	// resident, so the launch was silent. The engine's SFX bank is always
+	// loaded; 6 is its heavy-impact sample, distinct from the MG's 5.
+	Start3DSoundVolPitch(gMissileChannel, SOUND_BANK_SFX, gCd2Cfg.missileSound,
 		muzzle.vx, muzzle.vy, muzzle.vz, -1600, 4096 + 1024);
 }
 

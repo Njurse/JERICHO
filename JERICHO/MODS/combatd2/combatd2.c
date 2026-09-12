@@ -106,7 +106,7 @@ static void cd2LoadConfig(void)
 		gCd2Cfg.missileModel[sizeof(gCd2Cfg.missileModel) - 1] = 0;
 	}
 	gCd2Cfg.missileScale  = jer_config_get_int("combatd2", "missile_scale", 4096);
-	gCd2Cfg.missileSound  = jer_config_get_int("combatd2", "missile_sound", 11);
+	gCd2Cfg.missileSound  = jer_config_get_int("combatd2", "missile_sound", 6);
 
 	gCd2Cfg.enabled  = gCd2Cfg.enabled ? 1 : 0;
 	gCd2Cfg.topSpeed = jer_clamp_int(gCd2Cfg.topSpeed, 60, 600);

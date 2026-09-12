@@ -34,11 +34,23 @@ static void cd2MgFire(void* vcp)
 
 	cd2RaycastSpawn(&cd2WdefMG, cp, &muzzle, &dir);
 
-	// One channel held for the whole burst. Auto-fire every few frames with
-	// channel -1 grabbed a fresh voice per shot and immediately stole its own
-	// channel back, which is what made the MG stutter instead of rip.
+	// One channel held for the whole burst, and LOCKED. Merely caching the
+	// channel number is not enough: GetFreeChannel() hands out any voice that
+	// is not locked, so the engine's own continuous sounds took ours back and
+	// stomped every retrigger - which is why a cached channel went silent.
+	// LockChannel keeps it ours; GetFreeChannel() (and the engine) then skip it.
 	if (gMgChannel < 0)
-		gMgChannel = GetFreeChannel();
+	{
+		// GetFreeChannel(1), NOT GetFreeChannel(): sound.h declares it as
+		// 'int force = 1', a C++ default argument. Our module is C, so the
+		// default never applies and force arrives as garbage - which is why
+		// this returned -1 (no sound) whenever no voice happened to be idle.
+		gMgChannel = GetFreeChannel(1);
+		LockChannel(gMgChannel);
+
+		if (gCd2Cfg.debugLog)
+			printInfo("[combatd2] MG sound: channel=%d locked\n", gMgChannel);
+	}
 
 	Start3DSoundVolPitch(gMgChannel, SOUND_BANK_SFX, 5,
 		muzzle.vx, muzzle.vy, muzzle.vz, -2000, 4096 + 2048);
