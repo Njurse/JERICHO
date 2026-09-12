@@ -96,5 +96,6 @@ extern const CD2_WEAPON_DEF cd2WdefMG;		// raycast/machinegun.c
 extern const CD2_WEAPON_DEF cd2WdefMissile;	// projectile/missile.c
 extern const CD2_WEAPON_DEF cd2WdefMine;	// drops/mine.c
 extern const CD2_WEAPON_DEF cd2WdefHoming;	// projectile/homing.c
+extern const CD2_WEAPON_DEF cd2WdefCluster;	// projectile/cluster.c
 
 #endif /* CD2_WEAPON_INTERNAL_H */

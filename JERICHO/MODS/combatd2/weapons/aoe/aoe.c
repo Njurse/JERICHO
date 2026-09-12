@@ -12,6 +12,7 @@
 #include "combatd2.h"
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
+#include "weapons/fx/fx.h"
 
 void cd2AoeBlast(const VECTOR* at, int radius, int damage, int effect,
 		 const CAR_DATA* skip)
@@ -27,7 +28,10 @@ void cd2AoeBlast(const VECTOR* at, int radius, int damage, int effect,
 	// HandleExplosion ages (main.c) and DrawAllExplosions renders. explosion[]
 	// is exported, so verify from this side that a valid, in-bounds slot was
 	// actually armed rather than assuming it.
-	AddExplosion(blast, effect);
+	if (effect >= CD2_FX_BASE)
+		cd2FxSpawn(&blast, effect);	// a themed CD2_FX_* profile
+	else
+		AddExplosion(blast, effect);	// a stock ExplosionType
 
 	if (gCd2Cfg.debugLog)
 	{

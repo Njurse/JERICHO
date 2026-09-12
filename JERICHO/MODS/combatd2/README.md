@@ -73,6 +73,10 @@ Known prototype limits: rockets do not yet collide with buildings (no cheap
 module-side wall query), bullet hits don't dent bodies yet, and weapons need
 the TMB layout on (Triangle is only free of the car's pedal binds there).
 
+Weapon **impact FX are data-driven per weapon** now (each hit's size, colour,
+spin, collision and any bomblet burst). See [`FX.md`](FX.md) for the custom
+explosion library and the `JER_EVENT_EXPLOSION_*` engine hooks behind it.
+
 ## How it works
 
 All physics runs in one hook, `JER_EVENT_CAR_TORQUE` (the tail of

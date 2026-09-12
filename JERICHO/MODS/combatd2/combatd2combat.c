@@ -23,6 +23,7 @@
 #include "convert.h"
 #include "jericho.h"
 #include "jer_events.h"
+#include "weapons/fx/fx.h"
 
 // per-car latch: 1 once the car has crossed the damage cap (edge detection)
 static char gWasTotaled[MAX_CARS];
@@ -73,7 +74,12 @@ static int cd2cOnCarStep(void* ud, void* args)
 			blastPos.vx = cp->hd.where.t[0];
 			blastPos.vy = cp->hd.where.t[1] + 1;
 			blastPos.vz = cp->hd.where.t[2];
-			AddExplosion(blastPos, BIG_BANG);
+
+			// spectacular but HARMLESS death blast: a short burst of big
+			// explosions on the CD2_FX_WRECK profile (collide = 0). radius and
+			// damage are 0, so it does no radial damage either — the car dies
+			// in flames without the blast hurting or shoving anything around it.
+			cd2FxBarrage(&blastPos, NULL, CD2_FX_WRECK, 3, 3, 120, 0, 0, NULL);
 
 			// toss the wreck so it tumbles and comes to rest: upward pop +
 			// random roll/pitch spin (yaw is re-owned by the handling module,

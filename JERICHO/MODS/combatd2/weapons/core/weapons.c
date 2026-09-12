@@ -64,7 +64,8 @@ static const CD2_WEAPON_DEF* const gWdefs[CD2_WID_COUNT] =
 	&cd2WdefMG,
 	&cd2WdefMissile,
 	&cd2WdefMine,
-	&cd2WdefHoming
+	&cd2WdefHoming,
+	&cd2WdefCluster
 };
 
 const CD2_WEAPON_DEF* cd2WpnDef(int weaponId)

@@ -160,7 +160,7 @@ void cd2DropStep(void)
 					cd2WpnKnock(cp, &d->pos, &kdir, d->def->damage);
 				}
 				cd2AoeBlast(&d->pos, d->def->splashRadius,
-					d->def->splashDamage, d->def->explosionEffect, cp);
+					d->def->splashDamage, CD2_WPN_FX(d->def), cp);
 				d->active = 0;
 				break;
 			}

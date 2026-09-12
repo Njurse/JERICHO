@@ -48,6 +48,7 @@
 void cd2CombatRegister(JERICHO_CONTEXT* ctx);
 void cd2MediaRegister(JERICHO_CONTEXT* ctx);
 void cd2WeaponsRegister(JERICHO_CONTEXT* ctx);
+void cd2FxRegister(JERICHO_CONTEXT* ctx);
 
 // ---------------------------------------------------------------------------
 // State
@@ -1752,6 +1753,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	cd2CombatRegister(ctx);
 	cd2MediaRegister(ctx);
 	cd2WeaponsRegister(ctx);
+	cd2FxRegister(ctx);
 	cd2AiRegister(ctx);
 
 	ctx->jer_log(ctx, "[combatd2] registered (SDK v%d)\n", ctx->sdkVersion);

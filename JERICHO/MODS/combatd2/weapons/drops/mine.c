@@ -13,6 +13,7 @@
 #include "combatd2.h"
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
+#include "weapons/fx/fx.h"
 
 #include <string.h>
 
@@ -92,6 +93,7 @@ static CD2_WEAPON_DEF cd2MakeMineDef(void)
 	d.splashRadius = 450;	// explosion radius
 	d.splashDamage = 700;	// explosion damage at centre
 	d.explosionEffect = BIG_BANG;
+	d.impactFx = CD2_FX_MINE;	// red-orange blast (fx library)
 
 	d.homing = 0;		// RESERVED (no logic this turn)
 	d.collideScenery = 1;	// mine lands on walls/roofs instead of falling through

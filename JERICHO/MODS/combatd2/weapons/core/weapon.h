@@ -45,6 +45,7 @@ enum
 	CD2_WID_MISSILE,	// primary (projectile)
 	CD2_WID_MINE,		// hidden drop
 	CD2_WID_HOMING,		// primary (projectile) that homes in
+	CD2_WID_CLUSTER,	// primary (projectile): impact bursts into bomblets
 	CD2_WID_COUNT,
 	CD2_WID_NONE = -1
 };
@@ -80,8 +81,25 @@ typedef struct CD2_WEAPON_DEF
 	int splashRadius;	// explosion radius
 	int splashDamage;	// explosion damage at the blast centre
 	int explosionEffect;	// BIG_BANG / LITTLE_BANG (dr2types.h)
+	int impactFx;		// CD2_FX_* explosion profile id for the impact FX
+				// (0 = use the stock explosionEffect above). See
+				// weapons/fx/fx.h. Themed so a hit reads as its weapon.
 	int homing;		// 1 = the shot steers itself toward a target
 	int collideScenery;	// 1 = shots stop on buildings/scenery (default ON)
+
+	// -------------------------------------------------------------------
+	// Barrage (cluster missile): when barrageCount > 0 the impact ALSO
+	// schedules a burst of delayed blasts (see weapons/fx/fx.c). The parent
+	// explosion still plays (via impactFx); the burst then scatters small
+	// explosions around the hit point.
+	// -------------------------------------------------------------------
+	int barrageCount;	// blasts in the burst (0 = none)
+	int barrageInterval;	// frames between burst blasts
+	int barrageJitter;	// +/- world units of scatter per blast
+	int barrageFx;		// CD2_FX_* profile for the burst blasts
+	int barrageRadius;	// burst blast radius (0 = FX only, no damage)
+	int barrageDamage;	// burst blast damage at centre
+	int barrageStick;	// 1 = stick the burst to a hit car's hit point
 
 	int colR, colG, colB;	// draw colour
 
@@ -89,6 +107,10 @@ typedef struct CD2_WEAPON_DEF
 	// Lives in the weapon's own class folder.
 	void (*fire)(void* car);	// CAR_DATA*
 } CD2_WEAPON_DEF;
+
+// The explosion type/fx id a weapon's impact should use: its themed CD2_FX_*
+// profile when set, else the stock bang.
+#define CD2_WPN_FX(d)	((d)->impactFx ? (d)->impactFx : (d)->explosionEffect)
 
 // ---------------------------------------------------------------------------
 // Registry + inventory API (implemented in core/weapons.c)

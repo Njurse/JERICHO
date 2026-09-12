@@ -18,6 +18,7 @@
 #include "combatd2.h"
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
+#include "weapons/fx/fx.h"
 
 #include <string.h>
 
@@ -87,6 +88,7 @@ static CD2_WEAPON_DEF cd2MakeHomingDef(void)
 	d.splashRadius = 380;
 	d.splashDamage = 320;
 	d.explosionEffect = BIG_BANG;
+	d.impactFx = CD2_FX_SEEKER;	// purple, smaller blast (fx library)
 
 	d.homing = 1;		// the whole point of it
 	d.collideScenery = 1;

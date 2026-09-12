@@ -13,6 +13,7 @@
 #include "combatd2.h"
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
+#include "weapons/fx/fx.h"
 
 #include <string.h>
 
@@ -92,6 +93,7 @@ static CD2_WEAPON_DEF cd2MakeMissileDef(void)
 	// BIG_BANG, not LITTLE_BANG: a little bang is hscale 1024 for ~21 frames,
 	// which at combat speed reads as nothing at all. This is the visible one.
 	d.explosionEffect = BIG_BANG;
+	d.impactFx = CD2_FX_MISSILE;	// heavy orange warhead blast (fx library)
 
 	d.homing = 0;		// RESERVED (no logic this turn)
 	d.collideScenery = 1;	// missiles detonate on walls/buildings

@@ -24,6 +24,7 @@
 #include "combatd2.h"
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
+#include "weapons/fx/fx.h"
 
 #include <string.h>
 
@@ -190,11 +191,28 @@ void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 	}
 }
 
-static void cd2ProjectileExplode(CD2_PROJECTILE* p)
+// The impact: the parent blast always plays, then a barrage weapon (the
+// cluster) also schedules its delayed burst. `carHit` is the car struck (NULL
+// for a ground/scenery/range impact) and decides whether the burst sticks;
+// `skip` is the car the blast should not damage (the shooter, or the car
+// already hit directly).
+static void cd2ProjectileImpact(CD2_PROJECTILE* p, const CAR_DATA* carHit, const CAR_DATA* skip)
 {
 	cd2AoeBlast(&p->pos, p->def->splashRadius, p->def->splashDamage,
-		p->def->explosionEffect, p->owner);
+		CD2_WPN_FX(p->def), skip);
+
+	if (p->def->barrageCount > 0)
+		cd2FxBarrage(&p->pos, (p->def->barrageStick ? carHit : NULL),
+			p->def->barrageFx, p->def->barrageCount, p->def->barrageInterval,
+			p->def->barrageJitter, p->def->barrageRadius,
+			p->def->barrageDamage, skip);
+
 	p->active = 0;
+}
+
+static void cd2ProjectileExplode(CD2_PROJECTILE* p)
+{
+	cd2ProjectileImpact(p, NULL, p->owner);
 }
 
 // Integer square root (Newton on the bit pattern); the engine's own helpers
@@ -367,9 +385,7 @@ void cd2ProjectileStep(void)
 					{
 						cd2WpnDamageCar(cp, &p->pos, p->def->damage);
 						cd2WpnKnock(cp, &p->pos, &p->vel, p->def->damage);
-						cd2AoeBlast(&p->pos, p->def->splashRadius,
-							p->def->splashDamage, p->def->explosionEffect, cp);
-						p->active = 0;
+						cd2ProjectileImpact(p, cp, cp);
 						break;
 					}
 				}
