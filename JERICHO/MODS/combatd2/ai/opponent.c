@@ -33,6 +33,7 @@
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
 #include "ai/ai.h"
+#include "ai/nav.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -44,7 +45,7 @@
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
 #define CD2_AI_EVADE_FRAMES	85	// ~1.5 s of evasive driving
-#define CD2_AI_HURT		6000	// totalDamage above which it flees
+#define CD2_AI_HURT		26000	// totalDamage above which it flees
 #define CD2_AI_FIRE_RANGE	6600	// MG range when hunting
 #define CD2_AI_FIRE_COOLDOWN	10	// frames between AI MG shots
 #define CD2_AI_STEER_RATE	48	// max wheel_angle change per frame
@@ -52,7 +53,7 @@
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
 #define CD2_AI_REVERSE_TICKS	42	// frames of reversing after getting stuck
 #define CD2_AI_STUCK_TICKS	22	// frames with no forward progress before reversing
-#define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
+#define CD2_AI_STUCK_SPEED	15	// forward-speed magnitude counted as "stuck"
 
 static int sAiCarId = -1;
 static int sSpawned;
@@ -65,6 +66,9 @@ static int sWanderTimer;
 static int sSteer;		// rate-limited steering actually applied
 static int sReverse;		// frames of backing up left (stuck recovery)
 static int sStuck;		// frames without forward progress
+static int sLastDamage;		// car totalDamage last frame (to count new hits)
+static int sHits;		// collisions observed on the opponent
+static unsigned int sLogTick;	// debugLog throttle counter
 static CD2_AI_DEBUG sDbg;	// latest internal values (observability)
 
 static int cd2AiSqrt(int v)
@@ -185,6 +189,8 @@ static int cd2AiSpawn(void)
 	sSteer = 0;
 	sReverse = 0;
 	sStuck = 0;
+	sHits = 0;
+	sLastDamage = 0;
 	sWanderHeading = pcp->hd.direction;
 	sWanderTimer = 60;
 
@@ -202,6 +208,13 @@ static void cd2AiDrive(CAR_DATA* cp)
 	int fx, fz, rx, rz;
 	int threatFlag = 0, blockedAhead = 0;
 	int speedFwd = 0, pivotDir = 0;
+
+	// health/collision tracking: totalDamage only ever rises, so a change means
+	// the opponent just took a hit this frame (from any source).
+	if (cp->totalDamage > sLastDamage)
+		sHits++;
+
+	sLastDamage = cp->totalDamage;
 	int i;
 
 	tpos.vx = 0;
@@ -236,6 +249,8 @@ static void cd2AiDrive(CAR_DATA* cp)
 		sDbg.blockedAhead = 0;
 		sDbg.reverse = 0;
 		sDbg.pivot = 0;
+		sDbg.damage = cp->totalDamage;
+		sDbg.hits = sHits;
 		return;
 	}
 
@@ -499,7 +514,14 @@ static void cd2AiDrive(CAR_DATA* cp)
 		sDbg.blockedAhead = blockedAhead;
 		sDbg.reverse = (sReverse > 0) ? 1 : 0;
 		sDbg.pivot = pivotDir;
+		sDbg.damage = cp->totalDamage;
+		sDbg.hits = sHits;
 	}
+
+	if (gCd2Cfg.debugLog && (sLogTick++ % 60) == 0)
+		printInfo("[combatd2] AI car=%d state=%s dmg=%d hits=%d spd=%d steer=%d rev=%d pivot=%d threat=%d wall=%d\n",
+			cp->id, cd2AiStateName(), cp->totalDamage, sHits, speedFwd, sSteer,
+			(sReverse > 0) ? 1 : 0, pivotDir, threatFlag, blockedAhead);
 }
 
 // --- hooks -----------------------------------------------------------------
@@ -511,6 +533,10 @@ static int cd2AiOnFrame(void* ud, void* args)
 
 	if (!gCd2Cfg.enabled || !gCd2Cfg.aiOpponent)
 		return JER_RESULT_CONTINUE;
+
+	// Build the nav graph once the level's road data is resident (GAME_START
+	// can fire before the road lumps are loaded). Cheap no-op once built.
+	cd2NavReady();
 
 	// drop a destroyed/removed opponent so the id doesn't go stale
 	if (sAiCarId >= 0 &&
@@ -629,6 +655,10 @@ static int cd2AiOnOverlay(void* ud, void* args)
 
 	sprintf(text, "threat=%d wallAhead=%d padIn=0x%04X rev=%d pivot=%d",
 		sDbg.threat, sDbg.blockedAhead, sDbg.padIn, sDbg.reverse, sDbg.pivot);
+	PrintString(text, 20, y);
+	y += 12;
+
+	sprintf(text, "health dmg=%d hits=%d", sDbg.damage, sDbg.hits);
 	PrintString(text, 20, y);
 
 	return JER_RESULT_CONTINUE;

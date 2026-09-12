@@ -534,8 +534,9 @@ static int cd2OnDamageScale(void* ud, void* args)
 	{
 		static unsigned int t = 0;
 		if ((t++ & 63) == 0)
-			printInfo("[combatd2] scenery dmg scale: car=%d type=%d -> %d%% (%d)\n",
-				((CAR_DATA*)a->car)->id, ((CAR_DATA*)a->car)->controlType, gCd2Cfg.sceneryDamage, a->result);
+			printInfo("[combatd2] scenery dmg scale: car=%d type=%d -> %d%% (%d) dmg=%d\n",
+				((CAR_DATA*)a->car)->id, ((CAR_DATA*)a->car)->controlType, gCd2Cfg.sceneryDamage, a->result,
+				((CAR_DATA*)a->car)->totalDamage);
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -564,9 +565,10 @@ static int cd2OnCarVsCar(void* ud, void* args)
 	{
 		static unsigned int t = 0;
 		if ((t++ & 63) == 0)
-			printInfo("[combatd2] car-car dmg: car=%d type=%d opp=%d stock=%d -> %d (pct=%d)\n",
+			printInfo("[combatd2] car-car dmg: car=%d type=%d opp=%d stock=%d -> %d (pct=%d) dmg=%d\n",
 				((CAR_DATA*)a->car)->id, ((CAR_DATA*)a->car)->controlType,
-				cd2AiIsOpponent(a->car), a->value, v, gCd2Cfg.carCarDamage);
+				cd2AiIsOpponent(a->car), a->value, v, gCd2Cfg.carCarDamage,
+				((CAR_DATA*)a->car)->totalDamage);
 	}
 
 	a->value = v;

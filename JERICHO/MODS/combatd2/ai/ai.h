@@ -37,6 +37,8 @@ typedef struct CD2_AI_DEBUG
 	int padIn;		// pad the engine handed the car (should be forced to 0)
 	int reverse;		// 1 while backing up (stuck recovery)
 	int pivot;		// -1/0/+1 acute in-place pivot requested this frame
+	int damage;		// car totalDamage (health: 0 = pristine, rising = hurt)
+	int hits;		// collisions observed on the opponent so far
 } CD2_AI_DEBUG;
 
 // Fill *out with the latest AI values. Returns 1 when an opponent is active.

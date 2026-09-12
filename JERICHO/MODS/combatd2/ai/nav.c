@@ -259,7 +259,11 @@ static void cd2NavBuild(void)
 
 static void cd2NavEnsure(void)
 {
-	if (!sBuilt)
+	// Rebuild when the level changes (cd2NavReset) OR when a previous attempt
+	// found no road data yet (the road lumps may not be resident at GAME_START
+	// on every level) - so a later call picks it up instead of caching an empty
+	// graph for the whole level.
+	if (!sBuilt || sNodeCount == 0)
 		cd2NavBuild();
 }
 
