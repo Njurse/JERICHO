@@ -86,6 +86,56 @@ static int cd2NavIsqrt(int v)
 	return r;
 }
 
+// ---------------------------------------------------------------------------
+// Densify: insert intermediate waypoints so no leg is longer than
+// CD2_NAV_WP_STEP. A road route is only the A* segment midpoints, which can be
+// thousands of units apart; steering at such a midpoint makes the car beeline
+// across the corner and into whatever is on it. A dense polyline is what lets
+// pure-pursuit steering actually follow the road.
+// ---------------------------------------------------------------------------
+static int cd2NavDist2D(int ax, int az, int bx, int bz);	// defined below
+
+static void cd2NavDensify(CD2_NAV_ROUTE* out)
+{
+	VECTOR tmp[CD2_NAV_MAX_ROUTE];
+	int i, n = 0;
+
+	if (out->count <= 1)
+		return;
+
+	for (i = 0; i < out->count - 1; i++)
+	{
+		int ax = out->wp[i].vx, ay = out->wp[i].vy, az = out->wp[i].vz;
+		int bx = out->wp[i + 1].vx, by = out->wp[i + 1].vy, bz = out->wp[i + 1].vz;
+		int dx = bx - ax, dz = bz - az;
+		int dist = cd2NavDist2D(ax, az, bx, bz);
+		int steps = dist / CD2_NAV_WP_STEP;
+		int s;
+
+		if (n < CD2_NAV_MAX_ROUTE)
+			tmp[n++] = out->wp[i];
+
+		for (s = 1; s < steps && n < CD2_NAV_MAX_ROUTE - 1; s++)
+		{
+			tmp[n].vx = ax + (int)(((long long)dx * s) / steps);
+			tmp[n].vy = ay + (int)(((long long)(by - ay) * s) / steps);
+			tmp[n].vz = az + (int)(((long long)dz * s) / steps);
+			n++;
+		}
+
+		if (n >= CD2_NAV_MAX_ROUTE - 1)
+			break;
+	}
+
+	if (n < CD2_NAV_MAX_ROUTE)
+		tmp[n++] = out->wp[out->count - 1];
+
+	for (i = 0; i < n; i++)
+		out->wp[i] = tmp[i];
+
+	out->count = n;
+}
+
 static int cd2NavDist2D(int ax, int az, int bx, int bz)
 {
 	int dx = bx - ax;
@@ -653,6 +703,9 @@ int cd2NavRoute(int carId, const VECTOR* from, const VECTOR* goal, CD2_NAV_ROUTE
 			else
 				out->wp[CD2_NAV_MAX_ROUTE - 1] = *goal;
 		}
+
+		// dense enough to steer along, then measure
+		cd2NavDensify(out);
 
 		out->goalNode = goalNode;
 

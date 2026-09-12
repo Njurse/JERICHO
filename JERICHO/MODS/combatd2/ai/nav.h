@@ -14,7 +14,8 @@
 
 #include "driver2.h"
 
-#define CD2_NAV_MAX_ROUTE	24	// waypoints in one route
+#define CD2_NAV_MAX_ROUTE	64	// waypoints in one route
+#define CD2_NAV_WP_STEP		512	// max spacing between route waypoints (world units)
 #define CD2_NAV_MAX_NODES	4096	// graph node capacity
 #define CD2_NAV_MAX_CARS	32	// route-cache slots (indexed by car id)
 #define CD2_NAV_DRAW_RADIUS	4500	// nav_debug: draw nodes/edges within this of the player
