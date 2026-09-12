@@ -97,6 +97,7 @@ int cd2NavRoamGoal(const VECTOR* from, int minDist, int maxDist, VECTOR* out)
 {
 	static int sRotate = -1;	// -1 = not yet seeded for this run
 	int pass, i, d;
+	int best = -1, bestD = 0;
 
 	if (sNodeCount <= 0 || out == NULL)
 		return 0;
@@ -109,6 +110,10 @@ int cd2NavRoamGoal(const VECTOR* from, int minDist, int maxDist, VECTOR* out)
 	if (sRotate >= sNodeCount)
 		sRotate = 0;
 
+	// Take the FARTHEST acceptable node rather than the first one in index
+	// order. Index order follows the road layout, so scanning for the first
+	// match kept handing back destinations from the same corner of the map -
+	// which is why the contest never left its own neighbourhood.
 	for (pass = 0; pass < sNodeCount; pass++)
 	{
 		i = (sRotate + pass) % sNodeCount;
@@ -118,17 +123,24 @@ int cd2NavRoamGoal(const VECTOR* from, int minDist, int maxDist, VECTOR* out)
 
 		d = cd2NavDist2D(from->vx, from->vz, sNodes[i].x, sNodes[i].z);
 
-		if (d >= minDist && d <= maxDist)
+		if (d < minDist || d > maxDist)
+			continue;
+
+		if (best < 0 || d > bestD)
 		{
-			sRotate = i + 1;
-			out->vx = sNodes[i].x;
-			out->vy = from->vy;
-			out->vz = sNodes[i].z;
-			return 1;
+			best = i;
+			bestD = d;
 		}
 	}
 
-	return 0;
+	if (best < 0)
+		return 0;
+
+	sRotate = best + 1;
+	out->vx = sNodes[best].x;
+	out->vy = from->vy;
+	out->vz = sNodes[best].z;
+	return 1;
 }
 
 // ---------------------------------------------------------------------------

@@ -52,16 +52,22 @@
 #endif
 
 #define CD2_AI_SPAWN_OFFSET	900	// how far beside the player to spawn
-#define CD2_AI_ENGAGE_RANGE	12000	// close to this and it commits to a fight
-					//    (was 3000 - so little of the map counted as
-					//    'a target' that they never actually engaged)
-#define CD2_AI_ENGAGE_KEEP		18000	// ...and stays committed out to here (hysteresis)
-#define CD2_AI_ENGAGE_KEEP		18000	// ...and stays committed out to here (hysteresis)
+#define CD2_AI_ENGAGE_RANGE	10000	// close to this and it commits to a fight.
+					//    Tuned both ways: 12000 made a target always
+					//    available on a city map (permanent confinement),
+					//    and 7000 produced no fights at all in 90s.
+#define CD2_AI_ENGAGE_KEEP		11000	// ...and stays committed out to here (hysteresis).
+					//    These were 12000/18000, which on a city map
+					//    means a target is always in range, so the
+					//    contest never left the area it spawned in.
 #define CD2_AI_DISPERSE_TICKS	420	// how long the opening spread lasts
 #define CD2_AI_DISPERSE_LEG		26000	// how far the opening spread drives
-#define CD2_AI_ROAM_MIN			15000	// roam goal: nearest acceptable road node
-#define CD2_AI_ROAM_MAX			70000	// roam goal: furthest acceptable road node
-#define CD2_AI_GOAL_TICKS		1200	// frames before a roam goal is re-picked
+#define CD2_AI_ROAM_MIN			30000	// roam goal: nearest acceptable road node
+#define CD2_AI_ROAM_MAX			150000	// roam goal: furthest acceptable road node -
+					//    big enough to reach across a level
+#define CD2_AI_FLEE_RUN_MIN		30000	// fleeing: nearest regroup node
+#define CD2_AI_FLEE_RUN_MAX		150000	// fleeing: furthest regroup node
+#define CD2_AI_GOAL_TICKS		1800	// frames before a roam goal is re-picked
 #define CD2_AI_LOOK		4500	// look-ahead probe distance (was 480:
 					//    at speed that is ~2 frames of travel, so they could
 					//    only see a wall when it was already too late to do
@@ -115,7 +121,8 @@
 #define CD2_AI_LOOK_PER_SPEED	6	// extra probe distance per unit/frame of speed,
 					//    so the reach still grows with speed
 #define CD2_AI_BRAKE_SPEED	360	// forward speed above which it brakes instead of pivoting
-#define CD2_AI_ENGAGE_TICKS	1620	// frames of sustained aggression before breaking off
+#define CD2_AI_ENGAGE_TICKS	900	// frames of sustained aggression before breaking off,
+					//    after which it goes travelling for ROAM_TICKS.
 #define CD2_AI_ROAM_TICKS	1500	// frames spent roaming/hunting for weapons
 #define CD2_AI_ROAM_JITTER	440	// random extra roam frames (so they desync)
 #define CD2_AI_STATE_TICKS	145	// frames between behaviour re-decisions
@@ -804,6 +811,13 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			want = CD2_AI_FLEE;
 			sFleeCooldown = CD2_AI_FLEE_COOLDOWN + cd2AiRand(CD2_AI_FLEE_COOLDOWN / 2);
 		}
+		else if (sRoamTicks > 0)
+		{
+			// Just came off a fight. Travel - and deliberately do NOT re-acquire
+			// a target while this runs, or it locks straight back on and never
+			// goes anywhere.
+			want = CD2_AI_ROAM;
+		}
 		else if (targetId >= 0 && targetD2 < (long long)engage * engage)
 		{
 			// Committed to the fight, and STAYING committed: the range it
@@ -835,6 +849,27 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	// opening spread counts down in real frames
 	if (sDisperseTicks > 0)
 		sDisperseTicks--;
+
+	// Same for the behaviour clocks. These two are what stop a contest
+	// spending its whole life in one firefight: a fight that drags on is
+	// broken off, and the car goes and drives somewhere else for a while.
+	if (sRoamTicks > 0)
+		sRoamTicks--;
+
+	if (sState == CD2_AI_ATTACK)
+	{
+		if (++sEngageTicks > CD2_AI_ENGAGE_TICKS)
+		{
+			sEngageTicks = 0;
+			sRoamTicks = CD2_AI_ROAM_TICKS + cd2AiRand(CD2_AI_ROAM_JITTER);
+			sGoalTimer = 0;		// pick somewhere new to go
+		}
+	}
+	else
+	{
+		// measures CONSECUTIVE frames of aggression
+		sEngageTicks = 0;
+	}
 
 	// --- never park. Sitting still just makes it a target: short stops to
 	// pivot or line up a shot are fine, a long idle is not. ---
@@ -901,41 +936,47 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		}
 		else if (sState == CD2_AI_FLEE)
 		{
-			// Run: aim at a point mirrored through the car from the centre of
-			// whatever is crowding it, so it opens the distance rather than just
-			// driving off in a straight line.
+			// Regroup somewhere else entirely. A local dodge only keeps a hurt
+			// car loitering in the same fight, so send it to a road node on the
+			// far side of the map and let it come back in later.
 			int cx = 0, cz = 0, cn = 0, ci;
 
-			for (ci = 0; ci < MAX_CARS; ci++)
+			if (!cd2NavRoamGoal(&carV, CD2_AI_FLEE_RUN_MIN, CD2_AI_FLEE_RUN_MAX, &goalV))
 			{
-				CAR_DATA* o = &car_data[ci];
-				int fdx, fdz;
-
-				if (o == cp || o->controlType == CONTROL_TYPE_NONE || o->ap.carCos == NULL)
-					continue;
-
-				fdx = o->hd.where.t[0] - cp->hd.where.t[0];
-				fdz = o->hd.where.t[2] - cp->hd.where.t[2];
-
-				if (fdx * fdx + fdz * fdz < (long long)CD2_AI_DANGER_RANGE * CD2_AI_DANGER_RANGE)
+				// No road that far out. Fall back to a mirrored escape: aim
+				// through the car from the centre of whatever is crowding it,
+				// which opens the distance instead of driving off in a line.
+				for (ci = 0; ci < MAX_CARS; ci++)
 				{
-					cx += o->hd.where.t[0];
-					cz += o->hd.where.t[2];
-					cn++;
-				}
-			}
+					CAR_DATA* o = &car_data[ci];
+					int fdx, fdz;
 
-			if (cn > 0)
-			{
-				goalV.vx = carV.vx + (carV.vx - cx / cn);
-				goalV.vy = carV.vy;
-				goalV.vz = carV.vz + (carV.vz - cz / cn);
-			}
-			else
-			{
-				goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * CD2_AI_DISPERSE_LEG) >> 12);
-				goalV.vy = carV.vy;
-				goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_DISPERSE_LEG) >> 12);
+					if (o == cp || o->controlType == CONTROL_TYPE_NONE || o->ap.carCos == NULL)
+						continue;
+
+					fdx = o->hd.where.t[0] - cp->hd.where.t[0];
+					fdz = o->hd.where.t[2] - cp->hd.where.t[2];
+
+					if (fdx * fdx + fdz * fdz < (long long)CD2_AI_DANGER_RANGE * CD2_AI_DANGER_RANGE)
+					{
+						cx += o->hd.where.t[0];
+						cz += o->hd.where.t[2];
+						cn++;
+					}
+				}
+
+				if (cn > 0)
+				{
+					goalV.vx = carV.vx + (carV.vx - cx / cn);
+					goalV.vy = carV.vy;
+					goalV.vz = carV.vz + (carV.vz - cz / cn);
+				}
+				else
+				{
+					goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * CD2_AI_DISPERSE_LEG) >> 12);
+					goalV.vy = carV.vy;
+					goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_DISPERSE_LEG) >> 12);
+				}
 			}
 		}
 		else if (sState == CD2_AI_DISPERSE)
@@ -944,6 +985,16 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * CD2_AI_DISPERSE_LEG) >> 12);
 			goalV.vy = carV.vy;
 			goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_DISPERSE_LEG) >> 12);
+		}
+		else if (sRoamTicks <= 0 && targetId >= 0)
+		{
+			// ROAM with someone on the board: go after them. This is the
+			// CONVERGE half of patrol-and-pounce - roam far to explore, then
+			// close on whoever is out there. Suppressed during the roam window
+			// above so a deliberate explore leg actually explores.
+			goalV.vx = targetV.vx;
+			goalV.vy = targetV.vy;
+			goalV.vz = targetV.vz;
 		}
 		else
 		{
@@ -1521,8 +1572,8 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	}
 
 	if (gCd2Cfg.debugLog && (sLogTick2++ % 60) == 0)
-		printInfo("[combatd2] AI car=%d %s state=%s disp=%d dmg=%d hits=%d walls=%d spd=%d steer=%d rev=%d pivot=%d avoid=%d gov=%d free=%d threat=%d wall=%d\n",
-			cp->id, cd2AiRoleNameOf(sRole), cd2AiStateName(), sDisperseTicks, cp->totalDamage, sHits, cd2SceneryHits(cp),
+		printInfo("[combatd2] AI car=%d pos=(%d,%d) %s state=%s disp=%d dmg=%d hits=%d walls=%d spd=%d steer=%d rev=%d pivot=%d avoid=%d gov=%d free=%d threat=%d wall=%d\n",
+			cp->id, cp->hd.where.t[0], cp->hd.where.t[2], cd2AiRoleNameOf(sRole), cd2AiStateName(), sDisperseTicks, cp->totalDamage, sHits, cd2SceneryHits(cp),
 			speedFwd, sSteer, (sReverse > 0) ? 1 : 0, pivotDir, sAvoid, governed, freeAhead, threatFlag, blockedAhead);
 
 #undef sState
