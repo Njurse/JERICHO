@@ -42,14 +42,20 @@
 #include <stdio.h>
 
 #define CD2_AI_SPAWN_OFFSET	900	// how far beside the player to spawn
-#define CD2_AI_ENGAGE_RANGE	3000	// close to this and it commits to a fight
+#define CD2_AI_ENGAGE_RANGE	12000	// close to this and it commits to a fight
+					//    (was 3000 - so little of the map counted as
+					//    'a target' that they never actually engaged)
+#define CD2_AI_ENGAGE_KEEP		18000	// ...and stays committed out to here (hysteresis)
 #define CD2_AI_ENGAGE_KEEP		18000	// ...and stays committed out to here (hysteresis)
 #define CD2_AI_DISPERSE_TICKS	420	// how long the opening spread lasts
 #define CD2_AI_DISPERSE_LEG		26000	// how far the opening spread drives
-#define CD2_AI_ROAM_MIN			800	// roam goal: nearest acceptable road node
+#define CD2_AI_ROAM_MIN			15000	// roam goal: nearest acceptable road node
 #define CD2_AI_ROAM_MAX			70000	// roam goal: furthest acceptable road node
-#define CD2_AI_GOAL_TICKS		240	// frames before a roam goal is re-picked
-#define CD2_AI_LOOK		480	// look-ahead probe distance
+#define CD2_AI_GOAL_TICKS		1200	// frames before a roam goal is re-picked
+#define CD2_AI_LOOK		4500	// look-ahead probe distance (was 480:
+					//    at speed that is ~2 frames of travel, so they could
+					//    only see a wall when it was already too late to do
+					//    anything but reverse - the root of the reversing)
 #define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
@@ -65,6 +71,8 @@
 #define CD2_AI_DANGER_RANGE	6500	// how close another car counts as a threat
 #define CD2_AI_STANDOFF		2600	// standoff a totally timid car keeps from its target
 #define CD2_AI_FLEE_COOLDOWN	900	// frames before it will break contact again
+#define CD2_AI_FIRE_DISTANCE	3200	// ring to hold when shooting a parked car
+#define CD2_AI_STATIONARY		60		// target speed below which it counts as parked
 #define CD2_AI_PRIMARY_MIN	2200	// too close to launch a missile (world units)
 #define CD2_AI_PRIMARY_RANGE	14000	// furthest it will launch a missile
 #define CD2_AI_STEER_RATE	60	// max wheel_angle change per frame (was 148:
@@ -72,8 +80,9 @@
 #define CD2_AI_THRUST_RATE	8	// max thrust change per frame
 #define CD2_AI_PIVOT_DIFF	1150	// heading error above which it stops + pivots
 #define CD2_AI_PIVOT_SPEED	70	// only pivot below this forward speed (units/frame)
-#define CD2_AI_REVERSE_TICKS	22	// frames of reversing after getting stuck
-#define CD2_AI_STUCK_TICKS	40	// frames with no forward progress before reversing
+#define CD2_AI_REVERSE_TICKS	12	// frames of reversing after getting stuck (a nudge,
+					//    not a manoeuvre: prefer stopping and pivoting)
+#define CD2_AI_STUCK_TICKS	70	// frames with no forward progress before reversing
 #define CD2_AI_STUCK_SPEED	5	// forward-speed magnitude counted as "stuck"
 #define CD2_AI_WP_REACH		700	// route waypoints within this are "reached" and skipped
 #define CD2_AI_LOOKAHEAD_MIN	900	// pure-pursuit lookahead at a standstill
@@ -86,7 +95,8 @@
 #define CD2_AI_ENGAGE_JITTER	300	// random spread on the aggression burst length
 #define CD2_AI_WANDER_LEG	40000	// wander goal distance along the wander heading
 #define CD2_AI_NEAR_LOOK	380	// base imminent-collision probe distance
-#define CD2_AI_LOOK_PER_SPEED	0	// extra probe distance per unit/frame of speed
+#define CD2_AI_LOOK_PER_SPEED	6	// extra probe distance per unit/frame of speed,
+					//    so the reach still grows with speed
 #define CD2_AI_BRAKE_SPEED	360	// forward speed above which it brakes instead of pivoting
 #define CD2_AI_ENGAGE_TICKS	1620	// frames of sustained aggression before breaking off
 #define CD2_AI_ROAM_TICKS	1500	// frames spent roaming/hunting for weapons
@@ -102,7 +112,8 @@
 #define CD2_AI_FAN_STEPS	5	// length samples along each ray
 #define CD2_AI_STOP_FRAMES	60	// frames of travel the AI keeps in hand
 #define CD2_AI_GOVERN_SLACK	0	// speed grace before the governor bites
-#define CD2_AI_SIDE_MARGIN	250	// clearance gap before it biases steering
+#define CD2_AI_SIDE_MARGIN	900	// clearance gap before it biases steering (was 250:
+					//    too small to lean it off a wall before the fan saw one)
 #define CD2_AI_SIDE_BIAS	384	// heading nudge away from the closer wall
 #define CD2_AI_NEAR_BLOCK_MIN	350	// room below which a wall counts as imminent at any speed
 
@@ -211,6 +222,17 @@ static int cd2AiBravery(CAR_DATA* cp)
 	if (h > 100) h = 100;
 
 	return (m + h) / 2;
+}
+
+// Crude ground speed of another car, for deciding whether it is a target to
+// run down or a parked one to shoot from a distance.
+static int cd2AiCarSpeed(CAR_DATA* o)
+{
+	int vx = FIXEDH(o->st.n.linearVelocity[0]);
+	int vz = FIXEDH(o->st.n.linearVelocity[2]);
+	int ax = ABS(vx), az = ABS(vz);
+
+	return (ax > az) ? (ax + az / 2) : (az + ax / 2);
 }
 
 static CD2_AI_CAR* cd2AiSlot(int carId)
@@ -725,6 +747,11 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		sStateTimer = CD2_AI_STATE_TICKS + cd2AiRand(CD2_AI_STATE_JITTER);
 	}
 
+	// Standing still is how they die, so never let the governor hold a
+	// stationary car at a standstill - let it get moving again.
+	if (ABS(speedFwd) < CD2_AI_IDLE_SPEED && sReverse == 0)
+		governed = 0;
+
 	// opening spread counts down in real frames
 	if (sDisperseTicks > 0)
 		sDisperseTicks--;
@@ -761,6 +788,11 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			int badx = ABS(bdx), badz = ABS(bdz);
 			int blen = (badx > badz) ? (badx + badz / 2) : (badz + badx / 2);
 			int stand = CD2_AI_STANDOFF * (100 - sBravery) / 100;
+
+			// A parked car is a shooting gallery, not something to ram: hold a
+			// firing distance from it. A moving one is fair game to run down.
+			if (cd2AiCarSpeed(t) < CD2_AI_STATIONARY)
+				stand = CD2_AI_FIRE_DISTANCE;
 
 			// Disposition decides the approach: a brawler takes it to the target,
 			// a light car holds station and shoots from range instead of trading.
@@ -1062,7 +1094,10 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	{
 		// Pivoting in place next to a wall never clears the probe on its own, so
 		// after one failed cycle back off rather than scrape along the wall.
-		if (++sAvoidCycles > 1)
+		// Two failed avoidance cycles before reversing: stop-and-pivot is the
+		// better answer next to a wall, and reversing is how they were getting
+		// themselves wedged.
+		if (++sAvoidCycles > 2)
 		{
 			sReverse = CD2_AI_REVERSE_TICKS;
 			sAvoidCycles = 0;
@@ -1089,6 +1124,20 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	if (sReverse > 0)
 	{
 		sReverse--;
+
+		if (sReverse == 0)
+		{
+			// Backed out. Do NOT resume the bearing that got it wedged - drop
+			// the destination and the avoid state and pick somewhere else, or it
+			// just reverses into the same wall forever. Stopping, pivoting and
+			// driving off is the manoeuvre we actually want.
+			sGoalTimer = 0;		// force a fresh roam destination
+			sWanderHeading = (sWanderHeading + 1400 + cd2AiRand(1200)) & 0xfff;
+			sAvoid = CD2_AI_AVOID_NONE;
+			sAvoidTicks = 0;
+			sAvoidCycles = 0;
+			sStuck = 0;
+		}
 	}
 	else if (ABS(diff) > CD2_AI_PIVOT_DIFF || sAvoid != CD2_AI_AVOID_NONE)
 	{
@@ -1171,7 +1220,10 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			CAR_DATA* o = &car_data[i];
 			int dx, dz, aheadDot, side;
 
-			if (o == cp || o->controlType == CONTROL_TYPE_NONE)
+			// Never dodge the car we are attacking: running it down is the
+			// whole point when it is moving.
+			if (o == cp || o->controlType == CONTROL_TYPE_NONE ||
+				    (i == targetId && sState == CD2_AI_ATTACK))
 				continue;
 
 			dx = o->hd.where.t[0] - cp->hd.where.t[0];
