@@ -59,7 +59,10 @@ typedef struct CD2_PROJECTILE
 
 static CD2_PROJECTILE gProj[CD2_MAX_PROJECTILES];
 
-// A burst in progress: spawns one projectile every `interval` frames.
+// A burst in progress: spawns one projectile every `interval` frames. Note
+// the projectile pool is CD2_MAX_PROJECTILES (16), so two 10-shot volleys in
+// flight together will drop their excess shots (cd2ProjectileSpawnEx finds no
+// free slot) - the bonus then can't fire. One volley at a time fits easily.
 typedef struct CD2_PROJ_BURST
 {
 	int active;
@@ -68,6 +71,7 @@ typedef struct CD2_PROJ_BURST
 	int interval;
 	int seq;		// next shot's sequence number
 	int volley;		// gVolley slot the members join (-1 = none)
+	int vgen;		// that slot's generation at burst start (see below)
 	const CD2_WEAPON_DEF* def;
 	const CAR_DATA* shooter;
 } CD2_PROJ_BURST;
@@ -200,10 +204,13 @@ void cd2ProjectileReset(void)
 	sMissileModelTried = 0;
 }
 
-// core spawn: volley / vseq tag the shot as a member of a burst (-1 = none)
+// core spawn: volley / vseq / vgen tag the shot as a member of a burst
+// (-1/0 = an ordinary shot). vgen is the generation the burst captured when
+// it started, NOT the slot's current one, so a shot can never be counted into
+// a group that recycled the slot after this burst's volley retired.
 static void cd2ProjectileSpawnEx(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 			const VECTOR* from, const VECTOR* vel, const VECTOR* dir,
-			int volley, int vseq)
+			int volley, int vseq, int vgen)
 {
 	int i;
 	VECTOR carVel;
@@ -234,7 +241,7 @@ static void cd2ProjectileSpawnEx(const CD2_WEAPON_DEF* def, const CAR_DATA* shoo
 		p->travelled = 0;
 		p->volley = volley;
 		p->vseq = vseq;
-		p->vgen = (volley >= 0) ? gVolley[volley].gen : 0;
+		p->vgen = vgen;
 		return;
 	}
 }
@@ -242,7 +249,7 @@ static void cd2ProjectileSpawnEx(const CD2_WEAPON_DEF* def, const CAR_DATA* shoo
 void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 			const VECTOR* from, const VECTOR* vel, const VECTOR* dir)
 {
-	cd2ProjectileSpawnEx(def, shooter, from, vel, dir, -1, 0);
+	cd2ProjectileSpawnEx(def, shooter, from, vel, dir, -1, 0, 0);
 }
 
 // The impact: the parent blast always plays, then a barrage weapon (the
@@ -450,6 +457,7 @@ void cd2ProjectileBurst(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 	gBurst[bi].interval = interval;
 	gBurst[bi].seq = 0;
 	gBurst[bi].volley = vi;
+	gBurst[bi].vgen = (vi >= 0) ? gVolley[vi].gen : 0;
 	gBurst[bi].def = def;
 	gBurst[bi].shooter = shooter;
 
@@ -493,7 +501,7 @@ static void cd2ProjBurstStep(void)
 		vel.vy = (int)(((long long)dir.vy * b->def->speed) >> 12);
 		vel.vz = (int)(((long long)dir.vz * b->def->speed) >> 12);
 
-		cd2ProjectileSpawnEx(b->def, b->shooter, &muzzle, &vel, &dir, b->volley, b->seq);
+		cd2ProjectileSpawnEx(b->def, b->shooter, &muzzle, &vel, &dir, b->volley, b->seq, b->vgen);
 
 		b->seq++;
 		b->remaining--;
