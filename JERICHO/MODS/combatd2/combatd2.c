@@ -37,6 +37,7 @@
 #include "jer_math.h"
 #include "sound.h"
 #include "gamesnd.h"
+#include "mc_snd.h"
 #include "weapons/core/weapon.h"	/* CD2_WEAPON_DEF + inventory API */
 #include "ai/ai.h"			/* opponent AI (ai/opponent.c) */
 #include <string.h>
@@ -529,10 +530,102 @@ typedef struct CD2_RESPAWN
 
 static CD2_RESPAWN gCd2Respawn[MAX_CARS];
 
+// A wrecked car should be light enough to get shoved around like the wreck it
+// is, but ap.carCos points into the SHARED car_cosmetics[] table - one entry
+// per MODEL, not per car. So a plain mass /= 4 would quarter every car of that
+// model, then quarter it again if a second one died, and the first respawn
+// would restore it out from under the second. Reference-count per model.
+typedef struct CD2_MASS_MOD
+{
+	CAR_COSMETICS* cos;	// NULL when the slot is free
+	int original;
+	int count;		// cars currently wearing the reduced mass
+} CD2_MASS_MOD;
+
+static CD2_MASS_MOD gCd2MassMod[8];
+static int gCd2DeathChannel = -1;
+
 // 1 when this car is one the module drives (the player or an AI opponent).
 static int cd2OwnsCar(CAR_DATA* cp)
 {
 	return (cp->controlType == CONTROL_TYPE_PLAYER) || cd2AiIsOpponent(cp);
+}
+
+// Drop this car's model mass to a quarter until it respawns.
+static void cd2MassQuarter(CAR_DATA* cp)
+{
+	int i, spare = -1;
+
+	if (cp->ap.carCos == NULL)
+		return;
+
+	for (i = 0; i < 8; i++)
+	{
+		if (gCd2MassMod[i].cos == cp->ap.carCos)
+		{
+			gCd2MassMod[i].count++;
+			return;
+		}
+
+		if (spare < 0 && gCd2MassMod[i].cos == NULL)
+			spare = i;
+	}
+
+	if (spare < 0)
+		return;			// table full; leave the mass alone rather than corrupt it
+
+	gCd2MassMod[spare].cos = cp->ap.carCos;
+	gCd2MassMod[spare].original = cp->ap.carCos->mass;
+	gCd2MassMod[spare].count = 1;
+	cp->ap.carCos->mass = gCd2MassMod[spare].original / 4;
+}
+
+// Put it back, once the last car wearing that model has respawned.
+static void cd2MassRestore(CAR_DATA* cp)
+{
+	int i;
+
+	if (cp->ap.carCos == NULL)
+		return;
+
+	for (i = 0; i < 8; i++)
+	{
+		if (gCd2MassMod[i].cos == cp->ap.carCos)
+		{
+			if (--gCd2MassMod[i].count <= 0)
+			{
+				gCd2MassMod[i].cos->mass = gCd2MassMod[i].original;
+				gCd2MassMod[i].cos = NULL;
+			}
+
+			return;
+		}
+	}
+}
+
+// The casino bang. ExplosionSound uses GetMissionSound(29) on missions 30 and
+// 35 (the casino ones) and the missile WIP reached for the same sample. Guard
+// the way the engine does: a mission sample that is not resident comes back as
+// 255, so fall back to the always-loaded SFX impact rather than going silent.
+static void cd2DeathBang(CAR_DATA* cp)
+{
+	int bang = (unsigned char)GetMissionSound(29);	// char return: 0xFF arrives as -1
+	int bank = SOUND_BANK_MISSION;
+
+	if (bang == 255)
+	{
+		bang = 5;
+		bank = SOUND_BANK_SFX;
+	}
+
+	if (gCd2DeathChannel < 0)
+	{
+		gCd2DeathChannel = GetFreeChannel(1);
+		LockChannel(gCd2DeathChannel);
+	}
+
+	Start3DSoundVolPitch(gCd2DeathChannel, bank, bang,
+		cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], 0, 3584);
 }
 
 static void cd2RespawnCar(CAR_DATA* cp, CD2_RESPAWN* r)
@@ -573,8 +666,10 @@ static void cd2RespawnCar(CAR_DATA* cp, CD2_RESPAWN* r)
 	gCd2Car[cp->id].slideTicks = 0;
 	gCd2Car[cp->id].aiPivot = 0;
 
-	printInfo("[combatd2] respawn: car=%d back at start (%d,%d,%d)\n",
-		cp->id, r->x, r->y, r->z);
+	cd2MassRestore(cp);	// full weight again
+
+	printInfo("[combatd2] respawn: car=%d back at start (%d,%d,%d), mass %d\n",
+		cp->id, r->x, r->y, r->z, (cp->ap.carCos != NULL) ? cp->ap.carCos->mass : -1);
 }
 
 static void cd2RespawnTick(CAR_DATA* cp)
@@ -622,8 +717,13 @@ static void cd2RespawnTick(CAR_DATA* cp)
 			cp->handbrake = 0;
 			cp->wheelspin = 0;
 
-			printInfo("[combatd2] respawn: car=%d DESTROYED (type=%d) - control stripped, returning in %d frames\n",
-				cp->id, cp->controlType, r->timer);
+			// wrecked cars are lighter until they come back, and they go out with
+			// the casino bang
+			cd2MassQuarter(cp);
+			cd2DeathBang(cp);
+
+			printInfo("[combatd2] respawn: car=%d DESTROYED (type=%d) - control stripped, mass now %d, returning in %d frames\n",
+				cp->id, cp->controlType, (cp->ap.carCos != NULL) ? cp->ap.carCos->mass : -1, r->timer);
 		}
 	}
 	else if (r->waiting)
@@ -646,6 +746,7 @@ static int cd2OnGameStart(void* ud, void* args)
 
 	memset(gCd2Respawn, 0, sizeof(gCd2Respawn));
 	memset(gCd2SceneryHits, 0, sizeof(gCd2SceneryHits));
+	memset(gCd2MassMod, 0, sizeof(gCd2MassMod));	// masses are level data, re-read on load
 
 	return JER_RESULT_CONTINUE;
 }
