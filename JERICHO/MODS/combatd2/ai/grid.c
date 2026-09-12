@@ -19,7 +19,7 @@
 #define CD2_GRID_MAXCELLS	(CD2_GRID_MAXDIM * CD2_GRID_MAXDIM)
 #define CD2_GRID_MARGIN		6	// cells of margin around the bbox
 #define CD2_GRID_MAXSTEP	700	// max height change between neighbours (units)
-#define CD2_GRID_SAMPLE		256	// clearance radius tested per cell
+#define CD2_GRID_SAMPLE		160	// clearance radius tested per cell
 
 // cell state
 enum { CD2_GRID_UNKNOWN = 0, CD2_GRID_CLEAR = 1, CD2_GRID_BLOCKED = 2 };
@@ -269,6 +269,36 @@ int cd2GridPath(const VECTOR* from, const VECTOR* to, VECTOR* outWp, int maxWp, 
 	cd2GridEval(scx, scz);
 	cd2GridEval(gcx, gcz);
 
+	// The car can be sitting right against scenery, which would block its own
+	// cell; nudge start (like the goal below) to the nearest clear neighbour.
+	if (sCell[startIdx] != CD2_GRID_CLEAR)
+	{
+		int dx, dz;
+		int found = 0;
+
+		for (dz = -1; dz <= 1 && !found; dz++)
+			for (dx = -1; dx <= 1 && !found; dx++)
+			{
+				int nx = scx + dx, nz = scz + dz;
+
+				if (nx < 0 || nz < 0 || nx >= sDimX || nz >= sDimZ)
+					continue;
+
+				cd2GridEval(nx, nz);
+
+				if (sCell[nz * sDimX + nx] == CD2_GRID_CLEAR)
+				{
+					startIdx = nz * sDimX + nx;
+					scx = nx;
+					scz = nz;
+					found = 1;
+				}
+			}
+
+		if (!found)
+			return 0;
+	}
+
 	// endpoints must be usable (if the goal cell is blocked, nudge to a clear
 	// neighbour so a route can still end next to it)
 	if (sCell[goalIdx] != CD2_GRID_CLEAR)
@@ -296,6 +326,9 @@ int cd2GridPath(const VECTOR* from, const VECTOR* to, VECTOR* outWp, int maxWp, 
 		if (!found)
 			return 0;
 	}
+
+	if (sCell[startIdx] != CD2_GRID_CLEAR)
+		return 0;
 
 	if (sCell[startIdx] != CD2_GRID_CLEAR)
 		return 0;

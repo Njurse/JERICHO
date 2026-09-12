@@ -15,6 +15,7 @@
 #include "system.h"
 #include "combatd2.h"
 #include "ai/nav.h"
+#include "ai/grid.h"
 
 #include <string.h>
 
@@ -49,7 +50,9 @@ typedef struct CD2_NAV_CACHE
 	int  goalNode;
 	int  goalX, goalZ;
 	int  count;
-	int  node[CD2_NAV_MAX_ROUTE];
+	int  source;
+	int  expanded;
+	VECTOR wp[CD2_NAV_MAX_ROUTE];
 } CD2_NAV_CACHE;
 
 static CD2_NAV_CACHE sCache[CD2_NAV_MAX_CARS];
@@ -529,10 +532,10 @@ static int sScratchRoute[CD2_NAV_MAX_NODES];
 
 int cd2NavRoute(int carId, const VECTOR* from, const VECTOR* goal, CD2_NAV_ROUTE* out)
 {
-	CD2_NAV_CACHE* cache;
+	CD2_NAV_CACHE* cache = NULL;
 	int start, goalNode;
-	int i, n, len = 0;
-	int needReplan = 1;
+	int i, straight, roadLen = 0;
+	int replan = 1;
 
 	cd2NavEnsure();
 
@@ -542,91 +545,151 @@ int cd2NavRoute(int carId, const VECTOR* from, const VECTOR* goal, CD2_NAV_ROUTE
 	out->expanded = 0;
 	out->length = 0;
 
-	if (sNodeCount <= 0)
+	if (from == NULL || goal == NULL)
 		return 0;
+
+	if (carId >= 0 && carId < CD2_NAV_MAX_CARS)
+		cache = &sCache[carId];
+
+	straight = cd2NavDist2D(from->vx, from->vz, goal->vx, goal->vz);
 
 	start = cd2NavNodeAt(from);
 
 	if (start < 0)
 		start = cd2NavNearestRoadNode(from, 2048);
 
+	// goal node: exact surface, else a graph node only if the point is close to
+	// it (a goal far off any road is routed off-road instead)
 	goalNode = cd2NavNodeAt(goal);
 
 	if (goalNode < 0)
-		goalNode = cd2NavNearestRoadNode(goal, 4096);
+		goalNode = cd2NavNearestRoadNode(goal, 512);
 
-	if (start < 0 || goalNode < 0)
-		return 0;
+	if (cache != NULL && cache->valid && cache->goalNode == goalNode &&
+	    ABS(cache->goalX - goal->vx) + ABS(cache->goalZ - goal->vz) < 1024)
+		replan = 0;
 
-	if (carId >= 0 && carId < CD2_NAV_MAX_CARS)
+	if (replan)
 	{
-		cache = &sCache[carId];
-
-		if (cache->valid && cache->goalNode == goalNode &&
-		    ABS(cache->goalX - goal->vx) + ABS(cache->goalZ - goal->vz) < 1024)
-			needReplan = 0;
-		else
-		{
-			cache->valid = 0;
-		}
-	}
-	else
-	{
-		cache = NULL;
-	}
-
-	if (needReplan)
-	{
+		int roadOk = 0;
 		int expanded = 0;
 
-		n = cd2NavSearch(start, goalNode, sScratchRoute, CD2_NAV_MAX_ROUTE - 1, &expanded);
+		if (cache != NULL)
+			cache->valid = 0;
 
-		if (n < 0)
+		// --- road-graph attempt ---
+		if (sNodeCount > 0 && start >= 0 && goalNode >= 0)
+		{
+			int n = cd2NavSearch(start, goalNode, sScratchRoute, CD2_NAV_MAX_ROUTE - 1, &expanded);
+
+			if (n >= 0)
+			{
+				for (i = 0; i < n && out->count < CD2_NAV_MAX_ROUTE - 1; i++)
+				{
+					VECTOR p;
+
+					if (!cd2NavNodePos(sScratchRoute[i], &p))
+						continue;
+
+					out->wp[out->count++] = p;
+				}
+
+				for (i = 1; i < out->count; i++)
+					roadLen += cd2NavDist2D(out->wp[i - 1].vx, out->wp[i - 1].vz, out->wp[i].vx, out->wp[i].vz);
+
+				// include the final leg to the goal so the detour test below
+				// compares like for like against the straight-line distance
+				if (out->count > 0)
+					roadLen += cd2NavDist2D(out->wp[out->count - 1].vx, out->wp[out->count - 1].vz, goal->vx, goal->vz);
+
+				roadOk = 1;
+			}
+		}
+
+		// --- off-road fallback: no road route, or the road detours badly ---
+		if (!roadOk || (straight > 1200 && roadLen > straight * 2))
+		{
+			VECTOR gw[CD2_NAV_MAX_ROUTE];
+			int gexp = 0;
+			int gn = cd2GridPath(from, goal, gw, CD2_NAV_MAX_ROUTE, &gexp);
+
+			if (gn > 0)
+			{
+				for (i = 0; i < gn; i++)
+					out->wp[i] = gw[i];
+
+				out->count = gn;
+				out->source = CD2_NAV_SRC_SCENERY;
+				out->expanded = gexp;
+				roadOk = 1;
+			}
+			else if (roadOk)
+			{
+				out->source = CD2_NAV_SRC_ROAD;
+				out->expanded = expanded;
+				roadOk = 1;
+			}
+		}
+		else
+		{
+			out->source = CD2_NAV_SRC_ROAD;
+			out->expanded = expanded;
+		}
+
+		if (!roadOk)
 			return 0;
+
+		// always end at the actual goal position
+		if (out->count == 0 || out->wp[out->count - 1].vx != goal->vx || out->wp[out->count - 1].vz != goal->vz)
+		{
+			if (out->count < CD2_NAV_MAX_ROUTE)
+				out->wp[out->count++] = *goal;
+			else
+				out->wp[CD2_NAV_MAX_ROUTE - 1] = *goal;
+		}
+
+		out->goalNode = goalNode;
+
+		for (i = 1; i < out->count; i++)
+			out->length += cd2NavDist2D(out->wp[i - 1].vx, out->wp[i - 1].vz, out->wp[i].vx, out->wp[i].vz);
 
 		if (cache != NULL)
 		{
 			cache->valid = 1;
+			cache->source = out->source;
 			cache->goalNode = goalNode;
 			cache->goalX = goal->vx;
 			cache->goalZ = goal->vz;
-			cache->count = n;
+			cache->expanded = out->expanded;
+			cache->count = out->count;
 
-			for (i = 0; i < n; i++)
-				cache->node[i] = sScratchRoute[i];
+			for (i = 0; i < out->count; i++)
+				cache->wp[i] = out->wp[i];
 		}
 
-		out->expanded = expanded;
-	}
-
-	// materialise waypoints from the cached node list
-	if (cache != NULL)
-	{
-		n = cache->count;
-
-		for (i = 0; i < n && out->count < CD2_NAV_MAX_ROUTE - 1; i++)
+		if (gCd2Cfg.debugLog)
 		{
-			VECTOR p;
+			static unsigned int t = 0;
 
-			if (!cd2NavNodePos(cache->node[i], &p))
-				continue;
-
-			out->wp[out->count++] = p;
-
-			if (out->count >= 2)
-				len += cd2NavDist2D(out->wp[out->count - 2].vx, out->wp[out->count - 2].vz, p.vx, p.vz);
+			if ((t++ & 31) == 0)
+				printInfo("[combatd2] nav route car=%d src=%s wp=%d len=%d straight=%d goalNode=%d expanded=%d\n",
+					carId, (out->source == CD2_NAV_SRC_SCENERY) ? "scenery" : "road",
+					out->count, out->length, straight, goalNode, out->expanded);
 		}
 	}
-
-	// always end at the actual goal position
-	if (out->count < CD2_NAV_MAX_ROUTE)
+	else
 	{
-		out->wp[out->count++] = *goal;
-	}
+		out->source = cache->source;
+		out->goalNode = cache->goalNode;
+		out->expanded = cache->expanded;
+		out->count = cache->count;
 
-	out->source = CD2_NAV_SRC_ROAD;
-	out->goalNode = goalNode;
-	out->length = len;
+		for (i = 0; i < cache->count; i++)
+			out->wp[i] = cache->wp[i];
+
+		for (i = 1; i < out->count; i++)
+			out->length += cd2NavDist2D(out->wp[i - 1].vx, out->wp[i - 1].vz, out->wp[i].vx, out->wp[i].vz);
+	}
 
 	if (carId >= 0 && carId < CD2_NAV_MAX_CARS)
 	{

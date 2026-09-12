@@ -34,6 +34,7 @@
 #include "weapons/core/weapon_internal.h"
 #include "ai/ai.h"
 #include "ai/nav.h"
+#include "ai/grid.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -69,6 +70,9 @@ static int sStuck;		// frames without forward progress
 static int sLastDamage;		// car totalDamage last frame (to count new hits)
 static int sHits;		// collisions observed on the opponent
 static unsigned int sLogTick;	// debugLog throttle counter
+static CD2_NAV_ROUTE sRoute;	// navigator route to the current goal
+static int sRouteSrc = -1;	// last logged route source
+static int sNavProbeDone;	// one-shot arbitration probe at level start
 static CD2_AI_DEBUG sDbg;	// latest internal values (observability)
 
 static int cd2AiSqrt(int v)
@@ -522,6 +526,42 @@ static void cd2AiDrive(CAR_DATA* cp)
 		printInfo("[combatd2] AI car=%d state=%s dmg=%d hits=%d spd=%d steer=%d rev=%d pivot=%d threat=%d wall=%d\n",
 			cp->id, cd2AiStateName(), cp->totalDamage, sHits, speedFwd, sSteer,
 			(sReverse > 0) ? 1 : 0, pivotDir, threatFlag, blockedAhead);
+
+	// Navigator: keep a route to the current goal and log when the source
+	// changes (road vs off-road scenery). Steering still aims directly until the
+	// navigator is wired into the controller.
+	{
+		VECTOR carV, goalV;
+
+		carV.vx = cp->hd.where.t[0];
+		carV.vy = cp->hd.where.t[1];
+		carV.vz = cp->hd.where.t[2];
+
+		if (pcp != NULL && (sState == CD2_AI_HUNT || sState == CD2_AI_FLEE))
+		{
+			goalV.vx = pcp->hd.where.t[0];
+			goalV.vy = pcp->hd.where.t[1];
+			goalV.vz = pcp->hd.where.t[2];
+		}
+		else
+		{
+			goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * 5000) >> 12);
+			goalV.vy = carV.vy;
+			goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * 5000) >> 12);
+		}
+
+		cd2NavRoute(cp->id, &carV, &goalV, &sRoute);
+
+		if (sRoute.source != sRouteSrc)
+		{
+			sRouteSrc = sRoute.source;
+
+			printInfo("[combatd2] nav route car=%d src=%s wp=%d len=%d expanded=%d\n",
+				cp->id,
+				(sRoute.source == CD2_NAV_SRC_SCENERY) ? "scenery" : (sRoute.source == CD2_NAV_SRC_ROAD) ? "road" : "none",
+				sRoute.count, sRoute.length, sRoute.expanded);
+		}
+	}
 }
 
 // --- hooks -----------------------------------------------------------------
@@ -537,6 +577,58 @@ static int cd2AiOnFrame(void* ud, void* args)
 	// Build the nav graph once the level's road data is resident (GAME_START
 	// can fire before the road lumps are loaded). Cheap no-op once built.
 	cd2NavReady();
+
+	// One-shot probe: ask the router for a route to a point diagonally off the
+	// road network and log which source won (road vs off-road scenery).
+	// carId -1 so no car's route cache is touched.
+	if (!sNavProbeDone && cd2NavNodeCount() > 0)
+	{
+		CAR_DATA* pcp = NULL;
+
+		if (cd2WpnPlayerCar(&pcp))
+		{
+			VECTOR from, to;
+			CD2_NAV_ROUTE r;
+
+			from.vx = pcp->hd.where.t[0];
+			from.vy = pcp->hd.where.t[1];
+			from.vz = pcp->hd.where.t[2];
+
+			to = from;
+			to.vx += 7000;
+			to.vz -= 5000;
+
+			cd2NavRoute(-1, &from, &to, &r);
+
+			printInfo("[combatd2] nav probe: src=%s wp=%d len=%d expanded=%d nodes=%d edges=%d\n",
+				(r.source == CD2_NAV_SRC_SCENERY) ? "scenery" : (r.source == CD2_NAV_SRC_ROAD) ? "road" : "none",
+				r.count, r.length, r.expanded, cd2NavNodeCount(), cd2NavEdgeCount());
+
+			// Standalone off-road probes so the scenery router is verified even
+			// when the arbiter picks the road route.
+			{
+				static const int offs[4][2] = { { 3000, 0 }, { 0, 3000 }, { 7000, -5000 }, { -4000, 2500 } };
+				int kk;
+
+				for (kk = 0; kk < 4; kk++)
+				{
+					VECTOR g = from, wp[CD2_NAV_MAX_ROUTE];
+					int ge = 0;
+					int gn;
+
+					g.vx += offs[kk][0];
+					g.vz += offs[kk][1];
+
+					gn = cd2GridPath(&from, &g, wp, CD2_NAV_MAX_ROUTE, &ge);
+
+					printInfo("[combatd2] grid probe o=(%d,%d): wp=%d expanded=%d\n",
+						offs[kk][0], offs[kk][1], gn, ge);
+				}
+			}
+
+			sNavProbeDone = 1;
+		}
+	}
 
 	// drop a destroyed/removed opponent so the id doesn't go stale
 	if (sAiCarId >= 0 &&
