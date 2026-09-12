@@ -35,6 +35,7 @@
 #include "ai/ai.h"
 #include "ai/nav.h"
 #include "ai/grid.h"
+#include "ai/flow.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -46,7 +47,7 @@
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
 #define CD2_AI_EVADE_FRAMES	85	// ~1.5 s of evasive driving
-#define CD2_AI_HURT		26000	// totalDamage above which it flees
+#define CD2_AI_HURT		12000	// totalDamage above which it flees
 #define CD2_AI_FIRE_RANGE	6600	// MG range when hunting
 #define CD2_AI_FIRE_COOLDOWN	10	// frames between AI MG shots
 #define CD2_AI_STEER_RATE	48	// max wheel_angle change per frame
@@ -551,6 +552,14 @@ static void cd2AiDrive(CAR_DATA* cp)
 		}
 
 		cd2NavRoute(cp->id, &carV, &goalV, &sRoute);
+
+		// Shared pursuit flow field toward the same goal, budgeted per frame.
+		cd2FlowSetGoal(&goalV);
+		cd2FlowUpdate(64);
+
+		if (gCd2Cfg.debugLog && (sLogTick % 120) == 0)
+			printInfo("[combatd2] flow: ready=%d cells=%d goal=(%d,%d)\n",
+				cd2FlowReady(), cd2FlowCoverage(), goalV.vx, goalV.vz);
 
 		if (sRoute.source != sRouteSrc)
 		{
