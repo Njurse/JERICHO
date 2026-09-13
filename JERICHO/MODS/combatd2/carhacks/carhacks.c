@@ -154,6 +154,16 @@ static void ChkApplyImports(JER_ARGS_CAR_DATA_SOURCE* a)
 		int vals[3];
 		int v;
 
+		/* Skip separators and any spacing between entries. Without this a
+		 * "slot:city:model, slot:city:model" list parsed only its first entry:
+		 * the next one began with a space, so the number scan found nothing and
+		 * the entry was rejected as malformed. */
+		while (*p == ',' || *p == ' ' || *p == '\t')
+			p++;
+
+		if (*p == '\0')
+			break;
+
 		for (v = 0; v < 3; v++)
 		{
 			int got = 0;
@@ -234,7 +244,16 @@ static int ChkOnCarDataSource(void* ud, void* args)
 	/* Model numbers > 5 go into the special resident slot (engine's own path in
 	 * SetupResidentModels), and the spool loads that model's geometry - here from
 	 * the source city's folder. */
-	if (model > 5 && model < 40)
+	/* Any body the level can actually hold. 0..4 are the civilian cars: the
+	 * engine's own wantedCar pass finds one already resident, or puts a
+	 * non-resident one into an ordinary slot, so the player CAN drive a foreign
+	 * civ car - the import just has to cover whichever slot it lands in
+	 * (launch_mp_foreign_car.bat imports the whole 0..4 range for that reason).
+	 * 8..12 are the special bodies. 5, 6 and 7 are gaps in EVERY city, so they
+	 * are refused here rather than left to fail in the model build. 11 is
+	 * missing in Chicago only, which this cannot know - the engine refuses that
+	 * import and leaves the level's own vehicle in place. */
+	if (model >= 0 && model <= 12 && model != 5 && model != 6 && model != 7)
 	{
 		wantedCar[0] = model;
 

@@ -70,50 +70,46 @@ if %T%==1 set "TIME=day"
 if %T%==2 set "TIME=dusk"
 if %T%==3 set "TIME=night"
 
-rem ---- the player's car: ALWAYS foreign -----------------------------------
-rem Every city has models 8, 9, 10 and 12. Model 11 additionally exists
-rem everywhere except Chicago, so it only joins the pick when the source city is
-rem not Chicago.
-set "PICK=8"
-set /a "K=%RANDOM% %% 4"
-if %K%==1 set "PICK=9"
-if %K%==2 set "PICK=10"
-if %K%==3 set "PICK=12"
+rem ---- the player's car: ALWAYS foreign, from the source city's whole roster -
+rem Usable bodies: 0..4 (civilian) and 8, 9, 10, 12 (special). Model 11 exists
+rem everywhere EXCEPT Chicago, so it only joins the pick for another source, and
+rem models 5, 6 and 7 exist in no city at all.
+set "PICK=0"
+set /a "K=%RANDOM% %% 9"
+if %K%==1 set "PICK=1"
+if %K%==2 set "PICK=2"
+if %K%==3 set "PICK=3"
+if %K%==4 set "PICK=4"
+if %K%==5 set "PICK=8"
+if %K%==6 set "PICK=9"
+if %K%==7 set "PICK=10"
+if %K%==8 set "PICK=12"
 if not %SRC%==0 if %K%==0 set "PICK=11"
 
 set "PLAYERMODEL=%PICK%"
 set "CARARG="
 
-rem ---- the opponents' / traffic's share of the roster ----------------------
-rem One or two imports, entry one from the civ models and entry two from the
-rem special bodies, so the two never share a slot or a model. Kept as flat ifs:
-rem nested parenthesised blocks with delayed expansion are a batch trap.
-set "IMPORT=7:%SRC%:%PLAYERMODEL%"
-set "PREVSLOT=7"
-set /a "NIM=%RANDOM% %% 2 + 1"
+rem ---- what the whole roster pulls across -----------------------------------
+rem The civilian bodies are imported slot-for-slot, 0..4. That is what makes a
+rem CIVILIAN foreign car work for the player: carhacks only puts a model number
+rem in wantedCar, and the engine's own pass then spawns the player in whichever
+rem resident slot already holds that model - so importing the whole civ range
+rem guarantees the slot it lands in is the foreign one, wherever that turns out
+rem to be. Traffic reads slots 0..4 too, so the city's ambient cars become the
+rem source city's as well.
+set "IMPORT=0:%SRC%:0, 1:%SRC%:1, 2:%SRC%:2, 3:%SRC%:3, 4:%SRC%:4"
 
-for /l %%i in (1,1,%NIM%) do (
-	set /a "ISLOT=%RANDOM% %% 7"
-	if !ISLOT!==!PREVSLOT! set /a "ISLOT=(%RANDOM% %% 6 + ISLOT + 1) %% 7"
+rem A body above 5 goes to the special resident slot.
+if %PLAYERMODEL% GTR 5 set "IMPORT=%IMPORT%, 7:%SRC%:%PLAYERMODEL%"
 
-	set /a "IM=%RANDOM% %% 5"
-	if %%i==2 set /a "IM=%RANDOM% %% 4 + 5"
-
-	if !IM!==5 set "IM=8"
-	if !IM!==6 set "IM=9"
-	if !IM!==7 set "IM=10"
-	if !IM!==8 set "IM=12"
-
-	if defined ROSTER (
-		set "ROSTER=!ROSTER!, !ISLOT!:%SRC%:!IM!"
-	) else (
-		set "ROSTER=!ISLOT!:%SRC%:!IM!"
-	)
-
-	set "PREVSLOT=!ISLOT!"
-)
-
-if defined ROSTER set "IMPORT=%IMPORT%, %ROSTER%"
+rem Plus one special body in spare slot 5, so the AI opponents have a foreign
+rem special car in their pick too (they enumerate every loaded resident slot).
+set /a "EXTRA=%RANDOM% %% 4"
+set "XMODEL=8"
+if %EXTRA%==1 set "XMODEL=9"
+if %EXTRA%==2 set "XMODEL=10"
+if %EXTRA%==3 set "XMODEL=12"
+set "IMPORT=%IMPORT%, 5:%SRC%:%XMODEL%"
 
 if /i "%~1"=="dry" (
 	echo == roll ==
