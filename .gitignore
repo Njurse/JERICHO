@@ -50,3 +50,7 @@ src_rebuild/Makefile
 *.dll
 *.exp
 /DriverLevelTool
+
+# python bytecode from the mp test tools
+__pycache__/
+*.pyc
