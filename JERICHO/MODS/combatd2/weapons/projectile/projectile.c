@@ -260,13 +260,13 @@ void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 static void cd2ProjectileImpact(CD2_PROJECTILE* p, const CAR_DATA* carHit, const CAR_DATA* skip)
 {
 	cd2AoeBlast(&p->pos, p->def->splashRadius, p->def->splashDamage,
-		CD2_WPN_FX(p->def), skip);
+		CD2_WPN_FX(p->def), skip, p->owner);
 
 	if (p->def->barrageCount > 0)
 		cd2FxBarrage(&p->pos, (p->def->barrageStick ? carHit : NULL),
 			p->def->barrageFx, p->def->barrageCount, p->def->barrageInterval,
 			p->def->barrageJitter, p->def->barrageRadius,
-			p->def->barrageDamage, p->owner);
+			p->def->barrageDamage, p->owner, p->owner);
 
 	p->active = 0;
 }
@@ -578,7 +578,7 @@ void cd2ProjectileStep(void)
 						VECTOR at = p->pos;
 						VECTOR kdir = p->vel;
 
-						cd2WpnDamageCar(cp, &p->pos, p->def->damage);
+						cd2WpnDamageCar(cp, &p->pos, p->def->damage, p->owner);
 						cd2WpnKnock(cp, &p->pos, &p->vel, p->def->damage);
 						cd2ProjectileImpact(p, cp, cp);
 
@@ -598,7 +598,7 @@ void cd2ProjectileStep(void)
 
 							if (gVolley[v].landed >= gVolley[v].count)
 							{
-								cd2WpnDamageCar(cp, &at, p->def->volleyBonusDamage);
+								cd2WpnDamageCar(cp, &at, p->def->volleyBonusDamage, p->owner);
 								cd2WpnKnock(cp, &at, &kdir, p->def->volleyBonusKnock);
 
 								if (gCd2Cfg.debugLog)

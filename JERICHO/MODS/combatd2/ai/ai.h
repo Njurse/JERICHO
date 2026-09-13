@@ -57,4 +57,8 @@ int cd2AiGetDebug(CD2_AI_DEBUG* out);
 // 1 when `car` (a CAR_DATA*) is the opponent this module owns.
 int cd2AiIsOpponent(const void* car);
 
+// Role index of `car` (a CAR_DATA*), or -1 when it is not an opponent. Name it
+// with cd2AiRoleNameOf for a display string.
+int cd2AiRoleOf(const void* car);
+
 #endif /* CD2_AI_H */

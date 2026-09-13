@@ -171,7 +171,7 @@ void cd2RaycastStep(void)
 
 				if (cd2WpnPointInCar(cp, &r->pos))
 				{
-					cd2WpnDamageCar(cp, &r->pos, r->def->damage);
+					cd2WpnDamageCar(cp, &r->pos, r->def->damage, r->owner);
 					cd2WpnKnock(cp, &r->pos, &r->vel, r->def->damage);
 					cd2WpnMark(&r->pos, r->def->colR, r->def->colG, r->def->colB);
 					r->active = 0;

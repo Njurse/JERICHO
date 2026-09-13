@@ -1877,6 +1877,19 @@ int cd2AiIsOpponent(const void* car)
 	return (cp != NULL && cd2AiSlot(cp->id) != NULL) ? 1 : 0;
 }
 
+int cd2AiRoleOf(const void* car)
+{
+	const CAR_DATA* cp = (const CAR_DATA*)car;
+	CD2_AI_CAR* slot;
+
+	if (cp == NULL)
+		return -1;
+
+	slot = cd2AiSlot(cp->id);
+
+	return (slot != NULL) ? slot->role : -1;
+}
+
 int cd2AiGetDebug(CD2_AI_DEBUG* out)
 {
 	if (out != NULL)

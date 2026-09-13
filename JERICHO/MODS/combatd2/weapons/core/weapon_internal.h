@@ -27,8 +27,15 @@ void cd2WpnMark(const VECTOR* p, int r, int g, int bl);
 int  cd2WpnPointInCar(const CAR_DATA* cp, const VECTOR* p);
 
 // Apply damage to a car from a world impact (region picked from the impact
-// direction in the car's local frame).
-void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value);
+// direction in the car's local frame). `owner` is the car whose weapon caused
+// it (the firing car), or NULL for damage with no weapon behind it; it is
+// remembered so a kill can be credited to whoever landed the last weapon hit.
+void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value, const CAR_DATA* owner);
+
+// Who last damaged `carId` with a weapon, and forget it: the kill path calls
+// this once when a car is totaled, so a stale hit cannot credit a later death.
+// Returns the attacker's car id, or -1 when no weapon has hit it.
+int cd2WpnTakeAttacker(int carId);
 
 // Weapon impact "lever action": add reactive angular knockback (world-space
 // angular velocity) based on the impact point's offset from the car centre and
@@ -52,8 +59,12 @@ void cd2WpnCarVelocity(const CAR_DATA* cp, VECTOR* out);
 // ---------------------------------------------------------------------------
 // From aoe/aoe.c — explosion FX + radial damage (shared by projectile/drop)
 // ---------------------------------------------------------------------------
+// `skip` is the car the blast must not damage (shooter, or the car already hit
+// directly); `owner` is who fired it, for kill attribution, and may be NULL.
+// They are separate because call sites disagree on `skip` (a mine passes the
+// car it detonated on), so `skip` cannot double as the attacker.
 void cd2AoeBlast(const VECTOR* at, int radius, int damage, int effect,
-		 const CAR_DATA* skip);
+		 const CAR_DATA* skip, const CAR_DATA* owner);
 
 // ---------------------------------------------------------------------------
 // Class pools (one source folder each) — reset / step / draw all instances

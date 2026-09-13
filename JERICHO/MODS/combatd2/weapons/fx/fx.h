@@ -87,7 +87,8 @@ void cd2FxSpawn(const VECTOR* at, int fxId);
 
 void cd2FxBarrage(const VECTOR* at, const CAR_DATA* car, int fxId,
 		  int count, int interval, int jitter,
-		  int radius, int damage, const CAR_DATA* skip);
+		  int radius, int damage, const CAR_DATA* skip,
+		  const CAR_DATA* owner);
 
 // Advance the sequencer (once per frame) and clear it on a fresh level.
 void cd2FxStep(void);

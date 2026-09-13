@@ -358,7 +358,13 @@ int cd2WpnPointInCar(const CAR_DATA* cp, const VECTOR* p)
 // opponent test lives with the AI (avoids pulling ai.h into the core)
 extern int cd2AiIsOpponent(const void* car);
 
-void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value)
+// Last weapon to damage each car, by car id, for kill attribution (-1 = none).
+// An ID rather than a CAR_DATA*: the car_data slots are recycled, so a stored
+// pointer can end up aliasing whoever occupies that slot now. The kill path
+// takes + clears the entry, so a hit long ago cannot credit a later death.
+static int gWpnAttacker[MAX_CARS];
+
+void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value, const CAR_DATA* owner)
 {
 	const MATRIX* w = &cp->hd.where;
 	int dx = at->vx - w->t[0];
@@ -391,7 +397,36 @@ void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value)
 	else if (cd2IsTraffic(cp))
 		value = cd2ScaleDamage(value, CD2_TRAFFIC_WPN_TAKEN);
 
+	// remember the last weapon to touch it, so the death can be credited. The
+	// owner pointer is validated first: car_data slots are recycled (respawns,
+	// MP arenas), so a pointer captured at spawn can end up aliasing a
+	// different car - without this, its id read back as whoever occupies the
+	// slot now, which credited the player for kills it never made.
+	if (cp->id >= 0 && cp->id < MAX_CARS)
+	{
+		int ownerId = -1;
+
+		if (owner != NULL && owner->id >= 0 && owner->id < MAX_CARS &&
+			&car_data[owner->id] == owner)
+			ownerId = owner->id;
+
+		gWpnAttacker[cp->id] = ownerId;
+	}
+
 	ApplyDamage(cp, (char)region, value, 0);
+}
+
+int cd2WpnTakeAttacker(int carId)
+{
+	int owner;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return -1;
+
+	owner = gWpnAttacker[carId];
+	gWpnAttacker[carId] = -1;
+
+	return owner;
 }
 
 static int cd2Isqrt(int v)

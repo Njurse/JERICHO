@@ -15,7 +15,7 @@
 #include "weapons/fx/fx.h"
 
 void cd2AoeBlast(const VECTOR* at, int radius, int damage, int effect,
-		 const CAR_DATA* skip)
+		 const CAR_DATA* skip, const CAR_DATA* owner)
 {
 	VECTOR blast;
 	int i;
@@ -80,6 +80,7 @@ void cd2AoeBlast(const VECTOR* at, int radius, int damage, int effect,
 		if (dmg < 1)
 			continue;
 
-		cd2WpnDamageCar(cp, at, dmg);
+		// `owner` (not `skip`) carries the attacker for kill attribution.
+		cd2WpnDamageCar(cp, at, dmg, owner);
 	}
 }

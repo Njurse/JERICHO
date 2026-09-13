@@ -32,6 +32,7 @@
 #include "dr2math.h"
 #include "jericho.h"
 #include "jer_events.h"
+#include "jer_hud.h"	// HUD messages (kill banners)
 #include "jer_pause_menu.h"
 #include "jer_config.h"
 #include "jer_math.h"

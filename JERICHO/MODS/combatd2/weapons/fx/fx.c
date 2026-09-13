@@ -151,6 +151,7 @@ typedef struct CD2_FX_PENDING
 	int radius;
 	int damage;
 	const CAR_DATA* skip;	// car already damaged by the direct hit
+	const CAR_DATA* owner;	// who fired the parent shot (kill attribution)
 	const CAR_DATA* stuck;	// car the burst rides (NULL = fixed in world)
 
 	VECTOR world;		// world position (refreshed each frame when stuck)
@@ -193,7 +194,8 @@ static void cd2FxToWorld(const CAR_DATA* cp, int lx, int ly, int lz, VECTOR* out
 
 void cd2FxBarrage(const VECTOR* at, const CAR_DATA* car, int fxId,
 		  int count, int interval, int jitter,
-		  int radius, int damage, const CAR_DATA* skip)
+		  int radius, int damage, const CAR_DATA* skip,
+		  const CAR_DATA* owner)
 {
 	int i, k;
 
@@ -233,6 +235,7 @@ void cd2FxBarrage(const VECTOR* at, const CAR_DATA* car, int fxId,
 		p->radius = radius;
 		p->damage = damage;
 		p->skip = skip;
+		p->owner = owner;
 		p->stuck = car;
 		p->localX = jx;
 		p->localY = jy;
@@ -283,7 +286,7 @@ void cd2FxStep(void)
 			continue;
 		}
 
-		cd2AoeBlast(&p->world, p->radius, p->damage, p->fxId, p->skip);
+		cd2AoeBlast(&p->world, p->radius, p->damage, p->fxId, p->skip, p->owner);
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[combatd2] barrage blast fx=%d pos=(%d,%d,%d) stuck=%d\n",

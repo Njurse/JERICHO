@@ -23,7 +23,10 @@
 #include "convert.h"
 #include "jericho.h"
 #include "jer_events.h"
+#include "jer_hud.h"			// HUD messages (kill credit)
 #include "weapons/fx/fx.h"
+#include "weapons/core/weapon_internal.h"	// cd2WpnTakeAttacker
+#include "ai/ai.h"				// cd2AiIsOpponent / cd2AiRoleOf / cd2AiRoleNameOf
 
 // per-car latch: 1 once the car has crossed the damage cap (edge detection)
 static char gWasTotaled[MAX_CARS];
@@ -79,7 +82,7 @@ static int cd2cOnCarStep(void* ud, void* args)
 			// explosions on the CD2_FX_WRECK profile (collide = 0). radius and
 			// damage are 0, so it does no radial damage either — the car dies
 			// in flames without the blast hurting or shoving anything around it.
-			cd2FxBarrage(&blastPos, NULL, CD2_FX_WRECK, 3, 3, 120, 0, 0, NULL);
+			cd2FxBarrage(&blastPos, NULL, CD2_FX_WRECK, 3, 3, 120, 0, 0, NULL, NULL);
 
 			// toss the wreck so it tumbles and comes to rest: upward pop +
 			// random roll/pitch spin (yaw is re-owned by the handling module,
@@ -87,6 +90,35 @@ static int cd2cOnCarStep(void* ud, void* args)
 			cp->st.n.linearVelocity[1] += CD2C_TUMBLE_LAUNCH;
 			cp->st.n.angularVelocity[0] += (Random2(CD2C_TUMBLE_SPIN) - (CD2C_TUMBLE_SPIN >> 1));
 			cp->st.n.angularVelocity[2] += (Random2(CD2C_TUMBLE_SPIN) - (CD2C_TUMBLE_SPIN >> 1));
+
+			// Kill credit: when the player landed the last weapon hit on one of
+			// our opponents, name it on the HUD. cd2WpnTakeAttacker clears the
+			// record, so this car's next death is not credited to a stale hit.
+			if (cd2AiIsOpponent(cp))
+			{
+				int killerId = cd2WpnTakeAttacker(cp->id);
+				const char* name = cd2AiRoleNameOf(cd2AiRoleOf(cp));
+				int byPlayer = (killerId >= 0 && killerId < MAX_CARS &&
+						car_data[killerId].controlType == CONTROL_TYPE_PLAYER);
+
+				if (name == NULL)
+					name = "an opponent";
+
+				if (gCd2Cfg.debugLog)
+					printInfo("[combatd2] opponent totaled: car=%d role=%s killer=%d byPlayer=%d kCT=%d kAI=%d playerCar=%d\n",
+						cp->id, name, killerId, byPlayer,
+						(killerId >= 0 && killerId < MAX_CARS) ? car_data[killerId].controlType : -9,
+						(killerId >= 0 && killerId < MAX_CARS) ? cd2AiIsOpponent(&car_data[killerId]) : -9,
+						(int)MainPlayer.playerCarId);
+
+				if (byPlayer)
+				{
+					char msg[64];
+
+					sprintf(msg, "You killed %s", name);
+					jer_hud_message_replace(msg, 0);	// 0 = the default ~3s
+				}
+			}
 		}
 
 		// dead car: lock it — no throttle/steer/brake, handbrake on so the

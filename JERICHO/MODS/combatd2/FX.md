@@ -57,7 +57,7 @@ anything around it (`combatd2combat.c`).
 
 ## The barrage sequencer
 
-`cd2FxBarrage(at, car, fxId, count, interval, jitter, radius, damage, skip)`
+`cd2FxBarrage(at, car, fxId, count, interval, jitter, radius, damage, skip, owner)`
 schedules `count` blasts `interval` frames apart, each jittered by up to
 `+/-jitter` world units:
 
