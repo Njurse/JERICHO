@@ -384,6 +384,34 @@ void SetupResidentModels()
 			residentCarModels[SPECIAL_CAR_SLOT] = PlayerStartInfo[0]->model;
 	}
 
+	// JERICHO-HOOK: let a module finalise the resident car models (and pick the
+	// city the car data comes from) BEFORE the model files are read for them -
+	// ProcessCarModelLump runs after this. This has to come FIRST, ahead of the
+	// wantedCar pass below: `wantedCar` is what decides which car the player
+	// actually spawns in, so a module that sets it (carhacks' player_model) was
+	// being ignored - the pass had already run and cached PlayerStartInfo[].
+	// Reset the source each level so a module that does not answer gets the
+	// level's own city.
+	{
+		JER_ARGS_CAR_DATA_SOURCE jerSrc;
+
+		jerSrc.level = GameLevel;
+		jerSrc.sourceLevel = -1;
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; ++i)
+			gCarModelSource[i] = -1;
+
+		jerSrc.models = residentCarModels;
+		jerSrc.count = MAX_CAR_RESIDENT_MODELS;
+		jerSrc.modelSource = gCarModelSource;
+		jer_fire(JER_EVENT_CAR_DATA_SOURCE, &jerSrc);
+		gCarDataSourceLevel = jerSrc.sourceLevel;
+
+		// JERICHO-HOOK: now that the per-slot sources are known, read any foreign
+		// car data the module asked for. Fails soft, so a bad import just leaves
+		// the level's own vehicles in place.
+		InitCarImport();
+	}
+
 	takenSlots = 0;
 	for(i = 0; i < 2; i++)
 	{
@@ -426,29 +454,6 @@ void SetupResidentModels()
 		}
 	}
 
-	// JERICHO-HOOK: let a module finalise the resident car models (and pick the
-	// city the car data comes from) BEFORE the model files are read for them -
-	// ProcessCarModelLump runs after this. Reset the source each level so a
-	// module that does not answer gets the level's own city.
-	{
-		JER_ARGS_CAR_DATA_SOURCE jerSrc;
-
-		jerSrc.level = GameLevel;
-		jerSrc.sourceLevel = -1;
-		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; ++i)
-			gCarModelSource[i] = -1;
-
-		jerSrc.models = residentCarModels;
-		jerSrc.count = MAX_CAR_RESIDENT_MODELS;
-		jerSrc.modelSource = gCarModelSource;
-		jer_fire(JER_EVENT_CAR_DATA_SOURCE, &jerSrc);
-		gCarDataSourceLevel = jerSrc.sourceLevel;
-
-		// JERICHO-HOOK: now that the resident models and their per-slot sources are
-		// final, read any foreign car data the module asked for. Fails soft, so a
-		// bad import just leaves the level's own vehicles in place.
-		InitCarImport();
-	}
 }
 
 // [D] [T]
