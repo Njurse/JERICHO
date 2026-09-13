@@ -2167,7 +2167,7 @@ int PingInCivCar(int minPingInDist)
 	// check if special car is loaded and add it to random list
 	if ((specModelValid == 0 || allowSpecSpooling == 0 || residentCarModels[SPECIAL_CAR_SLOT] == 12) && residentCarModels[SPECIAL_CAR_SLOT] != 13)
 	{
-#if MAX_CAR_RESIDENT_MODELS == 6
+#if MAX_CAR_RESIDENT_MODELS >= 6
 		modelRandomList[15] = 4;
 #else
 		modelRandomList[15] = 0;
@@ -2178,7 +2178,7 @@ int PingInCivCar(int minPingInDist)
 	{
 		modelRandomList[15] = 4;
 
-#if MAX_CAR_RESIDENT_MODELS == 6
+#if MAX_CAR_RESIDENT_MODELS >= 6
 		modelRandomList[14] = 4;
 #else
 		modelRandomList[14] = 1;
@@ -2220,7 +2220,7 @@ int PingInCivCar(int minPingInDist)
 	if (minPingInDist == 666)
 		model = SPECIAL_CAR_SLOT;
 
-#if MAX_CAR_RESIDENT_MODELS == 6
+#if MAX_CAR_RESIDENT_MODELS >= 6
 	// [A] fix crashes on missing models
 	if(!gCarCleanModelPtr[model])
 	{
@@ -2505,6 +2505,7 @@ int CivAccelTrafficRules(CAR_DATA * cp, int* distToNode)
 			{
 				int properVel;
 				int brakeDist;
+				int distToEnd;
 
 				if (!IS_NODE_VALID(cp, cp->ai.c.ctrlNode))
 				{
@@ -2512,27 +2513,33 @@ int CivAccelTrafficRules(CAR_DATA * cp, int* distToNode)
 					return 0;
 				}
 
+				// same stop-point convention as CIV_AI_THRUST_STOP_AT_NODE:
+				// parked cars stop AT the node, everyone else lbody*3 before it
+				if (cp->ai.c.ctrlState == CIV_AI_CTRL_PARKED || cp->ai.c.ctrlState == CIV_AI_CTRL_STOP_AT_NODE)
+					distToEnd = 100;
+				else
+					distToEnd = lbody * 3;
+
 				properVel = cp->hd.wheel_speed;
 				brakeDist = (properVel * FIXEDH(properVel)) / (newAccel * 2);
 
-				if (ABS(brakeDist) > *distToNode)
+				// start braking when the stopping distance reaches the distance
+				// to the STOP POINT (distToEnd before the node), not to the node
+				// itself — otherwise the state flips too late, the AI arrives at
+				// the stop line at full speed and overshoots into the junction.
+				// (distToNode < 0 means a pathType-127 placeholder ctrlNode:
+				// keep driving, CreateNewNode resolves the route.)
+				if (ABS(brakeDist) > *distToNode - distToEnd && *distToNode > 0)
 				{
-					properVel -= 120000;
-					brakeDist = *distToNode - lbody * 3;
+					// proper speed-per-distance ramp (mirrors the EVENT_CAR_SPEED
+					// case below) so STOP_AT_NODE decelerates linearly to ~0 at
+					// the stop point instead of keeping the car flat-out until it
+					// is past the node and then reversing back to it
+					if (*distToNode - distToEnd > 100)
+						cp->ai.c.velRatio = (int)((long long)properVel / (*distToNode - distToEnd));
+					else
+						cp->ai.c.velRatio = 0;
 
-					if (brakeDist < 0)
-					{
-						if (lbody * 3 - *distToNode > 2)
-						{
-							properVel /= *distToNode - lbody * 3;
-						}
-					}
-					else if (brakeDist > 2)
-					{
-						properVel /= *distToNode - lbody * 3;
-					}
-
-					cp->ai.c.velRatio = properVel;
 					cp->ai.c.thrustState = CIV_AI_THRUST_STOP_AT_NODE;
 				}
 			}
@@ -2595,6 +2602,12 @@ int CivAccelTrafficRules(CAR_DATA * cp, int* distToNode)
 						properVel = 0;
 					}
 
+					// [A] never reverse to reach the node: a negative ramp target
+					// would slam full reverse thrust (newAccel * -2) at the stop
+					// line — the backwards crawl the sandbox AI showed
+					if (properVel < 0)
+						properVel = 0;
+
 					accelRatio = ((properVel - cp->hd.wheel_speed) * newAccel) / 15;
 				}
 
@@ -2630,7 +2643,9 @@ int CivAccelTrafficRules(CAR_DATA * cp, int* distToNode)
 			cp->ai.c.brakeLight = 1;
 
 			if (cp->ai.c.ctrlState == CIV_AI_CTRL_YIELD_TURN)
-				checkObstDist = 2048;
+				checkObstDist = 1024;	// [A] was 2048 (~14m): braking for cross
+							// traffic a third of a block early read as
+							// 'brakes prematurely' at every turn
 			else
 				checkObstDist = 512;
 
@@ -2973,43 +2988,76 @@ int CivAccel(CAR_DATA * cp)
 
 		lbody = cp->ap.carCos->colBox.vz;
 
-		// brake in front of obstacles
+		// brake in front of obstacles (nearest car in the same lane)
 		if (collDat != 0)
 		{
-			int sf, c1, c2;
-			sf = lbody / 2;
+			// [A] smoothed follow-distance braking. The old code slammed the
+			// full brake (newAccel * -2 = -4000) the instant anything entered
+			// the two-length zone and released it the moment it left, so
+			// following traffic — especially at the sandbox's boosted pace —
+			// became a hard-brake / full-accel stop-go oscillation.
+			// Now the throttle eases off linearly from four car-lengths, a
+			// light speed-proportional brake blends in as the gap closes, and
+			// the full brake engages smoothly, scaled by the deficit against
+			// the current stopping distance — so the AI settles at a
+			// comfortable following distance without oscillating, yet still
+			// brakes in time from any speed.
+			int gap = collDat - lbody;
+			int stopDist;
 
-			if (collDat < lbody * 2)
+			// stopping distance at the current speed (same formula as the
+			// junction brake): raw world units
+			stopDist = (cp->hd.wheel_speed * FIXEDH(cp->hd.wheel_speed)) / (newAccel * 2);
+
+			if (gap < lbody * 4)
 			{
-				if (/*lbody * 2 < collDat &&*/ sf <= collDat)	// [A] ancient bug fix
+				int throttlePct;
+				int deficit;
+
+				// throttle fraction: full at 4 lengths, zero at the bumper
+				throttlePct = (gap * 100) / (lbody * 4);
+
+				if (throttlePct < 0)
+					throttlePct = 0;
+				else if (throttlePct > 100)
+					throttlePct = 100;
+
+				tmpret = (newAccel * throttlePct) / 100;
+
+				// how far past the point of no return we are: >0 means the car
+				// can no longer stop before the obstacle
+				deficit = stopDist - gap;
+
+				// light speed-proportional brake blending in as the throttle
+				// eases off (fixed-point, same 1/4096 scale as newAccel)
+				brakeDist = ((-cp->hd.wheel_speed) / 8) * (100 - throttlePct) / 100;
+
+				if (brakeDist < -newAccel)
+					brakeDist = -newAccel;
+
+				tmpret += brakeDist;
+
+				if (gap < lbody / 2)
 				{
-					sf = sf - lbody * 2;
-					tmpret = ((collDat + lbody * -2) * -100) / sf + 100;
+					// anything parked in the lane: hold at half a car-length
+					tmpret = -newAccel * 2;
 				}
-				else if (sf < collDat && (lbody / 4) <= collDat)
+				else if (deficit > 0)
 				{
-					c2 = (lbody / 4) - sf;
-					tmpret = ((collDat - sf) * -300) / c2 + 400;
-				}
-				else
-				{
-					tmpret = 100;
+					// full brake ramps with the deficit (4x ramp: ~half brake
+					// at gap = stopDist/2, full as the gap closes) while the
+					// throttle (+ light blend) fades so it can't cancel the
+					// braking at zone entry; continuous at deficit=0
+					tmpret = (tmpret * (stopDist - deficit)) / (stopDist + 1);
+					tmpret -= (newAccel * 4 * deficit) / (stopDist + 1);
+
+					if (tmpret < -newAccel * 2)
+						tmpret = -newAccel * 2;
 				}
 			}
 			else
 			{
-				tmpret = 0;
-			}
-
-			tmpret = (newAccel * tmpret) / 100;
-			brakeDist = (-cp->hd.wheel_speed) / 4;
-
-			if (tmpret >= brakeDist)
-			{
-				if (brakeDist < tmpret * -2)
-					tmpret *= -2;
-				else
-					tmpret = brakeDist;
+				tmpret = newAccel;	// no limit: keep normal pace beyond 4 lengths
 			}
 
 			if (ret > tmpret)
@@ -3594,10 +3642,21 @@ int CivControl(CAR_DATA* cp)
 			steer = CivSteerAngle(cp);
 
 		thrust = CivAccel(cp);
-		if (thrust != 0) // [A] reduce acceleration when steering is applied
-			thrust = CivAccel(cp) - MAX(ABS(steer), 4) * 3;
+		// [A] reduce acceleration when steering is applied, but never let the
+		// steering penalty push thrust into reverse gear: at the speed cap
+		// CivAccel returns only newAccel>>2 (500), so subtracting the old
+		// MAX(ABS(steer),4)*3 (up to 1536) turned hard corners into reverse
+		// thrust while the car was still rolling forward — mid-corner braking
+		// and the backwards crawl. Braking (negative) thrust is left alone.
+		if (thrust > 0)
+		{
+			thrust -= MAX(ABS(steer), 4) * 3;
+
+			if (thrust < 0)
+				thrust = 0;
+		}
 		
-		// [A] fix backwards crawl
+		// [A] fix backwards crawl (safety net: no reverse push at standstill)
 		if (thrust < 0 && cp->hd.wheel_speed < 100)
 			thrust = 0;
 

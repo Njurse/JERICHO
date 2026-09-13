@@ -20,7 +20,13 @@
 #define MAX_CARS				20
 
 #ifndef PSX
-#define MAX_CAR_RESIDENT_MODELS	6			// use all permanently loaded car models available
+/* 8 (was 6): the extra slots beyond the mission header's five exist so a module
+ * can keep MANY more distinct vehicles resident at once (cross-city car data,
+ * extra models). They are filled with -1 = "no model" in SetupResidentModels, so
+ * stock levels are unchanged - the capacity is only used when a module claims a
+ * slot. SPECIAL_CAR_SLOT follows this value. Slots 0..4 keep their normal
+ * meaning; slot 4 is the engine's own filler. */
+#define MAX_CAR_RESIDENT_MODELS	8			// use all permanently loaded car models available
 #else
 #define MAX_CAR_RESIDENT_MODELS	5
 #endif

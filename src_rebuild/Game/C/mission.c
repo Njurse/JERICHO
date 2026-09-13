@@ -334,6 +334,13 @@ void SetupResidentModels()
 		residentCarModels[i] = MissionHeader->residentModels[i];
 		takenSlots |= 1 << MissionHeader->residentModels[i];
 	}
+
+	// Slots past the mission header's five exist only for modules to add extra
+	// resident models. Default them to -1 ("no model"), which ProcessCarModelLump
+	// skips, so a stock level is unchanged and the capacity is opt-in.
+	for (i = 5; i < SPECIAL_CAR_SLOT; ++i)
+		residentCarModels[i] = -1;
+
 #if MAX_CAR_RESIDENT_MODELS > 5
 	for (i = 1; i < 5; ++i)
 	{
