@@ -45,7 +45,14 @@ See [Contributing to project](https://github.com/OpenDriver2/REDRIVER2/wiki/Cont
 - **Gh0stBlade** - HLE Emulator code used as a base for Psy-Cross [(link)](https://github.com/TOMB5/TOMB5/tree/master/EMULATOR)
 - **Ben Lincoln** - [This Dust Remembers What It Once Was](https://www.beneaththewaves.net/Software/This_Dust_Remembers_What_It_Once_Was.html) (*TDR*)
 - **Stohrendorf** - [Symdump](https://github.com/stohrendorf/symdump) utility
-=======
-# REDRIVER2
-Fork of REDRIVER2 for personal testing
->>>>>>> origin/main
+
+---
+
+### This fork
+
+Fork of REDRIVER2 for personal testing. Engine work and mods live under
+`JERICHO/` — see `JERICHO/MODS/` for the mods, and
+`src_rebuild/Game/C/JERICHO/docs/` for the module (JERICHO) and event
+documentation. Mod-specific notes live next to each mod, e.g.
+`JERICHO/MODS/combatd2/README.md` and its `carhacks/FORMATS.md` file-format
+reference.
