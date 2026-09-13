@@ -57,6 +57,14 @@ void cd2FxRegister(JERICHO_CONTEXT* ctx);
 CD2_CONFIG gCd2Cfg;
 static CD2_CAR gCd2Car[MAX_CARS];
 static int gCd2SceneryHits[MAX_CARS];	// scenery impacts per car this level
+static int gCd2TrafficLastHit[MAX_CARS];	// last scenery-hit count seen, per car
+
+// Traffic (civ) cars are cannon fodder. They get no handling override and
+// are deliberately EXEMPT from the roll-over limiter, so a weapon hit or a
+// wall scrape can throw them properly instead of being clamped back down.
+#define CD2_TRAFFIC_TUMBLE_MIN_SPEED	60		// units/frame below which a scrape is ignored
+#define CD2_TRAFFIC_TUMBLE_RATE		26000	// angular impulse per unit/frame of speed
+#define CD2_TRAFFIC_TUMBLE_MAX		0x500000	// ceiling on that impulse
 static unsigned int gDbgFrame; // telemetry frame counter
 static char gPendingTotalCar;   // set by the pause-menu "Total Car", applied next physics frame
 
@@ -552,6 +560,52 @@ static int cd2OwnsCar(CAR_DATA* cp)
 	return (cp->controlType == CONTROL_TYPE_PLAYER) || cd2AiIsOpponent(cp);
 }
 
+// 1 for stock civ traffic: a car the module does NOT drive. Opponents are
+// spawned as CUTSCENE, so CIV_AI is the stock-traffic case.
+static int cd2IsTraffic(CAR_DATA* cp)
+{
+	return (cp->controlType == CONTROL_TYPE_CIV_AI) && !cd2AiIsOpponent(cp);
+}
+
+// Traffic that scrapes the world gets hurled. gCd2SceneryHits already ticks
+// on every wall/building impact (see cd2OnDamageScale), so a CHANGE in it IS
+// the contact - this needs no extra engine hook.
+static void cd2TrafficTumble(CAR_DATA* cp)
+{
+	int hits = gCd2SceneryHits[cp->id];
+	int* av = cp->st.n.angularVelocity;
+	int vx, vz, spd, rate, sign;
+
+	if (hits == gCd2TrafficLastHit[cp->id])
+		return;		// no fresh contact
+
+	gCd2TrafficLastHit[cp->id] = hits;
+
+	// raw 16.16 velocity -> an approximate units/frame
+	vx = ABS(cp->st.n.linearVelocity[0]) >> 12;
+	vz = ABS(cp->st.n.linearVelocity[2]) >> 12;
+	spd = (vx > vz) ? (vx + vz / 2) : (vz + vx / 2);
+
+	if (spd < CD2_TRAFFIC_TUMBLE_MIN_SPEED)
+		return;		// a nudge at walking pace is not worth a barrel roll
+
+	rate = spd * CD2_TRAFFIC_TUMBLE_RATE;
+
+	if (rate > CD2_TRAFFIC_TUMBLE_MAX)
+		rate = CD2_TRAFFIC_TUMBLE_MAX;
+
+	// Alternate the throw per contact so a car scraping down a long wall
+	// does not settle into one steady spin.
+	sign = (hits & 1) ? 1 : -1;
+
+	av[0] += sign * rate;		// pitch
+	av[2] += (sign * rate) / 2;	// roll
+
+	if (gCd2Cfg.debugLog)
+		printInfo("[combatd2] traffic tumble: car=%d spd=%d rate=%d sign=%d hits=%d\n",
+			cp->id, spd, rate, sign, hits);
+}
+
 // Drop this car's model mass to a quarter until it respawns.
 static void cd2MassQuarter(CAR_DATA* cp)
 {
@@ -747,6 +801,7 @@ static int cd2OnGameStart(void* ud, void* args)
 
 	memset(gCd2Respawn, 0, sizeof(gCd2Respawn));
 	memset(gCd2SceneryHits, 0, sizeof(gCd2SceneryHits));
+	memset(gCd2TrafficLastHit, 0, sizeof(gCd2TrafficLastHit));
 	memset(gCd2MassMod, 0, sizeof(gCd2MassMod));	// masses are level data, re-read on load
 
 	return JER_RESULT_CONTINUE;
@@ -767,6 +822,11 @@ static int cd2OnDebugTick(void* ud, void* args)
 		CAR_DATA* cp = &car_data[i];
 
 		if (cp->controlType == CONTROL_TYPE_NONE)
+			continue;
+
+		// Traffic is SUPPOSED to be tumbling. Standing it back up would undo
+		// the whole point, and it fights the weapon knockback besides.
+		if (cd2IsTraffic(cp))
 			continue;
 
 		cd2RecoverRoll(cp);
@@ -807,17 +867,18 @@ static int cd2OnDamageScale(void* ud, void* args)
 
 	a->result = cd2ScaleDamage(4096, gCd2Cfg.sceneryDamage);
 
+	// Count real scenery impacts for EVERY car, not just opponents. The AI
+	// readout uses it to measure "keeps smashing into walls", and the
+	// traffic tumble detects a world contact from a CHANGE in it - so with
+	// the increment buried in the opponent branch below, traffic could
+	// never register a hit and never tumbled at all.
+	if (((CAR_DATA*)a->car)->id >= 0 && ((CAR_DATA*)a->car)->id < MAX_CARS)
+		gCd2SceneryHits[((CAR_DATA*)a->car)->id]++;
+
 	// an opponent that keeps clipping walls needs the extra cushion, or a
 	// single corner ends its run
 	if (cd2AiIsOpponent(a->car))
-	{
 		a->result = cd2ScaleDamage(a->result, gCd2Cfg.aiDamageTaken);
-
-		// count real scenery impacts per car, so "they keep smashing into
-		// walls" can be measured rather than guessed at
-		if (((CAR_DATA*)a->car)->id >= 0 && ((CAR_DATA*)a->car)->id < MAX_CARS)
-			gCd2SceneryHits[((CAR_DATA*)a->car)->id]++;
-	}
 
 	if (gCd2Cfg.debugLog)
 	{
@@ -917,7 +978,12 @@ static int cd2OnCarStep(void* ud, void* args)
 
 	gCd2Car[cp->id].throttle = (cp->thrust > 0) ? 1 : (cp->thrust < 0) ? -1 : 0;
 
-	cd2LimitRoll(cp);
+	// Traffic is exempt from the roll-over limiter: it is meant to be thrown
+	// around, and clamping its pitch/roll is exactly what stopped that.
+	if (cd2IsTraffic(cp))
+		cd2TrafficTumble(cp);
+	else
+		cd2LimitRoll(cp);
 
 	// wrecked cars return to their start after a delay
 	cd2RespawnTick(cp);
@@ -949,6 +1015,12 @@ static int cd2OnCarTorque(void* ud, void* args)
 		default:
 			return JER_RESULT_CONTINUE; // NONE / camera & tanner colliders
 	}
+
+	// Traffic keeps STOCK handling. The TMB handling / top-speed override is
+	// for the player and the opponents; civilian traffic should stay slow and
+	// unwieldy so it reads as scenery that can be knocked about.
+	if (cd2IsTraffic(cp))
+		return JER_RESULT_CONTINUE;
 
 	CD2_CAR* c = &gCd2Car[cp->id];
 	CD2_STATS s = cd2GetStats(cp);
