@@ -40,6 +40,11 @@ extern void LoadImportedTPages(void);
 // a car's polys are converted into engine form, in cars.c's plotNewCarModel.
 extern int CarSetRemap(int set);
 
+// JERICHO: arm/disarm the remap for the car being converted. Must be on only for an
+// imported car - a host car whose set number collides with a remapped one needs its
+// own page, not the imported city's.
+extern void CarSetRemapEnable(int on);
+
 // JERICHO-HOOK: merge a cross-city import's car palettes (civ_clut) so its
 // vehicles read their own colours. No-op unless a module asked for an import.
 extern void ProcessImportedPalette(void);

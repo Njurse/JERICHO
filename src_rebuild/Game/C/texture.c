@@ -754,12 +754,28 @@ static int sRemapFrom[CAR_REMAP_MAX];
 static int sRemapTo[CAR_REMAP_MAX];
 static int sRemapCount;
 
+// Set while an imported vehicle's polys are being converted, so CarSetRemap only
+// applies to THAT car. It has to be per-car: the remap maps e.g. 54 -> 110 because
+// the imported car's 54 means the source city's page, but a HOST car whose set 54
+// means the host's own page must still read 54. Chicago's own car set list contains
+// 54, so a global remap would have retextured host cars with the imported city's
+// pages - the same class of bug as the civ_clut clobber.
+static int sCarSetRemapActive;
+
+void CarSetRemapEnable(int on)
+{
+	sCarSetRemapActive = on;
+}
+
 // Translate a source-city set number to the index its page was loaded at. Identity
-// for anything not re-indexed, so a level with no import - and every host car - is
+// unless we are converting an imported car, so host cars and import-free levels are
 // unaffected.
 int CarSetRemap(int set)
 {
 	int i;
+
+	if (!sCarSetRemapActive)
+		return set;
 
 	for (i = 0; i < sRemapCount; i++)
 	{

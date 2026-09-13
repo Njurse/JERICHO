@@ -1144,6 +1144,11 @@ MODEL* GetCarModel(char* src, char** dest, int KeepNormals)
 // [D] [T] [A]
 void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 {
+	// JERICHO: only an imported car's polys get the set remap. index is the resident
+	// slot, so this is where import-ness is known. Set for every build, so the value
+	// can never leak from one car to the next.
+	CarSetRemapEnable(index >= 0 && GetCarModelSourceCity(index) >= 0);
+
 	int newNumPolys;
 	int i, pass;
 	ushort clut;
