@@ -76,6 +76,13 @@ typedef struct CD2_WEAPON_DEF
 					// to the AI: one that homes can be launched way off-axis, one
 					// that only flies where it is pointed cannot.
 
+	int leanOut;		// mounted-crew pose while this weapon is selected:
+					// 0 = nobody leans out, 1 = the driver's window,
+					// 2 = the passenger's window, 3 = both. When set, the
+					// crew module hangs that car's ped out of the matching
+					// window (frozen get-out pose) and the weapon fires from
+					// there instead of the car's centre.
+
 	int damage;		// direct-hit damage (ApplyDamage units)
 	int speed;		// world units / frame
 	int range;		// max travel before the shot fizzles (world units)

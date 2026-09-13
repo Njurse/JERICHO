@@ -94,6 +94,8 @@ static CD2_WEAPON_DEF cd2MakeClusterDef(void)
 	d.homing = 0;
 	d.collideScenery = 1;
 
+	d.leanOut = 2;		// the passenger leans out to launch the cluster
+
 	// fires straight-ish; the AI will still launch it through a small error
 	d.fireCone = 600;
 

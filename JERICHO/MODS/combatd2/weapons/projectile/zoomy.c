@@ -91,6 +91,8 @@ static CD2_WEAPON_DEF cd2MakeZoomyDef(void)
 	d.fireCone = 350;	// it barely homes, so the AI must aim it (the plain
 				// missile uses the default cone)
 
+	d.leanOut = 2;		// the passenger hangs out of the window and sprays
+
 	d.colR = 140; d.colG = 230; d.colB = 255;	// pale cyan streaks
 
 	// -------------------------------------------------------------------

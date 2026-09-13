@@ -91,6 +91,8 @@ static CD2_WEAPON_DEF cd2MakeShotgunDef(void)
 
 	d.fireCone = 500;
 
+	d.leanOut = 1;		// the driver leans out of their window to fire
+
 	d.colR = 255; d.colG = 200; d.colB = 90;	// hot buckshot orange
 
 	// -------------------------------------------------------------------
