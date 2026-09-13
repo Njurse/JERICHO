@@ -594,6 +594,9 @@ static void cd2TrafficTumble(CAR_DATA* cp)
 	if (rate > CD2_TRAFFIC_TUMBLE_MAX)
 		rate = CD2_TRAFFIC_TUMBLE_MAX;
 
+	if (rate > CD2_TRAFFIC_SCRAPE_ROLL)
+		rate = CD2_TRAFFIC_SCRAPE_ROLL;
+
 	// Alternate the throw per contact so a car scraping down a long wall
 	// does not settle into one steady spin.
 	sign = (hits & 1) ? 1 : -1;
@@ -880,6 +883,10 @@ static int cd2OnDamageScale(void* ud, void* args)
 	if (cd2AiIsOpponent(a->car))
 		a->result = cd2ScaleDamage(a->result, gCd2Cfg.aiDamageTaken);
 
+	// Traffic takes a further half off scenery impacts.
+	if (cd2IsTraffic((CAR_DATA*)a->car))
+		a->result = cd2ScaleDamage(a->result, CD2_TRAFFIC_SCENERY_EXTRA);
+
 	if (gCd2Cfg.debugLog)
 	{
 		static unsigned int t = 0;
@@ -923,6 +930,60 @@ static int cd2OnCarVsCar(void* ud, void* args)
 				((CAR_DATA*)a->car)->id, ((CAR_DATA*)a->car)->controlType,
 				cd2AiIsOpponent(a->car), a->value, v, gCd2Cfg.carCarDamage,
 				((CAR_DATA*)a->car)->totalDamage);
+	}
+
+	// Exactly one of the pair being ours means this is a combatd2 car
+	// trading paint with civilian traffic. Take 80% off.
+	if (a->car != NULL && a->other != NULL &&
+		    (cd2OwnsCar((CAR_DATA*)a->car) != cd2OwnsCar((CAR_DATA*)a->other)))
+		v = cd2ScaleDamage(v, CD2_CAR_TRAFFIC_DAMAGE);
+
+	// Being shunted. A combatd2 car punting a civ car rolls it over: the
+	// roll axis is horizontal and perpendicular to the shove, so it tumbles
+	// end over end along the ground instead of spinning on the spot.
+	{
+		CAR_DATA* ca = (CAR_DATA*)a->car;
+		CAR_DATA* ot = (CAR_DATA*)a->other;
+		CAR_DATA* tc = NULL;
+		CAR_DATA* sc = NULL;
+
+		if (ca != NULL && ot != NULL)
+		{
+			if (cd2IsTraffic(ca) && cd2OwnsCar(ot))
+			{
+				tc = ca;
+				sc = ot;
+			}
+			else if (cd2IsTraffic(ot) && cd2OwnsCar(ca))
+			{
+				tc = ot;
+				sc = ca;
+			}
+
+			if (tc != NULL)
+			{
+				int dx = tc->hd.where.t[0] - sc->hd.where.t[0];
+				int dz = tc->hd.where.t[2] - sc->hd.where.t[2];
+				int adx = ABS(dx), adz = ABS(dz);
+				int al = (adx > adz) ? (adx + adz / 2) : (adz + adx / 2);
+				int rate = ABS(a->strikeVel) * CD2_TRAFFIC_ROLL_RATE;
+				int* av = tc->st.n.angularVelocity;
+
+				if (rate > CD2_TRAFFIC_ROLL_MAX)
+					rate = CD2_TRAFFIC_ROLL_MAX;
+
+				if (al < 1)
+					al = 1;
+
+				// roll about the horizontal axis perpendicular to the shove
+				av[0] += (int)(((long long)(-dz) * rate) / al);
+				av[2] += (int)(((long long)(-dx) * rate) / al);
+
+				if (gCd2Cfg.debugLog)
+					printInfo("[combatd2] traffic shove: car=%d by=%d strike=%d rate=%d\n",
+						tc->id, sc->id, a->strikeVel, rate);
+			}
+		}
 	}
 
 	a->value = v;

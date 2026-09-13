@@ -344,6 +344,29 @@ typedef struct CD2_STATS
 //   car-vs-solid: CD2_SCENERY_DAMAGE_DEFAULT  (buildings/walls/objects)
 // Runtime-tunable via the pause menu / [combatd2] car_car_damage, scenery_damage.
 #define CD2_CAR_CAR_DAMAGE_DEFAULT 67    // % of stock car-vs-car damage (10..100)
+// Collision damage between a combatd2 car (player/opponent) and civilian
+// traffic, as a percentage of what the pair would otherwise exchange.
+// 20 = 80% off: traffic is there to be shoved and tumbled, not wrecked on
+// contact.
+#define CD2_CAR_TRAFFIC_DAMAGE		20
+
+// Additional scenery-damage cut for traffic specifically, on top of
+// scenery_damage. 50 = halved again. Traffic spends its life scraping
+// walls, and the tumble is the point rather than the damage.
+#define CD2_TRAFFIC_SCENERY_EXTRA	50
+
+// Shoving traffic. A combatd2 car punting a civ car rolls it over, so the
+// twist response to a collision is deliberately high - but capped, because
+// past a point it stops reading as being barged aside and starts looking
+// like a physics glitch.
+#define CD2_TRAFFIC_ROLL_RATE	4			// roll impulse per unit of impact speed.
+				// 300 saturated the cap on every
+				// single shove (a normal impact term
+				// is ~300000), so the roll never
+				// varied with how hard it was hit.
+#define CD2_TRAFFIC_ROLL_MAX	0x180000	// ceiling: brisk tumble, not a blur
+#define CD2_TRAFFIC_SCRAPE_ROLL	0x300000	// ceiling for a ground scrape instead
+
 #define CD2_SCENERY_DAMAGE_DEFAULT 65    // % of stock car-vs-solid damage (0..100)
 #define CD2_AI_DAMAGE_TAKEN_DEFAULT 50   // % damage an opponent takes (10..400)
 
