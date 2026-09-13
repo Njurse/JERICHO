@@ -330,6 +330,18 @@ print(total, sets)
 - A `texture_set` means a different page in every city; unknown sets resolve to
   the dummy tpage `(960,0)` / CLUT `(960,16)`, which renders as nothing.
 - Models 5/6/7 are absent in **every** city; Chicago's 11 is absent too.
+- Car model polygons are **compressed**, not a sequence of `PolySizes`-sized PSX
+  primitives. Walking them with `PolySizes[*p & 0x1f]` *stalls* from polygon 5 — that
+  type's entry is `0`, so the walk re-reads the same bytes forever and reports
+  nonsense sets. `Find_TexID` in `texture.c` is marked UNUSED, probably for this
+  reason. Never trust a poly walk here without checking it against a local model
+  whose car renders textured.
+- City car sets live in the low numbers (**10..68** across all four cities), so set
+  indices **110+ are free** and safe to re-index an imported page onto.
+- An imported page must be **pinned**. It sits at `tpagepos[slot]` — the same VRAM
+  rectangle the engine streams region pages into — and a later load pass memsets
+  `tpageloaded`/`tpageslots`. Without re-claiming, a streamed page overwrites its
+  pixels while the car keeps sampling its coordinates, which reads as wrong UVs.
 - `REDRIVER2.log` is **truncated at session start and flushed at close** — a
   `taskkill` throws the whole session away, and a stale line-count boundary reads
   nothing. Wait for `---- LOG CLOSED ----` before believing a log.

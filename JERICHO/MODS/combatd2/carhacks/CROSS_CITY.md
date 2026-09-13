@@ -187,13 +187,37 @@ the module did not import from, so a stock level takes exactly its old path.
 ## Status: geometry and palettes, not yet correct pixels
 
 The import brings a foreign vehicle's **geometry** and its **car
-colours/palettes**, but a foreign vehicle is **not yet visually correct**. Its
-polygons carry `texture_set` numbers that name *its own* city's texture pages, and
-those pages are not in this level's `texture_pages` / `texture_cluts` tables
-(`FORMATS.md` §2 and §6) — so its polys reference a page the host level never
-loaded and it draws wrong (or not at all). Importing the foreign `TPAGE` region
-(and its spool page list) so the host level's tables carry the pages the geometry
-points at is **planned, not done**.
+colours/palettes**, and foreign vehicles are now **textured too**. The route, in
+order — each step of it earned by a measurement rather than a guess:
+
+1. **Which sets to load** come from the engine's own tables, never from inspecting
+   polygons: `carTpages[srcCity][0..5]` for a civilian body, `specTpages[srcCity]`
+   for a special one — exactly what `LoadPermanentTPages` does for the host's own
+   cars. (A polygon walk was tried first and abandoned: car model polys are a
+   *compressed* format, and the walk stalled on a `PolySizes` entry of 0 from
+   polygon 5 onward. `Find_TexID` being marked UNUSED in `texture.c` looks like the
+   fossil of someone reaching the same conclusion.)
+2. **Where the pages go**: the level's free slot indices, positioned by
+   `tpagepos[slot]` — the slot-indexed mapping the spool itself uses
+   (`spool.c:1722`). *Not* by the tail loop's `tpage` walk, which starts after the
+   perm **and** special pages and is therefore usually already past the 19-entry
+   list; every spare slot then shares one position and the last page wins.
+3. **Host-owned numbers are re-indexed.** A `texture_set` can only mean one thing at
+   a time, and the host city already owns some numbers the source city uses — VEGAS
+   uses 54 and 62, which Chicago owns. Those pages load at a free index (110+) and
+   the imported car's polys are translated onto it (`CarSetRemap`), armed **per car**
+   in `buildNewCarFromModel` so host cars are never affected. Chicago's own set list
+   contains 54, so a global remap would have retextured host cars.
+4. **The pages are pinned.** They occupy the same VRAM rectangles the engine streams
+   region pages into, and a later load pass memsets the slot table — so
+   `CarImportPin`, called each frame, re-claims and re-uploads any page that was
+   taken. Without it the car samples whatever streamed in over its page, which reads
+   as wrong UVs or wrong colours.
+
+Still open: `civ_clut[carid][texture_id][0]` in the same conversion still reads the
+page via the **original** set number, so that one cache entry can hold the host's
+CLUT for a re-indexed set. And visual confirmation stays the user's: the logs prove
+pages are placed, claimed and kept — not that a car looks right.
 
 ## Related
 
