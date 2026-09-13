@@ -144,7 +144,12 @@ city has no such variant". The engine indexes the table as
 `models_offset + offset` where `models_offset = lump_ptr + 4 + 160`
 (`models.c:ProcessCarModelLump`), then hands it to `GetCarModel` +
 `buildNewCarFromModel`, which **copy into the level heap** (`mallocptr`) — which
-is why an import only needs the source bytes transiently.
+is why only the source bytes are needed *during the build*. (The implementation is
+more conservative than that: `InitCarImport` keeps the whole foreign DATA1 region
+allocated for the level and frees it at the next level's `InitCarImport`
+(`models.c:424`), because `gCarImport.carModels` and `gCarImport.pallet` are
+pointers into it. Dropping it once the models are built would be a valid
+optimisation.)
 
 Measured: block size CHICAGO 123324 / HAVANA 131412 / RIO 135688 / VEGAS 132252
 bytes. Which models exist:

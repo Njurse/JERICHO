@@ -1,14 +1,34 @@
-# Cross-city vehicle imports — how the level file works
+# Cross-city vehicle imports
 
 > **Format reference:** `FORMATS.md` in this folder documents the file layouts
 > themselves — the `.LEV` container and its citylumps table, the 4-byte aligned
 > segment walk, `LUMP_CAR_MODELS`, `LUMP_PALLET`, the `.LCF`, texture sets vs
 > `texture_pages`/`texture_cluts`, the car draw path, and Python recipes to
-> re-measure any of it. Read that first if the names below are unfamiliar.
+> re-measure any of it. Read that first for how the bytes are laid out; this file
+> is only about the import feature built on top of them.
 
-Design notes for importing another city's vehicles into a level. Written from
-measurements of the data in `DRIVER2/LEVELS/*.LEV` and `MLEVELS/*.LEV`, before
-any code changes.
+Design notes for importing another city's vehicles into a level: what the feature
+does, how it is wired, what it costs, and where it is honest about its limits.
+Line references are into `src_rebuild/Game/`.
+
+## What it does
+
+A resident car slot can take its **geometry** and its **car colours** from a
+*different* city's level file instead of the level's own — e.g. Chicago's school
+bus driving in a Havana level. No external tool or data export is involved: the
+other city's data is already in its `.LEV`.
+
+It is **per slot**: the module names, for each resident slot, the city that slot's
+model should come from, so one slot can be foreign while the rest of the level is
+untouched. The per-slot city lives in `JER_ARGS_CAR_DATA_SOURCE.modelSource[]`
+(`jer_events.h:521`), read back through `GetCarModelSourceCity(slot)`
+(`mission.c:334`). `-1` means "the level's own city".
+
+There is a second, level-wide lever: `sourceLevel` (`jer_events.h:518`) names one
+city whose `LEVELS\<city>` folder the **loose-file** loaders (`.MDL`/`.COS`/`.DEN`)
+read — that is the separate hand-made-car path, kept for a whole-city override
+(`GetCarDataFolder`, `cars.c:1066`). It is not what puts a foreign vehicle in the
+level; `modelSource[]` is.
 
 ## Where a level's car models actually live
 
@@ -18,146 +38,166 @@ loose `LEVELS\<city>\CARMODEL_*` files: those are only an override the engine
 consults when present (`gContentOverride`), and nothing in the tree currently
 ships in the name the engine asks for.
 
-So "a car from another city" means reading that city's level file. No external
-tool or data export is needed.
+So "a car from another city" means reading that city's level file.
 
 ## Reading a foreign level file
 
-Plain stdio — no CD layer is involved on PC (`system.c`, and `loadsectorsPC`):
+`InitCarImport` (`models.c:419`) calls `LoadCarImport` (`models.c:336`), which
+uses plain stdio — no CD layer is involved on PC. The sequence:
 
-1. `fopen(gDataFolder + LevelFiles[city], "rb")`.
-2. `fseek(f, 8, SEEK_CUR)` — skip the outer LUMP type+size header.
-3. `fread` the 4 `XYPAIR` `citylumps[city]` entries (`citylumps[8][4]`,
-   `system.h`): **DATA1 = index 0, TPAGE = 1, DATA2 = 2, SPOOL = 3**, each an
-   (x = byte offset, y = byte size) pair into the file.
-4. Read the **DATA1** region (`(x, y)`) into a buffer with a plain
-   `fseek(x) + fread(y)`.
-5. DATA1's body is itself a container lump (`LUMP_LEVELDESC = 35`), so skip 8
-   more bytes and walk what follows. DATA2's body is `LUMP_LEVELDATA = 36`
-   (`LUMP_MODELS = 1` and the general level data live there).
+1. `fopen(gDataFolder + LevelFiles[city], "rb")`; if that fails, retry with an
+   `M` prefix (`gDataFolder + "M" + LevelFiles[city]`) for the multiplayer arena
+   file (`models.c:349-356`). City order is CHICAGO, HAVANA, VEGAS, RIO
+   (`system.c:130`, `:137`).
+2. `fseek(fp, 8, SEEK_SET)`, then read the 8-int (`4 × XYPAIR`) citylumps table
+   (`models.c:362`). See `FORMATS.md` §1 for the table layout and the container
+   fact that follows.
+3. Take DATA1 from the table (`table[0]` = byte offset, `table[1]` = byte size);
+   reject it if the offset is ≤ 0 or the size is ≤ 8 / > 4 MB (`models.c:368-371`).
+4. `malloc` the DATA1 size and read it whole with one `fseek`+`fread`
+   (`models.c:377-390`).
+5. DATA1's body is itself a container, so its segment list starts 8 bytes in
+   (`models.c:395`); `FindLumpSegment` (`models.c:253`) walks it using the
+   4-byte-alignment rule of `FORMATS.md` §1 ("Walking segments") to find type 28
+   (`LUMP_CAR_MODELS`) and type 25 (`LUMP_PALLET`).
+6. The car colours come from a **separate** file, `gDataFolder +
+   CosmeticFiles[city]` (`models.c:409`), read whole.
 
-## Walking the segments (the detail that matters)
+The file handle is closed before the walk; only the mallocs survive.
 
-`ProcessLumps` (`Game/C/main.c:190`) walks a flat segment list: `type = *(int*)ptr`,
-`size = *(int*)(ptr + 4)`, body at `ptr + 8`. Its advance is:
+## What the import carries
 
-```c
-lump_ptr = (char*)ptr + ((seg_size + 3) & ~0x3);   // main.c:378
-```
+Three pieces come from the foreign city, each behind a `GetCarImport*` getter:
 
-**Segments are 4-byte aligned.** Walking with a raw `size + 8` drifts as soon as
-a segment has a size that is not a multiple of 4 (a type-12 segment of 2163
-bytes knocked a naive walk into garbage on its fourth step). Any code reading a
-foreign `.LEV` must align the same way.
+| Piece | Where | Getter | Consumer |
+|---|---|---|---|
+| Car geometry (`LUMP_CAR_MODELS`, id 28) | foreign `.LEV` DATA1 | `GetCarImportModels(slot)` (`models.c:475`) | `ProcessCarModelLump` (`models.c:633`) |
+| Car colours (`CAR_COSMETICS`) | foreign `<CITY>.LCF` | `GetCarImportCosmetics(slot)` (`models.c:529`) | `ProcessCosmeticsLump` (`cosmetic.c:71`) |
+| Car palettes (`LUMP_PALLET`, id 25) | foreign `.LEV` DATA1 | `GetCarImportPallet(&size)` (`models.c:462`) | `ProcessImportedPalette` (`cars.c:1496`) |
 
-## What to lift out
+For geometry, `ProcessCarModelLump` swaps only its **base pointer** (`models.c:642-651`)
+— the foreign block has the same layout as the level's own, so the offset-table
+walk is unchanged. The foreign bytes are only read during the build:
+`GetCarModel`/`buildNewCarFromModel` **copy into the level heap** (`mallocptr`).
+The source buffer itself is not freed after the build — see "Cost and lifetime".
 
-| Lump | Id | What it is |
-|---|---|---|
-| `LUMP_CAR_MODELS` | 28 | Per-model offset table (3 ints per model: clean/damaged/low) then the geometry. This is the block `ProcessCarModelLump` consumes. Lives in **DATA1**. |
+## Palette mapping
 
-The car colours come in **two** pieces, and an import needs both:
+The imported city's `LUMP_PALLET` is merged with **that city's** texture-set
+mapping (`ProcessPalletLumpForCity(lump, size, city)`, `cars.c:1431`), and
+`GetCarPalIndex` (`cars.c:1933`) falls back to the imported city's table for a
+page the host level does not know — otherwise a foreign vehicle's pages would all
+collapse to slot 0 and it would be painted with the **host's** palette.
+`ProcessImportedPalette` (`cars.c:1496`) does this right after the level's own
+`ProcessPalletLump` (`texture.c:517-518`). The mechanism (`carTpages`, `civ_clut`,
+the per-city set numbers) is `FORMATS.md` §2 and §4.
 
-| Piece | Where | What |
-|---|---|---|
-| `CAR_COSMETICS` | `LEVELS\<CITY>.LCF` (3120 bytes, via `CosmeticFiles[]`) | per-model colour metadata, read by `LoadCosmetics` (`cosmetic.c:93`) |
-| `LUMP_PALLET` | id 25, in the level file's **DATA1** | the actual car palettes, merged into `civ_clut` by `ProcessPalletLump` (`cars.c:1427`) |
+## Cost and lifetime
 
-`LUMP_PALLET` is *not* texture palettes — despite the generic name it is processed
-by `cars.c`, not `texture.c`, and `civ_clut[8][32][6]` is what car polygons read
-their colours from (`cars.c` draw path: `pciv_clut[(clut_uv0 >> 0x10) + palette]`).
+The import mallocs and holds the **whole foreign DATA1 region**
+(`imp->region`, `models.c:377`) — not just the car-models block it points into
+(the block is a sub-range; `FORMATS.md` §1 sizes DATA1, §3 sizes the block) —
+plus the foreign `.LCF` (4096 bytes on disk). All of it is held for the **whole
+level**: it is freed only when the next level initialises the import again
+(`FreeCarImport` at `models.c:424`), or on a failed load. So one foreign city's
+data is resident at a time.
 
-### Why a foreign palette needs mapping, not just merging
+A stock level pays nothing: `gCarImportCity` stays `-1` and every `GetCarImport*`
+getter answers NULL (`models.c:455-537`).
 
-`GetCarPalIndex(tpage)` (`cars.c:1876`) resolves a texture page to one of eight
-car-palette slots **through the current level's table**, `carTpages[GameLevel][8]`
-— every city maps its *own* page numbers onto the same eight slots. So a page
-belonging to another city is unknown to the host level and falls back to slot 0,
-and the imported vehicle gets painted with the host's palette.
+## Failure behaviour
 
-The fix has two halves, both keyed on the imported city:
+Everything fails soft. If the file, the DATA1 region or the `LUMP_CAR_MODELS`
+segment is missing, `LoadCarImport` returns 0 and the level keeps its own
+vehicles (`models.c:441-445`, logged as `cross-city: no usable car data in …`).
 
-1. its `LUMP_PALLET` is merged with **that city's** mapping
-   (`ProcessPalletLumpForCity(..., city)`), so entries land where its own
-   vehicles will look for them;
-2. `GetCarPalIndex` falls back to the imported city's table for a page the host
-   level does not know.
+A slot that asks for a **model the foreign city lacks** keeps the level's own car
+too: `GetCarImportModels` returns NULL when the foreign offset table says `-1`
+(no such model) or when the damaged/low variants are missing
+(`models.c:508-522`), and `ProcessCarModelLump` falls back to its own `lump_ptr`.
+It logs why (`models.c:638-640`), because otherwise it just looks like "the model
+did not load".
 
-Measured car-palette pages per city: CHICAGO {1,50,62,63,65}, HAVANA
-{10,20,35,37,51}, RIO {55,57,58,60,68}, VEGAS {17,32,41,54,62} — effectively
-disjoint (only page 62 is shared, and the host's own lookup is tried first).
+## Traps
 
-`ProcessCarModelLump` (`models.c:220`) indexes the car-models block as
-`lump_ptr + 4 + model_number * 3 * sizeof(int)`, calls `GetCarModel(mem,
-&mallocptr, 1)` and `buildNewCarFromModel(slot, ...)`, which **copy into the
-level heap** (`mallocptr`). The foreign buffer is therefore only needed during
-the build and can be freed straight after.
-
-## Costs
-
-Measured `LUMP_CAR_MODELS` sizes (bytes):
-
-| City | LEVELS (SP) | MLEVELS (MP arena) |
-|---|---|---|
-| CHICAGO | 123324 | 109852 |
-| HAVANA | 131412 | 119012 |
-| RIO | 135688 | 135108 |
-| VEGAS | 132252 | 132684 |
-
-The MP figures are exactly the four values the engine logs at runtime
-(`LUMP_CAR_MODELS: size: …`), which is what validates this walk. So: **~123-136 KB
-per city, transient** — one foreign city at a time, freed once the models are
-built.
-
-## Two traps
-
+- **`-car slot9` = model 11 on a Chicago level crashes during load.** Chicago has
+  no model 11 (the model-completeness table is `FORMATS.md` §3). A slot forced to
+  a model the city lacks, with no fallback, is left with NULL model pointers —
+  the state `CreateDentableCar`'s guard flags (`denting.c:224`, `:237`). The
+  carhacks module lists this explicitly (`carhacks.c:27-28`).
 - **The special slot ignores the per-city colours.** `car_cosmetics[SPECIAL_CAR_SLOT]`
-is not taken per model — the cache `levelSpecCosmetics[model - 8]` is filled once
-for models 8..12 (`cosmetic.c:140-160`). A foreign model placed in the special
-slot would silently wear the **host** city's colours. `GetCarImportCosmetics()`
-is therefore consulted *before* either path, so an imported slot takes its own
-city's `CAR_COSMETICS` whichever slot it lands in.
-- **Denting has no lump.** There is no denting entry anywhere in the lump enum
-  (`main.c:80-130`); `LoadCustomCarDentingFromFile` reads loose `.DEN` files
-  (`denting.c:454, 487`). Denting therefore stays local — an imported model
-  dents as its host slot would.
+  is not taken per model — it uses the cache `levelSpecCosmetics[model - 8]`,
+  filled once for models 8..12 (`SetupSpecCosmetics`, `cosmetic.c:150-168`).
+  `GetCarImportCosmetics()` is therefore consulted *before* either path, so an
+  imported slot wears its own city's colours whichever slot it lands in
+  (`cosmetic.c:71-78`).
+- **Denting stays local.** There is no denting entry anywhere in the lump enum
+  (`main.c:82-120`); `LoadCustomCarDentingFromFile` reads loose `.DEN` files
+  (`denting.c:25-30`, called at `:454`, `:487`). An imported model dents as its
+  host slot would.
 
 ## Turning it on
 
-In `JERICHO/CONFIG/carhacks.ini` (off by default):
+In `JERICHO/CONFIG/carhacks.ini` (off by default — `carhacks.c:47`):
 
 ```
 cross_city_vehicles = 1
 import = 2:0:10
 ```
 
-`import` takes comma-separated `slot:city:model` entries — here, Chicago's school
-bus (model 10) into resident slot 2. City numbers are `0` CHICAGO, `1` HAVANA,
-`2` VEGAS, `3` RIO. Slots 0..4 feed ambient traffic, 5..6 are spare capacity and
-7 is the special slot; several entries may name different cities.
+`cross_city_vehicles` gates the whole hack. `import` takes comma-separated
+`slot:city:model` entries (`carhacks.c:143-206`) — here, Chicago's school bus
+(model 10) into resident slot 2. City numbers are `0` CHICAGO, `1` HAVANA,
+`2` VEGAS, `3` RIO (`system.c:130`). Slots 0..4 feed ambient traffic (the model
+list is `modelRandomList`, `civ_ai.c:47`), 5.. up to count-2 are spare capacity
+that stock levels leave empty, and the last slot (`SPECIAL_CAR_SLOT =
+MAX_CAR_RESIDENT_MODELS - 1` = 7, `dr2limits.h:29`, `:34`) is the special slot
+(`jer_events.h:512`); several entries may name different cities.
 
 Verified in the log by the size of the block that was actually read — with
-`import = 2:0:10` on a **Havana** level the engine reports
+`import = 2:0:10` on a **Havana** level:
 
 ```
 [carhacks] import: slot 2 <- model 10 from CHICAGO
-cross-city: car data from CHICAGO (123324 bytes of models, 4096 of cosmetics)
+cross-city: car data from CHICAGO (123324 bytes of models, 15576 of car palettes, 4096 of cosmetics)
 ```
 
-and 123324 is Chicago's car-models block in the table above (Havana's own is
-131412), so the foreign file really is what got loaded.
+The 123324 is Chicago's car-models block, not Havana's own (which is larger), so
+the foreign file really is what got loaded — `FORMATS.md` §3 owns those figures.
 
-## Where this is implemented`models.c` owns it: `InitCarImport()` (called from `SetupResidentModels` right
-after the query) reads the foreign level file and the foreign `.LCF` and holds
-them for the level; `GetCarImportModels(slot)` / `GetCarImportCosmetics(slot)`
-answer NULL for every slot the module did not import from, so a stock level takes
-exactly its old path. Both consumers (`ProcessCarModelLump`, `ProcessCosmeticsLump`)
-swap only their base pointer, because the foreign block has the same layout as
-the level's own.
+## Where this is implemented
+
+- **`models.c`** owns the import: `InitCarImport()` (`:419`), the reader
+  `LoadCarImport()` (`:336`), the aligned segment walker `FindLumpSegment()`
+  (`:253`), and the getters `GetCarImportCity` / `GetCarImportPallet` /
+  `GetCarImportModels` / `GetCarImportCosmetics` (`:455` / `:462` / `:475` / `:529`).
+- **`mission.c`** fires `JER_EVENT_CAR_DATA_SOURCE` and calls `InitCarImport` right
+  after (`:433-451`), and holds the per-slot city (`GetCarModelSourceCity`, `:334`).
+- **`carhacks.c`** is the module: `ChkOnCarDataSource` (`:213`) reads
+  `source_city` / `player_model` / `traffic_model` / `traffic_slot` and calls
+  `ChkApplyImports` (`:143`) for the `import` list. It does not compute anything —
+  it just writes model numbers and source cities and lets the engine read them.
+- **Consumers:** `ProcessCarModelLump` (`models.c:633`), `ProcessCosmeticsLump`
+  (`cosmetic.c:71`), `ProcessImportedPalette` (`cars.c:1496`) + `GetCarPalIndex`
+  (`cars.c:1933`).
+
+Both `GetCarImportModels` and `GetCarImportCosmetics` answer NULL for every slot
+the module did not import from, so a stock level takes exactly its old path.
+
+## Status: geometry and palettes, not yet correct pixels
+
+The import brings a foreign vehicle's **geometry** and its **car
+colours/palettes**, but a foreign vehicle is **not yet visually correct**. Its
+polygons carry `texture_set` numbers that name *its own* city's texture pages, and
+those pages are not in this level's `texture_pages` / `texture_cluts` tables
+(`FORMATS.md` §2 and §6) — so its polys reference a page the host level never
+loaded and it draws wrong (or not at all). Importing the foreign `TPAGE` region
+(and its spool page list) so the host level's tables carry the pages the geometry
+points at is **planned, not done**.
 
 ## Related
 
-The existing folder override (`GetCarDataFolder()`, `JER_EVENT_CAR_DATA_SOURCE`)
-redirects the **loose-file** loaders only (`.MDL` / `.COS` / `.DEN`). On its own
-it cannot produce foreign vehicles, because there is no loose vehicle data to
-find. It stays as the hand-made-car path.
+The folder override (`GetCarDataFolder()`, driven by
+`JER_EVENT_CAR_DATA_SOURCE.sourceLevel`) redirects the **loose-file** loaders only
+(`.MDL` / `.COS` / `.DEN`). On its own it cannot produce foreign vehicles, because
+there is no loose vehicle data to find. It stays as the hand-made-car path.
