@@ -24,9 +24,14 @@ inert no-ops when no module handles them.
 | `JER_EVENT_GET_IMPACT_INFO` | `JER_ARGS_IMPACT_INFO` | debug overlay | query: newest impact |
 | `JER_EVENT_DRAW_WHEEL` | `JER_ARGS_DRAW_WHEEL` | `DrawCarWheels` | distort a wheel's vertex copy, or `hide=1` to skip it |
 | `JER_EVENT_CAMERA` | `JER_ARGS_CAMERA` | `InitCamera` (chase cam) | adjust/override the camera transform |
+| `JER_EVENT_GAME_START` | — | `State_GameInit` (`main.c:803`) | a level is starting (fresh / restart / next) — modules reset transient state; notification (fired with no args), no handler = nothing |
 | `JER_EVENT_CAMERA_LOOK` | `JER_ARGS_CAMERA_LOOK` | `TurnHead` | right-stick look input, before the stock look handling |
 | `JER_EVENT_PED_INPUT` | `JER_ARGS_PED_INPUT` | ped control loop | rewrite the on-foot pad before it drives Tanner |
+| `JER_EVENT_PED_MOVE` | `JER_ARGS_PED_MOVE` | `AnimatePed` (`pedest.c:638`) | player ped is about to move — the one point where a `pPed->speed` write survives the runner's per-frame re-arm; only a `TANNER_MODEL` ped with `padId >= 0`; no handler = stock speed |
+| `JER_EVENT_PED_POSE` | `JER_ARGS_PED_POSE` | `DrawTanner` (`motion_c.c:1696`) | per-bone ROTATION window between `SetupTannerSkeleton` and `newRotateBones` (player ped only); module mutates `*Skel[i].pvRotation`; no handler = stock motion pose |
+| `JER_EVENT_FRONTEND` | `JER_ARGS_FRONTEND` | `CutSceneCitySelectScreen` (`FEmain.c:3089`) | take-a-ride city confirm — module may rewrite `gameLevel`/`gameType`/`numPlayers`, or set `defer = 1` to run its own start over the frozen frontend; no handler = stock flow |
 | `JER_EVENT_PED_SKELETON` | `JER_ARGS_PED_SKELETON` | `newShowTanner` | pose Tanner's skeleton (phase 0) + draw extras (phase 1) |
+| `JER_EVENT_MAP` | `JER_ARGS_MAP` | INPUT: `ControlMenu` (`pause.c:1505`) + `DrawFullscreenMap` (`overmap.c:1579`); DRAWN: `DrawFullscreenMap` (`overmap.c:1868`) | in-game map (`gShowMap`): a module returns `JER_RESULT_STOP` on INPUT to claim the pad (stock scroll/toggle skipped) and draws its own cursor on DRAWN; no handler = stock map |
 | `JER_EVENT_DRAW_OVERLAY` | — | `DrawDebugOverlays` / HUD path | 2D overlay / HUD drawing |
 | `JER_EVENT_PAUSE_MENU` | `JER_ARGS_PAUSE_MENU` | pause menu shell | module-owned menu state (labels + actions) |
 | `JER_EVENT_SHUTDOWN` | — | `redriver2_main`, after the state loop | the game is exiting — release resources (sockets, files) |
@@ -40,7 +45,12 @@ inert no-ops when no module handles them.
 | `JER_EVENT_CAR_TORQUE` | `JER_ARGS_CAR_TORQUE` | after `ConvertTorqueToAngularAcceleration` (`wheelforces.c`) | inject yaw torque (`aacc[1]`) |
 | `JER_EVENT_CAR_DRAW` | `JER_ARGS_CAR_DRAW` | `DrawCar` (`cars.c`) | rotate the render-only body matrix (visual pitch/roll/yaw) |
 | `JER_EVENT_CAR_DRAW_COLOR` | `JER_ARGS_CAR_DRAW_COLOR` | `DrawCarObject` (`cars.c`) | force a flat black body (totaled wreck) |
+| `JER_EVENT_GET_WALL_RESTITUTION` | `JER_ARGS_WALL_RESTITUTION` | `CarBuildingCollision` (`bcollide.c:1057`) | query: restitution scale 0..4096 (4096 = stock bounce) for a car hitting building/scenery; a low value cancels only the velocity into the wall (TMB-style absorb); no handler = stock (4096) |
+| `JER_EVENT_LEVEL_LAUNCH` | `JER_ARGS_LEVEL_LAUNCH` | `State_GameStart` (`glaunch.c:309`) | pending level/gametype/player count/mission number are finalised but the level has not loaded — module rewrites them in place; no handler = the values the engine wrote are kept |
 | `JER_EVENT_DRAW_WORLD` | — | `RenderGame2` (`main.c`), after `DrawAllTheCars` | draw world-space extras (projectiles, pickups) into the real OT — camera matrices are live; no handler = no-op |
+| `JER_EVENT_GET_DAMAGE_SCALE` | `JER_ARGS_DAMAGE_SCALE` | `DamageCar` (`bcollide.c:604`) | query: scale 0..4096 (4096 = stock) on the damage a car takes from solid scenery; only used when a handler returns below 4096; no handler = stock (4096) |
+| `JER_EVENT_CAR_VS_CAR` | `JER_ARGS_CAR_VS_CAR` | `DamageCar3D` (`bcollide.c:507`) | car-vs-car damage before `ApplyDamage` — `value` (the term actually applied) is in/out, `playerValue` is what a player car would have taken; no handler = stock `value` (clamped at 0) |
+| `JER_EVENT_DRAW_MAP` | `JER_ARGS_DRAW_MAP` | `DrawMultiplayerMap` (`overmap.c:1043`), `DrawOverheadMap` (`overmap.c:1218`), `DrawFullscreenMap` (`overmap.c:1823`) | map draw, after the player blip — module plots extra markers with `DrawTargetBlip` using the same `flags`; `fullscreen` distinguishes the map; no handler = stock blips only |
 | `JER_EVENT_EXPLOSION_SPAWN` | `JER_ARGS_EXPLOSION_SPAWN` | `AddExplosion` (`job_fx.c`) | attach a parametric FX profile to a new explosion: size (`speed`/`hscale`/`rscale`), `tint*`, `yawRate`, `collide`, `colScale`, and rewrite `type` |
 | `JER_EVENT_EXPLOSION_DRAW` | `JER_ARGS_EXPLOSION_DRAW` | `DrawExplosion` (`job_fx.c`) | tint/spin the stock bang, or set `override` to draw your own effect |
 | `JER_EVENT_EXPLOSION_COLLIDE` | `JER_ARGS_EXPLOSION_COLLIDE` | `ExplosionCollisionCheck` (`bomberman.c`) | query: may this explosion push/damage this car, and at what box scale |
@@ -102,6 +112,21 @@ reads the (possibly updated) fields back. No handler = stock behavior.
   `Skel[i].vCurrPos` to pose the arm), phase 1 after (read `vJPos` for
   world-space joint positions and draw extra meshes). `shadow` is set when
   the pass is for the shadow, so modules can skip there.
+- **`JER_EVENT_PED_MOVE`** fires inside `AnimatePed` right before the
+  player ped's position is advanced (`pedest.c:638`), for a `TANNER_MODEL`
+  ped with `padId >= 0`. `ProcessTannerPad` and the runner re-arm `speed =
+  MAXRUNSPEED` every frame, so this is the one point where a `pPed->speed`
+  write survives the advance — a module scales the run speed here (e.g. from
+  the analog deflection magnitude, lerped for stand-start momentum). No
+  handler = stock speed.
+- **`JER_EVENT_PED_POSE`** fires in `DrawTanner` between
+  `SetupTannerSkeleton` and `newRotateBones` (`motion_c.c:1696`), player ped
+  only. `args->skel` is the engine's `BONE* Skel[]`; each
+  `Skel[i].pvRotation` points into the raw motion-frame bytes that
+  `newRotateBones` reads immediately after the hook, so a rotation write here
+  is that frame's last word on the bone (the `PED_SKELETON` phase-0 hook
+  remains the position channel). Use the `jer_anim.h` helpers to resolve
+  bones.
 
 ## The car handling events (collisiondevil uses these)
 
@@ -151,6 +176,78 @@ no handler.
   `cp->hd.drawCarMat`. A module rotates `args->matrix` (a `MATRIX*`) for
   visual pitch/roll/yaw; the physics matrix (`cp->hd.where`) and collision
   box are never touched.
+
+## The damage events (combatd2 uses these)
+
+Three hooks around the collision damage path, all in `bcollide.c`; each is a
+no-op with no handler.
+
+- **`JER_EVENT_GET_DAMAGE_SCALE`** — query fired in `DamageCar`
+  (`bcollide.c:604`) just before the scenery (building/wall) hit is applied to
+  a car. `result` defaults to 4096 (= stock) and is only used when a handler
+  lowers it (`value = value * result >> 12`), so a module softens scenery
+  damage. No handler = full stock damage.
+- **`JER_EVENT_GET_WALL_RESTITUTION`** — query fired in `CarBuildingCollision`
+  (`bcollide.c:1057`) once a building/scenery hit is detected and the stock
+  reaction impulse computed. `result` defaults to 4096 (= stock bounce); when
+  a module lowers it the engine cancels only the velocity into the wall (the
+  normal component), keeps the tangential component so the car scrapes along,
+  and reflects just `result` of the normal — a hard-stop wall (the TM2/TMB
+  "collision forgiveness"). 0 = pure absorb, 4096 = full bounce. No handler =
+  the stock outward impulse + wall spin.
+- **`JER_EVENT_CAR_VS_CAR`** — fired in `DamageCar3D` (`bcollide.c:507`) when
+  two cars collide, right before `ApplyDamage`. The engine computes `value`
+  (the term actually applied to this car — the non-player branch uses a
+  harsher multiplier than the player one) and `playerValue` (what a
+  player-controlled car would take for the same impact). A module overwrites
+  `value` — e.g. give an owned opponent the player damage model, or scale the
+  exchange — and the engine clamps it at 0. No handler = stock `value`.
+
+## The map events (sandbox / combatd2 use these)
+
+- **`JER_EVENT_MAP`** (`JER_ARGS_MAP`) fires while the in-game map
+  (`gShowMap`) is up, in two actions. `JER_MAP_ACTION_INPUT` fires from the
+  pause shell's `ControlMenu` (`pause.c:1505`) and from `DrawFullscreenMap`
+  (`overmap.c:1579`) with the current pad bits; a module returns
+  `JER_RESULT_STOP` to claim the pad, and the engine then skips its own map
+  scrolling / toggle handling. `JER_MAP_ACTION_DRAWN` fires at the end of
+  `DrawFullscreenMap` (`overmap.c:1868`), after the map tiles, so a module
+  draws its own cursor on top. The `value` in the INPUT action is
+  caller-dependent (`Pads[0].direct` in overmap.c, the pause pad in pause.c),
+  so handlers should read `Pads[0]` directly instead of relying on it. No
+  handler = stock map controls and drawing.
+- **`JER_EVENT_DRAW_MAP`** (`JER_ARGS_DRAW_MAP`) fires right after the
+  player's own blip on each map the engine draws: `DrawMultiplayerMap`
+  (`overmap.c:1043`, `flags = 0x20 | 0x2`), `DrawOverheadMap`
+  (`overmap.c:1218`, `flags = 3`) and `DrawFullscreenMap` (`overmap.c:1823`,
+  `flags = 14`). A module plots extra markers with
+  `DrawTargetBlip(pos, r, g, b, flags)` using the same `flags` value so they
+  land in the right place; `fullscreen` distinguishes the fullscreen map from
+  the overhead one. No handler = only the stock blips are drawn.
+
+## The level-start events (levelhacks / combatd2 / d2pl use these)
+
+Three notification hooks fire around launching a level; each is a no-op with
+no handler.
+
+- **`JER_EVENT_GAME_START`** fires in `State_GameInit` (`main.c:803`) once a
+  level is starting — a fresh launch, a restart, or the next mission — after
+  controllers are re-opened, before the state switches to `STATE_GAMELOOP`. It
+  carries no args (fired with `NULL`); modules use it to reset transient state
+  (e.g. the sandbox closes its menu so it does not reopen unprompted, and
+  combatd2 re-arms its per-level inventory).
+- **`JER_EVENT_LEVEL_LAUNCH`** fires at the end of `State_GameStart`
+  (`glaunch.c:309`), after the pending level / gametype / player count /
+  mission number are finalised but before the level loads. All four fields are
+  in/out and the engine writes them back, so a module may redirect the launch
+  (e.g. bump a take-a-ride mission number into the multiplayer-map range). No
+  handler = stock values.
+- **`JER_EVENT_FRONTEND`** fires in `CutSceneCitySelectScreen`
+  (`FEmain.c:3089`) when the player confirms a take-a-ride city (CROSS),
+  before the frontend leaves. `gameLevel` / `gameType` / `numPlayers` are
+  in/out; setting `defer = 1` makes the module own the start (its own menu
+  runs over the frozen frontend) and the engine returns without scheduling the
+  level. No handler = stock flow.
 
 ## The pause menu bridge
 
