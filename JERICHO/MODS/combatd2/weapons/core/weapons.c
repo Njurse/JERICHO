@@ -137,6 +137,12 @@ const char* cd2WpnName(int weaponId)
 static int gAmmo[CD2_WID_COUNT];	// rounds per weapon (base weapons: unused)
 static int gSelected = CD2_WID_NONE;	// currently armed weapon (never a base weapon)
 
+// Per-car armed weapon: which weapon each car is currently using, or
+// CD2_WID_NONE. Kept for every car so the mounted-crew module can read whose
+// window a ped should lean out of (CD2_WEAPON_DEF.leanOut). The player's entry
+// tracks gSelected; AI cars record what the AI is engaging with.
+static int gCarWeapon[MAX_CARS];
+
 int cd2WpnOwns(int weaponId)
 {
 	const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
@@ -250,6 +256,24 @@ void cd2WpnGrantAllMax(void)
 		gSelected = cd2WpnFirstOwned();
 }
 
+// The weapon a car is currently using (CD2_WID_NONE = unarmed). An accessor
+// pair rather than the array itself so the AI and the crew can share it.
+int cd2WpnCarArmed(const CAR_DATA* cp)
+{
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return CD2_WID_NONE;
+
+	return gCarWeapon[cp->id];
+}
+
+void cd2WpnSetCarArmed(const CAR_DATA* cp, int weaponId)
+{
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return;
+
+	gCarWeapon[cp->id] = weaponId;
+}
+
 void cd2WpnResetAll(void)
 {
 	int i;
@@ -258,6 +282,9 @@ void cd2WpnResetAll(void)
 		gAmmo[i] = 0;
 
 	gSelected = CD2_WID_NONE;
+
+	for (i = 0; i < MAX_CARS; i++)
+		gCarWeapon[i] = CD2_WID_NONE;
 
 	cd2RaycastReset();
 	cd2ProjectileReset();
@@ -600,12 +627,17 @@ static int cd2WpnOnFrame(void* ud, void* args)
 	if (cd2CarTotaled(cp) || cd2FreezeActive(cp->id))
 	{
 		prevRT = prevLB = prevRB = 0;
+		cd2WpnSetCarArmed(cp, CD2_WID_NONE);	// downed driver = not armed
 
 		cd2RaycastStep();
 		cd2ProjectileStep();
 		cd2DropStep();
 		return JER_RESULT_CONTINUE;
 	}
+
+	// This car's armed weapon, for anyone who cares whose window a crew ped
+	// should lean out of (the player's trigger weapon).
+	cd2WpnSetCarArmed(cp, gSelected);
 
 	pad = Pads[(unsigned char)*cp->ai.padid].mapped;
 

@@ -128,6 +128,12 @@ void cd2RaycastScatter(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 // projectile pool when a freeze weapon hits a car.
 void cd2FreezeApply(int carId, int frames);
 
+// Per-car armed weapon (weapons/core/weapons.c): which weapon a car is
+// currently using, or CD2_WID_NONE. Read by anything that needs to know which
+// side a mounted crew should lean out of (CD2_WEAPON_DEF.leanOut).
+int  cd2WpnCarArmed(const CAR_DATA* cp);
+void cd2WpnSetCarArmed(const CAR_DATA* cp, int weaponId);
+
 // Is `carId` currently frozen? (exposed for the AI / HUD)
 int cd2FreezeActive(int carId);
 
