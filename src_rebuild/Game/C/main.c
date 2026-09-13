@@ -454,7 +454,12 @@ void LoadGameLevel(void)
 		LoadPermanentTPagesFromTIM();
 	}
 #endif
-	
+
+	// JERICHO-HOOK: an imported city's car textures go in last, after the .TIM
+	// override pass has rewritten every slot that is not 0xFF - so nothing can
+	// rewrite the slots they claim. No-op without an import.
+	LoadImportedTPages();
+
 	ReportMode(1);
 }
 

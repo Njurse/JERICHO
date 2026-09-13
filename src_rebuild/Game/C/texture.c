@@ -665,6 +665,81 @@ static int LevelTookTPage(int tpage)
 	return 0;
 }
 
+// Whether a set is already in a collected list.
+static int SetInList(int* sets, int n, int set)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+	{
+		if (sets[i] == set)
+			return 1;
+	}
+
+	return 0;
+}
+
+// The distinct texture sets a car model paints with. polyList[1] is the set - the
+// draw path indexes texture_pages[texture_set] with it (cars.c) - and only the
+// textured poly types carry one. PolySizes walks the packed list exactly as the
+// renderer does.
+static int CollectModelSets(MODEL* model, int* sets, int n, int max)
+{
+	char* polylist;
+	int i;
+
+	extern int PolySizes[56];
+
+	if (model == NULL)
+		return n;
+
+	polylist = GET_MODEL_DATA(char, model, poly_block);
+
+	for (i = 0; i < model->num_polys && n < max; i++)
+	{
+		switch (*polylist & 0x1F)
+		{
+			case 4: case 5: case 6: case 7:
+			case 20: case 21: case 22: case 23:
+			{
+				int set = (u_char)polylist[1];
+
+				if (set != 0 && !SetInList(sets, n, set))
+					sets[n++] = set;
+
+				break;
+			}
+		}
+
+		polylist += PolySizes[*polylist & 0x1f];
+	}
+
+	return n;
+}
+
+// Whether a texture set belongs to the level's own city. Its car pages are loaded,
+// or streamed on demand, by the level itself, so an import must never take one.
+// specTpages is checked because carTpages[GameLevel][6..7] are only filled in
+// further down LoadPermanentTPages - specTpages[GameLevel] covers those numbers.
+static int HostOwnsCarTPage(int tpage)
+{
+	int i;
+
+	for (i = 0; i < 8; i++)
+	{
+		if (carTpages[GameLevel][i] == tpage)
+			return 1;
+	}
+
+	for (i = 0; i < 12; i++)
+	{
+		if (specTpages[GameLevel][i] == tpage)
+			return 1;
+	}
+
+	return 0;
+}
+
 // JERICHO-HOOK: upload the imported city's car texture sets so a vehicle built
 // from that city's level file draws with its own textures instead of the host's.
 // Called from LoadPermanentTPages while its tpage/clutpos/slotsused accounting is
@@ -679,24 +754,48 @@ void LoadImportedTPages(void)
 {
 	int city = GetCarImportCity();
 	int base = GetCarImportPageBase();
+	int sets[64];
+	int nsets = 0;
+	int slot;
 	int i, j;
 
 	if (city < 0 || base < 0)
 		return;
 
-	for (i = 0; i < 6; i++)
+	// What the cars we actually imported paint with, rather than assuming every car
+	// set the source city has. The models exist by now - this runs from
+	// LoadGameLevel after ProcessLumps, which is where LUMP_CAR_MODELS is handled.
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS && nsets < 64; i++)
 	{
-		int set = carTpages[city][i];
+		if (GetCarModelSourceCity(i) >= 0)
+			nsets = CollectModelSets(gCarCleanModelPtr[i], sets, nsets, 64);
+	}
+
+	printInfo("cross-city: %s - %d set(s) named by the imported models\n", LevelNames[city], nsets);
+
+	// Each set goes into a slot the level left FREE, at that slot's own already
+	// assigned position. The slot init loop at the end of LoadPermanentTPages gave
+	// every spare slot a position and 8 CLUT rows - enough for the 32 a set can
+	// hold. So nothing of the level's moves: not a page position, not a CLUT row,
+	// not the tpage/clutpos cursors. Walking those cursors is what corrupted walls
+	// and car colours before, and not walking them is what makes that impossible
+	// now.
+	slot = slotsused;
+
+	for (i = 0; i < nsets; i++)
+	{
+		int set = sets[i];
 		int offset = 0;
 		int size = 0;
 		int npalettes;
 		char* buf;
+		RECT16 imptpage, impclut;
 
-		if (set == 0)
+		if (set == 0 || SetInList(sets, i, set))
 			continue;
 
-		// the level's own page for that number wins: its cars need it
-		if (LevelTookTPage(set))
+		// the level's own city keeps its own sets, whichever city we import from
+		if (LevelTookTPage(set) || HostOwnsCarTPage(set))
 		{
 			printInfo("cross-city: set %d is the level's own - left alone\n", set);
 			continue;
@@ -720,11 +819,10 @@ void LoadImportedTPages(void)
 			continue;
 		}
 
-		// out of texture memory: stop, rather than stamp over whatever position we
-		// happen to be sitting on
-		if (NoTextureMemory || slotsused >= 19)
+		// no spare slot: refuse, rather than steal one the level streams into
+		if (slot >= 19 || tpageslots[slot] != 0xFF)
 		{
-			printInfo("cross-city: out of texture memory - %s set %d and any after it not loaded\n", LevelNames[city], set);
+			printInfo("cross-city: no spare texture slot - %s set %d (and any after it) not loaded; those parts keep the host's textures\n", LevelNames[city], set);
 			break;
 		}
 
@@ -752,13 +850,29 @@ void LoadImportedTPages(void)
 			continue;
 		}
 
-		update_slotinfo(set, slotsused, &tpage);
-		LoadTPageAndCluts(&tpage, &clutpos, set, buf);
-		slotsused++;
+		// rect copies: LoadTPageAndCluts walks both of these, and it has to walk
+		// them instead of the level's own cursors
+		imptpage.x = slot_tpagepos[slot].vx;
+		imptpage.y = slot_tpagepos[slot].vy;
+		imptpage.w = 64;
+		imptpage.h = 256;
 
-		printInfo("cross-city: %s set %d loaded (%d bytes at +%d, %d clut rows)\n", LevelNames[city], set, size, offset, npalettes);
+		impclut.x = slot_clutpos[slot].vx;
+		impclut.y = slot_clutpos[slot].vy;
+		impclut.w = 16;
+		impclut.h = 1;
+
+		LoadTPageAndCluts(&imptpage, &impclut, set, buf);
+
+		// claimed: no longer 0xFF, so the streaming slot scan cannot hand it out
+		tpageslots[slot] = (u_char)set;
+		tpageloaded[set] = (u_char)slot;
+
+		printInfo("cross-city: %s set %d -> slot %d at (%d,%d), %d bytes at +%d, %d clut rows\n",
+			LevelNames[city], set, slot, imptpage.x, imptpage.y, size, offset, npalettes);
 
 		free(buf);
+		slot++;
 	}
 }
 
@@ -835,10 +949,11 @@ void LoadPermanentTPages(int *sector)
 		tpagebuffer += (permlist[i].y + 2047) & -CDSECTOR_SIZE;
 	}
 
-	// JERICHO-HOOK: bring the imported city's car texture sets in the same way the
-	// level's own pages were just brought in. No-op without an import.
-	LoadImportedTPages();
-	
+	// JERICHO-HOOK: the imported city's car texture sets are brought in later, by
+	// LoadImportedTPages() from LoadGameLevel. They cannot go here: the models
+	// have to exist before we can ask them which sets they paint with, and the .TIM
+	// override pass after this rewrites every slot that is not 0xFF. Claims belong
+	// after that, not before it.
 	tpagebuffer = (char*)mallocptr;
 
 	slot_clutpos[slotsused].vx = clutpos.x;
@@ -928,6 +1043,12 @@ void LoadPermanentTPages(int *sector)
 		IncrementTPageNum(&tpage);
 		clutpos.y += 8;
 	}
+
+	// JERICHO-HOOK: the level's own page state, for the cross-city invariant. An
+	// import must leave every one of these exactly as it is here - measured with an
+	// import on and off, and compared. This line is what proves it.
+	printInfo("cross-city: level page state - slotsused=%d nperms=%d nspecpages=%d tpage=(%d,%d) clutpos=(%d,%d)\n",
+		slotsused, nperms, nspecpages, tpage.x, tpage.y, clutpos.x, clutpos.y);
 }
 
 // [D] [T]

@@ -1507,9 +1507,36 @@ void ProcessImportedPalette(void)
 	if (lump == NULL || size <= 0)
 		return;
 
-	ProcessPalletLumpForCity(lump, size, city);
+	// The level's own palettes, the special-page padding and all 19 slots' CLUT rows
+	// are laid out from clutpos, so the imported palettes must not be laid out from
+	// it as well - doing exactly that is what moved every one of those rows (57
+	// y-units, 228 rows, for RIO). They are real VRAM rows that the imported car's
+	// clut ids have to point at, so they cannot simply be dropped either: they go to
+	// the top of the CLUT column, walked with a local cursor, and clutpos is left
+	// exactly where it was.
+	{
+		int rows = *(int*)lump;			// one stored CLUT per entry, by the merge's own count
+		int y = 512 - (rows + 3) / 4;		// 4 CLUT rows per y
+		RECT16 saved;
 
-	printInfo("cross-city: applied %s car palettes (%d bytes)\n", LevelNames[city], size);
+		if (rows <= 0 || y < 448)
+		{
+			printInfo("cross-city: %s palettes want %d rows and there is no safe room - skipped\n", LevelNames[city], rows);
+			return;
+		}
+
+		saved = clutpos;
+
+		clutpos.x = 960;
+		clutpos.y = y;
+
+		ProcessPalletLumpForCity(lump, size, city);
+
+		clutpos = saved;
+
+		printInfo("cross-city: applied %s car palettes (%d bytes, %d rows at y=%d, level CLUT cursor untouched)\n",
+			LevelNames[city], size, rows, y);
+	}
 }
 
 // [D] [T]
