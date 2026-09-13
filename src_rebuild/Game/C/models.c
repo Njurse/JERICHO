@@ -427,8 +427,14 @@ void InitCarImport(void)
 		}
 	}
 
-	if (city < 0 || !LoadCarImport(city, &gCarImport))
+	if (city < 0)
 		return;
+
+	if (!LoadCarImport(city, &gCarImport))
+	{
+		printInfo("cross-city: no usable car data in %s - keeping the level's own vehicles\n", LevelFiles[city]);
+		return;
+	}
 
 	gCarImportCity = city;
 
@@ -437,14 +443,53 @@ void InitCarImport(void)
 }
 
 // The foreign car-models block to build `slot` from, or NULL to use the level's
-// own. The block has the same layout as the level's, so only the base pointer
-// differs.
+// own. The block has the same layout as the level's so only the base pointer
+// differs - but it must actually CARRY the model this slot asks for, or the slot
+// would be left with no geometry at all (which is a dereference waiting to
+// happen, see the gCarCleanModelPtr guard in CreateDentableCar).
 char* GetCarImportModels(int slot)
 {
+	int model;
+	int* offsets;
+
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return NULL;
 
-	if (GetCarModelSourceCity(slot) != gCarImportCity)
+	if (GetCarModelSourceCity(slot) != gCarImportCity || gCarImport.carModels == NULL)
+		return NULL;
+
+	model = residentCarModels[slot];
+
+	if (model == 13)
+	{
+		// same derivation the builders use
+		model = 10 - (residentCarModels[0] + residentCarModels[1] + residentCarModels[2]);
+
+		if (model < 1)
+			model = 1;
+		else if (model > 4)
+			model = 4;
+	}
+
+	if (model < 0 || model > 12)
+		return NULL;
+
+	// the offset table must fit inside the block we read
+	if (4 + (model + 1) * 3 * (int)sizeof(int) > gCarImport.carModelsSize)
+		return NULL;
+
+	offsets = (int*)(gCarImport.carModels + 4 + model * sizeof(int) * 3);
+
+	if (offsets[0] < 0)
+		return NULL;	// this city has no such model - keep the level's own
+
+	if (offsets[0] >= gCarImport.carModelsSize)
+		return NULL;
+
+	if (offsets[1] != -1 && (offsets[1] <= offsets[0] || offsets[1] >= gCarImport.carModelsSize))
+		return NULL;
+
+	if (offsets[2] != -1 && (offsets[2] <= offsets[0] || offsets[2] >= gCarImport.carModelsSize))
 		return NULL;
 
 	return gCarImport.carModels;
