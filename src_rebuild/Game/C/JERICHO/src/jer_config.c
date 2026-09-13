@@ -117,6 +117,17 @@ static char* jerTrim(char* s)
 	return s;
 }
 
+/* A value that does not fit is cut, and because the file is rewritten from
+ * this cache the cut version replaces it on disk. Say so instead of losing it
+ * quietly - that silence is what made a long setting look like it had been
+ * parsed as only its first few characters. */
+static void jerConfigWarnIfCut(const char* mod, const char* key, const char* val)
+{
+	if (val != NULL && strlen(val) >= JER_CONFIG_VAL_LEN)
+		jer_log("[config] %s: '%s' is %d chars, the store holds %d - use a file\n",
+			mod, key, (int)strlen(val), JER_CONFIG_VAL_LEN - 1);
+}
+
 /* load <root>/CONFIG/<mod>.ini into the cache (last value wins on dupes) */
 static void jerConfigLoadMod(const char* mod)
 {
@@ -168,6 +179,8 @@ static void jerConfigLoadMod(const char* mod)
 		/* last value wins if the file somehow has duplicate keys */
 		{
 			int i = jerConfigFind(mod, key);
+
+			jerConfigWarnIfCut(mod, key, val);
 
 			if (i >= 0)
 			{
@@ -329,6 +342,10 @@ void jer_config_set_str(const char* mod, const char* key, const char* value)
 
 	if (mod == NULL || mod[0] == 0 || key == NULL || key[0] == 0)
 		return;
+
+	if (value != NULL && strlen(value) >= JER_CONFIG_VAL_LEN)
+		jer_log("[config] %s: '%s' is %d chars, the store holds %d - use a file\n",
+			mod, key, (int)strlen(value), JER_CONFIG_VAL_LEN - 1);
 
 	jerConfigLoadMod(mod);
 	i = jerConfigFind(mod, key);
