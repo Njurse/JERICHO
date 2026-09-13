@@ -1,0 +1,9 @@
+# cd2debug script - frames are counted from GAME_START (30 fps, so 30 = 1s).
+# Remove this file (or empty it) to turn the driver off.
+60:killplayer:enemy     # enemy kills us      -> "You were killed by X"
+150:killplayer:self     # self-inflicted       -> "You died"
+240:killplayer:none     # unattributed         -> "You died"
+330:killnpc:player      # we kill an opponent  -> "You killed X"
+420:killnpc:npc         # opponent kills one   -> "X was killed by Y"
+510:killnpc:none        # unattributed         -> "X died"
+600:grant              # every weapon to max

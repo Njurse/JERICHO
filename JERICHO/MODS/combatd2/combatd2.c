@@ -50,6 +50,7 @@
 void cd2CombatRegister(JERICHO_CONTEXT* ctx);
 void cd2MediaRegister(JERICHO_CONTEXT* ctx);
 void cd2WeaponsRegister(JERICHO_CONTEXT* ctx);
+void cd2DebugRegister(JERICHO_CONTEXT* ctx);	/* TEMPORARY: cd2debug.c */
 void cd2FxRegister(JERICHO_CONTEXT* ctx);
 void cd2FreezeRegister(JERICHO_CONTEXT* ctx);
 
@@ -1936,6 +1937,10 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	/* vehicle-availability hacks - self-contained, hosted here for now and
 	 * intended to move to its own module (see carhacks/carhacks.h) */
 	carhacks_register(ctx);
+
+	/* TEMPORARY: scripted debug driver, active only when debug_script is set
+	 * (delete cd2debug.c and these two lines when done) */
+	cd2DebugRegister(ctx);
 
 	ctx->jer_log(ctx, "[combatd2] registered (SDK v%d)\n", ctx->sdkVersion);
 }
