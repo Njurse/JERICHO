@@ -42,6 +42,10 @@ char* GetCarImportCosmetics(int slot);
 int GetCarImportCity(void);
 char* GetCarImportPallet(int* size);
 
+// The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
+// walks. texture.c parses it (the TP/TEXINF types the layout needs live there).
+char* GetCarImportTextureInfo(int* size);
+
 extern int ProcessCarModelLump(char *lump_ptr, int lump_size); // 0x00064E6C
 
 extern MODEL* FindModelPtrWithName(char *name); // 0x0005D40C

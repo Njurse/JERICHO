@@ -4,6 +4,7 @@
 #include "mission.h"
 #include "draw.h"
 #include "cars.h"
+#include "models.h"	// JERICHO: GetCarImportCity / GetCarImportTextureInfo (cross-city textures)
 #include "objanim.h"
 #include "ASM/compres.h"
 
@@ -471,6 +472,167 @@ void load_civ_palettes(RECT16 *cluts)
 	return;
 }
 
+// ---------------------------------------------------------------------------
+// JERICHO cross-city textures
+//
+// A vehicle imported from another city names ITS city's texture sets in its
+// polygons. This level never loaded those pages, so their texture_pages[] and
+// texture_cluts[] entries are still the dummy (960,0)/(960,16) values
+// LoadPermanentTPages fills in first - which is why a foreign car renders as
+// nothing at all. An imported city's page lists come from its own
+// LUMP_TEXTUREINFO lump, which models.c located while reading that city's level
+// file.
+//
+// This mirrors ProcessTextureInfo's walk but writes into import-side state: the
+// host level's own tables are never taken over.
+#define CAR_IMPORT_MAX_SETS	16
+
+typedef struct
+{
+	int count;			// entries used
+	int set[CAR_IMPORT_MAX_SETS];	// texture-set index (XYPAIR.x)
+	int bytes[CAR_IMPORT_MAX_SETS];	// byte size of that set's data (XYPAIR.y)
+} CAR_IMPORT_SETS;
+
+static CAR_IMPORT_SETS gCarImportPerms;
+static CAR_IMPORT_SETS gCarImportSpecs;
+static int gCarImportTexParsed = 0;
+
+static void CopyImportSetList(const XYPAIR* list, int n, CAR_IMPORT_SETS* out)
+{
+	int i;
+
+	out->count = 0;
+
+	if (list == NULL || n <= 0)
+		return;
+
+	if (n > CAR_IMPORT_MAX_SETS)
+		n = CAR_IMPORT_MAX_SETS;
+
+	for (i = 0; i < n; i++)
+	{
+		out->set[i] = list[i].x;
+		out->bytes[i] = list[i].y;
+	}
+
+	out->count = n;
+}
+
+// Parse the imported city's page lists. Same layout as ProcessTextureInfo:
+// [tpage_amount][texamount][TP array][one length-prefixed TEXINF array per
+// tpage][nperms][permlist][16-entry region][nspecpages][speclist].
+// A no-op when nothing is imported, and it fails safe on anything malformed.
+static void ParseImportedTextureInfo(void)
+{
+	char* lump;
+	char* ptr;
+	char* end;
+	int size = 0;
+	int tpageAmount;
+	int i;
+
+	gCarImportPerms.count = 0;
+	gCarImportSpecs.count = 0;
+	gCarImportTexParsed = 0;
+
+	if (GetCarImportCity() < 0)
+		return;
+
+	lump = GetCarImportTextureInfo(&size);
+
+	if (lump == NULL || size < 16)
+		return;
+
+	end = lump + size;
+	tpageAmount = *(int*)lump;
+
+	ptr = (char*)&((TP*)(lump + 8))[tpageAmount + 1];
+
+	// one length-prefixed TEXINF array per texture page
+	for (i = 0; i < tpageAmount; i++)
+	{
+		int texamount;
+
+		if (ptr + 4 > end)
+			return;
+
+		texamount = *(int*)ptr;
+		ptr += 4;
+
+		if (texamount < 0 || ptr + (size_t)texamount * sizeof(TEXINF) > end)
+			return;
+
+		ptr += texamount * sizeof(TEXINF);
+	}
+
+	if (ptr + 4 > end)
+		return;
+
+	{
+		int nperms = *(int*)ptr;
+
+		ptr += 4;
+
+		if (nperms < 0 || ptr + (size_t)nperms * sizeof(XYPAIR) > end)
+			return;
+
+		CopyImportSetList((XYPAIR*)ptr, nperms, &gCarImportPerms);
+	}
+
+	// the permanent list occupies a fixed 16-entry region
+	ptr = (char*)&((XYPAIR*)ptr)[16];
+
+	if (ptr + 4 > end)
+		return;
+
+	{
+		int nspec = *(int*)ptr;
+
+		ptr += 4;
+
+		if (nspec < 0 || ptr + (size_t)nspec * sizeof(XYPAIR) > end)
+			return;
+
+		CopyImportSetList((XYPAIR*)ptr, nspec, &gCarImportSpecs);
+	}
+
+	gCarImportTexParsed = 1;
+
+	// Say whether this city's CAR sets are among the loaded page lists - those
+	// are the sets an imported vehicle's polygons name. Entries 6..7 of
+	// carTpages are filled in at run time for the CURRENT level, so only the
+	// six static ones can be checked here.
+	{
+		int city = GetCarImportCity();
+		int wanted = 0;
+		int found = 0;
+
+		for (i = 0; i < 6; i++)
+		{
+			int set = carTpages[city][i];
+			int j;
+
+			if (set == 0)
+				continue;
+
+			wanted++;
+
+			for (j = 0; j < gCarImportPerms.count; j++)
+			{
+				if (gCarImportPerms.set[j] == set)
+				{
+					found++;
+					break;
+				}
+			}
+		}
+
+		printInfo("cross-city: %s page lists - %d permanent sets, %d special sets, %d/%d car sets present\n",
+			LevelNames[city], gCarImportPerms.count, gCarImportSpecs.count, found, wanted);
+	}
+}
+
 // [D] [T]
 void LoadPermanentTPages(int *sector)
 {
@@ -482,6 +644,10 @@ void LoadPermanentTPages(int *sector)
 
 	// init tpage and cluts
 	MaxSpecCluts = 0;
+
+	// JERICHO-HOOK: read the imported city's page lists (no-op with no import) so
+	// its car sets can be registered below.
+	ParseImportedTextureInfo();
 
 	for (tloop = 0; tloop < 128; tloop++)
 		texture_pages[tloop] = GetTPage(0, 0, 960, 0);

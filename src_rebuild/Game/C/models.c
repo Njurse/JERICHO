@@ -232,6 +232,7 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 
 #define CAR_IMPORT_LUMP_MODELS	28	// LUMP_CAR_MODELS
 #define CAR_IMPORT_LUMP_PALLET	25	// LUMP_PALLET - the car palettes (civ_clut)
+#define CAR_IMPORT_LUMP_TEXINFO	34	// LUMP_TEXTUREINFO - the page lists
 
 typedef struct
 {
@@ -242,6 +243,8 @@ typedef struct
 	int palletSize;
 	char* cosmetics;	// the city's .LCF (car colours), or NULL
 	int cosmeticsSize;
+	char* texInfo;		// LUMP_TEXTUREINFO body (page lists), or NULL
+	int texInfoSize;
 } CAR_IMPORT;
 
 static CAR_IMPORT gCarImport;
@@ -405,6 +408,11 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 	// host level's palettes are a different set entirely.
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_PALLET, &imp->pallet, &imp->palletSize);
 
+	// And the page LISTS, which say which texture sets that city's level loads
+	// and how big each set's data is. texture.c parses this; the page bytes
+	// themselves sit right after DATA1 in the file, which it reads separately.
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_TEXINFO, &imp->texInfo, &imp->texInfoSize);
+
 	// the car colours live beside it, as LEVELS\<city>.LCF
 	sprintf(filename, "%s%s", gDataFolder, CosmeticFiles[city]);
 	imp->cosmetics = ReadWholeFile(filename, &imp->cosmeticsSize);
@@ -465,6 +473,17 @@ char* GetCarImportPallet(int* size)
 		*size = gCarImport.palletSize;
 
 	return gCarImport.pallet;
+}
+
+// The imported city's LUMP_TEXTUREINFO (its texture-page lists). Only valid for
+// the level's duration, and only when an import is active. texture.c parses it -
+// the TP/TEXINF types the layout needs live there.
+char* GetCarImportTextureInfo(int* size)
+{
+	if (size)
+		*size = gCarImport.texInfoSize;
+
+	return gCarImport.texInfo;
 }
 
 // The foreign car-models block to build `slot` from, or NULL to use the level's
