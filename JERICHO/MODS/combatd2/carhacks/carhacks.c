@@ -16,6 +16,7 @@
  * compiled C++, so a plain extern matches the export). */
 extern int FileExists(char* name);
 extern int CarAvailability[4][10];	/* frontend car list: [level][slot] */
+extern char carNumLookup[4][10];	/* frontend slot -> model number */
 extern int wantedCar[2];		/* the player's chosen car model per player */
 
 #define CHK_LEVEL_CHICAGO	0
@@ -66,6 +67,45 @@ int carhacks_enabled(int index)
 	return jer_config_get_int("carhacks", gChkHacks[index].key, gChkHacks[index].def) != 0;
 }
 
+/* Offer the extended vehicle pool in the frontend's car-select list. The stock
+ * list is ten slots mapped through carNumLookup; `car_list = 8,9,10` replaces
+ * the LAST slots with those model numbers, so the extra vehicles can be picked.
+ * CarAvailability is left to the unlock query (result = 1 makes the slots
+ * selectable); only the model mapping is rewritten here. */
+static void ChkApplyCarList(int level)
+{
+	const char* list = jer_config_get_str("carhacks", "car_list", "");
+	int models[10];
+	int n = 0, slot, i;
+	const char* p;
+
+	if (level < 0 || level > 3 || list == NULL || *list == '\0')
+		return;
+
+	for (p = list; *p != '\0' && n < 10; )
+	{
+		int v = 0;
+
+		while (*p >= '0' && *p <= '9')
+		{
+			v = v * 10 + (*p - '0');
+			p++;
+		}
+
+		models[n++] = v;
+
+		while (*p != '\0' && (*p < '0' || *p > '9'))
+			p++;
+	}
+
+	slot = 10 - n;
+
+	for (i = 0; i < n; i++)
+		carNumLookup[level][slot + i] = (char)models[i];
+
+	printInfo("[carhacks] level %d car list: slots %d..%d -> %s\n", level, slot, slot + n - 1, list);
+}
+
 /* JER_EVENT_CAR_AVAILABILITY: the frontend is building `level`'s car list and
  * asks whether the normally-locked extra vehicles may be offered. */
 static int gChkLoggedLevel = -1;
@@ -86,6 +126,9 @@ static int ChkOnCarAvailability(void* ud, void* args)
 			printInfo("[carhacks] extra vehicles unlocked for level %d\n", a->level);
 		}
 	}
+
+	if (carhacks_enabled(CHK_HACK_CROSS_CITY))
+		ChkApplyCarList(a->level);
 
 	return JER_RESULT_CONTINUE;
 }
