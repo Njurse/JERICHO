@@ -1661,7 +1661,20 @@ void State_GameLoop(void* param)
 	// real stepped gameplay frames rather than iterations of the state machine.
 	if (gExitAfterFrames > 0 && ++gRunFrames >= gExitAfterFrames)
 	{
-		printInfo("JERICHO-RUN: reached %d frames, exiting cleanly\n", gRunFrames);
+		// JERICHO: one machine-readable line so a harness reads named fields instead
+		// of guessing a verdict from log prose. status=ok means the run reached its
+		// frame budget; a run that dies or hangs never prints this at all, which is
+		// how failure is detected.
+		{
+			int car = -1;
+
+			if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+				car = (int)car_data[MainPlayer.playerCarId].ap.model;
+
+			printInfo("JERICHO-RUN: level=%s car=%d frames=%d seed=%d status=ok\n",
+				LevelNames[GameLevel], car, gRunFrames, gDebugSeed);
+		}
+
 		exit(0);
 	}
 
