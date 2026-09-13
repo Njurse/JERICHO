@@ -38,6 +38,17 @@ typedef struct JER_ARGS_CAR_AVAILABILITY
  * models[] is the live residentCarModels array: a model number written into a
  * slot puts that vehicle in the level. Ambient traffic draws from slots 0..4
  * (modelRandomList in civ_ai.c), so a foreign car there appears in traffic. */
+/* JER_EVENT_GAME_START args: a level is starting.
+ *
+ * seed - the run seed from the debug/test -seed flag, or 0 when none was given.
+ *        A module that wants a reproducible run derives its own randomness from
+ *        this instead of the clock or ASLR, so two runs with the same seed can be
+ *        compared field by field. With 0, keep doing whatever you do today. */
+typedef struct JER_ARGS_GAME_START
+{
+	int seed;
+} JER_ARGS_GAME_START;
+
 typedef struct JER_ARGS_CAR_DATA_SOURCE
 {
 	int level;		/* in: GameLevel being set up */

@@ -5,6 +5,19 @@
 #include "jer_hud.h"	// JERICHO-HOOK: on-screen HUD messages
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
+// JERICHO: debug/test run controls, defined here because the command line is
+// parsed above State_GameLoop and State_GameInit:
+//   -frames N  exit after N gameplay frames, cleanly, so a test run terminates
+//              itself with a complete log instead of being killed (a kill
+//              discards the log buffer, and the log is the evidence)
+//   -seed N    pin module randomness, so two runs are directly comparable
+// Both are 0 (off) in a normal launch, so shipping behaviour is untouched.
+// Declarations only - the definitions sit with the other option state, and these
+// are here because the command line is parsed before that point in the file.
+extern int gExitAfterFrames;
+extern int gRunFrames;
+extern int gDebugSeed;
+
 #include "ASM/rndrasm.h"
 #include "ASM/d2mapasm.h"
 
@@ -804,8 +817,14 @@ void State_GameInit(void* param)
 
 	// JERICHO-HOOK: a level is starting (fresh launch, restart, or next
 	// mission) — modules reset their transient state here (e.g. the sandbox
-	// menu must close so it doesn't reopen unprompted)
-	jer_fire(JER_EVENT_GAME_START, NULL);
+	// menu must close so it doesn't reopen unprompted). The debug run seed rides
+	// along, so a module can be reproducible across runs when we ask for it.
+	{
+		JER_ARGS_GAME_START jerStart;
+
+		jerStart.seed = gDebugSeed;
+		jer_fire(JER_EVENT_GAME_START, &jerStart);
+	}
 
 	for (i = 0; i < 5; i++)
 	{
@@ -1618,6 +1637,11 @@ int gMultiStep = 0;
 	int gExitAfterFrames = 0;
 	int gRunFrames = 0;
 
+	// JERICHO: debug/test - the run seed, passed to modules on JER_EVENT_GAME_START
+	// so a module can make itself reproducible (combatd2's opponent AI derives its
+	// roles and roam goals from it). 0 = none given, modules seed themselves.
+	int gDebugSeed = 0;
+
 // [D] [T]
 void State_GameLoop(void* param)
 {
@@ -2165,6 +2189,12 @@ int redriver2_main(int argc, char** argv)
 			// JERICHO: run N gameplay frames, then exit cleanly. See gExitAfterFrames.
 			if (i + 1 < argc)
 				gExitAfterFrames = atoi(argv[++i]);
+		}
+		else if (!strcmp(argv[i], "-seed"))
+		{
+			// JERICHO: pin every module's run randomness, so two runs are diffable.
+			if (i + 1 < argc)
+				gDebugSeed = atoi(argv[++i]);
 		}
 		else if (!strcmp(argv[i], "-startpos"))
 		{
