@@ -55,4 +55,4 @@ Fork of REDRIVER2 for personal testing. Engine work and mods live under
 `src_rebuild/Game/C/JERICHO/docs/` for the module (JERICHO) and event
 documentation. Mod-specific notes live next to each mod, e.g.
 `JERICHO/MODS/combatd2/README.md` and its `carhacks/FORMATS.md` file-format
-reference.
+reference. `docs/README.md` indexes the whole documentation set.

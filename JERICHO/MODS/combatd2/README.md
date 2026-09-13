@@ -2,173 +2,244 @@
 
 Twisted Metal: Black style arcade handling for REDRIVER2, built as a JERICHO
 deep mod. The feel is *engineered, not simulated* — responsive and forgiving
-(TMB's north star) — on top of a point-mass rigid body that replaces the
-stock wheel/suspension sim:
+(TMB's north star) — on top of a point-mass rigid body that replaces the stock
+wheel/suspension sim (the suspension itself is kept, for visual roll/pitch
+only).
 
 - **Direct velocity control** — throttle accelerates to `topSpeed`, brake
-  decelerates (fast & proportional: strong scrub at speed, smooth taper so it
-  never jars to a stop) and reverses up to `reverseSpeed`.
+  decelerates (fast and proportional, then tapers) and reverses up to
+  `reverseSpeed`.
 - **Direct yaw control** — steering sets a target yaw rate; turning works at
   zero speed and steering authority never drops mid-slide.
-- **Tight Turn** — an acute forced pivot on its own yaw authority, *not*
-  steering amplification. It bleeds a little speed so gas + pivot produces a
-  short drift-slide; at low speed it spins nearly in place.
-- **TMB button layout** (optional, default ON) — with PlayStation face
+- **Tight Turn** — an acute forced pivot on its own yaw authority, not
+  steering amplification. It bleeds a little speed so gas + pivot is a short
+  drift-slide; at low speed it spins nearly in place.
+- **Optional TMB face-button layout** (default ON) — with PlayStation face
   buttons as the reference: **Square = Gas, Circle = Brake, X/Cross = Tight
-  Turn**, Triangle left unbound for the car (get in/out stays on L3). The
-  layout only applies while driving a car, never on foot. If your pad labels
-  the *left* face button "X" (Xbox-style), flip **Tight Turn Button** in the
-  menu to put the pivot on that button and Gas on X/Cross.
-- **Brief, forgiving skids** — high base grip that only sags ~30% at full
-  slip, so you never spiral out of control.
-- **Short, punchy gears with a tall top** — the rev/gear model is retuned per
-  player car so low gears are short and shift quickly, while top gear is tall
-  enough that the pitch levels out at the car's top speed instead of revving
-  away (tunable via the `CD2_GEAR_*` / `CD2_REV_CEILING` macros in `combatd2.h`).
-- **Engine-audio tuners** — the rev + idle channels run louder than stock and
-  the pitch slews to redline fast (shifts fall hard). Every knob lives in
-  `combatd2.h` as `CD2_REV_RISE_SCALE` / `CD2_REV_DROP_SCALE` (how FAST the
-  pitch moves; 4096 = stock lag) and `CD2_SND_*` (mixer pitch/volume: SPU
-  pitch 4096 = normal, PSX volume 0 = loudest / −10000 = silent, gain > 4096
-  = louder, positive bias = louder) — with a full explanation of units,
-  directions and typical ranges in the header itself.
-- **Walls absorb momentum** — scenery hits are a hard stop, not a bounce.
-- **Weight & Control spread** — derived from each chassis' power-to-weight and
-  mass: light cars are instant and agile, trucks are slow but heavy and coast
-  longer; collisions stay mass-based so heavies push.
+  Turn**, Triangle left unbound for the car (get in/out stays on L3). It only
+  applies while driving a car, never on foot. If your pad labels the *left*
+  face button "X" (Xbox-style), flip **Tight Turn Button** in the menu. The
+  layout is only a *read* override — the physical button → engine binding stays
+  in the engine's own `config.ini`, so every bind remains rebindable.
+- **Brief, forgiving skids** — high base grip that only sags ~30% at full slip.
+- **Walls absorb momentum** — scenery hits kill only the *into-wall* velocity
+  and let the car scrape along, instead of stopping dead or bouncing.
+- **Weight & control spread** — derived per chassis from power-to-weight and
+  mass: light cars are instant and agile, trucks are heavy but coast longer;
+  collisions stay mass-based so heavies push.
+- **Presentation tuners** — the rev/gearbox model and engine channel are
+  retuned per car; the knobs (`CD2_GEAR_*`, `CD2_REV_*`, `CD2_SND_*`) live in
+  `combatd2.h` / `combatd2media.c`. Time-scale and SPU pitch both use
+  **4096 = stock/normal**; PSX volume **0 = loudest**, **−10000 = silent**.
+  See [`SOUNDS.md`](SOUNDS.md) for the sample/bank API.
+- **Car combat** — the direct-velocity handling plus a data-driven weapon layer
+  (a machine-gun sidearm and finite primaries) and totaled-car wreck effects.
 
-Out of scope for now: turbo meter, energy attacks and ram-damage bonuses.
-Button layout: the optional TMB layout remaps the face buttons while driving
-(see above), replacing the original car binds while it is active; the
-*physical* button → engine-binding stays in the engine's own `config.ini`, so
-every bind remains rebindable there — combatd2 never hard-wires a physical
-key.
+Out of scope for now: a turbo meter, energy attacks and ram-damage bonuses.
 
-## Weapons (prototype)
+## Enabling
 
-The first pass at the car-combat layer, in the module's `weapons.c`:
+Enable the module in `JERICHO/CONFIG/modlist.ini` (the file the **Options →
+JERICHO** frontend also rewrites):
 
-- **Inventory** — two slots. The **machine gun** is the sidearm: every car
-  always has it and it never runs out. The **rocket** is an example primary:
-  finite ammo, and the inventory falls back to the MG the moment it empties.
-- **Controls** (driving, TMB layout only) — hold **Triangle to fire** (MG
-  auto, rocket single-shot), tap **R1 to cycle** MG ↔ armed primary. Binds
-  are read from the engine-mapped pad, so the physical buttons stay
-  configurable in `config.ini`.
-- **Machine gun** — hitscan from the car's nose straight along its heading
-  (TM2-style: you steer to aim, no right-stick reticle yet). Each shot draws
-  a bright tracer and damages the first car it hits via the engine's
-  `ApplyDamage`.
-- **Rocket** — a real moving projectile: per-frame flight, drawn body
-  (streak + flare) through the engine's `JER_EVENT_DRAW_WORLD` hook, and on
-  impact with a car or the ground it explodes (`AddExplosion`) and splashes
-  damage onto nearby cars. Damage that tops a car out runs straight into the
-  totaled-wreck effects (explosion → flat-black body, wheels off).
-- **Getting the rocket** — nothing spawns pickups yet (the `CD2_PICKUP`
-  object type + manager are a no-op skeleton in `weapons.c`, ready for the
-  map spawner). For now: pause → **Modules → Combat D2 → Debug → Primary**
-  toggles the rocket on/off.
+```
+combatd2 = 1
+```
 
-Known prototype limits: rockets do not yet collide with buildings (no cheap
-module-side wall query), bullet hits don't dent bodies yet, and weapons need
-the TMB layout on (Triangle is only free of the car's pedal binds there).
+`JERICHO/MODS/combatd2/mod.toml` ships `default-enabled = true`, so a build
+that does not list the module still runs it; an explicit `combatd2 = 0` turns
+it off. With the module off, the stock physics and collision path run
+unchanged. Live settings persist to `JERICHO/CONFIG/combatd2.ini` (loaded and
+saved by `combatd2.c` `cd2LoadConfig` / `cd2SaveConfig`).
 
-Weapon **impact FX are data-driven per weapon** now (each hit's size, colour,
-spin, collision and any bomblet burst). See [`FX.md`](FX.md) for the custom
-explosion library and the `JER_EVENT_EXPLOSION_*` engine hooks behind it.
+## Documentation
+
+- [`HANDLING.md`](HANDLING.md) — the point-mass handling model: what combatd2
+  owns vs. the engine, the TM2 / TM Black post-mortem mapping, the wall-scrape
+  fix, and where every `CD2_*` handling/physics macro lives.
+- [`FX.md`](FX.md) — the parametric explosion library and the
+  `JER_EVENT_EXPLOSION_*` hooks: per-weapon FX profiles, the barrage sequencer,
+  and the volley / freeze / scatter weapon behaviours.
+- [`SOUNDS.md`](SOUNDS.md) — Driver 2's three audio layers, the sample-play
+  API, the sound banks, and candidate weapon sample indices.
+- [`AI.md`](AI.md) — the prototype opponent AI (`ai/`): states, roles,
+  navigation and the on-screen readout.
+- [`carhacks/CROSS_CITY.md`](carhacks/CROSS_CITY.md) — what a cross-city
+  vehicle import has to pull across, and why colours need more than geometry.
+- [`carhacks/FORMATS.md`](carhacks/FORMATS.md) — the reverse-engineered
+  `.LEV`/`.LCF` layouts (citylumps, the 4-byte aligned segment walk,
+  `LUMP_CAR_MODELS`/`LUMP_PALLET`, the car draw path) plus Python recipes to
+  re-measure them.
 
 ## How it works
 
-All physics runs in one hook, `JER_EVENT_CAR_TORQUE` (the tail of
-`StepOneCar`): the module zeros the stock horizontal force and yaw torque,
-then writes `linearVelocity[0..2]` and `angularVelocity[1]` directly.
-`JER_EVENT_CAR_STEP` snapshots the raw throttle before the stock handbrake
-code zeroes it, `JER_EVENT_CAR_PAD` (new engine hook, fired inside
-`ProcessCarPad`) lets the module take over the car's pedal semantics for the
-TMB layout — the stock face-button assignment is skipped that frame, so the
-original binds never double-fire alongside the new ones; `JER_EVENT_CAR_GEARBOX`
-retunes the gamesnd rev model (short gears, tall top) and
-`JER_EVENT_CAR_ENGINE_SOUND` scales the engine channel pitch/volume — and
-`JER_EVENT_GET_WALL_RESTITUTION` (new engine query) makes
-walls absorb momentum — the stock collision path is unchanged when combatd2
-is off. Vertical motion + roll/pitch stay stock so the car still rides terrain.
+All handling runs in one engine hook, `JER_EVENT_CAR_TORQUE` (the tail of
+`StepOneCar`): the module zeroes the stock horizontal force and yaw torque,
+then writes `linearVelocity[0..2]` and `angularVelocity[1]` directly. It also
+attaches to:
 
-The module is one JERICHO mod built from several source files:
-`combatd2.c` (core handling + pause menu), `combatd2combat.c` (totaled-car
-wreck effects), `combatd2media.c` (gearbox/rev/sound/camera presentation)
-and `weapons.c` (the weapon prototype). The weapons run on a small set of
-extra hooks: `JER_EVENT_FRAME` (input + projectile sim), `JER_EVENT_DRAW_WORLD`
-(projectile/tracer drawing into the real ordering table — an engine hook
-added for this) and `JER_EVENT_DRAW_OVERLAY` (the HUD line).
+- `JER_EVENT_CAR_PAD` — fired inside `ProcessCarPad`; the module takes over the
+  car's pedal semantics for the TMB layout and the stock face-button assignment
+  is skipped that frame, so the original binds never double-fire.
+- `JER_EVENT_CAR_STEP` (snapshots the raw throttle before the stock handbrake
+  code zeroes it; also runs the freeze lock) plus `JER_EVENT_CAR_GEARBOX` /
+  `JER_EVENT_CAR_ENGINE_SOUND` (retune the gamesnd rev model and the engine
+  channel).
+- `JER_EVENT_GET_WALL_RESTITUTION` — makes walls absorb momentum.
+- `JER_EVENT_GET_PHYSICS_PARAMS` — re-tunes gravity, angular damping and the
+  suspension springs per car.
+- The weapon layer's `JER_EVENT_FRAME` (input + projectile sim),
+  `JER_EVENT_DRAW_WORLD` (projectile/tracer drawing into the ordering table)
+  and `JER_EVENT_DRAW_OVERLAY` (the HUD line).
 
-## Tuning
+Vertical motion and roll/pitch stay stock, so the car still rides terrain.
+Remove the `JERICHO/MODS/combatd2` folder and the game is stock again — the
+engine only calls the mod through the JERICHO registry. The full hook-to-field
+mapping is in [`HANDLING.md`](HANDLING.md) and [`FX.md`](FX.md).
 
-All constants live at the top of `combatd2.h` as `CD2_*` macros (speed =
-world-units/frame, yaw = PSX angle units where 4096 = 360°). Live sliders —
-Top Speed, Acceleration, Braking, Handling, Grip, Tight Pivot, TMB Buttons
-(on/off + tight-button position), Telemetry Log, and three presets — are in
-the pause menu under **Modules → Combat D2** (settings persist to
-`JERICHO/CONFIG/combatd2.ini`).
+## Weapons
 
-## Format notes
+Two inventory slots: the **machine gun** is the always-carried sidearm
+(infinite); primaries (**MISSILE, SEEKER, CLUSTER, ZOOMY, FREEZE, SHOTGUN** and
+the hidden MINE) are finite and fall back to the MG the moment they empty.
+Controls, read from the engine-mapped pad (`weapons/core/weapons.c:94-97`):
 
-The Driver 2 data files have no public spec, so what we've reverse-engineered is
-written down as we go:
+- **L2** (left trigger) — hold to fire the machine gun, auto fire.
+- **R2** (right trigger) — fire the selected primary, one shot per press; with
+  no primary armed it falls back to the MG so the trigger is never dead.
+- **R1 / L1** — cycle to the next / previous carried weapon (edge-triggered).
 
-- `carhacks/FORMATS.md` — the `.LEV` container and citylumps table, the 4-byte
-  aligned segment walk, `LUMP_CAR_MODELS` / `LUMP_PALLET` layouts, the `.LCF`,
-  texture sets vs `texture_pages`/`texture_cluts`, the car draw path, plus Python
-  recipes to re-measure each one.
-- `carhacks/CROSS_CITY.md` — what a cross-city import has to pull across, and why
-  colours need more than geometry.
+Weapons are data-driven: each is one `CD2_WEAPON_DEF` row, grouped by a
+functional class under `weapons/`. The shared field set and the registry API
+are in [`weapons/core/weapon.h`](weapons/core/weapon.h); the impact FX profiles
+and the volley / freeze / scatter behaviours are in [`FX.md`](FX.md). Nothing
+spawns drive-over pickups yet (the map spawner is not wired) — for testing,
+grant weapons from the pause menu (**Modules → Combat D2 → Weapons...**).
 
-## Test launchers (`tools/`)
+## Layout
 
-Windows `.bat` helpers that start the game with a rolled-up setup. They act on
-`bin\Release_dev\` directly and the module must be enabled in
-`bin\Release_dev\JERICHO\CONFIG\modlist.ini`.
+| Path | Holds |
+|---|---|
+| `combatd2.c` | core handling, config load/save, the pause menu, and the `JER_EVENT_CAR_*` / physics hooks |
+| `combatd2.h` | every compile-time tunable (`CD2_*` macros) and the shared structs |
+| `combatd2combat.c` | totaled-car wreck effects |
+| `combatd2media.c` | gearbox/rev/engine-sound/camera presentation |
+| `cd2debug.c` | temporary scripted debug driver (`tools/cd2_debug.example.txt` is the file format) |
+| `weapons/` | the weapon framework: `core/` (registry + inventory), `raycast/` (machine gun), `projectile/`, `shotgun/`, `drops/`, `aoe/`, `fx/` |
+| `ai/` | the prototype opponent AI (`opponent.c` brain; `nav.c` / `grid.c` / `flow.c` navigation) |
+| `carhacks/` | vehicle-availability hacks, plus the two format docs |
+| `tools/` | the test launchers and the arena smoke test |
+| `mod.toml` | package metadata (`id`, `default-enabled`) |
 
-These files are the source of truth; copies also sit next to the executable in
-`bin\Release_dev\` for double-clicking. `bin/` is gitignored, so re-copy after
-changing one here:
+## Test tooling (`tools/`)
+
+Windows helpers that boot the game with a rolled-up setup. They act on
+`bin\Release_dev\` and need the combatd2 module enabled in
+`bin\Release_dev\JERICHO\CONFIG\modlist.ini`. These files are the source of
+truth; copies also sit next to the executable for double-clicking. `bin/` is
+gitignored, so re-copy after editing one:
 
 ```
 cp JERICHO/MODS/combatd2/tools/launch_*.bat src_rebuild/bin/Release_dev/
 ```
 
-- `launch_tar_random.bat` — Take-A-Ride with a random city, car, weather and time.
-- `launch_mp_chicago_semi.bat` — Chicago's multiplayer arena, as the semi when its
-  data is present (falls back to the school bus).
-- `launch_mp_random_mix.bat` — multiplayer arena with a **random cross-city
-  import** and a mixed roster. The player gets a random local slot or, half the
-  time, a random foreign car (`player_model`); 1-2 vehicles are imported from a
-  randomly chosen *other* city into random resident slots. The AI opponents pick
-  their car at spawn by enumerating the resident slots the level actually loaded
-  and taking a salted random one, so they mix the imported vehicles in by
-  themselves — as does ambient traffic, which draws from slots 0..4. Run it with
-  the argument `dry` to see the roll without launching or touching the config.
+### `arena_test.sh` — multiplayer smoke test
 
-`launch_mp_random_mix.bat` **overwrites** `JERICHO/CONFIG/carhacks.ini` when it
-runs (the cross-city hack is off by default; the launcher switches it on for the
+A headless(ish) smoke test that boots a **multiplayer map** (the two-per-city
+arenas are small and closed, which makes them far better for combat testing
+than the open city missions) with a random **city / car / weather / time**, so
+each run exercises a different combination:
+
+```
+./arena_test.sh [seconds] [extra args...]
+./arena_test.sh                # 45s, random everything
+./arena_test.sh 90             # 90s run
+./arena_test.sh 45 -car slot5  # ...but pin the car
+```
+
+The car is always the validated `-car slot1..slot10` form; the `CAR` env var
+overrides the random pick, and extra args are appended to the launch line. It
+launches with `-nointro -mp <arena> -level <city> -car <slot> -weather <w>
+-time <t>`, sleeps, then:
+
+- **kills by PID only** (`taskkill //F //PID <pid>`) — it prints that exact
+  command — never by image name (see *Safety rules*);
+- treats a process that exited on its own before the timer as a **CRASH** (the
+  old script never noticed a dead game and reported "0 errors");
+- notes any pre-existing `REDRIVER2.dmp` and flags a **new** one as a crash;
+- **snapshots** `REDRIVER2.log` to `arena_test_<city>_<weather>_<time>_<stamp>.log`
+  (**it does not delete the log**) and greps the snapshot: `verdict: reached
+  GAMEPLAY` when a gameplay marker is found, otherwise the last log line, plus
+  counts of active modules and crash markers.
+
+### Launchers
+
+All four `cd` into `bin\Release_dev\`, then `start` `REDRIVER2_dev.exe`:
+
+| Launcher | What it does |
+|---|---|
+| `launch_tar_random.bat` | Take-a-Ride with a random city, a random slot (1..8 and 10), a random weather and time: `-level <city> -car slot<N> -weather <w> -time <t> -gamemode takeadrive`. |
+| `launch_mp_chicago_semi.bat` | Chicago's **multiplayer arena 1** (`-mp 1`; `-mp 0` is the other arena), player spawned as the **semi** when its data is present. |
+| `launch_tar_chicago_semi.bat` | **Single-player** Chicago, player spawned as the semi when its data is present. |
+| `launch_mp_random_mix.bat` | Multiplayer arena with a random cross-city import and a mixed roster; **overwrites** `carhacks.ini`; supports a `dry` argument. |
+
+Both `*_chicago_semi.bat` launchers want the semi at
+`DRIVER2\LEVELS\CHICAGO\CARMODEL_11_clean.dmodel`. This install ships only the
+school bus (`CARMODEL_10_clean.dmodel`), and forcing a model with no data
+crashes the game during load, so each script checks the file first and, if it is
+missing, spawns the school bus (`-car slot8`) instead — drop the semi's file in
+and the same script spawns the semi.
+
+`launch_mp_random_mix.bat` rolls a random arena city and a **different** city to
+import from, then imports 1-2 foreign vehicles into random resident slots (0..6;
+0..4 feed ambient traffic, 5..6 are spare capacity) and — half the time — gives
+the player a random foreign car instead of a local slot. The AI opponents pick
+their car at spawn by enumerating the resident slots the level actually loaded,
+and ambient traffic draws from slots 0..4, so both mix the imports in on their
+own. Run it with the argument `dry` to print the roll, the `carhacks.ini` it
+*would* write and the launch line, without writing or launching anything. When
+it *does* run it **overwrites** `bin\Release_dev\JERICHO\CONFIG\carhacks.ini`
+(the cross-city hack is off by default; the launcher switches it on for the
 session).
 
-**Never use `-car slot9`.** It is model 11, the slot the game reserves for a
-content-override truck, and no city ships data for it — the game dies during load
-(after `LUMP_CAR_MODELS`, no dump). Both random launchers skip it deliberately.
+### Standing hazard: never use `-car slot9`
+
+`-car slot9` is car **model 11**, the slot the game reserves for a
+content-override truck (`FEmain.c`, "remove truck"). **No city ships data for
+model 11 in Chicago**, so forcing it kills the game during load (right after
+`LUMP_CAR_MODELS`, no dump). It is a real vehicle in Havana, Rio and Vegas.
+Every random launcher above skips slot 9 deliberately — do not "fix" them into
+picking it. The slot form is the only safe one: it is mapped through
+`carNumLookup[level]` and bounds-checked, while a raw `-car <n>` is **not**, so
+any index past a level's loaded car pool crashes the same way.
+
+### Safety rules (do not break when testing)
+
+- **Kill by PID only.** The game never self-exits, and killing by image name
+  would also take down a session the user is running by hand. `arena_test.sh`
+  prints the exact `taskkill //F //PID <pid>` it used.
+- **Never delete `REDRIVER2.log`.** The user's own sessions write that file too.
+  Snapshot it (copy to a per-run name, as `arena_test.sh` does) instead.
+- `REDRIVER2.log` is **truncated at session start and flushed at close** (see
+  `carhacks/FORMATS.md` §8), so a log snapshotted right after a `taskkill` can
+  be cut off mid-session — treat a missing tail accordingly.
 
 ## Validation checklist
 
-- TMB layout: while driving, Square gasses, Circle brakes, X/Cross pivots;
-  on foot the ped controls are unchanged. Flip Tight Turn Button if the pad
+- **TMB layout**: while driving, Square gasses, Circle brakes, Cross pivots; on
+  foot the ped controls are unchanged. Flip **Tight Turn Button** if the pad
   labels the left face button "X".
-- Tight Turn: hard pivot, spins nearly in place at low speed, gas + pivot
+- **Tight Turn**: hard pivot, spins nearly in place at low speed, gas + pivot
   slides instead of stopping dead.
-- High-speed stop: brakes scrub quickly but taper — no jarring dead stop.
-- Wall hit at speed: hard stop, minimal bounce, no wall-spin; still controllable.
-- Vehicle spread: a light car out-accelerates and out-turns a heavy one.
-- MG: hold Triangle while driving — tracers stream from the nose, cars ahead
-  smoke and (over time) total out; the wreck still explodes/flat-blacks.
-- Rocket: pause → Modules → Combat D2 → Debug → **Primary** (grants 10),
-  hold Triangle to fire one; it flies visibly, explodes on a car/ground and
-  damages everything nearby. Tap R1 to swap back to the MG; empty rocket ammo
-  auto-returns to the MG. **Primary** again clears the slot.
+- **High-speed stop**: brakes scrub quickly but taper — no jarring dead stop.
+- **Wall hit at speed**: hard stop, minimal bounce, no wall-spin; still
+  controllable.
+- **Vehicle spread**: a light car out-accelerates and out-turns a heavy one.
+- **Machine gun**: hold **L2** while driving — tracers stream from the nose,
+  cars ahead smoke and (over time) total out; the wreck still explodes and
+  flat-blacks.
+- **Primary**: pause → **Modules → Combat D2 → Weapons...**, toggle **MISSILE**
+  to grant it (toggling again clears the slot), tap **R2** to fire one — it
+  flies visibly, explodes on a car or the ground and damages everything nearby.
+  With no primary armed, R2 falls back to the MG; an empty primary auto-returns
+  to the MG. **R1 / L1** cycle carried weapons.
