@@ -965,7 +965,7 @@ void PlayerCarFX(CAR_DATA *cp)
 }
 
 // [D] [T]
-void plotNewCarModel(CAR_MODEL* car, int palette, int flatBlack)
+void plotNewCarModel(CAR_MODEL* car, int palette, int flatColor)
 {
 #ifdef PSX
 	plotCarGlobals& _pg = *(plotCarGlobals*)((u_char*)getScratchAddr(0) + 1024 - sizeof(plotCarGlobals) - sizeof(_pct));
@@ -1008,7 +1008,7 @@ void plotNewCarModel(CAR_MODEL* car, int palette, int flatBlack)
 
 	// draw wheel arcs
 	plotCarPolyB3(car->numB3, car->pB3, car->vlist, &_pg);
-	_pg.intensity = flatBlack ? 0 : (underIntensity & 0xffffff);
+	_pg.intensity = (flatColor >= 0) ? flatColor : (underIntensity & 0xffffff);
 
 	// draw car bottom
 	_pg.ot = (OTTYPE*)(current->ot + 16);
@@ -1016,10 +1016,11 @@ void plotNewCarModel(CAR_MODEL* car, int palette, int flatBlack)
 
 	// draw car body
 	_pg.ot = (OTTYPE*)(current->ot + 4);
-	if (flatBlack)
+	if (flatColor >= 0)
 	{
-		// totaled wreck: flat solid black, gouraud shading off ("damping off")
-		_pg.intensity = 0;
+		// flat body colour (0 = totaled black, else e.g. an icy cyan): gouraud
+		// shading off ("damping off"), the packed colour used as the intensity
+		_pg.intensity = flatColor;
 		plotCarPolyGT3nolight(car->numGT3, car->pGT3, car->vlist, &_pg, palette);
 	}
 	else if (gTimeOfDay == TIME_NIGHT)
@@ -1465,17 +1466,33 @@ void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR
 	VECTOR modelLocation;
 	SVECTOR cog;
 	int flatBlack;
+	int flatColor;		// -1 = stock shading, 0 = flat black, >0 = flat colour
 
-	// JERICHO-HOOK: body color — a module sets flatBlack to render a totaled
-	// wreck flat solid black (gouraud shading off).
+	// JERICHO-HOOK: body color — a module renders the body flat: black for a
+	// totaled wreck, or a flat colour at full brightness (e.g. icy cyan for a
+	// frozen car).
 	flatBlack = 0;
+	flatColor = -1;
 	{
 		JER_ARGS_CAR_DRAW_COLOR jer;
 
 		jer.car = cp;
 		jer.flatBlack = 0;
+		jer.tintR = jer.tintG = jer.tintB = -1;
 		jer_fire(JER_EVENT_CAR_DRAW_COLOR, &jer);
 		flatBlack = jer.flatBlack;
+
+		if (flatBlack)
+			flatColor = 0;
+		else if (jer.tintR >= 0 || jer.tintG >= 0 || jer.tintB >= 0)
+		{
+			int r = (jer.tintR < 0) ? 255 : (jer.tintR & 0xff);
+			int g = (jer.tintG < 0) ? 255 : (jer.tintG & 0xff);
+			int b = (jer.tintB < 0) ? 255 : (jer.tintB & 0xff);
+
+			// POLY/GTE colour words are B<<16 | G<<8 | R (red in the low byte)
+			flatColor = (b << 16) | (g << 8) | r;
+		}
 	}
 
 	cog = cp->ap.carCos->cog;
@@ -1499,7 +1516,7 @@ void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR
 
 	gte_SetTransVector(&modelLocation);
 
-	plotNewCarModel(car, palette, flatBlack);
+	plotNewCarModel(car, palette, flatColor);
 }
 
 // Nattdy

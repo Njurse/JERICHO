@@ -362,13 +362,14 @@ void DrawExplosion(EXOBJECT* e)
 
 	if (tintR >= 0 || tintG >= 0 || tintB >= 0)
 	{
-		int tr = (rgb >> 16) & 0xff, tg = (rgb >> 8) & 0xff, tb = rgb & 0xff;
+		// the packed word is B<<16 | G<<8 | R (red in the low byte)
+		int tb = (rgb >> 16) & 0xff, tg = (rgb >> 8) & 0xff, tr = rgb & 0xff;
 
 		if (tintR >= 0) tr = (tr * tintR) / 255;
 		if (tintG >= 0) tg = (tg * tintG) / 255;
 		if (tintB >= 0) tb = (tb * tintB) / 255;
 
-		rgb = (rgb & 0xff000000) | (tr << 16) | (tg << 8) | tb;
+		rgb = (rgb & 0xff000000) | (tb << 16) | (tg << 8) | tr;
 	}
 
 	Apply_Inv_CameraMatrix(&v);
@@ -463,13 +464,14 @@ void DrawExplosion(EXOBJECT* e)
 
 	if (tintR >= 0 || tintG >= 0 || tintB >= 0)
 	{
-		int tr = (rgb >> 16) & 0xff, tg = (rgb >> 8) & 0xff, tb = rgb & 0xff;
+		// the packed word is B<<16 | G<<8 | R (red in the low byte)
+		int tb = (rgb >> 16) & 0xff, tg = (rgb >> 8) & 0xff, tr = rgb & 0xff;
 
 		if (tintR >= 0) tr = (tr * tintR) / 255;
 		if (tintG >= 0) tg = (tg * tintG) / 255;
 		if (tintB >= 0) tb = (tb * tintB) / 255;
 
-		rgb = (rgb & 0xff000000) | (tr << 16) | (tg << 8) | tb;
+		rgb = (rgb & 0xff000000) | (tb << 16) | (tg << 8) | tr;
 	}
 
 	for (i = 0; i < 2; i++)

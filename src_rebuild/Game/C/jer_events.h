@@ -452,12 +452,18 @@ typedef struct JER_ARGS_CAR_DRAW
 } JER_ARGS_CAR_DRAW;
 
 /* JER_EVENT_CAR_DRAW_COLOR — fired in DrawCarObject before the body model is
- * plotted; a module sets flatBlack = 1 to render the body flat solid black
- * (no gouraud shading, "damping off") for a totaled / burned-out wreck. */
+ * plotted. A module may render the body flat:
+ *   flatBlack = 1 -> flat solid black (a totaled / burned-out wreck);
+ *   tintR/G/B >= 0 -> a flat body colour at full brightness, e.g. an icy cyan
+ *                     for a frozen car (overrides the model's shading).
+ * Tint is ignored when flatBlack is set. */
 typedef struct JER_ARGS_CAR_DRAW_COLOR
 {
 	void* car;		/* CAR_DATA* */
 	int flatBlack;		/* out: 1 = draw the body flat black */
+	int tintR;		/* out: -1 = unset; else a flat body colour 0..255 */
+	int tintG;
+	int tintB;
 } JER_ARGS_CAR_DRAW_COLOR;
 
 /* JER_EVENT_LEVEL_LAUNCH — fired at the end of State_GameStart after the
