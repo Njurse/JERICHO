@@ -551,6 +551,22 @@ void DrawAllTheCars(int view)
 
 		spacefree = (num_cars_to_draw - 1) * 2000;
 
+		// JERICHO-HOOK: an imported car's pages live in VRAM that the world streams
+		// into, so re-take them HERE - after the world has already drawn with whatever
+		// it needed, and immediately before the cars sample them. This mirrors the
+		// engine's own answer for the special car (SpecClutsSpooled: re-upload at the
+		// point of use), and it is the difference between a car showing its own
+		// textures and a building losing its.
+		//
+		// Doing it at the top of the frame instead was wrong the other way round: it
+		// grabbed the rectangle back BEFORE the world drew, so the buildings were the
+		// ones left with the wrong page.
+		{
+			extern void CarImportPin(void);
+
+			CarImportPin();
+		}
+
 		for (i = 0; i < num_cars_to_draw; i++)
 		{
 			// Don't exceed draw buffers

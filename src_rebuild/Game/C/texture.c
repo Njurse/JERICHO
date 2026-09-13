@@ -931,13 +931,13 @@ void CarImportDumpState(void)
 			clut, (int)((clut & 0x3f) << 4), (int)(clut >> 6));
 	}
 
-	// and the pages we imported under their own numbers
-	for (i = 0; i < sRemapCount; i++)
+	// and the pages we imported under their own numbers. Iterating the PINS, not the
+	// remaps: a remap can exist for a set whose upload was refused for want of a spare
+	// slot, and calling that 'replaced' was a false report (it was never placed).
+	for (i = 0; i < sPinCount; i++)
 	{
-		int idx = sRemapTo[i];
-
-		if (tpageloaded[idx] == 0)
-			printInfo("cross-city:   index %d no longer looks loaded - something replaced it\n", idx);
+		if (tpageloaded[sPinIndex[i]] == 0)
+			printInfo("cross-city:   index %d no longer looks loaded - something replaced it\n", sPinIndex[i]);
 	}
 
 	// The decisive one: which slot index each imported page occupies, and whether the
@@ -1121,6 +1121,8 @@ void LoadImportedTPages(void)
 	{
 		int set = sets[i];
 		int dstSet = set;
+		int remapFrom = -1;
+		int remapTo = 0;
 		int offset = 0;
 		int size = 0;
 		int npalettes;
@@ -1150,9 +1152,12 @@ void LoadImportedTPages(void)
 				continue;
 			}
 
-			sRemapFrom[sRemapCount] = set;
-			sRemapTo[sRemapCount] = free;
-			sRemapCount++;
+			// NOT recorded yet: the remap only counts if the page actually gets loaded.
+			// Recording it here left the car's polys pointing at an index with nothing in
+			// it whenever the upload was later refused (no spare slot), which draws as an
+			// empty texture instead of falling back to the host's page for that part.
+			remapFrom = set;
+			remapTo = free;
 
 			printInfo("cross-city: set %d is the level's own - re-indexing it to %d for the imported car\n", set, free);
 
@@ -1281,6 +1286,14 @@ void LoadImportedTPages(void)
 			LoadTPageAndCluts(&imptpage, &impclut, dstSet, buf);
 
 			CarPinRecord(set, dstSet, slot, offset, size, tpageStart, clutStart);
+		}
+
+		// the remap is real now that the page is in place
+		if (remapFrom >= 0 && sRemapCount < CAR_REMAP_MAX)
+		{
+			sRemapFrom[sRemapCount] = remapFrom;
+			sRemapTo[sRemapCount] = remapTo;
+			sRemapCount++;
 		}
 
 		// claimed: no longer 0xFF, so the streaming slot scan cannot hand it out

@@ -1650,11 +1650,6 @@ int gMultiStep = 0;
 // Called after each entry point's own frame guard, so the count is real frames.
 void JerichoFrameTick(void)
 {
-	// Claim back any imported page the level has taken, BEFORE anything reports state -
-	// otherwise the dump below can show a loss from this very frame that pinning would
-	// have repaired on the next one, which reads as a defect that is not there.
-	CarImportPin();
-
 	if (gExitAfterFrames <= 0 || ++gRunFrames < gExitAfterFrames)
 		return;
 
