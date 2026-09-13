@@ -385,6 +385,11 @@ void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value)
 	// weapon hit doesn't end their run outright
 	if (cd2AiIsOpponent(cp))
 		value = cd2ScaleDamage(value, gCd2Cfg.aiDamageTaken);
+	// traffic takes CD2_TRAFFIC_WPN_TAKEN percent instead (400%: weapons are
+	// meant to sweep civilians aside, so this is checked second - an opponent
+	// is never traffic, but the ordering keeps their reduction authoritative)
+	else if (cd2IsTraffic(cp))
+		value = cd2ScaleDamage(value, CD2_TRAFFIC_WPN_TAKEN);
 
 	ApplyDamage(cp, (char)region, value, 0);
 }

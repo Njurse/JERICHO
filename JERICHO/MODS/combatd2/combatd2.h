@@ -355,6 +355,13 @@ typedef struct CD2_STATS
 // walls, and the tumble is the point rather than the damage.
 #define CD2_TRAFFIC_SCENERY_EXTRA	50
 
+// Weapons hit traffic harder than they hit the module's own cars. 400 = 4x
+// weapon damage, so a burst sweeps civilians out of the way instead of
+// plinking at them - traffic exists to be collateral, not a damage sink.
+// Only weapon damage is scaled here; explosion/scenery damage already has its
+// own traffic handling in cd2OnDamageScale.
+#define CD2_TRAFFIC_WPN_TAKEN	400
+
 // Shoving traffic. A combatd2 car punting a civ car rolls it over, so the
 // twist response to a collision is deliberately high - but capped, because
 // past a point it stops reading as being barged aside and starts looking
@@ -481,6 +488,9 @@ int cd2ScaleDamage(int value, int pct);
 
 // scenery impacts taken by `car` this level (observability for the AI)
 int cd2SceneryHits(void* car);
+
+// 1 for stock civ traffic: not a car the module drives (see cd2IsTraffic).
+int cd2IsTraffic(CAR_DATA* cp);
 
 int cd2CarTotaled(void* cp);
 

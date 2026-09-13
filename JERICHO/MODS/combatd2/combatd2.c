@@ -569,7 +569,9 @@ static int cd2OwnsCar(CAR_DATA* cp)
 
 // 1 for stock civ traffic: a car the module does NOT drive. Opponents are
 // spawned as CUTSCENE, so CIV_AI is the stock-traffic case.
-static int cd2IsTraffic(CAR_DATA* cp)
+// Non-static: the weapons layer scales damage per target class (see
+// cd2WpnDamageCar), and the AI helper it leans on is extern'd the same way.
+int cd2IsTraffic(CAR_DATA* cp)
 {
 	return (cp->controlType == CONTROL_TYPE_CIV_AI) && !cd2AiIsOpponent(cp);
 }
