@@ -125,6 +125,22 @@ static int ChkOnCarDataSource(void* ud, void* args)
 		printInfo("[carhacks] cross-city: player car forced to model %d\n", model);
 	}
 
+	/* Put a foreign vehicle into the level for real. Ambient traffic picks its
+	 * model from resident slots 0..4 (modelRandomList in civ_ai.c), so a model
+	 * written into one of those shows up as traffic. */
+	if (a->models != NULL)
+	{
+		int tmodel = jer_config_get_int("carhacks", "traffic_model", -1);
+		int tslot = jer_config_get_int("carhacks", "traffic_slot", 2);
+
+		if (tmodel >= 0 && tmodel < 40 && tslot >= 0 && tslot < a->count)
+		{
+			a->models[tslot] = tmodel;
+
+			printInfo("[carhacks] cross-city: resident slot %d -> model %d (traffic)\n", tslot, tmodel);
+		}
+	}
+
 	return JER_RESULT_CONTINUE;
 }
 
