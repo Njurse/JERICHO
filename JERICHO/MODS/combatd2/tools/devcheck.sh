@@ -61,6 +61,7 @@ SAVED="$(cat "$INI" 2>/dev/null || true)"
 ROLL=$(( SEED & 0x7fffffff ))
 roll() { ROLL=$(( (ROLL * 1103515245 + 12345) & 0x7fffffff )); ROLL_OUT=$(( (ROLL / 65536) % $1 )); }
 
+FAILED=0
 # name | host level | source city | kind        kind: stock | player | traffic
 # A 'player' row picks a random SPECIAL body (all four cities have 8, 9, 10 and 12;
 # 11 is missing in Chicago) and imports it into the special slot, then asks for it.
@@ -106,12 +107,18 @@ for entry in "${SCENARIOS[@]}"; do
 	LOST="$(grep -c 'no longer looks loaded' REDRIVER2.log || true)"
 	ERRORS="$(grep -icE 'access violation|fatal error|ModelPtr is NULL' REDRIVER2.log || true)"
 
-	PCAR="$(grep 'JERICHO-RUN:' REDRIVER2.log | grep -oE 'car=-?[0-9]+' | cut -d= -f2 | head -1 || true)"
+	# The player's resident SLOT - ap.model indexes gCarCleanModelPtr, it is not a model
+	# number - plus the model the level holds in that slot. The city then comes from the
+	# engine's own 'slot N geometry from <CITY>' line for that slot. Matching on the
+	# model number instead was the mistake that made a foreign special car look domestic.
+	PSLOT="$(grep 'JERICHO-RUN:' REDRIVER2.log | grep -oE 'carslot=-?[0-9]+' | cut -d= -f2 | head -1 || true)"
+	PMODEL="$(grep 'JERICHO-RUN:' REDRIVER2.log | grep -oE 'model=-?[0-9]+' | cut -d= -f2 | head -1 || true)"
 	FROM="-"
-	if [ -n "$PCAR" ] && [ "$PCAR" -ge 0 ] 2>/dev/null; then
-		FROM="$(grep -oE "geometry from [A-Z]+ model $PCAR" REDRIVER2.log | awk '{print $3}' | head -1 || true)"
+	if [ -n "$PSLOT" ] && [ "$PSLOT" -ge 0 ] 2>/dev/null; then
+		FROM="$(grep -oE "slot $PSLOT geometry from [A-Z]+" REDRIVER2.log | awk '{print $5}' | head -1 || true)"
 		[ -z "$FROM" ] && FROM="-"
 	fi
+	[ -n "$PMODEL" ] && FROM="$FROM:$PMODEL"
 
 	VERDICT=1
 	{ [ "$RC" -eq 0 ] && [ "$OK" -gt 0 ] && [ "$ERRORS" -eq 0 ] && [ "$LOST" -eq 0 ]; } && VERDICT=0

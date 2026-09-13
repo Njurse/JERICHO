@@ -1683,8 +1683,10 @@ void JerichoFrameTick(void)
 		if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
 			resident = car_data[MainPlayer.playerCarId].ap.model;
 
-		printInfo("JERICHO-DIAG: player car model=%d (want=%d, startinfo[0]=%d) residents=",
-			resident, wantedCar[0], (PlayerStartInfo[0] != NULL) ? PlayerStartInfo[0]->model : -9);
+		printInfo("JERICHO-DIAG: player slot=%d (model=%d, want=%d, startinfo[0]=%d) residents=",
+			resident,
+			(resident >= 0 && resident < MAX_CAR_RESIDENT_MODELS) ? residentCarModels[resident] : -1,
+			wantedCar[0], (PlayerStartInfo[0] != NULL) ? PlayerStartInfo[0]->model : -9);
 
 		for (pc = 0; pc < MAX_CAR_RESIDENT_MODELS; pc++)
 			printInfo(" %d", residentCarModels[pc]);
@@ -1699,14 +1701,26 @@ void JerichoFrameTick(void)
 	// guessing a verdict from log prose. status=ok means the run reached its frame
 	// budget; a run that dies or hangs never prints this at all, which is how failure
 	// is detected.
+	//
+	// NOTE the field names, because the old ones caused a false alarm: ap.model is a
+	// RESIDENT SLOT index (it indexes gCarCleanModelPtr[MAX_CAR_RESIDENT_MODELS]), not
+	// a model number. Reporting it as "car" made a player in the imported special slot
+	// look domestic to anyone matching it against 'geometry from <CITY> model <n>'.
+	// So: carslot is that slot, model is the model number the level has in it.
 	{
-		int car = -1;
+		int carslot = -1;
+		int model = -1;
 
 		if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
-			car = (int)car_data[MainPlayer.playerCarId].ap.model;
+		{
+			carslot = car_data[MainPlayer.playerCarId].ap.model;
 
-		printInfo("JERICHO-RUN: level=%s car=%d frames=%d seed=%d status=ok\n",
-			LevelNames[GameLevel], car, gRunFrames, gDebugSeed);
+			if (carslot >= 0 && carslot < MAX_CAR_RESIDENT_MODELS)
+				model = residentCarModels[carslot];
+		}
+
+		printInfo("JERICHO-RUN: level=%s carslot=%d model=%d frames=%d seed=%d status=ok\n",
+			LevelNames[GameLevel], carslot, model, gRunFrames, gDebugSeed);
 	}
 
 	// JERICHO: where the imported pages ended up, after the level has streamed.
