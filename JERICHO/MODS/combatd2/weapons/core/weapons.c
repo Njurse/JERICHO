@@ -593,6 +593,20 @@ static int cd2WpnOnFrame(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 	}
 
+	// A dead or ice-frozen driver can't work the guns: a totaled car (a burning
+	// wreck / waiting to respawn) and an ice-encased car both swallow the weapon
+	// buttons, so neither selection nor firing happens this frame. Live shots
+	// already in the air keep flying.
+	if (cd2CarTotaled(cp) || cd2FreezeActive(cp->id))
+	{
+		prevRT = prevLB = prevRB = 0;
+
+		cd2RaycastStep();
+		cd2ProjectileStep();
+		cd2DropStep();
+		return JER_RESULT_CONTINUE;
+	}
+
 	pad = Pads[(unsigned char)*cp->ai.padid].mapped;
 
 	if (gCd2Cfg.debugLog)

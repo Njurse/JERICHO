@@ -776,10 +776,6 @@ static void cd2RespawnTick(CAR_DATA* cp)
 			// every control input, so the engine's lockup / kill-patrol
 			// handling takes over this frame.
 			cp->totalDamage = USHRT_MAX;
-			cp->thrust = 0;
-			cp->wheel_angle = 0;
-			cp->handbrake = 0;
-			cp->wheelspin = 0;
 
 			// wrecked cars are lighter until they come back, and they go out with
 			// the casino bang
@@ -789,6 +785,16 @@ static void cd2RespawnTick(CAR_DATA* cp)
 			printInfo("[combatd2] respawn: car=%d DESTROYED (type=%d) - control stripped, mass now %d, returning in %d frames\n",
 				cp->id, cp->controlType, (cp->ap.carCos != NULL) ? cp->ap.carCos->mass : -1, r->timer);
 		}
+
+		// A wreck must not keep its throttle or spin its wheels while it burns
+		// down. The stock pad path re-applies these every frame (the damaged-car
+		// fallback selects the handbrake, whose branch never clears wheelspin,
+		// so a car that was mid-burnout when it died would keep its wheels
+		// spinning), so strip the controls on EVERY waiting frame, not once.
+		cp->thrust = 0;
+		cp->handbrake = 0;
+		cp->wheelspin = 0;
+		cp->wheel_angle = 0;
 	}
 	else if (r->waiting)
 	{

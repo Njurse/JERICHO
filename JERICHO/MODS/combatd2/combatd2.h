@@ -374,10 +374,15 @@ typedef struct CD2_STATS
 // A wrecked car the module owns (the player and the AI opponents) returns to
 // the position it started the level at, after CD2_RESPAWN_DELAY frames.
 // Spawn points come later; for now the start point is the respawn point.
-// Respawn delay is FIXED at 5 seconds (300 frames at 60fps). Deliberately
-// not configurable: every car, player or opponent, comes back on the same
-// clock, and the old max/min knobs let it drift as low as half a second.
-#define CD2_RESPAWN_DELAY 300
+// Respawn delay is FIXED at 5 seconds. NOTE the sim steps at 30 fps, NOT 60:
+// State_GameLoop gates StepGame behind FilterFrameTime (2 vblanks) and the code
+// comment says "always stay 30 FPS". CAR_STEP - and so the respawn tick - fires
+// once per StepCars, i.e. once per 30 Hz step, so 5s == 150 frames. (It was
+// 300 with a "300 frames at 60fps" comment, which is why respawn took ~10s.)
+// Deliberately not configurable: every car, player or opponent, comes back on
+// the same clock, and the old max/min knobs let it drift as low as half a
+// second.
+#define CD2_RESPAWN_DELAY 150
 // Prototype opponent-AI behaviour states (also CD2_CONFIG.aiForceState; 0 = let
 // the AI pick). See ai/opponent.c.
 enum

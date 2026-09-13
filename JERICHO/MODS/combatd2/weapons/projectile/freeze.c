@@ -32,9 +32,12 @@
 
 #include <string.h>
 
-// 5 seconds at the sim's 60 frames/sec (the same unit the weapon defs use for
-// refireCooldown: 120 = 2s).
-#define CD2_FREEZE_FRAMES	300
+// 5 seconds. NOTE the frozen-status countdown runs off JER_EVENT_FRAME, which
+// the engine fires once per sim frame (GlobalTimeStep), and the sim steps at
+// 30 fps (FilterFrameTime, 2 vblanks) - the SAME rate as CAR_STEP, not 60.
+// So 5s == 150 frames. (It was 300 with a "60 frames/sec" comment, which made
+// a freeze last ~10s - long enough to feel like being stuck.)
+#define CD2_FREEZE_FRAMES	150
 
 // grip = stock / this while frozen (lower = icier). 5 leaves ~20% bite.
 #define CD2_FREEZE_GRIP_DIV	5
@@ -63,8 +66,8 @@ void cd2FreezeApply(int carId, int frames)
 	gFreezeFrames[carId] = frames;
 
 	if (gCd2Cfg.debugLog)
-		printInfo("[combatd2] FREEZE car=%d frames=%d angle=%d\n",
-			carId, frames, (int)gFreezeAngle[carId]);
+		printInfo("[combatd2] FREEZE car=%d frames=%d angle=%d ct=%d\n",
+			carId, frames, (int)gFreezeAngle[carId], car_data[carId].controlType);
 }
 
 int cd2FreezeActive(int carId)
