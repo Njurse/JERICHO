@@ -116,6 +116,14 @@ Windows `.bat` helpers that start the game with a rolled-up setup. They act on
 `bin\Release_dev\` directly and the module must be enabled in
 `bin\Release_dev\JERICHO\CONFIG\modlist.ini`.
 
+These files are the source of truth; copies also sit next to the executable in
+`bin\Release_dev\` for double-clicking. `bin/` is gitignored, so re-copy after
+changing one here:
+
+```
+cp JERICHO/MODS/combatd2/tools/launch_*.bat src_rebuild/bin/Release_dev/
+```
+
 - `launch_tar_random.bat` — Take-A-Ride with a random city, car, weather and time.
 - `launch_mp_chicago_semi.bat` — Chicago's multiplayer arena, as the semi when its
   data is present (falls back to the school bus).
