@@ -489,6 +489,19 @@ typedef struct JER_ARGS_DAMAGE_SCALE
 	int result;	/* in/out: damage scale, 4096 = stock */
 } JER_ARGS_DAMAGE_SCALE;
 
+/* JER_EVENT_CAR_AVAILABILITY — query fired while the frontend builds a level's
+ * car list (CarSelectScreen). Set result = 1 to offer the normally-locked extra
+ * vehicles (fire truck / buses / truck) for `level`, bypassing the stock
+ * gFurthestMission == 40 && NumPlayers == 1 gate. Leave 0 for stock behaviour.
+ * The engine still refuses a vehicle whose model data is missing (that check
+ * exists to avoid a load crash), so this cannot make a data-less model appear. */
+typedef struct JER_ARGS_CAR_AVAILABILITY
+{
+	int level;	/* in: GameLevel whose car list is being built */
+	int result;	/* in/out: 1 = unlock the extra vehicles, 0 = stock */
+} JER_ARGS_CAR_AVAILABILITY;
+
+
 /* JER_EVENT_CAR_VS_CAR — fired in DamageCar3D (bcollide.c) when two cars
  * collide, right before ApplyDamage. `value` is the stock damage this car would
  * take; `playerValue` is what a player-controlled car would take for the SAME

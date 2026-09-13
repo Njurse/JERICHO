@@ -312,6 +312,7 @@ static const char* jerEventName(int event)
 	case JER_EVENT_LEVEL_LAUNCH:	return "LEVEL_LAUNCH";
 	case JER_EVENT_DRAW_WORLD:		return "DRAW_WORLD";
 	case JER_EVENT_GET_DAMAGE_SCALE:	return "GET_DAMAGE_SCALE";
+	case JER_EVENT_CAR_AVAILABILITY:	return "CAR_AVAILABILITY";
 	case JER_EVENT_CAR_VS_CAR:	return "CAR_VS_CAR";
 	case JER_EVENT_DRAW_MAP:	return "DRAW_MAP";
 	case JER_EVENT_EXPLOSION_SPAWN:	return "EXPLOSION_SPAWN";

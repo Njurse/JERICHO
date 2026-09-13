@@ -168,6 +168,13 @@ enum
 				   result 0 = visual only
 				   (see JER_ARGS_EXPLOSION_COLLIDE) */
 
+	JER_EVENT_CAR_AVAILABILITY,	/* query: fired while the frontend builds a
+					   level's car list (CarSelectScreen). A module
+					   sets result = 1 to offer the normally-locked
+					   extra vehicles (fire truck / buses / truck) for
+					   that level, lifting the progression gate and the
+					   single-player restriction. 0 = stock. */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

@@ -1,5 +1,8 @@
 #include "driver2.h"
 
+#include "jericho.h"		/* jer_fire */
+#include "../C/jer_events.h"	/* JER_EVENT_CAR_AVAILABILITY */
+
 #include "FEmain.h"
 
 #include "C/cd_icon.h"
@@ -2282,7 +2285,21 @@ int CarSelectScreen(int bSetup)
 		}
 
 		// setup unlockable cars
-		if (gFurthestMission == 40 && NumPlayers == 1)
+		// JERICHO-HOOK: a module may lift the progression + single-player gate on
+		// the extra vehicles for this level (JER_EVENT_CAR_AVAILABILITY). The
+		// per-model data checks below still apply, so a model with no data stays
+		// unavailable (forcing one crashed the game in load).
+		int unlockExtra = 0;
+		{
+			JER_ARGS_CAR_AVAILABILITY jerAvail;
+
+			jerAvail.level = GameLevel;
+			jerAvail.result = 0;
+			jer_fire(JER_EVENT_CAR_AVAILABILITY, &jerAvail);
+			unlockExtra = jerAvail.result;
+		}
+
+		if ((gFurthestMission == 40 && NumPlayers == 1) || unlockExtra)
 		{
 			for (int i = 4; i < 9; i++)
 			{
