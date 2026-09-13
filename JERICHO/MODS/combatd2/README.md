@@ -110,6 +110,18 @@ Top Speed, Acceleration, Braking, Handling, Grip, Tight Pivot, TMB Buttons
 the pause menu under **Modules → Combat D2** (settings persist to
 `JERICHO/CONFIG/combatd2.ini`).
 
+## Format notes
+
+The Driver 2 data files have no public spec, so what we've reverse-engineered is
+written down as we go:
+
+- `carhacks/FORMATS.md` — the `.LEV` container and citylumps table, the 4-byte
+  aligned segment walk, `LUMP_CAR_MODELS` / `LUMP_PALLET` layouts, the `.LCF`,
+  texture sets vs `texture_pages`/`texture_cluts`, the car draw path, plus Python
+  recipes to re-measure each one.
+- `carhacks/CROSS_CITY.md` — what a cross-city import has to pull across, and why
+  colours need more than geometry.
+
 ## Test launchers (`tools/`)
 
 Windows `.bat` helpers that start the game with a rolled-up setup. They act on

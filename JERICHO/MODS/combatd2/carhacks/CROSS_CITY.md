@@ -1,5 +1,11 @@
 # Cross-city vehicle imports — how the level file works
 
+> **Format reference:** `FORMATS.md` in this folder documents the file layouts
+> themselves — the `.LEV` container and its citylumps table, the 4-byte aligned
+> segment walk, `LUMP_CAR_MODELS`, `LUMP_PALLET`, the `.LCF`, texture sets vs
+> `texture_pages`/`texture_cluts`, the car draw path, and Python recipes to
+> re-measure any of it. Read that first if the names below are unfamiliar.
+
 Design notes for importing another city's vehicles into a level. Written from
 measurements of the data in `DRIVER2/LEVELS/*.LEV` and `MLEVELS/*.LEV`, before
 any code changes.
