@@ -1,0 +1,10 @@
+# aidriver — general-purpose AI driver for the player's car
+id = "aidriver"
+name = "AI Driver"
+version = "0.1.0"
+author = "Jaret Ludvik"
+description = "General-purpose AI driver for the sandbox AI modes: free-flowing joyride, aggressive police evasion, and pursuit tailing with tunable distances. Reads the AI mode from g_PlayerControlMode (set by the sandbox menu), so it works with zero cross-module coupling."
+dependencies = []
+default-enabled = false
+# API-only addon: built into a DLL and loaded at runtime (no game rebuild).
+runtime = "dll"
