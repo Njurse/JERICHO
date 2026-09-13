@@ -1854,7 +1854,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 
 	ctx->jer_register_module(ctx,
 		"combatd2",					/* id */
-		"Combat D2",				/* name */
+		"Caine's Crossfire",		/* name */
 		"0.6.0",					/* version */
 		"JERICHO",					/* author */
 		"Twisted Metal: Black style car combat: point-mass handling (velocity + yaw, Tight Turn pivot, TMB buttons, momentum-absorbing walls), totaled-car wreck effects, engine presentation tuners, and the weapon prototype.",	/* description */
