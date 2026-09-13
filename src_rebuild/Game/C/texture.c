@@ -273,6 +273,33 @@ void LoadTPageFromTIMs(int tpage2send)
 #endif
 
 // [D] [T]
+// JERICHO: imported pages take precedence over whatever the engine streams.
+//
+// Every page upload - the level's own, the world's re-streaming, and ours - funnels
+// through LoadTPageAndCluts. So this is the one choke point where "enforce our
+// materials over whatever vehicle we are replacing" can be made absolute: an upload
+// aimed at a rectangle an imported page already occupies is simply refused.
+//
+// Brutish on purpose, as asked. The cost is that a world stream landing on that
+// rectangle goes nowhere, and the world draws a stale page there - which is the price
+// of the imported car keeping its own. Inert unless an import is active: with no
+// import, nothing is owned, the guard never fires, and VRAM behaves exactly as before.
+static int sCarPageUploading;			// set while WE upload, so ours is not refused
+static unsigned char sCarPageOwned[19];		// the slot rects an imported page holds
+
+static int CarPageRectOwned(int x, int y)
+{
+	int i;
+
+	for (i = 0; i < 19; i++)
+	{
+		if (sCarPageOwned[i] && tpagepos[i].x == x && tpagepos[i].y == y)
+			return 1;
+	}
+
+	return 0;
+}
+
 int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress)
 {
 	int npalettes;
@@ -280,6 +307,11 @@ int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpagea
 	RECT16 temptpage;
 
 	char* tempBuf;
+
+	// JERICHO-HOOK: an imported page lives at this VRAM rectangle - the engine does
+	// not get to replace it. See sCarPageOwned.
+	if (!sCarPageUploading && CarPageRectOwned(tpage->x, tpage->y))
+		return 0;
 
 	npalettes = *(int *)tpageaddress;
 	tpageaddress += 4;
@@ -838,33 +870,96 @@ static int FindFreeSetIndex(void)
 #define CAR_PIN_MAX 8
 
 static int sPinCount;
-static int sPinCity[CAR_PIN_MAX];
 static int sPinSet[CAR_PIN_MAX];		// the set number the CAR asks for
-static int sPinIndex[CAR_PIN_MAX];		// the index it was loaded at
-static int sPinSlot[CAR_PIN_MAX];
-static int sPinOffset[CAR_PIN_MAX];
+static int sPinIndex[CAR_PIN_MAX];		// the index its page is loaded at
+static int sPinSlot[CAR_PIN_MAX];		// the slot it lives in, -1 while unplaced
+static int sPinOffset[CAR_PIN_MAX];		// where its bytes are in the source city's file
 static int sPinSize[CAR_PIN_MAX];
-static RECT16 sPinTpage[CAR_PIN_MAX];
-static RECT16 sPinClut[CAR_PIN_MAX];
+static int sPinEvictions;			// world pages taken back this run, for the dump
 
-static void CarPinRecord(int set, int index, int slot, int offset, int size, RECT16 tpage, RECT16 clut)
+static void CarPinRecord(int set, int index, int offset, int size)
 {
 	if (sPinCount >= CAR_PIN_MAX)
 		return;
 
-	sPinCity[sPinCount] = GetCarImportCity();
 	sPinSet[sPinCount] = set;
 	sPinIndex[sPinCount] = index;
-	sPinSlot[sPinCount] = slot;
+	sPinSlot[sPinCount] = -1;		// placed at draw time
 	sPinOffset[sPinCount] = offset;
 	sPinSize[sPinCount] = size;
-	sPinTpage[sPinCount] = tpage;
-	sPinClut[sPinCount] = clut;
 	sPinCount++;
 }
 
 // Called from the game loop. Cheap when nothing is wrong - a handful of compares -
 // and only re-reads the file when a page really has been taken.
+// Which slot an imported page should live in: a genuinely free one if there is one,
+// otherwise a streamed WORLD page to evict.
+//
+// Evicting the world is safe because the world is demand-paged - it re-streams
+// whatever it needs whenever it needs it - but the eviction has to CLEAR
+// tpageloaded[held], because that is the engine's own "this is not loaded" marker and
+// what makes it reload on next use. Without that the world would keep rendering the
+// rectangle we just took.
+//
+// Never taken: slots below nperms (the level's permanent pages) and anything a host
+// car or the host's special car needs. Breaking those is the thing this work exists
+// to fix.
+static int CarPageFindSlot(void)
+{
+	int i, k;
+	static int sVictim;
+
+	for (i = 0; i < 19; i++)
+	{
+		int idx = (sVictim + i) % 19;
+
+		if (idx >= nperms && tpageslots[idx] == 0xFF)
+		{
+			sVictim = idx;
+			return idx;		// free outright
+		}
+	}
+
+	for (i = 0; i < 19; i++)
+	{
+		int idx = (sVictim + i) % 19;
+		int held = tpageslots[idx];
+
+		if (idx < nperms || held == 0xFF)
+			continue;
+
+		for (k = 0; k < 8; k++)
+		{
+			if (carTpages[GameLevel][k] == held)
+				break;
+		}
+
+		if (k != 8)
+			continue;		// a host car needs it
+
+		for (k = 0; k < 12; k++)
+		{
+			if (specTpages[GameLevel][k] == held)
+				break;
+		}
+
+		if (k != 12)
+			continue;		// the host's special car needs it
+
+		tpageloaded[held] = 0;	// tell the engine to re-stream this one when it next wants it
+
+		sVictim = idx;
+		sPinEvictions++;
+
+		if (sPinEvictions <= 6)
+			printInfo("cross-city: paging - evicting world set %d from slot %d for an imported page\n", held, idx);
+
+		return idx;
+	}
+
+	return -1;
+}
+
 void CarImportPin(void)
 {
 	int i;
@@ -873,9 +968,20 @@ void CarImportPin(void)
 	{
 		char* buf;
 		RECT16 tpage, clut;
+		int slot;
 
-		if (tpageslots[sPinSlot[i]] == sPinIndex[i] && tpageloaded[sPinIndex[i]] != 0)
-			continue;
+		if (sPinSlot[i] >= 0 && tpageslots[sPinSlot[i]] == sPinIndex[i] && tpageloaded[sPinIndex[i]] != 0)
+			continue;		// still ours, nothing to do
+
+		// Where to put it: the slot it had before (taking that rectangle back), else a
+		// free one, else a world stream to evict.
+		slot = sPinSlot[i];
+
+		if (slot < 0 || slot >= 19)
+			slot = CarPageFindSlot();
+
+		if (slot < 0)
+			continue;		// nothing evictable this frame; try again next frame
 
 		buf = (char*)malloc(sPinSize[i]);
 
@@ -888,13 +994,28 @@ void CarImportPin(void)
 			continue;
 		}
 
-		tpage = sPinTpage[i];
-		clut = sPinClut[i];
+		tpage.x = tpagepos[slot].x;
+		tpage.y = tpagepos[slot].y;
+		tpage.w = 64;
+		tpage.h = 256;
 
+		clut.x = slot_clutpos[slot].vx;
+		clut.y = slot_clutpos[slot].vy;
+		clut.w = 16;
+		clut.h = 1;
+
+		// Ours to write: bypass the ownership guard for this upload, then mark the
+		// rectangle owned so the engine's own uploads to it are refused from here on.
+		sCarPageUploading = 1;
 		LoadTPageAndCluts(&tpage, &clut, sPinIndex[i], buf);
+		sCarPageUploading = 0;
 
-		tpageslots[sPinSlot[i]] = (u_char)sPinIndex[i];
-		tpageloaded[sPinIndex[i]] = (u_char)sPinSlot[i];
+		sCarPageOwned[slot] = 1;
+
+		tpageslots[slot] = (u_char)sPinIndex[i];
+		tpageloaded[sPinIndex[i]] = (u_char)slot;
+
+		sPinSlot[i] = slot;
 
 		free(buf);
 	}
@@ -918,7 +1039,7 @@ void CarImportDumpState(void)
 	if (GetCarImportCity() < 0 && sRemapCount == 0)
 		return;
 
-	printInfo("cross-city: final page state (%d re-indexed set(s))\n", sRemapCount);
+	printInfo("cross-city: final page state (%d pinned, %d world pages evicted)\n", sPinCount, sPinEvictions);
 
 	for (k = 0; k < sRemapCount; k++)
 	{
@@ -974,25 +1095,10 @@ void LoadImportedTPages(void)
 	int base = GetCarImportPageBase();
 	int sets[64];
 	int nsets = 0;
-	int slot;
 	int i, j;
 
-	// Positions we have already taken. The 19-entry tpagepos list runs out before
-	// the slot indices do, and once it does IncrementTPageNum leaves the position
-	// unchanged (setting NoTextureMemory) - so a later slot would silently share a
-	// position with an earlier one and its page would stamp over it. Tracking what
-	// we took turns that into a refusal with a reason.
-	RECT16 usedPos[8];
-	int nused = 0;
-
-	// CLUT rows for the imported sets walk locally across all of them, so two sets
-	// cannot land on the same rows the way the (also exhausted) slot_clutpos would.
-	// Started at the level's own end-of-CLUT cursor, which is free space above it.
-	RECT16 impclut;
-
-	impclut = clutpos;
-	impclut.w = 16;
-	impclut.h = 1;
+	// (placement moved to draw time - see CarImportPin/CarPageFindSlot - so the load
+	// no longer tracks slots, positions or CLUT rows)
 
 	// JERICHO-DIAG: what the walk actually sees, one line per resident slot. Local
 	// slots are the control - their cars render textured today, so if the walk finds
@@ -1109,13 +1215,11 @@ void LoadImportedTPages(void)
 	printInfo("cross-city: %s - %d set(s) wanted from carTpages/specTpages\n", LevelNames[city], nsets);
 
 	// Each set goes into a slot the level left FREE, at that slot's own already
-	// assigned position. The slot init loop at the end of LoadPermanentTPages gave
-	// every spare slot a position and 8 CLUT rows - enough for the 32 a set can
-	// hold. So nothing of the level's moves: not a page position, not a CLUT row,
-	// not the tpage/clutpos cursors. Walking those cursors is what corrupted walls
-	// and car colours before, and not walking them is what makes that impossible
-	// now.
-	slot = slotsused;
+	// assigned position - and now at DRAW time rather than load time: the load only
+	// records what each imported car needs (CarPinRecord), and CarImportPin pages it in
+	// before the cars are drawn, evicting a world slot if none is free. So nothing of
+	// the level's moves: not a page position, not a CLUT row, not the tpage/clutpos
+	// cursors. Walking those cursors is what corrupted walls and car colours before.
 
 	for (i = 0; i < nsets; i++)
 	{
@@ -1127,7 +1231,6 @@ void LoadImportedTPages(void)
 		int size = 0;
 		int npalettes;
 		char* buf;
-		RECT16 imptpage;
 
 		if (set == 0 || SetInList(sets, i, set))
 			continue;
@@ -1135,8 +1238,8 @@ void LoadImportedTPages(void)
 		// JERICHO-DIAG: every candidate, before any guard can hide it - which slot it
 		// would take, the position that slot resolves to, and whether the host owns
 		// the set. This is what tells a genuine capacity wall from a bogus refusal.
-		printInfo("cross-city: candidate %s set %d -> slot %d pos(%d,%d) hostOwns=%d\n",
-			LevelNames[city], set, slot, tpagepos[slot].x, tpagepos[slot].y, (LevelTookTPage(set) || HostOwnsCarTPage(set)) ? 1 : 0);
+		printInfo("cross-city: candidate %s set %d hostOwns=%d\n",
+			LevelNames[city], set, (LevelTookTPage(set) || HostOwnsCarTPage(set)) ? 1 : 0);
 
 		// The host city keeps its own meaning for a set number: a set index holds one
 		// meaning at a time. So the imported page goes to a free index instead and the
@@ -1210,28 +1313,9 @@ void LoadImportedTPages(void)
 		}
 
 		// no spare slot: refuse, rather than steal one the level streams into
-		if (slot >= 19 || tpageslots[slot] != 0xFF)
+		if (0)
 		{
-			printInfo("cross-city: no spare texture slot - %s set %d (and any after it) not loaded; those parts keep the host's textures\n", LevelNames[city], set);
-			break;
-		}
-
-		// and no position to put it in: refuse rather than overwrite a page we just
-		// uploaded, which is what happened silently before this check existed
-		{
-			int dup = 0, u;
-
-			for (u = 0; u < nused; u++)
-			{
-				if (usedPos[u].x == tpagepos[slot].x && usedPos[u].y == tpagepos[slot].y)
-					dup = 1;
-			}
-
-			if (dup)
-			{
-				printInfo("cross-city: no distinct VRAM page position left - %s set %d (and any after it) not loaded; those parts keep the host's textures\n", LevelNames[city], set);
-				break;
-			}
+			;
 		}
 
 		buf = (char*)malloc(size);
@@ -1246,49 +1330,23 @@ void LoadImportedTPages(void)
 			continue;
 		}
 
-		// an entry starts with its CLUT-row count; anything outside the 32 rows
-		// texture_cluts can hold is a bad offset, and uploading it would smear
-		// VRAM, so refuse it instead
+		// An entry starts with its CLUT-row count; anything outside the 32 rows
+		// texture_cluts can hold means a bad offset, and uploading it would smear VRAM.
+		// So the bytes are read here to VALIDATE the entry only: placement happens at
+		// draw time (CarImportPin), which is what frees the load from needing a spare
+		// slot at all - and lets a page take a world slot back when there is none.
 		npalettes = *(int*)buf;
+
+		free(buf);
 
 		if (npalettes <= 0 || npalettes > 32)
 		{
 			printInfo("cross-city: %s set %d looks corrupt (%d clut rows) - skipped\n", LevelNames[city], set, npalettes);
-			free(buf);
 			continue;
 		}
 
-		// The page position comes from tpagepos[slot], NOT from the walk the tail loop
-		// left behind. That walk starts wherever the perm AND special pages left it -
-		// index 12+8 = 20 on Havana, already past the 19-entry list - so
-		// IncrementTPageNum sets NoTextureMemory and never moves tpage again, and every
-		// spare slot ends up sharing the last position. Uploading five sets into one
-		// position is the 'broken textures on some city combinations' symptom, and it
-		// varies per level because how far the walk got does.
-		//
-		// tpagepos is indexed by slot - the spool does exactly this at spool.c:1722,
-		// slot_tpagepos[index] = tpagepos[index] - so slot N gets position N, distinct
-		// by construction.
-		imptpage.x = tpagepos[slot].x;
-		imptpage.y = tpagepos[slot].y;
-		imptpage.w = 64;
-		imptpage.h = 256;
-
-		printInfo("cross-city: %s set %d -> slot %d index %d at (%d,%d) clut(%d,%d), %d bytes at +%d, %d clut rows\n",
-			LevelNames[city], set, slot, dstSet, imptpage.x, imptpage.y, impclut.x, impclut.y, size, offset, npalettes);
-
-		// captured before the upload: LoadTPageAndCluts advances both rects, and the pin
-		// has to re-upload to the same place it used the first time
-		{
-			RECT16 tpageStart = imptpage;
-			RECT16 clutStart = impclut;
-
-			LoadTPageAndCluts(&imptpage, &impclut, dstSet, buf);
-
-			CarPinRecord(set, dstSet, slot, offset, size, tpageStart, clutStart);
-		}
-
-		// the remap is real now that the page is in place
+		// The remap becomes real together with the pin: the page WILL be placed (at draw
+		// time, evicting the world if need be), short of a failed read.
 		if (remapFrom >= 0 && sRemapCount < CAR_REMAP_MAX)
 		{
 			sRemapFrom[sRemapCount] = remapFrom;
@@ -1296,23 +1354,10 @@ void LoadImportedTPages(void)
 			sRemapCount++;
 		}
 
-		// claimed: no longer 0xFF, so the streaming slot scan cannot hand it out
-		tpageslots[slot] = (u_char)dstSet;
-		tpageloaded[dstSet] = (u_char)slot;
+		CarPinRecord(set, dstSet, offset, size);
 
-		// The position counts as taken only NOW. Recording it before the upload let a
-		// candidate that was skipped further down - not in the page list, unreadable -
-		// burn a position it never used, and the next candidate then saw a duplicate
-		// that did not exist. That is exactly how VEGAS-into-CHICAGO refused itself.
-		if (nused < 8)
-		{
-			usedPos[nused].x = tpagepos[slot].x;
-			usedPos[nused].y = tpagepos[slot].y;
-			nused++;
-		}
-
-		free(buf);
-		slot++;
+		printInfo("cross-city: %s set %d -> index %d, %d bytes at +%d, %d clut rows (paged in at draw time, evicting the world if needed)\n",
+			LevelNames[city], set, dstSet, size, offset, npalettes);
 	}
 }
 
