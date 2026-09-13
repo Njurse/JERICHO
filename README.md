@@ -473,3 +473,27 @@ The minimal reference addon: logs at boot and fires a custom event every 60
 frames. **Uses:** `JER_EVENT_FRAME` plus a custom `JER_EVENT_MODULE_CUSTOM`
 event. It exists to prove the whole addon pipeline end to end — the copy-me
 starting point.
+
+## Credits
+
+**JERICHO and this fork — Jaret Ludvik.**
+
+This project stands on **REDRIVER2**, the reverse-engineered Driver 2 rewrite it
+is forked from, and the engine underneath is the work of its authors: **SoapyMan**
+(lead reverse engineer and programmer), **Fireboyd78** (code refactoring and
+improvements), **Krishty** and **someone972** (early format decoding),
+**Gh0stBlade** (the HLE emulator base for Psy-Cross), **Ben Lincoln** (*(TDR)* —
+This Dust Remembers What It Once Was) and **Stohrendorf** (the symdump utility).
+The upstream project and its full history live in [`REDRIVER2.md`](REDRIVER2.md).
+
+Some bundled mods carry their own authorship in their `mod.toml` / folder
+README — see [`JERICHO/MODS/`](JERICHO/MODS/).
+
+## Documentation
+
+- [`docs/README.md`](docs/README.md) — the index for the whole documentation set.
+- [`src_rebuild/Game/C/JERICHO/docs/README.md`](src_rebuild/Game/C/JERICHO/docs/README.md) — JERICHO overview (layout, build, runtime).
+- [`src_rebuild/Game/C/JERICHO/docs/events.md`](src_rebuild/Game/C/JERICHO/docs/events.md) — the exhaustive event reference.
+- [`src_rebuild/Game/C/JERICHO/docs/HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) — writing a module.
+- [`JERICHO/sdk/README.md`](JERICHO/sdk/README.md) — the addon SDK.
+- [`docs/CI.md`](docs/CI.md) — the builds, downloads and release process.
