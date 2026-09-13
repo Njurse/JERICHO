@@ -174,7 +174,7 @@ launches with `-nointro -mp <arena> -level <city> -car <slot> -weather <w>
 
 ### Launchers
 
-All four `cd` into `bin\Release_dev\`, then `start` `REDRIVER2_dev.exe`:
+All five `cd` into `bin\Release_dev\`, then `start` `REDRIVER2_dev.exe`:
 
 | Launcher | What it does |
 |---|---|
@@ -182,6 +182,19 @@ All four `cd` into `bin\Release_dev\`, then `start` `REDRIVER2_dev.exe`:
 | `launch_mp_chicago_semi.bat` | Chicago's **multiplayer arena 1** (`-mp 1`; `-mp 0` is the other arena), player spawned as the **semi** when its data is present. |
 | `launch_tar_chicago_semi.bat` | **Single-player** Chicago, player spawned as the semi when its data is present. |
 | `launch_mp_random_mix.bat` | Multiplayer arena with a random cross-city import and a mixed roster; **overwrites** `carhacks.ini`; supports a `dry` argument. |
+| `launch_mp_foreign_car.bat` | The same arena mix with the coin flip removed: the player is **always** in a foreign car — a random body from a randomly chosen *other* city, forced through `player_model` plus an import into the special slot, and no `-car` argument. Model 11 joins the pick only when the source city is not Chicago (Chicago ships no data for it). Supports `dry`. |
+
+`launch_mp_foreign_car.bat` is the reliable way to reproduce the outstanding
+cross-city rendering limitation: a foreign vehicle carries the other city's
+geometry and palettes, but its polygons name **that** city's texture pages, which
+this level has not loaded — so it does not yet render correctly. That work is
+described in `carhacks/CROSS_CITY.md`.
+
+**They share one config file.** Both `launch_mp_*` launchers write the same
+`JERICHO/CONFIG/carhacks.ini`, so two runs at once will clobber each other's roll
+(and a game already in progress picks the change up on its next level load). Run
+one at a time, or check the file after launching if the cars look wrong.
+
 
 Both `*_chicago_semi.bat` launchers want the semi at
 `DRIVER2\LEVELS\CHICAGO\CARMODEL_11_clean.dmodel`. This install ships only the
