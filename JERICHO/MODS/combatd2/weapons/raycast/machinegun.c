@@ -79,8 +79,8 @@ static CD2_WEAPON_DEF cd2MakeMGDef(void)
 	d.fireCone = 420;		// a fast tracer: needs a reasonable line
 
 	d.damage = 390;
-	d.speed = 450;		// world units/frame (fast particle; outruns a car at top speed)
-	d.range = 6400;
+	d.speed = 750;		// world units/frame (fast particle; outruns a car at top speed)
+	d.range = 16400;
 	d.life = 2;
 
 	d.explosionEffect = LITTLE_BANG;
