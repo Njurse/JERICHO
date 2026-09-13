@@ -1642,6 +1642,37 @@ int gMultiStep = 0;
 	// roles and roam goals from it). 0 = none given, modules seed themselves.
 	int gDebugSeed = 0;
 
+// JERICHO: the -frames check, shared by every per-frame entry point so a debug run
+// self-terminates in the FRONTEND as well as in gameplay. It used to be
+// gameplay-only, which left frontend runs with no way to end except a kill - and a
+// kill discards the log, which is the whole reason -frames exists.
+//
+// Called after each entry point's own frame guard, so the count is real frames.
+void JerichoFrameTick(void)
+{
+	if (gExitAfterFrames <= 0 || ++gRunFrames < gExitAfterFrames)
+		return;
+
+	// JERICHO: one machine-readable line so a harness reads named fields instead of
+	// guessing a verdict from log prose. status=ok means the run reached its frame
+	// budget; a run that dies or hangs never prints this at all, which is how failure
+	// is detected.
+	{
+		int car = -1;
+
+		if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+			car = (int)car_data[MainPlayer.playerCarId].ap.model;
+
+		printInfo("JERICHO-RUN: level=%s car=%d frames=%d seed=%d status=ok\n",
+			LevelNames[GameLevel], car, gRunFrames, gDebugSeed);
+	}
+
+	// JERICHO: where the imported pages ended up, after the level has streamed.
+	CarImportDumpState();
+
+	exit(0);
+}
+
 // [D] [T]
 void State_GameLoop(void* param)
 {
@@ -1658,28 +1689,9 @@ void State_GameLoop(void* param)
 		return;
 
 	// JERICHO-HOOK: -frames. Counted here, after the 30 fps guard, so the number is
-	// real stepped gameplay frames rather than iterations of the state machine.
-	if (gExitAfterFrames > 0 && ++gRunFrames >= gExitAfterFrames)
-	{
-		// JERICHO: one machine-readable line so a harness reads named fields instead
-		// of guessing a verdict from log prose. status=ok means the run reached its
-		// frame budget; a run that dies or hangs never prints this at all, which is
-		// how failure is detected.
-		{
-			int car = -1;
-
-			if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
-				car = (int)car_data[MainPlayer.playerCarId].ap.model;
-
-			printInfo("JERICHO-RUN: level=%s car=%d frames=%d seed=%d status=ok\n",
-				LevelNames[GameLevel], car, gRunFrames, gDebugSeed);
-		}
-
-		// JERICHO: where the imported pages ended up, after the level has streamed.
-		CarImportDumpState();
-
-		exit(0);
-	}
+	// real stepped gameplay frames rather than iterations of the state machine. Shared
+	// with State_FrontEnd, so a frontend run self-terminates too.
+	JerichoFrameTick();
 
 	// JERICHO-HOOK: imported pages sit in slots the engine streams into, and a later
 	// load pass resets the slot table - so re-claim and re-upload any that were taken
