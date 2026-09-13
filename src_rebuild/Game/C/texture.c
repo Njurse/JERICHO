@@ -759,6 +759,14 @@ void LoadImportedTPages(void)
 	int slot;
 	int i, j;
 
+	// Positions we have already taken. The 19-entry tpagepos list runs out before
+	// the slot indices do, and once it does IncrementTPageNum leaves the position
+	// unchanged (setting NoTextureMemory) - so a later slot would silently share a
+	// position with an earlier one and its page would stamp over it. Tracking what
+	// we took turns that into a refusal with a reason.
+	RECT16 usedPos[8];
+	int nused = 0;
+
 	// JERICHO-DIAG: what the walk actually sees, one line per resident slot. Local
 	// slots are the control - their cars render textured today, so if the walk finds
 	// no sets for THOSE, the walk is wrong rather than the import being absent.
@@ -798,16 +806,56 @@ void LoadImportedTPages(void)
 	if (city < 0 || base < 0)
 		return;
 
-	// What the cars we actually imported paint with, rather than assuming every car
-	// set the source city has. The models exist by now - this runs from
-	// LoadGameLevel after ProcessLumps, which is where LUMP_CAR_MODELS is handled.
-	for (i = 0; i < MAX_CAR_RESIDENT_MODELS && nsets < 64; i++)
+	// Which sets to bring across: the ENGINE'S OWN ANSWER, not a guess.
+	//
+	// The engine never scans polygons to decide this. For its own cars it loads the
+	// whole carTpages list for the level - six civilian sets - and for a special
+	// body it takes that body's two entries out of specTpages. Do exactly the same
+	// for the source city, which is what makes a cross-city vehicle load like the
+	// city's own vehicles do.
+	//
+	// The polygon walk (CollectModelSets) is no longer a source of truth: run against
+	// LOCAL models, whose cars render textured, it reported sets that do not exist in
+	// that city (12 and 255 against Havana's {10,20,35,36,37,38,39,51}), so it
+	// misreads the layout. It survives only as the diagnostic that shows this.
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 	{
-		if (GetCarModelSourceCity(i) >= 0)
-			nsets = CollectModelSets(gCarCleanModelPtr[i], sets, nsets, 64);
+		int src = GetCarModelSourceCity(i);
+		int body, k;
+
+		if (src < 0)
+			continue;
+
+		body = residentCarModels[i];
+
+		if (body > 5)
+		{
+			// Special body: its own two pages, taken the same way LoadPermanentTPages
+			// takes them for the host level's special car.
+			int spec = (body - 8) * 2;
+
+			for (k = 0; k < 2; k++)
+			{
+				int set = (spec + k >= 0 && spec + k < 12) ? specTpages[src][spec + k] : 0;
+
+				if (set != 0 && nsets < 64 && !SetInList(sets, nsets, set))
+					sets[nsets++] = set;
+			}
+		}
+		else
+		{
+			// Civilian body: the city's civilian car sets.
+			for (k = 0; k < 6; k++)
+			{
+				int set = carTpages[src][k];
+
+				if (set != 0 && nsets < 64 && !SetInList(sets, nsets, set))
+					sets[nsets++] = set;
+			}
+		}
 	}
 
-	printInfo("cross-city: %s - %d set(s) named by the imported models\n", LevelNames[city], nsets);
+	printInfo("cross-city: %s - %d set(s) wanted from carTpages/specTpages\n", LevelNames[city], nsets);
 
 	// Each set goes into a slot the level left FREE, at that slot's own already
 	// assigned position. The slot init loop at the end of LoadPermanentTPages gave
@@ -860,6 +908,31 @@ void LoadImportedTPages(void)
 		{
 			printInfo("cross-city: no spare texture slot - %s set %d (and any after it) not loaded; those parts keep the host's textures\n", LevelNames[city], set);
 			break;
+		}
+
+		// and no position to put it in: refuse rather than overwrite a page we just
+		// uploaded, which is what happened silently before this check existed
+		{
+			int dup = 0, u;
+
+			for (u = 0; u < nused; u++)
+			{
+				if (usedPos[u].x == slot_tpagepos[slot].vx && usedPos[u].y == slot_tpagepos[slot].vy)
+					dup = 1;
+			}
+
+			if (dup)
+			{
+				printInfo("cross-city: no distinct VRAM page position left - %s set %d (and any after it) not loaded; those parts keep the host's textures\n", LevelNames[city], set);
+				break;
+			}
+
+			if (nused < 8)
+			{
+				usedPos[nused].x = slot_tpagepos[slot].vx;
+				usedPos[nused].y = slot_tpagepos[slot].vy;
+				nused++;
+			}
 		}
 
 		buf = (char*)malloc(size);
