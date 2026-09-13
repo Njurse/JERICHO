@@ -214,10 +214,45 @@ order — each step of it earned by a measurement rather than a guess:
    taken. Without it the car samples whatever streamed in over its page, which reads
    as wrong UVs or wrong colours.
 
-Still open: `civ_clut[carid][texture_id][0]` in the same conversion still reads the
-page via the **original** set number, so that one cache entry can hold the host's
-CLUT for a re-indexed set. And visual confirmation stays the user's: the logs prove
-pages are placed, claimed and kept — not that a car looks right.
+## Enforcement, and what is still open
+
+**Imported pages now have the last word.** Every page upload funnels through
+`LoadTPageAndCluts`, so the rule is enforced there: an upload aimed at a VRAM
+rectangle an imported page occupies is refused, and the world re-streams elsewhere.
+Brutish on purpose — the cost is that a world page meant for that rectangle goes
+stale. Inert with no import: nothing is owned, the guard cannot fire, and a stock run
+reports the same page state and `civ_clut` checksum as before.
+
+Why it was needed: the level's page *data* is built once at load, but the **slot table
+is refreshed continuously** — `SendTPage` re-uploads region pages as you drive, and
+`CleanSpooled`/`CleanSpooledModelSlots` (`models.c:33`, called from `spool.c:436/742`)
+recycle car-model slots on spool checkpoints. Something really does keep overwriting
+car materials.
+
+Still open, and visible in `devcheck.sh` (it FAILS rather than reporting a quiet '-'):
+
+- **A foreign car for the PLAYER does not work yet.** Two causes found by
+  instrumentation: the mission header applies `PlayerStartInfo[0]->model` *after*
+  modules get their say (`JER_EVENT_CAR_DATA_SOURCE` fires in `SetupResidentModels`,
+  called at `LoadMission:806`, while the header is applied at `:573`), and the resident
+  search took the *first* slot holding a model — levels list models twice, Havana being
+  `1 2 3 3 4`, so a civilian import lost to the host's own copy. Both are fixed, and
+  the choice now reaches `PlayerStartInfo` (verified by log) — but the player's car
+  still comes out with an impossible model (7, which exists in no city), and the
+  special-slot route that worked in an earlier session has regressed since. A bisect
+  from `c8676773` is the next step, and the harness makes it cheap.
+- **UV bleeding** on imported cars, reported by eye. Most likely the same contention:
+  the car sampling a rectangle a world page has since refilled.
+- `civ_clut[carid][texture_id][0]` in the poly conversion still reads via the
+  **original** set number, so that one cache entry can hold the host's CLUT for a
+  re-indexed set.
+
+Reference case worth keeping: the **fire truck (model 8) loads with correct palettes
+in Havana**. The host's own special body is sound, which is consistent with not merging
+an imported city's palettes into `civ_clut`.
+
+And visual confirmation stays the user's: these logs prove pages are placed, claimed
+and kept — not that a car looks right.
 
 ## Related
 
