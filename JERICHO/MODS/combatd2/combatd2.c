@@ -40,6 +40,7 @@
 #include "mc_snd.h"
 #include "weapons/core/weapon.h"	/* CD2_WEAPON_DEF + inventory API */
 #include "ai/ai.h"			/* opponent AI (ai/opponent.c) */
+#include "carhacks/carhacks.h"		/* vehicle-availability hacks (own module later) */
 #include <string.h>
 // Registration helpers from the other source files of this (merged) module:
 //   combatd2combat.c — wreck/explosion effects   (cd2CombatRegister)
@@ -1915,6 +1916,10 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	cd2FxRegister(ctx);
 	cd2FreezeRegister(ctx);
 	cd2AiRegister(ctx);
+
+	/* vehicle-availability hacks - self-contained, hosted here for now and
+	 * intended to move to its own module (see carhacks/carhacks.h) */
+	carhacks_register(ctx);
 
 	ctx->jer_log(ctx, "[combatd2] registered (SDK v%d)\n", ctx->sdkVersion);
 }
