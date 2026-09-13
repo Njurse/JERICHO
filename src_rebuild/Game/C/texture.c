@@ -767,6 +767,15 @@ void LoadImportedTPages(void)
 	RECT16 usedPos[8];
 	int nused = 0;
 
+	// CLUT rows for the imported sets walk locally across all of them, so two sets
+	// cannot land on the same rows the way the (also exhausted) slot_clutpos would.
+	// Started at the level's own end-of-CLUT cursor, which is free space above it.
+	RECT16 impclut;
+
+	impclut = clutpos;
+	impclut.w = 16;
+	impclut.h = 1;
+
 	// JERICHO-DIAG: what the walk actually sees, one line per resident slot. Local
 	// slots are the control - their cars render textured today, so if the walk finds
 	// no sets for THOSE, the walk is wrong rather than the import being absent.
@@ -873,7 +882,7 @@ void LoadImportedTPages(void)
 		int size = 0;
 		int npalettes;
 		char* buf;
-		RECT16 imptpage, impclut;
+		RECT16 imptpage;
 
 		if (set == 0 || SetInList(sets, i, set))
 			continue;
@@ -917,7 +926,7 @@ void LoadImportedTPages(void)
 
 			for (u = 0; u < nused; u++)
 			{
-				if (usedPos[u].x == slot_tpagepos[slot].vx && usedPos[u].y == slot_tpagepos[slot].vy)
+				if (usedPos[u].x == tpagepos[slot].x && usedPos[u].y == tpagepos[slot].y)
 					dup = 1;
 			}
 
@@ -929,8 +938,8 @@ void LoadImportedTPages(void)
 
 			if (nused < 8)
 			{
-				usedPos[nused].x = slot_tpagepos[slot].vx;
-				usedPos[nused].y = slot_tpagepos[slot].vy;
+				usedPos[nused].x = tpagepos[slot].x;
+				usedPos[nused].y = tpagepos[slot].y;
 				nused++;
 			}
 		}
@@ -959,26 +968,30 @@ void LoadImportedTPages(void)
 			continue;
 		}
 
-		// rect copies: LoadTPageAndCluts walks both of these, and it has to walk
-		// them instead of the level's own cursors
-		imptpage.x = slot_tpagepos[slot].vx;
-		imptpage.y = slot_tpagepos[slot].vy;
+		// The page position comes from tpagepos[slot], NOT from the walk the tail loop
+		// left behind. That walk starts wherever the perm AND special pages left it -
+		// index 12+8 = 20 on Havana, already past the 19-entry list - so
+		// IncrementTPageNum sets NoTextureMemory and never moves tpage again, and every
+		// spare slot ends up sharing the last position. Uploading five sets into one
+		// position is the 'broken textures on some city combinations' symptom, and it
+		// varies per level because how far the walk got does.
+		//
+		// tpagepos is indexed by slot - the spool does exactly this at spool.c:1722,
+		// slot_tpagepos[index] = tpagepos[index] - so slot N gets position N, distinct
+		// by construction.
+		imptpage.x = tpagepos[slot].x;
+		imptpage.y = tpagepos[slot].y;
 		imptpage.w = 64;
 		imptpage.h = 256;
 
-		impclut.x = slot_clutpos[slot].vx;
-		impclut.y = slot_clutpos[slot].vy;
-		impclut.w = 16;
-		impclut.h = 1;
+		printInfo("cross-city: %s set %d -> slot %d at (%d,%d) clut(%d,%d), %d bytes at +%d, %d clut rows\n",
+			LevelNames[city], set, slot, imptpage.x, imptpage.y, impclut.x, impclut.y, size, offset, npalettes);
 
 		LoadTPageAndCluts(&imptpage, &impclut, set, buf);
 
 		// claimed: no longer 0xFF, so the streaming slot scan cannot hand it out
 		tpageslots[slot] = (u_char)set;
 		tpageloaded[set] = (u_char)slot;
-
-		printInfo("cross-city: %s set %d -> slot %d at (%d,%d), %d bytes at +%d, %d clut rows\n",
-			LevelNames[city], set, slot, imptpage.x, imptpage.y, size, offset, npalettes);
 
 		free(buf);
 		slot++;
