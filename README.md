@@ -372,3 +372,104 @@ REDRIVER2_dev.exe -nointro -nofmv -level <city> -car <slot#> -gamemode <mode>
 - `-time`: `day` / `dusk` / `night`; `-weather`: `sunny` / `rain`
 
 `-car` needs at least a `-level` (a message box explains otherwise).
+
+## Showcase mods
+
+These modules exist to demonstrate what the hook surface makes possible. Each is
+built purely from JERICHO events (plus, for the deep mods, read/write access to
+game globals), each is managed from the same Mods menu, and none of them edits
+engine files — remove a module and the game is stock. Each mod also ships a fuller
+`README.md` in its own folder under [`JERICHO/MODS/`](JERICHO/MODS/) with the
+exact event list and tuning notes.
+
+### CRUMPLE — car deformation
+
+The flagship package: impact-driven vertex deformation and wheel damage layered
+on the stock damaged-model system. **Uses:** `JER_EVENT_COLLISION` /
+`JER_EVENT_DENT_PASS` / `JER_EVENT_RESET_CAR` to record impacts and deform verts,
+`JER_EVENT_GET_WHEEL_BEND` / `GET_WHEEL_DAMAGE` / `GET_WHEEL_PARAMS` +
+`JER_EVENT_DRAW_WHEEL` for per-wheel bend and scrub, and `JER_EVENT_PAUSE_MENU` /
+`JER_EVENT_GET_IMPACT_INFO` for its **Crumple Debug** submenu and readout.
+
+![CRUMPLE's Crumple Debug submenu](readme_images/addon_crumple_debug_example.png)
+
+### Caine's Crossfire (`combatd2`) — car combat
+
+Twisted Metal: Black-style arcade handling on a point-mass body, with a weapon
+prototype and a parametric explosion-FX library. **Uses:** the full car-handling
+set (`CAR_PAD`, `CAR_ENGINE`, `CAR_FRICTION`, `CAR_TORQUE`, `CAR_STEP`,
+`CAR_DRAW`, `CAR_DRAW_COLOR`, `CAR_GEARBOX`, `CAR_REVS`, `CAR_ENGINE_SOUND`); the
+damage hooks (`CAR_VS_CAR`, `GET_DAMAGE_SCALE`, `GET_WALL_RESTITUTION`); the FX
+hooks (`EXPLOSION_SPAWN` / `DRAW` / `COLLIDE`, `DRAW_WORLD`); plus `DRAW_MAP`,
+`CAR_DATA_SOURCE`, `CAR_AVAILABILITY` and `LEVEL_LAUNCH`. The single best example
+of how far one mod can reshape handling, sound, damage and effects at once.
+
+![Caine's Crossfire car-combat gamemode](readme_images/addon_cainescrossfire_gamemode_example.png)
+
+![A custom explosion effect driven by the FX hooks](readme_images/addon_custom_effects_example.png)
+
+### Sandbox — the whole API surface
+
+A demo package: no-damage, a time-scale world-step override, a map-teleport
+cursor, and an overlay menu that keeps the world running while it's open.
+**Uses:** `JER_EVENT_FRAME` (no-damage), the `JER_OVERRIDE_SLOT_SIM` override
+(time-scale), `JER_EVENT_DRAW_OVERLAY` + `JER_EVENT_PAUSE_MENU` (its menu),
+`JER_EVENT_MAP` (the teleport cursor), and a custom `>= JER_EVENT_MODULE_CUSTOM`
+event for its no-damage toggle — pure hooks, zero vanilla edits.
+
+![Sandbox's custom overlay menu](readme_images/addon_sandbox_custom_menu_example.png)
+
+### Driver 2 Parallel Lines (`d2pl`) — camera + weapons
+
+A modern dual-stick third-person camera plus an overridable weapon system.
+**Uses:** `JER_EVENT_CAMERA` (orbit / framing / FOV), `JER_EVENT_CAMERA_LOOK`
+(right-stick look), `JER_EVENT_PED_INPUT` + `PED_MOVE` / `PED_POSE` /
+`PED_SKELETON` (on-foot, camera-relative movement), `JER_EVENT_PAUSE_MENU`, and
+`jer_config` for its settings.
+
+### COLLISIONDEVIL — arcade handling
+
+An arcade handling overhaul ("a rocket-powered skateboard") that derives every
+value from existing chassis stats. **Uses:** `JER_EVENT_CAR_ENGINE` (scale
+thrust + steering), `JER_EVENT_CAR_FRICTION` (drop rear grip), `JER_EVENT_CAR_STEP`
+(detect drift), `JER_EVENT_CAR_TORQUE` (inject yaw kick) and `JER_EVENT_CAR_DRAW`
+(render-only body drama). Shows the handling hooks used as a coherent set.
+
+### AI Driver (`aidriver`) — a runtime addon
+
+A general-purpose AI driver for the player's car, built as an **addon DLL** (no
+game rebuild). **Uses:** `JER_EVENT_FRAME` and `JER_EVENT_PRE_SIM` to observe and
+drive the car, reading the AI mode from a game global — zero cross-module
+coupling. The clearest demonstration of the addon model.
+
+### Ant Farm — a screensaver / idle mode
+
+Turns the game into a passive city observer: input cut, HUD hidden, SFX muted,
+cops passive, while a cinematic camera tours the map. **Uses:** `JER_EVENT_CAMERA`
+for its shot styles, plus `JER_EVENT_FRAME`, `JER_EVENT_PED_INPUT`,
+`JER_EVENT_DRAW_OVERLAY` and `JER_EVENT_PAUSE_MENU`.
+
+### Level Hacks (`levelhacks`) — frontend flow
+
+Intercepts take-a-ride after the city confirm and offers Singleplayer/Multiplayer,
+then can boot a city's small multiplayer map in single player. **Uses:**
+`JER_EVENT_FRONTEND` (defer the stock start and run its own menu),
+`JER_EVENT_FRAME` (drive the menu), `JER_EVENT_DRAW_OVERLAY` (draw it),
+`JER_EVENT_GAME_START` (re-arm) and `JER_EVENT_LEVEL_LAUNCH` (swap the pending
+mission number). Shows rewriting frontend flow and the level-launch args.
+
+### Multiplayer (`mp`) — networking
+
+LAN multiplayer: host/join with UDP discovery, real frontend menus, and
+synchronized play. **Uses:** `JER_EVENT_MP_FRONTEND` (claim the menu),
+`JER_EVENT_FRONTEND` / `LEVEL_LAUNCH` / `GAME_START` (session flow), the net hooks
+(`NET_INPUT`, `NET_RECV`, `NET_SPAWN`, and the `NET_CAR_STATE` / `NET_PLAYERS`
+resync path), the `jer_frontend.h` menu API and the `jer_net.h` channel bridge.
+The reference for the networking and frontend-menu surfaces.
+
+### Example (`example`) — the smoke test
+
+The minimal reference addon: logs at boot and fires a custom event every 60
+frames. **Uses:** `JER_EVENT_FRAME` plus a custom `JER_EVENT_MODULE_CUSTOM`
+event. It exists to prove the whole addon pipeline end to end — the copy-me
+starting point.
