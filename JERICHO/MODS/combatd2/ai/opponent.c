@@ -199,6 +199,7 @@ typedef struct CD2_AI_CAR
 } CD2_AI_CAR;
 
 static CD2_AI_CAR sAi[CD2_AI_MAX];
+static int sPoolLogged;		// one-shot: log the level's usable car models
 static int sAiCount;		// number of live opponents
 static unsigned int sLogTick;	// debugLog throttle counter
 static int sNavProbeDone;	// one-shot arbitration probe at level start
@@ -508,11 +509,41 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		int model, palette = 0;
 		int i;
 
+		// A slot is only usable if the level loaded all THREE models for it.
+		// Clean alone is not enough: CreateDentableCar also needs the
+		// low-detail model, and it bails with 'gCarLowModelPtr is NULL' -
+		// after which the half-built car gets dereferenced and the game dies.
+		// Cities differ here, so it has to be asked, never assumed.
 		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 		{
 			if (gCarCleanModelPtr[i] != NULL && gCarDamModelPtr[i] != NULL &&
-			    i != pcp->ap.model)
+			    gCarLowModelPtr[i] != NULL && i != pcp->ap.model)
 				loaded[n++] = i;
+		}
+
+		// Name the pool once per level: this is what says which -car ids are
+		// even legal in the city being tested.
+		if (!sPoolLogged)
+		{
+			char pool[64];
+			int pi, pl = 0;
+
+			sPoolLogged = 1;
+			pool[0] = 0;
+
+			for (pi = 0; pi < MAX_CAR_RESIDENT_MODELS; pi++)
+			{
+				if (gCarCleanModelPtr[pi] != NULL && gCarDamModelPtr[pi] != NULL &&
+				    gCarLowModelPtr[pi] != NULL)
+				{
+					pool[pl++] = (char)('0' + pi);
+					pool[pl] = 0;
+				}
+			}
+
+			printInfo("[combatd2] car model pool this level: [%s] (player model clean=%d dam=%d low=%d, %d slots)\n",
+				pool, gCarCleanModelPtr[pcp->ap.model] != NULL, gCarDamModelPtr[pcp->ap.model] != NULL,
+				gCarLowModelPtr[pcp->ap.model] != NULL, MAX_CAR_RESIDENT_MODELS);
 		}
 
 		if (n == 0)
@@ -1251,13 +1282,23 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	}
 	else if (nearBlocked)
 	{
-		// Pivoting in place next to a wall never clears the probe on its own, so
-		// after one failed cycle back off rather than scrape along the wall.
-		// Two failed avoidance cycles before reversing: stop-and-pivot is the
-		// better answer next to a wall, and reversing is how they were getting
-		// themselves wedged.
-		if (++sAvoidCycles > 2)
+		if (freeAhead == 0)
 		{
+			// Pinned: nothing ahead at all. Pivoting on the spot only rotates the
+			// nose, it does not OPEN the gap, so the car sat there pivoting while
+			// the fan still read zero - which is exactly the grind that made the
+			// tight MP arenas so expensive. Back straight out instead, and drop
+			// the destination so it leaves on a new heading.
+			sReverse = CD2_AI_REVERSE_TICKS;
+			sAvoid = CD2_AI_AVOID_NONE;
+			sAvoidCycles = 0;
+			sGoalTimer = 0;
+		}
+		else if (++sAvoidCycles > 1)
+		{
+			// Steered and braked and the wall is still there - back out rather
+			// than scrape along it. One failed cycle, not two: with the reach
+			// now 4500 there is no excuse for spending a second one.
 			sReverse = CD2_AI_REVERSE_TICKS;
 			sAvoidCycles = 0;
 			sAvoid = CD2_AI_AVOID_NONE;
@@ -1381,9 +1422,15 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		// speed, the same way the stopping distance does.
 		if (freeAhead < CD2_AI_SWERVE_BASE + ABS(speedFwd) * CD2_AI_SWERVE_PER_SPEED)
 		{
-			if (freeL > freeR + CD2_AI_SWERVE_GAP)
+			// The tie-break scales with the room actually available. A fixed gap
+			// (450 = one probe step) reads the two sides as equal in a corridor,
+			// which drops through to 'steer harder the way you already are' - and
+			// that can be straight into the wall.
+			int gap = freeAhead / 3;
+
+			if (freeL > freeR + gap)
 				steer += CD2_AI_AVOID_STEER;	// more room to the left
-			else if (freeR > freeL + CD2_AI_SWERVE_GAP)
+			else if (freeR > freeL + gap)
 				steer -= CD2_AI_AVOID_STEER;	// more room to the right
 			else
 				steer += (steer >= 0) ? CD2_AI_AVOID_STEER : -CD2_AI_AVOID_STEER;
