@@ -43,6 +43,51 @@
 
 #include <stdio.h>
 
+// A real entropy source for the weapon RNG (see cd2WpnRand below). We can't
+// use <time.h> - the game's include path has its own Game/C/time.h that shadows
+// the CRT header. On MSVC x86/x64 the CPU timestamp counter is reliable per
+// run; elsewhere the ASLR addresses fall back.
+#if defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
+#include <intrin.h>
+#define CD2_WPN_HAVE_RDTSC 1
+#endif
+
+// ---------------------------------------------------------------------------
+// Weapon RNG: per-run seeded, and it ADVANCES per call so several draws in the
+// SAME frame differ. Random2() is a pure function of the frame counter, so it
+// cannot be used for anything spread across one frame (a shotgun's pellets).
+// ---------------------------------------------------------------------------
+static unsigned int sWpnRng;
+static int sWpnRngInit;
+
+int cd2WpnRand(int n)
+{
+	if (!sWpnRngInit)
+	{
+		int probe;
+		unsigned int s = (unsigned int)(size_t)&sWpnRng;	// ASLR
+
+		s ^= (unsigned int)(size_t)&probe;			// stack
+#if defined(CD2_WPN_HAVE_RDTSC)
+		s ^= (unsigned int)__rdtsc();
+		s ^= (unsigned int)(__rdtsc() >> 32);
+#endif
+		s = s * 2654435761u + 2246822519u;	// avalanche
+		if (s == 0)
+			s = 0x9E3779B9u;
+
+		sWpnRng = s;
+		sWpnRngInit = 1;
+	}
+
+	sWpnRng = sWpnRng * 1664525u + 1013904223u;	// Numerical Recipes LCG
+
+	if (n <= 0)
+		return 0;
+
+	return (int)((sWpnRng >> 16) % (unsigned int)n);
+}
+
 // ---------------------------------------------------------------------------
 // Input bindings (physical buttons are remapped by the engine's config.ini)
 // ---------------------------------------------------------------------------
@@ -67,7 +112,8 @@ static const CD2_WEAPON_DEF* const gWdefs[CD2_WID_COUNT] =
 	&cd2WdefHoming,
 	&cd2WdefCluster,
 	&cd2WdefZoomy,
-	&cd2WdefFreeze
+	&cd2WdefFreeze,
+	&cd2WdefShotgun
 };
 
 const CD2_WEAPON_DEF* cd2WpnDef(int weaponId)

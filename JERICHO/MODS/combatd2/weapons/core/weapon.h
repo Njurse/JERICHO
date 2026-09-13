@@ -33,6 +33,7 @@ enum
 	CD2_WCLS_PROJECTILE,	// moving projectile with impact explosion (missile)
 	CD2_WCLS_AOE,		// area burst (reserved; explosion helper today)
 	CD2_WCLS_DROP,		// placed object with a proximity trigger (mine)
+	CD2_WCLS_SHOTGUN,	// multi-pellet scatter from both fenders
 	CD2_WCLS_COUNT
 };
 
@@ -48,6 +49,7 @@ enum
 	CD2_WID_CLUSTER,	// primary (projectile): impact bursts into bomblets
 	CD2_WID_ZOOMY,		// primary (projectile): a burst of weakly-homing shots
 	CD2_WID_FREEZE,		// primary (projectile): freezes the car it hits
+	CD2_WID_SHOTGUN,	// primary (shotgun): pellet spread from both fenders
 	CD2_WID_COUNT,
 	CD2_WID_NONE = -1
 };
@@ -124,6 +126,17 @@ typedef struct CD2_WEAPON_DEF
 	// locked). The weapon itself normally does 0 damage.
 	// -------------------------------------------------------------------
 	int freezeFrames;	// frozen duration on a car hit (0 = none)
+
+	// -------------------------------------------------------------------
+	// Shotgun: when pelletCount > 0 the trigger fires that many pellets at
+	// once, ALTERNATING between the LEFT and RIGHT fenders, each jittered
+	// across a spread cone and biased outward per fender. Pellets are
+	// raycast-class particles, so `damage` is PER PELLET and `range` is the
+	// (short) shotgun range.
+	// -------------------------------------------------------------------
+	int pelletCount;	// pellets per shot (0 = a single particle)
+	int pelletSpread;	// cone half-width, car-relative fixed-point units
+	int pelletFanout;	// outward bias per fender (0 = straight ahead)
 
 	int colR, colG, colB;	// draw colour
 

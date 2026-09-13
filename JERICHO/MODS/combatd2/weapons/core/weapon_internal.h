@@ -71,7 +71,9 @@ void cd2DropStep(void);
 void cd2DropDraw(void);
 
 // Spawn entry points (weapon files -> their class pool).
-void cd2RaycastSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
+// Spawn one raycast particle. Returns 1 if a pool slot was taken, 0 if the
+// pool was full (so a caller firing several at once can count them).
+int cd2RaycastSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		     const VECTOR* from, const VECTOR* dir);
 void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 			const VECTOR* from, const VECTOR* vel, const VECTOR* dir);
@@ -107,6 +109,19 @@ extern const CD2_WEAPON_DEF cd2WdefHoming;	// projectile/homing.c
 extern const CD2_WEAPON_DEF cd2WdefCluster;	// projectile/cluster.c
 extern const CD2_WEAPON_DEF cd2WdefZoomy;	// projectile/zoomy.c
 extern const CD2_WEAPON_DEF cd2WdefFreeze;	// projectile/freeze.c
+extern const CD2_WEAPON_DEF cd2WdefShotgun;	// shotgun/shotgun.c
+
+// A per-run RNG for weapon effects that need WITHIN-frame variety. Random2()
+// is a pure function of the frame counter, so every pellet in one shotgun
+// blast would otherwise get the SAME jitter. Range: 0..n-1.
+int cd2WpnRand(int n);
+
+// Shotgun scatter: fire `count` raycast pellets of `def` at once, alternating
+// LEFT/RIGHT fender muzzles, each direction jittered within +/-`spread`
+// (car-relative) and biased by +/-`fanout` per fender. `spread`/`fanout` are
+// fixed-point angle units (4096 = 90 deg).
+void cd2RaycastScatter(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
+		       int count, int spread, int fanout);
 
 // Freeze status (weapons/projectile/freeze.c): encase `carId` in ice for
 // `frames` frames (cyan body, low grip, locked controls). Called by the

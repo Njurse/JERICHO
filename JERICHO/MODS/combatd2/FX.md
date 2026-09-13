@@ -79,6 +79,7 @@ schedules `count` blasts `interval` frames apart, each jittered by up to
 | CLUSTER | deep orange (255,90,0) | `CD2_FX_CLUSTER` | 5 × `CD2_FX_BOMBLET`, 4 frames apart, ±60, sticks to a hit car |
 | ZOOMY | pale cyan (140,230,255) | `CD2_FX_ZOOMY` (small) | 10 shots, 6 frames apart, weak homing; all-ten-land bonus |
 | FREEZE | icy cyan (170,230,255) | `CD2_FX_FREEZE` | freezes the car it hits for 5s (no damage) |
+| SHOTGUN | hot buckshot orange (255,200,90) | pellet mark = body colour | 10 pellets at once from BOTH fenders, ±spread cone |
 
 ## Volley weapons (the burst launcher)
 
@@ -123,6 +124,28 @@ projectile pool calls `cd2FreezeApply(carId, frames)`; the status lives in
 
 `FREEZE` is a moderate seeker (`homingRate 170`, between the zoomy's 40 and
 the seeker's 340).
+
+## Scatter weapons (the shotgun)
+
+`CD2_WCLS_SHOTGUN` fires a multi-pellet blast instead of a single shot. The
+def declares `pelletCount`, `pelletSpread` (cone half-width, car-relative
+fixed-point angle units) and `pelletFanout` (outward bias per fender); its fire
+fn is one line: `cd2RaycastScatter(&def, cp, count, spread, fanout)`.
+
+`cd2RaycastScatter` (`weapons/raycast/raycast.c`) fires `count` RAYCAST-class
+pellets at once — the same pool and per-frame hit test the machine gun uses —
+**ALTERNATING the LEFT and RIGHT fender muzzles** (`cd2WpnMuzzle(side)`), each
+direction jittered across the cone and biased outward per fender so the two
+barrels visibly fan apart. `damage` is therefore PER PELLET and `range` is the
+(short) shotgun range. The pellet impact mark uses `def->colR/G/B`.
+
+The spread uses `cd2WpnRand()` (weapons/core/weapons.c), a per-run seeded LCG
+that ADVANCES per call — `Random2()` is a pure function of the frame counter,
+so every pellet in one blast would otherwise get the SAME jitter. Same entropy
+approach as the AI seed (rdtsc + ASLR; `<time.h>` is shadowed by the game).
+
+**SHOTGUN**: 10 pellets, `pelletSpread 800` (~11°), `pelletFanout 260` (~3.6°),
+95 damage each, speed 2200, range 2600.
 
 ### Adding a kind
 1. Add an id to the `CD2_FX_*` enum in `fx.h`.

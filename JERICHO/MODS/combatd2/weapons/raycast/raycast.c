@@ -12,6 +12,7 @@
 #include "cosmetic.h"
 #include "dr2roads.h"
 #include "objcoll.h"
+#include "system.h"
 #include "jer_math.h"
 #include "combatd2.h"
 #include "weapons/core/weapon.h"
@@ -44,7 +45,7 @@ void cd2RaycastReset(void)
 		gRcast[i].active = 0;
 }
 
-void cd2RaycastSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
+int cd2RaycastSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		     const VECTOR* from, const VECTOR* dir)
 {
 	int i;
@@ -74,8 +75,51 @@ void cd2RaycastSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		r->vel.vy = (int)(((long long)dir->vy * speed) >> 12) + carVel.vy;
 		r->vel.vz = (int)(((long long)dir->vz * speed) >> 12) + carVel.vz;
 		r->travelled = 0;
-		return;
+		return 1;
 	}
+
+	return 0;	// pool full
+}
+
+// Shotgun scatter: fire `count` pellets at once, ALTERNATING the LEFT/RIGHT
+// fender muzzles, each direction jittered within a car-relative cone and
+// biased outward per fender so the two barrels visibly fan apart. The angles
+// are small, so dir = forward + right*jh + up*jv needs no renormalising (the
+// magnitude stays ~4096).
+void cd2RaycastScatter(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
+		       int count, int spread, int fanout)
+{
+	const MATRIX* w;
+	VECTOR fwd;
+	int i, spawned = 0;
+
+	if (def == NULL || shooter == NULL || shooter->ap.carCos == NULL || count <= 0)
+		return;
+
+	w = &shooter->hd.where;
+
+	cd2WpnForward(shooter, &fwd);
+
+	for (i = 0; i < count; i++)
+	{
+		VECTOR muzzle, dir;
+		int side = (i & 1) ? 1 : -1;			// alternate fenders
+		int jh = cd2WpnRand(spread * 2 + 1) - spread + side * fanout;
+		int jv = cd2WpnRand(spread + 1) - spread / 2;	// less vertical
+		long long rx = w->m[0][0], ry = w->m[1][0], rz = w->m[2][0];	// right
+		long long ux = w->m[0][1], uy = w->m[1][1], uz = w->m[2][1];	// up
+
+		cd2WpnMuzzle(shooter, side, &muzzle);
+
+		dir.vx = fwd.vx + (int)((rx * jh + ux * jv) >> 12);
+		dir.vy = fwd.vy + (int)((ry * jh + uy * jv) >> 12);
+		dir.vz = fwd.vz + (int)((rz * jh + uz * jv) >> 12);
+
+		spawned += cd2RaycastSpawn(def, shooter, &muzzle, &dir);
+	}
+
+	if (gCd2Cfg.debugLog)
+		printInfo("[combatd2] shotgun blast: %d/%d pellets from both fenders\n", spawned, count);
 }
 
 void cd2RaycastStep(void)
@@ -129,7 +173,7 @@ void cd2RaycastStep(void)
 				{
 					cd2WpnDamageCar(cp, &r->pos, r->def->damage);
 					cd2WpnKnock(cp, &r->pos, &r->vel, r->def->damage);
-					cd2WpnMark(&r->pos, 255, 255, 180);
+					cd2WpnMark(&r->pos, r->def->colR, r->def->colG, r->def->colB);
 					r->active = 0;
 					break;
 				}
