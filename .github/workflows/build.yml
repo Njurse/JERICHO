@@ -1,0 +1,203 @@
+name: Build
+
+# Builds downloadable binaries for every push and publishes releases.
+#
+#  - push to main        -> build + upload workflow artifacts, refresh the
+#                           rolling "alpha" pre-release
+#  - push a "v*" tag     -> build + publish a normal GitHub Release
+#  - manual run          -> same as a push to main (great for testing)
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Cancel a superseded run when a newer commit lands on the same ref.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SDL2_VERSION: '2.30.2'
+  OPENAL_VERSION: '1.23.1'
+
+jobs:
+  windows:
+    name: Windows (Win32)
+    runs-on: windows-2022
+    env:
+      SDL2_DIR: "${{ github.workspace }}/src_rebuild/dependencies/SDL2-2.30.2"
+      OPENAL_DIR: "${{ github.workspace }}/src_rebuild/dependencies/openal-soft-1.23.1-bin"
+      JPEG_DIR: "${{ github.workspace }}/src_rebuild/dependencies/jpeg-9d"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $deps = 'src_rebuild/dependencies'
+          New-Item -ItemType Directory -Force -Path $deps | Out-Null
+
+          Invoke-WebRequest 'https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-windows.zip' -OutFile premake5.zip
+          Expand-Archive premake5.zip -DestinationPath src_rebuild -Force
+
+          Invoke-WebRequest 'https://github.com/libsdl-org/SDL/releases/download/release-${{ env.SDL2_VERSION }}/SDL2-devel-${{ env.SDL2_VERSION }}-VC.zip' -OutFile sdl2.zip
+          Expand-Archive sdl2.zip -DestinationPath $deps -Force
+
+          Invoke-WebRequest 'https://github.com/kcat/openal-soft/releases/download/${{ env.OPENAL_VERSION }}/openal-soft-${{ env.OPENAL_VERSION }}-bin.zip' -OutFile openal.zip
+          Expand-Archive openal.zip -DestinationPath $deps -Force
+
+          Invoke-WebRequest 'http://www.ijg.org/files/jpegsr9d.zip' -OutFile jpeg.zip
+          Expand-Archive jpeg.zip -DestinationPath $deps -Force
+
+          # libjpeg ships jconfig.vc; the project expects jconfig.h
+          Move-Item "$deps/jpeg-9d/jconfig.vc" "$deps/jpeg-9d/jconfig.h" -Force
+
+      - name: Generate project files (vs2022)
+        working-directory: src_rebuild
+        run: .\premake5.exe vs2022
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build (Release + Release_dev)
+        shell: pwsh
+        run: |
+          foreach ($cfg in @('Release', 'Release_dev')) {
+            Write-Host "::group::msbuild $cfg"
+            msbuild src_rebuild/build/REDRIVER2.sln /p:Configuration=$cfg /p:Platform=Win32 /m /nologo /v:m
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Write-Host "::endgroup::"
+          }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          foreach ($cfg in @('Release', 'Release_dev')) {
+            $bin = "src_rebuild/bin/$cfg"
+            # runtime DLLs bundled next to the exe (Win32/x86)
+            Copy-Item "$env:SDL2_DIR/lib/x86/SDL2.dll" "$bin/SDL2.dll" -Force
+            Copy-Item "$env:OPENAL_DIR/bin/Win32/soft_oal.dll" "$bin/OpenAL32.dll" -Force
+            # game data (the post-build step already mirrored JERICHO/ into $bin)
+            Copy-Item "data/*" "$bin/" -Recurse -Force
+            Compress-Archive -Path "$bin/*" -DestinationPath "REDRIVER2_${cfg}_win32.zip" -Force
+          }
+
+      - name: Upload Release (win32) artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: REDRIVER2_Release_win32
+          path: REDRIVER2_Release_win32.zip
+          if-no-files-found: error
+
+      - name: Upload Release_dev (win32) artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: REDRIVER2_Release_dev_win32
+          path: REDRIVER2_Release_dev_win32.zip
+          if-no-files-found: error
+
+  linux:
+    name: Linux (x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libsdl2-dev libopenal-dev libjpeg-turbo8-dev libgl1-mesa-dev
+
+      - name: Download premake5
+        run: |
+          curl -fL https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-linux.tar.gz -o premake5.tar.gz
+          tar xf premake5.tar.gz -C src_rebuild
+          chmod +x src_rebuild/premake5
+
+      - name: Generate project files (gmake2)
+        working-directory: src_rebuild
+        run: ./premake5 gmake2
+
+      - name: Build (release_x64 + release_dev_x64)
+        working-directory: src_rebuild/build
+        run: |
+          for cfg in release_x64 release_dev_x64; do
+            echo "::group::make $cfg"
+            make config=$cfg -j"$(nproc)"
+            echo "::endgroup::"
+          done
+
+      - name: Package
+        run: |
+          for cfg in Release Release_dev; do
+            d="src_rebuild/bin/$cfg"
+            # game data (the post-build step already mirrored JERICHO/ into $d)
+            cp -R data/. "$d"/
+            ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/REDRIVER2_${cfg}_linux-x64.tar.gz" * )
+          done
+
+      - name: Upload Release (linux-x64) artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: REDRIVER2_Release_linux-x64
+          path: REDRIVER2_Release_linux-x64.tar.gz
+          if-no-files-found: error
+
+      - name: Upload Release_dev (linux-x64) artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: REDRIVER2_Release_dev_linux-x64
+          path: REDRIVER2_Release_dev_linux-x64.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: [windows, linux]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Collect build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Push a "v*" tag -> permanent, public GitHub Release.
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: false
+
+      # Every push to main refreshes a rolling "alpha" pre-release so there
+      # is always a current download until a real tag is cut. Delete this
+      # step once only tagged releases should be published.
+      - name: Update rolling alpha pre-release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: alpha
+          name: Alpha (latest main)
+          body: |
+            Rolling alpha build from `main` at ${{ github.sha }}.
+            Not a stable release - download and test at your own risk.
+          prerelease: true
+          make_latest: false
+          files: dist/*
