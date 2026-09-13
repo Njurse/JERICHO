@@ -91,31 +91,57 @@ static int cd2cOnCarStep(void* ud, void* args)
 			cp->st.n.angularVelocity[0] += (Random2(CD2C_TUMBLE_SPIN) - (CD2C_TUMBLE_SPIN >> 1));
 			cp->st.n.angularVelocity[2] += (Random2(CD2C_TUMBLE_SPIN) - (CD2C_TUMBLE_SPIN >> 1));
 
-			// Kill credit: when the player landed the last weapon hit on one of
-			// our opponents, name it on the HUD. cd2WpnTakeAttacker clears the
-			// record, so this car's next death is not credited to a stale hit.
-			if (cd2AiIsOpponent(cp))
+			// Death message. The killer is the last weapon to hit this car
+			// (cd2WpnTakeAttacker clears the record, so a death is never
+			// credited to a stale hit); no record means nothing to blame -
+			// scenery, or the car doing it to itself.
+			//
+			//   killed by the local player  -> "You killed <victim>"
+			//   killed by an enemy, us      -> "You were killed by <killer>"
+			//   killed by an enemy, an npc  -> "<victim> was killed by <killer>"
+			//   nobody to blame / self      -> "<victim> died"
+			//
+			// Only the local player and our opponents get a line: announcing
+			// every civ car that scrapes a wall would bury the screen.
 			{
 				int killerId = cd2WpnTakeAttacker(cp->id);
-				const char* name = cd2AiRoleNameOf(cd2AiRoleOf(cp));
-				int byPlayer = (killerId >= 0 && killerId < MAX_CARS &&
-						car_data[killerId].controlType == CONTROL_TYPE_PLAYER);
+				int isPlayer = (cp->controlType == CONTROL_TYPE_PLAYER);
+				int isNpc = cd2AiIsOpponent(cp);
 
-				if (name == NULL)
-					name = "an opponent";
-
-				if (gCd2Cfg.debugLog)
-					printInfo("[combatd2] opponent totaled: car=%d role=%s killer=%d byPlayer=%d kCT=%d kAI=%d playerCar=%d\n",
-						cp->id, name, killerId, byPlayer,
-						(killerId >= 0 && killerId < MAX_CARS) ? car_data[killerId].controlType : -9,
-						(killerId >= 0 && killerId < MAX_CARS) ? cd2AiIsOpponent(&car_data[killerId]) : -9,
-						(int)MainPlayer.playerCarId);
-
-				if (byPlayer)
+				if (isPlayer || isNpc)
 				{
-					char msg[64];
+					int isLocal = (cp->id == MainPlayer.playerCarId);
+					int byPlayer = (killerId >= 0 && killerId == MainPlayer.playerCarId);
+					const char* role = isNpc ? cd2AiRoleNameOf(cd2AiRoleOf(cp)) : NULL;
+					const char* victim = isLocal ? "You" : ((role != NULL) ? role : "The player");
+					const char* killer = NULL;
+					char msg[80];
 
-					sprintf(msg, "You killed %s", name);
+					// an enemy is any other car we can name: another opponent,
+					// or a second player. Anything else (traffic, an unknown
+					// slot) stays unattributed rather than guessed at.
+					if (killerId >= 0 && killerId < MAX_CARS && killerId != cp->id && !byPlayer)
+					{
+						if (cd2AiIsOpponent(&car_data[killerId]))
+							killer = cd2AiRoleNameOf(cd2AiRoleOf(&car_data[killerId]));
+						else if (car_data[killerId].controlType == CONTROL_TYPE_PLAYER)
+							killer = "the other player";
+					}
+
+					if (byPlayer)
+						sprintf(msg, "You killed %s", victim);
+					else if (killer != NULL && isLocal)
+						sprintf(msg, "You were killed by %s", killer);
+					else if (killer != NULL)
+						sprintf(msg, "%s was killed by %s", victim, killer);
+					else
+						sprintf(msg, "%s died", victim);
+
+					if (gCd2Cfg.debugLog)
+						printInfo("[combatd2] death: car=%d victim=%s killer=%d(%s) playerCar=%d\n",
+							cp->id, victim, killerId, (killer != NULL) ? killer : "-",
+							(int)MainPlayer.playerCarId);
+
 					jer_hud_message_replace(msg, 0);	// 0 = the default ~3s
 				}
 			}
