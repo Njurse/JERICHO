@@ -100,6 +100,7 @@ extern int leadAILoaded;
 extern int pathAILoaded;
 
 extern char* LevelNames[];
+extern char* LevelFiles[];	// LEVELS\<CITY>.LEV, indexed by GameLevel
 extern char* LoadingScreenNames[];
 
 struct DB

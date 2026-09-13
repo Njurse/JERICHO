@@ -4,6 +4,10 @@
 extern CAR_COSMETICS car_cosmetics[MAX_CAR_RESIDENT_MODELS];
 extern CAR_COSMETICS dummyCosmetics;
 
+// LEVELS\<CITY>.LCF - the per-city car colours an imported vehicle must take
+// its paint from (models.c reads the matching one)
+extern char* CosmeticFiles[];
+
 extern int gcar_num;
 
 extern void LoadCosmetics(int level); // 0x00031160

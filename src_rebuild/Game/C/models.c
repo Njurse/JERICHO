@@ -4,6 +4,7 @@
 #include "spool.h"
 #include "mission.h"
 #include "cars.h"
+#include "cosmetic.h"
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 
@@ -217,11 +218,257 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 }
 
 // [D] [T]
+// ---------------------------------------------------------------------------
+// JERICHO cross-city car import
+//
+// A resident slot may take its geometry (and its colours) from another city's
+// level file. SetupResidentModels runs JER_EVENT_CAR_DATA_SOURCE before this, so
+// by the time the models are built the module's per-slot sources are known;
+// InitCarImport() reads those files once and holds them for the level.
+//
+// Everything here fails soft: if a file, a lump or a heap allocation is missing,
+// the slot simply keeps the level's own data. See
+// MODS/combatd2/carhacks/CROSS_CITY.md for the file format.
+
+#define CAR_IMPORT_LUMP_MODELS	28	// LUMP_CAR_MODELS
+
+typedef struct
+{
+	char* region;		// malloc'd DATA1 copy the car-models block points into
+	char* carModels;	// LUMP_CAR_MODELS body, or NULL
+	int carModelsSize;
+	char* cosmetics;	// the city's .LCF (car colours), or NULL
+	int cosmeticsSize;
+} CAR_IMPORT;
+
+static CAR_IMPORT gCarImport;
+static int gCarImportCity = -1;	// city the held import came from, -1 = none
+
+// Find a segment inside a lump body. ProcessLumps advances 4-byte aligned, so
+// this must too - a raw size+8 walk drifts as soon as a segment's size is not a
+// multiple of four.
+static int FindLumpSegment(char* body, int size, int want, char** out, int* outSize)
+{
+	int off = 0;
+
+	while (off + 8 <= size)
+	{
+		int type = *(int*)(body + off);
+		int segSize = *(int*)(body + off + 4);
+
+		if (segSize < 0 || off + 8 + segSize > size)
+			break;
+
+		if (type == want)
+		{
+			*out = body + off + 8;
+			*outSize = segSize;
+			return 1;
+		}
+
+		off += 8 + ((segSize + 3) & ~3);
+	}
+
+	return 0;
+}
+
+static void FreeCarImport(CAR_IMPORT* imp)
+{
+	if (imp->region)
+		free(imp->region);
+
+	if (imp->cosmetics)
+		free(imp->cosmetics);
+
+	memset(imp, 0, sizeof(*imp));
+}
+
+// Read a whole file into a fresh buffer. NULL on any failure.
+static char* ReadWholeFile(const char* filename, int* outSize)
+{
+	FILE* fp;
+	long len;
+	char* buf;
+
+	*outSize = 0;
+
+	fp = fopen(filename, "rb");
+
+	if (fp == NULL)
+		return NULL;
+
+	fseek(fp, 0, SEEK_END);
+	len = ftell(fp);
+
+	if (len <= 0 || len > 4 * 1024 * 1024)
+	{
+		fclose(fp);
+		return NULL;
+	}
+
+	buf = (char*)malloc(len);
+
+	if (buf == NULL)
+	{
+		fclose(fp);
+		return NULL;
+	}
+
+	if (fseek(fp, 0, SEEK_SET) != 0 || fread(buf, 1, len, fp) != (size_t)len)
+	{
+		free(buf);
+		fclose(fp);
+		return NULL;
+	}
+
+	fclose(fp);
+	*outSize = (int)len;
+
+	return buf;
+}
+
+// Read <city>'s level file and pull out its car-models block: the file's DATA1
+// region (citylumps[0]), walked as segments. Returns 0 (leaving imp empty) if
+// anything is missing.
+static int LoadCarImport(int city, CAR_IMPORT* imp)
+{
+	char filename[64];
+	unsigned int table[8];
+	FILE* fp;
+	long data1Off, data1Size;
+
+	memset(imp, 0, sizeof(*imp));
+
+	if (city < 0 || city >= 4)
+		return 0;
+
+	// the full single-player level first, then the arena variant
+	sprintf(filename, "%s%s", gDataFolder, LevelFiles[city]);
+	fp = fopen(filename, "rb");
+
+	if (fp == NULL)
+	{
+		sprintf(filename, "%sM%s", gDataFolder, LevelFiles[city]);
+		fp = fopen(filename, "rb");
+	}
+
+	if (fp == NULL)
+		return 0;
+
+	// the file starts with a lump header; the citylump table follows it
+	if (fseek(fp, 8, SEEK_SET) != 0 || fread(table, 1, sizeof(table), fp) != sizeof(table))
+	{
+		fclose(fp);
+		return 0;
+	}
+
+	data1Off = table[0];	// CITYLUMP_DATA1 = 0: (byte offset, byte size)
+	data1Size = table[1];
+
+	if (data1Off <= 0 || data1Size <= 8 || data1Size > 4 * 1024 * 1024)
+	{
+		fclose(fp);
+		return 0;
+	}
+
+	imp->region = (char*)malloc(data1Size);
+
+	if (imp->region == NULL)
+	{
+		fclose(fp);
+		return 0;
+	}
+
+	if (fseek(fp, data1Off, SEEK_SET) != 0 || fread(imp->region, 1, data1Size, fp) != (size_t)data1Size)
+	{
+		fclose(fp);
+		FreeCarImport(imp);
+		return 0;
+	}
+
+	fclose(fp);
+
+	// DATA1's body is itself a container lump, so its segments start 8 bytes in
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_MODELS, &imp->carModels, &imp->carModelsSize);
+
+	if (imp->carModels == NULL)
+	{
+		FreeCarImport(imp);
+		return 0;
+	}
+
+	// the car colours live beside it, as LEVELS\<city>.LCF
+	sprintf(filename, "%s%s", gDataFolder, CosmeticFiles[city]);
+	imp->cosmetics = ReadWholeFile(filename, &imp->cosmeticsSize);
+
+	return 1;
+}
+
+// Load the foreign car data the module asked for. Called from
+// SetupResidentModels once the resident models and their sources are final, so
+// it runs before both the geometry (ProcessCarModelLump) and the colours
+// (ProcessCosmeticsLump) are taken from it. A no-op for a stock level.
+void InitCarImport(void)
+{
+	int city = -1;
+	int i;
+
+	FreeCarImport(&gCarImport);
+	gCarImportCity = -1;
+
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+	{
+		int src = GetCarModelSourceCity(i);
+
+		if (src >= 0 && residentCarModels[i] != -1)
+		{
+			city = src;
+			break;
+		}
+	}
+
+	if (city < 0 || !LoadCarImport(city, &gCarImport))
+		return;
+
+	gCarImportCity = city;
+
+	printInfo("cross-city: car data from %s (%d bytes of models, %d of cosmetics)\n",
+		LevelNames[city], gCarImport.carModelsSize, gCarImport.cosmeticsSize);
+}
+
+// The foreign car-models block to build `slot` from, or NULL to use the level's
+// own. The block has the same layout as the level's, so only the base pointer
+// differs.
+char* GetCarImportModels(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return NULL;
+
+	if (GetCarModelSourceCity(slot) != gCarImportCity)
+		return NULL;
+
+	return gCarImport.carModels;
+}
+
+// The foreign car colours for `slot`, or NULL. cosmetic.c uses this so an
+// imported vehicle wears its own city's paint instead of the host slot's.
+char* GetCarImportCosmetics(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return NULL;
+
+	if (GetCarModelSourceCity(slot) != gCarImportCity)
+		return NULL;
+
+	return gCarImport.cosmetics;
+}
+
 int ProcessCarModelLump(char *lump_ptr, int lump_size)
 {
 	int size;
 	int* offsets;
 	char* models_offset;
+	char* slot_models_offset;
 	char* mem;
 	MODEL* model;
 	int model_number;
@@ -307,14 +554,22 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 
 		if (model_number != -1)
 		{
-			offsets = (int *)(lump_ptr + 4 + model_number * sizeof(int)*3);
+			// JERICHO: a slot may take its geometry from another city's level file
+			char* src_lump = lump_ptr;
+			char* imported = GetCarImportModels(i);
+
+			if (imported)
+				src_lump = imported;
+
+			slot_models_offset = src_lump + 4 + 160;
+			offsets = (int *)(src_lump + 4 + model_number * sizeof(int)*3);
 
 			int cleanOfs = offsets[0];
 			int damOfs = offsets[1];
 			int lowOfs = offsets[2];
 
 #if USE_PC_FILESYSTEM
-			if (gContentOverride)
+			if (gContentOverride && imported == NULL)	// JERICHO: loose .MDL is the host city's
 			{
 				if (mem = LoadCarModelFromFile(NULL, model_number, CAR_MODEL_CLEAN))
 				{
@@ -353,7 +608,7 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 			if (cleanOfs != -1)
 			{
 				D_MALLOC_BEGIN();
-				mem = models_offset + cleanOfs;
+				mem = slot_models_offset + cleanOfs;
 				model = GetCarModel(mem, (char**)&mallocptr, 1);
 
 				gCarCleanModelPtr[i] = model;
@@ -365,7 +620,7 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 			if (damOfs != -1)
 			{
 				D_MALLOC_BEGIN();
-				mem = models_offset + damOfs;
+				mem = slot_models_offset + damOfs;
 				model = GetCarModel(mem, (char**)&mallocptr, 0);
 
 				gCarDamModelPtr[i] = model;
@@ -375,7 +630,7 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 			if (lowOfs != -1)
 			{
 				D_MALLOC_BEGIN();
-				mem = models_offset + lowOfs;
+				mem = slot_models_offset + lowOfs;
 				model = GetCarModel(mem, (char**)&mallocptr, 1);
 
 				gCarLowModelPtr[i] = model;

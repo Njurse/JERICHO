@@ -1,5 +1,6 @@
 #include "driver2.h"
 #include "cosmetic.h"
+#include "models.h"	// JERICHO: GetCarImportCosmetics / cross-city car data
 #include "system.h"
 #include "mission.h"
 #include "handling.h"
@@ -66,6 +67,17 @@ void ProcessCosmeticsLump(char *lump_ptr, int lump_size)
 
 		if (model != -1) 
 		{
+			// JERICHO: an imported vehicle wears its own city's colours
+			char* imported = GetCarImportCosmetics(i);
+
+			if (imported)
+			{
+				offset = *(int*)(imported + model * sizeof(int));
+				car_cosmetics[i] = *(CAR_COSMETICS*)((u_char*)imported + offset);
+				FixCarCos(&car_cosmetics[i], model);
+			}
+			else
+			{
 			offset = *(int*)(lump_ptr + model * sizeof(int));
 			car_cosmetics[i] = *(CAR_COSMETICS*)((u_char*)lump_ptr + offset);
 
@@ -74,6 +86,7 @@ void ProcessCosmeticsLump(char *lump_ptr, int lump_size)
 				LoadCustomCarCosmetics(&car_cosmetics[i], model);
 #endif
 			FixCarCos(&car_cosmetics[i], model);
+			}
 		}
 	}
 

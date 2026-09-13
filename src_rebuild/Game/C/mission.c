@@ -1,5 +1,6 @@
 #include "driver2.h"
 #include "mission.h"
+#include "models.h"	// JERICHO: InitCarImport / cross-city car data
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 
@@ -442,6 +443,11 @@ void SetupResidentModels()
 		jerSrc.modelSource = gCarModelSource;
 		jer_fire(JER_EVENT_CAR_DATA_SOURCE, &jerSrc);
 		gCarDataSourceLevel = jerSrc.sourceLevel;
+
+		// JERICHO-HOOK: now that the resident models and their per-slot sources are
+		// final, read any foreign car data the module asked for. Fails soft, so a
+		// bad import just leaves the level's own vehicles in place.
+		InitCarImport();
 	}
 }
 

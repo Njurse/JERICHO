@@ -48,10 +48,12 @@ foreign `.LEV` must align the same way.
 
 | Lump | Id | What it is |
 |---|---|---|
-| `LUMP_CAR_MODELS` | 28 | Per-model offset table (3 ints per model: clean/damaged/low) then the geometry. This is the block `ProcessCarModelLump` consumes. |
-| `LUMP_PALLET` | 25 | Per-model offset table then `CAR_COSMETICS` records — the car colours. |
+| `LUMP_CAR_MODELS` | 28 | Per-model offset table (3 ints per model: clean/damaged/low) then the geometry. This is the block `ProcessCarModelLump` consumes. Lives in **DATA1**. |
 
-Both live in **DATA1**.
+The car colours are *not* in the level file: `LoadCosmetics` (`cosmetic.c:93`)
+reads them from a separate 3120-byte `LEVELS\<CITY>.LCF` (`CosmeticFiles[]`).
+(`LUMP_PALLET` = 25 looks like the obvious candidate but is texture palettes —
+`texture.c` consumes it via `ProcessPalletLump`.)
 
 `ProcessCarModelLump` (`models.c:220`) indexes the car-models block as
 `lump_ptr + 4 + model_number * 3 * sizeof(int)`, calls `GetCarModel(mem,
@@ -77,15 +79,26 @@ built.
 
 ## Two traps
 
-- **The special slot ignores the palette lump.** `car_cosmetics[SPECIAL_CAR_SLOT]`
-  uses a cached `levelSpecCosmetics[model - 8]` (filled once for models 8..12,
-  `cosmetic.c:140-160`) rather than reading `LUMP_PALLET` per model. A foreign
-  model placed in the special slot would silently wear the **host** city's
-  vehicle colours unless the import supplies cosmetics for it too.
+- **The special slot ignores the per-city colours.** `car_cosmetics[SPECIAL_CAR_SLOT]`
+is not taken per model — the cache `levelSpecCosmetics[model - 8]` is filled once
+for models 8..12 (`cosmetic.c:140-160`). A foreign model placed in the special
+slot would silently wear the **host** city's colours. `GetCarImportCosmetics()`
+is therefore consulted *before* either path, so an imported slot takes its own
+city's `CAR_COSMETICS` whichever slot it lands in.
 - **Denting has no lump.** There is no denting entry anywhere in the lump enum
   (`main.c:80-130`); `LoadCustomCarDentingFromFile` reads loose `.DEN` files
   (`denting.c:454, 487`). Denting therefore stays local — an imported model
   dents as its host slot would.
+
+## Where this is implemented
+
+`models.c` owns it: `InitCarImport()` (called from `SetupResidentModels` right
+after the query) reads the foreign level file and the foreign `.LCF` and holds
+them for the level; `GetCarImportModels(slot)` / `GetCarImportCosmetics(slot)`
+answer NULL for every slot the module did not import from, so a stock level takes
+exactly its old path. Both consumers (`ProcessCarModelLump`, `ProcessCosmeticsLump`)
+swap only their base pointer, because the foreign block has the same layout as
+the level's own.
 
 ## Related
 
