@@ -66,6 +66,11 @@ static int gCd2TrafficLastHit[MAX_CARS];	// last scenery-hit count seen, per car
 #define CD2_TRAFFIC_TUMBLE_MIN_SPEED	60		// units/frame below which a scrape is ignored
 #define CD2_TRAFFIC_TUMBLE_RATE		26000	// angular impulse per unit/frame of speed
 #define CD2_TRAFFIC_TUMBLE_MAX		0x500000	// ceiling on that impulse
+
+// With no gas and no brake, below this speed (units/frame) the point-mass
+// velocity snaps to a dead stop so the car can't creep / micro-roll a few
+// units forever.
+#define CD2_MICRO_STOP_SPEED		20
 static unsigned int gDbgFrame; // telemetry frame counter
 static char gPendingTotalCar;   // set by the pause-menu "Total Car", applied next physics frame
 
@@ -1288,6 +1293,20 @@ static int cd2OnCarTorque(void* ud, void* args)
 		// no input: rolling drag — skipped during a slide so the car glides
 		velX -= (int)(((long long)velX * s.drag) >> 12);
 		velZ -= (int)(((long long)velZ * s.drag) >> 12);
+
+		// idle micro-roll guard: with no gas and no brake (this is the branch
+		// where throttle == 0) and barely any speed left, snap to a full stop
+		// so the car doesn't creep / roll a few units forever
+		{
+			int ax = ABS(FIXEDH(velX));
+			int az = ABS(FIXEDH(velZ));
+
+			if ((ax < az ? (az + ax / 2) : (ax + az / 2)) < CD2_MICRO_STOP_SPEED)
+			{
+				velX = 0;
+				velZ = 0;
+			}
+		}
 	}
 
 	// tight-turn momentum bleed: the forced pivot sheds a little horizontal

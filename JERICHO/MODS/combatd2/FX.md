@@ -115,7 +115,11 @@ projectile pool calls `cd2FreezeApply(carId, frames)`; the status lives in
   and the steering is pinned to the angle it had when it froze). `CAR_STEP`
   runs after the pad pass AND after the opponent AI's own input write, so it
   takes the last word for both; the freeze hooks use priority 20 for the same
-  reason.
+  reason. A `JER_EVENT_CAR_PAD` lock (handled = 1) stops the stock pedal path
+  re-applying the player's gas every frame;
+- **no spin** — a `JER_EVENT_CAR_TORQUE` hook (after the point-mass handling
+  writes the yaw) kills the yaw and damps pitch/roll, so an ice-encased car
+  doesn't keep rotating.
 
 `FREEZE` is a moderate seeker (`homingRate 170`, between the zoomy's 40 and
 the seeker's 340).

@@ -98,6 +98,48 @@ static int cd2FreezeOnStep(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// The pad pass: for the PLAYER car this is where gas/brake/steer reach the
+// car, so blank them here (handled = 1) or the stock pedal path would re-apply
+// the driver's input every frame despite the CAR_STEP lock further down.
+static int cd2FreezeOnPad(void* ud, void* args)
+{
+	JER_ARGS_CAR_PAD* a = (JER_ARGS_CAR_PAD*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car;
+
+	(void)ud;
+
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS || gFreezeFrames[cp->id] <= 0)
+		return JER_RESULT_CONTINUE;
+
+	cp->thrust = 0;
+	cp->handbrake = 0;
+	cp->wheelspin = 0;
+	a->handled = 1;		// skip the stock pedal assignment
+
+	return JER_RESULT_CONTINUE;
+}
+
+// The point-mass handling writes the car's yaw at CAR_TORQUE; running after it
+// lets the freeze kill the spin so an ice-encased car doesn't keep rotating.
+static int cd2FreezeOnTorque(void* ud, void* args)
+{
+	JER_ARGS_CAR_TORQUE* a = (JER_ARGS_CAR_TORQUE*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car;
+
+	(void)ud;
+
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS || gFreezeFrames[cp->id] <= 0)
+		return JER_RESULT_CONTINUE;
+
+	// stop it spinning: kill the yaw outright and damp pitch/roll (the engine
+	// re-adds the small ground reaction, so the car still settles on slopes)
+	cp->st.n.angularVelocity[1] = 0;
+	cp->st.n.angularVelocity[0] /= 4;
+	cp->st.n.angularVelocity[2] /= 4;
+
+	return JER_RESULT_CONTINUE;
+}
+
 static int cd2FreezeOnFriction(void* ud, void* args)
 {
 	JER_ARGS_CAR_FRICTION* a = (JER_ARGS_CAR_FRICTION*)args;
@@ -185,7 +227,9 @@ static int cd2FreezeOnGameStart(void* ud, void* args)
 
 void cd2FreezeRegister(JERICHO_CONTEXT* ctx)
 {
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PAD, cd2FreezeOnPad, NULL, CD2_FREEZE_PRIO);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2FreezeOnStep, NULL, CD2_FREEZE_PRIO);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, cd2FreezeOnTorque, NULL, CD2_FREEZE_PRIO);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_FRICTION, cd2FreezeOnFriction, NULL, CD2_FREEZE_PRIO);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW_COLOR, cd2FreezeOnDrawColor, NULL, CD2_FREEZE_PRIO);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2FreezeOnFrame, NULL, 0);
