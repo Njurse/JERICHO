@@ -826,6 +826,29 @@ void State_GameInit(void* param)
 		jer_fire(JER_EVENT_GAME_START, &jerStart);
 	}
 
+	// JERICHO: the last word on the player's car.
+	//
+	// A module gets its say during SetupResidentModels, inside LoadMission - which runs
+	// BEFORE the mission header is applied to PlayerStartInfo. So an explicit choice
+	// (cross-city player_model, or -car) was silently replaced by the level's own car,
+	// which is why the player kept ending up in a domestic vehicle while the special
+	// slot, which reads residentCarModels[SPECIAL_CAR_SLOT] instead, worked.
+	//
+	// Re-applied here, immediately before the level runs, so no earlier writer can
+	// overwrite it. Nothing changes when wantedCar is left at -1.
+	{
+		int pc;
+
+		for (pc = 0; pc < 2; pc++)
+		{
+			if (wantedCar[pc] != -1 && PlayerStartInfo[pc] != NULL)
+			{
+				PlayerStartInfo[pc]->model = wantedCar[pc];
+				printInfo("JERICHO: player %d car forced to model %d (wantedCar)\n", pc, wantedCar[pc]);
+			}
+		}
+	}
+
 	for (i = 0; i < 5; i++)
 	{
 		ReadControllers();
@@ -1650,6 +1673,25 @@ int gMultiStep = 0;
 // Called after each entry point's own frame guard, so the count is real frames.
 void JerichoFrameTick(void)
 {
+	// JERICHO-DIAG: on the first frame, what the player's car actually IS versus what
+	// was asked for. Distinguishes "the choice never took" from "something replaced it
+	// after the level start".
+	if (gRunFrames == 0)
+	{
+		int resident = -1, pc;
+
+		if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+			resident = car_data[MainPlayer.playerCarId].ap.model;
+
+		printInfo("JERICHO-DIAG: player car model=%d (want=%d, startinfo[0]=%d) residents=",
+			resident, wantedCar[0], (PlayerStartInfo[0] != NULL) ? PlayerStartInfo[0]->model : -9);
+
+		for (pc = 0; pc < MAX_CAR_RESIDENT_MODELS; pc++)
+			printInfo(" %d", residentCarModels[pc]);
+
+		printInfo("\n");
+	}
+
 	if (gExitAfterFrames <= 0 || ++gRunFrames < gExitAfterFrames)
 		return;
 
