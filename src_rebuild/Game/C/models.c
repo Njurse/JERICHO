@@ -4,6 +4,8 @@
 #include "spool.h"
 #include "mission.h"
 #include "cars.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
@@ -228,6 +230,18 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 	int specMemReq;
 
 	specMemReq = 0;
+
+	// JERICHO-HOOK: a module may point car-data loading at another city's folder
+	// before any CARMODEL_* file is read (cross-city vehicles). Default -1 keeps
+	// the level's own city.
+	{
+		JER_ARGS_CAR_DATA_SOURCE jerSrc;
+
+		jerSrc.level = GameLevel;
+		jerSrc.sourceLevel = gCarDataSourceLevel;
+		jer_fire(JER_EVENT_CAR_DATA_SOURCE, &jerSrc);
+		gCarDataSourceLevel = jerSrc.sourceLevel;
+	}
 
 	models_offset = lump_ptr + 4 + 160;	// also skip model count
 	offsets = (int*)(lump_ptr + 100);

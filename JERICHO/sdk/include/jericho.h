@@ -118,6 +118,12 @@ enum
 					   that level, lifting the progression gate and the
 					   single-player restriction. 0 = stock. */
 
+	JER_EVENT_CAR_DATA_SOURCE,	/* query: fired at the start of a level's car
+					   model processing, before any CARMODEL_*
+					   file is read. A module sets sourceLevel to
+					   another city (0..3) so this level loads that
+					   city's vehicles; -1 = the level's own city. */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

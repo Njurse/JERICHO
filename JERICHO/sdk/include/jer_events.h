@@ -29,6 +29,18 @@ typedef struct JER_ARGS_CAR_AVAILABILITY
 	int result;	/* in/out: 1 = unlock the extra vehicles, 0 = stock */
 } JER_ARGS_CAR_AVAILABILITY;
 
+
+/* JER_EVENT_CAR_DATA_SOURCE — query fired once per level at the start of
+ * ProcessCarModelLump (before any LEVELS\<city>\CARMODEL_* file is read). Set
+ * sourceLevel to a city index (0 = chicago, 1 = havana, 2 = vegas, 3 = rio) so
+ * this level loads THAT city's car data, i.e. cross-city vehicles. Leave -1 for
+ * stock (the level's own city). */
+typedef struct JER_ARGS_CAR_DATA_SOURCE
+{
+	int level;		/* in: GameLevel being set up */
+	int sourceLevel;	/* in/out: city whose LEVELS folder to read; -1 = own */
+} JER_ARGS_CAR_DATA_SOURCE;
+
 // To do: Separate CRUMPLE functions from jericho events and try to use vanilla-bound function hooks
 
 /* JER_EVENT_COLLISION — car-car / car-world collision.

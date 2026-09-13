@@ -502,6 +502,18 @@ typedef struct JER_ARGS_CAR_AVAILABILITY
 } JER_ARGS_CAR_AVAILABILITY;
 
 
+/* JER_EVENT_CAR_DATA_SOURCE — query fired once per level at the start of
+ * ProcessCarModelLump (before any LEVELS\<city>\CARMODEL_* file is read). Set
+ * sourceLevel to a city index (0 = chicago, 1 = havana, 2 = vegas, 3 = rio) so
+ * this level loads THAT city's car data, i.e. cross-city vehicles. Leave -1 for
+ * stock (the level's own city). */
+typedef struct JER_ARGS_CAR_DATA_SOURCE
+{
+	int level;		/* in: GameLevel being set up */
+	int sourceLevel;	/* in/out: city whose LEVELS folder to read; -1 = own */
+} JER_ARGS_CAR_DATA_SOURCE;
+
+
 /* JER_EVENT_CAR_VS_CAR — fired in DamageCar3D (bcollide.c) when two cars
  * collide, right before ApplyDamage. `value` is the stock damage this car would
  * take; `playerValue` is what a player-controlled car would take for the SAME

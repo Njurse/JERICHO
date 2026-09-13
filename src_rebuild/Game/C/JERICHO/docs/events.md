@@ -15,6 +15,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_RESET_CAR` | `JER_ARGS_RESET_CAR` | `denting.c` | clear a car's damage state |
 | `JER_EVENT_DEBUG_TICK` | — | `GlobalTimeStep` | per-frame debug/tuning |
 | `JER_EVENT_CAR_AVAILABILITY` | `JER_ARGS_CAR_AVAILABILITY` | `CarSelectScreen` (`FEmain.c`) | query: may the normally-locked extra vehicles (fire truck / buses / truck) be offered for this level? `result = 1` lifts the progression + single-player gate |
+| `JER_EVENT_CAR_DATA_SOURCE` | `JER_ARGS_CAR_DATA_SOURCE` | `ProcessCarModelLump` (`models.c`) | query: which city's `LEVELS\<city>` folder should this level read `CARMODEL_*` from? `sourceLevel = 0..3` loads another city's vehicles (cross-city); `-1` = own city |
 | `JER_EVENT_GET_WHEEL_BEND` | `JER_ARGS_QUERY_PTR` | wheel draw + physics | query: per-wheel bend array |
 | `JER_EVENT_GET_WHEEL_DAMAGE` | `JER_ARGS_QUERY_INT` | surface roughness | query: cumulative wheel damage 0..4096 |
 | `JER_EVENT_GET_WHEEL_PARAMS` | `JER_ARGS_WHEEL_PARAMS` | wheel yaw matrix + physics | query: deviation scales + scrub force |
