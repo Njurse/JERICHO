@@ -17,6 +17,18 @@
 #include "jericho.h"
 
 
+/* JER_EVENT_CAR_AVAILABILITY — query fired while the frontend builds a level's
+ * car list (CarSelectScreen). Set result = 1 to offer the normally-locked extra
+ * vehicles (fire truck / buses / truck) for `level`, bypassing the stock
+ * gFurthestMission == 40 && NumPlayers == 1 gate. Leave 0 for stock behaviour.
+ * The engine still refuses a vehicle whose model data is missing (that check
+ * exists to avoid a load crash), so this cannot make a data-less model appear. */
+typedef struct JER_ARGS_CAR_AVAILABILITY
+{
+	int level;	/* in: GameLevel whose car list is being built */
+	int result;	/* in/out: 1 = unlock the extra vehicles, 0 = stock */
+} JER_ARGS_CAR_AVAILABILITY;
+
 // To do: Separate CRUMPLE functions from jericho events and try to use vanilla-bound function hooks
 
 /* JER_EVENT_COLLISION — car-car / car-world collision.

@@ -111,6 +111,13 @@ enum
 	JER_EVENT_EXPLOSION_DRAW,	/* explosion drawn (JER_ARGS_EXPLOSION_DRAW) */
 	JER_EVENT_EXPLOSION_COLLIDE,	/* query: push/damage this car? (JER_ARGS_EXPLOSION_COLLIDE) */
 
+	JER_EVENT_CAR_AVAILABILITY,	/* query: fired while the frontend builds a
+					   level's car list (CarSelectScreen). A module
+					   sets result = 1 to offer the normally-locked
+					   extra vehicles (fire truck / buses / truck) for
+					   that level, lifting the progression gate and the
+					   single-player restriction. 0 = stock. */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 
