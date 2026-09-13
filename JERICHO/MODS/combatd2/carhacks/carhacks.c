@@ -18,35 +18,35 @@ extern int CarAvailability[4][10];		/* frontend car list: [level][slot] */
 
 #define CHK_LEVEL_CHICAGO	0
 
-/* The Chicago truck. IMPORTANT, measured on this install:
- *   - the extra vehicle is car MODEL 10 (frontend list index `carNumLookup
- *     [chicago][7]`, i.e. `-car slot8`). Its content-override data ships as
- *     LEVELS\CHICAGO\CARMODEL_10_clean.dmodel and it loads + drives fine.
- *   - model 11 (`-car slot9`, the one FEmain's `i == 8` line gates) has NO data
- *     on this install: forcing it crashes the game during load. So this hack
- *     targets 10 and must never unlock 11.
- * In the frontend the truck is only offered once gFurthestMission == 40 (and
- * NumPlayers == 1); the whole point here is to offer it any time.
+/* Which vehicle sits where (measured on this install, so nobody re-derives it):
+ *   model  8 (`-car slot6`) = fire truck
+ *   model 10 (`-car slot8`) = school bus   (data: LEVELS\CHICAGO\CARMODEL_10_clean.dmodel)
+ *   model 11 (`-car slot9`) = the slot the game reserves for a content-override
+ *                             truck. NO data ships here, and forcing it CRASHES
+ *                             the game in load - never unlock it by hand; the
+ *                             engine's own data check keeps it off, which is
+ *                             correct.
+ * The Chicago SEMI TRUCK itself is a scenery prop (model "LORRY", placed as 7
+ * events for Caine's Compound in event.c) - it is not a car model at all, so it
+ * cannot be made selectable by an availability hack.
  *
- * Caveats for extending this: the extra car reaches the level through the
- * special resident slot (SPECIAL_CAR_SLOT / MAX_CAR_RESIDENT_MODELS), and
- * InitSpecSpool switches special spooling OFF for mission 7 ("Caine's Compound
- * semi trucks") and whenever residentCarModels[SPECIAL_CAR_SLOT] < 8 - so a
- * level where spooling is off needs another route to make a car resident. */
-#define CHK_CHICAGO_TRUCK_SLOT	7	/* CarAvailability[chicago][7] = model 10 */
+ * The stock frontend only offers the extra vehicles once
+ * `gFurthestMission == 40 && NumPlayers == 1`. The engine asks modules via
+ * JER_EVENT_CAR_AVAILABILITY while it builds each level's list, and this hack
+ * answers "unlock them" so they are offered any time, in 1P or 2P. The engine
+ * still applies its per-model data checks, so models with no data (11) stay off.
+ */
 
 typedef struct CHK_HACK
 {
 	const char* name;	/* display name */
 	const char* key;	/* config key under the "carhacks" section */
 	int         def;	/* enabled by default */
-	int         level;	/* GameLevel it applies to */
-	int         slot;	/* index into CarAvailability[level][slot] */
 } CHK_HACK;
 
 static const CHK_HACK gChkHacks[] =
 {
-	{ "Chicago truck", "chicago_truck", 1, CHK_LEVEL_CHICAGO, CHK_CHICAGO_TRUCK_SLOT },
+	{ "Unlock extra vehicles", "unlock_extra_vehicles", 1 },
 };
 
 #define CHK_HACK_COUNT ((int)(sizeof(gChkHacks) / sizeof(gChkHacks[0])))
@@ -69,51 +69,29 @@ int carhacks_enabled(int index)
 	return jer_config_get_int("carhacks", gChkHacks[index].key, gChkHacks[index].def) != 0;
 }
 
-/* Offer every enabled hack's vehicle for `level`, so it is a normal entry in
- * that level's vehicle list. Idempotent; re-asserted per level launch because
- * the frontend recomputes CarAvailability when it builds the select screen. */
-static void ChkApplyForLevel(int level)
+/* JER_EVENT_CAR_AVAILABILITY: the frontend is building `level`'s car list and
+ * asks whether the normally-locked extra vehicles may be offered. */
+static int gChkLoggedLevel = -1;
+
+static int ChkOnCarAvailability(void* ud, void* args)
 {
-	int i;
+	JER_ARGS_CAR_AVAILABILITY* a = (JER_ARGS_CAR_AVAILABILITY*)args;
 
-	if (level < 0 || level >= 4)
-		return;
+	(void)ud;
 
-	for (i = 0; i < CHK_HACK_COUNT; i++)
+	if (carhacks_enabled(0))
 	{
-		const CHK_HACK* h = &gChkHacks[i];
+		a->result = 1;
 
-		if (h->level != level || !carhacks_enabled(i))
-			continue;
-
-		if (CarAvailability[level][h->slot] == 0)
+		/* one line per level-list build is enough (the frontend rebuilds the
+		 * list on entry, so this would otherwise repeat every frame) */
+		if (gChkLoggedLevel != a->level)
 		{
-			CarAvailability[level][h->slot] = 1;
-
-			printInfo("[carhacks] %s: enabled slot %d for level %d\n",
-				h->name, h->slot, level);
+			gChkLoggedLevel = a->level;
+			printInfo("[carhacks] extra vehicles unlocked for level %d\n", a->level);
 		}
 	}
-}
 
-static int ChkOnBoot(void* ud, void* args)
-{
-	(void)ud;
-	(void)args;
-
-	ChkApplyForLevel(CHK_LEVEL_CHICAGO);
-	return JER_RESULT_CONTINUE;
-}
-
-/* Fired at the end of State_GameStart, before the level loads, with the
- * pending level in/out. */
-static int ChkOnLevelLaunch(void* ud, void* args)
-{
-	JER_ARGS_LEVEL_LAUNCH* a = (JER_ARGS_LEVEL_LAUNCH*)args;
-
-	(void)ud;
-
-	ChkApplyForLevel(a->gameLevel);
 	return JER_RESULT_CONTINUE;
 }
 
@@ -122,12 +100,10 @@ void carhacks_register(JERICHO_CONTEXT* ctx)
 	int i;
 
 	for (i = 0; i < CHK_HACK_COUNT; i++)
-		ctx->jer_log(ctx, "[carhacks] hack '%s' (%s, level %d, slot %d) is %s\n",
-			gChkHacks[i].name, gChkHacks[i].key, gChkHacks[i].level, gChkHacks[i].slot,
-			carhacks_enabled(i) ? "on" : "off");
+		ctx->jer_log(ctx, "[carhacks] hack '%s' (%s) is %s\n",
+			gChkHacks[i].name, gChkHacks[i].key, carhacks_enabled(i) ? "on" : "off");
 
-	ctx->jer_register_hook(ctx, JER_EVENT_BOOT, ChkOnBoot, NULL, 0);
-	ctx->jer_register_hook(ctx, JER_EVENT_LEVEL_LAUNCH, ChkOnLevelLaunch, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_AVAILABILITY, ChkOnCarAvailability, NULL, 0);
 
 	ctx->jer_log(ctx, "[carhacks] %d car hack(s) registered\n", CHK_HACK_COUNT);
 }
