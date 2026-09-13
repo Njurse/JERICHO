@@ -109,6 +109,27 @@ level did not load resolves to tpage `(960,0)` / CLUT `(960,16)`. A car whose
 polys point there draws nothing usable — **invisible** — or draws with the dummy
 palette. This is precisely what a cross-city vehicle hits.
 
+### Where the page bytes actually are
+
+`LoadPermanentTPages` reads them from the sector **immediately after DATA1** —
+`citylumps[DATA1].x / 2048 + citylumps[DATA1].y / 2048` — which is exactly where
+`citylumps[TPAGE].x` points (219136 for CHICAGO = 1 + 106 sectors, and the TPAGE
+entry's `.x` is 219136). So the TPAGE region *is* the page data; the two views
+agree.
+
+Every entry of the perm list is concatenated there in list order and each one is
+**sector-aligned**: the engine advances with
+
+```c
+tpagebuffer += (permlist[i].y + 2047) & -CDSECTOR_SIZE;   // texture.c
+```
+
+so a set's offset is the running total of the aligned sizes before it. One entry
+is `[int clut rows][that many 32-byte CLUT rows][the compressed page]` — which is
+what `LoadTPageAndCluts` parses, and why the first int of an entry is a sane
+sanity check (RIO's car sets report 28-31 rows). Measured, RIO's six car sets sit
+at +151552, +210944, +235520, +262144, +286720 and +311296 with 23-27 KB each.
+
 **Per-city set assignments** live in `char carTpages[4][8]` (`texture.c:70`):
 eight texture-set numbers per city, filled in partly statically and partly at
 runtime (`spool.c:1719`, `texture.c:555`). `GetCarPalIndex` (`cars.c:1876`) is

@@ -603,8 +603,14 @@ static void ParseImportedTextureInfo(void)
 	// are the sets an imported vehicle's polygons name. Entries 6..7 of
 	// carTpages are filled in at run time for the CURRENT level, so only the
 	// six static ones can be checked here.
+	//
+	// Also prove the bytes are reachable: the permanent page data is
+	// concatenated after DATA1 in that city's file, one entry per listing, each
+	// sector-aligned - so a set's offset is the running total of the aligned
+	// sizes before it, which is exactly how LoadPermanentTPages carves them.
 	{
 		int city = GetCarImportCity();
+		int base = GetCarImportPageBase();
 		int wanted = 0;
 		int found = 0;
 
@@ -612,6 +618,7 @@ static void ParseImportedTextureInfo(void)
 		{
 			int set = carTpages[city][i];
 			int j;
+			int offset = 0;
 
 			if (set == 0)
 				continue;
@@ -622,9 +629,18 @@ static void ParseImportedTextureInfo(void)
 			{
 				if (gCarImportPerms.set[j] == set)
 				{
+					int cluts = 0;
+
 					found++;
+
+					if (base >= 0 && ReadCarImportFile(base + offset, &cluts, sizeof(cluts)))
+						printInfo("cross-city: %s set %d at +%d, %d bytes, %d clut rows\n",
+							LevelNames[city], set, offset, gCarImportPerms.bytes[j], cluts);
+
 					break;
 				}
+
+				offset += (gCarImportPerms.bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
 			}
 		}
 

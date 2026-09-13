@@ -245,6 +245,7 @@ typedef struct
 	int cosmeticsSize;
 	char* texInfo;		// LUMP_TEXTUREINFO body (page lists), or NULL
 	int texInfoSize;
+	int pageBase;		// byte offset of this file's permanent page data
 } CAR_IMPORT;
 
 static CAR_IMPORT gCarImport;
@@ -377,6 +378,11 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 		return 0;
 	}
 
+	// The permanent page data follows DATA1 in the file. The engine reads it from
+	// the sector just past DATA1 (main.c advances the sector before handing it to
+	// LoadPermanentTPages), so the base is the same sum, in bytes.
+	imp->pageBase = (int)(data1Off / CDSECTOR_SIZE + data1Size / CDSECTOR_SIZE) * CDSECTOR_SIZE;
+
 	imp->region = (char*)malloc(data1Size);
 
 	if (imp->region == NULL)
@@ -484,6 +490,51 @@ char* GetCarImportTextureInfo(int* size)
 		*size = gCarImport.texInfoSize;
 
 	return gCarImport.texInfo;
+}
+
+// Where the imported city's permanent page data starts in its level file, or -1.
+// The bytes for every entry of that city's page list are concatenated there, each
+// entry sector-aligned, which is how LoadPermanentTPages carves them.
+int GetCarImportPageBase(void)
+{
+	if (gCarImportCity < 0)
+		return -1;
+
+	return gCarImport.pageBase;
+}
+
+// Read `len` bytes at `offset` from the imported city's level file. Returns 1 on
+// success. Loadsectors cannot be used for this - it is bound to
+// g_CurrentLevelFileName, i.e. the level being played, not the imported city.
+int ReadCarImportFile(int offset, void* dst, int len)
+{
+	char filename[64];
+	FILE* fp;
+
+	if (gCarImportCity < 0 || offset < 0 || len <= 0 || dst == NULL)
+		return 0;
+
+	sprintf(filename, "%s%s", gDataFolder, LevelFiles[gCarImportCity]);
+	fp = fopen(filename, "rb");
+
+	if (fp == NULL)
+	{
+		sprintf(filename, "%sM%s", gDataFolder, LevelFiles[gCarImportCity]);
+		fp = fopen(filename, "rb");
+	}
+
+	if (fp == NULL)
+		return 0;
+
+	if (fseek(fp, offset, SEEK_SET) != 0 || fread(dst, 1, len, fp) != (size_t)len)
+	{
+		fclose(fp);
+		return 0;
+	}
+
+	fclose(fp);
+
+	return 1;
 }
 
 // The foreign car-models block to build `slot` from, or NULL to use the level's
