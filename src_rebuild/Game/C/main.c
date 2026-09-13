@@ -1610,6 +1610,14 @@ void CheckForPause(void)
 
 int gMultiStep = 0;
 
+	// JERICHO: debug/test - run N gameplay frames and exit cleanly. exit() runs
+	// atexit(PsyX_Shutdown) (PsyX_main.cpp), which finalises the log, so a test run
+	// ends with a complete log and an exit code instead of being killed - a kill
+	// discards the whole buffer and loses exactly the evidence the run existed for.
+	// 0 = run forever, i.e. the normal game.
+	int gExitAfterFrames = 0;
+	int gRunFrames = 0;
+
 // [D] [T]
 void State_GameLoop(void* param)
 {
@@ -1624,6 +1632,14 @@ void State_GameLoop(void* param)
 
 	if (!FilterFrameTime())
 		return;
+
+	// JERICHO-HOOK: -frames. Counted here, after the 30 fps guard, so the number is
+	// real stepped gameplay frames rather than iterations of the state machine.
+	if (gExitAfterFrames > 0 && ++gRunFrames >= gExitAfterFrames)
+	{
+		printInfo("JERICHO-RUN: reached %d frames, exiting cleanly\n", gRunFrames);
+		exit(0);
+	}
 
 	UpdatePadData();
 	CheckForPause();
@@ -2143,6 +2159,12 @@ int redriver2_main(int argc, char** argv)
 		{
 			extern void StoreXASubtitles();
 			StoreXASubtitles();
+		}
+		else if (!strcmp(argv[i], "-frames"))
+		{
+			// JERICHO: run N gameplay frames, then exit cleanly. See gExitAfterFrames.
+			if (i + 1 < argc)
+				gExitAfterFrames = atoi(argv[++i]);
 		}
 		else if (!strcmp(argv[i], "-startpos"))
 		{
