@@ -759,6 +759,42 @@ void LoadImportedTPages(void)
 	int slot;
 	int i, j;
 
+	// JERICHO-DIAG: what the walk actually sees, one line per resident slot. Local
+	// slots are the control - their cars render textured today, so if the walk finds
+	// no sets for THOSE, the walk is wrong rather than the import being absent.
+	// Runs before the no-import early-out on purpose, so a stock level gives the
+	// control in a single run.
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+	{
+		MODEL* m = gCarCleanModelPtr[i];
+
+		if (m == NULL)
+		{
+			printInfo("cross-city: scan slot %d: no model (src=%d)\n", i, GetCarModelSourceCity(i));
+			continue;
+		}
+
+		{
+			char* pb = GET_MODEL_DATA(char, m, poly_block);
+			int found[64];
+			int n, k;
+
+			// Run the SAME walk the import uses, on every slot including local ones.
+			// A local model that renders textured must yield sets here; if it does
+			// not, the walk is what is broken, not the import.
+			n = CollectModelSets(m, found, 0, 64);
+
+			printInfo("cross-city: scan slot %d: model=%p polys=%d polyblock=%p src=%d -> %d set(s):",
+				i, (void*)m, m->num_polys, (void*)pb, GetCarModelSourceCity(i), n);
+
+			for (k = 0; k < n && k < 12; k++)
+				printInfo(" %d", found[k]);
+
+			printInfo("   [bytes %02x %02x %02x %02x]\n",
+				(u_char)pb[0], (u_char)pb[1], (u_char)pb[2], (u_char)pb[3]);
+		}
+	}
+
 	if (city < 0 || base < 0)
 		return;
 
