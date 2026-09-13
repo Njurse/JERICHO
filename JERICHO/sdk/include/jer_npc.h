@@ -24,6 +24,25 @@ typedef struct JerNpc
  * Returns NULL on failure (the ped table is full). */
 JerNpc* jer_npc_spawn(int x, int z);
 
+/* spawn a pedestrian of a given model type: 0 = Tanner, 1 = the other player
+ * model, 3 = civilian. Civilians are recycled by the ambient-pedestrian system
+ * once they are far from the camera, so a ped a module wants to keep attached
+ * to something (e.g. a crew member mounted on a car) should use 0 or 1. */
+JerNpc* jer_npc_spawn_model(int pedModel, int x, int z);
+
+/* freeze a ped where it stands: both state slots become no-ops, so it neither
+ * walks, turns nor re-poses, and its current animation frame is held. */
+void jer_npc_park(JerNpc* n);
+
+/* hold an action pose: type = a PED_ACTION_* value (e.g. PED_ACTION_GETOUTCAR)
+ * with the animation frozen at `frame` (0..15; 14 is the last "climbing out"
+ * frame). Parks the ped as well, so the pose stays put. */
+void jer_npc_set_action(JerNpc* n, int action, int frame);
+
+/* place the ped outright: world x/z, raw engine Y (`position.vy`; Y-DOWN, so
+ * ground level is -MapHeight) and the whole-body yaw (0..4095). */
+void jer_npc_set_world(JerNpc* n, int x, int y, int z, int yaw);
+
 /* remove the ped from the world (safe on NULL / already-despawned) */
 void jer_npc_despawn(JerNpc* n);
 

@@ -6,9 +6,33 @@
 
 #include "driver2.h"
 #include "pedest.h"
+#include "motion_c.h"	/* SetupPedMotionData */
 #include "civ_ai.h"
 #include "dr2roads.h"
 #include "replays.h"	/* MAX_PLACED_PEDS */
+
+/* A parked ped's state function: it does nothing, so the ped neither walks nor
+ * advances its animation. It is installed into BOTH state slots, so whichever
+ * one the pedestrian updater calls the ped stays put. */
+static void jer_npc_frozen_state(LPPEDESTRIAN pPed)
+{
+	(void)pPed;
+}
+
+static void jer_npc_park_internal(LPPEDESTRIAN pPed)
+{
+	pPed->speed = 0;
+	pPed->doing_turn = 0;
+	pPed->finished_turn = 0;
+	pPed->velocity.vx = 0;
+	pPed->velocity.vy = 0;
+	pPed->velocity.vz = 0;
+	pPed->target.vx = pPed->position.vx;
+	pPed->target.vy = pPed->position.vy;
+	pPed->target.vz = pPed->position.vz;
+	pPed->fpRestState = jer_npc_frozen_state;
+	pPed->fpAgitatedState = jer_npc_frozen_state;
+}
 
 JerNpc* jer_npc_spawn(int x, int z)
 {
@@ -106,4 +130,49 @@ int jer_npc_leave_car(JerNpc* n)
 	(void)n;	/* STUB: the police bail-out is future work */
 
 	return 0;
+}
+
+JerNpc* jer_npc_spawn_model(int pedModel, int x, int z)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)jer_npc_spawn(x, z);
+
+	if (pPed != NULL)
+		pPed->pedType = (char)pedModel;
+
+	return (JerNpc*)pPed;
+}
+
+void jer_npc_park(JerNpc* n)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
+
+	if (pPed != NULL)
+		jer_npc_park_internal(pPed);
+}
+
+void jer_npc_set_action(JerNpc* n, int action, int frame)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
+
+	if (pPed == NULL)
+		return;
+
+	jer_npc_park_internal(pPed);
+
+	pPed->type = (char)action;
+	SetupPedMotionData(pPed);	/* pPed->motion = MotionCaptureData[action] */
+	pPed->frame1 = (char)frame;
+}
+
+void jer_npc_set_world(JerNpc* n, int x, int y, int z, int yaw)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
+
+	if (pPed == NULL)
+		return;
+
+	pPed->position.vx = x;
+	pPed->position.vy = y;
+	pPed->position.vz = z;
+	pPed->dir.vy = (short)(yaw & 0xfff);
 }
