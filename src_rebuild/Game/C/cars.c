@@ -1490,53 +1490,27 @@ void ProcessPalletLump(char *lump_ptr, int lump_size)
 	ProcessPalletLumpForCity(lump_ptr, lump_size, GameLevel);
 }
 
-// JERICHO-HOOK: apply an imported city's car palettes so its vehicles read their
-// own colours. Called right after the level's own palettes are processed; a no-op
-// when nothing is imported.
+// JERICHO-HOOK: deliberately does nothing - see the note inside.
 void ProcessImportedPalette(void)
 {
-	char* lump;
-	int size;
-	int city = GetCarImportCity();
-
-	if (city < 0)
-		return;
-
-	lump = GetCarImportPallet(&size);
-
-	if (lump == NULL || size <= 0)
-		return;
-
-	// The level's own palettes, the special-page padding and all 19 slots' CLUT rows
-	// are laid out from clutpos, so the imported palettes must not be laid out from
-	// it as well - doing exactly that is what moved every one of those rows (57
-	// y-units, 228 rows, for RIO). They are real VRAM rows that the imported car's
-	// clut ids have to point at, so they cannot simply be dropped either: they go to
-	// the top of the CLUT column, walked with a local cursor, and clutpos is left
-	// exactly where it was.
-	{
-		int rows = *(int*)lump;			// one stored CLUT per entry, by the merge's own count
-		int y = 512 - (rows + 3) / 4;		// 4 CLUT rows per y
-		RECT16 saved;
-
-		if (rows <= 0 || y < 448)
-		{
-			printInfo("cross-city: %s palettes want %d rows and there is no safe room - skipped\n", LevelNames[city], rows);
-			return;
-		}
-
-		saved = clutpos;
-
-		clutpos.x = 960;
-		clutpos.y = y;
-
-		ProcessPalletLumpForCity(lump, size, city);
-
-		clutpos = saved;
-
-		printInfo("cross-city: applied %s car palettes (%d bytes, %d rows at y=%d, level CLUT cursor untouched)\n",
-			LevelNames[city], size, rows, y);
-	}
+	// An imported city's palettes are NOT merged into civ_clut any more.
+	//
+	// civ_clut is u_short civ_clut[8][32][6]: EIGHT palette rows, and the host level
+	// uses all eight for its own cars. The imported city's palette indices are also
+	// 0..7, so merging put the foreign city's colours straight over the host's rows
+	// - which is why LOCAL cars, not just the imported one, started drawing with the
+	// wrong colours.
+	//
+	// There is nothing to squeeze: eight rows, all spoken for. Nor is the merge
+	// needed. A car's colours come from the CLUTs of its texture page, and a foreign
+	// car's page - uploaded into a spare texture slot by LoadImportedTPages - carries
+	// its own CLUTs with it, which is what its polys' clut ids resolve against. The
+	// merge was solving a problem the page upload already solves, at the cost of the
+	// host's palette table.
+	//
+	// Kept as a named function so this call site and the reason stay legible.
+	if (GetCarImportCity() >= 0)
+		printInfo("cross-city: %s keeps its palettes in its own pages - civ_clut is the host's 8 rows, none spare\n", LevelNames[GetCarImportCity()]);
 }
 
 // [D] [T]

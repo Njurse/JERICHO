@@ -1047,8 +1047,20 @@ void LoadPermanentTPages(int *sector)
 	// JERICHO-HOOK: the level's own page state, for the cross-city invariant. An
 	// import must leave every one of these exactly as it is here - measured with an
 	// import on and off, and compared. This line is what proves it.
-	printInfo("cross-city: level page state - slotsused=%d nperms=%d nspecpages=%d tpage=(%d,%d) clutpos=(%d,%d)\n",
-		slotsused, nperms, nspecpages, tpage.x, tpage.y, clutpos.x, clutpos.y);
+	//
+	// The civ_clut checksum is the same idea for the palette table
+	// (u_short civ_clut[8][32][6]): those 8 rows hold the colours every car in the
+	// level draws with, so an import must not disturb a single entry. A checksum
+	// makes that checkable instead of assumed.
+	{
+		unsigned int clutSum = 0;
+
+		for (i = 0; i < 8 * 32 * 6; i++)
+			clutSum = clutSum * 31 + ((u_short*)civ_clut)[i];
+
+		printInfo("cross-city: level page state - slotsused=%d nperms=%d nspecpages=%d tpage=(%d,%d) clutpos=(%d,%d) civclut=%08x\n",
+			slotsused, nperms, nspecpages, tpage.x, tpage.y, clutpos.x, clutpos.y, clutSum);
+	}
 }
 
 // [D] [T]
