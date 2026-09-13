@@ -24,7 +24,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_GET_IMPACT_INFO` | `JER_ARGS_IMPACT_INFO` | debug overlay | query: newest impact |
 | `JER_EVENT_DRAW_WHEEL` | `JER_ARGS_DRAW_WHEEL` | `DrawCarWheels` | distort a wheel's vertex copy, or `hide=1` to skip it |
 | `JER_EVENT_CAMERA` | `JER_ARGS_CAMERA` | `InitCamera` (chase cam) | adjust/override the camera transform |
-| `JER_EVENT_GAME_START` | — | `State_GameInit` (`main.c:803`) | a level is starting (fresh / restart / next) — modules reset transient state; notification (fired with no args), no handler = nothing |
+| `JER_EVENT_GAME_START` | — | `State_GameInit` (`main.c:803`) | a level is starting (fresh / restart / next) — modules reset transient state; notification, no handler = nothing. Carries `JER_ARGS_GAME_START { seed }`: the debug `-seed` run seed, or 0, so a module can make itself reproducible under test |
 | `JER_EVENT_CAMERA_LOOK` | `JER_ARGS_CAMERA_LOOK` | `TurnHead` | right-stick look input, before the stock look handling |
 | `JER_EVENT_PED_INPUT` | `JER_ARGS_PED_INPUT` | ped control loop | rewrite the on-foot pad before it drives Tanner |
 | `JER_EVENT_PED_MOVE` | `JER_ARGS_PED_MOVE` | `AnimatePed` (`pedest.c:638`) | player ped is about to move — the one point where a `pPed->speed` write survives the runner's per-frame re-arm; only a `TANNER_MODEL` ped with `padId >= 0`; no handler = stock speed |

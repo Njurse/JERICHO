@@ -1905,6 +1905,12 @@ void InitFrontendDisplay(void)
 // [D] [T]
 void State_FrontEnd(void* param)
 {
+	// JERICHO-HOOK: -frames applies to frontend runs too, so they self-terminate and
+	// leave a complete log rather than needing a kill. See JerichoFrameTick in main.c.
+	extern void JerichoFrameTick(void);
+
+	JerichoFrameTick();
+
 	// JERICHO-HOOK: the frontend ticks the game-frame event every frame so
 	// module menus (e.g. levelhacks' SP/MP prompt) can read input + draw
 	// while the frontend is frozen behind them

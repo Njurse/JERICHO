@@ -221,10 +221,25 @@ static CD2_AI_DEBUG sDbg;	// latest values of the tracked (first) opponent
 // opponents spawn on the same frame each boot). So we run our own LCG seeded
 // once per RUN from a source that varies: the wall clock, this static's
 // address under ASLR, and the frame counter. Every cd2AiRand* call advances it.
+// JERICHO: pinned run seed from the engine's debug -seed flag. 0 = not pinned.
+static unsigned int sRunSeedOverride;
+
+void cd2AiSetRunSeed(unsigned int seed)
+{
+	sRunSeedOverride = seed;
+}
+
 unsigned int cd2AiRunSeed(void)
 {
 	static unsigned int sSeed;
 	static int sDone;
+
+	// A run seed from the debug -seed flag pins our randomness: the whole point of
+	// the flag is that two runs produce the same roles, goals and routes, so a
+	// difference between two logs means something. 0 = nothing pinned, so keep
+	// seeding from ASLR/rdtsc and vary every launch.
+	if (sRunSeedOverride != 0)
+		return sRunSeedOverride;
 
 	if (!sDone)
 	{
@@ -1833,6 +1848,12 @@ static int cd2AiOnCarStep(void* ud, void* args)
 
 static int cd2AiOnGameStart(void* ud, void* args)
 {
+	// JERICHO: adopt the debug run seed, if the engine was given one. Done here
+	// because this is the first moment of a level, before any AI picks a role or a
+	// goal, so every derived choice below it is reproducible.
+	if (args != NULL)
+		cd2AiSetRunSeed((unsigned int)((JER_ARGS_GAME_START*)args)->seed);
+
 	int i;
 	(void)ud;
 	(void)args;

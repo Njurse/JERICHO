@@ -109,6 +109,27 @@ level did not load resolves to tpage `(960,0)` / CLUT `(960,16)`. A car whose
 polys point there draws nothing usable — **invisible** — or draws with the dummy
 palette. This is precisely what a cross-city vehicle hits.
 
+### Where the page bytes actually are
+
+`LoadPermanentTPages` reads them from the sector **immediately after DATA1** —
+`citylumps[DATA1].x / 2048 + citylumps[DATA1].y / 2048` — which is exactly where
+`citylumps[TPAGE].x` points (219136 for CHICAGO = 1 + 106 sectors, and the TPAGE
+entry's `.x` is 219136). So the TPAGE region *is* the page data; the two views
+agree.
+
+Every entry of the perm list is concatenated there in list order and each one is
+**sector-aligned**: the engine advances with
+
+```c
+tpagebuffer += (permlist[i].y + 2047) & -CDSECTOR_SIZE;   // texture.c
+```
+
+so a set's offset is the running total of the aligned sizes before it. One entry
+is `[int clut rows][that many 32-byte CLUT rows][the compressed page]` — which is
+what `LoadTPageAndCluts` parses, and why the first int of an entry is a sane
+sanity check (RIO's car sets report 28-31 rows). Measured, RIO's six car sets sit
+at +151552, +210944, +235520, +262144, +286720 and +311296 with 23-27 KB each.
+
 **Per-city set assignments** live in `char carTpages[4][8]` (`texture.c:70`):
 eight texture-set numbers per city, filled in partly statically and partly at
 runtime (`spool.c:1719`, `texture.c:555`). `GetCarPalIndex` (`cars.c:1876`) is
@@ -309,6 +330,26 @@ print(total, sets)
 - A `texture_set` means a different page in every city; unknown sets resolve to
   the dummy tpage `(960,0)` / CLUT `(960,16)`, which renders as nothing.
 - Models 5/6/7 are absent in **every** city; Chicago's 11 is absent too.
+- Car model polygons are **compressed**, not a sequence of `PolySizes`-sized PSX
+  primitives. Walking them with `PolySizes[*p & 0x1f]` *stalls* from polygon 5 — that
+  type's entry is `0`, so the walk re-reads the same bytes forever and reports
+  nonsense sets. `Find_TexID` in `texture.c` is marked UNUSED, probably for this
+  reason. Never trust a poly walk here without checking it against a local model
+  whose car renders textured.
+- City car sets live in the low numbers (**10..68** across all four cities), so set
+  indices **110+ are free** and safe to re-index an imported page onto.
+- `LUMP_TEXTUREINFO` (type **34**, DATA1) is **not** "a count then entries". The layout
+  is: an `int` texture-page count, an 8-byte header, a **`TP` array** of
+  `count + 1` entries, then — per texture page — a length-prefixed **`TEXINF`** array,
+  then `nperms` and its `XYPAIR`s, then the perm list's **fixed 16-ENTRY region**
+  (16 × `XYPAIR`, not 16 bytes), then `nspecpages` and its `XYPAIR`s. Reading it as
+  count-then-entries yields plausible garbage — 70 "permanent sets" for a city that
+  has 12 — which is why the authoritative reader is `ParseImportedTextureInfo`
+  (`texture.c`) and its runtime line, not a reimplementation.
+- An imported page must be **pinned**. It sits at `tpagepos[slot]` — the same VRAM
+  rectangle the engine streams region pages into — and a later load pass memsets
+  `tpageloaded`/`tpageslots`. Without re-claiming, a streamed page overwrites its
+  pixels while the car keeps sampling its coordinates, which reads as wrong UVs.
 - `REDRIVER2.log` is **truncated at session start and flushed at close** — a
   `taskkill` throws the whole session away, and a stale line-count boundary reads
   nothing. Wait for `---- LOG CLOSED ----` before believing a log.

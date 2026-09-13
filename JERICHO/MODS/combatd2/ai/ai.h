@@ -17,6 +17,11 @@ void cd2AiRegister(JERICHO_CONTEXT* ctx);
 // same routes every launch.
 unsigned int cd2AiRunSeed(void);
 
+// Pin the run seed (0 = unpin, seed from ASLR/rdtsc as usual). Set from the
+// engine's debug -seed flag via JER_EVENT_GAME_START, so a test run can be made
+// reproducible and two runs diffed.
+void cd2AiSetRunSeed(unsigned int seed);
+
 // 1 when the prototype opponent is currently spawned.
 int cd2AiActive(void);
 

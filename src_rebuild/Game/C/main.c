@@ -5,6 +5,19 @@
 #include "jer_hud.h"	// JERICHO-HOOK: on-screen HUD messages
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
+// JERICHO: debug/test run controls, defined here because the command line is
+// parsed above State_GameLoop and State_GameInit:
+//   -frames N  exit after N gameplay frames, cleanly, so a test run terminates
+//              itself with a complete log instead of being killed (a kill
+//              discards the log buffer, and the log is the evidence)
+//   -seed N    pin module randomness, so two runs are directly comparable
+// Both are 0 (off) in a normal launch, so shipping behaviour is untouched.
+// Declarations only - the definitions sit with the other option state, and these
+// are here because the command line is parsed before that point in the file.
+extern int gExitAfterFrames;
+extern int gRunFrames;
+extern int gDebugSeed;
+
 #include "ASM/rndrasm.h"
 #include "ASM/d2mapasm.h"
 
@@ -454,7 +467,12 @@ void LoadGameLevel(void)
 		LoadPermanentTPagesFromTIM();
 	}
 #endif
-	
+
+	// JERICHO-HOOK: an imported city's car textures go in last, after the .TIM
+	// override pass has rewritten every slot that is not 0xFF - so nothing can
+	// rewrite the slots they claim. No-op without an import.
+	LoadImportedTPages();
+
 	ReportMode(1);
 }
 
@@ -799,8 +817,37 @@ void State_GameInit(void* param)
 
 	// JERICHO-HOOK: a level is starting (fresh launch, restart, or next
 	// mission) — modules reset their transient state here (e.g. the sandbox
-	// menu must close so it doesn't reopen unprompted)
-	jer_fire(JER_EVENT_GAME_START, NULL);
+	// menu must close so it doesn't reopen unprompted). The debug run seed rides
+	// along, so a module can be reproducible across runs when we ask for it.
+	{
+		JER_ARGS_GAME_START jerStart;
+
+		jerStart.seed = gDebugSeed;
+		jer_fire(JER_EVENT_GAME_START, &jerStart);
+	}
+
+	// JERICHO: the last word on the player's car.
+	//
+	// A module gets its say during SetupResidentModels, inside LoadMission - which runs
+	// BEFORE the mission header is applied to PlayerStartInfo. So an explicit choice
+	// (cross-city player_model, or -car) was silently replaced by the level's own car,
+	// which is why the player kept ending up in a domestic vehicle while the special
+	// slot, which reads residentCarModels[SPECIAL_CAR_SLOT] instead, worked.
+	//
+	// Re-applied here, immediately before the level runs, so no earlier writer can
+	// overwrite it. Nothing changes when wantedCar is left at -1.
+	{
+		int pc;
+
+		for (pc = 0; pc < 2; pc++)
+		{
+			if (wantedCar[pc] != -1 && PlayerStartInfo[pc] != NULL)
+			{
+				PlayerStartInfo[pc]->model = wantedCar[pc];
+				printInfo("JERICHO: player %d car forced to model %d (wantedCar)\n", pc, wantedCar[pc]);
+			}
+		}
+	}
 
 	for (i = 0; i < 5; i++)
 	{
@@ -1605,6 +1652,69 @@ void CheckForPause(void)
 
 int gMultiStep = 0;
 
+	// JERICHO: debug/test - run N gameplay frames and exit cleanly. exit() runs
+	// atexit(PsyX_Shutdown) (PsyX_main.cpp), which finalises the log, so a test run
+	// ends with a complete log and an exit code instead of being killed - a kill
+	// discards the whole buffer and loses exactly the evidence the run existed for.
+	// 0 = run forever, i.e. the normal game.
+	int gExitAfterFrames = 0;
+	int gRunFrames = 0;
+
+	// JERICHO: debug/test - the run seed, passed to modules on JER_EVENT_GAME_START
+	// so a module can make itself reproducible (combatd2's opponent AI derives its
+	// roles and roam goals from it). 0 = none given, modules seed themselves.
+	int gDebugSeed = 0;
+
+// JERICHO: the -frames check, shared by every per-frame entry point so a debug run
+// self-terminates in the FRONTEND as well as in gameplay. It used to be
+// gameplay-only, which left frontend runs with no way to end except a kill - and a
+// kill discards the log, which is the whole reason -frames exists.
+//
+// Called after each entry point's own frame guard, so the count is real frames.
+void JerichoFrameTick(void)
+{
+	// JERICHO-DIAG: on the first frame, what the player's car actually IS versus what
+	// was asked for. Distinguishes "the choice never took" from "something replaced it
+	// after the level start".
+	if (gRunFrames == 0)
+	{
+		int resident = -1, pc;
+
+		if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+			resident = car_data[MainPlayer.playerCarId].ap.model;
+
+		printInfo("JERICHO-DIAG: player car model=%d (want=%d, startinfo[0]=%d) residents=",
+			resident, wantedCar[0], (PlayerStartInfo[0] != NULL) ? PlayerStartInfo[0]->model : -9);
+
+		for (pc = 0; pc < MAX_CAR_RESIDENT_MODELS; pc++)
+			printInfo(" %d", residentCarModels[pc]);
+
+		printInfo("\n");
+	}
+
+	if (gExitAfterFrames <= 0 || ++gRunFrames < gExitAfterFrames)
+		return;
+
+	// JERICHO: one machine-readable line so a harness reads named fields instead of
+	// guessing a verdict from log prose. status=ok means the run reached its frame
+	// budget; a run that dies or hangs never prints this at all, which is how failure
+	// is detected.
+	{
+		int car = -1;
+
+		if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+			car = (int)car_data[MainPlayer.playerCarId].ap.model;
+
+		printInfo("JERICHO-RUN: level=%s car=%d frames=%d seed=%d status=ok\n",
+			LevelNames[GameLevel], car, gRunFrames, gDebugSeed);
+	}
+
+	// JERICHO: where the imported pages ended up, after the level has streamed.
+	CarImportDumpState();
+
+	exit(0);
+}
+
 // [D] [T]
 void State_GameLoop(void* param)
 {
@@ -1619,6 +1729,17 @@ void State_GameLoop(void* param)
 
 	if (!FilterFrameTime())
 		return;
+
+	// JERICHO-HOOK: -frames. Counted here, after the 30 fps guard, so the number is
+	// real stepped gameplay frames rather than iterations of the state machine. Shared
+	// with State_FrontEnd, so a frontend run self-terminates too.
+	JerichoFrameTick();
+
+	// JERICHO-HOOK: imported pages sit in slots the engine streams into, and a later
+	// load pass resets the slot table - so re-claim and re-upload any that were taken
+	// back. This is the fix for imported cars sampling whatever streamed in over their
+	// pages, which looks like wrong UVs. A handful of compares when nothing is wrong.
+	CarImportPin();
 
 	UpdatePadData();
 	CheckForPause();
@@ -2138,6 +2259,18 @@ int redriver2_main(int argc, char** argv)
 		{
 			extern void StoreXASubtitles();
 			StoreXASubtitles();
+		}
+		else if (!strcmp(argv[i], "-frames"))
+		{
+			// JERICHO: run N gameplay frames, then exit cleanly. See gExitAfterFrames.
+			if (i + 1 < argc)
+				gExitAfterFrames = atoi(argv[++i]);
+		}
+		else if (!strcmp(argv[i], "-seed"))
+		{
+			// JERICHO: pin every module's run randomness, so two runs are diffable.
+			if (i + 1 < argc)
+				gDebugSeed = atoi(argv[++i]);
 		}
 		else if (!strcmp(argv[i], "-startpos"))
 		{

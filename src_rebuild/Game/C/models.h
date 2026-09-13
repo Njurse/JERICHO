@@ -42,6 +42,17 @@ char* GetCarImportCosmetics(int slot);
 int GetCarImportCity(void);
 char* GetCarImportPallet(int* size);
 
+// The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
+// walks. texture.c parses it (the TP/TEXINF types the layout needs live there).
+char* GetCarImportTextureInfo(int* size);
+
+// Where the imported city's permanent page data starts in its level file (-1 if
+// none), and a raw ranged read of that file. texture.c uses both to carve out a
+// page: the entries are concatenated there, each sector-aligned, which is exactly
+// how LoadPermanentTPages walks them.
+int GetCarImportPageBase(void);
+int ReadCarImportFile(int offset, void* dst, int len);
+
 extern int ProcessCarModelLump(char *lump_ptr, int lump_size); // 0x00064E6C
 
 extern MODEL* FindModelPtrWithName(char *name); // 0x0005D40C

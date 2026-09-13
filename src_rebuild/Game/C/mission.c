@@ -422,11 +422,23 @@ void SetupResidentModels()
 			
 			for (j = 0; j < MAX_CAR_RESIDENT_MODELS; j++)
 			{
-				if (residentCarModels[j] == wantedCar[i])
+				if (residentCarModels[j] != wantedCar[i])
+					continue;
+
+				// JERICHO: prefer a slot this model was IMPORTED into. Levels routinely
+				// list a model more than once - Havana's own resident list is 1 2 3 3 4 -
+				// so taking the first match handed the player the host's domestic copy
+				// while the imported one sat unused in the other slot. That is why a
+				// cross-city civilian car looked like just another local car, while the
+				// special slot (which never comes through here) worked.
+				if (GetCarModelSourceCity(j) >= 0)
 				{
 					foundRM = j;
 					break;
 				}
+
+				if (foundRM == -1)
+					foundRM = j;
 			}
 			
 			PlayerStartInfo[i]->model = wantedCar[i];
@@ -570,7 +582,26 @@ void LoadMission(int missionnum)
 		}
 #endif
 	
-		PlayerStartInfo[0]->model = MissionHeader->playerCarModel;
+		// JERICHO: an explicitly requested car wins over the level's default.
+		//
+		// This line used to be unconditionally MissionHeader->playerCarModel, which
+		// silently overwrote anything that had already asked for a different player
+		// car - a module's wantedCar (cross-city player_model), and -car too. That is
+		// why cross-city "worked" for the special slot, which reads
+		// residentCarModels[SPECIAL_CAR_SLOT] and never comes through here, but a
+		// civilian request was quietly replaced by the level's own car.
+		//
+		// Same shape as the DEBUG_OPTIONS start-position override just above: an
+		// explicit choice beats the mission, and with nothing set (wantedCar -1) this
+		// behaves exactly as before.
+		if (wantedCar[0] != -1)
+			PlayerStartInfo[0]->model = wantedCar[0];
+		else
+			PlayerStartInfo[0]->model = MissionHeader->playerCarModel;
+
+		printInfo("cross-city: mission player car - wantedCar[0]=%d header=%d -> using %d\n",
+			wantedCar[0], MissionHeader->playerCarModel, PlayerStartInfo[0]->model);
+
 		PlayerStartInfo[0]->palette = MissionHeader->playerCarColour;
 	}
 
@@ -785,6 +816,25 @@ void LoadMission(int missionnum)
 	}
 
 	SetupResidentModels();
+
+	// JERICHO: the resident models are final here, and this is where a module gets its
+	// say - JER_EVENT_CAR_DATA_SOURCE fires inside SetupResidentModels, so anything a
+	// module sets in `wantedCar` lands AFTER the mission header was applied (above,
+	// around line 573). That silently replaced a cross-city player car with the level's
+	// own car, which is why the player kept getting domestic vehicles while the special
+	// slot (which reads residentCarModels[SPECIAL_CAR_SLOT]) worked fine.
+	//
+	// Re-applying it here makes an explicit choice win - a module's, or -car's. With
+	// wantedCar left at -1, nothing changes.
+	{
+		int pc;
+
+		for (pc = 0; pc < 2; pc++)
+		{
+			if (wantedCar[pc] != -1 && PlayerStartInfo[pc] != NULL)
+				PlayerStartInfo[pc]->model = wantedCar[pc];
+		}
+	}
 
 	if (GameType == GAME_CAPTURETHEFLAG)
 		ActivateNextFlag();

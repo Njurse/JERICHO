@@ -1144,6 +1144,11 @@ MODEL* GetCarModel(char* src, char** dest, int KeepNormals)
 // [D] [T] [A]
 void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 {
+	// JERICHO: only an imported car's polys get the set remap. index is the resident
+	// slot, so this is where import-ness is known. Set for every build, so the value
+	// can never leak from one car to the next.
+	CarSetRemapEnable(index >= 0 && GetCarModelSourceCity(index) >= 0);
+
 	int newNumPolys;
 	int i, pass;
 	ushort clut;
@@ -1222,8 +1227,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						POLYFT3* pft3 = (POLYFT3*)polyList;
 									
 						cp->vindices = M_INT_4R(pft3->v0, pft3->v1, pft3->v2, 0);
-						cp->clut_uv0 = M_INT_2(texture_cluts[pft3->texture_set][pft3->texture_id], *(ushort*)&pft3->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[pft3->texture_set], *(ushort*)&pft3->uv1);
+						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(pft3->texture_set)][pft3->texture_id], *(ushort*)&pft3->uv0);
+						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pft3->texture_set)], *(ushort*)&pft3->uv1);
 						cp->uv3_uv2 = *(ushort*)&pft3->uv2;
 						cp->originalindex = i;
 
@@ -1236,16 +1241,16 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						POLYFT4* pft4 = (POLYFT4*)polyList;
 
 						cp->vindices = M_INT_4R(pft4->v0, pft4->v1, pft4->v2, 0);
-						cp->clut_uv0 = M_INT_2(texture_cluts[pft4->texture_set][pft4->texture_id], *(ushort *)&pft4->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[pft4->texture_set], *(ushort*)&pft4->uv1);
+						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(pft4->texture_set)][pft4->texture_id], *(ushort *)&pft4->uv0);
+						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pft4->texture_set)], *(ushort*)&pft4->uv1);
 						cp->uv3_uv2 = *(ushort*)&pft4->uv2;
 						cp->originalindex = i;
 
 						cp++;
 						
 						cp->vindices = M_INT_4R(pft4->v0, pft4->v2, pft4->v3, 0);
-						cp->clut_uv0 = M_INT_2(texture_cluts[polyList[1]][polyList[2]], *(ushort*)&pft4->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[polyList[1]], *(ushort*)&pft4->uv2);
+						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(polyList[1])][polyList[2]], *(ushort*)&pft4->uv0);
+						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(polyList[1])], *(ushort*)&pft4->uv2);
 						cp->uv3_uv2 = *(ushort*)&pft4->uv3;
 						cp->originalindex = i;
 
@@ -1260,12 +1265,12 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						carid = GetCarPalIndex(pgt3->texture_set);
 						clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
 
-						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
+						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[CarSetRemap(pgt3->texture_set)][pgt3->texture_id];
 						
 						cp->vindices = M_INT_4R(pgt3->v0, pgt3->v1, pgt3->v2, 0);
 						cp->nindices = M_INT_4R(pgt3->n0, pgt3->n1, pgt3->n2, 0);
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pgt3->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[pgt3->texture_set], *(ushort *)&pgt3->uv1);
+						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pgt3->texture_set)], *(ushort *)&pgt3->uv1);
 						cp->uv3_uv2 = *(ushort *)&pgt3->uv2;
 						cp->originalindex = i;
 
@@ -1280,7 +1285,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						carid = GetCarPalIndex(pgt4->texture_set);
 						clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
 
-						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
+						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[CarSetRemap(pgt4->texture_set)][pgt4->texture_id];
 
 						cp->vindices = M_INT_4R(pgt4->v0, pgt4->v1, pgt4->v2, 0);
 						cp->nindices = M_INT_4R(pgt4->n0, pgt4->n1, pgt4->n2, 0);
@@ -1490,26 +1495,27 @@ void ProcessPalletLump(char *lump_ptr, int lump_size)
 	ProcessPalletLumpForCity(lump_ptr, lump_size, GameLevel);
 }
 
-// JERICHO-HOOK: apply an imported city's car palettes so its vehicles read their
-// own colours. Called right after the level's own palettes are processed; a no-op
-// when nothing is imported.
+// JERICHO-HOOK: deliberately does nothing - see the note inside.
 void ProcessImportedPalette(void)
 {
-	char* lump;
-	int size;
-	int city = GetCarImportCity();
-
-	if (city < 0)
-		return;
-
-	lump = GetCarImportPallet(&size);
-
-	if (lump == NULL || size <= 0)
-		return;
-
-	ProcessPalletLumpForCity(lump, size, city);
-
-	printInfo("cross-city: applied %s car palettes (%d bytes)\n", LevelNames[city], size);
+	// An imported city's palettes are NOT merged into civ_clut any more.
+	//
+	// civ_clut is u_short civ_clut[8][32][6]: EIGHT palette rows, and the host level
+	// uses all eight for its own cars. The imported city's palette indices are also
+	// 0..7, so merging put the foreign city's colours straight over the host's rows
+	// - which is why LOCAL cars, not just the imported one, started drawing with the
+	// wrong colours.
+	//
+	// There is nothing to squeeze: eight rows, all spoken for. Nor is the merge
+	// needed. A car's colours come from the CLUTs of its texture page, and a foreign
+	// car's page - uploaded into a spare texture slot by LoadImportedTPages - carries
+	// its own CLUTs with it, which is what its polys' clut ids resolve against. The
+	// merge was solving a problem the page upload already solves, at the cost of the
+	// host's palette table.
+	//
+	// Kept as a named function so this call site and the reason stay legible.
+	if (GetCarImportCity() >= 0)
+		printInfo("cross-city: %s keeps its palettes in its own pages - civ_clut is the host's 8 rows, none spare\n", LevelNames[GetCarImportCity()]);
 }
 
 // [D] [T]

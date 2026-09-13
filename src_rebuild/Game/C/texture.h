@@ -31,6 +31,29 @@ extern char specTpages[4][12];
 
 extern void ProcessPalletLump(char *lump_ptr, int lump_size); // 0x00019F44
 
+// JERICHO: upload an imported city's car texture sets into texture_pages /
+// texture_cluts. Called from inside LoadPermanentTPages.
+extern void LoadImportedTPages(void);
+
+// JERICHO: re-claim and re-upload imported pages whose slot has been taken back by
+// streaming. Called from the game loop; cheap unless something actually went wrong.
+extern void CarImportPin(void);
+
+// JERICHO: report where the imported sets' pages actually ended up, decoding the
+// draw path's tpage/clut values back into VRAM coordinates. Called at the end of a
+// debug run - the check that says whether streaming replaced them.
+extern void CarImportDumpState(void);
+
+// JERICHO: translate an imported vehicle's source-city set number to the index its
+// page was actually loaded at (identity when it was not re-indexed). Applied where
+// a car's polys are converted into engine form, in cars.c's plotNewCarModel.
+extern int CarSetRemap(int set);
+
+// JERICHO: arm/disarm the remap for the car being converted. Must be on only for an
+// imported car - a host car whose set number collides with a remapped one needs its
+// own page, not the imported city's.
+extern void CarSetRemapEnable(int on);
+
 // JERICHO-HOOK: merge a cross-city import's car palettes (civ_clut) so its
 // vehicles read their own colours. No-op unless a module asked for an import.
 extern void ProcessImportedPalette(void);

@@ -512,6 +512,22 @@ typedef struct JER_ARGS_CAR_AVAILABILITY
  * from slots 0..4 (see modelRandomList in civ_ai.c), so a foreign car put there
  * shows up in traffic; slots 5.. up to count-2 are extra capacity that stock
  * levels leave as -1 ("no model"). */
+/* JER_EVENT_GAME_START args: a level is starting.
+ *
+ * seed - the run seed from the debug/test -seed flag, or 0 when none was given.
+ *        A module that wants a reproducible run derives its own randomness from
+ *        this instead of the clock or ASLR, so two runs with the same seed can be
+ *        compared field by field. With 0, keep doing whatever you do today - the
+ *        engine deliberately does not choose a seed for you.
+ *
+ * This used to fire with no args at all. Passing a struct instead of NULL is
+ * compatible with handlers that ignore args, which is why it is done here rather
+ * than as a new event. */
+typedef struct JER_ARGS_GAME_START
+{
+	int seed;
+} JER_ARGS_GAME_START;
+
 typedef struct JER_ARGS_CAR_DATA_SOURCE
 {
 	int level;		/* in: GameLevel being set up */

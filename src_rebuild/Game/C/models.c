@@ -232,6 +232,7 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 
 #define CAR_IMPORT_LUMP_MODELS	28	// LUMP_CAR_MODELS
 #define CAR_IMPORT_LUMP_PALLET	25	// LUMP_PALLET - the car palettes (civ_clut)
+#define CAR_IMPORT_LUMP_TEXINFO	34	// LUMP_TEXTUREINFO - the page lists
 
 typedef struct
 {
@@ -242,6 +243,9 @@ typedef struct
 	int palletSize;
 	char* cosmetics;	// the city's .LCF (car colours), or NULL
 	int cosmeticsSize;
+	char* texInfo;		// LUMP_TEXTUREINFO body (page lists), or NULL
+	int texInfoSize;
+	int pageBase;		// byte offset of this file's permanent page data
 } CAR_IMPORT;
 
 static CAR_IMPORT gCarImport;
@@ -374,6 +378,11 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 		return 0;
 	}
 
+	// The permanent page data follows DATA1 in the file. The engine reads it from
+	// the sector just past DATA1 (main.c advances the sector before handing it to
+	// LoadPermanentTPages), so the base is the same sum, in bytes.
+	imp->pageBase = (int)(data1Off / CDSECTOR_SIZE + data1Size / CDSECTOR_SIZE) * CDSECTOR_SIZE;
+
 	imp->region = (char*)malloc(data1Size);
 
 	if (imp->region == NULL)
@@ -404,6 +413,11 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 	// polygons reference ITS city's texture pages, whose colours live here - the
 	// host level's palettes are a different set entirely.
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_PALLET, &imp->pallet, &imp->palletSize);
+
+	// And the page LISTS, which say which texture sets that city's level loads
+	// and how big each set's data is. texture.c parses this; the page bytes
+	// themselves sit right after DATA1 in the file, which it reads separately.
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_TEXINFO, &imp->texInfo, &imp->texInfoSize);
 
 	// the car colours live beside it, as LEVELS\<city>.LCF
 	sprintf(filename, "%s%s", gDataFolder, CosmeticFiles[city]);
@@ -465,6 +479,62 @@ char* GetCarImportPallet(int* size)
 		*size = gCarImport.palletSize;
 
 	return gCarImport.pallet;
+}
+
+// The imported city's LUMP_TEXTUREINFO (its texture-page lists). Only valid for
+// the level's duration, and only when an import is active. texture.c parses it -
+// the TP/TEXINF types the layout needs live there.
+char* GetCarImportTextureInfo(int* size)
+{
+	if (size)
+		*size = gCarImport.texInfoSize;
+
+	return gCarImport.texInfo;
+}
+
+// Where the imported city's permanent page data starts in its level file, or -1.
+// The bytes for every entry of that city's page list are concatenated there, each
+// entry sector-aligned, which is how LoadPermanentTPages carves them.
+int GetCarImportPageBase(void)
+{
+	if (gCarImportCity < 0)
+		return -1;
+
+	return gCarImport.pageBase;
+}
+
+// Read `len` bytes at `offset` from the imported city's level file. Returns 1 on
+// success. Loadsectors cannot be used for this - it is bound to
+// g_CurrentLevelFileName, i.e. the level being played, not the imported city.
+int ReadCarImportFile(int offset, void* dst, int len)
+{
+	char filename[64];
+	FILE* fp;
+
+	if (gCarImportCity < 0 || offset < 0 || len <= 0 || dst == NULL)
+		return 0;
+
+	sprintf(filename, "%s%s", gDataFolder, LevelFiles[gCarImportCity]);
+	fp = fopen(filename, "rb");
+
+	if (fp == NULL)
+	{
+		sprintf(filename, "%sM%s", gDataFolder, LevelFiles[gCarImportCity]);
+		fp = fopen(filename, "rb");
+	}
+
+	if (fp == NULL)
+		return 0;
+
+	if (fseek(fp, offset, SEEK_SET) != 0 || fread(dst, 1, len, fp) != (size_t)len)
+	{
+		fclose(fp);
+		return 0;
+	}
+
+	fclose(fp);
+
+	return 1;
 }
 
 // The foreign car-models block to build `slot` from, or NULL to use the level's
