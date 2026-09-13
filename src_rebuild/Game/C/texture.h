@@ -35,6 +35,11 @@ extern void ProcessPalletLump(char *lump_ptr, int lump_size); // 0x00019F44
 // texture_cluts. Called from inside LoadPermanentTPages.
 extern void LoadImportedTPages(void);
 
+// JERICHO: translate an imported vehicle's source-city set number to the index its
+// page was actually loaded at (identity when it was not re-indexed). Applied where
+// a car's polys are converted into engine form, in cars.c's plotNewCarModel.
+extern int CarSetRemap(int set);
+
 // JERICHO-HOOK: merge a cross-city import's car palettes (civ_clut) so its
 // vehicles read their own colours. No-op unless a module asked for an import.
 extern void ProcessImportedPalette(void);

@@ -1222,8 +1222,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						POLYFT3* pft3 = (POLYFT3*)polyList;
 									
 						cp->vindices = M_INT_4R(pft3->v0, pft3->v1, pft3->v2, 0);
-						cp->clut_uv0 = M_INT_2(texture_cluts[pft3->texture_set][pft3->texture_id], *(ushort*)&pft3->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[pft3->texture_set], *(ushort*)&pft3->uv1);
+						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(pft3->texture_set)][pft3->texture_id], *(ushort*)&pft3->uv0);
+						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pft3->texture_set)], *(ushort*)&pft3->uv1);
 						cp->uv3_uv2 = *(ushort*)&pft3->uv2;
 						cp->originalindex = i;
 
@@ -1236,16 +1236,16 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						POLYFT4* pft4 = (POLYFT4*)polyList;
 
 						cp->vindices = M_INT_4R(pft4->v0, pft4->v1, pft4->v2, 0);
-						cp->clut_uv0 = M_INT_2(texture_cluts[pft4->texture_set][pft4->texture_id], *(ushort *)&pft4->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[pft4->texture_set], *(ushort*)&pft4->uv1);
+						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(pft4->texture_set)][pft4->texture_id], *(ushort *)&pft4->uv0);
+						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pft4->texture_set)], *(ushort*)&pft4->uv1);
 						cp->uv3_uv2 = *(ushort*)&pft4->uv2;
 						cp->originalindex = i;
 
 						cp++;
 						
 						cp->vindices = M_INT_4R(pft4->v0, pft4->v2, pft4->v3, 0);
-						cp->clut_uv0 = M_INT_2(texture_cluts[polyList[1]][polyList[2]], *(ushort*)&pft4->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[polyList[1]], *(ushort*)&pft4->uv2);
+						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(polyList[1])][polyList[2]], *(ushort*)&pft4->uv0);
+						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(polyList[1])], *(ushort*)&pft4->uv2);
 						cp->uv3_uv2 = *(ushort*)&pft4->uv3;
 						cp->originalindex = i;
 
@@ -1260,12 +1260,12 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						carid = GetCarPalIndex(pgt3->texture_set);
 						clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
 
-						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
+						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[CarSetRemap(pgt3->texture_set)][pgt3->texture_id];
 						
 						cp->vindices = M_INT_4R(pgt3->v0, pgt3->v1, pgt3->v2, 0);
 						cp->nindices = M_INT_4R(pgt3->n0, pgt3->n1, pgt3->n2, 0);
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pgt3->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[pgt3->texture_set], *(ushort *)&pgt3->uv1);
+						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pgt3->texture_set)], *(ushort *)&pgt3->uv1);
 						cp->uv3_uv2 = *(ushort *)&pgt3->uv2;
 						cp->originalindex = i;
 
@@ -1280,7 +1280,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						carid = GetCarPalIndex(pgt4->texture_set);
 						clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
 
-						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
+						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[CarSetRemap(pgt4->texture_set)][pgt4->texture_id];
 
 						cp->vindices = M_INT_4R(pgt4->v0, pgt4->v1, pgt4->v2, 0);
 						cp->nindices = M_INT_4R(pgt4->n0, pgt4->n1, pgt4->n2, 0);

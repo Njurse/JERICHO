@@ -740,6 +740,74 @@ static int HostOwnsCarTPage(int tpage)
 	return 0;
 }
 
+// JERICHO: index remap for imported vehicles.
+//
+// A texture set number can only mean one thing at a time, and the host city already
+// means something by some of the numbers the source city uses. Rather than skip
+// those sets - which left an imported car drawing host textures on part of its body
+// - the imported page goes to a free set index and the car's own polygons are
+// translated onto it as they are converted into engine form (cars.c, in
+// plotNewCarModel). Nothing of the host's is touched.
+#define CAR_REMAP_MAX 8
+
+static int sRemapFrom[CAR_REMAP_MAX];
+static int sRemapTo[CAR_REMAP_MAX];
+static int sRemapCount;
+
+// Translate a source-city set number to the index its page was loaded at. Identity
+// for anything not re-indexed, so a level with no import - and every host car - is
+// unaffected.
+int CarSetRemap(int set)
+{
+	int i;
+
+	for (i = 0; i < sRemapCount; i++)
+	{
+		if (sRemapFrom[i] == set)
+			return sRemapTo[i];
+	}
+
+	return set;
+}
+
+// First set index above everything a city uses that is still free. City car sets
+// live in the low numbers (10..68 in all four), so the top of the 128-entry table is
+// unused - and tpageloaded stays zero for any index never loaded. The host's car and
+// special sets are excluded explicitly as well, so a destination can never collide
+// with a meaning the host needs.
+static int FindFreeSetIndex(void)
+{
+	int i, k;
+
+	for (i = 110; i < 128; i++)
+	{
+		if (tpageloaded[i] != 0)
+			continue;
+
+		for (k = 0; k < 8; k++)
+		{
+			if (carTpages[GameLevel][k] == i)
+				break;
+		}
+
+		if (k != 8)
+			continue;
+
+		for (k = 0; k < 12; k++)
+		{
+			if (specTpages[GameLevel][k] == i)
+				break;
+		}
+
+		if (k != 12)
+			continue;
+
+		return i;
+	}
+
+	return 0;
+}
+
 // JERICHO-HOOK: upload the imported city's car texture sets so a vehicle built
 // from that city's level file draws with its own textures instead of the host's.
 // Called from LoadPermanentTPages while its tpage/clutpos/slotsused accounting is
@@ -902,6 +970,7 @@ void LoadImportedTPages(void)
 	for (i = 0; i < nsets; i++)
 	{
 		int set = sets[i];
+		int dstSet = set;
 		int offset = 0;
 		int size = 0;
 		int npalettes;
@@ -917,11 +986,27 @@ void LoadImportedTPages(void)
 		printInfo("cross-city: candidate %s set %d -> slot %d pos(%d,%d) hostOwns=%d\n",
 			LevelNames[city], set, slot, tpagepos[slot].x, tpagepos[slot].y, (LevelTookTPage(set) || HostOwnsCarTPage(set)) ? 1 : 0);
 
-		// the level's own city keeps its own sets, whichever city we import from
+		// The host city keeps its own meaning for a set number: a set index holds one
+		// meaning at a time. So the imported page goes to a free index instead and the
+		// car's polys are translated onto it (CarSetRemap, applied in plotNewCarModel
+		// as they are converted). Without this the part kept the host's texture.
 		if (LevelTookTPage(set) || HostOwnsCarTPage(set))
 		{
-			printInfo("cross-city: set %d is the level's own - left alone\n", set);
-			continue;
+			int free = FindFreeSetIndex();
+
+			if (free == 0 || sRemapCount >= CAR_REMAP_MAX)
+			{
+				printInfo("cross-city: set %d is the level's own and there is no free index - left alone\n", set);
+				continue;
+			}
+
+			sRemapFrom[sRemapCount] = set;
+			sRemapTo[sRemapCount] = free;
+			sRemapCount++;
+
+			printInfo("cross-city: set %d is the level's own - re-indexing it to %d for the imported car\n", set, free);
+
+			dstSet = free;
 		}
 
 		// locate it in the imported city's page list
@@ -1007,14 +1092,14 @@ void LoadImportedTPages(void)
 		imptpage.w = 64;
 		imptpage.h = 256;
 
-		printInfo("cross-city: %s set %d -> slot %d at (%d,%d) clut(%d,%d), %d bytes at +%d, %d clut rows\n",
-			LevelNames[city], set, slot, imptpage.x, imptpage.y, impclut.x, impclut.y, size, offset, npalettes);
+		printInfo("cross-city: %s set %d -> slot %d index %d at (%d,%d) clut(%d,%d), %d bytes at +%d, %d clut rows\n",
+			LevelNames[city], set, slot, dstSet, imptpage.x, imptpage.y, impclut.x, impclut.y, size, offset, npalettes);
 
-		LoadTPageAndCluts(&imptpage, &impclut, set, buf);
+		LoadTPageAndCluts(&imptpage, &impclut, dstSet, buf);
 
 		// claimed: no longer 0xFF, so the streaming slot scan cannot hand it out
-		tpageslots[slot] = (u_char)set;
-		tpageloaded[set] = (u_char)slot;
+		tpageslots[slot] = (u_char)dstSet;
+		tpageloaded[dstSet] = (u_char)slot;
 
 		// The position counts as taken only NOW. Recording it before the upload let a
 		// candidate that was skipped further down - not in the page list, unreadable -
