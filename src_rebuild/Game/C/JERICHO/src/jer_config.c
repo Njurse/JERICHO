@@ -28,7 +28,17 @@
 #define JER_CONFIG_MAX_ENTRIES 192	/* total key/value slots across all mods */
 #define JER_CONFIG_MOD_LEN 24
 #define JER_CONFIG_KEY_LEN 32
-#define JER_CONFIG_VAL_LEN 64
+
+/* Value length. 64 was too small: it silently truncated longer values, and
+ * because a set rewrites the file from this cache the truncation was written
+ * back to disk. A list-like setting (see combatd2's car_list) does not fit in
+ * 64 - it came back cut to 63 chars. Anything that needs more than this is
+ * better off in a file of its own. */
+#define JER_CONFIG_VAL_LEN 256
+
+/* Longest line the loader will read, so a whole "key = value" always arrives
+ * in one fgets: a longer line would be split and the tail parsed as garbage. */
+#define JER_CONFIG_LINE_LEN (JER_CONFIG_KEY_LEN + JER_CONFIG_VAL_LEN + 8)
 
 typedef struct JER_CONFIG_ENTRY
 {
@@ -112,7 +122,7 @@ static void jerConfigLoadMod(const char* mod)
 {
 	char path[512];
 	FILE* f;
-	char line[192];
+	char line[JER_CONFIG_LINE_LEN];
 
 	if (!gInitDone || gRootDir[0] == 0 || mod == NULL || mod[0] == 0)
 		return;

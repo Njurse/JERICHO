@@ -16,6 +16,11 @@
  * first access to a module and rewritten immediately on every set,
  * so values survive restarts with no explicit flush step.
  *
+ * Limits (jer_config.c): keys are 31 characters and values 255, and a
+ * module id is 23, all excluding the terminator. A longer value is
+ * truncated on load AND written back truncated, so a setting that needs
+ * more room belongs in a file of its own rather than a config key.
+ *
  * PC/emscripten builds persist to disk; on PSX the API is a no-op
  * that always returns the provided default.
  *
