@@ -1171,6 +1171,33 @@ void LoadImportedTPages(void)
 			offset += (gCarImportPerms.bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
 		}
 
+		// Not among the permanent pages? Then it may be a SPECIAL page - and those are
+		// exactly what a special body needs: carTpages gives a civilian car six sets,
+		// but a special body takes its own two out of specTpages. Their data follows
+		// the perm block in the file, each entry sector-aligned, so the walk simply
+		// continues where the perm block ends. Without this the player's imported car
+		// loaded no textures at all: 'set 77 -> slot 14' twice, nothing uploaded,
+		// because 77/78 are in the spec list and the search never looked there.
+		if (size <= 8 && gCarImportSpecs.count > 0)
+		{
+			int specOffset = 0;
+
+			for (j = 0; j < gCarImportPerms.count; j++)
+				specOffset += (gCarImportPerms.bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+
+			for (j = 0; j < gCarImportSpecs.count; j++)
+			{
+				if (gCarImportSpecs.set[j] == set)
+				{
+					size = gCarImportSpecs.bytes[j];
+					offset = specOffset;
+					break;
+				}
+
+				specOffset += (gCarImportSpecs.bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+			}
+		}
+
 		if (size <= 8)
 		{
 			printInfo("cross-city: %s set %d is not in its page list - skipped\n", LevelNames[city], set);
