@@ -31,6 +31,10 @@ extern char specTpages[4][12];
 
 extern void ProcessPalletLump(char *lump_ptr, int lump_size); // 0x00019F44
 
+// JERICHO: upload an imported city's car texture sets into texture_pages /
+// texture_cluts. Called from inside LoadPermanentTPages.
+extern void LoadImportedTPages(void);
+
 // JERICHO-HOOK: merge a cross-city import's car palettes (civ_clut) so its
 // vehicles read their own colours. No-op unless a module asked for an import.
 extern void ProcessImportedPalette(void);

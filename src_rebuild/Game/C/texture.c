@@ -649,6 +649,119 @@ static void ParseImportedTextureInfo(void)
 	}
 }
 
+// Whether the level's own page load already claimed this texture set. Scans the
+// slot table rather than tpageloaded, because slot 0 is a valid slot and so
+// indistinguishable from "not loaded" in that array.
+static int LevelTookTPage(int tpage)
+{
+	int i;
+
+	for (i = 0; i < slotsused && i < 19; i++)
+	{
+		if (tpageslots[i] == tpage)
+			return 1;
+	}
+
+	return 0;
+}
+
+// JERICHO-HOOK: upload the imported city's car texture sets so a vehicle built
+// from that city's level file draws with its own textures instead of the host's.
+// Called from LoadPermanentTPages while its tpage/clutpos/slotsused accounting is
+// live, so the imported sets are treated exactly like the level's permanent
+// pages: they take the next VRAM page position and the next CLUT rows, and the
+// streamed slots are pushed along behind them. No-op without an import.
+//
+// One page per car set, recovered from the imported file at the offset the page
+// list gives it (entries concatenated, each sector-aligned). Anything doubtful is
+// skipped and logged - a texture is never worth a crash or a corrupted VRAM.
+void LoadImportedTPages(void)
+{
+	int city = GetCarImportCity();
+	int base = GetCarImportPageBase();
+	int i, j;
+
+	if (city < 0 || base < 0)
+		return;
+
+	for (i = 0; i < 6; i++)
+	{
+		int set = carTpages[city][i];
+		int offset = 0;
+		int size = 0;
+		int npalettes;
+		char* buf;
+
+		if (set == 0)
+			continue;
+
+		// the level's own page for that number wins: its cars need it
+		if (LevelTookTPage(set))
+		{
+			printInfo("cross-city: set %d is the level's own - left alone\n", set);
+			continue;
+		}
+
+		// locate it in the imported city's page list
+		for (j = 0; j < gCarImportPerms.count; j++)
+		{
+			if (gCarImportPerms.set[j] == set)
+			{
+				size = gCarImportPerms.bytes[j];
+				break;
+			}
+
+			offset += (gCarImportPerms.bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+		}
+
+		if (size <= 8)
+		{
+			printInfo("cross-city: %s set %d is not in its page list - skipped\n", LevelNames[city], set);
+			continue;
+		}
+
+		// out of texture memory: stop, rather than stamp over whatever position we
+		// happen to be sitting on
+		if (NoTextureMemory || slotsused >= 19)
+		{
+			printInfo("cross-city: out of texture memory - %s set %d and any after it not loaded\n", LevelNames[city], set);
+			break;
+		}
+
+		buf = (char*)malloc(size);
+
+		if (buf == NULL || !ReadCarImportFile(base + offset, buf, size))
+		{
+			printInfo("cross-city: %s set %d could not be read (%d bytes) - skipped\n", LevelNames[city], set, size);
+
+			if (buf)
+				free(buf);
+
+			continue;
+		}
+
+		// an entry starts with its CLUT-row count; anything outside the 32 rows
+		// texture_cluts can hold is a bad offset, and uploading it would smear
+		// VRAM, so refuse it instead
+		npalettes = *(int*)buf;
+
+		if (npalettes <= 0 || npalettes > 32)
+		{
+			printInfo("cross-city: %s set %d looks corrupt (%d clut rows) - skipped\n", LevelNames[city], set, npalettes);
+			free(buf);
+			continue;
+		}
+
+		update_slotinfo(set, slotsused, &tpage);
+		LoadTPageAndCluts(&tpage, &clutpos, set, buf);
+		slotsused++;
+
+		printInfo("cross-city: %s set %d loaded (%d bytes at +%d, %d clut rows)\n", LevelNames[city], set, size, offset, npalettes);
+
+		free(buf);
+	}
+}
+
 // [D] [T]
 void LoadPermanentTPages(int *sector)
 {
@@ -721,6 +834,10 @@ void LoadPermanentTPages(int *sector)
 
 		tpagebuffer += (permlist[i].y + 2047) & -CDSECTOR_SIZE;
 	}
+
+	// JERICHO-HOOK: bring the imported city's car texture sets in the same way the
+	// level's own pages were just brought in. No-op without an import.
+	LoadImportedTPages();
 	
 	tpagebuffer = (char*)mallocptr;
 
