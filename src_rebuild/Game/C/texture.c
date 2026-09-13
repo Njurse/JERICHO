@@ -887,6 +887,12 @@ void LoadImportedTPages(void)
 		if (set == 0 || SetInList(sets, i, set))
 			continue;
 
+		// JERICHO-DIAG: every candidate, before any guard can hide it - which slot it
+		// would take, the position that slot resolves to, and whether the host owns
+		// the set. This is what tells a genuine capacity wall from a bogus refusal.
+		printInfo("cross-city: candidate %s set %d -> slot %d pos(%d,%d) hostOwns=%d\n",
+			LevelNames[city], set, slot, tpagepos[slot].x, tpagepos[slot].y, (LevelTookTPage(set) || HostOwnsCarTPage(set)) ? 1 : 0);
+
 		// the level's own city keeps its own sets, whichever city we import from
 		if (LevelTookTPage(set) || HostOwnsCarTPage(set))
 		{
@@ -934,13 +940,6 @@ void LoadImportedTPages(void)
 			{
 				printInfo("cross-city: no distinct VRAM page position left - %s set %d (and any after it) not loaded; those parts keep the host's textures\n", LevelNames[city], set);
 				break;
-			}
-
-			if (nused < 8)
-			{
-				usedPos[nused].x = tpagepos[slot].x;
-				usedPos[nused].y = tpagepos[slot].y;
-				nused++;
 			}
 		}
 
@@ -992,6 +991,17 @@ void LoadImportedTPages(void)
 		// claimed: no longer 0xFF, so the streaming slot scan cannot hand it out
 		tpageslots[slot] = (u_char)set;
 		tpageloaded[set] = (u_char)slot;
+
+		// The position counts as taken only NOW. Recording it before the upload let a
+		// candidate that was skipped further down - not in the page list, unreadable -
+		// burn a position it never used, and the next candidate then saw a duplicate
+		// that did not exist. That is exactly how VEGAS-into-CHICAGO refused itself.
+		if (nused < 8)
+		{
+			usedPos[nused].x = tpagepos[slot].x;
+			usedPos[nused].y = tpagepos[slot].y;
+			nused++;
+		}
 
 		free(buf);
 		slot++;
