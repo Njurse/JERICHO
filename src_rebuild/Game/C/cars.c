@@ -1057,6 +1057,19 @@ void startBuildNewCars(int isSpecial)
 }
 
 
+/* Cross-city car data (see cars.h): -1 = the level's own city. Resolved in one
+ * place so the .MDL/.COS/.DEN loaders all agree on which LEVELS\<CITY> folder
+ * to read. Set by a module via JER_EVENT_CAR_DATA_SOURCE. */
+int gCarDataSourceLevel = -1;
+
+const char* GetCarDataFolder(void)
+{
+	if (gCarDataSourceLevel >= 0 && gCarDataSourceLevel < 4)
+		return LevelNames[gCarDataSourceLevel];
+
+	return LevelNames[GameLevel];
+}
+
 #if USE_PC_FILESYSTEM
 static char* CarModelTypeNames[] = {
 	"CLEAN",
@@ -1070,7 +1083,7 @@ char* LoadCarModelFromFile(char* dest, int modelNumber, int type)
 	char* mem;
 	char filename[64];
 
-	sprintf(filename, "LEVELS\\%s\\CARMODEL_%d_%s.MDL", LevelNames[GameLevel], modelNumber, CarModelTypeNames[type - 1]);
+	sprintf(filename, "LEVELS\\%s\\CARMODEL_%d_%s.MDL", GetCarDataFolder(), modelNumber, CarModelTypeNames[type - 1]);
 	if (FileExists(filename))
 	{
 		mem = (char*)(dest ? dest : (_other_buffer + modelNumber * 0x10000 + (type - 1) * 0x4000));

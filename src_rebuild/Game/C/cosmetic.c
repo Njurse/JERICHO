@@ -33,7 +33,7 @@ void LoadCustomCarCosmetics(CAR_COSMETICS* dest, int modelNumber)
 {
 	char filename[64];
 
-	sprintf(filename, "LEVELS\\%s\\CARMODEL_%d.COS", LevelNames[GameLevel], modelNumber);
+	sprintf(filename, "LEVELS\\%s\\CARMODEL_%d.COS", GetCarDataFolder(), modelNumber);
 	if (!FileExists(filename))
 	{
 		return;

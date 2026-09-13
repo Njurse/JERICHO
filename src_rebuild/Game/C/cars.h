@@ -55,6 +55,14 @@ extern void MangleWheelModels(); // 0x000230C8
 
 extern char GetCarPalIndex(int tpage); // 0x00023390
 
+/* Cross-city car data: which city's LEVELS\<CITY> folder the CARMODEL_* files
+ * (.MDL/.COS/.DEN) are read from. -1 = the level's own city (stock). A module
+ * sets it (see JER_EVENT_CAR_DATA_SOURCE) so a level can load another city's
+ * vehicles. GetCarDataFolder() is the single place that resolves it, so all
+ * three loaders agree on the folder. */
+extern int gCarDataSourceLevel;
+extern const char* GetCarDataFolder(void);
+
 // This just says "these exist somewhere" so bounce info is global (may move all this to a totally custom library for organization)
 extern float gBouncePhase;
 extern float gBounceAmp;
