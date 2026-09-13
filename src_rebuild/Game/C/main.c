@@ -920,6 +920,22 @@ void StepSim(void)
 	// CONTROL_TYPE_PLAYER branch passes to ProcessCarPad below.
 	jer_fire(JER_EVENT_PRE_SIM, NULL);
 
+	// JERICHO-HOOK: announce the local player slots (pad ids) so a network
+	// module can map them to peers (see JER_ARGS_NET_PLAYERS).
+	{
+		JER_ARGS_NET_PLAYERS jerNetPlayers;
+		int jerPadIds[MAX_PLAYERS];
+		int k;
+
+		for (k = 0; k < MAX_PLAYERS; k++)
+			jerPadIds[k] = k;
+
+		jerNetPlayers.padIds = jerPadIds;
+		jerNetPlayers.max = MAX_PLAYERS;
+		jerNetPlayers.count = NumPlayers;
+		jer_fire(JER_EVENT_NET_PLAYERS, &jerNetPlayers);
+	}
+
 	SetUpTrafficLightPhase();
 	MoveSmashable_object();
 	//animate_garage_door();
@@ -1053,9 +1069,44 @@ void StepSim(void)
 		switch (cp->controlType)
 		{
 			case CONTROL_TYPE_PLAYER:
-				t0 = Pads[*cp->ai.padid].mapped;	// [A] padid might be wrong
-				t1 = Pads[*cp->ai.padid].mapanalog[2];
-				t2 = Pads[*cp->ai.padid].type & 4;
+			{
+				/* A slot with a NEGATIVE pad id is a REMOTE player car: the
+				 * stock spawn loop gives slots >= NumPlayers a negative id
+				 * (main.c: padid = -i). There is no local pad for it -- PAD
+				 * Pads[] only has the two local pads -- and the replay ring
+				 * must not be indexed with a negative id either, so skip
+				 * both. Network input drives these cars (hook below). */
+				int padId = *cp->ai.padid;
+
+				if (padId < 0)
+				{
+					t0 = 0;
+					t1 = 0;
+					t2 = 1;
+				}
+				else
+				{
+					t0 = Pads[padId].mapped;	// [A] padid might be wrong
+					t1 = Pads[padId].mapanalog[2];
+					t2 = Pads[padId].type & 4;
+				}
+
+				// JERICHO-HOOK: a network session may substitute this player
+				// car's input with a remote player's (see JER_ARGS_NET_INPUT).
+				{
+					JER_ARGS_NET_INPUT jerNetIn;
+					jerNetIn.car = cp;
+					jerNetIn.padId = padId;
+					jerNetIn.pad = (int)t0;
+					jerNetIn.handled = 0;
+					jer_fire(JER_EVENT_NET_INPUT, &jerNetIn);
+					if (jerNetIn.handled)
+					{
+						t0 = (u_int)jerNetIn.pad;
+						t1 = 0;
+						t2 = 1;
+					}
+				}
 
 				// [A] handle REDRIVER2 dedicated car exit button
 				if(t0 & CAR_PAD_LEAVECAR_DED)
@@ -1064,28 +1115,33 @@ void StepSim(void)
 					t0 |= CAR_PAD_LEAVECAR;
 				}
 
-				if (NoPlayerControl == 0)
+				/* the replay ring only covers the two LOCAL pads */
+				if (padId >= 0)
 				{
-					if (gStopPadReads)
+					if (NoPlayerControl == 0)
 					{
-						t0 = CAR_PAD_BRAKE;
+						if (gStopPadReads)
+						{
+							t0 = CAR_PAD_BRAKE;
 
-						if (cp->hd.wheel_speed <= 0x9000)
-							t0 = CAR_PAD_HANDBRAKE;
+							if (cp->hd.wheel_speed <= 0x9000)
+								t0 = CAR_PAD_HANDBRAKE;
 
-						t1 = 0;
-						t2 = 1;
+							t1 = 0;
+							t2 = 1;
+						}
+
+						cjpRecord(padId, &t0, &t1, &t2);
 					}
-
-					cjpRecord(*cp->ai.padid, &t0, &t1, &t2);
-				}
-				else
-				{
-					cjpPlay(*cp->ai.padid, &t0, &t1, &t2);
+					else
+					{
+						cjpPlay(padId, &t0, &t1, &t2);
+					}
 				}
 
 				ProcessCarPad(cp, t0, t1, t2);
 				break;
+			}
 			case CONTROL_TYPE_CIV_AI:
 				CivControl(cp);
 				break;
@@ -1820,6 +1876,23 @@ void DrawGame(void)
 		// into the display buffer like the pause menu
 		jer_fire(JER_EVENT_DRAW_OVERLAY, NULL);
 
+		// JERICHO-HOOK: error notices (engine + modules) -- gentle red, left
+		// of the screen, for jer_error's ~5 s lifetime
+		{
+			int jerN = jer_error_count(), jerK;
+
+			for (jerK = 0; jerK < jerN; jerK++)
+			{
+				const char* jerMsg = jer_error_at(jerK);
+
+				if (jerMsg == NULL)
+					continue;
+
+				SetTextColour(215, 70, 70);
+				PrintString((char*)jerMsg, 8, 92 + jerK * 12);
+			}
+		}
+
 		RenderGame2(0);
 		SwapDrawBuffers();
 	}
@@ -2030,9 +2103,16 @@ void PrintCommandLineArguments()
 		"  -chaseautotest <filename> : starts chase autotesting. Specify INI filename with it\n"
 #endif
 		"  -nointro : disable intro screens\n"
-		"  -nofmv : disable all FMVs\n";
+		"  -nofmv : disable all FMVs\n"
+		"  -help : print this list to the terminal and exit\n"
+		"  -host [port] : (mp mod) start hosting a LAN game\n"
+		"  -join <ip>[:port] : (mp mod) join a LAN game\n";
 
-	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "REDRIVER 2 command line arguments", argumentsMessage, NULL);
+	/* printInfo writes to the terminal *and* the log -- -help is meant to be
+	 * read from a console. Never a modal dialog: this used to run on unknown
+	 * arguments too, and a blocking message box here stalled headless
+	 * launches. */
+	printInfo("%s", argumentsMessage);
 }
 #endif
 
@@ -2055,6 +2135,27 @@ static void JerichoLogBridge(const char* msg)
 		printWarning("%s", msg);
 	else
 		printInfo("%s", msg);
+}
+
+void PrintCommandLineArguments(void);	/* defined further down */
+
+/* -help must not sit behind the intro FMV and the whole engine boot: scan the
+ * arguments up front, print the list to the terminal and quit. */
+static int JerichoEarlyHelp(int argc, char** argv)
+{
+	int i;
+
+	for (i = 1; i < argc; i++)
+	{
+		if (!strcmp(argv[i], "-help") || !strcmp(argv[i], "-h") ||
+			!strcmp(argv[i], "--help") || !strcmp(argv[i], "-?"))
+		{
+			PrintCommandLineArguments();
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 // [D] [T]
@@ -2088,6 +2189,10 @@ int main(void)
 int redriver2_main(int argc, char** argv)
 #endif // PSX
 {
+	/* -help short-circuits everything below */
+	if (JerichoEarlyHelp(argc, argv))
+		return 0;
+
 	char** ScreenNames;
 	
 	char* PALScreenNames[4] = {		// [A] don't show publisher logo
@@ -2250,11 +2355,18 @@ int redriver2_main(int argc, char** argv)
 	LoadCurrentProfile(1);
 	
 #ifndef PSX	
-	int commandLinePropsShown;
-	commandLinePropsShown = 0;
 
 	for (int i = 1; i < argc; i++)
 	{
+		/* -help prints the argument list to the terminal and exits; it replaces
+		 * the old help pop-up entirely. */
+		if (!strcmp(argv[i], "-help") || !strcmp(argv[i], "-h") ||
+			!strcmp(argv[i], "--help") || !strcmp(argv[i], "-?"))
+		{
+			PrintCommandLineArguments();
+			return 0;
+		}
+
 		if (!strcmp(argv[i], "-ini") || 
 			!strcmp(argv[i], "-cdimage"))
 		{
@@ -2533,16 +2645,37 @@ int redriver2_main(int argc, char** argv)
 			i++;
 		}
 #endif
+		else if (!strcmp(argv[i], "-host"))
+		{
+			/* (mp mod) recognised here so it is not an "unknown argument";
+			 * the module picks the value up via JER_EVENT_CMDLINE. */
+			if (i + 1 < argc && argv[i + 1][0] != '-')
+				i++;
+		}
+		else if (!strcmp(argv[i], "-join"))
+		{
+			/* (mp mod) host[:port] */
+			if (i + 1 < argc && argv[i + 1][0] != '-')
+				i++;
+		}
 		else
 		{
-#if !defined(PSX) && !defined(__EMSCRIPTEN__)
-			if (!commandLinePropsShown)
-				PrintCommandLineArguments();
-#endif
-			commandLinePropsShown = 1;
+			/* tell the player plainly -- the toast shows up in the frontend.
+			 * No modal (a message box used to pop here and stall unattended
+			 * launches) and no full-list dump: that is what -help is for. */
+			jer_error("invalid command line argument: %s", argv[i]);
 		}
 	}
 #endif // PSX
+
+	// JERICHO-HOOK: modules may pick up their own command-line shortcuts
+	// (e.g. mp's -host / -join) now the engine has parsed its own.
+	{
+		JER_ARGS_CMDLINE jerCl;
+		jerCl.argc = argc;
+		jerCl.argv = argv;
+		jer_fire(JER_EVENT_CMDLINE, &jerCl);
+	}
 
 #if !defined(PSX) && !defined(__EMSCRIPTEN__)
 #ifdef DEBUG_OPTIONS
@@ -3031,6 +3164,21 @@ void InitGameVariables(void)
 			PlayerStartInfo[1]->position.vz = levelstartpos[GameLevel][2];
 
 			numPlayersToCreate = NumPlayers;
+		}
+
+		// JERICHO-HOOK: a network module spawns the remote players here, so
+		// they get cars in the spawn loop below (negative pad ids).
+		{
+			JER_ARGS_NET_SPAWN jerSpawn;
+
+			jerSpawn.numPlayers = numPlayersToCreate;
+			jerSpawn.maxPlayers = 8;
+			jerSpawn.padIdBase = -numPlayersToCreate;
+			jerSpawn.added = 0;
+			jer_fire(JER_EVENT_NET_SPAWN, &jerSpawn);
+
+			if (jerSpawn.added > 0)
+				numPlayersToCreate += jerSpawn.added;
 		}
 	}
 

@@ -14,12 +14,13 @@
 #include "jer_internal.h"
 #include "jer_config.h"
 #include "jer_pause_menu.h"
+#include "jer_frontend.h"
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
-#define JER_MAX_HANDLERS 64
+#define JER_MAX_HANDLERS 256
 
 /* Generated registry — compiled-in modules (deep mods, auto-scanned by
  * premake). The registry TU is C++-compiled and wraps its definitions in
@@ -79,6 +80,100 @@ static void jerLog(const char* fmt, ...)
 
 	buf[sizeof(buf) - 1] = 0;
 	jerEmit(buf);
+}
+
+/* ------------------------------------------------------------------ */
+/* Error toasts                                                        */
+/*                                                                     */
+/* A short-lived, gentle-red notice on the LEFT of the screen, for     */
+/* things the player needs to be told about: bad command-line          */
+/* arguments (raised by the engine) or anything a module wants to      */
+/* report -- "could not join server", "connection to the server        */
+/* lost", ...  Anyone can raise one: jer_error("...").                 */
+/*                                                                     */
+/* Timing uses the frame counter (the engine fires JER_EVENT_FRAME     */
+/* every frame, frontend and in game), so there is no clock            */
+/* dependency.                                                         */
+/* ------------------------------------------------------------------ */
+#define JER_ERROR_MAX		4
+#define JER_ERROR_TEXT		96
+#define JER_ERROR_FRAMES	150	/* ~5 s at 30 Hz */
+
+typedef struct JER_ERROR_MSG
+{
+	char text[JER_ERROR_TEXT];
+	int  untilFrame;		/* 0 = empty slot */
+} JER_ERROR_MSG;
+
+static JER_ERROR_MSG gJerErrors[JER_ERROR_MAX];
+static int gJerErrorNext;
+static int gJerErrorFrame;
+
+int jer_error(const char* fmt, ...)
+{
+	va_list va;
+	int slot = gJerErrorNext % JER_ERROR_MAX;
+
+	if (fmt == NULL)
+		return 0;
+
+	va_start(va, fmt);
+	vsnprintf(gJerErrors[slot].text, JER_ERROR_TEXT, fmt, va);
+	va_end(va);
+
+	gJerErrors[slot].text[JER_ERROR_TEXT - 1] = 0;
+	gJerErrors[slot].untilFrame = gJerErrorFrame + JER_ERROR_FRAMES;
+	gJerErrorNext = (slot + 1) % JER_ERROR_MAX;
+
+	jerLog("[error] %s\n", gJerErrors[slot].text);
+
+	return 1;
+}
+
+/* The DRAWING lives in the engine (pres.h needs the full PSX type preamble,
+ * which this translation unit does not have) -- it asks for the live messages
+ * here and prints them itself. */
+int jer_error_count(void)
+{
+	int n = 0, i;
+
+	for (i = 0; i < JER_ERROR_MAX; i++)
+	{
+		if (gJerErrors[i].untilFrame != 0 && gJerErrorFrame < gJerErrors[i].untilFrame)
+			n++;
+	}
+
+	return n;
+}
+
+/* Text of the i-th live message (oldest first), or NULL. */
+const char* jer_error_at(int index)
+{
+	int seen = 0, i;
+
+	for (i = 0; i < JER_ERROR_MAX; i++)
+	{
+		int idx = (gJerErrorNext + i) % JER_ERROR_MAX;
+
+		if (gJerErrors[idx].untilFrame == 0 || gJerErrorFrame >= gJerErrors[idx].untilFrame)
+			continue;
+
+		if (seen++ == index)
+			return gJerErrors[idx].text;
+	}
+
+	return NULL;
+}
+
+/* JER_EVENT_FRAME: age the messages (the engine draws them). */
+static int jerErrorFrameHook(void* userdata, void* args)
+{
+	(void)userdata;
+	(void)args;
+
+	++gJerErrorFrame;
+
+	return JER_RESULT_CONTINUE;
 }
 
 static JER_MODULE* jerFindModule(const char* id)
@@ -319,6 +414,25 @@ static const char* jerEventName(int event)
 	case JER_EVENT_EXPLOSION_SPAWN:	return "EXPLOSION_SPAWN";
 	case JER_EVENT_EXPLOSION_DRAW:	return "EXPLOSION_DRAW";
 	case JER_EVENT_EXPLOSION_COLLIDE:return "EXPLOSION_COLLIDE";
+	case JER_EVENT_GET_PHYSICS_PARAMS:	return "GET_PHYSICS_PARAMS";
+	case JER_EVENT_CAR_PAD:			return "CAR_PAD";
+	case JER_EVENT_CAR_ENGINE:		return "CAR_ENGINE";
+	case JER_EVENT_CAR_FRICTION:	return "CAR_FRICTION";
+	case JER_EVENT_CAR_STEP:		return "CAR_STEP";
+	case JER_EVENT_CAR_TORQUE:		return "CAR_TORQUE";
+	case JER_EVENT_CAR_DRAW:		return "CAR_DRAW";
+	case JER_EVENT_CAR_DRAW_COLOR:	return "CAR_DRAW_COLOR";
+	case JER_EVENT_GET_WALL_RESTITUTION:	return "GET_WALL_RESTITUTION";
+	case JER_EVENT_CAR_GEARBOX:		return "CAR_GEARBOX";
+	case JER_EVENT_CAR_ENGINE_SOUND:	return "CAR_ENGINE_SOUND";
+	case JER_EVENT_CAR_REVS:		return "CAR_REVS";
+	case JER_EVENT_MP_FRONTEND:		return "MP_FRONTEND";
+	case JER_EVENT_NET_INPUT:		return "NET_INPUT";
+	case JER_EVENT_NET_CAR_STATE:	return "NET_CAR_STATE";
+	case JER_EVENT_NET_PLAYERS:		return "NET_PLAYERS";
+	case JER_EVENT_NET_RECV:		return "NET_RECV";
+	case JER_EVENT_NET_SPAWN:		return "NET_SPAWN";
+	case JER_EVENT_CMDLINE:			return "CMDLINE";
 	default:
 		if (event >= JER_EVENT_MODULE_CUSTOM)
 		{
@@ -405,6 +519,7 @@ static void jerActivateModules(const char* rootDir)
 	/* module-provided pause menus re-register during activation: clear the
 	 * registry first so a Mods-menu reload doesn't accumulate duplicates */
 	jer_pause_menu_reset();
+	jer_frontend_reset();
 
 	/* apply the modlist enable flags to the module table */
 	for (i = 0; i < modlist.count; i++)
@@ -573,6 +688,10 @@ void jer_init(const char* rootDir)
 
 	jerSnapshotModules(rootDir);
 	jerActivateModules(rootDir);
+
+	/* the runtime's own hook: error toasts are aged and drawn from the frame
+	 * tick (registered LAST so module handlers run first) */
+	jerCtxRegisterHook(&gCtx, JER_EVENT_FRAME, jerErrorFrameHook, NULL, 1000);
 
 	jer_fire(JER_EVENT_BOOT, NULL);
 }

@@ -27,6 +27,7 @@
 
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (mods manager frontend)
 #include "../C/jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "../C/JERICHO/include/jer_frontend.h"	// JERICHO-HOOK: module frontend menus
 
 #ifndef PSX
 
@@ -306,7 +307,7 @@ struct PSXSCREEN
 	u_char index;
 	u_char numButtons;
 	u_char userFunctionNum;
-	PSXBUTTON buttons[8];
+	PSXBUTTON buttons[12];	/* JERICHO-HOOK: was 8 — module menus (jer_frontend.h) need more rows */
 };
 
 // #define USE_EMBEDDED_FRONTEND_SCREENS
@@ -317,7 +318,8 @@ enum FEButtonAction
 	BTN_START_GAME = 2,
 	BTN_DISABLED = 3,
 	BTN_PREVIOUS_SCREEN = 4,
-	BTN_HIDDEN = 5
+	BTN_HIDDEN = 5,
+	BTN_MODULE = 6		/* handled by a module's frontend menu (jer_frontend.h) */
 };
 
 #define FE_MAKEVAR(code, value)		((code & 0xffff) << 8 | (value & 0xff))
@@ -325,7 +327,7 @@ enum FEButtonAction
 #ifdef USE_EMBEDDED_FRONTEND_SCREENS
 #include "FEscreens.inc"
 #else
-PSXSCREEN PsxScreens[42];
+PSXSCREEN PsxScreens[42 + JER_FE_MAX_MENUS];
 #endif
 
 #define FE_OTSIZE 16
@@ -387,9 +389,12 @@ int TimeOfDaySelectScreen(int bSetup);
 int DemoScreen(int bSetup);
 int MiniCarsOnOffScreen(int bSetup);
 int JerichoModsScreen(int bSetup);
+int JerFrontendMenuScreen(int bSetup);	// JERICHO-HOOK: module frontend menus
 
 // JERICHO-HOOK: frontend Mods manager screen (built into a spare screen slot)
 #define JERICHO_MODS_SCREEN 41
+// JERICHO-HOOK: module-provided frontend menus live in slots 42..(42+MAX-1)
+#define JERICHO_FE_SCREEN_BASE 42
 // 8 buttons max (PSXSCREEN::buttons[8]): modules + Prev/Next + Compile + Back.
 // Windows shows a Compile Mods button, so one less module fits per page.
 #if defined(_WIN32)
@@ -401,6 +406,12 @@ int JerichoModsScreen(int bSetup);
 static int gJerichoOptionsButtonAdded;
 static int gJerichoModsPage;		// paginated mod list: current page
 static int gJerichoModsNeedSetup;	// a page change needs the buttons rebuilt
+
+// JERICHO-HOOK: module-provided frontend menus (jer_frontend.h)
+static const JER_FE_MENU* gFeMenus[JER_FE_MAX_MENUS];
+static int gFeMenuCount;
+static int gFeMainEntry = -1;		// menu index the Multiplayer entry opens
+static int gFeNeedSetup;		// rebuild the current module menu screen
 
 screenFunc fpUserFunctions[] = {
 	CentreScreen,
@@ -427,7 +438,8 @@ screenFunc fpUserFunctions[] = {
 	TimeOfDaySelectScreen,
 	DemoScreen,
 	MiniCarsOnOffScreen,
-	JerichoModsScreen
+	JerichoModsScreen,
+	JerFrontendMenuScreen
 };
 
 char* gfxNames[4] = {
@@ -1377,6 +1389,19 @@ void LoadFrontendScreens(int full)
 		PsxScreens[JERICHO_MODS_SCREEN] = PsxScreens[31];
 		PsxScreens[JERICHO_MODS_SCREEN].userFunctionNum = 25;	// JerichoModsScreen
 		gJerichoOptionsButtonAdded = 0;
+
+		// JERICHO-HOOK: module frontend menu slots (all share one handler)
+		{
+			int fei;
+
+			for (fei = 0; fei < JER_FE_MAX_MENUS; fei++)
+			{
+				PsxScreens[JERICHO_FE_SCREEN_BASE + fei] = PsxScreens[31];
+				PsxScreens[JERICHO_FE_SCREEN_BASE + fei].userFunctionNum = 26;	// JerFrontendMenuScreen
+			}
+		}
+
+		gFeNeedSetup = 1;
 	}
 #endif
 
@@ -1617,6 +1642,21 @@ int HandleKeyPress(void)
 
 					break;
 				case BTN_START_GAME:
+				{
+					/* JERICHO-HOOK: a multiplayer module may own the start --
+					 * it broadcasts the level the stock screens just picked
+					 * and launches locally instead of the single-player
+					 * state change. */
+					JER_ARGS_MP_FRONTEND jerMp;
+					jerMp.action = JER_MP_FE_START;
+					jerMp.query = 0;
+					jerMp.claimed = 0;
+					jerMp.passthrough = 0;
+					jer_fire(JER_EVENT_MP_FRONTEND, &jerMp);
+
+					if (jerMp.claimed && !jerMp.passthrough)
+						break;
+
 					if (NumPlayers == 2 && iScreenSelect == SCREEN_CAR && (currPlayer == 2))
 					{
 						(fpUserFunctions[pCurrScreen->userFunctionNum - 1])(1);
@@ -1632,6 +1672,7 @@ int HandleKeyPress(void)
 						SetState(STATE_GAMESTART);
 					}
 					break;
+				}
 				case BTN_PREVIOUS_SCREEN:
 					if (ScreenDepth > 0)
 					{
@@ -1915,6 +1956,20 @@ void State_FrontEnd(void* param)
 	// module menus (e.g. levelhacks' SP/MP prompt) can read input + draw
 	// while the frontend is frozen behind them
 	jer_fire(JER_EVENT_FRAME, NULL);
+
+	// JERICHO-HOOK: error notices (engine + modules) -- gentle red, left of
+	// the screen, ~5 s (e.g. "invalid command line argument")
+	{
+		int jerN = jer_error_count(), jerK;
+
+		for (jerK = 0; jerK < jerN; jerK++)
+		{
+			const char* jerMsg = jer_error_at(jerK);
+
+			if (jerMsg != NULL)
+				FEPrintString((char*)jerMsg, 32, 140 + jerK * 18, 0, 215, 70, 70);
+		}
+	}
 
 	PadChecks();
 
@@ -3652,20 +3707,252 @@ void ForceStartLevel()
 	// Trigger the game to start
 	SetState(STATE_GAMESTART);
 }
+/* ------------------------------------------------------------------ */
+/* JERICHO-HOOK: module-provided frontend menus (jer_frontend.h)       */
+/* ------------------------------------------------------------------ */
+
+void jer_frontend_reset(void)
+{
+	int i;
+
+	for (i = 0; i < JER_FE_MAX_MENUS; i++)
+		gFeMenus[i] = NULL;
+
+	gFeMenuCount = 0;
+	gFeMainEntry = -1;
+}
+
+void jer_frontend_register_menu(const JER_FE_MENU* menu)
+{
+	if (menu == NULL || gFeMenuCount >= JER_FE_MAX_MENUS)
+		return;
+
+	gFeMenus[gFeMenuCount++] = menu;
+}
+
+int jer_frontend_menu_count(void)
+{
+	return gFeMenuCount;
+}
+
+const JER_FE_MENU* jer_frontend_menu_get(int index)
+{
+	return (index >= 0 && index < gFeMenuCount) ? gFeMenus[index] : NULL;
+}
+
+int jer_frontend_find(const char* id)
+{
+	int i;
+
+	if (id == NULL)
+		return -1;
+
+	for (i = 0; i < gFeMenuCount; i++)
+	{
+		if (gFeMenus[i]->id != NULL && strcmp(gFeMenus[i]->id, id) == 0)
+			return i;
+	}
+
+	return -1;
+}
+
+void jer_frontend_set_main_entry(const char* id)
+{
+	gFeMainEntry = jer_frontend_find(id);
+}
+
+void jer_frontend_refresh(void)
+{
+	gFeNeedSetup = 1;
+	bRedrawFrontend = 1;
+}
+
+void jer_frontend_goto(int screenIndex)
+{
+	if (screenIndex < 0 || screenIndex >= (int)(sizeof(PsxScreens) / sizeof(PsxScreens[0])))
+		return;
+
+	if (pCurrScreen != NULL)
+	{
+		pScreenStack[ScreenDepth] = pCurrScreen;
+		pButtonStack[ScreenDepth] = pCurrButton;
+		ScreenNames[ScreenDepth] = (char*)"";
+		if (ScreenDepth < 10)
+			ScreenDepth++;
+	}
+
+	pNewScreen = &PsxScreens[screenIndex];
+	bRedrawFrontend = 1;
+}
+
+void jer_frontend_open(int menuIndex)
+{
+	if (menuIndex < 0 || menuIndex >= gFeMenuCount)
+		return;
+
+	jer_frontend_goto(JERICHO_FE_SCREEN_BASE + menuIndex);
+}
+
+/* The single handler every module menu slot uses; the slot index selects the
+ * registered menu. Lays the items out as native buttons and reports input. */
+int JerFrontendMenuScreen(int bSetup)
+{
+	int menuIdx = (int)(pCurrScreen - PsxScreens) - JERICHO_FE_SCREEN_BASE;
+	const JER_FE_MENU* menu = jer_frontend_menu_get(menuIdx);
+	int n;
+
+	if (menu == NULL || menu->items == NULL)
+		return 0;
+
+	if (bSetup || gFeNeedSetup)
+	{
+		int i;
+		int rowTop, rowStep;
+
+		gFeNeedSetup = 0;
+
+		if (menu->on_enter != NULL)
+			menu->on_enter(menu->userdata);
+
+		n = menu->item_count;
+		if (n > JER_FE_MAX_ITEMS)
+			n = JER_FE_MAX_ITEMS;
+		if (n <= 0)
+			return bSetup ? 1 : 0;
+
+		pCurrScreen->numButtons = n;
+
+		/* stock frontend row metrics: rows start at 190 and step by 36. Only
+		 * shift a tall menu up (never a small one) so it still fits. */
+		rowStep = 36;
+		rowTop = 190;
+		if (rowTop + (n - 1) * rowStep > 462)
+			rowTop = 462 - (n - 1) * rowStep;
+		if (rowTop < 40)
+			rowTop = 40;
+
+		for (i = 0; i < n; i++)
+		{
+			const JER_FE_ITEM* it = &menu->items[i];
+			PSXBUTTON* btn = &pCurrScreen->buttons[i];
+
+			btn->x = 167;
+			btn->y = rowTop + i * rowStep;
+			btn->w = 256;
+			btn->h = rowStep;
+			btn->s_x = 370;
+			btn->s_y = rowTop + i * rowStep;
+
+			if (it->get_label != NULL)
+				it->get_label(it->userdata, btn->Name, sizeof(btn->Name));
+			else
+				snprintf(btn->Name, sizeof(btn->Name), "%s", it->label != NULL ? it->label : "");
+
+			btn->u = (u_char)(i == 0 ? n : i);
+			btn->d = (u_char)(i == n - 1 ? 1 : i + 2);
+			btn->l = 0;
+			btn->r = 0;
+			btn->var = -1;
+
+			if (it->is_back)
+				btn->action = FE_MAKEVAR(BTN_PREVIOUS_SCREEN, 0);
+			else if (it->submenu >= 0 && it->submenu < JER_FE_MAX_MENUS)
+				btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_FE_SCREEN_BASE + it->submenu);
+			else if (it->on_activate != NULL || it->on_adjust != NULL)
+				btn->action = FE_MAKEVAR(BTN_MODULE, 0);	/* module handles the press */
+			else
+				btn->action = FE_MAKEVAR(BTN_DISABLED, 0);
+		}
+
+		/* keep the cursor where the player left it when a LIVE refresh
+		 * rebuilds the screen (bSetup marks a fresh entry, which starts at
+		 * the top); otherwise a refresh resets the selection to the first
+		 * row every frame and the cursor gets stuck there */
+		if (bSetup)
+		{
+			pCurrButton = &pCurrScreen->buttons[0];
+		}
+		else
+		{
+			int cur = (pCurrButton != NULL) ? (int)(pCurrButton - pCurrScreen->buttons) : 0;
+
+			if (cur < 0 || cur >= n)
+				cur = 0;
+
+			pCurrButton = &pCurrScreen->buttons[cur];
+		}
+
+		if (bSetup)
+			return 1;
+	}
+	else
+	{
+		n = menu->item_count;
+		if (n > JER_FE_MAX_ITEMS)
+			n = JER_FE_MAX_ITEMS;
+	}
+
+	if (pCurrButton != NULL)
+	{
+		int idx = (int)(pCurrButton - pCurrScreen->buttons);
+
+		if (idx >= 0 && idx < n)
+		{
+			const JER_FE_ITEM* it = &menu->items[idx];
+
+			if (it->on_activate != NULL && (feNewPad & MPAD_CROSS))
+			{
+				int handled = it->on_activate(it->userdata);
+
+				FESound(2);
+
+				if (handled)
+				{
+					feNewPad = 0;
+					jer_frontend_refresh();
+					return 1;
+				}
+
+				if (it->submenu < 0)
+				{
+					feNewPad = 0;
+					return 1;	/* callback consumed the press */
+				}
+
+				/* else: fall through to the engine's submenu navigation */
+			}
+			else if (it->on_adjust != NULL && (feNewPad & (MPAD_D_LEFT | MPAD_D_RIGHT)))
+			{
+				int dir = (feNewPad & MPAD_D_RIGHT) ? 1 : -1;
+
+				FESound(2);
+				feNewPad = 0;
+				it->on_adjust(it->userdata, dir);
+				jer_frontend_refresh();
+
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
 // [D] [T]
 int MainScreen(int bSetup)
 {
 
 	if (bSetup) 
 	{
-		if (numPadsConnected == 2) 
-		{
+		// JERICHO-HOOK: route the Multiplayer entry to a module's frontend
+		// menu (jer_frontend.h) so online play is reachable without a second
+		// pad; otherwise fall back to the stock 2-pad split-screen screen.
+		if (gFeMainEntry >= 0)
+			pCurrScreen->buttons[3].action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_FE_SCREEN_BASE + gFeMainEntry);
+		else if (numPadsConnected == 2)
 			pCurrScreen->buttons[3].action = FE_MAKEVAR(BTN_NEXT_SCREEN, 6);
-		}
-		else 
-		{
+		else
 			pCurrScreen->buttons[3].action = FE_MAKEVAR(BTN_DISABLED, 0);
-		}
 
 		// JERICHO-HOOK: hang the Mods manager off the Options screen (once)
 		if (!gJerichoOptionsButtonAdded)

@@ -17,48 +17,6 @@
 #include "jericho.h"
 
 
-/* JER_EVENT_CAR_AVAILABILITY — query fired while the frontend builds a level's
- * car list (CarSelectScreen). Set result = 1 to offer the normally-locked extra
- * vehicles (fire truck / buses / truck) for `level`, bypassing the stock
- * gFurthestMission == 40 && NumPlayers == 1 gate. Leave 0 for stock behaviour.
- * The engine still refuses a vehicle whose model data is missing (that check
- * exists to avoid a load crash), so this cannot make a data-less model appear. */
-typedef struct JER_ARGS_CAR_AVAILABILITY
-{
-	int level;	/* in: GameLevel whose car list is being built */
-	int result;	/* in/out: 1 = unlock the extra vehicles, 0 = stock */
-} JER_ARGS_CAR_AVAILABILITY;
-
-
-/* JER_EVENT_CAR_DATA_SOURCE — query fired once per level at the end of
- * SetupResidentModels, BEFORE the model files are read for those slots
- * (ProcessCarModelLump runs after it). Set sourceLevel to a city index
- * (0 = chicago, 1 = havana, 2 = vegas, 3 = rio) so this level loads THAT city's
- * car data, i.e. cross-city vehicles; leave -1 for stock (the level's own city).
- * models[] is the live residentCarModels array: a model number written into a
- * slot puts that vehicle in the level. Ambient traffic draws from slots 0..4
- * (modelRandomList in civ_ai.c), so a foreign car there appears in traffic. */
-/* JER_EVENT_GAME_START args: a level is starting.
- *
- * seed - the run seed from the debug/test -seed flag, or 0 when none was given.
- *        A module that wants a reproducible run derives its own randomness from
- *        this instead of the clock or ASLR, so two runs with the same seed can be
- *        compared field by field. With 0, keep doing whatever you do today. */
-typedef struct JER_ARGS_GAME_START
-{
-	int seed;
-} JER_ARGS_GAME_START;
-
-typedef struct JER_ARGS_CAR_DATA_SOURCE
-{
-	int level;		/* in: GameLevel being set up */
-	int sourceLevel;	/* in/out: city whose LEVELS folder to read; -1 = own */
-	int* models;		/* in/out: residentCarModels[count] */
-	int count;		/* in: length of models[] */
-	int* modelSource;	/* in/out: per-slot city whose LEVEL file supplies that
-				 * slot's model, -1 = the level's own (count entries) */
-} JER_ARGS_CAR_DATA_SOURCE;
-
 // To do: Separate CRUMPLE functions from jericho events and try to use vanilla-bound function hooks
 
 /* JER_EVENT_COLLISION — car-car / car-world collision.
@@ -114,13 +72,15 @@ typedef struct JER_ARGS_IMPACT_INFO
 } JER_ARGS_IMPACT_INFO;
 
 /* JER_EVENT_DRAW_WHEEL — wheel draw; a module may distort the per-wheel
- * vertex copy (SVECTOR*) for camber/toe. */
+ * vertex copy (SVECTOR*) for camber/toe, or set hide=1 to skip drawing this
+ * wheel entirely (e.g. a totaled wreck with the wheels blown off). */
 typedef struct JER_ARGS_DRAW_WHEEL
 {
 	int carId;
 	int wheelnum;
 	void* verts;
 	int numVerts;
+	int hide;		/* out: set 1 to skip drawing this wheel */
 } JER_ARGS_DRAW_WHEEL;
 
 /* JER_EVENT_GET_WHEEL_PARAMS — query: wheel-damage physics parameters the
@@ -134,12 +94,37 @@ typedef struct JER_ARGS_WHEEL_PARAMS
 	int scrubForce;
 } JER_ARGS_WHEEL_PARAMS;
 
+/* JER_EVENT_GET_PHYSICS_PARAMS — query: per-car physics tuning, fired once at
+ * the top of StepOneCar (wheelforces.c) before gravity/suspension/angular
+ * settling run. All fields are in/out, prefilled with the stock constants so
+ * a module edits in place; no handler = stock. */
+typedef struct JER_ARGS_PHYSICS_PARAMS
+{
+	void* car;			/* CAR_DATA* */
+	int gravity;		/* in/out: vertical accel (stock -7456; D1 -10922) */
+	int angularDamping;	/* in/out: angular velocity damping factor (stock 128;
+						   higher settles pitch/roll/yaw faster) */
+	int springRate;		/* in/out: suspension spring constant (stock 230) */
+	int springDamping;	/* in/out: suspension damper constant (stock 100) */
+} JER_ARGS_PHYSICS_PARAMS;
+
 /* JER_EVENT_GET_BUDDHA — query: clamp totalDamage below the totaled
  * threshold for the player car (Buddha mode); 0 = disabled. */
 typedef struct JER_ARGS_QUERY_FLAG
 {
 	int result;
 } JER_ARGS_QUERY_FLAG;
+
+/* JER_EVENT_GET_WALL_RESTITUTION — query: restitution scale for a car hitting
+ * building/scenery geometry, fired in CarBuildingCollision (bcollide.c) once
+ * a hit is detected. result is 0..4096 (4096 = stock bounce); a module that
+ * wants TMB-style "walls absorb momentum" (hard stop, little/no bounce)
+ * returns a low value. No handler = stock. */
+typedef struct JER_ARGS_WALL_RESTITUTION
+{
+	void* car;		/* CAR_DATA* that hit the building */
+	int result;		/* out: restitution scale 0..4096, default 4096 */
+} JER_ARGS_WALL_RESTITUTION;
 
 /* JER_EVENT_PAUSE_MENU — pause menu shell <-> module bridge. The engine
  * keeps the Crumple Debug menu items; the module owns their state. */
@@ -344,6 +329,73 @@ typedef struct JER_ARGS_PED_SKELETON
 	int shadow;		/* 1 while the ped's shadow is being drawn */
 } JER_ARGS_PED_SKELETON;
 
+/* JER_EVENT_CAR_PAD — fired inside ProcessCarPad right before the stock
+ * face-button assignment (handbrake/wheelspin/thrust). A module may take
+ * over the car's pedal semantics: set handled = 1 and write cp->thrust,
+ * cp->handbrake and cp->wheelspin directly — the stock binds are then
+ * SKIPPED for that car this frame, so a physical button never double-fires
+ * its original action. pad may also be rewritten in/out for pure input
+ * transforms. Engine steering (wheel_angle) is not affected by handled.
+ * live = 1 only while this is genuine live player input (not AI/lead/
+ * cutscene/replay pad, and not the clamped locked-car state). */
+typedef struct JER_ARGS_CAR_PAD
+{
+	void* car;		/* CAR_DATA* being controlled */
+	int pad;		/* in/out: CAR_PAD_* action bits for this car */
+	int padSteer;		/* in/out: analog steering input (-128..127) */
+	int useAnalogue;	/* in/out: 1 = analog steering (analogue stick) */
+	int live;		/* in: 1 = live player pad (override allowed) */
+	int handled;		/* out: set 1 to skip the stock pedal assignment */
+} JER_ARGS_CAR_PAD;
+
+/* JER_EVENT_CAR_GEARBOX — fired inside GetEngineRevs (gamesnd.c) once per
+ * active car per frame, right before the gear is selected from wheel speed.
+ * Fields default to the stock gear-table row for this car (units match the
+ * stock table: ws = wheel_speed>>11). A module may rewrite the four gears to
+ * retune the rev model (e.g. shorter gears, and a tall top gear whose ratio
+ * levels the pitch at the car's top speed instead of revving away) and/or set
+ * revCeiling to clamp the returned revs. wheelSpeed/thrust/type are inputs. */
+typedef struct JER_ARGS_CAR_GEARBOX
+{
+	void* car;		/* CAR_DATA* */
+	int type;		/* in: stock gear-table row (0/1) in use */
+	int wheelSpeed;		/* in: scaled wheel speed ws (wheel_speed>>11) */
+	int thrust;		/* in: accel state (cp->thrust) */
+	int lowIdleWs[4];	/* in/out per gear: downshift point while coasting */
+	int lowWs[4];		/* in/out per gear: downshift point while accelerating */
+	int hiWs[4];		/* in/out per gear: upshift point */
+	int ratioAc[4];		/* in/out: revs per ws while accelerating */
+	int ratioIdle[4];	/* in/out: revs per ws while coasting */
+	int revCeiling;		/* in/out: clamp returned revs when > 0 */
+} JER_ARGS_CAR_GEARBOX;
+
+/* JER_EVENT_CAR_ENGINE_SOUND — fired in SoundTasks (gamesnd.c) once per
+ * player's car, right before the rev and idle engine channels are placed.
+ * pitch values are the SPU pitches about to be used (4096 = normal speed);
+ * volume is in PSX volume units (negative; -10000 = silent). A module may
+ * scale/offset them for engine-audio tuning. */
+typedef struct JER_ARGS_CAR_ENGINE_SOUND
+{
+	void* car;		/* CAR_DATA* of the player's car */
+	int playerId;		/* in: player index (0/1) driving this car */
+	int revPitch;		/* in/out: rev channel pitch */
+	int revVolume;		/* in/out: rev channel volume */
+	int idlePitch;		/* in/out: idle channel pitch */
+	int idleVolume;		/* in/out: idle channel volume */
+} JER_ARGS_CAR_ENGINE_SOUND;
+
+/* JER_EVENT_CAR_REVS — fired at the top of ControlCarRevs (gamesnd.c) once
+ * per active car per frame. A module may change how fast the engine pitch
+ * slews toward its target revs: revRise is the maximum the pitch can climb
+ * per frame, revDrop the maximum it can fall (stock file constants:
+ * maxrevrise = 1600, maxrevdrop = 1440). No handler = exactly stock. */
+typedef struct JER_ARGS_CAR_REVS
+{
+	void* car;		/* CAR_DATA* whose revs are being slewed */
+	int revRise;		/* in/out: max revs gained per frame */
+	int revDrop;		/* in/out: max revs lost per frame */
+} JER_ARGS_CAR_REVS;
+
 /* JER_EVENT_CAR_ENGINE — fired at the end of ProcessCarPad, after the engine
  * force (thrust) and steering (wheel_angle) are computed. A module scales
  * them in place to overclock acceleration / widen steering. handbrake/
@@ -399,52 +451,282 @@ typedef struct JER_ARGS_CAR_DRAW
 	int view;		/* in: camera view */
 } JER_ARGS_CAR_DRAW;
 
-/* JER_EVENT_EXPLOSION_SPAWN — an explosion slot was just armed in
- * AddExplosion (job_fx.c). The module may resize (speed/hscale/rscale), tint,
- * spin (yawRate), disable collision, and rewrite `type` (rewrite to a stock
- * bang id to keep the stock sound). A custom `type` >= 1000 has no engine
- * size defaults, so a module must fill speed/hscale/rscale itself. */
-typedef struct JER_ARGS_EXPLOSION_SPAWN
-{
-	void* pos;		/* VECTOR* (world) — read only */
-	int type;		/* in/out: ExplosionType */
-	int fxId;		/* out: module profile id */
-	int speed;		/* in/out */
-	int hscale;		/* in/out */
-	int rscale;		/* in/out */
-	int tintR;		/* in/out: -1 = stock colour */
-	int tintG;
-	int tintB;
-	int yawRate;		/* in/out: extra spin, PSX units/frame */
-	int collide;		/* in/out: 1 = push/damage, 0 = visual only */
-	int colScale;		/* in/out: collision-box scale, 4096 = stock */
-} JER_ARGS_EXPLOSION_SPAWN;
-
-/* JER_EVENT_EXPLOSION_DRAW — per explosion per frame (DrawExplosion,
- * job_fx.c). Tint/spin the stock mesh, or set override = 1 and draw your own
- * (the engine skips its stock mesh for this explosion). */
-typedef struct JER_ARGS_EXPLOSION_DRAW
-{
-	int time;		/* 0..0xfff life */
-	void* pos;		/* VECTOR* (world) */
-	int hscale;		/* in/out */
-	int rscale;		/* in/out */
-	int tintR;		/* in/out: -1 = stock colour */
-	int tintG;
-	int tintB;
-	int yaw;		/* in/out: extra spin this draw (PSX units) */
-	int fxId;		/* in: module profile id */
-	int override;		/* out: 1 = skip the stock mesh */
-} JER_ARGS_EXPLOSION_DRAW;
-
-/* JER_EVENT_EXPLOSION_COLLIDE — query (ExplosionCollisionCheck, bomberman.c).
- * result 1 (default) = stock push/damage; colScale scales the box. */
-typedef struct JER_ARGS_EXPLOSION_COLLIDE
+/* JER_EVENT_CAR_DRAW_COLOR — fired in DrawCarObject before the body model is
+ * plotted. A module may render the body flat:
+ *   flatBlack = 1 -> flat solid black (a totaled / burned-out wreck);
+ *   tintR/G/B >= 0 -> a flat body colour at full brightness, e.g. an icy cyan
+ *                     for a frozen car (overrides the model's shading).
+ * Tint is ignored when flatBlack is set. */
+typedef struct JER_ARGS_CAR_DRAW_COLOR
 {
 	void* car;		/* CAR_DATA* */
+	int flatBlack;		/* out: 1 = draw the body flat black */
+	int tintR;		/* out: -1 = unset; else a flat body colour 0..255 */
+	int tintG;
+	int tintB;
+} JER_ARGS_CAR_DRAW_COLOR;
+
+/* JER_EVENT_LEVEL_LAUNCH — fired at the end of State_GameStart after the
+ * pending level/gametype/player count/mission number are finalised but
+ * before the level is loaded. All fields are in/out: a module rewrites them
+ * to redirect the launch (e.g. bump a take-a-ride mission number into the
+ * multiplayer-map range so gMultiplayerLevels ends up set). */
+typedef struct JER_ARGS_LEVEL_LAUNCH
+{
+	int gameLevel;		/* in/out: pending level (GameLevel) */
+	int gameType;		/* in/out: pending gametype (GAMETYPE) */
+	int numPlayers;		/* in/out: player count */
+	int missionNumber;	/* in/out: computed mission (gCurrentMissionNumber) */
+	int timeOfDay;		/* in/out: TIME_* override, -1 = mission default */
+	int weather;		/* in/out: WEATHER_* override, -1 = mission default */
+} JER_ARGS_LEVEL_LAUNCH;
+
+/* JER_EVENT_GET_DAMAGE_SCALE — query: scale (0..4096; 4096 = stock) applied to
+ * the damage a car takes from hitting solid scenery (buildings/walls), fired in
+ * DamageCar (bcollide.c) just before ApplyDamage. A module returning a lower
+ * value softens scenery hits. No handler = stock (4096). */
+typedef struct JER_ARGS_DAMAGE_SCALE
+{
+	void* car;	/* CAR_DATA* */
+	int result;	/* in/out: damage scale, 4096 = stock */
+} JER_ARGS_DAMAGE_SCALE;
+
+/* JER_EVENT_CAR_AVAILABILITY — query fired while the frontend builds a level's
+ * car list (CarSelectScreen). Set result = 1 to offer the normally-locked extra
+ * vehicles (fire truck / buses / truck) for `level`, bypassing the stock
+ * gFurthestMission == 40 && NumPlayers == 1 gate. Leave 0 for stock behaviour.
+ * The engine still refuses a vehicle whose model data is missing (that check
+ * exists to avoid a load crash), so this cannot make a data-less model appear. */
+typedef struct JER_ARGS_CAR_AVAILABILITY
+{
+	int level;	/* in: GameLevel whose car list is being built */
+	int result;	/* in/out: 1 = unlock the extra vehicles, 0 = stock */
+} JER_ARGS_CAR_AVAILABILITY;
+
+
+/* JER_EVENT_CAR_DATA_SOURCE — query fired once per level at the end of
+ * SetupResidentModels, BEFORE the model files are read for those slots
+ * (ProcessCarModelLump runs after it). Set sourceLevel to a city index
+ * (0 = chicago, 1 = havana, 2 = vegas, 3 = rio) so this level loads THAT city's
+ * car data, i.e. cross-city vehicles; leave -1 for stock (the level's own city).
+ * models[] is the live residentCarModels array: writing a model number into a
+ * slot puts that vehicle in the level for real. Ambient traffic draws its model
+ * from slots 0..4 (see modelRandomList in civ_ai.c), so a foreign car put there
+ * shows up in traffic; slots 5.. up to count-2 are extra capacity that stock
+ * levels leave as -1 ("no model"). */
+/* JER_EVENT_GAME_START args: a level is starting.
+ *
+ * seed - the run seed from the debug/test -seed flag, or 0 when none was given.
+ *        A module that wants a reproducible run derives its own randomness from
+ *        this instead of the clock or ASLR, so two runs with the same seed can be
+ *        compared field by field. With 0, keep doing whatever you do today - the
+ *        engine deliberately does not choose a seed for you.
+ *
+ * This used to fire with no args at all. Passing a struct instead of NULL is
+ * compatible with handlers that ignore args, which is why it is done here rather
+ * than as a new event. */
+typedef struct JER_ARGS_GAME_START
+{
+	int seed;
+} JER_ARGS_GAME_START;
+
+typedef struct JER_ARGS_CAR_DATA_SOURCE
+{
+	int level;		/* in: GameLevel being set up */
+	int sourceLevel;	/* in/out: city whose LEVELS folder to read; -1 = own */
+	int* models;		/* in/out: residentCarModels[count] */
+	int count;		/* in: length of models[] */
+	int* modelSource;	/* in/out: per-slot city whose LEVEL file supplies that
+				 * slot's model, -1 = the level's own (count entries) */
+} JER_ARGS_CAR_DATA_SOURCE;
+
+
+/* JER_EVENT_CAR_VS_CAR — fired in DamageCar3D (bcollide.c) when two cars
+ * collide, right before ApplyDamage. `value` is the stock damage this car would
+ * take; `playerValue` is what a player-controlled car would take for the SAME
+ * impact (the non-player stock branch applies a harsher multiplier, which is
+ * what traffic/civ cars get). A module may set `value` — e.g. give an owned
+ * opponent the player model, or scale all car-to-car damage. No handler =
+ * stock. */
+typedef struct JER_ARGS_CAR_VS_CAR
+{
+	void* car;		/* CAR_DATA* taking the damage */
+	void* other;		/* CAR_DATA* it collided with */
+	int strikeVel;		/* impact velocity term (post-scale) */
+	int region;		/* 0..5 damage region */
+	int value;		/* in/out: damage to apply */
+	int playerValue;	/* in: damage a player car would take */
+} JER_ARGS_CAR_VS_CAR;
+
+/* JER_EVENT_DRAW_MAP — fired from overmap.c while the overhead map (and the
+ * fullscreen map) is being drawn, right after the player's own blip. Plot extra
+ * markers with DrawTargetBlip(pos, r, g, b, flags) using the same `flags` value
+ * so they land in the right place; `fullscreen` distinguishes the two. */
+typedef struct JER_ARGS_DRAW_MAP
+{
+	int flags;		/* flags the player blip was drawn with */
+	int fullscreen;		/* 1 = fullscreen map, 0 = overhead map */
+} JER_ARGS_DRAW_MAP;
+
+/* JER_EVENT_EXPLOSION_SPAWN — an explosion slot was just armed in
+ * AddExplosion (job_fx.c). The engine seeds the stock values first; a module
+ * may override ANY of them and/or rewrite `type`. A custom `type` id
+ * (>= 1000) is free for modules to define; the engine has no size defaults for
+ * an unknown type, so a module MUST fill in speed/hscale/rscale for one.
+ *   fxId        : module profile id (out; the engine does not interpret it)
+ *   type        : in/out ExplosionType — rewrite to a stock bang
+ *                 (BIG_BANG / LITTLE_BANG / HEY_MOMMA) to keep the stock
+ *                 sound + collision branches
+ *   speed       : time units added per frame (bigger = shorter life)
+ *   hscale      : vertical mesh scale (1024 small / 4096 big / 16384 huge)
+ *   rscale      : radial mesh scale
+ *   tintR/G/B   : -1 = stock colour, else a 0..255 per-channel tint
+ *   yawRate     : extra spin, PSX angle units per frame (0 = none)
+ *   collide     : 1 = stock car push/damage, 0 = visual only
+ *   colScale    : fixed point collision-box scale (4096 = stock) */
+typedef struct JER_ARGS_EXPLOSION_SPAWN
+{
+	void* pos;	/* VECTOR* (world) — read only */
+	int type;	/* in/out: ExplosionType */
+	int fxId;	/* out: module profile id */
+	int speed;	/* in/out */
+	int hscale;	/* in/out */
+	int rscale;	/* in/out */
+	int tintR;	/* in/out: -1 = stock colour */
+	int tintG;
+	int tintB;
+	int yawRate;	/* in/out */
+	int collide;	/* in/out */
+	int colScale;	/* in/out */
+} JER_ARGS_EXPLOSION_SPAWN;
+
+/* JER_EVENT_EXPLOSION_DRAW — fired once per explosion per frame from
+ * DrawAllExplosions (job_fx.c), with the live camera matrices set. A module
+ * may tint/spin the stock hemisphere, or set `override` to 1 and draw its own
+ * effect (the engine then skips its stock mesh for this explosion). */
+typedef struct JER_ARGS_EXPLOSION_DRAW
+{
+	int time;	/* 0..0xfff life (in) */
+	void* pos;	/* VECTOR* (world) — read only */
+	int hscale;	/* in/out */
+	int rscale;	/* in/out */
+	int tintR;	/* in/out: -1 = stock colour */
+	int tintG;
+	int tintB;
+	int yaw;	/* in/out: extra spin applied this draw (PSX units) */
+	int fxId;	/* in: module profile id */
+	int override;	/* out: 1 = module drew its own, skip the stock mesh */
+} JER_ARGS_EXPLOSION_DRAW;
+
+/* JER_EVENT_EXPLOSION_COLLIDE — query fired in ExplosionCollisionCheck
+ * (bomberman.c) for every (car, explosion) pair. `result` defaults to 1 (the
+ * stock push/damage); colScale scales the collision box (fixed point,
+ * 4096 = stock). Set result = 0 for a visual-only explosion, or a smaller
+ * colScale for a tighter blast. */
+typedef struct JER_ARGS_EXPLOSION_COLLIDE
+{
+	void* car;	/* CAR_DATA* being tested */
 	void* explosion;	/* EXOBJECT* */
-	int result;		/* in/out */
-	int colScale;		/* in/out */
+	int result;	/* in/out: 1 = apply the stock push/damage */
+	int colScale;	/* in/out: collision-box scale, 4096 = stock */
 } JER_ARGS_EXPLOSION_COLLIDE;
+
+/* ------------------------------------------------------------------ */
+/* Multiplayer (mp module)                                             */
+/* ------------------------------------------------------------------ */
+
+/* JER_EVENT_MP_FRONTEND — the frontend is about to enter a multiplayer menu
+ * point (the main-menu "Multiplayer" entry, or the multiplayer gamemode
+ * screen). `action` is JER_MP_FE_*. Setting `claimed = 1` makes the module
+ * own the flow: the engine does not schedule the stock navigation, so the
+ * module can run its own menu over the frozen frontend. No handler = stock. */
+enum
+{
+	JER_MP_FE_ENTER_MENU = 0,	/* the main-menu Multiplayer entry activated */
+	JER_MP_FE_GAMEMODE = 1,		/* the multiplayer gamemode screen confirmed */
+	JER_MP_FE_START = 2		/* the frontend's START GAME was pressed (BTN_START_GAME) */
+};
+
+typedef struct JER_ARGS_MP_FRONTEND
+{
+	int action;	/* in: JER_MP_FE_* */
+	int query;	/* in: 1 = engine probing (screen setup), just report
+			   claimed so the entry is enabled; 0 = the button was pressed */
+	int claimed;	/* out: 1 = the module handles the navigation */
+	int passthrough;	/* out: with claimed, run the STOCK navigation instead
+				   (e.g. the stock split-screen flow) */
+} JER_ARGS_MP_FRONTEND;
+
+/* JER_EVENT_NET_INPUT — per player car per frame, before the pad drives it.
+ * A module may write `pad` (engine-native mapped bits, MPAD_*) and set
+ * `handled = 1` to substitute a remote player's input for this car. No
+ * handler = the stock pad source. */
+typedef struct JER_ARGS_NET_INPUT
+{
+	void* car;	/* CAR_DATA* */
+	int padId;	/* the engine pad id bound to this car */
+	int pad;	/* in/out: mapped pad bits */
+	int handled;	/* out: 1 = use `pad` instead of the stock source */
+} JER_ARGS_NET_INPUT;
+
+/* JER_EVENT_NET_CAR_STATE — per player car per frame, the capture/apply
+ * channel for the host state-resync fallback. With apply = 0 the module
+ * READS the car's transform (capture); with apply = 1 the module WRITES it
+ * from these fields (a client snapping to the host's authoritative state). */
+typedef struct JER_ARGS_NET_CAR_STATE
+{
+	void* car;	/* CAR_DATA* */
+	int padId;
+	unsigned int frame;
+	int x, y, z;	/* in/out: world units */
+	int heading;	/* in/out: 0..4095 */
+	int apply;	/* in: 1 = write the transform from these fields */
+	int handled;	/* out (capture): 1 = a player car was captured */
+} JER_ARGS_NET_CAR_STATE;
+
+/* JER_EVENT_NET_PLAYERS — query: fill `padIds[]` with the pad ids of the
+ * local player-controlled cars (the slots a module maps to network peers).
+ * `count` reports how many were written. */
+typedef struct JER_ARGS_NET_PLAYERS
+{
+	int* padIds;	/* out: up to `max` pad ids */
+	int max;	/* in: capacity of padIds[] */
+	int count;	/* out: number written */
+} JER_ARGS_NET_PLAYERS;
+
+/* JER_EVENT_NET_RECV — the addon net bridge (jer_net.h) delivered an inbound
+ * channel payload. A module handles the channels it registered. `peer` is the
+ * sending player id (0 = host). */
+typedef struct JER_ARGS_NET_RECV
+{
+	const char* channel;	/* in: registered channel name */
+	int peer;		/* in: sending player id (0 = host) */
+	const void* data;	/* in: payload bytes */
+	int len;		/* in: payload length */
+} JER_ARGS_NET_RECV;
+
+/* JER_EVENT_CMDLINE - fired once, right after the engine has parsed its own
+ * command line, so a module can pick up its OWN shortcuts (e.g. mp's
+ * -host / -join) without the engine knowing about them. */
+typedef struct JER_ARGS_CMDLINE
+{
+	int    argc;
+	char** argv;
+} JER_ARGS_CMDLINE;
+
+/* JER_EVENT_NET_SPAWN — fired in InitGameVariables (main.c) just after the
+ * stock player start positions are set up and before the cars are created.
+ * A network module adds the REMOTE players here: for each extra slot fill
+ * PlayerStartInfo[slot] (and ReplayStreams[slot].SourceType), set the car
+ * position/model, and report the count via `added`. Slots >= numPlayers get a
+ * negative pad id in the spawn loop, so they are driven by network input, not
+ * a local pad. */
+typedef struct JER_ARGS_NET_SPAWN
+{
+	int numPlayers;		/* in: local player slots (numPlayersToCreate) */
+	int maxPlayers;		/* in: PlayerStartInfo[] capacity */
+	int padIdBase;		/* in: first negative pad id for added slots */
+	int added;		/* out: extra player cars the module created */
+} JER_ARGS_NET_SPAWN;
 
 #endif /* JERICHO_JER_EVENTS_H */

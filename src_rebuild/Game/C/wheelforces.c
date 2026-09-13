@@ -768,6 +768,32 @@ void StepOneCar(CAR_DATA* cp)
 		jer_fire(JER_EVENT_CAR_STEP, &jerArgs);
 	}
 
+	// JERICHO-HOOK: capture/apply a player car's transform for network
+	// state-resync (see JER_ARGS_NET_CAR_STATE).
+	if (cp->controlType == CONTROL_TYPE_PLAYER)
+	{
+		JER_ARGS_NET_CAR_STATE jerNetCar;
+
+		jerNetCar.car = cp;
+		jerNetCar.padId = (cp->ai.padid != NULL) ? *cp->ai.padid : -1;
+		jerNetCar.frame = 0;
+		jerNetCar.x = cp->hd.where.t[0];
+		jerNetCar.y = cp->hd.where.t[1];
+		jerNetCar.z = cp->hd.where.t[2];
+		jerNetCar.heading = cp->hd.direction;
+		jerNetCar.apply = 0;
+		jerNetCar.handled = 0;
+		jer_fire(JER_EVENT_NET_CAR_STATE, &jerNetCar);
+
+		if (jerNetCar.apply)
+		{
+			cp->hd.where.t[0] = jerNetCar.x;
+			cp->hd.where.t[1] = jerNetCar.y;
+			cp->hd.where.t[2] = jerNetCar.z;
+			cp->hd.direction = jerNetCar.heading;
+		}
+	}
+
 	car_cos = cp->ap.carCos;
 	lift = 0;
 

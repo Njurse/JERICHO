@@ -305,6 +305,8 @@ void State_GameStart(void* param)
 		jerLaunch.gameType = GameType;
 		jerLaunch.numPlayers = NumPlayers;
 		jerLaunch.missionNumber = gCurrentMissionNumber;
+		jerLaunch.timeOfDay = wantedTimeOfDay;	/* in/out: -1 = mission default */
+		jerLaunch.weather = wantedWeather;	/* in/out: -1 = mission default */
 
 		jer_fire(JER_EVENT_LEVEL_LAUNCH, &jerLaunch);
 
@@ -312,6 +314,11 @@ void State_GameStart(void* param)
 		GameType = (GAMETYPE)jerLaunch.gameType;
 		NumPlayers = jerLaunch.numPlayers;
 		gCurrentMissionNumber = jerLaunch.missionNumber;
+
+		/* a module (e.g. a network host) may choose the time of day and
+		 * weather for this launch; LoadMission folds them in when >= 0 */
+		wantedTimeOfDay = jerLaunch.timeOfDay;
+		wantedWeather = jerLaunch.weather;
 	}
 }
 

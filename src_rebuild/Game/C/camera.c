@@ -125,7 +125,7 @@ void InitCamera(PLAYER *lp)
 {
 	if (events.cameraEvent == NULL) 
 	{
-		paddCamera = Pads[lp->padid].mapped;
+		paddCamera = (lp->padid >= 0) ? Pads[lp->padid].mapped : 0;
 
 		if (NoPlayerControl != 0 || gInGameCutsceneActive != 0)
 		{

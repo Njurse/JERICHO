@@ -477,6 +477,8 @@ typedef struct JER_ARGS_LEVEL_LAUNCH
 	int gameType;		/* in/out: pending gametype (GAMETYPE) */
 	int numPlayers;		/* in/out: player count */
 	int missionNumber;	/* in/out: computed mission (gCurrentMissionNumber) */
+	int timeOfDay;		/* in/out: TIME_* override, -1 = mission default */
+	int weather;		/* in/out: WEATHER_* override, -1 = mission default */
 } JER_ARGS_LEVEL_LAUNCH;
 
 /* JER_EVENT_GET_DAMAGE_SCALE — query: scale (0..4096; 4096 = stock) applied to
@@ -628,5 +630,104 @@ typedef struct JER_ARGS_EXPLOSION_COLLIDE
 	int result;	/* in/out: 1 = apply the stock push/damage */
 	int colScale;	/* in/out: collision-box scale, 4096 = stock */
 } JER_ARGS_EXPLOSION_COLLIDE;
+
+/* ------------------------------------------------------------------ */
+/* Multiplayer (mp module)                                             */
+/* ------------------------------------------------------------------ */
+
+/* JER_EVENT_MP_FRONTEND — the frontend is about to enter a multiplayer menu
+ * point (the main-menu "Multiplayer" entry, or the multiplayer gamemode
+ * screen). `action` is JER_MP_FE_*. Setting `claimed = 1` makes the module
+ * own the flow: the engine does not schedule the stock navigation, so the
+ * module can run its own menu over the frozen frontend. No handler = stock. */
+enum
+{
+	JER_MP_FE_ENTER_MENU = 0,	/* the main-menu Multiplayer entry activated */
+	JER_MP_FE_GAMEMODE = 1,		/* the multiplayer gamemode screen confirmed */
+	JER_MP_FE_START = 2		/* the frontend's START GAME was pressed (BTN_START_GAME) */
+};
+
+typedef struct JER_ARGS_MP_FRONTEND
+{
+	int action;	/* in: JER_MP_FE_* */
+	int query;	/* in: 1 = engine probing (screen setup), just report
+			   claimed so the entry is enabled; 0 = the button was pressed */
+	int claimed;	/* out: 1 = the module handles the navigation */
+	int passthrough;	/* out: with claimed, run the STOCK navigation instead
+				   (e.g. the stock split-screen flow) */
+} JER_ARGS_MP_FRONTEND;
+
+/* JER_EVENT_NET_INPUT — per player car per frame, before the pad drives it.
+ * A module may write `pad` (engine-native mapped bits, MPAD_*) and set
+ * `handled = 1` to substitute a remote player's input for this car. No
+ * handler = the stock pad source. */
+typedef struct JER_ARGS_NET_INPUT
+{
+	void* car;	/* CAR_DATA* */
+	int padId;	/* the engine pad id bound to this car */
+	int pad;	/* in/out: mapped pad bits */
+	int handled;	/* out: 1 = use `pad` instead of the stock source */
+} JER_ARGS_NET_INPUT;
+
+/* JER_EVENT_NET_CAR_STATE — per player car per frame, the capture/apply
+ * channel for the host state-resync fallback. With apply = 0 the module
+ * READS the car's transform (capture); with apply = 1 the module WRITES it
+ * from these fields (a client snapping to the host's authoritative state). */
+typedef struct JER_ARGS_NET_CAR_STATE
+{
+	void* car;	/* CAR_DATA* */
+	int padId;
+	unsigned int frame;
+	int x, y, z;	/* in/out: world units */
+	int heading;	/* in/out: 0..4095 */
+	int apply;	/* in: 1 = write the transform from these fields */
+	int handled;	/* out (capture): 1 = a player car was captured */
+} JER_ARGS_NET_CAR_STATE;
+
+/* JER_EVENT_NET_PLAYERS — query: fill `padIds[]` with the pad ids of the
+ * local player-controlled cars (the slots a module maps to network peers).
+ * `count` reports how many were written. */
+typedef struct JER_ARGS_NET_PLAYERS
+{
+	int* padIds;	/* out: up to `max` pad ids */
+	int max;	/* in: capacity of padIds[] */
+	int count;	/* out: number written */
+} JER_ARGS_NET_PLAYERS;
+
+/* JER_EVENT_NET_RECV — the addon net bridge (jer_net.h) delivered an inbound
+ * channel payload. A module handles the channels it registered. `peer` is the
+ * sending player id (0 = host). */
+typedef struct JER_ARGS_NET_RECV
+{
+	const char* channel;	/* in: registered channel name */
+	int peer;		/* in: sending player id (0 = host) */
+	const void* data;	/* in: payload bytes */
+	int len;		/* in: payload length */
+} JER_ARGS_NET_RECV;
+
+/* JER_EVENT_CMDLINE — fired once, right after the engine has parsed its own
+ * command line, so a module can pick up its OWN shortcuts (e.g. mp's
+ * -host / -join) without the engine knowing about them. `argv` is owned by
+ * the engine; read only. */
+typedef struct JER_ARGS_CMDLINE
+{
+	int    argc;
+	char** argv;
+} JER_ARGS_CMDLINE;
+
+/* JER_EVENT_NET_SPAWN — fired in InitGameVariables (main.c) just after the
+ * stock player start positions are set up and before the cars are created.
+ * A network module adds the REMOTE players here: for each extra slot fill
+ * PlayerStartInfo[slot] (and ReplayStreams[slot].SourceType), set the car
+ * position/model, and report the count via `added`. Slots >= numPlayers get a
+ * negative pad id in the spawn loop, so they are driven by network input, not
+ * a local pad. */
+typedef struct JER_ARGS_NET_SPAWN
+{
+	int numPlayers;		/* in: local player slots (numPlayersToCreate) */
+	int maxPlayers;		/* in: PlayerStartInfo[] capacity */
+	int padIdBase;		/* in: first negative pad id for added slots */
+	int added;		/* out: extra player cars the module created */
+} JER_ARGS_NET_SPAWN;
 
 #endif /* JERICHO_JER_EVENTS_H */

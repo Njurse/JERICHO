@@ -181,6 +181,35 @@ enum
 					   another city (0..3) so this level loads that
 					   city's vehicles; -1 = the level's own city. */
 
+	/* ---- Multiplayer (the mp module drives these) ---- */
+	JER_EVENT_MP_FRONTEND,		/* the frontend is about to enter a
+					   multiplayer menu point (the main-menu
+					   "Multiplayer" entry or the multiplayer
+					   gamemode screen): a module may claim it
+					   (claimed) and run its own menu
+					   (see JER_ARGS_MP_FRONTEND) */
+	JER_EVENT_NET_INPUT,		/* per player car per frame, before the pad
+					   drives it: a module may substitute a remote
+					   player's input (see JER_ARGS_NET_INPUT) */
+	JER_EVENT_NET_CAR_STATE,	/* per player car per frame: capture (read)
+					   or apply (write) a synced transform for the
+					   host state-resync fallback
+					   (see JER_ARGS_NET_CAR_STATE) */
+	JER_EVENT_NET_PLAYERS,		/* query: enumerate the local player slots
+					   (pad ids) so a module can map them to
+					   network peers (see JER_ARGS_NET_PLAYERS) */
+	JER_EVENT_NET_RECV,		/* the addon net bridge delivered an inbound
+					   channel payload (see JER_ARGS_NET_RECV and
+					   jer_net.h) */
+	JER_EVENT_NET_SPAWN,		/* fired when a level's player cars are
+					   about to be created: a network module adds
+					   the remote players here
+					   (see JER_ARGS_NET_SPAWN) */
+
+	JER_EVENT_CMDLINE,		/* fired once after the engine parsed its own
+					   command line, so a module can pick up its own
+					   shortcuts (see JER_ARGS_CMDLINE) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 
@@ -309,6 +338,17 @@ int jer_fire(int event, void* args);
 
 /* Log through the JERICHO logger (defaults to printf). */
 void jer_log(const char* fmt, ...);
+
+/* Raise a short-lived error notice. It is drawn in a gentle red down the
+ * LEFT of the screen for about five seconds -- in the frontend and in
+ * game. Use it for anything the player needs to be told: bad
+ * command-line arguments, a failed join, a lost connection, ... */
+int jer_error(const char* fmt, ...);
+
+/* The live error notices, oldest first -- the ENGINE asks for these and
+ * prints them itself (it owns the text primitives). */
+int         jer_error_count(void);
+const char* jer_error_at(int index);
 
 /* Set a custom logger (NULL restores the default printf). */
 void jer_set_logger(void (*fn)(const char* msg));

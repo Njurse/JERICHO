@@ -67,6 +67,8 @@ enum
 	JER_EVENT_GET_WHEEL_DAMAGE,	/* query: cumulative wheel damage 0..4096 */
 	JER_EVENT_GET_IMPACT_INFO,	/* query: newest impact for the overlay */
 	JER_EVENT_GET_WHEEL_PARAMS,	/* query: wheel-damage physics params (scales + scrub) */
+	JER_EVENT_GET_PHYSICS_PARAMS,	/* query: gravity + angular settling + suspension
+									   rate for a car (see JER_ARGS_PHYSICS_PARAMS) */
 	JER_EVENT_GET_BUDDHA,		/* query: damage-total clamp flag (Buddha mode) */
 	JER_EVENT_DRAW_WHEEL,		/* wheel draw: allow visual mesh distortion */
 	JER_EVENT_PAUSE_MENU,		/* pause menu draw/update */
@@ -91,6 +93,10 @@ enum
 	JER_EVENT_SHUTDOWN,		/* the game is exiting (after the state loop) --
 								   modules release resources (sockets, files) */
 
+	JER_EVENT_CAR_PAD,		/* inside ProcessCarPad before the stock pedal
+				   assignment: module may take over thrust/handbrake/
+				   wheelspin (handled) so original binds do not double-fire
+				   (see JER_ARGS_CAR_PAD) */
 	JER_EVENT_CAR_ENGINE,		/* end of ProcessCarPad: transform thrust and
 								   steering (see JER_ARGS_CAR_ENGINE) */
 	JER_EVENT_CAR_FRICTION,		/* end of GetFrictionScalesDriver1: transform
@@ -101,15 +107,66 @@ enum
 								   (see JER_ARGS_CAR_TORQUE) */
 	JER_EVENT_CAR_DRAW,		/* car body draw: visual pitch/roll/yaw on the
 								   render matrix (see JER_ARGS_CAR_DRAW) */
+	JER_EVENT_CAR_DRAW_COLOR,	/* car body color: module forces a flat black
+								   wreck (see JER_ARGS_CAR_DRAW_COLOR) */
+	JER_EVENT_GET_WALL_RESTITUTION,	/* query: wall/scenery hit restitution
+									   scale 0..4096 (4096 = stock bounce) */
 
-	/* Explosion FX (job_fx.c / bomberman.c): a module may attach a
-	 * parametric profile to any AddExplosion slot -- size, tint, spin,
-	 * collision -- and can draw its own explosion mesh. The authoritative
-	 * enum order lives in the game copy (src_rebuild/Game/C/JERICHO);
-	 * this SDK header lists the names modules compile against. */
-	JER_EVENT_EXPLOSION_SPAWN,	/* AddExplosion slot armed (JER_ARGS_EXPLOSION_SPAWN) */
-	JER_EVENT_EXPLOSION_DRAW,	/* explosion drawn (JER_ARGS_EXPLOSION_DRAW) */
-	JER_EVENT_EXPLOSION_COLLIDE,	/* query: push/damage this car? (JER_ARGS_EXPLOSION_COLLIDE) */
+	JER_EVENT_CAR_GEARBOX,		/* inside GetEngineRevs (gamesnd.c): retune
+				   the gear/rev model per car (see JER_ARGS_CAR_GEARBOX) */
+	JER_EVENT_CAR_ENGINE_SOUND,	/* SoundTasks: scale/offset the player's
+				   rev + idle engine channel pitch/volume */
+
+	JER_EVENT_CAR_REVS,		/* top of ControlCarRevs (gamesnd.c): scale
+				   how fast engine pitch slews to its target revs
+				   (see JER_ARGS_CAR_REVS) */
+
+	JER_EVENT_LEVEL_LAUNCH,		/* end of State_GameStart, after the pending
+				   level/gametype/player count/mission number are
+				   finalised but before the level loads -- modules
+				   may rewrite them (e.g. swap a take-a-ride
+				   mission for its multiplayer-map variant) */
+
+	JER_EVENT_DRAW_WORLD,		/* mid-render world pass: fired inside
+				   RenderGame2 after DrawAllTheCars, while the
+				   camera matrices (inv_camera_matrix, ...) are
+				   live -- modules draw world-space extras
+				   (projectiles, pickups) into the real OT */
+
+	JER_EVENT_GET_DAMAGE_SCALE,	/* query: scale 0..4096 (4096 = stock) applied
+				   to the damage a car takes from hitting solid
+				   scenery (buildings/walls), fired in DamageCar
+				   (bcollide.c) before ApplyDamage (see
+				   JER_ARGS_DAMAGE_SCALE) */
+
+	JER_EVENT_CAR_VS_CAR,		/* fired in DamageCar3D (bcollide.c) when two
+				   cars collide, before ApplyDamage: a module
+				   may retune the damage two cars exchange,
+				   e.g. give a non-player car the player damage
+				   model or scale the exchange (see
+				   JER_ARGS_CAR_VS_CAR) */
+
+	JER_EVENT_DRAW_MAP,		/* fired while the overhead/fullscreen map is
+				   drawn (overmap.c), after the player blip:
+				   a module plots its own markers with
+				   DrawTargetBlip/DrawPlayerDot using the same
+				   flags (see JER_ARGS_DRAW_MAP) */
+
+	JER_EVENT_EXPLOSION_SPAWN,	/* an explosion slot was armed
+				   (AddExplosion, job_fx.c): a module may
+				   attach a parametric FX profile -- resize
+				   (speed/hscale/rscale), tint, spin rate,
+				   collision on/off -- and rewrite `type`
+				   (see JER_ARGS_EXPLOSION_SPAWN) */
+	JER_EVENT_EXPLOSION_DRAW,	/* an explosion is drawn (DrawExplosion,
+				   job_fx.c): a module may tint/spin the
+				   stock bang, or set override to draw its
+				   own mesh (see JER_ARGS_EXPLOSION_DRAW) */
+	JER_EVENT_EXPLOSION_COLLIDE,	/* query: may this explosion push/damage
+				   this car, and at what box scale
+				   (ExplosionCollisionCheck, bomberman.c).
+				   result 0 = visual only
+				   (see JER_ARGS_EXPLOSION_COLLIDE) */
 
 	JER_EVENT_CAR_AVAILABILITY,	/* query: fired while the frontend builds a
 					   level's car list (CarSelectScreen). A module
@@ -123,6 +180,35 @@ enum
 					   file is read. A module sets sourceLevel to
 					   another city (0..3) so this level loads that
 					   city's vehicles; -1 = the level's own city. */
+
+	/* ---- Multiplayer (the mp module drives these) ---- */
+	JER_EVENT_MP_FRONTEND,		/* the frontend is about to enter a
+					   multiplayer menu point (the main-menu
+					   "Multiplayer" entry or the multiplayer
+					   gamemode screen): a module may claim it
+					   (claimed) and run its own menu
+					   (see JER_ARGS_MP_FRONTEND) */
+	JER_EVENT_NET_INPUT,		/* per player car per frame, before the pad
+					   drives it: a module may substitute a remote
+					   player's input (see JER_ARGS_NET_INPUT) */
+	JER_EVENT_NET_CAR_STATE,	/* per player car per frame: capture (read)
+					   or apply (write) a synced transform for the
+					   host state-resync fallback
+					   (see JER_ARGS_NET_CAR_STATE) */
+	JER_EVENT_NET_PLAYERS,		/* query: enumerate the local player slots
+					   (pad ids) so a module can map them to
+					   network peers (see JER_ARGS_NET_PLAYERS) */
+	JER_EVENT_NET_RECV,		/* the addon net bridge delivered an inbound
+					   channel payload (see JER_ARGS_NET_RECV and
+					   jer_net.h) */
+	JER_EVENT_NET_SPAWN,		/* fired when a level's player cars are
+					   about to be created: a network module adds
+					   the remote players here
+					   (see JER_ARGS_NET_SPAWN) */
+
+	JER_EVENT_CMDLINE,		/* fired once after the engine parsed its own
+					   command line, so a module can pick up its own
+					   shortcuts (see JER_ARGS_CMDLINE) */
 
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
@@ -252,6 +338,17 @@ int jer_fire(int event, void* args);
 
 /* Log through the JERICHO logger (defaults to printf). */
 void jer_log(const char* fmt, ...);
+
+/* Raise a short-lived error notice. It is drawn in a gentle red down the
+ * LEFT of the screen for about five seconds -- in the frontend and in
+ * game. Use it for anything the player needs to be told: bad
+ * command-line arguments, a failed join, a lost connection, ... */
+int jer_error(const char* fmt, ...);
+
+/* The live error notices, oldest first -- the ENGINE asks for these and
+ * prints them itself (it owns the text primitives). */
+int         jer_error_count(void);
+const char* jer_error_at(int index);
 
 /* Set a custom logger (NULL restores the default printf). */
 void jer_set_logger(void (*fn)(const char* msg));
