@@ -338,6 +338,14 @@ print(total, sets)
   whose car renders textured.
 - City car sets live in the low numbers (**10..68** across all four cities), so set
   indices **110+ are free** and safe to re-index an imported page onto.
+- `LUMP_TEXTUREINFO` (type **34**, DATA1) is **not** "a count then entries". The layout
+  is: an `int` texture-page count, an 8-byte header, a **`TP` array** of
+  `count + 1` entries, then — per texture page — a length-prefixed **`TEXINF`** array,
+  then `nperms` and its `XYPAIR`s, then the perm list's **fixed 16-ENTRY region**
+  (16 × `XYPAIR`, not 16 bytes), then `nspecpages` and its `XYPAIR`s. Reading it as
+  count-then-entries yields plausible garbage — 70 "permanent sets" for a city that
+  has 12 — which is why the authoritative reader is `ParseImportedTextureInfo`
+  (`texture.c`) and its runtime line, not a reimplementation.
 - An imported page must be **pinned**. It sits at `tpagepos[slot]` — the same VRAM
   rectangle the engine streams region pages into — and a later load pass memsets
   `tpageloaded`/`tpageslots`. Without re-claiming, a streamed page overwrites its
