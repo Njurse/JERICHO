@@ -1,3 +1,7 @@
+> **Canonical location.** These JERICHO docs live canonically here
+> (`src_rebuild/Game/C/JERICHO/docs/`). The copies under `docs/JERICHO/` are
+> short pointers to this directory.
+
 # JERICHO — Just-in-Time Extensible Runtime Interface for Compiled Hooks & Overrides
 
 JERICHO is a tiny, platform-neutral C/C++ API that turns REDRIVER2 into a
