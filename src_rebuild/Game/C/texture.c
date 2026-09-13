@@ -809,6 +809,30 @@ void LoadImportedTPages(void)
 
 			printInfo("   [bytes %02x %02x %02x %02x]\n",
 				(u_char)pb[0], (u_char)pb[1], (u_char)pb[2], (u_char)pb[3]);
+
+			// JERICHO-DIAG: the RAW structure, so the real encoding can be read off
+			// instead of assumed. First 40 bytes, then the first 10 polygons as the walk
+			// sees them - type byte, the step PolySizes gives it, and the running total.
+			// If the total runs past the model's own data the advance is wrong, and the
+			// pattern of type bytes says what the mask should have been.
+			if (i == 0 && pb != NULL && m->num_polys > 0)
+			{
+				int total = 0;
+
+				printInfo("cross-city:   raw:");
+				for (k = 0; k < 40; k++)
+					printInfo(" %02x", (u_char)pb[k]);
+				printInfo("\n");
+
+				printInfo("cross-city:   walk:");
+				for (k = 0; k < 10; k++)
+				{
+					int step = PolySizes[(u_char)(pb[total] & 0x1f)];
+					printInfo(" [%d:t=%02x step=%d]", k, (u_char)pb[total], step);
+					total += step;
+				}
+				printInfo("  -> 10 polys span %d bytes; block end guess %d\n", total, sizeof(void*) * 0);
+			}
 		}
 	}
 
