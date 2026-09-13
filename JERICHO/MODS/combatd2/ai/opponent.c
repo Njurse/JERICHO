@@ -132,13 +132,19 @@
 #define CD2_AI_LOOK_PER_SPEED	6	// extra probe distance per unit/frame of speed,
 					//    so the reach still grows with speed
 #define CD2_AI_BRAKE_SPEED	360	// forward speed above which it brakes instead of pivoting
-#define CD2_AI_ENGAGE_TICKS	900	// frames of sustained aggression before breaking off,
+#define CD2_AI_ENGAGE_TICKS	4500	// frames of sustained aggression before breaking off,
 					//    after which it goes travelling for ROAM_TICKS.
+					//    Was 900; raised 5x so a contest stays in the fight instead
+					//    of pulling out mid-firefight. With ROAM_TICKS below that
+					//    is roughly 94% of the time attacking (was ~37%).
 #define CD2_AI_ROAM_INTERRUPT	3500	// a traveller still fights anything this close, so a
 					//    roam leg means going somewhere rather than
 					//    ignoring the car in front of it.
-#define CD2_AI_ROAM_TICKS	1500	// frames spent roaming/hunting for weapons
-#define CD2_AI_ROAM_JITTER	440	// random extra roam frames (so they desync)
+#define CD2_AI_ROAM_TICKS	300	// frames spent roaming/hunting for weapons (was 1500:
+					//    the break-off was 5x longer than the attack it interrupted)
+#define CD2_AI_ROAM_JITTER	90	// random extra roam frames (so they desync). Scales with
+					//    ROAM_TICKS - at 440 it would have dominated a 300-frame
+					//    break-off and doubled it.
 #define CD2_AI_STATE_TICKS	145	// frames between behaviour re-decisions
 #define CD2_AI_MIN_STATE_TICKS	150	// minimum frames any new behaviour is held
 #define CD2_AI_IDLE_TICKS	200	// frames near-standstill before it must get moving
