@@ -160,6 +160,21 @@ echo   player         : %CARARG% player_model=%PLAYERMODEL%
 echo   roster imports : %IMPORT%
 echo   (wrote %INI%)
 
+rem ---- optional test mode: "launch_mp_random_mix.bat test [frames]" --------
+rem With -frames the game exits by itself at the budget, so nothing needs killing.
+rem That matters: REDRIVER2.log only flushes at close, so a kill discarded the log
+rem the run existed to produce. The seed is printed so the scenario is reproducible.
+set "TESTARGS="
+set "FRAMES=%~2"
+if not defined FRAMES set "FRAMES=1350"
+if /i not "%~1"=="test" goto :notest
+rem a 30-bit seed: max 1073741823, so the engine's atoi reads it back exactly
+set /a "SEED=%RANDOM% * 32768 + %RANDOM%" >nul
+set "TESTARGS=-frames %FRAMES% -seed %SEED%"
+echo   test mode      : frames=%FRAMES% seed=%SEED%
+:notest
+
 cd /d "%EXEDIR%"
-start "" "REDRIVER2_dev.exe" -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive
+echo   running        : REDRIVER2_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
+start "" "REDRIVER2_dev.exe" -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
 endlocal
