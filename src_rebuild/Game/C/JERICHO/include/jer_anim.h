@@ -9,7 +9,7 @@
  * a bone's pvRotation points at) actually takes effect (newRotateBones is
  * the sole reader and runs right after the hook). PED_SKELETON phase-0
  * remains the channel for per-bone POSITION (vCurrPos) writes. See
- * JERICHO/docs/ped-animation.md for the full pipeline map and clobber
+ * docs/JERICHO/ped-animation.md for the full pipeline map and clobber
  * table.
  */
 

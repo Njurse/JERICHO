@@ -45,7 +45,7 @@ extern "C" {
  * Event IDs fired by the engine at fixed hook points in the vanilla files
  * (and by modules, which may also fire custom events >= JER_EVENT_MODULE_CUSTOM).
  * The argument struct for each event is documented at the engine call sites
- * (search for "JERICHO-HOOK") and in JERICHO/docs/events.md.
+ * (search for "JERICHO-HOOK") and in src_rebuild/Game/C/JERICHO/docs/events.md.
  */
 enum
 {
@@ -150,7 +150,7 @@ typedef int (*JER_HOOK_FN)(void* userdata, void* args);
  * pointers (default = the builtin behavior); a module may replace any slot
  * via MOD_CONTEXT::jer_override to take over whole behaviors, and call the
  * previous pointer if it saved it. Slot meaning is defined by the engine
- * (see JERICHO/docs/overrides.md).
+ * (see the "Override slots" section of src_rebuild/Game/C/JERICHO/docs/events.md).
  */
 enum
 {
