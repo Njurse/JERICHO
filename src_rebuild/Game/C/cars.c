@@ -10,6 +10,7 @@
 #include "camera.h"
 #include "handling.h"
 #include "cosmetic.h"
+#include "models.h"	// JERICHO: GetCarImportCity / GetCarImportPallet (cross-city palettes)
 #include "shadow.h"
 #include "civ_ai.h"
 #include "mc_snd.h"
@@ -1424,7 +1425,10 @@ void MangleWheelModels(void)
 }
 
 // [D] [T]
-void ProcessPalletLump(char *lump_ptr, int lump_size)
+// defined below, next to GetCarPalIndex
+static int CarPalIndexInCity(int tpage, int city);
+
+static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 {
 	ushort clutValue;
 	int *buffPtr;
@@ -1469,8 +1473,43 @@ void ProcessPalletLump(char *lump_ptr, int lump_size)
 			clutValue = clutTable[clut_number];
 		}
 
-		civ_clut[GetCarPalIndex(tpageindex)][texnum][palette + 1] = clutValue;
+		{
+			int palidx = CarPalIndexInCity(tpageindex, city);
+
+			if (palidx < 0)
+				palidx = 0;	// not a car palette in this city - stock behaviour
+
+			civ_clut[palidx][texnum][palette + 1] = clutValue;
+		}
 	}
+}
+
+// [D] [T]
+void ProcessPalletLump(char *lump_ptr, int lump_size)
+{
+	ProcessPalletLumpForCity(lump_ptr, lump_size, GameLevel);
+}
+
+// JERICHO-HOOK: apply an imported city's car palettes so its vehicles read their
+// own colours. Called right after the level's own palettes are processed; a no-op
+// when nothing is imported.
+void ProcessImportedPalette(void)
+{
+	char* lump;
+	int size;
+	int city = GetCarImportCity();
+
+	if (city < 0)
+		return;
+
+	lump = GetCarImportPallet(&size);
+
+	if (lump == NULL || size <= 0)
+		return;
+
+	ProcessPalletLumpForCity(lump, size, city);
+
+	printInfo("cross-city: applied %s car palettes (%d bytes)\n", LevelNames[city], size);
 }
 
 // [D] [T]
@@ -1873,14 +1912,46 @@ void DrawCar(CAR_DATA* cp, int view)
 }
 
 // [D] [T]
-char GetCarPalIndex(int tpage)
+// Which of a city's eight car-palette slots a texture page belongs to, or -1 when
+// that city does not use the page as a car palette.
+static int CarPalIndexInCity(int tpage, int city)
 {
 	int i;
 
+	if (city < 0 || city >= 4)
+		return -1;
+
 	for (i = 0; i < 8; i++)
 	{
-		if (tpage == carTpages[GameLevel][i])
+		if (tpage == carTpages[city][i])
 			return i;
+	}
+
+	return -1;
+}
+
+char GetCarPalIndex(int tpage)
+{
+	int idx = CarPalIndexInCity(tpage, GameLevel);
+	int imported;
+
+	if (idx >= 0)
+		return (char)idx;
+
+	// JERICHO: a vehicle imported from another city brings that city's texture
+	// pages with it. Its polygons look their colours up by page, and the host
+	// level has no entry for a foreign page - so they all collapse to slot 0 and
+	// the car is painted with the HOST's palette, which is what 'foreign palettes
+	// do not load' looks like. Map through the imported city's table instead,
+	// which is where its palettes were stored.
+	imported = GetCarImportCity();
+
+	if (imported >= 0)
+	{
+		idx = CarPalIndexInCity(tpage, imported);
+
+		if (idx >= 0)
+			return (char)idx;
 	}
 
 	return 0;

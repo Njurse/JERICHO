@@ -50,10 +50,36 @@ foreign `.LEV` must align the same way.
 |---|---|---|
 | `LUMP_CAR_MODELS` | 28 | Per-model offset table (3 ints per model: clean/damaged/low) then the geometry. This is the block `ProcessCarModelLump` consumes. Lives in **DATA1**. |
 
-The car colours are *not* in the level file: `LoadCosmetics` (`cosmetic.c:93`)
-reads them from a separate 3120-byte `LEVELS\<CITY>.LCF` (`CosmeticFiles[]`).
-(`LUMP_PALLET` = 25 looks like the obvious candidate but is texture palettes —
-`texture.c` consumes it via `ProcessPalletLump`.)
+The car colours come in **two** pieces, and an import needs both:
+
+| Piece | Where | What |
+|---|---|---|
+| `CAR_COSMETICS` | `LEVELS\<CITY>.LCF` (3120 bytes, via `CosmeticFiles[]`) | per-model colour metadata, read by `LoadCosmetics` (`cosmetic.c:93`) |
+| `LUMP_PALLET` | id 25, in the level file's **DATA1** | the actual car palettes, merged into `civ_clut` by `ProcessPalletLump` (`cars.c:1427`) |
+
+`LUMP_PALLET` is *not* texture palettes — despite the generic name it is processed
+by `cars.c`, not `texture.c`, and `civ_clut[8][32][6]` is what car polygons read
+their colours from (`cars.c` draw path: `pciv_clut[(clut_uv0 >> 0x10) + palette]`).
+
+### Why a foreign palette needs mapping, not just merging
+
+`GetCarPalIndex(tpage)` (`cars.c:1876`) resolves a texture page to one of eight
+car-palette slots **through the current level's table**, `carTpages[GameLevel][8]`
+— every city maps its *own* page numbers onto the same eight slots. So a page
+belonging to another city is unknown to the host level and falls back to slot 0,
+and the imported vehicle gets painted with the host's palette.
+
+The fix has two halves, both keyed on the imported city:
+
+1. its `LUMP_PALLET` is merged with **that city's** mapping
+   (`ProcessPalletLumpForCity(..., city)`), so entries land where its own
+   vehicles will look for them;
+2. `GetCarPalIndex` falls back to the imported city's table for a page the host
+   level does not know.
+
+Measured car-palette pages per city: CHICAGO {1,50,62,63,65}, HAVANA
+{10,20,35,37,51}, RIO {55,57,58,60,68}, VEGAS {17,32,41,54,62} — effectively
+disjoint (only page 62 is shared, and the host's own lookup is tried first).
 
 `ProcessCarModelLump` (`models.c:220`) indexes the car-models block as
 `lump_ptr + 4 + model_number * 3 * sizeof(int)`, calls `GetCarModel(mem,

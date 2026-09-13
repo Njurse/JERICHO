@@ -36,6 +36,12 @@ void InitCarImport(void);
 char* GetCarImportModels(int slot);
 char* GetCarImportCosmetics(int slot);
 
+// Which city the level is importing from (-1 = none), and that city's car
+// palettes. cars.c needs both: a foreign vehicle's texture pages must map to the
+// palette slots its own city's palettes were stored in, not the host's.
+int GetCarImportCity(void);
+char* GetCarImportPallet(int* size);
+
 extern int ProcessCarModelLump(char *lump_ptr, int lump_size); // 0x00064E6C
 
 extern MODEL* FindModelPtrWithName(char *name); // 0x0005D40C

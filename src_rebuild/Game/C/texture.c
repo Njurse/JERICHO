@@ -515,6 +515,7 @@ void LoadPermanentTPages(int *sector)
 	
 	IncrementClutNum(&clutpos);
 	ProcessPalletLump(palette_lump, 0);
+	ProcessImportedPalette();	// JERICHO-HOOK: a cross-city import's own palettes
 
 	load_civ_palettes(&clutpos);
 

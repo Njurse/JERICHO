@@ -231,12 +231,15 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 // MODS/combatd2/carhacks/CROSS_CITY.md for the file format.
 
 #define CAR_IMPORT_LUMP_MODELS	28	// LUMP_CAR_MODELS
+#define CAR_IMPORT_LUMP_PALLET	25	// LUMP_PALLET - the car palettes (civ_clut)
 
 typedef struct
 {
 	char* region;		// malloc'd DATA1 copy the car-models block points into
 	char* carModels;	// LUMP_CAR_MODELS body, or NULL
 	int carModelsSize;
+	char* pallet;		// LUMP_PALLET body (car palettes), or NULL
+	int palletSize;
 	char* cosmetics;	// the city's .LCF (car colours), or NULL
 	int cosmeticsSize;
 } CAR_IMPORT;
@@ -397,6 +400,11 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 		return 0;
 	}
 
+	// The car PALETTES are a separate lump in the same file. A foreign vehicle's
+	// polygons reference ITS city's texture pages, whose colours live here - the
+	// host level's palettes are a different set entirely.
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_PALLET, &imp->pallet, &imp->palletSize);
+
 	// the car colours live beside it, as LEVELS\<city>.LCF
 	sprintf(filename, "%s%s", gDataFolder, CosmeticFiles[city]);
 	imp->cosmetics = ReadWholeFile(filename, &imp->cosmeticsSize);
@@ -438,8 +446,25 @@ void InitCarImport(void)
 
 	gCarImportCity = city;
 
-	printInfo("cross-city: car data from %s (%d bytes of models, %d of cosmetics)\n",
-		LevelNames[city], gCarImport.carModelsSize, gCarImport.cosmeticsSize);
+	printInfo("cross-city: car data from %s (%d bytes of models, %d of car palettes, %d of cosmetics)\n",
+		LevelNames[city], gCarImport.carModelsSize, gCarImport.palletSize, gCarImport.cosmeticsSize);
+}
+
+// The city the level is importing vehicles from, or -1. cars.c uses this to map
+// that city's car texture pages to the palette slots its palettes were stored in.
+int GetCarImportCity(void)
+{
+	return gCarImportCity;
+}
+
+// The imported city's car palettes (LUMP_PALLET body), or NULL. `size` receives
+// its length.
+char* GetCarImportPallet(int* size)
+{
+	if (size)
+		*size = gCarImport.palletSize;
+
+	return gCarImport.pallet;
 }
 
 // The foreign car-models block to build `slot` from, or NULL to use the level's
@@ -486,10 +511,14 @@ char* GetCarImportModels(int slot)
 	if (offsets[0] >= gCarImport.carModelsSize)
 		return NULL;
 
-	if (offsets[1] != -1 && (offsets[1] <= offsets[0] || offsets[1] >= gCarImport.carModelsSize))
+	// Damaged and low-detail must be there too. A model with only some variants
+	// leaves gCarDamModelPtr/gCarLowModelPtr NULL for that slot, which is the
+	// state the CreateDentableCar guard complains about, and the AI's own spawn
+	// check (opponent.c) requires all three for exactly this reason.
+	if (offsets[1] <= offsets[0] || offsets[1] >= gCarImport.carModelsSize)
 		return NULL;
 
-	if (offsets[2] != -1 && (offsets[2] <= offsets[0] || offsets[2] >= gCarImport.carModelsSize))
+	if (offsets[2] <= offsets[1] || offsets[2] >= gCarImport.carModelsSize)
 		return NULL;
 
 	return gCarImport.carModels;
@@ -603,8 +632,20 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 			char* src_lump = lump_ptr;
 			char* imported = GetCarImportModels(i);
 
+			// Say so when a slot asked for a foreign model that city does not
+			// have: the slot silently keeps the level's own car otherwise, which
+			// looks like "the model did not load".
+			if (imported == NULL && GetCarModelSourceCity(i) >= 0)
+				printInfo("cross-city: slot %d asked for model %d from %s, which has no such model - using the level's own\n",
+					i, residentCarModels[i], LevelNames[GetCarModelSourceCity(i)]);
+
 			if (imported)
+			{
 				src_lump = imported;
+
+				printInfo("cross-city: slot %d geometry from %s model %d\n",
+					i, LevelNames[GetCarModelSourceCity(i)], residentCarModels[i]);
+			}
 
 			slot_models_offset = src_lump + 4 + 160;
 			offsets = (int *)(src_lump + 4 + model_number * sizeof(int)*3);

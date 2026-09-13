@@ -30,6 +30,10 @@ extern int NoTextureMemory;
 extern char specTpages[4][12];
 
 extern void ProcessPalletLump(char *lump_ptr, int lump_size); // 0x00019F44
+
+// JERICHO-HOOK: merge a cross-city import's car palettes (civ_clut) so its
+// vehicles read their own colours. No-op unless a module asked for an import.
+extern void ProcessImportedPalette(void);
 extern void load_civ_palettes(RECT16 *cluts); // 0x0001A094
 
 extern void IncrementClutNum(RECT16 *clut); // 0x00080DDC
