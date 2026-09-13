@@ -56,3 +56,6 @@ Fork of REDRIVER2 for personal testing. Engine work and mods live under
 documentation. Mod-specific notes live next to each mod, e.g.
 `JERICHO/MODS/combatd2/README.md` and its `carhacks/FORMATS.md` file-format
 reference. `docs/README.md` indexes the whole documentation set.
+
+Prebuilt binaries are produced by GitHub Actions on every push — see
+[`docs/CI.md`](docs/CI.md) for the downloads and how releases are cut.

@@ -38,6 +38,8 @@ Each mod documents itself in its own folder.
 
 ## Engine, ports and tooling
 
+- [`CI.md`](CI.md) — GitHub Actions builds: what is produced, the `alpha` pre-release,
+  and how to cut a tagged release.
 - [`src_rebuild/PsyCross/README.md`](../src_rebuild/PsyCross/README.md) — Psy-X /
   Psy-Cross, the PlayStation-to-host layer the engine is ported onto.
 - [`PSXToolchain/README.md`](../PSXToolchain/README.md) — the PSX build toolchain.
