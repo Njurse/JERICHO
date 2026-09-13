@@ -257,3 +257,118 @@ JER_MODULE_ENTRY(jer_module_greet_entry)(JERICHO_CONTEXT* ctx)
 
 Build it (`JERICHO\build_mods.bat greet`) and enable **Greet** in Options →
 JERICHO. The id, the folder name and the entry symbol all read `greet`.
+
+## Building and running
+
+### Prerequisites (Windows)
+
+- **Visual Studio 2019 or 2022** with the **Desktop development with C++**
+  workload (the MSVC x64 toolset and MSBuild).
+- **`premake5.exe`** — already committed at the repo root.
+- The third-party dependencies (SDL2, OpenAL, libjpeg), pinned to the upstream
+  versions (SDL2 `2.30.2`, OpenAL-soft `1.23.1`, libjpeg `jpeg-9d`). Fetch them
+  once with [`windows_dev_prepare.ps1`](windows_dev_prepare.ps1).
+
+### Building the game
+
+Generate the Visual Studio solution, then build it:
+
+```
+premake5.exe vs2019
+msbuild build\REDRIVER2.sln /p:Configuration=Release /p:Platform=x64
+```
+
+Helpers exist for the common cases:
+[`src_rebuild/build_redriver2.bat`](src_rebuild/build_redriver2.bat) (Release) and
+[`src_rebuild/build_dev.bat`](src_rebuild/build_dev.bat) (`Release_dev`).
+
+- **premake auto-scans `JERICHO/MODS`**: every folder with a `mod.toml` that does
+  *not* declare `runtime = "dll"` (a deep mod) is compiled into the game — there
+  is no mod list to maintain. `--with-mods="crumple,combatd2"` builds only a
+  subset; `--with-mods=""` gives a zero-mods build.
+- **Configurations:** `Release` is the clean shipping build; `Release_dev` adds
+  the debug options, console and dev tooling (`DEBUG_OPTIONS`, `COLLISION_DEBUG`,
+  `CUTSCENE_RECORDER`).
+- The executable exports its own symbols through the generated
+  [`exports.def`](src_rebuild/exports.def). Regenerate it (build with `/MAP`, then
+  run `tools/gen_exports`) only when the game's own symbol set changes.
+
+### Building addons (no exe rebuild)
+
+Addons build separately, against the game's import library, into DLLs:
+
+```
+JERICHO\build_mods.bat
+```
+
+Or press **Compile Mods** in the game (Options → JERICHO). Either way the script
+generates the addon solution ([`premake5_mods.lua`](src_rebuild/premake5_mods.lua)
+→ one DLL project per `runtime = "dll"` mod), builds it against the exported
+symbols, and copies the DLLs next to the executable. Reloading the Mods screen
+activates them; the game exe is never rebuilt.
+
+To build a single addon from its own folder, without the game tree:
+
+```
+JERICHO\sdk\build_mods.bat myaddon
+```
+
+The standalone SDK ([`JERICHO/sdk/`](JERICHO/sdk/)) ships the API headers, the
+game import library (`REDRIVER2.lib`) and the compiler glue, so addon authors
+need no game source, no PsyCross and no SDL/OpenAL/JPEG.
+
+> **Addon vs deep mod at build time.** Only `runtime = "dll"` folders become
+> DLLs; a folder *without* that key is compiled into the game and needs a full
+> game build. An addon that links a game *data* global (`?player@@...`) will fail
+> — MSVC cannot import data globals into a DLL, so keep addons API-only and move
+> game-internal code into a deep mod.
+
+### Installing and enabling mods
+
+Drop a module's folder (its `mod.toml` plus, for an addon, the built `<id>.dll`)
+into `JERICHO/MODS/<id>/`, then enable it in-game under **Options → JERICHO**.
+The loader scans `JERICHO/MODS` at boot and on every reload of the Mods screen.
+
+- **Enabled state and load order** live in
+  [`JERICHO/CONFIG/modlist.ini`](JERICHO/CONFIG/modlist.ini): line order = load
+  order, the value is the enabled flag (`1`/`0`). A module *not* listed there
+  follows its `default-enabled` flag from `mod.toml`, so a fresh checkout runs
+  each mod's default.
+- **Per-module settings** live in `JERICHO/CONFIG/<modid>.ini` (the
+  `jer_config.h` store) and can be hand-edited while the game is closed.
+- The active modules are listed in **`REDRIVER2.log`** at boot. A module missing
+  from the inventory is either not installed, disabled, or (for an addon) not yet
+  compiled.
+
+### Prebuilt downloads
+
+Every push to `main` and every `v*` tag is built by GitHub Actions and published
+as downloadable archives: a Windows x86 build and a Linux x86_64 build, each in
+`Release` and `Release_dev`, packed with the runtime libraries, the `data/` tree
+and the `JERICHO/` tree the runtime reads. See [`docs/CI.md`](docs/CI.md) for
+what is produced and how a release is cut.
+
+### Linux and other platforms
+
+- **Linux:** [`linux_dev_prepare.sh`](linux_dev_prepare.sh) fetches premake and
+  runs `premake5 gmake2`; then `make config=release_x64` in `src_rebuild/build/`.
+- **Multiarch Docker:** [`Dockerfile`](Dockerfile) + [`dockerbuild.sh`](dockerbuild.sh).
+- Deep mods build everywhere. Runtime addon DLLs load on Windows (`LoadLibrary`)
+  and Linux (`dlopen`); on Emscripten/Android the loader is a stub, so addons are
+  ignored (and logged) while deep mods still work.
+
+### Debug boot arguments
+
+`Release_dev` builds accept frontend-bypass launch arguments for fast iteration:
+
+```
+REDRIVER2_dev.exe -nointro -nofmv -level <city> -car <slot#> -gamemode <mode>
+                 -time <time> -weather <weather>
+```
+
+- `-level`: `chicago` / `havana` / `lasvegas` / `rio`
+- `-car`: a slot number (0–9) or a car name
+- `-gamemode`: `takeadrive` (default) / `survival` / `pursuit` / …
+- `-time`: `day` / `dusk` / `night`; `-weather`: `sunny` / `rain`
+
+`-car` needs at least a `-level` (a message box explains otherwise).
