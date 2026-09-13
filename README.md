@@ -18,6 +18,13 @@ deformation, a GTA-style camera, full arcade-handling overhauls, LAN
 multiplayer, and more — each one built purely out of hooks plus (for the deep
 mods) reads and writes of game globals.
 
+![The in-game mod manager (Options → JERICHO)](readme_images/jericho_mod_menu_example.png)
+
+*The Mods menu (**Options → JERICHO**): enable, disable and reorder every
+installed module, and drop into each module's own page. In-game toggles are
+written straight back to `JERICHO/CONFIG/modlist.ini`, and per-module settings
+live in `JERICHO/CONFIG/<modid>.ini`.*
+
 ## Two kinds of mods
 
 JERICHO handles mods two ways, and the split is deliberate.
@@ -51,13 +58,6 @@ usable from DLL addons.
 
 Both kinds are managed identically at runtime through the same Mods menu, so the
 distinction is about *what a mod is allowed to touch*, not how it is enabled.
-
-![The in-game mod manager (Options → JERICHO)](readme_images/jericho_mod_menu_example.png)
-
-*The Mods menu (**Options → JERICHO**): enable, disable and reorder every
-installed module, and drop into each module's own page. In-game toggles are
-written straight back to `JERICHO/CONFIG/modlist.ini`, and per-module settings
-live in `JERICHO/CONFIG/<modid>.ini`.*
 
 ## Repository layout
 
