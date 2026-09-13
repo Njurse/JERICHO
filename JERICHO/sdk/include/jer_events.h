@@ -30,15 +30,20 @@ typedef struct JER_ARGS_CAR_AVAILABILITY
 } JER_ARGS_CAR_AVAILABILITY;
 
 
-/* JER_EVENT_CAR_DATA_SOURCE — query fired once per level at the start of
- * ProcessCarModelLump (before any LEVELS\<city>\CARMODEL_* file is read). Set
- * sourceLevel to a city index (0 = chicago, 1 = havana, 2 = vegas, 3 = rio) so
- * this level loads THAT city's car data, i.e. cross-city vehicles. Leave -1 for
- * stock (the level's own city). */
+/* JER_EVENT_CAR_DATA_SOURCE — query fired once per level at the end of
+ * SetupResidentModels, BEFORE the model files are read for those slots
+ * (ProcessCarModelLump runs after it). Set sourceLevel to a city index
+ * (0 = chicago, 1 = havana, 2 = vegas, 3 = rio) so this level loads THAT city's
+ * car data, i.e. cross-city vehicles; leave -1 for stock (the level's own city).
+ * models[] is the live residentCarModels array: a model number written into a
+ * slot puts that vehicle in the level. Ambient traffic draws from slots 0..4
+ * (modelRandomList in civ_ai.c), so a foreign car there appears in traffic. */
 typedef struct JER_ARGS_CAR_DATA_SOURCE
 {
 	int level;		/* in: GameLevel being set up */
 	int sourceLevel;	/* in/out: city whose LEVELS folder to read; -1 = own */
+	int* models;		/* in/out: residentCarModels[count] */
+	int count;		/* in: length of models[] */
 } JER_ARGS_CAR_DATA_SOURCE;
 
 // To do: Separate CRUMPLE functions from jericho events and try to use vanilla-bound function hooks

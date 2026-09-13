@@ -231,17 +231,8 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 
 	specMemReq = 0;
 
-	// JERICHO-HOOK: a module may point car-data loading at another city's folder
-	// before any CARMODEL_* file is read (cross-city vehicles). Reset to -1 (the
-	// level's own city) each level so a module that does not answer gets stock.
-	{
-		JER_ARGS_CAR_DATA_SOURCE jerSrc;
-
-		jerSrc.level = GameLevel;
-		jerSrc.sourceLevel = -1;
-		jer_fire(JER_EVENT_CAR_DATA_SOURCE, &jerSrc);
-		gCarDataSourceLevel = jerSrc.sourceLevel;
-	}
+	// (The cross-city source + resident-model choices are resolved by
+	// JER_EVENT_CAR_DATA_SOURCE in SetupResidentModels, which runs before this.)
 
 	models_offset = lump_ptr + 4 + 160;	// also skip model count
 	offsets = (int*)(lump_ptr + 100);

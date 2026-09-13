@@ -1,5 +1,7 @@
 #include "driver2.h"
 #include "mission.h"
+#include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
+#include "jer_events.h"	// JERICHO-HOOK: event argument structs
 
 #include "system.h"
 #include "mgeneric.h"
@@ -406,6 +408,21 @@ void SetupResidentModels()
 			if (singlePal)
 				PlayerStartInfo[i]->palette = 0;
 		}
+	}
+
+	// JERICHO-HOOK: let a module finalise the resident car models (and pick the
+	// city the car data comes from) BEFORE the model files are read for them -
+	// ProcessCarModelLump runs after this. Reset the source each level so a
+	// module that does not answer gets the level's own city.
+	{
+		JER_ARGS_CAR_DATA_SOURCE jerSrc;
+
+		jerSrc.level = GameLevel;
+		jerSrc.sourceLevel = -1;
+		jerSrc.models = residentCarModels;
+		jerSrc.count = MAX_CAR_RESIDENT_MODELS;
+		jer_fire(JER_EVENT_CAR_DATA_SOURCE, &jerSrc);
+		gCarDataSourceLevel = jerSrc.sourceLevel;
 	}
 }
 
