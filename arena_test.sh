@@ -29,31 +29,59 @@ shift 2>/dev/null || true
 
 # --- random city / car / weather / time / arena -----------------------------
 CITIES=(chicago havana vegas rio)
-CARS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35)
 WEATHERS=(none rain wet)
 TIMES=(dawn day dusk night)
+
+# The car index picks the player's car MODEL, and a level only loads a SUBSET of
+# the car models (its own pool is smaller than MAX_CARS). An index past that
+# pool is out of bounds and crashes the game during load (right after
+# LUMP_CAR_MODELS, no dump). The pool DIFFERS per level, so there is no single
+# safe range: havana `-car 0` runs and `-car 31` dies, chicago `-car 7` dies.
+# Until we can query a level's real pool (Driver Madness has the per-city car
+# lists), the safe default is to let the LEVEL choose (omit -car entirely).
+# Set CAR_MAX=<n> only once you know that level's pool (indices are 0..n).
+CAR_MAX="${CAR_MAX:--1}"
 
 pick() { local arr=("$@"); echo "${arr[$((RANDOM % ${#arr[@]}))]}"; }
 
 CITY="$(pick "${CITIES[@]}")"
-CAR="$(pick "${CARS[@]}")"
 WEATHER="$(pick "${WEATHERS[@]}")"
 TIME="$(pick "${TIMES[@]}")"
 ARENA="$((RANDOM % 2))"
+
+# -1 = let the level pick the car (safe); >= 0 = randomise within 0..CAR_MAX
+if [ "$CAR_MAX" -ge 0 ]; then
+	CAR="$((RANDOM % (CAR_MAX + 1)))"
+	CAR_ARGS=(-car "$CAR")
+else
+	CAR="level-default"
+	CAR_ARGS=()
+fi
 
 echo "== arena test: city=$CITY car=$CAR weather=$WEATHER time=$TIME arena=$ARENA for ${RUN_SECS}s =="
 
 cd "$BIN_DIR" || { echo "no $BIN_DIR"; exit 1; }
 
+# note any pre-existing dump so we only report a NEW one
+DUMP_BEFORE="$(ls -t REDRIVER2.dmp REDRIVER2-crash-*.dmp 2>/dev/null | head -1)"
+
 # launch, capture the PID (never kill by image name)
-"./$EXE" -nointro -mp "$ARENA" -level "$CITY" -car "$CAR" -weather "$WEATHER" -time "$TIME" "$@" \
+"./$EXE" -nointro -mp "$ARENA" -level "$CITY" "${CAR_ARGS[@]}" -weather "$WEATHER" -time "$TIME" "$@" \
 	>/dev/null 2>&1 &
 PID=$!
 
 echo "   pid=$PID  (kill with: taskkill //F //PID $PID)"
 sleep "$RUN_SECS"
 
-if kill -0 "$PID" 2>/dev/null; then
+# --- crash monitoring -------------------------------------------------------
+# If the process is gone before we killed it, it DIED (crash) - the old script
+# never noticed this and reported "0 errors" for a dead game.
+DIED_EARLY=0
+kill -0 "$PID" 2>/dev/null || DIED_EARLY=1
+
+if [ "$DIED_EARLY" -eq 1 ]; then
+	echo "!! process exited on its own before ${RUN_SECS}s - treating as a CRASH"
+else
 	taskkill //F //PID "$PID" >/dev/null 2>&1 || kill "$PID" 2>/dev/null
 	sleep 1
 fi
@@ -64,10 +92,22 @@ OUT="arena_test_${CITY}_${WEATHER}_${TIME}_${STAMP}.log"
 cp -f REDRIVER2.log "$OUT" 2>/dev/null || true
 
 echo "== log snapshot: $BIN_DIR/$OUT =="
-echo "-- modules --"
-grep -c "state=active" "$OUT" 2>/dev/null || echo 0
-echo "-- fx / freeze / respawn / arena errors --"
-grep -cE "explosion fx registered|freeze status registered" "$OUT" 2>/dev/null || echo 0
-grep -icE "access violation|fatal error|abort" "$OUT" 2>/dev/null || echo 0
-echo "-- tail --"
-tail -n 5 "$OUT" 2>/dev/null || true
+
+# a NEW dump means the game crashed this run
+DUMP_AFTER="$(ls -t REDRIVER2.dmp REDRIVER2-crash-*.dmp 2>/dev/null | head -1)"
+if [ -n "$DUMP_AFTER" ] && [ "$DUMP_AFTER" != "$DUMP_BEFORE" ]; then
+	echo "!! CRASH DUMP written: $DUMP_AFTER"
+fi
+
+# did it actually reach gameplay, or stop in the loader?
+if grep -qE "nav flow|wpn frame|roll recover" "$OUT" 2>/dev/null; then
+	echo "verdict: reached GAMEPLAY"
+else
+	LAST="$(grep -vE '^\s*$' "$OUT" 2>/dev/null | tail -1)"
+	echo "verdict: NEVER REACHED GAMEPLAY - stalled/crashed in load"
+	echo "   last line: $LAST"
+fi
+
+echo "-- modules active: $(grep -c 'state=active' "$OUT" 2>/dev/null) --"
+echo "-- crash markers: $(grep -icE 'access violation|fatal error|abort|exception' "$OUT" 2>/dev/null) --"
+[ "$DIED_EARLY" -eq 1 ] && echo "== RESULT: CRASHED (process died early) ==" || echo "== RESULT: ran ${RUN_SECS}s =="
