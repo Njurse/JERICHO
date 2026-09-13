@@ -1012,8 +1012,21 @@ static int cd2OnFramePursuit(void* ud, void* args)
 	(void)ud;
 	(void)args;
 
-	if (gCd2Cfg.enabled)
-		FunkUpDaBGMTunez(1);
+	if (!gCd2Cfg.enabled)
+		return JER_RESULT_CONTINUE;
+
+	// Only while a game is actually running. This hook fires for EVERY frame,
+	// including the frontend's and the menus', where the music tables are not
+	// set up: FunkUpDaBGMTunez indexes xm_coptrackpos, which is still NULL there,
+	// and that dereference crashed the frontend on its first frame. A player car
+	// that is in the world is the cheapest reliable "in a game" test.
+	if (MainPlayer.playerCarId < 0 || MainPlayer.playerCarId >= MAX_CARS)
+		return JER_RESULT_CONTINUE;
+
+	if (car_data[MainPlayer.playerCarId].controlType != CONTROL_TYPE_PLAYER)
+		return JER_RESULT_CONTINUE;
+
+	FunkUpDaBGMTunez(1);
 
 	return JER_RESULT_CONTINUE;
 }
