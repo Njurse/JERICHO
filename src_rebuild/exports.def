@@ -1004,6 +1004,10 @@ EXPORTS
 	jer_set_logger
 	jer_override
 	jer_get_override
+	jer_hud_message
+	jer_hud_message_replace
+	jer_hud_clear
+	jer_hud_active
 	jer_manager_reload
 	jer_module_count
 	jer_module_list

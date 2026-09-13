@@ -2,6 +2,7 @@
 #include "main.h"
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "jer_hud.h"	// JERICHO-HOOK: on-screen HUD messages
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
 #include "ASM/rndrasm.h"
@@ -1675,6 +1676,10 @@ void DrawGame(void)
 	{
 		ObjectDrawnValue = FrameCnt;
 		DrawPauseMenus();
+
+		// JERICHO-HOOK: HUD messages (jer_hud.h), drawn with the pause menu so
+		// they land in the display buffer before the module overlays below.
+		jer_hud_draw();
 
 		// JERICHO-HOOK: module overlays (e.g. the sandbox menu) draw here,
 		// into the display buffer like the pause menu

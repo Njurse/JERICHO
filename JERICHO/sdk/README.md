@@ -16,6 +16,7 @@ sdk/
     jer_anim.h        player-skeleton animation helpers
     jer_menu.h        module-provided frontend menus
     jer_npc.h         NPC helpers
+    jer_hud.h         on-screen HUD messages (jer_hud_message)
     jer_events.h      event argument structs (game types as void*)
   lib/x64/Release/
     REDRIVER2.lib     import library for the game exe's exported symbols
