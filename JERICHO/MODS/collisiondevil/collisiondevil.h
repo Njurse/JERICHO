@@ -25,29 +25,29 @@
 // "steering into" a brake-tap drift, and the minimum speed (cp->hd.speed,
 // world units) before a drift can start.
 #define CD_STEER_MIN        24
-#define CD_DRIFT_MIN_SPEED  8
+#define CD_DRIFT_MIN_SPEED  2
 
 // Drift grip blend: exponential approach divisor (higher = slower in/out).
-#define CD_BLEND_LERP       2
+#define CD_BLEND_LERP       3
 
 // Visual smoothing divisor (higher = slower body roll/pitch/yaw settle).
-#define CD_VISUAL_LERP      1
+#define CD_VISUAL_LERP      2
 
 // Grip drop: fraction of the REAR friction removed at full eagerness
 // (4096 = 100%). 2253/4096 ~= 0.55 -> rear grip ~0.45x — the manifesto's
 // "Drift Grip = base_friction * 0.45".
-#define CD_GRIP_DROP_FRAC   3277
+#define CD_GRIP_DROP_FRAC   2277
 
 // Yaw kick: yaw angular-acceleration added per frame during a drift, derived
 // from the car's yaw inertia (twistRateY). kick = twistRateY * SCALE / 2 at
 // full drift blend + full eagerness. 16 -> ~8000 units/frame for a mid car.
-#define CD_YAW_KICK_SCALE   96
+#define CD_YAW_KICK_SCALE   126
 
 // Visual drama magnitudes (PSX angle units; 4096 = 360 deg, ~11.4 units/deg).
 #define CD_DRAMA_ROLL_SHIFT 4     // |wheel_angle| * drama >> 4 (~2 deg max)
-#define CD_DRAMA_PITCH_BASE 30    // nose up/down angle at full drama + speed
+#define CD_DRAMA_PITCH_BASE 5    // nose up/down angle at full drama + speed
 #define CD_DRAMA_YAW_SHIFT  5     // drift blend * drama >> 5 (~11 deg max)
-#define CD_DRAMA_REF_SPEED  60    // speed (world units) at which drama saturates
+#define CD_DRAMA_REF_SPEED  10    // speed (world units) at which drama saturates
 // Side-slip -> body roll gain: lateral velocity (fixed point) >> shift gives
 // a PSX-angle-unit lean. 9 => ~10 m/s side slip leans ~7 deg.
 #define CD_SLIP_SHIFT       11
@@ -61,20 +61,20 @@
 #define CD_BODY_MAX_PITCH    22    // ~2 deg nose dive/lift
 
 // Crash reactivity: impact force >> shift = angular-velocity kick on collision.
-#define CD_CRASH_SPIN_SHIFT  6
+#define CD_CRASH_SPIN_SHIFT  32
 
 // Angular damping soften: counter the stock -avel*128/4096 with +avel>>shift
 // (6 halves the settle so cars twist/flip longer).
-#define CD_DAMP_SHIFT        6
+#define CD_DAMP_SHIFT        2
 
 // Yaw-kick speed gate: full drift yaw authority near standstill, tapering to
 // a floor as speed rises so drifts slide instead of jackknifing the car.
 #define CD_YAW_KICK_LOW_SPEED   10
-#define CD_YAW_KICK_HIGH_SPEED  55
-#define CD_YAW_KICK_FLOOR       1638   // ~0.4x kick at/above high speed
+#define CD_YAW_KICK_HIGH_SPEED  25
+#define CD_YAW_KICK_FLOOR       2638   // ~0.4x kick at/above high speed
 
 // FOV pull: scr_z reduction (from gCameraDefaultScrZ = 256) at full pull+speed.
-#define CD_FOV_PULL_SCRZ    80
+#define CD_FOV_PULL_SCRZ    180
 
 // presets
 enum

@@ -178,7 +178,7 @@ static int cdOnCarEngine(void* ud, void* args)
 	// (the manifesto's "Drift Angle = base_steering_angle * 1.8").
 	if (gCdCfg.eagerness > 0 && a->wheelAngle != 0)
 	{
-		int widen = 4096 + (cdPercent(gCdCfg.eagerness) * 4) / 5;  // 1.0x..1.8x
+		int widen = 4096 + (cdPercent(gCdCfg.eagerness) * 0.4) / 50;  // 1.0x..1.8x
 		a->wheelAngle = cdScale(a->wheelAngle, widen);
 	}
 
