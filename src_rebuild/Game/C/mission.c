@@ -324,6 +324,21 @@ void InitialiseMissionDefaults(void)
 }
 
 // [A] function to properly place wanted car into resident models
+// Which city's level file supplies each resident slot's model. -1 = the level's
+// own city. A module sets this through JER_EVENT_CAR_DATA_SOURCE and
+// ProcessCarModelLump reads it when it builds the models, so one slot can take a
+// foreign vehicle while the rest of the level stays exactly as it was.
+static int gCarModelSource[MAX_CAR_RESIDENT_MODELS];
+
+int GetCarModelSourceCity(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return -1;
+
+	return gCarModelSource[slot];
+}
+
+// [D] [T]
 void SetupResidentModels()
 {
 	int i, j;
@@ -419,8 +434,12 @@ void SetupResidentModels()
 
 		jerSrc.level = GameLevel;
 		jerSrc.sourceLevel = -1;
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; ++i)
+			gCarModelSource[i] = -1;
+
 		jerSrc.models = residentCarModels;
 		jerSrc.count = MAX_CAR_RESIDENT_MODELS;
+		jerSrc.modelSource = gCarModelSource;
 		jer_fire(JER_EVENT_CAR_DATA_SOURCE, &jerSrc);
 		gCarDataSourceLevel = jerSrc.sourceLevel;
 	}

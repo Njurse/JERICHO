@@ -44,6 +44,8 @@ typedef struct JER_ARGS_CAR_DATA_SOURCE
 	int sourceLevel;	/* in/out: city whose LEVELS folder to read; -1 = own */
 	int* models;		/* in/out: residentCarModels[count] */
 	int count;		/* in: length of models[] */
+	int* modelSource;	/* in/out: per-slot city whose LEVEL file supplies that
+				 * slot's model, -1 = the level's own (count entries) */
 } JER_ARGS_CAR_DATA_SOURCE;
 
 // To do: Separate CRUMPLE functions from jericho events and try to use vanilla-bound function hooks

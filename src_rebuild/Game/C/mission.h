@@ -13,6 +13,11 @@ extern GAMETYPE StoredGameType;
 extern GAMEMODE CurrentGameMode;
 extern GAMEMODE WantedGameMode;
 extern int gCurrentMissionNumber;
+
+// JERICHO: which city's level file supplies the model for resident slot `slot`.
+// -1 = the level's own city (the default). Set by a module answering
+// JER_EVENT_CAR_DATA_SOURCE; read when the models are built.
+int GetCarModelSourceCity(int slot);
 extern MS_MISSION*MissionHeader;
 extern int residentCarModels[MAX_CAR_RESIDENT_MODELS];
 extern STREAM_SOURCE* PlayerStartInfo[8];
