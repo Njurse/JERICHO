@@ -110,6 +110,32 @@ Top Speed, Acceleration, Braking, Handling, Grip, Tight Pivot, TMB Buttons
 the pause menu under **Modules → Combat D2** (settings persist to
 `JERICHO/CONFIG/combatd2.ini`).
 
+## Test launchers (`tools/`)
+
+Windows `.bat` helpers that start the game with a rolled-up setup. They act on
+`bin\Release_dev\` directly and the module must be enabled in
+`bin\Release_dev\JERICHO\CONFIG\modlist.ini`.
+
+- `launch_tar_random.bat` — Take-A-Ride with a random city, car, weather and time.
+- `launch_mp_chicago_semi.bat` — Chicago's multiplayer arena, as the semi when its
+  data is present (falls back to the school bus).
+- `launch_mp_random_mix.bat` — multiplayer arena with a **random cross-city
+  import** and a mixed roster. The player gets a random local slot or, half the
+  time, a random foreign car (`player_model`); 1-2 vehicles are imported from a
+  randomly chosen *other* city into random resident slots. The AI opponents pick
+  their car at spawn by enumerating the resident slots the level actually loaded
+  and taking a salted random one, so they mix the imported vehicles in by
+  themselves — as does ambient traffic, which draws from slots 0..4. Run it with
+  the argument `dry` to see the roll without launching or touching the config.
+
+`launch_mp_random_mix.bat` **overwrites** `JERICHO/CONFIG/carhacks.ini` when it
+runs (the cross-city hack is off by default; the launcher switches it on for the
+session).
+
+**Never use `-car slot9`.** It is model 11, the slot the game reserves for a
+content-override truck, and no city ships data for it — the game dies during load
+(after `LUMP_CAR_MODELS`, no dump). Both random launchers skip it deliberately.
+
 ## Validation checklist
 
 - TMB layout: while driving, Square gasses, Circle brakes, X/Cross pivots;

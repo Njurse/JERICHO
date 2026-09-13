@@ -8,7 +8,13 @@ rem during load (after LUMP_CAR_MODELS, no dump).
 setlocal
 
 set /a CITY=%RANDOM% %% 4
-set /a SLOT=%RANDOM% %% 10 + 1
+
+rem Slots 1..8 and 10 only. Slot 9 is model 11 - the slot the game reserves for a
+rem content-override truck - and NO city ships data for it, so it dies during
+rem load (this is the crash that used to look random: it was this roll).
+set /a SLOT=%RANDOM% %% 9 + 1
+if %SLOT%==9 set "SLOT=10"
+
 set /a W=%RANDOM% %% 3
 set /a T=%RANDOM% %% 4
 
