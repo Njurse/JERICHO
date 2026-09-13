@@ -90,9 +90,32 @@ city's `CAR_COSMETICS` whichever slot it lands in.
   (`denting.c:454, 487`). Denting therefore stays local — an imported model
   dents as its host slot would.
 
-## Where this is implemented
+## Turning it on
 
-`models.c` owns it: `InitCarImport()` (called from `SetupResidentModels` right
+In `JERICHO/CONFIG/carhacks.ini` (off by default):
+
+```
+cross_city_vehicles = 1
+import = 2:0:10
+```
+
+`import` takes comma-separated `slot:city:model` entries — here, Chicago's school
+bus (model 10) into resident slot 2. City numbers are `0` CHICAGO, `1` HAVANA,
+`2` VEGAS, `3` RIO. Slots 0..4 feed ambient traffic, 5..6 are spare capacity and
+7 is the special slot; several entries may name different cities.
+
+Verified in the log by the size of the block that was actually read — with
+`import = 2:0:10` on a **Havana** level the engine reports
+
+```
+[carhacks] import: slot 2 <- model 10 from CHICAGO
+cross-city: car data from CHICAGO (123324 bytes of models, 4096 of cosmetics)
+```
+
+and 123324 is Chicago's car-models block in the table above (Havana's own is
+131412), so the foreign file really is what got loaded.
+
+## Where this is implemented`models.c` owns it: `InitCarImport()` (called from `SetupResidentModels` right
 after the query) reads the foreign level file and the foreign `.LCF` and holds
 them for the level; `GetCarImportModels(slot)` / `GetCarImportCosmetics(slot)`
 answer NULL for every slot the module did not import from, so a stock level takes

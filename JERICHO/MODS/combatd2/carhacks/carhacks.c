@@ -133,6 +133,79 @@ static int ChkOnCarAvailability(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* Pull imported vehicles out of "import = slot:city:model, ..." and write them
+ * into the resident list together with their source city. The engine reads both
+ * back after this event: it builds that slot's geometry from the named city's
+ * level file and takes its colours from that city's .LCF. Comma-separated, so a
+ * level can pull several vehicles from one or more cities.
+ *
+ * e.g. import = 5:0:10, 6:0:0    two Chicago vehicles into resident slots 5/6 */
+static void ChkApplyImports(JER_ARGS_CAR_DATA_SOURCE* a)
+{
+	const char* list = jer_config_get_str("carhacks", "import", "");
+	const char* p = list;
+	int n = 0;
+
+	if (list == NULL || *list == '\0' || a->models == NULL || a->modelSource == NULL)
+		return;
+
+	while (*p != '\0' && n < 8)
+	{
+		int vals[3];
+		int v;
+
+		for (v = 0; v < 3; v++)
+		{
+			int got = 0;
+
+			vals[v] = 0;
+
+			while (*p >= '0' && *p <= '9')
+			{
+				vals[v] = vals[v] * 10 + (*p - '0');
+				p++;
+				got = 1;
+			}
+
+			if (!got)
+			{
+				vals[v] = -1;
+				break;
+			}
+
+			if (v < 2)
+			{
+				if (*p == ':')
+					p++;
+				else
+				{
+					vals[0] = -1;
+					break;
+				}
+			}
+		}
+
+		while (*p != '\0' && *p != ',')		/* next entry */
+			p++;
+
+		if (*p == ',')
+			p++;
+
+		n++;
+
+		if (vals[0] < 0 || vals[0] >= a->count || vals[1] < 0 || vals[1] > 3 || vals[2] < 0 || vals[2] > 12)
+		{
+			printInfo("[carhacks] import entry %d ignored (want slot:city:model)\n", n);
+			continue;
+		}
+
+		a->models[vals[0]] = vals[2];
+		a->modelSource[vals[0]] = vals[1];
+
+		printInfo("[carhacks] import: slot %d <- model %d from %s\n", vals[0], vals[2], LevelNames[vals[1]]);
+	}
+}
+
 /* JER_EVENT_CAR_DATA_SOURCE: fires once per level, before any CARMODEL_* file is
  * read. Points the loader at another city's LEVELS folder and (optionally)
  * forces the player's car to a model from it, so a level can use vehicles that
@@ -183,6 +256,9 @@ static int ChkOnCarDataSource(void* ud, void* args)
 			printInfo("[carhacks] cross-city: resident slot %d -> model %d (traffic)\n", tslot, tmodel);
 		}
 	}
+
+	/* Real cross-city imports: geometry AND colours from another city's data */
+	ChkApplyImports(a);
 
 	return JER_RESULT_CONTINUE;
 }
