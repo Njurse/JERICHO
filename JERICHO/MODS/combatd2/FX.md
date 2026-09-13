@@ -39,6 +39,7 @@ impacts can't starve the pool.
 | `CD2_FX_BOMBLET` | cluster sub-blast | 1600 | orange (255,150,40) | 0 |
 | `CD2_FX_WRECK` | dying car | 6000 | stock fire | 0 |
 | `CD2_FX_ZOOMY` | zoomy missile | 950 | cool blue (140,230,255) | 0 |
+| `CD2_FX_FREEZE` | freeze missile | 1400 | pale ice blue (150,220,255) | 0 |
 
 - `collide = 0` means the explosion is **visual only** — the weapon's own damage
   + `cd2WpnKnock` stay authoritative, so a car is never pushed twice. The
@@ -77,6 +78,7 @@ schedules `count` blasts `interval` frames apart, each jittered by up to
 | SEEKER | purple | `CD2_FX_SEEKER` (smaller) | — |
 | CLUSTER | deep orange (255,90,0) | `CD2_FX_CLUSTER` | 5 × `CD2_FX_BOMBLET`, 4 frames apart, ±60, sticks to a hit car |
 | ZOOMY | pale cyan (140,230,255) | `CD2_FX_ZOOMY` (small) | 10 shots, 6 frames apart, weak homing; all-ten-land bonus |
+| FREEZE | icy cyan (170,230,255) | `CD2_FX_FREEZE` | freezes the car it hits for 5s (no damage) |
 
 ## Volley weapons (the burst launcher)
 
@@ -97,8 +99,28 @@ damage each, all small explosions; land all ten and the last one adds 900
 damage + a hard shove. The pool's volley tracking uses a generation counter so
 a recycled group slot can't miscount a stale shot.
 
-### Adding a kind
+## Freeze weapons (the freeze missile)
 
+`CD2_WEAPON_DEF.freezeFrames > 0` turns a car hit into an ice encasement
+instead of damage (the freeze missile sets `damage = 0`). On a hit the
+projectile pool calls `cd2FreezeApply(carId, frames)`; the status lives in
+`weapons/projectile/freeze.c` and lasts `frames` (the def uses 300 = 5s at
+60 fps):
+
+- **body** renders a bright flat cyan via `JER_EVENT_CAR_DRAW_COLOR` (the
+  engine hook gained `tintR/G/B` for this — a flat body colour at full
+  brightness; the totaled-wreck `flatBlack` still wins);
+- **grip** is cut via `JER_EVENT_CAR_FRICTION` (÷5) so it slides on ice;
+- **controls lock** via `JER_EVENT_CAR_STEP` (no gas, no brake, no handbrake,
+  and the steering is pinned to the angle it had when it froze). `CAR_STEP`
+  runs after the pad pass AND after the opponent AI's own input write, so it
+  takes the last word for both; the freeze hooks use priority 20 for the same
+  reason.
+
+`FREEZE` is a moderate seeker (`homingRate 170`, between the zoomy's 40 and
+the seeker's 340).
+
+### Adding a kind
 1. Add an id to the `CD2_FX_*` enum in `fx.h`.
 2. Add a row to `gFxDefs` in `fx.c`.
 3. Point a weapon's `CD2_WEAPON_DEF.impactFx` at it (and, for a burst, set

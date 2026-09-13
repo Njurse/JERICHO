@@ -582,6 +582,10 @@ void cd2ProjectileStep(void)
 						cd2WpnKnock(cp, &p->pos, &p->vel, p->def->damage);
 						cd2ProjectileImpact(p, cp, cp);
 
+						// a freeze weapon encases the car rather than damaging it
+						if (p->def->freezeFrames > 0)
+							cd2FreezeApply(cp->id, p->def->freezeFrames);
+
 						// volley bookkeeping: every member that lands on a car counts;
 						// the shot that completes the set (all landed) deals the bonus
 						if (v >= 0 && gVolley[v].active && gVolley[v].gen == vg)

@@ -57,6 +57,8 @@ static const CD2_FX_DEF gFxDefs[] =
 	{ CD2_FX_WRECK,   "WRECK",   BIG_BANG,	90,   6000,  6000,  4096,    0,      40,    -1, -1, -1 },
 	// zoomy missile hits: deliberately small (the weapon is a spray)
 	{ CD2_FX_ZOOMY,   "ZOOMY",   LITTLE_BANG, 230, 950,   950,   2048,    0,      260,   140, 230, 255 },
+	// freeze missile hit: cold pale blue, small (the freeze is the effect)
+	{ CD2_FX_FREEZE,  "FREEZE",  LITTLE_BANG, 200, 1400,  1400,  4096,    0,      120,   150, 220, 255 },
 };
 
 #define CD2_FX_DEF_COUNT (int)(sizeof(gFxDefs) / sizeof(gFxDefs[0]))

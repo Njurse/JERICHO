@@ -9,6 +9,7 @@
 
 #include "driver2.h"
 #include "cars.h"
+#include "jericho.h"
 #include "weapons/core/weapon.h"
 
 // ---------------------------------------------------------------------------
@@ -105,5 +106,17 @@ extern const CD2_WEAPON_DEF cd2WdefMine;	// drops/mine.c
 extern const CD2_WEAPON_DEF cd2WdefHoming;	// projectile/homing.c
 extern const CD2_WEAPON_DEF cd2WdefCluster;	// projectile/cluster.c
 extern const CD2_WEAPON_DEF cd2WdefZoomy;	// projectile/zoomy.c
+extern const CD2_WEAPON_DEF cd2WdefFreeze;	// projectile/freeze.c
+
+// Freeze status (weapons/projectile/freeze.c): encase `carId` in ice for
+// `frames` frames (cyan body, low grip, locked controls). Called by the
+// projectile pool when a freeze weapon hits a car.
+void cd2FreezeApply(int carId, int frames);
+
+// Is `carId` currently frozen? (exposed for the AI / HUD)
+int cd2FreezeActive(int carId);
+
+// Register the freeze hooks (ice body colour, grip, control lock, timer).
+void cd2FreezeRegister(JERICHO_CONTEXT* ctx);
 
 #endif /* CD2_WEAPON_INTERNAL_H */

@@ -47,6 +47,7 @@ enum
 	CD2_WID_HOMING,		// primary (projectile) that homes in
 	CD2_WID_CLUSTER,	// primary (projectile): impact bursts into bomblets
 	CD2_WID_ZOOMY,		// primary (projectile): a burst of weakly-homing shots
+	CD2_WID_FREEZE,		// primary (projectile): freezes the car it hits
 	CD2_WID_COUNT,
 	CD2_WID_NONE = -1
 };
@@ -116,6 +117,13 @@ typedef struct CD2_WEAPON_DEF
 	int burstInterval;	// frames between burst projectiles
 	int volleyBonusDamage;	// bonus damage the final landing shot deals
 	int volleyBonusKnock;	// bonus knockback strength for that final shot
+
+	// -------------------------------------------------------------------
+	// Freeze (freeze missile): when freezeFrames > 0, a car hit encases the
+	// car in ice for that many frames (cyan bright body, low grip, controls
+	// locked). The weapon itself normally does 0 damage.
+	// -------------------------------------------------------------------
+	int freezeFrames;	// frozen duration on a car hit (0 = none)
 
 	int colR, colG, colB;	// draw colour
 
