@@ -180,3 +180,80 @@ catalogue — every event's argument fields and engine call site — is in
 | Levels & vehicles | `JER_EVENT_CAR_AVAILABILITY`, `JER_EVENT_CAR_DATA_SOURCE` |
 | Networking | `JER_EVENT_NET_INPUT`, `JER_EVENT_NET_CAR_STATE`, `JER_EVENT_NET_PLAYERS`, `JER_EVENT_NET_RECV`, `JER_EVENT_NET_SPAWN` |
 | Custom | `>= JER_EVENT_MODULE_CUSTOM` (free for module-to-module messaging) |
+
+### What a module can do besides events
+
+Events are the core, but the API ships a helper for everything a mod usually
+needs. All are declared in the SDK headers under
+[`JERICHO/sdk/include/`](JERICHO/sdk/include/):
+
+| Header | Gives you |
+|---|---|
+| `jer_pause_menu.h` | Register menus/submenus into the pause screen (`jer_pause_menu_register`). The engine collects them under a **Modules** submenu (`Continue → Modules → your menu`), supports live dynamic labels and Left/Right adjust items, and needs no `pause.c` edits. |
+| `jer_frontend.h` | Register **real frontend screens** the engine renders natively (`jer_frontend_register_menu`), optionally routed from the main menu (`jer_frontend_set_main_entry`). The multiplayer mod's menus are built this way. |
+| `jer_hud.h` | On-screen HUD messages (`jer_hud_message`, drawn via `jer_hud_draw`). |
+| `jer_config.h` | Persistent per-module settings (`jer_config_get_int`/`set_int`/…). Each module owns `JERICHO/CONFIG/<modid>.ini`, hand-editable while the game is closed. |
+| `jer_net.h` | A named-channel network bridge over the active multiplayer session (`jer_net_register_channel` + `jer_net_send`, delivered back as `JER_EVENT_NET_RECV`). A safe no-op with no session, so a module can call it unconditionally. |
+| `jer_anim.h` | Player-skeleton animation helpers (resolve bones when posing via `JER_EVENT_PED_POSE` / `JER_EVENT_PED_SKELETON`). |
+| `jer_npc.h` | NPC (pedestrian) helpers. |
+| `jer_math.h` | Shared math helpers. |
+
+Two escape hatches round out the API:
+
+- **Behaviour overrides** — `ctx->jer_override(ctx, SLOT, fn)` swaps an engine
+  function-pointer slot (today `JER_OVERRIDE_SLOT_SIM`, the world step);
+  `jer_get_override(slot)` returns the previous handler so modules can chain.
+  The sandbox's time-scale is built on this.
+- **Custom events** — any id `>= JER_EVENT_MODULE_CUSTOM` is free for
+  module-to-module messaging; fire and consume them exactly like stock events.
+
+### Logging
+
+`ctx->jer_log(ctx, fmt, ...)` routes through the JERICHO logger, which the game
+writes into **`REDRIVER2.log`** (and the console in `_DEBUG` builds). At boot the
+runtime prints a banner and a module/hook inventory, so a missing log line is the
+first sign a module isn't compiled in or is disabled. Prefix your lines with
+`[<id>]` to keep the inventory readable.
+
+### A complete, minimal addon
+
+A whole working addon is two files — this is the shape of the in-repo
+[`example`](JERICHO/MODS/example/) module.
+
+`JERICHO/MODS/greet/mod.toml`:
+
+```toml
+id = "greet"
+name = "Greet"
+version = "0.1.0"
+author = "You"
+description = "Logs a line every 60 frames."
+default-enabled = true
+runtime = "dll"          # REQUIRED: marks this a runtime DLL addon
+```
+
+`JERICHO/MODS/greet/greet.c`:
+
+```c
+#include "jericho.h"
+
+static int GreetOnFrame(void* userdata, void* args)
+{
+    static int n = 0;
+    JERICHO_CONTEXT* ctx = (JERICHO_CONTEXT*)userdata;
+    if ((++n % 60) == 0)
+        ctx->jer_log(ctx, "[greet] frame %d", n);
+    return JER_RESULT_CONTINUE;
+}
+
+JER_MODULE_ENTRY(jer_module_greet_entry)(JERICHO_CONTEXT* ctx)
+{
+    ctx->jer_register_module(ctx, "greet", "Greet", "0.1.0",
+        "You", "Logs a line every 60 frames.", "", JERICHO_SDK_VERSION);
+    /* pass ctx as userdata so the handler can log through the API */
+    ctx->jer_register_hook(ctx, JER_EVENT_FRAME, GreetOnFrame, ctx, 0);
+}
+```
+
+Build it (`JERICHO\build_mods.bat greet`) and enable **Greet** in Options →
+JERICHO. The id, the folder name and the entry symbol all read `greet`.
