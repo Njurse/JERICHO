@@ -26,7 +26,13 @@ extern int CarAvailability[4][10];		/* frontend car list: [level][slot] */
  *     on this install: forcing it crashes the game during load. So this hack
  *     targets 10 and must never unlock 11.
  * In the frontend the truck is only offered once gFurthestMission == 40 (and
- * NumPlayers == 1); the whole point here is to offer it any time. */
+ * NumPlayers == 1); the whole point here is to offer it any time.
+ *
+ * Caveats for extending this: the extra car reaches the level through the
+ * special resident slot (SPECIAL_CAR_SLOT / MAX_CAR_RESIDENT_MODELS), and
+ * InitSpecSpool switches special spooling OFF for mission 7 ("Caine's Compound
+ * semi trucks") and whenever residentCarModels[SPECIAL_CAR_SLOT] < 8 - so a
+ * level where spooling is off needs another route to make a car resident. */
 #define CHK_CHICAGO_TRUCK_SLOT	7	/* CarAvailability[chicago][7] = model 10 */
 
 typedef struct CHK_HACK
