@@ -32,6 +32,7 @@ Each mod documents itself in its own folder.
 | example | [`README.md`](../JERICHO/MODS/example/README.md) |
 | aidriver | [`README.md`](../JERICHO/MODS/aidriver/README.md) |
 | gaildrv2 | [`README.md`](../JERICHO/MODS/gaildrv2/README.md) |
+| mp | [`README.md`](../JERICHO/MODS/mp/README.md) (LAN multiplayer) |
 
 `docs/crumple.md` is a pointer to the canonical copy in the mod folder.
 

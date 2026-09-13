@@ -54,6 +54,12 @@ inert no-ops when no module handles them.
 | `JER_EVENT_EXPLOSION_SPAWN` | `JER_ARGS_EXPLOSION_SPAWN` | `AddExplosion` (`job_fx.c`) | attach a parametric FX profile to a new explosion: size (`speed`/`hscale`/`rscale`), `tint*`, `yawRate`, `collide`, `colScale`, and rewrite `type` |
 | `JER_EVENT_EXPLOSION_DRAW` | `JER_ARGS_EXPLOSION_DRAW` | `DrawExplosion` (`job_fx.c`) | tint/spin the stock bang, or set `override` to draw your own effect |
 | `JER_EVENT_EXPLOSION_COLLIDE` | `JER_ARGS_EXPLOSION_COLLIDE` | `ExplosionCollisionCheck` (`bomberman.c`) | query: may this explosion push/damage this car, and at what box scale |
+| `JER_EVENT_MP_FRONTEND` | `JER_ARGS_MP_FRONTEND` | `MainScreen` + `HandleKeyPress` (`FEmain.c`) | the main-menu Multiplayer entry / the multiplayer gamemode screen is being entered: a module may claim it (`claimed = 1`) and run its own menu; also enables the entry without two pads |
+| `JER_EVENT_NET_INPUT` | `JER_ARGS_NET_INPUT` | car-control loop (`main.c`) | a player car's pad is about to drive it: a module may substitute a remote player's input (`handled = 1`) |
+| `JER_EVENT_NET_CAR_STATE` | `JER_ARGS_NET_CAR_STATE` | `StepOneCar` (`wheelforces.c`) | per player car: capture (`apply = 0`) or apply (`apply = 1`) a synced transform (host state-resync) |
+| `JER_EVENT_NET_PLAYERS` | `JER_ARGS_NET_PLAYERS` | top of `StepSim` (`main.c`) | notification: the local player pad ids, so a module maps them to peers |
+| `JER_EVENT_NET_RECV` | `JER_ARGS_NET_RECV` | the mp addon bridge (`jer_net.h`) | an inbound channel payload for a module that registered it |
+| `JER_EVENT_NET_SPAWN` | `JER_ARGS_NET_SPAWN` | `InitGameVariables` (`main.c`) | a level's player cars are about to be created: a network module adds the remote players (fills `PlayerStartInfo[slot]`, raises `numPlayersToCreate`); extra slots get negative pad ids |
 | `>= JER_EVENT_MODULE_CUSTOM` | module-defined | modules | custom events |
 
 ## The explosion FX events (combatd2 weapons use these)
@@ -248,6 +254,37 @@ no handler.
   in/out; setting `defer = 1` makes the module own the start (its own menu
   runs over the frozen frontend) and the engine returns without scheduling the
   level. No handler = stock flow.
+
+## The multiplayer events (the mp module uses these)
+
+Five hooks added for LAN multiplayer (`JERICHO/MODS/mp`):
+
+- **`JER_EVENT_MP_FRONTEND`** — fired from the frontend main screen
+  (`MainScreen`, as a query, to enable the multiplayer entry without a second
+  pad) and from `HandleKeyPress` when the main-menu Multiplayer button
+  (`JER_MP_FE_ENTER_MENU`) or the multiplayer gamemode screen
+  (`JER_MP_FE_GAMEMODE`) is confirmed. A module that sets `claimed = 1` owns
+  the press: the engine skips the stock navigation, so the module can draw its
+  own host/join menu over the frozen frontend. No handler = stock flow.
+- **`JER_EVENT_NET_INPUT`** — fired in the car-control loop (`main.c`) right
+  after a `CONTROL_TYPE_PLAYER` car's pad is read and before `ProcessCarPad`.
+  A module writes `pad` (engine-native bits) and sets `handled = 1` to drive
+  the car from remote input instead. No handler = the stock pad.
+- **`JER_EVENT_NET_CAR_STATE`** — fired per player car in `StepOneCar`
+  (`wheelforces.c`). With `apply = 0` the module reads the transform (`x/y/z`
+  from `hd.where.t[]`, `heading` from `hd.direction`) for capture; with
+  `apply = 1` the engine writes the module's values back (a client snapping to
+  the host). No handler = no-op.
+- **`JER_EVENT_NET_PLAYERS`** — fired once per frame at the top of `StepSim`
+  with the local player pad ids (`padIds[]`, `count`), so a module can map them
+  to network peers. No handler = no-op.
+- **`JER_EVENT_NET_RECV`** — the JERICHO addon network bridge (see
+  `jer_net.h`): the mp module delivers every inbound channel payload
+  (`channel`, `peer`, `data`, `len`) to modules that registered the channel.
+
+`JER_EVENT_LEVEL_LAUNCH` also carries in/out `timeOfDay`/`weather`, so a host
+can impose its chosen time of day and weather on the level load (`LoadMission`
+folds them in when >= 0).
 
 ## The pause menu bridge
 

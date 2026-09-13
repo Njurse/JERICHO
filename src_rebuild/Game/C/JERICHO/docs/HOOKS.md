@@ -96,6 +96,16 @@ jer_pause_menu_register(&myMenu);
 - **React to events** — see `events.md` for the full table. The engine
   call sites are inert when no module handles them, so a vanilla game (no
   modules) behaves exactly stock.
+- **Add real frontend menus** — `jer_frontend.h` registers menus that the
+  engine renders as native frontend screens (`jer_frontend_register_menu`),
+  optionally routed from the main menu (`jer_frontend_set_main_entry`). Items
+  can open submenus, run callbacks, adjust values with Left/Right, or return.
+- **Talk over the network** — `jer_net.h` lets any module send/receive named
+  channels over the active multiplayer session (`jer_net_register_channel` +
+  `jer_net_send`, delivered back as `JER_EVENT_NET_RECV`). It is a safe no-op
+  when there is no session, so a module can call it unconditionally. Use it for
+  data a peer cannot derive locally (host-spawned entities, event logs, RNG a
+  module author owns).
 - **Own pause-menu items** — register menus/submenus with
   `jer_pause_menu_register()` from `jer_pause_menu.h` (see the "Module
   pause menus" section). The engine collects everything under a "Modules"
