@@ -34,22 +34,75 @@ static void jer_npc_park_internal(LPPEDESTRIAN pPed)
 	pPed->fpAgitatedState = jer_npc_frozen_state;
 }
 
+/* Ring radii / directions used to search outward from a requested spawn point
+ * for walkable pavement. Snapping to the nearest walkable spot keeps a ped
+ * from being created out of bounds (off the road graph), which the pavement
+ * test - the same one the engine's own ped spawner uses - rejects. */
+static const int jer_npc_ring[] = { 0, 64, 128, 256, 512, 1024 };
+static const int jer_npc_dir[8][2] =
+{
+	{ 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 },
+	{ 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 }
+};
+
+/* Fill `out` with the nearest walkable pavement to (x, z), snapping Y to the
+ * ground. Returns 1 on success, 0 if nothing walkable was found nearby. */
+static int jer_npc_snap_to_road(int x, int z, VECTOR* out)
+{
+	int r, d;
+
+	for (r = 0; r < (int)(sizeof(jer_npc_ring) / sizeof(jer_npc_ring[0])); r++)
+	{
+		int rad = jer_npc_ring[r];
+		int n = (rad == 0) ? 1 : 8;
+
+		for (d = 0; d < n; d++)
+		{
+			VECTOR p;
+
+			p.vx = x + jer_npc_dir[d][0] * rad;
+			p.vz = z + jer_npc_dir[d][1] * rad;
+			p.vy = 0;
+			p.vy = -MapHeight(&p);
+
+			if (IsPavement(p.vx, p.vy, p.vz, NULL))
+			{
+				*out = p;
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
 JerNpc* jer_npc_spawn(int x, int z)
 {
 	LPPEDESTRIAN pPed;
 	VECTOR pos;
+
+	/* Snap the requested point to the nearest walkable pavement so the ped
+	 * never spawns out of bounds. If there is nothing walkable nearby, keep
+	 * the request but still ground it. */
+	pos.vx = x;
+	pos.vz = z;
+	pos.vy = 0;
+
+	if (!jer_npc_snap_to_road(x, z, &pos))
+	{
+		pos.vx = x;
+		pos.vz = z;
+		pos.vy = -MapHeight(&pos);
+	}
 
 	pPed = CreatePedestrian();
 
 	if (pPed == NULL)
 		return NULL;
 
-	pos.vx = x;
-	pos.vz = z;
-	pos.vy = 0;
-	pPed->position.vx = x;
-	pPed->position.vz = z;
-	pPed->position.vy = -130 - MapHeight(&pos);
+	pPed->position.vx = pos.vx;
+	pPed->position.vz = pos.vz;
+	pPed->position.vy = pos.vy - 130;
 
 	pPed->pedType = CIVILIAN;
 	pPed->dir.vx = 0;
@@ -57,6 +110,10 @@ JerNpc* jer_npc_spawn(int x, int z)
 	pPed->dir.vz = 0;
 	pPed->type = PED_ACTION_WALK;
 	pPed->flags = 0;
+
+	/* pPed->motion must point at the motion block for pPed->type, or the
+	 * draw path reads the pose out of a stale/NULL buffer. */
+	SetupPedMotionData(pPed);
 
 	return (JerNpc*)pPed;
 }
