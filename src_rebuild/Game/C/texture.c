@@ -824,12 +824,146 @@ static int FindFreeSetIndex(void)
 	return 0;
 }
 
-// JERICHO-HOOK: upload the imported city's car texture sets so a vehicle built
+// JERICHO: pinning for imported pages.
+//
+// The slot table does not stay as the import left it: a later load pass memsets
+// tpageloaded and resets tpageslots, after which the imported pages are unclaimed -
+// and they sit at tpagepos[slot], the very VRAM rectangles the engine's own slots
+// stream into. So a region page overwrites their pixels while the imported car keeps
+// sampling the coordinates, which reads as wrong UVs or wrong colours.
+//
+// So each imported page is remembered, and re-uploaded whenever the slot table no
+// longer shows it as ours. The page bytes come back from the source city's level
+// file, which is already open-able (ReadCarImportFile) - no need to hold megabytes.
+#define CAR_PIN_MAX 8
+
+static int sPinCount;
+static int sPinCity[CAR_PIN_MAX];
+static int sPinSet[CAR_PIN_MAX];		// the set number the CAR asks for
+static int sPinIndex[CAR_PIN_MAX];		// the index it was loaded at
+static int sPinSlot[CAR_PIN_MAX];
+static int sPinOffset[CAR_PIN_MAX];
+static int sPinSize[CAR_PIN_MAX];
+static RECT16 sPinTpage[CAR_PIN_MAX];
+static RECT16 sPinClut[CAR_PIN_MAX];
+
+static void CarPinRecord(int set, int index, int slot, int offset, int size, RECT16 tpage, RECT16 clut)
+{
+	if (sPinCount >= CAR_PIN_MAX)
+		return;
+
+	sPinCity[sPinCount] = GetCarImportCity();
+	sPinSet[sPinCount] = set;
+	sPinIndex[sPinCount] = index;
+	sPinSlot[sPinCount] = slot;
+	sPinOffset[sPinCount] = offset;
+	sPinSize[sPinCount] = size;
+	sPinTpage[sPinCount] = tpage;
+	sPinClut[sPinCount] = clut;
+	sPinCount++;
+}
+
+// Called from the game loop. Cheap when nothing is wrong - a handful of compares -
+// and only re-reads the file when a page really has been taken.
+void CarImportPin(void)
+{
+	int i;
+
+	for (i = 0; i < sPinCount; i++)
+	{
+		char* buf;
+		RECT16 tpage, clut;
+
+		if (tpageslots[sPinSlot[i]] == sPinIndex[i] && tpageloaded[sPinIndex[i]] != 0)
+			continue;
+
+		buf = (char*)malloc(sPinSize[i]);
+
+		if (buf == NULL)
+			continue;
+
+		if (!ReadCarImportFile(GetCarImportPageBase() + sPinOffset[i], buf, sPinSize[i]))
+		{
+			free(buf);
+			continue;
+		}
+
+		tpage = sPinTpage[i];
+		clut = sPinClut[i];
+
+		LoadTPageAndCluts(&tpage, &clut, sPinIndex[i], buf);
+
+		tpageslots[sPinSlot[i]] = (u_char)sPinIndex[i];
+		tpageloaded[sPinIndex[i]] = (u_char)sPinSlot[i];
+
+		free(buf);
+	}
+}
+
+// JERICHO: report where the imported sets' pages actually ended up, by decoding the
+// tpage/clut values the draw path will read back into VRAM coordinates.
+//
+// This is the streaming check. Imported pages are uploaded during the level load,
+// and the engine streams region pages into the same slot table as you drive - so a
+// page can be replaced by something else entirely, which a car sampling it looks
+// exactly like wrong UVs or wrong colours. Logging the values at the end of a run
+// says whether what was placed is still what is there.
+//
+// tpage packing (libgpu.h): x = ((v)      & 0xf) << 6; y = ((v >> 4) & 1) * 256 + ((v >> 11) & 1) * 512.
+// clut packing:  x = ((v) & 0x3f) << 4;  y = v >> 6.
+void CarImportDumpState(void)
+{
+	int i, k;
+
+	if (GetCarImportCity() < 0 && sRemapCount == 0)
+		return;
+
+	printInfo("cross-city: final page state (%d re-indexed set(s))\n", sRemapCount);
+
+	for (k = 0; k < sRemapCount; k++)
+	{
+		unsigned int page = texture_pages[sRemapTo[k]];
+		unsigned int clut = texture_cluts[sRemapTo[k]][0];
+
+		printInfo("cross-city:   set %d is at index %d: page=%04x => (%d,%d), clut0=%04x => (%d,%d)\n",
+			sRemapFrom[k], sRemapTo[k], page,
+			(int)((page & 0xf) << 6), (int)(((page >> 4) & 1) * 256 + ((page >> 11) & 1) * 512),
+			clut, (int)((clut & 0x3f) << 4), (int)(clut >> 6));
+	}
+
+	// and the pages we imported under their own numbers
+	for (i = 0; i < sRemapCount; i++)
+	{
+		int idx = sRemapTo[i];
+
+		if (tpageloaded[idx] == 0)
+			printInfo("cross-city:   index %d no longer looks loaded - something replaced it\n", idx);
+	}
+
+	// The decisive one: which slot index each imported page occupies, and whether the
+	// slot table still says that slot is ours. An imported page sits at tpagepos[slot]
+	// - the same VRAM rectangle the engine's own slot occupies - so if streaming has
+	// taken that slot back, the next streamed page lands on our pixels while the car
+	// keeps sampling the coordinates. That is what 'the UVs look off' actually is.
+	for (i = 0; i < slotsused; i++)
+	{
+		if (tpageloaded[tpageslots[i]] != 0 && tpageslots[i] >= 110)
+			printInfo("cross-city:   slot %d still holds imported set %d - intact\n", i, tpageslots[i]);
+	}
+
+	for (i = 0; i < sRemapCount; i++)
+	{
+		printInfo("cross-city:   imported index %d sits at slot rect (%d,%d) - shared with slot %d\n",
+			sRemapTo[i], tpagepos[sRemapTo[i] - 100].x, tpagepos[sRemapTo[i] - 100].y, sRemapTo[i] - 100);
+	}
+}
 // from that city's level file draws with its own textures instead of the host's.
 // Called from LoadPermanentTPages while its tpage/clutpos/slotsused accounting is
 // live, so the imported sets are treated exactly like the level's permanent
 // pages: they take the next VRAM page position and the next CLUT rows, and the
 // streamed slots are pushed along behind them. No-op without an import.
+// JERICHO-HOOK: upload the imported city's car texture sets so a vehicle built
+// from that city's level file draws with its own textures instead of the host's.
 //
 // One page per car set, recovered from the imported file at the offset the page
 // list gives it (entries concatenated, each sector-aligned). Anything doubtful is
@@ -1111,7 +1245,16 @@ void LoadImportedTPages(void)
 		printInfo("cross-city: %s set %d -> slot %d index %d at (%d,%d) clut(%d,%d), %d bytes at +%d, %d clut rows\n",
 			LevelNames[city], set, slot, dstSet, imptpage.x, imptpage.y, impclut.x, impclut.y, size, offset, npalettes);
 
-		LoadTPageAndCluts(&imptpage, &impclut, dstSet, buf);
+		// captured before the upload: LoadTPageAndCluts advances both rects, and the pin
+		// has to re-upload to the same place it used the first time
+		{
+			RECT16 tpageStart = imptpage;
+			RECT16 clutStart = impclut;
+
+			LoadTPageAndCluts(&imptpage, &impclut, dstSet, buf);
+
+			CarPinRecord(set, dstSet, slot, offset, size, tpageStart, clutStart);
+		}
 
 		// claimed: no longer 0xFF, so the streaming slot scan cannot hand it out
 		tpageslots[slot] = (u_char)dstSet;

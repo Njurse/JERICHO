@@ -1675,8 +1675,17 @@ void State_GameLoop(void* param)
 				LevelNames[GameLevel], car, gRunFrames, gDebugSeed);
 		}
 
+		// JERICHO: where the imported pages ended up, after the level has streamed.
+		CarImportDumpState();
+
 		exit(0);
 	}
+
+	// JERICHO-HOOK: imported pages sit in slots the engine streams into, and a later
+	// load pass resets the slot table - so re-claim and re-upload any that were taken
+	// back. This is the fix for imported cars sampling whatever streamed in over their
+	// pages, which looks like wrong UVs. A handful of compares when nothing is wrong.
+	CarImportPin();
 
 	UpdatePadData();
 	CheckForPause();
