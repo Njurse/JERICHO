@@ -32,15 +32,15 @@ CITIES=(chicago havana vegas rio)
 WEATHERS=(none rain wet)
 TIMES=(dawn day dusk night)
 
-# The car index picks the player's car MODEL, and a level only loads a SUBSET of
-# the car models (its own pool is smaller than MAX_CARS). An index past that
-# pool is out of bounds and crashes the game during load (right after
-# LUMP_CAR_MODELS, no dump). The pool DIFFERS per level, so there is no single
-# safe range: havana `-car 0` runs and `-car 31` dies, chicago `-car 7` dies.
-# Until we can query a level's real pool (Driver Madness has the per-city car
-# lists), the safe default is to let the LEVEL choose (omit -car entirely).
-# Set CAR_MAX=<n> only once you know that level's pool (indices are 0..n).
-CAR_MAX="${CAR_MAX:--1}"
+# Cars: use the VALIDATED `-car slot1..slot10` form, NEVER a raw model index.
+# The frontend maps slots through `carNumLookup[level][slot-1]` => model indices
+# {1,2,3,4,0,8,9,10,11,12} and bounds-checks the slot (slot11 is a clean error).
+# A raw `-car <n>` is NOT validated, and any index past the level's loaded pool
+# is out of bounds -> crash in load (after LUMP_CAR_MODELS, no dump). That was
+# the earlier bug: raw `-car 31` / `-car 7` crashed, while `-car slot10` runs.
+# CAR=slotN (or CAR=<raw index>, to probe) overrides the random slot.
+CAR="${CAR:-slot$((RANDOM % 10 + 1))}"
+CAR_ARGS=(-car "$CAR")
 
 pick() { local arr=("$@"); echo "${arr[$((RANDOM % ${#arr[@]}))]}"; }
 
@@ -49,14 +49,6 @@ WEATHER="$(pick "${WEATHERS[@]}")"
 TIME="$(pick "${TIMES[@]}")"
 ARENA="$((RANDOM % 2))"
 
-# -1 = let the level pick the car (safe); >= 0 = randomise within 0..CAR_MAX
-if [ "$CAR_MAX" -ge 0 ]; then
-	CAR="$((RANDOM % (CAR_MAX + 1)))"
-	CAR_ARGS=(-car "$CAR")
-else
-	CAR="level-default"
-	CAR_ARGS=()
-fi
 
 echo "== arena test: city=$CITY car=$CAR weather=$WEATHER time=$TIME arena=$ARENA for ${RUN_SECS}s =="
 
