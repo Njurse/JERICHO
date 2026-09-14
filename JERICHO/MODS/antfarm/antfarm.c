@@ -188,10 +188,11 @@ static int AntFarmStyleImplemented(int model)
 	case ANT_MODEL_TRACK:
 	case ANT_MODEL_CRANE:
 	case ANT_MODEL_ATTACH:
+	case ANT_MODEL_TRIPODZ:
 		return 1;
 
 	default:
-		return 0;	/* TRIPODZ: landing next */
+		return 0;
 	}
 }
 
@@ -218,12 +219,13 @@ typedef struct ANT_STYLE_DEF
 	int across;		/* 1 = aim across the road, not along it */
 	int settle;		/* camera settle divisor (bigger = calmer) */
 	int dwell;		/* scene-interest dwell multiplier, x100 */
+	int nearWater;		/* 1 = prefer a road that runs beside water */
 } ANT_STYLE_DEF;
 
 /* The archetype table. Weight, subject capability and all the per-cut
  * framing ranges live here; picking and framing both read it. */
 static const ANT_STYLE_DEF antStyleDefs[ANTFARM_STYLE_COUNT] = {
-	/* label          key          model            wt rOnly car beh zoom  hLo  hHi scrLo scrHi sLo sHi  fLo  fHi aimLo aimHi orbLo orbHi acr set dwell */
+	/* label          key          model            wt rOnly car beh zoom  hLo  hHi scrLo scrHi sLo sHi  fLo  fHi aimLo aimHi orbLo orbHi acr set dwell  nw */
 	{ "Chase cam",    "chase",     ANT_MODEL_FOLLOW,   4,   0,   1,  0,  0,  180,  340,  260,  276,    0,    0,   0,    0,    0,    0,    0,    0,  0,   8,   90 },
 	{ "Static track", "static",    ANT_MODEL_TRACK,   22,   0,   1,  0,  0,  180,  300,  258,  280,    0,    0,   0,    0,    0,    0,    0,    0,  0,   6,  120 },
 	{ "Overhead",     "overhead",  ANT_MODEL_ROADSIDE,26,   0,   0,  0,  0,  400,  700,  218,  242,  180,  360,   0,    0,  900, 1100,    0,    0,  0,  14,  130 },
@@ -239,9 +241,9 @@ static const ANT_STYLE_DEF antStyleDefs[ANTFARM_STYLE_COUNT] = {
 	{ "Tail 3/4",     "tail34",    ANT_MODEL_ATTACH,  12,   0,   1,  1,  0,   90,  150,  245,  268,  180,  280, 260,  420,  500,  800,    0,    0,  0,   5,  120 },
 	/* --- free / static angles --- */
 	{ "Kerb pass",    "kerb",      ANT_MODEL_ROADSIDE,12,   1,   0,  0,  0,   40,   80,  290,  320,  200,  320,   0,    0,    0,  200,    0,    0,  1,  14,  120 },
-	{ "Tripod zoom",  "tripzoom",  ANT_MODEL_TRIPODZ, 12,   1,   0,  0,  1,  120,  220,  235,  300,  200,  360,   0,    0,  900, 1200,  300,  600,  0,  18,  150 },
-	{ "Far pan",      "farpan",    ANT_MODEL_TRIPODZ, 10,   1,   0,  0,  1,  200,  340,  290,  340, 1400, 2200,   0,    0,  900, 1300,  400,  900,  0,  20,  150 },
-	{ "Waterfront",   "water",     ANT_MODEL_DOLLY,   10,   1,   0,  0,  0,   60,  180,  250,  275,    0,    0,   0,    0,  700, 1000,    0,    0,  0,  16,  150 },
+	{ "Tripod zoom",  "tripzoom",  ANT_MODEL_TRIPODZ, 12,   0,   1,  0,  1,  120,  220,  235,  300,  200,  360, 500, 1500,  900, 1200,  300,  600,  0,  18,  150 },
+	{ "Far pan",      "farpan",    ANT_MODEL_TRIPODZ, 10,   0,   1,  0,  1,  200,  340,  290,  340, 1400, 2200, 2000, 4000,  900, 1300,  400,  900,  0,  20,  150 },
+	{ "Waterfront",   "water",     ANT_MODEL_DOLLY,   10,   1,   0,  0,  0,   60,  180,  250,  275,    0,    0,   0,    0,  700, 1000,    0,    0,  0,  16,  150,  1 },
 };
 
 /* ------------------------------------------------------------------ */
@@ -352,6 +354,10 @@ typedef struct ANTFARM_STATE
 	int fovCurrent;		/* smoothed scr_z so the lens breathes instead of jumping */
 	int rollOn;		/* subtle horizon roll for a less rigid frame */
 	unsigned long stillSince;	/* when the subject of a rig shot stopped moving */
+
+	/* fixed vantage for the tripod-zoom / far-pan shots, resolved once */
+	VECTOR shotVantage;
+	int vantageSet;
 
 	/* void guard: while the shot's region is not resident, hold the previous
 	 * camera instead of drawing an unloaded one */
@@ -528,6 +534,69 @@ static int AntFarmPickSurface(int minLen)
 			best = idx;
 		}
 	}
+	return best;
+}
+
+/* Does this straight run beside water? The engine's sea is a single flat plane
+ * (GetSeaPlane, dr2roads.c:15) reached through the surface lookup, so probe a
+ * few points along the road for a water or beach surface. */
+static int AntFarmRoadNearWater(DRIVER2_STRAIGHT* rd)
+{
+	int i;
+
+	if (rd->length < 600)
+		return 0;
+
+	for (i = 0; i <= 3; i++)
+	{
+		int x = 0x7fffffff, z = 0x7fffffff;
+		VECTOR p;
+		int surf;
+
+		GetNodePos(rd, NULL, NULL, (rd->length * i) / 3, NULL, &x, &z, 0);
+
+		if (x == 0x7fffffff || z == 0x7fffffff)
+			continue;
+
+		p.vx = x;
+		p.vy = 0;
+		p.vz = z;
+
+		surf = GetSurfaceIndex(&p);
+
+		if (surf == SURF_WATER || surf == SURF_DEEPWATER || surf == SURF_SAND)
+			return 1;
+	}
+
+	return 0;
+}
+
+/* Nearest usable road that actually runs beside water, or -1 if none is. */
+static int AntFarmPickWaterRoad(int x, int z)
+{
+	int best = -1, i;
+	long long bestD2 = -1;
+
+	for (i = 0; i < g_numUsableRoads; i++)
+	{
+		int idx = g_usableRoads[i];
+		DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[idx];
+		long long dx, dz, d2;
+
+		if (!AntFarmRoadNearWater(rd))
+			continue;
+
+		dx = (long long)rd->Midx - x;
+		dz = (long long)rd->Midz - z;
+		d2 = dx * dx + dz * dz;
+
+		if (bestD2 < 0 || d2 < bestD2)
+		{
+			bestD2 = d2;
+			best = idx;
+		}
+	}
+
 	return best;
 }
 
@@ -1329,7 +1398,15 @@ static void AntFarmPlanShot(void)
 	AntFarmEnsureRoadCache();
 
 	if (s.targetKind == ANTFARM_TARGET_ROAD) {
-		int idx = AntFarmPickRoadNear(s.areaPos.vx, s.areaPos.vz);
+		int idx = -1;
+
+		/* a waterfront row asks for a road that really runs beside water */
+		if (antStyleDefs[s.style].nearWater)
+			idx = AntFarmPickWaterRoad(s.areaPos.vx, s.areaPos.vz);
+
+		if (idx < 0)
+			idx = AntFarmPickRoadNear(s.areaPos.vx, s.areaPos.vz);
+
 		if (idx >= 0) {
 			if ((antStyleDefs[s.style].model == ANT_MODEL_DOLLY ||
 				antStyleDefs[s.style].model == ANT_MODEL_CRANE) &&
@@ -1714,6 +1791,31 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			aim.vx = carPos.vx + FIXEDH(RSIN(dir) * s.shotLookAhead);
 			aim.vz = carPos.vz + FIXEDH(RCOS(dir) * s.shotLookAhead);
 			aim.vy = -(carPos.vy + 40);
+		}
+		else if (d->model == ANT_MODEL_TRIPODZ)
+		{
+			/* A fixed vantage, set up from the car when the shot begins and then
+			 * left alone: the car drives through the frame while the lens pushes
+			 * in and back out (the row's zoom) and the camera just follows it in
+			 * yaw. That yaw tracking is the "pan" a tripod would do. */
+			if (!s.vantageSet)
+			{
+				int right = (dir + 3072) & 0xfff;
+				int fwd = s.shotFwd;
+				int side = s.shotSide * s.shotSideSign;
+
+				s.shotVantage.vx = carPos.vx + FIXEDH(RSIN(dir) * fwd) + FIXEDH(RSIN(right) * side);
+				s.shotVantage.vz = carPos.vz + FIXEDH(RCOS(dir) * fwd) + FIXEDH(RCOS(right) * side);
+				s.shotVantage.vy = -AntFarmMapHeight(s.shotVantage.vx, s.shotVantage.vz)
+					- s.shotHeight;
+				s.vantageSet = 1;
+			}
+
+			desired = s.shotVantage;
+			lerp = 100 / d->settle;
+
+			aim = carPos;
+			aim.vy = -(carPos.vy + 30);
 		}
 		else if (d->model == ANT_MODEL_TRACK)
 		{
@@ -2353,6 +2455,7 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.streamDone = 0;
 			s.shotPlanned = 0;
 			s.holdSince = 0;
+			s.vantageSet = 0;	/* a fixed vantage is resolved per shot */
 
 			{
 				long long dx = (long long)s.areaPos.vx - camera_position.vx;
