@@ -57,6 +57,11 @@ enum
  * must not show) */
 #define ANTFARM_STILL_MS        2500
 
+/* extra black after a shot's region lands, so the destination's texture pages
+ * (which the engine streams per AREA, keyed off the camera position) are in
+ * VRAM before the scene is revealed */
+#define ANTFARM_TEX_SETTLE_MS   250
+
 /* interval config (seconds) */
 #define ANTFARM_MIN_INTERVAL    10
 #define ANTFARM_MAX_INTERVAL    300

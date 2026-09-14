@@ -902,6 +902,77 @@ static int AntFarmTrafficNear(const VECTOR* pos, int radius)
 	return n;
 }
 
+/* ------------------------------------------------------------------ */
+/* points of interest (SCAFFOLD - inert until the coordinates are filled) */
+/* ------------------------------------------------------------------ */
+/* The engine has no landmark table, which is exactly why shots are picked by
+ * FEATURE (water beside a road, length, traffic) rather than by name. This is
+ * the hook for the real thing: a per-city list of named places with a world
+ * position and a framing radius, so a shot can one day frame the Loop or the
+ * Malecon on purpose.
+ *
+ * Nothing here does anything yet, and that is deliberate: every entry has
+ * valid = 0, so AntFarmPoiNear() always returns -1 and the interest scorer is
+ * unaffected. To fill a row: load the city, drive to the landmark and read the
+ * position (or take it from a map capture), set .x/.z, then set .valid = 1 -
+ * that alone starts biasing shot selection toward it.
+ */
+typedef struct ANTFARM_POI
+{
+	const char* name;	/* landmark name */
+	int x, z;		/* its world position */
+	int radius;		/* how near a road must be to count */
+	int valid;		/* 0 = coordinates not filled in yet */
+} ANTFARM_POI;
+
+static const ANTFARM_POI antPois[] = {
+	/* Chicago - the elevated loop, the river bridges, Michigan Avenue */
+	{ "The Loop (elevated)",      0, 0, 4000, 0 },
+	{ "River bridges",            0, 0, 3000, 0 },
+	{ "Michigan Avenue",          0, 0, 4000, 0 },
+	/* Havana - the Malecon sea wall and the colonial old town */
+	{ "Malecon sea front",        0, 0, 5000, 0 },
+	{ "Old town (Habana Vieja)",  0, 0, 3000, 0 },
+	/* Las Vegas - the Strip and its neon frontage */
+	{ "The Strip",                0, 0, 6000, 0 },
+	/* Rio - the beaches and the Sugarloaf */
+	{ "Copacabana beach",         0, 0, 5000, 0 },
+	{ "Sugarloaf (Pao de Acucar)", 0, 0, 4000, 0 },
+};
+
+/* Nearest valid point of interest to a position, or -1 (which is every call
+ * today, since no row has valid = 1). */
+static int AntFarmPoiNear(int x, int z)
+{
+	int i, best = -1;
+	long long bestD2 = -1;
+
+	for (i = 0; i < (int)(sizeof(antPois) / sizeof(antPois[0])); i++)
+	{
+		long long dx, dz, d2, radius2;
+
+		if (!antPois[i].valid)
+			continue;
+
+		dx = (long long)x - antPois[i].x;
+		dz = (long long)z - antPois[i].z;
+		d2 = dx * dx + dz * dz;
+
+		radius2 = (long long)antPois[i].radius * antPois[i].radius;
+
+		if (d2 > radius2)
+			continue;
+
+		if (bestD2 < 0 || d2 < bestD2)
+		{
+			bestD2 = d2;
+			best = i;
+		}
+	}
+
+	return best;
+}
+
 /* How interesting is this road as a shot subject? Scored only from signals the
  * engine's data really offers - there is no per-level landmark or POI table,
  * and no junction surface id - so: water beside the road, sheer length, and
@@ -925,6 +996,12 @@ static int AntFarmRoadInterest(int idx, const VECTOR* pos)
 		traffic = 6;
 
 	score += traffic * 6;
+
+	/* the POI scaffold: inert today (every row has valid = 0, so this is
+	 * always -1), but it is wired up so filling in a landmark's coordinates
+	 * is the only change needed to start framing it */
+	if (AntFarmPoiNear(pos->vx, pos->vz) >= 0)
+		score += 40;
 
 	return score;
 }
@@ -1036,13 +1113,23 @@ static void AntFarmRememberCar(int carId)
 		s.recentCarCount++;
 }
 
-/* Pick a moving civilian car near the area. `minSpeed` lets a rig demand a car
- * that is genuinely underway, and a car framed in the last few cuts is heavily
- * de-weighted so the same sedan is not followed all session. */
+/* How fast a car must be going for a given style to accept it: a rig or a
+ * long-lens vantage needs a car genuinely underway, anything else is happy
+ * with one merely moving. */
+static int AntFarmModelMinSpeed(int style)
+{
+	int model = antStyleDefs[style].model;
+
+	return (model == ANT_MODEL_ATTACH || model == ANT_MODEL_TRIPODZ) ? 40 : 8;
+}
+
+/* Pick a moving civilian car near the area. `radius` <= 0 means anywhere on the
+ * map. A car framed in the last few cuts is heavily de-weighted so the same
+ * sedan is not followed all session. */
 static int AntFarmPickCarNear(const VECTOR* area, int radius, int minSpeed)
 {
 	int i, n = 0, pick = -1;
-	long long r2 = (long long)radius * radius;
+	long long r2 = (radius > 0) ? (long long)radius * radius : 0;
 
 	for (i = 0; i < MAX_CARS; i++)
 	{
@@ -1059,7 +1146,7 @@ static int AntFarmPickCarNear(const VECTOR* area, int radius, int minSpeed)
 		dx = (long long)cp->hd.where.t[0] - area->vx;
 		dz = (long long)cp->hd.where.t[2] - area->vz;
 
-		if (dx * dx + dz * dz > r2)
+		if (radius > 0 && dx * dx + dz * dz > r2)
 			continue;
 
 		weight = AntFarmCarRecent(i) ? 1 : 6;
@@ -1070,6 +1157,23 @@ static int AntFarmPickCarNear(const VECTOR* area, int radius, int minSpeed)
 	}
 
 	return pick;
+}
+
+/* Aim the shot at a car: put the area on the car so the cut streams where it
+ * actually is, and remember it so the next cuts do not repeat it. */
+static void AntFarmSetCarSubject(int carId)
+{
+	s.targetCarId = carId;
+
+	s.areaPos.vx = car_data[carId].hd.where.t[0];
+	s.areaPos.vz = car_data[carId].hd.where.t[2];
+	s.areaPos.vy = AntFarmMapHeight(s.areaPos.vx, s.areaPos.vz);
+	AntFarmClampToWorld(&s.areaPos);
+
+	s.spool = s.areaPos;
+	s.targetPos = s.areaPos;
+
+	AntFarmRememberCar(carId);
 }
 
 /* vehicle length/height for framing (colBox half-lengths, may be halved in
@@ -1175,7 +1279,18 @@ static int AntFarmPickStyle(int carOnly)
 	}
 
 	if (total <= 0)
+	{
+		/* nothing matched what was asked for: fall back to any style the user
+		 * actually has enabled (and whose camera exists) rather than a
+		 * hard-coded one that may be switched off */
+		for (i = 0; i < ANTFARM_STYLE_COUNT; i++)
+		{
+			if (s.stylesEnabled[i] && AntFarmStyleImplemented(antStyleDefs[i].model))
+				return i;
+		}
+
 		return ANTFARM_STYLE_TRIPOD;
+	}
 
 	roll = AntRand() % total;
 
@@ -2296,6 +2411,11 @@ static void AntFarmSetActive(int on)
 		s.captionUntil = 0;
 		s.stillSince = 0;
 
+		s.shotDistMin = 0x7fffffff;
+		s.shotDistMax = 0;
+		s.fovMin = 0x7fffffff;
+		s.fovMax = 0;
+
 		s.camPos.vx = camera_position.vx;
 		s.camPos.vy = camera_position.vy;
 		s.camPos.vz = camera_position.vz;
@@ -2312,29 +2432,19 @@ static void AntFarmSetActive(int on)
 		AntFarmPinPlayerCar();
 		MainPlayer.spoolXZ = &s.spool;
 
-		AntFarmPickStyleAndTarget();
-		AntFarmPlanShot();
-
-		if (s.targetKind == ANTFARM_TARGET_CAR)
-		{
-			s.targetCarId = AntFarmPickCarNear(&s.areaPos, 12000,
-				(antStyleDefs[s.style].model == ANT_MODEL_ATTACH ||
-					antStyleDefs[s.style].model == ANT_MODEL_TRIPODZ) ? 40 : 8);
-
-			if (s.targetCarId >= 0)
-				AntFarmRememberCar(s.targetCarId);
-
-			if (s.targetCarId < 0)
-			{
-				s.targetKind = ANTFARM_TARGET_ROAD;
-				s.style = AntFarmPickStyle(0);
-				AntFarmPlanShot();
-			}
-		}
-
-		s.camSnapped = 0;
+		/* Do NOT plan and reveal a shot straight from activation: that showed a
+		 * frame whose region and texture pages had not streamed yet, which is
+		 * the grey/skybox first shot. Enter the ordinary CUT instead and let the
+		 * normal machinery plan and stream the first shot - the cut is black, so
+		 * the only cost is the first cut's length. The area is the player's
+		 * neighbourhood for the first shot (see the CUT case), so the tour starts
+		 * near home rather than teleporting across the city. */
+		s.state = ANTFARM_STATE_CUT;
+		s.cutInit = 0;
 		s.fade = 255;
-		s.state = ANTFARM_STATE_FADE_IN;
+		s.stateStart = AntTicks();
+		s.shotStart = 0;
+		s.cutStart = s.stateStart;
 		s.stateStart = AntTicks();
 		s.shotStart = s.stateStart;
 
@@ -2532,9 +2642,22 @@ static int AntFarmOnFrame(void* userdata, void* args)
 		if (!s.leadMode && s.targetKind == ANTFARM_TARGET_CAR &&
 			AntFarmValidCar() == NULL)
 		{
-			s.state = ANTFARM_STATE_FADE_OUT;
-			s.stateStart = now;
-			break;
+			/* The subject despawned mid-shot (civilian AI recycles slots). Swap
+			 * to another car and keep the angle rather than cutting at once, so
+			 * the camera actually gets to settle on its subject. */
+			int car = AntFarmPickCarNear(&s.areaPos, 0, AntFarmModelMinSpeed(s.style));
+
+			if (car >= 0)
+			{
+				AntFarmSetCarSubject(car);
+				s.ctx->jer_log(s.ctx, "[antfarm] subject car gone - switched to car %d\n", car);
+			}
+			else
+			{
+				s.state = ANTFARM_STATE_FADE_OUT;
+				s.stateStart = now;
+				break;
+			}
 		}
 
 		/* Handle car mode cycling - but only for a car-mode-driven style. A
@@ -2572,6 +2695,24 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			if (model == ANT_MODEL_ATTACH || model == ANT_MODEL_TRIPODZ)
 			{
 				CAR_DATA* cp = AntFarmValidCar();
+
+				/* A long-lens vantage watches a car drive away: once it is out
+				 * of any useful range the shot is over - a pan ends when the
+				 * subject recedes, it does not watch it leave the map. */
+				if (cp != NULL && model == ANT_MODEL_TRIPODZ)
+				{
+					int dx = camera_position.vx - s.targetPos.vx;
+					int dz = camera_position.vz - s.targetPos.vz;
+
+					if (AntFarmDist(dx, dz) > s.shotFwd * 3 + 1500)
+					{
+						s.ctx->jer_log(s.ctx,
+							"[antfarm] subject out of range - cutting away\n");
+						s.state = ANTFARM_STATE_FADE_OUT;
+						s.stateStart = now;
+						break;
+					}
+				}
 
 				if (cp != NULL && cp->hd.speed > -40 && cp->hd.speed < 40)
 				{
@@ -2648,11 +2789,32 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			}
 			else
 			{
-				/* Pick a far area that is loaded; if none, it will fallback to current position */
-				AntFarmPickFarArea();
-				s.spool = s.areaPos;
-				s.targetPos = s.areaPos;
+				/* The very first shot keeps the area SetActive chose near the
+				 * player: a gentler way in than hopping across the city. Every
+				 * later cut picks a fresh far area. */
+				if (s.cutCount > 0)
+				{
+					/* Pick a far area that is loaded; if none, it will fallback to current position */
+					AntFarmPickFarArea();
+					s.spool = s.areaPos;
+					s.targetPos = s.areaPos;
+				}
+
 				AntFarmPickStyleAndTarget();
+
+				/* The first shot favours a scenery angle: at activation the civilian
+				 * traffic has barely spawned, so a car-locked style would have very
+				 * little to point the camera at yet. */
+				if (s.cutCount == 0 && s.targetKind == ANTFARM_TARGET_CAR)
+				{
+					int rs = AntFarmPickStyle(0);
+
+					if (antStyleDefs[rs].carFirst == 0)
+					{
+						s.style = rs;
+						s.targetKind = ANTFARM_TARGET_ROAD;
+					}
+				}
 				s.cutWaitForCar = (s.targetKind == ANTFARM_TARGET_CAR);
 				if (s.targetKind == ANTFARM_TARGET_CAR) {
 					s.carMode = CAR_MODE_CHASE_BEHIND;
@@ -2767,26 +2929,42 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			{
 				if (s.targetKind == ANTFARM_TARGET_CAR)
 				{
-					int car = AntFarmPickCarNear(&s.areaPos, 14000,
-						(antStyleDefs[s.style].model == ANT_MODEL_ATTACH ||
-							antStyleDefs[s.style].model == ANT_MODEL_TRIPODZ) ? 40 : 8);
+					int minSpeed = AntFarmModelMinSpeed(s.style);
+					int car = AntFarmPickCarNear(&s.areaPos, 14000, minSpeed);
+
+					if (car < 0)
+						car = AntFarmPickCarNear(&s.areaPos, 0, minSpeed);
+
 					if (car >= 0)
 					{
-						s.targetCarId = car;
-						AntFarmRememberCar(car);
+						/* plan FIRST, then attach the car: PlanShot resets
+						 * targetCarId, so doing it the other way round invalidated
+						 * the car we had just picked and every car shot then cut on
+						 * its first SHOW frame (a one-second shot with the camera
+						 * still nowhere near the car). */
+						AntFarmPlanShot();
+						AntFarmSetCarSubject(car);
 						s.cutWaitForCar = 0;
 						s.carMode = CAR_MODE_CHASE_BEHIND;
 						s.carModeIndex = 0;
 						s.carModeStart = now;
-						AntFarmPlanShot();
 						s.shotPlanned = 1;
 					}
 					else if (now - s.cutStart >= ANTFARM_CAR_WAIT_MS)
 					{
-						s.targetKind = ANTFARM_TARGET_ROAD;
-						s.style = AntFarmPickStyle(0);
-						AntFarmPlanShot();
-						s.shotPlanned = 1;
+						int rs = AntFarmPickStyle(0);
+
+						if (antStyleDefs[rs].carFirst == 0)
+						{
+							s.targetKind = ANTFARM_TARGET_ROAD;
+							s.style = rs;
+							AntFarmPlanShot();
+							s.shotPlanned = 1;
+						}
+
+						/* else: only car-locked styles are enabled, so keep looking for
+						 * traffic - shotPlanned stays 0, so the cut cannot reveal a shot
+						 * with no subject on it */
 					}
 				}
 				else
@@ -2797,7 +2975,10 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			}
 		}
 
-		if (s.shotPlanned && now - s.cutStart >= (unsigned long)(ANTFARM_CUT_HOLD_MS
+		if (s.shotPlanned &&
+			(s.targetKind != ANTFARM_TARGET_CAR || AntFarmValidCar() != NULL) &&
+			now - s.cutStart >= (unsigned long)(ANTFARM_CUT_HOLD_MS
+			+ ANTFARM_TEX_SETTLE_MS
 			+ (s.jumpDist2 > 0 ? (s.jumpDist2 / 30000 > 2000 ? 2000 : (int)(s.jumpDist2 / 30000)) : 0)))
 		{
 			if (!s.leadMode && s.leadEnabled &&
@@ -2952,14 +3133,24 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	 * flashing skybox/nodraw. */
 	if (s.state == ANTFARM_STATE_CUT)
 	{
-		/* keep streaming the SUBJECT while the screen is black: the new region
-		 * will evict the old one, which is fine because nothing is visible */
+		/* Keep streaming the SUBJECT while the screen is black: the new region
+		 * will evict the old one, which is fine because nothing is visible.
+		 *
+		 * The camera is ALSO parked at the destination (x/z) instead of being
+		 * left on the old shot, because the engine derives which TEXTURE AREAS
+		 * to stream from camera_position (map.c ControlMap ends by recomputing
+		 * the cells from camera_position before StartSpooling()). A camera still
+		 * sitting at the old spot therefore streamed the old area's texture
+		 * pages, and the new scenery faded in untextured - the "scenery textures
+		 * sometimes don't load" bug. Y is left alone so the height stays sane. */
 		s.spool = s.targetPos;
 
-		*(VECTOR*)a->cameraPosition = s.camPos;
-		*(SVECTOR*)a->cameraAngle = s.camAngle;
-		camera_position = s.camPos;
+		camera_position.vx = s.targetPos.vx;
+		camera_position.vz = s.targetPos.vz;
 		camera_angle = s.camAngle;
+
+		*(VECTOR*)a->cameraPosition = camera_position;
+		*(SVECTOR*)a->cameraAngle = camera_angle;
 		a->override = 1;
 
 		return JER_RESULT_CONTINUE;
@@ -2981,23 +3172,29 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	AntFarmClampToWorld(&s.aimPos);
 	AntFarmClampAboveGround(&s.aimPos);
 
+	/* Point the streamer at the camera BEFORE the guard below. The renderer
+	 * culls from camera_position, so the camera's own region is what has to be
+	 * resident; and if the hold returned first the spool would freeze with it,
+	 * so the camera's region could never stream at all - a deadlock that pinned
+	 * the camera for whole shots. (During the black CUT the spool instead tracks
+	 * the planned subject, which is what has to stream in before the shot is
+	 * shown.) */
+	s.spool = cam;
+
 	/* --- void guard -----------------------------------------------------
-	 * The renderer culls from camera_position, but regions stream around
-	 * MainPlayer.spoolXZ. If the camera or its aim sits in a region that has
-	 * not streamed, the frame is skybox + nodraw. Hold the previous camera
-	 * until it is resident; the cap means a data-less region can never
-	 * freeze the view forever. */
+	 * If the camera sits in a region that has not streamed, the frame is
+	 * skybox + nodraw, so hold the previous camera until it is resident. Only
+	 * the CAMERA's region is checked: the aim is merely a direction and the
+	 * renderer does not cull from it, so requiring it too caused needless holds
+	 * whenever the subject drove across a boundary. The cap means a data-less
+	 * region can never freeze the view forever. */
 	{
 		int camReady = AntFarmRegionUnpacked(AntFarmRegionOf(&cam));
-		int aimReady = AntFarmRegionUnpacked(AntFarmRegionOf(&s.aimPos));
 
-		if ((!camReady || !aimReady) && s.holdSince != 0 && now - s.holdSince > 4000)
-		{
-			camReady = 1;	/* held long enough — take the shot anyway */
-			aimReady = 1;
-		}
+		if (!camReady && s.holdSince != 0 && now - s.holdSince > 4000)
+			camReady = 1;	/* held long enough - take the shot anyway */
 
-		if (!camReady || !aimReady)
+		if (!camReady)
 		{
 			if (s.holdSince == 0)
 			{
@@ -3019,13 +3216,6 @@ static int AntFarmOnCamera(void* userdata, void* args)
 
 		s.holdSince = 0;
 	}
-
-	/* The streamer must follow the camera, because the renderer culls from
-	 * camera_position: keeping the spool on the abstract "area" let the camera
-	 * cross a region edge into a slot that was not resident — the skybox/nodraw
-	 * void. (During the black CUT the spool instead tracks the planned subject,
-	 * which is what has to stream in before the shot can be shown.) */
-	s.spool = cam;
 
 	{
 		int ground = -AntFarmMapHeight(cam.vx, cam.vz);
