@@ -3793,6 +3793,24 @@ void jer_frontend_open(int menuIndex)
 	jer_frontend_goto(JERICHO_FE_SCREEN_BASE + menuIndex);
 }
 
+/* Which registered module menu is on screen? -1 while the frontend shows
+ * anything else (a stock screen, the mods screen) or during gameplay. A
+ * module uses this to refresh only the screen it owns. */
+int jer_frontend_current_menu(void)
+{
+	int idx;
+
+	if (pCurrScreen == NULL)
+		return -1;
+
+	idx = (int)(pCurrScreen - PsxScreens) - JERICHO_FE_SCREEN_BASE;
+
+	if (idx < 0 || idx >= gFeMenuCount)
+		return -1;
+
+	return idx;
+}
+
 /* The single handler every module menu slot uses; the slot index selects the
  * registered menu. Lays the items out as native buttons and reports input. */
 int JerFrontendMenuScreen(int bSetup)

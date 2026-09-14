@@ -69,6 +69,7 @@ void jer_frontend_reset(void);
 int  jer_frontend_menu_count(void);
 const JER_FE_MENU* jer_frontend_menu_get(int index);
 int  jer_frontend_find(const char* id);		/* -1 if absent */
+int  jer_frontend_current_menu(void);		/* index of the module menu on screen, else -1 */
 
 /* Route the frontend's main-menu "Multiplayer" button to a registered menu
  * (by id). NULL clears it. */
