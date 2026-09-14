@@ -160,18 +160,37 @@ static int AntRandChance(int percent)
 /* ------------------------------------------------------------------ */
 /* camera archetypes                                                  */
 /* ------------------------------------------------------------------ */
-/* One row per style. Both the director (selection) and the framing code
- * read from here, so a new camera archetype is a single line. Lo/Hi are
- * inclusive ranges the per-cut randomiser draws from. */
+/* how the camera is driven. Several archetypes share a model and differ only
+ * in their ranges (a kerb pass is a roadside camera that happens to be low and
+ * long-lensed), so a new angle stays a single table row. */
+#define ANT_MODEL_ROADSIDE   0	/* camera parked beside the road, framing it */
+#define ANT_MODEL_DOLLY      1	/* travel along the road (flyover/crane) */
+#define ANT_MODEL_ORBIT      2	/* circle the subject */
+#define ANT_MODEL_FOLLOW     3	/* car-relative chase */
+#define ANT_MODEL_TRACK      4	/* fixed roadside camera tracking a car */
+#define ANT_MODEL_ATTACH     5	/* rig on the car itself (fender/sill/3-4) */
+#define ANT_MODEL_CRANE      6	/* travel along the road while rising */
+#define ANT_MODEL_COUNT      7
+
+/* One row per style. Both the director (selection) and the framing code read
+ * from here, so a new camera archetype is a single line. Lo/Hi are inclusive
+ * ranges the per-cut randomiser draws from. */
 typedef struct ANT_STYLE_DEF
 {
 	const char* label;	/* menu + log label */
 	const char* key;	/* config key suffix: style_<key> */
+	int model;		/* ANT_MODEL_* - how the camera is driven */
 	int weight;		/* selection weight */
 	int roadOnly;		/* 1 = never takes a car subject */
 	int carFirst;		/* 1 = takes (and prefers) a car subject */
+	int behind;		/* attached rigs: 1 = sit behind the car */
+	int zoom;		/* 1 = slow lens push-in then out across the shot */
 	int heightLo, heightHi;	/* camera elevation above ground/road */
-	int scrZLo, scrZHi;	/* FOV (projection distance); smaller = wider */
+	int scrZLo, scrZHi;	/* FOV (projection distance); smaller = wider.
+				 * For a zoom style these are the ramp's two ends. */
+	int sideLo, sideHi;	/* lateral offset: rig offset, or the roadside margin */
+	int fwdLo, fwdHi;	/* longitudinal offset (attached rigs) */
+	int aimLo, aimHi;	/* how far ahead of the subject to look */
 	int orbitLo, orbitHi;	/* azimuth sweep amplitude (0 = fixed) */
 	int across;		/* 1 = aim across the road, not along it */
 	int settle;		/* camera settle divisor (bigger = calmer) */
@@ -181,15 +200,15 @@ typedef struct ANT_STYLE_DEF
 /* The archetype table. Weight, subject capability and all the per-cut
  * framing ranges live here; picking and framing both read it. */
 static const ANT_STYLE_DEF antStyleDefs[ANTFARM_STYLE_COUNT] = {
-	/* label          key         wt rOnly car   hLo   hHi scrLo scrHi orbLo orbHi acr set dwell */
-	{ "Chase cam",    "chase",     4,   0,   1,   180,   340,  260,  276,    0,    0,   0,   8,   90 },
-	{ "Static track", "static",   22,   0,   1,   180,   300,  258,  280,    0,    0,   0,   6,  120 },
-	{ "Overhead",     "overhead", 26,   0,   0,   400,   700,  218,  242,    0,    0,   0,  14,  130 },
-	{ "Tripod",       "tripod",   16,   1,   0,   140,   260,  238,  268,  820, 1140,   0,  16,  120 },
-	{ "Flyover",      "flyover",  12,   1,   0,   400,   650,  248,  272,    0,    0,   0,  18,  140 },
-	{ "Orbit",        "orbit",    12,   0,   0,   200,   440,  232,  262,    0,    0,   0,  20,  140 },
-	{ "Crane",        "crane",    10,   1,   0,    90,   820,  240,  270,    0,    0,   0,  18,  150 },
-	{ "Ant level",    "low",      10,   1,   0,    45,    95,  250,  282,    0,    0,   1,  16,  120 },
+	/* label          key          model            wt rOnly car beh zoom  hLo  hHi scrLo scrHi sLo sHi  fLo  fHi aimLo aimHi orbLo orbHi acr set dwell */
+	{ "Chase cam",    "chase",     ANT_MODEL_FOLLOW,   4,   0,   1,  0,  0,  180,  340,  260,  276,    0,    0,   0,    0,    0,    0,    0,    0,  0,   8,   90 },
+	{ "Static track", "static",    ANT_MODEL_TRACK,   22,   0,   1,  0,  0,  180,  300,  258,  280,    0,    0,   0,    0,    0,    0,    0,    0,  0,   6,  120 },
+	{ "Overhead",     "overhead",  ANT_MODEL_ROADSIDE,26,   0,   0,  0,  0,  400,  700,  218,  242,  180,  360,   0,    0,  900, 1100,    0,    0,  0,  14,  130 },
+	{ "Tripod",       "tripod",    ANT_MODEL_ROADSIDE,16,   1,   0,  0,  0,  140,  260,  238,  268,  135,  270,   0,    0,  900, 1100,  820, 1140,  0,  16,  120 },
+	{ "Flyover",      "flyover",   ANT_MODEL_DOLLY,   12,   1,   0,  0,  0,  400,  650,  248,  272,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  140 },
+	{ "Orbit",        "orbit",     ANT_MODEL_ORBIT,   12,   0,   0,  0,  0,  200,  440,  232,  262,    0,    0,   0,    0,    0,    0,    0,    0,  0,  20,  140 },
+	{ "Crane",        "crane",     ANT_MODEL_CRANE,  10,   1,   0,  0,  0,   90,  820,  240,  270,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  150 },
+	{ "Ant level",    "low",       ANT_MODEL_ROADSIDE,10,   1,   0,  0,  0,   45,   95,  250,  282,  180,  360,   0,    0,    0,  220,    0,    0,  1,  16,  120 },
 };
 
 /* ------------------------------------------------------------------ */
@@ -1118,9 +1137,9 @@ static void AntFarmComputeCarMode(CAR_DATA* cp, const VECTOR* carPos, int dir, i
  * frames junctions (junctions have no centre of their own). */
 static void AntFarmSetupRoadShot(void)
 {
+	const ANT_STYLE_DEF* d = &antStyleDefs[s.style];
 	DRIVER2_STRAIGHT* rd;
 	int nLanes;
-	int roll;
 	int len;
 
 	AntFarmEnsureRoadCache();
@@ -1137,45 +1156,36 @@ static void AntFarmSetupRoadShot(void)
 	nLanes = ROAD_WIDTH_IN_LANES(rd);
 	s.roadLane = (nLanes > 0) ? (AntRand() % nLanes) : 0;
 
-	if (s.style == ANTFARM_STYLE_TRIPOD)
-	{
-		int endShot;
-
-		roll = AntRand() % 100;
-		endShot = (roll < 40) ? 1 : (roll < 70) ? -1 : 0;	/* 1 far end, -1 near end */
-
-		if (endShot != 0)
-		{
-			s.roadDist = (endShot > 0) ? (len - 300 - (AntRand() % 500))
-				: (300 + (AntRand() % 500));
-
-			if (AntRand() % 100 < 45)
-			{
-				s.roadDist = (endShot > 0) ? (len + 260 + (AntRand() % 320))
-					: (-260 - (AntRand() % 320));
-				s.junctionCorner = 1;
-			}
-			else
-			{
-				s.junctionCorner = 0;
-			}
-		}
-		else
-		{
-			s.roadDist = len / 2 + (AntRand() % (len / 4)) - len / 8;
-			s.junctionCorner = 0;
-		}
-	}
-	else if (s.style == ANTFARM_STYLE_FLYOVER)
+	if (d->model == ANT_MODEL_DOLLY || d->model == ANT_MODEL_CRANE)
 	{
 		/* Start the dolly at a negative offset so it begins before the road start,
 		 * and aim further ahead to avoid the camera pointing straight down at the end. */
 		int offset = 800 + (AntRand() % 200);
-		s.roadDist = -offset;   /* start before the road */
+
+		s.roadDist = -offset;	/* start before the road */
 		s.junctionCorner = 0;
 		s.shotLookAhead = 1000 + (AntRand() % 400);
 	}
-	else	/* OVERHEAD (road) */
+	else if (AntRandChance(40))
+	{
+		/* roadside: sometimes frame a road END, where junctions cluster */
+		int endShot = (AntRand() & 1) ? 1 : -1;	/* 1 far end, -1 near end */
+
+		s.roadDist = (endShot > 0) ? (len - 300 - (AntRand() % 500))
+			: (300 + (AntRand() % 500));
+
+		if (AntRandChance(45))
+		{
+			s.roadDist = (endShot > 0) ? (len + 260 + (AntRand() % 320))
+				: (-260 - (AntRand() % 320));
+			s.junctionCorner = 1;
+		}
+		else
+		{
+			s.junctionCorner = 0;
+		}
+	}
+	else
 	{
 		s.roadDist = len / 2 + (AntRand() % (len / 4)) - len / 8;
 		s.junctionCorner = 0;
@@ -1234,7 +1244,9 @@ static void AntFarmPlanShot(void)
 	if (s.targetKind == ANTFARM_TARGET_ROAD) {
 		int idx = AntFarmPickRoadNear(s.areaPos.vx, s.areaPos.vz);
 		if (idx >= 0) {
-			if (s.style == ANTFARM_STYLE_FLYOVER && Driver2StraightsPtr[idx].length < 1600) {
+			if ((antStyleDefs[s.style].model == ANT_MODEL_DOLLY ||
+				antStyleDefs[s.style].model == ANT_MODEL_CRANE) &&
+				Driver2StraightsPtr[idx].length < 1600) {
 				int better = AntFarmPickSurface(1600);
 				if (better >= 0) idx = better;
 			}
@@ -1548,6 +1560,7 @@ static int AntFarmFindClearCamera(const VECTOR* aim, const VECTOR* desired, VECT
 
 static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 {
+	const ANT_STYLE_DEF* d = &antStyleDefs[s.style];
 	VECTOR desired = { 0, 0, 0 };
 	VECTOR aim = { 0, 0, 0 };
 	unsigned long now = AntTicks();
@@ -1577,7 +1590,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 		AntFarmComputeCarMode(cp, &carPos, dir, h, &desired, &lerp);
 
 		/* ORBIT: circle the car slowly instead of using the chase angles */
-		if (s.style == ANTFARM_STYLE_ORBIT)
+		if (d->model == ANT_MODEL_ORBIT)
 		{
 			int radius = 900 + s.shotHeight;
 			int ang = (s.shotOrbitPhase + (int)(((now - s.shotStart)
@@ -1619,8 +1632,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 				return;
 			}
 
-			if (s.style == ANTFARM_STYLE_OVERHEAD || s.style == ANTFARM_STYLE_TRIPOD ||
-				s.style == ANTFARM_STYLE_LOW)
+			if (d->model == ANT_MODEL_ROADSIDE)
 			{
 				DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[s.roadSurfId];
 				int count = ROAD_LANES_COUNT(rd);
@@ -1633,19 +1645,14 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 				int sway = RSIN((now / 200) & 4095) >> 9;
 				int bobY = RSIN((now / 130) & 4095) >> 10;
 
-				/* For tripod, we want a more direct angle: place camera on the side,
-				 * but compute the look-at point further ahead or at the junction */
-				if (s.style == ANTFARM_STYLE_TRIPOD)
+				/* a style with an orbit amplitude pans slowly on its fixed side;
+				 * its distance from the road is the table's sideLo/Hi */
+				if (s.shotOrbitAmp > 0)
 				{
-					/* Use the orbit amplitude to gently pan, but keep a fixed side */
-					if (s.shotOrbitAmp > 0)
-					{
-						int sweepPhase = (s.shotOrbitPhase + now / 100) & 4095;
-						int sweep = FIXEDH(RSIN(sweepPhase) * s.shotOrbitAmp);
-						side = (side + 4096 + sweep) & 0xfff;
-					}
-					/* Reduce the offset to be closer to the road, and lower height */
-					off = (off * 3) / 4;   /* closer to road */
+					int sweepPhase = (s.shotOrbitPhase + now / 100) & 4095;
+					int sweep = FIXEDH(RSIN(sweepPhase) * s.shotOrbitAmp);
+
+					side = (side + 4096 + sweep) & 0xfff;
 				}
 
 				desired.vx = roadPt.vx + FIXEDH(RSIN(side) * off) + sway;
@@ -1668,7 +1675,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 				aim.vy = aim.vy - 12;
 			}
-			else if (s.style == ANTFARM_STYLE_ORBIT)
+			else if (d->model == ANT_MODEL_ORBIT)
 			{
 				/* slow circle around a point on the road */
 				int radius = 900 + s.shotHeight;
@@ -1682,7 +1689,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 				aim = roadPt;
 				aim.vy = roadPt.vy - 20;
 			}
-			else if (s.style == ANTFARM_STYLE_CRANE)
+			else if (d->model == ANT_MODEL_CRANE)
 			{
 				/* slow rise from road level, revealing the street ahead */
 				VECTOR startPt = { 0, 0, 0 };
@@ -1719,7 +1726,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 				aim = aimPt;
 				aim.vy = aimPt.vy - 40;
 			}
-			else	/* ANTFARM_STYLE_FLYOVER */
+			else	/* ANT_MODEL_DOLLY */
 			{
 				VECTOR startPt = { 0, 0, 0 };
 				VECTOR endPt = { 0, 0, 0 };
@@ -2617,7 +2624,7 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	SetGeomScreen(scr_z = s.fovCurrent);
 
 	if (s.targetKind == ANTFARM_TARGET_CAR && s.targetCarId >= 0 &&
-		s.style == ANTFARM_STYLE_CHASE)
+		antStyleDefs[s.style].model == ANT_MODEL_FOLLOW)
 		CameraCar = s.targetCarId;
 
 	a->override = 1;
