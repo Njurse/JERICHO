@@ -187,10 +187,11 @@ static int AntFarmStyleImplemented(int model)
 	case ANT_MODEL_FOLLOW:
 	case ANT_MODEL_TRACK:
 	case ANT_MODEL_CRANE:
+	case ANT_MODEL_ATTACH:
 		return 1;
 
 	default:
-		return 0;	/* ATTACH / TRIPODZ: landing next */
+		return 0;	/* TRIPODZ: landing next */
 	}
 }
 
@@ -301,6 +302,8 @@ typedef struct ANTFARM_STATE
 	int shotSideSign;	/* +1/-1 — which side of the road the camera sits */
 	int shotMargin;		/* clearance from the road half-width edge */
 	int shotHeight;		/* camera elevation above the road/ground */
+	int shotFwd;		/* attached rigs: longitudinal offset from the car */
+	int shotSide;		/* attached rigs: lateral offset from the car */
 	int shotLookAhead;	/* how far ahead of the camera the aim sits */
 	int shotOrbitAmp;	/* tripod azimuth sweep amplitude (0 = static) */
 	int shotOrbitPhase;	/* orbit phase seed */
@@ -348,6 +351,7 @@ typedef struct ANTFARM_STATE
 	int savedCameraCar;	/* CameraCar, restored on exit (was leaked) */
 	int fovCurrent;		/* smoothed scr_z so the lens breathes instead of jumping */
 	int rollOn;		/* subtle horizon roll for a less rigid frame */
+	unsigned long stillSince;	/* when the subject of a rig shot stopped moving */
 
 	/* void guard: while the shot's region is not resident, hold the previous
 	 * camera instead of drawing an unloaded one */
@@ -987,6 +991,8 @@ static void AntFarmInitShotVars(void)
 		const ANT_STYLE_DEF* d = &antStyleDefs[s.style];
 
 		s.shotHeight = AntRandRange(d->heightLo, d->heightHi);
+		s.shotFwd = AntRandRange(d->fwdLo, d->fwdHi);
+		s.shotSide = AntRandRange(d->sideLo, d->sideHi);
 
 		if (d->zoom)
 		{
@@ -1664,24 +1670,81 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 		dir = cp->hd.direction;
 		h = AntFarmMapHeight(carPos.vx, carPos.vz);
 
-		/* Use car mode to compute desired position */
-		AntFarmComputeCarMode(cp, &carPos, dir, h, &desired, &lerp);
-
-		/* ORBIT: circle the car slowly instead of using the chase angles */
-		if (d->model == ANT_MODEL_ORBIT)
+		if (d->model == ANT_MODEL_ATTACH)
 		{
-			int radius = 900 + s.shotHeight;
-			int ang = (s.shotOrbitPhase + (int)(((now - s.shotStart)
-				% ANTFARM_ORBIT_PERIOD_MS) * 4096 / ANTFARM_ORBIT_PERIOD_MS)) & 4095;
+			/* Rig on the car. Offsets are in the car's own frame - forward along
+			 * its heading, then to its right - so the rig rides the body. Yaw
+			 * only (no roll/pitch), which keeps the horizon level and the shot
+			 * watchable rather than nauseating. `behind` sits a rig at the tail,
+			 * and the per-shot side sign picks which flank. */
+			int fwd = s.shotFwd * (d->behind ? -1 : 1);
+			int side = s.shotSide * s.shotSideSign;
+			int right = (dir + 3072) & 0xfff;
 
-			desired.vx = carPos.vx + FIXEDH(RSIN(ang) * radius);
-			desired.vz = carPos.vz + FIXEDH(RCOS(ang) * radius);
+			/* Scale the rig to the car's own body, so a bus and a sports car
+			 * both get a camera that sits just outside the panels. The nominal
+			 * body is colBox.vz=300 / vx=130 (see AntFarmCarSize). */
+			if (cp->ap.carCos)
+			{
+				int vz = cp->ap.carCos->colBox.vz;
+				int vx = cp->ap.carCos->colBox.vx;
+				int scale;
+
+				if (vz < 200) vz = 200;
+				if (vx < 80) vx = 80;
+
+				scale = vz * 100 / 300;
+				if (scale < 60) scale = 60;
+				if (scale > 200) scale = 200;
+				fwd = fwd * scale / 100;
+
+				scale = vx * 100 / 130;
+				if (scale < 60) scale = 60;
+				if (scale > 220) scale = 220;
+				side = side * scale / 100;
+			}
+
+			desired.vx = carPos.vx + FIXEDH(RSIN(dir) * fwd) + FIXEDH(RSIN(right) * side);
+			desired.vz = carPos.vz + FIXEDH(RCOS(dir) * fwd) + FIXEDH(RCOS(right) * side);
 			desired.vy = -(h + s.shotHeight);
-			lerp = 100 / antStyleDefs[s.style].settle;
-		}
+			lerp = 100 / d->settle;
 
-		aim = carPos;
-		aim.vy = -(carPos.vy + 50);
+			/* look a little way ahead of the car rather than at it, so the
+			 * car sits in frame and the road reads beyond it */
+			aim.vx = carPos.vx + FIXEDH(RSIN(dir) * s.shotLookAhead);
+			aim.vz = carPos.vz + FIXEDH(RCOS(dir) * s.shotLookAhead);
+			aim.vy = -(carPos.vy + 40);
+		}
+		else if (d->model == ANT_MODEL_TRACK)
+		{
+			/* fixed roadside camera the car drives past */
+			AntFarmStaticTrack(cp, &desired);
+			lerp = 100 / d->settle;
+
+			aim = carPos;
+			aim.vy = -(carPos.vy + 50);
+		}
+		else
+		{
+			/* Use car mode to compute desired position */
+			AntFarmComputeCarMode(cp, &carPos, dir, h, &desired, &lerp);
+
+			/* ORBIT: circle the car slowly instead of using the chase angles */
+			if (d->model == ANT_MODEL_ORBIT)
+			{
+				int radius = 900 + s.shotHeight;
+				int ang = (s.shotOrbitPhase + (int)(((now - s.shotStart)
+					% ANTFARM_ORBIT_PERIOD_MS) * 4096 / ANTFARM_ORBIT_PERIOD_MS)) & 4095;
+
+				desired.vx = carPos.vx + FIXEDH(RSIN(ang) * radius);
+				desired.vz = carPos.vz + FIXEDH(RCOS(ang) * radius);
+				desired.vy = -(h + s.shotHeight);
+				lerp = 100 / antStyleDefs[s.style].settle;
+			}
+
+			aim = carPos;
+			aim.vy = -(carPos.vy + 50);
+		}
 
 		s.spool = carPos;
 		s.targetPos = carPos;
@@ -1864,8 +1927,18 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 	}
 
 	s.aimPos = aim;
+	/* Use the new clear camera finder to avoid scenery collisions. An attached
+	 * rig is deliberately inches off the body, so pulling it back for
+	 * line-of-sight would tear it off the car - it keeps its position and only
+	 * the ground clamp applies. */
+	if (d->model == ANT_MODEL_ATTACH)
+	{
+		AntFarmClampAboveGround(&desired);
+	}
+	else
 	{
 		VECTOR clearCam;
+
 		if (AntFarmFindClearCamera(&aim, &desired, &clearCam))
 		{
 			desired = clearCam;
@@ -1971,6 +2044,7 @@ static void AntFarmSetActive(int on)
 		s.holdSince = 0;
 		s.voidHolds = 0;
 		s.captionUntil = 0;
+		s.stillSince = 0;
 
 		s.camPos.vx = camera_position.vx;
 		s.camPos.vy = camera_position.vy;
@@ -2189,8 +2263,12 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			break;
 		}
 
-		/* Handle car mode cycling */
-		if (!s.leadMode && s.targetKind == ANTFARM_TARGET_CAR && AntFarmValidCar() != NULL)
+		/* Handle car mode cycling - but only for a car-mode-driven style. A
+		 * rig or a long-lens vantage *is* the angle, so rotating through the
+		 * car modes mid-shot would fight it. */
+		if (!s.leadMode && s.targetKind == ANTFARM_TARGET_CAR &&
+			AntFarmValidCar() != NULL &&
+			antStyleDefs[s.style].model == ANT_MODEL_FOLLOW)
 		{
 			if (now - s.carModeStart >= (unsigned long)AntCarModeIntervalMs())
 			{
@@ -2198,8 +2276,6 @@ static int AntFarmOnFrame(void* userdata, void* args)
 				s.carMode = AntFarmPickCarMode();
 				s.carModeStart = now;
 				s.carModeIndex++;
-				/* Reset snap to allow smooth transition (or we can keep lerp) */
-				// s.camSnapped = 0;  // keep snapped for smooth lerp
 				s.ctx->jer_log(s.ctx, "[antfarm] car mode changed to %d\n", s.carMode);
 			}
 
@@ -2209,6 +2285,39 @@ static int AntFarmOnFrame(void* userdata, void* args)
 				s.state = ANTFARM_STATE_FADE_OUT;
 				s.stateStart = now;
 				break;
+			}
+		}
+
+		/* A rig on a parked car (or a long lens pointed at one) is a frozen
+		 * frame, which is the one thing a screensaver must not show: if the
+		 * subject stops moving, cut away rather than stare at it. */
+		if (!s.leadMode && !s.leadEnding)
+		{
+			int model = antStyleDefs[s.style].model;
+
+			if (model == ANT_MODEL_ATTACH || model == ANT_MODEL_TRIPODZ)
+			{
+				CAR_DATA* cp = AntFarmValidCar();
+
+				if (cp != NULL && cp->hd.speed > -40 && cp->hd.speed < 40)
+				{
+					if (s.stillSince == 0)
+						s.stillSince = now;
+
+					if (now - s.stillSince >= ANTFARM_STILL_MS)
+					{
+						s.ctx->jer_log(s.ctx,
+							"[antfarm] subject parked - cutting away\n");
+						s.stillSince = 0;
+						s.state = ANTFARM_STATE_FADE_OUT;
+						s.stateStart = now;
+						break;
+					}
+				}
+				else
+				{
+					s.stillSince = 0;
+				}
 			}
 		}
 

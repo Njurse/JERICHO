@@ -52,6 +52,11 @@ enum
 #define ANTFARM_STREAM_TIMEOUT_MS 400
 #define ANTFARM_BLACK_CAP_MS    700
 
+/* how long a rig or long-lens shot will hold on a subject that has stopped
+ * moving before it cuts away (a frozen frame is the one thing a screensaver
+ * must not show) */
+#define ANTFARM_STILL_MS        2500
+
 /* interval config (seconds) */
 #define ANTFARM_MIN_INTERVAL    10
 #define ANTFARM_MAX_INTERVAL    300
