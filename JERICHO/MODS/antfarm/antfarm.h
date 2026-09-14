@@ -15,6 +15,14 @@ enum
 	ANTFARM_STYLE_ORBIT,   /* slow orbit around the subject */
 	ANTFARM_STYLE_CRANE,   /* slow vertical rise revealing a road */
 	ANTFARM_STYLE_LOW,     /* ground-level "ant" view of passing traffic */
+	ANTFARM_STYLE_FENDER,  /* rig on the front bumper, looking down the road */
+	ANTFARM_STYLE_SILL,    /* rig low on the side, along the flank */
+	ANTFARM_STYLE_NOSE34,  /* front-quarter leading */
+	ANTFARM_STYLE_TAIL34,  /* rear-quarter trailing */
+	ANTFARM_STYLE_KERB,    /* wheel-height pass with a long lens */
+	ANTFARM_STYLE_TRIPZOOM,/* parked vantage on a car, slow zoom */
+	ANTFARM_STYLE_FARPAN,  /* distant long lens, slow pan + zoom */
+	ANTFARM_STYLE_WATERFRONT,/* dolly along a waterfront road */
 	ANTFARM_STYLE_COUNT
 };
 

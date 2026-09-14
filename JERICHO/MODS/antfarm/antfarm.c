@@ -170,7 +170,29 @@ static int AntRandChance(int percent)
 #define ANT_MODEL_TRACK      4	/* fixed roadside camera tracking a car */
 #define ANT_MODEL_ATTACH     5	/* rig on the car itself (fender/sill/3-4) */
 #define ANT_MODEL_CRANE      6	/* travel along the road while rising */
-#define ANT_MODEL_COUNT      7
+#define ANT_MODEL_TRIPODZ    7	/* fixed vantage on a car, long lens */
+#define ANT_MODEL_COUNT      8
+
+/* Is this model's camera code implemented yet? A style whose model is not
+ * implemented is never offered by the picker and never defaults on, so a
+ * half-landed archetype cannot be selected. Each new rig flips its case on as
+ * its camera lands. */
+static int AntFarmStyleImplemented(int model)
+{
+	switch (model)
+	{
+	case ANT_MODEL_ROADSIDE:
+	case ANT_MODEL_DOLLY:
+	case ANT_MODEL_ORBIT:
+	case ANT_MODEL_FOLLOW:
+	case ANT_MODEL_TRACK:
+	case ANT_MODEL_CRANE:
+		return 1;
+
+	default:
+		return 0;	/* ATTACH / TRIPODZ: landing next */
+	}
+}
 
 /* One row per style. Both the director (selection) and the framing code read
  * from here, so a new camera archetype is a single line. Lo/Hi are inclusive
@@ -209,6 +231,16 @@ static const ANT_STYLE_DEF antStyleDefs[ANTFARM_STYLE_COUNT] = {
 	{ "Orbit",        "orbit",     ANT_MODEL_ORBIT,   12,   0,   0,  0,  0,  200,  440,  232,  262,    0,    0,   0,    0,    0,    0,    0,    0,  0,  20,  140 },
 	{ "Crane",        "crane",     ANT_MODEL_CRANE,  10,   1,   0,  0,  0,   90,  820,  240,  270,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  150 },
 	{ "Ant level",    "low",       ANT_MODEL_ROADSIDE,10,   1,   0,  0,  0,   45,   95,  250,  282,  180,  360,   0,    0,    0,  220,    0,    0,  1,  16,  120 },
+	/* --- car-attached rigs (damped, yaw-only: see ANT_MODEL_ATTACH) --- */
+	{ "Fender",       "fender",    ANT_MODEL_ATTACH,  12,   0,   1,  0,  0,   45,   85,  250,  272,   20,   60, 260,  380,  900, 1200,    0,    0,  0,   3,  110 },
+	{ "Sill",         "sill",      ANT_MODEL_ATTACH,  12,   0,   1,  0,  0,   40,   75,  245,  265,  240,  330, -60,   60,  400,  700,    0,    0,  0,   3,  110 },
+	{ "Nose 3/4",     "nose34",    ANT_MODEL_ATTACH,  12,   0,   1,  0,  0,   90,  150,  250,  272,  200,  300, 320,  480,  500,  800,    0,    0,  0,   5,  120 },
+	{ "Tail 3/4",     "tail34",    ANT_MODEL_ATTACH,  12,   0,   1,  1,  0,   90,  150,  245,  268,  180,  280, 260,  420,  500,  800,    0,    0,  0,   5,  120 },
+	/* --- free / static angles --- */
+	{ "Kerb pass",    "kerb",      ANT_MODEL_ROADSIDE,12,   1,   0,  0,  0,   40,   80,  290,  320,  200,  320,   0,    0,    0,  200,    0,    0,  1,  14,  120 },
+	{ "Tripod zoom",  "tripzoom",  ANT_MODEL_TRIPODZ, 12,   1,   0,  0,  1,  120,  220,  235,  300,  200,  360,   0,    0,  900, 1200,  300,  600,  0,  18,  150 },
+	{ "Far pan",      "farpan",    ANT_MODEL_TRIPODZ, 10,   1,   0,  0,  1,  200,  340,  290,  340, 1400, 2200,   0,    0,  900, 1300,  400,  900,  0,  20,  150 },
+	{ "Waterfront",   "water",     ANT_MODEL_DOLLY,   10,   1,   0,  0,  0,   60,  180,  250,  275,    0,    0,   0,    0,  700, 1000,    0,    0,  0,  16,  150 },
 };
 
 /* ------------------------------------------------------------------ */
@@ -900,6 +932,9 @@ static int AntFarmPickStyle(int carOnly)
 		weight[i] = 0;
 
 		if (!s.stylesEnabled[i])
+			continue;
+
+		if (!AntFarmStyleImplemented(d->model))
 			continue;
 
 		if (carOnly == 1 && d->roadOnly)
@@ -3038,12 +3073,16 @@ static int AntFarmOnBoot(void* userdata, void* args)
 	for (i = 0; i < ANTFARM_STYLE_COUNT; i++)
 	{
 		char key[24];
+		int def;
 
 		snprintf(key, sizeof(key), "style_%s", antStyleDefs[i].key);
 
-		/* chase is the least restful archetype, so it is off unless asked for */
-		s.stylesEnabled[i] = jer_config_get_bool(ANT_MOD_ID, key,
-			(i == ANTFARM_STYLE_CHASE) ? 0 : 1);
+		/* chase is the least restful archetype, so it is off unless asked for;
+		 * an archetype whose camera has not landed yet is off too */
+		def = AntFarmStyleImplemented(antStyleDefs[i].model) &&
+			(i != ANTFARM_STYLE_CHASE);
+
+		s.stylesEnabled[i] = jer_config_get_bool(ANT_MOD_ID, key, def);
 	}
 
 	s.rollOn = jer_config_get_bool(ANT_MOD_ID, "roll", 1);
