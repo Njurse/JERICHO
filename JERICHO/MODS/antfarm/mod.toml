@@ -1,7 +1,7 @@
 id = "antfarm"
 name = "Ant Farm Screensaver"
-version = "0.1.0"
+version = "0.2.0"
 author = "REDRIVER2 community"
-description = "Passive city observer / idle screensaver: cycles junction-tripod, traffic-follow and boulevard-flyover camera cuts with gentle fades while the city keeps living."
+description = "Passive city observer / idle screensaver: tours the map with 16 cinematic camera angles - roadside tripod/overhead/kerb, flyover and crane dollies, an orbit, waterfront drift, and six angles locked onto a moving car (fender, sill, nose-3/4 and tail-3/4 rigs plus a zooming tripod and a long-lens far pan) - with gentle fades while the city keeps living."
 dependencies = []
 default-enabled = false

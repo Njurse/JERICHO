@@ -5,32 +5,74 @@ screensaver: player input is cut off, the HUD hides, all SFX are muted
 (music stays), and cop aggression is disabled while a cinematic camera tours
 the whole map — every cut hops to a far area and picks a fresh shot:
 
+Road and free angles:
+
 - **Static track** — a fixed roadside camera a car drives past; the camera
   pans to follow, then relocates when the car leaves its reach.
 - **Overhead** — scenic elevated 3/4 view down onto traffic (either
   high-following a car or watching a whole road).
 - **Tripod** — parked, swaying (sometimes panning) roadside camera, aimed
   down the lane cars actually drive in.
+- **Kerb pass** — the same placement at wheel height with a long lens, so
+  traffic sweeps past with foreground occlusion.
 - **Flyover** — a slow, eased dolly along a long straight.
-- **Orbit** — a slow circle around the subject (a car or a point on the road).
 - **Crane** — a slow vertical rise from road level, revealing the street ahead.
+- **Orbit** — a slow circle around the subject (a car or a point on the road).
 - **Ant level** — a ground-level camera beside the road, looking *across* it so
   traffic sweeps past the lens.
+- **Waterfront** — a low dolly along a road that actually runs beside water
+  (found by probing the surface for water / deep water / sand).
 - **Chase** — behind-follow on a traffic car, framed to the vehicle's size.
   Off by default: it is the most agitated of the archetypes.
 
-Every archetype is one row in a table (`antStyleDefs` in `antfarm.c`): weight,
-whether it takes a car or a road, its camera-height / FOV / orbit ranges, how
-fast the camera settles, and how long it likes to dwell. A director picks
-weighted and heavily de-weights any style seen in the last few cuts, so
-consecutive cuts never repeat. Shot length is the configured interval scaled
-by scene interest, so long vistas hold longer and transient traffic does not
-linger. Cuts last 10–300 s (default 45) and the transition is a 1.4 s wash.
+Angles locked onto a car (all of these focus on *one moving car*, and cut away
+if it stops - a frozen frame is the one thing a screensaver must not show):
+
+- **Fender** — a rig on the front bumper looking down the road.
+- **Sill** — a rig low on the side, looking along the flank.
+- **Nose 3/4** — front-quarter leading view.
+- **Tail 3/4** — rear-quarter trailing view.
+- **Tripod zoom** — a near static vantage beside the car that holds still while
+  the car drives through, the camera panning to follow and the lens pushing in
+  and easing back out across the shot.
+- **Far pan** — the same idea from a distance, with a long lens: the car
+  approaches and recedes, the classic long-lens observation.
+
+The four rigs are **damped and yaw-only**: they follow the car's heading with a
+slight lag and never inherit body roll or pitch, so the horizon stays level and
+the shot stays watchable. Their offsets are scaled to the car's own body
+(`ap.carCos->colBox`), so a bus and a sports car both get a camera that sits
+just outside the panels, and they deliberately skip the scenery pull-back -
+pulling a camera that is inches off the body back for clearance would tear it
+off the car.
+
+Every archetype is one row in a table (`antStyleDefs` in `antfarm.c`): how the
+camera is driven (`model`), whether it takes a car or a road, its camera-height
+/ FOV / orbit / offset ranges, whether it zooms, how fast the camera settles,
+and how long it likes to dwell. A director picks weighted and heavily
+de-weights any style seen in the last few cuts, so consecutive cuts never
+repeat. Shot length is the configured interval scaled by scene interest, so
+long vistas hold longer and transient traffic does not linger. Cuts last 10–300 s
+(default 45) and the transition is a 0.7 s wash with a short black hold.
+
+Shot *areas* are picked by interest rather than at random: a sample of
+candidate roads is scored on water beside the road, sheer length, and traffic
+actually moving there, with a penalty for staying in the region it is already
+in so the tour keeps moving. Car subjects are likewise biased away from
+recently-framed cars, and the rig / long-lens angles demand a car that is
+genuinely underway.
 
 Each shot runs a scenery pass (line-of-sight pull-back + camera-collider
 push-out) so buildings never obscure the view, and the lens *breathes* between
 shots instead of snapping. There is a soft letterbox and an occasional
 place-name caption (both optional, see Settings below).
+
+A note on *named* landmarks: the engine has no landmark or POI table - overlays
+are HUD data, and there is no junction surface id - so shots target features
+(water, long straights, live traffic) rather than "the Loop". There is a
+deliberately inert scaffold for the real thing in `antfarm.c`
+(`antPois` / `AntFarmPoiNear`): fill in a city's landmark coordinates and set
+`valid = 1` and the interest scorer starts biasing shots toward it.
 
 **Rogue cars** (optional, off by default): a tiny chance per cut that the
 car of interest turns rogue — it becomes LEAD AI and tears across the map,
@@ -119,9 +161,20 @@ It boots straight into a take-a-drive with the screensaver enabled and its cut
 interval shortened, runs with `ALSOFT_DRIVERS=null` (silent), watches by PID so
 a genuine hang can be killed without touching any other session, snapshots
 `REDRIVER2.log`, and prints a verdict plus shots fired, distinct areas, black-cap
-hits and void-guard holds. House rules it follows: never kill by image name,
-never delete the shared log, and remember that the ~40 s clean exit of a
-single-player `-level` run prints no `JERICHO-RUN` line.
+hits, void-guard holds and the **shot telemetry**. City, weather and time
+default to *random* on every run, so repeated passes cover the maps instead of
+always testing one; pass them explicitly (or `STYLE=<key>`) to pin a case.
+
+The shot telemetry is what makes behaviour checkable without eyes: every shot
+logs `model=… subject=… dist MIN..MAX fov MIN..MAX`, and the harness reads
+invariants straight out of it - a rig must keep a bounded distance from its car
+(`max subject distance` under 2500), and a zoom row must actually move its lens
+(`largest lens span` at least 15). Both are reported and asserted per style.
+
+House rules it follows: never kill by image name, never delete the shared log,
+and remember that the ~40 s clean exit of a single-player `-level` run prints no
+`JERICHO-RUN` line. Note it launches the game the ordinary way, so a game window
+does appear while a run is in progress.
 
 ## Known issue (not this module)
 
