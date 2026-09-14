@@ -34,13 +34,15 @@ enum
 	ANTFARM_STATE_FADE_IN
 };
 
-/* timing (milliseconds) */
-#define ANTFARM_FADE_MS     1400
-#define ANTFARM_CUT_HOLD_MS 1500
+/* timing (milliseconds). Transitions are deliberately short: the cut only has
+ * to cover a region force-load, which is one frame on PC, so a long black hold
+ * just reads as dead air. */
+#define ANTFARM_FADE_MS     700
+#define ANTFARM_CUT_HOLD_MS 250
 #define ANTFARM_CAR_WAIT_MS 5000
 #define ANTFARM_LEAD_END_MS 4000
-#define ANTFARM_STREAM_TIMEOUT_MS 1500
-#define ANTFARM_BLACK_CAP_MS    1500
+#define ANTFARM_STREAM_TIMEOUT_MS 400
+#define ANTFARM_BLACK_CAP_MS    700
 
 /* interval config (seconds) */
 #define ANTFARM_MIN_INTERVAL    10
