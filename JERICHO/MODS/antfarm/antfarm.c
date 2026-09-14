@@ -196,6 +196,38 @@ static int AntFarmStyleImplemented(int model)
 	}
 }
 
+/* display name for a camera model, for the log */
+static const char* AntFarmModelName(int model)
+{
+	switch (model)
+	{
+	case ANT_MODEL_ROADSIDE:  return "roadside";
+	case ANT_MODEL_DOLLY:     return "dolly";
+	case ANT_MODEL_ORBIT:     return "orbit";
+	case ANT_MODEL_FOLLOW:    return "follow";
+	case ANT_MODEL_TRACK:     return "track";
+	case ANT_MODEL_ATTACH:    return "attach";
+	case ANT_MODEL_CRANE:     return "crane";
+	case ANT_MODEL_TRIPODZ:   return "tripodz";
+	default:                  return "?";
+	}
+}
+
+/* integer square root, so distances can be logged without pulling in floats */
+static int AntFarmDist(int dx, int dz)
+{
+	long long v = (long long)dx * dx + (long long)dz * dz;
+	long long r = v;
+
+	if (v <= 0)
+		return 0;
+
+	while (r > v / r)
+		r = (r + v / r) / 2;
+
+	return (int)r;
+}
+
 /* One row per style. Both the director (selection) and the framing code read
  * from here, so a new camera archetype is a single line. Lo/Hi are inclusive
  * ranges the per-cut randomiser draws from. */
@@ -354,6 +386,12 @@ typedef struct ANTFARM_STATE
 	int fovCurrent;		/* smoothed scr_z so the lens breathes instead of jumping */
 	int rollOn;		/* subtle horizon roll for a less rigid frame */
 	unsigned long stillSince;	/* when the subject of a rig shot stopped moving */
+
+	/* per-shot telemetry, reported when the shot ends so "is it really
+	 * attached?" and "did the lens actually move?" are answerable from the log */
+	int lastState;
+	int shotDistMin, shotDistMax;
+	int fovMin, fovMax;
 
 	/* fixed vantage for the tripod-zoom / far-pan shots, resolved once */
 	VECTOR shotVantage;
@@ -2469,6 +2507,25 @@ static int AntFarmOnFrame(void* userdata, void* args)
 		*GetPlayerFelony(&MainPlayer) = 2500;
 	}
 
+	/* when a shot ends, report what it did: the model, the subject kind, the
+	 * distance the camera kept from its subject and the lens range it used.
+	 * That makes a rig distinguishable from a roadside shot (it hugs its car)
+	 * and a zoom row from a fixed lens, from the log alone. */
+	if (s.state != s.lastState)
+	{
+		if (s.state == ANTFARM_STATE_FADE_OUT && s.shotStart != 0 &&
+			s.shotDistMax > 0)
+		{
+			s.ctx->jer_log(s.ctx,
+				"[antfarm] shot #%d model=%s subject=%s dist %d..%d fov %d..%d\n",
+				s.cutCount, AntFarmModelName(antStyleDefs[s.style].model),
+				(s.targetKind == ANTFARM_TARGET_CAR) ? "car" : "road",
+				s.shotDistMin, s.shotDistMax, s.fovMin, s.fovMax);
+		}
+
+		s.lastState = s.state;
+	}
+
 	switch (s.state)
 	{
 	case ANTFARM_STATE_SHOW:
@@ -2756,6 +2813,10 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.shotStart = now;
 			s.dwellMs = AntFarmComputeDwell();
 			s.camSnapped = 0;	/* snap onto the new shot under the black */
+			s.shotDistMin = 0x7fffffff;
+			s.shotDistMax = 0;
+			s.fovMin = 0x7fffffff;
+			s.fovMax = 0;
 
 			/* an occasional place-name caption, not on every shot */
 			if (s.captions && !s.leadMode && AntRandChance(40))
@@ -3026,6 +3087,19 @@ static int AntFarmOnCamera(void* userdata, void* args)
 
 	camera_position = cam;
 	camera_angle = ang;
+
+	/* fold this frame into the shot's telemetry (reported at FADE_OUT) */
+	if (s.state != ANTFARM_STATE_CUT)
+	{
+		int dist = AntFarmDist(camera_position.vx - s.targetPos.vx,
+			camera_position.vz - s.targetPos.vz);
+
+		if (dist < s.shotDistMin) s.shotDistMin = dist;
+		if (dist > s.shotDistMax) s.shotDistMax = dist;
+
+		if (s.fovCurrent < s.fovMin) s.fovMin = s.fovCurrent;
+		if (s.fovCurrent > s.fovMax) s.fovMax = s.fovCurrent;
+	}
 
 	/* breathe the lens between shots instead of snapping it, and let a zoom row
 	 * push in and ease back out across the shot */
