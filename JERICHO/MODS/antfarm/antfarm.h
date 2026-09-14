@@ -65,7 +65,14 @@ enum
 /* interval config (seconds) */
 #define ANTFARM_MIN_INTERVAL    10
 #define ANTFARM_MAX_INTERVAL    300
-#define ANTFARM_DEFAULT_INTERVAL 45
+#define ANTFARM_DEFAULT_INTERVAL 30
+
+/* A shot's visible time is clamped to this range whatever the interest
+ * multiplier works out to: this is the pace of the whole tour. Cutting every
+ * few seconds is a slideshow; dwelling for minutes stops being something you
+ * can leave on in the background. */
+#define ANTFARM_SHOT_MIN_MS     15000
+#define ANTFARM_SHOT_MAX_MS     45000
 
 /* how many cuts' worth of recent styles to avoid repeating */
 #define ANTFARM_STYLE_MEMORY    3

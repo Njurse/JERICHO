@@ -387,6 +387,12 @@ typedef struct ANTFARM_STATE
 	int rollOn;		/* subtle horizon roll for a less rigid frame */
 	unsigned long stillSince;	/* when the subject of a rig shot stopped moving */
 
+	/* travelling shots (dolly/crane): distance is advanced per frame and rolled
+	 * onto the connected road at a junction, instead of being parameterised
+	 * along one straight (which parked the camera on that road's end) */
+	unsigned long lastDollyMs;
+	int handoffs;
+
 	/* per-shot telemetry, reported when the shot ends so "is it really
 	 * attached?" and "did the lens actually move?" are answerable from the log */
 	int lastState;
@@ -1371,6 +1377,7 @@ static int AntFarmComputeDwell(void)
 	int base = AntIntervalMs();
 	int mul = d->dwell;
 	int len = 0;
+	int dwell;
 
 	if (s.targetKind == ANTFARM_TARGET_ROAD &&
 		s.roadSurfId >= 0 && s.roadSurfId < NumDriver2Straights)
@@ -1391,7 +1398,18 @@ static int AntFarmComputeDwell(void)
 	if (mul > ANTFARM_DWELL_MAX)
 		mul = ANTFARM_DWELL_MAX;
 
-	return base * mul / 100;
+	/* the shot's visible time, clamped to the range a shot should last: a tour
+	 * that cuts every few seconds is a slideshow, and one that dwells for
+	 * minutes stops being a screensaver you can leave on */
+	dwell = base * mul / 100;
+
+	if (dwell < ANTFARM_SHOT_MIN_MS)
+		dwell = ANTFARM_SHOT_MIN_MS;
+
+	if (dwell > ANTFARM_SHOT_MAX_MS)
+		dwell = ANTFARM_SHOT_MAX_MS;
+
+	return dwell;
 }
 
 /* The lens target for this frame. A zoom row sits at one end of its lens range
@@ -1426,25 +1444,25 @@ static int AntFarmFovTarget(void)
 /* Pick a new car mode, avoiding repetition if possible */
 static int AntFarmPickCarMode(void)
 {
-	int modes[CAR_MODE_COUNT];
-	int num = 0;
-	int i;
+	/* A car-mode change repositions the camera, so it is expensive for the eye.
+	 * The side modes swing the camera from one flank to the other - that is the
+	 * "bobbing left and right" the follow cam used to do - so the cycler stays
+	 * on steady framings: behind and overhead, with the front view now and then
+	 * for variety. */
+	static const int modes[] = {
+		CAR_MODE_CHASE_BEHIND, CAR_MODE_CHASE_BEHIND,
+		CAR_MODE_OVERHEAD, CAR_MODE_OVERHEAD,
+		CAR_MODE_CHASE_FRONT
+	};
+	int pick, attempts = 0;
 
-	/* Build list of available modes (exclude static if road not suitable?) */
-	for (i = 0; i < CAR_MODE_COUNT; i++) {
-		modes[num++] = i;
-	}
-
-	/* If we have a previous mode, try to avoid it */
-	int prev = s.carMode;
-	int attempts = 0;
-	int pick;
-	while (attempts < 20) {
-		pick = modes[AntRand() % num];
-		if (pick != prev || num == 1)
-			break;
+	do
+	{
+		pick = modes[AntRand() % (int)(sizeof(modes) / sizeof(modes[0]))];
 		attempts++;
 	}
+	while (pick == s.carMode && attempts < 20);
+
 	return pick;
 }
 
@@ -1576,11 +1594,10 @@ static void AntFarmSetupRoadShot(void)
 
 	if (d->model == ANT_MODEL_DOLLY || d->model == ANT_MODEL_CRANE)
 	{
-		/* Start the dolly at a negative offset so it begins before the road start,
-		 * and aim further ahead to avoid the camera pointing straight down at the end. */
-		int offset = 800 + (AntRand() % 200);
-
-		s.roadDist = -offset;	/* start before the road */
+		/* Start at the beginning of the road: the dolly advances a little every
+		 * frame and continues onto the connected road at a junction, so it
+		 * never needs a run-up before the road starts. */
+		s.roadDist = 0;
 		s.junctionCorner = 0;
 		s.shotLookAhead = 1000 + (AntRand() % 400);
 	}
@@ -1981,6 +1998,112 @@ static int AntFarmFindClearCamera(const VECTOR* aim, const VECTOR* desired, VECT
 	}
 }
 
+/* The road a travelling shot should continue onto at a junction: among the
+ * roads this one connects to (ConnectIdx, the road graph the level data
+ * carries - nothing else in the engine reads it), the one whose heading best
+ * continues ours. -1 if there is no usable continuation. */
+static int AntFarmNextRoad(int roadId, int heading)
+{
+	DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[roadId];
+	int best = -1;
+	int bestDot = -0x7fffffff;
+	int i;
+
+	for (i = 0; i < 4; i++)
+	{
+		int c = rd->ConnectIdx[i];
+		int ang, dot;
+
+		if (c < 0 || c >= NumDriver2Straights || c == roadId)
+			continue;
+
+		if (Driver2StraightsPtr[c].length < 200)
+			continue;
+
+		ang = Driver2StraightsPtr[c].angle;
+		dot = RSIN(ang) * RSIN(heading) + RCOS(ang) * RCOS(heading);
+
+		if (dot > bestDot)
+		{
+			bestDot = dot;
+			best = c;
+		}
+	}
+
+	/* ConnectIdx is not populated in these level files (nothing in the engine
+	 * reads it), so if it gave us nothing, step just PAST this road's end and
+	 * ask the engine which road is there - that is exactly how civ AI tracks
+	 * its current road (cs->currentRoad = GetSurfaceIndex(...)). */
+	if (best < 0)
+	{
+		VECTOR end = { 0, 0, 0 };
+		VECTOR tip;
+		int endHeading = 0;
+		int surf;
+
+		AntFarmShotRoadRender(rd->length, &end, &endHeading);
+
+		tip.vx = end.vx + FIXEDH(RSIN(endHeading) * 200);
+		tip.vy = end.vy;
+		tip.vz = end.vz + FIXEDH(RCOS(endHeading) * 200);
+
+		surf = GetSurfaceIndex(&tip);
+
+		if (surf >= 0 && surf < NumDriver2Straights && surf != roadId &&
+			Driver2StraightsPtr[surf].length >= 200)
+			best = surf;
+	}
+
+	return best;
+}
+
+/* Advance a travelling shot by this frame's share of the road, handing over to
+ * the connected road when this one runs out. The old form was parameterised by
+ * distance along ONE straight, so the camera parked on that road's end: the aim
+ * pinned to the final point and it simply hovered there - "it only goes down
+ * the road so far and cannot navigate intersections". */
+static void AntFarmAdvanceDolly(unsigned long now)
+{
+	int len = Driver2StraightsPtr[s.roadSurfId].length;
+	unsigned long shotMs = (unsigned long)(s.dwellMs > 0 ? s.dwellMs : AntIntervalMs());
+	unsigned long dt = now - s.lastDollyMs;
+	long long advance;
+
+	s.lastDollyMs = now;
+
+	if (dt > 250)		/* a hitch must not teleport the camera */
+		dt = 250;
+
+	/* Cover about a road and a half over the shot: enough to carry the dolly
+	 * through a junction (so intersections are actually navigated) while
+	 * keeping the pace calm. */
+	advance = (long long)(len + len / 2 + 800) * (long long)dt / (long long)shotMs;
+	s.roadDist += (int)advance;
+
+	while (s.roadDist > len && s.handoffs < 8)
+	{
+		VECTOR tip = { 0, 0, 0 };
+		int heading = 0;
+		int next;
+
+		AntFarmShotRoadRender(len, &tip, &heading);
+
+		next = AntFarmNextRoad(s.roadSurfId, heading);
+
+		if (next < 0)
+			break;
+
+		s.roadDist -= len;
+		s.roadSurfId = next;
+		s.handoffs++;
+		len = Driver2StraightsPtr[next].length;
+
+		s.ctx->jer_log(s.ctx,
+			"[antfarm] dolly continued onto the next road (junction %d)\n",
+			s.handoffs);
+	}
+}
+
 static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 {
 	const ANT_STYLE_DEF* d = &antStyleDefs[s.style];
@@ -2197,35 +2320,30 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			else if (d->model == ANT_MODEL_CRANE)
 			{
 				/* slow rise from road level, revealing the street ahead */
-				VECTOR startPt = { 0, 0, 0 };
-				VECTOR endPt = { 0, 0, 0 };
+				VECTOR camPt = { 0, 0, 0 };
 				VECTOR aimPt = { 0, 0, 0 };
-				int len = Driver2StraightsPtr[s.roadSurfId].length;
 				int dummyHeading = 0;
-				int t, tt, curDist, aimDist;
+				int len, curDist, aimDist, curH, t;
 				unsigned long shotMs = (unsigned long)(s.dwellMs > 0 ? s.dwellMs : AntIntervalMs());
 				unsigned long shotElapsed = now - s.shotStart;
-				int startD = s.roadDist;
-				int endD = len + 200;
-				int curH;
 
 				t = (shotElapsed >= shotMs) ? 1000
 					: (int)(shotElapsed * 1000 / shotMs);
 
-				tt = t * t * (3000 - 2 * t) / 1000000;
+				AntFarmAdvanceDolly(now);
 
-				AntFarmShotRoadRender(startD, &startPt, &dummyHeading);
-				AntFarmShotRoadRender(endD, &endPt, &dummyHeading);
+				len = Driver2StraightsPtr[s.roadSurfId].length;
+				curDist = (s.roadDist < 0) ? 0 : (s.roadDist > len ? len : s.roadDist);
 
-				desired.vx = startPt.vx + (endPt.vx - startPt.vx) * tt / 1000;
-				desired.vz = startPt.vz + (endPt.vz - startPt.vz) * tt / 1000;
+				AntFarmShotRoadRender(curDist, &camPt, &dummyHeading);
+				desired.vx = camPt.vx;
+				desired.vz = camPt.vz;
 
-				curH = ANTFARM_CRANE_LOW + (s.shotHeight - ANTFARM_CRANE_LOW) * tt / 1000;
+				curH = ANTFARM_CRANE_LOW + (s.shotHeight - ANTFARM_CRANE_LOW) * t / 1000;
 				desired.vy = -AntFarmMapHeight(desired.vx, desired.vz) - curH;
 
-				curDist = startD + (endD - startD) * tt / 1000;
 				aimDist = curDist + s.shotLookAhead;
-				if (aimDist > endD) aimDist = endD;
+				if (aimDist > len) aimDist = len;
 
 				AntFarmShotRoadRender(aimDist, &aimPt, &dummyHeading);
 				aim = aimPt;
@@ -2233,39 +2351,24 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			}
 			else	/* ANT_MODEL_DOLLY */
 			{
-				VECTOR startPt = { 0, 0, 0 };
-				VECTOR endPt = { 0, 0, 0 };
+				VECTOR camPt = { 0, 0, 0 };
 				VECTOR aimPt = { 0, 0, 0 };
-				int len = Driver2StraightsPtr[s.roadSurfId].length;
 				int dummyHeading = 0;
-				int t, tt, curDist, aimDist;
-				unsigned long shotElapsed = now - s.shotStart;
+				int len, curDist, aimDist;
 
-				int startD = s.roadDist;
-				int endD = len + 300 + (AntRand() % 200);
+				AntFarmAdvanceDolly(now);
 
-				{
-					unsigned long shotMs = (unsigned long)(s.dwellMs > 0 ? s.dwellMs : AntIntervalMs());
+				len = Driver2StraightsPtr[s.roadSurfId].length;
+				curDist = (s.roadDist < 0) ? 0 : (s.roadDist > len ? len : s.roadDist);
 
-					t = (shotElapsed >= shotMs) ? 1000
-						: (int)(shotElapsed * 1000 / shotMs);
-				}
-
-				/* smoothstep: monotonic 0..1000 (the old 1000-2t form went
-				 * negative past the midpoint, stalling and reversing the dolly) */
-				tt = t * t * (3000 - 2 * t) / 1000000;
-
-				AntFarmShotRoadRender(startD, &startPt, &dummyHeading);
-				AntFarmShotRoadRender(endD, &endPt, &dummyHeading);
-
-				desired.vx = startPt.vx + (endPt.vx - startPt.vx) * tt / 1000;
-				desired.vz = startPt.vz + (endPt.vz - startPt.vz) * tt / 1000;
+				AntFarmShotRoadRender(curDist, &camPt, &dummyHeading);
+				desired.vx = camPt.vx;
+				desired.vz = camPt.vz;
 				desired.vy = -(AntFarmMapHeight(desired.vx, desired.vz)) - s.shotHeight
 					+ (RSIN((now / 11) & 4095) >> 6);
 
-				curDist = startD + (endD - startD) * tt / 1000;
 				aimDist = curDist + s.shotLookAhead;
-				if (aimDist > endD) aimDist = endD;
+				if (aimDist > len) aimDist = len;
 
 				AntFarmShotRoadRender(aimDist, &aimPt, &dummyHeading);
 				aim = aimPt;
@@ -2410,6 +2513,8 @@ static void AntFarmSetActive(int on)
 		s.voidHolds = 0;
 		s.captionUntil = 0;
 		s.stillSince = 0;
+		s.lastDollyMs = AntTicks();
+		s.handoffs = 0;
 
 		s.shotDistMin = 0x7fffffff;
 		s.shotDistMax = 0;
@@ -2845,7 +2950,30 @@ static int AntFarmOnFrame(void* userdata, void* args)
 				int barrel = (brx & 1) + (brz & 1) * 2;
 
 				if (loading_region[barrel] == -1)
+				{
 					UnpackRegion(spoolRegion, barrel);
+
+					/* Land it in THIS frame rather than waiting for the engine's next
+					 * ControlMap pass. On PC the spool copies synchronously, so
+					 * flushing the queue here makes the destination resident
+					 * immediately and the cut can end as soon as the reveal is safe -
+					 * that is the difference between a transition that waits frames
+					 * for paging and one that does not wait at all. */
+					StartSpooling();
+					UpdateSpool();
+
+					/* The reveal needs the TEXTURE pages too, and those stream per AREA
+					 * keyed off the camera position, so ask for the destination's areas
+					 * explicitly and flush again. */
+					{
+						int cx = (s.spool.vx + units_across_halved) / MAP_CELL_SIZE;
+						int cz = (s.spool.vz + units_down_halved) / MAP_CELL_SIZE;
+
+						CheckLoadAreaData(cx, cz);
+						StartSpooling();
+						UpdateSpool();
+					}
+				}
 			}
 
 			regionsReady = (AntFarmRegionHasData(spoolRegion) && AntFarmRegionsReady(spoolRegion));
@@ -2994,6 +3122,8 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.shotStart = now;
 			s.dwellMs = AntFarmComputeDwell();
 			s.camSnapped = 0;	/* snap onto the new shot under the black */
+			s.lastDollyMs = now;
+			s.handoffs = 0;
 			s.shotDistMin = 0x7fffffff;
 			s.shotDistMax = 0;
 			s.fovMin = 0x7fffffff;
@@ -3357,31 +3487,44 @@ static int AntFarmOnDrawOverlay(void* userdata, void* args)
 	if (!s.active)
 		return JER_RESULT_CONTINUE;
 
-	/* --- transition wash (only mid-cut) --- */
+	/* --- transition wash --------------------------------------------------
+	 * A fade through WHITE/grey was both harsh in a dark room and, worse, not
+	 * what a dissolve should look like. This darkens instead: up to four
+	 * stacked semi-transparent BLACK passes, each one halving what is left of
+	 * the scene, so the transition goes dim -> dark -> black and then back out.
+	 * Nothing bright is ever shown between two shots. */
 	v = s.fade;
 
 	if (v > 0)
 	{
+		int passes, i;
+
 		if (v > 255)
 			v = 255;
 
-		poly = (POLY_F4*)current->primptr;
+		passes = v / 64;		/* 1..3 darkening passes */
 
-		setPolyF4(poly);
-		setSemiTrans(poly, 1);
-		setRGB0(poly, v, v, v);
+		for (i = 0; i < passes && i < 3; i++)
+		{
+			poly = (POLY_F4*)current->primptr;
+
+			setPolyF4(poly);
+			setSemiTrans(poly, 1);
+			setRGB0(poly, 0, 0, 0);
 
 #ifdef PSX
-		setXYWH(poly, 0, 0, 320, 256);
+			setXYWH(poly, 0, 0, 320, 256);
 #else
-		setXYWH(poly, -500, 0, 1200, 256);
+			setXYWH(poly, -500, 0, 1200, 256);
 #endif
 
-		addPrim(current->ot, poly);
-		current->primptr += sizeof(POLY_F4);
+			addPrim(current->ot, poly);
+			current->primptr += sizeof(POLY_F4);
+		}
 
 		if (v >= 250)
 		{
+			/* fully black at the bottom of the transition */
 			poly = (POLY_F4*)current->primptr;
 
 			setPolyF4(poly);
