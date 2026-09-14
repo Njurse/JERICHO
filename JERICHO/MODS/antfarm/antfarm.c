@@ -373,6 +373,8 @@ typedef struct ANTFARM_STATE
 	 * never repeat, plus the interest-scaled dwell of the current shot */
 	int recentStyles[ANTFARM_STYLE_MEMORY];
 	int recentCount;
+	int recentCars[ANTFARM_STYLE_MEMORY];	/* cars already framed recently */
+	int recentCarCount;
 	int dwellMs;		/* this shot's visible time, interest-scaled */
 	int dissolve;		/* 1 = cross-dissolve through grey rather than black */
 
@@ -397,6 +399,7 @@ static void AntFarmSetupRoadShot(void);
 static void AntFarmInitShotVars(void);
 static int AntFarmPickFarArea(void);
 static int AntFarmPickRoadNear(int x, int z);
+static int AntFarmTrafficNear(const VECTOR* pos, int radius);
 static void AntFarmPickStyleAndTarget(void);
 static void AntFarmBuildRoadCache(void);
 static void AntFarmStaticTrack(CAR_DATA* cp, VECTOR* desired);
@@ -833,6 +836,61 @@ static void AntFarmPickNearArea(void)
 
 /* pick a road – preferably in a different region, and ensure the region is loaded.
  * If no loaded region can be found, fallback to the current camera position (which is definitely loaded). */
+/* how many civilian cars are actually moving near a point - a liveliness
+ * signal the picker can score on (the engine exposes no landmark table) */
+static int AntFarmTrafficNear(const VECTOR* pos, int radius)
+{
+	int i, n = 0;
+	long long r2 = (long long)radius * radius;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		CAR_DATA* cp = &car_data[i];
+		long long dx, dz;
+
+		if (cp->controlType != CONTROL_TYPE_CIV_AI)
+			continue;
+
+		if (ABS(cp->hd.speed) <= 8)
+			continue;
+
+		dx = (long long)cp->hd.where.t[0] - pos->vx;
+		dz = (long long)cp->hd.where.t[2] - pos->vz;
+
+		if (dx * dx + dz * dz <= r2)
+			n++;
+	}
+
+	return n;
+}
+
+/* How interesting is this road as a shot subject? Scored only from signals the
+ * engine's data really offers - there is no per-level landmark or POI table,
+ * and no junction surface id - so: water beside the road, sheer length, and
+ * traffic actually moving there. */
+static int AntFarmRoadInterest(int idx, const VECTOR* pos)
+{
+	DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[idx];
+	int score = 0;
+	int traffic;
+
+	if (rd->length > 2600)
+		score += 26;
+	else if (rd->length > 1500)
+		score += 14;
+
+	if (AntFarmRoadNearWater(rd))
+		score += 45;
+
+	traffic = AntFarmTrafficNear(pos, 6000);
+	if (traffic > 6)
+		traffic = 6;
+
+	score += traffic * 6;
+
+	return score;
+}
+
 static int AntFarmPickFarArea(void)
 {
 	if (g_numUsableRoads == 0) {
@@ -846,27 +904,45 @@ static int AntFarmPickFarArea(void)
 
 	int curRegion = AntFarmRegionOf(&s.targetPos);
 
-	/* Try up to 40 times to find a road in a different region that is loaded */
-	for (int attempt = 0; attempt < 40; attempt++) {
-		int idx = g_usableRoads[AntRand() % g_numUsableRoads];
-		DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[idx];
-		if (rd->length < 200) continue;   // skip very short ones
+	/* Sample a handful of candidates and take the most interesting one, with a
+	 * penalty for staying in the region we are already in: the tour has to
+	 * move, and a long waterfront straight with traffic on it beats a random
+	 * back street that happens to come up first. */
+	{
+		int best = -1, bestScore = -1, attempt;
 
-		VECTOR pos;
-		pos.vx = rd->Midx;
-		pos.vy = AntFarmMapHeight(rd->Midx, rd->Midz);
-		pos.vz = rd->Midz;
-		AntFarmClampToWorld(&pos);
+		for (attempt = 0; attempt < 14; attempt++) {
+			int idx = g_usableRoads[AntRand() % g_numUsableRoads];
+			DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[idx];
+			VECTOR pos;
+			int score;
 
-		/* the destination must have data — residency comes later */
-		if (!AntFarmPositionHasData(&pos))
-			continue;
+			if (rd->length < 200)
+				continue;   /* skip very short ones */
 
-		/* Try to move to a different region if possible, but if not, accept any loaded region */
-		if (AntFarmRegionOf(&pos) != curRegion || attempt > 20) {
-			s.areaPos = pos;
-			return 1;
+			pos.vx = rd->Midx;
+			pos.vy = AntFarmMapHeight(rd->Midx, rd->Midz);
+			pos.vz = rd->Midz;
+			AntFarmClampToWorld(&pos);
+
+			/* the destination must have data — residency comes later */
+			if (!AntFarmPositionHasData(&pos))
+				continue;
+
+			score = AntFarmRoadInterest(idx, &pos);
+
+			if (AntFarmRegionOf(&pos) == curRegion)
+				score -= 20;
+
+			if (score > bestScore) {
+				bestScore = score;
+				best = idx;
+				s.areaPos = pos;
+			}
 		}
+
+		if (best >= 0)
+			return 1;
 	}
 
 	/* Fallback: try any usable road that is loaded, even if same region */
@@ -894,7 +970,38 @@ static int AntFarmPickFarArea(void)
 }
 
 /* pick a moving civilian car near a point (world units), or -1 */
-static int AntFarmPickCarNear(const VECTOR* area, int radius)
+/* has this car been the subject in the last few cuts? */
+static int AntFarmCarRecent(int carId)
+{
+	int i;
+
+	for (i = 0; i < s.recentCarCount; i++)
+		if (s.recentCars[i] == carId)
+			return 1;
+
+	return 0;
+}
+
+static void AntFarmRememberCar(int carId)
+{
+	int i;
+
+	if (carId < 0)
+		return;
+
+	for (i = ANTFARM_STYLE_MEMORY - 1; i > 0; i--)
+		s.recentCars[i] = s.recentCars[i - 1];
+
+	s.recentCars[0] = carId;
+
+	if (s.recentCarCount < ANTFARM_STYLE_MEMORY)
+		s.recentCarCount++;
+}
+
+/* Pick a moving civilian car near the area. `minSpeed` lets a rig demand a car
+ * that is genuinely underway, and a car framed in the last few cuts is heavily
+ * de-weighted so the same sedan is not followed all session. */
+static int AntFarmPickCarNear(const VECTOR* area, int radius, int minSpeed)
 {
 	int i, n = 0, pick = -1;
 	long long r2 = (long long)radius * radius;
@@ -903,11 +1010,12 @@ static int AntFarmPickCarNear(const VECTOR* area, int radius)
 	{
 		CAR_DATA* cp = &car_data[i];
 		long long dx, dz;
+		int weight;
 
 		if (cp->controlType != CONTROL_TYPE_CIV_AI)
 			continue;
 
-		if (ABS(cp->hd.speed) <= 8)
+		if (ABS(cp->hd.speed) <= minSpeed)
 			continue;
 
 		dx = (long long)cp->hd.where.t[0] - area->vx;
@@ -916,10 +1024,11 @@ static int AntFarmPickCarNear(const VECTOR* area, int radius)
 		if (dx * dx + dz * dz > r2)
 			continue;
 
-		if (AntRand() % (n + 1) == 0)
-			pick = i;
+		weight = AntFarmCarRecent(i) ? 1 : 6;
+		n += weight;
 
-		n++;
+		if (AntRand() % n < weight)
+			pick = i;
 	}
 
 	return pick;
@@ -2142,6 +2251,7 @@ static void AntFarmSetActive(int on)
 
 		s.fovCurrent = scr_z;		/* breathe out from the gameplay lens */
 		s.recentCount = 0;
+		s.recentCarCount = 0;
 		s.dwellMs = AntIntervalMs();
 		s.holdSince = 0;
 		s.voidHolds = 0;
@@ -2169,7 +2279,12 @@ static void AntFarmSetActive(int on)
 
 		if (s.targetKind == ANTFARM_TARGET_CAR)
 		{
-			s.targetCarId = AntFarmPickCarNear(&s.areaPos, 12000);
+			s.targetCarId = AntFarmPickCarNear(&s.areaPos, 12000,
+				(antStyleDefs[s.style].model == ANT_MODEL_ATTACH ||
+					antStyleDefs[s.style].model == ANT_MODEL_TRIPODZ) ? 40 : 8);
+
+			if (s.targetCarId >= 0)
+				AntFarmRememberCar(s.targetCarId);
 
 			if (s.targetCarId < 0)
 			{
@@ -2595,10 +2710,13 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			{
 				if (s.targetKind == ANTFARM_TARGET_CAR)
 				{
-					int car = AntFarmPickCarNear(&s.areaPos, 14000);
+					int car = AntFarmPickCarNear(&s.areaPos, 14000,
+						(antStyleDefs[s.style].model == ANT_MODEL_ATTACH ||
+							antStyleDefs[s.style].model == ANT_MODEL_TRIPODZ) ? 40 : 8);
 					if (car >= 0)
 					{
 						s.targetCarId = car;
+						AntFarmRememberCar(car);
 						s.cutWaitForCar = 0;
 						s.carMode = CAR_MODE_CHASE_BEHIND;
 						s.carModeIndex = 0;
