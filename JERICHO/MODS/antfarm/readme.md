@@ -15,7 +15,8 @@ Road and free angles:
   down the lane cars actually drive in.
 - **Kerb pass** — the same placement at wheel height with a long lens, so
   traffic sweeps past with foreground occlusion.
-- **Flyover** — a slow, eased dolly along a long straight.
+- **Flyover** — a slow, eased dolly along a long straight, which carries on
+  onto the connected road at a junction rather than stopping at the end of it.
 - **Crane** — a slow vertical rise from road level, revealing the street ahead.
 - **Orbit** — a slow circle around the subject (a car or a point on the road).
 - **Ant level** — a ground-level camera beside the road, looking *across* it so
@@ -51,9 +52,12 @@ camera is driven (`model`), whether it takes a car or a road, its camera-height
 / FOV / orbit / offset ranges, whether it zooms, how fast the camera settles,
 and how long it likes to dwell. A director picks weighted and heavily
 de-weights any style seen in the last few cuts, so consecutive cuts never
-repeat. Shot length is the configured interval scaled by scene interest, so
-long vistas hold longer and transient traffic does not linger. Cuts last 10–300 s
-(default 45) and the transition is a 0.7 s wash with a short black hold.
+repeat. Shot length is the configured interval scaled by scene interest and then
+clamped to **15–45 s** (default interval 30 s) - a tour that cuts every few
+seconds is a slideshow, and one that dwells for minutes stops being something
+you can leave on in the background. The transition is a 0.7 s dissolve that
+darkens through black rather than flashing through white, so it is easy on the
+eye in a dark room.
 
 Shot *areas* are picked by interest rather than at random: a sample of
 candidate roads is scored on water beside the road, sheer length, and traffic
