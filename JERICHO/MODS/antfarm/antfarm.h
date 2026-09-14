@@ -12,6 +12,9 @@ enum
 	ANTFARM_STYLE_OVERHEAD,
 	ANTFARM_STYLE_TRIPOD,
 	ANTFARM_STYLE_FLYOVER,
+	ANTFARM_STYLE_ORBIT,   /* slow orbit around the subject */
+	ANTFARM_STYLE_CRANE,   /* slow vertical rise revealing a road */
+	ANTFARM_STYLE_LOW,     /* ground-level "ant" view of passing traffic */
 	ANTFARM_STYLE_COUNT
 };
 
@@ -32,7 +35,7 @@ enum
 };
 
 /* timing (milliseconds) */
-#define ANTFARM_FADE_MS     600
+#define ANTFARM_FADE_MS     1400
 #define ANTFARM_CUT_HOLD_MS 1500
 #define ANTFARM_CAR_WAIT_MS 5000
 #define ANTFARM_LEAD_END_MS 4000
@@ -40,12 +43,27 @@ enum
 #define ANTFARM_BLACK_CAP_MS    1500
 
 /* interval config (seconds) */
-#define ANTFARM_MIN_INTERVAL    5    /* changed from 10 */
-#define ANTFARM_MAX_INTERVAL    60
-#define ANTFARM_DEFAULT_INTERVAL 20
+#define ANTFARM_MIN_INTERVAL    10
+#define ANTFARM_MAX_INTERVAL    300
+#define ANTFARM_DEFAULT_INTERVAL 45
 
-/* far-area hop distance */
-#define ANTFARM_FAR_DIST    12000
+/* how many cuts' worth of recent styles to avoid repeating */
+#define ANTFARM_STYLE_MEMORY    3
+
+/* dwell trimming: a shot's visible time is scaled by its scene interest */
+#define ANTFARM_DWELL_MIN       55    /* x100 */
+#define ANTFARM_DWELL_MAX       190   /* x100 */
+
+/* one full revolution in an ORBIT shot */
+#define ANTFARM_ORBIT_PERIOD_MS  60000
+
+/* presentation dressing: bar height top/bottom (~16:10 visible frame) and
+ * how long an occasional place-name caption stays up */
+#define ANTFARM_LETTERBOX_H 34
+#define ANTFARM_CAPTION_MS  4200
+
+/* CRANE shots rise from this height to the archetype's picked height */
+#define ANTFARM_CRANE_LOW        90
 
 /* lead-car wreck threshold */
 #define ANTFARM_LEAD_TOTAL    6000
