@@ -21,9 +21,15 @@
 set -u
 
 FRAMES="${1:-1200}"
-CITY="${2:-chicago}"
-WEATHER="${3:-none}"
-TIME="${4:-day}"
+
+# default to a RANDOM city/weather/time so repeated runs cover the maps (and so
+# a bug in one city's data cannot hide behind always testing Chicago)
+CITIES=(chicago havana lasvegas rio)
+WEATHERS=(none rain wet)
+TIMES=(day dusk night dawn)
+CITY="${2:-${CITIES[$((RANDOM % ${#CITIES[@]}))]}}"
+WEATHER="${3:-${WEATHERS[$((RANDOM % ${#WEATHERS[@]}))]}}"
+TIME="${4:-${TIMES[$((RANDOM % ${#TIMES[@]}))]}}"
 SEED="${SEED:-$(date +%s)}"
 TEST_INTERVAL="${TEST_INTERVAL:-10}"
 
@@ -53,13 +59,22 @@ trap cleanup EXIT
 dumps_before="$(ls -1 REDRIVER2*.dmp 2>/dev/null | wc -l | tr -d ' ')"
 log_before="$(stat -c %Y "$LOG" 2>/dev/null || echo 0)"
 
+# Wait for any previous run (ours or the user's) to release the exe. Without
+# this, back-to-back runs race the last process's shutdown: the new game
+# truncates REDRIVER2.log and then dies, and the run looks like a pass read
+# from a stale log.
+for _ in $(seq 1 40); do
+	tasklist 2>/dev/null | grep -qi "REDRIVER2_dev.exe" || break
+	sleep 1
+done
+
 # enable the screensaver and shorten the cuts just for this run
 sed -i "s/^enabled *=.*/enabled = 1/; s/^interval *=.*/interval = $TEST_INTERVAL/" "$INI" 2>/dev/null || \
 	{ printf 'enabled = 1\ninterval = %s\n' "$TEST_INTERVAL" >> "$INI"; }
 
 # STYLE=<key> isolates ONE camera archetype (all others off), so a single cut
 # proves that archetype's camera code ran.
-for k in chase static overhead tripod flyover orbit crane low; do
+for k in chase static overhead tripod flyover orbit crane low fender sill nose34 tail34 kerb tripzoom farpan water; do
 	v=1
 	if [ -n "${STYLE:-}" ] && [ "$k" != "$STYLE" ]; then v=0; fi
 	grep -q "^style_$k *=" "$INI" || echo "style_$k = $v" >> "$INI"
@@ -71,8 +86,11 @@ echo "Ant Farm test: city=$CITY weather=$WEATHER time=$TIME frames=$FRAMES seed=
 # NOTE the ./: bash does not search the current directory for a bare name,
 # so a plain "REDRIVER2_dev.exe" is "command not found" and the run silently
 # exits without ever launching.
-ALSOFT_DRIVERS=null "./$EXE" -nointro -level "$CITY" -car slot1 -weather "$WEATHER" \
-	-time "$TIME" -gamemode takeadrive -frames "$FRAMES" -seed "$SEED" >"$BIN/antfarm_test_stdout.txt" 2>&1 &
+# Launch plainly (the user's standing permission for this phase): a focused
+# minimised launch via Start-Process turned out not to give a reliable ready
+# signal, so this keeps the simple background launch.
+ARGS="-nointro -level $CITY -car slot1 -weather $WEATHER -time $TIME -gamemode takeadrive -frames $FRAMES -seed $SEED"
+ALSOFT_DRIVERS=null "./$EXE" $ARGS >"$BIN/antfarm_test_stdout.txt" 2>&1 &
 PID=$!
 
 # PID-scoped watchdog: poll, and kill ONLY this PID, and only on a real hang.
@@ -104,6 +122,11 @@ log_after="$(stat -c %Y "$LOG" 2>/dev/null || echo 0)"
 if [ "$log_after" = "$log_before" ]; then
 	echo "FAIL: the game never wrote REDRIVER2.log — it did not launch (see antfarm_test_stdout.txt)"
 	tail -5 "$BIN/antfarm_test_stdout.txt" 2>/dev/null | sed 's/^/   /'
+	exit 2
+fi
+
+if ! grep -q '\[antfarm\] ready' "$LOG" 2>/dev/null; then
+	echo "FAIL: the log has no [antfarm] ready line — the run did not boot (raced the previous process?)"
 	exit 2
 fi
 
@@ -141,6 +164,40 @@ if ! grep -q '\[antfarm\] cut #' "$LOG" 2>/dev/null; then
 	echo "WARN: no cut in this window (too short a run?)"
 fi
 echo "void guards:  $(grep -c 'void guard' "$LOG" 2>/dev/null || echo 0)  (a hold means the camera was heading into an unloaded region)"
+
+echo "shot telemetry:"
+grep -m 10 '\[antfarm\] shot #' "$LOG" 2>/dev/null | sed 's/^/   /'
+
+# Invariants read straight out of that telemetry.
+dmax=$(grep -o 'dist [0-9]*\.\.[0-9]*' "$LOG" 2>/dev/null | sed 's/dist //' \
+	| awk -F'[.][.]' '{ if ($2 + 0 > m) m = $2 + 0 } END { print m + 0 }')
+dmin=$(grep -o 'dist [0-9]*\.\.[0-9]*' "$LOG" 2>/dev/null | sed 's/dist //' \
+	| awk -F'[.][.]' '{ if (m == 0 || $1 + 0 < m) m = $1 + 0 } END { print m + 0 }')
+zspan=$(grep -o 'model=\(tripodz\|dolly\) .*fov [0-9]*\.\.[0-9]*' "$LOG" 2>/dev/null | sed 's/.*fov //' \
+	| awk -F'[.][.]' '{ d = $2 - $1; if (d > m) m = d } END { print m + 0 }')
+echo "max subject distance: $dmax   closest: $dmin   largest lens span: $zspan"
+
+case "${STYLE:-}" in
+	# a rig must hug its subject
+	fender|sill|nose34|tail34)
+		if [ "$dmax" -gt 2500 ]; then
+			echo "FAIL: subject distance $dmax exceeds the rig envelope"; fail=1
+		fi
+		;;
+esac
+
+case "${STYLE:-}" in
+	# a long-lens vantage: the car must actually pass near it at some point
+	# (its distance afterwards is the shot - the pan - so the MAX is not bounded)
+	tripzoom|farpan)
+		if [ "${dmin:-99999}" -gt 6000 ]; then
+			echo "FAIL: subject never came within long-lens range (closest $dmin)"; fail=1
+		fi
+		if [ "$zspan" -lt 15 ]; then
+			echo "FAIL: zoom row moved its lens by only $zspan"; fail=1
+		fi
+		;;
+esac
 echo "stdout:        $BIN/antfarm_test_stdout.txt"
 echo "snapshot: $SNAP"
 
