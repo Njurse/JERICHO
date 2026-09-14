@@ -273,6 +273,7 @@ typedef struct ANTFARM_STATE
 	int shotOrbitAmp;	/* tripod azimuth sweep amplitude (0 = static) */
 	int shotOrbitPhase;	/* orbit phase seed */
 	int shotScrZ;		/* per-shot FOV (projection distance) */
+	int shotZoomTo;		/* a zoom row's other lens end (== shotScrZ when it holds) */
 	int armFrac;		/* smoothed LOS pull-back fraction (256 = full arm) */
 
 	/* Car mode cycling */
@@ -951,22 +952,42 @@ static void AntFarmInitShotVars(void)
 		const ANT_STYLE_DEF* d = &antStyleDefs[s.style];
 
 		s.shotHeight = AntRandRange(d->heightLo, d->heightHi);
-		s.shotScrZ = AntRandRange(d->scrZLo, d->scrZHi);
 
-		/* some tripod shots slowly pan; the rest hold still */
+		if (d->zoom)
+		{
+			/* a zoom row sits at one end of its lens range and pushes to the
+			 * other and back across the shot (see AntFarmFovTarget) */
+			s.shotScrZ = d->scrZLo;
+			s.shotZoomTo = d->scrZHi;
+		}
+		else
+		{
+			s.shotScrZ = AntRandRange(d->scrZLo, d->scrZHi);
+			s.shotZoomTo = s.shotScrZ;
+		}
+
+		/* some rows slowly pan; the rest hold still */
 		if (d->orbitHi > 0 && AntRandChance(55))
 			s.shotOrbitAmp = AntRandRange(d->orbitLo, d->orbitHi);
 
-		/* ant-level shots look ACROSS the road so traffic sweeps the lens */
+		/* the row decides how far ahead to look: a short aim watches traffic
+		 * cross the lens, a long one looks down the road */
 		if (d->across)
 			s.shotLookAhead = AntRandRange(0, 220);
+		else if (d->aimHi > 0)
+			s.shotLookAhead = AntRandRange(d->aimLo, d->aimHi);
 	}
 
-	/* Safety clamp: never allow extreme wide angle */
-	if (s.shotScrZ < 210)
-		s.shotScrZ = 210;
-	if (s.shotScrZ > 290)
-		s.shotScrZ = 290;
+	/* safety clamp: a long lens is fine, a fisheye is not */
+	if (s.shotScrZ < 200)
+		s.shotScrZ = 200;
+	if (s.shotScrZ > 360)
+		s.shotScrZ = 360;
+
+	if (s.shotZoomTo < 200)
+		s.shotZoomTo = 200;
+	if (s.shotZoomTo > 360)
+		s.shotZoomTo = 360;
 }
 
 /* A shot's visible time: the cut interval scaled by how interesting the
@@ -999,6 +1020,31 @@ static int AntFarmComputeDwell(void)
 		mul = ANTFARM_DWELL_MAX;
 
 	return base * mul / 100;
+}
+
+/* The lens target for this frame. A zoom row sits at one end of its lens range
+ * and pushes to the other and back across the shot; everything else holds the
+ * lens it was given. This feeds the same smoothing as the rest of the FOV
+ * handling, so the movement is a slow breathe rather than a jump. */
+static int AntFarmFovTarget(void)
+{
+	const ANT_STYLE_DEF* d = &antStyleDefs[s.style];
+	unsigned long shotMs;
+	unsigned long elapsed;
+	int t, factor;
+
+	if (!d->zoom || s.shotZoomTo == s.shotScrZ)
+		return s.shotScrZ;
+
+	shotMs = (unsigned long)(s.dwellMs > 0 ? s.dwellMs : AntIntervalMs());
+	elapsed = AntTicks() - s.shotStart;
+
+	t = (elapsed >= shotMs) ? 1000 : (int)(elapsed * 1000 / shotMs);
+
+	/* half a sine: 0 at both ends of the shot, 4096 (= 1.0) in the middle */
+	factor = RSIN((t * 2048) / 1000);
+
+	return s.shotScrZ + (int)(((long)(s.shotZoomTo - s.shotScrZ) * factor) / 4096);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1251,15 +1297,12 @@ static void AntFarmPlanShot(void)
 				if (better >= 0) idx = better;
 			}
 			s.roadSurfId = idx;
-			s.shotScrZ = 240;
 			AntFarmSetupRoadShot();
 		}
 		else {
-			/* No road found – fallback to a safe hover above areaPos */
+			/* no road found - fall back to a safe hover above areaPos */
 			s.roadSurfId = -1;
 			s.targetPos = s.areaPos;
-			/* Set a default FOV so the camera doesn't go crazy */
-			s.shotScrZ = 240;
 		}
 	}
 	else {
@@ -2619,8 +2662,9 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	camera_position = cam;
 	camera_angle = ang;
 
-	/* breathe the lens between shots instead of snapping it */
-	s.fovCurrent += (s.shotScrZ - s.fovCurrent) / 18;
+	/* breathe the lens between shots instead of snapping it, and let a zoom row
+	 * push in and ease back out across the shot */
+	s.fovCurrent += (AntFarmFovTarget() - s.fovCurrent) / 18;
 	SetGeomScreen(scr_z = s.fovCurrent);
 
 	if (s.targetKind == ANTFARM_TARGET_CAR && s.targetCarId >= 0 &&
