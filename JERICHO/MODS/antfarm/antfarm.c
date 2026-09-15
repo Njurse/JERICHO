@@ -769,12 +769,44 @@ static void AntFarmClampAboveGround(VECTOR* v)
  * signal, so it was removed rather than left as a no-op.) */
 
 /* the region index ControlMap computes for a world position */
-static int AntFarmRegionOf(const VECTOR* pos)
+/* Is the level's map geometry loaded? On PC the cell and region sizes live in
+ * the LEVEL header (MAP_CELL_SIZE is cell_header.cell_size), so they are ZERO
+ * until a level has loaded - and the frontend runs with an empty header. Every
+ * bit of map maths below divides by them. */
+static int AntFarmMapReady(void)
 {
-	int cellx = (pos->vx + units_across_halved) / MAP_CELL_SIZE;
-	int cellz = (pos->vz + units_down_halved) / MAP_CELL_SIZE;
-	int rx = cellx / MAP_REGION_SIZE;
-	int rz = cellz / MAP_REGION_SIZE;
+	return cell_header.cell_size > 0 &&
+		cell_header.region_size > 0 &&
+		cells_across > 0 && cells_down > 0 &&
+		regions_across > 0 && regions_down > 0;
+}
+
+static int AntFarmRegionOfAt(const VECTOR* pos, int line)
+{
+	int cellx, cellz, rx, rz;
+
+	/* Guard the division: without a level header this is a divide-by-zero,
+	 * which is exactly how the screensaver crashed on a normal start (it is
+	 * only entered from the command line with -level in the headless harness,
+	 * which is why it went unnoticed). Region 0 is returned as "no idea". */
+	if (!AntFarmMapReady())
+	{
+		static int warned;
+
+		if (!warned)
+		{
+			warned = 1;
+			s.ctx->jer_log(s.ctx,
+				"[antfarm] map not loaded (antfarm.c:%d) - refusing map maths\n", line);
+		}
+
+		return 0;
+	}
+
+	cellx = (pos->vx + units_across_halved) / MAP_CELL_SIZE;
+	cellz = (pos->vz + units_down_halved) / MAP_CELL_SIZE;
+	rx = cellx / MAP_REGION_SIZE;
+	rz = cellz / MAP_REGION_SIZE;
 
 	if (rx < 0) rx = 0;
 	if (rx >= regions_across) rx = regions_across - 1;
@@ -783,6 +815,9 @@ static int AntFarmRegionOf(const VECTOR* pos)
 
 	return rx + rz * regions_across;
 }
+
+/* call sites pass their line so the "map not loaded" warning can name them */
+#define AntFarmRegionOf(pos) AntFarmRegionOfAt((pos), __LINE__)
 
 /* Is this region number currently resident? The engine keeps FOUR unpacked
  * regions, indexed by BARREL slot — (region_x & 1) + (region_z & 1) * 2 —
@@ -2452,7 +2487,7 @@ static void AntFarmSetActive(int on)
 	if (on)
 	{
 		if (game_over || gInGameCutsceneActive || quick_replay ||
-			NumPlayers != 1 || NoPlayerControl)
+			NumPlayers != 1 || NoPlayerControl || !AntFarmMapReady())
 		{
 			s.ctx->jer_log(s.ctx, "[antfarm] refused: not in a playable single-player state\n");
 			return;
@@ -2554,7 +2589,7 @@ static void AntFarmSetActive(int on)
 		s.shotStart = s.stateStart;
 
 		{
-			char styleList[80];
+			char styleList[200];  /* all 16 style keys fit - 80 silently truncated the log */
 			int n = 0, j;
 
 			styleList[0] = '\0';
@@ -2662,7 +2697,7 @@ static int AntFarmOnFrame(void* userdata, void* args)
 	 * a playable single-player state. This used to sit BELOW the !active
 	 * early-return below, so it could never run — "enabled = 1" did nothing
 	 * and the mode only ever started from F9 / the pause menu. */
-	if (s.pendingEnable && !s.active &&
+	if (s.pendingEnable && !s.active && AntFarmMapReady() &&
 		!game_over && !gInGameCutsceneActive && !quick_replay &&
 		NumPlayers == 1 && !NoPlayerControl)
 	{
@@ -2965,6 +3000,7 @@ static int AntFarmOnFrame(void* userdata, void* args)
 					/* The reveal needs the TEXTURE pages too, and those stream per AREA
 					 * keyed off the camera position, so ask for the destination's areas
 					 * explicitly and flush again. */
+					if (AntFarmMapReady())
 					{
 						int cx = (s.spool.vx + units_across_halved) / MAP_CELL_SIZE;
 						int cz = (s.spool.vz + units_down_halved) / MAP_CELL_SIZE;
@@ -3833,7 +3869,7 @@ static int AntFarmOnBoot(void* userdata, void* args)
 	AntFarmBuildRoadCache();
 
 	{
-		char styleList[80];
+		char styleList[200];  /* all 16 style keys fit - 80 silently truncated the log */
 		int n = 0;
 
 		styleList[0] = '\0';
