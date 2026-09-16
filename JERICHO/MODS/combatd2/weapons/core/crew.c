@@ -27,7 +27,9 @@
 #include "combatd2.h"
 #include "cars.h"
 #include "camera.h"
+#include "players.h"		/* player[] */
 #include "dr2roads.h"		/* MapHeight */
+#include "debris.h"		/* Setup_Smoke / SMOKE_FIRE */
 #include "pedest.h"		/* LPPEDESTRIAN, pUsedPeds, DestroyPedestrian */
 #include "jericho.h"
 #include "jer_events.h"
@@ -53,21 +55,41 @@
 #define CD2_CREW_MAX_DIST	2000
 
 // Crew ped states.
-enum { CD2_CREW_IN = 0, CD2_CREW_OUT, CD2_CREW_INANIM };
+enum { CD2_CREW_IN = 0, CD2_CREW_OUT, CD2_CREW_INANIM, CD2_CREW_FLEE };
 
 // Side indices (0 = driver / left, 1 = gunner / right). The matching lean flag
 // is (1 << index) == CD2_CREW_DRIVER/GUNNER.
 enum { CD2_CREW_SIDE_DRIVER = 0, CD2_CREW_SIDE_GUNNER = 1 };
 
+// Wreck bail-out: when a car the module drives is destroyed, its crew (both
+// sides) bails out and runs from the wreck, on fire, for this many frames
+// (~3s at 30fps) before being cleaned up.
+#define CD2_CREW_FLEE_FRAMES	90
+#define CD2_CREW_FLEE_SPEED	14	// world units / frame
+#define CD2_CREW_FLEE_SWAY	340	// heading swing each step (PSX angle units)
+#define CD2_CREW_FLEE_AMP	700	// sway amplitude (fixed point, 4096 = 1.0)
+
 typedef struct CD2_CREW_CAR
 {
 	int hold[2];		// frames the side stays out (0 = in)
 	JerNpc* ped[2];		// the crew ped (NULL = in the car)
-	int state[2];		// CD2_CREW_IN / OUT / INANIM
+	int state[2];		// CD2_CREW_IN / OUT / INANIM / FLEE
 	int frame[2];		// animation frame within the current phase
+	int fled;		// 1 once the wreck bail-out has been started
+	int fleeTicks[2];	// frames the side has been fleeing
+	int fleeHead[2];	// base heading to flee along (away from the wreck)
 } CD2_CREW_CAR;
 
 static CD2_CREW_CAR gCrew[MAX_CARS];
+
+// The camera pose held while the local player's car is a wreck (last live frame).
+static VECTOR sCamPos;
+static SVECTOR sCamAng;
+static int sCamHeld;
+
+// ped lifecycle (defined below; the wreck bail-out uses them)
+static void cd2CrewSpawnSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp);
+static void cd2CrewDespawnSide(CD2_CREW_CAR* c, int i);
 
 // ---------------------------------------------------------------------------
 // request
@@ -190,6 +212,117 @@ static int cd2CrewPedAlive(LPPEDESTRIAN p)
 	}
 
 	return 0;
+}
+
+// The local player's CAR_DATA, or NULL when on foot.
+static CAR_DATA* cd2CrewPlayerCar(void)
+{
+	int id = player[0].playerCarId;
+
+	if (id < 0 || id >= MAX_CARS)
+		return NULL;
+
+	return &car_data[id];
+}
+
+// ---------------------------------------------------------------------------
+// Wreck bail-out: the crew runs from the burning wreck.
+// ---------------------------------------------------------------------------
+
+// Begin the flee for one side: make sure a ped exists, then point it away from
+// the wreck and mark it fleeing (it burns - the PED_DRAW handler paints it).
+static void cd2CrewFleeSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp, int wx, int wz)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)c->ped[i];
+
+	if (pPed == NULL)
+	{
+		// wasn't leaning: put them out at the door first so they can run
+		cd2CrewSpawnSide(c, i, cp);
+		pPed = (LPPEDESTRIAN)c->ped[i];
+	}
+
+	if (pPed == NULL)
+		return;		// too far / no ped available - nobody bails
+
+	c->state[i] = CD2_CREW_FLEE;
+	c->fleeTicks[i] = 0;
+	c->hold[i] = 0;
+
+	{
+		int dx = pPed->position.vx - wx;
+		int dz = pPed->position.vz - wz;
+
+		if (dx == 0 && dz == 0)
+		{
+			dx = RSIN(cp->hd.direction);
+			dz = RCOS(cp->hd.direction);
+		}
+
+		c->fleeHead[i] = ratan2(dx, dz);	// heading AWAY from the wreck
+	}
+
+	if (gCd2Cfg.debugLog)
+		printInfo("[combatd2] crew: car=%d side=%d bails out (wreck)\n", cp->id, i);
+}
+
+static void cd2CrewFleeUpdate(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)c->ped[i];
+	int dir, head;
+	VECTOR g;
+
+	(void)cp;
+
+	if (pPed == NULL || !cd2CrewPedAlive(pPed))
+	{
+		c->ped[i] = NULL;
+		c->state[i] = CD2_CREW_IN;
+		return;
+	}
+
+	if (c->fleeTicks[i]++ >= CD2_CREW_FLEE_FRAMES)
+	{
+		cd2CrewDespawnSide(c, i);
+		return;
+	}
+
+	// a wavy sine path: the heading away from the wreck, swung by a sine so the
+	// ped weaves as it runs
+	head = c->fleeHead[i] +
+	       ((RSIN(c->fleeTicks[i] * CD2_CREW_FLEE_SWAY) * CD2_CREW_FLEE_AMP) >> 12);
+
+	// step along it, exactly like the engine's AnimatePed forward branch
+	pPed->dir.vy = (head + 2048) & 0xfff;
+	pPed->speed = CD2_CREW_FLEE_SPEED;
+
+	dir = pPed->dir.vy - 2048;
+	pPed->position.vx += FIXED(CD2_CREW_FLEE_SPEED * RSIN(dir));
+	pPed->position.vz += FIXED(CD2_CREW_FLEE_SPEED * RCOS(dir));
+
+	// running animation (the same 16-frame cycle the engine uses), then ground
+	jer_npc_set_action(c->ped[i], PED_ACTION_RUN, c->fleeTicks[i] & 15);
+
+	g.vx = pPed->position.vx;
+	g.vz = pPed->position.vz;
+	g.vy = 0;
+	pPed->position.vy = -MapHeight(&g) - 130;
+
+	// fire at the ped's origin so they read as running away in flames
+	if ((c->fleeTicks[i] & 7) == 0)
+	{
+		VECTOR sp, drift;
+
+		sp.vx = pPed->position.vx;
+		sp.vz = pPed->position.vz;
+		sp.vy = pPed->position.vy + 130;	// undo the root offset (smoke is y-up)
+
+		drift.vx = 0;
+		drift.vy = 0;
+		drift.vz = 0;
+
+		Setup_Smoke(&sp, 20, 60, SMOKE_FIRE, 0, &drift, 0);
+	}
 }
 
 // Hang the ped on the car's door: the side of the body just outside the panel,
@@ -374,6 +507,27 @@ static int cd2CrewOnFrame(void* ud, void* args)
 			continue;
 		}
 
+		// a wrecked car's crew bails out and runs from the fire
+		if (cd2CarTotaled(cp))
+		{
+			if (!gCrew[i].fled)
+			{
+				gCrew[i].fled = 1;
+				cd2CrewFleeSide(&gCrew[i], CD2_CREW_SIDE_DRIVER, cp, cp->hd.where.t[0], cp->hd.where.t[2]);
+				cd2CrewFleeSide(&gCrew[i], CD2_CREW_SIDE_GUNNER, cp, cp->hd.where.t[0], cp->hd.where.t[2]);
+			}
+
+			for (side = 0; side < 2; side++)
+				if (gCrew[i].state[side] == CD2_CREW_FLEE)
+					cd2CrewFleeUpdate(&gCrew[i], side, cp);
+				else if (gCrew[i].ped[side] != NULL)
+					cd2CrewDespawnSide(&gCrew[i], side);
+
+			continue;
+		}
+
+		gCrew[i].fled = 0;
+
 		for (side = 0; side < 2; side++)
 			cd2CrewUpdateSide(&gCrew[i], side, cp);
 	}
@@ -400,7 +554,11 @@ static int cd2CrewOnGameStart(void* ud, void* args)
 			gCrew[i].ped[side] = NULL;
 			gCrew[i].state[side] = CD2_CREW_IN;
 			gCrew[i].frame[side] = 0;
+			gCrew[i].fleeTicks[side] = 0;
+			gCrew[i].fleeHead[side] = 0;
 		}
+
+		gCrew[i].fled = 0;
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -419,7 +577,6 @@ static int cd2CrewOnCamera(void* ud, void* args)
 {
 	int i, side;
 	(void)ud;
-	(void)args;
 
 	if (!gCd2Cfg.enabled)
 		return JER_RESULT_CONTINUE;
@@ -430,8 +587,78 @@ static int cd2CrewOnCamera(void* ud, void* args)
 		{
 			LPPEDESTRIAN pPed = (LPPEDESTRIAN)gCrew[i].ped[side];
 
-			if (pPed != NULL && cd2CrewPedAlive(pPed))
+			// a fleeing ped moved on its own in the FRAME pass; a leaning one
+			// is parked and follows the car
+			if (pPed != NULL && cd2CrewPedAlive(pPed) && gCrew[i].state[side] != CD2_CREW_FLEE)
 				cd2CrewPlace(pPed, &car_data[i], side);
+		}
+	}
+
+	// Player death: hold the camera still while the local player's car is a
+	// wreck, so the death plays without the view sliding around. The held pose
+	// is the last live frame's; it resumes when the car respawns.
+	{
+		CAR_DATA* pc = cd2CrewPlayerCar();
+		JER_ARGS_CAMERA* a = (JER_ARGS_CAMERA*)args;
+
+		if (pc != NULL && cd2CarTotaled(pc))
+		{
+			if (!sCamHeld && gCd2Cfg.debugLog)
+				printInfo("[combatd2] crew: player wrecked - camera held until respawn\n");
+
+			sCamHeld = 1;
+
+			if (a != NULL)
+			{
+				if (a->cameraPosition != NULL)
+					*(VECTOR*)a->cameraPosition = sCamPos;
+
+				if (a->cameraAngle != NULL)
+					*(SVECTOR*)a->cameraAngle = sCamAng;
+
+				a->override = 1;
+			}
+		}
+		else
+		{
+			if (sCamHeld && gCd2Cfg.debugLog)
+				printInfo("[combatd2] crew: camera released\n");
+
+			sCamHeld = 0;
+
+			if (a != NULL)
+			{
+				if (a->cameraPosition != NULL)
+					sCamPos = *(VECTOR*)a->cameraPosition;
+
+				if (a->cameraAngle != NULL)
+					sCamAng = *(SVECTOR*)a->cameraAngle;
+			}
+		}
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+// ---------------------------------------------------------------------------
+// JER_EVENT_PED_DRAW: paint a fleeing crew ped flat black (burning). Matched
+// back to the crew by the ped pointer; with no match the ped draws stock.
+// ---------------------------------------------------------------------------
+static int cd2CrewOnPedDraw(void* ud, void* args)
+{
+	JER_ARGS_PED_DRAW* a = (JER_ARGS_PED_DRAW*)args;
+	int i, side;
+	(void)ud;
+
+	if (a == NULL || a->ped == NULL)
+		return JER_RESULT_CONTINUE;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		for (side = 0; side < 2; side++)
+		{
+			if ((void*)gCrew[i].ped[side] == a->ped && gCrew[i].state[side] == CD2_CREW_FLEE)
+				a->flatBlack = 1;
 		}
 	}
 
@@ -445,6 +672,7 @@ void cd2CrewRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2CrewOnFrame, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, cd2CrewOnCamera, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_PED_DRAW, cd2CrewOnPedDraw, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2CrewOnGameStart, NULL, 0);
 
 	ctx->jer_log(ctx, "[combatd2] mounted crew registered (SDK v%d)\n", ctx->sdkVersion);
