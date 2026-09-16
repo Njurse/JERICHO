@@ -116,11 +116,23 @@ When a car the module drives is destroyed (`cd2CarTotaled`), both crew sides
   (matched back to the crew by ped pointer) and `SMOKE_FIRE` is set up at its
   origin every few frames — reading as running from the wreckage in flames.
 
-## 7. Player death: hold the camera
+## 7. Player death: hold + drift the camera
 
-While the local player's car is a wreck the crew module holds the camera at its
-last live frame (`JER_EVENT_CAMERA`, `override = 1`), so the death plays without
-the view sliding; it releases when the car respawns.
+While the local player's car is a wreck the crew module takes over the camera
+(`JER_EVENT_CAMERA`, `override = 1`), so the death plays without the stock view
+sliding around. Rather than freeze it dead, the held view **drifts** over the
+respawn window (`gCd2Cfg.respawnDelay`, ~150 frames / 5s):
+
+- it **pulls back** along (camera − wreck) up to `CD2_DEATHCAM_ZOOM` (700
+  world units) — the wreck shrinks, i.e. a zoom out at the engine's fixed FOV;
+- it **rises** up to `CD2_DEATHCAM_RISE` (220) — engine camera Y is *down*, so
+  "up" is a smaller `vy`;
+- both are interpolated from the pose captured on the last live frame, and the
+  focus is the car's position at the moment of death (so a tumbling wreck does
+  not drag the view).
+
+It is released (stock camera resumes) when the car respawns. Constants live in
+`weapons/core/crew.c`; tune them there.
 
 ## 8. The engine hook
 

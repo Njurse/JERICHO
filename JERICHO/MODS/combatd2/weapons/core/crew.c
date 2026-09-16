@@ -70,6 +70,13 @@ enum { CD2_CREW_SIDE_DRIVER = 0, CD2_CREW_SIDE_GUNNER = 1 };
 					// 4096/90 ~= 45-frame sine period (~1.5s) - a slow weave
 #define CD2_CREW_FLEE_AMP	700	// sway amplitude (fixed point, 4096 = 1.0)
 
+// Death cam: while the player's car is a wreck the held view slowly PULLS BACK
+// and RISES over the respawn delay, so the death reads rather than just
+// freezing. Values are world units at full progress (t = 1).
+#define CD2_DEATHCAM_ZOOM	700	// pull the camera back this far
+#define CD2_DEATHCAM_RISE	220	// and raise it this far (engine Y is down)
+#define CD2_DEATHCAM_DELAY	300	// fallback respawn window when the cfg has 0
+
 typedef struct CD2_CREW_CAR
 {
 	int hold[2];		// frames the side stays out (0 = in)
@@ -87,6 +94,8 @@ static CD2_CREW_CAR gCrew[MAX_CARS];
 static VECTOR sCamPos;
 static SVECTOR sCamAng;
 static int sCamHeld;
+static int sCamTicks;		// frames since the death began (drives the drift)
+static VECTOR sCamFocus;	// the wreck's position at the moment of death
 
 // ped lifecycle (defined below; the wreck bail-out uses them)
 static void cd2CrewSpawnSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp);
@@ -604,15 +613,61 @@ static int cd2CrewOnCamera(void* ud, void* args)
 
 		if (pc != NULL && cd2CarTotaled(pc))
 		{
-			if (!sCamHeld && gCd2Cfg.debugLog)
-				printInfo("[combatd2] crew: player wrecked - camera held until respawn\n");
+			int delay;
+			int t;
 
-			sCamHeld = 1;
+			if (!sCamHeld)
+			{
+				sCamHeld = 1;
+				sCamTicks = 0;
+
+				// remember where the car died so the pull-back is measured from
+				// there, not from the (possibly tumbling) wreck
+				sCamFocus.vx = pc->hd.where.t[0];
+				sCamFocus.vy = pc->hd.where.t[1];
+				sCamFocus.vz = pc->hd.where.t[2];
+
+				if (gCd2Cfg.debugLog)
+					printInfo("[combatd2] crew: player wrecked - camera held until respawn\n");
+			}
+
+			if (sCamTicks < CD2_DEATHCAM_DELAY)
+				sCamTicks++;
+
+			// progress over the respawn window, 0..4096 (fixed point 1.0)
+			delay = (gCd2Cfg.respawnDelay > 0) ? gCd2Cfg.respawnDelay : CD2_DEATHCAM_DELAY;
+			t = (sCamTicks << 12) / delay;
+			if (t > 4096)
+				t = 4096;
 
 			if (a != NULL)
 			{
+				VECTOR pos = sCamPos;
+				int bx = sCamPos.vx - sCamFocus.vx;
+				int by = sCamPos.vy - sCamFocus.vy;
+				int bz = sCamPos.vz - sCamFocus.vz;
+				int d = ABS(bx) + ABS(bz);	// horizontal distance (a cheap length)
+
+				if (d < 1)
+					d = 1;
+
+				// PULL BACK: advance along (camera - wreck), i.e. away from the
+				// car, so the wreck slowly shrinks (a zoom out at fixed FOV).
+				pos.vx += (int)(((long long)bx * CD2_DEATHCAM_ZOOM * t) / ((long long)d * 4096));
+				pos.vy += (int)(((long long)by * CD2_DEATHCAM_ZOOM * t) / ((long long)d * 4096));
+				pos.vz += (int)(((long long)bz * CD2_DEATHCAM_ZOOM * t) / ((long long)d * 4096));
+
+				// RISE: engine camera Y is down, so up means a smaller vy.
+				pos.vy -= (CD2_DEATHCAM_RISE * t) >> 12;
+
+				// Observability: the requested pull-back/rise at each step, so a
+				// run can show the drift interpolating over the respawn window.
+				if (gCd2Cfg.debugLog && (sCamTicks % 60) == 0)
+					printInfo("[combatd2] crew: deathcam tick=%d/%d zoom=%d rise=%d\n",
+						sCamTicks, delay, (CD2_DEATHCAM_ZOOM * t) >> 12, (CD2_DEATHCAM_RISE * t) >> 12);
+
 				if (a->cameraPosition != NULL)
-					*(VECTOR*)a->cameraPosition = sCamPos;
+					*(VECTOR*)a->cameraPosition = pos;
 
 				if (a->cameraAngle != NULL)
 					*(SVECTOR*)a->cameraAngle = sCamAng;
