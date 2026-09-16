@@ -318,3 +318,17 @@ void jer_npc_set_world(JerNpc* n, int x, int y, int z, int yaw)
 	pPed->position.vz = z;
 	pPed->dir.vy = (short)(yaw & 0xfff);
 }
+
+void jer_npc_set_orient(JerNpc* n, int pitch, int yaw, int roll)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
+
+	if (pPed == NULL)
+		return;
+
+	/* newRotateBones builds the root matrix as RotMatrixYXZ(pPed->dir), so all
+	 * three components are live - not just the yaw. */
+	pPed->dir.vx = (short)(pitch & 0xfff);
+	pPed->dir.vy = (short)(yaw & 0xfff);
+	pPed->dir.vz = (short)(roll & 0xfff);
+}

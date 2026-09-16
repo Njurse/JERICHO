@@ -47,6 +47,14 @@ void jer_npc_set_action(JerNpc* n, int action, int frame);
  * so a module can hang it out of a car window from the car's transform. */
 void jer_npc_set_world(JerNpc* n, int x, int y, int z, int yaw);
 
+/* as jer_npc_set_world, but sets the FULL body orientation: the engine builds
+ * a ped's root matrix with RotMatrixYXZ(dir) over all three of dir.vx/vy/vz,
+ * so pitch and roll are settable too. Pass the parent's body rotation (a car's
+ * body tilt, say) so a carried ped banks with it instead of staying upright.
+ * yaw here is the same value jer_npc_set_world takes; pitch/roll are 0 when
+ * upright. */
+void jer_npc_set_orient(JerNpc* n, int pitch, int yaw, int roll);
+
 /* remove the ped from the world (safe on NULL / already-despawned) */
 void jer_npc_despawn(JerNpc* n);
 

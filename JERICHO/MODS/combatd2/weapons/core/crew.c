@@ -37,6 +37,9 @@
 #include "ai/ai.h"		/* cd2AiIsOpponent */
 #include "crew.h"
 
+// The engine's libgte angle helper (the inverse of RotMatrixYXZ needs it).
+extern int ratan2(int y, int x);
+
 // How long a side stays out after its last leaning shot, in frames (~0.8s at
 // 30fps). The hold is RE-ARMED on every shot, so it only needs to bridge the
 // gap between shots: shorter than any leaning weapon's refire (the shotgun is
@@ -57,16 +60,16 @@
 // skipped.
 #define CD2_CREW_ANIM_STEP	3
 
-// The get-out frame each side settles on. The DRIVER stops earlier, mid-climb,
-// so he reads as leaning out of the window with the arm reach below; the
-// GUNNER plays the full climb and then sits up on the sill.
+// The get-out frame each side settles on. Both sides use the SAME get-out
+// motion (the pose the engine itself authors for a ped at a car door) - the
+// driver stops early, leaning out of the window, and the gunner climbs further
+// out so he reads as sitting up on the sill, more prominent.
 #define CD2_CREW_DRIVER_HOLD	9
+#define CD2_CREW_GUNNER_HOLD	13
 
-// The gunner's resting pose once out of the car: a SIT raised this far above
-// the ped's normal standing height, so he perches ON the windowsill rather
-// than standing beside the car. The render frame is Y-down, so raising means
-// subtracting.
-#define CD2_CREW_SIT_FRAME	0
+// The gunner is raised this far above the leaning driver, perching him ON the
+// windowsill rather than hanging beside it. The render frame is Y-down, so
+// raising means subtracting.
 #define CD2_CREW_SILL_RAISE	26
 
 // Driver arm reach, forced through JER_EVENT_PED_SKELETON phase 0 (the
@@ -81,6 +84,18 @@
 // Both crew peds share ONE body yaw (see cd2CrewPlace), so the driver's reach
 // is rotated half a turn to point out of HIS window instead of the gunner's.
 #define CD2_CREW_ARM_FLIP	2048
+
+// The crew ped's origin rides this far ABOVE the car's body centre. The old
+// placement used the MAP ground (-MapHeight - 130), which is not tied to the
+// car at all: a car in the air left its crew standing on the road below. This
+// reproduces that on-ground offset (measured with the car level: car y +31 ->
+// ped y -130, i.e. 99 above the body centre) while now following the car.
+#define CD2_CREW_BODY_LIFT	99
+
+// The car matrix is Y-UP while the ped's body is rendered Y-DOWN, so a physical
+// pitch/roll maps to the NEGATED angles here. If a tilted car's crew leans the
+// wrong way, this is the single knob to flip.
+#define CD2_CREW_TILT_SIGN	(-1)
 
 // No crew is spawned for a car further than this from the camera (world units):
 // it would never be drawn, and the ped pool is shared with the ambient civs.
@@ -120,6 +135,7 @@ typedef struct CD2_CREW_CAR
 	int fleeTicks[2];	// frames the side has been fleeing
 	int fleeHead[2];	// base heading to flee along (away from the wreck)
 	int raiseY[2];		// extra height for the resting pose (sill perch), 0 = none
+	int sitLogged[2];	// one-shot: the "perched on the sill" note has been logged
 } CD2_CREW_CAR;
 
 static CD2_CREW_CAR gCrew[MAX_CARS];
@@ -134,6 +150,7 @@ static VECTOR sCamFocus;	// the wreck's position at the moment of death
 // ped lifecycle (defined below; the wreck bail-out uses them)
 static void cd2CrewSpawnSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp);
 static void cd2CrewDespawnSide(CD2_CREW_CAR* c, int i);
+static int cd2CrewClimbFrame(int i);
 
 // ---------------------------------------------------------------------------
 // request
@@ -460,10 +477,12 @@ static int cd2CrewOnPedSkeleton(void* ud, void* args)
 
 	for (i = 0; i < MAX_CARS; i++)
 	{
+		LPPEDESTRIAN pPed;
+
 		if ((void*)gCrew[i].ped[CD2_CREW_SIDE_DRIVER] == a->ped &&
 		    gCrew[i].state[CD2_CREW_SIDE_DRIVER] != CD2_CREW_FLEE)
 		{
-			LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
+			pPed = (LPPEDESTRIAN)a->ped;
 
 			cd2CrewPoseArm(a->skel, (pPed->dir.vy + CD2_CREW_ARM_FLIP) & 0xfff);
 			break;
@@ -471,6 +490,30 @@ static int cd2CrewOnPedSkeleton(void* ud, void* args)
 	}
 
 	return JER_RESULT_CONTINUE;
+}
+
+// Inverse of RotMatrixYXZ (PsyCross LIBGTE.C): pull the YXZ Euler triple back
+// out of a rotation matrix. The engine builds a ped's whole body with
+// RotMatrixYXZ(pPed->dir) (newRotateBones), so feeding it the CAR's tilt is
+// what makes a mounted crew bank and pitch with the car rather than staying
+// upright while the car is thrown around.
+//
+//   m[1][2] = -s0            m[1][0] = s2*c0     m[1][1] = c2*c0
+//   m[0][2] = s1*c0          m[2][2] = c1*c0
+static void cd2CrewMatrixEuler(const MATRIX* m, SVECTOR* out)
+{
+	int c2, s2, c0;
+
+	out->vz = ratan2(m->m[1][0], m->m[1][1]);	// roll
+	c2 = RCOS(out->vz);
+	s2 = RSIN(out->vz);
+
+	// c0 recovered without a square root: project the (m10, m11) pair back
+	// through the roll just found - c2*(c2*c0) + s2*(s2*c0) == c0.
+	c0 = FIXEDH(m->m[1][1] * c2) + FIXEDH(m->m[1][0] * s2);
+
+	out->vy = ratan2(m->m[0][2], m->m[2][2]);	// yaw
+	out->vx = ratan2(-m->m[1][2], c0);		// pitch
 }
 
 // Hang the ped on the car's door: the side of the body just outside the panel,
@@ -483,27 +526,30 @@ static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i, int raise
 	int s = (i == CD2_CREW_SIDE_DRIVER) ? -1 : 1;	// -1 = driver (left door), +1 = gunner (right door)
 	int lat = (cb->vx * 108) / 100;			// just outside the body side
 	int fwd = cb->vz / 4;				// a touch ahead of centre, not the rear
-	int x, z, yaw;
-	VECTOR g;
+	int x, z, y, yaw;
+	SVECTOR rot;
 
 	x = w->t[0] + (int)(((long long)w->m[0][0] * lat * s) >> 12)
 	           + (int)(((long long)w->m[0][2] * fwd) >> 12);
 	z = w->t[2] + (int)(((long long)w->m[2][0] * lat * s) >> 12)
 	           + (int)(((long long)w->m[2][2] * fwd) >> 12);
 
-	g.vx = x;
-	g.vz = z;
-	g.vy = 0;
+	// Ride the CAR, not the map: the old -MapHeight placement pinned the crew
+	// to the ground, so a car in the air (or being tossed by a wreck) left them
+	// standing on the road below. The car matrix is Y-UP while the ped's
+	// position is Y-DOWN, hence the negation.
+	y = -(cp->hd.where.t[1]) - CD2_CREW_BODY_LIFT - raiseY;
 
-	// Facing: the SAME yaw at both doors. The ped model's front is not aligned
-	// with the yaw vector, so mirroring the offsets per side (direction -/+ 1024,
-	// which is how the engine orients a ped climbing out of a door in
-	// SetupGetOutCar) leaves one door right and the other 180 out - verified
-	// in-game both ways round. dir - 1024 reads correctly on BOTH sides.
-	// Only the lateral offset above is per-side.
-	yaw = (cp->hd.direction - 1024) & 0xfff;
+	// Body rotation straight off the car's matrix, so the crew banks and
+	// pitches with the car (and the weapon arm follows, being posed in the
+	// ped's own local frame). The extracted yaw is identical to
+	// hd.direction - verified - so the facing the crew was tuned with is
+	// unchanged; only the tilt is new.
+	cd2CrewMatrixEuler(w, &rot);
+	yaw = (rot.vy - 1024) & 0xfff;
 
-	jer_npc_set_world((JerNpc*)pPed, x, -MapHeight(&g) - 130 - raiseY, z, yaw);
+	jer_npc_set_world((JerNpc*)pPed, x, y, z, yaw);
+	jer_npc_set_orient((JerNpc*)pPed, (CD2_CREW_TILT_SIGN * rot.vx) & 0xfff, yaw, (CD2_CREW_TILT_SIGN * rot.vz) & 0xfff);
 }
 
 static void cd2CrewSpawnSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
@@ -536,6 +582,7 @@ static void cd2CrewSpawnSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
 	c->state[i] = CD2_CREW_OUT;
 	c->frame[i] = 0;
 	c->raiseY[i] = 0;
+	c->sitLogged[i] = 0;
 
 	jer_npc_set_action(c->ped[i], PED_ACTION_GETOUTCAR, 0);
 	cd2CrewPlace(pPed, cp, i, c->raiseY[i]);
@@ -553,39 +600,46 @@ static void cd2CrewDespawnSide(CD2_CREW_CAR* c, int i)
 	c->state[i] = CD2_CREW_IN;
 	c->frame[i] = 0;
 	c->raiseY[i] = 0;
+	c->sitLogged[i] = 0;
 }
 
-// Drive the side's "out" pose for its current frame: climb out, then settle
-// into the resting pose. The DRIVER stops mid-climb, leaning out of the window
-// (the arm reach is forced separately, in the skeleton hook); the GUNNER
-// completes the climb and then perches ON the windowsill - a SIT, raised.
+// The frame the side's CLIMB stops at: the driver leans out there, the gunner
+// climbs further so he sits up on the sill.
+static int cd2CrewClimbFrame(int i)
+{
+	return (i == CD2_CREW_SIDE_DRIVER) ? CD2_CREW_DRIVER_HOLD : CD2_CREW_GUNNER_HOLD;
+}
+
+// Drive the side's "out" pose: climb out of the car and hold at the side's
+// frame. BOTH sides use the same GETOUTCAR motion - the one the engine itself
+// uses for a ped at a car door - so there is no snap and nothing to clip; only
+// the held frame and the gunner's perch height differ. (The gunner's SIT pose
+// was tried and reverted: its dangling legs hung through the door panel.)
 static void cd2CrewApplyOutPose(CD2_CREW_CAR* c, int i)
 {
-	int last = (i == CD2_CREW_SIDE_DRIVER) ? CD2_CREW_DRIVER_HOLD : CD2_CREW_GETOUT_LAST;
+	int hold = cd2CrewClimbFrame(i);
 
-	if (c->frame[i] < last)
+	if (c->frame[i] < hold)
 	{
 		c->frame[i] += CD2_CREW_ANIM_STEP;
 
-		if (c->frame[i] > last)
-			c->frame[i] = last;
-
-		jer_npc_set_action(c->ped[i], PED_ACTION_GETOUTCAR, c->frame[i]);
-		c->raiseY[i] = 0;
+		if (c->frame[i] > hold)
+			c->frame[i] = hold;
 	}
-	else if (i == CD2_CREW_SIDE_GUNNER)
-	{
-		if (c->raiseY[i] == 0 && gCd2Cfg.debugLog)
-			printInfo("[combatd2] crew: side=%d perched on the sill (SIT +%d)\n", i, CD2_CREW_SILL_RAISE);
 
-		jer_npc_set_action(c->ped[i], PED_ACTION_SIT, CD2_CREW_SIT_FRAME);
-		c->raiseY[i] = CD2_CREW_SILL_RAISE;
-	}
-	else
+	jer_npc_set_action(c->ped[i], PED_ACTION_GETOUTCAR, c->frame[i]);
+
+	// the gunner rises onto the sill as he climbs; the driver just leans
+	c->raiseY[i] = (i == CD2_CREW_SIDE_GUNNER)
+		? (CD2_CREW_SILL_RAISE * c->frame[i]) / CD2_CREW_GUNNER_HOLD
+		: 0;
+
+	if (c->frame[i] >= hold && c->sitLogged[i] == 0)
 	{
-		// the driver holds the mid-climb lean
-		jer_npc_set_action(c->ped[i], PED_ACTION_GETOUTCAR, CD2_CREW_DRIVER_HOLD);
-		c->raiseY[i] = 0;
+		c->sitLogged[i] = 1;
+
+		if (gCd2Cfg.debugLog)
+			printInfo("[combatd2] crew: side=%d settled out (frame=%d raise=%d)\n", i, c->frame[i], c->raiseY[i]);
 	}
 }
 
