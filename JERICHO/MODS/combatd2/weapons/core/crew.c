@@ -65,8 +65,8 @@ enum { CD2_CREW_SIDE_DRIVER = 0, CD2_CREW_SIDE_GUNNER = 1 };
 // sides) bails out and runs from the wreck, on fire, for this many frames
 // (~3s at 30fps) before being cleaned up.
 #define CD2_CREW_FLEE_FRAMES	90
-#define CD2_CREW_FLEE_SPEED	14	// world units / frame
-#define CD2_CREW_FLEE_SWAY	90	// heading swing per step (PSX angle units):
+#define CD2_CREW_FLEE_SPEED	34	// world units / frame
+#define CD2_CREW_FLEE_SWAY	10	// heading swing per step (PSX angle units):
 					// 4096/90 ~= 45-frame sine period (~1.5s) - a slow weave
 #define CD2_CREW_FLEE_AMP	700	// sway amplitude (fixed point, 4096 = 1.0)
 
