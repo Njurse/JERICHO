@@ -48,6 +48,22 @@ int  cd2WpnPlayerCar(CAR_DATA** out);
 // Fender muzzle for a given side (-1 left, +1 right), y-up world.
 void cd2WpnMuzzle(const CAR_DATA* cp, int side, VECTOR* out);
 
+// Muzzle at a leaning crew member's window: same convention as cd2WpnMuzzle but
+// pushed out to the door plane and raised toward the roof line, so a leaning
+// weapon visibly fires from the ped hanging there. side = -1 driver (left),
+// +1 gunner (right).
+void cd2WpnWindowMuzzle(const CAR_DATA* cp, int side, VECTOR* out);
+
+// The window side (+1 / -1) a weapon's lean flag fires from, or 0 when the
+// weapon leans nobody (fire from the body). A "both" weapon uses the driver's
+// window (one muzzle per shot).
+int  cd2WpnMuzzleSide(const CD2_WEAPON_DEF* def);
+
+// The muzzle a SHOT should leave from: the leaning crew member's window when
+// the weapon leans (per cd2WpnMuzzleSide), else the ordinary `side` muzzle. All
+// fire functions should use this so a leaning weapon fires from its ped.
+void cd2WpnShotMuzzle(const CD2_WEAPON_DEF* def, const CAR_DATA* cp, int side, VECTOR* out);
+
 // The car's forward unit vector *4096 (the m[][2] column).
 void cd2WpnForward(const CAR_DATA* cp, VECTOR* out);
 

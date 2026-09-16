@@ -494,7 +494,7 @@ static void cd2ProjBurstStep(void)
 			continue;
 		}
 
-		cd2WpnMuzzle(b->shooter, 0, &muzzle);
+		cd2WpnShotMuzzle(b->def, b->shooter, 0, &muzzle);	// gunner's window when leaning
 		cd2WpnForward(b->shooter, &dir);
 
 		vel.vx = (int)(((long long)dir.vx * b->def->speed) >> 12);

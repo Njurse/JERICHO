@@ -34,6 +34,10 @@
  *       leaning weapon (and the mounted crew it calls out).
  *   crew                            dump the mounted-crew state (who is out)
  *       for the player and the first opponent.
+ *   muzzle                          print the player car's centred muzzle next
+ *       to the left/right window muzzles (leaning weapons fire from a window).
+ *   select:<weapon>                 cycle the player's car until that weapon is
+ *       selected (grant first: the cycle skips unowned weapons).
  *
  * A kill applies damage over several frames rather than in one huge hit,
  * because ApplyDamage clamps a single hit, and it stops as soon as the car is
@@ -59,7 +63,7 @@
 #define CD2_DBG_DAMAGE		3000	// per frame, well above one hit's clamp
 #define CD2_DBG_KILL_TIMEOUT	300	// give up on a kill after this many frames (10s)
 
-enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW };
+enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT };
 enum { CD2_DBG_ATT_ENEMY = 0, CD2_DBG_ATT_SELF, CD2_DBG_ATT_NONE, CD2_DBG_ATT_PLAYER, CD2_DBG_ATT_NPC };
 
 typedef struct CD2_DBG_STEP
@@ -92,6 +96,37 @@ static int cd2DbgMatch(const char** s, const char* word)
 
 	*s += i;
 	return 1;
+}
+
+// A weapon short name -> CD2_WID_*, advancing *s past the name. CD2_WID_NONE if
+// the name is unknown. Shared by the `fire:` and `select:` steps.
+static int cd2DbgWeaponId(const char** s)
+{
+	static const struct { const char* n; int id; } wtab[] =
+	{
+		{ "mg", CD2_WID_MG }, { "missile", CD2_WID_MISSILE },
+		{ "mine", CD2_WID_MINE }, { "homing", CD2_WID_HOMING },
+		{ "cluster", CD2_WID_CLUSTER }, { "zoomy", CD2_WID_ZOOMY },
+		{ "freeze", CD2_WID_FREEZE }, { "shotgun", CD2_WID_SHOTGUN },
+	};
+	const char* p = *s;
+	unsigned int w;
+
+	for (w = 0; w < sizeof(wtab) / sizeof(wtab[0]); w++)
+	{
+		int k = 0;
+
+		while (wtab[w].n[k] != '\0' && p[k] == wtab[w].n[k])
+			k++;
+
+		if (wtab[w].n[k] == '\0')
+		{
+			*s = p + k;
+			return wtab[w].id;
+		}
+	}
+
+	return CD2_WID_NONE;
 }
 
 // Parses `action[:arg]`, leaving *s just past it. Returns CD2_DBG_NONE if the
@@ -153,50 +188,36 @@ static int cd2DbgReadAction(const char** s, int* arg)
 	// pad, so this is how a run exercises a leaning weapon (and thus the crew).
 	if (cd2DbgMatch(&p, "fire"))
 	{
-		static const struct { const char* n; int id; } wtab[] =
-		{
-			{ "mg", CD2_WID_MG }, { "missile", CD2_WID_MISSILE },
-			{ "mine", CD2_WID_MINE }, { "homing", CD2_WID_HOMING },
-			{ "cluster", CD2_WID_CLUSTER }, { "zoomy", CD2_WID_ZOOMY },
-			{ "freeze", CD2_WID_FREEZE }, { "shotgun", CD2_WID_SHOTGUN },
-		};
-		unsigned int w;
-
 		if (*p != ':')
 			return CD2_DBG_NONE;
 
 		p++;
 
-		*arg = CD2_WID_NONE;
-
-		for (w = 0; w < sizeof(wtab) / sizeof(wtab[0]); w++)
-		{
-			int k = 0;
-			int hit = 1;
-
-			while (wtab[w].n[k] != '\0')
-			{
-				if (p[k] != wtab[w].n[k])
-				{
-					hit = 0;
-					break;
-				}
-				k++;
-			}
-
-			if (hit)
-			{
-				*arg = wtab[w].id;
-				p += k;
-				break;
-			}
-		}
+		*arg = cd2DbgWeaponId(&p);
 
 		if (*arg == CD2_WID_NONE)
 			return CD2_DBG_NONE;
 
 		*s = p;
 		return CD2_DBG_FIRE;
+	}
+
+	// select:<weapon> - make the PLAYER's car cycle until that weapon is
+	// SELECTED (grant first: the cycle skips unowned weapons).
+	if (cd2DbgMatch(&p, "select"))
+	{
+		if (*p != ':')
+			return CD2_DBG_NONE;
+
+		p++;
+
+		*arg = cd2DbgWeaponId(&p);
+
+		if (*arg == CD2_WID_NONE)
+			return CD2_DBG_NONE;
+
+		*s = p;
+		return CD2_DBG_SELECT;
 	}
 
 	// crew - dump the current mounted-crew state (who is hanging out) for the
@@ -206,6 +227,14 @@ static int cd2DbgReadAction(const char** s, int* arg)
 	{
 		*s = p;
 		return CD2_DBG_CREW;
+	}
+
+	// muzzle - print the player car's centred muzzle next to the left/right
+	// window muzzles, so a run can show a leaning weapon fires from the door.
+	if (cd2DbgMatch(&p, "muzzle"))
+	{
+		*s = p;
+		return CD2_DBG_MUZZLE;
 	}
 
 	return CD2_DBG_NONE;
@@ -435,7 +464,8 @@ static void cd2DbgRunStep(const CD2_DBG_STEP* st)
 
 		if (cp != NULL)
 		{
-			printInfo("[cd2debug] crew player car=%d driver=%d gunner=%d\n",
+			printInfo("[cd2debug] crew frame=%d sel=%s player car=%d driver=%d gunner=%d\n",
+				sFrame, cd2WpnName(cd2WpnSelected()),
 				cp->id, cd2CrewSideOut(cp, CD2_CREW_DRIVER), cd2CrewSideOut(cp, CD2_CREW_GUNNER));
 
 			if (cd2CrewPedPos(cp, CD2_CREW_DRIVER, p))
@@ -448,6 +478,37 @@ static void cd2DbgRunStep(const CD2_DBG_STEP* st)
 				op->id, cd2CrewSideOut(op, CD2_CREW_DRIVER), cd2CrewSideOut(op, CD2_CREW_GUNNER));
 
 		printInfo("[cd2debug] crew peds spawned=%d\n", cd2CrewPedCount());
+		break;
+	}
+
+	case CD2_DBG_MUZZLE:
+	{
+		CAR_DATA* cp = cd2DbgPlayer();
+
+		if (cp != NULL && cp->ap.carCos != NULL)
+		{
+			VECTOR c, l, r;
+
+			cd2WpnMuzzle(cp, 0, &c);
+			cd2WpnWindowMuzzle(cp, -1, &l);		// driver (left)
+			cd2WpnWindowMuzzle(cp, 1, &r);		// gunner (right)
+
+			printInfo("[cd2debug] muzzle centre=(%d,%d,%d) left=(%d,%d,%d) right=(%d,%d,%d) car=(%d,%d,%d)\n",
+				c.vx, c.vy, c.vz, l.vx, l.vy, l.vz, r.vx, r.vy, r.vz,
+				cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2]);
+		}
+		break;
+	}
+
+	case CD2_DBG_SELECT:
+	{
+		int k;
+
+		for (k = 0; k < CD2_WID_COUNT * 3 && cd2WpnSelected() != st->arg; k++)
+			cd2WpnCycle(+1);
+
+		printInfo("[cd2debug] select %s -> now %s\n",
+			cd2WpnName(st->arg), cd2WpnName(cd2WpnSelected()));
 		break;
 	}
 	}

@@ -23,6 +23,13 @@
 // Safe on any car (traffic simply never carries a leaning weapon).
 void cd2CrewNotifyFire(const CAR_DATA* car, int leanMask);
 
+// The car's currently SELECTED/armed weapon's lean flags, refreshed every frame.
+// Unlike a single shot, this keeps the sides out for as long as that weapon
+// stays selected — selecting a leaning weapon brings the crew out and it stays
+// out until another weapon is selected (or the weapon fires and the fire hold
+// bridges the gap). Same OR semantics as cd2CrewNotifyFire.
+void cd2CrewArmed(const CAR_DATA* car, int leanMask);
+
 // Whether a car has that side currently out of the window:
 // 1 while out, 0 while in. side = CD2_CREW_DRIVER or CD2_CREW_GUNNER.
 int cd2CrewSideOut(const CAR_DATA* car, int side);

@@ -36,7 +36,7 @@ static void cd2ClusterFire(void* vcp)
 	if (cp == NULL || cp->ap.carCos == NULL)
 		return;
 
-	cd2WpnMuzzle(cp, 0, &muzzle);	// centred (side 0)
+	cd2WpnShotMuzzle(&cd2WdefCluster, cp, 0, &muzzle);	// gunner's window (leanOut)
 	cd2WpnForward(cp, &dir);
 
 	vel.vx = (int)(((long long)dir.vx * cd2WdefCluster.speed) >> 12);

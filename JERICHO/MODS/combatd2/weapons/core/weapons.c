@@ -572,6 +572,54 @@ void cd2WpnMuzzle(const CAR_DATA* cp, int side, VECTOR* out)
 	out->vz += (int)(((long long)w->m[2][1] * muzzleHeight) >> 12);
 }
 
+// A shot's muzzle when a crew member is leaning out: out to the door plane
+// (colBox.vx, the body half-width) and up toward the roof line, a little ahead
+// of the cabin centre - so the pellets/missile leave from the window the ped
+// hangs out of rather than the car's nose. Same matrix columns as cd2WpnMuzzle
+// (0 = right/lateral, 1 = up, 2 = forward).
+void cd2WpnWindowMuzzle(const CAR_DATA* cp, int side, VECTOR* out)
+{
+	const MATRIX* w = &cp->hd.where;
+	const SVECTOR* cb = &cp->ap.carCos->colBox;
+	int door = cb->vx;			// out to the door plane
+	int height = (cb->vy * 65) / 100;	// toward the roof line
+	int forward = cb->vz / 5;		// roughly the cabin front
+
+	out->vx = w->t[0] + (int)(((long long)w->m[0][2] * forward) >> 12)
+	                 + (int)(((long long)w->m[0][0] * door * side) >> 12)
+	                 + (int)(((long long)w->m[0][1] * height) >> 12);
+	out->vy = w->t[1] + (int)(((long long)w->m[1][2] * forward) >> 12)
+	                 + (int)(((long long)w->m[1][0] * door * side) >> 12)
+	                 + (int)(((long long)w->m[1][1] * height) >> 12);
+	out->vz = w->t[2] + (int)(((long long)w->m[2][2] * forward) >> 12)
+	                 + (int)(((long long)w->m[2][0] * door * side) >> 12)
+	                 + (int)(((long long)w->m[2][1] * height) >> 12);
+}
+
+int cd2WpnMuzzleSide(const CD2_WEAPON_DEF* def)
+{
+	if (def == NULL)
+		return 0;
+
+	if (def->leanOut & CD2_CREW_DRIVER)
+		return -1;	// driver -> left window
+
+	if (def->leanOut & CD2_CREW_GUNNER)
+		return 1;	// gunner -> right window
+
+	return 0;
+}
+
+void cd2WpnShotMuzzle(const CD2_WEAPON_DEF* def, const CAR_DATA* cp, int side, VECTOR* out)
+{
+	int ws = cd2WpnMuzzleSide(def);
+
+	if (ws != 0)
+		cd2WpnWindowMuzzle(cp, ws, out);
+	else
+		cd2WpnMuzzle(cp, side, out);
+}
+
 // ---------------------------------------------------------------------------
 // Refire cooldown: every shot from every shooter passes through here, so a
 // primary weapon can enforce a minimum gap between refires no matter who
@@ -685,6 +733,16 @@ static int cd2WpnOnFrame(void* ud, void* args)
 	// This car's armed weapon, for anyone who cares whose window a crew ped
 	// should lean out of (the player's trigger weapon).
 	cd2WpnSetCarArmed(cp, gSelected);
+
+	// Arm the crew from the SELECTED weapon every frame: selecting a leaning
+	// weapon brings its ped out and it stays out while that weapon is selected
+	// (not only at the instant it fires). A non-leaning selection contributes
+	// nothing, so an out side still retracts on its own after its hold lapses.
+	{
+		const CD2_WEAPON_DEF* armed = cd2WpnDef(gSelected);
+
+		cd2CrewArmed(cp, (armed != NULL) ? armed->leanOut : 0);
+	}
 
 	pad = Pads[(unsigned char)*cp->ai.padid].mapped;
 

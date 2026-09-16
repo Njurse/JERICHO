@@ -73,10 +73,9 @@ static CD2_CREW_CAR gCrew[MAX_CARS];
 // request
 // ---------------------------------------------------------------------------
 
-void cd2CrewNotifyFire(const CAR_DATA* cp, int leanMask)
+// Refresh (arm) the requested sides on a car's crew hold.
+static void cd2CrewRequest(const CAR_DATA* c, int leanMask)
 {
-	CAR_DATA* c = (CAR_DATA*)cp;
-
 	if (c == NULL || c->id < 0 || c->id >= MAX_CARS)
 		return;
 
@@ -85,15 +84,26 @@ void cd2CrewNotifyFire(const CAR_DATA* cp, int leanMask)
 
 	if (leanMask & CD2_CREW_GUNNER)
 		gCrew[c->id].hold[CD2_CREW_SIDE_GUNNER] = CD2_CREW_HOLD_FRAMES;
+}
+
+void cd2CrewNotifyFire(const CAR_DATA* cp, int leanMask)
+{
+	cd2CrewRequest(cp, leanMask);
 
 	// Observability: a leaning shot fired (leanMask 0 = the MG / a non-leaning
 	// weapon, deliberately silent). This is what a headless run greps to prove
 	// the flags reach the crew state for the player AND for AI cars.
-	if (leanMask != 0 && gCd2Cfg.debugLog)
+	if (leanMask != 0 && gCd2Cfg.debugLog && cp != NULL && cp->id >= 0 && cp->id < MAX_CARS)
 		printInfo("[combatd2] crew: car=%d fired lean=0x%X -> driver=%d gunner=%d\n",
-			c->id, leanMask,
-			gCrew[c->id].hold[CD2_CREW_SIDE_DRIVER],
-			gCrew[c->id].hold[CD2_CREW_SIDE_GUNNER]);
+			cp->id, leanMask,
+			gCrew[cp->id].hold[CD2_CREW_SIDE_DRIVER],
+			gCrew[cp->id].hold[CD2_CREW_SIDE_GUNNER]);
+}
+
+void cd2CrewArmed(const CAR_DATA* cp, int leanMask)
+{
+	// Runs every frame while a leaning weapon is selected, so no log here.
+	cd2CrewRequest(cp, leanMask);
 }
 
 int cd2CrewSideOut(const CAR_DATA* cp, int side)
@@ -183,7 +193,7 @@ static int cd2CrewPedAlive(LPPEDESTRIAN p)
 }
 
 // Hang the ped on the car's door: the side of the body just outside the panel,
-// a touch toward the cabin's rear, facing outward, grounded against the map at
+// a touch ahead of the cabin centre, facing outward, grounded against the map at
 // its own x/z. Driven by the same box/matrix math the weapon muzzles use.
 static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i)
 {
@@ -191,7 +201,7 @@ static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i)
 	const SVECTOR* cb = &cp->ap.carCos->colBox;
 	int s = (i == CD2_CREW_SIDE_DRIVER) ? -1 : 1;	// left = driver
 	int lat = (cb->vx * 108) / 100;			// just outside the body side
-	int fwd = -(cb->vz / 8);			// slightly behind the door line
+	int fwd = cb->vz / 4;				// a touch ahead of centre, not the rear
 	int x, z, yaw;
 	VECTOR g;
 
@@ -204,7 +214,9 @@ static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i)
 	g.vz = z;
 	g.vy = 0;
 
-	yaw = (cp->hd.direction + s * 1024) & 0xfff;
+	// Face outward, perpendicular to the body. The lateral term is the sign the
+	// user asked for after seeing them look toward the car's rear.
+	yaw = (cp->hd.direction - s * 1024) & 0xfff;
 
 	jer_npc_set_world((JerNpc*)pPed, x, -MapHeight(&g) - 130, z, yaw);
 }
@@ -395,11 +407,44 @@ static int cd2CrewOnGameStart(void* ud, void* args)
 }
 
 // ---------------------------------------------------------------------------
+// JER_EVENT_CAMERA: re-place every crew ped from the cars' CURRENT transforms.
+//
+// The peds are drawn at the top of the render pass, which runs AFTER StepCars()
+// for this frame. The FRAME handler runs BEFORE StepCars(), so a ped placed
+// there is a whole step behind the car it rides (very visible at speed). This
+// hook fires from InitCamera, just before DrawAllPedestrians, so the placement
+// uses the cars' final positions for the frame and the ped tracks exactly.
+// ---------------------------------------------------------------------------
+static int cd2CrewOnCamera(void* ud, void* args)
+{
+	int i, side;
+	(void)ud;
+	(void)args;
+
+	if (!gCd2Cfg.enabled)
+		return JER_RESULT_CONTINUE;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		for (side = 0; side < 2; side++)
+		{
+			LPPEDESTRIAN pPed = (LPPEDESTRIAN)gCrew[i].ped[side];
+
+			if (pPed != NULL && cd2CrewPedAlive(pPed))
+				cd2CrewPlace(pPed, &car_data[i], side);
+		}
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+// ---------------------------------------------------------------------------
 // Registration (called once by jer_module_combatd2_entry in combatd2.c)
 // ---------------------------------------------------------------------------
 void cd2CrewRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2CrewOnFrame, NULL, 1);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, cd2CrewOnCamera, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2CrewOnGameStart, NULL, 0);
 
 	ctx->jer_log(ctx, "[combatd2] mounted crew registered (SDK v%d)\n", ctx->sdkVersion);

@@ -51,7 +51,7 @@ static void cd2ShotgunFire(void* vcp)
 			printInfo("[combatd2] shotgun sound: channel=%d locked\n", gShotgunChannel);
 	}
 
-	cd2WpnMuzzle(cp, 0, &muzzle);	// centred, for the sound position
+	cd2WpnShotMuzzle(&cd2WdefShotgun, cp, 0, &muzzle);	// driver's window, for the sound position
 
 	// a low boom
 	Start3DSoundVolPitch(gShotgunChannel, SOUND_BANK_SFX, 6,

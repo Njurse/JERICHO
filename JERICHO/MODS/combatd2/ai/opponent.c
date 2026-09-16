@@ -1604,31 +1604,59 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	cp->handbrake = 0;
 	cp->wheelspin = 0;
 
-	// --- offensive: MG when lined up, plus a primary (missile) at range ---
-	// Both go through cd2WpnTryFire, so each weapon's own refire cooldown sets
-	// the cadence and the AI can't out-shoot what the player is allowed to do.
+	// --- offensive: leaning crew weapons, then the old primaries ---
+	// Every shot goes through cd2WpnTryFire, so each weapon's own refire
+	// cooldown sets the cadence and the AI can't out-shoot what the player is
+	// allowed to do. An opponent fires a LEANING weapon whenever one is up and
+	// it is lined up: the SHOTGUN (driver leans out) up close, then the CLUSTER
+	// and ZOOMY (gunner leans out) at range - so contestant cars show crew too.
+	// A cooling-down weapon does not block the next (each is its own `if`), so
+	// the AI still fires its missile/seeker primaries in between.
 	if (sEvade == 0 && targetId >= 0 &&
 	    targetD2 < (long long)CD2_AI_FIRE_RANGE * CD2_AI_FIRE_RANGE)
 	{
+		const CD2_WEAPON_DEF* mg = cd2WpnDef(CD2_WID_MG);
+		const CD2_WEAPON_DEF* sg = cd2WpnDef(CD2_WID_SHOTGUN);	// driver leans
+		const CD2_WEAPON_DEF* cl = cd2WpnDef(CD2_WID_CLUSTER);	// gunner leans
+		const CD2_WEAPON_DEF* zm = cd2WpnDef(CD2_WID_ZOOMY);	// gunner leans
 		const CD2_WEAPON_DEF* ms = cd2WpnDef(CD2_WID_MISSILE);
 		const CD2_WEAPON_DEF* hm = cd2WpnDef(CD2_WID_HOMING);
-		const CD2_WEAPON_DEF* mg = cd2WpnDef(CD2_WID_MG);
+		long long sgRange = (sg != NULL) ? (long long)sg->range :
+		                    (long long)CD2_AI_PRIMARY_MIN;
+		int closeEnough = targetD2 < sgRange * sgRange;
 		int inPrimary = (targetD2 > (long long)CD2_AI_PRIMARY_MIN * CD2_AI_PRIMARY_MIN &&
 		                 targetD2 < (long long)CD2_AI_PRIMARY_RANGE * CD2_AI_PRIMARY_RANGE);
 		int launched = 0;
-		int which = -1;
+		const char* fired = NULL;
 
-		// Each weapon states its own firing tolerance. Lined up, take the one
-		// that hits hardest; off to one side, take the one that steers.
-		if (inPrimary && ms != NULL && ABS(diff) < cd2AiCone(ms))
+		if (!launched && closeEnough && sg != NULL && ABS(diff) < cd2AiCone(sg))
+		{
+			launched = cd2WpnTryFire(cp, CD2_WID_SHOTGUN);
+			fired = (launched) ? "SHOTGUN" : NULL;
+		}
+
+		if (!launched && inPrimary && cl != NULL && ABS(diff) < cd2AiCone(cl))
+		{
+			launched = cd2WpnTryFire(cp, CD2_WID_CLUSTER);
+			fired = (launched) ? "CLUSTER" : NULL;
+		}
+
+		if (!launched && inPrimary && zm != NULL && ABS(diff) < cd2AiCone(zm))
+		{
+			launched = cd2WpnTryFire(cp, CD2_WID_ZOOMY);
+			fired = (launched) ? "ZOOMY" : NULL;
+		}
+
+		if (!launched && inPrimary && ms != NULL && ABS(diff) < cd2AiCone(ms))
 		{
 			launched = cd2WpnTryFire(cp, CD2_WID_MISSILE);
-			which = CD2_WID_MISSILE;
+			fired = (launched) ? "MISSILE" : NULL;
 		}
-		else if (inPrimary && hm != NULL && ABS(diff) < cd2AiCone(hm))
+
+		if (!launched && inPrimary && hm != NULL && ABS(diff) < cd2AiCone(hm))
 		{
 			launched = cd2WpnTryFire(cp, CD2_WID_HOMING);
-			which = CD2_WID_HOMING;
+			fired = (launched) ? "SEEKER" : NULL;
 		}
 
 		if (!launched && (mg == NULL || ABS(diff) < cd2AiCone(mg)))
@@ -1636,7 +1664,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 
 		if (launched && gCd2Cfg.debugLog)
 			printInfo("[combatd2] AI car=%d fired %s at car=%d (err=%d)\n",
-				cp->id, (which == CD2_WID_HOMING) ? "SEEKER" : "MISSILE", targetId, diff);
+				cp->id, (fired != NULL) ? fired : "?", targetId, diff);
 	}
 
 	// --- observability snapshot (tracked opponent only) ---

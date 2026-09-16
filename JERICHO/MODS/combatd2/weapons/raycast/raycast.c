@@ -109,7 +109,9 @@ void cd2RaycastScatter(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 		long long rx = w->m[0][0], ry = w->m[1][0], rz = w->m[2][0];	// right
 		long long ux = w->m[0][1], uy = w->m[1][1], uz = w->m[2][1];	// up
 
-		cd2WpnMuzzle(shooter, side, &muzzle);
+		// a leaning weapon (the shotgun) fires from the driver's window; a
+		// non-leaning one from the alternating fenders
+		cd2WpnShotMuzzle(def, shooter, side, &muzzle);
 
 		dir.vx = fwd.vx + (int)((rx * jh + ux * jv) >> 12);
 		dir.vy = fwd.vy + (int)((ry * jh + uy * jv) >> 12);
