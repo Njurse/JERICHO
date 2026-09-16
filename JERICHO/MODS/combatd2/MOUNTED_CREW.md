@@ -67,10 +67,12 @@ Driven off the request, one ped per side (`weapons/core/crew.c`):
    the **gunner at 14**, fully out.
 2. **held** — the ped settles into its resting pose and is **re-placed from the
    car's transform every frame** so it rides the car:
-   * **driver** — holds the mid-climb lean, with his right arm forced into a
-     weapon-holding reach (see *The poses* below);
-   * **gunner** — switches to `PED_ACTION_SIT` raised `CD2_CREW_SILL_RAISE`
-     above normal height, so he perches *on* the windowsill.
+   * **driver** — holds the mid-climb lean (frame 9) with his right arm forced
+     into a weapon-holding reach (see *The poses* below);
+   * **gunner** — the **same** motion at the **same** frame, raised
+     `CD2_CREW_SILL_RAISE` so he perches *on* the windowsill. Both sides use one
+     animation and one frame on purpose: a later frame stands the ped up, and
+     raising *that* just floats him.
 3. **in** — the hold lapses (or the weapon is deselected): play
    `PED_ACTION_GETINCAR` 0→15 (same step rate) and `DestroyPedestrian` the ped
    as it disappears. This is done by the module, **never** through the engine's
@@ -79,12 +81,12 @@ Driven off the request, one ped per side (`weapons/core/crew.c`):
 
 If fire resumes mid-retract the side flips straight back to *out*.
 
-### Placement (the two things that were wrong first time)
+### Placement
 
 `cd2CrewPlace` hangs the ped on the door: lateral = `colBox.vx * 1.08` out to
 the side (a *per-side* sign), forward = `colBox.vz / 4` (a touch *ahead* of
-centre, not the rear), grounded with `MapHeight` plus the pose's raise, and
-rotated by **one** yaw for both doors — `hd.direction - 90°`.
+centre, not the rear), **riding the car** in all three axes (see *3D placement*
+below), and rotated by **one** yaw for both doors — `hd.direction - 90°`.
 
 The facing is deliberately *not* mirrored per side. The ped model's front is
 not aligned with the yaw vector, so `hd.direction -/+ 90°` (which is how the
@@ -98,32 +100,59 @@ before `DrawAllPedestrians`), *not* only on `FRAME`. `FRAME` fires before
 plainly visible as lag. The `CAMERA` pass uses the cars' final transforms for
 the frame.
 
-### The poses, and who is allowed to be posed
+### The poses, the mirror flag, and who may be posed
 
-Both poses come from the engine's own motion data (`PED_ACTION_*`) — no new art:
+Both sides reuse the engine's own `GETOUTCAR` motion — no new art, no invented
+pose (`PED_ACTION_SIT` was tried and reverted: its legs dangle ~95 below the hip
+and land ~13 units *inboard* of it, so they hung through the door panel).
 
-* **driver, weapon arm** — forced through **`JER_EVENT_PED_SKELETON` phase 0**
-  (the POSITION channel, `vCurrPos`), mirroring d2pl's `poseArmPose` shape: the
-  shoulder stays at its rest offset, the forearm is raised and pushed forward,
-  and the hand extends past it (`CD2_CREW_ARM_*`; `handZ` must exceed `elbowZ`
-  or the arm folds back on itself). Both crew peds share one body yaw, so the
-  driver's reach is rotated half a turn (`CD2_CREW_ARM_FLIP`) to point out of
-  *his* window. The pose is re-applied on every draw, because the skeleton
-  resets `vCurrPos` each frame.
-* **gunner, sill perch** — `PED_ACTION_SIT` plus the `raiseY` above.
+* **driver weapon arm** — forced through **`JER_EVENT_PED_SKELETON` phase 0**
+  (the POSITION channel, `vCurrPos`), mirroring d2pl's `poseArmPose` shape:
+  shoulder at its rest offset, forearm raised and pushed forward, hand extended
+  past it, rotated half a turn (`CD2_CREW_ARM_FLIP`) to point out of *his*
+  window. Re-applied every draw (the skeleton resets `vCurrPos` each frame).
+  Note the pose constants are single-digit ped-local units and `>> 12` in the
+  rotate helper truncates them to ±1 — effectively invisible. The driver in
+  fact reads correctly on the plain motion; treat this as a hook, not the look.
+* **the mirror flag** — the one that actually mattered. For a get-out the engine
+  sets the shared `bReverseYRotation` (`SetupGetOutCar`) and
+  `newRotateBones` **mirror-flips the ped's root rotation** when it is set. We
+  reuse that motion at *both* doors with one orientation, so the second door
+  needs the flip. `cd2CrewOnPedPose` sets it per side (driver = unmirrored,
+  gunner = mirrored) and the skeleton phase-1 pass hands the game's value
+  straight back. That is the only effective *rotation* channel.
 
-Reaching a module's own ped from a pose hook is what the **ownership gate** is
-for: the ped-pose hooks (`PED_POSE`, `PED_SKELETON`) fire for the player ped
-**or any ped a module owns**. Spawning through `jer_npc_spawn*` marks the ped
-(`jer_npc_owned`), despawning unmarks it, and the query also checks `pUsedPeds`
-— so a ped the engine destroyed behind our back never matches a recycled slot.
-Ambient pedestrians are never posed, and the engine pays nothing for them.
+Reaching a module's own ped is what the **ownership gate** is for: the ped-pose
+hooks (`PED_POSE`, `PED_SKELETON`) fire for the player ped **or any ped a module
+owns**. Spawning through `jer_npc_spawn*` marks the ped (`jer_npc_owned`),
+despawning unmarks it, and the query also checks `pUsedPeds` — so a ped the
+engine destroyed behind our back never matches a recycled slot. Ambient
+pedestrians are never posed, and the engine pays nothing for them.
 
 > Two channels, and they are not interchangeable (full map:
 > `JERICHO/docs/ped-animation.md`): **positions** take from `PED_SKELETON`
 > phase 0, **rotations** only from `JER_EVENT_PED_POSE` (before
-> `newRotateBones`). The arm reach uses positions; a lean built from a bone
-> *rotation* would have to go through `PED_POSE`.
+> `newRotateBones`).
+
+### 3D placement — the crew rides the car, not the map
+
+Two bugs lived here, both from treating a mounted ped as a grounded one:
+
+* **Y** came from `-MapHeight(x,z)` — the map under the ped, which is *not*
+  attached to the car. A car in the air (or tossed by a wreck) left its crew
+  standing on the road below. Now `y = -cp->hd.where.t[1] - CD2_CREW_BODY_LIFT`,
+  riding the car. Note the conventions: the car matrix is **Y-UP** while a ped's
+  `position` is **Y-DOWN** (`camera.c` proves it: `where.t[1] == -cameraPos.vy`),
+  hence the negation. `CD2_CREW_BODY_LIFT` (99) reproduces the old on-ground
+  offset, measured with the car level.
+* **body rotation** was the 2D `hd.direction` with the body always upright.
+  `newRotateBones` builds a ped's root with `RotMatrixYXZ(dir)` over **all
+  three** of `dir.vx/vy/vz`, so pitch and roll are settable.
+  `cd2CrewMatrixEuler` inverts `RotMatrixYXZ` (PsyCross `LIBGTE.C`) into the
+  car's YXZ triple and `jer_npc_set_orient()` applies it, so the crew banks and
+  pitches with the car — and the arm, posed in the ped's own frame, follows.
+  The extracted yaw is **identical to `hd.direction`** (verified), so the tuned
+  facing is unchanged; the pitch/roll sign is the one `CD2_CREW_TILT_SIGN` knob.
 
 ## 4. Firing from the window
 
