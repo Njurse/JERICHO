@@ -1,21 +1,21 @@
-// combatd2combat.c — Combat D2: COMBAT effects source file.
+// combatd2wreckfx.c — Combat D2: the wreck edge (explosion + kill credit).
 //
-// One of the source files of the single combatd2 module (merged back from
-// the old separate "combatd2combat" module; registered by the module entry
-// in combatd2.c via cd2CombatRegister()). Owns the combat damage effects:
+// (Split out of the old combatd2combat.c; see combatd2_internal.h for the file
+// map.)
 //
-//   * JER_EVENT_CAR_STEP       - edge-detect a car reaching the game's damage
-//                                cap ("totaled") and spawn a BIG_BANG explosion
-//                                once, at the moment it crosses the threshold.
-//   * JER_EVENT_CAR_DRAW_COLOR - render the totaled body flat solid black
-//                                (gouraud shading off, "damping off").
-//   * JER_EVENT_DRAW_WHEEL     - hide all four wheels once totaled (blown off).
+// Edge-detects a car reaching the game's damage cap ("totaled") and, once, at
+// the moment it crosses the threshold: spawns a harmless BIG_BANG barrage on
+// the wreck profile, tosses the wreck so it tumbles and comes to rest, and
+// posts the death message (credited to the last weapon that hit it). Also owns
+// cd2CarTotaled - the canonical "past the cap" test the rest of the module and
+// the weapons layer share.
 //
-// The damage cap is the same value the stock game uses to decide a car is
-// totaled (cars.c DrawCar): MaxPlayerDamage[padid] for the player, otherwise
-// MaxPlayerDamage[0].
+// The damage cap is the one the stock game uses (cars.c DrawCar):
+// MaxPlayerDamage[padid] for the player, otherwise MaxPlayerDamage[0].
 
 #include "driver2.h"
+#include "combatd2.h"
+#include "combatd2_internal.h"
 #include "cars.h"
 #include "job_fx.h"
 #include "mission.h"
@@ -23,10 +23,10 @@
 #include "convert.h"
 #include "jericho.h"
 #include "jer_events.h"
-#include "jer_hud.h"			// HUD messages (kill credit)
+#include "jer_hud.h"	/* HUD messages (kill credit) */
 #include "weapons/fx/fx.h"
-#include "weapons/core/weapon_internal.h"	// cd2WpnTakeAttacker
-#include "ai/ai.h"				// cd2AiIsOpponent / cd2AiRoleOf / cd2AiRoleNameOf
+#include "weapons/core/weapon_internal.h"	/* cd2WpnTakeAttacker */
+#include "ai/ai.h"	/* cd2AiIsOpponent / cd2AiRoleOf / cd2AiRoleNameOf */
 
 // per-car latch: 1 once the car has crossed the damage cap (edge detection)
 static char gWasTotaled[MAX_CARS];
@@ -161,76 +161,6 @@ static int cd2cOnCarStep(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
-// CAR_DRAW_COLOR: totaled body renders flat solid black.
-static int cd2cOnCarDrawColor(void* ud, void* args)
-{
-	JER_ARGS_CAR_DRAW_COLOR* a = (JER_ARGS_CAR_DRAW_COLOR*)args;
-	CAR_DATA* cp = (CAR_DATA*)a->car;
-	(void)ud;
-
-	if (cp->id < 0 || cp->id >= MAX_CARS)
-		return JER_RESULT_CONTINUE;
-
-	if (cd2CarTotaled(cp))
-		a->flatBlack = 1;
-
-	return JER_RESULT_CONTINUE;
-}
-
-// DRAW_WHEEL: totaled car has its wheels blown off (hidden).
-static int cd2cOnDrawWheel(void* ud, void* args)
-{
-	JER_ARGS_DRAW_WHEEL* a = (JER_ARGS_DRAW_WHEEL*)args;
-	CAR_DATA* cp;
-	(void)ud;
-
-	if (a->carId < 0 || a->carId >= MAX_CARS)
-		return JER_RESULT_CONTINUE;
-
-	cp = &car_data[a->carId];
-
-	if (cd2CarTotaled(cp))
-		a->hide = 1;
-
-	return JER_RESULT_CONTINUE;
-}
-
-// CAR_ENGINE_SOUND: mute the totaled wreck's engine (idle hum).
-static int cd2cOnCarEngineSound(void* ud, void* args)
-{
-	JER_ARGS_CAR_ENGINE_SOUND* a = (JER_ARGS_CAR_ENGINE_SOUND*)args;
-	CAR_DATA* cp = (CAR_DATA*)a->car;
-	(void)ud;
-
-	if (cp->id < 0 || cp->id >= MAX_CARS)
-		return JER_RESULT_CONTINUE;
-
-	if (cd2CarTotaled(cp))
-	{
-		a->revVolume = -10000;  // silent
-		a->idleVolume = -10000; // silent
-	}
-
-	return JER_RESULT_CONTINUE;
-}
-
-// CAR_DRAW: drop the totaled wreck's body so it drags on the ground.
-static int cd2cOnCarDraw(void* ud, void* args)
-{
-	JER_ARGS_CAR_DRAW* a = (JER_ARGS_CAR_DRAW*)args;
-	CAR_DATA* cp = (CAR_DATA*)a->car;
-	MATRIX* m = (MATRIX*)a->matrix;
-	(void)ud;
-
-	if (cp->id < 0 || cp->id >= MAX_CARS)
-		return JER_RESULT_CONTINUE;
-
-	if (cd2CarTotaled(cp))
-		m->t[1] -= (int)cp->ap.carCos->wheelSize; // body rests on the ground, wheels gone
-
-	return JER_RESULT_CONTINUE;
-}
-
 // RESET_CAR: clear the latch so a respawned car can explode again.
 static int cd2cOnResetCar(void* ud, void* args)
 {
@@ -246,15 +176,10 @@ static int cd2cOnResetCar(void* ud, void* args)
 // ---------------------------------------------------------------------------
 // Registration (called once by jer_module_combatd2_entry in combatd2.c)
 // ---------------------------------------------------------------------------
-
-void cd2CombatRegister(JERICHO_CONTEXT* ctx)
+void cd2WreckFxRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2cOnCarStep, NULL, -1); // runs before combatd2.c's CAR_STEP
-	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW_COLOR, cd2cOnCarDrawColor, NULL, 0);
-	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WHEEL, cd2cOnDrawWheel, NULL, 0);
-	ctx->jer_register_hook(ctx, JER_EVENT_CAR_ENGINE_SOUND, cd2cOnCarEngineSound, NULL, 0);
-	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW, cd2cOnCarDraw, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2cOnResetCar, NULL, 0);
 
-	ctx->jer_log(ctx, "[combatd2] combat effects registered (SDK v%d)\n", ctx->sdkVersion);
+	ctx->jer_log(ctx, "[combatd2] wreck effects registered (SDK v%d)\n", ctx->sdkVersion);
 }

@@ -45,10 +45,12 @@
 #include "carhacks/carhacks.h"		/* vehicle-availability hacks (own module later) */
 #include <string.h>
 // Registration helpers from the other source files of this (merged) module:
-//   combatd2combat.c — wreck/explosion effects   (cd2CombatRegister)
+//   combatd2wreckfx.c  — wreck explosion + kill credit (cd2WreckFxRegister)
+//   combatd2carfx.c    — totaled-car presentation      (cd2CarFxRegister)
 //   combatd2media.c   — presentation tuners      (cd2MediaRegister)
 //   weapons/core      — weapon framework         (cd2WeaponsRegister)
-void cd2CombatRegister(JERICHO_CONTEXT* ctx);
+void cd2WreckFxRegister(JERICHO_CONTEXT* ctx);	/* combatd2wreckfx.c */
+void cd2CarFxRegister(JERICHO_CONTEXT* ctx);	/* combatd2carfx.c */
 void cd2MediaRegister(JERICHO_CONTEXT* ctx);
 void cd2WeaponsRegister(JERICHO_CONTEXT* ctx);
 void cd2DebugRegister(JERICHO_CONTEXT* ctx);	/* TEMPORARY: cd2debug.c */
@@ -434,7 +436,8 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	// the merged sibling sources (kept as separate files, registered here in
 	// core -> combat -> presentation order so the dispatch order of the old
 	// three-module layout is preserved: combat's CAR_STEP stays at priority -1)
-	cd2CombatRegister(ctx);
+	cd2WreckFxRegister(ctx);
+	cd2CarFxRegister(ctx);
 	cd2MediaRegister(ctx);
 	cd2WeaponsRegister(ctx);
 	cd2CrewRegister(ctx);
