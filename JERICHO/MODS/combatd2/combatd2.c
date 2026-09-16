@@ -47,11 +47,15 @@
 // Registration helpers from the other source files of this (merged) module:
 //   combatd2wreckfx.c  — wreck explosion + kill credit (cd2WreckFxRegister)
 //   combatd2carfx.c    — totaled-car presentation      (cd2CarFxRegister)
-//   combatd2media.c   — presentation tuners      (cd2MediaRegister)
+//   combatd2gearbox.c  — gearbox/rev-curve tuner  (cd2GearboxRegister)
+//   combatd2enginesnd.c— engine rev/idle channels (cd2EngineSndRegister)
+//   combatd2camerafx.c — chase framing + speed FOV (cd2CameraFxRegister)
 //   weapons/core      — weapon framework         (cd2WeaponsRegister)
 void cd2WreckFxRegister(JERICHO_CONTEXT* ctx);	/* combatd2wreckfx.c */
 void cd2CarFxRegister(JERICHO_CONTEXT* ctx);	/* combatd2carfx.c */
-void cd2MediaRegister(JERICHO_CONTEXT* ctx);
+void cd2GearboxRegister(JERICHO_CONTEXT* ctx);	/* combatd2gearbox.c */
+void cd2EngineSndRegister(JERICHO_CONTEXT* ctx);	/* combatd2enginesnd.c */
+void cd2CameraFxRegister(JERICHO_CONTEXT* ctx);	/* combatd2camerafx.c */
 void cd2WeaponsRegister(JERICHO_CONTEXT* ctx);
 void cd2DebugRegister(JERICHO_CONTEXT* ctx);	/* TEMPORARY: cd2debug.c */
 void cd2FxRegister(JERICHO_CONTEXT* ctx);
@@ -438,7 +442,9 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	// three-module layout is preserved: combat's CAR_STEP stays at priority -1)
 	cd2WreckFxRegister(ctx);
 	cd2CarFxRegister(ctx);
-	cd2MediaRegister(ctx);
+	cd2GearboxRegister(ctx);
+	cd2EngineSndRegister(ctx);
+	cd2CameraFxRegister(ctx);
 	cd2WeaponsRegister(ctx);
 	cd2CrewRegister(ctx);
 	cd2FxRegister(ctx);
