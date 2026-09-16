@@ -49,6 +49,31 @@
 #define CD2_CREW_GETOUT_LAST	14
 #define CD2_CREW_GETIN_LAST	15
 
+// The get-out frame each side settles on. The DRIVER stops earlier, mid-climb,
+// so he reads as leaning out of the window with the arm reach below; the
+// GUNNER plays the full climb and then sits up on the sill.
+#define CD2_CREW_DRIVER_HOLD	9
+
+// The gunner's resting pose once out of the car: a SIT raised this far above
+// the ped's normal standing height, so he perches ON the windowsill rather
+// than standing beside the car. The render frame is Y-down, so raising means
+// subtracting.
+#define CD2_CREW_SIT_FRAME	0
+#define CD2_CREW_SILL_RAISE	26
+
+// Driver arm reach, forced through JER_EVENT_PED_SKELETON phase 0 (the
+// position channel). Ped-local units, parent-relative, mirroring d2pl's proven
+// POSE_AIM: the forearm is raised and pushed forward and the hand extends past
+// it - handZ must EXCEED elbowZ or the arm folds back on itself.
+#define CD2_CREW_ARM_ELBOW_Y	-1	// raise the forearm
+#define CD2_CREW_ARM_ELBOW_Z	1	// reach it forward
+#define CD2_CREW_ARM_HAND_Y	-1	// raise the hand
+#define CD2_CREW_ARM_HAND_Z	1	// and extend it past the elbow
+
+// Both crew peds share ONE body yaw (see cd2CrewPlace), so the driver's reach
+// is rotated half a turn to point out of HIS window instead of the gunner's.
+#define CD2_CREW_ARM_FLIP	2048
+
 // No crew is spawned for a car further than this from the camera (world units):
 // it would never be drawn, and the ped pool is shared with the ambient civs.
 // Generous, because the chase camera sits ~1000 units behind the player's car.
@@ -86,6 +111,7 @@ typedef struct CD2_CREW_CAR
 	int fled;		// 1 once the wreck bail-out has been started
 	int fleeTicks[2];	// frames the side has been fleeing
 	int fleeHead[2];	// base heading to flee along (away from the wreck)
+	int raiseY[2];		// extra height for the resting pose (sill perch), 0 = none
 } CD2_CREW_CAR;
 
 static CD2_CREW_CAR gCrew[MAX_CARS];
@@ -335,10 +361,114 @@ static void cd2CrewFleeUpdate(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
 	}
 }
 
+// ---------------------------------------------------------------------------
+// The driver's arm pose, forced through JER_EVENT_PED_SKELETON phase 0 (the
+// POSITION channel — see JERICHO/docs/ped-animation.md). The hook hands the
+// engine's BONE array over as a void*, so mirror the layout (exactly as d2pl
+// does) to index it. vOffset is the rest parent->child delta; vCurrPos is what
+// the draw accumulates and it is reset every frame, so the pose is re-applied
+// on every draw.
+// ---------------------------------------------------------------------------
+typedef struct CD2_BONE
+{
+	int id;
+	struct CD2_BONE* pParent;
+	char numChildren;
+	struct CD2_BONE* pChildren[3];
+	void* pvOrigPos;
+	void* pvRotation;
+	VECTOR vOffset;
+	VECTOR vCurrPos;
+	void** pModel;
+} CD2_BONE;
+
+enum { CD2_LIMB_RSHOULDER = 9, CD2_LIMB_RELBOW = 10, CD2_LIMB_RHAND = 11 };
+
+// Rotate a local (x, z) pose offset by the ped's facing heading (RSIN/RCOS are
+// 4096-scaled). This mirrors how newRotateBones builds the skeleton frame: the
+// model rotated by the ped's yaw.
+static void cd2CrewRotatePose(int* px, int* pz, int h)
+{
+	int x = *px;
+	int z = *pz;
+	int c = RCOS(h);
+	int s = RSIN(h);
+
+	*px = (x * c + z * s) >> 12;
+	*pz = (-x * s + z * c) >> 12;
+}
+
+// Force the right arm into a weapon-holding reach: the shoulder stays at its
+// rest offset, the forearm is raised and pushed forward, and the hand extends
+// beyond it. `facing` is the heading the pose's local +Z points along.
+static void cd2CrewPoseArm(void* skelVoid, int facing)
+{
+	CD2_BONE* skel = (CD2_BONE*)skelVoid;
+	int ex, ez, hx, hz;
+	int shoulderX, shoulderY, shoulderZ;
+
+	skel[CD2_LIMB_RSHOULDER].vCurrPos.vx = skel[CD2_LIMB_RSHOULDER].vOffset.vx;
+	skel[CD2_LIMB_RSHOULDER].vCurrPos.vy = skel[CD2_LIMB_RSHOULDER].vOffset.vy;
+	skel[CD2_LIMB_RSHOULDER].vCurrPos.vz = skel[CD2_LIMB_RSHOULDER].vOffset.vz;
+
+	shoulderX = skel[CD2_LIMB_RSHOULDER].vCurrPos.vx;
+	shoulderY = skel[CD2_LIMB_RSHOULDER].vCurrPos.vy;
+	shoulderZ = skel[CD2_LIMB_RSHOULDER].vCurrPos.vz;
+
+	ex = 0;
+	ez = CD2_CREW_ARM_ELBOW_Z;
+	cd2CrewRotatePose(&ex, &ez, facing);
+	skel[CD2_LIMB_RELBOW].vCurrPos.vx = shoulderX + ex;
+	skel[CD2_LIMB_RELBOW].vCurrPos.vy = shoulderY + CD2_CREW_ARM_ELBOW_Y;
+	skel[CD2_LIMB_RELBOW].vCurrPos.vz = shoulderZ + ez;
+
+	hx = 0;
+	hz = CD2_CREW_ARM_HAND_Z;
+	cd2CrewRotatePose(&hx, &hz, facing);
+	skel[CD2_LIMB_RHAND].vCurrPos.vx = skel[CD2_LIMB_RELBOW].vCurrPos.vx + hx;
+	skel[CD2_LIMB_RHAND].vCurrPos.vy = skel[CD2_LIMB_RELBOW].vCurrPos.vy + CD2_CREW_ARM_HAND_Y;
+	skel[CD2_LIMB_RHAND].vCurrPos.vz = skel[CD2_LIMB_RELBOW].vCurrPos.vz + hz;
+}
+
+// JER_EVENT_PED_SKELETON: fires for the player ped and for every module-owned
+// ped (jer_npc_owned), so filter to OURS - and pose only the driver, who is
+// the one leaning out with a hand pointed.
+static int cd2CrewOnPedSkeleton(void* ud, void* args)
+{
+	JER_ARGS_PED_SKELETON* a = (JER_ARGS_PED_SKELETON*)args;
+	int i;
+
+	(void)ud;
+
+	if (a == NULL || a->ped == NULL || a->skel == NULL)
+		return JER_RESULT_CONTINUE;
+
+	// the position channel only, and never during the shadow pass
+	if (a->phase != 0 || a->shadow)
+		return JER_RESULT_CONTINUE;
+
+	if (!gCd2Cfg.enabled)
+		return JER_RESULT_CONTINUE;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		if ((void*)gCrew[i].ped[CD2_CREW_SIDE_DRIVER] == a->ped &&
+		    gCrew[i].state[CD2_CREW_SIDE_DRIVER] != CD2_CREW_FLEE)
+		{
+			LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
+
+			cd2CrewPoseArm(a->skel, (pPed->dir.vy + CD2_CREW_ARM_FLIP) & 0xfff);
+			break;
+		}
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
 // Hang the ped on the car's door: the side of the body just outside the panel,
 // a touch ahead of the cabin centre, facing outward, grounded against the map at
 // its own x/z. Driven by the same box/matrix math the weapon muzzles use.
-static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i)
+static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i, int raiseY)
 {
 	const MATRIX* w = &cp->hd.where;
 	const SVECTOR* cb = &cp->ap.carCos->colBox;
@@ -365,7 +495,7 @@ static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i)
 	// Only the lateral offset above is per-side.
 	yaw = (cp->hd.direction - 1024) & 0xfff;
 
-	jer_npc_set_world((JerNpc*)pPed, x, -MapHeight(&g) - 130, z, yaw);
+	jer_npc_set_world((JerNpc*)pPed, x, -MapHeight(&g) - 130 - raiseY, z, yaw);
 }
 
 static void cd2CrewSpawnSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
@@ -397,9 +527,10 @@ static void cd2CrewSpawnSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
 	c->ped[i] = (JerNpc*)pPed;
 	c->state[i] = CD2_CREW_OUT;
 	c->frame[i] = 0;
+	c->raiseY[i] = 0;
 
 	jer_npc_set_action(c->ped[i], PED_ACTION_GETOUTCAR, 0);
-	cd2CrewPlace(pPed, cp, i);
+	cd2CrewPlace(pPed, cp, i, c->raiseY[i]);
 
 	if (gCd2Cfg.debugLog)
 		printInfo("[combatd2] crew: car=%d side=%d out (get out)\n", cp->id, i);
@@ -413,6 +544,37 @@ static void cd2CrewDespawnSide(CD2_CREW_CAR* c, int i)
 	c->ped[i] = NULL;
 	c->state[i] = CD2_CREW_IN;
 	c->frame[i] = 0;
+	c->raiseY[i] = 0;
+}
+
+// Drive the side's "out" pose for its current frame: climb out, then settle
+// into the resting pose. The DRIVER stops mid-climb, leaning out of the window
+// (the arm reach is forced separately, in the skeleton hook); the GUNNER
+// completes the climb and then perches ON the windowsill - a SIT, raised.
+static void cd2CrewApplyOutPose(CD2_CREW_CAR* c, int i)
+{
+	int last = (i == CD2_CREW_SIDE_DRIVER) ? CD2_CREW_DRIVER_HOLD : CD2_CREW_GETOUT_LAST;
+
+	if (c->frame[i] < last)
+	{
+		c->frame[i]++;
+		jer_npc_set_action(c->ped[i], PED_ACTION_GETOUTCAR, c->frame[i]);
+		c->raiseY[i] = 0;
+	}
+	else if (i == CD2_CREW_SIDE_GUNNER)
+	{
+		if (c->raiseY[i] == 0 && gCd2Cfg.debugLog)
+			printInfo("[combatd2] crew: side=%d perched on the sill (SIT +%d)\n", i, CD2_CREW_SILL_RAISE);
+
+		jer_npc_set_action(c->ped[i], PED_ACTION_SIT, CD2_CREW_SIT_FRAME);
+		c->raiseY[i] = CD2_CREW_SILL_RAISE;
+	}
+	else
+	{
+		// the driver holds the mid-climb lean
+		jer_npc_set_action(c->ped[i], PED_ACTION_GETOUTCAR, CD2_CREW_DRIVER_HOLD);
+		c->raiseY[i] = 0;
+	}
 }
 
 static void cd2CrewUpdateSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
@@ -446,14 +608,9 @@ static void cd2CrewUpdateSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
 		if (pPed != NULL)
 		{
 			if (c->state[i] == CD2_CREW_OUT)
-			{
-				if (c->frame[i] < CD2_CREW_GETOUT_LAST)
-					c->frame[i]++;
+				cd2CrewApplyOutPose(c, i);
 
-				jer_npc_set_action(c->ped[i], PED_ACTION_GETOUTCAR, c->frame[i]);
-			}
-
-			cd2CrewPlace(pPed, cp, i);
+			cd2CrewPlace(pPed, cp, i, c->raiseY[i]);
 		}
 	}
 	else if (pPed != NULL)
@@ -476,7 +633,7 @@ static void cd2CrewUpdateSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
 		else
 		{
 			jer_npc_set_action(c->ped[i], PED_ACTION_GETINCAR, c->frame[i]);
-			cd2CrewPlace(pPed, cp, i);
+			cd2CrewPlace(pPed, cp, i, c->raiseY[i]);
 		}
 	}
 }
@@ -604,7 +761,7 @@ static int cd2CrewOnCamera(void* ud, void* args)
 			// a fleeing ped moved on its own in the FRAME pass; a leaning one
 			// is parked and follows the car
 			if (pPed != NULL && cd2CrewPedAlive(pPed) && gCrew[i].state[side] != CD2_CREW_FLEE)
-				cd2CrewPlace(pPed, &car_data[i], side);
+				cd2CrewPlace(pPed, &car_data[i], side, gCrew[i].raiseY[side]);
 		}
 	}
 
@@ -733,6 +890,7 @@ void cd2CrewRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2CrewOnFrame, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, cd2CrewOnCamera, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_DRAW, cd2CrewOnPedDraw, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_PED_SKELETON, cd2CrewOnPedSkeleton, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2CrewOnGameStart, NULL, 0);
 
 	ctx->jer_log(ctx, "[combatd2] mounted crew registered (SDK v%d)\n", ctx->sdkVersion);
