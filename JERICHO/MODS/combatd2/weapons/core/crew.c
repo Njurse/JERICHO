@@ -65,8 +65,8 @@ enum { CD2_CREW_SIDE_DRIVER = 0, CD2_CREW_SIDE_GUNNER = 1 };
 // sides) bails out and runs from the wreck, on fire, for this many frames
 // (~3s at 30fps) before being cleaned up.
 #define CD2_CREW_FLEE_FRAMES	90
-#define CD2_CREW_FLEE_SPEED	34	// world units / frame
-#define CD2_CREW_FLEE_SWAY	10	// heading swing per step (PSX angle units):
+#define CD2_CREW_FLEE_SPEED	8	// world units / frame
+#define CD2_CREW_FLEE_SWAY	40	// heading swing per step (PSX angle units):
 					// 4096/90 ~= 45-frame sine period (~1.5s) - a slow weave
 #define CD2_CREW_FLEE_AMP	700	// sway amplitude (fixed point, 4096 = 1.0)
 
@@ -342,7 +342,7 @@ static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i)
 {
 	const MATRIX* w = &cp->hd.where;
 	const SVECTOR* cb = &cp->ap.carCos->colBox;
-	int s = (i == CD2_CREW_SIDE_DRIVER) ? -1 : 1;	// left = driver
+	int s = (i == CD2_CREW_SIDE_DRIVER) ? -1 : 1;	// -1 = driver (left door), +1 = gunner (right door)
 	int lat = (cb->vx * 108) / 100;			// just outside the body side
 	int fwd = cb->vz / 4;				// a touch ahead of centre, not the rear
 	int x, z, yaw;
@@ -357,9 +357,13 @@ static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i)
 	g.vz = z;
 	g.vy = 0;
 
-	// Face outward, perpendicular to the body. The lateral term is the sign the
-	// user asked for after seeing them look toward the car's rear.
-	yaw = (cp->hd.direction - s * 1024) & 0xfff;
+	// Facing: the SAME yaw at both doors. The ped model's front is not aligned
+	// with the yaw vector, so mirroring the offsets per side (direction -/+ 1024,
+	// which is how the engine orients a ped climbing out of a door in
+	// SetupGetOutCar) leaves one door right and the other 180 out - verified
+	// in-game both ways round. dir - 1024 reads correctly on BOTH sides.
+	// Only the lateral offset above is per-side.
+	yaw = (cp->hd.direction - 1024) & 0xfff;
 
 	jer_npc_set_world((JerNpc*)pPed, x, -MapHeight(&g) - 130, z, yaw);
 }
