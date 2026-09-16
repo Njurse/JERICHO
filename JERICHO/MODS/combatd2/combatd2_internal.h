@@ -78,4 +78,8 @@ void cd2RespawnTick(CAR_DATA* cp);
 // ---------------------------------------------------------------------------
 void cd2CarQueueTotal(void);
 
+// The pause menu, registered by the entry so combatd2.c never sees cd2Menu
+// (combatd2menu.c).
+void cd2MenuRegister(JERICHO_CONTEXT* ctx);
+
 #endif /* CD2_INTERNAL_H */
