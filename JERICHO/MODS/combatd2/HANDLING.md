@@ -108,3 +108,22 @@ point-mass — can be re-tuned:
 These are compile-time macros; exposing them as config/menu sliders is a
 possible follow-up.
 
+## Wreck sounds (skidding / wheel noise stop with the car)
+
+A destroyed car must go quiet. The tyre-screech and surface-noise handling in
+`CheckCarEffects` (`handling.c`) is gated on the same damage cap the rest of the
+mod uses (`MaxPlayerDamage[0]`), with one subtlety worth knowing:
+
+- The "play skid sound" block only runs when `desired_skid != skidding.sound`.
+  For a wreck `desired_skid` is `-1`, so the guard must **not** pre-set
+  `skidding.sound = -1` (that made the two equal, skipped the block, and left a
+  screech that was already playing ringing forever). Skipping the tyre branch
+  instead lets the block see the change and `StopChannel`/`UnlockChannel` the
+  live sound.
+- The surface (wheel) noise is skipped for a wreck the same way, so a wreck
+  with a little speed left makes no wheel noise either.
+- The engine channels were already handled: `combatd2carfx.c`'s
+  `cd2cOnCarEngineSound` drives rev/idle volume to `-10000` once
+  `cd2CarTotaled`, and `gamesnd.c` silences them outright when the player has no
+  car (after the eject).
+

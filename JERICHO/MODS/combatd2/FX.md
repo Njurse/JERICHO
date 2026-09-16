@@ -53,7 +53,7 @@ impacts can't starve the pool.
 A totaled car explodes on the `CD2_FX_WRECK` profile: big and fiery (collapse
 6000) but `collide = 0`, and `cd2FxBarrage` is called with `radius = 0` /
 `damage = 0`. So the wreck goes up in flames without hurting or shoving
-anything around it (`combatd2combat.c`).
+anything around it (`combatd2wreckfx.c`).
 
 ## The barrage sequencer
 

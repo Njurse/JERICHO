@@ -43,8 +43,8 @@ Two of those priorities are deliberate:
   `useAnalogue = 0`, `handled = 1` so the stock pedal path never assigns controls
   (opponent.c:1805-1811). A CUTSCENE car is fed `cjpPlay` stream 0 = the player's
   live replay, so without this the opponent would mirror the player's input.
-- **CAR_STEP at 1** runs *after* combatd2combat.c's CAR_STEP (-1,
-  combatd2combat.c:252) and combatd2.c's (0). So the AI writes its inputs last,
+- **CAR_STEP at 1** runs *after* combatd2wreckfx.c's CAR_STEP (-1) and
+  combatd2sim.c's (0). So the AI writes its inputs last,
   on top of everything the core does.
 
 The drive itself runs on **CAR_STEP**, which is one per `StepCars` — the 30 Hz

@@ -29,7 +29,7 @@ only).
   collisions stay mass-based so heavies push.
 - **Presentation tuners** — the rev/gearbox model and engine channel are
   retuned per car; the knobs (`CD2_GEAR_*`, `CD2_REV_*`, `CD2_SND_*`) live in
-  `combatd2.h` / `combatd2media.c`. Time-scale and SPU pitch both use
+  `combatd2.h` / `combatd2gearbox.c` / `combatd2enginesnd.c`. Time-scale and SPU pitch both use
   **4096 = stock/normal**; PSX volume **0 = loudest**, **−10000 = silent**.
   See [`SOUNDS.md`](SOUNDS.md) for the sample/bank API.
 - **Car combat** — the direct-velocity handling plus a data-driven weapon layer
@@ -125,10 +125,18 @@ grant weapons from the pause menu (**Modules → Combat D2 → Weapons...**).
 
 | Path | Holds |
 |---|---|
-| `combatd2.c` | core handling, config load/save, the pause menu, and the `JER_EVENT_CAR_*` / physics hooks |
+| `combatd2.c` | core: config load/save, per-car state, per-vehicle stats, the car-identity helpers, the bootstrap + pursuit hooks, and the module entry that wires everything |
+| `combatd2_internal.h` | declarations shared between this module's source files (and a file map) |
+| `combatd2sim.c` | the point-mass handling model (TMB pad override, CAR_STEP/TORQUE, roll limit/recovery, wall restitution, physics params, the render lean) |
+| `combatd2respawn.c` | wreck age-out: respawn timers, traffic tumble, wreck mass, the death bang |
+| `combatd2damage.c` | damage scaling (scenery + car-vs-car) |
+| `combatd2menu.c` | the pause menu |
+| `combatd2wreckfx.c` | the wreck edge: `cd2CarTotaled`, the explosion, the kill-credit toast, the wreck toss |
+| `combatd2carfx.c` | totaled-car presentation (flat black, wheels gone, engine muted, body dropped) |
+| `combatd2gearbox.c` | the engine gearbox / rev-curve tuner |
+| `combatd2enginesnd.c` | the engine rev + idle channel tuner |
+| `combatd2camerafx.c` | chase framing + speed FOV pull |
 | `combatd2.h` | every compile-time tunable (`CD2_*` macros) and the shared structs |
-| `combatd2combat.c` | totaled-car wreck effects |
-| `combatd2media.c` | gearbox/rev/engine-sound/camera presentation |
 | `cd2debug.c` | temporary scripted debug driver (`tools/cd2_debug.example.txt` is the file format) |
 | `weapons/` | the weapon framework: `core/` (registry + inventory), `raycast/` (machine gun), `projectile/`, `shotgun/`, `drops/`, `aoe/`, `fx/` |
 | `ai/` | the prototype opponent AI (`opponent.c` brain; `nav.c` / `grid.c` / `flow.c` navigation) |
