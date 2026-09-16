@@ -28,6 +28,12 @@
  *       (default) -> "You killed <role>"; `npc` -> "<victim> was killed by
  *       <killer>"; `none` -> "<victim> died".
  *   grant                           every weapon to max (cd2WpnGrantAllMax).
+ *   fire:<weapon>                   the player's car fires one named weapon now
+ *       (mg/missile/mine/homing/cluster/zoomy/freeze/shotgun) through the same
+ *       cd2WpnTryFire the trigger uses - so a headless run can exercise a
+ *       leaning weapon (and the mounted crew it calls out).
+ *   crew                            dump the mounted-crew state (who is out)
+ *       for the player and the first opponent.
  *
  * A kill applies damage over several frames rather than in one huge hit,
  * because ApplyDamage clamps a single hit, and it stops as soon as the car is
@@ -46,13 +52,14 @@
 #include "combatd2.h"
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
+#include "weapons/core/crew.h"
 #include "ai/ai.h"
 
 #define CD2_DBG_MAX		16	// scripted steps
 #define CD2_DBG_DAMAGE		3000	// per frame, well above one hit's clamp
 #define CD2_DBG_KILL_TIMEOUT	300	// give up on a kill after this many frames (10s)
 
-enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT };
+enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW };
 enum { CD2_DBG_ATT_ENEMY = 0, CD2_DBG_ATT_SELF, CD2_DBG_ATT_NONE, CD2_DBG_ATT_PLAYER, CD2_DBG_ATT_NPC };
 
 typedef struct CD2_DBG_STEP
@@ -139,6 +146,66 @@ static int cd2DbgReadAction(const char** s, int* arg)
 	{
 		*s = p;
 		return CD2_DBG_GRANT;
+	}
+
+	// fire:<weapon> - make the PLAYER's car actually fire a named weapon once
+	// (through the same cd2WpnTryFire the trigger uses). Headless runs have no
+	// pad, so this is how a run exercises a leaning weapon (and thus the crew).
+	if (cd2DbgMatch(&p, "fire"))
+	{
+		static const struct { const char* n; int id; } wtab[] =
+		{
+			{ "mg", CD2_WID_MG }, { "missile", CD2_WID_MISSILE },
+			{ "mine", CD2_WID_MINE }, { "homing", CD2_WID_HOMING },
+			{ "cluster", CD2_WID_CLUSTER }, { "zoomy", CD2_WID_ZOOMY },
+			{ "freeze", CD2_WID_FREEZE }, { "shotgun", CD2_WID_SHOTGUN },
+		};
+		unsigned int w;
+
+		if (*p != ':')
+			return CD2_DBG_NONE;
+
+		p++;
+
+		*arg = CD2_WID_NONE;
+
+		for (w = 0; w < sizeof(wtab) / sizeof(wtab[0]); w++)
+		{
+			int k = 0;
+			int hit = 1;
+
+			while (wtab[w].n[k] != '\0')
+			{
+				if (p[k] != wtab[w].n[k])
+				{
+					hit = 0;
+					break;
+				}
+				k++;
+			}
+
+			if (hit)
+			{
+				*arg = wtab[w].id;
+				p += k;
+				break;
+			}
+		}
+
+		if (*arg == CD2_WID_NONE)
+			return CD2_DBG_NONE;
+
+		*s = p;
+		return CD2_DBG_FIRE;
+	}
+
+	// crew - dump the current mounted-crew state (who is hanging out) for the
+	// player and any opponents. The deterministic "MG did not clear the
+	// driver" assertion is `fire:shotgun` then `fire:mg` then `crew`.
+	if (cd2DbgMatch(&p, "crew"))
+	{
+		*s = p;
+		return CD2_DBG_CREW;
 	}
 
 	return CD2_DBG_NONE;
@@ -345,6 +412,44 @@ static void cd2DbgRunStep(const CD2_DBG_STEP* st)
 		cd2WpnGrantAllMax();
 		printInfo("[cd2debug] granted all weapons\n");
 		break;
+
+	case CD2_DBG_FIRE:
+	{
+		CAR_DATA* cp = cd2DbgPlayer();
+
+		if (cp != NULL && st->arg >= 0 && st->arg < CD2_WID_COUNT)
+		{
+			int fired = cd2WpnTryFire(cp, st->arg);
+
+			printInfo("[cd2debug] fire %s from car=%d -> %d\n",
+				cd2WpnName(st->arg), cp->id, fired);
+		}
+		break;
+	}
+
+	case CD2_DBG_CREW:
+	{
+		CAR_DATA* cp = cd2DbgPlayer();
+		CAR_DATA* op = cd2DbgFirstOpponent(-1);
+		int p[3];
+
+		if (cp != NULL)
+		{
+			printInfo("[cd2debug] crew player car=%d driver=%d gunner=%d\n",
+				cp->id, cd2CrewSideOut(cp, CD2_CREW_DRIVER), cd2CrewSideOut(cp, CD2_CREW_GUNNER));
+
+			if (cd2CrewPedPos(cp, CD2_CREW_DRIVER, p))
+				printInfo("[cd2debug] crew driverped pos=(%d,%d,%d) carpos=(%d,%d,%d)\n",
+					p[0], p[1], p[2], cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2]);
+		}
+
+		if (op != NULL)
+			printInfo("[cd2debug] crew opponent car=%d driver=%d gunner=%d\n",
+				op->id, cd2CrewSideOut(op, CD2_CREW_DRIVER), cd2CrewSideOut(op, CD2_CREW_GUNNER));
+
+		printInfo("[cd2debug] crew peds spawned=%d\n", cd2CrewPedCount());
+		break;
+	}
 	}
 }
 

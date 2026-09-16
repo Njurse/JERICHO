@@ -40,6 +40,7 @@
 #include "dr2math.h"
 #include "weapon.h"
 #include "weapon_internal.h"
+#include "crew.h"		/* mounted-crew lean request (fired weapons) */
 
 #include <stdio.h>
 
@@ -601,6 +602,12 @@ int cd2WpnTryFire(void* vcp, int weaponId)
 		return 0;
 
 	d->fire(cp);
+
+	// tell the mounted-crew module which window (if any) this weapon leans a
+	// ped out of. Fired by the player AND the AI (both come through here), so
+	// every contestant car gets crew. leanOut 0 (the base MG) contributes
+	// nothing and can never clear a side another weapon wants.
+	cd2CrewNotifyFire(cp, d->leanOut);
 
 	gap = d->refireCooldown;
 

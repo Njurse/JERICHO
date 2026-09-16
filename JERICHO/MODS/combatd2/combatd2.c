@@ -53,6 +53,7 @@ void cd2WeaponsRegister(JERICHO_CONTEXT* ctx);
 void cd2DebugRegister(JERICHO_CONTEXT* ctx);	/* TEMPORARY: cd2debug.c */
 void cd2FxRegister(JERICHO_CONTEXT* ctx);
 void cd2FreezeRegister(JERICHO_CONTEXT* ctx);
+void cd2CrewRegister(JERICHO_CONTEXT* ctx);	/* weapons/core/crew.c */
 
 // ---------------------------------------------------------------------------
 // State
@@ -1930,6 +1931,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	cd2CombatRegister(ctx);
 	cd2MediaRegister(ctx);
 	cd2WeaponsRegister(ctx);
+	cd2CrewRegister(ctx);
 	cd2FxRegister(ctx);
 	cd2FreezeRegister(ctx);
 	cd2AiRegister(ctx);

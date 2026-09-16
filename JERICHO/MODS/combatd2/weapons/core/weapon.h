@@ -76,11 +76,19 @@ typedef struct CD2_WEAPON_DEF
 					// to the AI: one that homes can be launched way off-axis, one
 					// that only flies where it is pointed cannot.
 
-	int leanOut;		// mounted-crew pose while this weapon is selected:
-					// 0 = nobody leans out, 1 = the driver's window,
-					// 2 = the passenger's window, 3 = both. When set, the
-					// crew module hangs that car's ped out of the matching
-					// window (frozen get-out pose) and the weapon fires from
+	int leanOut;		// mounted-crew flags: a BITMASK of which crew member
+					// leans out of a window WHILE THIS WEAPON IS FIRING.
+					//   bit 0 (1) = the driver leans out the LEFT window
+					//   bit 1 (2) = the gunner leans out the RIGHT window
+					//   3         = both
+					//   0         = nobody (e.g. the base machine gun)
+					// Several weapons can fire in the same frame (the base MG
+					// plus a primary), so the crew module ORs the flags of
+					// EVERY weapon a car is firing this frame: a side that is
+					// "true" for any firing weapon stays out, even while
+					// another firing weapon (the MG, leanOut 0) wants nobody.
+					// The crew module hangs that car's ped out of the matching
+					// window in a held get-out pose and the weapon fires from
 					// there instead of the car's centre.
 
 	int damage;		// direct-hit damage (ApplyDamage units)
