@@ -49,6 +49,14 @@
 #define CD2_CREW_GETOUT_LAST	14
 #define CD2_CREW_GETIN_LAST	15
 
+// Animation frames advanced per game tick. The engine's own get-out/get-in
+// step ONE frame per tick (15 ticks ~ 0.5s), which reads as sluggish for a
+// crew that pops out the moment a weapon is selected. Playing the same
+// animation at this rate keeps the motion legible but much snappier; the
+// frames are still visited in order (clamped to the end), so no pose is
+// skipped.
+#define CD2_CREW_ANIM_STEP	3
+
 // The get-out frame each side settles on. The DRIVER stops earlier, mid-climb,
 // so he reads as leaning out of the window with the arm reach below; the
 // GUNNER plays the full climb and then sits up on the sill.
@@ -557,7 +565,11 @@ static void cd2CrewApplyOutPose(CD2_CREW_CAR* c, int i)
 
 	if (c->frame[i] < last)
 	{
-		c->frame[i]++;
+		c->frame[i] += CD2_CREW_ANIM_STEP;
+
+		if (c->frame[i] > last)
+			c->frame[i] = last;
+
 		jer_npc_set_action(c->ped[i], PED_ACTION_GETOUTCAR, c->frame[i]);
 		c->raiseY[i] = 0;
 	}
@@ -624,7 +636,7 @@ static void cd2CrewUpdateSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
 				printInfo("[combatd2] crew: car=%d side=%d in (get in)\n", cp->id, i);
 		}
 
-		c->frame[i]++;
+		c->frame[i] += CD2_CREW_ANIM_STEP;
 
 		if (c->frame[i] >= CD2_CREW_GETIN_LAST)
 		{
