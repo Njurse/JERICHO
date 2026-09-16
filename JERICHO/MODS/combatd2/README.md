@@ -64,6 +64,11 @@ saved by `combatd2.c` `cd2LoadConfig` / `cd2SaveConfig`).
   API, the sound banks, and candidate weapon sample indices.
 - [`AI.md`](AI.md) — the prototype opponent AI (`ai/`): states, roles,
   navigation and the on-screen readout.
+- [`MOUNTED_CREW.md`](MOUNTED_CREW.md) — the driver/gunner who lean out of the
+  window to fire crew weapons: the `leanOut` bitmask, the selected/fired request
+  and its OR rule, the get-out/hold/get-in ped lifecycle, firing from the
+  window, the wreck bail-out (run away on fire) and the player-death camera
+  hold.
 - [`carhacks/CROSS_CITY.md`](carhacks/CROSS_CITY.md) — what a cross-city
   vehicle import has to pull across, and why colours need more than geometry.
 - [`carhacks/FORMATS.md`](carhacks/FORMATS.md) — the reverse-engineered

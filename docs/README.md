@@ -22,7 +22,7 @@ Each mod documents itself in its own folder.
 
 | Mod | Docs |
 |---|---|
-| combatd2 | [`README.md`](../JERICHO/MODS/combatd2/README.md) (index + test tooling), [`FX.md`](../JERICHO/MODS/combatd2/FX.md), [`HANDLING.md`](../JERICHO/MODS/combatd2/HANDLING.md), [`SOUNDS.md`](../JERICHO/MODS/combatd2/SOUNDS.md), [`AI.md`](../JERICHO/MODS/combatd2/AI.md), [`carhacks/CROSS_CITY.md`](../JERICHO/MODS/combatd2/carhacks/CROSS_CITY.md), [`carhacks/FORMATS.md`](../JERICHO/MODS/combatd2/carhacks/FORMATS.md) (**the proprietary file formats**) |
+| combatd2 | [`README.md`](../JERICHO/MODS/combatd2/README.md) (index + test tooling), [`FX.md`](../JERICHO/MODS/combatd2/FX.md), [`HANDLING.md`](../JERICHO/MODS/combatd2/HANDLING.md), [`SOUNDS.md`](../JERICHO/MODS/combatd2/SOUNDS.md), [`AI.md`](../JERICHO/MODS/combatd2/AI.md), [`MOUNTED_CREW.md`](../JERICHO/MODS/combatd2/MOUNTED_CREW.md), [`carhacks/CROSS_CITY.md`](../JERICHO/MODS/combatd2/carhacks/CROSS_CITY.md), [`carhacks/FORMATS.md`](../JERICHO/MODS/combatd2/carhacks/FORMATS.md) (**the proprietary file formats**) |
 | crumple | [`README.md`](../JERICHO/MODS/crumple/README.md), [`crumple.md`](../JERICHO/MODS/crumple/crumple.md) (car deformation model) |
 | d2pl | [`readme.md`](../JERICHO/MODS/d2pl/readme.md) |
 | sandbox | [`README.md`](../JERICHO/MODS/sandbox/README.md) |
