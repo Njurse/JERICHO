@@ -145,6 +145,20 @@ per-bone rotations where they actually take effect.
 - Movement direction / tank overrides: `JER_EVENT_PED_INPUT` (rewrite the
   pad bits + `lp->dir`).
 - Head: `head_rot` (or `JER_EVENT_CAMERA_LOOK` suppress).
+### Who the pose hooks fire for
+
+`PED_POSE` and `PED_SKELETON` (both phases) fire for the player's ped **and for
+any ped a module owns**. Ownership is granted by spawning through the `jer_npc`
+API (`jer_npc_spawn` / `jer_npc_spawn_model`), released by `jer_npc_despawn`,
+and queried by `jer_npc_owned()` — which also checks `pUsedPeds`, so a ped the
+engine destroyed behind our back never matches a recycled slot. Ambient
+pedestrians never fire these hooks, so the engine pays nothing for them.
+
+A module's own ped normally has `padId = -1` (a mounted crew member, say); it is
+poseable purely by virtue of this gate, and the shadow pass is filterable via
+`JER_ARGS_PED_SKELETON.shadow`. Only `TANNER_MODEL` peds have a skeleton at all
+— the sprite models are drawn as sprites and have nothing to pose.
+
 ## 7. Relative transforms (what the numbers mean)
 
 Every transform the mods write is LOCAL (parent-relative); the engine

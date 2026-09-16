@@ -60,29 +60,70 @@ never clear another weapon's side.
 Driven off the request, one ped per side (`weapons/core/crew.c`):
 
 1. **out** — a side's hold goes live: spawn a parked `TANNER_MODEL` ped beside
-   the car's door (`padId = -1`, so the player-only pose/shadow paths never
-   fire) and play `PED_ACTION_GETOUTCAR` 0→14, holding at 14 (the engine's own
-   transition would fire at 15).
-2. **held** — while the hold is refreshed the ped keeps the get-out pose and is
-   **re-placed from the car's transform every frame** so it rides the car.
+   the car's door (`padId = -1`) and climb it out with `PED_ACTION_GETOUTCAR`.
+   The animation advances `CD2_CREW_ANIM_STEP` (3) frames per tick (the
+   engine's own get-out steps one per tick, which reads sluggish) and stops at
+   the side's end frame: the **driver at 9**, still leaning out of the window,
+   the **gunner at 14**, fully out.
+2. **held** — the ped settles into its resting pose and is **re-placed from the
+   car's transform every frame** so it rides the car:
+   * **driver** — holds the mid-climb lean, with his right arm forced into a
+     weapon-holding reach (see *The poses* below);
+   * **gunner** — switches to `PED_ACTION_SIT` raised `CD2_CREW_SILL_RAISE`
+     above normal height, so he perches *on* the windowsill.
 3. **in** — the hold lapses (or the weapon is deselected): play
-   `PED_ACTION_GETINCAR` 0→15 and `DestroyPedestrian` the ped as it disappears.
-   This is done by the module, **never** through the engine's `PedGetInCar`
-   (that calls `ChangePedPlayerToCar` and would hijack the player's car).
+   `PED_ACTION_GETINCAR` 0→15 (same step rate) and `DestroyPedestrian` the ped
+   as it disappears. This is done by the module, **never** through the engine's
+   `PedGetInCar` (that calls `ChangePedPlayerToCar` and would hijack the
+   player's car).
 
 If fire resumes mid-retract the side flips straight back to *out*.
 
 ### Placement (the two things that were wrong first time)
 
 `cd2CrewPlace` hangs the ped on the door: lateral = `colBox.vx * 1.08` out to
-the side, forward = `colBox.vz / 4` (a touch *ahead* of centre, not the rear),
-grounded with `MapHeight`, facing outward (`hd.direction -/+ 90°`).
+the side (a *per-side* sign), forward = `colBox.vz / 4` (a touch *ahead* of
+centre, not the rear), grounded with `MapHeight` plus the pose's raise, and
+rotated by **one** yaw for both doors — `hd.direction - 90°`.
+
+The facing is deliberately *not* mirrored per side. The ped model's front is
+not aligned with the yaw vector, so `hd.direction -/+ 90°` (which is how the
+engine orients a ped climbing out in `SetupGetOutCar`) leaves one door correct
+and the other 180° out — verified both ways round in game. Only the lateral
+offset is per-side.
 
 The placement runs on **`JER_EVENT_CAMERA`** (fired from `InitCamera`, just
 before `DrawAllPedestrians`), *not* only on `FRAME`. `FRAME` fires before
 `StepCars()`, so a ped placed there is a whole step behind the car at speed —
 plainly visible as lag. The `CAMERA` pass uses the cars' final transforms for
 the frame.
+
+### The poses, and who is allowed to be posed
+
+Both poses come from the engine's own motion data (`PED_ACTION_*`) — no new art:
+
+* **driver, weapon arm** — forced through **`JER_EVENT_PED_SKELETON` phase 0**
+  (the POSITION channel, `vCurrPos`), mirroring d2pl's `poseArmPose` shape: the
+  shoulder stays at its rest offset, the forearm is raised and pushed forward,
+  and the hand extends past it (`CD2_CREW_ARM_*`; `handZ` must exceed `elbowZ`
+  or the arm folds back on itself). Both crew peds share one body yaw, so the
+  driver's reach is rotated half a turn (`CD2_CREW_ARM_FLIP`) to point out of
+  *his* window. The pose is re-applied on every draw, because the skeleton
+  resets `vCurrPos` each frame.
+* **gunner, sill perch** — `PED_ACTION_SIT` plus the `raiseY` above.
+
+Reaching a module's own ped from a pose hook is what the **ownership gate** is
+for: the ped-pose hooks (`PED_POSE`, `PED_SKELETON`) fire for the player ped
+**or any ped a module owns**. Spawning through `jer_npc_spawn*` marks the ped
+(`jer_npc_owned`), despawning unmarks it, and the query also checks `pUsedPeds`
+— so a ped the engine destroyed behind our back never matches a recycled slot.
+Ambient pedestrians are never posed, and the engine pays nothing for them.
+
+> Two channels, and they are not interchangeable (full map:
+> `JERICHO/docs/ped-animation.md`): **positions** take from `PED_SKELETON`
+> phase 0, **rotations** only from `JER_EVENT_PED_POSE` (before
+> `newRotateBones`). The arm reach uses positions; a lean built from a bone
+> *rotation* would have to go through `PED_POSE`.
 
 ## 4. Firing from the window
 
