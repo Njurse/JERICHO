@@ -1187,9 +1187,50 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 		jer_fire(JER_EVENT_PED_SKELETON, &jerSkel);
 	}
 
-	if(bDoingShadow || draw)
+	// JERICHO-HOOK: ped body colour. A module may force this ped flat black
+	// (a burning / bailed-out body) or a flat tint, like the car
+	// JER_EVENT_CAR_DRAW_COLOR hook. The ped models are drawn through
+	// RenderModel, which builds its gouraud table from plotContext.planeColours,
+	// so a flat colour means holding those at one value for this ped's draw.
 	{
-		if (pDrawingPed->pedType < OTHER_SPRITE)
+		int pedFlat = 0;
+		unsigned int pedColour = 0;
+		unsigned int pedSaved[8];
+		JER_ARGS_PED_DRAW jerPed;
+
+		jerPed.ped = pDrawingPed;
+		jerPed.flatBlack = 0;
+		jerPed.tintR = jerPed.tintG = jerPed.tintB = -1;
+		jer_fire(JER_EVENT_PED_DRAW, &jerPed);
+
+		if (jerPed.flatBlack)
+		{
+			pedFlat = 1;
+			pedColour = 0;	// black
+		}
+		else if (jerPed.tintR >= 0 || jerPed.tintG >= 0 || jerPed.tintB >= 0)
+		{
+			int r = (jerPed.tintR < 0) ? 255 : (jerPed.tintR & 0xff);
+			int g = (jerPed.tintG < 0) ? 255 : (jerPed.tintG & 0xff);
+			int b = (jerPed.tintB < 0) ? 255 : (jerPed.tintB & 0xff);
+
+			pedFlat = 1;
+			// POLY/GTE colour words are B<<16 | G<<8 | R (red in the low byte)
+			pedColour = (unsigned int)((b << 16) | (g << 8) | r);
+		}
+
+		if (pedFlat)
+		{
+			for (i = 0; i < 8; i++)
+			{
+				pedSaved[i] = plotContext.planeColours[i];
+				plotContext.planeColours[i] = pedColour;
+			}
+		}
+
+		if(bDoingShadow || draw)
+		{
+			if (pDrawingPed->pedType < OTHER_SPRITE)
 		{
 			// draw LOWERBACK - RTOE
 			for (i = 1; i < NUM_BONES - 1; i++)
@@ -1305,6 +1346,14 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 				DoCivHead(pDrawingPed, &v2, &v1);
 				bAllreadyRotated = 0;
 			}
+		}
+	}
+
+		// restore the lighting the ped-colour block overrode
+		if (pedFlat)
+		{
+			for (i = 0; i < 8; i++)
+				plotContext.planeColours[i] = pedSaved[i];
 		}
 	}
 

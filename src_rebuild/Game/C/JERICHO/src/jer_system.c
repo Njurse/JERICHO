@@ -403,6 +403,7 @@ static const char* jerEventName(int event)
 	case JER_EVENT_PED_POSE:		return "PED_POSE";
 	case JER_EVENT_FRONTEND:		return "FRONTEND";
 	case JER_EVENT_PED_SKELETON:	return "PED_SKELETON";
+	case JER_EVENT_PED_DRAW:		return "PED_DRAW";
 	case JER_EVENT_SHUTDOWN:		return "SHUTDOWN";
 	case JER_EVENT_LEVEL_LAUNCH:	return "LEVEL_LAUNCH";
 	case JER_EVENT_DRAW_WORLD:		return "DRAW_WORLD";

@@ -329,6 +329,20 @@ typedef struct JER_ARGS_PED_SKELETON
 	int shadow;		/* 1 while the ped's shadow is being drawn */
 } JER_ARGS_PED_SKELETON;
 
+/* JER_EVENT_PED_DRAW — fired in newShowTanner just before a ped's bones are
+ * rendered. A module may force a flat body colour, exactly like the car
+ * JER_EVENT_CAR_DRAW_COLOR hook: flatBlack = 1 renders the whole ped solid
+ * black (a burning / bailed-out body), or set any of tintR/G/B to >= 0 for a
+ * flat full-brightness tint (unset channels default to 255). Colours are 0..255
+ * per channel; the engine packs them B<<16 | G<<8 | R. With no handler (or all
+ * fields 0/-1) the ped renders stock. */
+typedef struct JER_ARGS_PED_DRAW
+{
+	void* ped;		/* LPPEDESTRIAN being drawn */
+	int flatBlack;		/* out: 1 = draw the ped flat black */
+	int tintR, tintG, tintB;	/* out: flat tint, -1 = unset (stock) */
+} JER_ARGS_PED_DRAW;
+
 /* JER_EVENT_CAR_PAD — fired inside ProcessCarPad right before the stock
  * face-button assignment (handbrake/wheelspin/thrust). A module may take
  * over the car's pedal semantics: set handled = 1 and write cp->thrust,

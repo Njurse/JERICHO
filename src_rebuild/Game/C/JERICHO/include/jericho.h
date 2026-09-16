@@ -210,6 +210,11 @@ enum
 					   command line, so a module can pick up its own
 					   shortcuts (see JER_ARGS_CMDLINE) */
 
+	JER_EVENT_PED_DRAW,		/* ped body colour: a module forces a flat black
+					   (a burning/bailed-out ped) or a full-brightness
+					   tint on a ped the skeleton path is drawing
+					   (see JER_ARGS_PED_DRAW) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 
