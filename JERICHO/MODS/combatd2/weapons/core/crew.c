@@ -61,11 +61,12 @@ extern int ratan2(int y, int x);
 #define CD2_CREW_ANIM_STEP	3
 
 // The get-out frame each side settles on. Both sides use the SAME get-out
-// motion (the pose the engine itself authors for a ped at a car door) - the
-// driver stops early, leaning out of the window, and the gunner climbs further
-// out so he reads as sitting up on the sill, more prominent.
+// motion (the pose the engine itself authors for a ped at a car door) at the
+// SAME frame - the gunner differs only by his perch height, so he cannot land
+// in a different part of the climb (a late frame stands him up, and raising
+// THAT just floats him).
 #define CD2_CREW_DRIVER_HOLD	9
-#define CD2_CREW_GUNNER_HOLD	13
+#define CD2_CREW_GUNNER_HOLD	CD2_CREW_DRIVER_HOLD
 
 // The gunner is raised this far above the leaning driver, perching him ON the
 // windowsill rather than hanging beside it. The render frame is Y-down, so
@@ -455,6 +456,58 @@ static void cd2CrewPoseArm(void* skelVoid, int facing)
 	skel[CD2_LIMB_RHAND].vCurrPos.vz = skel[CD2_LIMB_RELBOW].vCurrPos.vz + hz;
 }
 
+// ---------------------------------------------------------------------------
+// JER_EVENT_PED_POSE — the ONLY effective rotation channel (it fires between
+// SetupTannerSkeleton and newRotateBones). The engine MIRROR-FLIPS a ped's
+// root rotation for a get-out on one side of the car, via the shared
+// bReverseYRotation global (SetupGetOutCar: bReverseYRotation = !entrySide;
+// consumed in newRotateBones). Our crew plays that same get-out motion at both
+// doors, so without it the second door reads as a stranger pose - visibly "a
+// bit off". Set it per side here (the knob sits immediately before our ped's
+// bones rotate), and put it back afterwards for the rest of the game in the
+// skeleton phase-1 pass.
+// ---------------------------------------------------------------------------
+static int sCrewRevSaved;
+static int sCrewRevValid;
+
+static int cd2CrewOnPedPose(void* ud, void* args)
+{
+	JER_ARGS_PED_POSE* a = (JER_ARGS_PED_POSE*)args;
+	int i, side;
+
+	(void)ud;
+
+	if (a == NULL || a->ped == NULL)
+		return JER_RESULT_CONTINUE;
+
+	// belt and braces: if a previous frame's hand-back was somehow missed, put
+	// the game's value back before touching it again
+	if (sCrewRevValid)
+	{
+		bReverseYRotation = sCrewRevSaved;
+		sCrewRevValid = 0;
+	}
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		for (side = 0; side < 2; side++)
+		{
+			if ((void*)gCrew[i].ped[side] == a->ped)
+			{
+				sCrewRevSaved = bReverseYRotation;
+				sCrewRevValid = 1;
+
+				// the driver's door is the unmirrored case (the engine's own
+				// left-side pairing), the gunner's the mirrored one
+				bReverseYRotation = (side == CD2_CREW_SIDE_GUNNER) ? 1 : 0;
+				return JER_RESULT_CONTINUE;
+			}
+		}
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
 // JER_EVENT_PED_SKELETON: fires for the player ped and for every module-owned
 // ped (jer_npc_owned), so filter to OURS - and pose only the driver, who is
 // the one leaning out with a hand pointed.
@@ -467,6 +520,14 @@ static int cd2CrewOnPedSkeleton(void* ud, void* args)
 
 	if (a == NULL || a->ped == NULL || a->skel == NULL)
 		return JER_RESULT_CONTINUE;
+
+	// phase 1 runs after this ped's bones are built and drawn, so this is where
+	// the get-out mirror flag cd2CrewOnPedPose set gets handed back to the game.
+	if (a->phase == 1 && sCrewRevValid)
+	{
+		bReverseYRotation = sCrewRevSaved;
+		sCrewRevValid = 0;
+	}
 
 	// the position channel only, and never during the shadow pass
 	if (a->phase != 0 || a->shadow)
@@ -956,6 +1017,7 @@ void cd2CrewRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2CrewOnFrame, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, cd2CrewOnCamera, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_DRAW, cd2CrewOnPedDraw, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_PED_POSE, cd2CrewOnPedPose, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_SKELETON, cd2CrewOnPedSkeleton, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2CrewOnGameStart, NULL, 0);
 
