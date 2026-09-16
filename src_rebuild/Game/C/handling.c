@@ -1591,12 +1591,14 @@ void CheckCarEffects(CAR_DATA* cp, int player_id)
 
 	skidsound = 0;
 
-	// totaled wreck: wheels are gone, so it never lays rubber or screeches
-	if (cp->totalDamage >= MaxPlayerDamage[0])
-	{
-		player[player_id].skidding.sound = -1;
-	}
-	else
+	// totaled wreck: wheels are gone, so it never lays rubber or screeches.
+	// NB: leave skidding.sound alone here. The "play skid sound" block below
+	// only acts when desired_skid != skidding.sound, so pre-setting it to -1
+	// (which is what desired_skid will be for a wreck) made the two equal and
+	// skipped the block entirely - leaving a screech that was ALREADY playing
+	// ringing forever. Leaving it untouched lets desired_skid (-1) differ from
+	// the live value and stop/release the channel.
+	if (cp->totalDamage < MaxPlayerDamage[0])
 	{
 	// make tyre tracks and skid sound if needed
 	if (wheels_on_ground)
@@ -1627,7 +1629,7 @@ void CheckCarEffects(CAR_DATA* cp, int player_id)
 
 		tracks_and_smoke = (player_id < MAX_TYRE_TRACK_PLAYERS) && !(cp->hd.wheel[1].surface & 0x8) && !(cp->hd.wheel[3].surface & 0x8);
 	}
-	}	// end else (not a totaled wreck)
+	}	// end if (not a totaled wreck)
 
 	desired_skid = -1;
 
@@ -1679,7 +1681,8 @@ void CheckCarEffects(CAR_DATA* cp, int player_id)
 	// pick best wheel
 	desired_wheel = -1;
 
-	if (wheels_on_ground && cp->hd.speed > 10)
+	// a totaled wreck has no wheels left to make surface noise either
+	if (wheels_on_ground && cp->hd.speed > 10 && cp->totalDamage < MaxPlayerDamage[0])
 	{
 		int wnse, wheel2;
 
