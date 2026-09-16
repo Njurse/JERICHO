@@ -19,6 +19,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_anim.h"	// JERICHO-HOOK: jer_anim_bone_rotation (defined here)
+#include "jer_npc.h"	// JERICHO-HOOK: jer_npc_owned (ped ownership gating)
 
 #if USE_PGXP
 #include <math.h>
@@ -1092,10 +1093,12 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 	vJPos[ROOT].vy = -Skel[ROOT].pvOrigPos->vy;
 	vJPos[ROOT].vz = Skel[ROOT].pvOrigPos->vz;
 
-	// JERICHO-HOOK: player-ped skeleton — phase 0 lets modules force a pose
-	// (write Skel[i].vCurrPos for e.g. the arm holding a weapon) before the
-	// joint offsets below are accumulated.
-	if (pDrawingPed->pedType == TANNER_MODEL && pDrawingPed->padId >= 0)
+	// JERICHO-HOOK: ped skeleton — phase 0 lets modules force a pose (write
+	// Skel[i].vCurrPos for e.g. the arm holding a weapon) before the joint
+	// offsets below are accumulated. Fires for the player ped AND for any ped
+	// a module owns (jer_npc_owned) - e.g. a mounted crew member, which has
+	// padId -1 - but never for ambient pedestrians.
+	if (pDrawingPed->pedType == TANNER_MODEL && (pDrawingPed->padId >= 0 || jer_npc_owned(pDrawingPed)))
 	{
 		JER_ARGS_PED_SKELETON jerSkel;
 
@@ -1169,10 +1172,11 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 		}
 	}
 
-	// JERICHO-HOOK: player-ped skeleton — phase 1 lets modules read the
-	// accumulated joint offsets (vJPos[RHAND] = hand position) and draw
-	// extra meshes attached to them (e.g. a weapon in Tanner's hand).
-	if (pDrawingPed->pedType == TANNER_MODEL && pDrawingPed->padId >= 0)
+	// JERICHO-HOOK: ped skeleton — phase 1 lets modules read the accumulated
+	// joint offsets (vJPos[RHAND] = hand position) and draw extra meshes
+	// attached to them (e.g. a weapon in Tanner's hand). Same ownership rule
+	// as phase 0: player ped + module-owned peds.
+	if (pDrawingPed->pedType == TANNER_MODEL && (pDrawingPed->padId >= 0 || jer_npc_owned(pDrawingPed)))
 	{
 		JER_ARGS_PED_SKELETON jerSkel;
 
@@ -1735,8 +1739,9 @@ void DrawTanner(LPPEDESTRIAN pPed)
 
 	// JERICHO-HOOK: the pose hook — the ONLY window where a per-bone
 	// ROTATION write (mutating *Skel[i].pvRotation, read by
-	// newRotateBones right below) takes effect
-	if (pPed->pedType == TANNER_MODEL && pPed->padId >= 0)
+	// newRotateBones right below) takes effect. Fires for the player ped
+	// and for module-owned peds (jer_npc_owned), same rule as PED_SKELETON.
+	if (pPed->pedType == TANNER_MODEL && (pPed->padId >= 0 || jer_npc_owned(pPed)))
 	{
 		JER_ARGS_PED_POSE jerPose;
 

@@ -71,6 +71,18 @@ int jer_npc_speed(const JerNpc* n);
  * of its car onto the street. Returns 0 when unimplemented/not possible. */
 int jer_npc_leave_car(JerNpc* n);
 
+/* ---- engine-side (not for modules) ------------------------------------
+ * Ownership: the JERICHO ped hooks that let a module pose a ped
+ * (JER_EVENT_PED_POSE / JER_EVENT_PED_SKELETON) fire only for peds a MODULE
+ * owns, so the engine never pays for ambient pedestrians and a random civ can
+ * never be posed. Ownership is granted by spawning through this API
+ * (jer_npc_spawn / jer_npc_spawn_model) and released by jer_npc_despawn.
+ *
+ * The engine (motion_c.c) calls jer_npc_owned() at the hook sites. It also
+ * verifies the ped is still live, so a ped the engine destroyed behind our
+ * back reports 0 rather than posing whatever slot got recycled. */
+int jer_npc_owned(const void* ped);
+
 #ifdef __cplusplus
 }
 #endif

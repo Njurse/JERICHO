@@ -34,6 +34,85 @@ static void jer_npc_park_internal(LPPEDESTRIAN pPed)
 	pPed->fpAgitatedState = jer_npc_frozen_state;
 }
 
+/* ---------------------------------------------------------------------------
+ * Ownership (see jer_npc.h). A ped a module spawned through this API is
+ * "owned": the ped-pose hooks (JER_EVENT_PED_POSE / PED_SKELETON) only fire
+ * for owned peds. Spawning marks, despawn unmarks; the query also checks the
+ * ped is still on the engine's live list (pUsedPeds), so an entry whose ped
+ * the engine destroyed behind our back reports unowned instead of matching
+ * whatever pedestrian reused the slot.
+ * ------------------------------------------------------------------------- */
+#define JER_NPC_MAX_OWNED	32
+static LPPEDESTRIAN jer_npc_owned_peds[JER_NPC_MAX_OWNED];
+
+static int jer_npc_ped_alive(LPPEDESTRIAN pPed)
+{
+	LPPEDESTRIAN q = pUsedPeds;
+
+	while (q != NULL)
+	{
+		if (q == pPed)
+			return 1;
+
+		q = q->pNext;
+	}
+
+	return 0;
+}
+
+static void jer_npc_own_add(LPPEDESTRIAN pPed)
+{
+	int i;
+
+	if (pPed == NULL)
+		return;
+
+	for (i = 0; i < JER_NPC_MAX_OWNED; i++)
+	{
+		if (jer_npc_owned_peds[i] == pPed)
+			return;		/* already owned */
+	}
+
+	for (i = 0; i < JER_NPC_MAX_OWNED; i++)
+	{
+		if (jer_npc_owned_peds[i] == NULL)
+		{
+			jer_npc_owned_peds[i] = pPed;
+			return;
+		}
+	}
+
+	/* registry full: the ped simply stays unowned (it just won't be poseable) */
+}
+
+static void jer_npc_own_remove(LPPEDESTRIAN pPed)
+{
+	int i;
+
+	for (i = 0; i < JER_NPC_MAX_OWNED; i++)
+	{
+		if (jer_npc_owned_peds[i] == pPed)
+			jer_npc_owned_peds[i] = NULL;
+	}
+}
+
+int jer_npc_owned(const void* ped)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)ped;
+	int i;
+
+	if (pPed == NULL)
+		return 0;
+
+	for (i = 0; i < JER_NPC_MAX_OWNED; i++)
+	{
+		if (jer_npc_owned_peds[i] == pPed)
+			return jer_npc_ped_alive(pPed);
+	}
+
+	return 0;
+}
+
 /* Ring radii / directions used to search outward from a requested spawn point
  * for walkable pavement. Snapping to the nearest walkable spot keeps a ped
  * from being created out of bounds (off the road graph), which the pavement
@@ -115,6 +194,9 @@ JerNpc* jer_npc_spawn(int x, int z)
 	 * draw path reads the pose out of a stale/NULL buffer. */
 	SetupPedMotionData(pPed);
 
+	/* owned: this ped becomes eligible for the JERICHO ped-pose hooks */
+	jer_npc_own_add(pPed);
+
 	return (JerNpc*)pPed;
 }
 
@@ -123,7 +205,10 @@ void jer_npc_despawn(JerNpc* n)
 	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
 
 	if (pPed != NULL)
+	{
+		jer_npc_own_remove(pPed);
 		DestroyPedestrian(pPed);
+	}
 }
 
 void jer_npc_face(JerNpc* n, int heading)
