@@ -509,6 +509,10 @@ void jer_build_finish(void)
 	 * build finishing, which must not be reported as success */
 	if (gBuild.failed || !gBuild.done)
 	{
+		/* stop pumping it: the loop has given up, so a build that is somehow
+		 * still running must not keep driving a screen nobody is drawing */
+		jer_screen_dismiss();
+
 		/* the exe may still be sitting aside (the link is what failed). Put it
 		 * back rather than leaving the install with no exe at all. */
 		if (gBuild.renamed && !jerBuildFileExists(gBuild.exePath))
