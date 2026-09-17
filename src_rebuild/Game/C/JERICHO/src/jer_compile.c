@@ -498,7 +498,16 @@ void jer_build_finish(void)
 	/* one shot: a second LoadFrontendScreens() in this process must not re-report */
 	gBuild.attempted = 0;
 
-	if (gBuild.failed)
+	if (gBuild.count == 0 && gBuild.done && !gBuild.failed)
+	{
+		/* nothing to compile: not an error, and nothing to announce */
+		jer_log("[build] no deep mods installed - nothing to compile\n");
+		return;
+	}
+
+	/* !done here means the screen loop gave up at its frame cap without the
+	 * build finishing, which must not be reported as success */
+	if (gBuild.failed || !gBuild.done)
 	{
 		/* the exe may still be sitting aside (the link is what failed). Put it
 		 * back rather than leaving the install with no exe at all. */

@@ -2106,17 +2106,6 @@ void State_FrontEnd(void* param)
 
 	PadChecks();
 
-	// JERICHO-HOOK: a host prompt (jer_prompt.h) owns the pad while it is up.
-	// Feed it here — before the screen gets a turn — and consume the press, so a
-	// Cross that answers the prompt cannot also press the button underneath it.
-	if (jer_prompt_active())
-	{
-		jer_prompt_tick((feNewPad & MPAD_D_LEFT) != 0, (feNewPad & MPAD_D_RIGHT) != 0,
-			(feNewPad & MPAD_CROSS) != 0, (feNewPad & MPAD_CIRCLE) != 0);
-
-		feNewPad = 0;
-	}
-
 	if (currPlayer == 2)
 	{
 		if (Pads[1].type < 2)
@@ -2127,6 +2116,18 @@ void State_FrontEnd(void* param)
 		{
 			feNewPad = Pads[1].mapnew;
 		}
+	}
+
+	// JERICHO-HOOK: a host prompt (jer_prompt.h) owns the pad while it is up.
+	// Fed here — after the pads are read, before the screen gets a turn — and
+	// consumed (feNewPad = 0) so a Cross that answers the prompt cannot also
+	// press the button underneath it.
+	if (jer_prompt_active())
+	{
+		jer_prompt_tick((feNewPad & MPAD_D_LEFT) != 0, (feNewPad & MPAD_D_RIGHT) != 0,
+			(feNewPad & MPAD_CROSS) != 0, (feNewPad & MPAD_CIRCLE) != 0);
+
+		feNewPad = 0;
 	}
 
 	if (HandleKeyPress())
