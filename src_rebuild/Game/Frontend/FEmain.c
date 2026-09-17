@@ -28,6 +28,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (mods manager frontend)
 #include "../C/jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "../C/JERICHO/include/jer_frontend.h"	// JERICHO-HOOK: module frontend menus
+#include "../C/JERICHO/include/jer_screen.h"	// JERICHO-HOOK: presentation screens
 
 #ifndef PSX
 
@@ -403,6 +404,10 @@ int JerFrontendMenuScreen(int bSetup);	// JERICHO-HOOK: module frontend menus
 #define JERICHO_MODS_MODULES_PER_PAGE 5
 #endif
 
+// JERICHO-HOOK: safety cap on the boot presentation-screen loop (jer_screen.h):
+// a screen whose on_update never reports finished must not hang the frontend.
+#define JER_SCREEN_BOOT_MAX_FRAMES 100000
+
 static int gJerichoOptionsButtonAdded;
 static int gJerichoModsPage;		// paginated mod list: current page
 static int gJerichoModsNeedSetup;	// a page change needs the buttons rebuilt
@@ -755,6 +760,11 @@ int FEPrintString(char* string, int x, int y, int justification, int r, int g, i
 void LoadFrontendScreens(int full);
 void NewSelection(short dir);
 void EndFrame(void);
+
+/* JERICHO-HOOK: presentation screens (jer_screen.h) */
+void SetFEDrawMode(void);			/* defined below; used by the boot screen loop */
+int  JerichoDrawScreen(void);
+void JerichoRunBootScreens(void);
 
 // [D] [T]
 void SetVariable(int var)
@@ -1327,6 +1337,104 @@ void LoadBackgroundFile(char* name)
 	bRedrawFrontend = 1;
 }
 
+/* ------------------------------------------------------------------ *
+ * JERICHO-HOOK: presentation screens (JERICHO/include/jer_screen.h).
+ *
+ * A presentation screen is a full-screen, non-interactive frontend frame: a
+ * heading plus one live body line ("Compiling JERICHO addons..." /
+ * "ZOOMMOD [3/7]"). It lets long work show progress instead of a frozen
+ * screen. The engine only pumps the registry and draws it — what a screen says
+ * is owned by JERICHO and its modules.
+ * ------------------------------------------------------------------ */
+
+/* One frame of the active screen. Returns 1 if a screen was drawn. */
+int JerichoDrawScreen(void)
+{
+	static POLY_F4 jerBack;		/* static: the OT holds the pointer until EndFrame */
+	char body[JER_SCREEN_BODY_MAX];
+	const char* title = jer_screen_title();
+	int x;
+
+	if (title == NULL || current == NULL)
+		return 0;
+
+	jer_screen_body(body, sizeof(body));
+
+	/* a black backdrop, so it reads as a screen rather than an overlay */
+	setPolyF4(&jerBack);
+	setRGB0(&jerBack, 0, 0, 0);
+	setXYWH(&jerBack, 0, 0, 640, 512);
+	addPrim(current->ot + 11, &jerBack);
+
+	x = 320 - FEStringWidth((char*)title) / 2;
+	FEPrintString((char*)title, x, 236, 0, 230, 230, 230);
+
+	if (body[0] != 0)
+	{
+		x = 320 - FEStringWidth(body) / 2;
+		FEPrintString(body, x, 262, 0, 150, 205, 150);
+	}
+
+	return 1;
+}
+
+/* Boot variant: draw + advance while a screen is pending. Runs before the rest
+ * of the frontend is built, so a compile-style screen is visible first. A
+ * no-op when no screen is pending.
+ *
+ * NOTE: this deliberately does NOT use EndFrame(). EndFrame VSyncs before it
+ * presents, which deadlocks while swap-interval blocking is on — and at this
+ * point in the boot the display has just been brought up. The sequence below
+ * mirrors ShowLoadingScreen (loadview.c), which is what runs immediately
+ * before it: draw -> DrawSync -> VSync (skipped when fast-loading) ->
+ * PsyX_EndScene -> re-install the env. */
+void JerichoRunBootScreens(void)
+{
+	int guard;
+
+	jer_screen_tick();
+
+	if (!jer_screen_active())
+		return;
+
+	/* the frontend menu is not built yet: set up the draw env here (this also
+	 * gives us a valid `current` to add prims to) and bring the display up */
+	SetFEDrawMode();
+	SetDispMask(1);
+
+#ifndef PSX
+	PsyX_EnableSwapInterval((gFastLoadingScreens == 0));
+#endif
+
+	/* EndFrame() normally clears the OT it has just drawn and swapped in; this
+	 * loop does not use EndFrame, so clear it here before the first draw. */
+	ClearOTagR((u_long*)current->ot, FE_OTSIZE);
+
+	/* guard: a screen with no on_update would otherwise spin forever */
+	for (guard = 0; jer_screen_active() && guard < JER_SCREEN_BOOT_MAX_FRAMES; guard++)
+	{
+		JerichoDrawScreen();
+
+		DrawOTag((u_long*)(current->ot + FE_OTSIZE - 1));
+
+		DrawSync(0);
+
+		if (gFastLoadingScreens == 0)
+			VSync(0);
+
+#ifndef PSX
+		PsyX_EndScene();
+#endif
+
+		PutDispEnv(&current->disp);
+		PutDrawEnv(&current->draw);
+
+		ClearOTagR((u_long*)current->ot, FE_OTSIZE);
+
+		jer_screen_tick();
+	}
+}
+
 // [D] [T]
 void LoadFrontendScreens(int full)
 {
@@ -1337,6 +1445,11 @@ void LoadFrontendScreens(int full)
 
 	ShowLoadingScreen("GFX\\FELOAD.TIM", 1, 12);
 	ShowLoading();
+
+	// JERICHO-HOOK: presentation screens run here — before the rest of the
+	// frontend is built — so work that must happen before the menu (e.g.
+	// compiling deep modules) is visible. No-op when nothing is pending.
+	JerichoRunBootScreens();
 
 #ifndef USE_EMBEDDED_FRONTEND_SCREENS
 	if (full)
@@ -1957,10 +2070,17 @@ void State_FrontEnd(void* param)
 	// while the frontend is frozen behind them
 	jer_fire(JER_EVENT_FRAME, NULL);
 
+	// JERICHO-HOOK: advance any presentation screen (jer_screen.h) raised at
+	// runtime; it is drawn with the notices just below.
+	jer_screen_tick();
+
 	// JERICHO-HOOK: error notices (engine + modules) -- gentle red, left of
 	// the screen, ~5 s (e.g. "invalid command line argument")
 	{
 		int jerN = jer_error_count(), jerK;
+
+		/* presentation screens sit under the notices */
+		JerichoDrawScreen();
 
 		for (jerK = 0; jerK < jerN; jerK++)
 		{

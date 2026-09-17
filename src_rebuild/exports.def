@@ -123,8 +123,8 @@ EXPORTS
 	?InitCops@@YAXXZ
 	?PassiveCopTasks@@YAXPEAU_CAR_DATA@@@Z
 	?GetSamples@CSoundSource_OpenALCache@@UEAAHPEAEHH_N@Z
-	?GetSampleCount@CSoundSource_OpenALCache@@UEBAHXZ
 	?GetDataPtr@CSoundSource_OpenALCache@@UEBAPEAEAEAH@Z
+	?GetSampleCount@CSoundSource_OpenALCache@@UEBAHXZ
 	?ReplayLog_Fnarr_He_Said_Log@@YAHH@Z
 	?AddBrakeLight@@YAXPEAU_CAR_DATA@@@Z
 	?AddCopCarLight@@YAXPEAU_CAR_DATA@@@Z
@@ -348,16 +348,16 @@ EXPORTS
 	?GlobalTimeStep@@YAXXZ
 	?InitCarPhysics@@YAXPEAU_CAR_DATA@@PEAY03HH@Z
 	?InitSkidding@@YAXXZ
+	?SetXAVolume@@YAXH@Z
+	?ProcessRoadsLump@@YAXPEADH@Z
+	?ProcessRoadBoundsLump@@YAXPEADH@Z
+	?GetXAData@@YAXH@Z
+	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
+	?StopDualShockMotors@@YAXXZ
 	?InitialiseCarHandling@@YAXXZ
 	?ProcessJunctionsLump@@YAXPEADH@Z
-	?SetXAVolume@@YAXH@Z
-	?ProcessJuncBoundsLump@@YAXPEADH@Z
-	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
-	?ProcessRoadsLump@@YAXPEADH@Z
 	?ProcessSubDivisionLump@@YAXPEADH@Z
-	?GetXAData@@YAXH@Z
-	?ProcessRoadBoundsLump@@YAXPEADH@Z
-	?StopDualShockMotors@@YAXXZ
+	?ProcessJuncBoundsLump@@YAXPEADH@Z
 	?ProcessCarPad@@YAXPEAU_CAR_DATA@@IDD@Z
 	?RebuildCarMatrix@@YAXPEATRigidBodyState@@PEAU_CAR_DATA@@@Z
 	?SetShadowPoints@@YAXPEAU_CAR_DATA@@PEAUVECTOR@@@Z
@@ -825,9 +825,9 @@ EXPORTS
 	?GetDataPtr@CSoundSource_WaveCache@@UEBAPEAEAEAH@Z
 	?GetFormat@CSoundSource_Wave@@UEAAPEAUsoundFormat_s@@XZ
 	?GetSampleCount@CSoundSource_Wave@@UEBAHXZ
-	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
-	?Load@CSoundSource_OpenALCache@@EEAA_NPEBD@Z
 	?IsStreaming@CSoundSource_WaveCache@@UEAA_NXZ
+	?Load@CSoundSource_OpenALCache@@EEAA_NPEBD@Z
+	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
 	?PauseXA@@YAXXZ
 	?PlayXA@@YAXHH@Z
 	?PrepareXA@@YAXXZ
@@ -1002,8 +1002,8 @@ EXPORTS
 	??1?$vector@Uindex_entry_t@ReadAVI@@V?$allocator@Uindex_entry_t@ReadAVI@@@std@@@std@@QEAA@XZ
 	??1ReadAVI@@UEAA@XZ
 	??1_Sentry_base@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@XZ
-	??1bad_array_new_length@std@@UEAA@XZ
 	??1bad_cast@std@@UEAA@XZ
+	??1bad_array_new_length@std@@UEAA@XZ
 	??1locale@std@@QEAA@XZ
 	??1sentry@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@XZ
 	??_D?$basic_ifstream@DU?$char_traits@D@std@@@std@@QEAAXXZ
@@ -1045,6 +1045,8 @@ EXPORTS
 	?PrintFMVText@@YAXPEADHFH@Z
 	?SetupMovieRectangle@@YAXHH@Z
 	jer_init
+	jer_disable_all_modules
+	jer_modules_disabled
 	jer_fire
 	jer_log
 	jer_error
@@ -1080,6 +1082,15 @@ EXPORTS
 	jer_config_clear
 	jer_loader_scan
 	jer_loader_unload
+	jer_screen_register
+	jer_screen_reset
+	jer_screen_show
+	jer_screen_dismiss
+	jer_screen_tick
+	jer_screen_active
+	jer_screen_current
+	jer_screen_title
+	jer_screen_body
 	jer_module_antfarm_entry
 	??4half@@QEAAAEAU0@AEBU0@@Z
 	jer_module_collisiondevil_entry
