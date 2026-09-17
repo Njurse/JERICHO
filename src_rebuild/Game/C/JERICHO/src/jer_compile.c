@@ -198,7 +198,6 @@ static int jerBuildFindBat(char* out, int max)
 	/* 2) the repo: <srcDir>/../JERICHO/build_game.bat */
 	{
 		char repo[MAX_PATH];
-		int i;
 
 		snprintf(repo, sizeof(repo), "%s", gBuild.srcDir);
 		slash = strrchr(repo, '\\');
@@ -210,7 +209,6 @@ static int jerBuildFindBat(char* out, int max)
 		snprintf(out, max, "%s\\JERICHO\\build_game.bat", repo);
 
 		/* srcDir is <repo>/src_rebuild */
-		(void)i;
 		return jerBuildFileExists(out);
 	}
 }
@@ -387,6 +385,9 @@ static int jerBuildTick(void* ud)
 		{
 			int spawned = jerBuildSpawnStep();
 
+			if (!spawned)
+				gBuild.failed = 1;	/* nothing to show, but do not claim success */
+
 			return spawned ? 0 : 1;
 		}
 	}
@@ -435,9 +436,11 @@ int jer_build_begin(void)
 	snprintf(exeOld, sizeof(exeOld), "%s.old", exePath);
 
 	/* A previous boot-time build moved the then-running exe aside. It is
-	 * nobody's now (this process runs from the fresh one), so drop it. This
-	 * runs on every boot, whether or not a build is pending. */
-	DeleteFileA(exeOld);
+	 * nobody's now (this process runs from the fresh one), so drop it — but only
+	 * once the normal exe is really there, or we would delete the last good
+	 * image after a build whose *link* failed. */
+	if (jerBuildFileExists(exePath))
+		DeleteFileA(exeOld);
 
 	if (!jer_build_pending())
 		return 0;
@@ -487,14 +490,26 @@ int jer_build_begin(void)
 
 void jer_build_finish(void)
 {
-	char leaf[128];
 	FILE* f;
 
 	if (!gBuild.attempted)
 		return;
 
+	/* one shot: a second LoadFrontendScreens() in this process must not re-report */
+	gBuild.attempted = 0;
+
 	if (gBuild.failed)
 	{
+		/* the exe may still be sitting aside (the link is what failed). Put it
+		 * back rather than leaving the install with no exe at all. */
+		if (gBuild.renamed && !jerBuildFileExists(gBuild.exePath))
+		{
+			if (MoveFileA(gBuild.exeOld, gBuild.exePath))
+				jer_log("[build] restored the previous exe\n");
+			else
+				jer_log("[build] WARNING: the previous exe is at %s\n", gBuild.exeOld);
+		}
+
 		jer_log("[build] FAILED - see JERICHO/%s/%s\n", JER_CONFIG_PATH, JER_BUILD_LOG);
 		jer_error("JERICHO: compiling the deep mods failed - see JERICHO\\%s\\%s", JER_CONFIG_PATH, JER_BUILD_LOG);
 		return;
@@ -504,7 +519,6 @@ void jer_build_finish(void)
 	 * image: the new build runs on the next start */
 	jer_log("[build] OK - the new exe is in place; restart to run the compiled mods\n");
 
-	snprintf(leaf, sizeof(leaf), "JERICHO\\%s\\%s", JER_CONFIG_PATH, JER_BUILD_LOG);
 	f = fopen(gBuild.logPath, "ab");
 
 	if (f != NULL)
@@ -580,6 +594,10 @@ void jer_compile_request(void)
 	int built = jer_compile_mods();
 
 	jer_build_mark_pending();
+
+	/* the runtime addons that just built are loadable now, so pick them up
+	 * (the deep mods still wait for the restart) */
+	jer_manager_reload(jer_root_dir());
 
 	jer_log("[compile] Compile Mods: runtime addons built=%d, deep mods deferred to the next boot\n", built);
 

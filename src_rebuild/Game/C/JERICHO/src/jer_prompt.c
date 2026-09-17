@@ -50,7 +50,14 @@ int jer_prompt_begin(const char* question, JER_PROMPT_ON_YES on_yes)
 		return 0;
 	}
 
-	return jer_screen_show("jer-prompt");
+	if (!jer_screen_show("jer-prompt"))
+	{
+		/* registered but not shown: do not claim to be up with nothing drawn */
+		gPromptOpen = 0;
+		return 0;
+	}
+
+	return 1;
 }
 
 int jer_prompt_active(void)

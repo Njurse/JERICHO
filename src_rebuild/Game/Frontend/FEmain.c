@@ -412,6 +412,7 @@ int JerFrontendMenuScreen(int bSetup);	// JERICHO-HOOK: module frontend menus
 static int gJerichoOptionsButtonAdded;
 static int gJerichoModsPage;		// paginated mod list: current page
 static int gJerichoModsNeedSetup;	// a page change needs the buttons rebuilt
+static int gJerichoModsPrompted;	// a host prompt was up on the mods screen
 
 // JERICHO-HOOK: module-provided frontend menus (jer_frontend.h)
 static const JER_FE_MENU* gFeMenus[JER_FE_MAX_MENUS];
@@ -2105,6 +2106,17 @@ void State_FrontEnd(void* param)
 
 	PadChecks();
 
+	// JERICHO-HOOK: a host prompt (jer_prompt.h) owns the pad while it is up.
+	// Feed it here — before the screen gets a turn — and consume the press, so a
+	// Cross that answers the prompt cannot also press the button underneath it.
+	if (jer_prompt_active())
+	{
+		jer_prompt_tick((feNewPad & MPAD_D_LEFT) != 0, (feNewPad & MPAD_D_RIGHT) != 0,
+			(feNewPad & MPAD_CROSS) != 0, (feNewPad & MPAD_CIRCLE) != 0);
+
+		feNewPad = 0;
+	}
+
 	if (currPlayer == 2)
 	{
 		if (Pads[1].type < 2)
@@ -2125,12 +2137,6 @@ void State_FrontEnd(void* param)
 			bRedrawFrontend = 1;
 		}
 	}
-
-	// JERICHO-HOOK: feed the host prompt (jer_prompt.h) the pad AFTER the
-	// screen has had its turn, so a Cross that answers the prompt cannot also
-	// press the button underneath it.
-	jer_prompt_tick((feNewPad & MPAD_D_LEFT) != 0, (feNewPad & MPAD_D_RIGHT) != 0,
-		(feNewPad & MPAD_CROSS) != 0, (feNewPad & MPAD_CIRCLE) != 0);
 
 #ifndef PSX
 	DrawScreen(pCurrScreen);
@@ -4624,10 +4630,24 @@ int JerichoModsScreen(int bSetup)
 
 	/* per-frame: claim cross (toggle/page) and left/right (reorder) on module
 	 * buttons; everything else (up/down nav, Back cross) goes to the engine */
-	/* JERICHO-HOOK: a host prompt (jer_prompt.h) owns the pad while it is up —
-	 * the frontend frame feeds it, so the screen must not also act on it. */
+	/* JERICHO-HOOK: a host prompt (jer_prompt.h) owns the pad while it is up.
+	 * Returning non-zero ("handled") is what makes the frontend skip its own
+	 * button/navigation handling for this press — the prompt is fed in
+	 * State_FrontEnd, before the screen is asked. */
 	if (jer_prompt_active())
-		return 0;
+	{
+		gJerichoModsPrompted = 1;
+		return 1;
+	}
+
+	/* the prompt has closed: re-read the module list, since its Yes may have
+	 * rebuilt (and reloaded) the runtime addons */
+	if (gJerichoModsPrompted)
+	{
+		gJerichoModsPrompted = 0;
+		gJerichoModsNeedSetup = 1;
+		bRedrawFrontend = 1;
+	}
 
 	if (pCurrButton != NULL && pCurrScreen != NULL)
 	{
