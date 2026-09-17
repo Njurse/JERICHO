@@ -75,6 +75,27 @@ A screen is drawn **only while the game is in the frontend**, in two places:
    error notices, so a screen raised during gameplay takes effect the next
    time the frontend runs.
 
+## Yes/No prompts — `jer_prompt.h`
+
+A prompt is a presentation screen with a fixed shape, so the engine needs no
+dialog UI either:
+
+```c
+jer_prompt_begin("Compile the deep mods in your folder? JERICHO must restart to do this.",
+                 jer_compile_request);
+```
+
+The question becomes the heading and the body shows the highlight
+(`> Yes   No` / `  Yes > No`). `jer_prompt_tick(prev, next, confirm, cancel)` is
+fed one frame of input — already-decoded booleans, so the engine keeps its own
+pad makes — and runs the `on_yes` callback when the player confirms.
+Left/right move the highlight, Cross confirms it, Circle dismisses.
+
+The frontend feeds it from its own frame loop, **after** the current screen has
+had its turn, so a Cross that answers the prompt cannot also press the button
+underneath it; and while a prompt is up the frontend must not act on the pad
+(see the guard in `JerichoModsScreen`). "Compile Mods" is the first user.
+
 ## Rules and gotchas
 
 - **A boot screen needs `on_update`.** The boot loop ends when `on_update`

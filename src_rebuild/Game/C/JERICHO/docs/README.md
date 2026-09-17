@@ -94,6 +94,27 @@ or the **Compile Mods** button in the Mods menu. This runs
 addon), builds them against the game's import library, and copies the DLLs
 next to the exe. Reloading the Mods screen activates them. No exe rebuild.
 
+## Building deep mods (game-side)
+
+Deep mods (no `runtime = "dll"`) are compiled **into** the exe, so they cannot
+be rebuilt while the game is running. **Compile Mods** therefore asks first:
+
+- **Yes** builds the runtime addons immediately (above) and records that the
+  deep mods need a rebuild (`JERICHO/CONFIG/needs-build`), then tells the player
+  to restart.
+- On the **next boot**, JERICHO runs the deep build *before the frontend menu*
+  and shows a progress screen — `Compiling JERICHO addons...` / `CRUMPLE [3/9]`
+  — driven by `JERICHO/build_game.bat` (premake, then one MSBuild step per deep
+  module, then the exe), with everything it prints in
+  `JERICHO/CONFIG/build.log`.
+
+The exe the game is running from is locked, so it is moved to `<exe>.old` first
+and the freshly linked exe lands under the normal name — hence "restart to run
+them"; the stale `.old` goes away on the boot after that. Booting is the one
+moment a rebuild can happen at all, which is why it is deferred rather than
+done in place. The heading and the `[i/n]` line are drawn by the presentation
+screen in [screens.md](screens.md).
+
 ## The runtime
 
 At boot the game calls `jer_init("JERICHO")`:

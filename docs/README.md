@@ -15,7 +15,7 @@ its SDK mirrors); `docs/JERICHO/` holds pointers only.
 | [`HOOKS.md`](../src_rebuild/Game/C/JERICHO/docs/HOOKS.md) | writing a module: anatomy, pause menus, logging, boot arguments |
 | [`ped-animation.md`](../src_rebuild/Game/C/JERICHO/docs/ped-animation.md) | the pedestrian animation and skeleton pipeline |
 | [`module-activation.md`](../src_rebuild/Game/C/JERICHO/docs/module-activation.md) | how a module gets enabled (`modlist.ini` → `mod.toml` → fail-closed), the `src=` boot log and `-nomods`, which modules override car handling, and why no handling module ⇒ vanilla handling |
-| [`screens.md`](../src_rebuild/Game/C/JERICHO/docs/screens.md) | presentation screens: `jer_screen.h`, the register/show/tick API, the boot screen loop, and its gotchas |
+| [`screens.md`](../src_rebuild/Game/C/JERICHO/docs/screens.md) | presentation screens: `jer_screen.h` (register/show/tick, the boot loop) and the host-owned `jer_prompt.h` yes/no prompt |
 | [`sdk/README.md`](../JERICHO/sdk/README.md) | the addon SDK: headers, building, installing, platform notes |
 
 ## Mods
