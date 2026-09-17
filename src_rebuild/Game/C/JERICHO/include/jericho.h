@@ -412,6 +412,59 @@ int jer_module_list(JER_MODULE_INFO* out, int max);
 /* The central JERICHO folder passed to jer_init (used by the manager). */
 const char* jer_root_dir(void);
 
+/* ------------------------------------------------------------------ */
+/* Deep-mod builds (host side)                                         */
+/* ------------------------------------------------------------------ */
+
+#define JER_MOD_ID_MAX 40
+
+/* One module that must be compiled INTO the game (a "deep" mod): its
+ * mod.toml does not declare runtime = "dll". Changing or adding one of
+ * these needs the game exe rebuilt, which is what a restart is for. */
+typedef struct JER_DEEP_MOD
+{
+	char id[JER_MOD_ID_MAX];
+	char name[64];
+} JER_DEEP_MOD;
+
+/*
+ * Host-side: list the installed deep mods, in build order, so a caller can
+ * report "<name> [i/n]" progress while they are compiled. Returns the count
+ * (up to max), or 0 when there is nothing to compile. Does no loading.
+ */
+int jer_deep_mod_list(JER_DEEP_MOD* out, int max);
+
+/*
+ * Host-side: has a deep-mod rebuild been requested? Set by "Compile Mods"
+ * (see jer_build_mark_pending), consumed at the next boot by
+ * jer_build_run_pending(). The flag lives in <root>/CONFIG/.
+ */
+int jer_build_pending(void);
+void jer_build_mark_pending(void);
+void jer_build_clear_pending(void);
+
+/*
+ * Host-side: compile the deep mods into a fresh game exe (premake + MSBuild),
+ * driving a presentation screen (jer_screen.h) whose body is
+ * "<name> [i/n]". Does nothing when no build is pending.
+ *
+ * Split so the engine stays in charge of drawing:
+ *
+ *     if (jer_build_begin())          // clears the marker, raises the screen
+ *     {
+ *         JerichoRunBootScreens();    // the engine pumps it
+ *         jer_build_finish();         // logs the outcome + raises a notice
+ *     }
+ *
+ * The running exe is renamed aside first (Windows locks the image), so the
+ * freshly built exe lands under the normal name and is what runs next time --
+ * hence "restart to run them". jer_build_begin() returns non-zero when a build
+ * was attempted, so the caller knows to pump the screen. Windows only (else
+ * both return 0).
+ */
+int jer_build_begin(void);
+void jer_build_finish(void);
+
 /*
  * Host-side: compile every installed runtime "dll" addon into a loadable
  * module using the game's own toolchain (JERICHO/build_mods.bat). The game

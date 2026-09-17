@@ -67,6 +67,7 @@ typedef struct JER_MODULE
 	int sdkVersion;			/* from ctx->jer_register_module */
 	int valid;				/* passes SDK + dependency validation */
 	int enabledFromModlist;	/* 1 = modlist.ini decided, 0 = mod.toml default */
+	int isDllAddon;			/* mod.toml declares runtime = "dll" (loaded, not compiled in) */
 } JER_MODULE;
 
 /* ------------------------------------------------------------------ */

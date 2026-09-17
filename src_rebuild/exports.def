@@ -122,8 +122,8 @@ EXPORTS
 	?InitCopState@@YAXPEAU_CAR_DATA@@PEAD@Z
 	?InitCops@@YAXXZ
 	?PassiveCopTasks@@YAXPEAU_CAR_DATA@@@Z
-	?GetSamples@CSoundSource_OpenALCache@@UEAAHPEAEHH_N@Z
 	?GetDataPtr@CSoundSource_OpenALCache@@UEBAPEAEAEAH@Z
+	?GetSamples@CSoundSource_OpenALCache@@UEAAHPEAEHH_N@Z
 	?GetSampleCount@CSoundSource_OpenALCache@@UEBAHXZ
 	?ReplayLog_Fnarr_He_Said_Log@@YAHH@Z
 	?AddBrakeLight@@YAXPEAU_CAR_DATA@@@Z
@@ -348,16 +348,16 @@ EXPORTS
 	?GlobalTimeStep@@YAXXZ
 	?InitCarPhysics@@YAXPEAU_CAR_DATA@@PEAY03HH@Z
 	?InitSkidding@@YAXXZ
-	?SetXAVolume@@YAXH@Z
-	?ProcessRoadsLump@@YAXPEADH@Z
 	?ProcessRoadBoundsLump@@YAXPEADH@Z
-	?GetXAData@@YAXH@Z
-	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
-	?StopDualShockMotors@@YAXXZ
-	?InitialiseCarHandling@@YAXXZ
 	?ProcessJunctionsLump@@YAXPEADH@Z
+	?SetXAVolume@@YAXH@Z
 	?ProcessSubDivisionLump@@YAXPEADH@Z
+	?InitialiseCarHandling@@YAXXZ
+	?GetXAData@@YAXH@Z
 	?ProcessJuncBoundsLump@@YAXPEADH@Z
+	?StopDualShockMotors@@YAXXZ
+	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
+	?ProcessRoadsLump@@YAXPEADH@Z
 	?ProcessCarPad@@YAXPEAU_CAR_DATA@@IDD@Z
 	?RebuildCarMatrix@@YAXPEATRigidBodyState@@PEAU_CAR_DATA@@@Z
 	?SetShadowPoints@@YAXPEAU_CAR_DATA@@PEAUVECTOR@@@Z
@@ -825,9 +825,9 @@ EXPORTS
 	?GetDataPtr@CSoundSource_WaveCache@@UEBAPEAEAEAH@Z
 	?GetFormat@CSoundSource_Wave@@UEAAPEAUsoundFormat_s@@XZ
 	?GetSampleCount@CSoundSource_Wave@@UEBAHXZ
+	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
 	?IsStreaming@CSoundSource_WaveCache@@UEAA_NXZ
 	?Load@CSoundSource_OpenALCache@@EEAA_NPEBD@Z
-	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
 	?PauseXA@@YAXXZ
 	?PlayXA@@YAXHH@Z
 	?PrepareXA@@YAXXZ
@@ -916,6 +916,7 @@ EXPORTS
 	?HandleKeyPress@@YAHXZ
 	?InitFrontend@@YAXXZ
 	?InitFrontendDisplay@@YAXXZ
+	?JerichoDrawScreen@@YAHXZ
 	?LoadBackgroundFile@@YAXPEAD@Z
 	?LoadFrontendScreens@@YAXH@Z
 	?NewSelection@@YAXF@Z
@@ -1002,8 +1003,8 @@ EXPORTS
 	??1?$vector@Uindex_entry_t@ReadAVI@@V?$allocator@Uindex_entry_t@ReadAVI@@@std@@@std@@QEAA@XZ
 	??1ReadAVI@@UEAA@XZ
 	??1_Sentry_base@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@XZ
-	??1bad_cast@std@@UEAA@XZ
 	??1bad_array_new_length@std@@UEAA@XZ
+	??1bad_cast@std@@UEAA@XZ
 	??1locale@std@@QEAA@XZ
 	??1sentry@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@XZ
 	??_D?$basic_ifstream@DU?$char_traits@D@std@@@std@@QEAAXXZ
@@ -1071,17 +1072,12 @@ EXPORTS
 	jer_manager_read
 	jer_manager_write
 	fprintf
+	jer_build_pending
+	jer_build_mark_pending
+	jer_build_clear_pending
+	jer_build_begin
+	jer_build_finish
 	jer_compile_mods
-	jer_config_init
-	jer_config_get_int
-	jer_config_set_int
-	jer_config_get_bool
-	jer_config_set_bool
-	jer_config_get_str
-	jer_config_set_str
-	jer_config_clear
-	jer_loader_scan
-	jer_loader_unload
 	jer_screen_register
 	jer_screen_reset
 	jer_screen_show
@@ -1091,6 +1087,17 @@ EXPORTS
 	jer_screen_current
 	jer_screen_title
 	jer_screen_body
+	jer_config_init
+	jer_config_get_int
+	jer_config_set_int
+	jer_config_get_bool
+	jer_config_set_bool
+	jer_config_get_str
+	jer_config_set_str
+	jer_config_clear
+	jer_deep_mod_list
+	jer_loader_scan
+	jer_loader_unload
 	jer_module_antfarm_entry
 	??4half@@QEAAAEAU0@AEBU0@@Z
 	jer_module_collisiondevil_entry
@@ -1269,8 +1276,8 @@ EXPORTS
 	?canFire@WeaponBase@@UEAA_NXZ
 	?consumeAmmo@WeaponBase@@QEAAXXZ
 	?init@WeaponBase@@QEAAXXZ
-	?onEquip@WeaponBase@@UEAAXXZ
 	?onAmmoChanged@WeaponBase@@UEAAXXZ
+	?onEquip@WeaponBase@@UEAAXXZ
 	?onHolster@WeaponBase@@UEAAXXZ
 	?playSound@WeaponBase@@QEAAXH@Z
 	?poseArm@WeaponBase@@UEAAXPEAXH@Z
@@ -1610,10 +1617,10 @@ EXPORTS
 	?gCameraDistance@@3FA DATA
 	?gCameraDefaultScrZ@@3FA DATA
 	?switch_detail_distance@@3HA DATA
+	?colour_matrix@@3UMATRIX@@A DATA
 	?gCarDataSourceLevel@@3HA DATA
 	?gBounceAmp@@3MA DATA
 	?light_matrix@@3UMATRIX@@A DATA
-	?colour_matrix@@3UMATRIX@@A DATA
 	?CAR_PAUSE_START@@3HA DATA
 	?closeEncounter@@3HA DATA
 	?modelRandomList@@3PADA DATA
@@ -1937,35 +1944,35 @@ EXPORTS
 	?gCameraOffset@@3UVECTOR@@A DATA
 	?paddCamera@@3GA DATA
 	?jcam@@3PEAU_CAR_DATA@@EA DATA
-	?save_colour_matrix@@3UMATRIX@@A DATA
-	?save_light_matrix@@3UMATRIX@@A DATA
-	?car_data@@3PAU_CAR_DATA@@A DATA
-	?active_car_list@@3PAPEAU_CAR_DATA@@A DATA
-	?lightsOnDelay@@3PAEA DATA
-	?whichCP@@3HA DATA
-	?baseSpecCP@@3HA DATA
+	?gHubcap@@3UHUBCAP@@A DATA
+	?gTempCarUVPtr@@3PEAUDENTUVS@@EA DATA
+	?TransparentObject@@3DA DATA
 	?LeftLight@@3DA DATA
 	?RightLight@@3DA DATA
-	?TransparentObject@@3DA DATA
+	?carPolyBuffer@@3PAUCAR_POLY@@A DATA
+	?save_colour_matrix@@3UMATRIX@@A DATA
+	?save_light_matrix@@3UMATRIX@@A DATA
+	?lightsOnDelay@@3PAEA DATA
+	?car_data@@3PAU_CAR_DATA@@A DATA
+	?active_car_list@@3PAPEAU_CAR_DATA@@A DATA
 	?NewCarModel@@3PAUCAR_MODEL@@A DATA
 	?NewLowCarModel@@3PAUCAR_MODEL@@A DATA
 	?gCarLowModelPtr@@3PAPEAUMODEL@@A DATA
 	?gCarDamModelPtr@@3PAPEAUMODEL@@A DATA
 	?gCarCleanModelPtr@@3PAPEAUMODEL@@A DATA
+	?whichCP@@3HA DATA
+	?baseSpecCP@@3HA DATA
+	?gHubcapModelPtr@@3PEAUMODEL@@EA DATA
 	?gTempCarVertDump@@3PAY0BAA@USVECTOR@@A DATA
 	?gTempHDCarUVDump@@3PAY0BAA@UDENTUVS@@A DATA
 	?gTempLDCarUVDump@@3PAY0BAA@UDENTUVS@@A DATA
-	?gHubcapModelPtr@@3PEAUMODEL@@EA DATA
 	?gCleanWheelModelPtr@@3PEAUMODEL@@EA DATA
 	?gFastWheelModelPtr@@3PEAUMODEL@@EA DATA
 	?gDamWheelModelPtr@@3PEAUMODEL@@EA DATA
 	?FrontWheelRotation@@3PAFA DATA
 	?BackWheelRotation@@3PAFA DATA
-	?civ_clut@@3PAY1CA@5GA DATA
 	?gBouncePhase@@3MA DATA
-	?gHubcap@@3UHUBCAP@@A DATA
-	?gTempCarUVPtr@@3PEAUDENTUVS@@EA DATA
-	?carPolyBuffer@@3PAUCAR_POLY@@A DATA
+	?civ_clut@@3PAY1CA@5GA DATA
 	?cell_object_computed_values@@3PAEA DATA
 	?cell_object_index@@3HA DATA
 	?cell_object_buffer@@3PAUCELL_OBJECT@@A DATA

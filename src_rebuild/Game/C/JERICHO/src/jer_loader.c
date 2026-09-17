@@ -196,6 +196,15 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 		}
 		else if (strcmp(key, "dependencies") == 0)
 			jerTomlDeps(val, m->deps, sizeof(m->deps));
+		else if (strcmp(key, "runtime") == 0)
+		{
+			/* runtime = "dll" means a loadable addon; anything else (including
+			 * an absent key) is a deep mod, which is compiled into the game. */
+			char norm[16];
+
+			jerTomlValue(val, norm, sizeof(norm));
+			m->isDllAddon = (strcmp(norm, "dll") == 0);
+		}
 	}
 
 	fclose(f);
@@ -406,6 +415,79 @@ int jer_loader_scan(const char* rootDir, JER_MODULE* table, int max)
 
 		closedir(d);
 	}
+#endif
+
+	return count;
+}
+
+/*
+ * jer_deep_mod_list — the installed modules that are compiled INTO the game
+ * (mod.toml without runtime = "dll"). Same directory scan as jer_loader_scan
+ * but it never loads anything, so it is safe to call before/after activation.
+ */
+int jer_deep_mod_list(JER_DEEP_MOD* out, int max)
+{
+	const char* rootDir = jer_root_dir();
+	int count = 0;
+
+	if (rootDir == NULL || rootDir[0] == 0 || out == NULL || max <= 0)
+		return 0;
+
+#if defined(_WIN32)
+	{
+		char pattern[640];
+		WIN32_FIND_DATAA fd;
+		HANDLE hFind;
+
+		snprintf(pattern, sizeof(pattern), "%s/MODS/*", rootDir);
+		hFind = FindFirstFileA(pattern, &fd);
+
+		if (hFind == INVALID_HANDLE_VALUE)
+			return 0;
+
+		do
+		{
+			JER_MODULE m;
+			char modtoml[640];
+
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+				continue;
+			if (fd.cFileName[0] == '.')
+				continue;
+			if (!jerValidId(fd.cFileName))
+				continue;
+			if (count >= max)
+				break;
+
+			snprintf(modtoml, sizeof(modtoml), "%s/MODS/%s/%s", rootDir, fd.cFileName, JER_MODTOML);
+
+			{
+				FILE* t = fopen(modtoml, "rb");
+
+				if (t == NULL)
+					continue;	/* not a module folder */
+
+				fclose(t);
+			}
+
+			memset(&m, 0, sizeof(m));
+			snprintf(m.id, sizeof(m.id), "%s", fd.cFileName);
+			snprintf(m.name, sizeof(m.name), "%s", fd.cFileName);
+			jerParseModToml(modtoml, &m);
+
+			if (m.isDllAddon)
+				continue;	/* loadable addon: no rebuild needed */
+
+			snprintf(out[count].id, sizeof(out[count].id), "%s", m.id);
+			snprintf(out[count].name, sizeof(out[count].name), "%s", m.name);
+			count++;
+		} while (FindNextFileA(hFind, &fd) != 0);
+
+		FindClose(hFind);
+	}
+#else
+	/* the deep build is a Windows/MSBuild flow; nothing to list elsewhere */
+	(void)rootDir;
 #endif
 
 	return count;

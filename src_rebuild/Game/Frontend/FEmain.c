@@ -1413,6 +1413,11 @@ void JerichoRunBootScreens(void)
 	/* guard: a screen with no on_update would otherwise spin forever */
 	for (guard = 0; jer_screen_active() && guard < JER_SCREEN_BOOT_MAX_FRAMES; guard++)
 	{
+		/* EndFrame() rewinds the primitive buffer as part of its buffer swap;
+		 * this loop does not use EndFrame, so rewind it here — otherwise the
+		 * font prims walk off the end of the buffer after a few frames. */
+		current->primptr = current->primtab;
+
 		JerichoDrawScreen();
 
 		DrawOTag((u_long*)(current->ot + FE_OTSIZE - 1));
@@ -1447,9 +1452,12 @@ void LoadFrontendScreens(int full)
 	ShowLoading();
 
 	// JERICHO-HOOK: presentation screens run here — before the rest of the
-	// frontend is built — so work that must happen before the menu (e.g.
-	// compiling deep modules) is visible. No-op when nothing is pending.
+	// frontend is built — so work that must happen before the menu is visible.
+	// A deep-mod compile raises its own screen (it can only happen at boot,
+	// because it relinks the exe the game is running from).
+	jer_build_begin();
 	JerichoRunBootScreens();
+	jer_build_finish();
 
 #ifndef USE_EMBEDDED_FRONTEND_SCREENS
 	if (full)

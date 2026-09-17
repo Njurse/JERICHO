@@ -602,6 +602,8 @@ project "REDRIVER2"
         postbuildcommands {
             "xcopy /E /I /Y \"..\\..\\JERICHO\\MODS\" \"%{cfg.buildtarget.directory}JERICHO\\MODS\"",
             "if not exist \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\" xcopy /E /I \"..\\..\\JERICHO\\CONFIG\" \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\"",
+            "copy /Y \"..\\..\\JERICHO\\build_mods.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.bat\"",
+            "copy /Y \"..\\..\\JERICHO\\build_game.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.bat\"",
         }
 
     filter { "system:linux" }
