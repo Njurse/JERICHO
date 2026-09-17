@@ -33,6 +33,7 @@
 #include "pedest.h"		/* LPPEDESTRIAN, pUsedPeds, DestroyPedestrian */
 #include "jericho.h"
 #include "jer_events.h"
+#include "jer_anim.h"		/* the all-bone pose API */
 #include "jer_npc.h"		/* jer_npc_* ped scaffolding */
 #include "ai/ai.h"		/* cd2AiIsOpponent */
 #include "crew.h"
@@ -389,74 +390,43 @@ static void cd2CrewFleeUpdate(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
 
 // ---------------------------------------------------------------------------
 // The driver's arm pose, forced through JER_EVENT_PED_SKELETON phase 0 (the
-// POSITION channel — see JERICHO/docs/ped-animation.md). The hook hands the
-// engine's BONE array over as a void*, so mirror the layout (exactly as d2pl
-// does) to index it. vOffset is the rest parent->child delta; vCurrPos is what
-// the draw accumulates and it is reset every frame, so the pose is re-applied
-// on every draw.
+// POSITION channel). All-bone access comes from jer_anim - no private mirror of
+// the engine's bone layout, and jer_anim_rotate_offset() handles the
+// world-oriented frame the channel actually works in (see
+// JERICHO/docs/ped-animation.md).
 // ---------------------------------------------------------------------------
-typedef struct CD2_BONE
-{
-	int id;
-	struct CD2_BONE* pParent;
-	char numChildren;
-	struct CD2_BONE* pChildren[3];
-	void* pvOrigPos;
-	void* pvRotation;
-	VECTOR vOffset;
-	VECTOR vCurrPos;
-	void** pModel;
-} CD2_BONE;
-
-enum { CD2_LIMB_RSHOULDER = 9, CD2_LIMB_RELBOW = 10, CD2_LIMB_RHAND = 11 };
-
-// Rotate a local (x, z) pose offset by the ped's facing heading (RSIN/RCOS are
-// 4096-scaled). This mirrors how newRotateBones builds the skeleton frame: the
-// model rotated by the ped's yaw.
-static void cd2CrewRotatePose(int* px, int* pz, int h)
-{
-	int x = *px;
-	int z = *pz;
-	int c = RCOS(h);
-	int s = RSIN(h);
-
-	*px = (x * c + z * s) >> 12;
-	*pz = (-x * s + z * c) >> 12;
-}
 
 // Force the right arm into a weapon-holding reach: the shoulder stays at its
 // rest offset, the forearm is raised and pushed forward, and the hand extends
 // beyond it. `facing` is the heading the pose's local +Z points along.
-static void cd2CrewPoseArm(void* skelVoid, int facing)
+static void cd2CrewPoseArm(void* skel, int facing)
 {
-	CD2_BONE* skel = (CD2_BONE*)skelVoid;
+	const JER_BONE_POS* shoulderRest = jer_anim_bone_rest(skel, JER_LIMB_RSHOULDER);
+	JER_BONE_POS* shoulder = jer_anim_bone_pos(skel, JER_LIMB_RSHOULDER);
+	JER_BONE_POS* elbow = jer_anim_bone_pos(skel, JER_LIMB_RELBOW);
+	JER_BONE_POS* hand = jer_anim_bone_pos(skel, JER_LIMB_RHAND);
 	int ex, ez, hx, hz;
-	int shoulderX, shoulderY, shoulderZ;
 
-	skel[CD2_LIMB_RSHOULDER].vCurrPos.vx = skel[CD2_LIMB_RSHOULDER].vOffset.vx;
-	skel[CD2_LIMB_RSHOULDER].vCurrPos.vy = skel[CD2_LIMB_RSHOULDER].vOffset.vy;
-	skel[CD2_LIMB_RSHOULDER].vCurrPos.vz = skel[CD2_LIMB_RSHOULDER].vOffset.vz;
+	if (shoulder == NULL || elbow == NULL || hand == NULL || shoulderRest == NULL)
+		return;
 
-	shoulderX = skel[CD2_LIMB_RSHOULDER].vCurrPos.vx;
-	shoulderY = skel[CD2_LIMB_RSHOULDER].vCurrPos.vy;
-	shoulderZ = skel[CD2_LIMB_RSHOULDER].vCurrPos.vz;
+	*shoulder = *shoulderRest;
 
 	ex = 0;
 	ez = CD2_CREW_ARM_ELBOW_Z;
-	cd2CrewRotatePose(&ex, &ez, facing);
-	skel[CD2_LIMB_RELBOW].vCurrPos.vx = shoulderX + ex;
-	skel[CD2_LIMB_RELBOW].vCurrPos.vy = shoulderY + CD2_CREW_ARM_ELBOW_Y;
-	skel[CD2_LIMB_RELBOW].vCurrPos.vz = shoulderZ + ez;
+	jer_anim_rotate_offset(&ex, &ez, facing);
+	elbow->vx = shoulder->vx + ex;
+	elbow->vy = shoulder->vy + CD2_CREW_ARM_ELBOW_Y;
+	elbow->vz = shoulder->vz + ez;
 
 	hx = 0;
 	hz = CD2_CREW_ARM_HAND_Z;
-	cd2CrewRotatePose(&hx, &hz, facing);
-	skel[CD2_LIMB_RHAND].vCurrPos.vx = skel[CD2_LIMB_RELBOW].vCurrPos.vx + hx;
-	skel[CD2_LIMB_RHAND].vCurrPos.vy = skel[CD2_LIMB_RELBOW].vCurrPos.vy + CD2_CREW_ARM_HAND_Y;
-	skel[CD2_LIMB_RHAND].vCurrPos.vz = skel[CD2_LIMB_RELBOW].vCurrPos.vz + hz;
+	jer_anim_rotate_offset(&hx, &hz, facing);
+	hand->vx = elbow->vx + hx;
+	hand->vy = elbow->vy + CD2_CREW_ARM_HAND_Y;
+	hand->vz = elbow->vz + hz;
 }
 
-// ---------------------------------------------------------------------------
 // JER_EVENT_PED_POSE — the ONLY effective rotation channel (it fires between
 // SetupTannerSkeleton and newRotateBones). The engine MIRROR-FLIPS a ped's
 // root rotation for a get-out on one side of the car, via the shared

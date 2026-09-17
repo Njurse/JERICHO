@@ -1074,7 +1074,6 @@ EXPORTS
 	?D2plLaserColor@@YAXPEAUCVECTOR@@@Z
 	??0DemoPistol@@QEAA@XZ
 	??0WeaponBase@@QEAA@XZ
-	?D2plRotatePose@WeaponBase@@SAXPEAH0H@Z
 	?aimPoint@WeaponBase@@UEAAXPEAH@Z
 	?canFire@WeaponBase@@UEAA_NXZ
 	?consumeAmmo@WeaponBase@@QEAAXXZ

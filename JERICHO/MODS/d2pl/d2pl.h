@@ -35,6 +35,7 @@
 
 #include "jericho.h"
 #include "jer_events.h"
+#include "jer_anim.h"	/* JER_LIMB_* / the all-bone pose API */
 #include "jer_config.h"
 #include "jer_pause_menu.h"
 
@@ -177,47 +178,8 @@
 #define MARKER_MIN_SIZE 150
 #define MARKER_MAX_SIZE 800
 
-/* --- limb ids (must match motion_c.c's enum LIMBS) ------------------- */
-enum WeaponLimbs
-{
-	WL_ROOT = 0,
-	WL_LOWERBACK = 1,
-	WL_JOINT_1 = 2,
-	WL_NECK = 3,
-	WL_HEAD = 4,
-	WL_LSHOULDER = 5,
-	WL_LELBOW = 6,
-	WL_LHAND = 7,
-	WL_LFINGERS = 8,
-	WL_RSHOULDER = 9,
-	WL_RELBOW = 10,
-	WL_RHAND = 11,
-	WL_RFINGERS = 12,
-	WL_HIPS = 13,
-	WL_LHIP = 14,
-	WL_LKNEE = 15,
-	WL_LFOOT = 16,
-	WL_LTOE = 17,
-	WL_RHIP = 18,
-	WL_RKNEE = 19,
-	WL_RFOOT = 20,
-	WL_RTOE = 21,
-	WL_JOINT = 22,
-};
-
-/* --- bone layout (must match motion_c.c's struct BONE) --------------- */
-struct WeaponBone
-{
-	int id;
-	WeaponBone* pParent;
-	char numChildren;
-	WeaponBone* pChildren[3];
-	SVECTOR_NOPAD* pvOrigPos;
-	SVECTOR* pvRotation;
-	VECTOR vOffset;
-	VECTOR vCurrPos;
-	MODEL** pModel;
-};
+/* limb ids come from the shared jer_anim API (JER_LIMB_*), which covers
+ * all 23 bones - no private copy of the engine's enum. */
 
 /* --- arm-pose tuning (ped local frame, parent-relative offsets) --- */
 /* The ped's skeleton offsets are single-digit units, so the pose values
@@ -238,7 +200,7 @@ struct WeaponBone
 /*     module's camPos->vy all use this inverted frame — the module    */
 /*     converts with `camPos->vy = -base[1] + offset`.                 */
 /*   * X/Z in the pose offsets are parent-relative; X mirrors with the */
-/*     shoulder side (left flips it), and D2plRotatePose() rotates the */
+/*     shoulder side (left flips it), and jer_anim_rotate_offset() rotates the */
 /*     pair by the ped's facing (pPed->dir.vy) so the pose follows     */
 /*     his rotation. +Z in the pose reaches toward the facing.         */
 /*     Therefore: elbowY +2 LOWERS the forearm (render y-down),        */
@@ -438,18 +400,6 @@ public:
  * builds the skeleton's vCurrPos frame as the model rotated by dir.vy, so
  * the arm pose must be rotated the same way to point where Tanner faces.
  * Convention matches the engine: facing h -> forward = (RSIN h, RCOS h). */
-	static inline void D2plRotatePose(int* px, int* pz, int h)
-	{
-		int x = *px;
-		int z = *pz;
-		int c = RCOS(h);
-		int s = RSIN(h);
-
-		/* fixed‑point multiply: both cos/sin are scaled by 4096 (2^12) */
-		*px = (x * c + z * s) >> 12;
-		*pz = (-x * s + z * c) >> 12;
-	}
-
 	/* force the arm into a holding pose (phase-0 skeleton hook). Override
 	 * to pose different bones or add recoil; the base fixates the shoulder
 	 * at its (facing-rotated) rest offset and reaches the arm forward and
@@ -457,48 +407,47 @@ public:
 	 * rotation. `facing` is the ped's yaw (pPed->dir.vy, 0..4095).
 	 * poseArmPose() is the ONE shared implementation — the pose rows at
 	 * the top of this header are the only tuning needed for a new pose. */
-	virtual void poseArmPose(void* skelVoid, int left, int facing, const D2PL_POSE& pose)
+	virtual void poseArmPose(void* skel, int left, int facing, const D2PL_POSE& pose)
 	{
-		WeaponBone* skel = (WeaponBone*)skelVoid;
-		int shoulder = left ? WL_LSHOULDER : WL_RSHOULDER;
-		int elbow = left ? WL_LELBOW : WL_RELBOW;
-		int hand = left ? WL_LHAND : WL_RHAND;
+		int shoulderLimb = left ? JER_LIMB_LSHOULDER : JER_LIMB_RSHOULDER;
+		int elbowLimb = left ? JER_LIMB_LELBOW : JER_LIMB_RELBOW;
+		int handLimb = left ? JER_LIMB_LHAND : JER_LIMB_RHAND;
 		int side = left ? -1 : 1;
+		JER_BONE_POS* sh = jer_anim_bone_pos(skel, shoulderLimb);
+		const JER_BONE_POS* shRest = jer_anim_bone_rest(skel, shoulderLimb);
+		JER_BONE_POS* el = jer_anim_bone_pos(skel, elbowLimb);
+		JER_BONE_POS* ha = jer_anim_bone_pos(skel, handLimb);
 		int sx, sz, ex, ez, hx, hz;
-		int shoulderX, shoulderY, shoulderZ;
-		int elbowX, elbowY, elbowZ;
+		int shoulderY;
 
-		// --- Shoulder: Fixed at rest position ---
-		sx = skel[shoulder].vOffset.vx;
-		sz = skel[shoulder].vOffset.vz;
-		D2plRotatePose(&sx, &sz, facing);
-		skel[shoulder].vCurrPos.vx = sx;
-		skel[shoulder].vCurrPos.vy = skel[shoulder].vOffset.vy;
-		skel[shoulder].vCurrPos.vz = sz;
+		if (sh == NULL || el == NULL || ha == NULL || shRest == NULL)
+			return;
 
-		shoulderX = skel[shoulder].vCurrPos.vx;
-		shoulderY = skel[shoulder].vCurrPos.vy;
-		shoulderZ = skel[shoulder].vCurrPos.vz;
+		/* --- Shoulder: held at its rest offset, rotated by the facing --- */
+		sx = shRest->vx;
+		sz = shRest->vz;
+		jer_anim_rotate_offset(&sx, &sz, facing);
+		sh->vx = sx;
+		sh->vy = shRest->vy;
+		sh->vz = sz;
 
-		// --- Elbow: Offset from shoulder (small forward and slightly outward) ---
-		// Scale the pose values to prevent folding; adjust divisor as needed.
-		ex = (pose.elbowX * side) >> 2;   // lateral offset (outward)
-		ez = pose.elbowZ >> 2;            // forward offset
-		D2plRotatePose(&ex, &ez, facing);
-		elbowX = shoulderX + ex;
-		elbowY = shoulderY + (pose.elbowY >> 2); // vertical offset (up)
-		elbowZ = shoulderZ + 32 + ez;
-		skel[elbow].vCurrPos.vx = elbowX;
-		skel[elbow].vCurrPos.vy = elbowY;
-		skel[elbow].vCurrPos.vz = elbowZ;
+		shoulderY = sh->vy;
 
-		// --- Hand: Offset from elbow (longer forward extension) ---
-		hx = (pose.handX * side) >> 2;   // lateral offset (outward)
-		hz = pose.handZ >> 2;            // forward offset (larger for extension)
-		D2plRotatePose(&hx, &hz, facing);
-		skel[hand].vCurrPos.vx = elbowX + hx;
-		skel[hand].vCurrPos.vy = elbowY - (pose.handY >> 2); // raise hand upward (negate Y)
-		skel[hand].vCurrPos.vz = elbowZ + hz;
+		/* --- Elbow: small forward + slightly outward from the shoulder --- */
+		ex = (pose.elbowX * side) >> 2;
+		ez = pose.elbowZ >> 2;
+		jer_anim_rotate_offset(&ex, &ez, facing);
+		el->vx = sh->vx + ex;
+		el->vy = shoulderY + (pose.elbowY >> 2);
+		el->vz = sh->vz + 32 + ez;
+
+		/* --- Hand: longer forward extension past the elbow --- */
+		hx = (pose.handX * side) >> 2;
+		hz = pose.handZ >> 2;
+		jer_anim_rotate_offset(&hx, &hz, facing);
+		ha->vx = el->vx + hx;
+		ha->vy = el->vy - (pose.handY >> 2);
+		ha->vz = el->vz + hz;
 	}
 
 	virtual void poseArm(void* skelVoid, int facing)

@@ -299,12 +299,10 @@ int D2plAimCamera(void* args, int heading)
  * body root) rotation here propagates through the neck to the head, and
  * the arms follow because they hang off the same root. The HEAD is locked
  * to the torso (local yaw 0) so the walk/aim cycle can't turn it away. */
-static JER_BONE_ROT gSavedJoint1;	/* the shared motion buffer's original
-					   rotations (snapshotted at aim start,
-					   restored when aiming stops) */
-static JER_BONE_ROT gSavedHead;
-static JER_BONE_ROT* gSavedJoint1Slot;	/* the motion slot we last wrote */
-static JER_BONE_ROT* gSavedHeadSlot;
+/* the shared motion buffer's original rotations: snapshot EVERY bone at aim
+ * start and hand the whole set back when aiming stops (jer_anim owns the
+ * copy, so this no longer tracks individual motion slots by hand). */
+static JER_BONE_ROT gSavedRots[JER_LIMB_COUNT];
 static int gPoseSaved;
 
 int D2plOnPedPose(void* userdata, void* args)
@@ -325,29 +323,17 @@ int D2plOnPedPose(void* userdata, void* args)
 	{
 		/* the pvRotation bytes point into the SHARED per-type motion buffer,
 		 * and the walk cycle ADVANCES the motion frame during the aim — so
-		 * every slot we touch must be restored, or the twist persists in
-		 * the other frames. Restore the PREVIOUS aim frame’s slot first,
-		 * then snapshot + write the CURRENT one; the final slot is put
-		 * back on the first non-aim frame. */
+		 * what we touch must be put back, or the twist persists in the other
+		 * frames. Hand back the previous frame's snapshot first, take a fresh
+		 * one, then write; the last one goes back on the first non-aim
+		 * frame. */
 		if (gPoseSaved)
 		{
-			if (gSavedJoint1Slot != NULL)
-				*gSavedJoint1Slot = gSavedJoint1;
-			if (gSavedHeadSlot != NULL)
-				*gSavedHeadSlot = gSavedHead;
+			jer_anim_restore_rotations(a->skel, gSavedRots);
 			gPoseSaved = 0;
 		}
 
-		if (joint1 != NULL)
-		{
-			gSavedJoint1 = *joint1;
-			gSavedJoint1Slot = joint1;
-		}
-		if (head != NULL)
-		{
-			gSavedHead = *head;
-			gSavedHeadSlot = head;
-		}
+		jer_anim_save_rotations(a->skel, gSavedRots);
 		gPoseSaved = 1;
 
 		if (joint1 != NULL)
@@ -372,11 +358,8 @@ int D2plOnPedPose(void* userdata, void* args)
 	}
 	else if (gPoseSaved)
 	{
-		/* the aim stopped: restore the LAST touched slot */
-		if (gSavedJoint1Slot != NULL)
-			*gSavedJoint1Slot = gSavedJoint1;
-		if (gSavedHeadSlot != NULL)
-			*gSavedHeadSlot = gSavedHead;
+		/* the aim stopped: hand the whole skeleton back */
+		jer_anim_restore_rotations(a->skel, gSavedRots);
 		gPoseSaved = 0;
 	}
 
@@ -415,7 +398,7 @@ int D2plOnSkeleton(void* userdata, void* args)
 	SVECTOR* vJPos = (SVECTOR*)a->jointPos;
 	VECTOR* playerPos = (VECTOR*)a->playerPos;
 	VECTOR* cameraPos = (VECTOR*)a->cameraPos;
-	int handLimb = WL_RHAND;
+	int handLimb = JER_LIMB_RHAND;
 
 	(void)userdata;
 
@@ -427,7 +410,7 @@ int D2plOnSkeleton(void* userdata, void* args)
 		return JER_RESULT_CONTINUE;
 
 	/* the arm that holds the weapon follows the camera shoulder */
-	handLimb = (w->shoulderSide > 0) ? WL_LHAND : WL_RHAND;
+	handLimb = (w->shoulderSide > 0) ? JER_LIMB_LHAND : JER_LIMB_RHAND;
 
 	if (a->phase == 0)
 	{
