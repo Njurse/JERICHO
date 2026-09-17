@@ -568,3 +568,20 @@ int jer_compile_mods(void)
 	return 0;	/* runtime loading is Windows/Linux-desktop only */
 }
 #endif
+
+/*
+ * What "Compile Mods" does once the player confirms (see jer_prompt.h): the
+ * runtime DLL addons build immediately, the deep mods are deferred to the next
+ * boot because they relink the exe. Platform-neutral, so the prompt works
+ * everywhere even where the build itself does not.
+ */
+void jer_compile_request(void)
+{
+	int built = jer_compile_mods();
+
+	jer_build_mark_pending();
+
+	jer_log("[compile] Compile Mods: runtime addons built=%d, deep mods deferred to the next boot\n", built);
+
+	jer_error("JERICHO: restart to compile the deep mods");
+}

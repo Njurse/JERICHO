@@ -348,16 +348,16 @@ EXPORTS
 	?GlobalTimeStep@@YAXXZ
 	?InitCarPhysics@@YAXPEAU_CAR_DATA@@PEAY03HH@Z
 	?InitSkidding@@YAXXZ
-	?ProcessRoadBoundsLump@@YAXPEADH@Z
-	?ProcessJunctionsLump@@YAXPEADH@Z
-	?SetXAVolume@@YAXH@Z
-	?ProcessSubDivisionLump@@YAXPEADH@Z
-	?InitialiseCarHandling@@YAXXZ
-	?GetXAData@@YAXH@Z
 	?ProcessJuncBoundsLump@@YAXPEADH@Z
-	?StopDualShockMotors@@YAXXZ
 	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
 	?ProcessRoadsLump@@YAXPEADH@Z
+	?GetXAData@@YAXH@Z
+	?StopDualShockMotors@@YAXXZ
+	?ProcessRoadBoundsLump@@YAXPEADH@Z
+	?InitialiseCarHandling@@YAXXZ
+	?SetXAVolume@@YAXH@Z
+	?ProcessJunctionsLump@@YAXPEADH@Z
+	?ProcessSubDivisionLump@@YAXPEADH@Z
 	?ProcessCarPad@@YAXPEAU_CAR_DATA@@IDD@Z
 	?RebuildCarMatrix@@YAXPEATRigidBodyState@@PEAU_CAR_DATA@@@Z
 	?SetShadowPoints@@YAXPEAU_CAR_DATA@@PEAUVECTOR@@@Z
@@ -826,8 +826,8 @@ EXPORTS
 	?GetFormat@CSoundSource_Wave@@UEAAPEAUsoundFormat_s@@XZ
 	?GetSampleCount@CSoundSource_Wave@@UEBAHXZ
 	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
-	?IsStreaming@CSoundSource_WaveCache@@UEAA_NXZ
 	?Load@CSoundSource_OpenALCache@@EEAA_NPEBD@Z
+	?IsStreaming@CSoundSource_WaveCache@@UEAA_NXZ
 	?PauseXA@@YAXXZ
 	?PlayXA@@YAXHH@Z
 	?PrepareXA@@YAXXZ
@@ -1078,6 +1078,7 @@ EXPORTS
 	jer_build_begin
 	jer_build_finish
 	jer_compile_mods
+	jer_compile_request
 	jer_screen_register
 	jer_screen_reset
 	jer_screen_show
@@ -1087,6 +1088,10 @@ EXPORTS
 	jer_screen_current
 	jer_screen_title
 	jer_screen_body
+	jer_prompt_begin
+	jer_prompt_tick
+	jer_prompt_active
+	jer_prompt_close
 	jer_config_init
 	jer_config_get_int
 	jer_config_set_int
@@ -1617,10 +1622,10 @@ EXPORTS
 	?gCameraDistance@@3FA DATA
 	?gCameraDefaultScrZ@@3FA DATA
 	?switch_detail_distance@@3HA DATA
+	?light_matrix@@3UMATRIX@@A DATA
 	?colour_matrix@@3UMATRIX@@A DATA
 	?gCarDataSourceLevel@@3HA DATA
 	?gBounceAmp@@3MA DATA
-	?light_matrix@@3UMATRIX@@A DATA
 	?CAR_PAUSE_START@@3HA DATA
 	?closeEncounter@@3HA DATA
 	?modelRandomList@@3PADA DATA

@@ -29,6 +29,7 @@
 #include "../C/jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "../C/JERICHO/include/jer_frontend.h"	// JERICHO-HOOK: module frontend menus
 #include "../C/JERICHO/include/jer_screen.h"	// JERICHO-HOOK: presentation screens
+#include "../C/JERICHO/include/jer_prompt.h"	// JERICHO-HOOK: host yes/no prompt
 
 #ifndef PSX
 
@@ -1360,11 +1361,14 @@ int JerichoDrawScreen(void)
 
 	jer_screen_body(body, sizeof(body));
 
-	/* a black backdrop, so it reads as a screen rather than an overlay */
+	/* a black backdrop, so it reads as a screen rather than an overlay. It sits
+	 * just above the frontend's own screen content (indices run high = furthest
+	 * back to 0 = nearest) and just below the frontend font text at ot+1, so a
+	 * screen raised over the frontend covers it properly. */
 	setPolyF4(&jerBack);
 	setRGB0(&jerBack, 0, 0, 0);
 	setXYWH(&jerBack, 0, 0, 640, 512);
-	addPrim(current->ot + 11, &jerBack);
+	addPrim(current->ot + 2, &jerBack);
 
 	x = 320 - FEStringWidth((char*)title) / 2;
 	FEPrintString((char*)title, x, 236, 0, 230, 230, 230);
@@ -2121,6 +2125,12 @@ void State_FrontEnd(void* param)
 			bRedrawFrontend = 1;
 		}
 	}
+
+	// JERICHO-HOOK: feed the host prompt (jer_prompt.h) the pad AFTER the
+	// screen has had its turn, so a Cross that answers the prompt cannot also
+	// press the button underneath it.
+	jer_prompt_tick((feNewPad & MPAD_D_LEFT) != 0, (feNewPad & MPAD_D_RIGHT) != 0,
+		(feNewPad & MPAD_CROSS) != 0, (feNewPad & MPAD_CIRCLE) != 0);
 
 #ifndef PSX
 	DrawScreen(pCurrScreen);
@@ -4614,6 +4624,11 @@ int JerichoModsScreen(int bSetup)
 
 	/* per-frame: claim cross (toggle/page) and left/right (reorder) on module
 	 * buttons; everything else (up/down nav, Back cross) goes to the engine */
+	/* JERICHO-HOOK: a host prompt (jer_prompt.h) owns the pad while it is up —
+	 * the frontend frame feeds it, so the screen must not also act on it. */
+	if (jer_prompt_active())
+		return 0;
+
 	if (pCurrButton != NULL && pCurrScreen != NULL)
 	{
 		int idx = (int)(pCurrButton - pCurrScreen->buttons);
@@ -4670,9 +4685,12 @@ int JerichoModsScreen(int bSetup)
 			if (feNewPad & MPAD_CROSS)
 			{
 				FESound(2);
-				jer_compile_mods();
-				jer_manager_reload(jer_root_dir());
-				jer_mods_rebuild_button_names();
+
+				/* JERICHO-HOOK: ask first. Yes builds the runtime DLL addons
+				 * immediately and defers the deep mods to a restart, since they
+				 * relink the exe the game is running from. */
+				jer_prompt_begin("Compile the deep mods in your folder? JERICHO must restart to do this.", jer_compile_request);
+
 				bRedrawFrontend = 1;
 				return 1;
 			}
