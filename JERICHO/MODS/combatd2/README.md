@@ -69,6 +69,9 @@ saved by `combatd2.c` `cd2LoadConfig` / `cd2SaveConfig`).
   and its OR rule, the get-out/hold/get-in ped lifecycle, firing from the
   window, the wreck bail-out (run away on fire) and the player-death camera
   hold.
+- [`FACTIONS.md`](FACTIONS.md) — the five teams (`factions/`): the rows and their
+  colours, the roster and who drives what, the stance table, how a car is
+  assigned its team, and which attributes are deliberately not read yet.
 - [`carhacks/CROSS_CITY.md`](carhacks/CROSS_CITY.md) — what a cross-city
   vehicle import has to pull across, and why colours need more than geometry.
 - [`carhacks/FORMATS.md`](carhacks/FORMATS.md) — the reverse-engineered
@@ -151,6 +154,7 @@ them — and both are fireable through the scripted debug driver as
 | `cd2debug.c` | temporary scripted debug driver (`tools/cd2_debug.example.txt` is the file format) |
 | `weapons/` | the weapon framework: `core/` (registry + inventory), `raycast/` (machine gun), `projectile/`, `shotgun/`, `drops/`, `aoe/`, `fx/` |
 | `ai/` | the prototype opponent AI (`opponent.c` brain; `nav.c` / `grid.c` / `flow.c` navigation) |
+| `factions/` | the five teams: the registry, the roster, the stance table and the per-car assignment (`factions.c`; see [`FACTIONS.md`](FACTIONS.md)) |
 | `carhacks/` | vehicle-availability hacks, plus the two format docs |
 | `tools/` | the test launchers and the arena smoke test |
 | `mod.toml` | package metadata (`id`, `default-enabled`) |
