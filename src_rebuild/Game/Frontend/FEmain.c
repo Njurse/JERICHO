@@ -4291,6 +4291,15 @@ int JerichoModsScreen(int bSetup)
 	int shown;
 	int hasPrev;
 	int hasNext;
+	int hasCompile;		// Compile Mods button (Windows only)
+	/* Button index map (0-based). The vertical list is laid out top-to-bottom as
+	 * modules..., Prev, Next, Compile, Back; each button's u/d is derived from
+	 * that chain (see the walk in the setup block) and the per-frame cross
+	 * handling below uses the same indices instead of recomputing them. */
+	int idxPrev;
+	int idxNext;
+	int compileIdx;
+	int backIdx;
 	int i;
 
 	count = jer_module_list(mods, JER_MAX_MODULES);
@@ -4312,6 +4321,19 @@ int JerichoModsScreen(int bSetup)
 	hasPrev = gJerichoModsPage > 0;
 	hasNext = gJerichoModsPage + 1 < pageCount;
 
+	hasCompile = 0;		// Compile Mods button (Windows only)
+#if defined(_WIN32)
+	hasCompile = 1;
+#endif
+
+	/* The hand-computed u/d offsets this screen used to carry were off by one
+	 * whenever the page had no Prev (i.e. the first page): down from Next
+	 * skipped Compile and up from Compile landed on Back. Derive the map once. */
+	idxPrev = shown;								// only used when hasPrev
+	idxNext = shown + (hasPrev ? 1 : 0);			// only used when hasNext
+	compileIdx = shown + (hasPrev ? 1 : 0) + (hasNext ? 1 : 0);
+	backIdx = compileIdx + (hasCompile ? 1 : 0);
+
 	/* Layout the screen on entry (bSetup) and again after a page change
 	 * (gJerichoModsNeedSetup): the engine only calls setup when the screen
 	 * is entered, so paging must rebuild the buttons itself. */
@@ -4319,12 +4341,9 @@ int JerichoModsScreen(int bSetup)
 	{
 		PSXBUTTON* btn;
 		int numButtons = shown;		// module buttons first
-		int hasCompile = 0;			// Compile Mods button (Windows only)
-#if defined(_WIN32)
-		hasCompile = 1;
-#endif
-		int compileIdx = shown + (hasPrev ? 1 : 0) + (hasNext ? 1 : 0);
-		int backIdx = compileIdx + (hasCompile ? 1 : 0);
+		int chain[JERICHO_MODS_MODULES_PER_PAGE + 4];
+		int chainCount = 0;
+		int c;
 
 		gJerichoModsNeedSetup = 0;
 
@@ -4344,11 +4363,10 @@ int JerichoModsScreen(int bSetup)
 
 			snprintf(btn->Name, sizeof(btn->Name), "%s [%s]", mods[pageStart + i].name, mods[pageStart + i].enabled ? "ON" : "OFF");
 
-			/* u/d are 1-based button indices (0 = no move): up/down walk the
-			 * vertical list, first module wraps to Back, last module drops to
-			 * the first nav button (Prev/Next/Compile/Back) */
-			btn->u = (u_char)(i == 0 ? backIdx + 1 : i);
-			btn->d = (u_char)(i == shown - 1 ? shown + 1 : i + 2);
+			/* u/d are 1-based button indices (0 = no move); they are filled in
+			 * from the vertical chain walk at the end of this block */
+			btn->u = 0;
+			btn->d = 0;
 			btn->l = 0;
 			btn->r = 0;
 			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
@@ -4368,9 +4386,8 @@ int JerichoModsScreen(int bSetup)
 
 			sprintf(btn->Name, "< Prev Page");
 
-			/* up -> last module; down -> Next (or Compile when no Next) */
-			btn->u = (u_char)shown;
-			btn->d = (u_char)(hasNext ? shown + 2 : shown + 2);
+			btn->u = 0;
+			btn->d = 0;
 			btn->l = 0;
 			btn->r = 0;
 			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
@@ -4390,9 +4407,8 @@ int JerichoModsScreen(int bSetup)
 
 			sprintf(btn->Name, "Next Page >");
 
-			/* up -> Prev (or last module when no Prev); down -> Compile (or wrap) */
-			btn->u = (u_char)(hasPrev ? shown + 1 : shown);
-			btn->d = (u_char)(hasCompile ? shown + 3 : 1);
+			btn->u = 0;
+			btn->d = 0;
 			btn->l = 0;
 			btn->r = 0;
 			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
@@ -4412,9 +4428,8 @@ int JerichoModsScreen(int bSetup)
 
 			sprintf(btn->Name, "Compile Mods");
 
-			/* up -> Next (or Prev); down -> Back */
-			btn->u = (u_char)(hasNext ? shown + 2 : shown + 1);
-			btn->d = (u_char)(backIdx + 1);
+			btn->u = 0;
+			btn->d = 0;
 			btn->l = 0;
 			btn->r = 0;
 			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
@@ -4432,13 +4447,36 @@ int JerichoModsScreen(int bSetup)
 
 		sprintf(btn->Name, "Back");
 
-		/* up -> Compile (or Next/last module); down wraps to the first (1-based) */
-		btn->u = (u_char)backIdx;
-		btn->d = (u_char)1;
+		btn->u = 0;
+		btn->d = 0;
 		btn->l = 0;
 		btn->r = 0;
 		btn->action = FE_MAKEVAR(BTN_PREVIOUS_SCREEN, 0);
 		btn->var = -1;
+
+		/* Derive every button's up/down from the vertical chain so the whole
+		 * list is reachable and wraps: modules..., Prev, Next, Compile, Back.
+		 * Up/down are 1-based button ids (0 = no move). */
+		for (i = 0; i < shown; i++)
+			chain[chainCount++] = i;
+
+		if (hasPrev && chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
+			chain[chainCount++] = idxPrev;
+		if (hasNext && chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
+			chain[chainCount++] = idxNext;
+		if (hasCompile && chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
+			chain[chainCount++] = compileIdx;
+		if (chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
+			chain[chainCount++] = backIdx;
+
+		for (c = 0; c < chainCount; c++)
+		{
+			int up = chain[(c + chainCount - 1) % chainCount];
+			int dn = chain[(c + 1) % chainCount];
+
+			pCurrScreen->buttons[chain[c]].u = (u_char)(up + 1);
+			pCurrScreen->buttons[chain[c]].d = (u_char)(dn + 1);
+		}
 
 		pCurrButton = &pCurrScreen->buttons[0];
 
@@ -4448,7 +4486,7 @@ int JerichoModsScreen(int bSetup)
 
 	/* per-frame: claim cross (toggle/page) and left/right (reorder) on module
 	 * buttons; everything else (up/down nav, Back cross) goes to the engine */
-	if (pCurrButton != NULL)
+	if (pCurrButton != NULL && pCurrScreen != NULL)
 	{
 		int idx = (int)(pCurrButton - pCurrScreen->buttons);
 
@@ -4474,7 +4512,7 @@ int JerichoModsScreen(int bSetup)
 				return 1;
 			}
 		}
-		else if (hasPrev && idx == shown)
+		else if (hasPrev && idx == idxPrev)
 		{
 			if (feNewPad & MPAD_CROSS)
 			{
@@ -4485,7 +4523,7 @@ int JerichoModsScreen(int bSetup)
 				return 1;
 			}
 		}
-		else if (hasNext && idx == shown + (hasPrev ? 1 : 0))
+		else if (hasNext && idx == idxNext)
 		{
 			if (feNewPad & MPAD_CROSS)
 			{
@@ -4499,7 +4537,7 @@ int JerichoModsScreen(int bSetup)
 #if defined(_WIN32)
 		/* Compile Mods: build every installed module into a DLL, then reload
 		 * so freshly compiled (or newly dropped) mods appear immediately */
-		else if (idx == shown + (hasPrev ? 1 : 0) + (hasNext ? 1 : 0))
+		else if (idx == compileIdx)
 		{
 			if (feNewPad & MPAD_CROSS)
 			{
