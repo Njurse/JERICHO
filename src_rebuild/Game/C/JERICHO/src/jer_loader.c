@@ -37,7 +37,9 @@
 /*   version = "0.1.0"                                                 */
 /*   author = "You"                                                    */
 /*   description = "what it does"                                      */
-/*   default-enabled = false   (true/false; default true when absent)   */
+/*   default-enabled = false   (true/false; when the key is ABSENT the module  */
+/*                              defaults to DISABLED — it must opt in, never   */
+/*                              inherit "on"; see jerParseModToml)             */
 /*   dependencies = ["a", "b"]   or   dependencies = "a,b"             */
 /* ------------------------------------------------------------------ */
 
@@ -129,7 +131,11 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 	FILE* f;
 	char line[512];
 
-	m->defaultEnabled = 1;
+	/* Fail closed: a module whose mod.toml omits default-enabled is DISABLED
+	 * unless modlist.ini explicitly enables it. The old fallback was 1, which
+	 * meant a module could be silently ON simply by not mentioning the key —
+	 * that is how collisiondevil/combatd2/d2pl ran unannounced. Opt in only. */
+	m->defaultEnabled = 0;
 
 	f = fopen(path, "rb");
 
@@ -175,12 +181,18 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 			jerTomlValue(val, m->description, sizeof(m->description));
 		else if (strcmp(key, "default-enabled") == 0)
 		{
-			val = jerTrim(val);
+			/* Allow-list, mirroring premake5.lua: only an explicit
+			 * true / 1 / enabled turns a module ON; anything else — empty, a
+			 * typo, an unwrapped quoted string — leaves it OFF. A malformed
+			 * value must never be the reason a module is silently enabled. */
+			char norm[16];
 
-			if (strcmp(val, "false") == 0 || strcmp(val, "0") == 0 || strcmp(val, "disabled") == 0)
-				m->defaultEnabled = 0;
-			else
+			jerTomlValue(val, norm, sizeof(norm));
+
+			if (strcmp(norm, "true") == 0 || strcmp(norm, "1") == 0 || strcmp(norm, "enabled") == 0)
 				m->defaultEnabled = 1;
+			else
+				m->defaultEnabled = 0;
 		}
 		else if (strcmp(key, "dependencies") == 0)
 			jerTomlDeps(val, m->deps, sizeof(m->deps));

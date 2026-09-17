@@ -66,6 +66,7 @@ typedef struct JER_MODULE
 	int metadataSet;		/* module registered metadata via ctx */
 	int sdkVersion;			/* from ctx->jer_register_module */
 	int valid;				/* passes SDK + dependency validation */
+	int enabledFromModlist;	/* 1 = modlist.ini decided, 0 = mod.toml default */
 } JER_MODULE;
 
 /* ------------------------------------------------------------------ */

@@ -84,16 +84,25 @@ local function jericho_generate_registry(mods)
 	end
 
 	for _, m in ipairs(mods) do
-		local defaultEnabled = 1
+		-- Fail closed, to match the runtime loader (jer_loader.c): a module is
+		-- OFF unless its mod.toml explicitly says `default-enabled = true`. An
+		-- absent key must never silently turn a module on (that is how
+		-- collisiondevil/combatd2/d2pl ran unannounced).
+		local defaultEnabled = 0
 		local toml = io.open(string.format("../JERICHO/MODS/%s/mod.toml", m), "r")
 
 		if toml then
 			local line = toml:read("*l")
 
 			while line do
-				local v = line:match("default%-enabled%s*=%s*(%w+)")
+				-- Strip '#' comments first: a commented-out
+				-- `# default-enabled = true` must not enable the module.
+				local code = line:gsub("#.*$", "")
+				local v = code:match("default%-enabled%s*=%s*[\"']?(%w+)[\"']?")
 
-				if v == "false" then
+				if v == "true" or v == "1" or v == "enabled" then
+					defaultEnabled = 1
+				elseif v == "false" or v == "0" or v == "disabled" then
 					defaultEnabled = 0
 				end
 

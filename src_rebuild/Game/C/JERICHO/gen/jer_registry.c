@@ -19,7 +19,7 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "collisiondevil", jer_module_collisiondevil_entry, 1 },
 	{ "combatd2", jer_module_combatd2_entry, 1 },
 	{ "crumple", jer_module_crumple_entry, 1 },
-	{ "d2pl", jer_module_d2pl_entry, 1 },
+	{ "d2pl", jer_module_d2pl_entry, 0 },
 	{ "gaildrv2", jer_module_gaildrv2_entry, 0 },
 	{ "levelhacks", jer_module_levelhacks_entry, 1 },
 	{ "mp", jer_module_mp_entry, 1 },

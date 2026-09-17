@@ -338,6 +338,18 @@ typedef struct JER_REGISTRY_ENTRY
  */
 void jer_init(const char* rootDir);
 
+/*
+ * Hard-disable every module for this boot: no module is activated and no hook
+ * is registered, regardless of modlist.ini or any mod.toml default-enabled
+ * flag. Must be called BEFORE jer_init (the engine's -nomods flag does exactly
+ * this). This is the "provably zero modules" switch — the only way to be sure
+ * no silently default-enabled module is influencing the sim.
+ */
+void jer_disable_all_modules(void);
+
+/* Non-zero when every module was force-disabled via jer_disable_all_modules. */
+int jer_modules_disabled(void);
+
 /* Fire an event through the runtime (the engine's thin entry point). */
 int jer_fire(int event, void* args);
 

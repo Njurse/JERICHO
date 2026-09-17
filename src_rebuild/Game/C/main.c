@@ -2104,6 +2104,8 @@ void PrintCommandLineArguments()
 #endif
 		"  -nointro : disable intro screens\n"
 		"  -nofmv : disable all FMVs\n"
+		"  -nomods : (JERICHO) hard-disable every module for this boot, ignoring\n"
+		"        modlist.ini and mod.toml defaults (diagnostic; proves zero mods)\n"
 		"  -help : print this list to the terminal and exit\n"
 		"  -host [port] : (mp mod) start hosting a LAN game\n"
 		"  -join <ip>[:port] : (mp mod) join a LAN game\n";
@@ -2264,6 +2266,24 @@ int redriver2_main(int argc, char** argv)
 	// resolved the same way the game resolves everything else (relative to
 	// the working dir, like gDataFolder); inert without compiled-in modules.
 	jer_set_logger(JerichoLogBridge);
+
+	// JERICHO-HOOK: -nomods hard-disables every module for this boot, so no
+	// modlist.ini entry and no mod.toml default-enabled flag can pull one in.
+	// Scanned BEFORE jer_init (which runs activation) and before the main
+	// argument loop, so it works even for an unattended -level launch.
+	{
+		int ai;
+
+		for (ai = 1; ai < argc; ai++)
+		{
+			if (!strcmp(argv[ai], "-nomods"))
+			{
+				jer_disable_all_modules();
+				break;
+			}
+		}
+	}
+
 	jer_init("JERICHO");
 
 	StopCallback();
@@ -2379,6 +2399,12 @@ int redriver2_main(int argc, char** argv)
 		else if (!strcmp(argv[i], "-nointro"))
 		{
 			// do nothing. All command line features use it
+		}
+		else if (!strcmp(argv[i], "-nomods"))
+		{
+			// JERICHO: hard-disable every module for this boot. Already applied
+			// right before jer_init; recognised here so it is not reported as
+			// an unknown argument.
 		}
 #ifdef DEBUG_OPTIONS
 		else if (!strcmp(argv[i], "-exportxasubtitles"))

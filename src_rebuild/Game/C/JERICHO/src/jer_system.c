@@ -48,6 +48,10 @@ static JER_HANDLER gHandlers[JER_MAX_HANDLERS];
 static int gHandlerCount;
 static JER_MODULE gModules[JER_MAX_MODULES];
 static int gModuleCount;
+
+/* Set by jer_disable_all_modules() before jer_init: hard override that wins
+ * over both modlist.ini and every mod.toml default-enabled flag. */
+static int gDisableAllModules = 0;
 static JER_MODULE* gCurrentModule;	/* module whose entry is running */
 static void* gOverrideSlots[JER_OVERRIDE_SLOTS];
 static JERICHO_CONTEXT gCtx;
@@ -462,6 +466,7 @@ static void jerLogInventory(void)
 	{
 		JER_MODULE* m = &gModules[i];
 		const char* state;
+		const char* src;
 
 		if (!m->enabled)
 			state = "disabled";
@@ -472,10 +477,20 @@ static void jerLogInventory(void)
 		else
 			state = "active";
 
-		jerLog("[jericho]   %-10s v%-6s enabled=%d state=%-14s author=\"%s\" deps=\"%s\"\n",
+		/* where the enable decision came from: this is what makes a silently
+		 * default-enabled module visible (modlist.ini never mentioned it). */
+		if (gDisableAllModules)
+			src = "nomods";
+		else if (m->enabledFromModlist)
+			src = "modlist";
+		else
+			src = "default";
+
+		jerLog("[jericho]   %-10s v%-6s enabled=%d src=%-7s state=%-14s author=\"%s\" deps=\"%s\"\n",
 			m->id,
 			m->version[0] != 0 ? m->version : "?",
 			m->enabled,
+			src,
 			state,
 			m->author[0] != 0 ? m->author : "?",
 			m->deps[0] != 0 ? m->deps : "-");
@@ -534,6 +549,7 @@ static void jerActivateModules(const char* rootDir)
 		}
 
 		m->enabled = modlist.items[i].enabled;
+		m->enabledFromModlist = 1;
 
 		if (m->enabled && orderCount < JER_MAX_MODULES)
 			order[orderCount++] = m->id;
@@ -560,6 +576,24 @@ static void jerActivateModules(const char* rootDir)
 			if (gModules[i].enabled)
 				order[orderCount++] = gModules[i].id;
 		}
+	}
+
+	/* hard override: -nomods / jer_disable_all_modules() beats both the
+	 * modlist and every mod.toml default. The resolve log below still shows
+	 * exactly which modules WOULD have run, so nothing stays hidden. */
+	if (gDisableAllModules)
+	{
+		int wouldRun = 0;
+
+		for (i = 0; i < gModuleCount; i++)
+			wouldRun += gModules[i].enabled != 0;
+
+		for (i = 0; i < gModuleCount; i++)
+			gModules[i].enabled = 0;
+
+		orderCount = 0;
+
+		jerLog("[jericho] -nomods: %d module(s) force-disabled (modlist + mod.toml defaults ignored)\n", wouldRun);
 	}
 
 	/* activate in order */
@@ -730,6 +764,22 @@ void* jer_get_override(int slot)
 		return NULL;
 
 	return gOverrideSlots[slot];
+}
+
+/*
+ * Hard "no modules" switch (engine -nomods). Set BEFORE jer_init so the
+ * activation pass skips every module regardless of modlist.ini / mod.toml.
+ * Idempotent; safe to call from anywhere in the boot sequence.
+ */
+void jer_disable_all_modules(void)
+{
+	gDisableAllModules = 1;
+	jerLog("[jericho] -nomods requested: every module will be skipped this boot\n");
+}
+
+int jer_modules_disabled(void)
+{
+	return gDisableAllModules;
 }
 
 /* Re-read JERICHO/CONFIG/modlist.ini and re-activate (used after toggles). */
