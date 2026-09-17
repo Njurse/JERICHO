@@ -88,24 +88,36 @@ the side (a *per-side* sign), forward = `colBox.vz / 4` (a touch *ahead* of
 centre, not the rear), **riding the car** in all three axes (see *3D placement*
 below), and rotated to `hd.direction + CD2_CREW_YAW_OFFSET`.
 
-**Facing forward, mirrored per side.** `CD2_CREW_YAW_OFFSET` is 0, so both crew
-face *forward along the car* — and they are a horizontal mirror pair: the driver
-leans out of the car's left door, the gunner out of the right. (The knob reads
-`0` = forward, `1024` = turned a quarter to face out of the door — the earlier
-look — `2048` = backwards.)
+**Facing — measured, and it is one number.** The crew's body yaw is
+`hd.direction + CD2_CREW_BODY_YAW`, with `CD2_CREW_BODY_YAW = 2048`.
 
-That the yaw is the car's own heading is exact rather than fitted. Both angles
-come off the car's matrix: the car's local `+Z` (its nose) sits at world angle
-`1024 - hd.direction`, and a ped's forward `(RSIN yaw, RCOS yaw)` sits at
-`1024 - yaw`, so `yaw = hd.direction` puts the two on top of each other —
-verified in game as `pedFwd == carFwd` on both sides.
+That 2048 is not a fudge. A live dump of a crew ped's bones next to its car
+(`cd2CrewDumpPose`, below) shows the drawn body's forward sitting at world angle
 
-The *mirroring* is **not** done by flipping the yaw (the ped model's front is
-not aligned with the yaw vector, so a per-side `hd.direction -/+ 90°` — which is
-how the engine orients a ped climbing out in `SetupGetOutCar` — leaves one door
-correct and the other 180° out). It goes through the engine's own get-out mirror
-flag instead; see *The get-out mirror* below. Only the lateral offset and that
-flag are per-side.
+    3072 - yaw          (measured: the toe axis lands on it, ~±40 units)
+
+against the car's own forward at
+
+    1024 - direction     (the car's local +Z, straight off its matrix)
+
+so a ped handed `yaw = direction` is drawn facing **back down the car** — both
+crew read as backwards, which is exactly the bug. `+2048` cancels it. The flee
+path had already found the same thing independently (`cd2CrewFleeSide` sets
+`dir.vy = head + 2048` to make a fleeing ped face where it runs), which is the
+corroboration that convinced me it is the model, not the arithmetic.
+
+`CD2_CREW_BODY_YAW` is still the single knob: `2048` = both face forward along
+the car, `2048 ∓ 1024` = each turned a quarter to face out of his own door (the
+engine's own get-out pairing is `-1024` left / `+1024` right on top of the
+model's half turn).
+
+**Mirroring is the get-out flag, not a yaw flip.** The gunner is the driver's
+mirror via `bReverseYRotation` (driver 0, gunner 1) — the engine's own mechanism
+for the opposite door. This does *not* disturb the facing: both sides still
+measure `dToe ≈ 0`. Flipping the *yaw* per side instead leaves one door 180° out,
+because the model's front is not aligned with the yaw vector in the first place
+(that half turn above). Only the lateral offset, the arm's side, and that flag
+are per-side.
 
 The placement runs on **`JER_EVENT_CAMERA`** (fired from `InitCamera`, just
 before `DrawAllPedestrians`), *not* only on `FRAME`. `FRAME` fires before
@@ -120,25 +132,54 @@ pose (`PED_ACTION_SIT` was tried and reverted: its legs dangle ~95 below the hip
 and land ~13 units *inboard* of it, so they hung through the door panel).
 
 * **weapon arm** — both crew get it, each on his own side, forced through
-  **`JER_EVENT_PED_SKELETON` phase 0** (the POSITION channel, `vCurrPos`),
-  mirroring d2pl's `poseArmPose` shape: shoulder at its rest offset, forearm
-  raised and pushed quarter-turned out of the ped's own door
-  (`CD2_CREW_ARM_DOOR_TURN`, sign flipped for the gunner), hand extended past
-  it. Re-applied every draw (the skeleton resets `vCurrPos` each frame) — and it
-  goes through `jer_anim_rotate_offset`, because by phase 0 the chain has
-  already been rotated and the position channel is *world-oriented*; a raw
-  body-relative offset lands in the wrong place entirely.
-  Note the pose constants are single-digit ped-local units and `>> 12` in the
-  rotate helper truncates them to ±1 — effectively invisible. The crew in fact
-  read correctly on the plain motion; treat this as a hook, not the look.
-* **the mirror flag** — the one that actually mattered. For a get-out the engine
-  sets the shared `bReverseYRotation` (`SetupGetOutCar`) and
+  **`JER_EVENT_PED_SKELETON` phase 0** (the POSITION channel, `vCurrPos`).
+  Re-applied every draw. The subtlety that made this look broken for a while:
+  **the position channel is world-oriented** — `motion_c.c` has already rotated
+  the chain by the body matrix by the time phase 0 runs, so `vCurrPos` is not a
+  local offset any more. Writing a ped-local offset into it raw, or rotating it
+  by the yaw alone, pins the arm to one world direction: it stops following the
+  car. `cd2CrewLocalToWorld` turns the offset with the body's full rotation —
+  which for a crew ped *is* the car's — and that is what makes the reach track
+  the car exactly.
+  The other half of it: the shoulder is now **left alone**. It is already in the
+  world frame where the motion put it, and assigning the local rest value into
+  it (as the first cut did) yanked the whole arm to a fixed spot.
+  The offsets are ped-local: `+x` out of the ped's right, `-y` up (render frame
+  is Y-down), `+z` the way he faces. The driver's `out` is `-x` and the gunner's
+  `+x` — the car's local `+x` runs toward the gunner's door, since the crew are
+  placed at `-`/`+` lateral.
+* **the mirror flag** — the one that decides which way each ped is drawn. For a
+  get-out the engine sets the shared `bReverseYRotation` (`SetupGetOutCar`) and
   `newRotateBones` **mirror-flips the ped's root rotation** when it is set. Both
-  crew play that same motion at the same frame with the same forward-facing
-  orientation, so the second door needs the flip to read as a mirror image:
-  `cd2CrewOnPedPose` sets it per side (driver = unmirrored, gunner = mirrored)
-  and the skeleton phase-1 pass hands the game's value straight back. That is the
-  only effective *rotation* channel.
+  crew play that same motion at the same frame, so the second door needs the
+  flip to read as a mirror image: `cd2CrewOnPedPose` sets it per side (driver =
+  unmirrored, gunner = mirrored) and the skeleton phase-1 pass hands the game's
+  value straight back. That is the only effective *rotation* channel.
+
+### Seeing it for yourself: `cd2CrewDumpPose`
+
+Two rounds of "that looks wrong" were spent guessing at the interactions above
+because they are invisible in the source. They are not invisible at runtime.
+With `debug_log = 1` the first few crew draws print the ped's whole orientation
+next to its car's:
+
+    [crew] car  dir=-91  fwdAng=1115  m00=4057 m02=-567 m20=567 m22=4057
+    [crew] ped  dir=(2,2048,0)  pos=(6077,-80,-222363)
+    [crew] bone hips=(0,0,0) j1=(-4,-33,60) Lsh=(-27,5,-8) Rsh=(-28,7,0)
+    [crew] axis right=(55,-2,5) up=(7,24,-64) fwd=(8,3555,1334)
+    [crew] ang  carFwd=1115  pedFwd=1100  dPed=4081  lToe=1113  dToe=4094
+    [crew] arm  reach=(-34,9,0) ang=2048  dCar=933
+
+How to read it:
+
+* `dToe` (the toe axis against the car's forward) is the reliable facing measure
+  — **0 means the ped faces forward along the car**. The `pedFwd`/`dPed` pair is
+  the right×up cross-product, which the *bent climbing pose* skews, so trust the
+  toe.
+* `reach` is the hand's offset from the shoulder in world space: it should sit on
+  the ped's own side (`-x` driver, `+x` gunner) and **rotate as `m00`/`m20` do**
+  — that is the arm following the car.
+
 
 Reaching a module's own ped is what the **ownership gate** is for: the ped-pose
 hooks (`PED_POSE`, `PED_SKELETON`) fire for the player ped **or any ped a module

@@ -59,7 +59,7 @@ extern int ratan2(int y, int x);
 // animation at this rate keeps the motion legible but much snappier; the
 // frames are still visited in order (clamped to the end), so no pose is
 // skipped.
-#define CD2_CREW_ANIM_STEP	3
+#define CD2_CREW_ANIM_STEP	1
 
 // The get-out frame each side settles on. Both sides use the SAME get-out
 // motion (the pose the engine itself authors for a ped at a car door) at the
@@ -74,35 +74,41 @@ extern int ratan2(int y, int x);
 // raising means subtracting.
 #define CD2_CREW_SILL_RAISE	26
 
-// Driver arm reach, forced through JER_EVENT_PED_SKELETON phase 0 (the
-// position channel). Ped-local units, parent-relative, mirroring d2pl's proven
-// POSE_AIM: the forearm is raised and pushed forward and the hand extends past
-// it - handZ must EXCEED elbowZ or the arm folds back on itself.
-#define CD2_CREW_ARM_ELBOW_Y	-1	// raise the forearm
-#define CD2_CREW_ARM_ELBOW_Z	1	// reach it forward
-#define CD2_CREW_ARM_HAND_Y	-1	// raise the hand
-#define CD2_CREW_ARM_HAND_Z	1	// and extend it past the elbow
+// Weapon-arm reach, forced through JER_EVENT_PED_SKELETON phase 0 (the
+// position channel). These are PED-LOCAL offsets: +x is out of the ped's own
+// right side, -y is up (the render frame is Y-down), +z is the way the ped is
+// facing. They are turned by the body rotation before use - see
+// cd2CrewLocalToWorld - because the channel they land in is world-oriented.
+// Keep them small: they move real bone joints, so the arm mesh follows.
+#define CD2_CREW_ARM_ELBOW_OUT	10	// forearm out of the door
+#define CD2_CREW_ARM_ELBOW_UP	-2	// and raised
+#define CD2_CREW_ARM_ELBOW_FWD	2
+#define CD2_CREW_ARM_HAND_OUT	22	// hand out past the elbow (~arm length)
+#define CD2_CREW_ARM_HAND_UP	-5
+#define CD2_CREW_ARM_HAND_FWD	4
 
-// The arm reach points OUT of the ped's own door, which is a quarter turn off
-// the facing either way. The two sides are the horizontal mirror of each other
-// (the driver's door is the car's left, the gunner's the right), so the turn is
-// applied with opposite signs.
-#define CD2_CREW_ARM_DOOR_TURN	1024
-
-// Heading offset from the car's own heading for the crew's body.
-//   0    = face FORWARD along the car (both sides; the gunner is the mirror)
-//   1024 = turned a quarter, facing out of the door (the old lean-out look)
-//   2048 = facing back down the car
-// The ped's forward is (RSIN yaw, RCOS yaw), world angle 1024 - yaw, and the
-// car's forward is at 1024 - direction (both measured from the car's matrix).
-#define CD2_CREW_YAW_OFFSET	0
+// Heading offset applied to the car's own heading to get the crew's body yaw.
+//
+// MEASURED, not assumed. Dumping a live crew ped's bones next to its car
+// (cd2CrewDumpPose) shows the drawn body's forward sits at world angle
+//      3072 - yaw
+// while the car's own forward sits at 1024 - direction. The 2048 term is the
+// MODEL's own offset: Tanner's mesh front is half a turn from the yaw vector,
+// so a ped handed `yaw = direction` is drawn facing BACK down the car. That is
+// why both crew read as backwards with the offset at 0.
+//      yaw = direction + CD2_CREW_BODY_YAW
+//   CD2_CREW_BODY_YAW = 2048 -> both face FORWARD along the car
+//                     = 2048 -/+ 1024 -> face out of their own door
+//                       (the engine's own get-out pairing is 2048 - 1024 for
+//                        the left door and 2048 + 1024 for the right)
+#define CD2_CREW_BODY_YAW	2048
 
 // The crew ped's origin rides this far ABOVE the car's body centre. The old
 // placement used the MAP ground (-MapHeight - 130), which is not tied to the
 // car at all: a car in the air left its crew standing on the road below. This
 // reproduces that on-ground offset (measured with the car level: car y +31 ->
 // ped y -130, i.e. 99 above the body centre) while now following the car.
-#define CD2_CREW_BODY_LIFT	99
+#define CD2_CREW_BODY_LIFT	49
 
 // The car matrix is Y-UP while the ped's body is rendered Y-DOWN, so a physical
 // pitch/roll maps to the NEGATED angles here. If a tilted car's crew leans the
@@ -406,40 +412,124 @@ static void cd2CrewFleeUpdate(CD2_CREW_CAR* c, int i, const CAR_DATA* cp)
 // JERICHO/docs/ped-animation.md).
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Ped-local offset -> the frame the POSITION channel actually works in.
+//
+// By the time PED_SKELETON phase 0 runs, motion_c.c has already rotated the
+// bone chain by the body matrix, so vCurrPos is WORLD-oriented: it is not a
+// local offset any more. Writing a local offset straight into it (or rotating
+// it by the yaw alone) pins the pose to one world direction and it stops
+// following the car - which is exactly how the weapon arm ended up "locked".
+// Turn it with the body's own rotation instead; for a crew ped that rotation is
+// the car's, which is also what makes the pose follow the car exactly.
+//   local +x = out of the ped's right, -y = up, +z = the ped's facing
+// ---------------------------------------------------------------------------
+static void cd2CrewLocalToWorld(const CAR_DATA* cp, int lx, int ly, int lz, JER_BONE_POS* out)
+{
+	const MATRIX* w = &cp->hd.where;
+
+	out->vx = (int)((((long long)w->m[0][0] * lx) + ((long long)w->m[0][1] * ly) + ((long long)w->m[0][2] * lz)) >> 12);
+	out->vy = -(int)((((long long)w->m[1][0] * lx) + ((long long)w->m[1][1] * ly) + ((long long)w->m[1][2] * lz)) >> 12);
+	out->vz = (int)((((long long)w->m[2][0] * lx) + ((long long)w->m[2][1] * ly) + ((long long)w->m[2][2] * lz)) >> 12);
+}
+
 // Force the right arm into a weapon-holding reach: the shoulder stays at its
 // rest offset, the forearm is raised and pushed forward, and the hand extends
 // beyond it. `facing` is the heading the pose's local +Z points along.
-static void cd2CrewPoseArm(void* skel, int side, int facing)
+static void cd2CrewPoseArm(void* skel, const CAR_DATA* cp, int side)
 {
+	// the gunner is the driver mirrored, so his reach goes out of the OTHER
+	// side of his body and uses the mirrored limbs. The car's local +x runs
+	// toward the gunner's door (the crew are placed at -/+ lateral), so the
+	// driver's "out" is local -x and the gunner's is +x.
 	const int mirrored = (side == CD2_CREW_SIDE_GUNNER);
-	const int shoulderLimb = mirrored ? JER_LIMB_LSHOULDER : JER_LIMB_RSHOULDER;
-	const int elbowLimb = mirrored ? JER_LIMB_LELBOW : JER_LIMB_RELBOW;
-	const int handLimb = mirrored ? JER_LIMB_LHAND : JER_LIMB_RHAND;
-	const int doorTurn = mirrored ? CD2_CREW_ARM_DOOR_TURN : -CD2_CREW_ARM_DOOR_TURN;
-	const JER_BONE_POS* shoulderRest = jer_anim_bone_rest(skel, shoulderLimb);
-	JER_BONE_POS* shoulder = jer_anim_bone_pos(skel, shoulderLimb);
-	JER_BONE_POS* elbow = jer_anim_bone_pos(skel, elbowLimb);
-	JER_BONE_POS* hand = jer_anim_bone_pos(skel, handLimb);
-	int ex, ez, hx, hz;
+	const int outSign = mirrored ? 1 : -1;
+	JER_BONE_POS* elbow = jer_anim_bone_pos(skel, mirrored ? JER_LIMB_LELBOW : JER_LIMB_RELBOW);
+	JER_BONE_POS* hand = jer_anim_bone_pos(skel, mirrored ? JER_LIMB_LHAND : JER_LIMB_RHAND);
+	const JER_BONE_POS* shoulder = jer_anim_bone_pos(skel, mirrored ? JER_LIMB_LSHOULDER : JER_LIMB_RSHOULDER);
+	JER_BONE_POS off;
 
-	if (shoulder == NULL || elbow == NULL || hand == NULL || shoulderRest == NULL)
+	// the shoulder is left exactly where the motion put it: it is already in
+	// the world frame, and writing a local rest value into it was what yanked
+	// the whole arm to a fixed spot
+	if (elbow == NULL || hand == NULL || shoulder == NULL)
 		return;
 
-	*shoulder = *shoulderRest;
+	cd2CrewLocalToWorld(cp, outSign * CD2_CREW_ARM_ELBOW_OUT, CD2_CREW_ARM_ELBOW_UP, CD2_CREW_ARM_ELBOW_FWD, &off);
+	elbow->vx = shoulder->vx + off.vx;
+	elbow->vy = shoulder->vy + off.vy;
+	elbow->vz = shoulder->vz + off.vz;
 
-	ex = 0;
-	ez = CD2_CREW_ARM_ELBOW_Z;
-	jer_anim_rotate_offset(&ex, &ez, (facing + doorTurn) & 0xfff);
-	elbow->vx = shoulder->vx + ex;
-	elbow->vy = shoulder->vy + CD2_CREW_ARM_ELBOW_Y;
-	elbow->vz = shoulder->vz + ez;
+	cd2CrewLocalToWorld(cp, outSign * CD2_CREW_ARM_HAND_OUT, CD2_CREW_ARM_HAND_UP, CD2_CREW_ARM_HAND_FWD, &off);
+	hand->vx = elbow->vx + off.vx;
+	hand->vy = elbow->vy + off.vy;
+	hand->vz = elbow->vz + off.vz;
+}
 
-	hx = 0;
-	hz = CD2_CREW_ARM_HAND_Z;
-	jer_anim_rotate_offset(&hx, &hz, (facing + doorTurn) & 0xfff);
-	hand->vx = elbow->vx + hx;
-	hand->vy = elbow->vy + CD2_CREW_ARM_HAND_Y;
-	hand->vz = elbow->vz + hz;
+// ---------------------------------------------------------------------------
+// Debug: dump one crew ped's drawn pose next to its parent car's frame.
+//
+// The crew's orientation has to satisfy two things at once - the CAR's heading
+// (so the body turns with it) and the get-out MOTION's own twist (which is
+// authored per door) - and reasoning about which term does what from the source
+// alone has been error-prone. So print the actual numbers: the car's frame, the
+// `dir` the engine will use, and the bone positions, plus the axes derived from
+// them (right = R shoulder - L shoulder, up = hips - upper body, forward =
+// right x up). The angle deltas at the end say exactly how far the drawn body
+// is from the car's own forward.
+// ---------------------------------------------------------------------------
+static void cd2CrewDumpPose(const CAR_DATA* cp, int side, LPPEDESTRIAN pPed, void* skel)
+{
+	const MATRIX* w = &cp->hd.where;
+	const int carFwdAng = ratan2(w->m[2][2], w->m[0][2]) & 0xfff;
+	const JER_BONE_POS* hips = jer_anim_bone_pos(skel, JER_LIMB_HIPS);
+	const JER_BONE_POS* j1 = jer_anim_bone_pos(skel, JER_LIMB_JOINT_1);
+	const JER_BONE_POS* ls = jer_anim_bone_pos(skel, JER_LIMB_LSHOULDER);
+	const JER_BONE_POS* rs = jer_anim_bone_pos(skel, JER_LIMB_RSHOULDER);
+	const JER_BONE_POS* lf = jer_anim_bone_pos(skel, JER_LIMB_LFOOT);
+	const JER_BONE_POS* lt = jer_anim_bone_pos(skel, JER_LIMB_LTOE);
+	int rx = 0, ry = 0, rz = 0, ux = 0, uy = 0, uz = 0;
+	int fx, fy, fz, fAng, footAng = -1;
+
+	if (ls && rs) { rx = rs->vx - ls->vx; ry = rs->vy - ls->vy; rz = rs->vz - ls->vz; }
+	if (hips && j1) { ux = hips->vx - j1->vx; uy = hips->vy - j1->vy; uz = hips->vz - j1->vz; }
+
+	// forward = right x up (Y-down frame)
+	fx = ry * uz - rz * uy;
+	fy = rz * ux - rx * uz;
+	fz = rx * uy - ry * ux;
+	fAng = ratan2(fz, fx) & 0xfff;
+
+	if (lf && lt)
+		footAng = ratan2(lt->vz - lf->vz, lt->vx - lf->vx) & 0xfff;
+
+	printInfo("[crew] ---- car=%d side=%d ----\n", cp->id, side);
+	printInfo("[crew] car  dir=%d  fwdAng=%d  m00=%d m02=%d m20=%d m22=%d m11=%d\n",
+	          cp->hd.direction, carFwdAng, w->m[0][0], w->m[0][2], w->m[2][0], w->m[2][2], w->m[1][1]);
+	printInfo("[crew] ped  dir=(%d,%d,%d)  pos=(%d,%d,%d)\n",
+	          pPed->dir.vx, pPed->dir.vy, pPed->dir.vz,
+	          pPed->position.vx, pPed->position.vy, pPed->position.vz);
+	printInfo("[crew] bone hips=(%d,%d,%d) j1=(%d,%d,%d) Lsh=(%d,%d,%d) Rsh=(%d,%d,%d)\n",
+	          hips?hips->vx:0, hips?hips->vy:0, hips?hips->vz:0,
+	          j1?j1->vx:0, j1?j1->vy:0, j1?j1->vz:0,
+	          ls?ls->vx:0, ls?ls->vy:0, ls?ls->vz:0,
+	          rs?rs->vx:0, rs?rs->vy:0, rs?rs->vz:0);
+	printInfo("[crew] axis right=(%d,%d,%d) up=(%d,%d,%d) fwd=(%d,%d,%d)\n", rx, ry, rz, ux, uy, uz, fx, fy, fz);
+	printInfo("[crew] ang  carFwd=%d  pedFwd=%d  dPed=%d  lToe=%d  dToe=%d\n",
+	          carFwdAng, fAng, (fAng - carFwdAng) & 0xfff, footAng,
+	          footAng < 0 ? -1 : ((footAng - carFwdAng) & 0xfff));
+
+	{
+		const JER_BONE_POS* sh = jer_anim_bone_pos(skel, side ? JER_LIMB_LSHOULDER : JER_LIMB_RSHOULDER);
+		const JER_BONE_POS* hd = jer_anim_bone_pos(skel, side ? JER_LIMB_LHAND : JER_LIMB_RHAND);
+		int ax = 0, az = 0;
+
+		if (sh && hd) { ax = hd->vx - sh->vx; az = hd->vz - sh->vz; }
+
+		printInfo("[crew] arm  reach=(%d,%d,%d) ang=%d  dCar=%d\n",
+		          ax, (sh && hd) ? (hd->vy - sh->vy) : 0, az,
+		          (ratan2(az, ax) & 0xfff), ((ratan2(az, ax) & 0xfff) - carFwdAng) & 0xfff);
+	}
 }
 
 // JER_EVENT_PED_POSE — the ONLY effective rotation channel (it fires between
@@ -515,6 +605,20 @@ static int cd2CrewOnPedSkeleton(void* ud, void* args)
 		sCrewRevValid = 0;
 	}
 
+	if (a->phase == 1 && gCd2Cfg.debugLog && !a->shadow)
+	{
+		static int sDumps;
+		int ci, si;
+
+		for (ci = 0; ci < MAX_CARS && sDumps < 24; ci++)
+			for (si = 0; si < 2 && sDumps < 24; si++)
+				if ((void*)gCrew[ci].ped[si] == a->ped && gCrew[ci].state[si] == CD2_CREW_OUT)
+				{
+					sDumps++;
+					cd2CrewDumpPose(&car_data[ci], si, (LPPEDESTRIAN)a->ped, a->skel);
+				}
+	}
+
 	// the position channel only, and never during the shadow pass
 	if (a->phase != 0 || a->shadow)
 		return JER_RESULT_CONTINUE;
@@ -531,7 +635,7 @@ static int cd2CrewOnPedSkeleton(void* ud, void* args)
 			{
 				LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
 
-				cd2CrewPoseArm(a->skel, side, pPed->dir.vy);
+				cd2CrewPoseArm(a->skel, &car_data[i], side);
 				break;
 			}
 		}
@@ -594,7 +698,7 @@ static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i, int raise
 	// hd.direction - verified - so the facing the crew was tuned with is
 	// unchanged; only the tilt is new.
 	cd2CrewMatrixEuler(w, &rot);
-	yaw = (rot.vy - CD2_CREW_YAW_OFFSET) & 0xfff;
+	yaw = (rot.vy + CD2_CREW_BODY_YAW) & 0xfff;
 
 	jer_npc_set_world((JerNpc*)pPed, x, y, z, yaw);
 	jer_npc_set_orient((JerNpc*)pPed, (CD2_CREW_TILT_SIGN * rot.vx) & 0xfff, yaw, (CD2_CREW_TILT_SIGN * rot.vz) & 0xfff);
