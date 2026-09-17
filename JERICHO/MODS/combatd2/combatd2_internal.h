@@ -22,6 +22,15 @@
 //   combatd2gearbox.c engine gearbox/rev-curve tuner
 //   combatd2enginesnd.c engine rev + idle channel tuner
 //   combatd2camerafx.c chase framing + speed FOV pull
+//
+// The module's subfolders each carry their own header, and are registered from
+// the same entry:
+//
+//   factions/         the five teams - registry, roster, per-car assignment
+//                     (factions/factions.h + factions.c; see FACTIONS.md)
+//   ai/               the opponent AI (ai/ai.h; opponent.c is the brain)
+//   weapons/          the weapon framework (weapons/core/weapon.h)
+//   carhacks/         vehicle availability (carhacks/carhacks.h)
 
 #ifndef CD2_INTERNAL_H
 #define CD2_INTERNAL_H

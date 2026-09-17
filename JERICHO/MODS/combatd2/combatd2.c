@@ -42,6 +42,7 @@
 #include "mc_snd.h"
 #include "weapons/core/weapon.h"	/* CD2_WEAPON_DEF + inventory API */
 #include "ai/ai.h"			/* opponent AI (ai/opponent.c) */
+#include "factions/factions.h"	/* the five teams (factions/factions.c) */
 #include "carhacks/carhacks.h"		/* vehicle-availability hacks (own module later) */
 #include <string.h>
 // Registration helpers from the other source files of this (merged) module:
@@ -61,6 +62,7 @@ void cd2DebugRegister(JERICHO_CONTEXT* ctx);	/* TEMPORARY: cd2debug.c */
 void cd2FxRegister(JERICHO_CONTEXT* ctx);
 void cd2FreezeRegister(JERICHO_CONTEXT* ctx);
 void cd2CrewRegister(JERICHO_CONTEXT* ctx);	/* weapons/core/crew.c */
+void cd2FacRegister(JERICHO_CONTEXT* ctx);	/* factions/factions.c (declared in its header) */
 
 // ---------------------------------------------------------------------------
 // State
@@ -102,6 +104,12 @@ void cd2LoadConfig(void)
 	gCd2Cfg.aiRole        = jer_config_get_int("combatd2", "ai_role", -1);
 	gCd2Cfg.navDebug      = jer_config_get_int("combatd2", "nav_debug", 0);
 
+	// factions (factions/, see FACTIONS.md): give every car a team identity,
+	// and which team the player is. 0 = TANNER, and a non-competing faction is
+	// refused by cd2FacPlayerFaction (the player drives).
+	gCd2Cfg.factions      = jer_config_get_int("combatd2", "factions", 1);
+	gCd2Cfg.playerFaction = jer_config_get_int("combatd2", "player_faction", CD2_FAC_TANNER);
+
 	// car-vs-car damage as % of stock. Migrate the old car_car_nerf (% reduction).
 	gCd2Cfg.carCarDamage  = jer_config_get_int("combatd2", "car_car_damage", -1);
 	gCd2Cfg.aiDamageTaken = jer_config_get_int("combatd2", "ai_damage_taken", CD2_AI_DAMAGE_TAKEN_DEFAULT);
@@ -142,6 +150,8 @@ void cd2LoadConfig(void)
 	gCd2Cfg.aiDebug       = gCd2Cfg.aiDebug ? 1 : 0;
 	gCd2Cfg.aiRole        = jer_clamp_int(gCd2Cfg.aiRole, -1, CD2_AI_ROLE_COUNT - 1);
 	gCd2Cfg.navDebug      = gCd2Cfg.navDebug ? 1 : 0;
+	gCd2Cfg.factions      = gCd2Cfg.factions ? 1 : 0;
+	gCd2Cfg.playerFaction = jer_clamp_int(gCd2Cfg.playerFaction, 0, CD2_FAC_COUNT - 1);
 	gCd2Cfg.carCarDamage  = jer_clamp_int(gCd2Cfg.carCarDamage, 10, 100);
 	gCd2Cfg.aiDamageTaken = jer_clamp_int(gCd2Cfg.aiDamageTaken, 10, 400);
 	gCd2Cfg.respawn       = gCd2Cfg.respawn ? 1 : 0;
@@ -173,6 +183,8 @@ void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "ai_debug", gCd2Cfg.aiDebug);
 	jer_config_set_int("combatd2", "ai_role", gCd2Cfg.aiRole);
 	jer_config_set_int("combatd2", "nav_debug", gCd2Cfg.navDebug);
+	jer_config_set_int("combatd2", "factions", gCd2Cfg.factions);
+	jer_config_set_int("combatd2", "player_faction", gCd2Cfg.playerFaction);
 	jer_config_set_int("combatd2", "car_car_damage", gCd2Cfg.carCarDamage);
 	jer_config_set_int("combatd2", "ai_damage_taken", gCd2Cfg.aiDamageTaken);
 	jer_config_set_int("combatd2", "respawn", gCd2Cfg.respawn);
@@ -449,6 +461,10 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	cd2CrewRegister(ctx);
 	cd2FxRegister(ctx);
 	cd2FreezeRegister(ctx);
+
+	// The factions go in BEFORE the AI: a spawned opponent claims its roster
+	// slot, so the field has to exist (and be reset for the new level) first.
+	cd2FacRegister(ctx);
 	cd2AiRegister(ctx);
 
 	/* vehicle-availability hacks - self-contained, hosted here for now and

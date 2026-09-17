@@ -461,6 +461,15 @@ typedef struct CD2_CONFIG
 	int aiForceState;      // CD2_AI_AUTO (0) or a forced CD2_AI_* behaviour
 	int aiDebug;           // 0/1: draw the AI internal-value readout on screen
 	int aiRole;            // CD2_AI_ROLE_* (-1 = auto round-robin by car index)
+
+	// ---- factions (factions/, see FACTIONS.md) ---------------------------
+	// 0/1: give every car a faction identity (the five-row registry) and name
+	// it — in its own colour — in messages. Off restores the anonymous
+	// role-name wording ("Flanker was killed by ...").
+	int factions;
+	// the player's faction, a CD2_FAC_* index (0 = TANNER). A faction that
+	// does not compete (Caine, the host) is refused: the player drives.
+	int playerFaction;
 } CD2_CONFIG;
 
 typedef struct CD2_CAR

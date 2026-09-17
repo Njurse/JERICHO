@@ -37,6 +37,7 @@
 #include "ai/nav.h"
 #include "ai/grid.h"
 #include "ai/flow.h"
+#include "factions/factions.h"	// the five teams: claim this spawn's roster slot
 
 #include <string.h>
 #include <stdio.h>
@@ -608,6 +609,14 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 			return 0;	// no free slot
 
 		A->carId = slot->id;
+
+		// Faction identity: claim this spawn's roster slot (the field is
+		// MCKENZIE, VASQUEZ x2, JERICHO - see factions/factions.c). Claimed here,
+		// where the car is committed to the field, so an opponent can never be
+		// left nameless in a message; `index` is the spawn order cd2AiSpawn
+		// drives.
+		cd2FacAssignAiCar(slot, index);
+
 		A->state = CD2_AI_DISPERSE;	// spawn scattered, not in formation
 		A->stateTimer = 0;
 		A->evade = 0;
@@ -1983,7 +1992,15 @@ static int cd2AiOnOverlay(void* ud, void* args)
 	if (!gCd2Cfg.enabled || !gCd2Cfg.aiDebug || !sDbg.valid)
 		return JER_RESULT_CONTINUE;
 
-	sprintf(text, "AI car %d %s state=%s evade=%d", sDbg.carId, cd2AiRoleName(), cd2AiStateName(), sDbg.evadeLeft);
+	{
+		// Faction first (factions/): the readout is about a CAR, so show the
+		// team it belongs to - the role is already on the next field.
+		const char* tag = (sDbg.carId >= 0 && sDbg.carId < MAX_CARS)
+			? cd2FacTagOfCar(&car_data[sDbg.carId]) : NULL;
+
+		sprintf(text, "AI car %d %s faction=%s state=%s evade=%d", sDbg.carId, cd2AiRoleName(),
+			(tag != NULL) ? tag : "-", cd2AiStateName(), sDbg.evadeLeft);
+	}
 	PrintString(text, 20, y);
 	y += 12;
 
@@ -2070,12 +2087,18 @@ static int cd2AiOnDrawMap(void* ud, void* args)
 		p.vy = car_data[id].hd.where.t[1];
 		p.vz = car_data[id].hd.where.t[2];
 
-		switch (sAi[i].role)
+		// Colour is the FACTION's (factions/): the map is there to say who is
+		// who, not what job the AI handed them. An unfactioned car keeps the
+		// per-role colour so a blip is never left invisible.
+		if (!cd2FacColourOfCar(&car_data[id], &r, &g, &b))
 		{
-			case CD2_AI_ROLE_FLANKER:   r = 255; g = 160; b = 0;   break;
-			case CD2_AI_ROLE_AMBUSHER:  r = 200; g = 60;  b = 255; break;
-			case CD2_AI_ROLE_HARVESTER: r = 60;  g = 255; b = 60;  break;
-			default:                    r = 255; g = 40;  b = 40;  break;
+			switch (sAi[i].role)
+			{
+				case CD2_AI_ROLE_FLANKER:   r = 255; g = 160; b = 0;   break;
+				case CD2_AI_ROLE_AMBUSHER:  r = 200; g = 60;  b = 255; break;
+				case CD2_AI_ROLE_HARVESTER: r = 60;  g = 255; b = 60;  break;
+				default:                    r = 255; g = 40;  b = 40;  break;
+			}
 		}
 
 		DrawTargetBlip(&p, r, g, b, a->flags);

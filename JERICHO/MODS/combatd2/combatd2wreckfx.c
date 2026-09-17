@@ -24,6 +24,7 @@
 #include "jericho.h"
 #include "jer_events.h"
 #include "jer_hud.h"	/* HUD messages (kill credit) */
+#include "factions/factions.h"	/* the five teams: the named colours */
 #include "weapons/fx/fx.h"
 #include "weapons/core/weapon_internal.h"	/* cd2WpnTakeAttacker */
 #include "ai/ai.h"	/* cd2AiIsOpponent / cd2AiRoleOf / cd2AiRoleNameOf */
@@ -55,6 +56,86 @@ int cd2CarTotaled(void* vcp)
 {
 	CAR_DATA* cp = (CAR_DATA*)vcp;
 	return cp->totalDamage >= cd2cMaxDamage(cp);
+}
+
+// ---------------------------------------------------------------------------
+// The death banner: naming a car
+// ---------------------------------------------------------------------------
+// A car is announced as its FACTION (the registry in factions/), drawn in that
+// faction's colour, because that is the identity the tournament gives it. The
+// local player is kept as "You" - it is the player reading the line - but still
+// carries its faction's colour.
+//
+// A faction can field more than one car (VASQUEZ fields two), so the second and
+// later get an index: "VASQUEZ 2 was killed by MCKENZIE" rather than an
+// ambiguous tag for both. With no faction at all (factions off in config, or a
+// car the roster never saw) the old anonymous wording is kept, in a neutral
+// grey, so a message is never dropped for lack of a team.
+#define CD2C_NONAME_R	200
+#define CD2C_NONAME_G	200
+#define CD2C_NONAME_B	200
+
+// The name of `cp` for a message, written into `buf` when it needs assembling.
+// Returns the name (a literal, a faction tag, or `buf`) and fills the colour.
+static const char* cd2cAnnounce(CAR_DATA* cp, const char* fallback, char* buf, int bufLen,
+	unsigned char* r, unsigned char* g, unsigned char* b)
+{
+	int faction = cd2FacOfCar(cp);
+	int i, index = 0, total = 0;
+
+	if (faction == CD2_FAC_NONE || !cd2FacColourOf(faction, r, g, b))
+	{
+		*r = CD2C_NONAME_R;
+		*g = CD2C_NONAME_G;
+		*b = CD2C_NONAME_B;
+
+		return fallback;
+	}
+
+	if (cp->id == MainPlayer.playerCarId)
+		return "You";
+
+	// number the cars of a faction that fields more than one
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		if (cd2FacOfCarId(i) != faction)
+			continue;
+
+		total++;
+
+		if (i == cp->id)
+			index = total;
+	}
+
+	if (total > 1)
+		snprintf(buf, bufLen, "%s %d", cd2FacTagOf(faction), index);
+	else
+		snprintf(buf, bufLen, "%s", cd2FacTagOf(faction));
+
+	return buf;
+}
+
+// The two run kinds of a banner: the connective words (ambient colour, so the
+// line still matches every other HUD message) and a NAME (its faction colour).
+static void cd2cSegWord(JER_HUD_SEG* segs, int* n, const char* text)
+{
+	segs[*n].text = text;
+	segs[*n].r = 0;
+	segs[*n].g = 0;
+	segs[*n].b = 0;
+	segs[*n].ambient = 1;
+	(*n)++;
+}
+
+static void cd2cSegName(JER_HUD_SEG* segs, int* n, const char* text,
+	unsigned char r, unsigned char g, unsigned char b)
+{
+	segs[*n].text = text;
+	segs[*n].r = r;
+	segs[*n].g = g;
+	segs[*n].b = b;
+	segs[*n].ambient = 0;
+	(*n)++;
 }
 
 // CAR_STEP: explode once when a car first reaches the damage cap.
@@ -91,7 +172,7 @@ static int cd2cOnCarStep(void* ud, void* args)
 			cp->st.n.angularVelocity[0] += (Random2(CD2C_TUMBLE_SPIN) - (CD2C_TUMBLE_SPIN >> 1));
 			cp->st.n.angularVelocity[2] += (Random2(CD2C_TUMBLE_SPIN) - (CD2C_TUMBLE_SPIN >> 1));
 
-			// Death message. The killer is the last weapon to hit this car
+			// Death banner. The killer is the last weapon to hit this car
 			// (cd2WpnTakeAttacker clears the record, so a death is never
 			// credited to a stale hit); no record means nothing to blame -
 			// scenery, or the car doing it to itself.
@@ -101,8 +182,11 @@ static int cd2cOnCarStep(void* ud, void* args)
 			//   killed by an enemy, an npc  -> "<victim> was killed by <killer>"
 			//   nobody to blame / self      -> "<victim> died"
 			//
-			// Only the local player and our opponents get a line: announcing
-			// every civ car that scrapes a wall would bury the screen.
+			// The names are drawn in their faction's colour (factions/); the
+			// wiring words stay ambient so the line still looks like every
+			// other HUD message. Only the local player and our opponents get a
+			// line: announcing every civ car that scrapes a wall would bury
+			// the screen.
 			{
 				int killerId = cd2WpnTakeAttacker(cp->id);
 				int isPlayer = (cp->controlType == CONTROL_TYPE_PLAYER);
@@ -113,36 +197,64 @@ static int cd2cOnCarStep(void* ud, void* args)
 					int isLocal = (cp->id == MainPlayer.playerCarId);
 					int byPlayer = (killerId >= 0 && killerId == MainPlayer.playerCarId);
 					const char* role = isNpc ? cd2AiRoleNameOf(cd2AiRoleOf(cp)) : NULL;
-					const char* victim = isLocal ? "You" : ((role != NULL) ? role : "The player");
+					const char* victim;
 					const char* killer = NULL;
-					char msg[80];
+					char vBuf[24], kBuf[24];
+					unsigned char vr, vg, vb, kr = 0, kg = 0, kb = 0;
+					JER_HUD_SEG segs[5];
+					int n = 0;
 
 					// an enemy is any other car we can name: another opponent,
 					// or a second player. Anything else (traffic, an unknown
 					// slot) stays unattributed rather than guessed at.
 					if (killerId >= 0 && killerId < MAX_CARS && killerId != cp->id && !byPlayer)
 					{
-						if (cd2AiIsOpponent(&car_data[killerId]))
-							killer = cd2AiRoleNameOf(cd2AiRoleOf(&car_data[killerId]));
-						else if (car_data[killerId].controlType == CONTROL_TYPE_PLAYER)
-							killer = "the other player";
+						CAR_DATA* kcp = &car_data[killerId];
+						const char* kFallback = NULL;
+
+						if (cd2AiIsOpponent(kcp))
+							kFallback = cd2AiRoleNameOf(cd2AiRoleOf(kcp));
+						else if (kcp->controlType == CONTROL_TYPE_PLAYER)
+							kFallback = "the other player";
+
+						if (kFallback != NULL)
+							killer = cd2cAnnounce(kcp, kFallback, kBuf, sizeof(kBuf), &kr, &kg, &kb);
 					}
 
+					victim = cd2cAnnounce(cp, isLocal ? "You" : ((role != NULL) ? role : "The player"),
+						vBuf, sizeof(vBuf), &vr, &vg, &vb);
+
 					if (byPlayer)
-						sprintf(msg, "You killed %s", victim);
+					{
+						cd2cSegWord(segs, &n, "You killed ");
+						cd2cSegName(segs, &n, victim, vr, vg, vb);
+					}
 					else if (killer != NULL && isLocal)
-						sprintf(msg, "You were killed by %s", killer);
+					{
+						cd2cSegWord(segs, &n, "You were killed by ");
+						cd2cSegName(segs, &n, killer, kr, kg, kb);
+					}
 					else if (killer != NULL)
-						sprintf(msg, "%s was killed by %s", victim, killer);
+					{
+						cd2cSegName(segs, &n, victim, vr, vg, vb);
+						cd2cSegWord(segs, &n, " was killed by ");
+						cd2cSegName(segs, &n, killer, kr, kg, kb);
+					}
 					else
-						sprintf(msg, "%s died", victim);
+					{
+						cd2cSegName(segs, &n, victim, vr, vg, vb);
+						cd2cSegWord(segs, &n, " died");
+					}
 
 					if (gCd2Cfg.debugLog)
 						printInfo("[combatd2] death: car=%d victim=%s killer=%d(%s) playerCar=%d\n",
 							cp->id, victim, killerId, (killer != NULL) ? killer : "-",
 							(int)MainPlayer.playerCarId);
 
-					jer_hud_message_replace(msg, 0);	// 0 = the default ~3s
+					// one banner at a time, like the plaintext replace it
+					// supersedes: a frame with several deaths must not stack
+					jer_hud_clear();
+					jer_hud_message_segs(segs, n, 0);	// 0 = the default ~3s
 				}
 			}
 		}
