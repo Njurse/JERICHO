@@ -18,7 +18,7 @@
 
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
-#include "jer_anim.h"	// JERICHO-HOOK: jer_anim_bone_rotation (defined here)
+#include "jer_anim.h"	// JERICHO-HOOK: the all-bone API (implemented below)
 #include "jer_npc.h"	// JERICHO-HOOK: jer_npc_owned (ped ownership gating)
 
 #if USE_PGXP
@@ -144,19 +144,6 @@ PED_DATA MainPed[NUM_BONES] =
 };
 
 
-// FIXME: could be incorrect
-/* jer_anim helper (declared in jer_anim.h): resolve a limb's writable
- * per-frame rotation. Defined here, not in the JERICHO core, because only
- * the game sees the real BONE layout. */
-JER_BONE_ROT* jer_anim_bone_rotation(void* skel, int limb)
-{
-	BONE* bones = (BONE*)skel;
-
-	if (bones == NULL || limb < 0 || limb >= NUM_BONES)
-		return NULL;
-
-	return (JER_BONE_ROT*)bones[limb].pvRotation;
-}
 
 BONE Skel[NUM_BONES] =
 {
@@ -414,6 +401,122 @@ BONE Skel[NUM_BONES] =
 		NULL
 	}
 };
+
+// ---------------------------------------------------------------------------
+// jer_anim — read/write ANY of a ped's 23 bones (declared in jer_anim.h).
+// Defined here because only this file sees the real BONE layout; every helper
+// is bounds-checked and safe to call from the ped hooks. Pass the hook's
+// `skel`, or NULL to use the engine's live skeleton table.
+// ---------------------------------------------------------------------------
+static BONE* jer_anim_bones(void* skel)
+{
+	return skel != NULL ? (BONE*)skel : Skel;
+}
+
+JER_BONE_ROT* jer_anim_bone_rotation(void* skel, int limb)
+{
+	BONE* bones = jer_anim_bones(skel);
+
+	if (limb < 0 || limb >= NUM_BONES)
+		return NULL;
+
+	return (JER_BONE_ROT*)bones[limb].pvRotation;
+}
+
+JER_BONE_POS* jer_anim_bone_pos(void* skel, int limb)
+{
+	BONE* bones = jer_anim_bones(skel);
+
+	if (limb < 0 || limb >= NUM_BONES)
+		return NULL;
+
+	return (JER_BONE_POS*)&bones[limb].vCurrPos;
+}
+
+const JER_BONE_POS* jer_anim_bone_rest(void* skel, int limb)
+{
+	BONE* bones = jer_anim_bones(skel);
+
+	if (limb < 0 || limb >= NUM_BONES)
+		return NULL;
+
+	return (const JER_BONE_POS*)&bones[limb].vOffset;
+}
+
+int jer_anim_bone_parent(void* skel, int limb)
+{
+	BONE* bones = jer_anim_bones(skel);
+
+	if (limb < 0 || limb >= NUM_BONES || bones[limb].pParent == NULL)
+		return -1;
+
+	return (int)bones[limb].pParent->id;
+}
+
+void* jer_anim_bone_model(void* skel, int limb)
+{
+	BONE* bones = jer_anim_bones(skel);
+
+	if (limb < 0 || limb >= NUM_BONES)
+		return NULL;
+
+	return bones[limb].pModel;
+}
+
+/* NOTE: a bone's rotation points INTO the shared per-type motion buffer, so
+ * these copy the live values in and back out rather than owning state. */
+void jer_anim_save_rotations(void* skel, JER_BONE_ROT* out)
+{
+	BONE* bones = jer_anim_bones(skel);
+	int i;
+
+	if (out == NULL)
+		return;
+
+	for (i = 0; i < NUM_BONES; i++)
+	{
+		JER_BONE_ROT* live = (JER_BONE_ROT*)bones[i].pvRotation;
+
+		if (live != NULL)
+			out[i] = *live;
+		else
+		{
+			out[i].vx = 0;
+			out[i].vy = 0;
+			out[i].vz = 0;
+		}
+	}
+}
+
+void jer_anim_restore_rotations(void* skel, const JER_BONE_ROT* in)
+{
+	BONE* bones = jer_anim_bones(skel);
+	int i;
+
+	if (in == NULL)
+		return;
+
+	for (i = 0; i < NUM_BONES; i++)
+	{
+		JER_BONE_ROT* live = (JER_BONE_ROT*)bones[i].pvRotation;
+
+		if (live != NULL)
+			*live = in[i];
+	}
+}
+
+/* fixed-point rotate (RSIN/RCOS are 4096-scaled): the offset's +Z maps to the
+ * direction (RSIN(heading), RCOS(heading)). */
+void jer_anim_rotate_offset(int* px, int* pz, int heading)
+{
+	int x = *px;
+	int z = *pz;
+	int c = RCOS(heading);
+	int s = RSIN(heading);
+
+	*px = (x * c + z * s) >> 12;
+	*pz = (-x * s + z * c) >> 12;
+}
 
 int boneIdvals[] = {
 	// 1
