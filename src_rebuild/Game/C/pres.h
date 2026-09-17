@@ -16,6 +16,13 @@ extern void InitButtonTextures(); // 0x00074E54
 extern void LoadFont(char *buffer); // 0x00073CC8
 
 extern void SetTextColour(u_char Red, u_char Green, u_char Blue); // 0x00074A10
+
+// The colour SetTextColour writes and PrintString stamps into every glyph. It is
+// ambient state, NOT per-call, so a drawer that changes it must put it back:
+// jer_hud.c (coloured HUD messages) saves/restores it around its run because
+// modules draw their own PrintString overlays right afterwards and never set a
+// colour of their own.
+extern CVECTOR gFontColour;
 extern int StringWidth(char *pString); // 0x00074A24
 
 extern int OutputString(char *pString, int formatting, int x, int y, int xw, int r, int g, int b); // 0x00074AB0

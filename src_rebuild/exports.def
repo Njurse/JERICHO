@@ -58,14 +58,17 @@ EXPORTS
 	?DrawCarObject@@YAXPEAUCAR_MODEL@@PEAUMATRIX@@PEAUVECTOR@@HPEAU_CAR_DATA@@H@Z
 	?DrawCarWheels@@YAXPEAU_CAR_DATA@@PEAUMATRIX@@PEAUVECTOR@@H@Z
 	?DrawWheelObject@@YAXPEAUMODEL@@PEAUSVECTOR@@HH@Z
+	?GetCarDataFolder@@YAPEBDXZ
 	?GetCarModel@@YAPEAUMODEL@@PEADPEAPEADH@Z
 	?GetCarPalIndex@@YADH@Z
 	?LoadCarModelFromFile@@YAPEADPEADHH@Z
 	?MangleWheelModels@@YAXXZ
+	?ProcessImportedPalette@@YAXXZ
 	?ProcessPalletLump@@YAXPEADH@Z
 	?buildNewCarFromModel@@YAXHHPEADPEAUMODEL@@@Z
 	?plotCarPolyGT3@@YAXHPEAUCAR_POLY@@PEAUSVECTOR@@1PEAUplotCarGlobals@@H@Z
 	?plotCarPolyGT3Lit@@YAXHPEAUCAR_POLY@@PEAUSVECTOR@@1PEAUplotCarGlobals@@H@Z
+	?plotCarPolyGT3nolight@@YAXHPEAUCAR_POLY@@PEAUSVECTOR@@PEAUplotCarGlobals@@H@Z
 	?plotNewCarModel@@YAXPEAUCAR_MODEL@@HH@Z
 	?restoreLightingMatrices@@YAXXZ
 	?setupLightingMatrices@@YAXXZ
@@ -119,10 +122,10 @@ EXPORTS
 	?InitCopState@@YAXPEAU_CAR_DATA@@PEAD@Z
 	?InitCops@@YAXXZ
 	?PassiveCopTasks@@YAXPEAU_CAR_DATA@@@Z
-	?ReplayLog_Fnarr_He_Said_Log@@YAHH@Z
-	?GetSampleCount@CSoundSource_OpenALCache@@UEBAHXZ
 	?GetSamples@CSoundSource_OpenALCache@@UEAAHPEAEHH_N@Z
+	?GetSampleCount@CSoundSource_OpenALCache@@UEBAHXZ
 	?GetDataPtr@CSoundSource_OpenALCache@@UEBAPEAEAEAH@Z
+	?ReplayLog_Fnarr_He_Said_Log@@YAHH@Z
 	?AddBrakeLight@@YAXPEAU_CAR_DATA@@@Z
 	?AddCopCarLight@@YAXPEAU_CAR_DATA@@@Z
 	?AddExhaustSmoke@@YAXPEAU_CAR_DATA@@HH@Z
@@ -317,6 +320,7 @@ EXPORTS
 	?ExplosionSound@@YAXPEAUVECTOR@@H@Z
 	?FunkUpDaBGMTunez@@YAXH@Z
 	?GetCarBankSample@@YAHH@Z
+	?GetEngineRevs@@YAGPEAU_CAR_DATA@@@Z
 	?InitLeadHorn@@YAXXZ
 	?InitMusic@@YAXH@Z
 	?InitSpeechQueue@@YAXPEAUSPEECH_QUEUE@@@Z
@@ -344,16 +348,16 @@ EXPORTS
 	?GlobalTimeStep@@YAXXZ
 	?InitCarPhysics@@YAXPEAU_CAR_DATA@@PEAY03HH@Z
 	?InitSkidding@@YAXXZ
-	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
-	?StopDualShockMotors@@YAXXZ
-	?ProcessJunctionsLump@@YAXPEADH@Z
-	?ProcessJuncBoundsLump@@YAXPEADH@Z
-	?ProcessRoadBoundsLump@@YAXPEADH@Z
-	?ProcessSubDivisionLump@@YAXPEADH@Z
-	?SetXAVolume@@YAXH@Z
 	?InitialiseCarHandling@@YAXXZ
-	?GetXAData@@YAXH@Z
+	?ProcessJunctionsLump@@YAXPEADH@Z
+	?SetXAVolume@@YAXH@Z
+	?ProcessJuncBoundsLump@@YAXPEADH@Z
+	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
 	?ProcessRoadsLump@@YAXPEADH@Z
+	?ProcessSubDivisionLump@@YAXPEADH@Z
+	?GetXAData@@YAXH@Z
+	?ProcessRoadBoundsLump@@YAXPEADH@Z
+	?StopDualShockMotors@@YAXXZ
 	?ProcessCarPad@@YAXPEAU_CAR_DATA@@IDD@Z
 	?RebuildCarMatrix@@YAXPEATRigidBodyState@@PEAU_CAR_DATA@@@Z
 	?SetShadowPoints@@YAXPEAU_CAR_DATA@@PEAUVECTOR@@@Z
@@ -362,6 +366,18 @@ EXPORTS
 	?TerminateSkidding@@YAXH@Z
 	?UpdateCarPoints@@YAXPEAUCAR_COSMETICS@@@Z
 	?initOBox@@YAXPEAU_CAR_DATA@@@Z
+	jer_hud_active
+	jer_hud_clear
+	jer_hud_draw
+	jer_hud_message
+	jer_hud_message_replace
+	jer_hud_message_segs
+	jer_npc_despawn
+	jer_npc_owned
+	jer_npc_set_action
+	jer_npc_set_orient
+	jer_npc_set_world
+	jer_npc_spawn_model
 	?AddExplosion@@YAXUVECTOR@@H@Z
 	?DrawAllExplosions@@YAXXZ
 	?DrawExplosion@@YAXPEAU_ExOBJECT@@@Z
@@ -400,6 +416,8 @@ EXPORTS
 	?FadeScreen@@YAXH@Z
 	?FilterFrameTime@@YAHXZ
 	?Havana3DOcclusion@@YAHP6AXPEAH@Z0@Z
+	?InitGameVariables@@YAXXZ
+	?JerichoFrameTick@@YAXXZ
 	?ProcessLumps@@YAXPEADH@Z
 	?RenderGame2@@YAXH@Z
 	?SsSetSerialVol@@YAXFFF@Z
@@ -439,6 +457,7 @@ EXPORTS
 	?ActivateNextFlag@@YAXXZ
 	?CalcLapTime@@YAHHHH@Z
 	?CompleteAllActiveTargets@@YAXH@Z
+	?GetCarModelSourceCity@@YAHH@Z
 	?HandleGameOver@@YAHXZ
 	?HandleMission@@YAXXZ
 	?HandleMissionThreads@@YAXXZ
@@ -464,9 +483,15 @@ EXPORTS
 	?CleanSpooledModelSlots@@YAHXZ
 	?FindModelIdxWithName@@YAHPEAD@Z
 	?FindModelPtrWithName@@YAPEAUMODEL@@PEAD@Z
+	?GetCarImportCity@@YAHXZ
+	?GetCarImportCosmetics@@YAPEADH@Z
+	?GetCarImportPageBase@@YAHXZ
+	?GetCarImportTextureInfo@@YAPEADPEAH@Z
+	?InitCarImport@@YAXXZ
 	?ProcessCarModelLump@@YAHPEADH@Z
 	?ProcessMDSLump@@YAXPEADH@Z
 	?ProcessModel@@YAXH@Z
+	?ReadCarImportFile@@YAHHPEAXH@Z
 	?_MDL_GETTER_collision_block@@YAPEADPEAUMODEL@@@Z
 	?_MDL_GETTER_point_normals@@YAPEADPEAUMODEL@@@Z
 	?_MDL_GETTER_vertices@@YAPEADPEAUMODEL@@@Z
@@ -486,7 +511,12 @@ EXPORTS
 	?TannerShadow@@YAXPEAUPEDESTRIAN@@PEAUVECTOR@@PEAUSVECTOR@@PEAUCVECTOR@@F@Z
 	?newRotateBones@@YAXPEAUPEDESTRIAN@@PEAUBONE@@@Z
 	?newShowTanner@@YAXPEAUPEDESTRIAN@@@Z
+	jer_anim_bone_pos
+	jer_anim_bone_rest
 	jer_anim_bone_rotation
+	jer_anim_restore_rotations
+	jer_anim_rotate_offset
+	jer_anim_save_rotations
 	?ColourCycle@@YAXXZ
 	?DrawAllAnimatingObjects@@YAXPEAPEAUCELL_OBJECT@@H@Z
 	?InitAnimatingObjects@@YAXXZ
@@ -763,9 +793,14 @@ EXPORTS
 	?Draw3DTarget@@YAXPEAUVECTOR@@H@Z
 	?DrawStopZone@@YAXPEAUVECTOR@@@Z
 	?DrawTargetArrowModel@@YAXPEAUTARGET_ARROW_MODEL@@PEAUVECTOR@@HH@Z
+	?CarImportDumpState@@YAXXZ
+	?CarImportPin@@YAXXZ
+	?CarSetRemap@@YAHH@Z
+	?CarSetRemapEnable@@YAXH@Z
 	?GetTextureDetails@@YAXPEADPEAUTEXTURE_DETAILS@@H@Z
 	?GetTextureInfoName@@YAPEAUTEXINF@@PEADPEAUTPAN@@@Z
 	?IncrementClutNum@@YAXPEAU_RECT16@@@Z
+	?LoadImportedTPages@@YAXXZ
 	?LoadPermanentTPages@@YAXPEAH@Z
 	?LoadPermanentTPagesFromTIM@@YAXXZ
 	?LoadTPageAndCluts@@YAHPEAU_RECT16@@0HPEAD@Z
@@ -790,9 +825,9 @@ EXPORTS
 	?GetDataPtr@CSoundSource_WaveCache@@UEBAPEAEAEAH@Z
 	?GetFormat@CSoundSource_Wave@@UEAAPEAUsoundFormat_s@@XZ
 	?GetSampleCount@CSoundSource_Wave@@UEBAHXZ
+	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
 	?Load@CSoundSource_OpenALCache@@EEAA_NPEBD@Z
 	?IsStreaming@CSoundSource_WaveCache@@UEAA_NXZ
-	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
 	?PauseXA@@YAXXZ
 	?PlayXA@@YAXHH@Z
 	?PrepareXA@@YAXXZ
@@ -865,6 +900,7 @@ EXPORTS
 	?DemoScreen@@YAHH@Z
 	?MiniCarsOnOffScreen@@YAHH@Z
 	?JerichoModsScreen@@YAHH@Z
+	?JerFrontendMenuScreen@@YAHH@Z
 	?BuildButtonsVertical@@YAHHHH@Z
 	?DisplayOnScreenText@@YAXXZ
 	?DisplayScoreTable@@YAXXZ
@@ -891,6 +927,16 @@ EXPORTS
 	?SetupExtraPoly@@YAXPEADHH@Z
 	?SetupScreenSprts@@YAXPEAUPSXSCREEN@@@Z
 	?State_FrontEnd@@YAXPEAX@Z
+	jer_frontend_current_menu
+	jer_frontend_find
+	jer_frontend_goto
+	jer_frontend_menu_count
+	jer_frontend_menu_get
+	jer_frontend_open
+	jer_frontend_refresh
+	jer_frontend_register_menu
+	jer_frontend_reset
+	jer_frontend_set_main_entry
 	?DeinitStringMng@@YAXXZ
 	?InitStringMng@@YAHXZ
 	?FreeCameraKeyboardHandler@@YAXHD@Z
@@ -1002,26 +1048,11 @@ EXPORTS
 	jer_fire
 	jer_log
 	jer_error
+	jer_error_count
+	jer_error_at
 	jer_set_logger
 	jer_override
 	jer_get_override
-	jer_hud_message
-	jer_hud_message_replace
-	jer_hud_clear
-	jer_hud_active
-	jer_net_register_channel
-	jer_net_send
-	jer_net_is_active
-	jer_net_is_host
-	jer_net_peer_count
-	jer_net_local_player
-	jer_frontend_register_menu
-	jer_frontend_reset
-	jer_frontend_menu_count
-	jer_frontend_menu_get
-	jer_frontend_find
-	jer_frontend_set_main_entry
-	jer_frontend_refresh
 	jer_manager_reload
 	jer_module_count
 	jer_module_list
@@ -1034,6 +1065,7 @@ EXPORTS
 	jer_pause_menu_get
 	jer_manager_set_enabled
 	jer_manager_move
+	jerTrim
 	jer_manager_read
 	jer_manager_write
 	fprintf
@@ -1050,6 +1082,154 @@ EXPORTS
 	jer_loader_unload
 	jer_module_antfarm_entry
 	??4half@@QEAAAEAU0@AEBU0@@Z
+	jer_module_collisiondevil_entry
+	?cd2CarTopSpeed@@YAHPEAX@Z
+	?cd2CarBrake@@YAHPEAX@Z
+	?cd2IsTraffic@@YAHPEAU_CAR_DATA@@@Z
+	?cd2CarSetAiPivot@@YAXPEAXH@Z
+	?cd2LoadConfig@@YAXXZ
+	?cd2SaveConfig@@YAXXZ
+	?cd2ApplyPreset@@YAXXZ
+	?cd2OwnsCar@@YAHPEAU_CAR_DATA@@@Z
+	?cd2GetStats@@YA?AUCD2_STATS@@PEAU_CAR_DATA@@@Z
+	?cd2OnFramePursuit@@YAHPEAX0@Z
+	jer_module_combatd2_entry
+	?cd2OnCarPad@@YAHPEAX0@Z
+	?cd2OnCarStep@@YAHPEAX0@Z
+	?cd2OnCarTorque@@YAHPEAX0@Z
+	?cd2OnGetWallRestitution@@YAHPEAX0@Z
+	?cd2OnPhysicsParams@@YAHPEAX0@Z
+	?cd2OnCarDraw@@YAHPEAX0@Z
+	?cd2OnDebugTick@@YAHPEAX0@Z
+	?cd2CarQueueTotal@@YAXXZ
+	?cd2ScaleDamage@@YAHHH@Z
+	?cd2SceneryHits@@YAHPEAX@Z
+	?cd2OnDamageScale@@YAHPEAX0@Z
+	?cd2OnCarVsCar@@YAHPEAX0@Z
+	?cd2OnGameStart@@YAHPEAX0@Z
+	?cd2TrafficTumble@@YAXPEAU_CAR_DATA@@@Z
+	?cd2RespawnTick@@YAXPEAU_CAR_DATA@@@Z
+	?cd2MenuRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2AiRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2AiRunSeed@@YAIXZ
+	?cd2AiSetRunSeed@@YAXI@Z
+	?cd2AiActive@@YAHXZ
+	?cd2AiStateName@@YAPEBDXZ
+	?cd2AiRoleName@@YAPEBDXZ
+	?cd2AiRoleNameOf@@YAPEBDH@Z
+	?cd2AiGetDebug@@YAHPEAUCD2_AI_DEBUG@@@Z
+	?cd2AiIsOpponent@@YAHPEBX@Z
+	?cd2AiRoleOf@@YAHPEBX@Z
+	?cd2FacDef@@YAPEBUCD2_FACTION@@H@Z
+	?cd2FacTagOf@@YAPEBDH@Z
+	?cd2FacNameOf@@YAPEBDH@Z
+	?cd2FacStance@@YAHHH@Z
+	?cd2FacAtWar@@YAHHH@Z
+	?cd2FacColourOf@@YAHHPEAE00@Z
+	?cd2FacOfCarId@@YAHH@Z
+	?cd2FacOfCar@@YAHPEBU_CAR_DATA@@@Z
+	?cd2FacSetCar@@YAXHH@Z
+	?cd2FacForgetCar@@YAXH@Z
+	?cd2FacTagOfCar@@YAPEBDPEBU_CAR_DATA@@@Z
+	?cd2FacColourOfCar@@YAHPEBU_CAR_DATA@@PEAE11@Z
+	?cd2FacRosterFaction@@YAHH@Z
+	?cd2FacAssignAiCar@@YAXPEAXH@Z
+	?cd2FacPlayerFaction@@YAHXZ
+	?cd2FacRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2FacDumpField@@YAXXZ
+	carhacks_register
+	carhacks_count
+	carhacks_name
+	carhacks_enabled
+	?cd2CarTotaled@@YAHPEAX@Z
+	?cd2WreckFxRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2CarFxRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2GearboxRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2EngineSndRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2CameraFxRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2WpnDef@@YAPEBUCD2_WEAPON_DEF@@H@Z
+	?cd2WpnOwns@@YAHH@Z
+	?cd2WpnAmmo@@YAHH@Z
+	?cd2WpnSelected@@YAHXZ
+	?cd2WpnCycle@@YAHH@Z
+	?cd2WpnTryFire@@YAHPEAXH@Z
+	?cd2WpnGrant@@YAXHH@Z
+	?cd2WpnClear@@YAXH@Z
+	?cd2WpnGrantAllMax@@YAXXZ
+	?cd2WpnResetAll@@YAXXZ
+	?cd2WpnName@@YAPEBDH@Z
+	?cd2WpnLine@@YAXPEBUVECTOR@@0HHH@Z
+	?cd2WpnMark@@YAXPEBUVECTOR@@HHH@Z
+	?cd2WpnPointInCar@@YAHPEBU_CAR_DATA@@PEBUVECTOR@@@Z
+	?cd2WpnDamageCar@@YAXPEAU_CAR_DATA@@PEBUVECTOR@@HPEBU1@@Z
+	?cd2WpnTakeAttacker@@YAHH@Z
+	?cd2WpnKnock@@YAXPEAU_CAR_DATA@@PEBUVECTOR@@1H@Z
+	?cd2WpnPlayerCar@@YAHPEAPEAU_CAR_DATA@@@Z
+	?cd2WpnMuzzle@@YAXPEBU_CAR_DATA@@HPEAUVECTOR@@@Z
+	?cd2WpnWindowMuzzle@@YAXPEBU_CAR_DATA@@HPEAUVECTOR@@@Z
+	?cd2WpnMuzzleSide@@YAHPEBUCD2_WEAPON_DEF@@@Z
+	?cd2WpnShotMuzzle@@YAXPEBUCD2_WEAPON_DEF@@PEBU_CAR_DATA@@HPEAUVECTOR@@@Z
+	?cd2WpnForward@@YAXPEBU_CAR_DATA@@PEAUVECTOR@@@Z
+	?cd2WpnCarVelocity@@YAXPEBU_CAR_DATA@@PEAUVECTOR@@@Z
+	?cd2WpnIncomingThreat@@YAHPEBU_CAR_DATA@@PEAUVECTOR@@1@Z
+	?cd2WpnRand@@YAHH@Z
+	?cd2WpnCarArmed@@YAHPEBU_CAR_DATA@@@Z
+	?cd2WpnSetCarArmed@@YAXPEBU_CAR_DATA@@H@Z
+	?cd2WeaponsRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2DebugRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2FxDef@@YAPEBUCD2_FX_DEF@@H@Z
+	?cd2FxResolve@@YAPEBUCD2_FX_DEF@@H@Z
+	?cd2FxSpawn@@YAXPEBUVECTOR@@H@Z
+	?cd2FxBarrage@@YAXPEBUVECTOR@@PEBU_CAR_DATA@@HHHHHH11@Z
+	?cd2FxStep@@YAXXZ
+	?cd2FxReset@@YAXXZ
+	?cd2FxRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2FreezeApply@@YAXHH@Z
+	?cd2FreezeActive@@YAHH@Z
+	?cd2FreezeRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2CrewNotifyFire@@YAXPEBU_CAR_DATA@@H@Z
+	?cd2CrewArmed@@YAXPEBU_CAR_DATA@@H@Z
+	?cd2CrewSideOut@@YAHPEBU_CAR_DATA@@H@Z
+	?cd2CrewPedCount@@YAHXZ
+	?cd2CrewPedPos@@YAHPEBU_CAR_DATA@@HQEAH@Z
+	?cd2CrewRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2NavReady@@YAHXZ
+	?cd2NavReset@@YAXXZ
+	?cd2NavNodeCount@@YAHXZ
+	?cd2NavEdgeCount@@YAHXZ
+	?cd2NavNodeAt@@YAHPEBUVECTOR@@@Z
+	?cd2NavNearestRoadNode@@YAHPEBUVECTOR@@H@Z
+	?cd2NavNodePos@@YAHHPEAUVECTOR@@@Z
+	?cd2NavRoute@@YAHHPEBUVECTOR@@0PEAUCD2_NAV_ROUTE@@@Z
+	?cd2NavRoamGoal@@YAHPEBUVECTOR@@HHPEAU1@@Z
+	?cd2NavLastRoute@@YAPEBUCD2_NAV_ROUTE@@H@Z
+	?cd2NavDraw@@YAXPEBUVECTOR@@H@Z
+	?cd2GridPath@@YAHPEBUVECTOR@@0PEAU1@HPEAH@Z
+	?cd2GridDraw@@YAXXZ
+	?cd2FlowSetGoal@@YAXPEBUVECTOR@@@Z
+	?cd2FlowUpdate@@YAXH@Z
+	?cd2FlowReady@@YAHXZ
+	?cd2FlowCoverage@@YAHXZ
+	?cd2FlowDir@@YAHPEBUVECTOR@@PEAH@Z
+	?cd2FlowDraw@@YAXXZ
+	?cd2RaycastReset@@YAXXZ
+	?cd2RaycastStep@@YAXXZ
+	?cd2RaycastDraw@@YAXXZ
+	?cd2RaycastSpawn@@YAHPEBUCD2_WEAPON_DEF@@PEBU_CAR_DATA@@PEBUVECTOR@@2@Z
+	?cd2RaycastThreat@@YAHPEBU_CAR_DATA@@PEAUVECTOR@@1@Z
+	?cd2RaycastScatter@@YAXPEBUCD2_WEAPON_DEF@@PEBU_CAR_DATA@@HHH@Z
+	?cd2ProjectileReset@@YAXXZ
+	?cd2ProjectileStep@@YAXXZ
+	?cd2ProjectileDraw@@YAXXZ
+	?cd2ProjectileSpawn@@YAXPEBUCD2_WEAPON_DEF@@PEBU_CAR_DATA@@PEBUVECTOR@@22@Z
+	?cd2ProjectileBurst@@YAXPEBUCD2_WEAPON_DEF@@PEBU_CAR_DATA@@HH@Z
+	?cd2ProjectileModelValid@@YAHXZ
+	?cd2ProjectileThreat@@YAHPEBU_CAR_DATA@@PEAUVECTOR@@1@Z
+	?cd2DropReset@@YAXXZ
+	?cd2DropStep@@YAXXZ
+	?cd2DropDraw@@YAXXZ
+	?cd2DropSpawn@@YAXPEBUCD2_WEAPON_DEF@@PEBU_CAR_DATA@@PEBUVECTOR@@2@Z
+	?cd2AoeBlast@@YAXPEBUVECTOR@@HHHPEBU_CAR_DATA@@1@Z
 	jer_module_crumple_entry
 	?fst_max@@YAHHH@Z
 	?fst_min@@YAHHH@Z
@@ -1078,8 +1258,8 @@ EXPORTS
 	?canFire@WeaponBase@@UEAA_NXZ
 	?consumeAmmo@WeaponBase@@QEAAXXZ
 	?init@WeaponBase@@QEAAXXZ
-	?onAmmoChanged@WeaponBase@@UEAAXXZ
 	?onEquip@WeaponBase@@UEAAXXZ
+	?onAmmoChanged@WeaponBase@@UEAAXXZ
 	?onHolster@WeaponBase@@UEAAXXZ
 	?playSound@WeaponBase@@QEAAXH@Z
 	?poseArm@WeaponBase@@UEAAXPEAXH@Z
@@ -1096,7 +1276,87 @@ EXPORTS
 	?D2plOnPedInput@@YAHPEAX0@Z
 	?D2plOnPedMove@@YAHPEAX0@Z
 	?D2plPedCamera@@YAXPEAXH@Z
+	jer_module_gaildrv2_entry
 	jer_module_levelhacks_entry
+	MpConfigLoad
+	MpConfigSave
+	MpDefaultPlayerName
+	MpIsActive
+	MpIsHost
+	MpLocalPlayer
+	MpGetPlayer
+	MpGetPlayerByCar
+	MpIsPlayerCar
+	MpAddPlayer
+	MpRemovePlayer
+	MpResetPlayers
+	MpBuildManifest
+	MpBuildHash
+	MpModHash
+	MpCarPose
+	MpCameraPose
+	MpGetGameLevel
+	MpSetSubGame
+	MpReturnToFrontend
+	jer_module_mp_entry
+	MpNetStart
+	MpNetShutdown
+	MpNetPoll
+	MpNowMs
+	MpHostBegin
+	MpHostEnd
+	MpClientDisconnect
+	MpClientConnectBegin
+	MpClientConnectPoll
+	MpJoinState
+	MpJoinStateSet
+	MpJoinTarget
+	MpJoinTargetPort
+	MpHostBroadcast
+	MpSendToHost
+	MpSendToPlayer
+	MpSendConn
+	MpConnFindByPlayer
+	MpConnAssignPlayer
+	MpConnClose
+	MpConnPlayerId
+	MpPeerCount
+	MpDiscoveryStart
+	MpDiscoveryStop
+	MpDiscoveryPoll
+	MpDiscoveryCount
+	MpDiscoveryGet
+	MpDiscoveryRevision
+	MpHostByeAll
+	MpHandleMessage
+	MpSendHello
+	MpBeginHost
+	MpBeginJoinAsync
+	MpLeaveSession
+	MpSessionReset
+	MpStartMatch
+	MpOnNetSpawn
+	MpLockstepFrame
+	MpInputForPlayer
+	MpSendChat
+	MpClientLaunch
+	MpUiInit
+	MpUiTick
+	MpNotify
+	MpNotifyf
+	MpChatOpen
+	MpChatSendText
+	MpUiDrawOverlay
+	MpUiOpenModeMenu
+	MpUiOpenCarSelect
+	?strrchr@@YAPEADQEADH@Z
+	jer_net_register_channel
+	jer_net_send
+	jer_net_is_active
+	jer_net_is_host
+	jer_net_peer_count
+	jer_net_local_player
+	MpBridgeDeliver
 	jer_module_sandbox_entry
 	jer_anim_aim_diff
 	jer_menu_begin
@@ -1139,6 +1399,7 @@ EXPORTS
 	__xmm@00000000000000200000000000000000 DATA
 	__xmm@80000000800000008000000080000000 DATA
 	__xmm@ffffffffffffffffffffffffffffffff DATA
+	__xmm@00000000ffffffffffffffffffffffff DATA
 	__xmm@00005000000050000000500000005000 DATA
 	__xmm@00008748002688330000000e00bdfda3 DATA
 	__xmm@0003941b0167887400127fba00180d85 DATA
@@ -1149,6 +1410,10 @@ EXPORTS
 	__real@43e60000 DATA
 	__real@442f0000 DATA
 	__real@3faccccd DATA
+	__xmm@00000003000000020000000100000000 DATA
+	__xmm@00000007000000060000000500000004 DATA
+	__xmm@0000000b0000000a0000000900000008 DATA
+	__xmm@0000000f0000000e0000000d0000000c DATA
 	__xmm@000000000005e0e0ffffff4f00031330 DATA
 	__xmm@000000000005f050ffffff4f00030ad0 DATA
 	__xmm@000000000005f050ffffff4f000312b0 DATA
@@ -1194,10 +1459,12 @@ EXPORTS
 	__xmm@00000000ffffff000000000000000100 DATA
 	__xmm@00000000ffffff0000000000ffffff00 DATA
 	__xmm@000007ff000007ff000007ff000007ff DATA
+	__xmm@fffff800fffff800fffff800fffff800 DATA
 	__real@3f7db22d DATA
 	__real@3f7eb852 DATA
 	__real@3f80a3d7 DATA
 	__real@3f810625 DATA
+	__xmm@00000064000000e600000080ffffe2e0 DATA
 	??_7CSoundSource_WaveCache@@6B@ DATA
 	__real@3c000000 DATA
 	__real@42000000 DATA
@@ -1209,6 +1476,7 @@ EXPORTS
 	__real@44200000 DATA
 	__real@447a0000 DATA
 	__real@c47a0000 DATA
+	__xmm@00000000000000000000000000000002 DATA
 	__xmm@0000011f0000011e0000012100000121 DATA
 	__xmm@ffffffffffffffff00000c0000000c01 DATA
 	??_7CSoundSource_OpenALCache@@6B@ DATA
@@ -1227,11 +1495,20 @@ EXPORTS
 	__real@43480000 DATA
 	__real@40490fd0 DATA
 	__real@43340000 DATA
+	__real@3fd999999999999a DATA
+	__real@4049000000000000 DATA
+	__real@40b0000000000000 DATA
+	__real@3ff999999999999a DATA
+	__real@40cf71ffffffffff DATA
+	__real@40d1f80000000000 DATA
 	__real@42c00000 DATA
 	__real@43b40000 DATA
 	__real@44400000 DATA
 	??_7WeaponBase@@6B@ DATA
 	??_7DemoPistol@@6B@ DATA
+	__real@3ac90fdb DATA
+	__real@44020000 DATA
+	__real@45fa0000 DATA
 	__real@4099999a DATA
 	__real@41f00000 DATA
 	__real@42280000 DATA
@@ -1322,6 +1599,7 @@ EXPORTS
 	?gCameraDistance@@3FA DATA
 	?gCameraDefaultScrZ@@3FA DATA
 	?switch_detail_distance@@3HA DATA
+	?gCarDataSourceLevel@@3HA DATA
 	?gBounceAmp@@3MA DATA
 	?light_matrix@@3UMATRIX@@A DATA
 	?colour_matrix@@3UMATRIX@@A DATA
@@ -1434,13 +1712,13 @@ EXPORTS
 	?wantedWeather@@3HA DATA
 	?MaxPlayerDamage@@3PAHA DATA
 	?gNumRaceTrackLaps@@3HA DATA
-	?lRoutes@@3PAY07W4LIMBS@@A DATA
-	?MainPed@@3PAUPED_DATA@@A DATA
 	?bodyShiftEnabled@@3HA DATA
 	?bodyShiftValue@@3HA DATA
+	?torsoShiftValue@@3HA DATA
+	?lRoutes@@3PAY07W4LIMBS@@A DATA
+	?MainPed@@3PAUPED_DATA@@A DATA
 	?Skel@@3PAUBONE@@A DATA
 	?boneIdvals@@3PAHA DATA
-	?torsoShiftValue@@3HA DATA
 	?smashable@@3PAUSMASHABLE_OBJECT@@A DATA
 	?Lev0@@3PAUCYCLE_OBJECT@@A DATA
 	?Lev1@@3PAUCYCLE_OBJECT@@A DATA
@@ -1540,10 +1818,10 @@ EXPORTS
 	?malloctab@@3PECDEC DATA
 	?mallocptr@@3PECDEC DATA
 	?LevelNames@@3PAPEADA DATA
+	?LevelFiles@@3PAPEADA DATA
 	?LoadingScreenNames@@3PAPEADA DATA
 	?draw_mode_pal@@3UDRAW_MODE@@A DATA
 	?draw_mode_ntsc@@3UDRAW_MODE@@A DATA
-	?LevelFiles@@3PAPEADA DATA
 	?gContentOverride@@3HA DATA
 	?targetArrowVerts@@3PAUSVECTOR@@A DATA
 	?normalTargetArrowTris@@3PADA DATA
@@ -1572,14 +1850,14 @@ EXPORTS
 	?cutGfxNames@@3PAPEADA DATA
 	?CutAmountsTotal@@3PAHA DATA
 	?currPlayer@@3HA DATA
+	?carNumLookup@@3PAY09DA DATA
 	?CutSceneNames@@3PAPEADA DATA
 	?areaNames@@3PAY07PEADA DATA
 	?cutUnlock@@3PADA DATA
 	?CarAvailability@@3PAY09HA DATA
-	?carNumLookup@@3PAY09DA DATA
 	?minmaxSelections@@3PAY01HA DATA
-	?padsConnected@@3PAHA DATA
 	?botch@@3PAUBOTCH@@A DATA
+	?padsConnected@@3PAHA DATA
 	?feVariableSave@@3PAHA DATA
 	?mainScreenLoaded@@3HA DATA
 	?allowVibration@@3HA DATA
@@ -1648,6 +1926,8 @@ EXPORTS
 	?gCameraOffset@@3UVECTOR@@A DATA
 	?paddCamera@@3GA DATA
 	?jcam@@3PEAU_CAR_DATA@@EA DATA
+	?save_colour_matrix@@3UMATRIX@@A DATA
+	?save_light_matrix@@3UMATRIX@@A DATA
 	?car_data@@3PAU_CAR_DATA@@A DATA
 	?active_car_list@@3PAPEAU_CAR_DATA@@A DATA
 	?lightsOnDelay@@3PAEA DATA
@@ -1675,8 +1955,6 @@ EXPORTS
 	?gHubcap@@3UHUBCAP@@A DATA
 	?gTempCarUVPtr@@3PEAUDENTUVS@@EA DATA
 	?carPolyBuffer@@3PAUCAR_POLY@@A DATA
-	?save_colour_matrix@@3UMATRIX@@A DATA
-	?save_light_matrix@@3UMATRIX@@A DATA
 	?cell_object_computed_values@@3PAEA DATA
 	?cell_object_index@@3HA DATA
 	?cell_object_buffer@@3PAUCELL_OBJECT@@A DATA
@@ -1805,9 +2083,9 @@ EXPORTS
 	?debris_mat@@3UMATRIX@@A DATA
 	?leaf_mat@@3UMATRIX@@A DATA
 	?gCarDamageZoneVerts@@3PAY15DC@EA DATA
-	?gHubcapTime@@3HA DATA
 	?gHDCarDamageZonePolys@@3PAY15EG@EA DATA
 	?gHDCarDamageLevels@@3PAY0BAA@EA DATA
+	?gHubcapTime@@3HA DATA
 	?icon_addcam@@3UTEXTURE_DETAILS@@A DATA
 	?gNoReplaySaveAllowed@@3DA DATA
 	?icon_frameadv@@3UTEXTURE_DETAILS@@A DATA
@@ -1904,16 +2182,16 @@ EXPORTS
 	?FelonyDecreaseTimer@@3HA DATA
 	?playerLastRoad@@3FA DATA
 	?gNoFMV@@3HA DATA
+	?xm_coptrackpos@@3PEAHEA DATA
+	?current_music_id@@3HA DATA
 	?horn_time@@3IA DATA
+	?tunnels@@3U__tunnelinfo@@A DATA
 	?gDriver1Music@@3HA DATA
 	?TimeSinceLastSpeech@@3HA DATA
 	?phrase_top@@3DA DATA
 	?force_idle@@3PADA DATA
 	?force_siren@@3PADA DATA
 	?gSpeechQueue@@3USPEECH_QUEUE@@A DATA
-	?xm_coptrackpos@@3PEAHEA DATA
-	?current_music_id@@3HA DATA
-	?tunnels@@3U__tunnelinfo@@A DATA
 	?AvailableCheats@@3UACTIVE_CHEATS@@A DATA
 	?ActiveCheats@@3UACTIVE_CHEATS@@A DATA
 	?gLastChase@@3HA DATA
@@ -1937,10 +2215,10 @@ EXPORTS
 	?gCheatsBackup@@3UACTIVE_CHEATS@@A DATA
 	?gMissionCompletionState@@3HA DATA
 	?MissionEndData@@3UMISSION_DATA@@A DATA
+	?DebrisTimer@@3DA DATA
 	?ghost_mode@@3HA DATA
 	?playerghost@@3HA DATA
 	?playerhitcopsanyway@@3HA DATA
-	?DebrisTimer@@3DA DATA
 	?gCrumpleLastCollisionPoint@@3UVECTOR@@A DATA
 	?bbox@@3PAUBOUND_BOX@@A DATA
 	?delta@@3USVECTOR@@A DATA
@@ -1984,6 +2262,8 @@ EXPORTS
 	?leadcar_pos@@3UVECTOR@@A DATA
 	?gMultiStep@@3HA DATA
 	?gBootOnFoot@@3HA DATA
+	?gBootMpLevel@@3HA DATA
+	?gBootMpArena@@3HA DATA
 	?game_over@@3HA DATA
 	?gDemoLevel@@3HA DATA
 	?gStartPos@@3UXZPAIR@@A DATA
@@ -2001,6 +2281,9 @@ EXPORTS
 	?scr_z@@3HA DATA
 	?DawnCount@@3HA DATA
 	?ObjectDrawnValue@@3HA DATA
+	?gExitAfterFrames@@3HA DATA
+	?gRunFrames@@3HA DATA
+	?gDebugSeed@@3HA DATA
 	?cell_header@@3UOUT_CELL_FILE_HEADER@@A DATA
 	?current_region@@3HA DATA
 	?old_region@@3HA DATA
@@ -2055,8 +2338,8 @@ EXPORTS
 	?numPlayersToCreate@@3HA DATA
 	?MissionHeader@@3PEAU_MISSION@@EA DATA
 	?residentCarModels@@3PAHA DATA
-	?PlayerStartInfo@@3PAPEAUSTREAM_SOURCE@@A DATA
 	?gStartOnFoot@@3HA DATA
+	?PlayerStartInfo@@3PAPEAUSTREAM_SOURCE@@A DATA
 	?gWeather@@3HA DATA
 	?gShowPlayerDamage@@3HA DATA
 	?gDontPingInCops@@3HA DATA
@@ -2078,6 +2361,7 @@ EXPORTS
 	?gCurrentResidentSlot@@3HA DATA
 	?gPuppyDogCop@@3HA DATA
 	?CopsAllowed@@3HA DATA
+	?gMultiplayerLevels@@3HA DATA
 	?gStopCops@@3USTOPCOPS@@A DATA
 	?MissionTargets@@3PEAU_TARGET@@EA DATA
 	?Mission@@3UMR_MISSION@@A DATA
@@ -2085,7 +2369,6 @@ EXPORTS
 	?MissionScript@@3PEAIEA DATA
 	?MissionStrings@@3PEADEA DATA
 	?gMissionTitle@@3PEADEA DATA
-	?gMultiplayerLevels@@3HA DATA
 	?numCopCars@@3HA DATA
 	?gDontResetCarDamage@@3HA DATA
 	?gLapTimes@@3PAY04HA DATA
@@ -2099,6 +2382,9 @@ EXPORTS
 	?litSprites@@3PAHA DATA
 	?Low2LowerDetailTable@@3PEAGEA DATA
 	?permanentModelSlotBitfield@@3PAHA DATA
+	?bAllreadyRotated@@3HA DATA
+	?iCurrBone@@3HA DATA
+	?rectTannerWindow@@3U_RECT16@@A DATA
 	?jeans_texture@@3UTEXTURE_DETAILS@@A DATA
 	?arm1_texture@@3UTEXTURE_DETAILS@@A DATA
 	?forearm1_texture@@3UTEXTURE_DETAILS@@A DATA
@@ -2117,9 +2403,6 @@ EXPORTS
 	?cJerichoVNumbers@@3PAFA DATA
 	?vJerichoList@@3PAUSVECTOR@@A DATA
 	?gCurrentZ@@3HA DATA
-	?bAllreadyRotated@@3HA DATA
-	?iCurrBone@@3HA DATA
-	?rectTannerWindow@@3U_RECT16@@A DATA
 	?ft4TannerShadow@@3PAUPOLY_FT4@@A DATA
 	?tileTannerClear@@3PAUTILE@@A DATA
 	?num_anim_objects@@3HA DATA
@@ -2177,56 +2460,56 @@ EXPORTS
 	?playerwithcontrol@@3PAHA DATA
 	?gDisplayedMessage@@3UMENU_MESSAGE@@A DATA
 	?EnterScoreText@@3PADA DATA
+	?seated_count@@3HA DATA
+	?maxSeated@@3HA DATA
+	?pinginPedAngle@@3HA DATA
+	?max_pedestrians@@3HA DATA
+	?pedestrians@@3PAUPEDESTRIAN@@A DATA
+	?pFreePeds@@3PEAUPEDESTRIAN@@EA DATA
+	?pHold@@3PEAUPEDESTRIAN@@EA DATA
+	?num_pedestrians@@3HA DATA
+	?ping_in_pedestrians@@3DA DATA
+	?bKilled@@3HA DATA
+	?tannerPad@@3IA DATA
+	?pedestrian_roads@@3UPEDESTRIAN_ROADS@@A DATA
+	?bPower@@3HA DATA
+	?camAngle@@3USVECTOR@@A DATA
+	?oldWeather@@3HA DATA
+	?powerCounter@@3HA DATA
+	?bAvoidTanner@@3HA DATA
+	?iAllowWatch@@3HA DATA
+	?pCivCarToGetIn@@3PEAU_CAR_DATA@@EA DATA
+	?iFreezeTimer@@3HA DATA
+	?bFreezeAnimation@@3HA DATA
+	?allreadydone@@3HA DATA
+	?lastCarCameraView@@3HA DATA
+	?carToGetIn@@3PEAU_CAR_DATA@@EA DATA
+	?num_extra_boxes_set@@3HA DATA
 	?collision_box@@3PAUCAR_COLLISION_BOX@@A DATA
 	?collision_car_ptr@@3PAPEAU_CAR_DATA@@A DATA
 	?extra_collision_boxes@@3PAUCAR_COLLISION_BOX@@A DATA
 	?tanner_collision_box@@3UCAR_COLLISION_BOX@@A DATA
-	?num_extra_boxes_set@@3HA DATA
 	?collision_boxes_set@@3HA DATA
 	?basic_car_interest@@3HA DATA
-	?bKillTanner@@3HA DATA
 	?tannerLookAngle@@3USVECTOR@@A DATA
-	?seated_pedestrian@@3PEAUSEATED_PEDESTRIANS@@EA DATA
 	?pmTannerModels@@3PAPEAUMODEL@@A DATA
 	?pmJerichoModels@@3PAPEAUMODEL@@A DATA
+	?seated_pedestrian@@3PEAUSEATED_PEDESTRIANS@@EA DATA
+	?bKillTanner@@3HA DATA
 	?bReverseYRotation@@3HA DATA
-	?seated_count@@3HA DATA
 	?pUsedPeds@@3PEAUPEDESTRIAN@@EA DATA
-	?maxSeated@@3HA DATA
-	?pinginPedAngle@@3HA DATA
-	?pedestrians@@3PAUPEDESTRIAN@@A DATA
-	?pFreePeds@@3PEAUPEDESTRIAN@@EA DATA
-	?pHold@@3PEAUPEDESTRIAN@@EA DATA
-	?max_pedestrians@@3HA DATA
-	?num_pedestrians@@3HA DATA
-	?ping_in_pedestrians@@3DA DATA
-	?bKilled@@3HA DATA
-	?pedestrian_roads@@3UPEDESTRIAN_ROADS@@A DATA
-	?tannerPad@@3IA DATA
-	?camAngle@@3USVECTOR@@A DATA
-	?bPower@@3HA DATA
-	?oldWeather@@3HA DATA
-	?powerCounter@@3HA DATA
-	?bAvoidTanner@@3HA DATA
-	?pCivCarToGetIn@@3PEAU_CAR_DATA@@EA DATA
-	?iAllowWatch@@3HA DATA
-	?iFreezeTimer@@3HA DATA
-	?bFreezeAnimation@@3HA DATA
-	?allreadydone@@3HA DATA
-	?carToGetIn@@3PEAU_CAR_DATA@@EA DATA
-	?lastCarCameraView@@3HA DATA
 	?player@@3PAU_PLAYER@@A DATA
 	?gHiresFontTexture@@3IA DATA
 	?gHiresDigitsTexture@@3IA DATA
 	?gHiresFontRanges@@3PAUOUT_FN2RANGE@@A DATA
 	?gHiresFontRangeCount@@3HA DATA
-	?gFontColour@@3UCVECTOR@@A DATA
-	?gHiresFontCharData@@3PAY0OA@UOUT_FN2INFO@@A DATA
 	?fontclutid@@3FA DATA
+	?gHiresFontCharData@@3PAY0OA@UOUT_FN2INFO@@A DATA
 	?button_textures@@3PAUTEXTURE_DETAILS@@A DATA
 	?AsciiTable@@3PADA DATA
 	?fontinfo@@3PAUOUT_FONTINFO@@A DATA
 	?fonttpage@@3FA DATA
+	?gFontColour@@3UCVECTOR@@A DATA
 	?gOutOfTape@@3HA DATA
 	?PingBufferPos@@3HA DATA
 	?ReplayParameterPtr@@3PEAUREPLAY_PARAMETER_BLOCK@@EA DATA
@@ -2510,6 +2793,21 @@ EXPORTS
 	?g_Subtitles@@3PAUSUBTITLE@@A DATA
 	?g_CreditsLines@@3PAPEADA DATA
 	?fmvTextPolys@@3PAUPOLY_FT4@@A DATA
+	?gCdCfg@@3UCOLLISIONDEVIL_CONFIG@@A DATA
+	?gCd2Cfg@@3UCD2_CONFIG@@A DATA
+	?gCd2Car@@3PAUCD2_CAR@@A DATA
+	?gCd2SceneryHits@@3PAHA DATA
+	?gCd2TrafficLastHit@@3PAHA DATA
+	?cd2WdefFreeze@@3UCD2_WEAPON_DEF@@B DATA
+	?cd2WdefMG@@3UCD2_WEAPON_DEF@@B DATA
+	?cd2WdefMissile@@3UCD2_WEAPON_DEF@@B DATA
+	?cd2WdefMine@@3UCD2_WEAPON_DEF@@B DATA
+	?cd2WdefHoming@@3UCD2_WEAPON_DEF@@B DATA
+	?cd2WdefCluster@@3UCD2_WEAPON_DEF@@B DATA
+	?cd2WdefZoomy@@3UCD2_WEAPON_DEF@@B DATA
+	?cd2WdefShotgun@@3UCD2_WEAPON_DEF@@B DATA
+	?cd2WdefSpecialJericho@@3UCD2_WEAPON_DEF@@B DATA
+	?cd2WdefSmg@@3UCD2_WEAPON_DEF@@B DATA
 	?gCrumpleBuddha@@3HA DATA
 	?gCrumpleDpadDeform@@3HA DATA
 	?gCrumpleRepairCar@@3HA DATA
@@ -2556,3 +2854,5 @@ EXPORTS
 	?gPedWasMoving@@3HA DATA
 	?gPedRunSpeed@@3HA DATA
 	?gPedStickMove@@3HA DATA
+	gMp DATA
+	gMpCtx DATA

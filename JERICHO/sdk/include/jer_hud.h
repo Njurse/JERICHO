@@ -15,6 +15,18 @@
  * Lines are centred and stacked from the top of the screen, oldest first. The
  * queue is deliberately small: a burst of messages recycles the slot with the
  * least time left rather than growing without bound.
+ *
+ * COLOUR. A message is a line made of one or more colour RUNS. jer_hud_message
+ * is the single-run case and draws in whatever text colour is ambient at draw
+ * time, exactly as it always has. jer_hud_message_segs lets a line name
+ * something in its own colour - "You killed VASQUEZ" with only the name tinted
+ * - by concatenating its runs into one centred line and stamping each run in
+ * its own colour; a run marked `ambient` keeps the surrounding wording in the
+ * ambient colour so a partly-coloured line still matches the plain ones.
+ *
+ * Colouring is ambient global state in the engine (SetTextColour/gFontColour),
+ * so the drawer saves and restores it: a coloured message must not tint
+ * whatever draws next.
  */
 
 #ifdef __cplusplus
@@ -25,10 +37,32 @@ extern "C" {
 #define JER_HUD_MAX		4	/* messages that can be on screen at once */
 #define JER_HUD_DEFAULT_FRAMES	90	/* ~3 seconds at the 30 fps sim step */
 
+#define JER_HUD_SEG_MAX		6	/* colour runs in one message */
+#define JER_HUD_SEG_TEXT_MAX	64	/* longest run, terminator included */
+
+/* One colour run of a message. `text` may be NULL (treated as empty and
+ * skipped). With `ambient` 0 the run is drawn in r/g/b (0..255 each); with
+ * `ambient` 1 it is drawn in the ambient text colour at draw time and r/g/b are
+ * ignored - use that for the connective words in a partly-coloured line. */
+typedef struct JER_HUD_SEG
+{
+	const char* text;
+	unsigned char r, g, b;
+	int ambient;
+} JER_HUD_SEG;
+
 /* Show `text` on the HUD for `frames` (<= 0 means JER_HUD_DEFAULT_FRAMES).
  * Returns the slot used, or -1 if the text was empty. Longer text is
  * truncated to JER_HUD_TEXT_MAX-1 characters rather than rejected. */
 int jer_hud_message(const char* text, int frames);
+
+/* Show a multi-colour message: the runs are concatenated into one centred line
+ * and each is drawn in its own colour, so a name can carry its team's colour
+ * inside a sentence. At most JER_HUD_SEG_MAX runs are used and each is
+ * truncated to JER_HUD_SEG_TEXT_MAX-1 characters; empty runs are skipped.
+ * Returns the slot used, or -1 when there is nothing to draw (count <= 0, or
+ * every run empty). */
+int jer_hud_message_segs(const JER_HUD_SEG* segs, int count, int frames);
 
 /* Show `text` as the only message: clears anything already pending first, for
  * a single-line banner that a repeating event would otherwise stack up. */
