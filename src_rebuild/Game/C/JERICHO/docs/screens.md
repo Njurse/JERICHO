@@ -91,10 +91,14 @@ fed one frame of input — already-decoded booleans, so the engine keeps its own
 pad makes — and runs the `on_yes` callback when the player confirms.
 Left/right move the highlight, Cross confirms it, Circle dismisses.
 
-The frontend feeds it from its own frame loop, **after** the current screen has
-had its turn, so a Cross that answers the prompt cannot also press the button
-underneath it; and while a prompt is up the frontend must not act on the pad
-(see the guard in `JerichoModsScreen`). "Compile Mods" is the first user.
+The frontend feeds it from its own frame loop, straight after the pads are
+read and **before** the current screen gets a turn, and consumes the press
+(`feNewPad = 0`) — so a Cross that answers the prompt cannot also press the
+button underneath it. The mods screen additionally reports the press as
+*handled* while a prompt is up, which is what makes the frontend skip its own
+button/navigation handling; and once the prompt closes the screen re-reads the
+module list, since its Yes may have rebuilt and reloaded the runtime addons.
+"Compile Mods" is the first user.
 
 ## Rules and gotchas
 
