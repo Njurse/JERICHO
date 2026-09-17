@@ -114,7 +114,9 @@ static const CD2_WEAPON_DEF* const gWdefs[CD2_WID_COUNT] =
 	&cd2WdefCluster,
 	&cd2WdefZoomy,
 	&cd2WdefFreeze,
-	&cd2WdefShotgun
+	&cd2WdefShotgun,
+	&cd2WdefSpecialJericho,
+	&cd2WdefSmg
 };
 
 const CD2_WEAPON_DEF* cd2WpnDef(int weaponId)
@@ -613,6 +615,16 @@ int cd2WpnMuzzleSide(const CD2_WEAPON_DEF* def)
 void cd2WpnShotMuzzle(const CD2_WEAPON_DEF* def, const CAR_DATA* cp, int side, VECTOR* out)
 {
 	int ws = cd2WpnMuzzleSide(def);
+
+	// A weapon that leans BOTH crew out (leanOut 3) has no single window, so it
+	// fires from whichever window the caller asked for - that is how the
+	// scatter's alternating `side` puts pellets out of the driver's window AND
+	// the gunner's. Anything else keeps its one window (or the body muzzle).
+	if (def != NULL && (def->leanOut & CD2_CREW_DRIVER) && (def->leanOut & CD2_CREW_GUNNER))
+	{
+		cd2WpnWindowMuzzle(cp, (side < 0) ? -1 : 1, out);
+		return;
+	}
 
 	if (ws != 0)
 		cd2WpnWindowMuzzle(cp, ws, out);

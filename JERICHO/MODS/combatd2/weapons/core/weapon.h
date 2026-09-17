@@ -50,6 +50,9 @@ enum
 	CD2_WID_ZOOMY,		// primary (projectile): a burst of weakly-homing shots
 	CD2_WID_FREEZE,		// primary (projectile): freezes the car it hits
 	CD2_WID_SHOTGUN,	// primary (shotgun): pellet spread from both fenders
+	CD2_WID_SPECIAL_JERICHO,	// shotgun x2 pellets and x2 damage, BOTH
+					// windows at once (demo weapon)
+	CD2_WID_SMG,		// primary (projectile): a fast 6-shot burst sidearm
 	CD2_WID_COUNT,
 	CD2_WID_NONE = -1
 };

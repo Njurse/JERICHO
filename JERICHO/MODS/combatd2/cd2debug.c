@@ -108,6 +108,9 @@ static int cd2DbgWeaponId(const char** s)
 		{ "mine", CD2_WID_MINE }, { "homing", CD2_WID_HOMING },
 		{ "cluster", CD2_WID_CLUSTER }, { "zoomy", CD2_WID_ZOOMY },
 		{ "freeze", CD2_WID_FREEZE }, { "shotgun", CD2_WID_SHOTGUN },
+		{ "special_jericho", CD2_WID_SPECIAL_JERICHO },
+		{ "special", CD2_WID_SPECIAL_JERICHO },
+		{ "smg", CD2_WID_SMG },
 	};
 	const char* p = *s;
 	unsigned int w;
