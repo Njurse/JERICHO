@@ -145,6 +145,35 @@ per-bone rotations where they actually take effect.
 - Movement direction / tank overrides: `JER_EVENT_PED_INPUT` (rewrite the
   pad bits + `lp->dir`).
 - Head: `head_rot` (or `JER_EVENT_CAMERA_LOOK` suppress).
+
+### The all-bone API (`jer_anim.h`)
+
+Do **not** mirror `struct BONE` to reach a bone — the layout is private to
+`motion_c.c` and has moved before. `jer_anim` covers all 23 limbs:
+
+| call | use it for | call it from |
+|---|---|---|
+| `jer_anim_bone_pos(skel, limb)` | the writable accumulated joint offset | `PED_SKELETON` phase 0 |
+| `jer_anim_bone_rest(skel, limb)` | the bone's rest delta, to pose *against* | anywhere |
+| `jer_anim_bone_rotation(skel, limb)` | the writable per-frame rotation | `PED_POSE` only |
+| `jer_anim_save_rotations` / `_restore_rotations` | hand the shared motion buffer back whole | around a rotation pose |
+| `jer_anim_bone_parent(skel, limb)` | walk the chain (pose a whole limb) | anywhere |
+| `jer_anim_bone_model(skel, limb)` | the mesh drawn at a joint (hang a weapon off it) | `PED_SKELETON` phase 1 |
+| `jer_anim_rotate_offset(&x, &z, heading)` | turn a body-relative offset into the frame the position channel works in | before a `bone_pos` write |
+| `jer_anim_aim_diff(body, aim)` | the signed wrap-safe angle to write for aim | `PED_POSE` |
+
+Two traps this API exists to close:
+
+1. **The position channel is world-oriented** by the time phase 0 fires
+   (the chain has already been rotated), so a body-relative offset must go
+   through `jer_anim_rotate_offset` first — skip it and the pose silently goes
+   the wrong way (or inward, which is how the crew's leg pose ended up inside
+   the car door).
+2. **A rotation write lands in the shared motion buffer**, so it leaks into
+   every ped drawing that motion frame — and the walk cycle keeps advancing
+   frames. `jer_anim_save_rotations`/`_restore_rotations` are the supported way
+   to undo it (d2pl used to track individual motion slots by hand).
+
 ### Who the pose hooks fire for
 
 `PED_POSE` and `PED_SKELETON` (both phases) fire for the player's ped **and for
