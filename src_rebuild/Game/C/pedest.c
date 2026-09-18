@@ -29,6 +29,7 @@
 #include "draw.h"
 
 #include "ASM/rndrasm.h"
+#include <stdlib.h>		/* getenv - only used by the palette probe below */
 
 struct CAR_COLLISION_BOX
 {
@@ -126,6 +127,106 @@ extern SEATEDPTR FindSeated(); // 0x00072644
 extern SEATEDPTR FindTannerASeat(LPPEDESTRIAN pPed); // 0x000717AC
 extern void add_seated(SEATEDPTR seatedptr, int seat_index); // 0x000718C8
 
+// JERICHO-HOOK: measure the palette footprint of the Tanner skeleton.
+//
+// A CLUT row is only valid for the texture page it lives in, so how many
+// texture PAGES the body geometry spans decides whether one CLUT per instance
+// is enough for a per-instance palette swap, or whether the override has to be
+// chosen per bone. This reads the models the same way the plotter does (same
+// `id & 31` type nibble, same PolySizes stride), and it must run BEFORE
+// anything draws them: ConvertPolygonTypes rewrites the poly ids in place, so
+// the walk is only faithful on a fresh model.
+//
+// Gated behind JER_PALETTE_PROBE so ordinary runs pay nothing.
+static void JerichoProbeTannerPalette(void)
+{
+	static const char* names[17] = {
+		"TORSO", "HEAD", "U_ARM_RIGHT", "L_ARM_RIGHT", "HAND_RIGHT",
+		"THIGH_RIGHT", "CALF_RIGHT", "FOOT_LEFT", "U_ARM_LEFT", "L_ARM_LEFT",
+		"HAND_LEFT", "THIGH_LEFT", "CALF_LEFT", "FOOT_RIGHT", "NECK", "HIPS", "BAG"
+	};
+	static u_short pairs[64][2];
+	int npairs = 0, i, j, k;
+
+	if (getenv("JER_PALETTE_PROBE") == NULL)
+		return;
+
+	for (i = 0; i < 17; i++)
+	{
+		MODEL* m = pmTannerModels[i];
+		PL_POLYFT4* polys;
+		int n, textured = 0;
+
+		if (m == NULL)
+		{
+			jer_log("palette probe: %-11s (not in this level)\n", names[i]);
+			continue;
+		}
+
+		polys = GET_MODEL_DATA(PL_POLYFT4, m, poly_block);
+		n = m->num_polys;
+
+		while (n-- > 0)
+		{
+			u_char ptype = polys->id & 31;
+
+			if (ptype == 11 || ptype == 21 || ptype == 23)
+			{
+				for (j = 0; j < npairs; j++)
+				{
+					if (pairs[j][0] == polys->texture_set && pairs[j][1] == polys->texture_id)
+						break;
+				}
+
+				if (j == npairs && npairs < 64)
+				{
+					pairs[npairs][0] = polys->texture_set;
+					pairs[npairs][1] = polys->texture_id;
+					npairs++;
+				}
+
+				textured++;
+			}
+
+			polys = (PL_POLYFT4*)((char*)polys + PolySizes[ptype]);
+		}
+
+		jer_log("palette probe: %-11s polys=%d textured=%d\n", names[i], (int)m->num_polys, textured);
+	}
+
+	jer_log("palette probe: %d distinct (set,id) over the whole skeleton\n", npairs);
+
+	for (k = 0; k < npairs; k++)
+		jer_log("palette probe:    set=%d id=%d\n", pairs[k][0], pairs[k][1]);
+
+	/* distinct pages == how many CLUT rows a body actually needs */
+	{
+		static u_char pages[128];
+		int npages = 0;
+
+		for (k = 0; k < npairs; k++)
+		{
+			for (j = 0; j < npages; j++)
+				if (pages[j] == pairs[k][0]) break;
+
+			if (j == npages)
+				pages[npages++] = (u_char)pairs[k][0];
+		}
+
+		jer_log("palette probe: %d distinct texture page(s)\n", npages);
+	}
+
+	/* the next free CLUT row: clutpos is the engine's own cursor into the
+	 * 960..1023 strip (texture.c:102, advanced per row by IncrementClutNum).
+	 * Rows are 4 per scanline; the strip runs y = 256..511. */
+	{
+		extern RECT16 clutpos;
+		int used = (clutpos.y - 256) * 4 + (clutpos.x - 960) / 16;
+		jer_log("palette probe: next free CLUT row at (%d,%d); %d of %d rows used\n",
+			clutpos.x, clutpos.y, used, (512 - 256) * 4);
+	}
+}
+
 // [D] [T]
 void InitTanner(void)
 {
@@ -153,6 +254,8 @@ void InitTanner(void)
 	pmJerichoModels[3] = FindModelPtrWithName("JERI_L_ARM_LEFT");
 	pmJerichoModels[4] = FindModelPtrWithName("JERI_U_ARM_RIGHT");
 	pmJerichoModels[5] = FindModelPtrWithName("JERI_L_ARM_RIGHT");
+
+	JerichoProbeTannerPalette();
 
 	SetSkelModelPointers(TANNER_MODEL);
 	StoreVertexLists();
