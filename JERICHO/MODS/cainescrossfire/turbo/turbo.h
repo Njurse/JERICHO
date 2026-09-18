@@ -81,4 +81,31 @@
 #define CD2_TURBO_REFILL_ON_RESPAWN	1	// the car is respawned (wreck/recycle)
 #define CD2_TURBO_REFILL_ON_LEVEL	1	// a level/match starts
 
+// ---------------------------------------------------------------------------
+// the API (turbo/turbo.c)
+// ---------------------------------------------------------------------------
+// Timing and the meter live in turbo.c; callers just ask:
+int cd2TurboActive(int carId);		// boosting right now
+int cd2TurboReverse(int carId);		// ...and it is a reverse boost
+int cd2TurboMeter(int carId);		// frames of boost left
+int cd2TurboMeterFull(void);		// meter size, for a bar
+
+// What to scale by (100 = no boost at all):
+int cd2TurboSpeedPct(int carId);
+int cd2TurboAccelPct(int carId);
+
+// The over-rev: the caller passes its rev ceiling, this returns the one to use.
+int cd2TurboRevCeiling(int carId, int ceiling);
+
+// Feed the pad once per frame per car (the pad hook does). Edge-detected there.
+void cd2TurboPad(int carId, int pad);
+
+// The meter, on its refill events only - it never trickles back up.
+void cd2TurboRefill(int carId);
+void cd2TurboResetAll(void);
+
+// For the debug driver: force it on/off, and log the state.
+void cd2TurboForce(int carId, int on);
+void cd2TurboDump(int carId);
+
 #endif /* TURBO_H */

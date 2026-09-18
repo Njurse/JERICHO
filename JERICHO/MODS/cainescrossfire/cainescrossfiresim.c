@@ -31,6 +31,7 @@
 #include "dr2math.h"
 #include "jericho.h"
 #include "jer_events.h"
+#include "turbo/turbo.h"		/* cd2TurboPad - the double-tap trigger */
 #include "jer_math.h"
 #include "sound.h"
 #include "gamesnd.h"
@@ -70,6 +71,10 @@ int cd2OnCarPad(void* ud, void* args)
 
 	if (!gCd2Cfg.enabled || !a->live)
 		return JER_RESULT_CONTINUE;
+
+	/* the turbo trigger sees the pad before anything in here rewrites it: the
+	 * double tap is a driver gesture, not a control remap */
+	cd2TurboPad(cp->id, a->pad);
 
 	// The shoulders + triggers are the weapon controls now (L1/R1 = prev/next
 	// weapon, L2/R2 = fire). Strip them from the car's action bits so the

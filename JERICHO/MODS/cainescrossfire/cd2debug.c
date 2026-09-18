@@ -59,6 +59,7 @@
 
 #include "cainescrossfire.h"
 #include "teams/teams.h"		/* cd2TeamSet - change a team mid-round */
+#include "turbo/turbo.h"		/* cd2TurboForce - check the boost headlessly */
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
 #include "weapons/core/crew.h"
@@ -68,7 +69,7 @@
 #define CD2_DBG_DAMAGE		3000	// per frame, well above one hit's clamp
 #define CD2_DBG_KILL_TIMEOUT	300	// give up on a kill after this many frames (10s)
 
-enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT, CD2_DBG_TEAM };
+enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT, CD2_DBG_TEAM, CD2_DBG_TURBO };
 enum { CD2_DBG_ATT_ENEMY = 0, CD2_DBG_ATT_SELF, CD2_DBG_ATT_NONE, CD2_DBG_ATT_PLAYER, CD2_DBG_ATT_NPC };
 
 typedef struct CD2_DBG_STEP
@@ -145,6 +146,23 @@ static int cd2DbgReadAction(const char** s, int* arg)
 	const char* p = *s;
 
 	*arg = CD2_DBG_ATT_ENEMY;
+
+	if (cd2DbgMatch(&p, "turbo"))
+	{
+		/* turbo:<0|1> -- force the player's turbo on or off. The double tap is the
+		 * real trigger; this is for checking the meter and the boost headlessly. */
+		int on = 0;
+
+		if (*p != ':')
+			return CD2_DBG_NONE;
+
+		p++;
+		on = (*p == '1') ? 1 : 0;
+
+		*arg = on;
+		*s = p;
+		return CD2_DBG_TURBO;
+	}
 
 	if (cd2DbgMatch(&p, "team"))
 	{
@@ -567,6 +585,11 @@ static void cd2DbgRunStep(const CD2_DBG_STEP* st)
 			cd2WpnName(st->arg), cd2WpnName(cd2WpnSelected()));
 		break;
 	}
+
+	case CD2_DBG_TURBO:
+		/* the player's car */
+		cd2TurboForce((player[0].playerCarId >= 0) ? player[0].playerCarId : 0, st->arg);
+		break;
 
 	case CD2_DBG_TEAM:
 		/* change a team's colour mid-round; the second argument is the new
