@@ -54,6 +54,13 @@
 //   cd2KnockAdd(carId, howHard >> CD2_KNOCK_HARD_SHIFT, ...)
 #define CD2_KNOCK_HARD_SHIFT		16	// collision howHard -> impulse
 
+// Below this an impulse is not worth having: cars rub against each other and
+// against walls constantly, and a knock for every graze is a permanent buzz
+// rather than a reaction. And however often they touch, one car may only be
+// knocked every this many frames.
+#define CD2_KNOCK_MIN_IMPULSE		3
+#define CD2_KNOCK_COOLDOWN		6	// 0.2s at 30Hz
+
 typedef struct CD2_KNOCK_STATE
 {
 	int pitch, roll, yaw;		// current visual offsets

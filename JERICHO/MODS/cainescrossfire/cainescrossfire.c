@@ -48,6 +48,7 @@
 #include "ai/ai.h"			/* opponent AI (ai/opponent.c) */
 #include "factions/factions.h"	/* the five teams (factions/factions.c) */
 #include "turbo/turbo.h"		/* the boost: speed/accel scaling at the stats */
+#include "knock/knock.h"		/* CD2_KNOCK_* - collisions make the car buck */
 #include "carhacks/carhacks.h"		/* vehicle-availability hacks (own module later) */
 #include <string.h>
 // Registration helpers from the other source files of this (merged) module:
@@ -499,6 +500,71 @@ int cd2OnFramePursuit(void* ud, void* args)
 #endif
 
 /* ---------------------------------------------------------------------------
+ * Collisions: getting hit makes the car buck and rock.
+ *
+ * This is the knock's other source, and the reason it exists as a convention -
+ * a hit should shove the car visually without the handling model having to agree
+ * about it. Both cars take it, so a car-to-car shunt rocks them both.
+ *
+ * howHard is a large number (it is what DamageCar wants), so it is shifted down
+ * into an angular impulse; a heavier hit also lifts, so whatever it just hit is
+ * less likely to be inside the body while it rocks.
+ * --------------------------------------------------------------------------- */
+static int gCd2LastKnock[MAX_CARS];	/* the frame of each car's last buck */
+
+static int cd2OnCollision(void* ud, void* args)
+{
+	JER_ARGS_COLLISION* a = (JER_ARGS_COLLISION*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car0;
+	CAR_DATA* other = (CAR_DATA*)a->car1;
+	int impulse, lift;
+
+	(void)ud;
+
+	if (!gCd2Cfg.enabled || a->howHard <= 0)
+		return JER_RESULT_CONTINUE;
+
+	impulse = a->howHard >> CD2_KNOCK_HARD_SHIFT;
+
+	/* a graze is not a knock: cars rub constantly, and reacting to every touch
+	 * would leave them permanently buzzing instead of bucking */
+	if (impulse < CD2_KNOCK_MIN_IMPULSE)
+		return JER_RESULT_CONTINUE;
+
+	if (impulse > CD2_KNOCK_MAX_PITCH)
+		impulse = CD2_KNOCK_MAX_PITCH;
+
+	lift = (impulse > (CD2_KNOCK_MAX_PITCH / 2)) ? 1 : 0;
+
+	/* and one knock per car per cooldown, however the hits arrive */
+	if (cp != NULL)
+	{
+		if (FrameCnt - gCd2LastKnock[cp->id] < CD2_KNOCK_COOLDOWN)
+			cp = NULL;
+		else
+			gCd2LastKnock[cp->id] = FrameCnt;
+	}
+
+	if (other != NULL)
+	{
+		if (FrameCnt - gCd2LastKnock[other->id] < CD2_KNOCK_COOLDOWN)
+			other = NULL;
+		else
+			gCd2LastKnock[other->id] = FrameCnt;
+	}
+
+	/* negative pitch: driven into something, the nose drops and the back lifts -
+	 * the direction is a taste call, and this is the one that reads as "bucked" */
+	if (cp != NULL)
+		cd2KnockAdd(cp->id, -impulse, 0, 0, lift);
+
+	if (other != NULL)
+		cd2KnockAdd(other->id, -impulse / 2, 0, 0, lift);
+
+	return JER_RESULT_CONTINUE;
+}
+
+/* ---------------------------------------------------------------------------
  * -onfoot: hand the player over to his own two feet at level start.
  *
  * The level spawns him in a car; -onfoot (an engine flag, main.c) asks for him to
@@ -588,6 +654,7 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFramePursuit, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFootFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, cd2TurboOnDrawOverlay, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_COLLISION, cd2OnCollision, NULL, 0);
 #endif
 
 	cd2MenuRegister(ctx);	/* cainescrossfiremenu.c */
