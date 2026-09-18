@@ -88,13 +88,16 @@ int cd2TurboAccelPct(int carId)
 	return cd2TurboActive(carId) ? CD2_TURBO_ACCEL_PCT : 100;
 }
 
-// The gearbox may rev this much further while boosting (the over-rev).
+// The rev ceiling to use while boosting: CD2_TURBO_REV_FREE_PCT of the way from
+// the normal ceiling to a free-revving engine. Beyond the normal maximum, which is
+// the point - the note has to carry past it to be heard doing it - but not all the
+// way, so it does not scream.
 int cd2TurboRevCeiling(int carId, int ceiling)
 {
-	if (!cd2TurboActive(carId))
+	if (!cd2TurboActive(carId) || ceiling >= CD2_REV_FULL_REVS)
 		return ceiling;
 
-	return (int)(((long long)ceiling * (100 + CD2_TURBO_OVERREV_PCT)) / 100);
+	return ceiling + (int)(((long long)(CD2_REV_FULL_REVS - ceiling) * CD2_TURBO_REV_FREE_PCT) / 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -302,13 +305,14 @@ void cd2TurboDump(int carId)
 		CAR_DATA* cp = &car_data[carId];
 		CD2_STATS s = cd2GetStats(cp);
 
-		jer_log("[cainescrossfire] turbo car=%d %s%s meter=%d/%d (%.1fs left) topSpeed=%d accel=%d bar=%d/%d %s\n",
+		jer_log("[cainescrossfire] turbo car=%d %s%s meter=%d/%d (%.1fs left) topSpeed=%d accel=%d revs=%d (normal %d) bar=%d/%d %s\n",
 			carId,
 			gTurbo[carId].active ? "ACTIVE" : "idle",
 			(gTurbo[carId].active && gTurbo[carId].reverse) ? " reverse" : "",
 			gTurbo[carId].meter, CD2_TURBO_METER_FRAMES,
 			(float)gTurbo[carId].meter / 30.0f,
 			s.topSpeed, s.accel,
+			cd2TurboRevCeiling(carId, (int)(CD2_REV_CEILING)), (int)(CD2_REV_CEILING),
 			FelonyBar.position, FelonyBar.max,
 			(FelonyBar.pColourBand == sBarRed) ? "red" : "white");
 	}

@@ -28,7 +28,16 @@
 // gearbox's own ceiling. This is the over-rev: it does not make the car faster by
 // itself (the speed cap does that) -- it lets the car sound and behave like it is
 // being pushed past its limit.
-#define CD2_TURBO_OVERREV_PCT	25	// +25% on the rev ceiling while boosting
+// How far toward FREE-REVVING the turbo may carry the engine, as a percentage.
+//
+// Not a percentage of the normal ceiling - a percentage of the way to where the
+// note goes when the wheels are off the ground and nothing is clamping it, which
+// is a good deal higher than the normal maximum. 75 was asked for: high enough to
+// be heard being pushed past its limit, not so far that it screams.
+//
+// CD2_REV_FULL_REVS is that unclamped level, and it is not a new number: the
+// module's hard clamp is already expressed as a fraction of it (cainescrossfire.h).
+#define CD2_TURBO_REV_FREE_PCT	75
 
 // How much higher the engine note rides while boosting, in SPU pitch units
 // (4096 = the nominal pitch). The over-rev above lets it wind higher; this makes

@@ -256,6 +256,9 @@ enum
 #define CD2_GEAR_SHIFT_REVS   23000 * 0.7 // revs at the top of gears 0..2 (pitch peak;
                                     // matches stock redline scale)
 #define CD2_REV_CEILING       23000 * 0.8 // top-gear revs AT top speed; hard rev clamp
+#define CD2_REV_FULL_REVS     23000       // the same revs WITHOUT the clamp - where the
+                                          // note goes when the wheels are off the ground.
+                                          // The turbo carries a fraction of the way here.
 #define CD2_GEAR_DOWN_FRAC    3686  // fp: downshift point = prev gear top x this
                                     // (3686/4096 ≈ 0.9; hysteresis vs the upshift)
 // Engine pitch is hd.revs, slewed every frame toward a target set by the

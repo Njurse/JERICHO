@@ -97,7 +97,7 @@ static int cd2mOnCarGearbox(void* ud, void* args)
 		/* TURBO: the over-rev. The speed cap is raised in cd2GetStats; this is the
 		 * other half - while boosting the engine may wind past its own ceiling, so
 		 * the car sounds and behaves like it is being pushed past its limit. */
-		g->revCeiling = cd2TurboRevCeiling(cp->id, g->revCeiling);
+		g->revCeiling = cd2TurboRevCeiling(cp->id, g->revCeiling);	/* turbo: carries toward free-revving */
 	}
 
 	return JER_RESULT_CONTINUE;
