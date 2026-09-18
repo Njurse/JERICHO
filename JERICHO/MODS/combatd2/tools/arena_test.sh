@@ -32,7 +32,7 @@ BIN_DIR="${BIN_DIR:-/c/Users/Jaret/Documents/Projects/REDRIVER2/src_rebuild/bin/
 EXE="REDRIVER2_dev.exe"
 
 FRAMES="${1:-1350}"          # 30 fps sim => 1350 frames = 45s
-shift 2>/dev/null || true
+shift 1 2>/dev/null || true  # drop $1 (the frame count) — 2 here silently ate the first extra arg
 
 # --- the seed decides the WHOLE scenario ------------------------------------
 # Seeding bash's RNG from SEED (then drawing every roll from it) means a seed
