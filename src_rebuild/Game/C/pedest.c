@@ -325,29 +325,30 @@ void jer_ped_palette_init(void)
 			jer_log("\n");
 		}
 
+		/* the next free CLUT row: clutpos is the engine's cursor into the
+		 * 960..1023 strip, 4 rows per scanline, y = 256..511. Logged BEFORE the
+		 * cache check below, which allocates rows of its own. */
+		jer_log("palette probe: %d pair(s); next free CLUT row (%d,%d), %d of %d rows used\n",
+			gPedPalPairCount, clutpos.x, clutpos.y,
+			(clutpos.y - 256) * 4 + (clutpos.x - 960) / 16, (512 - 256) * 4);
+
 		/* the cache key must keep strength 0 and 256 apart: they are opposite
 		 * extremes (identity vs outright), so a key that truncates strength to a
 		 * byte would hand back the first for the second */
+		if (gPedPalPairCount == 0)
+		{
+			jer_log("palette probe: cache check skipped - no CLUT pairs recorded\n");
+		}
+		else
 		{
 			int h0 = jer_ped_palette_team(255, 0, 0, 0);
 			int h256 = jer_ped_palette_team(255, 0, 0, 256);
 
 			jer_log("palette probe: cache check - strength 0 -> handle %d, strength 256 -> handle %d (must differ)\n",
 				h0, h256);
+			jer_log("palette probe: cache check - re-asking 256 -> handle %d (must equal the one above)\n",
+				jer_ped_palette_team(255, 0, 0, 256));
 		}
-
-		/* and re-asking must reuse, not rebuild */
-		{
-			int again = jer_ped_palette_team(255, 0, 0, 256);
-
-			jer_log("palette probe: cache check - re-asking 256 -> handle %d (must equal the one above)\n", again);
-		}
-
-		/* the next free CLUT row: clutpos is the engine's cursor into the
-		 * 960..1023 strip, 4 rows per scanline, y = 256..511 */
-		jer_log("palette probe: %d pair(s); next free CLUT row (%d,%d), %d of %d rows used\n",
-			gPedPalPairCount, clutpos.x, clutpos.y,
-			(clutpos.y - 256) * 4 + (clutpos.x - 960) / 16, (512 - 256) * 4);
 	}
 }
 
@@ -366,6 +367,14 @@ int jer_ped_palette_team(int r, int g, int b, int strength)
 
 	if (gPedPalPairCount == 0)
 		return -1;
+
+	/* clamp to what the row builder accepts, so the cache key is the value actually
+	 * used rather than the caller's raw one (a strength of 300 would otherwise
+	 * allocate a second slot with byte-identical output) */
+	if (strength < 0)
+		strength = 0;
+	if (strength > 256)
+		strength = 256;
 
 	/* The cache key is the whole request, floor included. Packing it into an int
 	 * would collide strength 256 with 0 (they are opposite extremes: outright vs
