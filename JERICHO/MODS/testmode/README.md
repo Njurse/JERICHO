@@ -17,8 +17,9 @@ what texture and palette work needs (see `ped-palette.md`).
 
 The subject is either the boot's car (`-car`, or `-testcar <n>` to pick a
 different one) or a standing Tanner spawned a fixed distance in front of the
-player's start position. The player's own car and ped are left alone — the ped
-filter keeps anything `jer_npc_owned()` or with `padId >= 0`.
+player's start position. The player's own car and ped are left alone: the sweep
+removes only `CIVILIAN` peds, skips anything `jer_npc_owned()`, and skips a live
+player ped by pointer regardless of its type.
 
 ## Flags
 

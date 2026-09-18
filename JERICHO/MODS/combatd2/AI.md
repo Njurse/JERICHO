@@ -49,8 +49,8 @@ Two of those priorities are deliberate:
 
 The drive itself runs on **CAR_STEP**, which is one per `StepCars` — the 30 Hz
 simulation step (see the note at combatd2.h:386-388). Both the FRAME handler and
-the CAR_STEP handler bail unless `gCd2Cfg.enabled && gCd2Cfg.aiOpponent`
-(1704, 1823).
+the CAR_STEP handler bail unless the match fields opponents
+(`cd2MatchOpponents() > 0`, 1704, 1823).
 
 What the FRAME handler does (1699-1790), in order:
 

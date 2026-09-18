@@ -82,6 +82,12 @@ raises a player-visible "invalid command line argument" toast - which is why the
 mp mod's `-host`/`-join` and these have explicit branches in `main.c` even though
 the module reads the values itself.
 
+The override belongs to the **process**, not to one activation pass: it is not
+cleared afterwards, so a reload (`jer_manager_reload`, i.e. the Mods menu)
+re-applies it and the module returns even if the player just turned it off. A boot
+flag owns the boot - and both the set and the re-apply are logged, so it is never
+silent.
+
 ## Which modules override car handling
 
 Only these two replace the stock car physics; with both off the engine's

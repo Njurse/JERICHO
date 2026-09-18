@@ -20,10 +20,11 @@
 #include "jer_math.h"
 
 #include "driver2.h"		/* engine base types, needed before mission.h */
-#include "mission.h"		/* maxCivCars, CopsAllowed, numCivCars, numCopCars */
+#include "mission.h"		/* maxCivCars, CopsAllowed, numCivCars, numCopCars, NumPlayers */
 #include "cars.h"			/* car_data, MAX_CARS */
 #include "civ_ai.h"		/* PingOutCar */
 #include "pedest.h"		/* pUsedPeds, DestroyPedestrian */
+#include "players.h"		/* player[] - to recognise a player's own ped */
 #include "jer_npc.h"		/* jer_npc_owned - our own peds are not traffic */
 
 #include "testmode_internal.h"
@@ -158,17 +159,34 @@ static void TestmodeQuietHold(void)
 	 * clean unlink onto the free list - it is not a kill, so it costs no score and
 	 * raises no death handling.
 	 *
-	 * Which ones is decided by pedType, not by padId: ambient pedestrians are
-	 * CIVILIAN (and OTHER_SPRITE), while the player and mission Tanners are
-	 * TANNER_MODEL, so the player is safe by construction. padId is NOT a usable
-	 * test here - the engine leaves 0 on civilian peds, so `padId >= 0` would have
-	 * kept every one of them (measured: 10 such peds survived the first version of
-	 * this sweep). Anything JERICHO owns is kept as well. */
+	 * Ambient pedestrians are CIVILIAN, and only CIVILIAN is removed. Two traps:
+	 *  - padId is NOT a usable player test: the engine leaves padId = 0 on civilian
+	 *    peds, so `padId >= 0` kept every one of them (measured: 10 civilians
+	 *    survived the first version of this sweep).
+	 *  - OTHER_SPRITE is not ambient either. ActivatePlayerPedestrian assigns the
+	 *    player's own model as the pedType, and it explicitly handles
+	 *    playerType == OTHER_SPRITE (pedest.c), so removing those removes the
+	 *    PLAYER in a sprite-model on-foot mission and leaves player[].pPed
+	 *    dangling. Only the player ever gets that type, so it is simply not in the
+	 *    filter - and as a second line of defence a live player ped is skipped by
+	 *    pointer below, whatever its type.
+	 * JERICHO-owned peds (the subject, a module's crew) are kept as well. */
 	for (p = pUsedPeds; p != NULL; )
 	{
 		LPPEDESTRIAN next = p->pNext;	/* DestroyPedestrian unlinks: take it first */
+		int isPlayer = 0;
+		int i;
 
-		if (!jer_npc_owned(p) && (p->pedType == CIVILIAN || p->pedType == OTHER_SPRITE))
+		for (i = 0; i < NumPlayers; i++)
+		{
+			if (player[i].pPed == p)
+			{
+				isPlayer = 1;
+				break;
+			}
+		}
+
+		if (!isPlayer && !jer_npc_owned(p) && p->pedType == CIVILIAN)
 		{
 			DestroyPedestrian(p);
 			gQuietDespawnedPeds++;

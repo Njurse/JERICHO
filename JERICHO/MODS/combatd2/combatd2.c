@@ -74,6 +74,9 @@ CD2_CONFIG gCd2Cfg;
  * config so a harness cannot rewrite the player's match setting. */
 static int gEnvOpponents = -1;
 
+/* CD2_OPPONENTS was set but is not a number (reported at boot) */
+static int gEnvOpponentsBad = 0;
+
 /*
  * How many opponents THIS match fields: the match setting, unless the environment
  * overrides it for a headless run. Always clamped to the slots available.
@@ -123,11 +126,23 @@ void cd2LoadConfig(void)
 
 	/* CD2_OPPONENTS lets a headless harness ask for a match with opponents. It is
 	 * kept OUT of the saved config (it is applied by cd2MatchOpponents below), so
-	 * running a harness can never rewrite the player's match setting. */
+	 * running a harness can never rewrite the player's match setting. A value that
+	 * is not a number at all is ignored rather than silently meaning zero. */
 	{
 		const char* env = getenv("CD2_OPPONENTS");
 
-		gEnvOpponents = (env != NULL) ? atoi(env) : -1;
+		gEnvOpponents = -1;
+
+		if (env != NULL && env[0] != 0)
+		{
+			char* end = NULL;
+			long v = strtol(env, &end, 10);
+
+			if (end != NULL && *end == 0 && end != env)
+				gEnvOpponents = (int)v;	/* clamped by cd2MatchOpponents */
+			else
+				gEnvOpponentsBad = 1;	/* reported at boot, where ctx exists */
+		}
 	}
 	gCd2Cfg.aiForceState  = jer_config_get_int("combatd2", "ai_force_state", CD2_AI_AUTO);
 	gCd2Cfg.aiDebug       = jer_config_get_int("combatd2", "ai_debug", 0);
@@ -524,6 +539,8 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	if (gEnvOpponents >= 0)
 		ctx->jer_log(ctx, "[combatd2] note: CD2_OPPONENTS=%d overrides this run only, the ini keeps %d\n",
 			cd2MatchOpponents(), gCd2Cfg.aiOpponents);
+	else if (gEnvOpponentsBad)
+		ctx->jer_log(ctx, "[combatd2] note: CD2_OPPONENTS is set but is not a number; ignored\n");
 
 	if (jer_config_get_int("combatd2", "ai_opponent", 0) != 0)
 		ctx->jer_log(ctx, "[combatd2] note: ai_opponent is gone, it no longer spawns anything; "

@@ -355,6 +355,11 @@ int jer_modules_disabled(void);
  * that beats both modlist.ini and the module's own `default-enabled`. Used by the
  * engine's diagnostic/test flags so `-testmode` works without editing the user's
  * modlist first. `-nomods` still wins over it.
+ *
+ * The override belongs to the PROCESS, not to one activation pass: it is not
+ * cleared afterwards, so jer_manager_reload (the Mods menu) re-applies it and the
+ * module comes back even if the player just turned it off. A boot flag owns the
+ * boot; both the set and the re-apply are logged.
  */
 void jer_force_module(const char* id, int enabled);
 
