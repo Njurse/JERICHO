@@ -151,7 +151,7 @@ typedef struct
 static PED_PAL_PAIR gPedPalPairs[PED_PAL_MAX_PAIRS];
 static int gPedPalPairCount = 0;
 static int gPedPalTeams = 0;
-static int gPedPalKey[JER_PED_PAL_MAX_TEAMS];	/* (r,g,b,strength) per team */
+static int gPedPalKey[JER_PED_PAL_MAX_TEAMS][5];	/* r, g, b, strength, floor */
 static u_short gPedPalSaved[PED_PAL_MAX_PAIRS];
 static int gPedPalCurrent = -1;
 static int gPedPalActive = 0;
@@ -325,6 +325,24 @@ void jer_ped_palette_init(void)
 			jer_log("\n");
 		}
 
+		/* the cache key must keep strength 0 and 256 apart: they are opposite
+		 * extremes (identity vs outright), so a key that truncates strength to a
+		 * byte would hand back the first for the second */
+		{
+			int h0 = jer_ped_palette_team(255, 0, 0, 0);
+			int h256 = jer_ped_palette_team(255, 0, 0, 256);
+
+			jer_log("palette probe: cache check - strength 0 -> handle %d, strength 256 -> handle %d (must differ)\n",
+				h0, h256);
+		}
+
+		/* and re-asking must reuse, not rebuild */
+		{
+			int again = jer_ped_palette_team(255, 0, 0, 256);
+
+			jer_log("palette probe: cache check - re-asking 256 -> handle %d (must equal the one above)\n", again);
+		}
+
 		/* the next free CLUT row: clutpos is the engine's cursor into the
 		 * 960..1023 strip, 4 rows per scanline, y = 256..511 */
 		jer_log("palette probe: %d pair(s); next free CLUT row (%d,%d), %d of %d rows used\n",
@@ -344,15 +362,19 @@ int jer_ped_palette_pairs(void)
 int jer_ped_palette_team(int r, int g, int b, int strength)
 {
 	u_short rows[PED_PAL_MAX_PAIRS];
-	int key = ((r & 0xff) << 24) | ((g & 0xff) << 16) | ((b & 0xff) << 8) | (strength & 0xff);
 	int t, i, n = 0;
 
 	if (gPedPalPairCount == 0)
 		return -1;
 
+	/* The cache key is the whole request, floor included. Packing it into an int
+	 * would collide strength 256 with 0 (they are opposite extremes: outright vs
+	 * identity), and leaving the floor out would hand back rows built at the old
+	 * floor after jer_ped_palette_set_floor. */
 	for (t = 0; t < gPedPalTeams; t++)
 	{
-		if (gPedPalKey[t] == key)
+		if (gPedPalKey[t][0] == r && gPedPalKey[t][1] == g && gPedPalKey[t][2] == b &&
+			gPedPalKey[t][3] == strength && gPedPalKey[t][4] == gPedPalFloor)
 			return t;
 	}
 
@@ -402,7 +424,11 @@ int jer_ped_palette_team(int r, int g, int b, int strength)
 		gPedPalPairs[i].row[gPedPalTeams] = rows[i];
 	}
 
-	gPedPalKey[gPedPalTeams] = key;
+	gPedPalKey[gPedPalTeams][0] = r;
+	gPedPalKey[gPedPalTeams][1] = g;
+	gPedPalKey[gPedPalTeams][2] = b;
+	gPedPalKey[gPedPalTeams][3] = strength;
+	gPedPalKey[gPedPalTeams][4] = gPedPalFloor;
 
 	return gPedPalTeams++;
 }

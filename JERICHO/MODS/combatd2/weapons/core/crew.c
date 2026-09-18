@@ -1122,8 +1122,14 @@ static int cd2CrewOnPedPalette(void* ud, void* args)
 
 	(void)ud;
 
-	if (a == NULL || a->ped == NULL)
+	if (a == NULL)
 		return JER_RESULT_CONTINUE;
+
+	if (a->ped == NULL)
+	{
+		jer_ped_palette_select(-1);
+		return JER_RESULT_CONTINUE;
+	}
 
 	if (!gCd2Cfg.teamPalette || !gCd2Cfg.factions)
 	{

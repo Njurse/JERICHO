@@ -63,7 +63,9 @@ extern void IncrementClutNum(RECT16 *clut); // 0x00080DDC
 
 // JERICHO-HOOK: allocate a CLUT row that is a recoloured copy of another row
 // (per-instance pedestrian palettes). `floor5` (0..31) lifts the dark end so a
-// dark outfit still reads as the team colour. Returns the new clut word, or 0.
+// dark outfit still reads as the team colour. Entries that are themselves warm
+// (red-biased) are copied through untouched, because skin shares the outfit's
+// CLUT row - see pedest.c's PedPalRowIsOutfit. Returns the new clut word, or 0.
 extern u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength, int floor5);
 extern void IncrementTPageNum(RECT16 *tpage); // 0x00080528
 
