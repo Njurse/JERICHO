@@ -466,6 +466,12 @@ int cd2OnCarTorque(void* ud, void* args)
 		if (shovePct > 0)
 		{
 			int shove = (s.topSpeed * shovePct) / 100;
+
+			/* a reverse boost shoves backwards, or the car would lurch forwards
+			 * the moment the driver asked it to go the other way */
+			if (cd2TurboReverse(cp->id))
+				shove = -shove;
+
 			velX += fx * shove;
 			velZ += fz * shove;
 			jer_log("[cainescrossfire] turbo: shove +%d percent of top speed (%d)\n", shovePct, shove);

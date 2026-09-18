@@ -113,6 +113,10 @@ void cd2TurboRefill(int carId)
 	gTurbo[carId].tapFrame = -1;
 	gTurbo[carId].meter = CD2_TURBO_METER_FRAMES;
 	gTurbo[carId].inited = 1;
+
+	/* the refill is a rare event, so it is worth a line: it is the only thing
+	 * that gives a spent meter back */
+	jer_log("[cainescrossfire] turbo: meter refilled (car=%d)\n", carId);
 	gTurbo[carId].shove = 0;
 }
 
@@ -142,7 +146,10 @@ void cd2TurboPad(int carId, int pad)
 	st = &gTurbo[carId];
 
 	if (!gCd2Cfg.enabled)
+	{
+		st->prevPad = pad;	/* keep the edge state honest while it is off */
 		return;
+	}
 
 	/* starts full: the meter is filled the first time we see this car, and after
 	 * that only by cd2TurboRefill() - it never trickles back up */
@@ -195,7 +202,10 @@ void cd2TurboPad(int carId, int pad)
 
 		if (hit)
 		{
-			if (st->tapFrame >= 0 && st->tapButton == button &&
+			/* FrameCnt restarts at every level: a tap remembered from the previous
+			 * one would otherwise read as a negative difference, i.e. inside the
+			 * window, and latch instantly on the first press of the new level. */
+			if (st->tapFrame >= 0 && FrameCnt >= st->tapFrame && st->tapButton == button &&
 				(FrameCnt - st->tapFrame) <= CD2_TURBO_TAP_GRACE && st->meter > 0)
 			{
 				st->active = 1;
@@ -216,9 +226,10 @@ void cd2TurboPad(int carId, int pad)
 				st->tapButton = button;
 			}
 		}
-		else if (st->tapFrame >= 0 && (FrameCnt - st->tapFrame) > CD2_TURBO_TAP_GRACE)
+		else if (st->tapFrame >= 0 && (FrameCnt < st->tapFrame ||
+			(FrameCnt - st->tapFrame) > CD2_TURBO_TAP_GRACE))
 		{
-			st->tapFrame = -1;	// the window closed with no second tap
+			st->tapFrame = -1;	// the window closed (or the level restarted)
 		}
 	}
 
@@ -263,8 +274,16 @@ static int sBarPulse;
 // renders it, so the crime assignment above cannot overwrite it).
 void cd2TurboBarTick(int carId)
 {
-	if (carId < 0 || carId >= MAX_CARS || !gCd2Cfg.enabled)
+	if (carId < 0 || carId >= MAX_CARS)
 		return;
+
+	if (!gCd2Cfg.enabled)
+	{
+		/* turned off mid-session: stop showing a turbo bar over a felony value.
+		 * The engine re-initialises the bar at the next level. */
+		FelonyBar.active = 0;
+		return;
+	}
 
 	sBarPulse++;
 
@@ -330,7 +349,7 @@ void cd2TurboForce(int carId, int on)
 			gTurbo[carId].meter = CD2_TURBO_METER_FRAMES;
 
 		gTurbo[carId].active = 1;
-		gTurbo[carId].reverse = 0;
+		gTurbo[carId].reverse = (on == 2) ? 1 : 0;	/* 2 = force a REVERSE boost */
 		gTurbo[carId].hold = 1;		/* keep it on so the meter can be watched */
 		gTurbo[carId].shove = 1;
 		cd2KnockAdd(carId, (gCd2Cfg.rollLimit * CD2_TURBO_KICK_PITCH_PCT) / 100, 0, 0, 1);

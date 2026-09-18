@@ -157,7 +157,7 @@ static int cd2DbgReadAction(const char** s, int* arg)
 			return CD2_DBG_NONE;
 
 		p++;
-		on = (*p == '1') ? 1 : 0;
+		on = (*p >= '0' && *p <= '2') ? (*p - '0') : 0;	/* 2 = a reverse boost */
 
 		*arg = on;
 		*s = p;

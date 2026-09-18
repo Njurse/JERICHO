@@ -22,6 +22,8 @@
 #include "sound.h"
 #include "gamesnd.h"
 #include "mc_snd.h"	/* GetMissionSound */
+#include "turbo/turbo.h"		/* the meter refills on the level event, not on a timer */
+#include "knock/knock.h"		/* the knock's caches reset with the level too */
 #include <string.h>
 
 extern void RebuildCarMatrix(RigidBodyState* st, CAR_DATA* cp);
@@ -185,6 +187,10 @@ static void cd2RespawnCar(CAR_DATA* cp, CD2_RESPAWN* r)
 {
 	int i;
 
+	/* the other refill event: a wrecked and recycled car gets its boost back */
+	cd2TurboRefill(cp->id);
+	cd2KnockReset(cp->id);
+
 	cp->totalDamage = 0;
 
 	for (i = 0; i < 6; i++)
@@ -307,6 +313,12 @@ int cd2OnGameStart(void* ud, void* args)
 	memset(gCd2SceneryHits, 0, sizeof(gCd2SceneryHits));
 	memset(gCd2TrafficLastHit, 0, sizeof(gCd2TrafficLastHit));
 	memset(gCd2MassMod, 0, sizeof(gCd2MassMod));	// masses are level data, re-read on load
+
+	/* the turbo meter's refill event: it never trickles back up, so this is the
+	 * only thing that gives a player a boost at the start of a level. The knock's
+	 * caches go with it - they are keyed on FrameCnt, which restarts here. */
+	cd2TurboResetAll();
+	cd2KnockResetAll();
 
 	return JER_RESULT_CONTINUE;
 }

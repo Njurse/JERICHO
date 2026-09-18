@@ -370,7 +370,12 @@ CD2_STATS cd2GetStats(CAR_DATA* cp)
 		int accelPct = cd2TurboAccelPct(cp->id);
 
 		if (speedPct != 100)
+		{
 			s.topSpeed = (s.topSpeed * speedPct) / 100;
+
+			/* and the reverse cap, or a reverse turbo would have nothing to exceed */
+			s.reverseSpeed = (s.reverseSpeed * speedPct) / 100;
+		}
 
 		if (accelPct != 100)
 			s.accel = (s.accel * accelPct) / 100;
@@ -440,6 +445,12 @@ static int cd2OnResetCar(void* ud, void* args)
 		gCd2Car[a->carId].slip = 0;
 		gCd2Car[a->carId].roll = 0;
 		gCd2Car[a->carId].throttle = 0;
+
+		/* the turbe meter's respawn refill event. It lives here rather than on the
+		 * module's own recycle path because the PLAYER's respawn comes through the
+		 * engine's reset - the module's path only ever sees the cars it wrecks. */
+		cd2TurboRefill(a->carId);
+		cd2KnockReset(a->carId);
 		gCd2Car[a->carId].pivotDir = 0;
 		gCd2Car[a->carId].slideTicks = 0;
 		gCd2Car[a->carId].aiPivot = 0;
@@ -537,17 +548,24 @@ static int cd2OnCollision(void* ud, void* args)
 	lift = (impulse > (CD2_KNOCK_MAX_PITCH / 2)) ? 1 : 0;
 
 	/* and one knock per car per cooldown, however the hits arrive */
-	if (cp != NULL)
+	/* FrameCnt restarts at every level, so a stale entry reads as a large negative
+	 * difference - hence the >= 0 test, which treats that as "no recent knock"
+	 * rather than as "knocked a moment ago". */
+	if (cp != NULL && cp->id >= 0 && cp->id < MAX_CARS)
 	{
-		if (FrameCnt - gCd2LastKnock[cp->id] < CD2_KNOCK_COOLDOWN)
+		int diff = FrameCnt - gCd2LastKnock[cp->id];
+
+		if (diff >= 0 && diff < CD2_KNOCK_COOLDOWN)
 			cp = NULL;
 		else
 			gCd2LastKnock[cp->id] = FrameCnt;
 	}
 
-	if (other != NULL)
+	if (other != NULL && other->id >= 0 && other->id < MAX_CARS)
 	{
-		if (FrameCnt - gCd2LastKnock[other->id] < CD2_KNOCK_COOLDOWN)
+		int diff = FrameCnt - gCd2LastKnock[other->id];
+
+		if (diff >= 0 && diff < CD2_KNOCK_COOLDOWN)
 			other = NULL;
 		else
 			gCd2LastKnock[other->id] = FrameCnt;
@@ -596,7 +614,7 @@ static int cd2OnFootFrame(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	{
-		CAR_DATA* cp = &car_data[player[0].playerCarId];
+		CAR_DATA* cp = &car_data[player[0].playerCarId];	/* playerCarId is checked < MAX_CARS by the caller */
 
 		ActivatePlayerPedestrian(cp, NULL, 0, NULL, TANNER_MODEL);
 
@@ -650,11 +668,14 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_DEBUG_TICK, cd2OnDebugTick, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2OnGameStart, NULL, 0);
 
-#if CD2_ENFORCE_PURSUIT_MUSIC
-	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFramePursuit, NULL, 0);
+	/* these are not part of the pursuit-music option: the on-foot swap, the turbo
+	 * bar and the collision knock are all wanted whatever that flag is set to. */
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFootFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, cd2TurboOnDrawOverlay, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_COLLISION, cd2OnCollision, NULL, 0);
+
+#if CD2_ENFORCE_PURSUIT_MUSIC
+	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFramePursuit, NULL, 0);
 #endif
 
 	cd2MenuRegister(ctx);	/* cainescrossfiremenu.c */
