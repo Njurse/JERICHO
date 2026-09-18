@@ -109,6 +109,9 @@ void cd2LoadConfig(void)
 	// refused by cd2FacPlayerFaction (the player drives).
 	gCd2Cfg.factions      = jer_config_get_int("combatd2", "factions", 1);
 	gCd2Cfg.playerFaction = jer_config_get_int("combatd2", "player_faction", CD2_FAC_TANNER);
+	gCd2Cfg.teamPalette         = jer_config_get_int("combatd2", "team_palette", 1);
+	gCd2Cfg.teamPaletteStrength = jer_config_get_int("combatd2", "team_palette_strength", 256);
+	gCd2Cfg.teamPaletteFloor    = jer_config_get_int("combatd2", "team_palette_floor", 10);
 
 	// car-vs-car damage as % of stock. Migrate the old car_car_nerf (% reduction).
 	gCd2Cfg.carCarDamage  = jer_config_get_int("combatd2", "car_car_damage", -1);
@@ -152,6 +155,9 @@ void cd2LoadConfig(void)
 	gCd2Cfg.navDebug      = gCd2Cfg.navDebug ? 1 : 0;
 	gCd2Cfg.factions      = gCd2Cfg.factions ? 1 : 0;
 	gCd2Cfg.playerFaction = jer_clamp_int(gCd2Cfg.playerFaction, 0, CD2_FAC_COUNT - 1);
+	gCd2Cfg.teamPalette         = gCd2Cfg.teamPalette ? 1 : 0;
+	gCd2Cfg.teamPaletteStrength = jer_clamp_int(gCd2Cfg.teamPaletteStrength, 0, 256);
+	gCd2Cfg.teamPaletteFloor    = jer_clamp_int(gCd2Cfg.teamPaletteFloor, 0, 31);
 	gCd2Cfg.carCarDamage  = jer_clamp_int(gCd2Cfg.carCarDamage, 10, 100);
 	gCd2Cfg.aiDamageTaken = jer_clamp_int(gCd2Cfg.aiDamageTaken, 10, 400);
 	gCd2Cfg.respawn       = gCd2Cfg.respawn ? 1 : 0;
@@ -185,6 +191,9 @@ void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "nav_debug", gCd2Cfg.navDebug);
 	jer_config_set_int("combatd2", "factions", gCd2Cfg.factions);
 	jer_config_set_int("combatd2", "player_faction", gCd2Cfg.playerFaction);
+	jer_config_set_int("combatd2", "team_palette", gCd2Cfg.teamPalette);
+	jer_config_set_int("combatd2", "team_palette_strength", gCd2Cfg.teamPaletteStrength);
+	jer_config_set_int("combatd2", "team_palette_floor", gCd2Cfg.teamPaletteFloor);
 	jer_config_set_int("combatd2", "car_car_damage", gCd2Cfg.carCarDamage);
 	jer_config_set_int("combatd2", "ai_damage_taken", gCd2Cfg.aiDamageTaken);
 	jer_config_set_int("combatd2", "respawn", gCd2Cfg.respawn);

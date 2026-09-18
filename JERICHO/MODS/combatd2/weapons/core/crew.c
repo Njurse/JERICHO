@@ -35,6 +35,8 @@
 #include "jer_events.h"
 #include "jer_anim.h"		/* the all-bone pose API */
 #include "jer_npc.h"		/* jer_npc_* ped scaffolding */
+#include "jer_ped_palette.h"	/* per-instance ped palettes (team colours) */
+#include "factions/factions.h"	/* the five teams: their colours */
 #include "ai/ai.h"		/* cd2AiIsOpponent */
 #include "crew.h"
 
@@ -1101,6 +1103,69 @@ static int cd2CrewOnPedDraw(void* ud, void* args)
 }
 
 // ---------------------------------------------------------------------------
+// JER_EVENT_PED_DRAW: give a Tanner its faction's outfit colour.
+//
+// The engine recolours the CLUT rows for THIS ped only (see the SDK's
+// ped-palette.md), so a team reads at a glance without touching anyone else. The
+// player takes the configured player faction; a crew ped is matched back to its
+// car and takes that car's faction. A ped that is neither - a mission Tanner, a
+// plain civilian - is explicitly cleared back to stock colours, because the
+// engine's selection persists until it is changed.
+// ---------------------------------------------------------------------------
+static int cd2CrewOnPedPalette(void* ud, void* args)
+{
+	JER_ARGS_PED_DRAW* a = (JER_ARGS_PED_DRAW*)args;
+	LPPEDESTRIAN pPed;
+	unsigned char r, g, b;
+	int faction = CD2_FAC_NONE;
+	int i, side;
+
+	(void)ud;
+
+	if (a == NULL || a->ped == NULL)
+		return JER_RESULT_CONTINUE;
+
+	if (!gCd2Cfg.teamPalette || !gCd2Cfg.factions)
+	{
+		jer_ped_palette_select(-1);
+		return JER_RESULT_CONTINUE;
+	}
+
+	pPed = (LPPEDESTRIAN)a->ped;
+
+	if (pPed->padId >= 0)
+	{
+		faction = cd2FacPlayerFaction();
+	}
+	else
+	{
+		for (i = 0; i < MAX_CARS; i++)
+		{
+			for (side = 0; side < 2; side++)
+			{
+				if ((void*)gCrew[i].ped[side] == a->ped)
+					faction = cd2FacOfCarId(i);
+			}
+		}
+	}
+
+	/* cd2FacColourOf refuses an unknown faction (and CD2_FAC_NONE), which is how a
+	 * ped with no team ends up on stock colours */
+	if (!cd2FacColourOf(faction, &r, &g, &b))
+	{
+		jer_ped_palette_select(-1);
+		return JER_RESULT_CONTINUE;
+	}
+
+	/* the engine caches a row set per colour and rebuilds it after a level reload,
+	 * so asking on every draw is cheap and stays correct across levels */
+	jer_ped_palette_set_floor(gCd2Cfg.teamPaletteFloor);
+	jer_ped_palette_select(jer_ped_palette_team(r, g, b, gCd2Cfg.teamPaletteStrength));
+
+	return JER_RESULT_CONTINUE;
+}
+
+// ---------------------------------------------------------------------------
 // Registration (called once by jer_module_combatd2_entry in combatd2.c)
 // ---------------------------------------------------------------------------
 void cd2CrewRegister(JERICHO_CONTEXT* ctx)
@@ -1108,6 +1173,7 @@ void cd2CrewRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2CrewOnFrame, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, cd2CrewOnCamera, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_DRAW, cd2CrewOnPedDraw, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_PED_DRAW, cd2CrewOnPedPalette, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_POSE, cd2CrewOnPedPose, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_SKELETON, cd2CrewOnPedSkeleton, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2CrewOnGameStart, NULL, 0);

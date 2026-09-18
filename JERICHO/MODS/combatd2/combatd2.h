@@ -470,6 +470,17 @@ typedef struct CD2_CONFIG
 	// the player's faction, a CD2_FAC_* index (0 = TANNER). A faction that
 	// does not compete (Caine, the host) is refused: the player drives.
 	int playerFaction;
+
+	// ---- team palettes (factions/, see the SDK's ped-palette.md) ----------
+	// 0/1: give each Tanner the OUTFIT colour of its faction, so a team reads at
+	// a glance. Per-instance - only that ped's CLUT rows are recoloured; everyone
+	// else keeps stock colours. Needs `factions` on.
+	int teamPalette;
+	// how far each palette entry moves toward the faction colour, 0..256
+	int teamPaletteStrength;
+	// how far the dark end of the outfit is lifted, 0..31 (0 = keep the source
+	// brightness and let a dark suit stay dark, 31 = flat)
+	int teamPaletteFloor;
 } CD2_CONFIG;
 
 typedef struct CD2_CAR
