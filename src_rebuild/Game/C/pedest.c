@@ -29,7 +29,9 @@
 #include "draw.h"
 
 #include "ASM/rndrasm.h"
-#include <stdlib.h>		/* getenv - only used by the palette probe below */
+#include "texture.h"		/* texture_cluts / clutpos / JerichoMakeClutRow */
+#include "jer_ped_palette.h"	/* JERICHO-HOOK: per-instance ped palettes */
+#include <stdlib.h>		/* getenv - the palette probe only */
 
 struct CAR_COLLISION_BOX
 {
@@ -127,62 +129,108 @@ extern SEATEDPTR FindSeated(); // 0x00072644
 extern SEATEDPTR FindTannerASeat(LPPEDESTRIAN pPed); // 0x000717AC
 extern void add_seated(SEATEDPTR seatedptr, int seat_index); // 0x000718C8
 
-// JERICHO-HOOK: measure the palette footprint of the Tanner skeleton.
-//
-// A CLUT row is only valid for the texture page it lives in, so how many
-// texture PAGES the body geometry spans decides whether one CLUT per instance
-// is enough for a per-instance palette swap, or whether the override has to be
-// chosen per bone. This reads the models the same way the plotter does (same
-// `id & 31` type nibble, same PolySizes stride), and it must run BEFORE
-// anything draws them: ConvertPolygonTypes rewrites the poly ids in place, so
-// the walk is only faithful on a fresh model.
-//
-// Gated behind JER_PALETTE_PROBE so ordinary runs pay nothing.
-static void JerichoProbeTannerPalette(void)
+/* ---- per-instance pedestrian palettes (JERICHO) ---------------------------
+ *
+ * See JERICHO/docs/ped-palette.md: the Tanner body is one texture page but two
+ * CLUT entries, so a team colour needs a recoloured row per entry, swapped into
+ * texture_cluts for the duration of ONE instance's draw. Plotting only captures
+ * the CLUT address into each primitive, so nothing leaks to other pedestrians.
+ */
+
+#define PED_PAL_MAX_PAIRS 8
+
+typedef struct
+{
+	u_char set;
+	u_char id;
+	u_short stock;							/* the clut word as loaded */
+	u_short row[JER_PED_PAL_MAX_TEAMS];		/* recoloured row per team, 0 = unset */
+} PED_PAL_PAIR;
+
+static PED_PAL_PAIR gPedPalPairs[PED_PAL_MAX_PAIRS];
+static int gPedPalPairCount = 0;
+static int gPedPalTeams = 0;
+static int gPedPalKey[JER_PED_PAL_MAX_TEAMS];	/* (r,g,b,strength) per team */
+static u_short gPedPalSaved[PED_PAL_MAX_PAIRS];
+static int gPedPalCurrent = -1;
+static int gPedPalActive = 0;
+
+// [D] [T]
+static const char* PedPalModelName(int i)
 {
 	static const char* names[17] = {
 		"TORSO", "HEAD", "U_ARM_RIGHT", "L_ARM_RIGHT", "HAND_RIGHT",
 		"THIGH_RIGHT", "CALF_RIGHT", "FOOT_LEFT", "U_ARM_LEFT", "L_ARM_LEFT",
 		"HAND_LEFT", "THIGH_LEFT", "CALF_LEFT", "FOOT_RIGHT", "NECK", "HIPS", "BAG"
 	};
-	static u_short pairs[64][2];
-	int npairs = 0, i, j, k;
 
-	if (getenv("JER_PALETTE_PROBE") == NULL)
-		return;
+	return (i >= 0 && i < 17) ? names[i] : "?";
+}
+
+// [D] [T]
+void jer_ped_palette_reset(void)
+{
+	gPedPalPairCount = 0;
+	gPedPalTeams = 0;
+	gPedPalCurrent = -1;
+	gPedPalActive = 0;
+}
+
+// JERICHO-HOOK: record which CLUT entries the Tanner body uses, and their stock
+// values, so a per-instance palette can be swapped in. Must run before anything
+// draws those models - ConvertPolygonTypes rewrites the poly ids in place, so the
+// `id & 31` type nibble is only meaningful on a fresh model.
+void jer_ped_palette_init(void)
+{
+	MODEL* m;
+	PL_POLYFT4* polys;
+	int probe = getenv("JER_PALETTE_PROBE") != NULL;
+	int i, j, k, textured;
+
+	jer_ped_palette_reset();
+
+	if (probe)
+		jer_log("palette probe: --- Tanner palette footprint ---\n");
 
 	for (i = 0; i < 17; i++)
 	{
-		MODEL* m = pmTannerModels[i];
-		PL_POLYFT4* polys;
-		int n, textured = 0;
+		m = pmTannerModels[i];
+		textured = 0;
+
+		/* the head is drawn by a separate call (DoCivHead) which applies its own
+		 * palette, so it is deliberately excluded: a team-coloured body keeps the
+		 * stock face. */
+		if (i == 1)
+			continue;
 
 		if (m == NULL)
 		{
-			jer_log("palette probe: %-11s (not in this level)\n", names[i]);
+			if (probe)
+				jer_log("palette probe: %-11s (not in this level)\n", PedPalModelName(i));
 			continue;
 		}
 
 		polys = GET_MODEL_DATA(PL_POLYFT4, m, poly_block);
-		n = m->num_polys;
 
-		while (n-- > 0)
+		for (j = m->num_polys; j > 0; j--)
 		{
 			u_char ptype = polys->id & 31;
 
 			if (ptype == 11 || ptype == 21 || ptype == 23)
 			{
-				for (j = 0; j < npairs; j++)
+				for (k = 0; k < gPedPalPairCount; k++)
 				{
-					if (pairs[j][0] == polys->texture_set && pairs[j][1] == polys->texture_id)
+					if (gPedPalPairs[k].set == polys->texture_set && gPedPalPairs[k].id == polys->texture_id)
 						break;
 				}
 
-				if (j == npairs && npairs < 64)
+				if (k == gPedPalPairCount && gPedPalPairCount < PED_PAL_MAX_PAIRS)
 				{
-					pairs[npairs][0] = polys->texture_set;
-					pairs[npairs][1] = polys->texture_id;
-					npairs++;
+					gPedPalPairs[k].set = polys->texture_set;
+					gPedPalPairs[k].id = polys->texture_id;
+					gPedPalPairs[k].stock = texture_cluts[polys->texture_set][polys->texture_id];
+					memset(gPedPalPairs[k].row, 0, sizeof(gPedPalPairs[k].row));
+					gPedPalPairCount++;
 				}
 
 				textured++;
@@ -191,40 +239,133 @@ static void JerichoProbeTannerPalette(void)
 			polys = (PL_POLYFT4*)((char*)polys + PolySizes[ptype]);
 		}
 
-		jer_log("palette probe: %-11s polys=%d textured=%d\n", names[i], (int)m->num_polys, textured);
+		if (probe)
+			jer_log("palette probe: %-11s polys=%d textured=%d\n", PedPalModelName(i), (int)m->num_polys, textured);
 	}
 
-	jer_log("palette probe: %d distinct (set,id) over the whole skeleton\n", npairs);
-
-	for (k = 0; k < npairs; k++)
-		jer_log("palette probe:    set=%d id=%d\n", pairs[k][0], pairs[k][1]);
-
-	/* distinct pages == how many CLUT rows a body actually needs */
+	if (probe)
 	{
-		static u_char pages[128];
-		int npages = 0;
+		for (k = 0; k < gPedPalPairCount; k++)
+			jer_log("palette probe:    set=%d id=%d stock=0x%04x\n",
+				gPedPalPairs[k].set, gPedPalPairs[k].id, gPedPalPairs[k].stock);
 
-		for (k = 0; k < npairs; k++)
+		/* the next free CLUT row: clutpos is the engine's cursor into the
+		 * 960..1023 strip, 4 rows per scanline, y = 256..511 */
+		jer_log("palette probe: %d pair(s); next free CLUT row (%d,%d), %d of %d rows used\n",
+			gPedPalPairCount, clutpos.x, clutpos.y,
+			(clutpos.y - 256) * 4 + (clutpos.x - 960) / 16, (512 - 256) * 4);
+	}
+}
+
+// [D] [T]
+int jer_ped_palette_pairs(void)
+{
+	return gPedPalPairCount;
+}
+
+// JERICHO-HOOK: build (or reuse) the palette for a team colour. Returns a handle
+// >= 0, or -1 when nothing was recorded or VRAM is exhausted.
+int jer_ped_palette_team(int r, int g, int b, int strength)
+{
+	u_short rows[PED_PAL_MAX_PAIRS];
+	int key = ((r & 0xff) << 24) | ((g & 0xff) << 16) | ((b & 0xff) << 8) | (strength & 0xff);
+	int t, i;
+
+	if (gPedPalPairCount == 0)
+		return -1;
+
+	for (t = 0; t < gPedPalTeams; t++)
+	{
+		if (gPedPalKey[t] == key)
+			return t;
+	}
+
+	if (gPedPalTeams >= JER_PED_PAL_MAX_TEAMS)
+		return -1;
+
+	/* build every row before committing: a half-built team would leave the body
+	 * with a mix of team and stock palettes */
+	for (i = 0; i < gPedPalPairCount; i++)
+	{
+		rows[i] = JerichoMakeClutRow(gPedPalPairs[i].stock, r, g, b, strength);
+
+		if (rows[i] == 0)
 		{
-			for (j = 0; j < npages; j++)
-				if (pages[j] == pairs[k][0]) break;
+			jer_log("ped palette: no VRAM row for %d,%d,%d (entry %d)\n", r, g, b, i);
+			return -1;
+		}
+	}
 
-			if (j == npages)
-				pages[npages++] = (u_char)pairs[k][0];
+	jer_log("ped palette: team %d,%d,%d @%d ->", r, g, b, strength);
+
+	for (i = 0; i < gPedPalPairCount; i++)
+		jer_log(" set=%d id=%d stock=0x%04x row=0x%04x",
+			gPedPalPairs[i].set, gPedPalPairs[i].id, gPedPalPairs[i].stock, rows[i]);
+
+	jer_log("\n");
+
+	for (i = 0; i < gPedPalPairCount; i++)
+		gPedPalPairs[i].row[gPedPalTeams] = rows[i];
+
+	gPedPalKey[gPedPalTeams] = key;
+
+	return gPedPalTeams++;
+}
+
+// [D] [T]
+void jer_ped_palette_select(int handle)
+{
+	gPedPalCurrent = (handle >= 0 && handle < gPedPalTeams) ? handle : -1;
+}
+
+// [D] [T]
+int jer_ped_palette_selected(void)
+{
+	return gPedPalCurrent;
+}
+
+// JERICHO-HOOK: swap the selected team's rows into texture_cluts for one draw.
+// Balanced with jer_ped_palette_leave; no-ops when nothing is selected.
+void jer_ped_palette_enter(void)
+{
+	int i;
+
+	if (gPedPalCurrent < 0 || gPedPalActive)
+		return;
+
+	for (i = 0; i < gPedPalPairCount; i++)
+	{
+		int set = gPedPalPairs[i].set;
+		int id = gPedPalPairs[i].id;
+
+		gPedPalSaved[i] = texture_cluts[set][id];
+
+		/* the table must still hold the stock row: if it does not, a previous
+		 * draw's swap leaked out of its bracket */
+		if (gPedPalSaved[i] != gPedPalPairs[i].stock)
+		{
+			jer_log("ped palette: LEAK set=%d id=%d expected 0x%04x found 0x%04x\n",
+				set, id, gPedPalPairs[i].stock, gPedPalSaved[i]);
 		}
 
-		jer_log("palette probe: %d distinct texture page(s)\n", npages);
+		texture_cluts[set][id] = gPedPalPairs[i].row[gPedPalCurrent];
 	}
 
-	/* the next free CLUT row: clutpos is the engine's own cursor into the
-	 * 960..1023 strip (texture.c:102, advanced per row by IncrementClutNum).
-	 * Rows are 4 per scanline; the strip runs y = 256..511. */
-	{
-		extern RECT16 clutpos;
-		int used = (clutpos.y - 256) * 4 + (clutpos.x - 960) / 16;
-		jer_log("palette probe: next free CLUT row at (%d,%d); %d of %d rows used\n",
-			clutpos.x, clutpos.y, used, (512 - 256) * 4);
-	}
+	gPedPalActive = 1;
+}
+
+// JERICHO-HOOK: put the stock rows back.
+void jer_ped_palette_leave(void)
+{
+	int i;
+
+	if (!gPedPalActive)
+		return;
+
+	for (i = 0; i < gPedPalPairCount; i++)
+		texture_cluts[gPedPalPairs[i].set][gPedPalPairs[i].id] = gPedPalSaved[i];
+
+	gPedPalActive = 0;
 }
 
 // [D] [T]
@@ -255,7 +396,7 @@ void InitTanner(void)
 	pmJerichoModels[4] = FindModelPtrWithName("JERI_U_ARM_RIGHT");
 	pmJerichoModels[5] = FindModelPtrWithName("JERI_L_ARM_RIGHT");
 
-	JerichoProbeTannerPalette();
+	jer_ped_palette_init();
 
 	SetSkelModelPointers(TANNER_MODEL);
 	StoreVertexLists();

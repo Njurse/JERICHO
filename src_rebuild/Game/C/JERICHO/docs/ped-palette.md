@@ -112,9 +112,35 @@ red and blue.
 
 ## The probe
 
-`JerichoProbeTannerPalette()` in `pedest.c`, called from the end of
-`InitTanner()`, logs the per-bone counts, the distinct `(set, id)` pairs and the
-page count. It is gated behind the `JER_PALETTE_PROBE` environment variable so
-ordinary runs print nothing, and it must run **before** anything draws the
-models: `ConvertPolygonTypes` rewrites poly ids in place, so the walk is only
-faithful on a fresh model.
+`jer_ped_palette_init()` in `pedest.c`, called from the end of `InitTanner()`, is
+the production walk: it records the body's `(set, id)` pairs and their stock clut
+words so a team palette can be swapped in. It also logs the measured footprint
+(per-bone counts, the pairs, the CLUT cursor) when `JER_PALETTE_PROBE` is set, so
+ordinary runs print nothing.
+
+It must run **before** anything draws the models: `ConvertPolygonTypes` rewrites
+poly ids in place, so the walk is only faithful on a fresh model. It also runs
+once per level, which is what makes it correct — the pairs are not constant.
+Measured on Havana they are `(2,13)`+`(2,2)` in one scenario and `(2,12)`+`(2,2)`
+in another, so anything that hardcoded them would be wrong.
+
+## The API
+
+`JERICHO/include/jer_ped_palette.h`:
+
+| call | when |
+|---|---|
+| `jer_ped_palette_init()` | once per level, from `InitTanner` |
+| `jer_ped_palette_team(r, g, b, strength)` | once per team; returns a handle (rows are cached, so repeat calls are free) |
+| `jer_ped_palette_select(handle)` | from a `JER_EVENT_PED_DRAW` handler, for the ped being drawn (`-1` = stock) |
+| `jer_ped_palette_enter()` / `_leave()` | the host brackets the draw in `newShowTanner` — a module never calls these |
+
+`strength` is 0..256 and is the only look knob: it scales how far each entry
+moves toward the team colour. Brightness is preserved per entry, so **black stays
+black** — a dark suit keeps its dark entries and only the brighter areas visibly
+take the hue. Raising the floor (or a fully flat result) is a change to
+`JerichoMakeClutRow`'s lerp, not to this mechanism.
+
+`jer_ped_palette_enter` logs `ped palette: LEAK ...` if the table it is about to
+swap still holds a previous team's row — i.e. if a swap ever escaped its bracket.
+It has never fired.

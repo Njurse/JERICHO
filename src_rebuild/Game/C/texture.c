@@ -133,6 +133,83 @@ void IncrementClutNum(RECT16 *clut)
 	}
 }
 
+// JERICHO-HOOK: build a CLUT row that is a recoloured copy of another row.
+//
+// Used for per-instance pedestrian palettes: the Tanner body's polys all live on
+// one texture page but use more than one CLUT entry, so a team colour needs its
+// own recoloured row per entry. `sourceClut` is a clut word as it appears in
+// texture_cluts[][]; the new row is taken from the clutpos strip and its address
+// returned (0 when there was nothing to copy).
+//
+// `strength` is 0..256: 0 keeps the original colours, 256 takes the team hue
+// outright. Brightness is preserved per entry, so the model keeps its shading
+// instead of becoming a flat silhouette, and black stays black so a texture's
+// dark/outline entries are not painted over.
+//
+// Colour order note: PSX 16bpp is stp | b<<10 | g<<5 | r - five bits per channel,
+// blue in the HIGH bits (the same packing as the rest of this file, not the
+// B<<16|G<<8|R used for polygon colour words).
+u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength)
+{
+	RECT16 src;
+	u_short entries[16];
+	u_short out[16];
+	u_short addr;
+	int i, k;
+	int tr, tg, tb;
+
+	if (sourceClut == 0)
+		return 0;
+
+	// clut word -> VRAM position (PSX GetClut encoding: y << 6 | x >> 4)
+	src.x = (short)((sourceClut & 0x3f) * 16);
+	src.y = (short)((sourceClut >> 6) & 0x1ff);
+	src.w = 16;
+	src.h = 1;
+
+	// out of room in the strip at the right of VRAM
+	if (src.y > 511 || clutpos.y > 511)
+		return 0;
+
+	StoreImage(&src, (u_long*)entries);
+
+	k = strength;
+
+	if (k < 0)
+		k = 0;
+	if (k > 256)
+		k = 256;
+
+	// the team hue in the same 5-bit space
+	tr = (r * 31) / 255;
+	tg = (g * 31) / 255;
+	tb = (b * 31) / 255;
+
+	for (i = 0; i < 16; i++)
+	{
+		int r5 = entries[i] & 31;
+		int g5 = (entries[i] >> 5) & 31;
+		int b5 = (entries[i] >> 10) & 31;
+		int lum = (r5 * 77 + g5 * 150 + b5 * 29) >> 8;	// 0..31 brightness
+		int nr = (r5 * (256 - k) + ((tr * lum) / 31) * k) >> 8;
+		int ng = (g5 * (256 - k) + ((tg * lum) / 31) * k) >> 8;
+		int nb = (b5 * (256 - k) + ((tb * lum) / 31) * k) >> 8;
+
+		if (nr > 31) nr = 31;
+		if (ng > 31) ng = 31;
+		if (nb > 31) nb = 31;
+
+		out[i] = (u_short)((entries[i] & 0x8000) | (nb << 10) | (ng << 5) | nr);
+	}
+
+	LoadImage(&clutpos, (u_long*)out);
+
+	addr = GetClut(clutpos.x, clutpos.y);
+	IncrementClutNum(&clutpos);
+
+	return addr;
+}
+
 // [D] [T]
 void IncrementTPageNum(RECT16 *tpage)
 {

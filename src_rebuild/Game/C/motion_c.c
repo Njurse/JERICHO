@@ -20,6 +20,7 @@
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_anim.h"	// JERICHO-HOOK: the all-bone API (implemented below)
 #include "jer_npc.h"	// JERICHO-HOOK: jer_npc_owned (ped ownership gating)
+#include "jer_ped_palette.h"	// JERICHO-HOOK: per-instance ped palettes
 
 #if USE_PGXP
 #include <math.h>
@@ -1335,6 +1336,11 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 			}
 		}
 
+		// JERICHO-HOOK: per-instance ped palette. A module selects one from the
+		// PED_DRAW handler above; plotting only captures the CLUT address into each
+		// primitive, so the swapped rows reach this instance and nobody else.
+		jer_ped_palette_enter();
+
 		if(bDoingShadow || draw)
 		{
 			if (pDrawingPed->pedType < OTHER_SPRITE)
@@ -1455,6 +1461,8 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 			}
 		}
 	}
+
+		jer_ped_palette_leave();
 
 		// restore the lighting the ped-colour block overrode
 		if (pedFlat)

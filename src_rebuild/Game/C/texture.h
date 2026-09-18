@@ -60,6 +60,10 @@ extern void ProcessImportedPalette(void);
 extern void load_civ_palettes(RECT16 *cluts); // 0x0001A094
 
 extern void IncrementClutNum(RECT16 *clut); // 0x00080DDC
+
+// JERICHO-HOOK: allocate a CLUT row that is a recoloured copy of another row
+// (per-instance pedestrian palettes). Returns the new clut word, or 0.
+extern u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength);
 extern void IncrementTPageNum(RECT16 *tpage); // 0x00080528
 
 extern int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress); // 0x00080E14
