@@ -22,6 +22,7 @@
 #include "cainescrossfire.h"
 #include "cainescrossfire_internal.h"
 #include "factions/factions.h"
+#include "teams/teams.h"		/* the team colours - the single source for the rows' rgb */
 #include "cars.h"
 #include "jericho.h"
 #include "jer_events.h"
@@ -49,7 +50,7 @@ static const CD2_FACTION sFac[CD2_FAC_COUNT] =
 	{
 		CD2_FAC_TANNER, "TANNER", "John Tanner", "Rogue Undercover",
 		"Caine's criminal network exposed - enough evidence to bring them all down",
-		0xE6, 0xEE, 0xF8,	/* ice white */
+		CD2_TEAM_TANNER_R, CD2_TEAM_TANNER_G, CD2_TEAM_TANNER_B,	/* pale gold - teams/teams.h */
 		0x8A, 0x9C, 0xB0,	/* accent: steel */
 		TANNER_MODEL, TANNER_MODEL,
 		-1, -1,
@@ -62,7 +63,7 @@ static const CD2_FACTION sFac[CD2_FAC_COUNT] =
 	{
 		CD2_FAC_MCKENZIE, "MCKENZIE", "Lt. McKenzie", "The Law",
 		"Tanner brought in and the rogue operation shut down",
-		0x2F, 0x6B, 0xFF,	/* police blue */
+		CD2_TEAM_MCKENZIE_R, CD2_TEAM_MCKENZIE_G, CD2_TEAM_MCKENZIE_B,	/* police blue - teams/teams.h */
 		0xC8, 0xA0, 0x30,	/* accent: badge gold */
 		TANNER_MODEL, TANNER_MODEL,
 		-1, -1,
@@ -75,7 +76,7 @@ static const CD2_FACTION sFac[CD2_FAC_COUNT] =
 	{
 		CD2_FAC_VASQUEZ, "VASQUEZ", "Vasquez", "Enforcer",
 		"Total control of Caine's US operations",
-		0x35, 0xD0, 0x6A,	/* toxic green */
+		CD2_TEAM_VASQUEZ_R, CD2_TEAM_VASQUEZ_G, CD2_TEAM_VASQUEZ_B,	/* red - teams/teams.h */
 		0x2C, 0x5A, 0x38,	/* accent: olive */
 		TANNER_MODEL, TANNER_MODEL,
 		-1, -1,
@@ -88,7 +89,7 @@ static const CD2_FACTION sFac[CD2_FAC_COUNT] =
 	{
 		CD2_FAC_JERICHO, "JERICHO", "Charles Jericho", "Chaos / Free Agent",
 		"Tanner dead, and Caine's empire for himself",
-		0xFF, 0x8A, 0x1E,	/* chaos orange */
+		CD2_TEAM_JERICHO_R, CD2_TEAM_JERICHO_G, CD2_TEAM_JERICHO_B,	/* dark green - teams/teams.h */
 		0xC8, 0x28, 0x78,	/* accent: magenta */
 		TANNER_MODEL, TANNER_MODEL,
 		-1, -1,
@@ -100,7 +101,7 @@ static const CD2_FACTION sFac[CD2_FAC_COUNT] =
 	{
 		CD2_FAC_CAINE, "CAINE", "Solomon Caine", "Organized Crime",
 		"Four of them pointed at each other, and every one of them in debt to him",
-		0xE0, 0x24, 0x24,	/* mafia crimson */
+		CD2_TEAM_CAINE_R, CD2_TEAM_CAINE_G, CD2_TEAM_CAINE_B,	/* crimson - teams/teams.h */
 		0xD4, 0xAF, 0x37,	/* accent: gold */
 		TANNER_MODEL, TANNER_MODEL,
 		-1, -1,

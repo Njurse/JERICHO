@@ -24,6 +24,7 @@
 #include "driver2.h"
 #include "cainescrossfire.h"
 #include "cainescrossfire_internal.h"	/* cross-file decls within this module */
+#include "teams/teams.h"		/* team colours + the suit rule (and their defaults) */
 #include "cars.h"
 #include "cosmetic.h"
 #include "camera.h"
@@ -159,8 +160,8 @@ void cd2LoadConfig(void)
 	gCd2Cfg.factions      = jer_config_get_int("cainescrossfire", "factions", 1);
 	gCd2Cfg.playerFaction = jer_config_get_int("cainescrossfire", "player_faction", CD2_FAC_TANNER);
 	gCd2Cfg.teamPalette         = jer_config_get_int("cainescrossfire", "team_palette", 1);
-	gCd2Cfg.teamPaletteStrength = jer_config_get_int("cainescrossfire", "team_palette_strength", 256);
-	gCd2Cfg.teamPaletteFloor    = jer_config_get_int("cainescrossfire", "team_palette_floor", 10);
+	gCd2Cfg.teamPaletteStrength = jer_config_get_int("cainescrossfire", "team_palette_strength", CD2_SUIT_TINT_DEFAULT);
+	gCd2Cfg.teamPaletteFloor    = jer_config_get_int("cainescrossfire", "team_palette_floor", CD2_SUIT_FLOOR_DEFAULT);
 
 	// car-vs-car damage as % of stock. Migrate the old car_car_nerf (% reduction).
 	gCd2Cfg.carCarDamage  = jer_config_get_int("cainescrossfire", "car_car_damage", -1);
@@ -549,4 +550,9 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	if (jer_config_get_int("cainescrossfire", "ai_opponent", 0) != 0)
 		ctx->jer_log(ctx, "[cainescrossfire] note: ai_opponent is gone, it no longer spawns anything; "
 			"use ai_opponents = <0..%d> (now %d)\n", CD2_AI_MAX, gCd2Cfg.aiOpponents);
+
+	/* the team table, as resolved: one line per team, so a headless run shows the
+	 * colours and suit rules it is actually using rather than the ones someone
+	 * remembers editing (teams/teams.h) */
+	cd2TeamDump();
 }
