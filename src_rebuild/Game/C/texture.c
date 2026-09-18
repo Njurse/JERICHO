@@ -158,6 +158,8 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 	u_short addr;
 	int i, k;
 	int tr, tg, tb;
+	int dyR, dyG, dyB;		// per-channel dye scale (the team hue on a mid entry)
+	int flR, flG, flB;		// dark-end lift toward the hue
 
 	if (sourceClut == 0)
 		return 0;
@@ -191,6 +193,33 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 	tg = (g * 31) / 255;
 	tb = (b * 31) / 255;
 
+	/* --- the dye -------------------------------------------------------------
+	 * The suit must keep the shading the texture had, so an entry is SCALED by
+	 * the team hue rather than REPLACED by it. Replacing (what this did first)
+	 * turns every entry into "team hue at this entry's brightness": brightness
+	 * survives but the difference in hue and chroma between entries does not, and
+	 * the fabric reads as a solid colour - which is exactly what was reported.
+	 *
+	 * dyeX is the per-channel scale that lands a mid-brightness entry on the hue,
+	 * so the RELATIVE levels of the entries are preserved along with the absolute
+	 * ones. */
+	{
+		int hueLum = (tr * 77 + tg * 150 + tb * 29) >> 8;
+
+		if (hueLum < 1)
+			hueLum = 1;		// a near-black hue would divide by ~0
+
+		dyR = (tr << 8) / hueLum;
+		dyG = (tg << 8) / hueLum;
+		dyB = (tb << 8) / hueLum;
+	}
+
+	/* and the dark end is LIFTED toward the hue, which is what stops a black
+	 * outfit staying black (scaling alone cannot: black x anything is black) */
+	flR = (tr * floor5) / 31;
+	flG = (tg * floor5) / 31;
+	flB = (tb * floor5) / 31;
+
 	for (i = 0; i < 16; i++)
 	{
 		int r5 = entries[i] & 31;
@@ -210,17 +239,20 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 
 		lum = (r5 * 77 + g5 * 150 + b5 * 29) >> 8;	// 0..31 brightness
 
-		/* lift the dark end so a dark suit still reads as the team colour */
-		lum = floor5 + ((31 - floor5) * lum) / 31;
+		/* the dyed colour: scale, then lift the floor */
+		nr = ((r5 * dyR) >> 8) + flR;
+		ng = ((g5 * dyG) >> 8) + flG;
+		nb = ((b5 * dyB) >> 8) + flB;
 
-		nr = (r5 * (256 - k) + ((tr * lum) / 31) * k) >> 8;
-		ng = (g5 * (256 - k) + ((tg * lum) / 31) * k) >> 8;
-		nb = (b5 * (256 - k) + ((tb * lum) / 31) * k) >> 8;
+		if (nr > 31) nr = 31;
+		if (ng > 31) ng = 31;
+		if (nb > 31) nb = 31;
 
-		/* and let the brightest entries drift toward white, so a light colour stays
-		 * light instead of flattening to the team hue. Scaled by strength, so
-		 * strength 0 is still an exact identity. */
-		w = (lum > 20) ? (lum - 20) * 2 : 0;
+		/* a gentle lift on the brightest entries, so a light outfit still reads as
+		 * light instead of settling onto the hue - deliberately mild, because a
+		 * strong pull toward white is the other way this ends up looking flat.
+		 * Scaled by strength, so strength 0 is still an exact identity. */
+		w = (lum > 22) ? (lum - 22) * 2 : 0;
 
 		if (w > 0)
 		{
@@ -231,11 +263,80 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 			nb += ((31 - nb) * w) / 31;
 		}
 
+		/* mix the dyed entry with the original by the strength */
+		nr = (r5 * (256 - k) + nr * k) >> 8;
+		ng = (g5 * (256 - k) + ng * k) >> 8;
+		nb = (b5 * (256 - k) + nb * k) >> 8;
+
 		if (nr > 31) nr = 31;
 		if (ng > 31) ng = 31;
 		if (nb > 31) nb = 31;
 
 		out[i] = (u_short)((entries[i] & 0x8000) | (nb << 10) | (ng << 5) | nr);
+	}
+
+	/* Evidence that the suit kept its shading, as numbers rather than a claim:
+	 * the brightness RANGE across the entries that were dyed (skin excluded)
+	 * before and after, and how many DISTINCT colours survived.
+	 *
+	 * Both matter, and the second is the one that catches the repaint this
+	 * replaced: "team hue at this entry's brightness" kept the brightness range
+	 * intact - it would have scored fine on that alone - while collapsing every
+	 * entry onto a single hue, which is what "it looks like a solid colour" was.
+	 * A dye keeps the entries apart. */
+	{
+		int lo0 = 31, hi0 = 0, lo1 = 31, hi1 = 0;
+		int counted = 0, distinct0 = 0, distinct1 = 0;
+		int j;
+
+		for (i = 0; i < 16; i++)
+		{
+			int r5 = entries[i] & 31;
+			int g5 = (entries[i] >> 5) & 31;
+			int b5 = (entries[i] >> 10) & 31;
+			int l0, l1;
+
+			if (r5 - (g5 + b5) / 2 > 2)
+				continue;			/* skin: not touched */
+
+			l0 = (r5 * 77 + g5 * 150 + b5 * 29) >> 8;
+			l1 = ((out[i] & 31) * 77 + (((out[i] >> 5) & 31)) * 150 + (((out[i] >> 10) & 31)) * 29) >> 8;
+
+			if (l0 < lo0) lo0 = l0;
+			if (l0 > hi0) hi0 = l0;
+			if (l1 < lo1) lo1 = l1;
+			if (l1 > hi1) hi1 = l1;
+
+			counted++;
+		}
+
+		/* distinct colours, ignoring the STP bit and the skin entries */
+		for (i = 0; i < 16; i++)
+		{
+			int a, dup0 = 0, dup1 = 0;
+
+			if ((entries[i] & 31) - (((entries[i] >> 5) & 31) + ((entries[i] >> 10) & 31)) / 2 > 2)
+				continue;
+
+			for (a = 0; a < i; a++)
+			{
+				if ((entries[a] & 31) - (((entries[a] >> 5) & 31) + ((entries[a] >> 10) & 31)) / 2 > 2)
+					continue;
+				if ((entries[a] & 0x7fff) == (entries[i] & 0x7fff)) dup0 = 1;
+				if ((out[a] & 0x7fff) == (out[i] & 0x7fff)) dup1 = 1;
+			}
+
+			if (!dup0) distinct0++;
+			if (!dup1) distinct1++;
+		}
+
+		if (counted > 1 && k > 0)
+		{
+			printInfo("ped palette dye %d,%d,%d @%d floor=%d: %d entry(s), brightness %d..%d (spread %d) -> %d..%d (spread %d), distinct colours %d -> %d\n",
+				r, g, b, k, floor5, counted,
+				lo0, hi0, hi0 - lo0, lo1, hi1, hi1 - lo1,
+				distinct0, distinct1);
+		}
 	}
 
 	LoadImage(&clutpos, (u_long*)out);

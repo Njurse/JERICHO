@@ -22,7 +22,7 @@
 #include "cainescrossfire.h"
 #include "cainescrossfire_internal.h"
 #include "factions/factions.h"
-#include "teams/teams.h"		/* the team colours - the single source for the rows' rgb */
+#include "teams/teams.h"		/* the team colours - the source for the rows' rgb */
 #include "cars.h"
 #include "jericho.h"
 #include "jer_events.h"
@@ -195,6 +195,13 @@ int cd2FacAtWar(int a, int b)
 int cd2FacColourOf(int factionId, unsigned char* r, unsigned char* g, unsigned char* b)
 {
 	const CD2_FACTION* f = cd2FacDef(factionId);
+
+	/* The live team colour comes first, so a change made at runtime (cd2TeamSet,
+	 * including mid-round) shows up everywhere a faction colour is used - the name
+	 * banner, the map blips, the suit palette. The faction row's own r/g/b is the
+	 * fallback for a faction with no team row. */
+	if (f != NULL && cd2TeamColour(factionId, r, g, b))
+		return 1;
 
 	if (f == NULL)
 		return 0;

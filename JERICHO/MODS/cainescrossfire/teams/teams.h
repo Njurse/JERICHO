@@ -17,6 +17,12 @@
 // ---------------------------------------------------------------------------
 // The team colours
 // ---------------------------------------------------------------------------
+// These are the DEFAULTS. The live values live in the table in teams.c, which
+// starts as a copy of these and can be changed at any time - mid-round included -
+// with cd2TeamSet(), so a future "switch team in the middle of a game" needs no
+// further plumbing. Everything that shows a team colour reads the table, never
+// these macros.
+//
 // Tanner and McKenzie look like themselves -- Tanner's standard suit, McKenzie's
 // police uniform -- so their suits only take a light wash of the team colour.
 // Jericho and Vasquez are their colour.
@@ -67,15 +73,23 @@
 #define CD2_SUIT_TINT_DEFAULT	CD2_SUIT_FULL
 
 // The dark end of the outfit is lifted by this much (of 31) before the tint is
-// mixed in, so a suit whose fabric is nearly black still shows its team colour
-// instead of staying black. 0 keeps whatever the texture had.
-#define CD2_SUIT_FLOOR_DEFAULT	10
+// mixed in, so a suit whose fabric is nearly black still shows a hint of its
+// team colour instead of staying black. 0 keeps whatever the texture had.
+//
+// Kept small on purpose. Lifting the dark end and keeping the fabric's shading
+// pull against each other: every step up here raises the darkest folds and
+// squeezes the contrast between them, which is what makes a dyed suit start to
+// read as one flat colour. Measured on Tanner's outfit row at 256, a floor of 10
+// took the brightness spread from 29 to 21; 4 leaves it at 26 while still putting
+// a visible team tint into what were pure blacks.
+#define CD2_SUIT_FLOOR_DEFAULT	4
 
-/* One row per faction: the colour lives in the macros above, this carries what
- * is derived from it. */
+/* One row per faction, and the LIVE team state: a copy of the macros above that
+ * cd2TeamSet() can change at any time. */
 typedef struct CD2_TEAM
 {
 	int factionId;			// CD2_FAC_* this row belongs to
+	unsigned char r, g, b;		// the team colour, live
 	short suitTint;			// CD2_SUIT_CANONICAL / CD2_SUIT_FULL (256 needs more than a byte)
 	const char* note;		// why this character's suit behaves as it does
 } CD2_TEAM;
@@ -89,6 +103,17 @@ int cd2TeamColour(int factionId, unsigned char* r, unsigned char* g, unsigned ch
 
 /* How far that faction's suit takes its team colour; 0 for an unknown id. */
 short cd2TeamSuitTint(int factionId);
+
+/*
+ * Change a team's colour and/or suit tint AT RUNTIME -- mid-round, mid-anything.
+ * Everything that reads a team colour (the HUD, the name banner, the suit
+ * palette) reads the table, so the change takes effect on the next draw; the
+ * pedestrian palette keeps a row set per colour, so a new colour costs one row.
+ *
+ * Pass -1 for a component to leave it alone. Unknown faction ids are ignored
+ * (with a log), and the change is announced so a headless run shows it.
+ */
+void cd2TeamSet(int factionId, int r, int g, int b, int suitTint);
 
 /* Log the table (one line per team) at boot -- the evidence a headless run is
  * read for. */

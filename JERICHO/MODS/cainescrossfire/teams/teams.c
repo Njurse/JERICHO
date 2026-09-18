@@ -13,19 +13,19 @@
 #include "teams/teams.h"
 
 // ---------------------------------------------------------------------------
-// The table. One row per faction; the colour is NOT repeated here, it comes from
-// the macros in teams.h so there is still exactly one place to edit a colour.
+// The live table. The colours start as the macros in teams.h and cd2TeamSet can
+// change them at any time; nothing else in the module keeps its own copy.
 // ---------------------------------------------------------------------------
-static const CD2_TEAM sTeam[CD2_FAC_COUNT] =
+static CD2_TEAM sTeam[CD2_FAC_COUNT] =
 {
 	// Tanner and McKenzie have to look like themselves: a light wash only.
-	{ CD2_FAC_TANNER,	CD2_SUIT_CANONICAL,	"standard suit, lightly washed" },
-	{ CD2_FAC_MCKENZIE,	CD2_SUIT_CANONICAL,	"police uniform, lightly washed" },
+	{ CD2_FAC_TANNER,	CD2_TEAM_TANNER_R,   CD2_TEAM_TANNER_G,   CD2_TEAM_TANNER_B,	  CD2_SUIT_CANONICAL,	"standard suit, lightly washed" },
+	{ CD2_FAC_MCKENZIE,	CD2_TEAM_MCKENZIE_R, CD2_TEAM_MCKENZIE_G, CD2_TEAM_MCKENZIE_B,	  CD2_SUIT_CANONICAL,	"police uniform, lightly washed" },
 	// These two are their colour.
-	{ CD2_FAC_VASQUEZ,	CD2_SUIT_FULL,		"suit is the team colour" },
-	{ CD2_FAC_JERICHO,	CD2_SUIT_FULL,		"suit is the team colour" },
+	{ CD2_FAC_VASQUEZ,	CD2_TEAM_VASQUEZ_R,  CD2_TEAM_VASQUEZ_G,  CD2_TEAM_VASQUEZ_B,	  CD2_SUIT_FULL,	"suit is the team colour" },
+	{ CD2_FAC_JERICHO,	CD2_TEAM_JERICHO_R,  CD2_TEAM_JERICHO_G,  CD2_TEAM_JERICHO_B,	  CD2_SUIT_FULL,	"suit is the team colour" },
 	// The host: nobody asked for a colour, so he keeps the one he had.
-	{ CD2_FAC_CAINE,	CD2_SUIT_CANONICAL,	"host - keeps his own colour" },
+	{ CD2_FAC_CAINE,	CD2_TEAM_CAINE_R,    CD2_TEAM_CAINE_G,    CD2_TEAM_CAINE_B,	  CD2_SUIT_CANONICAL,	"host - keeps his own colour" },
 };
 
 // [D] [T]
@@ -45,23 +45,14 @@ const CD2_TEAM* cd2TeamOf(int factionId)
 // [D] [T]
 int cd2TeamColour(int factionId, unsigned char* r, unsigned char* g, unsigned char* b)
 {
-	unsigned char cr = 0, cg = 0, cb = 0;
+	const CD2_TEAM* t = cd2TeamOf(factionId);
 
-	switch (factionId)
-	{
-		case CD2_FAC_TANNER:	cr = CD2_TEAM_TANNER_R;   cg = CD2_TEAM_TANNER_G;   cb = CD2_TEAM_TANNER_B;   break;
-		case CD2_FAC_MCKENZIE:	cr = CD2_TEAM_MCKENZIE_R; cg = CD2_TEAM_MCKENZIE_G; cb = CD2_TEAM_MCKENZIE_B; break;
-		case CD2_FAC_VASQUEZ:	cr = CD2_TEAM_VASQUEZ_R;  cg = CD2_TEAM_VASQUEZ_G;  cb = CD2_TEAM_VASQUEZ_B;  break;
-		case CD2_FAC_JERICHO:	cr = CD2_TEAM_JERICHO_R;  cg = CD2_TEAM_JERICHO_G;  cb = CD2_TEAM_JERICHO_B;  break;
-		case CD2_FAC_CAINE:	cr = CD2_TEAM_CAINE_R;    cg = CD2_TEAM_CAINE_G;    cb = CD2_TEAM_CAINE_B;    break;
+	if (t == NULL)
+		return 0;	/* unknown: leave the caller's values alone */
 
-		default:
-			return 0;	/* unknown: leave the caller's values alone */
-	}
-
-	if (r != NULL) *r = cr;
-	if (g != NULL) *g = cg;
-	if (b != NULL) *b = cb;
+	if (r != NULL) *r = t->r;
+	if (g != NULL) *g = t->g;
+	if (b != NULL) *b = t->b;
 
 	return 1;
 }
@@ -72,6 +63,33 @@ short cd2TeamSuitTint(int factionId)
 	const CD2_TEAM* t = cd2TeamOf(factionId);
 
 	return (t != NULL) ? t->suitTint : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Change a team at runtime. This is what makes a mid-round colour change (or a
+// future mid-game team switch) work with no further plumbing: every reader of a
+// team colour reads this table, and the suit palette is keyed on the colour, so
+// a new colour simply builds a new row set on the next draw.
+// ---------------------------------------------------------------------------
+void cd2TeamSet(int factionId, int r, int g, int b, int suitTint)
+{
+	CD2_TEAM* t = (CD2_TEAM*)cd2TeamOf(factionId);
+
+	if (t == NULL)
+	{
+		jer_log("[cainescrossfire] cd2TeamSet: unknown faction %d, ignored\n", factionId);
+		return;
+	}
+
+	if (r >= 0) t->r = (unsigned char)((r > 255) ? 255 : r);
+	if (g >= 0) t->g = (unsigned char)((g > 255) ? 255 : g);
+	if (b >= 0) t->b = (unsigned char)((b > 255) ? 255 : b);
+
+	if (suitTint >= 0)
+		t->suitTint = (short)((suitTint > 256) ? 256 : suitTint);
+
+	jer_log("[cainescrossfire] team %s set to rgb=%02X%02X%02X suit=%d/256\n",
+		cd2FacTagOf(t->factionId), t->r, t->g, t->b, (int)t->suitTint);
 }
 
 // ---------------------------------------------------------------------------

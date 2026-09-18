@@ -35,6 +35,7 @@
 #include "jer_events.h"
 #include "jer_anim.h"		/* the all-bone pose API */
 #include "jer_npc.h"		/* jer_npc_* ped scaffolding */
+#include "teams/teams.h"	/* the team colours and the per-character suit rule */
 #include "jer_ped_palette.h"	/* per-instance ped palettes (team colours) */
 #include "factions/factions.h"	/* the five teams: their colours */
 #include "ai/ai.h"		/* cd2AiIsOpponent */
@@ -1118,6 +1119,7 @@ static int cd2CrewOnPedPalette(void* ud, void* args)
 	LPPEDESTRIAN pPed;
 	unsigned char r, g, b;
 	int faction = CD2_FAC_NONE;
+	int suitTint;
 	int i, side;
 
 	(void)ud;
@@ -1163,10 +1165,19 @@ static int cd2CrewOnPedPalette(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 	}
 
+	/* the per-character rule: Tanner and McKenzie keep a lightly washed version of
+	 * their own look, Jericho and Vasquez ARE their colour (teams/teams.h). A
+	 * faction with no team row falls back to the config's global strength. */
+	suitTint = cd2TeamSuitTint(faction);
+
+	if (suitTint <= 0)
+		suitTint = gCd2Cfg.teamPaletteStrength;
+
 	/* the engine caches a row set per colour and rebuilds it after a level reload,
-	 * so asking on every draw is cheap and stays correct across levels */
+	 * so asking on every draw is cheap, stays correct across levels, and picks up a
+	 * colour changed at runtime (cd2TeamSet) on the next draw */
 	jer_ped_palette_set_floor(gCd2Cfg.teamPaletteFloor);
-	jer_ped_palette_select(jer_ped_palette_team(r, g, b, gCd2Cfg.teamPaletteStrength));
+	jer_ped_palette_select(jer_ped_palette_team(r, g, b, suitTint));
 
 	return JER_RESULT_CONTINUE;
 }

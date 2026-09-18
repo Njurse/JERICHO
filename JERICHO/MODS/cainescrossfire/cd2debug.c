@@ -16,7 +16,7 @@
  *     420:killnpc:none        # no attacker             -> "X died"
  *     510:grant
  *
- * Grammar: `frame:action[:arg]`, frames counted from GAME_START (the sim steps
+ * Grammar: `frame:action[:arg[:arg2]]`, frames counted from GAME_START (the sim steps
  * at 30 fps, so 30 = 1s). Inactive unless the file exists, so it costs nothing
  * in normal play. Re-read on every GAME_START, so editing the file and
  * restarting the level is enough.
@@ -28,6 +28,10 @@
  *       (default) -> "You killed <role>"; `npc` -> "<victim> was killed by
  *       <killer>"; `none` -> "<victim> died".
  *   grant                           every weapon to max (cd2WpnGrantAllMax).
+ *   team:<faction index>:<rrggbb>   change a team's colour at runtime. This is
+ *       the only way to see a mid-round colour change (cd2TeamSet) from a
+ *       headless run - the HUD, the banner and the suit palette all follow it on
+ *       the next draw.
  *   fire:<weapon>                   the player's car fires one named weapon now
  *       (mg/missile/mine/homing/cluster/zoomy/freeze/shotgun) through the same
  *       cd2WpnTryFire the trigger uses - so a headless run can exercise a
@@ -54,6 +58,7 @@
 #include "jer_config.h"
 
 #include "cainescrossfire.h"
+#include "teams/teams.h"		/* cd2TeamSet - change a team mid-round */
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
 #include "weapons/core/crew.h"
@@ -63,7 +68,7 @@
 #define CD2_DBG_DAMAGE		3000	// per frame, well above one hit's clamp
 #define CD2_DBG_KILL_TIMEOUT	300	// give up on a kill after this many frames (10s)
 
-enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT };
+enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT, CD2_DBG_TEAM };
 enum { CD2_DBG_ATT_ENEMY = 0, CD2_DBG_ATT_SELF, CD2_DBG_ATT_NONE, CD2_DBG_ATT_PLAYER, CD2_DBG_ATT_NPC };
 
 typedef struct CD2_DBG_STEP
@@ -71,6 +76,7 @@ typedef struct CD2_DBG_STEP
 	int frame;
 	int action;
 	int arg;
+	int arg2;	// optional second value (-1 = not given); hex, so it can carry a colour
 } CD2_DBG_STEP;
 
 static CD2_DBG_STEP sSteps[CD2_DBG_MAX];
@@ -139,6 +145,31 @@ static int cd2DbgReadAction(const char** s, int* arg)
 	const char* p = *s;
 
 	*arg = CD2_DBG_ATT_ENEMY;
+
+	if (cd2DbgMatch(&p, "team"))
+	{
+		/* team:<faction index> -- the caller's optional second argument is the new
+		 * colour, as rrggbb. Changes a team mid-round (cd2TeamSet). */
+		int fac = 0;
+
+		if (*p != ':')
+			return CD2_DBG_NONE;
+
+		p++;
+
+		if (*p < '0' || *p > '9')
+			return CD2_DBG_NONE;
+
+		while (*p >= '0' && *p <= '9')
+		{
+			fac = fac * 10 + (*p - '0');
+			p++;
+		}
+
+		*arg = fac;
+		*s = p;
+		return CD2_DBG_TEAM;
+	}
 
 	if (cd2DbgMatch(&p, "killplayer"))
 	{
@@ -262,7 +293,7 @@ static int cd2DbgParse(void)
 	while (fgets(line, sizeof(line), fp) != NULL && n < CD2_DBG_MAX)
 	{
 		const char* s = line;
-		int frame = 0, action, arg;
+		int frame = 0, action, arg, arg2;
 
 		while (*s == ' ' || *s == '\t')
 			s++;
@@ -291,9 +322,31 @@ static int cd2DbgParse(void)
 			continue;
 		}
 
+		/* an optional second argument, hex because its only user is a colour
+		 * (team:<faction>:<rrggbb>) */
+		arg2 = -1;
+
+		if (*s == ':')
+		{
+			int v = 0, digits = 0;
+
+			s++;
+
+			while ((*s >= '0' && *s <= '9') || (*s >= 'a' && *s <= 'f') || (*s >= 'A' && *s <= 'F'))
+			{
+				v = v * 16 + ((*s <= '9') ? (*s - '0') : ((*s | 0x20) - 'a' + 10));
+				digits++;
+				s++;
+			}
+
+			if (digits > 0)
+				arg2 = v;
+		}
+
 		sSteps[n].frame = frame;
 		sSteps[n].action = action;
 		sSteps[n].arg = arg;
+		sSteps[n].arg2 = arg2;
 		n++;
 	}
 
@@ -514,6 +567,20 @@ static void cd2DbgRunStep(const CD2_DBG_STEP* st)
 			cd2WpnName(st->arg), cd2WpnName(cd2WpnSelected()));
 		break;
 	}
+
+	case CD2_DBG_TEAM:
+		/* change a team's colour mid-round; the second argument is the new
+		 * colour as rrggbb, or -1 to leave the colour and just relabel */
+		if (st->arg2 >= 0)
+		{
+			cd2TeamSet(st->arg,
+				(st->arg2 >> 16) & 0xff, (st->arg2 >> 8) & 0xff, st->arg2 & 0xff, -1);
+		}
+		else
+		{
+			printInfo("[cd2debug] team %d: no colour given (team:<faction>:<rrggbb>)\n", st->arg);
+		}
+		break;
 	}
 }
 
