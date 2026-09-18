@@ -23,6 +23,8 @@
 #include "mission.h"		/* maxCivCars, CopsAllowed, numCivCars, numCopCars */
 #include "cars.h"			/* car_data, MAX_CARS */
 #include "civ_ai.h"		/* PingOutCar */
+#include "pedest.h"		/* pUsedPeds, DestroyPedestrian */
+#include "jer_npc.h"		/* jer_npc_owned - our own peds are not traffic */
 
 #include "testmode_internal.h"
 
@@ -39,6 +41,7 @@ static int gQuiet = 0;				/* we are holding the spawn globals down */
 static int gSavedMaxCivCars = 0;
 static int gSavedCopsAllowed = 0;
 static int gQuietPingedCars = 0;	/* civilian cars removed from the scene */
+static int gQuietDespawnedPeds = 0;
 
 #define TESTMODE_LOG(...)	do { if (gCtx != NULL) gCtx->jer_log(gCtx, __VA_ARGS__); } while (0)
 
@@ -123,6 +126,7 @@ static void TestmodeSaveConfig(void)
 // ---------------------------------------------------------------------------
 static void TestmodeQuietHold(void)
 {
+	LPPEDESTRIAN p;
 	int i;
 
 	/* the level (or another module) set a count: that is the stock value */
@@ -149,10 +153,35 @@ static void TestmodeQuietHold(void)
 		}
 	}
 
+	/* Pedestrians have no spawn cap at all (there is no maxPedestrians to zero),
+	 * so unlike traffic they have to be REMOVED. DestroyPedestrian is the engine's
+	 * clean unlink onto the free list - it is not a kill, so it costs no score and
+	 * raises no death handling.
+	 *
+	 * Which ones is decided by pedType, not by padId: ambient pedestrians are
+	 * CIVILIAN (and OTHER_SPRITE), while the player and mission Tanners are
+	 * TANNER_MODEL, so the player is safe by construction. padId is NOT a usable
+	 * test here - the engine leaves 0 on civilian peds, so `padId >= 0` would have
+	 * kept every one of them (measured: 10 such peds survived the first version of
+	 * this sweep). Anything JERICHO owns is kept as well. */
+	for (p = pUsedPeds; p != NULL; )
+	{
+		LPPEDESTRIAN next = p->pNext;	/* DestroyPedestrian unlinks: take it first */
+
+		if (!jer_npc_owned(p) && (p->pedType == CIVILIAN || p->pedType == OTHER_SPRITE))
+		{
+			DestroyPedestrian(p);
+			gQuietDespawnedPeds++;
+		}
+
+		p = next;
+	}
+
 	if (!gQuiet)
 	{
 		gQuiet = 1;
-		TESTMODE_LOG("[testmode] quiet: traffic off (was %d cars), cops off\n", gSavedMaxCivCars);
+		TESTMODE_LOG("[testmode] quiet: traffic off (was %d cars), cops off, ambient peds removed\n",
+			gSavedMaxCivCars);
 	}
 }
 
@@ -175,7 +204,44 @@ static void TestmodeQuietRelease(void)
 // own live counters (mission.h) are logged periodically while the mode is on.
 // ---------------------------------------------------------------------------
 static int gCensusFrames = 0;
-static int gCensusDespawned = 0;
+
+// [D] [T]
+static int TestmodeCountPeds(void)
+{
+	LPPEDESTRIAN p;
+	int n = 0;
+
+	for (p = pUsedPeds; p != NULL; p = p->pNext)
+		n++;
+
+	return n;
+}
+
+// [D] [T]
+static const char* TestmodePedTypeName(int type)
+{
+	switch (type)
+	{
+		case TANNER_MODEL: return "tanner";
+		case OTHER_MODEL: return "model";
+		case OTHER_SPRITE: return "sprite";
+		case CIVILIAN: return "civilian";
+	}
+
+	return "?";
+}
+
+// [D] [T]
+static void TestmodeLogSurvivors(void)
+{
+	LPPEDESTRIAN p;
+
+	for (p = pUsedPeds; p != NULL; p = p->pNext)
+	{
+		TESTMODE_LOG("[testmode]   survivor: padId=%d owned=%d type=%d (%s)\n",
+			p->padId, jer_npc_owned(p) ? 1 : 0, (int)p->pedType, TestmodePedTypeName(p->pedType));
+	}
+}
 
 static void TestmodeCensus(void)
 {
@@ -184,8 +250,13 @@ static void TestmodeCensus(void)
 
 	gCensusFrames = 0;
 
-	TESTMODE_LOG("[testmode] census: civcars=%d copcars=%d (maxCivCars=%d CopsAllowed=%d) pinged_cars=%d peds_despawned=%d\n",
-		numCivCars, numCopCars, maxCivCars, CopsAllowed, gQuietPingedCars, gCensusDespawned);
+	TESTMODE_LOG("[testmode] census: civcars=%d copcars=%d (maxCivCars=%d CopsAllowed=%d) peds=%d pinged_cars=%d despawned_peds=%d\n",
+		numCivCars, numCopCars, maxCivCars, CopsAllowed, TestmodeCountPeds(),
+		gQuietPingedCars, gQuietDespawnedPeds);
+
+	/* whatever is left is either the player or something a module owns; say so
+	 * rather than leaving it to be guessed at */
+	TestmodeLogSurvivors();
 }
 
 // ---------------------------------------------------------------------------
