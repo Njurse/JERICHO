@@ -1,0 +1,7 @@
+id = "testmode"
+name = "Test Mode"
+version = "0.1.0"
+author = "JERICHO"
+description = "Debug/test-suite mode for asset work: a quiet world (no traffic, police or ambient pedestrians) with an orbiting camera on a chosen car or Tanner, so textures and palettes can be inspected up close."
+dependencies = []
+default-enabled = false

@@ -2109,7 +2109,9 @@ void PrintCommandLineArguments()
 		"        modlist.ini and mod.toml defaults (diagnostic; proves zero mods)\n"
 		"  -help : print this list to the terminal and exit\n"
 		"  -host [port] : (mp mod) start hosting a LAN game\n"
-		"  -join <ip>[:port] : (mp mod) join a LAN game\n";
+		"  -join <ip>[:port] : (mp mod) join a LAN game\n"
+		"  -testmode / -testcar <slot|n> / -testped : (testmode module) quiet\n"
+		"        world + orbit camera on a car or Tanner, for asset testing\n";
 
 	/* printInfo writes to the terminal *and* the log -- -help is meant to be
 	 * read from a console. Never a modal dialog: this used to run on unknown
@@ -2682,6 +2684,18 @@ int redriver2_main(int argc, char** argv)
 		else if (!strcmp(argv[i], "-join"))
 		{
 			/* (mp mod) host[:port] */
+			if (i + 1 < argc && argv[i + 1][0] != '-')
+				i++;
+		}
+		else if (!strcmp(argv[i], "-testmode") || !strcmp(argv[i], "-testped"))
+		{
+			/* (testmode module) no value to skip; recognised here so it is not
+			 * reported as an invalid argument - the module reads the flags itself
+			 * from JER_EVENT_CMDLINE, below. */
+		}
+		else if (!strcmp(argv[i], "-testcar"))
+		{
+			/* (testmode module) car slot or model number */
 			if (i + 1 < argc && argv[i + 1][0] != '-')
 				i++;
 		}
