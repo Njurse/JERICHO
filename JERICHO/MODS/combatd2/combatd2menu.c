@@ -185,14 +185,22 @@ static int cd2ToggleWeapon(void* ud, int dir)
 static void cd2LabelAi(void* ud, char* out, int max)
 {
 	(void)ud;
-	snprintf(out, max, "Opponent AI: %s", gCd2Cfg.aiOpponent ? "ON" : "OFF");
+	snprintf(out, max, "Opponents: %d of %d", gCd2Cfg.aiOpponents, CD2_AI_MAX);
 }
 
 static int cd2ToggleAi(void* ud, int dir)
 {
 	(void)ud;
-	(void)dir;
-	gCd2Cfg.aiOpponent = !gCd2Cfg.aiOpponent;
+
+	/* step through the possible match sizes, wrapping past the max back to none
+	 * (and back the other way from none to the max) */
+	gCd2Cfg.aiOpponents += (dir < 0) ? -1 : 1;
+
+	if (gCd2Cfg.aiOpponents < 0)
+		gCd2Cfg.aiOpponents = CD2_AI_MAX;
+	else if (gCd2Cfg.aiOpponents > CD2_AI_MAX)
+		gCd2Cfg.aiOpponents = 0;
+
 	cd2SaveConfig();
 	return JER_PAUSE_QUIT_NONE;
 }

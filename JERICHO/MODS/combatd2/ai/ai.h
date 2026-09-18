@@ -9,6 +9,12 @@
 
 #include "jericho.h"
 
+// How many AI opponents a match can field at once, and how many it spawns per
+// level (<= the max). The count itself is the match setting `ai_opponents`
+// (CD2_CONFIG), which defaults to 0: opponents are opted into, never assumed.
+#define CD2_AI_MAX		4	// maximum simultaneous opponents
+#define CD2_AI_SPAWN_COUNT	4	// most opponents spawned per level (<= CD2_AI_MAX)
+
 void cd2AiRegister(JERICHO_CONTEXT* ctx);
 
 // Per-run RNG seed (a value that actually varies between launches, unlike the

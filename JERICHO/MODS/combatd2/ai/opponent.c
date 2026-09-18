@@ -174,8 +174,8 @@
 // committed imminent-collision responses (hysteresis in cd2AiDrive)
 enum { CD2_AI_AVOID_NONE = 0, CD2_AI_AVOID_BRAKE, CD2_AI_AVOID_PIVOT };
 
-#define CD2_AI_MAX		4	// maximum simultaneous opponents
-#define CD2_AI_SPAWN_COUNT	4	// opponents spawned per level (<= CD2_AI_MAX)
+// CD2_AI_MAX / CD2_AI_SPAWN_COUNT live in ai/ai.h so the match setting
+// (CD2_CONFIG.aiOpponents) and the pause menu can clamp against them too.
 
 // Per-opponent state (one slot per spawned opponent, so several can run at once
 // with independent behaviour, roles and routes).
@@ -672,16 +672,27 @@ static int cd2AiSpawn(void)
 	CAR_DATA* pcp = NULL;
 	int i, n = 0;
 
+	int want = cd2MatchOpponents();
+
 	if (!cd2WpnPlayerCar(&pcp))
 		return 0;
+
+	/* the match setting, clamped: it may ask for fewer than the level would
+	 * otherwise field, and never more than there are slots */
+	if (want > CD2_AI_SPAWN_COUNT)
+		want = CD2_AI_SPAWN_COUNT;
+	if (want > CD2_AI_MAX)
+		want = CD2_AI_MAX;
 
 	for (i = 0; i < CD2_AI_MAX; i++)
 		sAi[i].carId = -1;
 
-	for (i = 0; i < CD2_AI_MAX && i < CD2_AI_SPAWN_COUNT; i++)
+	for (i = 0; i < want; i++)
 		n += cd2AiSpawnOne(pcp, i);
 
 	sAiCount = n;
+
+	printInfo("[combatd2] ai: %d opponent(s) spawned (ai_opponents=%d)\n", n, want);
 
 	return n;
 }
@@ -1753,7 +1764,7 @@ static int cd2AiOnFrame(void* ud, void* args)
 	(void)ud;
 	(void)args;
 
-	if (!gCd2Cfg.enabled || !gCd2Cfg.aiOpponent)
+	if (!gCd2Cfg.enabled || cd2MatchOpponents() <= 0)
 		return JER_RESULT_CONTINUE;
 
 	// Build the nav graph once the level's road data is resident (GAME_START
@@ -1872,7 +1883,7 @@ static int cd2AiOnCarStep(void* ud, void* args)
 	CD2_AI_CAR* A;
 	(void)ud;
 
-	if (!gCd2Cfg.enabled || !gCd2Cfg.aiOpponent)
+	if (!gCd2Cfg.enabled || cd2MatchOpponents() <= 0)
 		return JER_RESULT_CONTINUE;
 
 	A = cd2AiSlot(cp->id);
@@ -2071,7 +2082,7 @@ static int cd2AiOnDrawMap(void* ud, void* args)
 	int i, plotted = 0;
 	(void)ud;
 
-	if (!gCd2Cfg.enabled || !gCd2Cfg.aiOpponent)
+	if (!gCd2Cfg.enabled || cd2MatchOpponents() <= 0)
 		return JER_RESULT_CONTINUE;
 
 	for (i = 0; i < CD2_AI_MAX; i++)

@@ -457,7 +457,11 @@ typedef struct CD2_CONFIG
 	int respawn;           // 0/1: destroyed cars return to their start point
 	int respawnDelay;      // frames a destroyed car stays out (default ~5s)
 	int navDebug;          // 0/1: draw the navigation graph (nodes/edges/routes)
-	int aiOpponent;        // 0/1: spawn the prototype opponent car
+	// How many AI opponents this MATCH fields, 0..CD2_AI_MAX. Defaults to 0:
+	// opponents are opted into per match (ai_opponents in the ini, the pause menu,
+	// or CD2_OPPONENTS for a harness run), never spawned just because the module
+	// is loaded.
+	int aiOpponents;
 	int aiForceState;      // CD2_AI_AUTO (0) or a forced CD2_AI_* behaviour
 	int aiDebug;           // 0/1: draw the AI internal-value readout on screen
 	int aiRole;            // CD2_AI_ROLE_* (-1 = auto round-robin by car index)
@@ -495,6 +499,11 @@ typedef struct CD2_CAR
 } CD2_CAR;
 
 extern CD2_CONFIG gCd2Cfg;
+
+// How many opponents THIS match fields: the ai_opponents match setting, unless the
+// CD2_OPPONENTS environment overrides it for a headless run. Always clamped to
+// the slots available (0..CD2_AI_MAX).
+extern int cd2MatchOpponents(void);
 
 // Exported for the presentation source file (combatd2media.c) of this merged
 // module: the effective top speed of a car (fixed-point speed-units/frame).

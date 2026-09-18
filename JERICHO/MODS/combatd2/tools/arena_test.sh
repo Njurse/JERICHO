@@ -34,6 +34,13 @@ EXE="REDRIVER2_dev.exe"
 FRAMES="${1:-1350}"          # 30 fps sim => 1350 frames = 45s
 shift 1 2>/dev/null || true  # drop $1 (the frame count) — 2 here silently ate the first extra arg
 
+# combatd2 fields NO opponents unless a match asks for them (ai_opponents, default
+# 0), and a run with nobody to fight tests far less. Ask here. Override to taste:
+#   CD2_OPPONENTS=0 ./arena_test.sh 900    # the quiet world, no AI at all
+#   CD2_OPPONENTS=2 ./arena_test.sh 900    # a two-opponent match
+: "${CD2_OPPONENTS:=4}"
+export CD2_OPPONENTS
+
 # --- the seed decides the WHOLE scenario ------------------------------------
 # Seeding bash's RNG from SEED (then drawing every roll from it) means a seed
 # reproduces the scenario itself, not just the module randomness: same city, same

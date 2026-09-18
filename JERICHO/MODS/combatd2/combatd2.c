@@ -69,6 +69,22 @@ void cd2FacRegister(JERICHO_CONTEXT* ctx);	/* factions/factions.c (declared in i
 // ---------------------------------------------------------------------------
 
 CD2_CONFIG gCd2Cfg;
+
+/* CD2_OPPONENTS for this run only, or -1 when it is not set. Kept apart from the
+ * config so a harness cannot rewrite the player's match setting. */
+static int gEnvOpponents = -1;
+
+/*
+ * How many opponents THIS match fields: the match setting, unless the environment
+ * overrides it for a headless run. Always clamped to the slots available.
+ */
+int cd2MatchOpponents(void)
+{
+	int n = (gEnvOpponents >= 0) ? gEnvOpponents : gCd2Cfg.aiOpponents;
+
+	return jer_clamp_int(n, 0, CD2_AI_MAX);
+}
+
 CD2_CAR gCd2Car[MAX_CARS];
 int gCd2SceneryHits[MAX_CARS];	// scenery impacts per car this level
 int gCd2TrafficLastHit[MAX_CARS];	// last scenery-hit count seen, per car
@@ -98,7 +114,21 @@ void cd2LoadConfig(void)
 	gCd2Cfg.allWeapons    = jer_config_get_int("combatd2", "all_weapons", 1);
 	gCd2Cfg.rollLimit     = jer_config_get_int("combatd2", "roll_limit", CD2_ROLL_LIMIT_DEFAULT);
 	gCd2Cfg.sceneryDamage = jer_config_get_int("combatd2", "scenery_damage", CD2_SCENERY_DAMAGE_DEFAULT);
-	gCd2Cfg.aiOpponent    = jer_config_get_int("combatd2", "ai_opponent", 1);
+	/* Opponents are a MATCH setting and default to NONE: loading combatd2 must not
+	 * put cars on the track by itself. The old ai_opponent flag is deliberately
+	 * NOT migrated - it defaulted to on, so carrying it over would keep spawning
+	 * opponents for everyone who ever ran the module. It is only mentioned at
+	 * boot, so a stale line in the ini is not a mystery. */
+	gCd2Cfg.aiOpponents = jer_config_get_int("combatd2", "ai_opponents", 0);
+
+	/* CD2_OPPONENTS lets a headless harness ask for a match with opponents. It is
+	 * kept OUT of the saved config (it is applied by cd2MatchOpponents below), so
+	 * running a harness can never rewrite the player's match setting. */
+	{
+		const char* env = getenv("CD2_OPPONENTS");
+
+		gEnvOpponents = (env != NULL) ? atoi(env) : -1;
+	}
 	gCd2Cfg.aiForceState  = jer_config_get_int("combatd2", "ai_force_state", CD2_AI_AUTO);
 	gCd2Cfg.aiDebug       = jer_config_get_int("combatd2", "ai_debug", 0);
 	gCd2Cfg.aiRole        = jer_config_get_int("combatd2", "ai_role", -1);
@@ -148,7 +178,7 @@ void cd2LoadConfig(void)
 	gCd2Cfg.allWeapons    = gCd2Cfg.allWeapons ? 1 : 0;
 	gCd2Cfg.rollLimit     = jer_clamp_int(gCd2Cfg.rollLimit, 0, 89);
 	gCd2Cfg.sceneryDamage = jer_clamp_int(gCd2Cfg.sceneryDamage, 0, 100);
-	gCd2Cfg.aiOpponent    = gCd2Cfg.aiOpponent ? 1 : 0;
+	gCd2Cfg.aiOpponents   = jer_clamp_int(gCd2Cfg.aiOpponents, 0, CD2_AI_MAX);
 	gCd2Cfg.aiForceState  = jer_clamp_int(gCd2Cfg.aiForceState, 0, CD2_AI_STATE_COUNT - 1);
 	gCd2Cfg.aiDebug       = gCd2Cfg.aiDebug ? 1 : 0;
 	gCd2Cfg.aiRole        = jer_clamp_int(gCd2Cfg.aiRole, -1, CD2_AI_ROLE_COUNT - 1);
@@ -184,7 +214,7 @@ void cd2SaveConfig(void)
 	jer_config_set_int("combatd2", "all_weapons", gCd2Cfg.allWeapons);
 	jer_config_set_int("combatd2", "roll_limit", gCd2Cfg.rollLimit);
 	jer_config_set_int("combatd2", "scenery_damage", gCd2Cfg.sceneryDamage);
-	jer_config_set_int("combatd2", "ai_opponent", gCd2Cfg.aiOpponent);
+	jer_config_set_int("combatd2", "ai_opponents", gCd2Cfg.aiOpponents);
 	jer_config_set_int("combatd2", "ai_force_state", gCd2Cfg.aiForceState);
 	jer_config_set_int("combatd2", "ai_debug", gCd2Cfg.aiDebug);
 	jer_config_set_int("combatd2", "ai_role", gCd2Cfg.aiRole);
@@ -485,4 +515,17 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 	cd2DebugRegister(ctx);
 
 	ctx->jer_log(ctx, "[combatd2] registered (SDK v%d)\n", ctx->sdkVersion);
+
+	/* opponents are opted into per match now; say so, and warn about the stale key
+	 * the old toggle left behind so its absence has an explanation */
+	ctx->jer_log(ctx, "[combatd2] opponents: %d of %d this match (ai_opponents, default 0)\n",
+		cd2MatchOpponents(), CD2_AI_MAX);
+
+	if (gEnvOpponents >= 0)
+		ctx->jer_log(ctx, "[combatd2] note: CD2_OPPONENTS=%d overrides this run only, the ini keeps %d\n",
+			cd2MatchOpponents(), gCd2Cfg.aiOpponents);
+
+	if (jer_config_get_int("combatd2", "ai_opponent", 0) != 0)
+		ctx->jer_log(ctx, "[combatd2] note: ai_opponent is gone, it no longer spawns anything; "
+			"use ai_opponents = <0..%d> (now %d)\n", CD2_AI_MAX, gCd2Cfg.aiOpponents);
 }
