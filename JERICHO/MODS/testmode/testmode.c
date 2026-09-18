@@ -19,6 +19,11 @@
 #include "jer_config.h"
 #include "jer_math.h"
 
+#include "driver2.h"		/* engine base types, needed before mission.h */
+#include "mission.h"		/* maxCivCars, CopsAllowed, numCivCars, numCopCars */
+#include "cars.h"			/* car_data, MAX_CARS */
+#include "civ_ai.h"		/* PingOutCar */
+
 #include "testmode_internal.h"
 
 #include <stdlib.h>		/* atoi */
@@ -27,6 +32,13 @@
 TESTMODE_CFG gTestCfg;
 
 static JERICHO_CONTEXT* gCtx = NULL;
+
+/* ---- the quiet world ------------------------------------------------------ */
+
+static int gQuiet = 0;				/* we are holding the spawn globals down */
+static int gSavedMaxCivCars = 0;
+static int gSavedCopsAllowed = 0;
+static int gQuietPingedCars = 0;	/* civilian cars removed from the scene */
 
 #define TESTMODE_LOG(...)	do { if (gCtx != NULL) gCtx->jer_log(gCtx, __VA_ARGS__); } while (0)
 
@@ -101,6 +113,103 @@ static void TestmodeSaveConfig(void)
 }
 
 // ---------------------------------------------------------------------------
+// A quiet world: no civilian traffic and no police.
+//
+// maxCivCars and CopsAllowed are plain engine globals (mission.h) and a LEVEL
+// LOAD rewrites them from the mission header, so this is asserted every frame
+// rather than set once. Any value the engine writes while we are quiet is
+// ADOPTED as the stock value before being zeroed, which is what makes the
+// restore correct across level changes without knowing the mission's numbers.
+// ---------------------------------------------------------------------------
+static void TestmodeQuietHold(void)
+{
+	int i;
+
+	/* the level (or another module) set a count: that is the stock value */
+	if (maxCivCars != 0)
+		gSavedMaxCivCars = maxCivCars;
+
+	if (CopsAllowed != 0)
+		gSavedCopsAllowed = CopsAllowed;
+
+	maxCivCars = 0;
+	CopsAllowed = 0;
+
+	/* Stopping new spawns is not enough: a level load puts a few civilian cars
+	 * in the scene before the first frame, and they stay. PingOutCar is the
+	 * engine's own removal - it clears the CAR_DATA and sets CONTROL_TYPE_NONE -
+	 * so this is idempotent and self-healing. Only the first MAX_CARS entries are
+	 * cars at all; the last two are the Tanner and camera collision boxes. */
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		if (car_data[i].controlType == CONTROL_TYPE_CIV_AI)
+		{
+			PingOutCar(&car_data[i]);
+			gQuietPingedCars++;
+		}
+	}
+
+	if (!gQuiet)
+	{
+		gQuiet = 1;
+		TESTMODE_LOG("[testmode] quiet: traffic off (was %d cars), cops off\n", gSavedMaxCivCars);
+	}
+}
+
+// [D] [T]
+static void TestmodeQuietRelease(void)
+{
+	if (!gQuiet)
+		return;
+
+	maxCivCars = gSavedMaxCivCars;
+	CopsAllowed = gSavedCopsAllowed;
+	gQuiet = 0;
+
+	TESTMODE_LOG("[testmode] loud again: traffic %d cars, cops %s\n",
+		gSavedMaxCivCars, gSavedCopsAllowed ? "on" : "off");
+}
+
+// ---------------------------------------------------------------------------
+// A census, so the quiet world can be checked rather than assumed: the engine's
+// own live counters (mission.h) are logged periodically while the mode is on.
+// ---------------------------------------------------------------------------
+static int gCensusFrames = 0;
+static int gCensusDespawned = 0;
+
+static void TestmodeCensus(void)
+{
+	if (++gCensusFrames < 300)		/* ~10s at 30fps */
+		return;
+
+	gCensusFrames = 0;
+
+	TESTMODE_LOG("[testmode] census: civcars=%d copcars=%d (maxCivCars=%d CopsAllowed=%d) pinged_cars=%d peds_despawned=%d\n",
+		numCivCars, numCopCars, maxCivCars, CopsAllowed, gQuietPingedCars, gCensusDespawned);
+}
+
+// ---------------------------------------------------------------------------
+// JER_EVENT_FRAME — hold the world quiet while the mode is on.
+// ---------------------------------------------------------------------------
+static int TestmodeOnFrame(void* ud, void* args)
+{
+	(void)ud;
+	(void)args;
+
+	if (gTestCfg.enabled)
+	{
+		TestmodeQuietHold();
+		TestmodeCensus();
+	}
+	else
+	{
+		TestmodeQuietRelease();
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+// ---------------------------------------------------------------------------
 // JER_EVENT_CMDLINE — fired once, after the engine has parsed its own argv, so a
 // module can claim its own shortcuts. The engine recognises these flags in its
 // parser (see main.c's -testmode branch) so they are not reported as invalid.
@@ -153,6 +262,20 @@ static int TestmodeOnCmdline(void* ud, void* args)
 }
 
 // ---------------------------------------------------------------------------
+// JER_EVENT_SHUTDOWN — the game is going away; put the globals back so a
+// reload/restart is not left with a world we muzzled.
+// ---------------------------------------------------------------------------
+static int TestmodeOnShutdown(void* ud, void* args)
+{
+	(void)ud;
+	(void)args;
+
+	TestmodeQuietRelease();
+
+	return JER_RESULT_CONTINUE;
+}
+
+// ---------------------------------------------------------------------------
 // entry
 // ---------------------------------------------------------------------------
 JER_MODULE_ENTRY(jer_module_testmode_entry)(JERICHO_CONTEXT* ctx)
@@ -172,6 +295,8 @@ JER_MODULE_ENTRY(jer_module_testmode_entry)(JERICHO_CONTEXT* ctx)
 		JERICHO_SDK_VERSION);
 
 	ctx->jer_register_hook(ctx, JER_EVENT_CMDLINE, TestmodeOnCmdline, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, TestmodeOnFrame, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_SHUTDOWN, TestmodeOnShutdown, NULL, 0);
 
 	TestmodeLogOptions("config");
 
