@@ -53,6 +53,12 @@ FAC_NAME=("Tanner (standard suit, lightly washed)" \
           "Vasquez (suit is the team colour)" \
           "Jericho (suit is the team colour)")
 
+# What each of those MUST be dyed with, straight out of teams/teams.h: the team
+# colour, and the suit rule (CD2_SUIT_CANONICAL 60 / CD2_SUIT_FULL 256). This is
+# the part of the matrix a machine can actually judge.
+EXPECT_RGB=(ffe882 2961ba d1322a 2b4d22)
+EXPECT_TINT=(60 60 256 256)
+
 cd "$BIN_DIR" || { echo "no $BIN_DIR"; exit 1; }
 [ -f "$EXE" ] || { echo "no $EXE in $BIN_DIR"; exit 1; }
 
@@ -100,6 +106,24 @@ for fi in "${!FACS[@]}"; do
 			"${FAC_TAG[$fi]}" "$car" "$ONFOOT" "${STATUS:-none}" "$LEAK"
 		printf "             %s\n" "${DYE:-NO SUIT PALETTE LINE - the suit was never dyed}"
 
+		# the check: the colour and the suit rule have to be the ones teams/teams.h
+		# declares for this character. The dye line reads
+		#   ped palette dye R,G,B @tint floor=N: ...
+		GOT_RGB=$(printf '%s' "$DYE" | sed -n 's/.*dye \([0-9]*\),\([0-9]*\),\([0-9]*\) @.*/\1 \2 \3/p')
+		GOT_TINT=$(printf '%s' "$DYE" | sed -n 's/.*@\([0-9]*\) floor.*/\1/p')
+
+		if [ -n "$GOT_RGB" ]; then
+			WANT_RGB=$(printf '%d %d %d' "0x${EXPECT_RGB[$fi]:0:2}" "0x${EXPECT_RGB[$fi]:2:2}" "0x${EXPECT_RGB[$fi]:4:2}")
+
+			if [ "$GOT_RGB" != "$WANT_RGB" ] || [ "$GOT_TINT" != "${EXPECT_TINT[$fi]}" ]; then
+				echo "  !! ${FAC_TAG[$fi]} car$car: expected rgb=$WANT_RGB @${EXPECT_TINT[$fi]} (teams/teams.h), got rgb=$GOT_RGB @${GOT_TINT:-none}"
+				FAILED=1
+			fi
+		else
+			echo "  !! ${FAC_TAG[$fi]} car$car: no dye line to check"
+			FAILED=1
+		fi
+
 		[ "$STATUS" = "ok" ] && [ "$ONFOOT" -gt 0 ] && [ "$LEAK" -eq 0 ] || FAILED=1
 
 		ROWS+=("${FAC_NAME[$fi]}|${DYE}")
@@ -119,7 +143,7 @@ echo "   Traffic and pedestrians are still there; quieting the world is testmode
 
 echo ""
 if [ "$FAILED" -eq 0 ]; then
-	echo "== RESULT: ok  (every character reached gameplay on foot with its own colour dyed) =="
+	echo "== RESULT: ok  (every character reached gameplay on foot, dyed with the colour and suit rule teams/teams.h declares) =="
 else
 	echo "== RESULT: PROBLEM - see the runs above =="
 fi
