@@ -17,6 +17,7 @@
  */
 #include "driver2.h"
 #include "cainescrossfire.h"
+#include "cainescrossfire_internal.h"	/* cd2GetStats */
 #include "cars.h"
 #include "main.h"		/* FrameCnt */
 #include "pad.h"		/* MPAD_* */
@@ -213,12 +214,20 @@ void cd2TurboDump(int carId)
 	if (carId < 0 || carId >= MAX_CARS)
 		return;
 
-	jer_log("[cainescrossfire] turbo car=%d %s%s meter=%d/%d (%.1fs left)\n",
-		carId,
-		gTurbo[carId].active ? "ACTIVE" : "idle",
-		(gTurbo[carId].active && gTurbo[carId].reverse) ? " reverse" : "",
-		gTurbo[carId].meter, CD2_TURBO_METER_FRAMES,
-		(float)gTurbo[carId].meter / 30.0f);
+	/* the numbers the boost actually produces, not just the flag: the sim caps
+	 * speed and acceleration at these, so a boost is visible in them */
+	{
+		CAR_DATA* cp = &car_data[carId];
+		CD2_STATS s = cd2GetStats(cp);
+
+		jer_log("[cainescrossfire] turbo car=%d %s%s meter=%d/%d (%.1fs left) topSpeed=%d accel=%d\n",
+			carId,
+			gTurbo[carId].active ? "ACTIVE" : "idle",
+			(gTurbo[carId].active && gTurbo[carId].reverse) ? " reverse" : "",
+			gTurbo[carId].meter, CD2_TURBO_METER_FRAMES,
+			(float)gTurbo[carId].meter / 30.0f,
+			s.topSpeed, s.accel);
+	}
 }
 
 // Force it on/off, for a headless check (the debug driver's turbo step).

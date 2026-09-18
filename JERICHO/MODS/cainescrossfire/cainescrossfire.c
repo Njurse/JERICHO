@@ -47,6 +47,7 @@
 #include "weapons/core/weapon.h"	/* CD2_WEAPON_DEF + inventory API */
 #include "ai/ai.h"			/* opponent AI (ai/opponent.c) */
 #include "factions/factions.h"	/* the five teams (factions/factions.c) */
+#include "turbo/turbo.h"		/* the boost: speed/accel scaling at the stats */
 #include "carhacks/carhacks.h"		/* vehicle-availability hacks (own module later) */
 #include <string.h>
 // Registration helpers from the other source files of this (merged) module:
@@ -357,6 +358,22 @@ CD2_STATS cd2GetStats(CAR_DATA* cp)
 	// must stay POSITIVE: the brake pass tests `fwdSpeed > -reverseSpeed`.
 	s.topSpeed = (int)(((long long)s.topSpeed * CD2_SPEED_SCALE) >> 12);
 	s.reverseSpeed = (int)(((long long)s.topSpeed * CD2_REVERSE_FRAC) >> 12);
+
+	/* TURBO: the boost is applied here, last, because this is where the stats are
+	 * finally settled - a car's own derivation above must not overwrite it. Every
+	 * speed cap and every acceleration in the sim reads these, so raising them
+	 * here is the whole of "1.25x top speed and 1.25x acceleration". */
+	if (cp->id >= 0 && cp->id < MAX_CARS)
+	{
+		int speedPct = cd2TurboSpeedPct(cp->id);
+		int accelPct = cd2TurboAccelPct(cp->id);
+
+		if (speedPct != 100)
+			s.topSpeed = (s.topSpeed * speedPct) / 100;
+
+		if (accelPct != 100)
+			s.accel = (s.accel * accelPct) / 100;
+	}
 
 	return s;
 }
