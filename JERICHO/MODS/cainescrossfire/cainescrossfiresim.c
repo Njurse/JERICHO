@@ -28,10 +28,13 @@
 #include "convert.h"
 #include "players.h"
 #include "pad.h"
+#include "main.h"		/* FrameCnt */
+#include "debris.h"		/* Setup_Smoke / SMOKE_FIRE */
 #include "dr2math.h"
 #include "jericho.h"
 #include "jer_events.h"
 #include "turbo/turbo.h"		/* cd2TurboPad - the double-tap trigger */
+#include "knock/knock.h"		/* the visual knock (buck and rock) */
 #include "jer_math.h"
 #include "sound.h"
 #include "gamesnd.h"
@@ -435,6 +438,25 @@ int cd2OnCarTorque(void* ud, void* args)
 	int velX = cp->st.n.linearVelocity[0];
 	int velZ = cp->st.n.linearVelocity[2];
 
+	/* TURBO: flames out of the back while the boost runs. fx/fz are the car's own
+	 * forward unit vector, so the emitter sits behind the car wherever it points.
+	 * The vanilla exhaust puff is left alone - suppressing it would mean an engine
+	 * change, and the flames read over it anyway. */
+	if (cd2TurboActive(cp->id) && (FrameCnt & 3) == 0)
+	{
+		VECTOR sp, drift;
+
+		sp.vx = cp->hd.where.t[0] - (int)(((long long)fx * 150) >> 12);
+		sp.vz = cp->hd.where.t[2] - (int)(((long long)fz * 150) >> 12);
+		sp.vy = cp->hd.where.t[1] + 30;
+
+		drift.vx = 0;
+		drift.vy = 0;
+		drift.vz = 0;
+
+		Setup_Smoke(&sp, 18, 45, SMOKE_FIRE, 0, &drift, 0);
+	}
+
 	/* TURBO: the engagement shove. A push along the heading, applied as soon as
 	 * the boost starts - throttle or not, which is the point of a shove - and
 	 * ahead of the speed maths below, so the rest of the frame sees it. */
@@ -759,12 +781,11 @@ int cd2OnCarDraw(void* ud, void* args)
 	if (c->roll != 0)
 		_RotMatrixZ(m, (short)c->roll);
 
-	/* TURBO: the kick's nose-up pitch, on its own channel so it cannot fight the
-	 * slide's roll */
-	c->pitch = cd2TurboKickPitch(cp->id);
-
-	if (c->pitch != 0)
-		_RotMatrixX(m, (short)c->pitch);
+	/* the vehicle knock: buck and rock, render-only. The turbo's kick is one
+	 * source of it and collisions are another - they all land in the same place,
+	 * and none of it reaches the handling model. */
+	cd2KnockTick(cp->id);
+	cd2KnockApply(m, cp->id);
 
 	return JER_RESULT_CONTINUE;
 }

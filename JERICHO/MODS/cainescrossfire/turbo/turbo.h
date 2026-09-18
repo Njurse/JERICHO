@@ -105,7 +105,7 @@ int cd2TurboRevCeiling(int carId, int ceiling);
 // The kick. cd2TurboTakeShove returns a percentage of top speed ONCE per
 // engagement (0 otherwise); cd2TurboKickPitch is the body pitch to add this frame.
 int cd2TurboTakeShove(int carId);
-int cd2TurboKickPitch(int carId);
+// The buck itself is the knock's job (knock/knock.h), not the turbo's.
 
 // Feed the pad once per frame per car (the pad hook does). Edge-detected there.
 void cd2TurboPad(int carId, int pad);
