@@ -455,6 +455,10 @@ int cd2OnCarTorque(void* ud, void* args)
 		drift.vz = 0;
 
 		Setup_Smoke(&sp, 18, 45, SMOKE_FIRE, 0, &drift, 0);
+
+		/* and bright sparks with the flames: fire alone reads as a fire, and the
+		 * spec asked for both. Type 0 is the engine's own collision spray. */
+		Setup_Sparks(&sp, &drift, 3, 0);
 	}
 
 	/* TURBO: the engagement shove. A push along the heading, applied as soon as
