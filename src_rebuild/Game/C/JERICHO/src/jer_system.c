@@ -53,6 +53,26 @@ static int gModuleCount;
 /* Set by jer_disable_all_modules() before jer_init: hard override that wins
  * over both modlist.ini and every mod.toml default-enabled flag. */
 static int gDisableAllModules = 0;
+
+/* Per-module hard overrides (jer_force_module), same rules: they outrank
+ * modlist.ini and default-enabled, and gDisableAllModules outranks them. */
+#define JER_MAX_FORCED 8
+static struct { char id[32]; int enabled; } gForcedModules[JER_MAX_FORCED];
+static int gForcedCount = 0;
+
+// [D] [T]
+static int jerModuleForced(const char* id)
+{
+	int i;
+
+	for (i = 0; i < gForcedCount; i++)
+	{
+		if (strcmp(gForcedModules[i].id, id) == 0)
+			return i;
+	}
+
+	return -1;
+}
 static JER_MODULE* gCurrentModule;	/* module whose entry is running */
 static void* gOverrideSlots[JER_OVERRIDE_SLOTS];
 static JERICHO_CONTEXT gCtx;
@@ -482,6 +502,8 @@ static void jerLogInventory(void)
 		 * default-enabled module visible (modlist.ini never mentioned it). */
 		if (gDisableAllModules)
 			src = "nomods";
+		else if (gForcedCount > 0 && jerModuleForced(m->id) >= 0)
+			src = "forced";
 		else if (m->enabledFromModlist)
 			src = "modlist";
 		else
@@ -597,6 +619,37 @@ static void jerActivateModules(const char* rootDir)
 		orderCount = 0;
 
 		jerLog("[jericho] -nomods: %d module(s) force-disabled (modlist + mod.toml defaults ignored)\n", wouldRun);
+	}
+	else
+	{
+		/* per-module overrides (jer_force_module) - e.g. -testmode arming the
+		 * testmode module without the player having enabled it. Applied here, so
+		 * they change the enable decision itself, not just the log. */
+		int f;
+
+		for (f = 0; f < gForcedCount; f++)
+		{
+			for (i = 0; i < gModuleCount; i++)
+			{
+				int was;
+
+				if (strcmp(gModules[i].id, gForcedModules[f].id) != 0)
+					continue;
+
+				was = gModules[i].enabled;
+				gModules[i].enabled = gForcedModules[f].enabled;
+
+				if (was != gModules[i].enabled)
+				{
+					jerLog("[jericho] %s: force-%s for this boot\n", gModules[i].id,
+						gModules[i].enabled ? "ENABLED" : "disabled");
+
+					/* a newly enabled module becomes an activation */
+					if (gModules[i].enabled && orderCount < JER_MAX_MODULES)
+						order[orderCount++] = gModules[i].id;
+				}
+			}
+		}
 	}
 
 	/* activate in order */
@@ -783,6 +836,38 @@ void jer_disable_all_modules(void)
 int jer_modules_disabled(void)
 {
 	return gDisableAllModules;
+}
+
+/*
+ * Hard per-module switch (engine test/diagnostic flags). Set BEFORE jer_init so
+ * the activation pass honours it regardless of modlist.ini / mod.toml, which is
+ * what lets `-testmode` arm a module the player never enabled.
+ */
+void jer_force_module(const char* id, int enabled)
+{
+	int i = jerModuleForced(id);
+
+	if (id == NULL || id[0] == 0)
+		return;
+
+	/* a repeat of the same id just overwrites */
+	if (i >= 0)
+	{
+		gForcedModules[i].enabled = enabled != 0;
+		return;
+	}
+
+	if (gForcedCount >= JER_MAX_FORCED)
+	{
+		jerLog("[jericho] jer_force_module: out of slots, ignoring '%s'\n", id);
+		return;
+	}
+
+	snprintf(gForcedModules[gForcedCount].id, sizeof(gForcedModules[gForcedCount].id), "%s", id);
+	gForcedModules[gForcedCount].enabled = enabled != 0;
+	gForcedCount++;
+
+	jerLog("[jericho] module '%s' force-%s for this boot\n", id, enabled ? "ENABLED" : "disabled");
 }
 
 /* Re-read JERICHO/CONFIG/modlist.ini and re-activate (used after toggles). */

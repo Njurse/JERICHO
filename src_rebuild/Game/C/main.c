@@ -2285,6 +2285,18 @@ int redriver2_main(int argc, char** argv)
 				break;
 			}
 		}
+
+		/* the testmode module is a debug tool, so its flags enable it: the player
+		 * should not have to edit modlist.ini first. -nomods still wins. */
+		for (ai = 1; ai < argc; ai++)
+		{
+			if (!strcmp(argv[ai], "-testmode") || !strcmp(argv[ai], "-testped") ||
+				!strcmp(argv[ai], "-testcar"))
+			{
+				jer_force_module("testmode", 1);
+				break;
+			}
+		}
 	}
 
 	jer_init("JERICHO");

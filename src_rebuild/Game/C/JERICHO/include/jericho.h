@@ -350,6 +350,14 @@ void jer_disable_all_modules(void);
 /* Non-zero when every module was force-disabled via jer_disable_all_modules. */
 int jer_modules_disabled(void);
 
+/*
+ * Force ONE module on (or off) for this boot, before jer_init: a hard override
+ * that beats both modlist.ini and the module's own `default-enabled`. Used by the
+ * engine's diagnostic/test flags so `-testmode` works without editing the user's
+ * modlist first. `-nomods` still wins over it.
+ */
+void jer_force_module(const char* id, int enabled);
+
 /* Fire an event through the runtime (the engine's thin entry point). */
 int jer_fire(int event, void* args);
 
