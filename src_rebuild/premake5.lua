@@ -87,7 +87,7 @@ local function jericho_generate_registry(mods)
 		-- Fail closed, to match the runtime loader (jer_loader.c): a module is
 		-- OFF unless its mod.toml explicitly says `default-enabled = true`. An
 		-- absent key must never silently turn a module on (that is how
-		-- collisiondevil/combatd2/d2pl ran unannounced).
+		-- collisiondevil/cainescrossfire/d2pl ran unannounced).
 		local defaultEnabled = 0
 		local toml = io.open(string.format("../JERICHO/MODS/%s/mod.toml", m), "r")
 
@@ -416,7 +416,8 @@ for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
 
 		includedirs {
 			("../JERICHO/MODS/" .. JER_MOD),
-			("../JERICHO/MODS"),  -- sibling modules (combatd2media includes combatd2/combatd2.h)
+			("../JERICHO/MODS"),  -- sibling module roots: a source in a subfolder (ai/,
+			                      -- weapons/) includes its own module header by plain name
 		}
 
 		targetdir "bin/%{cfg.buildcfg}"

@@ -18,7 +18,7 @@ Resolution order (jer_system.c `jerActivateModules`):
    nothing. A module must *opt in*; it can never inherit "on".
 
 Step 3 is fail-closed on purpose. It used to be fail-open (absent ⇒ enabled),
-which is how `collisiondevil`, `combatd2` and `d2pl` ran unannounced for months
+which is how `collisiondevil`, `cainescrossfire` and `d2pl` ran unannounced for months
 without appearing in `modlist.ini` at all. The value is parsed as an
 **allow-list** in both parsers — only `true` / `1` / `enabled` turns a module on;
 an empty value, a typo or an unwrapped quoted string leaves it **off**.
@@ -35,7 +35,7 @@ Every boot writes the resolution to `REDRIVER2.log`:
 
 ```
 [jericho] --- module inventory (11 loaded) ---
-[jericho]   combatd2   v0.6.0  enabled=1 src=default state=active   ...
+[jericho]   Caine's Crossfire   v0.6.0  enabled=1 src=default state=active   ...
 [jericho]   crumple    v1.0.0  enabled=1 src=modlist state=active   ...
 ```
 
@@ -96,13 +96,13 @@ handling path is the untouched stock one.
 | Module | What it overrides | Where |
 |---|---|---|
 | `collisiondevil` | angular damping, drift yaw kick, rear-grip drop, crash spin | `CAR_TORQUE`, `CAR_FRICTION`, `CAR_STEP`, `CAR_ENGINE`, `COLLISION` — collisiondevil.c |
-| `combatd2` | gravity / angular damping / spring rate + a point-mass integrator | `GET_PHYSICS_PARAMS`, `CAR_TORQUE` — combatd2sim.c:708, :284 |
+| `cainescrossfire` | gravity / angular damping / spring rate + a point-mass integrator | `GET_PHYSICS_PARAMS`, `CAR_TORQUE` — cainescrossfiresim.c:708, :284 |
 
 `crumple` changes behaviour too, but only for **damaged** cars: its physics lives
 in bend-gated branches of the engine (see below), so an undamaged car is stock.
 
 **Guaranteeing vanilla handling:** `-nomods`, or a `modlist.ini` with
-`collisiondevil = 0` and `combatd2 = 0`. The shipped `modlist.ini` pins both to
+`collisiondevil = 0` and `cainescrossfire = 0`. The shipped `modlist.ini` pins both to
 `0`, so a default install runs no handling override. Verify with the boot log —
 `grep 'state=active' REDRIVER2.log` must not name either module.
 

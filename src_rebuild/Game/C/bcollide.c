@@ -1043,7 +1043,7 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 				reaction[2] = denom * (collisionResult.surfNormal.vz / 64);
 
 				// JERICHO-HOOK: wall restitution scale (0..4096; 4096 = stock).
-				// A module (combatd2) returns a low value so the wall cancels
+				// A module (cainescrossfire) returns a low value so the wall cancels
 				// only the velocity INTO it (the normal component) and lets the
 				// car keep scraping tangentially along the wall — the TM2
 				// "collision forgiveness" — instead of the stock outward

@@ -6,14 +6,14 @@
  * A message is a LINE made of one or more COLOUR RUNS. jer_hud_message is the
  * single-run case and draws in the ambient text colour, exactly as this file
  * always did; jer_hud_message_segs is for a line that has to name something in
- * its own colour (combatd2's faction names in the kill banner), and a run can
+ * its own colour (cainescrossfire's faction names in the kill banner), and a run can
  * still ask for the ambient colour so the surrounding wording keeps matching
  * every other HUD line.
  *
  * PrintString stamps the ambient gFontColour into every glyph and SetTextColour
  * is global state, so this drawer SAVES the colour on entry and puts it back on
  * exit: JER_EVENT_DRAW_OVERLAY fires immediately after jer_hud_draw, and the
- * module overlays it draws (combatd2's AI readout, jer_error's notices) expect
+ * module overlays it draws (cainescrossfire's AI readout, jer_error's notices) expect
  * the colour they left behind.
  */
 

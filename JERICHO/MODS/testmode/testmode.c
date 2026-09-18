@@ -103,7 +103,7 @@ static void TestmodeReadConfig(void)
 }
 
 // JERICHO-HOOK: persist the resolved options, so testmode.ini materialises with
-// every knob visible and editable (the combatd2 pattern). Reading first means a
+// every knob visible and editable (the cainescrossfire pattern). Reading first means a
 // value the player edited is written back unchanged.
 static void TestmodeSaveConfig(void)
 {

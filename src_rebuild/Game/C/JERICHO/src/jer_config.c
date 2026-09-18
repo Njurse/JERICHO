@@ -31,7 +31,7 @@
 
 /* Value length. 64 was too small: it silently truncated longer values, and
  * because a set rewrites the file from this cache the truncation was written
- * back to disk. A list-like setting (see combatd2's car_list) does not fit in
+ * back to disk. A list-like setting (see cainescrossfire's car_list) does not fit in
  * 64 - it came back cut to 63 chars. Anything that needs more than this is
  * better off in a file of its own. */
 #define JER_CONFIG_VAL_LEN 256

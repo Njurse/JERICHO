@@ -134,7 +134,7 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 	/* Fail closed: a module whose mod.toml omits default-enabled is DISABLED
 	 * unless modlist.ini explicitly enables it. The old fallback was 1, which
 	 * meant a module could be silently ON simply by not mentioning the key —
-	 * that is how collisiondevil/combatd2/d2pl ran unannounced. Opt in only. */
+	 * that is how collisiondevil/cainescrossfire/d2pl ran unannounced. Opt in only. */
 	m->defaultEnabled = 0;
 
 	f = fopen(path, "rb");

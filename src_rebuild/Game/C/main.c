@@ -1717,7 +1717,7 @@ int gMultiStep = 0;
 	int gRunFrames = 0;
 
 	// JERICHO: debug/test - the run seed, passed to modules on JER_EVENT_GAME_START
-	// so a module can make itself reproducible (combatd2's opponent AI derives its
+	// so a module can make itself reproducible (cainescrossfire's opponent AI derives its
 	// roles and roam goals from it). 0 = none given, modules seed themselves.
 	int gDebugSeed = 0;
 

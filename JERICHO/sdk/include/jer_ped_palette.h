@@ -7,7 +7,7 @@
  * A skeleton pedestrian's colours come from its polygon CLUTs, which are shared
  * by every instance of that model. This gives ONE instance a recoloured copy of
  * those CLUTs, so a module can put individual Tanners in team colours (see
- * `combatd2`'s `team_palette`) without touching anyone else.
+ * `cainescrossfire`'s `team_palette`) without touching anyone else.
  *
  * How it works, and why it is per-(texture_set, texture_id): see
  * JERICHO/docs/ped-palette.md. In short - the Tanner body is one texture page

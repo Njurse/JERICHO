@@ -657,7 +657,7 @@ ushort GetEngineRevs(CAR_DATA* cp)
 		if (gear > 3)
 			gear = 3;
 
-		// JERICHO-HOOK: retune the gear/rev model per car (combatd2's short
+		// JERICHO-HOOK: retune the gear/rev model per car (cainescrossfire's short
 		// gears + tall top gear that levels pitch at the car's top speed).
 		// Prefilled with the stock row, so no handler = exactly stock.
 		{
@@ -739,7 +739,7 @@ ushort GetEngineRevs(CAR_DATA* cp)
 
 		cp->hd.gear = 0;
 
-		// reverse redline: reverse drives as fast as forward in combatd2, so
+		// reverse redline: reverse drives as fast as forward in cainescrossfire, so
 		// the raw ws * ratio_ac can blow past redline (and overflow ushort)
 		if (acc != 0)
 		{
@@ -1739,7 +1739,7 @@ void SoundTasks(void)
 			position = (VECTOR*)cp->hd.where.t;
 			velocity = (LONGVECTOR3*)cp->st.n.linearVelocity;
 
-			// JERICHO-HOOK: engine-audio tuners (combatd2): scale/offset the
+			// JERICHO-HOOK: engine-audio tuners (cainescrossfire): scale/offset the
 			// rev + idle channel pitch and volume before they are placed.
 			{
 				JER_ARGS_CAR_ENGINE_SOUND es;

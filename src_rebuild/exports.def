@@ -122,9 +122,9 @@ EXPORTS
 	?InitCopState@@YAXPEAU_CAR_DATA@@PEAD@Z
 	?InitCops@@YAXXZ
 	?PassiveCopTasks@@YAXPEAU_CAR_DATA@@@Z
-	?GetDataPtr@CSoundSource_OpenALCache@@UEBAPEAEAEAH@Z
 	?GetSamples@CSoundSource_OpenALCache@@UEAAHPEAEHH_N@Z
 	?GetSampleCount@CSoundSource_OpenALCache@@UEBAHXZ
+	?GetDataPtr@CSoundSource_OpenALCache@@UEBAPEAEAEAH@Z
 	?ReplayLog_Fnarr_He_Said_Log@@YAHH@Z
 	?AddBrakeLight@@YAXPEAU_CAR_DATA@@@Z
 	?AddCopCarLight@@YAXPEAU_CAR_DATA@@@Z
@@ -349,15 +349,15 @@ EXPORTS
 	?InitCarPhysics@@YAXPEAU_CAR_DATA@@PEAY03HH@Z
 	?InitSkidding@@YAXXZ
 	?ProcessJuncBoundsLump@@YAXPEADH@Z
-	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
-	?ProcessRoadsLump@@YAXPEADH@Z
-	?GetXAData@@YAXH@Z
 	?StopDualShockMotors@@YAXXZ
 	?ProcessRoadBoundsLump@@YAXPEADH@Z
-	?InitialiseCarHandling@@YAXXZ
 	?SetXAVolume@@YAXH@Z
+	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
 	?ProcessJunctionsLump@@YAXPEADH@Z
+	?InitialiseCarHandling@@YAXXZ
+	?ProcessRoadsLump@@YAXPEADH@Z
 	?ProcessSubDivisionLump@@YAXPEADH@Z
+	?GetXAData@@YAXH@Z
 	?ProcessCarPad@@YAXPEAU_CAR_DATA@@IDD@Z
 	?RebuildCarMatrix@@YAXPEATRigidBodyState@@PEAU_CAR_DATA@@@Z
 	?SetShadowPoints@@YAXPEAU_CAR_DATA@@PEAUVECTOR@@@Z
@@ -636,6 +636,12 @@ EXPORTS
 	?TannerActionHappening@@YAHXZ
 	?TannerCarCollisionCheck@@YAHPEAUVECTOR@@HH@Z
 	?set_coll_box@@YAXHPEAU_CAR_DATA@@H@Z
+	jer_ped_palette_enter
+	jer_ped_palette_init
+	jer_ped_palette_leave
+	jer_ped_palette_select
+	jer_ped_palette_set_floor
+	jer_ped_palette_team
 	?ChangeCarPlayerToPed@@YAXH@Z
 	?ChangePedPlayerToCar@@YAXHPEAU_CAR_DATA@@@Z
 	?InitPlayer@@YAXPEAU_PLAYER@@PEAU_CAR_DATA@@DHPEAY03HHHPEAD@Z
@@ -800,6 +806,7 @@ EXPORTS
 	?GetTextureDetails@@YAXPEADPEAUTEXTURE_DETAILS@@H@Z
 	?GetTextureInfoName@@YAPEAUTEXINF@@PEADPEAUTPAN@@@Z
 	?IncrementClutNum@@YAXPEAU_RECT16@@@Z
+	?JerichoMakeClutRow@@YAGGHHHHH@Z
 	?LoadImportedTPages@@YAXXZ
 	?LoadPermanentTPages@@YAXPEAH@Z
 	?LoadPermanentTPagesFromTIM@@YAXXZ
@@ -825,8 +832,8 @@ EXPORTS
 	?GetDataPtr@CSoundSource_WaveCache@@UEBAPEAEAEAH@Z
 	?GetFormat@CSoundSource_Wave@@UEAAPEAUsoundFormat_s@@XZ
 	?GetSampleCount@CSoundSource_Wave@@UEBAHXZ
-	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
 	?Load@CSoundSource_OpenALCache@@EEAA_NPEBD@Z
+	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
 	?IsStreaming@CSoundSource_WaveCache@@UEAA_NXZ
 	?PauseXA@@YAXXZ
 	?PlayXA@@YAXHH@Z
@@ -1003,8 +1010,8 @@ EXPORTS
 	??1?$vector@Uindex_entry_t@ReadAVI@@V?$allocator@Uindex_entry_t@ReadAVI@@@std@@@std@@QEAA@XZ
 	??1ReadAVI@@UEAA@XZ
 	??1_Sentry_base@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@XZ
-	??1bad_array_new_length@std@@UEAA@XZ
 	??1bad_cast@std@@UEAA@XZ
+	??1bad_array_new_length@std@@UEAA@XZ
 	??1locale@std@@QEAA@XZ
 	??1sentry@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@XZ
 	??_D?$basic_ifstream@DU?$char_traits@D@std@@@std@@QEAAXXZ
@@ -1048,6 +1055,7 @@ EXPORTS
 	jer_init
 	jer_disable_all_modules
 	jer_modules_disabled
+	jer_force_module
 	jer_fire
 	jer_log
 	jer_error
@@ -1105,7 +1113,7 @@ EXPORTS
 	jer_loader_unload
 	jer_module_antfarm_entry
 	??4half@@QEAAAEAU0@AEBU0@@Z
-	jer_module_collisiondevil_entry
+	?cd2MatchOpponents@@YAHXZ
 	?cd2CarTopSpeed@@YAHPEAX@Z
 	?cd2CarBrake@@YAHPEAX@Z
 	?cd2IsTraffic@@YAHPEAU_CAR_DATA@@@Z
@@ -1116,7 +1124,7 @@ EXPORTS
 	?cd2OwnsCar@@YAHPEAU_CAR_DATA@@@Z
 	?cd2GetStats@@YA?AUCD2_STATS@@PEAU_CAR_DATA@@@Z
 	?cd2OnFramePursuit@@YAHPEAX0@Z
-	jer_module_combatd2_entry
+	jer_module_cainescrossfire_entry
 	?cd2OnCarPad@@YAHPEAX0@Z
 	?cd2OnCarStep@@YAHPEAX0@Z
 	?cd2OnCarTorque@@YAHPEAX0@Z
@@ -1253,6 +1261,7 @@ EXPORTS
 	?cd2DropDraw@@YAXXZ
 	?cd2DropSpawn@@YAXPEBUCD2_WEAPON_DEF@@PEBU_CAR_DATA@@PEBUVECTOR@@2@Z
 	?cd2AoeBlast@@YAXPEBUVECTOR@@HHHPEBU_CAR_DATA@@1@Z
+	jer_module_collisiondevil_entry
 	jer_module_crumple_entry
 	?fst_max@@YAHHH@Z
 	?fst_min@@YAHHH@Z
@@ -1281,8 +1290,8 @@ EXPORTS
 	?canFire@WeaponBase@@UEAA_NXZ
 	?consumeAmmo@WeaponBase@@QEAAXXZ
 	?init@WeaponBase@@QEAAXXZ
-	?onAmmoChanged@WeaponBase@@UEAAXXZ
 	?onEquip@WeaponBase@@UEAAXXZ
+	?onAmmoChanged@WeaponBase@@UEAAXXZ
 	?onHolster@WeaponBase@@UEAAXXZ
 	?playSound@WeaponBase@@QEAAXH@Z
 	?poseArm@WeaponBase@@UEAAXPEAXH@Z
@@ -1381,6 +1390,7 @@ EXPORTS
 	jer_net_local_player
 	MpBridgeDeliver
 	jer_module_sandbox_entry
+	jer_module_testmode_entry
 	jer_anim_aim_diff
 	jer_menu_begin
 	jer_menu_end
@@ -1518,12 +1528,12 @@ EXPORTS
 	__real@43480000 DATA
 	__real@40490fd0 DATA
 	__real@43340000 DATA
-	__real@3fd999999999999a DATA
-	__real@4049000000000000 DATA
-	__real@40b0000000000000 DATA
 	__real@3ff999999999999a DATA
 	__real@40cf71ffffffffff DATA
 	__real@40d1f80000000000 DATA
+	__real@3fd999999999999a DATA
+	__real@4049000000000000 DATA
+	__real@40b0000000000000 DATA
 	__real@42c00000 DATA
 	__real@43b40000 DATA
 	__real@44400000 DATA
@@ -2816,7 +2826,6 @@ EXPORTS
 	?g_Subtitles@@3PAUSUBTITLE@@A DATA
 	?g_CreditsLines@@3PAPEADA DATA
 	?fmvTextPolys@@3PAUPOLY_FT4@@A DATA
-	?gCdCfg@@3UCOLLISIONDEVIL_CONFIG@@A DATA
 	?gCd2Cfg@@3UCD2_CONFIG@@A DATA
 	?gCd2Car@@3PAUCD2_CAR@@A DATA
 	?gCd2SceneryHits@@3PAHA DATA
@@ -2831,6 +2840,7 @@ EXPORTS
 	?cd2WdefShotgun@@3UCD2_WEAPON_DEF@@B DATA
 	?cd2WdefSpecialJericho@@3UCD2_WEAPON_DEF@@B DATA
 	?cd2WdefSmg@@3UCD2_WEAPON_DEF@@B DATA
+	?gCdCfg@@3UCOLLISIONDEVIL_CONFIG@@A DATA
 	?gCrumpleBuddha@@3HA DATA
 	?gCrumpleDpadDeform@@3HA DATA
 	?gCrumpleRepairCar@@3HA DATA
@@ -2879,3 +2889,4 @@ EXPORTS
 	?gPedStickMove@@3HA DATA
 	gMp DATA
 	gMpCtx DATA
+	?gTestCfg@@3UTESTMODE_CFG@@A DATA

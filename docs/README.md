@@ -25,7 +25,7 @@ Each mod documents itself in its own folder.
 
 | Mod | Docs |
 |---|---|
-| combatd2 | [`README.md`](../JERICHO/MODS/combatd2/README.md) (index + test tooling), [`FX.md`](../JERICHO/MODS/combatd2/FX.md), [`HANDLING.md`](../JERICHO/MODS/combatd2/HANDLING.md), [`SOUNDS.md`](../JERICHO/MODS/combatd2/SOUNDS.md), [`AI.md`](../JERICHO/MODS/combatd2/AI.md), [`MOUNTED_CREW.md`](../JERICHO/MODS/combatd2/MOUNTED_CREW.md), [`FACTIONS.md`](../JERICHO/MODS/combatd2/FACTIONS.md), [`carhacks/CROSS_CITY.md`](../JERICHO/MODS/combatd2/carhacks/CROSS_CITY.md), [`carhacks/FORMATS.md`](../JERICHO/MODS/combatd2/carhacks/FORMATS.md) (**the proprietary file formats**) |
+| Caine's Crossfire | [`README.md`](../JERICHO/MODS/cainescrossfire/README.md) (index + test tooling), [`FX.md`](../JERICHO/MODS/cainescrossfire/FX.md), [`HANDLING.md`](../JERICHO/MODS/cainescrossfire/HANDLING.md), [`SOUNDS.md`](../JERICHO/MODS/cainescrossfire/SOUNDS.md), [`AI.md`](../JERICHO/MODS/cainescrossfire/AI.md), [`MOUNTED_CREW.md`](../JERICHO/MODS/cainescrossfire/MOUNTED_CREW.md), [`FACTIONS.md`](../JERICHO/MODS/cainescrossfire/FACTIONS.md), [`carhacks/CROSS_CITY.md`](../JERICHO/MODS/cainescrossfire/carhacks/CROSS_CITY.md), [`carhacks/FORMATS.md`](../JERICHO/MODS/cainescrossfire/carhacks/FORMATS.md) (**the proprietary file formats**) |
 | crumple | [`README.md`](../JERICHO/MODS/crumple/README.md), [`crumple.md`](../JERICHO/MODS/crumple/crumple.md) (car deformation model) |
 | d2pl | [`readme.md`](../JERICHO/MODS/d2pl/readme.md) |
 | sandbox | [`README.md`](../JERICHO/MODS/sandbox/README.md) |
@@ -47,8 +47,8 @@ Each mod documents itself in its own folder.
 - [`src_rebuild/PsyCross/README.md`](../src_rebuild/PsyCross/README.md) — Psy-X /
   Psy-Cross, the PlayStation-to-host layer the engine is ported onto.
 - [`PSXToolchain/README.md`](../PSXToolchain/README.md) — the PSX build toolchain.
-- `JERICHO/MODS/combatd2/tools/` — unattended test tooling (`arena_test.sh` and the
-  `launch_*.bat` launchers); described in combatd2's README under "Test tooling".
+- `JERICHO/MODS/cainescrossfire/tools/` — unattended test tooling (`arena_test.sh` and the
+  `launch_*.bat` launchers); described in Caine's Crossfire's README under "Test tooling".
 - [`changelog.txt`](../changelog.txt) — upstream changelog.
 
 ## Conventions

@@ -12,7 +12,7 @@
 # initialises but makes no sound (nothing is changed for the user's own
 # sessions).
 #
-# House rules (learned the hard way — same as combatd2's tools):
+# House rules (learned the hard way — same as cainescrossfire's tools):
 #   * never kill by image name; only the PID we launched is killed, and only
 #     on a genuine hang;
 #   * never delete REDRIVER2.log — it is snapshotted;

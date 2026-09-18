@@ -1,7 +1,7 @@
 # Per-instance pedestrian palettes (the Tanner body)
 
 How to give one Tanner instance its own colours without touching the others, and
-what the geometry actually costs. Written for the team-colour work in `combatd2`
+what the geometry actually costs. Written for the team-colour work in `cainescrossfire`
 (see `team_palette` there), but the lever is generic.
 
 ## What the geometry actually is
@@ -171,4 +171,4 @@ team colour makes the whole outfit read as one flat tone.
 
 `jer_ped_palette_enter` logs `ped palette: LEAK ...` if the table it is about to
 swap still holds a previous team's row — i.e. if a swap ever escaped its bracket.
-It has never fired, including under `combatd2` with its crew drawing.
+It has never fired, including under `cainescrossfire` with its crew drawing.

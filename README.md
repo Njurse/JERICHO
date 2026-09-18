@@ -284,7 +284,7 @@ Helpers exist for the common cases:
 
 - **premake auto-scans `JERICHO/MODS`**: every folder with a `mod.toml` that does
   *not* declare `runtime = "dll"` (a deep mod) is compiled into the game — there
-  is no mod list to maintain. `--with-mods="crumple,combatd2"` builds only a
+  is no mod list to maintain. `--with-mods="crumple,Caine's Crossfire"` builds only a
   subset; `--with-mods=""` gives a zero-mods build.
 - **Configurations:** `Release` is the clean shipping build; `Release_dev` adds
   the debug options, console and dev tooling (`DEBUG_OPTIONS`, `COLLISION_DEBUG`,
@@ -393,7 +393,7 @@ on the stock damaged-model system. **Uses:** `JER_EVENT_COLLISION` /
 
 ![CRUMPLE's Crumple Debug submenu](readme_images/addon_crumple_debug_example.png)
 
-### Caine's Crossfire (`combatd2`) — car combat
+### Caine's Crossfire (`cainescrossfire`) — car combat
 
 Twisted Metal: Black-style arcade handling on a point-mass body, with a weapon
 prototype and a parametric explosion-FX library. **Uses:** the full car-handling

@@ -64,7 +64,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_NET_SPAWN` | `JER_ARGS_NET_SPAWN` | `InitGameVariables` (`main.c`) | a level's player cars are about to be created: a network module adds the remote players (fills `PlayerStartInfo[slot]`, raises `numPlayersToCreate`); extra slots get negative pad ids |
 | `>= JER_EVENT_MODULE_CUSTOM` | module-defined | modules | custom events |
 
-## The explosion FX events (combatd2 weapons use these)
+## The explosion FX events (Caine's Crossfire weapons use these)
 
 `AddExplosion(pos, type)` is the single spawn point for every explosion in
 the game (mission bangs, thrown bombs, weapon impacts). Three hooks turn one
@@ -185,7 +185,7 @@ no handler.
   visual pitch/roll/yaw; the physics matrix (`cp->hd.where`) and collision
   box are never touched.
 
-## The damage events (combatd2 uses these)
+## The damage events (Caine's Crossfire uses these)
 
 Three hooks around the collision damage path, all in `bcollide.c`; each is a
 no-op with no handler.
@@ -211,7 +211,7 @@ no-op with no handler.
   `value` — e.g. give an owned opponent the player damage model, or scale the
   exchange — and the engine clamps it at 0. No handler = stock `value`.
 
-## The map events (sandbox / combatd2 use these)
+## The map events (sandbox / Caine's Crossfire use these)
 
 - **`JER_EVENT_MAP`** (`JER_ARGS_MAP`) fires while the in-game map
   (`gShowMap`) is up, in two actions. `JER_MAP_ACTION_INPUT` fires from the
@@ -233,7 +233,7 @@ no-op with no handler.
   land in the right place; `fullscreen` distinguishes the fullscreen map from
   the overhead one. No handler = only the stock blips are drawn.
 
-## The level-start events (levelhacks / combatd2 / d2pl use these)
+## The level-start events (levelhacks / Caine's Crossfire / d2pl use these)
 
 Three notification hooks fire around launching a level; each is a no-op with
 no handler.
@@ -243,7 +243,7 @@ no handler.
   controllers are re-opened, before the state switches to `STATE_GAMELOOP`. It
   carries no args (fired with `NULL`); modules use it to reset transient state
   (e.g. the sandbox closes its menu so it does not reopen unprompted, and
-  combatd2 re-arms its per-level inventory).
+  Caine's Crossfire re-arms its per-level inventory).
 - **`JER_EVENT_LEVEL_LAUNCH`** fires at the end of `State_GameStart`
   (`glaunch.c:309`), after the pending level / gametype / player count /
   mission number are finalised but before the level loads. All four fields are

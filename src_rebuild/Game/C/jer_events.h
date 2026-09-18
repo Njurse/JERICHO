@@ -350,7 +350,7 @@ typedef struct JER_ARGS_PED_SKELETON
  * tintR/G/B are currently inert on the body - `combointensity` is the lever that
  * works there, which is what the head does for night (DoCivHead,
  * motion_c.c:2240). Left as-is deliberately: changing the contract is a
- * behaviour change, and the palette path above is the one used by combatd2.
+ * behaviour change, and the palette path above is the one used by cainescrossfire.
  */
 typedef struct JER_ARGS_PED_DRAW
 {

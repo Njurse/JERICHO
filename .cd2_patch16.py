@@ -19,7 +19,7 @@ def save(p, body, crlf):
     io.open(p, "w", encoding="utf-8", newline="").write(body)
 
 
-P = "JERICHO/MODS/combatd2/ai/opponent.c"
+P = "JERICHO/MODS/cainescrossfire/ai/opponent.c"
 raw, crlf = load(P)
 body = raw.replace("\r\n", "\n")
 
@@ -105,7 +105,7 @@ ed(T(2) + "else if (targetId >= 0 && targetD2 < (long long)engage * engage)",
 save(P, body, crlf)
 
 # --- 6. nav.c: pick the FARTHEST acceptable node -------------------------
-N = "JERICHO/MODS/combatd2/ai/nav.c"
+N = "JERICHO/MODS/cainescrossfire/ai/nav.c"
 raw, crlf = load(N)
 body = raw.replace("\r\n", "\n")
 

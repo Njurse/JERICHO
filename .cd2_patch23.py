@@ -8,7 +8,7 @@ def T(n):
     return TB * n
 
 
-P = "JERICHO/MODS/combatd2/ai/opponent.c"
+P = "JERICHO/MODS/cainescrossfire/ai/opponent.c"
 raw = io.open(P, encoding="utf-8", newline="").read()
 crlf = "\r\n" in raw
 body = raw.replace("\r\n", "\n")
@@ -59,7 +59,7 @@ ed(T(2) + "for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)" + NL +
    T(5) + "pool[pl] = 0;" + NL +
    T(4) + "}" + NL +
    T(3) + "}" + NL + NL +
-   T(3) + "printInfo(\"[combatd2] car model pool this level: [%s] (player model clean=%d dam=%d low=%d, %d slots)\\n\"," + NL +
+   T(3) + "printInfo(\"[cainescrossfire] car model pool this level: [%s] (player model clean=%d dam=%d low=%d, %d slots)\\n\"," + NL +
    T(4) + "pool, gCarCleanModelPtr[pcp->ap.model] != NULL, gCarDamModelPtr[pcp->ap.model] != NULL," + NL +
    T(4) + "gCarLowModelPtr[pcp->ap.model] != NULL, MAX_CAR_RESIDENT_MODELS);" + NL +
    T(2) + "}" + NL + NL +
