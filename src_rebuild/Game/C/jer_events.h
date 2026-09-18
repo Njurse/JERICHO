@@ -335,7 +335,23 @@ typedef struct JER_ARGS_PED_SKELETON
  * black (a burning / bailed-out body), or set any of tintR/G/B to >= 0 for a
  * flat full-brightness tint (unset channels default to 255). Colours are 0..255
  * per channel; the engine packs them B<<16 | G<<8 | R. With no handler (or all
- * fields 0/-1) the ped renders stock. */
+ * fields 0/-1) the ped renders stock.
+ *
+ * The same handler may also select a per-instance PALETTE (jer_ped_palette.h),
+ * which is a real CLUT swap on the ped's outfit rather than a flat colour: the
+ * engine swaps the recoloured rows in for this one ped's draw, so a module can
+ * put individual characters in team colours.
+ *
+ * CAVEAT on the flat/tint fields: the engine applies them by holding
+ * plotContext.planeColours at one value, which only feeds the shaded colour
+ * table. The skeleton body is plotted with PLOT_NO_SHADE and takes its colour
+ * from combointensity instead (draw.c: "if (ptype == 21 || (pc->flags &
+ * PLOT_NO_SHADE)) pc->colour = combo...", around draw.c:1097), so flatBlack /
+ * tintR/G/B are currently inert on the body - `combointensity` is the lever that
+ * works there, which is what the head does for night (DoCivHead,
+ * motion_c.c:2240). Left as-is deliberately: changing the contract is a
+ * behaviour change, and the palette path above is the one used by combatd2.
+ */
 typedef struct JER_ARGS_PED_DRAW
 {
 	void* ped;		/* LPPEDESTRIAN being drawn */

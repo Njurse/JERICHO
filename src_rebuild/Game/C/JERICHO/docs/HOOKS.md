@@ -116,6 +116,12 @@ jer_pause_menu_register(&myMenu);
 - **Persist settings** — `jer_config_get_int/set_int/...` from
   `jer_config.h`. Each module owns `JERICHO/CONFIG/<modid>.ini`. d2pl writes
   every setting there; hand-editing the file while the game is closed works.
+- **Recolour one pedestrian instance** — `jer_ped_palette.h`:
+  `jer_ped_palette_team(r,g,b,strength)` returns a handle for a team colour and
+  `jer_ped_palette_select(handle)` applies it (from a `JER_EVENT_PED_DRAW`
+  handler, for the ped being drawn). The engine swaps recoloured CLUT rows in for
+  that one draw, so a module can put individual characters in team colours.
+  Measured footprint and mechanism: `ped-palette.md`.
 - **Custom events** — values `>= JER_EVENT_MODULE_CUSTOM` are free for
   module-to-module messaging (the sandbox uses one for its no-damage
   toggle).

@@ -45,9 +45,32 @@ word** — there is no `B<<16|G<<8|R` packing anywhere in this feature; each
 channel is a separate byte, the same convention `CD2_WEAPON_DEF.colR/G/B` and
 `SetTextColour` already use.
 
-Live uses today: the kill banner's names (`combatd2wreckfx.c`) and the opponent
-map blips (`cd2AiOnDrawMap`). The palette was chosen to stay readable as HUD
-text against the dark city palette.
+Live uses today: the kill banner's names (`combatd2wreckfx.c`), the opponent
+map blips (`cd2AiOnDrawMap`), and the **Tanner outfit** (see below).
+
+### The outfit: colouring a Tanner by its faction
+
+Each Tanner wears its faction's colour. This is a real palette swap, not a tint:
+`cd2CrewOnPedPalette` (in `weapons/core/crew.c`, on `JER_EVENT_PED_DRAW`) finds
+the ped's faction and hands the colour to `jer_ped_palette_team()`, which returns
+a set of recoloured CLUT rows the engine swaps in for **that instance's draw
+only** (`ped-palette.md` has the mechanism and the measurements).
+
+Only the outfit is recoloured — the body's rows are classified by content, and
+the warm entries (skin, which shares the outfit's CLUT row) are left alone. So a
+team reads as a team-coloured suit with a natural face.
+
+Config (`JERICHO/CONFIG/combatd2.ini`), alongside `factions`/`player_faction`:
+
+| key | default | meaning |
+|---|---|---|
+| `team_palette` | 1 | 0 turns the outfit colouring off entirely |
+| `team_palette_strength` | 256 | how far each entry moves toward the faction colour (0..256) |
+| `team_palette_floor` | 10 | how far the dark end is lifted (0..31): 0 lets a dark suit stay dark, 31 is flat |
+
+Needs `factions = 1`. A ped with no team — a mission Tanner, a civilian — is
+cleared back to stock colours, because the engine's selection persists until it
+is changed.
 
 ## 2. The field: who drives what
 

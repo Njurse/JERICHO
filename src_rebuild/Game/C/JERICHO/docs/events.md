@@ -45,7 +45,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_CAR_TORQUE` | `JER_ARGS_CAR_TORQUE` | after `ConvertTorqueToAngularAcceleration` (`wheelforces.c`) | inject yaw torque (`aacc[1]`) |
 | `JER_EVENT_CAR_DRAW` | `JER_ARGS_CAR_DRAW` | `DrawCar` (`cars.c`) | rotate the render-only body matrix (visual pitch/roll/yaw) |
 | `JER_EVENT_CAR_DRAW_COLOR` | `JER_ARGS_CAR_DRAW_COLOR` | `DrawCarObject` (`cars.c`) | force a flat black body (totaled wreck) |
-| `JER_EVENT_PED_DRAW` | `JER_ARGS_PED_DRAW` | `newShowTanner` (`motion_c.c`) | ped body colour: force a flat black (burning / bailed-out) or tinted ped — the `CAR_DRAW_COLOR` analogue for skeleton peds |
+| `JER_EVENT_PED_DRAW` | `JER_ARGS_PED_DRAW` | `newShowTanner` (`motion_c.c`) | ped body colour + per-instance palette: force a flat black (burning / bailed-out) or tinted ped, and/or select a recoloured outfit palette for this ped alone with `jer_ped_palette_select()` |
 | `JER_EVENT_GET_WALL_RESTITUTION` | `JER_ARGS_WALL_RESTITUTION` | `CarBuildingCollision` (`bcollide.c:1057`) | query: restitution scale 0..4096 (4096 = stock bounce) for a car hitting building/scenery; a low value cancels only the velocity into the wall (TMB-style absorb); no handler = stock (4096) |
 | `JER_EVENT_LEVEL_LAUNCH` | `JER_ARGS_LEVEL_LAUNCH` | `State_GameStart` (`glaunch.c:309`) | pending level/gametype/player count/mission number are finalised but the level has not loaded — module rewrites them in place; no handler = the values the engine wrote are kept |
 | `JER_EVENT_CMDLINE` | `JER_ARGS_CMDLINE` | `redriver2_main` (`main.c`), after the engine parsed its own argv | a module may pick up its own command-line shortcuts (e.g. mp's `-host`/`-join`); read-only `argc`/`argv`; no handler = ignored |
