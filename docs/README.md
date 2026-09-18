@@ -14,7 +14,7 @@ its SDK mirrors); `docs/JERICHO/` holds pointers only.
 | [`events.md`](../src_rebuild/Game/C/JERICHO/docs/events.md) | **the event reference** — every event id, its args struct, where it fires, query vs notification, stock behaviour |
 | [`HOOKS.md`](../src_rebuild/Game/C/JERICHO/docs/HOOKS.md) | writing a module: anatomy, pause menus, logging, boot arguments |
 | [`ped-animation.md`](../src_rebuild/Game/C/JERICHO/docs/ped-animation.md) | the pedestrian animation and skeleton pipeline |
-| [`module-activation.md`](../src_rebuild/Game/C/JERICHO/docs/module-activation.md) | how a module gets enabled (`modlist.ini` → `mod.toml` → fail-closed), the `src=` boot log and `-nomods`, which modules override car handling, and why no handling module ⇒ vanilla handling |
+| [`module-activation.md`](../src_rebuild/Game/C/JERICHO/docs/module-activation.md) | how a module gets enabled (`modlist.ini` → `mod.toml` → fail-closed), the `src=` boot log (`modlist`/`default`/`forced`/`nomods`), `-nomods`, forcing one module on for a test (`jer_force_module` / `-testmode`), which modules override car handling, and why no handling module ⇒ vanilla handling |
 | [`screens.md`](../src_rebuild/Game/C/JERICHO/docs/screens.md) | presentation screens: `jer_screen.h` (register/show/tick, the boot loop) and the host-owned `jer_prompt.h` yes/no prompt |
 | [`ped-palette.md`](../src_rebuild/Game/C/JERICHO/docs/ped-palette.md) | giving one Tanner instance its own colours: the measured palette footprint (1 page, 2 CLUT entries) and the `texture_cluts` bracket that makes it per-instance |
 | [`sdk/README.md`](../JERICHO/sdk/README.md) | the addon SDK: headers, building, installing, platform notes |
@@ -36,6 +36,7 @@ Each mod documents itself in its own folder.
 | aidriver | [`README.md`](../JERICHO/MODS/aidriver/README.md) |
 | gaildrv2 | [`README.md`](../JERICHO/MODS/gaildrv2/README.md) |
 | mp | [`README.md`](../JERICHO/MODS/mp/README.md) (LAN multiplayer) |
+| testmode | [`README.md`](../JERICHO/MODS/testmode/README.md) (asset-test mode: quiet world, census) |
 
 `docs/crumple.md` is a pointer to the canonical copy in the mod folder.
 

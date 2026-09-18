@@ -49,6 +49,34 @@ without a rebuild:
 
 ## Status
 
-Phase 1: **options only**. The module reads and logs its flags and config, but
-registers no gameplay hooks yet — arming it does not change anything. The quiet
-world, the subject and the camera arrive in the following phases.
+The module skeleton, its flags/config, and the **quiet world** are in: turning the
+mode on removes traffic, police and ambient pedestrians, and logs a census so that
+can be checked rather than assumed.
+
+Still to come: the subject (the camera has nothing to point at yet) and the orbit
+camera itself.
+
+### The census
+
+Every ~10s while the mode is on, the log carries the engine's own live counters
+plus what the mode did to them:
+
+```
+[testmode] census: civcars=0 copcars=0 (maxCivCars=0 CopsAllowed=0) peds=1 pinged_cars=1 despawned_peds=587
+[testmode]   survivor: padId=-1 owned=1 type=0 (tanner)
+```
+
+A survivor list follows, one line per pedestrian still alive (`padId`, whether
+JERICHO owns it, and its `pedType`), because "nobody is left" is only meaningful
+if you can see who *is* left: that is the player and anything a module owns.
+
+**Why pedestrians are removed rather than blocked:** `maxCivCars` and
+`CopsAllowed` are levers, but there is no equivalent for pedestrians - no
+`maxPedestrians`, and the civilian spawner has no flag or cheat gate. So ambient
+peds (`CIVILIAN`, `OTHER_SPRITE`) are destroyed every frame instead, via
+`DestroyPedestrian` (the engine's clean unlink, not a kill). It is a filter, not a
+gate: a ped spawned between frames can appear for one frame.
+
+One trap worth knowing if you touch this: **`padId >= 0` does not mean "the
+player"** - the engine leaves `padId = 0` on civilian peds, so a filter written
+that way keeps every civilian alive. The filter is `pedType`.

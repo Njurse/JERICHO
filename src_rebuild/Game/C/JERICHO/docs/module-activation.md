@@ -45,6 +45,7 @@ Every boot writes the resolution to `REDRIVER2.log`:
 |---|---|
 | `modlist` | `modlist.ini` listed it and decided |
 | `default` | **not listed** — its `mod.toml` default was used (treat as a bug: list it) |
+| `forced` | a diagnostic flag forced this one module (see below) |
 | `nomods` | the whole runtime was force-disabled with `-nomods` |
 
 "If `src=default` and `enabled=1`, a module is running that nobody asked for" is
@@ -64,6 +65,22 @@ The flag is set for the whole boot and is never cleared, so it also applies to
 `jer_manager_reload` and to frontend toggles: with `-nomods` active, toggling a
 module in Options → JERICHO rewrites `modlist.ini` but activates nothing until
 the game is restarted without the flag.
+
+## Diagnostic flags that force a module on
+
+A module does not have to be enabled before it can be used for a test: the engine
+can force one on for the boot with `jer_force_module(id, on)` (jer_system.c),
+called before `jer_init`. It outranks both `modlist.ini` and the module's
+`default-enabled`, adds the module to the activation order, and shows up in the
+inventory as `src=forced`. `-nomods` still outranks it.
+
+`-testmode` / `-testcar <slot|n>` / `-testped` (main.c, next to the `-nomods`
+scan) use it for the `testmode` module, so a session can be set up with flags and
+no ini editing. Modules can read their own arguments through `JER_EVENT_CMDLINE`
+(`events.md`), but the engine must *recognise* a flag in its own parser or it
+raises a player-visible "invalid command line argument" toast - which is why the
+mp mod's `-host`/`-join` and these have explicit branches in `main.c` even though
+the module reads the values itself.
 
 ## Which modules override car handling
 

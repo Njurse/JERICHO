@@ -467,9 +467,18 @@ quoted from prose). Config keys are loaded in `cd2LoadConfig` (combatd2.c:106-11
 
 Config keys (all in the `[combatd2]` section):
 
+**Opponents are a match setting and default to none.** `ai_opponents` is a count
+(0..`CD2_AI_MAX`), so loading the module no longer puts cars on the track by
+itself; `cd2MatchOpponents()` returns the effective value for the running match.
+It can be set in the ini, stepped from the pause menu (`Opponents: N of 4`), or
+overridden for a single headless run with the `CD2_OPPONENTS` environment variable
+- which is deliberately **not** written back to the config, so a harness run cannot
+rewrite the player's match setting. The old `ai_opponent` 0/1 flag is gone and is
+not migrated (it defaulted to on); a stale line in the ini is reported at boot.
+
 | Key | Field | Default | Clamp | Meaning |
 |---|---|---|---|---|
-| `ai_opponent` | `aiOpponent` | 1 | 0/1 | spawn the opponents at all |
+| `ai_opponents` | `aiOpponents` | 0 | 0..4 (`CD2_AI_MAX`) | how many opponents this match fields; 0 = none |
 | `ai_force_state` | `aiForceState` | 0 | 0..5 | 0 = Auto, else force a `CD2_AI_*` state |
 | `ai_debug` | `aiDebug` | 0 | 0/1 | on-screen AI readout |
 | `ai_role` | `aiRole` | -1 | -1..3 | -1 = auto round-robin, else force a role |
@@ -549,12 +558,13 @@ Navigation layer: `nav.h:15-21` (`MAX_ROUTE` 64, `WP_STEP` 512, `MAX_NODES` 4096
 - **`Random2` is a trap.** It ignores its argument *and* is constant within a
   frame (§4); never use it for jitter. All AI randomness must go through
   `cd2AiRand`/`cd2AiRandSalt`, which require reducing the value yourself (`% n`).
-- **CAR_PAD has no enabled/aiOpponent guard.** `cd2AiOnCarPad` only checks
+- **CAR_PAD has no enabled/count guard.** `cd2AiOnCarPad` only checks
   `cd2AiIsOpponent` (1798); it will keep blanking the pad of a live opponent even
-  after `ai_opponent` is toggled off, while CAR_STEP (which drives it) stops. The
-  car then coasts with no input until the slot is reaped (which also stops when
-  the FRAME handler bails at 1704). Toggling AI off mid-level leaves inert
-  CUTSCENE cars in the world.
+  after the match is changed to field fewer (or no) opponents, while CAR_STEP
+  (which drives it) stops. The car then coasts with no input until the slot is
+  reaped (which also stops when the FRAME handler bails at 1704). Lowering the
+  opponent count mid-level leaves inert CUTSCENE cars in the world - it takes
+  effect on the next level.
 - **Route/search capacity.** Routes cap at 64 waypoints (`MAX_ROUTE`); the road A*
   heap is `0x7fffffff`-initialised per search and best-effort on overflow
   (nav.c:576-603, grid.c:161-188). Both use static scratch, so the layer is not
