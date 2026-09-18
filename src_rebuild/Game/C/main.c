@@ -2056,7 +2056,7 @@ static int BootParseGameMode(const char* s)
 
 static int BootParseWeather(const char* s)
 {
-	if (BootEq(s, "none") || BootEq(s, "clear")) return WEATHER_NONE;
+	if (BootEq(s, "none") || BootEq(s, "clear") || BootEq(s, "dry")) return WEATHER_NONE;
 	if (BootEq(s, "rain")) return WEATHER_RAIN;
 	if (BootEq(s, "wet")) return WEATHER_WET;
 
@@ -2093,6 +2093,7 @@ void PrintCommandLineArguments()
 		"  -gamemode <takeadrive|pursuit|getaway|gaterace|checkpoint|trailblazer|\n"
 		"        survival|copsandrobbers|capturetheflag> : game mode override\n"
 		"  -weather <none|rain|wet> : weather override (with -level)\n"
+		"                             (none is also 'clear' or 'dry')\n"
 		"  -time <dawn|day|dusk|night> : time-of-day override (with -level)\n"
 		"  -mp [0|1] : load the small multiplayer map instead of the full city\n"
 		"        (with -level; 0 = first arena, 1 = second arena per city)\n"
