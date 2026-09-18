@@ -14,6 +14,7 @@
 #include "cars.h"
 #include "jericho.h"
 #include "jer_events.h"
+#include "turbo/turbo.h"		/* the over-rev while boosting */
 
 // GEARBOX (JER_EVENT_CAR_GEARBOX, gamesnd.c GetEngineRevs): while a player
 // drives, retune the rev model so gears feel SHORT and punchy but the tall
@@ -92,6 +93,11 @@ static int cd2mOnCarGearbox(void* ud, void* args)
 		}
 
 		g->revCeiling = CD2_REV_CEILING;
+
+		/* TURBO: the over-rev. The speed cap is raised in cd2GetStats; this is the
+		 * other half - while boosting the engine may wind past its own ceiling, so
+		 * the car sounds and behaves like it is being pushed past its limit. */
+		g->revCeiling = cd2TurboRevCeiling(cp->id, g->revCeiling);
 	}
 
 	return JER_RESULT_CONTINUE;

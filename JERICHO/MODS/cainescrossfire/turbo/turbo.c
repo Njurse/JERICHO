@@ -21,6 +21,8 @@
 #include "cars.h"
 #include "main.h"		/* FrameCnt */
 #include "pad.h"		/* MPAD_* */
+#include "players.h"		/* player[] */
+#include "overlay.h"		/* FelonyBar, COLOUR_BAND - the Turbo bar */
 #include "jericho.h"
 
 #include "turbo/turbo.h"
@@ -207,6 +209,53 @@ void cd2TurboPad(int carId, int pad)
 }
 
 // ---------------------------------------------------------------------------
+// the Turbo bar
+//
+// The Felony bar is replaced, not supplemented: the module owns FelonyBar's
+// position, colour and tag, and the engine draws it in the usual place. That
+// keeps the whole thing out of the engine's render path and means the bar lands
+// exactly where the player already looks for one.
+//
+// The crime value behind it (main.c's per-frame assignment) is deliberately left
+// alone - it still feeds the felony checks, it just is not what the bar shows.
+// ---------------------------------------------------------------------------
+static COLOUR_BAND sBarWhite[1] = { { { 255, 255, 255, 0 }, 0, 0 } };
+static COLOUR_BAND sBarRed[1]   = { { { 255, 0, 0, 0 }, 0, 0 } };
+static int sBarPulse;
+
+// Called once per frame, at the overlay draw (the last word before the engine
+// renders it, so the crime assignment above cannot overwrite it).
+void cd2TurboBarTick(int carId)
+{
+	if (carId < 0 || carId >= MAX_CARS || !gCd2Cfg.enabled)
+		return;
+
+	sBarPulse++;
+
+	FelonyBar.tag = "Turbo";
+	FelonyBar.active = 1;
+	FelonyBar.max = (u_short)CD2_TURBO_METER_FRAMES;
+	FelonyBar.position = (u_short)gTurbo[carId].meter;
+
+	/* white while it is simply there; pulsing white <-> red at the specified rate
+	 * while the boost is being spent */
+	if (gTurbo[carId].active && ((sBarPulse / CD2_TURBO_BAR_PULSE_FRAMES) & 1))
+		FelonyBar.pColourBand = sBarRed;
+	else
+		FelonyBar.pColourBand = sBarWhite;
+}
+
+/* the draw-overlay hook: the bar's last word before the engine renders it */
+int cd2TurboOnDrawOverlay(void* ud, void* args)
+{
+	(void)ud;
+	(void)args;
+
+	cd2TurboBarTick((player[0].playerCarId >= 0) ? player[0].playerCarId : 0);
+	return JER_RESULT_CONTINUE;
+}
+
+// ---------------------------------------------------------------------------
 // the debug driver's view of it
 // ---------------------------------------------------------------------------
 void cd2TurboDump(int carId)
@@ -220,13 +269,15 @@ void cd2TurboDump(int carId)
 		CAR_DATA* cp = &car_data[carId];
 		CD2_STATS s = cd2GetStats(cp);
 
-		jer_log("[cainescrossfire] turbo car=%d %s%s meter=%d/%d (%.1fs left) topSpeed=%d accel=%d\n",
+		jer_log("[cainescrossfire] turbo car=%d %s%s meter=%d/%d (%.1fs left) topSpeed=%d accel=%d bar=%d/%d %s\n",
 			carId,
 			gTurbo[carId].active ? "ACTIVE" : "idle",
 			(gTurbo[carId].active && gTurbo[carId].reverse) ? " reverse" : "",
 			gTurbo[carId].meter, CD2_TURBO_METER_FRAMES,
 			(float)gTurbo[carId].meter / 30.0f,
-			s.topSpeed, s.accel);
+			s.topSpeed, s.accel,
+			FelonyBar.position, FelonyBar.max,
+			(FelonyBar.pColourBand == sBarRed) ? "red" : "white");
 	}
 }
 

@@ -104,6 +104,11 @@ void cd2TurboPad(int carId, int pad);
 void cd2TurboRefill(int carId);
 void cd2TurboResetAll(void);
 
+// The bar: the module owns FelonyBar's position/colour/tag, and the engine draws
+// it. Called from the draw-overlay hook so nothing else can overwrite it.
+void cd2TurboBarTick(int carId);
+int cd2TurboOnDrawOverlay(void* ud, void* args);
+
 // For the debug driver: force it on/off, and log the state.
 void cd2TurboForce(int carId, int on);
 void cd2TurboDump(int carId);

@@ -587,6 +587,7 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 #if CD2_ENFORCE_PURSUIT_MUSIC
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFramePursuit, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFootFrame, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, cd2TurboOnDrawOverlay, NULL, 0);
 #endif
 
 	cd2MenuRegister(ctx);	/* cainescrossfiremenu.c */
