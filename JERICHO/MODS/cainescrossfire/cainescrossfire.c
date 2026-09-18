@@ -30,6 +30,9 @@
 #include "camera.h"
 #include "convert.h"
 #include "players.h"
+#include "main.h"			/* FrameCnt */
+#include "pedest.h"		/* ActivatePlayerPedestrian - the -onfoot swap */
+#include "civ_ai.h"		/* PingOutCar - retire the spawn car */
 #include "pad.h"
 #include "dr2math.h"
 #include "jericho.h"
@@ -159,6 +162,17 @@ void cd2LoadConfig(void)
 	// refused by cd2FacPlayerFaction (the player drives).
 	gCd2Cfg.factions      = jer_config_get_int("cainescrossfire", "factions", 1);
 	gCd2Cfg.playerFaction = jer_config_get_int("cainescrossfire", "player_faction", CD2_FAC_TANNER);
+
+	/* CC_PLAYER_FACTION lets a harness walk the characters (each is a faction)
+	 * without editing the player's config - same arrangement as CC_OPPONENTS, and
+	 * likewise NOT written back below. */
+	{
+		const char* env = getenv("CC_PLAYER_FACTION");
+
+		if (env != NULL)
+			gCd2Cfg.playerFaction = atoi(env);
+	}
+
 	gCd2Cfg.teamPalette         = jer_config_get_int("cainescrossfire", "team_palette", 1);
 	gCd2Cfg.teamPaletteStrength = jer_config_get_int("cainescrossfire", "team_palette_strength", CD2_SUIT_TINT_DEFAULT);
 	gCd2Cfg.teamPaletteFloor    = jer_config_get_int("cainescrossfire", "team_palette_floor", CD2_SUIT_FLOOR_DEFAULT);
@@ -467,6 +481,57 @@ int cd2OnFramePursuit(void* ud, void* args)
 }
 #endif
 
+/* ---------------------------------------------------------------------------
+ * -onfoot: hand the player over to his own two feet at level start.
+ *
+ * The level spawns him in a car; -onfoot (an engine flag, main.c) asks for him to
+ * start outside it instead, which is how a character's suit gets looked at up
+ * close. The engine owns every piece of this - activate the pedestrian beside the
+ * car, switch control to him, retire the car - and the swap is done once the
+ * world is actually playable, retried until it succeeds (a failed activation must
+ * never reach ChangeCarPlayerToPed, which would deref a null ped).
+ *
+ * Deliberately its own rather than d2pl's: that module is paused, and nothing here
+ * should depend on it being enabled.
+ * --------------------------------------------------------------------------- */
+static int cd2OnFootDone = 0;
+
+// [D] [T]
+static int cd2OnFootFrame(void* ud, void* args)
+{
+	extern int gBootOnFoot;		/* the engine's -onfoot flag (main.c) */
+
+	(void)ud;
+	(void)args;
+
+	if (cd2OnFootDone || !gBootOnFoot)
+		return JER_RESULT_CONTINUE;
+
+	/* wait for the world: the flag is retried, not consumed, until the swap is
+	 * actually possible */
+	if (FrameCnt <= 10 || player[0].playerCarId < 0)
+		return JER_RESULT_CONTINUE;
+
+	{
+		CAR_DATA* cp = &car_data[player[0].playerCarId];
+
+		ActivatePlayerPedestrian(cp, NULL, 0, NULL, TANNER_MODEL);
+
+		if (player[0].pPed != NULL)
+		{
+			jer_log("[cainescrossfire] -onfoot: swapping the spawn car for the player on foot\n");
+
+			ChangeCarPlayerToPed(0);
+			PingOutCar(cp);		/* and the car he was sitting in */
+
+			cd2OnFootDone = 1;
+			gBootOnFoot = 0;
+		}
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
 // ---------------------------------------------------------------------------
 // Module entry
 // ---------------------------------------------------------------------------
@@ -504,6 +569,7 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 
 #if CD2_ENFORCE_PURSUIT_MUSIC
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFramePursuit, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2OnFootFrame, NULL, 0);
 #endif
 
 	cd2MenuRegister(ctx);	/* cainescrossfiremenu.c */

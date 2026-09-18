@@ -2111,7 +2111,9 @@ void PrintCommandLineArguments()
 		"  -host [port] : (mp mod) start hosting a LAN game\n"
 		"  -join <ip>[:port] : (mp mod) join a LAN game\n"
 		"  -testmode / -testcar <slot|n> / -testped : (testmode module) quiet\n"
-		"        world + orbit camera on a car or Tanner, for asset testing\n";
+		"        world + orbit camera on a car or Tanner, for asset testing\n"
+		"  -mod <id> : force one module on for this boot (e.g. -mod d2pl), even if\n"
+		"        JERICHO/CONFIG/modlist.ini does not list it\n";
 
 	/* printInfo writes to the terminal *and* the log -- -help is meant to be
 	 * read from a console. Never a modal dialog: this used to run on unknown
@@ -2295,6 +2297,18 @@ int redriver2_main(int argc, char** argv)
 			{
 				jer_force_module("testmode", 1);
 				break;
+			}
+		}
+
+		/* -mod <id>: force any single module on for this boot, so a test can use a
+		 * module the player has not enabled without rewriting their modlist (e.g.
+		 * -mod d2pl for the on-foot path). Repeatable. */
+		for (ai = 1; ai + 1 < argc; ai++)
+		{
+			if (!strcmp(argv[ai], "-mod"))
+			{
+				jer_force_module(argv[ai + 1], 1);
+				ai++;
 			}
 		}
 	}
@@ -2708,6 +2722,13 @@ int redriver2_main(int argc, char** argv)
 		else if (!strcmp(argv[i], "-testcar"))
 		{
 			/* (testmode module) car slot or model number */
+			if (i + 1 < argc && argv[i + 1][0] != '-')
+				i++;
+		}
+		else if (!strcmp(argv[i], "-mod"))
+		{
+			/* (any module) force this one module on for the boot, even if the
+			 * modlist does not list it - the value is a module id */
 			if (i + 1 < argc && argv[i + 1][0] != '-')
 				i++;
 		}
