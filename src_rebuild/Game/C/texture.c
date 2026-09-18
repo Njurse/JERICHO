@@ -142,14 +142,15 @@ void IncrementClutNum(RECT16 *clut)
 // returned (0 when there was nothing to copy).
 //
 // `strength` is 0..256: 0 keeps the original colours, 256 takes the team hue
-// outright. Brightness is preserved per entry, so the model keeps its shading
-// instead of becoming a flat silhouette, and black stays black so a texture's
-// dark/outline entries are not painted over.
+// outright. `floor5` (0..31) lifts the dark end: each entry's brightness is
+// remapped to floor5 + ((31 - floor5) * lum) / 31 before the hue is applied, so a
+// near-black entry still comes out as a visible dark team colour instead of
+// staying black. floor5 = 0 keeps the source brightness, 31 makes it flat.
 //
 // Colour order note: PSX 16bpp is stp | b<<10 | g<<5 | r - five bits per channel,
 // blue in the HIGH bits (the same packing as the rest of this file, not the
 // B<<16|G<<8|R used for polygon colour words).
-u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength)
+u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength, int floor5)
 {
 	RECT16 src;
 	u_short entries[16];
@@ -180,6 +181,11 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 	if (k > 256)
 		k = 256;
 
+	if (floor5 < 0)
+		floor5 = 0;
+	if (floor5 > 31)
+		floor5 = 31;
+
 	// the team hue in the same 5-bit space
 	tr = (r * 31) / 255;
 	tg = (g * 31) / 255;
@@ -191,9 +197,14 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 		int g5 = (entries[i] >> 5) & 31;
 		int b5 = (entries[i] >> 10) & 31;
 		int lum = (r5 * 77 + g5 * 150 + b5 * 29) >> 8;	// 0..31 brightness
-		int nr = (r5 * (256 - k) + ((tr * lum) / 31) * k) >> 8;
-		int ng = (g5 * (256 - k) + ((tg * lum) / 31) * k) >> 8;
-		int nb = (b5 * (256 - k) + ((tb * lum) / 31) * k) >> 8;
+		int nr, ng, nb;
+
+		/* lift the dark end so a dark suit still reads as the team colour */
+		lum = floor5 + ((31 - floor5) * lum) / 31;
+
+		nr = (r5 * (256 - k) + ((tr * lum) / 31) * k) >> 8;
+		ng = (g5 * (256 - k) + ((tg * lum) / 31) * k) >> 8;
+		nb = (b5 * (256 - k) + ((tb * lum) / 31) * k) >> 8;
 
 		if (nr > 31) nr = 31;
 		if (ng > 31) ng = 31;

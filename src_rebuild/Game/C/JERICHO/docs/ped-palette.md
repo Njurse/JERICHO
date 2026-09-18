@@ -135,12 +135,28 @@ in another, so anything that hardcoded them would be wrong.
 | `jer_ped_palette_select(handle)` | from a `JER_EVENT_PED_DRAW` handler, for the ped being drawn (`-1` = stock) |
 | `jer_ped_palette_enter()` / `_leave()` | the host brackets the draw in `newShowTanner` — a module never calls these |
 
-`strength` is 0..256 and is the only look knob: it scales how far each entry
-moves toward the team colour. Brightness is preserved per entry, so **black stays
-black** — a dark suit keeps its dark entries and only the brighter areas visibly
-take the hue. Raising the floor (or a fully flat result) is a change to
-`JerichoMakeClutRow`'s lerp, not to this mechanism.
+`strength` is 0..256: it scales how far each entry moves toward the team colour.
+
+Two more decisions shape the look, and both are measured rather than guessed:
+
+**Only the outfit is recoloured.** The body's two rows are identified by content:
+the outfit is neutral (`r ≈ g ≈ b`) and skin is warm. On Havana the outfit row
+averages **-0.2** per entry for `r - (g+b)/2` and the skin row **+4.0**, so the
+2.5 threshold in `PedPalRowIsOutfit` is nowhere near either. Skin keeps its own
+colours, so a team gets a team-coloured suit and a natural face. The rows are
+classified at init, which is what makes this survive the `(2,12)`/`(2,13)`
+variation — the *content* is what is stable, not the id.
+
+**The dark end is lifted** (`jer_ped_palette_set_floor`, default 10 of 31). The
+outfit row is a grey ramp dominated by near-black entries — measured, 7 of its 16
+entries sit at brightness l1–l7 — so a proportional remap leaves a red suit at
+red 1–5 of 31, which reads as black. Lifting the floor maps each entry's
+brightness to `floor + (31 - floor) * lum / 31` before the hue goes on, so those
+same entries come out at red **10–13 of 31**: clearly a dark team colour, with 13
+distinct shades still intact (not a flat silhouette) and the bright entries
+untouched. `floor = 0` is the unlifted behaviour and `floor = 31` is flat, so the
+one parameter spans the whole spectrum.
 
 `jer_ped_palette_enter` logs `ped palette: LEAK ...` if the table it is about to
 swap still holds a previous team's row — i.e. if a swap ever escaped its bracket.
-It has never fired.
+It has never fired, including under `combatd2` with its crew drawing.

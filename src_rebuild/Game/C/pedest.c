@@ -143,6 +143,7 @@ typedef struct
 {
 	u_char set;
 	u_char id;
+	u_char recolour;						/* 1 = outfit, 0 = skin (left stock) */
 	u_short stock;							/* the clut word as loaded */
 	u_short row[JER_PED_PAL_MAX_TEAMS];		/* recoloured row per team, 0 = unset */
 } PED_PAL_PAIR;
@@ -154,6 +155,35 @@ static int gPedPalKey[JER_PED_PAL_MAX_TEAMS];	/* (r,g,b,strength) per team */
 static u_short gPedPalSaved[PED_PAL_MAX_PAIRS];
 static int gPedPalCurrent = -1;
 static int gPedPalActive = 0;
+static int gPedPalFloor = 10;			/* how far the dark end is lifted, 0..31 */
+
+// [D] [T]
+// A body row is either the outfit or the skin, and they separate cleanly: the
+// outfit is neutral (r ~= g ~= b) while skin is warm (red-biased). Measured on
+// Havana, the outfit row averages -0.2 per entry for r - (g + b)/2 and the skin
+// row +4.0, so a threshold of 2.5 is not close to either. Near-black entries
+// carry no hue information, so they are skipped.
+//
+// Returns 1 when the row should take the team colour.
+static int PedPalRowIsOutfit(const u_short* entries)
+{
+	int i, sum = 0, n = 0;
+
+	for (i = 0; i < 16; i++)
+	{
+		int r5 = entries[i] & 31;
+		int g5 = (entries[i] >> 5) & 31;
+		int b5 = (entries[i] >> 10) & 31;
+
+		if (r5 + g5 + b5 <= 6)
+			continue;
+
+		sum += r5 - (g5 + b5) / 2;
+		n++;
+	}
+
+	return (n == 0) ? 0 : (sum * 2 <= n * 5);		/* average <= 2.5 */
+}
 
 // [D] [T]
 static const char* PedPalModelName(int i)
@@ -226,10 +256,24 @@ void jer_ped_palette_init(void)
 
 				if (k == gPedPalPairCount && gPedPalPairCount < PED_PAL_MAX_PAIRS)
 				{
+					RECT16 src;
+					u_short entries[16];
+
 					gPedPalPairs[k].set = polys->texture_set;
 					gPedPalPairs[k].id = polys->texture_id;
 					gPedPalPairs[k].stock = texture_cluts[polys->texture_set][polys->texture_id];
 					memset(gPedPalPairs[k].row, 0, sizeof(gPedPalPairs[k].row));
+
+					/* outfit takes the team colour, skin keeps its own */
+					src.x = (short)((gPedPalPairs[k].stock & 0x3f) * 16);
+					src.y = (short)((gPedPalPairs[k].stock >> 6) & 0x1ff);
+					src.w = 16;
+					src.h = 1;
+
+					StoreImage(&src, (u_long*)entries);
+
+					gPedPalPairs[k].recolour = (u_char)PedPalRowIsOutfit(entries);
+
 					gPedPalPairCount++;
 				}
 
@@ -246,8 +290,40 @@ void jer_ped_palette_init(void)
 	if (probe)
 	{
 		for (k = 0; k < gPedPalPairCount; k++)
-			jer_log("palette probe:    set=%d id=%d stock=0x%04x\n",
-				gPedPalPairs[k].set, gPedPalPairs[k].id, gPedPalPairs[k].stock);
+			jer_log("palette probe:    set=%d id=%d stock=0x%04x %s\n",
+				gPedPalPairs[k].set, gPedPalPairs[k].id, gPedPalPairs[k].stock,
+				gPedPalPairs[k].recolour ? "outfit (recoloured)" : "skin (left stock)");
+
+		/* the stock rows themselves: how dark is the body actually? Each row is
+		 * 16 PSX colours, b<<10|g<<5|r - so a "black suit" shows up as entries
+		 * whose five-bit channels are all 0. */
+		for (k = 0; k < gPedPalPairCount; k++)
+		{
+			RECT16 src;
+			u_short entries[16];
+			int e;
+
+			src.x = (short)((gPedPalPairs[k].stock & 0x3f) * 16);
+			src.y = (short)((gPedPalPairs[k].stock >> 6) & 0x1ff);
+			src.w = 16;
+			src.h = 1;
+
+			StoreImage(&src, (u_long*)entries);
+
+			jer_log("palette probe:    row set=%d id=%d:", gPedPalPairs[k].set, gPedPalPairs[k].id);
+
+			for (e = 0; e < 16; e++)
+			{
+				int r5 = entries[e] & 31;
+				int g5 = (entries[e] >> 5) & 31;
+				int b5 = (entries[e] >> 10) & 31;
+				int lum = (r5 * 77 + g5 * 150 + b5 * 29) >> 8;
+
+				jer_log(" %d[%d,%d,%d/l%d]", e, r5, g5, b5, lum);
+			}
+
+			jer_log("\n");
+		}
 
 		/* the next free CLUT row: clutpos is the engine's cursor into the
 		 * 960..1023 strip, 4 rows per scanline, y = 256..511 */
@@ -269,7 +345,7 @@ int jer_ped_palette_team(int r, int g, int b, int strength)
 {
 	u_short rows[PED_PAL_MAX_PAIRS];
 	int key = ((r & 0xff) << 24) | ((g & 0xff) << 16) | ((b & 0xff) << 8) | (strength & 0xff);
-	int t, i;
+	int t, i, n = 0;
 
 	if (gPedPalPairCount == 0)
 		return -1;
@@ -284,32 +360,69 @@ int jer_ped_palette_team(int r, int g, int b, int strength)
 		return -1;
 
 	/* build every row before committing: a half-built team would leave the body
-	 * with a mix of team and stock palettes */
+	 * with a mix of team and stock palettes. Only the outfit rows are recoloured -
+	 * skin keeps its own colours. */
 	for (i = 0; i < gPedPalPairCount; i++)
 	{
-		rows[i] = JerichoMakeClutRow(gPedPalPairs[i].stock, r, g, b, strength);
+		if (!gPedPalPairs[i].recolour)
+			continue;
+
+		rows[i] = JerichoMakeClutRow(gPedPalPairs[i].stock, r, g, b, strength, gPedPalFloor);
 
 		if (rows[i] == 0)
 		{
 			jer_log("ped palette: no VRAM row for %d,%d,%d (entry %d)\n", r, g, b, i);
 			return -1;
 		}
+
+		n++;
 	}
 
-	jer_log("ped palette: team %d,%d,%d @%d ->", r, g, b, strength);
+	if (n == 0)
+		return -1;		/* no outfit row to recolour */
+
+	jer_log("ped palette: team %d,%d,%d @%d floor=%d ->", r, g, b, strength, gPedPalFloor);
 
 	for (i = 0; i < gPedPalPairCount; i++)
+	{
+		if (!gPedPalPairs[i].recolour)
+			continue;
+
 		jer_log(" set=%d id=%d stock=0x%04x row=0x%04x",
 			gPedPalPairs[i].set, gPedPalPairs[i].id, gPedPalPairs[i].stock, rows[i]);
+	}
 
 	jer_log("\n");
 
 	for (i = 0; i < gPedPalPairCount; i++)
+	{
+		if (!gPedPalPairs[i].recolour)
+			continue;
+
 		gPedPalPairs[i].row[gPedPalTeams] = rows[i];
+	}
 
 	gPedPalKey[gPedPalTeams] = key;
 
 	return gPedPalTeams++;
+}
+
+// JERICHO-HOOK: how far the dark end of the palette is lifted (0..31). 0 keeps
+// the source brightness, 31 is a flat team colour.
+void jer_ped_palette_set_floor(int floor5)
+{
+	if (floor5 < 0)
+		floor5 = 0;
+	if (floor5 > 31)
+		floor5 = 31;
+
+	gPedPalFloor = floor5;
+}
+
+// [D] [T]
+int jer_ped_palette_floor(void)
+{
+	return gPedPalFloor;
 }
 
 // [D] [T]
@@ -335,8 +448,13 @@ void jer_ped_palette_enter(void)
 
 	for (i = 0; i < gPedPalPairCount; i++)
 	{
-		int set = gPedPalPairs[i].set;
-		int id = gPedPalPairs[i].id;
+		int set, id;
+
+		if (!gPedPalPairs[i].recolour)
+			continue;
+
+		set = gPedPalPairs[i].set;
+		id = gPedPalPairs[i].id;
 
 		gPedPalSaved[i] = texture_cluts[set][id];
 
@@ -363,7 +481,12 @@ void jer_ped_palette_leave(void)
 		return;
 
 	for (i = 0; i < gPedPalPairCount; i++)
+	{
+		if (!gPedPalPairs[i].recolour)
+			continue;
+
 		texture_cluts[gPedPalPairs[i].set][gPedPalPairs[i].id] = gPedPalSaved[i];
+	}
 
 	gPedPalActive = 0;
 }

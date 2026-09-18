@@ -16,6 +16,10 @@
  * draw. Plotting only captures the CLUT address into each primitive, so nothing
  * leaks to other pedestrians.
  *
+ * Only the OUTFIT is recoloured: the body's rows are identified as outfit or skin
+ * by content (the outfit is neutral, r ~= g ~= b; skin is warm), and skin keeps
+ * its own colours. So a team gets a team-coloured suit and a natural face.
+ *
  * Lifecycle:
  *
  *     jer_ped_palette_init()           once per level, from InitTanner
@@ -55,12 +59,23 @@ int jer_ped_palette_pairs(void);
 
 /*
  * Build (or reuse) the palette for a team colour and return a handle >= 0, or -1
- * if nothing was recorded or there is no VRAM left. `strength` is 0..256: 0 keeps
- * the original colours, 256 takes the team hue outright. Brightness is preserved
- * per entry, so the body keeps its shading instead of becoming a flat silhouette,
- * and black stays black. Identical (r,g,b,strength) asks reuse the same rows.
+ * if nothing was recorded, there is no outfit row to recolour, or VRAM is out.
+ *
+ * `strength` is 0..256: 0 keeps the original colours, 256 takes the team hue
+ * outright. How the dark end of the outfit is mapped is set by
+ * jer_ped_palette_set_floor. Identical (r,g,b,strength) asks reuse the same rows.
  */
 int jer_ped_palette_team(int r, int g, int b, int strength);
+
+/*
+ * How far the dark end of the palette is lifted, 0..31 (default 10). A dark suit
+ * is dominated by near-black entries, and without a lift it reads as black rather
+ * than as the team colour; lifting it turns those entries into a visible dark
+ * version of the hue while keeping the shading. 0 keeps the source brightness,
+ * 31 gives a flat team colour.
+ */
+void jer_ped_palette_set_floor(int floor5);
+int jer_ped_palette_floor(void);
 
 /* Drop the cached teams (they live in rows that a level reload reuses). */
 void jer_ped_palette_reset(void);
