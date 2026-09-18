@@ -196,8 +196,19 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 		int r5 = entries[i] & 31;
 		int g5 = (entries[i] >> 5) & 31;
 		int b5 = (entries[i] >> 10) & 31;
-		int lum = (r5 * 77 + g5 * 150 + b5 * 29) >> 8;	// 0..31 brightness
-		int nr, ng, nb;
+		int lum, nr, ng, nb, w;
+
+		/* Skin shares the OUTFIT's CLUT row: measured on the outfit row, entry 9
+		 * is [20,14,12] - a warm tone - while the other entries are neutral greys.
+		 * A warm entry is skin, not clothing, so it keeps its own colour; only the
+		 * neutral entries take the team hue. */
+		if (r5 - (g5 + b5) / 2 > 2)
+		{
+			out[i] = entries[i];
+			continue;
+		}
+
+		lum = (r5 * 77 + g5 * 150 + b5 * 29) >> 8;	// 0..31 brightness
 
 		/* lift the dark end so a dark suit still reads as the team colour */
 		lum = floor5 + ((31 - floor5) * lum) / 31;
@@ -205,6 +216,20 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 		nr = (r5 * (256 - k) + ((tr * lum) / 31) * k) >> 8;
 		ng = (g5 * (256 - k) + ((tg * lum) / 31) * k) >> 8;
 		nb = (b5 * (256 - k) + ((tb * lum) / 31) * k) >> 8;
+
+		/* and let the brightest entries drift toward white, so a light colour stays
+		 * light instead of flattening to the team hue. Scaled by strength, so
+		 * strength 0 is still an exact identity. */
+		w = (lum > 20) ? (lum - 20) * 2 : 0;
+
+		if (w > 0)
+		{
+			w = (w * k) / 256;
+
+			nr += ((31 - nr) * w) / 31;
+			ng += ((31 - ng) * w) / 31;
+			nb += ((31 - nb) * w) / 31;
+		}
 
 		if (nr > 31) nr = 31;
 		if (ng > 31) ng = 31;

@@ -147,6 +147,12 @@ colours, so a team gets a team-coloured suit and a natural face. The rows are
 classified at init, which is what makes this survive the `(2,12)`/`(2,13)`
 variation — the *content* is what is stable, not the id.
 
+That row-level test is **not sufficient on its own**, and a play test caught it:
+the outfit row's own entry 9 is `[20,14,12]` — a warm tone, i.e. skin (hands,
+neck) sharing the suit's CLUT. So `JerichoMakeClutRow` applies the same warm test
+**per entry** and leaves warm entries untouched, while the neutral greys take the
+hue. Without this the hands recolour with the suit.
+
 **The dark end is lifted** (`jer_ped_palette_set_floor`, default 10 of 31). The
 outfit row is a grey ramp dominated by near-black entries — measured, 7 of its 16
 entries sit at brightness l1–l7 — so a proportional remap leaves a red suit at
@@ -156,6 +162,12 @@ same entries come out at red **10–13 of 31**: clearly a dark team colour, with
 distinct shades still intact (not a flat silhouette) and the bright entries
 untouched. `floor = 0` is the unlifted behaviour and `floor = 31` is flat, so the
 one parameter spans the whole spectrum.
+
+On top of that, the brightest entries drift toward **white** (weight
+`(lum - 20) * 2`, scaled by `strength`), so a light colour stays light instead of
+flattening to the team hue: the outfit row's `[30,30,30]` highlight comes out
+`[30,20,20]` for a red team rather than a flat `[30,0,0]`. Without it a mid-dark
+team colour makes the whole outfit read as one flat tone.
 
 `jer_ped_palette_enter` logs `ped palette: LEAK ...` if the table it is about to
 swap still holds a previous team's row — i.e. if a swap ever escaped its bracket.
