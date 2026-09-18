@@ -2113,7 +2113,9 @@ void PrintCommandLineArguments()
 		"  -testmode / -testcar <slot|n> / -testped : (testmode module) quiet\n"
 		"        world + orbit camera on a car or Tanner, for asset testing\n"
 		"  -mod <id> : force one module on for this boot (e.g. -mod d2pl), even if\n"
-		"        JERICHO/CONFIG/modlist.ini does not list it\n";
+		"        JERICHO/CONFIG/modlist.ini does not list it\n"
+		"  -onfoot : start the player outside his spawn car instead of in it (a\n"
+		"        module has to act on it - Caine's Crossfire swaps him out)\n";
 
 	/* printInfo writes to the terminal *and* the log -- -help is meant to be
 	 * read from a console. Never a modal dialog: this used to run on unknown
