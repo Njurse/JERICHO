@@ -74,7 +74,7 @@ CD2_CONFIG gCd2Cfg;
  * config so a harness cannot rewrite the player's match setting. */
 static int gEnvOpponents = -1;
 
-/* CD2_OPPONENTS was set but is not a number (reported at boot) */
+/* CD2_OPPONENTS was set to something unusable (reported at boot) */
 static int gEnvOpponentsBad = 0;
 
 /*
@@ -127,7 +127,8 @@ void cd2LoadConfig(void)
 	/* CD2_OPPONENTS lets a headless harness ask for a match with opponents. It is
 	 * kept OUT of the saved config (it is applied by cd2MatchOpponents below), so
 	 * running a harness can never rewrite the player's match setting. A value that
-	 * is not a number at all is ignored rather than silently meaning zero. */
+	 * is not a number, or is outside 0..CD2_AI_MAX, is ignored rather than silently
+	 * meaning zero. */
 	{
 		const char* env = getenv("CD2_OPPONENTS");
 
@@ -138,8 +139,11 @@ void cd2LoadConfig(void)
 			char* end = NULL;
 			long v = strtol(env, &end, 10);
 
-			if (end != NULL && *end == 0 && end != env)
-				gEnvOpponents = (int)v;	/* clamped by cd2MatchOpponents */
+			/* *end == 0 means the whole string was consumed; v is range-checked
+			 * because a huge number would otherwise truncate into the -1 sentinel
+			 * (i.e. read as "not set") instead of being rejected */
+			if (end != NULL && end != env && *end == 0 && v >= 0 && v <= CD2_AI_MAX)
+				gEnvOpponents = (int)v;
 			else
 				gEnvOpponentsBad = 1;	/* reported at boot, where ctx exists */
 		}
@@ -540,7 +544,7 @@ JER_MODULE_ENTRY(jer_module_combatd2_entry)(JERICHO_CONTEXT* ctx)
 		ctx->jer_log(ctx, "[combatd2] note: CD2_OPPONENTS=%d overrides this run only, the ini keeps %d\n",
 			cd2MatchOpponents(), gCd2Cfg.aiOpponents);
 	else if (gEnvOpponentsBad)
-		ctx->jer_log(ctx, "[combatd2] note: CD2_OPPONENTS is set but is not a number; ignored\n");
+		ctx->jer_log(ctx, "[combatd2] note: CD2_OPPONENTS must be 0..%d; ignored\n", CD2_AI_MAX);
 
 	if (jer_config_get_int("combatd2", "ai_opponent", 0) != 0)
 		ctx->jer_log(ctx, "[combatd2] note: ai_opponent is gone, it no longer spawns anything; "

@@ -74,7 +74,7 @@ if you can see who *is* left: that is the player and anything a module owns.
 **Why pedestrians are removed rather than blocked:** `maxCivCars` and
 `CopsAllowed` are levers, but there is no equivalent for pedestrians - no
 `maxPedestrians`, and the civilian spawner has no flag or cheat gate. So ambient
-peds (`CIVILIAN`, `OTHER_SPRITE`) are destroyed every frame instead, via
+peds (`CIVILIAN`) are destroyed every frame instead, via
 `DestroyPedestrian` (the engine's clean unlink, not a kill). It is a filter, not a
 gate: a ped spawned between frames can appear for one frame.
 
