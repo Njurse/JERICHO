@@ -13,6 +13,7 @@
 #include "cars.h"
 #include "jericho.h"
 #include "jer_events.h"
+#include "turbo/turbo.h"		/* cd2TurboActive - the boost is audible */
 
 // ENGINE SOUND (JER_EVENT_CAR_ENGINE_SOUND, gamesnd.c SoundTasks): scale and
 // offset the player car's rev + idle channel pitch and volume. Tuners live in
@@ -29,6 +30,15 @@ static int cd2mOnCarEngineSound(void* ud, void* args)
 
 	p = ((long long)e->revPitch * CD2_SND_PITCH_SCALE) >> 12;
 	e->revPitch = (int)p + CD2_SND_PITCH_BIAS;
+
+	/* TURBO: the boost is audible - the engine note rides higher while it lasts,
+	 * on top of the over-rev the gearbox allows. */
+	{
+		CAR_DATA* cp = (CAR_DATA*)e->car;
+
+		if (cp != NULL && cd2TurboActive(cp->id))
+			e->revPitch += CD2_TURBO_PITCH_BOOST;
+	}
 
 	p = ((long long)e->idlePitch * CD2_SND_PITCH_SCALE) >> 12;
 	e->idlePitch = (int)p + CD2_SND_IDLE_PITCH_BIAS;

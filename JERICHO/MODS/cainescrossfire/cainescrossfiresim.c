@@ -435,6 +435,21 @@ int cd2OnCarTorque(void* ud, void* args)
 	int velX = cp->st.n.linearVelocity[0];
 	int velZ = cp->st.n.linearVelocity[2];
 
+	/* TURBO: the engagement shove. A push along the heading, applied as soon as
+	 * the boost starts - throttle or not, which is the point of a shove - and
+	 * ahead of the speed maths below, so the rest of the frame sees it. */
+	{
+		int shovePct = cd2TurboTakeShove(cp->id);
+
+		if (shovePct > 0)
+		{
+			int shove = (s.topSpeed * shovePct) / 100;
+			velX += fx * shove;
+			velZ += fz * shove;
+			jer_log("[cainescrossfire] turbo: shove +%d percent of top speed (%d)\n", shovePct, shove);
+		}
+	}
+
 	long long fwdSpeed = ((long long)velX * fx + (long long)velZ * fz) >> 24; // speed units (vel and the unit vector are both 4096-scaled)
 
 	// Current horizontal speed (magnitude), used for the slide decision.
@@ -476,7 +491,8 @@ int cd2OnCarTorque(void* ud, void* args)
 		{
 			velX += fx * accel;
 			velZ += fz * accel;
-		}
+
+	}
 		else
 		{
 			velX -= (int)(((long long)velX * s.drag) >> 12);
@@ -742,6 +758,13 @@ int cd2OnCarDraw(void* ud, void* args)
 
 	if (c->roll != 0)
 		_RotMatrixZ(m, (short)c->roll);
+
+	/* TURBO: the kick's nose-up pitch, on its own channel so it cannot fight the
+	 * slide's roll */
+	c->pitch = cd2TurboKickPitch(cp->id);
+
+	if (c->pitch != 0)
+		_RotMatrixX(m, (short)c->pitch);
 
 	return JER_RESULT_CONTINUE;
 }

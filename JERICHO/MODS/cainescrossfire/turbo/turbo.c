@@ -38,6 +38,8 @@ typedef struct CD2_TURBO_STATE
 	int prevPad;		// the pad last seen for this car, for edge detection
 	int inited;		// the meter has been filled once (it starts full)
 	int hold;		// programmatic hold: keeps the boost on until it runs out
+	int kickFrames;		// the engagement kick, counting down
+	int shove;		// a one-frame impulse owed to the integrator
 				// (the debug driver, and any future scripted/AI driver)
 } CD2_TURBO_STATE;
 
@@ -108,6 +110,8 @@ void cd2TurboRefill(int carId)
 	gTurbo[carId].tapFrame = -1;
 	gTurbo[carId].meter = CD2_TURBO_METER_FRAMES;
 	gTurbo[carId].inited = 1;
+	gTurbo[carId].kickFrames = 0;
+	gTurbo[carId].shove = 0;
 }
 
 void cd2TurboResetAll(void)
@@ -166,6 +170,9 @@ void cd2TurboPad(int carId, int pad)
 		else if (st->meter > 0)
 		{
 			st->meter--;
+
+			if (st->kickFrames > 0)
+				st->kickFrames--;
 		}
 		else
 		{
@@ -191,6 +198,11 @@ void cd2TurboPad(int carId, int pad)
 				st->reverse = (button == MPAD_SQUARE) ? 1 : 0;
 				st->heldButton = button;
 				st->tapFrame = -1;
+
+				/* the kick: a shove owed to the integrator, and a nose-up pitch
+				 * that settles over CD2_TURBO_KICK_FRAMES (the far wheels lifting) */
+				st->shove = 1;
+				st->kickFrames = CD2_TURBO_KICK_FRAMES;
 			}
 			else
 			{
@@ -206,6 +218,49 @@ void cd2TurboPad(int carId, int pad)
 	}
 
 	st->prevPad = pad;
+}
+
+// ---------------------------------------------------------------------------
+// the kick
+//
+// Two halves, both specified: one shove when turbo engages (a percentage of top
+// speed, so the car is actually pushed and not just allowed to go faster), and a
+// nose-up pitch that lifts the front like a hard stop lifting the far wheels,
+// settling over CD2_TURBO_KICK_FRAMES. While the boost runs a lighter version of
+// the same pitch keeps the body feeling shoved along.
+// ---------------------------------------------------------------------------
+int cd2TurboTakeShove(int carId)
+{
+	if (carId < 0 || carId >= MAX_CARS || !gTurbo[carId].shove)
+		return 0;
+
+	gTurbo[carId].shove = 0;
+	return CD2_TURBO_KICK_FORCE_PCT;
+}
+
+// The pitch to add to the car's body this frame, in the same units as the roll.
+int cd2TurboKickPitch(int carId)
+{
+	int limit, pitch;
+
+	if (carId < 0 || carId >= MAX_CARS || !gTurbo[carId].active)
+		return 0;
+
+	limit = gCd2Cfg.rollLimit;
+
+	if (limit <= 0)
+		return 0;
+
+	/* the engagement kick, decaying to nothing over its frames */
+	pitch = 0;
+	if (gTurbo[carId].kickFrames > 0)
+		pitch = (limit * CD2_TURBO_KICK_PITCH_PCT * gTurbo[carId].kickFrames)
+			/ (100 * CD2_TURBO_KICK_FRAMES);
+
+	/* plus the lighter sustained shove that makes it read as being pushed */
+	pitch += (limit * CD2_TURBO_SHAKE_PCT) / 100;
+
+	return pitch;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +350,8 @@ void cd2TurboForce(int carId, int on)
 		gTurbo[carId].active = 1;
 		gTurbo[carId].reverse = 0;
 		gTurbo[carId].hold = 1;		/* keep it on so the meter can be watched */
+		gTurbo[carId].shove = 1;
+		gTurbo[carId].kickFrames = CD2_TURBO_KICK_FRAMES;
 	}
 	else
 	{

@@ -28,7 +28,12 @@
 // gearbox's own ceiling. This is the over-rev: it does not make the car faster by
 // itself (the speed cap does that) -- it lets the car sound and behave like it is
 // being pushed past its limit.
-#define CD2_TURBO_OVERREV_PCT	12	// +12% on the rev ceiling while boosting
+#define CD2_TURBO_OVERREV_PCT	25	// +25% on the rev ceiling while boosting
+
+// How much higher the engine note rides while boosting, in SPU pitch units
+// (4096 = the nominal pitch). The over-rev above lets it wind higher; this makes
+// sure the note is actually heard doing it.
+#define CD2_TURBO_PITCH_BOOST	420	// ~10% up
 
 // ---------------------------------------------------------------------------
 // The meter
@@ -96,6 +101,11 @@ int cd2TurboAccelPct(int carId);
 
 // The over-rev: the caller passes its rev ceiling, this returns the one to use.
 int cd2TurboRevCeiling(int carId, int ceiling);
+
+// The kick. cd2TurboTakeShove returns a percentage of top speed ONCE per
+// engagement (0 otherwise); cd2TurboKickPitch is the body pitch to add this frame.
+int cd2TurboTakeShove(int carId);
+int cd2TurboKickPitch(int carId);
 
 // Feed the pad once per frame per car (the pad hook does). Edge-detected there.
 void cd2TurboPad(int carId, int pad);

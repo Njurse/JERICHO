@@ -492,6 +492,7 @@ typedef struct CD2_CAR
 	int yawRate;       // current yaw rate, PSX-units/frame (signed)
 	int slip;          // lateral velocity, speed units (signed), for visuals
 	int roll;          // smoothed body roll, PSX angle units
+	int pitch;         // turbo kick: nose-up pitch (the far wheels lifting)
 	int throttle;      // +1/-1/0 raw throttle captured at CAR_STEP (see note)
 	int pivotDir;      // latched tight-turn direction +1/-1/0
 	int slideTicks;    // recovery frames remaining after a slide ends
