@@ -498,7 +498,11 @@ typedef struct CD2_CONFIG
 typedef struct CD2_CAR
 {
 	int yawRate;       // current yaw rate, PSX-units/frame (signed)
-	int slip;          // lateral velocity, speed units (signed), for visuals
+	int slip;
+	// the same step's SIGNED forward speed. The lean is built from the lateral
+	// velocity, whose meaning flips when the car travels backwards - and hd.speed is
+	// a magnitude, so it cannot tell you which way that is.
+	int fwdSpeed;          // lateral velocity, speed units (signed), for visuals
 	int roll;          // smoothed body roll, PSX angle units
 	int pitch;         // turbo kick: nose-up pitch (the far wheels lifting)
 	int throttle;      // +1/-1/0 raw throttle captured at CAR_STEP (see note)

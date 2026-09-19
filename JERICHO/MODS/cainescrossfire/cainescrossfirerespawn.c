@@ -309,6 +309,9 @@ int cd2OnGameStart(void* ud, void* args)
 	(void)ud;
 	(void)args;
 
+	/* a match is starting: no getting out of the car by choice */
+	gBlockPlayerExit = 1;
+
 	memset(gCd2Respawn, 0, sizeof(gCd2Respawn));
 	memset(gCd2SceneryHits, 0, sizeof(gCd2SceneryHits));
 	memset(gCd2TrafficLastHit, 0, sizeof(gCd2TrafficLastHit));

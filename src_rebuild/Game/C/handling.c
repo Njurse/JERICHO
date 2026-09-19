@@ -284,6 +284,9 @@ void FixCarCos(CAR_COSMETICS* carCos, int externalModelNumber)
 	}
 }
 
+/* see handling.h: a module's leave-the-car switch */
+int gBlockPlayerExit = 0;
+
 int ghost_mode = 0;
 int playerghost = 0;
 int playerhitcopsanyway = 0;
@@ -1167,7 +1170,7 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	if (cp->controlType == CONTROL_TYPE_PLAYER)
 	{
 		// handle car leaving
-		if ((pad & CAR_PAD_LEAVECAR) == CAR_PAD_LEAVECAR && player_id > -1)
+		if ((pad & CAR_PAD_LEAVECAR) == CAR_PAD_LEAVECAR && player_id > -1 && gBlockPlayerExit == 0)
 		{
 			if (!TannerStuckInCar(1, player_id))
 			{

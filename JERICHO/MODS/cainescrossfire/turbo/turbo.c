@@ -39,7 +39,8 @@ typedef struct CD2_TURBO_STATE
 	int prevPad;		// the pad last seen for this car, for edge detection
 	int inited;		// the meter has been filled once (it starts full)
 	int hold;		// programmatic hold: keeps the boost on until it runs out
-	int shove;		// a one-frame impulse owed to the integrator
+	int shove;
+	int engaged;		// one-frame flag: the boost just latched		// a one-frame impulse owed to the integrator
 				// (the debug driver, and any future scripted/AI driver)
 } CD2_TURBO_STATE;
 
@@ -216,6 +217,7 @@ void cd2TurboPad(int carId, int pad)
 				 * the nose. An IMPULSE, so the spring eases it in and settles it
 				 * instead of the car snapping to a new attitude. */
 				st->shove = 1;
+				st->engaged = 1;
 				cd2KnockAdd(carId, (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100,
 					0, 0, 1, -CD2_TURBO_KICK_SHIFT);	/* nose up, weight back */
 			}
@@ -252,6 +254,16 @@ int cd2TurboTakeShove(int carId)
 
 	gTurbo[carId].shove = 0;
 	return CD2_TURBO_KICK_FORCE_PCT;
+}
+
+// [D] [T]
+int cd2TurboTakeEngage(int carId)
+{
+	if (carId < 0 || carId >= MAX_CARS || !gTurbo[carId].engaged)
+		return 0;
+
+	gTurbo[carId].engaged = 0;
+	return 1;
 }
 
 
@@ -352,6 +364,7 @@ void cd2TurboForce(int carId, int on)
 		gTurbo[carId].reverse = (on == 2) ? 1 : 0;	/* 2 = force a REVERSE boost */
 		gTurbo[carId].hold = 1;		/* keep it on so the meter can be watched */
 		gTurbo[carId].shove = 1;
+		gTurbo[carId].engaged = 1;
 		cd2KnockAdd(carId, (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100,
 			0, 0, 1, -CD2_TURBO_KICK_SHIFT);
 	}

@@ -80,6 +80,20 @@
 // this way means changing the knock's rates does not quietly make the wheelie
 // smaller - which is exactly what happened when this was a bare percentage of the
 // ceiling.
+// The turbo's own note, played once when it engages. The engine already climbs in
+// pitch while the boost is held, which reads as effort; this is the thing HAPPENING -
+// a sample of its own, so a boost is heard rather than only inferred from the engine
+// going higher. SFX 12 is the swept siren, which at this pitch is a dull swell rather
+// than a siren. The dials are the sample, the volume, then the pitch.
+#define CD2_SND_TURBO_SAMPLE	12		/* SOUND_BANK_SFX */
+#define CD2_SND_TURBO_VOLUME	0		/* 0 = unattenuated */
+#define CD2_SND_TURBO_PITCH	1400		/* 4096 = normal; low turns the sweep into a swell */
+
+// The exhaust flame (Jaret: much larger and denser)
+#define CD2_TURBO_FLAME_SIZE	60		/* was 18 */
+#define CD2_TURBO_FLAME_LIFE	45
+#define CD2_TURBO_FLAME_SPARKS	12		/* was 3 */
+
 #define CD2_TURBO_KICK_KNOCK_PCT	120
 
 // How far back the weight goes when it engages. A wheelie is the weight moving
@@ -125,6 +139,10 @@ int cd2TurboRevCeiling(int carId, int ceiling);
 // The kick. cd2TurboTakeShove returns a percentage of top speed ONCE per
 // engagement (0 otherwise); cd2TurboKickPitch is the body pitch to add this frame.
 int cd2TurboTakeShove(int carId);
+
+// The engagement edge: 1 ONCE, on the frame the boost latches, so the note plays once
+// rather than every frame the boost is held.
+int cd2TurboTakeEngage(int carId);
 // The buck itself is the knock's job (knock/knock.h), not the turbo's.
 
 // Feed the pad once per frame per car (the pad hook does). Edge-detected there.

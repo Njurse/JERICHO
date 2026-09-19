@@ -447,7 +447,7 @@ int cd2OnCarTorque(void* ud, void* args)
 	 * forward unit vector, so the emitter sits behind the car wherever it points.
 	 * The vanilla exhaust puff is left alone - suppressing it would mean an engine
 	 * change, and the flames read over it anyway. */
-	if (cd2TurboActive(cp->id) && (FrameCnt & 3) == 0)
+	if (cd2TurboActive(cp->id))
 	{
 		VECTOR sp, drift;
 
@@ -459,17 +459,31 @@ int cd2OnCarTorque(void* ud, void* args)
 		drift.vy = 0;
 		drift.vz = 0;
 
-		Setup_Smoke(&sp, 18, 45, SMOKE_FIRE, 0, &drift, 0);
+		/* Jaret: much larger and denser. Every frame instead of every fourth, three
+		 * puffs down the plume, and four times the size - the flame is what says
+		 * "boosted" faster than the bar does. */
+		Setup_Smoke(&sp, CD2_TURBO_FLAME_SIZE, CD2_TURBO_FLAME_LIFE, SMOKE_FIRE, 0, &drift, 0);
+		Setup_Smoke(&sp, CD2_TURBO_FLAME_SIZE, CD2_TURBO_FLAME_LIFE, SMOKE_FIRE, 0, &drift, 0);
+		Setup_Smoke(&sp, CD2_TURBO_FLAME_SIZE * 3 / 4, CD2_TURBO_FLAME_LIFE, SMOKE_FIRE, 0, &drift, 0);
 
 		/* and bright sparks with the flames: fire alone reads as a fire, and the
 		 * spec asked for both. Type 0 is the engine's own collision spray. */
-		Setup_Sparks(&sp, &drift, 3, 0);
+		Setup_Sparks(&sp, &drift, CD2_TURBO_FLAME_SPARKS, 0);
 	}
 
 	/* TURBO: the engagement shove. A push along the heading, applied as soon as
 	 * the boost starts - throttle or not, which is the point of a shove - and
 	 * ahead of the speed maths below, so the rest of the frame sees it. */
 	{
+		/* the engagement note: a sample of its own, so a boost is heard as an event
+		 * rather than only inferred from the engine climbing */
+		if (cd2TurboTakeEngage(cp->id))
+		{
+			Start3DSoundVolPitch(-1, SOUND_BANK_SFX, CD2_SND_TURBO_SAMPLE,
+				cp->hd.where.t[0], cp->hd.where.t[1] + 40, cp->hd.where.t[2],
+				CD2_SND_TURBO_VOLUME, CD2_SND_TURBO_PITCH);
+		}
+
 		int shovePct = cd2TurboTakeShove(cp->id);
 
 		if (shovePct > 0)
@@ -680,6 +694,7 @@ int cd2OnCarTorque(void* ud, void* args)
 	velZ -= (int)(((long long)rz * latVel * grip) >> 12);
 
 	c->slip = (int)latVel; // for the visual lean
+	c->fwdSpeed = (int)fwdSpeed; // ...and which way it is going, so its sign can be used
 	}
 
 	// hard ceiling: total horizontal speed never exceeds topSpeed. Without it,
@@ -794,7 +809,11 @@ int cd2OnCarDraw(void* ud, void* args)
 	cd2MotionDump(cp->id);
 
 	CD2_CAR* c = &gCd2Car[cp->id];
-	int target = jer_clamp_int(-c->slip * CD2_ROLL_GAIN, -CD2_BODY_MAX_ROLL, CD2_BODY_MAX_ROLL);
+	/* Reversing flips the meaning of the lateral velocity, so the slip that leans the
+	 * body into a left-hand turn leans it the wrong way once the car is going
+	 * backwards. The direction of travel fixes the sign. */
+	int leanDir = (c->fwdSpeed < 0) ? -1 : 1;
+	int target = jer_clamp_int(-c->slip * CD2_ROLL_GAIN * leanDir, -CD2_BODY_MAX_ROLL, CD2_BODY_MAX_ROLL);
 	c->roll = jer_lerp_int(c->roll, target, CD2_ROLL_LERP);
 
 	if (c->roll != 0)

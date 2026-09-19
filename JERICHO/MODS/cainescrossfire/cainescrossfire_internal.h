@@ -71,7 +71,11 @@ int cd2OnCarDraw(void* ud, void* args);			// cainescrossfiresim.c
 int cd2OnDebugTick(void* ud, void* args);		// cainescrossfiresim.c
 int cd2OnDamageScale(void* ud, void* args);		// cainescrossfiredamage.c
 int cd2OnCarVsCar(void* ud, void* args);		// cainescrossfiredamage.c
-int cd2OnGameStart(void* ud, void* args);		// cainescrossfirerespawn.c
+int cd2OnGameStart(void* ud, void* args);
+
+/* handling.c. Set while a match is running so the player cannot leave his car by
+ * choice - a bail mid-race leaves the grid a car short. Cleared again on shutdown. */
+extern int gBlockPlayerExit;		// cainescrossfirerespawn.c
 int cd2OnFramePursuit(void* ud, void* args);		// cainescrossfire.c (music hold)
 
 // ---------------------------------------------------------------------------

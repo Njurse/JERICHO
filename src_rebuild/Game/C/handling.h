@@ -1,6 +1,12 @@
 #ifndef HANDLING_H
 #define HANDLING_H
 #include "overlay.h"
+/* Set by a module that does not want the player leaving his car by choice - a match
+ * mode, where bailing mid-race leaves the grid a car down. It blocks the LEAVE-CAR pad
+ * only: a forced exit, a cutscene or a level spawn still goes through, which is why it
+ * gates the caller rather than ActivatePlayerPedestrian itself. */
+extern int gBlockPlayerExit;
+
 extern int ghost_mode;
 extern int playerghost;
 extern int playerhitcopsanyway;
