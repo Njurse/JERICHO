@@ -93,9 +93,9 @@
 // a sample of its own, so a boost is heard rather than only inferred from the engine
 // going higher. SFX 12 is the swept siren, which at this pitch is a dull swell rather
 // than a siren. The dials are the sample, the volume, then the pitch.
-#define CD2_SND_TURBO_SAMPLE	12		/* SOUND_BANK_SFX */
-#define CD2_SND_TURBO_VOLUME	0		/* 0 = unattenuated */
-#define CD2_SND_TURBO_PITCH	1400		/* 4096 = normal; low turns the sweep into a swell */
+// The engagement SAMPLE that used to live here (SOUND_BANK_SFX 12, pitched low) is
+// gone: it read as a police siren. The turbo is heard through the engine over-rev
+// instead - see CD2_TURBO_REV_EXTRA_PCT - so there is nothing to define for it.
 
 // The exhaust flame (Jaret: much larger and denser)
 #define CD2_TURBO_FLAME_SIZE	60		/* was 18 */
@@ -150,7 +150,6 @@ int cd2TurboTakeShove(int carId);
 
 // The engagement edge: 1 ONCE, on the frame the boost latches, so the note plays once
 // rather than every frame the boost is held.
-int cd2TurboTakeEngage(int carId);
 // The buck itself is the knock's job (knock/knock.h), not the turbo's.
 
 // Feed the pad once per frame per car (the pad hook does). Edge-detected there.

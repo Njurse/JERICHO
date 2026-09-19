@@ -40,7 +40,6 @@ typedef struct CD2_TURBO_STATE
 	int inited;		// the meter has been filled once (it starts full)
 	int hold;		// programmatic hold: keeps the boost on until it runs out
 	int shove;
-	int engaged;		// one-frame flag: the boost just latched		// a one-frame impulse owed to the integrator
 				// (the debug driver, and any future scripted/AI driver)
 } CD2_TURBO_STATE;
 
@@ -228,7 +227,6 @@ void cd2TurboPad(int carId, int pad)
 				 * backwards looks like. Handing it the forward wheelie was giving it
 				 * the gas button's gesture rather than its own. */
 				st->shove = 1;
-				st->engaged = 1;
 
 				if (st->reverse)
 					cd2KnockAdd(carId, -(CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100,
@@ -272,15 +270,6 @@ int cd2TurboTakeShove(int carId)
 	return CD2_TURBO_KICK_FORCE_PCT;
 }
 
-// [D] [T]
-int cd2TurboTakeEngage(int carId)
-{
-	if (carId < 0 || carId >= MAX_CARS || !gTurbo[carId].engaged)
-		return 0;
-
-	gTurbo[carId].engaged = 0;
-	return 1;
-}
 
 
 // ---------------------------------------------------------------------------
@@ -380,7 +369,6 @@ void cd2TurboForce(int carId, int on)
 		gTurbo[carId].reverse = (on == 2) ? 1 : 0;	/* 2 = force a REVERSE boost */
 		gTurbo[carId].hold = 1;		/* keep it on so the meter can be watched */
 		gTurbo[carId].shove = 1;
-		gTurbo[carId].engaged = 1;
 		cd2KnockAdd(carId, (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100,
 			0, 0, 1, -CD2_TURBO_KICK_SHIFT);
 	}

@@ -475,15 +475,12 @@ int cd2OnCarTorque(void* ud, void* args)
 	 * the boost starts - throttle or not, which is the point of a shove - and
 	 * ahead of the speed maths below, so the rest of the frame sees it. */
 	{
-		/* the engagement note: a sample of its own, so a boost is heard as an event
-		 * rather than only inferred from the engine climbing */
-		if (cd2TurboTakeEngage(cp->id))
-		{
-			Start3DSoundVolPitch(-1, SOUND_BANK_SFX, CD2_SND_TURBO_SAMPLE,
-				cp->hd.where.t[0], cp->hd.where.t[1] + 40, cp->hd.where.t[2],
-				CD2_SND_TURBO_VOLUME, CD2_SND_TURBO_PITCH);
-		}
-
+		/* No engagement sample any more. The one that was here was SOUND_BANK_SFX 12,
+		 * pitched low, and it reads as a police siren - which is exactly what the
+		 * player heard and said. The turbo's audible signature is the ENGINE: it now
+		 * over-revs past the airborne ceiling (CD2_TURBO_REV_EXTRA_PCT), which is how
+		 * the source material does it too. A replacement belongs here only if it
+		 * actually sounds like a boost rather than like the constabulary. */
 		int shovePct = cd2TurboTakeShove(cp->id);
 
 		if (shovePct > 0)
@@ -693,7 +690,13 @@ int cd2OnCarTorque(void* ud, void* args)
 	velX -= (int)(((long long)rx * latVel * grip) >> 12);
 	velZ -= (int)(((long long)rz * latVel * grip) >> 12);
 
-	c->slip = (int)latVel; // for the visual lean
+	/* The lean's input, with a dead zone. Lateral velocity is never exactly zero - the
+	 * integrator leaves a little behind on every corner, and a collision spikes it, and
+	 * the gain below is large enough that the roll clamps at a latVel of 1 - so without
+	 * a floor the body rolls for reasons the player did not cause, which is the "it
+	 * tilts sideways instead of forwards or backwards" report. Below CD2_ROLL_DEADZONE
+	 * the slip is reported as flat and the lean settles. */
+	c->slip = ((int)latVel > CD2_ROLL_DEADZONE || (int)latVel < -CD2_ROLL_DEADZONE) ? (int)latVel : 0;
 	c->fwdSpeed = (int)fwdSpeed; // ...and which way it is going, so its sign can be used
 	}
 

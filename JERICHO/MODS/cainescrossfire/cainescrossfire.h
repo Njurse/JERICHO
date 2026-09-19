@@ -200,6 +200,11 @@ enum
 #define CD2_ROLL_GAIN       15     // roll = -latVel * gain, clamped below
 #define CD2_BODY_MAX_ROLL   14    // ~2° lean (TMB: weight felt, not exaggerated)
 #define CD2_ROLL_LERP       2     // exponential settle divisor
+// Lateral velocity below this (either sign) is not a slide and does not lean the body.
+// It has to exist because the gain above is large: a latVel of 1 already saturates the
+// roll, so any residue from the integrator would roll the car for no reason. In world
+// units per step, so a real drift clears it comfortably.
+#define CD2_ROLL_DEADZONE   6
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.
 #define CD2_FOV_PULL_SCRZ   60
