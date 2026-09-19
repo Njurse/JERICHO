@@ -64,10 +64,16 @@ Timing (verified in `main.c`): `SetupResidentModels` fires
 cars created. So:
 
 1. **CAR_DATA_SOURCE** — each *fielded* profile's `(city, model)` is placed into
-   a resident car slot. The level's own slot is reused when it already holds the
-   model from the right city; otherwise a spare slot is taken, else an unclaimed
-   civilian slot (the special slot is never taken). A foreign model is imported
-   by writing the slot's source city, so cross-city profiles work.
+   a resident car slot:
+   - a **native** profile (its city is the level's) reuses a resident slot that
+     already holds its model; failing that it takes an empty **spare** slot, the
+     level's own lump supplying the geometry;
+   - a **foreign** profile is placed only when its city is the level's one
+     **guest city**, into an empty spare slot (the engine imports from only one
+     foreign city per level — `InitCarImport` holds a single city, `models.c`).
+   Civilian slots (0..4) are never repurposed — they carry the level's own models
+   and the ambient traffic, and stealing one is what made the level's cars look
+   wrong. So a car belongs to the city it is picked in.
 2. **GAME_START** — the profile's `CAR_COSMETICS` overrides are written.
 3. **CAR_STEP** — the first time a car of a profiled slot is seen, it is assigned
    its profile, handed its special (filled to capacity, per-car ammo), and given

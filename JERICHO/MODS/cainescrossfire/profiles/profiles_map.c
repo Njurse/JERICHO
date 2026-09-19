@@ -42,6 +42,7 @@ static int gCd2VehFielded[CD2_VEH_COUNT];		// in this match's field?
 static int gCd2VehPalDone[MAX_CARS];			// paint set for this car already
 static int gCd2CarProfile[MAX_CARS];			// car -> profile (CD2_VEH_NONE)
 static int gCd2VehPlayer = CD2_VEH_NONE;		// the player's chosen profile
+static int gCd2GuestCity = -1;				// the one importable guest city
 
 // ---------------------------------------------------------------------------
 // Fielded set
@@ -237,80 +238,81 @@ static void cd2VehClaimSlot(int profileId, int slot)
 		gCd2SlotProfile[slot] = profileId;
 }
 
-// Find or make a resident slot for a fielded profile's model. Reuse a slot that
-// already holds the model from a compatible city; otherwise take a spare slot
-// (5..SPECIAL_CAR_SLOT-1), then any unclaimed slot. SPECIAL_CAR_SLOT is never
-// taken (it belongs to the level's special body).
+// Find a resident slot for a fielded profile's model.
+//
+// The engine can import from only ONE foreign city per level (InitCarImport
+// holds a single city, models.c), and a native model needs no import at all -
+// the level's own lump carries every model 0..12. So:
+//
+//   * a NATIVE profile (originCity == the level) reuses a resident slot that
+//     already holds its model; failing that it takes an empty spare slot, the
+//     level's own lump supplying the geometry (modelSource stays -1);
+//   * a FOREIGN profile is placed only when its city is the level's one guest
+//     city, into an empty spare slot with modelSource set for the import.
+//
+// Civilian slots (0..4) are never repurposed: they carry the level's own models
+// and the ambient traffic, and stealing one is what made the level's cars look
+// wrong. SPECIAL_CAR_SLOT is never taken.
 static void cd2VehPlaceProfile(int profileId, JER_ARGS_CAR_DATA_SOURCE* a)
 {
 	const CD2_VEH_PROFILE* p = cd2VehDef(profileId);
+	int native = (p != NULL) && (p->originCity == a->level);
 	int slot;
 
 	if (p == NULL || p->modelSlot < 0 || a->models == NULL)
 		return;
 
-	// 1. a slot already carrying this exact model from the right city (or, when
-	//    the profile is the level's own city, from the level itself).
-	for (slot = 0; slot < a->count && slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	// a native model that is already resident: reuse its slot untouched
+	if (native)
 	{
-		int src;
-
-		if (a->models[slot] != p->modelSlot)
-			continue;
-
-		src = (a->modelSource != NULL) ? a->modelSource[slot] : -1;
-
-		if (src == p->originCity || (src == -1 && p->originCity == a->level))
+		for (slot = 0; slot < a->count && slot < MAX_CAR_RESIDENT_MODELS; slot++)
 		{
-			cd2VehClaimSlot(profileId, slot);
+			if (a->models[slot] == p->modelSlot)
+			{
+				cd2VehClaimSlot(profileId, slot);
 
-			printInfo("[cainescrossfire] profile %s -> resident slot %d (level's own %s model %d)\n",
-				p->internalName, slot, LevelNames[p->originCity], p->modelSlot);
+				printInfo("[cainescrossfire] profile %s -> resident slot %d (%s's own model %d)\n",
+					p->internalName, slot, LevelNames[p->originCity], p->modelSlot);
+				return;
+			}
+		}
+	}
+	else
+	{
+		// only one guest city can be imported per level
+		if (gCd2GuestCity == -1)
+			gCd2GuestCity = p->originCity;
+		else if (gCd2GuestCity != p->originCity)
+		{
+			printInfo("[cainescrossfire] profile %s (%s): only one guest city per level (%s already), not fielded\n",
+				p->internalName, LevelNames[p->originCity], LevelNames[gCd2GuestCity]);
 			return;
 		}
 	}
 
-	// 2. a truly empty spare slot (5..SPECIAL_CAR_SLOT-1).
+	// an empty spare slot (5..SPECIAL_CAR_SLOT-1)
 	for (slot = SPECIAL_CAR_SLOT - 1; slot >= 5; slot--)
 	{
 		if (slot >= a->count || slot >= MAX_CAR_RESIDENT_MODELS)
 			continue;
 		if (gCd2SlotProfile[slot] != -1)
 			continue;
-		if (a->models[slot] == -1)
-		{
-			a->models[slot] = p->modelSlot;
-			if (a->modelSource != NULL)
-				a->modelSource[slot] = p->originCity;
-
-			cd2VehClaimSlot(profileId, slot);
-
-			printInfo("[cainescrossfire] profile %s -> resident slot %d (imported %s model %d)\n",
-				p->internalName, slot, LevelNames[p->originCity], p->modelSlot);
-			return;
-		}
-	}
-
-	// 3. any unclaimed slot below the special one (repurpose a civilian slot).
-	for (slot = SPECIAL_CAR_SLOT - 1; slot >= 0; slot--)
-	{
-		if (slot >= a->count || slot >= MAX_CAR_RESIDENT_MODELS)
-			continue;
-		if (gCd2SlotProfile[slot] != -1)
-			continue;
+		if (a->models[slot] != -1)
+			continue;		// don't clobber what carhacks (or a level) put here
 
 		a->models[slot] = p->modelSlot;
+
 		if (a->modelSource != NULL)
-			a->modelSource[slot] = p->originCity;
+			a->modelSource[slot] = native ? -1 : p->originCity;
 
 		cd2VehClaimSlot(profileId, slot);
 
-		printInfo("[cainescrossfire] profile %s -> resident slot %d (repurposed %s model %d)\n",
-			p->internalName, slot, LevelNames[p->originCity], p->modelSlot);
+		printInfo("[cainescrossfire] profile %s -> resident slot %d (%s %s model %d)\n",
+			p->internalName, slot, native ? "own" : "imported", LevelNames[p->originCity], p->modelSlot);
 		return;
 	}
 
-	printInfo("[cainescrossfire] profile %s: no free resident slot for %s model %d, not fielded\n",
+	printInfo("[cainescrossfire] profile %s: no free spare slot for %s model %d, not fielded\n",
 		p->internalName, LevelNames[p->originCity], p->modelSlot);
 }
 
@@ -332,6 +334,8 @@ static void cd2VehResetState(void)
 		gCd2VehPalDone[i] = 0;
 		gCd2CarProfile[i] = CD2_VEH_NONE;
 	}
+
+	gCd2GuestCity = -1;
 }
 
 static int cd2VehOnCarDataSource(void* ud, void* args)
