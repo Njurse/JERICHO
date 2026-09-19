@@ -1440,12 +1440,16 @@ void CarImportPin(void)
 		// our palette, which is why the palette check said MISMATCH with real positions.
 		if (sPinClutCursor.x == 0 && sPinClutCursor.y == 0)
 		{
-			int firstFree = clutpos.y + 8 * (19 - slotsused) + 4;
+			// JERICHO: the band starts just past whatever the level has already used, but
+			// never above 480 - the imported palettes occupy the same CLUT strip
+			// (ProcessImportedPalette uploads them there), and the old 500 ceiling left
+			// only 12 rows, which starved the second imported set so its page was never
+			// placed at all. 480..511 is 32 rows, and the level's own layout ends well
+			// below it (427 stock, 475 with an import).
+			int firstFree = clutpos.y + 4;
 
-			if (firstFree < 256)
+			if (firstFree < 480)
 				firstFree = 480;
-			if (firstFree > 500)
-				firstFree = 500;
 
 			sPinClutCursor.x = 960;
 			sPinClutCursor.y = firstFree;
@@ -1493,6 +1497,19 @@ void CarImportPin(void)
 		tpageloaded[sPinIndex[i]] = (u_char)slot;
 
 		sPinSlot[i] = slot;
+
+		// JERICHO: buildNewCarFromModel caches each set's palette-0 CLUT into its
+		// civ_clut row - but that build runs at load time, before this upload, so for
+		// an imported set it cached the (960,16) dummy. The page's CLUTs are only
+		// really in VRAM now, so re-point the row's base entry at them. Without this
+		// the car renders with whatever the dummy area happens to hold.
+		{
+			int row = GetCarPalIndex(sPinSet[i]);
+			int j;
+
+			for (j = 0; j < 32; j++)
+				civ_clut[row][j][0] = texture_cluts[sPinIndex[i]][j];
+		}
 
 		free(buf);
 	}

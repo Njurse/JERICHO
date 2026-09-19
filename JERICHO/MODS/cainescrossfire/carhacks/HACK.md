@@ -235,4 +235,42 @@ Two things follow, and they close off the cheaper fix:
    rows the host does not use, which means either offsetting the imported model's index
    at build time or resolving it against the imported pallet there.
 
+### Fixed: two banks of civ_clut rows, and a pin-time refresh
+
+`clut` is not actually baked in after all — `buildNewCarFromModel` *computes* it as
+`(carid - 1) * 192 + texture_id * 6`, and `pciv_clut` is `&civ_clut[1]`, so
+`pciv_clut[clut + palette]` is exactly `civ_clut[carid][texture_id][palette]`. The row is
+chosen by `carid`, which means the fix is only ever a matter of which row a set is
+assigned. So:
+
+- `civ_clut` is now `[CIV_CLUT_ROWS][32][6]` with `CIV_CLUT_ROWS` 16. Rows 0..7 stay the
+  host level's; rows 8..15 belong to an import.
+- `CarPalIndexInCity(tpage, city)` adds `CIV_CLUT_IMPORT_ROW` (8) when `city` is the
+  imported city. Both of its users get that for free — `ProcessPalletLumpForCity`
+  writes an import's palettes into rows 8..15, and `GetCarPalIndex` hands
+  `buildNewCarFromModel` a `carid` in 8..15 for a foreign page.
+- The `imported` special-case in the GT3/GT4 cases is gone (and with it the
+  `directClut` shortcut): an import now runs the host's own formula, so its
+  `clut_uv0` high word is a real `civ_clut` index in the second bank.
+- `ProcessImportedPalette` runs `ProcessPalletLumpForCity(GetCarImportPallet(...), ...,
+  importedCity)` — the same `LUMP_PALLET` path the host uses, which also `LoadImage`s the
+  colours into VRAM.
+
+One trap cost an hour: the pin is **draw-time**, but `buildNewCarFromModel` runs at
+*load* time. So `civ_clut[carid][texture_id][0] = texture_cluts[set][texture_id]` cached
+the `(960,16)` dummy for an imported set (resolved CLUT id `043c`, the dummy's own id).
+`CarImportPin` now re-points each row's palette-0 entry at the page's real CLUTs right
+after it uploads them.
+
+Second trap: the imported palettes occupy the same CLUT strip as everything else, which
+pushed `clutpos.y` to 475 and left the pin's band — clamped to start at y≤500 — only 12
+rows. The second imported set was therefore never placed at all (`slot=-1`, its page
+missing, and 238 wasted-car-page retries). The band now starts at 480 whenever the
+level's own layout leaves less room.
+
+Verified: both Havana sets pin (slots 9 and 5, 0 world pages evicted), the resolved
+CLUT id is a real one in the band (`79bf` = (992,487)), and `vramdump.py --lev
+HAVANA.LEV` reports **MATCH** for both sets (27 and 30 CLUT rows). `devcheck.sh` 7/7.
+
+
 

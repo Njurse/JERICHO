@@ -38,7 +38,13 @@ extern short BackWheelRotation[MAX_CARS];
 extern char LeftLight;
 extern char RightLight;
 
-extern u_short civ_clut[8][32][6];
+// JERICHO: civ_clut has two banks of 8 car-palette rows - 0..7 the host level's own,
+// 8..15 a cross-city import's - so a foreign car can be painted from its own city's
+// palettes without overwriting the host's. See the comment on civ_clut in cars.c.
+#define CIV_CLUT_ROWS		16
+#define CIV_CLUT_IMPORT_ROW	8
+
+extern u_short civ_clut[CIV_CLUT_ROWS][32][6];
 
 extern void DrawCar(CAR_DATA *cp, int view); // 0x000210B8
 
@@ -62,9 +68,5 @@ extern char GetCarPalIndex(int tpage); // 0x00023390
  * three loaders agree on the folder. */
 extern int gCarDataSourceLevel;
 extern const char* GetCarDataFolder(void);
-
-// This just says "these exist somewhere" so bounce info is global (may move all this to a totally custom library for organization)
-extern float gBouncePhase;
-extern float gBounceAmp;
 
 #endif

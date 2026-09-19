@@ -34,7 +34,6 @@ struct plotCarGlobals
 	u_int intensity;
 	u_short* pciv_clut;
 	u_char* damageLevel;
-	int directClut;		// JERICHO: clut_uv0 holds a CLUT id, not a civ_clut index
 };
 
 
@@ -96,7 +95,13 @@ MODEL* gCarCleanModelPtr[MAX_CAR_RESIDENT_MODELS];
 
 // pedestrian palette at 0 and next are cars
 // model_id, texture_number, palette
-u_short civ_clut[8][32][6];
+//
+// JERICHO: CIV_CLUT_ROWS is 16, not 8. Rows 0..7 are the host level's own car palettes;
+// rows 8..15 are a cross-city import's, which is what lets a foreign car be painted
+// from its own city's palettes without overwriting the host's. The row is chosen by
+// carid in buildNewCarFromModel, and read back as
+// pciv_clut[(carid-1)*192 + tex*6 + palette] (pciv_clut is &civ_clut[1]).
+u_short civ_clut[CIV_CLUT_ROWS][32][6];
 
 #define MAX_CAR_POLYS	(200 * 2) * MAX_CAR_RESIDENT_MODELS
 
@@ -104,10 +109,7 @@ int whichCP = 0;
 int baseSpecCP = 0;
 CAR_POLY carPolyBuffer[MAX_CAR_POLYS + 1];
 
-// JERICHO-DIAG: one-shot, so we can see exactly what an imported car's GT polys ask
-// for, and which of the two CLUT paths resolves them.
 static int gt3DiagCount = 0;
-static int gt3DiagCountHost = 0;
 
 char LeftLight = 0;
 char RightLight = 0;
@@ -279,33 +281,16 @@ void plotCarPolyGT3(int numTris, CAR_POLY *src, SVECTOR *vlist, SVECTOR *nlist, 
 
 			ofse = pg->damageLevel[src->originalindex];
 
-			if (pg->directClut)
+			// JERICHO-DIAG: an imported car indexes the second civ_clut bank (rows 8..15),
+			// so its clut index is >= 8*192. Log the id it resolves to.
+			if ((src->clut_uv0 >> 0x10) >= CIV_CLUT_IMPORT_ROW * 192 && gt3DiagCount < 4)
 			{
-				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
-
-				// JERICHO-DIAG: an imported poly reads the CLUT word verbatim.
-				if (gt3DiagCount < 4)
-				{
-					gt3DiagCount++;
-					printInfo("cross-city: GT3 IMPORTED clut_uv0=%08x hi=%d -> emitted %08x (verbatim)\n",
-			{
-				// JERICHO-DIAG: and a host poly indexes civ_clut with the same field, so
-				// we can tell whether `hi` is an index (small, lands in 1536 entries) or
-				// a GetClut() id.
-				if (gt3DiagCountHost < 4)
-				{
-					gt3DiagCountHost++;
-					printInfo("cross-city: GT3 HOST     clut_uv0=%08x hi=%d -> pciv_clut[%d] = %04x, emitted %08x\n",
-						src->clut_uv0, (src->clut_uv0 >> 0x10), (src->clut_uv0 >> 0x10) + palette,
-						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette],
-						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse);
-				}
-
-						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse);
-				}
+				gt3DiagCount++;
+				printInfo("cross-city: imported GT clut index %d -> CLUT id %04x (palette %d)\n",
+					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette], palette);
 			}
-			else
-				*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+
+			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
@@ -373,38 +358,19 @@ void plotCarPolyGT3Lit(int numTris, CAR_POLY* src, SVECTOR* vlist, SVECTOR* nlis
 			*(u_int*)&prim->r0 = (r0 & 0xff) << 0x10 | r0;
 			*(u_int*)&prim->r1 = (r1 & 0xff) << 0x10 | r1;
 			*(u_int*)&prim->r2 = (r2 & 0xff) << 0x10 | r2;
-			if (pg->directClut)
-			{
-				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
 
 			ofse = pg->damageLevel[src->originalindex];
 
-
-				// JERICHO-DIAG: the imported car reads the page's CLUT verbatim, so its
-				// body colour is whatever CLUT row that page happens to hold - NOT the
-				// palette the imported city's LUMP_PALLET defines.
-				if (gt3DiagCount < 4)
-				{
-					gt3DiagCount++;
+			// JERICHO-DIAG: an imported car indexes the second civ_clut bank (rows 8..15),
+			// so its clut index is >= 8*192. Log the id it resolves to.
+			if ((src->clut_uv0 >> 0x10) >= CIV_CLUT_IMPORT_ROW * 192 && gt3DiagCount < 4)
 			{
-				// JERICHO-DIAG: and a host poly indexes civ_clut with the same field, so
-				// we can tell whether `hi` is an index (small, lands in 1536 entries) or
-				// a GetClut() id.
-				if (gt3DiagCountHost < 4)
-				{
-					gt3DiagCountHost++;
-					printInfo("cross-city: GT3 HOST     clut_uv0=%08x hi=%d -> pciv_clut[%d] = %04x, emitted %08x\n",
-						src->clut_uv0, (src->clut_uv0 >> 0x10), (src->clut_uv0 >> 0x10) + palette,
-						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette],
-						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse);
-				}
-
-					printInfo("cross-city: GT3 IMPORTED clut_uv0=%08x hi=%d -> emitted %08x (verbatim)\n",
-						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse);
-				}
+				gt3DiagCount++;
+				printInfo("cross-city: imported GT clut index %d -> CLUT id %04x (palette %d)\n",
+					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette], palette);
 			}
-			else
-				*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+
+			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
@@ -481,34 +447,16 @@ void plotCarPolyGT3nolight(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGl
 
 			ofse = pg->damageLevel[src->originalindex];
 
-			if (pg->directClut)
-
-				// JERICHO-DIAG: the imported car reads the page's CLUT verbatim, so its
-				// body colour is whatever CLUT row that page happens to hold - NOT the
-				// palette the imported city's LUMP_PALLET defines.
-				if (gt3DiagCount < 4)
-				{
-					gt3DiagCount++;
-					printInfo("cross-city: GT3 IMPORTED clut_uv0=%08x hi=%d -> emitted %08x (verbatim)\n",
+			// JERICHO-DIAG: an imported car indexes the second civ_clut bank (rows 8..15),
+			// so its clut index is >= 8*192. Log the id it resolves to.
+			if ((src->clut_uv0 >> 0x10) >= CIV_CLUT_IMPORT_ROW * 192 && gt3DiagCount < 4)
 			{
-				// JERICHO-DIAG: and a host poly indexes civ_clut with the same field, so
-				// we can tell whether `hi` is an index (small, lands in 1536 entries) or
-				// a GetClut() id.
-				if (gt3DiagCountHost < 4)
-				{
-					gt3DiagCountHost++;
-					printInfo("cross-city: GT3 HOST     clut_uv0=%08x hi=%d -> pciv_clut[%d] = %04x, emitted %08x\n",
-						src->clut_uv0, (src->clut_uv0 >> 0x10), (src->clut_uv0 >> 0x10) + palette,
-						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette],
-						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse);
-				}
-
-						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse);
-				}
+				gt3DiagCount++;
+				printInfo("cross-city: imported GT clut index %d -> CLUT id %04x (palette %d)\n",
+					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette], palette);
 			}
-				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
-			else
-				*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+
+			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
@@ -1090,10 +1038,6 @@ void plotNewCarModel(CAR_MODEL* car, int palette, int flatColor)
 	_pg.pciv_clut = (u_short*)&civ_clut[1];
 	_pg.damageLevel = (u_char*)gTempCarUVPtr;
 
-	// JERICHO: an imported car's GT polys carry a direct CLUT id (from their own
-	// page), not a civ_clut row index. See buildNewCarFromModel.
-	_pg.directClut = car->imported;
-
 	_pg.ot = (OTTYPE*)(current->ot + 28);
 
 	gte_strgb(&underIntensity);
@@ -1364,23 +1308,10 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 
 						CarModelSetsAdd(index, pgt3->texture_set);
 
-						if (imported)
-						{
-							// JERICHO: an imported car's GT polys take their CLUT
-							// straight from their own page (like the FT path), never
-							// through the host's civ_clut rows - those are keyed by
-							// the HOST's palette, so a re-indexed set both painted the
-							// car with the host's colours and overwrote the host's
-							// cache entry with the imported CLUT.
-							clut = texture_cluts[CarSetRemap(pgt3->texture_set)][pgt3->texture_id];
-						}
-						else
-						{
-							carid = GetCarPalIndex(pgt3->texture_set);
-							clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
+						carid = GetCarPalIndex(pgt3->texture_set);
+						clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
 
-							civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
-						}
+						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
 
 						cp->vindices = M_INT_4R(pgt3->v0, pgt3->v1, pgt3->v2, 0);
 						cp->nindices = M_INT_4R(pgt3->n0, pgt3->n1, pgt3->n2, 0);
@@ -1399,19 +1330,14 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 
 						CarModelSetsAdd(index, pgt4->texture_set);
 
-						if (imported)
-						{
-							// JERICHO: imported car - CLUT straight from its own page,
-							// exactly like the FT path. See the GT3 case above.
-							clut = texture_cluts[CarSetRemap(pgt4->texture_set)][pgt4->texture_id];
-						}
-						else
-						{
-							carid = GetCarPalIndex(pgt4->texture_set);
-							clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
+						// JERICHO: no imported special-case - GetCarPalIndex already returns a
+						// second-bank row (8..15) for a page belonging to the imported city, so
+						// an import reads its own palettes through exactly the host's formula.
+						// A GT poly's clut_uv0 high word is a civ_clut INDEX, not a CLUT id.
+						carid = GetCarPalIndex(pgt4->texture_set);
+						clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
 
-							civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
-						}
+						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
 
 						cp->vindices = M_INT_4R(pgt4->v0, pgt4->v1, pgt4->v2, 0);
 						cp->nindices = M_INT_4R(pgt4->n0, pgt4->n1, pgt4->n2, 0);
@@ -1621,39 +1547,33 @@ void ProcessPalletLump(char *lump_ptr, int lump_size)
 	ProcessPalletLumpForCity(lump_ptr, lump_size, GameLevel);
 }
 
-// JERICHO-HOOK: deliberately does nothing - see the note inside.
+// JERICHO-HOOK: load a cross-city import's own car palettes into civ_clut.
+//
+// The import's models name their colours by the imported city's palette rows, so those
+// palettes have to be in civ_clut for their CLUT ids to resolve. The host level runs
+// first and fills rows 0..7 with its own, so an unmodified merge would paint the host's
+// cars with the foreign city's colours. CarPalIndexInCity therefore puts this city's
+// rows in the second bank (8..15), and ProcessPalletLumpForCity then runs exactly as it
+// does for the host - same LUMP_PALLET format, same LoadImage of the colours into VRAM -
+// without touching a single host row.
 void ProcessImportedPalette(void)
 {
-	// An imported city's palettes are NOT merged into civ_clut any more.
-	//
-	// civ_clut is u_short civ_clut[8][32][6]: EIGHT palette rows, and the host level
-	// uses all eight for its own cars. The imported city's palette indices are also
-	// 0..7, so merging put the foreign city's colours straight over the host's rows
-	// - which is why LOCAL cars, not just the imported one, started drawing with the
-	// wrong colours.
-	//
-	// There is nothing to squeeze: eight rows, all spoken for. Nor is the merge
-	// needed. A car's colours come from the CLUTs of its texture page, and a foreign
-	// car's page - uploaded into a spare texture slot by LoadImportedTPages - carries
-	// its own CLUTs with it, which is what its polys' clut ids resolve against. The
-	// merge was solving a problem the page upload already solves, at the cost of the
-	// host's palette table.
-	//
-	//
-	// JERICHO-DIAG: the gap, stated out loud. GetCarImportPallet() holds the imported
-	// city's LUMP_PALLET - the car palettes - and, as of this line, NOTHING reads it:
-	// a grep for GetCarImportPallet finds only its definition in models.c. So the
-	// imported car's body has no source for its paint at all, which is why its
-	// textures load but its palette is wrong.
-	// Kept as a named function so this call site and the reason stay legible.
-	if (GetCarImportCity() >= 0)
-	{
-		int palSize = 0;
-		char* pal = GetCarImportPallet(&palSize);
+	int city = GetCarImportCity();
+	int size = 0;
+	char* pallet;
 
-		printInfo("cross-city: %s car palettes: body=%s size=%d - NOT APPLIED (nothing reads GetCarImportPallet yet)\n",
-			LevelNames[GetCarImportCity()], (pal != NULL) ? "yes" : "NULL", palSize);
-	}
+	if (city < 0)
+		return;
+
+	pallet = GetCarImportPallet(&size);
+
+	if (pallet == NULL || size <= 0)
+		return;
+
+	ProcessPalletLumpForCity(pallet, size, city);
+
+	printInfo("cross-city: %s car palettes applied to civ_clut rows %d..%d\n",
+		LevelNames[city], CIV_CLUT_IMPORT_ROW, CIV_CLUT_ROWS - 1);
 }
 
 // [D] [T]
@@ -2062,17 +1982,25 @@ void DrawCar(CAR_DATA* cp, int view)
 // [D] [T]
 // Which of a city's eight car-palette slots a texture page belongs to, or -1 when
 // that city does not use the page as a car palette.
+//
+// JERICHO: the returned row is offset into civ_clut's second bank when `city` is the
+// imported city, so an import's palettes land in rows 8..15 and never touch the host's
+// 0..7. Both users get it consistently: ProcessPalletLumpForCity writes through it,
+// and GetCarPalIndex reads through it for the model's carid.
 static int CarPalIndexInCity(int tpage, int city)
 {
 	int i;
+	int rowbase;
 
 	if (city < 0 || city >= 4)
 		return -1;
 
+	rowbase = (city == GetCarImportCity() && city != GameLevel) ? CIV_CLUT_IMPORT_ROW : 0;
+
 	for (i = 0; i < 8; i++)
 	{
 		if (tpage == carTpages[city][i])
-			return i;
+			return i + rowbase;
 	}
 
 	return -1;
