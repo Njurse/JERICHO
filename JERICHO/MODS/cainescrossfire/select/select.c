@@ -15,6 +15,7 @@
 // entry is routed there too as a fallback.
 
 #include "driver2.h"
+#include "dr2types.h"		/* GAMETYPE / GAME_TAKEADRIVE */
 
 #include "jericho.h"
 #include "jer_events.h"
@@ -22,7 +23,8 @@
 
 #include "players.h"
 #include "main.h"
-#include "mission.h"		/* GameLevel, wantedCar */
+#include "mission.h"		/* GameLevel, wantedCar, GameType, NumPlayers */
+#include "glaunch.h"		/* gSubGameNumber, gWantNight */
 #include "state.h"		/* SetState, STATE_GAMESTART */
 #include "system.h"		/* LevelNames[] */
 
@@ -35,9 +37,44 @@
 #include <stdlib.h>
 
 extern int wantedCar[2];		/* the player's chosen car model per player */
+extern int gBootMpLevel;		/* main.c: take-a-ride loads the mp-map mission instead of the full city */
+extern int gBootMpArena;		/* main.c: which of the two mp layouts (0 or 1) */
 
 static int gCcForced;			/* -ccmenu / CC_MENU seen this run */
 static int gCcOpened;			/* we have opened the arena menu once */
+
+// A vehicle press: the item's userdata packs (city * 100 + profileId).
+static int cd2SelActVehicle(void* ud)
+{
+	int packed = (int)(size_t)ud;
+	int city = packed / 100;
+	int profile = packed % 100;
+	const CD2_VEH_PROFILE* p = cd2VehDef(profile);
+
+	GameLevel = city;
+	cd2VehSetPlayerProfile(profile);
+
+	if (p != NULL && p->modelSlot >= 0)
+		wantedCar[0] = p->modelSlot;
+
+	// A TWISTED-METAL MATCH, not the story campaign the frontend's Undercover
+	// entry would otherwise start. Free-roam TAKE A RIDE, single player, on the
+	// city's MULTIPLAYER-MAP arena 0 (gBootMpLevel makes State_GameStart pick
+	// the small mp layout, M58.., instead of the full city, M50..; arena 0 is
+	// gSubGameNumber 0).
+	GameType = GAME_TAKEADRIVE;
+	NumPlayers = 1;
+	gWantNight = 0;
+	gSubGameNumber = 0;		/* arena 0 (mission M58 + city*2) */
+	gBootMpLevel = 1;
+	gBootMpArena = 0;
+
+	printInfo("[cainescrossfire] CC select: start %s with %s (model %d) - take-a-ride mp arena 0\n",
+		LevelNames[city], cd2VehDisplayName(profile), (p != NULL) ? p->modelSlot : -1);
+
+	SetState(STATE_GAMESTART);
+	return 1;
+}
 
 // ---------------------------------------------------------------------------
 // The arena menu (index 0) — the four cities, each opening its vehicle menu.
@@ -75,27 +112,6 @@ static const int gCcVehCity[4] =
 {
 	CD2_VEH_CITY_CHICAGO, CD2_VEH_CITY_HAVANA, CD2_VEH_CITY_VEGAS, CD2_VEH_CITY_RIO
 };
-
-// A vehicle press: the item's userdata packs (city * 100 + profileId).
-static int cd2SelActVehicle(void* ud)
-{
-	int packed = (int)(size_t)ud;
-	int city = packed / 100;
-	int profile = packed % 100;
-	const CD2_VEH_PROFILE* p = cd2VehDef(profile);
-
-	GameLevel = city;
-	cd2VehSetPlayerProfile(profile);
-
-	if (p != NULL && p->modelSlot >= 0)
-		wantedCar[0] = p->modelSlot;
-
-	printInfo("[cainescrossfire] CC select: start %s with %s (model %d)\n",
-		LevelNames[city], cd2VehDisplayName(profile), (p != NULL) ? p->modelSlot : -1);
-
-	SetState(STATE_GAMESTART);
-	return 1;
-}
 
 // Build the arena + vehicle item tables from the registry (once, at register).
 static void cd2SelBuildMenus(void)
