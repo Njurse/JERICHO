@@ -174,6 +174,14 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // which is a car that keeps rocking - the floatiness this is here to remove.
 #define CD2_MOTION_COMPRESS_PCT	400	// 4x
 
+// The slam. A wheelie or a stoppie ends when the spring arrives back at level having been
+// out at a real angle - that is the far end of the car coming down, and the one moment the
+// body should hit the suspension. It is a knock, so it rides the same machinery: an
+// impulse, sized to an ANGLE, returning at the rate that impulse earns.
+#define CD2_MOTION_SLAM_MIN		35	// the pitch that counts as a real wheelie/stoppie
+#define CD2_MOTION_SLAM_IMPULSE	22	// the angle the knock is asked for, PSX units
+#define CD2_MOTION_SLAM_SHIFT	700	// and the weight thrown with it, /4096 units
+
 // A car in reverse has the same delta sign for the opposite reason, and should not
 // pitch as hard - it is a different manoeuvre, not a faster one.
 #define CD2_MOTION_REVERSE_PCT	50	// % of the amplitude when the car is going backwards
@@ -227,6 +235,8 @@ typedef struct CD2_MOTION_STATE
 	int accelVel;		// and its velocity
 	int accelShift;		// the squat that comes with it (along the car)
 	int accelBob;		// and the vertical part
+	int accelPeak;		// how far out this movement has been, for judging its ending
+	int accelPrev;		// last frame's pitch, so the crossing that ends it is visible
 
 	int inited;		// phases seeded
 	int logged;		// the class line has been written for this car

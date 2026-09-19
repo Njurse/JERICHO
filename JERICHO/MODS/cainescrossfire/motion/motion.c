@@ -16,6 +16,7 @@
 #include "jer_math.h"		/* jer_clamp_int */
 
 #include "motion/motion.h"
+#include "knock/knock.h"	/* the slam rides the knock */
 #include "ai/ai.h"		/* cd2AiIsOpponent - the racer test */
 
 // ---------------------------------------------------------------------------
@@ -404,7 +405,7 @@ void cd2MotionStep(int carId)
 }
 
 // [D] [T]
-static void cd2AccelApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
+static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
 {
 	int target = 0, accel;
 
@@ -497,15 +498,61 @@ static void cd2AccelApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
 	 * body PAST level once - that is the snap the source material describes - but no
 	 * further than the class allows, so the crossing is a movement rather than the start
 	 * of a wobble. */
-	if (target == 0)
 	{
-		int limit = (cls->pitchMax * cls->overshootPct) / 100;
+		/* Two bounds, because the two halves need different ones. Rising, the body may
+		 * pass the class ceiling by overshootPct - a wheelie arrives at the top of its arc
+		 * and goes a little beyond, which is the "overshoot on arrival" the source material
+		 * describes. Returning, it may only pass LEVEL by overshootPct, since that is the
+		 * counter-rock before the motion dies. Without the rising bound the arrival is
+		 * unbounded and the 4x compression makes it enormous: measured at 144 against a
+		 * 102 ceiling before this existed. */
+		int limit = (target == 0) ? (cls->pitchMax * cls->overshootPct) / 100
+			: cls->pitchMax + (cls->pitchMax * cls->overshootPct) / 100;
 
 		if (st->accelPitch > limit)
 			st->accelPitch = limit;
 		else if (st->accelPitch < -limit)
 			st->accelPitch = -limit;
 	}
+
+	/* THE SLAM. It fires when the body CROSSES level, judged against how far out this
+	 * movement has been - not against the previous frame, which is what the first version
+	 * did and it could never fire: at the crossing the previous frame is about 2 units by
+	 * definition, so a test of "was it out at 35 the frame before" is never true. The peak
+	 * is remembered instead, and cleared as the crossing is taken, so the slam happens once
+	 * per movement rather than once per frame of the return.
+	 *
+	 * No airborne work is needed: the spring arriving back at level IS the far end of the
+	 * car coming down. */
+	{
+		int mag = st->accelPitch < 0 ? -st->accelPitch : st->accelPitch;
+
+		if (mag > st->accelPeak)
+			st->accelPeak = mag;
+
+		/* The crossing itself: the sign of the pitch changed since the last frame. That is
+		 * what "arrives back at level" means, and it happens exactly once per movement. */
+		if ((st->accelPeak >= CD2_MOTION_SLAM_MIN) &&
+			((st->accelPrev > 0 && st->accelPitch <= 0) || (st->accelPrev < 0 && st->accelPitch >= 0)))
+		{
+			int wheelie = (st->accelPrev > 0);
+			int impulse = wheelie ? -CD2_KNOCK_IMPULSE_TO(CD2_MOTION_SLAM_IMPULSE) : CD2_KNOCK_IMPULSE_TO(CD2_MOTION_SLAM_IMPULSE);
+			int shift = wheelie ? CD2_MOTION_SLAM_SHIFT : -CD2_MOTION_SLAM_SHIFT;
+
+			jer_log("[cainescrossfire] slam car=%d peak=%d (a %s ending)\n",
+				carId, st->accelPeak, wheelie ? "wheelie" : "stoppie");
+
+			cd2KnockAdd(carId, impulse, 0, 0, 0, shift);
+
+			st->accelPeak = 0;	/* one slam per movement */
+		}
+
+		st->accelPrev = st->accelPitch;
+	}
+
+	/* a movement that has settled flat is over: the next one starts its own peak */
+	if (target == 0 && st->accelPitch == 0 && st->accelVel == 0)
+		st->accelPeak = 0;
 }
 
 // The squat, derived from the spring's own position so it cannot drift out of step
@@ -635,7 +682,7 @@ void cd2MotionApply(int carId, CD2_VISUAL_OFFSET* o)
 
 	if (gCd2Cfg.motionAccel)
 	{
-		cd2AccelApply(st, cls);
+		cd2AccelApply(carId, st, cls);
 		cd2AccelSquat(st);
 	}
 
