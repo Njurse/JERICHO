@@ -1274,6 +1274,25 @@ void CarImportPin(void)
 
 		clut = sPinClutCursor;
 
+		// JERICHO: the CLUT walker advances forward and WRAPS at the bottom of VRAM
+		// (IncrementClutNum), landing back at the top in the TEXTURE area. A latent
+		// safety net: with the slot starved as it is (see below) the walk never gets
+		// that far, but any set whose rows would run past y=511 is left unplaced
+		// rather than painting over a texture page.
+		{
+			int npal = *(int*)buf;
+			int need = (npal + 3) / 4 + 1;	// CLUT rows -> VRAM rows, 4 per row, +1 for a mid-row start
+
+			if (sPinClutCursor.y + need > 512)
+			{
+				printInfo("cross-city: %s set %d left unplaced - %d CLUT rows from y=%d would wrap into a texture page\n",
+					LevelNames[GetCarImportCity()], sPinSet[i], npal, sPinClutCursor.y);
+
+				free(buf);
+				continue;
+			}
+		}
+
 		// Ours to write: bypass the ownership guard for this upload, then mark the
 		// rectangle owned so the engine's own uploads to it are refused from here on.
 		sCarPageUploading = 1;
