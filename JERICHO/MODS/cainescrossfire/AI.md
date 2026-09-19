@@ -319,8 +319,8 @@ otherwise **pure pursuit** along the route polyline at a speed-scaled lookahead
 ## 6. Spawning and vehicle choice
 
 `cd2AiSpawn` (646-663) resets the slots then calls `cd2AiSpawnOne` for
-`i = 0 .. min(CD2_AI_MAX, CD2_AI_SPAWN_COUNT)-1`. Both are **4** (opponent.c:176-177),
-so up to four opponents.
+`i = 0 .. min(CD2_AI_MAX, CD2_AI_SPAWN_COUNT)-1`. Both are **6** (opponent.c:176-177),
+so up to six opponents.
 
 `cd2AiSpawnOne` (440-644):
 
@@ -385,7 +385,7 @@ is what tells you which `-car` ids are legal in the city being tested.
 ## 7. Driving, avoidance, combat
 
 All inside `cd2AiDrive` (665-1695); one `CD2_AI_CAR` slot per opponent
-(`sAi[CD2_AI_MAX]`, 207), so four run independently.
+(`sAi[CD2_AI_MAX]`, 207), so six run independently.
 
 **Evade overlay** (773-784, 1109-1115). `cd2WpnIncomingThreat(cp, ...)` (a
 weapons-module call, weapon_internal.h:111) sets `sEvade = EVADE_FRAMES` (85,
@@ -478,7 +478,7 @@ not migrated (it defaulted to on); a stale line in the ini is reported at boot.
 
 | Key | Field | Default | Clamp | Meaning |
 |---|---|---|---|---|
-| `ai_opponents` | `aiOpponents` | 0 | 0..4 (`CD2_AI_MAX`) | how many opponents this match fields; 0 = none |
+| `ai_opponents` | `aiOpponents` | 0 | 0..6 (`CD2_AI_MAX`) | how many opponents this match fields; 0 = none. The CC select's opponent screen sets it |
 | `ai_force_state` | `aiForceState` | 0 | 0..5 | 0 = Auto, else force a `CD2_AI_*` state |
 | `ai_debug` | `aiDebug` | 0 | 0/1 | on-screen AI readout |
 | `ai_role` | `aiRole` | -1 | -1..3 | -1 = auto round-robin, else force a role |

@@ -91,6 +91,22 @@ on both the scenery and car-vs-car paths.
 - plus the profile the **player** picked in the CC select flow;
 - `CC_PROFILES` overrides the whole set for a headless run (never persisted).
 
+## The select flow
+
+Three native frontend menus (`jer_frontend.h`), raised by `-ccmenu` or the main
+menu's **Deathmatch** row (the renamed Undercover entry):
+
+1. **`cc.arena`** — the four cities. Cross picks one.
+2. **`cc.veh.<city>`** — `< CAR >`: one row, Left/Right cycles it, with the
+   car's own frontend icon beside it. Cross stages the pick and opens…
+3. **`cc.opponents`** — `< N OPPONENTS >`: one row, Left/Right cycles **0..6**
+   (`CD2_AI_MAX`). Cross starts the match.
+
+The match itself is a free-roam **TAKE A RIDE** — single player, on the chosen
+city's **multiplayer-map arena 0** — with the chosen car and opponent count. The
+opponent count is the match setting `ai_opponents`, so the pause menu can still
+change it mid-match.
+
 ## The test roster
 
 Six profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):

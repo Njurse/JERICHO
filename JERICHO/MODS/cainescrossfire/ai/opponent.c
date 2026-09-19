@@ -484,7 +484,7 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 	// Probe BOTH sides at this opponent's fan distance (then a little further
 	// out) and spawn on whichever is clear, so we never drop a car inside a
 	// wall. lineClear: 0 = blocked.
-	for (k = 0; k < 5 && !chosen; k++) // Upped test to five opponents for a total of six contestants
+	for (k = 0; k < CD2_AI_SPAWN_COUNT && !chosen; k++) // one slot per opponent the level can field
 	{
 		int d = off + k * CD2_AI_SPAWN_OFFSET;
 

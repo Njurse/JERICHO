@@ -33,6 +33,7 @@
 #include "system.h"		/* LevelNames[] */
 
 #include "cainescrossfire.h"
+#include "ai/ai.h"		/* CD2_AI_MAX - the opponent cap the menu cycles */
 #include "profiles/profile.h"
 
 #include "select/select.h"
@@ -51,7 +52,8 @@ static int gCcOpened;			/* we have opened the arena menu once */
 // Menus
 // ---------------------------------------------------------------------------
 #define CC_MENU_ARENA		0
-#define CC_MENU_VEH_BASE	1	/* the four vehicle menus follow */
+#define CC_MENU_VEH_BASE	1	/* the four vehicle menus follow (1..4) */
+#define CC_MENU_OPPONENTS	5	/* after the vehicles: how many opponents */
 
 static const char* const gCcArenas[] =
 {
@@ -86,6 +88,14 @@ static int gCcVehList[4][CD2_VEH_COUNT];	// profile ids per city, registry order
 static int gCcVehN[4];				// how many cars the city has
 static int gCcVehSel[4];			// the carousel cursor
 
+// The opponent menu: a carousel over 0..CD2_AI_MAX, plus what the vehicle screen
+// picked (its Cross is what opens this menu).
+static JER_FE_ITEM gCcOppItems[2];	/* the carousel row + Back */
+static JER_FE_MENU gCcOppMenu = { "cc.opponents", gCcOppItems, 2, NULL, NULL, NULL };
+static int gCcOppSel;			// how many opponents the match will field
+static int gCcPendingCity;		// the arena the vehicle screen chose
+static int gCcPendingCar;		// ...and the roster slot in it
+
 static int cd2SelVehCity(void* ud)
 {
 	return (int)(size_t)ud;
@@ -99,10 +109,13 @@ static void cd2SelLaunch(int city, int sel)
 
 	// TEST/DEBUG override, for headless verification of the cross-city path:
 	//   CC_FORCE_ARENA=<0..3> CC_FORCE_CAR=<0..CD2_VEH_COUNT-1>
+	//   CC_FORCE_OPPONENTS=<0..CD2_AI_MAX>
 	if (getenv("CC_FORCE_ARENA") != NULL)
 		city = atoi(getenv("CC_FORCE_ARENA"));
 	if (getenv("CC_FORCE_CAR") != NULL)
 		sel = atoi(getenv("CC_FORCE_CAR"));
+	if (getenv("CC_FORCE_OPPONENTS") != NULL)
+		gCd2Cfg.aiOpponents = atoi(getenv("CC_FORCE_OPPONENTS"));
 
 	if (city < 0 || city > 3 || gCcVehN[city] <= 0)
 		return;
@@ -130,8 +143,9 @@ static void cd2SelLaunch(int city, int sel)
 	gBootMpLevel = 1;
 	gBootMpArena = 0;
 
-	printInfo("[cainescrossfire] CC select: start %s with %s (model %d) - take-a-ride mp arena 0\n",
-		LevelNames[city], cd2VehDisplayName(profile), (p != NULL) ? p->modelSlot : -1);
+	printInfo("[cainescrossfire] CC select: start %s with %s (model %d) - take-a-ride mp arena 0, %d opponent(s)\n",
+		LevelNames[city], cd2VehDisplayName(profile), (p != NULL) ? p->modelSlot : -1,
+		gCd2Cfg.aiOpponents);
 
 	SetState(STATE_GAMESTART);
 }
@@ -171,7 +185,49 @@ static int cd2SelVehActivate(void* ud)
 	if (city < 0 || city > 3 || gCcVehN[city] <= 0)
 		return 0;
 
-	cd2SelLaunch(city, gCcVehSel[city]);
+	// remember the pick and move on to the opponent screen - the match starts
+	// from there, so a player always gets to choose the field size
+	gCcPendingCity = city;
+	gCcPendingCar = gCcVehSel[city];
+
+	jer_frontend_open(CC_MENU_OPPONENTS);
+	return 1;
+}
+
+// ---------------------------------------------------------------------------
+// Opponents: 0..CD2_AI_MAX, cycled left/right, Cross starts the match.
+// ---------------------------------------------------------------------------
+static void cd2SelOppLabel(void* ud, char* out, int max)
+{
+	(void)ud;
+
+	if (gCcOppSel == 0)
+		snprintf(out, max, "< NO OPPONENTS >");
+	else if (gCcOppSel == 1)
+		snprintf(out, max, "< 1 OPPONENT >");
+	else
+		snprintf(out, max, "< %d OPPONENTS >", gCcOppSel);
+}
+
+static int cd2SelOppAdjust(void* ud, int dir)
+{
+	int n = CD2_AI_MAX + 1;
+
+	(void)ud;
+
+	gCcOppSel = (gCcOppSel + dir + n) % n;
+	jer_frontend_refresh();
+	return 1;
+}
+
+static int cd2SelOppActivate(void* ud)
+{
+	(void)ud;
+
+	// the match setting the AI reads at spawn (cd2MatchOpponents)
+	gCd2Cfg.aiOpponents = gCcOppSel;
+
+	cd2SelLaunch(gCcPendingCity, gCcPendingCar);
 	return 1;
 }
 
@@ -217,6 +273,28 @@ static void cd2SelBuildMenus(void)
 	gCcArenaItems[4].is_back = 1;
 
 	gCcArenaMenu.title = "SELECT ARENA";
+
+	// the opponent menu: one carousel row + Back
+	memset(&gCcOppItems[0], 0, sizeof(gCcOppItems[0]));
+	gCcOppItems[0].get_label = cd2SelOppLabel;
+	gCcOppItems[0].on_adjust = cd2SelOppAdjust;
+	gCcOppItems[0].on_activate = cd2SelOppActivate;
+	gCcOppItems[0].submenu = -1;
+
+	memset(&gCcOppItems[1], 0, sizeof(gCcOppItems[1]));
+	gCcOppItems[1].label = "Back";
+	gCcOppItems[1].submenu = -1;
+	gCcOppItems[1].is_back = 1;
+
+	gCcOppMenu.title = "SELECT OPPONENTS";
+
+	// open on whatever the match setting already is
+	gCcOppSel = gCd2Cfg.aiOpponents;
+
+	if (gCcOppSel < 0)
+		gCcOppSel = 0;
+	if (gCcOppSel > CD2_AI_MAX)
+		gCcOppSel = CD2_AI_MAX;
 
 	for (city = 0; city < 4; city++)
 	{
@@ -365,6 +443,7 @@ void cd2SelectRegister(JERICHO_CONTEXT* ctx)
 	jer_frontend_register_menu(&gCcVehMenu[1]);
 	jer_frontend_register_menu(&gCcVehMenu[2]);
 	jer_frontend_register_menu(&gCcVehMenu[3]);
+	jer_frontend_register_menu(&gCcOppMenu);
 
 	// a fallback route: the main menu's entry opens the arena menu
 	jer_frontend_set_main_entry("cc.arena");
