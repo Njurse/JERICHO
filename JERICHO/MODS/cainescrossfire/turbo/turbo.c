@@ -245,6 +245,9 @@ void cd2TurboPad(int carId, int pad)
 				 * the gas button's gesture rather than its own. */
 				st->shove = 1;
 
+				jer_log("[cainescrossfire] turbo engage car=%d (%s)\n",
+					carId, st->reverse ? "reverse" : "forward");
+
 				cd2TurboKick(carId, st->reverse);
 			}
 			else

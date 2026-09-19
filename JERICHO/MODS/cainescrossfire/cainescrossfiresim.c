@@ -89,6 +89,16 @@ int cd2OnCarPad(void* ud, void* args)
 		int dbg = cd2DbgPadMask();
 	}
 
+	/* the debug driver's scripted pad, for the PLAYER'S car only, and BEFORE the turbo so a
+	 * scripted double tap registers and the car sees it too. It sits above the shoulder
+	 * strip on purpose and that is safe: the strip removes L1/L2/R1/R2 and nothing else, so
+	 * a scripted drive or brake button passes through untouched.
+	 *
+	 * Its reach ends at this module. The engine's control is already decoded by the time
+	 * this hook runs, which is why `thrust:<n>` is the lever for the springs. */
+	if (cp->id == player[0].playerCarId)
+		a->pad |= cd2DbgPadMask();
+
 	/* the turbo trigger sees the pad before anything in here rewrites it: the
 	 * double tap is a driver gesture, not a control remap */
 	cd2TurboPad(cp->id, a->pad);
@@ -98,6 +108,7 @@ int cd2OnCarPad(void* ud, void* args)
 	// stock fast-steer (L1) never fires alongside; the stock horn (R1) is
 	// cleared in the weapons FRAME handler.
 	a->pad &= ~(MPAD_L1 | MPAD_L2 | MPAD_R1 | MPAD_R2);
+
 
 	if (!gCd2Cfg.tmbButtons)
 		return JER_RESULT_CONTINUE;

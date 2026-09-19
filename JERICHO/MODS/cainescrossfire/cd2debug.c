@@ -223,14 +223,16 @@ static int cd2DbgReadAction(const char** s, int* arg)
 		e++;
 	}
 
+	/* at least one digit: without this a bare "thrust:" silently forced the thrust to 0,
+	 * since the separator was already consumed and the empty-number test could not fire */
+	if (*e < '0' || *e > '9')
+		return CD2_DBG_NONE;
+
 	while (*e >= '0' && *e <= '9')
 {
 		v = v * 10 + (*e - '0');
 		e++;
 	}
-
-	if (e == p)
-		return CD2_DBG_NONE;
 
 	*arg = neg ? -v : v;
 	*s = e;

@@ -52,8 +52,8 @@
 // hd.speed does not move during a turbo engagement, so the delta was exactly 0 through
 // the very event the rule exists for, and the rate stayed pinned at its base. The impulse
 // is always known, always nonzero, and is already "how hard was that" in one number.
-// 24 means a full-ceiling knock - CD2_KNOCK_IMPULSE_TO(57), an impulse of 44 - lands the
-// rate at 2906, and the cap is reached at an impulse of 50. So the range is: a light
+// 24 means a full-ceiling knock - CD2_KNOCK_IMPULSE_TO(57) is 57*2696/4096 = 37 - lands the
+// rate at 2738, and the cap is reached at an impulse of 50. So the range is: a light
 // graze barely changes it, and anything that gets anywhere near the ceiling gets the
 // stiff return. Measured on a turbo engagement against the cap and the base.
 #define CD2_KNOCK_SETTLE_EXTRA_MAX	1200	// base 1850 + this = 3050, about 74% per frame

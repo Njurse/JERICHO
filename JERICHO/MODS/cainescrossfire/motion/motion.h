@@ -154,7 +154,10 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // that would tilt the car less than this produced no event, so it produces no pitch. This
 // is what makes a gentle drive exactly flat - without it the integrator's ordinary
 // breathing is summed into a permanent tilt.
-#define CD2_MOTION_DELTA_FLOOR	5	// ~0.44 degrees
+#define CD2_MOTION_DELTA_FLOOR	15	// ~1.3 degrees
+// NOTE the size against CD2_MOTION_DELTA_GAIN: d = delta * gain is always a multiple of the
+// gain, so a floor of 5 against a gain of 5 zeroed only delta == 0 exactly. At 15 the band is
+// |delta| <= 2, which is the integrator breathing rather than a manoeuvre.
 
 // The sustained term's speed window, in speed units per step. Below the floor the car
 // has no wheelie at all however hard the throttle is; above the full mark the pitch is
@@ -169,18 +172,32 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // unmodified, which is why a car digs in hard and then climbs back reluctantly. The source
 // material puts the ratio at 3-5x and this is the single global knob for it.
 //
-// Note that only the STIFFNESS splits. The damping stays high in both directions on
-// purpose: softening the rebound's damping as well would make the return underdamped,
-// which is a car that keeps rocking - the floatiness this is here to remove.
-#define CD2_MOTION_COMPRESS_PCT	400	// 4x
+// BOTH stiffness and damping scale, which is what the source material says and what
+// measuring forced me to agree with. Stiffness alone is not enough: raising it shortens the
+// swing's period without changing its envelope, so a 4x stiffness took the arrival overshoot
+// from about 9% to about 38% - a bigger wheelie than any class is supposed to have. Damping
+// at the same 4x would push the damping coefficient past 4096 and make the step oscillate,
+// so the two use different factors, and CD2_MOTION_COMPRESS_DAMP_PCT is bounded below 4096
+// for exactly that reason.
+#define CD2_MOTION_COMPRESS_PCT	400	// 4x on stiffness
+#define CD2_MOTION_COMPRESS_DAMP_PCT	150	// 1.5x on damping. MUST stay well under 4096: the
+					// integrator's stability condition is stiff < 2*4096 + 2*(4096 - damp),
+					// so a large damping factor is what would break it, not the stiffness.
 
 // The slam. A wheelie or a stoppie ends when the spring arrives back at level having been
 // out at a real angle - that is the far end of the car coming down, and the one moment the
 // body should hit the suspension. It is a knock, so it rides the same machinery: an
 // impulse, sized to an ANGLE, returning at the rate that impulse earns.
-#define CD2_MOTION_SLAM_MIN		35	// the pitch that counts as a real wheelie/stoppie
+#define CD2_MOTION_SLAM_MIN		60	// the pitch that counts as a real wheelie/stoppie.
+					// It must exceed the RETURN's own counter-swing, or the swing
+					// re-arms the peak and fires a second slam labelled as the
+					// opposite event. The largest counter-swing is LIGHT's, at
+					// 137*35/100 = 47, which is why this is above it.
 #define CD2_MOTION_SLAM_IMPULSE	22	// the angle the knock is asked for, PSX units
-#define CD2_MOTION_SLAM_SHIFT	700	// and the weight thrown with it, /4096 units
+#define CD2_MOTION_SLAM_SHIFT	48	// the weight thrown with it. This is a POSITION in the
+					// knock's shift channel, which is clamped at 55 and whose velocity is
+					// ZEROED at the clip - so 700 (the first value here) saturated in one
+					// frame and became a snap rather than a throw. The turbo kick is 52.
 
 // A car in reverse has the same delta sign for the opposite reason, and should not
 // pitch as hard - it is a different manoeuvre, not a faster one.

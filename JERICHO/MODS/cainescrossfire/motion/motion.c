@@ -459,6 +459,8 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 		if (st->travel < 0)
 			d = -((d * CD2_MOTION_REVERSE_PCT) / 100);
 
+		/* the floor applies AFTER the halving, so reversing is not a way around it */
+
 		/* The floor. A delta too small to produce CD2_MOTION_DELTA_FLOOR of angle is
 		 * not an event, it is the integrator breathing - and applied continuously it
 		 * tilts the car for no reason the player can see, which is the "it tilts when
@@ -484,10 +486,15 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 		 * sign of the position rather than on the throttle, so it is the body's motion
 		 * being classified - a launch, a dive and a landing all compress, and every
 		 * return is a rebound. */
-		if (err != 0 && (st->accelPitch == 0 ? 1 : ((st->accelPitch > 0) == (err > 0))))
-			stiff = (cls->stiffness * CD2_MOTION_COMPRESS_PCT) / 100;
+		int damp = cls->damping;
 
-		accel = ((err * stiff) >> 12) - (st->accelVel * cls->damping >> 12);
+		if (err != 0 && (st->accelPitch == 0 ? 1 : ((st->accelPitch > 0) == (err > 0))))
+		{
+			stiff = (cls->stiffness * CD2_MOTION_COMPRESS_PCT) / 100;
+			damp = (cls->damping * CD2_MOTION_COMPRESS_DAMP_PCT) / 100;
+		}
+
+		accel = ((err * stiff) >> 12) - (st->accelVel * damp >> 12);
 	}
 
 	st->accelVel += accel;
@@ -506,7 +513,12 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 		 * counter-rock before the motion dies. Without the rising bound the arrival is
 		 * unbounded and the 4x compression makes it enormous: measured at 144 against a
 		 * 102 ceiling before this existed. */
-		int limit = (target == 0) ? (cls->pitchMax * cls->overshootPct) / 100
+		/* Returning means the body is travelling back toward level, which is not the same as
+		 * the target being zero: while driving, the sustained term keeps the target away from
+		 * zero the whole time, and keying the tight bound on it left the rise bound in force
+		 * while the car was moving - exactly when the counter-swing needs holding. */
+		int back = (st->accelPitch > 0 && st->accelVel < 0) || (st->accelPitch < 0 && st->accelVel > 0);
+		int limit = back ? (cls->pitchMax * cls->overshootPct) / 100
 			: cls->pitchMax + (cls->pitchMax * cls->overshootPct) / 100;
 
 		if (st->accelPitch > limit)
@@ -544,14 +556,19 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 
 			cd2KnockAdd(carId, impulse, 0, 0, 0, shift);
 
-			st->accelPeak = 0;	/* one slam per movement */
+			st->accelPeak = mag;	/* one slam per movement: the counter-swing's own
+						 * peak is what remains, and it cannot reach the
+						 * threshold, so it cannot fire a second one */
 		}
 
 		st->accelPrev = st->accelPitch;
 	}
 
-	/* a movement that has settled flat is over: the next one starts its own peak */
-	if (target == 0 && st->accelPitch == 0 && st->accelVel == 0)
+	/* Settled is settled. This used to demand all three of target, position and velocity be
+	 * exactly zero, which with integer >>12 steps is a knife edge: the peak then survived
+	 * between movements and a later, gentler one inherited it and slammed on its own
+	 * crossing. Level and slow is the honest test. */
+	if (st->accelPitch > -2 && st->accelPitch < 2 && st->accelVel > -2 && st->accelVel < 2)
 		st->accelPeak = 0;
 }
 

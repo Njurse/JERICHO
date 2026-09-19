@@ -88,7 +88,11 @@ void cd2KnockAdd(int carId, int pitch, int roll, int yaw, int lift, int shift)
 		if (r > mag) mag = r;
 		if (y > mag) mag = y;
 
-		k->force = mag;
+		/* the MAXIMUM, not the latest: every impulse used to overwrite this, so a slam landing
+		 * during a live collision dropped the rate from the collision's down to the slam's and
+		 * restarted the deadline - the return would get gentler because something else hit */
+		if (mag > k->force)
+			k->force = mag;
 	}
 
 	/* the deadline restarts with every knock: 0.5s is per movement, not per car */
