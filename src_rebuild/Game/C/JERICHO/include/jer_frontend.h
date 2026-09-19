@@ -56,6 +56,8 @@ typedef struct JER_FE_MENU
 	int item_count;
 	void (*on_enter)(void* ud);		/* refresh before layout (optional) */
 	void* userdata;
+	/* Optional heading, drawn in orange above the rows (e.g. "SELECT CAR"). */
+	const char* title;
 	/* Optional car-icon preview: called on each layout, set *city to a
 	 * LevelNames index and *model to a model NUMBER; the engine draws that
 	 * city's car icon for it (the stock car-select art). Leave it NULL for no

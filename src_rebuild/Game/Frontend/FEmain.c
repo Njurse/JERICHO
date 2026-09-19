@@ -420,6 +420,9 @@ static const JER_FE_MENU* gFeMenus[JER_FE_MAX_MENUS];
 static int gFeMenuCount;
 static int gFeMainEntry = -1;		// menu index the Multiplayer entry opens
 static int gFeNeedSetup;		// rebuild the current module menu screen
+static int gFeMenuEnterFrame;		// suppress module-menu input on the frame it appears
+					// (the pad state handed to that first frame can be stale,
+					//  which auto-confirmed a row)
 
 screenFunc fpUserFunctions[] = {
 	CentreScreen,
@@ -4023,6 +4026,10 @@ int JerFrontendMenuScreen(int bSetup)
 	if (menu == NULL || menu->items == NULL)
 		return 0;
 
+	/* the menu heading (JER_FE_MENU.title), in orange, above the rows */
+	if (menu->title != NULL)
+		FEPrintStringSized((char*)menu->title, 100, 150, 3072, 1, 255, 150, 0);
+
 	if (bSetup || gFeNeedSetup)
 	{
 		int i;
@@ -4055,11 +4062,8 @@ int JerFrontendMenuScreen(int bSetup)
 
 				if (sel < 10)
 				{
+					/* the stock car-select icon, at its usual place */
 					SetupExtraPoly(gfxNames[pvCity], sel, 0);
-
-					/* the stock sprite is parked low-left over the car list;
-					 * lift it clear of a module menu's buttons */
-					setXY0(&extraSprt, 40, 40);
 				}
 			}
 		}
@@ -4133,13 +4137,32 @@ int JerFrontendMenuScreen(int bSetup)
 		}
 
 		if (bSetup)
+		{
+			gFeMenuEnterFrame = 1;
 			return 1;
+		}
 	}
 	else
 	{
 		n = menu->item_count;
 		if (n > JER_FE_MAX_ITEMS)
 			n = JER_FE_MAX_ITEMS;
+	}
+
+	if (gFeMenuEnterFrame)
+	{
+		/* the frame the menu appeared: the pad read may still be the previous
+		 * screen's (or the "all pressed" boot state) - never act on it */
+		gFeMenuEnterFrame = 0;
+		return 0;
+	}
+
+	if (numPadsConnected == 0)
+	{
+		/* no pad: the frontend synthesises a Cross (feNewPad = 0x10) to kick
+		 * the screen when the controller is unplugged - that is not a real
+		 * press, so a module menu must not act on it */
+		return 0;
 	}
 
 	if (pCurrButton != NULL)
@@ -4194,6 +4217,39 @@ int MainScreen(int bSetup)
 
 	if (bSetup) 
 	{
+		// JERICHO-HOOK: give a module first say over the title screen. Fired
+		// once per row (jer_frontend.h / JER_EVENT_FRONTEND_MAIN_MENU) so a
+		// module can rename a row, redirect it to its own menu, disable or hide
+		// it - before the stock Multiplayer routing below.
+		{
+			int bi;
+
+			for (bi = 0; bi < pCurrScreen->numButtons && bi < 12; bi++)
+			{
+				JER_ARGS_FRONTEND_ENTRY e;
+				PSXBUTTON* b = &pCurrScreen->buttons[bi];
+
+				memset(&e, 0, sizeof(e));
+				e.index = bi;
+				snprintf(e.label, sizeof(e.label), "%s", b->Name);
+				e.openMenu = -1;
+
+				jer_fire(JER_EVENT_FRONTEND_MAIN_MENU, &e);
+
+				/* the engine always applies the row (the return value only
+				 * says whether a handler ran; a module that changes nothing
+				 * leaves the struct as it came in) */
+				snprintf(b->Name, sizeof(b->Name), "%s", e.label);
+
+				if (e.hidden)
+					b->action = FE_MAKEVAR(BTN_HIDDEN, 0);
+				else if (e.openMenu >= 0 && e.openMenu < JER_FE_MAX_MENUS)
+					b->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_FE_SCREEN_BASE + e.openMenu);
+				else if (e.disabled)
+					b->action = FE_MAKEVAR(BTN_DISABLED, 0);
+			}
+		}
+
 		// JERICHO-HOOK: route the Multiplayer entry to a module's frontend
 		// menu (jer_frontend.h) so online play is reachable without a second
 		// pad; otherwise fall back to the stock 2-pad split-screen screen.

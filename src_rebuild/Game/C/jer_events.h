@@ -764,4 +764,19 @@ typedef struct JER_ARGS_NET_SPAWN
 	int added;		/* out: extra player cars the module created */
 } JER_ARGS_NET_SPAWN;
 
+/* JER_EVENT_FRONTEND_MAIN_MENU — fired once for EVERY row of the frontend's
+ * MAIN menu while it is being built (FEmain.c MainScreen), so a module can
+ * reshape the title screen: rename a row, point it at one of the module's own
+ * menus (jer_frontend.h), disable it, or hide it entirely (the "omit an element
+ * so you can put something else in its place" case). The engine applies the
+ * outputs after all handlers have run; `index` is the row (0 = the first). */
+typedef struct JER_ARGS_FRONTEND_ENTRY
+{
+	int  index;		/* in: which main-menu row (0-based) */
+	char label[32];		/* in/out: the row's text (in = the stock label) */
+	int  hidden;		/* out: 1 = do not draw this row */
+	int  disabled;		/* out: 1 = draw it but make it unselectable */
+	int  openMenu;		/* out: >= 0 = open this registered module menu */
+} JER_ARGS_FRONTEND_ENTRY;
+
 #endif /* JERICHO_JER_EVENTS_H */

@@ -168,13 +168,14 @@ static int cd2SelVehActivate(void* ud)
 	return 1;
 }
 
-// The car icon for the selected car: its (city, model number).
+// The car icon for the selected car: its OWN city + model (so a Chicago car
+// shows Chicago's art, whatever arena it is being picked in).
 static void cd2SelVehPreview(void* ud, int* city, int* model)
 {
 	int c = cd2SelVehCity(ud);
 	const CD2_VEH_PROFILE* p;
 
-	*city = c;
+	*city = -1;
 	*model = -1;
 
 	if (c < 0 || c > 3 || gCcVehN[c] <= 0)
@@ -183,7 +184,10 @@ static void cd2SelVehPreview(void* ud, int* city, int* model)
 	p = cd2VehDef(gCcVehList[c][gCcVehSel[c]]);
 
 	if (p != NULL)
+	{
+		*city = p->originCity;
 		*model = p->modelSlot;
+	}
 }
 
 // Build the arena + vehicle menus from the registry (once, at register).
@@ -205,23 +209,21 @@ static void cd2SelBuildMenus(void)
 	gCcArenaItems[4].submenu = -1;
 	gCcArenaItems[4].is_back = 1;
 
+	gCcArenaMenu.title = "SELECT ARENA";
+
 	for (city = 0; city < 4; city++)
 	{
-		int i, n = 0;
+		int i;
 
 		gCcVehSel[city] = 0;
 
+		// the carousel shows EVERY car, whatever the arena: only one car is ever
+		// picked, so at most one foreign city is imported for it (the engine's
+		// one-guest-city rule), and the arena only sets the level.
 		for (i = 0; i < CD2_VEH_COUNT; i++)
-		{
-			const CD2_VEH_PROFILE* p = cd2VehDef(i);
+			gCcVehList[city][i] = i;
 
-			if (p == NULL || p->originCity != gCcVehCity[city])
-				continue;
-
-			gCcVehList[city][n++] = i;
-		}
-
-		gCcVehN[city] = n;
+		gCcVehN[city] = CD2_VEH_COUNT;
 
 		// the carousel row: one row, left/right moves it
 		memset(&gCcVehItems[city][0], 0, sizeof(gCcVehItems[city][0]));
@@ -237,7 +239,7 @@ static void cd2SelBuildMenus(void)
 		gCcVehItems[city][1].is_back = 1;
 
 		// a city with no cars shows just Back
-		if (n > 0)
+		if (gCcVehN[city] > 0)
 		{
 			gCcVehMenu[city].item_count = 2;
 			gCcVehMenu[city].get_preview = cd2SelVehPreview;
@@ -252,7 +254,11 @@ static void cd2SelBuildMenus(void)
 
 		gCcVehMenu[city].id = gCcVehIds[city];
 		gCcVehMenu[city].userdata = (void*)(size_t)city;
+		gCcVehMenu[city].title = "SELECT CAR";
 	}
+
+	printInfo("[cainescrossfire] CC select: cars per arena - Chicago %d, Havana %d, Vegas %d, Rio %d\n",
+		gCcVehN[0], gCcVehN[1], gCcVehN[2], gCcVehN[3]);
 }
 
 int cd2SelectActive(void)
@@ -279,6 +285,24 @@ static int cd2SelOnCmdline(void* ud, void* args)
 
 	if (getenv("CC_MENU") != NULL)
 		gCcForced = 1;
+
+	return JER_RESULT_CONTINUE;
+}
+
+// JER_EVENT_FRONTEND_MAIN_MENU — the title screen's first row is the stock
+// "Undercover" (the story campaign). Replace it with "Deathmatch" and point it
+// at our arena menu: the total-conversion entry point.
+static int cd2SelOnMainMenu(void* ud, void* args)
+{
+	JER_ARGS_FRONTEND_ENTRY* e = (JER_ARGS_FRONTEND_ENTRY*)args;
+
+	(void)ud;
+
+	if (e->index == 0)
+	{
+		snprintf(e->label, sizeof(e->label), "%s", "Deathmatch");
+		e->openMenu = CC_MENU_ARENA;
+	}
 
 	return JER_RESULT_CONTINUE;
 }
@@ -322,6 +346,7 @@ void cd2SelectRegister(JERICHO_CONTEXT* ctx)
 	jer_frontend_set_main_entry("cc.arena");
 
 	ctx->jer_register_hook(ctx, JER_EVENT_CMDLINE, cd2SelOnCmdline, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_MAIN_MENU, cd2SelOnMainMenu, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2SelOnFrame, NULL, 0);
 
 	ctx->jer_log(ctx, "[cainescrossfire] CC select flow registered (-ccmenu)\n");

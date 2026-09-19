@@ -215,6 +215,11 @@ enum
 					   tint on a ped the skeleton path is drawing
 					   (see JER_ARGS_PED_DRAW) */
 
+	JER_EVENT_FRONTEND_MAIN_MENU,	/* fired once per row while the frontend MAIN
+					   menu is built: a module may rename a row,
+					   redirect it to its own menu, disable or hide
+					   it (see JER_ARGS_FRONTEND_ENTRY) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 
