@@ -44,6 +44,12 @@ extern char RightLight;
 #define CIV_CLUT_ROWS		16
 #define CIV_CLUT_IMPORT_ROW	8
 
+// An imported city's palettes are uploaded into the level's CLUT strip, and the pin band
+// that holds the imported PAGES' CLUTs sits just above them (texture.c reserves 480..511).
+// Past this row the palette upload would push that band to the bottom of VRAM, where a
+// page's CLUT rows wrap and the set is left unplaced - so the import stops uploading here.
+#define CAR_CLUT_IMPORT_LIMIT	476
+
 extern u_short civ_clut[CIV_CLUT_ROWS][32][6];
 
 extern void DrawCar(CAR_DATA *cp, int view); // 0x000210B8

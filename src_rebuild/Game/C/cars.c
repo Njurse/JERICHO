@@ -1492,6 +1492,7 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 	int tpageindex;
 	int total_cluts;
 	int clut_number;
+	int skipped = 0;
 
 	total_cluts = *(int*)lump_ptr;
 	
@@ -1512,13 +1513,25 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 		if (clut_number == -1)
 		{
 			// store clut
-			LoadImage(&clutpos, (u_long*)buffPtr);
-			buffPtr += 8;
+			// JERICHO: an imported city's palette upload has to stay below the pin band's
+			// reserve (see CAR_CLUT_IMPORT_LIMIT). Past it, reuse the city's first palette
+			// rather than walking clutpos into the reserve; the car's base colours come
+			// from its page's own CLUTs anyway, so only a late variant can be short.
+			if (city == GetCarImportCity() && city != GameLevel && clutpos.y > CAR_CLUT_IMPORT_LIMIT)
+			{
+				clutValue = (clutTablePtr > clutTable) ? clutTable[0] : 0;
+				skipped++;
+			}
+			else
+			{
+				LoadImage(&clutpos, (u_long*)buffPtr);
+				buffPtr += 8;
 
-			clutValue = GetClut(clutpos.x, clutpos.y);
-			IncrementClutNum(&clutpos);
+				clutValue = GetClut(clutpos.x, clutpos.y);
+				IncrementClutNum(&clutpos);
 
-			*clutTablePtr++ = clutValue;			
+				*clutTablePtr++ = clutValue;			
+			}
 		}
 		else
 		{
@@ -1535,6 +1548,10 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 			civ_clut[palidx][texnum][palette + 1] = clutValue;
 		}
 	}
+
+	if (skipped > 0)
+		printInfo("cross-city: %s palettes: %d of %d CLUTs past the row %d budget, reusing the city's first palette for them\n",
+			LevelNames[city], skipped, total_cluts, CAR_CLUT_IMPORT_LIMIT);
 }
 
 // [D] [T]
