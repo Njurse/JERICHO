@@ -70,8 +70,9 @@ if %PS%==9 set "PS=10"
 set "CARARG=-car slot%PS%"
 set "PLAYERMODEL=-1"
 
-rem Half the time the player drives a foreign car instead: models over 5 go to
-rem the special resident slot, which is why the import names slot 7.
+rem Half the time the player drives a foreign car instead, chosen by MODEL on the
+rem command line like any other car. The import below drops that model into spare
+rem slot 5 and the engine spawns the player in the first resident slot holding it.
 set /a "MODE=%RANDOM% %% 2"
 
 if %MODE%==1 (
@@ -80,8 +81,11 @@ if %MODE%==1 (
 	if !K!==1 set "PLAYERMODEL=9"
 	if !K!==2 set "PLAYERMODEL=10"
 	if !K!==3 set "PLAYERMODEL=12"
-	set "CARARG="
 )
+
+rem Selected after the block: reading PLAYERMODEL inside it would need delayed
+rem expansion, and a flat if here is the batch-safe form.
+if %MODE%==1 set "CARARG=-car %PLAYERMODEL%"
 
 rem ---- the opponents' / traffic's share of the roster ----------------------
 rem One or two imports, each a random foreign model into a random slot among
@@ -114,11 +118,11 @@ for /l %%i in (1,1,%NIM%) do (
 	set "PREVSLOT=!ISLOT!"
 )
 
-rem The player's foreign car goes into the special slot, so the import list
-rem carries it too. Kept as flat ifs: nested parenthesised blocks with delayed
-rem expansion are a batch trap ("% was unexpected at this time").
+rem The player's foreign car goes into spare slot 5, so the import list carries it
+rem too. Kept as flat ifs: nested parenthesised blocks with delayed expansion are
+rem a batch trap ("% was unexpected at this time").
 set "PLAYERIMPORT="
-if %MODE%==1 set "PLAYERIMPORT=7:%SRC%:%PLAYERMODEL%"
+if %MODE%==1 set "PLAYERIMPORT=5:%SRC%:%PLAYERMODEL%"
 
 if defined PLAYERIMPORT if defined IMPORT set "IMPORT=!IMPORT!, %PLAYERIMPORT%"
 if defined PLAYERIMPORT if not defined IMPORT set "IMPORT=%PLAYERIMPORT%"
@@ -127,12 +131,11 @@ if /i "%~1"=="dry" (
 	echo == roll ==
 	echo   arena      : %CITYNAME% ^(arena %ARENA%^), weather %WEATHER%, time %TIME%
 	echo   importing  : %SRCNAME%
-	echo   player     : %CARARG% player_model=%PLAYERMODEL%
+	echo   player     : %CARARG%
 	echo.
 	echo == carhacks.ini that would be written to %INI% ==
 	echo cross_city_vehicles = 1
 	echo source_city = -1
-	echo player_model = %PLAYERMODEL%
 	echo traffic_model = -1
 	echo traffic_slot = 2
 	echo car_list = 8,9,10
@@ -148,7 +151,6 @@ if /i "%~1"=="dry" (
 >>"%INI%" echo # cross-city imports: slot:city:model, city = 0 CHICAGO 1 HAVANA 2 VEGAS 3 RIO
 >>"%INI%" echo cross_city_vehicles = 1
 >>"%INI%" echo source_city = -1
->>"%INI%" echo player_model = %PLAYERMODEL%
 >>"%INI%" echo traffic_model = -1
 >>"%INI%" echo traffic_slot = 2
 >>"%INI%" echo car_list = 8,9,10
@@ -156,7 +158,7 @@ if /i "%~1"=="dry" (
 
 echo Random mix: arena=%CITYNAME% arena=%ARENA% weather=%WEATHER% time=%TIME%
 echo   importing from : %SRCNAME%
-echo   player         : %CARARG% player_model=%PLAYERMODEL%
+echo   player         : %CARARG%
 echo   roster imports : %IMPORT%
 echo   (wrote %INI%)
 

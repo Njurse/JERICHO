@@ -217,13 +217,21 @@ static void ChkApplyImports(JER_ARGS_CAR_DATA_SOURCE* a)
 }
 
 /* JER_EVENT_CAR_DATA_SOURCE: fires once per level, before any CARMODEL_* file is
- * read. Points the loader at another city's LEVELS folder and (optionally)
- * forces the player's car to a model from it, so a level can use vehicles that
- * belong to a different city. Off unless the cross_city_vehicles hack is on. */
+ * read. Points the loader at another city's LEVELS folder and writes the
+ * "import = slot:city:model" roster, so a level can use vehicles that belong to
+ * a different city. Off unless the cross_city_vehicles hack is on.
+ *
+ * It does NOT choose the player's car. That is the player's decision and it is
+ * made on the command line: -car <model|slotN> sets wantedCar, the engine's own
+ * pass then spawns the player in whichever resident slot holds that model (see
+ * InitPlayer). For an imported body that is the slot the `import` line put it
+ * in - e.g. import = 5:3:9 plus -car 9 makes resident slot 5 (RIO model 9) the
+ * player's car. Hardcoding a player car here is what this used to do, and it
+ * silently overrode the command line. */
 static int ChkOnCarDataSource(void* ud, void* args)
 {
 	JER_ARGS_CAR_DATA_SOURCE* a = (JER_ARGS_CAR_DATA_SOURCE*)args;
-	int src, model;
+	int src;
 
 	(void)ud;
 
@@ -231,7 +239,6 @@ static int ChkOnCarDataSource(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	src = jer_config_get_int("carhacks", "source_city", -1);
-	model = jer_config_get_int("carhacks", "player_model", -1);
 
 	if (src >= 0 && src < 4)
 	{
@@ -239,25 +246,6 @@ static int ChkOnCarDataSource(void* ud, void* args)
 
 		printInfo("[carhacks] cross-city: level %d will read car data from %s\n",
 			a->level, LevelNames[src]);
-	}
-
-	/* Model numbers > 5 go into the special resident slot (engine's own path in
-	 * SetupResidentModels), and the spool loads that model's geometry - here from
-	 * the source city's folder. */
-	/* Any body the level can actually hold. 0..4 are the civilian cars: the
-	 * engine's own wantedCar pass finds one already resident, or puts a
-	 * non-resident one into an ordinary slot, so the player CAN drive a foreign
-	 * civ car - the import just has to cover whichever slot it lands in
-	 * (launch_mp_foreign_car.bat imports the whole 0..4 range for that reason).
-	 * 8..12 are the special bodies. 5, 6 and 7 are gaps in EVERY city, so they
-	 * are refused here rather than left to fail in the model build. 11 is
-	 * missing in Chicago only, which this cannot know - the engine refuses that
-	 * import and leaves the level's own vehicle in place. */
-	if (model >= 0 && model <= 12 && model != 5 && model != 6 && model != 7)
-	{
-		wantedCar[0] = model;
-
-		printInfo("[carhacks] cross-city: player car forced to model %d\n", model);
 	}
 
 	/* Put a foreign vehicle into the level for real. Ambient traffic picks its

@@ -99,36 +99,40 @@ rem to be. Traffic reads slots 0..4 too, so the city's ambient cars become the
 rem source city's as well.
 set "IMPORT=0:%SRC%:0, 1:%SRC%:1, 2:%SRC%:2, 3:%SRC%:3, 4:%SRC%:4"
 
-rem A body above 5 goes to the special resident slot.
-if %PLAYERMODEL% GTR 5 set "IMPORT=%IMPORT%, 7:%SRC%:%PLAYERMODEL%"
+rem A body above 5 goes to spare resident slot 5; the player selects it by MODEL
+rem on the command line (-car), and the engine spawns the player in the first
+rem resident slot holding that model.
+if %PLAYERMODEL% GTR 5 set "IMPORT=%IMPORT%, 5:%SRC%:%PLAYERMODEL%"
 
-rem Plus one special body in spare slot 5, so the AI opponents have a foreign
+rem Plus one special body in spare slot 6, so the AI opponents have a foreign
 rem special car in their pick too (they enumerate every loaded resident slot).
 set /a "EXTRA=%RANDOM% %% 4"
 set "XMODEL=8"
 if %EXTRA%==1 set "XMODEL=9"
 if %EXTRA%==2 set "XMODEL=10"
 if %EXTRA%==3 set "XMODEL=12"
-set "IMPORT=%IMPORT%, 5:%SRC%:%XMODEL%"
+set "IMPORT=%IMPORT%, 6:%SRC%:%XMODEL%"
+
+rem The player's car, chosen on the command line like any other.
+set "CARARG=-car %PLAYERMODEL%"
 
 if /i "%~1"=="dry" (
 	echo == roll ==
 	echo   arena      : %CITYNAME% ^(arena %ARENA%^), weather %WEATHER%, time %TIME%
 	echo   importing  : %SRCNAME%
-	echo   player     : FOREIGN %SRCNAME% model %PLAYERMODEL% ^(no -car argument^)
+	echo   player     : FOREIGN %SRCNAME% model %PLAYERMODEL% ^(%CARARG%^)
 	echo   roster     : %ROSTER%
 	echo.
 	echo == carhacks.ini that would be written to %INI% ==
 	echo cross_city_vehicles = 1
 	echo source_city = -1
-	echo player_model = %PLAYERMODEL%
 	echo traffic_model = -1
 	echo traffic_slot = 2
 	echo car_list = 8,9,10
 	echo import = %IMPORT%
 	echo.
 	echo == would launch ==
-	echo REDRIVER2_dev.exe -nointro -mp %ARENA% -level %CITYNAME% -weather %WEATHER% -time %TIME% -gamemode takeadrive
+	echo REDRIVER2_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive
 	endlocal
 	exit /b 0
 )
@@ -137,7 +141,6 @@ if /i "%~1"=="dry" (
 >>"%INI%" echo # cross-city imports: slot:city:model, city = 0 CHICAGO 1 HAVANA 2 VEGAS 3 RIO
 >>"%INI%" echo cross_city_vehicles = 1
 >>"%INI%" echo source_city = -1
->>"%INI%" echo player_model = %PLAYERMODEL%
 >>"%INI%" echo traffic_model = -1
 >>"%INI%" echo traffic_slot = 2
 >>"%INI%" echo car_list = 8,9,10
@@ -145,7 +148,7 @@ if /i "%~1"=="dry" (
 
 echo Foreign player car: arena=%CITYNAME% arena=%ARENA% weather=%WEATHER% time=%TIME%
 echo   importing from : %SRCNAME%
-echo   player         : FOREIGN %SRCNAME% model %PLAYERMODEL% (no -car)
+echo   player         : FOREIGN %SRCNAME% model %PLAYERMODEL% (%CARARG%)
 echo   roster imports : %ROSTER%
 echo   (wrote %INI%)
 
@@ -164,6 +167,6 @@ echo   test mode      : frames=%FRAMES% seed=%SEED%
 :notest
 
 cd /d "%EXEDIR%"
-echo   running        : REDRIVER2_dev.exe -nointro -mp %ARENA% -level %CITYNAME% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
-start "" "REDRIVER2_dev.exe" -nointro -mp %ARENA% -level %CITYNAME% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
+echo   running        : REDRIVER2_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
+start "" "REDRIVER2_dev.exe" -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
 endlocal

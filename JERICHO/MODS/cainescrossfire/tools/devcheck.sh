@@ -89,15 +89,21 @@ for entry in "${SCENARIOS[@]}"; do
 	case "$KIND" in
 	stock)   printf 'cross_city_vehicles = 0\n' > "$INI" ;;
 	player)  { printf 'cross_city_vehicles = 1\n'
-	           printf 'import = 7:%s:%s\n' "$CITY" "$MODEL"
-	           printf 'player_model = %s\n' "$MODEL"
+	           printf 'import = 5:%s:%s\n' "$CITY" "$MODEL"
 	         } > "$INI" ;;
 	traffic) { printf 'cross_city_vehicles = 1\n'
 	           printf 'import = 0:%s:%s\n' "$CITY" "$MODEL"
 	         } > "$INI" ;;
 	esac
 
-	"./REDRIVER2_dev.exe" -nointro -level "$LEVEL" -car slot2 -weather none -time day \
+	# The player's car is chosen on the command line, not in the config: -car
+	# <model>. The engine then spawns the player in whichever resident slot holds
+	# that model - slot 5, the one the player scenario imports into. (Stock and
+	# traffic rows keep the deliberate -car slot2 so they stay domestic.)
+	CARARG="-car slot2"
+	[ "$KIND" = "player" ] && CARARG="-car $MODEL"
+
+	"./REDRIVER2_dev.exe" -nointro -level "$LEVEL" $CARARG -weather none -time day \
 		-frames "$FRAMES" -seed "$SEED" >/dev/null 2>&1
 	RC=$?
 

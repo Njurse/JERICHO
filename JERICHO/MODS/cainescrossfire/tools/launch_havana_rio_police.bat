@@ -59,10 +59,10 @@ echo.
 echo   level          : havana, daytime, -mp 1
 echo   modules        : combatd2 [carhacks] only
 echo   player car     : RIO special model %MODEL%
-echo   import         : slot 7 to RIO model %MODEL%
+echo   import         : slot 5 to RIO model %MODEL%
 if /i "%MODE%"=="test" echo   test mode      : frames=%FRAMES% seed=%SEED%
 echo   config         : %CFG%
-echo   command        : REDRIVER2_dev.exe -nointro -mp 1 -level havana -car slot2 -weather none -time day %TESTARGS%
+echo   command        : REDRIVER2_dev.exe -nointro -mp 1 -level havana -car %MODEL% -weather none -time day %TESTARGS%
 echo.
 
 if /i not "%MODE%"=="dry" goto :notdry
@@ -71,17 +71,17 @@ endlocal
 exit /b 0
 :notdry
 
-rem ---- the import: Rio's chosen special body into the player's special slot ----
-rem slot 7 is the special slot, which is the player's. The engine takes a special
-rem model from residentCarModels[SPECIAL_CAR_SLOT], which is the path that works.
+rem ---- the import: Rio's chosen special body into spare resident slot 5 ----
+rem Slot 5 is a spare resident slot the level leaves empty. The player's car is
+rem chosen on the command line (-car <model>), and the engine spawns the player
+rem in whichever resident slot holds that model - slot 5, the one we imported.
 echo cross_city_vehicles = 1 > "%CFG%"
-echo import = 7:3:%MODEL% >> "%CFG%"
-echo player_model = %MODEL% >> "%CFG%"
+echo import = 5:3:%MODEL% >> "%CFG%"
 
 echo   wrote          : %CFG%
 type "%CFG%"
 echo.
 
 cd /d "%EXEDIR%"
-start "" "REDRIVER2_dev.exe" -nointro -mp 1 -level havana -car slot2 -weather none -time day %TESTARGS%
+start "" "REDRIVER2_dev.exe" -nointro -mp 1 -level havana -car %MODEL% -weather none -time day %TESTARGS%
 endlocal
