@@ -1731,6 +1731,26 @@ extern "C"
 #endif
 void GR_SaveVRAM(const char* outputFileName, int x, int y, int width, int height, int bReadFromFrameBuffer);
 
+// JERICHO: -vramview [frames] - re-dump the LIVE VRAM to vram_live.tga every N
+// frames while the game runs, so the page/CLUT layout can be watched as it
+// changes instead of only at exit (which JERICHO_DUMPVRAM=1 gives). View it with
+// an image viewer that reloads, or tools/vramdump.py. 0 = off.
+int gVramViewInterval = 0;
+int gVramViewCounter = 0;
+
+void JerichoVramViewTick(void)
+{
+	if (gVramViewInterval <= 0)
+		return;
+
+	if (++gVramViewCounter < gVramViewInterval)
+		return;
+
+	gVramViewCounter = 0;
+
+	GR_SaveVRAM("vram_live.tga", 0, 0, 1024, 512, 0);
+}
+
 // JERICHO: the -frames check, shared by every per-frame entry point so a debug run
 // self-terminates in the FRONTEND as well as in gameplay. It used to be
 // gameplay-only, which left frontend runs with no way to end except a kill - and a
@@ -1739,6 +1759,10 @@ void GR_SaveVRAM(const char* outputFileName, int x, int y, int width, int height
 // Called after each entry point's own frame guard, so the count is real frames.
 void JerichoFrameTick(void)
 {
+	// JERICHO: -vramview - live VRAM re-dump, first thing so it runs every frame
+	// (before the frame-budget early-return below).
+	JerichoVramViewTick();
+
 	// JERICHO-DIAG: on the first frame, what the player's car actually IS versus what
 	// was asked for. Distinguishes "the choice never took" from "something replaced it
 	// after the level start".
@@ -2109,6 +2133,8 @@ void PrintCommandLineArguments()
 		"  -level <chicago|havana|lasvegas|rio|0-3> : boot straight into a city,\n"
 		"        bypassing the frontend (game mode defaults to Take A Ride)\n"
 		"  -car <number|slot1..slot10> : player car (model index or frontend slot)\n"
+		"  -vramview [frames] : re-dump the live VRAM to vram_live.tga every\n"
+		"        <frames> (default 15) so it can be watched as it changes\n"
 		"  -gamemode <takeadrive|pursuit|getaway|gaterace|checkpoint|trailblazer|\n"
 		"        survival|copsandrobbers|capturetheflag> : game mode override\n"
 		"  -weather <none|rain|wet> : weather override (with -level)\n"
@@ -2576,6 +2602,24 @@ int redriver2_main(int argc, char** argv)
 			strncpy(gBootCarStr, argv[i + 1], sizeof(gBootCarStr) - 1);
 			gBootCarStr[sizeof(gBootCarStr) - 1] = 0;
 			i++;
+		}
+		else if (!strcmp(argv[i], "-vramview"))
+		{
+			// Optional frame interval (default 15). Independent of -level.
+			int iv = 15;
+
+			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
+			{
+				iv = atoi(argv[i + 1]);
+				i++;
+			}
+
+			if (iv < 1)
+				iv = 1;
+
+			gVramViewInterval = iv;
+
+			printInfo("[vramview] re-dumping vram_live.tga every %d frames\n", iv);
 		}
 		else if (!strcmp(argv[i], "-gamemode"))
 		{
