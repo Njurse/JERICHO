@@ -144,12 +144,10 @@ Two additions exist mainly to put on a show:
 
 | Weapon | What it is |
 | --- | --- |
-| **SPECIAL** (`special_jericho`) | The shotgun doubled — **20 pellets** at **2x damage each** (190/pellet) — and **fired from both windows at once**: both the driver and the gunner lean out and the blast alternates its pellets between them. The demo weapon for showing simultaneous crew activity (`leanOut = 3`). |
 | **SMG** | A burst sidearm: one trigger = **6 shots**, 2 frames apart, each homing only very weakly, then a ~**1.1s** pause before the next volley. Fast, close-range spray (`weapons/projectile/smg.c`). |
 
-Both are ordinary primaries — in the cycle, grantable, `all_weapons` covers
-them — and both are fireable through the scripted debug driver as
-`fire:special_jericho` / `fire:smg`.
+The SMG is an ordinary primary — in the cycle, grantable, `all_weapons` covers
+it — and it is fireable through the scripted debug driver as `fire:smg`.
 
 ## Layout
 

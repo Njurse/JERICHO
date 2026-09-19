@@ -21,10 +21,10 @@ extern const CD2_VEH_PROFILE cd2VehRowAvalanche =
 	11,			/* modelSlot (CARMODEL_11) */
 
 	/* armor, speed, handling, specialPower (1..5) */
-	{ 4, 2, 3, 4 },
+	4, 2, 3, 4,
 
-	/* special: id, internal name, display, capacity, recharge frames */
-	{ CD2_WID_SPECIAL_AVALANCHE, "special_avalanche", "Monster Crush", 2, 900 },
+	/* special weapon (its name, ammo and recharge live in its own file) */
+	CD2_WID_SPECIAL_AVALANCHE,
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct */

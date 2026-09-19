@@ -10,11 +10,13 @@ debug driver all get them). What a special adds beyond a shared weapon is a
 - Internal ids are `CD2_WID_SPECIAL_<CAR>` — internally named **`special_<car>`**
   (`special_hornet`), separate from the on-screen name in the def's `displayName`
   (`"Spike Storm"`).
-- The **recharge** is the profile's `special.rechargeFrames`, mirrored into the
-  def's `refireCooldown`. `maxAmmo` = the profile's `capacity`.
+- The **recharge**, the **ammo** and the **display name** all live in the
+  special's own def (`refireCooldown`, `maxAmmo`, `displayName`) — the vehicle
+  profile only **names** the weapon (`specialWeapon`), so weapon data is never
+  duplicated in a profile.
 - Ammo is **per car** (`weapons.c`, `gCarAmmo[MAX_CARS][CD2_WID_COUNT]`), so each
-  contestant's special is its own. A car is handed its special, filled to
-  capacity, when its profile is first assigned.
+  contestant's special is its own. A car is handed its special when its profile
+  is first assigned, and the **player starts on it**.
 
 Firing one headlessly (the debug driver):
 

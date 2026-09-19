@@ -20,7 +20,7 @@ cannot return it and `cd2FacPlayerFaction` refuses it.
 | TANNER | `TANNER` | John Tanner | Rogue Undercover | `#E6EEF8` ice white | LEADER | 1 | 1 (the player) | MISSILE | "You're coming down with me." |
 | MCKENZIE | `MCKENZIE` | Lt. McKenzie | The Law | `#2F6BFF` police blue | LEADER | 1 | 1 | SMG | "Tanner! Stand down!" |
 | VASQUEZ | `VASQUEZ` | Vasquez | Enforcer | `#35D06A` toxic green | MINION | 1 | 2 | SHOTGUN | *(silent)* |
-| JERICHO | `JERICHO` | Charles Jericho | Chaos / Free Agent | `#FF8A1E` chaos orange | LEADER | 1 | 1 | SPECIAL_JERICHO | "Right in the face, boss!" |
+| JERICHO | `JERICHO` | Charles Jericho | Chaos / Free Agent | `#FF8A1E` chaos orange | LEADER | 1 | 1 | — | "Right in the face, boss!" |
 | CAINE | `CAINE` | Solomon Caine | Organized Crime | `#E02424` mafia crimson | HOST | **0** | 0 | MINE | "Everybody gets what they want. Eventually." |
 
 Each row also carries the story's **motive** — what that faction wants out of

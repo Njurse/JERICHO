@@ -20,10 +20,10 @@ extern const CD2_VEH_PROFILE cd2VehRowHighwayman =
 	1,			/* modelSlot (CARMODEL_1) */
 
 	/* armor, speed, handling, specialPower (1..5) */
-	{ 3, 3, 3, 5 },
+	3, 3, 3, 5,
 
-	/* special: id, internal name, display, capacity, recharge frames */
-	{ CD2_WID_SPECIAL_HIGHWAYMAN, "special_highwayman", "Breath of Fire", 3, 660 },
+	/* special weapon (its name, ammo and recharge live in its own file) */
+	CD2_WID_SPECIAL_HIGHWAYMAN,
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct */

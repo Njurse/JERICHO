@@ -67,15 +67,8 @@ enum
 // scheme in carhacks/VEHICLES.md. -1 = "no fixed model" (any the level loaded).
 
 // ---------------------------------------------------------------------------
-// Core stats — the Twisted Metal 1..5 scale.
+// Core stats — the Twisted Metal 1..5 scale (fields of CD2_VEH_PROFILE).
 // ---------------------------------------------------------------------------
-typedef struct CD2_VEH_STATS
-{
-	int armor;		// 1..5 — damage it can absorb
-	int speed;		// 1..5 — top speed / acceleration
-	int handling;		// 1..5 — grip + steering authority
-	int specialPower;	// 1..5 — how hard the special hits
-} CD2_VEH_STATS;
 
 // ---------------------------------------------------------------------------
 // Physics overrides — substitutes for the vehicle's CAR_COSMETICS fields.
@@ -107,22 +100,6 @@ typedef struct CD2_VEH_PHYS
 } CD2_VEH_PHYS;
 
 // ---------------------------------------------------------------------------
-// Special weapon — the profile's unique weapon slot.
-//
-// internalName is the stable, code-facing id ("special_hornet"); displayName is
-// what the HUD shows. weaponId is the CD2_WID_* the special maps to once its
-// def row exists (phase 4); until then it stays CD2_WID_NONE.
-// ---------------------------------------------------------------------------
-typedef struct CD2_VEH_SPECIAL
-{
-	int weaponId;			// CD2_WID_* (CD2_WID_NONE until registered)
-	const char* internalName;	// "special_<carname>"
-	const char* displayName;	// custom on-screen name
-	int capacity;			// charges carried
-	int rechargeFrames;		// recharge after firing, at 30 Hz
-} CD2_VEH_SPECIAL;
-
-// ---------------------------------------------------------------------------
 // The profile row.
 // ---------------------------------------------------------------------------
 typedef struct CD2_VEH_PROFILE
@@ -134,8 +111,15 @@ typedef struct CD2_VEH_PROFILE
 	int originCity;			// CD2_VEH_CITY_* (LevelNames index)
 	int modelSlot;			// model number in that city's CARMODEL_<n> set
 
-	CD2_VEH_STATS stats;
-	CD2_VEH_SPECIAL special;
+	/* armor, speed, handling, specialPower (1..5) */
+	int armor, speed, handling, specialPower;
+
+	// The car's SPECIAL WEAPON, by id (CD2_WID_*) — or CD2_WID_NONE for none.
+	// Everything ABOUT it (name, ammo carried, recharge, behaviour) belongs to
+	// the weapon, in its own file under weapons/special/. This is only the
+	// reference, so the profile never duplicates weapon data.
+	int specialWeapon;
+
 	CD2_VEH_PHYS phys;
 
 	int palette;			// preferred paint palette index, -1 = any / none

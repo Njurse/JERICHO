@@ -103,10 +103,18 @@ void cd2VehDumpProfiles(void)
 
 		city = cd2VehCityName(p->originCity);
 
-		printInfo("[cainescrossfire]   [%d] %s (%s) %s/%d stats A%d S%d H%d P%d special %s \"%s\" x%d rec%d palette %d\n",
-			i, p->internalName, p->displayName, city, p->modelSlot,
-			p->stats.armor, p->stats.speed, p->stats.handling, p->stats.specialPower,
-			p->special.internalName, p->special.displayName,
-			p->special.capacity, p->special.rechargeFrames, p->palette);
+		// the special's details come from the WEAPON, not the profile
+		{
+			const CD2_WEAPON_DEF* wd = cd2WpnDef(p->specialWeapon);
+
+			printInfo("[cainescrossfire]   [%d] %s (%s) %s/%d stats A%d S%d H%d P%d special %s \"%s\" x%d rec%d palette %d\n",
+				i, p->internalName, p->displayName, city, p->modelSlot,
+				p->armor, p->speed, p->handling, p->specialPower,
+				(wd != NULL) ? wd->name : "(none)",
+				(wd != NULL) ? cd2WpnDisplayName(p->specialWeapon) : "-",
+				(wd != NULL) ? wd->maxAmmo : 0,
+				(wd != NULL) ? wd->refireCooldown : 0,
+				p->palette);
+		}
 	}
 }

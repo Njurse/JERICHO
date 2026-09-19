@@ -1,7 +1,7 @@
 // weapons/special/bruxa.c — BRUXA's special: DOUBLE BOOM.
 //
-// The repurposed double shotgun. It fires TWICE the pellets of the existing
-// special_jericho (both windows at once), shoves a hard recoil back into the
+// The double shotgun: fires TWICE the pellets of the ordinary SHOTGUN (from
+// both windows at once), shoves a hard recoil back into the
 // shooter, and its pellets carry a heavy per-hit knock so a victim takes a
 // shove scaled by how many pellets connected (and how close the blast was — a
 // closer shot lands more pellets). A big, low, loud report sells it.
@@ -84,7 +84,7 @@ static CD2_WEAPON_DEF cd2MakeBruxaDef(void)
 	d.fireInterval = 27;
 	d.refireCooldown = 450;		// profile recharge: 15s
 
-	d.damage = 760;			// PER PELLET — double special_jericho's 380
+	d.damage = 760;			// PER PELLET — double the ordinary shotgun's 380
 	d.speed = 2200;
 	d.range = 2600;			// still a shotgun: short
 	d.life = 0;

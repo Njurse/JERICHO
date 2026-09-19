@@ -93,7 +93,7 @@ static const CD2_FACTION sFac[CD2_FAC_COUNT] =
 		0xC8, 0x28, 0x78,	/* accent: magenta */
 		TANNER_MODEL, TANNER_MODEL,
 		-1, -1,
-		CD2_WID_SPECIAL_JERICHO, "Right in the face, boss!",
+		CD2_WID_NONE, "Right in the face, boss!",
 		1, CD2_FAC_RANK_LEADER, 20, 95, 1
 	},
 

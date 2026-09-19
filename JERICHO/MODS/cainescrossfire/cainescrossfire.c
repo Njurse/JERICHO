@@ -410,8 +410,8 @@ CD2_STATS cd2GetStats(CAR_DATA* cp)
 
 			if (p != NULL)
 			{
-				int spd = jer_clamp_int(4096 + (p->stats.speed - 3) * 410, 2048, 6144);
-				int hnd = jer_clamp_int(4096 + (p->stats.handling - 3) * 410, 2048, 6144);
+				int spd = jer_clamp_int(4096 + (p->speed - 3) * 410, 2048, 6144);
+				int hnd = jer_clamp_int(4096 + (p->handling - 3) * 410, 2048, 6144);
 
 				s.accel    = (int)(((long long)s.accel * spd) >> 12);
 				s.topSpeed = (int)(((long long)s.topSpeed * spd) >> 12);

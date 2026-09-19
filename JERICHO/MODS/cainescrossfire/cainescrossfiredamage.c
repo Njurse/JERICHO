@@ -37,7 +37,7 @@ static int cd2VehArmorPct(void* vcar)
 	if (p == NULL)
 		return 100;
 
-	return jer_clamp_int(100 + (3 - p->stats.armor) * 15, 25, 200);
+	return jer_clamp_int(100 + (3 - p->armor) * 15, 25, 200);
 }
 
 // Scenery impacts taken by `car` this level (see cd2OnDamageScale).

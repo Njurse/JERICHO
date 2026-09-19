@@ -9,8 +9,8 @@
 // revolving bolt, the flame cone, the turbo dash).
 //
 // Internal ids are CD2_WID_SPECIAL_<CAR> (special_<car>); the on-screen name is
-// the def's displayName. The per-special recharge is the profile's
-// special.rechargeFrames, mirrored into the def's refireCooldown.
+// the def's displayName, and the recharge and ammo are the def's refireCooldown
+// and maxAmmo. A vehicle profile only names the weapon.
 
 #ifndef CD2_SPECIAL_H
 #define CD2_SPECIAL_H

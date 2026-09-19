@@ -50,8 +50,6 @@ enum
 	CD2_WID_ZOOMY,		// primary (projectile): a burst of weakly-homing shots
 	CD2_WID_FREEZE,		// primary (projectile): freezes the car it hits
 	CD2_WID_SHOTGUN,	// primary (shotgun): pellet spread from both fenders
-	CD2_WID_SPECIAL_JERICHO,	// shotgun x2 pellets and x2 damage, BOTH
-					// windows at once (demo weapon)
 	CD2_WID_SMG,		// primary (projectile): a fast 6-shot burst sidearm
 	CD2_WID_SPECIAL_HORNET,		// profile specials — each is one vehicle's
 	CD2_WID_SPECIAL_AVALANCHE,	// unique weapon, internally named
@@ -211,5 +209,7 @@ int  cd2WpnCarAmmo(void* car, int weaponId);	// rounds left (base: -1 = infinite
 int  cd2WpnCarOwns(void* car, int weaponId);
 void cd2WpnCarGrant(void* car, int weaponId, int ammo);
 void cd2WpnCarConsume(void* car, int weaponId);	// burn one round after a real shot
+void cd2WpnCarSelect(void* car, int weaponId);	// make it the car's weapon - for the
+						// PLAYER, its STARTING weapon (a profile's special)
 
 #endif /* CD2_WEAPON_H */

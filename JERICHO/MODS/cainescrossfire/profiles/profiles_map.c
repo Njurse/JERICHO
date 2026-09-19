@@ -428,10 +428,19 @@ static int cd2VehOnCarStep(void* ud, void* args)
 
 			cd2VehSetCarProfile(cp->id, profileId);
 
-			// hand the car its profile's special (per-car ammo), filled to
-			// capacity — once, at assignment
-			if (p != NULL && p->special.weaponId != CD2_WID_NONE && p->special.capacity > 0)
-				cd2WpnCarGrant(cp, p->special.weaponId, p->special.capacity);
+			// hand the car its special weapon. The profile only NAMES the
+			// weapon; the weapon's own def carries the ammo (maxAmmo) and the
+			// recharge. The player also STARTS on it.
+			if (p != NULL && p->specialWeapon != CD2_WID_NONE)
+			{
+				const CD2_WEAPON_DEF* wd = cd2WpnDef(p->specialWeapon);
+
+				if (wd != NULL)
+				{
+					cd2WpnCarGrant(cp, p->specialWeapon, wd->maxAmmo);
+					cd2WpnCarSelect(cp, p->specialWeapon);
+				}
+			}
 		}
 	}
 

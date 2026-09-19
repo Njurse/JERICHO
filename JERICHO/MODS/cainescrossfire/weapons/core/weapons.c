@@ -116,7 +116,6 @@ static const CD2_WEAPON_DEF* const gWdefs[CD2_WID_COUNT] =
 	&cd2WdefZoomy,
 	&cd2WdefFreeze,
 	&cd2WdefShotgun,
-	&cd2WdefSpecialJericho,
 	&cd2WdefSmg,
 	&cd2WdefSpecialHornet,
 	&cd2WdefSpecialAvalanche,
@@ -385,6 +384,25 @@ void cd2WpnSetCarArmed(const CAR_DATA* cp, int weaponId)
 		return;
 
 	gCarWeapon[cp->id] = weaponId;
+}
+
+// Force a car onto a weapon. gCarWeapon records it for every car; for the PLAYER
+// it also becomes the armed weapon (gSelected). A profile calls this with its
+// special, which is what makes the special the car's STARTING weapon.
+void cd2WpnCarSelect(void* vcp, int weaponId)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return;
+
+	gCarWeapon[cp->id] = weaponId;
+
+	if (cp->id == cd2WpnPlayerId())
+	{
+		gSelected = weaponId;
+		printInfo("[cainescrossfire] player starts on %s (weapon %d)\n", cd2WpnDisplayName(weaponId), weaponId);
+	}
 }
 
 void cd2WpnResetAll(void)

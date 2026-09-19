@@ -21,10 +21,10 @@ extern const CD2_VEH_PROFILE cd2VehRowCorvo =
 	0,			/* modelSlot (CARMODEL_0) */
 
 	/* armor, speed, handling, specialPower (1..5) */
-	{ 3, 3, 3, 4 },
+	3, 3, 3, 4,
 
-	/* special: id, internal name, display, capacity, recharge frames */
-	{ CD2_WID_SPECIAL_CORVO, "special_corvo", "Siren's Wrath", 3, 540 },
+	/* special weapon (its name, ammo and recharge live in its own file) */
+	CD2_WID_SPECIAL_CORVO,
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct */

@@ -21,10 +21,10 @@ extern const CD2_VEH_PROFILE cd2VehRowBruxa =
 	2,			/* modelSlot (CARMODEL_2) */
 
 	/* armor, speed, handling, specialPower (1..5) */
-	{ 4, 2, 3, 4 },
+	4, 2, 3, 4,
 
-	/* special: id, internal name, display, capacity, recharge frames */
-	{ CD2_WID_SPECIAL_BRUXA, "special_bruxa", "Double Boom", 4, 450 },
+	/* special weapon (its name, ammo and recharge live in its own file) */
+	CD2_WID_SPECIAL_BRUXA,
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct */

@@ -32,8 +32,8 @@ extern const CD2_VEH_PROFILE cd2VehRowHornet =
 {
 	CD2_VEH_HORNET, "hornet", "Hornet",       /* id, internalName, displayName */
 	CD2_VEH_CITY_CHICAGO, 3,                  /* originCity, modelSlot          */
-	{ 2, 4, 4, 3 },                           /* armor, speed, handling, special */
-	{ CD2_WID_SPECIAL_HORNET, "special_hornet", "Spike Storm", 3, 600 },
+	2, 4, 4, 3,                               /* armor, speed, handling, special */
+	CD2_WID_SPECIAL_HORNET,                   /* the special — by id only */
 	{ 3000, 4400, 0, 0, 0, 0, 0, 0, 0, 115 }, /* phys overrides (0 = inherit)   */
 	3                                         /* palette                        */
 };

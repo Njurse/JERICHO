@@ -137,7 +137,6 @@ extern const CD2_WEAPON_DEF cd2WdefCluster;	// projectile/cluster.c
 extern const CD2_WEAPON_DEF cd2WdefZoomy;	// projectile/zoomy.c
 extern const CD2_WEAPON_DEF cd2WdefFreeze;	// projectile/freeze.c
 extern const CD2_WEAPON_DEF cd2WdefShotgun;	// shotgun/shotgun.c
-extern const CD2_WEAPON_DEF cd2WdefSpecialJericho;	// shotgun/special_jericho.c
 extern const CD2_WEAPON_DEF cd2WdefSmg;		// projectile/smg.c
 
 // A per-run RNG for weapon effects that need WITHIN-frame variety. Random2()
