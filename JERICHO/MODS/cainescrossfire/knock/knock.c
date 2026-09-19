@@ -167,21 +167,23 @@ void cd2KnockTick(int carId)
 }
 
 // ---------------------------------------------------------------------------
-// The render-only part: rotate the car's own matrix, and raise the body. Called
-// from the car-draw path, so nothing here can reach the handling model.
+// The render-only part: translate the body, then rotate the car's own matrix.
+// Called from the car-draw path, so nothing here can reach the handling model.
+//
+// This takes the COMPOSED offset and nothing else - no car id, no state - so every
+// layer that wants to move a car goes through exactly this code and the pivot maths
+// exists once.
 // ---------------------------------------------------------------------------
-void cd2KnockApply(void* matrix, int carId)
+void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o)
 {
 	MATRIX* m = (MATRIX*)matrix;
-	const CD2_KNOCK_STATE* k;
+	int i;
 
-	if (m == NULL)
+	if (m == NULL || o == NULL)
 		return;
 
-	k = cd2KnockOf(carId);
-
-	if (k->lift != 0)
-		m->t[1] += k->lift;		/* up, never down - clear of what it leans on */
+	if (o->bob != 0)
+		m->t[1] += o->bob;		/* up or down, whichever the layer asked for */
 
 	/* The pivot. Rotating the basis turns the car about the model's origin, which
 	 * is somewhere in its middle - a wheelie has to turn about the rear axle, with
@@ -190,32 +192,44 @@ void cd2KnockApply(void* matrix, int carId)
 	 * arc the far end would have swept. Note the sign works out so the car only
 	 * ever moves UP, whichever way it is pitching - so it can never be pushed down
 	 * through the ground it is standing on. */
-	if (k->pitch != 0)
+	if (o->pitch != 0)
 	{
-		int rise = (k->pitch < 0 ? -k->pitch : k->pitch) * CD2_KNOCK_PIVOT_DIST >> 12;
-		int i;
+		int rise = (o->pitch < 0 ? -o->pitch : o->pitch) * CD2_KNOCK_PIVOT_DIST >> 12;
 
 		for (i = 0; i < 3; i++)
 			m->t[i] += (int)(((long long)m->m[1][i] * rise) >> 12);
 	}
 
-	if (k->shift != 0)
+	if (o->shift != 0)
 	{
 		/* the weight moving: a translation along the car's own forward axis, so a
 		 * wheelie squats onto the back wheels and a frontal hit throws the weight
 		 * forward. m[2] is the matrix's forward basis row. */
-		int i;
-
 		for (i = 0; i < 3; i++)
-			m->t[i] += (int)(((long long)m->m[2][i] * k->shift) >> 12);
+			m->t[i] += (int)(((long long)m->m[2][i] * o->shift) >> 12);
 	}
 
-	if (k->pitch != 0)
-		_RotMatrixX(m, (short)k->pitch);
+	if (o->pitch != 0)
+		_RotMatrixX(m, (short)o->pitch);
 
-	if (k->roll != 0)
-		_RotMatrixZ(m, (short)k->roll);
+	if (o->roll != 0)
+		_RotMatrixZ(m, (short)o->roll);
 
-	if (k->yaw != 0)
-		_RotMatrixY(m, (short)k->yaw);
+	if (o->yaw != 0)
+		_RotMatrixY(m, (short)o->yaw);
+}
+
+// [D] [T]
+void cd2KnockApply(void* matrix, int carId)
+{
+	const CD2_KNOCK_STATE* k = cd2KnockOf(carId);
+	CD2_VISUAL_OFFSET o;
+
+	o.pitch = k->pitch;
+	o.roll = k->roll;
+	o.yaw = k->yaw;
+	o.bob = k->lift;		/* the knock's lift is never negative */
+	o.shift = k->shift;
+
+	cd2VisualApply(matrix, &o);
 }

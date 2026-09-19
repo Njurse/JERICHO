@@ -120,6 +120,28 @@ typedef struct CD2_KNOCK_STATE
 } CD2_KNOCK_STATE;
 
 // ---------------------------------------------------------------------------
+// The transform
+// ---------------------------------------------------------------------------
+// Everything that moves a car's RENDER matrix goes through one compositor, so the
+// pivot, the shift and the rotations exist once rather than once per feature.
+//
+// An offset is a plain sum: each layer fills one of these and they are added
+// together before anything is applied. Angles are PSX units (4096 = full turn) and
+// the translations are world units. `bob` is SIGNED, unlike the knock's lift, so a
+// layer may push the body down as well as up.
+typedef struct CD2_VISUAL_OFFSET
+{
+	int pitch, roll, yaw;		// angles on the three axes
+	int bob;			// vertical translation (+ up, - down)
+	int shift;			// along the car's own forward axis (+ = forward)
+} CD2_VISUAL_OFFSET;
+
+// Apply a composed offset to a render matrix: translate, then rotate. Render-only
+// by construction - it is handed the car-draw matrix and nothing else, so it has
+// no route to the handling model.
+void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o);
+
+// ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
 // Add an impulse. Any of these may be negative; 0 means "no knock on that axis".
@@ -132,7 +154,7 @@ void cd2KnockTick(int carId);
 
 // Apply the current knock to a car's render matrix (rotate, and lift the body).
 // Called from the car-draw path, which is render-only, so this cannot reach the
-// physics.
+// physics. A thin wrapper over cd2VisualApply.
 void cd2KnockApply(void* matrix, int carId);
 
 // The state, for a dump or a caller that wants to know.
