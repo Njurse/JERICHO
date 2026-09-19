@@ -29,6 +29,7 @@
 #include <string.h>
 
 #define CD2_HORNET_RADIUS		320	// ring radius (world units)
+#define CD2_HORNET_SPIKE_H		95	// how far a spike stands up out of the ring
 #define CD2_HORNET_CONTACT_INTERVAL	15	// frames between ring contact hits
 #define CD2_HORNET_HOP			140	// knockback strength on contact
 #define CD2_HORNET_RELAUNCH_GAP		60	// frames the ring stays down after a launch
@@ -110,17 +111,25 @@ static int cd2HornetOnFrame(void* ud, void* args)
 		c.vy = cp->hd.where.t[1] + 40;
 		c.vz = cp->hd.where.t[2];
 
-		// the eight black spikes (eight compass directions) as the visual
+		// The eight spikes, one per compass direction: a short vertical line
+		// standing up out of the ring, plus a faint spoke back to the car. They
+		// are here only while the special is the ARMED weapon, so selecting it
+		// visibly arms the car and any other weapon retracts them.
 		for (j = 0; j < 8; j++)
 		{
-			VECTOR dir, edge;
+			VECTOR dir, base, tip;
 
 			cd2SpecCompass(cp, j, &dir);
-			edge.vx = c.vx + (dir.vx * CD2_HORNET_RADIUS >> 12);
-			edge.vy = c.vy;
-			edge.vz = c.vz + (dir.vz * CD2_HORNET_RADIUS >> 12);
 
-			cd2WpnLine(&c, &edge, 0, 0, 0);
+			base.vx = c.vx + (dir.vx * CD2_HORNET_RADIUS >> 12);
+			base.vy = cp->hd.where.t[1];
+			base.vz = c.vz + (dir.vz * CD2_HORNET_RADIUS >> 12);
+
+			tip = base;
+			tip.vy = base.vy + CD2_HORNET_SPIKE_H;
+
+			cd2WpnLine(&base, &tip, 224, 224, 236);		// bright steel spike
+			cd2WpnLine(&base, &c, 96, 96, 116);		// faint spoke to the car
 		}
 
 		// contact damage + knockback to other cars inside the ring

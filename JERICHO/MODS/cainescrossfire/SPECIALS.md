@@ -43,9 +43,9 @@ Firing one headlessly (the debug driver):
 
 ### Hornet — Spike Storm
 
-The ring deploys while the special is **armed**: eight spikes spring up around
-the car (eight black lines in the eight compass directions — the first-cut
-visual), and any other car inside the ring takes contact damage and a knockback
+The ring deploys while the special is **armed**: eight spikes stand up around
+the car (one per compass direction — a bright vertical spike with a faint spoke
+back to the car), and any other car inside the ring takes contact damage and a knockback
 every 15 frames. Pressing **fire launches** the eight outward in their eight
 facing directions — weakly homing, a narrow lock cone — exploding on whatever
 they hit (world or car). The launch spends the charge and starts the recharge.
@@ -90,8 +90,8 @@ twice (0.75s apart). While dashing, the collision damage Deadstar deals is
 The mechanics are the described ones, built on the framework's primitives, but a
 few are approximations to iterate on:
 
-- Hornet's ring is a damage/knock aura drawn with debug lines, not a modelled
-  mesh.
+- Hornet's ring is a damage/knock aura drawn with the engine's line primitives,
+  not a modelled spike rack (a real model is the later pass).
 - Avalanche's crush holds positions directly (a rigged climb animation is later).
 - Corvo's bolt, Highwayman's flame, and the ring are line/particle visuals.
 - The flame/blob/pellet sounds are sample + pitch, not bespoke audio.
