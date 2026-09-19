@@ -62,9 +62,16 @@
 
 // Nothing may knock beyond this, however hard the hit: a car spinning on its
 // side would look broken rather than hit.
-#define CD2_KNOCK_MAX_PITCH		240	// ~21 degrees - the ceiling the turbo wheelie uses
-#define CD2_KNOCK_MAX_ROLL		180
-#define CD2_KNOCK_MAX_YAW		110
+// The ceilings, and they are deliberately tiny - about 5 degrees on the pitch,
+// less on the others. A knock is not a rotation that happens to be fast: a real
+// lean of the model reads as the car tipping over, and past a few degrees it looks
+// like a flip however brief it is. The motion is carried by the TRANSFORM instead
+// (the shift along the car below, the lift, and the pivot), with the angle as the
+// accent on top - which is what makes it read as the car rocking rather than
+// rotating on the spot.
+#define CD2_KNOCK_MAX_PITCH		57	// ~5 degrees
+#define CD2_KNOCK_MAX_ROLL		45	// ~4 degrees
+#define CD2_KNOCK_MAX_YAW		30
 
 // The lift an impulse may ask for, and its ceiling. Small numbers: this is a
 // nudge to clear geometry, not a jump.
@@ -81,6 +88,11 @@
 // body (and, once the wheel hook carries a position, the wheels with it), clamped
 // so the car never visibly separates from its own wheels.
 #define CD2_KNOCK_MAX_SHIFT		55	// world units, fore or aft
+
+// How far from the model's origin the car's axles are, for the pivot below. A
+// wheelie turns about the REAR axle, a stoppie about the front one, so the nose (or
+// the tail) rises instead of the whole car spinning around a point in its middle.
+#define CD2_KNOCK_PIVOT_DIST		46
 #define CD2_KNOCK_SHIFT_DECAY		2200
 #define CD2_KNOCK_SHIFT_SETTLE		800
 

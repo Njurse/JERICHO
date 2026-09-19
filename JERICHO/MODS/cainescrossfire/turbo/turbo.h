@@ -85,7 +85,7 @@
 // How far back the weight goes when it engages. A wheelie is the weight moving
 // over the back wheels as much as the nose coming up, and without this the car just
 // rotates on the spot. Negative is backwards, along the car.
-#define CD2_TURBO_KICK_SHIFT		38
+#define CD2_TURBO_KICK_SHIFT		52
 
 // While turbo is running, a lighter version of the same pitch keeps the car
 // feeling shoved along. 0 disables it.

@@ -183,6 +183,22 @@ void cd2KnockApply(void* matrix, int carId)
 	if (k->lift != 0)
 		m->t[1] += k->lift;		/* up, never down - clear of what it leans on */
 
+	/* The pivot. Rotating the basis turns the car about the model's origin, which
+	 * is somewhere in its middle - a wheelie has to turn about the rear axle, with
+	 * the nose coming up, and a stoppie about the front, with the tail coming up.
+	 * Moving the origin to compensate is what fakes that: the body rises by the
+	 * arc the far end would have swept. Note the sign works out so the car only
+	 * ever moves UP, whichever way it is pitching - so it can never be pushed down
+	 * through the ground it is standing on. */
+	if (k->pitch != 0)
+	{
+		int rise = (k->pitch < 0 ? -k->pitch : k->pitch) * CD2_KNOCK_PIVOT_DIST >> 12;
+		int i;
+
+		for (i = 0; i < 3; i++)
+			m->t[i] += (int)(((long long)m->m[1][i] * rise) >> 12);
+	}
+
 	if (k->shift != 0)
 	{
 		/* the weight moving: a translation along the car's own forward axis, so a

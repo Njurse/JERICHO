@@ -120,9 +120,28 @@ slide keeps its level wheels.
 ## The ceiling
 
 The angles are a ceiling, not an amount: an impulse is sized with
-`CD2_KNOCK_IMPULSE_TO(max)` and carries the angle up to it. After the first pass
-at four times speed the ceilings came down by a factor of four - pitch 240 (about
-21 degrees) rather than 900 - because four times the speed at the old angle was a
-flip, not a wheelie. `CD2_KNOCK_DECAY` is the dial for how hard the jolt reads:
-up a little puts more frames on the up-stroke, and it still arrives at the same
-ceiling.
+`CD2_KNOCK_IMPULSE_TO(max)` and carries the angle up to it, so changing a decay
+rate resizes every impulse that uses it rather than silently shrinking the motion.
+`CD2_KNOCK_DECAY` is the dial for how hard the jolt reads: up a little puts more
+frames on the up-stroke, and it still arrives at the same ceiling.
+
+They are also deliberately TINY - pitch 57, about 5 degrees, and less on the
+others. Two earlier passes had 900 (about 79 degrees) and then 240 (about 21), and
+both were wrong for the same reason: a knock is not a fast rotation. Any real lean
+of the model reads as the car tipping, and past a few degrees it reads as a flip
+however brief it is. The motion is carried by the TRANSFORM instead - the shift
+along the car, the lift, and the pivot - with the angle as an accent on top. That
+composition is what makes it look like the car rocking rather than rotating on the
+spot.
+
+## The pivot
+
+Rotating the basis turns the car about the model's origin, which is somewhere in
+its middle. A wheelie has to turn about the REAR axle with the nose coming up; a
+stoppie about the FRONT with the tail coming up. So the origin is moved to
+compensate (`CD2_KNOCK_PIVOT_DIST`, the distance to the axle): the body rises by
+the arc the far end would have swept, which is what fakes the wheelie.
+
+The sign works out so the car only ever moves UP, whichever way it is pitching, so
+a knock can never push the car down through the ground it is standing on. See
+`cainescrossfire-vehicle-knock` in project memory for the whole convention.
