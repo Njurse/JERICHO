@@ -14,6 +14,7 @@ void jer_module_levelhacks_entry(JERICHO_CONTEXT* ctx);
 void jer_module_mp_entry(JERICHO_CONTEXT* ctx);
 void jer_module_sandbox_entry(JERICHO_CONTEXT* ctx);
 void jer_module_testmode_entry(JERICHO_CONTEXT* ctx);
+void jer_module_yarisbounce_entry(JERICHO_CONTEXT* ctx);
 
 extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "antfarm", jer_module_antfarm_entry, 0 },
@@ -26,8 +27,9 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "mp", jer_module_mp_entry, 1 },
 	{ "sandbox", jer_module_sandbox_entry, 0 },
 	{ "testmode", jer_module_testmode_entry, 0 },
+	{ "yarisbounce", jer_module_yarisbounce_entry, 1 },
 };
-extern const int jer_registry_module_count = 10;
+extern const int jer_registry_module_count = 11;
 #ifdef __cplusplus
 }
 #endif

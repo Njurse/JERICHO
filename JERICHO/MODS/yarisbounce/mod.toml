@@ -1,0 +1,7 @@
+id = "yarisbounce"
+name = "Yaris Bounce"
+version = "1.0.0"
+author = "Nattdy"
+description = "The squishy-Yaris meme effect: squash & stretch the car body's vertex copy as it drives (RSIN phase + quartic ease), drawn without touching physics or collision."
+dependencies = []
+default-enabled = true

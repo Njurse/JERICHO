@@ -316,8 +316,6 @@ void GlobalTimeStep(void)
 	int carsDentedThisFrame;
 	short *felony;
 
-	gBouncePhase = RSIN(FrameCnt);
-
 	// JERICHO-HOOK: every-frame event (modules observe the game loop).
 	jer_fire(JER_EVENT_FRAME, NULL);
 

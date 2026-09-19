@@ -115,10 +115,6 @@ char LeftLight = 0;
 char RightLight = 0;
 char TransparentObject = 0;
 
-// At the top of cars.c, outside any function
-float gBouncePhase = 0.0f;
-float gBounceAmp = 0.40f;
-
 // [D] [T]
 void plotCarPolyB3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *pg)
 {
@@ -1635,68 +1631,6 @@ void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR
 	plotNewCarModel(car, palette, flatColor);
 }
 
-// Nattdy
-// Potentially we could strip the car data to just the model info 
-// WIP bug 	gBouncePhase = RSIN(FrameCnt); is global and needs to be placed somewhere its not instantiated every car because i'd like to hold off on modifying the car struct
-// Current bug: feedback loop as it keeps reading the distorted model since we overwrite the original car model pointer
-CAR_MODEL* fiddleWithTheModel(CAR_DATA* cp, CAR_MODEL* CarModelPtr)
-{
-	// Grab the original (clean) model data - this is read-only
-	MODEL* srcModel = gCarCleanModelPtr[cp->ap.model];
-	int numVerts = srcModel->num_vertices;
-
-	// Get the vertex pointer using the game's macro
-	SVECTOR* srcVerts = GET_MODEL_DATA(SVECTOR, srcModel, vertices);  // Correct way for REDRIVER2
-	SVECTOR* dstVerts = CarModelPtr->vlist;   // per-car temp buffer
-
-	// Copy fresh each frame to avoid feedback loop
-	for (int i = 0; i < numVerts; i++) {
-		dstVerts[i] = srcVerts[i];
-	}
-
-	// Bounce phase (4096 = full circle in PS1 fixed-point)
-	int phase = (FrameCnt) & 4095;
-
-	// So they're telling me this shit ain't butter?
-	float margin = 4500;
-
-	// Assumption is 60fps, this should probably change to measuring the time *between* frames but still learning about the engine
-	int sinFixed = interpolate_quartic_ease_out(RSIN(phase * 120), -9000.0, 9000.0, margin);
-
-	// Ultimately it gets processed here and normalized to between -1 and 1 units
-	float bounce = (float)sinFixed / 4096.0f;
-
-
-
-	float scaleY = 1.0f + bounce * gBounceAmp;
-	float scaleX = 1.0f - bounce * (gBounceAmp);
-
-	// Utilizing custom smooth step function to soft clamp between the boundaries i really should define in the header instead
-	float smoothedScaleX = scaleX;
-	float smoothedScaleY = scaleY;
-
-
-	// Apply scaling to the copied vertices
-	for (int i = 0; i < numVerts; i++) {
-		float vertexY = dstVerts[i].vy;
-		dstVerts[i].vx = (short)(dstVerts[i].vx * scaleX);
-		dstVerts[i].vy = (short)(dstVerts[i].vy * scaleY);
-	}
-
-	float verticalOffsetScaled = -36 * ((bounce < 0) ? -bounce : bounce);
-
-	// Add whatever vertical offset is needed to keep the car above the ground and retain correct relative suspension offset
-	for (int i = 0; i < numVerts; i++) {
-		printf("Shifting vertices upwards, standby for a print statement that's useful");
-		dstVerts[i].vy = (short)(dstVerts[i].vy)+(-36 + scaleX*(cp->hd.oBox.length[1]/2) - verticalOffsetScaled);
-	}
-
-	// Debug display
-	UpdateBounceDisplay(bounce, scaleX, scaleY);
-
-	return CarModelPtr;
-}
-
 // [D] [T] [A]
 void DrawCar(CAR_DATA* cp, int view)
 {
@@ -1910,13 +1844,6 @@ void DrawCar(CAR_DATA* cp, int view)
 		CarModelPtr = &NewCarModel[model];
 		CarModelPtr->vlist = gTempCarVertDump[cp->id];
 		CarModelPtr->nlist = gTempCarVertDump[cp->id];
-
-		bool bounce_enabled = false;
-		if (bounce_enabled)
-		{
-			CAR_MODEL* ModifiedCarModelPtr = fiddleWithTheModel(cp, CarModelPtr);
-			CarModelPtr = ModifiedCarModelPtr;
-		}
 
 		FindCarLightFade(&workmatrix);
 

@@ -1635,7 +1635,6 @@ EXPORTS
 	?light_matrix@@3UMATRIX@@A DATA
 	?colour_matrix@@3UMATRIX@@A DATA
 	?gCarDataSourceLevel@@3HA DATA
-	?gBounceAmp@@3MA DATA
 	?CAR_PAUSE_START@@3HA DATA
 	?closeEncounter@@3HA DATA
 	?modelRandomList@@3PADA DATA
@@ -1986,7 +1985,6 @@ EXPORTS
 	?gDamWheelModelPtr@@3PEAUMODEL@@EA DATA
 	?FrontWheelRotation@@3PAFA DATA
 	?BackWheelRotation@@3PAFA DATA
-	?gBouncePhase@@3MA DATA
 	?civ_clut@@3PAY1CA@5GA DATA
 	?cell_object_computed_values@@3PAEA DATA
 	?cell_object_index@@3HA DATA

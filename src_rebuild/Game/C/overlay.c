@@ -134,15 +134,6 @@ void InitOverlays(void)
 
 }
 
-void UpdateBounceDisplay(float bounce, float scaleX, float scaleY)
-{
-	int BounceDisplayYLevel = 80;
-	char bounceText[64];
-	sprintf(bounceText, "Phase: %.2f || ScaleX: %.2f || ScaleY: %.2f", bounce, scaleX, scaleY);
-	PrintString(bounceText, 10, BounceDisplayYLevel);
-}
-
-
 // [D] [T]
 void SetFullscreenDrawing(int ofs)
 {

@@ -122,10 +122,11 @@ module supplies the input):
 | Front/rear force heading (`wdir`) | wheelforces.c | **harmless no-op** | Reproduces stock's `-cdx/cdz` (rear) and `-sdx/sdz` (front) exactly. |
 | `twistRateZ` doubling in `FixCarCos` | handling.c:190 (note) | **harmless no-op** (already removed) | The pre-JERICHO `carCos->twistRateZ <<= 1` is gone; the note exists so it is not reintroduced (doubling it halves roll inertia and tips every car). |
 | `gCrumpleLastCollisionPoint` + `DentCarDirectional` | handling.c:37, :498, :778 | **parity risk** (cosmetic) | The dent *direction* comes from a global written elsewhere, so dents can point differently from stock; it does not touch physics. |
-| `gBouncePhase` | handling.c:316 | **harmless no-op** | Written each frame and never read by physics (its only reader is the disabled bounce model in cars.c). |
 | Handbrake → `g_PlayerControlMode` cycle | handling.c:1244 | **parity risk** | Unconditional gameplay mutation in `ProcessCarPad`; inert unless a module reads it (`sandbox`/`aidriver`), which then changes the player car's control mode. |
 | `CheckCarEffects` wreck guards | handling.c:1594, :1601, :1632, :1685 | **harmless no-op** (effects only) | Only gate skid marks / tyre noise / smoke for a totaled car; no physics. Also note it uses `MaxPlayerDamage[0]` for every car rather than the per-`player_id` value. |
 | `civ_ai.c` AI-driving rewrite | civ_ai.c:3645 (and the follow-distance braking above it) | **parity risk** | Changes AI *input* (throttle/braking/steering penalty), not the handling model; the car still uses stock physics. |
+
+The squishy-Yaris bounce model that used to sit in this table (the dead `fiddleWithTheModel` in cars.c plus the `gBouncePhase` write in handling.c) has been **moved out into its own `yarisbounce` module** — the engine no longer carries it.
 
 So: **no handling-overriding module ⇒ vanilla handling.**
 
