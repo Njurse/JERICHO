@@ -5,6 +5,14 @@
 #include "jer_hud.h"	// JERICHO-HOOK: on-screen HUD messages
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>	// JERICHO: AllocConsole() for the -console live log window
+#endif
+
 // JERICHO: debug/test run controls, defined here because the command line is
 // parsed above State_GameLoop and State_GameInit:
 //   -frames N  exit after N gameplay frames, cleanly, so a test run terminates
@@ -2149,6 +2157,7 @@ void PrintCommandLineArguments()
 		"  -vramview [frames] : open a second window showing the live VRAM,\n"
 		"        refreshed every frame (also re-dumps vram_live.tga every\n"
 		"        <frames>, default 15, for tools/vramdump.py)\n"
+		"  -console : attach a console window showing the engine log live\n"
 		"  -gamemode <takeadrive|pursuit|getaway|gaterace|checkpoint|trailblazer|\n"
 		"        survival|copsandrobbers|capturetheflag> : game mode override\n"
 		"  -weather <none|rain|wet> : weather override (with -level)\n"
@@ -2634,6 +2643,21 @@ int redriver2_main(int argc, char** argv)
 			gVramViewInterval = iv;
 
 			printInfo("[vramview] re-dumping vram_live.tga every %d frames\n", iv);
+		}
+		else if (!strcmp(argv[i], "-console"))
+		{
+			// JERICHO: attach a Win32 console so the engine's log is visible live. The
+			// engine's printInfo already printf's (PsyX_main.cpp, the non-emscripten
+			// path) as well as writing REDRIVER2.log, so the console shows the same
+			// lines - pins, victim choices, give-backs - as they happen.
+			if (AllocConsole())
+			{
+				freopen("CONOUT$", "w", stdout);
+				freopen("CONOUT$", "w", stderr);
+				SetConsoleTitleA("JERICHO console");
+			}
+
+			printInfo("[console] live log console attached\n");
 		}
 		else if (!strcmp(argv[i], "-gamemode"))
 		{

@@ -51,6 +51,7 @@ extern void CarModelSetsClear(int slot);
 extern void CarModelSetsAdd(int slot, int set);
 extern int  CarModelSetCount(int slot);
 extern int  CarModelSet(int slot, int k);
+extern int  CarModelSetUsed(int set);
 
 // JERICHO: clear every bit of cross-city state for a new level - pins, remaps, page
 // ownership, the CLUT cursor and the per-slot set lists. Called from InitCarImport,

@@ -1118,6 +1118,7 @@ static int sPinSize[CAR_PIN_MAX];
 static int sPinPreferred[CAR_PIN_MAX];		// the rectangle the REPLACED car's page used, or -1
 static RECT16 sPinClutCursor;			// walking CLUT-row cursor for the imported pages
 static int sPinEvictions;			// world pages taken back this run, for the dump
+static int sPinUnusedTakes;			// wasted host car pages taken instead - the #3 win
 static int sPinReloads;				// times we re-uploaded a page we had already placed - the thrash meter
 
 // JERICHO: the texture sets each imported model's OWN polygons name. buildNewCarFromModel
@@ -1174,6 +1175,24 @@ int CarModelSet(int slot, int k)
 	return sModelSet[slot][k];
 }
 
+// JERICHO: is this texture set named by ANY built model (host or imported)? A loaded
+// car page no model names is wasted VRAM - the first thing the pool should take.
+int CarModelSetUsed(int set)
+{
+	int s, k;
+
+	for (s = 0; s < MAX_CAR_RESIDENT_MODELS; s++)
+	{
+		for (k = 0; k < sModelSetCount[s]; k++)
+		{
+			if (sModelSet[s][k] == set)
+				return 1;
+		}
+	}
+
+	return 0;
+}
+
 static void CarPinRecord(int set, int index, int offset, int size, int preferred)
 {
 	if (sPinCount >= CAR_PIN_MAX)
@@ -1216,6 +1235,45 @@ static int CarPageFindSlot(void)
 			sVictim = idx;
 			return idx;		// free outright
 		}
+	}
+
+	// JERICHO: FIRST choice - a HOST car page that no built model names. The level
+	// loads its whole carTpages/specTpages list up front, but a model only draws the
+	// sets IT names, so a car page nothing names is pure waste (measured: Rio wastes
+	// 2 of its 8). Taking one costs the world and the traffic nothing at all.
+	//
+	// This pass deliberately ignores nperms: the wasted pages sit in the level's own
+	// range (Rio's were slots 5 and 9), which is exactly where the world-eviction pass
+	// below refuses to look.
+	for (i = 0; i < 19; i++)
+	{
+		int idx = (sVictim + i) % 19;
+		int held = tpageslots[idx];
+		int iscar = 0;
+
+		if (held == 0xFF)
+			continue;
+
+		for (k = 0; k < 8; k++)
+			if (carTpages[GameLevel][k] == held) { iscar = 1; break; }
+		if (!iscar)
+		{
+			for (k = 0; k < 12; k++)
+				if (specTpages[GameLevel][k] == held) { iscar = 1; break; }
+		}
+
+		if (!iscar || CarModelSetUsed(held))
+			continue;
+
+		tpageloaded[held] = 0;
+
+		sVictim = idx;
+		sPinUnusedTakes++;
+
+		if (sPinUnusedTakes <= 6)
+			printInfo("cross-city: paging - taking UNUSED host car page set %d from slot %d for an imported page\n", held, idx);
+
+		return idx;
 	}
 
 	for (i = 0; i < 19; i++)
@@ -1274,6 +1332,51 @@ static int CarPageFindSlot(void)
 void CarImportPin(void)
 {
 	int i;
+
+	// JERICHO-DIAG: once, what the 19 VRAM slots actually hold. #3 may only take a
+	// rectangle without hurting the world if it holds a CAR page no live model is
+	// using - everything else is a streamed world page. This is the map for that.
+	{
+		static int sDumped;
+
+		if (!sDumped && sPinCount > 0)
+		{
+			int s, k, carpages = 0, unused = 0;
+
+			sDumped = 1;
+
+			for (s = 0; s < 19; s++)
+			{
+				int held = tpageslots[s];
+				int iscar = 0;
+
+				if (held == 0xFF)
+				{
+					printInfo("cross-city: slot %2d at (%3d,%3d): FREE\n", s, tpagepos[s].x, tpagepos[s].y);
+					continue;
+				}
+
+				for (k = 0; k < 6; k++)
+					if (carTpages[GameLevel][k] == held) { iscar = 1; break; }
+				for (k = 0; k < 12; k++)
+					if (specTpages[GameLevel][k] == held) { iscar = 1; break; }
+
+				printInfo("cross-city: slot %2d at (%3d,%3d): set %3d %s (loaded=%d%s)\n",
+					s, tpagepos[s].x, tpagepos[s].y, held,
+					iscar ? "HOST CAR PAGE" : "world       ", tpageloaded[held] != 0,
+					(iscar && !CarModelSetUsed(held)) ? " UNUSED" : "");
+
+				if (iscar)
+				{
+					carpages++;
+					if (!CarModelSetUsed(held))
+						unused++;
+				}
+			}
+
+			printInfo("cross-city: %d of 19 slots hold host car pages, %d of them named by no model\n", carpages, unused);
+		}
+	}
 
 	for (i = 0; i < sPinCount; i++)
 	{
@@ -1413,7 +1516,7 @@ void CarImportDumpState(void)
 	if (GetCarImportCity() < 0 && sRemapCount == 0)
 		return;
 
-	printInfo("cross-city: final page state (%d pinned, %d world pages evicted, %d page re-uploads, %d claims given back)\n", sPinCount, sPinEvictions, sPinReloads, sCarPageGiveBacks);
+	printInfo("cross-city: final page state (%d pinned, %d wasted car pages taken, %d world pages evicted, %d page re-uploads, %d claims given back)\n", sPinCount, sPinUnusedTakes, sPinEvictions, sPinReloads, sCarPageGiveBacks);
 
 	// Every pinned set and the rectangle it occupies, decoded from the tpage/clut values
 	// the draw path will read. This is what the VRAM dump is aimed at: run with
@@ -1498,6 +1601,7 @@ void CarImportResetState(void)
 	sPinCount = 0;
 	sRemapCount = 0;
 	sPinEvictions = 0;
+	sPinUnusedTakes = 0;
 	sPinReloads = 0;
 
 	for (i = 0; i < 19; i++)

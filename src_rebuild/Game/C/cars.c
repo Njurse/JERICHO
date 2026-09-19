@@ -1243,8 +1243,9 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 					{
 						POLYFT3* pft3 = (POLYFT3*)polyList;
 
-						if (imported)
-							CarModelSetsAdd(index, pft3->texture_set);
+						// JERICHO: record the set for EVERY model, host or imported - the pool
+						// needs to know which car pages any model actually names.
+						CarModelSetsAdd(index, pft3->texture_set);
 									
 						cp->vindices = M_INT_4R(pft3->v0, pft3->v1, pft3->v2, 0);
 						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(pft3->texture_set)][pft3->texture_id], *(ushort*)&pft3->uv0);
@@ -1260,8 +1261,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 					{
 						POLYFT4* pft4 = (POLYFT4*)polyList;
 
-						if (imported)
-							CarModelSetsAdd(index, pft4->texture_set);
+						CarModelSetsAdd(index, pft4->texture_set);
 
 						cp->vindices = M_INT_4R(pft4->v0, pft4->v1, pft4->v2, 0);
 						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(pft4->texture_set)][pft4->texture_id], *(ushort *)&pft4->uv0);
@@ -1285,8 +1285,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 					{
 						POLYGT3* pgt3 = (POLYGT3*)polyList;
 
-						if (imported)
-							CarModelSetsAdd(index, pgt3->texture_set);
+						CarModelSetsAdd(index, pgt3->texture_set);
 
 						if (imported)
 						{
@@ -1321,8 +1320,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 					{
 						POLYGT4* pgt4 = (POLYGT4*)polyList;
 
-						if (imported)
-							CarModelSetsAdd(index, pgt4->texture_set);
+						CarModelSetsAdd(index, pgt4->texture_set);
 
 						if (imported)
 						{
