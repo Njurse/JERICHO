@@ -35,6 +35,7 @@
 #include "jer_events.h"
 #include "turbo/turbo.h"		/* cd2TurboPad - the double-tap trigger */
 #include "knock/knock.h"		/* the visual knock (buck and rock) */
+#include "motion/motion.h"		/* the motion layers (idle fidget, pitch-back) */
 #include "jer_math.h"
 #include "sound.h"
 #include "gamesnd.h"
@@ -783,6 +784,10 @@ int cd2OnCarDraw(void* ud, void* args)
 
 	if (!gCd2Cfg.enabled || cp->id < 0 || cp->id >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
+
+	/* once per car per run: which class it is in, and the mass and power that
+	 * decided it. The layers below read that class. */
+	cd2MotionDump(cp->id);
 
 	CD2_CAR* c = &gCd2Car[cp->id];
 	int target = jer_clamp_int(-c->slip * CD2_ROLL_GAIN, -CD2_BODY_MAX_ROLL, CD2_BODY_MAX_ROLL);

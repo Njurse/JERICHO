@@ -1,0 +1,245 @@
+/*
+ * motion/motion.c -- see motion/motion.h for what the layers are and why.
+ *
+ * This file currently owns the CLASS DATA and the per-car state: which class a car
+ * is in, and the storage its layers keep between frames. The layers themselves are
+ * added on top of it.
+ */
+#include "driver2.h"
+#include "cainescrossfire.h"
+#include "cars.h"
+#include "cosmetic.h"		/* car_cosmetics[] - the model index is an offset into it */
+#include "jericho.h"
+#include "jer_math.h"		/* jer_clamp_int */
+
+#include "motion/motion.h"
+#include "ai/ai.h"		/* cd2AiIsOpponent - the racer test */
+
+// ---------------------------------------------------------------------------
+// The classes
+// ---------------------------------------------------------------------------
+// Read the numbers as "how the car carries its weight". A light car pitches further
+// and springs back faster; a heavy one is slower to move and slower to settle, and
+// that difference - not the top speed - is what makes a truck feel like a truck.
+//
+// The idle amplitudes are all small on purpose: a degree of pitch at a standstill
+// is a car with a running engine, three degrees is a car that looks broken.
+const CD2_MOTION_CLASS cd2MotionClasses[CD2_MOTION_CLASSES] =
+{
+	//  name      pitchMax  stiffness  damping  over%  idleP/R/Y  bob
+	{ "LIGHT",    137,       300,      1500,    35,     11, 11,  6,  2 },	// ~12 deg
+	{ "MEDIUM",   102,       240,      1450,    30,      9,  9,  5,  2 },	// ~9 deg
+	{ "HEAVY",     68,       170,      1400,    25,      7,  7,  4,  1 },	// ~6 deg
+};
+
+// Which model is which class. -1 = work it out from the car's own numbers.
+//
+// Fill this in from a run: cd2MotionDump prints each model's class alongside the
+// mass and power that were used, so this becomes a list of decisions rather than a
+// list of guesses. Until a model is listed, the fallback below keeps it sensible.
+const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX] =
+{
+	-1, -1, -1, -1, -1, -1, -1, -1
+};
+
+// The fallback, derived from what a real level actually reports. Two levels were
+// dumped (see the class line below) and every resident car came back like this:
+//
+//   mass    4096 for ALL of them (1.0 in fixed point - the engine's default, so
+//           mass cannot classify anything on its own)
+//   power   3000 .. 4096
+//   length  351 .. 396      (colBox.vz - the collision box's length)
+//   width   129 .. 145
+//   wheel   49 .. 55
+//   hnd     0 or 1
+//
+// So the pool is genuinely narrow, and the class table above is the intended lever,
+// not this. The boundaries are therefore set OUTSIDE the observed range: they exist
+// to catch a genuine outlier (a bus, a truck, a limo - if a level ever holds one)
+// and everything ordinary comes out MEDIUM. A rule that split a 351..396 spread into
+// three classes would be reading noise, and would put a whole level in one bucket
+// anyway - which is exactly what the first attempt at this did.
+#define CD2_MOTION_LEN_LIGHT	340	// colBox.vz at or below this is light
+#define CD2_MOTION_LEN_HEAVY	430	// ...at or above this is heavy
+#define CD2_MOTION_PW_LIGHT	5000	// power-to-weight (== power here), secondary
+#define CD2_MOTION_PW_HEAVY	2500
+
+static CD2_MOTION_STATE gMotion[MAX_CARS];
+
+// ---------------------------------------------------------------------------
+// Which car is in which class
+// ---------------------------------------------------------------------------
+// [D] [T]
+int cd2MotionModelOf(int carId)
+{
+	const CAR_DATA* cp;
+	int model;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return -1;
+
+	cp = &car_data[carId];
+
+	if (cp->ap.carCos == NULL)
+		return -1;
+
+	model = (int)(cp->ap.carCos - car_cosmetics);
+
+	if (model < 0 || model >= CD2_MOTION_MODEL_MAX)
+		return -1;
+
+	return model;
+}
+
+// [D] [T]
+static int cd2MotionDeriveClass(const CAR_COSMETICS* cos)
+{
+	int len = cos->colBox.vz;
+	int mass = cos->mass;
+	int power = cos->powerRatio;
+	int pw;
+
+	/* size first: it is the one field that actually differs across a level's cars */
+	if (len > 0 && len <= CD2_MOTION_LEN_LIGHT)
+		return CD2_MOTION_LIGHT;
+
+	if (len >= CD2_MOTION_LEN_HEAVY)
+		return CD2_MOTION_HEAVY;
+
+	/* a car with no mass is not a car; fall back to the middle rather than divide */
+	if (mass <= 0)
+		return CD2_MOTION_MEDIUM;
+
+	pw = (power * 4096) / mass;
+
+	if (pw >= CD2_MOTION_PW_LIGHT)
+		return CD2_MOTION_LIGHT;
+
+	if (pw <= CD2_MOTION_PW_HEAVY)
+		return CD2_MOTION_HEAVY;
+
+	return CD2_MOTION_MEDIUM;
+}
+
+// [D] [T]
+int cd2MotionClassIndex(int carId)
+{
+	int model;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return CD2_MOTION_MEDIUM;
+
+	model = cd2MotionModelOf(carId);
+
+	if (model >= 0 && cd2MotionModelClass[model] >= 0 &&
+		cd2MotionModelClass[model] < CD2_MOTION_CLASSES)
+	{
+		return cd2MotionModelClass[model];
+	}
+
+	if (car_data[carId].ap.carCos != NULL)
+		return cd2MotionDeriveClass(car_data[carId].ap.carCos);
+
+	return CD2_MOTION_MEDIUM;
+}
+
+// [D] [T]
+const CD2_MOTION_CLASS* cd2MotionClassOf(int carId)
+{
+	return &cd2MotionClasses[cd2MotionClassIndex(carId)];
+}
+
+// [D] [T]
+CD2_MOTION_STATE* cd2MotionStateOf(int carId)
+{
+	if (carId < 0 || carId >= MAX_CARS)
+		return NULL;
+
+	return &gMotion[carId];
+}
+
+// ---------------------------------------------------------------------------
+// The racer set
+// ---------------------------------------------------------------------------
+// The player, and the cars cainescrossfire's own AI is driving. This is the test the
+// AI already uses to find the cars in a race (ai/opponent.c), so traffic, parked
+// cars and the world's police are out by construction rather than by a filter that
+// has to remember to exclude them.
+// [D] [T]
+int cd2MotionIsRacer(int carId)
+{
+	const CAR_DATA* cp;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return 0;
+
+	cp = &car_data[carId];
+
+	if (cp->controlType == CONTROL_TYPE_PLAYER)
+		return 1;
+
+	return cd2AiIsOpponent(cp);
+}
+
+// ---------------------------------------------------------------------------
+// The class line
+// ---------------------------------------------------------------------------
+// Written once per car per run. It is deliberately verbose: the model index, what
+// the table said about it, and the mass and power the fallback used - because this
+// is the evidence cd2MotionModelClass above gets filled from.
+// [D] [T]
+void cd2MotionDump(int carId)
+{
+	CD2_MOTION_STATE* st;
+	const CAR_COSMETICS* cos;
+	const CD2_MOTION_CLASS* cls;
+	int model, listed, pw;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return;
+
+	st = &gMotion[carId];
+
+	if (st->logged)
+		return;
+
+	cos = car_data[carId].ap.carCos;
+	model = cd2MotionModelOf(carId);
+	listed = (model >= 0 && cd2MotionModelClass[model] >= 0);
+	cls = cd2MotionClassOf(carId);
+	pw = (cos != NULL && cos->mass > 0) ? (cos->powerRatio * 4096) / cos->mass : 0;
+
+	st->logged = 1;
+
+	/* deliberately verbose: this line is the evidence cd2MotionModelClass above
+	 * gets filled from, so it prints every field that could discriminate a car -
+	 * and the collision box, because that is the one that actually did. */
+	jer_log("[cainescrossfire] motion car=%d model=%d slot=%d class=%s (%s) racer=%d mass=%d power=%d pw=%d hnd=%d len=%d wide=%d wheel=%d\n",
+		carId, model, car_data[carId].ap.model, cls->name, listed ? "listed" : "derived",
+		cd2MotionIsRacer(carId),
+		cos != NULL ? cos->mass : 0, cos != NULL ? cos->powerRatio : 0, pw,
+		car_data[carId].hndType,
+		cos != NULL ? cos->colBox.vz : 0, cos != NULL ? cos->colBox.vx : 0,
+		cos != NULL ? cos->wheelSize : 0);
+}
+
+// ---------------------------------------------------------------------------
+// Reset
+// ---------------------------------------------------------------------------
+// [D] [T]
+void cd2MotionReset(int carId)
+{
+	if (carId < 0 || carId >= MAX_CARS)
+		return;
+
+	memset(&gMotion[carId], 0, sizeof(gMotion[carId]));
+}
+
+// [D] [T]
+void cd2MotionResetAll(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_CARS; i++)
+		cd2MotionReset(i);
+}
