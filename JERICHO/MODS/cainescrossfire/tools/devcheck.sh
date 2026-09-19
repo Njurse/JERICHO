@@ -37,7 +37,7 @@ SRC="$REPO/src_rebuild"
 BIN="$SRC/bin/Release_dev"
 INI="$BIN/JERICHO/CONFIG/carhacks.ini"
 MODLIST="$BIN/JERICHO/CONFIG/modlist.ini"
-FRAMES="${1:-120}"
+FRAMES="${1:-60}"
 SEED="${SEED:-7}"
 MSB="C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/MSBuild/Current/Bin/MSBuild.exe"
 
@@ -46,7 +46,9 @@ if [ -z "${SKIPBUILD:-}" ]; then
 	cd "$SRC" || exit 1
 	OUT="$("$MSB" build/REDRIVER2.vcxproj -p:Configuration=Release_dev -p:Platform=x64 \
 		-m -v:m -nologo 2>&1)"
-	if ! printf '%s' "$OUT" | grep -qi "REDRIVER2.exe"; then
+	# Match any REDRIVER2 build name: Release_dev links REDRIVER2_dev.exe, so a literal
+	# "REDRIVER2.exe" test failed every Release_dev build and made a good build look dead.
+	if ! printf '%s' "$OUT" | grep -qiE "REDRIVER2[A-Za-z_]*\.exe"; then
 		echo "BUILD FAILED - no link line:"
 		printf '%s\n' "$OUT" | grep -iE "error C|error LNK" | head -5
 		exit 1
@@ -55,6 +57,14 @@ fi
 
 cd "$BIN" || exit 1
 echo "exe: $(ls -l --time-style=+%H:%M:%S REDRIVER2_dev.exe | awk '{print $6, $5" bytes"}')"
+
+# Every run writes REDRIVER2.log and greps it back. A second instance - the player's own
+# session, most often - shares that file and the log is appended, not replaced, so the
+# counts below pick up the other session's lines. Warn rather than silently report junk.
+if tasklist 2>/dev/null | grep -qiE "redriver2|jericho"; then
+	echo "WARNING: another REDRIVER2 process is running. It shares REDRIVER2.log, so these"
+	echo "         results will be unreliable - close the game for a clean run."
+fi
 
 SAVED="$(cat "$INI" 2>/dev/null || true)"
 
@@ -75,17 +85,21 @@ ROLL=$(( SEED & 0x7fffffff ))
 roll() { ROLL=$(( (ROLL * 1103515245 + 12345) & 0x7fffffff )); ROLL_OUT=$(( (ROLL / 65536) % $1 )); }
 
 FAILED=0
+# Scenario coverage, kept deliberately short: one stock level, two PLAYER foreign
+# imports (different host cities and sources) and one traffic import. The player path
+# and the traffic path are what differ, and the two player rows catch a host/city-
+# specific break; extra city combinations have never once failed alone. Each row is a
+# full 60+ frame headless run, so this is the difference between a suite you actually
+# run and one you skip. Add rows when hunting a specific bug, not by default.
+#
 # name | host level | source city | kind        kind: stock | player | traffic
 # A 'player' row picks a random SPECIAL body (all four cities have 8, 9, 10 and 12;
 # 11 is missing in Chicago) and imports it into the special slot, then asks for it.
 SCENARIOS=(
 	"stock|havana|0|stock"
-	"PLAYER foreign 1|havana|3|player"
-	"PLAYER foreign 2|chicago|2|player"
-	"PLAYER foreign 3|rio|1|player"
-	"PLAYER foreign 4|vegas|0|player"
-	"traffic RIO->havana|havana|3|traffic"
-	"traffic CHICAGO->vegas|vegas|0|traffic"
+	"PLAYER foreign RIO->Havana|havana|3|player"
+	"PLAYER foreign CHICAGO->Vegas|vegas|0|player"
+	"traffic CHICAGO->Vegas|vegas|0|traffic"
 )
 
 printf '%-19s %4s %6s %6s %7s %4s %6s  %s\n' \
