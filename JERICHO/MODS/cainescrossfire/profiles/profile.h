@@ -34,6 +34,7 @@
 
 #include "driver2.h"
 #include "cainescrossfire.h"
+#include "jericho.h"			/* JERICHO_CONTEXT (cd2VehRegister) */
 #include "weapons/core/weapon.h"	/* CD2_WID_* — a profile's special weapon */
 
 // ---------------------------------------------------------------------------
@@ -162,5 +163,34 @@ int cd2VehFindByVehicle(int city, int model);
 // the physics overrides that are set. Unconditional and cheap — this is the
 // evidence a headless run is read for.
 void cd2VehDumpProfiles(void);
+
+// ---------------------------------------------------------------------------
+// Engine mapping (profiles/profiles_map.c)
+// ---------------------------------------------------------------------------
+// Which vehicle profiles this match fields, how each resolved into a resident
+// car slot, and the per-car assignment.
+//
+// Fielded set: the [cainescrossfire] profiles list (internal names, comma
+// separated), or — when that is empty — the profiles whose originCity is the
+// level's own city (the level's home vehicle). CC_PROFILES overrides it for a
+// headless run without touching the saved config.
+int  cd2VehIsFielded(int profileId);
+int  cd2VehFieldedCount(void);
+
+// The resident slot a profile resolved to this level (-1 = not placed), and the
+// reverse. A resident slot is an index into car_cosmetics[]/residentCarModels[];
+// a live car's cp->ap.model is that slot, NOT the model number.
+int  cd2VehSlotOf(int profileId);
+int  cd2VehProfileOfSlot(int slot);
+
+// The profile a live car belongs to, by its resident slot, or CD2_VEH_NONE.
+int  cd2VehOfCar(void* car);
+
+// Log the resolution (profile -> slot/import) and the cosmetic fields applied.
+void cd2VehDumpResolution(void);
+
+// Register the CAR_DATA_SOURCE / GAME_START / CAR_STEP / RESET_CAR handlers.
+// Called once from the module entry.
+void cd2VehRegister(JERICHO_CONTEXT* ctx);
 
 #endif /* CD2_PROFILE_H */

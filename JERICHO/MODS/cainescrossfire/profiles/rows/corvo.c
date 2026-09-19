@@ -11,7 +11,7 @@
 
 #include "../profile.h"
 
-const CD2_VEH_PROFILE cd2VehRowCorvo =
+extern const CD2_VEH_PROFILE cd2VehRowCorvo =
 {
 	CD2_VEH_CORVO,		/* id */
 	"corvo",		/* internalName */

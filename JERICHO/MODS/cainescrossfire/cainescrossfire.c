@@ -50,6 +50,7 @@
 #include "turbo/turbo.h"		/* the boost: speed/accel scaling at the stats */
 #include "knock/knock.h"		/* CD2_KNOCK_* - collisions make the car buck */
 #include "carhacks/carhacks.h"		/* vehicle-availability hacks (own module later) */
+#include "profiles/profile.h"		/* the Twisted Metal vehicle roster (profiles/) */
 #include <string.h>
 // Registration helpers from the other source files of this (merged) module:
 //   cainescrossfirewreckfx.c  — wreck explosion + kill credit (cd2WreckFxRegister)
@@ -758,6 +759,11 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	 * intended to move to its own module (see carhacks/carhacks.h) */
 	carhacks_register(ctx);
 
+	/* the vehicle roster (profiles/): resolves each profile into a resident
+	 * slot and applies its cosmetic overrides. Registered AFTER carhacks so the
+	 * profile's own placements win any slot carhacks also touched. */
+	cd2VehRegister(ctx);
+
 	/* TEMPORARY: scripted debug driver, active only when debug_script is set
 	 * (delete cd2debug.c and these two lines when done) */
 	cd2DebugRegister(ctx);
@@ -783,4 +789,9 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	 * colours and suit rules it is actually using rather than the ones someone
 	 * remembers editing (teams/teams.h) */
 	cd2TeamDump();
+
+	/* the vehicle roster, as resolved: one line per profile (identity, mapping,
+	 * stats, special), so a headless run shows the field it is actually using
+	 * (profiles/registry.c) */
+	cd2VehDumpProfiles();
 }

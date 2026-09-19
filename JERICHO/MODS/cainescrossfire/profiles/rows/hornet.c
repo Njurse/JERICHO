@@ -10,7 +10,7 @@
 
 #include "../profile.h"
 
-const CD2_VEH_PROFILE cd2VehRowHornet =
+extern const CD2_VEH_PROFILE cd2VehRowHornet =
 {
 	CD2_VEH_HORNET,		/* id */
 	"hornet",		/* internalName */
