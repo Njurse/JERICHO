@@ -21,6 +21,7 @@
 
 #include "driver2.h"
 #include "profile.h"
+#include "cainescrossfire_internal.h"	/* cd2OwnsCar */
 #include "rows/rows.h"
 #include "cars.h"
 #include "cosmetic.h"
@@ -39,6 +40,7 @@ static int gCd2VehSlot[CD2_VEH_COUNT];			// profile -> resident slot (-1)
 static int gCd2SlotProfile[MAX_CAR_RESIDENT_MODELS];	// resident slot -> profile (-1)
 static int gCd2VehFielded[CD2_VEH_COUNT];		// in this match's field?
 static int gCd2VehPalDone[MAX_CARS];			// paint set for this car already
+static int gCd2CarProfile[MAX_CARS];			// car -> profile (CD2_VEH_NONE)
 
 // ---------------------------------------------------------------------------
 // Fielded set
@@ -171,7 +173,42 @@ int cd2VehOfCar(void* vcp)
 	if (cp == NULL)
 		return CD2_VEH_NONE;
 
+	// The per-car assignment wins when set; otherwise fall back to the slot.
+	if (cd2VehOfCarId(cp->id) != CD2_VEH_NONE)
+		return cd2VehOfCarId(cp->id);
+
 	return cd2VehProfileOfSlot(cp->ap.model);
+}
+
+int cd2VehOfCarId(int carId)
+{
+	if (carId < 0 || carId >= MAX_CARS)
+		return CD2_VEH_NONE;
+
+	return gCd2CarProfile[carId];
+}
+
+void cd2VehSetCarProfile(int carId, int profileId)
+{
+	if (carId < 0 || carId >= MAX_CARS)
+		return;
+
+	if (profileId < 0 || profileId >= CD2_VEH_COUNT)
+		profileId = CD2_VEH_NONE;
+
+	gCd2CarProfile[carId] = profileId;
+
+	if (gCd2Cfg.debugLog)
+		printInfo("[cainescrossfire] profile: car=%d -> %s (%s)\n",
+			carId, cd2VehInternalName(profileId), cd2VehDisplayName(profileId));
+}
+
+void cd2VehForgetCar(int carId)
+{
+	if (carId < 0 || carId >= MAX_CARS)
+		return;
+
+	gCd2CarProfile[carId] = CD2_VEH_NONE;
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +313,10 @@ static void cd2VehResetState(void)
 		gCd2SlotProfile[i] = -1;
 
 	for (i = 0; i < MAX_CARS; i++)
+	{
 		gCd2VehPalDone[i] = 0;
+		gCd2CarProfile[i] = CD2_VEH_NONE;
+	}
 }
 
 static int cd2VehOnCarDataSource(void* ud, void* args)
@@ -351,10 +391,24 @@ static int cd2VehOnCarStep(void* ud, void* args)
 	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
-	if (gCd2VehPalDone[cp->id])
+	// Only the module's own cars (the player and the AI opponents) carry a
+	// profile — ambient traffic must not be mis-identified by a repurposed slot.
+	if (!cd2OwnsCar(cp))
 		return JER_RESULT_CONTINUE;
 
-	profileId = cd2VehProfileOfSlot(cp->ap.model);
+	// Record the car's profile once, from its resident slot.
+	profileId = cd2VehOfCarId(cp->id);
+
+	if (profileId == CD2_VEH_NONE)
+	{
+		profileId = cd2VehProfileOfSlot(cp->ap.model);
+
+		if (profileId != CD2_VEH_NONE)
+			cd2VehSetCarProfile(cp->id, profileId);
+	}
+
+	if (gCd2VehPalDone[cp->id])
+		return JER_RESULT_CONTINUE;
 
 	if (profileId != CD2_VEH_NONE)
 	{
@@ -386,7 +440,10 @@ static int cd2VehOnGameStart(void* ud, void* args)
 	(void)args;
 
 	for (i = 0; i < MAX_CARS; i++)
+	{
 		gCd2VehPalDone[i] = 0;
+		gCd2CarProfile[i] = CD2_VEH_NONE;
+	}
 
 	cd2VehApplyCosmetics();
 
@@ -400,7 +457,10 @@ static int cd2VehOnResetCar(void* ud, void* args)
 	(void)ud;
 
 	if (a != NULL && a->carId >= 0 && a->carId < MAX_CARS)
+	{
 		gCd2VehPalDone[a->carId] = 0;
+		gCd2CarProfile[a->carId] = CD2_VEH_NONE;
+	}
 
 	return JER_RESULT_CONTINUE;
 }

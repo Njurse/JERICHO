@@ -17,12 +17,27 @@
 #include "jer_events.h"
 #include "jer_math.h"
 #include "ai/ai.h"	/* cd2AiIsOpponent, via cd2IsTraffic/cd2OwnsCar */
+#include "profiles/profile.h"	/* the vehicle profiles (Armor stat) */
 
 // Shared damage rediuction: `value` scaled to `pct` percent (both damage hooks
 // route through this so player and opponent cars are treated identically).
 int cd2ScaleDamage(int value, int pct)
 {
 	return (value * pct) / 100;
+}
+
+// The profile's Armor stat (1..5) as the percentage of incoming damage the car
+// takes: armor 3 = 100%, 5 = 70%, 1 = 130%. Applied on every damage path that
+// hits the car (scenery and car-to-car), so a heavy-armor profile really does
+// soak hits. Returns 100 for a car with no profile.
+static int cd2VehArmorPct(void* vcar)
+{
+	const CD2_VEH_PROFILE* p = cd2VehDef(cd2VehOfCar(vcar));
+
+	if (p == NULL)
+		return 100;
+
+	return jer_clamp_int(100 + (3 - p->stats.armor) * 15, 25, 200);
 }
 
 // Scenery impacts taken by `car` this level (see cd2OnDamageScale).
@@ -67,6 +82,10 @@ int cd2OnDamageScale(void* ud, void* args)
 	if (cd2IsTraffic((CAR_DATA*)a->car))
 		a->result = cd2ScaleDamage(a->result, CD2_TRAFFIC_SCENERY_EXTRA);
 
+	// ARMOR: the profile's Armor stat scales what the car takes, whatever the
+	// source (scenery here).
+	a->result = cd2ScaleDamage(a->result, cd2VehArmorPct(a->car));
+
 	if (gCd2Cfg.debugLog)
 	{
 		static unsigned int t = 0;
@@ -101,6 +120,9 @@ int cd2OnCarVsCar(void* ud, void* args)
 	// opponents take a further cut so they survive long enough to be a threat
 	if (cd2AiIsOpponent(a->car))
 		v = cd2ScaleDamage(v, gCd2Cfg.aiDamageTaken);
+
+	// ARMOR: the profile's Armor stat scales what this car takes (car-to-car).
+	v = cd2ScaleDamage(v, cd2VehArmorPct(a->car));
 
 	if (gCd2Cfg.debugLog)
 	{

@@ -392,6 +392,36 @@ CD2_STATS cd2GetStats(CAR_DATA* cp)
 			s.grip = (int)(((long long)s.grip * traction) >> 12);
 	}
 
+	/* VEHICLE PROFILE (profiles/): the car's 1..5 design stats shape the derived
+	 * handling on top of the raw chassis numbers above. Speed nudges top speed +
+	 * acceleration, Handling nudges grip + steering authority; 3 is stock, so the
+	 * multiplier runs ~0.80x .. 1.20x over 1..5. The profile's topSpeedPct is a
+	 * direct nudge the mass/power derivation cannot express ("lower top speed" on
+	 * a heavy but powerful car). A plain array lookup — this runs per car per
+	 * physics frame. */
+	{
+		int prof = cd2VehOfCar(cp);
+
+		if (prof != CD2_VEH_NONE)
+		{
+			const CD2_VEH_PROFILE* p = cd2VehDef(prof);
+
+			if (p != NULL)
+			{
+				int spd = jer_clamp_int(4096 + (p->stats.speed - 3) * 410, 2048, 6144);
+				int hnd = jer_clamp_int(4096 + (p->stats.handling - 3) * 410, 2048, 6144);
+
+				s.accel    = (int)(((long long)s.accel * spd) >> 12);
+				s.topSpeed = (int)(((long long)s.topSpeed * spd) >> 12);
+				s.grip     = (int)(((long long)s.grip * hnd) >> 12);
+				s.control  = (int)(((long long)s.control * hnd) >> 12);
+
+				if (p->phys.topSpeedPct > 0)
+					s.topSpeed = (s.topSpeed * p->phys.topSpeedPct) / 100;
+			}
+		}
+	}
+
 	// The raw slider is in "speed-units/frame"; apply the fixed-point
 	// CD2_SPEED_SCALE (2048/4096 = 0.5x) to get the effective top so the
 	// point-mass model doesn't out-run the level scale. Reverse is derived

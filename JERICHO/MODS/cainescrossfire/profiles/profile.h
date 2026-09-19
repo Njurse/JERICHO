@@ -186,6 +186,14 @@ int  cd2VehProfileOfSlot(int slot);
 // The profile a live car belongs to, by its resident slot, or CD2_VEH_NONE.
 int  cd2VehOfCar(void* car);
 
+// Per-car profile assignment (mirrors the faction registry's gCd2CarFaction).
+// Every car the module drives carries a profile; cd2VehOfCarId is the storage.
+// CD2_VEH_NONE means "not assigned yet" — the CAR_STEP sync fills it from the
+// car's resident slot.
+int  cd2VehOfCarId(int carId);
+void cd2VehSetCarProfile(int carId, int profileId);
+void cd2VehForgetCar(int carId);
+
 // Log the resolution (profile -> slot/import) and the cosmetic fields applied.
 void cd2VehDumpResolution(void);
 
