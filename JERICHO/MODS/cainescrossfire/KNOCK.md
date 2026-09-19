@@ -93,3 +93,36 @@ with the body animated separately from the wheels, a small upward nudge so a sho
 does not put the body inside what it hit, and a damped settle back to rest. The
 research behind that conclusion, and what is documented vs inferred, is in
 `TURBO.md` - the same paper covers both, since the turbo is what needed it first.
+
+## The weight shift
+
+A knock does two things, not one. It rotates the body, and it translates it along
+the car's own forward axis - the second is what makes the rotation read as weight
+moving rather than the car pivoting on the spot, which is what it looked like when
+only the angle was there.
+
+    turbo engaging        weight 38 units BACK   (a squat onto the rear wheels)
+    hit head-on           weight forward, half the impulse
+    hit by another car    weight forward, quarter impulse
+
+`CD2_KNOCK_MAX_SHIFT` (55 units) clamps it, so the body can never visibly separate
+from its own wheels.
+
+## The wheels go with it
+
+By default the engine rotates the BODY model only and leaves the wheels on the
+un-rotated draw matrix, so they stay level - right for a body lean. A knock is the
+opposite: it moves the whole car, so the module sets `rigidWheels` on the
+`JER_EVENT_CAR_DRAW` args and the wheels take the same matrix, rotation and
+translation both. It is set only while a knock is actually running, so an ordinary
+slide keeps its level wheels.
+
+## The ceiling
+
+The angles are a ceiling, not an amount: an impulse is sized with
+`CD2_KNOCK_IMPULSE_TO(max)` and carries the angle up to it. After the first pass
+at four times speed the ceilings came down by a factor of four - pitch 240 (about
+21 degrees) rather than 900 - because four times the speed at the old angle was a
+flip, not a wheelie. `CD2_KNOCK_DECAY` is the dial for how hard the jolt reads:
+up a little puts more frames on the up-stroke, and it still arrives at the same
+ceiling.

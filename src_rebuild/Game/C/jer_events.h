@@ -479,6 +479,10 @@ typedef struct JER_ARGS_CAR_DRAW
 	void* car;		/* CAR_DATA* */
 	void* matrix;		/* MATRIX* — render matrix to rotate in place */
 	int view;		/* in: camera view */
+	int rigidWheels;	/* out: set 1 to give the wheels this same matrix. The
+				 * default (0) keeps them on the un-rotated one, which is
+				 * right for a body lean and wrong for anything that is
+				 * supposed to move the whole car - a knock. */
 } JER_ARGS_CAR_DRAW;
 
 /* JER_EVENT_CAR_DRAW_COLOR — fired in DrawCarObject before the body model is

@@ -1770,8 +1770,11 @@ void DrawCar(CAR_DATA* cp, int view)
 
 	// JERICHO-HOOK: car body draw — visual pitch/roll/yaw on a render-only
 	// copy of the draw matrix (physics/collision matrices are untouched).
-	// The rotation applies to the BODY model only; the wheels keep the
-	// un-rotated draw matrix so they stay level.
+	// By default the rotation applies to the BODY model only, and the wheels keep
+	// the un-rotated draw matrix so they stay level - which is right for a body
+	// lean. A module doing something that moves the WHOLE car (a knock: buck, rock,
+	// squat) sets rigidWheels and gets the same matrix for the wheels, so they go
+	// with the body instead of being left behind.
 	{
 		MATRIX bodyMatrix = cp->hd.drawCarMat;
 		JER_ARGS_CAR_DRAW jerArgs;
@@ -1779,10 +1782,11 @@ void DrawCar(CAR_DATA* cp, int view)
 		jerArgs.car = cp;
 		jerArgs.matrix = &bodyMatrix;
 		jerArgs.view = view;
+		jerArgs.rigidWheels = 0;
 		jer_fire(JER_EVENT_CAR_DRAW, &jerArgs);
 
 		MulMatrix0(&inv_camera_matrix, &bodyMatrix, &workmatrix);
-		MulMatrix0(&inv_camera_matrix, &cp->hd.drawCarMat, &wheelmatrix);
+		MulMatrix0(&inv_camera_matrix, jerArgs.rigidWheels ? &bodyMatrix : &cp->hd.drawCarMat, &wheelmatrix);
 	}
 
 	// [A] there was mini cars cheat

@@ -797,6 +797,17 @@ int cd2OnCarDraw(void* ud, void* args)
 	cd2KnockTick(cp->id);
 	cd2KnockApply(m, cp->id);
 
+	/* and while one is running the wheels come with it: a knock moves the whole
+	 * car, so they have to take the same matrix. Only then - an ordinary slide
+	 * keeps its level wheels, which is what the body lean wants. */
+	{
+		const CD2_KNOCK_STATE* knock = cd2KnockOf(cp->id);
+
+		if (knock->pitch != 0 || knock->roll != 0 || knock->yaw != 0 ||
+			knock->lift != 0 || knock->shift != 0)
+			a->rigidWheels = 1;
+	}
+
 	return JER_RESULT_CONTINUE;
 }
 
