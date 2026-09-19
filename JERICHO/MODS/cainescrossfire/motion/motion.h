@@ -151,6 +151,11 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 #define CD2_MOTION_SQUAT_SHIFT	1000	// units of weight shift per unit of pitch, /4096
 #define CD2_MOTION_SQUAT_BOB	900	// ...and of downward body movement, /4096
 
+// The composed offset's ceilings - the knock's budget plus the layer's own, never
+// more. See cd2MotionCompose for why this exists at all.
+#define CD2_MOTION_MAX_SHIFT	100	// the knock's 55, plus room for the squat
+#define CD2_MOTION_MAX_BOB	80
+
 // ---------------------------------------------------------------------------
 // The spikes
 // ---------------------------------------------------------------------------
@@ -201,6 +206,10 @@ typedef struct CD2_MOTION_STATE
 	int logged;		// the class line has been written for this car
 
 	int lastPitch, lastRoll, lastYaw, lastBob;	// the idle's last output, for a dump
+
+	// the composed offset as it was actually handed to the renderer, recorded so a
+	// dump can show what the car got rather than what each layer wanted
+	int compPitch, compRoll, compYaw, compBob, compShift;
 } CD2_MOTION_STATE;
 
 // ---------------------------------------------------------------------------
@@ -222,6 +231,11 @@ int cd2MotionIsRacer(int carId);
 // One line per car, written once: the class it resolved to, the model it keyed on,
 // and the mass and power that decided it. This is what the table gets filled from.
 void cd2MotionDump(int carId);
+
+// Build the offset a car is drawn with: the knock's contribution plus the layers',
+// in one place, clamped so two subsystems can never stack into something absurd. The
+// knock always lands in full; a layer may add its own ceiling on top of that, no more.
+void cd2MotionCompose(int carId, CD2_VISUAL_OFFSET* o);
 
 // The layers, evaluated for one car and ADDED to an offset the caller already has
 // (the knock's). Called once per frame per car from the car-draw path, which is

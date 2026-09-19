@@ -504,6 +504,62 @@ static void cd2AccelSquat(CD2_MOTION_STATE* st)
 }
 
 // ---------------------------------------------------------------------------
+// Composing, and the one clamp
+// ---------------------------------------------------------------------------
+// One place builds the offset the car is drawn with: the knock's contribution, plus
+// the layers' - and then it is clamped, which is the only arithmetic in this system
+// that exists purely to stop two subsystems adding up badly.
+//
+// The rule is deliberate: the knock always lands IN FULL, and a layer may put its own
+// ceiling on top of that, but not more. Without it, a knock arriving during a
+// wheelie would stack two full-amplitude rotations and the car would look like it was
+// standing on its nose. The impact cannot be damped by whatever the driving layer
+// happens to be doing, which is what "the knock wins" means here.
+// [D] [T]
+void cd2MotionCompose(int carId, CD2_VISUAL_OFFSET* o)
+{
+	const CD2_KNOCK_STATE* k = cd2KnockOf(carId);
+	const CD2_MOTION_CLASS* cls = cd2MotionClassOf(carId);
+	int pitchMax, rollMax, yawMax;
+
+	if (o == NULL || carId < 0 || carId >= MAX_CARS)
+		return;
+
+	o->pitch = k->pitch;
+	o->roll = k->roll;
+	o->yaw = k->yaw;
+	o->bob = k->lift;			/* the knock's lift is never negative */
+	o->shift = k->shift;
+
+	cd2MotionApply(carId, o);
+
+	pitchMax = cls->pitchMax + CD2_KNOCK_MAX_PITCH;
+	rollMax = cls->idleRoll + CD2_KNOCK_MAX_ROLL;
+	yawMax = cls->idleYaw + CD2_KNOCK_MAX_YAW;
+
+	o->pitch = jer_clamp_int(o->pitch, -pitchMax, pitchMax);
+	o->roll = jer_clamp_int(o->roll, -rollMax, rollMax);
+	o->yaw = jer_clamp_int(o->yaw, -yawMax, yawMax);
+	o->shift = jer_clamp_int(o->shift, -CD2_MOTION_MAX_SHIFT, CD2_MOTION_MAX_SHIFT);
+	o->bob = jer_clamp_int(o->bob, -CD2_MOTION_MAX_BOB, CD2_MOTION_MAX_BOB);
+
+	/* remembered, so a dump can show what the car actually got rather than what each
+	 * layer separately wanted */
+	{
+		CD2_MOTION_STATE* st = cd2MotionStateOf(carId);
+
+		if (st != NULL)
+		{
+			st->compPitch = o->pitch;
+			st->compRoll = o->roll;
+			st->compYaw = o->yaw;
+			st->compBob = o->bob;
+			st->compShift = o->shift;
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // The frame, and the dump
 // ---------------------------------------------------------------------------
 // [D] [T]
@@ -625,6 +681,10 @@ void cd2MotionDumpAccel(int carId)
 	jer_log("[cainescrossfire] accel car=%d pitch=%d vel=%d delta=%d thr=%d shift=%d bob=%d speed=%d class=%s\n",
 		carId, st->accelPitch, st->accelVel, st->delta, st->throttle, st->accelShift, st->accelBob,
 		car_data[carId].hd.speed, cd2MotionClassOf(carId)->name);
+
+	/* what the renderer actually got, clamp included */
+	jer_log("[cainescrossfire] composed car=%d pitch=%d roll=%d yaw=%d bob=%d shift=%d\n",
+		carId, st->compPitch, st->compRoll, st->compYaw, st->compBob, st->compShift);
 }
 
 // [D] [T]

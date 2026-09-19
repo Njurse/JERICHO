@@ -805,20 +805,13 @@ int cd2OnCarDraw(void* ud, void* args)
 	 * and none of it reaches the handling model. */
 	cd2KnockTick(cp->id);
 
-	/* One composed offset: the knock's, plus whatever the motion layers add. They
-	 * are summed and applied ONCE, so the pivot maths runs once and two layers
-	 * cannot fight over the matrix. */
+	/* One composed offset: the knock's, plus whatever the motion layers add, built and
+	 * clamped in one place. The knock always lands in full and a layer may put its own
+	 * ceiling on top - see cd2MotionCompose. */
 	{
-		const CD2_KNOCK_STATE* knock = cd2KnockOf(cp->id);
 		CD2_VISUAL_OFFSET o;
 
-		o.pitch = knock->pitch;
-		o.roll = knock->roll;
-		o.yaw = knock->yaw;
-		o.bob = knock->lift;		/* the knock's lift is never negative */
-		o.shift = knock->shift;
-
-		cd2MotionApply(cp->id, &o);
+		cd2MotionCompose(cp->id, &o);
 
 		cd2VisualApply(m, &o);
 
