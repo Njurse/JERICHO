@@ -1721,6 +1721,16 @@ int gMultiStep = 0;
 	// roles and roam goals from it). 0 = none given, modules seed themselves.
 	int gDebugSeed = 0;
 
+// JERICHO: PsyCross's VRAM dump, declared to match PsyX_render.h:183 and with C
+// linkage because this project compiles its .c files as C++ - and PsyCross exports it
+// from an extern "C" block. Two things cost attempts here: declaring it int (it is
+// void) and declaring it without extern "C", which made the linker look for the
+// mangled ?GR_SaveVRAM@@YAX... that does not exist.
+#ifdef __cplusplus
+extern "C"
+#endif
+void GR_SaveVRAM(const char* outputFileName, int x, int y, int width, int height, int bReadFromFrameBuffer);
+
 // JERICHO: the -frames check, shared by every per-frame entry point so a debug run
 // self-terminates in the FRONTEND as well as in gameplay. It used to be
 // gameplay-only, which left frontend runs with no way to end except a kill - and a
@@ -1777,6 +1787,15 @@ void JerichoFrameTick(void)
 
 		printInfo("JERICHO-RUN: level=%s carslot=%d model=%d frames=%d seed=%d status=ok\n",
 			LevelNames[GameLevel], carslot, model, gRunFrames, gDebugSeed);
+	}
+
+	// JERICHO: the pixel artefact, so 'where did this page land and is it intact' can be
+	// decoded rather than inferred from log lines. Gated by an environment variable so it
+	// needs no option-block plumbing: JERICHO_DUMPVRAM=1.
+	if (getenv("JERICHO_DUMPVRAM") != NULL)
+	{
+		GR_SaveVRAM("vram_dump.tga", 0, 0, 1024, 512, 0);
+		printInfo("JERICHO-RUN: wrote vram_dump.tga (1024x512, bReadFromFrameBuffer=0)\n");
 	}
 
 	// JERICHO: where the imported pages ended up, after the level has streamed.

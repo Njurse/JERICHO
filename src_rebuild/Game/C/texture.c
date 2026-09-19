@@ -1142,6 +1142,19 @@ static int CarPageFindSlot(void)
 		if (idx < nperms || held == 0xFF)
 			continue;
 
+		// JERICHO: never evict a page WE imported. Our own sets would otherwise fight
+		// each other for one rectangle - the model-9 run logged 'evicting world set 66'
+		// where 66 was a page we had just placed - and a page swapped out from under the
+		// car that needs it is exactly what "the UVs are bleeding" looks like.
+		for (k = 0; k < sPinCount; k++)
+		{
+			if (sPinIndex[k] == held)
+				break;
+		}
+
+		if (k != sPinCount)
+			continue;
+
 		for (k = 0; k < 8; k++)
 		{
 			if (carTpages[GameLevel][k] == held)
@@ -1254,6 +1267,23 @@ void CarImportDumpState(void)
 		return;
 
 	printInfo("cross-city: final page state (%d pinned, %d world pages evicted)\n", sPinCount, sPinEvictions);
+
+	// Every pinned set and the rectangle it occupies, decoded from the tpage/clut values
+	// the draw path will read. This is what the VRAM dump is aimed at: run with
+	// JERICHO_DUMPVRAM=1 and feed these rectangles to tools/vramdump.py. If the car's
+	// rectangle no longer looks like a page, something streamed over it.
+	for (k = 0; k < sPinCount; k++)
+	{
+		int pslot = sPinSlot[k];
+		unsigned int page = texture_pages[sPinIndex[k]];
+		unsigned int clut = texture_cluts[sPinIndex[k]][0];
+
+		printInfo("cross-city:   pinned set %d index %d: slot=%d, rect=(%d,%d), page=%04x, clut0=%04x=(%d,%d)\n",
+			sPinSet[k], sPinIndex[k], pslot,
+			(pslot >= 0 && pslot < 19) ? tpagepos[pslot].x : -1,
+			(pslot >= 0 && pslot < 19) ? tpagepos[pslot].y : -1,
+			page, clut, (int)((clut & 0x3f) << 4), (int)(clut >> 6));
+	}
 
 	for (k = 0; k < sRemapCount; k++)
 	{
