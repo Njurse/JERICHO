@@ -24,11 +24,20 @@ const CD2_KNOCK_STATE* cd2KnockOf(int carId)
 	return &gKnock[carId];
 }
 
+static int cd2KnockLogEvery(void);	/* defined below the tick */
+
 // [D] [T]
 void cd2KnockReset(int carId)
 {
 	if (carId < 0 || carId >= MAX_CARS)
 		return;
+
+	/* A knock CAN be taken away wholesale here, and that is correct: the car is being
+	 * reset, so it is already teleporting and an angle that vanished with it is invisible.
+	 * It is logged anyway so a wipe analysis can tell this apart from the settle
+	 * deadline's wipe, which was a real bug - both used to look identical in the series. */
+	if (cd2KnockLogEvery() > 0 && (gKnock[carId].pitch || gKnock[carId].roll || gKnock[carId].yaw))
+		jer_log("[cainescrossfire] knockreset car=%d f=%d pitch=%d - the car is being reset\n", carId, FrameCnt, gKnock[carId].pitch);
 
 	memset(&gKnock[carId], 0, sizeof(gKnock[carId]));
 }
@@ -108,6 +117,7 @@ static void cd2KnockAxis(int* angle, int* velocity, int decay, int settle, int m
 }
 
 static void cd2KnockSample(int carId);	/* defined below the tick */
+static int cd2KnockLogEvery(void);	/* ditto */
 
 // [D] [T]
 void cd2KnockTick(int carId)
