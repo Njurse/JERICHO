@@ -2,6 +2,7 @@
  * knock/knock.c -- see knock/knock.h for what a knock is and how it moves.
  */
 #include "driver2.h"
+#include "main.h"		/* FrameCnt - the sampler's clock */
 #include "cainescrossfire.h"
 #include "cars.h"
 #include "convert.h"		/* _RotMatrixX/Y/Z (the rotation helpers) */
@@ -106,7 +107,9 @@ static void cd2KnockAxis(int* angle, int* velocity, int decay, int settle, int m
 	*angle = a;
 }
 
-// [D] [T]
+static void cd2KnockSample(int carId);	/* defined below the tick */
+
+// [D] [T]
 void cd2KnockTick(int carId)
 {
 	CD2_KNOCK_STATE* k;
@@ -164,6 +167,51 @@ void cd2KnockTick(int carId)
 		else if (k->settleFrames == 0)
 			k->settleFrames = 1;	/* still moving: shut it next frame instead */
 	}
+
+	cd2KnockSample(carId);
+}
+
+// ---------------------------------------------------------------------------
+// CC_KNOCK_LOG=<frames> samples the knock's own state every N frames into the log - a
+// run-only override like CC_MOTION_LOG. This exists because a one-frame jump in a
+// rendered angle is invisible in a summary: the series is the only place it shows.
+// ---------------------------------------------------------------------------
+// [D] [T]
+static int cd2KnockLogEvery(void)
+{
+	static int every = -1;
+
+	if (every < 0)
+	{
+		const char* env = getenv("CC_KNOCK_LOG");
+
+		every = 0;
+
+		if (env != NULL && env[0] != 0)
+		{
+			int v = atoi(env);
+
+			if (v > 0)
+				every = v;
+		}
+	}
+
+	return every;
+}
+
+// [D] [T]
+static void cd2KnockSample(int carId)
+{
+	const CD2_KNOCK_STATE* k;
+	int every = cd2KnockLogEvery();
+
+	if (every <= 0 || (FrameCnt % every) != 0)
+		return;
+
+	k = &gKnock[carId];
+
+	jer_log("[cainescrossfire] knocksample car=%d f=%d pitch=%d vpitch=%d lift=%d shift=%d settle=%d\n",
+		carId, FrameCnt, k->pitch, k->vpitch, k->lift, k->shift, k->settleFrames);
 }
 
 // ---------------------------------------------------------------------------
