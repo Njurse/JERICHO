@@ -63,15 +63,21 @@ The squat is derived from the spring's own position (a shift along the car and a
 downward bob), so it cannot drift out of step with the angle that caused it: nose up,
 weight back, body sitting down on the rear.
 
-The nose-bob comes free. The class damping is deliberately below critical, so the
-spring overshoots on arrival and swings back past neutral on release. Neither overshoot
-is coded — they are what an underdamped spring does, which is why the class numbers are
-a stiffness and a damping rather than a scripted curve.
+The nose-bob comes from the compression/rebound split and is **bounded**: the body may
+cross level by at most `overshootPct` of the class ceiling, and the cap is on the velocity
+rather than the position, because a position cap removes angle instead of limiting it.
 
-Measured on a real level: rise to the ceiling in about 0.2 s, arrival peak 109-112
-against the 102 ceiling of a MEDIUM car (+9%, "overshoots slightly"), release return in
-about 0.17 s, and the pitch going negative on 158 samples for one car — the flip back
-past level.
+Nothing here is scripted. The rise, the hold and the arrival all fall out of the spring's
+own arithmetic plus two rules: the sustained term fades over `CD2_MOTION_WHEELIE_FRAMES`
+(0.4 s) so a wheelie is an event rather than a posture, and the return is capped.
+
+Measured on a real level with the throttle held from frame 100:
+
+    115 112 109 106 102 96 85 70 55 41 28 17 8 2 -2 -4 -5 -5 -5 ... -5
+
+a brief rise, one arrival, then planted at -5 for the remaining 250 frames. The slam fires
+when the body actually arrives back at level - see `knock/knock.h` and the code beside it
+for why that trigger is a latch plus a crossing and not something simpler.
 
 ## Where it runs, and when
 
@@ -104,7 +110,7 @@ stack two full-amplitude rotations, and — worse — the impact would be damped
 the driving layer happened to be doing at the time.
 
 Layers 2+ carry their own ceilings, separate from the knock's deliberate ~5 degrees. An
-impact is a snap and stays small; a wheelie is held and can be much larger. They are
+impact is a snap and stays small; a wheelie is briefly held and can be much larger. They are
 never the same number, which is the point.
 
 ## Vehicle classes
@@ -183,9 +189,14 @@ standstill, fading to nothing by `CD2_IDLE_SPEED_ZERO`.
 - **The idle's advance is one per step per car**, confirmed by sampling every frame over
   300 frames (297 samples): the engine steps at 30 FPS, so the frequencies above and the
   PSX angle units per frame agree.
-- **The arrival overshoot exceeds the class ceiling** by about 9% for a few frames. That
-  is the spring passing a held target, not a bug — but it is why the ceilings read lower
-  than the angles seen.
+- **The arrival overshoot is BOUNDED**, at `overshootPct` of the class ceiling past the
+target while rising and past level while returning. It was unbounded until the 4x
+compression was measured: the rise reached 144 against a 102 ceiling, 41% past, which is a
+bigger wheelie than the class is supposed to have. See `CD2_MOTION_COMPRESS_*` and the
+velocity cap in `cd2AccelApply`.
+- **A landing can slam twice.** The second is small (the residual crossing, at a pitch of 0
+or 1) and reads as a shiver after the car lands. Exactly one means disarming on the settled
+state; that is the next thing to try if it matters.
 - **The look and the sound of this are unverified.** Headless runs prove the rows, the
   ranges and the timing; they cannot say whether the shudder reads as an engine or the
   flame reads as a flame. Everything in the table above is a dial.
