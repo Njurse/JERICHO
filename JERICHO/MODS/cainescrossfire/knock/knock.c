@@ -162,10 +162,22 @@ void cd2KnockTick(int carId)
 	{
 		k->settleFrames--;
 
-		if (k->settleFrames == 0 && k->vpitch == 0 && k->vroll == 0 && k->vyaw == 0 && k->vlift == 0)
+		/* The counter closes only when there is nothing left to close - velocity AND
+		 * angle. Checking velocity alone was the bug: an impulse that reaches its
+		 * ceiling has its velocity ZEROED by the clip, so a knock sitting at five
+		 * degrees looked finished and the memset took the whole angle in one frame.
+		 * Measured before the fix: pitch -57 -> 0 between two frames. */
+		if (k->settleFrames == 0 &&
+			k->vpitch == 0 && k->vroll == 0 && k->vyaw == 0 && k->vlift == 0 && k->vshift == 0 &&
+			CD2_KNOCK_IDLE(k->pitch) && CD2_KNOCK_IDLE(k->roll) && CD2_KNOCK_IDLE(k->yaw) &&
+			CD2_KNOCK_IDLE(k->lift) && CD2_KNOCK_IDLE(k->shift))
+		{
 			memset(&gKnock[carId], 0, sizeof(gKnock[carId]));
+		}
 		else if (k->settleFrames == 0)
-			k->settleFrames = 1;	/* still moving: shut it next frame instead */
+		{
+			k->settleFrames = 1;	/* something is still live: keep settling it */
+		}
 	}
 
 	cd2KnockSample(carId);

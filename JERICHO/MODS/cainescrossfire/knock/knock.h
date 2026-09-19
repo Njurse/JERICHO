@@ -54,6 +54,11 @@
 // changing a rate does not silently soften a hit.
 #define CD2_KNOCK_SETTLE_FRAMES	9
 
+// What counts as "arrived" when the settle closes out: below this the angle is not worth
+// a frame, above it the deadline keeps easing rather than wiping. In PSX angle units, so
+// 2 is about a fifth of a degree.
+#define CD2_KNOCK_IDLE(v)		((v) > -2 && (v) < 2)
+
 // The impulse that exactly carries an axis to its ceiling:
 //   displacement = impulse / (1 - decay/4096)
 // A caller wanting a knock that ARRIVES at the limit (a wheelie, a hard hit) uses
