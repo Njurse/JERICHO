@@ -258,6 +258,7 @@ struct CAR_MODEL
 	CAR_POLY* pB3;
 	SVECTOR* vlist;
 	SVECTOR* nlist;
+	int imported;	// JERICHO: built from another city's data (cross-city import)
 };
 
 // UNUSED

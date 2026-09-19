@@ -34,6 +34,7 @@ struct plotCarGlobals
 	u_int intensity;
 	u_short* pciv_clut;
 	u_char* damageLevel;
+	int directClut;		// JERICHO: clut_uv0 holds a CLUT id, not a civ_clut index
 };
 
 
@@ -273,7 +274,10 @@ void plotCarPolyGT3(int numTris, CAR_POLY *src, SVECTOR *vlist, SVECTOR *nlist, 
 
 			ofse = pg->damageLevel[src->originalindex];
 
-			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+			if (pg->directClut)
+				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
+			else
+				*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
@@ -344,7 +348,10 @@ void plotCarPolyGT3Lit(int numTris, CAR_POLY* src, SVECTOR* vlist, SVECTOR* nlis
 
 			ofse = pg->damageLevel[src->originalindex];
 
-			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+			if (pg->directClut)
+				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
+			else
+				*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
@@ -421,7 +428,10 @@ void plotCarPolyGT3nolight(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGl
 
 			ofse = pg->damageLevel[src->originalindex];
 
-			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+			if (pg->directClut)
+				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
+			else
+				*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
@@ -1003,6 +1013,10 @@ void plotNewCarModel(CAR_MODEL* car, int palette, int flatColor)
 	_pg.pciv_clut = (u_short*)&civ_clut[1];
 	_pg.damageLevel = (u_char*)gTempCarUVPtr;
 
+	// JERICHO: an imported car's GT polys carry a direct CLUT id (from their own
+	// page), not a civ_clut row index. See buildNewCarFromModel.
+	_pg.directClut = car->imported;
+
 	_pg.ot = (OTTYPE*)(current->ot + 28);
 
 	gte_strgb(&underIntensity);
@@ -1147,7 +1161,9 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 	// JERICHO: only an imported car's polys get the set remap. index is the resident
 	// slot, so this is where import-ness is known. Set for every build, so the value
 	// can never leak from one car to the next.
-	CarSetRemapEnable(index >= 0 && GetCarModelSourceCity(index) >= 0);
+	int imported = (index >= 0 && GetCarModelSourceCity(index) >= 0);
+
+	CarSetRemapEnable(imported);
 
 	int newNumPolys;
 	int i, pass;
@@ -1160,6 +1176,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 
 	polySrcModel = (MODEL*)polySrc;
 	car = detail ? &NewCarModel[index] : &NewLowCarModel[index];
+	car->imported = imported;
 
 	if (polySrcModel == NULL || (polySrcModel->shape_flags & 0xfffffff) > 0x800000)
 	{
@@ -1261,12 +1278,25 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 					if (pass == 0) // GT3
 					{
 						POLYGT3* pgt3 = (POLYGT3*)polyList;
-							
-						carid = GetCarPalIndex(pgt3->texture_set);
-						clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
 
-						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[CarSetRemap(pgt3->texture_set)][pgt3->texture_id];
-						
+						if (imported)
+						{
+							// JERICHO: an imported car's GT polys take their CLUT
+							// straight from their own page (like the FT path), never
+							// through the host's civ_clut rows - those are keyed by
+							// the HOST's palette, so a re-indexed set both painted the
+							// car with the host's colours and overwrote the host's
+							// cache entry with the imported CLUT.
+							clut = texture_cluts[CarSetRemap(pgt3->texture_set)][pgt3->texture_id];
+						}
+						else
+						{
+							carid = GetCarPalIndex(pgt3->texture_set);
+							clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
+
+							civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
+						}
+
 						cp->vindices = M_INT_4R(pgt3->v0, pgt3->v1, pgt3->v2, 0);
 						cp->nindices = M_INT_4R(pgt3->n0, pgt3->n1, pgt3->n2, 0);
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pgt3->uv0);
@@ -1282,15 +1312,24 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 					{
 						POLYGT4* pgt4 = (POLYGT4*)polyList;
 
-						carid = GetCarPalIndex(pgt4->texture_set);
-						clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
+						if (imported)
+						{
+							// JERICHO: imported car - CLUT straight from its own page,
+							// exactly like the FT path. See the GT3 case above.
+							clut = texture_cluts[CarSetRemap(pgt4->texture_set)][pgt4->texture_id];
+						}
+						else
+						{
+							carid = GetCarPalIndex(pgt4->texture_set);
+							clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
 
-						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[CarSetRemap(pgt4->texture_set)][pgt4->texture_id];
+							civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
+						}
 
 						cp->vindices = M_INT_4R(pgt4->v0, pgt4->v1, pgt4->v2, 0);
 						cp->nindices = M_INT_4R(pgt4->n0, pgt4->n1, pgt4->n2, 0);
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pgt4->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[pgt4->texture_set], *(ushort*)&pgt4->uv1);
+						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pgt4->texture_set)], *(ushort*)&pgt4->uv1);
 						cp->uv3_uv2 = *(ushort*)&pgt4->uv2;
 						cp->originalindex = i;
 
@@ -1299,7 +1338,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						cp->vindices = M_INT_4R(pgt4->v0, pgt4->v2, pgt4->v3, 0);
 						cp->nindices = M_INT_4R(pgt4->n0, pgt4->n2, pgt4->n3, 0);
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pgt4->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[pgt4->texture_set], *(ushort *)&pgt4->uv2);
+						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pgt4->texture_set)], *(ushort *)&pgt4->uv2);
 						cp->uv3_uv2 = *(ushort *)&pgt4->uv3;
 						cp->originalindex = i;
 
