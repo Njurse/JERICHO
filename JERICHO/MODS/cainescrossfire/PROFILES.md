@@ -98,7 +98,7 @@ Six profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):
 | internal | display | city | model | A/S/H/P | special | palette |
 |---|---|---|---|---|---|---|
 | `hornet` | Hornet | Chicago | 3 | 2/4/4/3 | Spike Storm | 3 |
-| `avalanche` | Avalanche | Vegas | 12 | 4/2/3/4 | Monster Crush | – |
+| `avalanche` | Avalanche | Vegas | 11 | 4/2/3/4 | Monster Crush | – |
 | `corvo` | Corvo | Rio | 0 | 3/3/3/4 | Siren's Wrath | – |
 | `bruxa` | Bruxa | Rio | 2 | 4/2/3/4 | Double Boom | 2 |
 | `highwayman` | Highwayman | Havana | 1 | 3/3/3/5 | Breath of Fire | 1 |

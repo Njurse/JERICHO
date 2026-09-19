@@ -1,6 +1,6 @@
 // profiles/rows/avalanche.c — AVALANCHE: the Vegas monster truck.
 //
-//   identity   Vegas (model 12)
+//   identity   Vegas (model 11)
 //   special    special_avalanche — a monster-truck crush: a short speed/grip
 //              surge, and on ramming a car it climbs on top, pins it (zero
 //              velocity), spins its tyres while still steering, then shoves it
@@ -18,7 +18,7 @@ extern const CD2_VEH_PROFILE cd2VehRowAvalanche =
 	"Avalanche",		/* displayName */
 
 	CD2_VEH_CITY_VEGAS,	/* originCity */
-	12,			/* modelSlot (CARMODEL_12) */
+	11,			/* modelSlot (CARMODEL_11) */
 
 	/* armor, speed, handling, specialPower (1..5) */
 	{ 4, 2, 3, 4 },
