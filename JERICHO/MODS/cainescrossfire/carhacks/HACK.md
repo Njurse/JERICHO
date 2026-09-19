@@ -208,3 +208,31 @@ not "how do we map it" but "what is loaded at (448,16)": if the level's own CLUT
 already holds the imported palette's colours there, the fix is mapping-only; if not,
 the imported `LUMP_PALLET` has to be uploaded to the positions the imported models name.
 
+### Settled: `clut_uv0 >> 16` is a civ_clut *index*, and the palette is not in the page
+
+Measuring the same field on a **host** car settles it. Stock run, Rio, the player on
+Rio model 0 (so the host path runs):
+
+    cross-city: GT3 HOST     clut_uv0=007e9163 hi=126  -> pciv_clut[126]  = 5abf
+    cross-city: GT3 IMPORTED clut_uv0=043cff34 hi=1084 -> pciv_clut[1084] = 0000
+
+`civ_clut` is `u_short[8][32][6]` = 1536 entries and `pciv_clut = &civ_clut[1]`, so both
+indices are *in range* — they are not `GetClut()` ids at all. A host car uses a small
+index (126) that resolves to a real CLUT id (`0x5abf` = a CLUT at (1008,362), i.e. the
+level's **palette area**); the imported model's index (1084) lands in the same table
+where nothing is loaded, and reads 0.
+
+Two things follow, and they close off the cheaper fix:
+
+1. The car's body colour comes from `civ_clut`, which the level fills from its
+   `LUMP_PALLET` (`ProcessPalletLump` → `LoadImage` into the palette area). It does
+   **not** come from the texture page's own CLUTs — those live at (960,471)/(992,478)
+   and the model never names them. So the imported `LUMP_PALLET` really does have to be
+   uploaded; the fix is not mapping-only.
+2. The index is baked into the model's geometry. `ProcessImportedPalette` cannot simply
+   pour the imported palettes into `civ_clut`'s existing eight rows — that is exactly
+   the collision that repainted the host's own cars. The index has to be moved into
+   rows the host does not use, which means either offsetting the imported model's index
+   at build time or resolving it against the imported pallet there.
+
+

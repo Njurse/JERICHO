@@ -107,6 +107,7 @@ CAR_POLY carPolyBuffer[MAX_CAR_POLYS + 1];
 // JERICHO-DIAG: one-shot, so we can see exactly what an imported car's GT polys ask
 // for, and which of the two CLUT paths resolves them.
 static int gt3DiagCount = 0;
+static int gt3DiagCountHost = 0;
 
 char LeftLight = 0;
 char RightLight = 0;
@@ -278,20 +279,31 @@ void plotCarPolyGT3(int numTris, CAR_POLY *src, SVECTOR *vlist, SVECTOR *nlist, 
 
 			ofse = pg->damageLevel[src->originalindex];
 
-				// JERICHO-DIAG: the imported car reads the page's CLUT verbatim, so its
-				// body colour is whatever CLUT row that page happens to hold - NOT the
-				// palette the imported city's LUMP_PALLET defines.
+			if (pg->directClut)
+			{
+				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
+
+				// JERICHO-DIAG: an imported poly reads the CLUT word verbatim.
 				if (gt3DiagCount < 4)
 				{
 					gt3DiagCount++;
-					printInfo("cross-city: GT3 imported: clut_uv0=%08x -> page CLUT row %d, emitted %08x (verbatim). The host civ_clut path would use row %d -> %04x\n",
-						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse,
-						(src->clut_uv0 >> 0x10) + palette, pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette]);
+					printInfo("cross-city: GT3 IMPORTED clut_uv0=%08x hi=%d -> emitted %08x (verbatim)\n",
+			{
+				// JERICHO-DIAG: and a host poly indexes civ_clut with the same field, so
+				// we can tell whether `hi` is an index (small, lands in 1536 entries) or
+				// a GetClut() id.
+				if (gt3DiagCountHost < 4)
+				{
+					gt3DiagCountHost++;
+					printInfo("cross-city: GT3 HOST     clut_uv0=%08x hi=%d -> pciv_clut[%d] = %04x, emitted %08x\n",
+						src->clut_uv0, (src->clut_uv0 >> 0x10), (src->clut_uv0 >> 0x10) + palette,
+						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette],
+						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse);
+				}
+
+						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse);
 				}
 			}
-
-			if (pg->directClut)
-				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
 			else
 				*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
@@ -361,6 +373,9 @@ void plotCarPolyGT3Lit(int numTris, CAR_POLY* src, SVECTOR* vlist, SVECTOR* nlis
 			*(u_int*)&prim->r0 = (r0 & 0xff) << 0x10 | r0;
 			*(u_int*)&prim->r1 = (r1 & 0xff) << 0x10 | r1;
 			*(u_int*)&prim->r2 = (r2 & 0xff) << 0x10 | r2;
+			if (pg->directClut)
+			{
+				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
 
 			ofse = pg->damageLevel[src->originalindex];
 
@@ -371,13 +386,23 @@ void plotCarPolyGT3Lit(int numTris, CAR_POLY* src, SVECTOR* vlist, SVECTOR* nlis
 				if (gt3DiagCount < 4)
 				{
 					gt3DiagCount++;
-					printInfo("cross-city: GT3 imported: clut_uv0=%08x -> page CLUT row %d, emitted %08x (verbatim). The host civ_clut path would use row %d -> %04x\n",
-						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse,
-						(src->clut_uv0 >> 0x10) + palette, pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette]);
+			{
+				// JERICHO-DIAG: and a host poly indexes civ_clut with the same field, so
+				// we can tell whether `hi` is an index (small, lands in 1536 entries) or
+				// a GetClut() id.
+				if (gt3DiagCountHost < 4)
+				{
+					gt3DiagCountHost++;
+					printInfo("cross-city: GT3 HOST     clut_uv0=%08x hi=%d -> pciv_clut[%d] = %04x, emitted %08x\n",
+						src->clut_uv0, (src->clut_uv0 >> 0x10), (src->clut_uv0 >> 0x10) + palette,
+						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette],
+						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse);
+				}
+
+					printInfo("cross-city: GT3 IMPORTED clut_uv0=%08x hi=%d -> emitted %08x (verbatim)\n",
+						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse);
 				}
 			}
-			if (pg->directClut)
-				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
 			else
 				*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
@@ -464,9 +489,21 @@ void plotCarPolyGT3nolight(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGl
 				if (gt3DiagCount < 4)
 				{
 					gt3DiagCount++;
-					printInfo("cross-city: GT3 imported: clut_uv0=%08x -> page CLUT row %d, emitted %08x (verbatim). The host civ_clut path would use row %d -> %04x\n",
-						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse,
-						(src->clut_uv0 >> 0x10) + palette, pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette]);
+					printInfo("cross-city: GT3 IMPORTED clut_uv0=%08x hi=%d -> emitted %08x (verbatim)\n",
+			{
+				// JERICHO-DIAG: and a host poly indexes civ_clut with the same field, so
+				// we can tell whether `hi` is an index (small, lands in 1536 entries) or
+				// a GetClut() id.
+				if (gt3DiagCountHost < 4)
+				{
+					gt3DiagCountHost++;
+					printInfo("cross-city: GT3 HOST     clut_uv0=%08x hi=%d -> pciv_clut[%d] = %04x, emitted %08x\n",
+						src->clut_uv0, (src->clut_uv0 >> 0x10), (src->clut_uv0 >> 0x10) + palette,
+						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette],
+						pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse);
+				}
+
+						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse);
 				}
 			}
 				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
