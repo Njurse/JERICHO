@@ -76,19 +76,6 @@ int cd2OnCarPad(void* ud, void* args)
 	if (!gCd2Cfg.enabled || !a->live)
 		return JER_RESULT_CONTINUE;
 
-	/* the debug driver's scripted pad, for the player's car only, and BEFORE the turbo
-	 * so a scripted double tap registers like a real one. A test needs this because the
-	 * AI holds the throttle almost continuously: it will accelerate for you but it will
-	 * never let go, and half of what the body does happens on the release. */
-	{
-		/* NOTE, because it is not obvious and it cost a build: this pad reaches the MODULE
-		 * (the turbo's taps) but not the ENGINE. The module takes its thrust from the
-		 * engine's already-decoded cp->thrust, so holding MPAD_CROSS through a pad step
-		 * leaves the thrust at 0 - measured, over a whole run. Use `thrust:<n>` to drive
-		 * the springs and this to drive a scripted double tap. */
-		int dbg = cd2DbgPadMask();
-	}
-
 	/* the debug driver's scripted pad, for the PLAYER'S car only, and BEFORE the turbo so a
 	 * scripted double tap registers and the car sees it too. It sits above the shoulder
 	 * strip on purpose and that is safe: the strip removes L1/L2/R1/R2 and nothing else, so

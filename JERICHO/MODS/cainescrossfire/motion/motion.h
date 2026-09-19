@@ -163,6 +163,13 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // has no wheelie at all however hard the throttle is; above the full mark the pitch is
 // at the class maximum. Speeds in this model run to about 275, so 25 is a crawl and 180
 // is properly moving.
+// How long a wheelie may be HELD. It is brief on purpose: the nose comes up on a sudden
+// change of thrust, and then the car slams back down and keeps its tyres planted. Holding
+// the pitch for as long as the throttle is down was the first behaviour and it reads as a
+// car perpetually on its back wheels, which is not what any of this is for. 12 frames is
+// 0.4s - long enough to see, short enough to be an event.
+#define CD2_MOTION_WHEELIE_FRAMES	12
+
 #define CD2_MOTION_SPEED_FLOOR	25
 #define CD2_MOTION_SPEED_FULL	180
 
@@ -193,11 +200,24 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 					// re-arms the peak and fires a second slam labelled as the
 					// opposite event. The largest counter-swing is LIGHT's, at
 					// 137*35/100 = 47, which is why this is above it.
+// No second slam inside this many frames of the last one. The arrival can produce a
+// crossing on two consecutive frames - the body passes through level and its residual
+// carries it back a frame later - and every predicate tried to tell those apart either
+// missed the real arrival or only saw the wobble. A cooldown is the same mechanism the
+// collision knock already uses, and it makes one event out of a landing by construction.
+#define CD2_MOTION_SLAM_COOLDOWN	30	// 1s. A landing is ONE event: the arrival can cross
+					// level and be carried back across it a moment later, and at 10 frames that
+					// second crossing still got through.
+#define CD2_MOTION_SLAM_NEAR		12	// how close to level counts as arriving (the sign flip
+					// itself is fragile: the transient term rarely lands
+					// the pitch exactly on zero)
 #define CD2_MOTION_SLAM_IMPULSE	22	// the angle the knock is asked for, PSX units
-#define CD2_MOTION_SLAM_SHIFT	48	// the weight thrown with it. This is a POSITION in the
-					// knock's shift channel, which is clamped at 55 and whose velocity is
-					// ZEROED at the clip - so 700 (the first value here) saturated in one
-					// frame and became a snap rather than a throw. The turbo kick is 52.
+#define CD2_MOTION_SLAM_SHIFT	48	// the weight thrown with it, in the knock's shift
+					// channel. This is a VELOCITY, not a position: the channel's decay of
+					// 2200/4096 means the travel is about 2.16x it, so 48 arrives at the
+					// 55 clamp - which is intended, and is what the turbo kick's 52 does
+					// too. 700 (the first value here) was a unit error that saturated
+					// inside a single frame, which is a snap rather than a throw.
 
 // A car in reverse has the same delta sign for the opposite reason, and should not
 // pitch as hard - it is a different manoeuvre, not a faster one.
@@ -248,12 +268,14 @@ typedef struct CD2_MOTION_STATE
 	int travel;			// +1 travelling forwards, -1 backwards - the SIGNED direction
 	int delta;		// change in speed over the last step (signed)
 	int throttle;		// the thrust applied this step: -1, 0 or +1 (NOT an analogue)
+	int thrustFrames;	// how long it has been held, so a wheelie can be brief
 	int accelPitch;		// the spring's position
 	int accelVel;		// and its velocity
 	int accelShift;		// the squat that comes with it (along the car)
 	int accelBob;		// and the vertical part
-	int accelPeak;		// how far out this movement has been, for judging its ending
-	int accelPrev;		// last frame's pitch, so the crossing that ends it is visible
+	int slamArmed;		// out at a real angle: the next arrival at level is a slam
+	int slamPrev;		// last frame's pitch, so the arrival shows up as a crossing
+	int slamFrame;		// the frame of the last slam, so a landing stays one event
 
 	int inited;		// phases seeded
 	int logged;		// the class line has been written for this car

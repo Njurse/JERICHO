@@ -90,7 +90,9 @@ void cd2KnockAdd(int carId, int pitch, int roll, int yaw, int lift, int shift)
 
 		/* the MAXIMUM, not the latest: every impulse used to overwrite this, so a slam landing
 		 * during a live collision dropped the rate from the collision's down to the slam's and
-		 * restarted the deadline - the return would get gentler because something else hit */
+		 * restarted the deadline - the return would get gentler because something else hit.
+		 * It is zeroed with the state, and a lift/shift-only knock has mag 0, so it neither
+		 * sets nor clears a live knock's value. */
 		if (mag > k->force)
 			k->force = mag;
 	}

@@ -401,7 +401,18 @@ void cd2MotionStep(int carId)
 	 * thing in the state that knows: the thrust says what the driver asked for, which is
 	 * not the same question. */
 	st->travel = (gCd2Car[carId].fwdSpeed < 0) ? -1 : 1;
-	st->throttle = jer_clamp_int(gCd2Car[carId].throttle, -1, 1);
+	{
+	int now = jer_clamp_int(gCd2Car[carId].throttle, -1, 1);
+
+	/* how long this thrust has been held: a wheelie is an EVENT, so the sustained term
+	 * fades out while the driver keeps their foot in - the car comes down and stays down */
+	if (now != st->throttle)
+		st->thrustFrames = 0;
+	else if (st->thrustFrames < CD2_MOTION_WHEELIE_FRAMES)
+		st->thrustFrames++;
+
+	st->throttle = now;
+	}
 }
 
 // [D] [T]
@@ -436,10 +447,18 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 		 * it. Reverse power (the same pedal as braking) lifts the tail, and only when the
 		 * car is genuinely travelling backwards. Braking while travelling forwards gets
 		 * no sustained term at all: its whole effect is the transient dive below. */
+		/* BRIEF. The sustained term fades over CD2_MOTION_WHEELIE_FRAMES and then the car is
+		 * level again for as long as the throttle is held: a sudden change of thrust lifts the
+		 * nose, it does not leave it in the air. The arrival is the slam. */
+		int hold = CD2_MOTION_WHEELIE_FRAMES - st->thrustFrames;
+
+		if (hold < 0)
+			hold = 0;
+
 		if (st->throttle > 0)
-			target = (cls->pitchMax * scale) >> 12;
+			target = (((cls->pitchMax * scale) >> 12) * hold) / CD2_MOTION_WHEELIE_FRAMES;
 		else if (st->throttle < 0 && st->travel < 0)
-			target = -(((cls->pitchMax / 2) * scale) >> 12);
+			target = -((((cls->pitchMax / 2) * scale) >> 12) * hold) / CD2_MOTION_WHEELIE_FRAMES;
 	}
 
 	/* The transient half: the speed delta, which is what actually moves the car.
@@ -500,76 +519,87 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 	st->accelVel += accel;
 	st->accelPitch += st->accelVel;
 
-	/* The rebound's bound, and what overshootPct was always for: it was declared,
-	 * initialised in all three classes and never read. Returning to level may carry the
-	 * body PAST level once - that is the snap the source material describes - but no
-	 * further than the class allows, so the crossing is a movement rather than the start
-	 * of a wobble. */
+	/* ONE-WAY, VELOCITY-CAPPED, and what overshootPct was always for - it was declared,
+	 * initialised in all three classes and read by nothing. The body may travel back toward
+	 * level as fast as it likes, but it may not cross more than overshootPct past level: that
+	 * is the single counter-swing the source material describes, before the motion dies.
+	 *
+	 * Capping the POSITION was tried three times and is wrong in every form, because a
+	 * position clamp REMOVES angle rather than limiting it:
+	 *
+	 *   keyed on the target being zero    - while driving, the sustained term keeps the target
+	 *                                      away from zero, so the counter-swing was never held.
+	 *   keyed on position and velocity on  - that is true while APPROACHING the target, not only
+	 *   opposite sides                      while counter-swinging, so a held wheelie that
+	 *                                      overshot its own target was snapped down in a frame.
+	 *   keyed on the target's magnitude   - fine while driving, but the instant the throttle is
+	 *                                      released the target drops to zero and a wheelie at
+	 *                                      103 was snapped to 30.
+	 *
+	 * The cap belongs on the VELOCITY. Nothing is ever removed, and a crossing is merely limited
+	 * to the room that is left. */
 	{
-		/* Two bounds, because the two halves need different ones. Rising, the body may
-		 * pass the class ceiling by overshootPct - a wheelie arrives at the top of its arc
-		 * and goes a little beyond, which is the "overshoot on arrival" the source material
-		 * describes. Returning, it may only pass LEVEL by overshootPct, since that is the
-		 * counter-rock before the motion dies. Without the rising bound the arrival is
-		 * unbounded and the 4x compression makes it enormous: measured at 144 against a
-		 * 102 ceiling before this existed. */
-		/* Returning means the body is travelling back toward level, which is not the same as
-		 * the target being zero: while driving, the sustained term keeps the target away from
-		 * zero the whole time, and keying the tight bound on it left the rise bound in force
-		 * while the car was moving - exactly when the counter-swing needs holding. */
-		int back = (st->accelPitch > 0 && st->accelVel < 0) || (st->accelPitch < 0 && st->accelVel > 0);
-		int limit = back ? (cls->pitchMax * cls->overshootPct) / 100
-			: cls->pitchMax + (cls->pitchMax * cls->overshootPct) / 100;
+		int towardLevel = (st->accelPitch > 0) ? (st->accelVel < 0) : (st->accelPitch < 0 && st->accelVel > 0);
+		int room = (cls->pitchMax * cls->overshootPct) / 100;
+		int over = st->accelPitch < 0 ? -st->accelPitch : st->accelPitch;
 
-		if (st->accelPitch > limit)
-			st->accelPitch = limit;
-		else if (st->accelPitch < -limit)
-			st->accelPitch = -limit;
+		if (towardLevel && (over + st->accelVel) < -room)
+			st->accelVel = -room - over;
 	}
 
-	/* THE SLAM. It fires when the body CROSSES level, judged against how far out this
-	 * movement has been - not against the previous frame, which is what the first version
-	 * did and it could never fire: at the crossing the previous frame is about 2 units by
-	 * definition, so a test of "was it out at 35 the frame before" is never true. The peak
-	 * is remembered instead, and cleared as the crossing is taken, so the slam happens once
-	 * per movement rather than once per frame of the return.
-	 *
-	 * No airborne work is needed: the spring arriving back at level IS the far end of the
-	 * car coming down. */
+	/* THE SLAM, when a wheelie or a stoppie ends: the far end of the car coming down, and
+	 * the one moment the body should hit the suspension. It is a knock, so it rides the
+	 * machinery already tuned - an impulse, sized to an angle, returning at the rate that
+	 * impulse earns. No airborne work is needed: the spring arriving back at level IS the
+	 * far end coming down. */
 	{
+		int towardLevel = (st->accelPitch > 0) ? (st->accelVel < 0) : (st->accelPitch < 0 && st->accelVel > 0);
 		int mag = st->accelPitch < 0 ? -st->accelPitch : st->accelPitch;
 
-		if (mag > st->accelPeak)
-			st->accelPeak = mag;
+		/* A LATCH, armed while the body is out at a real angle and spent when it arrives back
+		 * at level. Counting peaks and zeroing them was tried and cannot work: the angle the
+		 * body is still descending through re-acquires any counter that has just been cleared,
+		 * and one 0.4s wheelie produced NINE slams that way. A latch is one per movement by
+		 * construction, and a fresh movement re-arms it. */
+		if (!towardLevel && mag >= CD2_MOTION_SLAM_MIN)
+			st->slamArmed = 1;
 
-		/* The crossing itself: the sign of the pitch changed since the last frame. That is
-		 * what "arrives back at level" means, and it happens exactly once per movement. */
-		if ((st->accelPeak >= CD2_MOTION_SLAM_MIN) &&
-			((st->accelPrev > 0 && st->accelPitch <= 0) || (st->accelPrev < 0 && st->accelPitch >= 0)))
+		/* The arrival is a CROSSING of level - the sign of the pitch changes - qualified by the
+		 * latch armed while the body was out at a real angle. That pair is the answer, and
+		 * each half was tried alone and failed:
+		 *
+		 *   the crossing alone        - flaky. The transient term usually leaves the pitch
+		 *                               resting a few units off zero, so whether the sign ever
+		 *                               flips depends on the exact residual, and the slam came
+		 *                               and went between runs of the same command.
+		 *   the latch alone           - fires twice. The residual wobble after the landing
+		 *                               arrives back at level too, a moment later and from about
+		 *                               9 units.
+		 *   a velocity turn near level - fires ONLY on that wobble, because a real arrival
+		 *                               passes through level without turning: it is still
+		 *                               travelling the same way on the far side.
+		 *
+		 * Together: one slam per movement, and a movement that never arrives stays armed for
+		 * the arrival it does get. */
+		if (st->slamArmed && (FrameCnt - st->slamFrame) > CD2_MOTION_SLAM_COOLDOWN &&
+			((st->slamPrev > 0 && st->accelPitch <= 0) || (st->slamPrev < 0 && st->accelPitch >= 0)))
 		{
-			int wheelie = (st->accelPrev > 0);
+			int wheelie = (st->accelVel < 0);
 			int impulse = wheelie ? -CD2_KNOCK_IMPULSE_TO(CD2_MOTION_SLAM_IMPULSE) : CD2_KNOCK_IMPULSE_TO(CD2_MOTION_SLAM_IMPULSE);
 			int shift = wheelie ? CD2_MOTION_SLAM_SHIFT : -CD2_MOTION_SLAM_SHIFT;
 
-			jer_log("[cainescrossfire] slam car=%d peak=%d (a %s ending)\n",
-				carId, st->accelPeak, wheelie ? "wheelie" : "stoppie");
+			jer_log("[cainescrossfire] slam car=%d at pitch=%d (a %s ending)\n",
+				carId, st->accelPitch, wheelie ? "wheelie" : "stoppie");
 
 			cd2KnockAdd(carId, impulse, 0, 0, 0, shift);
 
-			st->accelPeak = mag;	/* one slam per movement: the counter-swing's own
-						 * peak is what remains, and it cannot reach the
-						 * threshold, so it cannot fire a second one */
+			st->slamArmed = 0;	/* one slam per movement */
+			st->slamFrame = FrameCnt;
 		}
 
-		st->accelPrev = st->accelPitch;
 	}
 
-	/* Settled is settled. This used to demand all three of target, position and velocity be
-	 * exactly zero, which with integer >>12 steps is a knife edge: the peak then survived
-	 * between movements and a later, gentler one inherited it and slammed on its own
-	 * crossing. Level and slow is the honest test. */
-	if (st->accelPitch > -2 && st->accelPitch < 2 && st->accelVel > -2 && st->accelVel < 2)
-		st->accelPeak = 0;
+	st->slamPrev = st->accelPitch;
 }
 
 // The squat, derived from the spring's own position so it cannot drift out of step
