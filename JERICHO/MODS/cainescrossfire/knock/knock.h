@@ -62,14 +62,27 @@
 
 // Nothing may knock beyond this, however hard the hit: a car spinning on its
 // side would look broken rather than hit.
-#define CD2_KNOCK_MAX_PITCH		900	// ~79 degrees
-#define CD2_KNOCK_MAX_ROLL		700
-#define CD2_KNOCK_MAX_YAW		400
+#define CD2_KNOCK_MAX_PITCH		240	// ~21 degrees - the ceiling the turbo wheelie uses
+#define CD2_KNOCK_MAX_ROLL		180
+#define CD2_KNOCK_MAX_YAW		110
 
 // The lift an impulse may ask for, and its ceiling. Small numbers: this is a
 // nudge to clear geometry, not a jump.
 #define CD2_KNOCK_MAX_LIFT		70
 #define CD2_KNOCK_LIFT_PER_HIT		26	// world units of lift per unit of impulse
+
+// ---------------------------------------------------------------------------
+// The weight shift
+// ---------------------------------------------------------------------------
+// A knock may also SHIFT the body along the car, which is what makes it read as
+// weight moving rather than the car simply rotating on the spot: a wheelie puts the
+// weight back over the rear wheels, a hard frontal hit throws it forward, and a
+// boost leaning back looks like the car squatting. It is a translation of the whole
+// body (and, once the wheel hook carries a position, the wheels with it), clamped
+// so the car never visibly separates from its own wheels.
+#define CD2_KNOCK_MAX_SHIFT		55	// world units, fore or aft
+#define CD2_KNOCK_SHIFT_DECAY		2200
+#define CD2_KNOCK_SHIFT_SETTLE		800
 
 // Impulse scale, so callers can pass whatever their own units are and say how
 // much it was:
@@ -89,6 +102,8 @@ typedef struct CD2_KNOCK_STATE
 	int vpitch, vroll, vyaw;	// their velocities
 	int lift;			// current lift
 	int vlift;			// its velocity
+	int shift;			// current weight shift along the car (+ = forward)
+	int vshift;			// its velocity
 	int settleFrames;		// frames left before the settle is snapped shut
 } CD2_KNOCK_STATE;
 
@@ -96,8 +111,9 @@ typedef struct CD2_KNOCK_STATE
 // API
 // ---------------------------------------------------------------------------
 // Add an impulse. Any of these may be negative; 0 means "no knock on that axis".
-// The lift is clamped to CD2_KNOCK_MAX_LIFT and never goes below zero.
-void cd2KnockAdd(int carId, int pitch, int roll, int yaw, int lift);
+// The lift is clamped to CD2_KNOCK_MAX_LIFT and never goes below zero; the shift
+// is clamped to +/-CD2_KNOCK_MAX_SHIFT and + is forward along the car.
+void cd2KnockAdd(int carId, int pitch, int roll, int yaw, int lift, int shift);
 
 // Spring everything back toward level. Once per frame per car.
 void cd2KnockTick(int carId);

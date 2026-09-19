@@ -45,7 +45,7 @@ void cd2KnockResetAll(void)
 // An impulse adds VELOCITY. It never sets an angle: that is what makes the car
 // buck rather than snap to a new attitude and sit there.
 // ---------------------------------------------------------------------------
-void cd2KnockAdd(int carId, int pitch, int roll, int yaw, int lift)
+void cd2KnockAdd(int carId, int pitch, int roll, int yaw, int lift, int shift)
 {
 	CD2_KNOCK_STATE* k;
 
@@ -63,6 +63,8 @@ void cd2KnockAdd(int carId, int pitch, int roll, int yaw, int lift)
 
 	if (lift != 0)
 		k->vlift += lift * CD2_KNOCK_LIFT_PER_HIT;
+
+	k->vshift += shift;
 
 	/* the deadline restarts with every knock: 0.5s is per movement, not per car */
 	k->settleFrames = CD2_KNOCK_SETTLE_FRAMES;
@@ -148,6 +150,8 @@ void cd2KnockTick(int carId)
 	if (k->lift < 0)
 		k->lift = 0;
 
+	cd2KnockAxis(&k->shift, &k->vshift, CD2_KNOCK_SHIFT_DECAY, CD2_KNOCK_SHIFT_SETTLE, CD2_KNOCK_MAX_SHIFT);
+
 	/* the deadline: an exponential never arrives, so the settle is snapped shut
 	 * after its 0.5s. Only once the impulse has been spent - a knock is never cut
 	 * off on its way up. */
@@ -178,6 +182,17 @@ void cd2KnockApply(void* matrix, int carId)
 
 	if (k->lift != 0)
 		m->t[1] += k->lift;		/* up, never down - clear of what it leans on */
+
+	if (k->shift != 0)
+	{
+		/* the weight moving: a translation along the car's own forward axis, so a
+		 * wheelie squats onto the back wheels and a frontal hit throws the weight
+		 * forward. m[2] is the matrix's forward basis row. */
+		int i;
+
+		for (i = 0; i < 3; i++)
+			m->t[i] += (int)(((long long)m->m[2][i] * k->shift) >> 12);
+	}
 
 	if (k->pitch != 0)
 		_RotMatrixX(m, (short)k->pitch);

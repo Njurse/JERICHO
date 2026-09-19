@@ -574,10 +574,10 @@ static int cd2OnCollision(void* ud, void* args)
 	/* negative pitch: driven into something, the nose drops and the back lifts -
 	 * the direction is a taste call, and this is the one that reads as "bucked" */
 	if (cp != NULL)
-		cd2KnockAdd(cp->id, -impulse, 0, 0, lift);
+		cd2KnockAdd(cp->id, -impulse, 0, 0, lift, impulse / 2);	/* hit head-on: weight forward */
 
 	if (other != NULL)
-		cd2KnockAdd(other->id, -impulse / 2, 0, 0, lift);
+		cd2KnockAdd(other->id, -impulse / 2, 0, 0, lift, impulse / 4);
 
 	return JER_RESULT_CONTINUE;
 }
