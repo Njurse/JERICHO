@@ -24,7 +24,7 @@ extern const CD2_VEH_PROFILE cd2VehRowDeadstar =
 	{ 3, 5, 3, 4 },
 
 	/* special: id, internal name, display, capacity, recharge frames */
-	{ CD2_WID_NONE, "special_deadstar", "Death Dash", 2, 750 },
+	{ CD2_WID_SPECIAL_DEADSTAR, "special_deadstar", "Death Dash", 2, 750 },
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct */

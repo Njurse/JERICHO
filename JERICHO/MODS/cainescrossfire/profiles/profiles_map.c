@@ -404,7 +404,16 @@ static int cd2VehOnCarStep(void* ud, void* args)
 		profileId = cd2VehProfileOfSlot(cp->ap.model);
 
 		if (profileId != CD2_VEH_NONE)
+		{
+			const CD2_VEH_PROFILE* p = cd2VehDef(profileId);
+
 			cd2VehSetCarProfile(cp->id, profileId);
+
+			// hand the car its profile's special (per-car ammo), filled to
+			// capacity — once, at assignment
+			if (p != NULL && p->special.weaponId != CD2_WID_NONE && p->special.capacity > 0)
+				cd2WpnCarGrant(cp, p->special.weaponId, p->special.capacity);
+		}
 	}
 
 	if (gCd2VehPalDone[cp->id])

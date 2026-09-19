@@ -154,8 +154,20 @@ static int cd2DbgWeaponId(const char** s)
 		{ "cluster", CD2_WID_CLUSTER }, { "zoomy", CD2_WID_ZOOMY },
 		{ "freeze", CD2_WID_FREEZE }, { "shotgun", CD2_WID_SHOTGUN },
 		{ "special_jericho", CD2_WID_SPECIAL_JERICHO },
-		{ "special", CD2_WID_SPECIAL_JERICHO },
 		{ "smg", CD2_WID_SMG },
+		{ "special_hornet", CD2_WID_SPECIAL_HORNET },
+		{ "special_avalanche", CD2_WID_SPECIAL_AVALANCHE },
+		{ "special_corvo", CD2_WID_SPECIAL_CORVO },
+		{ "special_bruxa", CD2_WID_SPECIAL_BRUXA },
+		{ "special_highwayman", CD2_WID_SPECIAL_HIGHWAYMAN },
+		{ "special_deadstar", CD2_WID_SPECIAL_DEADSTAR },
+		{ "hornet", CD2_WID_SPECIAL_HORNET },
+		{ "avalanche", CD2_WID_SPECIAL_AVALANCHE },
+		{ "corvo", CD2_WID_SPECIAL_CORVO },
+		{ "bruxa", CD2_WID_SPECIAL_BRUXA },
+		{ "highwayman", CD2_WID_SPECIAL_HIGHWAYMAN },
+		{ "deadstar", CD2_WID_SPECIAL_DEADSTAR },
+		{ "special", CD2_WID_SPECIAL_JERICHO },
 	};
 	const char* p = *s;
 	unsigned int w;

@@ -24,7 +24,7 @@ extern const CD2_VEH_PROFILE cd2VehRowAvalanche =
 	{ 4, 2, 3, 4 },
 
 	/* special: id, internal name, display, capacity, recharge frames */
-	{ CD2_WID_NONE, "special_avalanche", "Monster Crush", 2, 900 },
+	{ CD2_WID_SPECIAL_AVALANCHE, "special_avalanche", "Monster Crush", 2, 900 },
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct */

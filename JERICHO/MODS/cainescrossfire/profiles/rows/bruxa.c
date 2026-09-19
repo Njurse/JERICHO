@@ -24,7 +24,7 @@ extern const CD2_VEH_PROFILE cd2VehRowBruxa =
 	{ 4, 2, 3, 4 },
 
 	/* special: id, internal name, display, capacity, recharge frames */
-	{ CD2_WID_NONE, "special_bruxa", "Double Boom", 4, 450 },
+	{ CD2_WID_SPECIAL_BRUXA, "special_bruxa", "Double Boom", 4, 450 },
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct */

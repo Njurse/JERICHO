@@ -40,6 +40,7 @@
 #include "dr2math.h"
 #include "weapon.h"
 #include "weapon_internal.h"
+#include "weapons/special/special.h"	/* the six vehicle specials */
 #include "crew.h"		/* mounted-crew lean request (fired weapons) */
 
 #include <stdio.h>
@@ -116,7 +117,13 @@ static const CD2_WEAPON_DEF* const gWdefs[CD2_WID_COUNT] =
 	&cd2WdefFreeze,
 	&cd2WdefShotgun,
 	&cd2WdefSpecialJericho,
-	&cd2WdefSmg
+	&cd2WdefSmg,
+	&cd2WdefSpecialHornet,
+	&cd2WdefSpecialAvalanche,
+	&cd2WdefSpecialCorvo,
+	&cd2WdefSpecialBruxa,
+	&cd2WdefSpecialHighwayman,
+	&cd2WdefSpecialDeadstar
 };
 
 const CD2_WEAPON_DEF* cd2WpnDef(int weaponId)

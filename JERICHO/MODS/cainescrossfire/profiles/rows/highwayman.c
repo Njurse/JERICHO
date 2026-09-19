@@ -23,7 +23,7 @@ extern const CD2_VEH_PROFILE cd2VehRowHighwayman =
 	{ 3, 3, 3, 5 },
 
 	/* special: id, internal name, display, capacity, recharge frames */
-	{ CD2_WID_NONE, "special_highwayman", "Breath of Fire", 3, 660 },
+	{ CD2_WID_SPECIAL_HIGHWAYMAN, "special_highwayman", "Breath of Fire", 3, 660 },
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct */

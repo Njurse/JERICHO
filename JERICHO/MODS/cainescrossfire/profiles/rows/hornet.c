@@ -23,7 +23,7 @@ extern const CD2_VEH_PROFILE cd2VehRowHornet =
 	{ 2, 4, 4, 3 },
 
 	/* special weapon: id (until registered), internal name, display, capacity, recharge frames (30 Hz) */
-	{ CD2_WID_NONE, "special_hornet", "Spike Storm", 3, 600 },
+	{ CD2_WID_SPECIAL_HORNET, "special_hornet", "Spike Storm", 3, 600 },
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct

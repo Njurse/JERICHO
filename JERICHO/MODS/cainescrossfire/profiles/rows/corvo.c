@@ -24,7 +24,7 @@ extern const CD2_VEH_PROFILE cd2VehRowCorvo =
 	{ 3, 3, 3, 4 },
 
 	/* special: id, internal name, display, capacity, recharge frames */
-	{ CD2_WID_NONE, "special_corvo", "Siren's Wrath", 3, 540 },
+	{ CD2_WID_SPECIAL_CORVO, "special_corvo", "Siren's Wrath", 3, 540 },
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct */

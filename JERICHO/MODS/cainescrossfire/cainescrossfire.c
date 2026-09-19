@@ -45,6 +45,7 @@
 #include "gamesnd.h"
 #include "mc_snd.h"
 #include "weapons/core/weapon.h"	/* CD2_WEAPON_DEF + inventory API */
+#include "weapons/special/special.h"	/* the six vehicle specials */
 #include "ai/ai.h"			/* opponent AI (ai/opponent.c) */
 #include "factions/factions.h"	/* the five teams (factions/factions.c) */
 #include "turbo/turbo.h"		/* the boost: speed/accel scaling at the stats */
@@ -779,6 +780,7 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	cd2CrewRegister(ctx);
 	cd2FxRegister(ctx);
 	cd2FreezeRegister(ctx);
+	cd2SpecialsRegister(ctx);	/* the six vehicle specials (weapons/special) */
 
 	// The factions go in BEFORE the AI: a spawned opponent claims its roster
 	// slot, so the field has to exist (and be reset for the new level) first.
