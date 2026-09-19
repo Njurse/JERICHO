@@ -14,6 +14,11 @@ block). All default to off, so shipping behaviour is untouched.
 | `-frames N` | run N gameplay frames, then exit **cleanly** (that is the point: `exit(0)` runs `atexit(PsyX_Shutdown)`, which finalises the log — a kill throws the log away) |
 | `-seed N` | pin every module's run randomness, so two runs are comparable and an A/B diff means something |
 | `-level <city>` `-car slotN` `-mp 0\|1` `-weather <w>` `-time <t>` `-gamemode <g>` | the pre-existing boot options |
+| `-vramview [frames]` | open a second window showing the live VRAM, refreshed every frame, and re-dump `vram_live.tga` every N frames (default 15) for `vramdump.py`. Independent of `-level` |
+
+Note `-car <model>` is the **model number**; `-car slotN` is a **frontend** slot.
+`carNumLookup` makes `slot5` = model 0 and `slot7` = model 9 — see
+`carhacks/VEHICLES.md` for the full vehicle map.
 
 Every `-frames` run ends with one parseable line, which is what harnesses should read
 instead of guessing at prose:
@@ -33,6 +38,8 @@ the frontend state as well, but a frontend run does not load in every environmen
 | `devcheck.sh [frames]` | build, run the cross-city scenario matrix, print one verdict. Exit 0 = all clean. Restores your `carhacks.ini` afterwards |
 | `arena_test.sh [frames]` | one random city/car/weather/time arena run. `SEED=N` replays an exact scenario, because the seed picks the scenario too, not just module randomness |
 | `levpages.py <city.LEV>` | read a level file's citylumps and segment sizes without launching the game |
+| `levmodels.py <city.LEV> ...` | which car models each city ships (from `LUMP_CAR_MODELS`), plus its `carTpages`/`specTpages`. The data behind `carhacks/VEHICLES.md` |
+| `vramdump.py <tga> [--png out.png] [--rect X Y W H label] [--log L --lev V]` | decode a VRAM dump: per-rectangle stats, a viewable PNG, and a palette check that proves an imported car's CLUTs are its own. Feed it `vram_live.tga` re-dumped by `-vramview` |
 | `launch_*.bat` | boot a specific scenario for playing. `test [frames]` makes it self-terminate and print a replayable seed; `dry` prints the roll without launching or writing config |
 
 ## House rules these follow, learned the hard way
