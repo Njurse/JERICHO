@@ -104,6 +104,10 @@ int whichCP = 0;
 int baseSpecCP = 0;
 CAR_POLY carPolyBuffer[MAX_CAR_POLYS + 1];
 
+// JERICHO-DIAG: one-shot, so we can see exactly what an imported car's GT polys ask
+// for, and which of the two CLUT paths resolves them.
+static int gt3DiagCount = 0;
+
 char LeftLight = 0;
 char RightLight = 0;
 char TransparentObject = 0;
@@ -274,6 +278,18 @@ void plotCarPolyGT3(int numTris, CAR_POLY *src, SVECTOR *vlist, SVECTOR *nlist, 
 
 			ofse = pg->damageLevel[src->originalindex];
 
+				// JERICHO-DIAG: the imported car reads the page's CLUT verbatim, so its
+				// body colour is whatever CLUT row that page happens to hold - NOT the
+				// palette the imported city's LUMP_PALLET defines.
+				if (gt3DiagCount < 4)
+				{
+					gt3DiagCount++;
+					printInfo("cross-city: GT3 imported: clut_uv0=%08x -> page CLUT row %d, emitted %08x (verbatim). The host civ_clut path would use row %d -> %04x\n",
+						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse,
+						(src->clut_uv0 >> 0x10) + palette, pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette]);
+				}
+			}
+
 			if (pg->directClut)
 				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
 			else
@@ -348,6 +364,18 @@ void plotCarPolyGT3Lit(int numTris, CAR_POLY* src, SVECTOR* vlist, SVECTOR* nlis
 
 			ofse = pg->damageLevel[src->originalindex];
 
+
+				// JERICHO-DIAG: the imported car reads the page's CLUT verbatim, so its
+				// body colour is whatever CLUT row that page happens to hold - NOT the
+				// palette the imported city's LUMP_PALLET defines.
+				if (gt3DiagCount < 4)
+				{
+					gt3DiagCount++;
+					printInfo("cross-city: GT3 imported: clut_uv0=%08x -> page CLUT row %d, emitted %08x (verbatim). The host civ_clut path would use row %d -> %04x\n",
+						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse,
+						(src->clut_uv0 >> 0x10) + palette, pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette]);
+				}
+			}
 			if (pg->directClut)
 				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
 			else
@@ -429,6 +457,18 @@ void plotCarPolyGT3nolight(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGl
 			ofse = pg->damageLevel[src->originalindex];
 
 			if (pg->directClut)
+
+				// JERICHO-DIAG: the imported car reads the page's CLUT verbatim, so its
+				// body colour is whatever CLUT row that page happens to hold - NOT the
+				// palette the imported city's LUMP_PALLET defines.
+				if (gt3DiagCount < 4)
+				{
+					gt3DiagCount++;
+					printInfo("cross-city: GT3 imported: clut_uv0=%08x -> page CLUT row %d, emitted %08x (verbatim). The host civ_clut path would use row %d -> %04x\n",
+						src->clut_uv0, (src->clut_uv0 >> 0x10), src->clut_uv0 + ofse,
+						(src->clut_uv0 >> 0x10) + palette, pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette]);
+				}
+			}
 				*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
 			else
 				*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
@@ -1562,9 +1602,21 @@ void ProcessImportedPalette(void)
 	// merge was solving a problem the page upload already solves, at the cost of the
 	// host's palette table.
 	//
+	//
+	// JERICHO-DIAG: the gap, stated out loud. GetCarImportPallet() holds the imported
+	// city's LUMP_PALLET - the car palettes - and, as of this line, NOTHING reads it:
+	// a grep for GetCarImportPallet finds only its definition in models.c. So the
+	// imported car's body has no source for its paint at all, which is why its
+	// textures load but its palette is wrong.
 	// Kept as a named function so this call site and the reason stay legible.
 	if (GetCarImportCity() >= 0)
-		printInfo("cross-city: %s keeps its palettes in its own pages - civ_clut is the host's 8 rows, none spare\n", LevelNames[GetCarImportCity()]);
+	{
+		int palSize = 0;
+		char* pal = GetCarImportPallet(&palSize);
+
+		printInfo("cross-city: %s car palettes: body=%s size=%d - NOT APPLIED (nothing reads GetCarImportPallet yet)\n",
+			LevelNames[GetCarImportCity()], (pal != NULL) ? "yes" : "NULL", palSize);
+	}
 }
 
 // [D] [T]

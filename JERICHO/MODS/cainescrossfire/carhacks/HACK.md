@@ -181,3 +181,30 @@ live world page. Result: `2 wasted car pages taken, 0 world pages evicted`.
 - The thrash meter is the thing to watch. If `page re-uploads` in the final page state
   grows with the frame count, something is still taking pages back — check the two
   `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
+
+## Discovery: an imported car's GT CLUT word is a CLUT *id*, not a palette row
+
+`GetCarImportPallet()` holds the imported city's `LUMP_PALLET` — the car palettes —
+and **nothing read it**: 14792 bytes for Havana, buffered and dropped. That is the
+imported car's only source of body colour, so this is the "textures load but the
+palette is wrong" bug.
+
+The second half of the story is the *encoding*, and it is why my `directClut` shortcut
+turned out to be the right shape:
+
+    cross-city: GT3 imported: clut_uv0=043cff34 -> page CLUT row 1084, emitted 043cff34 (verbatim).
+                The host civ_clut path would use row 1084 -> 0000
+
+For a **host** car, `clut_uv0 >> 16` is a small palette *row index* (0..30) that indexes
+`civ_clut[carpal][tex][palette]`, with the CLUT id substituted in the high word of the
+emitted prim. For the **imported** model it is `0x043c` = 1084 — a whole `GetClut(x,y)`
+id: `y = 1084 >> 6 = 16`, `x = (1084 & 63) << 4 = 448`, i.e. VRAM (448,16). Feeding that
+to the host path indexes `pciv_clut[1084]` — far out of range — which is why the host
+path emits `0x0000`.
+
+So the imported model carries its CLUT *location* in the poly, exactly like `FT3` does,
+and every body poly of the car points at one id. The remaining question is therefore
+not "how do we map it" but "what is loaded at (448,16)": if the level's own CLUT area
+already holds the imported palette's colours there, the fix is mapping-only; if not,
+the imported `LUMP_PALLET` has to be uploaded to the positions the imported models name.
+
