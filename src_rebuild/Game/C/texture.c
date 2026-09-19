@@ -499,7 +499,21 @@ void LoadTPageFromTIMs(int tpage2send)
 // of the imported car keeping its own. Inert unless an import is active: with no
 // import, nothing is owned, the guard never fires, and VRAM behaves exactly as before.
 static int sCarPageUploading;			// set while WE upload, so ours is not refused
-static unsigned char sCarPageOwned[19];		// the slot rects an imported page holds
+
+// JERICHO: imported-page claims, kept as a small POOL. A claim records the frame the
+// pin last confirmed that slot's rectangle for an imported set (0 = no claim).
+// CarPageRectOwned refuses a world upload only while the claim is FRESH - the car has
+// been drawn within CAR_PAGE_CLAIM_FRAMES. Once it has not, the world may take the
+// rectangle back: the page re-streams from disk (cheap - there is no CD budget on PC),
+// and CarImportPin re-uploads the car's page the next time the car IS drawn. A frame
+// stamp per slot, rather than a bare owned flag, is what lets this grow into a real
+// pool over the host's own car pages too (see the pool note in HACK.md).
+#define CAR_PAGE_CLAIM_FRAMES 8
+
+extern int FrameCnt;			// JERICHO: frame clock for the imported-page claim pool
+
+static int sCarPageClaimFrame[19];
+static int sCarPageGiveBacks;		// world uploads that reclaimed a stale claim
 
 // JERICHO: is this VRAM rectangle one an imported page owns? Exported so the spool's
 // own upload paths can respect it too - they write texture_pages[] and call LoadImage
@@ -511,8 +525,16 @@ int CarPageRectOwned(int x, int y)
 
 	for (i = 0; i < 19; i++)
 	{
-		if (sCarPageOwned[i] && tpagepos[i].x == x && tpagepos[i].y == y)
-			return 1;
+		if (sCarPageClaimFrame[i] == 0 || tpagepos[i].x != x || tpagepos[i].y != y)
+			continue;
+
+		if (FrameCnt - sCarPageClaimFrame[i] <= CAR_PAGE_CLAIM_FRAMES)
+			return 1;			// still the car's: refuse the world
+
+		// Stale: the car has not been drawn for a while, so let the world have the
+		// rectangle back. CarImportPin re-uploads the car's page when it is drawn again.
+		sCarPageClaimFrame[i] = 0;
+		sCarPageGiveBacks++;
 	}
 
 	return 0;
@@ -1260,7 +1282,12 @@ void CarImportPin(void)
 		int slot;
 
 		if (sPinSlot[i] >= 0 && tpageslots[sPinSlot[i]] == sPinIndex[i] && tpageloaded[sPinIndex[i]] != 0)
-			continue;		// still ours, nothing to do
+		{
+			// Still ours: refresh the claim so a car that keeps being drawn keeps its
+			// rectangle, while one that stops being drawn is released (CarPageRectOwned).
+			sCarPageClaimFrame[sPinSlot[i]] = FrameCnt;
+			continue;
+		}
 
 		// Where to put it: the slot it had before (taking that rectangle back), else the
 		// rectangle the REPLACED car's page used, else a free one, else a world stream to
@@ -1357,7 +1384,7 @@ void CarImportPin(void)
 		if (clut.x != sPinClutCursor.x || clut.y != sPinClutCursor.y)
 			sPinClutCursor = clut;	// the walker advanced: remember where it got to
 
-		sCarPageOwned[slot] = 1;
+		sCarPageClaimFrame[slot] = FrameCnt;
 
 		tpageslots[slot] = (u_char)sPinIndex[i];
 		tpageloaded[sPinIndex[i]] = (u_char)slot;
@@ -1386,7 +1413,7 @@ void CarImportDumpState(void)
 	if (GetCarImportCity() < 0 && sRemapCount == 0)
 		return;
 
-	printInfo("cross-city: final page state (%d pinned, %d world pages evicted, %d page re-uploads)\n", sPinCount, sPinEvictions, sPinReloads);
+	printInfo("cross-city: final page state (%d pinned, %d world pages evicted, %d page re-uploads, %d claims given back)\n", sPinCount, sPinEvictions, sPinReloads, sCarPageGiveBacks);
 
 	// Every pinned set and the rectangle it occupies, decoded from the tpage/clut values
 	// the draw path will read. This is what the VRAM dump is aimed at: run with
@@ -1474,7 +1501,9 @@ void CarImportResetState(void)
 	sPinReloads = 0;
 
 	for (i = 0; i < 19; i++)
-		sCarPageOwned[i] = 0;
+		sCarPageClaimFrame[i] = 0;
+
+	sCarPageGiveBacks = 0;
 
 	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 		sModelSetCount[i] = 0;
