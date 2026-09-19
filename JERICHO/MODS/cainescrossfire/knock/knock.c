@@ -129,7 +129,7 @@ void cd2KnockTick(int carId)
 
 	k = &gKnock[carId];
 
-	if (k->pitch == 0 && k->roll == 0 && k->yaw == 0 && k->lift == 0 &&
+	if (k->pitch == 0 && k->roll == 0 && k->yaw == 0 && k->lift == 0 && k->shift == 0 && k->vshift == 0 &&
 		k->vpitch == 0 && k->vroll == 0 && k->vyaw == 0 && k->vlift == 0)
 	{
 		return;		/* at rest: nothing to do, which is the common case */

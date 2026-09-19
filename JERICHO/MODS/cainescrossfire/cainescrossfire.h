@@ -201,9 +201,11 @@ enum
 #define CD2_BODY_MAX_ROLL   14    // ~2° lean (TMB: weight felt, not exaggerated)
 #define CD2_ROLL_LERP       2     // exponential settle divisor
 // Lateral velocity below this (either sign) is not a slide and does not lean the body.
-// It has to exist because the gain above is large: a latVel of 1 already saturates the
-// roll, so any residue from the integrator would roll the car for no reason. In world
-// units per step, so a real drift clears it comfortably.
+// It has to exist because the gain above is large: roll = -latVel * 15 clamped at 14, so
+// a latVel of about 0.93 already saturates it. That makes the lean effectively BINARY -
+// the dead zone is not a noise filter, it is the decision of whether the car is sliding
+// at all. Units are the same "speed units" the rest of the model uses (CD2_SKID_LOCK_LAT
+// and the per-step telemetry agree), which are world units of travel per step.
 #define CD2_ROLL_DEADZONE   6
 
 // Camera FOV pull (same trick as COLLISIONDEVIL): scr_z reduction at speed.

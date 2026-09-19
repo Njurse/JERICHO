@@ -239,12 +239,10 @@ static unsigned int cd2MotionNext(unsigned int* s)
 {
 	unsigned int x;
 
-	/* splitmix32. A plain LCG's output is good enough for phases but NOT for a
-	 * small modulo taken from a subsequence of it: the spike timer consumes two
-	 * draws per spike, so the axis was being picked from every other output, and
-	 * every other output of an LCG is a weaker LCG. That produced fourteen jolts in
-	 * a row on pitch and none on the other two axes. A real finalizer fixes it at
-	 * the source rather than at each use. */
+	/* splitmix32. A plain LCG is good enough for phases, but the phase and detune draws
+	 * take small modulos of it, and small modulos of an LCG's low bits are exactly where
+	 * an LCG is weakest - cars ended up sharing periods. A real finalizer fixes it at the
+	 * source rather than at each use. */
 	*s += 0x9E3779B9u;
 
 	x = *s;

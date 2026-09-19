@@ -20,7 +20,7 @@
 #include "cainescrossfire_internal.h"	/* cd2GetStats */
 #include "cars.h"
 #include "main.h"		/* FrameCnt */
-#include "pad.h"		/* MPAD_* */
+#include "pad.h"		/* CAR_PAD_* (which ARE MPAD_*), MPAD_* */
 #include "players.h"		/* player[] */
 #include "overlay.h"		/* FelonyBar, COLOUR_BAND - the Turbo bar */
 #include "jericho.h"
@@ -139,6 +139,23 @@ void cd2TurboResetAll(void)
 // sees for that car. Everything is edge-detected here so callers just hand over
 // the pad.
 // ---------------------------------------------------------------------------
+// The kick that goes with a boost, forward or reverse. Shared rather than written twice,
+// because it WAS written twice and only the pad path got the reverse mirror: a scripted
+// reverse boost (cd2TurboForce(carId, 2)) still performed the forward gesture. A reverse
+// launch is the mirror of a forward one - nose DOWN, weight FORWARD - and its lift is
+// zero rather than negative, because the knock has no downward lift to give (knock.h).
+// [D] [T]
+static void cd2TurboKick(int carId, int reverse)
+{
+	int mag = (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100;
+
+	if (reverse)
+		cd2KnockAdd(carId, -mag, 0, 0, 0, CD2_TURBO_KICK_SHIFT);
+	else
+		cd2KnockAdd(carId, mag, 0, 0, 1, -CD2_TURBO_KICK_SHIFT);
+}
+
+// [D] [T]
 void cd2TurboPad(int carId, int pad)
 {
 	CD2_TURBO_STATE* st;
@@ -228,12 +245,7 @@ void cd2TurboPad(int carId, int pad)
 				 * the gas button's gesture rather than its own. */
 				st->shove = 1;
 
-				if (st->reverse)
-					cd2KnockAdd(carId, -(CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100,
-						0, 0, 0, CD2_TURBO_KICK_SHIFT);	/* nose down, weight forward */
-				else
-					cd2KnockAdd(carId, (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100,
-						0, 0, 1, -CD2_TURBO_KICK_SHIFT);	/* nose up, weight back */
+				cd2TurboKick(carId, st->reverse);
 			}
 			else
 			{
@@ -369,8 +381,7 @@ void cd2TurboForce(int carId, int on)
 		gTurbo[carId].reverse = (on == 2) ? 1 : 0;	/* 2 = force a REVERSE boost */
 		gTurbo[carId].hold = 1;		/* keep it on so the meter can be watched */
 		gTurbo[carId].shove = 1;
-		cd2KnockAdd(carId, (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100,
-			0, 0, 1, -CD2_TURBO_KICK_SHIFT);
+		cd2TurboKick(carId, gTurbo[carId].reverse);
 	}
 	else
 	{

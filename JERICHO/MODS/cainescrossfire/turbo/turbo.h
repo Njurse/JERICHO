@@ -148,9 +148,9 @@ int cd2TurboRevCeiling(int carId, int ceiling);
 // engagement (0 otherwise); cd2TurboKickPitch is the body pitch to add this frame.
 int cd2TurboTakeShove(int carId);
 
-// The engagement edge: 1 ONCE, on the frame the boost latches, so the note plays once
-// rather than every frame the boost is held.
-// The buck itself is the knock's job (knock/knock.h), not the turbo's.
+// The buck is the knock's job (knock/knock.h), not the turbo's: cd2TurboKick in turbo.c
+// is shared by the pad path and the forced one so a reverse boost cannot get the forward
+// gesture. Its lift is 0 rather than negative, because the knock has none to give.
 
 // Feed the pad once per frame per car (the pad hook does). Edge-detected there.
 void cd2TurboPad(int carId, int pad);

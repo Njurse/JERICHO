@@ -18,6 +18,10 @@
 // ENGINE SOUND (JER_EVENT_CAR_ENGINE_SOUND, gamesnd.c SoundTasks): scale and
 // offset the player car's rev + idle channel pitch and volume. Tuners live in
 // cainescrossfire.h as CD2_SND_*; see the header guide for units and directions.
+// Says the clamp once per boost rather than once per frame: the hook below runs every
+// frame for every car, so an unguarded log would fill the file for the length of a boost.
+static int cd2SndClampSaid = 0;
+
 static int cd2mOnCarEngineSound(void* ud, void* args)
 {
 	JER_ARGS_CAR_ENGINE_SOUND* e = (JER_ARGS_CAR_ENGINE_SOUND*)args;
@@ -41,18 +45,29 @@ static int cd2mOnCarEngineSound(void* ud, void* args)
 	}
 
 	/* The SPU's pitch saturates at 0x3FFF, and the over-rev above deliberately carries
-	 * the note past the airborne revs - so this is the one place where a tuning change
-	 * could run out of headroom and wrap into something horrible instead of merely
-	 * screaming. Clamped, and said out loud when it happens, so a future ceiling raise
-	 * is measurable rather than a guess. */
+	 * the note past the airborne revs.
+	 *
+	 * MEASURED, that does not actually exhaust the channel: the engine derives the pitch
+	 * as roughly revs/4 + 2500, so even the boosted ceiling (36052 revs) lands near 11.9k,
+	 * about 27% below 0x3FFF. So this is a GUARD on a tuning value rather than a limit
+	 * being reached - kept because the arithmetic that decides it lives in another file
+	 * and is not visible from here. It speaks once per boost, not once per frame. */
 	if (e->revPitch > 0x3FFF)
 	{
-		jer_log("[cainescrossfire] engine pitch clamped: %d -> 0x3FFF (ran out of headroom with the turbo over-rev)\n", e->revPitch);
+		if (!cd2SndClampSaid)
+		{
+			cd2SndClampSaid = 1;
+			jer_log("[cainescrossfire] engine pitch clamped: %d -> 0x3FFF\n", e->revPitch);
+		}
+
 		e->revPitch = 0x3FFF;
 	}
-	else if (e->revPitch < 0)
+	else
 	{
-		e->revPitch = 0;
+		cd2SndClampSaid = 0;	/* out of the clamp again: a later boost may say so */
+
+		if (e->revPitch < 0)
+			e->revPitch = 0;
 	}
 
 	p = ((long long)e->idlePitch * CD2_SND_PITCH_SCALE) >> 12;
