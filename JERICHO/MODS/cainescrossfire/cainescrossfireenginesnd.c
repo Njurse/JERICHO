@@ -18,8 +18,9 @@
 // ENGINE SOUND (JER_EVENT_CAR_ENGINE_SOUND, gamesnd.c SoundTasks): scale and
 // offset the player car's rev + idle channel pitch and volume. Tuners live in
 // cainescrossfire.h as CD2_SND_*; see the header guide for units and directions.
-// Says the clamp once per boost rather than once per frame: the hook below runs every
-// frame for every car, so an unguarded log would fill the file for the length of a boost.
+// Says the clamp once per SESSION. This hook fires once per player car per frame (twice
+// in split-screen), so a flag that re-armed would let a second player's frames report the
+// clamp over and over; one line ever is enough to make the guard visible.
 static int cd2SndClampSaid = 0;
 
 static int cd2mOnCarEngineSound(void* ud, void* args)
@@ -62,12 +63,9 @@ static int cd2mOnCarEngineSound(void* ud, void* args)
 
 		e->revPitch = 0x3FFF;
 	}
-	else
+	else if (e->revPitch < 0)
 	{
-		cd2SndClampSaid = 0;	/* out of the clamp again: a later boost may say so */
-
-		if (e->revPitch < 0)
-			e->revPitch = 0;
+		e->revPitch = 0;
 	}
 
 	p = ((long long)e->idlePitch * CD2_SND_PITCH_SCALE) >> 12;
