@@ -1731,18 +1731,31 @@ extern "C"
 #endif
 void GR_SaveVRAM(const char* outputFileName, int x, int y, int width, int height, int bReadFromFrameBuffer);
 
-// JERICHO: -vramview [frames] - re-dump the LIVE VRAM to vram_live.tga every N
-// frames while the game runs, so the page/CLUT layout can be watched as it
-// changes instead of only at exit (which JERICHO_DUMPVRAM=1 gives). View it with
-// an image viewer that reloads, or tools/vramdump.py. 0 = off.
+#ifdef __cplusplus
+extern "C"
+#endif
+int GR_ShowVRAMDebug();
+
+// JERICHO: -vramview [frames] - open a SECOND window showing the live VRAM,
+// refreshed every frame, so a page/CLUT can be watched as it moves. Also
+// re-dumps vram_live.tga every <frames> (default 15) for tools/vramdump.py.
 int gVramViewInterval = 0;
 int gVramViewCounter = 0;
+int gVramViewWindowReported = 0;
 
 void JerichoVramViewTick(void)
 {
 	if (gVramViewInterval <= 0)
 		return;
 
+	// The live window, every frame.
+	if (GR_ShowVRAMDebug() && gVramViewWindowReported == 0)
+	{
+		gVramViewWindowReported = 1;
+		printInfo("[vramview] live VRAM window open\n");
+	}
+
+	// The file, every N frames, for the offline palette check.
 	if (++gVramViewCounter < gVramViewInterval)
 		return;
 
@@ -2133,8 +2146,9 @@ void PrintCommandLineArguments()
 		"  -level <chicago|havana|lasvegas|rio|0-3> : boot straight into a city,\n"
 		"        bypassing the frontend (game mode defaults to Take A Ride)\n"
 		"  -car <number|slot1..slot10> : player car (model index or frontend slot)\n"
-		"  -vramview [frames] : re-dump the live VRAM to vram_live.tga every\n"
-		"        <frames> (default 15) so it can be watched as it changes\n"
+		"  -vramview [frames] : open a second window showing the live VRAM,\n"
+		"        refreshed every frame (also re-dumps vram_live.tga every\n"
+		"        <frames>, default 15, for tools/vramdump.py)\n"
 		"  -gamemode <takeadrive|pursuit|getaway|gaterace|checkpoint|trailblazer|\n"
 		"        survival|copsandrobbers|capturetheflag> : game mode override\n"
 		"  -weather <none|rain|wet> : weather override (with -level)\n"

@@ -250,8 +250,8 @@ Still open:
   state grows with the frame count, something is still taking pages back — check the
   two `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
 - Visual confirmation stays the user's: the logs prove pages are placed, claimed and
-  kept — not that a car looks right. `-vramview` re-dumps the live VRAM so a page or
-  CLUT can be watched as it changes.
+  kept — not that a car looks right. `-vramview` opens a second window showing the
+  live VRAM so a page or CLUT can be watched as it changes.
 
 ## Related
 

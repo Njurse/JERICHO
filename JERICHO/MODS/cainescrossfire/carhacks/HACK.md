@@ -85,7 +85,7 @@ region to put a foreign vehicle's pages in.
 | where the player's car came from | `JERICHO-RUN: level=… carslot=5 model=9 …` then the engine's `slot 5 geometry from RIO model 9` |
 | where imported pages landed | `cross-city: pinned set 77 index 77: slot=14, rect=(512,0), page=0008 …` |
 | what is actually in VRAM | `JERICHO_DUMPVRAM=1` then `tools/vramdump.py vram_dump.tga --png out.png` |
-| VRAM live, while you play | `-vramview [frames]` re-dumps `vram_live.tga` every N frames (default 15) so it can be watched in an image viewer |
+| VRAM live, while you play | `-vramview [frames]` opens a second window showing the live VRAM every frame (and re-dumps `vram_live.tga` every N frames, default 15, for `vramdump.py`) |
 | replay a run exactly | `-seed N` (the seed picks module randomness) |
 
 ## Choosing the player's car
