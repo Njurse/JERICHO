@@ -80,7 +80,8 @@ region to put a foreign vehicle's pages in.
 
 | what | how |
 |---|---|
-| drive a Rio special body in Havana | `tools/launch_havana_rio_police.bat 9\|10\|12 [test [frames]]` |
+| drive a Rio police car in Havana | `tools/launch_havana_rio_police.bat [model] [test [frames]]` (model 0 = the Rio police car) |
+| drive a Havana police car in Rio | `tools/launch_rio_havana_police.bat [model] [test [frames]]` (model 0 = the Havana police car) |
 | any cross-city combination | `tools/devcheck.sh [frames]` — exits non-zero on failure |
 | where the player's car came from | `JERICHO-RUN: level=… carslot=5 model=9 …` then the engine's `slot 5 geometry from RIO model 9` |
 | where imported pages landed | `cross-city: pinned set 77 index 77: slot=14, rect=(512,0), page=0008 …` |
