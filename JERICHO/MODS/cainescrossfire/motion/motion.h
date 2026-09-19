@@ -150,6 +150,19 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 //     direction comes from the thrust's sign instead.
 #define CD2_MOTION_DELTA_GAIN	5	// speed units per step -> angle, per step
 
+// The transient term's floor, in PSX angle units after the gain above: a speed change
+// that would tilt the car less than this produced no event, so it produces no pitch. This
+// is what makes a gentle drive exactly flat - without it the integrator's ordinary
+// breathing is summed into a permanent tilt.
+#define CD2_MOTION_DELTA_FLOOR	5	// ~0.44 degrees
+
+// The sustained term's speed window, in speed units per step. Below the floor the car
+// has no wheelie at all however hard the throttle is; above the full mark the pitch is
+// at the class maximum. Speeds in this model run to about 275, so 25 is a crawl and 180
+// is properly moving.
+#define CD2_MOTION_SPEED_FLOOR	25
+#define CD2_MOTION_SPEED_FULL	180
+
 // A car in reverse has the same delta sign for the opposite reason, and should not
 // pitch as hard - it is a different manoeuvre, not a faster one.
 #define CD2_MOTION_REVERSE_PCT	50	// % of the amplitude when the car is going backwards
@@ -195,6 +208,7 @@ typedef struct CD2_MOTION_STATE
 
 	// --- Layer 2: acceleration pitch-back ---
 	int prevSpeed;		// last step's speed, for the delta
+	int speed;			// this step's speed (a magnitude), for the speed-scaled pitch
 	int delta;		// change in speed over the last step (signed)
 	int throttle;		// the thrust applied this step: -1, 0 or +1 (NOT an analogue)
 	int accelPitch;		// the spring's position

@@ -397,6 +397,7 @@ void cd2MotionStep(int carId)
 
 	st->delta = speed - st->prevSpeed;
 	st->prevSpeed = speed;
+	st->speed = speed;
 	st->throttle = jer_clamp_int(gCd2Car[carId].throttle, -1, 1);
 }
 
@@ -405,13 +406,33 @@ static void cd2AccelApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
 {
 	int target = 0, accel;
 
-	/* The sustained half: while the car is under power, so is the pitch. Reversing is
-	 * the same power pointed the other way, and gets the opposite pitch at half
-	 * amplitude - backing up is a different manoeuvre, not a faster one. */
-	if (st->throttle > 0)
-		target = cls->pitchMax;
-	else if (st->throttle < 0)
-		target = -(cls->pitchMax / 2);
+	/* The sustained half: while the car is under power, so is the pitch - but scaled by
+	 * SPEED, because lifting the nose is something a car does when it has the power to
+	 * lift itself, not something it does while crawling. Below CD2_MOTION_SPEED_FLOOR
+	 * there is no sustained pitch at all; by CD2_MOTION_SPEED_FULL it is at full
+	 * amplitude. That rule is from the source material and it is also what keeps gentle
+	 * driving flat: at walking pace this term is zero whatever the throttle is doing.
+	 * Reversing is the same power pointed the other way and gets the opposite pitch at
+	 * half amplitude - backing up is a different manoeuvre, not a faster one. */
+	{
+		int speed = st->speed;
+		int scale;
+
+		if (speed < 0)
+			speed = -speed;
+
+		if (speed <= CD2_MOTION_SPEED_FLOOR)
+			scale = 0;
+		else if (speed >= CD2_MOTION_SPEED_FULL)
+			scale = 4096;
+		else
+			scale = ((speed - CD2_MOTION_SPEED_FLOOR) * 4096) / (CD2_MOTION_SPEED_FULL - CD2_MOTION_SPEED_FLOOR);
+
+		if (st->throttle > 0)
+			target = (cls->pitchMax * scale) >> 12;
+		else if (st->throttle < 0)
+			target = -(((cls->pitchMax / 2) * scale) >> 12);
+	}
 
 	/* The transient half: the speed delta, which is what actually moves the car.
 	 * Braking is a negative delta, so the same rule that lifts the nose on power
@@ -425,6 +446,14 @@ static void cd2AccelApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
 		 * instead - and a car backing up swaps the pitch's sign rather than keeping it */
 		if (st->throttle < 0)
 			d = -((d * CD2_MOTION_REVERSE_PCT) / 100);
+
+		/* The floor. A delta too small to produce CD2_MOTION_DELTA_FLOOR of angle is
+		 * not an event, it is the integrator breathing - and applied continuously it
+		 * tilts the car for no reason the player can see, which is the "it tilts when
+		 * nothing happened" family of reports. Below the floor this term is exactly
+		 * zero, so a tilt means something occurred. */
+		if (d < CD2_MOTION_DELTA_FLOOR && d > -CD2_MOTION_DELTA_FLOOR)
+			d = 0;
 
 		target += d;
 	}
