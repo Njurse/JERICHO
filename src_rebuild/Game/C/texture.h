@@ -44,6 +44,19 @@ extern void CarImportPin(void);
 // debug run - the check that says whether streaming replaced them.
 extern void CarImportDumpState(void);
 
+// JERICHO: the texture sets one imported model's own polygons name. Cleared per slot
+// before the level's car models are built; buildNewCarFromModel records into it as it
+// walks the polys, and LoadImportedTPages imports only what it holds.
+extern void CarModelSetsClear(int slot);
+extern void CarModelSetsAdd(int slot, int set);
+extern int  CarModelSetCount(int slot);
+extern int  CarModelSet(int slot, int k);
+
+// JERICHO: clear every bit of cross-city state for a new level - pins, remaps, page
+// ownership, the CLUT cursor and the per-slot set lists. Called from InitCarImport,
+// which runs before the level's car models are built.
+extern void CarImportResetState(void);
+
 // JERICHO: whether a VRAM rectangle (a tpage position) is owned by an imported page.
 // The spool's own upload paths must respect this - they bypass LoadTPageAndCluts.
 extern int CarPageRectOwned(int x, int y);

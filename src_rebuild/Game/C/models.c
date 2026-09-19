@@ -5,6 +5,7 @@
 #include "mission.h"
 #include "cars.h"
 #include "cosmetic.h"
+#include "texture.h"	// JERICHO: CarImportResetState (cross-city per-level reset)
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 
@@ -434,6 +435,12 @@ void InitCarImport(void)
 {
 	int city = -1;
 	int i;
+
+	// JERICHO: a new level starts from a clean cross-city slate. This runs BEFORE the
+	// level's car models are built, so the per-slot set lists buildNewCarFromModel
+	// fills start empty (and last level's pins/ownership do not leak). See
+	// CarImportResetState in texture.c.
+	CarImportResetState();
 
 	FreeCarImport(&gCarImport);
 	gCarImportCity = -1;

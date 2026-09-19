@@ -65,7 +65,8 @@ Known so far, and worth keeping:
 | CHICAGO | 10 | school bus | `CARMODEL_10_clean.dmodel`; `-car slot8` |
 | CHICAGO | 11 | (reserved, no data) | forcing it crashes in load |
 | VEGAS | (special) | ambulance | "Steal the Ambulance" mission; exact model TBC |
-| HAVANA | 9 | **truck** | seen in Rio (import slot 5) — so 9 is NOT the cop car |
+| HAVANA | **0** | **police car** | found by cycling (`tools/cycle_vehicles.bat`); drives from `import = 3:1:0` in Rio (slot 3 = Rio's model 0) |
+| HAVANA | 9 | truck | seen in Rio (import slot 5) — so 9 is NOT the cop car |
 
 Not yet identified — look at the car in a level, then write it here:
 
@@ -78,7 +79,8 @@ Not yet identified — look at the car in a level, then write it here:
 | CHICAGO | 4 | ? |
 | CHICAGO | 9 | ? |
 | CHICAGO | 12 | ? |
-| HAVANA | 0..4 | ? |
+| HAVANA | 0 | police car (identified) |
+| HAVANA | 1..4 | ? |
 | HAVANA | 8 | ? |
 | HAVANA | 10 | ? |
 | HAVANA | 11 | ? |

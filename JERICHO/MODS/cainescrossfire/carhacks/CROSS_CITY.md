@@ -232,6 +232,11 @@ Two later texture defects, both in `buildNewCarFromModel` (see `HACK.md`):
   set. Imported cars now carry a direct CLUT from their own page instead
   (`plotCarGlobals.directClut`), so no host row is touched and the car wears its own
   colours.
+- **A civilian import asked for six pages; the level leaves five.** The sixth never
+  placed, and an unplaced page keeps the dummy `(960,0)` tpage — inside a live page —
+  so the car showed another page's pixels. The import now pulls only the sets the
+  model's own polygons name (`CarModelSetCount`/`CarModelSet`, recorded during
+  `buildNewCarFromModel`): Havana model 0 in Rio asks for **2**, both place.
 
 The player's car is chosen on the command line (`-car <model>`), not by the module.
 Import a vehicle into a spare resident slot and pass its model number:

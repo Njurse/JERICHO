@@ -139,6 +139,20 @@ import = 5:3:9      # RIO model 9 into spare resident slot 5
   host `civ_clut` row is read or written for an imported car. Stock cars are untouched
   (`imported` = 0, `directClut` stays off).
 
+## A civilian import pulls only what the car names
+
+A civic body used to request the whole `carTpages` list — **six** sets. The level
+leaves five usable slots, so the sixth page never placed, and an unplaced page leaves
+`texture_pages`/`texture_cluts` at the **dummy** `(960,0)`/`(960,16)`, which sits inside
+a live page — so the car sampled another page's pixels. That was the "contamination".
+
+Now `buildNewCarFromModel` records the `texture_set` of every FT3/FT4/GT3/GT4 poly it
+walks (the engine's own `PolySizes` walk, not the abandoned raw-lump scan) into a
+per-slot list, and `LoadImportedTPages` imports only those. Havana model 0 in Rio asks
+for **2** sets (36 and 21), both place, and the palette check reports MATCH. Special
+bodies are unchanged (two `specTpages`, already fits). The list is cleared per level by
+`CarImportResetState`, which now runs from `InitCarImport` — before the models are built.
+
 ## Still open
 
 - The thrash meter is the thing to watch. If `page re-uploads` in the final page state

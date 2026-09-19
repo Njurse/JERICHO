@@ -1098,6 +1098,60 @@ static RECT16 sPinClutCursor;			// walking CLUT-row cursor for the imported page
 static int sPinEvictions;			// world pages taken back this run, for the dump
 static int sPinReloads;				// times we re-uploaded a page we had already placed - the thrash meter
 
+// JERICHO: the texture sets each imported model's OWN polygons name. buildNewCarFromModel
+// collects them as it walks the poly stream (the engine's own, reliable PolySizes walk);
+// LoadImportedTPages then imports only these instead of a whole city's six civilian sets.
+// Without it a civilian import asks for 6 pages while the level leaves 5, so one page
+// stays unplaced - and an unplaced page leaves texture_pages/texture_cluts at the DUMMY
+// (960,0)/(960,16), which is inside a live page, so the car shows another page's pixels.
+#define CAR_MODEL_SETS_MAX 16
+
+static int sModelSetCount[MAX_CAR_RESIDENT_MODELS];
+static unsigned char sModelSet[MAX_CAR_RESIDENT_MODELS][CAR_MODEL_SETS_MAX];
+
+void CarModelSetsClear(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	sModelSetCount[slot] = 0;
+}
+
+void CarModelSetsAdd(int slot, int set)
+{
+	int i;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || set <= 0 || set > 127)
+		return;
+
+	for (i = 0; i < sModelSetCount[slot]; i++)
+	{
+		if (sModelSet[slot][i] == set)
+			return;		// already have it
+	}
+
+	if (sModelSetCount[slot] >= CAR_MODEL_SETS_MAX)
+		return;
+
+	sModelSet[slot][sModelSetCount[slot]++] = (unsigned char)set;
+}
+
+int CarModelSetCount(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	return sModelSetCount[slot];
+}
+
+int CarModelSet(int slot, int k)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || k < 0 || k >= sModelSetCount[slot])
+		return 0;
+
+	return sModelSet[slot][k];
+}
+
 static void CarPinRecord(int set, int index, int offset, int size, int preferred)
 {
 	if (sPinCount >= CAR_PIN_MAX)
@@ -1406,7 +1460,11 @@ void CarImportDumpState(void)
 // CarPageRectOwned then returned 1 for them and LoadTPageAndCluts / the two spool
 // sites refused the WORLD's uploads at exactly those rectangles - the world drew
 // stale pages there. Clear everything here, once per level.
-static void CarImportResetState(void)
+//
+// Called from InitCarImport (models.c), which runs BEFORE the level's car models are
+// built - so the per-slot set lists start empty and buildNewCarFromModel fills them
+// for the imported slots.
+void CarImportResetState(void)
 {
 	int i;
 
@@ -1417,6 +1475,9 @@ static void CarImportResetState(void)
 
 	for (i = 0; i < 19; i++)
 		sCarPageOwned[i] = 0;
+
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		sModelSetCount[i] = 0;
 
 	sPinClutCursor.x = 0;
 	sPinClutCursor.y = 0;
@@ -1432,9 +1493,6 @@ void LoadImportedTPages(void)
 	int pref[64];		// preferred slot per set: the rectangle the replaced car used, or -1
 	int nsets = 0;
 	int i, j;
-
-	// JERICHO: start this level from a clean slate (see CarImportResetState).
-	CarImportResetState();
 
 	// (placement moved to draw time - see CarImportPin/CarPageFindSlot - so the load
 	// no longer tracks slots, positions or CLUT rows)
@@ -1546,10 +1604,23 @@ void LoadImportedTPages(void)
 		}
 		else
 		{
-			// Civilian body: the city's civilian car sets.
-			for (k = 0; k < 6; k++)
+			// Civilian body: only the sets THIS model's own polygons name, collected by
+			// buildNewCarFromModel as it walked them. Pulling the whole carTpages list (6
+			// sets) asked for 6 pages where the level leaves 5, so one stayed unplaced -
+			// and an unplaced page leaves texture_pages/texture_cluts at the DUMMY,
+			// which sits inside a live page, so the car showed another page's pixels.
+			int count = CarModelSetCount(i);
+
+			if (count <= 0)
 			{
-				int set = carTpages[src][k];
+				// Walk found nothing (or the model was not built yet): keep the old
+				// whole-list behaviour rather than import nothing at all.
+				count = 6;
+			}
+
+			for (k = 0; k < count; k++)
+			{
+				int set = (count == 6) ? carTpages[src][k] : CarModelSet(i, k);
 
 				if (set != 0 && nsets < 64 && !SetInList(sets, nsets, set))
 				{
