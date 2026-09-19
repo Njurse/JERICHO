@@ -463,6 +463,22 @@ void cd2CarSetAiPivot(void* vcp, int dir)
 // Event handlers
 // ---------------------------------------------------------------------------
 
+/*
+ * The module is going away. Anything it took from the engine has to be handed back, or
+ * it stays taken for the life of the process - which is exactly what happened to
+ * gBlockPlayerExit: set at every match start, never released, so a player could not
+ * leave his car by choice even after the match that wanted that.
+ */
+static int cd2OnShutdown(void* ud, void* args)
+{
+	(void)ud;
+	(void)args;
+
+	gBlockPlayerExit = 0;
+
+	return JER_RESULT_CONTINUE;
+}
+
 static int cd2OnBoot(void* ud, void* args)
 {
 	(void)ud;
@@ -706,6 +722,7 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_VS_CAR, cd2OnCarVsCar, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DEBUG_TICK, cd2OnDebugTick, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2OnGameStart, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_SHUTDOWN, cd2OnShutdown, NULL, 0);
 
 	/* these are not part of the pursuit-music option: the on-foot swap, the turbo
 	 * bar and the collision knock are all wanted whatever that flag is set to. */

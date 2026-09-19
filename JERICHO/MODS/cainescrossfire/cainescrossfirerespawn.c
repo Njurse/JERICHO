@@ -309,8 +309,10 @@ int cd2OnGameStart(void* ud, void* args)
 	(void)ud;
 	(void)args;
 
-	/* a match is starting: no getting out of the car by choice */
-	gBlockPlayerExit = 1;
+	/* a match is starting: no getting out of the car by choice. Only while the module
+	 * is actually on, so a disabled module cannot block the engine's exit either. */
+	if (gCd2Cfg.enabled)
+		gBlockPlayerExit = 1;
 
 	memset(gCd2Respawn, 0, sizeof(gCd2Respawn));
 	memset(gCd2SceneryHits, 0, sizeof(gCd2SceneryHits));

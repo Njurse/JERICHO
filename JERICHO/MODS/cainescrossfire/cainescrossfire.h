@@ -500,8 +500,9 @@ typedef struct CD2_CAR
 	int yawRate;       // current yaw rate, PSX-units/frame (signed)
 	int slip;
 	// the same step's SIGNED forward speed. The lean is built from the lateral
-	// velocity, whose meaning flips when the car travels backwards - and hd.speed is
-	// a magnitude, so it cannot tell you which way that is.
+	// SPRINT: the signed forward speed, the direction of travel. The lean is built
+	// from the lateral velocity, whose meaning flips when the car travels backwards -
+	// and hd.speed is a magnitude, so it cannot tell you which way that is.
 	int fwdSpeed;          // lateral velocity, speed units (signed), for visuals
 	int roll;          // smoothed body roll, PSX angle units
 	int pitch;         // turbo kick: nose-up pitch (the far wheels lifting)

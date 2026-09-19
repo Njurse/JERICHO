@@ -196,7 +196,7 @@ typedef struct CD2_MOTION_STATE
 	// --- Layer 2: acceleration pitch-back ---
 	int prevSpeed;		// last step's speed, for the delta
 	int delta;		// change in speed over the last step (signed)
-	int throttle;		// the pad's throttle, 0..255
+	int throttle;		// the thrust applied this step: -1, 0 or +1 (NOT an analogue)
 	int accelPitch;		// the spring's position
 	int accelVel;		// and its velocity
 	int accelShift;		// the squat that comes with it (along the car)
