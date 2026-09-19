@@ -42,6 +42,7 @@ the frontend state as well, but a frontend run does not load in every environmen
 | `levmodels.py <city.LEV> ...` | which car models each city ships (from `LUMP_CAR_MODELS`), plus its `carTpages`/`specTpages`. The data behind `carhacks/VEHICLES.md` |
 | `vramdump.py <tga> [--png out.png] [--rect X Y W H label] [--log L --lev V]` | decode a VRAM dump: per-rectangle stats, a viewable PNG, and a palette check that proves an imported car's CLUTs are its own. Feed it `vram_live.tga` re-dumped by `-vramview` |
 | `launch_*.bat` | boot a specific scenario for playing. `test [frames]` makes it self-terminate and print a replayable seed; `dry` prints the roll without launching or writing config |
+| `_enable_module.bat <id>` | turn a module ON in the **bin** copy of `JERICHO/CONFIG/modlist.ini` — the copy the game reads. Called by the cross-city launchers, which are useless without `cainescrossfire` and used to rely on the bin mirror happening to agree with the repo |
 | `launch_havana_rio_police.bat` | drive RIO's police car (model 0) in HAVANA: import into resident slot 0, `-car 0`. `[model]` tries another Rio body |
 | `launch_rio_havana_police.bat` | drive HAVANA's police car (model 0) in RIO: import into resident slot 3 (Rio's own model 0 lives there, so that is the slot to replace), `-car 0` |
 

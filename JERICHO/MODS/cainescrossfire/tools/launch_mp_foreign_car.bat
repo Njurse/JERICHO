@@ -17,20 +17,24 @@ rem     ambient traffic mix foreign cars in too - the AI picks its car at spawn
 rem     from the resident slots the level actually loaded (see AI.md), and
 rem     traffic draws from slots 0..4.
 rem
-rem Requires the cainescrossfire module enabled in JERICHO\CONFIG\modlist.ini
-rem (bin\Release_dev\JERICHO\CONFIG\modlist.ini).
+rem This launcher turns the cainescrossfire module ON itself, in the bin copy of
+rem JERICHO\CONFIG\modlist.ini (the repo's modlist pins gameplay modules OFF, and the
+rem bin copy is what the game reads). It used to only say it was required, which
+rem meant it silently did nothing whenever the bin mirror disagreed with the repo.
+rem See tools\_enable_module.bat.
 rem
 rem NOTE: it OVERWRITES bin\Release_dev\JERICHO\CONFIG\carhacks.ini when it
 rem launches (cross-city is off by default; this switches it on for the
 rem session). Pass the argument "dry" to see the roll and the config it would
 rem write without launching or changing anything.
 rem
-rem HONEST CAVEAT: a cross-city vehicle carries the other city's geometry and
-rem palettes, but its polygons name THAT city's texture pages, which this level
-rem has not loaded - so a foreign car does not yet render correctly (usually
-rem invisible). That is the outstanding texture-page import, described in
-rem carhacks\CROSS_CITY.md. Use this launcher as much to reproduce that as to
-rem enjoy it.
+rem A cross-city vehicle carries the other city's geometry, its palettes AND - since
+rem the texture-page import landed - its own texture pages, paged into VRAM at draw
+rem time and painted from the source city's civ_clut rows. So a foreign car is not
+rem the invisible blob it used to be; if one comes up untextured or with the wrong
+rem colours, that is a bug worth chasing, not the known state. carhacks\HACK.md has
+rem the mechanism, and tools\vramdump.py can prove whether the page and its CLUTs
+rem actually landed.
 rem
 rem Model 11 - the body the game reserves for a content-override truck - exists
 rem in Havana, Rio and Vegas but NOT in Chicago, so it is only offered when
@@ -136,6 +140,10 @@ if /i "%~1"=="dry" (
 	endlocal
 	exit /b 0
 )
+
+rem ---- the module that provides all of this must actually be on --------------
+call "%~dp0_enable_module.bat" cainescrossfire "%EXEDIR%"
+echo.
 
 > "%INI%" echo # carhacks config - written by tools\launch_mp_foreign_car.bat
 >>"%INI%" echo # cross-city imports: slot:city:model, city = 0 CHICAGO 1 HAVANA 2 VEGAS 3 RIO

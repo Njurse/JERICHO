@@ -16,8 +16,11 @@ rem   * the player either gets a random local slot (-car slotN) or, half the
 rem     time, a randomly chosen FOREIGN car (-car <model>, imported into spare
 rem     resident slot 5).
 rem
-rem Requires the cainescrossfire module enabled in JERICHO\CONFIG\modlist.ini
-rem (bin\Release_dev\JERICHO\CONFIG\modlist.ini).
+rem This launcher turns the cainescrossfire module ON itself, in the bin copy of
+rem JERICHO\CONFIG\modlist.ini (the repo's modlist pins gameplay modules OFF, and the
+rem bin copy is what the game reads). It used to only say it was required, which
+rem meant it silently did nothing whenever the bin mirror disagreed with the repo.
+rem See tools\_enable_module.bat.
 rem
 rem NOTE: when it launches, this OVERWRITES bin\Release_dev\JERICHO\CONFIG\carhacks.ini
 rem (the cross-city hack is off by default; this launcher switches it on and
@@ -146,6 +149,10 @@ if /i "%~1"=="dry" (
 	endlocal
 	exit /b 0
 )
+
+rem ---- the module that provides all of this must actually be on --------------
+call "%~dp0_enable_module.bat" cainescrossfire "%EXEDIR%"
+echo.
 
 > "%INI%" echo # carhacks config - written by tools\launch_mp_random_mix.bat
 >>"%INI%" echo # cross-city imports: slot:city:model, city = 0 CHICAGO 1 HAVANA 2 VEGAS 3 RIO

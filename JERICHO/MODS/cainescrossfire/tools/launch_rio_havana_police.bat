@@ -70,7 +70,7 @@ set "TESTARGS=-frames %FRAMES% -seed %SEED%"
 
 echo.
 echo   level          : %LEVEL%, daytime, -mp 1
-echo   modules        : combatd2 [carhacks] only
+echo   modules        : cainescrossfire [carhacks] - turned on by this launcher
 echo   player car     : HAVANA model %MODEL%  (0 = the Havana police car)
 echo   import         : slot %ISLOT% to HAVANA model %MODEL%
 if /i "%MODE%"=="test" echo   test mode      : frames=%FRAMES% seed=%SEED%
@@ -83,6 +83,14 @@ echo   dry: nothing written, nothing launched
 endlocal
 exit /b 0
 :notdry
+
+rem ---- the module that provides this must actually be on ---------------------
+rem Writing carhacks.ini is not enough: only cainescrossfire reads it, and the repo's
+rem modlist pins that module OFF (gameplay mods are opt-in). The bin copy of the
+rem modlist is what the game reads, and the frontend rewrites it from Options ->
+rem JERICHO, so switching it on here is a runtime change - see _enable_module.bat.
+call "%~dp0_enable_module.bat" cainescrossfire "%EXEDIR%"
+echo.
 
 rem ---- the import ------------------------------------------------------------
 echo cross_city_vehicles = 1 > "%CFG%"
