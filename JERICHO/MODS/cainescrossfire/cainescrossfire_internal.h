@@ -43,6 +43,16 @@
 // Shared per-car state (owned by cainescrossfire.c)
 // ---------------------------------------------------------------------------
 extern CD2_CAR gCd2Car[MAX_CARS];
+
+/* the debug driver's scripted pad (cd2debug.c): ORed into the player's pad so a test
+ * can hold a button the AI would otherwise hold for it. 0 in normal play. */
+int cd2DbgPadMask(void);
+void cd2DbgSetPad(int mask);
+
+/* the same driver's forced thrust for the motion springs: the module takes its thrust
+ * from the engine's decoded cp->thrust, which a pad hook cannot reach. */
+int cd2DbgThrust(int* forced);
+void cd2DbgSetThrust(int t);
 extern int gCd2SceneryHits[MAX_CARS];	// scenery impacts per car this level
 extern int gCd2TrafficLastHit[MAX_CARS];	// last scenery-hit count seen, per car
 

@@ -473,10 +473,39 @@ static void cd2AccelApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
 
 	/* accel = (target - pos) * stiffness - vel * damping, in /4096 fixed point. The
 	 * class decides how fast it gets there and how much it overshoots. */
-	accel = ((target - st->accelPitch) * cls->stiffness >> 12) - (st->accelVel * cls->damping >> 12);
+	{
+		int err = target - st->accelPitch;
+		int stiff = cls->stiffness;
+
+		/* Is the body being pushed further from level, or coming back? Compression is
+		 * the stiff half: a car digs in fast and climbs back reluctantly, which is the
+		 * asymmetry that reads as weight. Tested on the SIGN of the error against the
+		 * sign of the position rather than on the throttle, so it is the body's motion
+		 * being classified - a launch, a dive and a landing all compress, and every
+		 * return is a rebound. */
+		if (err != 0 && (st->accelPitch == 0 ? 1 : ((st->accelPitch > 0) == (err > 0))))
+			stiff = (cls->stiffness * CD2_MOTION_COMPRESS_PCT) / 100;
+
+		accel = ((err * stiff) >> 12) - (st->accelVel * cls->damping >> 12);
+	}
 
 	st->accelVel += accel;
 	st->accelPitch += st->accelVel;
+
+	/* The rebound's bound, and what overshootPct was always for: it was declared,
+	 * initialised in all three classes and never read. Returning to level may carry the
+	 * body PAST level once - that is the snap the source material describes - but no
+	 * further than the class allows, so the crossing is a movement rather than the start
+	 * of a wobble. */
+	if (target == 0)
+	{
+		int limit = (cls->pitchMax * cls->overshootPct) / 100;
+
+		if (st->accelPitch > limit)
+			st->accelPitch = limit;
+		else if (st->accelPitch < -limit)
+			st->accelPitch = -limit;
+	}
 }
 
 // The squat, derived from the spring's own position so it cannot drift out of step

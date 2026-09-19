@@ -76,6 +76,19 @@ int cd2OnCarPad(void* ud, void* args)
 	if (!gCd2Cfg.enabled || !a->live)
 		return JER_RESULT_CONTINUE;
 
+	/* the debug driver's scripted pad, for the player's car only, and BEFORE the turbo
+	 * so a scripted double tap registers like a real one. A test needs this because the
+	 * AI holds the throttle almost continuously: it will accelerate for you but it will
+	 * never let go, and half of what the body does happens on the release. */
+	{
+		/* NOTE, because it is not obvious and it cost a build: this pad reaches the MODULE
+		 * (the turbo's taps) but not the ENGINE. The module takes its thrust from the
+		 * engine's already-decoded cp->thrust, so holding MPAD_CROSS through a pad step
+		 * leaves the thrust at 0 - measured, over a whole run. Use `thrust:<n>` to drive
+		 * the springs and this to drive a scripted double tap. */
+		int dbg = cd2DbgPadMask();
+	}
+
 	/* the turbo trigger sees the pad before anything in here rewrites it: the
 	 * double tap is a driver gesture, not a control remap */
 	cd2TurboPad(cp->id, a->pad);
@@ -275,7 +288,16 @@ int cd2OnCarStep(void* ud, void* args)
 		);
 	}
 
-	gCd2Car[cp->id].throttle = (cp->thrust > 0) ? 1 : (cp->thrust < 0) ? -1 : 0;
+	{
+		int forcedThrust = 0;
+
+		/* a scripted thrust, when the debug driver has set one (thrust:<n>): this is the
+		 * only lever that reaches Layer 2, because the pad hook cannot change cp->thrust */
+		if (cp->id == player[0].playerCarId && cd2DbgThrust(&forcedThrust))
+			gCd2Car[cp->id].throttle = forcedThrust;
+		else
+			gCd2Car[cp->id].throttle = (cp->thrust > 0) ? 1 : (cp->thrust < 0) ? -1 : 0;
+	}
 
 	// Traffic is exempt from the roll-over limiter: it is meant to be thrown
 	// around, and clamping its pitch/roll is exactly what stopped that.

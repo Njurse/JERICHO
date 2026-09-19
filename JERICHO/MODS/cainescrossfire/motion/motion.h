@@ -163,6 +163,17 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 #define CD2_MOTION_SPEED_FLOOR	25
 #define CD2_MOTION_SPEED_FULL	180
 
+// Compression against rebound. The spring is asymmetric: while the body is being pushed
+// further from level - the nose rising under power, the nose diving under the brakes -
+// it uses the class stiffness multiplied by this. Coming back it uses the class stiffness
+// unmodified, which is why a car digs in hard and then climbs back reluctantly. The source
+// material puts the ratio at 3-5x and this is the single global knob for it.
+//
+// Note that only the STIFFNESS splits. The damping stays high in both directions on
+// purpose: softening the rebound's damping as well would make the return underdamped,
+// which is a car that keeps rocking - the floatiness this is here to remove.
+#define CD2_MOTION_COMPRESS_PCT	400	// 4x
+
 // A car in reverse has the same delta sign for the opposite reason, and should not
 // pitch as hard - it is a different manoeuvre, not a faster one.
 #define CD2_MOTION_REVERSE_PCT	50	// % of the amplitude when the car is going backwards

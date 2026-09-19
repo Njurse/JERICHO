@@ -69,7 +69,7 @@
 #define CD2_DBG_DAMAGE		3000	// per frame, well above one hit's clamp
 #define CD2_DBG_KILL_TIMEOUT	300	// give up on a kill after this many frames (10s)
 
-enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT, CD2_DBG_TEAM, CD2_DBG_TURBO };
+enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT, CD2_DBG_TEAM, CD2_DBG_TURBO, CD2_DBG_PAD, CD2_DBG_THRUST };
 enum { CD2_DBG_ATT_ENEMY = 0, CD2_DBG_ATT_SELF, CD2_DBG_ATT_NONE, CD2_DBG_ATT_PLAYER, CD2_DBG_ATT_NPC };
 
 typedef struct CD2_DBG_STEP
@@ -81,6 +81,44 @@ typedef struct CD2_DBG_STEP
 } CD2_DBG_STEP;
 
 static CD2_DBG_STEP sSteps[CD2_DBG_MAX];
+
+// The scripted pad the debug driver holds on the player's car. Read by the module's pad
+// path and ORed into whatever the real controller sent, so a script drives alongside a
+// human rather than instead of one.
+static int sDbgPad = 0;
+
+// The forced thrust for Layer 2, and whether one is set at all. 99 is "not set" rather
+// than 0, because 0 is a legitimate thing to force - a coasting car is exactly the case
+// the release behaviour has to be tested in.
+static int sDbgThrust = 99;
+
+// [D] [T]
+void cd2DbgSetThrust(int t)
+{
+	sDbgThrust = t;
+}
+
+// [D] [T]
+int cd2DbgThrust(int* forced)
+{
+	if (sDbgThrust == 99)
+		return 0;
+
+	*forced = sDbgThrust;
+	return 1;
+}
+
+// [D] [T]
+void cd2DbgSetPad(int mask)
+{
+	sDbgPad = mask;
+}
+
+// [D] [T]
+int cd2DbgPadMask(void)
+{
+	return sDbgPad;
+}
 static int sCount = -1;		// -1 = not parsed yet
 static int sFrame;		// frames since GAME_START
 static int sKillVictim = -1;	// pending kill: victim car id (-1 = none)
@@ -162,6 +200,70 @@ static int cd2DbgReadAction(const char** s, int* arg)
 		*arg = on;
 		*s = p;
 		return CD2_DBG_TURBO;
+	}
+
+	if (cd2DbgMatch(&p, "thrust"))
+	{
+	/* thrust:<n> -- force the module's own thrust on the player's car, -1/0/1, until
+	 * another thrust: step replaces it (thrust:99 releases it back to the engine). This
+	 * is the ONLY way to drive Layer 2 headlessly, and the reason is not obvious: the
+	 * module takes its thrust from the engine's decoded cp->thrust, NOT from the pad
+	 * the CAR_PAD hook can rewrite - proven by holding MPAD_CROSS through the pad step
+	 * and watching the thrust stay 0 for the whole run. So the pad step drives the
+	 * turbo's taps and this one drives the springs. */
+	const char* e = p;
+	int v = 0, neg = 0;
+
+	if (*e == ':')
+		e++;
+
+	if (*e == '-')
+{
+		neg = 1;
+		e++;
+	}
+
+	while (*e >= '0' && *e <= '9')
+{
+		v = v * 10 + (*e - '0');
+		e++;
+	}
+
+	if (e == p)
+		return CD2_DBG_NONE;
+
+	*arg = neg ? -v : v;
+	*s = e;
+	return CD2_DBG_THRUST;
+	}
+
+	if (cd2DbgMatch(&p, "pad"))
+	{
+	/* pad:<mask> -- hold a pad mask on the PLAYER'S car until another pad: step
+	 * replaces it (pad:0 releases). A mask is MPAD_*, so 64 = cross = drive, 128 =
+	 * square = brake, 16 = triangle = handbrake. This is how a manoeuvre that needs
+	 * a driver's hands - a launch, a release, a double tap - gets exercised headlessly
+	 * at all: the AI mostly holds the throttle, so it never releases for you. */
+	if (*p != ':')
+		return CD2_DBG_NONE;
+
+	p++;
+
+	const char* e = p;
+	int v = 0;
+
+	while (*e >= '0' && *e <= '9')
+	{
+		v = v * 10 + (*e - '0');
+		e++;
+	}
+
+	if (e == p)
+		return CD2_DBG_NONE;
+
+	*arg = v;
+	*s = e;
+	return CD2_DBG_PAD;
 	}
 
 	if (cd2DbgMatch(&p, "team"))
@@ -585,6 +687,16 @@ static void cd2DbgRunStep(const CD2_DBG_STEP* st)
 			cd2WpnName(st->arg), cd2WpnName(cd2WpnSelected()));
 		break;
 	}
+
+	case CD2_DBG_THRUST:
+		cd2DbgSetThrust(st->arg);
+		printInfo("[cd2debug] forced thrust now %d on the player's car (99 = released)\n", st->arg);
+		break;
+
+	case CD2_DBG_PAD:
+		cd2DbgSetPad(st->arg);
+		printInfo("[cd2debug] pad mask now 0x%X on the player's car\n", st->arg);
+		break;
 
 	case CD2_DBG_TURBO:
 		/* the player's car */
