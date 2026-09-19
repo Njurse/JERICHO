@@ -1380,6 +1380,31 @@ void CarImportDumpState(void)
 // One page per car set, recovered from the imported file at the offset the page
 // list gives it (entries concatenated, each sector-aligned). Anything doubtful is
 // skipped and logged - a texture is never worth a crash or a corrupted VRAM.
+// JERICHO: cross-city state is PER LEVEL, and it used to survive a level change.
+// sPinCount/sRemapCount only ever appended, sCarPageOwned kept its 1s, and
+// sPinClutCursor stayed where the last level left it. So a second level loaded in
+// the same process inherited the first level's imported rectangles as "owned":
+// CarPageRectOwned then returned 1 for them and LoadTPageAndCluts / the two spool
+// sites refused the WORLD's uploads at exactly those rectangles - the world drew
+// stale pages there. Clear everything here, once per level.
+static void CarImportResetState(void)
+{
+	int i;
+
+	sPinCount = 0;
+	sRemapCount = 0;
+	sPinEvictions = 0;
+	sPinReloads = 0;
+
+	for (i = 0; i < 19; i++)
+		sCarPageOwned[i] = 0;
+
+	sPinClutCursor.x = 0;
+	sPinClutCursor.y = 0;
+	sPinClutCursor.w = 0;
+	sPinClutCursor.h = 0;
+}
+
 void LoadImportedTPages(void)
 {
 	int city = GetCarImportCity();
@@ -1388,6 +1413,9 @@ void LoadImportedTPages(void)
 	int pref[64];		// preferred slot per set: the rectangle the replaced car used, or -1
 	int nsets = 0;
 	int i, j;
+
+	// JERICHO: start this level from a clean slate (see CarImportResetState).
+	CarImportResetState();
 
 	// (placement moved to draw time - see CarImportPin/CarPageFindSlot - so the load
 	// no longer tracks slots, positions or CLUT rows)
