@@ -18,10 +18,9 @@
  *   (further layers - brake dive, airborne, landing - land here as they come.)
  *
  * A LAYER IS NOT A KICK. The knock (knock/knock.c) is an impulse: it carries an
- * angle to a ceiling and settles. An idle that did that would twitch and stop. So
- * the layers are procedural - sines and springs evaluated every frame - and only
- * the idle's random SPIKES are handed to the knock, where the settling machinery
- * already exists and is already tuned.
+ * angle to a ceiling and settles, which is what an impact should do. The layers are
+ * the opposite - procedural, sines and springs evaluated every frame, so they can be
+ * HELD for as long as the car is doing whatever drives them.
  *
  * Every layer is gated on the RACER SET: the player and the AI opponents. Traffic
  * and parked cars keep whatever the physics gave them, because a queue of traffic
@@ -85,9 +84,13 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // the ceilings cannot be breached by layering.
 //
 // In PSX angle units per frame at 30Hz: 1.2Hz = 164, 1.7Hz = 232, 2.3Hz = 314.
+// Raised by about half again (to roughly 1.9, 2.7 and 3.7Hz) so the idle reads as a
+// fast tremble rather than a slow sway, and the class amplitudes halved to match: the
+// spec is "almost nothing, but quick", and a slow deep motion at any depth reads as a
+// boat rather than an engine.
 #define CD2_IDLE_AXES		3	// pitch, roll, yaw
 #define CD2_IDLE_WAVES		3
-#define CD2_IDLE_FREQ		{ 164, 232, 314 }
+#define CD2_IDLE_FREQ		{ 262, 371, 502 }
 #define CD2_IDLE_WEIGHT		{ 2048, 1229, 819 }	/* 0.5, 0.3, 0.2 */
 
 // A per-car frequency detune, +/- this much, so two cars never share a period even
@@ -98,8 +101,14 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // The vertical bob runs on its own, FASTER frequencies than the axes. An idling
 // engine trembles quickly and shallowly; a slow deep rise and fall reads as a boat,
 // which is what the first pass at this looked like.
-// 2.6Hz = 355, 3.5Hz = 478, 4.4Hz = 601.
-#define CD2_IDLE_BOB_FREQ	{ 355, 478, 601 }
+// 3.9Hz = 533, 5.2Hz = 717, 6.6Hz = 902.
+//
+// Note the units: the bob is applied as a whole world unit (m->t[1] += bob), so 1 is
+// the smallest vertical step the matrix can express. At that size the bob is a square
+// wave, which is why it reads as a tremble rather than as motion, and why the idle's
+// visible depth lives in the ANGLES above instead. Going shallower than this means
+// removing the vertical, not tuning it.
+#define CD2_IDLE_BOB_FREQ	{ 533, 717, 902 }
 
 // The idle is all there is at a standstill, and by the time a car is properly moving
 // the motion layers take over and it must not fight them - so it fades out between
@@ -120,8 +129,8 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // A real spring-damper (accel = (target - pos) * stiffness - vel * damping), per
 // class, because this layer is HELD: the nose stays up while the throttle is on and
 // only comes back when it is released. The knock's two-phase motion cannot hold
-// anything - it carries an angle up and settles it, which is why the idle's spikes
-// use it and this does not.
+// anything - it carries an angle up and settles it, which is why an impact can use it
+// and this layer cannot.
 //
 // The target has two parts and they do different jobs:
 //   - the THRUST, which is sustained: while the car is under power, so is the pitch
@@ -157,23 +166,15 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 #define CD2_MOTION_MAX_BOB	80
 
 // ---------------------------------------------------------------------------
-// The spikes
+// The jolts that used to live here
 // ---------------------------------------------------------------------------
-// Every so often the idle is not smooth: the engine catches, a mount shifts, a
-// cylinder misfires - whatever it is, the car jolts once and settles. That is a
-// KICK, not a wave, so it is handed to the knock (knock/knock.c) as an impulse
-// instead of being animated here: the knock already knows how to carry an angle up
-// and settle it back, that machinery is already tuned by hand, and a second
-// implementation of it would only drift from the first.
-//
-// The impulse is sized with CD2_KNOCK_IMPULSE_TO, so these numbers are the ANGLE the
-// spike wants in PSX units and not a fudge factor that has to be re-tuned whenever
-// the knock's decay changes. 16 units is about 1.4 degrees.
-#define CD2_IDLE_SPIKE_MIN	24	// 0.8s at 30Hz
-#define CD2_IDLE_SPIKE_MAX	75	// 2.5s
-#define CD2_IDLE_SPIKE_PITCH	16
-#define CD2_IDLE_SPIKE_ROLL	12
-#define CD2_IDLE_SPIKE_YAW	8
+// Every 0.8 to 2.5 seconds a car at rest took a sudden kick on one random axis, handed
+// to the knock as an impulse. On paper it was the "occasional random impulse spike" the
+// idle was specified with. On screen it was the single most noticeable thing in the
+// layer and it read as the car snapping: measured as instantaneous 10-14 unit jumps
+// (about a degree) at 24-92 frame intervals, which is the cadence of the timer that
+// drove them. They are gone. The continuous fidget below is the whole of the idle now,
+// and if an idle kick is ever wanted again it belongs right here as a cd2KnockAdd.
 
 // ---------------------------------------------------------------------------
 // Per-car state
@@ -189,8 +190,7 @@ typedef struct CD2_MOTION_STATE
 	int step[CD2_IDLE_WAVES];			// per-car frequencies, detuned
 	int bobStep[CD2_IDLE_WAVES];			// and the bob's, which run faster
 	int driftPhase;					// the slow amplitude envelope
-	unsigned int rng;				// this car's generator, for the spikes
-	int spikeIn;					// frames until the next random spike
+	unsigned int rng;				// this car's generator: the phase and frequency offsets
 	int idleScale;					// smoothed 0..4096: full at rest, 0 at speed
 
 	// --- Layer 2: acceleration pitch-back ---
@@ -240,7 +240,7 @@ void cd2MotionCompose(int carId, CD2_VISUAL_OFFSET* o);
 // The layers, evaluated for one car and ADDED to an offset the caller already has
 // (the knock's). Called once per frame per car from the car-draw path, which is
 // render-only, so nothing here can reach the handling model. Advances the phases,
-// runs the spikes and the springs, and gates the whole thing on the racer set.
+// runs the springs, and gates the whole thing on the racer set.
 void cd2MotionApply(int carId, CD2_VISUAL_OFFSET* o);
 
 // Record what the car is doing this step - its speed, the change since the last step,

@@ -32,12 +32,15 @@ The three weights total 4096, which is not decoration: it makes the summed outpu
 **structurally** incapable of exceeding the class amplitude. Adding a fourth wave
 cannot breach a ceiling.
 
-Occasionally — every 0.8 to 2.5 seconds — a car at rest takes a sudden jolt of about
-1.4 degrees on one axis. That is not a wave and is not animated here: it is handed to
-the **knock** as an impulse, because the knock already knows how to carry an angle up
-and settle it back, and that machinery is tuned by hand. The impulses are sized through
-`CD2_KNOCK_IMPULSE_TO`, so `CD2_IDLE_SPIKE_PITCH 16` means "about 1.4 degrees" and
-keeps meaning it when the knock's decay is retuned.
+Cars used to take a sudden jolt of about 1.4 degrees on one axis every 0.8 to 2.5
+seconds. **That is gone.** It was specified as an occasional impulse spike, but on screen
+it was the most visible thing in the layer and it read as the car snapping: measured as
+instantaneous jumps of 10-14 units (about a degree) at 24-92 frame intervals, which is
+exactly the cadence of the timer that drove it. Moving the idle's own amplitude makes no
+difference to it either way - a jolt is an impulse, not a wave. What is left below is the
+continuous fidget, which is the whole of the idle now. If a jolt is ever wanted again it
+belongs in `cd2MotionApply` as a `cd2KnockAdd` call, sized through
+`CD2_KNOCK_IMPULSE_TO` so the number means an angle rather than a raw impulse.
 
 ### Layer 2 — the pitch-back, the squat, and the nose-bob
 
@@ -158,10 +161,10 @@ standstill, fading to nothing by `CD2_IDLE_SPEED_ZERO`.
 
 | want | change |
 |---|---|
-| a stronger or weaker shudder | the class `idlePitch/Roll/Yaw/Bob` |
+| how big the shudder is | the class `idlePitch/Roll/Yaw` |
+| the vertical bob | the class `idleBob` - **1 world unit is the floor**, see below |
 | a different shudder character | `CD2_IDLE_FREQ`, `CD2_IDLE_WEIGHT`, `CD2_IDLE_BOB_FREQ` |
 | how long it "breathes" | `CD2_IDLE_DRIFT_FREQ` |
-| more or fewer jolts | `CD2_IDLE_SPIKE_MIN/MAX`, `CD2_IDLE_SPIKE_*` |
 | when the idle goes away | `CD2_IDLE_SPEED_FULL/ZERO`, `CD2_IDLE_SCALE_LERP` |
 | how big a wheelie/stoppie | the class `pitchMax`, or `CD2_MOTION_DELTA_GAIN` |
 | how fast it gets there | the class `stiffness` |

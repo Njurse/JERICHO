@@ -30,9 +30,9 @@
 const CD2_MOTION_CLASS cd2MotionClasses[CD2_MOTION_CLASSES] =
 {
 	//  name      pitchMax  stiffness  damping  over%  idleP/R/Y  bob
-	{ "LIGHT",    137,       400,      1400,    35,     11, 11,  6,  1 },	// ~12 deg
-	{ "MEDIUM",   102,       340,      1415,    30,      9,  9,  5,  1 },	// ~9 deg
-	{ "HEAVY",     68,       240,      1350,    25,      7,  7,  4,  1 },	// ~6 deg
+	{ "LIGHT",    137,       400,      1400,    35,      6,  6,  3,  1 },	// ~12 deg
+	{ "MEDIUM",   102,       340,      1415,    30,      5,  5,  3,  1 },	// ~9 deg
+	{ "HEAVY",     68,       240,      1350,    25,      4,  4,  2,  1 },	// ~6 deg
 };
 
 // Which model is which class. -1 = work it out from the car's own numbers.
@@ -309,63 +309,8 @@ void cd2MotionSeed(int carId)
 	}
 
 	st->driftPhase = (int)(cd2MotionNext(&st->rng) & 4095);
-	st->spikeIn = CD2_IDLE_SPIKE_MIN + (int)(cd2MotionNext(&st->rng) % (unsigned)(CD2_IDLE_SPIKE_MAX - CD2_IDLE_SPIKE_MIN + 1));
 	st->idleScale = 4096;
 	st->inited = 1;
-}
-
-// The impulse that asks the knock for a given ANGLE. Sizing spikes as angles rather
-// than as raw impulses is what keeps them stable when the knock's decay is tuned:
-// the number below means "about 1.4 degrees" and stays meaning that.
-// [D] [T]
-static int cd2SpikeImpulse(int angle)
-{
-	int mag = CD2_KNOCK_IMPULSE_TO(angle < 0 ? -angle : angle);
-
-	return (angle < 0) ? -mag : mag;
-}
-
-// The spikes: every 0.8 to 2.5 seconds a car at rest takes one sudden jolt on one
-// axis, and the knock carries it up and settles it back. Nothing here animates the
-// jolt itself - it is a kick, and the kick machinery exists.
-// [D] [T]
-static void cd2IdleSpike(int carId, CD2_MOTION_STATE* st)
-{
-	int r, pitch = 0, roll = 0, yaw = 0;
-
-	/* a car at rest takes them; as the idle fades out with speed so does the
-	 * jolting, or a car at 100mph would keep hiccuping */
-	if (st->idleScale < 2048)
-		return;
-
-	if (--st->spikeIn > 0)
-		return;
-
-	r = (int)cd2MotionNext(&st->rng);
-
-	/* one axis takes it, and the sign is a coin toss: an idle that always jolted
-	 * the same way would read as a mechanism rather than an engine */
-	switch (r % 3)
-	{
-	case 0:
-		pitch = (r & 4) ? CD2_IDLE_SPIKE_PITCH : -CD2_IDLE_SPIKE_PITCH;
-		break;
-	case 1:
-		roll = (r & 4) ? CD2_IDLE_SPIKE_ROLL : -CD2_IDLE_SPIKE_ROLL;
-		break;
-	default:
-		yaw = (r & 4) ? CD2_IDLE_SPIKE_YAW : -CD2_IDLE_SPIKE_YAW;
-		break;
-	}
-
-	/* scaled by how present the idle is, so the jolt fades with everything else */
-	pitch = (pitch * st->idleScale) >> 12;
-	roll = (roll * st->idleScale) >> 12;
-	yaw = (yaw * st->idleScale) >> 12;
-
-	cd2KnockAdd(carId, cd2SpikeImpulse(pitch), cd2SpikeImpulse(roll), cd2SpikeImpulse(yaw), 0, 0);
-
-	st->spikeIn = CD2_IDLE_SPIKE_MIN + (int)(cd2MotionNext(&st->rng) % (unsigned)(CD2_IDLE_SPIKE_MAX - CD2_IDLE_SPIKE_MIN + 1));
 }
 
 // The three waves of one axis, summed and scaled. Never steps: the output is stored
@@ -617,10 +562,7 @@ void cd2MotionApply(int carId, CD2_VISUAL_OFFSET* o)
 	}
 
 	if (gCd2Cfg.motionIdle)
-	{
 		cd2IdleApply(st, cls);
-		cd2IdleSpike(carId, st);
-	}
 
 	if (gCd2Cfg.motionAccel)
 	{
