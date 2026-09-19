@@ -1093,10 +1093,12 @@ static int sPinIndex[CAR_PIN_MAX];		// the index its page is loaded at
 static int sPinSlot[CAR_PIN_MAX];		// the slot it lives in, -1 while unplaced
 static int sPinOffset[CAR_PIN_MAX];		// where its bytes are in the source city's file
 static int sPinSize[CAR_PIN_MAX];
+static int sPinPreferred[CAR_PIN_MAX];		// the rectangle the REPLACED car's page used, or -1
+static RECT16 sPinClutCursor;			// walking CLUT-row cursor for the imported pages
 static int sPinEvictions;			// world pages taken back this run, for the dump
 static int sPinReloads;				// times we re-uploaded a page we had already placed - the thrash meter
 
-static void CarPinRecord(int set, int index, int offset, int size)
+static void CarPinRecord(int set, int index, int offset, int size, int preferred)
 {
 	if (sPinCount >= CAR_PIN_MAX)
 		return;
@@ -1106,6 +1108,7 @@ static void CarPinRecord(int set, int index, int offset, int size)
 	sPinSlot[sPinCount] = -1;		// placed at draw time
 	sPinOffset[sPinCount] = offset;
 	sPinSize[sPinCount] = size;
+	sPinPreferred[sPinCount] = preferred;
 	sPinCount++;
 }
 
@@ -1205,9 +1208,19 @@ void CarImportPin(void)
 		if (sPinSlot[i] >= 0 && tpageslots[sPinSlot[i]] == sPinIndex[i] && tpageloaded[sPinIndex[i]] != 0)
 			continue;		// still ours, nothing to do
 
-		// Where to put it: the slot it had before (taking that rectangle back), else a
-		// free one, else a world stream to evict.
+		// Where to put it: the slot it had before (taking that rectangle back), else the
+		// rectangle the REPLACED car's page used, else a free one, else a world stream to
+		// evict.
+		//
+		// That middle option is the important one. Picking merely the first free slot -
+		// which is by definition a slot the world streams into - put imported textures on
+		// rectangles buildings were using, so buildings showed the car's texture. An
+		// import REPLACES a car, so it should take that car's own rectangles and leave the
+		// world alone.
 		slot = sPinSlot[i];
+
+		if (slot < 0 || slot >= 19)
+			slot = sPinPreferred[i];
 
 		if (slot < 0 || slot >= 19)
 			slot = CarPageFindSlot();
@@ -1231,10 +1244,35 @@ void CarImportPin(void)
 		tpage.w = 64;
 		tpage.h = 256;
 
-		clut.x = slot_clutpos[slot].vx;
-		clut.y = slot_clutpos[slot].vy;
-		clut.w = 16;
-		clut.h = 1;
+		// CLUT rows come from a LOCAL walker across the imported sets, and it starts ABOVE
+		// the rows the level's slots use.
+		//
+		// Two things forced that. Using slot_clutpos[slot] was wrong for the preferred
+		// rectangles - the replaced special car's slots 7/8 - because those entries are
+		// never assigned (the tail loop only fills slots from slotsused onward), so the
+		// CLUTs went to (0,0) and the car sampled CLUT 0: the 'crazy colors' report. Then
+		// starting the walker at clutpos collided with the SLOTS' own band, which also
+		// begins at clutpos and walks 8 rows per slot - so streamed pages kept overwriting
+		// our palette, which is why the palette check said MISMATCH with real positions.
+		if (sPinClutCursor.x == 0 && sPinClutCursor.y == 0)
+		{
+			int firstFree = clutpos.y + 8 * (19 - slotsused) + 4;
+
+			if (firstFree < 256)
+				firstFree = 480;
+			if (firstFree > 500)
+				firstFree = 500;
+
+			sPinClutCursor.x = 960;
+			sPinClutCursor.y = firstFree;
+			sPinClutCursor.w = 16;
+			sPinClutCursor.h = 1;
+
+			printInfo("cross-city: imported CLUT rows start at y=%d (level layout ends at %d, %d slots spare)\n",
+				firstFree, clutpos.y, 19 - slotsused);
+		}
+
+		clut = sPinClutCursor;
 
 		// Ours to write: bypass the ownership guard for this upload, then mark the
 		// rectangle owned so the engine's own uploads to it are refused from here on.
@@ -1242,6 +1280,9 @@ void CarImportPin(void)
 		sPinReloads++;	// counts re-uploads, i.e. how often the engine took a page back
 		LoadTPageAndCluts(&tpage, &clut, sPinIndex[i], buf);
 		sCarPageUploading = 0;
+
+		if (clut.x != sPinClutCursor.x || clut.y != sPinClutCursor.y)
+			sPinClutCursor = clut;	// the walker advanced: remember where it got to
 
 		sCarPageOwned[slot] = 1;
 
@@ -1344,6 +1385,7 @@ void LoadImportedTPages(void)
 	int city = GetCarImportCity();
 	int base = GetCarImportPageBase();
 	int sets[64];
+	int pref[64];		// preferred slot per set: the rectangle the replaced car used, or -1
 	int nsets = 0;
 	int i, j;
 
@@ -1446,7 +1488,13 @@ void LoadImportedTPages(void)
 				int set = (spec + k >= 0 && spec + k < 12) ? specTpages[src][spec + k] : 0;
 
 				if (set != 0 && nsets < 64 && !SetInList(sets, nsets, set))
+				{
+					// This page replaces the host's special car's OWN rectangle, so nothing has
+					// to be evicted for it. Picking a mere free slot instead is what put
+					// imported textures onto rectangles buildings were using.
+					pref[nsets] = SPECIAL_CAR_SLOT + k;
 					sets[nsets++] = set;
+				}
 			}
 		}
 		else
@@ -1457,7 +1505,11 @@ void LoadImportedTPages(void)
 				int set = carTpages[src][k];
 
 				if (set != 0 && nsets < 64 && !SetInList(sets, nsets, set))
+				{
+					pref[nsets] = -1;	// civilian body: no single natural rectangle, so the
+										// level's spare slots are used as before
 					sets[nsets++] = set;
+				}
 			}
 		}
 	}
@@ -1604,7 +1656,7 @@ void LoadImportedTPages(void)
 			sRemapCount++;
 		}
 
-		CarPinRecord(set, dstSet, offset, size);
+		CarPinRecord(set, dstSet, offset, size, pref[i]);
 
 		printInfo("cross-city: %s set %d -> index %d, %d bytes at +%d, %d clut rows (paged in at draw time, evicting the world if needed)\n",
 			LevelNames[city], set, dstSet, size, offset, npalettes);
