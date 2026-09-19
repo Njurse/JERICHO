@@ -2126,6 +2126,8 @@ void cd2AiRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2AiOnFrame, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2AiOnGameStart, NULL, 0);
+	// the same reset when the game returns to the frontend menus
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2AiOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2AiOnCarStep, NULL, 1);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PAD, cd2AiOnCarPad, NULL, -1);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_MAP, cd2AiOnDrawMap, NULL, 0);

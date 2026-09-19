@@ -182,6 +182,8 @@ void cd2SpecialHornetRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2HornetOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2HornetOnGameStart, NULL, 0);
+	// the same reset when the game returns to the frontend menus
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2HornetOnGameStart, NULL, 0);
 }
 
 static CD2_WEAPON_DEF cd2MakeHornetDef(void)

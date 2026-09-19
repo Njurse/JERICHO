@@ -478,6 +478,22 @@ static int cd2VehOnGameStart(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// JER_EVENT_FRONTEND_ENTERED — back in the menus: drop the module's vehicle
+// override, so the next start begins from the level's own cars and not the last
+// match's pick. (The engine clears wantedCar itself in ReInitFrontend; the
+// player's profile is the module's to clear.)
+static int cd2VehOnFrontendEntered(void* ud, void* args)
+{
+	(void)ud;
+	(void)args;
+
+	cd2VehSetPlayerProfile(CD2_VEH_NONE);
+	cd2VehResetState();
+
+	printInfo("[cainescrossfire] frontend: cleared the vehicle profile override\n");
+	return JER_RESULT_CONTINUE;
+}
+
 static int cd2VehOnResetCar(void* ud, void* args)
 {
 	JER_ARGS_RESET_CAR* a = (JER_ARGS_RESET_CAR*)args;
@@ -514,6 +530,7 @@ void cd2VehRegister(JERICHO_CONTEXT* ctx)
 
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DATA_SOURCE, cd2VehOnCarDataSource, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2VehOnGameStart, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2VehOnFrontendEntered, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2VehOnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2VehOnResetCar, NULL, 0);
 

@@ -337,6 +337,23 @@ static int cd2SelOnFrame(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// JER_EVENT_FRONTEND_ENTERED — back in the menus. Re-arm the -ccmenu flow so it
+// can open again, and drop any half-made selection.
+static int cd2SelOnFrontendEntered(void* ud, void* args)
+{
+	int city;
+
+	(void)ud;
+	(void)args;
+
+	gCcOpened = 0;
+
+	for (city = 0; city < 4; city++)
+		gCcVehSel[city] = 0;
+
+	return JER_RESULT_CONTINUE;
+}
+
 void cd2SelectRegister(JERICHO_CONTEXT* ctx)
 {
 	cd2SelBuildMenus();
@@ -354,6 +371,7 @@ void cd2SelectRegister(JERICHO_CONTEXT* ctx)
 
 	ctx->jer_register_hook(ctx, JER_EVENT_CMDLINE, cd2SelOnCmdline, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_MAIN_MENU, cd2SelOnMainMenu, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2SelOnFrontendEntered, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2SelOnFrame, NULL, 0);
 
 	ctx->jer_log(ctx, "[cainescrossfire] CC select flow registered (-ccmenu)\n");

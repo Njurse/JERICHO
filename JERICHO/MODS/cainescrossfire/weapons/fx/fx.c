@@ -331,6 +331,8 @@ void cd2FxRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_EXPLOSION_SPAWN, cd2FxOnSpawn, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2FxOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2FxOnGameStart, NULL, 0);
+	// the same reset when the game returns to the frontend menus
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2FxOnGameStart, NULL, 0);
 
 	ctx->jer_log(ctx, "[cainescrossfire] explosion fx registered (%d profiles)\n", CD2_FX_DEF_COUNT);
 }

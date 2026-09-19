@@ -1194,6 +1194,8 @@ void cd2CrewRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_POSE, cd2CrewOnPedPose, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_SKELETON, cd2CrewOnPedSkeleton, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2CrewOnGameStart, NULL, 0);
+	// the same reset when the game returns to the frontend menus
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2CrewOnGameStart, NULL, 0);
 
 	ctx->jer_log(ctx, "[cainescrossfire] mounted crew registered (SDK v%d)\n", ctx->sdkVersion);
 }

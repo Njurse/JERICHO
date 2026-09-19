@@ -187,6 +187,11 @@ static int cd2CorvoOnGameStart(void* ud, void* args)
 		gCorvoAcc[i] = 0;
 	}
 
+	// Silence the siren. It is a looped channel, so it must not keep wailing
+	// into the frontend menus when a match ends (JER_EVENT_FRONTEND_ENTERED).
+	if (gCorvoChannel >= 0)
+		StopChannel(gCorvoChannel);
+
 	return JER_RESULT_CONTINUE;
 }
 
@@ -194,6 +199,7 @@ void cd2SpecialCorvoRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2CorvoOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2CorvoOnGameStart, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2CorvoOnGameStart, NULL, 0);
 }
 
 static CD2_WEAPON_DEF cd2MakeCorvoDef(void)

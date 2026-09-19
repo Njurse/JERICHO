@@ -30,6 +30,8 @@ inert no-ops when no module handles them.
 | `JER_EVENT_PED_MOVE` | `JER_ARGS_PED_MOVE` | `AnimatePed` (`pedest.c:638`) | player ped is about to move — the one point where a `pPed->speed` write survives the runner's per-frame re-arm; only a `TANNER_MODEL` ped with `padId >= 0`; no handler = stock speed |
 | `JER_EVENT_PED_POSE` | `JER_ARGS_PED_POSE` | `DrawTanner` (`motion_c.c:1696`) | per-bone ROTATION window between `SetupTannerSkeleton` and `newRotateBones` (player ped only); module mutates `*Skel[i].pvRotation`; no handler = stock motion pose |
 | `JER_EVENT_FRONTEND` | `JER_ARGS_FRONTEND` | `CutSceneCitySelectScreen` (`FEmain.c:3089`) | take-a-ride city confirm — module may rewrite `gameLevel`/`gameType`/`numPlayers`, or set `defer = 1` to run its own start over the frozen frontend; no handler = stock flow |
+| `JER_EVENT_FRONTEND_MAIN_MENU` | `JER_ARGS_FRONTEND_ENTRY` | `MainScreen` (`FEmain.c`) | fired once per row while the title screen is built — rename (`label`), redirect to a module menu (`openMenu`), `disabled`, `hidden`; the engine always applies the struct; no handler = stock rows |
+| `JER_EVENT_FRONTEND_ENTERED` | — | `State_InitFrontEnd` (`glaunch.c:325`) | the game (re)entered the frontend — modules drop per-run gameplay state (a forced car, live weapons, looped sounds) so nothing lingers or plays in the menus; no args, no handler = nothing |
 | `JER_EVENT_PED_SKELETON` | `JER_ARGS_PED_SKELETON` | `newShowTanner` | pose Tanner's skeleton (phase 0) + draw extras (phase 1) |
 | `JER_EVENT_MAP` | `JER_ARGS_MAP` | INPUT: `ControlMenu` (`pause.c:1505`) + `DrawFullscreenMap` (`overmap.c:1579`); DRAWN: `DrawFullscreenMap` (`overmap.c:1868`) | in-game map (`gShowMap`): a module returns `JER_RESULT_STOP` on INPUT to claim the pad (stock scroll/toggle skipped) and draws its own cursor on DRAWN; no handler = stock map |
 | `JER_EVENT_DRAW_OVERLAY` | — | `DrawDebugOverlays` / HUD path | 2D overlay / HUD drawing |
@@ -256,6 +258,17 @@ no handler.
   in/out; setting `defer = 1` makes the module own the start (its own menu
   runs over the frozen frontend) and the engine returns without scheduling the
   level. No handler = stock flow.
+- **`JER_EVENT_FRONTEND_MAIN_MENU`** fires once for every row of the title
+  screen while `MainScreen` builds it (before the stock Multiplayer routing).
+  `JER_ARGS_FRONTEND_ENTRY { index, label[32], hidden, disabled, openMenu }` is
+  in/out and the engine applies it (`openMenu >= 0` opens that registered module
+  menu), so a module can rename a row, point it at its own screen, or omit it
+  and put something else in its place.
+- **`JER_EVENT_FRONTEND_ENTERED`** fires at the end of `State_InitFrontEnd`
+  (`glaunch.c:325`) — the game has (re)entered the menus, which is also the way
+  back from a match. Modules drop their per-run gameplay state here (a forced
+  car, live weapons, looped sounds) so nothing lingers or plays in the frontend.
+  No args, notification only.
 
 ## The multiplayer events (the mp module uses these)
 

@@ -335,6 +335,11 @@ void State_InitFrontEnd(void* param)
 	}
 
 	SetState(STATE_FRONTEND);
+
+	// JERICHO-HOOK: back in the menus (or here for the first time). Let a module
+	// drop its per-run gameplay state - a forced car, live weapons, looped
+	// sounds - so nothing lingers or plays while the menus are up.
+	jer_fire(JER_EVENT_FRONTEND_ENTERED, NULL);
 }
 
 // [D] [T]

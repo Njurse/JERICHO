@@ -427,6 +427,8 @@ void cd2FacRegister(JERICHO_CONTEXT* ctx)
 		gCd2CarFaction[i] = CD2_FAC_NONE;
 
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2FacOnGameStart, NULL, 0);
+	// the same reset when the game returns to the frontend menus
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2FacOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2FacOnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2FacOnResetCar, NULL, 0);
 

@@ -237,6 +237,8 @@ void cd2FreezeRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DRAW_COLOR, cd2FreezeOnDrawColor, NULL, CD2_FREEZE_PRIO);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2FreezeOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2FreezeOnGameStart, NULL, 0);
+	// the same reset when the game returns to the frontend menus
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2FreezeOnGameStart, NULL, 0);
 
 	ctx->jer_log(ctx, "[cainescrossfire] freeze status registered\n");
 }

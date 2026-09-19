@@ -161,6 +161,8 @@ void cd2SpecialHighwaymanRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2HighwaymanOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2HighwaymanOnGameStart, NULL, 0);
+	// the same reset when the game returns to the frontend menus
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2HighwaymanOnGameStart, NULL, 0);
 }
 
 static CD2_WEAPON_DEF cd2MakeHighwaymanDef(void)

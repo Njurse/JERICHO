@@ -166,6 +166,8 @@ void cd2SpecialDeadstarRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2DeadstarOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_VS_CAR, cd2DeadstarOnCarVsCar, NULL, 5);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2DeadstarOnGameStart, NULL, 0);
+	// the same reset when the game returns to the frontend menus
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2DeadstarOnGameStart, NULL, 0);
 }
 
 static CD2_WEAPON_DEF cd2MakeDeadstarDef(void)

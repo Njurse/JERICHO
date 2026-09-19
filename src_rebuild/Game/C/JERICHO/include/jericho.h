@@ -220,6 +220,12 @@ enum
 					   redirect it to its own menu, disable or hide
 					   it (see JER_ARGS_FRONTEND_ENTRY) */
 
+	JER_EVENT_FRONTEND_ENTERED,	/* fired when the game (re)enters the frontend
+					   (State_InitFrontEnd), i.e. on the way back from a
+					   match: a module drops its per-run gameplay state -
+					   the player's forced car, live weapons, sounds -
+					   so nothing lingers or plays in the menus. No args. */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 
