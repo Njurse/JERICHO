@@ -80,11 +80,95 @@ def write_png(path, width, height, px):
     open(path, "wb").write(png)
 
 
+def parse_log(path):
+    """Per imported set: its entry offset/size in the source level file, its CLUT-row
+    count, and the VRAM position of its first CLUT."""
+    import re
+    out = {}
+    for line in open(path, errors="ignore"):
+        m = re.search(r"cross-city: (\w+) set (\d+) -> index (\d+), (\d+) bytes at \+(\d+), (\d+) clut rows", line)
+        if m:
+            city, setno, index, size, off, cluts = m.groups()
+            out[int(setno)] = {"city": city, "index": int(index), "size": int(size),
+                               "offset": int(off), "cluts": int(cluts), "clutpos": None}
+            continue
+        m = re.search(r"pinned set (\d+) index (\d+): slot=(-?\d+), rect=\([\d,-]+\), page=\w+, clut0=\w+=\((\d+),(\d+)\)", line)
+        if m:
+            setno, cx, cy = int(m.group(1)), int(m.group(4)), int(m.group(5))
+            if setno in out:
+                out[setno]["clutpos"] = (cx, cy)
+    return out
+
+
+def page_data_base(blob):
+    """Where a city's page data begins in its level file: just past DATA1, which is where
+    the TPAGE lump's offset points (the engine reads pages from that sector).
+    The table after the 8-byte header is [DATA1.x, DATA1.y, TPAGE.x, TPAGE.y, ...]."""
+    table = struct.unpack_from("<8i", blob, 8)
+    return table[0] + table[1]
+
+
+def clut_rows_from_entry(blob, offset):
+    """The uncompressed part of a page entry: [int count][count * 32 bytes of CLUT].
+    A page entry is [int clut_count][cluts][compressed page] - the CLUTs are RAW, which
+    is what makes an expected palette checkable without a decompressor."""
+    n = struct.unpack_from("<i", blob, offset)[0]
+    if n <= 0 or n > 256:
+        return []
+    return [list(struct.unpack_from("<16H", blob, offset + 4 + i * 32)) for i in range(n)]
+
+
+def clut_rows_from_vram(width, px, x, y, count):
+    """Walk the CLUT column the way IncrementClutNum does: x in 16-pixel steps from 960,
+    wrapping to 960 with y+1 after 1008. VRAM is RGB555; the dump has been expanded to
+    8-bit, so shift back down to compare like for like."""
+    rows = []
+    cx, cy = x, y
+    for _ in range(count):
+        rows.append([((px[cy * width + cx + i][2] >> 3) << 10) |
+                     ((px[cy * width + cx + i][1] >> 3) << 5) |
+                     (px[cy * width + cx + i][0] >> 3) for i in range(16)])
+        cx += 16
+        if cx > 1008:
+            cx, cy = 960, cy + 1
+    return rows
+
+
+def check_palettes(args, width, px):
+    """Compare what each imported set's CLUT SHOULD be (from the source city's file)
+    against what is actually in VRAM where the engine says the set's CLUTs live."""
+    want = parse_log(args.log)
+    if not want:
+        print("  (no imported-page lines in the log to check)")
+        return
+    blob = open(args.lev, "rb").read()
+    base = page_data_base(blob)
+    print(f"  palette check against {args.lev} (page data base {base}):")
+    for setno, info in sorted(want.items()):
+        if info["clutpos"] is None:
+            print(f"    set {setno} ({info['city']}): never placed (no clut position in the log)")
+            continue
+        expected = clut_rows_from_entry(blob, base + info["offset"])
+        if not expected:
+            print(f"    set {setno}: entry at +{info['offset']} has no readable CLUTs")
+            continue
+        actual = clut_rows_from_vram(width, px, info["clutpos"][0], info["clutpos"][1], len(expected))
+        diffs = sum(1 for a, b in zip(expected, actual) if a != b)
+        mark = "MATCH" if diffs == 0 else f"MISMATCH ({diffs}/{len(expected)} rows differ)"
+        print(f"    set {setno} ({info['city']}) index {info['index']}: {len(expected)} clut rows "
+              f"at {info['clutpos']} -> {mark}")
+        if diffs:
+            print(f"        expected row0[0:4] = {[hex(v) for v in expected[0][:4]]}")
+            print(f"        vram     row0[0:4] = {[hex(v) for v in actual[0][:4]]}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tga")
     ap.add_argument("--png")
     ap.add_argument("--rect", nargs=5, action="append", metavar=("X", "Y", "W", "H", "LABEL"))
+    ap.add_argument("--log", help="engine log, for the palette check")
+    ap.add_argument("--lev", help="source city .LEV, for the palette check")
     args = ap.parse_args()
 
     width, height, px = read_tga(args.tga)
@@ -100,6 +184,9 @@ def main():
         n, top = rect_stats(width, px, x, y, PAGE_W, PAGE_H)
         state = "UNIFORM (empty)" if n == 1 else f"{n} colours"
         print(f"    slot {i:>2} at ({x:>3},{y:>3}): {state:<18} dominant={top[0][0] if top else None}")
+
+    if args.log and args.lev:
+        check_palettes(args, width, px)
 
     for x, y, w, h, label in (args.rect or []):
         n, top = rect_stats(width, px, int(x), int(y), int(w), int(h))
