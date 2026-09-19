@@ -35,7 +35,7 @@
 extern "C" {
 #endif
 
-#define JER_FE_MAX_MENUS	8
+#define JER_FE_MAX_MENUS	12
 #define JER_FE_MAX_ITEMS	12
 
 typedef struct JER_FE_ITEM

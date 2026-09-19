@@ -1489,7 +1489,6 @@ EXPORTS
 	MpSendHello
 	MpSessionReset
 	MpStartMatch
-	?strrchr@@YAPEADQEADH@Z
 	MpChatOpen
 	MpChatSendText
 	MpNotify
