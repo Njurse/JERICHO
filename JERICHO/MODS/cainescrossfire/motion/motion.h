@@ -101,6 +101,25 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 #define CD2_IDLE_DRIFT_DEPTH	1024		/* +/- this on a 3072 base */
 
 // ---------------------------------------------------------------------------
+// The spikes
+// ---------------------------------------------------------------------------
+// Every so often the idle is not smooth: the engine catches, a mount shifts, a
+// cylinder misfires - whatever it is, the car jolts once and settles. That is a
+// KICK, not a wave, so it is handed to the knock (knock/knock.c) as an impulse
+// instead of being animated here: the knock already knows how to carry an angle up
+// and settle it back, that machinery is already tuned by hand, and a second
+// implementation of it would only drift from the first.
+//
+// The impulse is sized with CD2_KNOCK_IMPULSE_TO, so these numbers are the ANGLE the
+// spike wants in PSX units and not a fudge factor that has to be re-tuned whenever
+// the knock's decay changes. 16 units is about 1.4 degrees.
+#define CD2_IDLE_SPIKE_MIN	24	// 0.8s at 30Hz
+#define CD2_IDLE_SPIKE_MAX	75	// 2.5s
+#define CD2_IDLE_SPIKE_PITCH	16
+#define CD2_IDLE_SPIKE_ROLL	12
+#define CD2_IDLE_SPIKE_YAW	8
+
+// ---------------------------------------------------------------------------
 // Per-car state
 // ---------------------------------------------------------------------------
 // Its own storage rather than more fields on CD2_CAR: this is animation, CD2_CAR is
