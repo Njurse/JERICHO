@@ -28,7 +28,7 @@ extern const CD2_VEH_PROFILE cd2VehRowAvalanche =
 
 	/* phys: mass, powerRatio, traction, susCoeff, wheelSize,
 	 *       twistRateX, twistRateY, twistRateZ, cogY, topSpeedPct */
-	{ 6800, 3800, 5400, CD2_VEH_INHERIT, 1400,
+	{ 6800, 3800, 5400, CD2_VEH_INHERIT, 72,
 	  CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT, 88 },
 
 	-1			/* palette: special body, no extra palette */

@@ -94,7 +94,7 @@ typedef struct CD2_VEH_PHYS
 	int powerRatio;		// engine power; with mass it sets the derived speed
 	int traction;		// grip, fixed point (4096 = stock)
 	int susCoeff;		// suspension coefficient
-	int wheelSize;		// wheel size
+	int wheelSize;		// wheel size — stock cars run ~49-53; keep the same scale
 	int twistRateX;		// roll/pitch/yaw compliance
 	int twistRateY;
 	int twistRateZ;
