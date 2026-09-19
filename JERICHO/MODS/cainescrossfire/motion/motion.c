@@ -29,8 +29,8 @@
 const CD2_MOTION_CLASS cd2MotionClasses[CD2_MOTION_CLASSES] =
 {
 	//  name      pitchMax  stiffness  damping  over%  idleP/R/Y  bob
-	{ "LIGHT",    137,       300,      1500,    35,     11, 11,  6,  2 },	// ~12 deg
-	{ "MEDIUM",   102,       240,      1450,    30,      9,  9,  5,  2 },	// ~9 deg
+	{ "LIGHT",    137,       300,      1500,    35,     11, 11,  6,  1 },	// ~12 deg
+	{ "MEDIUM",   102,       240,      1450,    30,      9,  9,  5,  1 },	// ~9 deg
 	{ "HEAVY",     68,       170,      1400,    25,      7,  7,  4,  1 },	// ~6 deg
 };
 
@@ -257,6 +257,7 @@ static unsigned int cd2MotionNext(unsigned int* s)
 void cd2MotionSeed(int carId)
 {
 	static const int base[CD2_IDLE_WAVES] = CD2_IDLE_FREQ;
+	static const int bobBase[CD2_IDLE_WAVES] = CD2_IDLE_BOB_FREQ;
 	CD2_MOTION_STATE* st;
 	unsigned int s;
 	int axis, w;
@@ -293,6 +294,17 @@ void cd2MotionSeed(int carId)
 
 		if (st->step[w] == 0)
 			st->step[w] = base[w];
+	}
+
+	/* and the bob gets its own, faster set, detuned the same way */
+	for (w = 0; w < CD2_IDLE_WAVES; w++)
+	{
+		int jitter = (int)(cd2MotionNext(&st->rng) % (unsigned)(CD2_IDLE_DETUNE * 2 + 1)) - CD2_IDLE_DETUNE;
+
+		st->bobStep[w] = bobBase[w] + (bobBase[w] * jitter) / 4096;
+
+		if (st->bobStep[w] == 0)
+			st->bobStep[w] = bobBase[w];
 	}
 
 	st->driftPhase = (int)(cd2MotionNext(&st->rng) & 4095);
@@ -404,7 +416,7 @@ static void cd2IdleApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
 			st->lastYaw = value;
 	}
 
-	st->lastBob = (int)(((long long)((cd2IdleWave(st->bobWave, st->step, envelope) * cls->idleBob) >> 12) * st->idleScale) >> 12);
+	st->lastBob = (int)(((long long)((cd2IdleWave(st->bobWave, st->bobStep, envelope) * cls->idleBob) >> 12) * st->idleScale) >> 12);
 }
 
 // ---------------------------------------------------------------------------
@@ -430,6 +442,24 @@ void cd2MotionApply(int carId, CD2_VISUAL_OFFSET* o)
 		cd2MotionSeed(carId);
 
 	cls = cd2MotionClassOf(carId);
+
+	/* How present the idle is. It is all there is at a standstill, and by the time a
+	 * car is properly moving the motion layers take over and it must not fight them,
+	 * so it fades between two speeds. The fade is smoothed, or pulling away would
+	 * switch it off with a visible step. */
+	{
+		int speed = car_data[carId].hd.speed;
+		int target;
+
+		if (speed <= CD2_IDLE_SPEED_FULL)
+			target = 4096;
+		else if (speed >= CD2_IDLE_SPEED_ZERO)
+			target = 0;
+		else
+			target = 4096 - ((speed - CD2_IDLE_SPEED_FULL) * 4096) / (CD2_IDLE_SPEED_ZERO - CD2_IDLE_SPEED_FULL);
+
+		st->idleScale = jer_lerp_int(st->idleScale, target, CD2_IDLE_SCALE_LERP);
+	}
 
 	cd2IdleApply(st, cls);
 	cd2IdleSpike(carId, st);
@@ -481,8 +511,9 @@ void cd2MotionDumpIdle(int carId)
 
 	cls = cd2MotionClassOf(carId);
 
-	jer_log("[cainescrossfire] idle car=%d pitch=%d roll=%d yaw=%d bob=%d scale=%d class=%s\n",
-		carId, st->lastPitch, st->lastRoll, st->lastYaw, st->lastBob, st->idleScale, cls->name);
+	jer_log("[cainescrossfire] idle car=%d pitch=%d roll=%d yaw=%d bob=%d scale=%d speed=%d class=%s\n",
+		carId, st->lastPitch, st->lastRoll, st->lastYaw, st->lastBob, st->idleScale,
+		car_data[carId].hd.speed, cls->name);
 }
 
 // [D] [T]

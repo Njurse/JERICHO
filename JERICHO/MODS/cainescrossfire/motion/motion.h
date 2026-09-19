@@ -95,6 +95,20 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // tell that it is a generator rather than an engine.
 #define CD2_IDLE_DETUNE		24		// /4096
 
+// The vertical bob runs on its own, FASTER frequencies than the axes. An idling
+// engine trembles quickly and shallowly; a slow deep rise and fall reads as a boat,
+// which is what the first pass at this looked like.
+// 2.6Hz = 355, 3.5Hz = 478, 4.4Hz = 601.
+#define CD2_IDLE_BOB_FREQ	{ 355, 478, 601 }
+
+// The idle is all there is at a standstill, and by the time a car is properly moving
+// the motion layers take over and it must not fight them - so it fades out between
+// these two speeds rather than switching off. Smoothing (a lerp toward the target)
+// keeps the fade from being visible as a step when a car pulls away.
+#define CD2_IDLE_SPEED_FULL	30	// at or below: the idle is fully present
+#define CD2_IDLE_SPEED_ZERO	150	// at or above: not present at all
+#define CD2_IDLE_SCALE_LERP	2
+
 // The slow envelope: the whole shudder breathes between half and full amplitude over
 // about four seconds, so a car sitting still never looks like it is looping.
 #define CD2_IDLE_DRIFT_FREQ	18		/* ~0.13Hz */
@@ -131,6 +145,7 @@ typedef struct CD2_MOTION_STATE
 	int wave[CD2_IDLE_AXES][CD2_IDLE_WAVES];	// phase accumulators
 	int bobWave[CD2_IDLE_WAVES];			// the vertical bob's own
 	int step[CD2_IDLE_WAVES];			// per-car frequencies, detuned
+	int bobStep[CD2_IDLE_WAVES];			// and the bob's, which run faster
 	int driftPhase;					// the slow amplitude envelope
 	unsigned int rng;				// this car's generator, for the spikes
 	int spikeIn;					// frames until the next random spike
