@@ -10,7 +10,7 @@
 
 #include "driver2.h"
 #include "cars.h"
-#include "cosmetic.h"
+#include "cosmetic.h"		/* AddCopCarLight - the forced siren light */
 #include "sound.h"
 #include "gamesnd.h"
 #include "jericho.h"
@@ -28,10 +28,18 @@
 #define CD2_CORVO_REVOLVE	320	// bolt spin per frame (PSX angle units)
 #define CD2_CORVO_HOP		300	// small vertical jump on a hit (linear vel)
 #define CD2_CORVO_TWIST		90	// twist strength (angular velocity term)
+#define CD2_CORVO_WAIL		24	// frames between siren wails (the loop)
+
+// The police siren the engine plays for its siren cars (CarHasSiren ->
+// M_SHRT_2(SOUND_BANK_VOICES, 0), played at pitch 4096 while the horn is held).
+// "The Rio police car siren" is this sample, taken from the level's own bank.
+#define CD2_CORVO_SIREN_BANK	SOUND_BANK_VOICES
+#define CD2_CORVO_SIREN_SAMPLE	0
 
 static int gCorvoFrames[MAX_CARS];
 static int gCorvoAngle[MAX_CARS];
 static int gCorvoAcc[MAX_CARS];
+static int gCorvoWail[MAX_CARS];	// frames until the next siren wail
 static int gCorvoChannel = -1;
 
 static void cd2CorvoFire(void* vcp)
@@ -44,6 +52,7 @@ static void cd2CorvoFire(void* vcp)
 	gCorvoFrames[cp->id] = CD2_CORVO_FRAMES;
 	gCorvoAngle[cp->id] = 0;
 	gCorvoAcc[cp->id] = 0;
+	gCorvoWail[cp->id] = CD2_CORVO_WAIL;
 
 	if (gCorvoChannel < 0)
 	{
@@ -52,8 +61,8 @@ static void cd2CorvoFire(void* vcp)
 	}
 
 	if (gCorvoChannel >= 0)
-		Start3DSoundVolPitch(gCorvoChannel, SOUND_BANK_SFX, 3,
-			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -2500, 4096 + 1400);
+		Start3DSoundVolPitch(gCorvoChannel, CD2_CORVO_SIREN_BANK, CD2_CORVO_SIREN_SAMPLE,
+			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -1200, 4096);
 }
 
 static int cd2CorvoOnFrame(void* ud, void* args)
@@ -80,6 +89,22 @@ static int cd2CorvoOnFrame(void* ud, void* args)
 		c.vx = cp->hd.where.t[0];
 		c.vy = cp->hd.where.t[1] + 60;
 		c.vz = cp->hd.where.t[2];
+
+		// FORCE THE SIREN onto the car for the whole window. Corvo is the
+		// model-0 car, but the engine only draws a siren light for cop/pursuer
+		// cars (cars.c, CarHasSiren + controlType), so a player-driven Corvo
+		// would have none. We drive the light ourselves here, and wail the
+		// siren on a loop.
+		AddCopCarLight(cp);
+
+		if (--gCorvoWail[i] <= 0)
+		{
+			gCorvoWail[i] = CD2_CORVO_WAIL;
+
+			if (gCorvoChannel >= 0)
+				Start3DSoundVolPitch(gCorvoChannel, CD2_CORVO_SIREN_BANK, CD2_CORVO_SIREN_SAMPLE,
+					c.vx, c.vy, c.vz, -1200, 4096);
+		}
 
 		// the revolving bolt: an 8-eighth compass direction from the roof
 		gCorvoAngle[i] = (gCorvoAngle[i] + CD2_CORVO_REVOLVE) & 4095;
@@ -172,6 +197,7 @@ static int cd2CorvoOnGameStart(void* ud, void* args)
 		gCorvoFrames[i] = 0;
 		gCorvoAngle[i] = 0;
 		gCorvoAcc[i] = 0;
+		gCorvoWail[i] = 0;
 	}
 
 	return JER_RESULT_CONTINUE;

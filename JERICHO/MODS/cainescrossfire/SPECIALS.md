@@ -57,9 +57,13 @@ be steered, then it shoves the victim off and drops back.
 
 ### Corvo — Siren's Wrath
 
-A 4-second siren. A lightning bolt revolves around the car and, every 20 frames,
-arcs onto the nearest other car in range: moderate damage, a shaky twist
-(angular velocity) that reads as electrocution, and a small vertical jump.
+A 4-second siren. The **police siren** (the engine's siren sample, `SOUND_BANK_VOICES`
+0 — what its siren cars play) wails on a loop, and the **siren light is forced onto
+the car** for the whole window: Corvo is the model-0 car, but the engine only draws
+a siren light for cop/pursuer cars (`cars.c`, `CarHasSiren` + controlType), so the
+special drives `AddCopCarLight` itself. A lightning bolt revolves around the car and,
+every 20 frames, arcs onto the nearest other car in range: moderate damage, a shaky
+twist (angular velocity) that reads as electrocution, and a small vertical jump.
 
 ### Bruxa — Double Boom
 
