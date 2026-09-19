@@ -83,6 +83,18 @@ static int gEnvOpponents = -1;
 /* CC_OPPONENTS was set to something unusable (reported at boot) */
 static int gEnvOpponentsBad = 0;
 
+/* CC_MOTION: -1 = not set, else 0/1. Run-only, never persisted. */
+static int gEnvMotion = -1;
+
+/*
+ * Are the procedural motion layers on? The master config key, unless the environment
+ * overrides it for a run.
+ */
+int cd2MotionEnabled(void)
+{
+	return (gEnvMotion >= 0) ? gEnvMotion : gCd2Cfg.motion;
+}
+
 /*
  * How many opponents THIS match fields: the match setting, unless the environment
  * overrides it for a headless run. Always clamped to the slots available.
@@ -154,6 +166,23 @@ void cd2LoadConfig(void)
 				gEnvOpponentsBad = 1;	/* reported at boot, where ctx exists */
 		}
 	}
+
+	/* CC_MOTION=0 is a run-only kill switch for the procedural motion layers, for a
+	 * harness or a bisect. Like CC_OPPONENTS it is never written back to the ini. */
+	{
+		const char* env = getenv("CC_MOTION");
+
+		gEnvMotion = -1;
+
+		if (env != NULL && env[0] != 0)
+		{
+			char* end = NULL;
+			long v = strtol(env, &end, 10);
+
+			if (end != NULL && end != env && *end == 0 && (v == 0 || v == 1))
+				gEnvMotion = (int)v;
+		}
+	}
 	gCd2Cfg.aiForceState  = jer_config_get_int("cainescrossfire", "ai_force_state", CD2_AI_AUTO);
 	gCd2Cfg.aiDebug       = jer_config_get_int("cainescrossfire", "ai_debug", 0);
 	gCd2Cfg.aiRole        = jer_config_get_int("cainescrossfire", "ai_role", -1);
@@ -178,6 +207,13 @@ void cd2LoadConfig(void)
 	gCd2Cfg.teamPalette         = jer_config_get_int("cainescrossfire", "team_palette", 1);
 	gCd2Cfg.teamPaletteStrength = jer_config_get_int("cainescrossfire", "team_palette_strength", CD2_SUIT_TINT_DEFAULT);
 	gCd2Cfg.teamPaletteFloor    = jer_config_get_int("cainescrossfire", "team_palette_floor", CD2_SUIT_FLOOR_DEFAULT);
+
+	/* the procedural motion layers (motion/, see MOTION.md). `motion` is the master
+	 * switch; the two per-layer keys let the idle or the pitch-back be turned off
+	 * without the other. */
+	gCd2Cfg.motion      = jer_config_get_int("cainescrossfire", "motion", 1);
+	gCd2Cfg.motionIdle  = jer_config_get_int("cainescrossfire", "motion_idle", 1);
+	gCd2Cfg.motionAccel = jer_config_get_int("cainescrossfire", "motion_accel", 1);
 
 	// car-vs-car damage as % of stock. Migrate the old car_car_nerf (% reduction).
 	gCd2Cfg.carCarDamage  = jer_config_get_int("cainescrossfire", "car_car_damage", -1);
@@ -258,6 +294,9 @@ void cd2SaveConfig(void)
 	jer_config_set_int("cainescrossfire", "factions", gCd2Cfg.factions);
 	jer_config_set_int("cainescrossfire", "player_faction", gCd2Cfg.playerFaction);
 	jer_config_set_int("cainescrossfire", "team_palette", gCd2Cfg.teamPalette);
+	jer_config_set_int("cainescrossfire", "motion", gCd2Cfg.motion);
+	jer_config_set_int("cainescrossfire", "motion_idle", gCd2Cfg.motionIdle);
+	jer_config_set_int("cainescrossfire", "motion_accel", gCd2Cfg.motionAccel);
 	jer_config_set_int("cainescrossfire", "team_palette_strength", gCd2Cfg.teamPaletteStrength);
 	jer_config_set_int("cainescrossfire", "team_palette_floor", gCd2Cfg.teamPaletteFloor);
 	jer_config_set_int("cainescrossfire", "car_car_damage", gCd2Cfg.carCarDamage);

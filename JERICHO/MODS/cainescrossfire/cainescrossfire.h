@@ -488,7 +488,12 @@ typedef struct CD2_CONFIG
 	// how far the dark end of the outfit is lifted, 0..31 (0 = keep the source
 	// brightness and let a dark suit stay dark, 31 = flat)
 	int teamPaletteFloor;
-} CD2_CONFIG;
+
+	// the procedural motion layers (motion/, see MOTION.md): `motion` is the master
+	// switch, the other two turn the idle fidget and the pitch-back off separately
+	int motion;
+	int motionIdle;
+	int motionAccel;} CD2_CONFIG;
 
 typedef struct CD2_CAR
 {
@@ -508,6 +513,9 @@ extern CD2_CONFIG gCd2Cfg;
 // CC_OPPONENTS environment overrides it for a headless run. Always clamped to
 // the slots available (0..CD2_AI_MAX).
 extern int cd2MatchOpponents(void);
+
+// the procedural motion layers' master switch (config `motion`, or CC_MOTION for a run)
+int cd2MotionEnabled(void);
 
 // Exported for the presentation source file (cainescrossfiremedia.c) of this merged
 // module: the effective top speed of a car (fixed-point speed-units/frame).

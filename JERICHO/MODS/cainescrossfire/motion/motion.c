@@ -525,6 +525,18 @@ void cd2MotionCompose(int carId, CD2_VISUAL_OFFSET* o)
 	if (o == NULL || carId < 0 || carId >= MAX_CARS)
 		return;
 
+	/* off entirely (config `motion`, or CC_MOTION=0 for a run): hand back exactly what
+	 * the knock did before any of this existed, so the master switch is a true off */
+	if (!cd2MotionEnabled())
+	{
+		o->pitch = k->pitch;
+		o->roll = k->roll;
+		o->yaw = k->yaw;
+		o->bob = k->lift;
+		o->shift = k->shift;
+		return;
+	}
+
 	o->pitch = k->pitch;
 	o->roll = k->roll;
 	o->yaw = k->yaw;
@@ -571,6 +583,9 @@ void cd2MotionApply(int carId, CD2_VISUAL_OFFSET* o)
 	if (o == NULL || carId < 0 || carId >= MAX_CARS)
 		return;
 
+	if (!cd2MotionEnabled())
+		return;
+
 	/* the racer set only. Traffic and parked cars keep whatever the physics gave
 	 * them: a queue of traffic shuddering in unison looks like a bug, not a world. */
 	if (!cd2MotionIsRacer(carId))
@@ -601,11 +616,17 @@ void cd2MotionApply(int carId, CD2_VISUAL_OFFSET* o)
 		st->idleScale = jer_lerp_int(st->idleScale, target, CD2_IDLE_SCALE_LERP);
 	}
 
-	cd2IdleApply(st, cls);
-	cd2IdleSpike(carId, st);
+	if (gCd2Cfg.motionIdle)
+	{
+		cd2IdleApply(st, cls);
+		cd2IdleSpike(carId, st);
+	}
 
-	cd2AccelApply(st, cls);
-	cd2AccelSquat(st);
+	if (gCd2Cfg.motionAccel)
+	{
+		cd2AccelApply(st, cls);
+		cd2AccelSquat(st);
+	}
 
 	o->pitch += st->lastPitch;
 	o->roll += st->lastRoll;
