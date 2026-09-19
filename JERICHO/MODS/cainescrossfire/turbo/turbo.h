@@ -67,7 +67,6 @@
 // angular acceleration, so this is expressed against the same limiter the car's
 // roll uses (CD2_ROLL_LIMIT_DEFAULT, cainescrossfire.h) rather than as a raw
 // fixed-point number nobody can calibrate.
-#define CD2_TURBO_KICK_PITCH_PCT	150	// % of the normal roll/pitch limit, once
 #define CD2_TURBO_KICK_FRAMES		6	// how long it takes to settle back (0.2s)
 
 // The shove itself, as a percentage of top speed, applied along the car's
@@ -75,9 +74,15 @@
 // engine.
 #define CD2_TURBO_KICK_FORCE_PCT	6
 
+// How hard the engage knocks the car, as a percentage of the knock's own ceiling.
+// It is sized to REACH that ceiling: an impulse of about CD2_KNOCK_MAX_PITCH *
+// (1 - CD2_KNOCK_DECAY/4096) carries the angle all the way up, so this being a
+// little over that is deliberate - a wheelie is a movement that arrives, not one
+// that approaches. The knock then eases it straight back down.
+#define CD2_TURBO_KICK_KNOCK_PCT	18
+
 // While turbo is running, a lighter version of the same pitch keeps the car
 // feeling shoved along. 0 disables it.
-#define CD2_TURBO_SHAKE_PCT		35	// % of the kick pitch, per frame at full boost
 
 // ---------------------------------------------------------------------------
 // The bar

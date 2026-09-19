@@ -27,16 +27,24 @@
 // ---------------------------------------------------------------------------
 // tunables
 // ---------------------------------------------------------------------------
-// How hard the spring pulls an angle back to level, and how much velocity is
-// kept per frame. Together: how loose the car looks. Lower spring = slower
-// recovery; lower damping = more wobble before it settles.
-#define CD2_KNOCK_SPRING		220	// /4096 - fraction of the remaining angle
-#define CD2_KNOCK_DAMPING		4030	// /4096 - velocity kept each frame
+// The motion is in two phases, and neither of them oscillates:
+//
+//   1. the impulse phase - a knock's velocity carries the angle up, decaying each
+//      frame, so a big impulse reaches the ceiling fast (that is the wheelie: the
+//      front comes up hard) and a small one barely moves.
+//   2. the settle phase - once the velocity is spent, the angle interpolates
+//      straight back to level.
+//
+// A spring/damper pair was tried first and read as wobbling: a spring between an
+// angle and zero is an oscillator, so the car rocked back and forth instead of
+// doing one firm movement and settling. These two rates are what replaced it.
+#define CD2_KNOCK_DECAY		3500	// /4096 - velocity kept per frame in phase 1
+#define CD2_KNOCK_SETTLE	400	// /4096 - fraction of the angle eased out per frame
 
-// The lift springs back a little softer, so the body comes down after the impact
+// The lift settles on a softer pair, so the body comes down after the impact
 // rather than snapping to the ground with it.
-#define CD2_KNOCK_LIFT_SPRING		150
-#define CD2_KNOCK_LIFT_DAMPING		4000
+#define CD2_KNOCK_LIFT_DECAY		3700
+#define CD2_KNOCK_LIFT_SETTLE		260
 
 // Nothing may knock beyond this, however hard the hit: a car spinning on its
 // side would look broken rather than hit.

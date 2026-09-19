@@ -334,7 +334,7 @@ typedef struct CD2_STATS
 // A car may lean up to CD2_ROLL_LIMIT_DEFAULT degrees (two wheels) but is
 // stopped past that, and the pitch/roll rates are capped so a single impulse
 // can't flip it in one frame.
-#define CD2_ROLL_LIMIT_DEFAULT  60       // degrees (0 = off)
+#define CD2_ROLL_LIMIT_DEFAULT  20       // degrees (0 = off)
 #define CD2_ROLL_MAX_AV         0x200000 // per-axis pitch/roll rate cap (raw)
 #define CD2_ROLL_RECOVER_DEG    6        // post-physics upright correction per frame
 
@@ -351,7 +351,7 @@ typedef struct CD2_STATS
 // traffic, as a percentage of what the pair would otherwise exchange.
 // 20 = 80% off: traffic is there to be shoved and tumbled, not wrecked on
 // contact.
-#define CD2_CAR_TRAFFIC_DAMAGE		20
+#define CD2_CAR_TRAFFIC_DAMAGE		5
 
 // Additional scenery-damage cut for traffic specifically, on top of
 // scenery_damage. 50 = halved again. Traffic spends its life scraping
@@ -363,13 +363,13 @@ typedef struct CD2_STATS
 // plinking at them - traffic exists to be collateral, not a damage sink.
 // Only weapon damage is scaled here; explosion/scenery damage already has its
 // own traffic handling in cd2OnDamageScale.
-#define CD2_TRAFFIC_WPN_TAKEN	400
+#define CD2_TRAFFIC_WPN_TAKEN	1400
 
 // Shoving traffic. A cainescrossfire car punting a civ car rolls it over, so the
 // twist response to a collision is deliberately high - but capped, because
 // past a point it stops reading as being barged aside and starts looking
 // like a physics glitch.
-#define CD2_TRAFFIC_ROLL_RATE	4			// roll impulse per unit of impact speed.
+#define CD2_TRAFFIC_ROLL_RATE	2			// roll impulse per unit of impact speed.
 				// 300 saturated the cap on every
 				// single shove (a normal impact term
 				// is ~300000), so the roll never
@@ -377,7 +377,7 @@ typedef struct CD2_STATS
 #define CD2_TRAFFIC_ROLL_MAX	0x180000	// ceiling: brisk tumble, not a blur
 #define CD2_TRAFFIC_SCRAPE_ROLL	0x300000	// ceiling for a ground scrape instead
 
-#define CD2_SCENERY_DAMAGE_DEFAULT 65    // % of stock car-vs-solid damage (0..100)
+#define CD2_SCENERY_DAMAGE_DEFAULT 25    // % of stock car-vs-solid damage (0..100)
 #define CD2_AI_DAMAGE_TAKEN_DEFAULT 50   // % damage an opponent takes (10..400)
 
 // ---- destroyed-car respawn -------------------------------------------

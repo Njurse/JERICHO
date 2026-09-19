@@ -48,7 +48,7 @@ extern int ratan2(int y, int x);
 // 30fps). The hold is RE-ARMED on every shot, so it only needs to bridge the
 // gap between shots: shorter than any leaning weapon's refire (the shotgun is
 // ~2.2s) yet long enough that a held trigger keeps the ped out continuously.
-#define CD2_CREW_HOLD_FRAMES	24
+#define CD2_CREW_HOLD_FRAMES	10
 
 // The get-out pose is held at the last "climbing out" frame; the engine's own
 // transition would fire at 15. The get-in animation plays 0..14 and the ped is
@@ -75,7 +75,7 @@ extern int ratan2(int y, int x);
 // The gunner is raised this far above the leaning driver, perching him ON the
 // windowsill rather than hanging beside it. The render frame is Y-down, so
 // raising means subtracting.
-#define CD2_CREW_SILL_RAISE	26
+#define CD2_CREW_SILL_RAISE	6
 
 // Weapon-arm reach, forced through JER_EVENT_PED_SKELETON phase 0 (the
 // position channel). These are PED-LOCAL offsets: +x is out of the ped's own
@@ -111,7 +111,7 @@ extern int ratan2(int y, int x);
 // car at all: a car in the air left its crew standing on the road below. This
 // reproduces that on-ground offset (measured with the car level: car y +31 ->
 // ped y -130, i.e. 99 above the body centre) while now following the car.
-#define CD2_CREW_BODY_LIFT	49
+#define CD2_CREW_BODY_LIFT	39
 
 // The car matrix is Y-UP while the ped's body is rendered Y-DOWN, so a physical
 // pitch/roll maps to the NEGATED angles here. If a tilted car's crew leans the
@@ -143,7 +143,7 @@ enum { CD2_CREW_SIDE_DRIVER = 0, CD2_CREW_SIDE_GUNNER = 1 };
 // and RISES over the respawn delay, so the death reads rather than just
 // freezing. Values are world units at full progress (t = 1).
 #define CD2_DEATHCAM_ZOOM	700	// pull the camera back this far
-#define CD2_DEATHCAM_RISE	220	// and raise it this far (engine Y is down)
+#define CD2_DEATHCAM_RISE	420	// and raise it this far (engine Y is down)
 #define CD2_DEATHCAM_DELAY	300	// fallback respawn window when the cfg has 0
 
 typedef struct CD2_CREW_CAR

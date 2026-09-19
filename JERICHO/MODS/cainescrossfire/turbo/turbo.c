@@ -26,7 +26,7 @@
 #include "jericho.h"
 
 #include "turbo/turbo.h"
-#include "knock/knock.h"		/* the buck when it engages */
+#include "knock/knock.h"		/* the wheelie when it engages (CD2_KNOCK_MAX_PITCH) */
 
 typedef struct CD2_TURBO_STATE
 {
@@ -180,10 +180,9 @@ void cd2TurboPad(int carId, int pad)
 		{
 			st->meter--;
 
-			/* a light shake while it lasts, through the same knock machinery -
-			 * one mechanism for turbo, collisions and crashes alike */
-			if ((st->meter % 6) == 0)
-				cd2KnockAdd(carId, (gCd2Cfg.rollLimit * CD2_TURBO_SHAKE_PCT) / 300, 0, 0, 0);
+			/* deliberately nothing per-frame here any more: repeated small
+			 * impulses read as a wobble, and a boost should be one firm wheelie
+			 * that settles, not a car shaking itself apart for 20 seconds */
 		}
 		else
 		{
@@ -217,7 +216,7 @@ void cd2TurboPad(int carId, int pad)
 				 * the nose. An IMPULSE, so the spring eases it in and settles it
 				 * instead of the car snapping to a new attitude. */
 				st->shove = 1;
-				cd2KnockAdd(carId, (gCd2Cfg.rollLimit * CD2_TURBO_KICK_PITCH_PCT) / 100, 0, 0, 1);
+				cd2KnockAdd(carId, (CD2_KNOCK_MAX_PITCH * CD2_TURBO_KICK_KNOCK_PCT) / 100, 0, 0, 1);
 			}
 			else
 			{
@@ -352,7 +351,7 @@ void cd2TurboForce(int carId, int on)
 		gTurbo[carId].reverse = (on == 2) ? 1 : 0;	/* 2 = force a REVERSE boost */
 		gTurbo[carId].hold = 1;		/* keep it on so the meter can be watched */
 		gTurbo[carId].shove = 1;
-		cd2KnockAdd(carId, (gCd2Cfg.rollLimit * CD2_TURBO_KICK_PITCH_PCT) / 100, 0, 0, 1);
+		cd2KnockAdd(carId, (CD2_KNOCK_MAX_PITCH * CD2_TURBO_KICK_KNOCK_PCT) / 100, 0, 0, 1);
 	}
 	else
 	{

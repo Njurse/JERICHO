@@ -66,20 +66,34 @@ void cd2KnockAdd(int carId, int pitch, int roll, int yaw, int lift)
 }
 
 // ---------------------------------------------------------------------------
-// One spring/damper step per axis, plus the lift. The angle is integrated from
-// the velocity, so the motion always eases in from wherever the car was.
+// One axis, in the two phases from the header: the velocity carries the angle up
+// and decays, then the angle eases straight back to level. There is no spring, so
+// there is nothing to oscillate - which is the difference between a car doing one
+// firm movement and a car wobbling.
+//
+// A useful consequence: an impulse of about maxAngle * (1 - decay/4096) reaches
+// the ceiling, so "how hard was that" is one number against the max.
 // ---------------------------------------------------------------------------
-static void cd2KnockAxis(int* angle, int* velocity, int spring, int damping, int maxAngle)
+static void cd2KnockAxis(int* angle, int* velocity, int decay, int settle, int maxAngle)
 {
 	int a;
 
-	/* the spring pulls the angle back to level... */
-	*velocity -= (int)(((long long)*angle * spring) >> 12);
+	if (*velocity != 0)
+	{
+		a = *angle + *velocity;
+		*velocity = (int)(((long long)*velocity * decay) >> 12);
+	}
+	else
+	{
+		/* easing out: a fixed fraction of the remaining angle each frame */
+		a = *angle - (int)(((long long)*angle * settle) >> 12);
 
-	/* ...and the damper takes the wobble out */
-	*velocity = (int)(((long long)*velocity * damping) >> 12);
+		if (a == *angle)
+			a = (*angle > 0) ? *angle - 1 : *angle + 1;
 
-	a = *angle + *velocity;
+		if (a < 2 && a > -2)
+			a = 0;			/* and it has to actually arrive */
+	}
 
 	if (a > maxAngle) { a = maxAngle; *velocity = 0; }
 	if (a < -maxAngle) { a = -maxAngle; *velocity = 0; }
@@ -103,13 +117,30 @@ void cd2KnockTick(int carId)
 		return;		/* at rest: nothing to do, which is the common case */
 	}
 
-	cd2KnockAxis(&k->pitch, &k->vpitch, CD2_KNOCK_SPRING, CD2_KNOCK_DAMPING, CD2_KNOCK_MAX_PITCH);
-	cd2KnockAxis(&k->roll, &k->vroll, CD2_KNOCK_SPRING, CD2_KNOCK_DAMPING, CD2_KNOCK_MAX_ROLL);
-	cd2KnockAxis(&k->yaw, &k->vyaw, CD2_KNOCK_SPRING, CD2_KNOCK_DAMPING, CD2_KNOCK_MAX_YAW);
+	/* the top of the movement, logged on the last frame the impulse still carries:
+	 * this is the number that says whether the impulse was sized to reach the
+	 * ceiling */
+	if (k->vpitch != 0 &&
+		(k->pitch + k->vpitch >= CD2_KNOCK_MAX_PITCH || k->pitch + k->vpitch <= -CD2_KNOCK_MAX_PITCH ||
+		 (((long long)k->vpitch * CD2_KNOCK_DECAY) >> 12) == 0))
+	{
+		int peak = k->pitch + k->vpitch;
+
+		/* the clamp in cd2KnockAxis is what the car actually gets */
+		if (peak > CD2_KNOCK_MAX_PITCH) peak = CD2_KNOCK_MAX_PITCH;
+		if (peak < -CD2_KNOCK_MAX_PITCH) peak = -CD2_KNOCK_MAX_PITCH;
+
+		jer_log("[cainescrossfire] knock car=%d peak pitch=%d of %d\n",
+			carId, peak, CD2_KNOCK_MAX_PITCH);
+	}
+
+	cd2KnockAxis(&k->pitch, &k->vpitch, CD2_KNOCK_DECAY, CD2_KNOCK_SETTLE, CD2_KNOCK_MAX_PITCH);
+	cd2KnockAxis(&k->roll, &k->vroll, CD2_KNOCK_DECAY, CD2_KNOCK_SETTLE, CD2_KNOCK_MAX_ROLL);
+	cd2KnockAxis(&k->yaw, &k->vyaw, CD2_KNOCK_DECAY, CD2_KNOCK_SETTLE, CD2_KNOCK_MAX_YAW);
 
 	/* the lift wants to be zero, and never negative: this is a nudge to clear
 	 * geometry, not a suspension */
-	cd2KnockAxis(&k->lift, &k->vlift, CD2_KNOCK_LIFT_SPRING, CD2_KNOCK_LIFT_DAMPING, CD2_KNOCK_MAX_LIFT);
+	cd2KnockAxis(&k->lift, &k->vlift, CD2_KNOCK_LIFT_DECAY, CD2_KNOCK_LIFT_SETTLE, CD2_KNOCK_MAX_LIFT);
 
 	if (k->lift < 0)
 		k->lift = 0;
