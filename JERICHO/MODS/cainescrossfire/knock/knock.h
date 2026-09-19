@@ -38,14 +38,21 @@
 // A spring/damper pair was tried first and read as wobbling: a spring between an
 // angle and zero is an oscillator, so the car rocked back and forth instead of
 // doing one firm movement and settling. These two rates are what replaced it.
-#define CD2_KNOCK_DECAY		1704	// /4096 - velocity kept per frame in phase 1
-#define CD2_KNOCK_SETTLE	1100	// /4096 - fraction of the angle eased out per frame
+#define CD2_KNOCK_DECAY		1400	// /4096 - velocity kept per frame in phase 1
+#define CD2_KNOCK_SETTLE	1850	// /4096 - fraction of the angle eased out per frame
 
 // ...and the settle is bounded: whatever the curve has left is snapped away after
-// this many frames (15 = 0.5s at 30Hz). An exponential approaches zero forever, so
+// this many frames (9 = 0.3s at 30Hz). An exponential approaches zero forever, so
 // without a deadline "eased back" would take about a second and a half to look
 // finished.
-#define CD2_KNOCK_SETTLE_FRAMES	15
+//
+// Jaret: the knock should be AGGRESSIVE and then settle AGGRESSIVELY. Both rates moved
+// the same way: a lower decay kills the velocity sooner, so the angle arrives as a
+// punch rather than a push, and a higher settle sheds the angle faster, so it is
+// already still by the time you look. The impulse sizing above absorbed the first
+// change on its own - that is exactly what CD2_KNOCK_IMPULSE_TO is for, and why
+// changing a rate does not silently soften a hit.
+#define CD2_KNOCK_SETTLE_FRAMES	9
 
 // The impulse that exactly carries an axis to its ceiling:
 //   displacement = impulse / (1 - decay/4096)
@@ -58,7 +65,7 @@
 // The lift settles on a softer pair, so the body comes down after the impact
 // rather than snapping to the ground with it.
 #define CD2_KNOCK_LIFT_DECAY		2200
-#define CD2_KNOCK_LIFT_SETTLE		800
+#define CD2_KNOCK_LIFT_SETTLE		1300	// aggressive, like the angles
 
 // Nothing may knock beyond this, however hard the hit: a car spinning on its
 // side would look broken rather than hit.
@@ -94,7 +101,7 @@
 // the tail) rises instead of the whole car spinning around a point in its middle.
 #define CD2_KNOCK_PIVOT_DIST		46
 #define CD2_KNOCK_SHIFT_DECAY		2200
-#define CD2_KNOCK_SHIFT_SETTLE		800
+#define CD2_KNOCK_SHIFT_SETTLE		1300
 
 // Impulse scale, so callers can pass whatever their own units are and say how
 // much it was:
