@@ -7,6 +7,7 @@
  */
 #include "driver2.h"
 #include "cainescrossfire.h"
+#include "cainescrossfire_internal.h"	/* gCd2Car - the per-car handling state */
 #include "cars.h"
 #include "cosmetic.h"		/* car_cosmetics[] - the model index is an offset into it */
 #include "dr2math.h"		/* RSIN - the integer sine the engine already uses */
@@ -29,9 +30,9 @@
 const CD2_MOTION_CLASS cd2MotionClasses[CD2_MOTION_CLASSES] =
 {
 	//  name      pitchMax  stiffness  damping  over%  idleP/R/Y  bob
-	{ "LIGHT",    137,       300,      1500,    35,     11, 11,  6,  1 },	// ~12 deg
-	{ "MEDIUM",   102,       240,      1450,    30,      9,  9,  5,  1 },	// ~9 deg
-	{ "HEAVY",     68,       170,      1400,    25,      7,  7,  4,  1 },	// ~6 deg
+	{ "LIGHT",    137,       400,      1400,    35,     11, 11,  6,  1 },	// ~12 deg
+	{ "MEDIUM",   102,       340,      1415,    30,      9,  9,  5,  1 },	// ~9 deg
+	{ "HEAVY",     68,       240,      1350,    25,      7,  7,  4,  1 },	// ~6 deg
 };
 
 // Which model is which class. -1 = work it out from the car's own numbers.
@@ -420,6 +421,89 @@ static void cd2IdleApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
 }
 
 // ---------------------------------------------------------------------------
+// Layer 2: pitch-back under power
+// ---------------------------------------------------------------------------
+// What the car is doing, recorded at the PHYSICS rate rather than at the draw rate:
+// the delta has to be a real per-step change in speed, not however often this car
+// happened to be drawn.
+// [D] [T]
+void cd2MotionStep(int carId)
+{
+	CD2_MOTION_STATE* st;
+	int speed;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return;
+
+	if (!cd2MotionIsRacer(carId))
+		return;
+
+	st = &gMotion[carId];
+
+	if (!st->inited)
+	{
+		/* no delta for the first step: there is nothing to compare against, and the
+		 * car has not moved yet */
+		st->prevSpeed = car_data[carId].hd.speed;
+		return;
+	}
+
+	speed = car_data[carId].hd.speed;
+
+	st->delta = speed - st->prevSpeed;
+	st->prevSpeed = speed;
+	st->throttle = jer_clamp_int(gCd2Car[carId].throttle, -1, 1);
+}
+
+// [D] [T]
+static void cd2AccelApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
+{
+	int target = 0, accel;
+
+	/* The sustained half: while the car is under power, so is the pitch. Reversing is
+	 * the same power pointed the other way, and gets the opposite pitch at half
+	 * amplitude - backing up is a different manoeuvre, not a faster one. */
+	if (st->throttle > 0)
+		target = cls->pitchMax;
+	else if (st->throttle < 0)
+		target = -(cls->pitchMax / 2);
+
+	/* The transient half: the speed delta, which is what actually moves the car.
+	 * Braking is a negative delta, so the same rule that lifts the nose on power
+	 * takes it down on the brakes - that is the stoppie, and it needs no case of its
+	 * own. A turbo lurches for the same reason, because a turbo IS a large positive
+	 * delta rather than a flag this has to know about. */
+	{
+		int d = st->delta * CD2_MOTION_DELTA_GAIN;
+
+		/* hd.speed is a magnitude, so "which way is it going" comes from the thrust
+		 * instead - and a car backing up swaps the pitch's sign rather than keeping it */
+		if (st->throttle < 0)
+			d = -((d * CD2_MOTION_REVERSE_PCT) / 100);
+
+		target += d;
+	}
+
+	target = jer_clamp_int(target, -cls->pitchMax, cls->pitchMax);
+
+	/* accel = (target - pos) * stiffness - vel * damping, in /4096 fixed point. The
+	 * class decides how fast it gets there and how much it overshoots. */
+	accel = ((target - st->accelPitch) * cls->stiffness >> 12) - (st->accelVel * cls->damping >> 12);
+
+	st->accelVel += accel;
+	st->accelPitch += st->accelVel;
+}
+
+// The squat, derived from the spring's own position so it cannot drift out of step
+// with the angle that caused it: nose up, weight back, body sitting down on the rear.
+// [D] [T]
+static void cd2AccelSquat(CD2_MOTION_STATE* st)
+{
+	st->accelShift = -(st->accelPitch * CD2_MOTION_SQUAT_SHIFT) >> 12;
+	st->accelBob = -(st->accelPitch * CD2_MOTION_SQUAT_BOB) >> 12;
+}
+
+// ---------------------------------------------------------------------------
 // The frame, and the dump
 // ---------------------------------------------------------------------------
 // [D] [T]
@@ -464,10 +548,17 @@ void cd2MotionApply(int carId, CD2_VISUAL_OFFSET* o)
 	cd2IdleApply(st, cls);
 	cd2IdleSpike(carId, st);
 
+	cd2AccelApply(st, cls);
+	cd2AccelSquat(st);
+
 	o->pitch += st->lastPitch;
 	o->roll += st->lastRoll;
 	o->yaw += st->lastYaw;
 	o->bob += st->lastBob;
+
+	o->pitch += st->accelPitch;
+	o->shift += st->accelShift;
+	o->bob += st->accelBob;
 }
 
 // Set by CC_MOTION_LOG=<frames> for a run - a run-only override, never saved, like
@@ -516,6 +607,26 @@ void cd2MotionDumpIdle(int carId)
 		car_data[carId].hd.speed, cls->name);
 }
 
+// The same sample for Layer 2: the spring's position, what drove it, and the squat it
+// produced. Kept separate from the idle line because they are tuned separately.
+// [D] [T]
+void cd2MotionDumpAccel(int carId)
+{
+	CD2_MOTION_STATE* st;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return;
+
+	st = &gMotion[carId];
+
+	if (!st->inited)
+		return;
+
+	jer_log("[cainescrossfire] accel car=%d pitch=%d vel=%d delta=%d thr=%d shift=%d bob=%d speed=%d class=%s\n",
+		carId, st->accelPitch, st->accelVel, st->delta, st->throttle, st->accelShift, st->accelBob,
+		car_data[carId].hd.speed, cd2MotionClassOf(carId)->name);
+}
+
 // [D] [T]
 void cd2MotionSample(void)
 {
@@ -528,7 +639,10 @@ void cd2MotionSample(void)
 	for (i = 0; i < MAX_CARS; i++)
 	{
 		if (gMotion[i].inited && cd2MotionIsRacer(i))
+		{
 			cd2MotionDumpIdle(i);
+			cd2MotionDumpAccel(i);
+		}
 	}
 }
 

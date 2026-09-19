@@ -253,6 +253,10 @@ int cd2OnCarStep(void* ud, void* args)
 	if (!gCd2Cfg.enabled || cp->id < 0 || cp->id >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
+	/* the motion layers' view of what the car is doing, sampled at the physics rate
+	 * so their delta is a real per-step change and not a function of draw order */
+	cd2MotionStep(cp->id);
+
 	// deferred "Total Car" debug: applied on the first physics frame after
 	// unpausing so the wreck/explosion don't fire while the pause menu is up.
 	if (gPendingTotalCar && cp->id == MainPlayer.playerCarId)

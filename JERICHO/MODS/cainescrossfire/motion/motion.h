@@ -115,6 +115,43 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 #define CD2_IDLE_DRIFT_DEPTH	1024		/* +/- this on a 3072 base */
 
 // ---------------------------------------------------------------------------
+// Layer 2: pitch-back under power, and the squat that goes with it
+// ---------------------------------------------------------------------------
+// A real spring-damper (accel = (target - pos) * stiffness - vel * damping), per
+// class, because this layer is HELD: the nose stays up while the throttle is on and
+// only comes back when it is released. The knock's two-phase motion cannot hold
+// anything - it carries an angle up and settles it, which is why the idle's spikes
+// use it and this does not.
+//
+// The target has two parts and they do different jobs:
+//   - the THRUST, which is sustained: while the car is under power, so is the pitch
+//   - the DELTA, the change in speed this step, which is transient: it is what makes
+//     the nose snap up as a car pulls away and what takes it down under braking. A
+//     hard stop from speed dips hard because a hard stop IS a large negative delta,
+//     and a turbo lurches because a turbo is a large positive one - neither needed a
+//     special case, which is the point of driving this from the delta rather than
+//     from "is the turbo on".
+//
+// Two things about the inputs, both measured rather than assumed:
+//   - the module's throttle is +1/-1/0 (the thrust applied at CAR_STEP), NOT a 0..255
+//     analogue. Treating it as an analogue made the sustained half round to zero and
+//     left the delta carrying everything - which looked fine right up until the
+//     question "why does the nose drop at cruising speed".
+//   - cp->hd.speed is a MAGNITUDE, so it cannot say which way the car is going. The
+//     direction comes from the thrust's sign instead.
+#define CD2_MOTION_DELTA_GAIN	5	// speed units per step -> angle, per step
+
+// A car in reverse has the same delta sign for the opposite reason, and should not
+// pitch as hard - it is a different manoeuvre, not a faster one.
+#define CD2_MOTION_REVERSE_PCT	50	// % of the amplitude when the car is going backwards
+
+// The squat: as the nose comes up, the weight goes back over the rear wheels and the
+// body sits down slightly. Both are derived from the spring's own position, so they
+// cannot drift out of step with the angle that caused them.
+#define CD2_MOTION_SQUAT_SHIFT	1000	// units of weight shift per unit of pitch, /4096
+#define CD2_MOTION_SQUAT_BOB	900	// ...and of downward body movement, /4096
+
+// ---------------------------------------------------------------------------
 // The spikes
 // ---------------------------------------------------------------------------
 // Every so often the idle is not smooth: the engine catches, a mount shifts, a
@@ -152,6 +189,9 @@ typedef struct CD2_MOTION_STATE
 	int idleScale;					// smoothed 0..4096: full at rest, 0 at speed
 
 	// --- Layer 2: acceleration pitch-back ---
+	int prevSpeed;		// last step's speed, for the delta
+	int delta;		// change in speed over the last step (signed)
+	int throttle;		// the pad's throttle, 0..255
 	int accelPitch;		// the spring's position
 	int accelVel;		// and its velocity
 	int accelShift;		// the squat that comes with it (along the car)
@@ -189,6 +229,12 @@ void cd2MotionDump(int carId);
 // runs the spikes and the springs, and gates the whole thing on the racer set.
 void cd2MotionApply(int carId, CD2_VISUAL_OFFSET* o);
 
+// Record what the car is doing this step - its speed, the change since the last step,
+// and the throttle. Called from the car-step hook (the physics rate), NOT from the
+// draw, so the delta is a real delta rather than however often a car happened to be
+// drawn.
+void cd2MotionStep(int carId);
+
 // Seed this car's phases. Called on first use; deterministic in the run seed, so a
 // replay with the same -seed shudders identically.
 void cd2MotionSeed(int carId);
@@ -196,6 +242,7 @@ void cd2MotionSeed(int carId);
 // One line sampling the idle's current output. Only worth having with a log, and it
 // is how the amplitudes and the "not a visible loop" claim are checked.
 void cd2MotionDumpIdle(int carId);
+void cd2MotionDumpAccel(int carId);
 
 // How often to sample the idle, from CC_MOTION_LOG=<frames> (a run-only override,
 // never saved - the same pattern as CC_OPPONENTS). 0 or unset means off. And the
