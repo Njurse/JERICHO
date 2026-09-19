@@ -1,10 +1,17 @@
 # Caine's Crossfire
 
-Twisted Metal: Black style arcade handling for REDRIVER2, built as a JERICHO
-deep mod. The feel is *engineered, not simulated* — responsive and forgiving
-(TMB's north star) — on top of a point-mass rigid body that replaces the stock
-wheel/suspension sim (the suspension itself is kept, for visual roll/pitch
-only).
+A **total conversion** of REDRIVER2 into a Twisted Metal-style car-combat game,
+built as a JERICHO deep mod. The goal is the whole experience, not just
+handling: a roster of vehicles with their own stats and special weapons, a
+pre-match select flow, and Twisted Metal: Black style arcade handling. The feel
+is *engineered, not simulated* — responsive and forgiving (TMB's north star) —
+on top of a point-mass rigid body that replaces the stock wheel/suspension sim
+(the suspension itself is kept, for visual roll/pitch only).
+
+- **The roster** — vehicles are **profiles** (identity + `(city, model)`
+  mapping, 1..5 stats, a special weapon, and native-physics overrides). See
+  [`PROFILES.md`](PROFILES.md); each profile's special is in
+  [`SPECIALS.md`](SPECIALS.md). A profile is one file under `profiles/rows/`.
 
 - **Direct velocity control** — throttle accelerates to `topSpeed`, brake
   decelerates (fast and proportional, then tapers) and reverses up to
@@ -33,9 +40,12 @@ only).
   **4096 = stock/normal**; PSX volume **0 = loudest**, **−10000 = silent**.
   See [`SOUNDS.md`](SOUNDS.md) for the sample/bank API.
 - **Car combat** — the direct-velocity handling plus a data-driven weapon layer
-  (a machine-gun sidearm and finite primaries) and totaled-car wreck effects.
+  (a machine-gun sidearm and finite primaries), six **vehicle specials**, and
+  totaled-car wreck effects. The CC select flow (`-ccmenu`) picks an arena and a
+  vehicle before the match.
 
-Out of scope for now: a turbo meter, energy attacks and ram-damage bonuses.
+Still to come: tournament brackets, a garage, and the rest of the total
+conversion.
 
 ## Enabling
 
