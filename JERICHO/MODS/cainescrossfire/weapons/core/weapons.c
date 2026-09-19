@@ -134,11 +134,106 @@ const char* cd2WpnName(int weaponId)
 	return d ? d->name : "NONE";
 }
 
+// The full on-screen name: the def's displayName when set, else the short name.
+// A special weapon's custom name lives in displayName, deliberately separate
+// from its internal id (special_<car>).
+const char* cd2WpnDisplayName(int weaponId)
+{
+	const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
+
+	if (d == NULL)
+		return "NONE";
+
+	return (d->displayName != NULL) ? d->displayName : d->name;
+}
+
 // ---------------------------------------------------------------------------
 // Inventory
 // ---------------------------------------------------------------------------
-static int gAmmo[CD2_WID_COUNT];	// rounds per weapon (base weapons: unused)
-static int gSelected = CD2_WID_NONE;	// currently armed weapon (never a base weapon)
+static int gCarAmmo[MAX_CARS][CD2_WID_COUNT];	// rounds per CAR per weapon — a
+						// contestant's arsenal (above all its
+						// SPECIAL) is its own, not a shared pool
+static int gSelected = CD2_WID_NONE;	// the PLAYER's armed weapon (never a base)
+static int sGrantAllPending;		// deferred all-weapons test grant (see GAME_START)
+
+// The player's car id, or -1 when there is none (yet).
+static int cd2WpnPlayerId(void)
+{
+	int id = player[0].playerCarId;
+
+	return (id >= 0 && id < MAX_CARS) ? id : -1;
+}
+
+// ---- car-keyed inventory (used by a special's fire path and by modules) ----
+int cd2WpnCarAmmo(void* vcp, int weaponId)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+	const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
+
+	if (d == NULL)
+		return 0;
+
+	if (d->isBase)
+		return -1;			// -1 = infinite (base)
+
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return 0;
+
+	return gCarAmmo[cp->id][weaponId];
+}
+
+int cd2WpnCarOwns(void* vcp, int weaponId)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+	const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
+
+	if (d == NULL)
+		return 0;
+
+	if (d->isBase)
+		return 1;
+
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return 0;
+
+	return gCarAmmo[cp->id][weaponId] > 0;
+}
+
+void cd2WpnCarGrant(void* vcp, int weaponId, int ammo)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+	const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
+	int cap;
+
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return;
+
+	if (d == NULL || d->isBase)
+		return;
+
+	cap = (d->maxAmmo > 0) ? d->maxAmmo : 9999;
+	gCarAmmo[cp->id][weaponId] = jer_clamp_int(ammo, 0, cap);
+
+	// a pickup auto-equips the first weapon the PLAYER ever holds (TMB)
+	if (cp->id == cd2WpnPlayerId() && gCarAmmo[cp->id][weaponId] > 0 && gSelected == CD2_WID_NONE)
+		gSelected = weaponId;
+}
+
+// Burn a round (the trigger calls this once a shot really goes out).
+void cd2WpnCarConsume(void* vcp, int weaponId)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+	const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
+
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return;
+
+	if (d == NULL || d->isBase)
+		return;
+
+	if (gCarAmmo[cp->id][weaponId] > 0)
+		gCarAmmo[cp->id][weaponId]--;
+}
 
 // Per-car armed weapon: which weapon each car is currently using, or
 // CD2_WID_NONE. Kept for every car so the mounted-crew module can read whose
@@ -146,24 +241,34 @@ static int gSelected = CD2_WID_NONE;	// currently armed weapon (never a base wea
 // tracks gSelected; AI cars record what the AI is engaging with.
 static int gCarWeapon[MAX_CARS];
 
+// The weaponId-only accessors mean "the PLAYER's" — the HUD, the pause menu and
+// the debug driver all ask about the player's own arsenal.
 int cd2WpnOwns(int weaponId)
 {
-	const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
+	int id = cd2WpnPlayerId();
 
-	if (d == NULL)
-		return 0;
+	if (id < 0)
+	{
+		const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
 
-	return d->isBase ? 1 : (gAmmo[weaponId] > 0);
+		return (d != NULL && d->isBase) ? 1 : 0;
+	}
+
+	return cd2WpnCarOwns(&car_data[id], weaponId);
 }
 
 int cd2WpnAmmo(int weaponId)
 {
-	const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
+	int id = cd2WpnPlayerId();
 
-	if (d == NULL)
-		return 0;
+	if (id < 0)
+	{
+		const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
 
-	return d->isBase ? -1 : gAmmo[weaponId];	// -1 = infinite (base)
+		return (d != NULL && d->isBase) ? -1 : 0;
+	}
+
+	return cd2WpnCarAmmo(&car_data[id], weaponId);
 }
 
 int cd2WpnSelected(void)
@@ -213,28 +318,22 @@ int cd2WpnCycle(int dir)
 
 void cd2WpnGrant(int weaponId, int ammo)
 {
-	const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
-	int cap;
-	int was;
+	int id = cd2WpnPlayerId();
 
-	if (d == NULL || d->isBase)
+	if (id < 0)
 		return;
 
-	was = (gAmmo[weaponId] > 0) ? 1 : 0;
-	cap = (d->maxAmmo > 0) ? d->maxAmmo : 9999;
-	gAmmo[weaponId] = jer_clamp_int(ammo, 0, cap);
-
-	// pickups auto-equip the first weapon you ever hold (TMB behaviour)
-	if (!was && gAmmo[weaponId] > 0 && gSelected == CD2_WID_NONE)
-		gSelected = weaponId;
+	cd2WpnCarGrant(&car_data[id], weaponId, ammo);
 }
 
 void cd2WpnClear(int weaponId)
 {
-	if (weaponId < 0 || weaponId >= CD2_WID_COUNT)
+	int id = cd2WpnPlayerId();
+
+	if (weaponId < 0 || weaponId >= CD2_WID_COUNT || id < 0)
 		return;
 
-	gAmmo[weaponId] = 0;
+	gCarAmmo[id][weaponId] = 0;
 
 	if (gSelected == weaponId)
 		gSelected = cd2WpnFirstOwned();
@@ -244,6 +343,10 @@ void cd2WpnClear(int weaponId)
 void cd2WpnGrantAllMax(void)
 {
 	int i;
+	int id = cd2WpnPlayerId();
+
+	if (id < 0)
+		return;
 
 	for (i = 0; i < CD2_WID_COUNT; i++)
 	{
@@ -252,7 +355,7 @@ void cd2WpnGrantAllMax(void)
 		if (d == NULL || d->isBase)
 			continue;
 
-		gAmmo[i] = (d->maxAmmo > 0) ? d->maxAmmo : 9999;
+		gCarAmmo[id][i] = (d->maxAmmo > 0) ? d->maxAmmo : 9999;
 	}
 
 	if (gSelected == CD2_WID_NONE)
@@ -279,10 +382,11 @@ void cd2WpnSetCarArmed(const CAR_DATA* cp, int weaponId)
 
 void cd2WpnResetAll(void)
 {
-	int i;
+	int i, c;
 
-	for (i = 0; i < CD2_WID_COUNT; i++)
-		gAmmo[i] = 0;
+	for (c = 0; c < MAX_CARS; c++)
+		for (i = 0; i < CD2_WID_COUNT; i++)
+			gCarAmmo[c][i] = 0;
 
 	gSelected = CD2_WID_NONE;
 
@@ -746,6 +850,13 @@ static int cd2WpnOnFrame(void* ud, void* args)
 	// should lean out of (the player's trigger weapon).
 	cd2WpnSetCarArmed(cp, gSelected);
 
+	// the deferred all-weapons test grant, now that the player car exists
+	if (sGrantAllPending)
+	{
+		cd2WpnGrantAllMax();
+		sGrantAllPending = 0;
+	}
+
 	// Arm the crew from the SELECTED weapon every frame: selecting a leaning
 	// weapon brings its ped out and it stays out while that weapon is selected
 	// (not only at the instant it fires). A non-leaning selection contributes
@@ -778,7 +889,7 @@ static int cd2WpnOnFrame(void* ud, void* args)
 
 	if (gCd2Cfg.debugLog && (dbg++ & 31) == 0)
 		printInfo("[cainescrossfire] wpn frame: pad=0x%04X LT=%d RT=%d LB=%d RB=%d sel=%d ammo=%d\n",
-			pad, lt, rt, lb, rb, gSelected, (gSelected != CD2_WID_NONE) ? gAmmo[gSelected] : 0);
+			pad, lt, rt, lb, rb, gSelected, (gSelected != CD2_WID_NONE) ? cd2WpnAmmo(gSelected) : 0);
 
 	// weapon select: bumpers, edge triggered
 	if (rb && !prevRB)
@@ -807,14 +918,14 @@ static int cd2WpnOnFrame(void* ud, void* args)
 	{
 		const CD2_WEAPON_DEF* d = cd2WpnDef(gSelected);
 
-		if (d != NULL && cd2WpnOwns(gSelected) && gAmmo[gSelected] > 0)
+		if (d != NULL && cd2WpnCarOwns(cp, gSelected) && cd2WpnCarAmmo(cp, gSelected) > 0)
 		{
 			// burns a round only when the shot really goes out (refire cooldown)
 			if (cd2WpnTryFire(cp, gSelected))
 			{
-				gAmmo[gSelected]--;
+				cd2WpnCarConsume(cp, gSelected);
 
-				if (gAmmo[gSelected] <= 0)
+				if (cd2WpnCarAmmo(cp, gSelected) <= 0)
 					cd2WpnClear(gSelected);
 			}
 		}
@@ -911,7 +1022,7 @@ static int cd2WpnOnOverlay(void* ud, void* args)
 	else
 	{
 		SetTextColour(255, 200, 90);
-		sprintf(text, "> %s x%d", cd2WpnName(gSelected), gAmmo[gSelected]);
+		sprintf(text, "> %s x%d", cd2WpnDisplayName(gSelected), cd2WpnAmmo(gSelected));
 		PrintString(text, 20, 222);
 	}
 
@@ -928,9 +1039,10 @@ static int cd2WpnOnGameStart(void* ud, void* args)
 
 	cd2WpnResetAll();
 
-	// test/dev: spawn with the machine gun plus EVERY weapon at max capacity
-	if (gCd2Cfg.allWeapons)
-		cd2WpnGrantAllMax();
+	// The inventory is per-car, and the player car does not exist yet at
+	// GAME_START — so the all-weapons test grant is deferred to the first frame
+	// the player car is around (cd2WpnOnFrame).
+	sGrantAllPending = gCd2Cfg.allWeapons ? 1 : 0;
 
 	return JER_RESULT_CONTINUE;
 }

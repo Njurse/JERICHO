@@ -53,6 +53,12 @@ enum
 	CD2_WID_SPECIAL_JERICHO,	// shotgun x2 pellets and x2 damage, BOTH
 					// windows at once (demo weapon)
 	CD2_WID_SMG,		// primary (projectile): a fast 6-shot burst sidearm
+	CD2_WID_SPECIAL_HORNET,		// profile specials — each is one vehicle's
+	CD2_WID_SPECIAL_AVALANCHE,	// unique weapon, internally named
+	CD2_WID_SPECIAL_CORVO,		// "special_<car>" and displayed under its own
+	CD2_WID_SPECIAL_BRUXA,		// custom name (see the vehicle profiles in
+	CD2_WID_SPECIAL_HIGHWAYMAN,	// profiles/ and profiles/SPECIALS.md)
+	CD2_WID_SPECIAL_DEADSTAR,
 	CD2_WID_COUNT,
 	CD2_WID_NONE = -1
 };
@@ -63,10 +69,14 @@ enum
 typedef struct CD2_WEAPON_DEF
 {
 	int id;			// CD2_WID_*
-	const char* name;	// short HUD name
+	const char* name;	// short HUD name (the code-facing label, e.g. "MG")
+	const char* displayName;	// full on-screen name; NULL = use `name`. A
+					// special weapon's custom name lives here
+					// ("Napalm Cone"), separate from its internal id.
 	int cls;		// CD2_WCLS_*
 
 	int isBase;		// 1 = always-available sidearm, excluded from the cycle
+	int isSpecial;		// 1 = one vehicle's unique special (per-car ammo/cooldown)
 	int hidden;		// 1 = never in pickups and never in a starting arsenal
 	int pickupEnabled;	// 1 = may be spawned as a drive-over map pickup
 	int pickupAmmo;		// rounds a pickup grants (field only for now)
@@ -187,7 +197,19 @@ void cd2WpnClear(int weaponId);		// drop a carried weapon
 void cd2WpnGrantAllMax(void);		// debug: every weapon to its max capacity
 void cd2WpnResetAll(void);		// fresh level: reset inventory + all instances
 
-// Human-readable name for the HUD ("MG", "MISSILE", ...).
+// Human-readable name for the HUD ("MG", "MISSILE", ...). This is the short,
+// code-facing label; cd2WpnDisplayName is the full on-screen name.
 const char* cd2WpnName(int weaponId);
+const char* cd2WpnDisplayName(int weaponId);
+
+// ---------------------------------------------------------------------------
+// Per-car inventory (a contestant's arsenal, above all its SPECIAL, is its own)
+// ---------------------------------------------------------------------------
+// The weaponId-only accessors above (cd2WpnOwns/Ammo/Grant/Clear) are the
+// PLAYER's; these take any car, for a special's fire path and for modules.
+int  cd2WpnCarAmmo(void* car, int weaponId);	// rounds left (base: -1 = infinite)
+int  cd2WpnCarOwns(void* car, int weaponId);
+void cd2WpnCarGrant(void* car, int weaponId, int ammo);
+void cd2WpnCarConsume(void* car, int weaponId);	// burn one round after a real shot
 
 #endif /* CD2_WEAPON_H */

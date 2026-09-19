@@ -72,17 +72,17 @@ static CD2_WEAPON_DEF cd2MakeSmgDef(void)
 	d.pickupAmmo = 4;
 
 	d.maxAmmo = 8;
-	d.fireInterval = 6;	// fast while the burst is running
-	d.refireCooldown = 33;	// ~1.1s at 30fps: one volley at a time, then a
+	d.fireInterval = 3;	// fast while the burst is running
+	d.refireCooldown = 16;	// ~0.5s at 30fps: one volley at a time, then a
 				// beat to aim - this is the SMG's whole rhythm
 
-	d.damage = 18;		// small per shot; six of them is the point
+	d.damage = 36;		// small per shot; six of them is the point
 	d.speed = 1500;		// fast enough to read as a bullet
 	d.range = 12000;	// must reach the AI's max launch range
 	d.life = 0;
 
 	d.splashRadius = 90;	// a light pop, not a blast
-	d.splashDamage = 12;
+	d.splashDamage = 24;
 	d.explosionEffect = LITTLE_BANG;
 	d.impactFx = CD2_FX_ZOOMY;	// small, cool-blue: a bullet strike
 

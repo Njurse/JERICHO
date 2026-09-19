@@ -80,18 +80,18 @@ static CD2_WEAPON_DEF cd2MakeMineDef(void)
 	d.pickupAmmo = 0;
 
 	d.maxAmmo = 8;
-	d.fireInterval = 40;
-	d.refireCooldown = 120;	// 2s minimum between drops
+	d.fireInterval = 20;
+	d.refireCooldown = 60;	// 2s minimum between drops
 	d.fireCone = 4096;	// it is dropped behind, not aimed
 
-	d.damage = 700;		// damage on the triggering car
+	d.damage = 1400;		// damage on the triggering car
 	d.speed = 0;		// dropped, not flown
 	d.range = 0;
 	d.life = 0;
 
 	d.radius = 400;		// proximity trigger radius
 	d.splashRadius = 450;	// explosion radius
-	d.splashDamage = 700;	// explosion damage at centre
+	d.splashDamage = 1400;	// explosion damage at centre
 	d.explosionEffect = BIG_BANG;
 	d.impactFx = CD2_FX_MINE;	// red-orange blast (fx library)
 

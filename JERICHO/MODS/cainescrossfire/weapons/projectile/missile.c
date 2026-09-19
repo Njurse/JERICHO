@@ -80,16 +80,16 @@ static CD2_WEAPON_DEF cd2MakeMissileDef(void)
 	d.pickupAmmo = 10;
 
 	d.maxAmmo = 20;
-	d.fireInterval = 30;
-	d.refireCooldown = 65;	// 1.05s minimum between missiles
+	d.fireInterval = 15;
+	d.refireCooldown = 32;	// 1.05s minimum between missiles
 
-	d.damage = 900;		// direct hit
+	d.damage = 1800;		// direct hit
 	d.speed = 1485;		// world units/frame
 	d.range = 10400;
 	d.life = 0;
 
 	d.splashRadius = 500;
-	d.splashDamage = 800;
+	d.splashDamage = 1600;
 	// BIG_BANG, not LITTLE_BANG: a little bang is hscale 1024 for ~21 frames,
 	// which at combat speed reads as nothing at all. This is the visible one.
 	d.explosionEffect = BIG_BANG;

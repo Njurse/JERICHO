@@ -159,9 +159,9 @@ static void cd2LabelWeapon(void* ud, char* out, int max)
 	}
 
 	if (d->isBase || cd2WpnAmmo(id) < 0)
-		snprintf(out, max, "%s: infinite", d->name);
+		snprintf(out, max, "%s: infinite", cd2WpnDisplayName(id));
 	else
-		snprintf(out, max, "%s: %d", d->name, cd2WpnAmmo(id));
+		snprintf(out, max, "%s: %d", cd2WpnDisplayName(id), cd2WpnAmmo(id));
 }
 
 static int cd2ToggleWeapon(void* ud, int dir)

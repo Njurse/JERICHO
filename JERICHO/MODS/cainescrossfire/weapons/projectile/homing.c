@@ -76,17 +76,17 @@ static CD2_WEAPON_DEF cd2MakeHomingDef(void)
 	d.pickupAmmo = 8;
 
 	d.maxAmmo = 16;
-	d.fireInterval = 40;
-	d.refireCooldown = 110;	// 1.8s minimum between seekers
+	d.fireInterval = 20;
+	d.refireCooldown = 55;	// 1.8s minimum between seekers
 
-	d.damage = 420;		// deliberately well under the missile's 900
+	d.damage = 840;		// deliberately well under the missile's 1800
 	d.speed = 1150;		// slower than the missile: it turns, so it can afford to
 	d.range = 14000;
 	d.life = 0;
 
 	d.radius = 0;
 	d.splashRadius = 380;
-	d.splashDamage = 320;
+	d.splashDamage = 640;
 	d.explosionEffect = BIG_BANG;
 	d.impactFx = CD2_FX_SEEKER;	// purple, smaller blast (fx library)
 

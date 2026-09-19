@@ -298,8 +298,8 @@ static CD2_WEAPON_DEF cd2MakeFreezeDef(void)
 	d.pickupAmmo = 3;
 
 	d.maxAmmo = 6;
-	d.fireInterval = 70;
-	d.refireCooldown = 180;	// 3s minimum between freezes
+	d.fireInterval = 35;
+	d.refireCooldown = 90;	// 3s minimum between freezes
 
 	d.damage = 0;		// no damage on its own
 	d.speed = 1250;		// slower: it seeks, so it can afford to

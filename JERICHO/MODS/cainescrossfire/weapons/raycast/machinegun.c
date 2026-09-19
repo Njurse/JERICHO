@@ -74,11 +74,11 @@ static CD2_WEAPON_DEF cd2MakeMGDef(void)
 	d.pickupAmmo = 0;
 
 	d.maxAmmo = 0;		// infinite
-	d.fireInterval = 5;	// frames between shots (auto)
-	d.refireCooldown = 5;	// minimum gap between refires
+	d.fireInterval = 2;	// frames between shots (auto)
+	d.refireCooldown = 2;	// minimum gap between refires
 	d.fireCone = 420;		// a fast tracer: needs a reasonable line
 
-	d.damage = 390;
+	d.damage = 780;
 	d.speed = 1050;		// world units/frame (fast particle; outruns a car at top speed)
 	d.range = 16400;
 	d.life = 4;

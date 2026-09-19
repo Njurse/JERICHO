@@ -74,10 +74,10 @@ static CD2_WEAPON_DEF cd2MakeShotgunDef(void)
 	d.pickupAmmo = 4;
 
 	d.maxAmmo = 8;
-	d.fireInterval = 55;
-	d.refireCooldown = 130;	// ~2.2s between blasts
+	d.fireInterval = 27;
+	d.refireCooldown = 65;	// ~2.2s between blasts
 
-	d.damage = 95;		// PER PELLET (10 pellets landed up close = ~950)
+	d.damage = 190;		// PER PELLET (10 pellets landed up close = ~1900)
 	d.speed = 2200;		// fast pellets
 	d.range = 2600;		// SHORT: a shotgun, not a rifle
 	d.life = 0;

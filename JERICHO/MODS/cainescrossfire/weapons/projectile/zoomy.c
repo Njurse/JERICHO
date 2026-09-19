@@ -71,16 +71,16 @@ static CD2_WEAPON_DEF cd2MakeZoomyDef(void)
 	d.pickupAmmo = 4;
 
 	d.maxAmmo = 8;
-	d.fireInterval = 60;
-	d.refireCooldown = 160;	// 2.7s — the volley is the weapon
+	d.fireInterval = 30;
+	d.refireCooldown = 80;	// 2.7s — the volley is the weapon
 
-	d.damage = 40;		// very small on its own
+	d.damage = 80;		// very small on its own
 	d.speed = 1600;		// fast / zoomy
 	d.range = 14000;	// must reach the AI's max launch range
 	d.life = 0;
 
 	d.splashRadius = 130;	// small blast
-	d.splashDamage = 25;
+	d.splashDamage = 50;
 	d.explosionEffect = LITTLE_BANG;
 	d.impactFx = CD2_FX_ZOOMY;	// small, cool-blue
 
@@ -101,7 +101,7 @@ static CD2_WEAPON_DEF cd2MakeZoomyDef(void)
 	// -------------------------------------------------------------------
 	d.burstCount = 10;
 	d.burstInterval = 6;	// ~0.6s from first shot to last
-	d.volleyBonusDamage = 900;
+	d.volleyBonusDamage = 1800;
 	d.volleyBonusKnock = 1200;
 
 	d.fire = cd2ZoomyFire;

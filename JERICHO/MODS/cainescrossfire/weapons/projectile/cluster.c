@@ -78,16 +78,16 @@ static CD2_WEAPON_DEF cd2MakeClusterDef(void)
 	d.pickupAmmo = 6;
 
 	d.maxAmmo = 12;
-	d.fireInterval = 45;
-	d.refireCooldown = 140;	// 2.3s minimum between clusters
+	d.fireInterval = 22;
+	d.refireCooldown = 70;	// 2.3s minimum between clusters
 
-	d.damage = 260;		// light direct hit — the burst does the work
+	d.damage = 520;		// light direct hit — the burst does the work
 	d.speed = 1300;
 	d.range = 11000;
 	d.life = 0;
 
 	d.splashRadius = 300;	// the parent warhead blast
-	d.splashDamage = 200;
+	d.splashDamage = 400;
 	d.explosionEffect = BIG_BANG;
 	d.impactFx = CD2_FX_CLUSTER;	// deep orange parent burst
 
@@ -111,7 +111,7 @@ static CD2_WEAPON_DEF cd2MakeClusterDef(void)
 	d.barrageJitter = 60;
 	d.barrageFx = CD2_FX_BOMBLET;
 	d.barrageRadius = 220;
-	d.barrageDamage = 140;
+	d.barrageDamage = 280;
 	d.barrageStick = 1;
 
 	d.fire = cd2ClusterFire;

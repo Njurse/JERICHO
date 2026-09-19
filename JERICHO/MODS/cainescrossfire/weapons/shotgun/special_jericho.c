@@ -73,11 +73,11 @@ static CD2_WEAPON_DEF cd2MakeSpecialJerichoDef(void)
 	d.pickupAmmo = 4;
 
 	d.maxAmmo = 8;
-	d.fireInterval = 55;
-	d.refireCooldown = 130;	// ~2.2s between blasts, like the shotgun
+	d.fireInterval = 27;
+	d.refireCooldown = 65;	// ~2.2s between blasts, like the shotgun
 
-	d.damage = 190;		// DOUBLE the shotgun's 95, and it is per pellet:
-				// 20 pellets landed up close is ~3800 - it deletes a car
+	d.damage = 380;		// DOUBLE the shotgun's 190, and it is per pellet:
+				// 20 pellets landed up close is ~7600 - it deletes a car
 	d.speed = 2200;
 	d.range = 2600;		// still a shotgun: short
 	d.life = 0;
