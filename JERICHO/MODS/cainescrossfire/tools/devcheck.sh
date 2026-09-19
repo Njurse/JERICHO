@@ -36,6 +36,7 @@ REPO="/c/Users/Jaret/Documents/Projects/REDRIVER2"
 SRC="$REPO/src_rebuild"
 BIN="$SRC/bin/Release_dev"
 INI="$BIN/JERICHO/CONFIG/carhacks.ini"
+MODLIST="$BIN/JERICHO/CONFIG/modlist.ini"
 FRAMES="${1:-120}"
 SEED="${SEED:-7}"
 MSB="C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/MSBuild/Current/Bin/MSBuild.exe"
@@ -56,6 +57,18 @@ cd "$BIN" || exit 1
 echo "exe: $(ls -l --time-style=+%H:%M:%S REDRIVER2_dev.exe | awk '{print $6, $5" bytes"}')"
 
 SAVED="$(cat "$INI" 2>/dev/null || true)"
+
+# This suite exercises the cross-city import, which lives in the cainescrossfire module.
+# The repo's modlist pins that module OFF (gameplay mods are opt-in) and the bin/JERICHO
+# tree is only a POSTBUILD MIRROR of it, so enabling it from here is what makes the suite
+# independent of whatever the last build happened to leave in the mirror. It also means a
+# stale mirror can no longer mask a module that fails to load: if cainescrossfire does not
+# come up, every player row reports DOMESTIC! and the run fails.
+SAVED_MODLIST="$(cat "$MODLIST" 2>/dev/null || true)"
+if [ -n "$SAVED_MODLIST" ]; then
+	printf '%s\n' "$SAVED_MODLIST" \
+		| sed 's/^\(cainescrossfire[[:space:]]*=[[:space:]]*\)0/\11/' > "$MODLIST"
+fi
 
 # Seeded rolls, arithmetically - bash's $RANDOM cannot be relied on to seed itself.
 ROLL=$(( SEED & 0x7fffffff ))
@@ -142,6 +155,7 @@ for entry in "${SCENARIOS[@]}"; do
 done
 
 [ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || printf 'cross_city_vehicles = 0\n' > "$INI"
+[ -n "$SAVED_MODLIST" ] && printf '%s\n' "$SAVED_MODLIST" > "$MODLIST"
 
 echo
 if [ "$FAILED" -eq 0 ]; then

@@ -603,6 +603,12 @@ project "REDRIVER2"
         postbuildcommands {
             "xcopy /E /I /Y \"..\\..\\JERICHO\\MODS\" \"%{cfg.buildtarget.directory}JERICHO\\MODS\"",
             "if not exist \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\" xcopy /E /I \"..\\..\\JERICHO\\CONFIG\" \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\"",
+            -- modlist.ini is the single source of truth for which modules run, but the
+            -- seeded-once CONFIG copy above meant a repo-side edit to it never reached
+            -- bin/ - which is how a module could sit 'enabled=0' there while the repo
+            -- said 1. /D copies only when the repo's is newer, so those edits land while
+            -- a toggle made at runtime in bin/ still survives a rebuild.
+            "xcopy /Y /D \"..\\..\\JERICHO\\CONFIG\\modlist.ini\" \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\\modlist.ini\"",
             "copy /Y \"..\\..\\JERICHO\\build_mods.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.bat\"",
             "copy /Y \"..\\..\\JERICHO\\build_game.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.bat\"",
         }
@@ -611,4 +617,7 @@ project "REDRIVER2"
         postbuildcommands {
             "mkdir -p \"%{cfg.buildtarget.directory}JERICHO/MODS\" && cp -R ../../JERICHO/MODS/. \"%{cfg.buildtarget.directory}JERICHO/MODS/\"",
             "mkdir -p \"%{cfg.buildtarget.directory}JERICHO/CONFIG\" && cp -Rn ../../JERICHO/CONFIG/. \"%{cfg.buildtarget.directory}JERICHO/CONFIG/\"",
+            -- as on Windows: let a repo-side modlist.ini edit reach bin/, but only when
+            -- it is the newer file (cp -u), so a runtime toggle there still survives.
+            "cp -u ../../JERICHO/CONFIG/modlist.ini \"%{cfg.buildtarget.directory}JERICHO/CONFIG/modlist.ini\"",
         }
