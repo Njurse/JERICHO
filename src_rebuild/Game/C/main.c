@@ -2655,6 +2655,17 @@ int redriver2_main(int argc, char** argv)
 				freopen("CONOUT$", "w", stdout);
 				freopen("CONOUT$", "w", stderr);
 				SetConsoleTitleA("JERICHO console");
+
+				// JERICHO: keep it out of the way - send the console to the bottom of
+				// the Z-order (behind the game window) and do not let it take focus
+				// from the game.
+				{
+					HWND con = GetConsoleWindow();
+
+					if (con != NULL)
+						SetWindowPos(con, HWND_BOTTOM, 0, 0, 0, 0,
+							SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				}
 			}
 
 			printInfo("[console] live log console attached\n");
