@@ -2846,6 +2846,12 @@ int redriver2_main(int argc, char** argv)
 			if (i + 1 < argc && argv[i + 1][0] != '-')
 				i++;
 		}
+		else if (!strcmp(argv[i], "-ccmenu"))
+		{
+			/* (cainescrossfire module) force the CC select flow. A bare flag -
+			 * the module reads it itself from JER_EVENT_CMDLINE, below; it is
+			 * recognised here so it is not reported as an invalid argument. */
+		}
 		else
 		{
 			/* tell the player plainly -- the toast shows up in the frontend.

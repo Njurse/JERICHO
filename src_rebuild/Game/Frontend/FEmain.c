@@ -29,6 +29,7 @@
 #include "../C/jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "../C/JERICHO/include/jer_frontend.h"	// JERICHO-HOOK: module frontend menus
 #include "../C/JERICHO/include/jer_screen.h"	// JERICHO-HOOK: presentation screens
+#include "../C/JERICHO/include/jer_menu.h"	// JERICHO-HOOK: jer_menu_draw (shared menu look)
 #include "../C/JERICHO/include/jer_prompt.h"	// JERICHO-HOOK: host yes/no prompt
 
 #ifndef PSX
@@ -1381,6 +1382,61 @@ int JerichoDrawScreen(void)
 	}
 
 	return 1;
+}
+
+/* jer_menu_draw — the shared JERICHO menu look (see JERICHO/include/jer_menu.h).
+ * Engine-side so every module's menu is drawn the same way with the frontend
+ * font: call it from a module's JER_EVENT_DRAW_OVERLAY handler with the frame
+ * centre. Renders the three base types (list / centred yes-no / carousel). */
+void jer_menu_draw(const JerMenu* m, int x, int y)
+{
+	const char* title;
+	int i;
+
+	if (m == NULL || !m->visible)
+		return;
+
+	title = jer_menu_title(m);
+
+	if (title != NULL && title[0] != 0)
+		FEPrintString((char*)title, x - FEStringWidth((char*)title) / 2, y - 18, 0, 235, 235, 235);
+
+	if (m->kind == JER_MENU_KIND_YESNO)
+	{
+		char line[48];
+		const char* vals[2];
+		vals[0] = "Yes";
+		vals[1] = "No";
+
+		sprintf(line, "%s%s        %s%s",
+			(m->cursor == 0) ? "> " : "  ", vals[0],
+			(m->cursor == 1) ? "> " : "  ", vals[1]);
+
+		FEPrintString(line, x - FEStringWidth(line) / 2, y, 0, 255, 255, 200);
+		return;
+	}
+
+	if (m->kind == JER_MENU_KIND_CAROUSEL)
+	{
+		const char* lbl = jer_menu_label(m);
+		char line[80];
+
+		sprintf(line, "<  %s  >", (lbl != NULL && lbl[0] != 0) ? lbl : "-");
+		FEPrintString(line, x - FEStringWidth(line) / 2, y, 0, 255, 235, 130);
+		return;
+	}
+
+	/* LIST */
+	for (i = 0; i < m->count; i++)
+	{
+		char line[80];
+		const char* lbl = (m->items != NULL && m->items[i] != NULL) ? m->items[i] : "";
+		int sel = (i == m->cursor);
+
+		sprintf(line, "%s%s", sel ? "> " : "  ", lbl);
+		FEPrintString(line, x - 70, y + i * 14, 0,
+			sel ? 255 : 190, 255, sel ? 140 : 190);
+	}
 }
 
 /* Boot variant: draw + advance while a screen is pending. Runs before the rest

@@ -41,6 +41,7 @@ static int gCd2SlotProfile[MAX_CAR_RESIDENT_MODELS];	// resident slot -> profile
 static int gCd2VehFielded[CD2_VEH_COUNT];		// in this match's field?
 static int gCd2VehPalDone[MAX_CARS];			// paint set for this car already
 static int gCd2CarProfile[MAX_CARS];			// car -> profile (CD2_VEH_NONE)
+static int gCd2VehPlayer = CD2_VEH_NONE;		// the player's chosen profile
 
 // ---------------------------------------------------------------------------
 // Fielded set
@@ -130,6 +131,10 @@ static void cd2VehBuildFielded(int level)
 		if (!any && CD2_VEH_COUNT > 0)
 			gCd2VehFielded[0] = 1;
 	}
+
+	// the player's chosen profile is always on the field, so its model gets a slot
+	if (gCd2VehPlayer != CD2_VEH_NONE)
+		gCd2VehFielded[gCd2VehPlayer] = 1;
 }
 
 int cd2VehIsFielded(int profileId)
@@ -138,6 +143,16 @@ int cd2VehIsFielded(int profileId)
 		return 0;
 
 	return gCd2VehFielded[profileId];
+}
+
+int cd2VehPlayerProfile(void)
+{
+	return gCd2VehPlayer;
+}
+
+void cd2VehSetPlayerProfile(int profileId)
+{
+	gCd2VehPlayer = (profileId >= 0 && profileId < CD2_VEH_COUNT) ? profileId : CD2_VEH_NONE;
 }
 
 int cd2VehFieldedCount(void)

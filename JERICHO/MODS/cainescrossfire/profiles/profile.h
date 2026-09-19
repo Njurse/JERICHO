@@ -173,9 +173,15 @@ void cd2VehDumpProfiles(void);
 // Fielded set: the [cainescrossfire] profiles list (internal names, comma
 // separated), or — when that is empty — the profiles whose originCity is the
 // level's own city (the level's home vehicle). CC_PROFILES overrides it for a
-// headless run without touching the saved config.
+// headless run without touching the saved config. The player's chosen profile
+// (cd2VehSetPlayerProfile) is always fielded.
 int  cd2VehIsFielded(int profileId);
 int  cd2VehFieldedCount(void);
+
+// The profile the PLAYER drives this match (the car-select pick), or
+// CD2_VEH_NONE. Always fielded, so its model is placed into a resident slot.
+int  cd2VehPlayerProfile(void);
+void cd2VehSetPlayerProfile(int profileId);
 
 // The resident slot a profile resolved to this level (-1 = not placed), and the
 // reverse. A resident slot is an index into car_cosmetics[]/residentCarModels[];

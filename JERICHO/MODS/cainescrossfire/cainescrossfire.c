@@ -52,6 +52,7 @@
 #include "knock/knock.h"		/* CD2_KNOCK_* - collisions make the car buck */
 #include "carhacks/carhacks.h"		/* vehicle-availability hacks (own module later) */
 #include "profiles/profile.h"		/* the Twisted Metal vehicle roster (profiles/) */
+#include "select/select.h"		/* the CC select flow (select/) */
 #include <string.h>
 // Registration helpers from the other source files of this (merged) module:
 //   cainescrossfirewreckfx.c  — wreck explosion + kill credit (cd2WreckFxRegister)
@@ -795,6 +796,9 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	 * slot and applies its cosmetic overrides. Registered AFTER carhacks so the
 	 * profile's own placements win any slot carhacks also touched. */
 	cd2VehRegister(ctx);
+
+	/* the CC select flow (select/): -ccmenu -> arena -> vehicle -> match */
+	cd2SelectRegister(ctx);
 
 	/* TEMPORARY: scripted debug driver, active only when debug_script is set
 	 * (delete cd2debug.c and these two lines when done) */
