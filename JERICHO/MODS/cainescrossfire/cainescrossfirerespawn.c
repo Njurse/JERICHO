@@ -13,6 +13,7 @@
 // casino death bang.
 
 #include "driver2.h"
+#include "mission.h"		/* wantedCar[] - the levels police car */
 #include "cainescrossfire.h"
 #include "cainescrossfire_internal.h"
 #include "cars.h"
@@ -306,6 +307,11 @@ void cd2RespawnTick(CAR_DATA* cp)
 // New level: forget every home.
 int cd2OnGameStart(void* ud, void* args)
 {
+	/* Which model the LEVEL treats as its police car. The engine keeps this in the
+	 * level header as wantedCar[], it differs per city, and the player picks a resident
+	 * SLOT - so to drive the cop you need the slot whose model this is, which the
+	 * per-car dump reports. Logged rather than guessed. */
+	jer_log("[cainescrossfire] level police car: wantedCar[0]=%d wantedCar[1]=%d\n", wantedCar[0], wantedCar[1]);
 	(void)ud;
 	(void)args;
 
