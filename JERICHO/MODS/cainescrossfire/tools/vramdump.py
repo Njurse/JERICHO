@@ -40,11 +40,18 @@ def read_tga(path):
     if img_type != 2 or bpp != 16:
         raise SystemExit(f"expected an uncompressed 16-bit TGA, got type={img_type} bpp={bpp}")
     off = 18 + id_len + cmap
-    px = []
-    for i in range(width * height):
-        v = struct.unpack_from("<H", data, off + i * 2)[0]
-        r, g, b = (v & 0x1F) << 3, ((v >> 5) & 0x1F) << 3, ((v >> 10) & 0x1F) << 3
-        px.append((r, g, b))
+    # GR_SaveVRAM writes rows bottom-up (it indexes vram with FLIP_Y), so the file's
+    # FIRST row is VRAM's LAST. Flip it back, or every y here - the slot map, the
+    # palette check, the PNG - is mirrored and quietly reads the wrong rows.
+    rows = []
+    for r in range(height):
+        base = off + r * width * 2
+        row = []
+        for c in range(width):
+            v = struct.unpack_from("<H", data, base + c * 2)[0]
+            row.append(((v & 0x1F) << 3, ((v >> 5) & 0x1F) << 3, ((v >> 10) & 0x1F) << 3))
+        rows.append(row)
+    px = [p for row in reversed(rows) for p in row]
     return width, height, px
 
 
@@ -153,7 +160,11 @@ def check_palettes(args, width, px):
             print(f"    set {setno}: entry at +{info['offset']} has no readable CLUTs")
             continue
         actual = clut_rows_from_vram(width, px, info["clutpos"][0], info["clutpos"][1], len(expected))
-        diffs = sum(1 for a, b in zip(expected, actual) if a != b)
+        # Compare the 15 colour bits only: the dump is expanded to 8-bit RGB and
+        # shifted back, which cannot carry VRAM bit 15 (the STP/mask bit). Without
+        # this mask a perfect match reads as "N/N rows differ".
+        diffs = sum(1 for er, ar in zip(expected, actual)
+                    if [(v & 0x7FFF) for v in er] != [(v & 0x7FFF) for v in ar])
         mark = "MATCH" if diffs == 0 else f"MISMATCH ({diffs}/{len(expected)} rows differ)"
         print(f"    set {setno} ({info['city']}) index {info['index']}: {len(expected)} clut rows "
               f"at {info['clutpos']} -> {mark}")
