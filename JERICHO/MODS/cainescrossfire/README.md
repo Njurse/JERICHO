@@ -69,6 +69,12 @@ saved by `cainescrossfire.c` `cd2LoadConfig` / `cd2SaveConfig`).
   and its OR rule, the get-out/hold/get-in ped lifecycle, firing from the
   window, the wreck bail-out (run away on fire) and the player-death camera
   hold.
+- [`MOTION.md`](MOTION.md) - the procedural motion layers: the engine-idle shudder,
+  the pitch-back under power, the squat and the nose-bob, the vehicle classes, and the
+  one clamp that stops two subsystems adding up badly.
+- [`KNOCK.md`](KNOCK.md) - the impact layer: bucking and rocking a car for effect.
+- [`TURBO.md`](TURBO.md) - the turbo meter, the trigger, and where the numbers came
+  from.
 - [`FACTIONS.md`](FACTIONS.md) — the five teams (`factions/`): the rows and their
   colours, the roster and who drives what, the stance table, how a car is
   assigned its team, and which attributes are deliberately not read yet.

@@ -1,5 +1,11 @@
 # The vehicle knock
 
+> **This is the impact layer.** Cars also have procedural motion — an engine-idle
+> shudder, a pitch-back under power and its squat — which composites with the knock
+> through one shared offset. See [`MOTION.md`](MOTION.md). The knock keeps its own
+> deliberately small ceilings (~5 degrees) because an impact is a snap, while the
+> held layers are allowed to be much larger; the two are never the same number.
+
 Bucking and rocking a car **for effect, without touching the physics**.
 
 A knock is a rotation plus a small lift applied to a car's *render* matrix
