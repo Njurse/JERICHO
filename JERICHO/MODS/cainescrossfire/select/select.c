@@ -97,6 +97,13 @@ static void cd2SelLaunch(int city, int sel)
 	const CD2_VEH_PROFILE* p;
 	int profile;
 
+	// TEST/DEBUG override, for headless verification of the cross-city path:
+	//   CC_FORCE_ARENA=<0..3> CC_FORCE_CAR=<0..CD2_VEH_COUNT-1>
+	if (getenv("CC_FORCE_ARENA") != NULL)
+		city = atoi(getenv("CC_FORCE_ARENA"));
+	if (getenv("CC_FORCE_CAR") != NULL)
+		sel = atoi(getenv("CC_FORCE_CAR"));
+
 	if (city < 0 || city > 3 || gCcVehN[city] <= 0)
 		return;
 

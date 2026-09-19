@@ -253,6 +253,37 @@ static void cd2VehClaimSlot(int profileId, int slot)
 // Civilian slots (0..4) are never repurposed: they carry the level's own models
 // and the ambient traffic, and stealing one is what made the level's cars look
 // wrong. SPECIAL_CAR_SLOT is never taken.
+// The player's car is spawned from `wantedCar`, and the engine then treats that
+// value as a resident SLOT when it looks the model data up (cp->ap.model feeds
+// residentCarModels[]). So a foreign car - whose model NUMBER is also a resident
+// slot of the host level - spawned the HOST's car of that number instead of the
+// imported one. Pin the player to the slot we actually placed the model in, and
+// stand the wantedCar pass down (wantedCar = -1) so it cannot re-resolve it.
+static void cd2VehPinPlayerCar(int profileId, int slot)
+{
+	const CD2_VEH_PROFILE* p;
+
+	if (profileId != gCd2VehPlayer)
+		return;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	wantedCar[0] = -1;
+
+	if (PlayerStartInfo[0] != NULL)
+	{
+		PlayerStartInfo[0]->model = (char)slot;
+
+		p = cd2VehDef(profileId);
+		if (p != NULL && p->palette >= 0)
+			PlayerStartInfo[0]->palette = (char)p->palette;
+	}
+
+	printInfo("[cainescrossfire] player car pinned to resident slot %d (profile %s, model %d)\n",
+		slot, cd2VehInternalName(profileId), residentCarModels[slot]);
+}
+
 static void cd2VehPlaceProfile(int profileId, JER_ARGS_CAR_DATA_SOURCE* a)
 {
 	const CD2_VEH_PROFILE* p = cd2VehDef(profileId);
@@ -273,6 +304,8 @@ static void cd2VehPlaceProfile(int profileId, JER_ARGS_CAR_DATA_SOURCE* a)
 
 				printInfo("[cainescrossfire] profile %s -> resident slot %d (%s's own model %d)\n",
 					p->internalName, slot, LevelNames[p->originCity], p->modelSlot);
+
+				cd2VehPinPlayerCar(profileId, slot);
 				return;
 			}
 		}
@@ -309,6 +342,8 @@ static void cd2VehPlaceProfile(int profileId, JER_ARGS_CAR_DATA_SOURCE* a)
 
 		printInfo("[cainescrossfire] profile %s -> resident slot %d (%s %s model %d)\n",
 			p->internalName, slot, native ? "own" : "imported", LevelNames[p->originCity], p->modelSlot);
+
+		cd2VehPinPlayerCar(profileId, slot);
 		return;
 	}
 
