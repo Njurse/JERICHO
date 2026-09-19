@@ -41,6 +41,23 @@
 #define CD2_KNOCK_DECAY		1400	// /4096 - velocity kept per frame in phase 1
 #define CD2_KNOCK_SETTLE	1850	// /4096 - fraction of the angle eased out per frame
 
+// A hard speed change stiffens the return. The settle above is a fixed fraction per
+// frame; these add to it in proportion to |delta|, the car's own speed change this step,
+// so a violent event comes back with authority and a small one cannot snap the body
+// around. The cap is deliberately well short of 4096: at 4096 the whole angle is removed
+// in a single frame, which is the snap this file has already been bitten by once.
+#define CD2_KNOCK_SETTLE_PER_FORCE	24
+// Sized against the IMPULSE that started the knock (recorded in the state by cd2KnockAdd),
+// not against the car's speed change. That was tried first and abandoned on measurement:
+// hd.speed does not move during a turbo engagement, so the delta was exactly 0 through
+// the very event the rule exists for, and the rate stayed pinned at its base. The impulse
+// is always known, always nonzero, and is already "how hard was that" in one number.
+// 24 means a full-ceiling knock - CD2_KNOCK_IMPULSE_TO(57), an impulse of 44 - lands the
+// rate at 2906, and the cap is reached at an impulse of 50. So the range is: a light
+// graze barely changes it, and anything that gets anywhere near the ceiling gets the
+// stiff return. Measured on a turbo engagement against the cap and the base.
+#define CD2_KNOCK_SETTLE_EXTRA_MAX	1200	// base 1850 + this = 3050, about 74% per frame
+
 // ...and the settle is bounded: whatever the curve has left is snapped away after
 // this many frames (9 = 0.3s at 30Hz). An exponential approaches zero forever, so
 // without a deadline "eased back" would take about a second and a half to look
@@ -129,6 +146,7 @@ typedef struct CD2_KNOCK_STATE
 	int shift;			// current weight shift along the car (+ = forward)
 	int vshift;			// its velocity
 	int settleFrames;		// frames left before the settle is snapped shut
+	int force;			// how hard the impulse that started this was, for the rate
 } CD2_KNOCK_STATE;
 
 // ---------------------------------------------------------------------------

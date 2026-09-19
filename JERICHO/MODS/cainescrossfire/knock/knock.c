@@ -76,6 +76,21 @@ void cd2KnockAdd(int carId, int pitch, int roll, int yaw, int lift, int shift)
 
 	k->vshift += shift;
 
+	/* How hard this was, which is what the return's rate is scaled by. The LARGEST single
+	 * component: a hit that lands mostly on one axis should stiffen the whole return, not
+	 * only that axis. Overwritten by each new impulse and cleared with the state, so it
+	 * always describes the movement currently in progress. */
+	{
+		int mag = pitch < 0 ? -pitch : pitch;
+		int r = roll < 0 ? -roll : roll;
+		int y = yaw < 0 ? -yaw : yaw;
+
+		if (r > mag) mag = r;
+		if (y > mag) mag = y;
+
+		k->force = mag;
+	}
+
 	/* the deadline restarts with every knock: 0.5s is per movement, not per car */
 	k->settleFrames = CD2_KNOCK_SETTLE_FRAMES;
 }
@@ -116,7 +131,24 @@ static void cd2KnockAxis(int* angle, int* velocity, int decay, int settle, int m
 	*angle = a;
 }
 
-static void cd2KnockSample(int carId);	/* defined below the tick */
+// The settle rate for this frame, given how violently the car's speed just changed.
+// [D] [T]
+static int cd2KnockSettleRate(int force)
+{
+	int extra;
+
+	if (force < 0)
+		force = -force;
+
+	extra = force * CD2_KNOCK_SETTLE_PER_FORCE;
+
+	if (extra > CD2_KNOCK_SETTLE_EXTRA_MAX)
+		extra = CD2_KNOCK_SETTLE_EXTRA_MAX;
+
+	return CD2_KNOCK_SETTLE + extra;
+}
+
+static void cd2KnockSample(int carId, int force);	/* defined below the tick */
 static int cd2KnockLogEvery(void);	/* ditto */
 
 // [D] [T]
@@ -152,9 +184,14 @@ void cd2KnockTick(int carId)
 			carId, peak, CD2_KNOCK_MAX_PITCH);
 	}
 
-	cd2KnockAxis(&k->pitch, &k->vpitch, CD2_KNOCK_DECAY, CD2_KNOCK_SETTLE, CD2_KNOCK_MAX_PITCH);
-	cd2KnockAxis(&k->roll, &k->vroll, CD2_KNOCK_DECAY, CD2_KNOCK_SETTLE, CD2_KNOCK_MAX_ROLL);
-	cd2KnockAxis(&k->yaw, &k->vyaw, CD2_KNOCK_DECAY, CD2_KNOCK_SETTLE, CD2_KNOCK_MAX_YAW);
+	int settle = cd2KnockSettleRate(k->force);
+
+	/* the three angles return at the rate the impulse earned; the lift and the shift keep
+	 * their own rates, because they are a nudge and a weight transfer rather than the body
+	 * coming back from an impact */
+	cd2KnockAxis(&k->pitch, &k->vpitch, CD2_KNOCK_DECAY, settle, CD2_KNOCK_MAX_PITCH);
+	cd2KnockAxis(&k->roll, &k->vroll, CD2_KNOCK_DECAY, settle, CD2_KNOCK_MAX_ROLL);
+	cd2KnockAxis(&k->yaw, &k->vyaw, CD2_KNOCK_DECAY, settle, CD2_KNOCK_MAX_YAW);
 
 	/* the lift wants to be zero, and never negative: this is a nudge to clear
 	 * geometry, not a suspension */
@@ -190,7 +227,7 @@ void cd2KnockTick(int carId)
 		}
 	}
 
-	cd2KnockSample(carId);
+	cd2KnockSample(carId, k->force);
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +259,7 @@ static int cd2KnockLogEvery(void)
 }
 
 // [D] [T]
-static void cd2KnockSample(int carId)
+static void cd2KnockSample(int carId, int force)
 {
 	const CD2_KNOCK_STATE* k;
 	int every = cd2KnockLogEvery();
@@ -232,8 +269,8 @@ static void cd2KnockSample(int carId)
 
 	k = &gKnock[carId];
 
-	jer_log("[cainescrossfire] knocksample car=%d f=%d pitch=%d vpitch=%d lift=%d shift=%d settle=%d\n",
-		carId, FrameCnt, k->pitch, k->vpitch, k->lift, k->shift, k->settleFrames);
+	jer_log("[cainescrossfire] knocksample car=%d f=%d pitch=%d vpitch=%d lift=%d shift=%d settle=%d rate=%d\n",
+		carId, FrameCnt, k->pitch, k->vpitch, k->lift, k->shift, k->settleFrames, cd2KnockSettleRate(force));
 }
 
 // ---------------------------------------------------------------------------
