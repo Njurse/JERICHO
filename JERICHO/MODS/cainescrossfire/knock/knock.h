@@ -38,13 +38,27 @@
 // A spring/damper pair was tried first and read as wobbling: a spring between an
 // angle and zero is an oscillator, so the car rocked back and forth instead of
 // doing one firm movement and settling. These two rates are what replaced it.
-#define CD2_KNOCK_DECAY		3500	// /4096 - velocity kept per frame in phase 1
-#define CD2_KNOCK_SETTLE	400	// /4096 - fraction of the angle eased out per frame
+#define CD2_KNOCK_DECAY		1704	// /4096 - velocity kept per frame in phase 1
+#define CD2_KNOCK_SETTLE	1100	// /4096 - fraction of the angle eased out per frame
+
+// ...and the settle is bounded: whatever the curve has left is snapped away after
+// this many frames (15 = 0.5s at 30Hz). An exponential approaches zero forever, so
+// without a deadline "eased back" would take about a second and a half to look
+// finished.
+#define CD2_KNOCK_SETTLE_FRAMES	15
+
+// The impulse that exactly carries an axis to its ceiling:
+//   displacement = impulse / (1 - decay/4096)
+// A caller wanting a knock that ARRIVES at the limit (a wheelie, a hard hit) uses
+// this and adds whatever margin it wants; a caller wanting a light one uses less.
+// Sizing an impulse by hand is how the first attempt ended up with a wheelie that
+// barely lifted when the rate changed.
+#define CD2_KNOCK_IMPULSE_TO(maxAngle)	((maxAngle) * (4096 - CD2_KNOCK_DECAY) / 4096)
 
 // The lift settles on a softer pair, so the body comes down after the impact
 // rather than snapping to the ground with it.
-#define CD2_KNOCK_LIFT_DECAY		3700
-#define CD2_KNOCK_LIFT_SETTLE		260
+#define CD2_KNOCK_LIFT_DECAY		2200
+#define CD2_KNOCK_LIFT_SETTLE		800
 
 // Nothing may knock beyond this, however hard the hit: a car spinning on its
 // side would look broken rather than hit.
@@ -75,6 +89,7 @@ typedef struct CD2_KNOCK_STATE
 	int vpitch, vroll, vyaw;	// their velocities
 	int lift;			// current lift
 	int vlift;			// its velocity
+	int settleFrames;		// frames left before the settle is snapped shut
 } CD2_KNOCK_STATE;
 
 // ---------------------------------------------------------------------------

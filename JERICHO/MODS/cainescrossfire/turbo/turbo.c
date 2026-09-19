@@ -216,7 +216,7 @@ void cd2TurboPad(int carId, int pad)
 				 * the nose. An IMPULSE, so the spring eases it in and settles it
 				 * instead of the car snapping to a new attitude. */
 				st->shove = 1;
-				cd2KnockAdd(carId, (CD2_KNOCK_MAX_PITCH * CD2_TURBO_KICK_KNOCK_PCT) / 100, 0, 0, 1);
+				cd2KnockAdd(carId, (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100, 0, 0, 1);
 			}
 			else
 			{
@@ -351,7 +351,7 @@ void cd2TurboForce(int carId, int on)
 		gTurbo[carId].reverse = (on == 2) ? 1 : 0;	/* 2 = force a REVERSE boost */
 		gTurbo[carId].hold = 1;		/* keep it on so the meter can be watched */
 		gTurbo[carId].shove = 1;
-		cd2KnockAdd(carId, (CD2_KNOCK_MAX_PITCH * CD2_TURBO_KICK_KNOCK_PCT) / 100, 0, 0, 1);
+		cd2KnockAdd(carId, (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100, 0, 0, 1);
 	}
 	else
 	{

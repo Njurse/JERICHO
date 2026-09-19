@@ -63,6 +63,9 @@ void cd2KnockAdd(int carId, int pitch, int roll, int yaw, int lift)
 
 	if (lift != 0)
 		k->vlift += lift * CD2_KNOCK_LIFT_PER_HIT;
+
+	/* the deadline restarts with every knock: 0.5s is per movement, not per car */
+	k->settleFrames = CD2_KNOCK_SETTLE_FRAMES;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +147,19 @@ void cd2KnockTick(int carId)
 
 	if (k->lift < 0)
 		k->lift = 0;
+
+	/* the deadline: an exponential never arrives, so the settle is snapped shut
+	 * after its 0.5s. Only once the impulse has been spent - a knock is never cut
+	 * off on its way up. */
+	if (k->settleFrames > 0)
+	{
+		k->settleFrames--;
+
+		if (k->settleFrames == 0 && k->vpitch == 0 && k->vroll == 0 && k->vyaw == 0 && k->vlift == 0)
+			memset(&gKnock[carId], 0, sizeof(gKnock[carId]));
+		else if (k->settleFrames == 0)
+			k->settleFrames = 1;	/* still moving: shut it next frame instead */
+	}
 }
 
 // ---------------------------------------------------------------------------

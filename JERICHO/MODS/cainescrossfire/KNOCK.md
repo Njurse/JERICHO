@@ -65,6 +65,14 @@ Everything is in `knock/knock.h`:
 
 - `CD2_KNOCK_DECAY` / `CD2_KNOCK_SETTLE` - how fast the impulse carries, and how
   fast the settle eases out. Lower decay is a shorter, sharper movement.
+- `CD2_KNOCK_SETTLE_FRAMES` - the settle's deadline, 15 frames (0.5s). An
+  exponential approaches zero forever, so without this "eased back" takes a second
+  and a half to look finished; at the deadline what is left is snapped away.
+- `CD2_KNOCK_IMPULSE_TO(maxAngle)` - the impulse that exactly reaches a ceiling.
+  **Size impulses with this**, not by hand: the displacement an impulse buys is
+  `impulse / (1 - decay/4096)`, so changing the rates silently resizes every
+  hand-picked impulse. The turbo's is 120% of it, because a wheelie should arrive
+  at the top rather than creep toward it.
 - `CD2_KNOCK_MAX_PITCH` / `_ROLL` / `_YAW` - the ceilings per axis.
 - `CD2_KNOCK_MAX_LIFT` / `CD2_KNOCK_LIFT_PER_HIT` / `CD2_KNOCK_LIFT_DECAY` /
   `_SETTLE` - how far a knock may lift, what an impulse buys, and how it comes back

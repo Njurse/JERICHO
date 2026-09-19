@@ -74,12 +74,13 @@
 // engine.
 #define CD2_TURBO_KICK_FORCE_PCT	6
 
-// How hard the engage knocks the car, as a percentage of the knock's own ceiling.
-// It is sized to REACH that ceiling: an impulse of about CD2_KNOCK_MAX_PITCH *
-// (1 - CD2_KNOCK_DECAY/4096) carries the angle all the way up, so this being a
-// little over that is deliberate - a wheelie is a movement that arrives, not one
-// that approaches. The knock then eases it straight back down.
-#define CD2_TURBO_KICK_KNOCK_PCT	18
+// How hard the engage knocks the car, as a percentage of the impulse that exactly
+// reaches the knock's ceiling (CD2_KNOCK_IMPULSE_TO). Over 100 on purpose: a
+// wheelie should ARRIVE at the top rather than creep toward it, and expressing it
+// this way means changing the knock's rates does not quietly make the wheelie
+// smaller - which is exactly what happened when this was a bare percentage of the
+// ceiling.
+#define CD2_TURBO_KICK_KNOCK_PCT	120
 
 // While turbo is running, a lighter version of the same pitch keeps the car
 // feeling shoved along. 0 disables it.
