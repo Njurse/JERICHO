@@ -4033,6 +4033,37 @@ int JerFrontendMenuScreen(int bSetup)
 		if (menu->on_enter != NULL)
 			menu->on_enter(menu->userdata);
 
+		/* the optional car icon (JER_FE_MENU.get_preview): resolve the model
+		 * to its car-select image slot and show it. bDrawExtra is cleared
+		 * first so a menu with no preview leaves no icon behind. */
+		bDrawExtra = 0;
+
+		if (menu->get_preview != NULL)
+		{
+			int pvCity = -1, pvModel = -1;
+			int sel;
+
+			menu->get_preview(menu->userdata, &pvCity, &pvModel);
+
+			if (pvCity >= 0 && pvCity < 4)
+			{
+				for (sel = 0; sel < 10; sel++)
+				{
+					if (carNumLookup[pvCity][sel] == (char)pvModel)
+						break;
+				}
+
+				if (sel < 10)
+				{
+					SetupExtraPoly(gfxNames[pvCity], sel, 0);
+
+					/* the stock sprite is parked low-left over the car list;
+					 * lift it clear of a module menu's buttons */
+					setXY0(&extraSprt, 40, 40);
+				}
+			}
+		}
+
 		n = menu->item_count;
 		if (n > JER_FE_MAX_ITEMS)
 			n = JER_FE_MAX_ITEMS;

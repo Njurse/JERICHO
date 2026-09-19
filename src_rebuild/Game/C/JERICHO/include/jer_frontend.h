@@ -56,6 +56,11 @@ typedef struct JER_FE_MENU
 	int item_count;
 	void (*on_enter)(void* ud);		/* refresh before layout (optional) */
 	void* userdata;
+	/* Optional car-icon preview: called on each layout, set *city to a
+	 * LevelNames index and *model to a model NUMBER; the engine draws that
+	 * city's car icon for it (the stock car-select art). Leave it NULL for no
+	 * icon. */
+	void (*get_preview)(void* ud, int* city, int* model);
 } JER_FE_MENU;
 
 /* Register a menu (and submenus). Call from the module entry; the registry
