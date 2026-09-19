@@ -209,6 +209,7 @@ typedef struct CD2_MOTION_STATE
 	// --- Layer 2: acceleration pitch-back ---
 	int prevSpeed;		// last step's speed, for the delta
 	int speed;			// this step's speed (a magnitude), for the speed-scaled pitch
+	int travel;			// +1 travelling forwards, -1 backwards - the SIGNED direction
 	int delta;		// change in speed over the last step (signed)
 	int throttle;		// the thrust applied this step: -1, 0 or +1 (NOT an analogue)
 	int accelPitch;		// the spring's position

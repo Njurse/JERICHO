@@ -396,6 +396,10 @@ void cd2MotionStep(int carId)
 	st->delta = speed - st->prevSpeed;
 	st->prevSpeed = speed;
 	st->speed = speed;
+	/* Which way the car is actually going. hd.speed is a magnitude, so this is the only
+	 * thing in the state that knows: the thrust says what the driver asked for, which is
+	 * not the same question. */
+	st->travel = (gCd2Car[carId].fwdSpeed < 0) ? -1 : 1;
 	st->throttle = jer_clamp_int(gCd2Car[carId].throttle, -1, 1);
 }
 
@@ -426,9 +430,14 @@ static void cd2AccelApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
 		else
 			scale = ((speed - CD2_MOTION_SPEED_FLOOR) * 4096) / (CD2_MOTION_SPEED_FULL - CD2_MOTION_SPEED_FLOOR);
 
+		/* Sustained: POWER, and not the pedal alone. Forward power lifts the nose
+		 * whichever way the car happens to be pointing - a forward launch always lifts
+		 * it. Reverse power (the same pedal as braking) lifts the tail, and only when the
+		 * car is genuinely travelling backwards. Braking while travelling forwards gets
+		 * no sustained term at all: its whole effect is the transient dive below. */
 		if (st->throttle > 0)
 			target = (cls->pitchMax * scale) >> 12;
-		else if (st->throttle < 0)
+		else if (st->throttle < 0 && st->travel < 0)
 			target = -(((cls->pitchMax / 2) * scale) >> 12);
 	}
 
@@ -440,9 +449,13 @@ static void cd2AccelApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
 	{
 		int d = st->delta * CD2_MOTION_DELTA_GAIN;
 
-		/* hd.speed is a magnitude, so "which way is it going" comes from the thrust
-		 * instead - and a car backing up swaps the pitch's sign rather than keeping it */
-		if (st->throttle < 0)
+		/* The sign belongs to the DIRECTION OF TRAVEL, not to the pedal. Keying it off
+		 * the thrust was the bug behind "the forward/backwards reads inverted": braking
+		 * hard while travelling forwards looked like reverse, so the nose LIFTED under
+		 * the brakes instead of diving. Speeding up digs the far end in - a positive
+		 * delta when travelling forwards, and the same delta negated when travelling
+		 * backwards, at half the amplitude because a reverse dive is a gentler thing. */
+		if (st->travel < 0)
 			d = -((d * CD2_MOTION_REVERSE_PCT) / 100);
 
 		/* The floor. A delta too small to produce CD2_MOTION_DELTA_FLOOR of angle is
