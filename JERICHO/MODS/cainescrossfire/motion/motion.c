@@ -9,6 +9,8 @@
 #include "cainescrossfire.h"
 #include "cars.h"
 #include "cosmetic.h"		/* car_cosmetics[] - the model index is an offset into it */
+#include "dr2math.h"		/* RSIN - the integer sine the engine already uses */
+#include "main.h"			/* FrameCnt - the sampler's clock */
 #include "jericho.h"
 #include "jer_math.h"		/* jer_clamp_int */
 
@@ -221,6 +223,214 @@ void cd2MotionDump(int carId)
 		car_data[carId].hndType,
 		cos != NULL ? cos->colBox.vz : 0, cos != NULL ? cos->colBox.vx : 0,
 		cos != NULL ? cos->wheelSize : 0);
+}
+
+// ---------------------------------------------------------------------------
+// Layer 1: the idle fidget
+// ---------------------------------------------------------------------------
+// A tiny local LCG. The engine's Random2 ignores its argument and is a pure function
+// of the frame counter, so every car would get the same sequence - exactly the trap
+// the AI hit (see project memory, combatd2-ai-seeding). cd2AiRunSeed() supplies the
+// per-run entropy and is pinned by -seed, so a replay is exact; the car id decides
+// which car within the run.
+// [D] [T]
+static unsigned int cd2MotionNext(unsigned int* s)
+{
+	*s = (*s) * 1664525u + 1013904223u;
+
+	return (*s) >> 8;
+}
+
+// [D] [T]
+void cd2MotionSeed(int carId)
+{
+	static const int base[CD2_IDLE_WAVES] = CD2_IDLE_FREQ;
+	CD2_MOTION_STATE* st;
+	unsigned int s;
+	int axis, w;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return;
+
+	st = &gMotion[carId];
+
+	s = cd2AiRunSeed() ^ (((unsigned int)carId + 1u) * 2654435761u);
+	s ^= s >> 15;
+	s *= 2246822519u;
+	s ^= s >> 13;
+
+	st->rng = s | 1;
+
+	/* every wave starts somewhere different, so no two axes and no two cars are in
+	 * step at frame one */
+	for (axis = 0; axis < CD2_IDLE_AXES; axis++)
+	{
+		for (w = 0; w < CD2_IDLE_WAVES; w++)
+			st->wave[axis][w] = (int)(cd2MotionNext(&st->rng) & 4095);
+	}
+
+	for (w = 0; w < CD2_IDLE_WAVES; w++)
+		st->bobWave[w] = (int)(cd2MotionNext(&st->rng) & 4095);
+
+	/* and the frequencies are detuned, so even two cars seeded alike drift apart */
+	for (w = 0; w < CD2_IDLE_WAVES; w++)
+	{
+		int jitter = (int)(cd2MotionNext(&st->rng) % (unsigned)(CD2_IDLE_DETUNE * 2 + 1)) - CD2_IDLE_DETUNE;
+
+		st->step[w] = base[w] + (base[w] * jitter) / 4096;
+
+		if (st->step[w] == 0)
+			st->step[w] = base[w];
+	}
+
+	st->driftPhase = (int)(cd2MotionNext(&st->rng) & 4095);
+	st->idleScale = 4096;
+	st->inited = 1;
+}
+
+// The three waves of one axis, summed and scaled. Never steps: the output is stored
+// so a dump can read it without changing what was drawn.
+// [D] [T]
+static int cd2IdleWave(int* phases, const int* steps, int envelope)
+{
+	static const int weight[CD2_IDLE_WAVES] = CD2_IDLE_WEIGHT;
+	int sum = 0;
+	int w;
+
+	for (w = 0; w < CD2_IDLE_WAVES; w++)
+	{
+		sum += (weight[w] * RSIN(phases[w])) >> 12;
+		phases[w] = (phases[w] + steps[w]) & 4095;
+	}
+
+	/* the envelope is applied to the sum as a whole: the layer breathes, and the
+	 * ratio between the three waves never changes */
+	return (int)(((long long)sum * envelope) >> 12);
+}
+
+// [D] [T]
+static void cd2IdleApply(CD2_MOTION_STATE* st, const CD2_MOTION_CLASS* cls)
+{
+	int amp[CD2_IDLE_AXES];
+	int envelope;
+	int axis;
+
+	/* the slow envelope: between half and full amplitude, over about four seconds */
+	envelope = 3072 + (int)(((long long)RSIN(st->driftPhase) * CD2_IDLE_DRIFT_DEPTH) >> 12);
+	st->driftPhase = (st->driftPhase + CD2_IDLE_DRIFT_FREQ) & 4095;
+
+	amp[0] = cls->idlePitch;
+	amp[1] = cls->idleRoll;
+	amp[2] = cls->idleYaw;
+
+	for (axis = 0; axis < CD2_IDLE_AXES; axis++)
+	{
+		int value = (int)(((long long)cd2IdleWave(st->wave[axis], st->step, envelope) * amp[axis]) >> 12);
+
+		value = (int)(((long long)value * st->idleScale) >> 12);
+
+		if (axis == 0)
+			st->lastPitch = value;
+		else if (axis == 1)
+			st->lastRoll = value;
+		else
+			st->lastYaw = value;
+	}
+
+	st->lastBob = (int)(((long long)((cd2IdleWave(st->bobWave, st->step, envelope) * cls->idleBob) >> 12) * st->idleScale) >> 12);
+}
+
+// ---------------------------------------------------------------------------
+// The frame, and the dump
+// ---------------------------------------------------------------------------
+// [D] [T]
+void cd2MotionApply(int carId, CD2_VISUAL_OFFSET* o)
+{
+	CD2_MOTION_STATE* st;
+	const CD2_MOTION_CLASS* cls;
+
+	if (o == NULL || carId < 0 || carId >= MAX_CARS)
+		return;
+
+	/* the racer set only. Traffic and parked cars keep whatever the physics gave
+	 * them: a queue of traffic shuddering in unison looks like a bug, not a world. */
+	if (!cd2MotionIsRacer(carId))
+		return;
+
+	st = &gMotion[carId];
+
+	if (!st->inited)
+		cd2MotionSeed(carId);
+
+	cls = cd2MotionClassOf(carId);
+
+	cd2IdleApply(st, cls);
+
+	o->pitch += st->lastPitch;
+	o->roll += st->lastRoll;
+	o->yaw += st->lastYaw;
+	o->bob += st->lastBob;
+}
+
+// Set by CC_MOTION_LOG=<frames> for a run - a run-only override, never saved, like
+// CC_OPPONENTS. 0 (or unset) means off.
+static int gMotionLogEvery = -1;
+
+// [D] [T]
+int cd2MotionLogEvery(void)
+{
+	if (gMotionLogEvery < 0)
+	{
+		const char* env = getenv("CC_MOTION_LOG");
+
+		gMotionLogEvery = 0;
+
+		if (env != NULL && env[0] != 0)
+		{
+			int v = atoi(env);
+
+			if (v > 0)
+				gMotionLogEvery = v;
+		}
+	}
+
+	return gMotionLogEvery;
+}
+
+// [D] [T]
+void cd2MotionDumpIdle(int carId)
+{
+	CD2_MOTION_STATE* st;
+	const CD2_MOTION_CLASS* cls;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return;
+
+	st = &gMotion[carId];
+
+	if (!st->inited)
+		return;
+
+	cls = cd2MotionClassOf(carId);
+
+	jer_log("[cainescrossfire] idle car=%d pitch=%d roll=%d yaw=%d bob=%d scale=%d class=%s\n",
+		carId, st->lastPitch, st->lastRoll, st->lastYaw, st->lastBob, st->idleScale, cls->name);
+}
+
+// [D] [T]
+void cd2MotionSample(void)
+{
+	int every = cd2MotionLogEvery();
+	int i;
+
+	if (every <= 0 || (FrameCnt % every) != 0)
+		return;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		if (gMotion[i].inited && cd2MotionIsRacer(i))
+			cd2MotionDumpIdle(i);
+	}
 }
 
 // ---------------------------------------------------------------------------

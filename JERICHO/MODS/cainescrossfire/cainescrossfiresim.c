@@ -800,16 +800,27 @@ int cd2OnCarDraw(void* ud, void* args)
 	 * source of it and collisions are another - they all land in the same place,
 	 * and none of it reaches the handling model. */
 	cd2KnockTick(cp->id);
-	cd2KnockApply(m, cp->id);
 
-	/* and while one is running the wheels come with it: a knock moves the whole
-	 * car, so they have to take the same matrix. Only then - an ordinary slide
-	 * keeps its level wheels, which is what the body lean wants. */
+	/* One composed offset: the knock's, plus whatever the motion layers add. They
+	 * are summed and applied ONCE, so the pivot maths runs once and two layers
+	 * cannot fight over the matrix. */
 	{
 		const CD2_KNOCK_STATE* knock = cd2KnockOf(cp->id);
+		CD2_VISUAL_OFFSET o;
 
-		if (knock->pitch != 0 || knock->roll != 0 || knock->yaw != 0 ||
-			knock->lift != 0 || knock->shift != 0)
+		o.pitch = knock->pitch;
+		o.roll = knock->roll;
+		o.yaw = knock->yaw;
+		o.bob = knock->lift;		/* the knock's lift is never negative */
+		o.shift = knock->shift;
+
+		cd2MotionApply(cp->id, &o);
+
+		cd2VisualApply(m, &o);
+
+		/* and the wheels come with the whole car: a knock moves it, and so does the
+		 * idle's shudder. Without this they would sit still under a rocking body. */
+		if (o.pitch != 0 || o.roll != 0 || o.yaw != 0 || o.bob != 0 || o.shift != 0)
 			a->rigidWheels = 1;
 	}
 
@@ -822,6 +833,10 @@ int cd2OnDebugTick(void* ud, void* args)
 
 	(void)ud;
 	(void)args;
+
+	/* before the roll-limit gate below: this is instrumentation, not a feature */
+	if (gCd2Cfg.enabled)
+		cd2MotionSample();
 
 	if (!gCd2Cfg.enabled || gCd2Cfg.rollLimit <= 0)
 		return JER_RESULT_CONTINUE;

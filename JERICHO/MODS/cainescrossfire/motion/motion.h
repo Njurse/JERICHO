@@ -76,6 +76,31 @@ extern const CD2_MOTION_CLASS cd2MotionClasses[CD2_MOTION_CLASSES];
 extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 
 // ---------------------------------------------------------------------------
+// Layer 1: the idle fidget
+// ---------------------------------------------------------------------------
+// Three sine waves per axis, at frequencies that do not share a period. That is the
+// whole trick: one sine is a wobble you can see repeating, and three that never line
+// up again inside a human attention span read as an engine idling. They are summed
+// with weights that total 4096, so the sum can never exceed the class amplitude and
+// the ceilings cannot be breached by layering.
+//
+// In PSX angle units per frame at 30Hz: 1.2Hz = 164, 1.7Hz = 232, 2.3Hz = 314.
+#define CD2_IDLE_AXES		3	// pitch, roll, yaw
+#define CD2_IDLE_WAVES		3
+#define CD2_IDLE_FREQ		{ 164, 232, 314 }
+#define CD2_IDLE_WEIGHT		{ 2048, 1229, 819 }	/* 0.5, 0.3, 0.2 */
+
+// A per-car frequency detune, +/- this much, so two cars never share a period even
+// if they share a phase. Without it a pair of cars shudders in step, which is the
+// tell that it is a generator rather than an engine.
+#define CD2_IDLE_DETUNE		24		// /4096
+
+// The slow envelope: the whole shudder breathes between half and full amplitude over
+// about four seconds, so a car sitting still never looks like it is looping.
+#define CD2_IDLE_DRIFT_FREQ	18		/* ~0.13Hz */
+#define CD2_IDLE_DRIFT_DEPTH	1024		/* +/- this on a 3072 base */
+
+// ---------------------------------------------------------------------------
 // Per-car state
 // ---------------------------------------------------------------------------
 // Its own storage rather than more fields on CD2_CAR: this is animation, CD2_CAR is
@@ -84,14 +109,13 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 typedef struct CD2_MOTION_STATE
 {
 	// --- Layer 1: the idle fidget ---
-	int phase[3];		// per-axis phase accumulators (pitch, roll, yaw)
-	int bobPhase;		// the vertical bob's own
-	int freq[3];		// per-axis frequencies, PSX units per frame, seeded per car
-	int bobFreq;
-	int driftPhase;		// the slow amplitude drift, so it never visibly loops
-	unsigned int rng;	// this car's generator for the spike timing
-	int spikeIn;		// frames until the next random spike
-	int idleScale;		// smoothed 0..4096: full at rest, 0 at speed
+	int wave[CD2_IDLE_AXES][CD2_IDLE_WAVES];	// phase accumulators
+	int bobWave[CD2_IDLE_WAVES];			// the vertical bob's own
+	int step[CD2_IDLE_WAVES];			// per-car frequencies, detuned
+	int driftPhase;					// the slow amplitude envelope
+	unsigned int rng;				// this car's generator, for the spikes
+	int spikeIn;					// frames until the next random spike
+	int idleScale;					// smoothed 0..4096: full at rest, 0 at speed
 
 	// --- Layer 2: acceleration pitch-back ---
 	int accelPitch;		// the spring's position
@@ -99,7 +123,10 @@ typedef struct CD2_MOTION_STATE
 	int accelShift;		// the squat that comes with it (along the car)
 	int accelBob;		// and the vertical part
 
+	int inited;		// phases seeded
 	int logged;		// the class line has been written for this car
+
+	int lastPitch, lastRoll, lastYaw, lastBob;	// the idle's last output, for a dump
 } CD2_MOTION_STATE;
 
 // ---------------------------------------------------------------------------
@@ -121,6 +148,26 @@ int cd2MotionIsRacer(int carId);
 // One line per car, written once: the class it resolved to, the model it keyed on,
 // and the mass and power that decided it. This is what the table gets filled from.
 void cd2MotionDump(int carId);
+
+// The layers, evaluated for one car and ADDED to an offset the caller already has
+// (the knock's). Called once per frame per car from the car-draw path, which is
+// render-only, so nothing here can reach the handling model. Advances the phases,
+// runs the spikes and the springs, and gates the whole thing on the racer set.
+void cd2MotionApply(int carId, CD2_VISUAL_OFFSET* o);
+
+// Seed this car's phases. Called on first use; deterministic in the run seed, so a
+// replay with the same -seed shudders identically.
+void cd2MotionSeed(int carId);
+
+// One line sampling the idle's current output. Only worth having with a log, and it
+// is how the amplitudes and the "not a visible loop" claim are checked.
+void cd2MotionDumpIdle(int carId);
+
+// How often to sample the idle, from CC_MOTION_LOG=<frames> (a run-only override,
+// never saved - the same pattern as CC_OPPONENTS). 0 or unset means off. And the
+// sampler itself, called once per frame from the debug tick.
+int cd2MotionLogEvery(void);
+void cd2MotionSample(void);
 
 void cd2MotionReset(int carId);
 void cd2MotionResetAll(void);
