@@ -155,6 +155,17 @@ bodies are unchanged (two `specTpages`, already fits). The list is cleared per l
 
 ## Still open
 
+- **An imported page still pays for its rectangles with live world pages.** VRAM is
+  full: all 19 slots are taken at level load (`slotsused=14` plus streamed world pages
+  in 14..18), so `CarPageFindSlot` **evicts** a world page — measured: world sets 30 and
+  31 from slots 14/15, rects `(512,0)`/`(576,0)`, the distant top row. Placing at load
+  does not help (`slot 14` already holds set 30 then), so there is no free slot to
+  claim at any point. The observed cost is "distant textures" going stale (and light
+  glare). Picking *what* is displaced is the open work: a **page pool** that holds the
+  host's own car pages alongside the imported ones and swaps them by what is actually
+  on screen, rather than evicting whatever the spool happened to put in the last spare
+  slot. `sCarPageClaimFrame`/`CAR_PAGE_CLAIM_FRAMES` (this file) is the placeholder that
+  grew the claim from a bare flag into a per-slot, refreshable record for exactly that.
 - The thrash meter is the thing to watch. If `page re-uploads` in the final page state
   grows with the frame count, something is still taking pages back — check the two
   `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
