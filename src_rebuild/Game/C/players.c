@@ -33,11 +33,22 @@ void InitPlayer(PLAYER *locPlayer, CAR_DATA *cp, char carCtrlType, int direction
 		model = -1;
 		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; ++i)
 		{
-			if (residentCarModels[i] == playerType)
+			if (residentCarModels[i] != playerType)
+				continue;
+
+			// JERICHO: prefer a slot this model was IMPORTED into. Levels list a
+			// model more than once, so taking the first match handed the player
+			// the host level's own car of that number while the imported one sat
+			// unused in another slot - the reason a cross-city pick looked like
+			// just another local car.
+			if (GetCarModelSourceCity(i) >= 0)
 			{
 				model = i;
 				break;
 			}
+
+			if (model == -1)
+				model = i;
 		}
 
 		InitCar(cp, direction, startPos, carCtrlType, model, palette & 255, &locPlayer->padid);
