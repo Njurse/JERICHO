@@ -44,6 +44,10 @@ extern void CarImportPin(void);
 // debug run - the check that says whether streaming replaced them.
 extern void CarImportDumpState(void);
 
+// JERICHO: whether a VRAM rectangle (a tpage position) is owned by an imported page.
+// The spool's own upload paths must respect this - they bypass LoadTPageAndCluts.
+extern int CarPageRectOwned(int x, int y);
+
 // JERICHO: translate an imported vehicle's source-city set number to the index its
 // page was actually loaded at (identity when it was not re-indexed). Applied where
 // a car's polys are converted into engine form, in cars.c's plotNewCarModel.

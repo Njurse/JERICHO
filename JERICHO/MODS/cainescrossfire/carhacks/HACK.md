@@ -55,6 +55,27 @@ region to put a foreign vehicle's pages in.
    rectangle goes nowhere. Inert with no import: nothing is owned, the guard cannot
    fire, and a stock run's page state and `civ_clut` checksum are unchanged.
 
+   **The guard had to reach the spool too**, and that was the last real bug. The
+   streamer does NOT go through `LoadTPageAndCluts`: `spool.c` writes `texture_pages[]`
+   and calls `LoadImage`/`LoadImage2` directly, at two sites — the "Send palettes"
+   block (`spool.c:478`) and the special-slot spool (`spool.c:1712`). The second is
+   the one that mattered: it re-uploads the HOST's special-car pages into
+   `tpagepos[specialSlot + i]`, and the imported player car IS the special slot, so
+   every spool pass repainted the host's pages over ours — and rewrote
+   `texture_pages[]`, so the car's polys resolved to a different VRAM rectangle
+   mid-frame. That is what "the UVs are bleeding" was. Both sites now check
+   `CarPageRectOwned`.
+
+   **The thrash meter proves it.** `CarImportPin` counts re-uploads of pages it has
+   already placed, and the dump reports it:
+
+     150 frames: 2 pinned, 2 world pages evicted, 2 page re-uploads
+     600 frames: 2 pinned, 2 world pages evicted, 2 page re-uploads
+
+   Two re-uploads is the initial placement of two pages; four times the frames adds
+   none. Before the spool guard, this number grew with runtime — the engine kept
+   taking the pages back.
+
 ## The instruments, and how to use them
 
 | what | how |
@@ -92,8 +113,8 @@ region to put a foreign vehicle's pages in.
 
 ## Still open
 
-- **UV bleeding** on imported cars, reported by eye. The leading candidate was our own
-  pages evicting each other (now fixed); the next check is the dump: decode the
-  rectangle the `pinned set …` line names and see whether it still looks like a page.
 - `civ_clut[carid][texture_id][0]` in the poly conversion still reads via the original
   set number, so one cache entry can hold the host's CLUT for a re-indexed set.
+- The thrash meter is the thing to watch. If `page re-uploads` in the final page state
+  grows with the frame count, something is still taking pages back — check the two
+  `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.

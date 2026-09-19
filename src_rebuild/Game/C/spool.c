@@ -472,7 +472,12 @@ void SendTPage(void)
 	if (nTPchunks == 0) 
 	{
 		// Send palettes
-		if (slot != tpageloaded[tpage2send] - 1)
+		// JERICHO-HOOK: unless an imported page owns this rectangle. This block writes
+		// CLUTs into it AND rewrites texture_pages[tpage2send] - so letting it run over an
+		// imported page both breaks its colours and re-points the car at a different VRAM
+		// rectangle mid-frame, which is exactly what "the UVs are bleeding" looks like.
+		if (slot != tpageloaded[tpage2send] - 1 &&
+			!CarPageRectOwned(slot_tpagepos[slot].vx, slot_tpagepos[slot].vy))
 		{
 			npalettes = *(int *)(model_spool_buffer + 0xE000);
 
@@ -1715,6 +1720,14 @@ void SpecClutsSpooled(void)
 	{
 		int index = specialSlot + i;
 		int tpage = specTpages[GameLevel][(specSpoolModelIndex-1) * 2 + i];
+
+		// JERICHO-HOOK: an imported page lives here, so the spool does not get to put the
+		// host's special-car pages over it. This is the path that kept re-breaking an
+		// imported PLAYER car: the player's car is in the special slot, so every spool
+		// pass re-uploaded the host's special pages onto ours, bypassing the
+		// LoadTPageAndCluts guard with its own direct writes.
+		if (CarPageRectOwned(tpagepos[index].x, tpagepos[index].y))
+			continue;
 
 		carTpages[GameLevel][i + 6] = tpageslots[index] = tpage;
 		tpageloaded[tpage] = specialSlot + i + 1;

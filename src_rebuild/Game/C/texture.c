@@ -501,7 +501,11 @@ void LoadTPageFromTIMs(int tpage2send)
 static int sCarPageUploading;			// set while WE upload, so ours is not refused
 static unsigned char sCarPageOwned[19];		// the slot rects an imported page holds
 
-static int CarPageRectOwned(int x, int y)
+// JERICHO: is this VRAM rectangle one an imported page owns? Exported so the spool's
+// own upload paths can respect it too - they write texture_pages[] and call LoadImage
+// directly, bypassing the LoadTPageAndCluts guard entirely, which is how the host's
+// special-car pages kept landing on top of an imported player car.
+int CarPageRectOwned(int x, int y)
 {
 	int i;
 
@@ -1090,6 +1094,7 @@ static int sPinSlot[CAR_PIN_MAX];		// the slot it lives in, -1 while unplaced
 static int sPinOffset[CAR_PIN_MAX];		// where its bytes are in the source city's file
 static int sPinSize[CAR_PIN_MAX];
 static int sPinEvictions;			// world pages taken back this run, for the dump
+static int sPinReloads;				// times we re-uploaded a page we had already placed - the thrash meter
 
 static void CarPinRecord(int set, int index, int offset, int size)
 {
@@ -1234,6 +1239,7 @@ void CarImportPin(void)
 		// Ours to write: bypass the ownership guard for this upload, then mark the
 		// rectangle owned so the engine's own uploads to it are refused from here on.
 		sCarPageUploading = 1;
+		sPinReloads++;	// counts re-uploads, i.e. how often the engine took a page back
 		LoadTPageAndCluts(&tpage, &clut, sPinIndex[i], buf);
 		sCarPageUploading = 0;
 
@@ -1266,7 +1272,7 @@ void CarImportDumpState(void)
 	if (GetCarImportCity() < 0 && sRemapCount == 0)
 		return;
 
-	printInfo("cross-city: final page state (%d pinned, %d world pages evicted)\n", sPinCount, sPinEvictions);
+	printInfo("cross-city: final page state (%d pinned, %d world pages evicted, %d page re-uploads)\n", sPinCount, sPinEvictions, sPinReloads);
 
 	// Every pinned set and the rectangle it occupies, decoded from the tpage/clut values
 	// the draw path will read. This is what the VRAM dump is aimed at: run with
