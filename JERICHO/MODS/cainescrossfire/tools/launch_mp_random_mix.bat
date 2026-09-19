@@ -13,8 +13,8 @@ rem     automatically once the imports exist.
 rem   * ambient traffic draws from slots 0..4, so imports there show up as
 rem     regular city traffic.
 rem   * the player either gets a random local slot (-car slotN) or, half the
-rem     time, a randomly chosen FOREIGN car (player_model + import into the
-rem     special slot).
+rem     time, a randomly chosen FOREIGN car (-car <model>, imported into spare
+rem     resident slot 5).
 rem
 rem Requires the cainescrossfire module enabled in JERICHO\CONFIG\modlist.ini
 rem (bin\Release_dev\JERICHO\CONFIG\modlist.ini).

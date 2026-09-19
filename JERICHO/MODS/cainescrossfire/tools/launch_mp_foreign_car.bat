@@ -9,9 +9,9 @@ rem
 rem How it works:
 rem   * a random arena city, weather, time and arena;
 rem   * a DIFFERENT city is picked as the import source (never the arena's own);
-rem   * the player's car is a random body from that source city, forced through
-rem     carhacks' player_model (models over 5 go to the special resident slot,
-rem     which is why the import names slot 7);
+rem   * the player's car is a random body from that source city, chosen by MODEL on
+rem     the command line (-car <model>); the import drops that model into spare
+rem     resident slot 5 and the engine spawns the player there;
 rem   * 1-2 more vehicles are imported into random slots so the AI opponents and
 rem     ambient traffic mix foreign cars in too - the AI picks its car at spawn
 rem     from the resident slots the level actually loaded (see AI.md), and

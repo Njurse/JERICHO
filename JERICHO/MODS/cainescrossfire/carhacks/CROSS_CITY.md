@@ -173,9 +173,10 @@ the foreign file really is what got loaded — `FORMATS.md` §3 owns those figur
   `GetCarImportModels` / `GetCarImportCosmetics` (`:455` / `:462` / `:475` / `:529`).
 - **`mission.c`** fires `JER_EVENT_CAR_DATA_SOURCE` and calls `InitCarImport` right
   after (`:433-451`), and holds the per-slot city (`GetCarModelSourceCity`, `:334`).
-- **`carhacks.c`** is the module: `ChkOnCarDataSource` (`:213`) reads
-  `source_city` / `player_model` / `traffic_model` / `traffic_slot` and calls
-  `ChkApplyImports` (`:143`) for the `import` list. It does not compute anything —
+- **`carhacks.c`** is the module: `ChkOnCarDataSource` reads
+  `source_city` / `traffic_model` / `traffic_slot` and calls
+  `ChkApplyImports` for the `import` list. It does not compute anything and does not
+  choose the player's car —
   it just writes model numbers and source cities and lets the engine read them.
 - **Consumers:** `ProcessCarModelLump` (`models.c:633`), `ProcessCosmeticsLump`
   (`cosmetic.c:71`), `ProcessImportedPalette` (`cars.c:1496`) + `GetCarPalIndex`
@@ -214,7 +215,7 @@ order — each step of it earned by a measurement rather than a guess:
    taken. Without it the car samples whatever streamed in over its page, which reads
    as wrong UVs or wrong colours.
 
-## Enforcement, and what is still open
+## Enforcement, and what was fixed
 
 **Imported pages now have the last word.** Every page upload funnels through
 `LoadTPageAndCluts`, so the rule is enforced there: an upload aimed at a VRAM
@@ -223,36 +224,34 @@ Brutish on purpose — the cost is that a world page meant for that rectangle go
 stale. Inert with no import: nothing is owned, the guard cannot fire, and a stock run
 reports the same page state and `civ_clut` checksum as before.
 
-Why it was needed: the level's page *data* is built once at load, but the **slot table
-is refreshed continuously** — `SendTPage` re-uploads region pages as you drive, and
-`CleanSpooled`/`CleanSpooledModelSlots` (`models.c:33`, called from `spool.c:436/742`)
-recycle car-model slots on spool checkpoints. Something really does keep overwriting
-car materials.
+Two later texture defects, both in `buildNewCarFromModel` (see `HACK.md`):
 
-Still open, and visible in `devcheck.sh` (it FAILS rather than reporting a quiet '-'):
+- **GT4 read `texture_pages[pgt4->texture_set]` raw**, while FT3/FT4/GT3 wrapped it in
+  `CarSetRemap` — so a re-indexed set's quad sampled the wrong page. Now wrapped.
+- **GT3/GT4 resolved their CLUT through the host's `civ_clut` rows**, keyed by the raw
+  set. Imported cars now carry a direct CLUT from their own page instead
+  (`plotCarGlobals.directClut`), so no host row is touched and the car wears its own
+  colours.
 
-- **A foreign car for the PLAYER does not work yet.** Two causes found by
-  instrumentation: the mission header applies `PlayerStartInfo[0]->model` *after*
-  modules get their say (`JER_EVENT_CAR_DATA_SOURCE` fires in `SetupResidentModels`,
-  called at `LoadMission:806`, while the header is applied at `:573`), and the resident
-  search took the *first* slot holding a model — levels list models twice, Havana being
-  `1 2 3 3 4`, so a civilian import lost to the host's own copy. Both are fixed, and
-  the choice now reaches `PlayerStartInfo` (verified by log) — but the player's car
-  still comes out with an impossible model (7, which exists in no city), and the
-  special-slot route that worked in an earlier session has regressed since. A bisect
-  from `c8676773` is the next step, and the harness makes it cheap.
-- **UV bleeding** on imported cars, reported by eye. Most likely the same contention:
-  the car sampling a rectangle a world page has since refilled.
-- `civ_clut[carid][texture_id][0]` in the poly conversion still reads via the
-  **original** set number, so that one cache entry can hold the host's CLUT for a
-  re-indexed set.
+The player's car is chosen on the command line (`-car <model>`), not by the module.
+Import a vehicle into a spare resident slot and pass its model number:
 
-Reference case worth keeping: the **fire truck (model 8) loads with correct palettes
-in Havana**. The host's own special body is sound, which is consistent with not merging
-an imported city's palettes into `civ_clut`.
+```
+cross_city_vehicles = 1
+import = 5:3:9      # RIO model 9 into spare resident slot 5
+```
 
-And visual confirmation stays the user's: these logs prove pages are placed, claimed
-and kept — not that a car looks right.
+then launch with `-car 9`: the engine spawns the player in the first resident slot
+holding model 9 — slot 5, the imported car.
+
+Still open:
+
+- **The thrash meter is the thing to watch.** If `page re-uploads` in the final page
+  state grows with the frame count, something is still taking pages back — check the
+  two `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
+- Visual confirmation stays the user's: the logs prove pages are placed, claimed and
+  kept — not that a car looks right. `-vramview` re-dumps the live VRAM so a page or
+  CLUT can be watched as it changes.
 
 ## Related
 

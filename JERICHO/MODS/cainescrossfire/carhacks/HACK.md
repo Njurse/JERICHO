@@ -82,10 +82,23 @@ region to put a foreign vehicle's pages in.
 |---|---|
 | drive a Rio special body in Havana | `tools/launch_havana_rio_police.bat 9\|10\|12 [test [frames]]` |
 | any cross-city combination | `tools/devcheck.sh [frames]` — exits non-zero on failure |
-| where the player's car came from | `JERICHO-RUN: level=… carslot=7 model=9 …` then the engine's `slot 7 geometry from RIO model 9` |
+| where the player's car came from | `JERICHO-RUN: level=… carslot=5 model=9 …` then the engine's `slot 5 geometry from RIO model 9` |
 | where imported pages landed | `cross-city: pinned set 77 index 77: slot=14, rect=(512,0), page=0008 …` |
 | what is actually in VRAM | `JERICHO_DUMPVRAM=1` then `tools/vramdump.py vram_dump.tga --png out.png` |
+| VRAM live, while you play | `-vramview [frames]` re-dumps `vram_live.tga` every N frames (default 15) so it can be watched in an image viewer |
 | replay a run exactly | `-seed N` (the seed picks module randomness) |
+
+## Choosing the player's car
+
+The player's car is **not** chosen by the module. It comes from the command
+line: `-car <model>` (or `-car slotN`, the frontend slot). The engine then spawns
+the player in the first resident slot holding that model (`InitPlayer`), so an
+import into a spare slot plus `-car <model>` makes that car the player's:
+
+```
+import = 5:3:9      # RIO model 9 into spare resident slot 5
+-car 9              # player spawns in slot 5, the imported car
+```
 
 ## Traps, all of which cost time
 
@@ -111,10 +124,23 @@ region to put a foreign vehicle's pages in.
 - **`REDRIVER2.log` is truncated at session start and flushed at close** — a kill
   throws the session away, so runs use `-frames` and exit by themselves.
 
+## The two texture defects, fixed
+
+- **GT4 never had its texture set remapped.** `texture_pages[pgt4->texture_set]` was
+  read raw in `buildNewCarFromModel`, while FT3/FT4/GT3 all wrapped theirs in
+  `CarSetRemap`. For a re-indexed set the quad sampled the host's page (or the unloaded
+  dummy), which is the *"textures are shifted"* artefact. Now wrapped, like its siblings.
+- **GT3/GT4 routed their CLUT through the HOST's `civ_clut` rows**, keyed by
+  `GetCarPalIndex(raw set)`. The host already owns those rows, so a re-indexed set
+  painted the imported car with the host's palette *and* overwrote the host's cache
+  entry with the imported CLUT. An imported car now carries a **direct CLUT id** on its
+  GT polys, taken from its own page's CLUTs (like the FT path): `CAR_MODEL.imported`
+  → `plotCarGlobals.directClut`, and `plotCarPolyGT3*` emits the value verbatim. No
+  host `civ_clut` row is read or written for an imported car. Stock cars are untouched
+  (`imported` = 0, `directClut` stays off).
+
 ## Still open
 
-- `civ_clut[carid][texture_id][0]` in the poly conversion still reads via the original
-  set number, so one cache entry can hold the host's CLUT for a re-indexed set.
 - The thrash meter is the thing to watch. If `page re-uploads` in the final page state
   grows with the frame count, something is still taking pages back — check the two
   `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
