@@ -98,7 +98,11 @@ int cd2TurboRevCeiling(int carId, int ceiling)
 	if (!cd2TurboActive(carId) || ceiling >= CD2_REV_FULL_REVS)
 		return ceiling;
 
-	return ceiling + (int)(((long long)(CD2_REV_FULL_REVS - ceiling) * CD2_TURBO_REV_FREE_PCT) / 100);
+	int free = ceiling + (int)(((long long)(CD2_REV_FULL_REVS - ceiling) * CD2_TURBO_REV_FREE_PCT) / 100);
+
+	/* and then that figure is raised again, deliberately PAST the airborne revs: the note
+	 * is meant to scream above anything the car can reach on its own. */
+	return (int)(((long long)free * CD2_TURBO_REV_EXTRA_PCT) / 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,12 +164,14 @@ void cd2TurboPad(int carId, int pad)
 		st->meter = CD2_TURBO_METER_FRAMES;
 	}
 
-	// the drive button and the reverse button
-	gasDown = (pad & MPAD_CROSS) ? 1 : 0;
-	brakeDown = (pad & MPAD_SQUARE) ? 1 : 0;
+	// the drive button and the reverse button, named the way the ENGINE names them
+	// (pad.h's ECarPads) rather than as raw bits: the mask the engine hands us is
+	// already remapped, so this follows the player's own button config.
+	gasDown = (pad & CAR_PAD_ACCEL) ? 1 : 0;
+	brakeDown = (pad & CAR_PAD_BRAKE) ? 1 : 0;
 
-	gasHit = (gasDown && !(st->prevPad & MPAD_CROSS)) ? 1 : 0;
-	brakeHit = (brakeDown && !(st->prevPad & MPAD_SQUARE)) ? 1 : 0;
+	gasHit = (gasDown && !(st->prevPad & CAR_PAD_ACCEL)) ? 1 : 0;
+	brakeHit = (brakeDown && !(st->prevPad & CAR_PAD_BRAKE)) ? 1 : 0;
 
 	if (st->active)
 	{
@@ -197,7 +203,7 @@ void cd2TurboPad(int carId, int pad)
 	else
 	{
 		// a double tap on either drive button
-		button = gasHit ? MPAD_CROSS : (brakeHit ? MPAD_SQUARE : 0);
+		button = gasHit ? CAR_PAD_ACCEL : (brakeHit ? CAR_PAD_BRAKE : 0);
 		hit = gasHit || brakeHit;
 
 		if (hit)
@@ -209,17 +215,27 @@ void cd2TurboPad(int carId, int pad)
 				(FrameCnt - st->tapFrame) <= CD2_TURBO_TAP_GRACE && st->meter > 0)
 			{
 				st->active = 1;
-				st->reverse = (button == MPAD_SQUARE) ? 1 : 0;
+				st->reverse = (button == CAR_PAD_BRAKE) ? 1 : 0;
 				st->heldButton = button;
 				st->tapFrame = -1;
 
-				/* the kick: a shove owed to the integrator, and a knock that lifts
-				 * the nose. An IMPULSE, so the spring eases it in and settles it
-				 * instead of the car snapping to a new attitude. */
+				/* the kick: a shove owed to the integrator, and a knock that throws
+				 * the weight. An IMPULSE, so the spring eases it in and settles it
+				 * instead of the car snapping to a new attitude.
+				 *
+				 * A REVERSE boost gets the mirror of the forward one: the nose goes
+				 * DOWN and the weight goes FORWARD, because that is what launching
+				 * backwards looks like. Handing it the forward wheelie was giving it
+				 * the gas button's gesture rather than its own. */
 				st->shove = 1;
 				st->engaged = 1;
-				cd2KnockAdd(carId, (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100,
-					0, 0, 1, -CD2_TURBO_KICK_SHIFT);	/* nose up, weight back */
+
+				if (st->reverse)
+					cd2KnockAdd(carId, -(CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100,
+						0, 0, 0, CD2_TURBO_KICK_SHIFT);	/* nose down, weight forward */
+				else
+					cd2KnockAdd(carId, (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100,
+						0, 0, 1, -CD2_TURBO_KICK_SHIFT);	/* nose up, weight back */
 			}
 			else
 			{

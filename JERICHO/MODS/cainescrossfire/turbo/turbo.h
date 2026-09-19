@@ -32,12 +32,20 @@
 //
 // Not a percentage of the normal ceiling - a percentage of the way to where the
 // note goes when the wheels are off the ground and nothing is clamping it, which
-// is a good deal higher than the normal maximum. 75 was asked for: high enough to
-// be heard being pushed past its limit, not so far that it screams.
+// is a good deal higher than the normal maximum.
 //
 // CD2_REV_FULL_REVS is that unclamped level, and it is not a new number: the
 // module's hard clamp is already expressed as a fraction of it (cainescrossfire.h).
 #define CD2_TURBO_REV_FREE_PCT	75
+
+// ...and then THAT figure is raised by this much. 165 = the boost ceiling itself is
+// 65% higher than the 75% figure above produces (21850 -> ~36000), which deliberately
+// carries the note past the airborne revs - the engine is meant to sound like it is
+// being over-revved against a limiter it cannot reach, not merely wound out.
+//
+// Watch the headroom when raising this: the pitch the SPU is handed saturates at
+// 0x3FFF, and CD2_TURBO_PITCH_BOOST is added on top of whatever this produces.
+#define CD2_TURBO_REV_EXTRA_PCT	165
 
 // How much higher the engine note rides while boosting, in SPU pitch units
 // (4096 = the nominal pitch). The over-rev above lets it wind higher; this makes

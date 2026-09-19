@@ -40,6 +40,21 @@ static int cd2mOnCarEngineSound(void* ud, void* args)
 			e->revPitch += CD2_TURBO_PITCH_BOOST;
 	}
 
+	/* The SPU's pitch saturates at 0x3FFF, and the over-rev above deliberately carries
+	 * the note past the airborne revs - so this is the one place where a tuning change
+	 * could run out of headroom and wrap into something horrible instead of merely
+	 * screaming. Clamped, and said out loud when it happens, so a future ceiling raise
+	 * is measurable rather than a guess. */
+	if (e->revPitch > 0x3FFF)
+	{
+		jer_log("[cainescrossfire] engine pitch clamped: %d -> 0x3FFF (ran out of headroom with the turbo over-rev)\n", e->revPitch);
+		e->revPitch = 0x3FFF;
+	}
+	else if (e->revPitch < 0)
+	{
+		e->revPitch = 0;
+	}
+
 	p = ((long long)e->idlePitch * CD2_SND_PITCH_SCALE) >> 12;
 	e->idlePitch = (int)p + CD2_SND_IDLE_PITCH_BIAS;
 
