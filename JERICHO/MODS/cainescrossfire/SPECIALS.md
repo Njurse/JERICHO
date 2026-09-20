@@ -30,7 +30,7 @@ Firing one headlessly (the debug driver):
 270:fire:deadstar
 ```
 
-## The six
+## The seven
 
 | internal | display | car | recharge | capacity |
 |---|---|---|---|---|
@@ -40,22 +40,41 @@ Firing one headlessly (the debug driver):
 | `special_bruxa` | Double Boom | Bruxa | 450 (15s) | 4 |
 | `special_highwayman` | Breath of Fire | Highwayman | 660 (22s) | 3 |
 | `special_deadstar` | Death Dash | Deadstar | 750 (25s) | 2 |
+| `special_obelisk` | Missile Barrage | Obelisk | 900 (30s) | 1 |
 
 ### Hornet — Spike Storm
 
 The ring deploys while the special is **armed**: eight spikes stand up around
 the car (one per compass direction — a bright vertical spike with a faint spoke
 back to the car), and any other car inside the ring takes contact damage and a knockback
-every 15 frames. Pressing **fire launches** the eight outward in their eight
+every 15 frames. The ring is measured out to what the victim's own body
+reaches, so a car whose flank is in the spikes is caught even with its centre
+outside them. Pressing **fire launches** the eight outward in their eight
 facing directions — weakly homing, a narrow lock cone — exploding on whatever
 they hit (world or car). The launch spends the charge and starts the recharge.
 
 ### Avalanche — Monster Crush
 
 A 5-second surge of max normal speed and raised grip. During it, ramming another
-car makes Avalanche **climb on top**: the attacker is held above the victim, the
+car makes Avalanche **climb on top**: the attacker is held over the victim, the
 victim's velocity is pinned (trapped), the attacker's tyres spin and it can still
 be steered, then it shoves the victim off and drops back.
+
+The held victim is pinned **flat on the road**: its ride height is held where it
+was before the crush and its tumble is stopped, so the press cannot shove its
+underside down through the surface. The attacker is held **level with the
+victim's own origin** — the collision solver decides the final height, so a
+positive lift only gave it more to push back up (which is what floated the truck
+before). Crunching plays throughout on the engine's own heavy-crash sample.
+
+### Obelisk — Missile Barrage
+
+A three-second salvo. Twice a volley — a pair at a time, out of **both flanks at
+once** and from the **midsection** rather than the nose — cheap homing missiles
+pour out, and the weave flips every volley, so the swarm snakes toward whatever
+it is chasing instead of flying in a straight line. Individually they barely
+scratch (55 a hit against a 55-frame hold's worth of them); there are a great
+many, and together they are a barrage.
 
 ### Corvo — Siren's Wrath
 

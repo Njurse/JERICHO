@@ -57,6 +57,7 @@ enum
 	CD2_WID_SPECIAL_BRUXA,		// custom name (see the vehicle profiles in
 	CD2_WID_SPECIAL_HIGHWAYMAN,	// profiles/ and profiles/SPECIALS.md)
 	CD2_WID_SPECIAL_DEADSTAR,
+	CD2_WID_SPECIAL_OBELISK,
 	CD2_WID_COUNT,
 	CD2_WID_NONE = -1
 };

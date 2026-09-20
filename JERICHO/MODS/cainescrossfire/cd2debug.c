@@ -166,6 +166,7 @@ static int cd2DbgWeaponId(const char** s)
 		{ "bruxa", CD2_WID_SPECIAL_BRUXA },
 		{ "highwayman", CD2_WID_SPECIAL_HIGHWAYMAN },
 		{ "deadstar", CD2_WID_SPECIAL_DEADSTAR },
+		{ "obelisk", CD2_WID_SPECIAL_OBELISK },
 	};
 	const char* p = *s;
 	unsigned int w;

@@ -48,6 +48,7 @@ enum
 	CD2_VEH_BRUXA,		// Rio's double-barrel shotgun car
 	CD2_VEH_HIGHWAYMAN,	// Havana's flamethrower car
 	CD2_VEH_DEADSTAR,	// Rio's turbo-ram car
+	CD2_VEH_OBELISK,	// Rio's missile-salvo platform
 	CD2_VEH_COUNT,
 	CD2_VEH_NONE = -1
 };

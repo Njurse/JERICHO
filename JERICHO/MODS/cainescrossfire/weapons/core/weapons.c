@@ -122,7 +122,8 @@ static const CD2_WEAPON_DEF* const gWdefs[CD2_WID_COUNT] =
 	&cd2WdefSpecialCorvo,
 	&cd2WdefSpecialBruxa,
 	&cd2WdefSpecialHighwayman,
-	&cd2WdefSpecialDeadstar
+	&cd2WdefSpecialDeadstar,
+	&cd2WdefSpecialObelisk
 };
 
 const CD2_WEAPON_DEF* cd2WpnDef(int weaponId)

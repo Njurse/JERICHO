@@ -109,7 +109,7 @@ change it mid-match.
 
 ## The test roster
 
-Six profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):
+Seven profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):
 
 | internal | display | city | model | A/S/H/P | special | palette |
 |---|---|---|---|---|---|---|
@@ -117,8 +117,9 @@ Six profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):
 | `avalanche` | Avalanche | Vegas | 11 | 4/2/3/4 | Monster Crush | – |
 | `corvo` | Corvo | Rio | 0 | 3/3/3/4 | Siren's Wrath | – |
 | `bruxa` | Bruxa | Rio | 2 | 4/2/3/4 | Double Boom | 2 |
-| `highwayman` | Highwayman | Havana | 1 | 3/3/3/5 | Breath of Fire | 1 |
+| `highwayman` | Highwayman | Havana | 1 | 3/3/3/5 | Breath of Fire | 2 |
 | `deadstar` | Deadstar | Rio | 12 | 3/5/3/4 | Death Dash | – |
+| `obelisk` | Obelisk | Rio | 9 | 3/3/2/5 | Missile Barrage | – |
 
 The numbers are first-test placeholders — meant to be tuned.
 
