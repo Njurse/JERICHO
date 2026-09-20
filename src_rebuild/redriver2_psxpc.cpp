@@ -633,7 +633,7 @@ int main(int argc, char** argv)
 
 #endif
 
-	PsyX_Initialise("REDRIVER2", fullScreen ? screenWidth : windowWidth, fullScreen ? screenHeight : windowHeight, fullScreen);
+	PsyX_Initialise("JERICHO", fullScreen ? screenWidth : windowWidth, fullScreen ? screenHeight : windowHeight, fullScreen);
 
 	char version_info[32];
 	GetTimeStamp(version_info);

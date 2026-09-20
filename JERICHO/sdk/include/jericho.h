@@ -32,7 +32,7 @@ extern "C" {
 #define JERICHO_BUILD_VERSION "1.0.0"
 #endif
 
-#define JERICHO_SDK_VERSION 1
+#define JERICHO_SDK_VERSION 2
 
 /* Maximum number of compiled-in modules (registry + modlist capacity). */
 #define JER_MAX_MODULES 32
