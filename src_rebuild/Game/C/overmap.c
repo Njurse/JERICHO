@@ -1010,27 +1010,16 @@ void DrawMultiplayerMap(void)
 	r = 255;
 	g = 0;
 
-	for (i = 0; i < NumPlayers; i++) 
-	{
-		pl = &player[i];
-
-		target.vx = pl->pos[0];
-		target.vz = pl->pos[2];
-
-		target.vy = 0;
-
-		WorldToMultiplayerMap(&target, &target);
-
-		target.vx += xPos;
-		target.vz += yPos;
-
-		DrawPlayerDot(&target, -pl->dir, r, g, 0, 0x8);
-
-		r++;
-		g--;
-	}
-
-	// JERICHO-HOOK: let modules plot their own markers on the multiplayer map.
+	// JERICHO-HOOK: let modules plot their own markers on the multiplayer map,
+	// and let one take the player blips over entirely.
+	//
+	// Fired BEFORE the stock loop, not after it. With NumPlayers held at 1 in a
+	// multiplayer session that loop draws exactly one blip -- the LOCAL player's
+	// -- so a module could only ever add to the map and every player was left
+	// with an arrow stuck on themselves. A module that wants "an arrow for every
+	// OTHER player" needs this one suppressed, so suppressStockBlip says so and
+	// the module becomes responsible for all of them.
+	//
 	// This is the ONLY map a multiplayer level draws - DrawOverheadMap diverts
 	// here whenever MissionHeader->region != 0 (which is how the engine defines
 	// a multiplayer level), so a hook fired there is unreachable in MP.
@@ -1040,8 +1029,33 @@ void DrawMultiplayerMap(void)
 
 		jerMap.flags = 0x20 | 0x2;
 		jerMap.fullscreen = 0;
+		jerMap.suppressStockBlip = 0;
 		jer_fire(JER_EVENT_DRAW_MAP, &jerMap);
+
+		if (!jerMap.suppressStockBlip)
+		{
+			for (i = 0; i < NumPlayers; i++) 
+			{
+				pl = &player[i];
+
+				target.vx = pl->pos[0];
+				target.vz = pl->pos[2];
+
+				target.vy = 0;
+
+				WorldToMultiplayerMap(&target, &target);
+
+				target.vx += xPos;
+				target.vz += yPos;
+
+				DrawPlayerDot(&target, -pl->dir, r, g, 0, 0x8);
+
+				r++;
+				g--;
+			}
+		}
 	}
+
 
 	draw_box(yPos, 64);
 

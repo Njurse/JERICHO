@@ -600,6 +600,12 @@ typedef struct JER_ARGS_DRAW_MAP
 {
 	int flags;		/* flags the player blip was drawn with */
 	int fullscreen;		/* 1 = fullscreen map, 0 = overhead map */
+	int suppressStockBlip;	/* in/out: 1 = the module draws every player
+				 * itself, so skip the engine's own blip. Fired BEFORE that
+				 * loop, because with NumPlayers held at 1 in a multiplayer
+				 * session it draws only the LOCAL player -- leaving a module
+				 * unable to do anything but add to it, and every player with
+				 * an arrow stuck on themselves. */
 } JER_ARGS_DRAW_MAP;
 
 /* JER_EVENT_EXPLOSION_SPAWN — an explosion slot was just armed in
