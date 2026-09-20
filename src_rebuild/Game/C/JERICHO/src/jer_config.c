@@ -12,6 +12,7 @@
  * ------------------------------------------------------------------ */
 
 #include "jer_config.h"
+#include "jericho.h"		/* jer_log - it is called below and only declared there */
 
 #include <stdio.h>
 #include <stdlib.h>
