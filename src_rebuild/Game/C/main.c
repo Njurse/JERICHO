@@ -2837,6 +2837,15 @@ int redriver2_main(int argc, char** argv)
 			if (i + 1 < argc && argv[i + 1][0] != '-')
 				i++;
 		}
+		else if (!strcmp(argv[i], "-mpcar"))
+		{
+			/* (mp mod) the vehicle this machine's player wants; the module picks
+			 * the value up via JER_EVENT_CMDLINE. Recognised here only so it is
+			 * not an "unknown argument" -- and, unlike the engine's -car, it
+			 * needs no -level, which is what a joining client can use. */
+			if (i + 1 < argc && argv[i + 1][0] != '-')
+				i++;
+		}
 		else if (!strcmp(argv[i], "-testmode") || !strcmp(argv[i], "-testped"))
 		{
 			/* (testmode module) no value to skip; recognised here so it is not
@@ -2958,15 +2967,15 @@ int redriver2_main(int argc, char** argv)
 	}
 	else if (gBootCarStr[0] != 0 || gBootGameMode >= 0 || gBootWeather >= 0 || gBootTime >= 0)
 	{
-		/* dependent options: at least a level is required */
+		/* Dependent options: at least a level is required. Report it as a notice,
+		 * never as a message box. This runs before the frontend, so a modal here
+		 * blocks an unattended launch outright: the process sits on the box and
+		 * never reaches the game at all. It is not theoretical -- a joining
+		 * client that was given -car without -level looked exactly like "the
+		 * client cannot connect", and the box sitting over the window was the
+		 * whole cause. */
 		printError("-car / -gamemode / -weather / -time need -level (e.g. -level havana)\n");
-
-#if !defined(PSX) && !defined(__EMSCRIPTEN__)
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "REDRIVER 2",
-			"-car / -gamemode / -weather / -time need -level.\n"
-			"Example: REDRIVER2 -level havana -car slot3 -gamemode takeadrive -time dusk -weather rain",
-			NULL);
-#endif
+		jer_error("-car / -gamemode / -weather / -time need -level");
 	}
 #endif // DEBUG_OPTIONS
 #endif // !PSX && !EMSCRIPTEN
