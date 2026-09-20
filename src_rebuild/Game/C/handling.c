@@ -1188,16 +1188,26 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 		}
 
 		// Lock car if it has mission lock or fully damaged
-		if (gStopPadReads != 0 || MaxPlayerDamage[*cp->ai.padid] <= cp->totalDamage || gCantDrive != 0)
+		// JERICHO: a REMOTE player car has a NEGATIVE pad id (main.c's spawn loop
+		// gives slots >= NumPlayers `padid = -i`), so indexing MaxPlayerDamage
+		// with *cp->ai.padid read BEFORE the array and could land on a value that
+		// trips this lock -- which forces the handbrake and leaves a remote car
+		// unable to move at all. Fall back to slot 0 for a car with no local pad.
 		{
-			pad = CAR_PAD_HANDBRAKE;
+			int dmgPad = (cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2)
+				? *cp->ai.padid : 0;
 
-			// apply brakes
-			if (cp->hd.wheel_speed > 36864)
-				pad = CAR_PAD_BRAKE;
+			if (gStopPadReads != 0 || MaxPlayerDamage[dmgPad] <= cp->totalDamage || gCantDrive != 0)
+			{
+				pad = CAR_PAD_HANDBRAKE;
 
-			int_steer = 0;
-			use_analogue = 1;
+				// apply brakes
+				if (cp->hd.wheel_speed > 36864)
+					pad = CAR_PAD_BRAKE;
+
+				int_steer = 0;
+				use_analogue = 1;
+			}
 		}
 
 		// turn of horning
