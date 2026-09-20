@@ -22,12 +22,12 @@
 
 #include <string.h>
 
-#define CD2_CORVO_FRAMES	120	// 4s of siren
-#define CD2_CORVO_RANGE		900	// attack radius (world units)
-#define CD2_CORVO_ZAP_INTERVAL	20	// frames between zaps
+#define CD2_CORVO_FRAMES	160	// 4s of siren
+#define CD2_CORVO_RANGE		1900	// attack radius (world units)
+#define CD2_CORVO_ZAP_INTERVAL	10	// frames between zaps
 #define CD2_CORVO_REVOLVE	320	// bolt spin per frame (PSX angle units)
-#define CD2_CORVO_HOP		300	// small vertical jump on a hit (linear vel)
-#define CD2_CORVO_TWIST		90	// twist strength (angular velocity term)
+#define CD2_CORVO_HOP		1300	// small vertical jump on a hit (linear vel)
+#define CD2_CORVO_TWIST		790	// twist strength (angular velocity term)
 // The police siren the engine plays for its siren cars (CarHasSiren ->
 // M_SHRT_2(SOUND_BANK_VOICES, 0), played at pitch 4096 while the horn is held).
 // "The Rio police car siren" is this sample, taken from the level's own bank.
@@ -118,7 +118,7 @@ static int cd2CorvoOnFrame(void* ud, void* args)
 			for (j = 0; j < MAX_CARS; j++)
 			{
 				CAR_DATA* oc = &car_data[j];
-				int dx, dz, d2;
+				long long dx, dz, d2;  /* 64-bit: a squared world distance wraps */
 
 				if (j == i || oc->controlType == CONTROL_TYPE_NONE || oc->ap.carCos == NULL)
 					continue;
@@ -219,7 +219,7 @@ static CD2_WEAPON_DEF cd2MakeCorvoDef(void)
 
 	d.id = CD2_WID_SPECIAL_CORVO;
 	d.name = "special_corvo";
-	d.displayName = "Siren's Wrath";
+	d.displayName = "Trovoaçoite";
 	d.cls = CD2_WCLS_AOE;
 
 	d.isSpecial = 1;
@@ -228,9 +228,9 @@ static CD2_WEAPON_DEF cd2MakeCorvoDef(void)
 
 	d.maxAmmo = 3;			// profile capacity
 	d.fireInterval = 30;
-	d.refireCooldown = 540;		// profile recharge: 18s
+	d.refireCooldown = 200;		// profile recharge: 18s
 
-	d.damage = 300;			// moderate, per zap
+	d.damage = 600;			// moderate, per zap
 	d.speed = 0;
 	d.range = CD2_CORVO_RANGE;
 	d.life = CD2_CORVO_FRAMES;

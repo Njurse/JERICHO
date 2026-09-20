@@ -28,6 +28,9 @@
 #define CD2_OBELISK_FRAMES		90	// 3s of barrage
 #define CD2_OBELISK_VOLLEY_EVERY	7	// frames between volleys (2 missiles each, ~8/s)
 #define CD2_OBELISK_WEAVE		760	// how hard a volley is thrown sideways (4096 scale)
+#define CD2_OBELISK_SPREAD		540	// per-missile launch jitter (4096 scale, ~47 deg total)
+#define CD2_OBELISK_WEAVE_VARY		300	// how far a volley's weave wanders off its line
+#define CD2_OBELISK_LIFT_SPREAD		180	// vertical part of the jitter
 #define CD2_OBELISK_SPEED		2600
 
 static int gSalvoFrames[MAX_CARS];	// barrage frames left
@@ -60,18 +63,28 @@ static void cd2ObeliskMuzzle(const CAR_DATA* cp, int side, VECTOR* out)
 
 // Fire one missile out of `side` (-1 left, +1 right). `weave` is the sideways
 // throw for this volley; the sides take OPPOSITE signs, so the pair crosses.
+//
+// Every missile then gets its own jitter on top. A salvo that left on a fixed
+// bearing read as a machine putting things in a pattern; the point is that the
+// swarm looks HUNGRY - each one thrown slightly wrong, some climbing, some
+// dropping, the whole stream squirming toward whatever it is chasing.
 static void cd2ObeliskLaunch(CAR_DATA* cp, int side, int weave)
 {
 	const MATRIX* w = &cp->hd.where;
 	VECTOR muzzle, dir, vel, fwd;
 	long long rx = w->m[0][0], ry = w->m[1][0], rz = w->m[2][0];	// the car's lateral axis
 	int lat = weave * -side;
+	int lift;
+
+	// its own line, and its own height
+	lat += cd2WpnRand(CD2_OBELISK_SPREAD * 2 + 1) - CD2_OBELISK_SPREAD;
+	lift = cd2WpnRand(CD2_OBELISK_LIFT_SPREAD * 2 + 1) - CD2_OBELISK_LIFT_SPREAD;
 
 	cd2WpnForward(cp, &fwd);
 	cd2ObeliskMuzzle(cp, side, &muzzle);
 
 	dir.vx = fwd.vx + (int)((rx * lat) >> 12);
-	dir.vy = fwd.vy + (int)((ry * lat) >> 12);
+	dir.vy = fwd.vy + (int)((ry * lat) >> 12) + lift;
 	dir.vz = fwd.vz + (int)((rz * lat) >> 12);
 
 	vel.vx = (int)(((long long)dir.vx * CD2_OBELISK_SPEED) >> 12);
@@ -131,9 +144,11 @@ static int cd2ObeliskOnFrame(void* ud, void* args)
 
 		if (++gSalvoAcc[i] >= CD2_OBELISK_VOLLEY_EVERY)
 		{
-			// one volley: both flanks at once, the weave flipping each time so
-			// the stream snakes rather than flying straight
+			// one volley: both flanks at once, the weave flipping each time AND
+			// wandering, so the stream snakes instead of holding a clean line
 			int weave = (gSalvoVolley[i] & 1) ? CD2_OBELISK_WEAVE : -CD2_OBELISK_WEAVE;
+
+			weave += cd2WpnRand(CD2_OBELISK_WEAVE_VARY * 2 + 1) - CD2_OBELISK_WEAVE_VARY;
 
 			gSalvoAcc[i] = 0;
 			gSalvoVolley[i]++;
