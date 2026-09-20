@@ -53,6 +53,10 @@
   Skip the build and (re)package whatever is already staged. Handy when
   re-publishing an unchanged build.
 
+.PARAMETER LanPackage
+  Also build REDRIVER2_mp_lan.7z (the partner-facing LAN package with its own
+  launchers) into -OutDir, so the release carries it too. Needs 7-Zip.
+
 .EXAMPLE
   # see what a release would contain, publish nothing
   pwsh -File tools/publish_release.ps1 -DryRun
@@ -74,7 +78,8 @@ param(
     [string]   $OutDir = 'dist',
     [switch]   $Publish,
     [switch]   $DryRun,
-    [switch]   $SkipBuild
+    [switch]   $SkipBuild,
+    [switch]   $LanPackage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -194,6 +199,19 @@ function New-Package {
     }
 }
 
+# --- 3b. the partner-facing LAN package (optional) -------------------------
+function New-LanPackage {
+    $script = Join-Path $RepoRoot 'JERICHO\MODS\mp\tools\pack_lan\make_lan_package.bat'
+    if (-not (Test-Path $script)) {
+        Warn "-LanPackage: $script not found, skipping"
+        return
+    }
+    Step "Building the LAN package (REDRIVER2_mp_lan.7z)"
+    $out = Join-Path $OutPath 'REDRIVER2_mp_lan.7z'
+    & cmd /c "`"$script`" `"$out`""
+    if ($LASTEXITCODE -ne 0) { Fail "make_lan_package.bat failed ($LASTEXITCODE)." }
+}
+
 # --- 4. publish (GitHub REST) ----------------------------------------------
 function Get-GitHubHeaders {
     if (-not $env:GH_TOKEN) {
@@ -292,6 +310,7 @@ if (-not $SkipBuild) {
 }
 
 New-Package
+if ($LanPackage) { New-LanPackage }
 
 Step "Packaged into $OutDir"
 Get-ChildItem $OutPath -File | ForEach-Object { Write-Host ("    {0}" -f $_.Name) }
