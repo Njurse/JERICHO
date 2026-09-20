@@ -38,6 +38,7 @@
 #include "ai/grid.h"
 #include "ai/flow.h"
 #include "factions/factions.h"	// the five teams: claim this spawn's roster slot
+#include "profiles/profile.h"	// cd2VehProfileOfSlot - is this slot one of OURS?
 
 #include <string.h>
 #include <stdio.h>
@@ -537,11 +538,28 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		// low-detail model, and it bails with 'gCarLowModelPtr is NULL' -
 		// after which the half-built car gets dereferenced and the game dies.
 		// Cities differ here, so it has to be asked, never assumed.
+		// OUR cars first. An opponent should be one of the roster's playable
+		// vehicles, not whatever civil body the level happens to be holding: a
+		// contestant driving the traffic's car is not a contestant. A resident
+		// slot carries a roster profile if profiles_map placed one in it.
 		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 		{
 			if (gCarCleanModelPtr[i] != NULL && gCarDamModelPtr[i] != NULL &&
-			    gCarLowModelPtr[i] != NULL && i != pcp->ap.model)
+			    gCarLowModelPtr[i] != NULL && i != pcp->ap.model &&
+			    cd2VehProfileOfSlot(i) >= 0)
 				loaded[n++] = i;
+		}
+
+		// Nothing of ours resident (a plain city level): fall back to any
+		// fully-loaded body, which is what this did before profiles existed.
+		if (n == 0)
+		{
+			for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+			{
+				if (gCarCleanModelPtr[i] != NULL && gCarDamModelPtr[i] != NULL &&
+				    gCarLowModelPtr[i] != NULL && i != pcp->ap.model)
+					loaded[n++] = i;
+			}
 		}
 
 		// Name the pool once per level: this is what says which -car ids are
