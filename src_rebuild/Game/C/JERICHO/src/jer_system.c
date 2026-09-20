@@ -120,8 +120,12 @@ static void jerLog(const char* fmt, ...)
 /* every frame, frontend and in game), so there is no clock            */
 /* dependency.                                                         */
 /* ------------------------------------------------------------------ */
-#define JER_ERROR_MAX		4
+#define JER_ERROR_MAX		8	/* a long message WRAPS into several slots, so leave
+					 * room for a wrapped one plus older notices */
 #define JER_ERROR_TEXT		96
+#define JER_ERROR_WRAP		34	/* characters that fit on one notice row -- both draw
+					 * sites print ONE entry per line (x=32 in the frontend,
+					 * x=8 in game), so a longer line was clipped at the edge */
 #define JER_ERROR_FRAMES	150	/* ~5 s at 30 Hz */
 
 typedef struct JER_ERROR_MSG
@@ -134,23 +138,79 @@ static JER_ERROR_MSG gJerErrors[JER_ERROR_MAX];
 static int gJerErrorNext;
 static int gJerErrorFrame;
 
+/* Push ONE already-wrapped line as its own notice. The engine's draw loops
+ * stack live notices (+k*18 in the frontend, +k*12 in game), so a message that
+ * occupies several slots is drawn as several rows -- that is the wrap. */
+static void jerErrorEmitLine(const char* s, int n)
+{
+	int slot = gJerErrorNext % JER_ERROR_MAX;
+
+	if (n > JER_ERROR_TEXT - 1)
+		n = JER_ERROR_TEXT - 1;
+
+	if (n > 0)
+		memcpy(gJerErrors[slot].text, s, (size_t)n);
+
+	gJerErrors[slot].text[n] = 0;
+	gJerErrors[slot].untilFrame = gJerErrorFrame + JER_ERROR_FRAMES;
+	gJerErrorNext = (slot + 1) % JER_ERROR_MAX;
+}
+
 int jer_error(const char* fmt, ...)
 {
 	va_list va;
-	int slot = gJerErrorNext % JER_ERROR_MAX;
+	char buf[JER_ERROR_TEXT * 2];
+	int len, pos, lines;
 
 	if (fmt == NULL)
 		return 0;
 
 	va_start(va, fmt);
-	vsnprintf(gJerErrors[slot].text, JER_ERROR_TEXT, fmt, va);
+	vsnprintf(buf, sizeof(buf), fmt, va);
 	va_end(va);
 
-	gJerErrors[slot].text[JER_ERROR_TEXT - 1] = 0;
-	gJerErrors[slot].untilFrame = gJerErrorFrame + JER_ERROR_FRAMES;
-	gJerErrorNext = (slot + 1) % JER_ERROR_MAX;
+	buf[sizeof(buf) - 1] = 0;
 
-	jerLog("[error] %s\n", gJerErrors[slot].text);
+	/* the LOG stays the whole message, on one line */
+	jerLog("[error] %s\n", buf);
+
+	len = (int)strlen(buf);
+
+	if (len == 0)
+	{
+		jerErrorEmitLine("", 0);
+		return 1;
+	}
+
+	/* WRAP: break at the last space in the window so words stay whole, and
+	 * hard-break at the window width when there is no usable space (a long
+	 * address like "192.168.50.239:1400" must still wrap, not be clipped). */
+	for (pos = 0, lines = 0; pos < len && lines < JER_ERROR_MAX; lines++)
+	{
+		int take = len - pos;
+
+		if (take > JER_ERROR_WRAP)
+		{
+			int cut = JER_ERROR_WRAP;
+
+			/* only accept a space in the latter half: breaking at a space
+			 * near the start would emit a near-empty line */
+			while (cut > JER_ERROR_WRAP / 2 && buf[pos + cut] != ' ')
+				cut--;
+
+			take = (cut > JER_ERROR_WRAP / 2) ? cut : JER_ERROR_WRAP;
+		}
+
+		if (take <= 0)
+			take = 1;
+
+		jerErrorEmitLine(buf + pos, take);
+
+		pos += take;
+
+		while (pos < len && buf[pos] == ' ')	/* drop the space we broke at */
+			pos++;
+	}
 
 	return 1;
 }
