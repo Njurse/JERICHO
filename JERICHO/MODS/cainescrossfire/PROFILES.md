@@ -129,7 +129,7 @@ Eleven profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md))
 | `corvo` | Corvo | Rio | 0 | 3/3/3/4 | Siren's Wrath | – |
 | `bruxa` | Bruxa | Rio | 2 | 4/2/3/4 | Double Boom | 2 |
 | `highwayman` | Highwayman | Havana | 1 | 3/3/3/5 | Breath of Fire | 2 |
-| `deadstar` | Deadstar | Rio | 12 | 3/5/3/4 | Death Dash | – |
+| `deadstar` | Deadstar | Rio | 12 | 4/3/2/4 | Death Dash | – |
 | `obelisk` | Obelisk | Rio | 9 | 3/3/2/5 | Missile Barrage | – |
 | `bootlegger` | Bootlegger | Vegas | 1 | 2/5/4/3 | Lead Hail | 1 |
 | `invocada` | Invocada | Rio | 3 | 4/3/2/5 | Cyclone | 0 |
