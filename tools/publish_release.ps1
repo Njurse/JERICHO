@@ -137,20 +137,33 @@ function Invoke-Build {
         $def = Join-Path $SrcRebuild 'exports.def'
 
         Step "Building $cfg (pass 1: empty def, emits the .map)"
-        Set-Content -Path $def -Value 'EXPORTS' -Encoding ascii
-        & $MsBuild $sln "/p:Configuration=$cfg" /p:Platform=x64 /m /nologo /v:m
-        if ($LASTEXITCODE -ne 0) { Fail "pass 1 for $cfg failed ($LASTEXITCODE)." }
+        # exports.def is a TRACKED file and pass 1 deliberately empties it, so
+        # anything that goes wrong between here and pass 2 would leave the repo
+        # with a one-line def -- and a build that fails (a locked exe, say)
+        # does exactly that. Put it back either way once we are done with it.
+        $defBackup = Join-Path $env:TEMP 'exports.def.rd2backup'
+        Copy-Item $def $defBackup -Force
+        try
+        {
+            Set-Content -Path $def -Value 'EXPORTS' -Encoding ascii
+            & $MsBuild $sln "/p:Configuration=$cfg" /p:Platform=x64 /m /nologo /v:m
+            if ($LASTEXITCODE -ne 0) { Fail "pass 1 for $cfg failed ($LASTEXITCODE)." }
 
-        Step "Regenerating exports.def for $cfg and relinking (pass 2)"
-        $gen  = Join-Path $SrcRebuild "bin\$cfg\gen_exports.exe"
-        $map  = Join-Path $SrcRebuild "bin\$cfg\$exe.map"
-        if (-not (Test-Path $gen)) { Fail "gen_exports.exe missing for $cfg -- did pass 1 link?" }
-        if (-not (Test-Path $map)) { Fail "$exe.map missing for $cfg -- is /MAP still on the link line?" }
-        & $gen $map $def
-        if ($LASTEXITCODE -ne 0) { Fail "gen_exports failed for $cfg ($LASTEXITCODE)." }
+            Step "Regenerating exports.def for $cfg and relinking (pass 2)"
+            $gen  = Join-Path $SrcRebuild "bin\$cfg\gen_exports.exe"
+            $map  = Join-Path $SrcRebuild "bin\$cfg\$exe.map"
+            if (-not (Test-Path $gen)) { Fail "gen_exports.exe missing for $cfg -- did pass 1 link?" }
+            if (-not (Test-Path $map)) { Fail "$exe.map missing for $cfg -- is /MAP still on the link line?" }
+            & $gen $map $def
+            if ($LASTEXITCODE -ne 0) { Fail "gen_exports failed for $cfg ($LASTEXITCODE)." }
 
-        & $MsBuild $sln "/p:Configuration=$cfg" /p:Platform=x64 /m /nologo /v:m
-        if ($LASTEXITCODE -ne 0) { Fail "pass 2 for $cfg failed ($LASTEXITCODE)." }
+            & $MsBuild $sln "/p:Configuration=$cfg" /p:Platform=x64 /m /nologo /v:m
+            if ($LASTEXITCODE -ne 0) { Fail "pass 2 for $cfg failed ($LASTEXITCODE)." }
+        }
+        finally
+        {
+            if (Test-Path $defBackup) { Copy-Item $defBackup $def -Force }
+        }
 
         $exePath = Join-Path $SrcRebuild "bin\$cfg\$exe.exe"
         if (-not (Test-Path $exePath)) { Fail "$exe.exe was not produced." }
