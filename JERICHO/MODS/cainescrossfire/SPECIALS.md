@@ -30,7 +30,7 @@ Firing one headlessly (the debug driver):
 270:fire:deadstar
 ```
 
-## The ten
+## The eleven
 
 | internal | display | car | recharge | capacity |
 |---|---|---|---|---|
@@ -44,6 +44,7 @@ Firing one headlessly (the debug driver):
 | `special_bootlegger` | Lead Hail | Bootlegger | 600 (20s) | 2 |
 | `special_invocada` | Cyclone | Invocada | 780 (26s) | 2 |
 | `special_fixer` | Laser Lock | Fixer | 150 (5s) | 2 |
+| `special_wheelman` | Shockwave | Wheelman | 700 (23s) | 2 |
 
 ### Hornet — Spike Storm
 
@@ -69,6 +70,20 @@ underside down through the surface. The attacker is held **level with the
 victim's own origin** — the collision solver decides the final height, so a
 positive lift only gave it more to push back up (which is what floated the truck
 before). Crunching plays throughout on the engine's own heavy-crash sample.
+
+### Wheelman — Shockwave
+
+**PLACEHOLDER.** A big bang goes off where Wheelman is standing and everything
+within 2200 units takes falling damage from it: 1800 at the centre, nothing at
+the rim. It is a bomb he is inside - short range, awkward to place, very good
+when it lands.
+
+The bang itself has **no collision**: its FX profile (`SHOCK`) is `collide = 0`,
+so the engine's own explosion push/damage branch never runs for it and the
+explosion is pure presentation. That is what stops the blast double-dipping -
+the special's own radial damage is the whole of it, once. Wheelman is skipped as
+its victim (he paid the charge to be at the centre of it) but is still thrown up
+by it, so it reads as a detonation rather than a decal.
 
 ### Bootlegger — Lead Hail
 

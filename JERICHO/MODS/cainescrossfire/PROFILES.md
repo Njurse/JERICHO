@@ -120,7 +120,7 @@ CC_FORCE_ARENA=3 CC_FORCE_CAR=6 CC_FORCE_OPPONENTS=6 \
 
 ## The test roster
 
-Ten profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):
+Eleven profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):
 
 | internal | display | city | model | A/S/H/P | special | palette |
 |---|---|---|---|---|---|---|
@@ -134,6 +134,7 @@ Ten profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):
 | `bootlegger` | Bootlegger | Vegas | 1 | 2/5/4/3 | Lead Hail | 1 |
 | `invocada` | Invocada | Rio | 3 | 4/3/2/5 | Cyclone | 0 |
 | `fixer` | Fixer | Chicago | 2 | 3/3/4/5 | Laser Lock | 3 |
+| `wheelman` | Wheelman | Chicago | 12 | 4/3/3/4 | Shockwave | – |
 
 The numbers are first-test placeholders — meant to be tuned.
 

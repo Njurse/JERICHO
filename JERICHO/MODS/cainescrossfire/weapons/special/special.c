@@ -56,6 +56,7 @@ void cd2SpecialsRegister(JERICHO_CONTEXT* ctx)
 	cd2SpecialBootleggerRegister(ctx);
 	cd2SpecialInvocadaRegister(ctx);
 	cd2SpecialFixerRegister(ctx);
+	cd2SpecialWheelmanRegister(ctx);
 
-	ctx->jer_log(ctx, "[cainescrossfire] %d vehicle special(s) registered\n", 10);
+	ctx->jer_log(ctx, "[cainescrossfire] %d vehicle special(s) registered\n", 11);
 }

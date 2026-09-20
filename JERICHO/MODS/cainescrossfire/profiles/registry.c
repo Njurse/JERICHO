@@ -25,7 +25,8 @@ static const CD2_VEH_PROFILE* const gVehRows[CD2_VEH_COUNT] =
 	&cd2VehRowObelisk,	/* CD2_VEH_OBELISK */
 	&cd2VehRowBootlegger,	/* CD2_VEH_BOOTLEGGER */
 	&cd2VehRowInvocada,	/* CD2_VEH_INVOCADA */
-	&cd2VehRowFixer		/* CD2_VEH_FIXER */
+	&cd2VehRowFixer,		/* CD2_VEH_FIXER */
+	&cd2VehRowWheelman	/* CD2_VEH_WHEELMAN */
 };
 
 const CD2_VEH_PROFILE* cd2VehDef(int profileId)

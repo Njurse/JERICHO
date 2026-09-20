@@ -63,6 +63,9 @@ static const CD2_FX_DEF gFxDefs[] =
 	// the only FX primitive there is, so a puff of smoke is a bang with the
 	// colour taken out of it and the expansion slowed down.
 	{ CD2_FX_SMOKE,   "SMOKE",   LITTLE_BANG, 300, 2000,  2000,  4096,    0,      40,    0, 0, 0 },
+	// a shockwave: the big bang, big and slow, with collision OFF - so it is
+	// pure presentation and whatever spawns it owns the damage entirely.
+	{ CD2_FX_SHOCK,   "SHOCK",   BIG_BANG,	100,  5200,  5200,  4096,    0,      150,   200, 225, 255 },
 };
 
 #define CD2_FX_DEF_COUNT (int)(sizeof(gFxDefs) / sizeof(gFxDefs[0]))

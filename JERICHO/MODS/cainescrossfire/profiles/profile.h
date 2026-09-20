@@ -52,6 +52,7 @@ enum
 	CD2_VEH_BOOTLEGGER,	// Vegas' runner
 	CD2_VEH_INVOCADA,	// Rio's storm
 	CD2_VEH_FIXER,		// Chicago's sniper
+	CD2_VEH_WHEELMAN,	// Chicago's bomb
 	CD2_VEH_COUNT,
 	CD2_VEH_NONE = -1
 };

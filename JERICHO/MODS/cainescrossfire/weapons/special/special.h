@@ -28,6 +28,7 @@ extern const CD2_WEAPON_DEF cd2WdefSpecialObelisk;	// special/obelisk.c
 extern const CD2_WEAPON_DEF cd2WdefSpecialBootlegger;	// special/bootlegger.c
 extern const CD2_WEAPON_DEF cd2WdefSpecialInvocada;	// special/invocada.c
 extern const CD2_WEAPON_DEF cd2WdefSpecialFixer;	// special/fixer.c
+extern const CD2_WEAPON_DEF cd2WdefSpecialWheelman;	// special/wheelman.c
 
 void cd2SpecialHornetRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialAvalancheRegister(JERICHO_CONTEXT* ctx);
@@ -39,6 +40,7 @@ void cd2SpecialObeliskRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialBootleggerRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialInvocadaRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialFixerRegister(JERICHO_CONTEXT* ctx);
+void cd2SpecialWheelmanRegister(JERICHO_CONTEXT* ctx);
 // Register every special's status hooks (called from the module entry).
 void cd2SpecialsRegister(JERICHO_CONTEXT* ctx);
 
