@@ -18,6 +18,7 @@ extern void InitOverheadMap(); // 0x000197BC
 extern void ProcessOverlayLump(char *lump_ptr, int lump_size); // 0x00016AE8
 
 extern void DrawTargetBlip(VECTOR *pos, u_char r, u_char g, u_char b, int flags); // 0x00016280
+extern void DrawPlayerDot(VECTOR *pos, short rot, u_char r, u_char g, u_char b, int flags); // 0x00016208
 extern void DrawTargetArrow(VECTOR *pos, int flags); // 0x00016578
 
 extern void DrawCopIndicators(void);

@@ -407,6 +407,7 @@ static int cd2AiFindTarget(CAR_DATA* cp, VECTOR* out)
 }
 
 extern void DrawTargetBlip(VECTOR* pos, unsigned char r, unsigned char g, unsigned char b, int flags);
+extern void DrawPlayerDot(VECTOR* pos, short rot, unsigned char r, unsigned char g, unsigned char b, int flags);
 
 static int cd2AiSqrt(int v)
 {
@@ -2112,7 +2113,10 @@ static int cd2AiOnDrawMap(void* ud, void* args)
 			}
 		}
 
-		DrawTargetBlip(&p, r, g, b, a->flags);
+		// A DIRECTIONAL marker, the way the co-op maps mark each player: the
+		// engine's rotated player dot, so a contestant's heading reads off the
+		// map (negated, as the stock player blip is).
+		DrawPlayerDot(&p, -(short)car_data[id].hd.direction, r, g, b, a->flags);
 		plotted++;
 	}
 
