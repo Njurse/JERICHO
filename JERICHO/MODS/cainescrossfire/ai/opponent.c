@@ -54,7 +54,8 @@
 #endif
 
 #define CD2_AI_SPAWN_OFFSET	900	// how far beside the player to spawn
-#define CD2_AI_ENGAGE_RANGE	10000	// close to this and it commits to a fight.
+#define CD2_AI_ENGAGE_RANGE	14000	// close to this and it commits to a fight (was
+					// 10000: they would rather roam than engage)
 					//    Tuned both ways: 12000 made a target always
 					//    available on a city map (permanent confinement),
 					//    and 7000 produced no fights at all in 90s.
@@ -62,7 +63,9 @@
 					//    These were 12000/18000, which on a city map
 					//    means a target is always in range, so the
 					//    contest never left the area it spawned in.
-#define CD2_AI_DISPERSE_TICKS	420	// how long the opening spread lasts
+#define CD2_AI_DISPERSE_TICKS	180	// how long the opening spread lasts (was 420: it
+					// spent fourteen seconds driving away from the fight before
+					// it would consider one)
 #define CD2_AI_DISPERSE_LEG		26000	// how far the opening spread drives
 #define CD2_AI_ROAM_MIN			30000	// roam goal: nearest acceptable road node
 #define CD2_AI_ROAM_MAX			150000	// roam goal: furthest acceptable road node -
@@ -94,7 +97,18 @@
 #define CD2_AI_MASS_REF		1200	// car mass considered average (bravery reference)
 #define CD2_AI_HEALTH_REF	20000	// damage ceiling considered average
 #define CD2_AI_DANGER_RANGE	6500	// how close another car counts as a threat
-#define CD2_AI_STANDOFF		2600	// standoff a totally timid car keeps from its target
+#define CD2_AI_STANDOFF		1600	// standoff a totally timid car keeps from its target (was 2600)
+
+// FLANKING. Aiming straight at the target means arriving behind it, in
+// whatever line it is already holding - two of them queue up and neither lands
+// anything. Instead the aim is offset onto the target's SHOULDER: off to one
+// side by CD2_AI_FLANK_ANGLE while it is still far, closing to dead-on inside
+// CD2_AI_FLANK_NEAR so the pass itself is square. Which shoulder is the car's
+// own parity, so a pack splits and comes at a target from both sides instead of
+// all leaning the same way.
+#define CD2_AI_FLANK_ANGLE	520	// ~46 deg off the target at full flank
+#define CD2_AI_FLANK_NEAR	2500	// inside this it lines up dead-on to hit
+#define CD2_AI_FLANK_FAR	9000	// out here the flank is at full angle
 #define CD2_AI_FLEE_COOLDOWN	900	// frames before it will break contact again
 #define CD2_AI_FIRE_DISTANCE	3200	// ring to hold when shooting a parked car
 #define CD2_AI_STATIONARY		60		// target speed below which it counts as parked
@@ -105,7 +119,8 @@
 					//    wind on, and that understeer is what put them
 					//    into walls. 105 is ~3.4 frames: responsive, and
 					//    still smoothed enough not to twitch.
-#define CD2_AI_THRUST_RATE	120	// max thrust change per frame. Full throttle is
+#define CD2_AI_THRUST_RATE	220	// max thrust change per frame. Full throttle is
+					// (was 120: on the power twice as fast)
 					//    CD2_TMB_THRUST (4215), so 8 took ~527 frames
 					//    (~9 seconds) to reach - they were barely
 					//    accelerating, which reads as timidity. 120 gets
@@ -1250,7 +1265,28 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	    targetD2 < (long long)CD2_AI_FIRE_RANGE * CD2_AI_FIRE_RANGE)
 	{
 		int toTarget = ratan2(targetV.vx - carV.vx, targetV.vz - carV.vz);
-		int aimErr = toTarget - desired;
+		int aimErr;
+
+		// FLANK (see the constants): swing the aim onto a shoulder while it is
+		// far out, and back onto the target as it closes, so the approach comes
+		// in off the target's own line and lands square.
+		if (targetD2 > 0)
+		{
+			int span = CD2_AI_FLANK_FAR - CD2_AI_FLANK_NEAR;
+			int d = cd2AiSqrt(targetD2);
+			int k = 0;
+
+			if (span > 0 && d > CD2_AI_FLANK_NEAR)
+				k = ((d - CD2_AI_FLANK_NEAR) * 4096) / span;
+
+			if (k > 4096)
+				k = 4096;
+
+			if (k > 0)
+				toTarget += ((cp->id & 1) ? 1 : -1) * ((CD2_AI_FLANK_ANGLE * k) >> 12);
+		}
+
+		aimErr = toTarget - desired;
 
 		while (aimErr > 2048)
 			aimErr -= 4096;
