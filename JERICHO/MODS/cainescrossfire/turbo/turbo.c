@@ -159,7 +159,7 @@ static void cd2TurboKick(int carId, int reverse)
 void cd2TurboPad(int carId, int pad)
 {
 	CD2_TURBO_STATE* st;
-	int gasDown, brakeDown, gasHit, brakeHit, button, hit;
+	int gasDown, brakeDown, spinDown, gasHit, brakeHit, spinHit, button, hit;
 
 	if (carId < 0 || carId >= MAX_CARS)
 		return;
@@ -185,15 +185,17 @@ void cd2TurboPad(int carId, int pad)
 	// already remapped, so this follows the player's own button config.
 	gasDown = (pad & CAR_PAD_ACCEL) ? 1 : 0;
 	brakeDown = (pad & CAR_PAD_BRAKE) ? 1 : 0;
+	spinDown = (pad & CAR_PAD_WHEELSPIN) ? 1 : 0;
 
 	gasHit = (gasDown && !(st->prevPad & CAR_PAD_ACCEL)) ? 1 : 0;
 	brakeHit = (brakeDown && !(st->prevPad & CAR_PAD_BRAKE)) ? 1 : 0;
+	spinHit = (spinDown && !(st->prevPad & CAR_PAD_WHEELSPIN)) ? 1 : 0;
 
 	if (st->active)
 	{
 		/* hold it or lose it: the driver releasing that button ends the boost.
 		 * A programmatic hold (st->hold) stands in for a held button. */
-		if (!st->hold && (st->reverse ? brakeDown : gasDown) == 0)
+		if (!st->hold && (st->reverse ? spinDown : gasDown) == 0)
 		{
 			st->active = 0;
 			st->heldButton = -1;
@@ -218,9 +220,10 @@ void cd2TurboPad(int carId, int pad)
 	}
 	else
 	{
-		// a double tap on either drive button
-		button = gasHit ? CAR_PAD_ACCEL : (brakeHit ? CAR_PAD_BRAKE : 0);
-		hit = gasHit || brakeHit;
+		// a double tap on the gas, or on the WHEELSPIN button (circle) for a
+		// reverse boost - the handbrake-turn button, not the brake
+		button = gasHit ? CAR_PAD_ACCEL : (spinHit ? CAR_PAD_WHEELSPIN : 0);
+		hit = gasHit || spinHit;
 
 		if (hit)
 		{
@@ -231,7 +234,7 @@ void cd2TurboPad(int carId, int pad)
 				(FrameCnt - st->tapFrame) <= CD2_TURBO_TAP_GRACE && st->meter > 0)
 			{
 				st->active = 1;
-				st->reverse = (button == CAR_PAD_BRAKE) ? 1 : 0;
+				st->reverse = (button == CAR_PAD_WHEELSPIN) ? 1 : 0;
 				st->heldButton = button;
 				st->tapFrame = -1;
 
