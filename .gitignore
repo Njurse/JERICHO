@@ -54,3 +54,6 @@ src_rebuild/Makefile
 # python bytecode from the mp test tools
 __pycache__/
 *.pyc
+
+# local release artifacts from tools/publish_release.ps1
+dist/
