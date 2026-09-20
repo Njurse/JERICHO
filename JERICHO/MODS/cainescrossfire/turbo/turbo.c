@@ -41,6 +41,8 @@ typedef struct CD2_TURBO_STATE
 	int hold;		// programmatic hold: keeps the boost on until it runs out
 	int shove;
 				// (the debug driver, and any future scripted/AI driver)
+	int speedAtEngage;	// the car's speed the moment the boost engaged
+	int kickLeft;		// frames of the measurement window still to run
 } CD2_TURBO_STATE;
 
 static CD2_TURBO_STATE gTurbo[MAX_CARS];
@@ -138,28 +140,12 @@ void cd2TurboResetAll(void)
 // Called once per frame per car from the pad hook, with the pad word the module
 // sees for that car. Everything is edge-detected here so callers just hand over
 // the pad.
-// ---------------------------------------------------------------------------
-// The kick that goes with a boost, forward or reverse. Shared rather than written twice,
-// because it WAS written twice and only the pad path got the reverse mirror: a scripted
-// reverse boost (cd2TurboForce(carId, 2)) still performed the forward gesture. A reverse
-// launch is the mirror of a forward one - nose DOWN, weight FORWARD - and its lift is
-// zero rather than negative, because the knock has no downward lift to give (knock.h).
-// [D] [T]
-static void cd2TurboKick(int carId, int reverse)
-{
-	int mag = (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100;
-
-	if (reverse)
-		cd2KnockAdd(carId, -mag, 0, 0, 0, CD2_TURBO_KICK_SHIFT);
-	else
-		cd2KnockAdd(carId, mag, 0, 0, 1, -CD2_TURBO_KICK_SHIFT);
-}
-
 // [D] [T]
 void cd2TurboPad(int carId, int pad)
 {
 	CD2_TURBO_STATE* st;
-	int gasDown, brakeDown, spinDown, gasHit, brakeHit, spinHit, button, hit;
+	int gasDown, revDown, gasHit, revHit, button, hit;
+	int gasBit, revBit;
 
 	if (carId < 0 || carId >= MAX_CARS)
 		return;
@@ -180,22 +166,32 @@ void cd2TurboPad(int carId, int pad)
 		st->meter = CD2_TURBO_METER_FRAMES;
 	}
 
-	// the drive button and the reverse button, named the way the ENGINE names them
-	// (pad.h's ECarPads) rather than as raw bits: the mask the engine hands us is
-	// already remapped, so this follows the player's own button config.
-	gasDown = (pad & CAR_PAD_ACCEL) ? 1 : 0;
-	brakeDown = (pad & CAR_PAD_BRAKE) ? 1 : 0;
-	spinDown = (pad & CAR_PAD_WHEELSPIN) ? 1 : 0;
+	/* WHICH button is the gas is the MODULE's business, not the engine's. With
+	 * TMB buttons - the driving scheme this mod uses - SQUARE is the gas and
+	 * CIRCLE is the brake (cainescrossfiresim.c rewrites the pad that way, AFTER
+	 * this runs). Reading the engine's stock names instead meant watching Cross
+	 * (Tight Turn, unless tmbTight is set) for the forward boost and the BRAKE
+	 * for the reverse one: double-tapping the gas did nothing at all, and the
+	 * only boost anyone could find came off the brake - so the turbo "only
+	 * worked in reverse". */
+	if (gCd2Cfg.tmbButtons)
+		gasBit = gCd2Cfg.tmbTight ? MPAD_CROSS : MPAD_SQUARE;
+	else
+		gasBit = CAR_PAD_ACCEL;
 
-	gasHit = (gasDown && !(st->prevPad & CAR_PAD_ACCEL)) ? 1 : 0;
-	brakeHit = (brakeDown && !(st->prevPad & CAR_PAD_BRAKE)) ? 1 : 0;
-	spinHit = (spinDown && !(st->prevPad & CAR_PAD_WHEELSPIN)) ? 1 : 0;
+	revBit = MPAD_CIRCLE;	/* the brake here, the handbrake stock */
+
+	gasDown = (pad & gasBit) ? 1 : 0;
+	revDown = (pad & revBit) ? 1 : 0;
+
+	gasHit = (gasDown && !(st->prevPad & gasBit)) ? 1 : 0;
+	revHit = (revDown && !(st->prevPad & revBit)) ? 1 : 0;
 
 	if (st->active)
 	{
 		/* hold it or lose it: the driver releasing that button ends the boost.
 		 * A programmatic hold (st->hold) stands in for a held button. */
-		if (!st->hold && (st->reverse ? spinDown : gasDown) == 0)
+		if (!st->hold && (st->reverse ? revDown : gasDown) == 0)
 		{
 			st->active = 0;
 			st->heldButton = -1;
@@ -220,10 +216,9 @@ void cd2TurboPad(int carId, int pad)
 	}
 	else
 	{
-		// a double tap on the gas, or on the WHEELSPIN button (circle) for a
-		// reverse boost - the handbrake-turn button, not the brake
-		button = gasHit ? CAR_PAD_ACCEL : (spinHit ? CAR_PAD_WHEELSPIN : 0);
-		hit = gasHit || spinHit;
+		// a double tap on the gas, or on CIRCLE (the brake) for a reverse boost
+		button = gasHit ? gasBit : (revHit ? revBit : 0);
+		hit = gasHit || revHit;
 
 		if (hit)
 		{
@@ -234,9 +229,14 @@ void cd2TurboPad(int carId, int pad)
 				(FrameCnt - st->tapFrame) <= CD2_TURBO_TAP_GRACE && st->meter > 0)
 			{
 				st->active = 1;
-				st->reverse = (button == CAR_PAD_WHEELSPIN) ? 1 : 0;
+				st->reverse = (button == revBit) ? 1 : 0;
 				st->heldButton = button;
 				st->tapFrame = -1;
+
+				/* remember where the car was, so the kick can be sized by what
+				 * the boost actually does to it (see the measurement at the end) */
+				st->speedAtEngage = car_data[carId].hd.speed;
+				st->kickLeft = CD2_TURBO_KICK_FRAMES;
 
 				/* the kick: a shove owed to the integrator, and a knock that throws
 				 * the weight. An IMPULSE, so the spring eases it in and settles it
@@ -250,8 +250,6 @@ void cd2TurboPad(int carId, int pad)
 
 				jer_log("[cainescrossfire] turbo engage car=%d (%s)\n",
 					carId, st->reverse ? "reverse" : "forward");
-
-				cd2TurboKick(carId, st->reverse);
 			}
 			else
 			{
@@ -265,6 +263,39 @@ void cd2TurboPad(int carId, int pad)
 		{
 			st->tapFrame = -1;	// the window closed (or the level restarted)
 		}
+	}
+
+	/* --- the measured kick -------------------------------------------------
+	 * How hard the boost throws the weight is decided by what it ACTUALLY did:
+	 * the speed the car gained over the window since it engaged. A boost from a
+	 * crawl pitches the body hard; one that barely changes an already-fast car
+	 * hardly moves it. A flat impulse slammed every engagement identically,
+	 * which is the "always as strong as it doesn't need to be" this replaces. */
+	if (st->kickLeft > 0 && --st->kickLeft == 0)
+	{
+		CAR_DATA* cp = &car_data[carId];
+		int gain = cp->hd.speed - st->speedAtEngage;
+		int ceiling = (CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH) * CD2_TURBO_KICK_KNOCK_PCT) / 100;
+		int floor = (ceiling * CD2_TURBO_KICK_MIN_PCT) / 100;
+		int mag;
+
+		if (st->reverse)
+			gain = -gain;
+		if (gain < 0)
+			gain = 0;
+
+		mag = (ceiling * gain) / CD2_TURBO_KICK_FULL_GAIN;
+		if (mag > ceiling)
+			mag = ceiling;
+		if (mag < floor)
+			mag = floor;
+
+		cd2KnockAdd(carId, st->reverse ? -mag : mag, 0, 0,
+			st->reverse ? 0 : 1,
+			st->reverse ? CD2_TURBO_KICK_SHIFT : -CD2_TURBO_KICK_SHIFT);
+
+		jer_log("[cainescrossfire] turbo kick car=%d gain=%d mag=%d of %d\n",
+			carId, gain, mag, ceiling);
 	}
 
 	st->prevPad = pad;
@@ -387,7 +418,8 @@ void cd2TurboForce(int carId, int on)
 		gTurbo[carId].reverse = (on == 2) ? 1 : 0;	/* 2 = force a REVERSE boost */
 		gTurbo[carId].hold = 1;		/* keep it on so the meter can be watched */
 		gTurbo[carId].shove = 1;
-		cd2TurboKick(carId, gTurbo[carId].reverse);
+		gTurbo[carId].speedAtEngage = car_data[carId].hd.speed;
+		gTurbo[carId].kickLeft = CD2_TURBO_KICK_FRAMES;
 	}
 	else
 	{

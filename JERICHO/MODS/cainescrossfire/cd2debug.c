@@ -254,10 +254,17 @@ static int cd2DbgReadAction(const char** s, int* arg)
 	if (cd2DbgMatch(&p, "pad"))
 	{
 	/* pad:<mask> -- hold a pad mask on the PLAYER'S car until another pad: step
-	 * replaces it (pad:0 releases). A mask is MPAD_*, so 64 = cross = drive, 128 =
-	 * square = brake, 16 = triangle = handbrake. This is how a manoeuvre that needs
-	 * a driver's hands - a launch, a release, a double tap - gets exercised headlessly
-	 * at all: the AI mostly holds the throttle, so it never releases for you. */
+	 * replaces it (pad:0 releases). Decimal, MPAD_* bits, and named for THIS
+	 * module's driving scheme (tmb_buttons), not the engine's stock names - the
+	 * stock ones have Square as the brake, which is the gas here:
+	 *
+	 *     64 = cross  - Tight Turn (the gas too, with tmb_tight = 1)
+	 *    128 = square - GAS
+	 *     32 = circle - BRAKE (double-tap it for a reverse turbo)
+	 *
+	 * This is how a manoeuvre that needs a driver's hands - a launch, a release,
+	 * a double tap - gets exercised headlessly at all: the AI mostly holds the
+	 * throttle, so it never releases for you. */
 	if (*p != ':')
 		return CD2_DBG_NONE;
 

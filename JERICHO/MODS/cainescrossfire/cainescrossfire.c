@@ -451,6 +451,27 @@ CD2_STATS cd2GetStats(CAR_DATA* cp)
 
 		if (accelPct != 100)
 			s.accel = (s.accel * accelPct) / 100;
+
+		/* DEATH DASH: the same lever a second time. The dash used to write the
+		 * car's velocity and wheel speed straight in, which the handling model
+		 * overwrote on the very next frame - and once it was driven by thrust
+		 * instead, the car simply stopped accelerating at its own top speed
+		 * (measured: 341 flat, of a 660 target). These caps are what the sim
+		 * actually obeys. */
+		{
+			int dashSpeed = 100, dashAccel = 100;
+
+			cd2SpecialDashPct(cp->id, &dashSpeed, &dashAccel);
+
+			if (dashSpeed != 100)
+			{
+				s.topSpeed = (s.topSpeed * dashSpeed) / 100;
+				s.reverseSpeed = (s.reverseSpeed * dashSpeed) / 100;
+			}
+
+			if (dashAccel != 100)
+				s.accel = (s.accel * dashAccel) / 100;
+		}
 	}
 
 	return s;

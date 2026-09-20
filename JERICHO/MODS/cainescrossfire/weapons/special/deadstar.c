@@ -27,44 +27,96 @@
 #include <string.h>
 
 #define CD2_DASH_FRAMES		75	// 2.5s
-#define CD2_DASH_SPEED		560	// world units/frame (a boosted top)
+#define CD2_DASH_SPEED		660	// the top the dash is aiming for (reported, not written)
+#define CD2_DASH_SPEED_PCT	195	// ...as a multiplier on the car's own top (turbo uses 125)
+#define CD2_DASH_ACCEL_PCT	260	// and how hard it gets there
+#define CD2_DASH_THRUST		12000	// engine force while dashing (cp->thrust is ~4215 flat out)
 #define CD2_DASH_HORN2_FRAME	22	// 0.75s in -> the second horn
 #define CD2_DASH_DAMAGE_MULT	4
 #define CD2_DASH_SIDE_BONUS	15	// % extra on a near-90 side hit
 
 static int gDashFrames[MAX_CARS];
 static int gHornTimer[MAX_CARS];	// frames until the second horn (0 = done)
+static int gDashTold[MAX_CARS];	// the engine override has been reported once
 static int gDashChannel = -1;
 
-static void cd2DeadstarFire(void* vcp)
+// The dash's real lever: the car's own top speed and acceleration, raised for
+// the window. NOTHING ELSE can do this - the engine clamps a car at its own top
+// speed no matter how much thrust it is given.
+void cd2SpecialDashPct(int carId, int* speedPct, int* accelPct)
 {
-	CAR_DATA* cp = (CAR_DATA*)vcp;
-	VECTOR fwd;
+	*speedPct = 100;
+	*accelPct = 100;
 
-	if (cp == NULL || cp->ap.carCos == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+	if (carId < 0 || carId >= MAX_CARS || gDashFrames[carId] <= 0)
 		return;
 
-	// instant acceleration: set the forward velocity to the dash top
-	cd2WpnForward(cp, &fwd);
+	*speedPct = CD2_DASH_SPEED_PCT;
+	*accelPct = CD2_DASH_ACCEL_PCT;
+}
 
-	cp->hd.speed = CD2_DASH_SPEED;
-	cp->st.n.linearVelocity[0] = (int)(((long long)fwd.vx * CD2_DASH_SPEED) >> 12);
-	cp->st.n.linearVelocity[1] = (int)(((long long)fwd.vy * CD2_DASH_SPEED) >> 12);
-	cp->st.n.linearVelocity[2] = (int)(((long long)fwd.vz * CD2_DASH_SPEED) >> 12);
-
-	gDashFrames[cp->id] = CD2_DASH_FRAMES;
-	gHornTimer[cp->id] = CD2_DASH_HORN2_FRAME;
-
+// The car's OWN horn - the sample the engine plays for it in LeadHorn
+// (SOUND_BANK_CARS, bank*3+2, bank = GetCarBankSample(model)). The old cut
+// reached for SOUND_BANK_SFX 4, which is one of the engine's CRASH samples, so
+// the "horns" were a thud at best.
+static void cd2DeadstarHorn(CAR_DATA* cp)
+{
 	if (gDashChannel < 0)
 	{
 		gDashChannel = GetFreeChannel(1);
 		LockChannel(gDashChannel);
 	}
 
-	// horn #1
 	if (gDashChannel >= 0)
-		Start3DSoundVolPitch(gDashChannel, SOUND_BANK_SFX, 4,
-			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -1500, 4096);
+		Start3DSoundVolPitch(gDashChannel, SOUND_BANK_CARS,
+			GetCarBankSample(cp->ap.model) * 3 + 2,
+			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -1200, 4096);
+}
+
+static void cd2DeadstarFire(void* vcp)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+
+	if (cp == NULL || cp->ap.carCos == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return;
+
+	gDashFrames[cp->id] = CD2_DASH_FRAMES;
+	gHornTimer[cp->id] = CD2_DASH_HORN2_FRAME;
+	gDashTold[cp->id] = 0;
+
+	// horn #1
+	cd2DeadstarHorn(cp);
+
+	printInfo("[cainescrossfire] deadstar: dash on car=%d (%d frames, thrust %d)\n",
+		cp->id, CD2_DASH_FRAMES, CD2_DASH_THRUST);
+}
+
+// The dash drives the car through the ENGINE. Writing linearVelocity/hd.speed
+// straight in (which is what it used to do) reads as instant, and then the
+// handling model integrates the wheel forces and overwrites the lot on the very
+// next frame - the car simply STOPPED, and the dash went nowhere. `thrust` is
+// the lever the engine actually obeys, so it is what the dash uses, every frame
+// of the window, whether or not the driver is on the gas.
+static int cd2DeadstarOnEngine(void* ud, void* args)
+{
+	JER_ARGS_CAR_ENGINE* a = (JER_ARGS_CAR_ENGINE*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car;
+
+	(void)ud;
+
+	if (cp == NULL || cp->id < 0 || cp->id >= MAX_CARS || gDashFrames[cp->id] <= 0)
+		return JER_RESULT_CONTINUE;
+
+	a->thrust = CD2_DASH_THRUST;
+
+	if (!gDashTold[cp->id])
+	{
+		gDashTold[cp->id] = 1;
+		printInfo("[cainescrossfire] deadstar: engine forced to %d on car=%d (speed was %d)\n",
+			a->thrust, cp->id, a->speed);
+	}
+
+	return JER_RESULT_CONTINUE;
 }
 
 static int cd2DeadstarOnFrame(void* ud, void* args)
@@ -88,12 +140,21 @@ static int cd2DeadstarOnFrame(void* ud, void* args)
 		}
 
 		// the second horn, 0.75s in
-		if (gHornTimer[i] > 0 && --gHornTimer[i] == 0 && gDashChannel >= 0)
-			Start3DSoundVolPitch(gDashChannel, SOUND_BANK_SFX, 4,
-				cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -1500, 4096);
+		if (gHornTimer[i] > 0 && --gHornTimer[i] == 0)
+			cd2DeadstarHorn(cp);
+
+		// the dash profile, every 15 frames: what the thrust is actually doing
+		// to the car, so the dials are set from a run rather than by feel
+		if (gDashFrames[i] % 15 == 0)
+			printInfo("[cainescrossfire] deadstar: dash car=%d left=%d speed=%d pos=(%d,%d) (aim %d)\n",
+				i, gDashFrames[i], cp->hd.speed, cp->hd.where.t[0], cp->hd.where.t[2], CD2_DASH_SPEED);
 
 		if (--gDashFrames[i] <= 0)
+		{
 			gDashFrames[i] = 0;
+
+			printInfo("[cainescrossfire] deadstar: dash done car=%d speed=%d\n", i, cp->hd.speed);
+		}
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -173,6 +234,7 @@ static int cd2DeadstarOnGameStart(void* ud, void* args)
 void cd2SpecialDeadstarRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2DeadstarOnFrame, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_ENGINE, cd2DeadstarOnEngine, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_VS_CAR, cd2DeadstarOnCarVsCar, NULL, 5);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2DeadstarOnGameStart, NULL, 0);
 	// the same reset when the game returns to the frontend menus

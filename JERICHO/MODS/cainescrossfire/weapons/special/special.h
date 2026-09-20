@@ -33,7 +33,6 @@ void cd2SpecialBruxaRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialHighwaymanRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialDeadstarRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialObeliskRegister(JERICHO_CONTEXT* ctx);
-
 // Register every special's status hooks (called from the module entry).
 void cd2SpecialsRegister(JERICHO_CONTEXT* ctx);
 
@@ -47,5 +46,14 @@ void cd2SpecFwdRight(const CAR_DATA* cp, VECTOR* fwd, VECTOR* right);
 // A y-up direction `i` eighths around the car's heading (i = 0..7, 0 = forward,
 // 2 = right, 4 = back, 6 = left), as a unit *4096 vector.
 void cd2SpecCompass(const CAR_DATA* cp, int eighth, VECTOR* out);
+
+// ---------------------------------------------------------------------------
+// The dash lever (special/deadstar.c)
+// ---------------------------------------------------------------------------
+// Death Dash's multiplier on a car's OWN stats, 100 = not dashing. The same
+// lever the turbo pulls, and for the same reason: the sim reads these caps, so
+// raised thrust alone can never take a car past its own top speed (measured at
+// 341 of a 660 target, flat). cainescrossfire.c's cd2GetStats applies it.
+void cd2SpecialDashPct(int carId, int* speedPct, int* accelPct);
 
 #endif /* CD2_SPECIAL_H */

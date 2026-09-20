@@ -167,7 +167,16 @@ static int cd2CorvoOnFrame(void* ud, void* args)
 		}
 
 		if (--gCorvoFrames[i] <= 0)
+		{
 			gCorvoFrames[i] = 0;
+
+			// The wail is a LOOPED channel: it has to be silenced where the
+			// window ends, not only when the game returns to the frontend. Left
+			// running, it kept playing over the match after the special was long
+			// over - and firing it again stacked another wail on top.
+			if (gCorvoChannel >= 0)
+				StopChannel(gCorvoChannel);
+		}
 	}
 
 	return JER_RESULT_CONTINUE;

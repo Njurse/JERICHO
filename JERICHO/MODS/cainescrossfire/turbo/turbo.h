@@ -104,6 +104,20 @@
 
 #define CD2_TURBO_KICK_KNOCK_PCT	120
 
+// The kick is measured, not assumed. The impulse above is the CEILING: what the
+// car is actually given is that scaled by how much speed the boost really added
+// over CD2_TURBO_KICK_FRAMES. A boost from a crawl throws the weight hard; one
+// that only nudges a car already near its top barely moves it - and with a flat
+// impulse every engagement looked identical, so a boost that changed nothing
+// still slammed the body around. CD2_TURBO_KICK_FULL_GAIN is the speed gain (in
+// wheel-speed units) that earns the full ceiling; the run logs the measured
+// gain, so this is tuned from a log rather than by feel.
+#define CD2_TURBO_KICK_FULL_GAIN	180
+
+// ...and a floor, so a boost that does add something always reads as a shove
+// rather than nothing at all (percentage of the ceiling).
+#define CD2_TURBO_KICK_MIN_PCT		15
+
 // How far back the weight goes when it engages. A wheelie is the weight moving
 // over the back wheels as much as the nose coming up, and without this the car just
 // rotates on the spot. Negative is backwards, along the car.
