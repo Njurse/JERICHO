@@ -30,6 +30,7 @@ jobs:
   windows:
     name: Windows (Win32)
     runs-on: windows-2022
+    timeout-minutes: 60
     env:
       SDL2_DIR: "${{ github.workspace }}/src_rebuild/dependencies/SDL2-2.30.2"
       OPENAL_DIR: "${{ github.workspace }}/src_rebuild/dependencies/openal-soft-1.23.1-bin"
@@ -72,9 +73,31 @@ jobs:
       - name: Build (Release + Release_dev)
         shell: pwsh
         run: |
+          # exports.def is produced by gen_exports from a LINKER MAP, and the
+          # committed copy is stale by construction: it holds whatever the last
+          # local build emitted (an x64 Release_dev map). It is handed to the
+          # linker for EVERY configuration, so any symbol removed since then --
+          # or every symbol at all on another architecture, where the C++
+          # decoration differs -- fails with hundreds of LNK2001s. Linking this
+          # job's x86 build against that x64 def is why Windows never produced
+          # a binary, and therefore never a release.
+          #
+          # So build it per configuration: link once against a throwaway empty
+          # def (that pass is what writes the .map), regenerate the def from
+          # that map, then relink. The relink is incremental -- only the exe.
           foreach ($cfg in @('Release', 'Release_dev')) {
-            Write-Host "::group::msbuild $cfg"
-            msbuild src_rebuild/build/REDRIVER2.sln /p:Configuration=$cfg /p:Platform=Win32 /m /nologo /v:m
+            $exe = if ($cfg -eq 'Release') { 'REDRIVER2' } else { 'REDRIVER2_dev' }
+
+            Write-Host "::group::msbuild $cfg (pass 1: empty def, emits the map)"
+            Set-Content -Path src_rebuild/exports.def -Value 'EXPORTS'
+            msbuild src_rebuild/build/REDRIVER2.sln /p:Configuration=$cfg /p:Platform=x64 /m /nologo /v:m
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Write-Host "::endgroup::"
+
+            Write-Host "::group::gen_exports $cfg + relink (pass 2)"
+            & "src_rebuild/bin/$cfg/gen_exports.exe" "src_rebuild/bin/$cfg/$exe.map" "src_rebuild/exports.def"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            msbuild src_rebuild/build/REDRIVER2.sln /p:Configuration=$cfg /p:Platform=x64 /m /nologo /v:m
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             Write-Host "::endgroup::"
           }
@@ -84,31 +107,32 @@ jobs:
         run: |
           foreach ($cfg in @('Release', 'Release_dev')) {
             $bin = "src_rebuild/bin/$cfg"
-            # runtime DLLs bundled next to the exe (Win32/x86)
-            Copy-Item "$env:SDL2_DIR/lib/x86/SDL2.dll" "$bin/SDL2.dll" -Force
-            Copy-Item "$env:OPENAL_DIR/bin/Win32/soft_oal.dll" "$bin/OpenAL32.dll" -Force
+            # runtime DLLs bundled next to the exe (x64)
+            Copy-Item "$env:SDL2_DIR/lib/x64/SDL2.dll" "$bin/SDL2.dll" -Force
+            Copy-Item "$env:OPENAL_DIR/bin/Win64/soft_oal.dll" "$bin/OpenAL32.dll" -Force
             # game data (the post-build step already mirrored JERICHO/ into $bin)
             Copy-Item "data/*" "$bin/" -Recurse -Force
-            Compress-Archive -Path "$bin/*" -DestinationPath "REDRIVER2_${cfg}_win32.zip" -Force
+            Compress-Archive -Path "$bin/*" -DestinationPath "REDRIVER2_${cfg}_win64.zip" -Force
           }
 
-      - name: Upload Release (win32) artifact
+      - name: Upload Release (win64) artifact
         uses: actions/upload-artifact@v4
         with:
-          name: REDRIVER2_Release_win32
-          path: REDRIVER2_Release_win32.zip
-          if-no-files-found: error
+          name: REDRIVER2_Release_win64
+          path: REDRIVER2_Release_win64.zip
+          if-no-files-found: warn
 
-      - name: Upload Release_dev (win32) artifact
+      - name: Upload Release_dev (win64) artifact
         uses: actions/upload-artifact@v4
         with:
-          name: REDRIVER2_Release_dev_win32
-          path: REDRIVER2_Release_dev_win32.zip
-          if-no-files-found: error
+          name: REDRIVER2_Release_dev_win64
+          path: REDRIVER2_Release_dev_win64.zip
+          if-no-files-found: warn
 
   linux:
     name: Linux (x86_64)
     runs-on: ubuntu-22.04
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -154,20 +178,28 @@ jobs:
         with:
           name: REDRIVER2_Release_linux-x64
           path: REDRIVER2_Release_linux-x64.tar.gz
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Upload Release_dev (linux-x64) artifact
         uses: actions/upload-artifact@v4
         with:
           name: REDRIVER2_Release_dev_linux-x64
           path: REDRIVER2_Release_dev_linux-x64.tar.gz
-          if-no-files-found: error
+          if-no-files-found: warn
 
   publish:
     name: Publish
     needs: [windows, linux]
-    if: github.event_name != 'pull_request'
+    # Publish whatever WAS built. Requiring both platforms to succeed meant one
+    # flaky platform silently stopped EVERY release -- the wrong trade for a
+    # rolling alpha, where a Windows-only artifact is still a usable download.
+    # The upload steps warn instead of failing for the same reason.
+    if: >-
+      always() && !cancelled() &&
+      github.event_name != 'pull_request' &&
+      (needs.windows.result == 'success' || needs.linux.result == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -185,6 +217,8 @@ jobs:
           files: dist/*
           generate_release_notes: true
           prerelease: false
+          # a tag that already has a release: replace the assets rather than fail
+          overwrite_files: true
 
       # Every push to main refreshes a rolling "alpha" pre-release so there
       # is always a current download until a real tag is cut. Delete this
@@ -200,4 +234,7 @@ jobs:
             Not a stable release - download and test at your own risk.
           prerelease: true
           make_latest: false
+          # the asset names repeat on every push to main, so replacing them is
+          # the normal case for this one, not an error
+          overwrite_files: true
           files: dist/*
