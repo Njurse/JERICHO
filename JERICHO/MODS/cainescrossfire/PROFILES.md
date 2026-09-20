@@ -120,7 +120,7 @@ CC_FORCE_ARENA=3 CC_FORCE_CAR=6 CC_FORCE_OPPONENTS=6 \
 
 ## The test roster
 
-Seven profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):
+Ten profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):
 
 | internal | display | city | model | A/S/H/P | special | palette |
 |---|---|---|---|---|---|---|
@@ -131,6 +131,9 @@ Seven profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):
 | `highwayman` | Highwayman | Havana | 1 | 3/3/3/5 | Breath of Fire | 2 |
 | `deadstar` | Deadstar | Rio | 12 | 3/5/3/4 | Death Dash | – |
 | `obelisk` | Obelisk | Rio | 9 | 3/3/2/5 | Missile Barrage | – |
+| `bootlegger` | Bootlegger | Vegas | 1 | 2/5/4/3 | Lead Hail | 1 |
+| `invocada` | Invocada | Rio | 3 | 4/3/2/5 | Cyclone | 0 |
+| `fixer` | Fixer | Chicago | 2 | 3/3/4/5 | Laser Lock | 3 |
 
 The numbers are first-test placeholders — meant to be tuned.
 

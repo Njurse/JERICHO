@@ -24,5 +24,8 @@ extern const CD2_VEH_PROFILE cd2VehRowBruxa;		// Rio, double shotgun
 extern const CD2_VEH_PROFILE cd2VehRowHighwayman;	// Havana, breath of fire
 extern const CD2_VEH_PROFILE cd2VehRowDeadstar;		// Rio, turbo ram
 extern const CD2_VEH_PROFILE cd2VehRowObelisk;		// Rio, missile salvo
+extern const CD2_VEH_PROFILE cd2VehRowBootlegger;	// Vegas, gunner MG (placeholder)
+extern const CD2_VEH_PROFILE cd2VehRowInvocada;		// Rio, cyclone
+extern const CD2_VEH_PROFILE cd2VehRowFixer;		// Chicago, laser (placeholder)
 
 #endif /* CD2_PROFILE_ROWS_H */

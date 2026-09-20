@@ -30,7 +30,7 @@ Firing one headlessly (the debug driver):
 270:fire:deadstar
 ```
 
-## The seven
+## The ten
 
 | internal | display | car | recharge | capacity |
 |---|---|---|---|---|
@@ -41,6 +41,9 @@ Firing one headlessly (the debug driver):
 | `special_highwayman` | Breath of Fire | Highwayman | 660 (22s) | 3 |
 | `special_deadstar` | Death Dash | Deadstar | 750 (25s) | 2 |
 | `special_obelisk` | Missile Barrage | Obelisk | 900 (30s) | 1 |
+| `special_bootlegger` | Lead Hail | Bootlegger | 600 (20s) | 2 |
+| `special_invocada` | Cyclone | Invocada | 780 (26s) | 2 |
+| `special_fixer` | Laser Lock | Fixer | 150 (5s) | 2 |
 
 ### Hornet — Spike Storm
 
@@ -66,6 +69,41 @@ underside down through the surface. The attacker is held **level with the
 victim's own origin** — the collision solver decides the final height, so a
 positive lift only gave it more to push back up (which is what floated the truck
 before). Crunching plays throughout on the engine's own heavy-crash sample.
+
+### Bootlegger — Lead Hail
+
+**PLACEHOLDER.** Five seconds of machine gun out of the gunner's side, wound up
+from a 9-frame interval to a 2-frame one over the first second, so the gun reads
+as spinning up rather than starting at full chatter. Each bullet is nearly
+nothing (55); the stream is the weapon. The rounds are the ordinary RAYCAST
+class, so they travel, hit and stop on scenery for free - only the def differs.
+
+### Invocada — Cyclone
+
+Six seconds of storm. The car goes **solid black** - body flat black and wheels
+hidden, so it is a silhouette rather than a car - with big black smoke puffs set
+around a circle that turns as the storm runs (the `SMOKE` FX profile: a bang
+with the colour taken out and the expansion slowed).
+
+Anything within 1500 units is dragged toward the eye and pushed across it, so
+victims are pulled in and left orbiting rather than flung away, with the pull
+scaled by how deep in they are and a dead zone right at the car so nothing
+judders on top of it. Damage is a slow tick (220 every 15 frames) - the storm is
+a place you do not want to be, not an instant.
+
+### Fixer — Laser Lock
+
+**PLACEHOLDER.** While the special is *selected*, a beam runs from Fixer's gunner
+to whatever it holds in its **forward cone** with a clear line to it - the same
+"always on while armed" the Hornet ring uses. The beam is a lock, not a hit: a
+different target resets the charge, and losing the target (out of the cone, out
+of range, or scenery in the way) takes both the beam and the charge with it.
+
+It goes **white → yellow → red** as the same car is held: white for the first
+two seconds with the turn eased so the fade is quick at the end of it, yellow
+turned at ~2s, red by ~4s, full charge at ~5.5s. Firing spends it: damage scales
+400 → 2600 and the twist away 200 → 1400 across the charge, and there are five
+seconds between shots, so a charge cannot simply be sat on.
 
 ### Obelisk — Missile Barrage
 

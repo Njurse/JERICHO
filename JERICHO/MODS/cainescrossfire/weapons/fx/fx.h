@@ -40,6 +40,7 @@ enum
 	CD2_FX_WRECK,			// dying car: spectacular but NO damage/collision
 	CD2_FX_ZOOMY,			// zoomy missile: small, cool blue
 	CD2_FX_FREEZE,			// freeze missile: pale ice blue
+	CD2_FX_SMOKE,			// pure black and slow: a puff of smoke, not a bang
 	CD2_FX_COUNT
 };
 

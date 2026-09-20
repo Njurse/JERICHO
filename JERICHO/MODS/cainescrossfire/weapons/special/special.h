@@ -1,4 +1,4 @@
-// weapons/special/special.h — the seven VEHICLE SPECIAL weapons.
+// weapons/special/special.h — the vehicle SPECIAL weapons, one per car.
 //
 // Each vehicle profile (profiles/) owns one unique special. They live here, one
 // file each, all driven through the ordinary weapon framework (a CD2_WEAPON_DEF
@@ -25,6 +25,9 @@ extern const CD2_WEAPON_DEF cd2WdefSpecialBruxa;	// special/bruxa.c
 extern const CD2_WEAPON_DEF cd2WdefSpecialHighwayman;	// special/highwayman.c
 extern const CD2_WEAPON_DEF cd2WdefSpecialDeadstar;	// special/deadstar.c
 extern const CD2_WEAPON_DEF cd2WdefSpecialObelisk;	// special/obelisk.c
+extern const CD2_WEAPON_DEF cd2WdefSpecialBootlegger;	// special/bootlegger.c
+extern const CD2_WEAPON_DEF cd2WdefSpecialInvocada;	// special/invocada.c
+extern const CD2_WEAPON_DEF cd2WdefSpecialFixer;	// special/fixer.c
 
 void cd2SpecialHornetRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialAvalancheRegister(JERICHO_CONTEXT* ctx);
@@ -33,6 +36,9 @@ void cd2SpecialBruxaRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialHighwaymanRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialDeadstarRegister(JERICHO_CONTEXT* ctx);
 void cd2SpecialObeliskRegister(JERICHO_CONTEXT* ctx);
+void cd2SpecialBootleggerRegister(JERICHO_CONTEXT* ctx);
+void cd2SpecialInvocadaRegister(JERICHO_CONTEXT* ctx);
+void cd2SpecialFixerRegister(JERICHO_CONTEXT* ctx);
 // Register every special's status hooks (called from the module entry).
 void cd2SpecialsRegister(JERICHO_CONTEXT* ctx);
 

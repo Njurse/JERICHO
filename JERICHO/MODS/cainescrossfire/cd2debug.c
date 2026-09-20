@@ -161,6 +161,9 @@ static int cd2DbgWeaponId(const char** s)
 		{ "special_highwayman", CD2_WID_SPECIAL_HIGHWAYMAN },
 		{ "special_deadstar", CD2_WID_SPECIAL_DEADSTAR },
 		{ "special_obelisk", CD2_WID_SPECIAL_OBELISK },
+		{ "special_bootlegger", CD2_WID_SPECIAL_BOOTLEGGER },
+		{ "special_invocada", CD2_WID_SPECIAL_INVOCADA },
+		{ "special_fixer", CD2_WID_SPECIAL_FIXER },
 		{ "hornet", CD2_WID_SPECIAL_HORNET },
 		{ "avalanche", CD2_WID_SPECIAL_AVALANCHE },
 		{ "corvo", CD2_WID_SPECIAL_CORVO },
@@ -168,6 +171,9 @@ static int cd2DbgWeaponId(const char** s)
 		{ "highwayman", CD2_WID_SPECIAL_HIGHWAYMAN },
 		{ "deadstar", CD2_WID_SPECIAL_DEADSTAR },
 		{ "obelisk", CD2_WID_SPECIAL_OBELISK },
+		{ "bootlegger", CD2_WID_SPECIAL_BOOTLEGGER },
+		{ "invocada", CD2_WID_SPECIAL_INVOCADA },
+		{ "fixer", CD2_WID_SPECIAL_FIXER },
 	};
 	const char* p = *s;
 	unsigned int w;
