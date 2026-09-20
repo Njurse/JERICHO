@@ -162,7 +162,7 @@ int cd2ProjectileThreat(const CAR_DATA* car, VECTOR* pos, VECTOR* vel)
 	for (i = 0; i < CD2_MAX_PROJECTILES; i++)
 	{
 		CD2_PROJECTILE* p = &gProj[i];
-		int dx, dy, dz, dist2, closing;
+		long long dx, dy, dz, dist2, closing;  /* 64-bit: the squared sum wraps otherwise */
 
 		if (!p->active || p->owner == car)
 			continue;
@@ -286,10 +286,10 @@ static void cd2ProjectileExplode(CD2_PROJECTILE* p)
 
 // Integer square root (Newton on the bit pattern); the engine's own helpers
 // live in files the weapon core does not otherwise pull in.
-static int cd2ProjIsqrt(int v)
+static int cd2ProjIsqrt(long long v)
 {
-	int r = 0;
-	int bit = 1 << 30;
+	long long r = 0;
+	long long bit = 1LL << 62;
 
 	if (v <= 0)
 		return 0;
@@ -325,8 +325,9 @@ static void cd2ProjectileSeek(CD2_PROJECTILE* p)
 {
 	int i, best = -1;
 	long long bestD = 0;
-	int dx, dy, dz, dm, vm;
-	int tx, ty, tz;
+	long long dx, dy, dz;
+	int dm, vm;
+	long long tx, ty, tz;
 
 	for (i = 0; i < MAX_CARS; i++)
 	{
@@ -686,7 +687,7 @@ static void cd2ProjDrawModel(CD2_PROJECTILE* p)
 	MATRIX mat;
 	VECTOR pos;
 	MODEL* model = cd2MissileModel();
-	int dx, dz;
+	long long dx, dz;
 
 	if (model == NULL)
 		return;

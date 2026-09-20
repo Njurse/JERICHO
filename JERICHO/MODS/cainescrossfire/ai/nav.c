@@ -61,10 +61,10 @@ static CD2_NAV_CACHE sCache[CD2_NAV_MAX_CARS];
 static CD2_NAV_ROUTE sLastRoute[CD2_NAV_MAX_CARS];
 static int           sLastValid[CD2_NAV_MAX_CARS];
 
-static int cd2NavIsqrt(int v)
+static int cd2NavIsqrt(long long v)
 {
-	int r = 0;
-	int bit = 1 << 30;
+	long long r = 0;
+	long long bit = 1LL << 62;
 
 	if (v <= 0)
 		return 0;
@@ -276,8 +276,8 @@ static void cd2NavDensify(CD2_NAV_ROUTE* out)
 
 static int cd2NavDist2D(int ax, int az, int bx, int bz)
 {
-	int dx = bx - ax;
-	int dz = bz - az;
+	long long dx = (long long)bx - ax;
+	long long dz = (long long)bz - az;
 
 	return cd2NavIsqrt(dx * dx + dz * dz);
 }

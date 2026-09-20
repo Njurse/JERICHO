@@ -410,6 +410,16 @@ static int cd2SelOnFrame(void* ud, void* args)
 		gCcOpened = 1;
 		gCcForced = 0;
 		printInfo("[cainescrossfire] CC select: arena menu open\n");
+
+		// Harness launch: a padless run cannot drive the menus (the module
+		// screens ignore input with no pad), so with the overrides set the match
+		// starts from here instead of on a confirm. Same launch the vehicle
+		// screen's confirm runs. Scripted runs only - a pad still gets the menus.
+		if (getenv("CC_FORCE_ARENA") != NULL && getenv("CC_FORCE_CAR") != NULL)
+		{
+			printInfo("[cainescrossfire] CC select: harness launch (no menu input)\n");
+			cd2SelLaunch(atoi(getenv("CC_FORCE_ARENA")), atoi(getenv("CC_FORCE_CAR")));
+		}
 	}
 
 	return JER_RESULT_CONTINUE;

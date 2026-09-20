@@ -409,10 +409,10 @@ static int cd2AiFindTarget(CAR_DATA* cp, VECTOR* out)
 extern void DrawTargetBlip(VECTOR* pos, unsigned char r, unsigned char g, unsigned char b, int flags);
 extern void DrawPlayerDot(VECTOR* pos, short rot, unsigned char r, unsigned char g, unsigned char b, int flags);
 
-static int cd2AiSqrt(int v)
+static int cd2AiSqrt(long long v)
 {
-	int r = 0;
-	int bit = 1 << 30;
+	long long r = 0;
+	long long bit = 1LL << 62;
 
 	if (v <= 0)
 		return 0;
@@ -1482,7 +1482,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		for (i = 0; i < MAX_CARS; i++)
 		{
 			CAR_DATA* o = &car_data[i];
-			int dx, dz, aheadDot, side;
+			long long dx, dz, aheadDot, side;
 
 			// Never dodge the car we are attacking: running it down is the
 			// whole point when it is moving.
@@ -1522,7 +1522,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			for (i = 0; i < MAX_CARS; i++)
 			{
 				CAR_DATA* o = &car_data[i];
-				int odx, odz, od2;
+				long long odx, odz, od2;
 
 				if (i == cp->id || !cd2AiIsOpponent(o))
 					continue;
@@ -1691,7 +1691,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	// --- observability snapshot (tracked opponent only) ---
 	if (A == &sAi[0])
 	{
-		int dx = 0, dz = 0, d2;
+		long long dx = 0, dz = 0, d2;
 
 		if (pcp != NULL)
 		{

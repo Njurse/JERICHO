@@ -160,6 +160,7 @@ static int cd2DbgWeaponId(const char** s)
 		{ "special_bruxa", CD2_WID_SPECIAL_BRUXA },
 		{ "special_highwayman", CD2_WID_SPECIAL_HIGHWAYMAN },
 		{ "special_deadstar", CD2_WID_SPECIAL_DEADSTAR },
+		{ "special_obelisk", CD2_WID_SPECIAL_OBELISK },
 		{ "hornet", CD2_WID_SPECIAL_HORNET },
 		{ "avalanche", CD2_WID_SPECIAL_AVALANCHE },
 		{ "corvo", CD2_WID_SPECIAL_CORVO },

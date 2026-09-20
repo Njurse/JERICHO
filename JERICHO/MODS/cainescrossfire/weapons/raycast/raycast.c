@@ -230,7 +230,7 @@ int cd2RaycastThreat(const CAR_DATA* car, VECTOR* pos, VECTOR* vel)
 	for (i = 0; i < CD2_MAX_RAYCAST; i++)
 	{
 		CD2_RAYCAST* r = &gRcast[i];
-		int dx, dy, dz, dist2, closing;
+		long long dx, dy, dz, dist2, closing;  /* 64-bit: the squared sum wraps otherwise */
 
 		if (!r->active || r->owner == car)
 			continue;

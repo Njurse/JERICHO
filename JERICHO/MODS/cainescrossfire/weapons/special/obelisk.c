@@ -95,6 +95,9 @@ static void cd2ObeliskFire(void* vcp)
 	gSalvoAcc[cp->id] = 0;
 	gSalvoVolley[cp->id] = 0;
 
+	printInfo("[cainescrossfire] obelisk: salvo fired (car=%d, %d frames, a pair every %d)\n",
+		cp->id, CD2_OBELISK_FRAMES, CD2_OBELISK_VOLLEY_EVERY);
+
 	if (gSalvoChannel < 0)
 	{
 		gSalvoChannel = GetFreeChannel(1);
@@ -153,7 +156,12 @@ static int cd2ObeliskOnFrame(void* ud, void* args)
 		}
 
 		if (--gSalvoFrames[i] <= 0)
+		{
 			gSalvoFrames[i] = 0;
+
+			printInfo("[cainescrossfire] obelisk: salvo done (car=%d, %d missiles)\n",
+				i, gSalvoVolley[i] * 2);
+		}
 	}
 
 	return JER_RESULT_CONTINUE;

@@ -129,6 +129,9 @@ static int cd2AvalancheOnCollision(void* ud, void* args)
 	gCrushFloor[att->id] = vic->hd.where.t[1];	// its ride height, to hold it flat
 	gCrushNoise[att->id] = 0;
 
+	printInfo("[cainescrossfire] avalanche: crush on car=%d over car=%d (%d frames)\n",
+		att->id, vic->id, CD2_CRUSH_FRAMES);
+
 	// and the victim stops taking the crash: the crush handles the hold
 	return JER_RESULT_CONTINUE;
 }
@@ -217,6 +220,8 @@ static int cd2AvalancheOnFrame(void* ud, void* args)
 					vic->st.n.linearVelocity[0] += (int)(((long long)fwd.vx * CD2_CRUSH_PUSH) >> 12);
 					vic->st.n.linearVelocity[2] += (int)(((long long)fwd.vz * CD2_CRUSH_PUSH) >> 12);
 					vic->hd.speed = CD2_CRUSH_PUSH;
+
+					printInfo("[cainescrossfire] avalanche: crush done, car=%d pushed car=%d off\n", i, v);
 
 					gCrushVictim[i] = -1;
 				}

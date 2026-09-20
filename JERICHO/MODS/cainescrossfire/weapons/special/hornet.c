@@ -140,35 +140,47 @@ static int cd2HornetOnFrame(void* ud, void* args)
 			for (j = 0; j < MAX_CARS; j++)
 			{
 				CAR_DATA* oc = &car_data[j];
-				int dx, dz, d2;
+				long long dx, dz, d2, base2, reach2;
+				int reach;
 
 				if (j == i || oc->controlType == CONTROL_TYPE_NONE || oc->ap.carCos == NULL)
 					continue;
 
-				dx = oc->hd.where.t[0] - c.vx;
-				dz = oc->hd.where.t[2] - c.vz;
+				dx = (long long)oc->hd.where.t[0] - c.vx;
+				dz = (long long)oc->hd.where.t[2] - c.vz;
 				d2 = dx * dx + dz * dz;
 
 				// the ring is measured centre-to-centre, so a big car can have its
 				// flank in the spikes with its centre still outside them. Add what
 				// the victim's own body reaches, so touching the spikes counts.
-				{
-					int reach = CD2_HORNET_RADIUS +
-						(oc->ap.carCos->colBox.vx + oc->ap.carCos->colBox.vz) / 2;
+				//
+				// All of this is 64-bit on purpose: a squared world distance
+				// overflows 32 bits on a big map, and a wrapped NEGATIVE read as
+				// "inside the ring" - the ring was damaging and knocking cars on
+				// the far side of the level.
+				reach = CD2_HORNET_RADIUS +
+					(oc->ap.carCos->colBox.vx + oc->ap.carCos->colBox.vz) / 2;
+				reach2 = (long long)reach * reach;
+				base2 = (long long)CD2_HORNET_RADIUS * CD2_HORNET_RADIUS;
 
-					if (d2 > reach * reach)
-						continue;
-				}
+				if (d2 > reach2)
+					continue;
+
+				// only worth saying when it is the flank case the reach was added for
+				if (d2 > base2)
+					printInfo("[cainescrossfire] hornet: ring hit car=%d, flank in the spikes\n", j);
 
 				cd2WpnDamageCar(oc, &c, cd2WdefSpecialHornet.damage, cp);
 
 				{
 					VECTOR dir;
-					int ad = (dx < 0 ? -dx : dx) + (dz < 0 ? -dz : dz);
+					long long adx = (dx < 0 ? -dx : dx);
+					long long adz = (dz < 0 ? -dz : dz);
+					long long ad = adx + adz;
 
 					if (ad < 1) ad = 1;
-					dir.vx = -(dx * 4096) / ad;
-					dir.vz = -(dz * 4096) / ad;
+					dir.vx = (int)(-(dx * 4096) / ad);
+					dir.vz = (int)(-(dz * 4096) / ad);
 					dir.vy = 0;
 					cd2WpnKnock(oc, &c, &dir, CD2_HORNET_HOP);
 				}
