@@ -21,6 +21,9 @@
 #include "weapons/core/weapon_internal.h"
 #include "weapons/special/special.h"
 
+#include "jer_notify.h"	/* jer_notify - the player's T-bone callout */
+#include "players.h"		/* player[0].playerCarId */
+
 #include <string.h>
 
 #define CD2_DASH_FRAMES		75	// 2.5s
@@ -135,7 +138,13 @@ static int cd2DeadstarOnCarVsCar(void* ud, void* args)
 
 				// |fwd| ~ 4096, so |cos| < 1/6 is within ~10 deg of square
 				if (dot < mag / 6)
+				{
 					v = v + (v * CD2_DASH_SIDE_BONUS) / 100;
+
+					// the T-bone critical is the player's moment - name it, for 3s
+					if (other->id == player[0].playerCarId)
+						jer_notify("T-Bone Damage Bonus.", 2, 3);
+				}
 			}
 		}
 
