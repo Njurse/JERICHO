@@ -2063,6 +2063,14 @@ int gBootOnFoot = 0;
 int gBootMpLevel = 0;
 int gBootMpArena = 0;
 
+/* A module may take the level launch over (mp's -host starts its own session
+ * level). When a module sets this during JER_EVENT_CMDLINE, the -level
+ * frontend-bypass below is skipped, so the engine does not load one level and
+ * then have the session load another. That double load was the "the match
+ * restarts with different weather when a client joins" report, and it also let
+ * the frontend's city win over the session's. */
+int gBootSuppressLevel = 0;
+
 #if !defined(PSX) && !defined(__EMSCRIPTEN__)
 #include <SDL_messagebox.h>
 
@@ -2895,7 +2903,12 @@ int redriver2_main(int argc, char** argv)
 	/* Frontend-bypass boot (testing convenience): -level [options...].
 	 * Game mode defaults to Take A Ride; -car/-gamemode/-weather/-time all
 	 * need -level. A -car "slotN" is resolved against the frontend's car
-	 * table for the selected city. */
+	 * table for the selected city.
+	 *
+	 * The -level options ALWAYS set the session's level globals; only the actual
+	 * entry into the level is skipped when a module has taken the launch over
+	 * (gBootSuppressLevel) -- otherwise the engine would load one level here and
+	 * the session would load another. */
 	if (gBootLevel >= 0)
 	{
 		if (gBootCarStr[0] != 0)
@@ -2926,10 +2939,6 @@ int redriver2_main(int argc, char** argv)
 				return -1;
 			}
 		}
-
-		SetFEDrawMode();
-		gInFrontend = 0;
-		AttractMode = 0;
 
 		GameLevel = gBootLevel;
 		GameType = (gBootGameMode >= 0) ? (GAMETYPE)gBootGameMode : GAME_TAKEADRIVE;
@@ -2963,9 +2972,22 @@ int redriver2_main(int argc, char** argv)
 		gCurrentMissionNumber = 0;
 		gSubGameNumber = gBootMpLevel ? gBootMpArena : 0;
 
-		SetState(STATE_GAMESTART);
+		if (gBootSuppressLevel)
+		{
+			/* A module (mp's -host) will launch this level itself once its session
+			 * is ready. The globals above are what it reads to know the city, time,
+			 * weather and car, so set those and stay in the frontend. */
+		}
+		else
+		{
+			SetFEDrawMode();
+			gInFrontend = 0;
+			AttractMode = 0;
+
+			SetState(STATE_GAMESTART);
+		}
 	}
-	else if (gBootCarStr[0] != 0 || gBootGameMode >= 0 || gBootWeather >= 0 || gBootTime >= 0)
+	else if (gBootLevel < 0 && (gBootCarStr[0] != 0 || gBootGameMode >= 0 || gBootWeather >= 0 || gBootTime >= 0))
 	{
 		/* Dependent options: at least a level is required. Report it as a notice,
 		 * never as a message box. This runs before the frontend, so a modal here
