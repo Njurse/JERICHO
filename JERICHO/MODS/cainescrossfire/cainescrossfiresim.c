@@ -33,7 +33,8 @@
 #include "dr2math.h"
 #include "jericho.h"
 #include "jer_events.h"
-#include "turbo/turbo.h"		/* cd2TurboPad - the double-tap trigger */
+#include "turbo/turbo.h"
+#include "motion/shove.h"		/* one-shot velocity pushes */
 #include "knock/knock.h"		/* the visual knock (buck and rock) */
 #include "motion/motion.h"		/* the motion layers (idle fidget, pitch-back) */
 #include "jer_math.h"
@@ -515,6 +516,28 @@ int cd2OnCarTorque(void* ud, void* args)
 			velX += fx * shove;
 			velZ += fz * shove;
 			jer_log("[cainescrossfire] turbo: shove +%d percent of top speed (%d)\n", shovePct, shove);
+		}
+	}
+
+	/* SHOVES requested by weapons (motion/shove.c). Same place in the frame as
+	 * the turbo's, and for the same reason: this is where velX/velZ ARE the car's
+	 * velocity, so a push added here is real. A weapon writing
+	 * cp->st.n.linearVelocity instead writes to a field this function overwrites
+	 * below - which is exactly why Bruxa's recoil did nothing however large the
+	 * constant was made. The magnitude is a percentage of the car's own top
+	 * speed, matching the turbo's shove above. */
+	{
+		int shX = 0, shZ = 0, shPct = 0;
+
+		if (cd2ShoveTake(cp->id, &shX, &shZ, &shPct))
+		{
+			int amt = (s.topSpeed * shPct) / 100;
+
+			velX += (int)(((long long)shX * amt) >> 12);
+			velZ += (int)(((long long)shZ * amt) >> 12);
+
+			jer_log("[cainescrossfire] shove car=%d dir=(%d,%d) %d%% -> %d\n",
+				cp->id, shX, shZ, shPct, amt);
 		}
 	}
 

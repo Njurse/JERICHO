@@ -21,11 +21,26 @@
 #include "weapons/core/weapon.h"
 #include "weapons/core/weapon_internal.h"
 #include "weapons/special/special.h"
+#include "motion/shove.h"		/* cd2ShovePush - the one shove that survives the sim */
+#include "knock/knock.h"		/* the nose-up kick (and its ceiling) */
 
 #include <string.h>
 
-#define CD2_BRUXA_RECOIL		1500	// shooter's backward shove (world units/frame, *4096)
-#define CD2_BRUXA_RECOIL_PITCH		0x14000	// nose-up pitch added to the shooter (raw avel)
+// THE RECOIL, in the only terms that work. This used to write
+// cp->st.n.linearVelocity directly, which the module's OWN sim overwrites from
+// its velX/velZ before the car moves - so the shove was gone before the car did
+// anything with it, and no constant was ever large enough to see: 1500 read as
+// 0.37 speed units per frame, and cranking it to 15000 (as it stands in the
+// working tree) only reached 3.7, against a car whose top speed is in the
+// hundreds. A percentage of the car's own top speed, handed to the sim through
+// motion/shove.c, is the same path the turbo's engagement shove uses.
+#define CD2_BRUXA_RECOIL_PCT	32	// shooter's backward shove (% of its own top speed)
+// The nose-up kick is a KNOCK, not an angular velocity: the sim ZEROES
+// angularVelocity[0] and [2] every frame (they are the render-only knock's
+// channel), so writing a pitch there wrote into a field that was cleared before
+// it was ever read.
+#define CD2_BRUXA_RECOIL_PITCH	CD2_KNOCK_IMPULSE_TO(CD2_KNOCK_MAX_PITCH)
+#define CD2_BRUXA_RECOIL_LIFT	1
 
 static int gBruxaChannel = -1;
 
@@ -44,14 +59,13 @@ static void cd2BruxaFire(void* vcp)
 		cd2WdefSpecialBruxa.pelletSpread,
 		cd2WdefSpecialBruxa.pelletFanout);
 
-	// strong recoil into the SHOOTER: shove it backward and kick its nose up
+	// strong recoil into the SHOOTER: shove it backward - through the sim, which
+	// is the only place a shove survives - and kick its nose up with a knock
 	cd2SpecFwdRight(cp, &fwd, &right);
 
-	cp->st.n.linearVelocity[0] -= (int)(((long long)fwd.vx * CD2_BRUXA_RECOIL) >> 12);
-	cp->st.n.linearVelocity[1] -= (int)(((long long)fwd.vy * CD2_BRUXA_RECOIL) >> 12);
-	cp->st.n.linearVelocity[2] -= (int)(((long long)fwd.vz * CD2_BRUXA_RECOIL) >> 12);
+	cd2ShovePush(cp->id, -fwd.vx, -fwd.vz, CD2_BRUXA_RECOIL_PCT);
 
-	cp->st.n.angularVelocity[0] += CD2_BRUXA_RECOIL_PITCH;
+	cd2KnockAdd(cp->id, CD2_BRUXA_RECOIL_PITCH, 0, 0, CD2_BRUXA_RECOIL_LIFT, 0);
 
 	if (gBruxaChannel < 0)
 	{
