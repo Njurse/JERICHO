@@ -27,8 +27,7 @@
 #include <string.h>
 
 #define CD2_DASH_FRAMES		75	// 2.5s
-#define CD2_DASH_SPEED		660	// the top the dash is aiming for (reported, not written)
-#define CD2_DASH_SPEED_PCT	195	// ...as a multiplier on the car's own top (turbo uses 125)
+#define CD2_DASH_SPEED_PCT	175	// ...as a multiplier on the car's own top (turbo uses 125)
 #define CD2_DASH_ACCEL_PCT	260	// and how hard it gets there
 #define CD2_DASH_THRUST		12000	// engine force while dashing (cp->thrust is ~4215 flat out)
 #define CD2_DASH_HORN2_FRAME	22	// 0.75s in -> the second horn
@@ -56,9 +55,12 @@ void cd2SpecialDashPct(int carId, int* speedPct, int* accelPct)
 }
 
 // The car's OWN horn - the sample the engine plays for it in LeadHorn
-// (SOUND_BANK_CARS, bank*3+2, bank = GetCarBankSample(model)). The old cut
-// reached for SOUND_BANK_SFX 4, which is one of the engine's CRASH samples, so
-// the "horns" were a thud at best.
+// (SOUND_BANK_CARS, bank*3+2, bank = GetCarBankSample(model)). Two things were
+// wrong with the first cut: it reached for SOUND_BANK_SFX 4, which is one of the
+// engine's CRASH samples, so the "horns" were a thud at best; and it was played
+// at a FIXED point taken when the dash fired, so a horn that should be coming
+// from a car doing 600 units a frame was left standing at the start line. This
+// tracks the car, exactly as LeadHorn does.
 static void cd2DeadstarHorn(CAR_DATA* cp)
 {
 	if (gDashChannel < 0)
@@ -68,9 +70,9 @@ static void cd2DeadstarHorn(CAR_DATA* cp)
 	}
 
 	if (gDashChannel >= 0)
-		Start3DSoundVolPitch(gDashChannel, SOUND_BANK_CARS,
+		Start3DTrackingSound(gDashChannel, SOUND_BANK_CARS,
 			GetCarBankSample(cp->ap.model) * 3 + 2,
-			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -1200, 4096);
+			(VECTOR*)cp->hd.where.t, (LONGVECTOR3*)cp->st.n.linearVelocity);
 }
 
 static void cd2DeadstarFire(void* vcp)
@@ -146,8 +148,8 @@ static int cd2DeadstarOnFrame(void* ud, void* args)
 		// the dash profile, every 15 frames: what the thrust is actually doing
 		// to the car, so the dials are set from a run rather than by feel
 		if (gDashFrames[i] % 15 == 0)
-			printInfo("[cainescrossfire] deadstar: dash car=%d left=%d speed=%d pos=(%d,%d) (aim %d)\n",
-				i, gDashFrames[i], cp->hd.speed, cp->hd.where.t[0], cp->hd.where.t[2], CD2_DASH_SPEED);
+			printInfo("[cainescrossfire] deadstar: dash car=%d left=%d speed=%d pos=(%d,%d)\n",
+				i, gDashFrames[i], cp->hd.speed, cp->hd.where.t[0], cp->hd.where.t[2]);
 
 		if (--gDashFrames[i] <= 0)
 		{

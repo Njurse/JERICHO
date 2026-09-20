@@ -4076,6 +4076,18 @@ int JerFrontendMenuScreen(int bSetup)
 
 				if (sel < 10)
 				{
+					/* The portrait is a PAIR: the texture, and the palette its
+					 * colour indices were authored against. That palette is NOT
+					 * in the city raw - it lives in the car-select background
+					 * file, which LoadBackgroundFile drops into VRAM at
+					 * (960,256), the very CLUT this sprite is drawn with. The
+					 * stock car-select loads it immediately before the icon for
+					 * exactly that reason; a module menu that skips it draws the
+					 * right texture through whatever palette the PREVIOUS screen
+					 * left in that slot, which reads as the right colours landing
+					 * on the wrong parts of the picture. */
+					LoadBackgroundFile("DATA\\CARS\\CARBACK.RAW");
+
 					/* the stock car-select icon, at its usual place */
 					SetupExtraPoly(gfxNames[pvCity], sel, 0);
 				}
