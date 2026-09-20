@@ -1111,8 +1111,18 @@ void StepSim(void)
 					if (jerNetIn.handled)
 					{
 						t0 = (u_int)jerNetIn.pad;
+
+						/* t1/t2 are ProcessCarPad's (PadSteer, use_analogue)
+						 * pair, and the values here have to match what a local
+						 * car gets for a pointer of the same kind. A replicated
+						 * pad is DIGITAL, so t2 = 0 makes the engine read t0;
+						 * the old t2 = 1 said "this is an analogue pad" and
+						 * paired it with t1 = 0, i.e. an analogue stick held at
+						 * centre, which made a remote car ignore t0 completely
+						 * -- no throttle, no steering, however hard its owner
+						 * pressed. */
 						t1 = 0;
-						t2 = 1;
+						t2 = 0;
 					}
 				}
 
