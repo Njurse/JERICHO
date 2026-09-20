@@ -122,6 +122,12 @@ jer_pause_menu_register(&myMenu);
   handler, for the ped being drawn). The engine swaps recoloured CLUT rows in for
   that one draw, so a module can put individual characters in team colours.
   Measured footprint and mechanism: `ped-palette.md`.
+- **Suppress the frontend's idle demo** — `JER_EVENT_FRONTEND_IDLE`
+  (`JER_ARGS_FRONTEND_IDLE`) fires from the timer that would boot the attract
+  demo after ~30 s without input; set `suppress = 1` and the timer is pushed
+  back. Anything that leaves a player sitting in a menu is "idle" by that
+  timer, and the demo it starts loads a whole level -- which blocks the main
+  thread while it happens.
 - **Custom events** — values `>= JER_EVENT_MODULE_CUSTOM` are free for
   module-to-module messaging (the sandbox uses one for its no-damage
   toggle).
