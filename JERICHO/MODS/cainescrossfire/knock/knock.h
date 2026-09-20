@@ -39,7 +39,7 @@
 // angle and zero is an oscillator, so the car rocked back and forth instead of
 // doing one firm movement and settling. These two rates are what replaced it.
 #define CD2_KNOCK_DECAY		1400	// /4096 - velocity kept per frame in phase 1
-#define CD2_KNOCK_SETTLE	1850	// /4096 - fraction of the angle eased out per frame
+#define CD2_KNOCK_SETTLE	1700	// /4096 - fraction of the angle eased out per frame
 
 // A hard speed change stiffens the return. The settle above is a fixed fraction per
 // frame; these add to it in proportion to |delta|, the car's own speed change this step,
@@ -86,8 +86,8 @@
 
 // The lift settles on a softer pair, so the body comes down after the impact
 // rather than snapping to the ground with it.
-#define CD2_KNOCK_LIFT_DECAY		2200
-#define CD2_KNOCK_LIFT_SETTLE		1300	// aggressive, like the angles
+#define CD2_KNOCK_LIFT_DECAY		1500
+#define CD2_KNOCK_LIFT_SETTLE		2600	// very fast: the body slams back down
 
 // Nothing may knock beyond this, however hard the hit: a car spinning on its
 // side would look broken rather than hit.
@@ -121,7 +121,7 @@
 // How far from the model's origin the car's axles are, for the pivot below. A
 // wheelie turns about the REAR axle, a stoppie about the front one, so the nose (or
 // the tail) rises instead of the whole car spinning around a point in its middle.
-#define CD2_KNOCK_PIVOT_DIST		46
+#define CD2_KNOCK_PIVOT_DIST		240
 #define CD2_KNOCK_SHIFT_DECAY		2200
 #define CD2_KNOCK_SHIFT_SETTLE		1300
 
