@@ -107,6 +107,17 @@ city's **multiplayer-map arena 0** — with the chosen car and opponent count. T
 opponent count is the match setting `ai_opponents`, so the pause menu can still
 change it mid-match.
 
+A headless run cannot drive the menus at all (the module screens ignore input
+with no pad), so `CC_FORCE_ARENA` + `CC_FORCE_CAR` make the flow launch the match
+from the frame handler instead of waiting for a confirm, and
+`CC_FORCE_OPPONENTS` sets the count. A scripted run only — a pad still gets the
+menus:
+
+```sh
+CC_FORCE_ARENA=3 CC_FORCE_CAR=6 CC_FORCE_OPPONENTS=6 \
+  REDRIVER2_dev.exe -nointro -ccmenu -frames 900
+```
+
 ## The test roster
 
 Seven profiles, each also carrying a special (see [`SPECIALS.md`](SPECIALS.md)):

@@ -1856,6 +1856,12 @@ void JerichoFrameTick(void)
 	// JERICHO: where the imported pages ended up, after the level has streamed.
 	CarImportDumpState();
 
+	// JERICHO: flush before leaving. When stdout is a file (a scripted run) it is
+	// fully buffered, and exit() was losing the tail - including the JERICHO-RUN
+	// summary just above - so a healthy run looked like it had died early.
+	fflush(stdout);
+	fflush(stderr);
+
 	exit(0);
 }
 

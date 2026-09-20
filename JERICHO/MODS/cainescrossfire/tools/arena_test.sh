@@ -96,13 +96,19 @@ echo "   direct:          ./$EXE -nointro -mp $ARENA -level $CITY -car $CAR -wea
 # note any pre-existing dump so we only report a NEW one
 DUMP_BEFORE="$(ls -t REDRIVER2.dmp REDRIVER2-crash-*.dmp 2>/dev/null | head -1)"
 
+# The run's OWN output is the snapshot. The module logs to stdout; REDRIVER2.log
+# is only written when the module's debug_log is on, so grepping that file made a
+# healthy run read as "DIED - no summary line". REDRIVER2.log is left alone.
+STAMP="$(date +%H%M%S)"
+OUT="arena_test_${CITY}_${WEATHER}_${SEED}_${STAMP}.log"
+
 # --- run -------------------------------------------------------------------
 # Foreground-terminating: the game exits itself at the frame budget. The loop is
 # a watchdog only, for the case where it hangs instead - and it kills just this
 # PID, never by image name.
 DEADLINE=$(( $(date +%s) + SECS + 60 ))   # generous: level load dominates a run's wall time
 "./$EXE" -nointro -mp "$ARENA" -level "$CITY" "${CAR_ARGS[@]}" -weather "$WEATHER" -time "$TIME" \
-	-frames "$FRAMES" -seed "$SEED" "$@" >/dev/null 2>&1 &
+	-frames "$FRAMES" -seed "$SEED" "$@" >"$OUT" 2>&1 &
 PID=$!
 
 STATUS="ok"
@@ -123,18 +129,15 @@ else
 	EXIT_CODE=1
 fi
 
-# snapshot the log (do NOT delete it)
-STAMP="$(date +%H%M%S)"
-OUT="arena_test_${CITY}_${WEATHER}_${SEED}_${STAMP}.log"
-cp -f REDRIVER2.log "$OUT" 2>/dev/null || true
-
 echo "== log snapshot: $BIN_DIR/$OUT =="
 
 # --- verdict, from fields rather than prose --------------------------------
 SUMMARY="$(grep -m1 'JERICHO-RUN:' "$OUT" 2>/dev/null)"
+MODULES="$(grep -c 'state=active' "$OUT" 2>/dev/null)"
+CRASHES="$(grep -icE 'access violation|fatal error|abort|exception' "$OUT" 2>/dev/null)"
 echo "-- engine summary: ${SUMMARY:-<none: the run never reached its frame budget>} --"
-echo "-- modules active: $(grep -c 'state=active' "$OUT" 2>/dev/null) --"
-echo "-- crash markers:  $(grep -icE 'access violation|fatal error|abort|exception' "$OUT" 2>/dev/null) --"
+echo "-- modules active: $MODULES --"
+echo "-- crash markers:  $CRASHES --"
 
 # a NEW dump means the game crashed this run
 DUMP_AFTER="$(ls -t REDRIVER2.dmp REDRIVER2-crash-*.dmp 2>/dev/null | head -1)"
@@ -146,6 +149,16 @@ fi
 
 if [ -n "$SUMMARY" ]; then
 	echo "verdict: CLEAN - ran to the frame budget${DUMP_NOTE}"
+	echo "== RESULT: ok  (exit=$EXIT_CODE, seed=$SEED) =="
+	exit 0
+fi
+
+# The engine prints its summary and exits immediately after. When stdout is a
+# FILE (not a tty) that last buffer is never flushed, so the summary line is
+# routinely missing from a perfectly healthy run. Fall back to the signals that
+# do survive: the exit code, a new dump, and the crash markers.
+if [ "$STATUS" = "ok" ] && [ -z "$DUMP_NOTE" ] && [ "$CRASHES" -eq 0 ] && [ "$MODULES" -gt 0 ]; then
+	echo "verdict: CLEAN - exited 0, no dump, no crash markers (summary line not flushed)"
 	echo "== RESULT: ok  (exit=$EXIT_CODE, seed=$SEED) =="
 	exit 0
 fi
