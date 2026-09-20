@@ -51,6 +51,37 @@ void InitPlayer(PLAYER *locPlayer, CAR_DATA *cp, char carCtrlType, int direction
 				model = i;
 		}
 
+		// JERICHO: the resolved slot must be one the level actually loaded a model
+		// into. A requested car the level's CAR_MODELS lump does not carry (a bad
+		// -mpcar / -car, or a model only another city has, or the special slot when
+		// its spool never ran) leaves gCarCleanModelPtr[] NULL in that slot, and
+		// both the lighting pass and the draw path dereference it -- an access
+		// violation in ComputeCarLightingLevels (crash dump rva 0x812D). Fall back
+		// to a resident slot that HAS a model, so an unavailable request becomes a
+		// real car instead of a crash. Both residentCarModels[] and
+		// gCarCleanModelPtr[] are populated by now: ProcessCarModelLump runs during
+		// the level load, before the spawn loop that calls InitPlayer.
+		if (model < 0 || model >= MAX_CAR_RESIDENT_MODELS || gCarCleanModelPtr[model] == NULL)
+		{
+			int fallback = -1;
+
+			for (i = 0; i < MAX_CAR_RESIDENT_MODELS; ++i)
+			{
+				if (gCarCleanModelPtr[i] != NULL)
+				{
+					fallback = i;
+					break;
+				}
+			}
+
+			if (fallback >= 0)
+			{
+				printInfo("JERICHO: car model %d has no data in this level - player car falls back to resident slot %d (model %d)\n",
+					(int)playerType, fallback, residentCarModels[fallback]);
+				model = fallback;
+			}
+		}
+
 		InitCar(cp, direction, startPos, carCtrlType, model, palette & 255, &locPlayer->padid);
 
 		ResetTyreTracks(cp, playerId);

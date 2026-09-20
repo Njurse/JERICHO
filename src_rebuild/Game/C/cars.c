@@ -563,26 +563,38 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 		cp->ap.qw = cp->st.n.orientation[3];
 		cp->lowDetail = detail | lightning;
 
-		model = detail ? gCarCleanModelPtr[cp->ap.model] : gCarLowModelPtr[cp->ap.model];
-		num_norms = model->num_point_normals / 3;
-		norms = GET_MODEL_DATA(SVECTOR, model, point_normals);
+		// JERICHO: a slot this level did not load a model into has no geometry to
+		// light, and dereferencing the NULL pointer was the access violation the
+		// crash dump named (ComputeCarLightingLevels +0x1ED, rva 0x812D). Skip the
+		// normals pass, but still restore the matrices set up above -- bailing out
+		// entirely would leave the lighting matrices applied to whatever draws next.
+		if (cp->ap.model >= 0 && cp->ap.model < MAX_CAR_RESIDENT_MODELS)
+			model = detail ? gCarCleanModelPtr[cp->ap.model] : gCarLowModelPtr[cp->ap.model];
+		else
+			model = NULL;
 
-		ppads = gTempCarVertDump[cp->id];
-		count = num_norms;// +1;
-
-		while (count >= 0)
+		if (model != NULL)
 		{
-			gte_ldv3(&norms[0], &norms[1], &norms[2]);
-			gte_ncct();
-			gte_strgb3(&c0, &c1, &c2);
+			num_norms = model->num_point_normals / 3;
+			norms = GET_MODEL_DATA(SVECTOR, model, point_normals);
 
-			ppads[0].pad = *(short*)&c0;
-			ppads[1].pad = *(short*)&c1;
-			ppads[2].pad = *(short*)&c2;
+			ppads = gTempCarVertDump[cp->id];
+			count = num_norms;// +1;
 
-			count--;
-			norms += 3;
-			ppads += 3;
+			while (count >= 0)
+			{
+				gte_ldv3(&norms[0], &norms[1], &norms[2]);
+				gte_ncct();
+				gte_strgb3(&c0, &c1, &c2);
+
+				ppads[0].pad = *(short*)&c0;
+				ppads[1].pad = *(short*)&c1;
+				ppads[2].pad = *(short*)&c2;
+
+				count--;
+				norms += 3;
+				ppads += 3;
+			}
 		}
 
 		restoreLightingMatrices();
@@ -1667,6 +1679,14 @@ void DrawCar(CAR_DATA* cp, int view)
 	D_CHECK_ERROR(cp < car_data, "Invalid car");
 	
 	model = cp->ap.model;
+
+	// JERICHO: no geometry for this slot in this level (its model was never
+	// loaded) -> there is nothing to draw, and the draw path dereferences the
+	// model. Skip the car rather than fault. InitPlayer now clamps an unavailable
+	// player car to a resident slot, so this is a backstop.
+	if (model < 0 || model >= MAX_CAR_RESIDENT_MODELS || gCarCleanModelPtr[model] == NULL)
+		return;
+
 	// draw car lights in for InCar camera
 	if (player[view].cameraView == 2 && cp->id == player[view].cameraCarId)
 	{
