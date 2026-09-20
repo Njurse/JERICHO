@@ -40,6 +40,18 @@ typedef struct JER_HUD_MSG
 
 static JER_HUD_MSG sHud[JER_HUD_MAX];
 
+// Anchored persistent lines (jer_hud_panel). Unlike sHud these do not age: they
+// are drawn every frame until cleared.
+typedef struct JER_HUD_PANEL
+{
+	char text[JER_HUD_TEXT_MAX];
+	int anchor;			// JER_HUD_ANCHOR_*
+	int r, g, b;
+	int used;
+} JER_HUD_PANEL;
+
+static JER_HUD_PANEL sPanel[JER_HUD_PANEL_MAX];
+
 // y of the first line, and the line spacing. The screen is 320x240 and the
 // stock 2D font is 10-12px, so four lines fit above the action.
 #define JER_HUD_FIRST_Y		22
@@ -220,6 +232,44 @@ static void jerHudDrawRuns(JER_HUD_MSG* m, short y, const CVECTOR* ambient)
 	}
 }
 
+// ---------------------------------------------------------------------------
+// panels
+// ---------------------------------------------------------------------------
+int jer_hud_panel(int slot, int anchor, const char* text, int r, int g, int b)
+{
+	JER_HUD_PANEL* p;
+
+	if (slot < 0 || slot >= JER_HUD_PANEL_MAX)
+		return -1;
+
+	if (text == NULL || text[0] == '\0')
+	{
+		jer_hud_panel_clear(slot);
+		return -1;
+	}
+
+	p = &sPanel[slot];
+
+	jerHudSetText(p->text, text, JER_HUD_TEXT_MAX);
+
+	p->anchor = anchor;
+	p->r = r < 0 ? 0 : (r > 255 ? 255 : r);
+	p->g = g < 0 ? 0 : (g > 255 ? 255 : g);
+	p->b = b < 0 ? 0 : (b > 255 ? 255 : b);
+	p->used = 1;
+
+	return slot;
+}
+
+void jer_hud_panel_clear(int slot)
+{
+	if (slot < 0 || slot >= JER_HUD_PANEL_MAX)
+		return;
+
+	sPanel[slot].used = 0;
+	sPanel[slot].text[0] = '\0';
+}
+
 void jer_hud_draw(void)
 {
 	CVECTOR ambient = gFontColour;
@@ -233,6 +283,56 @@ void jer_hud_draw(void)
 		jerHudDrawRuns(&sHud[i], (short)(JER_HUD_FIRST_Y + i * JER_HUD_LINE_H), &ambient);
 
 		sHud[i].frames--;
+	}
+
+	// panels last, so a readout sits over the messages rather than under them.
+	// They are stacked per anchor in slot order, and the text colour is saved
+	// and restored with the messages' (see the file header).
+	{
+		short stacked[3];
+
+		stacked[0] = stacked[1] = stacked[2] = 0;
+
+		for (i = 0; i < JER_HUD_PANEL_MAX; i++)
+		{
+			JER_HUD_PANEL* p = &sPanel[i];
+			short x, y;
+			int anchor, w;
+
+			if (!p->used)
+				continue;
+
+			anchor = p->anchor;
+
+			if (anchor < 0 || anchor >= 3)
+				anchor = JER_HUD_ANCHOR_TOP_LEFT;
+
+			w = StringWidth(p->text);
+
+			switch (anchor)
+			{
+				case JER_HUD_ANCHOR_TOP_RIGHT:
+					x = (short)(JER_HUD_SCREEN_W - 8 - w);
+					break;
+
+				case JER_HUD_ANCHOR_TOP_CENTRE:
+					x = (short)((JER_HUD_SCREEN_W - w) / 2);
+					break;
+
+				default:
+					x = 8;
+					break;
+			}
+
+			if (x < 0)
+				x = 0;
+
+			y = (short)(JER_HUD_FIRST_Y + stacked[anchor] * JER_HUD_LINE_H);
+			stacked[anchor]++;
+
+			SetTextColour(p->r, p->g, p->b);
+			PrintString(p->text, x, y);
+		}
 	}
 
 	// leave the text colour exactly as it was found (see the file header)

@@ -128,6 +128,14 @@ jer_pause_menu_register(&myMenu);
   back. Anything that leaves a player sitting in a menu is "idle" by that
   timer, and the demo it starts loads a whole level -- which blocks the main
   thread while it happens.
+- **Say something on screen** — `jer_hud.h`. `jer_hud_message` (and
+  `jer_hud_message_segs` for a partly-coloured line) queues a message that is
+  drawn centred, stacked from the top, and expires on its own — right for an
+  event ("You killed VASQUEZ"). For a READOUT, where a line belongs in a corner
+  for exactly as long as its subject exists, use `jer_hud_panel(slot, anchor,
+  text, r, g, b)` — an anchored line drawn every frame until `jer_hud_panel_clear`
+  or the next set. Both are drawn from the engine's overlay pass, so a module
+  needs no draw hook of its own.
 - **Custom events** — values `>= JER_EVENT_MODULE_CUSTOM` are free for
   module-to-module messaging (the sandbox uses one for its no-damage
   toggle).
