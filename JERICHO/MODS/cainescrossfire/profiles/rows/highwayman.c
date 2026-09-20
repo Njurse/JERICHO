@@ -30,5 +30,5 @@ extern const CD2_VEH_PROFILE cd2VehRowHighwayman =
 	{ 3600, 4600, CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT,
 	  CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT },
 
-	1			/* palette (placeholder) */
+	2			/* palette */
 };

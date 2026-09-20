@@ -31,5 +31,5 @@ extern const CD2_VEH_PROFILE cd2VehRowBruxa =
 	{ 4800, 4800, 4600, CD2_VEH_INHERIT, CD2_VEH_INHERIT,
 	  CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT },
 
-	2			/* palette (placeholder) */
+	2			/* palette */
 };

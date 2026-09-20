@@ -31,5 +31,5 @@ extern const CD2_VEH_PROFILE cd2VehRowHornet =
 	{ 3000, 4400, CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT,
 	  CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT, 115 },
 
-	3			/* palette (placeholder) */
+	3			/* palette */
 };
