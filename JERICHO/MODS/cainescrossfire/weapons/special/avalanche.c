@@ -28,14 +28,17 @@
 #define CD2_AVALANCHE_FRAMES	150	// 5s boost
 #define CD2_AVALANCHE_GRIP	6144	// fp grip multiplier while surging (1.5x)
 #define CD2_AVALANCHE_THRUST	6400	// thrust while surging
-#define CD2_CRUSH_FRAMES	45	// 1.5s hold on top of a victim
-#define CD2_CRUSH_LIFT		120	// how far above the victim the attacker sits
+#define CD2_CRUSH_FRAMES	55	// 1.5s hold on top of a victim
+#define CD2_CRUSH_LIFT		0	// extra height for the attacker over the victim's origin
 #define CD2_CRUSH_ROCK		0x0A000	// rocking pitch added each frame (raw avel)
 #define CD2_CRUSH_PUSH		260	// push-off speed given to the victim at the end
+#define CD2_CRUSH_CRUNCH_EVERY	12	// frames between crunch noises (the engine's heavy crash sample)
 
 static int gAvalancheFrames[MAX_CARS];	// boost frames left
 static int gCrushFrames[MAX_CARS];	// crush frames left (0 = not crushing)
 static int gCrushVictim[MAX_CARS];	// the car being crushed (-1)
+static int gCrushFloor[MAX_CARS];	// the victim's ride height, captured at crush start
+static int gCrushNoise[MAX_CARS];	// frames until the next crunch
 static int gAvalancheChannel = -1;
 
 static void cd2AvalancheFire(void* vcp)
@@ -123,6 +126,8 @@ static int cd2AvalancheOnCollision(void* ud, void* args)
 
 	gCrushFrames[att->id] = CD2_CRUSH_FRAMES;
 	gCrushVictim[att->id] = vic->id;
+	gCrushFloor[att->id] = vic->hd.where.t[1];	// its ride height, to hold it flat
+	gCrushNoise[att->id] = 0;
 
 	// and the victim stops taking the crash: the crush handles the hold
 	return JER_RESULT_CONTINUE;
@@ -164,20 +169,43 @@ static int cd2AvalancheOnFrame(void* ud, void* args)
 			{
 				CAR_DATA* vic = &car_data[v];
 
-				// hold the attacker above the victim, rocking
+				// hold the attacker ON the victim. The position is written before the
+				// physics step, so a lift is not where the truck ends up - it is how much
+				// the solver has to push back, and a positive one just floated it. Level
+				// with the victim's own origin is the "sitting on it" baseline.
 				cp->hd.where.t[0] = vic->hd.where.t[0];
 				cp->hd.where.t[2] = vic->hd.where.t[2];
 				cp->hd.where.t[1] = vic->hd.where.t[1] + CD2_CRUSH_LIFT;
 
-				// trap the victim: pin its velocity so it cannot drive away
+				// trap the victim: pin its velocity so it cannot drive away - and pin it
+				// FLAT on the road. The press would otherwise shove it down through the
+				// surface and leave it rocking, so its ride height is held at what it was
+				// before the crush and its tumble is stopped: bottom along the road, level.
 				vic->st.n.linearVelocity[0] = 0;
 				vic->st.n.linearVelocity[1] = 0;
 				vic->st.n.linearVelocity[2] = 0;
+				vic->st.n.angularVelocity[0] = 0;
+				vic->st.n.angularVelocity[1] = 0;
+				vic->st.n.angularVelocity[2] = 0;
+				vic->hd.where.t[1] = gCrushFloor[i];
 				vic->hd.speed = 0;
 
 				// spin the attacker's tyres (visual) and rock it
 				cp->wheelspin = 1;
 				cp->st.n.angularVelocity[0] += CD2_CRUSH_ROCK;
+
+				// crunching: the engine's own heavy-crash sample, over and over
+				if (--gCrushNoise[i] <= 0)
+				{
+					int chan = GetFreeChannel(1);
+
+					gCrushNoise[i] = CD2_CRUSH_CRUNCH_EVERY;
+
+					if (chan >= 0)
+						Start3DSoundVolPitch(chan, SOUND_BANK_SFX, 6,
+							vic->hd.where.t[0], vic->hd.where.t[1], vic->hd.where.t[2],
+							-2200, 3072 + (rand() % 1024));
+				}
 
 				if (--gCrushFrames[i] <= 0)
 				{
@@ -211,6 +239,8 @@ static int cd2AvalancheOnGameStart(void* ud, void* args)
 		gAvalancheFrames[i] = 0;
 		gCrushFrames[i] = 0;
 		gCrushVictim[i] = -1;
+		gCrushFloor[i] = 0;
+		gCrushNoise[i] = 0;
 	}
 
 	return JER_RESULT_CONTINUE;

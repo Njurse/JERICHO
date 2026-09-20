@@ -28,11 +28,11 @@
 
 #include <string.h>
 
-#define CD2_HORNET_RADIUS		320	// ring radius (world units)
-#define CD2_HORNET_SPIKE_H		95	// how far a spike stands up out of the ring
+#define CD2_HORNET_RADIUS		520	// ring radius (world units)
+#define CD2_HORNET_SPIKE_H		115	// how far a spike stands up out of the ring
 #define CD2_HORNET_CONTACT_INTERVAL	15	// frames between ring contact hits
 #define CD2_HORNET_HOP			140	// knockback strength on contact
-#define CD2_HORNET_RELAUNCH_GAP		60	// frames the ring stays down after a launch
+#define CD2_HORNET_RELAUNCH_GAP		80	// frames the ring stays down after a launch
 
 static int gHornetPost[MAX_CARS];	// frames until the ring may re-arm (post-launch)
 static int gHornetAcc[MAX_CARS];	// contact-hit accumulator
@@ -149,8 +149,16 @@ static int cd2HornetOnFrame(void* ud, void* args)
 				dz = oc->hd.where.t[2] - c.vz;
 				d2 = dx * dx + dz * dz;
 
-				if (d2 > CD2_HORNET_RADIUS * CD2_HORNET_RADIUS)
-					continue;
+				// the ring is measured centre-to-centre, so a big car can have its
+				// flank in the spikes with its centre still outside them. Add what
+				// the victim's own body reaches, so touching the spikes counts.
+				{
+					int reach = CD2_HORNET_RADIUS +
+						(oc->ap.carCos->colBox.vx + oc->ap.carCos->colBox.vz) / 2;
+
+					if (d2 > reach * reach)
+						continue;
+				}
 
 				cd2WpnDamageCar(oc, &c, cd2WdefSpecialHornet.damage, cp);
 
