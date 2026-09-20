@@ -2216,6 +2216,20 @@ void State_FrontEnd(void* param)
 	}
 #endif
 
+	/* Ask the modules before the attract demo starts. A multiplayer lobby is
+	 * idle by definition, so without this the demo would launch a level nobody
+	 * asked for -- and that load blocks the main thread for its whole
+	 * duration, dropping every player who was joining. */
+	{
+		JER_ARGS_FRONTEND_IDLE idleArgs;
+
+		idleArgs.suppress = 0;
+		jer_fire(JER_EVENT_FRONTEND_IDLE, &idleArgs);
+
+		if (idleArgs.suppress)
+			idle_timer = VSync(-1);
+	}
+
 	if ((VSync(-1) - idle_timer) > 1800)
 	{
 		if (ScreenDepth == 0)

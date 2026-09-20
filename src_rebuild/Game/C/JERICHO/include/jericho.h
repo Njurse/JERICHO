@@ -226,6 +226,13 @@ enum
 					   the player's forced car, live weapons, sounds -
 					   so nothing lingers or plays in the menus. No args. */
 
+	JER_EVENT_FRONTEND_IDLE,	/* the frontend's idle timer is about to start the
+				   attract demo: a module may suppress it (see
+				   JER_ARGS_FRONTEND_IDLE). A multiplayer lobby
+				   is idle by definition, so left alone the demo
+				   launches a level nobody asked for and blocks
+				   the main thread for the whole load. */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

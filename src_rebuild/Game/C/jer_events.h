@@ -749,6 +749,18 @@ typedef struct JER_ARGS_CMDLINE
 	char** argv;
 } JER_ARGS_CMDLINE;
 
+/* JER_EVENT_FRONTEND_IDLE -- fired from the frontend's idle timer, the one that
+ * boots the attract demo after ~30 s of no input. A multiplayer host sitting in a
+ * lobby waiting for players is idle by definition, so the demo launched a level
+ * nobody asked for; that load blocks the main thread for its whole duration and
+ * every player who was joining times out and drops.
+ *
+ * Set suppress = 1 to push the timer back. */
+typedef struct JER_ARGS_FRONTEND_IDLE
+{
+	int suppress;	/* in/out: 1 = do not start the attract demo */
+} JER_ARGS_FRONTEND_IDLE;
+
 /* JER_EVENT_NET_SPAWN — fired in InitGameVariables (main.c) just after the
  * stock player start positions are set up and before the cars are created.
  * A network module adds the REMOTE players here: for each extra slot fill
