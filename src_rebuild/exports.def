@@ -121,10 +121,10 @@ EXPORTS
 	?InitCopState@@YAXPEAU_CAR_DATA@@PEAD@Z
 	?InitCops@@YAXXZ
 	?PassiveCopTasks@@YAXPEAU_CAR_DATA@@@Z
-	?GetSampleCount@CSoundSource_OpenALCache@@UEBAHXZ
-	?GetDataPtr@CSoundSource_OpenALCache@@UEBAPEAEAEAH@Z
-	?ReplayLog_Fnarr_He_Said_Log@@YAHH@Z
 	?GetSamples@CSoundSource_OpenALCache@@UEAAHPEAEHH_N@Z
+	?GetSampleCount@CSoundSource_OpenALCache@@UEBAHXZ
+	?ReplayLog_Fnarr_He_Said_Log@@YAHH@Z
+	?GetDataPtr@CSoundSource_OpenALCache@@UEBAPEAEAEAH@Z
 	?AddBrakeLight@@YAXPEAU_CAR_DATA@@@Z
 	?AddCopCarLight@@YAXPEAU_CAR_DATA@@@Z
 	?AddExhaustSmoke@@YAXPEAU_CAR_DATA@@HH@Z
@@ -366,16 +366,17 @@ EXPORTS
 	?GlobalTimeStep@@YAXXZ
 	?InitCarPhysics@@YAXPEAU_CAR_DATA@@PEAY03HH@Z
 	?InitSkidding@@YAXXZ
+	?ProcessSubDivisionLump@@YAXPEADH@Z
 	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
-	?ProcessJunctionsLump@@YAXPEADH@Z
-	?ProcessRoadsLump@@YAXPEADH@Z
+	?InitialiseCarHandling@@YAXXZ
 	?GetXAData@@YAXH@Z
 	?StopDualShockMotors@@YAXXZ
-	?SetXAVolume@@YAXH@Z
-	?InitialiseCarHandling@@YAXXZ
-	?ProcessSubDivisionLump@@YAXPEADH@Z
-	?ProcessRoadBoundsLump@@YAXPEADH@Z
 	?ProcessJuncBoundsLump@@YAXPEADH@Z
+	?SetXAVolume@@YAXH@Z
+	?ProcessRoadBoundsLump@@YAXPEADH@Z
+	?ProcessJunctionsLump@@YAXPEADH@Z
+	?ProcessRoadsLump@@YAXPEADH@Z
+	?LongQuaternion2Matrix@@YAXPEAY03HPEAUMATRIX@@@Z
 	?ProcessCarPad@@YAXPEAU_CAR_DATA@@IDD@Z
 	?RebuildCarMatrix@@YAXPEATRigidBodyState@@PEAU_CAR_DATA@@@Z
 	?SetShadowPoints@@YAXPEAU_CAR_DATA@@PEAUVECTOR@@@Z
@@ -390,6 +391,8 @@ EXPORTS
 	jer_hud_message
 	jer_hud_message_replace
 	jer_hud_message_segs
+	jer_notify
+	jer_notify_clear
 	jer_npc_despawn
 	jer_npc_owned
 	jer_npc_set_action
@@ -578,6 +581,7 @@ EXPORTS
 	?LoadMapTile@@YAXHHH@Z
 	?Long2DDistance@@YAIPEAUVECTOR@@0@Z
 	?ProcessOverlayLump@@YAXPEADH@Z
+	?WorldToMultiplayerMap@@YAXPEAUVECTOR@@0@Z
 	?WorldToOverheadMapPositions@@YAXPEAUVECTOR@@0HDH@Z
 	?draw_box@@YAXHH@Z
 	?CloseControllers@@YAXXZ
@@ -872,9 +876,9 @@ EXPORTS
 	?GetDataPtr@CSoundSource_WaveCache@@UEBAPEAEAEAH@Z
 	?GetFormat@CSoundSource_Wave@@UEAAPEAUsoundFormat_s@@XZ
 	?GetSampleCount@CSoundSource_Wave@@UEBAHXZ
-	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
 	?IsStreaming@CSoundSource_WaveCache@@UEAA_NXZ
 	?Load@CSoundSource_OpenALCache@@EEAA_NPEBD@Z
+	?IsStreaming@CSoundSource_OpenALCache@@UEAA_NXZ
 	?PauseXA@@YAXXZ
 	?PlayXA@@YAXHH@Z
 	?PrepareXA@@YAXXZ
@@ -1053,8 +1057,8 @@ EXPORTS
 	??1?$vector@Uindex_entry_t@ReadAVI@@V?$allocator@Uindex_entry_t@ReadAVI@@@std@@@std@@QEAA@XZ
 	??1ReadAVI@@UEAA@XZ
 	??1_Sentry_base@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@XZ
-	??1bad_cast@std@@UEAA@XZ
 	??1bad_array_new_length@std@@UEAA@XZ
+	??1bad_cast@std@@UEAA@XZ
 	??1locale@std@@QEAA@XZ
 	??1sentry@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@XZ
 	??_D?$basic_ifstream@DU?$char_traits@D@std@@@std@@QEAAXXZ
@@ -1224,8 +1228,8 @@ EXPORTS
 	?cd2FacStance@@YAHHH@Z
 	?cd2FacTagOf@@YAPEBDH@Z
 	?cd2FacTagOfCar@@YAPEBDPEBU_CAR_DATA@@@Z
-	?cd2TurboSpeedPct@@YAHH@Z
 	?cd2TurboAccelPct@@YAHH@Z
+	?cd2TurboSpeedPct@@YAHH@Z
 	?cd2TurboActive@@YAHH@Z
 	?cd2TurboBarTick@@YAXH@Z
 	?cd2TurboDump@@YAXH@Z
@@ -1427,34 +1431,37 @@ EXPORTS
 	?D2plPedCamera@@YAXPEAXH@Z
 	jer_module_gaildrv2_entry
 	jer_module_levelhacks_entry
-	MpAddPlayer
+	MpCameraPose
+	MpGetGameLevel
+	MpReturnToFrontend
+	MpSetSubGame
+	jer_module_mp_entry
 	MpBuildHash
 	MpBuildManifest
-	MpCameraPose
-	MpCarPose
 	MpConfigLoad
 	MpConfigSave
 	MpDefaultPlayerName
-	MpGetGameLevel
+	MpModHash
+	MpAddPlayer
+	MpCarPose
 	MpGetPlayer
 	MpGetPlayerByCar
 	MpIsActive
 	MpIsHost
 	MpIsPlayerCar
 	MpLocalPlayer
-	MpModHash
 	MpRemovePlayer
 	MpResetPlayers
-	MpReturnToFrontend
-	MpSetSubGame
-	jer_module_mp_entry
 	MpClientConnectBegin
 	MpClientConnectPoll
 	MpClientDisconnect
 	MpConnAssignPlayer
 	MpConnClose
 	MpConnFindByPlayer
+	MpConnHandshakeDone
 	MpConnPlayerId
+	MpConnSetPing
+	MpConnShutdownGraceful
 	MpDiscoveryCount
 	MpDiscoveryGet
 	MpDiscoveryPoll
@@ -1465,6 +1472,7 @@ EXPORTS
 	MpHostBroadcast
 	MpHostByeAll
 	MpHostEnd
+	MpIsValidAddress
 	MpJoinState
 	MpJoinStateSet
 	MpJoinTarget
@@ -1474,20 +1482,28 @@ EXPORTS
 	MpNetStart
 	MpNowMs
 	MpPeerCount
+	MpPingForPlayer
 	MpSendConn
 	MpSendToHost
 	MpSendToPlayer
+	?MpNoteLocalPad@@YAXH@Z
 	MpBeginHost
 	MpBeginJoinAsync
+	MpBusy
 	MpClientLaunch
 	MpHandleMessage
+	MpHostSendRoster
 	MpInputForPlayer
 	MpLeaveSession
 	MpLockstepFrame
+	MpMarkBusy
 	MpOnNetSpawn
+	MpPlaceSpawns
 	MpSendChat
 	MpSendHello
+	MpSendInput
 	MpSessionReset
+	MpSpawnLateJoiners
 	MpStartMatch
 	MpChatOpen
 	MpChatSendText
@@ -1498,6 +1514,9 @@ EXPORTS
 	MpUiOpenCarSelect
 	MpUiOpenModeMenu
 	MpUiTick
+	MpOnDrawMap
+	?MpBotEnabled@@YAHXZ
+	?MpBotPadForLocalCar@@YAHXZ
 	MpBridgeDeliver
 	jer_net_is_active
 	jer_net_is_host
@@ -2433,13 +2452,14 @@ EXPORTS
 	?gBootOnFoot@@3HA DATA
 	?gBootMpLevel@@3HA DATA
 	?gBootMpArena@@3HA DATA
+	?gBootSuppressLevel@@3HA DATA
 	?gExitAfterFrames@@3HA DATA
 	?gRunFrames@@3HA DATA
 	?gDebugSeed@@3HA DATA
 	?game_over@@3HA DATA
 	?gDemoLevel@@3HA DATA
-	?gStartPos@@3UXZPAIR@@A DATA
 	?xa_timeout@@3HA DATA
+	?gStartPos@@3UXZPAIR@@A DATA
 	?FrameCnt@@3HA DATA
 	?CurrentPlayerView@@3HA DATA
 	?CameraChanged@@3DA DATA
