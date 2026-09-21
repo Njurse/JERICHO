@@ -1819,6 +1819,9 @@ int CreateStationaryCivCar(int direction, int orientX, int orientZ, LONGVECTOR4*
 			slot++;
 		} while (carCnt < &car_data[MAX_CARS]);
 
+		printInfo("JERICHO-DIAG PINGIN: slot=%d cookie=%d\n",
+			newCar != NULL ? (int)(newCar - car_data) : -1, cookieCount);
+
 		if (newCar)
 		{
 			int dx, dz;
@@ -2006,6 +2009,22 @@ int PingInCivCar(int minPingInDist)
 
 		cookieCountStart = cookieCount;
 
+		// JERICHO-DIAG: what this ping was asked for, and how many slots are even free.
+		// The module makes cars the base game never had, so a bound is the first
+		// suspicion -- but this is a print, not a guess.
+		{
+			int freeSlots = 0, k;
+
+			for (k = 0; k < MAX_CARS; k++)
+			{
+				if (car_data[k].controlType == CONTROL_TYPE_NONE)
+					freeSlots++;
+			}
+
+			printInfo("JERICHO-DIAG PINGIN: enter dist=%d cookieStart=%d freeSlots=%d\n",
+				minPingInDist, cookieCount, freeSlots);
+		}
+
 		// find a free slot
 		carCnt = car_data;
 		slot = reservedSlots;
@@ -2020,6 +2039,9 @@ int PingInCivCar(int minPingInDist)
 			carCnt++;
 			slot++;
 		} while (carCnt < &car_data[MAX_CARS]);
+
+		printInfo("JERICHO-DIAG PINGIN: slot=%d cookie=%d\n",
+			newCar != NULL ? (int)(newCar - car_data) : -1, cookieCount);
 
 		if (newCar == NULL)
 		{
@@ -2067,6 +2089,8 @@ int PingInCivCar(int minPingInDist)
 
 		} while (!IS_STRAIGHT_SURFACE(roadSeg) && !IS_CURVED_SURFACE(roadSeg));
 	}
+
+	printInfo("JERICHO-DIAG PINGIN: fan done cookie=%d\n", cookieCount);
 	
 	// wtf there were before? car wasn't set to 'confused' state
 	if (!GetSurfaceRoadInfo(&roadInfo, roadSeg))
