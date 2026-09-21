@@ -1885,7 +1885,15 @@ int PingInCivCar(int minPingInDist)
 #else
 	DRIVER2_ROAD_INFO roadInfo;
 	EXTRA_CIV_DATA civDat;
-	u_char possibleLanes[12];
+	/* NOT 12. numLanes is ROAD_WIDTH_IN_LANES(&roadInfo) = (NumLanes & 15) * 2, so
+	 * a road may legitimately report up to 30 lanes, and the fill loop further
+	 * down does possibleLanes[numPossibleLanes++] = i once per lane with no bound
+	 * check. A 12-byte array therefore overflows by up to 18 bytes into the stack
+	 * on any wide road, which is the shape of the access violation reported inside
+	 * this function. The PSX branch above guards its scratchpad with a
+	 * static_assert; this branch had no guard at all. 32 covers the true maximum
+	 * with room to spare. */
+	u_char possibleLanes[32];
 #endif
 	LONGVECTOR4 pos;
 	VECTOR baseLoc, randomLoc;
