@@ -130,6 +130,19 @@
 // wheelie turns about the REAR axle, a stoppie about the front one, so the nose (or
 // the tail) rises instead of the whole car spinning around a point in its middle.
 #define CD2_KNOCK_PIVOT_DIST		240
+
+// THE RISE IS AN ARC, so it needs the 2*pi that turns PSX angle units into radians:
+//   rise = |pitch| / 4096 * 2*pi * DIST
+// Folding the 2*pi into the constant (round(240 * 2*pi) = 1508) keeps it integer:
+//   rise = |pitch| * 1508 >> 12      (~0.37 world units per unit of pitch)
+// It used to be |pitch| * DIST >> 12, i.e. the angle treated as if 4096 units were
+// one RADIAN rather than a full turn - about 6.3x too small, which is why the small
+// anti-clip rise the effect needs (the body lifting as it pitches so the end swinging
+// down does not dig in) was never actually visible: at a 5-degree knock that was
+// 3 units, and it is 21 now. At the accel layer's wheelie pitch (~110) the rise is
+// ~40, which beats the -24 squat that layer puts on the body, so the car ends up a
+// little HIGHER at the top of a wheelie rather than lower.
+#define CD2_KNOCK_PIVOT_ARC		1508
 #define CD2_KNOCK_SHIFT_DECAY		3200
 #define CD2_KNOCK_SHIFT_SETTLE		2300
 

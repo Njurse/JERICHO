@@ -862,27 +862,35 @@ int cd2OnCarDraw(void* ud, void* args)
 	int target = jer_clamp_int(-c->slip * CD2_ROLL_GAIN * leanDir, -CD2_BODY_MAX_ROLL, CD2_BODY_MAX_ROLL);
 	c->roll = jer_lerp_int(c->roll, target, CD2_ROLL_LERP);
 
-	if (c->roll != 0)
-		_RotMatrixZ(m, (short)c->roll);
-
-	/* the vehicle knock: buck and rock, render-only. The turbo's kick is one
-	 * source of it and collisions are another - they all land in the same place,
-	 * and none of it reaches the handling model. */
+	/* The lean into the slide. It is applied through the same compositor as everything
+	 * else - NOT with the engine's _RotMatrixZ, which PRE-multiplies and so leans a car
+	 * facing +Z correctly but ROLLS a car facing +X: the same world-axis trap the knock
+	 * had. Folded in here it turns about the car's own forward whatever the heading. The
+	 * sign is the negative of the old call so the visible lean is unchanged (the local
+	 * rotation runs the other way to the world one at a level heading). */
 	cd2KnockTick(cp->id);
 
-	/* One composed offset: the knock's, plus whatever the motion layers add, built and
-	 * clamped in one place. The knock always lands in full and a layer may put its own
-	 * ceiling on top - see cd2MotionCompose. */
 	{
 		CD2_VISUAL_OFFSET o;
+		int movesCar;
 
+		/* One composed offset: the knock's, plus whatever the motion layers add, built and
+		 * clamped in one place. The knock always lands in full and a layer may put its own
+		 * ceiling on top - see cd2MotionCompose. */
 		cd2MotionCompose(cp->id, &o);
+
+		/* only the knock and the motion layers may set rigidWheels. A pure body LEAN
+		 * keeps the engine's default level wheels - that is the whole point of a lean -
+		 * so this is decided before the lean is folded in. */
+		movesCar = (o.pitch != 0 || o.roll != 0 || o.yaw != 0 || o.bob != 0 || o.shift != 0);
+
+		o.roll -= c->roll;
 
 		cd2VisualApply(m, &o);
 
 		/* and the wheels come with the whole car: a knock moves it, and so does the
 		 * idle's shudder. Without this they would sit still under a rocking body. */
-		if (o.pitch != 0 || o.roll != 0 || o.yaw != 0 || o.bob != 0 || o.shift != 0)
+		if (movesCar)
 			a->rigidWheels = 1;
 	}
 

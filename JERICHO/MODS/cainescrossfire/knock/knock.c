@@ -343,7 +343,7 @@ void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o)
 	 * (column 1), which for an upright car is straight up. */
 	if (o->pitch != 0)
 	{
-		int rise = (o->pitch < 0 ? -o->pitch : o->pitch) * CD2_KNOCK_PIVOT_DIST >> 12;
+		int rise = ((o->pitch < 0 ? -o->pitch : o->pitch) * CD2_KNOCK_PIVOT_ARC) >> 12;
 
 		for (i = 0; i < 3; i++)
 			m->t[i] += (int)(((long long)m->m[i][1] * rise) >> 12);
