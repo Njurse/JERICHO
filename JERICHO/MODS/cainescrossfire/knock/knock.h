@@ -14,11 +14,13 @@
  * it is standing on: the knock can raise the body slightly, never lower it.
  *
  * HOW IT MOVES - an impulse sets a VELOCITY, never an angle directly. The angle
- * is then carried there by a spring, so it eases in, overshoots a little and
- * settles. Setting the angle instead is what made the first version read as
- * stiff: it was a step, not a movement. Everything here is smoothed the same way
- * the car's own body roll is (jer_lerp_int), and the spring/damper pair is the
- * dial for how loose the car looks.
+ * is then carried there by that velocity, which decays each frame, and once the
+ * velocity is spent the angle eases straight back to level. Setting the angle
+ * instead is what made the first version read as stiff: it was a step, not a
+ * movement. A spring/damper pair was tried first and read as WOBBLING - a spring
+ * between an angle and zero is an oscillator - which is why the motion is these
+ * two phases and not a spring. The two rates are the dial for how firm the car
+ * looks; the four-way detail is on the tunables below.
  *
  * Angles are PSX angle units (4096 = a full turn), lengths are world units, and
  * the velocities are per frame at 30Hz.
@@ -38,7 +40,7 @@
 // A spring/damper pair was tried first and read as wobbling: a spring between an
 // angle and zero is an oscillator, so the car rocked back and forth instead of
 // doing one firm movement and settling. These two rates are what replaced it.
-#define CD2_KNOCK_DECAY		1400	// /4096 - velocity kept per frame in phase 1
+#define CD2_KNOCK_DECAY		600	// /4096 - velocity kept per frame in phase 1
 #define CD2_KNOCK_SETTLE	1700	// /4096 - fraction of the angle eased out per frame
 
 // A hard speed change stiffens the return. The settle above is a fixed fraction per
@@ -46,17 +48,23 @@
 // so a violent event comes back with authority and a small one cannot snap the body
 // around. The cap is deliberately well short of 4096: at 4096 the whole angle is removed
 // in a single frame, which is the snap this file has already been bitten by once.
-#define CD2_KNOCK_SETTLE_PER_FORCE	24
+#define CD2_KNOCK_SETTLE_PER_FORCE	1664
 // Sized against the IMPULSE that started the knock (recorded in the state by cd2KnockAdd),
 // not against the car's speed change. That was tried first and abandoned on measurement:
 // hd.speed does not move during a turbo engagement, so the delta was exactly 0 through
 // the very event the rule exists for, and the rate stayed pinned at its base. The impulse
 // is always known, always nonzero, and is already "how hard was that" in one number.
-// 24 means a full-ceiling knock - CD2_KNOCK_IMPULSE_TO(57) is 57*2696/4096 = 37 - lands the
-// rate at 2738, and the cap is reached at an impulse of 50. So the range is: a light
-// graze barely changes it, and anything that gets anywhere near the ceiling gets the
-// stiff return. Measured on a turbo engagement against the cap and the base.
-#define CD2_KNOCK_SETTLE_EXTRA_MAX	1200	// base 1850 + this = 3050, about 74% per frame
+// WATCH THE SCALE, because this is easy to kill by accident: extra is
+// force * CD2_KNOCK_SETTLE_PER_FORCE with NO division, so the ceiling lands at
+// force = CD2_KNOCK_SETTLE_EXTRA_MAX / CD2_KNOCK_SETTLE_PER_FORCE. At the 1664 below that
+// is an impulse of 0.36 - i.e. EVERY knock saturates, the rate is a flat base + cap, and
+// the "harder hits return harder" gradation this describes is OFF. It was written to
+// reach its cap at an impulse of about 50, which is what 24 was for.
+//
+// At 24 with a cap of 1200: a full-ceiling knock - CD2_KNOCK_IMPULSE_TO(57) - lands the
+// rate at its stiffest, so a light graze barely changes it while anything near the
+// ceiling gets the stiff return. Measured on a turbo engagement against the cap and base.
+#define CD2_KNOCK_SETTLE_EXTRA_MAX	600	// base 1700 + this = 2300, about 56% per frame
 
 // ...and the settle is bounded: whatever the curve has left is snapped away after
 // this many frames (9 = 0.3s at 30Hz). An exponential approaches zero forever, so
@@ -122,8 +130,8 @@
 // wheelie turns about the REAR axle, a stoppie about the front one, so the nose (or
 // the tail) rises instead of the whole car spinning around a point in its middle.
 #define CD2_KNOCK_PIVOT_DIST		240
-#define CD2_KNOCK_SHIFT_DECAY		2200
-#define CD2_KNOCK_SHIFT_SETTLE		1300
+#define CD2_KNOCK_SHIFT_DECAY		3200
+#define CD2_KNOCK_SHIFT_SETTLE		2300
 
 // Impulse scale, so callers can pass whatever their own units are and say how
 // much it was:
@@ -155,10 +163,25 @@ typedef struct CD2_KNOCK_STATE
 // Everything that moves a car's RENDER matrix goes through one compositor, so the
 // pivot, the shift and the rotations exist once rather than once per feature.
 //
+// THE CONVENTION, stated once here so no reader has to re-derive it from the
+// matrix maths in knock.c:
+//
+//   pitch   +  the FRONT lifts (nose up);  -  the REAR lifts (nose down)
+//   roll    +  ...about the car's own forward axle (see the note below)
+//   yaw     +  ...about the car's own up
+//   bob     +  up, - down
+//   shift   +  FORWARD along the car's own nose
+//
+// ...and all three angles turn about the CAR'S OWN axes, not the world's. That is
+// the whole point: a knock has to read the same whichever way the car is pointing.
+// The engine's rotation helpers pre-multiply (they rotate about the fixed world
+// axis), which is only correct when the car faces world +Z - using them is the bug
+// that made "positive pitch" dive the nose facing one way and lift it facing the
+// other. See cd2VisualApply for the arithmetic and the measured symptoms.
+//
 // An offset is a plain sum: each layer fills one of these and they are added
 // together before anything is applied. Angles are PSX units (4096 = full turn) and
-// the translations are world units. `bob` is SIGNED, unlike the knock's lift, so a
-// layer may push the body down as well as up.
+// the translations are world units.
 typedef struct CD2_VISUAL_OFFSET
 {
 	int pitch, roll, yaw;		// angles on the three axes

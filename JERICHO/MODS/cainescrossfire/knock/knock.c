@@ -116,6 +116,12 @@ static void cd2KnockAxis(int* angle, int* velocity, int decay, int settle, int m
 
 	if (*velocity != 0)
 	{
+		/* the angle follows the velocity's SIGN: cd2KnockAdd adds the impulse to the
+		 * velocity, so a positive (nose-up) impulse raises the angle. This is the
+		 * other half of "positive pitch = the front lifts" - while the transform was
+		 * turning the car about the world axes, the sign that looked wrong here got
+		 * flipped by hand to compensate; with cd2VisualApply fixed to the car's own
+		 * axes, the plain sum is correct and the workaround is gone. */
 		a = *angle + *velocity;
 		*velocity = (int)(((long long)*velocity * decay) >> 12);
 	}
@@ -280,8 +286,36 @@ static void cd2KnockSample(int carId, int force)
 }
 
 // ---------------------------------------------------------------------------
-// The render-only part: translate the body, then rotate the car's own matrix.
-// Called from the car-draw path, so nothing here can reach the handling model.
+// The render-only part: translate the body, then rotate the car about its OWN
+// axes. Called from the car-draw path, so nothing here can reach the handling
+// model.
+//
+// THE ONE THING TO GET RIGHT - and the bug this file had for a long time - is
+// WHICH axes the angles turn about. The engine's rotation helpers (_RotMatrixX/Y/Z,
+// convert.h) PRE-multiply: they do M' = R * M, i.e. they turn the car about the
+// fixed WORLD axis of that name. That is only the car's own pitch/roll/yaw when
+// the car happens to point along world +Z. At any other heading a "pitch" leaks
+// into a roll and back, and the SIGN flips once with every half turn - so the same
+// knock read as a nose-dive facing north and a nose-lift facing south, which is
+// exactly "the cars don't knock according to their heading". Measured on the body
+// matrix handed in here: a positive pitch nosed the car DOWN at heading 0, rolled
+// it at 90 and lifted it at 180 (see the replication in the commit message).
+//
+// So the rotations are POST-multiplied here (M' = M * R, via MulMatrix0): the same
+// pitch/roll/yaw numbers, but applied about the car's own axles, which makes the
+// motion identical whichever way the car is pointing. With that, positive pitch =
+// the FRONT lifts and negative = the REAR lifts - the convention every caller in
+// this module was already written against (turbo engages with a nose-up wheelie,
+// a frontal collision dives the nose). Nothing else had to change to fix the axis.
+//
+// BASIS, because it is not what it looks like: the matrix passed in is the car's
+// DRAW matrix (cars.c), which is the physics matrix with rows 0 and 2 negated (a
+// 180 turn about up - the model's nose is local -Z). Its COLUMNS are the world
+// images of the model's axes: column 1 is the car's UP, column 2 is the car's
+// BACKWARD. So the car's forward is -column 2, and its up is column 1. ROW 2 is
+// NOT forward - it equals -column 2 only at heading 0 and diverges from there,
+// which is the second half of the heading bug (the weight shift pointed the wrong
+// way as soon as the car turned).
 //
 // This takes the COMPOSED offset and nothing else - no car id, no state - so every
 // layer that wants to move a car goes through exactly this code and the pivot maths
@@ -290,6 +324,7 @@ static void cd2KnockSample(int carId, int force)
 void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o)
 {
 	MATRIX* m = (MATRIX*)matrix;
+	MATRIX rot, res;
 	int i;
 
 	if (m == NULL || o == NULL)
@@ -304,32 +339,46 @@ void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o)
 	 * Moving the origin to compensate is what fakes that: the body rises by the
 	 * arc the far end would have swept. Note the sign works out so the car only
 	 * ever moves UP, whichever way it is pitching - so it can never be pushed down
-	 * through the ground it is standing on. */
+	 * through the ground it is standing on. The rise is along the car's own up
+	 * (column 1), which for an upright car is straight up. */
 	if (o->pitch != 0)
 	{
 		int rise = (o->pitch < 0 ? -o->pitch : o->pitch) * CD2_KNOCK_PIVOT_DIST >> 12;
 
 		for (i = 0; i < 3; i++)
-			m->t[i] += (int)(((long long)m->m[1][i] * rise) >> 12);
+			m->t[i] += (int)(((long long)m->m[i][1] * rise) >> 12);
 	}
 
 	if (o->shift != 0)
 	{
-		/* the weight moving: a translation along the car's own forward axis, so a
-		 * wheelie squats onto the back wheels and a frontal hit throws the weight
-		 * forward. m[2] is the matrix's forward basis row. */
+		/* the weight moving: a translation along the car's own FORWARD axis (the
+		 * model's nose is local -Z, so forward is -column 2), so a wheelie squats
+		 * onto the back wheels and a frontal hit throws the weight forward. */
 		for (i = 0; i < 3; i++)
-			m->t[i] += (int)(((long long)m->m[2][i] * o->shift) >> 12);
+			m->t[i] += (int)(((long long)(-m->m[i][2]) * o->shift) >> 12);
 	}
 
-	if (o->pitch != 0)
-		_RotMatrixX(m, (short)o->pitch);
+	/* The rotations, composed onto the RIGHT so they act about the car's own axes
+	 * rather than the world's. Built in the engine's own YZX order (RotMatrixX,
+	 * then Z, then Y - Calc_Object_MatrixYZX, convert.c); the angles are small so
+	 * the order barely matters, but matching the engine keeps it predictable.
+	 * MulMatrix0 sets only the 3x3 (m2 = m0 * m1) and leaves t alone, so the
+	 * translation applied above survives - that is why res is pre-loaded from *m. */
+	if (o->pitch != 0 || o->roll != 0 || o->yaw != 0)
+	{
+		InitMatrix(rot);
 
-	if (o->roll != 0)
-		_RotMatrixZ(m, (short)o->roll);
+		if (o->pitch != 0)
+			RotMatrixX((int)o->pitch, &rot);
+		if (o->roll != 0)
+			RotMatrixZ((int)o->roll, &rot);
+		if (o->yaw != 0)
+			RotMatrixY((int)o->yaw, &rot);
 
-	if (o->yaw != 0)
-		_RotMatrixY(m, (short)o->yaw);
+		res = *m;
+		MulMatrix0(m, &rot, &res);
+		*m = res;
+	}
 }
 
 // [D] [T]
