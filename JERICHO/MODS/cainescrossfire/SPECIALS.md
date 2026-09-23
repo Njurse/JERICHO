@@ -124,10 +124,25 @@ seconds between shots, so a charge cannot simply be sat on.
 
 A three-second salvo. Twice a volley — a pair at a time, out of **both flanks at
 once** and from the **midsection** rather than the nose — cheap homing missiles
-pour out, and the weave flips every volley, so the swarm snakes toward whatever
-it is chasing instead of flying in a straight line. Individually they barely
-scratch (55 a hit against a 55-frame hold's worth of them); there are a great
-many, and together they are a barrage.
+pour out. Every missile leaves **outward off its own flank**, away from the car
+body, on a throw that wanders from volley to volley, and every missile picks its
+own spawn point around the launcher (further out, up or down the flank) and its
+own line inside that wedge — so a salvo reads as a swarm scattering around the
+car rather than a hose out of two fixed points.
+
+The seeker does **not** engage on the frame the missile is born. The pool holds
+each shot on its launch bearing for `CD2_WEAPON_DEF.homingDelay` frames (1, ±1 so
+a volley is staggered), so a pair visibly splays out of the flanks and clears the
+car before anything turns it back across — buzzing in like hornets rather than
+turning on a rail. The blast of a missile that connects right beside the launcher
+spares its owner (see [HANDLING.md](HANDLING.md) § *The damage model*), so a
+salvo cannot total its own car.
+
+The range is 9000 at speed 2600 — about 3.5 frames of flight, which is what those
+two numbers are sized for: enough for the outward launch to read, and still
+enough for the seeker to bring the shot round. Individually they barely scratch
+(55 a hit against a 55-frame hold's worth of them); there are a great many, and
+together they are a barrage. `weapons/special/obelisk.c` owns the numbers.
 
 ### Corvo — Siren's Wrath
 
@@ -169,6 +184,10 @@ few are approximations to iterate on:
 
 - Hornet's ring is a damage/knock aura drawn with the engine's line primitives,
   not a modelled spike rack (a real model is the later pass).
+- Obelisk's outward launch is the launch PATTERN, not per-projectile steering:
+  the projectile pool has no per-shot steering hook, so the swarm splays and
+  snakes by the bearings its missiles are born on rather than by a folded
+  zig-zag.
 - Avalanche's crush holds positions directly (a rigged climb animation is later).
 - Corvo's bolt, Highwayman's flame, and the ring are line/particle visuals.
 - The flame/blob/pellet sounds are sample + pitch, not bespoke audio.
