@@ -269,11 +269,9 @@ static void cd2FreezeFire(void* vcp)
 
 	if (gFreezeChannel < 0)
 	{
-		// GetFreeChannel(1), not GetFreeChannel(): sound.h declares the
-		// parameter as 'int force = 1' (a C++ default argument) and this
-		// module is C, so the default never applies and must be passed.
-		gFreezeChannel = GetFreeChannel(1);
-		LockChannel(gFreezeChannel);
+		// ONE voice for this sound, held only while the engine keeps its own
+		// reserve (cd2TakeVoice / jer_sound_lock); a busy field still yields one.
+		gFreezeChannel = cd2TakeVoice();
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[cainescrossfire] freeze sound: channel=%d locked\n", gFreezeChannel);

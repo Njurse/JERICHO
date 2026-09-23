@@ -88,6 +88,13 @@ the side (a *per-side* sign), forward = `colBox.vz / 4` (a touch *ahead* of
 centre, not the rear), **riding the car** in all three axes (see *3D placement*
 below), and rotated to `hd.direction + CD2_CREW_YAW_OFFSET`.
 
+**Per-vehicle offsets.** A body whose doors sit somewhere the default does not
+fit (a limo, a truck, a very wide car) moves the mount with its profile's
+`CD2_VEH_CREW` block — `lat`/`fwd`/`up`/`yaw` per side, plus a `sillRaise` and an
+`armScale`, each a delta with `CD2_VEH_INHERIT` (0) meaning "leave the default".
+`cd2CrewOffsets` reads it; `cd2CrewPlace` and `cd2CrewPoseArm` apply it. See
+[`PROFILES.md`](PROFILES.md) § *Crew offsets*.
+
 **Facing — measured, and it is one number.** The crew's body yaw is
 `hd.direction + CD2_CREW_BODY_YAW`, with `CD2_CREW_BODY_YAW = 2048`.
 
@@ -125,14 +132,25 @@ before `DrawAllPedestrians`), *not* only on `FRAME`. `FRAME` fires before
 plainly visible as lag. The `CAMERA` pass uses the cars' final transforms for
 the frame.
 
-### The poses, the mirror flag, and who may be posed
+### The poses — the driver leans and aims, the passenger sits on the sill
 
-Both sides reuse the engine's own `GETOUTCAR` motion — no new art, no invented
-pose (`PED_ACTION_SIT` was tried and reverted: its legs dangle ~95 below the hip
-and land ~13 units *inboard* of it, so they hung through the door panel).
+Both sides start from the engine's own `GETOUTCAR` motion — no new art, no
+invented pose (`PED_ACTION_SIT` was tried and reverted: its legs dangle ~95 below
+the hip and land ~13 units *inboard* of it, so they hung through the door panel).
+On top of that motion each side is posed differently and, both of them, **aim at
+the car's current target**.
 
-* **weapon arm** — both crew get it, each on his own side, forced through
-  **`JER_EVENT_PED_SKELETON` phase 0** (the POSITION channel, `vCurrPos`).
+**Where "the target" comes from.** An AI car's crew aim at whatever its own brain
+is chasing (`cd2AiTargetPos`, published by `cd2AiDrive`); the local player's crew
+aim at the radar lock (`cd2LockOnTarget`). No target = the arm falls back to a
+fixed "out of the window" reach. See `AI.md` §10.
+
+* **the arms AIM (POSITION channel, `PED_SKELETON` phase 0).** `cd2CrewAim` turns
+  the target into a direction in the car's frame (`RSIN`/`RCOS` of the target
+  yaw, clamped to `CD2_CREW_ARM_CONE` so a target behind does not fold the arm
+  through the ped) and `cd2CrewPoseArm` extends the forearm and hand along it,
+  with a fixed outward bias (`CD2_CREW_ARM_OUT_BIAS`) so the arm still leaves the
+  window rather than crossing the chest.
   Re-applied every draw. The subtlety that made this look broken for a while:
   **the position channel is world-oriented** — `motion_c.c` has already rotated
   the chain by the body matrix by the time phase 0 runs, so `vCurrPos` is not a
@@ -142,12 +160,26 @@ and land ~13 units *inboard* of it, so they hung through the door panel).
   which for a crew ped *is* the car's — and that is what makes the reach track
   the car exactly.
   The other half of it: the shoulder is now **left alone**. It is already in the
-  world frame where the motion put it, and assigning the local rest value into
-  it (as the first cut did) yanked the whole arm to a fixed spot.
+  world frame where the motion (and the torso aim below) put it, and assigning
+  the local rest value into it (as the first cut did) yanked the whole arm to a
+  fixed spot.
   The offsets are ped-local: `+x` out of the ped's right, `-y` up (render frame
   is Y-down), `+z` the way he faces. The driver's `out` is `-x` and the gunner's
   `+x` — the car's local `+x` runs toward the gunner's door, since the crew are
   placed at `-`/`+` lateral.
+* **the torso and head aim (ROTATION channel, `PED_POSE`).** `cd2CrewPoseTorso`
+  rolls the **driver's** upper body out of his own window (`CD2_CREW_DRIVER_LEAN`
+  on `JOINT_1` — the upper-body root, so both arms and the head follow) and turns
+  his head toward the target (`CD2_CREW_HEAD_AIM`). The **passenger** is the other
+  pose: his body is turned `CD2_CREW_SILL_YAW` (180°) at the mount so he sits on
+  the sill with his legs in the cabin and his back to the window, and `JOINT_1` is
+  twisted `CD2_CREW_SILL_TORSO` (180°) back toward the car's forward so he still
+  looks where the car goes; his head follows the target too. All single knobs —
+  the rendered look still wants a play-test.
+  A rotation write lands in the **shared per-type motion buffer**, so it leaks
+  into every ped playing that motion frame: `jer_anim_save_rotations` snapshots it
+  in `PED_POSE` and the skeleton phase-1 pass puts it back with
+  `jer_anim_restore_rotations` — the same hand-back the mirror flag below uses.
 * **the mirror flag** — the one that decides which way each ped is drawn. For a
   get-out the engine sets the shared `bReverseYRotation` (`SetupGetOutCar`) and
   `newRotateBones` **mirror-flips the ped's root rotation** when it is set. Both
@@ -179,6 +211,16 @@ How to read it:
 * `reach` is the hand's offset from the shoulder in world space: it should sit on
   the ped's own side (`-x` driver, `+x` gunner) and **rotate as `m00`/`m20` do**
   — that is the arm following the car.
+
+Its companion, **`cd2CrewDumpBones`** (`PED_POSE`, so the values are both ours
+and readable), prints the whole held pose as a paste-ready rotation table — the
+baseline to author a pose from outside the code (see
+[`CREW_POSES.md`](CREW_POSES.md)):
+
+    [crew] static const JER_BONE_ROT side1[JER_LIMB_COUNT] = {
+    [crew] 	{     0,  2048,   140 },	/*  2 JOINT_1 */
+    [crew] 	{     0,   300,     0 },	/*  4 HEAD */
+    ...
 
 
 Reaching a module's own ped is what the **ownership gate** is for: the ped-pose

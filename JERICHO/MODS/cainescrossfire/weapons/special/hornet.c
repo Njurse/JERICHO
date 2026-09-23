@@ -77,8 +77,7 @@ static void cd2HornetFire(void* vcp)
 
 	if (gHornetChannel < 0)
 	{
-		gHornetChannel = GetFreeChannel(1);
-		LockChannel(gHornetChannel);
+		gHornetChannel = cd2TakeVoice();
 	}
 }
 

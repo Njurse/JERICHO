@@ -176,8 +176,7 @@ static void cd2DeathBang(CAR_DATA* cp)
 
 	if (gCd2DeathChannel < 0)
 	{
-		gCd2DeathChannel = GetFreeChannel(1);
-		LockChannel(gCd2DeathChannel);
+		gCd2DeathChannel = cd2TakeVoice();
 	}
 
 	Start3DSoundVolPitch(gCd2DeathChannel, bank, bang,

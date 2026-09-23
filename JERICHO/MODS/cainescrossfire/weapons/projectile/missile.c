@@ -45,12 +45,9 @@ static void cd2MissileFire(void* vcp)
 	// SFX than the machine gun's 5)
 	if (gMissileChannel < 0)
 	{
-		// GetFreeChannel(1), NOT GetFreeChannel(): sound.h declares it as
-		// 'int force = 1', a C++ default argument. Our module is C, so the
-		// default never applies and force arrives as garbage - which is why
-		// this returned -1 (no sound) whenever no voice happened to be idle.
-		gMissileChannel = GetFreeChannel(1);
-		LockChannel(gMissileChannel);
+		// ONE voice for this sound, held only while the engine keeps its own
+		// reserve (cd2TakeVoice / jer_sound_lock); a busy field still yields one.
+		gMissileChannel = cd2TakeVoice();
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[cainescrossfire] missile sound: channel=%d locked sample=%d\n",

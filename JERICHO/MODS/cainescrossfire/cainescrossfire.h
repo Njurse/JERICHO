@@ -387,6 +387,20 @@ typedef struct CD2_STATS
 #define CD2_SCENERY_DAMAGE_DEFAULT 25    // % of stock car-vs-solid damage (0..100)
 #define CD2_AI_DAMAGE_TAKEN_DEFAULT 50   // % damage an opponent takes (10..400)
 
+// Global WEAPON damage, as a percentage of each weapon's own damage value,
+// applied at the one choke point every weapon hit passes through (direct hits,
+// burst/splash damage, drops, and the specials that deal damage). 50 = half.
+// The weapons were killing cars far too fast once car-to-car collision damage
+// was also in play.
+#define CD2_WEAPON_DAMAGE_DEFAULT 50
+
+// Scenery (wall/object) damage only bites above this raw strike velocity; the
+// engine already ignores anything under 20480. Below it the car takes NO
+// scenery damage at all, so only a genuinely hard hit costs anything - the map
+// is not worth taking damage over. Units are the raw bcollide strikeVel
+// (clamped at 2048000). 0 = off (keep the engine's own 20480 gate).
+#define CD2_SCENERY_DAMAGE_MIN_DEFAULT 61440
+
 // ---- destroyed-car respawn -------------------------------------------
 // A wrecked car the module owns (the player and the AI opponents) returns to
 // the position it started the level at, after CD2_RESPAWN_DELAY frames.
@@ -462,7 +476,9 @@ typedef struct CD2_CONFIG
 	int missileSound;      // SOUND_BANK_SFX sample played on missile launch
 
 	int sceneryDamage;     // % of stock damage a car takes hitting solid scenery/objects
+	int sceneryDamageThreshold; // raw strike velocity below which scenery damage is ignored (0 = off)
 	int carCarDamage;      // % of stock damage applied to car-vs-car hits
+	int weaponDamage;      // % of stock WEAPON damage (direct + splash), all weapons
 	int aiDamageTaken;     // % damage an opponent takes (they were dying too fast)
 	int respawn;           // 0/1: destroyed cars return to their start point
 	int respawnDelay;      // frames a destroyed car stays out (default ~5s)
@@ -538,6 +554,19 @@ int cd2CarBrake(void* cp);		// speed-units/frame^2
 // (totaled wreck — no driving input, no weapons).
 // scale a damage value by a percentage (shared with the weapon core)
 int cd2ScaleDamage(int value, int pct);
+
+// A voice for one of the module's sounds. The engine has only 16 SPU voices and
+// its own one-shot effects (the collision bang, explosions, tyre screech) play
+// on whatever GetFreeChannel() hands out, so the module must not hold them all:
+// take a voice with FORCE - so a sound is never lost to a busy field - then LOCK
+// it only while JER_SFX_RESERVE voices stay free for the engine (jer_sound_lock).
+// A refused lock still returns a usable voice: the sound plays, it just is not
+// held against the engine's own. Returns -1 only when no voice exists at all.
+int cd2TakeVoice(void);
+
+// the car's damage cap (what cd2CarTotaled tests against): turns totalDamage
+// into a health fraction for the HUD
+int cd2CarMaxDamage(void* cp);
 
 // scenery impacts taken by `car` this level (observability for the AI)
 int cd2SceneryHits(void* car);

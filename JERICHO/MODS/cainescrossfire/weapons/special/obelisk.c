@@ -113,8 +113,7 @@ static void cd2ObeliskFire(void* vcp)
 
 	if (gSalvoChannel < 0)
 	{
-		gSalvoChannel = GetFreeChannel(1);
-		LockChannel(gSalvoChannel);
+		gSalvoChannel = cd2TakeVoice();
 	}
 
 	if (gSalvoChannel >= 0)

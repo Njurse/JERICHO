@@ -34,19 +34,14 @@ static void cd2MgFire(void* vcp)
 
 	cd2RaycastSpawn(&cd2WdefMG, cp, &muzzle, &dir);
 
-	// One channel held for the whole burst, and LOCKED. Merely caching the
-	// channel number is not enough: GetFreeChannel() hands out any voice that
-	// is not locked, so the engine's own continuous sounds took ours back and
-	// stomped every retrigger - which is why a cached channel went silent.
-	// LockChannel keeps it ours; GetFreeChannel() (and the engine) then skip it.
+	// One voice held for the whole burst, and LOCKED while the engine keeps its
+	// own reserve. Merely caching the channel number is not enough: a voice that
+	// is not locked is handed out again, so the engine's own continuous sounds
+	// took ours back and stomped every retrigger - which is why a cached channel
+	// went silent. cd2TakeVoice takes and locks it (see cainescrossfire.h).
 	if (gMgChannel < 0)
 	{
-		// GetFreeChannel(1), NOT GetFreeChannel(): sound.h declares it as
-		// 'int force = 1', a C++ default argument. Our module is C, so the
-		// default never applies and force arrives as garbage - which is why
-		// this returned -1 (no sound) whenever no voice happened to be idle.
-		gMgChannel = GetFreeChannel(1);
-		LockChannel(gMgChannel);
+		gMgChannel = cd2TakeVoice();
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[cainescrossfire] MG sound: channel=%d locked\n", gMgChannel);

@@ -47,6 +47,39 @@ int GetFreeChannel(int force = 1);
   (`ComputeDoppler`), so they're the right choice for muzzle/impact/explosion
   sounds attached to a world point.
 
+## Voices are scarce — reserve them (`jer_sound`)
+
+There are only `MAX_SFX_CHANNELS` (16) SPU voices. The engine locks voices 0..2
+for itself at boot (0..5 in two-player) and plays its own one-shot effects — the
+**collision bang**, explosions, tyre screech — on whatever `GetFreeChannel()`
+hands out. A module that holds a LOCKED voice per sound can leave the engine with
+none: once every remaining voice is locked, `GetFreeChannel()` returns -1 and the
+crash you just had makes no sound at all. That is exactly what happened here
+before `jer_sound`: ~20 weapon/special sounds each locked a voice, so past ~13
+collisions (and, eventually, everything else) went silent.
+
+`jer_sound.h` fixes it, and the module routes every voice through it via
+`cd2TakeVoice()` (`cainescrossfire.c`):
+
+```c
+int  jer_sound_lock(int channel);      // 1 = locked, 0 = REFUSED (reserve held)
+int  jer_sound_ensure(int* channel);   // one-call acquire/re-lock/give-up
+void jer_sound_unlock(int channel);
+int  jer_sound_channel_busy(int channel);
+int  jer_sound_locked_count(void);
+```
+
+- `jer_sound_lock` locks a voice **only while `JER_SFX_RESERVE` (4) voices stay
+  free** for the engine, so a module can never starve the generic SFX pool.
+- A REFUSED lock is not an error: `cd2TakeVoice` still returns a usable voice
+  (`GetFreeChannel(1)` with FORCE never steals a locked voice), it just is not
+  held. Play it; do not treat a refusal as "no sound".
+- `jer_sound_ensure` is the wrapper for a cached `-1` channel variable: it
+  acquires and locks, re-locks after a level change (`ResetSound` clears every
+  lock), and gives up gracefully.
+- With `debug_log` on, a run logs the budget: `sfx voice: chan=9 held=0
+  locked=12/12` is the reserve being protected.
+
 ## Banks (`gamesnd.h`)
 
 ```c

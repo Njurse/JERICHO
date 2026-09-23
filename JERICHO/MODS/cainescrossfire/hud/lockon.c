@@ -7,13 +7,15 @@
 //      it reads as "what the guns are pointing at" rather than "what is
 //      nearby", and it disappears the moment the target leaves the cone, the
 //      range, or the line of sight.
-//   2. The MAP moves up under it. The engine parks the minimap at y=181, i.e.
+//   2. A small HEALTH BAR on the line under the name, so the target's state
+//      reads at a glance (green -> red).
+//   3. The MAP moves up under it. The engine parks the minimap at y=181, i.e.
 //      along the bottom; the corner holds both now, with the map tucked in
 //      under the name instead of fighting it.
 //
-// The name is drawn with the JERICHO HUD's anchored panels (jer_hud_panel):
-// persistent, corner-anchored lines, which is what a readout needs and what the
-// message queue deliberately is not.
+// The name is drawn with the JERICHO HUD's anchored panels (jer_hud_panel /
+// jer_hud_panel_bar): persistent, corner-anchored readouts, which is what the
+// lock needs and what the message queue deliberately is not.
 
 #include "driver2.h"
 #include "cars.h"
@@ -30,9 +32,14 @@
 
 extern int ratan2(int y, int x);	/* the module's angle helper */
 
-#define CD2_LOCK_RANGE	5200	// how far the readout reaches
+// How far the readout reaches. Deliberately generous: the lock is meant to sit
+// on an opponent almost all the time, and only drop when they are REALLY far
+// across the map. The mounted crew's aim rides the same lock, so this is also
+// how far a crew member will aim at a target.
+#define CD2_LOCK_RANGE	15600	// how far the readout reaches
 #define CD2_LOCK_CONE	480	// ...and how far off the nose (heading units, ~42 deg)
-#define CD2_LOCK_PANEL	0	// the HUD panel slot it owns
+#define CD2_LOCK_PANEL	0	// the HUD panel slot the NAME owns
+#define CD2_LOCK_BAR_PANEL 1	// the slot the health bar owns (stacks under it)
 #define CD2_HUD_MAP_Y	40	// where the map sits, under the name
 
 static int gLockCar = -1;
@@ -49,6 +56,7 @@ static void cd2LockClear(void)
 
 	gLockCar = -1;
 	jer_hud_panel_clear(CD2_LOCK_PANEL);
+	jer_hud_panel_clear(CD2_LOCK_BAR_PANEL);
 }
 
 // The best opponent in the player's forward cone with a clear line to it.
@@ -158,6 +166,30 @@ static int cd2LockOnFrame(void* ud, void* args)
 
 			cd2FacColourOfCar(&car_data[t], &r, &g, &b);
 			jer_hud_panel(CD2_LOCK_PANEL, JER_HUD_ANCHOR_TOP_RIGHT, name, r, g, b);
+		}
+
+		// the HEALTH BAR, a small meter on the line under the name: the
+		// target's remaining fraction of its damage cap (the same cap
+		// cd2CarTotaled uses). Coloured green (full) -> red (nearly wrecked)
+		// so the state reads at a glance without knowing the numbers.
+		{
+			int maxD = cd2CarMaxDamage(&car_data[t]);
+			int hp = maxD - (int)car_data[t].totalDamage;
+			int pct = 100;
+
+			if (hp < 0)
+				hp = 0;
+			if (hp > maxD)
+				hp = maxD;
+
+			if (maxD > 0)
+				pct = (hp * 100) / maxD;
+
+			jer_hud_panel_bar(CD2_LOCK_BAR_PANEL, JER_HUD_ANCHOR_TOP_RIGHT,
+				hp, maxD,
+				255 - (255 * pct) / 100,	// red rises as hp falls
+				(255 * pct) / 100,		// green at full
+				48);				// a little blue so it is not garish
 		}
 	}
 

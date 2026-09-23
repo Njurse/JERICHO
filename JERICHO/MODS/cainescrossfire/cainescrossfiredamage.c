@@ -57,6 +57,7 @@ int cd2SceneryHits(void* vcp)
 int cd2OnDamageScale(void* ud, void* args)
 {
 	JER_ARGS_DAMAGE_SCALE* a = (JER_ARGS_DAMAGE_SCALE*)args;
+	CAR_DATA* cp = (CAR_DATA*)a->car;
 
 	(void)ud;
 
@@ -70,8 +71,29 @@ int cd2OnDamageScale(void* ud, void* args)
 	// traffic tumble detects a world contact from a CHANGE in it - so with
 	// the increment buried in the opponent branch below, traffic could
 	// never register a hit and never tumbled at all.
-	if (((CAR_DATA*)a->car)->id >= 0 && ((CAR_DATA*)a->car)->id < MAX_CARS)
-		gCd2SceneryHits[((CAR_DATA*)a->car)->id]++;
+	if (cp->id >= 0 && cp->id < MAX_CARS)
+		gCd2SceneryHits[cp->id]++;
+
+	// THRESHOLD: below this raw strike velocity the contact is a scrape, not a
+	// crash, and the car takes NO damage from it. The engine already refuses
+	// anything under strikeVel 20480 (bcollide.c DamageCar); this raises the
+	// bar so only a genuinely hard hit costs anything - the map is not worth
+	// taking real damage over. Checked AFTER the counter above so a scrape
+	// still registers as a contact for the traffic tumble.
+	if (gCd2Cfg.sceneryDamageThreshold > 0 && a->impact < gCd2Cfg.sceneryDamageThreshold)
+	{
+		a->result = 0;
+
+		if (gCd2Cfg.debugLog)
+		{
+			static unsigned int t = 0;
+			if ((t++ & 63) == 0)
+				printInfo("[cainescrossfire] scenery dmg ignored: car=%d type=%d impact=%d < thresh=%d dmg=%d\n",
+					cp->id, cp->controlType, a->impact, gCd2Cfg.sceneryDamageThreshold, cp->totalDamage);
+		}
+
+		return JER_RESULT_CONTINUE;
+	}
 
 	// an opponent that keeps clipping walls needs the extra cushion, or a
 	// single corner ends its run
@@ -79,7 +101,7 @@ int cd2OnDamageScale(void* ud, void* args)
 		a->result = cd2ScaleDamage(a->result, gCd2Cfg.aiDamageTaken);
 
 	// Traffic takes a further half off scenery impacts.
-	if (cd2IsTraffic((CAR_DATA*)a->car))
+	if (cd2IsTraffic(cp))
 		a->result = cd2ScaleDamage(a->result, CD2_TRAFFIC_SCENERY_EXTRA);
 
 	// ARMOR: the profile's Armor stat scales what the car takes, whatever the
@@ -90,9 +112,8 @@ int cd2OnDamageScale(void* ud, void* args)
 	{
 		static unsigned int t = 0;
 		if ((t++ & 63) == 0)
-			printInfo("[cainescrossfire] scenery dmg scale: car=%d type=%d -> %d%% (%d) dmg=%d\n",
-				((CAR_DATA*)a->car)->id, ((CAR_DATA*)a->car)->controlType, gCd2Cfg.sceneryDamage, a->result,
-				((CAR_DATA*)a->car)->totalDamage);
+			printInfo("[cainescrossfire] scenery dmg scale: car=%d type=%d -> %d%% (%d) impact=%d dmg=%d\n",
+				cp->id, cp->controlType, gCd2Cfg.sceneryDamage, a->result, a->impact, cp->totalDamage);
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -105,12 +126,40 @@ int cd2OnCarVsCar(void* ud, void* args)
 {
 	JER_ARGS_CAR_VS_CAR* a = (JER_ARGS_CAR_VS_CAR*)args;
 	int v;
+	int aggressor = 0;
 	(void)ud;
 
 	if (!gCd2Cfg.enabled)
 		return JER_RESULT_CONTINUE;
 
 	v = a->value;
+
+	// AGGRESSOR IMMUNITY: in a car-to-car hit the car driving INTO the other
+	// deals the damage, and that car should not be hurt by its own attack.
+	// Compare each car's approach speed along the line between them - both
+	// dots use the same vector, so they compare correctly without normalising.
+	// This car's approach is `da` (positive = moving toward the other); the
+	// other car's is `-db`. The faster-approaching one is the aggressor and
+	// takes nothing; the car it hit still takes the full value. This is what
+	// stops Deadstar dying to its own dash (a ram always reads as the
+	// aggressor).
+	{
+		CAR_DATA* ca = (CAR_DATA*)a->car;
+		CAR_DATA* ot = (CAR_DATA*)a->other;
+
+		if (ca != NULL && ot != NULL)
+		{
+			long long dx = (long long)ot->hd.where.t[0] - ca->hd.where.t[0];
+			long long dz = (long long)ot->hd.where.t[2] - ca->hd.where.t[2];
+			long long da = (long long)ca->st.n.linearVelocity[0] * dx + (long long)ca->st.n.linearVelocity[2] * dz;
+			long long db = (long long)ot->st.n.linearVelocity[0] * dx + (long long)ot->st.n.linearVelocity[2] * dz;
+
+			aggressor = (da > -db);
+		}
+	}
+
+	// the aggressor keeps its damage-dealing role but takes none of the
+	// exchange itself (zeroed at the very end, after every scaling)
 
 	if (cd2AiIsOpponent(a->car))
 		v = a->playerValue;
@@ -185,6 +234,22 @@ int cd2OnCarVsCar(void* ud, void* args)
 					printInfo("[cainescrossfire] traffic shove: car=%d by=%d strike=%d rate=%d\n",
 						tc->id, sc->id, a->strikeVel, rate);
 			}
+		}
+	}
+
+	// finally, the aggressor takes none of the exchange (its own hit deals
+	// FULL damage to the other car; this only spares the attacker). Applied
+	// here so no earlier scaling branch can resurrect the value.
+	if (aggressor)
+	{
+		v = 0;
+
+		if (gCd2Cfg.debugLog)
+		{
+			static unsigned int t = 0;
+			if ((t++ & 31) == 0)
+				printInfo("[cainescrossfire] car-car aggressor: car=%d spared, other=%d (strike=%d)\n",
+					((CAR_DATA*)a->car)->id, ((CAR_DATA*)a->other)->id, a->strikeVel);
 		}
 	}
 

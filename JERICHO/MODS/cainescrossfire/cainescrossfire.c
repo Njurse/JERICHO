@@ -43,6 +43,7 @@
 #include "jer_math.h"
 #include "sound.h"
 #include "gamesnd.h"
+#include "jer_sound.h"		/* voice reservation (jer_sound_lock) - see cd2TakeVoice */
 #include "mc_snd.h"
 #include "weapons/core/weapon.h"	/* CD2_WEAPON_DEF + inventory API */
 #include "weapons/special/special.h"	/* the six vehicle specials */
@@ -90,6 +91,36 @@ static int gEnvOpponentsBad = 0;
 
 /* CC_MOTION: -1 = not set, else 0/1. Run-only, never persisted. */
 static int gEnvMotion = -1;
+
+/*
+ * A voice for one of the module's sounds. See cainescrossfire.h for the rule;
+ * in short: take with FORCE (a sound must never be lost to a busy field), then
+ * lock only while JER_SFX_RESERVE voices stay free for the engine (jer_sound_lock).
+ */
+int cd2TakeVoice(void)
+{
+	int c = GetFreeChannel(1);
+	int held;
+
+	if (c < 0)
+		return -1;
+
+	// best effort: hold the voice while the engine's own SFX keep their reserve
+	held = jer_sound_lock(c);
+
+	if (gCd2Cfg.debugLog)
+	{
+		static unsigned int t = 0;
+
+		// always report a REFUSED lock (the reserve being protected); otherwise
+		// a sample, so a run shows the budget filling up
+		if (!held || (t++ & 15) == 0)
+			printInfo("[cainescrossfire] sfx voice: chan=%d held=%d locked=%d/%d\n",
+				c, held, jer_sound_locked_count(), MAX_SFX_CHANNELS - JER_SFX_RESERVE);
+	}
+
+	return c;
+}
 
 /*
  * Are the procedural motion layers on? The master config key, unless the environment
@@ -140,6 +171,7 @@ void cd2LoadConfig(void)
 	gCd2Cfg.allWeapons    = jer_config_get_int("cainescrossfire", "all_weapons", 1);
 	gCd2Cfg.rollLimit     = jer_config_get_int("cainescrossfire", "roll_limit", CD2_ROLL_LIMIT_DEFAULT);
 	gCd2Cfg.sceneryDamage = jer_config_get_int("cainescrossfire", "scenery_damage", CD2_SCENERY_DAMAGE_DEFAULT);
+	gCd2Cfg.sceneryDamageThreshold = jer_config_get_int("cainescrossfire", "scenery_damage_threshold", CD2_SCENERY_DAMAGE_MIN_DEFAULT);
 	/* Opponents are a MATCH setting and default to NONE: loading cainescrossfire must not
 	 * put cars on the track by itself. The old ai_opponent flag is deliberately
 	 * NOT migrated - it defaulted to on, so carrying it over would keep spawning
@@ -222,6 +254,7 @@ void cd2LoadConfig(void)
 
 	// car-vs-car damage as % of stock. Migrate the old car_car_nerf (% reduction).
 	gCd2Cfg.carCarDamage  = jer_config_get_int("cainescrossfire", "car_car_damage", -1);
+	gCd2Cfg.weaponDamage  = jer_config_get_int("cainescrossfire", "weapon_damage", CD2_WEAPON_DAMAGE_DEFAULT);
 	gCd2Cfg.aiDamageTaken = jer_config_get_int("cainescrossfire", "ai_damage_taken", CD2_AI_DAMAGE_TAKEN_DEFAULT);
 	gCd2Cfg.respawn       = jer_config_get_int("cainescrossfire", "respawn", 1);
 	gCd2Cfg.respawnDelay  = CD2_RESPAWN_DELAY;	// fixed 5s, see CD2_RESPAWN_DELAY
@@ -255,6 +288,7 @@ void cd2LoadConfig(void)
 	gCd2Cfg.allWeapons    = gCd2Cfg.allWeapons ? 1 : 0;
 	gCd2Cfg.rollLimit     = jer_clamp_int(gCd2Cfg.rollLimit, 0, 89);
 	gCd2Cfg.sceneryDamage = jer_clamp_int(gCd2Cfg.sceneryDamage, 0, 100);
+	gCd2Cfg.sceneryDamageThreshold = jer_clamp_int(gCd2Cfg.sceneryDamageThreshold, 0, 2048000);
 	gCd2Cfg.aiOpponents   = jer_clamp_int(gCd2Cfg.aiOpponents, 0, CD2_AI_MAX);
 	gCd2Cfg.aiForceState  = jer_clamp_int(gCd2Cfg.aiForceState, 0, CD2_AI_STATE_COUNT - 1);
 	gCd2Cfg.aiDebug       = gCd2Cfg.aiDebug ? 1 : 0;
@@ -266,6 +300,7 @@ void cd2LoadConfig(void)
 	gCd2Cfg.teamPaletteStrength = jer_clamp_int(gCd2Cfg.teamPaletteStrength, 0, 256);
 	gCd2Cfg.teamPaletteFloor    = jer_clamp_int(gCd2Cfg.teamPaletteFloor, 0, 31);
 	gCd2Cfg.carCarDamage  = jer_clamp_int(gCd2Cfg.carCarDamage, 10, 100);
+	gCd2Cfg.weaponDamage  = jer_clamp_int(gCd2Cfg.weaponDamage, 0, 200);
 	gCd2Cfg.aiDamageTaken = jer_clamp_int(gCd2Cfg.aiDamageTaken, 10, 400);
 	gCd2Cfg.respawn       = gCd2Cfg.respawn ? 1 : 0;
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
@@ -291,6 +326,7 @@ void cd2SaveConfig(void)
 	jer_config_set_int("cainescrossfire", "all_weapons", gCd2Cfg.allWeapons);
 	jer_config_set_int("cainescrossfire", "roll_limit", gCd2Cfg.rollLimit);
 	jer_config_set_int("cainescrossfire", "scenery_damage", gCd2Cfg.sceneryDamage);
+	jer_config_set_int("cainescrossfire", "scenery_damage_threshold", gCd2Cfg.sceneryDamageThreshold);
 	jer_config_set_int("cainescrossfire", "ai_opponents", gCd2Cfg.aiOpponents);
 	jer_config_set_int("cainescrossfire", "ai_force_state", gCd2Cfg.aiForceState);
 	jer_config_set_int("cainescrossfire", "ai_debug", gCd2Cfg.aiDebug);
@@ -305,6 +341,7 @@ void cd2SaveConfig(void)
 	jer_config_set_int("cainescrossfire", "team_palette_strength", gCd2Cfg.teamPaletteStrength);
 	jer_config_set_int("cainescrossfire", "team_palette_floor", gCd2Cfg.teamPaletteFloor);
 	jer_config_set_int("cainescrossfire", "car_car_damage", gCd2Cfg.carCarDamage);
+	jer_config_set_int("cainescrossfire", "weapon_damage", gCd2Cfg.weaponDamage);
 	jer_config_set_int("cainescrossfire", "ai_damage_taken", gCd2Cfg.aiDamageTaken);
 	jer_config_set_int("cainescrossfire", "respawn", gCd2Cfg.respawn);
 	jer_config_set_str("cainescrossfire", "missile_model", gCd2Cfg.missileModel);

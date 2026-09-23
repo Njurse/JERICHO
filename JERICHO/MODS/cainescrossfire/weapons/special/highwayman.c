@@ -65,8 +65,7 @@ static void cd2HighwaymanFire(void* vcp)
 
 	if (gFlameChannel < 0)
 	{
-		gFlameChannel = GetFreeChannel(1);
-		LockChannel(gFlameChannel);
+		gFlameChannel = cd2TakeVoice();
 	}
 
 	if (gFlameChannel >= 0)

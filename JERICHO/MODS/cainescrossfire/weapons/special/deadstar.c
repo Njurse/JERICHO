@@ -65,8 +65,7 @@ static void cd2DeadstarHorn(CAR_DATA* cp)
 {
 	if (gDashChannel < 0)
 	{
-		gDashChannel = GetFreeChannel(1);
-		LockChannel(gDashChannel);
+		gDashChannel = cd2TakeVoice();
 	}
 
 	if (gDashChannel >= 0)
@@ -258,10 +257,10 @@ static CD2_WEAPON_DEF cd2MakeDeadstarDef(void)
 
 	d.maxAmmo = 2;			// profile capacity
 	d.fireInterval = 30;
-	d.refireCooldown = 750;		// profile recharge: 25s
+	d.refireCooldown = 88;		// profile recharge: 25s
 
 	d.damage = 0;			// the dash is the payload (collision damage x4)
-	d.speed = CD2_DASH_SPEED;
+	d.speed = 0;			// no projectile: the dash is a boost, not a shot
 	d.range = 0;
 	d.life = CD2_DASH_FRAMES;
 

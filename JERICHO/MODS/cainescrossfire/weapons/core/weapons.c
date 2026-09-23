@@ -524,6 +524,13 @@ void cd2WpnDamageCar(CAR_DATA* cp, const VECTOR* at, int value, const CAR_DATA* 
 	else if (dom == lx) region = (lx > 0) ? 3 : 2;
 	else region = (ly > 0) ? 4 : 5;
 
+	// GLOBAL weapon damage (cainescrossfire.h weapon_damage): EVERY weapon hit
+	// funnels through here - direct hits, burst/volley splash, the AOE blasts,
+	// dropped mines and the damaging specials - so this is the one place the
+	// whole arsenal's bite is set. The per-target cuts below (opponent, traffic,
+	// armor) stack on top of it.
+	value = cd2ScaleDamage(value, gCd2Cfg.weaponDamage);
+
 	// opponents take reduced damage (cainescrossfire.h ai_damage_taken), so one
 	// weapon hit doesn't end their run outright
 	if (cd2AiIsOpponent(cp))

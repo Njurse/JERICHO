@@ -41,11 +41,9 @@ static void cd2ShotgunFire(void* vcp)
 
 	if (gShotgunChannel < 0)
 	{
-		// GetFreeChannel(1), not GetFreeChannel(): sound.h declares the
-		// parameter as 'int force = 1' (a C++ default argument) and this
-		// module is C, so the default never applies and must be passed.
-		gShotgunChannel = GetFreeChannel(1);
-		LockChannel(gShotgunChannel);
+		// ONE voice for this sound, held only while the engine keeps its own
+		// reserve (cd2TakeVoice / jer_sound_lock); a busy field still yields one.
+		gShotgunChannel = cd2TakeVoice();
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[cainescrossfire] shotgun sound: channel=%d locked\n", gShotgunChannel);

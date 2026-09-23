@@ -157,6 +157,11 @@ Instant acceleration to turbo top speed for 2.5 seconds, with the horn blaring
 twice (0.75s apart). While dashing, the collision damage Deadstar deals is
 **x4**, and a near-90-degree hit into a car's side lands an extra 15%.
 
+The dash is a RAM, so the car-vs-car **aggressor rule** (`cd2OnCarVsCar`) matters
+here: the car driving into the other deals the damage and takes none of the
+exchange itself. Before that rule, ramming a heavy opponent could kill Deadstar
+with its own dash. See `HANDLING.md` § *The damage model*.
+
 ## What is a first cut
 
 The mechanics are the described ones, built on the framework's primitives, but a

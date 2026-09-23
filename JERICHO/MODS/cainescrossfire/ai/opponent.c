@@ -218,6 +218,8 @@ typedef struct CD2_AI_CAR
 	int hold;		// frames a behaviour must be held before switching
 	int idle;		// consecutive frames spent near-standstill
 	int lastDamage, hits;
+	int targetId;		// the car it is currently chasing (-1 = none)
+	VECTOR targetPos;	// that target's last known position (world)
 	CD2_NAV_ROUTE route;
 } CD2_AI_CAR;
 
@@ -885,6 +887,10 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	targetV.vy = 0;
 	targetV.vz = 0;
 	targetId = cd2AiFindTarget(cp, &targetV);
+
+	// publish it so the mounted crew can aim at whatever this car is chasing
+	A->targetId = targetId;
+	A->targetPos = targetV;
 
 	if (targetId >= 0)
 	{
@@ -2012,6 +2018,30 @@ int cd2AiRoleOf(const void* car)
 	slot = cd2AiSlot(cp->id);
 
 	return (slot != NULL) ? slot->role : -1;
+}
+
+// The car an opponent is currently chasing, as a world position. `out` is a
+// VECTOR* the caller supplies (void* so this header need not pull the game
+// types in). Returns 1 and fills *out when the car is an opponent with a live
+// target, else 0 and leaves *out untouched. The mounted crew uses it to aim at
+// what the AI itself is attacking, so the ped and the car agree.
+int cd2AiTargetPos(const void* car, void* out)
+{
+	const CAR_DATA* cp = (const CAR_DATA*)car;
+	CD2_AI_CAR* slot;
+
+	if (cp == NULL)
+		return 0;
+
+	slot = cd2AiSlot(cp->id);
+
+	if (slot == NULL || slot->targetId < 0)
+		return 0;
+
+	if (out != NULL)
+		*(VECTOR*)out = slot->targetPos;
+
+	return 1;
 }
 
 int cd2AiGetDebug(CD2_AI_DEBUG* out)

@@ -58,6 +58,13 @@ int cd2CarTotaled(void* vcp)
 	return cp->totalDamage >= cd2cMaxDamage(cp);
 }
 
+// The car's damage cap (the same value cd2CarTotaled tests against), so a caller
+// can turn totalDamage into a 0..1 health fraction - the lock-on health bar.
+int cd2CarMaxDamage(void* vcp)
+{
+	return cd2cMaxDamage((CAR_DATA*)vcp);
+}
+
 // ---------------------------------------------------------------------------
 // The death banner: naming a car
 // ---------------------------------------------------------------------------

@@ -72,4 +72,10 @@ int cd2AiIsOpponent(const void* car);
 // with cd2AiRoleNameOf for a display string.
 int cd2AiRoleOf(const void* car);
 
+// The car an opponent is chasing, as a world position: fill `*out` (a VECTOR*)
+// and return 1, or return 0 (and leave *out) when `car` is not an opponent or
+// has no live target. The mounted crew aims at this, so a ped and its car
+// agree on what they are attacking.
+int cd2AiTargetPos(const void* car, void* out);
+
 #endif /* CD2_AI_H */

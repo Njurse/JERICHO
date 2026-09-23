@@ -110,8 +110,7 @@ static int cd2BootleggerOnFrame(void* ud, void* args)
 
 			if (gBootChannel < 0)
 			{
-				gBootChannel = GetFreeChannel(1);
-				LockChannel(gBootChannel);
+				gBootChannel = cd2TakeVoice();
 			}
 
 			if (gBootChannel >= 0)

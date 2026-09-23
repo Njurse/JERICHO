@@ -45,11 +45,9 @@ static void cd2HomingFire(void* vcp)
 
 	if (gHomingChannel < 0)
 	{
-		// GetFreeChannel(1), NOT GetFreeChannel(): sound.h declares the
-		// parameter as 'int force = 1', a C++ default argument, and our module
-		// is C - so the default never applies and must be passed explicitly.
-		gHomingChannel = GetFreeChannel(1);
-		LockChannel(gHomingChannel);
+		// ONE voice for this sound, held only while the engine keeps its own
+		// reserve (cd2TakeVoice / jer_sound_lock); a busy field still yields one.
+		gHomingChannel = cd2TakeVoice();
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[cainescrossfire] homing sound: channel=%d locked\n", gHomingChannel);

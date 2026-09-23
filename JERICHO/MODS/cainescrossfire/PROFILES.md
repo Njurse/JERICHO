@@ -35,7 +35,8 @@ extern const CD2_VEH_PROFILE cd2VehRowHornet =
 	2, 4, 4, 3,                               /* armor, speed, handling, special */
 	CD2_WID_SPECIAL_HORNET,                   /* the special — by id only */
 	{ 3000, 4400, 0, 0, 0, 0, 0, 0, 0, 115 }, /* phys overrides (0 = inherit)   */
-	3                                         /* palette                        */
+	3,                                        /* palette                        */
+	{ { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, 0, 0 }  /* crew offsets (0 = default) */
 };
 ```
 
@@ -55,6 +56,40 @@ Three parts:
   model's own value"** — so a profile can be heavy on one axis and still pull the
   rest from the original model. The override is written into
   `car_cosmetics[slot]` at level start, before any car is built.
+
+## Crew offsets (`CD2_VEH_CREW`)
+
+The mounted crew (the driver and passenger who lean out to fire — see
+[`MOUNTED_CREW.md`](MOUNTED_CREW.md)) hang on the door with a default mount. A
+body whose doors sit somewhere the default does not fit — a limo, a truck, a very
+wide low car — can move it per profile:
+
+```c
+	/* crew: lat{drv,gun}, fwd{drv,gun}, up{drv,gun}, yaw{drv,gun},
+	 *       sillRaise, armScale% — all 0 = the module default mount. */
+	{ { 6, 6 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, 0, 0 }
+```
+
+- **Sides** are indexed `{ driver, gunner }` (left door, right door).
+- **`lat` / `fwd` / `up`** are world-unit deltas on the mount point: further out
+  from the door, further ahead of the cabin centre, higher on the body (the
+  render frame is Y-down). **`yaw`** turns the body (a window that is not square
+  to the car). **`sillRaise`** perches the seated passenger higher.
+  **`armScale`** is the weapon arm's reach as a per-cent of the default (`0` =
+  100%).
+- Every field is a **delta** and `CD2_VEH_INHERIT` (0) leaves the default alone,
+  so a row only states what it has to change. The block is the **last** member of
+  the row, so an existing row that omits it gets all-inherit (zeros) and its
+  positional initializer is unchanged.
+- Consumption is in `weapons/core/crew.c` (`cd2CrewOffsets`, applied in
+  `cd2CrewPlace` and the arm pose). The exact look still needs a play-test.
+
+The boot dump prints each profile's offsets, so a run shows which bodies carry an
+override:
+
+```
+[cainescrossfire]       crew offsets lat{6,6} fwd{0,0} up{0,0} yaw{0,0} sill 0 arm 100%
+```
 
 ## Where a profile meets the engine
 

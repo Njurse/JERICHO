@@ -69,8 +69,7 @@ static void cd2BruxaFire(void* vcp)
 
 	if (gBruxaChannel < 0)
 	{
-		gBruxaChannel = GetFreeChannel(1);
-		LockChannel(gBruxaChannel);
+		gBruxaChannel = cd2TakeVoice();
 	}
 
 	cd2WpnShotMuzzle(&cd2WdefSpecialBruxa, cp, 0, &muzzle);
@@ -89,16 +88,16 @@ static CD2_WEAPON_DEF cd2MakeBruxaDef(void)
 
 	d.id = CD2_WID_SPECIAL_BRUXA;
 	d.name = "special_bruxa";
-	d.displayName = "Double Boom";
+	d.displayName = "Double Blast";
 	d.cls = CD2_WCLS_SHOTGUN;
 
 	d.isSpecial = 1;
 
 	d.maxAmmo = 4;			// profile capacity
 	d.fireInterval = 27;
-	d.refireCooldown = 450;		// profile recharge: 15s
+	d.refireCooldown = 100;		// profile recharge: 15s
 
-	d.damage = 760;			// PER PELLET — double the ordinary shotgun's 380
+	d.damage = 1060;			// PER PELLET — double the ordinary shotgun's 380
 	d.speed = 2200;
 	d.range = 2600;			// still a shotgun: short
 	d.life = 0;
@@ -108,7 +107,7 @@ static CD2_WEAPON_DEF cd2MakeBruxaDef(void)
 	d.explosionEffect = BIG_BANG;
 
 	d.collideScenery = 1;
-	d.fireCone = 500;
+	d.fireCone = 700;
 
 	d.leanOut = 3;			// both crew fire it
 

@@ -127,3 +127,40 @@ mod uses (`MaxPlayerDamage[0]`), with one subtlety worth knowing:
   `cd2CarTotaled`, and `gamesnd.c` silences them outright when the player has no
   car (after the eject).
 
+## The damage model (how hard things bite)
+
+Every damage path the mod touches runs through `cainescrossfiredamage.c`, and the
+knobs are in the pause menu / `[cainescrossfire]` ini. The defaults below are the
+post-tuning ones (cars were dying far too fast before):
+
+- **Weapon damage — `weapon_damage`, default 50%.** EVERY weapon hit funnels
+  through one choke point, `cd2WpnDamageCar` (`weapons/core/weapons.c`): direct
+  hits, burst/volley splash, the AOE blasts, dropped mines and the damaging
+  specials. The global percentage is applied there, so the whole arsenal's bite
+  is a single number; the per-target cuts (opponent `ai_damage_taken`, the
+  traffic multiplier, the profile's Armor) stack on top.
+- **Scenery impact threshold — `scenery_damage_threshold`, default 61440.** The
+  engine already ignores a wall/building hit below `strikeVel` 20480
+  (`bcollide.c:DamageCar`); `JER_EVENT_GET_DAMAGE_SCALE` now carries that raw
+  `impact` so `cd2OnDamageScale` can raise the bar: below the threshold the car
+  takes **no** damage at all — a scrape is not a crash, and the map is not worth
+  taking real damage over. Above it, `scenery_damage` (default 25%, or whatever
+  the ini says) still scales the hit. The contact is counted *before* the
+  threshold test, so the traffic tumble still sees it.
+- **Car-vs-car aggressor immunity.** In a two-car hit the car driving INTO the
+  other deals the damage, and that car should not be hurt by its own attack.
+  `cd2OnCarVsCar` compares each car's approach speed along the line between them
+  (`st.n.linearVelocity`, 64-bit dots) and zeroes the faster-approaching car's
+  `value` at the very END, after every scaling. A near-even head-on (equal
+  approach) leaves both cars taking stock damage, so mutual crashes still hurt.
+  This is what stopped **Deadstar** dying to its own Death Dash (a ram always
+  reads as the aggressor).
+- **The lock-on health bar.** The readout under the locked target's name
+  (`hud/lockon.c`) draws `1 - totalDamage / cd2CarMaxDamage(target)` via
+  `jer_hud_panel_bar`, tinted green → red.
+
+Headless check: with `debug_log` on, a run logs `scenery dmg ignored: ... impact=N
+< thresh=...`, `scenery dmg scale: ... impact=N` and `car-car aggressor: car=N
+spared, other=M` — enough to confirm the thresholds and the aggressor rule are
+firing without a play-test.
+

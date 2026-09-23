@@ -47,11 +47,9 @@ static void cd2ClusterFire(void* vcp)
 
 	if (gClusterChannel < 0)
 	{
-		// GetFreeChannel(1), not GetFreeChannel(): sound.h declares the
-		// parameter as 'int force = 1' (a C++ default argument), and this
-		// module is C, so the default never applies and must be passed.
-		gClusterChannel = GetFreeChannel(1);
-		LockChannel(gClusterChannel);
+		// ONE voice for this sound, held only while the engine keeps its own
+		// reserve (cd2TakeVoice / jer_sound_lock); a busy field still yields one.
+		gClusterChannel = cd2TakeVoice();
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[cainescrossfire] cluster sound: channel=%d locked\n", gClusterChannel);

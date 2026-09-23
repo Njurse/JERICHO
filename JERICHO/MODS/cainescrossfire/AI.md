@@ -578,3 +578,21 @@ Navigation layer: `nav.h:15-21` (`MAX_ROUTE` 64, `WP_STEP` 512, `MAX_NODES` 4096
 - **Vehicle pool is level-specific.** Because of the NULL-slot fault (§6),
   opponents can only use slots the level loaded all three models for, and never
   the player's own slot. `MAX_CAR_RESIDENT_MODELS` is 8 on this build, 5 on PSX.
+
+## 10. The published target (`cd2AiTargetPos`)
+
+The brain picks its target each step (`cd2AiFindTarget`), and as of the mounted
+crew work it no longer keeps that private: `cd2AiDrive` stores the result in its
+`CD2_AI_CAR` slot (`targetId`, `targetPos`) and exposes it through
+
+```c
+int cd2AiTargetPos(const void* car, void* out);   // out = VECTOR*; 1 = filled
+```
+
+which returns the world position of whatever an opponent is chasing (0 for a
+non-opponent, or one with no live target). The mounted crew's aim reads it so a
+**ped and its car agree on what they are attacking** — the driver/passenger lean
+out and point where the AI itself is aiming, not at whatever happens to be
+nearest. The local player's crew use the radar lock (`cd2LockOnTarget`,
+`hud/lockon.c`) instead; the lock's range is `CD2_LOCK_RANGE` (15600 — deliberately
+generous, so the lock sits on an opponent unless they are really far away).

@@ -38,7 +38,9 @@
 #include "teams/teams.h"	/* the team colours and the per-character suit rule */
 #include "jer_ped_palette.h"	/* per-instance ped palettes (team colours) */
 #include "factions/factions.h"	/* the five teams: their colours */
-#include "ai/ai.h"		/* cd2AiIsOpponent */
+#include "ai/ai.h"		/* cd2AiIsOpponent, cd2AiTargetPos */
+#include "hud/lockon.h"		/* cd2LockOnTarget — the player's crew aim target */
+#include "profiles/profile.h"	/* per-vehicle crew offsets */
 #include "crew.h"
 
 // The engine's libgte angle helper (the inverse of RotMatrixYXZ needs it).
@@ -69,7 +71,7 @@ extern int ratan2(int y, int x);
 // SAME frame - the gunner differs only by his perch height, so he cannot land
 // in a different part of the climb (a late frame stands him up, and raising
 // THAT just floats him).
-#define CD2_CREW_DRIVER_HOLD	9
+#define CD2_CREW_DRIVER_HOLD	10
 #define CD2_CREW_GUNNER_HOLD	CD2_CREW_DRIVER_HOLD
 
 // The gunner is raised this far above the leaning driver, perching him ON the
@@ -83,12 +85,34 @@ extern int ratan2(int y, int x);
 // facing. They are turned by the body rotation before use - see
 // cd2CrewLocalToWorld - because the channel they land in is world-oriented.
 // Keep them small: they move real bone joints, so the arm mesh follows.
-#define CD2_CREW_ARM_ELBOW_OUT	10	// forearm out of the door
-#define CD2_CREW_ARM_ELBOW_UP	-2	// and raised
-#define CD2_CREW_ARM_ELBOW_FWD	2
-#define CD2_CREW_ARM_HAND_OUT	22	// hand out past the elbow (~arm length)
-#define CD2_CREW_ARM_HAND_UP	-5
-#define CD2_CREW_ARM_HAND_FWD	4
+//
+// The arm AIMS: its horizontal direction is the car's current target, in the
+// car's frame (see cd2CrewAim), turned into the ped's frame by the same body
+// rotation. OUT_BIAS keeps it leaving the window rather than crossing the
+// ped's chest when the target is dead ahead; a side with no target falls back
+// to CD2_CREW_ARM_IDLE_YAW (the old fixed "out the window" reach).
+#define CD2_CREW_ARM_OUT_BIAS	6	// outward lean on the window side (ped-local x)
+#define CD2_CREW_ARM_ELBOW_LEN	9	// forearm extension along the aim
+#define CD2_CREW_ARM_HAND_LEN	18	// hand extension past the elbow
+#define CD2_CREW_ARM_UP		(-4)	// forearm raised
+#define CD2_CREW_ARM_IDLE_YAW	900	// no target: reach out the window (~79 deg)
+#define CD2_CREW_ARM_CONE	1000	// aim clamped to this far off the nose
+
+// Aim mode also turns the upper body through the ROTATION channel
+// (JER_EVENT_PED_POSE). The lean rolls the torso toward the crew member's own
+// window; HEAD_AIM is the most the head turns toward the target (itself
+// clamped to the arm's cone). Single knobs - if a lean goes the wrong way,
+// flip the sign here.
+#define CD2_CREW_HEAD_AIM	300	// head yaw toward the target (clamped)
+#define CD2_CREW_DRIVER_LEAN	220	// driver: upper-body roll out of his window
+#define CD2_CREW_PASS_LEAN	140	// passenger: leans out less (he is seated)
+
+// The passenger sits ON the windowsill with his legs in the cabin: his body is
+// turned 180 from the crew's forward facing (legs inward, back to the window)
+// and his torso twists back so the head still looks where the car goes. These
+// two are the pose's whole shape - turn them, not the code.
+#define CD2_CREW_SILL_YAW	2048	// body yaw offset, 180 = legs face inward
+#define CD2_CREW_SILL_TORSO	2048	// JOINT_1 twist back toward forward
 
 // Heading offset applied to the car's own heading to get the crew's body yaw.
 //
@@ -111,7 +135,7 @@ extern int ratan2(int y, int x);
 // car at all: a car in the air left its crew standing on the road below. This
 // reproduces that on-ground offset (measured with the car level: car y +31 ->
 // ped y -130, i.e. 99 above the body centre) while now following the car.
-#define CD2_CREW_BODY_LIFT	39
+#define CD2_CREW_BODY_LIFT	32
 
 // The car matrix is Y-UP while the ped's body is rendered Y-DOWN, so a physical
 // pitch/roll maps to the NEGATED angles here. If a tilted car's crew leans the
@@ -172,6 +196,19 @@ static VECTOR sCamFocus;	// the wreck's position at the moment of death
 static void cd2CrewSpawnSide(CD2_CREW_CAR* c, int i, const CAR_DATA* cp);
 static void cd2CrewDespawnSide(CD2_CREW_CAR* c, int i);
 static int cd2CrewClimbFrame(int i);
+
+// The per-vehicle crew offsets for a car (its profile's CD2_VEH_CREW block), or
+// an all-inherit block for a car with no profile. Every field is a DELTA on the
+// module default, so a body with unusual doors can move the mount point, turn
+// the body, raise the seated passenger and scale the arm.
+static const CD2_VEH_CREW sCrewNoOffsets;
+
+static const CD2_VEH_CREW* cd2CrewOffsets(const CAR_DATA* cp)
+{
+	const CD2_VEH_PROFILE* p = cd2VehDef(cd2VehOfCar((void*)cp));
+
+	return (p != NULL) ? &p->crew : &sCrewNoOffsets;
+}
 
 // ---------------------------------------------------------------------------
 // request
@@ -436,10 +473,78 @@ static void cd2CrewLocalToWorld(const CAR_DATA* cp, int lx, int ly, int lz, JER_
 	out->vz = (int)((((long long)w->m[2][0] * lx) + ((long long)w->m[2][1] * ly) + ((long long)w->m[2][2] * lz)) >> 12);
 }
 
-// Force the right arm into a weapon-holding reach: the shoulder stays at its
-// rest offset, the forearm is raised and pushed forward, and the hand extends
-// beyond it. `facing` is the heading the pose's local +Z points along.
-static void cd2CrewPoseArm(void* skel, const CAR_DATA* cp, int side)
+// The car's current target, as a world position. AI opponents report whatever
+// their own brain is chasing (cd2AiTargetPos); the local player reports the
+// radar lock-on (cd2LockOnTarget). Returns 0 when there is nothing to aim at.
+static int cd2CrewFindTarget(const CAR_DATA* cp, VECTOR* out)
+{
+	if (cd2AiTargetPos(cp, out))
+		return 1;
+
+	if (cp->id == MainPlayer.playerCarId)
+	{
+		int t = cd2LockOnTarget();
+
+		if (t >= 0 && t < MAX_CARS && t != cp->id && car_data[t].ap.carCos != NULL)
+		{
+			out->vx = car_data[t].hd.where.t[0];
+			out->vy = car_data[t].hd.where.t[1];
+			out->vz = car_data[t].hd.where.t[2];
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+// The crew's aim as a horizontal direction in the CAR's frame: (axr, azr) is a
+// 4096-fixed-point unit vector (RSIN/RCOS of the aim yaw), so +azr is straight
+// ahead and +axr is toward the gunner's door. With no target it falls back to
+// the side's "out the window" reach. The yaw is clamped to CD2_CREW_ARM_CONE so
+// the arm never swings round to point behind the car.
+static void cd2CrewAim(const CAR_DATA* cp, int side, int* axr, int* azr)
+{
+	const int outSign = (side == CD2_CREW_SIDE_GUNNER) ? 1 : -1;
+	VECTOR tp;
+	int aimYaw;
+
+	if (!cd2CrewFindTarget(cp, &tp))
+	{
+		aimYaw = outSign * CD2_CREW_ARM_IDLE_YAW;
+	}
+	else
+	{
+		const MATRIX* w = &cp->hd.where;
+		int tx = tp.vx - cp->hd.where.t[0];
+		int tz = tp.vz - cp->hd.where.t[2];
+
+		// world -> car-local is the transpose of the car's matrix (which maps
+		// local -> world): x,z only, the arm aims horizontally.
+		int lx = (int)(((long long)w->m[0][0] * tx + (long long)w->m[2][0] * tz) >> 12);
+		int lz = (int)(((long long)w->m[0][2] * tx + (long long)w->m[2][2] * tz) >> 12);
+
+		aimYaw = ratan2(lx, lz) & 0xfff;
+	}
+
+	// wrap to -2048..2048 and clamp to the forward cone, so a target behind
+	// does not fold the arm back through the ped
+	if (aimYaw > 2048)
+		aimYaw -= 4096;
+
+	if (aimYaw > CD2_CREW_ARM_CONE)
+		aimYaw = CD2_CREW_ARM_CONE;
+	else if (aimYaw < -CD2_CREW_ARM_CONE)
+		aimYaw = -CD2_CREW_ARM_CONE;
+
+	*axr = RSIN(aimYaw);
+	*azr = RCOS(aimYaw);
+}
+
+// Force the weapon arm into an aiming reach: the shoulder stays where the
+// motion (and any torso aim) put it, the forearm extends along the aim and is
+// raised, and the hand extends beyond it. `(axr, azr)` is the aim direction in
+// the car's frame (see cd2CrewAim); `outSign` keeps the arm on its own side.
+static void cd2CrewPoseArm(void* skel, const CAR_DATA* cp, int side, int axr, int azr)
 {
 	// the gunner is the driver mirrored, so his reach goes out of the OTHER
 	// side of his body and uses the mirrored limbs. The car's local +x runs
@@ -447,6 +552,9 @@ static void cd2CrewPoseArm(void* skel, const CAR_DATA* cp, int side)
 	// driver's "out" is local -x and the gunner's is +x.
 	const int mirrored = (side == CD2_CREW_SIDE_GUNNER);
 	const int outSign = mirrored ? 1 : -1;
+	const CD2_VEH_CREW* cr = cd2CrewOffsets(cp);
+	int elbowLen = CD2_CREW_ARM_ELBOW_LEN;
+	int handLen = CD2_CREW_ARM_HAND_LEN;
 	JER_BONE_POS* elbow = jer_anim_bone_pos(skel, mirrored ? JER_LIMB_LELBOW : JER_LIMB_RELBOW);
 	JER_BONE_POS* hand = jer_anim_bone_pos(skel, mirrored ? JER_LIMB_LHAND : JER_LIMB_RHAND);
 	const JER_BONE_POS* shoulder = jer_anim_bone_pos(skel, mirrored ? JER_LIMB_LSHOULDER : JER_LIMB_RSHOULDER);
@@ -458,12 +566,26 @@ static void cd2CrewPoseArm(void* skel, const CAR_DATA* cp, int side)
 	if (elbow == NULL || hand == NULL || shoulder == NULL)
 		return;
 
-	cd2CrewLocalToWorld(cp, outSign * CD2_CREW_ARM_ELBOW_OUT, CD2_CREW_ARM_ELBOW_UP, CD2_CREW_ARM_ELBOW_FWD, &off);
+	// a profile may scale the reach for a body whose doors sit far from the
+	// ped (a wide car, a truck); 0 = the default 100%
+	if (cr->armScale != 0)
+	{
+		elbowLen = (elbowLen * cr->armScale) / 100;
+		handLen = (handLen * cr->armScale) / 100;
+	}
+
+	cd2CrewLocalToWorld(cp,
+		outSign * CD2_CREW_ARM_OUT_BIAS + (int)(((long long)axr * elbowLen) >> 12),
+		CD2_CREW_ARM_UP,
+		(int)(((long long)azr * elbowLen) >> 12), &off);
 	elbow->vx = shoulder->vx + off.vx;
 	elbow->vy = shoulder->vy + off.vy;
 	elbow->vz = shoulder->vz + off.vz;
 
-	cd2CrewLocalToWorld(cp, outSign * CD2_CREW_ARM_HAND_OUT, CD2_CREW_ARM_HAND_UP, CD2_CREW_ARM_HAND_FWD, &off);
+	cd2CrewLocalToWorld(cp,
+		outSign * CD2_CREW_ARM_OUT_BIAS + (int)(((long long)axr * handLen) >> 12),
+		CD2_CREW_ARM_UP,
+		(int)(((long long)azr * handLen) >> 12), &off);
 	hand->vx = elbow->vx + off.vx;
 	hand->vy = elbow->vy + off.vy;
 	hand->vz = elbow->vz + off.vz;
@@ -535,6 +657,48 @@ static void cd2CrewDumpPose(const CAR_DATA* cp, int side, LPPEDESTRIAN pPed, voi
 	}
 }
 
+// The bone names, in JER_LIMB_* order - purely so a dumped table reads as the
+// limb it belongs to (the author's rig must use this order).
+static const char* const sCrewLimbNames[JER_LIMB_COUNT] =
+{
+	"ROOT", "LOWERBACK", "JOINT_1", "NECK", "HEAD",
+	"LSHOULDER", "LELBOW", "LHAND", "LFINGERS",
+	"RSHOULDER", "RELBOW", "RHAND", "RFINGERS",
+	"HIPS", "LHIP", "LKNEE", "LFOOT", "LTOE",
+	"RHIP", "RKNEE", "RFOOT", "RTOE", "JOINT"
+};
+
+// Dump the whole skeleton's ROTATIONS as a paste-ready C table, so a pose can
+// be authored from a real, on-model baseline (see CREW_POSES.md). This is the
+// rotation channel, so it must run from JER_EVENT_PED_POSE - that is the only
+// point where the values are BOTH readable and our own aim applied (the
+// skeleton pass has already restored the shared buffer by then).
+static void cd2CrewDumpBones(void* skel, int car, int side)
+{
+	int limb;
+
+	printInfo("[crew] ---- bones car=%d side=%d (JER_BONE_ROT, parent-relative ZYX, 4096/turn) ----\n", car, side);
+	printInfo("[crew] static const JER_BONE_ROT side%d[JER_LIMB_COUNT] = {\n", side);
+
+	for (limb = 0; limb < JER_LIMB_COUNT; limb++)
+	{
+		JER_BONE_ROT* r = jer_anim_bone_rotation(skel, limb);
+
+		if (r != NULL)
+			printInfo("[crew] \t{ %5d, %5d, %5d },\t/* %2d %s */\n",
+				r->vx, r->vy, r->vz, limb, sCrewLimbNames[limb]);
+		else
+			printInfo("[crew] \t{     0,     0,     0 },\t/* %2d %s (no data) */\n",
+				limb, sCrewLimbNames[limb]);
+	}
+
+	printInfo("[crew] };\n");
+}
+
+// How many bone tables to dump per side (a run only needs one good baseline).
+#define CD2_CREW_BONE_DUMPS	3
+static int sCrewBoneDumps[2];
+
 // JER_EVENT_PED_POSE — the ONLY effective rotation channel (it fires between
 // SetupTannerSkeleton and newRotateBones). The engine MIRROR-FLIPS a ped's
 // root rotation for a get-out on one side of the car, via the shared
@@ -547,6 +711,47 @@ static void cd2CrewDumpPose(const CAR_DATA* cp, int side, LPPEDESTRIAN pPed, voi
 // ---------------------------------------------------------------------------
 static int sCrewRevSaved;
 static int sCrewRevValid;
+
+// The rotation-channel snapshot. A bone's rotation points into the SHARED
+// per-type motion buffer, so a write leaks into every ped drawing that motion
+// frame; snapshot before writing and put it back once this ped's bones are
+// built (the skeleton phase-1 pass), exactly as the mirror flag is handled.
+static JER_BONE_ROT sCrewRotSave[JER_LIMB_COUNT];
+static int sCrewRotValid;
+
+// The torso/head aim, on the ROTATION channel: the driver rolls his upper body
+// out of his own window and turns his head toward the target; the passenger's
+// torso twists back to forward (he is turned away from it) and his head follows
+// the target too. Called only for our own ped, in JER_EVENT_PED_POSE.
+static void cd2CrewPoseTorso(void* skel, int side, int axr, int azr)
+{
+	JER_BONE_ROT* j1 = jer_anim_bone_rotation(skel, JER_LIMB_JOINT_1);
+	JER_BONE_ROT* head = jer_anim_bone_rotation(skel, JER_LIMB_HEAD);
+	int aimYaw = ratan2(axr, azr) & 0xfff;
+
+	if (aimYaw > 2048)
+		aimYaw -= 4096;
+
+	if (aimYaw > CD2_CREW_HEAD_AIM)
+		aimYaw = CD2_CREW_HEAD_AIM;
+	else if (aimYaw < -CD2_CREW_HEAD_AIM)
+		aimYaw = -CD2_CREW_HEAD_AIM;
+
+	if (j1 != NULL)
+	{
+		// the passenger sits facing away from the car's forward, so twist the
+		// torso back toward it; the lean then rolls the upper body toward the
+		// crew member's own window (the driver's is local -x).
+		if (side == CD2_CREW_SIDE_GUNNER)
+			j1->vy = (short)((j1->vy + CD2_CREW_SILL_TORSO) & 0xfff);
+
+		j1->vz = (short)((j1->vz + ((side == CD2_CREW_SIDE_GUNNER)
+			? CD2_CREW_PASS_LEAN : -CD2_CREW_DRIVER_LEAN)) & 0xfff);
+	}
+
+	if (head != NULL)
+		head->vy = (short)((head->vy + aimYaw) & 0xfff);
+}
 
 static int cd2CrewOnPedPose(void* ud, void* args)
 {
@@ -566,18 +771,44 @@ static int cd2CrewOnPedPose(void* ud, void* args)
 		sCrewRevValid = 0;
 	}
 
+	if (sCrewRotValid)
+	{
+		jer_anim_restore_rotations(a->skel, sCrewRotSave);
+		sCrewRotValid = 0;
+	}
+
 	for (i = 0; i < MAX_CARS; i++)
 	{
 		for (side = 0; side < 2; side++)
 		{
 			if ((void*)gCrew[i].ped[side] == a->ped)
 			{
+				int axr, azr;
+
 				sCrewRevSaved = bReverseYRotation;
 				sCrewRevValid = 1;
 
 				// the driver's door is the unmirrored case (the engine's own
 				// left-side pairing), the gunner's the mirrored one
-				bReverseYRotation = (side == CD2_CREW_SIDE_GUNNER) ? 1 : 0;
+				// to do: fix the driver's awkward posing, the gunner is fine
+				bReverseYRotation = (side == CD2_CREW_SIDE_GUNNER) ? 1 : 1;
+
+				// the torso/head aim goes through the ROTATION channel, so
+				// snapshot the shared buffer first (restored in phase 1)
+				jer_anim_save_rotations(a->skel, sCrewRotSave);
+				sCrewRotValid = 1;
+
+				cd2CrewAim(&car_data[i], side, &axr, &azr);
+				cd2CrewPoseTorso(a->skel, side, axr, azr);
+
+				// a paste-ready baseline of the posed rotations, once or
+				// twice per side (this is the only point they are both
+				// readable AND ours; the skeleton pass restores them after)
+				if (gCd2Cfg.debugLog && sCrewBoneDumps[side] < CD2_CREW_BONE_DUMPS)
+				{
+					sCrewBoneDumps[side]++;
+					cd2CrewDumpBones(a->skel, i, side);
+				}
 
 				return JER_RESULT_CONTINUE;
 			}
@@ -608,6 +839,14 @@ static int cd2CrewOnPedSkeleton(void* ud, void* args)
 		sCrewRevValid = 0;
 	}
 
+	// and the shared motion buffer is put back, so the torso/head aim written
+	// in PED_POSE does not leak into every ped playing this motion frame
+	if (a->phase == 1 && sCrewRotValid)
+	{
+		jer_anim_restore_rotations(a->skel, sCrewRotSave);
+		sCrewRotValid = 0;
+	}
+
 	if (a->phase == 1 && gCd2Cfg.debugLog && !a->shadow)
 	{
 		static int sDumps;
@@ -636,9 +875,10 @@ static int cd2CrewOnPedSkeleton(void* ud, void* args)
 			if ((void*)gCrew[i].ped[side] == a->ped &&
 			    gCrew[i].state[side] != CD2_CREW_FLEE)
 			{
-				LPPEDESTRIAN pPed = (LPPEDESTRIAN)a->ped;
+				int axr, azr;
 
-				cd2CrewPoseArm(a->skel, &car_data[i], side);
+				cd2CrewAim(&car_data[i], side, &axr, &azr);
+				cd2CrewPoseArm(a->skel, &car_data[i], side, axr, azr);
 				break;
 			}
 		}
@@ -678,11 +918,18 @@ static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i, int raise
 {
 	const MATRIX* w = &cp->hd.where;
 	const SVECTOR* cb = &cp->ap.carCos->colBox;
+	const CD2_VEH_CREW* cr = cd2CrewOffsets(cp);
 	int s = (i == CD2_CREW_SIDE_DRIVER) ? -1 : 1;	// -1 = driver (left door), +1 = gunner (right door)
-	int lat = (cb->vx * 108) / 100;			// just outside the body side
-	int fwd = cb->vz / 4;				// a touch ahead of centre, not the rear
+	int lat = (cb->vx * 104) / 100;			// just outside the body side
+	int fwd = cb->vz / 5;				// a touch ahead of centre, not the rear
 	int x, z, y, yaw;
+	int upExtra;
 	SVECTOR rot;
+
+	// the body's own mount deltas (a limo/truck door that sits elsewhere)
+	lat += cr->lat[i];
+	fwd += cr->fwd[i];
+	upExtra = cr->up[i] + ((i == CD2_CREW_SIDE_GUNNER) ? cr->sillRaise : 0);
 
 	x = w->t[0] + (int)(((long long)w->m[0][0] * lat * s) >> 12)
 	           + (int)(((long long)w->m[0][2] * fwd) >> 12);
@@ -693,7 +940,7 @@ static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i, int raise
 	// to the ground, so a car in the air (or being tossed by a wreck) left them
 	// standing on the road below. The car matrix is Y-UP while the ped's
 	// position is Y-DOWN, hence the negation.
-	y = -(cp->hd.where.t[1]) - CD2_CREW_BODY_LIFT - raiseY;
+	y = -(cp->hd.where.t[1]) - CD2_CREW_BODY_LIFT - raiseY - upExtra;
 
 	// Body rotation straight off the car's matrix, so the crew banks and
 	// pitches with the car (and the weapon arm follows, being posed in the
@@ -701,7 +948,14 @@ static void cd2CrewPlace(LPPEDESTRIAN pPed, const CAR_DATA* cp, int i, int raise
 	// hd.direction - verified - so the facing the crew was tuned with is
 	// unchanged; only the tilt is new.
 	cd2CrewMatrixEuler(w, &rot);
-	yaw = (rot.vy + CD2_CREW_BODY_YAW) & 0xfff;
+
+	// the passenger sits ON the sill facing INTO the cabin (legs in, back to
+	// the window) - a 180 yaw - while the driver faces forward, leaning out.
+	// His torso then twists back toward the car's forward (the rotation
+	// channel, cd2CrewPoseTorso) so his head still looks where the car goes.
+	yaw = (rot.vy + CD2_CREW_BODY_YAW
+		+ (i == CD2_CREW_SIDE_GUNNER ? CD2_CREW_SILL_YAW : 0)
+		+ cr->yaw[i]) & 0xfff;
 
 	jer_npc_set_world((JerNpc*)pPed, x, y, z, yaw);
 	jer_npc_set_orient((JerNpc*)pPed, (CD2_CREW_TILT_SIGN * rot.vx) & 0xfff, yaw, (CD2_CREW_TILT_SIGN * rot.vz) & 0xfff);
@@ -952,6 +1206,9 @@ static int cd2CrewOnGameStart(void* ud, void* args)
 
 		gCrew[i].fled = 0;
 	}
+
+	sCrewBoneDumps[0] = 0;
+	sCrewBoneDumps[1] = 0;
 
 	return JER_RESULT_CONTINUE;
 }

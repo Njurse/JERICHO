@@ -52,8 +52,7 @@ static void cd2AvalancheFire(void* vcp)
 
 	if (gAvalancheChannel < 0)
 	{
-		gAvalancheChannel = GetFreeChannel(1);
-		LockChannel(gAvalancheChannel);
+		gAvalancheChannel = cd2TakeVoice();
 	}
 
 	if (gAvalancheChannel >= 0)

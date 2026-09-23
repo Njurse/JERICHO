@@ -80,8 +80,7 @@ static void cd2WheelmanFire(void* vcp)
 
 	if (gShockChannel < 0)
 	{
-		gShockChannel = GetFreeChannel(1);
-		LockChannel(gShockChannel);
+		gShockChannel = cd2TakeVoice();
 	}
 
 	if (gShockChannel >= 0)

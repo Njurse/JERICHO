@@ -105,6 +105,28 @@ typedef struct CD2_VEH_PHYS
 } CD2_VEH_PHYS;
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Crew (mounted driver/passenger) mount + pose offsets.
+//
+// A body whose doors sit somewhere the default mount does not fit - a limo, a
+// truck, a very wide low car - can move the crew's mount point, turn the body,
+// raise the seated passenger and scale the weapon arm. EVERY field is a DELTA
+// on the module default and uses CD2_VEH_INHERIT (0) to leave that default
+// alone, so a profile only states what it has to change.
+//
+// Sides: index 0 = the DRIVER (left door), index 1 = the GUNNER/passenger
+// (right door). Distances are the same world units the default placement uses.
+// ---------------------------------------------------------------------------
+typedef struct CD2_VEH_CREW
+{
+	int lat[2];		// further out from the door centre (+ = further out)
+	int fwd[2];		// further ahead of the cabin centre (+ = forward)
+	int up[2];		// higher (+ = up; render frame is Y-down)
+	int yaw[2];		// extra body yaw, PSX angle units (window out of true)
+	int sillRaise;		// extra perch height for the seated passenger
+	int armScale;		// arm reach, % of the default (0 = 100)
+} CD2_VEH_CREW;
+
 // The profile row.
 // ---------------------------------------------------------------------------
 typedef struct CD2_VEH_PROFILE
@@ -128,6 +150,13 @@ typedef struct CD2_VEH_PROFILE
 	CD2_VEH_PHYS phys;
 
 	int palette;			// preferred paint palette index, -1 = any / none
+
+	// Per-side crew mount/pose deltas (see CD2_VEH_CREW above). Appended LAST
+	// so every row's positional initializer still reads the same: a row that
+	// wants offsets appends one block after its palette value, e.g.
+	//     { { 0, 0 }, { 0, 0 }, { 0, 30 }, { 0, 0 }, 0, 100 }
+	// and a row that omits it gets all-inherit (zeros).
+	CD2_VEH_CREW crew;
 } CD2_VEH_PROFILE;
 
 // ---------------------------------------------------------------------------

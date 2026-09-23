@@ -42,7 +42,11 @@ on top of a point-mass rigid body that replaces the stock wheel/suspension sim
 - **Car combat** — the direct-velocity handling plus a data-driven weapon layer
   (a machine-gun sidearm and finite primaries), six **vehicle specials**, and
   totaled-car wreck effects. The CC select flow (`-ccmenu`) picks an arena and a
-  vehicle before the match.
+  vehicle before the match. The damage model is tuned so a car lasts: one global
+  weapon-damage percentage, a scenery-impact threshold (scrapes cost nothing) and
+  a car-vs-car aggressor rule (the car doing the ramming takes no damage). The
+  locked target's health shows as a small bar under its name. See
+  [`HANDLING.md`](HANDLING.md) § *The damage model*.
 
 Still to come: tournament brackets, a garage, and the rest of the total
 conversion.
@@ -79,6 +83,10 @@ saved by `cainescrossfire.c` `cd2LoadConfig` / `cd2SaveConfig`).
   and its OR rule, the get-out/hold/get-in ped lifecycle, firing from the
   window, the wreck bail-out (run away on fire) and the player-death camera
   hold.
+- [`CREW_POSES.md`](CREW_POSES.md) — the crew's bone contract and how to author
+  a pose outside the code: the 23-bone order/hierarchy, the 4096-per-turn
+  parent-relative ZYX angles, the two `jer_anim` channels and their traps, the
+  measured model-facing offset, and the paste-ready baseline dump.
 - [`MOTION.md`](MOTION.md) - the procedural motion layers: the engine-idle shudder,
   the pitch-back under power, the squat and the nose-bob, the vehicle classes, and the
   one clamp that stops two subsystems adding up badly.

@@ -49,12 +49,9 @@ static void cd2MineDrop(void* vcp)
 
 	if (gMineChannel < 0)
 	{
-		// GetFreeChannel(1), NOT GetFreeChannel(): sound.h declares it as
-		// 'int force = 1', a C++ default argument. Our module is C, so the
-		// default never applies and force arrives as garbage - which is why
-		// this returned -1 (no sound) whenever no voice happened to be idle.
-		gMineChannel = GetFreeChannel(1);
-		LockChannel(gMineChannel);
+		// ONE voice for this sound, held only while the engine keeps its own
+		// reserve (cd2TakeVoice / jer_sound_lock); a busy field still yields one.
+		gMineChannel = cd2TakeVoice();
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[cainescrossfire] mine sound: channel=%d locked\n", gMineChannel);

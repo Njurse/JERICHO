@@ -54,8 +54,7 @@ static void cd2CorvoFire(void* vcp)
 
 	if (gCorvoChannel < 0)
 	{
-		gCorvoChannel = GetFreeChannel(1);
-		LockChannel(gCorvoChannel);
+		gCorvoChannel = cd2TakeVoice();
 	}
 
 	if (gCorvoChannel >= 0)

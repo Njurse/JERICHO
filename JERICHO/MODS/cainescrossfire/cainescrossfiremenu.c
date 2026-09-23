@@ -321,6 +321,42 @@ static int cd2CycleScenery(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void cd2LabelWeaponDamage(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Weapon Damage: %d%%", gCd2Cfg.weaponDamage);
+}
+
+static int cd2CycleWeaponDamage(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gCd2Cfg.weaponDamage = (gCd2Cfg.weaponDamage + 5) % 205;
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void cd2LabelSceneryThreshold(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Scenery Threshold: %d", gCd2Cfg.sceneryDamageThreshold);
+}
+
+static int cd2CycleSceneryThreshold(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	// step in units of the engine's own 20480 gate: 0 = off (engine gate only),
+	// then 1x, 2x, ... The default (61440) is 3x.
+	gCd2Cfg.sceneryDamageThreshold += 20480;
+
+	if (gCd2Cfg.sceneryDamageThreshold > 204800)
+		gCd2Cfg.sceneryDamageThreshold = 0;
+
+	cd2SaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 {
 	{ NULL, cd2LabelAllWeapons, cd2ToggleAllWeapons, NULL, NULL, 0 },
@@ -334,11 +370,13 @@ static const JER_PAUSE_MENU_ITEM cd2WeaponItems[] =
 	{ NULL, cd2LabelRespawn, cd2ToggleRespawn, NULL, NULL, 0 },
 	{ NULL, cd2LabelNavDebug, cd2ToggleNavDebug, NULL, NULL, 0 },
 	{ NULL, cd2LabelScenery, cd2CycleScenery, NULL, NULL, 0 },
+	{ NULL, cd2LabelSceneryThreshold, cd2CycleSceneryThreshold, NULL, NULL, 0 },
 	{ NULL, cd2LabelCarCarNerf, cd2CycleCarCarNerf, NULL, NULL, 0 },
+	{ NULL, cd2LabelWeaponDamage, cd2CycleWeaponDamage, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU cd2WeaponMenu =
-{ "Weapons", cd2WeaponItems, 12 };
+{ "Weapons", cd2WeaponItems, 14 };
 
 static const JER_PAUSE_MENU_ITEM cd2DebugItems[] =
 {

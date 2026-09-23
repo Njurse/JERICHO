@@ -201,8 +201,7 @@ static void cd2FixerFire(void* vcp)
 
 			if (gBeamChannel < 0)
 			{
-				gBeamChannel = GetFreeChannel(1);
-				LockChannel(gBeamChannel);
+				gBeamChannel = cd2TakeVoice();
 			}
 
 			if (gBeamChannel >= 0)

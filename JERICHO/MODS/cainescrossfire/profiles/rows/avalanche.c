@@ -31,5 +31,12 @@ extern const CD2_VEH_PROFILE cd2VehRowAvalanche =
 	{ 6800, 3800, 5400, CD2_VEH_INHERIT, 72,
 	  CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT, CD2_VEH_INHERIT, 88 },
 
-	-1			/* palette: special body, no extra palette */
+	-1,			/* palette: special body, no extra palette */
+
+	/* crew: lat{drv,gun}, fwd{drv,gun}, up{drv,gun}, yaw{drv,gun},
+	 *       sillRaise, armScale% — all 0 = the module default mount. The
+	 *       monster truck rides high and its body is wide, so the crew hang
+	 *       a touch further out to clear the door panel; the rest is left to
+	 *       the default. Values are a tuning placeholder. */
+	{ { 6, 6 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, 0, 0 }
 };

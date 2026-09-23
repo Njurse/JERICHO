@@ -121,5 +121,13 @@ void cd2VehDumpProfiles(void)
 				(wd != NULL) ? wd->refireCooldown : 0,
 				p->palette);
 		}
+
+		// the crew mount deltas (a limo/truck body moves its own mount; all
+		// zero = the module default). Printed for every profile so a run shows
+		// which bodies carry an override.
+		printInfo("[cainescrossfire]       crew offsets lat{%d,%d} fwd{%d,%d} up{%d,%d} yaw{%d,%d} sill %d arm %d%%\n",
+			p->crew.lat[0], p->crew.lat[1], p->crew.fwd[0], p->crew.fwd[1],
+			p->crew.up[0], p->crew.up[1], p->crew.yaw[0], p->crew.yaw[1],
+			p->crew.sillRaise, p->crew.armScale ? p->crew.armScale : 100);
 	}
 }
