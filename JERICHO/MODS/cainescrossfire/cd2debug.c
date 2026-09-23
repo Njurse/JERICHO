@@ -27,7 +27,9 @@
  *   killnpc[:player|:npc|:none]     total the first opponent. `player`
  *       (default) -> "You killed <role>"; `npc` -> "<victim> was killed by
  *       <killer>"; `none` -> "<victim> died".
- *   grant                           every weapon to max (cd2WpnGrantAllMax).
+ *   grant                           every regular weapon to max
+ *       (cd2WpnGrantAllMax) - specials are not included, a car carries only
+ *       its own, handed to it by its profile.
  *   team:<faction index>:<rrggbb>   change a team's colour at runtime. This is
  *       the only way to see a mid-round colour change (cd2TeamSet) from a
  *       headless run - the HUD, the banner and the suit palette all follow it on

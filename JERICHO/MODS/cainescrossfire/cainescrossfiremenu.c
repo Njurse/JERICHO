@@ -122,8 +122,10 @@ static int cd2TotalCar(void* ud, int dir)
 }
 
 // ---- submenu: Weapons ----------------------------------------------------
-// Test/dev helpers: grant every weapon at once, plus a per-weapon grant/clear
-// toggle. Base weapons (the machine gun) are not listed - always carried.
+// Test/dev helpers: grant the whole regular arsenal at once (a car's special is
+// its own - the profile hands it over, never this menu), plus a per-weapon
+// grant/clear toggle. Base weapons (the machine gun) are not listed - always
+// carried.
 static void cd2LabelAllWeapons(void* ud, char* out, int max)
 {
 	(void)ud;

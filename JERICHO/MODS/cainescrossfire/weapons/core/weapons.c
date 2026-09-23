@@ -350,7 +350,10 @@ void cd2WpnClear(int weaponId)
 		gSelected = cd2WpnFirstOwned();
 }
 
-// Debug / test: every non-base weapon to its max capacity.
+// Debug / test: the whole REGULAR arsenal to its max capacity. Specials are NOT
+// part of the grant: a special belongs to ONE car and is handed to that car by
+// its own profile (cd2VehOnCarStep), so granting every def here would put every
+// OTHER car's special in the player's hands too.
 void cd2WpnGrantAllMax(void)
 {
 	int i;
@@ -363,7 +366,7 @@ void cd2WpnGrantAllMax(void)
 	{
 		const CD2_WEAPON_DEF* d = gWdefs[i];
 
-		if (d == NULL || d->isBase)
+		if (d == NULL || d->isBase || d->isSpecial)
 			continue;
 
 		gCarAmmo[id][i] = (d->maxAmmo > 0) ? d->maxAmmo : 9999;

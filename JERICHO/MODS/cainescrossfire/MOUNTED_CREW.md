@@ -332,7 +332,7 @@ unchanged, and mirrored into `JERICHO/sdk/include/`.
 (frames from GAME_START, 30 fps):
 
 ```
-60:grant                 # every weapon to max (the cycle skips unowned)
+60:grant                 # the whole regular arsenal (a special stays its car's own)
 70:select:shotgun        # driver leans out - no firing needed
 90:crew                  # dump: 'crew frame=.. sel=SHOTGUN player car=0 driver=1 ..'
 130:select:missile       # non-leaning: the driver gets back in

@@ -17,6 +17,10 @@ debug driver all get them). What a special adds beyond a shared weapon is a
 - Ammo is **per car** (`weapons.c`, `gCarAmmo[MAX_CARS][CD2_WID_COUNT]`), so each
   contestant's special is its own. A car is handed its special when its profile
   is first assigned, and the **player starts on it**.
+- Nothing else ever hands one over: the pause menu's / `all_weapons` **test
+  grant** (`cd2WpnGrantAllMax`, and the debug driver's `grant`) covers the whole
+  REGULAR arsenal and skips every `isSpecial` def, so no car can be given the
+  special that belongs to another.
 
 Firing one headlessly (the debug driver):
 
