@@ -155,12 +155,22 @@ post-tuning ones (cars were dying far too fast before):
   approach) leaves both cars taking stock damage, so mutual crashes still hurt.
   This is what stopped **Deadstar** dying to its own Death Dash (a ram always
   reads as the aggressor).
+- **Own-blast immunity.** The same rule for explosions: `cd2AoeBlast`
+  (`weapons/aoe/aoe.c`) takes the car it directly hit as `skip` AND a second car
+  to keep clear as `spare`, and the projectile pool passes the shot's own
+  LAUNCHER as that `spare`. A ground/scenery/range impact always excluded the
+  shooter (it was the `skip`), but a DIRECT hit passed only the struck car — so a
+  shot that connected right beside its own car splashed it, with the kill
+  attributed to itself. That is what the Obelisk's flank barrage needed: its
+  missiles leave outward from both sides, next to their own car. Dropped mines
+  deliberately pass no `spare` — a mine is your own problem.
 - **The lock-on health bar.** The readout under the locked target's name
   (`hud/lockon.c`) draws `1 - totalDamage / cd2CarMaxDamage(target)` via
   `jer_hud_panel_bar`, tinted green → red.
 
 Headless check: with `debug_log` on, a run logs `scenery dmg ignored: ... impact=N
-< thresh=...`, `scenery dmg scale: ... impact=N` and `car-car aggressor: car=N
-spared, other=M` — enough to confirm the thresholds and the aggressor rule are
+< thresh=...`, `scenery dmg scale: ... impact=N`, `car-car aggressor: car=N
+spared, other=M` and `aoe blast spared the shooter car=N (its own blast, d=… <= …)`
+— enough to confirm the thresholds, the aggressor rule and the own-blast guard are
 firing without a play-test.
 

@@ -279,8 +279,14 @@ void cd2ProjectileSpawn(const CD2_WEAPON_DEF* def, const CAR_DATA* shooter,
 // already hit directly).
 static void cd2ProjectileImpact(CD2_PROJECTILE* p, const CAR_DATA* carHit, const CAR_DATA* skip)
 {
+	// `spare` is the shot's own launcher. On a ground/scenery/range impact the
+	// owner is already the `skip`, but a DIRECT hit passes the struck car as the
+	// skip - and then the blast point is inside a car that can be sitting right
+	// beside the shooter. Sparing the owner there is what stops a salvo that
+	// connects next to its own car from splashing - and killing - the car that
+	// fired it.
 	cd2AoeBlast(&p->pos, p->def->splashRadius, p->def->splashDamage,
-		CD2_WPN_FX(p->def), skip, p->owner);
+		CD2_WPN_FX(p->def), skip, p->owner, p->owner);
 
 	if (p->def->barrageCount > 0)
 		cd2FxBarrage(&p->pos, (p->def->barrageStick ? carHit : NULL),

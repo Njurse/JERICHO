@@ -293,7 +293,9 @@ void cd2FxStep(void)
 			continue;
 		}
 
-		cd2AoeBlast(&p->world, p->radius, p->damage, p->fxId, p->skip, p->owner);
+		// the barrage already carries the launcher as its `skip`, so there is no
+		// second car to spare its blast
+		cd2AoeBlast(&p->world, p->radius, p->damage, p->fxId, p->skip, NULL, p->owner);
 
 		if (gCd2Cfg.debugLog)
 			printInfo("[cainescrossfire] barrage blast fx=%d pos=(%d,%d,%d) stuck=%d\n",

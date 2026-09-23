@@ -1391,7 +1391,7 @@ EXPORTS
 	?cd2DropReset@@YAXXZ
 	?cd2DropSpawn@@YAXPEBUCD2_WEAPON_DEF@@PEBU_CAR_DATA@@PEBUVECTOR@@2@Z
 	?cd2DropStep@@YAXXZ
-	?cd2AoeBlast@@YAXPEBUVECTOR@@HHHPEBU_CAR_DATA@@1@Z
+	?cd2AoeBlast@@YAXPEBUVECTOR@@HHHPEBU_CAR_DATA@@11@Z
 	jer_module_collisiondevil_entry
 	?fst_max@@YAHHH@Z
 	?fst_min@@YAHHH@Z

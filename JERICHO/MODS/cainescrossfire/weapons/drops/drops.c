@@ -159,8 +159,10 @@ void cd2DropStep(void)
 					kdir.vz = cp->hd.where.t[2] - d->pos.vz;
 					cd2WpnKnock(cp, &d->pos, &kdir, d->def->damage);
 				}
+				// no `spare` car here: a mine is your own problem, and the car it
+				// detonated on is already the `skip`
 				cd2AoeBlast(&d->pos, d->def->splashRadius,
-					d->def->splashDamage, CD2_WPN_FX(d->def), cp, d->owner);
+					d->def->splashDamage, CD2_WPN_FX(d->def), cp, NULL, d->owner);
 				d->active = 0;
 				break;
 			}

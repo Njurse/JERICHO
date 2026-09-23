@@ -51,7 +51,7 @@ static void cd2WheelmanFire(void* vcp)
 	// rather than a decal. The blast does no damage to it (skip = cp).
 	cp->st.n.linearVelocity[1] += CD2_WHEELMAN_SELF_HOP;
 
-	cd2AoeBlast(&at, CD2_WHEELMAN_RADIUS, CD2_WHEELMAN_DAMAGE, CD2_FX_SHOCK, cp, cp);
+	cd2AoeBlast(&at, CD2_WHEELMAN_RADIUS, CD2_WHEELMAN_DAMAGE, CD2_FX_SHOCK, cp, NULL, cp);
 
 	// how many cars the blast actually caught, so a run can show the special
 	// doing something rather than only going off

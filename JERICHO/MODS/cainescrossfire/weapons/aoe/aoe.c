@@ -2,8 +2,11 @@
 //
 // Shared by the PROJECTILE (missile impact) and DROP (mine trigger) classes.
 // Spawns the engine explosion effect at the blast point and applies falling
-// damage to every car in radius (the directly-hit car is normally passed as
-// `skip` because it already took the full direct damage).
+// damage to every car in radius. `skip` is normally the car that already took
+// the direct hit, and `spare` is a second car to keep clear - the SHOOTER, when
+// the blast point can land right beside it. A car should not be hurt by its own
+// attack, and a shot that connects next to its launcher used to splash it and
+// attribute the kill to itself.
 
 #include "driver2.h"
 #include "cars.h"
@@ -15,7 +18,7 @@
 #include "weapons/fx/fx.h"
 
 void cd2AoeBlast(const VECTOR* at, int radius, int damage, int effect,
-		 const CAR_DATA* skip, const CAR_DATA* owner)
+		 const CAR_DATA* skip, const CAR_DATA* spare, const CAR_DATA* owner)
 {
 	VECTOR blast;
 	int i;
@@ -58,12 +61,25 @@ void cd2AoeBlast(const VECTOR* at, int radius, int damage, int effect,
 	if (radius <= 0 || damage <= 0)
 		return;
 
+	// say so when the shooter was actually inside its own blast: that is the
+	// guard doing something, and it is the only way to see it from a headless run
+	if (spare != NULL)
+	{
+		int dx = at->vx - spare->hd.where.t[0];
+		int dz = at->vz - spare->hd.where.t[2];
+		int dist = (ABS(dx) + ABS(dz)) / 2;
+
+		if (dist <= radius && gCd2Cfg.debugLog)
+			printInfo("[cainescrossfire] aoe blast spared the shooter car=%d (its own blast, d=%d <= r=%d)\n",
+				spare->id, dist, radius);
+	}
+
 	for (i = 0; i < MAX_CARS; i++)
 	{
 		CAR_DATA* cp = &car_data[i];
 		int dx, dz, dist, dmg;
 
-		if (cp == skip || cp->controlType == 0 || cp->ap.carCos == NULL)
+		if (cp == skip || cp == spare || cp->controlType == 0 || cp->ap.carCos == NULL)
 			continue;
 
 		dx = at->vx - cp->hd.where.t[0];

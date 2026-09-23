@@ -76,11 +76,14 @@ void cd2WpnCarVelocity(const CAR_DATA* cp, VECTOR* out);
 // From aoe/aoe.c — explosion FX + radial damage (shared by projectile/drop)
 // ---------------------------------------------------------------------------
 // `skip` is the car the blast must not damage (shooter, or the car already hit
-// directly); `owner` is who fired it, for kill attribution, and may be NULL.
-// They are separate because call sites disagree on `skip` (a mine passes the
-// car it detonated on), so `skip` cannot double as the attacker.
+// directly); `spare` is a SECOND car to keep out of it, which is how the
+// projectile path bars the shot's own launcher from the splash of a hit it
+// landed beside itself (NULL = none); `owner` is who fired it, for kill
+// attribution, and may be NULL. They are separate because call sites disagree on
+// `skip` (a mine passes the car it detonated on), so `skip` cannot double as the
+// attacker.
 void cd2AoeBlast(const VECTOR* at, int radius, int damage, int effect,
-		 const CAR_DATA* skip, const CAR_DATA* owner);
+		 const CAR_DATA* skip, const CAR_DATA* spare, const CAR_DATA* owner);
 
 // ---------------------------------------------------------------------------
 // Class pools (one source folder each) — reset / step / draw all instances
