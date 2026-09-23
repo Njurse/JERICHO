@@ -134,8 +134,16 @@ jer_pause_menu_register(&myMenu);
   event ("You killed VASQUEZ"). For a READOUT, where a line belongs in a corner
   for exactly as long as its subject exists, use `jer_hud_panel(slot, anchor,
   text, r, g, b)` — an anchored line drawn every frame until `jer_hud_panel_clear`
-  or the next set. Both are drawn from the engine's overlay pass, so a module
-  needs no draw hook of its own.
+  or the next set — or `jer_hud_panel_bar(slot, anchor, value, max, r, g, b)` for
+  a small filled meter (a health bar under a lock-on name). Both are drawn from
+  the engine's overlay pass, so a module needs no draw hook of its own.
+- **Play a sound without starving the engine** — `jer_sound.h`. There are only 16
+  SPU voices and the engine's own collision/explosion sounds play on whatever
+  `GetFreeChannel()` hands out, so a module that LOCKS a voice per sound can leave
+  it silent. `jer_sound_lock` locks only while `JER_SFX_RESERVE` voices stay free;
+  `jer_sound_ensure(&channel)` is the one-call form for a cached `-1` channel
+  (acquire, re-lock after a level change, or give up gracefully). A refused lock
+  still yields a voice to play on — never treat it as "no sound".
 - **Custom events** — values `>= JER_EVENT_MODULE_CUSTOM` are free for
   module-to-module messaging (the sandbox uses one for its no-damage
   toggle).

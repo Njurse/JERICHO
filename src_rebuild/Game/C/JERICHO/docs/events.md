@@ -53,7 +53,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_LEVEL_LAUNCH` | `JER_ARGS_LEVEL_LAUNCH` | `State_GameStart` (`glaunch.c:309`) | pending level/gametype/player count/mission number are finalised but the level has not loaded — module rewrites them in place; no handler = the values the engine wrote are kept |
 | `JER_EVENT_CMDLINE` | `JER_ARGS_CMDLINE` | `redriver2_main` (`main.c`), after the engine parsed its own argv | a module may pick up its own command-line shortcuts (e.g. mp's `-host`/`-join`); read-only `argc`/`argv`; no handler = ignored |
 | `JER_EVENT_DRAW_WORLD` | — | `RenderGame2` (`main.c`), after `DrawAllTheCars` | draw world-space extras (projectiles, pickups) into the real OT — camera matrices are live; no handler = no-op |
-| `JER_EVENT_GET_DAMAGE_SCALE` | `JER_ARGS_DAMAGE_SCALE` | `DamageCar` (`bcollide.c:604`) | query: scale 0..4096 (4096 = stock) on the damage a car takes from solid scenery; only used when a handler returns below 4096; no handler = stock (4096) |
+| `JER_EVENT_GET_DAMAGE_SCALE` | `JER_ARGS_DAMAGE_SCALE` | `DamageCar` (`bcollide.c:604`) | query: scale 0..4096 (4096 = stock) on the damage a car takes from solid scenery; `impact` is the raw strike velocity (clamped to 2048000) so a module can ignore light scrapes; only used when a handler returns below 4096; no handler = stock (4096) |
 | `JER_EVENT_CAR_VS_CAR` | `JER_ARGS_CAR_VS_CAR` | `DamageCar3D` (`bcollide.c:507`) | car-vs-car damage before `ApplyDamage` — `value` (the term actually applied) is in/out, `playerValue` is what a player car would have taken; no handler = stock `value` (clamped at 0) |
 | `JER_EVENT_DRAW_MAP` | `JER_ARGS_DRAW_MAP` | `DrawMultiplayerMap` (`overmap.c:1043`), `DrawOverheadMap` (`overmap.c:1218`), `DrawFullscreenMap` (`overmap.c:1823`) | map draw, after the player blip — module plots extra markers with `DrawTargetBlip` using the same `flags`; `fullscreen` distinguishes the map; no handler = stock blips only ; a module may also set `suppressStockBlip` to draw every player itself, which is what suppresses the engine's own blip (it holds `NumPlayers` at 1, so that blip is the local player's) |
 | `JER_EVENT_EXPLOSION_SPAWN` | `JER_ARGS_EXPLOSION_SPAWN` | `AddExplosion` (`job_fx.c`) | attach a parametric FX profile to a new explosion: size (`speed`/`hscale`/`rscale`), `tint*`, `yawRate`, `collide`, `colScale`, and rewrite `type` |
@@ -197,7 +197,11 @@ no-op with no handler.
   (`bcollide.c:604`) just before the scenery (building/wall) hit is applied to
   a car. `result` defaults to 4096 (= stock) and is only used when a handler
   lowers it (`value = value * result >> 12`), so a module softens scenery
-  damage. No handler = full stock damage.
+  damage. `impact` carries the raw strike velocity (the same term the car-vs-car
+  event calls `strikeVel`, clamped to 2048000; the engine only reaches here at
+  `strikeVel >= 20480 && hd.speed > 9`), so a module can drop light scrapes
+  entirely by returning 0 below its own threshold. No handler = full stock
+  damage.
 - **`JER_EVENT_GET_WALL_RESTITUTION`** — query fired in `CarBuildingCollision`
   (`bcollide.c:1057`) once a building/scenery hit is detected and the stock
   reaction impulse computed. `result` defaults to 4096 (= stock bounce); when

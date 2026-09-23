@@ -94,6 +94,15 @@ int jer_hud_active(void);
 int jer_hud_panel(int slot, int anchor, const char* text, int r, int g, int b);
 void jer_hud_panel_clear(int slot);
 
+/* Draw `slot` as a small filled METER instead of a line of text - `value/max`
+ * is the fraction shown (e.g. a health bar under a lock-on name). Same
+ * anchoring and stacking as jer_hud_panel; the empty part is a dark
+ * semi-transparent track so it reads over any scenery. Call it every frame
+ * while the subject lives, and clear the slot (jer_hud_panel_clear, or max
+ * <= 0) when it does not. Returns the slot used, or -1 for a bad slot or an
+ * empty meter. */
+int jer_hud_panel_bar(int slot, int anchor, int value, int max, int r, int g, int b);
+
 /* Engine-internal: draw the active messages and age the queue. Called once per
  * frame from DrawGame, next to the pause menu. Modules do not call this. */
 void jer_hud_draw(void);

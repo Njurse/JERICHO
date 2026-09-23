@@ -600,6 +600,7 @@ void DamageCar(CAR_DATA *cp, CDATA2D *cd, CRET2D *collisionResult, int strikeVel
 			JER_ARGS_DAMAGE_SCALE jerDmg;
 
 			jerDmg.car = cp;
+			jerDmg.impact = strikeVel;
 			jerDmg.result = 4096;
 			jer_fire(JER_EVENT_GET_DAMAGE_SCALE, &jerDmg);
 

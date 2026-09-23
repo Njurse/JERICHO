@@ -16,7 +16,9 @@ sdk/
     jer_anim.h        player-skeleton animation helpers
     jer_menu.h        module-provided frontend menus
     jer_npc.h         NPC helpers
-    jer_hud.h         on-screen HUD messages (jer_hud_message)
+    jer_hud.h         on-screen HUD messages (jer_hud_message) and readouts
+                      (jer_hud_panel / jer_hud_panel_bar)
+    jer_sound.h       sound-voice reservation (jer_sound_lock / jer_sound_ensure)
     jer_net.h         addon network bridge (jer_net_send / JER_EVENT_NET_RECV)
     jer_frontend.h    add real frontend menus (jer_frontend_register_menu)
     jer_events.h      event argument structs (game types as void*)

@@ -19,6 +19,7 @@
 
 #include "driver2.h"
 #include "pres.h"
+#include "system.h"	// DB* current (the display buffer + OT the HUD draws into)
 
 #include "jericho.h"
 #include "jer_hud.h"
@@ -48,6 +49,8 @@ typedef struct JER_HUD_PANEL
 	int anchor;			// JER_HUD_ANCHOR_*
 	int r, g, b;
 	int used;
+	int bar;			// 1 = draw a meter instead of a line of text
+	int barValue, barMax;		// the meter's fraction (barValue / barMax)
 } JER_HUD_PANEL;
 
 static JER_HUD_PANEL sPanel[JER_HUD_PANEL_MAX];
@@ -56,6 +59,11 @@ static JER_HUD_PANEL sPanel[JER_HUD_PANEL_MAX];
 // stock 2D font is 10-12px, so four lines fit above the action.
 #define JER_HUD_FIRST_Y		22
 #define JER_HUD_LINE_H		16
+
+// Panel bars (jer_hud_panel_bar). Deliberately SMALL: a thin meter that sits
+// on the line under a lock-on name, not a full-width stock percentage bar.
+#define JER_HUD_BAR_W		56
+#define JER_HUD_BAR_H		4
 
 // Screen width, for centring. PrintStringCentred uses the same 320.
 #define JER_HUD_SCREEN_W	320
@@ -232,6 +240,54 @@ static void jerHudDrawRuns(JER_HUD_MSG* m, short y, const CVECTOR* ambient)
 	}
 }
 
+// A small 2D filled meter: a dark track plus a coloured fill of value/max.
+// Added to the same OT bucket the stock percentage bars use (current->ot + 1),
+// one bucket behind the text so a name drawn over it still wins.
+static void jerHudDrawBar(short x, short y, int value, int max, int r, int g, int b)
+{
+	POLY_G4* poly;
+	int fillW, x1, y1;
+
+	x1 = (short)(x + JER_HUD_BAR_W);
+	y1 = (short)(y + JER_HUD_BAR_H);
+
+	poly = (POLY_G4*)current->primptr;
+	setPolyG4(poly);
+	setSemiTrans(poly, 1);
+	poly->r0 = poly->r1 = poly->r2 = poly->r3 = 0;
+	poly->g0 = poly->g1 = poly->g2 = poly->g3 = 0;
+	poly->b0 = poly->b1 = poly->b2 = poly->b3 = 0;
+	poly->x0 = poly->x2 = x;
+	poly->x1 = poly->x3 = x1;
+	poly->y0 = poly->y1 = y;
+	poly->y2 = poly->y3 = y1;
+	addPrim(current->ot + 1, poly);
+	current->primptr += sizeof(POLY_G4);
+
+	if (max <= 0 || value <= 0)
+		return;
+
+	if (value > max)
+		value = max;
+
+	fillW = (JER_HUD_BAR_W * value) / max;
+
+	if (fillW <= 0)
+		return;
+
+	poly = (POLY_G4*)current->primptr;
+	setPolyG4(poly);
+	poly->r0 = poly->r1 = poly->r2 = poly->r3 = r;
+	poly->g0 = poly->g1 = poly->g2 = poly->g3 = g;
+	poly->b0 = poly->b1 = poly->b2 = poly->b3 = b;
+	poly->x0 = poly->x2 = x;
+	poly->x1 = poly->x3 = (short)(x + fillW);
+	poly->y0 = poly->y1 = y;
+	poly->y2 = poly->y3 = y1;
+	addPrim(current->ot + 1, poly);
+	current->primptr += sizeof(POLY_G4);
+}
+
 // ---------------------------------------------------------------------------
 // panels
 // ---------------------------------------------------------------------------
@@ -257,6 +313,40 @@ int jer_hud_panel(int slot, int anchor, const char* text, int r, int g, int b)
 	p->g = g < 0 ? 0 : (g > 255 ? 255 : g);
 	p->b = b < 0 ? 0 : (b > 255 ? 255 : b);
 	p->used = 1;
+	p->bar = 0;
+
+	return slot;
+}
+
+// A panel slot drawn as a small filled METER rather than a line of text - the
+// health bar under a lock-on name. `value/barMax` is the fraction shown; the
+// empty part is a dark semi-transparent track so it reads over any scenery.
+// Call it every frame while the subject exists (like jer_hud_panel); clear the
+// slot (jer_hud_panel_clear, or barMax <= 0) when it does not.
+int jer_hud_panel_bar(int slot, int anchor, int value, int max, int r, int g, int b)
+{
+	JER_HUD_PANEL* p;
+
+	if (slot < 0 || slot >= JER_HUD_PANEL_MAX)
+		return -1;
+
+	if (max <= 0)
+	{
+		jer_hud_panel_clear(slot);
+		return -1;
+	}
+
+	p = &sPanel[slot];
+
+	p->text[0] = '\0';
+	p->anchor = anchor;
+	p->r = r < 0 ? 0 : (r > 255 ? 255 : r);
+	p->g = g < 0 ? 0 : (g > 255 ? 255 : g);
+	p->b = b < 0 ? 0 : (b > 255 ? 255 : b);
+	p->used = 1;
+	p->bar = 1;
+	p->barValue = value < 0 ? 0 : value;
+	p->barMax = max;
 
 	return slot;
 }
@@ -267,6 +357,7 @@ void jer_hud_panel_clear(int slot)
 		return;
 
 	sPanel[slot].used = 0;
+	sPanel[slot].bar = 0;
 	sPanel[slot].text[0] = '\0';
 }
 
@@ -307,7 +398,7 @@ void jer_hud_draw(void)
 			if (anchor < 0 || anchor >= 3)
 				anchor = JER_HUD_ANCHOR_TOP_LEFT;
 
-			w = StringWidth(p->text);
+			w = p->bar ? JER_HUD_BAR_W : StringWidth(p->text);
 
 			switch (anchor)
 			{
@@ -330,8 +421,15 @@ void jer_hud_draw(void)
 			y = (short)(JER_HUD_FIRST_Y + stacked[anchor] * JER_HUD_LINE_H);
 			stacked[anchor]++;
 
-			SetTextColour(p->r, p->g, p->b);
-			PrintString(p->text, x, y);
+			if (p->bar)
+			{
+				jerHudDrawBar(x, y, p->barValue, p->barMax, p->r, p->g, p->b);
+			}
+			else
+			{
+				SetTextColour(p->r, p->g, p->b);
+				PrintString(p->text, x, y);
+			}
 		}
 	}
 
