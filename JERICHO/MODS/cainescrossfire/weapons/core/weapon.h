@@ -124,6 +124,15 @@ typedef struct CD2_WEAPON_DEF
 				// same units as CD2_PROJ_HOME_TURN); 0 = use the
 				// default. Lower = weaker (the seeker's default 340;
 				// "extremely weak" is ~40).
+	int homingDelay;	// frames a homing shot flies its LAUNCH bearing
+				// before the seeker engages (0 = engage on the first
+				// frame, which is what every weapon did before this
+				// field existed). The window is what lets a shot leave
+				// its launcher OUTWARD - off its own flank, away from
+				// the car it was fired from - before it starts turning.
+	int homingDelayVary;	// per-shot +/- jitter on homingDelay, so a
+				// volley's shots do not all arm on the same frame
+				// (0 = they all do).
 	int collideScenery;	// 1 = shots stop on buildings/scenery (default ON)
 
 	// -------------------------------------------------------------------

@@ -55,6 +55,10 @@ typedef struct CD2_PROJECTILE
 	int volley;	// index into gVolley (-1 = an ordinary shot)
 	int vseq;	// this shot's position in the burst
 	int vgen;	// gVolley slot generation (guards against slot reuse)
+	int arm;	// frames left before a homing shot's seeker engages (0 =
+			// engaged). Seeded per shot from def->homingDelay +
+			// def->homingDelayVary (see weapon.h).
+	int armLen;	// that window's length as seeded, for the engage log only
 } CD2_PROJECTILE;
 
 static CD2_PROJECTILE gProj[CD2_MAX_PROJECTILES];
@@ -242,6 +246,22 @@ static void cd2ProjectileSpawnEx(const CD2_WEAPON_DEF* def, const CAR_DATA* shoo
 		p->volley = volley;
 		p->vseq = vseq;
 		p->vgen = vgen;
+
+		// the seeker's arming window: armed per SHOT (not per weapon), so the
+		// jitter spreads a volley's shots across a couple of frames and a
+		// recycled pool slot can never inherit the previous shot's countdown.
+		// Every shot with homingDelay 0 is armed on its first stepped frame,
+		// exactly as it was before this existed.
+		p->arm = def->homingDelay;
+
+		if (p->arm > 0 && def->homingDelayVary > 0)
+			p->arm += cd2WpnRand(def->homingDelayVary * 2 + 1) - def->homingDelayVary;
+
+		if (p->arm < 0)
+			p->arm = 0;
+
+		p->armLen = p->arm;	// what the engage line reports
+
 		return;
 	}
 }
@@ -537,7 +557,18 @@ void cd2ProjectileStep(void)
 
 		p->prev = p->pos;
 
-		if (p->def->homing)
+		// the seeker's arming window (def->homingDelay): while it is still
+		// running the shot holds the bearing it was LAUNCHED on, which is how a
+		// weapon gets its shots to leave the car OUTWARD - and clear it - before
+		// anything turns them back onto a target.
+		if (p->arm > 0)
+		{
+			if (--p->arm == 0 && gCd2Cfg.debugLog)
+				printInfo("[cainescrossfire] %s: seeker engaged after %d frame(s) on the launch bearing\n",
+					p->def->name, p->armLen);
+		}
+
+		if (p->def->homing && p->arm <= 0)
 			cd2ProjectileSeek(p);
 
 		// advance in sub-steps sized by the ACTUAL per-frame distance (which
