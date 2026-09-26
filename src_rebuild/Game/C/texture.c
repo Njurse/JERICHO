@@ -2210,20 +2210,32 @@ void LoadPermanentTPages(int *sector)
 	// import must leave every one of these exactly as it is here - measured with an
 	// import on and off, and compared. This line is what proves it.
 	//
-	// The civ_clut checksum is the same idea for the palette table
-	// (u_short civ_clut[CIV_CLUT_ROWS][32][6], and CIV_CLUT_ROWS is 16 because the last
-	// eight rows are an import's - PALETTES.md §1): those rows hold the colours every car
-	// in the level draws with, so an import must not disturb a single entry. A checksum
-	// makes that checkable instead of assumed. It covers ALL rows on purpose: an earlier
-	// version hashed only the first eight and could not see the import bank at all.
+	// The civ_clut checksums are the same idea for the palette table
+	// (u_short civ_clut[CIV_CLUT_ROWS][32][6], CIV_CLUT_ROWS 16 and the last eight rows
+	// an import's - PALETTES.md §1): those rows hold the colours every car in the level
+	// draws with, so an import must not disturb a single entry.
+	//
+	// TWO sums, deliberately. `civclut` covers rows 0..7 - the HOST's rows - and is the
+	// number to compare ACROSS builds, because it has meant the same thing since it was
+	// introduced (a stock run must print the same value before and after a change).
+	// `civclut16` covers all CIV_CLUT_ROWS rows so the import bank is visible too, but it
+	// is only comparable within one build: widening a hash changes its value without
+	// anything being wrong. Skipping this split is how "the hash moved" nearly got read
+	// as a regression.
 	{
 		unsigned int clutSum = 0;
+		unsigned int clutSum16 = 0;
 
 		for (i = 0; i < CIV_CLUT_ROWS * 32 * 6; i++)
-			clutSum = clutSum * 31 + ((u_short*)civ_clut)[i];
+		{
+			if (i < 8 * 32 * 6)
+				clutSum = clutSum * 31 + ((u_short*)civ_clut)[i];
 
-		printInfo("cross-city: level page state - slotsused=%d nperms=%d nspecpages=%d tpage=(%d,%d) clutpos=(%d,%d) civclut=%08x\n",
-			slotsused, nperms, nspecpages, tpage.x, tpage.y, clutpos.x, clutpos.y, clutSum);
+			clutSum16 = clutSum16 * 31 + ((u_short*)civ_clut)[i];
+		}
+
+		printInfo("cross-city: level page state - slotsused=%d nperms=%d nspecpages=%d tpage=(%d,%d) clutpos=(%d,%d) civclut=%08x civclut16=%08x\n",
+			slotsused, nperms, nspecpages, tpage.x, tpage.y, clutpos.x, clutpos.y, clutSum, clutSum16);
 	}
 }
 
