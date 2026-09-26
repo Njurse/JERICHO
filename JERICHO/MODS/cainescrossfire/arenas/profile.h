@@ -54,6 +54,10 @@ typedef struct CD2_ARENA_SPAWN
 
 #define CD2_ARENA_NO_Y	0x7fffffff
 
+// The engine's ground height at (x,z), or CD2_ARENA_NO_Y when the cell is
+// not loaded. Used for a spawn that authored no height (arenas/arena.c).
+int cd2ArenaGroundY(int x, int z);
+
 #define CD2_ARENA_MAX_SPAWNS	16
 #define CD2_ARENA_MAX_ARENAS	32
 #define CD2_ARENA_NAME_LEN	32

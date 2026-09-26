@@ -24,16 +24,50 @@
 #include "driver2.h"
 #include "cars.h"
 #include "players.h"		/* MainPlayer - the player's car */
+
 #include "jericho.h"
 #include "jer_events.h"
 #include "jer_hud.h"		/* jer_hud_message - the fallback notice */
 #include "cainescrossfire.h"
 #include "arenas/profile.h"
+#include "main.h"			/* FrameCnt - the CC_YLOG dev probe */
+
+/* The engine's ground height at (x,z) - what a spawn with no authored y needs.
+ *
+ * MapHeight answers 0 for a cell that is not loaded yet (antfarm notes the same),
+ * so 0 means "no answer", NOT "the ground is at 0"; the caller then keeps the
+ * height the level gave the car. Without this, every opponent inherited the
+ * PLAYER's height, which is only right where the player is standing - put one
+ * 100k units away and it spawns in mid-air and drops into the void. */
+extern int MapHeight(VECTOR* pos);
+
+int cd2ArenaGroundY(int x, int z)
+{
+	VECTOR p;
+	int h;
+
+	p.vx = x;
+	p.vy = 0;
+	p.vz = z;
+
+	h = MapHeight(&p);
+
+	return (h != 0) ? h : CD2_ARENA_NO_Y;
+}
+
+/* NOTE: a forced UnpackRegion(spawn) + StartSpooling/UpdateSpool here was tried
+ * (antfarm's trick for a far teleport) and made things WORSE: the engine keeps
+ * only FOUR barrels, so pulling regions in for spawns one at a time evicts the
+ * ones just loaded, and MapHeight then answers 0 for spawns that previously had
+ * ground. Don't do it. A spawn in a region the engine has not spooled is a real
+ * limitation - keep arena spawns inside the area the player is playing in. */
+
 #include "weapons/core/weapon.h"		/* cd2WpnCarGrant / cd2WpnName - a weapon pickup */
 #include "weapons/core/weapon_internal.h"	/* cd2WpnLine - the marker */
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>		/* getenv - the CC_YLOG dev probe */
 
 #define CD2_PICKUP_RADIUS	320	/* drive-over range (world units) */
 
@@ -232,11 +266,18 @@ static void cd2ArenaPlacePlayer(void)
 	cp->hd.where.t[0] = sp.x;
 	cp->hd.where.t[2] = sp.z;
 
-	/* The authored height, when there is one. Without it a car placed on a hill
-	 * or a raised road falls through the world: the game's own height belongs to
-	 * the position the LEVEL started the car at, not to this one. */
+	/* The authored height, when there is one. Otherwise ask the map: a car placed
+	 * on a hill or a raised road falls through the world if it inherits a height
+	 * that belongs to some other spot. */
 	if (sp.y != CD2_ARENA_NO_Y)
 		cp->hd.where.t[1] = sp.y;
+	else
+	{
+		int gy = cd2ArenaGroundY(sp.x, sp.z);
+
+		if (gy != CD2_ARENA_NO_Y)
+			cp->hd.where.t[1] = gy;
+	}
 
 	cp->hd.direction = sp.heading & 0xfff;
 
@@ -518,6 +559,45 @@ static void cd2ArenaWarnSpawns(void)
 		jer_hud_message("spawn outside the arena region - fix it in the arena editor", 240);
 }
 
+/* Is there actually ground where each spawn is?
+ *
+ * This is the question "did I mess the spawn up, or is it on the world?" - asked
+ * of the engine instead of guessed. MapHeight answers 0 for a cell that is not
+ * loaded, and a spawn off the edge of the map is never loaded either, so both
+ * faults show up the same way: no ground, and a car dropped there falls into the
+ * void. Runs on the first FRAME (not GAME_START) so the cells have been spooled. */
+static void cd2ArenaReportGround(void)
+{
+	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
+	int i, void_spawns = 0;
+
+	if (a == NULL || a->spawnCount == 0)
+		return;
+
+	for (i = 0; i < a->spawnCount && i < CD2_ARENA_MAX_SPAWNS; i++)
+	{
+		const CD2_ARENA_SPAWN* sp = &a->spawns[i];
+		int gy = cd2ArenaGroundY(sp->x, sp->z);
+
+		if (gy == CD2_ARENA_NO_Y)
+		{
+			printInfo("[cainescrossfire] arena '%s': spawn %d (%d,%d) has NO GROUND there - "
+				"off the map, or not loaded. A car dropped there falls into the void.\n",
+				a->internalName, i, sp->x, sp->z);
+			void_spawns++;
+		}
+		else
+		{
+			printInfo("[cainescrossfire] arena '%s': spawn %d (%d,%d) is on the world, ground y=%d%s\n",
+				a->internalName, i, sp->x, sp->z, gy,
+				(sp->y != CD2_ARENA_NO_Y) ? " (the authored height is what is used)" : "");
+		}
+	}
+
+	if (void_spawns > 0)
+		jer_hud_message("a spawn has no ground under it - you would fall into the void", 240);
+}
+
 static int cd2ArenaOnGameStart(void* ud, void* args)
 {
 	(void)ud;
@@ -576,6 +656,9 @@ static int cd2ArenaOnFrame(void* ud, void* args)
 	{
 		gArenaPlayerPlaced = 1;
 		cd2ArenaPlacePlayer();
+
+		/* now that the cells are spooled, say whether each spawn has ground */
+		cd2ArenaReportGround();
 	}
 
 	/* no spawn points authored: say so once, so it is not a silent surprise */
@@ -590,6 +673,27 @@ static int cd2ArenaOnFrame(void* ud, void* args)
 	cd2ArenaBarrier();
 	cd2ArenaPickups();
 	cd2ArenaWatch();
+
+	/* TEMP dev probe: CC_YLOG=1 prints the player's height for the first 90
+	 * frames, to see whether a spawn settles on the ground or falls. */
+	{
+		static int ylog = -1;
+
+		if (ylog < 0)
+		{
+			const char* e = getenv("CC_YLOG");
+
+			ylog = (e != NULL && e[0] == '1');
+		}
+
+		{
+			CAR_DATA* ycp = &car_data[player[0].playerCarId];
+
+			if (ylog && FrameCnt < 90 && ycp->controlType == CONTROL_TYPE_PLAYER)
+				printInfo("[cd2ylog] frame=%d y=%d vy=%d\n", FrameCnt,
+					ycp->hd.where.t[1], ycp->st.n.linearVelocity[1]);
+		}
+	}
 
 	return JER_RESULT_CONTINUE;
 }

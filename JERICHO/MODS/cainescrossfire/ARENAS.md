@@ -294,6 +294,62 @@ one that is missing, and it says so plainly when a city has not been ripped.
 [cainescrossfire] arena barrier: car=0 clamped to (0,0)
 ```
 
+## Which map an arena loads (single-player city vs the small mp map)
+
+The `mp:` line is the biggest lever in an arena and the least obvious:
+
+| `mp:` | what loads |
+|---|---|
+| `0 0` | the **full single-player city** (mission M50..M57) |
+| `1 0` | the city's **small multiplayer map**, layout 0 (M58..M65) |
+| `1 1` | the city's **small multiplayer map**, layout 1 (M498..M505) |
+
+The engine picks this in `glaunch.c` (GAME_TAKEADRIVE): base `50` when it is the
+full city, base `58` for the multiplayer map, plus `GameLevel * 2 + night +
+subGame * 440`. `tools/arena_menu.bat` asks for it when it makes an arena
+("`1` = the city's small mp map, `0` = the full city") and the Python editor has
+the same switch in its Arena box.
+
+So "I picked arena X and it loaded the normal multiplayer map" means the arena's
+file says `mp: 1 ...`. New arenas default to the mp map unless you answer `0`.
+
+## Where a spawn gets its height (and when it falls into the void)
+
+A spawn's `y` is optional: `spawn: x z heading [y]`.
+
+* authored `y` — used as-is;
+* no `y` — the module asks the engine (`MapHeight`, the same call antfarm uses)
+  for the **ground under that spawn**, so a distant spawn no longer inherits the
+  player's height and drop through the world;
+* asking the engine also gives you a verdict on your spawns. On the first frame
+  the game logs one line per spawn:
+
+```
+arena 'pracinhas': spawn 0 (-186527,82690) is on the world, ground y=-2048
+arena 'pracinhas': spawn 2 (-198135,146918) has NO GROUND there - off the map,
+                   or not loaded. A car dropped there falls into the void.
+```
+
+**"NO GROUND" is the thing to act on.** It means either the point is outside the
+level, or its map region is not resident. The engine only spools the regions
+around the player, so a spawn a long way from the player's spawn can have no
+answer — keep arena spawns inside the part of the map you are actually playing
+in. This is a real limitation, not a bug to work around: forcing the region in
+with `UnpackRegion` was tried and made things worse (the engine keeps only four
+barrels, so pulling regions in one at a time evicts the ones just loaded).
+
+Set `CC_YLOG=1` to print the player's height and vertical velocity for the first
+90 frames — the way to tell "settling on the ground" from "falling out of it".
+
+## Run the launcher from anywhere
+
+`tools/arena_menu.bat` finds the repo by walking up for the folder holding both
+`JERICHO\MODS\cainescrossfire` and `src_rebuild`, and uses that copy's arenas and
+editor even when you run the build's own copy of the script. That matters: the
+build mirrors `MODS` into the output folder, and a launcher that resolved its
+paths by counting directory levels up from itself put arenas in the mirror, where
+the game never looks.
+
 ## Source layout
 
 | file | what |

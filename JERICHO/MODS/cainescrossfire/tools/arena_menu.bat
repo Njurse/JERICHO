@@ -18,12 +18,33 @@ rem   See ..\ARENAS.md for the .cca file format.
 rem ============================================================================
 
 set "TOOLS=%~dp0"
-for %%I in ("%TOOLS%..\..\..\..") do set "REPO=%%~fI"
+
+rem --- find the repo ---------------------------------------------------------
+rem The folder holding BOTH the mod and src_rebuild. Walk up for it rather than
+rem counting ..\..\..\.. from %~dp0: the build copies this script into the bin
+rem mirror, and a fixed depth from there lands INSIDE the build - arenas written
+rem to that copy are invisible to the game, which reads the repo folder. (That is
+rem exactly what happened to pracinhas.)
+set "REPO="
+set "CAND=%TOOLS%"
+:findrepo
+for %%I in ("%CAND%\.") do set "CAND=%%~fI"
+for %%I in ("%CAND%\..") do set "UP=%%~fI"
+if exist "%CAND%\JERICHO\MODS\cainescrossfire" if exist "%CAND%\src_rebuild" set "REPO=%CAND%"
+if defined REPO goto :gotrepo
+if /i "%UP%"=="%CAND%" goto :gotrepo
+set "CAND=%UP%"
+goto :findrepo
+:gotrepo
+if not defined REPO for %%I in ("%TOOLS%..\..\..\..") do set "REPO=%%~fI"
+
 set "ARENAS=%REPO%\JERICHO\MODS\cainescrossfire\arenas"
 set "BIN=%REPO%\src_rebuild\bin\Release_dev"
 set "GAME_ARENAS=%BIN%\JERICHO\MODS\cainescrossfire\arenas"
 set "EXE=%BIN%\REDRIVER2_dev.exe"
-set "EDITOR=%TOOLS%arenaedit.py"
+rem the repo's editor, not this copy's - a mirror copy is stale
+set "EDITOR=%REPO%\JERICHO\MODS\cainescrossfire\tools\arenaedit.py"
+if not exist "%EDITOR%" set "EDITOR=%TOOLS%arenaedit.py"
 
 rem --- find a real Python 3 (prefer the py launcher; skip the Store stub) ----
 set "PY="
@@ -45,6 +66,7 @@ cls
 echo ================================================================
 echo   Caine's Crossfire - arena tool
 echo ================================================================
+echo   repo:    %REPO%
 echo   arenas:  %ARENAS%
 if defined PY ( echo   python:  %PY% ) else ( echo   python:  NOT FOUND - install Python 3 to use the editor )
 echo.

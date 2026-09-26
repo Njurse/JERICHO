@@ -540,13 +540,22 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		if (cd2ArenaOpponentSpawn(index, &sp))
 		{
 			cand.vx = sp.x;
-			cand.vy = (sp.y != CD2_ARENA_NO_Y) ? sp.y : ppos.vy;
+			{
+				/* an authored height wins; otherwise the ground under THIS spawn - not the
+				 * player's height, which is only right where the player is standing. A
+				 * spawn in a region the engine has not spooled has no answer, and then
+				 * the player's height stands in. */
+				int gy = (sp.y != CD2_ARENA_NO_Y) ? sp.y : cd2ArenaGroundY(sp.x, sp.z);
+
+				cand.vy = (gy != CD2_ARENA_NO_Y) ? gy : ppos.vy;
+			}
 			cand.vz = sp.z;
 			spawnHeading = sp.heading;
 			chosen = 1;
 
-			printInfo("[cainescrossfire] arena spawn: opponent %d at (%d,%d,%d) heading %d\n",
-				index, sp.x, sp.y, sp.z, sp.heading);
+			printInfo("[cainescrossfire] arena spawn: opponent %d at (%d,%d,%d) heading %d%s\n",
+				index, cand.vx, cand.vy, cand.vz, sp.heading,
+				(sp.y == CD2_ARENA_NO_Y) ? " (height from the map)" : " (authored height)");
 		}
 	}
 
