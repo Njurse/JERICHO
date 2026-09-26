@@ -36,6 +36,12 @@
 #include <stdio.h>
 
 #define CD2_PICKUP_RADIUS	320	/* drive-over range (world units) */
+
+// How far outside the rectangle a car may be and still count as "crossing the
+// wall" (it is moving, and got there from inside). Beyond this it started out
+// there - a spawn outside the region - and pulling it back would be a long
+// teleport, quite possibly into the void. Generous enough for a fast overshoot.
+#define CD2_ARENA_BARRIER_MARGIN	12000
 #define CD2_PICKUP_RESPAWN	900	/* frames a taken pickup stays gone (30s) */
 #define CD2_PICKUP_HEIGHT	160	/* marker bar height (y-up) */
 #define CD2_PICKUP_Y		0	/* the flat-ground plane the markers stand on */
@@ -158,6 +164,7 @@ static int gArenaCurrent = CD2_ARENA_NONE;
 static int gArenaNotified;
 static int gArenaPlayerPlaced;
 static int gArenaClampLogged[MAX_CARS];	/* first hit against the barrier, per car */
+static int gArenaFarLogged[MAX_CARS];	/* first "far outside the region" note, per car */
 static int gPickupActive[CD2_ARENA_MAX_PICKUPS];
 static int gPickupTimer[CD2_ARENA_MAX_PICKUPS];
 
@@ -259,6 +266,24 @@ static void cd2ArenaClampCar(CAR_DATA* cp, const CD2_ARENA_REGION* r)
 	int x = cp->hd.where.t[0];
 	int z = cp->hd.where.t[2];
 	int hit = 0;
+
+	// A car FAR outside is not "crossing the wall": it is somewhere it should
+	// never have started (a spawn outside the region, most likely). Pulling it
+	// onto the rectangle would be a long teleport - often straight into the void,
+	// which is exactly the "car falls through the world" a bad spawn causes. So
+	// leave it where it is and say so once; the load-time warning explains it.
+	if (x < r->x0 - CD2_ARENA_BARRIER_MARGIN || x > r->x1 + CD2_ARENA_BARRIER_MARGIN ||
+	    z < r->z0 - CD2_ARENA_BARRIER_MARGIN || z > r->z1 + CD2_ARENA_BARRIER_MARGIN)
+	{
+		if (cp->id >= 0 && cp->id < MAX_CARS && !gArenaFarLogged[cp->id])
+		{
+			gArenaFarLogged[cp->id] = 1;
+			printInfo("[cainescrossfire] arena barrier: car=%d sits far outside the region "
+				"(%d,%d) - left alone (a spawn outside the region?)\n", cp->id, x, z);
+		}
+
+		return;
+	}
 
 	if (x < r->x0)      { x = r->x0; if (cp->st.n.linearVelocity[0] < 0) cp->st.n.linearVelocity[0] = 0; hit = 1; }
 	else if (x > r->x1) { x = r->x1; if (cp->st.n.linearVelocity[0] > 0) cp->st.n.linearVelocity[0] = 0; hit = 1; }
@@ -462,6 +487,37 @@ static void cd2ArenaPickups(void)
 // ---------------------------------------------------------------------------
 // hooks
 // ---------------------------------------------------------------------------
+// Warn about a spawn that sits outside the region: the barrier will NOT pull it
+// in (see cd2ArenaClampCar), so that car may drop through the world when the
+// match starts. Said once at GAME_START, in the log and on screen, because it is
+// the author's to fix and otherwise looks like a random crash into the void.
+static void cd2ArenaWarnSpawns(void)
+{
+	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
+	int i, bad = 0;
+
+	if (a == NULL || !a->region.bounded)
+		return;
+
+	for (i = 0; i < a->spawnCount && i < CD2_ARENA_MAX_SPAWNS; i++)
+	{
+		const CD2_ARENA_SPAWN* sp = &a->spawns[i];
+
+		if (sp->x < a->region.x0 || sp->x > a->region.x1 ||
+		    sp->z < a->region.z0 || sp->z > a->region.z1)
+		{
+			printInfo("[cainescrossfire] arena '%s': spawn %d (%d,%d) is OUTSIDE the region "
+				"(%d,%d,%d,%d) - it will not be pulled in, so it may fall into the void\n",
+				a->internalName, i, sp->x, sp->z,
+				a->region.x0, a->region.z0, a->region.x1, a->region.z1);
+			bad++;
+		}
+	}
+
+	if (bad > 0)
+		jer_hud_message("spawn outside the arena region - fix it in the arena editor", 240);
+}
+
 static int cd2ArenaOnGameStart(void* ud, void* args)
 {
 	(void)ud;
@@ -469,6 +525,7 @@ static int cd2ArenaOnGameStart(void* ud, void* args)
 
 	gArenaNotified = 0;
 	memset(gArenaClampLogged, 0, sizeof(gArenaClampLogged));
+	memset(gArenaFarLogged, 0, sizeof(gArenaFarLogged));
 
 	/* every pickup starts present */
 	{
@@ -492,6 +549,9 @@ static int cd2ArenaOnGameStart(void* ud, void* args)
 	 * written later in the launch), so the player's authored spawn is applied on
 	 * the first FRAME instead - see cd2ArenaOnFrame. */
 	gArenaPlayerPlaced = 0;
+
+	/* a spawn outside the region will not be pulled in - say so up front */
+	cd2ArenaWarnSpawns();
 
 	/* take the file as it is now, so the watcher only fires on a LATER change */
 	cd2ArenaWatchReset();

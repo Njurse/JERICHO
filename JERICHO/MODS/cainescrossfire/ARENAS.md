@@ -74,11 +74,14 @@ pickup: health -3000 1000 2500       # a repair: this many damage units off tota
   it: a car at the edge is put back on it and its **outward velocity is
   cancelled**, so the edge reads as a wall. Civ traffic is free to wander out.
   Omit it (or `none`) for no barrier.
-- **Keep every `spawn` INSIDE the `region`.** A spawn outside it is pulled onto
-  the rectangle on the first frame — a long teleport, and quite possibly into
-  the void. `arenaedit.py --check` and the launcher's checker flag it, and the
-  game logs the pull (`arena barrier: car=N clamped to (x,z)`), so if a car
-  lands somewhere odd, that line is the explanation.
+- **Keep every `spawn` INSIDE the `region`.** The barrier only pulls back a car
+  near the edge — one that drove out from inside. A car sitting FAR outside it
+  (which is what a spawn outside the region produces) is deliberately **left
+  alone** rather than teleported across the map into the void: the game warns at
+  GAME_START (`spawn N (x,z) is OUTSIDE the region`) and on screen, the barrier
+  says `car=N sits far outside the region ... left alone`, and
+  `arenaedit.py --check` flags it. So if a car will not stay put, look at the
+  region first.
 - **`spawn`** is a world position, a heading in PSX angle units (0..4095), and an
   optional **height** `y`. Spawn 1 is the player; 2.. are the opponents **in
   order** (opponent 0 is the second `spawn:` line, and so on). Up to 16. A
