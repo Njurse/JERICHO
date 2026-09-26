@@ -223,12 +223,40 @@ typedef struct CD2_AI_CAR
 	CD2_NAV_ROUTE route;
 } CD2_AI_CAR;
 
+
+static int sPlayerAi = 0;		// the mode is on
+static int sPlayerAiCarId = -1;		// the car it adopted (-1 = none)
+static char sPlayerAiPadId = 0;		// the CUTSCENE pad id the adopted car is fed
+static char* sPlayerAiSavedPadId;	// ...and the padid it had before, to give it back
+
+// The car the mode adopted, or -1. The roster/spawn bookkeeping asks so it can leave the
+// player out of its opponent count.
+static int cd2AiPlayerCar(void)
+{
+	return sPlayerAi ? sPlayerAiCarId : -1;
+}
+
 static CD2_AI_CAR sAi[CD2_AI_MAX];
 static int sPoolLogged;		// one-shot: log the level's usable car models
 static int sAiCount;		// number of live opponents
 static unsigned int sLogTick;	// debugLog throttle counter
 static int sNavProbeDone;	// one-shot arbitration probe at level start
 static CD2_AI_DEBUG sDbg;	// latest values of the tracked (first) opponent
+
+// Opponents alive OTHER than the adopted player car. The behaviour gate needs its own
+// count rather than the match setting: with `playerai:` on, the player occupies an AI
+// slot, so "is there anyone to fight" and "how many opponents did the match spawn" are
+// no longer the same question.
+static int cd2AiOthersAlive(void)
+{
+	int i, n = 0;
+
+	for (i = 0; i < CD2_AI_MAX; i++)
+		if (sAi[i].carId >= 0 && sAi[i].carId != cd2AiPlayerCar())
+			n++;
+
+	return n;
+}
 
 // Random2() IGNORES its argument - convert.c returns a raw 16-bit value
 // regardless of the range you ask for. Every "jitter up to N" must reduce it
@@ -918,6 +946,16 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 		int want;
 		int engage = (sState == CD2_AI_ATTACK) ? CD2_AI_ENGAGE_KEEP : CD2_AI_ENGAGE_RANGE;
 
+		// Nobody else on the field - which is the normal state of the `playerai:` test
+		// mode, and can happen in a match while every opponent is respawning. Hunting and
+		// fleeing both need someone to hunt or flee FROM, so with nobody there they are
+		// just noise: a car that "flees" a wall it clipped looks broken, and a car that
+		// hunts an empty city looks lost. Explore instead.
+		//
+		// ("Explore" is exactly the roam/wander path: a goal out along a heading it keeps
+		// choosing, re-planned through the nav grid when it arrives or gets stuck.)
+		int alone = (targetId < 0 && cd2AiOthersAlive() == 0);
+
 		if (sDisperseTicks > 0)
 		{
 			// Opening move. They spawn in a cluster and none of them has a
@@ -925,7 +963,7 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			// (counted down per frame, above - not per re-decision)
 			want = CD2_AI_DISPERSE;
 		}
-		else if (sFleeCooldown <= 0 &&
+		else if (!alone && sFleeCooldown <= 0 &&
 			         (cp->totalDamage > sFleeDamage || danger >= sFleeThreats))
 		{
 			// Hurt enough, or outnumbered enough, to break contact. The bars are
@@ -1901,6 +1939,11 @@ static int cd2AiOnFrame(void* ud, void* args)
 				continue;
 			}
 
+			// the adopted player car is not a spawned opponent: counting it would stop
+			// the match respawning its opponents while the test mode is on
+			if (id == cd2AiPlayerCar())
+				continue;
+
 			live++;
 		}
 
@@ -1911,6 +1954,153 @@ static int cd2AiOnFrame(void* ud, void* args)
 	}
 
 	return JER_RESULT_CONTINUE;
+}
+
+// ---------------------------------------------------------------------------
+// The player as an AI CONTESTANT (cc_debug.txt: playerai:1)
+//
+// A test mode: hand the player's car to the module's own opponent AI, so a run with
+// nobody at the wheel still has a car that fights and moves like a contestant - and so
+// the AI's driving can be watched against these levels and these cars.
+//
+// It is a small thing to do because the AI never asks about controlType: every one of
+// its hooks asks cd2AiIsOpponent(), which is nothing more than "has this car got an sAi
+// slot" (cd2AiSlot). So adopting the player's car is exactly giving it a slot:
+//
+//   * cd2AiOnCarPad then blanks its pad and marks the input handled - the same thing
+//     that stops an opponent mirroring the player's replay;
+//   * cd2AiOnCarStep then drives it through cd2AiDrive (steering, throttle, tactics).
+//
+// Nothing else changes. The car keeps CONTROL_TYPE_PLAYER, so the camera, the HUD, the
+// compass and the module's springs all keep treating it as the player's car; only the
+// hand on the wheel is the AI's. That is also why this is the safe way to do it - the
+// engine's own conversions (SetNullPlayer -> CIV_AI, cutscene.c:707, or the civ-AI
+// handover) change what the car IS and fight the module's player paths.
+//
+// Two deliberate omissions:
+//   * no cd2FacAssignAiCar: factions name the MATCH's opponents (MCKENZIE, VASQUEZ,
+//     JERICHO - factions/factions.c) and the player already has an identity;
+//   * the adopted car is not counted as a spawned opponent, so opponents keep respawning
+//     around it instead of the mode suppressing the match.
+// ---------------------------------------------------------------------------
+
+void cd2AiAdoptPlayer(int on)
+{
+	int carId, i;
+	CD2_AI_CAR* A;
+
+	if (!on)
+	{
+		if (sPlayerAiCarId >= 0 && sPlayerAiCarId < MAX_CARS)
+		{
+			CAR_DATA* pcp = &car_data[sPlayerAiCarId];
+
+			A = cd2AiSlot(sPlayerAiCarId);
+
+			if (A != NULL)
+				A->carId = -1;
+
+			// give the car back: its control type, the pad it reads, and the AI gearbox
+			if (pcp->controlType == CONTROL_TYPE_CUTSCENE)
+			{
+				pcp->controlType = CONTROL_TYPE_PLAYER;
+				pcp->ai.padid = (sPlayerAiSavedPadId != NULL) ? sPlayerAiSavedPadId : pcp->ai.padid;
+				pcp->hndType = 0;
+			}
+		}
+
+		printInfo("[cainescrossfire] player AI OFF (car %d back to the pad)\n", sPlayerAiCarId);
+
+		sPlayerAi = 0;
+		sPlayerAiCarId = -1;
+		return;
+	}
+
+	carId = player[0].playerCarId;
+
+	if (carId < 0 || carId >= MAX_CARS)
+	{
+		printInfo("[cainescrossfire] player AI: no player car to adopt (id=%d)\n", carId);
+		return;
+	}
+
+	if (sPlayerAi && sPlayerAiCarId == carId)
+		return;					// already driving it
+
+	A = cd2AiSlot(carId);
+
+	if (A == NULL)
+	{
+		for (i = 0; i < CD2_AI_MAX; i++)
+		{
+			if (sAi[i].carId < 0)
+			{
+				A = &sAi[i];
+				break;
+			}
+		}
+	}
+
+	if (A == NULL)
+	{
+		printInfo("[cainescrossfire] player AI: no free AI slot (all %d in use)\n", CD2_AI_MAX);
+		return;
+	}
+
+	// the same slot fill cd2AiSpawnOne does, minus the faction claim and minus the opening
+	// spread: the car is already on the field, so there is nothing to place or name, and
+	// nothing to break formation from. ROAM is the exploring behaviour (a nav-planned
+	// goal it keeps re-choosing), which is what an adopted player should do rather than
+	// drive out once on a scatter heading and then sit at the end of it.
+	A->carId = carId;
+	A->state = CD2_AI_ROAM;
+	A->disperseTicks = 0;
+	A->stateTimer = 0;
+	A->evade = 0;
+	A->fireTimer = 0;
+	A->steer = 0;
+	A->thrust = 0;
+	A->reverse = 0;
+	A->stuck = 0;
+	A->avoid = 0;
+	A->avoidTicks = 0;
+	A->avoidCycles = 0;
+	A->lastDamage = 0;
+	A->hits = 0;
+	A->disperseTicks = CD2_AI_DISPERSE_TICKS + cd2AiRand(CD2_AI_DISPERSE_TICKS / 2);
+	A->wanderHeading = car_data[carId].hd.direction;
+	A->wanderTimer = 60;
+	A->role = (gCd2Cfg.aiRole >= 0) ? gCd2Cfg.aiRole
+		: (int)(cd2AiRunSeed() % CD2_AI_ROLE_COUNT);
+	A->route.count = 0;
+	A->route.source = CD2_NAV_SRC_NONE;
+
+	A->bravery = cd2AiBravery(&car_data[carId]);
+	A->fleeDamage = cd2AiMaxDamage(&car_data[carId]) * (20 + A->bravery * 80 / 100) / 100;
+	A->fleeThreats = 5 - A->bravery / 25;
+
+	// The control type the opponents use, and it is load-bearing rather than cosmetic:
+	// CUTSCENE means this module writes the car's inputs and NO stock driver exists to
+	// fight it for them - no pedal path, no road-node snapping, no CheckPingOut when it
+	// leaves the road graph. Leaving the car CONTROL_TYPE_PLAYER loses the AI's throttle
+	// to the player's own pedal processing every frame (measured with the pad blanked:
+	// thr stayed 0 for the whole run).
+	//
+	// player[].playerCarId is deliberately NOT touched, so the camera, the HUD and the
+	// compass keep following the car - the engine's own way of taking a player's car away
+	// (SetNullPlayer, cutscene.c:707) clears it and loses all three.
+	sPlayerAiSavedPadId = (char*)car_data[carId].ai.padid;
+	car_data[carId].controlType = CONTROL_TYPE_CUTSCENE;
+	car_data[carId].ai.padid = &sPlayerAiPadId;
+	car_data[carId].hndType = 0;
+	car_data[carId].controlFlags = 0;
+
+	sPlayerAi = 1;
+	sPlayerAiCarId = carId;
+
+	printInfo("[cainescrossfire] player AI ON: car %d is now an AI contestant "
+		"(role=%d(%s) bravery=%d fleeAt=%d fleeThreats=%d)\n",
+		carId, A->role, cd2AiRoleNameOf(A->role), A->bravery, A->fleeDamage, A->fleeThreats);
 }
 
 static int cd2AiOnCarPad(void* ud, void* args)
@@ -1944,13 +2134,24 @@ static int cd2AiOnCarStep(void* ud, void* args)
 	CD2_AI_CAR* A;
 	(void)ud;
 
-	if (!gCd2Cfg.enabled || cd2MatchOpponents() <= 0)
+	if (!gCd2Cfg.enabled)
 		return JER_RESULT_CONTINUE;
 
 	A = cd2AiSlot(cp->id);
 
-	if (A != NULL)
+	// an adopted player car is driven even when the match has no opponents - watching the
+	// AI drive where there is nothing to fight is the point of the test mode
+	if (A != NULL && (cd2MatchOpponents() > 0 || cp->id == cd2AiPlayerCar()))
+	{
 		cd2AiDrive(cp, A);
+
+		// the mode's own readout: without it a headless run cannot tell "the AI is driving
+		// the player" from "the AI adopted the car and nothing happened"
+		if (cp->id == cd2AiPlayerCar() && gCd2Cfg.debugLog && (sLogTick % 45) == 0)
+			printInfo("[cainescrossfire] player AI: car=%d role=%s state=%s steer=%d thrust=%d spd=%d hdspd=%d\n",
+				cp->id, cd2AiRoleName(), cd2AiStateName(), A->steer, A->thrust,
+				cp->hd.speed, cp->hd.wheel_speed);
+	}
 
 	return JER_RESULT_CONTINUE;
 }

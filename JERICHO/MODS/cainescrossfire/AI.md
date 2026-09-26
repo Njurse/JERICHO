@@ -596,3 +596,31 @@ out and point where the AI itself is aiming, not at whatever happens to be
 nearest. The local player's crew use the radar lock (`cd2LockOnTarget`,
 `hud/lockon.c`) instead; the lock's range is `CD2_LOCK_RANGE` (15600 — deliberately
 generous, so the lock sits on an opponent unless they are really far away).
+
+## Watching the AI drive: `playerai:` (test mode)
+
+A scripted/headless run has no hands on the wheel, so the only way to watch how the
+contestants actually drive a level and these cars is to let the AI drive the player's
+car too. `JERICHO/CONFIG/cc_debug.txt`:
+
+    30:playerai:1      # from frame 30, the player'''s car is an AI contestant
+    300:playerai:0     # ...and give it back to the pad
+
+It is a small thing because the AI never asks about `controlType`: every hook asks
+`cd2AiIsOpponent()`, which is only "has this car got an `sAi` slot" (`cd2AiSlot`). So
+adopting the player is exactly giving its car a slot
+(`cd2AiAdoptPlayer`, ai/opponent.c): `cd2AiOnCarPad` then blanks its pad and marks the
+input handled, and `cd2AiOnCarStep` drives it through `cd2AiDrive`.
+
+Two things make it behave rather than merely move:
+
+* the car is switched to `CONTROL_TYPE_CUTSCENE`, the control the opponents use. That is
+  load-bearing, not cosmetic: a `CONTROL_TYPE_PLAYER` car loses the AI'''s throttle to the
+  player'''s own pedal processing every frame (measured: `thr` stayed 0 for a whole run
+  with the pad blanked). `player[].playerCarId` is left alone, so the camera, the HUD and
+  the compass keep following the car;
+* with nobody else alive the behaviour gate keeps it **exploring**: HUNT and FLEE both
+  need someone to hunt or flee from, so a car that "flees" a wall it clipped or hunts an
+  empty city just looks broken. It roams instead, re-planning through the nav grid. The
+  adopted car is also not counted as a spawned opponent, so a match with opponents still
+  respawns them around it.

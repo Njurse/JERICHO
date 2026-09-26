@@ -44,6 +44,13 @@
  *       to the left/right window muzzles (leaning weapons fire from a window).
  *   select:<weapon>                 cycle the player's car until that weapon is
  *       selected (grant first: the cycle skips unowned weapons).
+ *   playerai[:0|1]                  hand the PLAYER'S car to this module's own
+ *       opponent AI - the CONTESTANT AI, not the engine's civilian traffic AI - so it
+ *       drives and fights on its own (0 gives it back). The reason this exists: a
+ *       scripted run has no hands on the wheel, so an AI-driven player car is the only
+ *       way to watch how the contestants actually drive a level and these cars. The car
+ *       keeps being the player's car: the camera, the HUD and the compass still follow
+ *       it, and the match keeps respawning its opponents around it.
  *
  * A kill applies damage over several frames rather than in one huge hit,
  * because ApplyDamage clamps a single hit, and it stops as soon as the car is
@@ -60,6 +67,7 @@
 #include "jer_config.h"
 
 #include "cainescrossfire.h"
+#include "ai/ai.h"		/* cd2AiAdoptPlayer - the playerai: test mode */
 #include "teams/teams.h"		/* cd2TeamSet - change a team mid-round */
 #include "turbo/turbo.h"		/* cd2TurboForce - check the boost headlessly */
 #include "weapons/core/weapon.h"
@@ -71,7 +79,7 @@
 #define CD2_DBG_DAMAGE		3000	// per frame, well above one hit's clamp
 #define CD2_DBG_KILL_TIMEOUT	300	// give up on a kill after this many frames (10s)
 
-enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT, CD2_DBG_TEAM, CD2_DBG_TURBO, CD2_DBG_PAD, CD2_DBG_THRUST };
+enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT, CD2_DBG_TEAM, CD2_DBG_TURBO, CD2_DBG_PAD, CD2_DBG_THRUST, CD2_DBG_PLAYERAI };
 enum { CD2_DBG_ATT_ENEMY = 0, CD2_DBG_ATT_SELF, CD2_DBG_ATT_NONE, CD2_DBG_ATT_PLAYER, CD2_DBG_ATT_NPC };
 
 typedef struct CD2_DBG_STEP
@@ -259,6 +267,28 @@ static int cd2DbgReadAction(const char** s, int* arg)
 	*arg = neg ? -v : v;
 	*s = e;
 	return CD2_DBG_THRUST;
+	}
+
+	if (cd2DbgMatch(&p, "playerai") || cd2DbgMatch(&p, "ai"))
+	{
+	/* playerai:<0|1> (or just `playerai`) -- hand the PLAYER'S car to the engine's
+	 * civilian AI so it drives itself. A test mode for watching how the traffic AI
+	 * actually drives this level and these cars, and the only way to see it headlessly
+	 * (a scripted run has no hands on the wheel, so an AI-driven car is the only one that
+	 * moves). 0 gives the car back. */
+	int on = 1;
+
+	if (*p == ':')
+	{
+		p++;
+		on = (*p == '1');
+		if (*p == '0' || *p == '1')
+			p++;
+	}
+
+	*arg = on;
+	*s = p;
+	return CD2_DBG_PLAYERAI;
 	}
 
 	if (cd2DbgMatch(&p, "pad"))
@@ -722,6 +752,13 @@ static void cd2DbgRunStep(const CD2_DBG_STEP* st)
 	case CD2_DBG_THRUST:
 		cd2DbgSetThrust(st->arg);
 		printInfo("[cd2debug] forced thrust now %d on the player's car (99 = released)\n", st->arg);
+		break;
+
+	case CD2_DBG_PLAYERAI:
+		/* the module's own opponent AI (ai/opponent.c) drives the player's car from here
+		 * on: it keeps CONTROL_TYPE_PLAYER, so the camera, the HUD and the springs are
+		 * untouched - only the hand on the wheel changes */
+		cd2AiAdoptPlayer(st->arg != 0);
 		break;
 
 	case CD2_DBG_PAD:

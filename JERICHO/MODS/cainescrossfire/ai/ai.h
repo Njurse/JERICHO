@@ -65,6 +65,15 @@ typedef struct CD2_AI_DEBUG
 // Fill *out with the latest AI values. Returns 1 when an opponent is active.
 int cd2AiGetDebug(CD2_AI_DEBUG* out);
 
+// Hand the PLAYER's car to this AI (1) or give it back to the pad (0) - the
+// cc_debug.txt `playerai:` test mode. The player's car is adopted as an AI
+// contestant: it keeps CONTROL_TYPE_PLAYER and so keeps the camera, the HUD and
+// the module's springs, but the AI drives it (its pad is blanked and its throttle
+// and steering are written by cd2AiDrive). Driven even when the match has no
+// opponents, and not counted as a spawned opponent, so the match still respawns
+// its own.
+void cd2AiAdoptPlayer(int on);
+
 // 1 when `car` (a CAR_DATA*) is the opponent this module owns.
 int cd2AiIsOpponent(const void* car);
 
