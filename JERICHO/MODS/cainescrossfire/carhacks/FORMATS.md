@@ -360,6 +360,8 @@ print(total, sets)
   rectangle the engine streams region pages into — and a later load pass memsets
   `tpageloaded`/`tpageslots`. Without re-claiming, a streamed page overwrites its
   pixels while the car keeps sampling its coordinates, which reads as wrong UVs.
-- `REDRIVER2.log` is **truncated at session start and flushed at close** — a
-  `taskkill` throws the whole session away, and a stale line-count boundary reads
-  nothing. Wait for `---- LOG CLOSED ----` before believing a log.
+- The session log is `<appName>.log` — **`JERICHO.log` here** (the app name is
+  JERICHO, `PsyX_main.cpp:380`), flushed at close with `---- LOG CLOSED ----` as its last
+  line. A stale `REDRIVER2.log` from an older build name may sit beside it: do not grep
+  it, and a `taskkill` on a late-flushed run throws the session away. Capturing the run's
+  stdout is the safe read.

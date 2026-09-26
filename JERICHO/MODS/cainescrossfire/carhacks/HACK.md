@@ -87,7 +87,8 @@ region to put a foreign vehicle's pages in.
 | where imported pages landed | `cross-city: pinned set 77 index 77: slot=14, rect=(512,0), page=0008 …` |
 | what is actually in VRAM | `JERICHO_DUMPVRAM=1` then `tools/vramdump.py vram_dump.tga --png out.png` |
 | what a city's car palettes *should* be | `tools/levpalette.py LEVELS/<CITY>.LEV --out out/` — a swatch PNG + a text table per city, from `LUMP_PALLET` (see `PALETTES.md` §7) |
-| the last run's car textures under each palette | `tools/cardump.py vram_dump.tga --log REDRIVER2.log --out out/` — one PNG per imported set, a row per palette, plus the run's actual page CLUT as a control (`PALETTES.md` §7) |
+| the last run's car textures under each palette | `tools/cardump.py vram_dump.tga --log JERICHO.log --out out/` — one PNG per imported set, a row per palette, plus the run's actual page CLUT as a control (`PALETTES.md` §7) |
+| whether a run's palettes/pages behaved | `tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — the three invariants the engine's own summary misses (exit 0 held / 1 violated / 2 no import) |
 | VRAM live, while you play | `-vramview [frames]` opens a second window showing the live VRAM every frame (and re-dumps `vram_live.tga` every N frames, default 15, for `vramdump.py`) |
 | replay a run exactly | `-seed N` (the seed picks module randomness) |
 
@@ -124,8 +125,10 @@ import = 5:3:9      # RIO model 9 into spare resident slot 5
   `combatd2 = 1` line in `modlist.ini` silently enables nothing.
 - **Batch**: `> file echo text` may not write, and an `echo` containing parentheses
   inside a parenthesised `if` block breaks the parse of everything after it.
-- **`REDRIVER2.log` is truncated at session start and flushed at close** — a kill
-  throws the session away, so runs use `-frames` and exit by themselves.
+- **The session log is `JERICHO.log` in this build, not `REDRIVER2.log`** (`<appName>.log`;
+  the app name is JERICHO). A stale `REDRIVER2.log` can sit beside it. The log flushes at
+  close, so a kill on a late-flushed run throws the session away — runs use `-frames` and
+  exit by themselves, and the text to read is the run's captured stdout.
 
 ## The two texture defects, fixed
 

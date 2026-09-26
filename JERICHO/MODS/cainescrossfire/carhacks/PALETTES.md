@@ -278,13 +278,22 @@ A useful run proves three things instead:
 | what | how |
 |---|---|
 | what a city's car palettes *should* look like | `tools/levpalette.py <CITY>.LEV` — reads `LUMP_PALLET` and writes a swatch sheet per city + the raw rows (`--out DIR`) |
-| what a car's texture looks like under **each** of its palettes, from the **last run** | `tools/cardump.py` — takes the run's `vram_dump.tga` (`JERICHO_DUMPVRAM=1`) plus the run's log `REDRIVER2.log`, and blits each imported car's texture page(s) through each palette to one PNG per palette |
+| what a car's texture looks like under **each** of its palettes, from the **last run** | `tools/cardump.py` — takes the run's `vram_dump.tga` (`JERICHO_DUMPVRAM=1`) plus the run's log, and blits each imported car's texture page(s) through each palette to one PNG per palette |
+| whether a run's palettes/pages actually behaved | `tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — asserts the three invariants in §6 (exit 0 held / 1 violated / 2 no import) |
 | what is actually in VRAM right now | `-vramview [frames]` (live window) / `tools/vramdump.py vram_dump.tga --png out.png` |
 | which sets/rows a level uses | the engine's own lines: `cross-city: level page state …`, `cross-city: %s set %d -> index %d …`, `cross-city: pinned set %d index %d: slot=%d, rect=(%d,%d) …` |
 
 The exporter tools are how a fix is shown *visually*: `levpalette.py` gives the
 expected colours offline, `cardump.py` gives what the last run actually drew under
-each palette, and the two are meant to be compared side by side.
+each palette, and the two are meant to be compared side by side. `crosscheck.py` is
+how it is shown *measurably* — it is the check §6 says the engine's own summary is
+missing.
+
+> **Which log file?** The session log is `<appName>.log`, and this build's app name is
+> JERICHO (`PsyX_Initialise("JERICHO", …)`, `PsyX_main.cpp:380`), so the live file is
+> `JERICHO.log`. A stale `REDRIVER2.log` from an older build name may still be in the
+> folder — do not grep it. Capturing the run's stdout works just as well (and is what
+> `devcheck.sh` does) because `printInfo` writes both.
 
 ---
 
@@ -305,3 +314,5 @@ each palette, and the two are meant to be compared side by side.
 - `JerichoMakeClutRow` (`texture.c:153`, team/ped dye) allocates rows from the same
   runtime `clutpos` cursor (`texture.c:342-345`), guarded only by `clutpos.y > 511`.
 - The cross-city invariant hashes only rows 0..7 and says nothing about VRAM.
+- The session log is `JERICHO.log` in this build, **not** `REDRIVER2.log`; a stale
+  `REDRIVER2.log` can sit in the same folder.

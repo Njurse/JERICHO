@@ -32,6 +32,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from levpages import segments, LUMP_PALLET          # noqa: E402  (sibling tool)
+from levmodels import CAR_TPAGES, city_name          # noqa: E402  (owns the carTpages table)
 from vramdump import write_png                       # noqa: E402  (sibling tool)
 
 SW = 8          # swatch size, px
@@ -85,17 +86,35 @@ def psx_to_rgb(v):
     return (((v & 0x1F) << 3), ((v >> 5) & 0x1F) << 3, ((v >> 10) & 0x1F) << 3)
 
 
-def build_swatch(records):
+def carid_of(city, setno):
+    """The engine's `civ_clut` row (1-based) for a set - **the authoritative
+    mapping**: 1 + its index in that city's `carTpages` (`texture.c:71`).
+
+    `None` when the set is not one of that city's car pages, which is the case that
+    matters: `GetCarPalIndex` then returns 0 (`cars.c:1997`) and the row is the
+    HOST's - so anything keyed on this set (a `specTpages` page, say) will disturb
+    the host's palettes. Recommended against deriving the row from the order the
+    pages happen to appear in the lump: a city's `carTpages` has 8 entries but only
+    some carry palettes here, so that order is a different, incomplete set."""
+    pages = CAR_TPAGES.get(city.upper())
+    if not pages or setno not in pages:
+        return None
+    return pages.index(setno) + 1
+
+
+def build_swatch(city, records):
     """Group the records the way the draw resolves them: [carid][texnum][palette].
 
-    carid is 1 + the position of the page in the city's ascending page list, which
-    is the order the measured carTpages tables use (PALETTES.md §3)."""
-    pages = sorted({r[2] for r in records})
-    page_slot = {p: i + 1 for i, p in enumerate(pages)}
+    Returns (sets_with_no_row, table)."""
     table = {}
+    no_row = set()
     for palette, texnum, tpage, clut in records:
-        table.setdefault((page_slot[tpage], tpage), {}).setdefault(texnum, {})[palette] = clut
-    return pages, page_slot, table
+        carid = carid_of(city, tpage)
+        if carid is None:
+            no_row.add(tpage)
+            continue
+        table.setdefault((carid, tpage), {}).setdefault(texnum, {})[palette] = clut
+    return no_row, table
 
 
 def render_png(table, path):
@@ -163,7 +182,8 @@ def main():
         return 1
 
     total, records = parse_pallet(blob, off, size)
-    pages, page_slot, table = build_swatch(records)
+    city = city_name(path)
+    no_row, table = build_swatch(city, records)
 
     out_dir = out or os.path.dirname(os.path.abspath(path))
     os.makedirs(out_dir, exist_ok=True)
@@ -171,19 +191,23 @@ def main():
 
     print(f"{path}")
     print(f"  LUMP_PALLET at +0x{off:x}, {size} bytes, total_cluts={total}, {len(records)} records")
-    print(f"  car pages (ascending): {pages}")
-    print(f"  -> carid 1..{len(pages)} = {[page_slot[p] for p in pages]} for sets {pages}")
+    print(f"  city {city}; carTpages = {CAR_TPAGES.get(city.upper())}")
     for (carid, tpage) in sorted(table):
         texnums = sorted(table[(carid, tpage)])
         pals = sorted({p for t in texnums for p in table[(carid, tpage)][t]})
-        print(f"    carid {carid} set {tpage:>3}: texture ids {texnums}, palette slots {pals}")
+        print(f"    civ_clut[{carid}] set {tpage:>3}: texture ids {texnums}, palette slots {pals}")
+    if no_row:
+        print(f"  WARNING: sets {sorted(no_row)} are in the lump but NOT in {city}'s carTpages ->")
+        print(f"           GetCarPalIndex returns 0 for them, so the engine reads the HOST's row 0. Not dumped.")
 
     captions = render_png(table, stem + ".png")
     with open(stem + ".txt", "w") as f:
         f.write(f"# {name} default car palettes (LUMP_PALLET), from {path}\n")
-        f.write(f"# car pages (ascending, carid = position+1): {pages}\n")
+        f.write(f"# carTpages = {CAR_TPAGES.get(city.upper())} (carid = 1 + index in this list, texture.c:71)\n")
         f.write("# slot 0 of civ_clut is the page's own CLUT, not in this lump; palette p -> civ_clut[carid][texnum][p+1]\n")
         f.write("# colour words are PSX 16-bit stp|b<<10|g<<5|r\n")
+        if no_row:
+            f.write(f"# NOT in carTpages (engine resolves to the HOST's row 0): {sorted(no_row)}\n")
         for cap in captions:
             key = cap.split(" (civ_clut")[0]
             carid = int(key.split("carid ")[1].split()[0])

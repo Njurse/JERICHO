@@ -6,8 +6,8 @@ line. This tool takes the two artifacts a run already leaves behind -
 
   * the VRAM dump the engine writes with `JERICHO_DUMPVRAM=1` (`vram_dump.tga`;
     `-vramview` also re-dumps `vram_live.tga`), and
-  * that run's `REDRIVER2.log` (truncated at session start, flushed at close - wait
-    for `---- LOG CLOSED ----`),
+  * that run's log (the session log is `<appName>.log`, i.e. `JERICHO.log` here; its
+    last line is `---- LOG CLOSED ----`)
 
 and renders each imported texture page **through each of that car's palettes**, so a
 page can be eyeballed against `levpalette.py`'s offline defaults. The page's pixels
@@ -15,9 +15,9 @@ come from the run; the palettes come from the source city's `LUMP_PALLET`
 (`levpalette.py`'s parser) plus, as a control row, the page's own CLUT as it actually
 sits in the run's VRAM.
 
-    python3 cardump.py vram_dump.tga --log REDRIVER2.log --out out/
-    python3 cardump.py vram_dump.tga --log REDRIVER2.log --lev LEVELS/RIO.LEV
-    python3 cardump.py vram_dump.tga --log REDRIVER2.log --texnum 21   # a specific texture id
+    python3 cardump.py vram_dump.tga --log JERICHO.log --out out/
+    python3 cardump.py vram_dump.tga --log JERICHO.log --lev LEVELS/RIO.LEV
+    python3 cardump.py vram_dump.tga --log JERICHO.log --texnum 21   # a specific texture id
 
 One PNG per imported set: a column of rows, one per palette variant (0..4, i.e.
 `civ_clut[carid][texnum][palette+1]`, PALETTES.md §1) with the page's own CLUT as the
@@ -36,7 +36,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from vramdump import read_tga, write_png, parse_log, page_data_base, TPAGEPOS   # noqa: E402
-from levpalette import find_pallet, parse_pallet, build_swatch, psx_to_rgb       # noqa: E402
+from levpalette import find_pallet, parse_pallet, build_swatch, psx_to_rgb, carid_of  # noqa: E402
 
 PAGE_W, PAGE_H = 64, 256
 SEP = 2
@@ -83,15 +83,15 @@ def compose(rows):
     return w, h, px
 
 
-def source_pallet(lev):
-    """(page list, table) from a city's LUMP_PALLET: table[(carid, set)][texnum][palette]."""
+def source_pallet(city, lev):
+    """(sets with no civ_clut row, table) from a city's LUMP_PALLET:
+    table[(carid, set)][texnum][palette]. carid is the engine's own row (carTpages)."""
     blob = open(lev, "rb").read()
     off, size = find_pallet(blob)
     if size == 0:
         return None
     _total, records = parse_pallet(blob, off, size)
-    pages, _slot, table = build_swatch(records)
-    return pages, table
+    return build_swatch(city, records)
 
 
 def find_lev(city, data_dir, want):
@@ -110,7 +110,7 @@ def main():
         return 1
 
     tga = sys.argv[1]
-    log = "REDRIVER2.log"
+    log = None
     out = None
     lev = None
     data_dir = None
@@ -137,6 +137,10 @@ def main():
         return 1
 
     width, height, px = read_tga(tga)
+    if log is None:
+        # the session log is <appName>.log; JERICHO.log here. Fall back to the older name
+        # only if it is the one on disk, so a stale REDRIVER2.log is never silently read.
+        log = "JERICHO.log" if os.path.exists("JERICHO.log") or not os.path.exists("REDRIVER2.log") else "REDRIVER2.log"
     sets = parse_log(log) if os.path.exists(log) else {}
     if not sets:
         print(f"{log}: no imported-page lines (no import active, or a log with no 'set N -> index M' line)")
@@ -153,8 +157,9 @@ def main():
             continue
 
         src = find_lev(info["city"], data_dir, lev)
-        pallet = source_pallet(src) if src and os.path.exists(src) else None
-        pages, table = pallet if pallet else (None, None)
+        pallet = source_pallet(info["city"], src) if src and os.path.exists(src) else None
+        _no_row, table = pallet if pallet else (None, None)
+        carid = carid_of(info["city"], setno) if pallet else None
 
         # the page's rectangle (`rect=` in the pinned line) and its own CLUT
         # (`clut0=`), both straight from the log.
@@ -169,8 +174,7 @@ def main():
         rows, key = [], []
 
         # expected palettes, if this set is one of the source city's car pages
-        if pages and setno in pages:
-            carid = pages.index(setno) + 1
+        if carid and (carid, setno) in table:
             tex = table[(carid, setno)]
             ts = sorted(tex)
             chosen = texnum if texnum in tex else ts[0]
@@ -181,8 +185,13 @@ def main():
                            f" texnum {chosen}")
         else:
             chosen = texnum
-            print(f"  set {setno} ({info['city']}): not in {os.path.basename(src) if src else 'a'} LUMP_PALLET "
-                  f"(a specTpages page?) - only the page's own CLUT is available")
+            if carid:
+                print(f"  set {setno} ({info['city']}): a car page (civ_clut[{carid}]) but the lump carries no "
+                      f"palette variants for it - only the page's own CLUT applies (no leak)")
+            else:
+                print(f"  set {setno} ({info['city']}): not one of {info['city']}'s car pages -> "
+                      f"GetCarPalIndex returns 0 -> the HOST's civ_clut row 0 (a palette leak). "
+                      f"Only the page's own CLUT is shown")
 
         # control row: the page's own CLUT as it actually sits in this run's VRAM
         if cs:
