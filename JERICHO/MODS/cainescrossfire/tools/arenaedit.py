@@ -255,7 +255,7 @@ def _bounds(arenas, pad=0.15):
         if a.region:
             xs0 = min(xs0, a.region[0]); zs0 = min(zs0, a.region[1])
             xs1 = max(xs1, a.region[2]); zs1 = max(zs1, a.region[3])
-        for (x, z, _h) in a.spawns:
+        for (x, z, _h, _y) in a.spawns:
             xs0 = min(xs0, x); zs0 = min(zs0, z)
             xs1 = max(xs1, x); zs1 = max(zs1, z)
     if xs0 > xs1 or zs0 > zs1:
@@ -383,22 +383,50 @@ def render_png(arenas, path, bg=None, bg_rect=None, size=(1100, 800)):
 # ---------------------------------------------------------------------------
 # interactive editor (tkinter)
 # ---------------------------------------------------------------------------
-def run_editor(arenas, bg=None, bg_rect=None):
-    import tkinter as tk
-    from PIL import Image, ImageTk
+def run_editor(arenas, bg=None, bg_rect=None, hint=""):
+    try:
+        import tkinter as tk
+    except ImportError:
+        print("arenaedit: the editor window needs tkinter, which this Python lacks.")
+        print("  interpreter: %s" % sys.executable)
+        print("  fix: install Python 3 from python.org - the Microsoft Store build")
+        print("       ships without tkinter. Check with:  py -3 -c \"import tkinter\"")
+        print("  or use a headless mode: --check | --render OUT.png | --json")
+        return 2
+    try:
+        from PIL import Image, ImageTk
+    except ImportError:
+        print("arenaedit: the editor window needs Pillow (PIL) for its canvas image.")
+        print("  fix: py -3 -m pip install pillow")
+        print("  or use a headless mode: --check | --render OUT.png | --json")
+        return 2
 
     if not arenas:
-        print("no arena files given")
-        return 1
+        # Never leave the user staring at nothing: open an EMPTY editor instead
+        # of exiting, so a lookup problem cannot look like "the editor did not
+        # start". The window says where it looked and how to make an arena.
+        arenas = [Arena("new_arena", "New Arena")]
 
     state = {"idx": 0, "sel": -1, "mode": None, "bg": bg, "bg_rect": bg_rect,
-             "bgimg": None, "status": ""}
+             "bgimg": None, "status": hint}
 
     root = tk.Tk()
     root.title("Caine's Crossfire arena editor")
     canvas = tk.Canvas(root, width=1100, height=760, background="#121216",
                        highlightthickness=0)
     canvas.pack(fill="both", expand=True)
+
+    # Make sure the window is not lost behind the fullscreen game or the console:
+    # raise it, hold it on top just long enough to appear, then let it behave.
+    root.update_idletasks()
+    root.deiconify()
+    root.lift()
+    root.attributes("-topmost", True)
+    root.after(500, lambda: root.attributes("-topmost", False))
+    try:
+        root.focus_force()
+    except Exception:
+        pass
 
     def cur():
         return arenas[state["idx"]]
@@ -624,6 +652,67 @@ def run_editor(arenas, bg=None, bg_rect=None):
 
 
 # ---------------------------------------------------------------------------
+# what the tools need, in one place: `--selftest`, and the launcher's Check setup
+# ---------------------------------------------------------------------------
+def _repo_root():
+    # <root>/JERICHO/MODS/cainescrossfire/tools/arenaedit.py -> <root>
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
+
+
+def _find_game_exe():
+    root = _repo_root()
+    for cfg, name in (("Release_dev", "REDRIVER2_dev.exe"),
+                      ("Release", "REDRIVER2.exe")):
+        p = os.path.join(root, "src_rebuild", "bin", cfg, name)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def selftest(arena_dir):
+    """Print what the editor needs and where it looks; 0 = OK, 2 = a problem."""
+    ok = True
+
+    print("arenaedit setup check")
+    print("  interpreter : %s" % sys.executable)
+    print("                Python %s" % sys.version.split()[0])
+
+    try:
+        import tkinter
+        print("  tkinter     : OK (Tk %s)" % tkinter.TkVersion)
+    except Exception as e:
+        ok = False
+        print("  tkinter     : MISSING (%s)" % e)
+        print("                the editor window needs it - install Python from")
+        print("                python.org; the Microsoft Store build has no tkinter")
+
+    try:
+        import PIL
+        print("  Pillow      : OK (%s)" % PIL.__version__)
+    except Exception as e:
+        ok = False
+        print("  Pillow      : MISSING (%s)" % e)
+        print("                needed for a background image - py -3 -m pip install pillow")
+
+    print("  arena folder: %s" % arena_dir)
+    if os.path.isdir(arena_dir):
+        files = sorted(glob.glob(os.path.join(arena_dir, "*.cca")))
+        print("                exists, %d arena file(s)" % len(files))
+        for f in files:
+            print("                  %s" % os.path.basename(f))
+    else:
+        print("                DOES NOT EXIST yet (created on first save)")
+
+    exe = _find_game_exe()
+    print("  game exe    : %s" % (exe if exe else
+                                  "not found - the launcher's in-game option needs it"))
+
+    print("  result      : %s" % ("OK" if ok else "PROBLEM - see above"))
+    return 0 if ok else 2
+
+
+# ---------------------------------------------------------------------------
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Caine's Crossfire arena editor (top-down).")
     ap.add_argument("files", nargs="*", help="one or more .cca arena files (globs ok); default: the mod's arenas folder")
@@ -641,9 +730,15 @@ def main(argv=None):
     ap.add_argument("--render", metavar="OUT.png", help="render headlessly and exit")
     ap.add_argument("--check", action="store_true", help="validate and print, do not open a window")
     ap.add_argument("--json", action="store_true", help="print the parsed arenas as JSON")
+    ap.add_argument("--selftest", action="store_true",
+                    help="report the interpreter, tkinter/Pillow, the arena folder and the game exe, then exit")
     args = ap.parse_args(argv)
 
     arena_dir = args.dir or _default_arena_dir()
+
+    if args.selftest:
+        return selftest(arena_dir)
+
     paths = []
 
     for pat in (args.files or []):
@@ -684,7 +779,19 @@ def main(argv=None):
         print("No arena files found.")
         print("  make one:   python arenaedit.py --new chicago_docks --city CHICAGO")
         print("  or drop .cca files in: %s" % arena_dir)
-        return 0
+
+        # the offline modes just report; the editor still OPENS (empty) so the
+        # user gets a window with the folder it looked in and how to make one
+        if args.json or args.check or args.render:
+            return 0
+
+        os.makedirs(arena_dir, exist_ok=True)
+        blank = Arena("new_arena", "New Arena", CITY_INDEX.get(args.city.upper(), 0), 1, 0)
+        blank.path = os.path.join(arena_dir, "new_arena.cca")
+
+        return run_editor([blank], hint=(
+            "no .cca files in %s  -  press N to make one, or run: "
+            "python arenaedit.py --new myarena" % arena_dir))
 
     if args.json:
         import json
@@ -722,7 +829,12 @@ def main(argv=None):
         bg_rect = wr
         bg = load_obj_points(args.obj, wr)
     elif args.map:
-        from PIL import Image
+        try:
+            from PIL import Image
+        except ImportError:
+            print("arenaedit: --map needs Pillow (PIL) to read the background image.")
+            print("  fix: py -3 -m pip install pillow")
+            return 2
         bg = Image.open(args.map).convert("RGB")
         if bg_rect is None:
             bg_rect = _bounds(arenas)
