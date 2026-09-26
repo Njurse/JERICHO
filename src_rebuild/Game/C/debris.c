@@ -2866,19 +2866,32 @@ void Setup_Smoke(VECTOR *ipos, int start_w, int end_w, int SmokeType, int WheelS
 		mysmoke->final_w = end_w;
 		mysmoke->halflife = 64;
 	}
-	else if (SmokeType == 6) // UNUSED
+	/* A GREY haze: hurt, but not on fire (the damage ladder's middle band). This slot
+	 * was an unused branch - nothing in the engine passed 6 - and it renders through
+	 * the draw path's DEFAULT branch (flags 0x10 leaves every colour case untaken),
+	 * which is the same rule the white damage smoke uses: r = g = b = transparency.
+	 * So the grey is that rule at a MIDDLING brightness - 140 of 255, where the white
+	 * smoke uses 80 (a dim haze) and the black one uses 63 through a subtractive tmode
+	 * (a darkening, not a colour).
+	 *
+	 * The timings are the BLACK smoke's, not the white one's: 40 frames per puff at one
+	 * puff every 4th frame is about 10 live puffs per car, where the white smoke's 128
+	 * would be 32 and would eat the shared MAX_SMOKE pool on its own. A car sitting at
+	 * half health for a while must not starve the explosions. */
+	else if (SmokeType == SMOKE_GREY)
 	{
-		mysmoke->position.vx = ipos->vx;
+		mysmoke->position.vx = ipos->vx + (rand() & 7);
 		mysmoke->position.vy = ipos->vy;
-		mysmoke->position.vz = ipos->vz;
-		mysmoke->flags = 0x40 | 0x4 | 0x2;
-		mysmoke->transparency = 160;
-		mysmoke->step = 20;
-		mysmoke->t_step = 5;
+		mysmoke->position.vz = ipos->vz + (rand() & 7);
+
+		mysmoke->flags = 0x10 | 0x4 | 0x2;
+		mysmoke->transparency = 140;
+		mysmoke->step = (end_w - start_w) / 128 * 4;
+		mysmoke->t_step = end_w - start_w >> 5;
 		mysmoke->start_w = start_w;
 		mysmoke->final_w = end_w;
-		mysmoke->life = 78;
-		mysmoke->halflife = 32;
+		mysmoke->life = 40;
+		mysmoke->halflife = 20;
 	}
 	else
 	{

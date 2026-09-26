@@ -23,5 +23,12 @@ extern void AddSmokingEngine(CAR_DATA *cp, int black_smoke, int WheelSpeed); // 
 extern void AddExhaustSmoke(CAR_DATA *cp, int black_smoke, int WheelSpeed);
 extern void AddFlamingEngine(CAR_DATA *cp); // 0x00030FAC
 
+/* JERICHO: the same two emitters with the smoke TYPE and the sizes as arguments,
+ * so a module's damage ladder can ask for grey or for a bigger fire without a
+ * second copy of the emitter. The stock entry points above are these with the
+ * original numbers. */
+extern void AddSmokingEngineTyped(CAR_DATA *cp, int smokeType, int startW, int endW, int black_offset, int WheelSpeed);
+extern void AddFlamingEngineSized(CAR_DATA *cp, int startW, int endW);
+
 
 #endif

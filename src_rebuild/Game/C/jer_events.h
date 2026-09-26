@@ -500,6 +500,44 @@ typedef struct JER_ARGS_CAR_DRAW_COLOR
 	int tintB;
 } JER_ARGS_CAR_DRAW_COLOR;
 
+/* JER_EVENT_CAR_DAMAGE_FX — fired in DrawCar, once per drawn car per frame, at
+ * the point where the engine decides the damage smoke and the engine fire. The
+ * stock rule is per-zone damage (ap.damage above 2000 white / 3000 black) and
+ * it only lights the fire on a car that is totaled AND nearly stopped, which
+ * cannot express "smoke from half health, fire from a quarter".
+ *
+ * The engine fires this with the values the stock rule would have used, so a
+ * module may:
+ *   - rewrite them (type and sizes), and set handled = 1 to have them used; or
+ *   - leave handled = 0, in which case the stock values stand and the car is
+ *     emitted exactly as it would have been without any module.
+ *
+ * The engine still applies its own speed gates (smoke only under ~98 speed
+ * units, the fire only under ~7 and never in reverse) even when handled = 1:
+ * those limits are the smoke pool's budget (MAX_SMOKE particles), not part of
+ * the ladder. A module that wants fire on a wreck that is still sliding cannot
+ * get it through this hook alone - the gate would drop it. */
+typedef struct JER_ARGS_CAR_DAMAGE_FX
+{
+	void* car;		/* in: CAR_DATA* being drawn */
+	int health;		/* in: 0..100, the car's health against its own cap
+				   (its MaxPlayerDamage), i.e. 100 - damage/cap. The
+				   per-pad cap logic of cars.c is already applied, so
+				   the value is directly comparable to a % threshold. */
+	int smokeType;		/* in/out: SMOKE_* type to emit, 0 = none. In = what
+				   the stock rule would emit this frame. */
+	int smokeStart;		/* in/out: smoke start width (stock 100) */
+	int smokeEnd;		/* in/out: smoke final width (stock 400 white /
+				   500 black) */
+	int flame;		/* in/out: 1 = the engine fire emits this frame.
+				   In = the stock decision (totaled and slow). */
+	int flameStart;		/* in/out: fire start width (stock 50) */
+	int flameEnd;		/* in/out: fire final width (stock 100) - raise
+				   both for a bigger fire, e.g. a wreck */
+	int handled;		/* out: 1 = use the values above instead of the
+				   stock decision for this car this frame */
+} JER_ARGS_CAR_DAMAGE_FX;
+
 /* JER_EVENT_LEVEL_LAUNCH — fired at the end of State_GameStart after the
  * pending level/gametype/player count/mission number are finalised but
  * before the level is loaded. All fields are in/out: a module rewrites them

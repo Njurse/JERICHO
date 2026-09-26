@@ -233,6 +233,12 @@ enum
 				   launches a level nobody asked for and blocks
 				   the main thread for the whole load. */
 
+	JER_EVENT_CAR_DAMAGE_FX,	/* the per-frame damage smoke/fire decision for a
+				   drawn car (DrawCar): in/out smoke type and sizes
+				   plus the engine fire, so a module can put the
+				   ladder on its own rule - health rather than the
+				   stock per-zone damage (see JER_ARGS_CAR_DAMAGE_FX) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

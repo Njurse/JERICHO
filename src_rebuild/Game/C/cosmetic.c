@@ -678,6 +678,16 @@ void AddNightLights(CAR_DATA *cp)
 // [D] [T]
 void AddSmokingEngine(CAR_DATA *cp, int black_smoke, int WheelSpeed)
 {
+	/* the stock entry point: two smoke colours, each with its own size pair. The
+	 * typed form below is what a module's damage ladder goes through, so the stock
+	 * numbers live here once. */
+	AddSmokingEngineTyped(cp, black_smoke ? SMOKE_BLACK : SMOKE_WHITE,
+		100, black_smoke ? 500 : 400, black_smoke, WheelSpeed);
+}
+
+// [D] [T]
+void AddSmokingEngineTyped(CAR_DATA *cp, int smokeType, int startW, int endW, int black_offset, int WheelSpeed)
+{
 	CAR_COSMETICS *car_cos;
 	VECTOR SmokePos;
 	VECTOR Drift;
@@ -695,7 +705,7 @@ void AddSmokingEngine(CAR_DATA *cp, int black_smoke, int WheelSpeed)
 		SmokePos.vy = -cp->hd.where.t[1];
 		SmokePos.vz = cp->hd.where.t[2];
 		
-		if (black_smoke != 0)
+		if (black_offset != 0)
 			SmokePos.vy -= 50;
 	
 		gte_SetRotMatrix(cp->hd.drawCarMat.m);
@@ -703,10 +713,7 @@ void AddSmokingEngine(CAR_DATA *cp, int black_smoke, int WheelSpeed)
 		InitFXPos(&SmokePos, &svec, cp);
 		GetSmokeDrift(&Drift);
 
-		if (black_smoke)
-			Setup_Smoke(&SmokePos, 100, 500, SMOKE_BLACK, WheelSpeed, &Drift, 0);
-		else
-			Setup_Smoke(&SmokePos, 100, 400, SMOKE_WHITE, WheelSpeed, &Drift, 0);
+		Setup_Smoke(&SmokePos, startW, endW, smokeType, WheelSpeed, &Drift, 0);
 	}
 }
 
@@ -764,6 +771,12 @@ void AddExhaustSmoke(CAR_DATA *cp, int black_smoke, int WheelSpeed)
 // [D] [T]
 void AddFlamingEngine(CAR_DATA *cp)
 {
+	AddFlamingEngineSized(cp, 50, 100);
+}
+
+// [D] [T]
+void AddFlamingEngineSized(CAR_DATA *cp, int startW, int endW)
+{
 	CAR_COSMETICS *car_cos;
 	VECTOR SmokePos;
 	SVECTOR svec;
@@ -788,7 +801,7 @@ void AddFlamingEngine(CAR_DATA *cp)
 		Drift.vy = 0;
 		Drift.vz = 0;
 
-		Setup_Smoke(&SmokePos, 50, 100, SMOKE_FIRE, 0, &Drift, 0);
+		Setup_Smoke(&SmokePos, startW, endW, SMOKE_FIRE, 0, &Drift, 0);
 	}
 }
 

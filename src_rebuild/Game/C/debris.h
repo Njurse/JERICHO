@@ -14,6 +14,10 @@ struct SMASHABLE_OBJECT
 #define SMOKE_WHITE		2
 #define SMOKE_BROWN		3
 #define SMOKE_FIRE		4
+/* 5 is the white smoke's second size profile (see Setup_Smoke), so the free slot was
+ * 6, which was an unused branch with no caller anywhere in the engine. It is now the
+ * damage ladder's middle colour: a grey haze, for a car that is hurt but not burning. */
+#define SMOKE_GREY		6
 
 #define OBJECT_SMASHED_MARK		0xFD46FEC0
 

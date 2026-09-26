@@ -1910,6 +1910,8 @@ void DrawCar(CAR_DATA* cp, int view)
 	if (pos.vz <= CAR_LOD_SWITCH_DISTANCE && gForceLowDetailCars == 0 || cp->controlType == CONTROL_TYPE_PLAYER)
 	{
 		int doSmoke = 0;
+		int smokeType, smokeStart, smokeEnd, black_offset;
+		int flame, flameStart, flameEnd;
 
 		WheelSpeed = cp->hd.speed * 8192;
 		maxDamage = MaxPlayerDamage[0];
@@ -1920,10 +1922,17 @@ void DrawCar(CAR_DATA* cp, int view)
 				maxDamage = MaxPlayerDamage[*cp->ai.padid];
 		}
 
+		flame = 0;
+		flameStart = 50;
+		flameEnd = 100;
+
 		if (cp->totalDamage >= maxDamage)
 		{
+			/* the fire is gated to a car that has almost stopped (and a reversing
+			 * one wraps WheelSpeed and never burns) - see the hook below, which
+			 * keeps that gate whatever a module asks for */
 			if (WheelSpeed + 59999U < 119999)
-				AddFlamingEngine(cp);
+				flame = 1;
 
 			doSmoke = 2;
 		}
@@ -1938,8 +1947,64 @@ void DrawCar(CAR_DATA* cp, int view)
 			}
 		}
 
-		if (doSmoke && WheelSpeed + 399999U < 1199999)
-			AddSmokingEngine(cp, doSmoke - 1, WheelSpeed);
+		smokeType = (doSmoke == 2) ? SMOKE_BLACK : ((doSmoke == 1) ? SMOKE_WHITE : 0);
+		smokeStart = 100;
+		smokeEnd = (doSmoke == 2) ? 500 : 400;
+		black_offset = (doSmoke == 2);
+
+		/* JERICHO-HOOK: the damage smoke and fire decision for this car, on the
+		 * values the stock rule produced above. A module may rewrite them and set
+		 * handled = 1, which is how a module puts the ladder on its own rule -
+		 * health rather than ap.damage per zone (JER_ARGS_CAR_DAMAGE_FX). With
+		 * handled = 0 the values above are used unchanged, so a build with no
+		 * module handling this emits exactly what the stock code did. */
+		{
+			JER_ARGS_CAR_DAMAGE_FX jerDmg;
+			int cap = maxDamage;
+			int dmg = cp->totalDamage;
+			int hp;
+
+			hp = (cap > 0) ? (100 - (dmg * 100) / cap) : 0;
+
+			if (hp < 0)
+				hp = 0;
+			else if (hp > 100)
+				hp = 100;
+
+			jerDmg.car = cp;
+			jerDmg.health = hp;
+			jerDmg.smokeType = smokeType;
+			jerDmg.smokeStart = smokeStart;
+			jerDmg.smokeEnd = smokeEnd;
+			jerDmg.flame = flame;
+			jerDmg.flameStart = flameStart;
+			jerDmg.flameEnd = flameEnd;
+			jerDmg.handled = 0;
+
+			jer_fire(JER_EVENT_CAR_DAMAGE_FX, &jerDmg);
+
+			if (jerDmg.handled)
+			{
+				smokeType = jerDmg.smokeType;
+				smokeStart = jerDmg.smokeStart;
+				smokeEnd = jerDmg.smokeEnd;
+				flame = jerDmg.flame;
+				flameStart = jerDmg.flameStart;
+				flameEnd = jerDmg.flameEnd;
+
+				/* the offset was the stock "black sits lower" rule; a module that
+				 * picks its own colour keeps it for anything that is not white */
+				black_offset = (smokeType != 0 && smokeType != SMOKE_WHITE);
+			}
+		}
+
+		/* the gates are the smoke pool's budget, not part of the ladder, so they
+		 * apply to a module's choice too */
+		if (flame && WheelSpeed + 59999U < 119999)
+			AddFlamingEngineSized(cp, flameStart, flameEnd);
+
+		if (smokeType != 0 && WheelSpeed + 399999U < 1199999)
+			AddSmokingEngineTyped(cp, smokeType, smokeStart, smokeEnd, black_offset, WheelSpeed);
 
 #if ENABLE_GAME_ENCHANCEMENTS
 		AddExhaustSmoke(cp, doSmoke > 1, WheelSpeed);

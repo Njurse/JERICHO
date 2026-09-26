@@ -48,6 +48,7 @@ inert no-ops when no module handles them.
 | `JER_EVENT_CAR_TORQUE` | `JER_ARGS_CAR_TORQUE` | after `ConvertTorqueToAngularAcceleration` (`wheelforces.c`) | inject yaw torque (`aacc[1]`) |
 | `JER_EVENT_CAR_DRAW` | `JER_ARGS_CAR_DRAW` | `DrawCar` (`cars.c`) | rotate the render-only body matrix (visual pitch/roll/yaw) |
 | `JER_EVENT_CAR_DRAW_COLOR` | `JER_ARGS_CAR_DRAW_COLOR` | `DrawCarObject` (`cars.c`) | force a flat black body (totaled wreck) |
+| `JER_EVENT_CAR_DAMAGE_FX` | `JER_ARGS_CAR_DAMAGE_FX` | `DrawCar` (`cars.c:1984`), after the stock smoke/fire test | the per-car damage smoke and fire: the car's health is passed in with the values the stock rule chose (type, both widths, flame), and `handled = 1` makes the module's values the ones emitted — no handler = exactly the stock emission |
 | `JER_EVENT_PED_DRAW` | `JER_ARGS_PED_DRAW` | `newShowTanner` (`motion_c.c`) | ped body colour + per-instance palette: force a flat black (burning / bailed-out) or tinted ped, and/or select a recoloured outfit palette for this ped alone with `jer_ped_palette_select()` |
 | `JER_EVENT_GET_WALL_RESTITUTION` | `JER_ARGS_WALL_RESTITUTION` | `CarBuildingCollision` (`bcollide.c:1057`) | query: restitution scale 0..4096 (4096 = stock bounce) for a car hitting building/scenery; a low value cancels only the velocity into the wall (TMB-style absorb); no handler = stock (4096) |
 | `JER_EVENT_LEVEL_LAUNCH` | `JER_ARGS_LEVEL_LAUNCH` | `State_GameStart` (`glaunch.c:309`) | pending level/gametype/player count/mission number are finalised but the level has not loaded — module rewrites them in place; no handler = the values the engine wrote are kept |
@@ -187,6 +188,26 @@ no handler.
   `cp->hd.drawCarMat`. A module rotates `args->matrix` (a `MATRIX*`) for
   visual pitch/roll/yaw; the physics matrix (`cp->hd.where`) and collision
   box are never touched.
+
+- **`JER_EVENT_CAR_DAMAGE_FX`** fires in `DrawCar` (`cars.c:1984`), at the point
+  where the engine decides a car's damage smoke and its engine fire — once per
+  drawn car per frame, full-detail cars only (the same branch as the shadow and
+  the exhaust). The engine fires it with what its own rule produced:
+  `smokeType` (a `SMOKE_*` type, 0 = none) and both widths, `flame` and both fire
+  widths, and `health` (0..100, the car's `totalDamage` against its own cap,
+  per-pad for a player car — so a module can compare it to a percentage
+  directly). Set `handled = 1` to have the module's values emitted instead. The
+  stock rule is per-zone `ap.damage` (>2000 white, >3000 black) with the fire
+  only on a totaled car that has almost stopped, which is why a module wants
+  this: a ladder by health (smoke from half, fire from a quarter) cannot be
+  expressed by that test.
+  The engine's speed gates still apply with `handled = 1` — the smoke only under
+  ~98 speed units, the fire only under ~7 and never in reverse — because they
+  are the shared smoke pool's budget (`MAX_SMOKE`), not part of the ladder.
+  The emitters behind it (`AddSmokingEngineTyped`, `AddFlamingEngineSized`,
+  `cosmetic.c`) take the type and the sizes as arguments for exactly this; the
+  stock `AddSmokingEngine`/`AddFlamingEngine` are those with the original
+  numbers. No handler = the stock emission, unchanged.
 
 ## The damage events (Caine's Crossfire uses these)
 
