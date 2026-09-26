@@ -19,6 +19,16 @@
 #             JERICHO-RUN reports. A PLAYER scenario that ends up domestic FAILS the
 #             run: that is the whole point of those scenarios, and reporting "-" as if
 #             it were fine is how 'they keep selecting domestic vehicles' went unnoticed.
+#   xc      - tools/crosscheck.py's verdict on that run: ok | FAIL | skip (stock).
+#             It asserts the three invariants the engine's own summary does not - no
+#             imported page in the WORLD's slots, no world eviction, no imported set
+#             resolving to a HOST civ_clut row, and (with the VRAM dump) each pinned
+#             page still present with matching CLUTs.
+#
+# The run's text is captured to $RUNLOG rather than read from REDRIVER2.log: the
+# session log is `<appName>.log` and this build's app name is JERICHO, so the live file
+# is JERICHO.log while a stale REDRIVER2.log can sit there looking authoritative. Grepping
+# the captured stdout is both correct and per-scenario.
 #
 # Why the player scenarios use SPECIAL bodies (8,9,10,12): a special model is not in
 # the level's resident list, so the engine takes the special slot - and the special
@@ -35,6 +45,8 @@ set -u
 REPO="/c/Users/Jaret/Documents/Projects/REDRIVER2"
 SRC="$REPO/src_rebuild"
 BIN="$SRC/bin/Release_dev"
+TOOLS="$(cd "$(dirname "$0")" && pwd)"
+CITY_NAME=(CHICAGO HAVANA VEGAS RIO)
 INI="$BIN/JERICHO/CONFIG/carhacks.ini"
 MODLIST="$BIN/JERICHO/CONFIG/modlist.ini"
 FRAMES="${1:-60}"
@@ -85,6 +97,7 @@ ROLL=$(( SEED & 0x7fffffff ))
 roll() { ROLL=$(( (ROLL * 1103515245 + 12345) & 0x7fffffff )); ROLL_OUT=$(( (ROLL / 65536) % $1 )); }
 
 FAILED=0
+IDX=0
 # Scenario coverage, kept deliberately short: one stock level, two PLAYER foreign
 # imports (different host cities and sources) and one traffic import. The player path
 # and the traffic path are what differ, and the two player rows catch a host/city-
@@ -102,8 +115,8 @@ SCENARIOS=(
 	"traffic CHICAGO->Vegas|vegas|0|traffic"
 )
 
-printf '%-19s %4s %6s %6s %7s %4s %6s  %s\n' \
-	scenario exit ok-line pinned evicted lost errors from
+printf '%-19s %4s %6s %6s %7s %4s %6s %4s  %s\n' \
+	scenario exit ok-line pinned evicted lost errors xc from
 for entry in "${SCENARIOS[@]}"; do
 	NAME="${entry%%|*}"; REST="${entry#*|}"
 	LEVEL="${REST%%|*}"; REST="${REST#*|}"
@@ -130,31 +143,50 @@ for entry in "${SCENARIOS[@]}"; do
 	CARARG="-car slot2"
 	[ "$KIND" = "player" ] && CARARG="-car $MODEL"
 
-	"./REDRIVER2_dev.exe" -nointro -level "$LEVEL" $CARARG -weather none -time day \
-		-frames "$FRAMES" -seed "$SEED" >/dev/null 2>&1
+	RUNLOG="/tmp/devcheck_$$_${IDX}_${KIND}.log"
+	JERICHO_DUMPVRAM=1 "./REDRIVER2_dev.exe" -nointro -level "$LEVEL" $CARARG -weather none -time day \
+		-frames "$FRAMES" -seed "$SEED" > "$RUNLOG" 2>&1
 	RC=$?
+	IDX=$((IDX + 1))
 
-	OK="$(grep -c 'JERICHO-RUN:.*status=ok' REDRIVER2.log || true)"
-	PINNED="$(grep -c 'paged in at draw time' REDRIVER2.log || true)"
-	EVICTED="$(grep -oE '[0-9]+ world pages evicted' REDRIVER2.log | grep -oE '^[0-9]+' | head -1 || true)"
-	LOST="$(grep -c 'no longer looks loaded' REDRIVER2.log || true)"
-	ERRORS="$(grep -icE 'access violation|fatal error|ModelPtr is NULL' REDRIVER2.log || true)"
+	OK="$(grep -c 'JERICHO-RUN:.*status=ok' "$RUNLOG" || true)"
+	PINNED="$(grep -c 'paged in at draw time' "$RUNLOG" || true)"
+	EVICTED="$(grep -oE '[0-9]+ world pages evicted' "$RUNLOG" | grep -oE '^[0-9]+' | head -1 || true)"
+	LOST="$(grep -c 'no longer looks loaded' "$RUNLOG" || true)"
+	ERRORS="$(grep -icE 'access violation|fatal error|ModelPtr is NULL' "$RUNLOG" || true)"
 
 	# The player's resident SLOT - ap.model indexes gCarCleanModelPtr, it is not a model
 	# number - plus the model the level holds in that slot. The city then comes from the
 	# engine's own 'slot N geometry from <CITY>' line for that slot. Matching on the
 	# model number instead was the mistake that made a foreign special car look domestic.
-	PSLOT="$(grep 'JERICHO-RUN:' REDRIVER2.log | grep -oE 'carslot=-?[0-9]+' | cut -d= -f2 | head -1 || true)"
-	PMODEL="$(grep 'JERICHO-RUN:' REDRIVER2.log | grep -oE 'model=-?[0-9]+' | cut -d= -f2 | head -1 || true)"
+	PSLOT="$(grep 'JERICHO-RUN:' "$RUNLOG" | grep -oE 'carslot=-?[0-9]+' | cut -d= -f2 | head -1 || true)"
+	PMODEL="$(grep 'JERICHO-RUN:' "$RUNLOG" | grep -oE 'model=-?[0-9]+' | cut -d= -f2 | head -1 || true)"
 	FROM="-"
 	if [ -n "$PSLOT" ] && [ "$PSLOT" -ge 0 ] 2>/dev/null; then
-		FROM="$(grep -oE "slot $PSLOT geometry from [A-Z]+" REDRIVER2.log | awk '{print $5}' | head -1 || true)"
+		FROM="$(grep -oE "slot $PSLOT geometry from [A-Z]+" "$RUNLOG" | awk '{print $5}' | head -1 || true)"
 		[ -z "$FROM" ] && FROM="-"
 	fi
 	[ -n "$PMODEL" ] && FROM="$FROM:$PMODEL"
 
 	VERDICT=1
 	{ [ "$RC" -eq 0 ] && [ "$OK" -gt 0 ] && [ "$ERRORS" -eq 0 ] && [ "$LOST" -eq 0 ]; } && VERDICT=0
+
+	# the invariants the engine's own summary cannot see (crosscheck.py)
+	XC="skip"
+	if [ "$KIND" != "stock" ]; then
+		XC_OUT="$(python3 "$TOOLS/crosscheck.py" "$RUNLOG" --tga "$BIN/vram_dump.tga" \
+			--lev "$BIN/DRIVER2/LEVELS/${CITY_NAME[$CITY]}.LEV" 2>&1)"
+		XC=$?
+		if [ "$XC" -eq 1 ]; then
+			VERDICT=1
+			XC="FAIL"
+			printf '%s\n' "$XC_OUT" | grep -E 'INV[0-9]|crosscheck:' | sed 's/^/      /'
+			cp "$BIN/vram_dump.tga" "$RUNLOG.tga" 2>/dev/null || true
+			printf '      (run log %s)\n' "$RUNLOG"
+		else
+			XC="ok"
+		fi
+	fi
 
 	# a PLAYER row that came out domestic is a failure, not a pass
 	if [ "$KIND" = "player" ] && [ "$FROM" = "-" ]; then
@@ -164,8 +196,8 @@ for entry in "${SCENARIOS[@]}"; do
 
 	[ "$VERDICT" -ne 0 ] && FAILED=1
 
-	printf '%-19s %4s %6s %6s %7s %4s %6s  %s\n' "$NAME" "$RC" "$OK" \
-		"${PINNED:-0}" "${EVICTED:-0}" "$LOST" "$ERRORS" "$FROM"
+	printf '%-19s %4s %6s %6s %7s %4s %6s %4s  %s\n' "$NAME" "$RC" "$OK" \
+		"${PINNED:-0}" "${EVICTED:-0}" "$LOST" "$ERRORS" "$XC" "$FROM"
 done
 
 [ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || printf 'cross_city_vehicles = 0\n' > "$INI"
