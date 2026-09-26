@@ -81,6 +81,36 @@ menu's Deathmatch entry) the arena menu lists every registered arena; picking on
 loads its city/layout and makes it the match's current arena, so its spawns and
 barrier apply.
 
+## The in-game editor
+
+Start a match with `-cceditor` (or `CC_EDITOR=1`) and the player's car becomes
+the cursor: drive to a spot and press a button. The change shows live — ghost
+markers and the region rectangle are drawn every frame — and **SAVE** writes the
+same `.cca` the Python editor reads *and* updates the live arena, so the barrier
+follows the edit immediately. It is a build/debug tool, not a play mode.
+
+| button (pad 0) | action |
+|---|---|
+| **L1** | place / move the *selected* spawn at the car (its position and heading) |
+| **R1** | cycle which spawn slot is selected |
+| **L2** | delete the spawn nearest the car |
+| **R2** | mark the region: first press = corner A, second = the rect (the car is the other corner) |
+| **SELECT** | save to `CONFIG/arenas/<name>.cca` (and update the live arena) |
+| **START** | reload the arena from its file |
+
+The shoulders also carry weapon prev/next/fire while driving, so park the car
+before tapping them. A scripted run can drive the editor headlessly through the
+debug driver's `pad:` step with `JERICHO_CC_INJECT=1` — the editor reads that
+injected mask alongside the live pad:
+
+```
+5:pad:4      # L1  -> place a spawn at the car
+7:pad:0
+12:pad:8     # R1  -> next slot
+20:pad:2     # R2  -> corner A ... and again for the rect
+28:pad:256   # SELECT -> save
+```
+
 ## Test levers
 
 - `CC_FORCE_ARENA=<arena id>` — launch straight into an arena (id 0..N-1 in

@@ -46,6 +46,7 @@ would otherwise have to: none of them changes shipping behaviour.
 | `CC_KNOCK_LOG=N` | sample the body knock (pitch/roll/lift) every N frames — the accel-layer pitch test reads this |
 | `CC_FORCE_ARENA` / `CC_FORCE_CAR` / `CC_FORCE_OPPONENTS` / `CC_OPPONENTS` | pin the arena, the car and the opponent count without touching the config |
 | `CC_LOCK_TRAFFIC=N` | override the lock-on traffic preference for a run (`lock_traffic_penalty`, default 400%; 100 = no preference). See `../SPECIALS.md` |
+| `CC_EDITOR=1` | same as `-cceditor`: turn on the in-game arena editor (see `../ARENAS.md`) |
 | `CC_MOTION`, `CC_PROFILES`, `CC_MENU`, `CC_PLAYER_FACTION` | force the motion preset, the profile set, the menu or the player's faction |
 
 ### `cc_debug.txt` — the scripted driver

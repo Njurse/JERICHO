@@ -113,6 +113,13 @@ const CD2_ARENA_PROFILE* cd2ArenaFindByName(const char* name);
 // uses it too.
 int cd2ArenaRegister(const CD2_ARENA_PROFILE* arena);
 
+// Overwrite an existing arena in place (the in-game editor). Returns 1 on success.
+int cd2ArenaReplace(int arenaId, const CD2_ARENA_PROFILE* arena);
+
+// The path an arena saves to: CONFIG/arenas/<internalName>.cca. Returns 1 and
+// fills `out` (cap bytes), or 0 on a bad argument.
+int cd2ArenaFilePath(const CD2_ARENA_PROFILE* arena, char* out, int cap);
+
 // Build the registry: the four built-ins, then every authored file under
 // JERICHO/CONFIG/arenas/. Safe to call more than once (it rebuilds). Call from
 // the module entry, before the select flow builds its menus.

@@ -77,6 +77,7 @@ void cd2FreezeRegister(JERICHO_CONTEXT* ctx);
 void cd2CrewRegister(JERICHO_CONTEXT* ctx);	/* weapons/core/crew.c */
 void cd2FacRegister(JERICHO_CONTEXT* ctx);	/* factions/factions.c (declared in its header) */
 void cd2ArenaRegister(JERICHO_CONTEXT* ctx);	/* arenas/arena.c */
+void cd2EditorRegister(JERICHO_CONTEXT* ctx);	/* arenas/editor.c (the in-game editor) */
 
 // ---------------------------------------------------------------------------
 // State
@@ -884,6 +885,9 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 
 	/* the arena runtime (arenas/): authored spawns + the region barrier */
 	cd2ArenaRegister(ctx);
+
+	/* the in-game arena editor (-cceditor / CC_EDITOR) */
+	cd2EditorRegister(ctx);
 
 	/* the CC select flow (select/): -ccmenu -> arena -> vehicle -> match */
 	cd2SelectRegister(ctx);

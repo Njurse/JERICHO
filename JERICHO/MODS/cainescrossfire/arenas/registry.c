@@ -104,6 +104,30 @@ int cd2ArenaRegister(const CD2_ARENA_PROFILE* arena)
 	return gArenaCount++;
 }
 
+// Overwrite an existing arena in place (the in-game editor saves into it, so the
+// region barrier and the next spawn pick up the edit without a reload).
+int cd2ArenaReplace(int arenaId, const CD2_ARENA_PROFILE* arena)
+{
+	if (arena == NULL || arenaId < 0 || arenaId >= gArenaCount)
+		return 0;
+
+	gArena[arenaId] = *arena;
+	gArena[arenaId].id = arenaId;
+
+	return 1;
+}
+
+// The path an arena is (or would be) saved to: CONFIG/arenas/<internalName>.cca.
+int cd2ArenaFilePath(const CD2_ARENA_PROFILE* arena, char* out, int cap)
+{
+	if (arena == NULL || out == NULL || cap <= 0)
+		return 0;
+
+	snprintf(out, cap, "%s/CONFIG/arenas/%s.cca", jer_root_dir(), arena->internalName);
+
+	return 1;
+}
+
 // --- load ------------------------------------------------------------------
 
 // Register (or replace, by internalName) an arena. A file's arena that names a
