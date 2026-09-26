@@ -30,10 +30,10 @@
 // is a car with a running engine, three degrees is a car that looks broken.
 const CD2_MOTION_CLASS cd2MotionClasses[CD2_MOTION_CLASSES] =
 {
-	//  name      pitchMax  stiffness  damping  over%  idleP/R/Y  bob
-	{ "LIGHT",    137,       400,      1400,    35,      6,  6,  3,  1 },	// ~12 deg
-	{ "MEDIUM",   102,       340,      1415,    30,      5,  5,  3,  1 },	// ~9 deg
-	{ "HEAVY",     68,       240,      1350,    25,      4,  4,  2,  1 },	// ~6 deg
+	//  name      pitchMax  stiffness  damping  rebound%  idleP/R/Y  bob
+	{ "LIGHT",    137,       400,      1400,    15,      6,  6,  3,  1 },	// ~12 deg
+	{ "MEDIUM",   102,       340,      1415,    12,      5,  5,  3,  1 },	// ~9 deg
+	{ "HEAVY",     68,       240,      1350,    10,      4,  4,  2,  1 },	// ~6 deg
 };
 
 // Which model is which class. -1 = work it out from the car's own numbers.
@@ -408,7 +408,7 @@ void cd2MotionStep(int carId)
 	 * fades out while the driver keeps their foot in - the car comes down and stays down */
 	if (now != st->throttle)
 		st->thrustFrames = 0;
-	else if (st->thrustFrames < CD2_MOTION_WHEELIE_FRAMES)
+	else if (st->thrustFrames < CD2_MOTION_POSE_RAMP_FRAMES)
 		st->thrustFrames++;
 
 	st->throttle = now;
@@ -447,18 +447,27 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 		 * it. Reverse power (the same pedal as braking) lifts the tail, and only when the
 		 * car is genuinely travelling backwards. Braking while travelling forwards gets
 		 * no sustained term at all: its whole effect is the transient dive below. */
-		/* BRIEF. The sustained term fades over CD2_MOTION_WHEELIE_FRAMES and then the car is
-		 * level again for as long as the throttle is held: a sudden change of thrust lifts the
-		 * nose, it does not leave it in the air. The arrival is the slam. */
-		int hold = CD2_MOTION_WHEELIE_FRAMES - st->thrustFrames;
+		/* HELD, at CD2_MOTION_HOLD_PCT of the ceiling - the pose is where the weight has
+		 * gone, and it stays there while the power does. This replaces a term that faded out
+		 * over 4 frames, which was invisible: the only part of it a driver could see was the
+		 * RETURN swing, which goes the other way, so powering forward read as the nose
+		 * tilting DOWN and reversing read as it tilting up - the report that produced this
+		 * change. It stays a FRACTION of the ceiling and not the whole of it, because a
+		 * full-amplitude held pose is a car permanently on its back wheels, which was tried
+		 * and rejected before this. The ramp keeps the arrival from being a step, and the
+		 * arrival itself is the slam. */
+		int ramp = st->thrustFrames;
+		int hold;
 
-		if (hold < 0)
-			hold = 0;
+		if (ramp > CD2_MOTION_POSE_RAMP_FRAMES)
+			ramp = CD2_MOTION_POSE_RAMP_FRAMES;
+
+		hold = (((cls->pitchMax * CD2_MOTION_HOLD_PCT) / 100) * scale) >> 12;
 
 		if (st->throttle > 0)
-			target = (((cls->pitchMax * scale) >> 12) * hold) / CD2_MOTION_WHEELIE_FRAMES;
+			target = (hold * ramp) / CD2_MOTION_POSE_RAMP_FRAMES;
 		else if (st->throttle < 0 && st->travel < 0)
-			target = -((((cls->pitchMax / 2) * scale) >> 12) * hold) / CD2_MOTION_WHEELIE_FRAMES;
+			target = -(((hold * CD2_MOTION_REVERSE_PCT) / 100) * ramp) / CD2_MOTION_POSE_RAMP_FRAMES;
 	}
 
 	/* The transient half: the speed delta, which is what actually moves the car.
@@ -512,6 +521,16 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 			stiff = (cls->stiffness * CD2_MOTION_COMPRESS_PCT) / 100;
 			damp = (cls->damping * CD2_MOTION_COMPRESS_DAMP_PCT) / 100;
 		}
+		else
+		{
+			/* THE RETURN. This is the half a driver actually watches: the pose is over and
+			 * the body has to be level again NOW, not drift back while the next corner
+			 * arrives. The original intent was the opposite - "digs in fast and climbs back
+			 * reluctantly" - which is what left the fall-back slow enough to be the thing
+			 * you notice about the layer. It is still gentler than the compression. */
+			stiff = (cls->stiffness * CD2_MOTION_RETURN_PCT) / 100;
+			damp = (cls->damping * CD2_MOTION_RETURN_DAMP_PCT) / 100;
+		}
 
 		accel = ((err * stiff) >> 12) - (st->accelVel * damp >> 12);
 	}
@@ -519,9 +538,9 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 	st->accelVel += accel;
 	st->accelPitch += st->accelVel;
 
-	/* ONE-WAY, VELOCITY-CAPPED, and what overshootPct was always for - it was declared,
+	/* ONE-WAY, VELOCITY-CAPPED, and what reboundPct was always for - it was declared,
 	 * initialised in all three classes and read by nothing. The body may travel back toward
-	 * level as fast as it likes, but it may not cross more than overshootPct past level: that
+	 * level as fast as it likes, but it may not cross more than reboundPct past level: that
 	 * is the single counter-swing the source material describes, before the motion dies.
 	 *
 	 * Capping the POSITION was tried three times and is wrong in every form, because a
@@ -540,7 +559,7 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 	 * to the room that is left. */
 	{
 		int towardLevel = (st->accelPitch > 0) ? (st->accelVel < 0) : (st->accelPitch < 0 && st->accelVel > 0);
-		int room = (cls->pitchMax * cls->overshootPct) / 100;
+		int room = (cls->pitchMax * cls->reboundPct) / 100;
 		int over = st->accelPitch < 0 ? -st->accelPitch : st->accelPitch;
 
 		if (towardLevel && (over + st->accelVel) < -room)
@@ -804,13 +823,16 @@ void cd2MotionDumpAccel(int carId)
 	if (!st->inited)
 		return;
 
-	jer_log("[cainescrossfire] accel car=%d pitch=%d vel=%d delta=%d thr=%d shift=%d bob=%d speed=%d class=%s\n",
-		carId, st->accelPitch, st->accelVel, st->delta, st->throttle, st->accelShift, st->accelBob,
+	/* travel is logged because it is the one input the whole reverse path keys off, and its
+	 * sign is not visible anywhere else: it comes from fwdSpeed, which is the velocity
+	 * projected on the car's forward axis. +1 = going forwards, -1 = going backwards. */
+	jer_log("[cainescrossfire] accel f=%d car=%d pitch=%d vel=%d delta=%d thr=%d travel=%d shift=%d bob=%d speed=%d class=%s\n",
+		FrameCnt, carId, st->accelPitch, st->accelVel, st->delta, st->throttle, st->travel, st->accelShift, st->accelBob,
 		car_data[carId].hd.speed, cd2MotionClassOf(carId)->name);
 
 	/* what the renderer actually got, clamp included */
-	jer_log("[cainescrossfire] composed car=%d pitch=%d roll=%d yaw=%d bob=%d shift=%d\n",
-		carId, st->compPitch, st->compRoll, st->compYaw, st->compBob, st->compShift);
+	jer_log("[cainescrossfire] composed f=%d car=%d pitch=%d roll=%d yaw=%d bob=%d shift=%d\n",
+		FrameCnt, carId, st->compPitch, st->compRoll, st->compYaw, st->compBob, st->compShift);
 }
 
 // [D] [T]

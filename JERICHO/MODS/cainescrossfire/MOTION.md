@@ -52,20 +52,35 @@ angle to a ceiling and settles it.
 
 The target has two halves:
 
-- the **thrust**, sustained: under power, the class ceiling. Reversing is the same
-  power pointed the other way and gets the opposite pitch at half amplitude.
+- the **thrust**, sustained: under power, `CD2_MOTION_HOLD_PCT` of the class ceiling
+  (45%), so the pose reads as the weight being at the back rather than as a car
+  permanently on its back wheels. Reversing is the same power pointed the other way and
+  gets the opposite pitch, gentler by `CD2_MOTION_REVERSE_PCT`.
 - the **delta**, transient: the change in speed per step. This is what makes the layer
   interesting. A hard stop dips hard because a hard stop *is* a large negative delta,
   and a turbo lurches because a turbo *is* a large positive one — neither is a special
   case, and the amplitude of a wheelie or a stoppie falls straight out of it.
+
+**The held half was briefly a lie in the code.** For a while the sustained term faded out
+over 4 frames (`CD2_MOTION_WHEELIE_FRAMES`), on the reasoning that a wheelie is an event.
+The number was right and the effect was not: the only part of the layer a driver could
+still see was the **return** swing, which goes the other way — so powering forward read as
+the nose *dipping* and reversing as it *lifting*, i.e. exactly backwards. The pose is now
+held while the power is (the code matches this paragraph again), and the two halves of the
+spring were rebalanced for it: `CD2_MOTION_RETURN_PCT` (2.5x) and
+`CD2_MOTION_RETURN_DAMP_PCT` (1.25x) make the fall-back the FAST half, where it used to be
+the slow one ("digs in fast and climbs back reluctantly").
 
 The squat is derived from the spring's own position (a shift along the car and a
 downward bob), so it cannot drift out of step with the angle that caused it: nose up,
 weight back, body sitting down on the rear.
 
 The nose-bob comes from the compression/rebound split and is **bounded**: the body may
-cross level by at most `overshootPct` of the class ceiling, and the cap is on the velocity
+cross level by at most `reboundPct` of the class ceiling, and the cap is on the velocity
 rather than the position, because a position cap removes angle instead of limiting it.
+That allowance is deliberately small (15/12/10% by class): the counter-swing points the
+OPPOSITE way to the pose, so a generous one is a car that visibly tilts the wrong way
+every time the driver lifts off.
 
 Nothing here is scripted. The rise, the hold and the arrival all fall out of the spring's
 own arithmetic plus two rules: the sustained term fades over `CD2_MOTION_WHEELIE_FRAMES`
@@ -100,6 +115,20 @@ shuddering in unison looks like a bug, not a world.
 Unlike the knock, they set **`rigidWheels`**, so the wheels move with the body. The
 engine normally rotates the body model alone and leaves the wheels on the un-rotated
 matrix, which is right for a body lean and wrong for anything that moves the whole car.
+
+The **slide lean** is not a layer here — it lives in `cainescrossfiresim.c` — but it
+now rides the same compositor as everything else: it used the engine's `_RotMatrixZ`
+(a world-axis rotation, which leans a car facing +Z but ROLLS one facing +X), and is
+folded into the offset instead so it turns about the car's own forward. It does NOT
+set `rigidWheels` — a lean is the one case that keeps the engine's level wheels — so
+`cd2OnCarDraw` decides `rigidWheels` from the knock/motion part *before* the lean is
+added.
+
+The squat (below) pulls the body DOWN as the nose rises, which on its own would sink
+the car as it wheelies. The knock compositor's pivot **rise** offsets it: the rise is
+~40 world units at the accel layer's ~110 pitch against a −24 squat, so the car nets a
+little UP at the top of a wheelie. See KNOCK.md, "The pivot, and the rise" — the arc
+there carries the 2π the distance alone does not.
 
 ## The composition, and the one clamp
 
@@ -173,6 +202,9 @@ standstill, fading to nothing by `CD2_IDLE_SPEED_ZERO`.
 | how long it "breathes" | `CD2_IDLE_DRIFT_FREQ` |
 | when the idle goes away | `CD2_IDLE_SPEED_FULL/ZERO`, `CD2_IDLE_SCALE_LERP` |
 | how big a wheelie/stoppie | the class `pitchMax`, or `CD2_MOTION_DELTA_GAIN` |
+| how big the HELD pose under power is | `CD2_MOTION_HOLD_PCT` (% of `pitchMax`) |
+| how fast it falls back to level | `CD2_MOTION_RETURN_PCT`, `CD2_MOTION_RETURN_DAMP_PCT` |
+| how far it swings the wrong way on release | the class `reboundPct` |
 | how fast it gets there | the class `stiffness` |
 | how much it rings / how much nose-bob | the class `damping` (lower = more) |
 | how hard a hit is | `CD2_KNOCK_*` in `knock/knock.h` — the impact layer |

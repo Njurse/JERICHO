@@ -53,10 +53,21 @@ typedef struct CD2_MOTION_CLASS
 	const char* name;
 
 	// --- Layer 2: pitch-back under power ---
-	int pitchMax;		// ceiling for the nose, PSX angle units (4096 = a turn)
-	int stiffness;		// /4096 - spring pull per unit of error, per frame
-	int damping;		// /4096 - velocity kept per frame
-	int overshootPct;	// % past neutral the release is allowed to swing
+	int pitchMax;		// ceiling for the nose, PSX angle units (4096 = a turn, so 137 is about
+					// 12 degrees). The HELD pose is a fraction of this (see
+					// CD2_MOTION_HOLD_PCT); only the pulse on a sudden change reaches all of it.
+	int stiffness;		// drive rate: the fraction of the remaining error taken per frame, /4096.
+					// Higher = the body arrives sooner. Scaled on the way out
+					// (CD2_MOTION_COMPRESS_PCT) and on the way back (CD2_MOTION_RETURN_PCT).
+	int damping;		// brake on the body's velocity, /4096 per frame: how much of the
+					// current velocity is taken out each frame. Higher = less ringing. It has
+					// to stay well under 4096 or the integrator oscillates, which is why every
+					// scaling factor here does.
+	int reboundPct;		// how far PAST LEVEL the return may swing, as a % of pitchMax. This is
+					// the counter-swing and it goes the OPPOSITE way to the pose, so a large
+					// value is a car that visibly tilts the wrong way every time the driver
+					// lifts off. It was 35/30/25; the wrong-way tilt was visible, so it is
+					// now a fraction of that.
 
 	// --- Layer 1: the idle fidget ---
 	int idlePitch;		// amplitudes at a standstill, PSX angle units
@@ -163,12 +174,17 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // has no wheelie at all however hard the throttle is; above the full mark the pitch is
 // at the class maximum. Speeds in this model run to about 275, so 25 is a crawl and 180
 // is properly moving.
-// How long a wheelie may be HELD. It is brief on purpose: the nose comes up on a sudden
-// change of thrust, and then the car slams back down and keeps its tyres planted. Holding
-// the pitch for as long as the throttle is down was the first behaviour and it reads as a
-// car perpetually on its back wheels, which is not what any of this is for. 12 frames is
-// 0.4s - long enough to see, short enough to be an event.
-#define CD2_MOTION_WHEELIE_FRAMES	12
+// How many frames the pose takes to ARRIVE once the power does. Note it is a ramp IN, not
+// the fade out it used to be: the pose is now held for as long as the throttle is (see
+// CD2_MOTION_HOLD_PCT).
+#define CD2_MOTION_POSE_RAMP_FRAMES	4
+
+// How much of the class ceiling the HELD pose uses while the car is under power in the
+// direction it is travelling. A FRACTION rather than the whole of it, because a full held
+// pose is a car permanently on its back wheels - which is why the earlier version faded the
+// term out instead. Fading it out left nothing for a driver to see but the return swing,
+// which points the other way, so powering forward read as the nose dipping.
+#define CD2_MOTION_HOLD_PCT	45	// % of the ceiling, held while under power
 
 #define CD2_MOTION_SPEED_FLOOR	25
 #define CD2_MOTION_SPEED_FULL	180
@@ -186,6 +202,11 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // at the same 4x would push the damping coefficient past 4096 and make the step oscillate,
 // so the two use different factors, and CD2_MOTION_COMPRESS_DAMP_PCT is bounded below 4096
 // for exactly that reason.
+#define CD2_MOTION_RETURN_PCT	250	// 2.5x on stiffness ON THE WAY BACK. The fall-back is the
+					// half a driver watches, and at 1x (the original "digs in fast and climbs
+					// back reluctantly") the body took longer to come back than to go out.
+#define CD2_MOTION_RETURN_DAMP_PCT	125	// 1.25x on damping on the way back, so the faster
+					// return does not become a ringing step.
 #define CD2_MOTION_COMPRESS_PCT	400	// 4x on stiffness
 #define CD2_MOTION_COMPRESS_DAMP_PCT	150	// 1.5x on damping. MUST stay well under 4096: the
 					// integrator's stability condition is stiff < 2*4096 + 2*(4096 - damp),
@@ -195,11 +216,12 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // out at a real angle - that is the far end of the car coming down, and the one moment the
 // body should hit the suspension. It is a knock, so it rides the same machinery: an
 // impulse, sized to an ANGLE, returning at the rate that impulse earns.
-#define CD2_MOTION_SLAM_MIN		60	// the pitch that counts as a real wheelie/stoppie.
+#define CD2_MOTION_SLAM_MIN		40	// the pitch that counts as a real wheelie/stoppie.
 					// It must exceed the RETURN's own counter-swing, or the swing
 					// re-arms the peak and fires a second slam labelled as the
 					// opposite event. The largest counter-swing is LIGHT's, at
-					// 137*35/100 = 47, which is why this is above it.
+					// 137*reboundPct/100 = 20 now the rebound is cut, which is why this
+					// sits above it.
 // No second slam inside this many frames of the last one. The arrival can produce a
 // crossing on two consecutive frames - the body passes through level and its residual
 // carries it back a frame later - and every predicate tried to tell those apart either
@@ -211,8 +233,8 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 #define CD2_MOTION_SLAM_NEAR		12	// how close to level counts as arriving (the sign flip
 					// itself is fragile: the transient term rarely lands
 					// the pitch exactly on zero)
-#define CD2_MOTION_SLAM_IMPULSE	22	// the angle the knock is asked for, PSX units
-#define CD2_MOTION_SLAM_SHIFT	48	// the weight thrown with it, in the knock's shift
+#define CD2_MOTION_SLAM_IMPULSE	18	// the angle the knock is asked for, PSX units
+#define CD2_MOTION_SLAM_SHIFT	83	// the weight thrown with it, in the knock's shift
 					// channel. This is a VELOCITY, not a position: the channel's decay of
 					// 2200/4096 means the travel is about 2.16x it, so 48 arrives at the
 					// 55 clamp - which is intended, and is what the turbo kick's 52 does

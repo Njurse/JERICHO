@@ -286,6 +286,46 @@ static void cd2KnockSample(int carId, int force)
 }
 
 // ---------------------------------------------------------------------------
+// CC_VIS_LOG=<frames> - a run-only override like CC_MOTION_LOG. It prints what the
+// composed offset DID to the body rather than what it was meant to do: `noseLift` is the
+// change in the Y component of the car's forward vector (forward = -column 2), read back
+// off the matrix after the rotation, so `pitch>0 noseLift>0` means a positive pitch really
+// does lift the nose. The line names the verdict itself, because this is the single premise
+// every pitch sign in the module rests on - and it is the premise that was wrong for the
+// accel layer while every number in that layer was right.
+// ---------------------------------------------------------------------------
+static int gVisLogEvery = -1;
+
+// [D] [T]
+static void cd2VisSignLog(const CD2_VISUAL_OFFSET* o, int noseLift)
+{
+	if (gVisLogEvery < 0)
+	{
+		const char* env = getenv("CC_VIS_LOG");
+
+		gVisLogEvery = 0;
+
+		if (env != NULL && env[0] != 0)
+		{
+			int v = atoi(env);
+
+			if (v > 0)
+				gVisLogEvery = v;
+		}
+	}
+
+	if (gVisLogEvery <= 0 || (FrameCnt % gVisLogEvery) != 0)
+		return;
+
+	jer_log("[cainescrossfire] vis pitch=%d roll=%d yaw=%d bob=%d shift=%d -> noseLift=%d %s\n",
+		o->pitch, o->roll, o->yaw, o->bob, o->shift, noseLift,
+		(o->pitch == 0) ? "(level, so there is no sign to read)"
+		                : (((o->pitch > 0) == (noseLift > 0))
+		                       ? "SIGN OK - positive pitch lifts the nose"
+		                       : "SIGN INVERTED - positive pitch dips the nose"));
+}
+
+// ---------------------------------------------------------------------------
 // The render-only part: translate the body, then rotate the car about its OWN
 // axes. Called from the car-draw path, so nothing here can reach the handling
 // model.
@@ -326,9 +366,16 @@ void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o)
 	MATRIX* m = (MATRIX*)matrix;
 	MATRIX rot, res;
 	int i;
+	int noseBefore;
 
 	if (m == NULL || o == NULL)
 		return;
+
+	/* the car's forward is -column 2, i.e. -(m[0][2], m[1][2], m[2][2]) in the engine's
+	 * layout (m[i][k] is component i of basis vector k, so index 1 is Y and index 2 is the
+	 * basis vector that points BACKWARD). This is the Y of the nose direction as it
+	 * arrives - the same vector cd2VisualApply's own pivot and shift maths move along. */
+	noseBefore = -m->m[1][2];
 
 	if (o->bob != 0)
 		m->t[1] += o->bob;		/* up or down, whichever the layer asked for */
@@ -379,6 +426,8 @@ void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o)
 		MulMatrix0(m, &rot, &res);
 		*m = res;
 	}
+
+	cd2VisSignLog(o, (-m->m[1][2]) - noseBefore);	/* forward Y now - forward Y before */
 }
 
 // [D] [T]
