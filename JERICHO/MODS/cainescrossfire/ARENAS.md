@@ -220,6 +220,34 @@ is dropped at the cursor — fly over an area, tap it, then drive around to feel
 arena out without restarting the match. With the freecam off it does nothing (the
 car is already the cursor).
 
+## The Python editor (the window)
+
+`arenaedit.py` (or the launcher's *2) Open…*) is a normal editor window, not a
+bare canvas:
+
+- **Menu bar** — File (new / open / save / save as / reload / quit), Edit (undo,
+  delete selected), View (grid, labels, fit, zoom, background), Help (shortcuts).
+- **Toolbar** — the tools, as radio buttons: **Select** (drag spawns and region
+  corners), **Add spawn**, **Delete**, **Region** (click a corner, then the
+  opposite one) — plus Fit, Grid and Labels toggles and the arena picker.
+- **Canvas** — a grid with its step printed (a cell is 2048), the region as a
+  dashed rectangle with draggable corners, spawns numbered (`P` = the player),
+  pickups as squares, middle-drag to pan, wheel to zoom.
+- **Inspector** (right) — the arena's fields (name, city, mp map/layout), the
+  region's four numbers with Apply / Clear / Fit / "use the view's edges", the
+  **spawn list** with an edit form (x, y, z, heading — leave y blank for "none"),
+  the **pickup list** with an add form, and the background controls.
+- **Status bar** — the file and its unsaved state, the arena, the region, the
+  counts, the last action, and the cursor's world position.
+
+Keys: `1`–`4` pick a tool, `F` fit, `G` grid, `L` labels, `Del` delete, `Esc`
+cancel, `Ctrl+S/O/N/R/Z/Q`, `F1` shortcuts. Right-click deletes whatever is under
+the pointer; **undo** is `Ctrl+Z`.
+
+`--uitest` builds the window, drives it through its own commands (clicks the map,
+uses the inspector, undoes, saves, reloads) and reports — so the UI is checked
+without a human at the screen.
+
 ## Designing against a level map (the Python editor)
 
 A city needs a **rip** for the editor to draw it: `DriverLevelTool/` ships RIO
