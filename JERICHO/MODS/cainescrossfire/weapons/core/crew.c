@@ -269,6 +269,23 @@ int cd2CrewSideOut(const CAR_DATA* cp, int side)
 	return gCrew[c->id].hold[i] > 0;
 }
 
+// Pull every crew member back inside. Zeroing the holds lets the normal retract
+// path run: the next cd2CrewOnFrame sees wantOut == 0 and plays the get-in
+// animation (PED_ACTION_GETINCAR) before despawning the ped. The arena editor
+// calls this while it is active, so the driver and gunner sit IN the car
+// instead of leaning out over the one you are trying to place.
+//
+// Nothing re-arms the holds while the editor is on, because the weapon FRAME
+// hook refuses to fire or arm a weapon then (see cd2WpnOnFrame).
+void cd2CrewRetractAll(void)
+{
+	int i, side;
+
+	for (i = 0; i < MAX_CARS; i++)
+		for (side = 0; side < 2; side++)
+			gCrew[i].hold[side] = 0;
+}
+
 int cd2CrewPedCount(void)
 {
 	int i, side;

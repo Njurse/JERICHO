@@ -183,10 +183,12 @@ follows the edit immediately. It is a build/debug tool, not a play mode.
 | **SELECT** | save to `MODS/cainescrossfire/arenas/<name>.cca` (and update the live arena) |
 | **START** | reload the arena from its file |
 
-The shoulders also carry weapon prev/next/fire while driving, so park the car
-before tapping them. A scripted run can drive the editor headlessly through the
-debug driver's `pad:` step with `JERICHO_CC_INJECT=1` — the editor reads that
-injected mask alongside the live pad:
+**While the editor is ON the module disables weapons and sends the mounted crew
+back inside**, so the shoulder buttons belong to the editor — no shot fires and
+no driver/gunner leans out while you place (the log notes it once: `arena editor:
+weapons disabled and crew retracted`). A scripted run can drive the editor
+headlessly through the debug driver's `pad:` step with `JERICHO_CC_INJECT=1` —
+the editor reads that injected mask alongside the live pad:
 
 ```
 5:pad:4      # L1  -> place a spawn at the car

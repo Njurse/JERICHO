@@ -34,6 +34,11 @@ void cd2CrewArmed(const CAR_DATA* car, int leanMask);
 // 1 while out, 0 while in. side = CD2_CREW_DRIVER or CD2_CREW_GUNNER.
 int cd2CrewSideOut(const CAR_DATA* car, int side);
 
+// Send EVERY crew member back inside (the peds play the get-in animation and
+// despawn). The in-game arena editor calls this while it is active, so the
+// driver and gunner do not sit leaning out over the car being placed.
+void cd2CrewRetractAll(void);
+
 // How many crew peds are currently spawned (0..2*MAX_CARS). For tests/debug.
 int cd2CrewPedCount(void);
 

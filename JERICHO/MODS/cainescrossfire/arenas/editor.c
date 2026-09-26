@@ -33,6 +33,7 @@
 #include "cainescrossfire.h"
 #include "cainescrossfire_internal.h"	/* cd2DbgPadMask - the injected pad mask */
 #include "arenas/profile.h"
+#include "weapons/core/crew.h"	/* cd2CrewRetractAll - crew sit in the car while editing */
 #include "weapons/core/weapon_internal.h"	/* cd2WpnLine - the ghost markers, cd2WpnPlayerCar */
 
 #include <string.h>
@@ -46,6 +47,7 @@ int cd2ArenaFileSave(const char* path, const CD2_ARENA_PROFILE* a);
 
 static int gEditorOn;			/* -cceditor / CC_EDITOR */
 static int gEditorDirty;		/* an in-game edit is not saved yet */
+static int gEditorHygiene;		/* one-shot: the weapons-off / crew-in note */
 static int gSelSlot;
 static int gCornerState;		/* 0 none, 1 A marked, 2 rect set */
 static int gCornerAx, gCornerAz;
@@ -367,6 +369,8 @@ static int cd2EditorOnGameStart(void* ud, void* args)
 
 	a = cd2ArenaCurrent();
 
+	cd2CrewRetractAll();
+
 	if (a != NULL)
 		printInfo("[cainescrossfire] arena editor: editing '%s' (%d spawns, %d pickups)\n",
 			a->internalName, a->spawnCount, a->pickupCount);
@@ -385,6 +389,17 @@ static int cd2EditorOnFrame(void* ud, void* args)
 
 	if (!gEditorOn)
 		return JER_RESULT_CONTINUE;
+
+	/* the player's own car is the cursor: weapons are off while editing (see
+	 * cd2WpnOnFrame), so send any crew that was leaning out back inside */
+	cd2CrewRetractAll();
+
+	if (!gEditorHygiene)
+	{
+		gEditorHygiene = 1;
+		printInfo("[cainescrossfire] arena editor: weapons disabled and crew retracted - "
+			"the shoulder buttons are the editor's while it is on\n");
+	}
 
 	w = cd2ArenaCurrent();
 

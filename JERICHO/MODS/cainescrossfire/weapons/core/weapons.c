@@ -40,6 +40,7 @@
 #include "dr2math.h"
 #include "weapon.h"
 #include "weapon_internal.h"
+#include "../../arenas/profile.h"	/* cd2EditorActive - the arena editor owns the pads */
 #include "weapons/special/special.h"	/* the six vehicle specials */
 #include "crew.h"		/* mounted-crew lean request (fired weapons) */
 
@@ -913,7 +914,13 @@ static int cd2WpnOnFrame(void* ud, void* args)
 	// wreck / waiting to respawn) and an ice-encased car both swallow the weapon
 	// buttons, so neither selection nor firing happens this frame. Live shots
 	// already in the air keep flying.
-	if (cd2CarTotaled(cp) || cd2FreezeActive(cp->id))
+	//
+	// The ARENA EDITOR is a third such state: while it is active the shoulders
+	// belong to the editor (place / cycle / delete / region corners), so the guns
+	// are disarmed - and with nothing armed the crew peds retract back inside.
+	// This guard is above the raw pad read, so it also stops the base machine gun
+	// (which calls d->fire directly, bypassing cd2WpnTryFire).
+	if (cd2CarTotaled(cp) || cd2FreezeActive(cp->id) || cd2EditorActive())
 	{
 		prevRT = prevLB = prevRB = 0;
 		cd2WpnSetCarArmed(cp, CD2_WID_NONE);	// downed driver = not armed
