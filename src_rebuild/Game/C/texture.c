@@ -675,6 +675,12 @@ TEXINF* GetTextureInfoName(char *name, TPAN *result)
 }
 
 // [D] [T]
+// JERICHO: note the two encodings of `tpageloaded[]` in this file and leave them alone.
+// This writes it 0-based (the slot number) while SendTPage writes `slot + 1` and compares
+// `slot != tpageloaded[set] - 1`. The mismatch only ever makes SendTPage re-upload a set
+// this function loaded (a redundant upload, which the import guard then refuses if the
+// rectangle is a car's) - it cannot mis-point a page. Changing it would touch the
+// streamer's skip logic for no gain, so the inconsistency is documented instead.
 void update_slotinfo(int tpage, int slot, RECT16 *pos)
 {
 	tpageslots[slot] = tpage;
