@@ -165,9 +165,13 @@ carTpages[GameLevel][7] = page2;   // texture.c:2026
 
 so slots 6/7 of the host's table are the special car's pages, not `carTpages[]`
 entries parsed from data. And a **special** body's pages come from `specTpages`,
-which is a *different* table — `CarPalIndexInCity` only scans `carTpages`, so a
-`specTpages` page is not found in either city and `GetCarPalIndex` returns **0**.
-Anything that must not touch the host's row 0 has to cope with that (§5, §6).
+which is a *different* table — for a long time `CarPalIndexInCity` only scanned
+`carTpages`, so a `specTpages` page was found in neither city and `GetCarPalIndex`
+returned **0** — the host's row, which `CarImportPin` then overwrote. **Fixed:**
+`CarPalIndexInCity` now scans `specTpages` too and maps the pair onto the bank's last
+two rows (`rowbase + 6 + (i & 1)`), which is exactly where the host's own pair sits
+(`cars.c:1954-1998`). A set that is in *neither* table still answers 0 — as it does for
+a host car — so the pin refuses to write that row and logs it (§5).
 
 ---
 
@@ -229,9 +233,13 @@ only exist after the import uploads it at draw time, so `CarImportPin`
 (`texture.c:1332`) re-points the row:
 
 ```c
-int row = GetCarPalIndex(sPinSet[i]);                 // texture.c:1507
-for (j = 0; j < 32; j++)
-    civ_clut[row][j][0] = texture_cluts[sPinIndex[i]][j];   // texture.c:1511
+int row = GetCarPalIndex(sPinSet[i]);                 // texture.c:~1566
+
+if (row < CIV_CLUT_IMPORT_ROW)                        // a HOST row: refuse, and say so
+    printInfo("cross-city: pin - set %d resolves to civ_clut row %d (a HOST row): not re-pointing, palette leak avoided\n", ...);
+else
+    for (j = 0; j < 32; j++)
+        civ_clut[row][j][0] = texture_cluts[sPinIndex[i]][j];
 ```
 
 That single line is the load-time/draw-time seam. It is safe while `row` is one of
@@ -250,19 +258,14 @@ below 512, so the imported *pages*' CLUTs never land in the level's band.
 (`texture.c:2110-2117`):
 
 ```c
-for (i = 0; i < 8 * 32 * 6; i++)
+for (i = 0; i < CIV_CLUT_ROWS * 32 * 6; i++)
     clutSum = clutSum * 31 + ((u_short*)civ_clut)[i];
 printInfo("cross-city: level page state - slotsused=%d nperms=%d nspecpages=%d tpage=(%d,%d) clutpos=(%d,%d) civclut=%08x\n", ...);
 ```
 
-Two things it does **not** do, both of which is why "the wheels still come off":
-
-- it hashes only the **first bank** (`8 * 32 * 6` = rows 0..7) — rows 8..15 are
-  never checked, and (see the comment at `texture.c:2106`) the `[8][32][6]` in the
-  comment is stale: the array is `CIV_CLUT_ROWS` = 16 rows;
-- it says nothing about **VRAM** — the strip layout, or whether a slot's CLUT rows
-  still hold what the world put there. The dominant failure mode is a *VRAM*
-  collision, so the invariant can pass while scenery is being repainted.
+It used to hash only `8 * 32 * 6` (rows 0..7), so the import bank was invisible to it,
+and the comment beside it still said `[8][32][6]`. It now covers every row
+(`texture.c:2195`). What it still does **not** do:
 
 A useful run proves three things instead:
 
@@ -306,13 +309,17 @@ missing.
   refilled per frame (`cars.c:1322`, `:1348`, `texture.c:1511`).
 - `carTpages[GameLevel][6..7]` are **overwritten** with the special body's pages at
   runtime (`texture.c:2025-2026`).
-- A `specTpages` page is in **neither** `carTpages` table, so `GetCarPalIndex`
-  returns **0** for it — the host's row.
+- A `specTpages` page is not in `carTpages` — that used to make `GetCarPalIndex`
+  answer 0 (the host's row); it is now scanned and mapped onto the bank's last two rows.
+- A set in **neither** table answers row 0, exactly as a host car's does — the pin
+  refuses to *write* that row and logs it.
+- Two sets imported in one load saw `110` free for both and both took it, collapsing a
+  car's two pages onto one index; `FindFreeSetIndex` now reserves what it hands out.
 - `ProcessPalletLumpForCity` for an import uploads into the **shared** `clutpos`
   strip (the world's streamed CLUTs are carved from the same column) and can be
   truncated by `CAR_CLUT_IMPORT_LIMIT`.
 - `JerichoMakeClutRow` (`texture.c:153`, team/ped dye) allocates rows from the same
   runtime `clutpos` cursor (`texture.c:342-345`), guarded only by `clutpos.y > 511`.
-- The cross-city invariant hashes only rows 0..7 and says nothing about VRAM.
+- The cross-city invariant hashes `civ_clut` (all rows now) and says nothing about VRAM.
 - The session log is `JERICHO.log` in this build, **not** `REDRIVER2.log`; a stale
   `REDRIVER2.log` can sit in the same folder.

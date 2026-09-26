@@ -222,16 +222,26 @@ held a live host car page. `0 wasted car pages taken, 0 world pages evicted` hid
 because that path never consults the allocator at all. Now it is `specialSlot + k`, and
 `CarPinPreferredAllowed` refuses anything that is not the replaced car's own page.
 
+### The trap that collapsed a car's two pages onto one index
+
+`FindFreeSetIndex` answered "first index >= 110 with `tpageloaded[] == 0`", and
+`tpageloaded[]` only becomes non-zero when a page is **placed** — which is draw-time. So
+two sets imported in one load both saw 110 free and BOTH took it: the second's pixels and
+CLUTs replaced the first's, and the car sampled one page for both parts (`CHICAGO set 54
+-> index 110` and `set 55 -> index 110` in the log, 16 + 5 CLUT rows fighting for the
+same rows in VRAM — the `vramdump.py` MISMATCH). `FindFreeSetIndex` now reserves what it
+hands out (`sReservedSet`, cleared by `CarImportResetState`).
+
 ## Still open
 
 - **The import's CLUT rows are still carved from the level's own strip.** The pin band
-  starts at `max(clutpos.y + 4, 480)` and two sets can need 20+ rows between them
-  (16 + 5 measured), so a page's CLUTs can land on another imported page's and the
-  `vramdump.py` check reports MISMATCH for the larger set. Reserving the import its own
-  region — and bounding `clutpos.y += 8` in the slot-band loop — is Phase 4.
-- **A `specTpages` set still resolves to the HOST's `civ_clut` row 0** (`GetCarPalIndex`
-  has no entry for it), so the pin overwrites a host palette. Phase 4 maps those into the
-  import bank (`PALETTES.md` §3/§5).
+  starts at `max(clutpos.y + 4, 480)`; measured on a full level (`clutpos.y = 482`,
+  "imported CLUT rows start at y=486, 5 slots spare") two sets (16 + 5 rows) just fit in
+  `486..507`. A bigger import would run off the column, and the runtime team-palette
+  allocation shares the same column (it is now capped at `CAR_CLUT_IMPORT_LIMIT` so it
+  cannot walk into the import's rows — `texture.c`, `JerichoMakeClutRow`). Reserving the
+  import a fixed region, and bounding `clutpos.y += 8` in the slot-band loop, is the
+  remaining work here.
 - The victim is still chosen greedily (first wasted car page, round-robin). Weighing "is
   the car that uses this page on screen" is the real pool over the host's car pages;
   `sCarPageClaimFrame` / `CAR_PAGE_CLAIM_FRAMES` and the `UNUSED` slot map are in place
@@ -239,6 +249,11 @@ because that path never consults the allocator at all. Now it is `specialSlot + 
 - The thrash meter is the thing to watch. If `page re-uploads` in the final page state
   grows with the frame count, something is still taking pages back — check the two
   `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
+- A set the imported model names that is a car page in *neither* city still answers
+  `civ_clut` row 0, so those polys keep the host row-0 palette (as a host car's would).
+  Nothing is corrupted — the pin now refuses that row and logs `pin - set N resolves to
+  civ_clut row M (a HOST row)` — but the colour is the host's. Fixing it needs a bank row
+  for a page the engine never treats as a car page.
 
 ## The palette half: what cost the time, and where the detail now lives
 

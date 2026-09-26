@@ -56,6 +56,7 @@ def parse_run(path):
         "pinned": {},               # set -> {"slot":, "rect":, "clutpos":}
         "takes": [],                # "UNUSED host car page set N from slot S"
         "evicts": [],               # "world set N from slot S"
+        "pin_refusals": set(),      # sets the pin refused to re-point into a HOST row
         "final": None,              # dict
     }
     for line in open(path, errors="ignore"):
@@ -93,6 +94,9 @@ def parse_run(path):
                       r"page=\w+, clut0=\w+=\((\d+),(\d+)\)", line)
         if m and int(m.group(1)) in out["pinned"]:
             out["pinned"][int(m.group(1))]["clutpos"] = (int(m.group(2)), int(m.group(3)))
+        m = re.search(r"cross-city: pin - set (\d+) resolves to civ_clut row \d+ \(a HOST row\)", line)
+        if m:
+            out["pin_refusals"].add(int(m.group(1)))
         m = re.search(r"cross-city: final page state \((\d+) pinned, (\d+) wasted car pages taken, "
                       r"(\d+) world pages evicted, (\d+) page re-uploads, (\d+) claims given back\)", line)
         if m:
@@ -139,24 +143,35 @@ def check_inv1(run, fails, warns):
 
 
 def check_inv2(run, fails, warns):
-    """No imported set may resolve to a host civ_clut row."""
+    """An imported set must either map into the import bank, or be REFUSED a host row.
+
+    The engine answers row 0 for a page that is not a car page in either city - that is
+    its normal behaviour for a host car too, so it is not a defect by itself. What must
+    never happen is CarImportPin WRITING that row (it would hand a host palette the
+    imported page's CLUTs). So: in neither table -> the pin must have logged a refusal."""
     city = run["city"]
     if not city or not run["import_sets"]:
         return
     cars = CAR_TPAGES.get(city, [])
     specs = SPEC_TPAGES.get(city, [])
+    unbanked = 0
     for setno in sorted(run["import_sets"]):
-        carid = carid_of(city, setno)
-        if carid is not None:
-            continue
+        if carid_of(city, setno) is not None:
+            continue                        # a car page: rows 8..15 of the import bank
         if setno in specs:
-            warns.append(f"INV2 set {setno} is a {city} specTpages page - carTpages has no entry, so "
-                         f"GetCarPalIndex returns 0 and the pin writes the HOST's civ_clut row 0 "
-                         f"(must be mapped into the import bank, rows {IMPORT_ROW}..15)")
+            continue                        # a special body's page: the bank's last two rows
+        unbanked += 1
+        if setno in run["pin_refusals"]:
+            warns.append(f"INV2 set {setno} is not a car page in {city} (nor a special one), so its row is the "
+                         f"host's 0 - the pin refused to re-point it, so nothing leaked; those polys just "
+                         f"keep the host row-0 palette (as a host car's would)")
         else:
-            fails.append(f"INV2 set {setno} is in NEITHER {city}'s carTpages nor its specTpages - "
-                         f"GetCarPalIndex returns 0, so the pin overwrites the HOST's civ_clut row 0"
+            fails.append(f"INV2 set {setno} is in NEITHER {city}'s carTpages nor its specTpages and the pin did "
+                         f"NOT refuse a host row - the import would overwrite the HOST's civ_clut row 0"
                          + (f" (carTpages={cars})" if cars else ""))
+    if unbanked and not run["pin_refusals"]:
+        warns.append("INV2 no 'pin - set N resolves to civ_clut row M (a HOST row)' line in this run at all - "
+                     "either nothing needed refusing, or that guard is not in this build")
 
 
 def check_inv3(run, tga, lev, fails, warns):

@@ -1967,6 +1967,18 @@ static int CarPalIndexInCity(int tpage, int city)
 			return i + rowbase;
 	}
 
+	// JERICHO: a SPECIAL body's pages live in specTpages, not carTpages. The host level
+	// gets its own pair into carTpages[6]/[7] by OVERWRITING those two entries at load
+	// (texture.c:2025), and only the resident body is ever built - so without this scan a
+	// specTpages page is in neither table, GetCarPalIndex answers 0, and the row is the
+	// HOST's. Map the pair onto the bank's last two rows, exactly where the host's pair
+	// sits (rowbase 0 -> 6/7, the import bank -> 14/15).
+	for (i = 0; i < 12; i++)
+	{
+		if (tpage == specTpages[city][i])
+			return rowbase + 6 + (i & 1);
+	}
+
 	return -1;
 }
 

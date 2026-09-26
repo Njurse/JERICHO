@@ -170,8 +170,11 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 	src.w = 16;
 	src.h = 1;
 
-	// out of room in the strip at the right of VRAM
-	if (src.y > 511 || clutpos.y > 511)
+	// out of room in the strip at the right of VRAM, OR past the rows the cross-city
+	// import reserves above this point (its own palettes and the pin band). Allocating
+	// into those overwrote an imported car's colours with a pedestrian's - the runtime
+	// cursor and the import share one VRAM column, so this is the boundary between them.
+	if (src.y > 511 || clutpos.y > 511 || clutpos.y > CAR_CLUT_IMPORT_LIMIT)
 		return 0;
 
 	StoreImage(&src, (u_long*)entries);
@@ -1091,13 +1094,36 @@ int CarSetRemap(int set)
 // unused - and tpageloaded stays zero for any index never loaded. The host's car and
 // special sets are excluded explicitly as well, so a destination can never collide
 // with a meaning the host needs.
+//
+// JERICHO: reservation matters. `tpageloaded[]` only becomes non-zero when a page is
+// PLACED, and placement is draw-time - so two sets imported during one load both saw
+// 110 free and BOTH took it. That collapsed the car's two pages onto one index: the
+// second's pixels and CLUTs replaced the first's, and the car sampled one page for both
+// parts (the "broken textures on the modded car" report). The reservation list is what
+// makes the answer stable between the re-index and the placement.
+static int sReservedSet[CAR_REMAP_MAX];
+static int sReservedCount;
+
+static int SetIndexReserved(int i)
+{
+	int k;
+
+	for (k = 0; k < sReservedCount; k++)
+	{
+		if (sReservedSet[k] == i)
+			return 1;
+	}
+
+	return 0;
+}
+
 static int FindFreeSetIndex(void)
 {
 	int i, k;
 
 	for (i = 110; i < 128; i++)
 	{
-		if (tpageloaded[i] != 0)
+		if (tpageloaded[i] != 0 || SetIndexReserved(i))
 			continue;
 
 		for (k = 0; k < 8; k++)
@@ -1148,6 +1174,7 @@ static RECT16 sPinClutCursor;			// walking CLUT-row cursor for the imported page
 static int sPinEvictions;			// world pages taken back this run, for the dump
 static int sPinUnusedTakes;			// wasted host car pages taken instead - the #3 win
 static int sPinReloads;				// times we re-uploaded a page we had already placed - the thrash meter
+static int sPinRowLeaks;			// imported sets whose row came back a HOST row (refused, and logged)
 
 // JERICHO: the texture sets each imported model's OWN polygons name. buildNewCarFromModel
 // collects them as it walks the poly stream (the engine's own, reliable PolySizes walk);
@@ -1566,8 +1593,22 @@ void CarImportPin(void)
 			int row = GetCarPalIndex(sPinSet[i]);
 			int j;
 
-			for (j = 0; j < 32; j++)
-				civ_clut[row][j][0] = texture_cluts[sPinIndex[i]][j];
+			// JERICHO: never write a HOST row for an imported set. GetCarPalIndex answers
+			// below the import bank only when the set is in neither of the import city's
+			// tables (carTpages AND specTpages) - and re-pointing then hands a host palette
+			// the imported page's CLUTs, i.e. the import repaints a local car. Refuse it, and
+			// say so: a silent skip is how this class of leak stayed invisible.
+			if (row < CIV_CLUT_IMPORT_ROW)
+			{
+				if (sPinRowLeaks++ < 4)
+					printInfo("cross-city: pin - set %d resolves to civ_clut row %d (a HOST row): not re-pointing, palette leak avoided\n",
+						sPinSet[i], row);
+			}
+			else
+			{
+				for (j = 0; j < 32; j++)
+					civ_clut[row][j][0] = texture_cluts[sPinIndex[i]][j];
+			}
 		}
 
 		free(buf);
@@ -1676,6 +1717,7 @@ void CarImportResetState(void)
 
 	sPinCount = 0;
 	sRemapCount = 0;
+	sReservedCount = 0;
 	sPinEvictions = 0;
 	sPinUnusedTakes = 0;
 	sPinReloads = 0;
@@ -1893,6 +1935,9 @@ void LoadImportedTPages(void)
 			// empty texture instead of falling back to the host's page for that part.
 			remapFrom = set;
 			remapTo = free;
+
+			if (sReservedCount < CAR_REMAP_MAX)
+				sReservedSet[sReservedCount++] = free;	// keep the next set out of it
 
 			printInfo("cross-city: set %d is the level's own - re-indexing it to %d for the imported car\n", set, free);
 
@@ -2166,13 +2211,15 @@ void LoadPermanentTPages(int *sector)
 	// import on and off, and compared. This line is what proves it.
 	//
 	// The civ_clut checksum is the same idea for the palette table
-	// (u_short civ_clut[8][32][6]): those 8 rows hold the colours every car in the
-	// level draws with, so an import must not disturb a single entry. A checksum
-	// makes that checkable instead of assumed.
+	// (u_short civ_clut[CIV_CLUT_ROWS][32][6], and CIV_CLUT_ROWS is 16 because the last
+	// eight rows are an import's - PALETTES.md §1): those rows hold the colours every car
+	// in the level draws with, so an import must not disturb a single entry. A checksum
+	// makes that checkable instead of assumed. It covers ALL rows on purpose: an earlier
+	// version hashed only the first eight and could not see the import bank at all.
 	{
 		unsigned int clutSum = 0;
 
-		for (i = 0; i < 8 * 32 * 6; i++)
+		for (i = 0; i < CIV_CLUT_ROWS * 32 * 6; i++)
 			clutSum = clutSum * 31 + ((u_short*)civ_clut)[i];
 
 		printInfo("cross-city: level page state - slotsused=%d nperms=%d nspecpages=%d tpage=(%d,%d) clutpos=(%d,%d) civclut=%08x\n",
