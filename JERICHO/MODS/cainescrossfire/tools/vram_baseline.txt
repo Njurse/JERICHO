@@ -1,0 +1,200 @@
+# VRAM baseline - the measured map this tool produced, kept to diff future runs against.
+#
+# Produced by tools/vrammap.py from two `-vramview 1` runs of the SAME level and seed
+# (havana, seed 7) at different maturity, plus the late run log for clutpos:
+#   python3 vrammap.py stock_early.tga stock_late.tga --log stock_late.log
+#   python3 vrammap.py import_early.tga import_late.tga --log import_late.log
+#
+# Early = -frames 20, late = -frames 300. The import row is `import = 5:3:9` with -car 9.
+# Dumps are not committed (1 MiB each) - re-capture with -vramview 1 and diff.
+
+===== STOCK (cross_city_vehicles = 0) =====
+
+  dump C:/Users/Jaret/AppData/Local/Temp/vrammap/stock_early.tga: 1024x512
+  dump C:/Users/Jaret/AppData/Local/Temp/vrammap/stock_late.tga: 1024x512
+
+64x64 cell map  ('.' never written  '=' static  '#' changing/in use)
+         0  64 128 192 256 320 384 448 512 576 640 704 768 832 896 960
+   0     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+  64     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 128     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 192     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 256     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 320     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 384     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 448     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+
+never-written: 0 cells = 0 KiB of 1024 KiB (0%)
+
+claims: what the code says it writes, versus what the dumps show
+  claim                                rect                    black%  state     verdict
+  page slot 0                          (640,0) 64x256            3.1%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 1                          (704,0) 64x256            9.4%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 2                          (768,0) 64x256            2.7%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 3                          (832,0) 64x256            2.0%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 4                          (896,0) 64x256            1.2%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 5                          (960,0) 64x256            3.9%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 6                          (512,256) 64x256          3.5%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 7                          (576,256) 64x256         12.5%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 8                          (640,256) 64x256         10.5%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 9                          (704,256) 64x256         14.1%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 10                         (768,256) 64x256         13.7%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 11                         (832,256) 64x256          1.6%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 12                         (896,256) 64x256          3.9%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 13                         (448,0) 64x256           22.7%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 14                         (512,0) 64x256            6.6%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 15                         (576,0) 64x256            7.8%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 16                         (320,256) 64x256          0.4%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 17                         (384,256) 64x256         12.1%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 18                         (448,256) 64x256          2.0%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  framebuffer A (disp buffer 0)        (0,0) 320x256             4.5%  changing  live
+                                       system.c:724-725 (+ overlay.c:144)
+  framebuffer B (disp buffer 1)        (0,256) 320x256           6.6%  changing  live
+                                       system.c:724-725
+  CLUT column (clutpos/cars/pin band)  (960,256) 64x172         23.3%  static    resident
+                                       texture.c:2069-2072, cars.h:47-51 + clutpos.y=428 from the log
+  font CLUT                            (976,256) 16x1           50.0%  static    resident
+                                       pres.c:550-553, texture.c:2085
+  map CLUT                             (960,256) 16x1            0.0%  static    resident
+                                       texture.c:2074-2077, overmap.c:387
+  sky (2 page widths)                  (320,0) 128x256           2.3%  static    resident
+                                       sky.c:280-282
+  level font image                     (960,466) 64x46          18.8%  static    resident
+                                       pres.c:584-589
+  CD icon (spool)                      (960,433) 16x32          62.5%  static    resident
+                                       spool.c:333-348
+  loading screen                       (320,0) 160x511           4.8%  static    transient art (reclaimed at level load)
+                                       loadview.c:174-179
+  E3 hi-res screen                     (640,0) 320x511           6.2%  static    transient art (reclaimed at level load)
+                                       E3stuff.c:128-134, 257-263
+  frontend background (6 pages)        (640,0) 384x256           3.7%  static    transient art (reclaimed at level load)
+                                       FEmain.c:1319-1338
+  frontend extra/portrait art          (896,256) 64x219          0.9%  static    transient art (reclaimed at level load)
+                                       FEmain.c:755, 1263-1270
+
+  32 claim rectangles listed (page slots included); a 'free'/RESERVED BUT UNUSED row is the actionable one.
+
+breakdown of the 1 MiB
+  display buffers (x0..319, double buffered): 320 KiB
+  texture area (x320..1023):                704 KiB
+    page slots (19 x 64x256):             608 KiB
+    CLUT column (x960..1023, y256..511):    32 KiB
+    sky (x320..448, y0..256):               64 KiB
+    other claims inside it:                 0 KiB
+  => texture memory: slots + CLUT column + sky = 704 KiB of 704 KiB; the remainder is the level font and the CD icon.
+  NB: this is CELL resolution (64x64 = 4 KiB): a free cell means no dump ever wrote a non-black texel there, not that nothing claims it.
+
+
+===== IMPORT (import = 5:3:9, -car 9) =====
+
+  dump C:/Users/Jaret/AppData/Local/Temp/vrammap/import_early.tga: 1024x512
+  dump C:/Users/Jaret/AppData/Local/Temp/vrammap/import_late.tga: 1024x512
+
+64x64 cell map  ('.' never written  '=' static  '#' changing/in use)
+         0  64 128 192 256 320 384 448 512 576 640 704 768 832 896 960
+   0     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+  64     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 128     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 192     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 256     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 320     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 384     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+ 448     #   #   #   #   #   =   =   =   =   =   =   =   =   =   =   =
+
+never-written: 0 cells = 0 KiB of 1024 KiB (0%)
+
+claims: what the code says it writes, versus what the dumps show
+  claim                                rect                    black%  state     verdict
+  page slot 0                          (640,0) 64x256            3.1%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 1                          (704,0) 64x256            9.4%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 2                          (768,0) 64x256            2.7%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 3                          (832,0) 64x256            2.0%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 4                          (896,0) 64x256            1.2%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 5                          (960,0) 64x256            3.9%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 6                          (512,256) 64x256          3.5%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 7                          (576,256) 64x256         12.5%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 8                          (640,256) 64x256         10.5%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 9                          (704,256) 64x256         14.1%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 10                         (768,256) 64x256         13.7%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 11                         (832,256) 64x256          1.6%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 12                         (896,256) 64x256          7.4%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 13                         (448,0) 64x256           12.9%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 14                         (512,0) 64x256            6.6%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 15                         (576,0) 64x256            7.8%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 16                         (320,256) 64x256          0.4%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 17                         (384,256) 64x256         12.1%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  page slot 18                         (448,256) 64x256          2.0%  static    resident
+                                       texture.c:11-34 (tpagepos)
+  framebuffer A (disp buffer 0)        (0,0) 320x256             4.4%  changing  live
+                                       system.c:724-725 (+ overlay.c:144)
+  framebuffer B (disp buffer 1)        (0,256) 320x256           6.5%  changing  live
+                                       system.c:724-725
+  CLUT column (clutpos/cars/pin band)  (960,256) 64x229         23.7%  static    resident
+                                       texture.c:2069-2072, cars.h:47-51 + clutpos.y=485 from the log
+  font CLUT                            (976,256) 16x1           50.0%  static    resident
+                                       pres.c:550-553, texture.c:2085
+  map CLUT                             (960,256) 16x1            0.0%  static    resident
+                                       texture.c:2074-2077, overmap.c:387
+  sky (2 page widths)                  (320,0) 128x256           2.3%  static    resident
+                                       sky.c:280-282
+  level font image                     (960,466) 64x46          18.8%  static    resident
+                                       pres.c:584-589
+  CD icon (spool)                      (960,433) 16x32          12.5%  static    resident
+                                       spool.c:333-348
+  loading screen                       (320,0) 160x511           4.8%  static    transient art (reclaimed at level load)
+                                       loadview.c:174-179
+  E3 hi-res screen                     (640,0) 320x511           6.6%  static    transient art (reclaimed at level load)
+                                       E3stuff.c:128-134, 257-263
+  frontend background (6 pages)        (640,0) 384x256           3.7%  static    transient art (reclaimed at level load)
+                                       FEmain.c:1319-1338
+  frontend extra/portrait art          (896,256) 64x219          5.8%  static    transient art (reclaimed at level load)
+                                       FEmain.c:755, 1263-1270
+
+  32 claim rectangles listed (page slots included); a 'free'/RESERVED BUT UNUSED row is the actionable one.
+
+breakdown of the 1 MiB
+  display buffers (x0..319, double buffered): 320 KiB
+  texture area (x320..1023):                704 KiB
+    page slots (19 x 64x256):             608 KiB
+    CLUT column (x960..1023, y256..511):    32 KiB
+    sky (x320..448, y0..256):               64 KiB
+    other claims inside it:                 0 KiB
+  => texture memory: slots + CLUT column + sky = 704 KiB of 704 KiB; the remainder is the level font and the CD icon.
+  NB: this is CELL resolution (64x64 = 4 KiB): a free cell means no dump ever wrote a non-black texel there, not that nothing claims it.
