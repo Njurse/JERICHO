@@ -20,6 +20,7 @@ map, because "is our page still where we put it" is the question that matters.
 """
 
 import argparse
+import re
 import struct
 import sys
 import zlib
@@ -181,6 +182,39 @@ def check_palettes(args, width, px):
             print(f"        vram     row0[0:4] = {[hex(v) for v in actual[0][:4]]}")
 
 
+def parse_samples(log):
+    """The page rectangles the imported model's polys actually sample, and where the import
+    pinned each set. The engine's CarImportDumpPageRefs (texture.c) prints both, so a dump
+    can show in ONE picture which rectangle the car reads versus which one the import
+    filled - which is the whole fault: a poly keeps the page id it was built with, so it
+    can sample a rectangle the import never touched (the dummy (960,0) is a live slot)."""
+    out = []
+    for line in open(log, errors="ignore"):
+        m = re.search(r"page id (\w+) => rect \((\d+),(\d+)\), (\d+) poly", line)
+        if m:
+            out.append(((int(m.group(2)), int(m.group(3))), (255, 0, 0),
+                        f"SAMPLED {m.group(1)} ({m.group(4)} polys)"))
+            continue
+        m = re.search(r"pinned set (\d+) index (\d+): slot=(-?\d+), rect=\((\d+),(\d+)\)", line)
+        if m:
+            out.append(((int(m.group(4)), int(m.group(5))), (0, 255, 0),
+                        f"pinned set {m.group(1)}"))
+    return out
+
+
+def draw_box(px, width, x, y, w, h, colour, thick=2):
+    """Outline a rectangle on the decoded image so an overlay is self-describing."""
+    for t in range(thick):
+        for xx in range(max(x, 0), min(x + w, 1024)):
+            for yy in (y + t, y + h - 1 - t):
+                if 0 <= yy < 512:
+                    px[yy * width + xx] = colour
+        for yy in range(max(y, 0), min(y + h, 512)):
+            for xx in (x + t, x + w - 1 - t):
+                if 0 <= xx < 1024:
+                    px[yy * width + xx] = colour
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tga")
@@ -188,15 +222,34 @@ def main():
     ap.add_argument("--rect", nargs=5, action="append", metavar=("X", "Y", "W", "H", "LABEL"))
     ap.add_argument("--log", help="engine log, for the palette check")
     ap.add_argument("--lev", help="source city .LEV, for the palette check")
+    ap.add_argument("--samples", action="store_true",
+                    help="take the imported model's SAMPLED page rectangles and the pinned "
+                         "rectangles out of the log, box them on the PNG (red = sampled by a "
+                         "poly, green = pinned by the import) and report each one's stats")
     args = ap.parse_args()
 
     width, height, px = read_tga(args.tga)
     distinct = len(set(px))
     print(f"{args.tga}: {width}x{height}, {distinct} distinct colours in the whole dump")
 
+    boxes = []
+    for x, y, w, h, label in (args.rect or []):
+        boxes.append(((int(x), int(y)), (255, 255, 0), label))
+
+    if args.samples:
+        if not args.log:
+            print("  --samples needs --log (the rectangles come from the engine's output)")
+        else:
+            for (x, y), colour, label in parse_samples(args.log):
+                boxes.append(((x, y), colour, label))
+
     if args.png:
-        write_png(args.png, width, height, px)
-        print(f"  wrote {args.png} (viewable)")
+        out = list(px)
+        for (x, y), colour, _label in boxes:
+            draw_box(out, width, x, y, PAGE_W, PAGE_H, colour)
+        write_png(args.png, width, height, out)
+        print(f"  wrote {args.png} (viewable"
+              + (f", {len(boxes)} box(es) drawn)" if boxes else ")"))
 
     print("  slot map (tpagepos -> is it uniform, i.e. nothing loaded there?):")
     for i, (x, y) in enumerate(TPAGEPOS):
@@ -207,9 +260,10 @@ def main():
     if args.log and args.lev:
         check_palettes(args, width, px)
 
-    for x, y, w, h, label in (args.rect or []):
-        n, top = rect_stats(width, px, int(x), int(y), int(w), int(h))
-        print(f"  rect '{label}' ({x},{y}) {w}x{h}: {n} distinct colours, top 3 = {top}")
+    for (x, y), colour, label in boxes:
+        n, top = rect_stats(width, px, x, y, PAGE_W, PAGE_H)
+        print(f"  {'red  ' if colour == (255, 0, 0) else 'green' if colour == (0, 255, 0) else 'rect '}"
+              f" '{label}' ({x},{y}) {PAGE_W}x{PAGE_H}: {n} distinct colours, top 3 = {top}")
 
     return 0
 

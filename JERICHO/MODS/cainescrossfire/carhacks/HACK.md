@@ -146,7 +146,75 @@ import = 5:3:9      # RIO model 9 into spare resident slot 5
   host `civ_clut` row is read or written for an imported car. Stock cars are untouched
   (`imported` = 0, `directClut` stays off).
 
-## A civilian import pulls only what the car names
+## The page a poly SAMPLES vs the page the import FILLED (measured)
+
+The palette half came good because the pin re-points the **CLUT** into `civ_clut` at draw
+time. A **page** has no such indirection: `buildNewCarFromModel` bakes the page id into
+every poly from `texture_pages[CarSetRemap(set)]` (`cars.c:1293-1375`) at **build** time,
+and `CarImportPin` only fills `texture_pages[sPinIndex]` later, at **draw** time. So a poly
+keeps the id it was built with. `CarImportDumpPageRefs` (`texture.c`) prints exactly
+that, and this is what it measured — Havana, `import = 5:3:9`, `-car 9`, seed 7, **before**
+the fix:
+
+| what the model sampled | page id | decodes to | polys | what was actually there |
+|---|---|---|---|---|
+| the dummy, i.e. every texture-bearing body poly | `000f` | `(960,0)` | 206 of 254 | `GetTPage(0,0,960,0)` — the **dummy** — and simultaneously slot 5's live rectangle (host set 10, marked `UNUSED`) |
+| a set the import never took | `000b` | `(704,0)` | 32 | the host's slot 1 |
+| a page id of zero | `0000` | `(0,0)` | 16 | the framebuffer |
+| **pinned set 77** | `001e` | `(896,256)` | — | the imported page, filled at draw time |
+| **pinned set 78** | `0007` | `(448,0)` | — | the imported page, filled at draw time |
+
+**None of the sampled ids was a pinned one** — **0 of 254 polys read the imported page.**
+The u/v window is the full `0..255` on both axes, so it was never a UV fault: the car read
+the right *part* of the wrong page. The dummy decoding to `(960,0)` is why it presents as
+"wheel wells plastered along the body" rather than as an empty page — `(960,0)` is a live
+slot, so the car wore the host's page.
+
+The same run explains why a **civilian** import looked much closer to right only because
+its page happened to be pinned into slot 5 at `(960,0)` — the dummy's own rectangle —
+which is a coincidence, not a mechanism.
+
+### The fix: an imported page is an INDEX now, resolved at draw time
+
+`CAR_TPAGE_OF(pg, uv1)` (`cars.c`) resolves `texture_pages[index]` when the model is
+imported, so the page a poly samples follows the rectangle the pin actually filled — the
+same trick the CLUT already uses. It replaces the verbatim page word at all four
+texture-emitting sites, and `CAR_BAKE_TPAGE(imported, set)` makes `buildNewCarFromModel`
+bake the **index** for an imported model (and the resolved id for a stock one, so stock
+primitives are byte-identical). Measured after: **238 of 254** polys resolve to a pinned
+imported page, every one of them to *the same rectangle* the pin filled.
+
+The index itself is decided **once**, by `CarImportDstSetCore`, and shared by the build
+(which bakes it) and the pin (which fills it). Deciding it twice is what left a special
+body's third set baked as the host's index `1` while the pin filled `110`, so 32 polys kept
+the host's page: `set 1 is the level's own - re-indexed to 110 for the imported car
+(decided once, so the bake and the pin agree)`.
+
+Reproduce with:
+
+```
+JERICHO_DUMPVRAM=1 ./REDRIVER2_dev.exe -nointro -level havana -car 9 ... -frames 200 -seed 7
+grep "imported slot\|poly tpage index\|pinned set\|page check" JERICHO.log
+python3 tools/vramdump.py vram_dump.tga --log JERICHO.log --samples --png overlay.png
+```
+
+`page check - slot 5 clean: 238 of 254 polys resolve to a pinned imported page` is the
+one-line regression test; anything below that number is a poly drawing a rectangle the
+import never filled. `tools/vramdump.py --samples` boxes the sampled rectangles (red, with
+poly counts) against the pinned ones (green) on a dump.
+
+**Residual (known, measured):** the remaining polys name **set 0**, which has no page in
+the imported city's page list — the pin's `if (set == 0 ...) continue` guard refuses it — so
+those polys keep the host's page for index 0 (16 polys on the clean model, 32 on the low
+one). They need either a source page for set 0 or a deliberate mapping onto an imported
+page; both are decisions, not mechanical fixes.
+
+**Second fault, still open (`placement`):** an unused host car page exists (slot 5, host
+set 10, `UNUSED`) yet the special body's pages went to slots 12/13, which still hold the
+host's own sets 38/39 — the host's pages losing their slot, which is the "other cars /
+scenery" half.
+
+
 
 A civic body used to request the whole `carTpages` list — **six** sets. The level
 leaves five usable slots, so the sixth page never placed, and an unplaced page leaves
