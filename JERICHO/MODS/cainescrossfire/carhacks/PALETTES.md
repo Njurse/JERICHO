@@ -263,9 +263,10 @@ for (i = 0; i < CIV_CLUT_ROWS * 32 * 6; i++)
 printInfo("cross-city: level page state - slotsused=%d nperms=%d nspecpages=%d tpage=(%d,%d) clutpos=(%d,%d) civclut=%08x\n", ...);
 ```
 
-It used to hash only `8 * 32 * 6` (rows 0..7), so the import bank was invisible to it,
-and the comment beside it still said `[8][32][6]`. It now covers every row
-(`texture.c:2195`). What it still does **not** do:
+It now prints **two** sums: `civclut` for rows 0..7 (the HOST's rows — the number that
+means the same thing across builds, so a stock run must print the same value before and
+after a change) and `civclut16` for all `CIV_CLUT_ROWS` rows (so the import bank is
+visible too, comparable only within one build). What neither does:
 
 A useful run proves three things instead:
 
