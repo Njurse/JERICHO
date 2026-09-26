@@ -1,0 +1,24 @@
+# cd2debug script - the accel-layer pitch test.
+#
+# Run it as a test run (the two levers need the marker, because they latch):
+#
+#     cp tools/cd2_debug.pitchtest.txt bin/Release_dev/JERICHO/CONFIG/cc_debug.txt
+#     JERICHO_CC_INJECT=1 CC_KNOCK_LOG=30 ./REDRIVER2_dev.exe -nointro -level havana \
+#         -weather none -time day -frames 300 -seed 7
+#     grep knocksample JERICHO.log
+#
+# ...and put the player's config back to EMPTY afterwards - never leave a script in the
+# file the game reads (that is the whole lesson of the leftover pitch script):
+#
+#     printf '# kept empty for normal play - see tools/cd2_debug.example.txt\n' \
+#         > bin/Release_dev/JERICHO/CONFIG/cc_debug.txt
+#
+# frames are from GAME_START (30 fps). thrust:<n> forces the module's own thrust on the
+# player's car.
+#
+# Expectation with the corrected transform: holding thrust +1 accelerates the car and the
+# accel layer's pitch goes POSITIVE (front lifts); thrust -1 brakes it and the pitch goes
+# NEGATIVE (rear lifts).
+40:thrust:1
+220:thrust:-1
+420:thrust:99

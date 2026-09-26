@@ -32,6 +32,37 @@ A run that crashes or hangs never prints it, so **its absence plus a timeout is 
 failure signal**. Note `-frames` counts gameplay frames; the same tick is called from
 the frontend state as well, but a frontend run does not load in every environment.
 
+## Debug flags the *module* understands (environment)
+
+Run-only overrides, read once. They are how a headless run drives something a human
+would otherwise have to: none of them changes shipping behaviour.
+
+| env var | what it does |
+|---|---|
+| `JERICHO_CC_INJECT=1` | **required** for the `thrust:` and `pad:` steps of `cc_debug.txt` to touch the player's controls |
+| `CC_MOTION_LOG=N` | sample the capstan/spring motion model every N frames |
+| `CC_KNOCK_LOG=N` | sample the body knock (pitch/roll/lift) every N frames — the accel-layer pitch test reads this |
+| `CC_FORCE_ARENA` / `CC_FORCE_CAR` / `CC_FORCE_OPPONENTS` / `CC_OPPONENTS` | pin the arena, the car and the opponent count without touching the config |
+| `CC_MOTION`, `CC_PROFILES`, `CC_MENU`, `CC_PLAYER_FACTION` | force the motion preset, the profile set, the menu or the player's faction |
+
+### `cc_debug.txt` — the scripted driver
+
+`JERICHO/CONFIG/cc_debug.txt` runs **for whoever plays**, so keep it empty for normal
+play and keep test scripts in a named copy beside it (the pitch test lives on as
+`cc_debug.pitchtest.txt`). Two of its steps are latching — `thrust:<n>` and `pad:<mask>`
+hold the value until another step replaces it — so they additionally need
+`JERICHO_CC_INJECT=1`. A leftover pitch script once held thrust +1 from frame 40 and
+made normal play accelerate with no key held; without the marker those steps are now
+ignored and the log says so once:
+
+```
+[cd2debug] 3 thrust/pad step(s) IGNORED - this is not a test run, so the script will NOT
+           touch the player's controls. Set JERICHO_CC_INJECT=1 to let it.
+```
+
+Every other step (`killplayer:`, `killnpc:`, `grant`, `playerai:`, …) works from the
+file alone — see `cd2_debug.example.txt` for the format.
+
 ## Scripts
 
 | script | what it does |

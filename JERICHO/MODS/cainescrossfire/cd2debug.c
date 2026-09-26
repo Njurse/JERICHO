@@ -92,6 +92,29 @@ typedef struct CD2_DBG_STEP
 
 static CD2_DBG_STEP sSteps[CD2_DBG_MAX];
 
+// ---------------------------------------------------------------------------
+// INJECTION IS OPT-IN (JERICHO_CC_INJECT=1).
+//
+// `thrust:` and `pad:` drive the player's throttle and brake from the script, and they
+// LATCH: a step sets the value and it stays set until another step replaces it. So a
+// script left in JERICHO/CONFIG/cc_debug.txt drives the car of whoever plays next - which
+// is exactly what happened. A leftover accel-layer pitch test held thrust +1 from frame
+// 40, and normal play accelerated by itself with no key held.
+//
+// So the two injection levers need an explicit marker in the environment; every other
+// step in the file keeps working without it. The presence of a script is not consent -
+// the run has to say it is a test:
+//
+//     JERICHO_CC_INJECT=1 ./REDRIVER2_dev.exe -nointro -level havana ...
+//
+// A script that asks for injection while the marker is absent says so once, loudly, in
+// the log - so a forgotten script explains itself instead of driving the player quietly.
+// ---------------------------------------------------------------------------
+#define CD2_DBG_INJECT_ENV	"JERICHO_CC_INJECT"
+
+static int sInjectOn;		// the run is a test run (read once, at parse time)
+static int sInjectSteps;	// thrust/pad steps the script asks for
+
 // The scripted pad the debug driver holds on the player's car. Read by the module's pad
 // path and ORed into whatever the real controller sent, so a script drives alongside a
 // human rather than instead of one.
@@ -111,7 +134,7 @@ void cd2DbgSetThrust(int t)
 // [D] [T]
 int cd2DbgThrust(int* forced)
 {
-	if (sDbgThrust == 99)
+	if (!sInjectOn || sDbgThrust == 99)
 		return 0;
 
 	*forced = sDbgThrust;
@@ -127,7 +150,7 @@ void cd2DbgSetPad(int mask)
 // [D] [T]
 int cd2DbgPadMask(void)
 {
-	return sDbgPad;
+	return sInjectOn ? sDbgPad : 0;
 }
 static int sCount = -1;		// -1 = not parsed yet
 static int sFrame;		// frames since GAME_START
@@ -235,7 +258,12 @@ static int cd2DbgReadAction(const char** s, int* arg)
 	if (cd2DbgMatch(&p, "thrust"))
 	{
 	/* thrust:<n> -- force the module's own thrust on the player's car, -1/0/1, until
-	 * another thrust: step replaces it (thrust:99 releases it back to the engine). This
+	 * another thrust: step replaces it (thrust:99 releases it back to the engine).
+	 *
+	 * OPT-IN: needs JERICHO_CC_INJECT=1 in the environment, because the value latches and
+	 * a script left behind otherwise holds the throttle of normal play.
+	 *
+	 * This
 	 * is the ONLY way to drive Layer 2 headlessly, and the reason is not obvious: the
 	 * module takes its thrust from the engine's decoded cp->thrust, NOT from the pad
 	 * the CAR_PAD hook can rewrite - proven by holding MPAD_CROSS through the pad step
@@ -294,7 +322,8 @@ static int cd2DbgReadAction(const char** s, int* arg)
 	if (cd2DbgMatch(&p, "pad"))
 	{
 	/* pad:<mask> -- hold a pad mask on the PLAYER'S car until another pad: step
-	 * replaces it (pad:0 releases). Decimal, MPAD_* bits, and named for THIS
+	 * replaces it (pad:0 releases). OPT-IN, like thrust: JERICHO_CC_INJECT=1.
+	 * Decimal, MPAD_* bits, and named for THIS
 	 * module's driving scheme (tmb_buttons), not the engine's stock names - the
 	 * stock ones have Square as the brake, which is the gas here:
 	 *
@@ -462,6 +491,8 @@ static int cd2DbgParse(void)
 	char line[192];
 	int n = 0;
 
+	sInjectSteps = 0;
+
 	// A file rather than a config key: the config store caps a value (a long
 	// debug_script came back truncated to ~63 chars, i.e. three steps), and one
 	// step per line is easier to edit anyway.
@@ -529,14 +560,34 @@ static int cd2DbgParse(void)
 		sSteps[n].arg = arg;
 		sSteps[n].arg2 = arg2;
 		n++;
+
+		if (action == CD2_DBG_PAD || action == CD2_DBG_THRUST)
+			sInjectSteps++;
 	}
 
 	fclose(fp);
+
+	// the injection levers are opt-in: see the comment on CD2_DBG_INJECT_ENV
+	{
+		const char* v = getenv(CD2_DBG_INJECT_ENV);
+
+		sInjectOn = (v != NULL && v[0] != '\0' && v[0] != '0');
+	}
 
 	if (n > 0)
 		printInfo("[cd2debug] %d scripted step(s) from %s\n", n, path);
 	else
 		printInfo("[cd2debug] %s has no usable steps\n", path);
+
+	if (sInjectSteps > 0)
+	{
+		if (sInjectOn)
+			printInfo("[cd2debug] INJECTION ARMED (%s set): %d thrust/pad step(s) WILL drive the player's throttle and brake\n",
+				CD2_DBG_INJECT_ENV, sInjectSteps);
+		else
+			printInfo("[cd2debug] %d thrust/pad step(s) IGNORED - this is not a test run, so the script will NOT touch the player's controls. Set %s=1 to let it.\n",
+				sInjectSteps, CD2_DBG_INJECT_ENV);
+	}
 
 	return n;
 }
@@ -750,6 +801,12 @@ static void cd2DbgRunStep(const CD2_DBG_STEP* st)
 	}
 
 	case CD2_DBG_THRUST:
+		// opt-in, and it has to be: the value LATCHES until another step replaces it, so a
+		// script left in the config would hold the throttle of normal play (see
+		// CD2_DBG_INJECT_ENV)
+		if (!sInjectOn)
+			break;
+
 		cd2DbgSetThrust(st->arg);
 		printInfo("[cd2debug] forced thrust now %d on the player's car (99 = released)\n", st->arg);
 		break;
@@ -762,6 +819,10 @@ static void cd2DbgRunStep(const CD2_DBG_STEP* st)
 		break;
 
 	case CD2_DBG_PAD:
+		// opt-in, like thrust: a leftover script must not steer anyone's car
+		if (!sInjectOn)
+			break;
+
 		cd2DbgSetPad(st->arg);
 		printInfo("[cd2debug] pad mask now 0x%X on the player's car\n", st->arg);
 		break;

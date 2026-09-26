@@ -173,7 +173,7 @@ it — and it is fireable through the scripted debug driver as `fire:smg`.
 | `cainescrossfireenginesnd.c` | the engine rev + idle channel tuner |
 | `cainescrossfirecamerafx.c` | chase framing + speed FOV pull |
 | `cainescrossfire.h` | every compile-time tunable (`CD2_*` macros) and the shared structs |
-| `cd2debug.c` | temporary scripted debug driver (`tools/cc_debug.example.txt` is the file format) |
+| `cd2debug.c` | temporary scripted debug driver (`tools/cd2_debug.example.txt` is the file format; `thrust:`/`pad:` need `JERICHO_CC_INJECT=1`) |
 | `weapons/` | the weapon framework: `core/` (registry + inventory), `raycast/` (machine gun), `projectile/`, `shotgun/`, `drops/`, `aoe/`, `fx/` |
 | `ai/` | the prototype opponent AI (`opponent.c` brain; `nav.c` / `grid.c` / `flow.c` navigation) |
 | `factions/` | the five teams: the registry, the roster, the stance table and the per-car assignment (`factions.c`; see [`FACTIONS.md`](FACTIONS.md)) |

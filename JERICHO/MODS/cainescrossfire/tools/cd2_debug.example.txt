@@ -1,5 +1,20 @@
 # cd2debug script - frames are counted from GAME_START (30 fps, so 30 = 1s).
 # Remove this file (or empty it) to turn the driver off.
+#
+# The script runs for whoever plays, so it lives in the CONFIG of the build you are
+# playing (src_rebuild/bin/Release_dev/JERICHO/CONFIG/cc_debug.txt). Keep it EMPTY for
+# normal play and put a test script in a named copy beside it.
+#
+# `thrust:<n>` and `pad:<mask>` drive the player's throttle/brake and LATCH until
+# another step replaces them, so they are OPT-IN on top of the file - a leftover
+# script must not drive the car of the next person to play:
+#
+#     JERICHO_CC_INJECT=1 ./REDRIVER2_dev.exe -nointro -level havana ...   # injection
+#     CC_MOTION_LOG=30  ./REDRIVER2_dev.exe ...   # a motion sample per 30f, no marker
+#     CC_KNOCK_LOG=30   ./REDRIVER2_dev.exe ...   # a knock/pitch sample, no marker
+#
+# Without that marker the steps are ignored and the log says so, once. Every other
+# step below works from the file alone.
 60:killplayer:enemy     # enemy kills us      -> "You were killed by X"
 150:killplayer:self     # self-inflicted       -> "You died"
 240:killplayer:none     # unattributed         -> "You died"
