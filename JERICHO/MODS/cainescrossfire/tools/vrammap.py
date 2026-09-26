@@ -257,6 +257,65 @@ def main():
         print(f"  {'':<36} {src}")
 
     print()
+    print("overlaps between claims (deliberate ones are named; anything else is a bug)")
+
+    def overlap(a, b):
+        return not (a[1] + a[3] <= b[1] or b[1] + b[3] <= a[1] or
+                    a[2] + a[4] <= b[2] or b[2] + b[4] <= a[2])
+
+    # Claims that are EXPECTED to overlap, with the reason. The rest are findings: two
+    # systems writing the same VRAM with neither giving way is exactly how "the font is
+    # corrupted whenever a car is imported" happens.
+    DELIBERATE = {
+        # the CLUT column is a container: the font CLUT, the map CLUT and the CD icon are
+        # allocated inside it (by the level's own layout, at the cursor's first entries)
+        "font CLUT": "allocated inside the CLUT column",
+        "map CLUT": "allocated inside the CLUT column",
+        "CD icon (spool)": "allocated inside the CLUT column",
+        "level font image": "allocated inside the CLUT column",
+    }
+    overlaps = findings = 0
+    for i in range(len(claims)):
+        for j in range(i + 1, len(claims)):
+            a, b = claims[i], claims[j]
+            if not overlap(a, b):
+                continue
+            overlaps += 1
+            if a[6] or b[6]:
+                why = "OK: " + (a[0] if a[6] else b[0]) + " is transient art, reclaimed at level load"
+            else:
+                why = DELIBERATE.get(a[0]) or DELIBERATE.get(b[0])
+                why = "OK: " + why if why else None
+            if not why:
+                findings += 1
+            print(f"  {a[0]:<36} ({a[1]},{a[2]}) {a[3]}x{a[4]}   <->   "
+                  f"{b[0]:<28} ({b[1]},{b[2]}) {b[3]}x{b[4]}")
+            print(f"  {'':<36} {why if why else 'FINDING: two non-transient writers, one rectangle'}")
+    if not overlaps:
+        print("  none")
+    print(f"  -> {overlaps} overlap(s), {findings} of them finding(s)")
+
+    # Containment in the CLUT column is by design, but WHERE inside it matters: the import
+    # reserves rows from 480 down, so anything a claim puts at or below that collides with
+    # the imported car's palette rows.
+    col = [c for c in claims if c[0].startswith("CLUT column")]
+    if col:
+        _n, cx, _cy, cw, ch, _s, _t = col[0]
+        print()
+        print(f"CLUT column contents, rows, vs the import's reserved rows (480..511); the "
+              f"level's own layout ends at y={_cy + ch}")
+        for c in claims:
+            # x-contained in the column (any y): the point is to catch things that sit
+            # BELOW where the level's cursor stopped, which a y-containment test hides
+            if c is col[0] or not (cx <= c[1] and c[1] + c[3] <= cx + cw):
+                continue
+            last = c[2] + c[4] - 1
+            verdict = ("COLLIDES with the import's rows" if last >= 480
+                       else "above them (fine)")
+            print(f"  {c[0]:<22} rows {c[2]}..{last:<3} {verdict}")
+        print(f"  {'import pin band':<22} rows 480..511  (reserved; starts at "
+              f"max(clutpos.y+4, 480))")
+    print()
     print(f"  {len(claims)} claim rectangles listed (page slots included); "
           "a 'free'/RESERVED BUT UNUSED row is the actionable one.")
 
@@ -278,6 +337,10 @@ def main():
           f"{tex_kib - slot_kib - clut_kib - sky_kib} KiB")
     print(f"  => texture memory: slots + CLUT column + sky = {slot_kib + clut_kib + sky_kib} KiB "
           f"of {tex_kib} KiB; the remainder is the level font and the CD icon.")
+    fb_kib = sum(w * h * 2 // 1024 for (_n, _x, _y, w, h, _s, _t) in fbs)
+    total = fb_kib + tex_kib
+    print(f"  accounting: display {fb_kib} KiB + texture {tex_kib} KiB = {total} KiB of "
+          f"{1024 * 512 * 2 // 1024} KiB -> {'OK' if total == 1024 else 'MISMATCH'}")
     print(f"  NB: CELL resolution is {CELL}x{CELL} = {FREE} KiB; a 'free' cell means no dump ever "
           "wrote a non-black texel there, not that nothing claims it.")
     return 0
