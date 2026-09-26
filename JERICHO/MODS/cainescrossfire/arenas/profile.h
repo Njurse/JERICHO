@@ -53,6 +53,26 @@ typedef struct CD2_ARENA_SPAWN
 #define CD2_ARENA_NAME_LEN	32
 #define CD2_ARENA_DISPLAY_LEN	48
 
+// A drive-over pickup: a weapon crate or a repair. Placed like a spawn (a world
+// XZ), collected by a module-owned car that drives within range, then gone for a
+// while (CD2_PICKUP_RESPAWN). `amount` is rounds for a weapon, damage units
+// removed from the car's totalDamage for a repair.
+enum
+{
+	CD2_PICKUP_WEAPON = 0,
+	CD2_PICKUP_HEALTH
+};
+
+typedef struct CD2_ARENA_PICKUP
+{
+	int type;	// CD2_PICKUP_*
+	int weapon;	// CD2_WID_* (a weapon pickup), else -1
+	int amount;	// rounds, or damage units
+	int x, z;
+} CD2_ARENA_PICKUP;
+
+#define CD2_ARENA_MAX_PICKUPS	32
+
 // The arena row. spawns[0] is the PLAYER's start; spawns[1..] fill the
 // opponents in order. A spawnCount of 0 means "none authored" - the caller
 // falls back (and says so on screen).
@@ -69,6 +89,9 @@ typedef struct CD2_ARENA_PROFILE
 	CD2_ARENA_REGION region;		// the barrier (unbounded by default)
 	int spawnCount;				// authored spawn points (0 = fall back)
 	CD2_ARENA_SPAWN spawns[CD2_ARENA_MAX_SPAWNS];
+
+	int pickupCount;			// drive-over weapon/health pickups
+	CD2_ARENA_PICKUP pickups[CD2_ARENA_MAX_PICKUPS];
 } CD2_ARENA_PROFILE;
 
 // ---------------------------------------------------------------------------

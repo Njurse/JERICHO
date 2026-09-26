@@ -144,9 +144,11 @@ Controls, read from the engine-mapped pad (`weapons/core/weapons.c:94-97`):
 Weapons are data-driven: each is one `CD2_WEAPON_DEF` row, grouped by a
 functional class under `weapons/`. The shared field set and the registry API
 are in [`weapons/core/weapon.h`](weapons/core/weapon.h); the impact FX profiles
-and the volley / freeze / scatter behaviours are in [`FX.md`](FX.md). Nothing
-spawns drive-over pickups yet (the map spawner is not wired) — for testing,
-grant weapons from the pause menu (**Modules → Caine's Crossfire → Weapons...**).
+and the volley / freeze / scatter behaviours are in [`FX.md`](FX.md). Drive-over
+pickups (weapon crates and repairs) are placed per arena — see
+[`ARENAS.md`](ARENAS.md) — and grant their weapon/repair on contact; for testing,
+weapons can also be granted from the pause menu (**Modules → Caine's Crossfire →
+Weapons...**).
 
 Two additions exist mainly to put on a show:
 

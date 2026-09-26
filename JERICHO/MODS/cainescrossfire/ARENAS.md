@@ -43,6 +43,9 @@ region: -20000 -30000 20000 30000   # the barrier, world units: x0 z0 x1 z1. 'no
 spawn: -5000 2000 1024    # x z heading. Repeatable; the FIRST is the player, the rest the opponents
 spawn: 5000 2000 2048
 spawn: 3000 -6000 0
+# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]
+pickup: weapon missile 5000 2000 5   # a drive-over crate: grants the named weapon + ammo
+pickup: health -3000 1000 2500       # a repair: this many damage units off totalDamage
 ```
 
 - **`region`** is world-space XZ (the same units the game uses), an
@@ -56,6 +59,14 @@ spawn: 3000 -6000 0
   second `spawn:` line, and so on). Up to 16. A `spawn` inside scenery is the
   author's to fix — the editor shows where they are, and authored spawns are
   trusted (no clear-line probe).
+- **`pickup`** places a drive-over item: `pickup: weapon <name> x z [ammo]` gives the
+  named weapon (its short code name, e.g. `missile`, `homing`, `shotgun` — or its
+  display name) plus `ammo` rounds (default 5), and `pickup: health x z [amount]`
+  removes `amount` damage units from the car's `totalDamage` (default 2500). A
+  module-owned car (the player or an opponent) driving within **320 units** collects
+  it; it then disappears and comes back after **900 frames (30s)**. Each pickup
+  draws as a bar-and-diamond: **green for health, amber for a weapon**. Civ traffic
+  drives over them freely.
 - **`city` + `mp`** decide the level: `city` picks the city, `mp 1 0` loads that
   city's small multiplayer map, `mp 0 0` (or `mp: full`) loads the **full city
   map** — which, with a `region`, is how you cordon off a corner of a

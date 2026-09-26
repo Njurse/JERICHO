@@ -25,11 +25,22 @@
 #include "jer_hud.h"		/* jer_hud_message - the fallback notice */
 #include "cainescrossfire.h"
 #include "arenas/profile.h"
+#include "weapons/core/weapon.h"		/* cd2WpnCarGrant / cd2WpnName - a weapon pickup */
+#include "weapons/core/weapon_internal.h"	/* cd2WpnLine - the marker */
 
 #include <string.h>
+#include <stdio.h>
+
+#define CD2_PICKUP_RADIUS	320	/* drive-over range (world units) */
+#define CD2_PICKUP_RESPAWN	900	/* frames a taken pickup stays gone (30s) */
+#define CD2_PICKUP_HEIGHT	160	/* marker bar height (y-up) */
+#define CD2_PICKUP_Y		0	/* the flat-ground plane the markers stand on */
+#define CD2_PICKUP_AMMO_DEFAULT	5
+#define CD2_PICKUP_HEALTH_DEFAULT 2500
 
 extern int ratan2(int y, int x);
 extern void RebuildCarMatrix(RigidBodyState* st, CAR_DATA* cp);
+extern void TempBuildHandlingMatrix(CAR_DATA* cp, int init);
 
 // ---------------------------------------------------------------------------
 // which arena the match is on
@@ -38,7 +49,10 @@ static int gArenaCurrent = CD2_ARENA_NONE;
 
 // Once-per-level state (reset at JER_EVENT_GAME_START).
 static int gArenaNotified;
+static int gArenaPlayerPlaced;
 static int gArenaClampLogged[MAX_CARS];	/* first hit against the barrier, per car */
+static int gPickupActive[CD2_ARENA_MAX_PICKUPS];
+static int gPickupTimer[CD2_ARENA_MAX_PICKUPS];
 
 const CD2_ARENA_PROFILE* cd2ArenaCurrent(void)
 {
@@ -114,7 +128,11 @@ static void cd2ArenaPlacePlayer(void)
 	cp->st.n.angularVelocity[1] = 0;
 	cp->st.n.angularVelocity[2] = 0;
 
-	RebuildCarMatrix(&cp->st, cp);
+	/* TempBuildHandlingMatrix(init=1) copies hd.where into the rigid body's
+	 * fposition and rebuilds the orientation from hd.direction - the position
+	 * and heading the physics actually reads. RebuildCarMatrix alone would walk
+	 * the position BACK from fposition, undoing the move. */
+	TempBuildHandlingMatrix(cp, 1);
 
 	printInfo("[cainescrossfire] arena '%s': player car %d at spawn (%d,%d) heading %d\n",
 		a->internalName, id, x, z, heading & 0xfff);
@@ -140,6 +158,11 @@ static void cd2ArenaClampCar(CAR_DATA* cp, const CD2_ARENA_REGION* r)
 
 	cp->hd.where.t[0] = x;
 	cp->hd.where.t[2] = z;
+
+	/* fposition is what the physics reads; move it too (keep the orientation, so
+	 * a clamped car keeps its pitch/roll) */
+	cp->st.n.fposition[0] = x << 4;
+	cp->st.n.fposition[2] = z << 4;
 
 	/* halve the speed into the wall so the clamp reads as a scrape, not a stop */
 	if (cp->st.n.linearVelocity[0] && cp->st.n.linearVelocity[2])
@@ -184,6 +207,146 @@ static void cd2ArenaBarrier(void)
 }
 
 // ---------------------------------------------------------------------------
+// pickups (drive-over weapon crates + repairs)
+// ---------------------------------------------------------------------------
+static void cd2ArenaDrawPickup(const CD2_ARENA_PICKUP* p)
+{
+	VECTOR base, tip, e;
+	int r, g, b;
+	int w = 70;
+	int i;
+	static const int dir[4][2] = { { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } };
+
+	if (p->type == CD2_PICKUP_HEALTH) { r = 80; g = 255; b = 120; }
+	else                              { r = 255; g = 210; b = 120; }
+
+	base.vx = p->x;
+	base.vy = CD2_PICKUP_Y;
+	base.vz = p->z;
+
+	tip = base;
+	tip.vy = base.vy + CD2_PICKUP_HEIGHT;
+
+	/* a bar standing on the ground ... */
+	cd2WpnLine(&base, &tip, r, g, b);
+
+	/* ... topped by a small diamond so it reads as a pickup, not a post */
+	for (i = 0; i < 4; i++)
+	{
+		int j = (i + 1) & 3;
+		VECTOR a2, b2;
+
+		a2.vx = tip.vx + dir[i][0] * w; a2.vy = tip.vy; a2.vz = tip.vz + dir[i][1] * w;
+		b2.vx = tip.vx + dir[j][0] * w; b2.vy = tip.vy; b2.vz = tip.vz + dir[j][1] * w;
+		cd2WpnLine(&a2, &b2, r, g, b);
+	}
+
+	/* a foot ring so it is findable from a distance */
+	for (i = 0; i < 4; i++)
+	{
+		int j = (i + 1) & 3;
+		e.vx = base.vx + dir[i][0] * (w + 20); e.vy = base.vy; e.vz = base.vz + dir[i][1] * (w + 20);
+		VECTOR f;
+		f.vx = base.vx + dir[j][0] * (w + 20); f.vy = base.vy; f.vz = base.vz + dir[j][1] * (w + 20);
+		cd2WpnLine(&e, &f, r, g, b);
+	}
+}
+
+static void cd2ArenaPickupTake(CAR_DATA* cp, const CD2_ARENA_PICKUP* p)
+{
+	int isPlayer = (cp->controlType == CONTROL_TYPE_PLAYER);
+
+	if (p->type == CD2_PICKUP_WEAPON)
+	{
+		int ammo = (p->amount > 0) ? p->amount : CD2_PICKUP_AMMO_DEFAULT;
+
+		cd2WpnCarGrant(cp, p->weapon, ammo);
+
+		printInfo("[cainescrossfire] pickup: car=%d got %s x%d\n",
+			cp->id, cd2WpnName(p->weapon), ammo);
+
+		if (isPlayer)
+		{
+			char msg[64];
+
+			snprintf(msg, sizeof(msg), "Picked up %s x%d", cd2WpnName(p->weapon), ammo);
+			jer_hud_message(msg, 120);
+		}
+	}
+	else
+	{
+		int amount = (p->amount > 0) ? p->amount : CD2_PICKUP_HEALTH_DEFAULT;
+		int before = (int)cp->totalDamage;
+
+		if (cp->totalDamage > (unsigned int)amount)
+			cp->totalDamage -= amount;
+		else
+			cp->totalDamage = 0;
+
+		printInfo("[cainescrossfire] pickup: car=%d repaired %d (totalDamage %d -> %d)\n",
+			cp->id, amount, before, (int)cp->totalDamage);
+
+		if (isPlayer)
+		{
+			char msg[64];
+
+			snprintf(msg, sizeof(msg), "Repaired +%d", amount);
+			jer_hud_message(msg, 120);
+		}
+	}
+}
+
+static void cd2ArenaPickups(void)
+{
+	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
+	long long r2 = (long long)CD2_PICKUP_RADIUS * CD2_PICKUP_RADIUS;
+	int i, c;
+
+	if (a == NULL)
+		return;
+
+	for (i = 0; i < a->pickupCount && i < CD2_ARENA_MAX_PICKUPS; i++)
+	{
+		const CD2_ARENA_PICKUP* p = &a->pickups[i];
+
+		if (!gPickupActive[i])
+		{
+			if (gPickupTimer[i] > 0 && --gPickupTimer[i] <= 0)
+				gPickupActive[i] = 1;
+
+			continue;
+		}
+
+		cd2ArenaDrawPickup(p);
+
+		for (c = 0; c < MAX_CARS; c++)
+		{
+			CAR_DATA* cp = &car_data[c];
+			long long dx, dz, d2;
+
+			if (cp->controlType == CONTROL_TYPE_NONE || cp->ap.carCos == NULL)
+				continue;
+
+			/* only a car in the match collects (civ traffic drives over freely) */
+			if (!cd2OwnsCar(cp))
+				continue;
+
+			dx = (long long)cp->hd.where.t[0] - p->x;
+			dz = (long long)cp->hd.where.t[2] - p->z;
+			d2 = dx * dx + dz * dz;
+
+			if (d2 > r2)
+				continue;
+
+			cd2ArenaPickupTake(cp, p);
+			gPickupActive[i] = 0;
+			gPickupTimer[i] = CD2_PICKUP_RESPAWN;
+			break;
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // hooks
 // ---------------------------------------------------------------------------
 static int cd2ArenaOnGameStart(void* ud, void* args)
@@ -194,9 +357,28 @@ static int cd2ArenaOnGameStart(void* ud, void* args)
 	gArenaNotified = 0;
 	memset(gArenaClampLogged, 0, sizeof(gArenaClampLogged));
 
-	/* the level has placed the player by now (GAME_START fires after
-	 * State_GameInit's car setup), so this lands on the real car */
-	cd2ArenaPlacePlayer();
+	/* every pickup starts present */
+	{
+		const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
+		int i, n = (a != NULL) ? a->pickupCount : 0;
+
+		if (n > CD2_ARENA_MAX_PICKUPS)
+			n = CD2_ARENA_MAX_PICKUPS;
+
+		for (i = 0; i < CD2_ARENA_MAX_PICKUPS; i++)
+		{
+			gPickupActive[i] = (i < n) ? 1 : 0;
+			gPickupTimer[i] = 0;
+		}
+
+		if (a != NULL && n > 0)
+			printInfo("[cainescrossfire] arena '%s': %d pickup(s) armed\n", a->internalName, n);
+	}
+
+	/* The engine places the player AFTER GAME_START (its own start position is
+	 * written later in the launch), so the player's authored spawn is applied on
+	 * the first FRAME instead - see cd2ArenaOnFrame. */
+	gArenaPlayerPlaced = 0;
 
 	return JER_RESULT_CONTINUE;
 }
@@ -204,12 +386,21 @@ static int cd2ArenaOnGameStart(void* ud, void* args)
 static int cd2ArenaOnFrame(void* ud, void* args)
 {
 	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
+	CAR_DATA* pcp = NULL;
 
 	(void)ud;
 	(void)args;
 
-	if (a == NULL || MainPlayer.playerCarId < 0 || MainPlayer.playerCarId >= MAX_CARS)
+	if (a == NULL || !cd2WpnPlayerCar(&pcp))
 		return JER_RESULT_CONTINUE;
+
+	/* the player's authored spawn, once - on the first frame the real car exists
+	 * (the engine writes its own start position after GAME_START) */
+	if (!gArenaPlayerPlaced)
+	{
+		gArenaPlayerPlaced = 1;
+		cd2ArenaPlacePlayer();
+	}
 
 	/* no spawn points authored: say so once, so it is not a silent surprise */
 	if (!gArenaNotified && a->spawnCount == 0)
@@ -221,6 +412,7 @@ static int cd2ArenaOnFrame(void* ud, void* args)
 	}
 
 	cd2ArenaBarrier();
+	cd2ArenaPickups();
 
 	return JER_RESULT_CONTINUE;
 }

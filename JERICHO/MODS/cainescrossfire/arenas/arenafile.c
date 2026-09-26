@@ -20,6 +20,7 @@
 #include "driver2.h"
 #include "cainescrossfire.h"
 #include "arenas/profile.h"
+#include "weapons/core/weapon.h"	/* cd2WpnDef / cd2WpnName - a pickup names its weapon */
 
 #include <string.h>
 #include <stdio.h>
@@ -72,6 +73,30 @@ static int cd2ArenaCityFromName(const char* s)
 	if (cd2Strcasecmp(s, "havana") == 0)  return 1;
 	if (cd2Strcasecmp(s, "vegas") == 0)   return 2;
 	if (cd2Strcasecmp(s, "rio") == 0)     return 3;
+
+	return -1;
+}
+
+// A weapon name (its short code name or its display name) -> CD2_WID_*, or -1.
+static int cd2ArenaWeaponFromName(const char* s)
+{
+	int i;
+
+	if (s == NULL || s[0] == 0)
+		return -1;
+
+	for (i = 0; i < CD2_WID_COUNT; i++)
+	{
+		const CD2_WEAPON_DEF* d = cd2WpnDef(i);
+
+		if (d == NULL)
+			continue;
+
+		if (d->name != NULL && cd2Strcasecmp(d->name, s) == 0)
+			return i;
+		if (d->displayName != NULL && cd2Strcasecmp(d->displayName, s) == 0)
+			return i;
+	}
 
 	return -1;
 }
@@ -202,6 +227,55 @@ int cd2ArenaFileLoad(const char* path, CD2_ARENA_PROFILE* out)
 				sp->heading = heading & 0xfff;
 			}
 		}
+		else if (cd2Strcasecmp(key, "pickup") == 0)
+		{
+			char kind[24];
+			int used = 0;
+
+			if (sscanf(val, "%23s %n", kind, &used) == 1 &&
+			    out->pickupCount < CD2_ARENA_MAX_PICKUPS)
+			{
+				const char* rest = val + used;
+
+				if (cd2Strcasecmp(kind, "weapon") == 0)
+				{
+					char wname[32];
+					int x, z, ammo = 0, after = 0;
+
+					if (sscanf(rest, "%31s %n", wname, &after) == 1 &&
+					    sscanf(rest + after, "%d %d %d", &x, &z, &ammo) >= 2)
+					{
+						int wid = cd2ArenaWeaponFromName(wname);
+
+						if (wid >= 0)
+						{
+							CD2_ARENA_PICKUP* p = &out->pickups[out->pickupCount++];
+
+							p->type = CD2_PICKUP_WEAPON;
+							p->weapon = wid;
+							p->amount = ammo;
+							p->x = x;
+							p->z = z;
+						}
+					}
+				}
+				else if (cd2Strcasecmp(kind, "health") == 0)
+				{
+					int x, z, amount = 0;
+
+					if (sscanf(rest, "%d %d %d", &x, &z, &amount) >= 2)
+					{
+						CD2_ARENA_PICKUP* p = &out->pickups[out->pickupCount++];
+
+						p->type = CD2_PICKUP_HEALTH;
+						p->weapon = -1;
+						p->amount = amount;
+						p->x = x;
+						p->z = z;
+					}
+				}
+			}
+		}
 	}
 
 	fclose(fp);
@@ -246,6 +320,19 @@ int cd2ArenaFileSave(const char* path, const CD2_ARENA_PROFILE* a)
 	for (i = 0; i < a->spawnCount && i < CD2_ARENA_MAX_SPAWNS; i++)
 		fprintf(fp, "spawn: %d %d %d\n",
 			a->spawns[i].x, a->spawns[i].z, a->spawns[i].heading);
+
+	fprintf(fp, "# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]\n");
+
+	for (i = 0; i < a->pickupCount && i < CD2_ARENA_MAX_PICKUPS; i++)
+	{
+		const CD2_ARENA_PICKUP* p = &a->pickups[i];
+
+		if (p->type == CD2_PICKUP_WEAPON)
+			fprintf(fp, "pickup: weapon %s %d %d %d\n",
+				cd2WpnName(p->weapon), p->x, p->z, p->amount);
+		else
+			fprintf(fp, "pickup: health %d %d %d\n", p->x, p->z, p->amount);
+	}
 
 	fclose(fp);
 

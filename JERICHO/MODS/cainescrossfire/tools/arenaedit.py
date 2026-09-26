@@ -51,7 +51,7 @@ CITY_INDEX = {v: k for k, v in CITIES.items()}
 # ---------------------------------------------------------------------------
 class Arena:
     def __init__(self, internal="", display="", city=0, mp_level=1, mp_arena=0,
-                 region=None, spawns=None):
+                 region=None, spawns=None, pickups=None):
         self.internal = internal
         self.display = display
         self.city = city
@@ -59,11 +59,14 @@ class Arena:
         self.mp_arena = mp_arena
         self.region = region            # None, or (x0, z0, x1, z1)
         self.spawns = list(spawns or [])  # list of (x, z, heading)
+        # pickups: list of {"type": "weapon"|"health", "weapon": name|None,
+        #                   "amount": int, "x": int, "z": int}
+        self.pickups = list(pickups or [])
         self.path = None
 
     def clone(self, internal):
         return Arena(internal, internal, self.city, self.mp_level, self.mp_arena,
-                     self.region, self.spawns)
+                     self.region, self.spawns, self.pickups)
 
 
 def _city_from_token(tok):
@@ -119,6 +122,16 @@ def load_arena(path):
                     x, z = nums[0], nums[1]
                     h = nums[2] if len(nums) > 2 else 0
                     a.spawns.append((x, z, h & (HEADING_MAX - 1)))
+            elif key == "pickup":
+                parts = val.split()
+                if parts and parts[0].lower() == "weapon" and len(parts) >= 4:
+                    a.pickups.append({"type": "weapon", "weapon": parts[1],
+                                      "amount": int(parts[4]) if len(parts) > 4 else 0,
+                                      "x": int(parts[2]), "z": int(parts[3])})
+                elif parts and parts[0].lower() == "health" and len(parts) >= 3:
+                    a.pickups.append({"type": "health", "weapon": None,
+                                      "amount": int(parts[3]) if len(parts) > 3 else 0,
+                                      "x": int(parts[1]), "z": int(parts[2])})
     if not a.display:
         a.display = a.internal
     return a, saw_name
@@ -139,6 +152,12 @@ def save_arena(a):
     lines.append("# spawn: x z heading  (first = player, rest = opponents)")
     for (x, z, h) in a.spawns:
         lines.append("spawn: %d %d %d" % (x, z, h))
+    lines.append("# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]")
+    for p in a.pickups:
+        if p["type"] == "weapon":
+            lines.append("pickup: weapon %s %d %d %d" % (p["weapon"], p["x"], p["z"], p["amount"]))
+        else:
+            lines.append("pickup: health %d %d %d" % (p["x"], p["z"], p["amount"]))
     with open(a.path, "w") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -163,6 +182,11 @@ def check_arena(a):
             w.append("spawn %d heading %d out of range" % (i, h))
     if len(a.spawns) == 0:
         w.append("no spawns (the game falls back to its own placement)")
+    for i, p in enumerate(a.pickups):
+        if a.region:
+            x0, z0, x1, z1 = a.region
+            if not (x0 <= p["x"] <= x1 and z0 <= p["z"] <= z1):
+                w.append("pickup %d (%d,%d) is OUTSIDE the region" % (i, p["x"], p["z"]))
     return w
 
 
@@ -170,9 +194,9 @@ def describe(a):
     who = "player" if a.spawns else "-"
     opp = max(0, len(a.spawns) - 1)
     reg = "none" if not a.region else "%d,%d..%d,%d" % a.region
-    return ("%s (%s) city=%s mp=%d/%d region=%s spawns=%d (%s + %d opp)"
+    return ("%s (%s) city=%s mp=%d/%d region=%s spawns=%d (%s + %d opp) pickups=%d"
             % (a.internal, a.display, CITIES.get(a.city, a.city), a.mp_level,
-               a.mp_arena, reg, len(a.spawns), who, opp))
+               a.mp_arena, reg, len(a.spawns), who, opp, len(a.pickups)))
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +278,12 @@ def render_png(arenas, path, map_path=None, map_world=None, size=(1100, 800)):
             dx, dy = _heading_vec(h)
             dr.line([sx, sy, sx + dx * 26, sy + dy * 26], fill=c, width=2)
             dr.text((sx + 8, sy + 8), "%d" % i, fill=(255, 255, 255))
+        for p in a.pickups:
+            sx, sy = S(p["x"], p["z"])
+            c = (120, 255, 120) if p["type"] == "health" else (255, 210, 120)
+            dr.rectangle([sx - 6, sy - 6, sx + 6, sy + 6], outline=c, width=2)
+            dr.text((sx + 8, sy - 16), "H" if p["type"] == "health" else "W",
+                    fill=c)
         # a label in the corner
         dr.text((8, 8 + arenas.index(a) * 16),
                 "%s  [%s]" % (describe(a), a.path or "<new>"), fill=(230, 230, 230))
@@ -483,7 +513,7 @@ def main(argv=None):
         print(json.dumps([{
             "path": a.path, "internal": a.internal, "display": a.display,
             "city": a.city, "mp_level": a.mp_level, "mp_arena": a.mp_arena,
-            "region": a.region, "spawns": a.spawns,
+            "region": a.region, "spawns": a.spawns, "pickups": a.pickups,
         } for a in arenas], indent=2))
         return 0
 

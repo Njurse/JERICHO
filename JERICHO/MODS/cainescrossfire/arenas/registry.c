@@ -172,9 +172,9 @@ static int cd2ArenaLoadFile(const char* path)
 	{
 		int id = cd2ArenaRegisterOrReplace(&a);
 
-		printInfo("[cainescrossfire] arena file '%s': '%s' city=%d mp=%d/%d region=%s spawns=%d\n",
+		printInfo("[cainescrossfire] arena file '%s': '%s' city=%d mp=%d/%d region=%s spawns=%d pickups=%d\n",
 			path, a.internalName, a.city, a.mpLevel, a.mpArena,
-			a.region.bounded ? "bounded" : "whole-level", a.spawnCount);
+			a.region.bounded ? "bounded" : "whole-level", a.spawnCount, a.pickupCount);
 
 		return (id != CD2_ARENA_NONE);
 	}
