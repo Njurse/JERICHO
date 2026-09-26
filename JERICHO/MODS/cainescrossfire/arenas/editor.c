@@ -13,7 +13,7 @@
 //   R1      cycle which spawn slot is selected
 //   L2      delete the spawn nearest the car
 //   R2      mark the region: first press = corner A, second = the rect (car = the other corner)
-//   SELECT  save the arena to CONFIG/arenas/<name>.cca (and update the live arena)
+//   SELECT  save the arena to MODS/cainescrossfire/arenas/<name>.cca (and update the live arena)
 //   START   reload the arena from its file
 //
 // The shoulders also carry weapon prev/next/fire, so while editing, park the
@@ -286,7 +286,7 @@ static void cd2EditorSave(void)
 	}
 	else
 	{
-		printInfo("[cainescrossfire] arena editor: SAVE FAILED for %s (does CONFIG/arenas exist?)\n", path);
+		printInfo("[cainescrossfire] arena editor: SAVE FAILED for %s (does MODS/cainescrossfire/arenas exist?)\n", path);
 	}
 }
 

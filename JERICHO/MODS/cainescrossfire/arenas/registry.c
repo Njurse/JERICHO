@@ -3,7 +3,7 @@
 // The four built-in arenas are the cities' multiplayer maps: identity only
 // (unbounded, no authored spawns), so the match runs exactly as it did before
 // this registry existed. Every other arena is loaded from an authored file
-// under JERICHO/CONFIG/arenas/ (see ARENAS.md) and OVERRIDES a built-in of the
+// under JERICHO/MODS/cainescrossfire/arenas/ (see ARENAS.md) and OVERRIDES a built-in of the
 // same internalName, or is appended as a new arena. That is the same shape as
 // the vehicle registry (profiles/registry.c): the built-ins are the manifest,
 // the files are the content.
@@ -27,6 +27,17 @@ int cd2ArenaFileLoad(const char* path, CD2_ARENA_PROFILE* out);
 // The registry. Index == arena id.
 static CD2_ARENA_PROFILE gArena[CD2_ARENA_MAX_ARENAS];
 static int gArenaCount;
+
+// Where the arena files live: the module's OWN folder (the MODS mirror the build
+// keeps in step with the repo), so an arena ships with Caine's Crossfire rather
+// than in a separate CONFIG tree outside the mod. Read AND written there, which is what
+// makes the two editors - and the launcher (tools/arena_menu.bat) - agree.
+#define CD2_ARENA_DIR	"MODS/cainescrossfire/arenas"
+
+static void cd2ArenaDir(char* out, int cap)
+{
+	snprintf(out, cap, "%s/" CD2_ARENA_DIR, jer_root_dir());
+}
 
 // --- built-ins -------------------------------------------------------------
 
@@ -117,13 +128,13 @@ int cd2ArenaReplace(int arenaId, const CD2_ARENA_PROFILE* arena)
 	return 1;
 }
 
-// The path an arena is (or would be) saved to: CONFIG/arenas/<internalName>.cca.
+// The path an arena is (or would be) saved to: MODS/cainescrossfire/arenas/<internalName>.cca.
 int cd2ArenaFilePath(const CD2_ARENA_PROFILE* arena, char* out, int cap)
 {
 	if (arena == NULL || out == NULL || cap <= 0)
 		return 0;
 
-	snprintf(out, cap, "%s/CONFIG/arenas/%s.cca", jer_root_dir(), arena->internalName);
+	snprintf(out, cap, "%s/" CD2_ARENA_DIR "/%s.cca", jer_root_dir(), arena->internalName);
 
 	return 1;
 }
@@ -204,13 +215,13 @@ static int cd2ArenaLoadFile(const char* path)
 	}
 }
 
-// Scan JERICHO/CONFIG/arenas/ for *.cca files. A scan failure is not fatal: the
+// Scan JERICHO/MODS/cainescrossfire/arenas/ for *.cca files. A scan failure is not fatal: the
 // built-ins always survive.
 static void cd2ArenaScanDir(void)
 {
 	char dir[512];
 
-	snprintf(dir, sizeof(dir), "%s/CONFIG/arenas", jer_root_dir());
+	cd2ArenaDir(dir, sizeof(dir));
 
 #if defined(_WIN32)
 	{

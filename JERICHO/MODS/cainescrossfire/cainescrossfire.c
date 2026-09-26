@@ -816,8 +816,9 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	cd2LoadConfig();
 	cd2ApplyPreset();
 
-	/* the arena registry: built-ins + any authored files under CONFIG/arenas/.
-	 * Built here, before the select flow, because that builds its menus from it. */
+	/* the arena registry: built-ins + any authored files in the mod's
+	 * arenas/ folder (MODS/cainescrossfire/arenas). Built here, before the
+	 * select flow, because that builds its menus from it. */
 	cd2ArenaLoadAll();
 
 	ctx->jer_register_module(ctx,

@@ -9,7 +9,7 @@
 // manifest of rows indexed by an id. The four built-ins are the cities'
 // multiplayer maps (unbounded, no authored spawns - the match falls back to the
 // engine's start and the module's player-relative opponent placement). Every
-// OTHER arena comes from an authored DATA FILE under JERICHO/CONFIG/arenas/
+// OTHER arena comes from an authored DATA FILE under JERICHO/MODS/cainescrossfire/arenas/
 // (see ARENAS.md): the same "rows are the manifest, data is the content" split
 // the profiles use, so a custom arena - including a cordoned-off corner of a
 // full city map - needs no rebuild, only a file the editor writes.
@@ -116,12 +116,12 @@ int cd2ArenaRegister(const CD2_ARENA_PROFILE* arena);
 // Overwrite an existing arena in place (the in-game editor). Returns 1 on success.
 int cd2ArenaReplace(int arenaId, const CD2_ARENA_PROFILE* arena);
 
-// The path an arena saves to: CONFIG/arenas/<internalName>.cca. Returns 1 and
+// The path an arena saves to: MODS/cainescrossfire/arenas/<internalName>.cca. Returns 1 and
 // fills `out` (cap bytes), or 0 on a bad argument.
 int cd2ArenaFilePath(const CD2_ARENA_PROFILE* arena, char* out, int cap);
 
 // Build the registry: the four built-ins, then every authored file under
-// JERICHO/CONFIG/arenas/. Safe to call more than once (it rebuilds). Call from
+// JERICHO/MODS/cainescrossfire/arenas/. Safe to call more than once (it rebuilds). Call from
 // the module entry, before the select flow builds its menus.
 void cd2ArenaLoadAll(void);
 

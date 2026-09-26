@@ -9,7 +9,7 @@
 //   cc.opponents      < N OPPONENTS > - 0..CD2_AI_MAX, Cross starts the match
 //
 // The arena list is the REGISTRY, not a hardcoded four: every built-in city is
-// there, and any authored arena file under JERICHO/CONFIG/arenas/ adds another
+// there, and any authored arena file under JERICHO/MODS/cainescrossfire/arenas/ adds another
 // (optionally on the SAME city - see ARENAS.md). Selecting an arena loads its
 // city and its mission layout and makes it the match's current arena, so its
 // authored spawn points and its barrier apply.

@@ -43,6 +43,7 @@ units (0..4095); the arrow shows which way the car points.
 """
 
 import argparse
+import glob
 import os
 import sys
 
@@ -50,6 +51,12 @@ SPAWN_MAX = 16
 HEADING_MAX = 4096
 CITIES = {0: "CHICAGO", 1: "HAVANA", 2: "VEGAS", 3: "RIO"}
 CITY_INDEX = {v: k for k, v in CITIES.items()}
+
+
+def _default_arena_dir():
+    """The mod's own arena folder (this script lives in <mod>/tools/)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.normpath(os.path.join(here, "..", "arenas"))
 
 
 # ---------------------------------------------------------------------------
@@ -553,7 +560,10 @@ def run_editor(arenas, bg=None, bg_rect=None):
 # ---------------------------------------------------------------------------
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Caine's Crossfire arena editor (top-down).")
-    ap.add_argument("files", nargs="+", help="one or more .cca arena files")
+    ap.add_argument("files", nargs="*", help="one or more .cca arena files (globs ok); default: the mod's arenas folder")
+    ap.add_argument("--dir", help="the arena folder to list when no files are given")
+    ap.add_argument("--new", metavar="NAME", help="create a blank arena NAME.cca in the arena folder, then open it")
+    ap.add_argument("--city", default="CHICAGO", help="city for --new (default CHICAGO)")
     ap.add_argument("--map", help="background image (PNG) stretched over --map-world")
     ap.add_argument("--map-world", nargs=4, type=int, metavar=("X0", "Z0", "X1", "Z1"),
                     help="the world rectangle the background image covers")
@@ -567,8 +577,34 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="print the parsed arenas as JSON")
     args = ap.parse_args(argv)
 
+    arena_dir = args.dir or _default_arena_dir()
+    paths = []
+
+    for pat in (args.files or []):
+        if any(c in pat for c in "*?["):
+            paths.extend(sorted(glob.glob(pat)))
+        else:
+            paths.append(pat)
+
+    if args.new:
+        os.makedirs(arena_dir, exist_ok=True)
+        path = os.path.join(arena_dir, args.new + ".cca")
+        if os.path.exists(path):
+            print("already exists, opening:", path)
+        else:
+            a = Arena(args.new, args.new, CITY_INDEX.get(args.city.upper(), 0), 1, 0)
+            a.path = path
+            save_arena(a)
+            print("created", path)
+        paths = [path]
+
+    if not paths:
+        paths = sorted(glob.glob(os.path.join(arena_dir, "*.cca")))
+        if paths:
+            print("(no files given; using %s)" % arena_dir)
+
     arenas = []
-    for path in args.files:
+    for path in paths:
         if not os.path.exists(path):
             print("skip (missing):", path)
             continue
@@ -577,6 +613,12 @@ def main(argv=None):
             print("skip (no arena: line):", path)
             continue
         arenas.append(a)
+
+    if not arenas:
+        print("No arena files found.")
+        print("  make one:   python arenaedit.py --new chicago_docks --city CHICAGO")
+        print("  or drop .cca files in: %s" % arena_dir)
+        return 0
 
     if args.json:
         import json

@@ -8,10 +8,30 @@ barrier), and the **spawn points** (position + heading) the cars start at.
 The registry is the same shape as the vehicle one (`profiles/registry.c`): a
 manifest of rows indexed by an id, in `arenas/registry.c`. The four **built-in**
 arenas are the cities' small multiplayer maps — identity only. Every **custom**
-arena is an authored data file under `JERICHO/CONFIG/arenas/` that the game
+arena is an authored data file under `JERICHO/MODS/cainescrossfire/arenas/` that the game
 loads at boot, so a new arena needs no rebuild — only a file the editor writes.
 A file whose `arena:` name matches a built-in (e.g. `chicago`) *replaces* it, so
 the built-ins are themselves editable.
+
+## Making and opening arenas
+
+The easy way is the launcher, which keeps the mod's arena folder and the copy
+the game reads in step, and can make a new arena, open one in the Python editor,
+or drop you into the in-game editor:
+
+```
+JERICHO\MODS\cainescrossfire\tools\arena_menu.bat
+```
+
+Double-click it on Windows. By hand:
+
+- **New** — drop a `.cca` into `arenas/` (or `python tools/arenaedit.py --new my_arena`).
+- **Reaching the game** — `arenas/` is part of the mod, so a normal build mirrors
+  it to `bin\...\MODS\cainescrossfire\arenas\`, which is what the game scans; the
+  launcher's *Sync* does it without a build.
+- **Open top-down** — `python tools/arenaedit.py <the .cca>` (no arguments opens
+  every arena in the folder).
+- **Edit in-game** — launch with `-cceditor` and pick the arena (see below).
 
 ## The four built-ins
 
@@ -29,7 +49,7 @@ placement, and a short on-screen notice says so (`No spawn points in this arena
 
 ## The arena file
 
-One arena per file, `JERICHO/CONFIG/arenas/<name>.cca`. A line-based, diffable
+One arena per file, `JERICHO/MODS/cainescrossfire/arenas/<name>.cca`. A line-based, diffable
 text format — written by hand, by the in-game editor, or by the Python top-down
 editor (`tools/arenaedit.py`), all three reading and writing exactly this.
 
@@ -76,10 +96,13 @@ pickup: health -3000 1000 2500       # a repair: this many damage units off tota
 
 ### Where the files are read
 
-`JERICHO/CONFIG/arenas/*.cca`, scanned at boot. With `-ccmenu` (or the main
-menu's Deathmatch entry) the arena menu lists every registered arena; picking one
-loads its city/layout and makes it the match's current arena, so its spawns and
-barrier apply.
+`JERICHO/MODS/cainescrossfire/arenas/*.cca` — the mod's own folder. The game
+scans its **mirror** of that folder, `bin\<config>\JERICHO\MODS\cainescrossfire\arenas\`,
+which the build (or `arena_menu.bat`'s *Sync*) keeps in step; the in-game editor
+writes there too, and the launcher copies edits back to the mod folder. With
+`-ccmenu` (or the main menu's Deathmatch entry) the arena menu lists every
+registered arena; picking one loads its city/layout and makes it the match's
+current arena, so its spawns and barrier apply.
 
 ## The in-game editor
 
@@ -95,7 +118,7 @@ follows the edit immediately. It is a build/debug tool, not a play mode.
 | **R1** | cycle which spawn slot is selected |
 | **L2** | delete the spawn nearest the car |
 | **R2** | mark the region: first press = corner A, second = the rect (the car is the other corner) |
-| **SELECT** | save to `CONFIG/arenas/<name>.cca` (and update the live arena) |
+| **SELECT** | save to `MODS/cainescrossfire/arenas/<name>.cca` (and update the live arena) |
 | **START** | reload the arena from its file |
 
 The shoulders also carry weapon prev/next/fire while driving, so park the car

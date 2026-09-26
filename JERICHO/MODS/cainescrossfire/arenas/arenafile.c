@@ -1,6 +1,6 @@
 // arenas/arenafile.c — the authored ARENA DATA FILE (`.cca`) reader + writer.
 //
-// One arena per file, in JERICHO/CONFIG/arenas/. A line-based, diffable text
+// One arena per file, in JERICHO/MODS/cainescrossfire/arenas/. A line-based, diffable text
 // format so it can be written by hand, by the in-game editor, or by the Python
 // top-down editor (tools/arenaedit.py) — all three read and write exactly this.
 //
