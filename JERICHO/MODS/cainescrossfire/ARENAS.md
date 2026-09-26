@@ -117,6 +117,32 @@ writes there too, and the launcher copies edits back to the mod folder. With
 registered arena; picking one loads its city/layout and makes it the match's
 current arena, so its spawns and barrier apply.
 
+## Coordinates (what the numbers mean)
+
+An arena's `region` and `spawn` values are **world units** — exactly what
+`CAR_DATA.hd.where.t[]` holds (`x z`, plus `y` for the height). They are *not*
+grid cells and *not* the PlayStation fixed-point scale, and the editor shows the
+same numbers the game logs.
+
+- **Map grid:** a *cell* is **2048** units and a *region* is 32 cells =
+  **65536** units (`MAP_CELL_SIZE` / `MAP_REGION_SIZE`, both level-header fields
+  — zero until a level is loaded). A small arena is therefore a few cells per
+  side: tens of thousands of units, not millions. The shipped examples
+  (`-8000 -70000 8000 -55000`) are about 8×7 cells.
+- **`ONE == 4096`** (`dr2math.h`) is the engine's fixed-point unit for trig,
+  velocities and the **exported level model** — not for `hd.where`. The rigid
+  body keeps `fposition = hd.where.t << 4` (16 sub-units); the inverse is
+  `hd.where.t = fposition >> 4`.
+- **DriverLevelTool's `.obj`** is the level model at **1/4096 scale, X
+  mirrored**: `world_x = -4096 * obj_x`, `world_z = +4096 * obj_z`. So the RIO
+  vertex `x=55.7991` is world `x ≈ -228553`. The Python editor's
+  `--obj/--cells` mode instead stretches the obj's bounding box onto the cell
+  rectangle — a rough backdrop; use the 4096 formula when you need the picture to
+  register exactly with authored coordinates.
+- **The easy way to get a coordinate** is to drive there: the in-game editor's
+  readout and the `player car N spawned at (x,y,z)` log line give you real world
+  numbers, including the height that keeps a car out of the void.
+
 ## Two editors, one live file (pseudo-realtime)
 
 The game reads *and writes* the arena file **in the mod folder**
