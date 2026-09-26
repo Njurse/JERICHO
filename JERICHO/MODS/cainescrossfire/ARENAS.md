@@ -74,6 +74,11 @@ pickup: health -3000 1000 2500       # a repair: this many damage units off tota
   it: a car at the edge is put back on it and its **outward velocity is
   cancelled**, so the edge reads as a wall. Civ traffic is free to wander out.
   Omit it (or `none`) for no barrier.
+- **Keep every `spawn` INSIDE the `region`.** A spawn outside it is pulled onto
+  the rectangle on the first frame — a long teleport, and quite possibly into
+  the void. `arenaedit.py --check` and the launcher's checker flag it, and the
+  game logs the pull (`arena barrier: car=N clamped to (x,z)`), so if a car
+  lands somewhere odd, that line is the explanation.
 - **`spawn`** is a world position, a heading in PSX angle units (0..4095), and an
   optional **height** `y`. Spawn 1 is the player; 2.. are the opponents **in
   order** (opponent 0 is the second `spawn:` line, and so on). Up to 16. A
@@ -128,6 +133,12 @@ the same file `tools/arenaedit.py` edits — and both sides watch it:
 
 So you can drive in the game and adjust the same arena top-down (or the other
 way round) without restarting either one.
+
+Verified both ways (2026-09): a save through the Python API while the game was
+running logged `arena: reloaded 'live' from disk (2 spawns, 0 pickups)`; an
+in-game save (a scripted L1 place + SELECT) moved the file's mtime, and the
+Python side's poll reloaded the new spawn — or refused, when there were unsaved
+top-down edits.
 
 ## The in-game editor
 
