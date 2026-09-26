@@ -2038,6 +2038,122 @@ void LoadImportedTPages(void)
 	}
 }
 
+// ---------------------------------------------------------------------------
+// JERICHO VRAM accounting (measurement only - it changes no upload)
+//
+// The engine has no allocator and no free-space query: every upload is a hard-coded or
+// slot-walk rectangle, and `NoTextureMemory` is only a lockout for when the page walk
+// runs off `tpagepos[]` (texture.c:354-386). So "how much VRAM is left" was
+// unanswerable - which is how a reserved region sits empty for years and how a
+// CLUT-strip squeeze stays invisible. tools/vrammap.py is the offline version of this;
+// this is the same answer, in the run.
+//
+// The dynamic claims (page slots, the level's CLUT column) are READ from the engine's
+// own state - `slot_tpagepos[]` and `clutpos`, the same variables the uploads use - so
+// they cannot drift from reality the way a hand-maintained list would. Only rectangles
+// that are fixed no matter what a level loads are listed as constants.
+// ---------------------------------------------------------------------------
+
+#define VRAM_CELL	64							// accounting granularity: 64x64 texels
+#define VRAM_COLS	(1024 / VRAM_CELL)
+#define VRAM_ROWS	(512 / VRAM_CELL)
+#define VRAM_CELL_KB	(VRAM_CELL * VRAM_CELL * 2 / 1024)	// 8 KiB
+
+typedef struct
+{
+	const char *name;
+	int x, y, w, h;
+	const char *why;
+} VRAM_FIXED;
+
+static const VRAM_FIXED sVramFixed[] =
+{
+	{ "framebuffer A", 0,   0,   320, 256, "system.c:724-725 - a display buffer, not texture memory" },
+	{ "framebuffer B", 0,   256, 320, 256, "system.c:724-725 - double buffered, so 320 KiB of the 1 MiB" },
+	{ "sky",           320, 0,   128, 256, "sky.c:280-282 - two page widths" },
+	{ "level font",    960, 466, 64,  46,  "pres.c:584-589" },
+	{ "font clut",     976, 256, 16,  1,   "pres.c:550-553" },
+	{ "map clut",      960, 256, 16,  1,   "texture.c:2074-2077" },
+	{ "CD icon",       960, 433, 16,  32,  "spool.c:333-348" },
+};
+
+static void VramAccountReport(void)
+{
+	static unsigned char cells[VRAM_ROWS][VRAM_COLS];	// static: this is not a small stack
+	int used = 0, texused = 0, freecells, i, x, y;
+	int bw = 0, bh = 0, bx = 0, by = 0, best = 0;
+	const int texcol = 320 / VRAM_CELL;			// the display buffers own x0..319
+
+	memset(cells, 0, sizeof(cells));
+
+// mark every cell a rectangle touches (rounded up: a partial cell is not free)
+#define VRAM_MARK(px, py, pw, ph)												\
+	do {																		\
+		int _x0 = (px) / VRAM_CELL, _y0 = (py) / VRAM_CELL;						\
+		int _x1 = ((px) + (pw) + VRAM_CELL - 1) / VRAM_CELL;					\
+		int _y1 = ((py) + (ph) + VRAM_CELL - 1) / VRAM_CELL;					\
+		for (y = _y0; y < _y1 && y < VRAM_ROWS; y++)							\
+			for (x = _x0; x < _x1 && x < VRAM_COLS; x++)						\
+				if (x >= 0 && y >= 0) cells[y][x] = 1;							\
+	} while (0)
+
+	// the page slots, read from the array the streamer itself uploads to
+	for (i = 0; i < 19; i++)
+		VRAM_MARK(slot_tpagepos[i].vx, slot_tpagepos[i].vy, 64, 256);
+
+	// the CLUT column the level committed (its own cursor, rounded up to the cell)
+	if (clutpos.y > 256)
+		VRAM_MARK(960, 256, 64, clutpos.y - 256);
+
+	for (i = 0; i < (int)(sizeof(sVramFixed) / sizeof(sVramFixed[0])); i++)
+		VRAM_MARK(sVramFixed[i].x, sVramFixed[i].y, sVramFixed[i].w, sVramFixed[i].h);
+
+	for (y = 0; y < VRAM_ROWS; y++)
+		for (x = 0; x < VRAM_COLS; x++)
+			if (cells[y][x])
+			{
+				used++;
+				if (x >= texcol) texused++;		// inside the texture area (x320..1023)
+			}
+
+	freecells = VRAM_ROWS * VRAM_COLS - used;
+
+	// the largest free rectangle INSIDE the texture area: whole-VRAM 'free' is always 0
+	// here (the display buffers see to that), so the useful answer is the texture pool's
+	{
+		int r0, r1, c0, c1, r, c;
+
+		for (r0 = 0; r0 < VRAM_ROWS; r0++)
+			for (r1 = r0; r1 < VRAM_ROWS; r1++)
+				for (c0 = texcol; c0 < VRAM_COLS; c0++)
+					for (c1 = c0; c1 < VRAM_COLS; c1++)
+					{
+						int ok = 1;
+
+						for (r = r0; r <= r1 && ok; r++)
+							for (c = c0; c <= c1 && ok; c++)
+								if (cells[r][c]) ok = 0;
+
+						if (ok && (r1 - r0 + 1) * (c1 - c0 + 1) > best)
+						{
+							best = (r1 - r0 + 1) * (c1 - c0 + 1);
+							bx = c0 * VRAM_CELL; by = r0 * VRAM_CELL;
+							bw = (c1 - c0 + 1) * VRAM_CELL; bh = (r1 - r0 + 1) * VRAM_CELL;
+						}
+					}
+	}
+
+#undef VRAM_MARK
+
+	// One line, because this is read in a log next to the page state. The texture area is
+	// the half that can be argued about: the framebuffers are 320 KiB nobody can use.
+	printInfo("JERICHO-VRAM: texture used=%d/%d KiB (slots %d + clut %d + sky %d); clut strip %d/256 rows (%d free); vram free=%d KiB of 1024; largest free in texture area=(%d,%d) %dx%d = %d KiB\n",
+		texused * VRAM_CELL_KB, (VRAM_COLS - texcol) * VRAM_ROWS * VRAM_CELL_KB,
+		19 * 32, 64 * 256 * 2 / 1024, 64,
+		(clutpos.y > 256) ? (clutpos.y - 256) : 0, 256 - ((clutpos.y > 256) ? (clutpos.y - 256) : 0),
+		freecells * VRAM_CELL_KB, bx, by, bw, bh, best * VRAM_CELL_KB);
+}
+
 // [D] [T]
 void LoadPermanentTPages(int *sector)
 {
@@ -2237,6 +2353,11 @@ void LoadPermanentTPages(int *sector)
 		printInfo("cross-city: level page state - slotsused=%d nperms=%d nspecpages=%d tpage=(%d,%d) clutpos=(%d,%d) civclut=%08x civclut16=%08x\n",
 			slotsused, nperms, nspecpages, tpage.x, tpage.y, clutpos.x, clutpos.y, clutSum, clutSum16);
 	}
+
+	// JERICHO-HOOK: and where that left VRAM (measurement only). The fixed claims in the
+	// table above are committed a little later in a level's life (sky, font, CD icon), so
+	// they are counted here from their constants rather than waited for.
+	VramAccountReport();
 }
 
 // [D] [T]

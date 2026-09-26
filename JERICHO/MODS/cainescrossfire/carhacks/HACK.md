@@ -86,6 +86,7 @@ region to put a foreign vehicle's pages in.
 | where the player's car came from | `JERICHO-RUN: level=… carslot=5 model=9 …` then the engine's `slot 5 geometry from RIO model 9` |
 | where imported pages landed | `cross-city: pinned set 77 index 77: slot=14, rect=(512,0), page=0008 …` |
 | what is actually in VRAM | `JERICHO_DUMPVRAM=1` then `tools/vramdump.py vram_dump.tga --png out.png` |
+| where VRAM went, and what is left | the engine's own `JERICHO-VRAM: texture used=704/704 KiB (slots 608 + clut 32 + sky 64); clut strip 172/256 rows (84 free); … largest free in texture area=…` line, printed once per level load (see also `tools/vrammap.py`) |
 | what a city's car palettes *should* be | `tools/levpalette.py LEVELS/<CITY>.LEV --out out/` — a swatch PNG + a text table per city, from `LUMP_PALLET` (see `PALETTES.md` §7) |
 | the last run's car textures under each palette | `tools/cardump.py vram_dump.tga --log JERICHO.log --out out/` — one PNG per imported set, a row per palette, plus the run's actual page CLUT as a control (`PALETTES.md` §7) |
 | whether a run's palettes/pages behaved | `tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — the three invariants the engine's own summary misses (exit 0 held / 1 violated / 2 no import) |
