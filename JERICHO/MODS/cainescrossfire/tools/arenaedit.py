@@ -8,14 +8,20 @@ are two views of one file: what one saves, the other loads.
 
     python arenaedit.py arenas/*.cca                 # open the editor
     python arenaedit.py chicago.cca --map city.png \
-        --map-world -450000 -580000 450000 580000    # with a background
+        --map-world -450000 -580000 450000 580000    # with a background image
+    python arenaedit.py chicago.cca --obj CITY.obj --cells 448 576  # obj background
     python arenaedit.py chicago.cca --render out.png # headless snapshot
     python arenaedit.py chicago.cca --check          # validate, print, exit
 
 The view is in WORLD units (the units the .cca stores and the game uses), so no
-calibration is needed to place things. A background IMAGE is optional and purely
-decorative - it is stretched over the world rectangle you give it with
---map-world x0 z0 x1 z1. Without one you get a coordinate grid.
+calibration is needed to place things. A background is optional and purely
+decorative. Give it as an IMAGE stretched over a world rectangle (--map
+--map-world), or as a level .obj from DriverLevelTool (--obj), whose own
+bounding box is stretched onto --obj-world (or the centered cell grid from
+--cells). The .obj is in the tool's model units, not world units, so its
+mapping is approximate unless you give the exact rectangle; the game's own
+overmap (DriverLevelTool -overmap) is the alternative when its map tiles are
+present. Without a background you get a coordinate grid.
 
 Mouse (editor):
   left-click         select a spawn (or the nearest to the click)
@@ -245,21 +251,81 @@ def _heading_vec(h):
 
 
 # ---------------------------------------------------------------------------
+# background sources: a prepared image, or a level .obj point cloud
+# ---------------------------------------------------------------------------
+def load_obj_points(path, world_rect, size=(1400, 1000), sample=2):
+    """Stream a level .obj (DriverLevelTool -world/-models) and rasterise its XZ
+    vertex cloud into a background image, mapped onto `world_rect`.
+
+    The .obj is in the level tool's model units, not the game's world units, so
+    the correspondence is given by `world_rect` (the world rectangle the obj's
+    own XZ bounding box is stretched onto) - see --obj-world / --cells. Without a
+    correct rectangle the picture is a shape reference, not an aligned map.
+    """
+    from PIL import Image
+
+    W, H = size
+    img = Image.new("L", size, 0)
+    px = img.load()
+    x0, z0, x1, z1 = world_rect
+    sx = W / float(x1 - x0)
+    sz = H / float(z1 - z0)
+    n = 0
+    kept = 0
+    with open(path, "r", errors="ignore") as f:
+        for line in f:
+            if line[:2] != "v ":
+                continue
+            n += 1
+            if sample > 1 and (n % sample):
+                continue
+            parts = line.split()
+            try:
+                x = float(parts[1]); z = float(parts[3])
+            except (IndexError, ValueError):
+                continue
+            ix = int((x - x0) * sx)
+            iz = int((z - z0) * sz)
+            if 0 <= ix < W and 0 <= iz < H:
+                v = px[ix, iz]
+                if v < 255:
+                    px[ix, iz] = min(255, v + 60)
+                kept += 1
+    img = img.convert("RGB")
+    print("obj %s: %d verts, %d plotted" % (path, n, kept))
+    return img
+
+
+def cells_world_rect(cw, ch, cell=2048):
+    """The world rectangle a WxH cell grid covers, centred on the origin
+    (DriverLevelTool prints 'Level dimensions [W H], cell size: 2048')."""
+    hw = cw * cell // 2
+    hh = ch * cell // 2
+    return (-hw, -hh, hw, hh)
+
+
+# ---------------------------------------------------------------------------
 # headless render
 # ---------------------------------------------------------------------------
-def render_png(arenas, path, map_path=None, map_world=None, size=(1100, 800)):
+def render_png(arenas, path, bg=None, bg_rect=None, size=(1100, 800)):
     from PIL import Image, ImageDraw
     img = Image.new("RGB", size, (18, 18, 22))
     dr = ImageDraw.Draw(img)
 
-    wr = map_world if map_world else _bounds(arenas)
+    # the view frames the arena; the background is placed under it, so a zoomed
+    # view still lines the picture up with the world coordinates
+    wr = _bounds(arenas)
     view = View(wr)
     view.scale = min(size[0] / (wr[2] - wr[0]), size[1] / (wr[3] - wr[1])) * 0.92
     view.ox, view.oy = size[0] / 2.0, size[1] / 2.0
 
-    if map_path and os.path.exists(map_path):
-        bg = Image.open(map_path).convert("RGB").resize(size)
-        img.paste(bg, (0, 0))
+    if bg is not None and bg_rect is not None:
+        p0 = view.world_to_screen(bg_rect[0], bg_rect[1])
+        p1 = view.world_to_screen(bg_rect[2], bg_rect[3])
+        w = max(1, int(abs(p1[0] - p0[0])))
+        h = max(1, int(abs(p1[1] - p0[1])))
+        img.paste(bg.resize((w, h)), (int(min(p0[0], p1[0])), int(min(p0[1], p1[1]))))
+        dr = ImageDraw.Draw(img)
 
     def S(x, z):
         return view.world_to_screen(x, z)
@@ -295,7 +361,7 @@ def render_png(arenas, path, map_path=None, map_world=None, size=(1100, 800)):
 # ---------------------------------------------------------------------------
 # interactive editor (tkinter)
 # ---------------------------------------------------------------------------
-def run_editor(arenas, map_path=None, map_world=None):
+def run_editor(arenas, bg=None, bg_rect=None):
     import tkinter as tk
     from PIL import Image, ImageTk
 
@@ -303,7 +369,8 @@ def run_editor(arenas, map_path=None, map_world=None):
         print("no arena files given")
         return 1
 
-    state = {"idx": 0, "sel": -1, "mode": None, "bg": None, "bgimg": None}
+    state = {"idx": 0, "sel": -1, "mode": None, "bg": bg, "bg_rect": bg_rect,
+             "bgimg": None}
 
     root = tk.Tk()
     root.title("Caine's Crossfire arena editor")
@@ -314,25 +381,19 @@ def run_editor(arenas, map_path=None, map_world=None):
     def cur():
         return arenas[state["idx"]]
 
-    wr = map_world if map_world else _bounds(arenas)
-    view = View(wr)
+    view = View(_bounds(arenas))
     state["view"] = view
 
     def fit():
         v = state["view"]
         w = max(1, canvas.winfo_width())
         h = max(1, canvas.winfo_height())
-        r = map_world if map_world else _bounds(arenas)
+        r = _bounds(arenas)
         v.wx0, v.wz0, v.wx1, v.wz1 = r
         v.cx = (r[0] + r[2]) / 2.0
         v.cz = (r[1] + r[3]) / 2.0
         v.scale = min(w / (r[2] - r[0]), h / (r[3] - r[1])) * 0.92
         v.ox, v.oy = w / 2.0, h / 2.0
-        if map_path and state["bg"] is None:
-            try:
-                state["bg"] = Image.open(map_path).convert("RGB")
-            except Exception:
-                state["bg"] = False
 
     def S(x, z):
         return state["view"].world_to_screen(x, z)
@@ -341,10 +402,14 @@ def run_editor(arenas, map_path=None, map_world=None):
         canvas.delete("all")
         v = state["view"]
         a = cur()
-        if state["bg"]:
-            w = max(1, canvas.winfo_width()); h = max(1, canvas.winfo_height())
+        if state["bg"] and state["bg_rect"]:
+            br = state["bg_rect"]
+            p0 = S(br[0], br[1]); p1 = S(br[2], br[3])
+            w = max(1, int(abs(p1[0] - p0[0])))
+            h = max(1, int(abs(p1[1] - p0[1])))
             state["bgimg"] = ImageTk.PhotoImage(state["bg"].resize((w, h)))
-            canvas.create_image(0, 0, anchor="nw", image=state["bgimg"])
+            canvas.create_image(min(p0[0], p1[0]), min(p0[1], p1[1]),
+                                anchor="nw", image=state["bgimg"])
 
         # region
         if a.region:
@@ -492,6 +557,11 @@ def main(argv=None):
     ap.add_argument("--map", help="background image (PNG) stretched over --map-world")
     ap.add_argument("--map-world", nargs=4, type=int, metavar=("X0", "Z0", "X1", "Z1"),
                     help="the world rectangle the background image covers")
+    ap.add_argument("--obj", help="a level .obj (DriverLevelTool) drawn as a top-down background")
+    ap.add_argument("--obj-world", nargs=4, type=int, metavar=("X0", "Z0", "X1", "Z1"),
+                    help="the world rectangle the .obj's own bounding box is stretched onto")
+    ap.add_argument("--cells", nargs=2, type=int, metavar=("W", "H"),
+                    help="level grid (DriverLevelTool 'Level dimensions [W H]'); sets --obj-world")
     ap.add_argument("--render", metavar="OUT.png", help="render headlessly and exit")
     ap.add_argument("--check", action="store_true", help="validate and print, do not open a window")
     ap.add_argument("--json", action="store_true", help="print the parsed arenas as JSON")
@@ -527,14 +597,34 @@ def main(argv=None):
                 rc = 1
         return rc
 
+    # background: a prepared image, or a level .obj point cloud. `bg_rect` is the
+    # world rectangle the picture covers; the view (interactive or rendered)
+    # frames the arena and places the picture under it.
+    bg = None
+    bg_rect = tuple(args.map_world) if args.map_world else None
+
+    if args.obj:
+        if args.obj_world:
+            wr = tuple(args.obj_world)
+        elif args.cells:
+            wr = cells_world_rect(args.cells[0], args.cells[1])
+        else:
+            wr = cells_world_rect(448, 576)   # a common DriverLevelTool grid
+            print("note: no --obj-world/--cells; assuming a 448x576 grid for the obj mapping")
+        bg_rect = wr
+        bg = load_obj_points(args.obj, wr)
+    elif args.map:
+        from PIL import Image
+        bg = Image.open(args.map).convert("RGB")
+        if bg_rect is None:
+            bg_rect = _bounds(arenas)
+
     if args.render:
-        mw = tuple(args.map_world) if args.map_world else None
-        render_png(arenas, args.render, args.map, mw)
+        render_png(arenas, args.render, bg, bg_rect)
         print("wrote", args.render)
         return 0
 
-    mw = tuple(args.map_world) if args.map_world else None
-    return run_editor(arenas, args.map, mw)
+    return run_editor(arenas, bg, bg_rect)
 
 
 if __name__ == "__main__":
