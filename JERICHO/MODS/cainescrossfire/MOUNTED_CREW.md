@@ -287,34 +287,58 @@ When a car the module drives is destroyed (`cd2CarTotaled`), both crew sides
 - it is painted **flat black** through the engine's `JER_EVENT_PED_DRAW` hook
   (matched back to the crew by ped pointer) and `SMOKE_FIRE` is set up at its
   origin every few frames — reading as running from the wreckage in flames.
+  The black is the whole ped: a pedestrian is drawn with `PLOT_NO_SHADE`, and
+  that path takes its colour from the plot context's `combo`, *not* from
+  `planeColours` — so holding `planeColours` (which is all the hook used to do)
+  had no effect on a ped at all, and the body came out in its normal clothes
+  with only the palette machinery having any say. The hook's colour now travels
+  as `plotContext.flatColour` under `PLOT_FLAT_COLOUR`, which every flat-shaded
+  plot path honours, so the body, head and limbs all go flat together.
 
-## 7. Player death: hold + drift the camera
+## 7. Player death: hold the blast point, then pan up slowly
 
 While the local player's car is a wreck the crew module takes over the camera
 (`JER_EVENT_CAMERA`, `override = 1`), so the death plays without the stock view
-sliding around. Rather than freeze it dead, the held view **drifts** over the
+sliding around. Rather than freeze it dead, the held view **pans up** over the
 respawn window (`gCd2Cfg.respawnDelay`, ~150 frames / 5s):
 
-- it **pulls back** along (camera − wreck) up to `CD2_DEATHCAM_ZOOM` (700
-  world units) — the wreck shrinks, i.e. a zoom out at the engine's fixed FOV;
-- it **rises** up to `CD2_DEATHCAM_RISE` (220) — engine camera Y is *down*, so
-  "up" is a smaller `vy`;
-- both are interpolated from the pose captured on the last live frame, and the
-  focus is the car's position at the moment of death (so a tumbling wreck does
-  not drag the view).
+- it **holds the spot the camera was at when the car blew up** — the anchor
+  (`sCamFocus`) is the camera's own position at the blast, not the wreck's, so there
+  is no lateral drift and the wreckage the camera was looking at stays where it is in
+  frame. Jaret: *"lets do a slower pan up and focus on the point the camera was at when
+  it blew up"*. (It used to pull back along (camera − wreck) up to
+  `CD2_DEATHCAM_ZOOM` 700, which slid the camera away from the car it was watching; that
+  term and its constant are gone — to bring the drift back, anchor the focus on the car
+  and re-add it.)
+- it **rises** up to `CD2_DEATHCAM_RISE` (260) — engine camera Y is *down*, so "up" is a
+  smaller `vy` — and the ramp is **eased in** (`t²`), so the pan starts almost still and
+  gathers. Was a linear 420, which read as a lurch; measured over a 150-frame window the
+  eased rise is 41 units at 40% and 166 at 80%.
+- the captured **angle** is held unchanged, so the view keeps the framing it had.
 
 It is released (stock camera resumes) when the car respawns. Constants live in
-`weapons/core/crew.c`; tune them there.
+`weapons/core/crew.c`; the pan is observable per 60 ticks as
+`crew: deathcam tick=N/M rise=R (held at the blast point)`.
 
 ## 8. The engine hook
 
 `JER_EVENT_PED_DRAW` (`JER_ARGS_PED_DRAW { ped, flatBlack, tintR/G/B }`) is the
 ped analogue of `JER_EVENT_CAR_DRAW_COLOR`. It is fired in `newShowTanner`
 before a ped's bones are drawn; a module may set `flatBlack` (or a tint) and the
-engine holds `plotContext.planeColours` at that colour for the ped's
-`RenderModel` calls, restoring afterwards. With no handler the ped renders
-stock. It is appended at the end of the event enum so existing ids are
-unchanged, and mirrored into `JERICHO/sdk/include/`.
+engine draws that ped's polys in that flat colour, restoring the plot context
+afterwards (the palette `jer_ped_palette_*` machinery is what carries a team
+TINT, and it stays independent — a tinted ped keeps its own palette and the
+module's colour is applied on top).
+
+Note the mechanism, because it is not the obvious one: a pedestrian is drawn
+with `PLOT_NO_SHADE`, whose colour comes from the plot context's `combo`, not
+from `planeColours` — so the flat colour is passed as `plotContext.flatColour`
+under `PLOT_FLAT_COLOUR` and honoured in all three flat-shaded plot paths
+(`draw.c`). Setting `planeColours` alone (what this hook did originally) is a
+no-op for a ped.
+
+With no handler the ped renders stock. It is appended at the end of the event
+enum so existing ids are unchanged, and mirrored into `JERICHO/sdk/include/`.
 
 ## 9. Guards
 

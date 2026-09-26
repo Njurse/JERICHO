@@ -17,6 +17,7 @@ JERICHO explosion hooks the engine now fires around its own explosion code
 | `JER_EVENT_EXPLOSION_DRAW` | `DrawExplosion` (`job_fx.c`) | tint/spin the stock mesh, or `override` and draw your own |
 | `JER_EVENT_EXPLOSION_COLLIDE` | `ExplosionCollisionCheck` (`bomberman.c`) | query: may this explosion push/damage this car, at what box scale |
 | `JER_EVENT_CAR_DAMAGE_FX` | `DrawCar` (`cars.c`) | the damage SMOKE and FIRE for a car: the car's health plus what the stock rule chose, all in/out — set `handled` to make the module's values the emitted ones |
+| `JER_EVENT_PED_DRAW` | `newShowTanner` (`motion_c.c`) | the colour a pedestrian is drawn in: `flatBlack` or a `tintR/G/B`. Carries a **flat colour** into all three flat-shaded plot paths - note it is NOT `planeColours`, because a ped is drawn with `PLOT_NO_SHADE`, which is why a ped ignored the hook until the engine passed the colour properly |
 
 A profile is passed to `AddExplosion` as a **custom explosion type** (an id
 `>= CD2_FX_BASE`, 1000). The `SPAWN` handler resolves it, writes the parameters
