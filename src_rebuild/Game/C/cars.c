@@ -1518,6 +1518,21 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 	int total_cluts;
 	int clut_number;
 	int skipped = 0;
+	// The Clut id stored for each page, so an upload that has run out of budget can
+	// reuse THE SAME PAGE's palette rather than the city's very first one. The old
+	// fallback (`clutTable[0]`) is the "crazy colours" report: it is a palette for a
+	// different texture, so the car draws with another car's colours instead of slightly
+	// wrong ones. Pages are few (a city has 5-8 car page columns), so a tiny table does.
+	ushort pageClut[16];
+	int pageOf[16];
+	int nPage = 0;
+	int k;
+
+	for (k = 0; k < 16; k++)
+	{
+		pageClut[k] = 0;
+		pageOf[k] = -1;
+	}
 
 	total_cluts = *(int*)lump_ptr;
 	
@@ -1538,13 +1553,20 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 		if (clut_number == -1)
 		{
 			// store clut
-			// JERICHO: an imported city's palette upload has to stay below the pin band's
-			// reserve (see CAR_CLUT_IMPORT_LIMIT). Past it, reuse the city's first palette
-			// rather than walking clutpos into the reserve; the car's base colours come
-			// from its page's own CLUTs anyway, so only a late variant can be short.
+			// JERICHO: an imported city's palette upload stops at CAR_CLUT_IMPORT_LIMIT so it
+			// cannot eat the pin band's reserve. Past it, reuse the palette already stored
+			// for THIS PAGE - the car's own page, so its colours stay its own - and only
+			// fall back to the city's first palette if this page has not stored one yet.
 			if (city == GetCarImportCity() && city != GameLevel && clutpos.y > CAR_CLUT_IMPORT_LIMIT)
 			{
-				clutValue = (clutTablePtr > clutTable) ? clutTable[0] : 0;
+				int hit = -1;
+
+				for (k = 0; k < nPage; k++)
+					if (pageOf[k] == tpageindex)
+						hit = k;
+
+				clutValue = (hit >= 0) ? pageClut[hit]
+					: ((clutTablePtr > clutTable) ? clutTable[0] : 0);
 				skipped++;
 			}
 			else
@@ -1555,7 +1577,24 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 				clutValue = GetClut(clutpos.x, clutpos.y);
 				IncrementClutNum(&clutpos);
 
-				*clutTablePtr++ = clutValue;			
+				*clutTablePtr++ = clutValue;
+
+				// remember this page's first stored palette (the fallback above)
+				if (nPage < 16)
+				{
+					int seen = -1;
+
+					for (k = 0; k < nPage; k++)
+						if (pageOf[k] == tpageindex)
+							seen = k;
+
+					if (seen < 0)
+					{
+						pageOf[nPage] = tpageindex;
+						pageClut[nPage] = clutValue;
+						nPage++;
+					}
+				}
 			}
 		}
 		else

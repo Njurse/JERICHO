@@ -44,10 +44,26 @@ extern char RightLight;
 #define CIV_CLUT_ROWS		16
 #define CIV_CLUT_IMPORT_ROW	8
 
-// An imported city's palettes are uploaded into the level's CLUT strip, and the pin band
-// that holds the imported PAGES' CLUTs sits just above them (texture.c reserves 480..511).
-// Past this row the palette upload would push that band to the bottom of VRAM, where a
-// page's CLUT rows wrap and the set is left unplaced - so the import stops uploading here.
+// ---------------------------------------------------------------------------
+// The CLUT column's budget, measured (tools/vrammap.py + the JERICHO_PAL_DIAG readings
+// in texture.c print it step by step on every level load):
+//
+//   after the host's palettes            y=304    (48 rows)
+//   after an import's palettes           y=361    (57 rows - the WHOLE foreign table)
+//   after the level's page CLUTs         y=445    (84 rows)
+//   after the streamed-slot walk         y=485    (40 rows, 8 per streamed slot)
+//
+// and the level font image is `(960,466) 64x46` (pres.c:584) - the full width of the
+// column for rows 466..511. So the CLUT-safe area is 256..465 (210 rows) and the layout
+// needs 229: an import pushes the level's own CLUTs 19 rows into the font, and the pin
+// band (which starts at clutpos+4 = 489) lands inside it too. Measured: the HUD font and
+// the imported car's palettes overwrite each other every frame.
+//
+// The reserve below stops the import's palette upload from making it worse, and the
+// overflow reuses the palette stored for the SAME PAGE (see ProcessPalletLumpForCity) so
+// a squeezed import keeps its own colours rather than another car's. Freeing the 19+
+// rows the column is short needs one of the static consumers packed - the level's page
+// CLUTs (84 rows for 12 pages) or the streamed-slot walk (40 rows) - see VRAM.md §6.
 #define CAR_CLUT_IMPORT_LIMIT	476
 
 extern u_short civ_clut[CIV_CLUT_ROWS][32][6];

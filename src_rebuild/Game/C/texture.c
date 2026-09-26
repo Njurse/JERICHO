@@ -1526,12 +1526,13 @@ void CarImportPin(void)
 		// our palette, which is why the palette check said MISMATCH with real positions.
 		if (sPinClutCursor.x == 0 && sPinClutCursor.y == 0)
 		{
-			// JERICHO: the band starts just past whatever the level has already used, but
-			// never above 480 - the imported palettes occupy the same CLUT strip
-			// (ProcessImportedPalette uploads them there), and the old 500 ceiling left
-			// only 12 rows, which starved the second imported set so its page was never
-			// placed at all. 480..511 is 32 rows, and the level's own layout ends well
-			// below it (427 stock, 475 with an import).
+			// JERICHO: the band starts just past whatever the level (and an import's
+			// palettes) has already used, but never above CD2_CLUT_BAND_TOP - the rows
+			// above it are reserved for the band so the palettes cannot eat it.
+			//
+			// The hard ceiling is the level font image (rows 466..511, pres.c:584), NOT
+			// the bottom of VRAM: rows at or below 466 are the font, and a CLUT there is
+			// painted over by LoadFont and paints over it (cars.h: CD2_CLUT_SAFE_LAST).
 			int firstFree = clutpos.y + 4;
 
 			if (firstFree < 480)
@@ -1551,8 +1552,8 @@ void CarImportPin(void)
 		// JERICHO: the CLUT walker advances forward and WRAPS at the bottom of VRAM
 		// (IncrementClutNum), landing back at the top in the TEXTURE area. A latent
 		// safety net: with the slot starved as it is (see below) the walk never gets
-		// that far, but any set whose rows would run past y=511 is left unplaced
-		// rather than painting over a texture page.
+		// that far, but any set whose rows would run past the CLUT-safe area is left
+		// unplaced rather than painting over a texture page OR over the level font.
 		{
 			int npal = *(int*)buf;
 			int need = (npal + 3) / 4 + 1;	// CLUT rows -> VRAM rows, 4 per row, +1 for a mid-row start
@@ -2077,6 +2078,8 @@ static const VRAM_FIXED sVramFixed[] =
 	{ "CD icon",       960, 433, 16,  32,  "spool.c:333-348" },
 };
 
+#define JERICHO_PAL_DIAG(_what) printInfo("cross-city: clut cursor after %s: y=%d (the level font image owns 466..511, cars.h)\n", _what, clutpos.y)
+
 static void VramAccountReport(void)
 {
 	static unsigned char cells[VRAM_ROWS][VRAM_COLS];	// static: this is not a small stack
@@ -2202,9 +2205,12 @@ void LoadPermanentTPages(int *sector)
 	
 	IncrementClutNum(&clutpos);
 	ProcessPalletLump(palette_lump, 0);
+	JERICHO_PAL_DIAG("host palettes");
 	ProcessImportedPalette();	// JERICHO-HOOK: a cross-city import's own palettes
+	JERICHO_PAL_DIAG("import palettes");
 
 	load_civ_palettes(&clutpos);
+	JERICHO_PAL_DIAG("load_civ_palettes");
 
 	tpagebuffer = (char*)mallocptr;
 	nsectors = 0;
@@ -2321,6 +2327,7 @@ void LoadPermanentTPages(int *sector)
 		IncrementTPageNum(&tpage);
 		clutpos.y += 8;
 	}
+	JERICHO_PAL_DIAG("level slot walk (8 rows per streamed slot)");
 
 	// JERICHO-HOOK: the level's own page state, for the cross-city invariant. An
 	// import must leave every one of these exactly as it is here - measured with an
