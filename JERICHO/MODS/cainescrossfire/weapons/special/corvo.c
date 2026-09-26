@@ -110,14 +110,16 @@ static int cd2CorvoOnFrame(void* ud, void* args)
 		// the zap
 		if (++gCorvoAcc[i] >= CD2_CORVO_ZAP_INTERVAL)
 		{
-			int best = -1, bestD2 = CD2_CORVO_RANGE * CD2_CORVO_RANGE;
+			int best = -1;
+			long long bestCost = 0;
+			long long range2 = (long long)CD2_CORVO_RANGE * CD2_CORVO_RANGE;
 
 			gCorvoAcc[i] = 0;
 
 			for (j = 0; j < MAX_CARS; j++)
 			{
 				CAR_DATA* oc = &car_data[j];
-				long long dx, dz, d2;  /* 64-bit: a squared world distance wraps */
+				long long dx, dz, d2, cost;  /* 64-bit: a squared world distance wraps */
 
 				if (j == i || oc->controlType == CONTROL_TYPE_NONE || oc->ap.carCos == NULL)
 					continue;
@@ -126,9 +128,17 @@ static int cd2CorvoOnFrame(void* ud, void* args)
 				dz = oc->hd.where.t[2] - c.vz;
 				d2 = dx * dx + dz * dz;
 
-				if (d2 < bestD2)
+				if (d2 > range2)
+					continue;
+
+				// a contestant is preferred over civ traffic, so the bolt comes
+				// down on a car in the match rather than a bystander (see
+				// cd2WpnTargetCost)
+				cost = cd2WpnTargetCost(d2, oc);
+
+				if (best < 0 || cost < bestCost)
 				{
-					bestD2 = d2;
+					bestCost = cost;
 					best = j;
 				}
 			}

@@ -350,7 +350,7 @@ static int cd2ProjIsqrt(long long v)
 static void cd2ProjectileSeek(CD2_PROJECTILE* p)
 {
 	int i, best = -1;
-	long long bestD = 0;
+	long long bestCost = 0;
 	long long dx, dy, dz;
 	int dm, vm;
 	long long tx, ty, tz;
@@ -358,7 +358,7 @@ static void cd2ProjectileSeek(CD2_PROJECTILE* p)
 	for (i = 0; i < MAX_CARS; i++)
 	{
 		CAR_DATA* o = &car_data[i];
-		long long ox, oz, d2;
+		long long ox, oz, d2, cost;
 
 		if (o == p->owner || o->controlType == CONTROL_TYPE_NONE || o->ap.carCos == NULL)
 			continue;
@@ -367,9 +367,14 @@ static void cd2ProjectileSeek(CD2_PROJECTILE* p)
 		oz = o->hd.where.t[2] - p->pos.vz;
 		d2 = ox * ox + oz * oz;
 
-		if (best < 0 || d2 < bestD)
+		// prefer a contestant over civ traffic (see cd2WpnTargetCost), so a
+		// homing shot bends toward a car in the match, not the civilians in the
+		// way. Ties favour the incumbent (strict <).
+		cost = cd2WpnTargetCost(d2, o);
+
+		if (best < 0 || cost < bestCost)
 		{
-			bestD = d2;
+			bestCost = cost;
 			best = i;
 		}
 	}
@@ -428,7 +433,8 @@ static void cd2ProjectileSeek(CD2_PROJECTILE* p)
 				long long dot = (long long)p->vel.vx * dx + (long long)p->vel.vy * dy + (long long)p->vel.vz * dz;
 				int cosE = (int)(dot / (vm / 64) / dm);
 
-				printInfo("[cainescrossfire] homing car=%d dist=%d aim=%d\n", best, (int)dm, cosE * 64);
+				printInfo("[cainescrossfire] homing car=%d class=%d dist=%d aim=%d\n",
+					best, cd2WpnTargetClass(&car_data[best]), (int)dm, cosE * 64);
 			}
 		}
 	}
