@@ -287,13 +287,23 @@ When a car the module drives is destroyed (`cd2CarTotaled`), both crew sides
 - it is painted **flat black** through the engine's `JER_EVENT_PED_DRAW` hook
   (matched back to the crew by ped pointer) and `SMOKE_FIRE` is set up at its
   origin every few frames — reading as running from the wreckage in flames.
-  The black is the whole ped: a pedestrian is drawn with `PLOT_NO_SHADE`, and
-  that path takes its colour from the plot context's `combo`, *not* from
-  `planeColours` — so holding `planeColours` (which is all the hook used to do)
-  had no effect on a ped at all, and the body came out in its normal clothes
-  with only the palette machinery having any say. The hook's colour now travels
-  as `plotContext.flatColour` under `PLOT_FLAT_COLOUR`, which every flat-shaded
-  plot path honours, so the body, head and limbs all go flat together.
+  The black is the whole ped, and getting there took two separate engine fixes
+  because a pedestrian is not drawn the way a car is:
+
+  1. a pedestrian is drawn with `PLOT_NO_SHADE`, and that path takes its colour
+     from the plot context's `combo`, *not* from `planeColours` — so holding
+     `planeColours` (which is all the hook used to do) had no effect on a ped at
+     all. The colour now travels as `plotContext.flatColour` under
+     `PLOT_FLAT_COLOUR`, which every flat-shaded plot path honours;
+  2. the **skin** needed one more: the head is a *model*, and `RenderModel`
+     assigns `plotContext.flags = flags` on entry, which wiped the flat bit — so
+     the shaded body polys went black (they read `f4colourTable`, built from
+     `planeColours`) while the face, which takes the `PLOT_NO_SHADE` branch, was
+     still lit by `combo`. Measured: 611 face polys at `combo=00808080` → all
+     `colour=2c000000` after. `RenderModel` now preserves the bit, and the
+     limb/skin quads in `DrawBodySprite` (which never go through the plotter at
+     all, and take `combointensity` or a hardcoded 254 for the shadow) have their
+     own branch for it.
 
 ## 7. Player death: hold the blast point, then pan up slowly
 
@@ -330,12 +340,18 @@ afterwards (the palette `jer_ped_palette_*` machinery is what carries a team
 TINT, and it stays independent — a tinted ped keeps its own palette and the
 module's colour is applied on top).
 
-Note the mechanism, because it is not the obvious one: a pedestrian is drawn
-with `PLOT_NO_SHADE`, whose colour comes from the plot context's `combo`, not
-from `planeColours` — so the flat colour is passed as `plotContext.flatColour`
-under `PLOT_FLAT_COLOUR` and honoured in all three flat-shaded plot paths
-(`draw.c`). Setting `planeColours` alone (what this hook did originally) is a
-no-op for a ped.
+Note the mechanism, because it is not the obvious one and it has two halves:
+
+- a pedestrian is drawn with `PLOT_NO_SHADE`, whose colour comes from the plot
+  context's `combo`, not from `planeColours` — so the flat colour is passed as
+  `plotContext.flatColour` under `PLOT_FLAT_COLOUR` and honoured in all three
+  flat-shaded plot paths (`draw.c`). Setting `planeColours` alone (what this
+  hook did originally) is a no-op for a ped;
+- the bit has to *survive the draw*: the head is a model, and `RenderModel`
+  assigns `plotContext.flags = flags` on entry, which dropped it — leaving the
+  face (the `PLOT_NO_SHADE` polys) lit at `combo` while the shaded body went
+  black. `RenderModel` preserves `PLOT_FLAT_COLOUR` across that assignment, and
+  `DrawBodySprite` has its own flat-colour branch for the limb quads.
 
 With no handler the ped renders stock. It is appended at the end of the event
 enum so existing ids are unchanged, and mirrored into `JERICHO/sdk/include/`.

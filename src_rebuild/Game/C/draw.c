@@ -112,7 +112,26 @@ int setupYet = 0;
 int gDrawDistance = PVS_CELL_COUNT * PVS_CELL_COUNT;
 
 #ifndef PSX
-_pct& plotContext = *(_pct*)((u_char*)getScratchAddr(0) + 1024 - sizeof(_pct));	// orig offset: 0x1f800020
+_pct& plotContext = *(_pct*)((u_char*)getScratchAddr(0) + 1024 - sizeof(_pct));
+
+/* JERICHO: the flat-colour probe. Off unless CC_PED_FLAT_LOG is set; it reports the
+ * polygons the ped draw forced to a flat colour, which is how the face/skin was found
+ * taking the PLOT_NO_SHADE `combo` path instead of the flat colour. */
+static int jerFlatProbeLogged;
+
+static int jerFlatProbeOn(void)
+{
+	static int on = -1;
+
+	if (on < 0)
+	{
+		const char* env = getenv("CC_PED_FLAT_LOG");
+
+		on = (env != NULL && env[0] != 0 && env[0] != '0');
+	}
+
+	return on;
+}	// orig offset: 0x1f800020
 #endif
 
 struct MVERTEX5x5
@@ -1103,6 +1122,10 @@ void PlotModelSubdivNxN(MODEL* model, int rot, _pct* pc, int n)
 			pc->colour = (pc->flags & PLOT_FLAT_COLOUR)
 				? ((pc->flatColour & 0xffffffU) | 0x2c000000U)
 				: (combo & 0x2ffffffU | 0x2c000000);
+
+			if ((pc->flags & PLOT_FLAT_COLOUR) && jerFlatProbeOn() && (jerFlatProbeLogged++ % 64) == 0)
+				printInfo("flat poly: ptype=%d combo=%08x -> colour=%08x bone=%d\n",
+					ptype, combo, pc->colour, polys->th & 31);
 		}
 		else
 		{
@@ -1250,7 +1273,7 @@ void RenderModel(MODEL* model, MATRIX* matrix, VECTOR* pos, int zBias, int flags
 	plotContext.ptexture_pages = &texture_pages;
 	plotContext.ptexture_cluts = &texture_cluts;
 	plotContext.polySizes = PolySizes;
-	plotContext.flags = flags;
+	plotContext.flags = flags | (plotContext.flags & PLOT_FLAT_COLOUR);
 	plotContext.current = current;
 	
 	plotContext.primptr = plotContext.current->primptr;

@@ -42,6 +42,7 @@ would otherwise have to: none of them changes shipping behaviour.
 | `JERICHO_CC_INJECT=1` | **required** for the `thrust:` and `pad:` steps of `cc_debug.txt` to touch the player's controls |
 | `CC_MOTION_LOG=N` | sample the capstan/spring motion model every N frames |
 | `CC_VIS_LOG=N` | what the composed offset DID to the body: prints the nose's vertical motion read back off the matrix, with a `SIGN OK` / `SIGN INVERTED` verdict. This is the sign test every pitch convention in the module rests on |
+| `CC_PED_FLAT_LOG=1` | `ped flat draw` per forced ped, `ped flat sprite` for its limb quads, and `flat poly` (engine side, throttled) for the polygons a flat colour was applied to — this is how the face/skin polys were found drawing at `combo` instead of the flat colour |
 | `CC_KNOCK_LOG=N` | sample the body knock (pitch/roll/lift) every N frames — the accel-layer pitch test reads this |
 | `CC_FORCE_ARENA` / `CC_FORCE_CAR` / `CC_FORCE_OPPONENTS` / `CC_OPPONENTS` | pin the arena, the car and the opponent count without touching the config |
 | `CC_MOTION`, `CC_PROFILES`, `CC_MENU`, `CC_PLAYER_FACTION` | force the motion preset, the profile set, the menu or the player's faction |

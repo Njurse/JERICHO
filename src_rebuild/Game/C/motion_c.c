@@ -609,6 +609,11 @@ int bDoingShadow = 0;
 int gCurrentZ;
 
 // [D] [T] [A]
+/* JERICHO: the ped flat-colour probe. Declared up here because DrawBodySprite (the bone
+ * quads, i.e. most of a pedestrian) is defined before the ped draw that uses it. */
+static int gPedFlatSpriteLogged;	/* throttles the sprite probe's output */
+static int pedFlatProbeOn(void);
+
 void DrawBodySprite(LPPEDESTRIAN pDrawingPed, int boneId, VERTTYPE v1[2], VERTTYPE v2[2], int sz, int sy)
 {
 #if 0
@@ -897,6 +902,21 @@ void DrawBodySprite(LPPEDESTRIAN pDrawingPed, int boneId, VERTTYPE v1[2], VERTTY
 		prims->r0 = 254;
 		prims->g0 = 254;
 		prims->b0 = 254;
+	}
+	else if (plotContext.flags & PLOT_FLAT_COLOUR)
+	{
+		/* A ped being forced to a flat colour - a bailed-out crew ped, burnt black and
+		 * running from the wreck. These quads ARE most of a pedestrian (the limbs and the
+		 * skin) and they never go through the poly plotter, so before this branch existed
+		 * the flat colour covered the model bones and left the rest of the body LIT - the
+		 * blackout stopped at the clothes. The colour word is B<<16|G<<8|R. */
+		prims->r0 = plotContext.flatColour & 0xFF;
+		prims->g0 = (plotContext.flatColour >> 8) & 0xFF;
+		prims->b0 = (plotContext.flatColour >> 16) & 0xFF;
+
+		if (pedFlatProbeOn() && (gPedFlatSpriteLogged++ % 128) == 0)
+			jer_log("ped flat sprite: bone=%d rgb=%d,%d,%d\n",
+				boneId, prims->r0, prims->g0, prims->b0);
 	}
 	else if (gNight)
 	{
