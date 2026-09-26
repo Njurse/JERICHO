@@ -42,6 +42,9 @@
  * the game exe but has no public header; a JERICHO module is compiled as C++ and
  * links the exe's exported symbols, so a plain extern resolves it. */
 extern int g_FreeCameraEnabled;
+/* the engine's car placement (cars.c): copies hd.where into the rigid body's
+ * fposition and rebuilds the orientation - the position the physics reads */
+extern void TempBuildHandlingMatrix(CAR_DATA* cp, int init);
 #include "weapons/core/weapon_internal.h"	/* cd2WpnLine - the ghost markers, cd2WpnPlayerCar */
 
 #include <string.h>
@@ -335,6 +338,36 @@ static void cd2EditorCorner(void)
 		w.region.x0, w.region.z0, w.region.x1, w.region.z1);
 }
 
+// The quick way to BE somewhere: fly the freecam over a spot and press TRIANGLE
+// to drop the car there, then drive it to feel the arena out - no restart, no
+// walking the whole map. A no-op unless the freecam is the cursor (otherwise the
+// car is already where the cursor is).
+static void cd2EditorWarpCar(void)
+{
+	CAR_DATA* cp = cd2EditorCar();
+	int x, y, z, heading, fromFreecam;
+
+	if (cp == NULL || !cd2EditorCursor(&x, &y, &z, &heading, &fromFreecam) || !fromFreecam)
+		return;
+
+	cp->hd.where.t[0] = x;
+	cp->hd.where.t[1] = y;
+	cp->hd.where.t[2] = z;
+
+	cp->st.n.linearVelocity[0] = 0;
+	cp->st.n.linearVelocity[1] = 0;
+	cp->st.n.linearVelocity[2] = 0;
+	cp->st.n.angularVelocity[0] = 0;
+	cp->st.n.angularVelocity[1] = 0;
+	cp->st.n.angularVelocity[2] = 0;
+
+	/* the engine reads the rigid body, not hd.where: this copies where into
+	 * fposition and rebuilds the orientation from hd.direction */
+	TempBuildHandlingMatrix(cp, 1);
+
+	printInfo("[cainescrossfire] arena editor: warped car %d to (%d,%d,%d)\n", cp->id, x, y, z);
+}
+
 static void cd2EditorSave(void)
 {
 	const CD2_ARENA_PROFILE* w = cd2ArenaCurrent();
@@ -438,7 +471,7 @@ static int cd2EditorOnFrame(void* ud, void* args)
 {
 	const CD2_ARENA_PROFILE* w;
 	unsigned short pad, edge;
-	char line[200];
+	char line[220];
 
 	(void)ud;
 	(void)args;
@@ -473,6 +506,7 @@ static int cd2EditorOnFrame(void* ud, void* args)
 	if (edge & MPAD_R1)	{ gSelSlot = (gSelSlot + 1) % ((w->spawnCount > 0) ? w->spawnCount : 1); }
 	if (edge & MPAD_L2)	cd2EditorDeleteNearest();
 	if (edge & MPAD_R2)	cd2EditorCorner();
+	if (edge & MPAD_TRIANGLE)	cd2EditorWarpCar();
 	if (edge & MPAD_SELECT)	cd2EditorSave();
 	if (edge & MPAD_START)	cd2EditorReload();
 
@@ -486,7 +520,7 @@ static int cd2EditorOnFrame(void* ud, void* args)
 	cd2EditorDraw();
 
 	snprintf(line, sizeof(line),
-		"ARENA EDITOR: %s%s  spawn %d/%d  region %s  cursor %s  [L1 place  R1 slot  L2 del  R2 corner  SEL save  START reload]",
+		"ARENA EDITOR: %s%s  spawn %d/%d  region %s  cursor %s  [L1 place  R1 slot  L2 del  R2 corner  TRI warp  SEL save  START reload]",
 		w->internalName, gEditorDirty ? " *unsaved*" : "",
 		(w->spawnCount > 0) ? (gSelSlot + 1) : 0, w->spawnCount,
 		w->region.bounded ? "set" : "none",

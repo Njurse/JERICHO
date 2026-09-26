@@ -55,6 +55,7 @@ echo    4) Check all arenas
 echo    5) Render an arena to a PNG
 echo    6) Sync the two arena folders
 echo    7) Check the setup
+echo    8) Build the level map (a city's top-down rip)
 echo    Q) Quit
 echo.
 set "C="
@@ -66,6 +67,7 @@ if /i "%C%"=="4" goto check
 if /i "%C%"=="5" goto render
 if /i "%C%"=="6" goto syncmenu
 if /i "%C%"=="7" goto setup
+if /i "%C%"=="8" goto levelmap
 if /i "%C%"=="q" goto :eof
 goto menu
 
@@ -199,6 +201,29 @@ rem ---------------------------------------------------------------------------
 call :sync
 echo.
 echo   synced - the newer file in each pair wins.
+pause
+goto menu
+
+rem ---------------------------------------------------------------------------
+:levelmap
+if not defined PY goto nopy
+cls
+echo Build the level map
+echo --------------------------------------------------------------
+echo   A city's DriverLevelTool rip, drawn top-down and aligned to the game's
+echo   world coordinates. It is cached next to the .obj, so doing this once
+echo   makes opening an arena with that map instant afterwards.
+echo.
+set "LCITY="
+set /p "LCITY=  city (RIO/CHICAGO/HAVANA/VEGAS) [RIO]: "
+if "%LCITY%"=="" set "LCITY=RIO"
+set "PREVIEW=%REPO%\DriverLevelTool\%LCITY%_LEVELMODEL.preview.png"
+echo.
+%PY% "%EDITOR%" --level %LCITY% --rebuild-map --dir "%ARENAS%" --render "%PREVIEW%"
+set "RC=!errorlevel!"
+echo.
+if not "!RC!"=="0" echo   the build failed - exit code !RC! (is that city ripped?)
+if exist "%PREVIEW%" start "" "%PREVIEW%"
 pause
 goto menu
 

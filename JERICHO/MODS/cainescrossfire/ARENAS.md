@@ -215,6 +215,32 @@ spawn: the cursor's height is what is written as the spawn's `y`, which is what
 keeps the car out of the void. Headless, or without a keyboard, the debug
 driver's `freecam:1` / `freecam:0` step forces it on and off.
 
+**Getting the car there:** press **TRIANGLE** while the freecam is on and the car
+is dropped at the cursor — fly over an area, tap it, then drive around to feel the
+arena out without restarting the match. With the freecam off it does nothing (the
+car is already the cursor).
+
+## Designing against a level map (the Python editor)
+
+A city needs a **rip** for the editor to draw it: `DriverLevelTool/` ships RIO
+(`RIO_LEVELMODEL.obj`), and another city can be added with
+`DriverLevelTool.exe -world 1` pointed at its level.
+
+```
+python arenaedit.py myarena.cca --level RIO     # build/load the map, aligned
+python arenaedit.py --level RIO --rebuild-map   # force a rebuild
+arena_menu.bat  ->  8) Build the level map      # the same, from the menu
+```
+
+The picture is drawn **aligned to the game's world coordinates** (a rip is the
+level model at 1/4096 with X mirrored, so `world_x = -4096*obj_x`,
+`world_z = +4096*obj_z`) and **cached** beside the `.obj` as
+`<CITY>_LEVELMODEL.topdown.png` plus a `.json` sidecar carrying the world rect —
+so only the first build costs anything (a few seconds on a 185 MB `.obj`) and the
+PNG is shareable on its own, without the rip. With no `--level`, a map already
+cached for the arena's city is used automatically; `--level CITY` is what builds
+one that is missing, and it says so plainly when a city has not been ripped.
+
 ## Test levers
 
 - `CC_FORCE_ARENA=<arena id>` — launch straight into an arena (id 0..N-1 in

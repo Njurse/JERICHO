@@ -51,6 +51,7 @@ SPAWN_MAX = 16
 HEADING_MAX = 4096
 CITIES = {0: "CHICAGO", 1: "HAVANA", 2: "VEGAS", 3: "RIO"}
 CITY_INDEX = {v: k for k, v in CITIES.items()}
+CITY_NAMES = {v: k for k, v in CITY_INDEX.items()}	# index -> NAME
 
 
 def _default_arena_dir():
@@ -316,6 +317,158 @@ def load_obj_points(path, world_rect, size=(1400, 1000), sample=2):
     img = img.convert("RGB")
     print("obj %s: %d verts, %d plotted" % (path, n, kept))
     return img
+
+
+# ---------------------------------------------------------------------------
+# level rips: a city's DriverLevelTool model, drawn top-down and CACHED
+# ---------------------------------------------------------------------------
+# DriverLevelTool writes the level model at 1/4096 (the engine's ONE) with X
+# mirrored, so: world_x = -4096 * obj_x and world_z = +4096 * obj_z. Using that
+# instead of stretching the obj's bounding box is what makes the picture land on
+# the arena's own world coordinates.
+LEVEL_SCALE = 4096
+
+
+def repo_root():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
+
+
+def level_rip_paths(city):
+    """(obj, png, json) for a city's rip in DriverLevelTool/ - any may be missing."""
+    base = os.path.join(repo_root(), "DriverLevelTool", "%s_LEVELMODEL" % city.upper())
+    return base + ".obj", base + ".topdown.png", base + ".topdown.json"
+
+
+def build_level_map(city, size=(2000, 2000), sample=4, rebuild=False,
+                    allow_build=True, verbose=True):
+    """The top-down background for a city, from its DriverLevelTool rip.
+
+    Returns (PIL image, world_rect), or (None, None) when there is no rip (or no
+    cache and allow_build is off). The picture is CACHED as
+    `<CITY>_LEVELMODEL.topdown.png` plus a `.json` sidecar with the world rect, so
+    the slow pass over a ~185 MB .obj happens once and later opens are instant -
+    and the PNG alone is shareable, since the sidecar carries the alignment.
+
+    `sample` keeps every Nth vertex (the cloud is ~10M points; every 4th is
+    plenty at this resolution).
+    """
+    import json
+    from array import array
+    from PIL import Image
+
+    obj, png, side = level_rip_paths(city)
+
+    def _cached():
+        if not (os.path.exists(png) and os.path.exists(side)):
+            return None
+
+        try:
+            meta = json.load(open(side))
+            rect = tuple(meta["rect"])
+        except Exception:
+            return None
+
+        # invalidate only when the .obj is present AND has changed; a PNG on its
+        # own (the obj deleted, or a shared cache) is still good
+        if os.path.exists(obj) and not rebuild:
+            st = os.stat(obj)
+
+            if meta.get("obj_size") != st.st_size or meta.get("obj_mtime") != int(st.st_mtime):
+                if verbose:
+                    print("level map cache for %s is stale - rebuilding" % city.upper())
+                return None
+
+        return Image.open(png).convert("RGB"), rect
+
+    if not rebuild:
+        got = _cached()
+
+        if got is not None:
+            return got
+
+    if not os.path.exists(obj):
+        if verbose:
+            print("no level rip for %s (looked for %s)" % (city.upper(), obj))
+        return None, None
+
+    if not allow_build:
+        if verbose:
+            print("no cached level map for %s yet - run with --level %s once to build it"
+                  % (city.upper(), city.upper()))
+        return None, None
+
+    if verbose:
+        print("building the %s level map (one pass over %s, then cached)"
+              % (city.upper(), os.path.basename(obj)))
+
+    xs = array("f")
+    zs = array("f")
+    n = 0
+
+    with open(obj, "r", errors="ignore") as f:
+        for line in f:
+            if line[:2] != "v ":
+                continue
+
+            n += 1
+
+            if sample > 1 and (n % sample):
+                continue
+
+            parts = line.split()
+
+            try:
+                xs.append(float(parts[1]))
+                zs.append(float(parts[3]))
+            except (IndexError, ValueError):
+                pass
+
+    if not len(xs):
+        return None, None
+
+    # the model -> world frame (X mirrored): this is the true extent
+    rect = (-LEVEL_SCALE * max(xs), LEVEL_SCALE * min(zs),
+            -LEVEL_SCALE * min(xs), LEVEL_SCALE * max(zs))
+
+    W, H = size
+    img = Image.new("L", size, 0)
+    px = img.load()
+    x0, z0, x1, z1 = rect
+    sx = W / float(x1 - x0)
+    sz = H / float(z1 - z0)
+    kept = 0
+
+    for i in range(len(xs)):
+        ix = int((-LEVEL_SCALE * xs[i] - x0) * sx)
+        iz = int((LEVEL_SCALE * zs[i] - z0) * sz)
+
+        if 0 <= ix < W and 0 <= iz < H:
+            v = px[ix, iz]
+
+            if v < 255:
+                px[ix, iz] = min(255, v + 50)
+
+            kept += 1
+
+    img = img.convert("RGB")
+
+    try:
+        img.save(png)
+        json.dump({"city": city.upper(), "rect": list(rect), "verts": n,
+                   "sampled": len(xs), "plotted": kept,
+                   "obj_size": os.stat(obj).st_size,
+                   "obj_mtime": int(os.stat(obj).st_mtime)},
+                  open(side, "w"), indent=1)
+
+        if verbose:
+            print("cached %s (%d of %d verts plotted; world rect %s)"
+                  % (os.path.basename(png), kept, n, rect))
+    except Exception as e:
+        if verbose:
+            print("(could not write the cache: %s - using it for this session only)" % e)
+
+    return img, rect
 
 
 def cells_world_rect(cw, ch, cell=2048):
@@ -727,6 +880,12 @@ def main(argv=None):
                     help="the world rectangle the .obj's own bounding box is stretched onto")
     ap.add_argument("--cells", nargs=2, type=int, metavar=("W", "H"),
                     help="level grid (DriverLevelTool 'Level dimensions [W H]'); sets --obj-world")
+    ap.add_argument("--level", nargs="?", const="auto", metavar="CITY",
+                    help="draw a city's DriverLevelTool rip as the top-down background, aligned "
+                         "to the arena's world coordinates (omit CITY to use the arena's own). "
+                         "Cached next to the .obj, so it is slow only the first time")
+    ap.add_argument("--rebuild-map", action="store_true",
+                    help="rebuild the cached level map even when it looks current")
     ap.add_argument("--render", metavar="OUT.png", help="render headlessly and exit")
     ap.add_argument("--check", action="store_true", help="validate and print, do not open a window")
     ap.add_argument("--json", action="store_true", help="print the parsed arenas as JSON")
@@ -775,23 +934,26 @@ def main(argv=None):
             continue
         arenas.append(a)
 
+    hint = ""
+
     if not arenas:
         print("No arena files found.")
         print("  make one:   python arenaedit.py --new chicago_docks --city CHICAGO")
         print("  or drop .cca files in: %s" % arena_dir)
 
         # the offline modes just report; the editor still OPENS (empty) so the
-        # user gets a window with the folder it looked in and how to make one
-        if args.json or args.check or args.render:
+        # user gets a window with the folder it looked in and how to make one.
+        # (--level is the exception: with a level map there IS something to draw,
+        # so a --render builds/renders it even with no arena files.)
+        if (args.json or args.check or args.render) and not args.level:
             return 0
 
         os.makedirs(arena_dir, exist_ok=True)
         blank = Arena("new_arena", "New Arena", CITY_INDEX.get(args.city.upper(), 0), 1, 0)
         blank.path = os.path.join(arena_dir, "new_arena.cca")
-
-        return run_editor([blank], hint=(
-            "no .cca files in %s  -  press N to make one, or run: "
-            "python arenaedit.py --new myarena" % arena_dir))
+        arenas = [blank]
+        hint = ("no .cca files in %s  -  press N to make one, or run: "
+                "python arenaedit.py --new myarena" % arena_dir)
 
     if args.json:
         import json
@@ -838,13 +1000,34 @@ def main(argv=None):
         bg = Image.open(args.map).convert("RGB")
         if bg_rect is None:
             bg_rect = _bounds(arenas)
+    else:
+        # a level rip: an explicit --level CITY builds or loads it; otherwise an
+        # already-cached one for the arena's city is used, and NOT built - so
+        # opening never stalls on a 60-second parse of a 185 MB .obj
+        city = None
+
+        if args.level:
+            if args.level == "auto":
+                city = CITY_NAMES.get(arenas[0].city if arenas else 0)
+            else:
+                city = args.level
+        elif arenas:
+            city = CITY_NAMES.get(arenas[0].city)
+
+        if city:
+            img, rect = build_level_map(city, rebuild=args.rebuild_map,
+                                        allow_build=bool(args.level),
+                                        verbose=bool(args.level) or args.rebuild_map)
+
+            if img is not None:
+                bg, bg_rect = img, rect
 
     if args.render:
         render_png(arenas, args.render, bg, bg_rect)
         print("wrote", args.render)
         return 0
 
-    return run_editor(arenas, bg, bg_rect)
+    return run_editor(arenas, bg, bg_rect, hint=hint)
 
 
 if __name__ == "__main__":
