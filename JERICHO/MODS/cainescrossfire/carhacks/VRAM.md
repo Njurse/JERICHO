@@ -90,6 +90,47 @@ so an imported car's palette rows are written over the bottom ~23 rows of the HU
 image, and `LoadFont` writes over the car's palette rows. `tools/vrammap.py` prints this
 section for exactly this reason (see §5).
 
+### The budget, measured row by row
+
+`JERICHO_PAL_DIAG` readings (texture.c) print the cursor at each step, on every level
+load. Havana with the RIO import of model 9:
+
+| step | cursor | rows | what it is |
+|---|---|---|---|
+| after the host's palettes | y=304 | 48 | the whole host city palette table |
+| after an import's palettes | y=361 | **57** | the whole FOREIGN city palette table |
+| after the level's page CLUTs | y=445 | 84 | 12 permanent pages, 7 rows each |
+| after the streamed-slot walk | y=485 | 40 | 8 rows per streamed slot (5 slots) |
+| **total** | | **229** | |
+
+The font owns 466..511, so the CLUT-safe area is 256..465 = **210 rows** and the layout
+needs **229**: an import pushes the level's own CLUTs 19 rows into the font, and the pin
+band (which starts at `clutpos+4` = 489) lands inside it too. That is the cross-city
+palette corruption: the HUD font and the imported car's palettes overwrite each other
+every frame.
+
+The 57 rows are the whole foreign table for **one** car — the same "only what the car
+names" rule the *pages* already follow. The allocation that fits, with every number
+measured:
+
+```
+256..303  host palettes          48
+304..311  import palettes         8   (reserved early, filled once the model is known)
+312..395  level page CLUTs       84
+396..435  streamed slots         40
+436..465  pin band               30   (measured need: 16 + 7 rows for the two sets)
+                                 --
+                                 210  = exactly the safe area
+```
+
+two things have to move for that: the import's palette upload must be filtered to the
+pages the imported model names (`sets[]` in `LoadImportedTPages`, which is exactly the
+list `specTpages[src]`/`CarModelSet` produce — the pin's band then only carries those),
+and its rows must be *reserved* in that early position while the content is uploaded
+later, because `CarModelSet` needs the built model. `civ_clut` is read only at draw time
+(`cars.c` plot paths, `motion_c.c` peds), so deferring the fill to `LoadImportedTPages`
+is safe.
+
 ## 4. Everything else that writes VRAM
 
 The complete claim table lives in `tools/vrammap.py` (`CLAIMS`), each row carrying its
@@ -159,3 +200,8 @@ Given §2 (0 KiB free) and §3 (~27 CLUT rows spare), the plausible moves, cheap
    already does this for the world) so an import reserves no VRAM at all.
 
 1 and 2 are the ones with a measured target; 4 and 5 are structural.
+
+For 1 specifically, the numbers are in §3: the page slots and the host palettes are already
+packed, so the reclaim that makes the column fit is the import’s own 57 rows (filter to the
+pages the imported model names) plus reserving the pin band inside the safe area - the
+allocation that adds up to exactly 210 rows is written out there.
