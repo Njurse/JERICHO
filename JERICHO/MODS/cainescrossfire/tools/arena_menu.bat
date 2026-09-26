@@ -5,13 +5,15 @@ title Caine's Crossfire - Arena tool
 rem ============================================================================
 rem arena_menu.bat - make, open and test Caine's Crossfire arenas.
 rem
-rem   Double-click it (or run it from tools\). It keeps the mod's own arena
-rem   folder in step with the copy the game reads, so what you make or edit -
-rem   in the Python editor, or in-game with -cceditor - is what ships:
+rem   Double-click it (or run it from tools\). Arenas live in the mod's own
+rem   folder, and the game reads AND writes that same folder (a dev build) - so
+rem   the Python editor and the game edit one file:
 rem
-rem     mod folder  JERICHO\MODS\cainescrossfire\arenas      (source of truth)
-rem     game reads  bin\Release_dev\JERICHO\MODS\..."arenas" (the MODS mirror)
+rem     arenas   JERICHO\MODS\cainescrossfire\arenas   (the file both use)
+rem     game     <bin>\...\MODS\...\arenas             (an installed copy's fallback)
 rem
+rem   Option 7 checks the setup (interpreter, tkinter/Pillow, folders, game exe)
+rem   and is the thing to run when the editor will not open.
 rem   See ..\ARENAS.md for the .cca file format.
 rem ============================================================================
 
@@ -52,6 +54,7 @@ echo    3) Edit an arena in-game
 echo    4) Check all arenas
 echo    5) Render an arena to a PNG
 echo    6) Sync the two arena folders
+echo    7) Check the setup
 echo    Q) Quit
 echo.
 set "C="
@@ -62,6 +65,7 @@ if /i "%C%"=="3" goto game
 if /i "%C%"=="4" goto check
 if /i "%C%"=="5" goto render
 if /i "%C%"=="6" goto syncmenu
+if /i "%C%"=="7" goto setup
 if /i "%C%"=="q" goto :eof
 goto menu
 
@@ -94,7 +98,7 @@ if exist "%NEWFILE%" (
   >>"%NEWFILE%" echo city: %CITY%
   >>"%NEWFILE%" echo mp: %MP% 0
   >>"%NEWFILE%" echo region: none
-  >>"%NEWFILE%" echo # spawn: x z heading  ^(first = player, rest = opponents^)
+  >>"%NEWFILE%" echo # spawn: x z heading [y]  ^(first = player, rest = opponents; y = height^)
   >>"%NEWFILE%" echo # pickup: weapon ^<name^> x z [ammo]   ^|   pickup: health x z [amount]
   echo.
   echo   created %NEWFILE%
@@ -123,8 +127,14 @@ echo.
 echo   opening %OPENFILE% ...
 echo.
 %PY% "%EDITOR%" "%OPENFILE%"
+set "RC=!errorlevel!"
 echo.
-echo   saved - arenas live in %ARENAS%
+if not "!RC!"=="0" (
+  echo   the editor exited with code !RC! - the message above says why.
+  echo   run "7) Check the setup" for the whole picture.
+) else (
+  echo   saved - arenas live in %ARENAS%
+)
 pause
 call :sync
 goto menu
@@ -160,7 +170,9 @@ if not defined PY goto nopy
 call :sync
 echo.
 %PY% "%EDITOR%" "%ARENAS%\*.cca" --check
+set "RC=!errorlevel!"
 echo.
+if not "!RC!"=="0" echo   (warnings above - exit code !RC!)
 pause
 goto menu
 
@@ -175,6 +187,8 @@ if not exist "%OUT%" mkdir "%OUT%" >nul 2>nul
 for %%F in ("%PICKED%") do set "OUT=%ARENAS%\renders\%%~nF.png"
 echo.
 %PY% "%EDITOR%" "%PICKED%" --render "%OUT%"
+set "RC=!errorlevel!"
+if not "!RC!"=="0" echo   the render failed - exit code !RC!
 echo.
 if exist "%OUT%" start "" "%OUT%"
 pause
@@ -185,6 +199,18 @@ rem ---------------------------------------------------------------------------
 call :sync
 echo.
 echo   synced - the newer file in each pair wins.
+pause
+goto menu
+
+rem ---------------------------------------------------------------------------
+:setup
+if not defined PY goto nopy
+call :sync
+echo.
+%PY% "%EDITOR%" --selftest
+set "RC=!errorlevel!"
+echo.
+if not "!RC!"=="0" echo   SOMETHING IS MISSING - see above
 pause
 goto menu
 
