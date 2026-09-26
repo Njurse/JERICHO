@@ -190,6 +190,27 @@ typedef struct CD2_WEAPON_DEF
 #define CD2_WPN_FX(d)	((d)->impactFx ? (d)->impactFx : (d)->explosionEffect)
 
 // ---------------------------------------------------------------------------
+// Lock-on target preference (implemented in core/weapons.c)
+// ---------------------------------------------------------------------------
+// Which car a lock-on should aim at. The module's own cars - the player and the
+// AI opponents (cd2OwnsCar) - are the intended targets; stock civ traffic
+// (cd2IsTraffic) is collateral, and is strongly disfavoured so a lock does not
+// snap onto it. Every lock-on pick (Fixer's laser beam, a homing projectile's
+// seek, Corvo's bolt) routes through these, so the preference is set once.
+//
+// 0 = an intended target (a module-owned car), 1 = civ traffic, 2 = anything
+// else (an empty / NONE / CUTSCENE slot - neither).
+int cd2WpnTargetClass(const CAR_DATA* cp);
+
+// Score a candidate for a nearest-target pick. `d2` is its squared XZ distance.
+// An intended target scores its plain distance; a civ-traffic candidate scores
+// its distance inflated by the config's lock_traffic_penalty percent
+// (CD2_LOCK_TRAFFIC_PENALTY_DEFAULT), so a traffic car only wins the pick when
+// no intended target is comparably close. LOWER is better; the caller keeps the
+// first/incumbent on a tie, which is what its selection loop expects.
+long long cd2WpnTargetCost(long long d2, const CAR_DATA* cp);
+
+// ---------------------------------------------------------------------------
 // Registry + inventory API (implemented in core/weapons.c)
 // ---------------------------------------------------------------------------
 const CD2_WEAPON_DEF* cd2WpnDef(int weaponId);

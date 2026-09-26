@@ -7,6 +7,10 @@
 //
 //   * the beam only exists while there is a target in the cone (fireCone) AND
 //     lineClear has a line to it. Lose either and the beam, and the lock, go.
+//   * the target is CONNECTED to the match: the laser holds a contestant - the
+//     player or an AI opponent (cd2OwnsCar) - and never civ traffic, so the
+//     beam cannot be stolen by a civilian drifting through the cone. Firing
+//     therefore always lands on an opponent's car.
 //   * a different target resets the lock: the charge belongs to one car.
 //   * firing spends it: heavy damage scaled by the charge, plus a hard twist
 //     AWAY from Fixer. Five seconds between shots, so the charge cannot simply
@@ -34,8 +38,8 @@
 
 extern int ratan2(int y, int x);	/* the module's angle helper */
 
-#define CD2_FIXER_RANGE		6200	// how far the lock reaches
-#define CD2_FIXER_CONE		420	// ...and how far off the nose (heading units, ~37 deg)
+#define CD2_FIXER_RANGE		7750	// how far the lock reaches (6200 + 25%)
+#define CD2_FIXER_CONE		500	// ...and how far off the nose (heading units, ~44 deg)
 #define CD2_FIXER_CHARGE	165	// frames of solid lock for a full charge (5.5s)
 #define CD2_FIXER_YELLOW	60	// lock frames where white has turned yellow (2s)
 #define CD2_FIXER_RED		120	// ...and where yellow has turned red (4s)
@@ -112,6 +116,12 @@ static int cd2FixerAcquire(CAR_DATA* cp, VECTOR* c, int keep)
 		int toTarget, diff;
 
 		if (j == cp->id || oc->controlType == CONTROL_TYPE_NONE || oc->ap.carCos == NULL)
+			continue;
+
+		// lock onto a CONTESTANT only - the player or an opponent. The laser is
+		// for the cars in the match, not the civilians drifting through the cone,
+		// so traffic never steals the lock (and can never be what a shot lands on).
+		if (cd2WpnTargetClass(oc) != 0)
 			continue;
 
 		dx = (long long)oc->hd.where.t[0] - c->vx;
@@ -264,6 +274,8 @@ static int cd2FixerOnFrame(void* ud, void* args)
 		if (t != gTarget[i])
 		{
 			// a different car: the charge belongs to one target
+			printInfo("[cainescrossfire] fixer: lock car=%d -> contestant car=%d (class=%d)\n",
+				i, t, cd2WpnTargetClass(&car_data[t]));
 			gTarget[i] = t;
 			gLock[i] = 0;
 		}

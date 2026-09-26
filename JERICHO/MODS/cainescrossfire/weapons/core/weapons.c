@@ -498,6 +498,44 @@ int cd2WpnPointInCar(const CAR_DATA* cp, const VECTOR* p)
 // opponent test lives with the AI (avoids pulling ai.h into the core)
 extern int cd2AiIsOpponent(const void* car);
 
+// ---------------------------------------------------------------------------
+// Lock-on target preference (see weapons/core/weapon.h).
+//
+// The module's own cars - the player and the AI opponents - are the targets a
+// lock-on is FOR; stock civ traffic is collateral. The pick loops stay as they
+// are (nearest wins); they only score candidates through cd2WpnTargetCost,
+// which inflates a traffic candidate's distance so an intended target wins
+// unless the traffic is far closer.
+// ---------------------------------------------------------------------------
+int cd2WpnTargetClass(const CAR_DATA* cp)
+{
+	if (cp == NULL)
+		return 2;
+
+	if (cd2OwnsCar((CAR_DATA*)cp))
+		return 0;	// the player or an opponent - the intended targets
+
+	if (cd2IsTraffic((CAR_DATA*)cp))
+		return 1;	// stock civ traffic - disfavoured, never forbidden
+
+	return 2;		// an empty / NONE / CUTSCENE slot
+}
+
+long long cd2WpnTargetCost(long long d2, const CAR_DATA* cp)
+{
+	int pct;
+
+	if (cd2WpnTargetClass(cp) != 1)
+		return d2;
+
+	pct = gCd2Cfg.lockTrafficPenalty;
+
+	if (pct < 100)
+		pct = 100;
+
+	return (d2 * pct) / 100;
+}
+
 // Last weapon to damage each car, by car id, for kill attribution (-1 = none).
 // An ID rather than a CAR_DATA*: the car_data slots are recycled, so a stored
 // pointer can end up aliasing whoever occupies that slot now. The kill path

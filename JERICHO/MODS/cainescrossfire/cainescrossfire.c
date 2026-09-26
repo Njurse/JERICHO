@@ -256,6 +256,23 @@ void cd2LoadConfig(void)
 	gCd2Cfg.carCarDamage  = jer_config_get_int("cainescrossfire", "car_car_damage", -1);
 	gCd2Cfg.weaponDamage  = jer_config_get_int("cainescrossfire", "weapon_damage", CD2_WEAPON_DAMAGE_DEFAULT);
 	gCd2Cfg.aiDamageTaken = jer_config_get_int("cainescrossfire", "ai_damage_taken", CD2_AI_DAMAGE_TAKEN_DEFAULT);
+	gCd2Cfg.lockTrafficPenalty = jer_config_get_int("cainescrossfire", "lock_traffic_penalty", CD2_LOCK_TRAFFIC_PENALTY_DEFAULT);
+
+	/* CC_LOCK_TRAFFIC lets a harness retune the lock-on traffic preference for a
+	 * run without touching the player's config (applied but never saved back, the
+	 * same arrangement as CC_OPPONENTS). */
+	{
+		const char* env = getenv("CC_LOCK_TRAFFIC");
+
+		if (env != NULL && env[0] != 0)
+		{
+			char* end = NULL;
+			long v = strtol(env, &end, 10);
+
+			if (end != NULL && end != env && *end == 0 && v >= 100 && v <= 10000)
+				gCd2Cfg.lockTrafficPenalty = (int)v;
+		}
+	}
 	gCd2Cfg.respawn       = jer_config_get_int("cainescrossfire", "respawn", 1);
 	gCd2Cfg.respawnDelay  = CD2_RESPAWN_DELAY;	// fixed 5s, see CD2_RESPAWN_DELAY
 
@@ -302,6 +319,7 @@ void cd2LoadConfig(void)
 	gCd2Cfg.carCarDamage  = jer_clamp_int(gCd2Cfg.carCarDamage, 10, 100);
 	gCd2Cfg.weaponDamage  = jer_clamp_int(gCd2Cfg.weaponDamage, 0, 200);
 	gCd2Cfg.aiDamageTaken = jer_clamp_int(gCd2Cfg.aiDamageTaken, 10, 400);
+	gCd2Cfg.lockTrafficPenalty = jer_clamp_int(gCd2Cfg.lockTrafficPenalty, 100, 10000);
 	gCd2Cfg.respawn       = gCd2Cfg.respawn ? 1 : 0;
 	gCd2Cfg.missileScale  = jer_clamp_int(gCd2Cfg.missileScale, 512, 16384);
 	gCd2Cfg.missileSound  = jer_clamp_int(gCd2Cfg.missileSound, 0, 34);
@@ -343,6 +361,7 @@ void cd2SaveConfig(void)
 	jer_config_set_int("cainescrossfire", "car_car_damage", gCd2Cfg.carCarDamage);
 	jer_config_set_int("cainescrossfire", "weapon_damage", gCd2Cfg.weaponDamage);
 	jer_config_set_int("cainescrossfire", "ai_damage_taken", gCd2Cfg.aiDamageTaken);
+	jer_config_set_int("cainescrossfire", "lock_traffic_penalty", gCd2Cfg.lockTrafficPenalty);
 	jer_config_set_int("cainescrossfire", "respawn", gCd2Cfg.respawn);
 	jer_config_set_str("cainescrossfire", "missile_model", gCd2Cfg.missileModel);
 	jer_config_set_int("cainescrossfire", "missile_scale", gCd2Cfg.missileScale);

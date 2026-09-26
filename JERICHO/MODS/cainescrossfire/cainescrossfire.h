@@ -387,6 +387,16 @@ typedef struct CD2_STATS
 #define CD2_SCENERY_DAMAGE_DEFAULT 25    // % of stock car-vs-solid damage (0..100)
 #define CD2_AI_DAMAGE_TAKEN_DEFAULT 50   // % damage an opponent takes (10..400)
 
+// LOCK-ON target preference (core/weapons.c, cd2WpnTargetCost). A lock-on pick
+// (Fixer's laser beam, a homing projectile's seek, Corvo's bolt) scores every
+// candidate by its squared distance, but a stock civ-traffic candidate's
+// distance is INFLATED by this percentage first, so the module's own cars (the
+// player and the AI opponents) are strongly preferred over the traffic a lock
+// would otherwise snap onto. 400 = a traffic car must be within half the
+// distance of an intended target to win the pick. 100 = no preference (traffic
+// competes on distance alone, the old behaviour).
+#define CD2_LOCK_TRAFFIC_PENALTY_DEFAULT 400
+
 // Global WEAPON damage, as a percentage of each weapon's own damage value,
 // applied at the one choke point every weapon hit passes through (direct hits,
 // burst/splash damage, drops, and the specials that deal damage). 50 = half.
@@ -530,6 +540,10 @@ typedef struct CD2_CONFIG
 	int carCarDamage;      // % of stock damage applied to car-vs-car hits
 	int weaponDamage;      // % of stock WEAPON damage (direct + splash), all weapons
 	int aiDamageTaken;     // % damage an opponent takes (they were dying too fast)
+	int lockTrafficPenalty; // % inflation of a civ-traffic TARGET's distance for
+			       // lock-on picks; higher = stronger preference for the
+			       // module's own cars over traffic (see
+			       // CD2_LOCK_TRAFFIC_PENALTY_DEFAULT)
 	int respawn;           // 0/1: destroyed cars return to their start point
 	int respawnDelay;      // frames a destroyed car stays out (default ~5s)
 	int navDebug;          // 0/1: draw the navigation graph (nodes/edges/routes)
@@ -623,6 +637,11 @@ int cd2SceneryHits(void* car);
 
 // 1 for stock civ traffic: not a car the module drives (see cd2IsTraffic).
 int cd2IsTraffic(CAR_DATA* cp);
+
+// 1 when this car is one the module drives (the player or an AI opponent) - the
+// intended target of a lock-on. The complement of cd2IsTraffic for the cars the
+// module puts on the track (a CONTROL_TYPE_NONE / CUTSCENE slot is neither).
+int cd2OwnsCar(CAR_DATA* cp);
 
 int cd2CarTotaled(void* cp);
 

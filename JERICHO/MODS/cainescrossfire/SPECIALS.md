@@ -118,11 +118,29 @@ to whatever it holds in its **forward cone** with a clear line to it - the same
 different target resets the charge, and losing the target (out of the cone, out
 of range, or scenery in the way) takes both the beam and the charge with it.
 
+The cone reaches **7750 units** at +/-500 heading units (~44 deg off the nose).
+The lock holds **contestants only** - the player and the AI opponents
+(`cd2OwnsCar`) - and never civ traffic, so a civilian drifting through the cone
+cannot steal the beam and a shot always lands on a car in the match.
+
 It goes **white → yellow → red** as the same car is held: white for the first
 two seconds with the turn eased so the fade is quick at the end of it, yellow
 turned at ~2s, red by ~4s, full charge at ~5.5s. Firing spends it: damage scales
 400 → 2600 and the twist away 200 → 1400 across the charge, and there are five
 seconds between shots, so a charge cannot simply be sat on.
+
+### Lock-on target preference
+
+Every lock-on in the module - Fixer's laser, a homing projectile's seek
+(`projectile.c`, the missiles, the Obelisk salvo), and Corvo's bolt - picks its
+target through one shared score (`cd2WpnTargetCost`). The module's own cars (the
+player and the opponents) score their plain distance; a stock **civ-traffic**
+candidate's distance is inflated by the config's `lock_traffic_penalty` percent
+(`cainescrossfire.ini`, default **400**), so traffic only wins the pick when no
+intended target is comparably close (at 400 a civ car must be within half the
+distance). 100 restores the old "nearest car wins" behaviour; `CC_LOCK_TRAFFIC`
+overrides it for a single run. Fixer is the strict case and skips traffic
+outright.
 
 ### Obelisk — Missile Barrage
 
