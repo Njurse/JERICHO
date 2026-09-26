@@ -53,6 +53,7 @@ void cd2DbgSetPad(int mask);
  * from the engine's decoded cp->thrust, which a pad hook cannot reach. */
 int cd2DbgThrust(int* forced);
 void cd2DbgSetThrust(int t);
+
 extern int gCd2SceneryHits[MAX_CARS];	// scenery impacts per car this level
 extern int gCd2TrafficLastHit[MAX_CARS];	// last scenery-hit count seen, per car
 

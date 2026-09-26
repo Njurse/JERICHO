@@ -139,7 +139,7 @@ post-tuning ones (cars were dying far too fast before):
   specials. The global percentage is applied there, so the whole arsenal's bite
   is a single number; the per-target cuts (opponent `ai_damage_taken`, the
   traffic multiplier, the profile's Armor) stack on top.
-- **Scenery impact threshold — `scenery_damage_threshold`, default 61440.** The
+- **Scenery impact threshold — `scenery_damage_threshold`, default 122880.** The
   engine already ignores a wall/building hit below `strikeVel` 20480
   (`bcollide.c:DamageCar`); `JER_EVENT_GET_DAMAGE_SCALE` now carries that raw
   `impact` so `cd2OnDamageScale` can raise the bar: below the threshold the car
@@ -147,6 +147,23 @@ post-tuning ones (cars were dying far too fast before):
   taking real damage over. Above it, `scenery_damage` (default 25%, or whatever
   the ini says) still scales the hit. The contact is counted *before* the
   threshold test, so the traffic tumble still sees it.
+
+  The bar is set from what crashes actually measure. Full throttle into Havana's
+  scenery (`30:thrust:1`), the impacts that arrived were **21861** (a nudge),
+  **78058** and **113922** (ordinary crashes) and **290166** (a violent one) —
+  so the default sits above an ordinary crash and only the violent kind is
+  charged. Measured effect on that run: charged impacts 3 → 1 (the 290k one) and
+  the player's total damage **14669 → 642**. Lower it to 20480 for the stock
+  engine behaviour; 0 turns the gate off.
+- **One scenery bite per contact — `CD2_SCENERY_HIT_COOLDOWN` (45 frames).** A car
+  leaning on a wall reports an impact *every frame* it is in contact, and the
+  engine's `DamageCar` has no notion of a contact already resolved — so the same
+  collision used to be charged for as long as the car stayed against it, which is
+  how "sticking to a light collision" added up to a write-off. After a charged
+  impact the car cannot be charged again for 45 frames (~1.5s of the 30fps sim),
+  which is generous next to the physics rate and shorter than a genuine second
+  crash. `gCd2SceneryHits` still counts every frame of contact, so the traffic
+  tumble (which reads its *change*) is unaffected.
 - **Car-vs-car aggressor immunity.** In a two-car hit the car driving INTO the
   other deals the damage, and that car should not be hurt by its own attack.
   `cd2OnCarVsCar` compares each car's approach speed along the line between them

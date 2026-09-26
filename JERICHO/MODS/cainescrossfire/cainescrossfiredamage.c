@@ -12,6 +12,7 @@
 #include "cainescrossfire.h"
 #include "cainescrossfire_internal.h"
 #include "cars.h"
+#include "main.h"	/* FrameCnt - the scenery-damage debounce clock */
 #include "dr2math.h"
 #include "jericho.h"
 #include "jer_events.h"
@@ -39,6 +40,10 @@ static int cd2VehArmorPct(void* vcar)
 
 	return jer_clamp_int(100 + (3 - p->armor) * 15, 25, 200);
 }
+
+// FrameCnt of the last scenery impact each car was CHARGED for (0 = never): the
+// per-contact debounce in cd2OnDamageScale (CD2_SCENERY_HIT_COOLDOWN).
+static int sSceneryHitFrame[MAX_CARS];
 
 // Scenery impacts taken by `car` this level (see cd2OnDamageScale).
 int cd2SceneryHits(void* vcp)
@@ -93,6 +98,35 @@ int cd2OnDamageScale(void* ud, void* args)
 		}
 
 		return JER_RESULT_CONTINUE;
+	}
+
+	// ONE BITE PER CONTACT (CD2_SCENERY_HIT_COOLDOWN). A car in sustained contact with
+	// a wall reports an impact every frame, and the engine's DamageCar has no idea the
+	// contact was already resolved - so the same collision was charged over and over for
+	// as long as the car leaned on it. That is the "a light collision adds up to a
+	// massive amount of damage" failure. The counter above still ticks every frame (the
+	// traffic tumble reads its change), so only the DAMAGE is debounced.
+	if (cp->id >= 0 && cp->id < MAX_CARS)
+	{
+		int since = FrameCnt - sSceneryHitFrame[cp->id];
+
+		if (sSceneryHitFrame[cp->id] != 0 && since >= 0 && since < CD2_SCENERY_HIT_COOLDOWN)
+		{
+			a->result = 0;
+
+			if (gCd2Cfg.debugLog)
+			{
+				static unsigned int t = 0;
+				if ((t++ & 63) == 0)
+					printInfo("[cainescrossfire] scenery dmg debounced: car=%d contact %d frames after the last charged one (cooldown %d)\n",
+						cp->id, since, CD2_SCENERY_HIT_COOLDOWN);
+			}
+
+			return JER_RESULT_CONTINUE;
+		}
+
+		// +1 so a contact on frame 0 is not mistaken for "never hit"
+		sSceneryHitFrame[cp->id] = FrameCnt + 1;
 	}
 
 	// an opponent that keeps clipping walls needs the extra cushion, or a

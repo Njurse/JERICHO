@@ -396,10 +396,25 @@ typedef struct CD2_STATS
 
 // Scenery (wall/object) damage only bites above this raw strike velocity; the
 // engine already ignores anything under 20480. Below it the car takes NO
-// scenery damage at all, so only a genuinely hard hit costs anything - the map
-// is not worth taking damage over. Units are the raw bcollide strikeVel
-// (clamped at 2048000). 0 = off (keep the engine's own 20480 gate).
-#define CD2_SCENERY_DAMAGE_MIN_DEFAULT 61440
+// scenery damage at all, so only a genuinely violent hit costs anything - the map
+// is not worth taking damage over.
+//
+// The bar is deliberately far above what an ordinary crash reaches. Measured on a
+// full-throttle run into Havana's scenery, the impacts that arrived were 21861
+// (a nudge), 78058 and 113922 (ordinary crashes) and 290166 (a violent one): at
+// this default an ordinary crash costs nothing and only the last kind bites.
+// Raise it further to make the map almost free, lower it to 20480 to get the
+// stock engine behaviour back. Units are the raw bcollide strikeVel (clamped at
+// 2048000). 0 = off (keep the engine's own 20480 gate).
+#define CD2_SCENERY_DAMAGE_MIN_DEFAULT 122880
+
+// How long after a scenery impact a car cannot be charged for another one. A car
+// leaning on a wall reports an impact EVERY frame it is in contact - the engine's
+// DamageCar has no notion of a contact already resolved - so without this the same
+// collision is charged for as long as the car stays against it, and "sticking to a
+// light collision" adds up to a write-off. One bite per ~1.5s of the 30fps sim rate:
+// generous next to the physics rate, and a genuine second crash comes later.
+#define CD2_SCENERY_HIT_COOLDOWN 45
 
 // ---- destroyed-car respawn -------------------------------------------
 // A wrecked car the module owns (the player and the AI opponents) returns to
