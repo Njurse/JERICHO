@@ -76,6 +76,8 @@ class Arena:
         #                   "amount": int, "x": int, "z": int}
         self.pickups = list(pickups or [])
         self.path = None
+        self.mtime = None       # last seen on-disk mtime (for the live reload)
+        self.dirty = False      # has unsaved top-down edits
 
     def clone(self, internal):
         return Arena(internal, internal, self.city, self.mp_level, self.mp_arena,
@@ -134,7 +136,8 @@ def load_arena(path):
                 if len(nums) >= 2 and len(a.spawns) < SPAWN_MAX:
                     x, z = nums[0], nums[1]
                     h = nums[2] if len(nums) > 2 else 0
-                    a.spawns.append((x, z, h & (HEADING_MAX - 1)))
+                    y = nums[3] if len(nums) > 3 else None   # height, optional
+                    a.spawns.append((x, z, h & (HEADING_MAX - 1), y))
             elif key == "pickup":
                 parts = val.split()
                 if parts and parts[0].lower() == "weapon" and len(parts) >= 4:
@@ -147,6 +150,10 @@ def load_arena(path):
                                       "x": int(parts[1]), "z": int(parts[2])})
     if not a.display:
         a.display = a.internal
+    try:
+        a.mtime = os.path.getmtime(path)
+    except OSError:
+        a.mtime = None
     return a, saw_name
 
 
@@ -162,9 +169,12 @@ def save_arena(a):
         lines.append("region: %d %d %d %d" % a.region)
     else:
         lines.append("region: none")
-    lines.append("# spawn: x z heading  (first = player, rest = opponents)")
-    for (x, z, h) in a.spawns:
-        lines.append("spawn: %d %d %d" % (x, z, h))
+    lines.append("# spawn: x z heading [y]  (first = player, rest = opponents; y = height)")
+    for (x, z, h, y) in a.spawns:
+        if y is None:
+            lines.append("spawn: %d %d %d" % (x, z, h))
+        else:
+            lines.append("spawn: %d %d %d %d" % (x, z, h, y))
     lines.append("# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]")
     for p in a.pickups:
         if p["type"] == "weapon":
@@ -173,6 +183,11 @@ def save_arena(a):
             lines.append("pickup: health %d %d %d" % (p["x"], p["z"], p["amount"]))
     with open(a.path, "w") as f:
         f.write("\n".join(lines) + "\n")
+    try:
+        a.mtime = os.path.getmtime(a.path)
+    except OSError:
+        a.mtime = None
+    a.dirty = False
 
 
 def check_arena(a):
@@ -186,7 +201,7 @@ def check_arena(a):
         x0, z0, x1, z1 = a.region
         if x0 >= x1 or z0 >= z1:
             w.append("region is empty/backwards: %r" % (a.region,))
-    for i, (x, z, h) in enumerate(a.spawns):
+    for i, (x, z, h, y) in enumerate(a.spawns):
         if a.region:
             x0, z0, x1, z1 = a.region
             if not (x0 <= x <= x1 and z0 <= z <= z1):
@@ -343,7 +358,7 @@ def render_png(arenas, path, bg=None, bg_rect=None, size=(1100, 800)):
             x0, z0, x1, z1 = a.region
             p0 = S(x0, z0); p1 = S(x1, z1)
             dr.rectangle([p0, p1], outline=(255, 200, 60), width=2)
-        for i, (x, z, h) in enumerate(a.spawns):
+        for i, (x, z, h, y) in enumerate(a.spawns):
             sx, sy = S(x, z)
             c = (120, 255, 120) if i == 0 else (255, 120, 120)
             r = 6
@@ -377,7 +392,7 @@ def run_editor(arenas, bg=None, bg_rect=None):
         return 1
 
     state = {"idx": 0, "sel": -1, "mode": None, "bg": bg, "bg_rect": bg_rect,
-             "bgimg": None}
+             "bgimg": None, "status": ""}
 
     root = tk.Tk()
     root.title("Caine's Crossfire arena editor")
@@ -387,6 +402,11 @@ def run_editor(arenas, bg=None, bg_rect=None):
 
     def cur():
         return arenas[state["idx"]]
+
+    def touch():
+        # any local edit marks the arena dirty, so the file watcher knows not to
+        # reload over it from disk
+        cur().dirty = True
 
     view = View(_bounds(arenas))
     state["view"] = view
@@ -430,7 +450,7 @@ def run_editor(arenas, bg=None, bg_rect=None):
                                         fill="#ffc83c", tags=("knob", (hx, hz)))
 
         # spawns
-        for i, (x, z, h) in enumerate(a.spawns):
+        for i, (x, z, h, y) in enumerate(a.spawns):
             sx, sy = S(x, z)
             color = "#7dff7d" if i == 0 else "#ff7d7d"
             idx_tag = ("spawn", i)
@@ -444,14 +464,17 @@ def run_editor(arenas, bg=None, bg_rect=None):
                                anchor="nw", tags=idx_tag)
 
         canvas.create_text(10, 10, anchor="nw", fill="#e8e8e8", text=(
-            "%s   [%s]\nfile %d/%d   selected spawn %d\n"
-            "n new  d delete  r region  s save  Tab file  q quit"
-            % (describe(a), a.path or "<new>", state["idx"] + 1, len(arenas),
-               state["sel"])))
+            "%s   [%s]%s\nfile %d/%d   selected spawn %d\n"
+            "n new  d delete  r region  s save  L reload  Tab file  q quit"
+            % (describe(a), a.path or "<new>", "  *unsaved*" if a.dirty else "",
+               state["idx"] + 1, len(arenas), state["sel"])))
+        if state.get("status"):
+            canvas.create_text(10, canvas.winfo_height() - 24, anchor="nw",
+                               fill="#ffd35c", text=state["status"])
 
     def pick_spawn(sx, sy):
         best, bestd = -1, 18.0
-        for i, (x, z, h) in enumerate(cur().spawns):
+        for i, (x, z, h, y) in enumerate(cur().spawns):
             p = S(x, z)
             d = ((p[0] - sx) ** 2 + (p[1] - sy) ** 2) ** 0.5
             if d < bestd:
@@ -478,8 +501,9 @@ def run_editor(arenas, bg=None, bg_rect=None):
                 del a.spawns[i]
                 state["sel"] = -1
             elif len(a.spawns) < SPAWN_MAX:
-                a.spawns.append((int(wx), int(wz), 0))
+                a.spawns.append((int(wx), int(wz), 0, None))
                 state["sel"] = len(a.spawns) - 1
+            touch()
             redraw()
             return
         state["sel"] = i
@@ -493,8 +517,9 @@ def run_editor(arenas, bg=None, bg_rect=None):
             state["view"].ox += 0  # pan handled by motion delta below
             return
         if state["mode"] == "drag" and 0 <= state["sel"] < len(a.spawns):
-            x, z, h = a.spawns[state["sel"]]
-            a.spawns[state["sel"]] = (int(wx), int(wz), h)
+            x, z, h, y = a.spawns[state["sel"]]
+            a.spawns[state["sel"]] = (int(wx), int(wz), h, y)
+            touch()
             redraw()
         elif isinstance(state["mode"], tuple) and a.region:
             x0, z0, x1, z1 = a.region
@@ -503,6 +528,7 @@ def run_editor(arenas, bg=None, bg_rect=None):
             corners[k] = [int(wx), int(wz)]
             xs = sorted([c[0] for c in corners]); zs = sorted([c[1] for c in corners])
             a.region = (xs[0], zs[0], xs[3], zs[3])
+            touch()
             redraw()
 
     def on_wheel(ev):
@@ -529,9 +555,17 @@ def run_editor(arenas, bg=None, bg_rect=None):
         elif k == "d" and 0 <= state["sel"] < len(a.spawns):
             del a.spawns[state["sel"]]
             state["sel"] = -1
+            touch()
             redraw()
         elif k == "r":
             a.region = None if a.region else (-2000, -2000, 2000, 2000)
+            touch()
+            redraw()
+        elif k == "l":
+            # force a reload from disk, discarding local edits
+            if a.path:
+                reload_one(state["idx"])
+                state["status"] = "reloaded '%s' from disk" % a.internal
             redraw()
         elif k in ("s",) or (ev.state & 0x4 and k == "s"):
             if a.path:
@@ -543,6 +577,37 @@ def run_editor(arenas, bg=None, bg_rect=None):
             state["sel"] = -1
             redraw()
 
+    def reload_one(i):
+        a = arenas[i]
+        if not a.path:
+            return
+        fresh, _ = load_arena(a.path)
+        a.__dict__.update(fresh.__dict__)
+
+    def poll():
+        # the other side of the loop: the game saves the .cca, so pick it up here
+        for i, a in enumerate(arenas):
+            if not a.path:
+                continue
+            try:
+                m = os.path.getmtime(a.path)
+            except OSError:
+                continue
+            if a.mtime is None:
+                a.mtime = m
+                continue
+            if abs(m - a.mtime) < 1e-6:
+                continue
+            if a.dirty:
+                state["status"] = ("'%s' changed on disk - press L to reload "
+                                   "(you have unsaved edits)" % a.internal)
+            else:
+                reload_one(i)
+                state["status"] = "reloaded '%s' from disk" % a.internal
+                if i == state["idx"]:
+                    redraw()
+        root.after(900, poll)
+
     canvas.bind("<ButtonPress>", on_press)
     canvas.bind("<B1-Motion>", on_drag)
     canvas.bind("<B3-Motion>", on_drag)
@@ -553,6 +618,7 @@ def run_editor(arenas, bg=None, bg_rect=None):
 
     fit()
     redraw()
+    root.after(900, poll)
     root.mainloop()
     return 0
 

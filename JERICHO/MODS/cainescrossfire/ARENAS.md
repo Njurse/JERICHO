@@ -60,9 +60,9 @@ name: Dockyard Duel       # on-screen name (default: the internal name)
 city: CHICAGO             # CHICAGO | HAVANA | VEGAS | RIO, or 0..3
 mp: 1 0                   # <load the small mp map?> <which layout 0|1>. 'full' = whole city
 region: -20000 -30000 20000 30000   # the barrier, world units: x0 z0 x1 z1. 'none' = whole level
-spawn: -5000 2000 1024    # x z heading. Repeatable; the FIRST is the player, the rest the opponents
-spawn: 5000 2000 2048
-spawn: 3000 -6000 0
+spawn: -5000 2000 1024 30  # x z heading [y]. Repeatable; the FIRST is the player, the rest the opponents
+spawn: 5000 2000 2048 30
+spawn: 3000 -6000 0 30     # y is optional but recommended - see below
 # pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]
 pickup: weapon missile 5000 2000 5   # a drive-over crate: grants the named weapon + ammo
 pickup: health -3000 1000 2500       # a repair: this many damage units off totalDamage
@@ -74,10 +74,18 @@ pickup: health -3000 1000 2500       # a repair: this many damage units off tota
   it: a car at the edge is put back on it and its **outward velocity is
   cancelled**, so the edge reads as a wall. Civ traffic is free to wander out.
   Omit it (or `none`) for no barrier.
-- **`spawn`** is a world position and a heading in PSX angle units (0..4095).
-  Spawn 1 is the player; 2.. are the opponents **in order** (opponent 0 is the
-  second `spawn:` line, and so on). Up to 16. A `spawn` inside scenery is the
-  author's to fix — the editor shows where they are, and authored spawns are
+- **`spawn`** is a world position, a heading in PSX angle units (0..4095), and an
+  optional **height** `y`. Spawn 1 is the player; 2.. are the opponents **in
+  order** (opponent 0 is the second `spawn:` line, and so on). Up to 16. A
+  `spawn` inside scenery is the author's to fix — the editor shows where they are,
+  and authored spawns are trusted (no clear-line probe).
+- **`y`** is what keeps cars out of the void. With no `y`, the game keeps whatever
+  height the *level* started the player at — right for a flat area, wrong on a
+  hill or a raised road, where the car drops through the world. The in-game editor
+  records the car's height as you place, so authoring by driving is always right;
+  placing by hand, run the arena once and read the `spawned at (x,y,z)` log line
+  for the height to paste. (A spot with no ground under it at all still falls —
+  place on the map.)
   trusted (no clear-line probe).
 - **`pickup`** places a drive-over item: `pickup: weapon <name> x z [ammo]` gives the
   named weapon (its short code name, e.g. `missile`, `homing`, `shotgun` — or its
@@ -103,6 +111,23 @@ writes there too, and the launcher copies edits back to the mod folder. With
 `-ccmenu` (or the main menu's Deathmatch entry) the arena menu lists every
 registered arena; picking one loads its city/layout and makes it the match's
 current arena, so its spawns and barrier apply.
+
+## Two editors, one live file (pseudo-realtime)
+
+The game reads *and writes* the arena file **in the mod folder**
+(`JERICHO/MODS/cainescrossfire/arenas/`; an installed mod uses its own copy) —
+the same file `tools/arenaedit.py` edits — and both sides watch it:
+
+- **Save in the Python editor** → the running game re-reads the `.cca` within a
+  second: the region barrier and the ghost markers update live, and the HUD says
+  *arena reloaded from disk*. Unsaved in-game edits are never clobbered — the
+  game logs that it kept them instead.
+- **Save in-game** (SELECT) → the Python editor notices the file changed and
+  reloads it; if you have unsaved top-down edits it tells you rather than
+  overwriting them.
+
+So you can drive in the game and adjust the same arena top-down (or the other
+way round) without restarting either one.
 
 ## The in-game editor
 

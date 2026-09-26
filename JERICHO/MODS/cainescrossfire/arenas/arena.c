@@ -16,6 +16,10 @@
 //      built-ins) touches nothing.
 //
 //   3. The notice above (jer_hud_message), once per level.
+//
+//   4. FOLLOWING THE FILE. The arena's .cca is re-read when it changes on disk,
+//      so an edit made by the Python editor (tools/arenaedit.py, the same file)
+//      lands here without a restart - pseudo-realtime editing between the two.
 
 #include "driver2.h"
 #include "cars.h"
@@ -42,6 +46,109 @@ extern int ratan2(int y, int x);
 extern void RebuildCarMatrix(RigidBodyState* st, CAR_DATA* cp);
 extern void TempBuildHandlingMatrix(CAR_DATA* cp, int init);
 
+int cd2ArenaFileLoad(const char* path, CD2_ARENA_PROFILE* out);
+
+// ---------------------------------------------------------------------------
+// file watch (see job 4 above)
+// ---------------------------------------------------------------------------
+#define CD2_ARENA_WATCH_FRAMES	20	/* poll every ~0.7s at 30fps */
+
+static unsigned long gArenaHash;
+static int gArenaHashSet;
+static int gArenaWatchTick;
+
+// FNV-1a over the file's bytes; 0 when it cannot be read (e.g. no file yet).
+static unsigned long cd2ArenaFileHash(const char* path)
+{
+	FILE* fp = fopen(path, "rb");
+	unsigned long h = 2166136261u;
+
+	if (fp == NULL)
+		return 0;
+
+	for (;;)
+	{
+		int ch = fgetc(fp);
+
+		if (ch == EOF)
+			break;
+
+		h ^= (unsigned char)ch;
+		h *= 16777619u;
+	}
+
+	fclose(fp);
+
+	return (h != 0) ? h : 1;	/* 0 is reserved for "unreadable" */
+}
+
+// Remember the file as it is now, so the watcher does not fire on our own write
+// (the in-game editor calls this after it saves).
+void cd2ArenaWatchReset(void)
+{
+	char path[512];
+	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
+
+	gArenaHash = 0;
+	gArenaHashSet = 0;
+
+	if (a == NULL || !cd2ArenaFilePath(a, path, sizeof(path)))
+		return;
+
+	gArenaHash = cd2ArenaFileHash(path);
+	gArenaHashSet = 1;
+}
+
+static void cd2ArenaWatch(void)
+{
+	char path[512];
+	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
+	unsigned long h;
+
+	if ((++gArenaWatchTick % CD2_ARENA_WATCH_FRAMES) != 0)
+		return;
+
+	if (a == NULL || !cd2ArenaFilePath(a, path, sizeof(path)))
+		return;
+
+	h = cd2ArenaFileHash(path);
+
+	if (!gArenaHashSet)
+	{
+		gArenaHash = h;
+		gArenaHashSet = 1;
+		return;
+	}
+
+	if (h == gArenaHash)
+		return;
+
+	/* the file changed under us */
+	gArenaHash = h;
+
+	if (cd2EditorHasUnsaved())
+	{
+		printInfo("[cainescrossfire] arena '%s': changed on disk - kept your unsaved in-game edits "
+			"(SELECT save or START reload to take the file)\n", a->internalName);
+		return;
+	}
+
+	{
+		CD2_ARENA_PROFILE tmp;
+
+		if (!cd2ArenaFileLoad(path, &tmp))
+			return;
+
+		cd2ArenaReplace(a->id, &tmp);
+
+		printInfo("[cainescrossfire] arena: reloaded '%s' from disk (%d spawns, %d pickups)\n",
+			tmp.internalName, tmp.spawnCount, tmp.pickupCount);
+
+		if (cd2EditorActive())
+			jer_hud_message("arena reloaded from disk", 120);
+	}
+}
+
 // ---------------------------------------------------------------------------
 // which arena the match is on
 // ---------------------------------------------------------------------------
@@ -67,21 +174,20 @@ void cd2ArenaSetCurrent(int arenaId)
 // ---------------------------------------------------------------------------
 // spawn lookups (used by the AI spawn path)
 // ---------------------------------------------------------------------------
-int cd2ArenaPlayerSpawn(int* x, int* z, int* heading)
+int cd2ArenaPlayerSpawn(CD2_ARENA_SPAWN* out)
 {
 	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
 
 	if (a == NULL || a->spawnCount < 1)
 		return 0;
 
-	if (x) *x = a->spawns[0].x;
-	if (z) *z = a->spawns[0].z;
-	if (heading) *heading = a->spawns[0].heading;
+	if (out != NULL)
+		*out = a->spawns[0];
 
 	return 1;
 }
 
-int cd2ArenaOpponentSpawn(int index, int* x, int* z, int* heading)
+int cd2ArenaOpponentSpawn(int index, CD2_ARENA_SPAWN* out)
 {
 	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
 	int slot = index + 1;		/* spawns[0] is the player */
@@ -89,9 +195,8 @@ int cd2ArenaOpponentSpawn(int index, int* x, int* z, int* heading)
 	if (a == NULL || index < 0 || slot >= a->spawnCount)
 		return 0;
 
-	if (x) *x = a->spawns[slot].x;
-	if (z) *z = a->spawns[slot].z;
-	if (heading) *heading = a->spawns[slot].heading;
+	if (out != NULL)
+		*out = a->spawns[slot];
 
 	return 1;
 }
@@ -102,14 +207,14 @@ int cd2ArenaOpponentSpawn(int index, int* x, int* z, int* heading)
 static void cd2ArenaPlacePlayer(void)
 {
 	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
+	CD2_ARENA_SPAWN sp;
 	int id = player[0].playerCarId;
 	CAR_DATA* cp;
-	int x, z, heading;
 
 	if (a == NULL || id < 0 || id >= MAX_CARS)
 		return;
 
-	if (!cd2ArenaPlayerSpawn(&x, &z, &heading))
+	if (!cd2ArenaPlayerSpawn(&sp))
 		return;
 
 	cp = &car_data[id];
@@ -117,9 +222,16 @@ static void cd2ArenaPlacePlayer(void)
 	if (cp->controlType != CONTROL_TYPE_PLAYER)
 		return;
 
-	cp->hd.where.t[0] = x;
-	cp->hd.where.t[2] = z;
-	cp->hd.direction = heading & 0xfff;
+	cp->hd.where.t[0] = sp.x;
+	cp->hd.where.t[2] = sp.z;
+
+	/* The authored height, when there is one. Without it a car placed on a hill
+	 * or a raised road falls through the world: the game's own height belongs to
+	 * the position the LEVEL started the car at, not to this one. */
+	if (sp.y != CD2_ARENA_NO_Y)
+		cp->hd.where.t[1] = sp.y;
+
+	cp->hd.direction = sp.heading & 0xfff;
 
 	cp->st.n.linearVelocity[0] = 0;
 	cp->st.n.linearVelocity[1] = 0;
@@ -134,8 +246,9 @@ static void cd2ArenaPlacePlayer(void)
 	 * the position BACK from fposition, undoing the move. */
 	TempBuildHandlingMatrix(cp, 1);
 
-	printInfo("[cainescrossfire] arena '%s': player car %d at spawn (%d,%d) heading %d\n",
-		a->internalName, id, x, z, heading & 0xfff);
+	printInfo("[cainescrossfire] arena '%s': player car %d spawned at (%d,%d,%d) heading %d\n",
+		a->internalName, id, cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2],
+		cp->hd.direction);
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +493,9 @@ static int cd2ArenaOnGameStart(void* ud, void* args)
 	 * the first FRAME instead - see cd2ArenaOnFrame. */
 	gArenaPlayerPlaced = 0;
 
+	/* take the file as it is now, so the watcher only fires on a LATER change */
+	cd2ArenaWatchReset();
+
 	return JER_RESULT_CONTINUE;
 }
 
@@ -413,6 +529,7 @@ static int cd2ArenaOnFrame(void* ud, void* args)
 
 	cd2ArenaBarrier();
 	cd2ArenaPickups();
+	cd2ArenaWatch();
 
 	return JER_RESULT_CONTINUE;
 }

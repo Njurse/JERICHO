@@ -5,16 +5,21 @@
 // button to drop a spawn point there (its position and heading are the car's),
 // or to mark the region's corners. Everything is drawn as ghost markers with
 // the engine's line primitives and a small on-screen readout, and the file is
-// saved/reloaded on demand - so this and the Python editor (tools/arenaedit.py)
-// are two views of one `.cca` file (see ARENAS.md).
+// saved/reloaded on demand.
+//
+// The editor edits the match's LIVE arena (arenas/registry.c), so a change made
+// in the other editor - a save from tools/arenaedit.py, writing the SAME .cca -
+// is re-read by the runtime's file watcher and shows up here without a restart.
+// That is the pseudo-realtime loop between the two editors. Edits made HERE are
+// marked unsaved until SELECT, and the watcher leaves them alone meanwhile.
 //
 // Buttons (pad 0, EDGES - a press, not a hold):
 //   L1      place / move the SELECTED spawn at the car
 //   R1      cycle which spawn slot is selected
 //   L2      delete the spawn nearest the car
 //   R2      mark the region: first press = corner A, second = the rect (car = the other corner)
-//   SELECT  save the arena to MODS/cainescrossfire/arenas/<name>.cca (and update the live arena)
-//   START   reload the arena from its file
+//   SELECT  save the arena to the mod's arenas/<name>.cca (and update the live arena)
+//   START   reload the arena from its file (discards unsaved edits)
 //
 // The shoulders also carry weapon prev/next/fire, so while editing, park the
 // car before tapping them. This is a build/debug tool, not a play mode.
@@ -28,7 +33,7 @@
 #include "cainescrossfire.h"
 #include "cainescrossfire_internal.h"	/* cd2DbgPadMask - the injected pad mask */
 #include "arenas/profile.h"
-#include "weapons/core/weapon_internal.h"	/* cd2WpnLine - the ghost markers */
+#include "weapons/core/weapon_internal.h"	/* cd2WpnLine - the ghost markers, cd2WpnPlayerCar */
 
 #include <string.h>
 #include <stdio.h>
@@ -38,46 +43,46 @@ int cd2ArenaFileSave(const char* path, const CD2_ARENA_PROFILE* a);
 
 #define CD2_ED_PANEL		3	/* the HUD slot the readout owns */
 #define CD2_ED_MARK		90	/* ghost bar height (y-up) */
-#define CD2_ED_Y			0	/* the ground plane the ghosts stand on */
 
 static int gEditorOn;			/* -cceditor / CC_EDITOR */
-static int gEditorReady;		/* the working copy is loaded */
+static int gEditorDirty;		/* an in-game edit is not saved yet */
 static int gSelSlot;
 static int gCornerState;		/* 0 none, 1 A marked, 2 rect set */
 static int gCornerAx, gCornerAz;
 static unsigned short gLastPad;
-static CD2_ARENA_PROFILE gWork;
-static int gWorkId = CD2_ARENA_NONE;
 
 int cd2EditorActive(void)
 {
 	return gEditorOn;
 }
 
-// Load the match's current arena into the working copy.
-static int cd2EditorLoad(void)
+int cd2EditorHasUnsaved(void)
 {
-	const CD2_ARENA_PROFILE* a;
+	return gEditorOn && gEditorDirty;
+}
 
-	gWorkId = CD2_ARENA_NONE;
-
-	/* find the current arena's id by name (the registry has no "current id"
-	 * getter for the editor, and the profile is what we edit) */
-	a = cd2ArenaCurrent();
+// Take a mutable copy of the match's live arena. Returns 0 when there is none.
+static int cd2EditorBegin(CD2_ARENA_PROFILE* w)
+{
+	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
 
 	if (a == NULL)
 		return 0;
 
-	gWork = *a;
-	gWorkId = a->id;
-	gEditorReady = 1;
-	gSelSlot = 0;
-	gCornerState = 0;
-
-	printInfo("[cainescrossfire] arena editor: editing '%s' (%d spawns, %d pickups)\n",
-		gWork.internalName, gWork.spawnCount, gWork.pickupCount);
-
+	*w = *a;
 	return 1;
+}
+
+// Write the working copy back into the live arena, unsaved.
+static void cd2EditorCommit(const CD2_ARENA_PROFILE* w)
+{
+	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
+
+	if (a == NULL)
+		return;
+
+	cd2ArenaReplace(a->id, w);
+	gEditorDirty = 1;
 }
 
 // The player's car, or NULL. The car IS the editor cursor.
@@ -136,28 +141,29 @@ static void cd2EditorRect(int x0, int z0, int x1, int z1, int y, int r, int g, i
 
 static void cd2EditorDraw(void)
 {
+	const CD2_ARENA_PROFILE* w = cd2ArenaCurrent();
 	CAR_DATA* cp = cd2EditorCar();
-	int y = (cp != NULL) ? cp->hd.where.t[1] : CD2_ED_Y;
+	int y = (cp != NULL) ? cp->hd.where.t[1] : 0;
 	int i;
 
-	if (!gEditorReady)
+	if (w == NULL)
 		return;
 
-	/* the region: a plain rectangle, brighter once both corners are set */
-	if (gWork.region.bounded)
-		cd2EditorRect(gWork.region.x0, gWork.region.z0, gWork.region.x1, gWork.region.z1,
+	/* the region: a plain rectangle */
+	if (w->region.bounded)
+		cd2EditorRect(w->region.x0, w->region.z0, w->region.x1, w->region.z1,
 			y, 255, 200, 60);
 
 	/* spawn 0 is the player: green; the rest red; the selected one big/white */
-	for (i = 0; i < gWork.spawnCount && i < CD2_ARENA_MAX_SPAWNS; i++)
+	for (i = 0; i < w->spawnCount && i < CD2_ARENA_MAX_SPAWNS; i++)
 	{
 		int sel = (i == gSelSlot);
 
 		if (i == 0)
-			cd2EditorBar(gWork.spawns[i].x, gWork.spawns[i].z, y,
+			cd2EditorBar(w->spawns[i].x, w->spawns[i].z, y,
 				sel ? 255 : 80, 255, sel ? 255 : 120, sel);
 		else
-			cd2EditorBar(gWork.spawns[i].x, gWork.spawns[i].z, y,
+			cd2EditorBar(w->spawns[i].x, w->spawns[i].z, y,
 				255, sel ? 255 : 120, sel ? 255 : 120, sel);
 	}
 
@@ -172,8 +178,9 @@ static void cd2EditorDraw(void)
 static void cd2EditorPlace(void)
 {
 	CAR_DATA* cp = cd2EditorCar();
+	CD2_ARENA_PROFILE w;
 
-	if (cp == NULL || !gEditorReady)
+	if (cp == NULL || !cd2EditorBegin(&w))
 		return;
 
 	if (gSelSlot < 0)
@@ -181,31 +188,35 @@ static void cd2EditorPlace(void)
 	if (gSelSlot >= CD2_ARENA_MAX_SPAWNS)
 		gSelSlot = CD2_ARENA_MAX_SPAWNS - 1;
 
-	gWork.spawns[gSelSlot].x = cp->hd.where.t[0];
-	gWork.spawns[gSelSlot].z = cp->hd.where.t[2];
-	gWork.spawns[gSelSlot].heading = cp->hd.direction & 0xfff;
+	w.spawns[gSelSlot].x = cp->hd.where.t[0];
+	w.spawns[gSelSlot].z = cp->hd.where.t[2];
+	w.spawns[gSelSlot].heading = cp->hd.direction & 0xfff;
+	w.spawns[gSelSlot].y = cp->hd.where.t[1];	/* the height you were at, so cars do not sink */
 
-	if (gSelSlot + 1 > gWork.spawnCount)
-		gWork.spawnCount = gSelSlot + 1;
+	if (gSelSlot + 1 > w.spawnCount)
+		w.spawnCount = gSelSlot + 1;
 
-	printInfo("[cainescrossfire] arena editor: spawn %d = (%d,%d) heading %d\n",
-		gSelSlot, gWork.spawns[gSelSlot].x, gWork.spawns[gSelSlot].z,
-		gWork.spawns[gSelSlot].heading);
+	cd2EditorCommit(&w);
+
+	printInfo("[cainescrossfire] arena editor: spawn %d = (%d,%d,%d) heading %d\n",
+		gSelSlot, w.spawns[gSelSlot].x, w.spawns[gSelSlot].y, w.spawns[gSelSlot].z,
+		w.spawns[gSelSlot].heading);
 }
 
 static void cd2EditorDeleteNearest(void)
 {
 	CAR_DATA* cp = cd2EditorCar();
+	CD2_ARENA_PROFILE w;
 	long long best = 0;
 	int i, bestI = -1;
 
-	if (cp == NULL || gWork.spawnCount == 0)
+	if (cp == NULL || !cd2EditorBegin(&w) || w.spawnCount == 0)
 		return;
 
-	for (i = 0; i < gWork.spawnCount; i++)
+	for (i = 0; i < w.spawnCount; i++)
 	{
-		long long dx = (long long)cp->hd.where.t[0] - gWork.spawns[i].x;
-		long long dz = (long long)cp->hd.where.t[2] - gWork.spawns[i].z;
+		long long dx = (long long)cp->hd.where.t[0] - w.spawns[i].x;
+		long long dz = (long long)cp->hd.where.t[2] - w.spawns[i].z;
 		long long d2 = dx * dx + dz * dz;
 
 		if (bestI < 0 || d2 < best)
@@ -218,24 +229,27 @@ static void cd2EditorDeleteNearest(void)
 	if (bestI < 0)
 		return;
 
-	for (i = bestI; i < gWork.spawnCount - 1; i++)
-		gWork.spawns[i] = gWork.spawns[i + 1];
+	for (i = bestI; i < w.spawnCount - 1; i++)
+		w.spawns[i] = w.spawns[i + 1];
 
-	gWork.spawnCount--;
+	w.spawnCount--;
 
-	if (gSelSlot >= gWork.spawnCount)
-		gSelSlot = (gWork.spawnCount > 0) ? gWork.spawnCount - 1 : 0;
+	if (gSelSlot >= w.spawnCount)
+		gSelSlot = (w.spawnCount > 0) ? w.spawnCount - 1 : 0;
+
+	cd2EditorCommit(&w);
 
 	printInfo("[cainescrossfire] arena editor: deleted spawn %d (%d left)\n",
-		bestI, gWork.spawnCount);
+		bestI, w.spawnCount);
 }
 
 static void cd2EditorCorner(void)
 {
 	CAR_DATA* cp = cd2EditorCar();
+	CD2_ARENA_PROFILE w;
 	int x, z;
 
-	if (cp == NULL)
+	if (cp == NULL || !cd2EditorBegin(&w))
 		return;
 
 	x = cp->hd.where.t[0];
@@ -247,65 +261,63 @@ static void cd2EditorCorner(void)
 		gCornerAz = z;
 		gCornerState = 1;
 		printInfo("[cainescrossfire] arena editor: corner A = (%d,%d)\n", x, z);
+		return;
 	}
-	else
-	{
-		int x0 = (gCornerAx < x) ? gCornerAx : x;
-		int x1 = (gCornerAx > x) ? gCornerAx : x;
-		int z0 = (gCornerAz < z) ? gCornerAz : z;
-		int z1 = (gCornerAz > z) ? gCornerAz : z;
 
-		gWork.region.bounded = 1;
-		gWork.region.x0 = x0;
-		gWork.region.z0 = z0;
-		gWork.region.x1 = x1;
-		gWork.region.z1 = z1;
-		gCornerState = 2;
+	w.region.bounded = 1;
+	w.region.x0 = (gCornerAx < x) ? gCornerAx : x;
+	w.region.x1 = (gCornerAx > x) ? gCornerAx : x;
+	w.region.z0 = (gCornerAz < z) ? gCornerAz : z;
+	w.region.z1 = (gCornerAz > z) ? gCornerAz : z;
+	gCornerState = 2;
 
-		printInfo("[cainescrossfire] arena editor: region = %d,%d,%d,%d\n", x0, z0, x1, z1);
-	}
+	cd2EditorCommit(&w);
+
+	printInfo("[cainescrossfire] arena editor: region = %d,%d,%d,%d\n",
+		w.region.x0, w.region.z0, w.region.x1, w.region.z1);
 }
 
 static void cd2EditorSave(void)
 {
+	const CD2_ARENA_PROFILE* w = cd2ArenaCurrent();
 	char path[512];
 
-	if (!gEditorReady)
+	if (w == NULL || !cd2ArenaFilePath(w, path, sizeof(path)))
 		return;
 
-	if (!cd2ArenaFilePath(&gWork, path, sizeof(path)))
-		return;
-
-	if (cd2ArenaFileSave(path, &gWork))
+	if (cd2ArenaFileSave(path, w))
 	{
-		/* update the LIVE arena so the barrier and the next spawn see the edit */
-		cd2ArenaReplace(gWorkId, &gWork);
+		gEditorDirty = 0;
+		cd2ArenaWatchReset();	/* our write is not "an external change" */
 
 		printInfo("[cainescrossfire] arena editor: saved '%s' -> %s (%d spawns, %d pickups)\n",
-			gWork.internalName, path, gWork.spawnCount, gWork.pickupCount);
+			w->internalName, path, w->spawnCount, w->pickupCount);
 	}
 	else
 	{
-		printInfo("[cainescrossfire] arena editor: SAVE FAILED for %s (does MODS/cainescrossfire/arenas exist?)\n", path);
+		printInfo("[cainescrossfire] arena editor: SAVE FAILED for %s (does the arenas folder exist?)\n", path);
 	}
 }
 
 static void cd2EditorReload(void)
 {
+	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
+	CD2_ARENA_PROFILE w;
 	char path[512];
 
-	if (!gEditorReady)
+	if (a == NULL || !cd2ArenaFilePath(a, path, sizeof(path)))
 		return;
 
-	if (!cd2ArenaFilePath(&gWork, path, sizeof(path)))
-		return;
-
-	if (cd2ArenaFileLoad(path, &gWork))
+	if (cd2ArenaFileLoad(path, &w))
 	{
+		cd2ArenaReplace(a->id, &w);
+		gEditorDirty = 0;
 		gSelSlot = 0;
 		gCornerState = 0;
+		cd2ArenaWatchReset();
+
 		printInfo("[cainescrossfire] arena editor: reloaded %s (%d spawns)\n",
-			path, gWork.spawnCount);
+			path, w.spawnCount);
 	}
 	else
 	{
@@ -340,21 +352,33 @@ static int cd2EditorOnCmdline(void* ud, void* args)
 
 static int cd2EditorOnGameStart(void* ud, void* args)
 {
+	const CD2_ARENA_PROFILE* a;
+
 	(void)ud;
 	(void)args;
 
-	gEditorReady = 0;
+	gEditorDirty = 0;
+	gSelSlot = 0;
+	gCornerState = 0;
 	gLastPad = 0;
 
-	if (gEditorOn)
-		cd2EditorLoad();
+	if (!gEditorOn)
+		return JER_RESULT_CONTINUE;
+
+	a = cd2ArenaCurrent();
+
+	if (a != NULL)
+		printInfo("[cainescrossfire] arena editor: editing '%s' (%d spawns, %d pickups)\n",
+			a->internalName, a->spawnCount, a->pickupCount);
 
 	return JER_RESULT_CONTINUE;
 }
 
 static int cd2EditorOnFrame(void* ud, void* args)
 {
+	const CD2_ARENA_PROFILE* w;
 	unsigned short pad, edge;
+	char line[160];
 
 	(void)ud;
 	(void)args;
@@ -362,11 +386,10 @@ static int cd2EditorOnFrame(void* ud, void* args)
 	if (!gEditorOn)
 		return JER_RESULT_CONTINUE;
 
-	if (!gEditorReady)
-	{
-		if (!cd2EditorLoad())
-			return JER_RESULT_CONTINUE;
-	}
+	w = cd2ArenaCurrent();
+
+	if (w == NULL)
+		return JER_RESULT_CONTINUE;
 
 	/* the raw pad (shoulders included - the module strips them from the CAR_PAD
 	 * stream, but the editor wants them) ORed with the debug driver's injected
@@ -376,22 +399,27 @@ static int cd2EditorOnFrame(void* ud, void* args)
 	gLastPad = pad;
 
 	if (edge & MPAD_L1)	cd2EditorPlace();
-	if (edge & MPAD_R1)	{ gSelSlot = (gSelSlot + 1) % ((gWork.spawnCount > 0) ? gWork.spawnCount : 1); }
+	if (edge & MPAD_R1)	{ gSelSlot = (gSelSlot + 1) % ((w->spawnCount > 0) ? w->spawnCount : 1); }
 	if (edge & MPAD_L2)	cd2EditorDeleteNearest();
 	if (edge & MPAD_R2)	cd2EditorCorner();
 	if (edge & MPAD_SELECT)	cd2EditorSave();
 	if (edge & MPAD_START)	cd2EditorReload();
 
+	/* the arena may have been replaced (by an action above, or by the runtime's
+	 * file watcher picking up a Python-editor save) - re-read for the draw */
+	w = cd2ArenaCurrent();
+
+	if (w == NULL)
+		return JER_RESULT_CONTINUE;
+
 	cd2EditorDraw();
 
-	{
-		char line[128];
-
-		snprintf(line, sizeof(line), "ARENA EDITOR: %s  spawn %d/%d  region %s  [L1 place R1 slot L2 del R2 corner SEL save START reload]",
-			gWork.internalName, (gWork.spawnCount > 0) ? (gSelSlot + 1) : 0, gWork.spawnCount,
-			gWork.region.bounded ? "set" : "none");
-		jer_hud_panel(CD2_ED_PANEL, 0, line, 255, 230, 120);
-	}
+	snprintf(line, sizeof(line),
+		"ARENA EDITOR: %s%s  spawn %d/%d  region %s  [L1 place  R1 slot  L2 del  R2 corner  SEL save  START reload]",
+		w->internalName, gEditorDirty ? " *unsaved*" : "",
+		(w->spawnCount > 0) ? (gSelSlot + 1) : 0, w->spawnCount,
+		w->region.bounded ? "set" : "none");
+	jer_hud_panel(CD2_ED_PANEL, 0, line, gEditorDirty ? 255 : 220, 230, 120);
 
 	return JER_RESULT_CONTINUE;
 }

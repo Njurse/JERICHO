@@ -16,6 +16,8 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <sys/stat.h>	/* stat - is a candidate arena folder actually there? */
+#include <stdlib.h>	/* _fullpath - freeze the arena folder to an absolute path */
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -28,15 +30,61 @@ int cd2ArenaFileLoad(const char* path, CD2_ARENA_PROFILE* out);
 static CD2_ARENA_PROFILE gArena[CD2_ARENA_MAX_ARENAS];
 static int gArenaCount;
 
-// Where the arena files live: the module's OWN folder (the MODS mirror the build
-// keeps in step with the repo), so an arena ships with Caine's Crossfire rather
-// than in a separate CONFIG tree outside the mod. Read AND written there, which is what
-// makes the two editors - and the launcher (tools/arena_menu.bat) - agree.
+// The FILE each arena came from (a built-in has none). Remembered rather than
+// derived from the arena's name, so an arena whose `arena:` name differs from
+// its file name still saves/reloads where it was loaded from.
+static char gArenaPath[CD2_ARENA_MAX_ARENAS][512];
+
+// Where the arena files live: the module's OWN folder (JERICHO/MODS/
+// cainescrossfire/arenas), so an arena ships with Caine's Crossfire rather than
+// in a separate CONFIG tree outside the mod. Read AND written there, which is
+// what makes the two editors - and the launcher - agree.
 #define CD2_ARENA_DIR	"MODS/cainescrossfire/arenas"
 
-static void cd2ArenaDir(char* out, int cap)
+static int cd2DirExists(const char* path)
 {
-	snprintf(out, cap, "%s/" CD2_ARENA_DIR, jer_root_dir());
+	struct stat st;
+
+	return (stat(path, &st) == 0 && (st.st_mode & S_IFDIR) != 0);
+}
+
+// The arena folder. A dev build runs from <repo>/src_rebuild/bin/<config>/JERICHO,
+// so the repo's own mod folder sits four levels up: prefer THAT, so the game, the
+// Python editor (which edits the repo copy) and the launcher all touch ONE file.
+// A shipped mod has no repo tree and uses the MODS mirror next to the exe.
+//
+// The result is frozen to an ABSOLUTE path at boot: the game changes its working
+// directory while loading a level, so a relative path stops resolving later -
+// which is exactly when the file watcher and the editor's save run.
+static const char* cd2ArenaDir(void)
+{
+	static char dir[512];
+	static int done;
+
+	if (!done)
+	{
+		char dev[512];
+		char raw[512];
+
+		done = 1;
+
+		snprintf(dev, sizeof(dev), "%s/../../../../JERICHO/" CD2_ARENA_DIR, jer_root_dir());
+
+		if (cd2DirExists(dev))
+			snprintf(raw, sizeof(raw), "%s", dev);
+		else
+			snprintf(raw, sizeof(raw), "%s/" CD2_ARENA_DIR, jer_root_dir());
+
+#if defined(_WIN32)
+		if (_fullpath(dir, raw, sizeof(dir)) == NULL)
+			snprintf(dir, sizeof(dir), "%s", raw);
+#else
+		if (realpath(raw, dir) == NULL)
+			snprintf(dir, sizeof(dir), "%s", raw);
+#endif
+	}
+
+	return dir;
 }
 
 // --- built-ins -------------------------------------------------------------
@@ -111,6 +159,7 @@ int cd2ArenaRegister(const CD2_ARENA_PROFILE* arena)
 
 	gArena[gArenaCount] = *arena;
 	gArena[gArenaCount].id = gArenaCount;
+	gArenaPath[gArenaCount][0] = 0;
 
 	return gArenaCount++;
 }
@@ -134,7 +183,10 @@ int cd2ArenaFilePath(const CD2_ARENA_PROFILE* arena, char* out, int cap)
 	if (arena == NULL || out == NULL || cap <= 0)
 		return 0;
 
-	snprintf(out, cap, "%s/" CD2_ARENA_DIR "/%s.cca", jer_root_dir(), arena->internalName);
+	if (arena->id >= 0 && arena->id < gArenaCount && gArenaPath[arena->id][0] != 0)
+		snprintf(out, cap, "%s", gArenaPath[arena->id]);
+	else
+		snprintf(out, cap, "%s/%s.cca", cd2ArenaDir(), arena->internalName);
 
 	return 1;
 }
@@ -207,6 +259,9 @@ static int cd2ArenaLoadFile(const char* path)
 	{
 		int id = cd2ArenaRegisterOrReplace(&a);
 
+		if (id >= 0 && id < CD2_ARENA_MAX_ARENAS)
+			snprintf(gArenaPath[id], sizeof(gArenaPath[id]), "%s", path);
+
 		printInfo("[cainescrossfire] arena file '%s': '%s' city=%d mp=%d/%d region=%s spawns=%d pickups=%d\n",
 			path, a.internalName, a.city, a.mpLevel, a.mpArena,
 			a.region.bounded ? "bounded" : "whole-level", a.spawnCount, a.pickupCount);
@@ -219,9 +274,7 @@ static int cd2ArenaLoadFile(const char* path)
 // built-ins always survive.
 static void cd2ArenaScanDir(void)
 {
-	char dir[512];
-
-	cd2ArenaDir(dir, sizeof(dir));
+	const char* dir = cd2ArenaDir();
 
 #if defined(_WIN32)
 	{
@@ -262,6 +315,7 @@ void cd2ArenaLoadAll(void)
 	cd2ArenaAddBuiltins();
 	cd2ArenaScanDir();
 
+	printInfo("[cainescrossfire] arenas: dir %s\n", cd2ArenaDir());
 	printInfo("[cainescrossfire] arenas: %d registered (%d built-in)\n",
 		gArenaCount, CD2_ARENA_BUILTIN_COUNT);
 }

@@ -215,9 +215,9 @@ int cd2ArenaFileLoad(const char* path, CD2_ARENA_PROFILE* out)
 		}
 		else if (cd2Strcasecmp(key, "spawn") == 0)
 		{
-			int x, z, heading = 0;
+			int x, z, heading = 0, y = CD2_ARENA_NO_Y;
 
-			if (sscanf(val, "%d %d %d", &x, &z, &heading) >= 2 &&
+			if (sscanf(val, "%d %d %d %d", &x, &z, &heading, &y) >= 2 &&
 			    out->spawnCount < CD2_ARENA_MAX_SPAWNS)
 			{
 				CD2_ARENA_SPAWN* sp = &out->spawns[out->spawnCount++];
@@ -225,6 +225,7 @@ int cd2ArenaFileLoad(const char* path, CD2_ARENA_PROFILE* out)
 				sp->x = x;
 				sp->z = z;
 				sp->heading = heading & 0xfff;
+				sp->y = y;	/* the 4th value, or CD2_ARENA_NO_Y if absent */
 			}
 		}
 		else if (cd2Strcasecmp(key, "pickup") == 0)
@@ -315,11 +316,17 @@ int cd2ArenaFileSave(const char* path, const CD2_ARENA_PROFILE* a)
 	else
 		fprintf(fp, "region: none\n");
 
-	fprintf(fp, "# spawn: x z heading  (first = player, rest = opponents)\n");
+	fprintf(fp, "# spawn: x z heading [y]  (first = player, rest = opponents; y = height)\n");
 
 	for (i = 0; i < a->spawnCount && i < CD2_ARENA_MAX_SPAWNS; i++)
-		fprintf(fp, "spawn: %d %d %d\n",
-			a->spawns[i].x, a->spawns[i].z, a->spawns[i].heading);
+	{
+		const CD2_ARENA_SPAWN* sp = &a->spawns[i];
+
+		if (sp->y != CD2_ARENA_NO_Y)
+			fprintf(fp, "spawn: %d %d %d %d\n", sp->x, sp->z, sp->heading, sp->y);
+		else
+			fprintf(fp, "spawn: %d %d %d\n", sp->x, sp->z, sp->heading);
+	}
 
 	fprintf(fp, "# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]\n");
 

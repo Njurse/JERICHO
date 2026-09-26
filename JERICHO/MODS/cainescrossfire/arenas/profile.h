@@ -41,12 +41,18 @@ typedef struct CD2_ARENA_REGION
 	int x0, z0, x1, z1;	// world units; x0<x1 and z0<z1 after load
 } CD2_ARENA_REGION;
 
-// One spawn point: world position + heading (PSX heading units, 0..4095).
+// One spawn point: world position + heading (PSX heading units, 0..4095) + the
+// ground height y. y carries the height the author was at (the in-game editor
+// records the car's), so a car dropped on a hill or a raised road does not fall
+// through; CD2_ARENA_NO_Y means "none authored" and the game keeps its own.
 typedef struct CD2_ARENA_SPAWN
 {
 	int x, z;
 	int heading;
+	int y;
 } CD2_ARENA_SPAWN;
+
+#define CD2_ARENA_NO_Y	0x7fffffff
 
 #define CD2_ARENA_MAX_SPAWNS	16
 #define CD2_ARENA_MAX_ARENAS	32
@@ -140,11 +146,21 @@ void cd2ArenaSetCurrent(int arenaId);
 struct JERICHO_CONTEXT;
 void cd2ArenaRegister(struct JERICHO_CONTEXT* ctx);
 
+// The in-game editor's state, read by the runtime's file watcher (arenas/arena.c):
+// `active` = the editing mode is on; `hasUnsaved` = an in-game edit has not been
+// saved, so the watcher must not overwrite it from disk.
+int cd2EditorActive(void);
+int cd2EditorHasUnsaved(void);
+
+// Forget what the arena file held (the in-game editor calls this after saving so
+// the watcher does not treat our own write as an external change).
+void cd2ArenaWatchReset(void);
+
 // The CURRENT arena's spawn points, if it has any. cd2ArenaPlayerSpawn reads
 // spawns[0]; cd2ArenaOpponentSpawn reads spawns[1 + index]. Each returns 1 and
-// fills the three out-params when the spawn exists, else 0 (so the caller falls
-// back to its own placement).
-int cd2ArenaPlayerSpawn(int* x, int* z, int* heading);
-int cd2ArenaOpponentSpawn(int index, int* x, int* z, int* heading);
+// fills `out` when the spawn exists, else 0 (so the caller falls back to its own
+// placement). A spawn's `y` is CD2_ARENA_NO_Y when no height was authored.
+int cd2ArenaPlayerSpawn(CD2_ARENA_SPAWN* out);
+int cd2ArenaOpponentSpawn(int index, CD2_ARENA_SPAWN* out);
 
 #endif /* CD2_ARENA_PROFILE_H */

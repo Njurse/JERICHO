@@ -535,18 +535,18 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 	// heading). The author places these, so no lineClear probe - a spawn on
 	// scenery is the author's to fix (the editor shows it).
 	{
-		int ax, az, ah;
+		CD2_ARENA_SPAWN sp;
 
-		if (cd2ArenaOpponentSpawn(index, &ax, &az, &ah))
+		if (cd2ArenaOpponentSpawn(index, &sp))
 		{
-			cand.vx = ax;
-			cand.vy = ppos.vy;
-			cand.vz = az;
-			spawnHeading = ah;
+			cand.vx = sp.x;
+			cand.vy = (sp.y != CD2_ARENA_NO_Y) ? sp.y : ppos.vy;
+			cand.vz = sp.z;
+			spawnHeading = sp.heading;
 			chosen = 1;
 
-			printInfo("[cainescrossfire] arena spawn: opponent %d at (%d,%d) heading %d\n",
-				index, ax, az, ah);
+			printInfo("[cainescrossfire] arena spawn: opponent %d at (%d,%d,%d) heading %d\n",
+				index, sp.x, sp.y, sp.z, sp.heading);
 		}
 	}
 
