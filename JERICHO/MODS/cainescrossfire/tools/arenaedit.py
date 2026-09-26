@@ -648,6 +648,9 @@ class EditorApp:
         self.bg = bg                     # the picture actually drawn
         self.bg_rect = bg_rect
         self.bg_photo = None
+        self._bg_key = None              # what the cached background tile shows
+        self._redraw_job = None          # a coalesced redraw, if one is pending
+        self._labels = {}                # last text per label, so we only rewrite changes
         self.pending_corner = None
         self.pan_from = None
         self.drag = None
@@ -910,7 +913,7 @@ class EditorApp:
         c.bind("<MouseWheel>", self.on_wheel)
         c.bind("<Button-4>", lambda e: self.zoom(1.15, e.x, e.y))
         c.bind("<Button-5>", lambda e: self.zoom(1 / 1.15, e.x, e.y))
-        c.bind("<Configure>", lambda e: self.redraw())
+        c.bind("<Configure>", lambda e: self._redraw_soon())
         c.bind("<Key>", self.on_key)
         c.configure(takefocus=1)
         self.tv_spawns.bind("<<TreeviewSelect>>", self.on_spawn_select)
@@ -1063,6 +1066,7 @@ class EditorApp:
 
     # -- the canvas ---------------------------------------------------------
     def redraw(self):
+        self._redraw_job = None
         c = self.canvas
         c.delete("all")
         a = self.cur()
@@ -1092,16 +1096,7 @@ class EditorApp:
                           text="grid %d units (a cell is 2048)" % step)
 
         if self.bg is not None and self.bg_rect:
-            br = self.bg_rect
-            p0 = self.S(br[0], br[1])
-            p1 = self.S(br[2], br[3])
-            iw = max(1, int(abs(p1[0] - p0[0])))
-            ih = max(1, int(abs(p1[1] - p0[1])))
-            if iw > 1 and ih > 1 and iw * ih < 40_000_000:
-                from PIL import ImageTk
-                self.bg_photo = ImageTk.PhotoImage(self.bg.resize((iw, ih)))
-                c.create_image(min(p0[0], p1[0]), min(p0[1], p1[1]), anchor="nw",
-                               image=self.bg_photo)
+            self._draw_bg(c, w, h)
 
         if a.region:
             x0, z0, x1, z1 = a.region
@@ -1119,6 +1114,8 @@ class EditorApp:
 
         for i, (x, z, hd, y) in enumerate(a.spawns):
             sx, sy = self.S(x, z)
+            if not (-40.0 <= sx <= w + 40.0 and -40.0 <= sy <= h + 40.0):
+                continue                       # off screen: cull it
             col = SPAWN_COL if i == 0 else OPP_COL
             if i == self.sel:
                 c.create_oval(sx - 11, sy - 11, sx + 11, sy + 11, outline=SEL_COL, width=2)
@@ -1133,6 +1130,8 @@ class EditorApp:
 
         for i, p in enumerate(a.pickups):
             sx, sy = self.S(p["x"], p["z"])
+            if not (-30.0 <= sx <= w + 30.0 and -30.0 <= sy <= h + 30.0):
+                continue                       # off screen: cull it
             col = PICK_HEALTH if p["type"] == "health" else PICK_WEAPON
             if i == self.sel_pick:
                 c.create_oval(sx - 10, sy - 10, sx + 10, sy + 10, outline=SEL_COL, width=2)
@@ -1145,6 +1144,70 @@ class EditorApp:
 
         self._status_line()
 
+    def _redraw_soon(self):
+        """Coalesce a burst of motion events into a single redraw.
+
+        Panning and dragging fire many events per frame; redrawing on each one
+        was most of the lag.
+        """
+        if self._redraw_job is None:
+            self._redraw_job = self.root.after_idle(self.redraw)
+
+    def _draw_bg(self, c, w, h):
+        """Draw the level map, but only the part on screen, and only re-rasterise
+        it when that part or the window changes.
+
+        Resizing the whole 2000x2000 map on every redraw - which is what happened
+        while panning or dragging - is what made the editor crawl. Cropping to the
+        visible window first keeps every frame canvas-sized.
+        """
+        from PIL import Image, ImageTk
+
+        br = self.bg_rect
+        p0 = self.S(br[0], br[1])
+        p1 = self.S(br[2], br[3])
+        sx0, sx1 = min(p0[0], p1[0]), max(p0[0], p1[0])
+        sy0, sy1 = min(p0[1], p1[1]), max(p0[1], p1[1])
+        span_w = sx1 - sx0
+        span_h = sy1 - sy0
+        if span_w <= 1 or span_h <= 1:
+            return
+
+        # the part of the map that is actually on screen
+        vx0 = max(0.0, sx0)
+        vy0 = max(0.0, sy0)
+        vx1 = min(float(w), sx1)
+        vy1 = min(float(h), sy1)
+        dst_w = int(vx1 - vx0)
+        dst_h = int(vy1 - vy0)
+        if dst_w < 1 or dst_h < 1:
+            return
+
+        # ...the same window in source pixels
+        iw, ih = self.bg.size
+        bx0 = max(0, int((vx0 - sx0) * iw / span_w))
+        by0 = max(0, int((vy0 - sy0) * ih / span_h))
+        bx1 = min(iw, max(bx0 + 1, int((vx1 - sx0) * iw / span_w)))
+        by1 = min(ih, max(by0 + 1, int((vy1 - sy0) * ih / span_h)))
+
+        key = (id(self.bg), bx0, by0, bx1, by1, dst_w, dst_h)
+        if self._bg_key != key:
+            tile = self.bg.crop((bx0, by0, bx1, by1))
+            if tile.size != (dst_w, dst_h):
+                resample = Image.NEAREST if dst_w < tile.size[0] else Image.BILINEAR
+                tile = tile.resize((dst_w, dst_h), resample)
+            self.bg_photo = ImageTk.PhotoImage(tile)
+            self._bg_key = key
+        c.create_image(vx0, vy0, anchor="nw", image=self.bg_photo)
+
+    def _label(self, widget, text):
+        """Set a label's text only when it changed - configuring on every mouse
+        move was its own small cost."""
+        key = str(widget)
+        if self._labels.get(key) != text:
+            self._labels[key] = text
+            widget.configure(text=text)
+
     def _status_line(self):
         a = self.cur()
         what = a.path or "<unsaved: press Save>"
@@ -1153,9 +1216,9 @@ class EditorApp:
             where = "region %d,%d..%d,%d" % a.region
         else:
             where = "no region"
-        self.lbl_file.configure(
-            text="%s%s   |   %s   |   %s   |   %d spawn(s), %d pickup(s)"
-                 % (what, star, a.internal, where, len(a.spawns), len(a.pickups)))
+        self._label(self.lbl_file,
+                    "%s%s   |   %s   |   %s   |   %d spawn(s), %d pickup(s)"
+                    % (what, star, a.internal, where, len(a.spawns), len(a.pickups)))
 
     # -- mouse --------------------------------------------------------------
     def on_press(self, ev):
@@ -1251,7 +1314,7 @@ class EditorApp:
             x, z, hd, y = a.spawns[k]
             a.spawns[k] = (int(wx), int(wz), hd, y)
             a.dirty = True
-            self.redraw()
+            self._redraw_soon()
         elif kind == "corner" and a.region:
             x0, z0, x1, z1 = a.region
             corners = [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]
@@ -1260,7 +1323,7 @@ class EditorApp:
             zs = sorted(c[1] for c in corners)
             a.region = (xs[0], zs[0], xs[3], zs[3])
             a.dirty = True
-            self.redraw()
+            self._redraw_soon()
 
     def on_release(self, ev):
         if self.drag is not None:
@@ -1278,7 +1341,7 @@ class EditorApp:
         x0, y0, ox, oy = self.pan_from
         self.view.ox = ox + (ev.x - x0)
         self.view.oy = oy + (ev.y - y0)
-        self.redraw()
+        self._redraw_soon()
 
     def on_right(self, ev):
         # right-click: delete whatever is under the pointer (no mode switch)
@@ -1303,7 +1366,7 @@ class EditorApp:
 
     def on_motion(self, ev):
         wx, wz = self.W(ev.x, ev.y)
-        self.lbl_pos.configure(text="cursor  %d , %d" % (int(wx), int(wz)))
+        self._label(self.lbl_pos, "cursor  %d , %d" % (int(wx), int(wz)))
 
     def on_wheel(self, ev):
         self.zoom(1.15 if ev.delta > 0 else 1 / 1.15, ev.x, ev.y)
@@ -1854,6 +1917,45 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
     app.fit_view()
     root.update()
     check("zoom + fit ran", app.view.scale > 0)
+
+    # --- the background is the expensive part: culled + cached ---------------
+    try:
+        import time
+        from PIL import Image
+
+        big = Image.new("RGB", (2000, 2000), (35, 35, 40))
+        for k in range(0, 2000, 40):        # some texture, so it is not a flat block
+            big.paste((130, 130, 130), (k, 0, k + 18, 2000))
+
+        # (a) a map about the size of the view: the old code resized the WHOLE
+        #     image on every redraw, which is what made panning crawl
+        cx0, cz0 = cur.spawns[0][0], cur.spawns[0][1]
+        app._set_bg(big, (cx0 - 4000, cz0 - 4000, cx0 + 4000, cz0 + 4000), "test map")
+        root.update()
+        n = 25
+        t0 = time.perf_counter()
+        for _ in range(n):
+            app.view.ox += 4                # pan a little, so it must re-crop
+            app.redraw()
+        ms = (time.perf_counter() - t0) * 1000.0 / n
+        print("  %-40s %.1f ms/frame" % ("pan + redraw, map ~= view", ms))
+        check("pan+redraw under 100 ms/frame", ms < 100.0)
+
+        # (b) a map far bigger than the view: the old code silently SKIPPED it
+        #     (its guard refused anything over 40M pixels)
+        app._set_bg(big, (-300000, -300000, 300000, 300000), "huge map")
+        root.update()
+        app.redraw()
+        check("a huge map still draws (culled, not skipped)", app.bg_photo is not None)
+
+        # (c) nothing moved -> the tile is reused, not rebuilt
+        k1 = app._bg_key
+        app.redraw()
+        check("the background tile is cached", app._bg_key == k1)
+        app.clear_bg()
+        root.update()
+    except ImportError:
+        print("  (no Pillow: skipped the background timing checks)")
 
     tmp = os.path.join(tempfile.gettempdir(), "_uitest_arena.cca")
     cur.path = tmp
