@@ -54,10 +54,72 @@ CITY_INDEX = {v: k for k, v in CITIES.items()}
 CITY_NAMES = {v: k for k, v in CITY_INDEX.items()}	# index -> NAME
 
 
-def _default_arena_dir():
-    """The mod's own arena folder (this script lives in <mod>/tools/)."""
+def _repo_root_from(start):
+    """The repo root at or above `start`, or None.
+
+    `start` may be .../JERICHO/MODS/cainescrossfire/tools (the repo copy) or
+    .../src_rebuild/bin/<cfg>/JERICHO/MODS/.../tools (the build's copy), so walk
+    up looking for the folder that holds BOTH the repo mod tree and src_rebuild.
+    """
+    d = os.path.abspath(start)
+    for _ in range(12):
+        if (os.path.isdir(os.path.join(d, "JERICHO", "MODS", "cainescrossfire")) and
+                os.path.isdir(os.path.join(d, "src_rebuild"))):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return None
+
+
+def repo_root():
+    """The repo root, whichever copy of this script is running."""
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.normpath(os.path.join(here, "..", "arenas"))
+    return _repo_root_from(here) or os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.dirname(here))))
+
+
+def _stale_mirror_note():
+    """A warning line when this is the build's COPY of the script and the repo
+    copy has moved on - the trap that makes a fix 'not work'."""
+    here = os.path.abspath(__file__)
+    root = _repo_root_from(os.path.dirname(here))
+    if not root:
+        return None
+    repo_copy = os.path.join(root, "JERICHO", "MODS", "cainescrossfire", "tools",
+                             "arenaedit.py")
+    if os.path.abspath(repo_copy) == here:
+        return None
+    try:
+        with open(repo_copy, "rb") as f1, open(here, "rb") as f2:
+            if f1.read() == f2.read():
+                return None
+    except OSError:
+        return None
+    return repo_copy
+
+
+def _default_arena_dir():
+    """Where arenas live: the mod's own arena folder.
+
+    This script normally sits in <repo>/JERICHO/MODS/cainescrossfire/tools/, but
+    the Windows build also copies the whole mod into the game tree
+    (<repo>/src_rebuild/bin/<cfg>/JERICHO/MODS/...). Running THAT copy used to
+    write arenas into the mirror - where a dev-build game never looks, because
+    the game resolves its arena folder to the repo copy (CD2_ARENA_DIR). So
+    resolve it the same way the game does: the repo folder when there is one.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    local = os.path.normpath(os.path.join(here, "..", "arenas"))
+
+    root = _repo_root_from(here)
+    if root:
+        cand = os.path.join(root, "JERICHO", "MODS", "cainescrossfire", "arenas")
+        if os.path.isdir(cand):
+            return cand
+
+    return local
 
 
 # ---------------------------------------------------------------------------
@@ -327,11 +389,6 @@ def load_obj_points(path, world_rect, size=(1400, 1000), sample=2):
 # instead of stretching the obj's bounding box is what makes the picture land on
 # the arena's own world coordinates.
 LEVEL_SCALE = 4096
-
-
-def repo_root():
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
 
 
 def level_rip_paths(city):
@@ -1822,9 +1879,7 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
 # what the tools need, in one place: --selftest, and the launcher's Check setup
 # ---------------------------------------------------------------------------
 def _repo_root():
-    # <root>/JERICHO/MODS/cainescrossfire/tools/arenaedit.py -> <root>
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))
+    return repo_root()
 
 
 def _find_game_exe():
@@ -1912,6 +1967,12 @@ def main(argv=None):
     ap.add_argument("--uitest", action="store_true",
                     help="build the editor window, drive it through its own commands, report and exit (a headless UI check)")
     args = ap.parse_args(argv)
+
+    _stale = _stale_mirror_note()
+    if _stale:
+        print("note: this is the build's COPY of arenaedit.py and the repo copy differs.")
+        print("      run the repo one instead:  py -3 \"%s\"" % _stale)
+        print()
 
     arena_dir = args.dir or _default_arena_dir()
 

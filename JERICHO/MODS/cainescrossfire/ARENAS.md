@@ -26,9 +26,15 @@ JERICHO\MODS\cainescrossfire\tools\arena_menu.bat
 Double-click it on Windows. By hand:
 
 - **New** — drop a `.cca` into `arenas/` (or `python tools/arenaedit.py --new my_arena`).
-- **Reaching the game** — `arenas/` is part of the mod, so a normal build mirrors
-  it to `bin\...\MODS\cainescrossfire\arenas\`, which is what the game scans; the
-  launcher's *Sync* does it without a build.
+- **Reaching the game** — `arenas/` is part of the mod. A **dev build's** game
+  resolves its arena folder to **this repo copy**, so an edit here is live (that
+  is what makes the two editors pseudo-realtime); an installed mod uses its own
+  mirrored copy, which a normal build keeps in step.
+- **Run the repo copy of the tools.** The Windows build also copies the whole mod
+  into the game tree (`src_rebuild\bin\<cfg>\JERICHO\MODS\...`), so an old script
+  can linger there and make a fix look like it did not work. Both copies now
+  resolve the arena folder to the repo's `arenas/`, and running the build's copy
+  prints a note when the repo copy has moved on.
 - **Open top-down** — `python tools/arenaedit.py <the .cca>` (no arguments opens
   every arena in the folder).
 - **Edit in-game** — launch with `-cceditor` and pick the arena (see below).
