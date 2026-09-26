@@ -198,6 +198,20 @@ the editor reads that injected mask alongside the live pad:
 28:pad:256   # SELECT -> save
 ```
 
+## Freecam (F7) as the editor cursor
+
+Press **F7** (the engine's freecam — `game.freeCamera=1` in `data/config.ini` is
+what wires that key up in a release build) and the editor's cursor leaves the
+car: every action then uses **the point the camera is looking at**, about 6000
+units in front of it, so an arena can be laid out from above instead of by
+driving. Turn the freecam off and the cursor snaps straight back to the car.
+
+The readout says which is live (`cursor car` / `cursor FREECAM (F7)`) and a cyan
+marker is drawn at the freecam cursor. **Aim at the ground** where you want the
+spawn: the cursor's height is what is written as the spawn's `y`, which is what
+keeps the car out of the void. Headless, or without a keyboard, the debug
+driver's `freecam:1` / `freecam:0` step forces it on and off.
+
 ## Test levers
 
 - `CC_FORCE_ARENA=<arena id>` — launch straight into an arena (id 0..N-1 in

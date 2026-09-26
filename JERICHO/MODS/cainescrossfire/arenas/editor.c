@@ -34,6 +34,14 @@
 #include "cainescrossfire_internal.h"	/* cd2DbgPadMask - the injected pad mask */
 #include "arenas/profile.h"
 #include "weapons/core/crew.h"	/* cd2CrewRetractAll - crew sit in the car while editing */
+#include "camera.h"		/* camera_position - where the freecam is */
+#include "draw.h"		/* inv_camera_matrix - which way the freecam looks */
+#include "dr2math.h"		/* ONE (4096) - the fixed-point scale of the camera basis */
+
+/* The engine's F7 freecam toggle (utils/DebugOverlay.cpp). It is exported from
+ * the game exe but has no public header; a JERICHO module is compiled as C++ and
+ * links the exe's exported symbols, so a plain extern resolves it. */
+extern int g_FreeCameraEnabled;
 #include "weapons/core/weapon_internal.h"	/* cd2WpnLine - the ghost markers, cd2WpnPlayerCar */
 
 #include <string.h>
@@ -44,6 +52,7 @@ int cd2ArenaFileSave(const char* path, const CD2_ARENA_PROFILE* a);
 
 #define CD2_ED_PANEL		3	/* the HUD slot the readout owns */
 #define CD2_ED_MARK		90	/* ghost bar height (y-up) */
+#define CD2_ED_CURSOR_RANGE	6000	/* how far in front of the freecam the cursor sits */
 
 static int gEditorOn;			/* -cceditor / CC_EDITOR */
 static int gEditorDirty;		/* an in-game edit is not saved yet */
@@ -96,6 +105,47 @@ static CAR_DATA* cd2EditorCar(void)
 		return NULL;
 
 	return cp;
+}
+
+// Where the editor's CURSOR is, which is what every action places/moves/deletes
+// relative to:
+//   - freecam (engine F7) ON  -> the point the camera is looking at, so you can
+//     lay an arena out from above without driving there;
+//   - freecam off             -> back on the player's car (drive-and-place).
+// Returns 0 when there is neither. `heading` is the car's when the car is the
+// cursor, and 0 from the freecam (a camera has no heading); `fromFreecam` says
+// which it was, for the readout.
+static int cd2EditorCursor(int* x, int* y, int* z, int* heading, int* fromFreecam)
+{
+	CAR_DATA* cp;
+
+	if (g_FreeCameraEnabled != 0)
+	{
+		/* the freecam's look direction is row 2 of the engine's inverse camera
+		 * matrix, scaled by ONE (same expression DoFreeCamera uses to fly) */
+		*x = camera_position.vx + (inv_camera_matrix.m[2][0] * CD2_ED_CURSOR_RANGE) / ONE;
+		*y = camera_position.vy + (inv_camera_matrix.m[2][1] * CD2_ED_CURSOR_RANGE) / ONE;
+		*z = camera_position.vz + (inv_camera_matrix.m[2][2] * CD2_ED_CURSOR_RANGE) / ONE;
+
+		if (heading) *heading = 0;
+		if (fromFreecam) *fromFreecam = 1;
+
+		return 1;
+	}
+
+	cp = cd2EditorCar();
+
+	if (cp == NULL)
+		return 0;
+
+	*x = cp->hd.where.t[0];
+	*y = cp->hd.where.t[1];
+	*z = cp->hd.where.t[2];
+
+	if (heading) *heading = cp->hd.direction & 0xfff;
+	if (fromFreecam) *fromFreecam = 0;
+
+	return 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +222,16 @@ static void cd2EditorDraw(void)
 	/* a single corner mark while A is pending */
 	if (gCornerState == 1)
 		cd2EditorBar(gCornerAx, gCornerAz, y, 255, 255, 120, 1);
+
+	/* the CURSOR: cyan while it is the freecam's aim point (so it is obvious the
+	 * car is not what you are about to place), hidden when it is the car itself
+	 * (the car is its own marker) */
+	{
+		int cx, cy, cz, ch, fromFreecam;
+
+		if (cd2EditorCursor(&cx, &cy, &cz, &ch, &fromFreecam) && fromFreecam)
+			cd2EditorBar(cx, cz, cy, 120, 210, 255, 1);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -179,10 +239,10 @@ static void cd2EditorDraw(void)
 // ---------------------------------------------------------------------------
 static void cd2EditorPlace(void)
 {
-	CAR_DATA* cp = cd2EditorCar();
 	CD2_ARENA_PROFILE w;
+	int x, y, z, heading, fromFreecam;
 
-	if (cp == NULL || !cd2EditorBegin(&w))
+	if (!cd2EditorCursor(&x, &y, &z, &heading, &fromFreecam) || !cd2EditorBegin(&w))
 		return;
 
 	if (gSelSlot < 0)
@@ -190,35 +250,35 @@ static void cd2EditorPlace(void)
 	if (gSelSlot >= CD2_ARENA_MAX_SPAWNS)
 		gSelSlot = CD2_ARENA_MAX_SPAWNS - 1;
 
-	w.spawns[gSelSlot].x = cp->hd.where.t[0];
-	w.spawns[gSelSlot].z = cp->hd.where.t[2];
-	w.spawns[gSelSlot].heading = cp->hd.direction & 0xfff;
-	w.spawns[gSelSlot].y = cp->hd.where.t[1];	/* the height you were at, so cars do not sink */
+	w.spawns[gSelSlot].x = x;
+	w.spawns[gSelSlot].z = z;
+	w.spawns[gSelSlot].y = y;		/* the cursor's height, so cars do not sink */
+	w.spawns[gSelSlot].heading = heading;	/* 0 from the freecam */
 
 	if (gSelSlot + 1 > w.spawnCount)
 		w.spawnCount = gSelSlot + 1;
 
 	cd2EditorCommit(&w);
 
-	printInfo("[cainescrossfire] arena editor: spawn %d = (%d,%d,%d) heading %d\n",
-		gSelSlot, w.spawns[gSelSlot].x, w.spawns[gSelSlot].y, w.spawns[gSelSlot].z,
-		w.spawns[gSelSlot].heading);
+	printInfo("[cainescrossfire] arena editor: spawn %d = (%d,%d,%d) heading %d (%s)\n",
+		gSelSlot, x, y, z, heading, fromFreecam ? "freecam" : "car");
 }
 
 static void cd2EditorDeleteNearest(void)
 {
-	CAR_DATA* cp = cd2EditorCar();
 	CD2_ARENA_PROFILE w;
 	long long best = 0;
 	int i, bestI = -1;
+	int cx, cy, cz, ch, fromFreecam;
 
-	if (cp == NULL || !cd2EditorBegin(&w) || w.spawnCount == 0)
+	if (!cd2EditorCursor(&cx, &cy, &cz, &ch, &fromFreecam) ||
+	    !cd2EditorBegin(&w) || w.spawnCount == 0)
 		return;
 
 	for (i = 0; i < w.spawnCount; i++)
 	{
-		long long dx = (long long)cp->hd.where.t[0] - w.spawns[i].x;
-		long long dz = (long long)cp->hd.where.t[2] - w.spawns[i].z;
+		long long dx = (long long)cx - w.spawns[i].x;
+		long long dz = (long long)cz - w.spawns[i].z;
 		long long d2 = dx * dx + dz * dz;
 
 		if (bestI < 0 || d2 < best)
@@ -247,15 +307,11 @@ static void cd2EditorDeleteNearest(void)
 
 static void cd2EditorCorner(void)
 {
-	CAR_DATA* cp = cd2EditorCar();
 	CD2_ARENA_PROFILE w;
-	int x, z;
+	int x, z, y, heading, fromFreecam;
 
-	if (cp == NULL || !cd2EditorBegin(&w))
+	if (!cd2EditorCursor(&x, &y, &z, &heading, &fromFreecam) || !cd2EditorBegin(&w))
 		return;
-
-	x = cp->hd.where.t[0];
-	z = cp->hd.where.t[2];
 
 	if (gCornerState == 0)
 	{
@@ -382,7 +438,7 @@ static int cd2EditorOnFrame(void* ud, void* args)
 {
 	const CD2_ARENA_PROFILE* w;
 	unsigned short pad, edge;
-	char line[160];
+	char line[200];
 
 	(void)ud;
 	(void)args;
@@ -430,10 +486,11 @@ static int cd2EditorOnFrame(void* ud, void* args)
 	cd2EditorDraw();
 
 	snprintf(line, sizeof(line),
-		"ARENA EDITOR: %s%s  spawn %d/%d  region %s  [L1 place  R1 slot  L2 del  R2 corner  SEL save  START reload]",
+		"ARENA EDITOR: %s%s  spawn %d/%d  region %s  cursor %s  [L1 place  R1 slot  L2 del  R2 corner  SEL save  START reload]",
 		w->internalName, gEditorDirty ? " *unsaved*" : "",
 		(w->spawnCount > 0) ? (gSelSlot + 1) : 0, w->spawnCount,
-		w->region.bounded ? "set" : "none");
+		w->region.bounded ? "set" : "none",
+		(g_FreeCameraEnabled != 0) ? "FREECAM (F7)" : "car");
 	jer_hud_panel(CD2_ED_PANEL, 0, line, gEditorDirty ? 255 : 220, 230, 120);
 
 	return JER_RESULT_CONTINUE;

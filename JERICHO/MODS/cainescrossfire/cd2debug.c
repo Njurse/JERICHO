@@ -79,7 +79,12 @@
 #define CD2_DBG_DAMAGE		3000	// per frame, well above one hit's clamp
 #define CD2_DBG_KILL_TIMEOUT	300	// give up on a kill after this many frames (10s)
 
-enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT, CD2_DBG_TEAM, CD2_DBG_TURBO, CD2_DBG_PAD, CD2_DBG_THRUST, CD2_DBG_PLAYERAI };
+/* The engine's F7 freecam toggle (utils/DebugOverlay.cpp; exported from the exe).
+ * The `freecam:` debug step forces it, so the arena editor's freecam cursor can
+ * be exercised headlessly. */
+extern int g_FreeCameraEnabled;
+
+enum { CD2_DBG_NONE = 0, CD2_DBG_KILLPLAYER, CD2_DBG_KILLNPC, CD2_DBG_GRANT, CD2_DBG_FIRE, CD2_DBG_CREW, CD2_DBG_MUZZLE, CD2_DBG_SELECT, CD2_DBG_TEAM, CD2_DBG_TURBO, CD2_DBG_PAD, CD2_DBG_THRUST, CD2_DBG_PLAYERAI, CD2_DBG_FREECAM };
 enum { CD2_DBG_ATT_ENEMY = 0, CD2_DBG_ATT_SELF, CD2_DBG_ATT_NONE, CD2_DBG_ATT_PLAYER, CD2_DBG_ATT_NPC };
 
 typedef struct CD2_DBG_STEP
@@ -354,6 +359,28 @@ static int cd2DbgReadAction(const char** s, int* arg)
 	*arg = v;
 	*s = e;
 	return CD2_DBG_PAD;
+	}
+
+	if (cd2DbgMatch(&p, "freecam"))
+	{
+	/* freecam:<0|1> -- force the engine's F7 freecam on (bare `freecam` = on).
+	 * The real toggle is a keyboard key, so this is how the arena editor's
+	 * freecam cursor - the camera's aim point instead of the car - gets tested
+	 * headlessly, and how you can drop into it without a keyboard. */
+	int on = 1;
+
+	if (*p == ':')
+	{
+		p++;
+		on = (*p != '0');
+
+		if (*p == '0' || *p == '1')
+			p++;
+	}
+
+	*arg = on;
+	*s = p;
+	return CD2_DBG_FREECAM;
 	}
 
 	if (cd2DbgMatch(&p, "team"))
@@ -728,6 +755,11 @@ static void cd2DbgRunStep(const CD2_DBG_STEP* st)
 	case CD2_DBG_GRANT:
 		cd2WpnGrantAllMax();
 		printInfo("[cd2debug] granted all weapons\n");
+		break;
+
+	case CD2_DBG_FREECAM:
+		g_FreeCameraEnabled = st->arg ? 1 : 0;
+		printInfo("[cd2debug] freecam %s\n", st->arg ? "ON" : "off");
 		break;
 
 	case CD2_DBG_FIRE:
