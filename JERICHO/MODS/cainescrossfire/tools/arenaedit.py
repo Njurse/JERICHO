@@ -650,6 +650,7 @@ class EditorApp:
         self.bg_photo = None
         self._bg_key = None              # what the cached background tile shows
         self._redraw_job = None          # a coalesced redraw, if one is pending
+        self._last_configure = None      # the canvas size of the last <Configure> we acted on
         self._labels = {}                # last text per label, so we only rewrite changes
         self.pending_corner = None
         self.pan_from = None
@@ -776,8 +777,12 @@ class EditorApp:
         self.canvas = tk.Canvas(body, background="#0f0f14", highlightthickness=0)
         self.canvas.pack(side="left", fill="both", expand=True)
 
-        side = ttk.Frame(body, padding=(5, 4))
+        # Fixed width, or the inspector's text re-flows the layout on every redraw:
+        # the canvas resizes -> <Configure> -> redraw -> text changes -> ... which
+        # never lets Tk drain and freezes the editor. Content must not size us.
+        side = ttk.Frame(body, padding=(5, 4), width=360)
         side.pack(side="right", fill="y")
+        side.pack_propagate(False)
 
         self._box_arena(side)
         self._box_region(side)
@@ -893,11 +898,13 @@ class EditorApp:
         ttk = self.ttk
         s = ttk.Frame(self.root, padding=(6, 3))
         s.pack(side="bottom", fill="x")
+        # fixed widths for the same reason as the inspector above: variable-length
+        # status text must not resize the window under us
         self.lbl_pos = ttk.Label(s, text="", width=30, anchor="e")
         self.lbl_pos.pack(side="right")
-        self.lbl_file = ttk.Label(s, text="", anchor="w")
+        self.lbl_file = ttk.Label(s, text="", width=74, anchor="w")
         self.lbl_file.pack(side="left")
-        self.lbl_msg = ttk.Label(s, text="", anchor="w")
+        self.lbl_msg = ttk.Label(s, text="", width=34, anchor="w")
         self.lbl_msg.pack(side="left", padx=14)
 
     def _bind(self):
@@ -913,7 +920,12 @@ class EditorApp:
         c.bind("<MouseWheel>", self.on_wheel)
         c.bind("<Button-4>", lambda e: self.zoom(1.15, e.x, e.y))
         c.bind("<Button-5>", lambda e: self.zoom(1 / 1.15, e.x, e.y))
-        c.bind("<Configure>", lambda e: self._redraw_soon())
+        # NOTE: no redraw binding on <Configure>. Drawing can change the window's own
+        # layout (the status line carries a long path), so canvas resize -> <Configure>
+        # -> redraw -> resize was an endless loop that froze the editor: update() and
+        # mainloop never returned. Debouncing it only made the loop slower. Every real
+        # action redraws (pan/zoom/fit/tool clicks and the file poll), so the only cost
+        # of leaving it out is that a window resize repaints at the next click or Fit.
         c.bind("<Key>", self.on_key)
         c.configure(takefocus=1)
         self.tv_spawns.bind("<<TreeviewSelect>>", self.on_spawn_select)
@@ -1072,6 +1084,7 @@ class EditorApp:
         a = self.cur()
         w = max(1, c.winfo_width())
         h = max(1, c.winfo_height())
+        self._drawn_size = (w, h)
         v = self.view
 
         if self.show_grid:
@@ -1151,7 +1164,9 @@ class EditorApp:
         was most of the lag.
         """
         if self._redraw_job is None:
-            self._redraw_job = self.root.after_idle(self.redraw)
+            # a TIMER, not after_idle: an idle callback that provokes more work can
+            # starve Tk's idle queue, and update() then never returns
+            self._redraw_job = self.root.after(16, self.redraw)
 
     def _draw_bg(self, c, w, h):
         """Draw the level map, but only the part on screen, and only re-rasterise
