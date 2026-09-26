@@ -34,6 +34,7 @@ struct plotCarGlobals
 	u_int intensity;
 	u_short* pciv_clut;
 	u_char* damageLevel;
+	int pageIndirect;	// JERICHO: this model's tpage high word is an INDEX, not a page id
 };
 
 
@@ -42,6 +43,24 @@ struct plotCarGlobals
 #else
 #define CAR_LOD_SWITCH_DISTANCE 5500
 #endif
+
+// JERICHO cross-city: an IMPORTED model's tpage high word is a texture-page INDEX, not a
+// page id, so the page a poly samples can follow the rectangle the import pinned it into
+// (the CLUT already works this way: the GT path reads pciv_clut at draw time). A stock
+// model keeps baking the resolved id, exactly as before, so its primitives are unchanged.
+//
+// Why it has to be an indirection rather than a value: the page id is baked when the model
+// is BUILT, and CarImportPin only fills texture_pages[] when the car is DRAWN - so a baked
+// id is the dummy GetTPage(0,0,960,0), which is a live slot. Measured: 206 of 254 polys of
+// an imported body sampled (960,0), the host's own page, which reads as wheel wells smeared
+// across the car. See carhacks/HACK.md.
+#define CAR_TPAGE_OF(_pg, _uv1)	\
+	((u_int)(((_pg)->pageIndirect \
+		? texture_pages[((_uv1) >> 16) & 0xffff] : ((_uv1) >> 16)) << 16))
+
+// The matching bake for buildNewCarFromModel.
+#define CAR_BAKE_TPAGE(_imported, _set)	\
+	((u_int)((_imported) ? (u_int)CarSetRemap(_set) : (u_int)texture_pages[CarSetRemap(_set)]))
 
 MATRIX light_matrix =
 { 
@@ -214,7 +233,7 @@ void plotCarPolyFT3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *
 			*(u_int*)&prim->u0 = (src->clut_uv0 & 0xffff0000) | ((src->clut_uv0 & 0xffff) + ofse);
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
-			*(u_int*)&prim->u1 = (src->tpage_uv1 & 0xffff0000) | ((src->tpage_uv1 & 0xffff) + ofse);
+			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
 			gte_stsxy3(&prim->x0, &prim->x1, &prim->x2);
@@ -296,7 +315,7 @@ void plotCarPolyGT3(int numTris, CAR_POLY *src, SVECTOR *vlist, SVECTOR *nlist, 
 			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
-			*(u_int*)&prim->u1 = (src->tpage_uv1 & 0xffff0000) | ((src->tpage_uv1 & 0xffff) + ofse);
+			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
 			gte_stsxy3(&prim->x0, &prim->x1, &prim->x2);
@@ -378,7 +397,7 @@ void plotCarPolyGT3Lit(int numTris, CAR_POLY* src, SVECTOR* vlist, SVECTOR* nlis
 			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
-			*(u_int*)&prim->u1 = (src->tpage_uv1 & 0xffff0000) | ((src->tpage_uv1 & 0xffff) + ofse);
+			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
 			gte_stsxy3(&prim->x0, &prim->x1, &prim->x2);
@@ -466,7 +485,7 @@ void plotCarPolyGT3nolight(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGl
 			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
-			*(u_int*)&prim->u1 = (src->tpage_uv1 & 0xffff0000) | ((src->tpage_uv1 & 0xffff) + ofse);
+			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
 			gte_stsxy3(&prim->x0, &prim->x1, &prim->x2);
@@ -1058,6 +1077,7 @@ void plotNewCarModel(CAR_MODEL* car, int palette, int flatColor)
 	_pg.intensity = 0;
 	_pg.pciv_clut = (u_short*)&civ_clut[1];
 	_pg.damageLevel = (u_char*)gTempCarUVPtr;
+	_pg.pageIndirect = car->imported;	// JERICHO: imported models carry an index (CAR_TPAGE_OF)
 
 	_pg.ot = (OTTYPE*)(current->ot + 28);
 
@@ -1291,7 +1311,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 									
 						cp->vindices = M_INT_4R(pft3->v0, pft3->v1, pft3->v2, 0);
 						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(pft3->texture_set)][pft3->texture_id], *(ushort*)&pft3->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pft3->texture_set)], *(ushort*)&pft3->uv1);
+						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pft3->texture_set), *(ushort*)&pft3->uv1);
 						cp->uv3_uv2 = *(ushort*)&pft3->uv2;
 						cp->originalindex = i;
 
@@ -1307,7 +1327,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 
 						cp->vindices = M_INT_4R(pft4->v0, pft4->v1, pft4->v2, 0);
 						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(pft4->texture_set)][pft4->texture_id], *(ushort *)&pft4->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pft4->texture_set)], *(ushort*)&pft4->uv1);
+						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pft4->texture_set), *(ushort*)&pft4->uv1);
 						cp->uv3_uv2 = *(ushort*)&pft4->uv2;
 						cp->originalindex = i;
 
@@ -1315,7 +1335,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						
 						cp->vindices = M_INT_4R(pft4->v0, pft4->v2, pft4->v3, 0);
 						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(polyList[1])][polyList[2]], *(ushort*)&pft4->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(polyList[1])], *(ushort*)&pft4->uv2);
+						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, polyList[1]), *(ushort*)&pft4->uv2);
 						cp->uv3_uv2 = *(ushort*)&pft4->uv3;
 						cp->originalindex = i;
 
@@ -1337,7 +1357,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						cp->vindices = M_INT_4R(pgt3->v0, pgt3->v1, pgt3->v2, 0);
 						cp->nindices = M_INT_4R(pgt3->n0, pgt3->n1, pgt3->n2, 0);
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pgt3->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pgt3->texture_set)], *(ushort *)&pgt3->uv1);
+						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pgt3->texture_set), *(ushort *)&pgt3->uv1);
 						cp->uv3_uv2 = *(ushort *)&pgt3->uv2;
 						cp->originalindex = i;
 
@@ -1363,7 +1383,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						cp->vindices = M_INT_4R(pgt4->v0, pgt4->v1, pgt4->v2, 0);
 						cp->nindices = M_INT_4R(pgt4->n0, pgt4->n1, pgt4->n2, 0);
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pgt4->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pgt4->texture_set)], *(ushort*)&pgt4->uv1);
+						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pgt4->texture_set), *(ushort*)&pgt4->uv1);
 						cp->uv3_uv2 = *(ushort*)&pgt4->uv2;
 						cp->originalindex = i;
 
@@ -1372,7 +1392,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						cp->vindices = M_INT_4R(pgt4->v0, pgt4->v2, pgt4->v3, 0);
 						cp->nindices = M_INT_4R(pgt4->n0, pgt4->n2, pgt4->n3, 0);
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pgt4->uv0);
-						cp->tpage_uv1 = M_INT_2(texture_pages[CarSetRemap(pgt4->texture_set)], *(ushort *)&pgt4->uv2);
+						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pgt4->texture_set), *(ushort *)&pgt4->uv2);
 						cp->uv3_uv2 = *(ushort *)&pgt4->uv3;
 						cp->originalindex = i;
 

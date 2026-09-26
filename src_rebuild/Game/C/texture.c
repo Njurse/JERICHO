@@ -1073,20 +1073,19 @@ void CarSetRemapEnable(int on)
 // Translate a source-city set number to the index its page was loaded at. Identity
 // unless we are converting an imported car, so host cars and import-free levels are
 // unaffected.
+//
+// The index is decided HERE, once, and shared by the two places that need it: the model
+// BUILD (which bakes it into every poly - CAR_BAKE_TPAGE) and the PIN (which fills
+// texture_pages at draw time). They must agree, because the polys read
+// texture_pages[that index]. They used to be computed separately, and that is why a
+// special body's third set was baked as the host's index 1 while the pin filled index
+// 110: measured, 48 of 254 polys read the host's page (704,0) instead of the imported one.
+int CarImportDstSet(int set);	// defined below, once the free-index allocator is in scope
+int CarImportPinDstSet(int set);	// the same decision, for the pin (outside the build)
+
 int CarSetRemap(int set)
 {
-	int i;
-
-	if (!sCarSetRemapActive)
-		return set;
-
-	for (i = 0; i < sRemapCount; i++)
-	{
-		if (sRemapFrom[i] == set)
-			return sRemapTo[i];
-	}
-
-	return set;
+	return CarImportDstSet(set);
 }
 
 // First set index above everything a city uses that is still free. City car sets
@@ -1149,6 +1148,61 @@ static int FindFreeSetIndex(void)
 
 	return 0;
 }
+
+// The decision itself, shared by the build (which bakes it) and the pin (which fills it).
+// The `sCarSetRemapActive` guard lives in CarImportDstSet, NOT here: the pin runs long
+// after the build has finished, and the first cut of this had the guard here - so the
+// pin's lookup returned the set unchanged, recorded index 1 while the polys had baked
+// 110, and the 32 polys that name set 1 kept reading the host's page.
+static int CarImportDstSetCore(int set)
+{
+	int i, free;
+
+	for (i = 0; i < sRemapCount; i++)
+	{
+		if (sRemapFrom[i] == set)
+			return sRemapTo[i];
+	}
+
+	// A set the level has already resolved keeps its meaning (the host city owns that
+	// number), so the imported page goes to a free index instead - allocated at BUILD
+	// time so the bake cannot disagree with the pin. A set the level never resolved is
+	// left as it is: the pin replaces texture_pages[set] with the imported page, and the
+	// polys read exactly that.
+	if (!(LevelTookTPage(set) || HostOwnsCarTPage(set)))
+		return set;
+
+	free = FindFreeSetIndex();
+
+	if (free == 0 || sRemapCount >= CAR_REMAP_MAX)
+		return set;			// no room: keep the host's page for this part, as before
+
+	sRemapFrom[sRemapCount] = set;
+	sRemapTo[sRemapCount] = free;
+	sRemapCount++;
+
+	if (sReservedCount < CAR_REMAP_MAX)
+		sReservedSet[sReservedCount++] = free;	// keep the next set out of it
+
+	printInfo("cross-city: set %d is the level's own - re-indexed to %d for the imported car (decided once, so the bake and the pin agree)\n",
+		set, free);
+
+	return free;
+}
+
+// What the imported car's polys are baked with, and what the pin fills.
+int CarImportDstSet(int set)
+{
+	return sCarSetRemapActive ? CarImportDstSetCore(set) : set;
+}
+
+// For the pin, which runs outside the build: the mapping is the same one the build used,
+// so the page it fills is the page the polys read.
+int CarImportPinDstSet(int set)
+{
+	return CarImportDstSetCore(set);
+}
+
 
 // JERICHO: pinning for imported pages.
 //
@@ -1627,6 +1681,8 @@ void CarImportPin(void)
 //
 // tpage packing (libgpu.h): x = ((v)      & 0xf) << 6; y = ((v >> 4) & 1) * 256 + ((v >> 11) & 1) * 512.
 // clut packing:  x = ((v) & 0x3f) << 4;  y = v >> 6.
+static void CarImportDumpPageRefs(void);
+
 void CarImportDumpState(void)
 {
 	int i, k;
@@ -1688,6 +1744,148 @@ void CarImportDumpState(void)
 	{
 		printInfo("cross-city:   imported index %d sits at slot rect (%d,%d) - shared with slot %d\n",
 			sRemapTo[i], tpagepos[sRemapTo[i] - 100].x, tpagepos[sRemapTo[i] - 100].y, sRemapTo[i] - 100);
+	}
+
+	CarImportDumpPageRefs();
+}
+
+// JERICHO-HOOK: what the IMPORTED MODEL actually samples, poly by poly.
+//
+// The palette survives a pin because the CLUT is re-pointed at draw time: CarImportPin
+// writes civ_clut and the car reads it through pciv_clut on every draw. A PAGE has no such
+// indirection. buildNewCarFromModel BAKES the page id into every poly from
+// texture_pages[CarSetRemap(set)] at build time (cars.c:1293-1375), and CarImportPin only
+// fills texture_pages[sPinIndex] later, at draw time. So "the palette is right but the
+// texture is wrong" is exactly the shape of a stale page id: the poly keeps the id it was
+// built with, while the pixels that id decodes to are whatever is at that rectangle now.
+//
+// For every imported slot this prints the three things that decide it: the distinct page
+// ids the polys carry and the VRAM rectangle each decodes to; the u/v window the model
+// addresses (so a window sitting in the wrong band of a page - wheel wells across the body
+// - is numbers rather than a screenshot); and what the pin actually put in texture_pages
+// for that set, and where. A poly page id matching no pinned set is the fault; one whose
+// rectangle a live slot now owns is the other half of it.
+static void CarImportPageRect(unsigned int page, int* px, int* py)
+{
+	// PSX tpage id: bits 0-3 = x in 64-texel units, bit 4 = y bit 8, bit 11 = y bit 9.
+	if (px) *px = (int)(page & 0xf) * 64;
+	if (py) *py = (int)(((page >> 4) & 1) * 256 + ((page >> 11) & 1) * 512);
+}
+
+static void CarImportDumpOneModel(const char* which, int slot, CAR_MODEL* m)
+{
+	unsigned int seen[8];
+	int count[8], pinnedCount[8];
+	int nseen = 0, npoly = 0, k, list, nOnPinned = 0;
+	int umin = 0xffff, umax = -1, vmin = 0xffff, vmax = -1;
+
+	if (m == NULL)
+		return;
+
+	for (k = 0; k < 8; k++)
+		seen[k] = 0, count[k] = 0, pinnedCount[k] = 0;
+
+	for (list = 0; list < 3; list++)
+	{
+		CAR_POLY* polys = (list == 0) ? m->pFT3 : (list == 1) ? m->pGT3 : m->pB3;
+		int num = (list == 0) ? m->numFT3 : (list == 1) ? m->numGT3 : m->numB3;
+
+		for (k = 0; k < num; k++)
+		{
+			CAR_POLY* poly = &polys[k];
+			unsigned int id = (unsigned int)((poly->tpage_uv1 >> 16) & 0xffff);
+			int j, u, v;
+
+			npoly++;
+
+			for (j = 0; j < nseen; j++)
+				if (seen[j] == id)
+					break;
+			if (j == nseen && nseen < 8)
+			{
+				seen[nseen] = id;
+				count[nseen] = 0;
+				nseen++;
+			}
+			if (j < nseen)
+				count[j]++;
+
+			u = poly->clut_uv0 & 0xff;			if (u < umin) umin = u; if (u > umax) umax = u;
+			v = (poly->clut_uv0 >> 8) & 0xff;	if (v < vmin) vmin = v; if (v > vmax) vmax = v;
+			u = poly->uv3_uv2 & 0xff;			if (u < umin) umin = u; if (u > umax) umax = u;
+			v = (poly->uv3_uv2 >> 8) & 0xff;	if (v < vmin) vmin = v; if (v > vmax) vmax = v;
+		}
+	}
+
+	printInfo("cross-city: imported slot %d %s model: %d polys, u=%d..%d v=%d..%d\n",
+		slot, which, npoly, umin, umax, vmin, vmax);
+
+	for (k = 0; k < nseen; k++)
+	{
+		unsigned int page = texture_pages[seen[k] & 0xff];
+		int px, py, pinned = -1, j;
+
+		// An imported model bakes the INDEX (CAR_BAKE_TPAGE), so seen[k] is an index into
+		// texture_pages - resolve it the way the draw path does (CAR_TPAGE_OF) and compare
+		// against the index the pin filled. If those agree, the car reads the imported page.
+		CarImportPageRect(page, &px, &py);
+
+		for (j = 0; j < sPinCount; j++)
+			if ((unsigned int)sPinIndex[j] == (seen[k] & 0xff))
+				pinned = j;
+
+		if (pinned >= 0)
+			nOnPinned += count[k];
+
+		pinnedCount[k] = (pinned >= 0);
+
+		printInfo("cross-city:   poly tpage index %d -> texture_pages=%04x rect (%d,%d), %d poly(s) - %s\n",
+			(int)(seen[k] & 0xff), page, px, py, count[k],
+			(pinned >= 0) ? "a pinned index"
+			: "NOT a pinned index - the model names a set the import never took");
+
+		if (pinned >= 0 && sPinSlot[pinned] >= 0)
+			printInfo("cross-city:     ...pinned into slot %d at (%d,%d) - %s\n",
+				sPinSlot[pinned], tpagepos[sPinSlot[pinned]].x, tpagepos[sPinSlot[pinned]].y,
+				(tpagepos[sPinSlot[pinned]].x == px && tpagepos[sPinSlot[pinned]].y == py)
+					? "THE SAME RECTANGLE the poly resolves to"
+					: "a DIFFERENT rectangle (the table moved after this frame's draw)");
+	}
+
+	// the one-line regression check: a poly whose index is not a pinned one is drawing a
+	// rectangle the import never filled, which is exactly the fault this instrument exists
+	// to catch (before the fix this read 0 of 254)
+	if (npoly > 0)
+		printInfo("cross-city: page check - slot %d %s: %d of %d polys resolve to a pinned imported page%s\n",
+			slot, which, nOnPinned, npoly,
+			(nOnPinned == npoly) ? " (all of them)"
+			: " - the rest name a set the import has no page for");
+}
+
+static void CarImportDumpPageRefs(void)
+{
+	int slot, n;
+
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		if (GetCarModelSourceCity(slot) < 0)
+			continue;
+
+		CarImportDumpOneModel("clean", slot, &NewCarModel[slot]);
+		CarImportDumpOneModel("low", slot, &NewLowCarModel[slot]);
+	}
+
+	for (n = 0; n < sPinCount; n++)
+	{
+		int px, py;
+
+		if (sPinIndex[n] < 0 || sPinIndex[n] >= 128 || sPinSet[n] < 0)
+			continue;
+
+		CarImportPageRect(texture_pages[sPinIndex[n]], &px, &py);
+		printInfo("cross-city:   pinned set %d index %d: texture_pages=%04x => (%d,%d)%s\n",
+			sPinSet[n], sPinIndex[n], texture_pages[sPinIndex[n]], px, py,
+			(sPinSlot[n] >= 0) ? " [placed]" : " [NOT PLACED]");
 	}
 }
 // from that city's level file draws with its own textures instead of the host's.
@@ -1856,6 +2054,36 @@ void LoadImportedTPages(void)
 					sets[nsets++] = set;
 				}
 			}
+
+			// ...AND the sets the model's own polygons name, on top of the body's two.
+			//
+			// A special body's polys can name more than its specTpages pair: measured on
+			// an imported body, 48 of 254 polys carried tpage indices that were NOT the
+			// body's two - they resolved to the HOST's pages (704,0) and (640,0) - because
+			// those polys name small set numbers the source city resolves through its own
+			// tables. Taking them here means every poly the model paints with gets an
+			// imported page instead of a host one, which is what the loud line below
+			// reports when it still cannot.
+			{
+				int count = CarModelSetCount(i);
+				int own = 0;
+
+				for (k = 0; k < count; k++)
+				{
+					int set = CarModelSet(i, k);
+
+					if (set != 0 && nsets < 64 && !SetInList(sets, nsets, set))
+					{
+						pref[nsets] = -1;	// no natural rectangle: a spare slot, as for civilians
+						sets[nsets++] = set;
+						own++;
+					}
+				}
+
+				if (count > 0)
+					printInfo("cross-city:   special body %d (slot %d) names %d set(s) of its own; %d beyond its two spec pages\n",
+						body, i, count, own);
+			}
 		}
 		else
 		{
@@ -1917,33 +2145,32 @@ void LoadImportedTPages(void)
 			LevelNames[city], set, (LevelTookTPage(set) || HostOwnsCarTPage(set)) ? 1 : 0);
 
 		// The host city keeps its own meaning for a set number: a set index holds one
-		// meaning at a time. So the imported page goes to a free index instead and the
-		// car's polys are translated onto it (CarSetRemap, applied in plotNewCarModel
-		// as they are converted). Without this the part kept the host's texture.
-		if (LevelTookTPage(set) || HostOwnsCarTPage(set))
+		// meaning at a time. So a set the level already resolved goes to a free index and
+		// the car's polys are translated onto it (CarSetRemap, applied in
+		// buildNewCarFromModel as the polys are converted). Without this the part kept the
+		// host's texture.
+		//
+		// The decision is NOT made here: CarImportDstSet owns it, and the build already
+		// called it - so the index the polys were baked with is the index filled below.
+		// Making the choice twice is what left a special body's third set baked as the
+		// host's index while the pin filled a different one.
+		dstSet = CarImportPinDstSet(set);
+
+		if (dstSet != set)
 		{
-			int free = FindFreeSetIndex();
-
-			if (free == 0 || sRemapCount >= CAR_REMAP_MAX)
-			{
-				printInfo("cross-city: set %d is the level's own and there is no free index - left alone\n", set);
-				continue;
-			}
-
-			// NOT recorded yet: the remap only counts if the page actually gets loaded.
-			// Recording it here left the car's polys pointing at an index with nothing in
-			// it whenever the upload was later refused (no spare slot), which draws as an
-			// empty texture instead of falling back to the host's page for that part.
-			remapFrom = set;
-			remapTo = free;
-
-			if (sReservedCount < CAR_REMAP_MAX)
-				sReservedSet[sReservedCount++] = free;	// keep the next set out of it
-
-			printInfo("cross-city: set %d is the level's own - re-indexing it to %d for the imported car\n", set, free);
-
-			dstSet = free;
+			// CarImportDstSet allocated and recorded it at build time; recording again here
+			// would add a second mapping for the same set.
+			remapFrom = -1;
+			printInfo("cross-city: %s set %d -> index %d, taken from the build-time remap (the car's polys already point at it)\n",
+				LevelNames[city], set, dstSet);
 		}
+		else
+		{
+			printInfo("cross-city: %s set %d keeps its own index (the level never resolved it)\n",
+				LevelNames[city], set);
+		}
+
+
 
 		// locate it in the imported city's page list
 		for (j = 0; j < gCarImportPerms.count; j++)
@@ -1988,12 +2215,6 @@ void LoadImportedTPages(void)
 		{
 			printInfo("cross-city: %s set %d is not in its page list - skipped\n", LevelNames[city], set);
 			continue;
-		}
-
-		// no spare slot: refuse, rather than steal one the level streams into
-		if (0)
-		{
-			;
 		}
 
 		buf = (char*)malloc(size);
