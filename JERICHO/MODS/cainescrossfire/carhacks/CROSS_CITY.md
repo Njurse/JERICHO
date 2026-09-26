@@ -255,9 +255,16 @@ Still open:
 - **The thrash meter is the thing to watch.** If `page re-uploads` in the final page
   state grows with the frame count, something is still taking pages back — check the
   two `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
+- **Run `tools/crosscheck.py` (or `devcheck.sh`, which calls it) instead of reading the
+  page state by eye.** It asserts the three things the engine's own summary cannot see
+  (`carhacks/HACK.md`, "Where an imported page may live now"): an imported page must not
+  sit on the world's/scenery's rectangle, must not take a live local car's page, and its
+  CLUTs must match the source city's file.
 - Visual confirmation stays the user's: the logs prove pages are placed, claimed and
   kept — not that a car looks right. `-vramview` opens a second window showing the
-  live VRAM so a page or CLUT can be watched as it changes.
+  live VRAM so a page or CLUT can be watched as it changes, `tools/cardump.py` renders
+  last run's pages under each palette, and `tools/levpalette.py` gives the defaults to
+  compare against.
 
 ## Related
 

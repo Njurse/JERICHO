@@ -176,13 +176,66 @@ So `CarModelSetsAdd` now records every model's sets (host or imported),
 first pass that takes a wasted car page — ignoring `nperms` — before it will evict a
 live world page. Result: `2 wasted car pages taken, 0 world pages evicted`.
 
+## Where an imported page may live now (and the guard table)
+
+Placement is now strictly "something nobody is drawing", in this order (`CarPageFindSlot`):
+
+1. a free slot inside the level's own range — `nperms <= idx < slotsused`, never the
+   world's pool;
+2. a host car page that **no built model names** (the `UNUSED` map, any idx >= nperms);
+3. as a last resort, **evict a streamed world page** — logged, and counted in the final
+   page state. That is the same thing the engine already does when its own pool is full,
+   and it is now safe: `LoadInAreaTSets` no longer offers the car's rectangle, so the
+   world re-streams into another slot instead of overwriting the car. The count is the
+   cost to watch — not damage.
+
+A page REPLACES a car, so the rectangle that car already used is preferred over all of
+the above: `pref[]` (special bodies only) and `CarPinPreferredAllowed` accept a
+preferred rectangle **only if it currently holds one of the host special car's own two
+pages**. That check is the fix for the worst of the leaks — see below.
+
+**Every upload path asks before it writes.** The old guard was applied to two of four
+paths, which is worse than none (the world's page pixels landed on the car's page while
+its CLUTs were refused, leaving the world drawing a page pointer that no longer matched
+what was at that rectangle):
+
+| path | file | guarded |
+|---|---|---|
+| `LoadTPageAndCluts` (level load, .TIM override) | `texture.c:553` | always was |
+| `SendTPage` CLUT/palette pass | `spool.c:~479` | always was |
+| `SendTPage` **page rows + slot table** | `spool.c:~518` | **now** — both halves refused together |
+| `SpecClutsSpooled` | `spool.c:~1729` | always was |
+| `Tada` **special page rows** | `spool.c:~2023` | **now** |
+
+And `LoadInAreaTSets` (`spool.c:~593`) no longer offers the streamer a slot an imported
+page owns (`CarPageSlotOwned`, by slot — the pin's claims are slot-indexed, and
+`slot_tpagepos[]` need not equal `tpagepos[]`). Without that the world simply picked the
+car's rectangle again the next time that area was streamed.
+
+### The trap that put a car's page on a building
+
+`pref[nsets] = SPECIAL_CAR_SLOT + k` used the **resident-model** constant (7) where the
+runtime **texture slot** was meant (`specialSlot`, 11-13 depending on the level). Measured
+on Havana with `nperms=12`: an imported special body pinned its two pages onto slots **7
+and 8** — two of the level's *permanent* page rectangles — while the map showed slot 8
+held a live host car page. `0 wasted car pages taken, 0 world pages evicted` hid it,
+because that path never consults the allocator at all. Now it is `specialSlot + k`, and
+`CarPinPreferredAllowed` refuses anything that is not the replaced car's own page.
+
 ## Still open
 
-- The victim is still chosen greedily (first wasted car page, round-robin). A car page
-  that a *live* model names can still only be had by evicting a world page — the next
-  step is to weigh "is the car that uses this page on screen" the same way, i.e. a real
-  pool over the host's car pages. `sCarPageClaimFrame` / `CAR_PAGE_CLAIM_FRAMES` and the
-  `UNUSED` slot map are the pieces already in place for it.
+- **The import's CLUT rows are still carved from the level's own strip.** The pin band
+  starts at `max(clutpos.y + 4, 480)` and two sets can need 20+ rows between them
+  (16 + 5 measured), so a page's CLUTs can land on another imported page's and the
+  `vramdump.py` check reports MISMATCH for the larger set. Reserving the import its own
+  region — and bounding `clutpos.y += 8` in the slot-band loop — is Phase 4.
+- **A `specTpages` set still resolves to the HOST's `civ_clut` row 0** (`GetCarPalIndex`
+  has no entry for it), so the pin overwrites a host palette. Phase 4 maps those into the
+  import bank (`PALETTES.md` §3/§5).
+- The victim is still chosen greedily (first wasted car page, round-robin). Weighing "is
+  the car that uses this page on screen" is the real pool over the host's car pages;
+  `sCarPageClaimFrame` / `CAR_PAGE_CLAIM_FRAMES` and the `UNUSED` slot map are in place
+  for it.
 - The thrash meter is the thing to watch. If `page re-uploads` in the final page state
   grows with the frame count, something is still taking pages back — check the two
   `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.

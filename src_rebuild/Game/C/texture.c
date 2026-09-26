@@ -540,6 +540,28 @@ int CarPageRectOwned(int x, int y)
 	return 0;
 }
 
+// JERICHO: the same question asked by SLOT, which is exact where a rectangle is not.
+// `slot_tpagepos[]` (what the streamer uploads to) and `tpagepos[]` (what the pin
+// places at) are two views that are not guaranteed to agree, so the streamer asks by
+// slot - otherwise it could offer a rectangle the pin owns and upload a world page
+// over the car.
+int CarPageSlotOwned(int slot)
+{
+	if (slot < 0 || slot >= 19)
+		return 0;
+
+	if (sCarPageClaimFrame[slot] == 0)
+		return 0;
+
+	if (FrameCnt - sCarPageClaimFrame[slot] <= CAR_PAGE_CLAIM_FRAMES)
+		return 1;
+
+	sCarPageClaimFrame[slot] = 0;
+	sCarPageGiveBacks++;
+
+	return 0;
+}
+
 int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress)
 {
 	int npalettes;
@@ -1226,14 +1248,19 @@ static int CarPageFindSlot(void)
 	int i, k;
 	static int sVictim;
 
+	// JERICHO: a slot free outright - but only one inside the LEVEL's own range. The free
+	// slots in [slotsused,19) are the WORLD's stream pool: LoadInAreaTSets treats any
+	// slot not already holding a set it needs as available, so taking one there makes the
+	// world stream into a rectangle we hold. A free slot below nperms is a permanent page
+	// and must never be taken either. That leaves [nperms, slotsused).
 	for (i = 0; i < 19; i++)
 	{
 		int idx = (sVictim + i) % 19;
 
-		if (idx >= nperms && tpageslots[idx] == 0xFF)
+		if (idx >= nperms && idx < slotsused && tpageslots[idx] == 0xFF)
 		{
 			sVictim = idx;
-			return idx;		// free outright
+			return idx;		// free outright, and not a rectangle the world will want
 		}
 	}
 
@@ -1329,6 +1356,32 @@ static int CarPageFindSlot(void)
 	return -1;
 }
 
+// JERICHO: may an imported page take this rectangle as its PREFERRED one? Only if it
+// currently holds one of the HOST SPECIAL car's own two pages (`carTpages[GameLevel][6]`
+// and `[7]`, set at load) - the rectangle of the car an import replaces, which nothing
+// else needs.
+//
+// This check is the fix for a real leak: the preferred slot used to be taken blindly,
+// and it was `SPECIAL_CAR_SLOT + k` - the RESIDENT-MODEL constant (7), not the runtime
+// texture slot the special pages actually live in (11-13 depending on the level). So the
+// car's page was pinned onto two of the level's PERMANENT page rectangles and a building
+// drew the car's texture. Anything that is not the replaced car's own page now goes
+// through CarPageFindSlot, which knows the placement rules.
+static int CarPinPreferredAllowed(int slot)
+{
+	int held;
+
+	if (slot < 0 || slot >= 19)
+		return 0;
+
+	held = tpageslots[slot];
+
+	if (held == 0xFF)
+		return 0;
+
+	return (held == carTpages[GameLevel][6] || held == carTpages[GameLevel][7]);
+}
+
 void CarImportPin(void)
 {
 	int i;
@@ -1403,10 +1456,10 @@ void CarImportPin(void)
 		// world alone.
 		slot = sPinSlot[i];
 
-		if (slot < 0 || slot >= 19)
+		if (!CarPinPreferredAllowed(slot))
 			slot = sPinPreferred[i];
 
-		if (slot < 0 || slot >= 19)
+		if (!CarPinPreferredAllowed(slot))
 			slot = CarPageFindSlot();
 
 		if (slot < 0)
@@ -1746,8 +1799,11 @@ void LoadImportedTPages(void)
 				{
 					// This page replaces the host's special car's OWN rectangle, so nothing has
 					// to be evicted for it. Picking a mere free slot instead is what put
-					// imported textures onto rectangles buildings were using.
-					pref[nsets] = SPECIAL_CAR_SLOT + k;
+					// imported textures onto rectangles buildings were using. `specialSlot` is
+					// the runtime TEXTURE slot the host special pages were loaded into - not
+					// SPECIAL_CAR_SLOT, which is a resident-MODEL index (7) and lands on the
+					// level's permanent pages.
+					pref[nsets] = (specialSlot + k < 19) ? (specialSlot + k) : -1;
 					sets[nsets++] = set;
 				}
 			}

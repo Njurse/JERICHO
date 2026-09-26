@@ -50,7 +50,7 @@ IMPORT_ROW = 8
 def parse_run(path):
     """Everything crosscheck needs, pulled out of one run's text."""
     out = {
-        "city": None, "slotsused": None, "nperms": None,
+        "city": None, "level": None, "slotsused": None, "nperms": None,
         "import_sets": {},          # set -> (index, size, offset, cluts)
         "slotmap": {},              # slot -> (set, "car"|"world", loaded, unused)
         "pinned": {},               # set -> {"slot":, "rect":, "clutpos":}
@@ -62,6 +62,9 @@ def parse_run(path):
         m = re.search(r"cross-city: car data from (\w+)\b", line)
         if m:
             out["city"] = m.group(1).upper()
+        m = re.search(r"JERICHO-RUN: level=(\w+)", line)
+        if m:
+            out["level"] = m.group(1).upper()
         m = re.search(r"cross-city: level page state - slotsused=(\d+) nperms=(\d+) "
                       r"nspecpages=(\d+) tpage=\((\d+),(\d+)\) clutpos=\((\d+),(\d+)\) civclut=(\w+)", line)
         if m:
@@ -99,25 +102,38 @@ def parse_run(path):
 
 
 def check_inv1(run, fails, warns):
-    """No imported page in the world's stream pool; no live local car page taken."""
+    """No imported page on a rectangle something DRAWN and un-streamable owns.
+
+    Two things are hard failures: a WORLD/scenery rectangle (a permanent page nothing
+    will re-stream) and a live local car's page. A world page merely EVICTED for an
+    import is a warning, not a failure: with LoadInAreaTSets skipping owned slots the
+    world re-streams into another slot, which is what the engine already does when its
+    own pool is full - the count is its cost."""
     su, np = run["slotsused"], run["nperms"]
+    host = run.get("level")
+    # A special-body import REPLACES the host special car, so taking the host special
+    # car's own two rectangles is the design, not a leak. carTpages[host][6]/[7] are
+    # overwritten at load with the CURRENT special body's pair, so the whitelist is the
+    # host's whole specTpages table (only the resident special's two are ever live).
+    special = set(SPEC_TPAGES.get(host, []))
     for setno, info in sorted(run["pinned"].items()):
         slot = info["slot"]
         if su is not None and slot >= su:
-            fails.append(f"INV1 set {setno} pinned to slot {slot} >= slotsused {su} - that is the WORLD's pool")
-        elif np is not None and slot < np:
-            # only a failure if that slot was NOT a host car page the import legitimately replaces
-            held = run["slotmap"].get(slot)
-            if held is None or held[1] != "car" or not held[3]:
-                fails.append(f"INV1 set {setno} pinned to slot {slot} (< nperms {np}) - a PERMANENT/world page"
-                             + (f" (slot map: set {held[0]} {held[1]})" if held else " (not in the slot map)"))
+            warns.append(f"INV1 set {setno} pinned to slot {slot} >= slotsused {su}: a WORLD-pool rectangle "
+                         f"(re-streamable now that LoadInAreaTSets skips owned slots - watch the re-upload meter)")
         held = run["slotmap"].get(slot)
-        if held and held[1] == "car" and not held[3]:
-            fails.append(f"INV1 set {setno} took a LIVE host car page in slot {slot} (set {held[0]} is named by a model)")
-    for setno, slot in run["evicts"]:
-        fails.append(f"INV1 evicted WORLD set {setno} from slot {slot} for an imported page")
-    if run["final"] and run["final"]["evicted"]:
-        fails.append(f"INV1 {run['final']['evicted']} world page(s) evicted")
+        if held is None:
+            continue                    # not in the map = free at dump time, nothing lost
+        held_set, kind, _loaded, unused = held
+        if kind == "world":
+            fails.append(f"INV1 set {setno} pinned to slot {slot}, which held WORLD set {held_set} at pin time "
+                         f"- the import took the world's/scenery's rectangle")
+        elif not unused and held_set not in special:
+            fails.append(f"INV1 set {setno} pinned to slot {slot}, which held LIVE host car page {held_set} "
+                         f"- a local car is retextured")
+    if run["evicts"]:
+        warns.append(f"INV1 {len(run['evicts'])} world page(s) evicted for an imported page - "
+                     f"re-streamable, but it is the cost of placing where nothing was free")
     if not run["pinned"] and run["import_sets"]:
         warns.append("INV1 nothing pinned at all - no imported page was placed")
 
@@ -205,7 +221,7 @@ def main():
         return 2
 
     print(f"{log}")
-    print(f"  city={run['city']} slotsused={run['slotsused']} nperms={run['nperms']} "
+    print(f"  city={run['city']} level={run['level']} slotsused={run['slotsused']} nperms={run['nperms']} "
           f"imported sets={sorted(run['import_sets'])}")
     if run["final"]:
         f = run["final"]

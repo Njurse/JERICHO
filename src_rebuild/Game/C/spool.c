@@ -461,6 +461,7 @@ void SendTPage(void)
 	int npalettes;
 	int tpage2send;
 	int i;
+	int owned;			// JERICHO: is this slot's rectangle an imported page's?
 	RECT16 cluts;
 
 	tpage2send = tsetinfo[tsetpos * 2];
@@ -515,7 +516,17 @@ void SendTPage(void)
 	}
 	else 
 	{
-		if (slot != tpageloaded[tpage2send] - 1) 
+		// JERICHO-HOOK: an imported page owns this rectangle, so the world's chunk must
+		// NEITHER be written over it NOR re-point the slot table at it. The CLUT/palette
+		// pass above was guarded while this one was not, and that asymmetry is the worst
+		// of both: the world's pixels landed on the car's page while texture_pages[] /
+		// texture_cluts[] for the world's set kept their old values, so the world drew a
+		// page it was no longer pointing at. Both halves now agree - refused together.
+		// (LoadInAreaTSets no longer offers an owned slot, so this is a safety net for
+		// chunks queued before the claim.)
+		owned = CarPageRectOwned(slot_tpagepos[slot].vx, slot_tpagepos[slot].vy);
+
+		if (!owned && slot != tpageloaded[tpage2send] - 1) 
 		{
 			LoadImage(&tpage, (u_long*)(model_spool_buffer + 0xA000 + (loadbank_write & 1) * 256 * 32));
 			tpage.y = tpage.y + tpage.h;
@@ -523,13 +534,16 @@ void SendTPage(void)
 
 		if (nTPchunks == 4)
 		{
-			old = tpageslots[slot];
-			tpageslots[slot] = tpage2send;
+			if (!owned)
+			{
+				old = tpageslots[slot];
+				tpageslots[slot] = tpage2send;
 
-			if(old != 0xFF)	// [A] bug fix
-				tpageloaded[old] = 0;
+				if(old != 0xFF)	// [A] bug fix
+					tpageloaded[old] = 0;
 
-			tpageloaded[tpage2send] = slot + 1;
+				tpageloaded[tpage2send] = slot + 1;
+			}
 
 			tsetpos++;
 
@@ -592,6 +606,14 @@ void LoadInAreaTSets(int area)
 	// get available slots
 	for (slot = slotsused; slot < 19; slot++)
 	{
+		// JERICHO-HOOK: a slot an imported page owns is NOT available and must never be
+		// offered to the streamer. Offering it was the other half of the scenery leak:
+		// SendTPage's page upload was unguarded, so the world wrote its pixels over the
+		// car's page while its CLUT write was refused - leaving the world drawing a page
+		// pointer that no longer matched its pixels ("corrupted colours on the walls").
+		if (CarPageSlotOwned(slot))
+			continue;
+
 		// use free slot immediately
 		if (tpageslots[slot] == 0xff)
 		{
@@ -2017,6 +2039,15 @@ void Tada(void)
 		case SpecSpool_Tpage1:
 		case SpecSpool_Tpage2:
 			spec_tpage = specialSlot + (specialState - 1);
+
+			// JERICHO-HOOK: an imported page owns this rectangle, so the host special car's
+			// page must NOT be written over it. SpecClutsSpooled already refuses the CLUTs;
+			// without this the PAGE PIXELS still landed on the imported player car (the
+			// player's car IS the special slot), which is the "broken textures on the
+			// modded car" report. Both halves refused together, as in SendTPage.
+			if (CarPageSlotOwned(spec_tpage))
+				break;
+
 			tpagerect.w = 64;
 			tpagerect.h = 16;
 
