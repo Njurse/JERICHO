@@ -84,13 +84,14 @@ The source buffer itself is not freed after the build — see "Cost and lifetime
 ## Palette mapping
 
 The imported city's `LUMP_PALLET` is merged with **that city's** texture-set
-mapping (`ProcessPalletLumpForCity(lump, size, city)`, `cars.c:1431`), and
-`GetCarPalIndex` (`cars.c:1933`) falls back to the imported city's table for a
+mapping (`ProcessPalletLumpForCity(lump, size, city)`, `cars.c:1496`), and
+`GetCarPalIndex` (`cars.c:1973`) falls back to the imported city's table for a
 page the host level does not know — otherwise a foreign vehicle's pages would all
 collapse to slot 0 and it would be painted with the **host's** palette.
-`ProcessImportedPalette` (`cars.c:1496`) does this right after the level's own
-`ProcessPalletLump` (`texture.c:517-518`). The mechanism (`carTpages`, `civ_clut`,
-the per-city set numbers) is `FORMATS.md` §2 and §4.
+`ProcessImportedPalette` (`cars.c:1584`) does this right after the level's own
+`ProcessPalletLump` (`texture.c:1981-1982`). **The whole mechanism — `carTpages`,
+`civ_clut`'s two banks, the row formula, and the CLUT strip — is owned by
+`PALETTES.md`** (the byte layout stays in `FORMATS.md` §4).
 
 ## Cost and lifetime
 

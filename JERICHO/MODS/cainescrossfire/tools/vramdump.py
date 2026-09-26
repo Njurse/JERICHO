@@ -89,7 +89,12 @@ def write_png(path, width, height, px):
 
 def parse_log(path):
     """Per imported set: its entry offset/size in the source level file, its CLUT-row
-    count, and the VRAM position of its first CLUT."""
+    count, the VRAM slot+rectangle its PAGE was pinned to, and the VRAM position of
+    its first CLUT (slot 0).
+
+    `rect` is the page rectangle (`tpagepos[slot]`) and `clutpos` the page's own
+    CLUT position - `cardump.py` needs both, so both are captured here rather than
+    re-parsed there."""
     import re
     out = {}
     for line in open(path, errors="ignore"):
@@ -97,13 +102,16 @@ def parse_log(path):
         if m:
             city, setno, index, size, off, cluts = m.groups()
             out[int(setno)] = {"city": city, "index": int(index), "size": int(size),
-                               "offset": int(off), "cluts": int(cluts), "clutpos": None}
+                               "offset": int(off), "cluts": int(cluts),
+                               "slot": None, "rect": None, "clutpos": None}
             continue
-        m = re.search(r"pinned set (\d+) index (\d+): slot=(-?\d+), rect=\([\d,-]+\), page=\w+, clut0=\w+=\((\d+),(\d+)\)", line)
+        m = re.search(r"pinned set (\d+) index (\d+): slot=(-?\d+), rect=\((\d+),(\d+)\), page=\w+, clut0=\w+=\((\d+),(\d+)\)", line)
         if m:
-            setno, cx, cy = int(m.group(1)), int(m.group(4)), int(m.group(5))
+            setno = int(m.group(1))
             if setno in out:
-                out[setno]["clutpos"] = (cx, cy)
+                out[setno]["slot"] = int(m.group(3))
+                out[setno]["rect"] = (int(m.group(4)), int(m.group(5)))
+                out[setno]["clutpos"] = (int(m.group(6)), int(m.group(7)))
     return out
 
 

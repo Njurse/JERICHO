@@ -86,6 +86,8 @@ region to put a foreign vehicle's pages in.
 | where the player's car came from | `JERICHO-RUN: level=… carslot=5 model=9 …` then the engine's `slot 5 geometry from RIO model 9` |
 | where imported pages landed | `cross-city: pinned set 77 index 77: slot=14, rect=(512,0), page=0008 …` |
 | what is actually in VRAM | `JERICHO_DUMPVRAM=1` then `tools/vramdump.py vram_dump.tga --png out.png` |
+| what a city's car palettes *should* be | `tools/levpalette.py LEVELS/<CITY>.LEV --out out/` — a swatch PNG + a text table per city, from `LUMP_PALLET` (see `PALETTES.md` §7) |
+| the last run's car textures under each palette | `tools/cardump.py vram_dump.tga --log REDRIVER2.log --out out/` — one PNG per imported set, a row per palette, plus the run's actual page CLUT as a control (`PALETTES.md` §7) |
 | VRAM live, while you play | `-vramview [frames]` opens a second window showing the live VRAM every frame (and re-dumps `vram_live.tga` every N frames, default 15, for `vramdump.py`) |
 | replay a run exactly | `-seed N` (the seed picks module randomness) |
 
@@ -182,95 +184,31 @@ live world page. Result: `2 wasted car pages taken, 0 world pages evicted`.
   grows with the frame count, something is still taking pages back — check the two
   `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
 
-## Discovery: an imported car's GT CLUT word is a CLUT *id*, not a palette row
+## The palette half: what cost the time, and where the detail now lives
 
 `GetCarImportPallet()` holds the imported city's `LUMP_PALLET` — the car palettes —
-and **nothing read it**: 14792 bytes for Havana, buffered and dropped. That is the
-imported car's only source of body colour, so this is the "textures load but the
-palette is wrong" bug.
+and for a while **nothing read it** (14792 bytes for Havana, buffered and dropped).
+That was the "textures load but the palette is wrong" bug, and chasing it produced
+the two-bank `civ_clut` design, the `directClut` shortcut that was tried and removed,
+and the draw-time pin.
 
-The second half of the story is the *encoding*, and it is why my `directClut` shortcut
-turned out to be the right shape:
+All of that is now documented once, in **`PALETTES.md`**: the `clut_uv0` high word
+being a `civ_clut` *index* (and why an FT poly's is a CLUT id), the `(carid-1)*192`
+formula, the two banks, `carTpages`/`specTpages`, the shared `clutpos` strip, and the
+per-frame re-point. Read it before touching anything palette-shaped.
 
-    cross-city: GT3 imported: clut_uv0=043cff34 -> page CLUT row 1084, emitted 043cff34 (verbatim).
-                The host civ_clut path would use row 1084 -> 0000
+The shortcuts that cost the time, kept because they will tempt you again:
 
-For a **host** car, `clut_uv0 >> 16` is a small palette *row index* (0..30) that indexes
-`civ_clut[carpal][tex][palette]`, with the CLUT id substituted in the high word of the
-emitted prim. For the **imported** model it is `0x043c` = 1084 — a whole `GetClut(x,y)`
-id: `y = 1084 >> 6 = 16`, `x = (1084 & 63) << 4 = 448`, i.e. VRAM (448,16). Feeding that
-to the host path indexes `pciv_clut[1084]` — far out of range — which is why the host
-path emits `0x0000`.
+- **The pin is draw-time; `buildNewCarFromModel` is load-time.** So the cached
+  `civ_clut[carid][tex][0]` for an imported set holds the `(960,16)` dummy and has to be
+  re-pointed after the page actually uploads (`PALETTES.md` §5).
+- **The imported palettes share the level's CLUT strip**, so the pin's own band has to
+  start below whatever the level left (`PALETTES.md` §4) — that starvation is what left
+  the second imported set unplaced entirely.
+- **A `specTpages` page is in neither `carTpages` table**, so `GetCarPalIndex` answers 0
+  for it — the host's row (`PALETTES.md` §3).
 
-So the imported model carries its CLUT *location* in the poly, exactly like `FT3` does,
-and every body poly of the car points at one id. The remaining question is therefore
-not "how do we map it" but "what is loaded at (448,16)": if the level's own CLUT area
-already holds the imported palette's colours there, the fix is mapping-only; if not,
-the imported `LUMP_PALLET` has to be uploaded to the positions the imported models name.
 
-### Settled: `clut_uv0 >> 16` is a civ_clut *index*, and the palette is not in the page
-
-Measuring the same field on a **host** car settles it. Stock run, Rio, the player on
-Rio model 0 (so the host path runs):
-
-    cross-city: GT3 HOST     clut_uv0=007e9163 hi=126  -> pciv_clut[126]  = 5abf
-    cross-city: GT3 IMPORTED clut_uv0=043cff34 hi=1084 -> pciv_clut[1084] = 0000
-
-`civ_clut` is `u_short[8][32][6]` = 1536 entries and `pciv_clut = &civ_clut[1]`, so both
-indices are *in range* — they are not `GetClut()` ids at all. A host car uses a small
-index (126) that resolves to a real CLUT id (`0x5abf` = a CLUT at (1008,362), i.e. the
-level's **palette area**); the imported model's index (1084) lands in the same table
-where nothing is loaded, and reads 0.
-
-Two things follow, and they close off the cheaper fix:
-
-1. The car's body colour comes from `civ_clut`, which the level fills from its
-   `LUMP_PALLET` (`ProcessPalletLump` → `LoadImage` into the palette area). It does
-   **not** come from the texture page's own CLUTs — those live at (960,471)/(992,478)
-   and the model never names them. So the imported `LUMP_PALLET` really does have to be
-   uploaded; the fix is not mapping-only.
-2. The index is baked into the model's geometry. `ProcessImportedPalette` cannot simply
-   pour the imported palettes into `civ_clut`'s existing eight rows — that is exactly
-   the collision that repainted the host's own cars. The index has to be moved into
-   rows the host does not use, which means either offsetting the imported model's index
-   at build time or resolving it against the imported pallet there.
-
-### Fixed: two banks of civ_clut rows, and a pin-time refresh
-
-`clut` is not actually baked in after all — `buildNewCarFromModel` *computes* it as
-`(carid - 1) * 192 + texture_id * 6`, and `pciv_clut` is `&civ_clut[1]`, so
-`pciv_clut[clut + palette]` is exactly `civ_clut[carid][texture_id][palette]`. The row is
-chosen by `carid`, which means the fix is only ever a matter of which row a set is
-assigned. So:
-
-- `civ_clut` is now `[CIV_CLUT_ROWS][32][6]` with `CIV_CLUT_ROWS` 16. Rows 0..7 stay the
-  host level's; rows 8..15 belong to an import.
-- `CarPalIndexInCity(tpage, city)` adds `CIV_CLUT_IMPORT_ROW` (8) when `city` is the
-  imported city. Both of its users get that for free — `ProcessPalletLumpForCity`
-  writes an import's palettes into rows 8..15, and `GetCarPalIndex` hands
-  `buildNewCarFromModel` a `carid` in 8..15 for a foreign page.
-- The `imported` special-case in the GT3/GT4 cases is gone (and with it the
-  `directClut` shortcut): an import now runs the host's own formula, so its
-  `clut_uv0` high word is a real `civ_clut` index in the second bank.
-- `ProcessImportedPalette` runs `ProcessPalletLumpForCity(GetCarImportPallet(...), ...,
-  importedCity)` — the same `LUMP_PALLET` path the host uses, which also `LoadImage`s the
-  colours into VRAM.
-
-One trap cost an hour: the pin is **draw-time**, but `buildNewCarFromModel` runs at
-*load* time. So `civ_clut[carid][texture_id][0] = texture_cluts[set][texture_id]` cached
-the `(960,16)` dummy for an imported set (resolved CLUT id `043c`, the dummy's own id).
-`CarImportPin` now re-points each row's palette-0 entry at the page's real CLUTs right
-after it uploads them.
-
-Second trap: the imported palettes occupy the same CLUT strip as everything else, which
-pushed `clutpos.y` to 475 and left the pin's band — clamped to start at y≤500 — only 12
-rows. The second imported set was therefore never placed at all (`slot=-1`, its page
-missing, and 238 wasted-car-page retries). The band now starts at 480 whenever the
-level's own layout leaves less room.
-
-Verified: both Havana sets pin (slots 9 and 5, 0 world pages evicted), the resolved
-CLUT id is a real one in the band (`79bf` = (992,487)), and `vramdump.py --lev
-HAVANA.LEV` reports **MATCH** for both sets (27 and 30 CLUT rows). `devcheck.sh` 7/7.
 
 
 

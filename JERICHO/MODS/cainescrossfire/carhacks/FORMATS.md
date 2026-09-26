@@ -197,11 +197,14 @@ polygon data) and `normals`, e.g.
 
 ## 4. `LUMP_PALLET` (id 25) — the car palettes
 
-Consumed by `ProcessPalletLump` (**`cars.c:1427`**, not `texture.c` — the generic
-name misleads), which merges it into:
+Consumed by `ProcessPalletLump` (**`cars.c:1570`**, not `texture.c` — the generic
+name misleads), which merges it into `civ_clut`. **How the merge resolves — the
+`carid` row formula, the two banks, `carTpages`, and where the CLUTs land in
+VRAM — is owned by `PALETTES.md`**; this section is only the byte layout.
 
 ```c
-u_short civ_clut[8][32][6];   // cars.c:97   [car palette][texture id][colour slot]
+#define CIV_CLUT_ROWS 16                                  // cars.h:44
+u_short civ_clut[CIV_CLUT_ROWS][32][6];   // cars.c:104  [car palette row][texture id][colour slot]
 ```
 
 Layout:
@@ -222,8 +225,9 @@ Layout:
 
 The engine's write is
 `civ_clut[GetCarPalIndex(tpageindex)][texnum][palette + 1] = clutValue`
-(`cars.c:1472`) — note `palette + 1`, slot 0 being reserved for the base colour
-that the draw path fills per-frame from `texture_cluts` (`cars.c:1263`, `:1283`).
+(`cars.c:1560`) — note `palette + 1`, slot 0 being reserved for the base colour
+that the draw path fills per-frame from `texture_cluts` (`cars.c:1322`, `:1348`).
+`PALETTES.md` §1-§2 explains both halves.
 
 Measured: 15576 bytes / 219 cluts (CHICAGO), 14792 / 192 (HAVANA),
 15704 / 228 (RIO), 14808 / 200 (VEGAS).
@@ -258,11 +262,17 @@ Gotcha: the special slot does **not** read it per model — it takes a cached
 model geometry (LUMP_CAR_MODELS)
   -> GetCarModel / buildNewCarFromModel   copy into the level heap
   -> prims: POLYGT3 / POLYGT4 with texture_set + texture_id
-  -> clut_uv0 = M_INT_2(texture_cluts[texture_set][texture_id], uv)     cars.c:1225, :1239
-     tpage_uv1 = M_INT_2(texture_pages[texture_set], uv)
-  -> every frame: civ_clut[carid][texture_id][0] = texture_cluts[...]   cars.c:1263, :1283
-  -> draw: pg->pciv_clut[(clut_uv0 >> 0x10) + palette]                  cars.c:275, :1002
+  -> FT polys: clut_uv0 = M_INT_2(texture_cluts[set][texture_id], uv)   cars.c:1280, :1296
+               tpage_uv1 = M_INT_2(texture_pages[set], uv)
+     GT polys: clut_uv0 = M_INT_2((carid-1)*192 + texture_id*6, uv)      cars.c:1326, :1352
+  -> AT LOAD: civ_clut[carid][texture_id][0] = texture_cluts[set][texid] cars.c:1322, :1348
+  -> PER FRAME: civ_clut[row][j][0] = texture_cluts[importedIndex][j]    texture.c:1511
+  -> draw: pg->pciv_clut[(clut_uv0 >> 0x10) + palette]                  cars.c:289
 ```
+
+**The `clut_uv0` / `civ_clut` / `carid` mechanics are owned by `PALETTES.md` §1**
+(including why a GT high word is a `civ_clut` *index* and an FT one is a CLUT id)
+**and the per-frame re-point by `PALETTES.md` §5.** Here they are only context.
 
 `palette` here is the car's colour choice (from `CAR_COSMETICS` / the chosen
 palette), and it indexes the six slots of `civ_clut[carpal][texid][…]`.
