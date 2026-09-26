@@ -1128,6 +1128,28 @@ void SetupTannerSkeleton(LPPEDESTRIAN pDrawingPed)
 }
 
 // [A] - was inlined in newShowTanner
+/* 1 while the ped being drawn is being forced to a flat colour (the PED_DRAW hook above).
+ * DoCivHead is a separate call and cannot see that block's locals, so the state lives here
+ * for the duration of the ped's draw. Only the module can set it, through the hook. */
+static int gPedFlatNow;
+
+/* CC_PED_FLAT_LOG=1 for a run: log every ped drawn with a forced flat colour, and what the
+ * head draw saw at that moment. Run-only and never saved, the same shape as CC_MOTION_LOG -
+ * the colour a ped ends up is otherwise invisible in a log. */
+static int gPedFlatBlackProbe = -1;
+
+static int pedFlatProbeOn(void)
+{
+	if (gPedFlatBlackProbe < 0)
+	{
+		const char* env = getenv("CC_PED_FLAT_LOG");
+
+		gPedFlatBlackProbe = (env != NULL && env[0] != 0 && env[0] != '0');
+	}
+
+	return gPedFlatBlackProbe;
+}
+
 void DrawSprite(LPPEDESTRIAN pDrawingPed, BONE* pBone, SVECTOR* vJPos)
 {
 	VERTTYPE t0[2], t1[2]; // [A] was two longs
@@ -1334,7 +1356,15 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 				pedSaved[i] = plotContext.planeColours[i];
 				plotContext.planeColours[i] = pedColour;
 			}
+
+			/* A ped is drawn with PLOT_NO_SHADE, and that path takes its colour from
+			 * `combo` rather than from planeColours - so the flat colour has to go through
+			 * the flag as well, or a "flat black" ped comes out in its normal clothes. */
+			plotContext.flatColour = pedColour;
+			plotContext.flags |= PLOT_FLAT_COLOUR;
 		}
+
+		gPedFlatNow = pedFlat;
 
 		// JERICHO-HOOK: per-instance ped palette. A module selects one from the
 		// PED_DRAW handler above; plotting only captures the CLUT address into each
@@ -1469,7 +1499,15 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 		{
 			for (i = 0; i < 8; i++)
 				plotContext.planeColours[i] = pedSaved[i];
+
+			plotContext.flags &= ~PLOT_FLAT_COLOUR;
+
+			if (pedFlatProbeOn())
+				jer_log("ped flat draw: ped=%p colour=%08x type=%d padId=%d\n",
+					(void*)pDrawingPed, pedColour, pDrawingPed->pedType, pDrawingPed->padId);
 		}
+
+		gPedFlatNow = 0;
 	}
 
 	// clear all id flags
@@ -2247,6 +2285,20 @@ void DoCivHead(LPPEDESTRIAN pPed, SVECTOR* vert1, SVECTOR* vert2)
 
 	if (gNight)
 		combointensity = 0x404040;
+
+	/* A ped forced to a flat colour (the PED_DRAW hook) must be flat ALL OVER, head
+	 * included - the whole point is a body burnt to a crisp, not a black body with a
+	 * normal face on top. The head is drawn by this separate call with its own palette,
+	 * which is deliberate for a team TINT (a coloured outfit keeps the stock face - see
+	 * pedest.c) but wrong for flat black, so the flat colour wins here. */
+	if (gPedFlatNow)
+	{
+		flags &= ~PLOT_CUSTOM_PALETTE;
+
+		if (pedFlatProbeOn())
+			jer_log("ped head draw: FLAT colour0=%08x pallet=%d -> palette dropped\n",
+				plotContext.planeColours[0], pPed->pallet & 15);
+	}
 
 	RenderModel(gPed1HeadModelPtr, pHeadRot, &pos, 1, flags, 0, 0);
 

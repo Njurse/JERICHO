@@ -747,7 +747,9 @@ void PlotBuildingModel(MODEL* model, int rot, _pct* pc)
 
 		if (ptype == 21)
 		{
-			pc->colour = combo & 0x2ffffff | 0x2c000000;
+			pc->colour = (pc->flags & PLOT_FLAT_COLOUR)
+				? ((pc->flatColour & 0xffffffU) | 0x2c000000U)
+				: (combo & 0x2ffffff | 0x2c000000);
 		}
 		else
 		{
@@ -843,7 +845,9 @@ void PlotBuildingModelSubdivNxN(MODEL* model, int rot, _pct* pc, int n)
 
 		if (ptype == 21)
 		{
-			pc->colour = combo & 0x2ffffffU | 0x2c000000;
+			pc->colour = (pc->flags & PLOT_FLAT_COLOUR)
+				? ((pc->flatColour & 0xffffffU) | 0x2c000000U)
+				: (combo & 0x2ffffffU | 0x2c000000);
 		}
 		else
 		{
@@ -1096,7 +1100,9 @@ void PlotModelSubdivNxN(MODEL* model, int rot, _pct* pc, int n)
 
 		if (ptype == 21 || (pc->flags & PLOT_NO_SHADE))
 		{
-			pc->colour = combo & 0x2ffffffU | 0x2c000000;
+			pc->colour = (pc->flags & PLOT_FLAT_COLOUR)
+				? ((pc->flatColour & 0xffffffU) | 0x2c000000U)
+				: (combo & 0x2ffffffU | 0x2c000000);
 		}
 		else
 		{

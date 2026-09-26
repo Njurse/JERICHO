@@ -8,6 +8,12 @@ enum PlotFlags
 	PLOT_NO_CULL = (1 << 2),
 	PLOT_NO_SHADE = (1 << 3),
 	PLOT_CUSTOM_PALETTE = (1 << 4),
+	/* JERICHO: this draw must use pc->flatColour instead of the combo/gouraud colour. The
+	 * PLOT_NO_SHADE path below takes its colour from `combo`, NOT from planeColours - which
+	 * is how a pedestrian is drawn - so a module forcing a flat colour on a ped (the
+	 * PED_DRAW hook: "flat black, a burnt body running from a wreck") had no effect until
+	 * this bit existed: it was setting planeColours, which no ped poly ever reads. */
+	PLOT_FLAT_COLOUR = (1 << 5),
 };
 
 // Primitive plot context used in scratchpad
@@ -15,6 +21,7 @@ struct _pct
 {
 	int f4colourTable[32];
 	u_int planeColours[8];
+	u_int flatColour;		/* JERICHO: the colour a PLOT_FLAT_COLOUR draw must use */
 	int scribble[8];
 	u_short(*ptexture_pages)[128];
 	u_short(*ptexture_cluts)[128][32];
