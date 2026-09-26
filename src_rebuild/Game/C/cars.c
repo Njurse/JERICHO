@@ -206,8 +206,15 @@ void plotCarPolyFT3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *
 		{
 			ofse = pg->damageLevel[src->originalindex];
 			*(u_int*)&prim->r0 = FT3rgb;
-			*(u_int*)&prim->u0 = src->clut_uv0 + ofse;
-			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
+			// JERICHO: `src->clut_uv0 + ofse` adds the damage offset to the WHOLE word, so the
+			// dent's UV shift carried into the CLUT id whenever the uv pair was within 128 of
+			// 0xFFFF - i.e. denting an FT poly could change which palette that poly used (the
+			// "the palette of a dented car goes wrong" report). The GT paths already mask the
+			// low word; this now does too, keeping the uv0->uv1 carry the offset needs.
+			*(u_int*)&prim->u0 = (src->clut_uv0 & 0xffff0000) | ((src->clut_uv0 & 0xffff) + ofse);
+			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
+			// texture page. Mask the tpage id, keep the uv carry.
+			*(u_int*)&prim->u1 = (src->tpage_uv1 & 0xffff0000) | ((src->tpage_uv1 & 0xffff) + ofse);
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
 			gte_stsxy3(&prim->x0, &prim->x1, &prim->x2);
@@ -287,7 +294,9 @@ void plotCarPolyGT3(int numTris, CAR_POLY *src, SVECTOR *vlist, SVECTOR *nlist, 
 			}
 
 			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
-			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
+			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
+			// texture page. Mask the tpage id, keep the uv carry.
+			*(u_int*)&prim->u1 = (src->tpage_uv1 & 0xffff0000) | ((src->tpage_uv1 & 0xffff) + ofse);
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
 			gte_stsxy3(&prim->x0, &prim->x1, &prim->x2);
@@ -367,7 +376,9 @@ void plotCarPolyGT3Lit(int numTris, CAR_POLY* src, SVECTOR* vlist, SVECTOR* nlis
 			}
 
 			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
-			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
+			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
+			// texture page. Mask the tpage id, keep the uv carry.
+			*(u_int*)&prim->u1 = (src->tpage_uv1 & 0xffff0000) | ((src->tpage_uv1 & 0xffff) + ofse);
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
 			gte_stsxy3(&prim->x0, &prim->x1, &prim->x2);
@@ -453,7 +464,9 @@ void plotCarPolyGT3nolight(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGl
 			}
 
 			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
-			*(u_int*)&prim->u1 = src->tpage_uv1 + ofse;
+			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
+			// texture page. Mask the tpage id, keep the uv carry.
+			*(u_int*)&prim->u1 = (src->tpage_uv1 & 0xffff0000) | ((src->tpage_uv1 & 0xffff) + ofse);
 			*(u_int*)&prim->u2 = src->uv3_uv2 + ofse;
 
 			gte_stsxy3(&prim->x0, &prim->x1, &prim->x2);

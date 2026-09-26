@@ -134,8 +134,22 @@ did not load".
   (`cosmetic.c:71-78`).
 - **Denting stays local.** There is no denting entry anywhere in the lump enum
   (`main.c:82-120`); `LoadCustomCarDentingFromFile` reads loose `.DEN` files
-  (`denting.c:25-30`, called at `:454`, `:487`). An imported model dents as its
-  host slot would.
+  (`denting.c:25-30`, called at `:454`, `:487`).
+  **Decision (documented, not an oversight):** the level loads ONE denting lump, for
+  the host level, and `ProcessDentLump` indexes it by `residentCarModels[i]` — a model
+  number in the SOURCE city's numbering for an imported slot. So an imported model
+  dents as its host slot would: the zones are the host's, applied to the imported
+  geometry. Importing the source city's `.DEN` as well (a second lump keyed by the
+  import's own model number) is the fix if the dent *shape* ever matters; it does not
+  affect colour, which is what the dent-palette bug below was.
+- **Denting must not touch the palette or the page.** The damage offset is added to the
+  poly's UV words every frame (`plotCarPolyFT3` / `GT3` / `GT3Lit` / `GT3nolight`,
+  `cars.c:171-500`). For FT polys it used to be added to the WHOLE `clut_uv0` /
+  `tpage_uv1` word, so a dent on a poly whose uv pair sat within 128 of `0xFFFF`
+  carried into the CLUT id (or the tpage id) — denting the car changed its *palette*.
+  Both words are now masked to their low half before the offset is added, so the carry
+  stays inside the uv pair where the dent wants it. This is the "the palette of a
+  dented car goes wrong" report.
 
 ## Turning it on
 
