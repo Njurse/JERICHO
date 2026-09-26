@@ -17,6 +17,7 @@
 #include "cainescrossfire.h"
 #include "cainescrossfire_internal.h"
 #include "cars.h"
+#include "debris.h"		/* SMOKE_BLACK / SMOKE_GREY - the damage smoke types */
 #include "job_fx.h"
 #include "mission.h"
 #include "players.h"
@@ -63,6 +64,104 @@ int cd2CarTotaled(void* vcp)
 int cd2CarMaxDamage(void* vcp)
 {
 	return cd2cMaxDamage((CAR_DATA*)vcp);
+}
+
+// ---------------------------------------------------------------------------
+// The damage ladder - JER_EVENT_CAR_DAMAGE_FX (cars.c, DrawCar)
+// ---------------------------------------------------------------------------
+// The engine's damage smoke keys off per-zone ap.damage, and its fire off "past the cap
+// AND nearly stopped". Neither is a health ladder: a car can be most of the way to a
+// write-off and emit nothing, or take one engine-zone hit and smoke like a chimney. This
+// handler answers the engine with the ladder the player can actually read off the HUD:
+//
+//   above CD2_DMG_HEALTH_SMOKE      nothing
+//   at or below it                  grey smoke
+//   at or below CD2_DMG_HEALTH_FIRE on fire, with black smoke
+//   past the damage cap             the burning WRECK: the big fire + thick black smoke
+//
+// `health` arrives from the engine already normalised against the car's own cap (the
+// per-pad one for a player car), which is the same number the lock-on bar computes, so
+// the thresholds need no arithmetic here. The engine still applies its own speed gates,
+// so smoke needs the car under ~98 speed units and the fire under ~7: a wreck lights up
+// as it comes to rest, and a car at speed cannot flood the shared particle pool.
+//
+// `handled = 1` in every case: this module owns the decision for every car, players and
+// traffic alike, so a car that answers "nothing" suppresses the stock smoke too - which
+// is the point, since 50% health has to mean quiet for the stock 2000-zone-damage puff
+// as well.
+static signed char gDmgFx[MAX_CARS];	// 0 nothing, 1 smoking, 2 burning, 3 wreck
+
+// [D] [T]
+static int cd2cOnDamageFx(void* ud, void* args)
+{
+	JER_ARGS_CAR_DAMAGE_FX* a = (JER_ARGS_CAR_DAMAGE_FX*)args;
+	CAR_DATA* cp;
+	int step;
+
+	(void)ud;
+
+	if (a == NULL || a->car == NULL)
+		return JER_RESULT_CONTINUE;
+
+	cp = (CAR_DATA*)a->car;
+
+	if (cd2CarTotaled(cp))
+	{
+		step = 3;
+
+		a->smokeType = SMOKE_BLACK;
+		a->smokeStart = CD2_WRECK_SMOKE_START;
+		a->smokeEnd = CD2_WRECK_SMOKE_END;
+		a->flame = 1;
+		a->flameStart = CD2_WRECK_FIRE_START;
+		a->flameEnd = CD2_WRECK_FIRE_END;
+	}
+	else if (a->health <= CD2_DMG_HEALTH_FIRE)
+	{
+		step = 2;
+
+		a->smokeType = SMOKE_BLACK;
+		a->smokeStart = CD2_DMG_SMOKE_START;
+		a->smokeEnd = CD2_DMG_SMOKE_END;
+		a->flame = 1;
+		a->flameStart = CD2_DMG_FIRE_START;
+		a->flameEnd = CD2_DMG_FIRE_END;
+	}
+	else if (a->health <= CD2_DMG_HEALTH_SMOKE)
+	{
+		step = 1;
+
+		a->smokeType = SMOKE_GREY;
+		a->smokeStart = CD2_DMG_SMOKE_START;
+		a->smokeEnd = CD2_DMG_SMOKE_END;
+		a->flame = 0;
+	}
+	else
+	{
+		step = 0;
+
+		a->smokeType = 0;
+		a->flame = 0;
+	}
+
+	a->handled = 1;
+
+	// the ladder's trace: one line per CHANGE, which is what makes the two thresholds
+	// checkable from a log instead of only by eye - a run that kills a car must show
+	// hp falling through 50 (grey smoke) and 25 (fire) before the wreck line
+	if (cp->id >= 0 && cp->id < MAX_CARS && gDmgFx[cp->id] != (signed char)step)
+	{
+		gDmgFx[cp->id] = (signed char)step;
+
+		if (gCd2Cfg.debugLog)
+			jer_log("[cainescrossfire] damage fx car=%d hp=%d%% -> %s\n", cp->id, a->health,
+				(step == 3) ? "WRECK: big fire + thick smoke"
+				: (step == 2) ? "on fire + black smoke"
+				: (step == 1) ? "grey smoke"
+				: "nothing");
+	}
+
+	return JER_RESULT_CONTINUE;
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +386,10 @@ static int cd2cOnResetCar(void* ud, void* args)
 	(void)ud;
 
 	if (a->carId >= 0 && a->carId < MAX_CARS)
+	{
 		gWasTotaled[a->carId] = 0;
+		gDmgFx[a->carId] = 0;		// the ladder starts silent again on a respawn
+	}
 
 	return JER_RESULT_CONTINUE;
 }
@@ -299,6 +401,11 @@ void cd2WreckFxRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, cd2cOnCarStep, NULL, -1); // runs before cainescrossfire.c's CAR_STEP
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, cd2cOnResetCar, NULL, 0);
+
+	// the damage ladder: the engine asks before it emits a car's damage smoke or fire
+	// (cars.c DrawCar) and this answers with health-based thresholds - see
+	// cd2cOnDamageFx, and CD2_DMG_* in cainescrossfire.h
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DAMAGE_FX, cd2cOnDamageFx, NULL, 0);
 
 	ctx->jer_log(ctx, "[cainescrossfire] wreck effects registered (SDK v%d)\n", ctx->sdkVersion);
 }

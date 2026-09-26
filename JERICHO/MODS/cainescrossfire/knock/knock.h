@@ -129,20 +129,31 @@
 // How far from the model's origin the car's axles are, for the pivot below. A
 // wheelie turns about the REAR axle, a stoppie about the front one, so the nose (or
 // the tail) rises instead of the whole car spinning around a point in its middle.
-#define CD2_KNOCK_PIVOT_DIST		240
+//
+// THIS NUMBER IS THE WHOLE TRICK, and it was 240 - a guess - where the cars' own axle
+// distance is about 190 (colBox.vz 382 for the light class, 340-430 across the classes).
+// The lift below is the arc of a point at this distance, applied to EVERY point of the
+// body, so it cancels exactly the far end's dip only when the distance is right. At 240
+// it over-cancelled by ~25%: the far end (the rear, in a wheelie) came out not planted
+// but LIFTED, and since the lift also raises the nose the car read as floating upward
+// rather than pitching - measured at the accel layer's held pose (pitch 61, squat -13):
+// nose +24, rear -10, where the rear should be sitting at the squat alone. Jaret, from
+// playing: "when i hit gas the nose is supposed to rise (FRONT) not the rear".
+#define CD2_KNOCK_PIVOT_DIST		190
 
 // THE RISE IS AN ARC, so it needs the 2*pi that turns PSX angle units into radians:
 //   rise = |pitch| / 4096 * 2*pi * DIST
-// Folding the 2*pi into the constant (round(240 * 2*pi) = 1508) keeps it integer:
-//   rise = |pitch| * 1508 >> 12      (~0.37 world units per unit of pitch)
+// Folding the 2*pi into the constant (round(190 * 2*pi) = 1194) keeps it integer:
+//   rise = |pitch| * 1194 >> 12      (~0.29 world units per unit of pitch)
 // It used to be |pitch| * DIST >> 12, i.e. the angle treated as if 4096 units were
 // one RADIAN rather than a full turn - about 6.3x too small, which is why the small
 // anti-clip rise the effect needs (the body lifting as it pitches so the end swinging
 // down does not dig in) was never actually visible: at a 5-degree knock that was
-// 3 units, and it is 21 now. At the accel layer's wheelie pitch (~110) the rise is
-// ~40, which beats the -24 squat that layer puts on the body, so the car ends up a
-// little HIGHER at the top of a wheelie rather than lower.
-#define CD2_KNOCK_PIVOT_ARC		1508
+// 3 units, and it is 21 now. At the accel layer's held pose (pitch 61) the rise is now
+// ~18, which is exactly the far end's dip, so the rear sits at the squat (-13) instead
+// of being lifted - the nose rises by the full 2x the dip and the car pitches rather
+// than floats.
+#define CD2_KNOCK_PIVOT_ARC		1194
 #define CD2_KNOCK_SHIFT_DECAY		3200
 #define CD2_KNOCK_SHIFT_SETTLE		2300
 

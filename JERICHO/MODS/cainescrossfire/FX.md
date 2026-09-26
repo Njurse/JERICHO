@@ -16,6 +16,7 @@ JERICHO explosion hooks the engine now fires around its own explosion code
 | `JER_EVENT_EXPLOSION_SPAWN` | `AddExplosion` (`job_fx.c`) | attach a profile: `speed`/`hscale`/`rscale`, `tintR/G/B`, `yawRate`, `collide`, `colScale`, and rewrite `type` |
 | `JER_EVENT_EXPLOSION_DRAW` | `DrawExplosion` (`job_fx.c`) | tint/spin the stock mesh, or `override` and draw your own |
 | `JER_EVENT_EXPLOSION_COLLIDE` | `ExplosionCollisionCheck` (`bomberman.c`) | query: may this explosion push/damage this car, at what box scale |
+| `JER_EVENT_CAR_DAMAGE_FX` | `DrawCar` (`cars.c`) | the damage SMOKE and FIRE for a car: the car's health plus what the stock rule chose, all in/out â€” set `handled` to make the module's values the emitted ones |
 
 A profile is passed to `AddExplosion` as a **custom explosion type** (an id
 `>= CD2_FX_BASE`, 1000). The `SPAWN` handler resolves it, writes the parameters
@@ -26,6 +27,41 @@ so the engine's sound + collision branches keep working. The `DRAW` and
 
 `MAX_EXPLOSION_OBJECTS` was raised from 5 to **16** so a barrage plus other
 impacts can't starve the pool.
+
+## The damage ladder (smoke and fire by health)
+
+A car's damage smoke used to be the engine's own: per-zone `ap.damage` above 2000
+white, above 3000 black, and the fire only on a car past its damage cap that had
+almost stopped. That is not a ladder a player can read, so the module answers
+`JER_EVENT_CAR_DAMAGE_FX` with health instead (`cainescrossfirewreckfx.c`,
+`cd2cOnDamageFx`), for every car including traffic:
+
+| health | what the car emits |
+|---|---|
+| above 50% | nothing — including no stock puff, because the handler always sets `handled` |
+| at or below 50% (`CD2_DMG_HEALTH_SMOKE`) | grey smoke (`SMOKE_GREY`, a new engine type in what had been an unused slot) |
+| at or below 25% (`CD2_DMG_HEALTH_FIRE`) | on fire, with black smoke |
+| past the damage cap | the WRECK: the big fire + thick black smoke, until it respawns |
+
+The health the engine passes is `totalDamage` against the car's own cap (the per-pad
+one for a player car) — the same number the lock-on bar draws — so the two
+percentages need no arithmetic in the handler. The engine's own speed gates still
+apply (smoke under ~98 speed units, fire under ~7), which is what makes a wreck light
+up as it comes to rest and keeps a car at speed from flooding the shared particle
+pool (`MAX_SMOKE`, 80).
+
+One line per CHANGE makes the ladder checkable from a log rather than only by eye:
+
+```
+damage fx car=0 hp=50% -> grey smoke
+damage fx car=0 hp=20% -> on fire + black smoke
+damage fx car=0 hp=0%  -> WRECK: big fire + thick smoke
+damage fx car=0 hp=100% -> nothing
+```
+
+The widths all come from `CD2_DMG_*` / `CD2_WRECK_*` in `cainescrossfire.h`, and the
+engine's emitters take them as arguments (`AddSmokingEngineTyped`,
+`AddFlamingEngineSized`); the stock entry points are those with the original numbers.
 
 ## Profiles (`weapons/fx/fx.c`)
 

@@ -164,6 +164,16 @@ post-tuning ones (cars were dying far too fast before):
   which is generous next to the physics rate and shorter than a genuine second
   crash. `gCd2SceneryHits` still counts every frame of contact, so the traffic
   tumble (which reads its *change*) is unaffected.
+- **A stacking budget — `CD2_SCENERY_STACK_WINDOW` (90 frames).** The cooldown limits
+  how OFTEN a contact is charged, not what a run of them costs. Sliding along a wall
+  passes the threshold on every contact, because the hook's `impact` is the raw strike
+  VELOCITY — a fast scrape and a head-on hit look identical to it (measured while
+  grinding a wall: impacts of 133k and 342k) — so a few seconds of scraping was several
+  heavy bites in a row at full scale. Jaret, playing: *"sliding along scenery totally
+  killed it."* Each bite after the first inside the window is therefore worth HALF the
+  one before it (100%, 50%, 25%, 12.5%…), so however long the contact lasts the total is
+  bounded at about twice a single hit. Logged as `scenery dmg stacked: car=N bite K of
+  this window -> P% of it`.
 - **Car-vs-car aggressor immunity.** In a two-car hit the car driving INTO the
   other deals the damage, and that car should not be hurt by its own attack.
   `cd2OnCarVsCar` compares each car's approach speed along the line between them

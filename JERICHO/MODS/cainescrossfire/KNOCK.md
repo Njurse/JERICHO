@@ -148,6 +148,49 @@ stoppie about the FRONT with the tail coming up. So the origin is moved to
 compensate (`CD2_KNOCK_PIVOT_DIST`, the distance to the axle): the body rises by
 the arc the far end would have swept, which is what fakes the wheelie.
 
+**That rise is an ARC, so it carries the 2π** that turns the angle into radians —
+`|pitch| / 4096 * 2π * DIST`, folded into the integer constant `CD2_KNOCK_PIVOT_ARC`
+(= round(190·2π) = 1194, about 0.29 world units per unit of pitch). It used to be
+`|pitch| * DIST / 4096`, i.e. the angle read as if 4096 units were one RADIAN: about
+6.3× too small, which is why the small anti-clip lift the effect needs was never
+visible (3 units at a 5° knock; 21 now).
+
+**`DIST` is the whole trick, and it was 240 where the cars' axle distance is ~190.**
+The lift is applied to EVERY point of the body, so it cancels the far end's dip only
+when `DIST` is the real axle distance. At 240 it over-cancelled by about a quarter: the
+far end (the rear, in a wheelie) came out not planted but **lifted**, and since the lift
+raises the nose too the car read as floating upward rather than pitching. Measured at the
+motion layer's held pose (pitch 61, squat −13) by reading both ends back off the matrix
+(`CC_VIS_LOG`): with 240 the nose went +24 and the rear **−10**, where the rear should be
+sitting at the squat alone; with 190 the same pose gives nose +19, rear **−15**. Jaret
+playing: *"when i hit gas the nose is supposed to rise (FRONT) not the rear."*
+
 The sign works out so the car only ever moves UP, whichever way it is pitching, so
 a knock can never push the car down through the ground it is standing on. See
 `cainescrossfire-vehicle-knock` in project memory for the whole convention.
+
+## The axes (and why the angles are car-local)
+
+**Pitch, roll and yaw turn about the CAR'S OWN axes, not the world's.** This is not
+cosmetic: the engine's `_RotMatrixX/Y/Z` pre-multiply (they do `M' = R·M`, i.e. a
+rotation about the fixed world axis), which is only the car's own pitch/roll/yaw
+when the car happens to point along world +Z. Using them made a knock read as a
+nose-dive facing one way and a nose-lift facing the other, and made the same knock
+roll instead of pitch at a quarter turn. The compositor post-multiplies instead
+(`M' = M·R`, via `MulMatrix0`) so the motion is identical at every heading.
+
+Two supporting facts that are easy to get wrong, both in `cd2VisualApply`:
+
+- the angles are applied on top of the car's **draw** matrix, which is the physics
+  matrix with rows 0 and 2 negated. Its **columns** are the world images of the
+  model's axes — column 1 is the car's up, column 2 is the car's *backward* (the
+  model's nose is local −Z). So forward is **−column 2**; row 2 is *not* forward
+  (it equals −column 2 only at heading 0), which is the bug the weight shift had.
+- the sign convention, stated once so nothing has to be re-derived: **positive
+  pitch lifts the FRONT, negative lifts the REAR; positive shift is forward.** Every
+  caller here is written for that (turbo's nose-up wheelie, a frontal collision
+  diving the nose, the accel layer's front-lift under power).
+
+The **slide lean** (`cainescrossfiresim.c`) rides the same compositor for the same
+reason — it used the world-axis `_RotMatrixZ`, which leans a car facing +Z but rolls
+one facing +X.

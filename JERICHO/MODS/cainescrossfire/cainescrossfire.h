@@ -285,9 +285,9 @@ enum
 //     volume toward 0: add a POSITIVE CD2_SND_*_BIAS and/or raise the gain
 //     above 4096 (gain divides the remaining attenuation: 8192 ≈ twice as
 //     loud). Clamps keep everything in [-10000, 0].
-#define CD2_REV_RISE_SCALE    6144  // fp: rev rise slew multiplier (~1.5x stock)
+#define CD2_REV_RISE_SCALE    4644  // fp: rev rise slew multiplier (~1.5x stock)
 #define CD2_REV_DROP_SCALE    4096  // fp: rev fall slew multiplier (1.0x stock)
-#define CD2_SND_PITCH_SCALE   4096  // fp: rev+idle pitch multiplier (1.0)
+#define CD2_SND_PITCH_SCALE   4296  // fp: rev+idle pitch multiplier (1.0)
 #define CD2_SND_PITCH_BIAS    1024  // additive rev-channel pitch (faster spin-up)
 #define CD2_SND_IDLE_PITCH_BIAS 512 // additive idle-channel pitch
 #define CD2_SND_REV_GAIN      4096  // fp: rev loudness gain (>4096 = louder)
@@ -370,13 +370,13 @@ typedef struct CD2_STATS
 // plinking at them - traffic exists to be collateral, not a damage sink.
 // Only weapon damage is scaled here; explosion/scenery damage already has its
 // own traffic handling in cd2OnDamageScale.
-#define CD2_TRAFFIC_WPN_TAKEN	1400
+#define CD2_TRAFFIC_WPN_TAKEN	700
 
 // Shoving traffic. A cainescrossfire car punting a civ car rolls it over, so the
 // twist response to a collision is deliberately high - but capped, because
 // past a point it stops reading as being barged aside and starts looking
 // like a physics glitch.
-#define CD2_TRAFFIC_ROLL_RATE	2			// roll impulse per unit of impact speed.
+#define CD2_TRAFFIC_ROLL_RATE	4			// roll impulse per unit of impact speed.
 				// 300 saturated the cap on every
 				// single shove (a normal impact term
 				// is ~300000), so the roll never
@@ -415,6 +415,40 @@ typedef struct CD2_STATS
 // light collision" adds up to a write-off. One bite per ~1.5s of the 30fps sim rate:
 // generous next to the physics rate, and a genuine second crash comes later.
 #define CD2_SCENERY_HIT_COOLDOWN 45
+
+// How long the per-hit stacking budget remembers (frames). A car scraping along a wall in
+// one continuous contact charges every CD2_SCENERY_HIT_COOLDOWN frames; each of those
+// bites after the first is worth half of the one before it, and this window is when that
+// count resets. 90 = 3s: longer than a cooldown, so a slide's bites all land in one
+// window and decay instead of each arriving at full strength.
+#define CD2_SCENERY_STACK_WINDOW 90
+
+// ---- the damage smoke/fire ladder ------------------------------------
+// A car's own HEALTH drives its damage FX, rather than the stock engine's per-zone
+// ap.damage rule (which says nothing about how hurt a car is: a car can be past its
+// damage cap in the engine's sense and smoke nothing, or lightly damaged there and
+// smoke hard). Above the first threshold a car emits nothing, at or below it the car
+// smokes, and at or below the second it is on fire. Both are percentages of the car's
+// own cap (cd2CarMaxDamage), so a light and a heavy car behave alike.
+//
+// The engine asks through JER_EVENT_CAR_DAMAGE_FX (cars.c DrawCar) and the module
+// answers with the values below; see cainescrossfirewreckfx.c, cd2cOnDamageFx.
+#define CD2_DMG_HEALTH_SMOKE 50		// % health: at or below this it smokes (grey)
+#define CD2_DMG_HEALTH_FIRE  25		// % health: at or below this it burns
+
+// The widths handed to the engine's smoke/fire emitters, start -> final, in the
+// engine's world units. For scale: the stock damage smoke is 100 -> 400/500 and the
+// stock engine fire is 50 -> 100. A wreck burns with a fire several times a car's own
+// - that is the "big fire" the explosion leaves behind, and it is why the wreck pair
+// is separate from the one a merely-burning car uses.
+#define CD2_DMG_SMOKE_START   100
+#define CD2_DMG_SMOKE_END     500
+#define CD2_DMG_FIRE_START    50
+#define CD2_DMG_FIRE_END      200
+#define CD2_WRECK_SMOKE_START 100
+#define CD2_WRECK_SMOKE_END   700
+#define CD2_WRECK_FIRE_START  100
+#define CD2_WRECK_FIRE_END    400
 
 // ---- destroyed-car respawn -------------------------------------------
 // A wrecked car the module owns (the player and the AI opponents) returns to

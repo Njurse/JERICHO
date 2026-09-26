@@ -294,10 +294,14 @@ static void cd2KnockSample(int carId, int force)
 // every pitch sign in the module rests on - and it is the premise that was wrong for the
 // accel layer while every number in that layer was right.
 // ---------------------------------------------------------------------------
+/* The probe's ruler: the nominal half-length both ends are measured at - roughly the light
+ * class (colBox.vz 382), which is what most of these cars are. */
+#define CD2_VIS_PROBE_HALF 190
+
 static int gVisLogEvery = -1;
 
 // [D] [T]
-static void cd2VisSignLog(const CD2_VISUAL_OFFSET* o, int noseLift)
+static void cd2VisSignLog(const CD2_VISUAL_OFFSET* o, int noseWorld, int rearWorld)
 {
 	if (gVisLogEvery < 0)
 	{
@@ -317,12 +321,14 @@ static void cd2VisSignLog(const CD2_VISUAL_OFFSET* o, int noseLift)
 	if (gVisLogEvery <= 0 || (FrameCnt % gVisLogEvery) != 0)
 		return;
 
-	jer_log("[cainescrossfire] vis pitch=%d roll=%d yaw=%d bob=%d shift=%d -> noseLift=%d %s\n",
-		o->pitch, o->roll, o->yaw, o->bob, o->shift, noseLift,
-		(o->pitch == 0) ? "(level, so there is no sign to read)"
-		                : (((o->pitch > 0) == (noseLift > 0))
-		                       ? "SIGN OK - positive pitch lifts the nose"
-		                       : "SIGN INVERTED - positive pitch dips the nose"));
+	jer_log("[cainescrossfire] vis pitch=%d roll=%d yaw=%d bob=%d shift=%d -> nose %+d rear %+d  %s\n",
+		o->pitch, o->roll, o->yaw, o->bob, o->shift, noseWorld, rearWorld,
+		(o->pitch == 0) ? "(level)"
+		                : ((noseWorld > 0 && rearWorld <= 0)
+		                       ? "OK - the nose rises, the rear stays planted (a wheelie)"
+		                       : ((rearWorld > 0)
+		                              ? "WRONG END - the REAR rises: the pivot lift beats the rotation's dip"
+		                              : "SIGN INVERTED - the nose dips")));
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +373,7 @@ void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o)
 	MATRIX rot, res;
 	int i;
 	int noseBefore;
+	int originBefore;
 
 	if (m == NULL || o == NULL)
 		return;
@@ -376,6 +383,7 @@ void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o)
 	 * basis vector that points BACKWARD). This is the Y of the nose direction as it
 	 * arrives - the same vector cd2VisualApply's own pivot and shift maths move along. */
 	noseBefore = -m->m[1][2];
+	originBefore = m->t[1];
 
 	if (o->bob != 0)
 		m->t[1] += o->bob;		/* up or down, whichever the layer asked for */
@@ -427,7 +435,18 @@ void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o)
 		*m = res;
 	}
 
-	cd2VisSignLog(o, (-m->m[1][2]) - noseBefore);	/* forward Y now - forward Y before */
+	/* Both ends, in world units, at a nominal half-length: this is what settles "which end
+	 * rises", which the nose direction alone cannot - the pivot adds a LIFT to every point,
+	 * so the rear can move UP while the nose direction still tilts up. That is exactly the
+	 * failure this probe caught: the rise was the arc of a nominal 240 units when the car's
+	 * half-length is ~190, so the far end was lifted more than the rotation dipped it. */
+	{
+		int half = CD2_VIS_PROBE_HALF;
+		int noseOnly = ((int)(((long long)(-m->m[1][2]) * half) >> 12)) - ((int)(((long long)noseBefore * half) >> 12));
+		int bodyLift = m->t[1] - originBefore;
+
+		cd2VisSignLog(o, noseOnly + bodyLift, -noseOnly + bodyLift);
+	}	/* forward Y now - forward Y before */
 }
 
 // [D] [T]

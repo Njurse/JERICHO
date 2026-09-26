@@ -45,6 +45,11 @@ static int cd2VehArmorPct(void* vcar)
 // per-contact debounce in cd2OnDamageScale (CD2_SCENERY_HIT_COOLDOWN).
 static int sSceneryHitFrame[MAX_CARS];
 
+// How many scenery hits this car has been charged for in the current window, and when
+// that window started. See the stack below: it is what stops a long scrape adding up.
+static int sSceneryStack[MAX_CARS];
+static int sSceneryWindow[MAX_CARS];
+
 // Scenery impacts taken by `car` this level (see cd2OnDamageScale).
 int cd2SceneryHits(void* vcp)
 {
@@ -127,6 +132,44 @@ int cd2OnDamageScale(void* ud, void* args)
 
 		// +1 so a contact on frame 0 is not mistaken for "never hit"
 		sSceneryHitFrame[cp->id] = FrameCnt + 1;
+	}
+
+	// ---- the stacking budget: a long scrape can never add up to a write-off -------
+	//
+	// The debounce above limits how OFTEN a contact is charged, not how much a sequence
+	// of them costs. Sliding along a wall at speed passes the threshold above on every
+	// contact (the hook's `impact` is the raw strike VELOCITY, so a fast scrape and a
+	// head-on hit look the same to it), so a few seconds of scraping was several heavy
+	// bites in a row - "sliding along scenery totally killed it". Each successive bite
+	// inside the window is therefore worth HALF the one before it: 100%, 50%, 25%...
+	// however long the contact lasts, the total is bounded at twice the first bite.
+	if (cp->id >= 0 && cp->id < MAX_CARS)
+	{
+		int stack = 0;
+
+		if (sSceneryWindow[cp->id] != 0 && (unsigned int)(FrameCnt - sSceneryWindow[cp->id]) < CD2_SCENERY_STACK_WINDOW)
+			stack = sSceneryStack[cp->id];
+		else
+			sSceneryWindow[cp->id] = FrameCnt;
+
+		if (stack > 0)
+		{
+			int pct = 100 >> (stack > 3 ? 3 : stack);
+
+			a->result = cd2ScaleDamage(a->result, pct);
+
+			if (gCd2Cfg.debugLog)
+			{
+				static unsigned int t = 0;
+
+				if ((t++ & 31) == 0)
+					printInfo("[cainescrossfire] scenery dmg stacked: car=%d bite %d of this window -> %d%% of it (impact=%d)\n",
+						cp->id, stack + 1, pct, a->impact);
+			}
+		}
+
+		if (stack < 3)
+			sSceneryStack[cp->id] = stack + 1;
 	}
 
 	// an opponent that keeps clipping walls needs the extra cushion, or a
