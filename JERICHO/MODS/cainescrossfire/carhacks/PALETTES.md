@@ -213,13 +213,18 @@ CLUTs: `SendTPage` uses `slot_clutpos[slot]` (`spool.c:491-492`) and
 
 **Why this matters:** the strip is a single 256-row budget shared by the host
 palettes, the import's palettes, the level's page CLUTs and the world's streamed
-CLUTs. Measured end-of-load `clutpos`: **427 stock, 475 with a Havana->Rio import**
-(the import's palettes consumed 48 rows). `CAR_CLUT_IMPORT_LIMIT = 476`
+CLUTs. Measured end-of-load `clutpos`: **428 stock, 485 with a Havana->Rio import**
+(the import's palettes and page CLUTs consumed 57 of the 256 rows, leaving 27). `CAR_CLUT_IMPORT_LIMIT = 476`
 (`cars.h:51`) exists only to stop an import walking the cursor into the band the
 per-frame pin reserves — past it, `ProcessPalletLumpForCity` reuses the city's
 first palette for the remaining entries and logs how many (`cars.c:1532-1536`,
 `:1564-1566`). That is a band-aid: the import and the world are competing for one
 budget.
+
+> The column's geometry, the whole VRAM budget around it, and the collision it has
+> with the level font image are in **`VRAM.md`** — including the measured
+> `clutpos.y` for a stock level (428) and with an import (485), and the section of
+> `tools/vrammap.py` that prints which claims sit in the import's reserved rows.
 
 ---
 
