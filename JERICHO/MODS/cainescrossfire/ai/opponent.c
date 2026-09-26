@@ -39,6 +39,7 @@
 #include "ai/flow.h"
 #include "factions/factions.h"	// the five teams: claim this spawn's roster slot
 #include "profiles/profile.h"	// cd2VehProfileOfSlot - is this slot one of OURS?
+#include "arenas/profile.h"	// cd2ArenaOpponentSpawn - an authored arena start
 
 #include <string.h>
 #include <stdio.h>
@@ -509,6 +510,7 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 	int i, k, side, chosen = 0;
 	int chosenModel = 0, chosenPalette = 0;
 	int off = CD2_AI_SPAWN_OFFSET * (index + 1);	// fan each opponent out
+	int spawnHeading = pcp->hd.direction;		// ...unless the arena authored one
 
 	cand.vx = 0;
 	cand.vy = 0;
@@ -527,6 +529,26 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		return 0;
 
 	cd2AiCarPos(pcp, &ppos);
+
+	// An AUTHORED arena spawn wins over the player-relative fan: if the arena
+	// the match is on names a start for this opponent, use it (position AND
+	// heading). The author places these, so no lineClear probe - a spawn on
+	// scenery is the author's to fix (the editor shows it).
+	{
+		int ax, az, ah;
+
+		if (cd2ArenaOpponentSpawn(index, &ax, &az, &ah))
+		{
+			cand.vx = ax;
+			cand.vy = ppos.vy;
+			cand.vz = az;
+			spawnHeading = ah;
+			chosen = 1;
+
+			printInfo("[cainescrossfire] arena spawn: opponent %d at (%d,%d) heading %d\n",
+				index, ax, az, ah);
+		}
+	}
 
 	// Probe BOTH sides at this opponent's fan distance (then a little further
 	// out) and spawn on whichever is clear, so we never drop a car inside a
@@ -645,7 +667,7 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		if (residentCarModels[model] != 0 && residentCarModels[model] <= 4)
 			palette = cd2AiRandSalt(6, index * 31 + 17);
 
-		InitCar(slot, pcp->hd.direction, &pos, CONTROL_TYPE_CUTSCENE, model, palette, &cd2AiPadId);
+		InitCar(slot, spawnHeading, &pos, CONTROL_TYPE_CUTSCENE, model, palette, &cd2AiPadId);
 
 		chosenModel = model;
 		chosenPalette = car_data[slot->id].ap.palette;

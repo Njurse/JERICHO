@@ -53,6 +53,7 @@
 #include "knock/knock.h"		/* CD2_KNOCK_* - collisions make the car buck */
 #include "carhacks/carhacks.h"		/* vehicle-availability hacks (own module later) */
 #include "profiles/profile.h"		/* the Twisted Metal vehicle roster (profiles/) */
+#include "arenas/profile.h"		/* the arena registry: bounded places the match happens */
 #include "select/select.h"		/* the CC select flow (select/) */
 #include "hud/lockon.h"		/* the lock-on readout + the map's corner */
 #include "motion/shove.h"		/* one-shot velocity pushes for the sim */
@@ -75,6 +76,7 @@ void cd2FxRegister(JERICHO_CONTEXT* ctx);
 void cd2FreezeRegister(JERICHO_CONTEXT* ctx);
 void cd2CrewRegister(JERICHO_CONTEXT* ctx);	/* weapons/core/crew.c */
 void cd2FacRegister(JERICHO_CONTEXT* ctx);	/* factions/factions.c (declared in its header) */
+void cd2ArenaRegister(JERICHO_CONTEXT* ctx);	/* arenas/arena.c */
 
 // ---------------------------------------------------------------------------
 // State
@@ -813,6 +815,10 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	cd2LoadConfig();
 	cd2ApplyPreset();
 
+	/* the arena registry: built-ins + any authored files under CONFIG/arenas/.
+	 * Built here, before the select flow, because that builds its menus from it. */
+	cd2ArenaLoadAll();
+
 	ctx->jer_register_module(ctx,
 		"cainescrossfire",					/* id */
 		"Caine's Crossfire",		/* name */
@@ -876,6 +882,9 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	 * profile's own placements win any slot carhacks also touched. */
 	cd2VehRegister(ctx);
 
+	/* the arena runtime (arenas/): authored spawns + the region barrier */
+	cd2ArenaRegister(ctx);
+
 	/* the CC select flow (select/): -ccmenu -> arena -> vehicle -> match */
 	cd2SelectRegister(ctx);
 	cd2LockOnRegister(ctx);
@@ -911,4 +920,8 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	 * stats, special), so a headless run shows the field it is actually using
 	 * (profiles/registry.c) */
 	cd2VehDumpProfiles();
+
+	/* the arena registry, as resolved: one line per arena, so a headless run
+	 * shows the places (and their spawn/region data) it actually loaded */
+	cd2ArenaDump();
 }

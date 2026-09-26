@@ -2,18 +2,22 @@
 // (JERICHO/include/jer_frontend.h), so it looks and navigates like the game's
 // own screens instead of a floating overlay.
 //
-//   cc.arena          the four cities (+ Back)
-//   cc.veh.<city>     < VEHICLE > - a carousel over that arena's own cars, with
-//                     the car's frontend icon, left/right to change, Cross to
-//                     start the match
+//   cc.arena          every ARENA in the registry (arenas/), then Back
+//   cc.veh.<city>     < VEHICLE > - a carousel over that arena's city's own
+//                     cars, with the car's frontend icon, left/right to change,
+//                     Cross to the opponent screen
+//   cc.opponents      < N OPPONENTS > - 0..CD2_AI_MAX, Cross starts the match
+//
+// The arena list is the REGISTRY, not a hardcoded four: every built-in city is
+// there, and any authored arena file under JERICHO/CONFIG/arenas/ adds another
+// (optionally on the SAME city - see ARENAS.md). Selecting an arena loads its
+// city and its mission layout and makes it the match's current arena, so its
+// authored spawn points and its barrier apply.
 //
 // Restricting the vehicle list to the arena's own city is deliberate: the engine
 // imports from only ONE foreign city per level (models.c, InitCarImport), so a
 // car belongs to the city it is picked in - that is also what makes its
 // geometry load from its own city.
-//
-// Confirming a car launches a Twisted-Metal match: free-roam TAKE A RIDE, single
-// player, on the city's multiplayer-map arena 0.
 //
 // Raised by -ccmenu (or CC_MENU): the flow opens cc.arena, and the main menu's
 // Deathmatch entry (the replaced Undercover button) opens it too.
@@ -35,6 +39,7 @@
 #include "cainescrossfire.h"
 #include "ai/ai.h"		/* CD2_AI_MAX - the opponent cap the menu cycles */
 #include "profiles/profile.h"
+#include "arenas/profile.h"	/* the arena registry the flow lists */
 
 #include "select/select.h"
 
@@ -52,24 +57,23 @@ static int gCcOpened;			/* we have opened the arena menu once */
 // Menus
 // ---------------------------------------------------------------------------
 #define CC_MENU_ARENA		0
-#define CC_MENU_VEH_BASE	1	/* the four vehicle menus follow (1..4) */
+#define CC_MENU_VEH_BASE	1	/* the vehicle menus follow (one per city) */
 #define CC_MENU_OPPONENTS	5	/* after the vehicles: how many opponents */
 
-static const char* const gCcArenas[] =
-{
-	"Chicago", "Havana", "Las Vegas", "Rio"
-};
+#define CC_CITY_COUNT		4	/* LevelNames: Chicago, Havana, Vegas, Rio */
 
-static JER_FE_ITEM gCcArenaItems[5];	/* 4 cities + Back */
-static JER_FE_MENU gCcArenaMenu = { "cc.arena", gCcArenaItems, 5, NULL, NULL, NULL };
+// The arena menu: one row per registry arena + Back.
+static JER_FE_ITEM gCcArenaItems[CD2_ARENA_MAX_ARENAS + 1];
+static JER_FE_MENU gCcArenaMenu = { "cc.arena", gCcArenaItems, 0, NULL, NULL, NULL };
+static int gCcArenaId[CD2_ARENA_MAX_ARENAS];	/* registry id per menu row */
 
-static const char* const gCcVehIds[4] =
+static const char* const gCcVehIds[CC_CITY_COUNT] =
 {
 	"cc.veh.chicago", "cc.veh.havana", "cc.veh.vegas", "cc.veh.rio"
 };
 
-static JER_FE_ITEM gCcVehItems[4][2];	/* the carousel row + Back */
-static JER_FE_MENU gCcVehMenu[4] =
+static JER_FE_ITEM gCcVehItems[CC_CITY_COUNT][2];	/* the carousel row + Back */
+static JER_FE_MENU gCcVehMenu[CC_CITY_COUNT] =
 {
 	{ "cc.veh.chicago", gCcVehItems[0], 0, NULL, NULL, NULL },
 	{ "cc.veh.havana",  gCcVehItems[1], 0, NULL, NULL, NULL },
@@ -77,47 +81,53 @@ static JER_FE_MENU gCcVehMenu[4] =
 	{ "cc.veh.rio",     gCcVehItems[3], 0, NULL, NULL, NULL }
 };
 
-// The vehicle menus' cities (must line up with gCcVehIds).
-static const int gCcVehCity[4] =
-{
-	CD2_VEH_CITY_CHICAGO, CD2_VEH_CITY_HAVANA, CD2_VEH_CITY_VEGAS, CD2_VEH_CITY_RIO
-};
-
 // The per-city rosters + the carousel cursor.
-static int gCcVehList[4][CD2_VEH_COUNT];	// profile ids per city, registry order
-static int gCcVehN[4];				// how many cars the city has
-static int gCcVehSel[4];			// the carousel cursor
+static int gCcVehList[CC_CITY_COUNT][CD2_VEH_COUNT];	// profile ids per city, registry order
+static int gCcVehN[CC_CITY_COUNT];			// how many cars the city has
+static int gCcVehSel[CC_CITY_COUNT];			// the carousel cursor
 
 // The opponent menu: a carousel over 0..CD2_AI_MAX, plus what the vehicle screen
 // picked (its Cross is what opens this menu).
 static JER_FE_ITEM gCcOppItems[2];	/* the carousel row + Back */
 static JER_FE_MENU gCcOppMenu = { "cc.opponents", gCcOppItems, 2, NULL, NULL, NULL };
 static int gCcOppSel;			// how many opponents the match will field
-static int gCcPendingCity;		// the arena the vehicle screen chose
-static int gCcPendingCar;		// ...and the roster slot in it
+static int gCcChosenArena = CD2_ARENA_NONE;	// the arena the vehicle screen serves
+static int gCcPendingCar;		// ...and the roster slot in its city
 
 static int cd2SelVehCity(void* ud)
 {
 	return (int)(size_t)ud;
 }
 
-// Launch a match with the car of `city` at roster slot `sel`.
-static void cd2SelLaunch(int city, int sel)
+// Launch a match on `arenaId` with the car of that arena's city at roster slot
+// `sel`.
+static void cd2SelLaunch(int arenaId, int sel)
 {
+	const CD2_ARENA_PROFILE* a;
 	const CD2_VEH_PROFILE* p;
-	int profile;
+	int city, profile;
 
-	// TEST/DEBUG override, for headless verification of the cross-city path:
-	//   CC_FORCE_ARENA=<0..3> CC_FORCE_CAR=<0..CD2_VEH_COUNT-1>
+	// TEST/DEBUG override, for headless verification:
+	//   CC_FORCE_ARENA=<arena id> CC_FORCE_CAR=<0..CD2_VEH_COUNT-1>
 	//   CC_FORCE_OPPONENTS=<0..CD2_AI_MAX>
 	if (getenv("CC_FORCE_ARENA") != NULL)
-		city = atoi(getenv("CC_FORCE_ARENA"));
+		arenaId = atoi(getenv("CC_FORCE_ARENA"));
 	if (getenv("CC_FORCE_CAR") != NULL)
 		sel = atoi(getenv("CC_FORCE_CAR"));
 	if (getenv("CC_FORCE_OPPONENTS") != NULL)
 		gCd2Cfg.aiOpponents = atoi(getenv("CC_FORCE_OPPONENTS"));
 
-	if (city < 0 || city > 3 || gCcVehN[city] <= 0)
+	a = cd2ArenaDef(arenaId);
+
+	if (a == NULL)
+	{
+		printInfo("[cainescrossfire] CC select: arena %d not found, launch refused\n", arenaId);
+		return;
+	}
+
+	city = a->city;
+
+	if (city < 0 || city >= CC_CITY_COUNT || gCcVehN[city] <= 0)
 		return;
 
 	if (sel < 0 || sel >= gCcVehN[city])
@@ -133,19 +143,22 @@ static void cd2SelLaunch(int city, int sel)
 		wantedCar[0] = p->modelSlot;
 
 	// A TWISTED-METAL MATCH, not the story campaign the frontend's Undercover
-	// entry would otherwise start. Free-roam TAKE A RIDE, single player, on the
-	// city's MULTIPLAYER-MAP arena 0 (gBootMpLevel makes State_GameStart pick
-	// the small mp layout, M58.., instead of the full city, M50..).
+	// entry would otherwise start. The arena says which mission layout: a
+	// built-in arena is the city's small multiplayer map, a custom one may be a
+	// cordoned corner of the full city (mp 0).
 	GameType = GAME_TAKEADRIVE;
 	NumPlayers = 1;
 	gWantNight = 0;
-	gSubGameNumber = 0;		/* arena 0 (mission M58 + city*2) */
-	gBootMpLevel = 1;
-	gBootMpArena = 0;
+	gSubGameNumber = 0;
+	gBootMpLevel = a->mpLevel ? 1 : 0;
+	gBootMpArena = a->mpArena ? 1 : 0;
 
-	printInfo("[cainescrossfire] CC select: start %s with %s (model %d) - take-a-ride mp arena 0, %d opponent(s)\n",
-		LevelNames[city], cd2VehDisplayName(profile), (p != NULL) ? p->modelSlot : -1,
-		gCd2Cfg.aiOpponents);
+	// the match's current arena: its authored spawns + barrier apply from here
+	cd2ArenaSetCurrent(arenaId);
+
+	printInfo("[cainescrossfire] CC select: start arena '%s' (%s) with %s (model %d) - mp=%d/%d, %d opponent(s)\n",
+		a->internalName, a->displayName, cd2VehDisplayName(profile),
+		(p != NULL) ? p->modelSlot : -1, a->mpLevel, a->mpArena, gCd2Cfg.aiOpponents);
 
 	SetState(STATE_GAMESTART);
 }
@@ -155,7 +168,7 @@ static void cd2SelVehLabel(void* ud, char* out, int max)
 {
 	int city = cd2SelVehCity(ud);
 
-	if (city < 0 || city > 3 || gCcVehN[city] <= 0)
+	if (city < 0 || city >= CC_CITY_COUNT || gCcVehN[city] <= 0)
 	{
 		snprintf(out, max, "< none >");
 		return;
@@ -169,7 +182,7 @@ static int cd2SelVehAdjust(void* ud, int dir)
 {
 	int city = cd2SelVehCity(ud);
 
-	if (city < 0 || city > 3 || gCcVehN[city] <= 0)
+	if (city < 0 || city >= CC_CITY_COUNT || gCcVehN[city] <= 0)
 		return 0;
 
 	gCcVehSel[city] = (gCcVehSel[city] + dir + gCcVehN[city]) % gCcVehN[city];
@@ -182,15 +195,29 @@ static int cd2SelVehActivate(void* ud)
 {
 	int city = cd2SelVehCity(ud);
 
-	if (city < 0 || city > 3 || gCcVehN[city] <= 0)
+	if (city < 0 || city >= CC_CITY_COUNT || gCcVehN[city] <= 0)
 		return 0;
 
 	// remember the pick and move on to the opponent screen - the match starts
 	// from there, so a player always gets to choose the field size
-	gCcPendingCity = city;
 	gCcPendingCar = gCcVehSel[city];
 
 	jer_frontend_open(CC_MENU_OPPONENTS);
+	return 1;
+}
+
+// An arena row was confirmed: remember the arena its vehicle screen will serve,
+// then open that city's vehicle menu.
+static int cd2SelArenaActivate(void* ud)
+{
+	int idx = (int)(size_t)ud;
+	const CD2_ARENA_PROFILE* a = cd2ArenaDef(gCcArenaId[idx]);
+
+	if (a == NULL)
+		return 0;
+
+	gCcChosenArena = gCcArenaId[idx];
+	jer_frontend_open(CC_MENU_VEH_BASE + a->city);
 	return 1;
 }
 
@@ -227,7 +254,7 @@ static int cd2SelOppActivate(void* ud)
 	// the match setting the AI reads at spawn (cd2MatchOpponents)
 	gCd2Cfg.aiOpponents = gCcOppSel;
 
-	cd2SelLaunch(gCcPendingCity, gCcPendingCar);
+	cd2SelLaunch(gCcChosenArena, gCcPendingCar);
 	return 1;
 }
 
@@ -241,7 +268,7 @@ static void cd2SelVehPreview(void* ud, int* city, int* model)
 	*city = -1;
 	*model = -1;
 
-	if (c < 0 || c > 3 || gCcVehN[c] <= 0)
+	if (c < 0 || c >= CC_CITY_COUNT || gCcVehN[c] <= 0)
 		return;
 
 	p = cd2VehDef(gCcVehList[c][gCcVehSel[c]]);
@@ -257,21 +284,33 @@ static void cd2SelVehPreview(void* ud, int* city, int* model)
 static void cd2SelBuildMenus(void)
 {
 	int city;
+	int n = cd2ArenaCount();
+	int i;
 
-	for (city = 0; city < 4; city++)
+	if (n > CD2_ARENA_MAX_ARENAS)
+		n = CD2_ARENA_MAX_ARENAS;
+
+	// one row per arena, pointing at its city's vehicle menu
+	for (i = 0; i < n; i++)
 	{
-		JER_FE_ITEM* it = &gCcArenaItems[city];
+		const CD2_ARENA_PROFILE* a = cd2ArenaDef(i);
+		JER_FE_ITEM* it = &gCcArenaItems[i];
 
 		memset(it, 0, sizeof(*it));
-		it->label = gCcArenas[city];
-		it->submenu = CC_MENU_VEH_BASE + city;
+		it->label = (a != NULL) ? a->displayName : "?";
+		it->userdata = (void*)(size_t)i;
+		it->on_activate = cd2SelArenaActivate;
+		it->submenu = -1;
+
+		gCcArenaId[i] = i;
 	}
 
-	memset(&gCcArenaItems[4], 0, sizeof(gCcArenaItems[4]));
-	gCcArenaItems[4].label = "Back";
-	gCcArenaItems[4].submenu = -1;
-	gCcArenaItems[4].is_back = 1;
+	memset(&gCcArenaItems[n], 0, sizeof(gCcArenaItems[n]));
+	gCcArenaItems[n].label = "Back";
+	gCcArenaItems[n].submenu = -1;
+	gCcArenaItems[n].is_back = 1;
 
+	gCcArenaMenu.item_count = n + 1;
 	gCcArenaMenu.title = "SELECT ARENA";
 
 	// the opponent menu: one carousel row + Back
@@ -296,10 +335,8 @@ static void cd2SelBuildMenus(void)
 	if (gCcOppSel > CD2_AI_MAX)
 		gCcOppSel = CD2_AI_MAX;
 
-	for (city = 0; city < 4; city++)
+	for (city = 0; city < CC_CITY_COUNT; city++)
 	{
-		int i;
-
 		gCcVehSel[city] = 0;
 
 		// the carousel shows EVERY car, whatever the arena: only one car is ever
@@ -342,8 +379,7 @@ static void cd2SelBuildMenus(void)
 		gCcVehMenu[city].title = "SELECT CAR";
 	}
 
-	printInfo("[cainescrossfire] CC select: cars per arena - Chicago %d, Havana %d, Vegas %d, Rio %d\n",
-		gCcVehN[0], gCcVehN[1], gCcVehN[2], gCcVehN[3]);
+	printInfo("[cainescrossfire] CC select: %d arena(s) in the menu\n", n);
 }
 
 int cd2SelectActive(void)
@@ -413,7 +449,7 @@ static int cd2SelOnFrame(void* ud, void* args)
 
 		// Harness launch: a padless run cannot drive the menus (the module
 		// screens ignore input with no pad), so with the overrides set the match
-		// starts from here instead of on a confirm. Same launch the vehicle
+		// starts from here instead of on a confirm. Same launch the opponent
 		// screen's confirm runs. Scripted runs only - a pad still gets the menus.
 		if (getenv("CC_FORCE_ARENA") != NULL && getenv("CC_FORCE_CAR") != NULL)
 		{
@@ -436,7 +472,7 @@ static int cd2SelOnFrontendEntered(void* ud, void* args)
 
 	gCcOpened = 0;
 
-	for (city = 0; city < 4; city++)
+	for (city = 0; city < CC_CITY_COUNT; city++)
 		gCcVehSel[city] = 0;
 
 	return JER_RESULT_CONTINUE;
@@ -446,8 +482,8 @@ void cd2SelectRegister(JERICHO_CONTEXT* ctx)
 {
 	cd2SelBuildMenus();
 
-	// ORDER MATTERS: the arena menu first, so it is index 0; the four vehicle
-	// menus follow as CC_MENU_VEH_BASE + city.
+	// ORDER MATTERS: the arena menu first, so it is index 0; the per-city
+	// vehicle menus follow as CC_MENU_VEH_BASE + city.
 	jer_frontend_register_menu(&gCcArenaMenu);
 	jer_frontend_register_menu(&gCcVehMenu[0]);
 	jer_frontend_register_menu(&gCcVehMenu[1]);
