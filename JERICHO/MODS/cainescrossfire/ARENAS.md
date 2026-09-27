@@ -334,6 +334,10 @@ Two things worth knowing:
 Changing `--style` **rebuilds** the map rather than serving the other one: the
 sidecar keys the cache on the style (`renderer` records what actually drew it).
 
+Asking for a map and not getting one is never silent: the reason is printed
+*and* `--render` exits non-zero, so the launcher's menu 8 can tell (it used to
+report "the build failed" only on an earlier, unrelated error).
+
 `tools/rendercheck.py` is the headless guard for all of this — a synthetic rip
 whose answer is known (ground, a raised patch that must win the height buffer,
 and a quad too big for the fill grid, which must be subdivided rather than

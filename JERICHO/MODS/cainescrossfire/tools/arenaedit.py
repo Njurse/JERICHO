@@ -3304,6 +3304,8 @@ def main(argv=None):
     # world rectangle the picture covers; the view (interactive or rendered)
     # frames the arena and places the picture under it.
     bg = None
+    bg_rect = None
+    bg_missing = False       # an explicit --level/--obj/--map produced nothing
     bg_rect = tuple(args.map_world) if args.map_world else None
 
     if args.obj and not os.path.exists(args.obj):
@@ -3362,6 +3364,11 @@ def main(argv=None):
 
             if img is not None:
                 bg, bg_rect = img, rect
+            else:
+                # asked for a map and did not get one: the reason was printed
+                # above, but a SCRIPT has to be able to tell (arena_menu.bat
+                # checks the exit code, and a silent empty preview is worse)
+                bg_missing = True
 
     if args.uitest:
         return ui_selftest(arenas, bg, bg_rect)
@@ -3369,7 +3376,7 @@ def main(argv=None):
     if args.render:
         render_png(arenas, args.render, bg, bg_rect)
         print("wrote", args.render)
-        return 0
+        return 2 if bg_missing else 0
 
     return run_editor(arenas, bg, bg_rect, hint=hint)
 
