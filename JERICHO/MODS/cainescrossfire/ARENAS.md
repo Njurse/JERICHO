@@ -392,23 +392,52 @@ A spawn's `y` is optional: `spawn: x z heading [y]`.
 * authored `y` — used as-is;
 * no `y` — the module asks the engine (`MapHeight`, the same call antfarm uses)
   for the **ground under that spawn**, so a distant spawn no longer inherits the
-  player's height and drop through the world;
-* asking the engine also gives you a verdict on your spawns. On the first frame
-  the game logs one line per spawn:
+  player's height and drop through the world.
+
+### The player's spawn streams its own region
+
+The engine streams the world as a 2×2 window of **regions** and only pre-loads
+*neighbours*, so a region the player **hops** into — a spawn far from the level's
+own start — is never placed in a barrel and its cells never load: the world
+around the car is a void. The module now fixes that: when it places the player at
+`spawns[0]` it calls **`jer_map_spool_to`** (`JERICHO/docs/map-streaming.md`),
+which makes the engine load the spawn's region (and its neighbours) before the
+car needs the ground. The log shows it:
 
 ```
-arena 'pracinhas': spawn 0 (-186527,82690) is on the world, ground y=-2048
-arena 'pracinhas': spawn 2 (-198135,146918) has NO GROUND there - off the map,
-                   or not loaded. A car dropped there falls into the void.
+[jer_map] streamed region 144 for (-186527,82690)
 ```
 
-**"NO GROUND" is the thing to act on.** It means either the point is outside the
-level, or its map region is not resident. The engine only spools the regions
-around the player, so a spawn a long way from the player's spawn can have no
-answer — keep arena spawns inside the part of the map you are actually playing
-in. This is a real limitation, not a bug to work around: forcing the region in
-with `UnpackRegion` was tried and made things worse (the engine keeps only four
-barrels, so pulling regions in one at a time evicts the ones just loaded).
+Only the **player's** spawn is streamed. The engine keeps just four regions, so
+streaming one per spawn would evict the ones just loaded — keep the opponents
+inside the same part of the map as the player (see the spawn verdict below).
+
+### The spawn verdict (logged a second after the drop)
+
+A second after placing the player the game logs one line per spawn — a
+`jer_map`-aware verdict, not a bare `MapHeight`:
+
+```
+arena 'pracinhas': spawn 0 (-186527,82690) - the engine gave no ground height here (MapHeight is not always reliable)
+arena 'pracinhas': spawn 2 (-198135,146918) is in region 157, which is not resident (not streamed) - a car dropped there falls into the void. Keep spawns inside the arena you are playing in.
+```
+
+**"not resident — a car dropped there falls into the void" is the thing to act
+on.** The engine only spools four regions around the player, so a spawn a long
+way from the player has no ground. This is why spawns should sit inside the part
+of the map the arena is played in.
+
+Two caveats about the engine's height answer, both measured:
+
+* `MapHeight` reads the map through a barrel indexed by cell **parity**, not by
+  region number, so for a point whose region is *not* resident it returns a
+  **neighbouring** region's height — a confident-looking number that is the wrong
+  place. `cd2ArenaGroundY` therefore refuses to answer unless the point's region
+  is resident.
+* even for a resident region it is not always reliable (it returned `0x7FFFFFFF`
+  for a region a car was standing on), so a missing height is *logged*, not
+  alarmed — and a spawn with no authored `y` that gets no answer simply keeps the
+  height the level gave the car.
 
 Set `CC_YLOG=1` to print the player's height and vertical velocity for the first
 90 frames — the way to tell "settling on the ground" from "falling out of it".

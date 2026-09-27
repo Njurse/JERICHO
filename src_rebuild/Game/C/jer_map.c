@@ -1,18 +1,25 @@
 /* jer_map.c — see JERICHO/include/jer_map.h.
  *
  * Engine-side (not in JERICHO/src) because it reaches into spool.c/map.c
- * internals — regions_unpacked[], UnpackRegion, the spool flush — exactly like
- * jer_hud.c needs the game's display buffer. The logic is the SAME fix the
- * antfarm module worked out for its far teleports (antfarm.c: the barrel is
- * (region_x & 1) + (region_z & 1) * 2, not the region number; the engine only
- * pre-loads neighbours, so a hop must force the destination in); it lives here
- * now so cainescrossfire's arena spawn and antfarm share one implementation.
+ * internals — regions_unpacked[], UnpackRegion, ControlMap, the spool flush —
+ * exactly like jer_hud.c needs the game's display buffer.
+ *
+ * The problem this solves, and the fix, are antfarm's: the engine streams a 2x2
+ * window of regions and only pre-loads neighbours, so a region you HOP into is
+ * never placed in a barrel and its geometry never loads (the void). The safe way
+ * to stream there is NOT to call UnpackRegion by hand — that sets
+ * regions_unpacked[barrel] to the region but leaves the barrel's actual
+ * geometry/roadmap unloaded, so MapHeight still answers 0 (measured: the barrels
+ * read as packed correctly while MapHeight stayed 0). Instead clear
+ * `current_region` so the engine's own ControlMap takes its FIRST-PASS path and
+ * loads the region under MainPlayer.spoolXZ into the right barrel itself — its
+ * bookkeeping, not a copy of it. That is what jer_map_spool_to does.
  */
 
 #include "driver2.h"
 
 #include "map.h"	/* cell_header, MAP_CELL_SIZE/REGION_SIZE, regions_across/down,
-				 * cells_across/down, units_across_halved/down */
+				 * cells_across/down, units_across_halved/down, ControlMap */
 #include "spool.h"	/* regions_unpacked, loading_region, spoolinfo_offsets,
 				 * UnpackRegion, StartSpooling, UpdateSpool, CheckLoadAreaData */
 
@@ -103,12 +110,13 @@ int jer_map_force_region(int region)
 
 	/* Land it in THIS frame instead of waiting for the engine's next ControlMap
 	 * pass. On PC the spool copies synchronously, so flushing the queue here
-	 * makes the destination resident on return. */
+	 * runs the copy. */
 	StartSpooling();
 	UpdateSpool();
 
-	printInfo("[jer_map] forced region %d into barrel %d\n", region, barrel);
-
+	/* NOTE: this marks the region unpacked but does not run the engine's full
+	 * ControlMap bookkeeping; MapHeight may still answer 0. Prefer
+	 * jer_map_spool_to, which uses the engine's own path. */
 	return 1;
 }
 
@@ -121,16 +129,31 @@ int jer_map_spool_to(int x, int z)
 	if (region < 0 || !jer_map_region_has_data(region))
 		return 0;
 
-	if (!jer_map_region_resident(region) && !jer_map_force_region(region))
-		return 0;
-
-	/* The map geometry is in, but the TEXTURE pages stream per AREA keyed off
-	 * the position, so ask for the destination's area explicitly and flush
-	 * again — otherwise the region draws untextured until the camera reaches
-	 * it. Same two-step antfarm uses. */
+	if (!jer_map_region_resident(region))
 	{
-		int cx = (x + units_across_halved) / MAP_CELL_SIZE;
-		int cz = (z + units_down_halved) / MAP_CELL_SIZE;
+		/* Make the engine load it the way it does at LEVEL START: forget the
+		 * current region so ControlMap takes its first-pass path, which unpacks
+		 * the region under MainPlayer.spoolXZ (the caller must have pointed
+		 * spoolXZ at the destination) into the correct 2x2 barrel slot, asks for
+		 * its AREA data and flushes the spool — the engine's own bookkeeping. */
+		current_region = -1;
+		ControlMap();
+
+		if (!jer_map_region_resident(region))
+			return 0;
+
+		printInfo("[jer_map] streamed region %d for (%d,%d)\n", region, x, z);
+	}
+	else
+	{
+		/* Already resident: just make sure its texture AREA is requested. The
+		 * area key is the cell WITHIN the region (CheckLoadAreaData's own
+		 * convention - map.c passes current_barrel_region_*cell, 0..31), not an
+		 * absolute cell; passing absolute cells loads the wrong area. */
+		int rx = region % regions_across;
+		int rz = region / regions_across;
+		int cx = (x + units_across_halved) / MAP_CELL_SIZE - rx * MAP_REGION_SIZE;
+		int cz = (z + units_down_halved) / MAP_CELL_SIZE - rz * MAP_REGION_SIZE;
 
 		CheckLoadAreaData(cx, cz);
 		StartSpooling();

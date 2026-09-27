@@ -28,6 +28,7 @@
 #include "jericho.h"
 #include "jer_events.h"
 #include "jer_hud.h"		/* jer_hud_message - the fallback notice */
+#include "jer_map.h"		/* jer_map_spool_to - stream the spawn's region in */
 #include "cainescrossfire.h"
 #include "arenas/profile.h"
 #include "main.h"			/* FrameCnt - the CC_YLOG dev probe */
@@ -38,13 +39,25 @@
  * so 0 means "no answer", NOT "the ground is at 0"; the caller then keeps the
  * height the level gave the car. Without this, every opponent inherited the
  * PLAYER's height, which is only right where the player is standing - put one
- * 100k units away and it spawns in mid-air and drops into the void. */
+ * 100k units away and it spawns in mid-air and drops into the void.
+ *
+ * TRUST ONLY A RESIDENT REGION. MapHeight reads the map through a 2x2 barrel
+ * indexed by cell parity, NOT by region number, so for a point whose region is
+ * not resident it happily returns a NEIGHBOURING region's height - a
+ * confident-looking number that is simply the wrong place (measured: the level's
+ * own start reads 0x7FFFFFFF, and an unloaded spawn read a stale -2048). So we
+ * answer ONLY when jer_map_region_resident() says the point's region is the one
+ * in its barrel; otherwise "no answer". */
 extern int MapHeight(VECTOR* pos);
 
 int cd2ArenaGroundY(int x, int z)
 {
 	VECTOR p;
 	int h;
+	int region = jer_map_region_of(x, z);
+
+	if (region < 0 || !jer_map_region_resident(region))
+		return CD2_ARENA_NO_Y;		/* not resident - any height would be another place's */
 
 	p.vx = x;
 	p.vy = 0;
@@ -55,12 +68,24 @@ int cd2ArenaGroundY(int x, int z)
 	return (h != 0) ? h : CD2_ARENA_NO_Y;
 }
 
-/* NOTE: a forced UnpackRegion(spawn) + StartSpooling/UpdateSpool here was tried
- * (antfarm's trick for a far teleport) and made things WORSE: the engine keeps
- * only FOUR barrels, so pulling regions in for spawns one at a time evicts the
- * ones just loaded, and MapHeight then answers 0 for spawns that previously had
- * ground. Don't do it. A spawn in a region the engine has not spooled is a real
- * limitation - keep arena spawns inside the area the player is playing in. */
+/* THE SPAWN AND THE STREAMER.
+ *
+ * The engine streams the world as a 2x2 window of regions and only ever
+ * PRE-LOADS NEIGHBOURS, and only as you near a region edge. A region the match
+ * HOPS into - a spawn far from the level's own start - is therefore never put
+ * into a barrel, so its cells never load and MapHeight answers 0: the car drops
+ * into the void. That is the bug this file used to document as a limitation.
+ *
+ * The fix is jer_map_spool_to (JERICHO docs/map-streaming.md): unpack the
+ * destination region into its parity barrel and flush the spool queue
+ * synchronously - the same thing antfarm does for its far teleports.
+ *
+ * It is done ONCE, for the PLAYER's spawn, and only when the player's region is
+ * not already resident. Forcing a region EVICTS whatever shared its parity slot,
+ * so forcing one per spawn (an earlier attempt) evicted the regions just loaded
+ * and MapHeight then answered 0 for ground that had been fine. Opponent spawns
+ * are not force-loaded; keep the player and the opponents inside the area the
+ * player is playing in. */
 
 #include "weapons/core/weapon.h"		/* cd2WpnCarGrant / cd2WpnName - a weapon pickup */
 #include "weapons/core/weapon_internal.h"	/* cd2WpnLine - the marker */
@@ -77,6 +102,11 @@ int cd2ArenaGroundY(int x, int z)
 // teleport, quite possibly into the void. Generous enough for a fast overshoot.
 #define CD2_ARENA_BARRIER_MARGIN	12000
 #define CD2_PICKUP_RESPAWN	900	/* frames a taken pickup stays gone (30s) */
+/* Frames to wait after placing the player before asking the engine for the
+ * ground under each spawn (MapHeight reads through the spool, which was just
+ * pointed at the spawn; on the move's own frame it can answer for the old
+ * place). ~1s at 30fps. */
+#define CD2_ARENA_REPORT_DELAY	30
 #define CD2_PICKUP_HEIGHT	160	/* marker bar height (y-up) */
 #define CD2_PICKUP_Y		0	/* the flat-ground plane the markers stand on */
 #define CD2_PICKUP_AMMO_DEFAULT	5
@@ -197,6 +227,7 @@ static int gArenaCurrent = CD2_ARENA_NONE;
 // Once-per-level state (reset at JER_EVENT_GAME_START).
 static int gArenaNotified;
 static int gArenaPlayerPlaced;
+static int gArenaReportAt = -1;	/* frame the ground verdict runs on, or -1 */
 static int gArenaClampLogged[MAX_CARS];	/* first hit against the barrier, per car */
 static int gArenaFarLogged[MAX_CARS];	/* first "far outside the region" note, per car */
 static int gPickupActive[CD2_ARENA_MAX_PICKUPS];
@@ -266,9 +297,30 @@ static void cd2ArenaPlacePlayer(void)
 	cp->hd.where.t[0] = sp.x;
 	cp->hd.where.t[2] = sp.z;
 
-	/* The authored height, when there is one. Otherwise ask the map: a car placed
-	 * on a hill or a raised road falls through the world if it inherits a height
-	 * that belongs to some other spot. */
+	/* Make the spawn's region resident BEFORE reading the ground. The engine has
+	 * streamed around the level's OWN start, not here, so without this the cells
+	 * under the spawn are not loaded: the world around the car is a void, and
+	 * cd2ArenaGroundY would read some other region's height (see its note).
+	 * MainPlayer.spoolXZ already tracks the player's car, so pointing the
+	 * streamer at the spawn is enough; jer_map_spool_to loads the region + its
+	 * texture areas for this frame.
+	 *
+	 * Camera vs spool: the renderer culls from camera_position while the spool
+	 * follows MainPlayer.spoolXZ, so if they disagree the frame draws a region
+	 * the streamer evicted. They do not here - this runs in JER_EVENT_FRAME
+	 * (inside StepSim), and the camera is rebuilt from the car afterwards, in the
+	 * render path (DrawGame -> RenderGame2 -> InitCamera, main.c:3158). So both
+	 * the spool and the camera are at the spawn for the same frame's draw, over a
+	 * region this call has just made resident. No camera snap is needed. */
+	if (!jer_map_spool_to(sp.x, sp.z))
+		printInfo("[cainescrossfire] arena '%s': spawn at (%d,%d) has NO MAP DATA "
+			"(off the map?) - it will fall into the void\n",
+			a->internalName, sp.x, sp.z);
+
+	/* The authored height, when there is one. Otherwise ask the map - now that
+	 * the spawn's region is resident, so the answer is about THIS place (a car
+	 * placed on a hill or a raised road falls through the world if it inherits a
+	 * height that belongs to some other spot). */
 	if (sp.y != CD2_ARENA_NO_Y)
 		cp->hd.where.t[1] = sp.y;
 	else
@@ -562,14 +614,19 @@ static void cd2ArenaWarnSpawns(void)
 /* Is there actually ground where each spawn is?
  *
  * This is the question "did I mess the spawn up, or is it on the world?" - asked
- * of the engine instead of guessed. MapHeight answers 0 for a cell that is not
- * loaded, and a spawn off the edge of the map is never loaded either, so both
- * faults show up the same way: no ground, and a car dropped there falls into the
- * void. Runs on the first FRAME (not GAME_START) so the cells have been spooled. */
+ * of the engine. It runs a few frames after the player is placed (not on the
+ * move's own frame: the spool was only just pointed here), so the cells under
+ * the player's spawn have streamed.
+ *
+ * The ACTIONABLE fault is a spawn whose region has no data, or is not resident:
+ * nothing can be streamed there, and a car dropped on it falls into the void.
+ * Beyond that the engine's MapHeight is the only height oracle, and it is not
+ * always reliable (measured: it returns 0x7FFFFFFF even for a resident region a
+ * car is standing on), so a missing height is logged, not alarmed. */
 static void cd2ArenaReportGround(void)
 {
 	const CD2_ARENA_PROFILE* a = cd2ArenaCurrent();
-	int i, void_spawns = 0;
+	int i, no_region = 0;
 
 	if (a == NULL || a->spawnCount == 0)
 		return;
@@ -577,25 +634,40 @@ static void cd2ArenaReportGround(void)
 	for (i = 0; i < a->spawnCount && i < CD2_ARENA_MAX_SPAWNS; i++)
 	{
 		const CD2_ARENA_SPAWN* sp = &a->spawns[i];
-		int gy = cd2ArenaGroundY(sp->x, sp->z);
+		int rg = jer_map_region_of(sp->x, sp->z);
 
-		if (gy == CD2_ARENA_NO_Y)
+		if (rg < 0 || !jer_map_region_has_data(rg))
 		{
-			printInfo("[cainescrossfire] arena '%s': spawn %d (%d,%d) has NO GROUND there - "
-				"off the map, or not loaded. A car dropped there falls into the void.\n",
+			printInfo("[cainescrossfire] arena '%s': spawn %d (%d,%d) is OFF THE MAP "
+				"(no region data) - a car dropped there falls into the void\n",
 				a->internalName, i, sp->x, sp->z);
-			void_spawns++;
+			no_region++;
+		}
+		else if (!jer_map_region_resident(rg))
+		{
+			printInfo("[cainescrossfire] arena '%s': spawn %d (%d,%d) is in region %d, which is "
+				"not resident (not streamed) - a car dropped there falls into the void. "
+				"Keep spawns inside the arena you are playing in.\n",
+				a->internalName, i, sp->x, sp->z, rg);
+			no_region++;
 		}
 		else
 		{
-			printInfo("[cainescrossfire] arena '%s': spawn %d (%d,%d) is on the world, ground y=%d%s\n",
-				a->internalName, i, sp->x, sp->z, gy,
-				(sp->y != CD2_ARENA_NO_Y) ? " (the authored height is what is used)" : "");
+			int gy = cd2ArenaGroundY(sp->x, sp->z);
+
+			if (gy == CD2_ARENA_NO_Y)
+				printInfo("[cainescrossfire] arena '%s': spawn %d (%d,%d) - the engine gave no "
+					"ground height here (MapHeight is not always reliable)\n",
+					a->internalName, i, sp->x, sp->z);
+			else
+				printInfo("[cainescrossfire] arena '%s': spawn %d (%d,%d) is on the world, ground y=%d%s\n",
+					a->internalName, i, sp->x, sp->z, gy,
+					(sp->y != CD2_ARENA_NO_Y) ? " (the authored height is what is used)" : "");
 		}
 	}
 
-	if (void_spawns > 0)
-		jer_hud_message("a spawn has no ground under it - you would fall into the void", 240);
+	if (no_region > 0)
+		jer_hud_message("a spawn is outside the loaded map - a car there would fall into the void", 240);
 }
 
 static int cd2ArenaOnGameStart(void* ud, void* args)
@@ -629,6 +701,7 @@ static int cd2ArenaOnGameStart(void* ud, void* args)
 	 * written later in the launch), so the player's authored spawn is applied on
 	 * the first FRAME instead - see cd2ArenaOnFrame. */
 	gArenaPlayerPlaced = 0;
+	gArenaReportAt = -1;
 
 	/* a spawn outside the region will not be pulled in - say so up front */
 	cd2ArenaWarnSpawns();
@@ -657,7 +730,15 @@ static int cd2ArenaOnFrame(void* ud, void* args)
 		gArenaPlayerPlaced = 1;
 		cd2ArenaPlacePlayer();
 
-		/* now that the cells are spooled, say whether each spawn has ground */
+		/* the ground verdict waits a few frames: MapHeight reads through the
+		 * spool, which has only just been pointed here, so asking on the very
+		 * frame of the move can answer for the wrong place (measured: INT_MAX). */
+		gArenaReportAt = FrameCnt + CD2_ARENA_REPORT_DELAY;
+	}
+
+	if (gArenaReportAt >= 0 && FrameCnt >= gArenaReportAt)
+	{
+		gArenaReportAt = -1;
 		cd2ArenaReportGround();
 	}
 

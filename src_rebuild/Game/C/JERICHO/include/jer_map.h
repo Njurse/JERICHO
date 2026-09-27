@@ -67,21 +67,28 @@ int jer_map_region_has_data(int region);
 int jer_map_region_resident(int region);
 
 /* Unpack region into its parity barrel and flush the spool queue (synchronous
- * on PC), so it is resident on return. Returns 1 when the region has data and
- * was forced (or was already resident), 0 when there is nothing to load (no
- * level, no data, or it is mid-load). Does NOT touch the texture AREA data —
- * for that use jer_map_spool_to, which knows the position. */
+ * on PC). Returns 1 when the region has data and was forced (or was already
+ * resident), 0 when there is nothing to load (no level, no data, or it is
+ * mid-load). Does NOT touch the texture AREA data.
+ *
+ * CAVEAT: this marks the region unpacked but does not run the engine's full
+ * ControlMap bookkeeping, so the barrel's geometry/roadmap may stay unloaded and
+ * MapHeight can still answer 0. Prefer jer_map_spool_to, which uses the engine's
+ * own path. Kept as the low-level primitive. */
 int jer_map_force_region(int region);
 
-/* The full "stream there" call for a destination position: if the region at
- * (x, z) is not resident, force it in (jer_map_force_region) and then ask for
- * its texture AREA data (CheckLoadAreaData keyed off the same position) and
- * flush again — map geometry and texture pages both, in this frame.
+/* The full "stream there" call for a destination position. If the region at
+ * (x, z) is not resident, make the engine load it the way it does at LEVEL
+ * START: clear the engine's current region so ControlMap takes its first-pass
+ * path and unpacks the region under MainPlayer.spoolXZ into the right 2x2 barrel
+ * slot itself — then ask for the destination's texture AREA data
+ * (CheckLoadAreaData) and flush again, so geometry and texture pages both land
+ * in this frame.
  *
  * Point MainPlayer.spoolXZ at (x, z) BEFORE calling this, and move the camera to
  * match (see the header note). Returns 1 when the destination region has data
- * and is now resident/being unpacked; 0 when there is nothing to stream there
- * (no level, or no data at the point — the caller should keep its old spot). */
+ * and is now resident; 0 when there is nothing to stream there (no level, or no
+ * data at the point — the caller should keep its old spot). */
 int jer_map_spool_to(int x, int z);
 
 #ifdef __cplusplus
