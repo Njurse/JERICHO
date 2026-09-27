@@ -2,6 +2,15 @@
 
 #include "jericho.h"		/* jer_fire */
 #include "../C/jer_events.h"	/* JER_EVENT_CAR_AVAILABILITY */
+#include "../C/JERICHO/include/jer_texture.h"	/* custom menu background */
+#include "../C/jer_menu_bg.h"	/* the background itself */
+
+// JERICHO: -shotfront <frame> (set and counted in main.c) and PsyCross's live-window
+// screenshot. PsyX_TakeScreenshot is NOT in PsyCross's extern "C" block, so it is
+// declared without C linkage - same reasoning as in main.c.
+extern int gScreenshotFrameFront;
+extern int gFrontendFrames;
+void PsyX_TakeScreenshot(void);
 
 #include "FEmain.h"
 
@@ -1110,9 +1119,29 @@ void DrawScreen(PSXSCREEN *pScr)
 	int numBtnsToDraw;
 	int i;
 
-	for (i = 0; i < 6; i++)
-		addPrim(current->ot + 11, &BackgroundPolys[i]);
-	addPrim(current->ot + 11, &BackgroundBlack);
+	// JERICHO: the custom menu background. On by default; CONFIG/jericho.ini
+	// custom_menu_background = 0 restores the stock DATA/GFX.RAW art. It is loaded once,
+	// lazily, on the first frame that draws a screen (by then the GL context exists).
+	jer_menu_bg_tick();
+
+	if (jer_menu_bg_ready())
+	{
+		// jer_texture draws only inside a render pass; here we are drawing straight into
+		// the display buffer, so say so. 640x512 is the area the stock background covers
+		// in the frontend's own coordinate space (six polys tiled to 640x512), and the
+		// blit scales whatever the image is to fill it. Bucket 11 is the one the stock
+		// background used, i.e. behind the menu text.
+		gJerTextureRenderPass = 1;
+		jer_texture_draw_screen(jer_menu_bg_texture(), 0, 0, 640, 512, 11);
+		gJerTextureRenderPass = 0;
+	}
+	else
+	{
+		for (i = 0; i < 6; i++)
+			addPrim(current->ot + 11, &BackgroundPolys[i]);
+
+		addPrim(current->ot + 11, &BackgroundBlack);
+	}
 	
 	if (pScr)
 	{
@@ -1493,6 +1522,7 @@ void JerichoRunBootScreens(void)
 
 #ifndef PSX
 		PsyX_EndScene();
+
 #endif
 
 		PutDispEnv(&current->disp);
@@ -2284,6 +2314,17 @@ void EndFrame(void)
 
 #ifndef PSX
 	PsyX_EndScene();
+
+	// JERICHO: -shotfront <frame> -- capture one presented FRONTEND frame. It has to be
+	// here, at the end of EndFrame: -shot counts gameplay frames (gRunFrames), which do
+	// not advance while the menus are up, and a screenshot is only meaningful once the
+	// frame has been presented.
+	if (gScreenshotFrameFront >= 0 && ++gFrontendFrames >= gScreenshotFrameFront)
+	{
+		gScreenshotFrameFront = -1;
+		PsyX_TakeScreenshot();
+		printInfo("JERICHO-SHOT: wrote SCREENSHOT.BMP on frontend frame %d\n", gFrontendFrames);
+	}
 #endif
 }
 

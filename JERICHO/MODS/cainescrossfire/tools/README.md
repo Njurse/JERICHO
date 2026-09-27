@@ -72,6 +72,7 @@ file alone — see `cd2_debug.example.txt` for the format.
 | script | what it does |
 |---|---|
 | `devcheck.sh [frames]` | build, run the cross-city scenario matrix, print one verdict. Exit 0 = all clean. Restores your `carhacks.ini` afterwards |
+| `icons.py placeholders` / `convert <in.png> <out.tga>` / `list` | **the pickup icons**: (re)write the default placeholder set (`textures/icons/health.tga` + one per `CD2_WID_*`), convert a PNG to the 32-bit TGA the engine reads, or print the icon name -> weapon map. Author at any size and let `convert --size N` (default 64) scale it |
 | `arena_test.sh [frames]` | one random city/car/weather/time arena run. `SEED=N` replays an exact scenario, because the seed picks the scenario too, not just module randomness |
 | `levpages.py <city.LEV>` | read a level file's citylumps and segment sizes without launching the game |
 | `levmodels.py <city.LEV> ...` | which car models each city ships (from `LUMP_CAR_MODELS`), plus its `carTpages`/`specTpages`. The data behind `carhacks/VEHICLES.md` |

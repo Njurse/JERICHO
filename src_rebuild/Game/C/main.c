@@ -1753,6 +1753,12 @@ int gMultiStep = 0;
 	// State_GameLoop), which is where the F12 handler reads the window too.
 	int gScreenshotFrame = -1;
 
+	// JERICHO: debug/test - the same, for FRONTEND frames. -shot counts gameplay frames
+	// (gRunFrames), which never advance while the menus are up, so a menu can only be
+	// captured with this. Set by -shotfront <frame>; consumed in FEmain.c.
+	int gScreenshotFrameFront = -1;
+	int gFrontendFrames = 0;
+
 // JERICHO: PsyCross's VRAM dump, declared to match PsyX_render.h:183 and with C
 // linkage because this project compiles its .c files as C++ - and PsyCross exports it
 // from an extern "C" block. Two things cost attempts here: declaring it int (it is
@@ -2578,6 +2584,12 @@ int redriver2_main(int argc, char** argv)
 			// JERICHO: run N gameplay frames, then exit cleanly. See gExitAfterFrames.
 			if (i + 1 < argc)
 				gExitAfterFrames = atoi(argv[++i]);
+		}
+		else if (!strcmp(argv[i], "-shotfront"))
+		{
+			// JERICHO: write SCREENSHOT.BMP on frontend frame N (menus, no level).
+			if (i + 1 < argc)
+				gScreenshotFrameFront = atoi(argv[++i]);
 		}
 		else if (!strcmp(argv[i], "-shot"))
 		{

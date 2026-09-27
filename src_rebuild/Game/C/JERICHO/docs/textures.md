@@ -51,6 +51,44 @@ Flags (`JER_TEX_DRAW_*`): `BILLBOARD` (yaw towards the camera instead of using
 `spin` — do **not** set it on something that should spin), `MIRROR` (force the
 texture flipped), `NO_OCCLUDE` (skip the depth sort so nothing hides it).
 
+`jer_texture_draw_screen(tex, x, y, w, h, otBucket)` blits over a rectangle in the
+**frame buffer** — no camera, for a menu background or any full-screen art. `otBucket`
+is required rather than chosen for you: the frontend's ordering table is only
+**16 entries** (`FE_OTSIZE`), so a world-sized index writes past the end of it. That
+is not hypothetical — the first cut of the menu background used `OTSIZE-1` and the
+menus flickered, because every frame appended primitives beyond the table. Pass the
+bucket the art it replaces used (the menu background uses 11).
+
+## JERICHO's own menu background
+
+`JERICHO/CORE/jericho_background.tga` replaces the stock `DATA/GFX.RAW` menu art,
+drawn through `jer_texture_draw_screen` so any size or format works. **On by
+default.** Switch it off with `JERICHO/CONFIG/jericho.ini`:
+
+```
+custom_menu_background = 0
+```
+
+A missing or unreadable file is not an error — the stock background is drawn instead.
+(`Game/C/jer_menu_bg.c`.)
+
+## What the loader does to your image
+
+jer_texture does not grow a format per art pipeline. **Whatever TGA you hand it is
+converted, once, into what the game's own art is** — so an export from any tool
+works, and authors do not have to guess:
+
+- **RGBA.** A 24-bit TGA becomes RGBA with a fully opaque alpha (a photo or a
+  background has no alpha to lose).
+- **15-bit colour.** RGB is quantised to the PSX's 5-5-5, so a custom texture sits in
+  the same palette world as the levels instead of reading as a photo pasted over them.
+- **Capped size.** The long side is capped at 1024 and box-downscaled past that. A
+  1672x941 background is needlessly heavy as a GPU texture for a 320x240-era look, and
+  the draw scales it anyway — so you never have to pre-size an image. (An icon at 64x64
+  is already in the right ballpark; that is what `tools/icons.py placeholders` writes.)
+
+The converted size is what `jer_texture_size` reports.
+
 ## Two targets
 
 | target | what it is | cost |

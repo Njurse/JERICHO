@@ -123,8 +123,8 @@ EXPORTS
 	?InitCops@@YAXXZ
 	?PassiveCopTasks@@YAXPEAU_CAR_DATA@@@Z
 	?ReplayLog_Fnarr_He_Said_Log@@YAHH@Z
-	?GetSampleCount@CSoundSource_OpenALCache@@UEBAHXZ
 	?GetSamples@CSoundSource_OpenALCache@@UEAAHPEAEHH_N@Z
+	?GetSampleCount@CSoundSource_OpenALCache@@UEBAHXZ
 	?GetDataPtr@CSoundSource_OpenALCache@@UEBAPEAEAEAH@Z
 	?jer_texture_psx_reload@@YAHPEBDGG@Z
 	?AddBrakeLight@@YAXPEAU_CAR_DATA@@@Z
@@ -370,17 +370,17 @@ EXPORTS
 	?GlobalTimeStep@@YAXXZ
 	?InitCarPhysics@@YAXPEAU_CAR_DATA@@PEAY03HH@Z
 	?InitSkidding@@YAXXZ
+	?ProcessJunctionsLump@@YAXPEADH@Z
+	?InitialiseCarHandling@@YAXXZ
+	?ProcessJuncBoundsLump@@YAXPEADH@Z
+	?ProcessRoadsLump@@YAXPEADH@Z
+	?ProcessRoadBoundsLump@@YAXPEADH@Z
+	?GetXAData@@YAXH@Z
+	?SetXAVolume@@YAXH@Z
 	?CivPedDoNothing@@YAXPEAUPEDESTRIAN@@@Z
 	?ProcessSubDivisionLump@@YAXPEADH@Z
-	?ProcessRoadBoundsLump@@YAXPEADH@Z
-	?jer_texture_psx_release@@YAXGG@Z
-	?ProcessJuncBoundsLump@@YAXPEADH@Z
-	?InitialiseCarHandling@@YAXXZ
-	?ProcessJunctionsLump@@YAXPEADH@Z
-	?SetXAVolume@@YAXH@Z
-	?ProcessRoadsLump@@YAXPEADH@Z
 	?StopDualShockMotors@@YAXXZ
-	?GetXAData@@YAXH@Z
+	?jer_texture_psx_release@@YAXGG@Z
 	?LongQuaternion2Matrix@@YAXPEAY03HPEAUMATRIX@@@Z
 	?ProcessCarPad@@YAXPEAU_CAR_DATA@@IDD@Z
 	?RebuildCarMatrix@@YAXPEATRigidBodyState@@PEAU_CAR_DATA@@@Z
@@ -403,6 +403,9 @@ EXPORTS
 	jer_map_region_of
 	jer_map_region_resident
 	jer_map_spool_to
+	?jer_menu_bg_ready@@YAHXZ
+	?jer_menu_bg_texture@@YAIXZ
+	?jer_menu_bg_tick@@YAXXZ
 	jer_notify
 	jer_npc_despawn
 	jer_npc_face
@@ -415,9 +418,11 @@ EXPORTS
 	jer_npc_stop
 	jer_sound_lock
 	jer_sound_locked_count
+	jer_texture_core_path
 	jer_texture_count
 	jer_texture_draw_card
 	jer_texture_draw_flat
+	jer_texture_draw_screen
 	jer_texture_free
 	jer_texture_free_all
 	jer_texture_load
@@ -1088,8 +1093,8 @@ EXPORTS
 	??1?$vector@Uindex_entry_t@ReadAVI@@V?$allocator@Uindex_entry_t@ReadAVI@@@std@@@std@@QEAA@XZ
 	??1ReadAVI@@UEAA@XZ
 	??1_Sentry_base@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@XZ
-	??1bad_cast@std@@UEAA@XZ
 	??1bad_array_new_length@std@@UEAA@XZ
+	??1bad_cast@std@@UEAA@XZ
 	??1locale@std@@QEAA@XZ
 	??1sentry@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAA@XZ
 	??_D?$basic_ifstream@DU?$char_traits@D@std@@@std@@QEAAXXZ
@@ -1145,11 +1150,19 @@ EXPORTS
 	jer_root_dir
 	jer_set_logger
 	vsnprintf
+	fprintf
+	jer_config_clear
+	jer_config_get_bool
+	jer_config_get_int
+	jer_config_get_str
+	jer_config_init
+	jer_config_set_bool
+	jer_config_set_int
+	jer_config_set_str
 	jer_pause_menu_count
 	jer_pause_menu_get
 	jer_pause_menu_register
 	jer_pause_menu_reset
-	fprintf
 	jerTrim
 	jer_manager_move
 	jer_manager_read
@@ -1176,14 +1189,6 @@ EXPORTS
 	jer_prompt_begin
 	jer_prompt_close
 	jer_prompt_tick
-	jer_config_clear
-	jer_config_get_bool
-	jer_config_get_int
-	jer_config_get_str
-	jer_config_init
-	jer_config_set_bool
-	jer_config_set_int
-	jer_config_set_str
 	jer_deep_mod_list
 	jer_loader_scan
 	jer_loader_unload
@@ -1253,8 +1258,8 @@ EXPORTS
 	?cd2FacSetCar@@YAXHH@Z
 	?cd2FacTagOf@@YAPEBDH@Z
 	?cd2FacTagOfCar@@YAPEBDPEBU_CAR_DATA@@@Z
-	?cd2TurboAccelPct@@YAHH@Z
 	?cd2TurboSpeedPct@@YAHH@Z
+	?cd2TurboAccelPct@@YAHH@Z
 	?cd2TurboActive@@YAHH@Z
 	?cd2TurboBarTick@@YAXH@Z
 	?cd2TurboDump@@YAXH@Z
@@ -1294,12 +1299,16 @@ EXPORTS
 	?cd2ArenaRegister@@YAHPEBUCD2_ARENA_PROFILE@@@Z
 	?cd2ArenaReplace@@YAHHPEBUCD2_ARENA_PROFILE@@@Z
 	?cd2ArenaCurrent@@YAPEBUCD2_ARENA_PROFILE@@XZ
+	?cd2ArenaDrawPickupMarker@@YAXPEBUCD2_ARENA_PICKUP@@@Z
 	?cd2ArenaGroundY@@YAHHH@Z
 	?cd2ArenaOpponentSpawn@@YAHHPEAUCD2_ARENA_SPAWN@@@Z
+	?cd2ArenaPickupActive@@YAHH@Z
 	?cd2ArenaPlayerSpawn@@YAHPEAUCD2_ARENA_SPAWN@@@Z
 	?cd2ArenaRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
 	?cd2ArenaSetCurrent@@YAXH@Z
 	?cd2ArenaWatchReset@@YAXXZ
+	?cd2PickupDrawRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
+	?cd2PickupIconFor@@YAIHH@Z
 	?cd2SelectRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
 	?cd2LockOnRegister@@YAXPEAUJERICHO_CONTEXT@@@Z
 	?cd2LockOnTarget@@YAHXZ
@@ -1465,8 +1474,8 @@ EXPORTS
 	?canFire@WeaponBase@@UEAA_NXZ
 	?consumeAmmo@WeaponBase@@QEAAXXZ
 	?init@WeaponBase@@QEAAXXZ
-	?onAmmoChanged@WeaponBase@@UEAAXXZ
 	?onEquip@WeaponBase@@UEAAXXZ
+	?onAmmoChanged@WeaponBase@@UEAAXXZ
 	?onHolster@WeaponBase@@UEAAXXZ
 	?playSound@WeaponBase@@QEAAXH@Z
 	?poseArm@WeaponBase@@UEAAXPEAXH@Z
@@ -1922,11 +1931,12 @@ EXPORTS
 	?RecapFrameLength@@3PAGA DATA
 	?doWheels@@3HA DATA
 	?gScreenshotFrame@@3HA DATA
+	?gScreenshotFrameFront@@3HA DATA
 	?Havana3DLevelMode@@3HA DATA
 	?gPlayBootFMV@@3HA DATA
 	?Havana3DLevelDraw@@3HA DATA
-	?levelstartpos@@3PAY03HA DATA
 	?current_camera_angle@@3HA DATA
+	?levelstartpos@@3PAY03HA DATA
 	?cells_across@@3HA DATA
 	?cells_down@@3HA DATA
 	?missionstarts@@3PADA DATA
@@ -2508,6 +2518,7 @@ EXPORTS
 	?fade_gt4@@3PAUPOLY_GT4@@A DATA
 	?fade_g4@@3PAUPOLY_G4@@A DATA
 	?gMultiStep@@3HA DATA
+	?gFrontendFrames@@3HA DATA
 	?gVramViewInterval@@3HA DATA
 	?gVramViewCounter@@3HA DATA
 	?gVramViewWindowReported@@3HA DATA
@@ -2520,8 +2531,8 @@ EXPORTS
 	?gDebugSeed@@3HA DATA
 	?game_over@@3HA DATA
 	?gDemoLevel@@3HA DATA
-	?xa_timeout@@3HA DATA
 	?gStartPos@@3UXZPAIR@@A DATA
+	?xa_timeout@@3HA DATA
 	?FrameCnt@@3HA DATA
 	?CurrentPlayerView@@3HA DATA
 	?CameraChanged@@3DA DATA

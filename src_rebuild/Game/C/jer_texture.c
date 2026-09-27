@@ -126,7 +126,7 @@ static void jerTexSetDefaultUVs(JER_TEX_SLOT* s)
 // The stores go into a FILE-SCOPE volatile: a local array of addresses is provably
 // dead and gets optimised out (which is exactly what happened the first time).
 // Membership is the header's, not this list's: add a line when you add an entry point.
-static volatile const void* gJerTexApiKeep[16];
+static volatile const void* gJerTexApiKeep[19];
 
 static void jerTexKeepPublicSurface(void)
 {
@@ -145,7 +145,9 @@ static void jerTexKeepPublicSurface(void)
 	gJerTexApiKeep[12] = (const void*)jer_texture_count;
 	gJerTexApiKeep[13] = (const void*)jer_texture_draw_card;
 	gJerTexApiKeep[14] = (const void*)jer_texture_draw_flat;
-	gJerTexApiKeep[15] = (const void*)jer_texture_psx_release;
+	gJerTexApiKeep[15] = (const void*)jer_texture_draw_screen;
+	gJerTexApiKeep[16] = (const void*)jer_texture_core_path;
+	gJerTexApiKeep[17] = (const void*)jer_texture_psx_release;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +195,31 @@ int jer_texture_mod_path(const char* modId, const char* name, char* out, int cap
 	// A dev build's JERICHO folder is <repo>/src_rebuild/bin/<config>/JERICHO, so the
 	// repo's MODS tree sits four levels up: prefer it, so the file the tools write is
 	// the file the game reads. A shipped build has no repo tree and uses the mirror.
+	snprintf(dev, sizeof(dev), "%s/../../../../JERICHO/%s", root, rel);
+
+	if (jerTexFileExists(dev))
+		snprintf(raw, sizeof(raw), "%s", dev);
+	else
+		snprintf(raw, sizeof(raw), "%s/%s", root, rel);
+
+	jerTexAbsolute(out, cap, raw);
+	return 1;
+}
+
+// The CORE folder's variant of the same rule: <root>/CORE/<name>, repo copy first. This
+// is where JERICHO's own art lives (the menu background is the first user).
+int jer_texture_core_path(const char* name, char* out, int cap)
+{
+	char rel[JER_TEX_PATH_MAX];
+	char dev[JER_TEX_PATH_MAX + 64];
+	char raw[JER_TEX_PATH_MAX + 64];
+	const char* root = jer_root_dir();
+
+	if (out == NULL || cap <= 0 || root == NULL || name == NULL)
+		return 0;
+
+	snprintf(rel, sizeof(rel), "CORE/%s", name);
+
 	snprintf(dev, sizeof(dev), "%s/../../../../JERICHO/%s", root, rel);
 
 	if (jerTexFileExists(dev))
@@ -264,6 +291,145 @@ static JER_TEXTURE jerTexStore(const char* path, int target, const char* key,
 	return JER_TEX_HANDLE(slot, s->generation);
 }
 
+// 24-bit TGA -> RGBA, with a fully opaque alpha. An opaque image (a menu background, a
+// photo dropped in as an icon) has no alpha channel to lose. Returns a malloc'd buffer.
+static u_char* jerTexExpand24(const u_char* rgb, int w, int h)
+{
+	u_char* out = (u_char*)malloc((size_t)w * h * 4);
+	int i, n = w * h;
+
+	if (out == NULL)
+		return NULL;
+
+	for (i = 0; i < n; i++)
+	{
+		out[i * 4 + 0] = rgb[i * 3 + 0];
+		out[i * 4 + 1] = rgb[i * 3 + 1];
+		out[i * 4 + 2] = rgb[i * 3 + 2];
+		out[i * 4 + 3] = 255;
+	}
+
+	return out;
+}
+
+// ---------------------------------------------------------------------------
+// normalising an image to the ONE format the engine draws
+// ---------------------------------------------------------------------------
+//
+// jer_texture does not grow a format per art pipeline. Whatever TGA it is handed is
+// converted, once, into what the game's own art is:
+//
+//   * RGBA (a 24-bit file becomes RGBA with alpha 255);
+//   * RGB quantised to 15-bit, the PSX's 5-5-5 colour, so a custom texture sits in the
+//     same palette world as the levels rather than reading as a photo pasted over them;
+//   * capped at JER_TEX_MAX_DIM on the long side, box-downscaled - a 1672x941 background
+//     is silly for a 320x240-era look and needlessly heavy as a GPU texture.
+
+#define JER_TEX_MAX_DIM	1024
+
+// 8-bit -> the 5-bit grid, expanded back the way the PSX hardware does it
+// (5 bits replicated into the top of the byte), so 15-bit art round-trips unchanged.
+static u_char jerTexTo15(u_char c)
+{
+	int v = c >> 3;
+
+	return (u_char)((v << 3) | (v >> 2));
+}
+
+static void jerTexQuantise15(u_char* rgba, int n)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+	{
+		rgba[i * 4 + 0] = jerTexTo15(rgba[i * 4 + 0]);
+		rgba[i * 4 + 1] = jerTexTo15(rgba[i * 4 + 1]);
+		rgba[i * 4 + 2] = jerTexTo15(rgba[i * 4 + 2]);
+	}
+}
+
+// Box-downscale in place (malloc'ing the smaller buffer and freeing the old one) when the
+// long side is over the cap. Returns the possibly-replaced buffer.
+static u_char* jerTexShrink(u_char** buf, int* w, int* h)
+{
+	int ow = *w, oh = *h;
+	int nw = ow, nh = oh;
+	int x, y, o;
+	u_char* src = *buf;
+	u_char* dst;
+
+	if (ow > oh && ow > JER_TEX_MAX_DIM)
+	{
+		nw = JER_TEX_MAX_DIM;
+		nh = (oh * JER_TEX_MAX_DIM) / ow;
+	}
+	else if (oh >= ow && oh > JER_TEX_MAX_DIM)
+	{
+		nh = JER_TEX_MAX_DIM;
+		nw = (ow * JER_TEX_MAX_DIM) / oh;
+	}
+
+	if (nw == ow && nh == oh)
+		return src;
+
+	if (nw < 1) nw = 1;
+	if (nh < 1) nh = 1;
+
+	dst = (u_char*)malloc((size_t)nw * nh * 4);
+
+	if (dst == NULL)
+		return src;
+
+	for (y = 0; y < nh; y++)
+	{
+		int sy0 = (y * oh) / nh;
+		int sy1 = ((y + 1) * oh) / nh;
+
+		if (sy1 <= sy0) sy1 = sy0 + 1;
+
+		for (x = 0; x < nw; x++)
+		{
+			int sx0 = (x * ow) / nw;
+			int sx1 = ((x + 1) * ow) / nw;
+			int r = 0, g = 0, b = 0, a = 0, n = 0;
+			int sx, sy;
+
+			if (sx1 <= sx0) sx1 = sx0 + 1;
+
+			for (sy = sy0; sy < sy1; sy++)
+			{
+				for (sx = sx0; sx < sx1; sx++)
+				{
+					const u_char* p = &src[((size_t)sy * ow + sx) * 4];
+
+					r += p[0]; g += p[1]; b += p[2]; a += p[3];
+					n++;
+				}
+			}
+
+			o = (y * nw + x) * 4;
+			dst[o + 0] = (u_char)(r / n);
+			dst[o + 1] = (u_char)(g / n);
+			dst[o + 2] = (u_char)(b / n);
+			dst[o + 3] = (u_char)(a / n);
+		}
+	}
+
+	free(src);
+	*buf = dst;
+	*w = nw;
+	*h = nh;
+
+	return dst;
+}
+
+// Everything the engine needs before uploading. `rgba` must be 4 bytes/px.
+static void jerTexNormalise(u_char** rgba, int* w, int* h)
+{
+	jerTexShrink(rgba, w, h);
+	jerTexQuantise15(*rgba, (*w) * (*h));
+}
+
 JER_TEXTURE jer_texture_load_path(const char* path, int target)
 {
 	u_char* data = NULL;
@@ -308,12 +474,26 @@ JER_TEXTURE jer_texture_load_path(const char* path, int target)
 		return JER_TEX_NONE;
 	}
 
+	if (bpp == 24)
+	{
+		u_char* rgba = jerTexExpand24(data, w, h);
+
+		free(data);
+		data = rgba;
+		bpp = rgba != NULL ? 32 : bpp;
+	}
+
 	if (bpp != 32)
 	{
-		jer_log("jer_texture: %s is %d-bit, need a 32-bit TGA (with alpha)\n", fixed, bpp);
+		jer_log("jer_texture: %s is %d-bit, need a 24- or 32-bit TGA\n", fixed, bpp);
 		free(data);
 		return JER_TEX_NONE;
 	}
+
+	jerTexNormalise(&data, &w, &h);
+
+	if (data == NULL)
+		return JER_TEX_NONE;
 
 	gl = (unsigned int)GR_CreateRGBATexture(w, h, data);
 	free(data);
@@ -401,11 +581,25 @@ int jer_texture_reload(JER_TEXTURE tex)
 		return 0;
 	}
 
+	if (bpp == 24)
+	{
+		u_char* rgba = jerTexExpand24(data, w, h);
+
+		free(data);
+		data = rgba;
+		bpp = rgba != NULL ? 32 : bpp;
+	}
+
 	if (bpp != 32)
 	{
 		free(data);
 		return 0;
 	}
+
+	jerTexNormalise(&data, &w, &h);
+
+	if (data == NULL)
+		return 0;
 
 	gl = (unsigned int)GR_CreateRGBATexture(w, h, data);
 	free(data);
@@ -704,4 +898,73 @@ void jer_texture_draw_flat(JER_TEXTURE tex, int x, int y, int z,
 			   int halfW, int halfL, int yaw, int flags)
 {
 	jerTexDraw(jerTexSlot(tex, NULL), x, y, z, halfW, halfL, yaw, flags, 1);
+}
+
+// A screen-space blit: the texture stretched over a rectangle in the FRAME BUFFER, no
+// camera involved. This is what a menu background needs. `x, y` are the top-left corner
+// in the current draw buffer's coordinates and w/h the size in the same units, so the
+// caller can scale any texture to the display without resizing the image itself.
+//
+// `otBucket` is the caller's ordering-table bucket, and it MUST come from the caller:
+// the frontend's OT is only FE_OTSIZE (16) entries, so the world's OTSIZE-1 would be an
+// out-of-bounds write - which is exactly how this first went wrong (the menu flickered,
+// because the prims were written past the end of the table). The frontend passes the
+// bucket its stock background used (11): parsed before any lower bucket, i.e. behind the
+// menu text.
+void jer_texture_draw_screen(JER_TEXTURE tex, int x, int y, int w, int h, int otBucket)
+{
+	JER_TEX_SLOT* s = jerTexSlot(tex, NULL);
+	POLY_FT4* poly;
+	char* base;
+
+	if (!gJerTextureRenderPass || s == NULL)
+		return;
+
+	base = current->primptr;
+	poly = (POLY_FT4*)base;
+
+	setPolyFT4(poly);
+
+	// Opaque: a background has nothing behind it to blend with, and one that did blend
+	// would let the stock background show through.
+	setSemiTrans(poly, 0);
+	setRGB0(poly, 128, 128, 128);
+
+	// a 2D quad needs no projection - the corners ARE the screen coordinates
+	{
+		short x1 = (short)(x + w);
+		short y1 = (short)(y + h);
+
+		setXY4(poly, (short)x, (short)y, x1, (short)y, (short)x, y1, x1, y1);
+	}
+
+	poly->u0 = s->u0; poly->v0 = s->v0;
+	poly->u1 = s->u1; poly->v1 = s->v1;
+	poly->u2 = s->u2; poly->v2 = s->v2;
+	poly->u3 = s->u3; poly->v3 = s->v3;
+
+	poly->tpage = (s->target == JER_TEX_TARGET_PAGE) ? s->tpage : 0;
+	poly->clut = (s->target == JER_TEX_TARGET_PAGE) ? s->clut : 0;
+
+	if (s->target == JER_TEX_TARGET_PAGE)
+	{
+		addPrim(current->ot + otBucket, poly);
+		current->primptr = base + sizeof(POLY_FT4);
+		return;
+	}
+
+	{
+		DR_PSYX_TEX* tex = (DR_PSYX_TEX*)(base + sizeof(POLY_FT4));
+		DR_PSYX_TEX* rst = (DR_PSYX_TEX*)(base + sizeof(POLY_FT4) + sizeof(DR_PSYX_TEX));
+
+		SetPsyXTexture(tex, s->glTexture, 255, 255);
+		SetPsyXTexture(rst, 0, 0, 0);
+
+		// reverse parse order, same as the world quad (see jerTexEmitQuad)
+		addPrim(current->ot + otBucket, rst);
+		addPrim(current->ot + otBucket, poly);
+		addPrim(current->ot + otBucket, tex);
+
+		current->primptr = base + sizeof(POLY_FT4) + 2 * sizeof(DR_PSYX_TEX);
+	}
 }

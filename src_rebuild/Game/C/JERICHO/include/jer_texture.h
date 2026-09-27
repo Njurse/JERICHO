@@ -67,6 +67,7 @@
 extern "C" {
 #endif
 
+
 /* A loaded texture. JER_TEX_NONE (0) means "nothing" — an unloaded, failed or freed
  * handle, which every call treats as a no-op. */
 typedef unsigned int JER_TEXTURE;
@@ -139,6 +140,10 @@ JER_TEXTURE jer_texture_load_path(const char* path, int target);
  * call, because the game changes its working directory while loading a level. */
 int jer_texture_mod_path(const char* modId, const char* name, char* out, int cap);
 
+/* As jer_texture_mod_path, for JERICHO's OWN art: <root>/CORE/<name>, repo copy first.
+ * The menu background lives there. */
+int jer_texture_core_path(const char* name, char* out, int cap);
+
 /* Free a texture (a no-op on JER_TEX_NONE). Every OTHER handle stays valid, but a
  * handle used after freeing is a no-op rather than a crash. */
 void jer_texture_free(JER_TEXTURE tex);
@@ -203,8 +208,26 @@ void jer_texture_draw_card(JER_TEXTURE tex, int x, int y, int z,
 void jer_texture_draw_flat(JER_TEXTURE tex, int x, int y, int z,
 			   int halfW, int halfL, int yaw, int flags);
 
+/* Blit `tex` over a rectangle in the FRAME BUFFER — a screen-space draw with no camera
+ * involved, for a menu background or any full-screen art. `x, y` is the top-left corner
+ * and `w, h` the size, in the current draw buffer's coordinates, so any texture can be
+ * scaled to the display without resizing the image.
+ *
+ * `otBucket` is the caller's own ordering-table bucket and is REQUIRED: the frontend's
+ * table is only 16 entries, so a world-sized index would write past the end of it. The
+ * menu background passes the bucket its stock art used (11), which the DT walks before
+ * the lower buckets - so the menu text lands on top. */
+void jer_texture_draw_screen(JER_TEXTURE tex, int x, int y, int w, int h, int otBucket);
+
 #ifdef __cplusplus
 }
 #endif
+
+/* Engine-internal: non-zero while a render pass is live. The engine brackets the
+ * DRAW_WORLD / DRAW_OVERLAY fires with it, and the frontend brackets its own
+ * display-buffer draws, so a draw made from the wrong place is ignored rather than
+ * writing into a primitive table nothing is rendering. Declared OUTSIDE the extern "C"
+ * block on purpose: the engine defines it as a C++ symbol. Modules do not touch it. */
+extern int gJerTextureRenderPass;
 
 #endif /* JER_TEXTURE_H */
