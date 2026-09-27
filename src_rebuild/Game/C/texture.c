@@ -1267,6 +1267,7 @@ static int sPinEvictions;			// world pages taken back this run, for the dump
 static int sPinUnusedTakes;			// wasted host car pages taken instead - the #3 win
 static int sPinReloads;				// times we re-uploaded a page we had already placed - the thrash meter
 static int sPinRowLeaks;			// imported sets whose row came back a HOST row (refused, and logged)
+static int sPinBandSafe;			// the pin band starts inside the CLUT-safe area (above the font)
 
 // JERICHO: the texture sets each imported model's OWN polygons name. buildNewCarFromModel
 // collects them as it walks the poly stream (the engine's own, reliable PolySizes walk);
@@ -1619,24 +1620,52 @@ void CarImportPin(void)
 		if (sPinClutCursor.x == 0 && sPinClutCursor.y == 0)
 		{
 			// JERICHO: the band starts just past whatever the level (and an import's
-			// palettes) has already used, but never above CD2_CLUT_BAND_TOP - the rows
-			// above it are reserved for the band so the palettes cannot eat it.
+			// palettes) has already used, and it stays INSIDE the CLUT-safe area (rows
+			// 256..CD2_CLUT_SAFE_LAST) - it is never forced down to a floor.
 			//
 			// The hard ceiling is the level font image (rows 466..511, pres.c:584), NOT
 			// the bottom of VRAM: rows at or below 466 are the font, and a CLUT there is
-			// painted over by LoadFont and paints over it (cars.h: CD2_CLUT_SAFE_LAST).
+			// painted over by LoadFont and paints over it every frame (cars.h:
+			// CD2_CLUT_SAFE_LAST).
+			//
+			// There used to be `if (firstFree < 480) firstFree = 480;` here. 480 is
+			// INSIDE the font, so the moment the level's own layout reached the font
+			// (which an import makes it do) the band was moved from "no room" to "over
+			// the glyphs" - the collision, made deliberate by a literal. With no floor,
+			// an overflow leaves the band past the safe area and the refusal below
+			// declines every set instead: no palettes is recoverable, glyphs are not.
 			int firstFree = clutpos.y + 4;
 
-			if (firstFree < 480)
+			// JERICHO: prefer the CLUT-safe area (rows 256..CD2_CLUT_SAFE_LAST, i.e. above
+			// the level font image at rows 466..511, pres.c:584). Without an import the
+			// level's layout ends near y=428, so the band then starts at 432 and the 34
+			// safe rows it walks are free of the glyphs - the font is no longer painted
+			// over by the imported car's palettes.
+			//
+			// When the level's layout HAS reached the font there is no safe room, and the
+			// band falls back to the historic forced y=480 - which is inside the font, so
+			// that case still collides. It is kept deliberately: refusing the sets instead
+			// (which is what the safe-area rule would do) makes the imported car lose its
+			// pages altogether, and the devcheck matrix catches that as a regression
+			// (RIO->Havana: 'lost 3' and an INV2 failure). Freeing the ~20 rows the layout
+			// is short is the fix, not a stricter refusal - see cars.h and VRAM.md §6.
+			if (firstFree > CD2_CLUT_SAFE_LAST)
+			{
+				printInfo("cross-city: no CLUT-safe room for the pin band (layout ends at %d, the font starts at %d) - falling back to y=480, which is inside the font\n",
+					clutpos.y, CD2_CLUT_SAFE_LAST + 1);
+
 				firstFree = 480;
+			}
 
 			sPinClutCursor.x = 960;
 			sPinClutCursor.y = firstFree;
 			sPinClutCursor.w = 16;
 			sPinClutCursor.h = 1;
 
-			printInfo("cross-city: imported CLUT rows start at y=%d (level layout ends at %d, %d slots spare)\n",
-				firstFree, clutpos.y, 19 - slotsused);
+			sPinBandSafe = (firstFree <= CD2_CLUT_SAFE_LAST);
+
+			printInfo("cross-city: imported CLUT rows start at y=%d (level layout ends at %d, %d slots spare, safe area ends at %d)\n",
+				firstFree, clutpos.y, 19 - slotsused, CD2_CLUT_SAFE_LAST);
 		}
 
 		clut = sPinClutCursor;
@@ -1649,11 +1678,20 @@ void CarImportPin(void)
 		{
 			int npal = *(int*)buf;
 			int need = (npal + 3) / 4 + 1;	// CLUT rows -> VRAM rows, 4 per row, +1 for a mid-row start
+			int limit = sPinBandSafe ? (CD2_CLUT_SAFE_LAST + 1) : 512;
 
-			if (sPinClutCursor.y + need > 512)
+			// JERICHO: the refusal boundary depends on where the band actually is. A band
+			// that started inside the CLUT-safe area must not reach the level font: rows
+			// CD2_CLUT_SAFE_LAST+1 and below ARE the glyphs, so a set that would reach them
+			// is left unplaced - the same rule as "would wrap into a texture page", for the
+			// same reason. A band that had no safe room and fell back to y=480 is already
+			// inside the font, so refusing there would just lose the car for no gain: it
+			// keeps the historic wrap-only test (>512) until the layout is packed.
+			if (sPinClutCursor.y + need > limit)
 			{
-				printInfo("cross-city: %s set %d left unplaced - %d CLUT rows from y=%d would wrap into a texture page\n",
-					LevelNames[GetCarImportCity()], sPinSet[i], npal, sPinClutCursor.y);
+				printInfo("cross-city: %s set %d left unplaced - %d CLUT rows from y=%d would %s\n",
+					LevelNames[GetCarImportCity()], sPinSet[i], npal, sPinClutCursor.y,
+					sPinBandSafe ? "reach the level font (the safe area ends there)" : "wrap into a texture page");
 
 				free(buf);
 				continue;
@@ -2409,11 +2447,31 @@ static void VramAccountReport(void)
 
 	// One line, because this is read in a log next to the page state. The texture area is
 	// the half that can be argued about: the framebuffers are 320 KiB nobody can use.
-	printInfo("JERICHO-VRAM: texture used=%d/%d KiB (slots %d + clut %d + sky %d); clut strip %d/256 rows (%d free); vram free=%d KiB of 1024; largest free in texture area=(%d,%d) %dx%d = %d KiB\n",
-		texused * VRAM_CELL_KB, (VRAM_COLS - texcol) * VRAM_ROWS * VRAM_CELL_KB,
-		19 * 32, 64 * 256 * 2 / 1024, 64,
-		(clutpos.y > 256) ? (clutpos.y - 256) : 0, 256 - ((clutpos.y > 256) ? (clutpos.y - 256) : 0),
-		freecells * VRAM_CELL_KB, bx, by, bw, bh, best * VRAM_CELL_KB);
+	//
+	// JERICHO: the CLUT column is reported against its SAFE area (rows 256..CD2_CLUT_SAFE_LAST),
+	// not against the whole 256-row column. The area below CD2_CLUT_SAFE_LAST is the level
+	// font image, so counting it as "free" is what let a 19-row overflow look like spare
+	// room - the numbers said 84 free while the glyphs were being painted over. When the
+	// layout does overflow, say by how much; that is the number to drive to zero.
+	{
+		int clutrows = (clutpos.y > CD2_CLUT_SAFE_FIRST) ? (clutpos.y - CD2_CLUT_SAFE_FIRST) : 0;
+		int clutfree = CD2_CLUT_SAFE_LAST + 1 - clutpos.y;
+		int clutover = -clutfree;
+
+		if (clutfree < 0)
+			clutfree = 0;
+
+		printInfo("JERICHO-VRAM: texture used=%d/%d KiB (slots %d + clut %d + sky %d); clut strip %d rows used, %d safe free%s; vram free=%d KiB of 1024; largest free in texture area=(%d,%d) %dx%d = %d KiB\n",
+			texused * VRAM_CELL_KB, (VRAM_COLS - texcol) * VRAM_ROWS * VRAM_CELL_KB,
+			19 * 32, 64 * 256 * 2 / 1024, 64,
+			clutrows, clutfree,
+			(clutover > 0) ? " - OVERFLOW into the level font" : ", no overflow",
+			freecells * VRAM_CELL_KB, bx, by, bw, bh, best * VRAM_CELL_KB);
+
+		if (clutover > 0)
+			printInfo("JERICHO-VRAM: WARNING - the CLUT column reaches y=%d, %d row(s) into the level font image (%d..511). See cars.h CD2_CLUT_SAFE_LAST and VRAM.md 6.\n",
+				clutpos.y, clutover, CD2_CLUT_SAFE_LAST + 1);
+	}
 }
 
 // [D] [T]

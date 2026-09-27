@@ -64,7 +64,17 @@ extern char RightLight;
 // a squeezed import keeps its own colours rather than another car's. Freeing the 19+
 // rows the column is short needs one of the static consumers packed - the level's page
 // CLUTs (84 rows for 12 pages) or the streamed-slot walk (40 rows) - see VRAM.md §6.
-#define CAR_CLUT_IMPORT_LIMIT	476
+//
+// JERICHO: CAR_CLUT_IMPORT_LIMIT was 476, which is INSIDE the level font image
+// (960,466) 64x46 (pres.c:584) - so the limit permitted the import to write rows
+// 466..475, i.e. straight over the glyphs, and the pin band (which forced itself to a
+// floor of y=480) landed in the font as well. Both are the same bug: a literal ceiling
+// where the layout's actual ceiling is "the last row above the font image". The
+// constants below name it, and everything that bounds a CLUT row uses them instead of a
+// literal - CAR_CLUT_IMPORT_LIMIT is now the font's last safe row, not an arbitrary one.
+#define CD2_CLUT_SAFE_FIRST	256		// the CLUT column starts here (LoadPermanentTPages)
+#define CD2_CLUT_SAFE_LAST	465		// the last row above the level font image (466..511)
+#define CAR_CLUT_IMPORT_LIMIT	CD2_CLUT_SAFE_LAST
 
 extern u_short civ_clut[CIV_CLUT_ROWS][32][6];
 
