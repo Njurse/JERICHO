@@ -1538,6 +1538,8 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 	int total_cluts;
 	int clut_number;
 	int skipped = 0;
+	int reused = 0;			// entries that reused a CLUT already in VRAM (no new row)
+	const int rowStart = clutpos.y;	// to report how many COLUMN ROWS this load consumed
 	// The Clut id stored for each page, so an upload that has run out of budget can
 	// reuse THE SAME PAGE's palette rather than the city's very first one. The old
 	// fallback (`clutTable[0]`) is the "crazy colours" report: it is a palette for a
@@ -1621,6 +1623,7 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 		{
 			// use stored clut
 			clutValue = clutTable[clut_number];
+			reused++;
 		}
 
 		{
@@ -1633,9 +1636,12 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 		}
 	}
 
-	if (skipped > 0)
-		printInfo("cross-city: %s palettes: %d of %d CLUTs past the row %d budget, reusing the city's first palette for them\n",
-			LevelNames[city], skipped, total_cluts, CAR_CLUT_IMPORT_LIMIT);
+	// JERICHO: always report, not only when something was skipped. This is the number
+	// that decides whether the CLUT column fits: the import's whole-table load is what
+	// pushes the level's own layout past the font (cars.h, VRAM.md §6), so the count of
+	// CLUTs and the rows they took has to be visible without a skip happening first.
+	printInfo("cross-city: %s palettes: %d CLUT(s) in the lump, %d row(s) taken (rows %d -> %d), %d reusing an earlier CLUT, %d past the row %d budget\n",
+		LevelNames[city], total_cluts, clutpos.y - rowStart, rowStart, clutpos.y, reused, skipped, CAR_CLUT_IMPORT_LIMIT);
 }
 
 // [D] [T]
