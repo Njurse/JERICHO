@@ -1477,7 +1477,6 @@ class EditorApp:
         self.var_mp = tk.BooleanVar(value=True)
         self.var_pick_kind = tk.StringVar(value="health")
         self.var_style = tk.StringVar(value="textured")
-
         self._build_menu()
         self._build_toolbar()
         self._build_body()
@@ -1540,7 +1539,15 @@ class EditorApp:
         v.add_separator()
         v.add_command(label="Background: cached level map", command=self.use_cached_map)
         v.add_command(label="Background: build level map\u2026", command=self.build_map)
+        v.add_command(label="Background: rip this city (slow)\u2026", command=self.rip_city)
+        style = tk.Menu(v, tearoff=0)
+        for s in ("textured", "points"):
+            style.add_radiobutton(label=s, variable=self.var_style, value=s,
+                                  command=self.style_changed)
+        v.add_cascade(label="Background style", menu=style)
+        v.add_command(label="Background: stop the running job", command=self.stop_job)
         v.add_command(label="Background: none", command=self.clear_bg)
+        self.menu_view = v          # --uitest inspects the entries
         m.add_cascade(label="View", menu=v)
 
         h = tk.Menu(m, tearoff=0)
@@ -1870,6 +1877,16 @@ class EditorApp:
             self._say("no cached level map for %s yet - use Build, or Rip this city" % city)
             return
         self._set_bg(img, rect, "%s level map (cached, %s)" % (city, self.map_summary(city)))
+
+    def style_changed(self):
+        """Say so when the style changes: it only applies on the next build."""
+        style = self.var_style.get()
+        meta = level_map_meta(CITY_NAMES.get(self.cur().city, "CHICAGO"))
+        showing = (meta or {}).get("style")
+        if showing and showing != style:
+            self._say("map style = %s - Build (or Use the cached map) to apply it" % style)
+        else:
+            self._say("map style = %s" % style)
 
     def map_summary(self, city):
         """What the cached map actually is, from its sidecar."""
@@ -2867,6 +2884,27 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
           app.var_style.get() == "textured" and app.cb_style.winfo_exists()
           and app.btn_rip.winfo_exists() and app.btn_build.winfo_exists()
           and app.btn_stop.winfo_exists())
+
+    # switching the style must SAY what it did (it applies on the next build, so a
+    # silent switch would look like nothing happened)
+    app.var_style.set("points")
+    app.style_changed()
+    said = str(app.lbl_msg["text"])
+    app.var_style.set("textured")
+    app.style_changed()
+    check("the style switch reports itself (%s)" % said,
+          "points" in said and "textured" in str(app.lbl_msg["text"]))
+
+    labels = []
+    for i in range(app.menu_view.index("end") + 1):
+        try:
+            labels.append(str(app.menu_view.entrycget(i, "label")))
+        except Exception:
+            pass                       # a separator has no label
+    check("the View menu lists the background actions",
+          any("rip" in l.lower() for l in labels)
+          and any("style" in l.lower() for l in labels)
+          and any("stop" in l.lower() for l in labels))
 
     app.add_spawn()
     root.update()
