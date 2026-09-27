@@ -55,6 +55,7 @@
 #include "felony.h"	/* GetPlayerFelony */
 #include "sound.h"	/* gMasterVolume, SetMasterVolume */
 #include "map.h"	/* units_across_halved, units_down_halved, current_region, regions_across */
+#include "jer_map.h"	/* shared region maths / residency / force (see map-streaming.md) */
 #include "spool.h"	/* spoolinfo_offsets, regions_unpacked */
 #include "pres.h"	/* SetTextColour, PrintString (overlay captions) */
 
@@ -775,16 +776,13 @@ static void AntFarmClampAboveGround(VECTOR* v)
  * bit of map maths below divides by them. */
 static int AntFarmMapReady(void)
 {
-	return cell_header.cell_size > 0 &&
-		cell_header.region_size > 0 &&
-		cells_across > 0 && cells_down > 0 &&
-		regions_across > 0 && regions_down > 0;
+	/* the level-header guard is shared (jer_map.h) - it is the same divide-by-zero
+	 * trap for every module */
+	return jer_map_ready();
 }
 
 static int AntFarmRegionOfAt(const VECTOR* pos, int line)
 {
-	int cellx, cellz, rx, rz;
-
 	/* Guard the division: without a level header this is a divide-by-zero,
 	 * which is exactly how the screensaver crashed on a normal start (it is
 	 * only entered from the command line with -level in the headless harness,
@@ -803,17 +801,10 @@ static int AntFarmRegionOfAt(const VECTOR* pos, int line)
 		return 0;
 	}
 
-	cellx = (pos->vx + units_across_halved) / MAP_CELL_SIZE;
-	cellz = (pos->vz + units_down_halved) / MAP_CELL_SIZE;
-	rx = cellx / MAP_REGION_SIZE;
-	rz = cellz / MAP_REGION_SIZE;
-
-	if (rx < 0) rx = 0;
-	if (rx >= regions_across) rx = regions_across - 1;
-	if (rz < 0) rz = 0;
-	if (rz >= regions_down) rz = regions_down - 1;
-
-	return rx + rz * regions_across;
+	/* the cell/region maths and the level-header guard now live in the shared
+	 * jer_map helper (JERICHO/docs/map-streaming.md); this is the same call the
+	 * arena module uses for its spawns */
+	return jer_map_region_of(pos->vx, pos->vz);
 }
 
 /* call sites pass their line so the "map not loaded" warning can name them */
@@ -828,11 +819,9 @@ static int AntFarmRegionOfAt(const VECTOR* pos, int line)
  * geometry that had not streamed — the skybox/nodraw void. */
 static int AntFarmRegionUnpacked(int region)
 {
-	int rx = region % regions_across;
-	int rz = region / regions_across;
-	int barrel = (rx & 1) + (rz & 1) * 2;
-
-	return regions_unpacked[barrel] == region;
+	/* the barrel is (region_x & 1) + (region_z & 1) * 2, NOT the region number -
+	 * the shared jer_map helper carries that (JERICHO/docs/map-streaming.md) */
+	return jer_map_region_resident(region);
 }
 
 /* Is the shot's own region ready to draw from? The engine only ever keeps
@@ -860,10 +849,7 @@ static int AntFarmRegionsReady(int centerRegion)
  * would show a void forever) */
 static int AntFarmRegionHasData(int region)
 {
-	int totalRegions = regions_across * regions_down;
-	if (region < 0 || region >= totalRegions)
-		return 0;
-	return spoolinfo_offsets[region] != 0xffff;
+	return jer_map_region_has_data(region);
 }
 
 /* Can a shot be set up here at all? That is a question about DATA, not about
@@ -2976,7 +2962,11 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			 * the region a far hop lands in is NEVER put into a barrel. That is
 			 * why the residency gate could not pass, every cut hit the black
 			 * cap, and the shot was forced through into unloaded geometry
-			 * (skybox/nodraw). Force the destination region in ourselves. */
+			 * (skybox/nodraw). Force the destination region in ourselves.
+			 *
+			 * (jer_map_spool_to is the shared version of this - the arena module
+			 * uses it; antfarm keeps its own here because it also drives the
+			 * camera, and this sequence predates the helper.) */
 			if (spoolRegion >= 0 && spoolRegion < regions_across * regions_down &&
 				!AntFarmRegionUnpacked(spoolRegion))
 			{
