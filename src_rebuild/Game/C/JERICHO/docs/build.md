@@ -98,7 +98,39 @@ The runtime side of (2) is the loader in `jer_loader.c` (see
 - **No mod list anywhere.** Both pipelines auto-scan, so installing a mod is
   dropping a folder.
 
-## See also
+## Linux specifics
+
+The Linux backend is `premake5 gmake2` + `make`. The one thing that differs
+from Windows throughout the JERICHO build is **how an addon reaches the game's
+symbols**:
+
+- **Windows** builds an *import library* for the exe (`REDRIVER2.lib`, from
+  `/DEF:exports.def`) and every addon links against it.
+- **Linux has no import library.** The exe is linked with
+  `-Wl,--export-dynamic` (premake5.lua), so its symbols are present in the
+  running process, and each addon is linked with unresolved symbols allowed
+  (`-Wl,--allow-shlib-undefined`) and resolved at `dlopen()` time.
+
+Consequences worth knowing:
+
+- The addon artifact is `<id>.so` (the loader looks for exactly that name, so
+  `premake5_mods.lua` sets `targetprefix ""` to defeat premake's `lib` prefix).
+- There is **no `exports.def` step on Linux** — `game exports` is Windows-only
+  and exits with an explanation elsewhere. The committed `exports.def` is never
+  handed to a Linux link (it is inside `filter "system:Windows"`).
+- The make configs are the lowercase `*_x64` names: the game uses
+  `release_x64` / `release_dev_x64` / `debug_x64`; the addon workspace is
+  `release_x64` only (it is `{ Release } x { x64 }`).
+
+A fresh Linux checkout:
+
+```
+./linux_dev_prepare.sh          # premake5 + deps check + gmake2 makefiles
+python3 JERICHO/build.py game   # build the game with the deep mods
+python3 JERICHO/build.py mods   # build the runtime addons (.so)
+```
+
+
 
 - [README.md](README.md) — JERICHO overview, the mod model, the platform matrix.
 - [`sdk/README.md`](../../../JERICHO/sdk/README.md) — the standalone addon SDK.
