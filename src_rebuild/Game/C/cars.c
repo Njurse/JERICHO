@@ -1526,7 +1526,7 @@ void MangleWheelModels(void)
 // defined below, next to GetCarPalIndex
 static int CarPalIndexInCity(int tpage, int city);
 
-static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
+static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, const unsigned char *rowNeeded)
 {
 	ushort clutValue;
 	int *buffPtr;
@@ -1539,7 +1539,21 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 	int clut_number;
 	int skipped = 0;
 	int reused = 0;			// entries that reused a CLUT already in VRAM (no new row)
+	int deferred = 0;		// JERICHO: stored CLUTs the row filter left out of VRAM
+	int borrowed = 0;		// JERICHO: skipped CLUTs a needed entry referred to (uploaded on demand)
 	const int rowStart = clutpos.y;	// to report how many COLUMN ROWS this load consumed
+
+	// JERICHO: the deferred-upload state (see ProcessImportedPaletteRows).
+	//
+	// In the filtered pass (rowNeeded != NULL) a stored CLUT whose row the imported model
+	// does not draw from is NOT uploaded - that is the reclaim. But an entry can REFER to
+	// an earlier CLUT by index (`clut_number`, i.e. `clutTable[n]`), and that earlier CLUT
+	// may belong to a row we are skipping. Such a reference must still be given its real
+	// colours, or a needed part draws from nothing. So each stored CLUT's source keeps a
+	// pointer, and a reference to a skipped one uploads it on the spot.
+	int* clutSrc[320];		// where each stored CLUT's 16 colours are in the lump
+	u_short clutDone[320];		// the id index k was uploaded to, 0 = not uploaded
+	int clutStored = 0;		// ALL stored CLUTs seen, so `clut_number` indices line up
 	// The Clut id stored for each page, so an upload that has run out of budget can
 	// reuse THE SAME PAGE's palette rather than the city's very first one. The old
 	// fallback (`clutTable[0]`) is the "crazy colours" report: it is a palette for a
@@ -1566,11 +1580,38 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 
 	while (*buffPtr != -1)
 	{
+		int palidx, needed;	// JERICHO: the row this entry belongs to, and whether we keep it
+
 		palette = buffPtr[0];
 		texnum = buffPtr[1];
 		tpageindex = buffPtr[2];
 		clut_number = buffPtr[3];
 		buffPtr += 4;
+
+		palidx = CarPalIndexInCity(tpageindex, city);
+
+		if (palidx < 0)
+			palidx = 0;	// not a car palette in this city - stock behaviour
+
+		needed = (rowNeeded == NULL) ? 1 : rowNeeded[palidx];
+
+		// JERICHO: the reclaim. This CLUT belongs to a row the imported model does not
+		// draw from, so it is neither uploaded nor entered into civ_clut - nothing reads
+		// it. Its SOURCE is still recorded: a needed entry can refer to it by index.
+		if (clut_number == -1 && !needed)
+		{
+			if (clutStored < 320)
+			{
+				clutSrc[clutStored] = buffPtr;
+				clutDone[clutStored] = 0;
+				clutTable[clutStored] = 0;
+			}
+
+			clutStored++;
+			deferred++;
+			buffPtr += 8;
+			continue;
+		}
 
 		if (clut_number == -1)
 		{
@@ -1593,11 +1634,24 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 			}
 			else
 			{
+				int* src = buffPtr;
+
 				LoadImage(&clutpos, (u_long*)buffPtr);
 				buffPtr += 8;
 
 				clutValue = GetClut(clutpos.x, clutpos.y);
 				IncrementClutNum(&clutpos);
+
+				// JERICHO: remember this CLUT's source, so a later entry that REFERS to it
+				// can be served even if this one were skipped (see the reference branch).
+				if (clutStored < 320)
+				{
+					clutSrc[clutStored] = src;
+					clutDone[clutStored] = clutValue;
+					clutTable[clutStored] = clutValue;
+				}
+
+				clutStored++;
 
 				*clutTablePtr++ = clutValue;
 
@@ -1624,24 +1678,98 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 			// use stored clut
 			clutValue = clutTable[clut_number];
 			reused++;
+
+			// JERICHO: in the filtered pass that CLUT may have been SKIPPED - it belongs to
+			// a row we are not keeping. A needed entry refers to it, so it must still be
+			// given its real colours: upload it now from its recorded source. Costs a row
+			// only when a reference crosses rows, and without it that part paints with
+			// nothing at all.
+			if (clutValue == 0 && clut_number >= 0 && clut_number < clutStored)
+			{
+				if (clutDone[clut_number] == 0)
+				{
+					LoadImage(&clutpos, (u_long*)clutSrc[clut_number]);
+					clutDone[clut_number] = GetClut(clutpos.x, clutpos.y);
+					IncrementClutNum(&clutpos);
+					borrowed++;
+				}
+
+				clutValue = clutDone[clut_number];
+			}
 		}
 
-		{
-			int palidx = CarPalIndexInCity(tpageindex, city);
-
-			if (palidx < 0)
-				palidx = 0;	// not a car palette in this city - stock behaviour
-
+		if (needed)
 			civ_clut[palidx][texnum][palette + 1] = clutValue;
-		}
 	}
 
 	// JERICHO: always report, not only when something was skipped. This is the number
 	// that decides whether the CLUT column fits: the import's whole-table load is what
 	// pushes the level's own layout past the font (cars.h, VRAM.md §6), so the count of
 	// CLUTs and the rows they took has to be visible without a skip happening first.
-	printInfo("cross-city: %s palettes: %d CLUT(s) in the lump, %d row(s) taken (rows %d -> %d), %d reusing an earlier CLUT, %d past the row %d budget\n",
-		LevelNames[city], total_cluts, clutpos.y - rowStart, rowStart, clutpos.y, reused, skipped, CAR_CLUT_IMPORT_LIMIT);
+	printInfo("cross-city: %s palettes: %d CLUT(s) in the lump, %d row(s) taken (rows %d -> %d), %d reusing an earlier CLUT, %d deferred by the row filter, %d of those borrowed back, %d past the row %d budget\n",
+		LevelNames[city], total_cluts, clutpos.y - rowStart, rowStart, clutpos.y, reused, deferred, borrowed, skipped, CAR_CLUT_IMPORT_LIMIT);
+}
+
+// JERICHO: the deferred import palette lump (see ProcessImportedPaletteRows).
+static char* sImpPalLump;
+static int sImpPalSize;
+static int sImpPalCity = -1;
+
+// JERICHO: the host path, and the entry point every existing caller uses.
+//
+// An imported city's table is DEFERRED rather than loaded here. Its lump is a WHOLE
+// foreign city's - 228 CLUTs, 57 column rows - and the import is ONE model that draws
+// from 2 of the bank's 8 rows (measured, CarImportDumpState). Loading all 57 rows is what
+// pushes the level's own layout 19 rows past the level font image (cars.h, VRAM.md §6).
+// The rows to keep cannot be known here: they come from the built model's poly stream,
+// which is walked long after this runs. So the lump is remembered and the real upload
+// happens in ProcessImportedPaletteRows, from CarImportPin - the first point the rows
+// exist.
+static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
+{
+	if (city == GetCarImportCity() && city != GameLevel)
+	{
+		sImpPalLump = lump_ptr;
+		sImpPalSize = lump_size;
+		sImpPalCity = city;
+
+		printInfo("cross-city: %s palettes: deferred (%d CLUT(s) in the lump) - which rows to keep is not known until the model is built\n",
+			LevelNames[city], (lump_ptr != NULL) ? *(int*)lump_ptr : 0);
+
+		return;
+	}
+
+	ProcessPalletLumpForRows(lump_ptr, lump_size, city, NULL);
+}
+
+// JERICHO: upload an imported city's car palettes for ONLY the civ_clut rows the built
+// model names. `rowNeeded` is indexed by civ_clut row (CIV_CLUT_ROWS entries); every
+// entry that is set is uploaded, every entry that is not is neither uploaded nor entered
+// into civ_clut - nothing reads it, since the model's polys only name its own rows.
+//
+// A CLUT that a kept entry REFERS to by index is uploaded on demand even when its own row
+// was skipped (ProcessPalletLumpForRows), so a cross-row reference cannot leave a part
+// pointing at nothing. Returns 1 when a deferred lump was uploaded, 0 when there was none.
+int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
+{
+	int rows = 0, r;
+
+	if (sImpPalLump == NULL)
+		return 0;
+
+	for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
+		if (rowNeeded[r])
+			rows++;
+
+	printInfo("cross-city: %s palettes: uploading for %d of the import bank's %d rows\n",
+		LevelNames[sImpPalCity], rows, CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW);
+
+	ProcessPalletLumpForRows(sImpPalLump, sImpPalSize, sImpPalCity, rowNeeded);
+
+	sImpPalLump = NULL;
+	sImpPalCity = -1;
+
+	return 1;
 }
 
 // [D] [T]

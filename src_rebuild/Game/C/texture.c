@@ -1508,9 +1508,49 @@ static int CarPinPreferredAllowed(int slot)
 	return (held == carTpages[GameLevel][6] || held == carTpages[GameLevel][7]);
 }
 
+static void VramAccountReport(void);
+
 void CarImportPin(void)
 {
 	int i;
+	// JERICHO: the import's car palettes are uploaded HERE, not during the level load.
+	//
+	// The palette lump is a whole foreign city's (228 CLUTs, 57 column rows) and the rows
+	// to keep are the ones the BUILT model draws from - which do not exist until its poly
+	// stream has been walked. Deferring the upload to this point is what lets it be
+	// filtered: measured, the model uses 2 of the import bank's 8 rows, so ~43 of the 57
+	// rows are given back, which is more than the 19 the CLUT column is short of the level
+	// font (cars.h, VRAM.md §6).
+	//
+	// Once only: the rows come from the sets, and the sets do not change afterwards.
+	{
+		static int sPalDone;
+
+		if (!sPalDone && sPinCount > 0)
+		{
+			unsigned char rowNeeded[CIV_CLUT_ROWS];
+
+			sPalDone = 1;
+
+			memset(rowNeeded, 0, sizeof(rowNeeded));
+
+			for (i = 0; i < sPinCount; i++)
+			{
+				int row = GetCarPalIndex(sPinSet[i]);
+
+				if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS)
+					rowNeeded[row] = 1;
+			}
+
+			ProcessImportedPaletteRows(rowNeeded);
+
+			// JERICHO: re-run the census NOW. LoadPermanentTPages reports the CLUT column
+			// during the level load, which is before this upload - so it would keep saying
+			// "no overflow" about a column that this upload then ran past. The number to
+			// read is the one after everything the import puts in the column is in it.
+			VramAccountReport();
+		}
+	}
 
 	// JERICHO-DIAG: once, what the 19 VRAM slots actually hold. #3 may only take a
 	// rectangle without hurting the world if it holds a CAR page no live model is
@@ -1767,6 +1807,50 @@ void CarImportDumpState(void)
 		return;
 
 	printInfo("cross-city: final page state (%d pinned, %d wasted car pages taken, %d world pages evicted, %d page re-uploads, %d claims given back)\n", sPinCount, sPinUnusedTakes, sPinEvictions, sPinReloads, sCarPageGiveBacks);
+
+	// JERICHO: which of the import bank's rows the imported model actually uses.
+	//
+	// This is the number that sizes the CLUT reclaim (VRAM.md §6). The palette lump is a
+	// WHOLE foreign city's table - 228 CLUTs, 57 column rows - and it is uploaded for
+	// every row in the bank whether the imported model draws from that row or not. The
+	// bank is 8 rows (8..15, one per car slot in that city) and an import is ONE model,
+	// so the rows below are what a partial upload would have to keep. If this ever says
+	// 8 of 8 the reclaim is worth nothing and that has to be known before writing it.
+	{
+		int seen[CIV_CLUT_ROWS];
+		int nrow = 0, r, k2;
+
+		memset(seen, 0, sizeof(seen));
+
+		for (k2 = 0; k2 < sPinCount; k2++)
+		{
+			int row = GetCarPalIndex(sPinSet[k2]);
+
+			if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS && !seen[row])
+			{
+				seen[row] = 1;
+				nrow++;
+			}
+		}
+
+		if (nrow > 0)
+		{
+			char list[64];
+			int at = 0;
+
+			list[0] = 0;
+
+			for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
+			{
+				if (seen[r])
+					at += snprintf(list + at, sizeof(list) - at, "%s%d", (at > 0) ? "," : "", r);
+			}
+
+			printInfo("cross-city: the imported model uses %d of the import bank's %d civ_clut rows (rows %s, bank is %d..%d) - %d idle\n",
+				nrow, CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW, list, CIV_CLUT_IMPORT_ROW, CIV_CLUT_ROWS - 1,
+				(CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) - nrow);
+		}
+	}
 
 	// Every pinned set and the rectangle it occupies, decoded from the tpage/clut values
 	// the draw path will read. This is what the VRAM dump is aimed at: run with
