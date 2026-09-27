@@ -196,11 +196,12 @@ follows the edit immediately. It is a build/debug tool, not a play mode.
 | **SELECT** | save to `MODS/cainescrossfire/arenas/<name>.cca` (and update the live arena) |
 | **START** | reload the arena from its file |
 
-**Noclip** (CROSS) is for positioning: the car IS the editor cursor, so drive it
-(or flit with noclip) to the spot, then **L1** drops a spawn there. Noclip holds
-whatever altitude the car had when you switched it on — the handling is
-point-mass (velocity + yaw), so it still drives normally, it just no longer
-falls. The HUD line shows `noclip ON/off`. It resets off on each level start.
+**Noclip** (CROSS) is flight for positioning: the car IS the editor cursor, so
+fly it (drive in x/z — the handling is point-mass, so it works in the air) to the
+spot, adjust the height with the **d-pad** (up = rise, down = drop, ~15000
+units/s), then **L1** drops a spawn there. Noclip starts holding whatever
+altitude the car had when you switched it on and no longer falls. The HUD line
+shows `noclip ON/off`. It resets off on each level start.
 
 **While the editor is ON the module disables weapons and sends the mounted crew
 back inside**, so the shoulder buttons belong to the editor — no shot fires and

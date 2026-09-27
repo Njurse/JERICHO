@@ -56,6 +56,8 @@ int cd2ArenaFileSave(const char* path, const CD2_ARENA_PROFILE* a);
 #define CD2_ED_PANEL		3	/* the HUD slot the readout owns */
 #define CD2_ED_MARK		90	/* ghost bar height (y-up) */
 #define CD2_ED_CURSOR_RANGE	6000	/* how far in front of the freecam the cursor sits */
+#define CD2_ED_NOCLIP_STEP	512	/* noclip: altitude step per frame while the d-pad is held
+								 * (~15000 units/s at 30fps) */
 
 static int gEditorOn;			/* -cceditor / CC_EDITOR */
 static int gEditorDirty;		/* an in-game edit is not saved yet */
@@ -560,6 +562,16 @@ static int cd2EditorOnFrame(void* ud, void* args)
 	if (edge & MPAD_SELECT)	cd2EditorSave();
 	if (edge & MPAD_START)	cd2EditorReload();
 
+	/* NOCLIP, held: the d-pad raises/lowers the held altitude (pad:0 on the dev
+	 * driver is a release, so this has to read the HELD state, not an edge), so
+	 * you can fly the car up and over things and set its height where you want.
+	 * The car still drives in x/z (point-mass handling), so noclip is flight. */
+	if (gNoclip)
+	{
+		if (pad & MPAD_D_UP)	gNoclipY += CD2_ED_NOCLIP_STEP;
+		if (pad & MPAD_D_DOWN)	gNoclipY -= CD2_ED_NOCLIP_STEP;
+	}
+
 	/* the arena may have been replaced (by an action above, or by the runtime's
 	 * file watcher picking up a Python-editor save) - re-read for the draw */
 	w = cd2ArenaCurrent();
@@ -570,13 +582,14 @@ static int cd2EditorOnFrame(void* ud, void* args)
 	cd2EditorDraw();
 
 	snprintf(line, sizeof(line),
-		"ARENA EDITOR: %s%s  spawn %d/%d  region %s  cursor %s  noclip %s  "
+		"ARENA EDITOR: %s%s  spawn %d/%d  region %s  cursor %s  noclip %s%s  "
 		"[L1 place  R1 slot  L2 del  R2 corner  TRI warp  X noclip  SEL save  START reload]",
 		w->internalName, gEditorDirty ? " *unsaved*" : "",
 		(w->spawnCount > 0) ? (gSelSlot + 1) : 0, w->spawnCount,
 		w->region.bounded ? "set" : "none",
 		(g_FreeCameraEnabled != 0) ? "FREECAM (F7)" : "car",
-		gNoclip ? "ON" : "off");
+		gNoclip ? "ON" : "off",
+		gNoclip ? "  (d-pad up/down = height)" : "");
 	jer_hud_panel(CD2_ED_PANEL, 0, line, gEditorDirty ? 255 : 220, 230, 120);
 
 	return JER_RESULT_CONTINUE;
