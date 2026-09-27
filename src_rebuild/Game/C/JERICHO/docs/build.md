@@ -30,7 +30,7 @@ python3 JERICHO/build.py <target> [step] [id] [options]
 | `game exports` | **Windows only** — two-pass `exports.def` (empty def → link for the `.map` → `gen_exports` → relink) |
 | `game` / `game all` | `premake` + every deep mod + the exe |
 | `mods` | build every `runtime = "dll"` addon and mirror it next to the exe |
-| `sdk [<id>]` | build one addon against the standalone SDK (`JERICHO/sdk`) |
+| `sdk [<mod-folder>]` | build one addon folder against the standalone SDK (`JERICHO/sdk`); see [`sdk/README.md`](../../../JERICHO/sdk/README.md) |
 
 Options: `--src DIR` (default: auto-detected), `--config NAME`
 (`Release` | `Release_dev` | `Debug`, and the `*_x64` spellings),
@@ -69,7 +69,7 @@ class MyBackend(Backend):
     def build_deep_mod(self, ctx, mod_id):    ...
     def build_exe(self, ctx):                 ...
     def build_addons(self, ctx):              ...
-    def build_sdk_addon(self, ctx, include, sdk_dir, src_c, out): ...
+    def build_sdk_addon(self, ctx, include, folder, mod_id, out): ...
 ```
 
 If the running OS has no backend, the driver **exits with the template above**

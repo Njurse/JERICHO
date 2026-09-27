@@ -271,7 +271,16 @@ JERICHO. The id, the folder name and the entry symbol all read `greet`.
 
 ### Building the game
 
-Generate the Visual Studio solution, then build it:
+Build with the cross-platform driver — it runs the same premake + compiler
+steps on Windows and Linux (see
+[`docs/build.md`](src_rebuild/Game/C/JERICHO/docs/build.md)):
+
+```
+python3 JERICHO/build.py game          # premake + every deep mod + the exe
+python3 JERICHO/build.py game exe      # relink only, after a source change
+```
+
+The Visual Studio path still works and the driver uses it on Windows:
 
 ```
 premake5.exe vs2019
@@ -290,32 +299,37 @@ Helpers exist for the common cases:
   the debug options, console and dev tooling (`DEBUG_OPTIONS`, `COLLISION_DEBUG`,
   `CUTSCENE_RECORDER`).
 - The executable exports its own symbols through the generated
-  [`exports.def`](src_rebuild/exports.def). Regenerate it (build with `/MAP`, then
-  run `tools/gen_exports`) only when the game's own symbol set changes.
+  [`exports.def`](src_rebuild/exports.def) on **Windows**. Regenerate it (build
+  with `/MAP`, then run `tools/gen_exports`) only when the game's own symbol set
+  changes. On **Linux** there is no import library — the exe is linked
+  `-Wl,--export-dynamic` and addons resolve its symbols from the running
+  process at `dlopen` time.
 
 ### Building addons (no exe rebuild)
 
-Addons build separately, against the game's import library, into DLLs:
+Addons build separately, into shared libraries:
 
 ```
-JERICHO\build_mods.bat
+python3 JERICHO/build.py mods         # Windows: JERICHO\build_mods.bat
 ```
 
-Or press **Compile Mods** in the game (Options → JERICHO). Either way the script
+Or press **Compile Mods** in the game (Options → JERICHO). Either way the driver
 generates the addon solution ([`premake5_mods.lua`](src_rebuild/premake5_mods.lua)
-→ one DLL project per `runtime = "dll"` mod), builds it against the exported
-symbols, and copies the DLLs next to the executable. Reloading the Mods screen
-activates them; the game exe is never rebuilt.
+→ one shared-library project per `runtime = "dll"` mod), builds it (`<id>.dll` on
+Windows, `<id>.so` on Linux) and copies the binaries next to the executable.
+Reloading the Mods screen activates them; the game exe is never rebuilt.
 
 To build a single addon from its own folder, without the game tree:
 
 ```
-JERICHO\sdk\build_mods.bat myaddon
+JERICHO\sdk\build_mods.bat myaddon       (Windows)
+./JERICHO/sdk/build_mods.sh myaddon      (Linux)
 ```
 
-The standalone SDK ([`JERICHO/sdk/`](JERICHO/sdk/)) ships the API headers, the
-game import library (`REDRIVER2.lib`) and the compiler glue, so addon authors
-need no game source, no PsyCross and no SDL/OpenAL/JPEG.
+The standalone SDK ([`JERICHO/sdk/`](JERICHO/sdk/)) ships the API headers and the
+compiler glue, so addon authors need no game source, no PsyCross and no
+SDL/OpenAL/JPEG. On Windows it also ships the game import library
+(`REDRIVER2.lib`); on Linux it needs none.
 
 > **Addon vs deep mod at build time.** Only `runtime = "dll"` folders become
 > DLLs; a folder *without* that key is compiled into the game and needs a full
@@ -350,12 +364,29 @@ what is produced and how a release is cut.
 
 ### Linux and other platforms
 
-- **Linux:** [`linux_dev_prepare.sh`](linux_dev_prepare.sh) fetches premake and
-  runs `premake5 gmake2`; then `make config=release_x64` in `src_rebuild/build/`.
+The toolchain is platform-agnostic by design: one Python driver (`build.py`)
+with a per-OS back-end, and one runtime host layer (`jer_host.h`) for the mod
+system. Porting to a new OS means adding a build back-end and a host block — not
+editing the engine. See
+[`docs/build.md`](src_rebuild/Game/C/JERICHO/docs/build.md) and
+[`docs/porting.md`](src_rebuild/Game/C/JERICHO/docs/porting.md).
+
+- **Linux setup:** [`linux_dev_prepare.sh`](linux_dev_prepare.sh) fetches
+  premake5, checks the system dependencies (SDL2, OpenAL, libjpeg — the same
+  ones CI installs) and generates the gmake2 makefiles. Then build:
+
+  ```
+  python3 JERICHO/build.py game       # the game + the deep mods
+  python3 JERICHO/build.py mods       # the runtime addons (.so)
+  ```
+
+  In-game **Compile Mods** works on Linux too; because the linker relinks the
+  running exe in place there, it skips the Windows "move the exe aside" step,
+  but a restart is still needed to run the freshly built image.
 - **Multiarch Docker:** [`Dockerfile`](Dockerfile) + [`dockerbuild.sh`](dockerbuild.sh).
-- Deep mods build everywhere. Runtime addon DLLs load on Windows (`LoadLibrary`)
-  and Linux (`dlopen`); on Emscripten/Android the loader is a stub, so addons are
-  ignored (and logged) while deep mods still work.
+- Deep mods build everywhere. Runtime addon shared libraries load on Windows
+  (`LoadLibrary`, `.dll`) and Linux (`dlopen`, `.so`); on Emscripten/Android the
+  loader is a stub, so addons are ignored (and logged) while deep mods still work.
 
 ### Debug boot arguments
 

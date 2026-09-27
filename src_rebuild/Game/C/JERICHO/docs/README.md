@@ -70,29 +70,42 @@ src_rebuild/tools/gen_exports/     maps the linker map to exports.def
 
 ## Building the game
 
+Everything goes through one cross-platform driver, `JERICHO/build.py` — see
+[build.md](build.md):
+
 ```
-premake5.exe vs2019        (or the gen_vc2019*.bat scripts)
-msbuild build/REDRIVER2.sln /p:Configuration=Release /p:Platform=x64
+python3 JERICHO/build.py game        # premake + every deep module + the exe
+python3 JERICHO/build.py game exe    # just relink after a source change
 ```
+
+The legacy `.bat` entry points still work on Windows (they are now thin shims
+over the driver); on Linux use the driver or `./build_game.sh`.
 
 - premake **auto-scans** `JERICHO/MODS`: every folder with a `mod.toml`
   (no `runtime = "dll"`) becomes a compiled-in module — no mod list to
   maintain anywhere.
-- The linker map (`/MAP`) is turned into `exports.def` by
-  `tools/gen_exports`, so the exe exports its symbols and DLL addons can
-  link against them. Regenerate it only when the game's own symbol set
-  changes: build with `/MAP`, run `gen_exports`, commit the new def.
+- **Windows** exports its symbols through a linker map turned into
+  `exports.def` by `tools/gen_exports` (`/MAP`), so DLL addons can link
+  against them. Regenerate it only when the game's own symbol set changes:
+  build with `/MAP`, run `gen_exports`, commit the new def.
+- **Linux** has no import library: the exe is linked `-Wl,--export-dynamic`
+  (premake5.lua) and addons resolve its symbols from the running process at
+  `dlopen` time. No `exports.def` is involved.
 
 ## Building addons (game-side)
 
 ```
-JERICHO\build_mods.bat
+python3 JERICHO/build.py mods        # Windows: JERICHO\build_mods.bat
 ```
 
 or the **Compile Mods** button in the Mods menu. This runs
-`premake5_mods.lua` (generates one DLL project per `runtime = "dll"`
-addon), builds them against the game's import library, and copies the DLLs
-next to the exe. Reloading the Mods screen activates them. No exe rebuild.
+`premake5_mods.lua` (generates one shared-library project per
+`runtime = "dll"` addon), builds them, and copies the binaries next to the
+exe. Reloading the Mods screen activates them. No exe rebuild.
+
+Addon authors who only have the SDK build the same way through
+`sdk/build_mods.bat` / `sdk/build_mods.sh` — see
+[`sdk/README.md`](../../../JERICHO/sdk/README.md).
 
 ## Building deep mods (game-side)
 
@@ -104,16 +117,19 @@ be rebuilt while the game is running. **Compile Mods** therefore asks first:
   to restart.
 - On the **next boot**, JERICHO runs the deep build *before the frontend menu*
   and shows a progress screen — `Compiling JERICHO addons...` / `CRUMPLE [3/9]`
-  — driven by `JERICHO/build_game.bat` (premake, then one MSBuild step per deep
-  module, then the exe), with everything it prints in
+  — driven by the build shim (`JERICHO/build_game.bat` on Windows,
+  `build_game.sh` on Linux; both forward to `build.py`), which does premake,
+  then one step per deep module, then the exe, with everything it prints in
   `JERICHO/CONFIG/build.log`.
 
-The exe the game is running from is locked, so it is moved to `<exe>.old` first
-and the freshly linked exe lands under the normal name — hence "restart to run
-them"; the stale `.old` goes away on the boot after that. Booting is the one
-moment a rebuild can happen at all, which is why it is deferred rather than
-done in place. The heading and the `[i/n]` line are drawn by the presentation
-screen in [screens.md](screens.md).
+The exe the game is running from is locked on Windows, so it is moved to
+`<exe>.old` first and the freshly linked exe lands under the normal name —
+hence "restart to run them"; the stale `.old` goes away on the boot after that.
+On Linux the linker relinks the running exe in place (no rename), but a restart
+is still needed to run the new image. Booting is the one moment a rebuild can
+happen at all, which is why it is deferred rather than done in place. The
+heading and the `[i/n]` line are drawn by the presentation screen in
+[screens.md](screens.md).
 
 ## The runtime
 
@@ -137,11 +153,17 @@ At boot the game calls `jer_init("JERICHO")`:
 
 ## Platform matrix
 
-| Platform | Deep mods (compiled-in) | Addon DLLs (runtime) |
-|----------|--------------------------|----------------------|
-| Windows  | yes                      | yes (`LoadLibrary`)  |
-| Linux    | yes                      | yes (`dlopen`)       |
+| Platform | Deep mods (compiled-in) | Addon shared libs (runtime) |
+|----------|--------------------------|-----------------------------|
+| Windows  | yes                      | yes (`LoadLibrary`, `.dll`) |
+| Linux    | yes                      | yes (`dlopen`, `.so`)       |
 | Emscripten / Android | yes            | no (loader is a stub, logged) |
+
+All the OS-dependent work — loading a module, scanning `MODS`, running a build
+step, finding the exe — sits behind one interface, `jer_host.h`, so a new
+platform is a single back-end rather than edits across the engine; see
+[porting.md](porting.md). The build side follows the same rule through
+`build.py` back-ends ([build.md](build.md)).
 
 ## Troubleshooting
 
