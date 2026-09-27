@@ -14,6 +14,7 @@ its SDK mirrors); `docs/JERICHO/` holds pointers only.
 | [`events.md`](../src_rebuild/Game/C/JERICHO/docs/events.md) | **the event reference** — every event id, its args struct, where it fires, query vs notification, stock behaviour |
 | [`HOOKS.md`](../src_rebuild/Game/C/JERICHO/docs/HOOKS.md) | writing a module: anatomy, pause menus, logging, boot arguments |
 | [`ped-animation.md`](../src_rebuild/Game/C/JERICHO/docs/ped-animation.md) | the pedestrian animation and skeleton pipeline |
+| [`map-streaming.md`](../src_rebuild/Game/C/JERICHO/docs/map-streaming.md) | **world region streaming** — the 2×2 barrel window, why the engine only pre-loads neighbours, and the `jer_map` helper to stream somewhere it has not been (arena spawns, teleports) |
 | [`module-activation.md`](../src_rebuild/Game/C/JERICHO/docs/module-activation.md) | how a module gets enabled (`modlist.ini` → `mod.toml` → fail-closed), the `src=` boot log (`modlist`/`default`/`forced`/`nomods`), `-nomods`, forcing one module on for a test (`jer_force_module` / `-testmode`), which modules override car handling, and why no handling module ⇒ vanilla handling |
 | [`screens.md`](../src_rebuild/Game/C/JERICHO/docs/screens.md) | presentation screens: `jer_screen.h` (register/show/tick, the boot loop) and the host-owned `jer_prompt.h` yes/no prompt |
 | [`ped-palette.md`](../src_rebuild/Game/C/JERICHO/docs/ped-palette.md) | giving one Tanner instance its own colours: the measured palette footprint (1 page, 2 CLUT entries) and the `texture_cluts` bracket that makes it per-instance |
@@ -38,7 +39,8 @@ Each mod documents itself in its own folder.
 | mp | [`README.md`](../JERICHO/MODS/mp/README.md) (LAN multiplayer) — start with [`JERICHO-MP.md`](../JERICHO/MODS/mp/docs/JERICHO-MP.md) |
 | testmode | [`README.md`](../JERICHO/MODS/testmode/README.md) (asset-test mode: quiet world, census) |
 
-`docs/crumple.md` is a pointer to the canonical copy in the mod folder.
+`docs/crumple.md` is a pointer to the canonical copy in the mod folder, as are
+`docs/JERICHO/ped-animation.md` and `docs/JERICHO/map-streaming.md`.
 
 ## Engine, ports and tooling
 

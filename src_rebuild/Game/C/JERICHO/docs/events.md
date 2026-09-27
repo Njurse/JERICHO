@@ -4,6 +4,11 @@ Argument structs live in `src_rebuild/Game/C/jer_events.h` (game-side; the
 SDK stays generic). Engine call sites are tagged `// JERICHO-HOOK` and are
 inert no-ops when no module handles them.
 
+Some capabilities are plain helper calls rather than events — e.g. moving the
+world streamer / making a region resident (`jer_map.h`, see
+[map-streaming.md](map-streaming.md)), the HUD (`jer_hud.h`), screens
+(`jer_screen.h`). Those are documented with their header.
+
 | Event | Args | Fired from | Meaning |
 |---|---|---|---|
 | `JER_EVENT_BOOT` | — | `jer_init` | once, after all modules activated |
