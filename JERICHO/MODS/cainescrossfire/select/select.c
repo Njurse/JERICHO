@@ -407,6 +407,62 @@ static int cd2SelOnCmdline(void* ud, void* args)
 	if (getenv("CC_MENU") != NULL)
 		gCcForced = 1;
 
+	/* DIRECT BOOT into an arena. The engine's own -level/-mp/-car boots straight
+	 * into a level with no frontend; with CC_FORCE_ARENA set we make it an
+	 * ARENA here (the registry was loaded at module entry, before CMDLINE) so
+	 * its spawns, barrier and - with CC_EDITOR=1 - the in-game editor apply.
+	 * This is the path the Python editor's "Launch in game" button uses.
+	 *
+	 * We do NOT touch the level/gametype/mission: -level and -mp already chose
+	 * those (the launcher derives them from the arena's `city`/`mp`). Only the
+	 * arena, its car profile and the opponent count are ours to set. */
+	if (!gCcForced && getenv("CC_FORCE_ARENA") != NULL)
+	{
+		int aid = atoi(getenv("CC_FORCE_ARENA"));
+		const CD2_ARENA_PROFILE* ar = cd2ArenaDef(aid);
+
+		if (ar != NULL)
+		{
+			const char* carEnv = getenv("CC_FORCE_CAR");
+			const char* oppEnv = getenv("CC_FORCE_OPPONENTS");
+
+			cd2ArenaSetCurrent(aid);
+
+			if (oppEnv != NULL)
+			{
+				int n = atoi(oppEnv);
+
+				if (n < 0) n = 0;
+				if (n > CD2_AI_MAX) n = CD2_AI_MAX;
+
+				gCd2Cfg.aiOpponents = n;
+			}
+
+			printInfo("[cainescrossfire] direct boot: arena '%s' (id %d, city=%d mp=%d/%d), %d opponent(s)\n",
+				ar->internalName, aid, ar->city, ar->mpLevel, ar->mpArena, gCd2Cfg.aiOpponents);
+
+			/* the car: the engine's -car picks the model; also adopt the arena
+			 * city's profile for slot `CC_FORCE_CAR` so the module's stats match */
+			if (carEnv != NULL)
+			{
+				int city = ar->city;
+				int sel = atoi(carEnv);
+
+				if (city >= 0 && city < CC_CITY_COUNT && gCcVehN[city] > 0)
+				{
+					if (sel < 0 || sel >= gCcVehN[city])
+						sel = 0;
+
+					cd2VehSetPlayerProfile(gCcVehList[city][sel]);
+				}
+			}
+		}
+		else
+		{
+			printInfo("[cainescrossfire] direct boot: arena %d not found, ignored\n", aid);
+		}
+	}
+
 	return JER_RESULT_CONTINUE;
 }
 

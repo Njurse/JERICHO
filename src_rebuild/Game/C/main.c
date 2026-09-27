@@ -2887,6 +2887,13 @@ int redriver2_main(int argc, char** argv)
 			 * the module reads it itself from JER_EVENT_CMDLINE, below; it is
 			 * recognised here so it is not reported as an invalid argument. */
 		}
+		else if (!strcmp(argv[i], "-cceditor"))
+		{
+			/* (cainescrossfire module) start in the in-game arena editor. A bare
+			 * flag - the module reads it itself from JER_EVENT_CMDLINE, below;
+			 * recognised here so the launcher's `-ccmenu -cceditor` is not
+			 * reported as an invalid argument. (CC_EDITOR=1 does the same.) */
+		}
 		else
 		{
 			/* tell the player plainly -- the toast shows up in the frontend.
