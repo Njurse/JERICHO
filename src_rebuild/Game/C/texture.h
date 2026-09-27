@@ -92,6 +92,14 @@ extern void IncrementClutNum(RECT16 *clut); // 0x00080DDC
 // (red-biased) are copied through untouched, because skin shares the outfit's
 // CLUT row - see pedest.c's PedPalRowIsOutfit. Returns the new clut word, or 0.
 extern u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength, int floor5);
+// JERICHO-HOOK: read/write a CLUT row IN PLACE at the address a CLUT id already names.
+// Costs no CLUT strip row (clutpos is untouched), so it works with the strip full. The
+// row may be SHARED by every car that resolves to the same id, so an in-place edit is
+// global - which is what makes it the way to find out which part a row paints.
+// Both are immediate (GR_ReadVRAM / GR_CopyVRAM), safe outside a render pass.
+// Return 1 on success, 0 on a zero id or null buffer.
+extern int JerichoClutReadInPlace(u_short clut, u_short* out16);
+extern int JerichoClutWriteInPlace(u_short clut, const u_short* in16);
 
 /* JERICHO: the CLUT-strip budget, shared by the ped team colours, the imported car
  * palettes and the per-instance car colours. One dyed row = one 16-entry CLUT, and a

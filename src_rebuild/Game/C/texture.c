@@ -137,6 +137,61 @@ void IncrementClutNum(RECT16 *clut)
 	}
 }
 
+// JERICHO: read or write a CLUT row IN PLACE, at the address a CLUT id already names.
+//
+// A live palette editor needs exactly this and nothing else. An in-place write costs NO
+// CLUT strip row - `clutpos` is untouched - so it works even when the strip is full, and
+// it is full (see VRAM.md 3 and the budget in cars.h). The mechanism is the engine's own,
+// already proven at runtime by objanim.c ColourCycle, which rewrites a world CLUT row
+// every other frame: read the row, change it, write it back to the SAME address.
+//
+// Both calls are immediate (StoreImage -> GR_ReadVRAM, LoadImage -> GR_CopyVRAM), so they
+// are safe OUTSIDE a render pass - no ordering table, no `current`.
+//
+// `clut` is a CLUT id as `civ_clut` / `texture_cluts` store it (x = (clut & 0x3f) << 4,
+// y = clut >> 6). Only the ONE 16-entry row that id names is touched: a 256-colour CLUT
+// is 16 such rows, so writing one row changes one of its palettes.
+//
+// NOTE for callers: a CLUT row can be SHARED - every car whose poly resolves to the same
+// id samples this row. An in-place edit is therefore global. That is what makes it the
+// right tool for FINDING OUT which part a row paints, and the wrong one for a per-car
+// colour (which needs its own row; JerichoMakeClutRow allocates one).
+//
+// Return 1 on success, 0 on a zero id or a null buffer.
+int JerichoClutReadInPlace(u_short clut, u_short* out16)
+{
+	RECT16 r;
+
+	if (clut == 0 || out16 == NULL)
+		return 0;
+
+	r.x = (clut & 0x3f) << 4;
+	r.y = clut >> 6;
+	r.w = 16;
+	r.h = 1;
+
+	StoreImage(&r, (u_long*)out16);
+
+	return 1;
+}
+
+int JerichoClutWriteInPlace(u_short clut, const u_short* in16)
+{
+	RECT16 r;
+
+	if (clut == 0 || in16 == NULL)
+		return 0;
+
+	r.x = (clut & 0x3f) << 4;
+	r.y = clut >> 6;
+	r.w = 16;
+	r.h = 1;
+
+	LoadImage(&r, (u_long*)in16);
+
+	return 1;
+}
+
 // JERICHO-HOOK: build a CLUT row that is a recoloured copy of another row.
 //
 // Used for per-instance pedestrian palettes: the Tanner body's polys all live on

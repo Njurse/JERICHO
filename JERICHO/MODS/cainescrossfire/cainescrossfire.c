@@ -79,6 +79,9 @@ void cd2FacRegister(JERICHO_CONTEXT* ctx);	/* factions/factions.c (declared in i
 void cd2ArenaRegister(JERICHO_CONTEXT* ctx);	/* arenas/arena.c */
 void cd2EditorRegister(JERICHO_CONTEXT* ctx);	/* arenas/editor.c (the in-game editor) */
 
+/* palette/paletteedit.c - live car-palette overrides + the CLUT map dump */
+void cd2PaletteEditRegister(JERICHO_CONTEXT* ctx);
+
 /* TEMPORARY Phase-1 spike — delete with texprobe.c */
 void cd2TexProbeRegister(JERICHO_CONTEXT* ctx);
 
@@ -900,6 +903,9 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	cd2SelectRegister(ctx);
 	cd2LockOnRegister(ctx);
 	cd2ShoveRegister(ctx);
+
+	/* live car-palette editing (CONFIG/cc_palette.txt); inert without the file */
+	cd2PaletteEditRegister(ctx);
 
 	/* TEMPORARY Phase-1 spike (texprobe.c); inert without JERICHO_TEXPROBE=1 */
 	cd2TexProbeRegister(ctx);
