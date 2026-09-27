@@ -235,16 +235,31 @@ echo --------------------------------------------------------------
 echo   A city's DriverLevelTool rip, drawn top-down and aligned to the game's
 echo   world coordinates. It is cached next to the .obj, so doing this once
 echo   makes opening an arena with that map instant afterwards.
+echo   Rips are gitignored and only RIO ships one, so another city is
+echo   exported here first - that is the slow part ^(a few minutes^).
 echo.
 set "LCITY="
 set /p "LCITY=  city (RIO/CHICAGO/HAVANA/VEGAS) [RIO]: "
 if "%LCITY%"=="" set "LCITY=RIO"
 set "PREVIEW=%REPO%\DriverLevelTool\%LCITY%_LEVELMODEL.preview.png"
 echo.
+if not exist "%REPO%\DriverLevelTool\%LCITY%_LEVELMODEL.obj" (
+  echo   %LCITY% has no rip yet - exporting it with DriverLevelTool.
+  echo   ~185 MB, a few minutes; DriverLevelTool opens its own window.
+  echo.
+  %PY% "%EDITOR%" --rip %LCITY%
+  if not "!errorlevel!"=="0" (
+    echo.
+    echo   the rip failed - is DriverLevelTool.exe in %REPO%\DriverLevelTool\ ?
+    pause
+    goto menu
+  )
+  echo.
+)
 %PY% "%EDITOR%" --level %LCITY% --rebuild-map --dir "%ARENAS%" --render "%PREVIEW%"
 set "RC=!errorlevel!"
 echo.
-if not "!RC!"=="0" echo   the build failed - exit code !RC! (is that city ripped?)
+if not "!RC!"=="0" echo   the build failed - exit code !RC!
 if exist "%PREVIEW%" start "" "%PREVIEW%"
 pause
 goto menu

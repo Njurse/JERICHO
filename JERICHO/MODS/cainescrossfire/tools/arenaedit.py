@@ -12,6 +12,8 @@ are two views of one file: what one saves, the other loads.
     python arenaedit.py chicago.cca --obj CITY.obj --cells 448 576  # obj background
     python arenaedit.py chicago.cca --render out.png # headless snapshot
     python arenaedit.py chicago.cca --check          # validate, print, exit
+    python arenaedit.py --rip CHICAGO                # export a city's level model
+    python arenaedit.py --rip                        # ... or all four cities
 
 The view is in WORLD units (the units the .cca stores and the game uses), so no
 calibration is needed to place things. A background is optional and purely
@@ -397,8 +399,141 @@ def level_rip_paths(city):
     return base + ".obj", base + ".topdown.png", base + ".topdown.json"
 
 
+def driverleveltool_dir():
+    return os.path.join(repo_root(), "DriverLevelTool")
+
+
+def find_tool_exe():
+    """DriverLevelTool.exe, or None. It is the only way to make a rip."""
+    p = os.path.join(driverleveltool_dir(), "DriverLevelTool.exe")
+    return p if os.path.exists(p) else None
+
+
+def _cfg_order():
+    """Build configs, the one the game exe lives in first."""
+    order = []
+    exe = _find_game_exe()
+    if exe:
+        order.append(os.path.basename(os.path.dirname(exe)))
+    for c in ("Release_dev", "Release", "Debug"):
+        if c not in order:
+            order.append(c)
+    return order
+
+
+def find_city_lev(city):
+    """The `.LEV` to rip for `city`, or None.
+
+    RIO was ripped from DRIVER2/LEVELS/RIO.LEV (the full single-player city, not
+    the small mp map), so look there - in the config the game runs from first,
+    then the others, then beside the tool (where RIO.LEV sits).
+    """
+    city = city.upper()
+    root = repo_root()
+    cands = [os.path.join(driverleveltool_dir(), "%s.LEV" % city)]
+    for cfg in _cfg_order():
+        cands.append(os.path.join(root, "src_rebuild", "bin", cfg, "DRIVER2",
+                                  "LEVELS", "%s.LEV" % city))
+    cands.append(os.path.join(root, "src_rebuild", "bin", "Release_dev",
+                              "DRIVER2 original - Copy", "LEVELS", "%s.LEV" % city))
+    for p in cands:
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def rip_level(city, force=False, verbose=True, cancel=None):
+    """Export a city's level model with DriverLevelTool, so the editor can draw it.
+
+    `DriverLevelTool.exe <CITY>.LEV -world 1 -textures 1`, run in
+    DriverLevelTool/ with the `.LEV` copied in beside it (that is how RIO was
+    done). The tool writes `<CITY>_LEVELMODEL.obj`, a `<CITY>_textures/` folder
+    of pages and a `.mtl`. Returns the `.obj` path, or None with the reason
+    printed. Already-ripped cities are skipped unless `force`.
+
+    Traps: this build REJECTS `-format` (it auto-detects the LEV); and
+    `DriverLevelTool/` is gitignored, so a rip is a local artifact - that is why
+    only RIO exists until someone runs this.
+
+    `cancel` is an optional threading.Event; while the tool runs it is polled,
+    and on cancel the child is terminated.
+    """
+    import shutil
+    import subprocess
+
+    city = city.upper()
+    obj, _png, _side = level_rip_paths(city)
+
+    if os.path.exists(obj) and not force:
+        return obj
+
+    exe = find_tool_exe()
+    if not exe:
+        if verbose:
+            print("cannot rip %s: no DriverLevelTool.exe in %s"
+                  % (city, driverleveltool_dir()))
+            print("  (put the tool there, or use --obj/--map with a picture you have)")
+        return None
+
+    lev = find_city_lev(city)
+    if not lev:
+        if verbose:
+            print("cannot rip %s: no %s.LEV (looked in DriverLevelTool/ and"
+                  " src_rebuild/bin/*/DRIVER2/LEVELS/)" % (city, city))
+            print("  build the game first, or copy a %s.LEV next to the tool" % city)
+        return None
+
+    work = driverleveltool_dir()
+    local_lev = os.path.join(work, "%s.LEV" % city)
+    if os.path.abspath(lev) != os.path.abspath(local_lev):
+        try:
+            shutil.copyfile(lev, local_lev)
+        except OSError as e:
+            if verbose:
+                print("cannot copy %s into %s: %s" % (lev, work, e))
+            return None
+
+    argv = [exe, os.path.basename(local_lev), "-world", "1", "-textures", "1"]
+    if verbose:
+        print("ripping %s: %s" % (city, " ".join(argv)))
+        print("  (DriverLevelTool opens a window and takes a few minutes)")
+
+    try:
+        proc = subprocess.Popen(argv, cwd=work)
+    except OSError as e:
+        if verbose:
+            print("cannot run DriverLevelTool: %s" % e)
+        return None
+
+    while True:
+        try:
+            rc = proc.wait(timeout=0.25)
+            break
+        except subprocess.TimeoutExpired:
+            if cancel is not None and cancel.is_set():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                if verbose:
+                    print("rip of %s cancelled" % city)
+                return None
+
+    if not os.path.exists(obj):
+        if verbose:
+            print("DriverLevelTool exited %s but wrote no %s"
+                  % (rc, os.path.basename(obj)))
+        return None
+
+    if verbose:
+        print("ripped %s -> %s (%.0f MB)"
+              % (city, os.path.basename(obj), os.stat(obj).st_size / 1048576.0))
+    return obj
+
+
 def build_level_map(city, size=(2000, 2000), sample=4, rebuild=False,
-                    allow_build=True, verbose=True):
+                    allow_build=True, allow_rip=False, verbose=True):
     """The top-down background for a city, from its DriverLevelTool rip.
 
     Returns (PIL image, world_rect), or (None, None) when there is no rip (or no
@@ -444,9 +579,16 @@ def build_level_map(city, size=(2000, 2000), sample=4, rebuild=False,
         if got is not None:
             return got
 
+    # a missing rip is the difference between "RIO works" and "only RIO works":
+    # the .obj is a gitignored local artifact, so make it on demand when asked.
+    if not os.path.exists(obj) and allow_rip:
+        if rip_level(city, verbose=verbose) is None:
+            return None, None
+
     if not os.path.exists(obj):
         if verbose:
             print("no level rip for %s (looked for %s)" % (city.upper(), obj))
+            print("  make one:  python arenaedit.py --rip %s" % city.upper())
         return None, None
 
     if not allow_build:
@@ -1028,9 +1170,11 @@ class EditorApp:
         city = CITY_NAMES.get(self.cur().city, "CHICAGO")
         self._say("building the %s level map\u2026" % city)
         self.root.update_idletasks()
-        img, rect = build_level_map(city, rebuild=False, allow_build=True, verbose=False)
+        img, rect = build_level_map(city, rebuild=False, allow_build=True,
+                                    allow_rip=True, verbose=False)
         if img is None:
-            self._say("no rip for %s - DriverLevelTool/ needs a %s_LEVELMODEL.obj" % (city, city))
+            self._say("no level map for %s - rip it first: python arenaedit.py --rip %s"
+                      % (city, city))
             return
         self._set_bg(img, rect, "%s level map (built)" % city)
         self._say("%s level map ready and cached" % city)
@@ -2009,6 +2153,41 @@ def _find_game_exe():
     return None
 
 
+def rip_main(token):
+    """`--rip [CITY]` - export the level model(s) with DriverLevelTool, then exit.
+
+    0 when every requested city has a rip afterwards, 2 otherwise. Already-ripped
+    cities are skipped (that is why RIO is quick here).
+    """
+    if token == "auto":
+        cities = sorted(CITIES.values())
+    else:
+        c = _city_from_token(token)
+        if c is None:
+            print("unknown city '%s' - pick one of: %s"
+                  % (token, ", ".join(sorted(CITIES.values()))))
+            return 2
+        cities = [CITY_NAMES[c]]
+
+    if not find_tool_exe():
+        print("cannot rip: no DriverLevelTool.exe in %s" % driverleveltool_dir())
+        print("  the tool (and the rips it makes) are gitignored, so neither is")
+        print("  in the checkout - drop DriverLevelTool.exe there first")
+        return 2
+
+    print("ripping %d city(ies): %s" % (len(cities), ", ".join(cities)))
+    print("  DriverLevelTool is slow (minutes each) and writes ~185 MB per city")
+    print()
+
+    rc = 0
+    for city in cities:
+        if rip_level(city) is None:
+            rc = 2
+        print()
+
+    return rc
+
+
 def selftest(arena_dir):
     """Print what the editor needs and where it looks; 0 = OK, 2 = a problem."""
     ok = True
@@ -2043,9 +2222,22 @@ def selftest(arena_dir):
     else:
         print("                DOES NOT EXIST yet (created on first save)")
 
+    tool = find_tool_exe()
+    print("  DriverLevelTool: %s" % (tool if tool else
+          "not found in %s" % driverleveltool_dir()))
+    if not tool:
+        print("                needed to rip a city; the tool and its rips are gitignored")
+
     for city in sorted(CITIES.values()):
         obj, png, side = level_rip_paths(city)
-        have = "cached map" if os.path.exists(png) else ("rip, no map yet" if os.path.exists(obj) else "-")
+        if os.path.exists(png):
+            have = "cached map"
+        elif os.path.exists(obj):
+            have = "ripped, no map yet (--level %s builds it)" % city
+        elif tool and find_city_lev(city):
+            have = "no rip - run: --rip %s" % city
+        else:
+            have = "no rip (no %s.LEV to make one from)" % city
         print("  level %-8s: %s" % (city, have))
 
     exe = _find_game_exe()
@@ -2074,6 +2266,12 @@ def main(argv=None):
                     help="draw a city's DriverLevelTool rip as the top-down background, aligned "
                          "to the arena's world coordinates (omit CITY to use the arena's own). "
                          "Cached next to the .obj, so it is slow only the first time")
+    ap.add_argument("--rip", nargs="?", const="auto", metavar="CITY",
+                    help="export the city's level model with DriverLevelTool so it can be drawn "
+                         "(omit CITY to rip every city), then exit. Slow, and local: the .obj is "
+                         "gitignored, which is why only RIO ships ripped")
+    ap.add_argument("--no-rip", action="store_true",
+                    help="with --level: never run DriverLevelTool; fail if that city has no rip")
     ap.add_argument("--rebuild-map", action="store_true",
                     help="rebuild the cached level map even when it looks current")
     ap.add_argument("--render", metavar="OUT.png", help="render headlessly and exit")
@@ -2095,6 +2293,9 @@ def main(argv=None):
 
     if args.selftest:
         return selftest(arena_dir)
+
+    if args.rip:
+        return rip_main(args.rip)
 
     paths = []
 
@@ -2228,6 +2429,7 @@ def main(argv=None):
         if city:
             img, rect = build_level_map(city, rebuild=args.rebuild_map,
                                         allow_build=bool(args.level),
+                                        allow_rip=bool(args.level) and not args.no_rip,
                                         verbose=bool(args.level) or args.rebuild_map)
 
             if img is not None:

@@ -256,24 +256,35 @@ without a human at the screen.
 
 ## Designing against a level map (the Python editor)
 
-A city needs a **rip** for the editor to draw it: `DriverLevelTool/` ships RIO
-(`RIO_LEVELMODEL.obj`), and another city can be added with
-`DriverLevelTool.exe -world 1` pointed at its level.
+A city needs a **rip** for the editor to draw it, and a rip is a **local
+artifact**: `DriverLevelTool/` is gitignored, so only what you have exported
+yourself is there. That is why RIO used to be the only city you could draw — the
+other three had never been ripped, and `--level CHICAGO` had nothing to load.
 
 ```
-python arenaedit.py myarena.cca --level RIO     # build/load the map, aligned
-python arenaedit.py --level RIO --rebuild-map   # force a rebuild
-arena_menu.bat  ->  8) Build the level map      # the same, from the menu
+python arenaedit.py --rip                        # export all four cities' rips
+python arenaedit.py --rip HAVANA                 # ... or just one
+python arenaedit.py myarena.cca --level RIO      # build/load the map, aligned
+python arenaedit.py --level RIO --rebuild-map    # force a rebuild
+arena_menu.bat  ->  8) Build the level map       # the same, from the menu
 ```
+
+`--rip` runs `DriverLevelTool.exe <CITY>.LEV -world 1 -textures 1` in
+`DriverLevelTool/` (copying the `.LEV` in beside it, from
+`src_rebuild/bin/<cfg>/DRIVER2/LEVELS/`). It is slow — minutes per city, ~120–240 MB
+of `.obj` — so it is a one-off per machine, and an already-ripped city is skipped.
+`--level CITY` **rips on demand** when that city has no rip yet (`--no-rip`
+refuses instead), and `--selftest` prints each city's state, so "which cities can
+I draw?" is one command. This build of `DriverLevelTool` rejects `-format` — it
+detects the LEV itself — so the tool is not passed one.
 
 The picture is drawn **aligned to the game's world coordinates** (a rip is the
 level model at 1/4096 with X mirrored, so `world_x = -4096*obj_x`,
 `world_z = +4096*obj_z`) and **cached** beside the `.obj` as
 `<CITY>_LEVELMODEL.topdown.png` plus a `.json` sidecar carrying the world rect —
-so only the first build costs anything (a few seconds on a 185 MB `.obj`) and the
-PNG is shareable on its own, without the rip. With no `--level`, a map already
-cached for the arena's city is used automatically; `--level CITY` is what builds
-one that is missing, and it says so plainly when a city has not been ripped.
+so only the first build costs anything and the PNG is shareable on its own,
+without the rip. With no `--level`, a map already cached for the arena's city is
+used automatically.
 
 ## Test levers
 
