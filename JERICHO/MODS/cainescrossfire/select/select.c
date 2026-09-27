@@ -408,58 +408,67 @@ static int cd2SelOnCmdline(void* ud, void* args)
 		gCcForced = 1;
 
 	/* DIRECT BOOT into an arena. The engine's own -level/-mp/-car boots straight
-	 * into a level with no frontend; with CC_FORCE_ARENA set we make it an
-	 * ARENA here (the registry was loaded at module entry, before CMDLINE) so
-	 * its spawns, barrier and - with CC_EDITOR=1 - the in-game editor apply.
-	 * This is the path the Python editor's "Launch in game" button uses.
+	 * into a level with no frontend; with CC_FORCE_ARENA_NAME (or CC_FORCE_ARENA
+	 * by id) set we make it an ARENA here (the registry was loaded at module
+	 * entry, before CMDLINE) so its spawns, barrier and - with CC_EDITOR=1 - the
+	 * in-game editor apply. This is the path the Python editor's "Launch in
+	 * game" button uses, by NAME: the registry id is file-scan order, which
+	 * drifts as arenas are added, so a name is the stable handle.
 	 *
 	 * We do NOT touch the level/gametype/mission: -level and -mp already chose
 	 * those (the launcher derives them from the arena's `city`/`mp`). Only the
 	 * arena, its car profile and the opponent count are ours to set. */
-	if (!gCcForced && getenv("CC_FORCE_ARENA") != NULL)
 	{
-		int aid = atoi(getenv("CC_FORCE_ARENA"));
-		const CD2_ARENA_PROFILE* ar = cd2ArenaDef(aid);
+		const char* nameEnv = getenv("CC_FORCE_ARENA_NAME");
+		const char* idEnv = getenv("CC_FORCE_ARENA");
 
-		if (ar != NULL)
+		if (!gCcForced && (nameEnv != NULL || idEnv != NULL))
 		{
-			const char* carEnv = getenv("CC_FORCE_CAR");
-			const char* oppEnv = getenv("CC_FORCE_OPPONENTS");
+			const CD2_ARENA_PROFILE* ar = (nameEnv != NULL)
+				? cd2ArenaFindByName(nameEnv)
+				: cd2ArenaDef(atoi(idEnv));
 
-			cd2ArenaSetCurrent(aid);
-
-			if (oppEnv != NULL)
+			if (ar != NULL)
 			{
-				int n = atoi(oppEnv);
+				const char* carEnv = getenv("CC_FORCE_CAR");
+				const char* oppEnv = getenv("CC_FORCE_OPPONENTS");
 
-				if (n < 0) n = 0;
-				if (n > CD2_AI_MAX) n = CD2_AI_MAX;
+				cd2ArenaSetCurrent(ar->id);
 
-				gCd2Cfg.aiOpponents = n;
-			}
-
-			printInfo("[cainescrossfire] direct boot: arena '%s' (id %d, city=%d mp=%d/%d), %d opponent(s)\n",
-				ar->internalName, aid, ar->city, ar->mpLevel, ar->mpArena, gCd2Cfg.aiOpponents);
-
-			/* the car: the engine's -car picks the model; also adopt the arena
-			 * city's profile for slot `CC_FORCE_CAR` so the module's stats match */
-			if (carEnv != NULL)
-			{
-				int city = ar->city;
-				int sel = atoi(carEnv);
-
-				if (city >= 0 && city < CC_CITY_COUNT && gCcVehN[city] > 0)
+				if (oppEnv != NULL)
 				{
-					if (sel < 0 || sel >= gCcVehN[city])
-						sel = 0;
+					int n = atoi(oppEnv);
 
-					cd2VehSetPlayerProfile(gCcVehList[city][sel]);
+					if (n < 0) n = 0;
+					if (n > CD2_AI_MAX) n = CD2_AI_MAX;
+
+					gCd2Cfg.aiOpponents = n;
+				}
+
+				printInfo("[cainescrossfire] direct boot: arena '%s' (id %d, city=%d mp=%d/%d), %d opponent(s)\n",
+					ar->internalName, ar->id, ar->city, ar->mpLevel, ar->mpArena, gCd2Cfg.aiOpponents);
+
+				/* the car: the engine's -car picks the model; also adopt the arena
+				 * city's profile for slot `CC_FORCE_CAR` so the module's stats match */
+				if (carEnv != NULL)
+				{
+					int city = ar->city;
+					int sel = atoi(carEnv);
+
+					if (city >= 0 && city < CC_CITY_COUNT && gCcVehN[city] > 0)
+					{
+						if (sel < 0 || sel >= gCcVehN[city])
+							sel = 0;
+
+						cd2VehSetPlayerProfile(gCcVehList[city][sel]);
+					}
 				}
 			}
-		}
-		else
-		{
-			printInfo("[cainescrossfire] direct boot: arena %d not found, ignored\n", aid);
+			else
+			{
+				printInfo("[cainescrossfire] direct boot: arena '%s' not found, ignored\n",
+					(nameEnv != NULL) ? nameEnv : idEnv);
+			}
 		}
 	}
 

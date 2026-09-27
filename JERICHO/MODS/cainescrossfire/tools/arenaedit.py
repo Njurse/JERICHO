@@ -854,8 +854,17 @@ def _build_textured(city, obj, size, sample, verbose, uv_flip=False,
     # export negates X to land on the world frame, and mirroring the model
     # mirrors u with it. `--uv-flip` is the escape hatch for a rip that disagrees
     # (it is the same correction, a quarter-turn apart).
-    area_s = (PX[:, 1] - PX[:, 0]) * (PY[:, 2] - PY[:, 0]) \
-        - (PX[:, 2] - PX[:, 0]) * (PY[:, 1] - PY[:, 0])
+    #
+    # Measured on a CANONICAL projection (2000 px across the map), never the
+    # requested output size: at 200 px the faces are sub-pixel and their signed
+    # areas are numerical noise, so the verdict flipped with the size (VEGAS
+    # came out mirrored at 800 and kept at 2000 - the same picture, two answers).
+    osx = 2000.0 / float(x1 - x0)
+    osz = 2000.0 / float(z1 - z0)
+    OX = (-LEVEL_SCALE * corners[:, :, 0] * osx).astype(np.float64)
+    OY = (LEVEL_SCALE * corners[:, :, 2] * osz).astype(np.float64)
+    area_s = (OX[:, 1] - OX[:, 0]) * (OY[:, 2] - OY[:, 0]) \
+        - (OX[:, 2] - OX[:, 0]) * (OY[:, 1] - OY[:, 0])
     area_t = (PU[:, 1] - PU[:, 0]) * (PV[:, 2] - PV[:, 0]) \
         - (PU[:, 2] - PU[:, 0]) * (PV[:, 1] - PV[:, 0])
     live = (area_s != 0.0) & (area_t != 0.0)
@@ -1517,6 +1526,8 @@ class EditorApp:
         f.add_command(label="Save", accelerator="Ctrl+S", command=self.save)
         f.add_command(label="Save as\u2026", command=self.save_as)
         f.add_separator()
+        f.add_command(label="Launch in game", accelerator="F5", command=self.launch_current)
+        f.add_separator()
         f.add_command(label="Reload from disk", accelerator="Ctrl+R", command=self.reload)
         f.add_separator()
         f.add_command(label="Quit", accelerator="Ctrl+Q", command=self.close)
@@ -1567,6 +1578,7 @@ class EditorApp:
         ttk.Button(bar, text="New", command=self.new_arena).pack(side="left", padx=1)
         ttk.Button(bar, text="Open", command=self.open_file).pack(side="left", padx=1)
         ttk.Button(bar, text="Save", command=self.save).pack(side="left", padx=1)
+        ttk.Button(bar, text="Launch in game", command=self.launch_current).pack(side="left", padx=1)
         sep()
 
         for tid, label, _h in TOOLS:
@@ -1776,6 +1788,7 @@ class EditorApp:
         r.bind("<Control-z>", lambda e: self.undo())
         r.bind("<Control-q>", lambda e: self.close())
         r.bind("<F1>", lambda e: self.show_help())
+        r.bind("<F5>", lambda e: self.launch_current())
         # closing the window while a rip/render runs must stop it first: the worker
         # polls the cancel flag, so this is what makes Stop and the X both clean
         r.protocol("WM_DELETE_WINDOW", self.close)
@@ -2665,6 +2678,25 @@ class EditorApp:
         self.redraw()
         self._say("saved %s" % path)
 
+    def launch_current(self):
+        """Save the open arena, then start the game straight into it in the
+        in-game editor (zero opponents, editor mode on). The game is detached -
+        this window stays open and usable while it runs."""
+        a = self.cur()
+        if a.path:
+            self.save()
+        args, info = launch_game(a)
+        if args is None:
+            self._say(info)
+            try:
+                from tkinter import messagebox
+                messagebox.showwarning("Launch in game", info, parent=self.root)
+            except Exception:
+                pass
+            return
+        self._say("launched %s  ->  arena '%s', 0 opponents, editor on"
+                  % (os.path.basename(args[0]), a.internal))
+
     def reload(self):
         a = self.cur()
         if not a.path or not os.path.exists(a.path):
@@ -3066,7 +3098,17 @@ def _repo_root():
     return repo_root()
 
 
-def _find_game_exe():
+def _find_game_exe(override=None):
+    """The game executable to launch, or None.
+
+    An explicit override wins (the `--exe` flag, or the `CC_GAME_EXE`
+    environment variable), then the usual build output (Release_dev first, then
+    Release). None means "no exe to launch" - the editor's Launch button says so
+    rather than guessing.
+    """
+    cand = override or os.environ.get("CC_GAME_EXE")
+    if cand:
+        return cand if os.path.exists(cand) else None
     root = _repo_root()
     for cfg, name in (("Release_dev", "REDRIVER2_dev.exe"),
                       ("Release", "REDRIVER2.exe")):
@@ -3074,6 +3116,65 @@ def _find_game_exe():
         if os.path.exists(p):
             return p
     return None
+
+
+_EXE_OVERRIDE = None    # set from --exe in main(); the Launch button reuses it
+
+
+def arena_launch_args(a, exe):
+    """The argv that boots straight into arena `a` in the in-game editor.
+
+    The engine's own -level/-mp frontend bypass (no menus), -car a valid slot,
+    and the module picks the arena up from CC_FORCE_ARENA_NAME (its `arena:`
+    name, not a registry id - the id is scan order and would drift).
+    """
+    args = [exe, "-nointro", "-level", str(a.city), "-car", "slot1"]
+    if a.mp_level:
+        args += ["-mp", str(a.mp_arena)]
+    return args
+
+
+def arena_launch_env(a):
+    env = dict(os.environ)
+    env["CC_EDITOR"] = "1"                    # in-game editor on
+    env["CC_FORCE_ARENA_NAME"] = a.internal   # ...this arena, by name
+    env["CC_FORCE_OPPONENTS"] = "0"           # zero opponents
+    env["CC_OPPONENTS"] = "0"
+    return env
+
+
+def launch_game(a, exe_override=None, dry=False):
+    """Start the game straight into arena `a` in the in-game editor.
+
+    Returns (args, env) on success, or (None, message) when there is no exe.
+    The game is DETACHED (its own process group / session): the editor stays
+    usable and this process NEVER waits on or kills it - the launcher rule (a
+    detached game's PID is unknowable, so do not hunt it).
+    """
+    import subprocess
+
+    exe = _find_game_exe(exe_override or _EXE_OVERRIDE)
+    if not exe:
+        return None, ("no game exe - build it (src_rebuild/bin/<cfg>/REDRIVER2_dev.exe) "
+                      "or pass --exe / set CC_GAME_EXE")
+
+    args = arena_launch_args(a, exe)
+    env = arena_launch_env(a)
+
+    if dry:
+        return args, env
+
+    kwargs = {"cwd": os.path.dirname(exe), "env": env}
+    if os.name == "nt":
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        kwargs["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        kwargs["close_fds"] = True
+    else:
+        kwargs["start_new_session"] = True
+
+    subprocess.Popen(args, **kwargs)
+    return args, env
 
 
 def rip_main(token):
@@ -3111,7 +3212,7 @@ def rip_main(token):
     return rc
 
 
-def selftest(arena_dir):
+def selftest(arena_dir, exe_override=None):
     """Print what the editor needs and where it looks; 0 = OK, 2 = a problem."""
     ok = True
 
@@ -3163,9 +3264,14 @@ def selftest(arena_dir):
             have = "no rip (no %s.LEV to make one from)" % city
         print("  level %-8s: %s" % (city, have))
 
-    exe = _find_game_exe()
-    print("  game exe    : %s" % (exe if exe else
-                                  "not found - the launcher's in-game option needs it"))
+    exe = _find_game_exe(exe_override)
+    src = ""
+    if exe_override:
+        src = "  (--exe)"
+    elif os.environ.get("CC_GAME_EXE"):
+        src = "  (CC_GAME_EXE)"
+    print("  game exe    : %s%s" % (exe if exe else
+                                    "not found - the Launch button / in-game option needs it", src))
 
     print("  result      : %s" % ("OK" if ok else "PROBLEM - see above"))
     return 0 if ok else 2
@@ -3204,11 +3310,21 @@ def main(argv=None):
     ap.add_argument("--render", metavar="OUT.png", help="render headlessly and exit")
     ap.add_argument("--check", action="store_true", help="validate and print, do not open a window")
     ap.add_argument("--json", action="store_true", help="print the parsed arenas as JSON")
-    ap.add_argument("--selftest", action="store_true",
-                    help="report the interpreter, tkinter/Pillow, the arena folder and the game exe, then exit")
+    ap.add_argument("--exe", metavar="PATH",
+                    help="the game exe the Launch button / in-game option starts "
+                         "(default: the build output under src_rebuild/bin; also CC_GAME_EXE)")
+    ap.add_argument("--launch", action="store_true",
+                    help="save the arena and start the game straight into it in the in-game "
+                         "editor (zero opponents, editor mode on), then exit")
+    ap.add_argument("--launch-dry", action="store_true",
+                    help="print the launch command + env for --launch, but start nothing")
+    ap.add_argument("--selftest", action="store_true",                    help="report the interpreter, tkinter/Pillow, the arena folder and the game exe, then exit")
     ap.add_argument("--uitest", action="store_true",
                     help="build the editor window, drive it through its own commands, report and exit (a headless UI check)")
     args = ap.parse_args(argv)
+
+    global _EXE_OVERRIDE
+    _EXE_OVERRIDE = args.exe
 
     _stale = _stale_mirror_note()
     if _stale:
@@ -3219,7 +3335,7 @@ def main(argv=None):
     arena_dir = args.dir or _default_arena_dir()
 
     if args.selftest:
-        return selftest(arena_dir)
+        return selftest(arena_dir, exe_override=args.exe)
 
     if args.rip:
         return rip_main(args.rip)
@@ -3280,6 +3396,22 @@ def main(argv=None):
         arenas = [blank]
         hint = ("no .cca files in %s  -  press N to make one, or run: "
                 "python arenaedit.py --new myarena" % arena_dir)
+
+    if args.launch or args.launch_dry:
+        a = arenas[0]
+        if a.path and not args.launch_dry:
+            save_arena(a)                  # launch what is on screen
+        cmd, info = launch_game(a, dry=args.launch_dry)
+        if cmd is None:
+            print("launch: %s" % info)
+            return 2
+        if args.launch_dry:
+            print("would launch: %s" % " ".join(cmd))
+            print("  env: CC_EDITOR=1 CC_FORCE_ARENA_NAME=%s CC_FORCE_OPPONENTS=0" % a.internal)
+        else:
+            print("launched %s  ->  arena '%s', 0 opponents, editor on"
+                  % (os.path.basename(cmd[0]), a.internal))
+        return 0
 
     if args.json:
         import json

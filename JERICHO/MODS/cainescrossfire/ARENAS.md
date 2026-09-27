@@ -37,7 +37,9 @@ Double-click it on Windows. By hand:
   prints a note when the repo copy has moved on.
 - **Open top-down** — `python tools/arenaedit.py <the .cca>` (no arguments opens
   every arena in the folder).
-- **Edit in-game** — launch with `-cceditor` and pick the arena (see below).
+- **Edit in-game** — the Python editor's **Launch in game** button (or `--launch`)
+  boots straight into the open arena in editor mode; or launch with `-cceditor`
+  and pick an arena (see below).
 
 ## The four built-ins
 
@@ -247,6 +249,14 @@ bare canvas:
   level map for this city* and *Remove background*.
 - **Status bar** — the file and its unsaved state, the arena, the region, the
   counts, the last action, and the cursor's world position.
+- **Launch in game** — the toolbar button (also *File ▸ Launch in game*, `F5`,
+  or `--launch`) saves the arena and starts the game **straight into it** in the
+  in-game editor, zero opponents. The game runs **detached**, so this window
+  stays usable. It boots the engine's own frontend bypass
+  (`-level <city> [-mp <layout>] -car slot1`) with `CC_EDITOR=1` and
+  `CC_FORCE_ARENA_NAME=<arena>`; `--launch-dry` prints that command instead of
+  starting anything. The exe is the build output, or `--exe PATH` / `CC_GAME_EXE`
+  (reported by `--selftest`).
 
 ### Long jobs (a rip, a level-map render)
 
