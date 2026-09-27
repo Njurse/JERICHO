@@ -2,7 +2,7 @@
 
 A standalone, self-contained kit for writing JERICHO addons for REDRIVER2.
 No game source, no PsyCross, no SDL2/OpenAL/JPEG — just this folder, a C
-compiler, and the JERICHO API.
+compiler, Python 3, and the JERICHO API.
 
 ## What's inside
 
@@ -23,8 +23,9 @@ sdk/
     jer_frontend.h    add real frontend menus (jer_frontend_register_menu)
     jer_events.h      event argument structs (game types as void*)
   lib/x64/Release/
-    REDRIVER2.lib     import library for the game exe's exported symbols
-  build_mods.bat      compiles one addon folder into a DLL
+    REDRIVER2.lib     import library for the game exe's exported symbols (Windows)
+  build_mods.bat      shim: compile one addon folder into a DLL (Windows)
+  build_mods.sh       shim: the same, producing a .so (Linux)
   example/            a minimal working addon (copy it to start)
 ```
 
@@ -82,11 +83,24 @@ The entry symbol is always `jer_module_<id>_entry` — the folder name, the
 ## Building
 
 ```
-build_mods.bat myaddon
+build_mods.bat myaddon            (Windows)
+./build_mods.sh myaddon           (Linux)
 ```
 
-Requires Visual Studio 2019/2022 with the C++ toolset (found automatically
-via vswhere). Produces `myaddon\myaddon.dll`.
+Both shims are thin wrappers over the shared cross-platform build driver,
+`build.py` — the same driver the game's own build tree uses (see
+`src_rebuild/Game/C/JERICHO/docs/build.md`). The driver sits next to the shim
+when the SDK is shipped standalone, and one level up in the repo. It needs
+Python 3 on `PATH`.
+
+- **Windows** needs Visual Studio 2019/2022 with the C++ toolset (found via
+  vswhere) and the SDK's import library `lib/x64/Release/REDRIVER2.lib`, so the
+  addon can call game functions and read game globals.
+- **Linux** needs only a C compiler (`cc`). There is **no import library**: the
+  addon links with undefined symbols allowed and resolves the game's symbols
+  from the `-Wl,--export-dynamic` exe at `dlopen` time.
+
+Produces `myaddon\myaddon.dll` (Windows) or `myaddon/myaddon.so` (Linux).
 
 ## Installing
 
@@ -98,6 +112,12 @@ all happen at runtime and persist in `JERICHO\CONFIG\`.
 
 ## Platform notes
 
-- Windows: runtime loading via `LoadLibrary` (this SDK builds x64 DLLs).
-- Linux: the same pipeline uses `dlopen`; build with the game's mods build.
+- Windows: linked against `REDRIVER2.lib` (the exe's import library) and loaded
+  at runtime with `LoadLibrary`; builds x64 DLLs.
+- Linux: no import library — the addon links with undefined symbols allowed and
+  resolves them from the exe at `dlopen` time; builds `.so`.
 - Emscripten/Android: no runtime loading — addons are ignored (logged).
+
+The same addon folder builds on either OS with the shims above; the driver
+picks the platform. For distribution, copy `build.py` into this folder so the
+SDK stays self-contained.

@@ -17,7 +17,7 @@ Usage
     build.py game exports            (Windows) two-pass exports.def + relink
     build.py game                    premake + every deep mod + the exe
     build.py mods                    build every runtime addon (DLL / .so)
-    build.py sdk [<id>]              build one addon against the standalone SDK
+    build.py sdk [<mod-folder>]       build one addon against the standalone SDK
 
 Common options
 --------------
@@ -219,13 +219,20 @@ class Ctx:
         self.backend = backend
 
     def run(self, cmd, cwd=None, env=None):
-        """Print and run a command. Returns its exit code (0 in dry-run)."""
+        """Print and run a command. Returns its exit code (0 in dry-run).
+
+        `cmd` is a list of argv (run directly) or a single string (run through
+        the platform shell — needed on Windows when the command itself carries
+        quotes, e.g. 'call "C:\\...\\vcvars64.bat" && cl ...').
+        """
+        shell = isinstance(cmd, str)
+        printable = cmd if shell else " ".join(cmd)
         where = "" if cwd is None else "   (cwd %s)" % cwd
-        print("[build] %s%s" % (" ".join(cmd), where), flush=True)
+        print("[build] %s%s" % (printable, where), flush=True)
         if self.dry_run:
             return 0
         try:
-            return subprocess.call(cmd, cwd=cwd, env=env)
+            return subprocess.call(cmd, cwd=cwd, env=env, shell=shell)
         except FileNotFoundError as exc:
             eprint("[build] ERROR: %s" % exc)
             return 127
@@ -294,7 +301,7 @@ class Backend:
     def build_addons(self, ctx):                    # pragma: no cover - abstract
         raise NotImplementedError
 
-    def build_sdk_addon(self, ctx, include, sdk_dir, src_c, out):  # pragma: no cover
+    def build_sdk_addon(self, ctx, include, folder, mod_id, out):  # pragma: no cover
         raise NotImplementedError
 
     def make_config(self, ctx):
@@ -382,17 +389,29 @@ class WindowsBackend(Backend):
         return self._build_proj(ctx, os.path.join("build_mods", "REDRIVER2_MODS.sln"),
                                 "Release")
 
-    def build_sdk_addon(self, ctx, include, sdk_dir, src_c, out):
-        lib = os.path.join(sdk_dir, "lib", "x64", "Release", "REDRIVER2.lib")
-        game_inc = os.path.join(ctx.src, "Game")
-        game_c = os.path.join(ctx.src, "Game", "C")
-        inner = ('cl /nologo /LD /TP /EHsc /I "%s" /I "%s" /I "%s" "%s" '
-                 '/link /LIBPATH:"%s" REDRIVER2.lib /OUT:"%s"'
-                 % (include, game_inc, game_c, src_c, os.path.dirname(lib), out))
+    def build_sdk_addon(self, ctx, include, folder, mod_id, out):
+        sources = [os.path.join(folder, f) for f in sorted(os.listdir(folder))
+                   if f.lower().endswith(".c")]
+        if not sources:
+            raise SystemExit("build.py sdk: no .c sources in %s" % folder)
+
+        lib_dir = os.path.join(os.path.dirname(include), "lib", "x64", "Release")
+        parts = ['cl /nologo /LD /TP /EHsc /DNDEBUG /DJERICHO_MODULE_BUILD',
+                 '/I"%s"' % include, '/I"%s"' % folder]
+        parts += ['"%s"' % s for s in sources]
+        parts.append('/link')
+        if os.path.isfile(os.path.join(lib_dir, "REDRIVER2.lib")):
+            parts.append('/LIBPATH:"%s"' % lib_dir)
+            parts.append('REDRIVER2.lib')
+        parts.append('/OUT:"%s"' % out)
+
+        inner = " ".join(parts)
         vcvars = find_vcvars64()
         if vcvars:
             inner = 'call "%s" >nul && %s' % (vcvars, inner)
-        return ctx.run(["cmd", "/c", inner], cwd=ctx.src)
+        # a single shell string: the command carries quotes (vcvars path, /I
+        # paths), which subprocess would mangle if passed as one argv element.
+        return ctx.run(inner, cwd=folder)
 
 
 @register_backend
@@ -436,12 +455,17 @@ class LinuxBackend(Backend):
         # the mods workspace is { Release } x { x64 } only -> release_x64
         return self._make(ctx, "build_mods", None, "release_x64")
 
-    def build_sdk_addon(self, ctx, include, sdk_dir, src_c, out):
+    def build_sdk_addon(self, ctx, include, folder, mod_id, out):
+        sources = [os.path.join(folder, f) for f in sorted(os.listdir(folder))
+                   if f.lower().endswith(".c")]
+        if not sources:
+            raise SystemExit("build.py sdk: no .c sources in %s" % folder)
+
         cc = os.environ.get("CC", "cc")
-        # an addon .so resolves the game's symbols at dlopen time, so
-        # undefined symbols are fine here (the exe is --export-dynamic).
-        return ctx.run([cc, "-shared", "-fPIC", "-O2", "-o", out, src_c,
-                        "-I", include], cwd=ctx.src)
+        # no import library on Linux: the addon .so resolves the game's symbols
+        # from the --export-dynamic exe at dlopen() time.
+        return ctx.run([cc, "-shared", "-fPIC", "-O2", "-o", out,
+                        "-I", include, "-I", folder] + sources, cwd=folder)
 
 
 # --------------------------------------------------------------------------
@@ -519,27 +543,47 @@ def do_mods(ctx):
     return copy_addons(ctx)
 
 
-def do_sdk(ctx, mod_id):
-    b = ctx.backend
-    sdk_dir = os.path.join(jericho_dir(ctx.src), "sdk")
+def resolve_sdk_dir(src_dir=None):
+    """Locate the JERICHO SDK folder.
+
+    A build.py copied INTO the SDK folder is standalone (the SDK is its own
+    directory); otherwise the SDK is JERICHO/sdk beside this script, or beside
+    src_rebuild.
+    """
+    if os.path.isfile(os.path.join(SCRIPT_DIR, "include", "jericho.h")):
+        return SCRIPT_DIR
+
+    cand = os.path.join(SCRIPT_DIR, "sdk")
+    if os.path.isfile(os.path.join(cand, "include", "jericho.h")):
+        return cand
+
+    if src_dir:
+        cand = os.path.join(jericho_dir(src_dir), "sdk")
+        if os.path.isfile(os.path.join(cand, "include", "jericho.h")):
+            return cand
+
+    return None
+
+
+def do_sdk(ctx, mod_arg):
+    sdk_dir = resolve_sdk_dir(ctx.src or None)
+    if sdk_dir is None:
+        raise SystemExit("build.py sdk: cannot find the JERICHO SDK - copy build.py "
+                         "into the SDK folder, or pass the addon folder by path.")
+
     include = os.path.join(sdk_dir, "include")
 
-    ids = [mod_id] if mod_id else addon_mods(ctx.src)
-    if not ids:
-        print("[build] sdk: no runtime=\"dll\" addons found", flush=True)
-        return 0
+    folder = os.path.abspath(mod_arg) if mod_arg else os.path.join(sdk_dir, "example")
+    if not os.path.isdir(folder):
+        raise SystemExit("build.py sdk: %s is not a folder" % folder)
+    if not os.path.isfile(os.path.join(folder, "mod.toml")):
+        raise SystemExit("build.py sdk: %s has no mod.toml (not an addon folder)" % folder)
 
-    for mid in ids:
-        src_c = os.path.join(mods_dir(ctx.src), mid, mid + ".c")
-        if not os.path.isfile(src_c):
-            eprint("[build] sdk: %s has no %s.c - skipped" % (mid, mid))
-            continue
-        out = os.path.join(mods_dir(ctx.src), mid, mid + b.lib_ext)
-        print("[build] sdk addon: %s -> %s" % (mid, out), flush=True)
-        rc = b.build_sdk_addon(ctx, include, sdk_dir, src_c, out)
-        if rc:
-            return rc
-    return 0
+    mod_id = os.path.basename(os.path.normpath(folder))
+    out = os.path.join(folder, mod_id + ctx.backend.lib_ext)
+
+    print("[build] sdk addon: %s -> %s" % (folder, out), flush=True)
+    return ctx.backend.build_sdk_addon(ctx, include, folder, mod_id, out)
 
 
 # --------------------------------------------------------------------------
@@ -553,7 +597,7 @@ def main(argv=None):
     p.add_argument("target", nargs="?", default="game",
                    choices=["game", "mods", "sdk"])
     p.add_argument("step", nargs="?", default=None,
-                   help="premake|mod|exe|exports|all (game); <id> (sdk)")
+                   help="premake|mod|exe|exports|all (game); <mod-folder> (sdk)")
     p.add_argument("id", nargs="?", default=None, help="module id for 'game mod <id>'")
     p.add_argument("--src", default=None, help="the src_rebuild tree")
     p.add_argument("--config", default=os.environ.get("JERICHO_BUILD_CONFIG", DEFAULT_CONFIG))
@@ -564,23 +608,25 @@ def main(argv=None):
     # tolerate an empty or quote-wrapped --src (a batch shim can hand us "").
     src_arg = (args.src or "").strip().strip('"')
     src = find_src_dir(src_arg)
-    if src is None:
-        raise SystemExit("build.py: could not find src_rebuild (pass --src).")
-
     config = canonical_config(args.config)
     jobs = args.jobs if args.jobs > 0 else (os.cpu_count() or 4)
-    ctx = Ctx(src, config, args.dry_run, jobs, backend_for_os())
+    ctx = Ctx(src or "", config, args.dry_run, jobs, backend_for_os())
 
     print("[build] JERICHO driver | os=%s config=%s jobs=%d src=%s%s"
-          % (ctx.backend.key, config, jobs, src, "  [dry-run]" if args.dry_run else ""),
+          % (ctx.backend.key, config, jobs, src or "(none)",
+             "  [dry-run]" if args.dry_run else ""),
           flush=True)
+
+    if args.target == "sdk":
+        return do_sdk(ctx, args.step)
+
+    if src is None:
+        raise SystemExit("build.py: could not find src_rebuild (pass --src).")
 
     if args.target == "game":
         return do_game(ctx, args.step, args.id)
     if args.target == "mods":
         return do_mods(ctx)
-    if args.target == "sdk":
-        return do_sdk(ctx, args.step)
     raise SystemExit("build.py: unknown target %r" % args.target)
 
 
