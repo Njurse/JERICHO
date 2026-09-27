@@ -611,6 +611,12 @@ project "REDRIVER2"
             "xcopy /Y /D \"..\\..\\JERICHO\\CONFIG\\modlist.ini\" \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\\modlist.ini\"",
             "copy /Y \"..\\..\\JERICHO\\build_mods.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.bat\"",
             "copy /Y \"..\\..\\JERICHO\\build_game.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.bat\"",
+            -- the shared cross-platform build driver + its POSIX shims travel
+            -- with the runtime JERICHO so the in-game Compile Mods flow finds
+            -- them next to the exe (build_game.bat forwards to build.py).
+            "copy /Y \"..\\..\\JERICHO\\build.py\" \"%{cfg.buildtarget.directory}JERICHO\\build.py\"",
+            "copy /Y \"..\\..\\JERICHO\\build_game.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.sh\"",
+            "copy /Y \"..\\..\\JERICHO\\build_mods.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.sh\"",
         }
 
     filter { "system:linux" }
@@ -620,4 +626,8 @@ project "REDRIVER2"
             -- as on Windows: let a repo-side modlist.ini edit reach bin/, but only when
             -- it is the newer file (cp -u), so a runtime toggle there still survives.
             "cp -u ../../JERICHO/CONFIG/modlist.ini \"%{cfg.buildtarget.directory}JERICHO/CONFIG/modlist.ini\"",
+            -- the shared cross-platform build driver + the .bat/.sh entry
+            -- points travel with the runtime JERICHO (the in-game Compile
+            -- Mods flow runs build_game.sh -> build.py).
+            "cp -f ../../JERICHO/build.py ../../JERICHO/build_game.sh ../../JERICHO/build_mods.sh ../../JERICHO/build_game.bat ../../JERICHO/build_mods.bat \"%{cfg.buildtarget.directory}JERICHO/\"",
         }
