@@ -1181,7 +1181,16 @@ void InitaliseMenu(PAUSEMODE mode)
 					pNewMenu = &CutscenePauseMenuHeader;
 			}
 			else 
-				pNewMenu = &MultiplayerPauseHeader;
+			{
+				/* JERICHO: this branch is the MULTIPLAYER one, and it used to hand back a
+				 * static header that never went through JerPauseRootOr -- so a match on a
+				 * multiplayer-region map (gMultiplayerLevels, set from MissionHeader->region)
+				 * lost the whole "JERICHO Addons" tree: every module's pause menu, including
+				 * mp's own "My colour". A two-player split-screen match has the same problem.
+				 * Splice it the same way as the single-player branch; JerPauseRootOr works
+				 * off the header it is GIVEN, so this copies the multiplayer layout. */
+				pNewMenu = JerPauseRootOr(&MultiplayerPauseHeader);
+			}
 
 			break;
 		case PAUSEMODE_GAMEOVER:
