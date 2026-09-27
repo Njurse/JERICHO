@@ -1,8 +1,9 @@
 // ai/ai.h — Combat D2 opponent AI. The brain lives in ai/opponent.c; this
 // header is the small surface the rest of the module (menu, cainescrossfire.c) uses.
 //
-// States are the CD2_AI_* enum in cainescrossfire.h (HUNT / FLEE / RECOVER / WANDER,
-// plus the EVADE overlay that rides on top of whichever is active).
+// States are the CD2_AI_* enum in cainescrossfire.h (Auto / Disperse / Roam /
+// Attack / Flee / Recover), plus the EVADE overlay that rides on top of whichever is
+// active.
 
 #ifndef CD2_AI_H
 #define CD2_AI_H
@@ -67,11 +68,12 @@ int cd2AiGetDebug(CD2_AI_DEBUG* out);
 
 // Hand the PLAYER's car to this AI (1) or give it back to the pad (0) - the
 // cc_debug.txt `playerai:` test mode. The player's car is adopted as an AI
-// contestant: it keeps CONTROL_TYPE_PLAYER and so keeps the camera, the HUD and
-// the module's springs, but the AI drives it (its pad is blanked and its throttle
-// and steering are written by cd2AiDrive). Driven even when the match has no
-// opponents, and not counted as a spawned opponent, so the match still respawns
-// its own.
+// contestant: it is switched to CONTROL_TYPE_CUTSCENE (load-bearing, not cosmetic -
+// a CONTROL_TYPE_PLAYER car loses the AI's throttle to the player's own pedal path
+// every frame) so it keeps the camera, the HUD and the module's springs, but the AI
+// drives it (its pad is blanked and its throttle and steering are written by
+// cd2AiDrive). Driven even when the match has no opponents, and not counted as a
+// spawned opponent, so the match still respawns its own.
 void cd2AiAdoptPlayer(int on);
 
 // 1 when `car` (a CAR_DATA*) is the opponent this module owns.

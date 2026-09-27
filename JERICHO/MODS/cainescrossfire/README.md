@@ -77,7 +77,8 @@ saved by `cainescrossfire.c` `cd2LoadConfig` / `cd2SaveConfig`).
 - [`SOUNDS.md`](SOUNDS.md) — Driver 2's three audio layers, the sample-play
   API, the sound banks, and candidate weapon sample indices.
 - [`AI.md`](AI.md) — the prototype opponent AI (`ai/`): states, roles,
-  navigation and the on-screen readout.
+  navigation, the on-screen readout, and (§11) a prioritised backlog of what
+  needs improving and how.
 - [`MOUNTED_CREW.md`](MOUNTED_CREW.md) — the driver/gunner who lean out of the
   window to fire crew weapons: the `leanOut` bitmask, the selected/fired request
   and its OR rule, the get-out/hold/get-in ped lifecycle, firing from the
