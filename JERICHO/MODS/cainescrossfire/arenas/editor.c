@@ -64,6 +64,8 @@ static int gSelSlot;
 static int gCornerState;		/* 0 none, 1 A marked, 2 rect set */
 static int gCornerAx, gCornerAz;
 static unsigned short gLastPad;
+static int gNoclip;			/* editor noclip: hold the car's altitude */
+static int gNoclipY;		/* the altitude held while noclip is on (y-up) */
 
 int cd2EditorActive(void)
 {
@@ -108,6 +110,52 @@ static CAR_DATA* cd2EditorCar(void)
 		return NULL;
 
 	return cp;
+}
+
+/* NOCLIP (CROSS toggles it). While it is on, hold the player's car at the
+ * altitude it had when noclip was switched on, with no gravity and no vertical
+ * velocity, so it can be driven/slid freely - through the air, over anything -
+ * to place a spawn exactly where you want it, without dropping out of the world.
+ * The handling is point-mass (velocity + yaw), so it drives in the air happily;
+ * only the fall is what noclip removes.
+ *
+ * Pinned in JER_EVENT_GET_PHYSICS_PARAMS, which fires at the very top of
+ * StepOneCar BEFORE the step snapshots st.n.linearVelocity into its locals -
+ * zeroing vy in CAR_STEP (which fires after that snapshot) is too late, the old
+ * vy still integrates. Setting gravity to 0 here removes the fall at the
+ * source. */
+static int cd2EditorNoClipStep(void* ud, void* args)
+{
+	JER_ARGS_PHYSICS_PARAMS* s = (JER_ARGS_PHYSICS_PARAMS*)args;
+	CAR_DATA* cp = (CAR_DATA*)s->car;
+
+	(void)ud;
+
+	if (gEditorOn && gNoclip && cp != NULL && cp->controlType == CONTROL_TYPE_PLAYER)
+	{
+		s->gravity = 0;
+		cp->hd.where.t[1] = gNoclipY;
+		cp->st.n.linearVelocity[1] = 0;
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+// CROSS: toggle noclip. Entering it captures the altitude to hold.
+static void cd2EditorToggleNoClip(void)
+{
+	CAR_DATA* cp;
+
+	gNoclip ^= 1;
+
+	if (gNoclip)
+	{
+		cp = cd2EditorCar();
+		gNoclipY = (cp != NULL) ? cp->hd.where.t[1] : 200;
+		printInfo("[cainescrossfire] arena editor: NOCLIP on (holding y=%d) - drive/fly to place\n", gNoclipY);
+	}
+	else
+		printInfo("[cainescrossfire] arena editor: NOCLIP off\n");
 }
 
 // Where the editor's CURSOR is, which is what every action places/moves/deletes
@@ -452,6 +500,7 @@ static int cd2EditorOnGameStart(void* ud, void* args)
 	gSelSlot = 0;
 	gCornerState = 0;
 	gLastPad = 0;
+	gNoclip = 0;
 
 	if (!gEditorOn)
 		return JER_RESULT_CONTINUE;
@@ -507,6 +556,7 @@ static int cd2EditorOnFrame(void* ud, void* args)
 	if (edge & MPAD_L2)	cd2EditorDeleteNearest();
 	if (edge & MPAD_R2)	cd2EditorCorner();
 	if (edge & MPAD_TRIANGLE)	cd2EditorWarpCar();
+	if (edge & MPAD_CROSS)	cd2EditorToggleNoClip();
 	if (edge & MPAD_SELECT)	cd2EditorSave();
 	if (edge & MPAD_START)	cd2EditorReload();
 
@@ -520,11 +570,13 @@ static int cd2EditorOnFrame(void* ud, void* args)
 	cd2EditorDraw();
 
 	snprintf(line, sizeof(line),
-		"ARENA EDITOR: %s%s  spawn %d/%d  region %s  cursor %s  [L1 place  R1 slot  L2 del  R2 corner  TRI warp  SEL save  START reload]",
+		"ARENA EDITOR: %s%s  spawn %d/%d  region %s  cursor %s  noclip %s  "
+		"[L1 place  R1 slot  L2 del  R2 corner  TRI warp  X noclip  SEL save  START reload]",
 		w->internalName, gEditorDirty ? " *unsaved*" : "",
 		(w->spawnCount > 0) ? (gSelSlot + 1) : 0, w->spawnCount,
 		w->region.bounded ? "set" : "none",
-		(g_FreeCameraEnabled != 0) ? "FREECAM (F7)" : "car");
+		(g_FreeCameraEnabled != 0) ? "FREECAM (F7)" : "car",
+		gNoclip ? "ON" : "off");
 	jer_hud_panel(CD2_ED_PANEL, 0, line, gEditorDirty ? 255 : 220, 230, 120);
 
 	return JER_RESULT_CONTINUE;
@@ -535,4 +587,6 @@ void cd2EditorRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CMDLINE, cd2EditorOnCmdline, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2EditorOnGameStart, NULL, 20);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2EditorOnFrame, NULL, -5);
+	/* noclip: kill gravity + hold the altitude, at the top of the physics step */
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_PHYSICS_PARAMS, cd2EditorNoClipStep, NULL, 0);
 }
