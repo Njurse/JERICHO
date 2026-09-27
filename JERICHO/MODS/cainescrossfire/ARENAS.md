@@ -104,13 +104,29 @@ pickup: health -3000 1000 2500       # a repair: this many damage units off tota
   place on the map.)
   trusted (no clear-line probe).
 - **`pickup`** places a drive-over item: `pickup: weapon <name> x z [ammo]` gives the
-  named weapon (its short code name, e.g. `missile`, `homing`, `shotgun` — or its
+  named weapon (its short code name, e.g. `missile`, `MG`, `shotgun` — or its
   display name) plus `ammo` rounds (default 5), and `pickup: health x z [amount]`
   removes `amount` damage units from the car's `totalDamage` (default 2500). A
   module-owned car (the player or an opponent) driving within **320 units** collects
-  it; it then disappears and comes back after **900 frames (30s)**. Each pickup
-  draws as a bar-and-diamond: **green for health, amber for a weapon**. Civ traffic
-  drives over them freely.
+  it; it then disappears and comes back after **900 frames (30s)**. Civ traffic
+  drives over them freely. Watch the name: it is matched against the weapon's
+  **short code name** (`CD2_WEAPON_DEF.name`), so the homing weapon is `SEEKER`, not
+  `homing` — a name that matches nothing is dropped without a word.
+- **how a pickup LOOKS** (all optional, and the defaults are what you want unless you
+  are doing something specific):
+  - `pickupspin: <PSX angle units per frame>` — how fast the plane turns. Default
+    **48**, i.e. a full turn every ~2.8s at 30fps; it goes edge-on twice a turn,
+    which is what reads as spinning.
+  - `pickupbob: <world units>` — how far it floats up and down. Default **40**, `0`
+    to keep it still.
+  - `pickupsize: <world units>` — the plane's half-size. Default **220** (440 wide).
+
+  An arena that sets none of them is written back without them, so existing files
+  are untouched. Each pickup is drawn as an upright plane showing its icon
+  (`textures/icons/health.tga` and `textures/icons/wid_<weapon>.tga` — see
+  `tools/icons.py`), turning about the world vertical and bobbing, always on top so
+  the road cannot hide it. A weapon with no icon falls back to the old
+  bar-and-diamond: **green for health, amber for a weapon**.
 - **`city` + `mp`** decide the level: `city` picks the city, `mp 1 0` loads that
   city's small multiplayer map, `mp 0 0` (or `mp: full`) loads the **full city
   map** — which, with a `region`, is how you cordon off a corner of a
