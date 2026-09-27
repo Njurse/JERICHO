@@ -132,5 +132,79 @@ python3 JERICHO/build.py mods   # build the runtime addons (.so)
 
 
 
+## Verifying the Linux toolchain (acceptance test)
+
+This is the end-to-end check that the mod toolchain works on a Linux box. It
+exercises all four moving parts: the driver, the premake addon build, the
+in-game **Compile Mods** path, and the runtime loader.
+
+### 0. Prerequisites
+
+```
+sudo apt-get install -y build-essential libsdl2-dev libopenal-dev \
+                        libjpeg-turbo8-dev libgl1-mesa-dev
+python3 --version            # 3.6+
+```
+
+### 1. Set up and build the game + the deep mods
+
+```
+./linux_dev_prepare.sh                    # premake5 + deps check + gmake2 makefiles
+python3 JERICHO/build.py game --dry-run   # (optional) inspect the commands
+python3 JERICHO/build.py game             # premake + every deep mod + REDRIVER2_dev
+```
+
+Expect `src_rebuild/bin/Release_dev/REDRIVER2_dev`, with `JERICHO/` mirrored
+beside it — including `build.py`, `build_game.sh` and `build_mods.sh`.
+`--dry-run` should report `os=linux` and lines like
+`make -C build config=release_dev_x64 …`.
+
+### 2. Build the runtime addons (`.so`)
+
+```
+python3 JERICHO/build.py mods
+ls -l JERICHO/MODS/example/example.so JERICHO/MODS/aidriver/aidriver.so
+```
+
+Expect `example.so` (and `aidriver.so`) — **not** `libexample.so`. A `lib`
+prefix means `targetprefix ""` did not take effect; report it.
+
+### 3. Run the game and confirm the addons load
+
+```
+cd src_rebuild/bin/Release_dev
+./REDRIVER2_dev -nointro -nofmv
+```
+
+The engine's session log (`<appName>.log`, i.e. `JERICHO.log`) prints the module
+inventory at boot:
+
+```
+== JERICHO v1 (...) == ...
+[jericho] --- module inventory (N loaded) ---
+[jericho]   example   v0.1.0  enabled=... state=...
+```
+
+An addon shown as *not compiled* means the loader did not find its `.so`.
+
+### 4. In-game Compile Mods (the deep build on Linux)
+
+1. Options → JERICHO → **Compile Mods** → **Yes**. It reports that the runtime
+   addons were rebuilt and the deep mods need a restart.
+2. Restart the game. The **Compiling JERICHO addons…** / `<name> [i/n]` progress
+   screen runs, driven by `JERICHO/build_game.sh` → `build.py`.
+3. `JERICHO/CONFIG/build.log` holds the full output; success prints
+   "deep mods compiled - restart to run them".
+4. Restart once more and confirm the game starts with the deep mods active.
+
+### What to report back
+
+- The driver's command lines and the `ls` from steps 1–2.
+- The `[jericho]` inventory line(s) from the log after step 3.
+- Whether step 4's progress screen appeared, and the tail of `build.log`.
+- Any `make` / `premake` error text, verbatim.
+
+## See also
+
 - [README.md](README.md) — JERICHO overview, the mod model, the platform matrix.
 - [`sdk/README.md`](../../../JERICHO/sdk/README.md) — the standalone addon SDK.
