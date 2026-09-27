@@ -102,7 +102,19 @@ typedef struct CD2_ARENA_PROFILE
 
 	int pickupCount;			// drive-over weapon/health pickups
 	CD2_ARENA_PICKUP pickups[CD2_ARENA_MAX_PICKUPS];
+
+	// How a pickup PRESENTS itself (arenas/pickupdraw.c). All three are optional in the
+	// .cca: an absent key takes the default below, and a file that changes none of them
+	// is written back WITHOUT them, so an existing arena's text is untouched.
+	int pickupSpin;		// spin, PSX angle units per frame (48 = a turn every ~2.8s @30fps)
+	int pickupBob;		// bob amplitude, world units (0 = no bob)
+	int pickupSize;		// card half-size, world units (the plane is 2x this)
 } CD2_ARENA_PROFILE;
+
+// Presentation defaults, used when the .cca does not say.
+#define CD2_PICKUP_SPIN_DEFAULT	48
+#define CD2_PICKUP_BOB_DEFAULT	40
+#define CD2_PICKUP_SIZE_DEFAULT	220
 
 // ---------------------------------------------------------------------------
 // The registry (arenas/registry.c)
@@ -166,5 +178,28 @@ void cd2ArenaWatchReset(void);
 // placement). A spawn's `y` is CD2_ARENA_NO_Y when no height was authored.
 int cd2ArenaPlayerSpawn(CD2_ARENA_SPAWN* out);
 int cd2ArenaOpponentSpawn(int index, CD2_ARENA_SPAWN* out);
+
+// ---------------------------------------------------------------------------
+// Pickup presentation (arenas/pickupdraw.c)
+// ---------------------------------------------------------------------------
+//
+// The icon for a weapon (CD2_WID_*), which is the asset `icons/<name>.tga` in the mod's
+// own textures folder. NULL when a weapon has no icon authored, in which case its
+// pickup draws the line marker instead.
+const char* cd2PickupIconName(int wid);
+int cd2PickupIconCount(void);
+
+// The engine-side texture handle for a pickup's icon (JER_TEX_NONE when none is
+// authored), how many loaded at boot, and the hook registration.
+struct JERICHO_CONTEXT;
+unsigned int cd2PickupIconFor(int type, int weapon);	/* JER_TEXTURE */
+int cd2PickupIconsLoaded(void);
+void cd2PickupDrawRegister(struct JERICHO_CONTEXT* ctx);
+
+// Pickup state the presentation needs. cd2ArenaPickupActive reports whether pickup
+// `index` is up (the taken ones are on a respawn timer); cd2ArenaDrawPickupMarker draws
+// the line-marker fallback for one whose icon is missing.
+int cd2ArenaPickupActive(int index);
+void cd2ArenaDrawPickupMarker(const CD2_ARENA_PICKUP* p);
 
 #endif /* CD2_ARENA_PROFILE_H */

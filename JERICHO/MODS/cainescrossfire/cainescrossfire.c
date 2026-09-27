@@ -890,6 +890,9 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	/* the arena runtime (arenas/): authored spawns + the region barrier */
 	cd2ArenaRegister(ctx);
 
+	/* the pickup icons + their world presentation (arenas/pickupdraw.c) */
+	cd2PickupDrawRegister(ctx);
+
 	/* the in-game arena editor (-cceditor / CC_EDITOR) */
 	cd2EditorRegister(ctx);
 

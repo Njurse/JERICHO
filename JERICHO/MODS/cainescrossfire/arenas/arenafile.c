@@ -133,6 +133,11 @@ int cd2ArenaFileLoad(const char* path, CD2_ARENA_PROFILE* out)
 	memset(out, 0, sizeof(*out));
 	out->region.bounded = 0;
 
+	/* presentation defaults: present whether or not the file mentions them */
+	out->pickupSpin = CD2_PICKUP_SPIN_DEFAULT;
+	out->pickupBob = CD2_PICKUP_BOB_DEFAULT;
+	out->pickupSize = CD2_PICKUP_SIZE_DEFAULT;
+
 	while (fgets(line, sizeof(line), fp) != NULL)
 	{
 		char* hash;
@@ -212,6 +217,18 @@ int cd2ArenaFileLoad(const char* path, CD2_ARENA_PROFILE* out)
 				out->region.x1 = x1;
 				out->region.z1 = z1;
 			}
+		}
+		else if (cd2Strcasecmp(key, "pickupspin") == 0)
+		{
+			out->pickupSpin = atoi(val);
+		}
+		else if (cd2Strcasecmp(key, "pickupbob") == 0)
+		{
+			out->pickupBob = atoi(val);
+		}
+		else if (cd2Strcasecmp(key, "pickupsize") == 0)
+		{
+			out->pickupSize = atoi(val);
 		}
 		else if (cd2Strcasecmp(key, "spawn") == 0)
 		{
@@ -329,6 +346,17 @@ int cd2ArenaFileSave(const char* path, const CD2_ARENA_PROFILE* a)
 	}
 
 	fprintf(fp, "# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]\n");
+
+	/* only when they differ from the default, so an arena that says nothing about
+	 * presentation round-trips byte-for-byte (see CD2_PICKUP_*_DEFAULT) */
+	if (a->pickupSpin != CD2_PICKUP_SPIN_DEFAULT)
+		fprintf(fp, "pickupspin: %d\n", a->pickupSpin);
+
+	if (a->pickupBob != CD2_PICKUP_BOB_DEFAULT)
+		fprintf(fp, "pickupbob: %d\n", a->pickupBob);
+
+	if (a->pickupSize != CD2_PICKUP_SIZE_DEFAULT)
+		fprintf(fp, "pickupsize: %d\n", a->pickupSize);
 
 	for (i = 0; i < a->pickupCount && i < CD2_ARENA_MAX_PICKUPS; i++)
 	{

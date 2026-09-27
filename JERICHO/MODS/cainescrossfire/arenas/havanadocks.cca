@@ -1,0 +1,21 @@
+# cainescrossfire arena -- see ARENAS.md
+arena: havanadocks
+name: havanadocks
+city: 1
+mp: 0 0
+region: 308233 -142122 445357 9906
+# spawn: x z heading [y]  (first = player, rest = opponents; y = height)
+spawn: 436381 -95081 3000 32
+spawn: 431501 -107772 1800 32
+spawn: 394346 -45307 0 32
+spawn: 331915 -22766 0 32
+spawn: 378573 -37466 0 32
+spawn: 312528 -113098 0
+spawn: 373036 -117859 0
+# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]
+pickup: health 436391 -94546 250
+pickup: weapon missile 436997 -94896
+pickup: weapon SEEKER 436997 -95596
+pickup: weapon mg 436391 -95946
+pickup: weapon freeze 435784 -95596
+pickup: health 435784 -94896 250

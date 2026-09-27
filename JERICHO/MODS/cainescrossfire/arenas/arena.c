@@ -243,6 +243,16 @@ void cd2ArenaSetCurrent(int arenaId)
 	gArenaCurrent = arenaId;
 }
 
+// Is pickup `index` up right now? The presentation (arenas/pickupdraw.c) draws only the
+// live ones; a taken one is on its respawn timer.
+int cd2ArenaPickupActive(int index)
+{
+	if (index < 0 || index >= CD2_ARENA_MAX_PICKUPS)
+		return 0;
+
+	return gPickupActive[index];
+}
+
 // ---------------------------------------------------------------------------
 // spawn lookups (used by the AI spawn path)
 // ---------------------------------------------------------------------------
@@ -440,7 +450,10 @@ static void cd2ArenaBarrier(void)
 // ---------------------------------------------------------------------------
 // pickups (drive-over weapon crates + repairs)
 // ---------------------------------------------------------------------------
-static void cd2ArenaDrawPickup(const CD2_ARENA_PICKUP* p)
+// The LINE-MARKER presentation: a bar, a diamond on top and a foot ring. Used for a
+// pickup whose icon is missing (arenas/pickupdraw.c picks between this and the textured
+// card), and as the honest fallback when the mod ships no art.
+void cd2ArenaDrawPickupMarker(const CD2_ARENA_PICKUP* p)
 {
 	VECTOR base, tip, e;
 	int r, g, b;
@@ -548,7 +561,9 @@ static void cd2ArenaPickups(void)
 			continue;
 		}
 
-		cd2ArenaDrawPickup(p);
+		// the DRAW itself lives in the render pass now (arenas/pickupdraw.c,
+		// JER_EVENT_DRAW_WORLD): a draw during the sim would land in a buffer that is
+		// about to be rebuilt, and the textured presentation needs the live camera.
 
 		for (c = 0; c < MAX_CARS; c++)
 		{
