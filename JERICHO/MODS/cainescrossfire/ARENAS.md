@@ -281,10 +281,48 @@ detects the LEV itself — so the tool is not passed one.
 The picture is drawn **aligned to the game's world coordinates** (a rip is the
 level model at 1/4096 with X mirrored, so `world_x = -4096*obj_x`,
 `world_z = +4096*obj_z`) and **cached** beside the `.obj` as
-`<CITY>_LEVELMODEL.topdown.png` plus a `.json` sidecar carrying the world rect —
-so only the first build costs anything and the PNG is shareable on its own,
-without the rip. With no `--level`, a map already cached for the arena's city is
-used automatically.
+`<CITY>_LEVELMODEL.topdown.png` plus a `.json` sidecar carrying the world rect
+(and the style) — so only the first build costs anything and the PNG is
+shareable on its own, without the rip. With no `--level`, a map already cached
+for the arena's city is used automatically.
+
+### What the map is (`--style`)
+
+```
+python arenaedit.py --level RIO --style textured   # the default: the city, textured
+python arenaedit.py --level RIO --style points     # the fast vertex cloud
+```
+
+The rip carries real geometry — ~1.2M textured faces for a city — and an `.mtl`
+naming a texture page per material, so the default **`textured`** style is a real
+top-down **render** of the city, not a wireframe: every triangle is filled with
+its texture's colour, and a height buffer keeps the topmost surface, so a roof
+wins over the street under it. It costs ~10–30 s and ~1–1.7M triangles per city,
+once, into the cache. **`points`** is the old vertex cloud: instant, no textures,
+and still the automatic fallback for a rip with no faces.
+
+Two things worth knowing:
+
+* **Which way up the texture is** is *measured*, not assumed. A face's signed
+  area on screen and in `(u, v)` must match if its texture is not mirrored when
+  seen from above; the build counts that over the faces where the sign is well
+  determined and reports the percentage (all four cities land at 88–95%, i.e.
+  keep `u` as it is). `--uv-flip` is the escape hatch if a rip disagrees.
+* The tool writes a page file only when it has one, so a few materials name a
+  `PAGE_n.tga` that does not exist (0–9 per city). Those faces draw flat grey —
+  measured at 93 px in the whole RIO map, so it is not worth chasing.
+
+Changing `--style` **rebuilds** the map rather than serving the other one: the
+sidecar keys the cache on the style (`renderer` records what actually drew it).
+
+`tools/rendercheck.py` is the headless guard for all of this — a synthetic rip
+whose answer is known (ground, a raised patch that must win the height buffer,
+and a quad too big for the fill grid, which must be subdivided rather than
+skipped) plus `--city CITY` / `--all` on the real maps:
+
+```
+python rendercheck.py --all        # every ripped city renders with structure
+```
 
 ## Test levers
 

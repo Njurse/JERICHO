@@ -14,16 +14,19 @@ are two views of one file: what one saves, the other loads.
     python arenaedit.py chicago.cca --check          # validate, print, exit
     python arenaedit.py --rip CHICAGO                # export a city's level model
     python arenaedit.py --rip                        # ... or all four cities
+    python arenaedit.py myarena.cca --level RIO       # the city, textured, underneath
+    python arenaedit.py --level RIO --style points   # ... or the fast vertex cloud
 
 The view is in WORLD units (the units the .cca stores and the game uses), so no
 calibration is needed to place things. A background is optional and purely
 decorative. Give it as an IMAGE stretched over a world rectangle (--map
 --map-world), or as a level .obj from DriverLevelTool (--obj), whose own
 bounding box is stretched onto --obj-world (or the centered cell grid from
---cells). The .obj is in the tool's model units, not world units, so its
-mapping is approximate unless you give the exact rectangle; the game's own
-overmap (DriverLevelTool -overmap) is the alternative when its map tiles are
-present. Without a background you get a coordinate grid.
+--cells). Best is a city's own rip (`--level CITY`), which is aligned to the
+game's world coordinates for you: by default it is a real textured top-down
+RENDER of the level's faces, cached beside the .obj (`--style points` gives the
+fast, texture-free vertex cloud instead). Without a background you get a
+coordinate grid.
 
 Mouse (editor):
   left-click         select a spawn (or the nearest to the click)
@@ -532,22 +535,558 @@ def rip_level(city, force=False, verbose=True, cancel=None):
     return obj
 
 
-def build_level_map(city, size=(2000, 2000), sample=4, rebuild=False,
-                    allow_build=True, allow_rip=False, verbose=True):
+# ---------------------------------------------------------------------------
+# the top-down render: the rip's FACES, textured (the `textured` style)
+# ---------------------------------------------------------------------------
+# The rip carries real geometry - v + vt + f, over a million of them - and an
+# .mtl naming a texture page per material. So the background can be the city as
+# it looks from above instead of a cloud of its vertices: every triangle is
+# filled with its texture's colour, and a height buffer keeps the topmost
+# surface, so a roof wins over the street under it. `points` (the old vertex
+# cloud) is kept as the fast, texture-free fallback.
+GRID_MAX = 64           # the largest triangle bbox (in pixels) the fill handles
+ELEM_BUDGET = 1000000   # pixels per vectorised chunk (keeps memory ~100 MB)
+
+
+def _read_mtl(path):
+    """{material name: texture file} from a DriverLevelTool .mtl."""
+    pages = {}
+    cur = None
+    try:
+        f = open(path, "r", errors="ignore")
+    except OSError:
+        return pages
+    with f:
+        for line in f:
+            low = line.strip().lower()
+            if low.startswith("newmtl "):
+                cur = low.split(None, 1)[1].strip()
+            elif low.startswith("map_kd ") and cur is not None:
+                pages[cur] = line.strip().split(None, 1)[1].strip()
+    return pages
+
+
+def _scan_obj(obj, cancel=None):
+    """One streaming pass over a rip -> (V, UV, TRI, TRIUV, SLOTS, materials, rect).
+
+    The export re-emits every group's vertices, so the OBJ indices are global and
+    cumulative - the arrays just grow. Faces are quads (fanned 0-2) or triangles,
+    and the last `usemtl` before a face is that face's material.
+
+    The world rect is taken from EVERY vertex. The old code derived it from the
+    1-in-`sample` vertices it plotted, so the extent under-covered and the whole
+    picture was scaled and shifted off the arena's coordinates.
+    """
+    import numpy as np
+    from array import array
+
+    vx = array("f"); vy = array("f"); vz = array("f")
+    uu = array("f"); vv = array("f")
+    ti = array("i"); tu = array("i"); ts = array("i")
+    materials = ["none"]        # slot 0: an untextured face
+    slot = {"none": 0}
+    cur = 0
+    min_x = min_z = 1e30
+    max_x = max_z = -1e30
+
+    with open(obj, "r", errors="ignore") as f:
+        for line in f:
+            c = line[:2]
+
+            if c == "v ":
+                p = line.split()
+                try:
+                    x = float(p[1]); y = float(p[2]); z = float(p[3])
+                except (IndexError, ValueError):
+                    x = y = z = 0.0
+                vx.append(x); vy.append(y); vz.append(z)
+                if x < min_x: min_x = x
+                if x > max_x: max_x = x
+                if z < min_z: min_z = z
+                if z > max_z: max_z = z
+
+            elif c == "vt":
+                p = line.split()
+                try:
+                    uu.append(float(p[1])); vv.append(float(p[2]))
+                except (IndexError, ValueError):
+                    uu.append(0.0); vv.append(0.0)
+
+            elif c == "us":
+                parts = line.split(None, 1)
+                name = parts[1].strip().lower() if len(parts) > 1 else "none"
+                cur = slot.get(name)
+                if cur is None:
+                    cur = slot[name] = len(materials)
+                    materials.append(name)
+
+            elif c == "f ":
+                toks = line.split()
+                if len(toks) < 4:
+                    continue
+                try:
+                    corners = [(int(t.split("/")[0]),
+                                int(t.split("/")[1]) if "/" in t and t.split("/")[1] else 0)
+                               for t in toks[1:]]
+                except ValueError:
+                    continue
+                a0, t0 = corners[0]
+                for k in range(1, len(corners) - 1):
+                    b, tb = corners[k]
+                    cc, tc = corners[k + 1]
+                    ti.extend((a0 - 1, b - 1, cc - 1))
+                    tu.extend((t0 - 1 if t0 else 0,
+                               tb - 1 if tb else 0,
+                               tc - 1 if tc else 0))
+                    ts.append(cur)
+
+            if cancel is not None and cancel.is_set():
+                return None
+
+    if not len(vx) or not len(ti):
+        return None
+
+    nv = len(vx)
+    V = np.empty((nv, 3), dtype=np.float32)
+    V[:, 0] = np.frombuffer(vx, dtype=np.float32)
+    V[:, 1] = np.frombuffer(vy, dtype=np.float32)
+    V[:, 2] = np.frombuffer(vz, dtype=np.float32)
+
+    if len(uu):
+        UV = np.empty((len(uu), 2), dtype=np.float32)
+        UV[:, 0] = np.frombuffer(uu, dtype=np.float32)
+        UV[:, 1] = np.frombuffer(vv, dtype=np.float32)
+    else:
+        UV = np.zeros((1, 2), dtype=np.float32)
+
+    TRI = np.frombuffer(ti, dtype=np.int32).reshape(-1, 3)
+    TRIUV = np.frombuffer(tu, dtype=np.int32).reshape(-1, 3)
+    SLOTS = np.frombuffer(ts, dtype=np.int32).reshape(-1)
+
+    # indices are 1-based; a bad one would read garbage, so clamp (np.clip
+    # returns a writable copy, which the read-only frombuffer views are not)
+    TRI = np.clip(TRI, 0, len(V) - 1)
+    TRIUV = np.clip(TRIUV, 0, max(0, len(UV) - 1))
+
+    # the model -> world frame (X mirrored) over the TRUE extent
+    rect = (-LEVEL_SCALE * max_x, LEVEL_SCALE * min_z,
+            -LEVEL_SCALE * min_x, LEVEL_SCALE * max_z)
+    return V, UV, TRI, TRIUV, SLOTS, materials, rect
+
+
+def _build_atlas(material_pages, obj_dir):
+    """Stack every referenced page into one padded RGBA array for a single gather.
+
+    Returns (flat, base, widths, heights, wmax, npages, loaded, missing). Slot 0
+    (an untextured face) is a flat grey, so "no texture" still draws something.
+    """
+    import numpy as np
+    from PIL import Image
+
+    n = len(material_pages)
+    loaded = 0
+    missing = []
+    imgs = []
+
+    for i, path in enumerate(material_pages):
+        im = None
+        if i > 0 and path:
+            cand = path if os.path.isabs(path) else os.path.join(obj_dir, path)
+            for c in (cand, os.path.join(obj_dir, os.path.basename(path))):
+                if os.path.exists(c):
+                    try:
+                        im = Image.open(c).convert("RGBA")
+                        loaded += 1
+                        break
+                    except Exception:
+                        im = None
+            if im is None:
+                missing.append(path)
+        if im is None:
+            im = Image.new("RGBA", (4, 4), (150, 150, 150, 255))
+        imgs.append(np.asarray(im, dtype=np.uint8))
+
+    wmax = max(a.shape[1] for a in imgs)
+    hmax = max(a.shape[0] for a in imgs)
+    atlas = np.zeros((n, hmax, wmax, 4), dtype=np.uint8)
+    base = np.zeros(n, dtype=np.int64)
+    widths = np.zeros(n, dtype=np.int64)
+    heights = np.zeros(n, dtype=np.int64)
+
+    for i, a in enumerate(imgs):
+        h, w = a.shape[0], a.shape[1]
+        atlas[i, :h, :w] = a
+        base[i] = i * hmax * wmax
+        widths[i] = w
+        heights[i] = h
+
+    return (atlas.reshape(-1, 4), base, widths, heights, wmax,
+            n, loaded, missing)
+
+
+def _split_big(PX, PY, PH, PU, PV, SLOTS, limit, rounds=8):
+    """Subdivide triangles whose screen bbox is bigger than `limit`.
+
+    A triangle larger than the fill's grid was previously SKIPPED, which punched
+    holes in the picture wherever the level had a big polygon (the fill reported
+    them as `faces_skipped`). Splitting at the edge midpoints keeps every
+    barycentric attribute exact - a midpoint's value is the mean of its ends - so
+    the pieces fill normally and the image has no holes.
+    """
+    import numpy as np
+
+    for _ in range(rounds):
+        w = np.maximum(np.maximum(PX[:, 0], PX[:, 1]), PX[:, 2]) \
+            - np.minimum(np.minimum(PX[:, 0], PX[:, 1]), PX[:, 2])
+        h = np.maximum(np.maximum(PY[:, 0], PY[:, 1]), PY[:, 2]) \
+            - np.minimum(np.minimum(PY[:, 0], PY[:, 1]), PY[:, 2])
+        big = np.maximum(w, h) > limit
+        if not big.any():
+            break
+
+        idx = np.nonzero(big)[0]
+        small = np.nonzero(~big)[0]
+
+        def expand(P):
+            m01 = 0.5 * (P[:, 0] + P[:, 1])
+            m12 = 0.5 * (P[:, 1] + P[:, 2])
+            m20 = 0.5 * (P[:, 2] + P[:, 0])
+            kids = np.stack([P[:, 0], m01, m20,
+                             m01, P[:, 1], m12,
+                             m20, m12, P[:, 2],
+                             m01, m12, m20], axis=1)
+            kids = kids.reshape(len(P), 4, 3)[idx].reshape(-1, 3)
+            return np.concatenate([P[small], kids], axis=0)
+
+        PX = expand(PX); PY = expand(PY); PH = expand(PH)
+        PU = expand(PU); PV = expand(PV)
+        SLOTS = np.concatenate([SLOTS[small], np.repeat(SLOTS[idx], 4)])
+
+    return PX, PY, PH, PU, PV, SLOTS
+
+
+def _build_textured(city, obj, size, sample, verbose, uv_flip=False,
+                    progress=None, cancel=None):
+    """The textured top-down render. Returns (PIL image, rect, stats)."""
+    import numpy as np
+    from PIL import Image
+
+    if verbose:
+        print("  reading %s (%.0f MB, this is the slow part) ..."
+              % (os.path.basename(obj), os.path.getsize(obj) / 1048576.0))
+
+    scan = _scan_obj(obj, cancel=cancel)
+    if scan is None:
+        return None, None, {}
+
+    V, UV, TRI, TRIUV, SLOTS, materials, rect = scan
+    ntri = len(TRI)
+
+    if sample and sample > 1:
+        keep = np.arange(0, ntri, sample)
+        TRI = TRI[keep]; TRIUV = TRIUV[keep]; SLOTS = SLOTS[keep]
+        ntri = len(TRI)
+
+    # --- the texture pages -------------------------------------------------
+    pages = _read_mtl(os.path.splitext(obj)[0] + ".mtl")
+    material_pages = [pages.get(m) for m in materials]
+    flat, base, tw, th, wmax, npages, loaded, missing = _build_atlas(
+        material_pages, os.path.dirname(obj))
+
+    if verbose:
+        print("  %s: %d triangles, %d texture pages (%d loaded)"
+              % (city.upper(), ntri, npages - 1, loaded))
+        if missing:
+            print("  (no page for: %s)" % ", ".join(missing[:4]))
+
+    W, H = size
+
+    # screen space (x right, y down) and the height the z-buffer sorts on
+    corners = V[TRI].astype(np.float64)
+    x0, z0, x1, z1 = rect
+    sx = W / float(x1 - x0)
+    sz = H / float(z1 - z0)
+
+    PX = ((-LEVEL_SCALE * corners[:, :, 0] - x0) * sx).astype(np.float32)
+    PY = ((LEVEL_SCALE * corners[:, :, 2] - z0) * sz).astype(np.float32)
+    PH = (LEVEL_SCALE * corners[:, :, 1]).astype(np.float32)
+    PU = np.stack([UV[TRIUV[:, 0], 0], UV[TRIUV[:, 1], 0],
+                   UV[TRIUV[:, 2], 0]], axis=1).astype(np.float32)
+    PV = np.stack([UV[TRIUV[:, 0], 1], UV[TRIUV[:, 1], 1],
+                   UV[TRIUV[:, 2], 1]], axis=1).astype(np.float32)
+
+    # --- orientation -------------------------------------------------------
+    # A face's signed area in screen space and in (u, v) must have the SAME sign
+    # if its texture is not mirrored when seen from above. That is independent of
+    # the model's winding convention, so it is a measurement, not a guess: the
+    # export negates X to land on the world frame, and mirroring the model
+    # mirrors u with it. `--uv-flip` is the escape hatch for a rip that disagrees
+    # (it is the same correction, a quarter-turn apart).
+    area_s = (PX[:, 1] - PX[:, 0]) * (PY[:, 2] - PY[:, 0]) \
+        - (PX[:, 2] - PX[:, 0]) * (PY[:, 1] - PY[:, 0])
+    area_t = (PU[:, 1] - PU[:, 0]) * (PV[:, 2] - PV[:, 0]) \
+        - (PU[:, 2] - PU[:, 0]) * (PV[:, 1] - PV[:, 0])
+    live = (area_s != 0.0) & (area_t != 0.0)
+    # A raw majority over every face is noisy: the level is mostly sub-pixel
+    # slivers, where a sign is meaningless (that reads ~0.35). Restricting to
+    # faces with a well-determined area on screen AND in uv space gives a
+    # decisive verdict (0.95-1.00 across all four cities) - so this measures
+    # rather than guesses. Widen the net only if too few faces qualify.
+    sel = (np.abs(area_s) > 16.0) & (np.abs(area_t) > 0.02)
+    if int(sel.sum()) < 32:
+        sel = (np.abs(area_s) > 1.0) & (np.abs(area_t) > 1e-3)
+    if not sel.any():
+        sel = live
+    njudged = int(sel.sum())
+    agree = float(np.mean((area_s[sel] > 0) == (area_t[sel] > 0))) if njudged else 1.0
+    mirrored_u = agree < 0.5
+    if mirrored_u:
+        PU = 1.0 - PU
+        agree = 1.0 - agree
+    if uv_flip:
+        PV = 1.0 - PV
+
+    if verbose:
+        print("  uv orientation: %.1f%% of %d faces agree (u %s)"
+              % (agree * 100.0, njudged,
+                 "mirrored to match" if mirrored_u else "kept"))
+
+    # --- fill --------------------------------------------------------------
+    PX, PY, PH, PU, PV, SLOTS = _split_big(
+        PX.astype(np.float32), PY.astype(np.float32), PH.astype(np.float32),
+        PU.astype(np.float32), PV.astype(np.float32), SLOTS, GRID_MAX)
+    pieces = len(PX)
+
+    if verbose:
+        print("  filling %d pieces (%.2f px each) ..."
+              % (pieces, float(np.maximum(
+                  np.maximum(PX[:, 0], PX[:, 1]), PX[:, 2]).mean()
+                  - np.minimum(np.minimum(PX[:, 0], PX[:, 1]), PX[:, 2]).mean())))
+
+    cx0 = np.clip(np.floor(np.minimum(np.minimum(PX[:, 0], PX[:, 1]), PX[:, 2])).astype(np.int64), 0, W)
+    cy0 = np.clip(np.floor(np.minimum(np.minimum(PY[:, 0], PY[:, 1]), PY[:, 2])).astype(np.int64), 0, H)
+    cx1 = np.clip(np.ceil(np.maximum(np.maximum(PX[:, 0], PX[:, 1]), PX[:, 2])).astype(np.int64) + 1, 0, W)
+    cy1 = np.clip(np.ceil(np.maximum(np.maximum(PY[:, 0], PY[:, 1]), PY[:, 2])).astype(np.int64) + 1, 0, H)
+
+    vis = (cx1 > cx0) & (cy1 > cy0) & np.isfinite(PX[:, 0]) & np.isfinite(PY[:, 0])
+    g = np.maximum(cx1 - cx0, cy1 - cy0)
+    vis &= g <= GRID_MAX            # _split_big guarantees this, but be safe
+    total = int(vis.sum())
+
+    out = np.zeros(W * H, dtype=np.int64)
+
+    def fill(sub, S):
+        ox = np.arange(S, dtype=np.float64)[None, None, :]
+        oy = np.arange(S, dtype=np.float64)[None, :, None]
+        bx = cx0[sub].astype(np.float64)[:, None, None] + ox
+        by = cy0[sub].astype(np.float64)[:, None, None] + oy
+
+        xs = PX[sub].astype(np.float64)[:, :, None, None]
+        ys = PY[sub].astype(np.float64)[:, :, None, None]
+        x0s, x1s, x2s = xs[:, 0], xs[:, 1], xs[:, 2]
+        y0s, y1s, y2s = ys[:, 0], ys[:, 1], ys[:, 2]
+
+        d = (y1s - y2s) * (x0s - x2s) + (x2s - x1s) * (y0s - y2s)
+        degen = np.abs(d) < 1e-12
+        d = np.where(degen, 1e-12, d)
+
+        # edge functions. The barycentric WEIGHTS are n/d (affine either way, so
+        # they interpolate whatever the winding), but INSIDE is where the sign of
+        # n matches the sign of d - a level mesh is not uniformly wound, and
+        # testing only one sign silently dropped every clockwise face.
+        n0 = (y1s - y2s) * (bx - x2s) + (x2s - x1s) * (by - y2s)
+        n1 = (y2s - y0s) * (bx - x2s) + (x0s - x2s) * (by - y2s)
+        n2 = d - n0 - n1
+        sgn = np.where(d < 0.0, -1.0, 1.0)
+
+        # CONSERVATIVE test: include a pixel when the pixel SQUARE touches the
+        # triangle, i.e. its centre is up to half a pixel outside an edge. A
+        # plain centre test drops every sub-pixel triangle - the level is mostly
+        # sub-pixel triangles at this scale, so it left the picture speckled with
+        # pinholes. (|n|/|edge| is the centre-to-edge distance.)
+        len0 = np.hypot(x1s - x2s, y1s - y2s)
+        len1 = np.hypot(x2s - x0s, y2s - y0s)
+        len2 = np.hypot(x0s - x1s, y0s - y1s)
+
+        ins = ((n0 * sgn) >= -0.5 * len0)
+        ins &= ((n1 * sgn) >= -0.5 * len1)
+        ins &= ((n2 * sgn) >= -0.5 * len2)
+        ins &= ~degen
+        ins &= bx < cx1[sub].astype(np.float64)[:, None, None]
+        ins &= by < cy1[sub].astype(np.float64)[:, None, None]
+        if not ins.any():
+            return 0
+
+        w0 = n0 / d
+        w1 = n1 / d
+        w2 = n2 / d
+
+        hs = PH[sub].astype(np.float64)[:, :, None, None]
+        us = PU[sub].astype(np.float64)[:, :, None, None]
+        vs = PV[sub].astype(np.float64)[:, :, None, None]
+
+        hh = w0 * hs[:, 0] + w1 * hs[:, 1] + w2 * hs[:, 2]
+        uu = w0 * us[:, 0] + w1 * us[:, 1] + w2 * us[:, 2]
+        vv = w0 * vs[:, 0] + w1 * vs[:, 1] + w2 * vs[:, 2]
+
+        sl = SLOTS[sub][:, None, None]
+        pw = tw[sl]; ph = th[sl]
+        col = np.clip((uu * pw).astype(np.int64), 0, pw - 1)
+        row = np.clip((vv * ph).astype(np.int64), 0, ph - 1)
+        texel = flat[base[sl] + row * wmax + col]           # (n, S, S, 4)
+
+        ins &= texel[..., 3] > 0
+        if not ins.any():
+            return 0
+
+        rgb = ((texel[..., 0].astype(np.int64) << 16)
+               | (texel[..., 1].astype(np.int64) << 8)
+               | texel[..., 2].astype(np.int64))
+        # height first in the key, so the topmost sample wins the pixel
+        hq = np.clip(np.rint(hh), -8388607, 8388607).astype(np.int64) + 8388608
+        key = (hq << 24) | rgb
+        flatpx = by.astype(np.int64) * W + bx.astype(np.int64)
+
+        np.maximum.at(out, flatpx[ins], key[ins])
+        return int(ins.sum())
+
+    for S in (1, 2, 4, 8, 16, 32, 64):
+        if S == 1:
+            sel = vis & (g <= 1)
+        else:
+            sel = vis & (g > S // 2) & (g <= S)
+        idx = np.nonzero(sel)[0]
+        if not len(idx):
+            continue
+        step = max(1, ELEM_BUDGET // (S * S))
+        for a in range(0, len(idx), step):
+            sub = idx[a:a + step]
+            fill(sub, S)
+            if progress is not None:
+                progress(min(total, a + step), total)
+            if cancel is not None and cancel.is_set():
+                return None, None, {}
+
+    # --- decode ------------------------------------------------------------
+    img = np.zeros((H, W, 3), dtype=np.uint8)
+    img[:, :] = (26, 24, 30)                 # the void, so holes are visible
+    seen = out != 0
+    if seen.any():
+        rgb = out[seen] & 0xFFFFFF
+        img.reshape(-1, 3)[seen] = np.stack(
+            ((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255), axis=1).astype(np.uint8)
+
+    stats = {"tris": int(ntri), "pieces": int(pieces), "plotted": int(seen.sum()),
+             "covered_pct": round(100.0 * float(seen.sum()) / (W * H), 2),
+             "uv_agree": round(agree, 4), "u_mirrored": bool(mirrored_u),
+             "uv_flip": bool(uv_flip),
+             "pages": int(npages - 1), "pages_loaded": int(loaded)}
+
+    return Image.fromarray(img), rect, stats
+
+
+def _build_points(obj, size, sample, verbose):
+    """The old vertex-cloud background: fast, no textures, `points` style."""
+    from array import array
+    from PIL import Image
+
+    xs = array("f")
+    zs = array("f")
+    n = 0
+    min_x = min_z = 1e30
+    max_x = max_z = -1e30
+
+    with open(obj, "r", errors="ignore") as f:
+        for line in f:
+            if line[:2] != "v ":
+                continue
+
+            n += 1
+            parts = line.split()
+
+            try:
+                x = float(parts[1])
+                z = float(parts[3])
+            except (IndexError, ValueError):
+                continue
+
+            # the extent comes from EVERY vertex, not just the plotted 1-in-N:
+            # sampling it under-covered the world rect and shifted the picture off
+            # the arena's coordinates
+            if x < min_x: min_x = x
+            if x > max_x: max_x = x
+            if z < min_z: min_z = z
+            if z > max_z: max_z = z
+
+            if sample > 1 and (n % sample):
+                continue
+
+            xs.append(x)
+            zs.append(z)
+
+    if not len(xs):
+        return None, None, {}
+
+    # the model -> world frame (X mirrored)
+    rect = (-LEVEL_SCALE * max_x, LEVEL_SCALE * min_z,
+            -LEVEL_SCALE * min_x, LEVEL_SCALE * max_z)
+
+    W, H = size
+    img = Image.new("L", size, 0)
+    px = img.load()
+    x0, z0, x1, z1 = rect
+    sx = W / float(x1 - x0)
+    sz = H / float(z1 - z0)
+    kept = 0
+
+    for i in range(len(xs)):
+        ix = int((-LEVEL_SCALE * xs[i] - x0) * sx)
+        iz = int((LEVEL_SCALE * zs[i] - z0) * sz)
+
+        if 0 <= ix < W and 0 <= iz < H:
+            v = px[ix, iz]
+
+            if v < 255:
+                px[ix, iz] = min(255, v + 50)
+
+            kept += 1
+
+    img = img.convert("RGB")
+    stats = {"verts": n, "sampled": len(xs), "plotted": kept}
+    if verbose:
+        print("  %d of %d verts plotted" % (kept, n))
+    return img, rect, stats
+
+
+def build_level_map(city, size=(2000, 2000), sample=None, rebuild=False,
+                    allow_build=True, allow_rip=False, verbose=True,
+                    style="textured", uv_flip=False, progress=None, cancel=None):
     """The top-down background for a city, from its DriverLevelTool rip.
 
     Returns (PIL image, world_rect), or (None, None) when there is no rip (or no
     cache and allow_build is off). The picture is CACHED as
-    `<CITY>_LEVELMODEL.topdown.png` plus a `.json` sidecar with the world rect, so
-    the slow pass over a ~185 MB .obj happens once and later opens are instant -
-    and the PNG alone is shareable, since the sidecar carries the alignment.
+    `<CITY>_LEVELMODEL.topdown.png` plus a `.json` sidecar with the world rect and
+    the style, so the slow pass over a ~240 MB .obj happens once and later opens
+    are instant - and the PNG alone is shareable, since the sidecar carries the
+    alignment.
 
-    `sample` keeps every Nth vertex (the cloud is ~10M points; every 4th is
-    plenty at this resolution).
+    `style` is "textured" (the rip's faces, filled with their texture - the
+    default and what the map "looks like") or "points" (just the vertices, no
+    textures, much faster). The cache is keyed on the style, so switching
+    rebuilds instead of serving the other one.
+
+    `sample` keeps every Nth item: every Nth vertex for "points" (the cloud is
+    millions of points; every 4th is plenty) or every Nth triangle for
+    "textured" (default: all of them - dropping triangles leaves holes).
+
+    `uv_flip` flips the texture's V axis for a rip whose UVs disagree with the
+    world frame (the render measures and reports that itself).
     """
     import json
-    from array import array
     from PIL import Image
+
+    if sample is None:
+        sample = 4 if style == "points" else 1
 
     obj, png, side = level_rip_paths(city)
 
@@ -561,6 +1100,16 @@ def build_level_map(city, size=(2000, 2000), sample=4, rebuild=False,
         except Exception:
             return None
 
+        # a cache in the OTHER style (or the old un-keyed point cloud) is not
+        # this; and uv_flip is part of the picture, so it is part of the key
+        if meta.get("style", "points") != style:
+            if verbose:
+                print("level map cache for %s is the %s style - rebuilding as %s"
+                      % (city.upper(), meta.get("style", "points"), style))
+            return None
+        if bool(meta.get("uv_flip", False)) != bool(uv_flip):
+            return None
+
         # invalidate only when the .obj is present AND has changed; a PNG on its
         # own (the obj deleted, or a shared cache) is still good
         if os.path.exists(obj) and not rebuild:
@@ -571,7 +1120,10 @@ def build_level_map(city, size=(2000, 2000), sample=4, rebuild=False,
                     print("level map cache for %s is stale - rebuilding" % city.upper())
                 return None
 
-        return Image.open(png).convert("RGB"), rect
+        img = Image.open(png)
+        img.load()
+        img = img.convert("RGB")
+        return img, rect
 
     if not rebuild:
         got = _cached()
@@ -598,71 +1150,47 @@ def build_level_map(city, size=(2000, 2000), sample=4, rebuild=False,
         return None, None
 
     if verbose:
-        print("building the %s level map (one pass over %s, then cached)"
-              % (city.upper(), os.path.basename(obj)))
+        print("building the %s level map (%s style, one pass over %s, then cached)"
+              % (city.upper(), style, os.path.basename(obj)))
 
-    xs = array("f")
-    zs = array("f")
-    n = 0
+    if style == "points":
+        img, rect, stats = _build_points(obj, size, sample, verbose)
+        renderer = "points"
+    else:
+        img, rect, stats = _build_textured(city, obj, size, sample, verbose,
+                                           uv_flip=uv_flip, progress=progress,
+                                           cancel=cancel)
+        renderer = "textured"
 
-    with open(obj, "r", errors="ignore") as f:
-        for line in f:
-            if line[:2] != "v ":
-                continue
+        # a rip with no faces (or one whose textures are all missing) still has
+        # vertices, so fall back rather than showing nothing. The cache key stays
+        # the REQUESTED style, so this is not re-attempted on every open.
+        if img is None and not (cancel is not None and cancel.is_set()):
+            if verbose:
+                print("  no faces to texture - falling back to the vertex cloud")
+            img, rect, stats = _build_points(
+                obj, size, sample if sample and sample > 1 else 4, verbose)
+            renderer = "points (fallback)"
 
-            n += 1
-
-            if sample > 1 and (n % sample):
-                continue
-
-            parts = line.split()
-
-            try:
-                xs.append(float(parts[1]))
-                zs.append(float(parts[3]))
-            except (IndexError, ValueError):
-                pass
-
-    if not len(xs):
+    if img is None:
+        if verbose:
+            print("could not render %s (cancelled, or a rip with no faces)" % city.upper())
         return None, None
-
-    # the model -> world frame (X mirrored): this is the true extent
-    rect = (-LEVEL_SCALE * max(xs), LEVEL_SCALE * min(zs),
-            -LEVEL_SCALE * min(xs), LEVEL_SCALE * max(zs))
-
-    W, H = size
-    img = Image.new("L", size, 0)
-    px = img.load()
-    x0, z0, x1, z1 = rect
-    sx = W / float(x1 - x0)
-    sz = H / float(z1 - z0)
-    kept = 0
-
-    for i in range(len(xs)):
-        ix = int((-LEVEL_SCALE * xs[i] - x0) * sx)
-        iz = int((LEVEL_SCALE * zs[i] - z0) * sz)
-
-        if 0 <= ix < W and 0 <= iz < H:
-            v = px[ix, iz]
-
-            if v < 255:
-                px[ix, iz] = min(255, v + 50)
-
-            kept += 1
-
-    img = img.convert("RGB")
 
     try:
         img.save(png)
-        json.dump({"city": city.upper(), "rect": list(rect), "verts": n,
-                   "sampled": len(xs), "plotted": kept,
-                   "obj_size": os.stat(obj).st_size,
-                   "obj_mtime": int(os.stat(obj).st_mtime)},
-                  open(side, "w"), indent=1)
+        meta = {"city": city.upper(), "rect": list(rect), "style": style,
+                "renderer": renderer, "uv_flip": bool(uv_flip),
+                "obj_size": os.stat(obj).st_size,
+                "obj_mtime": int(os.stat(obj).st_mtime)}
+        meta.update(stats)
+        json.dump(meta, open(side, "w"), indent=1)
 
         if verbose:
-            print("cached %s (%d of %d verts plotted; world rect %s)"
-                  % (os.path.basename(png), kept, n, rect))
+            print("cached %s (%s; world rect %s)"
+                  % (os.path.basename(png),
+                     ", ".join("%s=%s" % (k, stats[k]) for k in sorted(stats)),
+                     tuple(round(v) for v in rect)))
     except Exception as e:
         if verbose:
             print("(could not write the cache: %s - using it for this session only)" % e)
@@ -2266,6 +2794,10 @@ def main(argv=None):
                     help="draw a city's DriverLevelTool rip as the top-down background, aligned "
                          "to the arena's world coordinates (omit CITY to use the arena's own). "
                          "Cached next to the .obj, so it is slow only the first time")
+    ap.add_argument("--style", choices=("textured", "points"), default="textured",
+                    help="how to draw a level map: 'textured' (the default) fills the rip's "
+                         "faces with their textures - the city as it looks from above; "
+                         "'points' is the fast, texture-free vertex cloud")
     ap.add_argument("--rip", nargs="?", const="auto", metavar="CITY",
                     help="export the city's level model with DriverLevelTool so it can be drawn "
                          "(omit CITY to rip every city), then exit. Slow, and local: the .obj is "
@@ -2430,6 +2962,7 @@ def main(argv=None):
             img, rect = build_level_map(city, rebuild=args.rebuild_map,
                                         allow_build=bool(args.level),
                                         allow_rip=bool(args.level) and not args.no_rip,
+                                        style=args.style,
                                         verbose=bool(args.level) or args.rebuild_map)
 
             if img is not None:
