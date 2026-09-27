@@ -3,6 +3,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_hud.h"	// JERICHO-HOOK: on-screen HUD messages
+#include "jer_texture.h"	// JERICHO-HOOK: custom texture injection (reload/free)
 #include "jer_car_palette.h"	// JERICHO-HOOK: per-instance car colour (inert table)
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
@@ -831,6 +832,10 @@ void State_GameInit(void* param)
 	// along, so a module can be reproducible across runs when we ask for it.
 	{
 		JER_ARGS_GAME_START jerStart;
+
+		// jer_texture: re-read every loaded texture from disk first, so art edited
+		// between runs is picked up without a restart (see jer_texture.h).
+		jer_texture_reload_all();
 
 		jerStart.seed = gDebugSeed;
 		jer_fire(JER_EVENT_GAME_START, &jerStart);
@@ -1741,6 +1746,13 @@ int gMultiStep = 0;
 	// roles and roam goals from it). 0 = none given, modules seed themselves.
 	int gDebugSeed = 0;
 
+	// JERICHO: debug/test - write a screenshot (SCREENSHOT.BMP) on gameplay frame N,
+	// so a visual feature can be verified headlessly instead of by pressing F12 in a
+	// live session: the frame budget (-frames) ends the run, this captures one frame
+	// of it on the way. -1 = never. Captured just after the frame is presented (see
+	// State_GameLoop), which is where the F12 handler reads the window too.
+	int gScreenshotFrame = -1;
+
 // JERICHO: PsyCross's VRAM dump, declared to match PsyX_render.h:183 and with C
 // linkage because this project compiles its .c files as C++ - and PsyCross exports it
 // from an extern "C" block. Two things cost attempts here: declaring it int (it is
@@ -1755,6 +1767,18 @@ void GR_SaveVRAM(const char* outputFileName, int x, int y, int width, int height
 extern "C"
 #endif
 int GR_ShowVRAMDebug();
+
+// JERICHO: PsyCross's live-window screenshot (PsyX_main.cpp PsyX_TakeScreenshot) --
+// glReadPixels of the window into SCREENSHOT.BMP. Declared WITHOUT extern "C" on
+// purpose: unlike GR_SaveVRAM, PsyX_TakeScreenshot lives OUTSIDE PsyCross's extern "C"
+// block, so the linker wants its C++-mangled name (?PsyX_TakeScreenshot@@YAXXZ). A
+// plain declaration in this C++-compiled file produces exactly that.
+void PsyX_TakeScreenshot(void);
+
+// JERICHO: jer_texture.c's "a render pass is live" flag. Set around the DRAW_WORLD /
+// DRAW_OVERLAY fires below so jer_texture can refuse a draw made from the wrong hook
+// (see Game/C/jer_texture.c).
+extern int gJerTextureRenderPass;
 
 // JERICHO: -vramview [frames] - open a SECOND window showing the live VRAM,
 // refreshed every frame, so a page/CLUT can be watched as it moves. Also
@@ -1956,7 +1980,9 @@ void DrawGame(void)
 
 		// JERICHO-HOOK: module overlays (e.g. the sandbox menu) draw here,
 		// into the display buffer like the pause menu
+		gJerTextureRenderPass = 1;
 		jer_fire(JER_EVENT_DRAW_OVERLAY, NULL);
+		gJerTextureRenderPass = 0;
 
 		// JERICHO-HOOK: error notices (engine + modules) -- gentle red, left
 		// of the screen, for jer_error's ~5 s lifetime
@@ -1995,6 +2021,16 @@ void DrawGame(void)
 #ifndef PSX
 	if (!FadingScreen)
 		PsyX_EndScene();
+
+	// JERICHO: -shot <frame> -- capture ONE presented frame into SCREENSHOT.BMP.
+	// Done here (right after the frame is presented) because that is the point the
+	// F12 handler reads the window from. One-shot, so the rest of the run is free.
+	if (gScreenshotFrame >= 0 && gRunFrames >= gScreenshotFrame)
+	{
+		gScreenshotFrame = -1;
+		PsyX_TakeScreenshot();
+		printInfo("JERICHO-SHOT: wrote SCREENSHOT.BMP on frame %d\n", gRunFrames);
+	}
 #endif
 
 	FrameCnt++;
@@ -2543,6 +2579,13 @@ int redriver2_main(int argc, char** argv)
 			if (i + 1 < argc)
 				gExitAfterFrames = atoi(argv[++i]);
 		}
+		else if (!strcmp(argv[i], "-shot"))
+		{
+			// JERICHO: write SCREENSHOT.BMP on gameplay frame N (headless visual
+			// check). Pair with -frames M where M > N, since the -frames exit wins.
+			if (i + 1 < argc)
+				gScreenshotFrame = atoi(argv[++i]);
+		}
 		else if (!strcmp(argv[i], "-seed"))
 		{
 			// JERICHO: pin every module's run randomness, so two runs are diffable.
@@ -3024,6 +3067,9 @@ int redriver2_main(int argc, char** argv)
 	// state ran and before the process tears down.
 	jer_fire(JER_EVENT_SHUTDOWN, NULL);
 
+	// jer_texture: release every loaded texture (GPU textures + any VRAM pages).
+	jer_texture_free_all();
+
 #ifndef PSX
 	SaveCurrentProfile(1);
 #endif
@@ -3309,7 +3355,11 @@ void RenderGame2(int view)
 	// JERICHO-HOOK: module world-space extras (projectiles, pickups) draw
 	// here, mid-render with the camera matrices live, into the real OT.
 	// Fires every view; no handler = no-op.
+	// The bracket tells jer_texture a render pass is live: it refuses to draw
+	// outside one, so a module calling from the wrong hook cannot corrupt the primtab.
+	gJerTextureRenderPass = 1;
 	jer_fire(JER_EVENT_DRAW_WORLD, NULL);
+	gJerTextureRenderPass = 0;
 
 #ifndef PSX
 

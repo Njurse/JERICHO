@@ -79,6 +79,9 @@ void cd2FacRegister(JERICHO_CONTEXT* ctx);	/* factions/factions.c (declared in i
 void cd2ArenaRegister(JERICHO_CONTEXT* ctx);	/* arenas/arena.c */
 void cd2EditorRegister(JERICHO_CONTEXT* ctx);	/* arenas/editor.c (the in-game editor) */
 
+/* TEMPORARY Phase-1 spike — delete with texprobe.c */
+void cd2TexProbeRegister(JERICHO_CONTEXT* ctx);
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -894,6 +897,9 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	cd2SelectRegister(ctx);
 	cd2LockOnRegister(ctx);
 	cd2ShoveRegister(ctx);
+
+	/* TEMPORARY Phase-1 spike (texprobe.c); inert without JERICHO_TEXPROBE=1 */
+	cd2TexProbeRegister(ctx);
 
 	/* TEMPORARY: scripted debug driver, active only when debug_script is set
 	 * (delete cd2debug.c and these two lines when done) */

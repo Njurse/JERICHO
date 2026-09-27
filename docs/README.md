@@ -13,6 +13,7 @@ its SDK mirrors); `docs/JERICHO/` holds pointers only.
 | [`README.md`](../src_rebuild/Game/C/JERICHO/docs/README.md) | what JERICHO is, API addons vs deep mods, layout, building, troubleshooting |
 | [`events.md`](../src_rebuild/Game/C/JERICHO/docs/events.md) | **the event reference** — every event id, its args struct, where it fires, query vs notification, stock behaviour |
 | [`HOOKS.md`](../src_rebuild/Game/C/JERICHO/docs/HOOKS.md) | writing a module: anatomy, pause menus, logging, boot arguments |
+| [`textures.md`](../src_rebuild/Game/C/JERICHO/docs/textures.md) | **custom textures** — the `jer_texture.h` API: the `MODS/<mod>/textures/<name>.tga` convention, the two targets (hires GPU texture vs PSX VRAM page), and the draw recipe's traps |
 | [`ped-animation.md`](../src_rebuild/Game/C/JERICHO/docs/ped-animation.md) | the pedestrian animation and skeleton pipeline |
 | [`map-streaming.md`](../src_rebuild/Game/C/JERICHO/docs/map-streaming.md) | **world region streaming** — the 2×2 barrel window, why the engine only pre-loads neighbours, and the `jer_map` helper to stream somewhere it has not been (arena spawns, teleports) |
 | [`module-activation.md`](../src_rebuild/Game/C/JERICHO/docs/module-activation.md) | how a module gets enabled (`modlist.ini` → `mod.toml` → fail-closed), the `src=` boot log (`modlist`/`default`/`forced`/`nomods`), `-nomods`, forcing one module on for a test (`jer_force_module` / `-testmode`), which modules override car handling, and why no handling module ⇒ vanilla handling |

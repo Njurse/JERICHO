@@ -73,6 +73,10 @@ src_rebuild/tools/gen_exports/     maps the linker map to exports.def
 
 - [`events.md`](events.md) — the event reference.
 - [`HOOKS.md`](HOOKS.md) — writing a module.
+- [`textures.md`](textures.md) — **custom textures**: the `jer_texture.h` API, the
+  `MODS/<mod>/textures/<name>.tga` convention, the two targets (hires GPU texture vs
+  PSX VRAM page), and the draw recipe's traps (the Y-flip, the OT bucket shift, the
+  global texture override).
 - [`map-streaming.md`](map-streaming.md) — **world region streaming**: the 2×2
   barrel window, why the engine only pre-loads neighbours, and the `jer_map`
   helper to stream somewhere it has not been (arena spawns, teleports).

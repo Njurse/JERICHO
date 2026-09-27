@@ -3,6 +3,7 @@
 
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "jer_texture.h"	// JERICHO-HOOK: custom texture injection (reload)
 
 #include "system.h"
 #include "main.h"
@@ -340,6 +341,9 @@ void State_InitFrontEnd(void* param)
 	// drop its per-run gameplay state - a forced car, live weapons, looped
 	// sounds - so nothing lingers or plays while the menus are up.
 	jer_fire(JER_EVENT_FRONTEND_ENTERED, NULL);
+
+	// jer_texture: the menus are a natural moment to pick up re-edited art.
+	jer_texture_reload_all();
 }
 
 // [D] [T]
