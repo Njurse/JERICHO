@@ -3,6 +3,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_hud.h"	// JERICHO-HOOK: on-screen HUD messages
+#include "jer_car_palette.h"	// JERICHO-HOOK: per-instance car colour (inert table)
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
 #ifdef _WIN32
@@ -636,6 +637,7 @@ void State_GameInit(void* param)
 	}
 
 	ClearMem((char*)car_data, sizeof(car_data));
+	jer_car_palette_init();	// JERICHO: per-instance car colours are all inert again
 
 	MainPlayer.spoolXZ = (VECTOR*)car_data[0].hd.where.t;
 	car_data[0].hd.where.t[0] = PlayerStartInfo[0]->position.vx;
