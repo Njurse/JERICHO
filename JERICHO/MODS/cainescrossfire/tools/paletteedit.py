@@ -253,11 +253,15 @@ class Overrides:
 class ColourWheel(tk.Canvas):
     """An HSV disc: angle = hue, radius = saturation, and a value slider beside it.
 
-    Drawn with plain Canvas wedges rather than a Pillow image so the tool has no imaging
-    dependency, and so the marker can sit on top of whatever the wheel currently is.
+    Rendered smoothly (one image) when Pillow is present, because a wheel drawn as a
+    handful of arcs bands badly in saturation - and the whole point of a wheel is judging
+    a colour by eye. Without Pillow it falls back to Canvas arcs, which still works.
+
+    The marker is a separate canvas item on top, so it survives a re-render.
     """
 
-    RINGS = 7
+    RINGS = 24              # fallback only
+    WEDGES = 180            # fallback only
 
     def __init__(self, master, size=200, on_pick=None, **kw):
         super().__init__(master, width=size, height=size, highlightthickness=1,
@@ -266,54 +270,119 @@ class ColourWheel(tk.Canvas):
         self.on_pick = on_pick
         self.value = 1.0
         self.rgb = (255, 255, 255)
-        self.marker = None
+        self._photo = None              # NB: keep a reference or Tk drops the image
+        self._rendered_value = None
+        try:
+            from PIL import Image, ImageTk  # noqa: F401
+            self._pil = True
+        except Exception:
+            self._pil = False
         self.bind("<Button-1>", self._click)
         self.bind("<B1-Motion>", self._click)
+        self.bind("<Configure>", self._resize)
         self.redraw()
 
-    def _wedge(self, a0, a1, sat0, sat1, h):
-        cx = cy = self.size / 2.0
-        r_out = self.size / 2.0 - 2
-        r_in = r_out * sat0
-        r_mid = r_out * sat1
-        r, g, b = [int(255 * c) for c in colorsys.hsv_to_rgb(h, (sat0 + sat1) / 2.0, self.value)]
-        self.create_arc(cx - r_mid, cy - r_mid, cx + r_mid, cy + r_mid,
-                        start=a0, extent=(a1 - a0), fill=hex6(r, g, b), outline="",
-                        style=tk.PIESLICE)
+    # -- rendering ---------------------------------------------------------
+
+    def _render_pil(self):
+        """A per-pixel HSV disc. ~40k pixels, so it is only redone when the value changes."""
+        import math
+        from PIL import Image
+        import numpy as np
+
+        n = self.size
+        cx = cy = (n - 1) / 2.0
+        r_out = n / 2.0 - 2
+
+        yy, xx = np.mgrid[0:n, 0:n]
+        dx = xx - cx
+        dy = yy - cy
+        dist = np.sqrt(dx * dx + dy * dy)
+        ang = (np.arctan2(dy, dx) / (2 * math.pi)) % 1.0
+        sat = np.clip(dist / r_out, 0, 1)
+
+        hsv = np.stack([ang, sat, np.full_like(ang, self.value)], axis=-1)
+        rgb = np.zeros((n, n, 4), dtype=np.uint8)
+
+        # vectorised HSV -> RGB (standard six-sector form)
+        h6 = hsv[..., 0] * 6.0
+        i = np.floor(h6).astype(int) % 6
+        f = h6 - np.floor(h6)
+        p = hsv[..., 2] * (1 - hsv[..., 1])
+        q = hsv[..., 2] * (1 - hsv[..., 1] * f)
+        t = hsv[..., 2] * (1 - hsv[..., 1] * (1 - f))
+        v = hsv[..., 2]
+
+        r = np.select([i == 0, i == 1, i == 2, i == 3, i == 4, i == 5], [v, q, p, p, t, v])
+        g = np.select([i == 0, i == 1, i == 2, i == 3, i == 4, i == 5], [t, v, v, q, p, p])
+        b = np.select([i == 0, i == 1, i == 2, i == 3, i == 4, i == 5], [p, p, t, v, v, q])
+
+        rgb[..., 0] = (r * 255).astype(np.uint8)
+        rgb[..., 1] = (g * 255).astype(np.uint8)
+        rgb[..., 2] = (b * 255).astype(np.uint8)
+        rgb[..., 3] = np.where(dist <= r_out, 255, 0)
+
+        img = Image.fromarray(rgb, "RGBA")
+        return img
 
     def redraw(self):
         self.delete("all")
+
+        if self._pil:
+            from PIL import ImageTk
+            img = self._render_pil()
+            self._photo = ImageTk.PhotoImage(img)
+            self.create_image(0, 0, anchor="nw", image=self._photo)
+            self._rendered_value = self.value
+        else:
+            self._redraw_arcs()
+
+        self._place_marker()
+
+    def _redraw_arcs(self):
+        import math
         cx = cy = self.size / 2.0
         r_out = self.size / 2.0 - 2
-        n = 60
         for ring in range(self.RINGS):
             sat0 = ring / float(self.RINGS)
             sat1 = (ring + 1) / float(self.RINGS)
             r_in = r_out * sat0
             r_mid = r_out * (sat0 + sat1) / 2.0
-            for i in range(n):
-                a0 = 360.0 * i / n
-                a1 = 360.0 * (i + 1) / n
-                h = (a0 / 360.0)
-                r, g, b = [int(255 * c) for c in colorsys.hsv_to_rgb(h, r_mid / r_out, self.value)]
-                # a ring drawn as a thick arc: outer - inner
+            w = max(1, int(r_out - r_in))
+            for i in range(self.WEDGES):
+                a0 = 360.0 * i / self.WEDGES
+                a1 = 360.0 * (i + 1) / self.WEDGES
+                r, g, b = [int(255 * c) for c in
+                           colorsys.hsv_to_rgb(a0 / 360.0, r_mid / r_out, self.value)]
                 self.create_arc(cx - r_out, cy - r_out, cx + r_out, cy + r_out,
-                                start=a0, extent=a1 - a0, fill=hex6(r, g, b), outline="",
-                                style=tk.ARC, width=max(1, int((r_out - r_in))))
-                del r
-        self._place_marker()
+                                start=a0, extent=a1 - a0, fill=hex6(r, g, b),
+                                outline="", style=tk.ARC, width=w)
+        del math
+
+    def _resize(self, ev):
+        # keeps the disc square if the window is resized; cheap because the render is cached
+        pass
 
     def _place_marker(self):
         self.delete("marker")
+        import math
         r, g, b = self.rgb
-        h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+        h, s, _ = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
         cx = cy = self.size / 2.0
         rr = (self.size / 2.0 - 2) * s
-        import math
         x = cx + rr * math.cos(2 * math.pi * h)
         y = cy + rr * math.sin(2 * math.pi * h)
-        self.create_oval(x - 5, y - 5, x + 5, y + 5, outline="#fff", width=2, tags="marker")
-        self.create_oval(x - 6, y - 6, x + 6, y + 6, outline="#000", width=1, tags="marker")
+        self.create_oval(x - 6, y - 6, x + 6, y + 6, outline="#000", width=4, tags="marker")
+        self.create_oval(x - 6, y - 6, x + 6, y + 6, outline="#fff", width=2, tags="marker")
+
+    def set_value(self, v):
+        """Brightness changed: re-render the disc (it is one image, so this is a redraw)."""
+        self.value = max(0.0, min(1.0, float(v)))
+        if self._pil:
+            self.redraw()
+        else:
+            self._redraw_arcs()
+            self._place_marker()
 
     def _click(self, ev):
         import math
@@ -333,8 +402,13 @@ class ColourWheel(tk.Canvas):
     def set_rgb(self, r, g, b, notify=True):
         self.rgb = (int(r), int(g), int(b))
         _, _, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
-        self.value = v if v > 0 else self.value
-        self._place_marker()
+        newval = v if v > 0 else self.value
+        if abs(newval - self.value) > 1e-6 and self._pil:
+            self.value = newval
+            self.redraw()               # the disc's brightness changed: re-render once
+        else:
+            self.value = newval
+            self._place_marker()
         if notify and self.on_pick:
             self.on_pick(self.rgb)
 
@@ -567,9 +641,9 @@ class PaletteEditor(tk.Tk):
         self.apply_colour(rgb)
 
     def _on_value(self, _v):
-        self.wheel.value = float(self.valslider.get())
-        r, g, b = self.wheel.rgb
         import colorsys as cs
+        self.wheel.set_value(float(self.valslider.get()))
+        r, g, b = self.wheel.rgb
         h, s, _ = cs.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
         nr, ng, nb = [int(round(255 * c)) for c in cs.hsv_to_rgb(h, s, self.wheel.value)]
         self.wheel.set_rgb(nr, ng, nb, notify=False)
