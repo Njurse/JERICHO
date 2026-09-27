@@ -86,6 +86,13 @@ extern void IncrementClutNum(RECT16 *clut); // 0x00080DDC
 // (red-biased) are copied through untouched, because skin shares the outfit's
 // CLUT row - see pedest.c's PedPalRowIsOutfit. Returns the new clut word, or 0.
 extern u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength, int floor5);
+
+/* JERICHO: the CLUT-strip budget, shared by the ped team colours, the imported car
+ * palettes and the per-instance car colours. One dyed row = one 16-entry CLUT, and a
+ * dyed car takes one per textured part, so these answer "how many custom-coloured
+ * cars still fit" before anything is written. */
+extern int jer_clut_slots_free(void);
+extern void jer_clut_report(const char* why);
 extern void IncrementTPageNum(RECT16 *tpage); // 0x00080528
 
 extern int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress); // 0x00080E14

@@ -100,6 +100,10 @@ int MaxSpecCluts;
 int slotsused;
 
 RECT16 clutpos;
+
+// JERICHO: once the strip's remaining budget has been reported, don't repeat it
+// until it gets tight.
+static int gJerClutReported = 0;
 RECT16 fontclutpos;
 RECT16 mapclutpos;
 DVECTOR slot_clutpos[19];
@@ -347,7 +351,41 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 	addr = GetClut(clutpos.x, clutpos.y);
 	IncrementClutNum(&clutpos);
 
+	/* JERICHO: the same strip carries the ped team colours, the imported car palettes
+	 * and (next) the per-instance car colours, so say what is left the first time a
+	 * row is taken and again when it gets tight. A dyed car needs one row per
+	 * textured part, so the number to watch is SLOTS, not lines. */
+	{
+		int free = jer_clut_slots_free();
+
+		if (!gJerClutReported || free < 16)
+		{
+			gJerClutReported = 1;
+			jer_clut_report("after a dyed CLUT row");
+		}
+	}
+
 	return addr;
+}
+
+// JERICHO: free CLUT slots in the strip, before CAR_CLUT_IMPORT_LIMIT. The x cursor
+// walks 0..960 in steps of 16 (64 CLUTs to a strip line) and wraps one line down, so
+// what is left is whole lines plus the slot the x cursor is sitting on.
+int jer_clut_slots_free(void)
+{
+	int lines = CAR_CLUT_IMPORT_LIMIT - clutpos.y;
+
+	if (lines < 0)
+		return 0;
+
+	return lines * 64 - (clutpos.x / 16);
+}
+
+void jer_clut_report(const char* why)
+{
+	printInfo("[jericho] CLUT strip: y=%d/%d x=%d -> %d free slot(s)%s%s\n",
+		clutpos.y, CAR_CLUT_IMPORT_LIMIT, clutpos.x, jer_clut_slots_free(),
+		why ? " -- " : "", why ? why : "");
 }
 
 // [D] [T]
