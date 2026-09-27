@@ -232,9 +232,10 @@ if not defined PY goto nopy
 cls
 echo Build the level map
 echo --------------------------------------------------------------
-echo   A city's DriverLevelTool rip, drawn top-down and aligned to the game's
-echo   world coordinates. It is cached next to the .obj, so doing this once
-echo   makes opening an arena with that map instant afterwards.
+echo   A city's DriverLevelTool rip, RENDERED top-down ^(its textured faces,
+echo   not a vertex cloud^) and aligned to the game's world coordinates. Both
+echo   are cached next to the .obj, so doing this once makes opening an arena
+echo   with that map instant afterwards. The preview it opens IS that render.
 echo   Rips are gitignored and only RIO ships one, so another city is
 echo   exported here first - that is the slow part ^(a few minutes^).
 echo.
