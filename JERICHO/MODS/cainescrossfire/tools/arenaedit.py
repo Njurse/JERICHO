@@ -445,6 +445,29 @@ def find_city_lev(city):
     return None
 
 
+def _discard_partial_rip(obj, had_obj, verbose):
+    """Drop a truncated .obj a killed/failed rip left behind.
+
+    DriverLevelTool writes the .obj as it goes, so a cancelled rip leaves a file
+    that LOOKS like a rip: the next `--level CITY` would happily cache a
+    half-a-city map from it. Only a file WE created is removed - if a good rip was
+    already there and a forced re-rip was cancelled, it is left alone (and said so).
+    """
+    if not os.path.exists(obj):
+        return
+    if had_obj:
+        if verbose:
+            print("  %s was already there, so it is left as it is - re-rip to be sure"
+                  % os.path.basename(obj))
+        return
+    try:
+        os.remove(obj)
+        if verbose:
+            print("  discarded the incomplete %s" % os.path.basename(obj))
+    except OSError:
+        pass
+
+
 def rip_level(city, force=False, verbose=True, cancel=None):
     """Export a city's level model with DriverLevelTool, so the editor can draw it.
 
@@ -496,6 +519,7 @@ def rip_level(city, force=False, verbose=True, cancel=None):
                 print("cannot copy %s into %s: %s" % (lev, work, e))
             return None
 
+    had_obj = os.path.exists(obj)
     argv = [exe, os.path.basename(local_lev), "-world", "1", "-textures", "1"]
     if verbose:
         print("ripping %s: %s" % (city, " ".join(argv)))
@@ -521,12 +545,20 @@ def rip_level(city, force=False, verbose=True, cancel=None):
                     proc.kill()
                 if verbose:
                     print("rip of %s cancelled" % city)
+                _discard_partial_rip(obj, had_obj, verbose)
                 return None
 
     if not os.path.exists(obj):
         if verbose:
             print("DriverLevelTool exited %s but wrote no %s"
                   % (rc, os.path.basename(obj)))
+        return None
+
+    if rc != 0:
+        if verbose:
+            print("DriverLevelTool exited %s - the %s it wrote may be incomplete"
+                  % (rc, os.path.basename(obj)))
+        _discard_partial_rip(obj, had_obj, verbose)
         return None
 
     if verbose:

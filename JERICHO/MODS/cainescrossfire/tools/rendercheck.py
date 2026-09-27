@@ -44,7 +44,10 @@ def check(name, ok, detail=""):
 
 
 def synth_check(workdir):
-    """A rip whose picture is known: ground, a raised patch, and a big quad."""
+    """A rip whose picture is known: ground, a raised patch, and a big quad.
+
+    Returns the .obj path, so the progress/cancel checks can reuse it.
+    """
     obj = os.path.join(workdir, "toy.obj")
     os.makedirs(os.path.join(workdir, "tex"), exist_ok=True)
     Image.new("RGBA", (4, 4), (255, 0, 0, 255)).save(
@@ -80,6 +83,28 @@ def synth_check(workdir):
     check("the raised patch won the height buffer", 300 < green < 600,
           "green=%d (expect ~441)" % green)
     check("the ground is filled, not speckled", red > 9000, "red=%d" % red)
+    return obj
+
+
+def progress_check(obj):
+    """A build reports progress, and a cancel stops it early (the editor's Stop)."""
+    import threading
+
+    calls = []
+
+    def prog(done, total=0):
+        calls.append((done, total))
+
+    img, _rect, _st = ae._build_textured("TOY", obj, (100, 100), 1, False,
+                                         progress=prog)
+    check("the render reports progress",
+          img is not None and len(calls) > 0 and calls[-1][0] >= calls[0][0],
+          "%d call(s), last %s" % (len(calls), calls[-1] if calls else None))
+
+    ev = threading.Event()
+    ev.set()
+    img2, _r2, _s2 = ae._build_textured("TOY", obj, (100, 100), 1, False, cancel=ev)
+    check("a cancel already set aborts the render", img2 is None)
 
 
 def city_check(city, size):
@@ -110,7 +135,8 @@ def main():
     print("rendercheck: the synthetic rip")
     work = tempfile.mkdtemp(prefix="rendercheck_")
     try:
-        synth_check(work)
+        obj = synth_check(work)
+        progress_check(obj)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
