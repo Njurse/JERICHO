@@ -53,6 +53,12 @@ extern char RightLight;
 //   after the level's page CLUTs         y=445    (84 rows)
 //   after the streamed-slot walk         y=485    (40 rows, 8 per streamed slot)
 //
+// JERICHO: the middle line is no longer what happens. The import's table is now DEFERRED
+// to CarImportPin and uploaded for only the rows the built model names (2 of the bank's
+// 8), so it costs 38 rows instead of 57 and the streamed-slot walk then ends at 466
+// (RIO -> Havana, exactly fitting) or 470 (CHICAGO -> Vegas, 4 rows over) instead of 485.
+// See ProcessPalletLumpForRows / ProcessImportedPaletteRows, and VRAM.md 6.1.
+//
 // and the level font image is `(960,466) 64x46` (pres.c:584) - the full width of the
 // column for rows 466..511. So the CLUT-safe area is 256..465 (210 rows) and the layout
 // needs 229: an import pushes the level's own CLUTs 19 rows into the font, and the pin

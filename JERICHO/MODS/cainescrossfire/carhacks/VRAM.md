@@ -205,3 +205,38 @@ For 1 specifically, the numbers are in §3: the page slots and the host palettes
 packed, so the reclaim that makes the column fit is the import’s own 57 rows (filter to the
 pages the imported model names) plus reserving the pin band inside the safe area - the
 allocation that adds up to exactly 210 rows is written out there.
+
+### 6.1 The import's palette table — DONE (measured)
+
+The import's half of option 1 is implemented. The foreign palette lump is a whole city's
+table (**228 CLUTs**, which at 4 CLUTs to a row is **57 column rows**) and it was uploaded
+in full, for every row of the import bank, whether the imported model draws from that row or
+not. Measured, the model uses **2 of the bank's 8 rows**.
+
+The upload is now **deferred to the first point the rows exist** (`CarImportPin`, from
+`GetCarPalIndex(sPinSet[i])`) — it cannot be filtered where it used to run, because that is
+inside `LoadPermanentTPages`, before the built model's poly stream has named its sets —
+and only the kept rows are uploaded:
+
+| scenario | before | after | rows in the font |
+|---|---|---|---|
+| RIO -> Havana | 57 rows | **38 rows** (428 → 466) | **0** (fits exactly) |
+| CHICAGO -> Vegas | 57 rows | **42 rows** (428 → 470) | **4** |
+
+All four `devcheck.sh` scenarios stay clean with `lost 0`.
+
+**It is not enough on its own.** The reclaim is bounded by something less obvious than the
+row count: the lump stores its CLUTs under the rows being skipped and the kept rows
+*reference* them (`clut_number` → `clutTable[n]`), so a cross-row reference must still be
+uploaded. 142–152 of the skipped CLUTs are pulled back that way, which is why the table
+needs 38–42 rows and not the ~14 a pure row count suggests.
+
+So **~4 rows are still missing** for CHICAGO -> Vegas, and the pin band still finds no safe
+room in either scenario (it falls back to `y=480`, inside the font). The next moves, in
+order of measured size:
+
+- **pack the streamed-slot walk** (option 1's other half): 5 slots × 8 rows = **40 rows**
+  reserved, against `npalettes / 4 + 1` actually used — ~5 rows back;
+- **the pin band**: it needs ~15–51 rows depending on the sets, and has none;
+- **option 2** (reclaim un-named car pages) does not help the *CLUT column* at all — it
+  returns pages, not rows. It is still the right move for pages.
