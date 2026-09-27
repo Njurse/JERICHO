@@ -242,17 +242,36 @@ bare canvas:
 - **Inspector** (right) — the arena's fields (name, city, mp map/layout), the
   region's four numbers with Apply / Clear / Fit / "use the view's edges", the
   **spawn list** with an edit form (x, y, z, heading — leave y blank for "none"),
-  the **pickup list** with an add form, and the background controls.
+  the **pickup list** with an add form, and the **Background** box: the map style
+  (`textured` / `points`), *Rip this city*, *Use the cached level map*, *Build
+  level map for this city* and *Remove background*.
 - **Status bar** — the file and its unsaved state, the arena, the region, the
   counts, the last action, and the cursor's world position.
+
+### Long jobs (a rip, a level-map render)
+
+Both of those take tens of seconds to minutes, so they run **off the Tk thread**
+and the window says so rather than freezing: the Background box grows a progress
+bar and a **Stop** button, the background buttons go grey, and the status line
+counts the render's progress ("building the RIO level map (textured): 47%").
+Stop, `Ctrl+Q` and closing the window all cancel the job — for a `--rip` that
+means the `DriverLevelTool` child is terminated — and the waiting is bounded, so
+the window never becomes unkillable. A job that raises is reported in the status
+line instead of vanishing.
+
+(That is also why this was worth doing: the load and the folder listing used to
+run straight from the button handler, so the window was dead for the whole
+render and the OS greyed it out as "not responding".)
 
 Keys: `1`–`4` pick a tool, `F` fit, `G` grid, `L` labels, `Del` delete, `Esc`
 cancel, `Ctrl+S/O/N/R/Z/Q`, `F1` shortcuts. Right-click deletes whatever is under
 the pointer; **undo** is `Ctrl+Z`.
 
 `--uitest` builds the window, drives it through its own commands (clicks the map,
-uses the inspector, undoes, saves, reloads) and reports — so the UI is checked
-without a human at the screen.
+uses the inspector, undoes, saves, reloads), exercises a background job (starts
+one, cancels one, fails one) and reports — so the UI is checked without a human
+at the screen. It keeps the window **withdrawn**: it drives the widgets, it does
+not need to be seen, and leaving it mapped made Tk paint every canvas item.
 
 ## Designing against a level map (the Python editor)
 

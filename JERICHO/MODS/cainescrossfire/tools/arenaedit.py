@@ -1198,6 +1198,111 @@ def build_level_map(city, size=(2000, 2000), sample=None, rebuild=False,
     return img, rect
 
 
+def level_map_meta(city):
+    """The sidecar of a city's cached level map, or None.
+
+    It says what the picture actually is (style, renderer, how much of the frame
+    is covered, how the uv orientation was decided) - which the editor shows, so
+    "the background looks odd" comes with the numbers.
+    """
+    import json
+    _obj, _png, side = level_rip_paths(city)
+    try:
+        with open(side) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# long jobs: the window must not freeze while a rip or a render runs
+# ---------------------------------------------------------------------------
+# Tk is not thread-safe, so a worker thread touches plain data only: it reports
+# through a lock-protected Progress and hands its result back on a queue that the
+# MAIN thread drains in an `after` tick. Before this, the button handler called
+# build_level_map directly, so the window was dead for the whole 10-30 s render
+# (and for a multi-minute rip), with only an update_idletasks() to show for it.
+class Progress:
+    """Thread-safe progress: the worker writes, the Tk thread reads."""
+
+    def __init__(self):
+        import threading
+        self._lock = threading.Lock()
+        self.done = 0
+        self.total = 0
+        self.text = ""
+
+    def __call__(self, done, total=0):
+        with self._lock:
+            self.done = int(done)
+            if total:
+                self.total = int(total)
+
+    def note(self, text):
+        with self._lock:
+            self.text = text
+
+    def snapshot(self):
+        with self._lock:
+            return self.done, self.total, self.text
+
+
+class Job:
+    """A running background job: `cancel()` stops it at its next checkpoint."""
+
+    def __init__(self, what=""):
+        import threading
+        self.what = what
+        self._event = threading.Event()
+
+    def cancel(self):
+        self._event.set()
+
+    @property
+    def cancelled(self):
+        return self._event.is_set()
+
+
+def run_bg(root, work, on_done, on_error=None, progress=None, tick=None,
+           interval=80, what=""):
+    """Run `work(progress, cancel)` off the Tk thread; deliver its result on it.
+
+    `work` is called with `(progress, cancel_event)` and its return value is
+    handed to `on_done` on the MAIN thread. `tick(progress)` runs on the main
+    thread every `interval` ms while the job is in flight. Returns the Job.
+    """
+    import queue
+    import threading
+
+    job = Job(what)
+    out = queue.Queue()
+
+    def worker():
+        try:
+            out.put(("done", work(progress, job._event)))
+        except BaseException as e:              # noqa: BLE001 - reported, not lost
+            out.put(("error", e))
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    def poll():
+        try:
+            kind, payload = out.get_nowait()
+        except queue.Empty:
+            if tick is not None:
+                tick(progress)
+            root.after(interval, poll)
+            return
+        if kind == "error":
+            if on_error is not None:
+                on_error(payload)
+        else:
+            on_done(payload)
+
+    root.after(interval, poll)
+    return job
+
+
 def cells_world_rect(cw, ch, cell=2048):
     """The world rectangle a WxH cell grid covers, centred on the origin
     (DriverLevelTool prints 'Level dimensions [W H], cell size: 2048')."""
@@ -1326,6 +1431,8 @@ class EditorApp:
         self.pan_from = None
         self.drag = None
         self.exit_code = 0
+        self.job = None                  # the background job in flight, if any
+        self.busy_widgets = []           # disabled while a job runs
         self.view = View(_bounds(self.arenas))
 
         root.title("Caine's Crossfire - arena editor")
@@ -1337,6 +1444,7 @@ class EditorApp:
         self.var_layout = tk.StringVar(value="0")
         self.var_mp = tk.BooleanVar(value=True)
         self.var_pick_kind = tk.StringVar(value="health")
+        self.var_style = tk.StringVar(value="textured")
 
         self._build_menu()
         self._build_toolbar()
@@ -1380,7 +1488,7 @@ class EditorApp:
         f.add_separator()
         f.add_command(label="Reload from disk", accelerator="Ctrl+R", command=self.reload)
         f.add_separator()
-        f.add_command(label="Quit", accelerator="Ctrl+Q", command=self.root.destroy)
+        f.add_command(label="Quit", accelerator="Ctrl+Q", command=self.close)
         m.add_cascade(label="File", menu=f)
 
         e = tk.Menu(m, tearoff=0)
@@ -1557,12 +1665,32 @@ class EditorApp:
         b.pack(fill="x", pady=2)
         self.lbl_bg = ttk.Label(b, text="none", wraplength=230, justify="left")
         self.lbl_bg.pack(anchor="w")
-        ttk.Button(b, text="Use the cached level map", command=self.use_cached_map).pack(
-            fill="x", pady=(4, 0))
-        ttk.Button(b, text="Build level map for this city", command=self.build_map).pack(
-            fill="x", pady=(2, 0))
-        ttk.Button(b, text="Remove background", command=self.clear_bg).pack(
-            fill="x", pady=(2, 0))
+
+        row = ttk.Frame(b)
+        row.pack(fill="x", pady=(4, 0))
+        ttk.Label(row, text="map style:").pack(side="left")
+        self.cb_style = ttk.Combobox(row, textvariable=self.var_style, width=10,
+                                     state="readonly", values=("textured", "points"))
+        self.cb_style.pack(side="left", padx=(4, 0))
+
+        self.btn_rip = ttk.Button(b, text="Rip this city (slow)…", command=self.rip_city)
+        self.btn_rip.pack(fill="x", pady=(4, 0))
+        self.btn_use = ttk.Button(b, text="Use the cached level map", command=self.use_cached_map)
+        self.btn_use.pack(fill="x", pady=(2, 0))
+        self.btn_build = ttk.Button(b, text="Build level map for this city", command=self.build_map)
+        self.btn_build.pack(fill="x", pady=(2, 0))
+        self.btn_clear = ttk.Button(b, text="Remove background", command=self.clear_bg)
+        self.btn_clear.pack(fill="x", pady=(2, 0))
+
+        # the busy indicator: hidden unless a rip/render is running, so a long job
+        # is visible and the window still answers (the file poll, panning, Cancel)
+        self.pb = ttk.Progressbar(b, mode="indeterminate", length=200)
+        self.pb.pack(fill="x", pady=(6, 0))
+        self.pb.pack_forget()               # packed above, hidden until a job runs
+        self.btn_stop = ttk.Button(b, text="Stop", command=self.stop_job)
+        self.btn_stop.pack(fill="x", pady=(4, 0))
+        self.btn_stop.pack_forget()
+        self.busy_widgets = [self.btn_rip, self.btn_use, self.btn_build, self.btn_clear]
 
     def _build_status(self):
         ttk = self.ttk
@@ -1607,8 +1735,11 @@ class EditorApp:
         r.bind("<Control-s>", lambda e: self.save())
         r.bind("<Control-r>", lambda e: self.reload())
         r.bind("<Control-z>", lambda e: self.undo())
-        r.bind("<Control-q>", lambda e: self.root.destroy())
+        r.bind("<Control-q>", lambda e: self.close())
         r.bind("<F1>", lambda e: self.show_help())
+        # closing the window while a rip/render runs must stop it first: the worker
+        # polls the cancel flag, so this is what makes Stop and the X both clean
+        r.protocol("WM_DELETE_WINDOW", self.close)
 
     # -- view -------------------------------------------------------------
     def S(self, x, z):
@@ -1617,10 +1748,24 @@ class EditorApp:
     def W(self, sx, sy):
         return self.view.screen_to_world(sx, sy)
 
+    def _canvas_size(self):
+        """The canvas size to lay things out for.
+
+        An UNMAPPED canvas reports 1x1 (winfo_width), which made every fit/zoom
+        degenerate and the background culling crawl - that is what a headless
+        --uitest hit. Fall back to the requested size when the widget has no
+        allocation yet, so the layout maths is the same mapped or not.
+        """
+        w = self.canvas.winfo_width()
+        h = self.canvas.winfo_height()
+        if w <= 1 or h <= 1:
+            w = max(int(self.canvas.winfo_reqwidth()), 1)
+            h = max(int(self.canvas.winfo_reqheight()), 1)
+        return max(1, w), max(1, h)
+
     def fit(self):
         v = self.view
-        w = max(1, self.canvas.winfo_width())
-        h = max(1, self.canvas.winfo_height())
+        w, h = self._canvas_size()
         r = _bounds(self.arenas)
         v.wx0, v.wz0, v.wx1, v.wz1 = r
         v.cx = (r[0] + r[2]) / 2.0
@@ -1643,8 +1788,7 @@ class EditorApp:
 
     def region_from_view(self):
         v = self.view
-        w = max(1, self.canvas.winfo_width())
-        h = max(1, self.canvas.winfo_height())
+        w, h = self._canvas_size()
         x0, z0 = self.W(0, 0)
         x1, z1 = self.W(w, h)
         self.push_undo()
@@ -1657,8 +1801,7 @@ class EditorApp:
 
     def _fit_rect(self, rect):
         v = self.view
-        w = max(1, self.canvas.winfo_width())
-        h = max(1, self.canvas.winfo_height())
+        w, h = self._canvas_size()
         x0, z0, x1, z1 = rect
         v.cx = (x0 + x1) / 2.0
         v.cz = (z0 + z1) / 2.0
@@ -1669,7 +1812,7 @@ class EditorApp:
     def zoom(self, f, sx=None, sy=None):
         v = self.view
         if sx is None:
-            sx, sy = self.canvas.winfo_width() / 2.0, self.canvas.winfo_height() / 2.0
+            sx, sy = self._canvas_size()[0] / 2.0, self._canvas_size()[1] / 2.0
         wx, wz = self.W(sx, sy)
         v.scale *= f
         v.ox = sx - (wx - v.cx) * v.scale
@@ -1688,24 +1831,150 @@ class EditorApp:
 
     def use_cached_map(self):
         city = CITY_NAMES.get(self.cur().city, "CHICAGO")
+        # this only reads a cached PNG (tens of ms), so it stays synchronous - the
+        # slow paths are the rip and the BUILD, and those are background jobs
         img, rect = build_level_map(city, allow_build=False, verbose=False)
         if img is None:
-            self._say("no cached level map for %s yet - use Build (it takes a few seconds)" % city)
+            self._say("no cached level map for %s yet - use Build, or Rip this city" % city)
             return
-        self._set_bg(img, rect, "%s level map (cached)" % city)
+        self._set_bg(img, rect, "%s level map (cached, %s)" % (city, self.map_summary(city)))
+
+    def map_summary(self, city):
+        """What the cached map actually is, from its sidecar."""
+        meta = level_map_meta(city)
+        if not meta:
+            return "?"
+        bits = [str(meta.get("renderer") or meta.get("style") or "?")]
+        if "covered_pct" in meta:
+            bits.append("%s%% covered" % meta["covered_pct"])
+        if "uv_agree" in meta:
+            bits.append("uv %.0f%%" % (100.0 * float(meta["uv_agree"])))
+        return ", ".join(bits)
+
+    # -- long jobs: the window stays responsive -----------------------------
+    def _run_bg(self, what, work, on_done):
+        """Start a background job, or refuse when one is already running."""
+        if self.job is not None:
+            self._say("still busy: %s" % self.job.what)
+            return
+        self.job = run_bg(self.root, work,
+                          lambda res: self._bg_done(res, on_done),
+                          self._bg_error, Progress(), self._bg_tick, what=what)
+        self._busy_on(what)
+
+    def _busy_on(self, what):
+        self._say("%s\u2026 (slow, but the window keeps responding)" % what)
+        for w in self.busy_widgets:
+            try:
+                w.configure(state="disabled")
+            except Exception:
+                pass
+        try:
+            self.pb.pack(fill="x", pady=(6, 0))
+            self.pb.configure(mode="indeterminate", value=0)
+            self.pb.start(60)
+            self.btn_stop.pack(fill="x", pady=(4, 0))
+        except Exception:
+            pass
+
+    def _busy_off(self):
+        self.job = None
+        for w in self.busy_widgets:
+            try:
+                w.configure(state="normal")
+            except Exception:
+                pass
+        try:
+            self.pb.stop()
+            self.pb.pack_forget()
+            self.btn_stop.pack_forget()
+        except Exception:
+            pass
+
+    def _bg_tick(self, progress):
+        """Main-thread tick while a job runs: show its progress if it reports any."""
+        if progress is None:
+            return
+        done, total, text = progress.snapshot()
+        try:
+            if total:
+                self.pb.stop()
+                self.pb.configure(mode="determinate", maximum=total, value=done)
+                self._say("%s: %d%%" % (self.job.what if self.job else "working",
+                                         int(100.0 * done / total)))
+            if text:
+                self._say(text)
+        except Exception:
+            pass
+
+    def _bg_done(self, result, on_done):
+        self._busy_off()
+        on_done(result)
+
+    def _bg_error(self, exc):
+        what = self.job.what if self.job else "job"
+        self._busy_off()
+        self._say("%s failed: %s" % (what, exc))
+        print("%s failed: %r" % (what, exc))
+
+    def stop_job(self):
+        if self.job is None:
+            self._say("nothing is running")
+            return
+        self.job.cancel()
+        self._say("stopping %s\u2026" % self.job.what)
+
+    def wait_idle(self, timeout=300.0):
+        """Pump the event loop until no job is running (used by --uitest)."""
+        import time
+        t0 = time.time()
+        while self.job is not None and time.time() - t0 < timeout:
+            self.root.update()
+            time.sleep(0.02)
+        self.root.update()
+        return self.job is None
+
+    def close(self):
+        """Quit: cancel any running job and let it unwind before Tk goes away."""
+        if self.job is not None:
+            self.job.cancel()
+            self._say("stopping %s\u2026" % self.job.what)
+            self.wait_idle(timeout=30.0)
+        self.root.destroy()
 
     def build_map(self):
         city = CITY_NAMES.get(self.cur().city, "CHICAGO")
-        self._say("building the %s level map\u2026" % city)
-        self.root.update_idletasks()
-        img, rect = build_level_map(city, rebuild=False, allow_build=True,
-                                    allow_rip=True, verbose=False)
+        style = self.var_style.get()
+        self._run_bg(
+            "building the %s level map (%s)" % (city, style),
+            lambda prog, canc: build_level_map(city, rebuild=False,
+                                               allow_build=True, allow_rip=True,
+                                               style=style, verbose=False,
+                                               progress=prog, cancel=canc),
+            lambda res: self._bg_map_done(res, city))
+
+    def _bg_map_done(self, res, city):
+        img, rect = res if res else (None, None)
         if img is None:
-            self._say("no level map for %s - rip it first: python arenaedit.py --rip %s"
-                      % (city, city))
+            self._say("no level map for %s - try Rip this city" % city)
             return
-        self._set_bg(img, rect, "%s level map (built)" % city)
+        self._set_bg(img, rect, "%s level map (built, %s)"
+                     % (city, self.map_summary(city)))
         self._say("%s level map ready and cached" % city)
+
+    def rip_city(self):
+        city = CITY_NAMES.get(self.cur().city, "CHICAGO")
+        self._run_bg(
+            "ripping %s with DriverLevelTool" % city,
+            lambda prog, canc: rip_level(city, verbose=True, cancel=canc),
+            lambda obj: self._bg_rip_done(obj, city))
+
+    def _bg_rip_done(self, obj, city):
+        if obj is None:
+            self._say("the rip of %s failed - is DriverLevelTool.exe in %s?"
+                      % (city, driverleveltool_dir()))
+            return
+        self._say("%s ripped - now Build the level map" % city)
 
     def clear_bg(self):
         self.bg = self.bg_caller
@@ -1754,8 +2023,7 @@ class EditorApp:
         c = self.canvas
         c.delete("all")
         a = self.cur()
-        w = max(1, c.winfo_width())
-        h = max(1, c.winfo_height())
+        w, h = self._canvas_size()
         self._drawn_size = (w, h)
         v = self.view
 
@@ -2548,6 +2816,11 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
             self.delta = 120
 
     root = tk.Tk()
+    # WITHDRAW the window: this check drives the widgets and the canvas, it does not
+    # need to be SEEN. Leaving it mapped made it paint every canvas item (Tk's line
+    # rendering here is pathologically slow - 1000+ grid lines took minutes), so the
+    # "headless UI check" was neither headless nor usable.
+    root.withdraw()
     app = EditorApp(root, arenas, bg, bg_rect, "ui selftest")
     root.update()
 
@@ -2558,6 +2831,10 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
     check("window built (%d arena(s))" % len(app.arenas), len(app.arenas) == len(arenas))
     check("toolbar mode is select", app.var_mode.get() == "select")
     check("menubar present", root.cget("menu") != "")
+    check("background controls are there (style, rip, build)",
+          app.var_style.get() == "textured" and app.cb_style.winfo_exists()
+          and app.btn_rip.winfo_exists() and app.btn_build.winfo_exists()
+          and app.btn_stop.winfo_exists())
 
     app.add_spawn()
     root.update()
@@ -2643,6 +2920,54 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
         root.update()
     except ImportError:
         print("  (no Pillow: skipped the background timing checks)")
+
+    # --- a long job runs OFF the loop, and can be stopped --------------------
+    # This is the freeze fix: the rip and the render used to run straight from the
+    # button handler, so the window was dead for their whole duration.
+    try:
+        import time
+
+        got = {}
+
+        def short_job(prog, canc):
+            prog(1, 2)
+            time.sleep(0.05)
+            prog(2, 2)
+            prog.note("nearly there")
+            return "ok"
+
+        app._run_bg("uitest job", short_job, lambda res: got.setdefault("short", res))
+        check("a job starts in the background", app.job is not None)
+        busy = app.btn_build["state"]        # the action buttons are locked while busy
+        root.update()                        # ... and the loop still turns
+        check("the window is still live while the job runs",
+              app.wait_idle() and got.get("short") == "ok")
+        check("the buttons were disabled while busy", str(busy) == "disabled")
+        check("the buttons are usable again afterwards",
+              str(app.btn_build["state"]) == "normal")
+
+        def slow_job(prog, canc):
+            for _ in range(500):
+                if canc.is_set():
+                    return "cancelled"
+                time.sleep(0.01)
+            return "finished"
+
+        app._run_bg("cancel me", slow_job, lambda res: got.setdefault("slow", res))
+        root.update()
+        app.stop_job()
+        check("Stop cancels a running job",
+              app.wait_idle() and got.get("slow") == "cancelled")
+
+        def boom(prog, canc):
+            raise RuntimeError("uitest explosion")
+
+        app._run_bg("boom", boom, lambda res: got.setdefault("boom", res))
+        app.wait_idle()
+        check("a failing job is reported, not swallowed",
+              app.job is None and str(app.btn_build["state"]) == "normal")
+    except ImportError:
+        print("  (no time module: skipped the background job checks)")
 
     tmp = os.path.join(tempfile.gettempdir(), "_uitest_arena.cca")
     cur.path = tmp
