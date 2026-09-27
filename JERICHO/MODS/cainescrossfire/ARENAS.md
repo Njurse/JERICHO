@@ -260,18 +260,32 @@ bare canvas:
 
 - **Menu bar** — File (new / open / save / save as / reload / quit), Edit (undo,
   delete selected), View (grid, labels, fit, zoom, background), Help (shortcuts).
-- **Toolbar** — the tools, as radio buttons: **Select** (drag spawns and region
-  corners), **Add spawn**, **Delete**, **Region** (click a corner, then the
-  opposite one) — plus Fit, Grid and Labels toggles and the arena picker.
+- **Toolbar** — the tools, as radio buttons: **Select** (drag any object, or a
+  region corner), **Add object**, **Delete**, **Region** (click a corner, then
+  the opposite one) — plus the Add-object parameters (the **Object** picker:
+  Player spawn / Opponent spawn / Health pickup / Weapon pickup; the **Weapon**
+  box and the **Amount**), Fit, Grid and Labels toggles and the arena picker.
+  One object model backs all of this: a spawn and a pickup are the same kind of
+  thing, drawn by its kind and dragged/deleted the same way.
 - **Canvas** — a grid with its step printed (a cell is 2048), the region as a
   dashed rectangle with draggable corners, spawns numbered (`P` = the player),
-  pickups as squares, middle-drag to pan, wheel to zoom.
+  pickups as squares, middle-drag to pan, wheel to zoom. Any object drags, and
+  a right-click deletes whatever is under the pointer.
 - **Inspector** (right) — the arena's fields (name, city, mp map/layout), the
   region's four numbers with Apply / Clear / Fit / "use the view's edges", the
   **spawn list** with an edit form (x, y, z, heading — leave y blank for "none"),
-  the **pickup list** with an add form, and the **Background** box: the map style
-  (`textured` / `points`), *Rip this city*, *Use the cached level map*, *Build
-  level map for this city* and *Remove background*.
+  the **pickup list** with a **Look** row (spin / bob / size — how every pickup
+  is drawn; `48 / 40 / 220` is the default), and the **Background** box: the map
+  style (`textured` / `points`), *Rip this city*, *Use the cached level map*,
+  *Build level map for this city* and *Remove background*.
+
+**Add object** is the only way to add a spawn or a pickup (the pickups box no
+longer has its own add form). Pick the Object at the right and click the map:
+*Opponent spawn* appends (up to `CD2_ARENA_MAX_SPAWNS`), *Health*/*Weapon*
+append a pickup (up to `CD2_ARENA_MAX_PICKUPS`, amount 2500 / 5 by default), and
+*Player spawn* **moves** the one player start rather than adding a second. A
+weapon name that is not in `WEAPON_NAMES` is refused with a message, because the
+game drops an unknown name without saying anything.
 - **Status bar** — the file and its unsaved state, the arena, the region, the
   counts, the last action, and the cursor's world position.
 - **Launch in game** — the toolbar button (also *File ▸ Launch in game*, `F5`,

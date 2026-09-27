@@ -29,22 +29,23 @@ fast, texture-free vertex cloud instead). Without a background you get a
 coordinate grid.
 
 Mouse (editor):
-  left-click         select a spawn (or the nearest to the click)
-  left-drag          move the selected spawn
-  right-click        add a spawn at the click (or delete, over one)
-  drag a region knob set a region corner
+  left-click         use the current tool: select/drag an object, place the
+                     current Object (Add object), or delete one
+  left-drag          move any object, or a region corner
+  right-click        delete whatever is under the pointer
   wheel              zoom about the cursor
   middle-drag        pan
 Keys:
-  n                  new arena (from the current one)
-  d                  delete the selected spawn
-  r                  cycle region: none -> rect -> none
-  s / Ctrl-S         save the current file
-  Tab / Shift-Tab    next / previous file
-  q / Esc            quit
+  1 2 3 4            Select / Add object / Delete / Region
+  F / G / L          fit / grid / labels
+  Del                delete the selected object
+  Ctrl-S O N R Z Q   save / open / new / reload / undo / quit
 
-Spawn 0 is the PLAYER; the rest are opponents in order. A heading is PSX angle
-units (0..4095); the arrow shows which way the car points.
+An arena holds ONE kind of thing: an object is a spawn or a pickup, and the KIND
+says which - so a spawn and a pickup drag, delete and draw the same way. Add
+object places the kind picked in the toolbar (Player spawn / Opponent spawn /
+Health or Weapon pickup). Spawn 0 is the PLAYER; the rest are opponents in order.
+A heading is PSX angle units (0..4095); the arrow shows which way the car points.
 """
 
 import argparse
@@ -54,6 +55,18 @@ import sys
 
 SPAWN_MAX = 16
 HEADING_MAX = 4096
+PICKUP_MAX = 32             # CD2_ARENA_MAX_PICKUPS (arenas/profile.h)
+
+# The weapon names a `pickup: weapon` may use - the module's CD2_WEAPON_DEF.name,
+# matched case-insensitively (arenas/arenafile.c). It is the SHORT code name: the
+# homing weapon is "SEEKER", not "homing". A name that matches nothing is dropped
+# WITHOUT A WORD by the game, which is exactly why check_arena warns about it.
+WEAPON_NAMES = ("MG", "MISSILE", "SEEKER", "CLUSTER", "ZOOMY", "FREEZE",
+                "SHOTGUN", "SMG", "MINE",
+                "special_hornet", "special_avalanche", "special_corvo",
+                "special_bruxa", "special_highwayman", "special_deadstar",
+                "special_obelisk", "special_bootlegger", "special_invocada",
+                "special_fixer", "special_wheelman")
 CITIES = {0: "CHICAGO", 1: "HAVANA", 2: "VEGAS", 3: "RIO"}
 CITY_INDEX = {v: k for k, v in CITIES.items()}
 CITY_NAMES = {v: k for k, v in CITY_INDEX.items()}	# index -> NAME
@@ -130,26 +143,307 @@ def _default_arena_dir():
 # ---------------------------------------------------------------------------
 # the data model + the file format (mirrors arenas/arenafile.c)
 # ---------------------------------------------------------------------------
+# The common object: ONE container for everything an arena holds - a spawn or a
+# pickup. The editor picks, drags, deletes and draws these uniformly; the KIND
+# only decides the extra fields and how an object looks and writes out. Add a
+# new kind here and the interaction code needs no change.
+OBJ_PLAYER_SPAWN = "player_spawn"      # the player's car (spawn 1 on disk)
+OBJ_OPPONENT_SPAWN = "opponent_spawn"  # every other spawn
+OBJ_HEALTH = "health"                  # pickup: a repair
+OBJ_WEAPON = "weapon"                  # pickup: a named weapon + ammo
+
+# the kinds, in the order the "Add object" dropdown offers them
+OBJECT_KINDS = (OBJ_PLAYER_SPAWN, OBJ_OPPONENT_SPAWN, OBJ_HEALTH, OBJ_WEAPON)
+
+# what each kind is called in the "Object" dropdown
+OBJ_LABELS = {OBJ_PLAYER_SPAWN: "Player spawn",
+              OBJ_OPPONENT_SPAWN: "Opponent spawn",
+              OBJ_HEALTH: "Health pickup",
+              OBJ_WEAPON: "Weapon pickup"}
+OBJ_FROM_LABEL = {v: k for k, v in OBJ_LABELS.items()}
+# the amount a fresh pickup gets, by kind (world units of damage / rounds)
+OBJ_DEFAULT_AMOUNT = {OBJ_HEALTH: 2500, OBJ_WEAPON: 5}
+
+# Pickup presentation defaults - must match CD2_PICKUP_*_DEFAULT in
+# arenas/profile.h. The module writes these keys back only when they differ, so
+# save_arena must do the same or an arena's text is rewritten for nothing.
+PICKUP_SPIN_DEFAULT = 48    # PSX angle units per frame
+PICKUP_BOB_DEFAULT = 40     # world units of float
+PICKUP_SIZE_DEFAULT = 220   # plane half-size, world units
+
+
+class ArenaObject:
+    """A placed thing - a spawn or a pickup - as one container.
+
+    Position is what every object shares (x, z); the kind adds what it needs: a
+    spawn has a heading (and an optional authored height), a weapon pickup a
+    weapon name and ammo, a health pickup an amount. `load_arena`/`save_arena`
+    are the only places that care which .cca line a kind becomes; everything else
+    (pick, drag, delete, draw) works on the object.
+    """
+
+    # how close (screen px) a click/drag has to be to catch this object
+    PICK_RADIUS = 16.0
+
+    def __init__(self, kind, x, z, y=None, heading=0, weapon=None, amount=0):
+        self.kind = kind
+        self.x = int(x)
+        self.z = int(z)
+        self.y = y                # spawns: the authored height, or None
+        self.heading = int(heading)  # spawns: PSX angle units
+        self.weapon = weapon      # weapon pickups: the short code name ("MG", ...)
+        self.amount = int(amount)  # pickups: ammo (weapon) or damage healed (health)
+
+    @property
+    def is_spawn(self):
+        return self.kind in (OBJ_PLAYER_SPAWN, OBJ_OPPONENT_SPAWN)
+
+    @property
+    def is_pickup(self):
+        return self.kind in (OBJ_HEALTH, OBJ_WEAPON)
+
+    def label(self):
+        """A short human name, for the status bar and the lists."""
+        if self.kind == OBJ_PLAYER_SPAWN:
+            return "player spawn"
+        if self.kind == OBJ_OPPONENT_SPAWN:
+            return "opponent spawn"
+        if self.kind == OBJ_HEALTH:
+            return "health pickup"
+        return "weapon pickup (%s)" % (self.weapon or "?")
+
+    def color(self):
+        """The canvas colour for this object (its kind's identity)."""
+        if self.kind == OBJ_PLAYER_SPAWN:
+            return SPAWN_COL
+        if self.kind == OBJ_OPPONENT_SPAWN:
+            return OPP_COL
+        if self.kind == OBJ_HEALTH:
+            return PICK_HEALTH
+        return PICK_WEAPON
+
+    def pick_radius(self):
+        return self.PICK_RADIUS
+
+    def hit(self, px, py, sx, sy):
+        """Is the pointer (px, py) within pick_radius of this object's drawn
+        point (sx, sy)? The editor owns the world->screen transform; the object
+        owns only the tolerance."""
+        r = self.pick_radius()
+        return (px - sx) ** 2 + (py - sy) ** 2 <= r * r
+
+    def to_line(self):
+        """The .cca line this object becomes (see arenas/arenafile.c). Both spawn
+        kinds write `spawn:` - the FIRST one is the player, the rest opponents."""
+        if self.kind in (OBJ_PLAYER_SPAWN, OBJ_OPPONENT_SPAWN):
+            if self.y is None:
+                return "spawn: %d %d %d" % (self.x, self.z, self.heading)
+            return "spawn: %d %d %d %d" % (self.x, self.z, self.heading, self.y)
+        if self.kind == OBJ_WEAPON:
+            return "pickup: weapon %s %d %d %d" % (self.weapon, self.x, self.z, self.amount)
+        return "pickup: health %d %d %d" % (self.x, self.z, self.amount)
+
+    @staticmethod
+    def parse(key, val):
+        """The ArenaObject a .cca line makes, or None if the key is not an object
+        (region/city/mp/... belong to the Arena itself). `spawn` parses as an
+        OPPONENT spawn; load_arena promotes the FIRST one to the player."""
+        if key == "spawn":
+            nums = [int(x) for x in val.split()]
+            if len(nums) < 2:
+                return None
+            return ArenaObject(OBJ_OPPONENT_SPAWN, nums[0], nums[1],
+                               y=(nums[3] if len(nums) > 3 else None),
+                               heading=(nums[2] if len(nums) > 2 else 0))
+        if key == "pickup":
+            parts = val.split()
+            if parts and parts[0].lower() == "weapon" and len(parts) >= 4:
+                return ArenaObject(OBJ_WEAPON, parts[2], parts[3], weapon=parts[1],
+                                   amount=(int(parts[4]) if len(parts) > 4 else 0))
+            if parts and parts[0].lower() == "health" and len(parts) >= 3:
+                return ArenaObject(OBJ_HEALTH, parts[1], parts[2],
+                                   amount=(int(parts[3]) if len(parts) > 3 else 0))
+        return None
+
+
 class Arena:
     def __init__(self, internal="", display="", city=0, mp_level=1, mp_arena=0,
-                 region=None, spawns=None, pickups=None):
+                 region=None, objects=None):
         self.internal = internal
         self.display = display
         self.city = city
         self.mp_level = mp_level
         self.mp_arena = mp_arena
         self.region = region            # None, or (x0, z0, x1, z1)
-        self.spawns = list(spawns or [])  # list of (x, z, heading)
-        # pickups: list of {"type": "weapon"|"health", "weapon": name|None,
-        #                   "amount": int, "x": int, "z": int}
-        self.pickups = list(pickups or [])
+        # THE container: every spawn and pickup is ONE ArenaObject here and the
+        # kind says which. `spawns`/`pickups` below are filtered views of it.
+        self.objects = list(objects or [])
+        # pickup presentation (arenas/pickupdraw.c) - optional in the .cca, so these
+        # are the module's defaults and save_arena writes them back only if changed
+        self.pickup_spin = PICKUP_SPIN_DEFAULT
+        self.pickup_bob = PICKUP_BOB_DEFAULT
+        self.pickup_size = PICKUP_SIZE_DEFAULT
         self.path = None
         self.mtime = None       # last seen on-disk mtime (for the live reload)
         self.dirty = False      # has unsaved top-down edits
 
+    # -- the object container ------------------------------------------------
+    def _spawn_objects(self):
+        return [o for o in self.objects if o.is_spawn]
+
+    def _pickup_objects(self):
+        return [o for o in self.objects if o.is_pickup]
+
+    @property
+    def player(self):
+        """The player's spawn - the FIRST spawn object - or None."""
+        s = self._spawn_objects()
+        return s[0] if s else None
+
+    def normalise(self):
+        """Keep the kinds honest: the first spawn object is the player, every other
+        spawn an opponent (the .cca writes `spawn:` for both - the first is the
+        player). Called after anything changes `objects`."""
+        first = True
+        for o in self.objects:
+            if o.is_spawn:
+                o.kind = OBJ_PLAYER_SPAWN if first else OBJ_OPPONENT_SPAWN
+                first = False
+
+    def add_object(self, obj):
+        if obj is not None:
+            self.objects.append(obj)
+            self.normalise()
+        return obj
+
+    def remove_object(self, obj):
+        if obj in self.objects:
+            self.objects.remove(obj)
+            self.normalise()
+
+    def replace_object(self, old, new):
+        if old in self.objects and new is not None:
+            self.objects[self.objects.index(old)] = new
+            self.normalise()
+
+    def insert_object_after(self, obj, after):
+        if obj is None:
+            return
+        i = self.objects.index(after) + 1 if after in self.objects else len(self.objects)
+        self.objects.insert(i, obj)
+        self.normalise()
+
+    def _as_value(self, o):
+        """An object in the OLD shape - a spawn as (x, z, heading, y), a pickup as a
+        dict - so the call sites that predate the object model keep working."""
+        if o.is_spawn:
+            return (o.x, o.z, o.heading, o.y)
+        return {"type": "health" if o.kind == OBJ_HEALTH else "weapon",
+                "weapon": o.weapon, "amount": o.amount, "x": o.x, "z": o.z}
+
+    # -- the filtered views (a compatibility layer over `objects`) -----------
+    @property
+    def spawns(self):
+        return _ObjectView(self, is_spawn=True)
+
+    @spawns.setter
+    def spawns(self, values):
+        self.objects = [o for o in self.objects if not o.is_spawn]
+        for v in values:
+            self.objects.append(_spawn_from_tuple(v))
+        self.normalise()
+
+    @property
+    def pickups(self):
+        return _ObjectView(self, is_spawn=False)
+
+    @pickups.setter
+    def pickups(self, values):
+        self.objects = [o for o in self.objects if not o.is_pickup]
+        for v in values:
+            self.objects.append(_pickup_from_dict(v))
+        self.normalise()
+
     def clone(self, internal):
-        return Arena(internal, internal, self.city, self.mp_level, self.mp_arena,
-                     self.region, self.spawns, self.pickups)
+        objs = [ArenaObject(o.kind, o.x, o.z, o.y, o.heading, o.weapon, o.amount)
+                for o in self.objects]
+        a = Arena(internal, internal, self.city, self.mp_level, self.mp_arena,
+                  self.region, objs)
+        a.pickup_spin = self.pickup_spin
+        a.pickup_bob = self.pickup_bob
+        a.pickup_size = self.pickup_size
+        return a
+
+
+def _spawn_from_tuple(v):
+    x, z = v[0], v[1]
+    h = v[2] if len(v) > 2 else 0
+    y = v[3] if len(v) > 3 else None
+    return ArenaObject(OBJ_OPPONENT_SPAWN, x, z, y=y, heading=h)
+
+
+def _pickup_from_dict(p):
+    if p.get("type") == "health":
+        return ArenaObject(OBJ_HEALTH, p["x"], p["z"], amount=p.get("amount", 0))
+    return ArenaObject(OBJ_WEAPON, p["x"], p["z"],
+                       weapon=p.get("weapon"), amount=p.get("amount", 0))
+
+
+class _ObjectView:
+    """A filtered, list-shaped view of Arena.objects - a spawn as (x, z, heading,
+    y), a pickup as a dict (the shapes the editor used before the object model).
+
+    Reads slice `objects`; every MUTATION goes back through the Arena, so
+    `objects` stays the single store and the player-spawn invariant holds. It is a
+    compatibility layer, not a second store: new code works on the objects."""
+
+    def __init__(self, arena, is_spawn):
+        self._a = arena
+        self._is_spawn = is_spawn
+
+    def _objs(self):
+        return self._a._spawn_objects() if self._is_spawn else self._a._pickup_objects()
+
+    def _make(self, val):
+        return _spawn_from_tuple(val) if self._is_spawn else _pickup_from_dict(val)
+
+    def __len__(self):
+        return len(self._objs())
+
+    def __bool__(self):
+        return len(self._objs()) > 0
+
+    def __iter__(self):
+        return iter([self._a._as_value(o) for o in self._objs()])
+
+    def __getitem__(self, i):
+        return self._a._as_value(self._objs()[i])
+
+    def __delitem__(self, i):
+        self._a.remove_object(self._objs()[i])
+
+    def __setitem__(self, i, val):
+        self._a.replace_object(self._objs()[i], self._make(val))
+
+    def append(self, val):
+        self._a.add_object(self._make(val))
+
+    def insert(self, i, val):
+        objs = self._objs()
+        obj = self._make(val)
+        if not objs:
+            self._a.add_object(obj)
+        elif i >= len(objs):
+            self._a.insert_object_after(obj, objs[-1])
+        else:
+            self._a.objects.insert(self._a.objects.index(objs[i]), obj)
+            self._a.normalise()
+
+    def __eq__(self, other):
+        return list(self) == list(other)
+
+    def __repr__(self):
+        return repr(list(self))
 
 
 def _city_from_token(tok):
@@ -199,23 +493,34 @@ def load_arena(path):
                     if len(nums) == 4:
                         x0, z0, x1, z1 = nums
                         a.region = (min(x0, x1), min(z0, z1), max(x0, x1), max(z0, z1))
-            elif key == "spawn":
-                nums = [int(x) for x in val.split()]
-                if len(nums) >= 2 and len(a.spawns) < SPAWN_MAX:
-                    x, z = nums[0], nums[1]
-                    h = nums[2] if len(nums) > 2 else 0
-                    y = nums[3] if len(nums) > 3 else None   # height, optional
-                    a.spawns.append((x, z, h & (HEADING_MAX - 1), y))
-            elif key == "pickup":
-                parts = val.split()
-                if parts and parts[0].lower() == "weapon" and len(parts) >= 4:
-                    a.pickups.append({"type": "weapon", "weapon": parts[1],
-                                      "amount": int(parts[4]) if len(parts) > 4 else 0,
-                                      "x": int(parts[2]), "z": int(parts[3])})
-                elif parts and parts[0].lower() == "health" and len(parts) >= 3:
-                    a.pickups.append({"type": "health", "weapon": None,
-                                      "amount": int(parts[3]) if len(parts) > 3 else 0,
-                                      "x": int(parts[1]), "z": int(parts[2])})
+            elif key == "pickupspin":
+                try:
+                    a.pickup_spin = int(val)
+                except ValueError:
+                    pass
+            elif key == "pickupbob":
+                try:
+                    a.pickup_bob = int(val)
+                except ValueError:
+                    pass
+            elif key == "pickupsize":
+                try:
+                    a.pickup_size = int(val)
+                except ValueError:
+                    pass
+            elif key in ("spawn", "pickup"):
+                # every spawn and pickup is one ArenaObject (see ArenaObject.parse);
+                # the file's own order is kept, so "spawns first" survives a save
+                obj = ArenaObject.parse(key, val)
+                if obj is None:
+                    continue
+                if obj.is_spawn:
+                    if len(a._spawn_objects()) >= SPAWN_MAX:
+                        continue
+                    obj.heading &= HEADING_MAX - 1
+                elif len(a._pickup_objects()) >= PICKUP_MAX:
+                    continue
+                a.add_object(obj)
     if not a.display:
         a.display = a.internal
     try:
@@ -238,17 +543,19 @@ def save_arena(a):
     else:
         lines.append("region: none")
     lines.append("# spawn: x z heading [y]  (first = player, rest = opponents; y = height)")
-    for (x, z, h, y) in a.spawns:
-        if y is None:
-            lines.append("spawn: %d %d %d" % (x, z, h))
-        else:
-            lines.append("spawn: %d %d %d %d" % (x, z, h, y))
+    for o in a._spawn_objects():
+        lines.append(o.to_line())
     lines.append("# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]")
-    for p in a.pickups:
-        if p["type"] == "weapon":
-            lines.append("pickup: weapon %s %d %d %d" % (p["weapon"], p["x"], p["z"], p["amount"]))
-        else:
-            lines.append("pickup: health %d %d %d" % (p["x"], p["z"], p["amount"]))
+    # pickup presentation - written only when it differs from the module's default,
+    # exactly as arenas/arenafile.c does (so an arena that sets none keeps its text)
+    if a.pickup_spin != PICKUP_SPIN_DEFAULT:
+        lines.append("pickupspin: %d" % a.pickup_spin)
+    if a.pickup_bob != PICKUP_BOB_DEFAULT:
+        lines.append("pickupbob: %d" % a.pickup_bob)
+    if a.pickup_size != PICKUP_SIZE_DEFAULT:
+        lines.append("pickupsize: %d" % a.pickup_size)
+    for o in a._pickup_objects():
+        lines.append(o.to_line())
     with open(a.path, "w") as f:
         f.write("\n".join(lines) + "\n")
     try:
@@ -283,7 +590,19 @@ def check_arena(a):
             x0, z0, x1, z1 = a.region
             if not (x0 <= p["x"] <= x1 and z0 <= p["z"] <= z1):
                 w.append("pickup %d (%d,%d) is OUTSIDE the region" % (i, p["x"], p["z"]))
+        if p["type"] == "weapon" and not _known_weapon(p["weapon"]):
+            w.append("pickup %d weapon '%s' is NOT a known name - the game drops it "
+                     "silently (see WEAPON_NAMES; e.g. the homing weapon is SEEKER)"
+                     % (i, p["weapon"]))
     return w
+
+
+def _known_weapon(name):
+    """Is `name` a weapon the module will accept? Case-insensitive, like
+    arenas/arenafile.c - an unknown name is discarded without a word."""
+    if not name:
+        return False
+    return name.strip().lower() in [n.lower() for n in WEAPON_NAMES]
 
 
 def describe(a):
@@ -1414,13 +1733,13 @@ def render_png(arenas, path, bg=None, bg_rect=None, size=(1100, 800)):
 # ---------------------------------------------------------------------------
 # Each tool is (id, toolbar label, status-bar hint).
 TOOLS = (
-    ("select", "Select", "Select and drag spawns or region corners. Middle-drag pans, the wheel zooms."),
-    ("spawn", "Add spawn", "Click the map to add a spawn there. Spawn 1 is the player, the rest opponents."),
+    ("select", "Select", "Select and drag any object, or a region corner. Middle-drag pans, the wheel zooms."),
+    ("object", "Add object", "Click the map to place the Object chosen at right (player/opponent spawn, health or weapon pickup)."),
     ("delete", "Delete", "Click a spawn or a pickup to delete it."),
     ("region", "Region", "Click one corner, then the opposite corner, to set the play boundary."),
 )
 
-TOOL_KEYS = {"1": "select", "2": "spawn", "3": "delete", "4": "region"}
+TOOL_KEYS = {"1": "select", "2": "object", "3": "delete", "4": "region"}
 
 # grid steps to choose from, in world units (a cell is 2048)
 GRID_STEPS = (512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 4194304)
@@ -1484,8 +1803,11 @@ class EditorApp:
         self.var_city = tk.StringVar(value="CHICAGO")
         self.var_layout = tk.StringVar(value="0")
         self.var_mp = tk.BooleanVar(value=True)
-        self.var_pick_kind = tk.StringVar(value="health")
         self.var_style = tk.StringVar(value="textured")
+        # Add-object parameters: what the Object tool drops on the next click
+        self.var_object = tk.StringVar(value=OBJ_LABELS[OBJ_PLAYER_SPAWN])
+        self.var_weapon = tk.StringVar(value=WEAPON_NAMES[0])
+        self.var_obj_amount = tk.StringVar(value="")
         self._build_menu()
         self._build_toolbar()
         self._build_body()
@@ -1510,10 +1832,47 @@ class EditorApp:
 
     def _mode_changed(self):
         self.mode = self.var_mode.get()
-        for tid, _l, hint in TOOLS:
-            if tid == self.mode:
-                self._say(hint)
+        if self.mode == "object":
+            self._say(self._object_hint())
+        else:
+            for tid, _l, hint in TOOLS:
+                if tid == self.mode:
+                    self._say(hint)
         self.redraw()
+
+    # -- the Add-object parameters ------------------------------------------
+    def object_kind(self):
+        """The kind the Object tool will place."""
+        return OBJ_FROM_LABEL.get(self.var_object.get(), OBJ_PLAYER_SPAWN)
+
+    def object_amount(self):
+        """The amount a fresh pickup gets (the entry, or the kind's default)."""
+        kind = self.object_kind()
+        try:
+            return int(self.var_obj_amount.get())
+        except ValueError:
+            return OBJ_DEFAULT_AMOUNT.get(kind, 0)
+
+    def _object_kind_changed(self, _ev=None):
+        """Enable only what the chosen kind needs and default its amount."""
+        kind = self.object_kind()
+        self.var_object.set(OBJ_LABELS[kind])
+        self.cb_weapon.configure(state="normal" if kind == OBJ_WEAPON else "disabled")
+        self.e_obj_amount.configure(state="normal" if kind in OBJ_DEFAULT_AMOUNT else "disabled")
+        self.var_obj_amount.set(str(OBJ_DEFAULT_AMOUNT.get(kind, "")) if kind in OBJ_DEFAULT_AMOUNT else "")
+        if self.mode == "object":
+            self._say(self._object_hint())
+
+    def _object_hint(self):
+        kind = self.object_kind()
+        if kind == OBJ_PLAYER_SPAWN:
+            return "click to place the PLAYER spawn (moves it if you already have one)"
+        if kind == OBJ_OPPONENT_SPAWN:
+            return "click to add an opponent spawn (up to %d)" % SPAWN_MAX
+        if kind == OBJ_HEALTH:
+            return "click to drop a health pickup (repairs %d)" % self.object_amount()
+        return "click to drop a '%s' weapon pickup (%d rounds)" % (
+            self.var_weapon.get().strip() or "?", self.object_amount())
 
     # -- window chrome ------------------------------------------------------
     def _build_menu(self):
@@ -1584,6 +1943,29 @@ class EditorApp:
         for tid, label, _h in TOOLS:
             ttk.Radiobutton(bar, text=label, value=tid, variable=self.var_mode,
                             command=self._mode_changed).pack(side="left", padx=1)
+        sep()
+
+        # what the "Add object" tool places: the kind, and (for a pickup) the weapon
+        # and amount. Only the fields the kind needs stay enabled - see
+        # _object_kind_changed.
+        ttk.Label(bar, text="object:").pack(side="left")
+        self.cb_object = ttk.Combobox(bar, width=15, state="readonly",
+                                      values=[OBJ_LABELS[k] for k in OBJECT_KINDS])
+        self.cb_object.set(self.var_object.get())
+        self.cb_object.pack(side="left", padx=2)
+        self.cb_object.bind("<<ComboboxSelected>>", self._object_kind_changed)
+
+        self.lbl_weapon = ttk.Label(bar, text="weapon:")
+        self.lbl_weapon.pack(side="left")
+        self.cb_weapon = ttk.Combobox(bar, width=14, textvariable=self.var_weapon,
+                                      values=list(WEAPON_NAMES))
+        self.cb_weapon.pack(side="left", padx=2)
+
+        self.lbl_amount = ttk.Label(bar, text="amount:")
+        self.lbl_amount.pack(side="left")
+        self.e_obj_amount = ttk.Entry(bar, width=6, textvariable=self.var_obj_amount)
+        self.e_obj_amount.pack(side="left", padx=2)
+        self._object_kind_changed()
         sep()
 
         ttk.Button(bar, text="Fit", command=self.fit_view).pack(side="left", padx=1)
@@ -1696,19 +2078,24 @@ class EditorApp:
         for c, w in zip(cols, (56, 74, 58, 58)):
             self.tv_pickups.heading(c, text=c.upper())
             self.tv_pickups.column(c, width=w, anchor="w" if c in ("kind", "detail") else "e")
-        self.tv_pickups.grid(row=0, column=0, columnspan=5, sticky="nsew")
-        ttk.Combobox(b, textvariable=self.var_pick_kind, width=7, state="readonly",
-                     values=["health", "weapon"]).grid(row=1, column=0, sticky="we", pady=(5, 0))
-        self.e_pick_what = ttk.Entry(b, width=9)
-        self.e_pick_what.grid(row=1, column=1, sticky="we", pady=(5, 0))
-        self.e_pick_amt = ttk.Entry(b, width=6)
-        self.e_pick_amt.grid(row=1, column=2, sticky="we", pady=(5, 0))
-        ttk.Button(b, text="Add at view centre", command=self.add_pickup).grid(
-            row=1, column=3, sticky="we", pady=(5, 0))
+        self.tv_pickups.grid(row=0, column=0, columnspan=4, sticky="nsew")
+        # how every pickup in this arena is drawn (arenas/pickupdraw.c). Pickups are
+        # ADDED with the Object tool; here you only shape how they look.
+        look = ttk.Frame(b)
+        look.grid(row=1, column=0, columnspan=4, sticky="we", pady=(5, 0))
+        ttk.Label(look, text="look:").pack(side="left")
+        self.pick_look = {}
+        for key in ("spin", "bob", "size"):
+            ttk.Label(look, text=key).pack(side="left", padx=(6, 1))
+            e = ttk.Entry(look, width=5)
+            e.pack(side="left")
+            e.bind("<Return>", self.apply_pickup_look)
+            e.bind("<FocusOut>", self.apply_pickup_look)
+            self.pick_look[key] = e
         ttk.Button(b, text="Del", command=self.del_pickup).grid(
-            row=1, column=4, sticky="we", pady=(5, 0))
-        ttk.Label(b, text="(weapon name / health amount)", foreground="#888").grid(
-            row=2, column=0, columnspan=5, sticky="w")
+            row=2, column=0, sticky="we", pady=(4, 0))
+        ttk.Label(b, text="(spin / bob / size; 48 / 40 / 220 = default)",
+                  foreground="#888").grid(row=2, column=1, columnspan=3, sticky="w")
 
     def _box_bg(self, side):
         ttk = self.ttk
@@ -2052,7 +2439,12 @@ class EditorApp:
         a = self.cur()
         return {"internal": a.internal, "display": a.display, "city": a.city,
                 "mp_level": a.mp_level, "mp_arena": a.mp_arena, "region": a.region,
-                "spawns": list(a.spawns), "pickups": [dict(p) for p in a.pickups]}
+                "pickup_spin": a.pickup_spin, "pickup_bob": a.pickup_bob,
+                "pickup_size": a.pickup_size,
+                # copy the container (fresh objects, so an undo never aliases live
+                # ones); the kind rides along so a restore keeps spawn/pickup intact
+                "objects": [ArenaObject(o.kind, o.x, o.z, o.y, o.heading,
+                                        o.weapon, o.amount) for o in a.objects]}
 
     def push_undo(self):
         self.undo_stack.append(self.snapshot())
@@ -2071,8 +2463,12 @@ class EditorApp:
         a.mp_level = s["mp_level"]
         a.mp_arena = s["mp_arena"]
         a.region = s["region"]
-        a.spawns = list(s["spawns"])
-        a.pickups = [dict(p) for p in s["pickups"]]
+        a.pickup_spin = s["pickup_spin"]
+        a.pickup_bob = s["pickup_bob"]
+        a.pickup_size = s["pickup_size"]
+        a.objects = [ArenaObject(o.kind, o.x, o.z, o.y, o.heading, o.weapon, o.amount)
+                     for o in s["objects"]]
+        a.normalise()
         a.dirty = True
         self.sel = min(self.sel, len(a.spawns) - 1)
         self.refresh()
@@ -2127,30 +2523,29 @@ class EditorApp:
             c.create_text(12, h - 16, anchor="sw", fill="#7a5c00",
                           text="no region set - the whole level is the arena")
 
-        for i, (x, z, hd, y) in enumerate(a.spawns):
-            sx, sy = self.S(x, z)
+        # every object draws from its own kind (ArenaObject.color); a spawn is an
+        # arrow with a heading, a pickup a square - one loop over the container
+        si = pi = 0
+        for o in a.objects:
+            sx, sy = self.S(o.x, o.z)
             if not (-40.0 <= sx <= w + 40.0 and -40.0 <= sy <= h + 40.0):
                 continue                       # off screen: cull it
-            col = SPAWN_COL if i == 0 else OPP_COL
-            if i == self.sel:
+            col = o.color()
+            if (o.is_spawn and si == self.sel) or (o.is_pickup and pi == self.sel_pick):
                 c.create_oval(sx - 11, sy - 11, sx + 11, sy + 11, outline=SEL_COL, width=2)
                 col = SEL_COL
-            dx, dy = _heading_vec(hd)
-            c.create_line(sx, sy, sx + dx * 26, sy + dy * 26, fill=col, width=2)
-            c.create_oval(sx - 5, sy - 5, sx + 5, sy + 5, fill=col, outline="#000")
-            if self.show_labels:
-                label = "%d" % i if i else "P"
-                c.create_text(sx + 9, sy + 9, anchor="nw", fill="#ffffff",
-                              text=label, font=("TkDefaultFont", 8, "bold"))
-
-        for i, p in enumerate(a.pickups):
-            sx, sy = self.S(p["x"], p["z"])
-            if not (-30.0 <= sx <= w + 30.0 and -30.0 <= sy <= h + 30.0):
-                continue                       # off screen: cull it
-            col = PICK_HEALTH if p["type"] == "health" else PICK_WEAPON
-            if i == self.sel_pick:
-                c.create_oval(sx - 10, sy - 10, sx + 10, sy + 10, outline=SEL_COL, width=2)
-            c.create_rectangle(sx - 5, sy - 5, sx + 5, sy + 5, fill=col, outline="#000")
+            if o.is_spawn:
+                dx, dy = _heading_vec(o.heading)
+                c.create_line(sx, sy, sx + dx * 26, sy + dy * 26, fill=col, width=2)
+                c.create_oval(sx - 5, sy - 5, sx + 5, sy + 5, fill=col, outline="#000")
+                if self.show_labels:
+                    c.create_text(sx + 9, sy + 9, anchor="nw", fill="#ffffff",
+                                  text=("P" if si == 0 else "%d" % si),
+                                  font=("TkDefaultFont", 8, "bold"))
+                si += 1
+            else:
+                c.create_rectangle(sx - 5, sy - 5, sx + 5, sy + 5, fill=col, outline="#000")
+                pi += 1
 
         if self.pending_corner is not None:
             sx, sy = self.S(*self.pending_corner)
@@ -2243,40 +2638,22 @@ class EditorApp:
         wx, wz = self.W(ev.x, ev.y)
         a = self.cur()
 
-        if self.mode == "spawn":
-            if len(a.spawns) >= SPAWN_MAX:
-                self._say("that is the maximum of %d spawns" % SPAWN_MAX)
-                return
-            self.push_undo()
-            a.spawns.append((int(wx), int(wz), 0, None))
-            self.sel = len(a.spawns) - 1
-            a.dirty = True
-            self.refresh()
-            self.redraw()
-            self._say("added spawn %d (spawn 1 is the player)" % self.sel)
+        if self.mode == "object":
+            self._place_object(int(wx), int(wz))
             return
 
         if self.mode == "delete":
-            i = self._pick_spawn(ev.x, ev.y)
-            if i >= 0:
+            obj = self._pick_object(ev.x, ev.y)
+            if obj is not None:
                 self.push_undo()
-                del a.spawns[i]
+                a.remove_object(obj)
                 a.dirty = True
-                self.sel = -1
+                self.deselect()
                 self.refresh()
                 self.redraw()
-                self._say("deleted spawn %d" % i)
-                return
-            j = self._pick_pickup(ev.x, ev.y)
-            if j >= 0:
-                self.push_undo()
-                del a.pickups[j]
-                a.dirty = True
-                self.refresh()
-                self.redraw()
-                self._say("deleted pickup %d" % j)
-                return
-            self._say("nothing there to delete")
+                self._say("deleted the %s at %d,%d" % (obj.label(), obj.x, obj.z))
+            else:
+                self._say("nothing there to delete")
             return
 
         if self.mode == "region":
@@ -2295,12 +2672,11 @@ class EditorApp:
             self.redraw()
             return
 
-        # select mode: a spawn, a region corner, or nothing
-        i = self._pick_spawn(ev.x, ev.y)
-        if i >= 0:
-            self.sel = i
-            self.tv_spawns.selection_set(self.tv_spawns.get_children()[i])
-            self.drag = ("spawn", i)
+        # select mode: an object, a region corner, or nothing
+        obj = self._pick_object(ev.x, ev.y)
+        if obj is not None:
+            self.select_object(obj)
+            self.drag = ("object", obj)
             self.refresh()
             self.redraw()
             return
@@ -2311,13 +2687,6 @@ class EditorApp:
                 if abs(sx - ev.x) < 9 and abs(sy - ev.y) < 9:
                     self.drag = ("corner", k)
                     return
-        j = self._pick_pickup(ev.x, ev.y)
-        if j >= 0:
-            self.sel_pick = j
-            self.sel = -1
-            self.refresh()
-            self.redraw()
-            return
         self.deselect()
         self.redraw()
 
@@ -2327,9 +2696,10 @@ class EditorApp:
         wx, wz = self.W(ev.x, ev.y)
         a = self.cur()
         kind, k = self.drag
-        if kind == "spawn" and 0 <= k < len(a.spawns):
-            x, z, hd, y = a.spawns[k]
-            a.spawns[k] = (int(wx), int(wz), hd, y)
+        if kind == "object":
+            # every object drags the same way - it is one container
+            k.x = int(wx)
+            k.z = int(wz)
             a.dirty = True
             self._redraw_soon()
         elif kind == "corner" and a.region:
@@ -2361,25 +2731,17 @@ class EditorApp:
         self._redraw_soon()
 
     def on_right(self, ev):
-        # right-click: delete whatever is under the pointer (no mode switch)
-        i = self._pick_spawn(ev.x, ev.y)
-        if i >= 0:
+        # right-click: delete whatever is under the pointer (no mode switch). A
+        # spawn and a pickup are the same object now, so one pick and one delete.
+        obj = self._pick_object(ev.x, ev.y)
+        if obj is not None:
             self.push_undo()
-            del self.cur().spawns[i]
+            self.cur().remove_object(obj)
             self.cur().dirty = True
-            self.sel = -1
+            self.deselect()
             self.refresh()
             self.redraw()
-            self._say("deleted spawn %d" % i)
-            return
-        j = self._pick_pickup(ev.x, ev.y)
-        if j >= 0:
-            self.push_undo()
-            del self.cur().pickups[j]
-            self.cur().dirty = True
-            self.refresh()
-            self.redraw()
-            self._say("deleted pickup %d" % j)
+            self._say("deleted the %s" % obj.label())
 
     def on_motion(self, ev):
         wx, wz = self.W(ev.x, ev.y)
@@ -2408,23 +2770,78 @@ class EditorApp:
             self.deselect()
             self.redraw()
 
-    def _pick_spawn(self, sx, sy):
-        best, bestd = -1, 18.0
-        for i, (x, z, _h, _y) in enumerate(self.cur().spawns):
-            p = self.S(x, z)
-            d = ((p[0] - sx) ** 2 + (p[1] - sy) ** 2) ** 0.5
-            if d < bestd:
-                best, bestd = i, d
+    def _pick_object(self, sx, sy):
+        """The object under the pointer - a spawn and a pickup are the same thing
+        now, so this is the ONE hit test (ArenaObject.hit; nearest wins)."""
+        best, bestd = None, None
+        for o in self.cur().objects:
+            ox, oy = self.S(o.x, o.z)
+            if o.hit(sx, sy, ox, oy):
+                d = (sx - ox) ** 2 + (sy - oy) ** 2
+                if bestd is None or d < bestd:
+                    best, bestd = o, d
         return best
 
-    def _pick_pickup(self, sx, sy):
-        best, bestd = -1, 16.0
-        for i, p in enumerate(self.cur().pickups):
-            q = self.S(p["x"], p["z"])
-            d = ((q[0] - sx) ** 2 + (q[1] - sy) ** 2) ** 0.5
-            if d < bestd:
-                best, bestd = i, d
-        return best
+    def _place_object(self, x, z):
+        """Drop the chosen object (Player spawn / Opponent spawn / Health / Weapon
+        pickup) at the click. The one place the Add-object tool turns a kind into an
+        ArenaObject - validate first, then commit, so a rejected click pushes no
+        undo."""
+        a = self.cur()
+        kind = self.object_kind()
+        weapon = None
+
+        if kind == OBJ_OPPONENT_SPAWN and len(a.spawns) >= SPAWN_MAX:
+            self._say("that is the maximum of %d spawns" % SPAWN_MAX)
+            return
+        if kind in (OBJ_HEALTH, OBJ_WEAPON) and len(a.pickups) >= PICKUP_MAX:
+            self._say("that is the maximum of %d pickups" % PICKUP_MAX)
+            return
+        if kind == OBJ_WEAPON:
+            weapon = self.var_weapon.get().strip()
+            if not _known_weapon(weapon):
+                self._say("'%s' is not a known weapon - the game drops it silently "
+                          "(pick one from the list, e.g. SEEKER)" % weapon)
+                return
+
+        self.push_undo()
+        if kind == OBJ_PLAYER_SPAWN:
+            obj = a.player
+            if obj is None:
+                obj = a.add_object(ArenaObject(OBJ_PLAYER_SPAWN, x, z))
+                self._say("placed the player spawn at %d,%d" % (x, z))
+            else:
+                obj.x, obj.z = x, z            # it IS the player: move it there
+                self._say("moved the player spawn to %d,%d" % (x, z))
+        else:
+            obj = a.add_object(ArenaObject(kind, x, z, weapon=weapon,
+                                           amount=self.object_amount()))
+            self._say("added the %s at %d,%d" % (obj.label(), x, z))
+
+        self.select_object(obj)
+        a.dirty = True
+        self.refresh()
+        self.redraw()
+
+    def select_object(self, obj):
+        """Point the inspector and the lists at `obj` (sets the spawn or pickup index
+        the forms read)."""
+        a = self.cur()
+        if obj is None or obj not in a.objects:
+            return
+        if obj.is_spawn:
+            self.sel = a._spawn_objects().index(obj)
+            self.sel_pick = -1
+        else:
+            self.sel_pick = a._pickup_objects().index(obj)
+            self.sel = -1
+        try:
+            if self.sel >= 0:
+                self.tv_spawns.selection_set(self.tv_spawns.get_children()[self.sel])
+            if self.sel_pick >= 0:
+                self.tv_pickups.selection_set(self.tv_pickups.get_children()[self.sel_pick])
+        except Exception:
+            pass
 
     # -- commands -----------------------------------------------------------
     def deselect(self):
@@ -2474,26 +2891,25 @@ class EditorApp:
         self._say("duplicated the spawn")
 
     def delete_selected(self):
+        """Delete the selected object (from either list) - resolved as an object, so
+        spawns and pickups delete the same way."""
         a = self.cur()
-        if self.sel_pick >= 0 and self.sel_pick < len(a.pickups):
-            self.push_undo()
-            del a.pickups[self.sel_pick]
-            a.dirty = True
-            self.sel_pick = -1
-            self.refresh()
-            self.redraw()
-            self._say("deleted the pickup")
-            return
-        if self.sel < 0 or self.sel >= len(a.spawns):
+        obj = None
+        if 0 <= self.sel_pick < len(a.pickups):
+            obj = a._pickup_objects()[self.sel_pick]
+        elif 0 <= self.sel < len(a.spawns):
+            obj = a._spawn_objects()[self.sel]
+        if obj is None:
             self._say("nothing selected")
             return
         self.push_undo()
-        del a.spawns[self.sel]
+        a.remove_object(obj)
         a.dirty = True
         self.sel = -1
+        self.sel_pick = -1
         self.refresh()
         self.redraw()
-        self._say("deleted the spawn")
+        self._say("deleted the %s" % obj.label())
 
     def apply_arena(self):
         a = self.cur()
@@ -2554,44 +2970,45 @@ class EditorApp:
         self.redraw()
         self._say("spawn %d updated" % self.sel)
 
-    def add_pickup(self):
+    def apply_pickup_look(self, _ev=None):
+        """Read the pickup spin/bob/size entries into the arena (the module's
+        presentation keys). Blank or unreadable text just leaves the value alone."""
         a = self.cur()
-        v = self.view
-        kind = self.var_pick_kind.get()
-        what = self.e_pick_what.get().strip()
-        amt = self.e_pick_amt.get().strip()
-        x, z = int(v.cx), int(v.cz)
-        if kind == "health":
+        changed = False
+        for key, attr in (("spin", "pickup_spin"), ("bob", "pickup_bob"),
+                          ("size", "pickup_size")):
+            txt = self.pick_look[key].get().strip()
+            if txt == "":
+                continue
             try:
-                amount = int(amt) if amt else 2500
+                val = int(txt)
             except ValueError:
-                self._say("the health amount wants a number")
-                return
-            p = {"type": "health", "weapon": None, "amount": amount, "x": x, "z": z}
-        else:
-            if not what:
-                self._say("a weapon pickup wants a weapon name")
-                return
-            try:
-                amount = int(amt) if amt else 5
-            except ValueError:
-                self._say("the ammo wants a number")
-                return
-            p = {"type": "weapon", "weapon": what, "amount": amount, "x": x, "z": z}
-        self.push_undo()
-        a.pickups.append(p)
-        a.dirty = True
-        self.refresh()
-        self.redraw()
-        self._say("pickup added - drag it where you want (select mode)")
+                continue
+            if getattr(a, attr) != val:
+                setattr(a, attr, val)
+                changed = True
+        if changed:
+            a.dirty = True
+            self._say("pickup look: spin %d, bob %d, size %d"
+                      % (a.pickup_spin, a.pickup_bob, a.pickup_size))
+
+    def _fill_pickup_look(self):
+        a = self.cur()
+        for key, val in (("spin", a.pickup_spin), ("bob", a.pickup_bob),
+                         ("size", a.pickup_size)):
+            e = self.pick_look.get(key)
+            if e is None:
+                continue
+            e.delete(0, "end")
+            e.insert(0, str(val))
 
     def del_pickup(self):
         a = self.cur()
-        if self.sel_pick < 0 or self.sel_pick >= len(a.pickups):
+        if not 0 <= self.sel_pick < len(a.pickups):
             self._say("select a pickup in the list first")
             return
         self.push_undo()
-        del a.pickups[self.sel_pick]
+        a.remove_object(a._pickup_objects()[self.sel_pick])
         a.dirty = True
         self.sel_pick = -1
         self.refresh()
@@ -2714,14 +3131,18 @@ class EditorApp:
         from tkinter import messagebox
         messagebox.showinfo(
             "Shortcuts",
-            "Tools:  1 select   2 add spawn   3 delete   4 region\n"
-            "Map:    left = use the tool (or drag a spawn / region corner)\n"
+            "Tools:  1 select   2 add object   3 delete   4 region\n"
+            "Map:    left = use the tool (or drag any object / region corner)\n"
             "        right-click = delete what is under the pointer\n"
             "        middle-drag = pan, wheel = zoom\n"
             "Keys:   F fit   G grid   L labels   Del delete   Esc cancel\n"
             "        Ctrl+S save   Ctrl+O open   Ctrl+N new   Ctrl+R reload\n"
             "        Ctrl+Z undo   Ctrl+Q quit\n\n"
-            "Spawn 1 is the player, the rest are opponents.\n"
+            "Add object: pick the Object (Player spawn / Opponent spawn / Health or\n"
+            "Weapon pickup), the weapon and the amount at the right, then click the\n"
+            "map. Player spawn MOVES the one player start; the rest append. Spawn 1\n"
+            "is the player. Every object drags and right-click-deletes the same way.\n"
+            "Look row (Pickups box): spin / bob / size - how all pickups are drawn.\n"
             "Keep every spawn inside the region: the boundary only pulls back a car\n"
             "that drove out from inside; one that starts outside is left alone.")
 
@@ -2799,6 +3220,7 @@ class EditorApp:
         for p in a.pickups:
             self.tv_pickups.insert("", "end", values=(
                 p["type"], p.get("weapon") or p.get("amount"), p["x"], p["z"]))
+        self._fill_pickup_look()
 
         self._status_line()
 
@@ -2944,10 +3366,53 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
 
     cx = max(40, app.canvas.winfo_width() // 2)
     cy = max(40, app.canvas.winfo_height() // 2)
-    app.mode = "spawn"
-    app.on_press(Ev(cx, cy))
+
+    # the Add-object tool: each kind lands in the ONE container (Arena.objects)
+    def place(label, at_x, at_y):
+        app.var_object.set(label)
+        app._object_kind_changed()
+        app.mode = "object"
+        app.on_press(Ev(at_x, at_y))
+        root.update()
+
+    npa = len(cur.spawns)
+    place("Opponent spawn", cx, cy)
+    check("Add object (opponent) -> %d spawn(s)" % (npa + 1), len(cur.spawns) == npa + 1)
+    check("... it is an opponent spawn",
+          cur._spawn_objects()[-1].kind == OBJ_OPPONENT_SPAWN)
+
+    # "Player spawn" moves the existing one - there is only ever one
+    npl = len(cur.spawns)
+    place("Player spawn", cx - 30, cy - 30)
+    check("Player spawn moves it, not adds", len(cur.spawns) == npl)
+    check("... and it stays spawn 1", cur.player.kind == OBJ_PLAYER_SPAWN)
+
+    npk = len(cur.pickups)
+    place("Health pickup", cx + 20, cy + 20)
+    place("Weapon pickup", cx - 20, cy + 20)
+    check("Add object (health+weapon) -> %d pickup(s)" % (npk + 2),
+          len(cur.pickups) == npk + 2)
+    check("... kinds are right",
+          cur._pickup_objects()[-2].kind == OBJ_HEALTH
+          and cur._pickup_objects()[-1].kind == OBJ_WEAPON)
+
+    # an unknown weapon name is refused - the module would drop it without a word
+    app.var_weapon.set("homing")
+    nbad = len(cur.pickups)
+    place("Weapon pickup", cx + 40, cy + 40)
+    check("an unknown weapon name is refused", len(cur.pickups) == nbad)
+    app.var_weapon.set("SEEKER")
+
+    # a pickup drags like a spawn (one interaction path)
+    pk = cur._pickup_objects()[-1]
+    before = (pk.x, pk.z)
+    psx, psy = app.S(pk.x, pk.z)
+    app.mode = "select"
+    app.on_press(Ev(psx, psy))
+    app.on_drag(Ev(psx + 25, psy + 25))
+    app.on_release(Ev(psx + 25, psy + 25))
     root.update()
-    check("click-to-add -> %d spawn(s)" % (n0 + 2), len(cur.spawns) == n0 + 2)
+    check("a pickup drags too", (pk.x, pk.z) != before)
 
     app.mode = "region"
     app.on_press(Ev(cx, cy))
@@ -2970,12 +3435,15 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
     check("spawn list has %d row(s)" % len(cur.spawns),
           len(app.tv_spawns.get_children()) == len(cur.spawns))
 
-    app.var_pick_kind.set("health")
-    app.e_pick_amt.delete(0, "end")
-    app.e_pick_amt.insert(0, "1500")
-    app.add_pickup()
+    # the pickup Look row feeds the module's presentation keys (the ones the old
+    # save used to drop on the floor)
+    for key, val in (("spin", "111"), ("bob", "22"), ("size", "333")):
+        app.pick_look[key].delete(0, "end")
+        app.pick_look[key].insert(0, val)
+    app.apply_pickup_look()
     root.update()
-    check("added a pickup -> %d" % (p0 + 1), len(cur.pickups) == p0 + 1)
+    check("the pickup look applied",
+          (cur.pickup_spin, cur.pickup_bob, cur.pickup_size) == (111, 22, 333))
     check("pickup list has %d row(s)" % len(cur.pickups),
           len(app.tv_pickups.get_children()) == len(cur.pickups))
 
@@ -3080,6 +3548,10 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
     back, saw = load_arena(tmp)
     check("round-trips (%d spawns, %d pickups)" % (len(back.spawns), len(back.pickups)),
           saw and back.spawns == cur.spawns and len(back.pickups) == len(cur.pickups))
+    check("the pickup look round-trips (%d/%d/%d)"
+          % (back.pickup_spin, back.pickup_bob, back.pickup_size),
+          (back.pickup_spin, back.pickup_bob, back.pickup_size)
+          == (cur.pickup_spin, cur.pickup_bob, cur.pickup_size))
 
     root.destroy()
     try:
