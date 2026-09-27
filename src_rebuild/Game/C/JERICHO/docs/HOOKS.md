@@ -144,6 +144,15 @@ jer_pause_menu_register(&myMenu);
   `jer_sound_ensure(&channel)` is the one-call form for a cached `-1` channel
   (acquire, re-lock after a level change, or give up gracefully). A refused lock
   still yields a voice to play on — never treat it as "no sound".
+- **Move somewhere the world has not streamed to** — `jer_map.h`. The engine
+  streams the map as a 2×2 window of REGIONS and only pre-loads neighbours, so a
+  region you HOP into (a teleport, or a spawn far from the level start) is never
+  loaded and the ground there reads as a void. `jer_map_spool_to(x, z)` makes the
+  engine load the destination's region (and its texture areas) before you need
+  them; `jer_map_region_of` / `jer_map_region_resident` / `jer_map_region_has_data`
+  answer "where am I / is it loaded / is there anything there"; `jer_map_ready`
+  is the level-header guard (the frontend runs with a zeroed header and every
+  region division would trap). Full story: [`map-streaming.md`](map-streaming.md).
 - **Custom events** — values `>= JER_EVENT_MODULE_CUSTOM` are free for
   module-to-module messaging (the sandbox uses one for its no-damage
   toggle).

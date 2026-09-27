@@ -78,6 +78,7 @@ echo    5) Render an arena to a PNG
 echo    6) Sync the two arena folders
 echo    7) Check the setup
 echo    8) Build the level map (a city's top-down rip)
+echo    9) Launch an arena straight into the editor (no opponents)
 echo    Q) Quit
 echo.
 set "C="
@@ -90,6 +91,7 @@ if /i "%C%"=="5" goto render
 if /i "%C%"=="6" goto syncmenu
 if /i "%C%"=="7" goto setup
 if /i "%C%"=="8" goto levelmap
+if /i "%C%"=="9" goto launch
 if /i "%C%"=="q" goto :eof
 goto menu
 
@@ -168,7 +170,7 @@ rem ---------------------------------------------------------------------------
 if not exist "%EXE%" (
   echo.
   echo   The game is not built: %EXE%
-  echo   Build it (Release_dev) first.
+  echo   Build it ^(Release_dev^) first.
   pause
   goto menu
 )
@@ -177,7 +179,9 @@ if not exist "%GAME_ARENAS%" mkdir "%GAME_ARENAS%" >nul 2>nul
 echo.
 echo   launching with the in-game editor. In the game: Deathmatch, then the
 echo   arena you want. L1 place, R1 slot, L2 delete, R2 region corners,
-echo   SELECT save, START reload. Close the game when done.
+echo   CROSS noclip (d-pad = height), SELECT save, START reload. Close it when
+echo   done. For one arena with no menus, use option 9 (or the editor's own
+echo   "Launch in game" button / F5).
 echo.
 pushd "%BIN%"
 start "" /wait "%EXE%" -nointro -ccmenu -cceditor
@@ -185,6 +189,29 @@ popd
 call :sync
 echo.
 echo   done - your edits are copied back to %ARENAS%
+pause
+goto menu
+
+rem ---------------------------------------------------------------------------
+rem Launch ONE arena straight into the in-game editor (the engine's frontend
+rem bypass), zero opponents - what the editor's "Launch in game" button does.
+:launch
+if not defined PY goto nopy
+if not exist "%EXE%" (
+  echo.
+  echo   The game is not built: %EXE%
+  echo   Build it ^(Release_dev^) first.
+  pause
+  goto menu
+)
+call :sync
+call :pick
+if errorlevel 1 goto menu
+echo.
+echo   launching the in-game editor on %PICKED% (zero opponents)...
+echo   the game runs DETACHED - edit, then SELECT to save. Close it when done.
+echo.
+%PY% "%EDITOR%" "%PICKED%" --launch --exe "%EXE%"
 pause
 goto menu
 
