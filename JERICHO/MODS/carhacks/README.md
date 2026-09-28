@@ -34,6 +34,8 @@ off independently.
 |---|---|---|
 | `unlock_extra_vehicles` | 1 | lift the progression + single-player gate on the frontend car list's extra vehicles (`JER_EVENT_CAR_AVAILABILITY`) |
 | `cross_city_vehicles` | 0 | import vehicles that belong to *another* city's data (`JER_EVENT_CAR_DATA_SOURCE`) |
+| `car_select_menu` | 1 | replace the stock Take-a-Ride car screen with the menu that has the city-roster row ([`CARSELECT.md`](CARSELECT.md)) |
+| `mp_agree_imports` | 1 | in a session, let the HOST's import set win for everyone ([`MP_ADAPTER.md`](MP_ADAPTER.md)); off ⇒ each machine keeps its own |
 
 Cross-city keys (only read when `cross_city_vehicles = 1`):
 
@@ -65,3 +67,12 @@ This module's own docs:
 The cross-city test suite and launchers live in Caine's Crossfire's `tools/`
 (`devcheck.sh`, `launch_mp_*.bat`) and write `JERICHO/CONFIG/carhacks.ini`; they
 enable this module by id.
+
+This module's own tool:
+
+| tool | what for |
+|---|---|
+| `tools/chk_mp_foreign.sh` | stress a **real mp pair** with a different foreign city on each side (three cities' car data at once) and report what each machine loaded and what each player ended up driving — see [`MP_ADAPTER.md`](MP_ADAPTER.md) |
+
+It drives mp's harness (`JERICHO/MODS/mp/tools/mp_pair.bat`), so `mp` and
+`carhacks` must both be enabled in `JERICHO/CONFIG/modlist.ini` for it.

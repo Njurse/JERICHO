@@ -180,7 +180,7 @@ it — and it is fireable through the scripted debug driver as `fire:smg`.
 | `weapons/` | the weapon framework: `core/` (registry + inventory), `raycast/` (machine gun), `projectile/`, `shotgun/`, `drops/`, `aoe/`, `fx/` |
 | `ai/` | the prototype opponent AI (`opponent.c` brain; `nav.c` / `grid.c` / `flow.c` navigation) |
 | `factions/` | the five teams: the registry, the roster, the stance table and the per-car assignment (`factions.c`; see [`FACTIONS.md`](FACTIONS.md)) |
-| `carhacks/` | vehicle-availability hacks, plus the two format docs |
+| `carhacks/` | the vehicle-availability + cross-city hacks' **docs** (the code is its own module now: `JERICHO/MODS/carhacks/`), plus the city-data format docs (`CROSS_CITY.md`, `HACK.md`, `FORMATS.md`, `PALETTES.md`, `VEHICLES.md`, `VRAM.md`) |
 | `tools/` | the test launchers and the arena smoke test |
 | `mod.toml` | package metadata (`id`, `default-enabled`) |
 
