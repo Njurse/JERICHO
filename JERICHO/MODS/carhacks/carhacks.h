@@ -44,6 +44,37 @@ int         carhacks_count(void);
 const char* carhacks_name(int index);
 int         carhacks_enabled(int index);
 
+/* The hack table rows. Named, so no handler (or sibling source) ever depends on
+ * the table order. */
+enum
+{
+	CHK_HACK_UNLOCK_EXTRA = 0,	/* lift the frontend's extra-vehicle gate */
+	CHK_HACK_CROSS_CITY,		/* import another city's vehicles */
+	CHK_HACK_CAR_SELECT		/* the car-select menu (carselect.c) */
+};
+
+/* ---------------------------------------------------------------------------
+ * The car-select menu (carselect.c)
+ * ------------------------------------------------------------------------- */
+
+/* Register the frontend car-select menu and its hooks. Called from
+ * carhacks_register. Safe to call more than once (a module reload re-runs it). */
+void chkCarSelectRegister(JERICHO_CONTEXT* ctx);
+
+/* The menu's id, for jer_frontend_find and for the boot log. */
+const char* chkCarSelectMenuId(void);
+
+/* Arm the menu: the stock car screen has just started its setup, so show ours
+ * instead of it. Called from carhacks.c's JER_EVENT_CAR_AVAILABILITY hook.
+ * Declines for a 2-player pick, a mission's car pick, or a live mp session. */
+void chkCarSelectArm(void);
+
+/* The player's last pick from the menu: the city its car must come from and the
+ * model number inside that city. -1 = nothing picked. carhacks.c turns this
+ * into the cross-city import. */
+int chkCarSelectPickCity(void);
+int chkCarSelectPickModel(void);
+
 #ifdef __cplusplus
 }
 #endif

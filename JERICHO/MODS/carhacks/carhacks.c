@@ -37,14 +37,14 @@ typedef struct CHK_HACK
 	int         def;	/* enabled by default */
 } CHK_HACK;
 
-/* Named rows, so the handlers don't depend on table order. */
-#define CHK_HACK_UNLOCK_EXTRA	0
-#define CHK_HACK_CROSS_CITY	1
+/* Named rows, so the handlers don't depend on table order (CHK_HACK_* live in
+ * carhacks.h so sibling sources - carselect.c - can name them too). */
 
 static const CHK_HACK gChkHacks[] =
 {
 	{ "Unlock extra vehicles", "unlock_extra_vehicles", 1 },
 	{ "Cross-city vehicles",   "cross_city_vehicles",   0 },	/* opt-in */
+	{ "Car select menu",       "car_select_menu",      1 },
 };
 
 #define CHK_HACK_COUNT ((int)(sizeof(gChkHacks) / sizeof(gChkHacks[0])))
@@ -129,6 +129,13 @@ static int ChkOnCarAvailability(void* ud, void* args)
 
 	if (carhacks_enabled(CHK_HACK_CROSS_CITY))
 		ChkApplyCarList(a->level);
+
+	/* The car-select menu (carselect.c) takes the stock car screen's place. The
+	 * screen has only STARTED its setup here - this hook runs before the code
+	 * that turns unlockExtra into CarAvailability - so the menu is only armed
+	 * and opens on the next frame, by which time that setup has finished. */
+	if (carhacks_enabled(CHK_HACK_CAR_SELECT))
+		chkCarSelectArm();
 
 	return JER_RESULT_CONTINUE;
 }
@@ -280,6 +287,11 @@ void carhacks_register(JERICHO_CONTEXT* ctx)
 
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_AVAILABILITY, ChkOnCarAvailability, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DATA_SOURCE, ChkOnCarDataSource, NULL, 0);
+
+	/* the car-select menu (carselect.c): a JERICHO frontend menu that replaces
+	 * the stock Take-a-Ride car screen so it can carry the city-roster row */
+	if (carhacks_enabled(CHK_HACK_CAR_SELECT))
+		chkCarSelectRegister(ctx);
 
 	ctx->jer_log(ctx, "[carhacks] %d car hack(s) registered\n", CHK_HACK_COUNT);
 }

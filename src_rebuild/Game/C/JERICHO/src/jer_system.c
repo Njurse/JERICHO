@@ -519,7 +519,10 @@ static const char* jerEventName(int event)
 	case JER_EVENT_NET_RECV:		return "NET_RECV";
 	case JER_EVENT_NET_SPAWN:		return "NET_SPAWN";
 	case JER_EVENT_CMDLINE:			return "CMDLINE";
+	case JER_EVENT_FRONTEND_MAIN_MENU:	return "FRONTEND_MAIN_MENU";
+	case JER_EVENT_FRONTEND_ENTERED:	return "FRONTEND_ENTERED";
 	case JER_EVENT_FRONTEND_IDLE:	return "FRONTEND_IDLE";
+	case JER_EVENT_CAR_DAMAGE_FX:	return "CAR_DAMAGE_FX";
 	default:
 		if (event >= JER_EVENT_MODULE_CUSTOM)
 		{
