@@ -14,9 +14,9 @@ engine-side event bridges, the addon SDK and a set of showcase mods all live
 under [`JERICHO/`](JERICHO/) — the mods in [`JERICHO/MODS/`](JERICHO/MODS/) and
 the engine-side SDK in [`src_rebuild/Game/C/JERICHO/`](src_rebuild/Game/C/JERICHO/).
 The mods exist to *demonstrate what the hook surface makes possible*: real car
-deformation, a GTA-style camera, full arcade-handling overhauls, LAN
-multiplayer, and more — each one built purely out of hooks plus (for the deep
-mods) reads and writes of game globals.
+deformation, a GTA-style camera, full arcade-handling overhauls, authored
+textures and live car palettes, LAN multiplayer, and more — each one built
+purely out of hooks plus (for the deep mods) reads and writes of game globals.
 
 ![The in-game mod manager (Options → JERICHO)](readme_images/jericho_mod_menu_example.png)
 
@@ -66,16 +66,19 @@ JERICHO/                         the framework folder (also the runtime data dir
 ├── MODS/<id>/                   installed modules, one folder each
 │   ├── mod.toml                 metadata: id, name, version, author, runtime, ...
 │   ├── <id>.c                   the module source (addon or deep mod)
+│   ├── textures/<name>.tga      the module's own art (jer_texture; see below)
 │   └── <id>.dll                 compiled addon binary (built, not committed)
+├── CORE/                        JERICHO's own art (the custom menu background)
 ├── CONFIG/
 │   ├── modlist.ini              module enabled state + load order
+│   ├── jericho.ini              framework settings (e.g. custom_menu_background)
 │   └── <id>.ini                 per-module settings (jer_config store)
 ├── build_mods.bat               compiles every runtime="dll" addon (in-game button)
 └── sdk/                         standalone addon development kit (headers + import lib)
 
 src_rebuild/Game/C/JERICHO/      the engine-side SDK + canonical docs
 ├── include/jericho.h            public API: hooks, events, overrides, module entry
-├── include/jer_*.h              math / config / menu / pause-menu / net helpers
+├── include/jer_*.h              math/config/menu/screen/texture/map/... helpers
 ├── src/jer_loader.c             runtime DLL scanner + loader
 ├── src/jer_system.c             module table, activation, dispatch, logging
 ├── src/jer_manager.c            CONFIG/modlist.ini read/write
@@ -86,7 +89,8 @@ Documentation lives beside the code it describes. [`docs/README.md`](docs/README
 is the index for the whole set; the canonical JERICHO docs are in
 [`src_rebuild/Game/C/JERICHO/docs/`](src_rebuild/Game/C/JERICHO/docs/) —
 [`README.md`](src_rebuild/Game/C/JERICHO/docs/README.md) (overview, layout, build),
-[`events.md`](src_rebuild/Game/C/JERICHO/docs/events.md) (the full event reference)
+[`events.md`](src_rebuild/Game/C/JERICHO/docs/events.md) (the full event reference),
+[`textures.md`](src_rebuild/Game/C/JERICHO/docs/textures.md) (custom art)
 and [`HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) (writing a module).
 
 ## The hook schema
@@ -203,7 +207,7 @@ and the addon-safe subset is mirrored into the SDK at
 | `jer_anim.h` | Player-skeleton animation helpers (resolve bones when posing via `JER_EVENT_PED_POSE` / `JER_EVENT_PED_SKELETON`). |
 | `jer_npc.h` | NPC (pedestrian) helpers. |
 | `jer_ped_palette.h` | Per-**instance** pedestrian palettes — recolour one Tanner (e.g. team colours) without touching every instance of the model. |
-| `jer_texture.h` | **Custom textures**: ship a TGA under the module's `textures/`, ask for a handle, draw it — the engine owns loading, upload and draw order. |
+| `jer_texture.h` | **Custom textures** — ship a TGA under the module's `textures/`, ask for a handle, draw it; the engine owns loading, upload and draw order. See [Custom textures and art](#custom-textures-and-art). |
 | `jer_map.h` | World-region streaming: query the region you are in and force/stream a region the engine never pre-loaded (teleports, arena spawns). |
 | `jer_car_palette.h` | Per-`CAR_DATA`-slot car colour — inert until set, and stable across machines, so it is safe to sync in multiplayer. |
 | `jer_math.h` | Shared math helpers. |
@@ -267,6 +271,145 @@ JER_MODULE_ENTRY(jer_module_greet_entry)(JERICHO_CONTEXT* ctx)
 
 Build it (`JERICHO\build_mods.bat greet`) and enable **Greet** in Options →
 JERICHO. The id, the folder name and the entry symbol all read `greet`.
+
+## Custom textures and art
+
+The engine's own art is PSX data: indexed 4-bit/8-bit texture pages and CLUTs
+packed into a 1 MiB VRAM that is **full once a level is loaded**. JERICHO does not
+pretend otherwise — it gives a module **two** ways to put an authored image on
+screen and keeps the page maths, the ordering table and the upload on the engine
+side (`Game/C/jer_texture.c` + `jer_texture_psx.c`). The API is
+[`jer_texture.h`](src_rebuild/Game/C/JERICHO/include/jer_texture.h); the full
+write-up — every trap and the measured numbers — is
+[`textures.md`](src_rebuild/Game/C/JERICHO/docs/textures.md).
+
+```c
+JER_TEXTURE icon = jer_texture_load("cainescrossfire", "icons/health");
+...
+jer_texture_draw_card(icon, x, y, z, 120, 120, spin, JER_TEX_DRAW_NONE);
+```
+
+### The asset convention
+
+A module ships its art in its **own** folder, under a `textures/` subdirectory:
+
+```
+JERICHO/MODS/<modId>/textures/<name>.tga        e.g. icons/health.tga
+```
+
+`name` is a slash-separated path under that folder (extension optional). The file
+is a **32-bit TGA** — uncompressed or RLE true-colour with an 8-bit alpha channel,
+the one format that carries a cut-out alpha. The resolver prefers the **repo's**
+copy (a dev build runs four levels below it) and falls back to the mirror beside
+the exe, so the file a tool writes is the file the game reads. JERICHO's *own* art
+lives in `JERICHO/CORE/`.
+
+### Two targets: a GPU texture, or a real PSX page
+
+| Target | What it is | Cost |
+|---|---|---|
+| `JER_TEX_TARGET_IMAGE` *(default)* | a real RGBA texture on the GPU, drawn through the PsyX texture override — any size, full colour, alpha | no VRAM |
+| `JER_TEX_TARGET_PAGE` | the image quantised to an indexed **PSX texture page + CLUT** in VRAM, drawn as a normal textured poly | the authentic PSX look — but **VRAM is effectively full**, so a page must be given up and the load fails cleanly when none can be |
+
+The default is the "hires" path: an icon that should read crisply, or anything the
+level never had. `PAGE` is for art that has to sit *inside* a level's palette world
+rather than on top of it — and it is honest about the limit: a `PAGE` request that
+cannot get VRAM reports `JER_TEX_TARGET_IMAGE` back (`jer_texture_target`), so a
+module can see it got the fallback. `jer_texture_tpage` hands the raw
+`tpage`/`clut` ids to a module that draws its own `POLY_FT4`.
+
+### Three draw calls
+
+All three are **no-ops outside a render pass**, so a module cannot corrupt the
+primitive table by calling from the wrong hook. Draw from `JER_EVENT_DRAW_WORLD`
+(mid-render, while the camera matrices are live) or `JER_EVENT_DRAW_OVERLAY`.
+
+- `jer_texture_draw_card(tex, x, y, z, halfW, halfH, spin, flags)` — an upright,
+  flat **card** that turns about the world vertical (`spin` in PSX angle units; it
+  goes edge-on twice a turn, which is what reads as "spinning"). Caine's Crossfire's
+  pickup planes are drawn this way.
+- `jer_texture_draw_flat(tex, x, y, z, halfW, halfL, yaw, flags)` — the same on a
+  **horizontal** rectangle: a ground decal.
+- `jer_texture_draw_screen(tex, x, y, w, h, otBucket)` — blit over a rectangle in
+  the **frame buffer**, no camera involved: a menu background or any full-screen art.
+
+Flags (`JER_TEX_DRAW_*`): `DOUBLE` (draw the reverse-wound twin too, so a spinning
+card is not invisible from behind), `BILLBOARD` (yaw at the camera instead of using
+`spin` — do **not** set it on something that should spin), `MIRROR`, and
+`NO_OCCLUDE` (skip the depth sort so nothing hides a marker).
+
+### The traps the API hides
+
+These are the ones that cost real time, and the reason the call site never sees
+them:
+
+- **The world position is the game's *raw* frame** — the same numbers a car's
+  `hd.where.t[0..2]` carries. The API applies the engine's Y-flip, because
+  render-space Y is the *negative* of that frame and camera-space +Y runs **down**
+  the screen, so a positive lift in the raw frame moves a card up.
+- **The PsyX texture override is global.** `DR_PSYX_TEX` applies to every textured
+  primitive parsed after it, so the primitives are emitted in an order that covers
+  exactly one quad, and a texture change forces a GPU draw split (a frame of 40
+  cards measured ~80 splits against a `MAX_DRAW_SPLITS` ceiling of 4096).
+- **The OT bucket is `z >> 3`, always.** SZ saturates at `0xFFFF` and
+  `0xFFFF >> 3 == OTSIZE-1`; `>> 2` can index past the table. The API applies the
+  same shift and near-clip guard the engine's own world prims use.
+- **The frontend's ordering table is only 16 entries** (`FE_OTSIZE`). A
+  screen-space draw must be handed the bucket its art replaces (the menu background
+  passes 11) — pass a world-sized index and the menus flicker as every frame
+  appends past the end of the table.
+- **PsyX does not backface-cull**, so the API auto-mirrors a card when it faces
+  away; an icon never reads backwards.
+
+Whatever TGA you hand the loader is normalised **once**, so any export pipeline
+works: a 24-bit image becomes RGBA with opaque alpha; RGB is quantised to the PSX's
+5-5-5 so a custom texture sits in the same palette world as the levels; and the
+long side is capped at 1024 (box-downscaled past that), so you never have to
+pre-size an image. `jer_texture_size` reports the converted size.
+
+### Live iteration
+
+`jer_texture_load` loads once per `(path, target)` and returns the same handle
+again. The engine re-reads every loaded texture on `JER_EVENT_GAME_START` and on
+frontend entry, so **edit a TGA and it is picked up without a restart**. A handle
+used after freeing is a clean no-op (handles are generation-tagged), and everything
+releases on shutdown.
+
+Two levers make a texture visible to a script rather than an eye: `-shot <frame>`
+writes `SCREENSHOT.BMP` on gameplay frame N, and `JERICHO_TEX_DIAG=1` traces each
+drawn card's projected rectangle to the log.
+
+### JERICHO's own menu background
+
+JERICHO ships a replacement frontend background — `JERICHO/CORE/jericho_background.tga`
+— drawn through `jer_texture_draw_screen` in place of the stock `DATA/GFX.RAW` art
+(`Game/C/jer_menu_bg.c`). **On by default**; a missing or unreadable file simply
+falls back to the stock background. Switch it off in `JERICHO/CONFIG/jericho.ini`:
+
+```
+custom_menu_background = 0
+```
+
+### Palettes and per-instance colour
+
+Textures are half the art story; the other half is colour, and a car's or a
+pedestrian's colour comes out of shared CLUTs. Two headers give a module its own
+without touching anyone else's:
+
+- `jer_car_palette.h` — `jer_car_palette_set(carId, r, g, b)` tints **one car
+  slot**. Inert until set, and keyed on the `CAR_DATA` slot, which is stable for a
+  session on every machine — so the same value is safe to sync in multiplayer.
+- `jer_ped_palette.h` — recolours **one pedestrian instance** (a team-coloured
+  Tanner) without touching every instance of the model; only the outfit is
+  recoloured, the skin keeps its own tones.
+
+The live tuning tool is
+`JERICHO/MODS/cainescrossfire/tools/paletteedit.py`, and the
+resolution rules — which `civ_clut` row, which CLUT, where in VRAM — are written
+down in
+[`carhacks/PALETTES.md`](JERICHO/MODS/cainescrossfire/carhacks/PALETTES.md). The
+VRAM budget itself is in
+[`carhacks/VRAM.md`](JERICHO/MODS/cainescrossfire/carhacks/VRAM.md).
 
 ## Building and running
 
@@ -410,6 +553,27 @@ Beyond the game build, the repo ships tooling for the work around it:
   and the unattended test harness (`arena_test.sh`, `devcheck.sh`). Described in
   that mod's own README.
 
+### Diagnostics
+
+Everything the runtime and the engine print goes to **`REDRIVER2.log`** (and, with
+`-console`, to a live console window): the boot banner, the module/hook inventory,
+each module's lines prefixed `[<id>]`, and the `src=` of every activation
+(`modlist` / `default` / `forced` / `nomods`). See
+[`module-activation.md`](src_rebuild/Game/C/JERICHO/docs/module-activation.md).
+
+- **A module missing from the inventory** is not installed, disabled, or (for an
+  addon) not compiled yet.
+- **`-nomods`** proves a zero-mod baseline: it disables everything for one boot.
+- **`-shot <frame>`** / **`-shotfront <frame>`** write `SCREENSHOT.BMP` on a
+  gameplay / frontend frame, so a visual change can be checked from a script.
+- **`JERICHO_TEX_DIAG=1`** traces each drawn texture card's projected rectangle.
+- **A crash** leaves a minidump — attribute it to a function with
+  [`tools/dmp_fault.py`](tools/dmp_fault.py) then
+  [`tools/map_lookup.py`](tools/map_lookup.py) (see
+  [`tools/README.md`](tools/README.md)).
+
+A deep-mod rebuild logs its work to `JERICHO/CONFIG/build.log`.
+
 ## Showcase mods
 
 These modules exist to demonstrate what the hook surface makes possible. Each is
@@ -438,8 +602,12 @@ set (`CAR_PAD`, `CAR_ENGINE`, `CAR_FRICTION`, `CAR_TORQUE`, `CAR_STEP`,
 `CAR_DRAW`, `CAR_DRAW_COLOR`, `CAR_GEARBOX`, `CAR_REVS`, `CAR_ENGINE_SOUND`); the
 damage hooks (`CAR_VS_CAR`, `GET_DAMAGE_SCALE`, `GET_WALL_RESTITUTION`); the FX
 hooks (`EXPLOSION_SPAWN` / `DRAW` / `COLLIDE`, `DRAW_WORLD`); plus `DRAW_MAP`,
-`CAR_DATA_SOURCE`, `CAR_AVAILABILITY` and `LEVEL_LAUNCH`. The single best example
-of how far one mod can reshape handling, sound, damage and effects at once.
+`CAR_DATA_SOURCE`, `CAR_AVAILABILITY` and `LEVEL_LAUNCH`. It is also the biggest
+consumer of the art surface — its 21 weapon/health pickup icons are 32-bit TGAs
+drawn through [`jer_texture`](#custom-textures-and-art), its cars take
+per-instance colours, and its arenas are a `.cca` registry edited with its own
+Python tooling. The single best example of how far one mod can reshape handling,
+sound, damage, effects **and** presentation at once.
 
 ![Caine's Crossfire car-combat gamemode](readme_images/addon_cainescrossfire_gamemode_example.png)
 
@@ -563,4 +731,11 @@ README — see [`JERICHO/MODS/`](JERICHO/MODS/).
 - [`src_rebuild/Game/C/JERICHO/docs/ped-animation.md`](src_rebuild/Game/C/JERICHO/docs/ped-animation.md) — the pedestrian animation and skeleton pipeline.
 - [`src_rebuild/Game/C/JERICHO/docs/ped-palette.md`](src_rebuild/Game/C/JERICHO/docs/ped-palette.md) — per-instance pedestrian colours.
 - [`JERICHO/sdk/README.md`](JERICHO/sdk/README.md) — the addon SDK.
+- [`tools/README.md`](tools/README.md) — repo-wide maintenance tools (release publishing, crash-dump triage).
 - [`docs/CI.md`](docs/CI.md) — the builds, downloads and release process.
+
+Each mod documents itself in its own folder under [`JERICHO/MODS/`](JERICHO/MODS/);
+Caine's Crossfire is the richest, with `PROFILES.md` (the vehicle roster),
+`SPECIALS.md`, `ARENAS.md` (the arena registry and `.cca` format), `HANDLING.md`,
+`AI.md`, and `carhacks/` (`CROSS_CITY.md`, `FORMATS.md`, `PALETTES.md`,
+`VRAM.md`).
