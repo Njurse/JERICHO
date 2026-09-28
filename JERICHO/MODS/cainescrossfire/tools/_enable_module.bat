@@ -43,7 +43,11 @@ if not exist "%MODLIST%" (
 set "MODULE_ENABLE_ID=%MOD%"
 set "MODULE_ENABLE_LIST=%MODLIST%"
 set "RC="
-for /f "usebackq delims=" %%R in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=$env:MODULE_ENABLE_LIST; $m=[regex]::Escape($env:MODULE_ENABLE_ID); $t=[IO.File]::ReadAllText($p); $on='(?m)^[ \t]*'+$m+'[ \t]*=[ \t]*1([ \t]*(#.*)?)$'; $off='(?m)^([ \t]*'+$m+'[ \t]*=[ \t]*)0([ \t]*(#.*)?)$'; if ($t -match $off) { [IO.File]::WriteAllText($p, ($t -replace $off, '${1}1${2}'), (New-Object Text.UTF8Encoding $false)); 'DONE' } elseif ($t -match $on) { 'ALREADY' } else { 'MISSING' }"`) do set "RC=%%R"
+rem The trailing \r matters: the bin modlist is CRLF, and without allowing it a BARE
+rem line ("mp = 0", no comment) never matched - only lines carrying a "# ..." did,
+rem because ".*" swallowed the carriage return. So "mp" could not be enabled at all
+rem while "carhacks      = 0   # comment" could.
+for /f "usebackq delims=" %%R in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=$env:MODULE_ENABLE_LIST; $m=[regex]::Escape($env:MODULE_ENABLE_ID); $t=[IO.File]::ReadAllText($p); $on='(?m)^[ \t]*'+$m+'[ \t]*=[ \t]*1([ \t]*(#.*)?)\r?$'; $off='(?m)^([ \t]*'+$m+'[ \t]*=[ \t]*)0([ \t]*(#.*)?)\r?$'; if ($t -match $off) { [IO.File]::WriteAllText($p, ($t -replace $off, '${1}1${2}'), (New-Object Text.UTF8Encoding $false)); 'DONE' } elseif ($t -match $on) { 'ALREADY' } else { 'MISSING' }"`) do set "RC=%%R"
 
 if "%RC%"=="DONE"    echo   module %MOD% : enabled in %MODLIST%
 if "%RC%"=="ALREADY" echo   module %MOD% : already enabled
