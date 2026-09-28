@@ -4050,6 +4050,82 @@ def selftest(arena_dir, exe_override=None):
     return 0 if ok else 2
 
 
+def viewport_png(arena, path, sel=0, size=560, verbose=True):
+    """Render the 3D viewport for the arena's `sel`-th object (the highlighted one)
+    and write it to `path`. Returns 0 on success, 2 when nothing could be drawn -
+    the assertions make this scriptable (see tools/README.md)."""
+    import numpy as np
+    import view3d
+
+    city = CITY_NAMES.get(arena.city, "CHICAGO")
+    objs = list(arena.objects)
+    if not objs:
+        print("viewport: %s has no objects to focus" % arena.internal)
+        return 2
+
+    if sel < 0:                      # default: the player's spawn
+        obj = arena.player or objs[0]
+    else:
+        obj = objs[min(sel, len(objs) - 1)]
+
+    geom = load_level_geom(city, verbose=verbose)
+    if geom is None:
+        print("viewport: no level rip for %s (run: --rip %s)" % (city, city))
+        return 2
+
+    gy = obj.y if getattr(obj, "y", None) is not None else view3d.ground_y(geom, obj.x, obj.z)
+    rect = _viewport_rect(obj.x, obj.z)
+
+    # The camera frames the object AND the ground under it: a spawn sitting on the
+    # street is centred as before, while one authored high above it (a stale .cca
+    # height - see ARENAS.md's ground report) still shows the street it should be
+    # on, instead of a frame of empty air.
+    gy_ref = view3d.ground_y(geom, obj.x, obj.z)
+    span = abs(float(gy) - gy_ref)
+    target = (float(obj.x), 0.5 * (float(gy) + gy_ref), float(obj.z))
+    dist = max(2600.0, span * 1.6)
+
+    w = max(64, int(size))
+    h = max(48, int(round(w * 0.75)))
+    cam = view3d.Camera(target, yaw=35.0, pitch=30.0, dist=dist)
+    blob = view3d.object_blob(city, geom, obj, cam, w, h)
+    img = view3d.render_viewport(city, target, rect, size=(w, h), cam=cam,
+                                 level_geom=geom, blobs=[blob] if blob else [])
+
+    a = np.asarray(img)
+    covered = float(np.mean(np.any(a != np.array(view3d.BG, np.uint8), axis=2)))
+    colours = len(np.unique(a.reshape(-1, 3), axis=0))
+
+    if verbose:
+        print("viewport: %s, object %d (%s) at %d,%d  ->  %s" %
+              (city, sel, obj.label(), obj.x, obj.z, path))
+    img.save(path)
+
+    # the assertions that make the mode usable from a script
+    if (img.width, img.height) != (w, h):
+        print("viewport: FAILED - wrong image size %dx%d" % (img.width, img.height))
+        return 2
+    if not (0.01 <= covered <= 0.999):
+        print("viewport: FAILED - the frame is %.1f%% covered (nothing drawn?)" % (covered * 100))
+        return 2
+    if colours <= 4:
+        print("viewport: FAILED - only %d colours (flat/blank?)" % colours)
+        return 2
+
+    if verbose:
+        print("viewport: %dx%d, %.0f%% covered, %d colours, object drawn: %s"
+              % (w, h, covered * 100, colours, blob is not None))
+    return 0
+
+
+def _viewport_rect(x, z, half=None):
+    """The world window the 3D viewport shows: the object's cell plus its eight
+    neighbours (3x3 cells = 6144 units), centred on the object."""
+    if half is None:
+        half = 3 * MAP_CELL / 2.0
+    return (x - half, z - half, x + half, z + half)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Caine's Crossfire arena editor (top-down).")
     ap.add_argument("files", nargs="*", help="one or more .cca arena files (globs ok); default: the mod's arenas folder")
@@ -4081,6 +4157,12 @@ def main(argv=None):
     ap.add_argument("--rebuild-map", action="store_true",
                     help="rebuild the cached level map even when it looks current")
     ap.add_argument("--render", metavar="OUT.png", help="render headlessly and exit")
+    ap.add_argument("--viewport", metavar="OUT.png",
+                    help="render the 3D viewport (the highlighted object's cell + its "
+                         "eight neighbours) and exit")
+    ap.add_argument("--viewport-sel", type=int, default=0,
+                    help="which object --viewport focuses (-1 = the player spawn)")
+    ap.add_argument("--vp-size", type=int, default=560, help="--viewport width in px")
     ap.add_argument("--check", action="store_true", help="validate and print, do not open a window")
     ap.add_argument("--json", action="store_true", help="print the parsed arenas as JSON")
     ap.add_argument("--exe", metavar="PATH",
@@ -4160,7 +4242,7 @@ def main(argv=None):
         # user gets a window with the folder it looked in and how to make one.
         # (--level is the exception: with a level map there IS something to draw,
         # so a --render builds/renders it even with no arena files.)
-        if (args.json or args.check or args.render) and not args.level:
+        if (args.json or args.check or args.render or args.viewport) and not args.level:
             return 0
 
         os.makedirs(arena_dir, exist_ok=True)
@@ -4282,6 +4364,10 @@ def main(argv=None):
         render_png(arenas, args.render, bg, bg_rect)
         print("wrote", args.render)
         return 2 if bg_missing else 0
+
+    if args.viewport:
+        return viewport_png(arenas[0], args.viewport, sel=args.viewport_sel,
+                            size=args.vp_size)
 
     return run_editor(arenas, bg, bg_rect, hint=hint)
 
