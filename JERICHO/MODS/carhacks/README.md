@@ -45,6 +45,15 @@ Cross-city keys (only read when `cross_city_vehicles = 1`):
 | `source_city` | the city a level reads its car data from (`0..3`) |
 | `import` | `slot:city:model, ...` — write foreign models into resident slots |
 | `traffic_model`, `traffic_slot` | put a foreign model into a civilian slot so ambient traffic uses it |
+| `mp_agree_imports` | in a session, let the host's import set win for everyone ([`MP_ADAPTER.md`](MP_ADAPTER.md)); off ⇒ each machine keeps its own |
+
+## Hooks
+
+| event | what it does |
+|---|---|
+| `JER_EVENT_CAR_AVAILABILITY` | unlocks the extra vehicles on the frontend car list |
+| `JER_EVENT_CAR_DATA_SOURCE` | writes the level's import set into the engine's `models[]` / `modelSource[]` |
+| `JER_EVENT_CAR_PEER_DRAW` | **answer how a remote player's car is drawn here** — whether this machine really holds that player's vehicle, and the palette to use if it does not ([`MP_ADAPTER.md`](MP_ADAPTER.md)) |
 
 ## Docs
 
@@ -60,7 +69,7 @@ the code):
 This module's own docs:
 
 - [`CARSELECT.md`](CARSELECT.md) — the in-game car select: a city-roster row in a JERICHO menu override
-- [`MP_ADAPTER.md`](MP_ADAPTER.md) — the car-identity / import-set schema and the connection channel over the JERICHO net bridge (`jer_net`), for the `mp` module
+- [`MP_ADAPTER.md`](MP_ADAPTER.md) — the car-identity / import-set schema, the connection channel over the JERICHO net bridge (`jer_net`), how a peer's car is drawn (and corrected), and the measured one-foreign-city-per-level limit
 
 ## Test tooling
 
