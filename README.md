@@ -1,6 +1,6 @@
 # JERICHO
 
-**Just-in-Time Extensible Runtime Interface for Compiled Hooks & Overrides**
+REDRIVER2 has had a slew of incredible modifications - BetterCars, AltModPack, and even online multiplayer. However, the cardinal sin plaguing the REDRIVER2 modification community is the lack of a unified and extensible modding platform. So, I introduce: JERICHO - **Just-in-Time Extensible Runtime Interface for Compiled Hooks & Overrides**
 
 JERICHO is a small, platform-neutral C/C++ mod framework for the
 reverse-engineered **REDRIVER2** (a source-level reimplementation of Driver 2).
