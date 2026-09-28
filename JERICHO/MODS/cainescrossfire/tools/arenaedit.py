@@ -1950,8 +1950,8 @@ class EditorApp:
         # _object_kind_changed.
         ttk.Label(bar, text="object:").pack(side="left")
         self.cb_object = ttk.Combobox(bar, width=15, state="readonly",
+                                      textvariable=self.var_object,
                                       values=[OBJ_LABELS[k] for k in OBJECT_KINDS])
-        self.cb_object.set(self.var_object.get())
         self.cb_object.pack(side="left", padx=2)
         self.cb_object.bind("<<ComboboxSelected>>", self._object_kind_changed)
 
@@ -3369,14 +3369,24 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
 
     # the Add-object tool: each kind lands in the ONE container (Arena.objects)
     def place(label, at_x, at_y):
-        app.var_object.set(label)
-        app._object_kind_changed()
+        # drive the picker the way the UI does - through the combobox, so a combo
+        # that never writes back to its var is caught here (setting the var
+        # directly, as the old helper did, hid exactly that bug: the tool kept
+        # placing the player spawn whatever the picker showed).
+        app.cb_object.current([OBJ_LABELS[k] for k in OBJECT_KINDS].index(label))
+        app.cb_object.event_generate("<<ComboboxSelected>>")
+        root.update()
         app.mode = "object"
         app.on_press(Ev(at_x, at_y))
         root.update()
 
+    check("the object picker drives object_kind()",
+          app.object_kind() == OBJ_PLAYER_SPAWN)   # combo starts on the player spawn
+
     npa = len(cur.spawns)
     place("Opponent spawn", cx, cy)
+    check("picking a kind through the combobox reaches the tool",
+          app.object_kind() == OBJ_OPPONENT_SPAWN)
     check("Add object (opponent) -> %d spawn(s)" % (npa + 1), len(cur.spawns) == npa + 1)
     check("... it is an opponent spawn",
           cur._spawn_objects()[-1].kind == OBJ_OPPONENT_SPAWN)
