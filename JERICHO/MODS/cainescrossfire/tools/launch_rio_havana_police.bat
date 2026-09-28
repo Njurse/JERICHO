@@ -84,12 +84,14 @@ endlocal
 exit /b 0
 :notdry
 
-rem ---- the module that provides this must actually be on ---------------------
-rem Writing carhacks.ini is not enough: only cainescrossfire reads it, and the repo's
-rem modlist pins that module OFF (gameplay mods are opt-in). The bin copy of the
-rem modlist is what the game reads, and the frontend rewrites it from Options ->
-rem JERICHO, so switching it on here is a runtime change - see _enable_module.bat.
+rem ---- the modules that provide this must actually be on ---------------------
+rem Writing carhacks.ini is not enough: only the carhacks module reads it (it is its own
+rem module now, JERICHO/MODS/carhacks/), and the repo's modlist pins gameplay modules OFF
+rem (they are opt-in). The bin copy of the modlist is what the game reads, and the
+rem frontend rewrites it from Options -> JERICHO, so switching them on here is a runtime
+rem change - see _enable_module.bat.
 call "%~dp0_enable_module.bat" cainescrossfire "%EXEDIR%"
+call "%~dp0_enable_module.bat" carhacks "%EXEDIR%"
 echo.
 
 rem ---- the import ------------------------------------------------------------

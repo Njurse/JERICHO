@@ -30,7 +30,11 @@
 //                     (factions/factions.h + factions.c; see FACTIONS.md)
 //   ai/               the opponent AI (ai/ai.h; opponent.c is the brain)
 //   weapons/          the weapon framework (weapons/core/weapon.h)
-//   carhacks/         vehicle availability (carhacks/carhacks.h)
+//
+// carhacks/ (the vehicle-availability + cross-city hacks) used to be listed here:
+// it is its own module now (JERICHO/MODS/carhacks/), so it is no longer a
+// subfolder of this one. Only the docs stayed behind - cainescrossfire/carhacks/
+// holds CROSS_CITY.md, HACK.md, FORMATS.md, PALETTES.md, VEHICLES.md and VRAM.md.
 
 #ifndef CD2_INTERNAL_H
 #define CD2_INTERNAL_H

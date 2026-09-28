@@ -80,16 +80,19 @@ fi
 
 SAVED="$(cat "$INI" 2>/dev/null || true)"
 
-# This suite exercises the cross-city import, which lives in the cainescrossfire module.
-# The repo's modlist pins that module OFF (gameplay mods are opt-in) and the bin/JERICHO
-# tree is only a POSTBUILD MIRROR of it, so enabling it from here is what makes the suite
-# independent of whatever the last build happened to leave in the mirror. It also means a
-# stale mirror can no longer mask a module that fails to load: if cainescrossfire does not
-# come up, every player row reports DOMESTIC! and the run fails.
+# This suite exercises the cross-city import, which lives in the carhacks module (it used
+# to be hosted inside cainescrossfire; the cainescrossfire module is still enabled here so
+# the suite keeps testing the combination it always did). The repo's modlist pins gameplay
+# modules OFF (they are opt-in) and the bin/JERICHO tree is only a POSTBUILD MIRROR of it,
+# so enabling them from here is what makes the suite independent of whatever the last build
+# happened to leave in the mirror. It also means a stale mirror can no longer mask a module
+# that fails to load: if carhacks does not come up, every player row reports DOMESTIC! and
+# the run fails.
 SAVED_MODLIST="$(cat "$MODLIST" 2>/dev/null || true)"
 if [ -n "$SAVED_MODLIST" ]; then
 	printf '%s\n' "$SAVED_MODLIST" \
-		| sed 's/^\(cainescrossfire[[:space:]]*=[[:space:]]*\)0/\11/' > "$MODLIST"
+		| sed -e 's/^\(cainescrossfire[[:space:]]*=[[:space:]]*\)0/\11/' \
+		      -e 's/^\(carhacks[[:space:]]*=[[:space:]]*\)0/\11/' > "$MODLIST"
 fi
 
 # Seeded rolls, arithmetically - bash's $RANDOM cannot be relied on to seed itself.

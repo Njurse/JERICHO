@@ -150,8 +150,11 @@ if /i "%~1"=="dry" (
 	exit /b 0
 )
 
-rem ---- the module that provides all of this must actually be on --------------
+rem ---- the modules that provide all of this must actually be on --------------
+rem carhacks is its own module now (JERICHO/MODS/carhacks/), so it has to be switched
+rem on as well as cainescrossfire - see tools\_enable_module.bat.
 call "%~dp0_enable_module.bat" cainescrossfire "%EXEDIR%"
+call "%~dp0_enable_module.bat" carhacks "%EXEDIR%"
 echo.
 
 > "%INI%" echo # carhacks config - written by tools\launch_mp_random_mix.bat

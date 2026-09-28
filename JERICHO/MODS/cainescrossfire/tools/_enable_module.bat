@@ -4,8 +4,9 @@ rem _enable_module.bat <module-id> [exe-dir]
 rem
 rem   Turn a module ON in the bin/ modlist - the copy the game actually reads.
 rem
-rem   Why this exists. A launcher writes carhacks.ini, but only the cainescrossfire
-rem   module reads that file, and the repo's modlist pins gameplay modules OFF
+rem   Why this exists. A launcher writes carhacks.ini, but only the carhacks module
+rem   reads that file (it lives in JERICHO/MODS/carhacks/ now), and the repo's modlist
+rem   pins gameplay modules OFF
 rem   (they are opt-in). The bin/ copy of the modlist is runtime state - the
 rem   frontend rewrites it from Options -> JERICHO - so switching it on belongs to
 rem   the launcher, not to a comment saying it must be on. Those launchers used to

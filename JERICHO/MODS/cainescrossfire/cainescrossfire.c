@@ -51,7 +51,6 @@
 #include "factions/factions.h"	/* the five teams (factions/factions.c) */
 #include "turbo/turbo.h"		/* the boost: speed/accel scaling at the stats */
 #include "knock/knock.h"		/* CD2_KNOCK_* - collisions make the car buck */
-#include "carhacks/carhacks.h"		/* vehicle-availability hacks (own module later) */
 #include "profiles/profile.h"		/* the Twisted Metal vehicle roster (profiles/) */
 #include "arenas/profile.h"		/* the arena registry: bounded places the match happens */
 #include "select/select.h"		/* the CC select flow (select/) */
@@ -881,13 +880,15 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	cd2FacRegister(ctx);
 	cd2AiRegister(ctx);
 
-	/* vehicle-availability hacks - self-contained, hosted here for now and
-	 * intended to move to its own module (see carhacks/carhacks.h) */
-	carhacks_register(ctx);
+	/* NOTE: the vehicle-availability / cross-city hacks (carhacks) used to be
+	 * registered here. They are their own module now (JERICHO/MODS/carhacks/,
+	 * lifted out so they can be enabled next to any module - in particular the
+	 * multiplayer one). Enable that module alongside this one to get them; it
+	 * registers AFTER this module, so a profile's own placements still win any
+	 * resident slot carhacks also touched. */
 
 	/* the vehicle roster (profiles/): resolves each profile into a resident
-	 * slot and applies its cosmetic overrides. Registered AFTER carhacks so the
-	 * profile's own placements win any slot carhacks also touched. */
+	 * slot and applies its cosmetic overrides. */
 	cd2VehRegister(ctx);
 
 	/* the arena runtime (arenas/): authored spawns + the region barrier */

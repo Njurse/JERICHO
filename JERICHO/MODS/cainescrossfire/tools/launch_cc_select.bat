@@ -11,7 +11,9 @@ rem It ALSO neutralises JERICHO\CONFIG\carhacks.ini. That file is shared runtime
 rem state: the other launchers write a cross-city "import = slot:city:model" list
 rem into it, and a stale list forces resident slots to another city's models -
 rem which fights the CC select (the arena's own cars must load from the arena).
-rem So the flow runs with carhacks' cross-city import off.
+rem So the flow runs with carhacks' cross-city import off. The carhacks module itself
+rem is deliberately left OFF here too (this launcher only turns cainescrossfire on), so
+rem the neutralised file is belt-and-braces rather than the thing holding the line.
 rem
 rem Pass "dry" to print what it would run without launching or changing anything.
 setlocal
