@@ -917,12 +917,28 @@ def _read_mtl(path):
     return pages
 
 
+def _region_of_group(name):
+    """The region id a `g regNN` group names, or -1. The rip groups geometry by
+    region (`g reg52`), and each region is a chunk of the streaming map, so the id
+    is what lets a small window (9 cells) pull only its own triangles."""
+    d = ""
+    for ch in reversed(name.strip()):
+        if ch.isdigit():
+            d = ch + d
+        else:
+            break
+    return int(d) if d else -1
+
+
 def _scan_obj(obj, cancel=None):
-    """One streaming pass over a rip -> (V, UV, TRI, TRIUV, SLOTS, materials, rect).
+    """One streaming pass over a rip -> (V, UV, TRI, TRIUV, SLOTS, REG, materials, rect).
 
     The export re-emits every group's vertices, so the OBJ indices are global and
     cumulative - the arrays just grow. Faces are quads (fanned 0-2) or triangles,
     and the last `usemtl` before a face is that face's material.
+
+    REG is the streaming region each triangle belongs to, from the `g regNN` group
+    it sits under (-1 if a face appears before any group).
 
     The world rect is taken from EVERY vertex. The old code derived it from the
     1-in-`sample` vertices it plotted, so the extent under-covered and the whole
@@ -933,10 +949,11 @@ def _scan_obj(obj, cancel=None):
 
     vx = array("f"); vy = array("f"); vz = array("f")
     uu = array("f"); vv = array("f")
-    ti = array("i"); tu = array("i"); ts = array("i")
+    ti = array("i"); tu = array("i"); ts = array("i"); tr = array("i")
     materials = ["none"]        # slot 0: an untextured face
     slot = {"none": 0}
     cur = 0
+    reg = -1                    # the current `g regNN` region
     min_x = min_z = 1e30
     max_x = max_z = -1e30
 
@@ -962,6 +979,10 @@ def _scan_obj(obj, cancel=None):
                     uu.append(float(p[1])); vv.append(float(p[2]))
                 except (IndexError, ValueError):
                     uu.append(0.0); vv.append(0.0)
+
+            elif c == "g " or c == "o ":
+                parts = line.split(None, 1)
+                reg = _region_of_group(parts[1]) if len(parts) > 1 else -1
 
             elif c == "us":
                 parts = line.split(None, 1)
@@ -990,6 +1011,7 @@ def _scan_obj(obj, cancel=None):
                                tb - 1 if tb else 0,
                                tc - 1 if tc else 0))
                     ts.append(cur)
+                    tr.append(reg)
 
             if cancel is not None and cancel.is_set():
                 return None
@@ -1013,6 +1035,7 @@ def _scan_obj(obj, cancel=None):
     TRI = np.frombuffer(ti, dtype=np.int32).reshape(-1, 3)
     TRIUV = np.frombuffer(tu, dtype=np.int32).reshape(-1, 3)
     SLOTS = np.frombuffer(ts, dtype=np.int32).reshape(-1)
+    REG = np.frombuffer(tr, dtype=np.int32).reshape(-1)
 
     # indices are 1-based; a bad one would read garbage, so clamp (np.clip
     # returns a writable copy, which the read-only frombuffer views are not)
@@ -1022,7 +1045,7 @@ def _scan_obj(obj, cancel=None):
     # the model -> world frame (X mirrored) over the TRUE extent
     rect = (-LEVEL_SCALE * max_x, LEVEL_SCALE * min_z,
             -LEVEL_SCALE * min_x, LEVEL_SCALE * max_z)
-    return V, UV, TRI, TRIUV, SLOTS, materials, rect
+    return V, UV, TRI, TRIUV, SLOTS, REG, materials, rect
 
 
 def _build_atlas(material_pages, obj_dir):
@@ -1130,12 +1153,12 @@ def _build_textured(city, obj, size, sample, verbose, uv_flip=False,
     if scan is None:
         return None, None, {}
 
-    V, UV, TRI, TRIUV, SLOTS, materials, rect = scan
+    V, UV, TRI, TRIUV, SLOTS, REG, materials, rect = scan
     ntri = len(TRI)
 
     if sample and sample > 1:
         keep = np.arange(0, ntri, sample)
-        TRI = TRI[keep]; TRIUV = TRIUV[keep]; SLOTS = SLOTS[keep]
+        TRI = TRI[keep]; TRIUV = TRIUV[keep]; SLOTS = SLOTS[keep]; REG = REG[keep]
         ntri = len(TRI)
 
     # --- the texture pages -------------------------------------------------
@@ -1416,6 +1439,274 @@ def _build_points(obj, size, sample, verbose):
     if verbose:
         print("  %d of %d verts plotted" % (kept, n))
     return img, rect, stats
+
+
+# ---------------------------------------------------------------------------
+# level geometry: the rip's TRIANGLES, cached and binned by map cell
+# ---------------------------------------------------------------------------
+# The top-down background is a PICTURE (build_level_map). The 3D viewport needs
+# the actual triangles, but the rip is ~250 MB and re-scanning it per refresh is
+# not an option, so this is the same one-pass scan cached to disk and bucketed by
+# map CELL (2048 units, MAP_CELL_SIZE). A 9-cell window then pulls only its own
+# triangles. Same lazy staleness rule as build_level_map: rebuild when the .obj
+# is newer. Geometry is stored in WORLD units (the frame the spawns use).
+GEOM_CACHE_VERSION = 1
+MAP_CELL = 2048              # MAP_CELL_SIZE (map.h)
+GEOM_BIG_CELLS = 24          # a triangle spanning more cells than this joins the
+                             # always-included "big" list: a huge ground quad is
+                             # otherwise duplicated across hundreds of buckets
+                             # (or, binned by centroid, silently dropped)
+_CELL_SHIFT = 20             # cell coords are small (+- a few hundred); pack
+_CELL_W = 1 << 21            # (cx, cz) into one non-negative int64 key
+
+
+def level_geom_paths(city):
+    """(obj, npz, json) for a city's geometry cache in DriverLevelTool/."""
+    obj, _png, _side = level_rip_paths(city)
+    base = os.path.splitext(obj)[0]
+    return obj, base + ".geom.npz", base + ".geom.json"
+
+
+def _cell_key(cx, cz):
+    return int((cx + (1 << _CELL_SHIFT)) * _CELL_W + (cz + (1 << _CELL_SHIFT)))
+
+
+def _geom_fresh(meta, obj):
+    """A cached geometry file is stale when the .obj it came from changed (or a
+    missing .obj leaves the cache as the only witness - then it is kept)."""
+    if not os.path.exists(obj):
+        return True
+    try:
+        st = os.stat(obj)
+    except OSError:
+        return True
+    return (meta.get("obj_size") == st.st_size
+            and meta.get("obj_mtime") == int(st.st_mtime))
+
+
+class LevelGeom:
+    """The rip's triangles, in WORLD units, binned by cell. `window(rect)` is the
+    whole point: the triangles overlapping a world rectangle, already compacted to
+    just their own vertices, so the renderer draws a 9-cell slice cheaply."""
+
+    def __init__(self, vw, uv, tri, triuv, slots, materials, rect,
+                 big, cell_keys, cell_start, order):
+        self.vw = vw              # (Nv, 3) float32 world x,y,z
+        self.uv = uv              # (Nuv, 2) float32
+        self.tri = tri            # (T, 3) int32 -> vw
+        self.triuv = triuv        # (T, 3) int32 -> uv
+        self.slots = slots        # (T,) int32 -> materials
+        self.materials = materials
+        self.rect = rect
+        self.big = big            # tri indices too sprawling to bin
+        self.cell_keys = cell_keys
+        self.cell_start = cell_start
+        self.order = order        # tri indices grouped by cell
+
+    def _cell_tris(self, cx, cz):
+        import numpy as np
+        k = _cell_key(cx, cz)
+        pos = int(np.searchsorted(self.cell_keys, k))
+        if pos < len(self.cell_keys) and self.cell_keys[pos] == k:
+            return self.order[self.cell_start[pos]:self.cell_start[pos + 1]]
+        return None
+
+    def window(self, rect):
+        """(VW, TRI, TRIUV, SLOTS) for the triangles overlapping world rect
+        (x0, z0, x1, z1), vertices compacted to only what is used."""
+        import numpy as np
+
+        x0, z0, x1, z1 = rect
+        cx0 = int(np.floor(x0 / MAP_CELL)); cx1 = int(np.floor(x1 / MAP_CELL))
+        cz0 = int(np.floor(z0 / MAP_CELL)); cz1 = int(np.floor(z1 / MAP_CELL))
+
+        parts = []
+        for cx in range(cx0, cx1 + 1):
+            for cz in range(cz0, cz1 + 1):
+                got = self._cell_tris(cx, cz)
+                if got is not None and len(got):
+                    parts.append(got)
+        if len(self.big):
+            parts.append(self.big)
+        if not parts:
+            empty = np.zeros(0, np.int32)
+            return (np.zeros((0, 3), np.float32), np.zeros((0, 3), np.int32),
+                    np.zeros((0, 3), np.int32), empty)
+
+        tris = np.unique(np.concatenate(parts))
+
+        # a cell bucket is a bucket, not a clip: cull to the rect itself. The
+        # triangle's own bbox is enough (a tri either overlaps the view or not).
+        cor = self.vw[self.tri[tris]]                 # (n, 3, 3)
+        inside = ((cor[:, :, 0].max(1) >= x0) & (cor[:, :, 0].min(1) <= x1)
+                  & (cor[:, :, 2].max(1) >= z0) & (cor[:, :, 2].min(1) <= z1))
+        tris = tris[inside]
+        if not len(tris):
+            empty = np.zeros(0, np.int32)
+            return (np.zeros((0, 3), np.float32), np.zeros((0, 3), np.int32),
+                    np.zeros((0, 3), np.int32), empty)
+
+        tri = self.tri[tris]
+        keep, remap = np.unique(tri, return_inverse=True)
+        return (self.vw[keep],
+                remap.reshape(-1, 3).astype(np.int32),
+                self.triuv[tris].astype(np.int32),
+                self.slots[tris].astype(np.int32))
+
+
+def _geom_save(npz, side, geom, obj, verbose):
+    import json
+    import numpy as np
+
+    np.savez(npz,
+             vw=geom.vw, uv=geom.uv, tri=geom.tri, triuv=geom.triuv,
+             slots=geom.slots, big=geom.big,
+             cell_keys=geom.cell_keys, cell_start=geom.cell_start,
+             order=geom.order)
+    meta = {"version": GEOM_CACHE_VERSION,
+            "materials": geom.materials,
+            "rect": list(geom.rect),
+            "tris": int(len(geom.tri)),
+            "verts": int(len(geom.vw)),
+            "cells": int(len(geom.cell_keys)),
+            "big": int(len(geom.big)),
+            "obj_size": os.stat(obj).st_size,
+            "obj_mtime": int(os.stat(obj).st_mtime)}
+    json.dump(meta, open(side, "w"), indent=1)
+    if verbose:
+        print("  cached %s (%d triangles, %d verts, %d cells, %d big)"
+              % (os.path.basename(npz), meta["tris"], meta["verts"],
+                 meta["cells"], meta["big"]))
+
+
+def _geom_load_files(npz, side):
+    """Read a saved geometry cache back into a LevelGeom (the ONE load path, so
+    the checks exercise exactly what the editor runs)."""
+    import json
+    import numpy as np
+
+    meta = json.load(open(side))
+    z = np.load(npz)
+    return LevelGeom(z["vw"], z["uv"], z["tri"], z["triuv"], z["slots"],
+                     meta["materials"], tuple(meta["rect"]), z["big"],
+                     z["cell_keys"], z["cell_start"], z["order"])
+
+
+def _geom_from_obj(obj, verbose=True, cancel=None):
+    """One pass over a rip .obj -> a LevelGeom (no disk I/O)."""
+    import numpy as np
+
+    scan = _scan_obj(obj, cancel=cancel)
+    if scan is None:
+        if verbose:
+            print("  scan failed or was cancelled")
+        return None
+
+    V, UV, TRI, TRIUV, SLOTS, _REG, materials, rect = scan
+
+    # the model -> world frame (X mirrored), the same frame hd.where lives in
+    VW = np.empty_like(V)
+    VW[:, 0] = -LEVEL_SCALE * V[:, 0]
+    VW[:, 1] = LEVEL_SCALE * V[:, 1]
+    VW[:, 2] = LEVEL_SCALE * V[:, 2]
+
+    # every triangle's cell span, from its world x/z bbox
+    tx = VW[TRI][:, :, 0]
+    tz = VW[TRI][:, :, 2]
+    cx0 = np.floor(tx.min(1) / MAP_CELL).astype(np.int64)
+    cx1 = np.floor(tx.max(1) / MAP_CELL).astype(np.int64)
+    cz0 = np.floor(tz.min(1) / MAP_CELL).astype(np.int64)
+    cz1 = np.floor(tz.max(1) / MAP_CELL).astype(np.int64)
+    span = (cx1 - cx0 + 1) * (cz1 - cz0 + 1)
+
+    n = len(TRI)
+    idx_all = np.arange(n, dtype=np.int64)
+    big = idx_all[span > GEOM_BIG_CELLS]
+    rest = idx_all[span <= GEOM_BIG_CELLS]
+
+    keys = []
+    tids = []
+    single = rest[(cx0[rest] == cx1[rest]) & (cz0[rest] == cz1[rest])]
+    if len(single):
+        keys.append(np.array([_cell_key(int(cx0[i]), int(cz0[i])) for i in single],
+                             dtype=np.int64))
+        tids.append(single.astype(np.int32))
+
+    multi = rest[~((cx0[rest] == cx1[rest]) & (cz0[rest] == cz1[rest]))]
+    if len(multi):
+        mk = []
+        mt = []
+        for i in multi:
+            for cx in range(int(cx0[i]), int(cx1[i]) + 1):
+                for cz in range(int(cz0[i]), int(cz1[i]) + 1):
+                    mk.append(_cell_key(cx, cz))
+                    mt.append(i)
+        keys.append(np.array(mk, dtype=np.int64))
+        tids.append(np.array(mt, dtype=np.int32))
+
+    if keys:
+        allk = np.concatenate(keys)
+        allt = np.concatenate(tids)
+        order_sort = np.argsort(allk, kind="stable")
+        allk = allk[order_sort]
+        order = allt[order_sort].astype(np.int32)
+        cell_keys, starts = np.unique(allk, return_index=True)
+        cell_start = np.concatenate([starts, [len(order)]]).astype(np.int64)
+    else:
+        cell_keys = np.zeros(0, np.int64)
+        cell_start = np.zeros(1, np.int64)
+        order = np.zeros(0, np.int32)
+
+    return LevelGeom(VW.astype(np.float32), UV.astype(np.float32),
+                     TRI.astype(np.int32), TRIUV.astype(np.int32),
+                     SLOTS.astype(np.int32), materials, rect,
+                     big.astype(np.int32), cell_keys, cell_start, order)
+
+
+def build_level_geom(city, verbose=True, cancel=None):
+    """One pass over the rip -> a LevelGeom, written next to the .obj. Slow (it
+    reads the whole ~250 MB model) but done once; load_level_geom is then fast."""
+    obj, npz, side = level_geom_paths(city)
+
+    if not os.path.exists(obj):
+        if verbose:
+            print("no level rip for %s (looked for %s)" % (city.upper(), obj))
+        return None
+
+    if verbose:
+        print("building the %s geometry cache (one pass over %s, then cached)"
+              % (city.upper(), os.path.basename(obj)))
+
+    geom = _geom_from_obj(obj, verbose=verbose, cancel=cancel)
+    if geom is None:
+        return None
+
+    try:
+        _geom_save(npz, side, geom, obj, verbose)
+    except Exception as e:
+        if verbose:
+            print("  (could not write the geometry cache: %s - using it for this "
+                  "session only)" % e)
+
+    return geom
+
+
+def load_level_geom(city, rebuild=False, verbose=True, cancel=None):
+    """The cached LevelGeom for `city`, building it once if needed. None when
+    there is no rip."""
+    import json
+
+    obj, npz, side = level_geom_paths(city)
+
+    if not rebuild and os.path.exists(npz) and os.path.exists(side):
+        try:
+            meta = json.load(open(side))
+        except Exception:
+            meta = None
+        if meta and meta.get("version") == GEOM_CACHE_VERSION and _geom_fresh(meta, obj):
+            return _geom_load_files(npz, side)
+
+    return build_level_geom(city, verbose=verbose, cancel=cancel)
 
 
 def build_level_map(city, size=(2000, 2000), sample=None, rebuild=False,
