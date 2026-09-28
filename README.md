@@ -166,16 +166,16 @@ catalogue — every event's argument fields and engine call site — is in
 
 | Area | Events |
 |---|---|
-| Lifecycle & frame | `JER_EVENT_BOOT`, `JER_EVENT_FRAME`, `JER_EVENT_DEBUG_TICK`, `JER_EVENT_GAME_START`, `JER_EVENT_LEVEL_LAUNCH`, `JER_EVENT_SHUTDOWN` |
-| Input | `JER_EVENT_PRE_SIM`, `JER_EVENT_CAR_PAD`, `JER_EVENT_PED_INPUT`, `JER_EVENT_CAMERA_LOOK`, `JER_EVENT_MAP` |
+| Lifecycle & frame | `JER_EVENT_BOOT`, `JER_EVENT_INIT`, `JER_EVENT_CMDLINE`, `JER_EVENT_FRAME`, `JER_EVENT_DEBUG_TICK`, `JER_EVENT_GAME_START`, `JER_EVENT_LEVEL_LAUNCH`, `JER_EVENT_SHUTDOWN` |
+| Input | `JER_EVENT_PRE_SIM`, `JER_EVENT_CAR_PAD`, `JER_EVENT_PED_INPUT`, `JER_EVENT_CAMERA_LOOK` |
 | Car handling | `JER_EVENT_CAR_ENGINE`, `JER_EVENT_CAR_FRICTION`, `JER_EVENT_CAR_STEP`, `JER_EVENT_CAR_TORQUE`, `JER_EVENT_CAR_DRAW`, `JER_EVENT_CAR_DRAW_COLOR`, `JER_EVENT_GET_PHYSICS_PARAMS` |
-| Damage & collision | `JER_EVENT_COLLISION`, `JER_EVENT_DENT_PASS`, `JER_EVENT_RESET_CAR`, `JER_EVENT_CAR_VS_CAR`, `JER_EVENT_GET_DAMAGE_SCALE`, `JER_EVENT_GET_WALL_RESTITUTION`, `JER_EVENT_GET_BUDDHA` |
+| Damage & collision | `JER_EVENT_COLLISION`, `JER_EVENT_DENT_PASS`, `JER_EVENT_RESET_CAR`, `JER_EVENT_CAR_VS_CAR`, `JER_EVENT_CAR_DAMAGE_FX`, `JER_EVENT_GET_DAMAGE_SCALE`, `JER_EVENT_GET_WALL_RESTITUTION`, `JER_EVENT_GET_BUDDHA`, `JER_EVENT_GET_IMPACT_INFO` |
 | Wheels | `JER_EVENT_GET_WHEEL_BEND`, `JER_EVENT_GET_WHEEL_DAMAGE`, `JER_EVENT_GET_WHEEL_PARAMS`, `JER_EVENT_DRAW_WHEEL` |
 | Engine sound | `JER_EVENT_CAR_GEARBOX`, `JER_EVENT_CAR_REVS`, `JER_EVENT_CAR_ENGINE_SOUND` |
 | Explosions & overlay | `JER_EVENT_EXPLOSION_SPAWN`, `JER_EVENT_EXPLOSION_DRAW`, `JER_EVENT_EXPLOSION_COLLIDE`, `JER_EVENT_DRAW_OVERLAY`, `JER_EVENT_DRAW_WORLD` |
 | Camera | `JER_EVENT_CAMERA` |
-| Ped & animation | `JER_EVENT_PED_MOVE`, `JER_EVENT_PED_POSE`, `JER_EVENT_PED_SKELETON` |
-| Frontend & menus | `JER_EVENT_FRONTEND`, `JER_EVENT_PAUSE_MENU`, `JER_EVENT_MP_FRONTEND` |
+| Ped & animation | `JER_EVENT_PED_MOVE`, `JER_EVENT_PED_POSE`, `JER_EVENT_PED_SKELETON`, `JER_EVENT_PED_DRAW` |
+| Frontend & menus | `JER_EVENT_FRONTEND`, `JER_EVENT_FRONTEND_ENTERED`, `JER_EVENT_FRONTEND_IDLE`, `JER_EVENT_FRONTEND_MAIN_MENU`, `JER_EVENT_PAUSE_MENU`, `JER_EVENT_MP_FRONTEND` |
 | Map | `JER_EVENT_MAP`, `JER_EVENT_DRAW_MAP` |
 | Levels & vehicles | `JER_EVENT_CAR_AVAILABILITY`, `JER_EVENT_CAR_DATA_SOURCE` |
 | Networking | `JER_EVENT_NET_INPUT`, `JER_EVENT_NET_CAR_STATE`, `JER_EVENT_NET_PLAYERS`, `JER_EVENT_NET_RECV`, `JER_EVENT_NET_SPAWN` |
@@ -184,18 +184,28 @@ catalogue — every event's argument fields and engine call site — is in
 ### What a module can do besides events
 
 Events are the core, but the API ships a helper for everything a mod usually
-needs. All are declared in the SDK headers under
+needs. They live under
+[`src_rebuild/Game/C/JERICHO/include/`](src_rebuild/Game/C/JERICHO/include/),
+and the addon-safe subset is mirrored into the SDK at
 [`JERICHO/sdk/include/`](JERICHO/sdk/include/):
 
 | Header | Gives you |
 |---|---|
 | `jer_pause_menu.h` | Register menus/submenus into the pause screen (`jer_pause_menu_register`). The engine collects them under a **Modules** submenu (`Continue → Modules → your menu`), supports live dynamic labels and Left/Right adjust items, and needs no `pause.c` edits. |
 | `jer_frontend.h` | Register **real frontend screens** the engine renders natively (`jer_frontend_register_menu`), optionally routed from the main menu (`jer_frontend_set_main_entry`). The multiplayer mod's menus are built this way. |
+| `jer_menu.h` | A small reusable list menu (cursor + wrap + label mapping) for a module that takes over a frontend decision — the module keeps the drawing and the pad read. |
+| `jer_screen.h` | Non-interactive **presentation screens** (a heading, one live body line, an optional `[n/total]` step counter) — the counterpart of `jer_frontend.h` for boot/progress work. `jer_prompt.h` builds a host-owned Yes/No prompt on top of it. |
 | `jer_hud.h` | On-screen HUD messages (`jer_hud_message`, drawn via `jer_hud_draw`). |
+| `jer_notify.h` | The engine's own centred "You Drowned"-style notice (`jer_notify`), with its priority rules. |
+| `jer_sound.h` | Module-safe SFX channel locks (`jer_sound_lock`) that never starve the engine's 16-voice pool. |
 | `jer_config.h` | Persistent per-module settings (`jer_config_get_int`/`set_int`/…). Each module owns `JERICHO/CONFIG/<modid>.ini`, hand-editable while the game is closed. |
 | `jer_net.h` | A named-channel network bridge over the active multiplayer session (`jer_net_register_channel` + `jer_net_send`, delivered back as `JER_EVENT_NET_RECV`). A safe no-op with no session, so a module can call it unconditionally. |
 | `jer_anim.h` | Player-skeleton animation helpers (resolve bones when posing via `JER_EVENT_PED_POSE` / `JER_EVENT_PED_SKELETON`). |
 | `jer_npc.h` | NPC (pedestrian) helpers. |
+| `jer_ped_palette.h` | Per-**instance** pedestrian palettes — recolour one Tanner (e.g. team colours) without touching every instance of the model. |
+| `jer_texture.h` | **Custom textures**: ship a TGA under the module's `textures/`, ask for a handle, draw it — the engine owns loading, upload and draw order. |
+| `jer_map.h` | World-region streaming: query the region you are in and force/stream a region the engine never pre-loaded (teleports, arena spawns). |
+| `jer_car_palette.h` | Per-`CAR_DATA`-slot car colour — inert until set, and stable across machines, so it is safe to sync in multiplayer. |
 | `jer_math.h` | Shared math helpers. |
 
 Two escape hatches round out the API:
@@ -359,19 +369,46 @@ what is produced and how a release is cut.
 
 ### Debug boot arguments
 
-`Release_dev` builds accept frontend-bypass launch arguments for fast iteration:
+`Release_dev` builds accept frontend-bypass launch arguments for fast iteration
+(`REDRIVER2_dev.exe -help` prints the full list):
 
 ```
-REDRIVER2_dev.exe -nointro -nofmv -level <city> -car <slot#> -gamemode <mode>
-                 -time <time> -weather <weather>
+REDRIVER2_dev.exe -nointro -nofmv -level <city> -car <car> -gamemode <mode>
+                 -time <time> -weather <weather> [-console] [-vramview]
 ```
 
-- `-level`: `chicago` / `havana` / `lasvegas` / `rio`
-- `-car`: a slot number (0–9) or a car name
-- `-gamemode`: `takeadrive` (default) / `survival` / `pursuit` / …
-- `-time`: `day` / `dusk` / `night`; `-weather`: `sunny` / `rain`
+- `-level`: `chicago` / `havana` / `lasvegas` (or `vegas`) / `rio`, or `0`–`3`
+- `-car`: a car-model number, or a frontend slot as `slot1` … `slot10`
+- `-gamemode`: `takeadrive` (default) / `pursuit` / `getaway` / `gaterace` /
+  `checkpoint` / `trailblazer` / `survival` / `copsandrobbers` / `capturetheflag`
+- `-time`: `dawn` / `day` / `dusk` / `night`; `-weather`: `none` / `rain` / `wet`
+- `-mp [0|1]`: load a city's small multiplayer map instead of the full city
+- `-console`: attach a console window showing the engine log live;
+  `-vramview [n]`: a second window showing live VRAM (re-dumping `vram_live.tga`
+  every `n` frames, default 15, for the VRAM tools)
 
 `-car` needs at least a `-level` (a message box explains otherwise).
+
+The mod runtime adds its own switches, all listed in `-help`: `-nomods`
+hard-disables every module for one boot (the zero-mod diagnostic), `-mod <id>`
+forces a single module on, and `-testmode` / `-testcar <slot|n>` / `-testped`
+drive the `testmode` module's quiet-world orbit camera. `-onfoot` starts the
+player outside his spawn car (a module has to act on it — Caine's Crossfire
+swaps him out).
+
+### Dev tooling
+
+Beyond the game build, the repo ships tooling for the work around it:
+
+- [`tools/`](tools/) — repo-wide maintenance: release publishing
+  (`publish_release.ps1`, the offline equivalent of the CI `publish` job) and
+  crash-dump triage (`dmp_fault.py` → `map_lookup.py`). See
+  [`tools/README.md`](tools/README.md).
+- `JERICHO/MODS/cainescrossfire/tools/` — the Caine's Crossfire workbench: the
+  arena editor (`arenaedit.py`, `view3d.py`), palette/VRAM inspectors
+  (`paletteedit.py`, `vrammap.py`, `vramdump.py`), level and car-data dumpers,
+  and the unattended test harness (`arena_test.sh`, `devcheck.sh`). Described in
+  that mod's own README.
 
 ## Showcase mods
 
@@ -422,10 +459,10 @@ event for its no-damage toggle — pure hooks, zero vanilla edits.
 ### Driver 2 Parallel Lines (`d2pl`) — camera + weapons
 
 A modern dual-stick third-person camera plus an overridable weapon system.
-**Uses:** `JER_EVENT_CAMERA` (orbit / framing / FOV), `JER_EVENT_CAMERA_LOOK`
-(right-stick look), `JER_EVENT_PED_INPUT` + `PED_MOVE` / `PED_POSE` /
-`PED_SKELETON` (on-foot, camera-relative movement), `JER_EVENT_PAUSE_MENU`, and
-`jer_config` for its settings.
+*(Development is currently paused.)* **Uses:** `JER_EVENT_CAMERA` (orbit /
+framing / FOV), `JER_EVENT_CAMERA_LOOK` (right-stick look), `JER_EVENT_PED_INPUT`
++ `PED_MOVE` / `PED_POSE` / `PED_SKELETON` (on-foot, camera-relative movement),
+`JER_EVENT_PAUSE_MENU`, and `jer_config` for its settings.
 
 ### COLLISIONDEVIL — arcade handling
 
@@ -467,6 +504,30 @@ synchronized play. **Uses:** `JER_EVENT_MP_FRONTEND` (claim the menu),
 resync path), the `jer_frontend.h` menu API and the `jer_net.h` channel bridge.
 The reference for the networking and frontend-menu surfaces.
 
+### Test Mode (`testmode`) — the asset-test harness
+
+Cuts the world down to a quiet backdrop — no traffic, police or ambient
+pedestrians — and drops a free orbit camera on a chosen car or on Tanner, so
+textures and palettes can be inspected up close. **Uses:** `JER_EVENT_CMDLINE`
+(its `-testmode` / `-testcar` / `-testped` switches), `JER_EVENT_FRAME` (the
+orbit camera and the world census) and `JER_EVENT_SHUTDOWN`.
+
+### Yaris Bounce (`yarisbounce`) — a render-only gimmick
+
+Squash-and-stretch the car body's *vertex copy* as it drives (an RSIN phase plus
+a quartic ease), drawn without touching physics or collision. **Uses:**
+`JER_EVENT_CAR_DRAW` and `JER_EVENT_DRAW_WHEEL` for the deformed body, plus
+`JER_EVENT_FRAME` / `JER_EVENT_DRAW_OVERLAY` for its toggles. A small, complete
+example of render-only deformation.
+
+### GAILDRV2 (`gaildrv2`) — the machine-learning bridge
+
+A JERICHO ↔ ML bridge: it exports game state over TCP as compact binary, applies
+agent actions, and supports a wait-for-input lockstep mode. **Uses:**
+`JER_EVENT_BOOT` / `JER_EVENT_GAME_START` / `JER_EVENT_SHUTDOWN` for the session
+lifecycle, and `JER_EVENT_FRAME` / `JER_EVENT_PRE_SIM` to pump state out and
+actions in.
+
 ### Example (`example`) — the smoke test
 
 The minimal reference addon: logs at boot and fires a custom event every 60
@@ -495,5 +556,11 @@ README — see [`JERICHO/MODS/`](JERICHO/MODS/).
 - [`src_rebuild/Game/C/JERICHO/docs/README.md`](src_rebuild/Game/C/JERICHO/docs/README.md) — JERICHO overview (layout, build, runtime).
 - [`src_rebuild/Game/C/JERICHO/docs/events.md`](src_rebuild/Game/C/JERICHO/docs/events.md) — the exhaustive event reference.
 - [`src_rebuild/Game/C/JERICHO/docs/HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) — writing a module.
+- [`src_rebuild/Game/C/JERICHO/docs/textures.md`](src_rebuild/Game/C/JERICHO/docs/textures.md) — custom textures (`jer_texture`).
+- [`src_rebuild/Game/C/JERICHO/docs/map-streaming.md`](src_rebuild/Game/C/JERICHO/docs/map-streaming.md) — world-region streaming (`jer_map`).
+- [`src_rebuild/Game/C/JERICHO/docs/module-activation.md`](src_rebuild/Game/C/JERICHO/docs/module-activation.md) — how a module gets enabled (`modlist.ini` → `mod.toml`), and `-nomods` / `-mod`.
+- [`src_rebuild/Game/C/JERICHO/docs/screens.md`](src_rebuild/Game/C/JERICHO/docs/screens.md) — presentation screens (`jer_screen`, `jer_prompt`).
+- [`src_rebuild/Game/C/JERICHO/docs/ped-animation.md`](src_rebuild/Game/C/JERICHO/docs/ped-animation.md) — the pedestrian animation and skeleton pipeline.
+- [`src_rebuild/Game/C/JERICHO/docs/ped-palette.md`](src_rebuild/Game/C/JERICHO/docs/ped-palette.md) — per-instance pedestrian colours.
 - [`JERICHO/sdk/README.md`](JERICHO/sdk/README.md) — the addon SDK.
 - [`docs/CI.md`](docs/CI.md) — the builds, downloads and release process.
