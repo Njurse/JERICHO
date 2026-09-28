@@ -17,6 +17,7 @@
 #include "carhacks.h"
 #include "carid.h"
 #include "carimport.h"
+#include "net.h"
 
 /* Engine globals the hacks touch (exported as C++ data symbols; the mod is
  * compiled C++, so a plain extern matches the export). */
@@ -189,10 +190,16 @@ static int ChkOnCarDataSource(void* ud, void* args)
 
 	if (a->models != NULL && a->modelSource != NULL)
 	{
-		if (crossCity)
+		/* The local config is this machine's fallback. On a CLIENT that has already
+		 * received the session's agreed set the HOST is authoritative, so the
+		 * config stands down; on the host the config IS the authority. */
+		if (crossCity && !chkNetHasAgreedSet())
 			chkImportLoadConfig("carhacks", a->count);
 
 		chkImportApplyPick(a->level, a->count);
+
+		/* the session's agreed set, if one arrived (no-op without a session) */
+		chkNetApplyAgreedSet();
 
 		chkImportApplyToCarData(a->count, a->models, a->modelSource);
 	}
@@ -200,6 +207,10 @@ static int ChkOnCarDataSource(void* ud, void* args)
 	/* one line for the log, and the thing a peer will want to compare against
 	 * (MP_ADAPTER.md) */
 	chkImportDump(a->level);
+
+	/* the set is real now: if this machine is hosting, tell the session, so the
+	 * clients (still in the menus) load the same cars (net.c) */
+	chkNetNotifySetBuilt();
 
 	/* the pick is spent: a later level must not import the same car again */
 	chkImportClearPick();
@@ -222,6 +233,11 @@ void carhacks_register(JERICHO_CONTEXT* ctx)
 	 * the stock Take-a-Ride car screen so it can carry the city-roster row */
 	if (carhacks_enabled(CHK_HACK_CAR_SELECT))
 		chkCarSelectRegister(ctx);
+
+	/* the multiplayer adapter (net.c): carhacks' own channel over the JERICHO
+	 * addon net bridge, so a session can agree which city each machine reads its
+	 * car data from. Every call inside is a no-op with no session. */
+	chkNetRegister(ctx);
 
 	ctx->jer_log(ctx, "[carhacks] %d car hack(s) registered\n", CHK_HACK_COUNT);
 }

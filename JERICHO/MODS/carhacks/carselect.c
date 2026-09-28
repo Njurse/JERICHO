@@ -41,6 +41,7 @@
 #include "carhacks.h"
 #include "carid.h"
 #include "carimport.h"
+#include "net.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -281,6 +282,9 @@ static int chkRideWith(int city, int idx)
 	/* the pick is the module's single source of truth for "the player's car":
 	 * carhacks.c turns it into the level's cross-city import (carimport.c) */
 	chkImportSetLocalPick(city, list[idx].model);
+
+	/* and tell a session, so the host can fold it into the agreed set (net.c) */
+	chkNetAdvertisePick(city, list[idx].model);
 
 	wantedCar[0] = list[idx].model;
 
