@@ -3894,6 +3894,8 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
           any("rip" in l.lower() for l in labels)
           and any("style" in l.lower() for l in labels)
           and any("stop" in l.lower() for l in labels))
+    check("the View menu offers the 3D viewport",
+          any("3d viewport" in l.lower() for l in labels))
 
     app.add_spawn()
     root.update()
@@ -4097,6 +4099,51 @@ def ui_selftest(arenas, bg=None, bg_rect=None):
           % (back.pickup_spin, back.pickup_bob, back.pickup_size),
           (back.pickup_spin, back.pickup_bob, back.pickup_size)
           == (cur.pickup_spin, cur.pickup_bob, cur.pickup_size))
+
+    # --- the 3D viewport window ------------------------------------------
+    # Only exercised when the city's geometry cache exists: without it the render
+    # would kick off a full rip SCAN in the background, which is not what a UI
+    # self-test should do. The renderer itself is covered by rendercheck.py.
+    city = CITY_NAMES.get(cur.city, "CHICAGO")
+    _obj, _npz, _side = level_geom_paths(city)
+    if not os.path.exists(_npz):
+        print("  %-40s SKIP (no geometry cache for %s)" % ("the 3D viewport window", city))
+    elif not cur.objects:
+        print("  %-40s SKIP (no objects to focus)" % "the 3D viewport window")
+    else:
+        try:
+            import time
+            app.select_object(cur.objects[0])
+            root.update()
+            app.viewport_toggle()
+            root.update()
+            vp = app.viewport
+            check("View > 3D viewport opens the window",
+                  vp is not None and vp.exists() and vp.win.state() != "withdrawn")
+            check("the viewport follows the selected object",
+                  vp is not None and vp.obj is cur.objects[0])
+
+            y0, p0, d0 = vp.yaw, vp.pitch, vp.dist
+            vp._press(Ev(100, 100))
+            vp._motion(Ev(150, 120))
+            vp._release(Ev(150, 120))
+            check("dragging orbits the camera", vp.yaw != y0 and vp.pitch != p0)
+            vp._wheel(Ev(0, 0))
+            check("the wheel zooms", vp.dist < d0)
+
+            deadline = time.time() + 120
+            while time.time() < deadline and vp.photo is None:
+                root.update()
+                time.sleep(0.02)
+            check("the viewport renders the object's cell", vp.photo is not None)
+            check("the status line names the object's cell",
+                  "cell" in vp._text and city in vp._text)
+            vp.hide()
+            root.update()
+            check("closing the viewport hides it", vp.win.state() == "withdrawn")
+        except Exception as e:
+            print("  the 3D viewport window                 EXCEPTION %r" % (e,))
+            check("the 3D viewport window", False)
 
     root.destroy()
     try:

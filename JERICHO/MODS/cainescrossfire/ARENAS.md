@@ -318,9 +318,50 @@ the pointer; **undo** is `Ctrl+Z`.
 
 `--uitest` builds the window, drives it through its own commands (clicks the map,
 uses the inspector, undoes, saves, reloads), exercises a background job (starts
-one, cancels one, fails one) and reports — so the UI is checked without a human
-at the screen. It keeps the window **withdrawn**: it drives the widgets, it does
-not need to be seen, and leaving it mapped made Tk paint every canvas item.
+one, cancels one, fails one), opens the **3D viewport** on a highlighted object,
+orbits and renders it (when the city's geometry cache exists), and reports — so
+the UI is checked without a human at the screen. It keeps the window
+**withdrawn**: it drives the widgets, it does not need to be seen, and leaving it
+mapped made Tk paint every canvas item.
+
+## The 3D viewport (the Python editor)
+
+The top-down view tells you a spawn's *coordinates*; it cannot tell you whether
+the car ends up in a lane, on the pavement or inside a wall. So highlighting a
+spawn or a pickup can raise a **3D viewport**: a second window showing the cell
+the object sits in **plus its eight neighbours** (3×3 cells, 6144 units), drawn
+from the same city rip as the top-down map, with the **placeholder car** (car
+model 1's geometry, coloured from palette 0) standing at the spawn with its
+heading, or the pickup's own icon on a billboard.
+
+- **It opens itself** the first time you highlight an object (View ▸ 3D viewport
+  reopens it). Its own ✕ or `Esc` hides it; the editor keeps it and it goes on
+  following the selection.
+- **Orbit**: drag to rotate, wheel to zoom. The camera is centred on the object,
+  and it frames the **ground under the object** too, so a spawn authored far
+  above the street still shows the street (see the ground report below).
+- The **status line** names the object, its world `x`,`z` (and `y` when it has
+  one), its **map cell** and the camera angles. The object's cell is drawn as a
+  projected outline on the ground, so which cell is which is unambiguous.
+- It renders **off the Tk thread** like any other long job, and redraws are
+  coalesced, so orbiting never blocks the window. The first render also loads the
+  city's geometry cache (and builds it once if missing — see the next section).
+
+Without a text-mode window the same thing is one command:
+
+```
+python arenaedit.py arenas/vegasstrip.cca --viewport out.png    # the 1st object
+python arenaedit.py arenas/pracinhas.cca --viewport out.png --viewport-sel -1
+```
+
+`--viewport` writes the image and **asserts** it (right size, not empty, not a
+flat fill), so a script can tell a real render from a blank one. `--viewport-sel
+N` picks the object (`-1` = the player's spawn) and `--vp-size` sets the width.
+
+The viewport is a **placeholder** view, not a renderer of the game: the car is
+always model 1 in palette 0 (whatever the arena's own car is), it is flat-shaded
+from the palette rather than textured with the car's own pages, and nothing is
+animated. It is there to answer "is this spot where I think it is?".
 
 ## Designing against a level map (the Python editor)
 
