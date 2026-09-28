@@ -39,6 +39,8 @@
 #include "state.h"		/* SetState, STATE_GAMESTART */
 
 #include "carhacks.h"
+#include "carid.h"
+#include "carimport.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,8 +81,6 @@ typedef struct CHK_ROSTER_ENTRY
 
 static int gChkRosterCity;	/* which city's roster the car list is drawn from */
 static int gChkCarIdx;		/* cursor into that roster */
-static int gChkPickCity = -1;	/* the last Ride's pick (city, model), -1 = none */
-static int gChkPickModel = -1;
 
 static int gChkArmed;		/* the stock car screen has run its setup: show ours */
 static int gChkWalked;		/* harness: the walk to the car screen happened */
@@ -275,8 +275,12 @@ static int chkRideWith(int city, int idx)
 		return 0;
 	}
 
-	gChkPickCity = city;
-	gChkPickModel = list[idx].model;
+	gChkRosterCity = city;
+	chkClampCursor();
+
+	/* the pick is the module's single source of truth for "the player's car":
+	 * carhacks.c turns it into the level's cross-city import (carimport.c) */
+	chkImportSetLocalPick(city, list[idx].model);
 
 	wantedCar[0] = list[idx].model;
 
@@ -476,12 +480,12 @@ static void chkReadHarness(void)
 
 int chkCarSelectPickCity(void)
 {
-	return gChkPickCity;
+	return chkImportLocalPickCity();
 }
 
 int chkCarSelectPickModel(void)
 {
-	return gChkPickModel;
+	return chkImportLocalPickModel();
 }
 
 void chkCarSelectRegister(JERICHO_CONTEXT* ctx)

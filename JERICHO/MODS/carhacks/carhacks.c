@@ -1,7 +1,11 @@
 /* carhacks.c — see carhacks.h. Vehicle-availability + cross-city hacks.
  *
- * Only engine globals (already exported to mods in exports.def) and the public
- * JERICHO API are used here, so this file moves to its own module unchanged.
+ * Only engine globals and the public JERICHO API are used here, so this unit
+ * stays host-agnostic (it was lifted out of Caine's Crossfire into this module;
+ * see carhacks.h).
+ *
+ * The cross-city IMPORT SET itself lives in carimport.c; this file owns the hack
+ * table and the two engine hooks that drive it.
  */
 
 #include "driver2.h"
@@ -11,6 +15,8 @@
 #include "jer_config.h"
 
 #include "carhacks.h"
+#include "carid.h"
+#include "carimport.h"
 
 /* Engine globals the hacks touch (exported as C++ data symbols; the mod is
  * compiled C++, so a plain extern matches the export). */
@@ -37,7 +43,7 @@ typedef struct CHK_HACK
 	int         def;	/* enabled by default */
 } CHK_HACK;
 
-/* Named rows, so the handlers don't depend on table order (CHK_HACK_* live in
+/* Named rows, so no handler depends on table order (CHK_HACK_* live in
  * carhacks.h so sibling sources - carselect.c - can name them too). */
 
 static const CHK_HACK gChkHacks[] =
@@ -140,139 +146,63 @@ static int ChkOnCarAvailability(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
-/* Pull imported vehicles out of "import = slot:city:model, ..." and write them
- * into the resident list together with their source city. The engine reads both
- * back after this event: it builds that slot's geometry from the named city's
- * level file and takes its colours from that city's .LCF. Comma-separated, so a
- * level can pull several vehicles from one or more cities.
- *
- * e.g. import = 5:0:10, 6:0:0    two Chicago vehicles into resident slots 5/6 */
-static void ChkApplyImports(JER_ARGS_CAR_DATA_SOURCE* a)
-{
-	const char* list = jer_config_get_str("carhacks", "import", "");
-	const char* p = list;
-	int n = 0;
-
-	if (list == NULL || *list == '\0' || a->models == NULL || a->modelSource == NULL)
-		return;
-
-	while (*p != '\0' && n < 8)
-	{
-		int vals[3];
-		int v;
-
-		/* Skip separators and any spacing between entries. Without this a
-		 * "slot:city:model, slot:city:model" list parsed only its first entry:
-		 * the next one began with a space, so the number scan found nothing and
-		 * the entry was rejected as malformed. */
-		while (*p == ',' || *p == ' ' || *p == '\t')
-			p++;
-
-		if (*p == '\0')
-			break;
-
-		for (v = 0; v < 3; v++)
-		{
-			int got = 0;
-
-			vals[v] = 0;
-
-			while (*p >= '0' && *p <= '9')
-			{
-				vals[v] = vals[v] * 10 + (*p - '0');
-				p++;
-				got = 1;
-			}
-
-			if (!got)
-			{
-				vals[v] = -1;
-				break;
-			}
-
-			if (v < 2)
-			{
-				if (*p == ':')
-					p++;
-				else
-				{
-					vals[0] = -1;
-					break;
-				}
-			}
-		}
-
-		while (*p != '\0' && *p != ',')		/* next entry */
-			p++;
-
-		if (*p == ',')
-			p++;
-
-		n++;
-
-		if (vals[0] < 0 || vals[0] >= a->count || vals[1] < 0 || vals[1] > 3 || vals[2] < 0 || vals[2] > 12)
-		{
-			printInfo("[carhacks] import entry %d ignored (want slot:city:model)\n", n);
-			continue;
-		}
-
-		a->models[vals[0]] = vals[2];
-		a->modelSource[vals[0]] = vals[1];
-
-		printInfo("[carhacks] import: slot %d <- model %d from %s\n", vals[0], vals[2], LevelNames[vals[1]]);
-	}
-}
-
 /* JER_EVENT_CAR_DATA_SOURCE: fires once per level, before any CARMODEL_* file is
- * read. Points the loader at another city's LEVELS folder and writes the
- * "import = slot:city:model" roster, so a level can use vehicles that belong to
- * a different city. Off unless the cross_city_vehicles hack is on.
+ * read. It builds this level's IMPORT SET (carimport.c) and writes it into the
+ * engine's arrays: modelSource[slot] names the city a resident slot's
+ * CARMODEL_<n> is read from, so a level can use vehicles that belong to a
+ * different city.
  *
- * It does NOT choose the player's car. That is the player's decision and it is
- * made on the command line: -car <model|slotN> sets wantedCar, the engine's own
- * pass then spawns the player in whichever resident slot holds that model (see
- * InitPlayer). For an imported body that is the slot the `import` line put it
- * in - e.g. import = 5:3:9 plus -car 9 makes resident slot 5 (RIO model 9) the
- * player's car. Hardcoding a player car here is what this used to do, and it
- * silently overrode the command line. */
+ * The set has two sources, applied in this order:
+ *   1. the [carhacks] config (`import = slot:city:model, ...`, traffic_model /
+ *      traffic_slot) - the fallback, and what the launchers and devcheck.sh
+ *      drive. Off unless cross_city_vehicles is on, exactly as it was.
+ *   2. the player's PICK from the car-select menu. That one is an explicit
+ *      choice of ONE car, so it imports even when the config-driven hack is off.
+ *
+ * The player's car is still chosen the normal way: wantedCar[] (set by the menu's
+ * Ride, or by -car) is what InitPlayer matches against the resident list. This
+ * event only decides which city each slot's DATA comes from. */
 static int ChkOnCarDataSource(void* ud, void* args)
 {
 	JER_ARGS_CAR_DATA_SOURCE* a = (JER_ARGS_CAR_DATA_SOURCE*)args;
+	int crossCity = carhacks_enabled(CHK_HACK_CROSS_CITY);
 	int src;
 
 	(void)ud;
 
-	if (!carhacks_enabled(CHK_HACK_CROSS_CITY))
-		return JER_RESULT_CONTINUE;
+	/* a fresh set for this level (the player's pick survives the reset: it was
+	 * made in the frontend and is consumed by the level it starts) */
+	chkImportReset();
 
-	src = jer_config_get_int("carhacks", "source_city", -1);
-
-	if (src >= 0 && src < 4)
+	if (crossCity)
 	{
-		a->sourceLevel = src;
+		src = jer_config_get_int("carhacks", "source_city", -1);
 
-		printInfo("[carhacks] cross-city: level %d will read car data from %s\n",
-			a->level, LevelNames[src]);
-	}
-
-	/* Put a foreign vehicle into the level for real. Ambient traffic picks its
-	 * model from resident slots 0..4 (modelRandomList in civ_ai.c), so a model
-	 * written into one of those shows up as traffic. */
-	if (a->models != NULL)
-	{
-		int tmodel = jer_config_get_int("carhacks", "traffic_model", -1);
-		int tslot = jer_config_get_int("carhacks", "traffic_slot", 2);
-
-		if (tmodel >= 0 && tmodel < 40 && tslot >= 0 && tslot < a->count)
+		if (src >= 0 && src < 4)
 		{
-			a->models[tslot] = tmodel;
+			a->sourceLevel = src;
 
-			printInfo("[carhacks] cross-city: resident slot %d -> model %d (traffic)\n", tslot, tmodel);
+			printInfo("[carhacks] cross-city: level %d will read car data from %s\n",
+				a->level, LevelNames[src]);
 		}
 	}
 
-	/* Real cross-city imports: geometry AND colours from another city's data */
-	ChkApplyImports(a);
+	if (a->models != NULL && a->modelSource != NULL)
+	{
+		if (crossCity)
+			chkImportLoadConfig("carhacks", a->count);
+
+		chkImportApplyPick(a->level, a->count);
+
+		chkImportApplyToCarData(a->count, a->models, a->modelSource);
+	}
+
+	/* one line for the log, and the thing a peer will want to compare against
+	 * (MP_ADAPTER.md) */
+	chkImportDump(a->level);
+
+	/* the pick is spent: a later level must not import the same car again */
+	chkImportClearPick();
 
 	return JER_RESULT_CONTINUE;
 }
