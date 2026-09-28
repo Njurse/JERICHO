@@ -109,22 +109,39 @@ unit.
 
 ### The hotload hand-off (next unit)
 
+**Measured first: a second city is not partially supported, it is absent.** The
+gate was opened by hand (`two_guest_cities = 1`, a measurement lever in
+`carimport.c`) so the ENGINE finally saw a set naming two cities:
+
+```
+[carhacks] import: slot 5 <- model 8 from HAVANA
+[carhacks] import: slot 6 <- model 9 from RIO          <- the lever let this in
+cross-city: car data from HAVANA (131412 bytes of models, 14792 of car palettes)
+cross-city: HAVANA car palettes applied to civ_clut rows 8..15
+cross-city: slot 5 geometry from HAVANA model 8
+                                                       <- no "car data from RIO",
+                                                          and no "slot 6 geometry"
+[pair] verdict: PASS   (no crash, no dump, 0 dumps)
+```
+
+The per-slot source city is real, but a level's car lumps are read for ONE city
+(`ProcessCarModelLump`), so a slot pointing at a second city gets no data at all -
+quietly. That is what the hotload actually has to do:
+
 1. The identity is already there: `chkNetPeerCar()` says which (city, model) each
-   peer drives.
-2. Geometry is per SLOT already (`gCarModelSource[]` names a city per slot). The
-   single-city assumption lives in the **palette** upload, which keys off
-   `GetCarImportCity()` (`cars.c:1623`), and in the per-level import bookkeeping
-   (`models.c`) - so a second city needs its palette rows uploaded too, under the
-   same budget as the first.
-3. The budget is measured: a foreign car is ~130 KB of models plus ~15 KB of car
-   palettes (the `cross-city: car data from …` lines, `CROSS_CITY.md`), the CLUT
-   column runs ~89-95% committed and the level font owns rows 466..511
-   (`carhacks/VRAM.md`) - so a second held city has to fit what is left, and must
-   refuse rather than corrupt when it does not (`CarImportPin` already reclaims).
-4. Once the data is in, the peer's car object is rebuilt with the same call the
-   mesh fix uses (`CreateDentableCar`, mp's `MpAdoptRemoteCar`), and
-   `ChkOnCarPeerDraw` stops correcting that player - because the car drawn IS
-   theirs.
+   peer drives, and `chkNetFoldPeerCars()` is already the place a car joins the set.
+2. Read the second city's **model + page + palette** lumps at runtime (the parts
+   `ProcessCarModelLump` does at level start), then pin them with `CarImportPin`
+   and upload the palette rows - the single-city assumption is precisely in the
+   palette upload, which keys off `GetCarImportCity()` (`cars.c:1623`).
+3. Fit them in the measured budget: ~130 KB of models plus ~15 KB of car palettes
+   per city (the `cross-city: car data from …` lines, `CROSS_CITY.md`), with the
+   CLUT column ~89-95% committed and the level font owning rows 466..511
+   (`carhacks/VRAM.md`; the level's own slot walk already reaches y=436). Refuse
+   rather than corrupt when it does not fit.
+4. Rebuild the peer's car object with the same call the mesh fix uses
+   (`CreateDentableCar`, mp's `MpAdoptRemoteCar`). `ChkOnCarPeerDraw` then stops
+   correcting that player, because the car drawn IS theirs.
 
 ## Authority and lifecycle
 

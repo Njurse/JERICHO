@@ -96,6 +96,21 @@ static int chkClaimGuestCity(int city, int slot)
 	if (gChkGuestCity == city)
 		return 1;
 
+	/* MEASUREMENT LEVER (two_guest_cities = 1): let a second foreign city through
+	 * so the ENGINE's behaviour with one can be observed, instead of only this
+	 * gate's refusal. This is not a supported mode - the level is read from one
+	 * city (models.c), the palette upload keys off GetCarImportCity()
+	 * (cars.c:1623) and the CLUT band is nearly full (VRAM.md) - it exists to say
+	 * what a second city actually costs. See MP_ADAPTER.md's hotload hand-off. */
+	if (jer_config_get_int("carhacks", "two_guest_cities", 0))
+	{
+		printInfo("[carhacks] import: slot %d also from %s (two_guest_cities lever - "
+			"measuring a SECOND source city, not supported)\n",
+			slot, chkCityName(city));
+
+		return 1;
+	}
+
 	printInfo("[carhacks] import: slot %d wants %s but this level already reads cars from %s - "
 		"the engine holds ONE source city per level, so the entry is dropped\n",
 		slot, chkCityName(city), chkCityName(gChkGuestCity));
