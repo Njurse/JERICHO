@@ -32,6 +32,7 @@ BG = (26, 24, 30)          # "nothing here", the same colour rendercheck uses
 NEAR = 24.0                # near plane (world units; a car is ~750)
 FOV_Y = 52.0               # vertical field of view, degrees
 HEADING_MAX = 4096         # PSX angle units for a full turn (spawn headings)
+MAP_CELL = 2048            # MAP_CELL_SIZE (map.h) - one streaming map cell
 LIGHT = (0.35, 0.86, 0.36)  # a fixed key light, world-space (down-ish from above)
 SHADE_LO, SHADE_HI = 0.55, 1.0
 
@@ -412,6 +413,42 @@ def object_blob(city, geom, obj, cam, W, H, car_model=1, icon_size=500.0):
         name = "health"
     gy = ground_y(geom, x, z)
     return billboard((x, gy + 250.0, z), icon_size, cam, W, H, icon_atlas(name))
+
+
+def project_points(cam, pts, W, H):
+    """Project world points (n,3) -> (sx, sy, ok): screen coords and whether each
+    is in front of the near plane. For overlays (the cell mark)."""
+    eye, right, up, fwd, f = cam.basis(W, H)
+    P = np.asarray(pts, dtype=np.float64).reshape(-1, 3)
+    vx, vy, vz = _project(P, eye, right, up, fwd)
+    ok = vz > NEAR
+    safe = np.where(ok, vz, 1.0)
+    sx = W / 2.0 + f * vx / safe
+    sy = H / 2.0 - f * vy / safe
+    return sx, sy, ok
+
+
+def cell_mark(img, cam, x, z):
+    """Draw the map CELL the object sits in as a projected outline, so the 3x3
+    window's centre cell is obvious. Uses MAP_CELL (2048), the engine's cell."""
+    from PIL import ImageDraw
+
+    cx = int(math.floor(x / MAP_CELL))
+    cz = int(math.floor(z / MAP_CELL))
+    x0, x1 = cx * MAP_CELL, (cx + 1) * MAP_CELL
+    z0, z1 = cz * MAP_CELL, (cz + 1) * MAP_CELL
+    y = 6.0                       # just above the ground, so it is not buried
+    corners = [(x0, y, z0), (x1, y, z0), (x1, y, z1), (x0, y, z1)]
+
+    W, H = img.width, img.height
+    sx, sy, ok = project_points(cam, corners, W, H)
+    dr = ImageDraw.Draw(img)
+    for i in range(4):
+        j = (i + 1) % 4
+        if ok[i] and ok[j]:
+            dr.line([float(sx[i]), float(sy[i]), float(sx[j]), float(sy[j])],
+                    fill=(120, 200, 255), width=2)
+    return img
 
 
 def render_viewport(city, focus, rect, size=(480, 360), cam=None, level_geom=None,

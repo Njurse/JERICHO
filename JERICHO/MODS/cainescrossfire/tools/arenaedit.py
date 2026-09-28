@@ -53,6 +53,8 @@ import glob
 import os
 import sys
 
+import view3d                    # the 3D viewport rasterizer (tools/view3d.py)
+
 SPAWN_MAX = 16
 HEADING_MAX = 4096
 PICKUP_MAX = 32             # CD2_ARENA_MAX_PICKUPS (arenas/profile.h)
@@ -1709,6 +1711,19 @@ def load_level_geom(city, rebuild=False, verbose=True, cancel=None):
     return build_level_geom(city, verbose=verbose, cancel=cancel)
 
 
+_GEOM_MEMORY = {}
+
+
+def level_geom_memory(city):
+    """The LevelGeom for `city`, kept in memory for the session. load_level_geom
+    re-reads the whole cache each call, which is fine once but not per frame - the
+    3D viewport re-renders on every orbit step."""
+    key = city.upper()
+    if key not in _GEOM_MEMORY:
+        _GEOM_MEMORY[key] = load_level_geom(city, verbose=False)
+    return _GEOM_MEMORY[key]
+
+
 def build_level_map(city, size=(2000, 2000), sample=None, rebuild=False,
                     allow_build=True, allow_rip=False, verbose=True,
                     style="textured", uv_flip=False, progress=None, cancel=None):
@@ -2074,6 +2089,7 @@ class EditorApp:
         self.bg = bg                     # the picture actually drawn
         self.bg_rect = bg_rect
         self.bg_photo = None
+        self.viewport = None             # the 3D viewport window, made lazily
         self._bg_key = None              # what the cached background tile shows
         self._redraw_job = None          # a coalesced redraw, if one is pending
         self._last_configure = None      # the canvas size of the last <Configure> we acted on
@@ -2208,6 +2224,8 @@ class EditorApp:
         v.add_cascade(label="Background style", menu=style)
         v.add_command(label="Background: stop the running job", command=self.stop_job)
         v.add_command(label="Background: none", command=self.clear_bg)
+        v.add_separator()
+        v.add_command(label="3D viewport", command=self.viewport_toggle)
         self.menu_view = v          # --uitest inspects the entries
         m.add_cascade(label="View", menu=v)
 
@@ -2993,6 +3011,8 @@ class EditorApp:
             k.z = int(wz)
             a.dirty = True
             self._redraw_soon()
+            if self.viewport is not None:
+                self.viewport.on_selection(k)     # the viewport follows it
         elif kind == "corner" and a.region:
             x0, z0, x1, z1 = a.region
             corners = [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]
@@ -3133,6 +3153,44 @@ class EditorApp:
                 self.tv_pickups.selection_set(self.tv_pickups.get_children()[self.sel_pick])
         except Exception:
             pass
+        self._viewport_follow()
+
+    # -- the 3D viewport ----------------------------------------------------
+    def _selected_object(self):
+        """The ArenaObject the editor has highlighted, or None."""
+        a = self.cur()
+        if 0 <= self.sel < len(a.spawns):
+            return a._spawn_objects()[self.sel]
+        if 0 <= self.sel_pick < len(a.pickups):
+            return a._pickup_objects()[self.sel_pick]
+        return None
+
+    def _viewport_follow(self):
+        """Point the 3D viewport at the current highlight (a no-op until it exists)."""
+        if self.viewport is not None:
+            self.viewport.on_selection(self._selected_object())
+
+    def viewport_toggle(self):
+        """View > 3D viewport: open it on the highlight (or hide it)."""
+        if self.viewport is None:
+            self.viewport = Viewport3D(self)
+        vp = self.viewport
+        if not vp.exists():
+            self.viewport = None
+            return
+        if vp.win.state() != "withdrawn":
+            vp.hide()
+            self._say("3D viewport hidden (View > 3D viewport to show it)")
+            return
+        obj = self._selected_object()
+        if obj is None:
+            objs = list(self.cur().objects)
+            obj = objs[0] if objs else None
+        if obj is None:
+            self._say("this arena has no objects to show in 3D")
+            return
+        vp.on_selection(obj)
+        self._say("3D viewport: %s (%s)" % (obj.label(), CITY_NAMES.get(self.cur().city, "CHICAGO")))
 
     # -- commands -----------------------------------------------------------
     def deselect(self):
@@ -3514,6 +3572,7 @@ class EditorApp:
         self._fill_pickup_look()
 
         self._status_line()
+        self._viewport_follow()
 
     # -- the other editor's saves -------------------------------------------
     def _poll(self):
@@ -3540,6 +3599,191 @@ class EditorApp:
                     self.redraw()
                 self._say("'%s' reloaded from disk (the game saved it)" % a.internal)
         self.root.after(900, self._poll)
+
+
+class Viewport3D:
+    """The 3D viewport window: the highlighted object's cell plus its eight
+    neighbours, drawn by tools/view3d.py.
+
+    Made lazily - the editor builds one the first time an object is highlighted and
+    it follows the selection from then on. Orbit by dragging, zoom with the wheel.
+    Its own X (or Escape) hides it; View > 3D viewport brings it back.
+    """
+
+    DEF_W, DEF_H = 480, 360
+    PITCH_LO, PITCH_HI = 3.0, 88.0
+    DIST_LO, DIST_HI = 400.0, 40000.0
+
+    def __init__(self, app):
+        import tkinter as tk
+
+        self.app = app
+        self.tk = tk
+        self.win = tk.Toplevel(app.root)
+        self.win.title("Caine's Crossfire - 3D viewport")
+        self.win.geometry("%dx%d" % (self.DEF_W, self.DEF_H))
+        self.win.protocol("WM_DELETE_WINDOW", self.hide)
+        self.win.withdraw()                  # nothing highlighted yet
+
+        self.canvas = tk.Canvas(self.win, width=self.DEF_W, height=self.DEF_H,
+                                background="#101014", highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.lbl = tk.Label(self.win, anchor="w", font=("Consolas", 9),
+                            background="#1a1a20", foreground="#c8d0dc")
+        self.lbl.pack(side="bottom", fill="x")
+
+        self.city = None
+        self.obj = None
+        self.yaw, self.pitch, self.dist = 35.0, 30.0, 2600.0
+        self.photo = None
+        self.job = None
+        self._drag = None
+        self._pending = False
+        self._text = ""
+
+        self.canvas.bind("<ButtonPress-1>", self._press)
+        self.canvas.bind("<B1-Motion>", self._motion)
+        self.canvas.bind("<ButtonRelease-1>", self._release)
+        self.canvas.bind("<MouseWheel>", self._wheel)
+        self.canvas.bind("<Button-4>", lambda e: self._zoom(1.15))
+        self.canvas.bind("<Button-5>", lambda e: self._zoom(1 / 1.15))
+        self.canvas.bind("<Configure>", self._configure)
+        self.win.bind("<Escape>", lambda e: self.hide())
+
+    # -- lifecycle ----------------------------------------------------------
+    def exists(self):
+        try:
+            return bool(self.win.winfo_exists())
+        except Exception:
+            return False
+
+    def show(self):
+        if not self.exists():
+            return
+        self.win.deiconify()
+        self.win.lift()
+        self.draw()
+
+    def hide(self):
+        if self.exists():
+            self.win.withdraw()
+
+    def on_selection(self, obj):
+        """Called by the editor when the highlight changes, or an object moves."""
+        if obj is None or not self.exists():
+            return                      # nothing to follow; keep the last view
+        city = CITY_NAMES.get(self.app.cur().city, "CHICAGO")
+        if city != self.city:
+            self.city = city            # a different city: a different rip
+        self.obj = obj
+        if self.win.state() == "withdrawn":
+            self.show()                 # first highlight: pop up
+        else:
+            self._soon()                # already up: follow, coalesced
+
+    # -- rendering ----------------------------------------------------------
+    def _size(self):
+        return (max(160, self.canvas.winfo_width()),
+                max(120, self.canvas.winfo_height()))
+
+    def draw(self):
+        """Render off the Tk thread and put the result on the canvas."""
+        if self.obj is None or not self.exists():
+            return
+        if self.job is not None:
+            return                      # one render in flight; a later step re-draws
+
+        obj, city = self.obj, self.city
+        w, h = self._size()
+        yaw, pitch, dist = self.yaw, self.pitch, self.dist
+
+        def work(progress, cancel):
+            geom = level_geom_memory(city)
+            if geom is None:
+                return None, "no level rip for %s - run: python arenaedit.py --rip %s" % (city, city)
+            gy_ref = view3d.ground_y(geom, obj.x, obj.z)
+            oy = obj.y if getattr(obj, "y", None) is not None else gy_ref
+            # frame the object AND the ground under it, as --viewport does
+            target = (float(obj.x), 0.5 * (float(oy) + gy_ref), float(obj.z))
+            cam = view3d.Camera(target, yaw=yaw, pitch=pitch, dist=dist)
+            blob = view3d.object_blob(city, geom, obj, cam, w, h)
+            img = view3d.render_viewport(city, target, _viewport_rect(obj.x, obj.z),
+                                         size=(w, h), cam=cam, level_geom=geom,
+                                         blobs=[blob] if blob else [])
+            view3d.cell_mark(img, cam, obj.x, obj.z)     # which cell this is
+            return img, None
+
+        def done(res):
+            self.job = None
+            img, err = res
+            if err or img is None or not self.exists():
+                self._text = err or "nothing to draw"
+                try:
+                    self.lbl.configure(text=self._text)
+                except Exception:
+                    pass
+                return
+            from PIL import ImageTk
+            self.photo = ImageTk.PhotoImage(img)
+            self.canvas.delete("all")
+            self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
+            self._status()
+
+        self.job = run_bg(self.app.root, work, done, what="viewport")
+
+    def _soon(self):
+        """Coalesce redraws so a drag does not queue a render per mouse event."""
+        if self._pending:
+            return
+        self._pending = True
+        self.win.after(40, self._flush)
+
+    def _flush(self):
+        self._pending = False
+        self.draw()
+
+    def _status(self):
+        o = self.obj
+        if o is None:
+            return
+        cell = (int(o.x // MAP_CELL), int(o.z // MAP_CELL))
+        y = getattr(o, "y", None)
+        self._text = ("3D viewport  %s  %s at %d,%d%s   cell %d,%d   yaw %.0f pitch %.0f"
+                      % (self.city, o.label(), o.x, o.z,
+                         "" if y is None else " y=%d" % y, cell[0], cell[1],
+                         self.yaw, self.pitch))
+        try:
+            self.lbl.configure(text=self._text)
+        except Exception:
+            pass
+
+    # -- orbit --------------------------------------------------------------
+    def _press(self, ev):
+        self.canvas.focus_set()
+        self._drag = (ev.x, ev.y, self.yaw, self.pitch)
+
+    def _motion(self, ev):
+        if self._drag is None:
+            return
+        x0, y0, yaw0, pitch0 = self._drag
+        self.yaw = yaw0 - (ev.x - x0) * 0.4
+        self.pitch = min(self.PITCH_HI, max(self.PITCH_LO, pitch0 + (ev.y - y0) * 0.3))
+        self._soon()
+
+    def _release(self, ev):
+        self._drag = None
+        self._soon()
+
+    def _wheel(self, ev):
+        self._zoom(1.15 if ev.delta > 0 else 1 / 1.15)
+
+    def _zoom(self, f):
+        self.dist = min(self.DIST_HI, max(self.DIST_LO, self.dist / f))
+        self._soon()
+
+    def _configure(self, ev):
+        self._soon()
+
 
 def run_editor(arenas, bg=None, bg_rect=None, hint=""):
     """Open the editor window.
@@ -4091,6 +4335,7 @@ def viewport_png(arena, path, sel=0, size=560, verbose=True):
     blob = view3d.object_blob(city, geom, obj, cam, w, h)
     img = view3d.render_viewport(city, target, rect, size=(w, h), cam=cam,
                                  level_geom=geom, blobs=[blob] if blob else [])
+    view3d.cell_mark(img, cam, obj.x, obj.z)
 
     a = np.asarray(img)
     covered = float(np.mean(np.any(a != np.array(view3d.BG, np.uint8), axis=2)))
