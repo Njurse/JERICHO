@@ -164,10 +164,10 @@ Health / stuck / idle handling (opponent.c:721-944):
 - Near-standstill for `IDLE_TICKS` (200) frames → bump `wanderHeading`, drop the
   destination, reverse out (`REVERSE_TICKS` = 12) (934-944).
 
-The forced-state path (`aiForceState != AUTO`, 829-832) sets `sState` directly
-and skips the selector. Note it never *adds* behaviour: there is no
-`DISPERSE`/`RECOVER` branch in the navigator (§5), so forcing those behaves like
-ROAM. See §9.
+The forced-state path (`aiForceState != AUTO`) sets `sState` directly and skips the
+selector. `DISPERSE` and `RECOVER` each have their own goal branch (§5), so a forced
+state does something distinct; `RECOVER` is still never chosen by the selector on its
+own (§9).
 
 ---
 
@@ -291,7 +291,7 @@ step ≤ `MAXSTEP` (700), and `lineClear` between the centres (142-159). Octile 
 (281-335). Waypoints are sampled one cell apart (subsampled if too many) and the
 true goal is appended (435-460).
 
-### flow.c — shared pursuit field
+### flow.c — per-car pursuit fallback
 
 A 96×96 window of 256-unit cells holding a fast-marching distance to a moving
 goal (`flow.c:19-28`). `cd2FlowSetGoal` re-centres the window when the goal moves
@@ -300,9 +300,12 @@ enters a new cell, throttled to `RESEED_EVERY` (8) frames (151-192) — a
 fast-moving goal would otherwise reset the field every frame. `cd2FlowUpdate`
 propagates up to `budget` cells/frame (194-235); diagonal step 362, straight 256,
 blocked cells (`CellAtPositionEmpty(p, 120)`) skipped. `cd2FlowDir` reads the
-lowest-distance neighbour cell and returns the heading downhill (247-299), giving
-any number of opponents an O(1) "which way to the goal" with no per-car search —
-costing nothing per car is what lets a pack converge cheaply.
+lowest-distance neighbour cell and returns the heading downhill (247-299).
+
+It is a **fallback, not the main path**: the router normally produces a route the
+steering follows, and `cd2FlowSetGoal` / `cd2FlowUpdate(CD2_FLOW_BUDGET)` are called
+**only** on the no-route branch inside `cd2AiDrive`. (It used to be re-seeded for
+every opponent every frame — up to 4 re-centres of a field nobody read.)
 
 ### How drive ties them together (opponent.c:946-1209)
 
@@ -486,7 +489,7 @@ logged every 60 frames when `debug_log` is on.
 
 ## 8. Tuning knobs
 
-All are `#define`s at the top of `opponent.c:57-189` (runtime values — read, not
+All are `#define`s at the top of `opponent.c:57-188` (runtime values — read, not
 quoted from prose). Config keys are loaded in `cd2LoadConfig` (cainescrossfire.c:189-267)
 and clamped with `jer_clamp_int` (cainescrossfire.c:318-330). The `Line` column below is
 the line **as this was written**; `opponent.c` drifts (see the caveat in §1), so trust
@@ -525,39 +528,40 @@ Engagement / roam ticks (opponent.c):
 | `DISPERSE_LEG` | 26000 | 70 | opening-spread distance |
 | `ROAM_MIN` / `ROAM_MAX` | 30000 / 150000 | 71-72 | roam goal node distance band |
 | `FLEE_RUN_MIN` / `FLEE_RUN_MAX` | 30000 / 150000 | 74-75 | flee regroup node distance band |
-| `GOAL_TICKS` | 1800 | 76 | frames before a roam goal is re-picked |
-| `ENGAGE_TICKS` | 4500 | 153 | sustained-aggression frames before break-off |
-| `ROAM_INTERRUPT` | 3500 | 158 | a roamer still fights anything this close |
-| `ROAM_TICKS` | 300 | 161 | frames spent roaming (the break-off) |
-| `ROAM_JITTER` | 90 | 163 | random extra roam frames |
-| `STATE_TICKS` | 145 | 166 | frames between re-decisions |
-| `MIN_STATE_TICKS` | 150 | 167 | min dwell after a change |
-| `STATE_JITTER` | 60 | 146 | random extra decision frames |
-| `FLEE_COOLDOWN` | 900 | 113 | frames before it will break contact again |
+| `RECOVER_MIN` / `RECOVER_MAX` | 12000 / 45000 | 76-77 | recovering: a nearer regroup band than FLEE |
+| `GOAL_TICKS` | 1800 | 78 | frames before a roam goal is re-picked |
+| `ENGAGE_TICKS` | 4500 | 152 | sustained-aggression frames before break-off |
+| `ROAM_INTERRUPT` | 3500 | 157 | a roamer still fights anything this close |
+| `ROAM_TICKS` | 300 | 160 | frames spent roaming (the break-off) |
+| `ROAM_JITTER` | 90 | 162 | random extra roam frames |
+| `STATE_TICKS` | 145 | 165 | frames between re-decisions |
+| `MIN_STATE_TICKS` | 150 | 166 | min dwell after a change |
+| `STATE_JITTER` | 60 | 144 | random extra decision frames |
+| `FLEE_COOLDOWN` | 900 | 111 | frames before it will break contact again |
 
-Movement / avoidance: `SPAWN_OFFSET` 900 (57), `LOOK` 4500 (77),
-`AVOID_STEER` 150 (82), `SWERVE_BASE` 1400 (83), `SWERVE_PER_SPEED` 7 (84),
-`STEER_DIV` 6 (86), `STEER_DIV_SPEED` 55 (87), `STEER_RATE` 105 (118),
-`THRUST_RATE` 220 (123), `PIVOT_DIFF` 1150 (129), `PIVOT_SPEED` 150 (130),
-`REVERSE_TICKS` 12 (133), `STUCK_TICKS` 70 (135), `STUCK_SPEED` 5 (136),
-`WP_REACH` 700 (137), `LOOKAHEAD_MIN/MAX/PER_SPEED` 1400/6000/12 (138-140),
-`SEPARATE_RANGE/CLOSE/STEER` 5200/2600/120 (143-145), `IDLE_TICKS` 200 (168),
-`IDLE_SPEED` 15 (169), `FAN_RAYS/STEPS` 5/10 (173-174), `STOP_FRAMES` 8 (179),
-`GOVERN_SLACK` 0 (185), `SIDE_MARGIN` 900 (186), `SIDE_BIAS` 384 (188),
-`NEAR_BLOCK_MIN` 350 (189), `LOOK_PER_SPEED` 6 (150). `THRUST_RATE` was 120
+Movement / avoidance: `SPAWN_OFFSET` 900 (57), `LOOK` 4500 (79),
+`AVOID_STEER` 150 (83), `SWERVE_BASE` 1400 (84), `SWERVE_PER_SPEED` 7 (85),
+`STEER_DIV` 6 (86), `STEER_DIV_SPEED` 55 (87), `STEER_RATE` 105 (116),
+`THRUST_RATE` 220 (121), `PIVOT_DIFF` 1150 (127), `PIVOT_SPEED` 150 (128),
+`REVERSE_TICKS` 12 (131), `STUCK_TICKS` 70 (133), `STUCK_SPEED` 5 (134),
+`WP_REACH` 700 (135), `LOOKAHEAD_MIN/MAX/PER_SPEED` 1400/6000/12 (136-138),
+`SEPARATE_RANGE/CLOSE/STEER` 5200/2600/120 (141-143), `IDLE_TICKS` 200 (167),
+`IDLE_SPEED` 15 (168), `FAN_RAYS/STEPS` 5/10 (172-173), `STOP_FRAMES` 8 (178),
+`GOVERN_SLACK` 0 (184), `SIDE_MARGIN` 900 (185), `SIDE_BIAS` 384 (187),
+`NEAR_BLOCK_MIN` 350 (188), `LOOK_PER_SPEED` 6 (149). `THRUST_RATE` was 120
 (the AI never reached full throttle); `STEER_RATE` 105.
 
-Combat: `EVADE_FRAMES` 85 (91), `FIRE_RANGE` 9000 (93), `FIRE_CONE` 420 (94),
-`AIM_PULL_LIMIT` 1100 (96), `AIM_PULL` 2 (97), `MASS_REF` 1200 (98),
-`HEALTH_REF` 20000 (99), `DANGER_RANGE` 6500 (100), `STANDOFF` 1600 (101),
-`FIRE_DISTANCE` 3200 (114), `STATIONARY` 60 (115), `PRIMARY_MIN/RANGE`
-2200/14000 (116-117), `WANDER_LEG` 40000 (148). `STANDOFF` was 2600 — the
+Combat: `EVADE_FRAMES` 85 (91), `FIRE_RANGE` 9000 (92), `FIRE_CONE` 420 (93),
+`AIM_PULL_LIMIT` 1100 (94), `AIM_PULL` 2 (95), `MASS_REF` 1200 (96),
+`HEALTH_REF` 20000 (97), `DANGER_RANGE` 6500 (98), `STANDOFF` 1600 (99),
+`FIRE_DISTANCE` 3200 (112), `STATIONARY` 60 (113), `PRIMARY_MIN/RANGE`
+2200/14000 (114-115), `WANDER_LEG` 40000 (148). `STANDOFF` was 2600 — the
 stand-off a totally timid car keeps from its target.
 
-Flanking (opponent.c:103-112): `FLANK_ANGLE` 520 (110), `FLANK_NEAR` 2500 (111),
-`FLANK_FAR` 9000 (112) — the aim swings onto the target's shoulder while it is far
+Flanking (opponent.c:106-110): `FLANK_ANGLE` 520 (108), `FLANK_NEAR` 2500 (109),
+`FLANK_FAR` 9000 (110) — the aim swings onto the target's shoulder while it is far
 and closes to dead-on inside `FLANK_NEAR`; the side is the car's own parity
-(`(cp->id & 1)`, opponent.c:1361). See §7 and [G4](#g4).
+(`(cp->id & 1)`, opponent.c:1395). See §7 and [G4](#g4).
 
 Navigation layer: `nav.h:15-21` (`MAX_ROUTE` 64, `WP_STEP` 512, `MAX_NODES` 4096,
 `MAX_CARS` 32, `DRAW_RADIUS` 4500); `grid.c:17-23` (`CELL` 512, `MAXDIM` 64,
@@ -571,34 +575,30 @@ Navigation layer: `nav.h:15-21` (`MAX_ROUTE` 64, `WP_STEP` 512, `MAX_NODES` 4096
 - **Stale comment.** `opponent.c:8-13` still names states HUNT/WANDER/RECOVER that
   don't exist in the enum; the real set is §3. Don't trust that prose — the enum is
   the truth. (`ai/ai.h`'s header was corrected to the real state set.)
-- **RECOVER is only ever a *reported* state.** It is produced when a car is
-  totaled (opponent.c:748), at which point drive returns and does nothing else.
-  Forcing `ai_force_state = 5` sets `sState = RECOVER` but there is **no RECOVER
-  branch** in the navigator, so it behaves like ROAM. Likewise DISPERSE forced on
-  its own just drives out along `wanderHeading`.
+- **RECOVER is never *selected*, only forced or reported.** The selector never
+  picks it, so in normal play the only "Recover" is the momentary report when a
+  car is totaled. It does have its own goal branch now (withdraw to a nearer
+  regroup, `RECOVER_MIN..MAX`), so forcing `ai_force_state = 5` behaves
+  distinctly instead of like ROAM.
 - **HARVESTER is inert.** Only FLANKER and AMBUSHER are special-cased
   (973-984); CHASER and HARVESTER take the identical default approach. The enum
   comment "rally points for now" is accurate.
-- **Dead `#define`s and fields.** Defined but never used:
-  `CD2_AI_PROBE_ANG` (75), `CD2_AI_SWERVE_GAP` (79 — the code now uses
-  `freeAhead/3` instead), `CD2_AI_HURT_FLEE` (86), `CD2_AI_FIRE_COOLDOWN` (89 —
-  the per-weapon cooldown runs instead), `CD2_AI_NEAR_LOOK` (131),
-  `CD2_AI_ENGAGE_JITTER` (129). The `CD2_AI_CAR.fireTimer` and
-  `CD2_AI_CAR.engageLimit` fields are set/aliased but never read — aggression
-  bursts are *not* jittered per car. Don't tune these expecting an effect.
-- **The flow field runs per opponent, not per frame.** `cd2FlowUpdate(64)` is
-  inside `cd2AiDrive`, so 4 opponents advance it ~256 cells/frame — more than the
-  `CD2_FLOW_BUDGET` name implies.
+- **Two reserved knobs.** `CD2_AI_ENGAGE_JITTER` and `CD2_AI_CAR.engageLimit` are
+  defined and aliased but read nowhere — kept for the per-car aggression spread
+  planned in [G6](#g6), not live. (The five other dead `#define`s and the
+  write-only `fireTimer` field have been removed, so a grep for them is clean.)
+- **The flow field is per caller and only built on the no-route branch.** Each
+  opponent that needs it seeds the shared window with its own goal and reads it
+  straight back, so the "shared" field is really a per-car scratch field — fine,
+  but do not expect two cars to share one gradient.
 - **`Random2` is a trap.** It ignores its argument *and* is constant within a
   frame (§4); never use it for jitter. All AI randomness must go through
   `cd2AiRand`/`cd2AiRandSalt`, which require reducing the value yourself (`% n`).
-- **CAR_PAD has no enabled/count guard.** `cd2AiOnCarPad` only checks
-  `cd2AiIsOpponent` (1798); it will keep blanking the pad of a live opponent even
-  after the match is changed to field fewer (or no) opponents, while CAR_STEP
-  (which drives it) stops. The car then coasts with no input until the slot is
-  reaped (which also stops when the FRAME handler bails at 1704). Lowering the
-  opponent count mid-level leaves inert CUTSCENE cars in the world - it takes
-  effect on the next level.
+- **Lowering `ai_opponents` mid-level only takes effect next level.** CAR_PAD and
+  CAR_STEP now share one liveness gate, so surplus cars are no longer left with a
+  blanked pad and no driver; but they are not reaped either (the FRAME reap stops
+  once the count is 0), so a car on the field when the count dropped stays until
+  the level changes.
 - **Route/search capacity.** Routes cap at 64 waypoints (`MAX_ROUTE`); the road A*
   heap is `0x7fffffff`-initialised per search and best-effort on overflow
   (nav.c:576-603, grid.c:161-188). Both use static scratch, so the layer is not
@@ -663,185 +663,42 @@ Two things make it behave rather than merely move:
 
 ## 11. What needs improvement, and how
 
-This is the AI's backlog: what is wrong or missing today, and the concrete change
-that fixes it. §1–§10 describe the as-built design; §11 plans the next pass. Every
-citation below was re-read against `ai/opponent.c` at its **current length** (it has
-grown to ~2458 lines, so §1–§10's line numbers have drifted — **prefer the symbol
-over the line number** everywhere in this file).
+The opponent AI's remaining backlog — gameplay behaviour, not correctness. §1–§10
+describe the as-built design. Every citation was re-read against `ai/opponent.c`; a
+`file:line` can still drift, so **prefer the symbol over the line number**.
 
-**How to read an entry.** Each gives:
+The **correctness** items this section used to list (C1–C8) have all **landed**: the
+stale `speedFwd`, the adopted player's disperse timer, reused-slot state, the
+per-frame flow re-seed, the missing RECOVER branch, the CAR_PAD guard, the idle
+destination and the dead defines are fixed. The main sections (§3, §5, §8, §9) now
+describe the corrected behaviour, and the code comments carry the detail.
+
+**How to read an entry.** Each of the gameplay items below gives:
 
 - **Symptom / evidence** — the `file:line` and symbol that shows the problem;
 - **Why it matters** — the player-visible or maintenance cost;
 - **How** — the function, `#define` or hook to change, and the approach;
-- **Verify** — how to see the change with the instruments that already exist (the
-  `cc_debug.txt` levers, `-seed` for a reproducible run, or `tools/arena_test.sh`).
+- **Verify** — how to see the change with the tools that exist (the `cc_debug.txt`
+  levers, `-seed` for a reproducible run, or `tools/arena_test.sh`).
 
 Effort is **S** (a few lines), **M** (an hour or two), **L** (a design change that
-needs a play test). Nothing here is written yet; the order is the order I would land
-them — the P1 correctness fixes are behaviour-neutral enough to batch, the P2
-behaviour work each needs eyes on it.
+needs a play test). Each item is its own unit.
 
 ### Priority summary
 
 | Id | Area | Pri | Effort | One-line effect |
 |---|---|---|---|---|
-| [C1](#c1) | Driving | P1 | S | `speedFwd` is read before it is set, so "never park" is a 200-frame timer, not a speed test |
-| [C2](#c2) | `playerai:` | P1 | S | the adopted player leaves ROAM for DISPERSE on its first re-decision, against the stated intent |
-| [C3](#c3) | Spawning | P1 | S | a reused AI slot inherits the dead car's roam window, hold and target |
-| [C4](#c4) | Navigation | P1 | M | the shared flow field is re-seeded up to 4×/frame, so it rarely propagates |
-| [C5](#c5) | States | P1 | S | forcing RECOVER/DISPERSE from the menu adds no behaviour (no branch exists) |
-| [C6](#c6) | Lifecycle | P1 | S | lowering `ai_opponents` mid-level leaves inert CUTSCENE cars coasting |
-| [C7](#c7) | Driving | P1 | S | idle recovery re-aims the heading but keeps the stale destination |
-| [C8](#c8) | Cleanup | P1 | S | six dead `#define`s and two write-only fields mislead anyone tuning them |
 | [G1](#g1) | Combat | P2 | M | no focus-fire or coordination — each car picks its own nearest target |
 | [G2](#g2) | Roles | P2 | L | HARVESTER is inert: no pickup or cache seeking |
 | [G3](#g3) | Roles | P2 | M | AMBUSHER trails a moving point instead of lying in wait |
 | [G4](#g4) | Roles | P2 | M | only FLANKER/AMBUSHER differ, and a global parity flank overrides role intent |
 | [G5](#g5) | Combat | P2 | M | weapon choice is a fixed ladder, blind to target health, range and ammo |
-| [G6](#g6) | Difficulty | P2 | S | every car uses the same 4500-frame aggression burst (`engageLimit` is dead) |
+| [G6](#g6) | Difficulty | P2 | S | every car uses the same 4500-frame aggression burst (`engageLimit` is reserved for this) |
 | [G7](#g7) | Difficulty | P2 | M | the only difficulty dial is `ai_damage_taken`; no skill scaling or catch-up |
 | [G8](#g8) | Combat | P2 | M | nothing detects or counters player tactics |
 | [G9](#g9) | Spawning | P2 | S | respawn is all-or-nothing (spawns only when `live == 0`) |
 
-### 11.1 Correctness / bugs — fix first
-
-These are behaviour-neutral to fix (C1 excepted) and each has a cheap check.
-
-#### <a id="c1"></a>C1 — Stale `speedFwd` turns "never park" into a timer
-
-- **Symptom / evidence.** `int speedFwd = 0` (opponent.c:803) is assigned **only**
-  at opponent.c:1249. So at opponent.c:1043 the governor exemption
-  `if (ABS(speedFwd) < CD2_AI_IDLE_SPEED && sReverse == 0) governed = 0;` always
-  sees 0 — dead code (governed is already 0). Worse, the same stale 0 at
-  opponent.c:1073 makes `ABS(speedFwd) < CD2_AI_IDLE_SPEED` **true on every
-  non-reversing frame**, so `sIdle` (1074) counts *frames not reversing* and the
-  "never park" recovery (1078-1084) fires every `CD2_AI_IDLE_TICKS` (200) whatever
-  the car's speed.
-- **Why it matters.** Every contestant briefly reverses and re-aims on a ~6.7 s
-  timer even flat out — exactly the stutter the comment at 1071-1072 exists to
-  prevent. The governor exemption itself is harmless (the governor at 1702 needs
-  none: `need = speedFwd²/2a` is 0 at v=0), but it hides the real bug.
-- **How.** Move the forward-speed computation (1249-1250) above the state/timer
-  block — before 1043 — or compute a cheap local speed there. Then 1043's
-  exemption becomes meaningful and 1073 tests real speed. Leave the governor at
-  1702 as is.
-- **Verify.** Headless with a fixed `-seed`, `cc_debug.txt` `30:playerai:1`;
-  grep the log for `idle too long - moving out` (opponent.c:1087) — it must stop
-  firing while the car is genuinely moving.
-
-#### <a id="c2"></a>C2 — The adopted player gets a disperse timer it was meant not to
-
-- **Symptom / evidence.** `cd2AiAdoptPlayer` sets `A->disperseTicks = 0;`
-  (opponent.c:2088, comment "minus the opening spread") and then, fifteen lines
-  later, **overwrites** it: `A->disperseTicks = CD2_AI_DISPERSE_TICKS +
-  cd2AiRand(...)` (opponent.c:2101).
-- **Why it matters.** On the first state re-decision the selector sees
-  `sDisperseTicks > 0` and sends the adopted car to `DISPERSE`, so `playerai:` —
-  the tool for watching the whole AI drive — does not behave as the adoption
-  comment (2081-2085) says it will.
-- **How.** Delete the 2101 assignment (keep 2088's `= 0`), or make it conditional
-  on a *spawned* opponent. The intent is already written down at 2081-2085.
-- **Verify.** `playerai:1`, headless; the `player AI: ... state=` line
-  (opponent.c:2182) must read `Roam`, not `Disperse`.
-
-#### <a id="c3"></a>C3 — A reused AI slot inherits the dead car's state
-
-- **Symptom / evidence.** `cd2AiSpawn` clears only `sAi[i].carId = -1`
-  (opponent.c:782-783); `cd2AiSpawnOne` initialises only the fields at
-  opponent.c:715-743. `CD2_AI_CAR` (199-225) also holds
-  `goalX/goalZ/goalTimer/roamTicks/fleeCooldown/hold/idle/targetId/engageTicks/engageLimit`,
-  and `sAi` is a file-static array (240) — none of those are reset on (re)spawn.
-- **Why it matters.** After a wipe-and-respawn a slot can open with another car's
-  roam window, hold timer or latched target, so the fresh spawn's opening
-  behaviour is wrong (it may think it is mid-roam-leg, or chase a dead id).
-- **Also here.** `A->state = CD2_AI_DISPERSE;` is assigned **twice** in that init
-  block (opponent.c:715 and 741) — a harmless leftover from moving the opening-move
-  lines; keep the later one.
-- **How.** In the init block (715-743) also zero the missing fields, or `memset`
-  the slot before setting `carId`.
-- **Verify.** Headless, let the field wipe and respawn; read the per-opponent log
-  line (opponent.c:1854) — `disp`/state at spawn should match a first-boot spawn.
-
-#### <a id="c4"></a>C4 — The shared flow field is re-seeded per opponent
-
-- **Symptom / evidence.** `cd2FlowSetGoal(&goalV); cd2FlowUpdate(64);`
-  (opponent.c:1235-1236) sits inside `cd2AiDrive`, i.e. runs once per opponent per
-  frame, each seeding the shared 96×96 window (flow.c) with its **own** goal. With
-  goals more than `CD2_FLOW_RECENTRE` (2500) apart, every `cd2FlowSetGoal`
-  re-centres and reseeds the window.
-- **Why it matters.** With 4 opponents the "shared" field is reset ~4×/frame and
-  advances only 64 cells between resets, so it rarely becomes a usable gradient —
-  real cost for little value (and the literal `64` bypasses `CD2_FLOW_BUDGET`).
-- **How.** Either (a) drive it **once per frame** toward a single shared goal (from
-  `cd2AiOnFrame`) and let all cars read it, or (b) accept it is really per-car and
-  drop the shared-window pretence (rely on the route + direct aim at 1252-1260).
-  Reconcile the hard-coded `64` with `CD2_FLOW_BUDGET` in the same change.
-- **Verify.** The existing `nav flow:` log (opponent.c:1239) prints `flow=` and
-  `cells=` per opponent; one update per frame should raise coverage.
-
-#### <a id="c5"></a>C5 — Forced RECOVER/DISPERSE add no behaviour
-
-- **Symptom / evidence.** The goal-by-state block handles ATTACK (opponent.c:1092),
-  FLEE (1134), DISPERSE (1179), the ROAM-converge case (1186) and the ROAM-road
-  `else` (1196). There is **no RECOVER branch**: a forced `CD2_AI_RECOVER` (pause
-  menu, or `ai_force_state = 5`) falls into the roam/wander `else`. DISPERSE does
-  drive out (1179-1185) but carries no opening-fight semantics.
-- **Why it matters.** `ai_force_state` is offered as a debug control; forcing
-  RECOVER silently behaves like ROAM, which misdirects anyone diagnosing the AI.
-- **How.** Give RECOVER its own goal — mirror FLEE's regroup at a shorter range so
-  a "heavily damaged, back off and stabilise" state is real — or make branchless
-  forced states fall back to a state the menu names honestly.
-- **Verify.** `ai_force_state = 5` with `ai_debug` on: the readout (2369's
-  `cd2AiStateName`) reads `Recover` **and** the car visibly disengages.
-
-#### <a id="c6"></a>C6 — CAR_PAD and CAR_STEP disagree about who is live
-
-- **Symptom / evidence.** `cd2AiOnCarPad` guards only on `cd2AiIsOpponent`
-  (opponent.c:2143) and blanks the pad; `cd2AiOnCarStep` guards on
-  `cd2MatchOpponents() > 0 || cp->id == cd2AiPlayerCar()` (2175); and
-  `cd2AiOnFrame` bails at `cd2MatchOpponents() <= 0` (1897).
-- **Why it matters.** Lowering `ai_opponents` (or 0) mid-level stops the drive but
-  keeps blanking the pads, so the leftover CUTSCENE cars coast with no input — and
-  the reap that would remove them also stops (FRAME bails). Today it only takes
-  effect on the next level (§9).
-- **How.** Give `cd2AiOnCarPad` the same guard as CAR_STEP (or gate the blank on
-  `cd2AiActive()`), and decide the intended semantics for "lower the count
-  mid-level" — immediate despawn (reap independent of the count) or next-level.
-  Document whichever you pick.
-- **Verify.** Start a 3-opponent match, cycle `ai_opponents` down from the pause
-  menu, and watch the per-car AI log / the map blips (2427).
-
-#### <a id="c7"></a>C7 — Idle recovery keeps the stale destination
-
-- **Symptom / evidence.** The idle branch (opponent.c:1078-1084) bumps
-  `sWanderHeading`, clears the avoid state and sets `sReverse`, but does **not**
-  touch `sGoalTimer`/`sGoalX`/`sGoalZ` — unlike the stuck and avoid-reverse paths,
-  which re-aim the goal.
-- **Why it matters.** The car reverses out and then drives straight back to the
-  node it was stuck against, so the recovery can loop (and C1 makes it fire
-  spuriously).
-- **How.** In the idle branch also drop the destination (`sGoalTimer = 0;`) the
-  way the reverse paths do, so the next tick picks a fresh road node.
-- **Verify.** `idle too long - moving out` (1087) should be followed by a new goal,
-  not a re-approach of the same spot.
-
-#### <a id="c8"></a>C8 — Dead defines and write-only fields
-
-- **Symptom / evidence.** `CD2_AI_PROBE_ANG` (opponent.c:81), `CD2_AI_SWERVE_GAP`
-  (85), `CD2_AI_HURT_FLEE` (92), `CD2_AI_FIRE_COOLDOWN` (95), `CD2_AI_ENGAGE_JITTER`
-  (147) and `CD2_AI_NEAR_LOOK` (149) each have exactly one reference — their own
-  `#define`. In `CD2_AI_CAR`, `fireTimer` is written (718, 2091) and aliased (817)
-  but never read, and `engageLimit` is aliased (829) but never set or read.
-- **Why it matters.** §8 lists them as knobs; changing them does nothing.
-  `CD2_AI_ENGAGE_JITTER` is the worst — it advertises jittered aggression bursts
-  that do not exist (see [G6](#g6)).
-- **How.** Delete the six defines; wire the one that should matter
-  (`CD2_AI_ENGAGE_JITTER`/`engageLimit`, in G6). Then prune the dormant rows from §8.
-- **Verify.** `grep` each name → zero hits after removal, and §8 no longer lists
-  them.
-
-### 11.2 Gameplay / behaviour depth
+### 11.1 Gameplay / behaviour depth — the remaining backlog
 
 These change what the opponents *do*, so each wants a play test (or a scripted
 `cc_debug.txt` run), not just a compile. They are ordered roughly by
@@ -985,21 +842,18 @@ value-per-effort.
 
 ### Sequencing
 
-- **Safe to batch (P1, no visible behaviour change).** [C3](#c3), [C4](#c4),
-  [C5](#c5), [C6](#c6), [C8](#c8) — slot re-init, flow cadence, the forced-state
-  branches, the pad guard and the dead-code sweep all land without changing how a
-  healthy opponent drives. One commit.
-- **Fix with eyes on it (P1, changes behaviour).** [C1](#c1) removes the spurious
-  periodic reversal (compare a `playerai:` run before/after); [C2](#c2) makes the
-  adopted car roam instead of dispersing; [C7](#c7) changes the stuck-recovery
-  loop.
-- **Then the behaviour work (P2), smallest first.** [G6](#g6) wires the dead
-  `engageLimit`/`ENGAGE_JITTER`; [G9](#g9) respawn shortfall and [G4](#g4)
-  role/parity cleanup are small; [G3](#g3) ambusher, [G5](#g5) situational weapons
-  and [G1](#g1) focus-fire are medium; [G2](#g2) HARVESTER and [G7](#g7)
-  difficulty are the design-sized ones; [G8](#g8) is open-ended and should follow a
-  real play session.
-- **Dependencies.** [G2](#g2) needs the arenas pickup accessor before it can be
-  written. [C8](#c8) and [G6](#g6) land together — C8 deletes the dead
-  `CD2_AI_ENGAGE_JITTER` that G6 revives. [G7](#g7) reuses the `bravery` /
-  `cd2AiBravery` hook G6 also touches, so do G6 first.
+The correctness pass (C1–C8) has landed, so everything below is behaviour work and
+each item is its own unit:
+
+- **Smallest first.** [G6](#g6) is pure wiring — it turns the reserved
+  `engageLimit`/`ENGAGE_JITTER` into a per-car aggression spread; [G9](#g9)
+  (shortfall respawn) and [G4](#g4) (role/parity cleanup) are small.
+- **Medium.** [G3](#g3) ambusher, [G5](#g5) situational weapons and [G1](#g1)
+  focus-fire.
+- **Design-sized.** [G2](#g2) HARVESTER (needs an arenas pickup accessor) and
+  [G7](#g7) difficulty scaling.
+- **Open-ended.** [G8](#g8) anti-tactic behaviour should follow a real play
+  session.
+- **Dependencies.** [G2](#g2) needs the arenas pickup accessor first. [G7](#g7)
+  reuses the `bravery` / `cd2AiBravery` hook [G6](#g6) also touches, so do G6
+  first.

@@ -73,26 +73,24 @@
 					//    big enough to reach across a level
 #define CD2_AI_FLEE_RUN_MIN		30000	// fleeing: nearest regroup node
 #define CD2_AI_FLEE_RUN_MAX		150000	// fleeing: furthest regroup node
+#define CD2_AI_RECOVER_MIN		12000	// recovering: a nearer regroup than FLEE,
+#define CD2_AI_RECOVER_MAX		45000	//    so a badly hurt car backs off then rejoins
 #define CD2_AI_GOAL_TICKS		1800	// frames before a roam goal is re-picked
 #define CD2_AI_LOOK		4500	// look-ahead probe distance (was 480:
 					//    at speed that is ~2 frames of travel, so they could
 					//    only see a wall when it was already too late to do
 					//    anything but reverse - the root of the reversing)
-#define CD2_AI_PROBE_ANG	450	// ~35 deg side probes
 #define CD2_AI_AVOID_STEER	150	// steer nudge to dodge something
 #define CD2_AI_SWERVE_BASE	1400	// clearance at which it starts leaning around a wall
 #define CD2_AI_SWERVE_PER_SPEED	7	// ...plus this much per unit/frame of speed
-#define CD2_AI_SWERVE_GAP		450	// clearance difference that decides which way to go
 #define CD2_AI_STEER_DIV	6	// heading error -> wheel_angle divisor
 #define CD2_AI_STEER_DIV_SPEED	55	// extra divisor per unit/frame of speed: the gain
 					//    has to fall off with speed, or a fixed gain
 					//    overshoots every frame and the car weaves down
 					//    a straight road instead of tracking it.
 #define CD2_AI_EVADE_FRAMES	85	// ~1.5 s of evasive driving
-#define CD2_AI_HURT_FLEE	8000	// totalDamage above which it breaks off (rare)
 #define CD2_AI_FIRE_RANGE	9000	// MG range when pursuing
 #define CD2_AI_FIRE_CONE	420	// heading error it will still fire through
-#define CD2_AI_FIRE_COOLDOWN	1	// frames between AI MG shots
 #define CD2_AI_AIM_PULL_LIMIT	1100	// only bias the heading within this error (~97 deg)
 #define CD2_AI_AIM_PULL		2	// lean this fraction of the remaining error onto the target
 #define CD2_AI_MASS_REF		1200	// car mass considered average (bravery reference)
@@ -144,9 +142,10 @@
 #define CD2_AI_SEPARATE_CLOSE	2600	// ease off the throttle if packed this tight
 #define CD2_AI_SEPARATE_STEER	120	// steering nudge away from a nearby opponent
 #define CD2_AI_STATE_JITTER	60	// random extra frames between behaviour re-decisions
+// RESERVED for G6 (per-car aggression spread): defined so the wiring change has a
+// value to use, but not read anywhere yet. See AI.md G6.
 #define CD2_AI_ENGAGE_JITTER	300	// random spread on the aggression burst length
 #define CD2_AI_WANDER_LEG	40000	// wander goal distance along the wander heading
-#define CD2_AI_NEAR_LOOK	380	// base imminent-collision probe distance
 #define CD2_AI_LOOK_PER_SPEED	6	// extra probe distance per unit/frame of speed,
 					//    so the reach still grows with speed
 #define CD2_AI_BRAKE_SPEED	360	// forward speed above which it brakes instead of pivoting
@@ -199,14 +198,14 @@ enum { CD2_AI_AVOID_NONE = 0, CD2_AI_AVOID_BRAKE, CD2_AI_AVOID_PIVOT };
 typedef struct CD2_AI_CAR
 {
 	int carId;
-	int state, stateTimer, evade, fireTimer;
+	int state, stateTimer, evade;
 	int wanderHeading, wanderTimer;
 	int steer, reverse, stuck;
 	int thrust;		// last throttle sent, for slew limiting
 	int role, avoid, avoidTicks;
 	int avoidCycles;	// consecutive avoid activations (escalates to reverse)
 	int engageTicks;	// frames of the current aggressive burst
-	int engageLimit;	// this contestant's own aggression burst length
+	int engageLimit;	// this contestant's own aggression burst length (RESERVED: G6)
 	int disperseTicks;	// frames left of the opening spread
 	int bravery;		// 0 = light and fragile, 100 = heavy and tough
 	int fleeDamage;	// damage at which THIS car breaks contact
@@ -712,10 +711,8 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		// drives.
 		cd2FacAssignAiCar(slot, index);
 
-		A->state = CD2_AI_DISPERSE;	// spawn scattered, not in formation
 		A->stateTimer = 0;
 		A->evade = 0;
-		A->fireTimer = 0;
 		A->steer = 0;
 		A->thrust = 0;
 		A->reverse = 0;
@@ -725,6 +722,18 @@ static int cd2AiSpawnOne(CAR_DATA* pcp, int index)
 		A->avoidCycles = 0;
 		A->lastDamage = 0;
 		A->hits = 0;
+		// A slot is REUSED once its car dies, so every field the navigator keeps
+		// between frames must be reset here as well - otherwise the fresh spawn
+		// inherits the dead car's roam window, hold timer or target (AI.md C3).
+		A->engageTicks = 0;
+		A->roamTicks = 0;
+		A->fleeCooldown = 0;
+		A->hold = 0;
+		A->idle = 0;
+		A->targetId = -1;
+		A->goalTimer = 0;
+		A->goalX = 0;
+		A->goalZ = 0;
 		A->wanderHeading = pcp->hd.direction;
 		A->wanderTimer = 60;
 		// round-robin so the four opponents differ, but rotate the assignment
@@ -814,7 +823,6 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #define sState		A->state
 #define sStateTimer	A->stateTimer
 #define sEvade		A->evade
-#define sFireTimer	A->fireTimer
 #define sWanderHeading	A->wanderHeading
 #define sWanderTimer	A->wanderTimer
 #define sSteer		A->steer
@@ -899,6 +907,13 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 	fz = cp->hd.where.m[2][2];
 	rx = cp->hd.where.m[0][0];
 	rz = cp->hd.where.m[2][0];
+
+	// --- forward speed (world units/frame, signed). Computed HERE because both
+	// the "never park" tests below (the governor exemption and the idle counter)
+	// and the pure-pursuit lookahead scale with it. It used to be read a few
+	// hundred lines before it was set, so those tests saw a constant 0. ---
+	speedFwd = (int)(((long long)fx * FIXEDH(cp->st.n.linearVelocity[0])
+			+ (long long)fz * FIXEDH(cp->st.n.linearVelocity[2])) >> 12);
 
 	// --- evade overlay: any incoming shot? ---
 	if (cd2WpnIncomingThreat(cp, &tpos, NULL))
@@ -1081,6 +1096,12 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			sWanderHeading = (sWanderHeading + 1200 + cd2AiRand(1200)) & 0xfff;
 		sAvoid = CD2_AI_AVOID_NONE;
 		sAvoidTicks = 0;
+		// Drop the destination as well, the way the stuck/avoid reverse paths do:
+		// re-aiming the heading while keeping the goal sent the car straight back
+		// into whatever it was idling against (AI.md C7).
+		sGoalTimer = 0;
+		sGoalX = 0;
+		sGoalZ = 0;
 		sReverse = CD2_AI_REVERSE_TICKS;	// back out of whatever is holding it
 
 		if (gCd2Cfg.debugLog)
@@ -1176,6 +1197,19 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 				}
 			}
 		}
+		else if (sState == CD2_AI_RECOVER)
+		{
+			// Heavily damaged: give ground and stabilise. RECOVER is FLEE at a
+			// SHORTER reach - back off to a road node nearer than FLEE's regroup and
+			// let the car come back in, rather than crossing the map. Without its own
+			// branch a forced RECOVER just acted like ROAM (AI.md C5).
+			if (!cd2NavRoamGoal(&carV, CD2_AI_RECOVER_MIN, CD2_AI_RECOVER_MAX, &goalV))
+			{
+				goalV.vx = carV.vx + (int)(((long long)RSIN(sWanderHeading) * CD2_AI_WANDER_LEG) >> 12);
+				goalV.vy = carV.vy;
+				goalV.vz = carV.vz + (int)(((long long)RCOS(sWanderHeading) * CD2_AI_WANDER_LEG) >> 12);
+			}
+		}
 		else if (sState == CD2_AI_DISPERSE)
 		{
 			// opening spread: drive out along this contestant's own heading
@@ -1231,9 +1265,8 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 
 	cd2NavRoute(cp->id, &carV, &goalV, &sRoute);
 
-		// shared pursuit field toward the same goal, budgeted per frame
-		cd2FlowSetGoal(&goalV);
-		cd2FlowUpdate(64);
+		// (the flow field is no longer built here - see the no-route fallback in
+		// the steering block below, which is its only reader)
 
 		if (gCd2Cfg.debugLog && (sLogTick % 120) == 0)
 			printInfo("[cainescrossfire] nav flow: car=%d role=%s src=%s wp=%d flow=%d cells=%d goal=(%d,%d)\n",
@@ -1243,11 +1276,6 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 				(sRoute.source == CD2_NAV_SRC_DIRECT) ? "direct" : "none",
 				sRoute.count, cd2FlowReady(), cd2FlowCoverage(), goalV.vx, goalV.vz);
 	}
-
-	// --- forward speed (world units/frame, signed). Needed before the heading
-	// choice: pure pursuit scales its lookahead with it. ---
-	speedFwd = (int)(((long long)fx * FIXEDH(cp->st.n.linearVelocity[0])
-			+ (long long)fz * FIXEDH(cp->st.n.linearVelocity[2])) >> 12);
 
 	// --- desired heading: navigator look-ahead, else flow, else direct aim ---
 	if (sEvade > 0)
@@ -1319,10 +1347,16 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 			}
 		}
 
-		// no usable route: shared flow field, then direct aim at the goal
+		// no usable route: the per-car flow field, then a direct aim at the goal.
+		// The field is built ONLY here - the route is the normal path, and seeding
+		// the window for every opponent on every frame was churn for a fallback
+		// that rarely runs (AI.md C4).
 		if (!got)
 		{
 			int head;
+
+			cd2FlowSetGoal(&goalV);
+			cd2FlowUpdate(CD2_FLOW_BUDGET);
 
 			if (cd2FlowDir(&carV, &head))
 				desired = head;
@@ -1857,7 +1891,6 @@ static void cd2AiDrive(CAR_DATA* cp, CD2_AI_CAR* A)
 #undef sState
 #undef sStateTimer
 #undef sEvade
-#undef sFireTimer
 #undef sWanderHeading
 #undef sWanderTimer
 #undef sSteer
@@ -2088,7 +2121,6 @@ void cd2AiAdoptPlayer(int on)
 	A->disperseTicks = 0;
 	A->stateTimer = 0;
 	A->evade = 0;
-	A->fireTimer = 0;
 	A->steer = 0;
 	A->thrust = 0;
 	A->reverse = 0;
@@ -2098,7 +2130,21 @@ void cd2AiAdoptPlayer(int on)
 	A->avoidCycles = 0;
 	A->lastDamage = 0;
 	A->hits = 0;
-	A->disperseTicks = CD2_AI_DISPERSE_TICKS + cd2AiRand(CD2_AI_DISPERSE_TICKS / 2);
+	// same reuse hazard as cd2AiSpawnOne: clear everything the navigator carries
+	// between frames, or the adopted car keeps a stale roam window / hold / target
+	A->engageTicks = 0;
+	A->roamTicks = 0;
+	A->fleeCooldown = 0;
+	A->hold = 0;
+	A->idle = 0;
+	A->targetId = -1;
+	A->goalTimer = 0;
+	A->goalX = 0;
+	A->goalZ = 0;
+	// disperseTicks stays 0 (set above): an adopted player ROAMs. Overwriting it
+	// here gave the car the opening-spread window, so it left ROAM for DISPERSE on
+	// the first re-decision - the opposite of what the comment above describes
+	// (AI.md C2).
 	A->wanderHeading = car_data[carId].hd.direction;
 	A->wanderTimer = 60;
 	A->role = (gCd2Cfg.aiRole >= 0) ? gCd2Cfg.aiRole
@@ -2140,7 +2186,15 @@ static int cd2AiOnCarPad(void* ud, void* args)
 	CAR_DATA* cp = (CAR_DATA*)a->car;
 	(void)ud;
 
-	if (!cd2AiIsOpponent(cp))
+	// The SAME gate cd2AiOnCarStep drives on: a slot only gives us the right to
+	// suppress the car's input while the match actually fields opponents, or for
+	// the adopted player car. Blanking on slot-ownership alone left a surplus car
+	// with its pad zeroed (and coasting, since CAR_STEP had stopped driving it)
+	// after the count was lowered mid-level. NOTE: the despawn timing is
+	// unchanged - a lowered count still only takes full effect on the next level
+	// (AI.md C6); this just stops the two handlers disagreeing about who is live.
+	if (!cd2AiIsOpponent(cp) ||
+	    (cd2MatchOpponents() <= 0 && cp->id != cd2AiPlayerCar()))
 		return JER_RESULT_CONTINUE;
 
 	// Capture what the engine handed the opponent before we blank it. A

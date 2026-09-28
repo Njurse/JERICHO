@@ -23,7 +23,6 @@
 #define CD2_FLOW_HEAP		(CD2_FLOW_CELLS * 4)	// slack for duplicate heap pushes
 #define CD2_FLOW_UNSET		0xFFFF
 #define CD2_FLOW_RECENTRE	2500	// goal move that re-centres the window
-#define CD2_FLOW_BUDGET		64	// default cells propagated per frame
 #define CD2_FLOW_RESEED_EVERY	8	// min frames between goal-cell re-seeds
 #define CD2_FLOW_SAMPLE		120	// clearance radius per cell
 

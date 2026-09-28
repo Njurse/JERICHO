@@ -10,6 +10,9 @@
 
 #include "driver2.h"
 
+// Cells propagated per cd2FlowUpdate call when the caller wants the default.
+#define CD2_FLOW_BUDGET	64
+
 // Point the field at a goal (re-centres the window when the goal moves far).
 void cd2FlowSetGoal(const VECTOR* goal);
 
