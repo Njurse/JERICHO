@@ -102,6 +102,13 @@ int chkNetPeerCar(int id, CHK_CAR_ID* out);
 /* How many players we have a car identity for (0 while nothing is known). */
 int chkNetPeerCount(void);
 
+/* Fold every peer's car into this machine's import set, so it loads what the
+ * other players drive. Called while the set is being built for a level (a peer's
+ * car has to be in the set BEFORE the level reads its car files). Returns how many
+ * were added; a car from a second foreign city is refused by the one-guest-city
+ * rule with a log line. */
+int chkNetFoldPeerCars(void);
+
 /* A city index as a log-friendly name ("level" for CHK_CITY_NATIVE/-1). */
 const char* chkNetCityName(int city);
 

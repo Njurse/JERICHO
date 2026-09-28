@@ -203,6 +203,13 @@ static int ChkOnCarDataSource(void* ud, void* args)
 		/* the session's agreed set, if one arrived (no-op without a session) */
 		chkNetApplyAgreedSet();
 
+		/* and what OUR players drive: folding a peer's car in here means the level
+		 * reads that vehicle, so a peer is drawn as their own car rather than as
+		 * whatever this level happens to hold in the slot they were adopted into.
+		 * A car from a second foreign city is refused by the one-guest-city rule
+		 * (loudly), which is the engine's limit, not a choice made here. */
+		chkNetFoldPeerCars();
+
 		chkImportApplyToCarData(a->count, a->models, a->modelSource);
 	}
 

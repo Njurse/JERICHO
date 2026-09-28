@@ -98,10 +98,17 @@ const char* chkNetCityName(int city)
 	return (city >= 0 && city < 4) ? LevelNames[city] : "level";
 }
 
-/* Fold every peer's claim into this machine's set, so the host LOADS what its
- * clients asked to drive. A claim already in the set is left alone; a new one
- * takes a spare resident slot. Returns how many were folded. */
-static int chkNetFoldPeerPicks(void)
+/* Fold every peer's car into this machine's set, so it LOADS what the other
+ * players drive instead of drawing their SLOT as whatever this level happens to
+ * hold there. A car already in the set is left alone; a new one takes a spare
+ * resident slot. Returns how many were folded.
+ *
+ * Whether the engine can actually hold the car is NOT this function's call: a car
+ * from a second foreign city is refused by the set's one-guest-city rule, loudly
+ * (chkImportSetSlot in carimport.c). That refusal is the honest limit - the
+ * engine reads one foreign city per level - and the peer keeps the clean fallback
+ * instead (ChkOnCarPeerDraw). */
+int chkNetFoldPeerCars(void)
 {
 	int folded = 0, p, slot;
 
@@ -110,6 +117,14 @@ static int chkNetFoldPeerPicks(void)
 		int already = 0;
 
 		if (!gChkNetPeerPickSet[p])
+			continue;
+
+		/* A car from the level's OWN city needs no import: the level already lists
+		 * its own city's vehicles. Skipping those also stops an identity that has
+		 * not settled yet (mp reports a car before a level exists) from claiming a
+		 * spare resident slot with the level's own model 0. Said either way - as
+		 * CHK_CITY_NATIVE or as the level's own index - it is the same car. */
+		if (chkCarIdCity(gChkNetPeerPick[p]) < 0 || chkCarIdCity(gChkNetPeerPick[p]) == GameLevel)
 			continue;
 
 		for (slot = 0; slot < CHK_IMPORT_MAX_SLOTS; slot++)
@@ -182,7 +197,7 @@ void chkNetPublishSet(void)
 	if (!chkNetAgreeEnabled() || !jer_net_is_active() || !jer_net_is_host())
 		return;
 
-	chkNetFoldPeerPicks();
+	chkNetFoldPeerCars();
 	chkNetBuildSetPayload();
 
 	chkNetSendPacket(CHK_NET_SET, gChkNetAgreed, gChkNetAgreedLen);
