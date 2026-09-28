@@ -11,6 +11,7 @@
 
 #include "jericho.h"
 #include "jer_events.h"
+#include "jer_config.h"
 #include "jer_net.h"
 
 #include "system.h"		/* LevelNames[] for the log */
@@ -40,6 +41,15 @@ static int gChkNetAgreedLen;
 static int gChkNetAgreedGuest = -1;
 
 static unsigned char gChkNetBuf[64];
+
+/* Is the session's set AGREEMENT on? carhacks.ini: mp_agree_imports (default 1).
+ * Off = every machine keeps its own import set, which is what a session where
+ * the players deliberately want different cars needs - and what the three-city
+ * stress test (tools/chk_mp_foreign.sh) uses. */
+static int chkNetAgreeEnabled(void)
+{
+	return jer_config_get_int("carhacks", "mp_agree_imports", 1) != 0;
+}
 
 /* ---------------------------------------------------------------------------
  * Sending
@@ -157,7 +167,7 @@ static void chkNetBuildSetPayload(void)
 
 void chkNetPublishSet(void)
 {
-	if (!jer_net_is_active() || !jer_net_is_host())
+	if (!chkNetAgreeEnabled() || !jer_net_is_active() || !jer_net_is_host())
 		return;
 
 	chkNetFoldPeerPicks();
@@ -175,7 +185,8 @@ int chkNetHasAgreedSet(void)
 	/* True only where the session's set APPLIES: on a CLIENT that has received
 	 * one. On the host this buffer is its own set, already applied - so the host
 	 * keeps building from its own config (it is the authority). */
-	return jer_net_is_active() && !jer_net_is_host() && (gChkNetAgreedLen > 0);
+	return chkNetAgreeEnabled() && jer_net_is_active() && !jer_net_is_host() &&
+		(gChkNetAgreedLen > 0);
 }
 
 int chkNetAgreedGuestCity(void)
@@ -246,7 +257,7 @@ static int chkNetOnRecv(void* ud, void* args)
 	{
 		case CHK_NET_REQ:
 			/* a joiner asks: the host answers with the current set */
-			if (jer_net_is_host())
+			if (jer_net_is_host() && chkNetAgreeEnabled())
 				chkNetPublishSet();
 			break;
 
@@ -261,7 +272,7 @@ static int chkNetOnRecv(void* ud, void* args)
 				a->peer, chkNetCityName((int)p[2]), (int)p[3]);
 
 			/* the host owns the set, so it re-publishes with the claim in */
-			if (jer_net_is_host())
+			if (jer_net_is_host() && chkNetAgreeEnabled())
 				chkNetPublishSet();
 			break;
 
@@ -306,7 +317,7 @@ void chkNetAdvertisePick(int city, int model)
 {
 	unsigned char pay[2];
 
-	if (!jer_net_is_active())
+	if (!chkNetAgreeEnabled() || !jer_net_is_active())
 		return;
 
 	pay[0] = (unsigned char)city;
@@ -319,6 +330,9 @@ void chkNetAdvertisePick(int city, int model)
 
 void chkNetRequestSet(void)
 {
+	if (!chkNetAgreeEnabled())
+		return;
+
 	if (chkNetSendPacket(CHK_NET_REQ, NULL, 0))
 		printInfo("[carhacks/net] asked the host for the agreed set\n");
 }
@@ -352,6 +366,9 @@ static int chkNetOnFrame(void* ud, void* args)
 			chkNetPublishSet();
 		else
 			chkNetRequestSet();
+
+		if (!chkNetAgreeEnabled())
+			printInfo("[carhacks/net] import agreement OFF (mp_agree_imports = 0) - every machine keeps its own set\n");
 	}
 	else if (!active && gChkNetSession)
 	{
