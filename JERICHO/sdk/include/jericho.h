@@ -228,6 +228,11 @@ enum
 				   ladder on its own rule - health rather than the
 				   stock per-zone damage (see JER_ARGS_CAR_DAMAGE_FX) */
 
+	JER_EVENT_CAR_PEER_DRAW,	/* a remote player's car is about to be drawn with
+				   the data its owner sent: a module may correct the
+				   palette when this machine does not actually hold
+				   that player's vehicle (JER_ARGS_CAR_PEER_DRAW) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */};
 
 /* Common return values from hook handlers. */

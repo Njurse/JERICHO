@@ -15,15 +15,19 @@
 #include "jer_net.h"
 
 #include "system.h"		/* LevelNames[] for the log */
+#include "cars.h"		/* car_data[], where the local car's slot lives */
+#include "players.h"		/* player[]: whose car is whose */
+#include "mission.h"		/* residentCarModels[], GameLevel, GetCarModelSourceCity */
 
 #include "carid.h"
 #include "carimport.h"
 #include "net.h"
 
 #include <string.h>
+#include <stdlib.h>		/* atoi: the palette test lever */
 
-/* Player ids are the bridge's (0 = host, 1.. = clients). */
-#define CHK_NET_MAX_PLAYERS	8
+/* Player ids are the bridge's (0 = host, 1.. = clients). CHK_NET_MAX_PLAYERS is
+ * public (net.h) because carhacks.c sizes its own per-player tables with it. */
 
 /* Payload cap: [guestCity][count][version] + 8 x [slot][city][model]. */
 #define CHK_NET_SET_MAX		(3 + CHK_IMPORT_MAX_SLOTS * 3)
@@ -31,9 +35,17 @@
 static int gChkNetRegistered;
 static int gChkNetSession;		/* a session was live last frame */
 
-/* What each peer says it wants to drive. */
+/* What each player drives. Filled from the wire: a peer's own report of its car
+ * (player 0 = the host). Peer rows are per-player, so a THIRD machine can learn
+ * player 1's car from the host's broadcast - a client's PICK only reaches the
+ * host. */
 static CHK_CAR_ID gChkNetPeerPick[CHK_NET_MAX_PLAYERS];
 static int gChkNetPeerPickSet[CHK_NET_MAX_PLAYERS];
+
+/* What WE are driving, as last advertised (mp settles the local car after the
+ * session starts, so this changes under us). */
+static CHK_CAR_ID gChkNetLocal;
+static int gChkNetLocalSet;
 
 /* The session's agreed set payload (see above) and the city it reads from. */
 static unsigned char gChkNetAgreed[CHK_NET_SET_MAX];
@@ -81,7 +93,7 @@ static int chkNetSendPacket(int tag, const unsigned char* payload, int payloadLe
  * The host's agreed set
  * ------------------------------------------------------------------------- */
 
-static const char* chkNetCityName(int city)
+const char* chkNetCityName(int city)
 {
 	return (city >= 0 && city < 4) ? LevelNames[city] : "level";
 }
@@ -225,6 +237,132 @@ int chkNetApplyAgreedSet(void)
 }
 
 /* ---------------------------------------------------------------------------
+ * Who is driving what
+ * ------------------------------------------------------------------------- */
+
+/* What the LOCAL player is driving, read from the ENGINE rather than from the
+ * pick (which only the car-select menu sets, and not at all inside a match): the
+ * local car's resident slot, the city that slot's data came from, and the model
+ * it holds. A slot the level imported from elsewhere names its source city; any
+ * other slot is the level's own car, which needs no import on any machine, so it
+ * reports CHK_CITY_NATIVE. */
+CHK_CAR_ID chkNetLocalCar(void)
+{
+	CAR_DATA* cp;
+	int slot, city, model;
+
+	if (player[0].playerCarId < 0 || player[0].playerCarId >= MAX_CARS)
+		return chkCarId(CHK_CITY_NATIVE, CHK_MODEL_NONE);
+
+	cp = &car_data[player[0].playerCarId];
+	slot = cp->ap.model;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return chkCarId(CHK_CITY_NATIVE, CHK_MODEL_NONE);
+
+	model = residentCarModels[slot];
+
+	if (model < 0)
+		return chkCarId(CHK_CITY_NATIVE, CHK_MODEL_NONE);
+
+	city = GetCarModelSourceCity(slot);
+
+	return chkCarId((city >= 0) ? city : CHK_CITY_NATIVE, model);
+}
+
+int chkNetPeerCar(int id, CHK_CAR_ID* out)
+{
+	if (id < 0 || id >= CHK_NET_MAX_PLAYERS || !gChkNetPeerPickSet[id])
+		return 0;
+
+	if (out != NULL)
+		*out = gChkNetPeerPick[id];
+
+	return 1;
+}
+
+/* How many players we have a car identity for: one more than the highest player
+ * id known (0 = the host). 0 while nothing is known yet. */
+int chkNetPeerCount(void)
+{
+	int i, n = 0;
+
+	for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
+	{
+		if (gChkNetPeerPickSet[i])
+			n = i + 1;
+	}
+
+	return n;
+}
+
+static void chkNetLogCars(const char* who)
+{
+	char buf[192];
+	int i, at = 0;
+
+	buf[0] = '\0';
+
+	for (i = 0; i < CHK_NET_MAX_PLAYERS && at < (int)sizeof(buf) - 32; i++)
+	{
+		if (!gChkNetPeerPickSet[i])
+			continue;
+
+		at += snprintf(buf + at, sizeof(buf) - (size_t)at, "%s%d=%s model %d",
+			(at > 0) ? ", " : "", i,
+			chkNetCityName((int)gChkNetPeerPick[i].city),
+			(int)gChkNetPeerPick[i].model);
+	}
+
+	printInfo("[carhacks/net] cars (%s): %s\n", who, (buf[0] != '\0') ? buf : "none known");
+}
+
+/* The host's per-player table, broadcast so EVERY machine knows every player's
+ * car. Without it a client's PICK stops at the host and a third machine never
+ * learns what the other two are driving - which is what a peer's car has to be
+ * identified against before it can be drawn (or rejected) as the right vehicle. */
+static void chkNetBroadcastCars(void)
+{
+	unsigned char pay[1 + CHK_NET_MAX_PLAYERS * 3];
+	int len = 1, i, count = 0;
+
+	if (!jer_net_is_active() || !jer_net_is_host())
+		return;
+
+	for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
+	{
+		CHK_CAR_ID id;
+
+		if (i == 0)
+		{
+			id = chkNetLocalCar();
+
+			if (!chkCarIdIsSet(id))
+				continue;
+
+			gChkNetPeerPick[0] = id;
+			gChkNetPeerPickSet[0] = 1;
+		}
+		else if (gChkNetPeerPickSet[i])
+			id = gChkNetPeerPick[i];
+		else
+			continue;
+
+		pay[len++] = (unsigned char)i;
+		pay[len++] = id.city;
+		pay[len++] = id.model;
+		count++;
+	}
+
+	if (count == 0)
+		return;
+
+	pay[0] = (unsigned char)count;
+
+	chkNetSendPacket(CHK_NET_CARS, pay, len);
+}
+
+/* ---------------------------------------------------------------------------
  * Inbound
  * ------------------------------------------------------------------------- */
 
@@ -256,9 +394,15 @@ static int chkNetOnRecv(void* ud, void* args)
 	switch (tag)
 	{
 		case CHK_NET_REQ:
-			/* a joiner asks: the host answers with the current set */
-			if (jer_net_is_host() && chkNetAgreeEnabled())
-				chkNetPublishSet();
+			/* a joiner asks: the host answers with the current set, and with the
+			 * per-player table so it knows who is driving what */
+			if (jer_net_is_host())
+			{
+				chkNetBroadcastCars();
+
+				if (chkNetAgreeEnabled())
+					chkNetPublishSet();
+			}
 			break;
 
 		case CHK_NET_PICK:
@@ -268,12 +412,46 @@ static int chkNetOnRecv(void* ud, void* args)
 			gChkNetPeerPick[a->peer] = chkCarId(p[2], p[3]);
 			gChkNetPeerPickSet[a->peer] = 1;
 
-			printInfo("[carhacks/net] player %d wants %s model %d\n",
+			printInfo("[carhacks/net] player %d drives %s model %d\n",
 				a->peer, chkNetCityName((int)p[2]), (int)p[3]);
 
-			/* the host owns the set, so it re-publishes with the claim in */
-			if (jer_net_is_host() && chkNetAgreeEnabled())
-				chkNetPublishSet();
+			/* The host owns the SET, so it re-publishes with the claim in - but the
+			 * identity table is not part of the import agreement: every machine needs
+			 * to know which car each peer drives even when each keeps its own set
+			 * (that is what decides whether a peer's car CAN be drawn here). */
+			if (jer_net_is_host())
+			{
+				chkNetBroadcastCars();
+
+				if (chkNetAgreeEnabled())
+					chkNetPublishSet();
+			}
+			break;
+
+		case CHK_NET_CARS:
+			if (a->len < 4)
+				break;
+
+			{
+				int count = (int)p[2];
+				int at = 3, i;
+
+				if (count > CHK_NET_MAX_PLAYERS)
+					count = CHK_NET_MAX_PLAYERS;
+
+				for (i = 0; i < count && at + 2 < a->len; i++, at += 3)
+				{
+					int who = (int)p[at];
+
+					if (who < 0 || who >= CHK_NET_MAX_PLAYERS)
+						continue;
+
+					gChkNetPeerPick[who] = chkCarId(p[at + 1], p[at + 2]);
+					gChkNetPeerPickSet[who] = 1;
+				}
+
+				chkNetLogCars("from the host");
+			}
 			break;
 
 		case CHK_NET_SET:
@@ -317,7 +495,9 @@ void chkNetAdvertisePick(int city, int model)
 {
 	unsigned char pay[2];
 
-	if (!chkNetAgreeEnabled() || !jer_net_is_active())
+	/* NOT gated on the import agreement: this is "what I am driving", which every
+	 * machine needs whether or not the sets are agreed. */
+	if (!jer_net_is_active())
 		return;
 
 	pay[0] = (unsigned char)city;
@@ -367,8 +547,65 @@ static int chkNetOnFrame(void* ud, void* args)
 		else
 			chkNetRequestSet();
 
+		gChkNetLocalSet = 0;	/* re-advertise OUR car for this session */
+
 		if (!chkNetAgreeEnabled())
 			printInfo("[carhacks/net] import agreement OFF (mp_agree_imports = 0) - every machine keeps its own set\n");
+	}
+	else if (active)
+	{
+		/* CHK_FORCE_PLAYER_PALETTE=<n>: a headless run has no colour picker, so the
+		 * local car always comes out palette 0 - which means mp's owner-authoritative
+		 * palette, and carhacks' correction of it, are never exercised from a script.
+		 * This is the module's test lever for that, the way CHK_FORCE_CAR is for the
+		 * menu. Idempotent, and re-applied until the car exists. */
+		{
+			const char* p = getenv("CHK_FORCE_PLAYER_PALETTE");
+
+			if (p != NULL && *p >= '0' && *p <= '9' &&
+				player[0].playerCarId >= 0 && player[0].playerCarId < MAX_CARS)
+			{
+				u_char want = (u_char)atoi(p);
+
+				if (car_data[player[0].playerCarId].ap.palette != want)
+				{
+					car_data[player[0].playerCarId].ap.palette = want;
+					printInfo("[carhacks/net] test lever: local car palette -> %d\n", (int)want);
+				}
+			}
+		}
+
+		/* Keep the session up to date with what we are driving. A change matters:
+		 * mp spawns the local car and settles -mpcar AFTER the session is up, so a
+		 * one-shot advert at join time would announce an unspawned car. */
+		CHK_CAR_ID mine = chkNetLocalCar();
+
+		if (gChkNetLocalSet && chkCarIdEqual(mine, gChkNetLocal))
+			return JER_RESULT_CONTINUE;
+
+		gChkNetLocal = mine;
+		gChkNetLocalSet = 1;
+
+		if (!chkCarIdIsSet(mine))
+			return JER_RESULT_CONTINUE;
+
+		/* OUR row, not player 0's: on a CLIENT player 0 is the host, and writing
+		 * our own car there told this machine that the host drove our car - which
+		 * is how a peer's car got reported as already-correct for a moment. */
+		{
+			int me = jer_net_local_player();
+
+			if (me >= 0 && me < CHK_NET_MAX_PLAYERS)
+			{
+				gChkNetPeerPick[me] = mine;
+				gChkNetPeerPickSet[me] = 1;
+			}
+		}
+
+		chkNetAdvertisePick((int)mine.city, (int)mine.model);
+
+		if (jer_net_is_host())
+			chkNetBroadcastCars();
 	}
 	else if (!active && gChkNetSession)
 	{

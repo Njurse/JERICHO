@@ -10,6 +10,8 @@
 
 #include "driver2.h"
 #include "system.h"		/* LevelNames[] */
+#include "mission.h"		/* GameLevel, residentCarModels[] */
+#include "cars.h"		/* MAX_CAR_RESIDENT_MODELS */
 #include "jericho.h"
 #include "jer_events.h"
 #include "jer_config.h"
@@ -218,9 +220,97 @@ static int ChkOnCarDataSource(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* ---------------------------------------------------------------------------
+ * How a peer's car is drawn here
+ * ------------------------------------------------------------------------- */
+
+/* JER_EVENT_CAR_PEER_DRAW (fired by mp): a remote player's car is about to be
+ * drawn with the data its owner sent.
+ *
+ * mp's wire carries a resident SLOT, not a (city, model), so the car this machine
+ * draws for a peer may be a completely different vehicle - and then the owner's
+ * palette means nothing here, because the civ_clut rows a car samples are built
+ * per city (cars.c). carhacks knows every player's (city, model) [net.c], so it is
+ * the only thing that can tell "this IS their car" from "this only looks like it".
+ *
+ * A mismatch is answered with palette 0 - the base colours every resident model
+ * always has - so a car that is not the owner's is never painted with colours
+ * that belong to a vehicle that is not here. A car that IS the owner's (the
+ * ordinary case, and the only one where their palette is meaningful) is left
+ * alone, so mp's owner-authoritative colour still works.
+ *
+ * This is the never-garbled FALLBACK, not the fix: where the peer's real vehicle
+ * can be loaded locally the machine should do that instead (MP_ADAPTER.md's
+ * hotload step), and then this hook stops correcting that player. */
+
+static signed char gChkPeerDrawn[CHK_NET_MAX_PLAYERS];	/* -1 unknown, 0 not theirs, 1 theirs */
+static CHK_CAR_ID gChkPeerLast[CHK_NET_MAX_PLAYERS];	/* what the last line was about */
+static signed char gChkPeerLastSet[CHK_NET_MAX_PLAYERS];
+
+static int ChkOnCarPeerDraw(void* ud, void* args)
+{
+	JER_ARGS_CAR_PEER_DRAW* a = (JER_ARGS_CAR_PEER_DRAW*)args;
+	CHK_CAR_ID peer;
+	int slot, drawnModel, drawnCity, peerCity, theirs, relog;
+
+	(void)ud;
+
+	if (a == NULL || a->player < 0 || a->player >= CHK_NET_MAX_PLAYERS)
+		return JER_RESULT_CONTINUE;
+
+	/* with no reported identity there is nothing to check against: leave mp's
+	 * owner-authoritative palette alone rather than guess */
+	if (!chkNetPeerCar(a->player, &peer))
+		return JER_RESULT_CONTINUE;
+
+	/* a->model is the resident SLOT mp adopted, not a model number - resolve it
+	 * before comparing anything against the owner's reported model */
+	slot = a->model;
+	drawnModel = (slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS) ? residentCarModels[slot] : -1;
+	drawnCity = (a->sourceCity >= 0) ? a->sourceCity : GameLevel;
+	peerCity = chkCarIdCity(peer);
+
+	theirs = (drawnModel >= 0) && (drawnModel == chkCarIdModel(peer)) &&
+		(peerCity < 0 || peerCity == drawnCity);
+
+	relog = (gChkPeerDrawn[a->player] != (signed char)theirs) ||
+		!gChkPeerLastSet[a->player] || !chkCarIdEqual(gChkPeerLast[a->player], peer);
+
+	if (relog)
+	{
+		gChkPeerDrawn[a->player] = (signed char)theirs;
+		gChkPeerLast[a->player] = peer;
+		gChkPeerLastSet[a->player] = 1;
+
+		if (theirs)
+			printInfo("[carhacks/net] peer %d drives %s model %d and this machine draws exactly that "
+				"(slot %d) - their own colours\n",
+				a->player, chkNetCityName(drawnCity), drawnModel, slot);
+		else
+			printInfo("[carhacks/net] peer %d drives %s model %d, but this machine draws %s model %d in slot %d"
+				" - using that car's own colours (theirs is not loaded here)\n",
+				a->player, chkNetCityName(peerCity), (int)chkCarIdModel(peer),
+				chkNetCityName(drawnCity), drawnModel, slot);
+	}
+
+	if (!theirs && a->paletteIn != 0)
+	{
+		a->paletteOut = 0;
+		a->handled = 1;
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
 void carhacks_register(JERICHO_CONTEXT* ctx)
 {
 	int i;
+
+	for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
+	{
+		gChkPeerDrawn[i] = -1;
+		gChkPeerLastSet[i] = 0;
+	}
 
 	for (i = 0; i < CHK_HACK_COUNT; i++)
 		ctx->jer_log(ctx, "[carhacks] hack '%s' (%s) is %s\n",
@@ -228,6 +318,7 @@ void carhacks_register(JERICHO_CONTEXT* ctx)
 
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_AVAILABILITY, ChkOnCarAvailability, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DATA_SOURCE, ChkOnCarDataSource, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PEER_DRAW, ChkOnCarPeerDraw, NULL, 0);
 
 	/* the car-select menu (carselect.c): a JERICHO frontend menu that replaces
 	 * the stock Take-a-Ride car screen so it can carry the city-roster row */

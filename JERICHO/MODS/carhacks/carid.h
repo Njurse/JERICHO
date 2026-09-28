@@ -51,10 +51,14 @@ static inline CHK_CAR_ID chkCarId(int city, int model)
 	return id;
 }
 
-/* A usable (city, model): a real city and a real model. */
+/* A usable identity: a real model, with a city that is either one of the four or
+ * CHK_CITY_NATIVE (the level's own city - no import implied). CHK_MODEL_NONE is
+ * what makes an identity "unset", so a native car is a SET identity too: a peer
+ * still needs to know which model it is. */
 static inline int chkCarIdIsSet(CHK_CAR_ID id)
 {
-	return (id.city < CHK_CITY_COUNT_LIMIT && id.model < CHK_MODEL_LIMIT);
+	return (id.model < CHK_MODEL_LIMIT) &&
+		(id.city == CHK_CITY_NATIVE || id.city < CHK_CITY_COUNT_LIMIT);
 }
 
 /* Set, but with no import implied (the level's own city). */

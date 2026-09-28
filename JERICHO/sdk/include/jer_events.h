@@ -772,6 +772,24 @@ typedef struct JER_ARGS_NET_RECV
 	int len;		/* in: payload length */
 } JER_ARGS_NET_RECV;
 
+/* JER_EVENT_CAR_PEER_DRAW — a remote player's car is being drawn with the data
+ * its owner sent. mp carries a resident SLOT, not a city, so only a module can
+ * tell whether this machine actually holds that player's vehicle: set
+ * `handled` = 1 and `paletteOut` to the palette the car ACTUALLY drawn here
+ * supports, and that is the one the renderer uses. Without an answer the owner's
+ * palette is taken as-is, which paints the wrong colours onto a car that is not
+ * the owner's (see carhacks' MP_ADAPTER.md). */
+typedef struct JER_ARGS_CAR_PEER_DRAW
+{
+	int player;		/* in: the owning player id (0 = host) */
+	void* car;		/* in: CAR_DATA* this machine draws for them */
+	int model;		/* in: the resident model (slot) drawn here */
+	int sourceCity;		/* in: that slot's city, -1 = the level's own */
+	int paletteIn;		/* in: the palette the owner reports */
+	int paletteOut;		/* out: the palette to use instead (handled = 1) */
+	int handled;		/* out: 1 = use paletteOut */
+} JER_ARGS_CAR_PEER_DRAW;
+
 /* JER_EVENT_CMDLINE - fired once, right after the engine has parsed its own
  * command line, so a module can pick up its OWN shortcuts (e.g. mp's
  * -host / -join) without the engine knowing about them. */

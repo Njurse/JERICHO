@@ -25,12 +25,14 @@
  *   byte 1  tag (CHK_NET_REQ / CHK_NET_PICK / CHK_NET_SET)
  *   rest    payload
  *
- *   REQ   no payload                  - "send me the set" (a joiner asks)
- *   PICK  [city][model]              - "this is the car I want to drive"
- *   SET   [guestCity][count] then    - the host's agreed import set
- *         count x [slot][city][model]
+ *   REQ   no payload                  - "send me the set and the car table"
+ *   PICK  [city][model]              - "this is the car I am driving"
+ *   CARS  [count] then count x        - the host's per-player car table, so EVERY
+ *         [playerId][city][model]       machine knows who drives what
+ *   SET   [guestCity][count][version] - the host's agreed import set
+ *         then count x [slot][city][model]
  *
- * 2 + (2 + 8*3) = 28 bytes at most, against the bridge's 1024-byte payload cap.
+ * 2 + max(1 + 8*3) = 27 bytes at most, against the bridge's 1024-byte cap.
  */
 #ifndef CHK_NET_H
 #define CHK_NET_H
@@ -46,9 +48,10 @@
 
 enum
 {
-	CHK_NET_REQ  = 1,	/* a client asks the host for the agreed set */
-	CHK_NET_PICK = 2,	/* a peer names the car it wants to drive */
-	CHK_NET_SET  = 3	/* the host's agreed set */
+	CHK_NET_REQ  = 1,	/* a client asks the host for the set and the car table */
+	CHK_NET_PICK = 2,	/* a peer reports the car it is driving */
+	CHK_NET_SET  = 3,	/* the host's agreed import set */
+	CHK_NET_CARS = 4	/* the host's per-player car table */
 };
 
 /* Register the channel and its inbound hook. Called from carhacks_register.
@@ -81,5 +84,25 @@ int chkNetHasAgreedSet(void);
 
 /* The guest city the session agreed, or -1. */
 int chkNetAgreedGuestCity(void);
+
+/* ---- who is driving what ------------------------------------------------- */
+
+/* Player ids are the bridge's: 0 = host, 1.. = clients. */
+#define CHK_NET_MAX_PLAYERS	8
+
+/* What the LOCAL player is driving, read from the engine (the car's resident
+ * slot, the city that slot's data came from - CHK_CITY_NATIVE for the level's
+ * own - and the model it holds). CHK_MODEL_NONE when there is no car yet. */
+CHK_CAR_ID chkNetLocalCar(void);
+
+/* What player `id` (0 = the host) is driving, as that player reported it.
+ * Returns 0 when nothing is known about that player yet. */
+int chkNetPeerCar(int id, CHK_CAR_ID* out);
+
+/* How many players we have a car identity for (0 while nothing is known). */
+int chkNetPeerCount(void);
+
+/* A city index as a log-friendly name ("level" for CHK_CITY_NATIVE/-1). */
+const char* chkNetCityName(int city);
 
 #endif /* CHK_NET_H */
