@@ -192,7 +192,10 @@ static int AntFarmStyleImplemented(int model)
 	case ANT_MODEL_DOLLY:
 	case ANT_MODEL_ORBIT:
 	case ANT_MODEL_FOLLOW:
-	case ANT_MODEL_TRACK:
+	/* ANT_MODEL_TRACK ("Static track") is intentionally NOT implemented: the
+	 * style relocated its fixed camera spot every time the subject passed it or
+	 * drifted away, so the view jumped/interpolated between new vantage points
+	 * every few seconds - hysterical. It is retired from the rotation. */
 	case ANT_MODEL_CRANE:
 	case ANT_MODEL_ATTACH:
 	case ANT_MODEL_TRIPODZ:
@@ -213,7 +216,8 @@ static const char* AntFarmModelName(int model)
 	case ANT_MODEL_DOLLY:     return "dolly";
 	case ANT_MODEL_ORBIT:     return "orbit";
 	case ANT_MODEL_FOLLOW:    return "follow";
-	case ANT_MODEL_TRACK:     return "track";
+	/* Model names. "track" still prints for the retired Static track row. */
+	case ANT_MODEL_TRACK:     return "track(retired)";
 	case ANT_MODEL_ATTACH:    return "attach";
 	case ANT_MODEL_CRANE:     return "crane";
 	case ANT_MODEL_TRIPODZ:   return "tripodz";
@@ -303,11 +307,6 @@ extern int regions_unpacked[];
 /* module state                                                       */
 /* ------------------------------------------------------------------ */
 
-/* Car camera modes (angles) - inspired by replay director */
-#define CAR_MODE_CHASE_BEHIND 0
-#define CAR_MODE_CHASE_FRONT  1
-#define CAR_MODE_OVERHEAD     2
-
 typedef struct ANTFARM_STATE
 {
 	JERICHO_CONTEXT* ctx;
@@ -324,8 +323,6 @@ typedef struct ANTFARM_STATE
 	unsigned long shotStart;	/* when the current shot's fade-in began (ms) */
 
 	int intervalMs;					/* seconds per visible shot (cut interval) */
-	int carModeIntervalMs;			/* seconds per car mode change */
-	int carModesPerCut;				/* number of mode changes before a cut */
 	int stylesEnabled[ANTFARM_STYLE_COUNT];
 	int leadEnabled;	/* rogue-car events allowed */
 	int leadChance;		/* percent chance per cut */
@@ -339,7 +336,7 @@ typedef struct ANTFARM_STATE
 	VECTOR targetPos;	/* world-space focus (also the spool content) */
 	VECTOR areaPos;		/* the far-area anchor of the current cut */
 
-	/* per-shot framing (these are modified by car modes) */
+	/* per-shot framing */
 	int shotSideSign;	/* +1/-1 — which side of the road the camera sits */
 	int shotMargin;		/* clearance from the road half-width edge */
 	int shotHeight;		/* camera elevation above the road/ground */
@@ -352,11 +349,10 @@ typedef struct ANTFARM_STATE
 	int shotZoomTo;		/* a zoom row's other lens end (== shotScrZ when it holds) */
 	int armFrac;		/* smoothed LOS pull-back fraction (256 = full arm) */
 
-	/* Car mode cycling */
-	int carMode;				/* current CAR_MODE_* */
-	int carModeIndex;			/* how many modes have been shown this cut */
-	unsigned long carModeStart;	/* when the current car mode began */
-	int carModeDurationMs;		/* configurable duration per mode */
+	/* the follow (trail) cam: damped position + slow yaw, no mode switching */
+	VECTOR trailPos;	/* smoothed trail-cam position */
+	int trailYaw;		/* smoothed trail-cam yaw (0..4095) */
+	int trailSet;		/* the trail cam has been seeded for this shot */
 
 	VECTOR trackCamPos;	/* STATIC style: the fixed roadside camera spot */
 	int trackPlaced;	/* the static spot has been placed */
@@ -415,6 +411,11 @@ typedef struct ANTFARM_STATE
 	unsigned long holdSince;
 	int voidHolds;
 
+	/* world recovery: how long the camera has been in an un-resident region,
+	 * and how many times the tour has had to re-anchor itself on a road */
+	unsigned long stuckSince;
+	int recoveries;
+
 	/* presentation dressing */
 	int letterbox;		/* draw the soft cinematic bars */
 	int captions;		/* show the occasional place-name caption */
@@ -458,8 +459,9 @@ static int AntFarmPickRoadNear(int x, int z);
 static int AntFarmTrafficNear(const VECTOR* pos, int radius);
 static void AntFarmPickStyleAndTarget(void);
 static void AntFarmBuildRoadCache(void);
-static void AntFarmStaticTrack(CAR_DATA* cp, VECTOR* desired);
 static void AntFarmSetActive(int on);
+static void AntFarmSuspend(void);
+static void AntFarmRecoverToRoad(void);
 
 /* ------------------------------------------------------------------ */
 /* timing                                                             */
@@ -478,12 +480,6 @@ static unsigned long AntTicks(void)
 static int AntIntervalMs(void)
 {
 	return (s.intervalMs > 0) ? s.intervalMs : ANTFARM_DEFAULT_INTERVAL * 1000;
-}
-
-/* car mode interval */
-static int AntCarModeIntervalMs(void)
-{
-	return (s.carModeIntervalMs > 0) ? s.carModeIntervalMs : 6000; /* default 6 sec */
 }
 
 /* ------------------------------------------------------------------ */
@@ -1426,6 +1422,7 @@ static void AntFarmInitShotVars(void)
 	s.shotLookAhead = AntRandRange(800, 1100);	/* stable look-ahead */
 	s.shotOrbitAmp = 0;
 	s.armFrac = 256;
+	s.trailSet = 0;			/* the trail cam re-seeds on the car's heading */
 	s.shotOrbitPhase = AntRand() & 4095;
 
 	{
@@ -1547,98 +1544,122 @@ static int AntFarmFovTarget(void)
 /* Car mode cycling                                                   */
 /* ------------------------------------------------------------------ */
 
-/* Pick a new car mode, avoiding repetition if possible */
-static int AntFarmPickCarMode(void)
+/* ------------------------------------------------------------------ */
+/* the follow (trail) cam                                             */
+/* ------------------------------------------------------------------ */
+/* REWRITTEN FROM SCRATCH. The old follow cam cycled between a chase-behind,
+ * an overhead and a chase-front framing every few seconds and let the camera
+ * lerp 12% of the way to the new framing per frame: the camera visibly jumped
+ * and "switched sides" mid-shot, which read as snappy and horrible.
+ *
+ * The replacement is ONE continuous perspective - a damped trail cam. There is
+ * no mode to switch to, so nothing can jump:
+ *   - the camera trails the car on its heading, at a distance and height
+ *     scaled to the car's own body (a bus and a sports car both get a camera
+ *     that sits outside the panels),
+ *   - the yaw follows the car through a SLOW, short-way-round slew, so a turn
+ *     draws the camera around the corner instead of whipping it,
+ *   - roll and pitch are never inherited: the horizon stays level,
+ *   - the aim sits ahead of the car, so the car rides low in frame and the
+ *     road reads beyond it.
+ * Speeds grow the trail distance a little, so the shot opens up at speed and
+ * stays intimate in traffic. */
+static void AntFarmFollowCam(CAR_DATA* cp, const VECTOR* carPos, int dir, int h,
+	VECTOR* desired, VECTOR* aim, int* outLerp)
 {
-	/* A car-mode change repositions the camera, so it is expensive for the eye.
-	 * The side modes swing the camera from one flank to the other - that is the
-	 * "bobbing left and right" the follow cam used to do - so the cycler stays
-	 * on steady framings: behind and overhead, with the front view now and then
-	 * for variety. */
-	static const int modes[] = {
-		CAR_MODE_CHASE_BEHIND, CAR_MODE_CHASE_BEHIND,
-		CAR_MODE_OVERHEAD, CAR_MODE_OVERHEAD,
-		CAR_MODE_CHASE_FRONT
-	};
-	int pick, attempts = 0;
-
-	do
-	{
-		pick = modes[AntRand() % (int)(sizeof(modes) / sizeof(modes[0]))];
-		attempts++;
-	}
-	while (pick == s.carMode && attempts < 20);
-
-	return pick;
-}
-
-/* Compute desired camera position for a car mode */
-static void AntFarmComputeCarMode(CAR_DATA* cp, const VECTOR* carPos, int dir, int h,
-	VECTOR* desired, int* outLerp)
-{
-	int dist, height;
-	int baseDist, baseHeight;
-	VECTOR offset;
-
-	/* Get base framing distances for this car */
 	int vz = 300, vy = 120;
-	if (cp->ap.carCos) {
+	int back, high, speed;
+	int yaw;
+
+	if (cp->ap.carCos)
+	{
 		vz = cp->ap.carCos->colBox.vz;
 		vy = cp->ap.carCos->colBox.vy;
 	}
-	if (vz < 200) vz = 200;
-	if (vy < 80) vy = 80;
-	baseDist = vz * 2 + vy + 380;
-	if (baseDist < 700) baseDist = 700;
-	if (baseDist > 1350) baseDist = 1350;
-	baseHeight = 170 + vy / 2;
-	if (baseHeight > 460) baseHeight = 460;
 
-	/* Mode-specific offsets. Only the three modes AntFarmPickCarMode can
-	 * return exist: the side sweeps and the static vantage were dropped from
-	 * the cycle (they swung the camera flank-to-flank / froze it), and the dead
-	 * cases that lingered were unreachable - a car-mode change that never
-	 * happens. CHASE_BEHIND is the default so an unexpected value still frames
-	 * the car rather than parking the camera. */
-	switch (s.carMode)
+	if (vz < 200)
+		vz = 200;
+
+	if (vy < 80)
+		vy = 80;
+
+	/* framing: back off the tail by the body length plus a margin */
+	back = vz * 2 + vy + 420;
+
+	if (back < 700)
+		back = 700;
+
+	if (back > 1400)
+		back = 1400;
+
+	/* a little more room at speed (hd.speed is a signed fixed-ish count) */
+	speed = ABS(cp->hd.speed);
+
+	if (speed > 8)
 	{
-	case CAR_MODE_CHASE_FRONT:
-		/* Forward-looking: in front of the car */
-		dist = baseDist;
-		height = baseHeight;
-		offset.vx = FIXEDH(RSIN(dir) * dist);
-		offset.vz = FIXEDH(RCOS(dir) * dist);
-		offset.vy = -h - height;
-		*outLerp = 8;
-		break;
+		back += speed * 3;
 
-	case CAR_MODE_OVERHEAD:
-		/* High overhead, close to car */
-		dist = 400 + vz;
-		height = 550 + vy;
-		if (dist > 600) dist = 600;
-		if (height > 720) height = 720;
-		offset.vx = FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
-		offset.vz = FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
-		offset.vy = -h - height;
-		*outLerp = 9;
-		break;
-
-	case CAR_MODE_CHASE_BEHIND:
-	default:
-		/* Classic chase: behind and above */
-		dist = baseDist;
-		height = baseHeight;
-		offset.vx = FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
-		offset.vz = FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
-		offset.vy = -h - height;
-		*outLerp = 8;
-		break;
+		if (back > 1900)
+			back = 1900;
 	}
 
-	desired->vx = carPos->vx + offset.vx;
-	desired->vy = offset.vy;
-	desired->vz = carPos->vz + offset.vz;
+	high = 190 + vy / 2;
+
+	if (high > 420)
+		high = 420;
+
+	if (high < 150)
+		high = 150;
+
+	/* The yaw the camera WANTS: the car's own heading (so it sits behind the
+	 * car). The slow slew toward it happens in the state below, one frame at a
+	 * time - that is what removes the whip. */
+	yaw = dir & 0xfff;
+
+	if (!s.trailSet)
+	{
+		/* seed the trail on the car's heading so the first frame is already a
+		 * sensible behind-shot rather than a swing in from wherever the
+		 * gameplay camera happened to be */
+		s.trailYaw = yaw;
+		s.trailPos.vx = carPos->vx - FIXEDH(RSIN(yaw) * back);
+		s.trailPos.vz = carPos->vz - FIXEDH(RCOS(yaw) * back);
+		s.trailPos.vy = -(h + high);
+		s.trailSet = 1;
+	}
+
+	/* --- yaw slew: at most a few hundred units of angle per frame, and
+	 * always the short way round --- */
+	{
+		int d = (yaw + 4096 - s.trailYaw) & 0xfff;
+
+		if (d > 2048)
+			d -= 4096;
+
+		s.trailYaw = (s.trailYaw + d / 12) & 0xfff;
+	}
+
+	/* --- position: ease toward the ideal trail point at a fixed, gentle rate
+	 * (damped, not snapped) --- */
+	{
+		int idealX = carPos->vx - FIXEDH(RSIN(s.trailYaw) * back);
+		int idealZ = carPos->vz - FIXEDH(RCOS(s.trailYaw) * back);
+		int idealY = -(h + high);
+
+		s.trailPos.vx += (idealX - s.trailPos.vx) * 6 / 100;
+		s.trailPos.vz += (idealZ - s.trailPos.vz) * 6 / 100;
+		s.trailPos.vy += (idealY - s.trailPos.vy) * 8 / 100;
+	}
+
+	*desired = s.trailPos;
+
+	/* aim a little ahead of the car so it sits low in frame */
+	aim->vx = carPos->vx + FIXEDH(RSIN(dir) * (600 + speed * 4));
+	aim->vz = carPos->vz + FIXEDH(RCOS(dir) * (600 + speed * 4));
+	aim->vy = -(carPos->vy + 30);
+
+	/* the position is already smoothed above, so the generic lerp is a no-op */
+	*outLerp = 100;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1833,13 +1854,6 @@ static void AntFarmPlanShot(void)
 		s.targetPos = s.areaPos;
 	}
 	AntFarmInitShotVars();
-
-	/* If we have a car target, initialize car mode */
-	if (s.targetKind == ANTFARM_TARGET_CAR) {
-		s.carMode = CAR_MODE_CHASE_BEHIND; /* initial mode */
-		s.carModeIndex = 0;
-		s.carModeStart = AntTicks();
-	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -1865,8 +1879,7 @@ static int AntFarmOnGameStart(void* userdata, void* args)
 		 * cannot write the old level's car state into the new one; every other
 		 * global is restored normally and the mode re-engages on the new level. */
 		s.savedPlayerCarControlType = 0;
-		AntFarmSetActive(0);
-		s.pendingEnable = 1;
+		AntFarmSuspend();
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -1957,9 +1970,6 @@ static void AntFarmStartLead(void)
 	s.style = ANTFARM_STYLE_CHASE;
 	s.targetKind = ANTFARM_TARGET_CAR;
 	s.trackPlaced = 0;
-	s.carMode = CAR_MODE_CHASE_BEHIND;
-	s.carModeIndex = 0;
-	s.carModeStart = AntTicks();
 	AntFarmInitShotVars();
 
 	CopsAllowed = 1;
@@ -1984,39 +1994,59 @@ static void AntFarmEndLead(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* world recovery ("get back to a road with the world loaded")        */
+/* ------------------------------------------------------------------ */
+
+/* The pretty bow. If the camera is sitting in a region that the streamer never
+ * unpacked - a shot over the void, or scenery that simply is not there - do not
+ * endure it: put the tour back on solid ground.
+ *
+ * It re-anchors on the NEAREST usable road to the camera (a road the level
+ * certainly has), points the spool at it, and asks the SHARED world-spool
+ * helper (jer_map_spool_to) to stream that region in by the engine's own
+ * level-start path - geometry, roadmap and texture AREA, so MapHeight answers
+ * properly and the scenery has its pages. Then it re-enters the ordinary CUT,
+ * which plans a fresh shot from there like any other cut.
+ *
+ * The same helper is what forces a far hop's region in during the CUT, so there
+ * is one code path for "make the map stream to here", used by this module and
+ * by the arena module. */
+static void AntFarmRecoverToRoad(void)
+{
+	unsigned long now = AntTicks();
+
+	AntFarmPickNearArea();		/* nearest usable road to the camera -> s.areaPos */
+	s.spool = s.areaPos;
+	s.targetPos = s.areaPos;
+
+	MainPlayer.spoolXZ = &s.spool;
+	jer_map_spool_to(s.spool.vx, s.spool.vz);
+
+	s.recoveries++;
+	s.ctx->jer_log(s.ctx,
+		"[antfarm] world recovery #%d: re-anchored on the road at %d,%d (region %d)\n",
+		s.recoveries, s.spool.vx, s.spool.vz, AntFarmRegionOf(&s.spool));
+
+	/* straight to black and re-plan - no half-faded reveal over a void */
+	s.state = ANTFARM_STATE_CUT;
+	s.cutInit = 0;
+	s.fade = 255;
+	s.stateStart = now;
+	s.cutStart = now;
+	s.camSnapped = 0;
+	s.vantageSet = 0;
+	s.trailSet = 0;
+	s.stuckSince = 0;
+}
+
+/* ------------------------------------------------------------------ */
 /* camera                                                             */
 /* ------------------------------------------------------------------ */
 
-/* STATIC style: a fixed roadside camera the target car drives past. */
-static void AntFarmStaticTrack(CAR_DATA* cp, VECTOR* desired)
-{
-	int carX = cp->hd.where.t[0];
-	int carZ = cp->hd.where.t[2];
-	int dir = cp->hd.direction;
-	int dx = carX - s.trackCamPos.vx;
-	int dz = carZ - s.trackCamPos.vz;
-	int passed = FIXEDH(dx * RSIN(dir) + dz * RCOS(dir)) < 0;
-	int far = dx * dx + dz * dz > 3200 * 2200;
-
-	if (!s.trackPlaced || far)
-	{
-		int side = (AntRand() & 1) ? 1024 : 3072;
-		int spotDist = 1000 + (AntRand() % 400);
-		int sideDist = 650 + (AntRand() % 450);
-		int hgt = 130 + (AntRand() % 90);
-
-		s.trackCamPos.vx = carX + FIXEDH(RSIN((dir + 2048) & 0xfff) * spotDist);
-		s.trackCamPos.vz = carZ + FIXEDH(RCOS((dir + 2048) & 0xfff) * spotDist);
-		s.trackCamPos.vy = -(AntFarmMapHeight(s.trackCamPos.vx, s.trackCamPos.vz) + hgt);
-
-		s.trackCamPos.vx += FIXEDH(RSIN((dir + side) & 0xfff) * sideDist);
-		s.trackCamPos.vz += FIXEDH(RCOS((dir + side) & 0xfff) * sideDist);
-
-		s.trackPlaced = 1;
-	}
-
-	*desired = s.trackCamPos;
-}
+/* (AntFarmStaticTrack lived here. It relocated its roadside spot whenever the
+ * subject passed or drifted away, which made the shot jump between vantage
+ * points - the "hysterical" camera. The Static track style is retired, so the
+ * function is gone with it.) */
 
 /* Improved camera position finder: tries to find a clear line-of-sight
  * position near the desired, using multiple candidate offsets. */
@@ -2345,10 +2375,17 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			aim = carPos;
 			aim.vy = -(carPos.vy + 30);
 		}
-		else if (d->model == ANT_MODEL_TRACK)
+			else if (d->model == ANT_MODEL_ORBIT)
 		{
-			/* fixed roadside camera the car drives past */
-			AntFarmStaticTrack(cp, &desired);
+			/* ORBIT around a car: same idea as the road orbit, centred on the
+			 * car instead of a point on the road */
+			int radius = 900 + s.shotHeight;
+			int ang = (s.shotOrbitPhase + (int)(((now - s.shotStart)
+				% ANTFARM_ORBIT_PERIOD_MS) * 4096 / ANTFARM_ORBIT_PERIOD_MS)) & 4095;
+
+			desired.vx = carPos.vx + FIXEDH(RSIN(ang) * radius);
+			desired.vz = carPos.vz + FIXEDH(RCOS(ang) * radius);
+			desired.vy = -(h + s.shotHeight);
 			lerp = 100 / d->settle;
 
 			aim = carPos;
@@ -2356,24 +2393,10 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 		}
 		else
 		{
-			/* Use car mode to compute desired position */
-			AntFarmComputeCarMode(cp, &carPos, dir, h, &desired, &lerp);
-
-			/* ORBIT: circle the car slowly instead of using the chase angles */
-			if (d->model == ANT_MODEL_ORBIT)
-			{
-				int radius = 900 + s.shotHeight;
-				int ang = (s.shotOrbitPhase + (int)(((now - s.shotStart)
-					% ANTFARM_ORBIT_PERIOD_MS) * 4096 / ANTFARM_ORBIT_PERIOD_MS)) & 4095;
-
-				desired.vx = carPos.vx + FIXEDH(RSIN(ang) * radius);
-				desired.vz = carPos.vz + FIXEDH(RCOS(ang) * radius);
-				desired.vy = -(h + s.shotHeight);
-				lerp = 100 / antStyleDefs[s.style].settle;
-			}
-
-			aim = carPos;
-			aim.vy = -(carPos.vy + 50);
+			/* FOLLOW: the damped trail cam (see AntFarmFollowCam). It smooths
+			 * its own position, so the generic per-frame lerp is disabled for
+			 * it (outLerp = 100) - no double smoothing, no snap. */
+			AntFarmFollowCam(cp, &carPos, dir, h, &desired, &aim, &lerp);
 		}
 
 		s.spool = carPos;
@@ -2612,6 +2635,19 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 /* lifecycle                                                          */
 /* ------------------------------------------------------------------ */
 
+/* Hand the engine back exactly as AntFarmSetActive(0) but KEEP the mode
+ * wanted, so it re-engages by itself as soon as the game is playable again.
+ * This is what "on" means for AntFarm: a pause, a cutscene, a replay or a
+ * level restart SUSPENDS the screensaver, it never silently switches it off.
+ * Turning it off for good is the pause-menu row or F9. */
+static void AntFarmSuspend(void)
+{
+	AntFarmSetActive(0);
+	s.pendingEnable = 1;
+
+	s.ctx->jer_log(s.ctx, "[antfarm] suspended (re-engages when playable)\n");
+}
+
 static void AntFarmSetActive(int on)
 {
 	if (!on)
@@ -2682,9 +2718,6 @@ static void AntFarmSetActive(int on)
 		s.leadEnding = 0;
 		s.targetCarId = -1;
 		s.roadSurfId = -1;
-		s.carMode = CAR_MODE_CHASE_BEHIND;
-		s.carModeIndex = 0;
-		s.carModeStart = AntTicks();
 
 		s.fovCurrent = scr_z;		/* breathe out from the gameplay lens */
 		s.recentCount = 0;
@@ -2692,6 +2725,8 @@ static void AntFarmSetActive(int on)
 		s.dwellMs = AntIntervalMs();
 		s.holdSince = 0;
 		s.voidHolds = 0;
+		s.stuckSince = 0;
+		s.recoveries = 0;
 		s.captionUntil = 0;
 		s.stillSince = 0;
 		s.lastDollyMs = AntTicks();
@@ -2752,9 +2787,8 @@ static void AntFarmSetActive(int on)
 			}
 
 			s.ctx->jer_log(s.ctx,
-				"[antfarm] enabled (interval %ds, mode interval %ds, modes/cut %d, styles %s, lead=%d%%)\n",
-				AntIntervalMs() / 1000, AntCarModeIntervalMs() / 1000,
-				s.carModesPerCut, styleList, s.leadEnabled ? s.leadChance : 0);
+				"[antfarm] enabled (interval %ds, styles %s, lead=%d%%)\n",
+				AntIntervalMs() / 1000, styleList, s.leadEnabled ? s.leadChance : 0);
 		}
 	}
 	else
@@ -2799,9 +2833,9 @@ static void AntFarmSetActive(int on)
 		s.fade = 0;
 
 		s.ctx->jer_log(s.ctx,
-			"[antfarm] disabled (cuts: %d; void guards: %d; restored pads=%d overlays=%d cops=%d vol=%d)\n",
-			s.cutCount, s.voidHolds, s.savedStopPadReads, s.savedDoOverlays,
-			s.savedCopsAllowed, s.savedMasterVolume);
+			"[antfarm] disabled (cuts: %d; void guards: %d; recoveries: %d; restored pads=%d overlays=%d cops=%d vol=%d)\n",
+			s.cutCount, s.voidHolds, s.recoveries, s.savedStopPadReads,
+			s.savedDoOverlays, s.savedCopsAllowed, s.savedMasterVolume);
 	}
 }
 
@@ -2872,7 +2906,11 @@ static int AntFarmOnFrame(void* userdata, void* args)
 
 	if (gInGameCutsceneActive || quick_replay || game_over)
 	{
-		AntFarmSetActive(0);
+		/* The engine is driving the screen (a cutscene, a replay, the game-over
+		 * screen) and needs the camera and the player's car back. Hand them back,
+		 * but stay wanted: the screensaver re-engages when the game is playable
+		 * again - "on" means on, a cutscene must not switch it off. */
+		AntFarmSuspend();
 		return JER_RESULT_CONTINUE;
 	}
 
@@ -2960,30 +2998,10 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			}
 		}
 
-		/* Handle car mode cycling - but only for a car-mode-driven style. A
-		 * rig or a long-lens vantage *is* the angle, so rotating through the
-		 * car modes mid-shot would fight it. */
-		if (!s.leadMode && s.targetKind == ANTFARM_TARGET_CAR &&
-			AntFarmValidCar() != NULL &&
-			antStyleDefs[s.style].model == ANT_MODEL_FOLLOW)
-		{
-			if (now - s.carModeStart >= (unsigned long)AntCarModeIntervalMs())
-			{
-				/* Switch to a new mode */
-				s.carMode = AntFarmPickCarMode();
-				s.carModeStart = now;
-				s.carModeIndex++;
-				s.ctx->jer_log(s.ctx, "[antfarm] car mode changed to %d\n", s.carMode);
-			}
-
-			/* If we've exceeded the number of modes per cut, force a cut */
-			if (s.carModeIndex >= s.carModesPerCut)
-			{
-				s.state = ANTFARM_STATE_FADE_OUT;
-				s.stateStart = now;
-				break;
-			}
-		}
+		/* Handle the follow cam: nothing to cycle any more. The trail cam is ONE
+		 * continuous framing (see AntFarmFollowCam) - the old car-mode cycling
+		 * that swapped chase-behind / overhead / chase-front every few seconds is
+		 * what made the follow shot read as snappy and side-switching. */
 
 		/* A rig on a parked car (or a long lens pointed at one) is a frozen
 		 * frame, which is the one thing a screensaver must not show: if the
@@ -3081,9 +3099,6 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			{
 				s.style = AntFarmPickStyle(1);
 				s.trackPlaced = 0;
-				s.carMode = CAR_MODE_CHASE_BEHIND;
-				s.carModeIndex = 0;
-				s.carModeStart = now;
 				AntFarmInitShotVars();
 				s.shotPlanned = 1;
 			}
@@ -3105,11 +3120,6 @@ static int AntFarmOnFrame(void* userdata, void* args)
 				AntFarmPickStyleAndTarget();
 
 				s.cutWaitForCar = (s.targetKind == ANTFARM_TARGET_CAR);
-				if (s.targetKind == ANTFARM_TARGET_CAR) {
-					s.carMode = CAR_MODE_CHASE_BEHIND;
-					s.carModeIndex = 0;
-					s.carModeStart = now;
-				}
 			}
 			s.camSnapped = 0;
 		}
@@ -3130,44 +3140,26 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			 * (jer_map_spool_to is the shared version of this - the arena module
 			 * uses it; antfarm keeps its own here because it also drives the
 			 * camera, and this sequence predates the helper.) */
+			/* The streamer follows MainPlayer.spoolXZ, and jer_map_spool_to reads
+			 * it - so hand it the destination BEFORE asking for the stream. */
+			MainPlayer.spoolXZ = &s.spool;
+
+			/* Force the destination in through the SHARED world-spool helper.
+			 * It uses the engine's own level-start path, so the barrel's
+			 * geometry and roadmap are loaded too (the hand-rolled
+			 * UnpackRegion + spool flush this module used to do marked the region
+			 * unpacked WITHOUT that bookkeeping, and MapHeight could still answer
+			 * 0 for ground that was "loaded"), and it asks for the destination's
+			 * texture AREA as well, so geometry and pages land in the same
+			 * frame. Same call the CUT and the recovery path use - one code path
+			 * for "make the map stream to here". */
 			if (spoolRegion >= 0 && spoolRegion < regions_across * regions_down &&
 				!AntFarmRegionUnpacked(spoolRegion))
 			{
-				int brx = spoolRegion % regions_across;
-				int brz = spoolRegion / regions_across;
-				int barrel = (brx & 1) + (brz & 1) * 2;
-
-				if (loading_region[barrel] == -1)
-				{
-					UnpackRegion(spoolRegion, barrel);
-
-					/* Land it in THIS frame rather than waiting for the engine's next
-					 * ControlMap pass. On PC the spool copies synchronously, so
-					 * flushing the queue here makes the destination resident
-					 * immediately and the cut can end as soon as the reveal is safe -
-					 * that is the difference between a transition that waits frames
-					 * for paging and one that does not wait at all. */
-					StartSpooling();
-					UpdateSpool();
-
-					/* The reveal needs the TEXTURE pages too, and those stream per AREA
-					 * keyed off the camera position, so ask for the destination's areas
-					 * explicitly and flush again. */
-					if (AntFarmMapReady())
-					{
-						int cx = (s.spool.vx + units_across_halved) / MAP_CELL_SIZE;
-						int cz = (s.spool.vz + units_down_halved) / MAP_CELL_SIZE;
-
-						CheckLoadAreaData(cx, cz);
-						StartSpooling();
-						UpdateSpool();
-					}
-				}
+				jer_map_spool_to(s.spool.vx, s.spool.vz);
 			}
 
 			regionsReady = (AntFarmRegionHasData(spoolRegion) && AntFarmRegionsReady(spoolRegion));
-
-			MainPlayer.spoolXZ = &s.spool;
 
 			if (!(regionsReady && nodesReady) && !s.streamDone)
 			{
@@ -3262,9 +3254,6 @@ static int AntFarmOnFrame(void* userdata, void* args)
 						AntFarmPlanShot();
 						AntFarmSetCarSubject(car);
 						s.cutWaitForCar = 0;
-						s.carMode = CAR_MODE_CHASE_BEHIND;
-						s.carModeIndex = 0;
-						s.carModeStart = now;
 						s.shotPlanned = 1;
 					}
 					else if (now - s.cutStart >= ANTFARM_CAR_WAIT_MS)
@@ -3340,10 +3329,6 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.fade = 0;
 			s.state = ANTFARM_STATE_SHOW;
 			s.stateStart = now;
-			/* If car target, reset mode timer */
-			if (s.targetKind == ANTFARM_TARGET_CAR) {
-				s.carModeStart = now;
-			}
 		}
 		break;
 	}
@@ -3370,6 +3355,27 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			CheckLoadAreaData(cx, cz);
 			StartSpooling();
 			UpdateSpool();
+		}
+	}
+
+	/* --- world recovery trigger -----------------------------------------
+	 * The void guard in the camera hook holds the previous frame while the
+	 * camera's region is not resident. If that never resolves (a shot whose
+	 * ground has no data, or a streamer that will not follow) the tour would
+	 * simply sit there, so after ANTFARM_RECOVER_MS re-anchor on a road and
+	 * re-plan. The CUT does its own streaming, so it is exempt. */
+	if (s.active && s.state != ANTFARM_STATE_CUT && AntFarmMapReady())
+	{
+		if (!AntFarmRegionUnpacked(AntFarmRegionOf(&camera_position)))
+		{
+			if (s.stuckSince == 0)
+				s.stuckSince = now;
+			else if (now - s.stuckSince >= ANTFARM_RECOVER_MS)
+				AntFarmRecoverToRoad();
+		}
+		else
+		{
+			s.stuckSince = 0;
 		}
 	}
 
@@ -3700,8 +3706,7 @@ static int AntFarmOnPauseMenu(void* userdata, void* args)
 
 	if (a->action == JER_PAUSE_OPEN && s.active)
 	{
-		AntFarmSetActive(0);
-		s.pendingEnable = 1;
+		AntFarmSuspend();
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -3913,54 +3918,6 @@ static int AntIntervalAdjust(void* userdata, int direction)
 	return JER_PAUSE_QUIT_NONE;
 }
 
-static void AntModeIntervalLabel(void* userdata, char* out, int max)
-{
-	(void)userdata;
-
-	snprintf(out, max, "Mode interval: %ds", AntCarModeIntervalMs() / 1000);
-}
-
-static int AntModeIntervalAdjust(void* userdata, int direction)
-{
-	int secs;
-
-	(void)userdata;
-
-	secs = AntCarModeIntervalMs() / 1000 + direction * 2;
-
-	if (secs < 2)
-		secs = 2;
-	if (secs > 30)
-		secs = 30;
-
-	s.carModeIntervalMs = secs * 1000;
-	jer_config_set_int(ANT_MOD_ID, "mode_interval", secs);
-
-	return JER_PAUSE_QUIT_NONE;
-}
-
-static void AntModesPerCutLabel(void* userdata, char* out, int max)
-{
-	(void)userdata;
-
-	snprintf(out, max, "Modes per cut: %d", s.carModesPerCut);
-}
-
-static int AntModesPerCutAdjust(void* userdata, int direction)
-{
-	int val = s.carModesPerCut + direction;
-
-	if (val < 1)
-		val = 1;
-	if (val > 20)
-		val = 20;
-
-	s.carModesPerCut = val;
-	jer_config_set_int(ANT_MOD_ID, "modes_per_cut", val);
-
-	return JER_PAUSE_QUIT_NONE;
-}
-
 /* Style rows are generated from the archetype table, so a new camera style
  * shows up in the pause menu automatically (userdata carries the index). */
 static void AntStyleLabelFn(void* userdata, char* out, int max)
@@ -4026,8 +3983,6 @@ static void AntFarmBuildMenu(void)
 
 	AntFarmSetItem(&n, AntMenuLabel, AntMenuToggle, NULL, 0);
 	AntFarmSetItem(&n, AntIntervalLabel, AntIntervalAdjust, NULL, 1);
-	AntFarmSetItem(&n, AntModeIntervalLabel, AntModeIntervalAdjust, NULL, 1);
-	AntFarmSetItem(&n, AntModesPerCutLabel, AntModesPerCutAdjust, NULL, 1);
 
 	for (i = 0; i < ANTFARM_STYLE_COUNT; i++)
 		AntFarmSetItem(&n, AntStyleLabelFn, AntStyleToggleFn, (void*)(size_t)i, 0);
@@ -4045,7 +4000,7 @@ static void AntFarmBuildMenu(void)
 
 static int AntFarmOnBoot(void* userdata, void* args)
 {
-	int secs, modeSecs, modesPerCut, i;
+	int secs, i;
 
 	(void)userdata;
 	(void)args;
@@ -4059,16 +4014,6 @@ static int AntFarmOnBoot(void* userdata, void* args)
 		secs = ANTFARM_MAX_INTERVAL;
 
 	s.intervalMs = secs * 1000;
-
-	modeSecs = jer_config_get_int(ANT_MOD_ID, "mode_interval", 6);
-	if (modeSecs < 2) modeSecs = 2;
-	if (modeSecs > 30) modeSecs = 30;
-	s.carModeIntervalMs = modeSecs * 1000;
-
-	modesPerCut = jer_config_get_int(ANT_MOD_ID, "modes_per_cut", 5);
-	if (modesPerCut < 1) modesPerCut = 1;
-	if (modesPerCut > 20) modesPerCut = 20;
-	s.carModesPerCut = modesPerCut;
 
 	for (i = 0; i < ANTFARM_STYLE_COUNT; i++)
 	{
@@ -4112,9 +4057,8 @@ static int AntFarmOnBoot(void* userdata, void* args)
 		}
 
 		s.ctx->jer_log(s.ctx,
-			"[antfarm] ready: interval %ds, mode interval %ds, modes/cut %d, styles %s, lead=%d\n",
-			s.intervalMs / 1000, s.carModeIntervalMs / 1000,
-			s.carModesPerCut, styleList, s.leadEnabled);
+			"[antfarm] ready: interval %ds, styles %s, lead=%d\n",
+			s.intervalMs / 1000, styleList, s.leadEnabled);
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -4125,15 +4069,13 @@ JER_MODULE_ENTRY(jer_module_antfarm_entry)(JERICHO_CONTEXT* ctx)
 	memset(&s, 0, sizeof(s));
 	s.ctx = ctx;
 	s.intervalMs = ANTFARM_DEFAULT_INTERVAL * 1000;
-	s.carModeIntervalMs = 6000;
-	s.carModesPerCut = 5;
 
 	ctx->jer_register_module(ctx,
 		"antfarm",
 		"Ant Farm Screensaver",
 		"0.1.0",
 		"REDRIVER2 community",
-		"City-observer screensaver with dynamic car-mode cycling, diverse cinematic camera styles touring the whole map, with optional rogue-car chases.",
+		"City-observer screensaver: diverse cinematic camera angles touring the whole map, a damped trail cam on traffic, and optional rogue-car chases.",
 		"",
 		JERICHO_SDK_VERSION);
 

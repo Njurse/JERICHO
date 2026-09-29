@@ -1,5 +1,10 @@
 # Ant Farm — screensaver / idle mode (JERICHO module)
 
+> **Internals live in [`ARCHITECTURE.md`](ARCHITECTURE.md)** — every hook, the
+> cut state machine, the archetype table and each camera model's maths, shot
+> planning, region/area streaming and the world-recovery path, audio, config and
+> the test harness. This file is the what-and-how-to-use.
+
 A passive city observer for REDRIVER2. Turn it on and the game becomes a
 screensaver: player input is cut off, the HUD hides, the player's own car
 engine is silenced (the rest of the city stays audible; music stays), and cop
@@ -30,8 +35,14 @@ Road and free angles:
   road **end** (where the engine's straights meet), and the plan probes just
   past that end to confirm another surface is there and logs the junction it
   found.
-- **Chase** — behind-follow on a traffic car, framed to the vehicle's size.
-  Off by default: it is the most agitated of the archetypes.
+- **Chase** — the **trail cam**: one continuous, damped behind-follow on a
+  traffic car. It carries no camera modes (the old build cycled behind /
+  overhead / front every few seconds and lerped 12% a frame, which read as a
+  snappy camera that kept switching sides). The camera trails the car on its
+  heading at a distance and height scaled to the car's own body, follows the
+  car's yaw slowly and the short way round, never inherits roll or pitch, and
+  aims a little ahead so the car rides low in frame. It opens up a little at
+  speed. Off by default: it is the most agitated of the archetypes.
 
 Angles locked onto a car (all of these focus on *one moving car*, and cut away
 if it stops - a frozen frame is the one thing a screensaver must not show):
@@ -110,7 +121,11 @@ playable single-player session is running — no keypress needed.
 
 - **F9** (keyboard, PC) — toggle the screensaver during gameplay.
 - **Pause -> Modules -> Ant Farm** — toggle, plus a row per camera archetype
-  and sliders for cut interval / car-mode interval / modes-per-cut.
+  and an adjuster for the cut interval.
+- **While it is ON it is enforced**: a pause, a cutscene, a replay or a level
+  restart only *suspends* it (the game is handed back for as long as the
+  engine needs it) and it re-engages by itself. Nothing switches it off
+  silently — only F9 / the menu row do.
 - **START / opening the pause menu** — *suspends* the screensaver: the game
   (and the player's car) is handed back so the pause menu and its camera
   behave normally, and the mode re-engages on its own when the pause closes.
@@ -119,9 +134,8 @@ playable single-player session is running — no keypress needed.
   rather than shooting at the previous level's roads. To turn it OFF for good,
   use **F9** or the **Ant Farm** row in the pause menu.
 - Settings persist to `JERICHO/CONFIG/antfarm.ini`
-  (`interval`, `mode_interval`, `modes_per_cut`, `style_<key>` for each
-  archetype, `roll`, `letterbox`, `captions`, `debug_hud`, `lead_mode`,
-  `enabled`). A missing `enabled` defaults to **on** — the mode turns itself
+  (`interval`, `style_<key>` for each archetype, `roll`, `letterbox`,
+  `captions`, `debug_hud`, `lead_mode`, `enabled`). A missing `enabled` defaults to **on** — the mode turns itself
   on at the start of a game, and toggling it off (F9 / the pause menu) is what
   persists a `0`.
 

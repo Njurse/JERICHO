@@ -63,6 +63,11 @@ enum
  * VRAM before the scene is revealed */
 #define ANTFARM_TEX_SETTLE_MS   250
 
+/* how long the camera may sit in a region that has not streamed before the
+ * module gives up on the shot and re-anchors the tour on the nearest road
+ * (the "get itself back to solid ground" recovery; see AntFarmRecoverToRoad) */
+#define ANTFARM_RECOVER_MS      2500
+
 /* interval config (seconds) */
 #define ANTFARM_MIN_INTERVAL    10
 #define ANTFARM_MAX_INTERVAL    300
