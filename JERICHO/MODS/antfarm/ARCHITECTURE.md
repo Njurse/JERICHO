@@ -379,6 +379,13 @@ subject the car is attached *after* planning (`AntFarmSetCarSubject`), because
 (`AntRandChance(72)`), and clamps the lens (200…360). It also resets
 `trailSet`.
 
+**Flank variety.** The same function picks `shotSideSign` (±1), which every model
+uses symmetrically — the attached rigs, the tripod vantages, the roadside and the
+junction placements. It deliberately **alternates** rather than coin-flipping:
+a plain coin flip streaks, and several shots in a row on one flank is exactly
+what reads as "the camera is always on the right". So ~75 % of shots take the
+opposite side to the previous one and ~25 % repeat it (`s.lastSideSign`).
+
 ---
 
 ## 8. Camera rendering

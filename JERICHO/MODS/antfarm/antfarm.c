@@ -337,7 +337,8 @@ typedef struct ANTFARM_STATE
 	VECTOR areaPos;		/* the far-area anchor of the current cut */
 
 	/* per-shot framing */
-	int shotSideSign;	/* +1/-1 — which side of the road the camera sits */
+	int shotSideSign;	/* +1/-1 — which side of the road/car the camera sits */
+	int lastSideSign;	/* the flank the previous shot used (flank variety) */
 	int shotMargin;		/* clearance from the road half-width edge */
 	int shotHeight;		/* camera elevation above the road/ground */
 	int shotFwd;		/* attached rigs: longitudinal offset from the car */
@@ -1417,7 +1418,19 @@ static int AntFarmPickStyle(int carOnly)
 /* randomize the framing of a freshly picked shot so no two cuts look alike */
 static void AntFarmInitShotVars(void)
 {
-	s.shotSideSign = (AntRand() & 1) ? 1 : -1;
+	/* Which side of the road/target the camera sits on. A plain coin flip
+	 * STREAKS - several shots in a row on the same flank is exactly what reads
+	 * as "the camera is always on the right" - so alternate by default and keep
+	 * roughly a quarter of the shots on the same side for variety. Every model
+	 * that uses it (the attached rigs, the tripod vantages, the roadside and
+	 * junction placements) is symmetric about the target, so both flanks are
+	 * equally available. */
+	if (s.lastSideSign == 0)
+		s.shotSideSign = (AntRand() & 1) ? 1 : -1;
+	else
+		s.shotSideSign = AntRandChance(25) ? s.lastSideSign : -s.lastSideSign;
+
+	s.lastSideSign = s.shotSideSign;
 	s.shotMargin = AntRandRange(180, 360);		/* clear of the kerb */
 	s.shotLookAhead = AntRandRange(800, 1100);	/* stable look-ahead */
 	s.shotOrbitAmp = 0;
