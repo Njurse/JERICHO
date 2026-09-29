@@ -1519,6 +1519,12 @@ static int AntFarmComputeDwell(void)
 	 * minutes stops being a screensaver you can leave on */
 	dwell = base * mul / 100;
 
+	/* pace trim: the director asks for shots ~15% shorter than the interest
+	 * score alone suggests, so the tour changes them a little more often
+	 * (ANTFARM_PACE_PCT). Applied before the clamps so the 15 s floor still
+	 * protects against a short interval. */
+	dwell = dwell * ANTFARM_PACE_PCT / 100;
+
 	if (dwell < ANTFARM_SHOT_MIN_MS)
 		dwell = ANTFARM_SHOT_MIN_MS;
 

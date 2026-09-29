@@ -83,6 +83,10 @@ enum
 /* how many cuts' worth of recent styles to avoid repeating */
 #define ANTFARM_STYLE_MEMORY    3
 
+/* shot-pace trim: the dwell the interest score asks for is scaled by this, so
+ * the tour changes shots a little more often. 85 = shots ~15% shorter. */
+#define ANTFARM_PACE_PCT        85
+
 /* dwell trimming: a shot's visible time is scaled by its scene interest */
 #define ANTFARM_DWELL_MIN       55    /* x100 */
 #define ANTFARM_DWELL_MAX       190   /* x100 */

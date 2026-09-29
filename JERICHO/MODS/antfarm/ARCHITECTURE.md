@@ -302,8 +302,11 @@ no junction surface id), which is why shots are picked by *feature*.
 
 `AntFarmComputeDwell` = `interval × dwell/100`, ×1.3 for a road longer than
 3000, ×0.8 for one shorter than 900, ×0.7 for a car subject (transient — do not
-linger on an empty frame), then clamped to 15–45 s. This is what makes the pace
-breathe instead of ticking metronome-steady.
+linger on an empty frame), then ×`ANTFARM_PACE_PCT`/100 (**85 — the tour changes
+shots ~15 % more often than the interest score alone would suggest**, applied
+before the clamps so the 15 s floor still protects against a short interval),
+then clamped to 15–45 s. This is what makes the pace breathe instead of ticking
+metronome-steady.
 
 ---
 

@@ -71,7 +71,9 @@ camera is driven (`model`), whether it takes a car or a road, its camera-height
 and how long it likes to dwell. A director picks weighted and heavily
 de-weights any style seen in the last few cuts, so consecutive cuts never
 repeat. Shot length is the configured interval scaled by scene interest and then
-clamped to **15–45 s** (default interval 30 s) - a tour that cuts every few
+clamped to **15–45 s** and trimmed by a pace factor (shots run ~15% shorter
+than the interest score alone would give, so the tour changes them a little
+more often) - with the default 30 s interval a tour that cuts every few
 seconds is a slideshow, and one that dwells for minutes stops being something
 you can leave on in the background. The transition is a 0.7 s dissolve that
 darkens through black rather than flashing through white, so it is easy on the
