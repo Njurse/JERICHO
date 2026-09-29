@@ -3,8 +3,11 @@
  *
  * A passive city observer for REDRIVER2. When enabled it:
  *   - cuts off player input (gStopPadReads), hides the HUD (gDoOverlays),
- *     mutes all car/player SFX (SetMasterVolume), disables cop aggression
- *     (CopsAllowed = 0),
+ *     silences the player's own car engine so its idle loop stops (the
+ *     JER_EVENT_CAR_ENGINE_SOUND hook - the master volume alone never did it,
+ *     because SetMasterVolume(0) is UNITY gain and silence is -10000; the
+ *     master volume is instead kept at the game's normal level so the music
+ *     and the city stay audible), disables cop aggression (CopsAllowed = 0),
  *   - pins the hidden player car to the camera focus and redirects the
  *     region spool there, so geometry + traffic stream to every shot,
  *   - hops to a FAR area of the map on every cut (touring the whole city)
@@ -14,6 +17,7 @@
  *       OVERHEAD : scenic elevated 3/4 view down onto traffic (car or road)
  *       TRIPOD   : parked roadside camera watching a junction/road
  *       FLYOVER  : slow eased dolly along a long straight
+ *       JUNCTION : parked vantage sliding its aim across a crossroads
  *     Static/overhead styles are weighted over the chase cam.
  *   - while focusing on a car, the camera cycles through multiple angles
  *     (chase behind, chase front, side, overhead, static) every few seconds,
@@ -49,11 +53,12 @@
 #include "cutscene.h"	/* gInGameCutsceneActive */
 #include "glaunch.h"	/* quick_replay, NoPlayerControl */
 #include "mission.h"	/* NumPlayers, CopsAllowed */
+#include "pause.h"	/* pauseflag - the pause menu is up */
 #include "convert.h"	/* Random2 */
 #include "objcoll.h"	/* lineClear, CheckScenaryCollisions */
 #include "civ_ai.h"	/* reservedSlots, InitCar */
-#include "felony.h"	/* GetPlayerFelony */
 #include "sound.h"	/* gMasterVolume, SetMasterVolume */
+#include "felony.h"	/* GetPlayerFelony */
 #include "map.h"	/* units_across_halved, units_down_halved, current_region, regions_across */
 #include "jer_map.h"	/* shared region maths / residency / force (see map-streaming.md) */
 #include "spool.h"	/* spoolinfo_offsets, regions_unpacked */
@@ -172,7 +177,8 @@ static int AntRandChance(int percent)
 #define ANT_MODEL_ATTACH     5	/* rig on the car itself (fender/sill/3-4) */
 #define ANT_MODEL_CRANE      6	/* travel along the road while rising */
 #define ANT_MODEL_TRIPODZ    7	/* fixed vantage on a car, long lens */
-#define ANT_MODEL_COUNT      8
+#define ANT_MODEL_JUNCTION   8	/* parked vantage on a junction mouth */
+#define ANT_MODEL_COUNT      9
 
 /* Is this model's camera code implemented yet? A style whose model is not
  * implemented is never offered by the picker and never defaults on, so a
@@ -190,6 +196,7 @@ static int AntFarmStyleImplemented(int model)
 	case ANT_MODEL_CRANE:
 	case ANT_MODEL_ATTACH:
 	case ANT_MODEL_TRIPODZ:
+	case ANT_MODEL_JUNCTION:
 		return 1;
 
 	default:
@@ -210,6 +217,7 @@ static const char* AntFarmModelName(int model)
 	case ANT_MODEL_ATTACH:    return "attach";
 	case ANT_MODEL_CRANE:     return "crane";
 	case ANT_MODEL_TRIPODZ:   return "tripodz";
+	case ANT_MODEL_JUNCTION:  return "junction";
 	default:                  return "?";
 	}
 }
@@ -261,22 +269,24 @@ static const ANT_STYLE_DEF antStyleDefs[ANTFARM_STYLE_COUNT] = {
 	/* label          key          model            wt rOnly car beh zoom  hLo  hHi scrLo scrHi sLo sHi  fLo  fHi aimLo aimHi orbLo orbHi acr set dwell  nw */
 	{ "Chase cam",    "chase",     ANT_MODEL_FOLLOW,   4,   0,   1,  0,  0,  180,  340,  260,  276,    0,    0,   0,    0,    0,    0,    0,    0,  0,   8,   90 },
 	{ "Static track", "static",    ANT_MODEL_TRACK,   22,   0,   1,  0,  0,  180,  300,  258,  280,    0,    0,   0,    0,    0,    0,    0,    0,  0,   6,  120 },
-	{ "Overhead",     "overhead",  ANT_MODEL_ROADSIDE,26,   0,   0,  0,  0,  400,  700,  218,  242,  180,  360,   0,    0,  900, 1100,    0,    0,  0,  14,  130 },
+	{ "Overhead",     "overhead",  ANT_MODEL_ROADSIDE,26,   0,   0,  0,  0,  400,  700,  218,  242,  180,  360,   0,    0,  900, 1100,  300,  760,  0,  14,  130 },
 	{ "Tripod",       "tripod",    ANT_MODEL_ROADSIDE,16,   1,   0,  0,  0,  140,  260,  238,  268,  135,  270,   0,    0,  900, 1100,  820, 1140,  0,  16,  120 },
 	{ "Flyover",      "flyover",   ANT_MODEL_DOLLY,   12,   1,   0,  0,  0,  400,  650,  248,  272,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  140 },
 	{ "Orbit",        "orbit",     ANT_MODEL_ORBIT,   12,   0,   0,  0,  0,  200,  440,  232,  262,    0,    0,   0,    0,    0,    0,    0,    0,  0,  20,  140 },
 	{ "Crane",        "crane",     ANT_MODEL_CRANE,  10,   1,   0,  0,  0,   90,  820,  240,  270,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  150 },
-	{ "Ant level",    "low",       ANT_MODEL_ROADSIDE,10,   1,   0,  0,  0,   45,   95,  250,  282,  180,  360,   0,    0,    0,  220,    0,    0,  1,  16,  120 },
+	{ "Ant level",    "low",       ANT_MODEL_ROADSIDE,10,   1,   0,  0,  0,   45,   95,  250,  282,  180,  360,   0,    0,    0,  220,  200,  480,  1,  16,  120 },
 	/* --- car-attached rigs (damped, yaw-only: see ANT_MODEL_ATTACH) --- */
 	{ "Fender",       "fender",    ANT_MODEL_ATTACH,  12,   0,   1,  0,  0,   45,   85,  250,  272,   20,   60, 260,  380,  900, 1200,    0,    0,  0,   3,  110 },
 	{ "Sill",         "sill",      ANT_MODEL_ATTACH,  12,   0,   1,  0,  0,   40,   75,  245,  265,  240,  330, -60,   60,  400,  700,    0,    0,  0,   3,  110 },
 	{ "Nose 3/4",     "nose34",    ANT_MODEL_ATTACH,  12,   0,   1,  0,  0,   90,  150,  250,  272,  200,  300, 320,  480,  500,  800,    0,    0,  0,   5,  120 },
 	{ "Tail 3/4",     "tail34",    ANT_MODEL_ATTACH,  12,   0,   1,  1,  0,   90,  150,  245,  268,  180,  280, 260,  420,  500,  800,    0,    0,  0,   5,  120 },
 	/* --- free / static angles --- */
-	{ "Kerb pass",    "kerb",      ANT_MODEL_ROADSIDE,12,   1,   0,  0,  0,   40,   80,  290,  320,  200,  320,   0,    0,    0,  200,    0,    0,  1,  14,  120 },
+	{ "Kerb pass",    "kerb",      ANT_MODEL_ROADSIDE,12,   1,   0,  0,  0,   40,   80,  290,  320,  200,  320,   0,    0,    0,  200,  180,  420,  1,  14,  120 },
 	{ "Tripod zoom",  "tripzoom",  ANT_MODEL_TRIPODZ, 12,   0,   1,  0,  1,  120,  220,  235,  300,  200,  360, 500, 1500,  900, 1200,  300,  600,  0,  18,  150 },
 	{ "Far pan",      "farpan",    ANT_MODEL_TRIPODZ, 10,   0,   1,  0,  1,  200,  340,  290,  340, 1400, 2200, 2000, 4000,  900, 1300,  400,  900,  0,  20,  150 },
 	{ "Waterfront",   "water",     ANT_MODEL_DOLLY,   10,   1,   0,  0,  0,   60,  180,  250,  275,    0,    0,   0,    0,  700, 1000,    0,    0,  0,  16,  150,  1 },
+	/* --- parked vantage on a junction (see ANT_MODEL_JUNCTION) --- */
+	{ "Junction",     "junction",  ANT_MODEL_JUNCTION,12,   1,   0,  0,  0,  120,  320,  236,  266,  170,  300,   0,    0,  250,  700,  300,  700,  0,  14,  135 },
 };
 
 /* ------------------------------------------------------------------ */
@@ -296,11 +306,7 @@ extern int regions_unpacked[];
 /* Car camera modes (angles) - inspired by replay director */
 #define CAR_MODE_CHASE_BEHIND 0
 #define CAR_MODE_CHASE_FRONT  1
-#define CAR_MODE_SIDE_LEFT    2
-#define CAR_MODE_SIDE_RIGHT   3
-#define CAR_MODE_OVERHEAD     4
-#define CAR_MODE_STATIC       5
-#define CAR_MODE_COUNT        6
+#define CAR_MODE_OVERHEAD     2
 
 typedef struct ANTFARM_STATE
 {
@@ -412,7 +418,12 @@ typedef struct ANTFARM_STATE
 	/* presentation dressing */
 	int letterbox;		/* draw the soft cinematic bars */
 	int captions;		/* show the occasional place-name caption */
+	int debugHud;		/* bottom-right readout of the current shot (debug_hud) */
 	unsigned long captionUntil;	/* when the current caption fades out */
+
+	/* texture-area guard: the cell the camera was last in, so a live shot that
+	 * crosses cells can request the new cell's area data at once */
+	int lastCellX, lastCellZ;
 
 	/* director state: a rolling memory of recent styles so consecutive cuts
 	 * never repeat, plus the interest-scaled dwell of the current shot */
@@ -448,6 +459,7 @@ static int AntFarmTrafficNear(const VECTOR* pos, int radius);
 static void AntFarmPickStyleAndTarget(void);
 static void AntFarmBuildRoadCache(void);
 static void AntFarmStaticTrack(CAR_DATA* cp, VECTOR* desired);
+static void AntFarmSetActive(int on);
 
 /* ------------------------------------------------------------------ */
 /* timing                                                             */
@@ -733,6 +745,46 @@ static int AntFarmShotRoadRender(int distAlong, VECTOR* roadPt, int* heading)
 	return 1;
 }
 
+/* Is this straight's end a REAL junction? A junction is where this road meets
+ * another one, and the engine records no surface id of its own for it: step
+ * just PAST the end along the lane heading and ask which surface is there - a
+ * different usable straight means the two roads meet. A boundary road end
+ * opens onto nothing (GetSurfaceIndex gives no road), and a camera parked
+ * there looks off the edge of the world - which is the void a junction shot
+ * showed when it used one. Returns 1 and the end point + heading when it
+ * really is a junction. */
+static int AntFarmJunctionEnd(int roadId, int laneNo, int atFar,
+	int* x, int* z, int* heading)
+{
+	DRIVER2_STRAIGHT* rd;
+	VECTOR tip;
+	int ex, ez, eh;
+	int neigh;
+
+	if (roadId < 0 || roadId >= NumDriver2Straights)
+		return 0;
+
+	rd = &Driver2StraightsPtr[roadId];
+
+	if (!AntFarmShotRoadPoint(roadId, atFar ? (int)rd->length : 0, laneNo, &ex, &ez, &eh))
+		return 0;
+
+	tip.vx = ex + FIXEDH(RSIN(eh) * 320);
+	tip.vy = 0;
+	tip.vz = ez + FIXEDH(RCOS(eh) * 320);
+
+	neigh = GetSurfaceIndex(&tip);
+
+	if (neigh < 0 || neigh >= NumDriver2Straights || neigh == roadId)
+		return 0;
+
+	*x = ex;
+	*z = ez;
+	*heading = eh;
+
+	return 1;
+}
+
 /* keep positions inside the playable map so the camera never reaches the
  * nodraw skybox extremes at the world edge, and never dives below the
  * ground into the void (render Y is negative-up: ground = -MapHeight) */
@@ -752,6 +804,19 @@ static void AntFarmClampToWorld(VECTOR* v)
 
 	if (v->vz > maxZ)
 		v->vz = maxZ;
+}
+
+/* Is this point uncomfortably close to the playable map's edge? The camera is
+ * clamped to the world, but a shot anchored on a boundary road sits right
+ * against the nodraw skybox, and pinning the player's car out there can trip
+ * the game's own end-of-world handling (a mission restart). The tour should
+ * stay inside the map, so far-area candidates near the edge are skipped. */
+static int AntFarmNearWorldEdge(int x, int z)
+{
+	int maxX = units_across_halved - 9000;
+	int maxZ = units_down_halved - 9000;
+
+	return (x < -maxX || x > maxX || z < -maxZ || z > maxZ);
 }
 
 /* clamp a RENDER-space position to just above the ground (render Y is
@@ -863,8 +928,11 @@ static int AntFarmPositionHasData(const VECTOR* pos)
 	return AntFarmRegionHasData(AntFarmRegionOf(pos));
 }
 
-/* pick the NEAREST usable straight to the camera so the very first shot
- * starts instantly on a real road that is always inside the loaded area */
+/* Seed the very first takeover frame from the NEAREST usable straight to the
+ * camera, so the moment the screensaver engages it sits on loaded ground
+ * rather than a bare spawn point. This is only an initial position for
+ * camPos/spool: the first CUT plans its shot like every other cut (a far area
+ * picked by interest), so the tour is not anchored to the player. */
 static void AntFarmPickNearArea(void)
 {
 	int bestIdx = -1;
@@ -1035,6 +1103,15 @@ static int AntFarmRoadInterest(int idx, const VECTOR* pos)
 
 static int AntFarmPickFarArea(void)
 {
+	/* The cache must be current HERE, not only later when a shot is planned:
+	 * at the FIRST activation it is still the empty one built at boot (before
+	 * any level had loaded), so this function would take its "no usable roads"
+	 * fallback and anchor the first cut on the camera position - which, on an
+	 * auto-enable at level load, is still (0,0) because the camera has not
+	 * been placed yet. That is the arbitrary first area the tour used to open
+	 * on. */
+	AntFarmEnsureRoadCache();
+
 	if (g_numUsableRoads == 0) {
 		/* No usable roads at all – fallback to camera position (which is loaded) */
 		s.areaPos.vx = camera_position.vx;
@@ -1067,6 +1144,11 @@ static int AntFarmPickFarArea(void)
 			pos.vz = rd->Midz;
 			AntFarmClampToWorld(&pos);
 
+			/* stay off the world edge: a shot (and the pinned car) at a boundary
+			 * road sits against the nodraw skybox */
+			if (AntFarmNearWorldEdge(pos.vx, pos.vz))
+				continue;
+
 			/* the destination must have data — residency comes later */
 			if (!AntFarmPositionHasData(&pos))
 				continue;
@@ -1097,6 +1179,7 @@ static int AntFarmPickFarArea(void)
 		pos.vy = AntFarmMapHeight(rd->Midx, rd->Midz);
 		pos.vz = rd->Midz;
 		AntFarmClampToWorld(&pos);
+		if (AntFarmNearWorldEdge(pos.vx, pos.vz)) continue;
 		if (AntFarmPositionHasData(&pos)) {
 			s.areaPos = pos;
 			return 1;
@@ -1365,8 +1448,10 @@ static void AntFarmInitShotVars(void)
 			s.shotZoomTo = s.shotScrZ;
 		}
 
-		/* some rows slowly pan; the rest hold still */
-		if (d->orbitHi > 0 && AntRandChance(55))
+		/* some rows slowly pan; the rest hold still. Most road-bound rows do
+		 * pan - a parked camera on an empty road is a frozen frame, and this is
+		 * a screensaver. */
+		if (d->orbitHi > 0 && AntRandChance(72))
 			s.shotOrbitAmp = AntRandRange(d->orbitLo, d->orbitHi);
 
 		/* the row decides how far ahead to look: a short aim watches traffic
@@ -1491,7 +1576,7 @@ static int AntFarmPickCarMode(void)
 static void AntFarmComputeCarMode(CAR_DATA* cp, const VECTOR* carPos, int dir, int h,
 	VECTOR* desired, int* outLerp)
 {
-	int dist, height, sideOff;
+	int dist, height;
 	int baseDist, baseHeight;
 	VECTOR offset;
 
@@ -1509,19 +1594,14 @@ static void AntFarmComputeCarMode(CAR_DATA* cp, const VECTOR* carPos, int dir, i
 	baseHeight = 170 + vy / 2;
 	if (baseHeight > 460) baseHeight = 460;
 
-	/* Mode-specific offsets */
+	/* Mode-specific offsets. Only the three modes AntFarmPickCarMode can
+	 * return exist: the side sweeps and the static vantage were dropped from
+	 * the cycle (they swung the camera flank-to-flank / froze it), and the dead
+	 * cases that lingered were unreachable - a car-mode change that never
+	 * happens. CHASE_BEHIND is the default so an unexpected value still frames
+	 * the car rather than parking the camera. */
 	switch (s.carMode)
 	{
-	case CAR_MODE_CHASE_BEHIND:
-		/* Classic chase: behind and above */
-		dist = baseDist;
-		height = baseHeight;
-		offset.vx = FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
-		offset.vz = FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
-		offset.vy = -h - height;
-		*outLerp = 8;
-		break;
-
 	case CAR_MODE_CHASE_FRONT:
 		/* Forward-looking: in front of the car */
 		dist = baseDist;
@@ -1530,28 +1610,6 @@ static void AntFarmComputeCarMode(CAR_DATA* cp, const VECTOR* carPos, int dir, i
 		offset.vz = FIXEDH(RCOS(dir) * dist);
 		offset.vy = -h - height;
 		*outLerp = 8;
-		break;
-
-	case CAR_MODE_SIDE_LEFT:
-		/* Left side, slightly elevated */
-		dist = baseDist * 2 / 3;
-		height = baseHeight * 3 / 4;
-		sideOff = dist;
-		offset.vx = FIXEDH(RSIN((dir + 1024) & 0xfff) * sideOff);
-		offset.vz = FIXEDH(RCOS((dir + 1024) & 0xfff) * sideOff);
-		offset.vy = -h - height;
-		*outLerp = 7;
-		break;
-
-	case CAR_MODE_SIDE_RIGHT:
-		/* Right side, slightly elevated */
-		dist = baseDist * 2 / 3;
-		height = baseHeight * 3 / 4;
-		sideOff = dist;
-		offset.vx = FIXEDH(RSIN((dir + 3072) & 0xfff) * sideOff);
-		offset.vz = FIXEDH(RCOS((dir + 3072) & 0xfff) * sideOff);
-		offset.vy = -h - height;
-		*outLerp = 7;
 		break;
 
 	case CAR_MODE_OVERHEAD:
@@ -1566,18 +1624,16 @@ static void AntFarmComputeCarMode(CAR_DATA* cp, const VECTOR* carPos, int dir, i
 		*outLerp = 9;
 		break;
 
-	case CAR_MODE_STATIC:
+	case CAR_MODE_CHASE_BEHIND:
 	default:
-		/* Static roadside: place a fixed camera, use existing static track logic */
-	{
-		VECTOR staticPos;
-		AntFarmStaticTrack(cp, &staticPos);
-		desired->vx = staticPos.vx;
-		desired->vy = staticPos.vy;
-		desired->vz = staticPos.vz;
-		*outLerp = 4;
-		return;
-	}
+		/* Classic chase: behind and above */
+		dist = baseDist;
+		height = baseHeight;
+		offset.vx = FIXEDH(RSIN((dir + 2048) & 0xfff) * dist);
+		offset.vz = FIXEDH(RCOS((dir + 2048) & 0xfff) * dist);
+		offset.vy = -h - height;
+		*outLerp = 8;
+		break;
 	}
 
 	desired->vx = carPos->vx + offset.vx;
@@ -1621,6 +1677,56 @@ static void AntFarmSetupRoadShot(void)
 		s.roadDist = 0;
 		s.junctionCorner = 0;
 		s.shotLookAhead = 1000 + (AntRand() % 400);
+	}
+	else if (d->model == ANT_MODEL_JUNCTION)
+	{
+		int tries;
+
+		/* A junction row must actually sit on a JUNCTION, not on a road end that
+		 * opens onto nothing: stepping past a boundary road end finds no
+		 * neighbouring surface, and a camera (and the pinned player car) parked
+		 * there looks off the edge of the world - the void a junction shot showed.
+		 * Probe the end and take the first one that really meets another road,
+		 * trying the other end and then a few other roads. */
+		for (tries = 0; tries < 10; tries++)
+		{
+			int endAtFar = (AntRand() & 1);
+			int ex, ez, eh;
+
+			if (tries > 0)
+			{
+				int cand = AntFarmPickSurface(400);
+
+				if (cand >= 0 && cand < NumDriver2Straights &&
+					!AntFarmNearWorldEdge(Driver2StraightsPtr[cand].Midx,
+						Driver2StraightsPtr[cand].Midz))
+				{
+					s.roadSurfId = cand;
+					len = Driver2StraightsPtr[cand].length;
+				}
+			}
+
+			if (AntFarmJunctionEnd(s.roadSurfId, s.roadLane, endAtFar, &ex, &ez, &eh))
+			{
+				s.roadDist = endAtFar ? len : 0;
+				s.junctionCorner = endAtFar ? 1 : 0;
+
+				s.ctx->jer_log(s.ctx,
+					"[antfarm] junction shot: road %d %s end %d,%d -> junction found\n",
+					s.roadSurfId, endAtFar ? "far" : "near", ex, ez);
+				break;
+			}
+
+			if (tries == 9)
+			{
+				/* no crossroads found nearby: watch a road end anyway, but say so */
+				s.roadDist = endAtFar ? len : 0;
+				s.junctionCorner = endAtFar ? 1 : 0;
+				s.ctx->jer_log(s.ctx,
+					"[antfarm] junction shot: no junction found near road %d, using its end\n",
+					s.roadSurfId);
+			}
+		}
 	}
 	else if (AntRandChance(40))
 	{
@@ -1746,6 +1852,22 @@ static int AntFarmOnGameStart(void* userdata, void* args)
 
 	if (a != NULL && a->seed != 0)
 		AntFarmSetRunSeed((unsigned int)a->seed);
+
+	/* A level (re)start invalidates every road/area reference the tour holds
+	 * (road indices, the area, the pinned car). If the mode is running, hand
+	 * back and re-engage on the NEW level instead of shooting at the old
+	 * level's roads - which is exactly what broke the camera when a level was
+	 * restarted from the pause menu. */
+	if (s.active)
+	{
+		/* The level is being rebuilt, so MainPlayer.playerCarId may already point
+		 * at a different car. Forget the saved car slot FIRST so the hand-back
+		 * cannot write the old level's car state into the new one; every other
+		 * global is restored normally and the mode re-engages on the new level. */
+		s.savedPlayerCarControlType = 0;
+		AntFarmSetActive(0);
+		s.pendingEnable = 1;
+	}
 
 	return JER_RESULT_CONTINUE;
 }
@@ -2256,9 +2378,6 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 		s.spool = carPos;
 		s.targetPos = carPos;
-
-		/* if static mode, lerp slower */
-		if (s.carMode == CAR_MODE_STATIC) lerp = 4;
 	}
 	else	/* ANTFARM_TARGET_ROAD */
 	{
@@ -2369,6 +2488,37 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 				AntFarmShotRoadRender(aimDist, &aimPt, &dummyHeading);
 				aim = aimPt;
 				aim.vy = aimPt.vy - 40;
+			}
+			else if (d->model == ANT_MODEL_JUNCTION)
+			{
+				/* A parked vantage on a junction mouth: sit off the corner and
+				 * above the traffic, and slide the AIM slowly ACROSS the mouth
+				 * rather than down the lane - so cars entering and leaving the
+				 * junction cross the frame. The mouth is the road END the shot was
+				 * planned onto (see AntFarmSetupRoadShot); junctionCorner says which
+				 * of the two ends it is. */
+				VECTOR mouth = roadPt;
+				int endDist = s.junctionCorner ? (int)Driver2StraightsPtr[s.roadSurfId].length : 0;
+				int dummyHeading = 0;
+				int side = (heading + (s.shotSideSign > 0 ? 1024 : 3072)) & 0xfff;
+				int back = -(s.shotLookAhead + 350);
+				int sweep = 0;
+
+				if (AntFarmShotRoadRender(endDist, &mouth, &dummyHeading) == 0)
+					mouth = roadPt;
+
+				if (s.shotOrbitAmp > 0)
+					sweep = FIXEDH(RSIN((s.shotOrbitPhase + now / 90) & 4095) * s.shotOrbitAmp);
+
+				desired.vx = mouth.vx + FIXEDH(RSIN(side) * s.shotSide)
+					+ FIXEDH(RSIN(heading) * back);
+				desired.vz = mouth.vz + FIXEDH(RCOS(side) * s.shotSide)
+					+ FIXEDH(RCOS(heading) * back);
+				desired.vy = mouth.vy - s.shotHeight;
+
+				aim.vx = mouth.vx + FIXEDH(RSIN((heading + 1024) & 0xfff) * sweep);
+				aim.vz = mouth.vz + FIXEDH(RCOS((heading + 1024) & 0xfff) * sweep);
+				aim.vy = mouth.vy - 20;
 			}
 			else	/* ANT_MODEL_DOLLY */
 			{
@@ -2492,10 +2642,20 @@ static void AntFarmSetActive(int on)
 		gDoOverlays = 0;
 		CopsAllowed = 0;
 
-		/* mute all SFX for a calm watch (music is separate - gMusicVolume - and
-		 * is deliberately left alone). The readme always claimed this; the code
-		 * never actually did it. */
+		/* Restore the game's own (neutral) master level for the watch. The PSX
+		 * volume scale puts 0 at UNITY and -10000 at silence, and the music (XM)
+		 * and CD audio both pass through it, so the module keeps it at the level
+		 * the game itself considers normal while it runs and hands the player's
+		 * own value back on exit. The player's car ENGINE is silenced separately
+		 * (AntFarmOnCarEngineSound) - the volume alone never did that, which is
+		 * why the idle used to be audible while the readme claimed otherwise. */
 		SetMasterVolume(0);
+
+		/* Silence the PLAYER'S OWN car engine - it is pinned and hidden, but its
+		 * idle loop keeps sounding, which is the one noise a screensaver must not
+		 * have. Done through the CAR_ENGINE_SOUND hook (see
+		 * AntFarmOnCarEngineSound), so only the player's car is silenced. */
+		s.ctx->jer_log(s.ctx, "[antfarm] player car engine silenced\n");
 
 		s.savedPlayerCarControlType = 0;
 
@@ -2536,6 +2696,8 @@ static void AntFarmSetActive(int on)
 		s.stillSince = 0;
 		s.lastDollyMs = AntTicks();
 		s.handoffs = 0;
+		s.lastCellX = 0x7fffffff;
+		s.lastCellZ = 0x7fffffff;
 
 		s.shotDistMin = 0x7fffffff;
 		s.shotDistMax = 0;
@@ -2562,9 +2724,9 @@ static void AntFarmSetActive(int on)
 		 * frame whose region and texture pages had not streamed yet, which is
 		 * the grey/skybox first shot. Enter the ordinary CUT instead and let the
 		 * normal machinery plan and stream the first shot - the cut is black, so
-		 * the only cost is the first cut's length. The area is the player's
-		 * neighbourhood for the first shot (see the CUT case), so the tour starts
-		 * near home rather than teleporting across the city. */
+		 * the only cost is the first cut's length. The area picked above is only
+		 * the initial camera/spool seed; the first cut then hops to a far area
+		 * exactly like every other cut. */
 		s.state = ANTFARM_STATE_CUT;
 		s.cutInit = 0;
 		s.fade = 255;
@@ -2575,7 +2737,7 @@ static void AntFarmSetActive(int on)
 		s.shotStart = s.stateStart;
 
 		{
-			char styleList[200];  /* all 16 style keys fit - 80 silently truncated the log */
+			char styleList[220];  /* all 17 style keys fit - 80 silently truncated the log */
 			int n = 0, j;
 
 			styleList[0] = '\0';
@@ -2645,8 +2807,20 @@ static void AntFarmSetActive(int on)
 
 static void AntFarmToggle(void)
 {
-	AntFarmSetActive(s.active ? 0 : 1);
-	jer_config_set_bool(ANT_MOD_ID, "enabled", s.active);
+	/* The intent is "wanted", not just "running": pausing suspends the mode
+	 * (it is wanted but not active), so an off request must clear the want too
+	 * or it would come straight back when the pause closes. */
+	if (s.active || s.pendingEnable)
+	{
+		AntFarmSetActive(0);			/* also clears pendingEnable */
+		jer_config_set_bool(ANT_MOD_ID, "enabled", 0);
+	}
+	else
+	{
+		s.pendingEnable = 1;
+		AntFarmSetActive(1);
+		jer_config_set_bool(ANT_MOD_ID, "enabled", 1);
+	}
 }
 
 static void AntFarmCheckF9(void)
@@ -2683,7 +2857,7 @@ static int AntFarmOnFrame(void* userdata, void* args)
 	 * a playable single-player state. This used to sit BELOW the !active
 	 * early-return below, so it could never run — "enabled = 1" did nothing
 	 * and the mode only ever started from F9 / the pause menu. */
-	if (s.pendingEnable && !s.active && AntFarmMapReady() &&
+	if (s.pendingEnable && !s.active && pauseflag == 0 && AntFarmMapReady() &&
 		!game_over && !gInGameCutsceneActive && !quick_replay &&
 		NumPlayers == 1 && !NoPlayerControl)
 	{
@@ -2915,32 +3089,21 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			}
 			else
 			{
-				/* The very first shot keeps the area SetActive chose near the
-				 * player: a gentler way in than hopping across the city. Every
-				 * later cut picks a fresh far area. */
-				if (s.cutCount > 0)
-				{
-					/* Pick a far area that is loaded; if none, it will fallback to current position */
-					AntFarmPickFarArea();
-					s.spool = s.areaPos;
-					s.targetPos = s.areaPos;
-				}
+				/* EVERY cut - the first one included - picks a fresh far area and a
+				 * style by interest. The first cut used to keep the player's own
+				 * neighbourhood and force a scenery angle on the theory that "at
+				 * activation the civilian traffic has barely spawned". That is true of
+				 * a fresh session, but not of a mid-game toggle: toggling on while
+				 * driving then always opened on a parked camera pointed at the road
+				 * you were just on - a static first shot with no subject. */
+
+				/* Pick a far area that is loaded; if none, it will fallback to current position */
+				AntFarmPickFarArea();
+				s.spool = s.areaPos;
+				s.targetPos = s.areaPos;
 
 				AntFarmPickStyleAndTarget();
 
-				/* The first shot favours a scenery angle: at activation the civilian
-				 * traffic has barely spawned, so a car-locked style would have very
-				 * little to point the camera at yet. */
-				if (s.cutCount == 0 && s.targetKind == ANTFARM_TARGET_CAR)
-				{
-					int rs = AntFarmPickStyle(0);
-
-					if (antStyleDefs[rs].carFirst == 0)
-					{
-						s.style = rs;
-						s.targetKind = ANTFARM_TARGET_ROAD;
-					}
-				}
 				s.cutWaitForCar = (s.targetKind == ANTFARM_TARGET_CAR);
 				if (s.targetKind == ANTFARM_TARGET_CAR) {
 					s.carMode = CAR_MODE_CHASE_BEHIND;
@@ -3183,6 +3346,31 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			}
 		}
 		break;
+	}
+
+	/* --- texture-area guard -------------------------------------------
+	 * The engine streams texture pages per AREA keyed off camera_position,
+	 * which it recomputes each frame - but a shot that travels (dolly,
+	 * flyover, crane) crosses cells faster than the pager settles, and a page
+	 * that misses its slot is the "scenery / palette did not load" look. When
+	 * the camera enters a new cell during a live shot, ask for that cell's
+	 * area data explicitly, exactly as the CUT does for a destination, so the
+	 * pages are requested the moment they are needed. (The CUT already does
+	 * this for the shot it is streaming in, so it is skipped there.) */
+	if (s.active && s.state != ANTFARM_STATE_CUT && AntFarmMapReady())
+	{
+		int cx = (camera_position.vx + units_across_halved) / MAP_CELL_SIZE;
+		int cz = (camera_position.vz + units_down_halved) / MAP_CELL_SIZE;
+
+		if (cx != s.lastCellX || cz != s.lastCellZ)
+		{
+			s.lastCellX = cx;
+			s.lastCellZ = cz;
+
+			CheckLoadAreaData(cx, cz);
+			StartSpooling();
+			UpdateSpool();
+		}
 	}
 
 	if (s.active)
@@ -3461,6 +3649,29 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* Silence the PLAYER's own car engine for as long as the screensaver runs.
+ * The player's car is pinned and hidden (CONTROL_TYPE_NONE, so the renderer
+ * skips it), but its engine channels keep looping - the idle in particular -
+ * and that is the one sound a screensaver must not have. The engine's own
+ * hook (gamesnd.c SoundTasks) hands us the in/out channel volumes for the
+ * player's car just before they are placed, so forcing them silent is a
+ * targeted mute: the rest of the city stays audible. -10000 is the PSX
+ * "silent" volume (0 would be full). */
+static int AntFarmOnCarEngineSound(void* userdata, void* args)
+{
+	JER_ARGS_CAR_ENGINE_SOUND* a = (JER_ARGS_CAR_ENGINE_SOUND*)args;
+
+	(void)userdata;
+
+	if (s.active)
+	{
+		a->idleVolume = -10000;
+		a->revVolume = -10000;
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
 /* on-foot input: explicit kill switch */
 static int AntFarmOnPedInput(void* userdata, void* args)
 {
@@ -3474,7 +3685,13 @@ static int AntFarmOnPedInput(void* userdata, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
-/* START during the screensaver: hand control back */
+/* START / the pause menu opening: SUSPEND rather than disable. The pause menu
+ * takes over the frame and the camera, and the player's car has to be back for
+ * it (and for a restart from the menu) - so hand the engine state back, but
+ * remember the mode is still WANTED so it re-engages when the pause closes, on
+ * whatever level is then running. Disabling here (as the module used to) is
+ * what left the screensaver off and the camera confused after a pause or a
+ * restart from the pause menu. Turning it off for good is the menu row / F9. */
 static int AntFarmOnPauseMenu(void* userdata, void* args)
 {
 	JER_ARGS_PAUSE_MENU* a = (JER_ARGS_PAUSE_MENU*)args;
@@ -3484,7 +3701,7 @@ static int AntFarmOnPauseMenu(void* userdata, void* args)
 	if (a->action == JER_PAUSE_OPEN && s.active)
 	{
 		AntFarmSetActive(0);
-		jer_config_set_bool(ANT_MOD_ID, "enabled", 0);
+		s.pendingEnable = 1;
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -3625,6 +3842,24 @@ static int AntFarmOnDrawOverlay(void* userdata, void* args)
 		}
 	}
 
+	/* --- debug readout: what the camera is doing right now ---------------
+	 * Bottom-right, like the place-name caption, and only when asked for
+	 * (debug_hud in antfarm.ini): it takes the guesswork out of "what am I
+	 * looking at" when a shot misbehaves (void, unscrolled scenery). */
+	if (s.debugHud)
+	{
+		static const char* stNames[4] = { "show", "fade-out", "cut", "fade-in" };
+		char line[72];
+		int st = (s.state >= 0 && s.state < 4) ? s.state : 0;
+
+		snprintf(line, sizeof(line), "antfarm: %s %s %s %s",
+			antStyleDefs[s.style].key, AntFarmModelName(antStyleDefs[s.style].model),
+			(s.targetKind == ANTFARM_TARGET_CAR) ? "car" : "road", stNames[st]);
+
+		SetTextColour(140, 140, 140);
+		PrintStringRightAligned(line, 316, 244);
+	}
+
 	return JER_RESULT_CONTINUE;
 }
 
@@ -3636,7 +3871,9 @@ static void AntMenuLabel(void* userdata, char* out, int max)
 {
 	(void)userdata;
 
-	snprintf(out, max, "Ant Farm: %s", s.active ? "ON" : "OFF");
+	/* "wanted" (running OR suspended by a pause), so the row shows ON while
+	 * the pause menu has the mode on hold */
+	snprintf(out, max, "Ant Farm: %s", (s.active || s.pendingEnable) ? "ON" : "OFF");
 }
 
 static int AntMenuToggle(void* userdata, int direction)
@@ -3851,15 +4088,16 @@ static int AntFarmOnBoot(void* userdata, void* args)
 	s.rollOn = jer_config_get_bool(ANT_MOD_ID, "roll", 1);
 	s.letterbox = jer_config_get_bool(ANT_MOD_ID, "letterbox", 1);
 	s.captions = jer_config_get_bool(ANT_MOD_ID, "captions", 1);
+	s.debugHud = jer_config_get_bool(ANT_MOD_ID, "debug_hud", 0);
 	s.leadEnabled = jer_config_get_bool(ANT_MOD_ID, "lead_mode", 0);
 	s.leadChance = ANTFARM_LEAD_CHANCE;
-	s.pendingEnable = jer_config_get_bool(ANT_MOD_ID, "enabled", 0);
+	s.pendingEnable = jer_config_get_bool(ANT_MOD_ID, "enabled", 1);
 
 	/* Build the road cache once at boot */
 	AntFarmBuildRoadCache();
 
 	{
-		char styleList[200];  /* all 16 style keys fit - 80 silently truncated the log */
+		char styleList[220];  /* all 17 style keys fit - 80 silently truncated the log */
 		int n = 0;
 
 		styleList[0] = '\0';
@@ -3903,6 +4141,7 @@ JER_MODULE_ENTRY(jer_module_antfarm_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, AntFarmOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, AntFarmOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, AntFarmOnCamera, NULL, 100);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_ENGINE_SOUND, AntFarmOnCarEngineSound, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PED_INPUT, AntFarmOnPedInput, NULL, 10);
 	ctx->jer_register_hook(ctx, JER_EVENT_PAUSE_MENU, AntFarmOnPauseMenu, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, AntFarmOnDrawOverlay, NULL, 0);

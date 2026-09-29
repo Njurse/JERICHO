@@ -23,6 +23,7 @@ enum
 	ANTFARM_STYLE_TRIPZOOM,/* parked vantage on a car, slow zoom */
 	ANTFARM_STYLE_FARPAN,  /* distant long lens, slow pan + zoom */
 	ANTFARM_STYLE_WATERFRONT,/* dolly along a waterfront road */
+	ANTFARM_STYLE_JUNCTION,/* parked vantage watching a junction mouth */
 	ANTFARM_STYLE_COUNT
 };
 

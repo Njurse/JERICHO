@@ -1,8 +1,9 @@
 # Ant Farm — screensaver / idle mode (JERICHO module)
 
 A passive city observer for REDRIVER2. Turn it on and the game becomes a
-screensaver: player input is cut off, the HUD hides, all SFX are muted
-(music stays), and cop aggression is disabled while a cinematic camera tours
+screensaver: player input is cut off, the HUD hides, the player's own car
+engine is silenced (the rest of the city stays audible; music stays), and cop
+aggression is disabled while a cinematic camera tours
 the whole map — every cut hops to a far area and picks a fresh shot:
 
 Road and free angles:
@@ -23,6 +24,12 @@ Road and free angles:
   traffic sweeps past the lens.
 - **Waterfront** — a low dolly along a road that actually runs beside water
   (found by probing the surface for water / deep water / sand).
+- **Junction** — a parked vantage on a junction mouth: it sits off the corner
+  and slides its aim slowly *across* the crossroads, so cars entering and
+  leaving the junction cross the frame. Junction shots are planned onto a
+  road **end** (where the engine's straights meet), and the plan probes just
+  past that end to confirm another surface is there and logs the junction it
+  found.
 - **Chase** — behind-follow on a traffic car, framed to the vehicle's size.
   Off by default: it is the most agitated of the archetypes.
 
@@ -104,11 +111,35 @@ playable single-player session is running — no keypress needed.
 - **F9** (keyboard, PC) — toggle the screensaver during gameplay.
 - **Pause -> Modules -> Ant Farm** — toggle, plus a row per camera archetype
   and sliders for cut interval / car-mode interval / modes-per-cut.
-- **START** during the screensaver — turns it off and opens the normal
-  pause menu.
+- **START / opening the pause menu** — *suspends* the screensaver: the game
+  (and the player's car) is handed back so the pause menu and its camera
+  behave normally, and the mode re-engages on its own when the pause closes.
+  It also survives a **level restart from the pause menu** — the mode hands
+  back, drops the old level's references and starts fresh on the new level,
+  rather than shooting at the previous level's roads. To turn it OFF for good,
+  use **F9** or the **Ant Farm** row in the pause menu.
 - Settings persist to `JERICHO/CONFIG/antfarm.ini`
   (`interval`, `mode_interval`, `modes_per_cut`, `style_<key>` for each
-  archetype, `roll`, `letterbox`, `captions`, `lead_mode`, `enabled`).
+  archetype, `roll`, `letterbox`, `captions`, `debug_hud`, `lead_mode`,
+  `enabled`). A missing `enabled` defaults to **on** — the mode turns itself
+  on at the start of a game, and toggling it off (F9 / the pause menu) is what
+  persists a `0`.
+
+### Debugging a shot
+
+Set `debug_hud = 1` in `antfarm.ini` for a small grey readout in the
+**bottom-right** corner (the place the caption lives, opposite side) showing
+what the camera is doing this frame:
+
+```
+antfarm: <style key> <model> <car|road> <show|fade-out|cut|fade-in>
+```
+
+`style` is the archetype key (`junction`, `flyover`, `tripzoom`…), `model` is
+how the camera is driven (`roadside`, `dolly`, `attach`, `track`, `tripodz`,
+`junction`, …). It takes the guessing out of "what am I looking at" when a
+shot misbehaves. `debug_hud` is off by default and is not written to the config
+by the menu, so it only appears if you put it there.
 
 ## How it works (module-only, no game edits)
 
@@ -116,7 +147,7 @@ playable single-player session is running — no keypress needed.
 |---|---|
 | Input cutoff | `gStopPadReads = 1` (player car brakes and holds; on-foot pads zeroed via `JER_EVENT_PED_INPUT`) |
 | HUD hidden | `gDoOverlays = 0` |
-| Sound | `SetMasterVolume(0)` on entry, restored on exit (music is a separate volume and stays) |
+| Sound | keeps the master volume at the level the game itself treats as normal (music and CD audio pass through it, so music stays); the player's own car engine is silenced via `JER_EVENT_CAR_ENGINE_SOUND` (forces its idle + rev channel volumes to `-10000`). (Note: `SetMasterVolume(0)` is *unity*, not mute — silence is `-10000`, which is why the old master-volume-only attempt never silenced the idle engine.) |
 | Camera | `JER_EVENT_CAMERA` — writes `camera_position`/`camera_angle`, sets `override = 1` so the engine rebuilds the view from our values |
 | On-road framing | `GetSurfaceRoadInfo` + `GetNodePos` (lane + distance) + `ROAD_LANE_DIR` for the traffic heading — same helpers the civ AI drives on |
 | Scenery clearance | `lineClear` LOS pull-back + `CheckScenaryCollisions` camera-collider push-out (world-space Y conversion, `camera.c:604` pattern) |
@@ -134,7 +165,7 @@ playable single-player session is running — no keypress needed.
 - The player's car is **pinned to the camera focus** while the mode runs:
   teleported there each frame (so region streaming/streaming follows the
   action), hidden (`CONTROL_TYPE_NONE` + slot reserved so traffic can't reuse
-  it), and muted. On exit it's restored to where you left it, along with the
+  it), and its engine silenced. On exit it's restored to where you left it, along with the
   pad/overlay/cop/projection (`scr_z`) and `CameraCar` state.
 - The engine keeps only **four** regions resident (a 2×2 barrel window,
   `regions_unpacked[4]`), and only ever pre-loads neighbours as you drive. A
@@ -148,9 +179,42 @@ playable single-player session is running — no keypress needed.
   not resident yet.
 - The fade uses the game's stock semi-transparent wash look rather than a
   true black — matching how the original game does its own screen fades.
+- **Void / uncrolled scenery.** The camera is held whenever its region is not
+  resident (the void guard), and while a shot is live the module also asks the
+  engine for the *area* data of any new cell the camera enters (dolly/crane
+  shots cross cells faster than the pager settles, which is the "scenery or
+  palette did not load" look). `debug_hud` prints the current style if you need
+  to pin which shot it was.
+- Junction shots require a real crossroads: the plan probes past the road end
+  and, if there is no neighbouring surface there (a boundary road end that
+  opens onto nothing), it tries the other end and then other roads. A vantage
+  on an open road end at the map edge is what looked off the edge of the world.
+- Far areas are biased away from the world edge (`AntFarmNearWorldEdge`), so a
+  shot - and the pinned player car - stay inside the map.
 - Camera/pad compatibility: while the screensaver is on, Ant Farm's camera
   and pad hooks run at a higher JERICHO priority than d2pl's, so the
   screensaver takes precedence; it hands control back as soon as it is off.
+
+## Source layout (next unit)
+
+`antfarm.c` is still one file (~3.9k lines). It is deliberately organised in
+sections and is safe to split along them **without behaviour change** (the
+state layout and hook registration order must stay identical; only `static`
+has to be dropped on the moved functions):
+
+| New file | Moves out of `antfarm.c` |
+|---|---|
+| `antfarm_internal.h` | the `ANTFARM_STATE` struct, shared decls, constants |
+| `antfarm_rng.c` | `AntRand*` / the run seed |
+| `antfarm_roads.c` | the road cache, road/water picking, `AntFarmShotRoad*`, map-height/clamp helpers |
+| `antfarm_director.c` | `antStyleDefs`, style/car picking + memory, interest/POI, shot vars, dwell, far-area pick |
+| `antfarm_shotplan.c` | `AntFarmPlanShot` / `AntFarmSetupRoadShot` / `AntFarmPickStyleAndTarget` |
+| `antfarm_camera.c` | `AntFarmComputeCamera`, car modes, `AntFarmStaticTrack`, `AntFarmFindClearCamera`, dolly/junction maths |
+| `antfarm_lead.c` | the rogue-car (lead AI) event |
+
+`antfarm.c` then keeps the module entry, boot/config, lifecycle, pause menu and
+the hooks. New sources are picked up by re-running `premake5 vs2019` (the
+module's `.c` files are globbed at generate time).
 
 ## Tools
 

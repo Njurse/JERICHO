@@ -15,7 +15,9 @@
 # House rules (learned the hard way — same as cainescrossfire's tools):
 #   * never kill by image name; only the PID we launched is killed, and only
 #     on a genuine hang;
-#   * never delete REDRIVER2.log — it is snapshotted;
+#   * never delete JERICHO.log — it is snapshotted;  (the engine's session log
+#     is <appName>.log = JERICHO.log here, NOT REDRIVER2.log — a stale
+#     REDRIVER2.log from an older build made this harness read the wrong file)
 #   * antfarm is compiled INTO the exe, so a stale exe silently ignores code
 #     changes. Check the link line / exe timestamp before trusting a run.
 set -u
@@ -36,7 +38,7 @@ TEST_INTERVAL="${TEST_INTERVAL:-10}"
 BIN="C:/Users/Jaret/Documents/Projects/REDRIVER2/src_rebuild/bin/Release_dev"
 EXE="REDRIVER2_dev.exe"
 INI="$BIN/JERICHO/CONFIG/antfarm.ini"
-LOG="$BIN/REDRIVER2.log"
+LOG="$BIN/JERICHO.log"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 SNAP="$BIN/antfarm_test_${CITY}_${WEATHER}_${TIME}_${STAMP}.log"
 
@@ -56,12 +58,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-dumps_before="$(ls -1 REDRIVER2*.dmp 2>/dev/null | wc -l | tr -d ' ')"
+dumps_before="$(ls -1 "$BIN"/*.dmp 2>/dev/null | wc -l | tr -d ' ')"
 log_before="$(stat -c %Y "$LOG" 2>/dev/null || echo 0)"
 
 # Wait for any previous run (ours or the user's) to release the exe. Without
 # this, back-to-back runs race the last process's shutdown: the new game
-# truncates REDRIVER2.log and then dies, and the run looks like a pass read
+# truncates JERICHO.log and then dies, and the run looks like a pass read
 # from a stale log.
 for _ in $(seq 1 40); do
 	tasklist 2>/dev/null | grep -qi "REDRIVER2_dev.exe" || break
@@ -74,7 +76,7 @@ sed -i "s/^enabled *=.*/enabled = 1/; s/^interval *=.*/interval = $TEST_INTERVAL
 
 # STYLE=<key> isolates ONE camera archetype (all others off), so a single cut
 # proves that archetype's camera code ran.
-for k in chase static overhead tripod flyover orbit crane low fender sill nose34 tail34 kerb tripzoom farpan water; do
+for k in chase static overhead tripod flyover orbit crane low fender sill nose34 tail34 kerb tripzoom farpan water junction; do
 	v=1
 	if [ -n "${STYLE:-}" ] && [ "$k" != "$STYLE" ]; then v=0; fi
 	grep -q "^style_$k *=" "$INI" || echo "style_$k = $v" >> "$INI"
@@ -112,7 +114,7 @@ wait "$PID" 2>/dev/null || true
 
 cp -f "$LOG" "$SNAP" 2>/dev/null
 
-dumps_after="$(ls -1 REDRIVER2*.dmp 2>/dev/null | wc -l | tr -d ' ')"
+dumps_after="$(ls -1 "$BIN"/*.dmp 2>/dev/null | wc -l | tr -d ' ')"
 
 fail=0
 echo "--- verdict ---"
@@ -120,7 +122,7 @@ echo "--- verdict ---"
 log_after="$(stat -c %Y "$LOG" 2>/dev/null || echo 0)"
 
 if [ "$log_after" = "$log_before" ]; then
-	echo "FAIL: the game never wrote REDRIVER2.log — it did not launch (see antfarm_test_stdout.txt)"
+	echo "FAIL: the game never wrote JERICHO.log — it did not launch (see antfarm_test_stdout.txt)"
 	tail -5 "$BIN/antfarm_test_stdout.txt" 2>/dev/null | sed 's/^/   /'
 	exit 2
 fi
