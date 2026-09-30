@@ -261,6 +261,7 @@ change applies on the next level; nothing is cached.
 | `traffic_model`, `traffic_slot` | — | put a foreign model into a civilian slot so ambient traffic uses it |
 | `mp_agree_imports` | `1` | in a session, let the host's import set win for everyone |
 | `spawn_imports` | `0` | **measurement lever**: place one car per imported city ahead of the player, once per level |
+| `spawn_spacing` | `1500` | the gap between those placed cars, in world units — the default suits a long body (bus, fire truck, semi); echoed on the spawn summary line so a run records the value |
 | `two_guest_cities` | `0` | **measurement lever**: let more than one foreign city into the set. Off by default because the CLUT column overflows with one; see [Limits](#limits--what-it-does-not-do-today) |
 
 Cities are `0..3` = CHICAGO, HAVANA, VEGAS, RIO. Models are `0..12`.
@@ -331,6 +332,11 @@ This module's own tools (in `tools/`):
 |---|---|
 | `chk_single_city_playtest.sh [city] [frames]` | one host level, one car from every **other** city, **placed on the ground** to look at. `CHK_SHOW=1` streams the game log live. The watchable one |
 | `chk_all_cities.sh [frames]` | the same, but for **every** host level in turn |
+| `chk_mashup.sh [host] [mix] [frames]` | the biggest mix the engine can hold: cars from **2-4 cities** shuffled into the resident slots that are placed *and* driven, verified `built N/N, spawned N/N` |
+
+All three take **`frames 0` for MANUAL**: the `-frames` argument is left off, so the
+game runs until you close it and the tool moves on then — one close per level in the
+suite, so you go to the next test when you are ready rather than when a timer says so.
 | `chk_mp_foreign.sh` | a **real mp pair** with a different foreign city on each side, reporting what each machine loaded and what each player ended up driving |
 
 Both city tools assert the same three things per level, and **fail** if any is
