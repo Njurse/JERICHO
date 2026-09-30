@@ -2646,6 +2646,34 @@ static void VramAccountReport(void)
 			printInfo("JERICHO-VRAM: WARNING - the CLUT column reaches y=%d, %d row(s) into the level font image (%d..511). See cars.h CD2_CLUT_SAFE_LAST and VRAM.md 6.\n",
 				clutpos.y, clutover, CD2_CLUT_SAFE_LAST + 1);
 	}
+
+	// JERICHO: how many CLUT rows ONE streamed slot can need -- the max over the
+	// level's own pages of (palettes / 4 + 1), which is exactly what SendTPage
+	// writes into a slot's band (spool.c:495). The band reserves a flat 8 per slot;
+	// this is the number that says whether it can reserve less (VRAM.md 6, option 1)
+	// -- and whether 8 was ever enough.
+	{
+		int ti, maxRows = 0, minRows = 0;
+
+		for (ti = 0; ti < tpage_amount; ti++)
+		{
+			int rows;
+
+			if (tpage_texamts[ti] <= 0)
+				continue;
+
+			rows = tpage_texamts[ti] / 4 + 1;
+
+			if (rows > maxRows)
+				maxRows = rows;
+
+			if (minRows == 0 || rows < minRows)
+				minRows = rows;
+		}
+
+		printInfo("JERICHO-CLUT: the level's pages need %d..%d CLUT rows each; the streamed-slot band reserves 8\n",
+			minRows, maxRows);
+	}
 }
 
 // [D] [T]
