@@ -74,6 +74,38 @@ static CHK_IMPORT_ENTRY* chkSlot(int slot)
 	return &gChkSet[slot];
 }
 
+/* The engine's live resident models for this level, handed over from
+ * JER_EVENT_CAR_DATA_SOURCE (models.c) so chkImportSlotFree can see what another
+ * module claimed. NULL outside the hook -- the slot choosers fall back to asking
+ * only about OUR set then. */
+static int* gChkEngineModels;
+static int  gChkEngineCount;
+
+void chkImportSetEngineModels(int* models, int count)
+{
+	gChkEngineModels = models;
+	gChkEngineCount = (count > 0) ? count : 0;
+}
+
+/* Is `slot` still free to import into? A slot another module already gave a model
+ * is NOT ours to take: mp writes ITS spare player slots (5 and 6) from the same
+ * JER_EVENT_CAR_DATA_SOURCE, and both used to answer at the same priority, so one
+ * silently overwrote the other. carhacks now answers LAST (priority 10) and skips
+ * whatever it finds claimed -- mp's slots, or any other module's. */
+int chkImportSlotFree(int slot)
+{
+	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS)
+		return 0;
+
+	if (gChkSet[slot].used)
+		return 0;			/* already ours */
+
+	if (gChkEngineModels != NULL && slot < gChkEngineCount && gChkEngineModels[slot] >= 0)
+		return 0;			/* another module claimed it */
+
+	return 1;
+}
+
 static const char* chkCityName(int city)
 {
 	if (city < 0)
@@ -344,7 +376,7 @@ int chkImportApplyPick(int level, int count)
 	 * number as one of its own civilians. */
 	for (slot = CHK_IMPORT_SPARE_FIRST; slot < count && slot < CHK_IMPORT_MAX_SLOTS; slot++)
 	{
-		if (!gChkSet[slot].used)
+		if (chkImportSlotFree(slot))
 			break;
 	}
 

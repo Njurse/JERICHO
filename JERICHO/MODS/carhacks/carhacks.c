@@ -198,6 +198,12 @@ static int ChkOnCarDataSource(void* ud, void* args)
 
 	if (a->models != NULL && a->modelSource != NULL)
 	{
+		/* Let the set see which resident slots the ENGINE already holds a model
+		 * in, so its slot choosers skip one another module claimed. mp answers
+		 * this SAME event at priority 0 -- i.e. before us -- and writes its spare
+		 * player slots 5 and 6, which chkImportSlotFree then avoids. */
+		chkImportSetEngineModels(a->models, a->count);
+
 		/* The local config is this machine's fallback. On a CLIENT that has already
 		 * received the session's agreed set the HOST is authoritative, so the
 		 * config stands down; on the host the config IS the authority. */
@@ -217,6 +223,8 @@ static int ChkOnCarDataSource(void* ud, void* args)
 		chkNetFoldPeerCars();
 
 		chkImportApplyToCarData(a->count, a->models, a->modelSource);
+
+		chkImportSetEngineModels(NULL, 0);	/* hook-only pointer: drop it */
 	}
 
 	/* one line for the log, and the thing a peer will want to compare against
@@ -330,7 +338,11 @@ void carhacks_register(JERICHO_CONTEXT* ctx)
 			gChkHacks[i].name, gChkHacks[i].key, carhacks_enabled(i) ? "on" : "off");
 
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_AVAILABILITY, ChkOnCarAvailability, NULL, 0);
-	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DATA_SOURCE, ChkOnCarDataSource, NULL, 0);
+	/* Priority 10: run AFTER mp (which answers this at 0 and writes its spare
+	 * player slots 5/6). A later handler still runs before the engine consumes
+	 * the value (ProcessCarModelLump follows the event), so carhacks gets to see
+	 * mp's claims and skip them instead of overwriting them. */
+	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DATA_SOURCE, ChkOnCarDataSource, NULL, 10);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PEER_DRAW, ChkOnCarPeerDraw, NULL, 0);
 
 	/* the car-select menu (carselect.c): a JERICHO frontend menu that replaces

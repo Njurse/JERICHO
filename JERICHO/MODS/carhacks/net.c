@@ -141,7 +141,7 @@ int chkNetFoldPeerCars(void)
 
 		for (slot = CHK_IMPORT_SPARE_FIRST; slot < CHK_IMPORT_MAX_SLOTS; slot++)
 		{
-			if (chkImportSlotId(slot).model == CHK_MODEL_NONE)
+			if (chkImportSlotFree(slot))
 				break;
 		}
 

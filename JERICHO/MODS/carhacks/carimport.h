@@ -33,6 +33,19 @@ int chkImportSetSlotModel(int slot, int model);
 /* The identity recorded for `slot` (city = CHK_CITY_NATIVE when nothing). */
 CHK_CAR_ID chkImportSlotId(int slot);
 
+/* ---- slot ownership ---------------------------------------------------- */
+
+/* Hand the set the ENGINE's live resident models for this level (the `models`
+ * array from JER_EVENT_CAR_DATA_SOURCE), so its automatic slot choosers skip a
+ * slot another module already claimed. carhacks answers that event AFTER mp
+ * (priority 10 vs mp's 0), so mp's spare slots (5 and 6) are already written
+ * here -- see chkImportSlotFree. Pass NULL/0 outside the hook. */
+void chkImportSetEngineModels(int* models, int count);
+
+/* Is resident slot `slot` free to import into -- nothing of OURS, and nothing
+ * another module claimed? */
+int chkImportSlotFree(int slot);
+
 /* The one foreign city the set reads from, or -1 (the level's own city). */
 int chkImportGuestCity(void);
 

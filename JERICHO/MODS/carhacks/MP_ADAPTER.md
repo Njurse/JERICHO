@@ -2,8 +2,8 @@
 
 How carhacks and the multiplayer module (`JERICHO/MODS/mp/`) fit together: the car
 **identity** schema, the **channel** carhacks multiplexes over the bridge mp
-exposes, the host-authority rule, and the mp-side changes that are *proposed here
-but deliberately not made*.
+exposes, the host-authority rule, and the mp-side deltas (1 and 2 are now landed;
+3, the in-session roster, is still open).
 
 ## The problem this exists to solve
 
@@ -184,30 +184,26 @@ mid-level change therefore cannot move anyone's car; it takes effect next level.
 | the pick's / a peer's spare slot (5, then 6) | carhacks | that foreign car |
 | 5, 6 when mp seats extra players | **mp** | `gMpExtraModel`, `modelSource = -1` |
 
-**The honest gap:** both use spare slots 5/6, and both answer
-`JER_EVENT_CAR_DATA_SOURCE` at priority 0 (`mp.c:1422`, `carhacks.c`). They can
-coexist because carhacks' fold only takes a spare slot that is *empty in the set*
-and logs when none is free, and because the adapter is only active in a session —
-but a match with several foreign cars and several extra players could collide. The
-clean fix needs mp to tell carhacks which slots it reserved; that is an mp-side
-change (see below), so it is recorded rather than worked around.
+**Ownership, resolved.** Both used to use spare slots 5/6 and both answered
+`JER_EVENT_CAR_DATA_SOURCE` at priority 0, so one could silently overwrite the other.
+Both halves are fixed: carhacks now answers that event at priority 10 — i.e. AFTER mp
+— and its automatic slot choosers (`chkImportApplyPick`, `chkNetFoldPeerCars`) skip
+any resident slot that already holds a model (`chkImportSlotFree`, fed the engine's
+live `models[]` through `chkImportSetEngineModels`). mp's reserved slots win
+deterministically, and so does any other module's claim.
 
-## Proposed mp-side deltas (NOT implemented here)
+## mp-side deltas — 1 and 2 are DONE
 
-Kept deliberately out of scope — this work is carhacks-side only, so the mp module
-and its wire format are untouched.
-
-1. **Carry the city.** Add one byte to `MP_ROSTER_ENTRY` and
-   `MP_CARSTATE_ENTRY` (`u8 modelCity`, `0xFF` = the session city) and bump
-   `MP_PROTO_VERSION` (`mp_proto.h`), then resolve it in `MpPlayerCarModel`. That
-   is the whole change needed for mp to describe a cross-city car natively, and it
-   would make this channel unnecessary for identity (it would still be the way the
-   *agreed guest city* is reached, since the engine holds one per level).
-2. **Publish the reserved slots.** A small query so carhacks' fold can avoid slots
-   mp has taken.
-3. **Offer the roster in-session.** carhacks' menu declines while a session is live
-   precisely because the stock car screen is mp's. Giving the roster row to mp's
-   own car screen is the natural follow-up.
+1. **Carry the city. DONE** (`MP_PROTO_VERSION` 6). `MP_ROSTER_ENTRY.modelCity` and
+   `MP_CARSTATE_ENTRY.modelCity` carry the city (`0xFF` = the session city), and the
+   carstate's `model` is the model NUMBER, not a slot. `MpResidentSlotForCar` resolves
+   the pair to the receiver's OWN slot, and `-mpcar [city:]model` names one.
+2. **Reserved slots. DONE**, by observation rather than a query: carhacks answers the
+   source event after mp and skips slots the engine already holds a model in (above).
+3. **Offer the roster in-session. STILL OPEN.** carhacks' menu declines while a
+   session is live precisely because the stock car screen is mp's. Giving the roster
+   row to mp's own car screen — or letting carhacks' Ride drive mp's START — is the
+   next unit.
 
 ## What is verified today
 
