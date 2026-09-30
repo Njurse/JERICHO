@@ -1620,7 +1620,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 			// cannot eat the pin band's reserve. Past it, reuse the palette already stored
 			// for THIS PAGE - the car's own page, so its colours stay its own - and only
 			// fall back to the city's first palette if this page has not stored one yet.
-			if (city == GetCarImportCity() && city != GameLevel && clutpos.y > CAR_CLUT_IMPORT_LIMIT)
+			if (CarImportCityHeld(city) && city != GameLevel && clutpos.y > CAR_CLUT_IMPORT_LIMIT)
 			{
 				int hit = -1;
 
@@ -1710,10 +1710,12 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		LevelNames[city], total_cluts, clutpos.y - rowStart, rowStart, clutpos.y, reused, deferred, borrowed, skipped, CAR_CLUT_IMPORT_LIMIT);
 }
 
-// JERICHO: the deferred import palette lump (see ProcessImportedPaletteRows).
-static char* sImpPalLump;
-static int sImpPalSize;
-static int sImpPalCity = -1;
+// JERICHO: the deferred import palette lumps, ONE PER CITY (see
+// ProcessImportedPaletteRows). A level can hold more than one city's car data now
+// (models.c's gCarImports[4]), and each city's own LUMP_PALLET is deferred until
+// the built model says which rows it draws from.
+static char* sImpPalLump[4];
+static int sImpPalSize[4];
 
 // JERICHO: the host path, and the entry point every existing caller uses.
 //
@@ -1727,11 +1729,12 @@ static int sImpPalCity = -1;
 // exist.
 static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 {
-	if (city == GetCarImportCity() && city != GameLevel)
+	// This SLOT's city, not the level's one guest city: any city the level holds
+	// has its palette table deferred (models.c's CarImportCityHeld).
+	if (CarImportCityHeld(city) && city != GameLevel)
 	{
-		sImpPalLump = lump_ptr;
-		sImpPalSize = lump_size;
-		sImpPalCity = city;
+		sImpPalLump[city] = lump_ptr;
+		sImpPalSize[city] = lump_size;
 
 		printInfo("cross-city: %s palettes: deferred (%d CLUT(s) in the lump) - which rows to keep is not known until the model is built\n",
 			LevelNames[city], (lump_ptr != NULL) ? *(int*)lump_ptr : 0);
@@ -1752,24 +1755,41 @@ static void ProcessPalletLumpForCity(char *lump_ptr, int lump_size, int city)
 // pointing at nothing. Returns 1 when a deferred lump was uploaded, 0 when there was none.
 int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 {
-	int rows = 0, r;
+	int city, uploaded = -1;
 
-	if (sImpPalLump == NULL)
-		return 0;
+	for (city = 0; city < 4; city++)
+	{
+		int rows = 0, r;
 
-	for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
-		if (rowNeeded[r])
-			rows++;
+		if (sImpPalLump[city] == NULL)
+			continue;
 
-	printInfo("cross-city: %s palettes: uploading for %d of the import bank's %d rows\n",
-		LevelNames[sImpPalCity], rows, CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW);
+		// The civ_clut import bank is ONE bank of rows (CIV_CLUT_IMPORT_ROW..
+		// CIV_CLUT_ROWS-1), so it admits one city's rows. A second city is REFUSED
+		// loudly rather than overwriting the first's -- the honest limit the
+		// measurement in CROSS_CITY.md "The budget" records; lifting it is the
+		// CLUT band's job, not this function's.
+		if (uploaded >= 0)
+		{
+			printInfo("cross-city: %s palettes: REFUSED - the civ_clut import bank holds ONE city's rows (%d..%d), and %s already has them\n",
+				LevelNames[city], CIV_CLUT_IMPORT_ROW, CIV_CLUT_ROWS - 1, LevelNames[uploaded]);
+			continue;
+		}
 
-	ProcessPalletLumpForRows(sImpPalLump, sImpPalSize, sImpPalCity, rowNeeded);
+		for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
+			if (rowNeeded[r])
+				rows++;
 
-	sImpPalLump = NULL;
-	sImpPalCity = -1;
+		printInfo("cross-city: %s palettes: uploading for %d of the import bank's %d rows\n",
+			LevelNames[city], rows, CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW);
 
-	return 1;
+		ProcessPalletLumpForRows(sImpPalLump[city], sImpPalSize[city], city, rowNeeded);
+
+		sImpPalLump[city] = NULL;
+		uploaded = city;
+	}
+
+	return (uploaded >= 0);
 }
 
 // [D] [T]
@@ -1789,22 +1809,30 @@ void ProcessPalletLump(char *lump_ptr, int lump_size)
 // without touching a single host row.
 void ProcessImportedPalette(void)
 {
-	int city = GetCarImportCity();
-	int size = 0;
-	char* pallet;
+	int city;
 
-	if (city < 0)
-		return;
+	// EVERY held city, not just the first: each has its own deferred LUMP_PALLET to
+	// hand to the pin (ProcessPalletLumpForCity defers it), so a second city's cars
+	// are described by their OWN palettes instead of being silently coloured by the
+	// first city's rows.
+	for (city = 0; city < 4; city++)
+	{
+		int size = 0;
+		char* pallet;
 
-	pallet = GetCarImportPallet(&size);
+		if (!CarImportCityHeld(city) || city == GameLevel)
+			continue;
 
-	if (pallet == NULL || size <= 0)
-		return;
+		pallet = GetCarImportPalletForCity(city, &size);
 
-	ProcessPalletLumpForCity(pallet, size, city);
+		if (pallet == NULL || size <= 0)
+			continue;
 
-	printInfo("cross-city: %s car palettes applied to civ_clut rows %d..%d\n",
-		LevelNames[city], CIV_CLUT_IMPORT_ROW, CIV_CLUT_ROWS - 1);
+		ProcessPalletLumpForCity(pallet, size, city);
+
+		printInfo("cross-city: %s car palettes applied to civ_clut rows %d..%d\n",
+			LevelNames[city], CIV_CLUT_IMPORT_ROW, CIV_CLUT_ROWS - 1);
+	}
 }
 
 // [D] [T]
@@ -2230,7 +2258,7 @@ static int CarPalIndexInCity(int tpage, int city)
 	if (city < 0 || city >= 4)
 		return -1;
 
-	rowbase = (city == GetCarImportCity() && city != GameLevel) ? CIV_CLUT_IMPORT_ROW : 0;
+	rowbase = (CarImportCityHeld(city) && city != GameLevel) ? CIV_CLUT_IMPORT_ROW : 0;
 
 	for (i = 0; i < 8; i++)
 	{
@@ -2265,12 +2293,13 @@ char GetCarPalIndex(int tpage)
 	// pages with it. Its polygons look their colours up by page, and the host
 	// level has no entry for a foreign page - so they all collapse to slot 0 and
 	// the car is painted with the HOST's palette, which is what 'foreign palettes
-	// do not load' looks like. Map through the imported city's table instead,
-	// which is where its palettes were stored.
-	imported = GetCarImportCity();
-
-	if (imported >= 0)
+	// do not load' looks like. Map through a HELD city's table instead, which is
+	// where its palettes were stored. More than one city can be held.
+	for (imported = 0; imported < 4; imported++)
 	{
+		if (!CarImportCityHeld(imported) || imported == GameLevel)
+			continue;
+
 		idx = CarPalIndexInCity(tpage, imported);
 
 		if (idx >= 0)
