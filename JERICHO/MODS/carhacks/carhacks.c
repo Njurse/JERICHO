@@ -360,7 +360,7 @@ void carhacks_register(JERICHO_CONTEXT* ctx)
 	chkNetRegister(ctx);
 
 	/* the "see the imported cars" measurement lever (spawn.c): places one car per
-	 * imported city beside the player, once per level. Off unless
+	 * imported city in a line ahead of the player, once per level. Off unless
 	 * spawn_imports = 1. */
 	chkSpawnRegister(ctx);
 

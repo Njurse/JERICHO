@@ -8,8 +8,8 @@
  * of them.
  *
  * With `spawn_imports = 1` in carhacks.ini this puts one car per imported city on
- * the ground beside the player, ONCE, as soon as the level is live, so the
- * geometry and the placement can be looked at.
+ * the ground in a line ahead of the player, ONCE, as soon as the level is live, so
+ * the geometry and the placement can be looked at.
  *
  * It is a MEASUREMENT lever, not a feature:
  *   - the cars are CONTROL_TYPE_CUTSCENE and nothing drives them: they sit where
