@@ -1578,9 +1578,25 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 	buffPtr = (int*)(lump_ptr + 4);
 	clutTablePtr = (u_short*)clutTable;
 
-	while (*buffPtr != -1)
+	for (;;)
 	{
 		int palidx, needed;	// JERICHO: the row this entry belongs to, and whether we keep it
+
+		// BOUNDS FIRST, before the terminator read. A palette lump ends with a -1
+		// palette field, but the deferred lump is a POINTER and a SIZE that come from
+		// gCarImports[city]; when a recolourable import is in play (models 0..4, the ones
+		// whose palettes use the civ_clut import bank) this walk used to run past the end
+		// and read heap as entry fields -- clut_number came out as -1.5e9 and indexed
+		// clutTable out of bounds, which is the EXCEPTION_ACCESS_VIOLATION at +0x300.
+		if ((char*)buffPtr + 12 > (char*)lump_ptr + lump_size)
+		{
+			printInfo("cross-city: %s palettes: no terminator within %d bytes (%d entries read) - the lump is mis-sized; stopping\n",
+				LevelNames[city], lump_size, clutStored);
+			break;
+		}
+
+		if (*buffPtr == -1)
+			break;
 
 		palette = buffPtr[0];
 		texnum = buffPtr[1];
@@ -1607,11 +1623,11 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 				clutTable[clutStored] = 0;
 			}
 
-			clutStored++;
+			if (clutStored < 320)
+				clutStored++;
 			deferred++;
 			buffPtr += 8;
-			continue;
-		}
+			continue;		}
 
 		if (clut_number == -1)
 		{
@@ -1651,7 +1667,10 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 					clutTable[clutStored] = clutValue;
 				}
 
-				clutStored++;
+				// Clamped: clutStored bounds the REFERENCE branch below, and it must not
+				// grow past the table it indexes.
+				if (clutStored < 320)
+					clutStored++;
 
 				*clutTablePtr++ = clutValue;
 
@@ -1676,7 +1695,17 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		else
 		{
 			// use stored clut
-			clutValue = clutTable[clut_number];
+			// clut_number is DATA out of the lump: bound it before it indexes the table.
+			// An index past the table, or past what has actually been stored, is a lump
+			// this code must not trust -- it is the second half of the +0x300 fault.
+			if (clut_number < 0 || clut_number >= 320 || clut_number >= clutStored)
+			{
+				printInfo("cross-city: %s palettes: entry %d refers to CLUT %d, which is not stored (%d stored) - using the first palette\n",
+					LevelNames[city], clutStored, clut_number, clutStored);
+				clut_number = (clutStored > 0) ? 0 : -1;
+			}
+
+			clutValue = (clut_number >= 0) ? clutTable[clut_number] : 0;
 			reused++;
 
 			// JERICHO: in the filtered pass that CLUT may have been SKIPPED - it belongs to

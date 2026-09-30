@@ -104,6 +104,20 @@ if [ "$host" -lt 0 ]; then
 	exit 2
 fi
 
+# ---- the pool, and the exact repro ------------------------------------------
+# CHK_POOL=all : draw models from the WHOLE range 0..12, not just the four specials every
+#                city ships. This is the "any vehicle" case, and the only way to reach the
+#                RECOLOURABLE bodies (0..4) -- the ones whose palettes use the civ_clut
+#                import bank (rows 8..15, ONE city's worth).
+# CHK_REPRO=1  : pin the exact set that faulted in ProcessPalletLumpForRows -- host
+#                HAVANA, slots 0,1,2,4,5,6 <- CHICAGO 1, VEGAS 3, RIO 9 -- so the crash
+#                is reproducible instead of remembered.
+CHK_POOL="${CHK_POOL:-specials}"
+
+if [ "${CHK_REPRO:-0}" = "1" ]; then
+	host=1				# HAVANA, the level it faulted on
+fi
+
 MIX="${2:-4}"
 case "$MIX" in
 	2|3|4) ;;
@@ -150,6 +164,22 @@ for m in "${MASH_MODELS[@]}"; do
 		PAIRS+=("$c:$m")
 	done
 done
+
+# CHK_REPRO: the exact faulting set, in order -- one model per city, cycled.
+if [ "${CHK_REPRO:-0}" = "1" ]; then
+	MASH_CITIES=(0 2 3)		# CHICAGO, VEGAS, RIO (the host is HAVANA)
+	PAIRS=("0:1" "2:3" "3:9")
+fi
+
+# CHK_POOL=all: the whole model range, for every chosen city.
+if [ "$CHK_POOL" = "all" ]; then
+	PAIRS=()
+	for c in "${MASH_CITIES[@]}"; do
+		for m in $(seq 0 12); do
+			PAIRS+=("$c:$m")
+		done
+	done
+fi
 
 npairs="${#PAIRS[@]}"
 want="${#MASH_SLOTS[@]}"

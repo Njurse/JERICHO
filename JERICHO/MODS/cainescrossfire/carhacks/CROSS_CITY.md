@@ -380,6 +380,34 @@ a measurement lever, not a feature.
 `tools/chk_all_cities.sh` runs it for every host level, setting `spawn_imports = 1`
 and asserting `lumps 3/3, geometry 3/3, spawned 3/3`.
 
+## The full-pool access violation, and what it actually was
+
+`ProcessPalletLumpForRows` faulted (EXCEPTION_ACCESS_VIOLATION, `+0x300`) as soon as a
+**recolourable** model (0..4) was imported — the models whose palettes use the `civ_clut`
+import bank. `8/9/10/12` are specials and never reach this path, which is why the mashup
+was fine until the pool was widened to "any vehicle".
+
+What the dump plus a bounded probe established:
+
+- `clut_number` is read straight out of the lump (`buffPtr[3]`) and used as
+  `clutTable[clut_number]` with **no bound at all**. Once the walk desynchronised the
+  value came out as `-1593258381`, a wild address — that is the fault.
+- The walk (`while (*buffPtr != -1)`) trusted a terminator that is not always inside the
+  lump it was handed, and it never consulted `lump_size`.
+- `clutStored` grew past the 320 entries `clutSrc` / `clutDone` / `clutTable` hold, so
+  the REFERENCE branch's `clut_number < clutStored` could itself index past the table.
+
+All three are bounded now: the walk stops before the lump's end and says so, every index
+is checked against the table *and* against what was actually stored, and `clutStored` is
+clamped. The reproducer (`CHK_REPRO=1 chk_mashup.sh havana 4 60`) runs to `built 3/3,
+spawned 3/3` with no dump.
+
+**Still open, now visible instead of fatal:** the walk reports
+`no terminator within N bytes` — the deferred lump and its size do not agree with the
+entry format this code assumes (a city's table is 219 CLUTs in a 15576-byte lump). From
+here that would show as wrong colours for a cross-row reference, not as a crash. It and
+the one-city bank are what the CLUT band unit takes on.
+
 ## Related
 
 The folder override (`GetCarDataFolder()`, driven by
