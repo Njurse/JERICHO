@@ -332,6 +332,50 @@ Still open:
   last run's pages under each palette, and `tools/levpalette.py` gives the defaults to
   compare against.
 
+## Seeing the imported cars (the `spawn_imports` lever)
+
+An import fills a **resident model slot** and nothing more: it does not create a
+vehicle. So a foreign car is invisible unless you drive it or the engine happens to
+roll its slot -- and the engine's roll can never reach slots 5/6:
+
+- traffic picks its model from `modelRandomList` (`civ_ai.c:47`), which names
+  0/1/2/4 only;
+- `residentCarModels[5]/[6]` (`mission.c:359`) are written and read by nobody;
+- carhacks itself never spawns.
+
+A level really can hold three cities' car data and show none of them. This lever is
+for looking at them:
+
+    # carhacks.ini
+    spawn_imports = 1
+
+With it on, `spawn.c` installs a FRAME hook that fires **once per level**, as soon
+as the level is live and the player is in a car (`playerCarId` in range and
+`controlType == CONTROL_TYPE_PLAYER` -- the codebase's own "in a game" test). It
+then puts one car per imported city on the ground beside the player:
+
+    [carhacks] spawn: CHICAGO model 8 (resident slot 4) placed in CAR_DATA slot 2, palette 0
+    [carhacks] spawn: HAVANA model 9 (resident slot 5) placed in CAR_DATA slot 3, palette 0
+    [carhacks] spawn: RIO model 12 (resident slot 6) placed in CAR_DATA slot 4, palette 0
+    [carhacks] spawn: 3 imported car(s) placed beside the player
+
+The recipe is the one cainescrossfire's own opponent spawn already proves
+(`ai/opponent.c:518-528,678`): the first `CAR_DATA` whose `controlType` is
+`CONTROL_TYPE_NONE`, `InitCar(..., CONTROL_TYPE_CUTSCENE, ...)` at
+`CD2_AI_SPAWN_OFFSET`-style offsets along the player's own right-hand axis,
+alternating sides. The engine's palette rule applies too -- `0..5` only for a
+recolourable body (`0..4`), else `0` -- so a recolourable car gets a distinct colour
+and a special body is not mis-tinted. `CONTROL_TYPE_CUTSCENE` is deliberate: nothing
+drives the car, so it stays where it is put and can be looked at.
+
+**Two honest limits.** The colours are NOT right yet: three imports overflow the
+CLUT column (`JERICHO-VRAM` reports 0 safe free) and the band-placement unit is what
+fixes that -- so this lever proves **geometry and placement**, not pixels. And it is
+a measurement lever, not a feature.
+
+`tools/chk_all_cities.sh` runs it for every host level, setting `spawn_imports = 1`
+and asserting `lumps 3/3, geometry 3/3, spawned 3/3`.
+
 ## Related
 
 The folder override (`GetCarDataFolder()`, driven by

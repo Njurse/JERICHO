@@ -70,6 +70,7 @@ for host in 0 1 2 3; do
 	{
 		printf 'cross_city_vehicles = 1\n'
 		printf 'two_guest_cities = 1\n'
+		printf 'spawn_imports = 1\n'
 		printf 'import ='
 		first=1
 		slot=4
@@ -100,7 +101,7 @@ for host in 0 1 2 3; do
 	fi
 
 	echo "===== host ${CITY_NAME[$host]} (level ${LEVEL_NAME[$host]}) ====="
-	grep -aE "car data from|geometry from|page lists -" "$log" | sed -e 's/^[[:space:]]*//'
+	grep -aE "car data from|geometry from|page lists -|carhacks\] spawn" "$log" | sed -e 's/^[[:space:]]*//'
 	grep -aE "JERICHO-CLUT:|JERICHO-VRAM: texture used|JERICHO-HEAP:" "$log" | tail -3 | sed -e 's/^[[:space:]]*//'
 
 	if grep -aqE "access violation|fatal error|ModelPtr is NULL" "$log"; then
@@ -113,18 +114,28 @@ for host in 0 1 2 3; do
 
 	nlumps=$(grep -acE "cross-city: car data from" "$log")
 	ngeom=$(grep -acE "cross-city: slot [0-9]+ geometry from" "$log")
-	echo "  -> lumps $nlumps/3, geometry $ngeom/3"
+	nspawn=$(grep -acE "carhacks\] spawn: .* placed in CAR_DATA" "$log")
+	echo "  -> lumps $nlumps/3, geometry $ngeom/3, spawned $nspawn/3"
 
 	[ "$nlumps" -ne 3 ] && fail=1
 	[ "$ngeom" -ne 3 ] && fail=1
+
+	# The spawn lever is what makes the three cars VISIBLE (an import only fills a
+	# resident model slot; nothing in the engine spawns slots 5/6). No spawn line
+	# means you would not see them, which is the whole point of this test.
+	[ "$nspawn" -ne 3 ] && fail=1
 done
 
 [ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || printf 'cross_city_vehicles = 0\n' > "$INI"
 echo "carhacks.ini restored"
 
 if [ "$fail" -eq 0 ]; then
-	echo "== all-cities: 4 host levels x 3 foreign cars, every city present and built =="
+	echo "== all-cities: 4 host levels x 3 foreign cars, every city LOADED, BUILT and SPAWNED =="
 else
 	echo "== all-cities: PROBLEMS above =="
 fi
+
+# The spawned cars' COLOURS are not right yet: three imports overflow the CLUT
+# column (JERICHO-VRAM reports 0 safe free), which the band-placement unit fixes.
+# Geometry and placement are what this test proves.
 exit "$fail"
