@@ -1029,7 +1029,7 @@ static void ParseImportedTextureInfo(void)
 
 					found++;
 
-					if (base >= 0 && ReadCarImportFile(base + offset, &cluts, sizeof(cluts)))
+					if (base >= 0 && ReadCarImportFileForCity(city, base + offset, &cluts, sizeof(cluts)))
 						printInfo("cross-city: %s set %d at +%d, %d bytes, %d clut rows\n",
 							LevelNames[city], set, offset, gCarImportPerms.bytes[j], cluts);
 
@@ -1316,6 +1316,9 @@ static int sPinIndex[CAR_PIN_MAX];		// the index its page is loaded at
 static int sPinSlot[CAR_PIN_MAX];		// the slot it lives in, -1 while unplaced
 static int sPinOffset[CAR_PIN_MAX];		// where its bytes are in the source city's file
 static int sPinSize[CAR_PIN_MAX];
+static int sPinCity[CAR_PIN_MAX];		// WHICH city's level file those bytes come from --
+						// a level can hold more than one city's car data now,
+						// so the page must be read from ITS OWN file
 static int sPinPreferred[CAR_PIN_MAX];		// the rectangle the REPLACED car's page used, or -1
 static RECT16 sPinClutCursor;			// walking CLUT-row cursor for the imported pages
 static int sPinEvictions;			// world pages taken back this run, for the dump
@@ -1396,7 +1399,7 @@ int CarModelSetUsed(int set)
 	return 0;
 }
 
-static void CarPinRecord(int set, int index, int offset, int size, int preferred)
+static void CarPinRecord(int set, int index, int offset, int size, int preferred, int city)
 {
 	if (sPinCount >= CAR_PIN_MAX)
 		return;
@@ -1406,6 +1409,7 @@ static void CarPinRecord(int set, int index, int offset, int size, int preferred
 	sPinSlot[sPinCount] = -1;		// placed at draw time
 	sPinOffset[sPinCount] = offset;
 	sPinSize[sPinCount] = size;
+	sPinCity[sPinCount] = city;
 	sPinPreferred[sPinCount] = preferred;
 	sPinCount++;
 }
@@ -1691,7 +1695,10 @@ void CarImportPin(void)
 		if (buf == NULL)
 			continue;
 
-		if (!ReadCarImportFile(GetCarImportPageBase() + sPinOffset[i], buf, sPinSize[i]))
+		/* The page's bytes come from ITS OWN city's level file -- a level can hold
+		 * more than one city's car data, so neither the file nor the page base may
+		 * come from the level-wide singleton. */
+		if (!ReadCarImportFileForCity(sPinCity[i], GetCarImportPageBaseForCity(sPinCity[i]) + sPinOffset[i], buf, sPinSize[i]))
 		{
 			free(buf);
 			continue;
@@ -2153,7 +2160,7 @@ void CarImportResetState(void)
 void LoadImportedTPages(void)
 {
 	int city = GetCarImportCity();
-	int base = GetCarImportPageBase();
+	int base = GetCarImportPageBaseForCity(city);
 	int sets[64];
 	int pref[64];		// preferred slot per set: the rectangle the replaced car used, or -1
 	int nsets = 0;
@@ -2434,7 +2441,7 @@ void LoadImportedTPages(void)
 
 		buf = (char*)malloc(size);
 
-		if (buf == NULL || !ReadCarImportFile(base + offset, buf, size))
+		if (buf == NULL || !ReadCarImportFileForCity(city, base + offset, buf, size))
 		{
 			printInfo("cross-city: %s set %d could not be read (%d bytes) - skipped\n", LevelNames[city], set, size);
 
@@ -2468,7 +2475,7 @@ void LoadImportedTPages(void)
 			sRemapCount++;
 		}
 
-		CarPinRecord(set, dstSet, offset, size, pref[i]);
+		CarPinRecord(set, dstSet, offset, size, pref[i], city);
 
 		printInfo("cross-city: %s set %d -> index %d, %d bytes at +%d, %d clut rows (paged in at draw time, evicting the world if needed)\n",
 			LevelNames[city], set, dstSet, size, offset, npalettes);
