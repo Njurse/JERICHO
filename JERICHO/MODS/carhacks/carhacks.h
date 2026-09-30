@@ -26,6 +26,24 @@
  * live in cainescrossfire/carhacks/ - they are referenced from engine source
  * comments there and from tools, so they were not moved with the code. This
  * module's own docs (README.md, CARSELECT.md, MP_ADAPTER.md) are here.
+ *
+ * LOGGING - one rule per call, so no future line has to guess:
+ *   - printInfo(...)   every DIAGNOSTIC line (what the module did and why it
+ *                      refused). This is the engine's own informational channel
+ *                      (driver2.h -> PsyX_Log_Info) -- the channel that emits the
+ *                      "cross-city:"/"JERICHO-*" lines carhacks' lines sit beside,
+ *                      and the one the harnesses read from a run's captured
+ *                      stdout. Prefix with "[carhacks]" or "[carhacks/net]".
+ *   - jer_error(...)   a line the PLAYER must see (a dropped car, a refused
+ *                      pick, a menu that will not come up). It logs the whole
+ *                      message verbatim as "[error] ..." AND raises the on-screen
+ *                      notice, so it is the single call for a player-facing
+ *                      refusal -- do NOT pair it with a printInfo.
+ *   - ctx->jer_log(...) ONLY inside a module entry/registration function, where
+ *                      `ctx` is the handle in hand and calling it is the SDK
+ *                      idiom (carhacks_register, chkNetRegister,
+ *                      chkCarSelectRegister). It lands in the same log as
+ *                      printInfo.
  */
 
 #include "jericho.h"

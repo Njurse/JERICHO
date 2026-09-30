@@ -55,6 +55,17 @@ Cross-city keys (only read when `cross_city_vehicles = 1`):
 | `JER_EVENT_CAR_DATA_SOURCE` | writes the level's import set into the engine's `models[]` / `modelSource[]` |
 | `JER_EVENT_CAR_PEER_DRAW` | **answer how a remote player's car is drawn here** — whether this machine really holds that player's vehicle, and the palette to use if it does not ([`MP_ADAPTER.md`](MP_ADAPTER.md)) |
 
+## Logging
+
+One rule per call, so no future line has to guess (also stated at the top of
+`carhacks.h`):
+
+| call | for | notes |
+|---|---|---|
+| `printInfo(...)` | every **diagnostic** line | the engine's own informational channel — the same one that emits the `cross-city:`/`JERICHO-*` lines carhacks' messages sit beside, and the one the harnesses read from a run's captured stdout. Prefix with `[carhacks]` / `[carhacks/net]`. |
+| `jer_error(...)` | a line the **player** must see | a dropped car, a refused pick, a menu that will not come up. Logs the message verbatim as `[error] …` **and** raises the on-screen notice, so it is the *single* call for a player-facing refusal — do not pair it with a `printInfo`. |
+| `ctx->jer_log(ctx, …)` | a **module entry / registration** function | only where `ctx` is the handle in hand (`carhacks_register`, `chkNetRegister`, `chkCarSelectRegister`); it lands in the same log as `printInfo`. |
+
 ## Docs
 
 The mechanism and the city data formats are documented next to the engine code

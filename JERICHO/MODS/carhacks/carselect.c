@@ -271,7 +271,9 @@ static int chkRideWith(int city, int idx)
 
 	if (idx < 0 || idx >= n)
 	{
-		printInfo("[carhacks] car select: ride refused - no car %d in %s's roster (%d available)\n",
+		/* Player-facing: the pick could not be started, so tell them (the menu
+		 * normally prevents this, but a refused Ride must not be silent). */
+		jer_error("[carhacks] car select: ride refused - no car %d in %s's roster (%d available)",
 			idx, chkCityName(city), n);
 		return 0;
 	}
@@ -348,7 +350,9 @@ void chkCarSelectArm(void)
 	 * overriding it from another module would break the session. */
 	if (jer_net_is_active())
 	{
-		printInfo("[carhacks] car select: a multiplayer session is live - the stock car screen stays mp's\n");
+		/* Player-facing: the roster row is not on offer here, and it is worth
+		 * saying why rather than leaving the player wondering. */
+		jer_error("[carhacks] car select: a multiplayer session is live - the stock car screen stays mp's");
 		return;
 	}
 
@@ -533,7 +537,7 @@ void chkCarSelectRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, chkSelOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, chkSelOnFrontendEntered, NULL, 0);
 
-	printInfo("[carhacks] car select: menu '%s' registered (%d rows: car, city, ride, back; %s)\n",
+	ctx->jer_log(ctx, "[carhacks] car select: menu '%s' registered (%d rows: car, city, ride, back; %s)\n",
 		gChkMenu.id, gChkMenu.item_count,
 		(gChkForceCity >= 0 || gChkForceCar >= 0 || gChkForceMenu) ? "harness overrides set" : "no harness overrides");
 }

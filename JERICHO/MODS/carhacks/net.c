@@ -147,8 +147,10 @@ int chkNetFoldPeerCars(void)
 
 		if (slot >= CHK_IMPORT_MAX_SLOTS)
 		{
-			printInfo("[carhacks/net] player %d wants %s model %d, but no spare resident "
-				"slot is free - not importing it\n",
+			/* Player-facing: a peer's car could not be brought in, so the host
+			 * is told on screen as well as in the log. */
+			jer_error("[carhacks/net] player %d wants %s model %d, but no spare resident "
+				"slot is free - not importing it",
 				p, chkNetCityName((int)gChkNetPeerPick[p].city), (int)gChkNetPeerPick[p].model);
 			continue;
 		}

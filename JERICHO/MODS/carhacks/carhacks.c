@@ -125,6 +125,9 @@ static int ChkOnCarAvailability(void* ud, void* args)
 
 	(void)ud;
 
+	if (a == NULL)
+		return JER_RESULT_CONTINUE;
+
 	if (carhacks_enabled(CHK_HACK_UNLOCK_EXTRA))
 	{
 		a->result = 1;
@@ -172,6 +175,9 @@ static int ChkOnCarDataSource(void* ud, void* args)
 	int src;
 
 	(void)ud;
+
+	if (a == NULL)
+		return JER_RESULT_CONTINUE;
 
 	/* a fresh set for this level (the player's pick survives the reset: it was
 	 * made in the frontend and is consumed by the level it starts) */

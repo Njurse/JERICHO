@@ -11,6 +11,7 @@
 
 #include "driver2.h"
 
+#include "jericho.h"		/* jer_error: a player-facing refusal notice */
 #include "jer_config.h"
 
 #include "system.h"		/* LevelNames[] for the log */
@@ -111,8 +112,12 @@ static int chkClaimGuestCity(int city, int slot)
 		return 1;
 	}
 
-	printInfo("[carhacks] import: slot %d wants %s but this level already reads cars from %s - "
-		"the engine holds ONE source city per level, so the entry is dropped\n",
+	/* Player-facing: a car was DROPPED, so say so on screen as well as in the log.
+	 * jer_error() logs the whole message verbatim (prefixed "[error] "), so both
+	 * the "[carhacks]" tag and the "already reads cars from" text the mp harness
+	 * matches are preserved. */
+	jer_error("[carhacks] import: slot %d wants %s but this level already reads cars from %s - "
+		"the engine holds ONE source city per level, so the entry is dropped",
 		slot, chkCityName(city), chkCityName(gChkGuestCity));
 
 	return 0;
@@ -345,8 +350,9 @@ int chkImportApplyPick(int level, int count)
 
 	if (slot >= count || slot >= CHK_IMPORT_MAX_SLOTS)
 	{
-		printInfo("[carhacks] import: the pick (%s model %d) needs a spare resident slot and "
-			"none is free - riding the level's own car of that number\n",
+		/* Player-facing: their pick could not be imported, so tell them. */
+		jer_error("[carhacks] import: the pick (%s model %d) needs a spare resident slot and "
+			"none is free - riding the level's own car of that number",
 			chkCityName(city), model);
 		return 0;
 	}
