@@ -23,11 +23,35 @@
 # This is the carhacks test - it needs only the carhacks module. It writes
 # JERICHO/CONFIG/carhacks.ini and restores it, and the run self-terminates
 # (-frames), so nothing is polled or killed.
+#
+#   ./chk_all_cities.sh              run from anywhere; the checkout is found from
+#                                    the script's location, or from the default
+#   CHK_SHOW=1 ./chk_all_cities.sh   also print the game's log WHILE it runs
+#   REPO=/path/to/REDRIVER2 ./chk_all_cities.sh   point at another checkout
+#   ./chk_all_cities.sh 300          longer runs (frames)
 set -u
 
-REPO="$(cd "$(dirname "$0")/../../../.." && pwd)"
+# Resolve the checkout from the script's OWN location, then fall back to the known
+# one. A bare name (`bash chk_all_cities.sh`), a symlink or a copy gives $0 no
+# usable directory, and that used to make this die with "cannot find the
+# directory" before the first run. REPO=/path/to/REDRIVER2 overrides either.
+if [ -z "${REPO:-}" ]; then
+	HERE="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || HERE=""
+	[ -n "$HERE" ] && REPO="$(cd "$HERE/../../../.." 2>/dev/null && pwd)"
+fi
+
+if [ -z "${REPO:-}" ] || [ ! -d "$REPO/src_rebuild/bin/Release_dev" ]; then
+	REPO="/c/Users/Jaret/Documents/Projects/REDRIVER2"
+fi
+
 BIN="$REPO/src_rebuild/bin/Release_dev"
 INI="$BIN/JERICHO/CONFIG/carhacks.ini"
+
+if [ ! -f "$BIN/REDRIVER2_dev.exe" ]; then
+	echo "chk_all_cities: no game at $BIN/REDRIVER2_dev.exe" >&2
+	echo "  run it from the checkout, or pass REPO=/path/to/REDRIVER2" >&2
+	exit 2
+fi
 CITY_NAME=(CHICAGO HAVANA VEGAS RIO)
 LEVEL_NAME=(chicago havana lasvegas rio)
 FRAMES="${1:-60}"
@@ -61,9 +85,19 @@ for host in 0 1 2 3; do
 
 	log="/tmp/chk_all_${LEVEL_NAME[$host]}.log"
 
-	./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
-		-weather none -time day -frames "$FRAMES" -seed 7 > "$log" 2>&1
-	rc=$?
+	echo "----- running host ${CITY_NAME[$host]} (level ${LEVEL_NAME[$host]}, $FRAMES frames) -----"
+
+	# CHK_SHOW=1 also prints the game's own log to the terminal, so a run can be
+	# watched while it happens rather than read afterwards.
+	if [ "${CHK_SHOW:-0}" = "1" ]; then
+		./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
+			-weather none -time day -frames "$FRAMES" -seed 7 2>&1 | tee "$log"
+		rc="${PIPESTATUS[0]}"
+	else
+		./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
+			-weather none -time day -frames "$FRAMES" -seed 7 > "$log" 2>&1
+		rc=$?
+	fi
 
 	echo "===== host ${CITY_NAME[$host]} (level ${LEVEL_NAME[$host]}) ====="
 	grep -aE "car data from|geometry from|page lists -" "$log" | sed -e 's/^[[:space:]]*//'
