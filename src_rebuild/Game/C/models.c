@@ -249,8 +249,14 @@ typedef struct
 	int pageBase;		// byte offset of this file's permanent page data
 } CAR_IMPORT;
 
-static CAR_IMPORT gCarImport;
-static int gCarImportCity = -1;	// city the held import came from, -1 = none
+// ONE import per city, not one per level: a set can name more than one city (a
+// session's agreed set, a late joiner), and the geometry/cosmetics getters below
+// resolve the city from the SLOT, so two cities' cars can be built into one level.
+// The PALETTE side is still single-city -- the CLUT column is the limit, see
+// CROSS_CITY.md "The budget" -- so the single-city getters keep answering with the
+// FIRST held city until that is lifted.
+static CAR_IMPORT gCarImports[4];	// CHICAGO/HAVANA/VEGAS/RIO; .region == NULL = not held
+static int gCarImportCity = -1;		// the first held city, -1 = none (single-city getters)
 
 // Find a segment inside a lump body. ProcessLumps advances 4-byte aligned, so
 // this must too - a raw size+8 walk drifts as soon as a segment's size is not a
@@ -433,8 +439,7 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 // (ProcessCosmeticsLump) are taken from it. A no-op for a stock level.
 void InitCarImport(void)
 {
-	int city = -1;
-	int i;
+	int i, city;
 
 	// JERICHO: a new level starts from a clean cross-city slate. This runs BEFORE the
 	// level's car models are built, so the per-slot set lists buildNewCarFromModel
@@ -442,33 +447,39 @@ void InitCarImport(void)
 	// CarImportResetState in texture.c.
 	CarImportResetState();
 
-	FreeCarImport(&gCarImport);
+	for (city = 0; city < 4; city++)
+		FreeCarImport(&gCarImports[city]);
+
 	gCarImportCity = -1;
 
+	// Load EVERY city the set names, not just the first: a slot's geometry comes
+	// from ITS city (GetCarImportModels resolves it per slot), so a set naming two
+	// cities builds both. The FIRST one loaded is what the single-city palette
+	// getters answer with - see the declaration above.
 	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 	{
 		int src = GetCarModelSourceCity(i);
 
-		if (src >= 0 && residentCarModels[i] != -1)
+		if (src < 0 || src >= 4 || residentCarModels[i] == -1)
+			continue;
+
+		if (gCarImports[src].region != NULL)
+			continue;			// already held from an earlier slot
+
+		if (!LoadCarImport(src, &gCarImports[src]))
 		{
-			city = src;
-			break;
+			printInfo("cross-city: no usable car data in %s - slots naming it keep the level's own vehicles\n",
+				LevelFiles[src]);
+			continue;
 		}
+
+		printInfo("cross-city: car data from %s (%d bytes of models, %d of car palettes, %d of cosmetics)\n",
+			LevelNames[src], gCarImports[src].carModelsSize, gCarImports[src].palletSize,
+			gCarImports[src].cosmeticsSize);
+
+		if (gCarImportCity < 0)
+			gCarImportCity = src;
 	}
-
-	if (city < 0)
-		return;
-
-	if (!LoadCarImport(city, &gCarImport))
-	{
-		printInfo("cross-city: no usable car data in %s - keeping the level's own vehicles\n", LevelFiles[city]);
-		return;
-	}
-
-	gCarImportCity = city;
-
-	printInfo("cross-city: car data from %s (%d bytes of models, %d of car palettes, %d of cosmetics)\n",
-		LevelNames[city], gCarImport.carModelsSize, gCarImport.palletSize, gCarImport.cosmeticsSize);
 }
 
 // The city the level is importing vehicles from, or -1. cars.c uses this to map
@@ -482,10 +493,12 @@ int GetCarImportCity(void)
 // its length.
 char* GetCarImportPallet(int* size)
 {
-	if (size)
-		*size = gCarImport.palletSize;
+	CAR_IMPORT* imp = (gCarImportCity >= 0 && gCarImportCity < 4) ? &gCarImports[gCarImportCity] : NULL;
 
-	return gCarImport.pallet;
+	if (size)
+		*size = imp ? imp->palletSize : 0;
+
+	return imp ? imp->pallet : NULL;
 }
 
 // The imported city's LUMP_TEXTUREINFO (its texture-page lists). Only valid for
@@ -493,10 +506,12 @@ char* GetCarImportPallet(int* size)
 // the TP/TEXINF types the layout needs live there.
 char* GetCarImportTextureInfo(int* size)
 {
-	if (size)
-		*size = gCarImport.texInfoSize;
+	CAR_IMPORT* imp = (gCarImportCity >= 0 && gCarImportCity < 4) ? &gCarImports[gCarImportCity] : NULL;
 
-	return gCarImport.texInfo;
+	if (size)
+		*size = imp ? imp->texInfoSize : 0;
+
+	return imp ? imp->texInfo : NULL;
 }
 
 // Where the imported city's permanent page data starts in its level file, or -1.
@@ -507,7 +522,7 @@ int GetCarImportPageBase(void)
 	if (gCarImportCity < 0)
 		return -1;
 
-	return gCarImport.pageBase;
+	return gCarImports[gCarImportCity].pageBase;
 }
 
 // Read `len` bytes at `offset` from the imported city's level file. Returns 1 on
@@ -553,11 +568,21 @@ char* GetCarImportModels(int slot)
 {
 	int model;
 	int* offsets;
+	int city;
+	CAR_IMPORT* imp;
 
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return NULL;
 
-	if (GetCarModelSourceCity(slot) != gCarImportCity || gCarImport.carModels == NULL)
+	// THIS slot's city, not the level's one guest city: two cities can be held now.
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0 || city >= 4)
+		return NULL;
+
+	imp = &gCarImports[city];
+
+	if (imp->carModels == NULL)
 		return NULL;
 
 	model = residentCarModels[slot];
@@ -577,41 +602,45 @@ char* GetCarImportModels(int slot)
 		return NULL;
 
 	// the offset table must fit inside the block we read
-	if (4 + (model + 1) * 3 * (int)sizeof(int) > gCarImport.carModelsSize)
+	if (4 + (model + 1) * 3 * (int)sizeof(int) > imp->carModelsSize)
 		return NULL;
 
-	offsets = (int*)(gCarImport.carModels + 4 + model * sizeof(int) * 3);
+	offsets = (int*)(imp->carModels + 4 + model * sizeof(int) * 3);
 
 	if (offsets[0] < 0)
 		return NULL;	// this city has no such model - keep the level's own
 
-	if (offsets[0] >= gCarImport.carModelsSize)
+	if (offsets[0] >= imp->carModelsSize)
 		return NULL;
 
 	// Damaged and low-detail must be there too. A model with only some variants
 	// leaves gCarDamModelPtr/gCarLowModelPtr NULL for that slot, which is the
 	// state the CreateDentableCar guard complains about, and the AI's own spawn
 	// check (opponent.c) requires all three for exactly this reason.
-	if (offsets[1] <= offsets[0] || offsets[1] >= gCarImport.carModelsSize)
+	if (offsets[1] <= offsets[0] || offsets[1] >= imp->carModelsSize)
 		return NULL;
 
-	if (offsets[2] <= offsets[1] || offsets[2] >= gCarImport.carModelsSize)
+	if (offsets[2] <= offsets[1] || offsets[2] >= imp->carModelsSize)
 		return NULL;
 
-	return gCarImport.carModels;
+	return imp->carModels;
 }
 
 // The foreign car colours for `slot`, or NULL. cosmetic.c uses this so an
 // imported vehicle wears its own city's paint instead of the host slot's.
 char* GetCarImportCosmetics(int slot)
 {
+	int city;
+
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return NULL;
 
-	if (GetCarModelSourceCity(slot) != gCarImportCity)
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0 || city >= 4)
 		return NULL;
 
-	return gCarImport.cosmetics;
+	return gCarImports[city].cosmetics;
 }
 
 int ProcessCarModelLump(char *lump_ptr, int lump_size)
