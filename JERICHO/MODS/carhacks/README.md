@@ -46,14 +46,14 @@ Cross-city keys (only read when `cross_city_vehicles = 1`):
 | `import` | `slot:city:model, ...` — write foreign models into resident slots |
 | `traffic_model`, `traffic_slot` | put a foreign model into a civilian slot so ambient traffic uses it |
 | `mp_agree_imports` | in a session, let the host's import set win for everyone ([`MP_ADAPTER.md`](MP_ADAPTER.md)); off ⇒ each machine keeps its own |
-| `spawn_imports` | `1` ⇒ put one car of each imported city on the ground beside the player, once per level, so the geometry can be looked at (see below) |
+| `spawn_imports` | `1` ⇒ put one car of each imported city in a line ahead of the player, once per level, so the geometry can be looked at (see below) |
 
 ### `spawn_imports` — seeing the cars
 
 An import fills a resident **model slot**; it does not create a vehicle, and nothing
 in the engine spawns slots 5/6 (traffic rolls 0/1/2/4 only). So a foreign car is
 invisible unless you drive it. `spawn_imports = 1` in `carhacks.ini` puts one car of
-each imported city on the ground beside the player, once per level, so the geometry
+each imported city in a line ahead of the player, once per level, so the geometry
 can be looked at. Off by default; it is a measurement lever, and the colours are not
 right until the CLUT band placement lands.
 
@@ -104,8 +104,9 @@ This module's own tool:
 
 | tool | what for |
 |---|---|
+| `tools/chk_single_city_playtest.sh` | one host level, one car from every **other** city, **placed on the ground** to look at (`[city] [frames]`, `CHK_SHOW=1` to watch it live) — the watchable one |
 | `tools/chk_mp_foreign.sh` | stress a **real mp pair** with a different foreign city on each side (three cities' car data at once) and report what each machine loaded and what each player ended up driving — see [`MP_ADAPTER.md`](MP_ADAPTER.md) |
-| `tools/chk_all_cities.sh` | import every other city's car on **every** host level (3 imports into slots 4/5/6) and assert `lumps 3/3, geometry 3/3, spawned 3/3` — the standalone proof that the cross-city path works per level, no mp needed |
+| `tools/chk_all_cities.sh` | the same as the playtest but for **every** host level in turn, asserting `lumps 3/3, geometry 3/3, spawned 3/3` on each |
 
 The all-cities tool turns on `spawn_imports` (below), so it also proves the cars are
 actually put on the ground where they can be looked at.

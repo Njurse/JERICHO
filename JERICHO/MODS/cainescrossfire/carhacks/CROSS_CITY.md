@@ -352,18 +352,22 @@ for looking at them:
 With it on, `spawn.c` installs a FRAME hook that fires **once per level**, as soon
 as the level is live and the player is in a car (`playerCarId` in range and
 `controlType == CONTROL_TYPE_PLAYER` -- the codebase's own "in a game" test). It
-then puts one car per imported city on the ground beside the player:
+Then one car per imported city, in a LINE AHEAD of the player down the road (not
+fanned out to the side, where a spawn point's kerb or wall is):
 
-    [carhacks] spawn: CHICAGO model 8 (resident slot 4) placed in CAR_DATA slot 2, palette 0
-    [carhacks] spawn: HAVANA model 9 (resident slot 5) placed in CAR_DATA slot 3, palette 0
-    [carhacks] spawn: RIO model 12 (resident slot 6) placed in CAR_DATA slot 4, palette 0
-    [carhacks] spawn: 3 imported car(s) placed beside the player
+    [carhacks] spawn: CHICAGO model 8 (resident slot 4) in CAR_DATA slot 2, palette 0, 900 ahead - player (24453,30,-497793) car (25353,30,-497794)
+    [carhacks] spawn: HAVANA model 9 (resident slot 5) in CAR_DATA slot 3, palette 0, 1800 ahead - player (24453,30,-497793) car (26253,30,-497794)
+    [carhacks] spawn: VEGAS model 10 (resident slot 6) in CAR_DATA slot 4, palette 0, 2700 ahead - player (24453,30,-497793) car (27154,30,-497795)
+    [carhacks] spawn: 3 imported car(s) placed ahead of the player
 
 The recipe is the one cainescrossfire's own opponent spawn already proves
 (`ai/opponent.c:518-528,678`): the first `CAR_DATA` whose `controlType` is
 `CONTROL_TYPE_NONE`, `InitCar(..., CONTROL_TYPE_CUTSCENE, ...)` at
-`CD2_AI_SPAWN_OFFSET`-style offsets along the player's own right-hand axis,
-alternating sides. The engine's palette rule applies too -- `0..5` only for a
+`CD2_AI_SPAWN_OFFSET`-style steps along the player's FORWARD axis (the matrix's
+third column -- `cop_ai.c:426-428` reads the same pair for a point 400 units ahead,
+and `handling.c:788` derives `hd.direction` from it). The player's and the car's
+world positions are logged, so the line can be checked by hand. The engine's palette
+rule applies too -- `0..5` only for a
 recolourable body (`0..4`), else `0` -- so a recolourable car gets a distinct colour
 and a special body is not mis-tinted. `CONTROL_TYPE_CUTSCENE` is deliberate: nothing
 drives the car, so it stays where it is put and can be looked at.

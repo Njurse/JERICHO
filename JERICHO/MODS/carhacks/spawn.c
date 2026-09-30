@@ -32,9 +32,9 @@
 #include "carid.h"
 #include "carimport.h"
 
-/* How far beside the player each car is dropped, and how far the fan grows per
- * car. The same idea as cainescrossfire's opponent spawn (CD2_AI_SPAWN_OFFSET,
- * 900) so they are all in view at once instead of in a line down the road. */
+/* How far AHEAD of the player each car is put, and the gap between them. They go
+ * in a LINE down the road, not fanned out to the side: at a spawn point the side is
+ * usually a wall or the pavement, which is exactly where these kept landing. */
 #define CHK_SPAWN_OFFSET	900
 
 /* Set once this level's imports have been placed; cleared when the level changes
@@ -71,7 +71,7 @@ static CAR_DATA* chkSpawnFreeCar(void)
 static int chkSpawnOnFrame(void* ud, void* args)
 {
 	CAR_DATA* pcp;
-	int i, placed = 0, side = 1;
+	int i, placed = 0;
 
 	(void)ud;
 	(void)args;
@@ -124,9 +124,11 @@ static int chkSpawnOnFrame(void* ud, void* args)
 			continue;
 		}
 
-		/* Fan them out from the player, alternating sides, offset along the
-		 * player's own right-hand axis so they land beside the car rather than in
-		 * the road. */
+		/* In a LINE ahead of the player, into the road where there is room. The
+		 * forward axis is the matrix's third column -- the engine reads the very
+		 * same pair for a point ahead of a car (cop_ai.c:426-428 uses m[0][2]/
+		 * m[2][2] for 400 units ahead; handling.c:788 derives hd.direction from
+		 * those two as well). m[0][0]/m[2][0] would be the SIDE, which is the wall. */
 		d = CHK_SPAWN_OFFSET * (placed + 1);
 
 		/* The engine's own rule (PingInCivCar, and cainescrossfire's spawn): a
@@ -134,22 +136,24 @@ static int chkSpawnOnFrame(void* ud, void* args)
 		 * else is single-palette. Different colours per car so they can be told
 		 * apart at a glance. */
 		palette = (residentCarModels[i] >= 0 && residentCarModels[i] <= 4) ? (placed % 6) : 0;
-
-		pos[0] = pcp->hd.where.t[0] + (int)(((long long)pcp->hd.where.m[0][0] * d * side) >> 12);
+		pos[0] = pcp->hd.where.t[0] + (int)(((long long)pcp->hd.where.m[0][2] * d) >> 12);
 		pos[1] = pcp->hd.where.t[1];
-		pos[2] = pcp->hd.where.t[2] + (int)(((long long)pcp->hd.where.m[2][0] * d * side) >> 12);
+		pos[2] = pcp->hd.where.t[2] + (int)(((long long)pcp->hd.where.m[2][2] * d) >> 12);
 		pos[3] = 0;
 
 		InitCar(car, pcp->hd.direction, &pos, CONTROL_TYPE_CUTSCENE, i, palette, &padId);
 
-		printInfo("[carhacks] spawn: %s model %d (resident slot %d) placed in CAR_DATA slot %d, palette %d\n",
-			chkCityName(id.city), id.model, i, CAR_INDEX(car), palette);
+		/* The player's position and the car's are both logged: this is the one thing
+		 * about the placement a reader cannot check from the numbers above. */
+		printInfo("[carhacks] spawn: %s model %d (resident slot %d) in CAR_DATA slot %d, palette %d, %d ahead - player (%d,%d,%d) car (%d,%d,%d)\n",
+			chkCityName(id.city), id.model, i, CAR_INDEX(car), palette, d,
+			pcp->hd.where.t[0], pcp->hd.where.t[1], pcp->hd.where.t[2],
+			pos[0], pos[1], pos[2]);
 
 		placed++;
-		side = -side;
 	}
 
-	printInfo("[carhacks] spawn: %d imported car(s) placed beside the player\n", placed);
+	printInfo("[carhacks] spawn: %d imported car(s) placed ahead of the player\n", placed);
 
 	return JER_RESULT_CONTINUE;
 }

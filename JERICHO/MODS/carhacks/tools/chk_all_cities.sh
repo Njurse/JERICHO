@@ -114,7 +114,7 @@ for host in 0 1 2 3; do
 
 	nlumps=$(grep -acE "cross-city: car data from" "$log")
 	ngeom=$(grep -acE "cross-city: slot [0-9]+ geometry from" "$log")
-	nspawn=$(grep -acE "carhacks\] spawn: .* placed in CAR_DATA" "$log")
+	nspawn=$(grep -acE "carhacks\] spawn: .* in CAR_DATA slot" "$log")
 	echo "  -> lumps $nlumps/3, geometry $ngeom/3, spawned $nspawn/3"
 
 	[ "$nlumps" -ne 3 ] && fail=1
