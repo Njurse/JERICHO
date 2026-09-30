@@ -121,6 +121,6 @@ if [ ! -f "$INDEX" ]; then
 fi
 echo "| $DATE | $UP | $MIX | $ROWS | $FREE | ${BIG:--} | $SHA | ${NOTE:-(no note)} |" >> "$INDEX"
 
-echo "  archived $(ls "$REPO/JERICHO/MODS/carhacks/docs/vram/$DATE-"*.png 2>/dev/null | tail -1 | xargs -r basename)"
+echo "  archived ${DATE}-$(echo "$LEVEL" | tr '[:upper:]' '[:lower:]')-${TAG}.png"
 echo "  indexed  $INDEX"
 [ "$rc" -eq 0 ] || echo "  (note: the mashup run itself exited $rc)"
