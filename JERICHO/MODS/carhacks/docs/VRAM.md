@@ -25,6 +25,13 @@ column itself, x960..1023 y256..511, at 2x — and the overlapping bands in it a
 problem: the level font image is rows **466..511** while the import's pin band is rows
 **480..511**, so the pin band sits *entirely inside the font*.
 
+The figure above is a **checkpoint**: every deliberate step of the CLUT work drops a
+dated copy with its measured numbers into [`docs/vram/`](vram/README.md), so the
+column's health can be read over time rather than only now. Take one with
+`tools/chk_vram_checkpoint.sh <level> <mix> <tag> ["note"]` — it runs the mashup with
+a dump, reads the numbers from that run's own log, stamps them into the figure, and
+appends the index row.
+
 ## 1. The 1 MiB, in three parts
 
 PSX VRAM is 1024x512 16-bit texels = 1 MiB. This engine divides it like so:
