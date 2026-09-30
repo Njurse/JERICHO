@@ -34,6 +34,8 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "../../carhacks/tools")))  # cross-module tool path
 import arenaedit as ae                                     # noqa: E402
 import levgeom                                             # noqa: E402
 

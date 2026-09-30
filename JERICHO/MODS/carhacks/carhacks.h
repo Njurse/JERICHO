@@ -8,7 +8,7 @@
  * gated by its own config key, so they switch on and off independently.
  *
  * MODULE BOUNDARY. This unit was lifted out of Caine's Crossfire (it used to
- * live in cainescrossfire/carhacks/ and be registered from that module's entry)
+ * live in MODS/carhacks/ (docs in MODS/carhacks/docs/) and be registered from that module's entry)
  * and is now its own module under JERICHO/MODS/carhacks/ - so it can be enabled
  * next to any other module, in particular the multiplayer module. It is kept
  * HOST-AGNOSTIC, which is what made the lift cheap and keeps it re-usable:
@@ -23,7 +23,7 @@
  *
  * The docs that describe the cross-city mechanism and the city data formats
  * (CROSS_CITY.md, HACK.md, FORMATS.md, PALETTES.md, VEHICLES.md, VRAM.md) still
- * live in cainescrossfire/carhacks/ - they are referenced from engine source
+ * live in MODS/carhacks/ (docs in MODS/carhacks/docs/) - they are referenced from engine source
  * comments there and from tools, so they were not moved with the code. This
  * module's own docs (README.md, CARSELECT.md, MP_ADAPTER.md) are here.
  *

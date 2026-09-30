@@ -28,10 +28,10 @@
 
 #include <string.h>
 
-#define CD2_HORNET_RADIUS		520	// ring radius (world units)
-#define CD2_HORNET_SPIKE_H		115	// how far a spike stands up out of the ring
+#define CD2_HORNET_RADIUS		720	// ring radius (world units)
+#define CD2_HORNET_SPIKE_H		135	// how far a spike stands up out of the ring
 #define CD2_HORNET_CONTACT_INTERVAL	15	// frames between ring contact hits
-#define CD2_HORNET_HOP			140	// knockback strength on contact
+#define CD2_HORNET_HOP			240	// knockback strength on contact
 #define CD2_HORNET_RELAUNCH_GAP		80	// frames the ring stays down after a launch
 
 static int gHornetPost[MAX_CARS];	// frames until the ring may re-arm (post-launch)

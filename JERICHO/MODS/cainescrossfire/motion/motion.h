@@ -184,10 +184,10 @@ extern const signed char cd2MotionModelClass[CD2_MOTION_MODEL_MAX];
 // pose is a car permanently on its back wheels - which is why the earlier version faded the
 // term out instead. Fading it out left nothing for a driver to see but the return swing,
 // which points the other way, so powering forward read as the nose dipping.
-#define CD2_MOTION_HOLD_PCT	45	// % of the ceiling, held while under power
+#define CD2_MOTION_HOLD_PCT	15	// % of the ceiling, held while under power
 
 #define CD2_MOTION_SPEED_FLOOR	25
-#define CD2_MOTION_SPEED_FULL	180
+#define CD2_MOTION_SPEED_FULL	45
 
 // Compression against rebound. The spring is asymmetric: while the body is being pushed
 // further from level - the nose rising under power, the nose diving under the brakes -

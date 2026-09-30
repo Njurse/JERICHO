@@ -32,7 +32,7 @@
 #define CD2_CRUSH_LIFT		0	// extra height for the attacker over the victim's origin
 #define CD2_CRUSH_ROCK		0x0A000	// rocking pitch added each frame (raw avel)
 #define CD2_CRUSH_PUSH		260	// push-off speed given to the victim at the end
-#define CD2_CRUSH_CRUNCH_EVERY	12	// frames between crunch noises (the engine's heavy crash sample)
+#define CD2_CRUSH_CRUNCH_EVERY	24	// frames between crunch noises (the engine's heavy crash sample)
 
 static int gAvalancheFrames[MAX_CARS];	// boost frames left
 static int gCrushFrames[MAX_CARS];	// crush frames left (0 = not crushing)

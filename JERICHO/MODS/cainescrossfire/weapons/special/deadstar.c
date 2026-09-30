@@ -26,11 +26,11 @@
 
 #include <string.h>
 
-#define CD2_DASH_FRAMES		75	// 2.5s
+#define CD2_DASH_FRAMES		85	// 2.5s
 #define CD2_DASH_SPEED_PCT	175	// ...as a multiplier on the car's own top (turbo uses 125)
 #define CD2_DASH_ACCEL_PCT	260	// and how hard it gets there
 #define CD2_DASH_THRUST		12000	// engine force while dashing (cp->thrust is ~4215 flat out)
-#define CD2_DASH_HORN2_FRAME	22	// 0.75s in -> the second horn
+#define CD2_DASH_HORN2_FRAME	11	// 0.75s in -> the second horn
 #define CD2_DASH_DAMAGE_MULT	4
 #define CD2_DASH_SIDE_BONUS	15	// % extra on a near-90 side hit
 
@@ -255,7 +255,7 @@ static CD2_WEAPON_DEF cd2MakeDeadstarDef(void)
 
 	d.isSpecial = 1;
 
-	d.maxAmmo = 2;			// profile capacity
+	d.maxAmmo = 3;			// profile capacity
 	d.fireInterval = 30;
 	d.refireCooldown = 88;		// profile recharge: 25s
 

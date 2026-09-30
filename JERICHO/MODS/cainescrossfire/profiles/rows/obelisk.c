@@ -13,7 +13,7 @@ extern const CD2_VEH_PROFILE cd2VehRowObelisk =
 	"Obelisk",
 
 	CD2_VEH_CITY_RIO,
-	9,			// CARMODEL_9 in Rio
+	11,			// CARMODEL_9 in Rio
 
 	// armor, speed, handling, specialPower (1..5)
 	3, 3, 2, 5,

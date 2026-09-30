@@ -38,6 +38,8 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "../../carhacks/tools")))  # cross-module tool path
 
 from levmodels import CAR_TPAGES, SPEC_TPAGES                                # noqa: E402
 from levpalette import carid_of                                             # noqa: E402

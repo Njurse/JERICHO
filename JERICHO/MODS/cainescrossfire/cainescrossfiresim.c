@@ -44,7 +44,7 @@
 // With no gas and no brake, below this speed (units/frame) the point-mass
 // velocity snaps to a dead stop so the car can't creep / micro-roll a few
 // units forever.
-#define CD2_MICRO_STOP_SPEED		20
+#define CD2_MICRO_STOP_SPEED		12
 
 static unsigned int gDbgFrame;	// telemetry frame counter
 static char gPendingTotalCar;	// set by the pause-menu "Total Car", applied next physics frame

@@ -53,7 +53,7 @@ struct plotCarGlobals
 // is BUILT, and CarImportPin only fills texture_pages[] when the car is DRAWN - so a baked
 // id is the dummy GetTPage(0,0,960,0), which is a live slot. Measured: 206 of 254 polys of
 // an imported body sampled (960,0), the host's own page, which reads as wheel wells smeared
-// across the car. See carhacks/HACK.md.
+// across the car. See carhacks/docs/HACK.md.
 #define CAR_TPAGE_OF(_pg, _uv1)	\
 	((u_int)(((_pg)->pageIndirect \
 		? texture_pages[((_uv1) >> 16) & 0xffff] : ((_uv1) >> 16)) << 16))

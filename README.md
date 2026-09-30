@@ -407,9 +407,9 @@ The live tuning tool is
 `JERICHO/MODS/cainescrossfire/tools/paletteedit.py`, and the
 resolution rules — which `civ_clut` row, which CLUT, where in VRAM — are written
 down in
-[`carhacks/PALETTES.md`](JERICHO/MODS/cainescrossfire/carhacks/PALETTES.md). The
+[`carhacks/docs/PALETTES.md`](JERICHO/MODS/carhacks/docs/PALETTES.md). The
 VRAM budget itself is in
-[`carhacks/VRAM.md`](JERICHO/MODS/cainescrossfire/carhacks/VRAM.md).
+[`carhacks/docs/VRAM.md`](JERICHO/MODS/carhacks/docs/VRAM.md).
 
 ## Building and running
 

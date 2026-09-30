@@ -34,6 +34,8 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "../../carhacks/tools")))  # cross-module tool path
 
 from vramdump import read_tga, write_png, parse_log, page_data_base, TPAGEPOS   # noqa: E402
 from levpalette import find_pallet, parse_pallet, build_swatch, psx_to_rgb, carid_of  # noqa: E402

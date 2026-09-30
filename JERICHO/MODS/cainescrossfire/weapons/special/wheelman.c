@@ -31,7 +31,7 @@
 #define CD2_WHEELMAN_RADIUS	2200	// how far the blast reaches (world units)
 #define CD2_WHEELMAN_DAMAGE	1800	// at the centre; falls off to nothing at the rim
 #define CD2_WHEELMAN_CHANNEL_LOW	700	// the sound is pitched down for weight
-#define CD2_WHEELMAN_SELF_HOP	180	// Wheelman is thrown up by his own blast
+#define CD2_WHEELMAN_SELF_HOP	480	// Wheelman is thrown up by his own blast
 
 static int gShockChannel = -1;
 

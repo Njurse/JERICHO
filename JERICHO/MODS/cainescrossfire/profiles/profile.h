@@ -69,7 +69,7 @@ enum
 };
 
 // A profile's model is the NUMBER in that city's CARMODEL_<n> set (0..12), the
-// scheme in carhacks/VEHICLES.md. -1 = "no fixed model" (any the level loaded).
+// scheme in carhacks/docs/VEHICLES.md. -1 = "no fixed model" (any the level loaded).
 
 // ---------------------------------------------------------------------------
 // Core stats — the Twisted Metal 1..5 scale (fields of CD2_VEH_PROFILE).

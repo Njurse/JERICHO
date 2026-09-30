@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else "src_rebuild/bin/Release_dev/vram_dump.tga"
 OUT = sys.argv[2] if len(sys.argv) > 2 else \
-    "JERICHO/MODS/cainescrossfire/carhacks/vram-issues.png"
+    "JERICHO/MODS/carhacks/docs/vram-issues.png"
 
 CLUT_X, CLUT_Y0, CLUT_Y1 = 960, 256, 511      # the CLUT column, from vrammap.py
 FONT_Y0, FONT_Y1 = 466, 511                    # the level font image

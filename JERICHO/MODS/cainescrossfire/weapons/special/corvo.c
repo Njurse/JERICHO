@@ -228,7 +228,7 @@ static CD2_WEAPON_DEF cd2MakeCorvoDef(void)
 
 	d.id = CD2_WID_SPECIAL_CORVO;
 	d.name = "special_corvo";
-	d.displayName = "Trovoaçoite";
+	d.displayName = "Trovoacoite";
 	d.cls = CD2_WCLS_AOE;
 
 	d.isSpecial = 1;

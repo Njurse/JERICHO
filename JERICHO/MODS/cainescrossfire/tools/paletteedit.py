@@ -47,6 +47,8 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+sys.path.insert(0, os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "../../carhacks/tools")))  # cross-module tool path
 
 # ---------------------------------------------------------------------------
 # paths

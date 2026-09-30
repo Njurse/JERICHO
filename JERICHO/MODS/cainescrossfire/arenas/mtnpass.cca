@@ -1,0 +1,13 @@
+# cainescrossfire arena -- see ARENAS.md
+arena: mtnpass
+name: Mountain Pass
+city: 3
+mp: 0 0
+region: -325233 47180 -136247 159753
+# spawn: x z heading [y]  (first = player, rest = opponents; y = height)
+spawn: -185023 83795 0 32
+spawn: -170793 105905 0 32
+spawn: -193069 147597 0 32
+spawn: -321094 108589 0 32
+spawn: -270931 89141 0 32
+# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]

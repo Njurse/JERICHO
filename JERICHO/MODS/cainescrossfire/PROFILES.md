@@ -46,7 +46,7 @@ Three parts:
   is on screen (`Hornet`). A vehicle is identified by **(city, model number)** —
   `originCity` is a `LevelNames[]` index (Chicago 0, Havana 1, Vegas 2, Rio 3) and
   `modelSlot` is the number in that city's `CARMODEL_<n>` set (see
-  `carhacks/VEHICLES.md`). The same model number is a different car in each city,
+  `carhacks/docs/VEHICLES.md`). The same model number is a different car in each city,
   which is why both are tracked.
 - **Core stats.** Armor / Speed / Handling / Special Power, each 1..5. These are
   the design + HUD numbers; Speed and Handling also shape the sim (below).

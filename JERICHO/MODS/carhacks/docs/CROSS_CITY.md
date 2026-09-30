@@ -323,7 +323,7 @@ Still open:
   two `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
 - **Run `tools/crosscheck.py` (or `devcheck.sh`, which calls it) instead of reading the
   page state by eye.** It asserts the three things the engine's own summary cannot see
-  (`carhacks/HACK.md`, "Where an imported page may live now"): an imported page must not
+  (`carhacks/docs/HACK.md`, "Where an imported page may live now"): an imported page must not
   sit on the world's/scenery's rectangle, must not take a live local car's page, and its
   CLUTs must match the source city's file.
 - Visual confirmation stays the user's: the logs prove pages are placed, claimed and

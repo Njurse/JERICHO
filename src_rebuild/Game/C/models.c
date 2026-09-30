@@ -229,7 +229,7 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 //
 // Everything here fails soft: if a file, a lump or a heap allocation is missing,
 // the slot simply keeps the level's own data. See
-// MODS/cainescrossfire/carhacks/CROSS_CITY.md for the file format.
+// MODS/cainescrossfire/carhacks/docs/CROSS_CITY.md for the file format.
 
 #define CAR_IMPORT_LUMP_MODELS	28	// LUMP_CAR_MODELS
 #define CAR_IMPORT_LUMP_PALLET	25	// LUMP_PALLET - the car palettes (civ_clut)

@@ -72,6 +72,18 @@ snapshot and debugging it is debugging the wrong file.
 
 ## The shape of the module
 
+| where | what |
+|---|---|
+| `carhacks.c/.h` | registration, the six event handlers, the config keys |
+| `carimport.c` `carselect.c` `net.c` `spawn.c` | the import, the car-select
+menu, the session wiring, the spawn lever |
+| `docs/` | `CROSS_CITY.md`, `HACK.md`, `VEHICLES.md`, `PALETTES.md`, `VRAM.md`
+— moved here from Caine's Crossfire, which keeps only `FORMATS.md` |
+| `tools/` | the `chk_*.sh` harnesses **and** the car-data tools
+(`vrammap.py`, `levgeom.py`, `levmodels.py`, `levpages.py`, `levpalette.py`,
+`make_vram_issues_png.py`) |
+
+
 Three independent hacks, each one row of the table in `carhacks.c` and each gated by
 its own key, so they switch on and off separately:
 
@@ -135,8 +147,8 @@ to do. carhacks is the policy on top: **which** city, **which** car, **which** s
 ### The import, step by step
 
 The order matters, and every step has cost a bug. See
-[`CROSS_CITY.md`](../cainescrossfire/carhacks/CROSS_CITY.md) and
-[`HACK.md`](../cainescrossfire/carhacks/HACK.md) for the walkthrough and the traps.
+[`CROSS_CITY.md`](docs/CROSS_CITY.md) and
+[`HACK.md`](docs/HACK.md) for the walkthrough and the traps.
 
 **1. The engine asks.** As a level sets up its resident car models, it fires
 `JER_EVENT_CAR_DATA_SOURCE` and hands carhacks the two arrays it is about to use:
@@ -173,7 +185,7 @@ by **index**, and a set index holds one meaning at a time — the host level has
 already claimed most of them. So as the imported car's polys are converted, each
 one is translated onto a *different, free* index (`CarImportDstSet` /
 `CarSetRemap`). Get this wrong and the car renders with the host city's textures
-([`HACK.md`](../cainescrossfire/carhacks/HACK.md) — "the part kept the host's
+([`HACK.md`](docs/HACK.md) — "the part kept the host's
 texture").
 
 **6. The page and its CLUT are pinned in at draw time.** `LoadImportedTPages` records
@@ -211,7 +223,7 @@ not a cosmetic one — it is what [`MP_ADAPTER.md`](MP_ADAPTER.md) calls the
 
 A model number on its own is **not** an identity. Every city ships `CARMODEL_0..12`
 and the same number is a *different vehicle* in each city — model 9 is one car in
-Chicago and another in Rio ([`VEHICLES.md`](../cainescrossfire/carhacks/VEHICLES.md)).
+Chicago and another in Rio ([`VEHICLES.md`](docs/VEHICLES.md)).
 So carhacks names a car as a pair, `carid.h`:
 
 ```
@@ -409,7 +421,7 @@ Both positions are logged so the line is checkable by hand.
 It is a **measurement lever, not a feature**: the cars are `CONTROL_TYPE_CUTSCENE`
 (nothing drives them, so they stay where they are put) and the colours are not right
 until the CLUT work lands. Full detail:
-[`CROSS_CITY.md`](../cainescrossfire/carhacks/CROSS_CITY.md), "Seeing the imported
+[`CROSS_CITY.md`](docs/CROSS_CITY.md), "Seeing the imported
 cars".
 
 ---
@@ -439,12 +451,12 @@ The mechanism and the city data formats are documented next to the engine code t
 reverse-engineer, in Caine's Crossfire's folder (so they were not moved with the
 code):
 
-- [`CROSS_CITY.md`](../cainescrossfire/carhacks/CROSS_CITY.md) — what a cross-city import is, cost and lifetime, the budget, the traps
-- [`HACK.md`](../cainescrossfire/carhacks/HACK.md) — the mechanism in the order it runs
-- [`VEHICLES.md`](../cainescrossfire/carhacks/VEHICLES.md) — model numbers → what they are, per city
+- [`CROSS_CITY.md`](docs/CROSS_CITY.md) — what a cross-city import is, cost and lifetime, the budget, the traps
+- [`HACK.md`](docs/HACK.md) — the mechanism in the order it runs
+- [`VEHICLES.md`](docs/VEHICLES.md) — model numbers → what they are, per city
 - [`FORMATS.md`](../cainescrossfire/carhacks/FORMATS.md) — the level-file / lump formats
-- [`PALETTES.md`](../cainescrossfire/carhacks/PALETTES.md) — car palettes and CLUT rows
-- [`VRAM.md`](../cainescrossfire/carhacks/VRAM.md) — the VRAM layout and how to measure it
+- [`PALETTES.md`](docs/PALETTES.md) — car palettes and CLUT rows
+- [`VRAM.md`](docs/VRAM.md) — the VRAM layout and how to measure it
 
 This module's own docs:
 

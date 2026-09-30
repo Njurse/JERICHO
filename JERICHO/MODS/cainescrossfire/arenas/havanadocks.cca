@@ -3,19 +3,23 @@ arena: havanadocks
 name: havanadocks
 city: 1
 mp: 0 0
-region: 308233 -142122 445357 9906
+region: 235835 -136241 446116 9734
 # spawn: x z heading [y]  (first = player, rest = opponents; y = height)
-spawn: 436381 -95081 3000 32
-spawn: 431501 -107772 1800 32
-spawn: 394346 -45307 0 32
+spawn: 246490 -113980 1800 32
+spawn: 393457 -44265 0 32
 spawn: 331915 -22766 0 32
-spawn: 378573 -37466 0 32
-spawn: 312528 -113098 0
-spawn: 373036 -117859 0
+spawn: 356496 -36759 1856 32
+spawn: 291808 -113012 1024
+spawn: 366601 -111005 0
+spawn: 415690 -102665 0
+spawn: 267365 -27002 0
 # pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]
-pickup: health 436391 -94546 250
-pickup: weapon missile 436997 -94896
-pickup: weapon SEEKER 436997 -95596
-pickup: weapon mg 436391 -95946
-pickup: weapon freeze 435784 -95596
-pickup: health 435784 -94896 250
+pickup: health 384519 -132907 250
+pickup: weapon missile 394123 -31151 0
+pickup: weapon SEEKER 312231 -91918 0
+pickup: weapon mg 332725 -15159 0
+pickup: weapon freeze 413956 -31181 0
+pickup: health 424798 -92277 250
+pickup: health 380394 -41486 2500
+pickup: health 275852 4566 2500
+pickup: health 440397 -101489 2500

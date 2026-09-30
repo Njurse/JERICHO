@@ -33,7 +33,7 @@
 //
 // carhacks/ (the vehicle-availability + cross-city hacks) used to be listed here:
 // it is its own module now (JERICHO/MODS/carhacks/), so it is no longer a
-// subfolder of this one. Only the docs stayed behind - cainescrossfire/carhacks/
+// subfolder of this one. The docs moved to MODS/carhacks/docs/ too, apart from FORMATS.md - cainescrossfire/carhacks/
 // holds CROSS_CITY.md, HACK.md, FORMATS.md, PALETTES.md, VEHICLES.md and VRAM.md.
 
 #ifndef CD2_INTERNAL_H

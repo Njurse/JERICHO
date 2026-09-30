@@ -14,7 +14,7 @@ sets that city's civilian cars and its special bodies paint with. Those are stat
 per city; this tool pairs them with the .LEV so a model number can be looked up to
 "does it exist here, and which page does it wear".
 
-Companion: carhacks/VEHICLES.md is the human reference (model -> name).
+Companion: carhacks/docs/VEHICLES.md is the human reference (model -> name).
 """
 
 import struct

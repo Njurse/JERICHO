@@ -27,6 +27,8 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "../../carhacks/tools")))  # cross-module tool path
 
 BG = (26, 24, 30)          # "nothing here", the same colour rendercheck uses
 NEAR = 24.0                # near plane (world units; a car is ~750)

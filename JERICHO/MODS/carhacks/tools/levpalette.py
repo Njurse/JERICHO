@@ -2,7 +2,7 @@
 """levpalette.py - dump a city's default CAR palettes (LUMP_PALLET) as swatches.
 
 Why: a car's colour comes out of `civ_clut`, which a level fills from its
-`LUMP_PALLET` (see carhacks/PALETTES.md). "The palette is wrong" is not checkable
+`LUMP_PALLET` (see carhacks/docs/PALETTES.md). "The palette is wrong" is not checkable
 from a log line, so this turns the source of truth for a city's colours into a
 picture and a text table you can diff against what a run actually drew (the
 per-run side is `cardump.py`).
@@ -30,6 +30,8 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "../../cainescrossfire/tools")))  # cross-module tool path
 
 from levpages import segments, LUMP_PALLET          # noqa: E402  (sibling tool)
 from levmodels import CAR_TPAGES, city_name          # noqa: E402  (owns the carTpages table)

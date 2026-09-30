@@ -27,7 +27,7 @@ Dumps come from `JERICHO_DUMPVRAM=1` (vram_dump.tga) or `-vramview [frames]`
 two dumps far apart separate "streamed" from "loaded once").
 
 Note the session log is `<appName>.log` = JERICHO.log here, not REDRIVER2.log (see
-carhacks/PALETTES.md). Read-only, stdlib only; shares vramdump.py's TGA decoder.
+carhacks/docs/PALETTES.md). Read-only, stdlib only; shares vramdump.py's TGA decoder.
 """
 
 import os
@@ -35,6 +35,8 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "../../cainescrossfire/tools")))  # cross-module tool path
 
 from vramdump import read_tga                                          # noqa: E402
 

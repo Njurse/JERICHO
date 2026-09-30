@@ -137,7 +137,7 @@ quietly. That is what the hotload actually has to do:
 3. Fit them in the measured budget: ~130 KB of models plus ~15 KB of car palettes
    per city (the `cross-city: car data from …` lines, `CROSS_CITY.md`), with the
    CLUT column ~89-95% committed and the level font owning rows 466..511
-   (`carhacks/VRAM.md`; the level's own slot walk already reaches y=436). Refuse
+   (`carhacks/docs/VRAM.md`; the level's own slot walk already reaches y=436). Refuse
    rather than corrupt when it does not fit.
 4. Rebuild the peer's car object with the same call the mesh fix uses
    (`CreateDentableCar`, mp's `MpAdoptRemoteCar`). `ChkOnCarPeerDraw` then stops

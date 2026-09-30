@@ -3,7 +3,7 @@
 // *** NOT IMPLEMENTED YET. *** This file holds the seam (jer_texture_internal.h) with
 // honest stubs so the IMAGE target can land and be verified on its own. The real
 // implementation — decode -> quantise to an indexed image + 16/256-colour CLUT ->
-// claim a VRAM page (never the streamer's, see carhacks/VRAM.md) -> LoadImage ->
+// claim a VRAM page (never the streamer's, see carhacks/docs/VRAM.md) -> LoadImage ->
 // report the packed tpage/clut ids + UV rect — is the next unit of work.
 //
 // Until then a PAGE request fails cleanly, which the registry already handles: the

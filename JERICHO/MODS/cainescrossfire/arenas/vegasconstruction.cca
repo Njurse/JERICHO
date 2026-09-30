@@ -1,9 +1,9 @@
 # cainescrossfire arena -- see ARENAS.md
-arena: pracinhas
-name: pracinhas
-city: 3
+arena: vegasconstruction
+name: Construction Site
+city: 2
 mp: 0 0
-region: 122500 -220274 269854 -131822
+region: 184436 -122651 230052 -92055
 # spawn: x z heading [y]  (first = player, rest = opponents; y = height)
-spawn: 233623 -157325 0
+spawn: 211979 -105721 0 35
 # pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]

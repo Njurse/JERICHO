@@ -19,7 +19,7 @@ block). All default to off, so shipping behaviour is untouched.
 
 Note `-car <model>` is the **model number**; `-car slotN` is a **frontend** slot.
 `carNumLookup` makes `slot5` = model 0 and `slot7` = model 9 — see
-`carhacks/VEHICLES.md` for the full vehicle map.
+`carhacks/docs/VEHICLES.md` for the full vehicle map.
 
 Every `-frames` run ends with one parseable line, which is what harnesses should read
 instead of guessing at prose:
@@ -70,18 +70,20 @@ file alone — see `cd2_debug.example.txt` for the format.
 
 ## Scripts
 
+The car-data / VRAM tools live with the **carhacks** module now
+(`../carhacks/tools/`): `vrammap.py`, `levgeom.py`, `levmodels.py`,
+`levpages.py`, `levpalette.py`, `make_vram_issues_png.py`. They read this
+game's car data rather than the arena format, and carhacks is where that work
+lives. The scripts below that still import them add `../carhacks/tools` to
+`sys.path`, so they run exactly as before from this folder.
+
 | script | what it does |
 |---|---|
 | `devcheck.sh [frames]` | build, run the cross-city scenario matrix, print one verdict. Exit 0 = all clean. Restores your `carhacks.ini` afterwards |
 | `icons.py placeholders` / `convert <in.png> <out.tga>` / `list` | **the pickup icons**: (re)write the default placeholder set (`textures/icons/health.tga` + one per `CD2_WID_*`), convert a PNG to the 32-bit TGA the engine reads, or print the icon name -> weapon map. Author at any size and let `convert --size N` (default 64) scale it |
 | `arena_test.sh [frames]` | one random city/car/weather/time arena run. `SEED=N` replays an exact scenario, because the seed picks the scenario too, not just module randomness |
-| `levpages.py <city.LEV>` | read a level file's citylumps and segment sizes without launching the game |
-| `levmodels.py <city.LEV> ...` | which car models each city ships (from `LUMP_CAR_MODELS`), plus its `carTpages`/`specTpages`. The data behind `carhacks/VEHICLES.md` |
 | `vramdump.py <tga> [--png out.png] [--rect X Y W H label] [--log L --lev V]` | decode a VRAM dump: per-rectangle stats, a viewable PNG, and a palette check that proves an imported car's CLUTs are its own. Feed it `vram_live.tga` re-dumped by `-vramview` |
-| `vrammap.py <tga> [<tga> ...] [--log L]` | **where the 1 MiB of VRAM goes**: classifies every 64x64 cell of one or more dumps as never-written / static / in-use, prints the map and the largest free rectangles, and puts each rectangle the code claims (with `file:line`) next to what the dumps show - so a region reserved but never written shows up as `RESERVED BUT UNUSED`. Read it before changing any VRAM layout; `vrammap.py -h` prints the method |
-| `levpalette.py <city.LEV> [--out DIR]` | a city's **default car palettes** from `LUMP_PALLET`: a swatch PNG + a text table, so "what the car should look like" is a diffable file |
 | `paletteedit.py [--bin DIR] [--topmost] [--offline] [--level X.LEV] [--city C] [--launch [CMD]]` | **the live palette editor** (tkinter): reads the running game's CLUT map and writes the override file the game polls (`JERICHO/CONFIG/cc_palette.txt`), so dragging the colour wheel changes a car's palette entry **while you play**. `Solo` an entry (every other entry black) to see exactly which part it paints; `--topmost` floats it over the game. `--level` works with **no game at all**, straight from a level's palette lump. The chosen numbers are what an authored car colour is built from - see `../PALETTES.md` |
-| `levgeom.py <city.LEV> [--model N]` | a city's **car-model geometry**, decoded from `LUMP_CAR_MODELS` (the model header + the packed FT3/FT4/GT3/GT4 poly stream), plus its palette-0 colours from `LUMP_PALLET`. What the 3D viewport's placeholder car is made of, and it caches beside the `.LEV` |
 | `view3d.py <city> <x> <z> [--out PNG] [--yaw/--pitch/--dist ...]` | render the editor's **3D viewport** for one world point from the command line: the point's cell + its eight neighbours, textured from the same rip, with the placeholder car/pickup. The GUI uses this module directly |
 | `arena_menu.bat` | the **arena launcher** (double-click): make a new arena, open one in the Python editor, launch the in-game editor, validate/render, keep the mod's `arenas/` folder in step with the game's mirror, `7)` check the setup (`--selftest`) and `8)` build a city's level map (top-down rip) - ripping that city with `--rip` first if it has none. Or run the Python editor directly: `python arenaedit.py` (no args = every arena in the folder; `--new NAME` = create one) |
 | `arenaedit.py <arena.cca...>` | the **arena editor, top-down** (the launcher's "_open_") - a proper window: menu bar (File / Edit / View / Help), a toolbar with the tools (Select, Add spawn, Delete, Region) and the view toggles, a canvas with a grid and a cursor-position readout, and an **inspector** on the right for the arena fields, the region, the spawn list and the pickups. It reads and writes the same `.cca` the game does. `--check` validates, `--render OUT.png` snapshots headlessly, `--viewport OUT.png` renders the **3D viewport** for the highlighted object (`--viewport-sel N`, `-1` = the player's spawn; `--vp-size`), `--json` dumps, `--uitest` builds the window and drives it through its own commands (a headless UI check), `--selftest` reports the interpreter/tkinter/Pillow/folders/rips, `--new NAME` creates an arena, `--level [CITY]` draws a city's rip underneath (ripping it on demand **once**, with `--no-rip` to refuse), `--rip [CITY]` exports a city's level rip with DriverLevelTool (all four when no city is named) - that is the step that makes a city drawable, and it is slow and local, since rips are gitignored - and `--style textured|points` picks the map: **textured** (the default) is a real top-down render of the rip's faces with their textures, **points** is the fast vertex cloud. **Pseudo-realtime**: it reloads when the game saves the .cca, and the game reloads when it saves (each side refuses to clobber unsaved edits) |

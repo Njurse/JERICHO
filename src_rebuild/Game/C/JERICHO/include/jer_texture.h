@@ -40,7 +40,7 @@
  *   JER_TEX_TARGET_PAGE  — the image is quantised to an indexed PSX texture PAGE plus
  *     a 16- or 256-colour CLUT in VRAM and drawn as a normal textured poly, so it
  *     looks exactly like the rest of the game. VRAM is effectively FULL on a played
- *     level (see the mod's carhacks/VRAM.md), so a page is taken from an existing
+ *     level (see the mod's carhacks/docs/VRAM.md), so a page is taken from an existing
  *     claim, and the load FAILS cleanly when nothing can be given up. Use this when
  *     the texture has to sit in a level's palette world rather than on top of it.
  *

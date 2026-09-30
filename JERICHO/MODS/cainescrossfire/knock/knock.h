@@ -113,7 +113,7 @@
 // The lift an impulse may ask for, and its ceiling. Small numbers: this is a
 // nudge to clear geometry, not a jump.
 #define CD2_KNOCK_MAX_LIFT		70
-#define CD2_KNOCK_LIFT_PER_HIT		26	// world units of lift per unit of impulse
+#define CD2_KNOCK_LIFT_PER_HIT		126	// world units of lift per unit of impulse
 
 // ---------------------------------------------------------------------------
 // The weight shift

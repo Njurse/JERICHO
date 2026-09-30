@@ -83,6 +83,9 @@ Everything is in `knock/knock.h`:
 - `CD2_KNOCK_MAX_LIFT` / `CD2_KNOCK_LIFT_PER_HIT` / `CD2_KNOCK_LIFT_DECAY` /
   `_SETTLE` - how far a knock may lift, what an impulse buys, and how it comes back
   down.
+- `CD2_KNOCK_PIVOT_DIST` / `CD2_KNOCK_PIVOT_ARC` - the axle distance, and the rise
+  the pivot buys (the arc — see "The pivot, and the rise"). This is the knob for how
+  much the body lifts as it pitches; the arc carries the 2π, the distance does not.
 - `CD2_KNOCK_HARD_SHIFT` - how a collision's `howHard` becomes an impulse.
 - `CD2_KNOCK_MIN_IMPULSE` and `CD2_KNOCK_COOLDOWN` - the reasons knocks are rare.
 
@@ -140,7 +143,7 @@ along the car, the lift, and the pivot - with the angle as an accent on top. Tha
 composition is what makes it look like the car rocking rather than rotating on the
 spot.
 
-## The pivot
+## The pivot, and the rise
 
 Rotating the basis turns the car about the model's origin, which is somewhere in
 its middle. A wheelie has to turn about the REAR axle with the nose coming up; a

@@ -97,7 +97,7 @@ saved by `cainescrossfire.c` `cd2LoadConfig` / `cd2SaveConfig`).
 - [`FACTIONS.md`](FACTIONS.md) — the five teams (`factions/`): the rows and their
   colours, the roster and who drives what, the stance table, how a car is
   assigned its team, and which attributes are deliberately not read yet.
-- [`carhacks/CROSS_CITY.md`](carhacks/CROSS_CITY.md) — what a cross-city
+- [`carhacks/docs/CROSS_CITY.md`](../carhacks/docs/CROSS_CITY.md) — what a cross-city
   vehicle import has to pull across, and why colours need more than geometry.
 - [`carhacks/FORMATS.md`](carhacks/FORMATS.md) — the reverse-engineered
   `.LEV`/`.LCF` layouts (citylumps, the 4-byte aligned segment walk,
@@ -242,7 +242,7 @@ All five `cd` into `bin\Release_dev\`, then `start` `REDRIVER2_dev.exe`:
 cross-city rendering limitation: a foreign vehicle carries the other city's
 geometry and palettes, but its polygons name **that** city's texture pages, which
 this level has not loaded — so it does not yet render correctly. That work is
-described in `carhacks/CROSS_CITY.md`.
+described in `carhacks/docs/CROSS_CITY.md`.
 
 **They share one config file.** Both `launch_mp_*` launchers write the same
 `JERICHO/CONFIG/carhacks.ini`, so two runs at once will clobber each other's roll
