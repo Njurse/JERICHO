@@ -153,6 +153,69 @@ static void CarPalRowClear(void)
 		sCivClutRowWriters[r] = 0;
 }
 
+// JERICHO: which civ_clut block this guest city owns.
+//
+// The import used to be ONE 8-row block (8..15) that every guest city shared:
+// CarPalIndexInCity returned rowbase CIV_CLUT_IMPORT_ROW for all of them, so a mashup's
+// cities wrote over each other - and once a refusal was added, the FIRST city kept the
+// block while every car still read it. Measured in a 3-city mashup: all six imported
+// slots read rows 8..15 with one city having written only 2 of those rows.
+//
+// A block is CIV_CLUT_BLOCK_ROWS tall because CarPalIndexInCity's `i` spans
+// carTpages[city][0..7]; a narrower band cannot hold `rowbase + 6` and the fix silently
+// uploads nothing.
+static int CarImportCityBand(int city)
+{
+	int c, band = 0;
+
+	if (city < 0 || city >= 4)
+		return -1;
+
+	for (c = 0; c < city; c++)
+		if (CarImportCityHeld(c) && c != GameLevel)
+			band++;
+
+	return band;
+}
+
+// JERICHO: how many guest cities the CLUT column can actually afford.
+//
+// MEASURED (a 3-city mashup, CHICAGO host): one guest city's palettes cost about 36
+// column rows. The safe area is 210 rows (256..465) and the level's own layout already
+// takes ~157 of them, so the third city ran clutpos to 486 - 21 rows INTO the level
+// font. Two guest cities fit (about 16 rows to spare); the third is refused rather
+// than painting over the glyphs. Reclaiming rows is what raises this number, and it is
+// deliberately one place to change.
+#define CIV_CLUT_GUEST_CITIES	2
+
+static int CarImportBankRow(int city)
+{
+	int band = CarImportCityBand(city);
+	int base;
+
+	if (band < 0)
+		return CIV_CLUT_IMPORT_ROW;
+
+	// Past what the column can pay for: no block at all, so the caller can refuse this
+	// city out loud instead of taking a neighbour's rows or the font's.
+	if (band >= CIV_CLUT_GUEST_CITIES)
+		return -1;
+
+	base = CIV_CLUT_IMPORT_ROW + band * CIV_CLUT_BLOCK_ROWS;
+
+	if (base + CIV_CLUT_BLOCK_ROWS > CIV_CLUT_ROWS)
+	{
+		printInfo("cross-city: %s wants palette block %d but civ_clut holds %d - staying on the first block\n",
+			LevelNames[city], band, (CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) / CIV_CLUT_BLOCK_ROWS);
+
+		return CIV_CLUT_IMPORT_ROW;
+	}
+
+	return base;
+}
+
+static int CarPalIndexInCity(int tpage, int city);
+
 // JERICHO: the palette row map, printed at exit beside the page check. First which
 // imported slot's car reads the import bank, then which city wrote each row - so a
 // car whose colours are wrong can be traced to the row it reads and the city that
@@ -1860,32 +1923,48 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 
 	for (city = 0; city < 4; city++)
 	{
-		int rows = 0, r;
+		int rows = 0, r, base, limit;
 
 		if (sImpPalLump[city] == NULL)
 			continue;
 
-		// The civ_clut import bank is ONE bank of rows (CIV_CLUT_IMPORT_ROW..
-		// CIV_CLUT_ROWS-1), so it admits one city's rows. A second city is REFUSED
-		// loudly rather than overwriting the first's -- the honest limit the
-		// measurement in CROSS_CITY.md "The budget" records; lifting it is the
-		// CLUT band's job, not this function's.
-		if (uploaded >= 0)
+		// JERICHO: THIS CITY'S block, not the whole bank. The bank used to admit a single
+		// city - a second was REFUSED - so a mashup's other cities got nothing while
+		// their cars still read the block. A block each means the rows uploaded here and
+		// the row CarPalIndexInCity hands the model are the same rows, for every city.
+		base = CarImportBankRow(city);
+
+		if (base < 0)
 		{
-			printInfo("cross-city: %s palettes: REFUSED - the civ_clut import bank holds ONE city's rows (%d..%d), and %s already has them\n",
-				LevelNames[city], CIV_CLUT_IMPORT_ROW, CIV_CLUT_ROWS - 1, LevelNames[uploaded]);
+			// The honest refusal, at the measured threshold: the column can pay for
+			// CIV_CLUT_GUEST_CITIES cities' palettes, and this is one more. Refusing is
+			// recoverable (this car has no colours); overflowing is not (the glyphs go).
+			printInfo("cross-city: %s palettes: REFUSED - the CLUT column affords %d guest cities and %s have them (each city costs ~36 of the safe area's 210 rows)\n",
+				LevelNames[city], CIV_CLUT_GUEST_CITIES, "the others");
+
+			sImpPalLump[city] = NULL;
 			continue;
 		}
 
-		for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
+		limit = base + CIV_CLUT_BLOCK_ROWS;
+		if (limit > CIV_CLUT_ROWS)
+			limit = CIV_CLUT_ROWS;
+
+		for (r = base; r < limit; r++)
 			if (rowNeeded[r])
 			{
 				rows++;
 				CarPalRowNote(r, city);
 			}
 
-		printInfo("cross-city: %s palettes: uploading for %d of the import bank's %d rows\n",
-			LevelNames[city], rows, CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW);
+		printInfo("cross-city: %s palettes: uploading for %d of its block's %d rows (civ_clut %d..%d)\n",
+			LevelNames[city], rows, CIV_CLUT_BLOCK_ROWS, base, limit - 1);
+
+		// The honest refusal, now per city: a city whose own palettes need more rows than
+		// a block has loses the excess rather than a neighbour's block.
+		if (rows > CIV_CLUT_BLOCK_ROWS)
+			printInfo("cross-city: %s palettes: wants %d rows and a block is %d - the excess is not placed (CIV_CLUT_BLOCK_ROWS)\n",
+				LevelNames[city], rows, CIV_CLUT_BLOCK_ROWS);
 
 		ProcessPalletLumpForRows(sImpPalLump[city], sImpPalSize[city], city, rowNeeded);
 
@@ -2366,7 +2445,13 @@ static int CarPalIndexInCity(int tpage, int city)
 	if (city < 0 || city >= 4)
 		return -1;
 
-	rowbase = (CarImportCityHeld(city) && city != GameLevel) ? CIV_CLUT_IMPORT_ROW : 0;
+	rowbase = (CarImportCityHeld(city) && city != GameLevel) ? CarImportBankRow(city) : 0;
+
+	// A city the column cannot afford has no block. Its cars then fall back to the host's
+	// row 0 (and ProcessImportedPaletteRows says why), which is a wrong colour rather than
+	// a write into someone else's block or into the level font.
+	if (rowbase < 0)
+		rowbase = 0;
 
 	for (i = 0; i < 8; i++)
 	{
@@ -2387,6 +2472,23 @@ static int CarPalIndexInCity(int tpage, int city)
 	}
 
 	return -1;
+}
+
+// JERICHO: the same lookup, for a caller that KNOWS which city the page belongs to.
+//
+// GetCarPalIndex answers "which city does this page belong to?" by asking every held
+// city's table in order and taking the first that has the page - which, with three
+// cities whose page numbers overlap, is simply the first city. That is fine while one
+// city owns one shared block, and wrong the moment each city owns its own: the pin
+// recorded the source city of every page it holds (sPinCity), so use that instead of a
+// guess. Without this, a 3-city mashup uploads for the first city only - the other two
+// blocks stay empty and their cars read whatever the first city put there.
+int CarPalIndexInCityFor(int tpage, int city)
+{
+	if (city < 0 || city >= 4)
+		return GetCarPalIndex(tpage);
+
+	return CarPalIndexInCity(tpage, city);
 }
 
 char GetCarPalIndex(int tpage)

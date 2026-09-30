@@ -1616,7 +1616,11 @@ void CarImportPin(void)
 
 			for (i = 0; i < sPinCount; i++)
 			{
-				int row = GetCarPalIndex(sPinSet[i]);
+				// JERICHO: the pin knows which city this page came from (sPinCity), so ask
+				// that city's table directly. GetCarPalIndex would instead search every
+				// held city and take the first that has the page number - which with
+				// three cities is the first city, leaving the others' blocks empty.
+				int row = CarPalIndexInCityFor(sPinSet[i], sPinCity[i]);
 
 				if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS)
 					rowNeeded[row] = 1;

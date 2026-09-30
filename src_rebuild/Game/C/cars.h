@@ -38,11 +38,18 @@ extern short BackWheelRotation[MAX_CARS];
 extern char LeftLight;
 extern char RightLight;
 
-// JERICHO: civ_clut has two banks of 8 car-palette rows - 0..7 the host level's own,
-// 8..15 a cross-city import's - so a foreign car can be painted from its own city's
-// palettes without overwriting the host's. See the comment on civ_clut in cars.c.
-#define CIV_CLUT_ROWS		16
+// JERICHO: civ_clut is a table of 8-row car-palette BLOCKS. Rows 0..7 are the host
+// level's own; each guest city gets a block of its own after that, so a foreign car is
+// painted from its own city's palettes without overwriting anyone else's. See the
+// comment on civ_clut in cars.c.
+//
+// The block height is 8 and cannot be narrower: CarPalIndexInCity returns `i + rowbase`
+// where `i` is the index into carTpages[city][0..7], so a city's rows span its whole
+// block even though only the rows its polgyons name carry data (measured: 2 of them).
+// Hence 8 + 8 per guest city - three guests fit in 32.
+#define CIV_CLUT_ROWS		32
 #define CIV_CLUT_IMPORT_ROW	8
+#define CIV_CLUT_BLOCK_ROWS	8			// the height of one city's block (carTpages' range)
 
 // ---------------------------------------------------------------------------
 // The CLUT column's budget, measured (tools/vrammap.py + the JERICHO_PAL_DIAG readings
@@ -98,6 +105,7 @@ extern void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* mo
 extern void MangleWheelModels(); // 0x000230C8
 
 extern char GetCarPalIndex(int tpage); // 0x00023390
+extern int CarPalIndexInCityFor(int tpage, int city); // JERICHO: the same, given the city (cars.c)
 
 /* Cross-city car data: which city's LEVELS\<CITY> folder the CARMODEL_* files
  * (.MDL/.COS/.DEN) are read from. -1 = the level's own city (stock). A module
