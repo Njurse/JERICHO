@@ -16,6 +16,15 @@ Two tools, one answer:
 
 ---
 
+![The CLUT column and what is wrong with it](vram-issues.png)
+
+That picture is this document at a glance: a live `vram_dump.tga` of a **three-city
+mashup run**, with the rectangles taken from `tools/vrammap.py` rather than drawn by
+hand (the script is `tools/make_vram_issues_png.py`). The strip on the right is the CLUT
+column itself, x960..1023 y256..511, at 2x — and the overlapping bands in it are the
+problem: the level font image is rows **466..511** while the import's pin band is rows
+**480..511**, so the pin band sits *entirely inside the font*.
+
 ## 1. The 1 MiB, in three parts
 
 PSX VRAM is 1024x512 16-bit texels = 1 MiB. This engine divides it like so:
