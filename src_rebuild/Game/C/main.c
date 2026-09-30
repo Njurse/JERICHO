@@ -1876,6 +1876,21 @@ void JerichoFrameTick(void)
 			LevelNames[GameLevel], carslot, model, gRunFrames, gDebugSeed);
 	}
 
+	// JERICHO: the LEVEL HEAP and the car-poly arena, at the end of a run. main.c's
+	// own malloctab print is behind #if DEBUG||PSX, so a release build never shows
+	// it -- and the cross-city import's per-city geometry has to fit THIS heap. The
+	// numbers in CROSS_CITY.md's budget come from here. whichCP is the shared car-poly
+	// counter: carPolyBuffer is a fixed cap, so a second city's cars compete with
+	// the level's own for it.
+	if (malloctab != NULL && mallocptr != NULL)
+	{
+		long heapUsed = (long)(mallocptr - malloctab);
+
+		printInfo("JERICHO-HEAP: level heap %ld/%d bytes used, %ld free; car polys %d/%d used\n",
+			heapUsed, PSX_MALLOC_SIZE, (long)PSX_MALLOC_SIZE - heapUsed,
+			whichCP, (200 * 2) * MAX_CAR_RESIDENT_MODELS);
+	}
+
 	// JERICHO: the pixel artefact, so 'where did this page land and is it intact' can be
 	// decoded rather than inferred from log lines. Gated by an environment variable so it
 	// needs no option-block plumbing: JERICHO_DUMPVRAM=1.

@@ -106,6 +106,58 @@ data is resident at a time.
 A stock level pays nothing: `gCarImportCity` stays `-1` and every `GetCarImport*`
 getter answers NULL (`models.c:455-537`).
 
+## The budget: what a SECOND (and third, fourth) city would cost
+
+Measured end-of-run, one line per source city, by
+`cainescrossfire/tools/measure_cities.sh` (it reads the engine's own
+`cross-city:`/JERICHO-VRAM/JERICHO-HEAP lines; `frames=90`, seed 7). The
+`JERICHO-HEAP:` line prints the level heap and the car-poly arena at the end of a
+run — main.c's own `malloctab` print is behind `#if DEBUG||PSX`, so a release
+build shows it only through that line.
+
+**Per city, held for the whole level (the C heap, `imp->region` + `.LCF`):**
+
+| city | models | car palettes | cosmetics |
+|---|---|---|---|
+| CHICAGO | 123324 | 15576 | 4096 |
+| HAVANA | 131412 | 14792 | 4096 |
+| VEGAS | 132252 | 14808 | 4096 |
+| RIO | 135688 | 15704 | 4096 |
+
+so **~143–155 KB per city**, 4 cities ≈ 600 KB. On a PC that is nothing, and it is
+*not* the wall.
+
+**Per imported car, against a stock level of the same city:** the car build takes
+the level heap from ~75 KB free to ~68 KB free and the poly counter from 1900 to
+~2230 — i.e. **≈ +6–7 KB of level heap and ≈ +314 car polys per imported car**:
+
+| run | heap used / free | car polys |
+|---|---|---|
+| HAVANA stock | 795608 / 74724 | 1900 |
+| HAVANA + HAVANA m8 | 801796 / 68536 | 2214 |
+| HAVANA + RIO m8 | 802156 / 68176 | 2232 |
+| VEGAS + CHICAGO m8 | 788532 / 81800 | 2238 |
+| CHICAGO + VEGAS m8 | 808252 / 62080 | 2280 |
+
+The level heap (870332 B) has room for ~10 more imported cars, and the poly arena
+(`carPolyBuffer`, a **fixed 3200 cap** shared by every built car) for ~4. **Neither
+is the wall either.**
+
+**The CLUT column is the wall.** It is the *only* one of the three that is already
+full:
+
+| run | CLUT rows used | safe free |
+|---|---|---|
+| any stock level | 172 | 38 |
+| + one imported car | 210–220 | **0 — OVERFLOW into the level font** |
+
+So the column accepts **one** imported car and already paints over rows 466..511
+(the level font) to do it (`VRAM.md` §6.1; the import's own rows start at `y=480`).
+A second city adds a whole second palette table (~15 KB ≈ 40+ rows) with **no room
+at all**. That is why "one foreign city per level" is honest, and why the CLUT
+reclaim in `VRAM.md` §6.1 is the *prerequisite* for the hotload, not a parallel
+task: until the column can hold two cities, no amount of RAM headroom helps.
+
 ## Failure behaviour
 
 Everything fails soft. If the file, the DATA1 region or the `LUMP_CAR_MODELS`
