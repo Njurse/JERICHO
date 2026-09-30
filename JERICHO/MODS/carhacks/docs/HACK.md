@@ -80,16 +80,16 @@ region to put a foreign vehicle's pages in.
 
 | what | how |
 |---|---|
-| drive a Rio police car in Havana | `tools/launch_havana_rio_police.bat [model] [test [frames]]` (model 0 = the Rio police car) |
-| drive a Havana police car in Rio | `tools/launch_rio_havana_police.bat [model] [test [frames]]` (model 0 = the Havana police car) |
-| any cross-city combination | `tools/devcheck.sh [frames]` — exits non-zero on failure |
+| drive a Rio police car in Havana | `cainescrossfire/tools/launch_havana_rio_police.bat [model] [test [frames]]` (model 0 = the Rio police car) |
+| drive a Havana police car in Rio | `cainescrossfire/tools/launch_rio_havana_police.bat [model] [test [frames]]` (model 0 = the Havana police car) |
+| any cross-city combination | `cainescrossfire/tools/devcheck.sh [frames]` — exits non-zero on failure |
 | where the player's car came from | `JERICHO-RUN: level=… carslot=5 model=9 …` then the engine's `slot 5 geometry from RIO model 9` |
 | where imported pages landed | `cross-city: pinned set 77 index 77: slot=14, rect=(512,0), page=0008 …` |
-| what is actually in VRAM | `JERICHO_DUMPVRAM=1` then `tools/vramdump.py vram_dump.tga --png out.png` |
+| what is actually in VRAM | `JERICHO_DUMPVRAM=1` then `cainescrossfire/tools/vramdump.py vram_dump.tga --png out.png` |
 | where VRAM went, and what is left | the engine's own `JERICHO-VRAM: texture used=704/704 KiB (slots 608 + clut 32 + sky 64); clut strip 172/256 rows (84 free); … largest free in texture area=…` line, printed once per level load (see also `tools/vrammap.py`) |
 | what a city's car palettes *should* be | `tools/levpalette.py LEVELS/<CITY>.LEV --out out/` — a swatch PNG + a text table per city, from `LUMP_PALLET` (see `PALETTES.md` §7) |
-| the last run's car textures under each palette | `tools/cardump.py vram_dump.tga --log JERICHO.log --out out/` — one PNG per imported set, a row per palette, plus the run's actual page CLUT as a control (`PALETTES.md` §7) |
-| whether a run's palettes/pages behaved | `tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — the three invariants the engine's own summary misses (exit 0 held / 1 violated / 2 no import) |
+| the last run's car textures under each palette | `cainescrossfire/tools/cardump.py vram_dump.tga --log JERICHO.log --out out/` — one PNG per imported set, a row per palette, plus the run's actual page CLUT as a control (`PALETTES.md` §7) |
+| whether a run's palettes/pages behaved | `cainescrossfire/tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — the three invariants the engine's own summary misses (exit 0 held / 1 violated / 2 no import) |
 | VRAM live, while you play | `-vramview [frames]` opens a second window showing the live VRAM every frame (and re-dumps `vram_live.tga` every N frames, default 15, for `vramdump.py`) |
 | replay a run exactly | `-seed N` (the seed picks module randomness) |
 
@@ -195,12 +195,12 @@ Reproduce with:
 ```
 JERICHO_DUMPVRAM=1 ./REDRIVER2_dev.exe -nointro -level havana -car 9 ... -frames 200 -seed 7
 grep "imported slot\|poly tpage index\|pinned set\|page check" JERICHO.log
-python3 tools/vramdump.py vram_dump.tga --log JERICHO.log --samples --png overlay.png
+python3 cainescrossfire/tools/vramdump.py vram_dump.tga --log JERICHO.log --samples --png overlay.png
 ```
 
 `page check - slot 5 clean: 238 of 254 polys resolve to a pinned imported page` is the
 one-line regression test; anything below that number is a poly drawing a rectangle the
-import never filled. `tools/vramdump.py --samples` boxes the sampled rectangles (red, with
+import never filled. `cainescrossfire/tools/vramdump.py --samples` boxes the sampled rectangles (red, with
 poly counts) against the pinned ones (green) on a dump.
 
 **Residual (known, measured):** the remaining polys name **set 0**, which has no page in

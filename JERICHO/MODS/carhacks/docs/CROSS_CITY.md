@@ -100,8 +100,8 @@ The import mallocs and holds the **whole foreign DATA1 region**
 (the block is a sub-range; `FORMATS.md` §1 sizes DATA1, §3 sizes the block) —
 plus the foreign `.LCF` (4096 bytes on disk). All of it is held for the **whole
 level**: it is freed only when the next level initialises the import again
-(`FreeCarImport` at `models.c:424`), or on a failed load. So one foreign city's
-data is resident at a time.
+(`FreeCarImport` at `models.c:424`), or on a failed load. Up to **four** cities' data can be resident at once
+(`gCarImports[4]`), one block per imported slot.
 
 A stock level pays nothing: `gCarImportCity` stays `-1` and every `GetCarImport*`
 getter answers NULL (`models.c:455-537`).
@@ -154,7 +154,9 @@ full:
 So the column accepts **one** imported car and already paints over rows 466..511
 (the level font) to do it (`VRAM.md` §6.1; the import's own rows start at `y=480`).
 A second city adds a whole second palette table (~15 KB ≈ 40+ rows) with **no room
-at all**. That is why "one foreign city per level" is honest, and why the CLUT
+at all**. That is why **one guest city's PALETTES per level** is honest — the
+geometry side holds several cities (`gCarImports[4]`), but the palette side does
+not — and why the CLUT
 reclaim in `VRAM.md` §6.1 is the *prerequisite* for the hotload, not a parallel
 task: until the column can hold two cities, no amount of RAM headroom helps.
 
@@ -177,7 +179,7 @@ did not load".
   no model 11 (the model-completeness table is `FORMATS.md` §3). A slot forced to
   a model the city lacks, with no fallback, is left with NULL model pointers —
   the state `CreateDentableCar`'s guard flags (`denting.c:224`, `:237`). The
-  carhacks module lists this explicitly (`carhacks.c:27-28`).
+  carhacks module lists this explicitly (`carhacks.c:33-40`).
 - **The special slot ignores the per-city colours.** `car_cosmetics[SPECIAL_CAR_SLOT]`
   is not taken per model — it uses the cache `levelSpecCosmetics[model - 8]`,
   filled once for models 8..12 (`SetupSpecCosmetics`, `cosmetic.c:150-168`).
@@ -205,7 +207,7 @@ did not load".
 
 ## Turning it on
 
-In `JERICHO/CONFIG/carhacks.ini` (off by default — `carhacks.c:47`):
+In `JERICHO/CONFIG/carhacks.ini` (off by default — `carhacks.c:55`):
 
 ```
 cross_city_vehicles = 1
@@ -213,7 +215,7 @@ import = 2:0:10
 ```
 
 `cross_city_vehicles` gates the whole hack. `import` takes comma-separated
-`slot:city:model` entries (`carhacks.c:143-206`) — here, Chicago's school bus
+`slot:city:model` entries (`carimport.c:251-345`) — here, Chicago's school bus
 (model 10) into resident slot 2. City numbers are `0` CHICAGO, `1` HAVANA,
 `2` VEGAS, `3` RIO (`system.c:130`). Slots 0..4 feed ambient traffic (the model
 list is `modelRandomList`, `civ_ai.c:47`), 5.. up to count-2 are spare capacity
@@ -242,7 +244,7 @@ the foreign file really is what got loaded — `FORMATS.md` §3 owns those figur
   after (`:433-451`), and holds the per-slot city (`GetCarModelSourceCity`, `:334`).
 - **`carhacks.c`** is the module: `ChkOnCarDataSource` reads
   `source_city` / `traffic_model` / `traffic_slot` and calls
-  `ChkApplyImports` for the `import` list. It does not compute anything and does not
+  `chkImportLoadConfig` for the `import` list. It does not compute anything and does not
   choose the player's car —
   it just writes model numbers and source cities and lets the engine read them.
 - **Consumers:** `ProcessCarModelLump` (`models.c:633`), `ProcessCosmeticsLump`
@@ -321,14 +323,14 @@ Still open:
 - **The thrash meter is the thing to watch.** If `page re-uploads` in the final page
   state grows with the frame count, something is still taking pages back — check the
   two `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
-- **Run `tools/crosscheck.py` (or `devcheck.sh`, which calls it) instead of reading the
+- **Run `cainescrossfire/tools/crosscheck.py` (or `cainescrossfire/tools/devcheck.sh`, which calls it) instead of reading the
   page state by eye.** It asserts the three things the engine's own summary cannot see
   (`carhacks/docs/HACK.md`, "Where an imported page may live now"): an imported page must not
   sit on the world's/scenery's rectangle, must not take a live local car's page, and its
   CLUTs must match the source city's file.
 - Visual confirmation stays the user's: the logs prove pages are placed, claimed and
   kept — not that a car looks right. `-vramview` opens a second window showing the
-  live VRAM so a page or CLUT can be watched as it changes, `tools/cardump.py` renders
+  live VRAM so a page or CLUT can be watched as it changes, `cainescrossfire/tools/cardump.py` renders
   last run's pages under each palette, and `tools/levpalette.py` gives the defaults to
   compare against.
 
@@ -358,7 +360,7 @@ fanned out to the side, where a spawn point's kerb or wall is):
     [carhacks] spawn: CHICAGO model 8 (resident slot 4) in CAR_DATA slot 2, palette 0, 900 ahead - player (24453,30,-497793) car (25353,30,-497794)
     [carhacks] spawn: HAVANA model 9 (resident slot 5) in CAR_DATA slot 3, palette 0, 1800 ahead - player (24453,30,-497793) car (26253,30,-497794)
     [carhacks] spawn: VEGAS model 10 (resident slot 6) in CAR_DATA slot 4, palette 0, 2700 ahead - player (24453,30,-497793) car (27154,30,-497795)
-    [carhacks] spawn: 3 imported car(s) placed ahead of the player
+    [carhacks] spawn: 3 imported car(s) placed ahead of the player, 1500 units apart
 
 The recipe is the one cainescrossfire's own opponent spawn already proves
 (`ai/opponent.c:518-528,678`): the first `CAR_DATA` whose `controlType` is

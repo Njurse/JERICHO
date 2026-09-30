@@ -17,8 +17,10 @@ Two facts, both measured:
    same number is a *different* vehicle in each (`VEHICLES.md`). So "Rio's model 9"
    is not expressible on mp's wire at all.
 
-On top of that, the engine reads a level's car data from **one** foreign city
-(`models.c`, `gCarModelSource`), so a session has to *agree* which city that is.
+On top of that, while the *geometry* side is now per-city (`gCarImports[4]`,
+one block per slot), the **palette** side still admits one guest city - the
+`civ_clut` import bank, rows 8..15 - so a session has to *agree* which city
+that is.
 Today it is whatever each machine's own `carhacks.ini` happens to say.
 
 ## The identity schema — `carid.h`
@@ -93,11 +95,12 @@ picker, so the local car always comes out palette 0 and none of this would ever
 fire. `CHK_FORCE_PLAYER_PALETTE=<n>` sets it, the way `CHK_FORCE_CAR` drives the
 menu.
 
-**The limit - one foreign city per level.** `chkNetFoldPeerCars()` folds every
+**The limit - one guest city's PALETTES.** `chkNetFoldPeerCars()` folds every
 peer's car into the level's import set, so a peer is drawn as their own vehicle
-where the engine can hold it. It cannot when that car comes from a SECOND foreign
-city: the engine reads one foreign city per level, and the set refuses the entry
-loudly (below). A car from the level's own city is skipped - it needs no import,
+where the engine can hold it. The geometry side now holds several cities at once
+(`gCarImports[4]`, one block per slot), but the **palette** side does not: the
+`civ_clut` import bank (rows 8..15) is one city's worth of rows, and the set
+refuses a second city's entry loudly (below). A car from the level's own city is skipped - it needs no import,
 and skipping it keeps an identity that has not settled yet from claiming a spare
 slot with the level's own model 0.
 
@@ -109,8 +112,10 @@ unit.
 
 ### The hotload hand-off (next unit)
 
-**Measured first: a second city is not partially supported, it is absent.** The
-gate was opened by hand (`two_guest_cities = 1`, a measurement lever in
+**Measured first, BEFORE the per-city import block landed.** The log below is
+from that build, when a second city's geometry really was absent; the per-city
+block has since removed that specific symptom, and this is kept as the record of
+what the measurement looked like. The gate was opened by hand (`two_guest_cities = 1`, a measurement lever in
 `carimport.c`) so the ENGINE finally saw a set naming two cities:
 
 ```
@@ -124,9 +129,9 @@ cross-city: slot 5 geometry from HAVANA model 8
 [pair] verdict: PASS   (no crash, no dump, 0 dumps)
 ```
 
-The per-slot source city is real, but a level's car lumps are read for ONE city
-(`ProcessCarModelLump`), so a slot pointing at a second city gets no data at all -
-quietly. That is what the hotload actually has to do:
+The per-slot source city is real, and each slot now builds from its own city
+(`ProcessCarModelLump`, `models.c:764-783`). That is what the hotload actually
+has to do:
 
 1. The identity is already there: `chkNetPeerCar()` says which (city, model) each
    peer drives, and `chkNetFoldPeerCars()` is already the place a car joins the set.
@@ -145,9 +150,9 @@ quietly. That is what the hotload actually has to do:
 
 ## Authority and lifecycle
 
-The **host is authoritative**, and the reason is the engine's one-guest-city rule:
-there is exactly one foreign city per level, so the host's choice has to win for
-everyone. `mp_agree_imports = 0` (`carhacks.ini`) turns the whole agreement off —
+The **host is authoritative**, and the reason is the palette bank's one-guest-city
+rule: the `civ_clut` import bank admits one city, so the host's choice has to win
+for everyone. `mp_agree_imports = 0` (`carhacks.ini`) turns the whole agreement off —
 every machine keeps its own set, which is what a session where the players
 deliberately want different cars needs, and what the three-city stress test below
 uses.

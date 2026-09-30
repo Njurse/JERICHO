@@ -207,9 +207,15 @@ shares the same `MAX_CAR_RESIDENT_MODELS` array:
 
 | slots | who |
 |---|---|
-| `0..3` | the level's own city's cars |
-| `4..6` | **free** — where imports go, and where **mp** puts an extra player's car |
-| `7` | the level's special body |
+| `0..4` | the level's own city's civilians — `mission.c:350-354` fills these from the mission header, and `4` is the engine's own traffic filler (`dr2limits.h:23-28`) |
+| `5..6` | **free** — the spare pair. This is where imports go, and where **mp** puts an extra player's car |
+| `7` | the level's special body (`SPECIAL_CAR_SLOT`) |
+
+Two of the civilian slots are load-bearing and must not be imported over casually:
+**slot 3 is the cop car** (`externalCopModel = residentCarModels[3]`, `civ_ai.c:3390`)
+and **slot 4 is the traffic filler**. A set *may* name 0..4 — the parser accepts any
+slot below the count — but that recolours the level's own traffic, because traffic
+rolls slots 0/1/2/4 (`civ_ai.c:47`). The module's own choosers start at **5**.
 
 With `mp` loaded, slots **5 and 6** belong to the session (one per additional
 player). This is why carhacks' `CAR_DATA_SOURCE` handler runs at priority 10: the
@@ -410,7 +416,7 @@ player**:
 ```
 [carhacks] spawn: CHICAGO model 8 (resident slot 4) in CAR_DATA slot 2, palette 0,  900 ahead - player (24453,30,-497793) car (25353,30,-497794)
 [carhacks] spawn: HAVANA  model 9 (resident slot 5) in CAR_DATA slot 3, palette 0, 1800 ahead - player (24453,30,-497793) car (26253,30,-497794)
-[carhacks] spawn: 3 imported car(s) placed ahead of the player
+[carhacks] spawn: 3 imported car(s) placed ahead of the player, 1500 units apart
 ```
 
 They go **forward**, along the matrix's third column — the engine's own "a point
@@ -447,9 +453,12 @@ Everything is in the run's log; grep for these:
 
 ## Docs
 
-The mechanism and the city data formats are documented next to the engine code they
-reverse-engineer, in Caine's Crossfire's folder (so they were not moved with the
-code):
+The mechanism and the city data formats live in this module's `docs/`, beside the
+code they describe. (Only `FORMATS.md`, which documents the level-file and car-lump
+formats that Caine's Crossfire's own tools read, stayed in
+`cainescrossfire/carhacks/`.) Note that engine `file:line` citations throughout
+these docs are **approximate by design** - the engine moves, the mechanism does
+not - so confirm a citation before relying on the exact line:
 
 - [`CROSS_CITY.md`](docs/CROSS_CITY.md) — what a cross-city import is, cost and lifetime, the budget, the traps
 - [`HACK.md`](docs/HACK.md) — the mechanism in the order it runs

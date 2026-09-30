@@ -176,7 +176,7 @@ largest free in texture area=(0,0) 0x0 = 0 KiB
 
 Two dumps from **different states of the same session** (a frontend dump and an in-game
 one, or -frames 20 and -frames 300) are what let the tool separate *resident* from
-*streamed*; a single dump can only say "written". `tools/vram_baseline.txt` is the recorded
+*streamed*; a single dump can only say "written". `cainescrossfire/tools/vram_baseline.txt` is the recorded
 baseline (Havana, seed 7, stock and `import = 5:3:9`) with the exact commands in its
 header, so a future change can be diffed against it.
 

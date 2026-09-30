@@ -53,7 +53,24 @@ vram = Image.open(SRC).convert("RGB")
 if vram.size != (1024, 512):
     vram = vram.resize((1024, 512), Image.NEAREST)
 
-W, H = 1180, 720
+# The "what is wrong" block lives in the LEFT column, under the legend, so it can
+# never run off the bottom of the sheet. (It used to start below the 2x CLUT strip,
+# at y=606 on a 720-tall sheet, which clipped its last two lines.)
+WRONG = (
+    (RED,   "level font image is rows 466..511, and the import's rows land in it"),
+    (PURPLE, "the import pin band is rows 480..511 - ENTIRELY inside the font"),
+    (AMBER, "VEGAS' own pages need 9 CLUT rows; the streamed-slot walk reserves 8"),
+    (AMBER, "SendTPage orders cluts.h = npalettes/4 + 1 with no clamp (spool.c:495)"),
+    (INK,   "this dump's run (LASVEGAS, 3 cities mixed): 164 rows used, 46 free"),
+    (INK,   "so the column FITS today - the reserve is what is thin, not the total"),
+    (GREEN, "widen the reserve to the level's own max and the margin stays honest,"),
+    (GREEN, "and the cross-row closure is what buys a 4th city - the remap's job"),
+)
+BLOCK_Y = 456                         # just under the left legend (which ends at 438)
+BLOCK_H = 19 + 15 * len(WRONG)        # one title line, then one per entry
+
+# The sheet grows if the block ever outgrows it, so text cannot be clipped again.
+W, H = 1180, max(720, BLOCK_Y + BLOCK_H + 16)
 sheet = Image.new("RGB", (W, H), WHITE)
 d = ImageDraw.Draw(sheet)
 
@@ -118,21 +135,13 @@ d.text((ZX - 52, row(SAFE_LAST + 1) - 7), "465", fill=RED, font=small)
 d.text((ZX, ZY - 20), "the CLUT column, 64x256 at 2x (x960..1023)",
        fill=INK, font=font)
 
-# ---- what that means --------------------------------------------------------
-y = ZY + 256 * ZC + 14
+# ---- what that means (left column, under the legend) ------------------------
+y = BLOCK_Y
 d.text((SX, y), "what is wrong, in the run that produced this dump:", fill=INK, font=font)
 y += 19
-for col, line in (
-    (RED,   "level font image is rows 466..511, and the import's rows land in it"),
-    (PURPLE, "the import pin band is rows 480..511 - ENTIRELY inside the font"),
-    (AMBER, "VEGAS' own pages need 9 CLUT rows; the streamed-slot walk reserves 8"),
-    (AMBER, "SendTPage orders cluts.h = npalettes/4 + 1 with no clamp (spool.c:495)"),
-    (INK,   "with 3 imports the census read: 213 rows used, 0 safe free"),
-    (INK,   "the palette upload in the crashing run wrote rows 428 -> 470, 5 past 465"),
-    (GREEN, "the import's palette table is only 57 -> 38-42 rows after filtering,"),
-    (GREEN, "but the cross-row closure pulls 142-152 of them back - the remap's job"),
-):
+for col, line in WRONG:
     d.text((SX + 8, y), line, fill=col, font=small); y += 15
+assert y <= H, "the sheet is too short for the block: %d > %d" % (y, H)
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 sheet.save(OUT)
