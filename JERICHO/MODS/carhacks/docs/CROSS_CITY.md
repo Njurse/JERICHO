@@ -416,3 +416,33 @@ The folder override (`GetCarDataFolder()`, driven by
 `JER_EVENT_CAR_DATA_SOURCE.sourceLevel`) redirects the **loose-file** loaders only
 (`.MDL` / `.COS` / `.DEN`). On its own it cannot produce foreign vehicles, because
 there is no loose vehicle data to find. It stays as the hand-made-car path.
+
+
+## The palette bank, measured (and the one thing a per-city fix must reconcile)
+
+The `civ_clut` import bank is rows 8..15, and `CarPalIndexInCity` handed **every** guest
+city the same row base (`CIV_CLUT_IMPORT_ROW`). `CarPalRowReport` (the palette map, see
+README) makes what that costs explicit in a three-city mashup:
+
+    palette map - resident slot 0 reads civ_clut rows 8..15 (HAVANA model 8)
+    ...                                slot 6 reads civ_clut rows 8..15 (RIO model 12)
+    palette map - civ_clut row 14 written by HAVANA
+    palette map - civ_clut row 15 written by HAVANA
+    palette map - 2 of the import bank's 8 rows written, 0 of them by more than one city
+
+All six imported cars read the same eight rows, and only one city wrote - two rows. The
+other two cities' palettes are REFUSED, so their cars read the first city's rows. Note
+the direction: the residual colour fault is an **absence**, not a collision, which is why
+it shows as "some vehicles" rather than as everything being wrong.
+
+Demand is small: **2 rows per city**. The column has 41-53 rows free, so per-city banks
+are not a VRAM budget problem - the gate is simply far stricter than the hardware.
+
+**A per-city row base is not a one-place change.** Attempting it (a 2-row band per city
+via `CarImportBankRow`, and dropping the single-city refusal) built cleanly and ran, and
+produced `uploading for 0 of its 2 rows` for every city - a regression, not a fix. The
+reason is a second site: `CarImportPin` builds `rowNeeded[]` from
+`GetCarPalIndex(sPinSet[i])` (texture.c), not from `CarPalIndexInCity`. Those two agreed
+only while every city shared one base. Changing one and not the other leaves `rowNeeded`
+empty and nothing uploads. **Reconcile both in the same change**, and read the palette map
+before/after to confirm two cities now write two different bands.
