@@ -438,11 +438,25 @@ it shows as "some vehicles" rather than as everything being wrong.
 Demand is small: **2 rows per city**. The column has 41-53 rows free, so per-city banks
 are not a VRAM budget problem - the gate is simply far stricter than the hardware.
 
-**A per-city row base is not a one-place change.** Attempting it (a 2-row band per city
-via `CarImportBankRow`, and dropping the single-city refusal) built cleanly and ran, and
-produced `uploading for 0 of its 2 rows` for every city - a regression, not a fix. The
-reason is a second site: `CarImportPin` builds `rowNeeded[]` from
-`GetCarPalIndex(sPinSet[i])` (texture.c), not from `CarPalIndexInCity`. Those two agreed
-only while every city shared one base. Changing one and not the other leaves `rowNeeded`
-empty and nothing uploads. **Reconcile both in the same change**, and read the palette map
-before/after to confirm two cities now write two different bands.
+**Resolved: a BLOCK per guest city.** `CarImportBankRow(city)` gives each guest city its
+own 8-row block (`CIV_CLUT_IMPORT_ROW + band * CIV_CLUT_BLOCK_ROWS`, with `CIV_CLUT_ROWS`
+grown 16 -> 32), and the pin builds `rowNeeded[]` from
+`CarPalIndexInCityFor(sPinSet[i], sPinCity[i])` rather than `GetCarPalIndex(sPinSet[i])`.
+
+Two traps, both paid for:
+
+- **A block is 8 rows, not as many as the city fills.** `CarPalIndexInCity` returns
+  `i + rowbase` where `i` spans `carTpages[city][0..7]`, so a 2-row band cannot hold
+  `rowbase + 6`. The first attempt used 2-row bands and every city uploaded **0 rows** -
+  the rows it needed were outside the band, so the filter matched nothing.
+- **`GetCarPalIndex` cannot answer "which city owns this page".** It asks each held city
+  in order and takes the first hit, which with three cities is simply the first city. That
+  was harmless while one city owned one shared block and fatal the moment each city had
+  its own: HAVANA uploaded, VEGAS and RIO uploaded 0. `sPinCity` already recorded each
+  page's source city, so use it.
+
+**The measured ceiling is 2 guest cities.** A city's palettes cost about **36 column rows**;
+the CLUT-safe area is 210 rows (256..465) and the level's own layout takes ~157. Two fit;
+three ran `clutpos` to 486, **21 rows into the level font**. So `CIV_CLUT_GUEST_CITIES` is
+2 and the third city is refused out loud with its numbers. Raisising it is the row
+reclamation unit's job - the gate is the column, not the table.
