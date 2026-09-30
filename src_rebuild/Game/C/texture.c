@@ -1588,6 +1588,7 @@ static int CarPinPreferredAllowed(int slot)
 }
 
 static void VramAccountReport(void);
+static int LevelClutRowsNeeded(void);		// JERICHO: the level's own max CLUT rows
 
 void CarImportPin(void)
 {
@@ -1773,10 +1774,21 @@ void CarImportPin(void)
 			// is short is the fix, not a stricter refusal - see cars.h and VRAM.md §6.
 			if (firstFree > CD2_CLUT_SAFE_LAST)
 			{
-				printInfo("cross-city: no CLUT-safe room for the pin band (layout ends at %d, the font starts at %d) - falling back to y=480, which is inside the font\n",
+				// There is no safe row left. This used to fall back to the historic
+				// forced y=480, which is INSIDE the level font - the collision, made
+				// deliberate by a literal. Painting over the glyphs is worse than an
+				// imported car losing its palettes: no palettes is recoverable,
+				// painted-over text is not. So refuse the band and say so, and let the
+				// refusal path below decline the sets.
+				//
+				// This should now be unreachable: the streamed-slot band reserves the
+				// level's own maximum rows (LevelClutRowsNeeded above), so a three-city
+				// mashup ends its layout near y=425 with ~40 rows to spare, where the
+				// old flat-8 reserve left it at 469 - past the font. See VRAM.md 6.
+				printInfo("cross-city: NO CLUT-safe room for the import pin band (layout ends at %d, the font starts at %d) - refusing the band rather than writing over the level font\n",
 					clutpos.y, CD2_CLUT_SAFE_LAST + 1);
 
-				firstFree = 480;
+				firstFree = CD2_CLUT_SAFE_LAST + 1;	// past the safe area: the sets are declined
 			}
 
 			sPinClutCursor.x = 960;
@@ -2667,7 +2679,8 @@ static void VramAccountReport(void)
 	// this is the number that says whether it can reserve less (VRAM.md 6, option 1)
 	// -- and whether 8 was ever enough.
 	{
-		int ti, maxRows = 0, minRows = 0;
+		int reserve = LevelClutRowsNeeded();
+		int minRows = 0, ti;
 
 		for (ti = 0; ti < tpage_amount; ti++)
 		{
@@ -2678,16 +2691,36 @@ static void VramAccountReport(void)
 
 			rows = tpage_texamts[ti] / 4 + 1;
 
-			if (rows > maxRows)
-				maxRows = rows;
-
 			if (minRows == 0 || rows < minRows)
 				minRows = rows;
 		}
 
-		printInfo("JERICHO-CLUT: the level's pages need %d..%d CLUT rows each; the streamed-slot band reserves 8\n",
-			minRows, maxRows);
+		printInfo("JERICHO-CLUT: the level's pages need %d..%d CLUT rows each; the streamed-slot band reserves %d\n",
+			minRows, reserve, (reserve < 1) ? 8 : reserve);
 	}
+}
+
+// JERICHO: the most CLUT rows ANY of the level's own pages needs -- i.e. the widest
+// thing a streamed slot can be asked to hold. spool.c orders exactly
+// (npalettes / 4 + 1) rows per slot, so reserving less than this lets one slot's
+// CLUTs write over the next slot's. The band used to reserve a flat 8, which is one
+// short for LASVEGAS (its own pages need 9) -- VRAM.md 6.
+static int LevelClutRowsNeeded(void)
+{
+	int ti, rows, maxRows = 0;
+
+	for (ti = 0; ti < tpage_amount; ti++)
+	{
+		if (tpage_texamts[ti] <= 0)
+			continue;
+
+		rows = tpage_texamts[ti] / 4 + 1;
+
+		if (rows > maxRows)
+			maxRows = rows;
+	}
+
+	return maxRows;
 }
 
 // [D] [T]
@@ -2835,6 +2868,11 @@ void LoadPermanentTPages(int *sector)
 
 		while (clutsloaded < MaxSpecCluts)
 		{
+			// JERICHO: stop at the last row above the level font image rather than
+			// ticking the cursor into the glyphs (CD2_CLUT_SAFE_LAST, VRAM.md 6).
+			if (clutpos.y >= CD2_CLUT_SAFE_LAST)
+				break;
+
 			IncrementClutNum(&clutpos);
 			clutsloaded++;
 		}
@@ -2843,10 +2881,24 @@ void LoadPermanentTPages(int *sector)
 	if (clutpos.x != 960) 
 	{
 		clutpos.x = 960;
-		clutpos.y++;
+
+		// JERICHO: same ceiling. The band below is clamped too, but a cursor already
+		// sitting at the ceiling must not step into the level font.
+		if (clutpos.y < CD2_CLUT_SAFE_LAST)
+			clutpos.y++;
 	}
 
 	// init all slots
+	// JERICHO: reserve what this level's widest page actually needs rather than a
+	// flat 8 rows, and never past the last row above the level font image.
+	int slotRows = LevelClutRowsNeeded();
+	if (slotRows < 1)
+		slotRows = 8;			// no page data at all: keep the historic reserve
+	if (slotRows > CD2_CLUT_SAFE_LAST - clutpos.y + 1)
+		slotRows = CD2_CLUT_SAFE_LAST - clutpos.y + 1;
+	if (slotRows < 0)
+		slotRows = 0;
+
 	for (i = slotsused; i < 19; i++)
 	{
 		tpageslots[i] = 0xFF;
@@ -2858,9 +2910,9 @@ void LoadPermanentTPages(int *sector)
 		slot_tpagepos[i].vy = tpage.y;
 
 		IncrementTPageNum(&tpage);
-		clutpos.y += 8;
+		clutpos.y += slotRows;
 	}
-	JERICHO_PAL_DIAG("level slot walk (8 rows per streamed slot)");
+	JERICHO_PAL_DIAG("level slot walk (the level's own max rows per streamed slot)");
 
 	// JERICHO-HOOK: the level's own page state, for the cross-city invariant. An
 	// import must leave every one of these exactly as it is here - measured with an

@@ -494,6 +494,20 @@ void SendTPage(void)
 
 			cluts.h = npalettes / 4 + 1;
 
+			// JERICHO: npalettes is read out of the spooled page data, so it is not
+			// ours to trust, and the dest band is this slot's reserved rows. Writing
+			// past the last row above the level font image overwrites the glyphs
+			// (VRAM.md 6) - so refuse the excess and say so, rather than corrupt it.
+			if (cluts.y + cluts.h > CD2_CLUT_SAFE_LAST + 1)
+			{
+				int room = CD2_CLUT_SAFE_LAST + 1 - cluts.y;
+
+				printInfo("JERICHO-CLUT: spool slot %d wanted %d CLUT rows at y=%d; clamped to %d (CD2_CLUT_SAFE_LAST=%d)\n",
+					slot, cluts.h, cluts.y, (room > 0) ? room : 0, CD2_CLUT_SAFE_LAST);
+
+				cluts.h = (room > 0) ? room : 0;
+			}
+
 			LoadImage(&cluts, (u_long*)(model_spool_buffer + 0xE000 + 4));
 
 			clutptr = (u_int*)(texture_cluts[tpage2send]);
