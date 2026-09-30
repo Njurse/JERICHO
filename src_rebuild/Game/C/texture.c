@@ -890,9 +890,12 @@ typedef struct
 	int bytes[CAR_IMPORT_MAX_SETS];	// byte size of that set's data (XYPAIR.y)
 } CAR_IMPORT_SETS;
 
-static CAR_IMPORT_SETS gCarImportPerms;
-static CAR_IMPORT_SETS gCarImportSpecs;
-static int gCarImportTexParsed = 0;
+// ONE list per city: a level can hold more than one city's car data, and each
+// city's page list is its own (the same set number means a different page in
+// another city). Indexed by city, so a set is resolved against ITS OWN list.
+static CAR_IMPORT_SETS gCarImportPerms[4];
+static CAR_IMPORT_SETS gCarImportSpecs[4];
+static int gCarImportTexParsed[4];
 
 static void CopyImportSetList(const XYPAIR* list, int n, CAR_IMPORT_SETS* out)
 {
@@ -919,7 +922,11 @@ static void CopyImportSetList(const XYPAIR* list, int n, CAR_IMPORT_SETS* out)
 // [tpage_amount][texamount][TP array][one length-prefixed TEXINF array per
 // tpage][nperms][permlist][16-entry region][nspecpages][speclist].
 // A no-op when nothing is imported, and it fails safe on anything malformed.
-static void ParseImportedTextureInfo(void)
+// Parse ONE city's page lists. Same layout as ProcessTextureInfo:
+// [tpage_amount][texamount][TP array][one length-prefixed TEXINF array per
+// tpage][nperms][permlist][16-entry region][nspecpages][speclist].
+// A no-op when that city is not held, and it fails safe on anything malformed.
+static void ParseImportedTextureInfoForCity(int city)
 {
 	char* lump;
 	char* ptr;
@@ -928,14 +935,14 @@ static void ParseImportedTextureInfo(void)
 	int tpageAmount;
 	int i;
 
-	gCarImportPerms.count = 0;
-	gCarImportSpecs.count = 0;
-	gCarImportTexParsed = 0;
+	gCarImportPerms[city].count = 0;
+	gCarImportSpecs[city].count = 0;
+	gCarImportTexParsed[city] = 0;
 
-	if (GetCarImportCity() < 0)
+	if (!CarImportCityHeld(city))
 		return;
 
-	lump = GetCarImportTextureInfo(&size);
+	lump = GetCarImportTextureInfoForCity(city, &size);
 
 	if (lump == NULL || size < 16)
 		return;
@@ -973,7 +980,7 @@ static void ParseImportedTextureInfo(void)
 		if (nperms < 0 || ptr + (size_t)nperms * sizeof(XYPAIR) > end)
 			return;
 
-		CopyImportSetList((XYPAIR*)ptr, nperms, &gCarImportPerms);
+		CopyImportSetList((XYPAIR*)ptr, nperms, &gCarImportPerms[city]);
 	}
 
 	// the permanent list occupies a fixed 16-entry region
@@ -990,10 +997,10 @@ static void ParseImportedTextureInfo(void)
 		if (nspec < 0 || ptr + (size_t)nspec * sizeof(XYPAIR) > end)
 			return;
 
-		CopyImportSetList((XYPAIR*)ptr, nspec, &gCarImportSpecs);
+		CopyImportSetList((XYPAIR*)ptr, nspec, &gCarImportSpecs[city]);
 	}
 
-	gCarImportTexParsed = 1;
+	gCarImportTexParsed[city] = 1;
 
 	// Say whether this city's CAR sets are among the loaded page lists - those
 	// are the sets an imported vehicle's polygons name. Entries 6..7 of
@@ -1005,8 +1012,7 @@ static void ParseImportedTextureInfo(void)
 	// sector-aligned - so a set's offset is the running total of the aligned
 	// sizes before it, which is exactly how LoadPermanentTPages carves them.
 	{
-		int city = GetCarImportCity();
-		int base = GetCarImportPageBase();
+		int base = GetCarImportPageBaseForCity(city);
 		int wanted = 0;
 		int found = 0;
 
@@ -1021,9 +1027,9 @@ static void ParseImportedTextureInfo(void)
 
 			wanted++;
 
-			for (j = 0; j < gCarImportPerms.count; j++)
+			for (j = 0; j < gCarImportPerms[city].count; j++)
 			{
-				if (gCarImportPerms.set[j] == set)
+				if (gCarImportPerms[city].set[j] == set)
 				{
 					int cluts = 0;
 
@@ -1031,18 +1037,29 @@ static void ParseImportedTextureInfo(void)
 
 					if (base >= 0 && ReadCarImportFileForCity(city, base + offset, &cluts, sizeof(cluts)))
 						printInfo("cross-city: %s set %d at +%d, %d bytes, %d clut rows\n",
-							LevelNames[city], set, offset, gCarImportPerms.bytes[j], cluts);
+							LevelNames[city], set, offset, gCarImportPerms[city].bytes[j], cluts);
 
 					break;
 				}
 
-				offset += (gCarImportPerms.bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+				offset += (gCarImportPerms[city].bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
 			}
 		}
 
 		printInfo("cross-city: %s page lists - %d permanent sets, %d special sets, %d/%d car sets present\n",
-			LevelNames[city], gCarImportPerms.count, gCarImportSpecs.count, found, wanted);
+			LevelNames[city], gCarImportPerms[city].count, gCarImportSpecs[city].count, found, wanted);
 	}
+}
+
+// Parse EVERY held city's page list. A set is resolved against ITS OWN city's
+// list, because the same set number means a different page in another city - so
+// one city's list cannot stand in for another's.
+static void ParseImportedTextureInfo(void)
+{
+	int city;
+
+	for (city = 0; city < 4; city++)
+		ParseImportedTextureInfoForCity(city);
 }
 
 // Whether the level's own page load already claimed this texture set. Scans the
@@ -1144,7 +1161,10 @@ static int HostOwnsCarTPage(int tpage)
 // - the imported page goes to a free set index and the car's own polygons are
 // translated onto it as they are converted into engine form (cars.c, in
 // plotNewCarModel). Nothing of the host's is touched.
-#define CAR_REMAP_MAX 8
+// Enough for BOTH imported cities: each contributes its own sets that the level
+// already resolved, so one city's six was the old ceiling and a second city
+// overflows 8. These are small int arrays - the cost is a few hundred bytes.
+#define CAR_REMAP_MAX 32
 
 static int sRemapFrom[CAR_REMAP_MAX];
 static int sRemapTo[CAR_REMAP_MAX];
@@ -2162,6 +2182,8 @@ void LoadImportedTPages(void)
 	int city = GetCarImportCity();
 	int base = GetCarImportPageBaseForCity(city);
 	int sets[64];
+	int setCity[64];		// WHICH city each set belongs to: a page list is per city, and
+					// the same set number means a different page in another
 	int pref[64];		// preferred slot per set: the rectangle the replaced car used, or -1
 	int nsets = 0;
 	int i, j;
@@ -2273,6 +2295,7 @@ void LoadImportedTPages(void)
 					// SPECIAL_CAR_SLOT, which is a resident-MODEL index (7) and lands on the
 					// level's permanent pages.
 					pref[nsets] = (specialSlot + k < 19) ? (specialSlot + k) : -1;
+					setCity[nsets] = src;
 					sets[nsets++] = set;
 				}
 			}
@@ -2297,6 +2320,7 @@ void LoadImportedTPages(void)
 					if (set != 0 && nsets < 64 && !SetInList(sets, nsets, set))
 					{
 						pref[nsets] = -1;	// no natural rectangle: a spare slot, as for civilians
+						setCity[nsets] = src;
 						sets[nsets++] = set;
 						own++;
 					}
@@ -2331,6 +2355,7 @@ void LoadImportedTPages(void)
 				{
 					pref[nsets] = -1;	// civilian body: no single natural rectangle, so the
 										// level's spare slots are used as before
+					setCity[nsets] = src;
 					sets[nsets++] = set;
 				}
 			}
@@ -2349,6 +2374,7 @@ void LoadImportedTPages(void)
 	for (i = 0; i < nsets; i++)
 	{
 		int set = sets[i];
+		int sc = setCity[i];		// THIS set's city: its page list is THAT city's
 		int dstSet = set;
 		int remapFrom = -1;
 		int remapTo = 0;
@@ -2364,7 +2390,7 @@ void LoadImportedTPages(void)
 		// would take, the position that slot resolves to, and whether the host owns
 		// the set. This is what tells a genuine capacity wall from a bogus refusal.
 		printInfo("cross-city: candidate %s set %d hostOwns=%d\n",
-			LevelNames[city], set, (LevelTookTPage(set) || HostOwnsCarTPage(set)) ? 1 : 0);
+			LevelNames[sc], set, (LevelTookTPage(set) || HostOwnsCarTPage(set)) ? 1 : 0);
 
 		// The host city keeps its own meaning for a set number: a set index holds one
 		// meaning at a time. So a set the level already resolved goes to a free index and
@@ -2384,26 +2410,26 @@ void LoadImportedTPages(void)
 			// would add a second mapping for the same set.
 			remapFrom = -1;
 			printInfo("cross-city: %s set %d -> index %d, taken from the build-time remap (the car's polys already point at it)\n",
-				LevelNames[city], set, dstSet);
+				LevelNames[sc], set, dstSet);
 		}
 		else
 		{
 			printInfo("cross-city: %s set %d keeps its own index (the level never resolved it)\n",
-				LevelNames[city], set);
+				LevelNames[sc], set);
 		}
 
 
 
-		// locate it in the imported city's page list
-		for (j = 0; j < gCarImportPerms.count; j++)
+		// locate it in THAT city's page list
+		for (j = 0; j < gCarImportPerms[sc].count; j++)
 		{
-			if (gCarImportPerms.set[j] == set)
+			if (gCarImportPerms[sc].set[j] == set)
 			{
-				size = gCarImportPerms.bytes[j];
+				size = gCarImportPerms[sc].bytes[j];
 				break;
 			}
 
-			offset += (gCarImportPerms.bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+			offset += (gCarImportPerms[sc].bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
 		}
 
 		// Not among the permanent pages? Then it may be a SPECIAL page - and those are
@@ -2413,37 +2439,39 @@ void LoadImportedTPages(void)
 		// continues where the perm block ends. Without this the player's imported car
 		// loaded no textures at all: 'set 77 -> slot 14' twice, nothing uploaded,
 		// because 77/78 are in the spec list and the search never looked there.
-		if (size <= 8 && gCarImportSpecs.count > 0)
+		if (size <= 8 && gCarImportSpecs[sc].count > 0)
 		{
 			int specOffset = 0;
 
-			for (j = 0; j < gCarImportPerms.count; j++)
-				specOffset += (gCarImportPerms.bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+			for (j = 0; j < gCarImportPerms[sc].count; j++)
+				specOffset += (gCarImportPerms[sc].bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
 
-			for (j = 0; j < gCarImportSpecs.count; j++)
+			for (j = 0; j < gCarImportSpecs[sc].count; j++)
 			{
-				if (gCarImportSpecs.set[j] == set)
+				if (gCarImportSpecs[sc].set[j] == set)
 				{
-					size = gCarImportSpecs.bytes[j];
+					size = gCarImportSpecs[sc].bytes[j];
 					offset = specOffset;
 					break;
 				}
 
-				specOffset += (gCarImportSpecs.bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+				specOffset += (gCarImportSpecs[sc].bytes[j] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
 			}
 		}
 
 		if (size <= 8)
 		{
-			printInfo("cross-city: %s set %d is not in its page list - skipped\n", LevelNames[city], set);
+			printInfo("cross-city: %s set %d is not in its page list - skipped\n", LevelNames[sc], set);
 			continue;
 		}
 
 		buf = (char*)malloc(size);
 
-		if (buf == NULL || !ReadCarImportFileForCity(city, base + offset, buf, size))
+		// The page's bytes come from THIS set's city, so neither the file nor the page
+		// base may come from the level-wide singleton.
+		if (buf == NULL || !ReadCarImportFileForCity(sc, GetCarImportPageBaseForCity(sc) + offset, buf, size))
 		{
-			printInfo("cross-city: %s set %d could not be read (%d bytes) - skipped\n", LevelNames[city], set, size);
+			printInfo("cross-city: %s set %d could not be read (%d bytes) - skipped\n", LevelNames[sc], set, size);
 
 			if (buf)
 				free(buf);
@@ -2462,7 +2490,7 @@ void LoadImportedTPages(void)
 
 		if (npalettes <= 0 || npalettes > 32)
 		{
-			printInfo("cross-city: %s set %d looks corrupt (%d clut rows) - skipped\n", LevelNames[city], set, npalettes);
+			printInfo("cross-city: %s set %d looks corrupt (%d clut rows) - skipped\n", LevelNames[sc], set, npalettes);
 			continue;
 		}
 
@@ -2475,10 +2503,10 @@ void LoadImportedTPages(void)
 			sRemapCount++;
 		}
 
-		CarPinRecord(set, dstSet, offset, size, pref[i], city);
+		CarPinRecord(set, dstSet, offset, size, pref[i], sc);
 
 		printInfo("cross-city: %s set %d -> index %d, %d bytes at +%d, %d clut rows (paged in at draw time, evicting the world if needed)\n",
-			LevelNames[city], set, dstSet, size, offset, npalettes);
+			LevelNames[sc], set, dstSet, size, offset, npalettes);
 	}
 }
 
