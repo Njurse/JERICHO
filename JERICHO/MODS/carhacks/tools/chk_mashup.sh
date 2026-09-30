@@ -5,8 +5,9 @@
 #   ./chk_mashup.sh [host] [mix] [frames]
 #        host    default chicago   the level to run (name, or index 0..3)
 #        mix     default 4         how many cities to mix, 2..4
-#        frames  default 60        0 = MANUAL: no -frames, so the game runs until you
-#                                  close it and the script moves on then
+#        frames  default MANUAL    omit it and the game runs until you close it, then
+#                                  the script carries on; a number times the run, and
+#                                  'manual'/'0' spell the default out loud
 #
 # The other tools answer "does the cross-city path work". This one builds the
 # biggest mix the engine can hold and puts it where it can be SEEN:
@@ -109,14 +110,22 @@ case "$MIX" in
 	*) echo "chk_mashup: mix must be 2, 3 or 4 (got '$MIX')" >&2; exit 2 ;;
 esac
 
-FRAMES="${3:-60}"
-
-# frames 0 = MANUAL: no -frames at all, so the game runs until YOU close it and the
-# script moves on then. Any other value is a timed run that self-terminates.
+# ---- frames: no argument means MANUAL --------------------------------------
+# No argument = MANUAL: -frames is left off entirely, so the game runs until YOU close
+# it and the tool carries on then. A number = a timed run that self-terminates.
+# "manual" and "0" are accepted spellings of MANUAL, so `chk_mashup.sh chicago 4 manual`
+# says what it does.
+FRAMES_ARG="${3:-}"
+case "$FRAMES_ARG" in
+	""|manual|MANUAL|0|-1) FRAMES=0 ;;
+	*[!0-9]*) echo "chk_mashup: frames must be a number or 'manual' (got '$FRAMES_ARG')" >&2; exit 2 ;;
+	*) FRAMES="$FRAMES_ARG" ;;
+esac
 FRAME_ARGS=()
 [ "$FRAMES" != "0" ] && FRAME_ARGS=(-frames "$FRAMES")
 MANUAL=0
 [ "$FRAMES" = "0" ] && MANUAL=1
+[ "$MANUAL" = "1" ] && FRAMES_LABEL="MANUAL" || FRAMES_LABEL="$FRAMES frames"
 
 # ---- which cities, and what goes in which slot -----------------------------
 
@@ -177,7 +186,7 @@ cd "$BIN" || exit 1
 	printf '\n'
 } > "$INI"
 
-echo "----- mashup: host ${CITY_NAME[$host]}, $MIX cities, $want slot(s), $FRAMES frames -----"
+echo "----- mashup: host ${CITY_NAME[$host]}, $MIX cities, $want slot(s), $FRAMES_LABEL -----"
 echo "----- import: $(grep -a '^import' "$INI")"
 [ "$MANUAL" = "1" ] && echo "----- MANUAL: drive around, then close the game to finish this level -----"
 

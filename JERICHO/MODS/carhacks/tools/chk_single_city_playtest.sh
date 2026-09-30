@@ -35,7 +35,8 @@
 #   ./chk_single_city_playtest.sh             run from anywhere; default chicago
 #   ./chk_single_city_playtest.sh havana      pick the host level (name or index 0..3)
 #   ./chk_single_city_playtest.sh rio 300     longer runs (frames)
-#   ./chk_single_city_playtest.sh rio 0       MANUAL: drive around, then close the
+#   ./chk_single_city_playtest.sh rio         MANUAL (no frames arg): drive around, then
+#                                             close the game to finish
 #   CHK_SHOW=1 ./chk_single_city_playtest.sh  also print the game's log WHILE it runs
 #   REPO=/path/to/REDRIVER2 ./chk_single_city_playtest.sh   point at another checkout
 set -u
@@ -111,12 +112,21 @@ if [ "$host" -lt 0 ]; then
 	exit 2
 fi
 
-FRAMES="${2:-60}"
-
-# frames 0 = MANUAL: no -frames at all, so the game runs until YOU close it and the
-# test carries on then. Any other value is a timed run that self-terminates.
+# ---- frames: no argument means MANUAL --------------------------------------
+# No argument = MANUAL: -frames is left off entirely, so the game runs until YOU close
+# it and the test carries on then. A number = a timed run that self-terminates.
+# "manual" and "0" are accepted spellings of MANUAL. NOTE the position: argument 1 is
+# the CITY, so `./chk_single_city_playtest.sh 0` is city 0 (CHICAGO), not frames -- the
+# banner names the city it resolved, so a mix-up is visible rather than silent.
+FRAMES_ARG="${2:-}"
+case "$FRAMES_ARG" in
+	""|manual|MANUAL|0|-1) FRAMES=0 ;;
+	*[!0-9]*) echo "chk_single_city_playtest: frames must be a number or 'manual' (got '$FRAMES_ARG')" >&2; exit 2 ;;
+	*) FRAMES="$FRAMES_ARG" ;;
+esac
 FRAME_ARGS=()
 [ "$FRAMES" != "0" ] && FRAME_ARGS=(-frames "$FRAMES")
+[ "$FRAMES" = "0" ] && FRAMES_LABEL="MANUAL" || FRAMES_LABEL="$FRAMES frames"
 
 SAVED="$(cat "$INI" 2>/dev/null || true)"
 
@@ -145,7 +155,8 @@ fail=0
 
 log="/tmp/chk_city_${LEVEL_NAME[$host]}.log"
 
-echo "----- running host ${CITY_NAME[$host]} (level ${LEVEL_NAME[$host]}, $FRAMES frames) -----"
+echo "----- running host ${CITY_NAME[$host]} (level ${LEVEL_NAME[$host]}, $FRAMES_LABEL) -----"
+[ "$FRAMES" = "0" ] && echo "----- MANUAL: drive around, then close the game to finish this level -----"
 
 # CHK_SHOW=1 also prints the game's own log to the terminal, so a run can be
 # watched while it happens rather than read afterwards.

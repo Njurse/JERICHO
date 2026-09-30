@@ -29,7 +29,8 @@
 #   CHK_SHOW=1 ./chk_all_cities.sh   also print the game's log WHILE it runs
 #   REPO=/path/to/REDRIVER2 ./chk_all_cities.sh   point at another checkout
 #   ./chk_all_cities.sh 300          longer runs (frames)
-#   ./chk_all_cities.sh 0            MANUAL: drive each level, close the game to go on
+#   ./chk_all_cities.sh              MANUAL (no frames arg): drive each level, close the
+#                                    game to move on to the next city
 set -u
 
 # Resolve the checkout from the script's OWN location, then fall back to the known
@@ -68,12 +69,19 @@ if [ ! -f "$BIN/REDRIVER2_dev.exe" ]; then
 fi
 CITY_NAME=(CHICAGO HAVANA VEGAS RIO)
 LEVEL_NAME=(chicago havana lasvegas rio)
-FRAMES="${1:-60}"
-
-# frames 0 = MANUAL: no -frames at all, so each level runs until YOU close it and
-# the suite moves on to the next one then. Any other value self-terminates per level.
+# ---- frames: no argument means MANUAL --------------------------------------
+# No argument = MANUAL: -frames is left off entirely, so each level runs until YOU close
+# it and the suite moves on to the next one then. A number = a timed run per level.
+# "manual" and "0" are accepted spellings of MANUAL.
+FRAMES_ARG="${1:-}"
+case "$FRAMES_ARG" in
+	""|manual|MANUAL|0|-1) FRAMES=0 ;;
+	*[!0-9]*) echo "chk_all_cities: frames must be a number or 'manual' (got '$FRAMES_ARG')" >&2; exit 2 ;;
+	*) FRAMES="$FRAMES_ARG" ;;
+esac
 FRAME_ARGS=()
 [ "$FRAMES" != "0" ] && FRAME_ARGS=(-frames "$FRAMES")
+[ "$FRAMES" = "0" ] && FRAMES_LABEL="MANUAL" || FRAMES_LABEL="$FRAMES frames"
 
 # A model every city ships, one per city so the lines can be told apart. 8, 9, 10
 # and 12 exist in all four cities; 11 is missing in Chicago.
@@ -105,7 +113,7 @@ for host in 0 1 2 3; do
 
 	log="/tmp/chk_all_${LEVEL_NAME[$host]}.log"
 
-	echo "----- running host ${CITY_NAME[$host]} (level ${LEVEL_NAME[$host]}, $FRAMES frames) -----"
+	echo "----- running host ${CITY_NAME[$host]} (level ${LEVEL_NAME[$host]}, $FRAMES_LABEL) -----"
 	[ "$FRAMES" = "0" ] && echo "----- MANUAL: drive around, then close the game to move to the next level -----"
 
 	# CHK_SHOW=1 also prints the game's own log to the terminal, so a run can be
