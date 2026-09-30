@@ -613,6 +613,29 @@ project "REDRIVER2"
             "copy /Y \"..\\..\\JERICHO\\build_game.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.bat\"",
         }
 
+    -- The TOOLS are deliberately NOT mirrored. They are source, not game data: the
+    -- game loads the compiled mods and CONFIG/, never a shell script. Mirroring them
+    -- put every tool in two places, so a tool run from bin/ was a snapshot that could
+    -- silently drift from the repo until someone rebuilt - which is exactly how a
+    -- stale copy gets run and blamed. One canonical location:
+    -- JERICHO/MODS/<mod>/tools.
+    --
+    -- One explicit command per mod FOLDER, discovered on disk rather than taken from
+    -- JERICHO_COMPILED_MODS: the xcopy is recursive, so it mirrors folders that are
+    -- not compiled mods too (combatd2 is one), and those would otherwise keep their
+    -- tools/ forever. No cmd wildcard or for-loop syntax to get wrong, and `rd` needs
+    -- the `if exist` guard because on a first build there is nothing to remove yet.
+    local jer_mirrored_mods = {}
+    for _, JER_DIR in ipairs(os.matchdirs("../JERICHO/MODS/*")) do
+        table.insert(jer_mirrored_mods, path.getname(JER_DIR))
+    end
+
+    filter { "system:Windows" }
+        for _, JER_MOD in ipairs(jer_mirrored_mods) do
+            local JER_TOOLS = "%{cfg.buildtarget.directory}JERICHO\\MODS\\" .. JER_MOD .. "\\tools"
+            postbuildcommands { "if exist \"" .. JER_TOOLS .. "\" rd /S /Q \"" .. JER_TOOLS .. "\"" }
+        end
+
     filter { "system:linux" }
         postbuildcommands {
             "mkdir -p \"%{cfg.buildtarget.directory}JERICHO/MODS\" && cp -R ../../JERICHO/MODS/. \"%{cfg.buildtarget.directory}JERICHO/MODS/\"",
@@ -621,3 +644,10 @@ project "REDRIVER2"
             -- it is the newer file (cp -u), so a runtime toggle there still survives.
             "cp -u ../../JERICHO/CONFIG/modlist.ini \"%{cfg.buildtarget.directory}JERICHO/CONFIG/modlist.ini\"",
         }
+
+    -- the same removal as on Windows, after the copy above
+    filter { "system:linux" }
+        for _, JER_MOD in ipairs(jer_mirrored_mods) do
+            local JER_TOOLS = "%{cfg.buildtarget.directory}JERICHO/MODS/" .. JER_MOD .. "/tools"
+            postbuildcommands { "rm -rf \"" .. JER_TOOLS .. "\"" }
+        end
