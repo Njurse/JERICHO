@@ -1812,7 +1812,7 @@ void CarImportPin(void)
 			if (sPinClutCursor.y + need > limit)
 			{
 				printInfo("cross-city: %s set %d left unplaced - %d CLUT rows from y=%d would %s\n",
-					LevelNames[GetCarImportCity()], sPinSet[i], npal, sPinClutCursor.y,
+					LevelNames[sPinCity[i]], sPinSet[i], npal, sPinClutCursor.y,
 					sPinBandSafe ? "reach the level font (the safe area ends there)" : "wrap into a texture page");
 
 				free(buf);
@@ -1881,11 +1881,25 @@ void CarImportPin(void)
 // clut packing:  x = ((v) & 0x3f) << 4;  y = v >> 6.
 static void CarImportDumpPageRefs(void);
 
+// Is ANY city held for this level? The per-city replacement for "is there a guest
+// city at all" - the old single-city test (GetCarImportCity() < 0) only answered
+// for the FIRST held city.
+static int CarImportAnyHeld(void)
+{
+	int c;
+
+	for (c = 0; c < 4; c++)
+		if (CarImportCityHeld(c))
+			return 1;
+
+	return 0;
+}
+
 void CarImportDumpState(void)
 {
 	int i, k;
 
-	if (GetCarImportCity() < 0 && sRemapCount == 0)
+	if (CarImportAnyHeld() == 0 && sRemapCount == 0)
 		return;
 
 	printInfo("cross-city: final page state (%d pinned, %d wasted car pages taken, %d world pages evicted, %d page re-uploads, %d claims given back)\n", sPinCount, sPinUnusedTakes, sPinEvictions, sPinReloads, sCarPageGiveBacks);
