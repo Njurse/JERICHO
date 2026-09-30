@@ -337,6 +337,10 @@ This module's own tools (in `tools/`):
 All three take **`frames 0` for MANUAL**: the `-frames` argument is left off, so the
 game runs until you close it and the tool moves on then — one close per level in the
 suite, so you go to the next test when you are ready rather than when a timer says so.
+
+All of them show the imported cars with the **wrong colours** until the CLUT band
+placement lands (see [Limits](#limits--what-it-does-not-do-today)) — they judge
+geometry, placement and mix, not paint.
 | `chk_mp_foreign.sh` | a **real mp pair** with a different foreign city on each side, reporting what each machine loaded and what each player ended up driving |
 
 Both city tools assert the same three things per level, and **fail** if any is
