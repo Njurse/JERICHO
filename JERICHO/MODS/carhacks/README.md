@@ -51,6 +51,25 @@ Every key is listed under [Config reference](#config-reference).
 
 ---
 
+## Where to run things (and which copy is which)
+
+**The repo tree is the source of truth.** Edit and run everything from
+`JERICHO/MODS/<mod>/…`.
+
+`src_rebuild/bin/Release_dev/` is **build output**. `.gitignore` excludes `*bin/`, and
+every build refreshes it from the repo:
+
+| what | where it ends up | why |
+|---|---|---|
+| the mod sources, docs and `mod.toml` | mirrored to `bin/<Config>/JERICHO/MODS/` | the game loads the compiled mods and reads `CONFIG/`, so a run is self-contained |
+| **the tools** (`<mod>/tools/*`) | **repo only** — the build removes them from the mirror | they are source, not game data. Mirroring them put every tool in two places, and a `bin/` copy is a snapshot that goes stale |
+| `JERICHO/CONFIG/*.ini` | seeded once, then updated in place | so a runtime toggle (which modules run, a mod's own settings) survives a rebuild |
+
+The tools drive the game by resolving `$BIN` (the repo's
+`src_rebuild/bin/Release_dev`), so they work wherever they are run from — but one that
+finds itself under a `bin/` path prints a NOTE saying so, because that copy is a
+snapshot and debugging it is debugging the wrong file.
+
 ## The shape of the module
 
 Three independent hacks, each one row of the table in `carhacks.c` and each gated by
@@ -334,9 +353,11 @@ This module's own tools (in `tools/`):
 | `chk_all_cities.sh [frames]` | the same, but for **every** host level in turn |
 | `chk_mashup.sh [host] [mix] [frames]` | the biggest mix the engine can hold: cars from **2-4 cities** shuffled into the resident slots that are placed *and* driven, verified `built N/N, spawned N/N` |
 
-All three take **`frames 0` for MANUAL**: the `-frames` argument is left off, so the
-game runs until you close it and the tool moves on then — one close per level in the
-suite, so you go to the next test when you are ready rather than when a timer says so.
+**No frames argument means MANUAL**: `-frames` is left off entirely, so the game runs
+until you close it and the tool moves on then — one close per level in the suite, so you
+go to the next test when you are ready rather than when a timer says so. Pass a number
+for a timed run; `manual` and `0` spell the default out, and the banner prints which one
+it resolved.
 
 All of them show the imported cars with the **wrong colours** until the CLUT band
 placement lands (see [Limits](#limits--what-it-does-not-do-today)) — they judge
