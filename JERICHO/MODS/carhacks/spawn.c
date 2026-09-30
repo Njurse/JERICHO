@@ -32,10 +32,12 @@
 #include "carid.h"
 #include "carimport.h"
 
-/* How far AHEAD of the player each car is put, and the gap between them. They go
- * in a LINE down the road, not fanned out to the side: at a spawn point the side is
- * usually a wall or the pavement, which is exactly where these kept landing. */
-#define CHK_SPAWN_OFFSET	900
+/* The DEFAULT gap between the placed cars, in world units -- they go in a LINE
+ * ahead of the player, not fanned out to the side: at a spawn point the side is a
+ * wall or the pavement, which is exactly where these kept landing. 1500 rather than
+ * 900 because a long body (bus, fire truck, the semi) reaches into the car in
+ * front; override per run with `spawn_spacing`. */
+#define CHK_SPAWN_OFFSET	1500
 
 /* Set once this level's imports have been placed; cleared when the level changes
  * (chkSpawnReset, from the CAR_DATA_SOURCE handler). */
@@ -49,6 +51,15 @@ void chkSpawnReset(void)
 static int chkSpawnEnabled(void)
 {
 	return jer_config_get_int("carhacks", "spawn_imports", 0) != 0;
+}
+
+/* The gap to use this run, read once so every car in the line shares it. Anything
+ * non-positive falls back to the default rather than stacking them all on one spot. */
+static int chkSpawnSpacing(void)
+{
+	int v = jer_config_get_int("carhacks", "spawn_spacing", CHK_SPAWN_OFFSET);
+
+	return (v > 0) ? v : CHK_SPAWN_OFFSET;
 }
 
 /* The first CAR_DATA slot the world is not using, or NULL. Same search
@@ -71,7 +82,7 @@ static CAR_DATA* chkSpawnFreeCar(void)
 static int chkSpawnOnFrame(void* ud, void* args)
 {
 	CAR_DATA* pcp;
-	int i, placed = 0;
+	int i, placed = 0, spacing;
 
 	(void)ud;
 	(void)args;
@@ -94,6 +105,9 @@ static int chkSpawnOnFrame(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	sChkSpawned = 1;		/* one attempt per level, whatever it manages */
+
+	/* Read once: every car in this line shares the gap it was placed with. */
+	spacing = chkSpawnSpacing();
 
 	for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
 	{
@@ -129,7 +143,7 @@ static int chkSpawnOnFrame(void* ud, void* args)
 		 * same pair for a point ahead of a car (cop_ai.c:426-428 uses m[0][2]/
 		 * m[2][2] for 400 units ahead; handling.c:788 derives hd.direction from
 		 * those two as well). m[0][0]/m[2][0] would be the SIDE, which is the wall. */
-		d = CHK_SPAWN_OFFSET * (placed + 1);
+		d = spacing * (placed + 1);
 
 		/* The engine's own rule (PingInCivCar, and cainescrossfire's spawn): a
 		 * recolourable civilian body (model 0..4) takes a palette 0..5, anything
@@ -153,7 +167,8 @@ static int chkSpawnOnFrame(void* ud, void* args)
 		placed++;
 	}
 
-	printInfo("[carhacks] spawn: %d imported car(s) placed ahead of the player\n", placed);
+	printInfo("[carhacks] spawn: %d imported car(s) placed ahead of the player, %d units apart\n",
+		placed, spacing);
 
 	return JER_RESULT_CONTINUE;
 }
