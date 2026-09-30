@@ -79,6 +79,13 @@ enum
  * carhacks_register. Safe to call more than once (a module reload re-runs it). */
 void chkCarSelectRegister(JERICHO_CONTEXT* ctx);
 
+/* The "see the imported cars" measurement lever (spawn.c). chkSpawnRegister
+ * installs its FRAME hook; chkSpawnReset re-arms it for a new level, so the cars
+ * are placed once per level rather than once per session. Called from
+ * carhacks_register and the CAR_DATA_SOURCE handler respectively. */
+void chkSpawnRegister(JERICHO_CONTEXT* ctx);
+void chkSpawnReset(void);
+
 /* The menu's id, for jer_frontend_find and for the boot log. */
 const char* chkCarSelectMenuId(void);
 

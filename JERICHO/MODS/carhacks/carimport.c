@@ -106,7 +106,7 @@ int chkImportSlotFree(int slot)
 	return 1;
 }
 
-static const char* chkCityName(int city)
+const char* chkCityName(int city)
 {
 	if (city < 0)
 		return "level";

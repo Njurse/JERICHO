@@ -30,6 +30,10 @@ int chkImportSetSlot(int slot, CHK_CAR_ID id);
  * traffic knock does). 1 = changed. */
 int chkImportSetSlotModel(int slot, int model);
 
+/* A city's name for a log line: "level" for CHK_CITY_NATIVE (-1), else LevelNames.
+ * Shared by carimport.c, net.c and spawn.c. */
+const char* chkCityName(int city);
+
 /* The identity recorded for `slot` (city = CHK_CITY_NATIVE when nothing). */
 CHK_CAR_ID chkImportSlotId(int slot);
 

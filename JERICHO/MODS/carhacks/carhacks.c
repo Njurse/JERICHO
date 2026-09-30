@@ -183,6 +183,10 @@ static int ChkOnCarDataSource(void* ud, void* args)
 	 * made in the frontend and is consumed by the level it starts) */
 	chkImportReset();
 
+	/* re-arm the spawn lever for THIS level: it places its cars once, and a new
+	 * level means a new set to place (spawn.c) */
+	chkSpawnReset();
+
 	if (crossCity)
 	{
 		src = jer_config_get_int("carhacks", "source_city", -1);
@@ -354,6 +358,11 @@ void carhacks_register(JERICHO_CONTEXT* ctx)
 	 * addon net bridge, so a session can agree which city each machine reads its
 	 * car data from. Every call inside is a no-op with no session. */
 	chkNetRegister(ctx);
+
+	/* the "see the imported cars" measurement lever (spawn.c): places one car per
+	 * imported city beside the player, once per level. Off unless
+	 * spawn_imports = 1. */
+	chkSpawnRegister(ctx);
 
 	ctx->jer_log(ctx, "[carhacks] %d car hack(s) registered\n", CHK_HACK_COUNT);
 }
