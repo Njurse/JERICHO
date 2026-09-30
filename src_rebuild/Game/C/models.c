@@ -489,11 +489,25 @@ int GetCarImportCity(void)
 	return gCarImportCity;
 }
 
+// Is `city`'s car data loaded for this level? The gate the per-city array offers
+// to a caller that has a city (or a slot's city) in hand.
+int CarImportCityHeld(int city)
+{
+	return (city >= 0 && city < 4 && gCarImports[city].region != NULL);
+}
+
 // The imported city's car palettes (LUMP_PALLET body), or NULL. `size` receives
 // its length.
 char* GetCarImportPallet(int* size)
 {
-	CAR_IMPORT* imp = (gCarImportCity >= 0 && gCarImportCity < 4) ? &gCarImports[gCarImportCity] : NULL;
+	return GetCarImportPalletForCity(gCarImportCity, size);
+}
+
+// The same for a NAMED city, so a caller with a slot can ask about THAT slot's
+// city instead of the level's first one.
+char* GetCarImportPalletForCity(int city, int* size)
+{
+	CAR_IMPORT* imp = CarImportCityHeld(city) ? &gCarImports[city] : NULL;
 
 	if (size)
 		*size = imp ? imp->palletSize : 0;
@@ -506,7 +520,12 @@ char* GetCarImportPallet(int* size)
 // the TP/TEXINF types the layout needs live there.
 char* GetCarImportTextureInfo(int* size)
 {
-	CAR_IMPORT* imp = (gCarImportCity >= 0 && gCarImportCity < 4) ? &gCarImports[gCarImportCity] : NULL;
+	return GetCarImportTextureInfoForCity(gCarImportCity, size);
+}
+
+char* GetCarImportTextureInfoForCity(int city, int* size)
+{
+	CAR_IMPORT* imp = CarImportCityHeld(city) ? &gCarImports[city] : NULL;
 
 	if (size)
 		*size = imp ? imp->texInfoSize : 0;
@@ -519,10 +538,15 @@ char* GetCarImportTextureInfo(int* size)
 // entry sector-aligned, which is how LoadPermanentTPages carves them.
 int GetCarImportPageBase(void)
 {
-	if (gCarImportCity < 0)
+	return GetCarImportPageBaseForCity(gCarImportCity);
+}
+
+int GetCarImportPageBaseForCity(int city)
+{
+	if (!CarImportCityHeld(city))
 		return -1;
 
-	return gCarImports[gCarImportCity].pageBase;
+	return gCarImports[city].pageBase;
 }
 
 // Read `len` bytes at `offset` from the imported city's level file. Returns 1 on
@@ -530,18 +554,23 @@ int GetCarImportPageBase(void)
 // g_CurrentLevelFileName, i.e. the level being played, not the imported city.
 int ReadCarImportFile(int offset, void* dst, int len)
 {
+	return ReadCarImportFileForCity(gCarImportCity, offset, dst, len);
+}
+
+int ReadCarImportFileForCity(int city, int offset, void* dst, int len)
+{
 	char filename[64];
 	FILE* fp;
 
-	if (gCarImportCity < 0 || offset < 0 || len <= 0 || dst == NULL)
+	if (!CarImportCityHeld(city) || offset < 0 || len <= 0 || dst == NULL)
 		return 0;
 
-	sprintf(filename, "%s%s", gDataFolder, LevelFiles[gCarImportCity]);
+	sprintf(filename, "%s%s", gDataFolder, LevelFiles[city]);
 	fp = fopen(filename, "rb");
 
 	if (fp == NULL)
 	{
-		sprintf(filename, "%sM%s", gDataFolder, LevelFiles[gCarImportCity]);
+		sprintf(filename, "%sM%s", gDataFolder, LevelFiles[city]);
 		fp = fopen(filename, "rb");
 	}
 

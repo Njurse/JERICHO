@@ -39,19 +39,31 @@ char* GetCarImportCosmetics(int slot);
 // Which city the level is importing from (-1 = none), and that city's car
 // palettes. cars.c needs both: a foreign vehicle's texture pages must map to the
 // palette slots its own city's palettes were stored in, not the host's.
+//
+// These are the SINGLE-CITY forms: they answer with the FIRST city the level
+// holds, which is what a level naming one city (the normal case) means. A set may
+// name MORE than one city (gCarImports[4] in models.c), so a caller that has a
+// SLOT in hand should use the ForCity forms with GetCarModelSourceCity(slot) and
+// the two agree. CarImportCityHeld says whether a city is loaded at all.
 int GetCarImportCity(void);
+int CarImportCityHeld(int city);
+
 char* GetCarImportPallet(int* size);
+char* GetCarImportPalletForCity(int city, int* size);
 
 // The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
 // walks. texture.c parses it (the TP/TEXINF types the layout needs live there).
 char* GetCarImportTextureInfo(int* size);
+char* GetCarImportTextureInfoForCity(int city, int* size);
 
 // Where the imported city's permanent page data starts in its level file (-1 if
 // none), and a raw ranged read of that file. texture.c uses both to carve out a
 // page: the entries are concatenated there, each sector-aligned, which is exactly
 // how LoadPermanentTPages walks them.
 int GetCarImportPageBase(void);
+int GetCarImportPageBaseForCity(int city);
 int ReadCarImportFile(int offset, void* dst, int len);
+int ReadCarImportFileForCity(int city, int offset, void* dst, int len);
 
 extern int ProcessCarModelLump(char *lump_ptr, int lump_size); // 0x00064E6C
 
