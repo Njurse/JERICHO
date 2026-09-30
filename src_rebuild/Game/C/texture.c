@@ -1892,6 +1892,7 @@ void CarImportPin(void)
 // tpage packing (libgpu.h): x = ((v)      & 0xf) << 6; y = ((v >> 4) & 1) * 256 + ((v >> 11) & 1) * 512.
 // clut packing:  x = ((v) & 0x3f) << 4;  y = v >> 6.
 static void CarImportDumpPageRefs(void);
+void CarPalRowReport(void);		// JERICHO: the civ_clut row ownership map (cars.c)
 
 // Is ANY city held for this level? The per-city replacement for "is there a guest
 // city at all" - the old single-city test (GetCarImportCity() < 0) only answered
@@ -2015,6 +2016,7 @@ void CarImportDumpState(void)
 	}
 
 	CarImportDumpPageRefs();
+	CarPalRowReport();
 }
 
 // JERICHO-HOOK: what the IMPORTED MODEL actually samples, poly by poly.
@@ -2118,6 +2120,57 @@ static void CarImportDumpOneModel(const char* which, int slot, CAR_MODEL* m)
 				(tpagepos[sPinSlot[pinned]].x == px && tpagepos[sPinSlot[pinned]].y == py)
 					? "THE SAME RECTANGLE the poly resolves to"
 					: "a DIFFERENT rectangle (the table moved after this frame's draw)");
+
+		// JERICHO: WHICH set is it, and why did nothing fill it? The index alone cannot
+		// say, because CarImportDstSetCore folds a source set into its destination. Ask
+		// the three places that decide: the import's own remap table (it meant to take
+		// this set), a guest city's page list (the loader should have loaded it), the
+		// host's own resolution (the import deliberately kept the host's page), or
+		// nothing at all (which is the fault).
+		if (pinned < 0)
+		{
+			int r, c, s2, found = 0;
+
+			for (r = 0; r < sRemapCount; r++)
+			{
+				// Both directions matter: seen[k] is usually a DESTINATION the import
+				// allocated (110..127), which is the interesting case - the import
+				// decided to take this set, so an unfilled index means the pin never
+				// got to it.
+				if (sRemapTo[r] == (int)(seen[k] & 0xff))
+				{
+					printInfo("cross-city:     index %d IS an index the import allocated, for source set %d\n",
+						(int)(seen[k] & 0xff), sRemapFrom[r]);
+					found = 1;
+				}
+				else if (sRemapFrom[r] == (int)(seen[k] & 0xff))
+				{
+					printInfo("cross-city:     index %d is a source set the import remapped -> %d\n",
+						(int)(seen[k] & 0xff), sRemapTo[r]);
+					found = 1;
+				}
+			}
+
+			for (c = 0; c < 4; c++)
+			{
+				for (s2 = 0; s2 < gCarImportPerms[c].count; s2++)
+					if (gCarImportPerms[c].set[s2] == (int)(seen[k] & 0xff))
+					{ printInfo("cross-city:     source set %d: in %s's page list at perms[%d]\n",
+						(int)(seen[k] & 0xff), LevelNames[c], s2); found = 1; }
+
+				for (s2 = 0; s2 < gCarImportSpecs[c].count; s2++)
+					if (gCarImportSpecs[c].set[s2] == (int)(seen[k] & 0xff))
+					{ printInfo("cross-city:     source set %d: in %s's SPECIAL list at specs[%d]\n",
+						(int)(seen[k] & 0xff), LevelNames[c], s2); found = 1; }
+			}
+
+			if (HostOwnsCarTPage((int)(seen[k] & 0xff)))
+				printInfo("cross-city:     index %d is a page the HOST already resolved\n", (int)(seen[k] & 0xff));
+
+			if (!found)
+				printInfo("cross-city:     index %d is in NO city's page list and was never remapped - nothing could ever fill it\n",
+					(int)(seen[k] & 0xff));
+		}
 	}
 
 	// the one-line regression check: a poly whose index is not a pinned one is drawing a

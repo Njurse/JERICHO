@@ -122,6 +122,78 @@ MODEL* gCarCleanModelPtr[MAX_CAR_RESIDENT_MODELS];
 // pciv_clut[(carid-1)*192 + tex*6 + palette] (pciv_clut is &civ_clut[1]).
 u_short civ_clut[CIV_CLUT_ROWS][32][6];
 
+// JERICHO: WHO wrote each civ_clut row, and thereby which imported slot's car reads
+// it. A row two cities both claim is a palette collision - one car wearing another's
+// colours - and until now that was only visible as a mystery colour on some vehicle.
+// CarPalRowNote records the write where it happens; CarPalRowReport prints the map at
+// exit, next to the slot each car was loaded into.
+static int sCivClutRowWriters[CIV_CLUT_ROWS];
+static int sCivClutRowCity[CIV_CLUT_ROWS][4];
+
+static void CarPalRowNote(int row, int city)
+{
+	int i;
+
+	if (row < 0 || row >= CIV_CLUT_ROWS)
+		return;
+
+	for (i = 0; i < sCivClutRowWriters[row]; i++)
+		if (sCivClutRowCity[row][i] == city)
+			return;		// this city already owns the row
+
+	if (sCivClutRowWriters[row] < 4)
+		sCivClutRowCity[row][sCivClutRowWriters[row]++] = city;
+}
+
+static void CarPalRowClear(void)
+{
+	int r;
+
+	for (r = 0; r < CIV_CLUT_ROWS; r++)
+		sCivClutRowWriters[r] = 0;
+}
+
+// JERICHO: the palette row map, printed at exit beside the page check. First which
+// imported slot's car reads the import bank, then which city wrote each row - so a
+// car whose colours are wrong can be traced to the row it reads and the city that
+// overwrote it, instead of being a mystery on one vehicle.
+void CarPalRowReport(void)
+{
+	int r, i, slot, collisions = 0, claimed = 0;
+
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		int city = GetCarModelSourceCity(slot);
+
+		if (city < 0)
+			continue;
+
+		printInfo("cross-city: palette map - resident slot %d reads civ_clut rows %d..%d (%s model %d)\n",
+			slot, CIV_CLUT_IMPORT_ROW, CIV_CLUT_ROWS - 1, LevelNames[city], residentCarModels[slot]);
+	}
+
+	for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
+	{
+		if (sCivClutRowWriters[r] == 0)
+			continue;
+
+		claimed++;
+
+		printInfo("cross-city: palette map - civ_clut row %d written by", r);
+
+		for (i = 0; i < sCivClutRowWriters[r]; i++)
+			printInfo(" %s", LevelNames[sCivClutRowCity[r][i]]);
+
+		printInfo("%s\n", (sCivClutRowWriters[r] > 1) ? "   <-- COLLISION (one car wears another's colours)" : "");
+
+		if (sCivClutRowWriters[r] > 1)
+			collisions++;
+	}
+
+	printInfo("cross-city: palette map - %d of the import bank's %d rows written, %d of them by more than one city\n",
+		claimed, CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW, collisions);
+}
+
 #define MAX_CAR_POLYS	(200 * 2) * MAX_CAR_RESIDENT_MODELS
 
 int whichCP = 0;
@@ -1807,7 +1879,10 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 
 		for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
 			if (rowNeeded[r])
+			{
 				rows++;
+				CarPalRowNote(r, city);
+			}
 
 		printInfo("cross-city: %s palettes: uploading for %d of the import bank's %d rows\n",
 			LevelNames[city], rows, CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW);
@@ -1839,6 +1914,10 @@ void ProcessPalletLump(char *lump_ptr, int lump_size)
 void ProcessImportedPalette(void)
 {
 	int city;
+
+	// JERICHO: a fresh level means a fresh palette map - the row ownership recorded
+	// here is what CarPalRowReport prints at exit.
+	CarPalRowClear();
 
 	// EVERY held city, not just the first: each has its own deferred LUMP_PALLET to
 	// hand to the pin (ProcessPalletLumpForCity defers it), so a second city's cars
