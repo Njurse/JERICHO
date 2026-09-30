@@ -203,7 +203,16 @@ if grep -aqE "access violation|fatal error|ModelPtr is NULL" "$log"; then
 	fail=1
 fi
 
-[ "$rc" -ne 0 ] && { echo "  !! exit $rc"; fail=1; }
+# A MANUAL run ends when you close the window, which is not exit 0. That is normal
+# there, so it is reported and not counted as a failure; a real crash is caught by
+# the fault check above, which is independent of the exit code.
+if [ "$rc" -ne 0 ]; then
+	if [ "$FRAMES" = "0" ]; then
+		echo "  (exit $rc - closed by hand; not a failure in MANUAL mode)"
+	else
+		echo "  !! exit $rc"; fail=1
+	fi
+fi
 
 # Built == the slot really holds its own city's model; spawned == it is on screen.
 # "Loaded and built" is not "visible": nothing in the engine makes a vehicle from
