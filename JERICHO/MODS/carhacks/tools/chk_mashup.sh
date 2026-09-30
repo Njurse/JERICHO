@@ -46,6 +46,19 @@ if [ -z "${REPO:-}" ] || [ ! -d "$REPO/src_rebuild/bin/Release_dev" ]; then
 	REPO="/c/Users/Jaret/Documents/Projects/REDRIVER2"
 fi
 
+# Running from inside a build tree? Then this is a COPY, not the script: the build
+# deliberately does not mirror the tools (premake5.lua removes them), so this means a
+# hand-copied or older one -- and a stale tool reads as a bug in the tool. Say so
+# before it does anything.
+JER_SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+case "$JER_SELF" in
+	*/bin/*)
+		echo "NOTE: this is the BUILD's copy of this tool:" >&2
+		echo "        $JER_SELF" >&2
+		echo "      The canonical one is JERICHO/MODS/<mod>/tools/ - run and edit that." >&2
+		;;
+esac
+
 BIN="$REPO/src_rebuild/bin/Release_dev"
 INI="$BIN/JERICHO/CONFIG/carhacks.ini"
 
