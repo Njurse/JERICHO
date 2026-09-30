@@ -29,6 +29,7 @@
 #   CHK_SHOW=1 ./chk_all_cities.sh   also print the game's log WHILE it runs
 #   REPO=/path/to/REDRIVER2 ./chk_all_cities.sh   point at another checkout
 #   ./chk_all_cities.sh 300          longer runs (frames)
+#   ./chk_all_cities.sh 0            MANUAL: drive each level, close the game to go on
 set -u
 
 # Resolve the checkout from the script's OWN location, then fall back to the known
@@ -55,6 +56,11 @@ fi
 CITY_NAME=(CHICAGO HAVANA VEGAS RIO)
 LEVEL_NAME=(chicago havana lasvegas rio)
 FRAMES="${1:-60}"
+
+# frames 0 = MANUAL: no -frames at all, so each level runs until YOU close it and
+# the suite moves on to the next one then. Any other value self-terminates per level.
+FRAME_ARGS=()
+[ "$FRAMES" != "0" ] && FRAME_ARGS=(-frames "$FRAMES")
 
 # A model every city ships, one per city so the lines can be told apart. 8, 9, 10
 # and 12 exist in all four cities; 11 is missing in Chicago.
@@ -87,16 +93,17 @@ for host in 0 1 2 3; do
 	log="/tmp/chk_all_${LEVEL_NAME[$host]}.log"
 
 	echo "----- running host ${CITY_NAME[$host]} (level ${LEVEL_NAME[$host]}, $FRAMES frames) -----"
+	[ "$FRAMES" = "0" ] && echo "----- MANUAL: drive around, then close the game to move to the next level -----"
 
 	# CHK_SHOW=1 also prints the game's own log to the terminal, so a run can be
 	# watched while it happens rather than read afterwards.
 	if [ "${CHK_SHOW:-0}" = "1" ]; then
 		./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
-			-weather none -time day -frames "$FRAMES" -seed 7 2>&1 | tee "$log"
+			-weather none -time day ${FRAME_ARGS[@]+"${FRAME_ARGS[@]}"} -seed 7 2>&1 | tee "$log"
 		rc="${PIPESTATUS[0]}"
 	else
 		./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
-			-weather none -time day -frames "$FRAMES" -seed 7 > "$log" 2>&1
+			-weather none -time day ${FRAME_ARGS[@]+"${FRAME_ARGS[@]}"} -seed 7 > "$log" 2>&1
 		rc=$?
 	fi
 

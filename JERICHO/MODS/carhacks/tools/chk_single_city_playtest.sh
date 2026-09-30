@@ -35,6 +35,7 @@
 #   ./chk_single_city_playtest.sh             run from anywhere; default chicago
 #   ./chk_single_city_playtest.sh havana      pick the host level (name or index 0..3)
 #   ./chk_single_city_playtest.sh rio 300     longer runs (frames)
+#   ./chk_single_city_playtest.sh rio 0       MANUAL: drive around, then close the
 #   CHK_SHOW=1 ./chk_single_city_playtest.sh  also print the game's log WHILE it runs
 #   REPO=/path/to/REDRIVER2 ./chk_single_city_playtest.sh   point at another checkout
 set -u
@@ -99,6 +100,11 @@ fi
 
 FRAMES="${2:-60}"
 
+# frames 0 = MANUAL: no -frames at all, so the game runs until YOU close it and the
+# test carries on then. Any other value is a timed run that self-terminates.
+FRAME_ARGS=()
+[ "$FRAMES" != "0" ] && FRAME_ARGS=(-frames "$FRAMES")
+
 SAVED="$(cat "$INI" 2>/dev/null || true)"
 
 cd "$BIN" || exit 1
@@ -132,11 +138,11 @@ echo "----- running host ${CITY_NAME[$host]} (level ${LEVEL_NAME[$host]}, $FRAME
 # watched while it happens rather than read afterwards.
 if [ "${CHK_SHOW:-0}" = "1" ]; then
 	./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
-		-weather none -time day -frames "$FRAMES" -seed 7 2>&1 | tee "$log"
+		-weather none -time day ${FRAME_ARGS[@]+"${FRAME_ARGS[@]}"} -seed 7 2>&1 | tee "$log"
 	rc="${PIPESTATUS[0]}"
 else
 	./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
-		-weather none -time day -frames "$FRAMES" -seed 7 > "$log" 2>&1
+		-weather none -time day ${FRAME_ARGS[@]+"${FRAME_ARGS[@]}"} -seed 7 > "$log" 2>&1
 	rc=$?
 fi
 
