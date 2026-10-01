@@ -115,6 +115,17 @@ reads the (possibly updated) fields back. No handler = stock behavior.
   fights the transform. The args also carry `basePos` (the chased point),
   `baseDir` (the chased facing), `carSpeed` and `inCar` so a module can run
   its own full chase-cam math instead of poking at the stock result.
+  Measured axis facts for a module that writes the transform itself
+  (`debugorbit` is the worked example): `basePos` is `LONGVECTOR4` `{x, y, z}`
+  in the same units as `camera_position`, and **y is inverted — a SMALLER y is
+  HIGHER**, for the camera and for the target alike. In one stock Chicago frame
+  the car's `basePos[1]` was 114 while the engine's own chase camera sat at
+  `y = -305`, i.e. ~419 above it. So a camera placed `height` above the subject
+  is `basePos[1] - height`, not `basePos[1] + height` (getting that backwards
+  puts the camera under the road — the first `debugorbit` build did exactly
+  that). Horizontally the engine places the camera at
+  `basePos + (sin(a), cos(a)) * distance` and aims it with
+  `camera_angle.vy = -(a + 2048)`.
 - **`JER_EVENT_CAMERA_LOOK`** fires at the top of `TurnHead` with the
   player, the camera pad bits, and the raw right-stick analog
   (`stickX`/`stickY`). A module drives the look (e.g. GTA-style orbit by

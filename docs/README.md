@@ -40,6 +40,7 @@ Each mod documents itself in its own folder.
 | gaildrv2 | [`README.md`](../JERICHO/MODS/gaildrv2/README.md) |
 | mp | [`README.md`](../JERICHO/MODS/mp/README.md) (LAN multiplayer) — start with [`JERICHO-MP.md`](../JERICHO/MODS/mp/docs/JERICHO-MP.md) |
 | testmode | [`README.md`](../JERICHO/MODS/testmode/README.md) (asset-test mode: quiet world, census) |
+| debugorbit | [`README.md`](../JERICHO/MODS/debugorbit/README.md) (**Debug Orbit Camera** — camera-only: takes the camera over at level start and orbits the player at a fixed radius/elevation, for inspecting a car or Tanner from every side; also the worked example of the camera y inversion) |
 
 `docs/crumple.md` is a pointer to the canonical copy in the mod folder, as are
 `docs/JERICHO/ped-animation.md` and `docs/JERICHO/map-streaming.md`.
