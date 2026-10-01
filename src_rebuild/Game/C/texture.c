@@ -1338,6 +1338,8 @@ int CarImportPinDstSet(int set)
 
 static int sPinCount;
 static int sPinDropped;			// JERICHO: pages asked for after the table filled - see CarPinRecord
+static int sPalDone;			// JERICHO: the deferred palette upload has run for THIS level
+static int sPalUploaded;		// JERICHO: how many CLUT slots it wrote (0 = nothing, the interesting failure)
 static int sPinSet[CAR_PIN_MAX];		// the set number the CAR asks for
 static int sPinIndex[CAR_PIN_MAX];		// the index its page is loaded at
 static int sPinSlot[CAR_PIN_MAX];		// the slot it lives in, -1 while unplaced
@@ -1623,10 +1625,11 @@ void CarImportPin(void)
 	// rows are given back, which is more than the 19 the CLUT column is short of the level
 	// font (cars.h, VRAM.md §6).
 	//
-	// Once only: the rows come from the sets, and the sets do not change afterwards.
+	// Once per LEVEL, not once per process: this used to be a function-static that
+	// CarImportResetState never cleared, so a second level in the same session never
+	// uploaded a guest city's palettes at all - and its deferred lumps were the previous
+	// level's. See sPalDone at file scope.
 	{
-		static int sPalDone;
-
 		if (!sPalDone && sPinCount > 0)
 		{
 			unsigned char rowNeeded[CIV_CLUT_ROWS];
@@ -1645,6 +1648,18 @@ void CarImportPin(void)
 
 				if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS)
 					rowNeeded[row] = 1;
+			}
+
+			// JERICHO: how many rows this level actually asked for. A zero here was the
+			// signature of the 2-row-band bug (rows fell outside the band and the upload
+			// wrote nothing), so it belongs in the census rather than being inferred from a
+			// column total that has lied before.
+			{
+				int rq;
+
+				for (rq = 0; rq < CIV_CLUT_ROWS; rq++)
+					if (rowNeeded[rq])
+						sPalUploaded++;
 			}
 
 			ProcessImportedPaletteRows(rowNeeded);
@@ -1883,15 +1898,17 @@ void CarImportPin(void)
 			int row = CarPalIndexInCityFor(sPinSet[i], sPinCity[i]);
 			int j;
 
-			// JERICHO: never write a HOST row for an imported set. GetCarPalIndex answers
-			// below the import bank only when the set is in neither of the import city's
-			// tables (carTpages AND specTpages) - and re-pointing then hands a host palette
-			// the imported page's CLUTs, i.e. the import repaints a local car. Refuse it, and
-			// say so: a silent skip is how this class of leak stayed invisible.
+			// JERICHO: never write a HOST row for an imported set. A row below the import
+			// bank means either (0..7) the set IS a host page - re-pointing then hands a host
+			// palette the imported page's CLUTs, i.e. the import repaints a local car - or
+			// (-1) the set is in neither of the source city's tables, so there is no row for
+			// it at all. Both are refused and said out loud: a silent skip is how this class
+			// of leak stayed invisible. (-1 rather than 0 is the more precise answer, and is
+			// what CarPalIndexInCityFor now returns when the city genuinely has no row.)
 			if (row < CIV_CLUT_IMPORT_ROW)
 			{
 				if (sPinRowLeaks++ < 4)
-					printInfo("cross-city: pin - set %d resolves to civ_clut row %d (a HOST row): not re-pointing, palette leak avoided\n",
+					printInfo("cross-city: pin - set %d resolves to civ_clut row %d (below the import bank: a host row, or no row at all): not re-pointing, palette leak avoided\n",
 						sPinSet[i], row);
 			}
 			else
@@ -1940,7 +1957,7 @@ void CarImportDumpState(void)
 	if (CarImportAnyHeld() == 0 && sRemapCount == 0)
 		return;
 
-	printInfo("cross-city: final page state (%d pinned, %d wasted car pages taken, %d world pages evicted, %d page re-uploads, %d claims given back, %d pins DROPPED)\n", sPinCount, sPinUnusedTakes, sPinEvictions, sPinReloads, sCarPageGiveBacks, sPinDropped);
+	printInfo("cross-city: final page state (%d pinned, %d wasted car pages taken, %d world pages evicted, %d page re-uploads, %d claims given back, %d pins DROPPED, %d palette rows uploaded)\n", sPinCount, sPinUnusedTakes, sPinEvictions, sPinReloads, sCarPageGiveBacks, sPinDropped, sPalUploaded);
 
 	// JERICHO: which of the import bank's rows the imported model actually uses.
 	//
@@ -2266,6 +2283,17 @@ void CarImportResetState(void)
 	sPinEvictions = 0;
 	sPinUnusedTakes = 0;
 	sPinReloads = 0;
+
+	// JERICHO: the palette upload's own lifecycle. These were never cleared, so the upload
+	// ran once per PROCESS rather than once per level: a second level kept sPalDone set,
+	// never re-uploaded, and dereferenced the previous level's deferred lumps. The
+	// counters were the same - they accumulated across levels and read as churn.
+	sPalDone = 0;
+	sPalUploaded = 0;
+	sPinDropped = 0;
+	sPinRowLeaks = 0;
+	sPinBandSafe = 0;
+	CarImportPaletteReset();
 
 	for (i = 0; i < 19; i++)
 		sCarPageClaimFrame[i] = 0;

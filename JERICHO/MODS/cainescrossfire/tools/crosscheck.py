@@ -96,11 +96,13 @@ def parse_run(path):
                       r"page=\w+, clut0=\w+=\((\d+),(\d+)\)", line)
         if m and int(m.group(1)) in out["pinned"]:
             out["pinned"][int(m.group(1))]["clutpos"] = (int(m.group(2)), int(m.group(3)))
-        m = re.search(r"cross-city: pin - set (\d+) resolves to civ_clut row \d+ \(a HOST row\)", line)
+        m = re.search(r"cross-city: pin - set (\d+) resolves to civ_clut row -?\d+ \(below the import bank", line)
         if m:
             out["pin_refusals"].add(int(m.group(1)))
+        # The census gained two fields (pins DROPPED, palette rows uploaded); match the
+        # head of the line rather than demanding the old closing paren.
         m = re.search(r"cross-city: final page state \((\d+) pinned, (\d+) wasted car pages taken, "
-                      r"(\d+) world pages evicted, (\d+) page re-uploads, (\d+) claims given back\)", line)
+                      r"(\d+) world pages evicted, (\d+) page re-uploads, (\d+) claims given back", line)
         if m:
             out["final"] = {"pinned": int(m.group(1)), "wasted": int(m.group(2)), "evicted": int(m.group(3)),
                             "reuploads": int(m.group(4)), "givebacks": int(m.group(5))}
@@ -164,9 +166,9 @@ def check_inv2(run, fails, warns):
             continue                        # a special body's page: the bank's last two rows
         unbanked += 1
         if setno in run["pin_refusals"]:
-            warns.append(f"INV2 set {setno} is not a car page in {city} (nor a special one), so its row is the "
-                         f"host's 0 - the pin refused to re-point it, so nothing leaked; those polys just "
-                         f"keep the host row-0 palette (as a host car's would)")
+            warns.append(f"INV2 set {setno} is not a car page in {city} (nor a special one), so its row is below "
+                         f"the import bank (the host's 0, or -1 for 'no row at all') - the pin refused to re-point "
+                         f"it, so nothing leaked; those polys just keep the host row-0 palette (as a host car's would)")
         else:
             fails.append(f"INV2 set {setno} is in NEITHER {city}'s carTpages nor its specTpages and the pin did "
                          f"NOT refuse a host row - the import would overwrite the HOST's civ_clut row 0"

@@ -1877,7 +1877,21 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		}
 
 		if (needed)
-			civ_clut[palidx][texnum][palette + 1] = clutValue;
+		{
+			// JERICHO: the lump's palette field is used as palette+1 into a 6-slot group,
+			// where slot 0 is the page's own CLUT, so a value past 4 writes into the NEXT
+			// texture_id's group. Real lumps are 0..4 (levpalette.py measures it), but a
+			// malformed one would now clobber a texture_id a squeezed upload kept - so it
+			// is bounded at the point of use rather than trusted.
+			int slot = palette + 1;
+
+			if (slot < 1)
+				slot = 1;
+			if (slot > 5)
+				slot = 5;
+
+			civ_clut[palidx][texnum][slot] = clutValue;
+		}
 	}
 
 	// JERICHO: always report, not only when something was skipped. This is the number
@@ -2004,6 +2018,35 @@ void ProcessPalletLump(char *lump_ptr, int lump_size)
 // rows in the second bank (8..15), and ProcessPalletLumpForCity then runs exactly as it
 // does for the host - same LUMP_PALLET format, same LoadImage of the colours into VRAM -
 // without touching a single host row.
+// JERICHO: forget a level's deferred palette work. Called from CarImportResetState so the
+// upload happens once per LEVEL. Without it the lumps stay pointing at the previous
+// level's palette data (and CarImportPin's sPalDone stays set, so nothing is uploaded for
+// the new level at all) - a bug that only shows on the SECOND level of a session, which is
+// why it went unnoticed until the lifecycle was audited.
+void CarImportPaletteReset(void)
+{
+	int c, cleared = 0;
+
+	for (c = 0; c < 4; c++)
+	{
+		if (sImpPalLump[c] != NULL)
+			cleared++;
+
+		sImpPalLump[c] = NULL;
+		sImpPalSize[c] = 0;
+	}
+
+	CarPalRowClear();
+
+	// JERICHO: this runs on the per-level reset path (models.c InitCarImport), and it is
+	// what makes the deferred upload happen once per LEVEL. Logged because the failure it
+	// fixes is invisible on a single-level run: the SECOND level used to keep CarImportPin's
+	// sPalDone set and upload nothing, with the previous level's lumps still in place. If
+	// this line appears once per level with the count from the level before, the lifecycle
+	// is right; a missing line on level 2 is the bug back.
+	printInfo("cross-city: palette state cleared for the new level (%d lump(s) were deferred by the previous one)\n", cleared);
+}
+
 void ProcessImportedPalette(void)
 {
 	int city;

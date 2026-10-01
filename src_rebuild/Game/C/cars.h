@@ -106,6 +106,7 @@ extern void MangleWheelModels(); // 0x000230C8
 
 extern char GetCarPalIndex(int tpage); // 0x00023390
 extern int CarPalIndexInCityFor(int tpage, int city); // JERICHO: the same, given the city (cars.c)
+extern void CarImportPaletteReset(void); // JERICHO: forget a level's deferred palette work (cars.c)
 
 /* Cross-city car data: which city's LEVELS\<CITY> folder the CARMODEL_* files
  * (.MDL/.COS/.DEN) are read from. -1 = the level's own city (stock). A module
