@@ -79,19 +79,26 @@ camera in the frontend at all (that hook is in-game only).
 
 ## SDK-only, on purpose
 
-This addon imports **no** engine symbol: it calls only the context's function
-pointers and mirrors the two engine structs it writes through (`VECTOR`,
-`SVECTOR`) locally. A module DLL that imports engine symbols is bound to the exe
-name baked into its import library (`REDRIVER2.exe` in the SDK copy,
-`REDRIVER2_dev.exe` in the dev tree), so it only loads under whichever build that
-library came from. Importing nothing keeps this addon loadable under any build —
-which is also why it reads the pad nowhere.
+This addon imports **no** engine symbol. It calls only the context's function
+pointers, mirrors the two engine structs it writes through (`VECTOR`,
+`SVECTOR`) locally, and reaches the host's config API by asking the running
+module for it — `GetModuleHandle(NULL)` + `GetProcAddress("jer_config_get_int")`
+and friends, with the built-in defaults as the fallback. The reason is that a
+module DLL importing *any* engine symbol is bound to the exe name baked into its
+import library (`REDRIVER2.exe` in the SDK copy, `REDRIVER2_dev.exe` in the dev
+tree), so it only loads under whichever build that library came from — and the
+only symptom is the loader's "enabled but no compiled binary found", which reads
+like a missing build rather than a failed load. Importing nothing keeps the addon
+loadable under any build, which is also why it reads the pad nowhere.
 
 It is therefore built with the SDK, not with the game:
 
 ```
 JERICHO\sdk\build_mods.bat C:\path\to\REDRIVER2\JERICHO\MODS\debugorbit
 ```
+
+or, from the mod folder, `build.bat`, which also mirrors the result into the
+runtime `bin\Release_dev\JERICHO\MODS\debugorbit` the launcher's exe scans.
 
 ## Limits
 
