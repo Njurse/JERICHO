@@ -352,3 +352,20 @@ The shortcuts that cost the time, kept because they will tempt you again:
 
 
 
+
+
+### The pin table is a budget too, and it was the silent one
+
+`CarImportDstSetCore` allocates a free index (110..127) for a set the host already owns,
+and the imported model's polys bake it - so **the pin is the only thing that ever fills
+that index**. `CarPinRecord` used to drop the page silently once its table was full
+(`if (sPinCount >= CAR_PIN_MAX) return;`), leaving the index on the initialisation dummy
+`GetTPage(0,0,960,0)` = VRAM (960,0), which is a **live slot**. That is what "body
+textures bleed into the wheel textures" is: the wheels are the host's shared models, and
+their page is what the dummy rectangle was holding.
+
+It now logs and counts the drops (the exit census reports `N pins DROPPED`), and
+`CAR_PIN_MAX` is 16 - inside the 18-index window `CarImportDstSetCore` allocates from.
+A 3-city mashup asks for 13 pages (8 pinned + 5 dropped), so the old 8 was short by five.
+Measured after: pins dropped 5 -> 0, and the three slots that were wearing the host's page
+went from 30/250, 84/244, 30/253 to 234/250, 228/244, 235/253.
