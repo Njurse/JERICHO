@@ -14,7 +14,7 @@ Options → JERICHO screen.
 |---|---|
 | Hold | sits static for `hold_ms` (default 2.5 s) at a 3/4 front view — `start_angle` degrees off the subject's centreline, with the whole vehicle plus context in frame |
 | Orbit | then turns around the subject at `speed` degrees per second (default 40 → a 9 s revolution) |
-| Framing | a constant radius (`distance`, default 4200) and a constant `elevation` below horizontal (default 30°, i.e. the spec's 25–35° band), so the subject stays the same size and the same distance from the top of the frame throughout |
+| Framing | a constant radius (`distance`, default 2100) and a constant `elevation` below horizontal (default 30°, i.e. the spec's 25–35° band), so the subject stays the same size and the same distance from the top of the frame throughout. The height is derived from the two, so changing the distance changes both |
 | Subject | whatever the engine's chase camera is chasing: the player's car, or Tanner on foot |
 | Control | none — the pad is untouched. An idle car sits still and the orbit is a clean turntable; a driven one is simply watched |
 
@@ -29,7 +29,7 @@ once a second), so re-tuning needs no rebuild and no restart:
 | key | default | meaning |
 |---|---|---|
 | `enabled` | 1 | the kill switch; 0 hands the camera back to the engine |
-| `distance` | 4200 | orbit radius, in the engine's world units (the stock chase camera sits ~850 behind a car) |
+| `distance` | 2100 | orbit radius, in the engine's world units (the stock chase camera sits ~850 behind a car). The height follows it: at 30° the camera is `distance · tan 30°` = 1212 above the subject |
 | `elevation` | 30 | degrees below horizontal, clamped 5..80. The height is derived as `distance * tan(elevation)` |
 | `speed` | 40 | degrees per second, clamped ±360. Negative reverses the orbit |
 | `hold_ms` | 2500 | the static hold before the orbit starts, milliseconds (the spec's 2–3 s) |
@@ -136,16 +136,18 @@ REDRIVER2_dev.exe -nointro -level chicago -car slot2 -weather none -time day -fr
 What a clean run looks like (measured, Chicago, `-car slot2`, 30 Hz):
 
 ```
-[debugorbit] hold: subject heading 0 deg, camera at 45 deg (start_angle +45), 2500 ms, then 40 deg/s at radius 4200 and 30 deg down
+[debugorbit] hold: subject heading 0 deg, camera at 45 deg (start_angle +45), 2500 ms, then 40 deg/s at radius 2100 and 30 deg down
 [debugorbit] orbit: hold done after 76 frames, yaw starts at 46 deg
-[debugorbit] t=29  hold  yaw=45  deg cam=(9186,-2311,-219512) ang=(341,1536,0) target=(6216,114,-222482) stockCam=(6216,-305,-223554)
-[debugorbit] t=119 orbit yaw=103 deg cam=(10298,-2311,-223471) ang=(341,869,0)  target=(6216,114,-222482) stockCam=(6216,-305,-223554)
-[debugorbit] t=179 orbit yaw=183 deg cam=(5952,-2311,-226674) ang=(341,4055,0) target=(6216,114,-222482) stockCam=(6216,-305,-223554)
+[debugorbit] t=29  hold  yaw=45  deg cam=(7701,-1098,-220997) ang=(341,1536,0) target=(6216,114,-222482) stockCam=(6216,-305,-223554)
+[debugorbit] t=119 orbit yaw=103 deg cam=(8257,-1098,-222977) ang=(341,869,0)  target=(6216,114,-222482) stockCam=(6216,-305,-223554)
+[debugorbit] t=179 orbit yaw=183 deg cam=(6084,-1098,-224578) ang=(341,4055,0) target=(6216,114,-222482) stockCam=(6216,-305,-223554)
 ```
 
-Read it like this: `cam - target` is `(2970, -2425, 2970)` at yaw 45° —
-`sqrt(2970² + 2970²) = 4200` (the radius) and `2425 = 4200 · tan 30°` (the
-height, said the inverted way round: `ly = basePos[1] - 2425`). `ang.vx = 341` =
+Read it like this: `cam - target` is `(1485, -1212, 1485)` at yaw 45° —
+`sqrt(1485² + 1485²) = 2100` (the radius) and `1212 = 2100 · tan 30°` (the
+height, said the inverted way round: `y = basePos[1] - 1212`). `ang.vx = 341` =
 30° of pitch, `ang.vy` walks `1536 → 869 → 4055` as the yaw turns. The yaw
 advances 40° per 30 frames (`45 → 103 → 183`), i.e. exactly 40°/s and a 9 s
-revolution.
+revolution. `stockCam` is the engine's own chase camera on that frame: 419 above
+the car's `basePos[1]` (114) at `y = -305` — the smaller y that proves which way
+is up.

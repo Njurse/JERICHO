@@ -80,13 +80,15 @@ typedef struct DBG_ANG { short vx, vy, vz, pad; } DBG_ANG;	/* SVECTOR */
 /* --------------------------------------------------------------------------
  * Tunables — JERICHO/CONFIG/debugorbit.ini, re-read live.
  *
- * The defaults are the approved framing: distance 4200 (the same inspection
- * distance testmode picked, and the stock chase camera sits ~850 behind a car),
- * 30 degrees below horizontal (the spec's 25-35 band), 40 deg/s (the spec's
+ * The defaults are the approved framing: distance 2100 (halved from the 4200
+ * inspection distance testmode picked; the stock chase camera sits ~850 behind a
+ * car), 30 degrees below horizontal (the spec's 25-35 band), 40 deg/s (the spec's
  * 30-45, i.e. a 9 s turn), a 2.5 s static hold (the spec's 2-3 s) and a start
  * angle 45 degrees off the subject's centreline (the spec's 3/4 front view).
+ * The height is derived, so halving the distance halves it too: 2100 * tan 30
+ * = 1212 above the subject, instead of 2425 at 4200.
  * ------------------------------------------------------------------------ */
-#define DBG_DEF_DISTANCE	4200
+#define DBG_DEF_DISTANCE	2100	/* half the 4200 inspection distance -- and so half the height */
 #define DBG_DEF_ELEVATION	30	/* degrees below horizontal */
 #define DBG_DEF_SPEED		40	/* degrees per second */
 #define DBG_DEF_HOLD_MS		2500	/* static hold before the orbit starts */
