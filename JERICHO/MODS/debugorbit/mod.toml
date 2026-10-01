@@ -1,0 +1,14 @@
+# debugorbit — Debug Orbit Camera
+#
+# A camera-only addon: the moment a level starts it takes the camera over and
+# orbits the player (or their car) at a fixed radius and elevation, so a model
+# can be inspected from every side without touching the pad.
+id = "debugorbit"
+name = "Debug Orbit Camera"
+version = "0.1.0"
+author = "Jaret Ludvik"
+description = "Takes the camera over at level start and orbits the player at a fixed radius and elevation (a short static hold, then a slow 360), for inspecting a vehicle or Tanner from every side."
+dependencies = []
+default-enabled = true
+# API-only addon: built into a DLL and loaded at runtime (no game rebuild).
+runtime = "dll"
