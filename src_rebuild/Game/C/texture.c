@@ -1328,9 +1328,16 @@ int CarImportPinDstSet(int set)
 // So each imported page is remembered, and re-uploaded whenever the slot table no
 // longer shows it as ours. The page bytes come back from the source city's level
 // file, which is already open-able (ReadCarImportFile) - no need to hold megabytes.
-#define CAR_PIN_MAX 8
+// JERICHO: how many imported pages can be pinned at once. A 3-city mashup asks for 13
+// (measured: 8 pinned + 5 DROPPED), and a dropped pin is not a miss - the index was
+// already allocated by CarImportDstSetCore and baked into the model's polys, so its
+// polys read the dummy (960,0), a live host slot. The ceiling is the free-index window
+// CarImportDstSetCore allocates from (110..127, 18 indices): past that there is no index
+// to pin anyway.
+#define CAR_PIN_MAX 16
 
 static int sPinCount;
+static int sPinDropped;			// JERICHO: pages asked for after the table filled - see CarPinRecord
 static int sPinSet[CAR_PIN_MAX];		// the set number the CAR asks for
 static int sPinIndex[CAR_PIN_MAX];		// the index its page is loaded at
 static int sPinSlot[CAR_PIN_MAX];		// the slot it lives in, -1 while unplaced
@@ -1422,7 +1429,21 @@ int CarModelSetUsed(int set)
 static void CarPinRecord(int set, int index, int offset, int size, int preferred, int city)
 {
 	if (sPinCount >= CAR_PIN_MAX)
+	{
+		// JERICHO: this used to return silently, which is what turned "the import ran out
+		// of pins" into "this car wears the host's page": CarImportDstSetCore had already
+		// allocated `index` and the model's polys baked it, so an index nothing fills keeps
+		// the initialisation dummy GetTPage(0,0,960,0) - VRAM (960,0), which is a LIVE
+		// slot. Say so, and count it, so the gap between what is asked for and what the
+		// table holds is a number rather than a guess.
+		sPinDropped++;
+
+		if (sPinDropped <= 4)
+			printInfo("cross-city: NO PIN LEFT for %s set %d (index %d) - the table holds %d; its polys will read the dummy page (960,0), which is a live host slot\n",
+				LevelNames[city], set, index, CAR_PIN_MAX);
+
 		return;
+	}
 
 	sPinSet[sPinCount] = set;
 	sPinIndex[sPinCount] = index;
@@ -1919,7 +1940,7 @@ void CarImportDumpState(void)
 	if (CarImportAnyHeld() == 0 && sRemapCount == 0)
 		return;
 
-	printInfo("cross-city: final page state (%d pinned, %d wasted car pages taken, %d world pages evicted, %d page re-uploads, %d claims given back)\n", sPinCount, sPinUnusedTakes, sPinEvictions, sPinReloads, sCarPageGiveBacks);
+	printInfo("cross-city: final page state (%d pinned, %d wasted car pages taken, %d world pages evicted, %d page re-uploads, %d claims given back, %d pins DROPPED)\n", sPinCount, sPinUnusedTakes, sPinEvictions, sPinReloads, sCarPageGiveBacks, sPinDropped);
 
 	// JERICHO: which of the import bank's rows the imported model actually uses.
 	//
