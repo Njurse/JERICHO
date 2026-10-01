@@ -231,8 +231,14 @@ void CarPalRowReport(void)
 		if (city < 0)
 			continue;
 
-		printInfo("cross-city: palette map - resident slot %d reads civ_clut rows %d..%d (%s model %d)\n",
-			slot, CIV_CLUT_IMPORT_ROW, CIV_CLUT_ROWS - 1, LevelNames[city], residentCarModels[slot]);
+		int base = CarImportBankRow(city);
+
+		if (base < 0)
+			printInfo("cross-city: palette map - resident slot %d: %s model %d - NO PALETTE BLOCK (refused; the column affords %d guests, so this car has no colours of its own)\n",
+				slot, LevelNames[city], residentCarModels[slot], CIV_CLUT_GUEST_CITIES);
+		else
+			printInfo("cross-city: palette map - resident slot %d: %s model %d reads civ_clut rows %d..%d\n",
+				slot, LevelNames[city], residentCarModels[slot], base, base + CIV_CLUT_BLOCK_ROWS - 1);
 	}
 
 	for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
@@ -1360,6 +1366,14 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 	// can never leak from one car to the next.
 	int imported = (index >= 0 && GetCarModelSourceCity(index) >= 0);
 
+	// JERICHO: the city this model is built FROM, so the palette lookups below can be
+	// told rather than left to guess. GetCarPalIndex answers "which row?" by asking every
+	// held city in order and taking the first hit - with three cities that is the first
+	// city, so a model from the second or third was baked with the wrong city's rows and
+	// rendered in its colours. -1 means "no source city": the lookup falls back to the old
+	// behaviour for the host and for anything unaffected by imports.
+	int srcCity = (index >= 0) ? GetCarModelSourceCity(index) : -1;
+
 	CarSetRemapEnable(imported);
 
 	int newNumPolys;
@@ -1484,7 +1498,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 
 						CarModelSetsAdd(index, pgt3->texture_set);
 
-						carid = GetCarPalIndex(pgt3->texture_set);
+						carid = CarPalIndexInCityFor(pgt3->texture_set, srcCity);
 						clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
 
 						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
@@ -1510,7 +1524,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						// second-bank row (8..15) for a page belonging to the imported city, so
 						// an import reads its own palettes through exactly the host's formula.
 						// A GT poly's clut_uv0 high word is a civ_clut INDEX, not a CLUT id.
-						carid = GetCarPalIndex(pgt4->texture_set);
+						carid = CarPalIndexInCityFor(pgt4->texture_set, srcCity);
 						clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
 
 						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];

@@ -1880,7 +1880,7 @@ void CarImportPin(void)
 		// really in VRAM now, so re-point the row's base entry at them. Without this
 		// the car renders with whatever the dummy area happens to hold.
 		{
-			int row = GetCarPalIndex(sPinSet[i]);
+			int row = CarPalIndexInCityFor(sPinSet[i], sPinCity[i]);
 			int j;
 
 			// JERICHO: never write a HOST row for an imported set. GetCarPalIndex answers
@@ -1958,7 +1958,7 @@ void CarImportDumpState(void)
 
 		for (k2 = 0; k2 < sPinCount; k2++)
 		{
-			int row = GetCarPalIndex(sPinSet[k2]);
+			int row = CarPalIndexInCityFor(sPinSet[k2], sPinCity[k2]);
 
 			if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS && !seen[row])
 			{
