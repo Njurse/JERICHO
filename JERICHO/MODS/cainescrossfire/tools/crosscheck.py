@@ -52,7 +52,7 @@ IMPORT_ROW = 8
 def parse_run(path):
     """Everything crosscheck needs, pulled out of one run's text."""
     out = {
-        "city": None, "level": None, "slotsused": None, "nperms": None,
+        "city": None, "cities": set(), "level": None, "slotsused": None, "nperms": None,
         "import_sets": {},          # set -> (index, size, offset, cluts)
         "slotmap": {},              # slot -> (set, "car"|"world", loaded, unused)
         "pinned": {},               # set -> {"slot":, "rect":, "clutpos":}
@@ -65,6 +65,13 @@ def parse_run(path):
         m = re.search(r"cross-city: car data from (\w+)\b", line)
         if m:
             out["city"] = m.group(1).upper()
+        # JERICHO: EVERY city this run imported from, not just one. INV2 used to test every
+        # pinned set against a single city's tables, so on a multi-city mashup it flagged
+        # the other cities' sets as "in neither RIO's carTpages nor its specTpages" - a
+        # checker crying wolf, which is worse than a checker that stays quiet.
+        m = re.search(r"cross-city: car data from ([A-Z]+)", line)
+        if m:
+            out["cities"].add(m.group(1))
         m = re.search(r"JERICHO-RUN: level=(\w+)", line)
         if m:
             out["level"] = m.group(1).upper()
@@ -156,14 +163,17 @@ def check_inv2(run, fails, warns):
     city = run["city"]
     if not city or not run["import_sets"]:
         return
+    # The set of source cities: what this run actually imported FROM.
+    cities = sorted(run["cities"]) or [city]
     cars = CAR_TPAGES.get(city, [])
     specs = SPEC_TPAGES.get(city, [])
     unbanked = 0
     for setno in sorted(run["import_sets"]):
-        if carid_of(city, setno) is not None:
-            continue                        # a car page: rows 8..15 of the import bank
-        if setno in specs:
-            continue                        # a special body's page: the bank's last two rows
+        # Banked if ANY of the run's cities owns the set - a car page (rows 8..15 of the
+        # import bank) or a special body's page (the bank's last two rows).
+        if any(carid_of(c, setno) is not None or setno in SPEC_TPAGES.get(c, [])
+               for c in cities):
+            continue
         unbanked += 1
         if setno in run["pin_refusals"]:
             warns.append(f"INV2 set {setno} is not a car page in {city} (nor a special one), so its row is below "
