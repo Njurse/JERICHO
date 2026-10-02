@@ -165,8 +165,18 @@ half's strip is the level's again, rows 466..511 are never written, and the
 "no CLUT-safe room" refusal with its `y=480` fallback are deleted. Measured: a
 3-city mix uses **28** arena CLUT rows of 512, the strip reads "125 rows used, 85
 safe free, no overflow", and the font region is byte-identical to a stock run
-(`VRAM.md` §0). So more than one guest city's palettes now fit comfortably; what is
-still open is page IDENTITY, not room (`VRAM.md` §7).
+(`VRAM.md` §0).
+
+**The cities' PALETTE TABLES needed the same move, and got it separately.** They are
+a different path (`ProcessPalletLumpForRows`, which walks the foreign palette lump)
+and they stayed on the base `clutpos` when the pin band moved — 32–38 rows per guest
+city, landing at **381..448** in a two-guest mashup, which reaches into the CD-icon
+band at 433..464 and leaves the strip only 18 free rows. They now take the arena
+column too. Measured against a stock run: the base CLUT column's rows 256..465 are
+**0 differing texels**, the host's page slots are 0 differing, and the strip is back
+to 114–124 rows used / 86–96 free. So more than one guest city's palettes now fit
+comfortably; what is still open is the palette VARIANTS a spawned car gets, not room
+(`VRAM.md` §7). `tools/hostdiff.py` is the check.
 
 ## Failure behaviour
 

@@ -314,19 +314,31 @@ hands out (`sReservedSet`, cleared by `CarImportResetState`).
 ## Still open
 
 - ~~**The import's CLUT rows are still carved from the level's own strip.**~~ **RESOLVED
-  by the arena.** The pin band no longer touches the strip: an import's palettes and page
-  CLUTs come from the arena's own column at x960..1023 / rows 512..1023, and the "no
-  CLUT-safe room" refusal with its `y=480` fallback (which was INSIDE the font) are
-  deleted. Measured: rows 466..511 — the level font — are byte-identical to a stock run,
-  and the strip reads "125 rows used, 85 safe free, no overflow" with the import present.
-  The base half's "four rows short" arithmetic is now the LEVEL's problem alone.
-- **Page IDENTITY, not space, is what is left.** One `chk_suite.sh` row (the 3-city mix)
-  still reports `INV2 set 1 is in NEITHER the source cities' carTpages nor their speTpages
-  and the pin did NOT refuse a host row`, and it matches the remaining field report — a
-  couple of cars still come out wrong, and certain combinations occasionally corrupt a
-  palette. That is what a host-row/import-row collision looks like. It is not a
-  VRAM-space bug; the two sides disagree about whether set 1 is a car page at all. See
-  [`VRAM.md`](VRAM.md) §7 for the two candidates.
+  by the arena — and it took two moves, not one.** The pin band went to the arena column
+  first (x960..1023 / rows 512..1023), with the "no CLUT-safe room" refusal and its `y=480`
+  fallback (which was INSIDE the font) deleted. But the imported CITIES' PALETTE TABLES are
+  a different path (`ProcessPalletLumpForRows`) and stayed on the base `clutpos`, so a guest
+  city's table still landed in the level's column — 32–38 rows each, and a two-guest mashup
+  put them at **381..448**, reaching into the CD-icon/spool band at 433..464 and taking the
+  strip from 85 safe free rows to **18**. Both now go to the arena column. Measured, against
+  a stock run: the base CLUT column rows 256..465 and the host's page slots are **0
+  differing texels**, and the strip reads 114–124 rows used / 86–96 free. The base half's
+  "four rows short" arithmetic is the LEVEL's problem alone now.
+- **What is left is the import's PALETTE VARIANTS, not its identity.** See
+  [`VRAM.md`](VRAM.md) §7. In order of evidence: `rowNeeded` is built from the pin's SET
+  LIST rather than the built model's baked `civ_clut` indices, so a row a poly actually
+  reads can be left unuploaded (the "only one or two of the palettes that spawned worked"
+  report); ~114 polys of every imported car name **set 0**, which the import skips, so they
+  sample the host's `texture_pages[0]` (a "one panel is wrong" mechanism); and `civ_clut`
+  rows are keyed by `(set, city)` and not by slot, so a SAME-city collision between two
+  models is real but untracked (`CarPalRowReport` only sees cross-city writers).
+- **A launcher request for a model a city does not ship is unsatisfiable.** Models **5, 6 and
+  7 exist in no city** at all — measured across all four `.LEV` files. This used to be a
+  silent no-op: the engine logged `car model N has no data in this level - player car falls
+  back to resident slot 0` and the player kept their car, which reads as "the script doesn't
+  replace the car". `launch_imported_player.bat` now checks `levmodels.py --has-model`
+  BEFORE the dry exit and refuses with the list of what the source city does ship. See
+  [`../tools/README.md`](../tools/README.md).
 - The victim is still chosen greedily (first wasted car page, round-robin). Weighing "is
   the car that uses this page on screen" is the real pool over the host's car pages;
   `sCarPageClaimFrame` / `CAR_PAGE_CLAIM_FRAMES` and the `UNUSED` slot map are in place
