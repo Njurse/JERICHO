@@ -221,6 +221,30 @@ void JerVramArenaPageFree(int slot)
 	}
 }
 
+// Is (x,y) the top-left of an ALLOCATED arena page? The arena half is JERICHO's alone, so
+// an allocated page there is by construction owned by whoever asked for it - no separate
+// claim frame is needed, and none of the base game's ownership bookkeeping (which is
+// indexed by tpagepos[] slot) can describe it.
+int JerVramArenaPageOwned(int x, int y)
+{
+	int i;
+
+	for (i = 0; i < JER_ARENA_PAGES; i++)
+	{
+		RECT16 r;
+
+		if (!sJerArenaPageUsed[i])
+			continue;
+
+		JerVramArenaPageRect(i, &r);
+
+		if (r.x == x && r.y == y)
+			return 1;
+	}
+
+	return 0;
+}
+
 // Does tpage word `page` address arena page `slot`? The decode is the engine's own, the
 // same one CarImportPageRect and the shader use (x = (page & 0xf) * 64, y = bit4 * 256 +
 // bit11 * 512) - NOT the retired 5-bit form.
@@ -750,6 +774,13 @@ static int sCarPageGiveBacks;		// world uploads that reclaimed a stale claim
 int CarPageRectOwned(int x, int y)
 {
 	int i;
+
+	// JERICHO: anything in the arena half is JERICHO's. Rows 512..1023 are space no stock
+	// path computes - tpagepos[] holds Y in {0,256} - so an upload aimed there is either
+	// one of our own pin uploads (which bypass the guard via sCarPageUploading) or a stray
+	// that must be refused. Checked before the slot table, which cannot describe it.
+	if (y >= JER_VRAM_HALF_Y)
+		return JerVramArenaPageOwned(x, y);
 
 	for (i = 0; i < 19; i++)
 	{
@@ -1475,6 +1506,13 @@ static int sPalUploaded;		// JERICHO: how many CLUT slots it wrote (0 = nothing,
 static int sPinSet[CAR_PIN_MAX];		// the set number the CAR asks for
 static int sPinIndex[CAR_PIN_MAX];		// the index its page is loaded at
 static int sPinSlot[CAR_PIN_MAX];		// the slot it lives in, -1 while unplaced
+static int sPinArena[CAR_PIN_MAX];		// JERICHO: the bottom-half arena page it lives in
+						// instead, or -1 when it is in the base half. An
+						// arena pin has no slot: rows 512..1023 are not
+						// tpagepos[] and must stay out of tpageslots /
+						// tpageloaded / slot_clutpos, which are the world
+						// streamer's slot space (spool.c indexes
+						// slot_clutpos with tpageloaded[x] - 1).
 static int sPinOffset[CAR_PIN_MAX];		// where its bytes are in the source city's file
 static int sPinSize[CAR_PIN_MAX];
 static int sPinCity[CAR_PIN_MAX];		// WHICH city's level file those bytes come from --
@@ -1582,6 +1620,7 @@ static void CarPinRecord(int set, int index, int offset, int size, int preferred
 	sPinSet[sPinCount] = set;
 	sPinIndex[sPinCount] = index;
 	sPinSlot[sPinCount] = -1;		// placed at draw time
+	sPinArena[sPinCount] = -1;
 	sPinOffset[sPinCount] = offset;
 	sPinSize[sPinCount] = size;
 	sPinCity[sPinCount] = city;
@@ -1854,6 +1893,13 @@ void CarImportPin(void)
 		char* buf;
 		RECT16 tpage, clut;
 		int slot;
+		int arena = -1;
+
+		// JERICHO: an arena pin cannot be taken back. Rows 512..1023 are not
+		// tpagepos[], so the world streamer cannot target them and no host page can
+		// land on one - there is nothing to refresh and nothing to re-upload.
+		if (sPinArena[i] >= 0)
+			continue;
 
 		if (sPinSlot[i] >= 0 && tpageslots[sPinSlot[i]] == sPinIndex[i] && tpageloaded[sPinIndex[i]] != 0)
 		{
@@ -1863,30 +1909,57 @@ void CarImportPin(void)
 			continue;
 		}
 
-		// Where to put it: the slot it had before (taking that rectangle back), else the
-		// rectangle the REPLACED car's page used, else a free one, else a world stream to
-		// evict.
+		// JERICHO: THE ARENA FIRST. Rows 512..1023 are space nothing else in the engine
+		// computes - not the world streamer (tpagepos[] holds Y in {0,256}), not the
+		// CLUT cursors (bounded by CD2_CLUT_SAFE_LAST) - so a page placed here takes
+		// nothing from the world and nothing from a host car. That IS the fix: INV1
+		// ("pinned to a WORLD-pool rectangle") and "buildings show the car's texture"
+		// are both what happens when an import has to TAKE a rectangle. The slot passes
+		// below stay as the fallback for when the arena is full (30 pages, and an import
+		// needs a handful per set).
 		//
-		// That middle option is the important one. Picking merely the first free slot -
-		// which is by definition a slot the world streams into - put imported textures on
-		// rectangles buildings were using, so buildings showed the car's texture. An
-		// import REPLACES a car, so it should take that car's own rectangles and leave the
-		// world alone.
-		slot = sPinSlot[i];
+		// This choice belongs here rather than in CarPageFindSlot: that returns a
+		// tpagepos[] INDEX and the rectangle is derived from it, so an arena page has no
+		// index to return.
+		arena = JerVramArenaPageAlloc();
 
-		if (!CarPinPreferredAllowed(slot))
-			slot = sPinPreferred[i];
+		if (arena >= 0)
+		{
+			JerVramArenaPageRect(arena, &tpage);
+			slot = -1;
+		}
+		else
+		{
+			// Where to put it: the slot it had before (taking that rectangle back), else the
+			// rectangle the REPLACED car's page used, else a free one, else a world stream to
+			// evict.
+			//
+			// That middle option is the important one. Picking merely the first free slot -
+			// which is by definition a slot the world streams into - put imported textures on
+			// rectangles buildings were using, so buildings showed the car's texture. An
+			// import REPLACES a car, so it should take that car's own rectangles and leave the
+			// world alone.
+			slot = sPinSlot[i];
 
-		if (!CarPinPreferredAllowed(slot))
-			slot = CarPageFindSlot();
+			if (!CarPinPreferredAllowed(slot))
+				slot = sPinPreferred[i];
 
-		if (slot < 0)
-			continue;		// nothing evictable this frame; try again next frame
+			if (!CarPinPreferredAllowed(slot))
+				slot = CarPageFindSlot();
+
+			if (slot < 0)
+				continue;		// nothing evictable this frame; try again next frame
+		}
 
 		buf = (char*)malloc(sPinSize[i]);
 
 		if (buf == NULL)
+		{
+			if (arena >= 0)
+				JerVramArenaPageFree(arena);
+
 			continue;
+		}
 
 		/* The page's bytes come from ITS OWN city's level file -- a level can hold
 		 * more than one city's car data, so neither the file nor the page base may
@@ -1894,13 +1967,20 @@ void CarImportPin(void)
 		if (!ReadCarImportFileForCity(sPinCity[i], GetCarImportPageBaseForCity(sPinCity[i]) + sPinOffset[i], buf, sPinSize[i]))
 		{
 			free(buf);
+
+			if (arena >= 0)
+				JerVramArenaPageFree(arena);
+
 			continue;
 		}
 
-		tpage.x = tpagepos[slot].x;
-		tpage.y = tpagepos[slot].y;
-		tpage.w = 64;
-		tpage.h = 256;
+		if (arena < 0)
+		{
+			tpage.x = tpagepos[slot].x;
+			tpage.y = tpagepos[slot].y;
+			tpage.w = 64;
+			tpage.h = 256;
+		}
 
 		// CLUT rows come from a LOCAL walker across the imported sets, and it starts ABOVE
 		// the rows the level's slots use.
@@ -1929,46 +2009,32 @@ void CarImportPin(void)
 			// the glyphs" - the collision, made deliberate by a literal. With no floor,
 			// an overflow leaves the band past the safe area and the refusal below
 			// declines every set instead: no palettes is recoverable, glyphs are not.
-			int firstFree = clutpos.y + 4;
+			// JERICHO: the import's CLUT rows come from the ARENA's own column - x960..1023,
+			// rows 512..1023 - NOT from the base half's strip.
+			//
+			// The strip is the scarce resource, and this is the last thing that was still
+			// competing for it. It holds ~86 rows above the level font (pres.c:584) and the
+			// level's own layout plus the streamed-slot band take most of that, so a 3-city
+			// mix runs out and sets are refused - the "three imports overflow the VRAM CLUT
+			// column" limitation, and the refusals that follow. Below row 512 there is no
+			// font and no slot band: 512 rows, ~6x the strip's safe remainder, mirrored at
+			// the same x so IncrementClutNum walks it unchanged.
+			int firstFree = JER_VRAM_HALF_Y;
 
 			// JERICHO: prefer the CLUT-safe area (rows 256..CD2_CLUT_SAFE_LAST, i.e. above
 			// the level font image at rows 466..511, pres.c:584). Without an import the
-			// level's layout ends near y=428, so the band then starts at 432 and the 34
-			// safe rows it walks are free of the glyphs - the font is no longer painted
-			// over by the imported car's palettes.
-			//
-			// When the level's layout HAS reached the font there is no safe room, and the
-			// band falls back to the historic forced y=480 - which is inside the font, so
-			// that case still collides. It is kept deliberately: refusing the sets instead
-			// (which is what the safe-area rule would do) makes the imported car lose its
-			// pages altogether, and the chk_suite test matrix catches that as a regression
-			// (RIO->Havana: 'lost 3' and an INV2 failure). Freeing the ~20 rows the layout
-			// is short is the fix, not a stricter refusal - see cars.h and VRAM.md §6.
-			if (firstFree > CD2_CLUT_SAFE_LAST)
-			{
-				// There is no safe row left. This used to fall back to the historic
-				// forced y=480, which is INSIDE the level font - the collision, made
-				// deliberate by a literal. Painting over the glyphs is worse than an
-				// imported car losing its palettes: no palettes is recoverable,
-				// painted-over text is not. So refuse the band and say so, and let the
-				// refusal path below decline the sets.
-				//
-				// This should now be unreachable: the streamed-slot band reserves the
-				// level's own maximum rows (LevelClutRowsNeeded above), so a three-city
-				// mashup ends its layout near y=425 with ~40 rows to spare, where the
-				// old flat-8 reserve left it at 469 - past the font. See VRAM.md 6.
-				printInfo("cross-city: NO CLUT-safe room for the import pin band (layout ends at %d, the font starts at %d) - refusing the band rather than writing over the level font\n",
-					clutpos.y, CD2_CLUT_SAFE_LAST + 1);
-
-				firstFree = CD2_CLUT_SAFE_LAST + 1;	// past the safe area: the sets are declined
-			}
+			// (The safe-area arithmetic this block used to do - and its y=480 fallback
+			// INSIDE the level font - is gone. The arena column is nowhere near the glyphs,
+			// so there is no ceiling to test against and nothing to refuse. CD2_CLUT_SAFE_LAST
+			// now bounds only the LEVEL's own layout, which is where it belongs: the import
+			// no longer has an opinion about the strip, it just does not use it.)
 
 			sPinClutCursor.x = 960;
 			sPinClutCursor.y = firstFree;
 			sPinClutCursor.w = 16;
 			sPinClutCursor.h = 1;
 
-			sPinBandSafe = (firstFree <= CD2_CLUT_SAFE_LAST);
+			sPinBandSafe = 0;	// the arena column, not the base half's strip: nothing to overflow into
 
 			printInfo("cross-city: imported CLUT rows start at y=%d (level layout ends at %d, %d slots spare, safe area ends at %d)\n",
 				firstFree, clutpos.y, 19 - slotsused, CD2_CLUT_SAFE_LAST);
@@ -1984,15 +2050,13 @@ void CarImportPin(void)
 		{
 			int npal = *(int*)buf;
 			int need = (npal + 3) / 4 + 1;	// CLUT rows -> VRAM rows, 4 per row, +1 for a mid-row start
-			int limit = sPinBandSafe ? (CD2_CLUT_SAFE_LAST + 1) : 512;
-
-			// JERICHO: the refusal boundary depends on where the band actually is. A band
-			// that started inside the CLUT-safe area must not reach the level font: rows
-			// CD2_CLUT_SAFE_LAST+1 and below ARE the glyphs, so a set that would reach them
-			// is left unplaced - the same rule as "would wrap into a texture page", for the
-			// same reason. A band that had no safe room and fell back to y=480 is already
-			// inside the font, so refusing there would just lose the car for no gain: it
-			// keeps the historic wrap-only test (>512) until the layout is packed.
+			// JERICHO: the boundary is the END OF VRAM now, not the level font. The arena
+			// column runs x960..1023 / y512..1023 and IncrementClutNum wraps the row at the
+			// bottom, so the only thing worth refusing is a set that would run off the end of
+			// the buffer and be carried back into a real texture page. With 512 rows against
+			// a handful per car this is a formality - but it is the honest one, and it no
+			// longer has anything to do with the glyphs.
+			int limit = JER_VRAM_TOTAL_ROWS;
 			if (sPinClutCursor.y + need > limit)
 			{
 				printInfo("cross-city: %s set %d left unplaced - %d CLUT rows from y=%d would %s\n",
@@ -2000,6 +2064,10 @@ void CarImportPin(void)
 					sPinBandSafe ? "reach the level font (the safe area ends there)" : "wrap into a texture page");
 
 				free(buf);
+
+				if (arena >= 0)
+					JerVramArenaPageFree(arena);
+
 				continue;
 			}
 		}
@@ -2014,12 +2082,23 @@ void CarImportPin(void)
 		if (clut.x != sPinClutCursor.x || clut.y != sPinClutCursor.y)
 			sPinClutCursor = clut;	// the walker advanced: remember where it got to
 
-		sCarPageClaimFrame[slot] = FrameCnt;
+		if (arena >= 0)
+		{
+			// An arena pin. Deliberately NOT recorded in tpageslots / tpageloaded /
+			// slot_clutpos - those describe the world streamer's slot space, and a page in
+			// rows 512..1023 is not one of its slots. CarPageRectOwned knows the arena
+			// separately, so the engine's own uploads are still refused.
+			sPinArena[i] = arena;
+		}
+		else
+		{
+			sCarPageClaimFrame[slot] = FrameCnt;
 
-		tpageslots[slot] = (u_char)sPinIndex[i];
-		tpageloaded[sPinIndex[i]] = (u_char)slot;
+			tpageslots[slot] = (u_char)sPinIndex[i];
+			tpageloaded[sPinIndex[i]] = (u_char)slot;
 
-		sPinSlot[i] = slot;
+			sPinSlot[i] = slot;
+		}
 
 		// JERICHO: buildNewCarFromModel caches each set's palette-0 CLUT into its
 		// civ_clut row - but that build runs at load time, before this upload, so for
@@ -2066,6 +2145,7 @@ void CarImportPin(void)
 // tpage packing (libgpu.h): x = ((v)      & 0xf) << 6; y = ((v >> 4) & 1) * 256 + ((v >> 11) & 1) * 512.
 // clut packing:  x = ((v) & 0x3f) << 4;  y = v >> 6.
 static void CarImportDumpPageRefs(void);
+static void CarImportPageRect(unsigned int page, int* px, int* py);	// defined below, used by the dump above
 void CarPalRowReport(void);		// JERICHO: the civ_clut row ownership map (cars.c)
 
 // Is ANY city held for this level? The per-city replacement for "is there a guest
@@ -2145,11 +2225,20 @@ void CarImportDumpState(void)
 		unsigned int page = texture_pages[sPinIndex[k]];
 		unsigned int clut = texture_cluts[sPinIndex[k]][0];
 
-		printInfo("cross-city:   pinned set %d index %d: slot=%d, rect=(%d,%d), page=%04x, clut0=%04x=(%d,%d)\n",
-			sPinSet[k], sPinIndex[k], pslot,
-			(pslot >= 0 && pslot < 19) ? tpagepos[pslot].x : -1,
-			(pslot >= 0 && pslot < 19) ? tpagepos[pslot].y : -1,
-			page, clut, (int)((clut & 0x3f) << 4), (int)(clut >> 6));
+		// Decode the rectangle from the page word the DRAW path will read, rather than from
+		// tpagepos[slot]: an arena pin has no slot (rows 512..1023 are not tpagepos[]), and
+		// this is what the car actually samples, so it reports the truth for both halves.
+		{
+			int px = -1, py = -1;
+
+			CarImportPageRect(page, &px, &py);
+
+			printInfo("cross-city:   pinned set %d index %d: slot=%d%s, rect=(%d,%d), page=%04x, clut0=%04x=(%d,%d)\n",
+				sPinSet[k], sPinIndex[k], pslot,
+				(sPinArena[k] >= 0) ? " (arena)" : "",
+				px, py,
+				page, clut, (int)((clut & 0x3f) << 4), (int)(clut >> 6));
+		}
 	}
 
 	for (k = 0; k < sRemapCount; k++)
@@ -2168,6 +2257,12 @@ void CarImportDumpState(void)
 	// slot, and calling that 'replaced' was a false report (it was never placed).
 	for (i = 0; i < sPinCount; i++)
 	{
+		// An arena pin keeps tpageloaded[] clear ON PURPOSE - rows 512..1023 are not the
+		// world streamer's slot space - so this test would report every one of them as
+		// replaced. Nothing can replace an arena page; check it first.
+		if (sPinArena[i] >= 0)
+			continue;
+
 		if (tpageloaded[sPinIndex[i]] == 0)
 			printInfo("cross-city:   index %d no longer looks loaded - something replaced it\n", sPinIndex[i]);
 	}
@@ -2380,7 +2475,7 @@ static void CarImportDumpPageRefs(void)
 		CarImportPageRect(texture_pages[sPinIndex[n]], &px, &py);
 		printInfo("cross-city:   pinned set %d index %d: texture_pages=%04x => (%d,%d)%s\n",
 			sPinSet[n], sPinIndex[n], texture_pages[sPinIndex[n]], px, py,
-			(sPinSlot[n] >= 0) ? " [placed]" : " [NOT PLACED]");
+			(sPinArena[n] >= 0) ? " [arena]" : (sPinSlot[n] >= 0) ? " [placed]" : " [NOT PLACED]");
 	}
 }
 // from that city's level file draws with its own textures instead of the host's.
@@ -2415,6 +2510,12 @@ void CarImportResetState(void)
 	sPinEvictions = 0;
 	sPinUnusedTakes = 0;
 	sPinReloads = 0;
+
+	// JERICHO: the bottom-half arena is per LEVEL. Its pages and CLUT rows are handed out
+	// by the pins above, so a new level must start with all of them free, or the arena
+	// would fill up across a session and quietly push later imports back into the base
+	// half (or refuse them).
+	JerVramArenaReset();
 
 	// JERICHO: the palette upload's own lifecycle. These were never cleared, so the upload
 	// ran once per PROCESS rather than once per level: a second level kept sPalDone set,

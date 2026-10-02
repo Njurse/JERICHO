@@ -61,10 +61,34 @@ rows 512..1023 **bit-exactly zero** (`vrammap.py`: `never-written: 1024 KiB of 2
 the run's census reads `arena rows 512..1023: pages 0 used of 30 (30 free), clut rows 0
 used (512 free)`.
 
-**State as of this commit: the arena exists and is inert.** The cross-city import still
-places in the base half, so §§4-6 - the pin band, the font collision, and the INV1/INV2
-failures `chk_suite.sh` reports - are still current. Moving the import into the arena is
-the next unit; once it lands, those sections describe the fallback path instead.
+**State: the import lives in the arena.** Since the placement landed, every imported page
+and every imported CLUT comes from rows 512..1023. `CarImportPin` (`texture.c`) asks
+`JerVramArenaPageAlloc` **first** and only falls back to the base-half passes (previous
+slot / the replaced car's page / a free slot / a world eviction) when the arena is full, and
+the import's CLUT band is the arena's own column (`firstFree = JER_VRAM_HALF_Y`). The base
+half's strip is the LEVEL's again, so the "no CLUT-safe room" refusal and its `y=480`
+fallback are deleted outright, and `sPinBandSafe` is now always 0.
+
+Measured on the 3-city mix (host CHICAGO, 60 frames, seed 7):
+
+| check | before | now |
+|---|---|---|
+| world pages **evicted** | 702 | **0** |
+| sets "no longer looks loaded" | 5 | **0** |
+| the level font, rows 466..511, vs a stock run | collided | **0 differing texels** |
+| imported pages | 1 WORLD page taken | **9 of 9** at y=512, x from 0 in 64px steps |
+| imported CLUT rows | the strip (466..511) | x960/992/1008, **y512..539** |
+| `chk_suite.sh` | 2 rows red (INV1, evictions) | 6 of 7 green; the mix carries one INV2 finding (§7) |
+
+A subtlety worth keeping: an arena pin has **no slot**. It is deliberately not recorded in
+`tpageslots` / `tpageloaded` / `slot_clutpos` - those describe the world streamer's slot
+space (`spool.c` indexes `slot_clutpos` with `tpageloaded[x] - 1`), and a row in the arena
+is not one of its slots. Ownership is answered instead by `JerVramArenaPageOwned` from
+`CarPageRectOwned`, and `tools/crosscheck.py` knows the `slot=-1 (arena)` marker so it does
+not report a placed pin as unplaced.
+
+§§4-6 below describe the BASE half and are still the map of what the arena is avoiding.
+§6.1's account of the import's old pin band is historical where marked.
 
 ## 1. The base 1 MiB, in three parts
 
@@ -120,7 +144,14 @@ here is where the walk *stops*, because everything from there down is contended:
 | stock, full level | 428 | 84 |
 | with one imported car | 485 | 27 |
 
-The import's own palette *rows* are reserved from **480** down
+> **Historical - the arena removed this.** The import no longer takes rows from the strip
+> at all: its palettes and page CLUTs come from the arena's own column below row 512
+> (§0), and the "no CLUT-safe room" refusal plus its `y=480` fallback are deleted. The
+> strip is the LEVEL's again. This section is kept because it is the clearest statement of
+> why a 64px strip could not hold an import, and because the numbers below are what
+> `tools/vrammap.py` still measures for the level itself.
+
+The import's own palette *rows* were reserved from **480** down
 (`max(clutpos.y + 4, 480)`), which is inside the 27 rows that are left. So the column is
 about 89-95% committed on a full level, and an import's ~21 rows of palettes and page
 CLUTs come out of the last ~27.
@@ -274,12 +305,11 @@ and only the kept rows are uploaded:
 | RIO -> Havana | 57 rows | **38 rows** (428 → 466) | **0** (fits exactly) |
 | CHICAGO -> Vegas | 57 rows | **42 rows** (428 → 470) | **4** |
 
-`chk_suite.sh` is the gate. Its stock control and the imported-PLAYER rows must stay clean
-(the player really driving the foreign car, the invariants holding). Two rows are currently
-RED, and both are the contention this bottom-half work exists to remove: the PLAYER row on
-the host with the least free VRAM (it takes a WORLD page - INV1), and the 3-city `city mix`
-(world evictions, and pages `lost`). Expected to fail until the arena lands - that is the
-measurement, not a surprise.
+`chk_suite.sh` is the gate. **With the arena in place, six of seven rows are green**, and
+both former red rows moved: the PLAYER row on the host with the least free VRAM no longer
+takes a WORLD page (INV1 gone; evictions 1 -> 0), and the 3-city `city mix` is clean on
+every space invariant (evictions 702 -> 0, losses 5 -> 0). The mix row still carries one
+finding, but it is a page-IDENTITY one, not a space one - §7.
 
 **It is not enough on its own.** The reclaim is bounded by something less obvious than the
 row count: the lump stores its CLUTs under the rows being skipped and the kept rows
@@ -287,12 +317,55 @@ row count: the lump stores its CLUTs under the rows being skipped and the kept r
 uploaded. 142–152 of the skipped CLUTs are pulled back that way, which is why the table
 needs 38–42 rows and not the ~14 a pure row count suggests.
 
-So **~4 rows are still missing** for CHICAGO -> Vegas, and the pin band still finds no safe
-room in either scenario (it falls back to `y=480`, inside the font). The next moves, in
-order of measured size:
+So **~4 rows are still missing** for CHICAGO -> Vegas **in the base half** - which now
+matters only to the LEVEL's own layout and the streamed-slot band, because the import is no
+longer a claimant there. The moves that would close it remain, in order of measured size:
 
 - **pack the streamed-slot walk** (option 1's other half): 5 slots × 8 rows = **40 rows**
   reserved, against `npalettes / 4 + 1` actually used — ~5 rows back;
-- **the pin band**: it needs ~15–51 rows depending on the sets, and has none;
 - **option 2** (reclaim un-named car pages) does not help the *CLUT column* at all — it
-  returns pages, not rows. It is still the right move for pages.
+  returns pages, not rows. It is still the right move for pages;
+- and "where does an import's 15-51 rows of palettes go?" is no longer an open question:
+  the arena's 512 rows below the font answer it. The mix uses 28 of them.
+
+---
+
+## 7. What is still wrong: page IDENTITY (the stubborn cars, the corrupted palettes)
+
+The arena answers *where* an imported set's texture and palette are stored. It does not
+answer *whether a set is a car page at all*, and that is the one failure `chk_suite.sh`
+still reports - on the 3-city `city mix` only:
+
+    FAIL  INV2 set 1 is in NEITHER the source cities' carTpages nor their specTpages and the
+          pin did NOT refuse a host row - the import would overwrite the HOST's civ_clut row 0
+
+INV2's rule (`tools/crosscheck.py`) is: a set is *banked* if any of the run's cities owns it
+as a car page or as a special page; if nobody banks it, the pin must have LOGGED a refusal
+to re-point its palette row. Set 1 is banked by nobody and no refusal was logged, so the
+import would write its CLUTs into a host `civ_clut` row - a palette shared with the host's
+own cars.
+
+The pin's guard does exist and is deliberate (`texture.c`, in `CarImportPin`): a row below
+`CIV_CLUT_IMPORT_ROW` is refused **and logged**, because writing it hands a host car the
+imported car's colours. So the two sides disagree about set 1:
+
+| side | question | set 1 answer |
+|---|---|---|
+| the engine | `CarPalIndexInCityFor(set, city)` -> is the row below the bank? | no (it wrote the row) |
+| crosscheck | `carid_of(city, set)` for every city in the run | not banked |
+
+One of them is wrong, and the candidates are narrow:
+1. **the city set** - crosscheck judges against the cities the run *logged* as imported
+   from; if the mix's set 1 belongs to a fourth city that the log does not name, crosscheck
+   is wrong and the engine is right. (INV2 was already corrected once for exactly this
+   class of mistake.)
+2. **the table** - if set 1 really is in no city's `carTpages`, then `CarPalIndexInCityFor`
+   is answering a row it should answer `-1` for, and the engine writes a host row.
+
+This is pre-existing, not a regression from the arena: it used to be invisible because the
+set was never placed. It is the mechanism behind the remaining field report - **a couple of
+cars still come out wrong, and certain car combinations occasionally corrupt a palette** -
+which is what a host-row/import collision looks like. The next unit is page identity, not
+space: 1) find which imported model names set 1 and whether it is a car page in the city it
+came from; 2) reconcile `CarPalIndexInCityFor` with `carid_of`; 3) keep the refuse-and-log
+path as the assertion, and let `chk_suite.sh` prove it.

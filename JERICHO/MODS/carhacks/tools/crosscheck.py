@@ -88,10 +88,15 @@ def parse_run(path):
         if m:
             out["slotmap"][int(m.group(1))] = (int(m.group(4)), "car" if m.group(5) == "HOST CAR PAGE" else "world",
                                                int(m.group(6)), m.group(7) is not None)
-        m = re.search(r"cross-city:\s+pinned set (\d+) index (\d+): slot=(-?\d+), rect=\((\d+),(\d+)\)", line)
+        # slot=-1 (arena) marks a pin in the JERICHO arena (rows 512..1023). It has no slot
+        # because the arena is not tpagepos[] space - but it IS placed, and INV1 cannot
+        # object to it: nothing in slotmap can be down there. So record it and say so.
+        m = re.search(r"cross-city:\s+pinned set (\d+) index (\d+): slot=(-?\d+)( \(arena\))?, "
+                      r"rect=\((-?\d+),(-?\d+)\)", line)
         if m:
             out["pinned"][int(m.group(1))] = {"slot": int(m.group(3)),
-                                              "rect": (int(m.group(4)), int(m.group(5))),
+                                              "rect": (int(m.group(5)), int(m.group(6))),
+                                              "arena": m.group(4) is not None,
                                               "clutpos": None}
         m = re.search(r"cross-city: paging - taking UNUSED host car page set (\d+) from slot (\d+)", line)
         if m:
@@ -99,10 +104,10 @@ def parse_run(path):
         m = re.search(r"cross-city: paging - evicting world set (\d+) from slot (\d+)", line)
         if m:
             out["evicts"].append((int(m.group(1)), int(m.group(2))))
-        m = re.search(r"cross-city:\s+pinned set (\d+) index \d+: slot=-?\d+, rect=\(-?\d+,-?\d+\), "
-                      r"page=\w+, clut0=\w+=\((\d+),(\d+)\)", line)
+        m = re.search(r"cross-city:\s+pinned set (\d+) index \d+: slot=-?\d+( \(arena\))?, "
+                      r"rect=\(-?\d+,-?\d+\), page=\w+, clut0=\w+=\((\d+),(\d+)\)", line)
         if m and int(m.group(1)) in out["pinned"]:
-            out["pinned"][int(m.group(1))]["clutpos"] = (int(m.group(2)), int(m.group(3)))
+            out["pinned"][int(m.group(1))]["clutpos"] = (int(m.group(3)), int(m.group(4)))
         m = re.search(r"cross-city: pin - set (\d+) resolves to civ_clut row -?\d+ \(below the import bank", line)
         if m:
             out["pin_refusals"].add(int(m.group(1)))
@@ -132,6 +137,8 @@ def check_inv1(run, fails, warns):
     # host's whole specTpages table (only the resident special's two are ever live).
     special = set(SPEC_TPAGES.get(host, []))
     for setno, info in sorted(run["pinned"].items()):
+        if info.get("arena"):
+            continue    # placed in the arena: not slot space - nothing in slotmap can be there
         slot = info["slot"]
         if su is not None and slot >= su:
             warns.append(f"INV1 set {setno} pinned to slot {slot} >= slotsused {su}: a WORLD-pool rectangle "

@@ -247,7 +247,17 @@ live world page. Result: `2 wasted car pages taken, 0 world pages evicted`.
 
 ## Where an imported page may live now (and the guard table)
 
-Placement is now strictly "something nobody is drawing", in this order (`CarPageFindSlot`):
+Placement is now strictly "something nobody is drawing", in this order:
+
+0. **the JERICHO arena** — a page in rows 512..1023 (`JerVramArenaPageAlloc`, from
+   `CarImportPin`). Nothing stock is drawn there and nothing stock can even compute its
+   rectangle, so this is less "something nobody is drawing" than "something nobody *can*
+   draw". It is asked FIRST; the passes below are only the fallback for a full arena (30
+   pages). The import's CLUT rows come from the arena's own column for the same reason
+   (`firstFree = JER_VRAM_HALF_Y`), which hands the base half's strip back to the level —
+   see [`VRAM.md`](VRAM.md) §0.
+
+Then, only when the arena cannot take it (`CarPageFindSlot`):
 
 1. a free slot inside the level's own range — `nperms <= idx < slotsused`, never the
    world's pool;
@@ -303,14 +313,20 @@ hands out (`sReservedSet`, cleared by `CarImportResetState`).
 
 ## Still open
 
-- **The import's CLUT rows are still carved from the level's own strip.** The pin band
-  starts at `max(clutpos.y + 4, 480)`; measured on a full level (`clutpos.y = 482`,
-  "imported CLUT rows start at y=486, 5 slots spare") two sets (16 + 5 rows) just fit in
-  `486..507`. A bigger import would run off the column, and the runtime team-palette
-  allocation shares the same column (it is now capped at `CAR_CLUT_IMPORT_LIMIT` so it
-  cannot walk into the import's rows — `texture.c`, `JerichoMakeClutRow`). Reserving the
-  import a fixed region, and bounding `clutpos.y += 8` in the slot-band loop, is the
-  remaining work here.
+- ~~**The import's CLUT rows are still carved from the level's own strip.**~~ **RESOLVED
+  by the arena.** The pin band no longer touches the strip: an import's palettes and page
+  CLUTs come from the arena's own column at x960..1023 / rows 512..1023, and the "no
+  CLUT-safe room" refusal with its `y=480` fallback (which was INSIDE the font) are
+  deleted. Measured: rows 466..511 — the level font — are byte-identical to a stock run,
+  and the strip reads "125 rows used, 85 safe free, no overflow" with the import present.
+  The base half's "four rows short" arithmetic is now the LEVEL's problem alone.
+- **Page IDENTITY, not space, is what is left.** One `chk_suite.sh` row (the 3-city mix)
+  still reports `INV2 set 1 is in NEITHER the source cities' carTpages nor their speTpages
+  and the pin did NOT refuse a host row`, and it matches the remaining field report — a
+  couple of cars still come out wrong, and certain combinations occasionally corrupt a
+  palette. That is what a host-row/import-row collision looks like. It is not a
+  VRAM-space bug; the two sides disagree about whether set 1 is a car page at all. See
+  [`VRAM.md`](VRAM.md) §7 for the two candidates.
 - The victim is still chosen greedily (first wasted car page, round-robin). Weighing "is
   the car that uses this page on screen" is the real pool over the host's car pages;
   `sCarPageClaimFrame` / `CAR_PAGE_CLAIM_FRAMES` and the `UNUSED` slot map are in place

@@ -126,6 +126,7 @@ void JerVramArenaPageRect(int slot, RECT16 *r);
 int  JerVramArenaPageAlloc(void);
 void JerVramArenaPageFree(int slot);
 int  JerVramArenaPageHolds(int slot, int page);
+int  JerVramArenaPageOwned(int x, int y);
 int  JerVramArenaClutAlloc(int rows);
 int  JerVramArenaPagesUsed(void);
 int  JerVramArenaPagesFree(void);
