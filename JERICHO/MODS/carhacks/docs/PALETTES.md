@@ -409,3 +409,39 @@ The rows that *do* have no coverage (base+1, base+6, base+7) belong to models th
 drawn in that window with a variant above 0. So this is a guard against the case where a
 spawned car picks a column its row does not hold — it is not a demonstrated fix, and a run
 that exercises those models (a special body spawned and respawning) is what would prove it.
+
+## The empty column IS reached: a draw-time fallback (measured 2026-10-02)
+
+The section above left the clamp unproven ("a run that exercises those models is what would
+prove it"). It is now measured, and the guard was in the wrong place.
+
+`CarClutVariant` deliberately does not touch the HOST rows (0..7), so a stock car whose
+spawned `ap.palette` names a column the city's lump never filled reads
+`civ_clut[..][..][slot] == 0`. A CLUT word of 0 is `GetClut(0,0)` — **the display
+framebuffer** — so the car's body polys paint themselves with whatever is on screen, i.e.
+the car is invisible, while the FT/B polys (underside, wheel arcs, mirrors) draw. That is
+exactly the "the wheel wells and side mirrors render but not the rest of the car" report.
+
+Measured with `JERICHO_DIAG_CARDRAW=1` (a per-model page/CLUT census in `DrawCarObject`), on
+an antfarm-only run of a rainy dusk Chicago:
+
+```
+car=6 model=2 pal=3 polys=238 pg 000e:210/0000>473f 000b:28/00af>00af ...
+car=7 model=1 pal=4 polys=60  pg 001b:58 /0000>4ebf 000b:2 /421d>421d ...
+```
+
+The body group's raw CLUT is `0000` and resolves to a real CLUT; the second group's is
+already valid and is left alone.
+
+The fix is `CarClutLookup(pg, ci, palette)` (cars.c), now used by the three GT3 plotters in
+place of the bare `pciv_clut[ci + CarClutVariant(...)]`: if the looked-up CLUT is 0 it falls
+back to the group's own slot 0 (`pciv_clut[ci - 1 .. ci + 4]`, "the page's own CLUT, always
+refilled"), and only if the whole group is empty does it leave 0. A block where the palette
+is valid is unchanged, so nothing that already drew correctly moves.
+
+Measured after the fix: **0 body groups left on the framebuffer**, and the fallback fired
+**64500** times over one 700-frame rainy-dusk run — so the empty column is not a corner
+case, it is the common one for palettes above what a city's lump names.
+
+(Note: the host rows are still not clamped — that would pin every stock car to one colour.
+The fallback is draw-time only, and only when the column is empty.)

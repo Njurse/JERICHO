@@ -112,6 +112,10 @@ MODEL* gCarLowModelPtr[MAX_CAR_RESIDENT_MODELS];
 MODEL* gCarDamModelPtr[MAX_CAR_RESIDENT_MODELS];
 MODEL* gCarCleanModelPtr[MAX_CAR_RESIDENT_MODELS];
 
+/* JERICHO-DIAG: the car-body draw census (see DrawCarObject/DrawCar), off unless
+ * JERICHO_DIAG_CARDRAW=1. Declared here so the draw paths can use it. */
+static int jerDiagCarDraw(void);
+
 // pedestrian palette at 0 and next are cars
 // model_id, texture_number, palette
 //
@@ -498,6 +502,44 @@ static int CarClutVariant(int clutIdx, int palette)
 	return palette;
 }
 
+// [JERICHO] The CLUT a car BODY poly actually samples, with a fallback when the spawned
+// palette names a column this city's lump never filled.
+//
+// `civ_clut[..][..][0]` (the group's own "page CLUT") is always written by
+// buildNewCarFromModel, but the columns above it are only filled for the palette numbers a
+// city's lump names. The spawner picks ap.palette from 0..5 regardless, so a column past
+// what was uploaded stays 0 - and a CLUT word of 0 is GetClut(0,0), the DISPLAY
+// FRAMEBUFFER. The body then paints itself with whatever is on screen: "the car is
+// invisible", while its untextured/FT polys (wheel arcs, underside, mirrors) still draw.
+// CarClutVariant deliberately does not clamp the host rows (that would pin every stock car
+// to one colour), so the empty column is caught HERE instead: fall back to the group's own
+// CLUT, which is always filled, rather than to the framebuffer.
+static int sCarClutFallbackCount;
+
+static u_short CarClutLookup(plotCarGlobals* pg, int ci, int palette)
+{
+	int slot = ci + CarClutVariant(ci, palette);
+	int j;
+
+	if (pg->pciv_clut[slot] != 0)
+		return pg->pciv_clut[slot];
+
+	/* slots of this texture_id's group are pciv_clut[ci - 1 .. ci + 4] */
+	if (ci >= 1)
+	{
+		for (j = 0; j < 6; j++)
+		{
+			if (pg->pciv_clut[ci - 1 + j] != 0)
+			{
+				sCarClutFallbackCount++;
+				return pg->pciv_clut[ci - 1 + j];
+			}
+		}
+	}
+
+	return 0;
+}
+
 // [D] [T]
 void plotCarPolyGT3(int numTris, CAR_POLY *src, SVECTOR *vlist, SVECTOR *nlist, plotCarGlobals *pg, int palette)
 {
@@ -555,10 +597,10 @@ void plotCarPolyGT3(int numTris, CAR_POLY *src, SVECTOR *vlist, SVECTOR *nlist, 
 			{
 				gt3DiagCount++;
 				printInfo("cross-city: imported GT clut index %d -> CLUT id %04x (palette %d)\n",
-					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)], palette);
+					(src->clut_uv0 >> 0x10), CarClutLookup(pg, src->clut_uv0 >> 0x10, palette), palette);
 			}
 
-			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+			*(u_int*)&prim->u0 = CarClutLookup(pg, src->clut_uv0 >> 0x10, palette) << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
 			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
@@ -637,10 +679,10 @@ void plotCarPolyGT3Lit(int numTris, CAR_POLY* src, SVECTOR* vlist, SVECTOR* nlis
 			{
 				gt3DiagCount++;
 				printInfo("cross-city: imported GT clut index %d -> CLUT id %04x (palette %d)\n",
-					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)], palette);
+					(src->clut_uv0 >> 0x10), CarClutLookup(pg, src->clut_uv0 >> 0x10, palette), palette);
 			}
 
-			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+			*(u_int*)&prim->u0 = CarClutLookup(pg, src->clut_uv0 >> 0x10, palette) << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
 			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
@@ -725,10 +767,10 @@ void plotCarPolyGT3nolight(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGl
 			{
 				gt3DiagCount++;
 				printInfo("cross-city: imported GT clut index %d -> CLUT id %04x (palette %d)\n",
-					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)], palette);
+					(src->clut_uv0 >> 0x10), CarClutLookup(pg, src->clut_uv0 >> 0x10, palette), palette);
 			}
 
-			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+			*(u_int*)&prim->u0 = CarClutLookup(pg, src->clut_uv0 >> 0x10, palette) << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
 			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
@@ -2325,7 +2367,96 @@ void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR
 
 	gte_SetTransVector(&modelLocation);
 
+	/* JERICHO-DIAG (opt-in, JERICHO_DIAG_CARDRAW=1): what the body is about to
+	 * draw - the model, whether it has geometry, and the first poly's baked
+	 * texture page + CLUT. This is what tells an invisible car (no verts / null
+	 * model) from a mis-textured one (bad page/clut), which the log otherwise
+	 * cannot distinguish. */
+	if (jerDiagCarDraw())
+	{
+		static int antCarDrawTick;
+
+		if ((++antCarDrawTick % 90) == 0 && cp != NULL)
+		{
+			/* histogram the baked texture pages across the model's polys: a car
+			 * whose body is invisible but whose mirrors/wheel-wells render is a
+			 * model whose polys are split across pages, one of them bad. */
+			u_int pg[4] = { 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu };
+			u_int cl[4] = { 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu };
+			u_int cl2[4] = { 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu };
+			int cnt[4] = { 0, 0, 0, 0 };
+			CAR_POLY* lists[2];
+			int counts[2];
+			int k, i, np = car->numGT3 + car->numFT3;
+
+			lists[0] = car->pGT3; counts[0] = car->numGT3;
+			lists[1] = car->pFT3; counts[1] = car->numFT3;
+
+			for (k = 0; k < 2; k++)
+			{
+				for (i = 0; i < counts[k]; i++)
+				{
+					u_int p = (u_int)(lists[k][i].tpage_uv1 >> 16);
+					int j;
+
+					for (j = 0; j < 4; j++)
+					{
+						if (cnt[j] == 0 || pg[j] == p)
+						{
+							pg[j] = p;
+							cnt[j]++;
+							break;
+						}
+					}
+				}
+			}
+
+			/* the resolved CLUT word for the first poly of each page group */
+			plotCarGlobals dbgPg;
+			dbgPg.pciv_clut = (u_short*)&civ_clut[1];
+
+			for (k = 0; k < 2; k++)
+			{
+				for (i = 0; i < counts[k]; i++)
+				{
+					u_int p = (u_int)(lists[k][i].tpage_uv1 >> 16);
+					int j;
+
+					for (j = 0; j < 4; j++)
+					{
+						if (cl[j] == 0xffffffffu && pg[j] == p)
+						{
+							int ci = lists[k][i].clut_uv0 >> 16;
+
+							/* pg->pciv_clut is (u_short*)&civ_clut[1] - a FLAT
+							 * u_short view, not civ_clut[row][...] */
+							cl[j] = (u_int)((u_short*)&civ_clut[1])[ci + CarClutVariant(ci, palette)];
+							cl2[j] = (u_int)CarClutLookup(&dbgPg, ci, palette);
+							break;
+						}
+					}
+				}
+			}
+
+			printInfo("JERICHO-DIAG CARDRAW: car=%d model=%d pal=%d polys=%d fb=%d pg %04x:%d/%04x>%04x %04x:%d/%04x>%04x %04x:%d/%04x>%04x %04x:%d/%04x>%04x\n",
+				cp->id, cp->ap.model, palette, np, sCarClutFallbackCount,
+				pg[0], cnt[0], cl[0], cl2[0], pg[1], cnt[1], cl[1], cl2[1],
+				pg[2], cnt[2], cl[2], cl2[2], pg[3], cnt[3], cl[3], cl2[3]);
+		}
+	}
+
 	plotNewCarModel(car, palette, flatColor);
+}
+
+/* JERICHO-DIAG: the car-body draw census, off unless JERICHO_DIAG_CARDRAW=1. */
+static int jerDiagCarDraw(void)
+{
+	static int on = -1;
+
+	if (on < 0)
+		on = (getenv("JERICHO_DIAG_CARDRAW") != NULL) ? 1 : 0;
+
+	return on;
 }
 
 // [D] [T] [A]
@@ -2353,7 +2484,12 @@ void DrawCar(CAR_DATA* cp, int view)
 	// model. Skip the car rather than fault. InitPlayer now clamps an unavailable
 	// player car to a resident slot, so this is a backstop.
 	if (model < 0 || model >= MAX_CAR_RESIDENT_MODELS || gCarCleanModelPtr[model] == NULL)
+	{
+		if (jerDiagCarDraw())
+			printInfo("JERICHO-DIAG CARDRAW: SKIP car=%d model=%d (no geometry)\n", cp->id, model);
+
 		return;
+	}
 
 	// draw car lights in for InCar camera
 	if (player[view].cameraView == 2 && cp->id == player[view].cameraCarId)
