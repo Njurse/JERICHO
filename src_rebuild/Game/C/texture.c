@@ -267,25 +267,17 @@ int JerVramArenaPageHolds(int slot, int page)
 // Reserve `rows` rows of the bottom CLUT column and return the first row, or -1 when the
 // column cannot hold them. The caller decides the row count - for the import it is the
 // same (npal + 3) / 4 + 1 the top half's pin band uses, per set.
-int JerVramArenaClutAlloc(int rows)
-{
-	int y;
-
-	if (rows <= 0)
-		return -1;
-
-	if (sJerArenaClutY + rows > JER_VRAM_TOTAL_ROWS)
-	{
-		sJerArenaClutDropped++;
-		return -1;
-	}
-
-	y = sJerArenaClutY;
-	sJerArenaClutY += rows;
-	sJerArenaClutUsed += rows;
-
-	return y;
-}
+// JERICHO: ONE allocator for the arena's CLUT column, the cursor below.
+//
+// There used to be a second, `JerVramArenaClutAlloc(rows)` - an up-front block
+// reservation - and it is GONE on purpose. Two ways to advance one column is exactly how
+// the palettes and the pin's page CLUTs ended up sharing rows 512..: the pin band was
+// reserved by size and the palette tables walked a cursor, so neither knew about the
+// other. What the column needs is one watermark that everything takes from, in order.
+//
+// The cursor is the shape the palettes need (walk, then commit). The pin band uses the
+// same watermark by taking the cursor and advancing it as it walks (texture.c,
+// CarImportPin), so a later taker always starts past the earlier one.
 
 // JERICHO: the arena CLUT column as a CURSOR, for a caller that walks it one CLUT at a
 // time (IncrementClutNum) instead of knowing its size up front - the imported cities'
@@ -294,12 +286,19 @@ int JerVramArenaClutAlloc(int rows)
 //
 // The x is the same 960 as the base column and IncrementClutNum wraps at 1024, so the
 // walk needs no special case: 4 CLUTs to a row, then y++.
+//
+// The rect is 16x1 and MUST stay 16x1: `LoadImage` is
+// `GR_CopyVRAM(p, 0, 0, rect->w, rect->h, rect->x, rect->y)` (LIBGPU.C:64), i.e. it copies
+// w*h halfwords from the caller's buffer. This first returned 64x4 - the SHAPE of the
+// column instead of the shape of one CLUT - so every CLUT copied 256 halfwords: 16 real
+// ones plus 240 read past the source and written over the next three VRAM rows. The base
+// column's cursor is 16x1 for the same reason (texture.c, `clutpos` init).
 void JerVramArenaClutCursor(RECT16 *out)
 {
 	out->x = JER_ARENA_CLUT_X;
 	out->y = (short)sJerArenaClutY;
-	out->w = 64;
-	out->h = 4;
+	out->w = 16;
+	out->h = 1;
 }
 
 void JerVramArenaClutAdvance(int rows)
@@ -2093,40 +2092,30 @@ void CarImportPin(void)
 		// our palette, which is why the palette check said MISMATCH with real positions.
 		if (sPinClutCursor.x == 0 && sPinClutCursor.y == 0)
 		{
-			// JERICHO: the band starts just past whatever the level (and an import's
-			// palettes) has already used, and it stays INSIDE the CLUT-safe area (rows
-			// 256..CD2_CLUT_SAFE_LAST) - it is never forced down to a floor.
-			//
-			// The hard ceiling is the level font image (rows 466..511, pres.c:584), NOT
-			// the bottom of VRAM: rows at or below 466 are the font, and a CLUT there is
-			// painted over by LoadFont and paints over it every frame (cars.h:
-			// CD2_CLUT_SAFE_LAST).
-			//
-			// There used to be `if (firstFree < 480) firstFree = 480;` here. 480 is
-			// INSIDE the font, so the moment the level's own layout reached the font
-			// (which an import makes it do) the band was moved from "no room" to "over
-			// the glyphs" - the collision, made deliberate by a literal. With no floor,
-			// an overflow leaves the band past the safe area and the refusal below
-			// declines every set instead: no palettes is recoverable, glyphs are not.
 			// JERICHO: the import's CLUT rows come from the ARENA's own column - x960..1023,
 			// rows 512..1023 - NOT from the base half's strip.
 			//
-			// The strip is the scarce resource, and this is the last thing that was still
-			// competing for it. It holds ~86 rows above the level font (pres.c:584) and the
-			// level's own layout plus the streamed-slot band take most of that, so a 3-city
-			// mix runs out and sets are refused - the "three imports overflow the VRAM CLUT
-			// column" limitation, and the refusals that follow. Below row 512 there is no
-			// font and no slot band: 512 rows, ~6x the strip's safe remainder, mirrored at
-			// the same x so IncrementClutNum walks it unchanged.
-			int firstFree = JER_VRAM_HALF_Y;
+			// The strip is the scarce resource, and this was the last thing still competing
+			// for it. It holds ~86 rows above the level font (pres.c:584) and the level's own
+			// layout plus the streamed-slot band take most of that, so a 3-city mix ran out
+			// and sets were refused. Below row 512 there is no font and no slot band: 512
+			// rows, mirrored at the same x, so IncrementClutNum walks it unchanged.
+			//
+			// AND it starts where the arena column is ACTUALLY free - i.e. past the guest
+			// palette tables, which are uploaded just above this - and advances the SAME
+			// watermark (see the walk's tail below).
+			//
+			// Both used to start at JER_VRAM_HALF_Y with INDEPENDENT cursors -
+			// `sPinClutCursor` here, `sJerArenaClutY` in the palette upload - so the pin's
+			// page CLUTs were written straight over rows 512.. and the imported car's
+			// flat/GT PANEL polys read page-CLUT data: a broken palette on every panel.
+			// Measured before the fix: the palettes took rows 512..545 and the band then
+			// started at 512 again.
+			RECT16 arenaClut;
+			int firstFree;
 
-			// JERICHO: prefer the CLUT-safe area (rows 256..CD2_CLUT_SAFE_LAST, i.e. above
-			// the level font image at rows 466..511, pres.c:584). Without an import the
-			// (The safe-area arithmetic this block used to do - and its y=480 fallback
-			// INSIDE the level font - is gone. The arena column is nowhere near the glyphs,
-			// so there is no ceiling to test against and nothing to refuse. CD2_CLUT_SAFE_LAST
-			// now bounds only the LEVEL's own layout, which is where it belongs: the import
-			// no longer has an opinion about the strip, it just does not use it.)
+			JerVramArenaClutCursor(&arenaClut);
+			firstFree = arenaClut.y;
 
 			sPinClutCursor.x = 960;
 			sPinClutCursor.y = firstFree;
@@ -2179,7 +2168,18 @@ void CarImportPin(void)
 		sCarPageUploading = 0;
 
 		if (clut.x != sPinClutCursor.x || clut.y != sPinClutCursor.y)
+		{
+			// The walker advanced. Keep the ARENA watermark level with it, so the next
+			// walk - another pin's page CLUTs, or a guest palette table - starts PAST this
+			// band instead of on top of it. Without this the two cursors drift apart and
+			// the palettes get overwritten (a broken palette on every panel).
+			int before = sPinClutCursor.y;
+
 			sPinClutCursor = clut;	// the walker advanced: remember where it got to
+
+			if (clut.y > before)
+				JerVramArenaClutAdvance(clut.y - before);
+		}
 
 		if (arena >= 0)
 		{
