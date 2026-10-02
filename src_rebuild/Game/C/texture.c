@@ -1599,7 +1599,24 @@ int CarImportPinDstSet(int set)
 
 static int sPinCount;
 static int sPinDropped;			// JERICHO: pages asked for after the table filled - see CarPinRecord
+
+// JERICHO: the sets CarPinRecord had to DROP, because the table was full.
+//
+// A dropped set still has an index that CarImportDstSetCore allocated and the model's
+// polys baked, so the POLYS STILL READ ITS PALETTE ROW. That row is marked for upload from
+// `sPinSet[]` - which a dropped set never enters - so before this, a drop meant a
+// `civ_clut` row that nothing wrote, and the car wore whatever was there. The page is lost
+// either way; the colour is not, so the drops are recorded and not merely counted.
+#define CAR_DROP_MAX	16
+static int sPinDroppedSet[CAR_DROP_MAX];
+static int sPinDroppedCity[CAR_DROP_MAX];
+static int sPinDroppedKept;		// recorded (vs counted only, once CAR_DROP_MAX is reached)
 static int sPalDone;			// JERICHO: the deferred palette upload has run for THIS level
+static unsigned char sPalRowsDone[CIV_CLUT_ROWS];	// JERICHO: which civ_clut rows are already
+							// IN VRAM this level. The upload used to be a
+							// one-shot latch, so a pin recorded after the
+							// first call never got its rows; it is now
+							// driven by "needed and not yet done".
 static int sPalUploaded;		// JERICHO: how many CLUT slots it wrote (0 = nothing, the interesting failure)
 static int sPinSet[CAR_PIN_MAX];		// the set number the CAR asks for
 static int sPinIndex[CAR_PIN_MAX];		// the index its page is loaded at
@@ -1708,9 +1725,20 @@ static void CarPinRecord(int set, int index, int offset, int size, int preferred
 		// table holds is a number rather than a guess.
 		sPinDropped++;
 
+		if (sPinDroppedKept < CAR_DROP_MAX)
+		{
+			sPinDroppedSet[sPinDroppedKept] = set;
+			sPinDroppedCity[sPinDroppedKept] = city;
+			sPinDroppedKept++;
+		}
+
 		if (sPinDropped <= 4)
-			printInfo("cross-city: NO PIN LEFT for %s set %d (index %d) - the table holds %d; its polys will read the dummy page (960,0), which is a live host slot\n",
-				LevelNames[city], set, index, CAR_PIN_MAX);
+		{
+			int drow = CarPalIndexInCityFor(set, city);
+
+			printInfo("cross-city: NO PIN LEFT for %s set %d (index %d) - the table holds %d; its polys will read the dummy page (960,0), which is a live host slot, but its PALETTE ROW (%d) still gets uploaded\n",
+				LevelNames[city], set, index, CAR_PIN_MAX, drow);
+		}
 
 		return;
 	}
@@ -1899,45 +1927,75 @@ void CarImportPin(void)
 	// uploaded a guest city's palettes at all - and its deferred lumps were the previous
 	// level's. See sPalDone at file scope.
 	{
-		if (!sPalDone && sPinCount > 0)
-		{
-			unsigned char rowNeeded[CIV_CLUT_ROWS];
+		unsigned char rowNeeded[CIV_CLUT_ROWS];
+		unsigned char fresh[CIV_CLUT_ROWS];
+		int r, nfresh = 0;
 
+		memset(rowNeeded, 0, sizeof(rowNeeded));
+
+		for (i = 0; i < sPinCount; i++)
+		{
+			// JERICHO: the pin knows which city this page came from (sPinCity), so ask
+			// that city's table directly. GetCarPalIndex would instead search every
+			// held city and take the first that has the page number - which with
+			// three cities is the first city, leaving the others' blocks empty.
+			int row = CarPalIndexInCityFor(sPinSet[i], sPinCity[i]);
+
+			if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS)
+				rowNeeded[row] = 1;
+		}
+
+		// JERICHO: AND the sets CarPinRecord had to DROP for want of table room. Their
+		// page is lost - the polys will read the dummy page - but the model's polys still
+		// baked an index whose CLUT comes from civ_clut, so the ROW is still read. Leaving
+		// it unmarked is what made a drop show up as a car wearing a colour nothing wrote.
+		for (i = 0; i < sPinDroppedKept; i++)
+		{
+			int drow = CarPalIndexInCityFor(sPinDroppedSet[i], sPinDroppedCity[i]);
+
+			if (drow >= CIV_CLUT_IMPORT_ROW && drow < CIV_CLUT_ROWS)
+				rowNeeded[drow] = 1;
+		}
+
+		// JERICHO: what is needed that has NOT already been uploaded.
+		//
+		// This used to be gated by a one-shot latch (`if (!sPalDone && sPinCount > 0)`), so
+		// a pin recorded AFTER the first call never got its rows at all: the latch was
+		// already set and the new row was simply never asked for. Driving on "needed and not
+		// yet done" instead means a late pin costs a re-upload of the rows it adds - and
+		// nothing when it adds none, which is the common case and why this stays cheap.
+		for (r = 0; r < CIV_CLUT_ROWS; r++)
+		{
+			fresh[r] = (rowNeeded[r] && !sPalRowsDone[r]) ? 1 : 0;
+			nfresh += fresh[r];
+		}
+
+		if (nfresh > 0)
+		{
+			// JERICHO: how many rows this level asked for. A zero here was the signature of
+			// the 2-row-band bug (rows fell outside the band and the upload wrote nothing),
+			// so it belongs in the census rather than being inferred from a column total
+			// that has lied before.
 			sPalDone = 1;
 
-			memset(rowNeeded, 0, sizeof(rowNeeded));
+			for (r = 0; r < CIV_CLUT_ROWS; r++)
+				if (rowNeeded[r])
+					sPalUploaded += 1;
 
-			for (i = 0; i < sPinCount; i++)
-			{
-				// JERICHO: the pin knows which city this page came from (sPinCity), so ask
-				// that city's table directly. GetCarPalIndex would instead search every
-				// held city and take the first that has the page number - which with
-				// three cities is the first city, leaving the others' blocks empty.
-				int row = CarPalIndexInCityFor(sPinSet[i], sPinCity[i]);
+			// Remember what is now in VRAM BEFORE the upload, so a row that is asked for
+			// again later is not re-uploaded (and does not consume a second arena row).
+			memcpy(sPalRowsDone, rowNeeded, sizeof(sPalRowsDone));
 
-				if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS)
-					rowNeeded[row] = 1;
-			}
-
-			// JERICHO: how many rows this level actually asked for. A zero here was the
-			// signature of the 2-row-band bug (rows fell outside the band and the upload
-			// wrote nothing), so it belongs in the census rather than being inferred from a
-			// column total that has lied before.
-			{
-				int rq;
-
-				for (rq = 0; rq < CIV_CLUT_ROWS; rq++)
-					if (rowNeeded[rq])
-						sPalUploaded++;
-			}
-
-			ProcessImportedPaletteRows(rowNeeded);
+			ProcessImportedPaletteRows(fresh);
 
 			// JERICHO: re-run the census NOW. LoadPermanentTPages reports the CLUT column
 			// during the level load, which is before this upload - so it would keep saying
 			// "no overflow" about a column that this upload then ran past. The number to
 			// read is the one after everything the import puts in the column is in it.
 			VramAccountReport();
+
+			printInfo("cross-city: palette rows needed %d, newly uploaded %d (the rest were already in VRAM)\n",
+				sPalUploaded, nfresh);
 		}
 	}
 
@@ -2631,8 +2689,10 @@ void CarImportResetState(void)
 	// never re-uploaded, and dereferenced the previous level's deferred lumps. The
 	// counters were the same - they accumulated across levels and read as churn.
 	sPalDone = 0;
+	memset(sPalRowsDone, 0, sizeof(sPalRowsDone));
 	sPalUploaded = 0;
 	sPinDropped = 0;
+	sPinDroppedKept = 0;		// the recorded subsets (and their cities) go with it
 	sPinRowLeaks = 0;
 	sPinBandSafe = 0;
 	CarImportPaletteReset();
