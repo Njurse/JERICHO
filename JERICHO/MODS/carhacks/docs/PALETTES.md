@@ -445,3 +445,50 @@ case, it is the common one for palettes above what a city's lump names.
 
 (Note: the host rows are still not clamped — that would pin every stock car to one colour.
 The fallback is draw-time only, and only when the column is empty.)
+
+## REGRESSION (2026-09-30 → 2026-10-02): the host palette walk read ZERO entries
+
+After the fix above the cars were visible but **every vehicle of a model was the same
+colour**. That is a second, older break, and it is the more serious one.
+
+`ProcessPalletLumpForRows` gained a bounds guard on 2026-09-30 (`7def90605`) to stop a walk
+that ran past the end of a deferred IMPORT lump and read heap as entry fields:
+
+`if ((char*)buffPtr + 12 > (char*)lump_ptr + lump_size) break;`
+
+But the LEVEL's own lump has always been passed with **size 0** - stock has called
+`ProcessPalletLump(palette_lump, 0)` (texture.c) since 2020, and that walk is bounded by the
+lump's own header count and its `-1` terminator, not by a size. With size 0 the guard tripped
+on the first iteration, so the host walk processed **nothing**:
+
+```
+cross-city: CHICAGO palettes: 219 CLUT(s) in the lump, 0 row(s) taken (rows 256 -> 256)
+cross-city: CHICAGO palettes: no terminator within 0 bytes (0 entries read) - the lump is mis-sized; stopping
+```
+
+`civ_clut`'s per-palette columns were therefore never filled, and every car of a model drew
+from the one CLUT the model build had put in slot 0. Measured with `JERICHO_DIAG_PAL=1`
+(dumps the lump entries): the lump holds **palette fields 0..4 for every (row, texnum)**
+group, so the variety was there all along - we simply stopped reading it.
+
+**Fix:** bound the walk by whichever limit the caller actually supplied. `lump_size > 0`
+(a deferred import) keeps the exact byte check; `lump_size == 0` (the level's own lump) is
+bounded by the header count (`entriesRead >= total_cluts`). Measured after:
+
+```
+CHICAGO palettes: 219 CLUT(s) in the lump, 26 row(s) taken (rows 256 -> 282), 116 reusing ...
+CARDRAW  model=0 ci=264 raw[ci-1..ci+5] 437f 573c 433f 437c 437d 437e 437f
+         -> res0..5 573c 433f 437c 437d 437e 437f      (six DISTINCT colours)
+```
+
+Verified antfarm-only across chicago/havana/lasvegas/rio: PASS, no new dump, 15-30 rows
+taken per city (the font at 466 is untouched) and the lower-half pool still fully reserved.
+
+**Still open (unchanged, and NOT this bug):** some models still resolve to a single colour -
+their groups are the special-body pages whose rows the lump's entries do not reach. That is
+the earlier fork: either the model should read the rows the lump fills, or those pages need
+their own lump. The draw-time fallback keeps them *visible* rather than framebuffered.
+
+**Diagnostics added for the next reader:** `JERICHO_DIAG_PAL=1` (the lump's entries, with the
+computed row/texnum/palette) and `JERICHO_DIAG_CARDRAW=1` (per-model page/CLUT census and the
+six resolved palette CLUTs, in `DrawCarObject`). Both off by default.

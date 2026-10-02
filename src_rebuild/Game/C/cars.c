@@ -1825,6 +1825,8 @@ void MangleWheelModels(void)
 // defined below, next to GetCarPalIndex
 static int CarPalIndexInCity(int tpage, int city);
 
+static int sPalDumpCount;
+
 static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, const unsigned char *rowNeeded)
 {
 	ushort clutValue;
@@ -1837,6 +1839,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 	int total_cluts;
 	int clut_number;
 	int skipped = 0;
+	int entriesRead = 0;		// entries walked (bounds the lump when no size was given)
 	int reused = 0;			// entries that reused a CLUT already in VRAM (no new row)
 	int deferred = 0;		// JERICHO: stored CLUTs the row filter left out of VRAM
 	int borrowed = 0;		// JERICHO: skipped CLUTs a needed entry referred to (uploaded on demand)
@@ -1913,17 +1916,27 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 	{
 		int palidx, needed;	// JERICHO: the row this entry belongs to, and whether we keep it
 
-		// BOUNDS FIRST, before the terminator read. A palette lump ends with a -1
-		// palette field, but the deferred lump is a POINTER and a SIZE that come from
-		// gCarImports[city]; when a recolourable import is in play (models 0..4, the ones
-		// whose palettes use the civ_clut import bank) this walk used to run past the end
-		// and read heap as entry fields -- clut_number came out as -1.5e9 and indexed
-		// clutTable out of bounds, which is the EXCEPTION_ACCESS_VIOLATION at +0x300.
-		if ((char*)buffPtr + 12 > (char*)lump_ptr + lump_size)
+		// BOUNDS, from whichever limit the CALLER actually gave us. The two callers differ:
+		//   * the LEVEL's own lump is passed with size 0 - stock has called
+		//     ProcessPalletLump(palette_lump, 0) since 2020 and relies on the header's own
+		//     count and the -1 terminator - so its bound is that count;
+		//   * a deferred IMPORT lump is a pointer+size from gCarImports, with no such
+		//     contract, so it gets the exact byte check.
+		// Enforcing the byte check when there is NO size is what silently stopped the host
+		// walk: every level read zero entries, so civ_clut's per-palette columns were never
+		// filled and every traffic model kept a single colour.
+		if (lump_size > 0)
 		{
-			printInfo("cross-city: %s palettes: no terminator within %d bytes (%d entries read) - the lump is mis-sized; stopping\n",
-				LevelNames[city], lump_size, clutStored);
-			break;
+			if ((char*)buffPtr + 12 > (char*)lump_ptr + lump_size)
+			{
+				printInfo("cross-city: %s palettes: no terminator within %d bytes (%d entries read) - the lump is mis-sized; stopping\n",
+					LevelNames[city], lump_size, clutStored);
+				break;
+			}
+		}
+		else if (entriesRead >= total_cluts)
+		{
+			break;		/* header count exhausted (this caller gave no size) */
 		}
 
 		if (*buffPtr == -1)
@@ -1934,8 +1947,20 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		tpageindex = buffPtr[2];
 		clut_number = buffPtr[3];
 		buffPtr += 4;
+		entriesRead++;
 
 		palidx = CarPalIndexInCity(tpageindex, city);
+
+		/* JERICHO-DIAG (JERICHO_DIAG_PAL=1): what the palette lump actually holds. The
+		 * traffic cars pick ap.palette from 0..5, so a model's colour VARIETY is the
+		 * number of distinct `palette` fields its (row, texnum) group carries: one field
+		 * per group = one colour per model, however the draw is fixed. */
+		if (getenv("JERICHO_DIAG_PAL") != NULL && sPalDumpCount < 250)
+		{
+			sPalDumpCount++;
+			printInfo("JERICHO-DIAG PAL: entry %d city=%d filtered=%d row=%d texnum=%d palette=%d tpage=%d clut=%d\n",
+				sPalDumpCount, city, (rowNeeded != NULL), palidx, texnum, palette, tpageindex, clut_number);
+		}
 
 		if (palidx < 0)
 			palidx = 0;	// not a car palette in this city - stock behaviour
@@ -2382,8 +2407,6 @@ void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR
 			 * whose body is invisible but whose mirrors/wheel-wells render is a
 			 * model whose polys are split across pages, one of them bad. */
 			u_int pg[4] = { 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu };
-			u_int cl[4] = { 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu };
-			u_int cl2[4] = { 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu };
 			int cnt[4] = { 0, 0, 0, 0 };
 			CAR_POLY* lists[2];
 			int counts[2];
@@ -2411,37 +2434,37 @@ void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR
 				}
 			}
 
-			/* the resolved CLUT word for the first poly of each page group */
+			/* the resolved CLUT across the SIX palettes the spawner can pick, for the
+			 * biggest page group of this model. That IS the colour variety the traffic
+			 * of this model has: six distinct values = a proper palette set, a value
+			 * repeated or zero = a mangled set. */
 			plotCarGlobals dbgPg;
+			int ci0 = 0;
+			int found = 0;
+
 			dbgPg.pciv_clut = (u_short*)&civ_clut[1];
 
-			for (k = 0; k < 2; k++)
+			for (k = 0; k < 2 && !found; k++)
 			{
 				for (i = 0; i < counts[k]; i++)
 				{
-					u_int p = (u_int)(lists[k][i].tpage_uv1 >> 16);
-					int j;
-
-					for (j = 0; j < 4; j++)
+					if ((u_int)(lists[k][i].tpage_uv1 >> 16) == pg[0])
 					{
-						if (cl[j] == 0xffffffffu && pg[j] == p)
-						{
-							int ci = lists[k][i].clut_uv0 >> 16;
-
-							/* pg->pciv_clut is (u_short*)&civ_clut[1] - a FLAT
-							 * u_short view, not civ_clut[row][...] */
-							cl[j] = (u_int)((u_short*)&civ_clut[1])[ci + CarClutVariant(ci, palette)];
-							cl2[j] = (u_int)CarClutLookup(&dbgPg, ci, palette);
-							break;
-						}
+						ci0 = lists[k][i].clut_uv0 >> 16;
+						found = 1;
+						break;
 					}
 				}
 			}
 
-			printInfo("JERICHO-DIAG CARDRAW: car=%d model=%d pal=%d polys=%d fb=%d pg %04x:%d/%04x>%04x %04x:%d/%04x>%04x %04x:%d/%04x>%04x %04x:%d/%04x>%04x\n",
-				cp->id, cp->ap.model, palette, np, sCarClutFallbackCount,
-				pg[0], cnt[0], cl[0], cl2[0], pg[1], cnt[1], cl[1], cl2[1],
-				pg[2], cnt[2], cl[2], cl2[2], pg[3], cnt[3], cl[3], cl2[3]);
+			printInfo("JERICHO-DIAG CARDRAW: car=%d model=%d pal=%d ci=%d polys=%d pg%04x:%d raw[ci-1..ci+5] %04x %04x %04x %04x %04x %04x %04x | res0..5 %04x %04x %04x %04x %04x %04x\n",
+				cp->id, cp->ap.model, palette, ci0, np, pg[0], cnt[0],
+				(unsigned)dbgPg.pciv_clut[ci0 - 1], (unsigned)dbgPg.pciv_clut[ci0], (unsigned)dbgPg.pciv_clut[ci0 + 1],
+				(unsigned)dbgPg.pciv_clut[ci0 + 2], (unsigned)dbgPg.pciv_clut[ci0 + 3], (unsigned)dbgPg.pciv_clut[ci0 + 4],
+				(unsigned)dbgPg.pciv_clut[ci0 + 5],
+				(unsigned)CarClutLookup(&dbgPg, ci0, 0), (unsigned)CarClutLookup(&dbgPg, ci0, 1),
+				(unsigned)CarClutLookup(&dbgPg, ci0, 2), (unsigned)CarClutLookup(&dbgPg, ci0, 3),
+				(unsigned)CarClutLookup(&dbgPg, ci0, 4), (unsigned)CarClutLookup(&dbgPg, ci0, 5));
 		}
 	}
 
