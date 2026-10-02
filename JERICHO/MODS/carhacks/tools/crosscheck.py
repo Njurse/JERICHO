@@ -28,7 +28,7 @@ Usage:
 
 NOTE the session log is `<appName>.log`, and this build's app name is JERICHO, so the
 file is `JERICHO.log` - NOT REDRIVER2.log, which may be a stale file from an older
-build. Capturing stdout works too, and is per-scenario (that is what devcheck.sh does).
+build. Capturing stdout works too, and is per-scenario (that is what chk_suite.sh does).
 
 Exit code: 0 = every invariant held, 1 = at least one violation.
 """

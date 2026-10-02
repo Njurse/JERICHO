@@ -14,7 +14,7 @@ block). All default to off, so shipping behaviour is untouched.
 | `-frames N` | run N gameplay frames, then exit **cleanly** (that is the point: `exit(0)` runs `atexit(PsyX_Shutdown)`, which finalises the log — a kill throws the log away) |
 | `-seed N` | pin every module's run randomness, so two runs are comparable and an A/B diff means something |
 | `-level <city>` `-car slotN` `-mp 0\|1` `-weather <w>` `-time <t>` `-gamemode <g>` | the pre-existing boot options |
-| `-vramview [frames]` | open a second window showing the live VRAM, refreshed every frame, and re-dump `vram_live.tga` every N frames (default 15) for `vramdump.py`. Independent of `-level` |
+| `-vramview [interval] [scale] [x y w h]` | open a second window showing the live VRAM, refreshed every frame, and re-dump `vram_live.tga` every N frames (default 15) for `carhacks/tools/vramdump.py`. `[scale]` is an integer zoom (0 or omitted = auto-fit; the window is kept small and is resizable); `[x y w h]` shows just that VRAM region (e.g. `0 512 1024 512` for the bottom half). Independent of `-level` |
 | `-console` | attach a Win32 console (sent to the bottom of the Z-order) showing the engine log live, not just in the session log file |
 
 Note `-car <model>` is the **model number**; `-car slotN` is a **frontend** slot.
@@ -70,30 +70,24 @@ file alone — see `cd2_debug.example.txt` for the format.
 
 ## Scripts
 
-The car-data / VRAM tools live with the **carhacks** module now
-(`../carhacks/tools/`): `vrammap.py`, `levgeom.py`, `levmodels.py`,
-`levpages.py`, `levpalette.py`, `make_vram_issues_png.py`. They read this
-game's car data rather than the arena format, and carhacks is where that work
-lives. The scripts below that still import them add `../carhacks/tools` to
-`sys.path`, so they run exactly as before from this folder.
+The car-data, VRAM and cross-city tools - and the launchers that drive them - live
+with the **carhacks** module now: [`../carhacks/tools/`](../carhacks/tools/README.md).
+That is the index for `vrammap.py`, `vramdump.py`, `cardump.py`, `chk_suite.sh`,
+`crosscheck.py`, the `lev*.py` readers and the cross-city `launch_*` launchers. They
+are not listed below because carhacks is its own addon; Caine's Crossfire only
+leverages it (it declares carhacks as a dependency in `../mod.toml`).
 
 | script | what it does |
 |---|---|
-| `devcheck.sh [frames]` | build, run the cross-city scenario matrix, print one verdict. Exit 0 = all clean. Restores your `carhacks.ini` afterwards |
 | `icons.py placeholders` / `convert <in.png> <out.tga>` / `list` | **the pickup icons**: (re)write the default placeholder set (`textures/icons/health.tga` + one per `CD2_WID_*`), convert a PNG to the 32-bit TGA the engine reads, or print the icon name -> weapon map. Author at any size and let `convert --size N` (default 64) scale it |
 | `arena_test.sh [frames]` | one random city/car/weather/time arena run. `SEED=N` replays an exact scenario, because the seed picks the scenario too, not just module randomness |
-| `vramdump.py <tga> [--png out.png] [--rect X Y W H label] [--log L --lev V]` | decode a VRAM dump: per-rectangle stats, a viewable PNG, and a palette check that proves an imported car's CLUTs are its own. Feed it `vram_live.tga` re-dumped by `-vramview` |
 | `paletteedit.py [--bin DIR] [--topmost] [--offline] [--level X.LEV] [--city C] [--launch [CMD]]` | **the live palette editor** (tkinter): reads the running game's CLUT map and writes the override file the game polls (`JERICHO/CONFIG/cc_palette.txt`), so dragging the colour wheel changes a car's palette entry **while you play**. `Solo` an entry (every other entry black) to see exactly which part it paints; `--topmost` floats it over the game. `--level` works with **no game at all**, straight from a level's palette lump. The chosen numbers are what an authored car colour is built from - see `../PALETTES.md` |
 | `view3d.py <city> <x> <z> [--out PNG] [--yaw/--pitch/--dist ...]` | render the editor's **3D viewport** for one world point from the command line: the point's cell + its eight neighbours, textured from the same rip, with the placeholder car/pickup. The GUI uses this module directly |
 | `arena_menu.bat` | the **arena launcher** (double-click): make a new arena, open one in the Python editor, launch the in-game editor, validate/render, keep the mod's `arenas/` folder in step with the game's mirror, `7)` check the setup (`--selftest`) and `8)` build a city's level map (top-down rip) - ripping that city with `--rip` first if it has none. Or run the Python editor directly: `python arenaedit.py` (no args = every arena in the folder; `--new NAME` = create one) |
 | `arenaedit.py <arena.cca...>` | the **arena editor, top-down** (the launcher's "_open_") - a proper window: menu bar (File / Edit / View / Help), a toolbar with the tools (Select, Add spawn, Delete, Region) and the view toggles, a canvas with a grid and a cursor-position readout, and an **inspector** on the right for the arena fields, the region, the spawn list and the pickups. It reads and writes the same `.cca` the game does. `--check` validates, `--render OUT.png` snapshots headlessly, `--viewport OUT.png` renders the **3D viewport** for the highlighted object (`--viewport-sel N`, `-1` = the player's spawn; `--vp-size`), `--json` dumps, `--uitest` builds the window and drives it through its own commands (a headless UI check), `--selftest` reports the interpreter/tkinter/Pillow/folders/rips, `--new NAME` creates an arena, `--level [CITY]` draws a city's rip underneath (ripping it on demand **once**, with `--no-rip` to refuse), `--rip [CITY]` exports a city's level rip with DriverLevelTool (all four when no city is named) - that is the step that makes a city drawable, and it is slow and local, since rips are gitignored - and `--style textured|points` picks the map: **textured** (the default) is a real top-down render of the rip's faces with their textures, **points** is the fast vertex cloud. **Pseudo-realtime**: it reloads when the game saves the .cca, and the game reloads when it saves (each side refuses to clobber unsaved edits) |
 | `rendercheck.py [--city CITY] [--all] [--size N]` | the **headless guard for the arena editor's map renderer**: a synthetic rip whose answer is known (a ground quad, a raised patch that must win the height buffer, and a quad too big for the fill grid, which must be subdivided rather than skipped) plus structure/colour assertions on the real cities. Exit 0 = OK. This is what caught the three renderer bugs (dropped clockwise faces, sub-pixel pinholes, silently skipped large triangles) |
-| `cardump.py <tga> [--log JERICHO.log] [--lev SRC.LEV] [--out DIR] [--texnum N]` | the **last run's** imported car textures: renders each imported set's page under each of that car's palettes (plus the run's actual page CLUT as a control) to PNGs, to compare against `levpalette.py`'s defaults |
-| `crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` | assert the three cross-city invariants on ONE run: no imported page in the WORLD's slots, no world eviction, no imported set resolving to a HOST `civ_clut` row, and (with `--tga`) each pinned page still present with matching CLUTs. Exit 0 = held, 1 = violated, 2 = no import in this run |
 | `launch_*.bat` | boot a specific scenario for playing. `test [frames]` makes it self-terminate and print a replayable seed; `dry` prints the roll without launching or writing config |
 | `_enable_module.bat <id>` | turn a module ON in the **bin** copy of `JERICHO/CONFIG/modlist.ini` — the copy the game reads. Called by the cross-city launchers, which are useless without `cainescrossfire` and used to rely on the bin mirror happening to agree with the repo |
-| `launch_havana_rio_police.bat` | drive RIO's police car (model 0) in HAVANA: import into resident slot 0, `-car 0`. `[model]` tries another Rio body |
-| `launch_rio_havana_police.bat` | drive HAVANA's police car (model 0) in RIO: import into resident slot 3 (Rio's own model 0 lives there, so that is the slot to replace), `-car 0` |
 
 ## House rules these follow, learned the hard way
 

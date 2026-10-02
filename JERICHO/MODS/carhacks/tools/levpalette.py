@@ -30,8 +30,6 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.normpath(os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "../../cainescrossfire/tools")))  # cross-module tool path
 
 from levpages import segments, LUMP_PALLET          # noqa: E402  (sibling tool)
 from levmodels import CAR_TPAGES, city_name          # noqa: E402  (owns the carTpages table)

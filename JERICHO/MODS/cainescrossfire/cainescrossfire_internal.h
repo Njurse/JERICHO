@@ -31,10 +31,11 @@
 //   ai/               the opponent AI (ai/ai.h; opponent.c is the brain)
 //   weapons/          the weapon framework (weapons/core/weapon.h)
 //
-// carhacks/ (the vehicle-availability + cross-city hacks) used to be listed here:
-// it is its own module now (JERICHO/MODS/carhacks/), so it is no longer a
-// subfolder of this one. The docs moved to MODS/carhacks/docs/ too, apart from FORMATS.md - cainescrossfire/carhacks/
-// holds CROSS_CITY.md, HACK.md, FORMATS.md, PALETTES.md, VEHICLES.md and VRAM.md.
+// carhacks/ (the vehicle-availability + cross-city hacks) used to be listed here.
+// It is its own module now (JERICHO/MODS/carhacks/) - code, docs and tools - and
+// this module DECLARES it as a dependency (mod.toml) instead of carrying it. If you
+// are looking for the cross-city import or any of its tools, they are all under
+// JERICHO/MODS/carhacks/ now.
 
 #ifndef CD2_INTERNAL_H
 #define CD2_INTERNAL_H

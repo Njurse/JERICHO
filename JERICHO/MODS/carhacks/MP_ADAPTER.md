@@ -225,8 +225,8 @@ client  [carhacks/net] the host's agreed set arrived: guest city CHICAGO, 1 entr
 ```
 
 and, with no session at all, a plain single-player run logs only the channel
-registration — the local cross-city path is unchanged (`devcheck.sh`, all 4
-scenarios clean).
+registration — the local cross-city path is unchanged (`chk_suite.sh`'s stock control
+and imported-player rows stay clean).
 
 ### Three cities at once — `tools/chk_mp_foreign.sh`
 
@@ -303,8 +303,8 @@ seat b  peer 0 drives HAVANA model 8, but this machine draws RIO model 9 in slot
 One line per change, not per packet — the state stream is continuous. The fold that
 would instead LOAD the peer's car is refused by the engine's one-city rule when the
 cities differ (`import: slot N wants RIO but this level already reads cars from
-HAVANA … dropped`), which is the honest limit, and `devcheck.sh` stays clean
-(all 4 scenarios).
+HAVANA … dropped`), which is the honest limit, and `chk_suite.sh`'s single-import rows
+stay clean.
 
 ### Not verified
 

@@ -278,7 +278,7 @@ A useful run proves three things instead:
 1. no imported set resolves into a *host* `civ_clut` row;
 2. no imported page occupies a VRAM rectangle the world streams into;
 3. a world set's `texture_pages[]` / `texture_cluts[]` agree with the pixels
-   actually at its rectangle (see `cainescrossfire/tools/vramdump.py`).
+   actually at its rectangle (see `carhacks/tools/vramdump.py`).
 
 ---
 
@@ -287,9 +287,9 @@ A useful run proves three things instead:
 | what | how |
 |---|---|
 | what a city's car palettes *should* look like | `tools/levpalette.py <CITY>.LEV` — reads `LUMP_PALLET` and writes a swatch sheet per city + the raw rows (`--out DIR`) |
-| what a car's texture looks like under **each** of its palettes, from the **last run** | `cainescrossfire/tools/cardump.py` — takes the run's `vram_dump.tga` (`JERICHO_DUMPVRAM=1`) plus the run's log, and blits each imported car's texture page(s) through each palette to one PNG per palette |
-| whether a run's palettes/pages actually behaved | `cainescrossfire/tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — asserts the three invariants in §6 (exit 0 held / 1 violated / 2 no import) |
-| what is actually in VRAM right now | `-vramview [frames]` (live window) / `cainescrossfire/tools/vramdump.py vram_dump.tga --png out.png` |
+| what a car's texture looks like under **each** of its palettes, from the **last run** | `carhacks/tools/cardump.py` — takes the run's `vram_dump.tga` (`JERICHO_DUMPVRAM=1`) plus the run's log, and blits each imported car's texture page(s) through each palette to one PNG per palette |
+| whether a run's palettes/pages actually behaved | `carhacks/tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — asserts the three invariants in §6 (exit 0 held / 1 violated / 2 no import) |
+| what is actually in VRAM right now | `-vramview [frames]` (live window) / `carhacks/tools/vramdump.py vram_dump.tga --png out.png` |
 | which sets/rows a level uses | the engine's own lines: `cross-city: level page state …`, `cross-city: %s set %d -> index %d …`, `cross-city: pinned set %d index %d: slot=%d, rect=(%d,%d) …` |
 
 The exporter tools are how a fix is shown *visually*: `levpalette.py` gives the
@@ -302,7 +302,7 @@ missing.
 > JERICHO (`PsyX_Initialise("JERICHO", …)`, `PsyX_main.cpp:380`), so the live file is
 > `JERICHO.log`. A stale `REDRIVER2.log` from an older build name may still be in the
 > folder — do not grep it. Capturing the run's stdout works just as well (and is what
-> `devcheck.sh` does) because `printInfo` writes both.
+> `chk_suite.sh` does) because `printInfo` writes both.
 
 ---
 

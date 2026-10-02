@@ -71,7 +71,7 @@ void chkImportClearPick(void);
 
 /* Read the [carhacks] config (import = slot:city:model, traffic_model,
  * traffic_slot) into the set. This is the fallback when no pick has been made,
- * and what the launchers and devcheck.sh drive. `source_city` is NOT here: it is
+ * and what the launchers and chk_suite.sh drive. `source_city` is NOT here: it is
  * a level-wide lever, applied by carhacks.c itself. Returns the number of
  * changes. */
 int chkImportLoadConfig(const char* section, int count);

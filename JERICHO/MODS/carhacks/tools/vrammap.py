@@ -35,13 +35,16 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.normpath(os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "../../cainescrossfire/tools")))  # cross-module tool path
 
 from vramdump import read_tga                                          # noqa: E402
 
 CELL = 64
 FREE = 8            # KiB per 64x64 cell (64*64 texels * 2 bytes = 8 KiB)
+
+# VRAM is 1024x1024 in this build (PsyX_render.h VRAM_HEIGHT). Rows 0..511 are the top
+# half the claims below live in; rows 512..1023 are the JERICHO arena - free by
+# construction, claimed only by JERICHO content (carhacks/docs/VRAM.md).
+VRAM_W, VRAM_H = 1024, 1024
 
 # Every VRAM rectangle the code writes, with its provenance. `transient` marks art that
 # only lives during the frontend / a load and is reclaimed by LoadPermanentTPages
@@ -84,9 +87,9 @@ def parse_tpagepos(texture_c):
 
 def black_fraction(px, w, x0, y0, cw, ch, step=2):
     n = black = 0
-    for y in range(y0, min(y0 + ch, 512), step):
+    for y in range(y0, min(y0 + ch, VRAM_H), step):
         base = y * w
-        for x in range(x0, min(x0 + cw, 1024), step):
+        for x in range(x0, min(x0 + cw, VRAM_W), step):
             n += 1
             if px[base + x] == (0, 0, 0):
                 black += 1
@@ -180,7 +183,7 @@ def main():
     width, _px = dumps[0]
 
     # ---- measured map ------------------------------------------------------------
-    rows, cols = 512 // CELL, 1024 // CELL
+    rows, cols = VRAM_H // CELL, VRAM_W // CELL
     grid = [[cell_state(dumps, r, c) for c in range(cols)] for r in range(rows)]
     freemap = [[grid[r][c] == "free" for c in range(cols)] for r in range(rows)]
     nfree = sum(1 for r in range(rows) for c in range(cols) if freemap[r][c])
@@ -196,8 +199,8 @@ def main():
               "with - pass two dumps from different states to tell resident from streamed)")
 
     print()
-    print(f"never-written: {nfree} cells = {nfree * FREE} KiB of {1024 * 512 * 2 // 1024} KiB "
-          f"({100 * nfree * FREE // (1024 * 512 * 2 // 1024)}%)")
+    print(f"never-written: {nfree} cells = {nfree * FREE} KiB of {VRAM_W * VRAM_H * 2 // 1024} KiB "
+          f"({100 * nfree * FREE // (VRAM_W * VRAM_H * 2 // 1024)}%)")
     skip, free_rects = set(), []
     for _ in range(5):
         r = largest_free_rect(freemap, rows, cols, skip)
@@ -247,8 +250,8 @@ def main():
         b = max(black_fraction(px, width, x, y, w, h, 8) for (_w, px) in dumps)
         # classify from the same cell grid the map uses, so the two agree
         cells = [grid[yy // CELL][xx // CELL]
-                 for yy in range(y, min(y + h, 512), CELL)
-                 for xx in range(x, min(x + w, 1024), CELL)]
+                 for yy in range(y, min(y + h, VRAM_H), CELL)
+                 for xx in range(x, min(x + w, VRAM_W), CELL)]
         if cells and all(c == "free" for c in cells):
             state, verdict = "free", "RESERVED BUT UNUSED"
         elif any(c == "changing" for c in cells):
@@ -323,15 +326,16 @@ def main():
 
     # ---- the breakdown that matters: is the texture area fully accounted for? ---------
     TEXT_X = 320                        # the display buffers own x0..319
-    tex_kib = (1024 - TEXT_X) * 512 * 2 // 1024
+    tex_kib = (VRAM_W - TEXT_X) * (VRAM_H // 2) * 2 // 1024   # the TOP half only, x320..1023
     fbs = [c for c in claims if c[0].startswith("framebuffer")]
     slot_kib = sum(w * h * 2 // 1024 for (n, x, y, w, h, s, t) in claims if n.startswith("page slot"))
     sky_kib = sum(w * h * 2 // 1024 for (n, x, y, w, h, s, t) in claims if n.startswith("sky"))
     clut_kib = 64 * 256 * 2 // 1024
     print()
-    print("breakdown of the 1 MiB")
-    print(f"  display buffers (x0..319, double buffered): {sum(w * h * 2 // 1024 for (_n, _x, _y, w, h, _s, _t) in fbs)} KiB")
-    print(f"  texture area (x{TEXT_X}..1023):                {tex_kib} KiB")
+    arena_kib = VRAM_W * (VRAM_H - VRAM_H // 2) * 2 // 1024
+    print("breakdown of the 2 MiB")
+    print(f"  display buffers (x0..319, y0..511, double buffered): {sum(w * h * 2 // 1024 for (_n, _x, _y, w, h, _s, _t) in fbs)} KiB")
+    print(f"  top-half texture area (x{TEXT_X}..1023, y0..511):     {tex_kib} KiB")
     print(f"    page slots ({len(slots)} x 64x256):             {slot_kib} KiB")
     print(f"    CLUT column (x960..1023, y256..511):    {clut_kib} KiB")
     print(f"    sky (x320..448, y0..256):               {sky_kib} KiB")
@@ -339,10 +343,13 @@ def main():
           f"{tex_kib - slot_kib - clut_kib - sky_kib} KiB")
     print(f"  => texture memory: slots + CLUT column + sky = {slot_kib + clut_kib + sky_kib} KiB "
           f"of {tex_kib} KiB; the remainder is the level font and the CD icon.")
+    print(f"  JERICHO arena (rows 512..1023, full width): {arena_kib} KiB - the base game")
+    print("    cannot reach it, so it is free until JERICHO content claims it")
     fb_kib = sum(w * h * 2 // 1024 for (_n, _x, _y, w, h, _s, _t) in fbs)
-    total = fb_kib + tex_kib
-    print(f"  accounting: display {fb_kib} KiB + texture {tex_kib} KiB = {total} KiB of "
-          f"{1024 * 512 * 2 // 1024} KiB -> {'OK' if total == 1024 else 'MISMATCH'}")
+    total = fb_kib + tex_kib + arena_kib
+    vram_kib = VRAM_W * VRAM_H * 2 // 1024
+    print(f"  accounting: display {fb_kib} KiB + top-half texture {tex_kib} KiB + arena {arena_kib} KiB "
+          f"= {total} KiB of {vram_kib} KiB -> {'OK' if total == vram_kib else 'MISMATCH'}")
     print(f"  NB: CELL resolution is {CELL}x{CELL} = {FREE} KiB; a 'free' cell means no dump ever "
           "wrote a non-black texel there, not that nothing claims it.")
     return 0

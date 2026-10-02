@@ -109,7 +109,7 @@ getter answers NULL (`models.c:455-537`).
 ## The budget: what a SECOND (and third, fourth) city would cost
 
 Measured end-of-run, one line per source city, by
-`cainescrossfire/tools/measure_cities.sh` (it reads the engine's own
+`carhacks/tools/measure_cities.sh` (it reads the engine's own
 `cross-city:`/JERICHO-VRAM/JERICHO-HEAP lines; `frames=90`, seed 7). The
 `JERICHO-HEAP:` line prints the level heap and the car-poly arena at the end of a
 run — main.c's own `malloctab` print is behind `#if DEBUG||PSX`, so a release
@@ -323,14 +323,14 @@ Still open:
 - **The thrash meter is the thing to watch.** If `page re-uploads` in the final page
   state grows with the frame count, something is still taking pages back — check the
   two `spool.c` sites first, since they bypass `LoadTPageAndCluts` by design.
-- **Run `cainescrossfire/tools/crosscheck.py` (or `cainescrossfire/tools/devcheck.sh`, which calls it) instead of reading the
+- **Run `carhacks/tools/crosscheck.py` (or `carhacks/tools/chk_suite.sh`, which calls it) instead of reading the
   page state by eye.** It asserts the three things the engine's own summary cannot see
   (`carhacks/docs/HACK.md`, "Where an imported page may live now"): an imported page must not
   sit on the world's/scenery's rectangle, must not take a live local car's page, and its
   CLUTs must match the source city's file.
 - Visual confirmation stays the user's: the logs prove pages are placed, claimed and
   kept — not that a car looks right. `-vramview` opens a second window showing the
-  live VRAM so a page or CLUT can be watched as it changes, `cainescrossfire/tools/cardump.py` renders
+  live VRAM so a page or CLUT can be watched as it changes, `carhacks/tools/cardump.py` renders
   last run's pages under each palette, and `tools/levpalette.py` gives the defaults to
   compare against.
 

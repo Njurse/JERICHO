@@ -548,10 +548,13 @@ Beyond the game build, the repo ships tooling for the work around it:
   crash-dump triage (`dmp_fault.py` → `map_lookup.py`). See
   [`tools/README.md`](tools/README.md).
 - `JERICHO/MODS/cainescrossfire/tools/` — the Caine's Crossfire workbench: the
-  arena editor (`arenaedit.py`, `view3d.py`), palette/VRAM inspectors
-  (`paletteedit.py`, `vrammap.py`, `vramdump.py`), level and car-data dumpers,
-  and the unattended test harness (`arena_test.sh`, `devcheck.sh`). Described in
-  that mod's own README.
+  arena editor (`arenaedit.py`, `view3d.py`, `arena_menu.bat`), the live palette
+  editor (`paletteedit.py`) and the arena smoke test (`arena_test.sh`). Described
+  in that mod's own README.
+- `JERICHO/MODS/carhacks/tools/` — the carhacks workbench (its own addon now): the
+  cross-city checks (`chk_suite.sh`, `crosscheck.py`, `measure_cities.sh`), the
+  VRAM/car-data tools (`vrammap.py`, `vramdump.py`, `cardump.py`, the `lev*.py`
+  readers) and the cross-city launchers. See its `tools/README.md`.
 
 ### Diagnostics
 

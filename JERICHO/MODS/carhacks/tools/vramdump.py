@@ -2,8 +2,9 @@
 """vramdump.py - decode the VRAM dump the engine can write, and report what is in it.
 
 The engine writes `vram_dump.tga` at the end of a run when JERICHO_DUMPVRAM=1 is set
-(see main.c; it calls PsyCross's GR_SaveVRAM). That is emulated PSX VRAM: 1024x512,
-16-bit, RGB555. This turns it into something measurable - per-rectangle statistics -
+(see main.c; it calls PsyCross's GR_SaveVRAM). That is emulated PSX VRAM: 1024x1024,
+16-bit, RGB555 - the base game only fills rows 0..511; rows 512..1023 are the JERICHO
+arena (carhacks/docs/VRAM.md), so a dump of them is how you see what JERICHO placed. This turns it into something measurable - per-rectangle statistics -
 and into a PNG so a human can look at the same data.
 
 Why it exists: "the imported car's textures look wrong" is not checkable from log
@@ -33,6 +34,10 @@ TPAGEPOS = [
 ]
 PAGE_W, PAGE_H = 64, 256
 
+# VRAM is 1024x1024 in this build (PsyX_render.h VRAM_HEIGHT); rows 512..1023 are the
+# JERICHO arena. Used to bound rectangle walks - never assume the dump is 512 tall.
+VRAM_W, VRAM_H = 1024, 1024
+
 
 def read_tga(path):
     data = open(path, "rb").read()
@@ -59,7 +64,7 @@ def read_tga(path):
 def rect_stats(width, px, x, y, w, h):
     """Distinct colours + whether the rectangle is uniform (i.e. untouched)."""
     seen = {}
-    for row in range(y, min(y + h, 512)):
+    for row in range(y, min(y + h, VRAM_H)):
         base = row * width
         for col in range(x, min(x + w, 1024)):
             c = px[base + col]
@@ -207,9 +212,9 @@ def draw_box(px, width, x, y, w, h, colour, thick=2):
     for t in range(thick):
         for xx in range(max(x, 0), min(x + w, 1024)):
             for yy in (y + t, y + h - 1 - t):
-                if 0 <= yy < 512:
+                if 0 <= yy < VRAM_H:
                     px[yy * width + xx] = colour
-        for yy in range(max(y, 0), min(y + h, 512)):
+        for yy in range(max(y, 0), min(y + h, VRAM_H)):
             for xx in (x + t, x + w - 1 - t):
                 if 0 <= xx < 1024:
                     px[yy * width + xx] = colour

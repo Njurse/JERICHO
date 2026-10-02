@@ -12,7 +12,7 @@ progression. carhacks opens both doors:
   into its own resident model slots, so a Chicago car can be driven on a Havana
   level, a Rio truck on a Vegas level, and so on.
 
-It used to live inside **Caine's Crossfire** (`cainescrossfire/carhacks/`) and be
+It used to live inside **Caine's Crossfire** and be
 registered from that module's entry. It is its own compiled-in module now so it can
 sit *next to any other module* — in particular **multiplayer** (`mp`) — without
 dragging the whole total-conversion in. `carhacks.c/.h` stay host-agnostic (engine
@@ -137,7 +137,7 @@ This is the substantial half, and the rest of this section is what it does.
 ### Why it needs engine support at all
 
 A level's car models are not loose files. They live **inside the level file**, in a
-`CAR` lump, as compressed geometry plus texture-page data ([`FORMATS.md`](../cainescrossfire/carhacks/FORMATS.md)).
+`CAR` lump, as compressed geometry plus texture-page data ([`FORMATS.md`](docs/FORMATS.md)).
 There is no cross-city loader in the game, so "drive a Havana car on a Chicago
 level" means *reading another level file's centre section and building models out of
 it* — which is what the engine-side cross-city API (`InitCarImport`,
@@ -358,10 +358,10 @@ the hot-load hand-off lands ([`MP_ADAPTER.md`](MP_ADAPTER.md)).
 
 ## Testing it
 
-The cross-city test suite and the launchers live in Caine's Crossfire's `tools/`
-(`devcheck.sh`, `launch_mp_*.bat`); they write `JERICHO/CONFIG/carhacks.ini` and
-enable this module by id. `devcheck.sh`'s scenarios are the regression gate: a stock
-run, a foreign car on two different levels, and a foreign **traffic** model.
+The cross-city test suite and the launchers live in this module's `tools/`
+(`chk_suite.sh`, `launch_mp_*.bat`); they write `JERICHO/CONFIG/carhacks.ini` and
+enable this module by id. `chk_suite.sh` is the regression gate: a stock control, the
+imported PLAYER once per host city, a 3-city `city mix`, and a foreign **traffic** model.
 
 This module's own tools (in `tools/`):
 
@@ -454,16 +454,14 @@ Everything is in the run's log; grep for these:
 ## Docs
 
 The mechanism and the city data formats live in this module's `docs/`, beside the
-code they describe. (Only `FORMATS.md`, which documents the level-file and car-lump
-formats that Caine's Crossfire's own tools read, stayed in
-`cainescrossfire/carhacks/`.) Note that engine `file:line` citations throughout
+code they describe. Note that engine `file:line` citations throughout
 these docs are **approximate by design** - the engine moves, the mechanism does
 not - so confirm a citation before relying on the exact line:
 
 - [`CROSS_CITY.md`](docs/CROSS_CITY.md) — what a cross-city import is, cost and lifetime, the budget, the traps
 - [`HACK.md`](docs/HACK.md) — the mechanism in the order it runs
 - [`VEHICLES.md`](docs/VEHICLES.md) — model numbers → what they are, per city
-- [`FORMATS.md`](../cainescrossfire/carhacks/FORMATS.md) — the level-file / lump formats
+- [`FORMATS.md`](docs/FORMATS.md) — the level-file / lump formats
 - [`PALETTES.md`](docs/PALETTES.md) — car palettes and CLUT rows
 - [`VRAM.md`](docs/VRAM.md) — the VRAM layout and how to measure it
 

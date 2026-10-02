@@ -160,7 +160,7 @@ static int ChkOnCarAvailability(void* ud, void* args)
  *
  * The set has two sources, applied in this order:
  *   1. the [carhacks] config (`import = slot:city:model, ...`, traffic_model /
- *      traffic_slot) - the fallback, and what the launchers and devcheck.sh
+ *      traffic_slot) - the fallback, and what the launchers and chk_suite.sh
  *      drive. Off unless cross_city_vehicles is on, exactly as it was.
  *   2. the player's PICK from the car-select menu. That one is an explicit
  *      choice of ONE car, so it imports even when the config-driven hack is off.

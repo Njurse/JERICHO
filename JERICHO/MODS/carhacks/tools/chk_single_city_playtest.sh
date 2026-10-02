@@ -4,8 +4,9 @@
 #
 #   ./chk_single_city_playtest.sh [city] [frames]   city default chicago, frames 60
 #
-# The cainescrossfire suite (tools/devcheck.sh) imports ONE foreign car and asks
-# whether it renders. That cannot see a MULTI-city regression, and the engine can
+# chk_suite.sh (the carhacks acceptance test) drives the PLAYER in ONE imported car.
+# The other half is whether the engine can hold SEVERAL cities at once, which a
+# single-import check cannot see: the engine can
 # hold several cities' car data at once now (one import per city), which made every
 # step of the pin / remap / palette path stop being single-city. So this brings in
 # one car from EACH OTHER city, in a single host level, and reports what the engine

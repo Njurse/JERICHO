@@ -99,7 +99,7 @@ saved by `cainescrossfire.c` `cd2LoadConfig` / `cd2SaveConfig`).
   assigned its team, and which attributes are deliberately not read yet.
 - [`carhacks/docs/CROSS_CITY.md`](../carhacks/docs/CROSS_CITY.md) — what a cross-city
   vehicle import has to pull across, and why colours need more than geometry.
-- [`carhacks/FORMATS.md`](carhacks/FORMATS.md) — the reverse-engineered
+- [`carhacks/docs/FORMATS.md`](../carhacks/docs/FORMATS.md) — the reverse-engineered
   `.LEV`/`.LCF` layouts (citylumps, the 4-byte aligned segment walk,
   `LUMP_CAR_MODELS`/`LUMP_PALLET`, the car draw path) plus Python recipes to
   re-measure them.
@@ -180,7 +180,6 @@ it — and it is fireable through the scripted debug driver as `fire:smg`.
 | `weapons/` | the weapon framework: `core/` (registry + inventory), `raycast/` (machine gun), `projectile/`, `shotgun/`, `drops/`, `aoe/`, `fx/` |
 | `ai/` | the prototype opponent AI (`opponent.c` brain; `nav.c` / `grid.c` / `flow.c` navigation) |
 | `factions/` | the five teams: the registry, the roster, the stance table and the per-car assignment (`factions.c`; see [`FACTIONS.md`](FACTIONS.md)) |
-| `carhacks/` | the vehicle-availability + cross-city hacks' **docs** (the code is its own module now: `JERICHO/MODS/carhacks/`), plus the city-data format docs (`CROSS_CITY.md`, `HACK.md`, `FORMATS.md`, `PALETTES.md`, `VEHICLES.md`, `VRAM.md`) |
 | `tools/` | the test launchers and the arena smoke test |
 | `mod.toml` | package metadata (`id`, `default-enabled`) |
 
@@ -234,20 +233,21 @@ All five `cd` into `bin\Release_dev\`, then `start` `REDRIVER2_dev.exe`:
 | `launch_tar_random.bat` | Take-a-Ride with a random city, a random slot (1..8 and 10), a random weather and time: `-level <city> -car slot<N> -weather <w> -time <t> -gamemode takeadrive`. |
 | `launch_mp_chicago_semi.bat` | Chicago's **multiplayer arena 1** (`-mp 1`; `-mp 0` is the other arena), player spawned as the **semi** when its data is present. |
 | `launch_tar_chicago_semi.bat` | **Single-player** Chicago, player spawned as the semi when its data is present. |
-| `launch_mp_random_mix.bat` | Multiplayer arena with a random cross-city import and a mixed roster; **overwrites** `carhacks.ini`; supports a `dry` argument. |
-| `launch_mp_foreign_car.bat` | The same arena mix with the coin flip removed: the player is **always** in a foreign car, drawn from the source city's **whole usable roster** — civilian bodies 0..4 as well as the special ones 8, 9, 10 and 12, plus 11 when the source city has it (Chicago does not) — selected with `-car <model>`. Civilian bodies are imported slot-for-slot over slots 0..4 and special bodies into spare slot 5, because carhacks only writes a model number and the engine then spawns the player in whichever resident slot already holds it. Supports `dry`. |
+
+The two cross-city arena launchers that used to sit here - `launch_mp_foreign_car.bat`
+and `launch_mp_random_mix.bat` - moved with the module to
+[`carhacks/tools/`](../carhacks/tools/README.md), along with every other cross-city
+tool (`chk_suite.sh`, `crosscheck.py`, `vrammap.py`, `vramdump.py`, `cardump.py`, the
+`lev*.py` readers, `cycle_vehicles.bat`). Caine's Crossfire leverages carhacks rather
+than carrying it: `mod.toml` declares it as a dependency.
+
+The reliable way to reproduce the outstanding cross-city rendering limitation is
+`carhacks/tools/launch_mp_foreign_car.bat`: a foreign vehicle carries the other
+city's geometry and palettes, but its polygons name **that** city's texture pages,
+which this level has not loaded - so it does not yet render correctly. That work is
+described in `carhacks/docs/CROSS_CITY.md`.
 | `launch_cc_select.bat` | Boot straight into the **CC select flow** (`-ccmenu`): pick an arena (the four cities), then a vehicle (every registered profile), then the match starts. No `-level`, so the game comes up in the frontend. Supports `dry`. |
 
-`launch_mp_foreign_car.bat` is the reliable way to reproduce the outstanding
-cross-city rendering limitation: a foreign vehicle carries the other city's
-geometry and palettes, but its polygons name **that** city's texture pages, which
-this level has not loaded — so it does not yet render correctly. That work is
-described in `carhacks/docs/CROSS_CITY.md`.
-
-**They share one config file.** Both `launch_mp_*` launchers write the same
-`JERICHO/CONFIG/carhacks.ini`, so two runs at once will clobber each other's roll
-(and a game already in progress picks the change up on its next level load). Run
-one at a time, or check the file after launching if the cars look wrong.
 
 
 Both `*_chicago_semi.bat` launchers want the semi at
@@ -257,17 +257,6 @@ crashes the game during load, so each script checks the file first and, if it is
 missing, spawns the school bus (`-car slot8`) instead — drop the semi's file in
 and the same script spawns the semi.
 
-`launch_mp_random_mix.bat` rolls a random arena city and a **different** city to
-import from, then imports 1-2 foreign vehicles into random resident slots (0..6;
-0..4 feed ambient traffic, 5..6 are spare capacity) and — half the time — gives
-the player a random foreign car instead of a local slot. The AI opponents pick
-their car at spawn by enumerating the resident slots the level actually loaded,
-and ambient traffic draws from slots 0..4, so both mix the imports in on their
-own. Run it with the argument `dry` to print the roll, the `carhacks.ini` it
-*would* write and the launch line, without writing or launching anything. When
-it *does* run it **overwrites** `bin\Release_dev\JERICHO\CONFIG\carhacks.ini`
-(the cross-city hack is off by default; the launcher switches it on for the
-session).
 
 ### Standing hazard: never use `-car slot9`
 
@@ -288,7 +277,7 @@ any index past a level's loaded car pool crashes the same way.
 - **Never delete `REDRIVER2.log`.** The user's own sessions write that file too.
   Snapshot it (copy to a per-run name, as `arena_test.sh` does) instead.
 - `REDRIVER2.log` is **truncated at session start and flushed at close** (see
-  `carhacks/FORMATS.md` §8), so a log snapshotted right after a `taskkill` can
+  `carhacks/docs/FORMATS.md` §8), so a log snapshotted right after a `taskkill` can
   be cut off mid-session — treat a missing tail accordingly.
 
 ## Validation checklist
