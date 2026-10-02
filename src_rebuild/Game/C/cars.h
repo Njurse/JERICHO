@@ -116,6 +116,12 @@ extern void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* mo
 extern void MangleWheelModels(); // 0x000230C8
 
 extern char GetCarPalIndex(int tpage); // 0x00023390
+
+// JERICHO: what a row (or one texture_id within it) can offer a spawned car's colour
+// variant - the highest colour column the foreign lump actually filled. 0 means "only the
+// page's own CLUT". The draw clamps with these so a car never reads a column nothing wrote.
+extern int CivClutRowMaxSlot(int row);
+extern int CivClutTexMaxSlot(int row, int texid);
 extern int CarPalIndexInCityFor(int tpage, int city); // JERICHO: the same, given the city (cars.c)
 extern void CarImportPaletteReset(void); // JERICHO: forget a level's deferred palette work (cars.c)
 

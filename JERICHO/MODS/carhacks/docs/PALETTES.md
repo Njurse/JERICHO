@@ -329,3 +329,35 @@ missing.
 - The cross-city invariant hashes `civ_clut` (all rows now) and says nothing about VRAM.
 - The session log is `JERICHO.log` in this build, **not** `REDRIVER2.log`; a stale
   `REDRIVER2.log` can sit in the same folder.
+
+## The import's model rows and its lump rows are disjoint (measured 2026-10-01)
+
+`civ_clut` rows are now instrumented with the colour columns each row actually got
+(`CivClutRowMaxSlot`/`CivClutTexMaxSlot`, recorded at the one write site in
+`ProcessPalletLumpForRows`, printed by `CarPalRowReport` as "has colour variants" vs
+"slot 0 only"). That census and a per-city row comparison immediately found a gap the
+row filter cannot explain:
+
+```
+civ_clut 8..15 (HAVANA): uploading for 2 of its block's 8 rows
+  row 14: READ by the built model, but 0 of the lump's entries map to it
+  row 15: READ by the built model, but 0 of the lump's entries map to it
+  rows  8..13: the lump holds 30/120/125/125/140 entries the model does NOT read
+```
+
+- The **built model** baked rows `base+6`/`base+7` (14/15) for its special-body pages —
+  that is the `specTpages` scan in `CarPalIndexInCity`, which maps a special page onto
+  the bank's last two rows.
+- The **lump** holds no entry whose `tpageindex` resolves there. Its entries resolve to
+  rows `base..base+5` (8..13) via `carTpages`, which the model does not read.
+- So the row filter drops every one of them (`wanted=0`), the two rows the model *does*
+  read stay empty, and those polys draw colourless. **Uploading the whole block would not
+  help** — the data for rows 14/15 is not in the lump at all.
+
+Consequence for the earlier plan: "stop row-filtering the upload" is *not* the fix for
+this symptom. The disagreement is between how the model *maps* a page to a row
+(`specTpages` → the bank's last two) and how the lump's entries map (via `carTpages` →
+`base..base+5`). Either the model should read the rows the lump fills, or the special
+pair needs its own lump. A `cross-city: ... those polys draw colourless` line is now
+emitted per row so this stays visible instead of being rediscovered as "some cars still
+look wrong".

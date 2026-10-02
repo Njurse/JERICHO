@@ -130,6 +130,15 @@ u_short civ_clut[CIV_CLUT_ROWS][32][6];
 static int sCivClutRowWriters[CIV_CLUT_ROWS];
 static int sCivClutRowCity[CIV_CLUT_ROWS][4];
 
+// JERICHO: and WHICH COLOUR COLUMN of each row was actually filled. A spawned car picks
+// its variant (0..5, civ_ai.c) and the draw reads civ_clut[row][texture_id][variant+1],
+// but the upload only writes the columns the lump names - so a car can ask for a column
+// nothing ever wrote and silently get the row's slot 0 instead. These maxima are what the
+// draw clamps against, and what the palette map reports, so "the upload and the selector
+// agree" is a measurement rather than an assumption.
+static int sCivClutRowMaxSlot[CIV_CLUT_ROWS];       // highest slot written in the row
+static int sCivClutTexMaxSlot[CIV_CLUT_ROWS][32];   // ...and per texture_id within it
+
 static void CarPalRowNote(int row, int city)
 {
 	int i;
@@ -151,6 +160,11 @@ static void CarPalRowClear(void)
 
 	for (r = 0; r < CIV_CLUT_ROWS; r++)
 		sCivClutRowWriters[r] = 0;
+
+	// The colour-column coverage goes with the writers: a new level re-uploads the rows it
+	// needs, so a stale maximum would let the draw pick a column this level never filled.
+	memset(sCivClutRowMaxSlot, 0, sizeof(sCivClutRowMaxSlot));
+	memset(sCivClutTexMaxSlot, 0, sizeof(sCivClutTexMaxSlot));
 }
 
 // JERICHO: which civ_clut block this guest city owns.
@@ -228,6 +242,24 @@ static int CarPalIndexInCity(int tpage, int city);
 // imported slot's car reads the import bank, then which city wrote each row - so a
 // car whose colours are wrong can be traced to the row it reads and the city that
 // overwrote it, instead of being a mystery on one vehicle.
+// JERICHO: how many colour columns a row has for a spawned car to choose from.
+int CivClutRowMaxSlot(int row)
+{
+	if (row < 0 || row >= CIV_CLUT_ROWS)
+		return 0;
+
+	return sCivClutRowMaxSlot[row];
+}
+
+// JERICHO: the same question for one texture_id of a row (0 = the page's own CLUT only).
+int CivClutTexMaxSlot(int row, int texid)
+{
+	if (row < 0 || row >= CIV_CLUT_ROWS || texid < 0 || texid >= 32)
+		return 0;
+
+	return sCivClutTexMaxSlot[row][texid];
+}
+
 void CarPalRowReport(void)
 {
 	int r, i, slot, collisions = 0, claimed = 0;
@@ -256,7 +288,8 @@ void CarPalRowReport(void)
 
 		claimed++;
 
-		printInfo("cross-city: palette map - civ_clut row %d written by", r);
+		printInfo("cross-city: palette map - civ_clut row %d (%s) written by", r,
+			(sCivClutRowMaxSlot[r] > 0) ? "has colour variants" : "slot 0 only");
 
 		for (i = 0; i < sCivClutRowWriters[r]; i++)
 			printInfo(" %s", LevelNames[sCivClutRowCity[r][i]]);
@@ -1747,6 +1780,15 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 	int nPage = 0;
 	int k;
 
+	// JERICHO-DIAG: what the mask asked for vs what the lump actually holds, per row.
+	int histRow[CIV_CLUT_ROWS];
+	int histNeed[CIV_CLUT_ROWS];
+	int histWrite[CIV_CLUT_ROWS];
+
+	memset(histRow, 0, sizeof(histRow));
+	memset(histNeed, 0, sizeof(histNeed));
+	memset(histWrite, 0, sizeof(histWrite));
+
 	for (k = 0; k < 16; k++)
 	{
 		pageClut[k] = 0;
@@ -1793,6 +1835,14 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 			palidx = 0;	// not a car palette in this city - stock behaviour
 
 		needed = (rowNeeded == NULL) ? 1 : rowNeeded[palidx];
+
+		if (rowNeeded != NULL && palidx >= 0 && palidx < CIV_CLUT_ROWS)
+		{
+			histRow[palidx]++;
+
+			if (needed)
+				histNeed[palidx]++;
+		}
 
 		// JERICHO: the reclaim. This CLUT belongs to a row the imported model does not
 		// draw from, so it is neither uploaded nor entered into civ_clut - nothing reads
@@ -1932,7 +1982,35 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 				slot = 5;
 
 			civ_clut[palidx][texnum][slot] = clutValue;
+
+			if (palidx >= 0 && palidx < CIV_CLUT_ROWS)
+				histWrite[palidx]++;
+
+			if (slot > sCivClutRowMaxSlot[palidx])
+				sCivClutRowMaxSlot[palidx] = slot;
+			if (texnum >= 0 && texnum < 32 && slot > sCivClutTexMaxSlot[palidx][texnum])
+				sCivClutTexMaxSlot[palidx][texnum] = slot;
 		}
+	}
+
+	// JERICHO: a row the built model reads but this city's lump cannot fill. The car then
+	// draws those polys from an all-zero palette row - a garbled car - and no amount of
+	// uploading fixes it, because the data is not in the lump at all. Say it here, where the
+	// mismatch is known, rather than leaving it to be rediscovered as "some cars still look
+	// wrong". Measured on a HAVANA-in-CHICAGO import: the model names rows 14 and 15 (its
+	// special-body pair) and the lump holds 0 entries that map to either, while the 30..140
+	// entries it does hold map to rows 8..13, which the model does not read.
+	if (rowNeeded != NULL)
+	{
+		int blockBase = CarImportBankRow(city);
+		int blockEnd = (blockBase < 0) ? 0 : blockBase + CIV_CLUT_BLOCK_ROWS;
+
+		// Only this city's OWN block: the mask spans every guest's rows, so without this a
+		// city would be blamed for a neighbour's rows it was never asked to fill.
+		for (k = blockBase; k < blockEnd && k < CIV_CLUT_ROWS; k++)
+			if (k >= 0 && rowNeeded[k] && histWrite[k] == 0)
+				printInfo("cross-city: %s palettes: row %d is READ by the built model but the lump wrote nothing to it (%d of its entries map to other rows) - those polys draw colourless\n",
+					LevelNames[city], k, histRow[k]);
 	}
 
 	// JERICHO: commit the rows the guest walk actually used. IncrementClutNum wraps
