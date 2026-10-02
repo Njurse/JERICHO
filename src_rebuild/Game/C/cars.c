@@ -139,6 +139,11 @@ static int sCivClutRowCity[CIV_CLUT_ROWS][4];
 static int sCivClutRowMaxSlot[CIV_CLUT_ROWS];       // highest slot written in the row
 static int sCivClutTexMaxSlot[CIV_CLUT_ROWS][32];   // ...and per texture_id within it
 
+// JERICHO: how often the draw clamped a spawned variant down to a column that exists (see
+// CarClutVariant). Zero on a stock level is the invariant: the clamp must never touch the
+// host's own rows 0..7. Reported by CarPalRowReport, which runs at exit.
+static int sClutClampCount;
+
 static void CarPalRowNote(int row, int city)
 {
 	int i;
@@ -316,6 +321,11 @@ void CarPalRowReport(void)
 
 	printInfo("cross-city: palette map - %d of the import bank's %d rows written, %d of them by more than one city\n",
 		claimed, CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW, collisions);
+
+	// JERICHO: how often the draw had to clamp a spawned variant down to a column that
+	// exists. Zero on a stock level is the invariant that matters: the clamp must never
+	// touch the host's own rows 0..7, and this is the number that says so.
+	printInfo("cross-city: palette map - %d draw-time variants clamped to a column that exists\n", sClutClampCount);
 }
 
 #define MAX_CAR_POLYS	(200 * 2) * MAX_CAR_RESIDENT_MODELS
@@ -448,6 +458,46 @@ void plotCarPolyFT3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *
 	pg->primptr = (unsigned char*)prim;
 }
 
+// JERICHO: the colour COLUMN a poly may use, bounded by what its row actually holds.
+//
+// The variant is the spawner's choice (ap.palette, 0..5 in civ_ai.c) but the upload only
+// fills the columns a city's lump names, so an unbounded variant reads whatever the
+// NEIGHBOURING texture_id's colour happens to be, or an empty slot. That is a car wearing
+// someone else's palette, with no other symptom to go on.
+//
+// Only the import bank is constrained. Slots are 0..5 within a texture_id's 6-entry group,
+// where slot 0 is the page's own CLUT and is always refilled - so 0 is always a valid
+// answer. Rows 0..7 are the host level's OWN car palettes, filled by a path that records no
+// coverage; clamping those to 0 would pin every stock car to one colour, which is a worse
+// bug than the one being fixed, so they are left alone.
+static int CarClutVariant(int clutIdx, int palette)
+{
+	int row, texid, max;
+
+	if (clutIdx < 0)
+		return palette;
+
+	row = clutIdx / (6 * 32) + 1;		// pg->pciv_clut is &civ_clut[1]
+	texid = (clutIdx % (6 * 32)) / 6;
+
+	if (row < CIV_CLUT_IMPORT_ROW || row >= CIV_CLUT_ROWS)
+		return palette;
+
+	max = CivClutTexMaxSlot(row, texid);
+
+	if (max < 0)
+		max = 0;
+
+	if (palette > max)
+	{
+		sClutClampCount++;
+
+		return max;
+	}
+
+	return palette;
+}
+
 // [D] [T]
 void plotCarPolyGT3(int numTris, CAR_POLY *src, SVECTOR *vlist, SVECTOR *nlist, plotCarGlobals *pg, int palette)
 {
@@ -505,10 +555,10 @@ void plotCarPolyGT3(int numTris, CAR_POLY *src, SVECTOR *vlist, SVECTOR *nlist, 
 			{
 				gt3DiagCount++;
 				printInfo("cross-city: imported GT clut index %d -> CLUT id %04x (palette %d)\n",
-					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette], palette);
+					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)], palette);
 			}
 
-			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
 			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
@@ -587,10 +637,10 @@ void plotCarPolyGT3Lit(int numTris, CAR_POLY* src, SVECTOR* vlist, SVECTOR* nlis
 			{
 				gt3DiagCount++;
 				printInfo("cross-city: imported GT clut index %d -> CLUT id %04x (palette %d)\n",
-					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette], palette);
+					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)], palette);
 			}
 
-			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
 			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
@@ -675,10 +725,10 @@ void plotCarPolyGT3nolight(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGl
 			{
 				gt3DiagCount++;
 				printInfo("cross-city: imported GT clut index %d -> CLUT id %04x (palette %d)\n",
-					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette], palette);
+					(src->clut_uv0 >> 0x10), pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)], palette);
 			}
 
-			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + palette] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
+			*(u_int*)&prim->u0 = pg->pciv_clut[(src->clut_uv0 >> 0x10) + CarClutVariant(src->clut_uv0 >> 0x10, palette)] << 0x10 | (src->clut_uv0 & 0xffff) + ofse;
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
 			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);

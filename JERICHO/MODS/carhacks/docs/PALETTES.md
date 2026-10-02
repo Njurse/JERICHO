@@ -389,3 +389,23 @@ the rows the lump fills, or those pages need their own lump; that is the open fo
 (A diagnostic detail fixed here: the palette map reported the HOST city's own car as
 reading the import bank, because `CarImportBankRow` answers that for a city with no band.
 The host reads rows 0..7 and the map now says so.)
+
+### The draw-time clamp, and what it did not prove
+
+`CarClutVariant` (cars.c) bounds the column the draw reads: it decodes the row from the GT
+clut index (`clut_uv0 >> 16` is `(carid-1)*192 + texid*6`, `pg->pciv_clut` is
+`&civ_clut[1]`), and if that row is in the import bank it clamps the spawned variant to
+`CivClutTexMaxSlot(row, texid)`. Slot 0 is the page's own CLUT and is always refilled, so 0
+is always a valid answer. Rows 0..7 are left alone deliberately — those are the host's own
+car palettes, filled by a path that records no coverage, and clamping them would pin every
+stock car to one colour.
+
+`CarPalRowReport` counts the clamps, and on a stock level the count is meaningless because
+the report never runs without an import — so the invariant "the clamp never touches the
+host" rests on the early return for `row < CIV_CLUT_IMPORT_ROW`, not on a measurement.
+
+**The clamp did not fire in any run measured: 0 over 400 frames of a three-city mashup.**
+The rows that *do* have no coverage (base+1, base+6, base+7) belong to models that were not
+drawn in that window with a variant above 0. So this is a guard against the case where a
+spawned car picks a column its row does not hold — it is not a demonstrated fix, and a run
+that exercises those models (a special body spawned and respawning) is what would prove it.
