@@ -149,16 +149,24 @@ full:
 | run | CLUT rows used | safe free |
 |---|---|---|
 | any stock level | 172 | 38 |
-| + one imported car | 210–220 | **0 — OVERFLOW into the level font** |
+| + one imported car | 210–220 | **0 — used to overflow into the level font** |
 
-So the column accepts **one** imported car and already paints over rows 466..511
-(the level font) to do it (`VRAM.md` §6.1; the import's own rows start at `y=480`).
-A second city adds a whole second palette table (~15 KB ≈ 40+ rows) with **no room
-at all**. That is why **one guest city's PALETTES per level** is honest — the
-geometry side holds several cities (`gCarImports[4]`), but the palette side does
-not — and why the CLUT
-reclaim in `VRAM.md` §6.1 is the *prerequisite* for the hotload, not a parallel
-task: until the column can hold two cities, no amount of RAM headroom helps.
+So the column accepted **one** imported car, and painted over rows 466..511 (the
+level font) to do it — the import's rows were force-started at `y=480`, which is
+inside the glyphs (`VRAM.md` §3, §6.1). A second city adds a whole second palette
+table (~15 KB ≈ 40+ rows) with **no room at all**. That is why **one guest city's
+PALETTES per level** is honest — the geometry side holds several cities
+(`gCarImports[4]`), but the palette side did not.
+
+**This is no longer the constraint: the import's CLUTs come from the arena.** Since
+the bottom-half work landed, an import's palette rows are taken from the arena's own
+column at x960..1023 / rows 512..1023 (`firstFree = JER_VRAM_HALF_Y`), so the base
+half's strip is the level's again, rows 466..511 are never written, and the
+"no CLUT-safe room" refusal with its `y=480` fallback are deleted. Measured: a
+3-city mix uses **28** arena CLUT rows of 512, the strip reads "125 rows used, 85
+safe free, no overflow", and the font region is byte-identical to a stock run
+(`VRAM.md` §0). So more than one guest city's palettes now fit comfortably; what is
+still open is page IDENTITY, not room (`VRAM.md` §7).
 
 ## Failure behaviour
 
