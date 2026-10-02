@@ -1367,6 +1367,9 @@ MODEL* GetCarModel(char* src, char** dest, int KeepNormals)
 }
 
 // [D] [T] [A]
+// JERICHO: the palette row a built poly may bake. Never negative - see its definition.
+static int CarPalIndexForBuild(int tpage, int city);
+
 void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 {
 	// JERICHO: only an imported car's polys get the set remap. index is the resident
@@ -1506,7 +1509,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 
 						CarModelSetsAdd(index, pgt3->texture_set);
 
-						carid = CarPalIndexInCityFor(pgt3->texture_set, srcCity);
+						carid = CarPalIndexForBuild(pgt3->texture_set, srcCity);
 						clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
 
 						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
@@ -1532,7 +1535,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						// second-bank row (8..15) for a page belonging to the imported city, so
 						// an import reads its own palettes through exactly the host's formula.
 						// A GT poly's clut_uv0 high word is a civ_clut INDEX, not a CLUT id.
-						carid = CarPalIndexInCityFor(pgt4->texture_set, srcCity);
+						carid = CarPalIndexForBuild(pgt4->texture_set, srcCity);
 						clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
 
 						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
@@ -2591,6 +2594,36 @@ int CarPalIndexInCityFor(int tpage, int city)
 		return GetCarPalIndex(tpage);
 
 	return CarPalIndexInCity(tpage, city);
+}
+
+// JERICHO: the palette row a BUILT poly bakes, which must never be negative.
+//
+// `CarPalIndexInCityFor` answers -1 for a set that is in neither the source city's
+// carTpages nor its specTpages, and the bake sites then compute
+// `clut = (carid - 1) * 6 * 32 + texture_id * 6` - at carid = -1 that is NEGATIVE. The poly's
+// clut_uv0 high word is a civ_clut INDEX (not a CLUT id), so at draw time it reads BEFORE
+// civ_clut[1] - and the line beside it WRITES `civ_clut[-1][texture_id][0]`, i.e. out of
+// bounds. Build-time memory corruption, and a wrong palette on every poly naming that set:
+// "broken palettes on each panel" with no other symptom.
+//
+// A set in neither table means the import and the model disagree about what the set IS, so
+// fall back to the held-city search (GetCarPalIndex), which always answers a real row - 0 at
+// worst, which is a wrong COLOUR rather than a wild write - and say so once.
+static int sPalBakeMiss;
+static int CarPalIndexForBuild(int tpage, int city)
+{
+	int idx = CarPalIndexInCityFor(tpage, city);
+
+	if (idx < 0)
+	{
+		if (sPalBakeMiss++ < 4)
+			printInfo("cross-city: set %d has no palette row in %s (nor in any held city) - baking row 0 for its polys rather than a negative index\n",
+				tpage, (city >= 0 && city < 4) ? LevelNames[city] : "?");
+
+		idx = GetCarPalIndex(tpage);
+	}
+
+	return idx;
 }
 
 char GetCarPalIndex(int tpage)
