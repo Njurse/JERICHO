@@ -1,4 +1,4 @@
-# Where the 1 MiB of VRAM goes, and how to measure it
+# Where VRAM goes: the base 1 MiB, the JERICHO arena, and how to measure it
 
 The canonical reference for **VRAM layout and headroom**. Read this before changing any
 VRAM layout, before reserving a region, or when a texture/page/palette misbehaves in a
@@ -32,9 +32,44 @@ column's health can be read over time rather than only now. Take one with
 a dump, reads the numbers from that run's own log, stamps them into the figure, and
 appends the index row.
 
-## 1. The 1 MiB, in three parts
+## 0. The buffer is 2 MiB now: rows 0..511 base, rows 512..1023 JERICHO
 
-PSX VRAM is 1024x512 16-bit texels = 1 MiB. This engine divides it like so:
+The emulator's VRAM is **1024x1024** (PsyCross `PsyX_render.h`, `VRAM_HEIGHT`), i.e. 2 MiB
+of texels, cut in two by what can ADDRESS it rather than by choice:
+
+| rows | who can write/read it | what it is |
+|---|---|---|
+| **0..511** | every stock path: `tpagepos[]` (Y in {0,256}), the CLUT cursors, the display buffers, the sky, the level font | the base 1 MiB - everything in §§1-6 below |
+| **512..1023** | JERICHO code only | the **arena**: `JerVramArenaPageAlloc` / `JerVramArenaClutAlloc` (`texture.c`), `JER_VRAM_HALF_Y` (`cars.h`) |
+
+Rows >=512 are addressable because the tpage word's Y is not one bit: `getTPage` packs
+bit 4 (Y+256) **and bit 11 (Y+512)**, and the renderer's shader decodes both
+(`PsyX_render.cpp`, `v_page_clut.y`). So a page at row 512 or 768 is an ordinary tpage to
+everything downstream. A CLUT's Y is 10 bits (`clut >> 6`) once the 9-bit masks are gone,
+which is what `texture.c` and `pedest.c` now use - and the DR_TPAGE parser keeps bit 11
+its own encoder (`_get_mode`) already wrote.
+
+The arena is **30 pages** of 64x256 (two page-rows x 15 columns) plus a CLUT column
+mirroring the base one at x960..1023, rows 512..1023. It starts at **x=0**: the base half
+cannot, because x0..319 there is the display buffers, which is why the arena gets the full
+width and 1024 KiB rather than a strip.
+
+**Nothing stock can take it.** `tpagepos[]` holds only Y in {0,256} and the CLUT cursors
+are bounded by `CD2_CLUT_SAFE_LAST`, so the arena is not a reservation that a flag could
+leak - it is a row range no base-game path computes. Measured: a full level load leaves
+rows 512..1023 **bit-exactly zero** (`vrammap.py`: `never-written: 1024 KiB of 2048`), and
+the run's census reads `arena rows 512..1023: pages 0 used of 30 (30 free), clut rows 0
+used (512 free)`.
+
+**State as of this commit: the arena exists and is inert.** The cross-city import still
+places in the base half, so §§4-6 - the pin band, the font collision, and the INV1/INV2
+failures `chk_suite.sh` reports - are still current. Moving the import into the arena is
+the next unit; once it lands, those sections describe the fallback path instead.
+
+## 1. The base 1 MiB, in three parts
+
+PSX VRAM is 1024x512 16-bit texels = 1 MiB, and that is exactly the base half (rows
+0..511) of this build's buffer. This engine divides it like so:
 
 | region | rect | size | owner |
 |---|---|---|---|
@@ -183,7 +218,7 @@ largest free in texture area=(0,0) 0x0 = 0 KiB
 
 Two dumps from **different states of the same session** (a frontend dump and an in-game
 one, or -frames 20 and -frames 300) are what let the tool separate *resident* from
-*streamed*; a single dump can only say "written". `cainescrossfire/tools/vram_baseline.txt` is the recorded
+*streamed*; a single dump can only say "written". `carhacks/tools/vram_baseline.txt` is the recorded
 baseline (Havana, seed 7, stock and `import = 5:3:9`) with the exact commands in its
 header, so a future change can be diffed against it.
 
@@ -239,7 +274,12 @@ and only the kept rows are uploaded:
 | RIO -> Havana | 57 rows | **38 rows** (428 → 466) | **0** (fits exactly) |
 | CHICAGO -> Vegas | 57 rows | **42 rows** (428 → 470) | **4** |
 
-All four `devcheck.sh` scenarios stay clean with `lost 0`.
+`chk_suite.sh` is the gate. Its stock control and the imported-PLAYER rows must stay clean
+(the player really driving the foreign car, the invariants holding). Two rows are currently
+RED, and both are the contention this bottom-half work exists to remove: the PLAYER row on
+the host with the least free VRAM (it takes a WORLD page - INV1), and the 3-city `city mix`
+(world evictions, and pages `lost`). Expected to fail until the arena lands - that is the
+measurement, not a surprise.
 
 **It is not enough on its own.** The reclaim is bounded by something less obvious than the
 row count: the lump stores its CLUTs under the rows being skipped and the kept rows

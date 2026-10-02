@@ -1772,7 +1772,7 @@ void GR_SaveVRAM(const char* outputFileName, int x, int y, int width, int height
 #ifdef __cplusplus
 extern "C"
 #endif
-int GR_ShowVRAMDebug();
+int GR_ShowVRAMDebug(int scale, int rx, int ry, int rw, int rh);
 
 // JERICHO: PsyCross's live-window screenshot (PsyX_main.cpp PsyX_TakeScreenshot) --
 // glReadPixels of the window into SCREENSHOT.BMP. Declared WITHOUT extern "C" on
@@ -1786,12 +1786,16 @@ void PsyX_TakeScreenshot(void);
 // (see Game/C/jer_texture.c).
 extern int gJerTextureRenderPass;
 
-// JERICHO: -vramview [frames] - open a SECOND window showing the live VRAM,
-// refreshed every frame, so a page/CLUT can be watched as it moves. Also
-// re-dumps vram_live.tga every <frames> (default 15) for tools/vramdump.py.
+// JERICHO: -vramview [interval] [scale] [x y w h] - open a SECOND window showing
+// the live VRAM, refreshed every frame, so a page/CLUT can be watched as it moves.
+// [scale] is an integer zoom and [x y w h] the VRAM region to show (omit for the
+// whole buffer - e.g. '0 512 1024 512' for just the JERICHO bottom half). Also
+// re-dumps vram_live.tga every <interval> frames (default 15) for tools/vramdump.py.
 int gVramViewInterval = 0;
 int gVramViewCounter = 0;
 int gVramViewWindowReported = 0;
+int gVramViewScale = 1;
+int gVramViewRegion[4] = { 0, 0, 0, 0 };
 
 void JerichoVramViewTick(void)
 {
@@ -1799,7 +1803,8 @@ void JerichoVramViewTick(void)
 		return;
 
 	// The live window, every frame.
-	if (GR_ShowVRAMDebug() && gVramViewWindowReported == 0)
+	if (GR_ShowVRAMDebug(gVramViewScale, gVramViewRegion[0], gVramViewRegion[1],
+			gVramViewRegion[2], gVramViewRegion[3]) && gVramViewWindowReported == 0)
 	{
 		gVramViewWindowReported = 1;
 		printInfo("[vramview] live VRAM window open\n");
@@ -1811,7 +1816,7 @@ void JerichoVramViewTick(void)
 
 	gVramViewCounter = 0;
 
-	GR_SaveVRAM("vram_live.tga", 0, 0, 1024, 512, 0);
+	GR_SaveVRAM("vram_live.tga", 0, 0, 1024, 1024, 0);
 }
 
 // JERICHO: the -frames check, shared by every per-frame entry point so a debug run
@@ -1896,8 +1901,8 @@ void JerichoFrameTick(void)
 	// needs no option-block plumbing: JERICHO_DUMPVRAM=1.
 	if (getenv("JERICHO_DUMPVRAM") != NULL)
 	{
-		GR_SaveVRAM("vram_dump.tga", 0, 0, 1024, 512, 0);
-		printInfo("JERICHO-RUN: wrote vram_dump.tga (1024x512, bReadFromFrameBuffer=0)\n");
+		GR_SaveVRAM("vram_dump.tga", 0, 0, 1024, 1024, 0);
+		printInfo("JERICHO-RUN: wrote vram_dump.tga (1024x1024, bReadFromFrameBuffer=0)\n");
 	}
 
 	// JERICHO: where the imported pages ended up, after the level has streamed.
@@ -2237,9 +2242,12 @@ void PrintCommandLineArguments()
 		"  -level <chicago|havana|lasvegas|rio|0-3> : boot straight into a city,\n"
 		"        bypassing the frontend (game mode defaults to Take A Ride)\n"
 		"  -car <number|slot1..slot10> : player car (model index or frontend slot)\n"
-		"  -vramview [frames] : open a second window showing the live VRAM,\n"
-		"        refreshed every frame (also re-dumps vram_live.tga every\n"
-		"        <frames>, default 15, for tools/vramdump.py)\n"
+		"  -vramview [interval] [scale] [x y w h] : open a second window showing the\n"
+		"        live VRAM, refreshed every frame (also re-dumps vram_live.tga every\n"
+		"        <interval>, default 15, for tools/vramdump.py). [scale] is an integer\n"
+		"        zoom (0 or omitted = auto-fit; the window is kept small and is\n"
+		"        resizable); [x y w h] is the region to show (omit for the whole\n"
+		"        buffer, or use '0 512 1024 512' for just the JERICHO bottom half)\n"
 		"  -console : attach a console window showing the engine log live\n"
 		"  -gamemode <takeadrive|pursuit|getaway|gaterace|checkpoint|trailblazer|\n"
 		"        survival|copsandrobbers|capturetheflag> : game mode override\n"
@@ -2724,21 +2732,41 @@ int redriver2_main(int argc, char** argv)
 		}
 		else if (!strcmp(argv[i], "-vramview"))
 		{
-			// Optional frame interval (default 15). Independent of -level.
-			int iv = 15;
+			// Optional numeric tail: interval (default 15), scale, then x y w h of the
+			// region to show. All are decimal so a following -flag stops the run.
+			// scale 0 = auto-fit (the window is kept small; see GR_ShowVRAMDebug).
+			int iv = 15, sc = 0, rx = 0, ry = 0, rw = 0, rh = 0;
+			int got = 0;
 
-			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
+			while (got < 6 && i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
 			{
-				iv = atoi(argv[i + 1]);
-				i++;
+				int v = atoi(argv[++i]);
+
+				switch (got)
+				{
+					case 0: iv = v; break;
+					case 1: sc = v; break;
+					case 2: rx = v; break;
+					case 3: ry = v; break;
+					case 4: rw = v; break;
+					case 5: rh = v; break;
+				}
+
+				got++;
 			}
 
 			if (iv < 1)
 				iv = 1;
 
 			gVramViewInterval = iv;
+			gVramViewScale = sc;
+			gVramViewRegion[0] = rx;
+			gVramViewRegion[1] = ry;
+			gVramViewRegion[2] = rw;
+			gVramViewRegion[3] = rh;
 
-			printInfo("[vramview] re-dumping vram_live.tga every %d frames\n", iv);
+			printInfo("[vramview] re-dumping vram_live.tga every %d frames; window region (%d,%d) %dx%d at %s\n",
+				iv, rx, ry, rw, rh, sc > 0 ? "zoom" : "auto-fit");
 		}
 		else if (!strcmp(argv[i], "-console"))
 		{

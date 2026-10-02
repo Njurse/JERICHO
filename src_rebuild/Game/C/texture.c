@@ -137,6 +137,138 @@ void IncrementClutNum(RECT16 *clut)
 	}
 }
 
+// ---------------------------------------------------------------------------
+// JERICHO: the bottom-half VRAM arena (see JER_VRAM_HALF_Y in cars.h).
+//
+// Everything JERICHO loads - the cross-city import's pages and palettes, and later the
+// custom textures that name a real page - is placed HERE, in rows 512..1023, instead of
+// being squeezed into the top half's claims. The top half is full (VRAM.md 2: 19 page
+// slots, a 32 KiB CLUT column and the sky = 704 KiB of 704), so an import placed there
+// has to TAKE something: that is where INV1 ("pinned to a WORLD-pool rectangle") and the
+// font collision come from. Placing below instead makes the question go away.
+//
+// Pages are two page-rows (Y = 512 and 768) of 64-wide columns, and they start at x=0:
+// the top half cannot do that (x0..319 is the display buffers, and its 64-wide grid only
+// begins at x=320), but down here the display buffers do not reach. The CLUT column
+// mirrors the top half's at x 960..1023, so the page grid stops at x=896.
+//
+// No stock walk can reach this: tpagepos[] uses Y in {0,256}, the CLUT cursors are
+// bounded by CD2_CLUT_SAFE_LAST, and IncrementClutNum is clamped by its callers. The
+// arena is therefore "owned" by construction - it is not a mark that could be forgotten,
+// it is a row range nothing else addresses.
+// ---------------------------------------------------------------------------
+#define JER_PAGE_W			64
+#define JER_PAGE_ROW_H		256
+#define JER_ARENA_CLUT_X	960									// the CLUT column starts here
+#define JER_PAGES_PER_ROW	(JER_ARENA_CLUT_X / JER_PAGE_W)		// 15 -> x 0..895
+#define JER_PAGE_ROWS		2									// Y = 512 and 768
+#define JER_ARENA_PAGES		(JER_PAGES_PER_ROW * JER_PAGE_ROWS)	// 30 pages, 60 KiB
+
+static u_char sJerArenaPageUsed[JER_ARENA_PAGES];
+static int sJerArenaPagesUsed;
+static int sJerArenaClutY = JER_VRAM_HALF_Y;	// next free row of the bottom CLUT column
+static int sJerArenaClutUsed;					// rows handed out
+static int sJerArenaClutDropped;				// asks that found no room
+
+// Drop every arena claim. A level load calls this, so one level's imports cannot make
+// the next level's look pre-used.
+void JerVramArenaReset(void)
+{
+	memset(sJerArenaPageUsed, 0, sizeof(sJerArenaPageUsed));
+	sJerArenaPagesUsed = 0;
+	sJerArenaClutY = JER_VRAM_HALF_Y;
+	sJerArenaClutUsed = 0;
+	sJerArenaClutDropped = 0;
+}
+
+// Where arena page `slot` lives. This is the rectangle a caller uploads into, and what
+// the page word it hands the model has to resolve back to (bits 4 and 11 of the tpage Y).
+void JerVramArenaPageRect(int slot, RECT16 *r)
+{
+	r->x = (short)((slot % JER_PAGES_PER_ROW) * JER_PAGE_W);
+	r->y = (short)(JER_VRAM_HALF_Y + (slot / JER_PAGES_PER_ROW) * JER_PAGE_ROW_H);
+	r->w = JER_PAGE_W;
+	r->h = JER_PAGE_ROW_H;
+}
+
+// Take the first free arena page. Returns the slot, or -1 when the half is full.
+int JerVramArenaPageAlloc(void)
+{
+	int i;
+
+	for (i = 0; i < JER_ARENA_PAGES; i++)
+	{
+		if (!sJerArenaPageUsed[i])
+		{
+			sJerArenaPageUsed[i] = 1;
+			sJerArenaPagesUsed++;
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+void JerVramArenaPageFree(int slot)
+{
+	if (slot < 0 || slot >= JER_ARENA_PAGES)
+		return;
+
+	if (sJerArenaPageUsed[slot])
+	{
+		sJerArenaPageUsed[slot] = 0;
+		sJerArenaPagesUsed--;
+	}
+}
+
+// Does tpage word `page` address arena page `slot`? The decode is the engine's own, the
+// same one CarImportPageRect and the shader use (x = (page & 0xf) * 64, y = bit4 * 256 +
+// bit11 * 512) - NOT the retired 5-bit form.
+int JerVramArenaPageHolds(int slot, int page)
+{
+	RECT16 r;
+	int px, py;
+
+	if (slot < 0 || slot >= JER_ARENA_PAGES)
+		return 0;
+
+	JerVramArenaPageRect(slot, &r);
+
+	px = (page & 0xf) * 64;
+	py = (((page >> 4) & 1) * 256) + (((page >> 11) & 1) * 512);
+
+	return (px == r.x) && (py == r.y);
+}
+
+// Reserve `rows` rows of the bottom CLUT column and return the first row, or -1 when the
+// column cannot hold them. The caller decides the row count - for the import it is the
+// same (npal + 3) / 4 + 1 the top half's pin band uses, per set.
+int JerVramArenaClutAlloc(int rows)
+{
+	int y;
+
+	if (rows <= 0)
+		return -1;
+
+	if (sJerArenaClutY + rows > JER_VRAM_TOTAL_ROWS)
+	{
+		sJerArenaClutDropped++;
+		return -1;
+	}
+
+	y = sJerArenaClutY;
+	sJerArenaClutY += rows;
+	sJerArenaClutUsed += rows;
+
+	return y;
+}
+
+int JerVramArenaPagesUsed(void)			{ return sJerArenaPagesUsed; }
+int JerVramArenaPagesFree(void)			{ return JER_ARENA_PAGES - sJerArenaPagesUsed; }
+int JerVramArenaClutRowsUsed(void)		{ return sJerArenaClutUsed; }
+int JerVramArenaClutRowsFree(void)		{ return JER_VRAM_TOTAL_ROWS - sJerArenaClutY; }
+int JerVramArenaClutDropped(void)		{ return sJerArenaClutDropped; }
+
 // JERICHO: read or write a CLUT row IN PLACE, at the address a CLUT id already names.
 //
 // A live palette editor needs exactly this and nothing else. An in-place write costs NO
@@ -225,7 +357,7 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 
 	// clut word -> VRAM position (PSX GetClut encoding: y << 6 | x >> 4)
 	src.x = (short)((sourceClut & 0x3f) * 16);
-	src.y = (short)((sourceClut >> 6) & 0x1ff);
+	src.y = (short)((sourceClut >> 6) & 0x3ff);	// 10-bit Y: the arena sits at 512..1023
 	src.w = 16;
 	src.h = 1;
 
@@ -233,7 +365,7 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 	// import reserves above this point (its own palettes and the pin band). Allocating
 	// into those overwrote an imported car's colours with a pedestrian's - the runtime
 	// cursor and the import share one VRAM column, so this is the boundary between them.
-	if (src.y > 511 || clutpos.y > 511 || clutpos.y > CAR_CLUT_IMPORT_LIMIT)
+	if (src.y >= JER_VRAM_TOTAL_ROWS || clutpos.y > 511 || clutpos.y > CAR_CLUT_IMPORT_LIMIT)
 		return 0;
 
 	StoreImage(&src, (u_long*)entries);
@@ -1809,7 +1941,7 @@ void CarImportPin(void)
 			// band falls back to the historic forced y=480 - which is inside the font, so
 			// that case still collides. It is kept deliberately: refusing the sets instead
 			// (which is what the safe-area rule would do) makes the imported car lose its
-			// pages altogether, and the devcheck matrix catches that as a regression
+			// pages altogether, and the chk_suite test matrix catches that as a regression
 			// (RIO->Havana: 'lost 3' and an INV2 failure). Freeing the ~20 rows the layout
 			// is short is the fix, not a stricter refusal - see cars.h and VRAM.md §6.
 			if (firstFree > CD2_CLUT_SAFE_LAST)
@@ -2660,7 +2792,7 @@ void LoadImportedTPages(void)
 
 #define VRAM_CELL	64							// accounting granularity: 64x64 texels
 #define VRAM_COLS	(1024 / VRAM_CELL)
-#define VRAM_ROWS	(512 / VRAM_CELL)
+#define VRAM_ROWS	(JER_VRAM_TOTAL_ROWS / VRAM_CELL)	// 16: the whole 1024-row buffer, not just the top half
 #define VRAM_CELL_KB	(VRAM_CELL * VRAM_CELL * 2 / 1024)	// 8 KiB
 
 typedef struct
@@ -2767,16 +2899,27 @@ static void VramAccountReport(void)
 		if (clutfree < 0)
 			clutfree = 0;
 
-		printInfo("JERICHO-VRAM: texture used=%d/%d KiB (slots %d + clut %d + sky %d); clut strip %d rows used, %d safe free%s; vram free=%d KiB of 1024; largest free in texture area=(%d,%d) %dx%d = %d KiB\n",
+		printInfo("JERICHO-VRAM: texture used=%d/%d KiB (slots %d + clut %d + sky %d); clut strip %d rows used, %d safe free%s; vram free=%d KiB of %d; largest free in texture area=(%d,%d) %dx%d = %d KiB\n",
 			texused * VRAM_CELL_KB, (VRAM_COLS - texcol) * VRAM_ROWS * VRAM_CELL_KB,
 			19 * 32, 64 * 256 * 2 / 1024, 64,
 			clutrows, clutfree,
 			(clutover > 0) ? " - OVERFLOW into the level font" : ", no overflow",
-			freecells * VRAM_CELL_KB, bx, by, bw, bh, best * VRAM_CELL_KB);
+			freecells * VRAM_CELL_KB, VRAM_ROWS * VRAM_COLS * VRAM_CELL_KB, bx, by, bw, bh, best * VRAM_CELL_KB);
 
 		if (clutover > 0)
 			printInfo("JERICHO-VRAM: WARNING - the CLUT column reaches y=%d, %d row(s) into the level font image (%d..511). See cars.h CD2_CLUT_SAFE_LAST and VRAM.md 6.\n",
 				clutpos.y, clutover, CD2_CLUT_SAFE_LAST + 1);
+
+		// JERICHO: the bottom-half arena, next to the top half's answer. Rows 512..1023 are
+		// space no stock path addresses, so the whole budget is free until JERICHO content
+		// claims it - this line is the "did anything land in the new half, and is it full?"
+		// measurement.
+		printInfo("JERICHO-VRAM: arena rows %d..%d: pages %d used of %d (%d free), clut rows %d used (%d free)%s\n",
+			JER_VRAM_HALF_Y, JER_VRAM_TOTAL_ROWS - 1,
+			JerVramArenaPagesUsed(), JerVramArenaPagesUsed() + JerVramArenaPagesFree(),
+			JerVramArenaPagesFree(),
+			JerVramArenaClutRowsUsed(), JerVramArenaClutRowsFree(),
+			(JerVramArenaClutDropped() > 0) ? " - DROPPED asks" : "");
 	}
 
 	// JERICHO: how many CLUT rows ONE streamed slot can need -- the max over the

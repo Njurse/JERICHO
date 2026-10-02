@@ -266,7 +266,10 @@ void jer_ped_palette_init(void)
 
 					/* outfit takes the team colour, skin keeps its own */
 					src.x = (short)((gPedPalPairs[k].stock & 0x3f) * 16);
-					src.y = (short)((gPedPalPairs[k].stock >> 6) & 0x1ff);
+					/* 10-bit Y, not 9: a palette may live in the VRAM arena at rows
+					 * 512..1023 (cars.h JER_VRAM_HALF_Y), and masking to 0x1ff would
+					 * fold such an id back onto a top-half row and read the wrong one. */
+					src.y = (short)((gPedPalPairs[k].stock >> 6) & 0x3ff);
 					src.w = 16;
 					src.h = 1;
 
@@ -304,7 +307,7 @@ void jer_ped_palette_init(void)
 			int e;
 
 			src.x = (short)((gPedPalPairs[k].stock & 0x3f) * 16);
-			src.y = (short)((gPedPalPairs[k].stock >> 6) & 0x1ff);
+			src.y = (short)((gPedPalPairs[k].stock >> 6) & 0x3ff);
 			src.w = 16;
 			src.h = 1;
 
