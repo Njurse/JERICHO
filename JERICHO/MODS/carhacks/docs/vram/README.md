@@ -11,3 +11,4 @@ with the image it produced in this folder. Row 1 is the **before** baseline.
 | 2026-09-30 | CHICAGO | 4 | 192 | 18 | (0,0) 0x0 = 0 KiB | 330206aa | palette blocks: 2 guest cities now write their own civ_clut blocks (rows 8..15 and 16..23); the third is refused at the measured ceiling |
 | 2026-09-30 | CHICAGO | 4 | 192 | 18 | (0,0) 0x0 = 0 KiB | 7724f9b9 | the pin table holds what a mashup asks for: CAR_PIN_MAX 8->16, each page now carries its source city (slots 4/5/6 went 30->234 of ~250 polys) |
 | 2026-10-01 | CHICAGO | 3 | 192 | 18 | (320,512) 704x512 = 704 KiB | f121e525 | the import lives in rows 512..1023 now; the level font is untouched and the base column is the level's again |
+| 2026-10-01 | CHICAGO | 3 | 125 | 85 | (320,512) 704x512 = 704 KiB | 09b7fe6b | both of the import's palette conditioners now take the arena column - the pin band and each guest city's palette table; the base CLUT column is byte-identical to a stock run |
