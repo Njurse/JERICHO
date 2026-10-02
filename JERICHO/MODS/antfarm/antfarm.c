@@ -350,7 +350,6 @@ typedef struct ANTFARM_STATE
 	int shotOrbitPhase;	/* orbit phase seed */
 	int shotScrZ;		/* per-shot FOV (projection distance) */
 	int shotZoomTo;		/* a zoom row's other lens end (== shotScrZ when it holds) */
-	int armFrac;		/* smoothed LOS pull-back fraction (256 = full arm) */
 
 	/* the follow (trail) cam: damped position + slow yaw, no mode switching */
 	VECTOR trailPos;	/* smoothed trail-cam position */
@@ -358,7 +357,6 @@ typedef struct ANTFARM_STATE
 	int trailSet;		/* the trail cam has been seeded for this shot */
 
 	VECTOR trackCamPos;	/* STATIC style: the fixed roadside camera spot */
-	int trackPlaced;	/* the static spot has been placed */
 
 	VECTOR spool;		/* what MainPlayer.spoolXZ points at while active */
 
@@ -438,7 +436,6 @@ typedef struct ANTFARM_STATE
 	int recentCars[ANTFARM_STYLE_MEMORY];	/* cars already framed recently */
 	int recentCarCount;
 	int dwellMs;		/* this shot's visible time, interest-scaled */
-	int dissolve;		/* 1 = cross-dissolve through grey rather than black */
 
 	/* player car saved/restored around activation (teleport + hide) */
 	int savedPlayerCarControlType;
@@ -1370,35 +1367,6 @@ static int AntFarmCarSize(CAR_DATA* cp)
 	return 300;
 }
 
-static void AntFarmCarFraming(CAR_DATA* cp, int* outDist, int* outHeight)
-{
-	int vz = 300, vy = 120;
-
-	if (cp->ap.carCos)
-	{
-		vz = cp->ap.carCos->colBox.vz;
-		vy = cp->ap.carCos->colBox.vy;
-	}
-
-	if (vz < 200)
-		vz = 200;
-
-	if (vy < 80)
-		vy = 80;
-
-	*outDist = vz * 2 + vy + 380;	/* well back from the traffic */
-	*outHeight = 170 + vy / 2;	/* well above it */
-
-	if (*outDist < 700)
-		*outDist = 700;
-
-	if (*outDist > 1350)
-		*outDist = 1350;
-
-	if (*outHeight > 460)
-		*outHeight = 460;
-}
-
 /* has this style been picked in the last few cuts? */
 static int AntFarmStyleRecent(int style)
 {
@@ -1511,7 +1479,6 @@ static void AntFarmInitShotVars(void)
 	s.shotMargin = AntRandRange(180, 360);		/* clear of the kerb */
 	s.shotLookAhead = AntRandRange(800, 1100);	/* stable look-ahead */
 	s.shotOrbitAmp = 0;
-	s.armFrac = 256;
 	s.trailSet = 0;			/* the trail cam re-seeds on the car's heading */
 	s.shotOrbitPhase = AntRand() & 4095;
 
@@ -1638,10 +1605,6 @@ static int AntFarmFovTarget(void)
 
 	return s.shotScrZ + (int)(((long)(s.shotZoomTo - s.shotScrZ) * factor) / 4096);
 }
-
-/* ------------------------------------------------------------------ */
-/* Car mode cycling                                                   */
-/* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
 /* the follow (trail) cam                                             */
@@ -1918,7 +1881,6 @@ static void AntFarmPickStyleAndTarget(void)
  * For car targets, just mark it – the car will be picked later. */
 static void AntFarmPlanShot(void)
 {
-	s.trackPlaced = 0;
 	s.targetCarId = -1;
 
 	AntFarmEnsureRoadCache();
@@ -2074,7 +2036,6 @@ static void AntFarmStartLead(void)
 	s.leadEnding = 0;
 	s.style = ANTFARM_STYLE_CHASE;
 	s.targetKind = ANTFARM_TARGET_CAR;
-	s.trackPlaced = 0;
 	AntFarmInitShotVars();
 
 	CopsAllowed = 1;
@@ -2160,15 +2121,12 @@ static int AntFarmFindClearCamera(const VECTOR* aim, const VECTOR* desired, VECT
 	VECTOR candidates[32];
 	int numCandidates = 0;
 	VECTOR delta;
-	int dist, dx, dz;
 	int i;
 
 	/* compute vector from aim to desired */
 	delta.vx = desired->vx - aim->vx;
 	delta.vy = desired->vy - aim->vy;
 	delta.vz = desired->vz - aim->vz;
-	dist = sqrt(delta.vx * delta.vx + delta.vy * delta.vy + delta.vz * delta.vz);
-	if (dist < 1) dist = 1;
 
 	/* 1) Try the desired position itself */
 	candidates[numCandidates++] = *desired;
@@ -2184,11 +2142,30 @@ static int AntFarmFindClearCamera(const VECTOR* aim, const VECTOR* desired, VECT
 		if (numCandidates >= 32) break;
 	}
 
-	/* 3) Rotate around aim: try different azimuth angles (0, 45, 90, ...) at 80% and 120% distance */
-	for (int ang = 0; ang < 360; ang += 45) {
-		float rad = ang * 3.14159f / 180.0f;
-		float cosA = cos(rad);
-		float sinA = sin(rad);
+	/* 3) Rotate around aim: try different azimuth angles (0, 45, 90, ...) at 80% and 120% distance.
+	 * The eight steps are fixed, so their cos/sin are built once and kept - the
+	 * same expression the per-frame code used, just not recomputed every frame. */
+	static float antAzim[8][2];
+	static int antAzimInit = 0;
+
+	if (!antAzimInit)
+	{
+		int a;
+
+		for (a = 0; a < 8; a++)
+		{
+			float rad = (a * 45) * 3.14159f / 180.0f;
+
+			antAzim[a][0] = cos(rad);
+			antAzim[a][1] = sin(rad);
+		}
+
+		antAzimInit = 1;
+	}
+
+	for (int ang = 0; ang < 8; ang++) {
+		float cosA = antAzim[ang][0];
+		float sinA = antAzim[ang][1];
 		/* rotate the delta vector around the Y axis */
 		int rx = (int)(delta.vx * cosA - delta.vz * sinA);
 		int rz = (int)(delta.vx * sinA + delta.vz * cosA);
@@ -2893,10 +2870,8 @@ static void AntFarmSetActive(int on)
 		s.cutInit = 0;
 		s.fade = 255;
 		s.stateStart = AntTicks();
-		s.shotStart = 0;
+		s.shotStart = 0;	/* no shot revealed yet (set when the first FADE_IN starts) */
 		s.cutStart = s.stateStart;
-		s.stateStart = AntTicks();
-		s.shotStart = s.stateStart;
 
 		{
 			char styleList[220];  /* all 17 style keys fit - 80 silently truncated the log */
@@ -3227,7 +3202,6 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			if (s.leadMode)
 			{
 				s.style = AntFarmPickStyle(1);
-				s.trackPlaced = 0;
 				AntFarmInitShotVars();
 				s.shotPlanned = 1;
 			}
@@ -4252,7 +4226,7 @@ JER_MODULE_ENTRY(jer_module_antfarm_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_module(ctx,
 		"antfarm",
 		"Ant Farm Screensaver",
-		"0.1.0",
+		"0.2.0",
 		"REDRIVER2 community",
 		"City-observer screensaver: diverse cinematic camera angles touring the whole map, a damped trail cam on traffic, and optional rogue-car chases.",
 		"",

@@ -26,6 +26,21 @@
 #include "cutrecorder.h"
 #include "draw.h"
 #include "job_fx.h"
+
+/* JERICHO-DIAG: the PingInCivCar census (slot / cookie / free slots) was added
+ * while chasing the mp "first civ ping" crash. It fires on EVERY ping - five or
+ * more per frame - so it is off unless JERICHO_DIAG_PINGIN=1 is set in the
+ * environment (same opt-in shape as JERICHO_DUMPVRAM). Checked once. */
+static int jerDiagPingIn(void)
+{
+	static int on = -1;
+
+	if (on < 0)
+		on = (getenv("JERICHO_DIAG_PINGIN") != NULL) ? 1 : 0;
+
+	return on;
+}
+
 const u_char speedLimits[3] = { 56, 97, 138 };
 
 #ifdef DEBUG
@@ -1819,8 +1834,9 @@ int CreateStationaryCivCar(int direction, int orientX, int orientZ, LONGVECTOR4*
 			slot++;
 		} while (carCnt < &car_data[MAX_CARS]);
 
-		printInfo("JERICHO-DIAG PINGIN: slot=%d cookie=%d\n",
-			newCar != NULL ? (int)(newCar - car_data) : -1, cookieCount);
+		if (jerDiagPingIn())
+			printInfo("JERICHO-DIAG PINGIN: slot=%d cookie=%d\n",
+				newCar != NULL ? (int)(newCar - car_data) : -1, cookieCount);
 
 		if (newCar)
 		{
@@ -2029,8 +2045,9 @@ int PingInCivCar(int minPingInDist)
 					freeSlots++;
 			}
 
-			printInfo("JERICHO-DIAG PINGIN: enter dist=%d cookieStart=%d freeSlots=%d\n",
-				minPingInDist, cookieCount, freeSlots);
+			if (jerDiagPingIn())
+				printInfo("JERICHO-DIAG PINGIN: enter dist=%d cookieStart=%d freeSlots=%d\n",
+					minPingInDist, cookieCount, freeSlots);
 		}
 
 		// find a free slot
@@ -2048,8 +2065,9 @@ int PingInCivCar(int minPingInDist)
 			slot++;
 		} while (carCnt < &car_data[MAX_CARS]);
 
-		printInfo("JERICHO-DIAG PINGIN: slot=%d cookie=%d\n",
-			newCar != NULL ? (int)(newCar - car_data) : -1, cookieCount);
+		if (jerDiagPingIn())
+			printInfo("JERICHO-DIAG PINGIN: slot=%d cookie=%d\n",
+				newCar != NULL ? (int)(newCar - car_data) : -1, cookieCount);
 
 		if (newCar == NULL)
 		{
@@ -2098,7 +2116,8 @@ int PingInCivCar(int minPingInDist)
 		} while (!IS_STRAIGHT_SURFACE(roadSeg) && !IS_CURVED_SURFACE(roadSeg));
 	}
 
-	printInfo("JERICHO-DIAG PINGIN: fan done cookie=%d\n", cookieCount);
+	if (jerDiagPingIn())
+		printInfo("JERICHO-DIAG PINGIN: fan done cookie=%d\n", cookieCount);
 	
 	// wtf there were before? car wasn't set to 'confused' state
 	if (!GetSurfaceRoadInfo(&roadInfo, roadSeg))

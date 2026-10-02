@@ -617,3 +617,7 @@ generate time).
   those) and pinned to the shot focus every frame; hand it back before any
   engine-driven camera (pause, cutscene, replay, restart) uses it.
 * **Module code is compiled into the exe** — a stale exe ignores your changes.
+* **`PingInCivCar` no longer spams the log.** The `JERICHO-DIAG PINGIN:` census
+  lines fire on every ping, so they are gated behind `JERICHO_DIAG_PINGIN=1`
+  (same opt-in shape as `JERICHO_DUMPVRAM`). Pre-seeding makes many pings, so a
+  normal run has none of them.
