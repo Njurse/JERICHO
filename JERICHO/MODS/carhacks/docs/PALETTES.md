@@ -361,3 +361,31 @@ this symptom. The disagreement is between how the model *maps* a page to a row
 pair needs its own lump. A `cross-city: ... those polys draw colourless` line is now
 emitted per row so this stays visible instead of being rediscovered as "some cars still
 look wrong".
+
+### The whole-block upload, and the three rows no city can fill (same day)
+
+Done: the mask now marks **every row of every held city's block**
+(`CarImportPaletteBlockBase`, texture.c), not just the rows the built models named. An
+as-needed import holds only the cities it took a car from, and a block is 8 of the
+column's 32 rows, so the whole block is affordable — and it is what makes a spawned car's
+**colour variant** reachable, because a variant is a *column* within a row and `civ_ai`
+picks `ap.palette` 0..5 on spawn, not at build time.
+
+Measured on a three-city mashup (HAVANA/VEGAS/RIO into CHICAGO), before → after:
+
+| | before | after |
+|---|---|---|
+| rows uploaded per city | 2 of 8 | **8 of 8** |
+| rows offering colour variants | 0 | **10 of 24** |
+| per-slot block | — | slot 4 → 8..15, slot 5 → 16..23, slot 6 → 24..31 |
+
+The pattern in what stays empty is now unmistakable: **rows `base+1`, `base+6` and
+`base+7` are empty for every city**, and `base+6`/`base+7` are exactly the special-body
+pair the `specTpages` scan maps onto. So the remaining colourless polys are not a space
+problem and not a filter problem — the lump has no entry resolving to those three rows,
+while 30..140 of its entries resolve to the rows beside them. Either the model should read
+the rows the lump fills, or those pages need their own lump; that is the open fork.
+
+(A diagnostic detail fixed here: the palette map reported the HOST city's own car as
+reading the import bank, because `CarImportBankRow` answers that for a city with no band.
+The host reads rows 0..7 and the map now says so.)

@@ -122,6 +122,10 @@ extern char GetCarPalIndex(int tpage); // 0x00023390
 // page's own CLUT". The draw clamps with these so a car never reads a column nothing wrote.
 extern int CivClutRowMaxSlot(int row);
 extern int CivClutTexMaxSlot(int row, int texid);
+
+// JERICHO: the civ_clut row block a held guest city owns (-1 = none), so a caller can ask
+// for the whole block instead of only the rows one model named.
+extern int CarImportPaletteBlockBase(int city);
 extern int CarPalIndexInCityFor(int tpage, int city); // JERICHO: the same, given the city (cars.c)
 extern void CarImportPaletteReset(void); // JERICHO: forget a level's deferred palette work (cars.c)
 

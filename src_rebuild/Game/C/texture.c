@@ -1957,6 +1957,32 @@ void CarImportPin(void)
 				rowNeeded[drow] = 1;
 		}
 
+		// JERICHO: AND every row of every held city's block, not only the rows the models
+		// built so far happen to name. The import is as-needed, and a city's block is 8 of
+		// the column's 32 rows, so uploading all of it is affordable - and it is what makes
+		// a spawned car's COLOUR VARIANT reachable, because a variant is a COLUMN within a
+		// row: civ_ai picks ap.palette 0..5 on spawn, and the car built first is not
+		// necessarily the one that ends up wearing that row. With only the named rows kept,
+		// exactly the columns some earlier model happened to name exist, and the row filter
+		// was solving a space problem the lower half pool no longer has.
+		//
+		// This is NOT what fixes a colourless imported special: that car reads rows whose
+		// data is absent from its lump entirely (see PALETTES.md). It fixes variants.
+		for (i = 0; i < 4; i++)
+		{
+			int base = CarImportPaletteBlockBase(i), r2, end;
+
+			if (base < 0)
+				continue;
+
+			end = base + CIV_CLUT_BLOCK_ROWS;
+			if (end > CIV_CLUT_ROWS)
+				end = CIV_CLUT_ROWS;
+
+			for (r2 = base; r2 < end; r2++)
+				rowNeeded[r2] = 1;
+		}
+
 		// JERICHO: what is needed that has NOT already been uploaded.
 		//
 		// This used to be gated by a one-shot latch (`if (!sPalDone && sPinCount > 0)`), so

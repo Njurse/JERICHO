@@ -236,6 +236,20 @@ static int CarImportBankRow(int city)
 	return base;
 }
 
+// JERICHO: the civ_clut block a held guest city owns, for a caller that must reason about
+// the whole block rather than the rows one built model happened to name. -1 when this city
+// has no block at all: it is the host level, it is not held, or the column cannot afford it.
+int CarImportPaletteBlockBase(int city)
+{
+	if (city < 0 || city >= 4 || city == GameLevel)
+		return -1;
+
+	if (!CarImportCityHeld(city))
+		return -1;
+
+	return CarImportBankRow(city);
+}
+
 static int CarPalIndexInCity(int tpage, int city);
 
 // JERICHO: the palette row map, printed at exit beside the page check. First which
@@ -271,7 +285,7 @@ void CarPalRowReport(void)
 		if (city < 0)
 			continue;
 
-		int base = CarImportBankRow(city);
+		int base = (city == GameLevel) ? 0 : CarImportBankRow(city);
 
 		if (base < 0)
 			printInfo("cross-city: palette map - resident slot %d: %s model %d - NO PALETTE BLOCK (refused; civ_clut affords %d guests, so this car has no colours of its own)\n",
