@@ -178,15 +178,23 @@ static int CarImportCityBand(int city)
 	return band;
 }
 
-// JERICHO: how many guest cities the CLUT column can actually afford.
+// JERICHO: how many guest cities get a palette block.
 //
-// MEASURED (a 3-city mashup, CHICAGO host): one guest city's palettes cost about 36
-// column rows. The safe area is 210 rows (256..465) and the level's own layout already
-// takes ~157 of them, so the third city ran clutpos to 486 - 21 rows INTO the level
-// font. Two guest cities fit (about 16 rows to spare); the third is refused rather
-// than painting over the glyphs. Reclaiming rows is what raises this number, and it is
-// deliberately one place to change.
-#define CIV_CLUT_GUEST_CITIES	2
+// WAS 2, and the reason was the base half: one guest city's palettes cost ~36 rows of the
+// CLUT COLUMN, the CLUT-safe area is 210 rows (256..465), the level's own layout took
+// ~157 of them, and a third city ran clutpos to 486 - 21 rows INTO the level font. While
+// the import shared that strip, refusing the third was the least-bad answer.
+//
+// The arena removed the reason: an import's palette rows come from the arena's own column
+// now (rows 512..1023, texture.c), so a guest city costs the base half NOTHING. The limit
+// is the civ_clut ARRAY (rows CIV_CLUT_IMPORT_ROW..CIV_CLUT_ROWS-1), not the column, and
+// the measured cost is nowhere near it - a 3-city mix uses ~28 arena rows out of 512.
+//
+// Measured at 2, and why it mattered: the third imported car came out with "NO PALETTE
+// BLOCK (refused)" and fell back to the HOST's civ_clut row 0, i.e. an imported car
+// wearing a local car's colours. That is what "the imported NPC cars have the wrong
+// textures" looks like.
+#define CIV_CLUT_GUEST_CITIES	((CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) / CIV_CLUT_BLOCK_ROWS)
 
 static int CarImportBankRow(int city)
 {
@@ -234,7 +242,7 @@ void CarPalRowReport(void)
 		int base = CarImportBankRow(city);
 
 		if (base < 0)
-			printInfo("cross-city: palette map - resident slot %d: %s model %d - NO PALETTE BLOCK (refused; the column affords %d guests, so this car has no colours of its own)\n",
+			printInfo("cross-city: palette map - resident slot %d: %s model %d - NO PALETTE BLOCK (refused; civ_clut affords %d guests, so this car has no colours of its own)\n",
 				slot, LevelNames[city], residentCarModels[slot], CIV_CLUT_GUEST_CITIES);
 		else
 			printInfo("cross-city: palette map - resident slot %d: %s model %d reads civ_clut rows %d..%d\n",
@@ -1967,8 +1975,9 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 			// The honest refusal, at the measured threshold: the column can pay for
 			// CIV_CLUT_GUEST_CITIES cities' palettes, and this is one more. Refusing is
 			// recoverable (this car has no colours); overflowing is not (the glyphs go).
-			printInfo("cross-city: %s palettes: REFUSED - the CLUT column affords %d guest cities and %s have them (each city costs ~36 of the safe area's 210 rows)\n",
-				LevelNames[city], CIV_CLUT_GUEST_CITIES, "the others");
+			printInfo("cross-city: %s palettes: REFUSED - civ_clut affords %d guest cities and %s have them (rows %d..%d are the import bank)\n",
+				LevelNames[city], CIV_CLUT_GUEST_CITIES, "the others",
+				CIV_CLUT_IMPORT_ROW, CIV_CLUT_ROWS - 1);
 
 			sImpPalLump[city] = NULL;
 			continue;

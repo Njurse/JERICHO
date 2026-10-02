@@ -2118,9 +2118,19 @@ void CarImportPin(void)
 			// what CarPalIndexInCityFor now returns when the city genuinely has no row.)
 			if (row < CIV_CLUT_IMPORT_ROW)
 			{
-				if (sPinRowLeaks++ < 4)
-					printInfo("cross-city: pin - set %d resolves to civ_clut row %d (below the import bank: a host row, or no row at all): not re-pointing, palette leak avoided\n",
-						sPinSet[i], row);
+				// JERICHO: log EVERY refusal, and count them.
+				//
+				// This was capped at four lines, which made the FIFTH set's refusal
+				// invisible - and tools/crosscheck.py's INV2 reads refusals from this very
+				// log, so it reported "the pin did NOT refuse a host row" for a set the
+				// engine had just correctly refused (measured: the 3-city mix's set 1, which
+				// is pinned last and was therefore the fifth). An assertion that can be
+				// suppressed by volume is not an assertion. The volume is a handful of lines
+				// per level.
+				sPinRowLeaks++;
+
+				printInfo("cross-city: pin - set %d resolves to civ_clut row %d (below the import bank: a host row, or no row at all): not re-pointing, palette leak avoided\n",
+					sPinSet[i], row);
 			}
 			else
 			{
@@ -2169,7 +2179,7 @@ void CarImportDumpState(void)
 	if (CarImportAnyHeld() == 0 && sRemapCount == 0)
 		return;
 
-	printInfo("cross-city: final page state (%d pinned, %d wasted car pages taken, %d world pages evicted, %d page re-uploads, %d claims given back, %d pins DROPPED, %d palette rows uploaded)\n", sPinCount, sPinUnusedTakes, sPinEvictions, sPinReloads, sCarPageGiveBacks, sPinDropped, sPalUploaded);
+	printInfo("cross-city: final page state (%d pinned, %d wasted car pages taken, %d world pages evicted, %d page re-uploads, %d claims given back, %d pins DROPPED, %d palette rows uploaded, %d palette rows REFUSED)\n", sPinCount, sPinUnusedTakes, sPinEvictions, sPinReloads, sCarPageGiveBacks, sPinDropped, sPalUploaded, sPinRowLeaks);
 
 	// JERICHO: which of the import bank's rows the imported model actually uses.
 	//
