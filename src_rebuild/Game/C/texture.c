@@ -108,7 +108,7 @@ RECT16 fontclutpos;
 RECT16 mapclutpos;
 DVECTOR slot_clutpos[19];
 DVECTOR slot_tpagepos[19];
-u_char tpageslots[19];
+u_char tpageslots[TPAGE_SLOTS];
 
 TP *tpage_position = NULL;
 TEXINF* tpage_ids[128] = { 0 };
@@ -1232,7 +1232,11 @@ static int LevelTookTPage(int tpage)
 {
 	int i;
 
-	for (i = 0; i < slotsused && i < 19; i++)
+	// TPAGE_SLOTS, not a policy limit: tpageslots is 19 entries and this is the array
+	// bound. It is NOT the reason a host set could read as unused - HostUsesTPage asks the
+	// level's own page list (permlist), which covers every permanent page regardless of
+	// how many slots the table can hold.
+	for (i = 0; i < slotsused && i < TPAGE_SLOTS; i++)
 	{
 		if (tpageslots[i] == tpage)
 			return 1;
@@ -1316,6 +1320,70 @@ static int HostOwnsCarTPage(int tpage)
 	return 0;
 }
 
+// JERICHO: does the HOST level draw with this texture set AT ALL?
+//
+// This is the question an import must ask before it writes a page, and the old test was
+// narrower in two ways that both left the host repainted:
+//
+//   - it knew only the host's CAR pages (carTpages/specTpages), so a set the host uses for
+//     a PEDESTRIAN or a scenery prop read as "the host does not use this" and the import
+//     wrote its page IN PLACE. Pedestrians read texture_pages[]/texture_cluts[] with no
+//     city awareness at all (draw.c, and their colour row is civ_clut[0], motion_c.c), so
+//     those peds came out with the imported car's pixels - the "the host's own pedestrians
+//     and regional traffic are mangled" report. Consistently, not occasionally: a set the
+//     host shares with the guest city ALWAYS collides.
+//   - LevelTookTPage only scanned the resolved slot table, whose loop caps at 19, so a
+//     permanent page past slot 19 also read as unused.
+//
+// permlist IS the host's own page list (LoadPermanentTPages loads exactly those, and
+// update_slotinfo puts them in tpageslots), and speclist is its special-page list, so
+// with the car tables this answers for every set the host draws with - and it subsumes
+// LevelTookTPage, whose only other sources are those two lists plus a spool special.
+// JERICHO: WHICH of the host's lists says it uses this set - ordered so the answer says
+// whether the OLD test would have caught it:
+//
+//   "host car page" / "resolved slot"  -> the narrow test (LevelTookTPage, whose loop caps
+//                                         at 19, or HostOwnsCarTPage) already said yes.
+//                                         No behaviour change for these.
+//   "specs" / "perms/ped-scenery"      -> ONLY the wide test catches it. perms is the
+//                                         level's own page list, where PEDESTRIANS and
+//                                         scenery live; specs is its special-page list.
+//                                         These are the sets the import used to write IN
+//                                         PLACE, repainting the host's pedestrians with the
+//                                         imported car's pixels - measured as common: 1-4
+//                                         of every 9 candidates, host-dependent.
+//
+// The union is the same either way; the order only makes the *reason* readable.
+static const char *HostUseReason(int tpage)
+{
+	int i;
+
+	if (HostOwnsCarTPage(tpage))
+		return "host car page";
+
+	if (LevelTookTPage(tpage))
+		return "resolved slot";
+
+	for (i = 0; i < nspecpages; i++)
+	{
+		if (speclist[i].x == tpage)
+			return "specs";
+	}
+
+	for (i = 0; i < nperms; i++)
+	{
+		if (permlist[i].x == tpage)
+			return "perms/ped-scenery";
+	}
+
+	return "-";
+}
+
+static int HostUsesTPage(int tpage)
+{
+	return HostUseReason(tpage)[0] != '-';
+}
+
 // JERICHO: index remap for imported vehicles.
 //
 // A texture set number can only mean one thing at a time, and the host city already
@@ -1394,29 +1462,22 @@ static int SetIndexReserved(int i)
 
 static int FindFreeSetIndex(void)
 {
-	int i, k;
+	int i;
 
 	for (i = 110; i < 128; i++)
 	{
 		if (tpageloaded[i] != 0 || SetIndexReserved(i))
 			continue;
 
-		for (k = 0; k < 8; k++)
-		{
-			if (carTpages[GameLevel][k] == i)
-				break;
-		}
-
-		if (k != 8)
-			continue;
-
-		for (k = 0; k < 12; k++)
-		{
-			if (specTpages[GameLevel][k] == i)
-				break;
-		}
-
-		if (k != 12)
+		// JERICHO: never hand an import an index the HOST draws with.
+		//
+		// The two car-table loops that used to be here were the whole test, and they left
+		// the level's OWN page list unasked (permlist/speclist - scenery and pedestrians).
+		// HostUsesTPage asks all of it, so this is the invariant stated where the index is
+		// actually chosen, rather than relying on tpageloaded's bookkeeping above being
+		// complete. If an import ever ends up on a host set, this is the line that should
+		// have stopped it.
+		if (HostUsesTPage(i))
 			continue;
 
 		return i;
@@ -1445,7 +1506,11 @@ static int CarImportDstSetCore(int set)
 	// time so the bake cannot disagree with the pin. A set the level never resolved is
 	// left as it is: the pin replaces texture_pages[set] with the imported page, and the
 	// polys read exactly that.
-	if (!(LevelTookTPage(set) || HostOwnsCarTPage(set)))
+	//
+	// JERICHO: the test is HostUsesTPage - "does the host draw with this set at all?" -
+	// not the old "is it one of the 19 resolved slots, or one of the host's car pages".
+	// See HostUsesTPage for what the narrow version cost (repainted pedestrians).
+	if (!HostUsesTPage(set))
 		return set;
 
 	free = FindFreeSetIndex();
@@ -2764,8 +2829,8 @@ void LoadImportedTPages(void)
 		// JERICHO-DIAG: every candidate, before any guard can hide it - which slot it
 		// would take, the position that slot resolves to, and whether the host owns
 		// the set. This is what tells a genuine capacity wall from a bogus refusal.
-		printInfo("cross-city: candidate %s set %d hostOwns=%d\n",
-			LevelNames[sc], set, (LevelTookTPage(set) || HostOwnsCarTPage(set)) ? 1 : 0);
+		printInfo("cross-city: candidate %s set %d hostOwns=%d (%s)\n",
+			LevelNames[sc], set, HostUsesTPage(set) ? 1 : 0, HostUseReason(set));
 
 		// The host city keeps its own meaning for a set number: a set index holds one
 		// meaning at a time. So a set the level already resolved goes to a free index and
@@ -3140,6 +3205,14 @@ void LoadPermanentTPages(int *sector)
 
 	tpagebuffer = (char*)mallocptr;
 	nsectors = 0;
+
+	// JERICHO: state the invariant the slot table depends on, out loud. The loop below
+	// writes ONE slot per permanent page and tpageslots holds TPAGE_SLOTS, so a level with
+	// more would overrun it - silently, because the write is an index into a fixed array
+	// two hundred lines from the bound. It has never happened (nperms is far below), and
+	// saying so here means the next reader does not have to infer it from a loop bound.
+	if (nperms > TPAGE_SLOTS)
+		printInfo("JERICHO-WARN: level has %d permanent pages but tpageslots holds %d - the load will overrun the slot table\n", nperms, TPAGE_SLOTS);
 
 	for (i = 0; i < nperms; i++)
 		nsectors += (permlist[i].y + 2047) / CDSECTOR_SIZE;

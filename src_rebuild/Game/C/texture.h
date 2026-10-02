@@ -16,7 +16,14 @@ extern RECT16 fontclutpos;
 extern RECT16 mapclutpos;
 
 extern unsigned char tpageloaded[128];
-extern unsigned char tpageslots[19];
+// JERICHO: the base half's SLOT table. 19 entries is the ENGINE's own bound, not a policy
+// tuned here: LoadPermanentTPages writes one entry per permanent page, so a level with
+// more would already have overrun this array. That is why the slot scans stop at 19 - it
+// is an array bound, and "lifting" it would read past the end. What does NOT need the slot
+// table is "does the host use this set at all": that is answered from the level's own page
+// list (permlist/speclist), which has no such limit.
+#define TPAGE_SLOTS 19
+extern unsigned char tpageslots[TPAGE_SLOTS];
 
 extern DVECTOR slot_clutpos[19];
 extern DVECTOR slot_tpagepos[19];
