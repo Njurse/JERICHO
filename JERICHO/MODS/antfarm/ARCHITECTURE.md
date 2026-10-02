@@ -448,6 +448,13 @@ opposite side to the previous one and ~25 % repeat it (`s.lastSideSign`).
   * smooth `s.camPos` toward the desired by `lerp/100`;
   * `PointAtTarget` for the angle, with the angle then slewed 18 %/frame (short
     way round), plus an optional barely-there horizon roll;
+  * **road-following tilt.** The four road models (roadside, dolly, crane,
+    junction) aim `ANTFARM_ROAD_AIM_LIFT` (60) units above the road, and their
+    final pitch gets a further small upward bias (`ANTFARM_ROAD_PITCH_UP`, 20 —
+    ~1.8°; `camera_angle.vx` is 0 at level and grows downward, so subtracting
+    tilts up). The stock framing read as pointing too far down, so this shows a
+    little more street and skyline. Attached rigs, the trail cam, orbit and
+    tripod-zoom keep their own framing;
   * breathe the lens: `s.fovCurrent += (AntFarmFovTarget() − s.fovCurrent)/18`
     then `SetGeomScreen(scr_z = s.fovCurrent)`. `AntFarmFovTarget` returns the
     shot's lens, or, for a zoom row, a half-sine push to the other end and back;
@@ -456,14 +463,17 @@ opposite side to the previous one and ~25 % repeat it (`s.lastSideSign`).
 A degenerate aim == camera pair is pushed 500 units along the current view
 direction, or `PointAtTarget` has no direction and the view whips.
 
-Per-shot telemetry is accumulated (`shotDistMin/Max`, `fovMin/Max`) and logged
-at `FADE_OUT`:
+Per-shot telemetry is accumulated (`shotDistMin/Max`, `fovMin/Max`,
+`pitchMin/Max`) and logged at `FADE_OUT`:
 
 ```
-[antfarm] shot #3 model=junction subject=road dist 808..808 fov 253..321
+[antfarm] shot #3 model=junction subject=road dist 808..808 fov 253..321 pitch 120..260
 ```
 
-That line is what makes shots checkable without eyes.
+`pitch` is the rendered camera tilt (signed: negative = up, 0 = level, positive
+= down), which is what makes the road-camera upward tweak checkable from the
+log rather than by eye. The line as a whole is what makes shots checkable
+without eyes.
 
 ---
 

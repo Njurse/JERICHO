@@ -58,6 +58,17 @@ enum
  * must not show) */
 #define ANTFARM_STILL_MS        2500
 
+/* Road-following cameras (roadside, dolly, crane, junction) aim this many
+ * world units ABOVE the road, so the frame carries more of the street and what
+ * is beyond it instead of pointing too far down. The per-model aim offsets
+ * below are the base; this is added to them. */
+#define ANTFARM_ROAD_AIM_LIFT   60
+
+/* ...plus a small upward bias on the final pitch, in the same units as
+ * camera_angle.vx (4096 = 360 deg, so ~11.4 units per degree; this is ~1.8 deg).
+ * vx is 0 at level, positive = looking down, so subtracting tilts the view up. */
+#define ANTFARM_ROAD_PITCH_UP   20
+
 /* The very first shot of an activation fades in FAST and begins as soon as its
  * assets have streamed, instead of waiting out the normal CUT hold: a
  * screensaver that opens on several seconds of black reads as broken. Every

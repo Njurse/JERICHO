@@ -405,6 +405,7 @@ typedef struct ANTFARM_STATE
 	int lastState;
 	int shotDistMin, shotDistMax;
 	int fovMin, fovMax;
+	int pitchMin, pitchMax;	/* camera tilt range over the shot (0 = level, +=down) */
 
 	/* fixed vantage for the tripod-zoom / far-pan shots, resolved once */
 	VECTOR shotVantage;
@@ -2565,7 +2566,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 					aim = roadPt;
 				}
 
-				aim.vy = aim.vy - 12;
+				aim.vy = aim.vy - 12 - ANTFARM_ROAD_AIM_LIFT;
 			}
 			else if (d->model == ANT_MODEL_ORBIT)
 			{
@@ -2611,7 +2612,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 				AntFarmShotRoadRender(aimDist, &aimPt, &dummyHeading);
 				aim = aimPt;
-				aim.vy = aimPt.vy - 40;
+				aim.vy = aimPt.vy - 40 - ANTFARM_ROAD_AIM_LIFT;
 			}
 			else if (d->model == ANT_MODEL_JUNCTION)
 			{
@@ -2642,7 +2643,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 				aim.vx = mouth.vx + FIXEDH(RSIN((heading + 1024) & 0xfff) * sweep);
 				aim.vz = mouth.vz + FIXEDH(RCOS((heading + 1024) & 0xfff) * sweep);
-				aim.vy = mouth.vy - 20;
+				aim.vy = mouth.vy - 20 - ANTFARM_ROAD_AIM_LIFT;
 			}
 			else	/* ANT_MODEL_DOLLY */
 			{
@@ -2667,7 +2668,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 				AntFarmShotRoadRender(aimDist, &aimPt, &dummyHeading);
 				aim = aimPt;
-				aim.vy = aimPt.vy - 60;
+				aim.vy = aimPt.vy - 60 - ANTFARM_ROAD_AIM_LIFT;
 			}
 		}
 
@@ -2727,6 +2728,18 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 	{
 		SVECTOR ang;
 		PointAtTarget(&s.camPos, &aim, &ang);
+
+		/* Road-following cameras (roadside/dolly/crane/junction) tilt a touch
+		 * further UP than the raw aim implies, so the frame reads more of the
+		 * environment instead of pointing too far down - the ever-so-slight lift
+		 * the aim above already started. Attached rigs, the trail cam, the orbit
+		 * and the tripod-zoom keep their own framing; vx is 0 at level and grows
+		 * downward, so subtracting tilts the view up. */
+		if (s.targetKind == ANTFARM_TARGET_ROAD &&
+			(d->model == ANT_MODEL_ROADSIDE || d->model == ANT_MODEL_DOLLY ||
+				d->model == ANT_MODEL_CRANE || d->model == ANT_MODEL_JUNCTION))
+			ang.vx = (ang.vx - ANTFARM_ROAD_PITCH_UP) & 0xfff;
+
 		*outPos = s.camPos;
 		*outAngle = ang;
 	}
@@ -2841,6 +2854,8 @@ static void AntFarmSetActive(int on)
 		s.shotDistMax = 0;
 		s.fovMin = 0x7fffffff;
 		s.fovMax = 0;
+		s.pitchMin = 0x7fffffff;
+		s.pitchMax = -0x7fffffff;
 
 		s.camPos.vx = camera_position.vx;
 		s.camPos.vy = camera_position.vy;
@@ -3074,10 +3089,11 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.shotDistMax > 0)
 		{
 			s.ctx->jer_log(s.ctx,
-				"[antfarm] shot #%d model=%s subject=%s dist %d..%d fov %d..%d\n",
+				"[antfarm] shot #%d model=%s subject=%s dist %d..%d fov %d..%d pitch %d..%d\n",
 				s.cutCount, AntFarmModelName(antStyleDefs[s.style].model),
 				(s.targetKind == ANTFARM_TARGET_CAR) ? "car" : "road",
-				s.shotDistMin, s.shotDistMax, s.fovMin, s.fovMax);
+				s.shotDistMin, s.shotDistMax, s.fovMin, s.fovMax,
+				s.pitchMin, s.pitchMax);
 		}
 
 		s.lastState = s.state;
@@ -3450,6 +3466,8 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.shotDistMax = 0;
 			s.fovMin = 0x7fffffff;
 			s.fovMax = 0;
+			s.pitchMin = 0x7fffffff;
+			s.pitchMax = -0x7fffffff;
 
 			/* an occasional place-name caption, not on every shot */
 			if (s.captions && !s.leadMode && AntRandChance(40))
@@ -3784,6 +3802,19 @@ static int AntFarmOnCamera(void* userdata, void* args)
 
 		if (s.fovCurrent < s.fovMin) s.fovMin = s.fovCurrent;
 		if (s.fovCurrent > s.fovMax) s.fovMax = s.fovCurrent;
+
+		/* the rendered camera tilt (signed: negative = up, 0 = level, positive
+		 * = down). Reported so the road-camera upward tweak is measurable from
+		 * the log, not just by eye. */
+		{
+			int pv = s.camAngle.vx;
+
+			if (pv > 2048)
+				pv -= 4096;
+
+			if (pv < s.pitchMin) s.pitchMin = pv;
+			if (pv > s.pitchMax) s.pitchMax = pv;
+		}
 	}
 
 	/* breathe the lens between shots instead of snapping it, and let a zoom row

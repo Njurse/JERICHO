@@ -91,8 +91,11 @@ genuinely underway.
 
 Each shot runs a scenery pass (line-of-sight pull-back + camera-collider
 push-out) so buildings never obscure the view, and the lens *breathes* between
-shots instead of snapping. There is a soft letterbox and an occasional
-place-name caption (both optional, see Settings below).
+shots instead of snapping. The road-following angles (roadside, dolly, crane,
+junction) also aim slightly **above** the road, so a shot shows more of the
+street and what lies beyond it rather than pointing too far down. There is a
+soft letterbox and an occasional place-name caption (both optional, see
+Settings below).
 
 A note on *named* landmarks: the engine has no landmark or POI table - overlays
 are HUD data, and there is no junction surface id - so shots target features
