@@ -244,10 +244,19 @@ STYLE=orbit bash tools/antfarm_test.sh 2400 chicago none day   # isolate one arc
 It boots straight into a take-a-drive with the screensaver enabled and its cut
 interval shortened, runs with `ALSOFT_DRIVERS=null` (silent), watches by PID so
 a genuine hang can be killed without touching any other session, snapshots
-`REDRIVER2.log`, and prints a verdict plus shots fired, distinct areas, black-cap
-hits, void-guard holds and the **shot telemetry**. City, weather and time
-default to *random* on every run, so repeated passes cover the maps instead of
-always testing one; pass them explicitly (or `STYLE=<key>`) to pin a case.
+`JERICHO.log` (the engine's session log, `<appName>.log`), and prints a verdict
+plus shots fired, distinct areas, black-cap hits, void-guard holds and the
+**shot telemetry**. City, weather and time default to *random* on every run, so
+repeated passes cover the maps instead of always testing one; pass them
+explicitly (or `STYLE=<key>`) to pin a case.
+
+**Strict test condition — antfarm is the only module.** The script rewrites the
+runtime `JERICHO/CONFIG/modlist.ini` for the run (every module set to `0`,
+`antfarm = 1`) and restores the user's own copy on exit, so a run can never be
+contaminated by another module. It then asserts the condition straight out of
+the engine's own `[jericho] --- module inventory ---`: exactly one module may be
+`enabled=1`, and it has to be antfarm (the verdict line reads
+`modules active: N (must be 1: antfarm)`).
 
 The shot telemetry is what makes behaviour checkable without eyes: every shot
 logs `model=… subject=… dist MIN..MAX fov MIN..MAX`, and the harness reads

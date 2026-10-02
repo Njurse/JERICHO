@@ -8,6 +8,9 @@
 # still contains several cuts (and therefore several camera archetypes). The
 # verdict is read from the module's own log lines.
 #
+# Strict test condition: antfarm is the ONLY module active. The runtime
+# modlist.ini is rewritten for the run (every module 0, antfarm 1) and restored
+# on exit, so the user's own module selection is never changed for good.
 # Muted: the run boots with OpenAL Soft's null output driver, so audio
 # initialises but makes no sound (nothing is changed for the user's own
 # sessions).
@@ -38,6 +41,7 @@ TEST_INTERVAL="${TEST_INTERVAL:-10}"
 BIN="C:/Users/Jaret/Documents/Projects/REDRIVER2/src_rebuild/bin/Release_dev"
 EXE="REDRIVER2_dev.exe"
 INI="$BIN/JERICHO/CONFIG/antfarm.ini"
+MODLIST="$BIN/JERICHO/CONFIG/modlist.ini"
 LOG="$BIN/JERICHO.log"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 SNAP="$BIN/antfarm_test_${CITY}_${WEATHER}_${TIME}_${STAMP}.log"
@@ -48,9 +52,11 @@ cd "$BIN" || { echo "no bin dir: $BIN"; exit 2; }
 
 # the user's own settings are restored no matter how we leave
 cp -f "$INI" "$INI.antfarmbak" 2>/dev/null || true
+cp -f "$MODLIST" "$MODLIST.antfarmbak" 2>/dev/null || true
 PID=""
 cleanup() {
 	[ -f "$INI.antfarmbak" ] && mv -f "$INI.antfarmbak" "$INI"
+	[ -f "$MODLIST.antfarmbak" ] && mv -f "$MODLIST.antfarmbak" "$MODLIST"
 	# never leave an orphaned game behind if this script is interrupted
 	if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
 		kill -9 "$PID" 2>/dev/null
@@ -83,7 +89,21 @@ for k in chase static overhead tripod flyover orbit crane low fender sill nose34
 	sed -i "s/^style_$k *=.*/style_$k = $v/" "$INI"
 done
 
-echo "Ant Farm test: city=$CITY weather=$WEATHER time=$TIME frames=$FRAMES seed=$SEED interval=${TEST_INTERVAL}s style=${STYLE:-<all>} (muted)"
+# Strict testing condition: antfarm is the ONLY module active for this run.
+# The runtime modlist decides which modules load, and the user's own copy has
+# other modules (mp, debugorbit) enabled - so every "id = value" line is forced
+# to 0 and antfarm is then set to 1. Comment/header lines are left untouched
+# (the pattern only matches lines that begin with an identifier followed by
+# "="). Restored by cleanup() on exit.
+if [ -f "$MODLIST" ]; then
+	sed -i -E 's/^([A-Za-z0-9_]+)[[:space:]]*=.*/\1 = 0/' "$MODLIST"
+	grep -qE '^antfarm[[:space:]]*=' "$MODLIST" || echo 'antfarm = 1' >> "$MODLIST"
+	sed -i -E 's/^(antfarm)[[:space:]]*=.*/antfarm = 1/' "$MODLIST"
+else
+	echo "WARN: no modlist.ini at $MODLIST - cannot force antfarm-only"
+fi
+
+echo "Ant Farm test: city=$CITY weather=$WEATHER time=$TIME frames=$FRAMES seed=$SEED interval=${TEST_INTERVAL}s style=${STYLE:-<all>} (muted, antfarm-only)"
 
 # NOTE the ./: bash does not search the current directory for a bare name,
 # so a plain "REDRIVER2_dev.exe" is "command not found" and the run silently
@@ -157,6 +177,19 @@ echo "ready line:    $(grep -m1 '\[antfarm\] ready' "$LOG" 2>/dev/null || echo '
 echo "enabled line:  $(grep -m1 '\[antfarm\] enabled' "$LOG" 2>/dev/null || echo '<none>')"
 if ! grep -q '\[antfarm\] enabled' "$LOG" 2>/dev/null; then
 	echo "FAIL: the screensaver never engaged"; fail=1
+fi
+
+# The strict test condition (antfarm only, no other mods) is asserted straight
+# out of the engine's own module inventory: exactly ONE module may be
+# "enabled=1", and it has to be antfarm. A second enabled module means the
+# modlist force above did not take (or the binary reads a different copy).
+mods_on=$(grep -c 'enabled=1 src=' "$LOG" 2>/dev/null)
+[ -z "$mods_on" ] && mods_on=0
+echo "modules active: $mods_on (must be 1: antfarm)"
+if [ "$mods_on" != "1" ]; then
+	echo "FAIL: $mods_on module(s) enabled — this run was not antfarm-only"; fail=1
+elif ! grep -qE '^\[jericho\][[:space:]]+antfarm[[:space:]].*enabled=1' "$LOG" 2>/dev/null; then
+	echo "FAIL: the single enabled module is not antfarm"; fail=1
 fi
 echo "cuts observed: $(grep -c '\[antfarm\] cut #' "$LOG" 2>/dev/null || echo 0)"
 grep -m 16 '\[antfarm\] cut #' "$LOG" 2>/dev/null | sed 's/^/   /'
