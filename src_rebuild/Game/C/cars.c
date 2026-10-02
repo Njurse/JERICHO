@@ -2758,11 +2758,26 @@ static int CarPalIndexForBuild(int tpage, int city)
 
 	if (idx < 0)
 	{
-		if (sPalBakeMiss++ < 4)
-			printInfo("cross-city: set %d has no palette row in %s (nor in any held city) - baking row 0 for its polys rather than a negative index\n",
-				tpage, (city >= 0 && city < 4) ? LevelNames[city] : "?");
+		// JERICHO: an unclassifiable set resolves to the SOURCE CITY'S OWN first row, not to
+		// the host's row 0. Set 0 is the usual one - every city's models carry 8-16 polys
+		// naming it, and no city has a car page there.
+		//
+		// Two reasons, and the second is a bug fix rather than a preference:
+		//
+		// 1. The host reads its OWN row 0 for a set it cannot classify. Applying that rule
+		//    where the car actually came from is the same rule, not a new one.
+		// 2. `carid` is the row in `clut = (carid-1)*6*32 + texture_id*6`, which is NEGATIVE
+		//    at carid 0 - and the poly's clut_uv0 high word is a civ_clut INDEX into
+		//    `&civ_clut[1]`, so a negative one reads BEFORE the array. A guest's row 0 is its
+		//    block base (8/16/24), which is positive, so those polys become safe; the old
+		//    `GetCarPalIndex` fallback answered 0 and left the wild index in place.
+		int base = CarImportPaletteBlockBase(city);
 
-		idx = GetCarPalIndex(tpage);
+		if (sPalBakeMiss++ < 4)
+			printInfo("cross-city: set %d has no palette row in %s - baking that city's own row 0 (civ_clut %d) rather than a negative index\n",
+				tpage, (city >= 0 && city < 4) ? LevelNames[city] : "?", (base >= 0) ? base : 0);
+
+		idx = (base >= 0) ? base : GetCarPalIndex(tpage);
 	}
 
 	return idx;
