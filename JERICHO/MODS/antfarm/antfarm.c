@@ -375,6 +375,7 @@ typedef struct ANTFARM_STATE
 	int streamRetries;	/* far-area re-picks on streaming timeouts */
 	int streamDone;		/* the new area's regions have been accepted+loaded */
 	int shotPlanned;	/* 1 when the shot for this cut has been fully planned */
+	int seededThisCut;	/* traffic has been pre-seeded for this cut's area */
 
 	/* rogue-car (lead AI) event */
 	int leadMode;		/* following a rogue car until it is totaled */
@@ -994,6 +995,79 @@ static int AntFarmTrafficNear(const VECTOR* pos, int radius)
 	}
 
 	return n;
+}
+
+/* ------------------------------------------------------------------ */
+/* traffic pre-seed                                                   */
+/* ------------------------------------------------------------------ */
+/* The engine dribbles civilians in only a few per frame, around
+ * MainPlayer.spoolXZ, so a shot that hops to a fresh area opens on an empty
+ * road and a car-subject style has nothing to latch onto. This fills the area
+ * at once with the engine's own spawner (PingInCivCar) - the very call the
+ * game uses, so the cars are ordinary traffic, not a special case.
+ *
+ * "Cars do not spawn invisible": InitCar places every pinger with MapHeight(),
+ * which answers 0 for a cell that is not resident - the car lands in the void
+ * and is never drawn. So the focus region is streamed in first and the seed is
+ * skipped (loudly) if it still has no data or is not resident, rather than
+ * dropping a batch of cars into nothing. */
+static void AntFarmPreseedTraffic(int nMax)
+{
+	VECTOR focus;
+	VECTOR* savedSpool;
+	int region, spawned = 0, i;
+
+	if (!AntFarmMapReady())
+		return;
+
+	/* The spawner reads MainPlayer.spoolXZ; hand it the focus we want the
+	 * traffic at - the module's shot area while active, otherwise the player's
+	 * own spool (a level start, before the first cut has picked an area). */
+	if (s.active)
+	{
+		focus = s.spool;
+	}
+	else
+	{
+		if (MainPlayer.spoolXZ == NULL)
+			return;
+
+		focus.vx = MainPlayer.spoolXZ->vx;
+		focus.vz = MainPlayer.spoolXZ->vz;
+	}
+
+	savedSpool = MainPlayer.spoolXZ;
+	MainPlayer.spoolXZ = &focus;
+
+	region = AntFarmRegionOf(&focus);
+
+	/* stream the destination in before pinging into it, so the cars land on
+	 * loaded ground instead of in the void */
+	if (!AntFarmRegionUnpacked(region) && AntFarmRegionHasData(region))
+		jer_map_spool_to(focus.vx, focus.vz);
+
+	if (AntFarmRegionHasData(region) && AntFarmRegionUnpacked(region))
+	{
+		for (i = 0; i < nMax; i++)
+		{
+			if (PingInCivCar(15900) == 0)
+				break;		/* no free slot / no valid lane this ping */
+
+			spawned++;
+		}
+	}
+	else
+	{
+		s.ctx->jer_log(s.ctx,
+			"[antfarm] pre-seed skipped: region %d not resident (cars would spawn invisible)\n",
+			region);
+	}
+
+	MainPlayer.spoolXZ = savedSpool;
+
+	s.ctx->jer_log(s.ctx,
+		"[antfarm] pre-seed: %d civ car(s) around (%d,%d) region %d\n",
+		spawned, focus.vx, focus.vz, region);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1903,6 +1977,12 @@ static int AntFarmOnGameStart(void* userdata, void* args)
 		AntFarmSuspend();
 	}
 
+	/* Pre-seed the new level's traffic at once (when the screensaver is wanted),
+	 * so the world is already alive and a car-subject shot has something to
+	 * frame. Skipped when the mode is off, so plain play is untouched. */
+	if (s.active || s.pendingEnable)
+		AntFarmPreseedTraffic(maxCivCars);
+
 	return JER_RESULT_CONTINUE;
 }
 
@@ -2778,6 +2858,12 @@ static void AntFarmSetActive(int on)
 		AntFarmPinPlayerCar();
 		MainPlayer.spoolXZ = &s.spool;
 
+		/* Fill the world around the focus straight away (activated or on a
+		 * re-engage) so the screensaver does not open on an empty city; the
+		 * per-cut seed below then tops the traffic up at whatever area each
+		 * shot actually hops to. */
+		AntFarmPreseedTraffic(maxCivCars);
+
 		/* Do NOT plan and reveal a shot straight from activation: that showed a
 		 * frame whose region and texture pages had not streamed yet, which is
 		 * the grey/skybox first shot. Enter the ordinary CUT instead and let the
@@ -3108,6 +3194,7 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.streamRetries = 0;
 			s.streamDone = 0;
 			s.shotPlanned = 0;
+			s.seededThisCut = 0;	/* the cut's area is seeded once its region is in */
 			s.holdSince = 0;
 			s.vantageSet = 0;	/* a fixed vantage is resolved per shot */
 
@@ -3255,6 +3342,16 @@ static int AntFarmOnFrame(void* userdata, void* args)
 				AntFarmPinPlayerCar();
 				MainPlayer.spoolXZ = &s.spool;
 				s.cutStart = now;
+			}
+
+			/* The destination region is in, so now it is safe to seed traffic
+			 * around the area the shot will actually use (once per cut). The
+			 * spawner places cars with MapHeight(), so seeding any earlier -
+			 * before the region is resident - would drop them into the void. */
+			if (s.streamDone && !s.seededThisCut)
+			{
+				s.seededThisCut = 1;
+				AntFarmPreseedTraffic(maxCivCars);
 			}
 
 			if (s.streamDone && !s.shotPlanned)

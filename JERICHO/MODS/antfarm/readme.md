@@ -172,6 +172,7 @@ by the menu, so it only appears if you put it there.
 | Scenery clearance | `lineClear` LOS pull-back + `CheckScenaryCollisions` camera-collider push-out (world-space Y conversion, `camera.c:604` pattern) |
 | Region streaming | the spool (`MainPlayer.spoolXZ`) is redirected to a module-owned `VECTOR`, re-asserted every frame in the camera hook (after `UpdatePlayers()` resets it), and pointed at the *camera* once a shot is live |
 | Far hops | the engine only pre-loads *neighbouring* regions as you move, so a hop calls `UnpackRegion()` to force the destination region in, and the cut waits (black) for it before fading in |
+| Traffic pre-seed | `PingInCivCar` (the game's own spawner) fills the focus with civilian traffic at **level start, on activation and once per cut** — the region is streamed in first, so no car is ever spawned into an unloaded cell ("invisible" cars) |
 | Fade | semi-transparent fullscreen wash drawn in `JER_EVENT_DRAW_OVERLAY` (same look as the stock `FadeGameScreen`), plus optional letterbox bars and the caption |
 | FOV | per-shot `SetGeomScreen(scr_z = …)`, interpolated so the lens breathes |
 | Timing / state machine | `JER_EVENT_FRAME` (wall-clock, SDL_GetTicks) |

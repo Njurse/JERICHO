@@ -218,6 +218,34 @@ enters a new cell during a live shot, `AntFarmOnFrame` calls
 `CheckLoadAreaData(cellX, cellZ)` + `StartSpooling`/`UpdateSpool`, exactly as the
 CUT does for a destination. Tracked by `s.lastCellX/lastCellZ`.
 
+### Traffic pre-seed (`AntFarmPreseedTraffic`)
+
+The engine only dribbles civilians in a few per frame, around
+`MainPlayer.spoolXZ`, so a cut that hops to a fresh area opens on an empty road
+and a car-subject style has nothing to frame. `AntFarmPreseedTraffic(nMax)`
+fills the area at once with the engine's own spawner, `PingInCivCar` — the same
+call the game uses, so the cars are ordinary traffic.
+
+It is called from three places: **level start** (`AntFarmOnGameStart`, only when
+the mode is active or wanted, so plain play is untouched), **activation /
+re-engage** (`AntFarmSetActive(1)`), and **once per cut** as soon as that cut's
+destination region is resident (`s.seededThisCut`, reset in the CUT's `cutInit`,
+right before the shot is planned — so a car-subject cut has a subject waiting).
+
+It hands `MainPlayer.spoolXZ` the focus for the duration (the module's shot area
+while active, otherwise the player's own spool) and restores it after. The
+player's car is never a candidate: it is pinned with `reservedSlots[] = 1` and
+`CONTROL_TYPE_NONE`, which the spawner's free-slot search skips.
+
+**No invisible cars.** `InitCar` places every pinger with `MapHeight()`, which
+answers 0 for a cell that is not resident — the car lands in the void and is
+never drawn. So the focus region is streamed in first (`jer_map_spool_to` when
+it is not resident) and the seed only pings when the region has data *and* is
+resident; otherwise it logs
+`[antfarm] pre-seed skipped: region N not resident (cars would spawn invisible)`
+and spawns nothing. Each seed logs its count:
+`[antfarm] pre-seed: N civ car(s) around (x,z) region R`.
+
 ---
 
 ## 4. The director
