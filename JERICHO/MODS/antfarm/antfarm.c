@@ -1549,16 +1549,19 @@ static void AntFarmInitShotVars(void)
 			s.shotLookAhead = AntRandRange(d->aimLo, d->aimHi);
 	}
 
-	/* safety clamp: a long lens is fine, a fisheye is not */
-	if (s.shotScrZ < 200)
-		s.shotScrZ = 200;
-	if (s.shotScrZ > 360)
-		s.shotScrZ = 360;
+	/* safety clamp: a long lens is fine, a fisheye is not. The floor is the
+	 * engine's own widest lens (ANTFARM_FOV_MIN = gCameraDefaultScrZ), so a
+	 * shot can never be wider than ordinary gameplay - a style row whose whole
+	 * scrZ range sits below it (e.g. overhead) simply pins to the floor. */
+	if (s.shotScrZ < ANTFARM_FOV_MIN)
+		s.shotScrZ = ANTFARM_FOV_MIN;
+	if (s.shotScrZ > ANTFARM_FOV_MAX)
+		s.shotScrZ = ANTFARM_FOV_MAX;
 
-	if (s.shotZoomTo < 200)
-		s.shotZoomTo = 200;
-	if (s.shotZoomTo > 360)
-		s.shotZoomTo = 360;
+	if (s.shotZoomTo < ANTFARM_FOV_MIN)
+		s.shotZoomTo = ANTFARM_FOV_MIN;
+	if (s.shotZoomTo > ANTFARM_FOV_MAX)
+		s.shotZoomTo = ANTFARM_FOV_MAX;
 }
 
 /* A shot's visible time: the cut interval scaled by how interesting the

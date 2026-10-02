@@ -265,7 +265,7 @@ camera case. Columns (`ANT_STYLE_DEF`):
 | `behind` | attached rigs: sit behind the car |
 | `zoom` | push the lens in and back out across the shot |
 | `heightLo/Hi` | camera elevation above ground/road |
-| `scrZLo/Hi` | FOV (projection distance; smaller = wider). For a zoom row these are the ramp's two ends |
+| `scrZLo/Hi` | FOV (projection distance; smaller = wider). For a zoom row these are the ramp's two ends. Both clamp to `ANTFARM_FOV_MIN` 256 … `ANTFARM_FOV_MAX` 360 |
 | `sideLo/Hi` | lateral offset (rig offset, or the roadside margin) |
 | `fwdLo/Hi` | longitudinal offset (attached rigs) |
 | `aimLo/Hi` | how far ahead of the subject the aim sits |
@@ -418,7 +418,10 @@ subject the car is attached *after* planning (`AntFarmSetCarSubject`), because
 
 `AntFarmInitShotVars` randomises the framing from the row's ranges, sets the FOV
 (one end of the ramp for a zoom row), decides whether the row pans
-(`AntRandChance(72)`), and clamps the lens (200…360). It also resets
+(`AntRandChance(72)`), and clamps the lens to `ANTFARM_FOV_MIN` 256 …
+`ANTFARM_FOV_MAX` 360. The floor is the engine's own widest lens
+(`gCameraDefaultScrZ`), so no shot is ever wider than ordinary gameplay - a
+deeper floor (200) read as a fisheye when a shot's lens expanded. It also resets
 `trailSet`.
 
 **Flank variety.** The same function picks `shotSideSign` (±1), which every model

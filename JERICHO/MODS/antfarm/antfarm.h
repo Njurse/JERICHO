@@ -58,6 +58,15 @@ enum
  * must not show) */
 #define ANTFARM_STILL_MS        2500
 
+/* The screensaver's lens range, as the projection distance passed to
+ * SetGeomScreen (scr_z): SMALLER = WIDER. The engine itself never goes below
+ * gCameraDefaultScrZ (256) - camera.c floors scr_z there, and grows it with
+ * distance up to 800 - so 256 is the widest the game ever is. The module used
+ * to allow 200, which is wider than the game ever goes and read as a fisheye
+ * when a shot's lens "expanded"; the floor is now the engine's own widest. */
+#define ANTFARM_FOV_MIN         256
+#define ANTFARM_FOV_MAX         360
+
 /* Road-following cameras (roadside, dolly, crane, junction) aim this many
  * world units ABOVE the road, so the frame carries more of the street and what
  * is beyond it instead of pointing too far down. The per-model aim offsets

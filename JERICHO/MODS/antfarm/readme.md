@@ -177,7 +177,7 @@ by the menu, so it only appears if you put it there.
 | Far hops | the engine only pre-loads *neighbouring* regions as you move, so a hop calls `UnpackRegion()` to force the destination region in, and the cut waits (black) for it before fading in |
 | Traffic pre-seed | `PingInCivCar` (the game's own spawner) fills the focus with civilian traffic at **level start, on activation and once per cut** — the region is streamed in first, so no car is ever spawned into an unloaded cell ("invisible" cars) |
 | Fade | semi-transparent fullscreen wash drawn in `JER_EVENT_DRAW_OVERLAY` (same look as the stock `FadeGameScreen`), plus optional letterbox bars and the caption |
-| FOV | per-shot `SetGeomScreen(scr_z = …)`, interpolated so the lens breathes |
+| FOV | per-shot `SetGeomScreen(scr_z = …)`, interpolated so the lens breathes; clamped so a shot is never wider than the engine's own widest lens (`ANTFARM_FOV_MIN` 256) |
 | Timing / state machine | `JER_EVENT_FRAME` (wall-clock, SDL_GetTicks) |
 
 ## Caveats
