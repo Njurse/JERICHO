@@ -77,7 +77,10 @@ more often) - with the default 30 s interval a tour that cuts every few
 seconds is a slideshow, and one that dwells for minutes stops being something
 you can leave on in the background. The transition is a 0.7 s dissolve that
 darkens through black rather than flashing through white, so it is easy on the
-eye in a dark room.
+eye in a dark room — and the **very first shot of an activation fades in over
+0.5 s the moment its assets have streamed**, instead of waiting out the usual
+black beat, so turning it on never opens on a few seconds of black. (The log
+says so: `[antfarm] first shot: fading in over 500ms`.)
 
 Shot *areas* are picked by interest rather than at random: a sample of
 candidate roads is scored on water beside the road, sheer length, and traffic

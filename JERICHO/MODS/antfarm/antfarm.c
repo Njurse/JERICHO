@@ -321,6 +321,8 @@ typedef struct ANTFARM_STATE
 	int fade;		/* 0..255 overlay wash intensity */
 	unsigned long stateStart;	/* when the current state began (ms) */
 	unsigned long shotStart;	/* when the current shot's fade-in began (ms) */
+	int fadeInMs;		/* duration of the current FADE_IN (the first shot is shorter) */
+	int firstShot;		/* this activation has not revealed a shot yet: reveal as soon as it streams */
 
 	int intervalMs;					/* seconds per visible shot (cut interval) */
 	int stylesEnabled[ANTFARM_STYLE_COUNT];
@@ -2732,6 +2734,8 @@ static void AntFarmSetActive(int on)
 		s.state = ANTFARM_STATE_SHOW;
 		s.stateStart = AntTicks();
 		s.shotStart = s.stateStart;
+		s.fadeInMs = ANTFARM_FADE_MS;
+		s.firstShot = 1;	/* the activation shot reveals fast (see the CUT state) */
 		s.cutCount = 0;
 		s.leadMode = 0;
 		s.leadEnding = 0;
@@ -3300,11 +3304,24 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			}
 		}
 
-		if (s.shotPlanned &&
-			(s.targetKind != ANTFARM_TARGET_CAR || AntFarmValidCar() != NULL) &&
-			now - s.cutStart >= (unsigned long)(ANTFARM_CUT_HOLD_MS
-			+ ANTFARM_TEX_SETTLE_MS
-			+ (s.jumpDist2 > 0 ? (s.jumpDist2 / 30000 > 2000 ? 2000 : (int)(s.jumpDist2 / 30000)) : 0)))
+		/* How long the black CUT is held before the shot is revealed. Every
+		 * later cut waits the normal hold (it covers a far hop's streaming and
+		 * lets the destination's texture pages land), but the ACTIVATION shot
+		 * waits for nothing except its own readiness: it reveals the moment its
+		 * region is resident and the shot is planned, so the screensaver does
+		 * not open on seconds of black. The streaming gate above has already
+		 * run, so reaching here means the region is in. */
+		{
+			unsigned long holdMs = s.firstShot ? 0
+				: (unsigned long)(ANTFARM_CUT_HOLD_MS + ANTFARM_TEX_SETTLE_MS
+					+ (s.jumpDist2 > 0 ? (s.jumpDist2 / 30000 > 2000 ? 2000 : (int)(s.jumpDist2 / 30000)) : 0));
+
+			if (!(s.shotPlanned &&
+				(s.targetKind != ANTFARM_TARGET_CAR || AntFarmValidCar() != NULL) &&
+				now - s.cutStart >= holdMs))
+				break;
+		}
+
 		{
 			if (!s.leadMode && s.leadEnabled &&
 				s.targetKind == ANTFARM_TARGET_CAR &&
@@ -3317,6 +3334,17 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.state = ANTFARM_STATE_FADE_IN;
 			s.stateStart = now;
 			s.shotStart = now;
+			/* the activation shot fades in over ANTFARM_FIRST_FADE_MS; every
+			 * later shot gets the normal transition. Recorded per transition so
+			 * the FADE_IN ramp reads the right duration, and the flag cleared
+			 * so only the FIRST shot is fast. */
+			s.fadeInMs = s.firstShot ? ANTFARM_FIRST_FADE_MS : ANTFARM_FADE_MS;
+
+			if (s.firstShot)
+				s.ctx->jer_log(s.ctx, "[antfarm] first shot: fading in over %dms\n",
+					ANTFARM_FIRST_FADE_MS);
+
+			s.firstShot = 0;
 			s.dwellMs = AntFarmComputeDwell();
 			s.camSnapped = 0;	/* snap onto the new shot under the black */
 			s.lastDollyMs = now;
@@ -3341,7 +3369,8 @@ static int AntFarmOnFrame(void* userdata, void* args)
 		break;
 
 	case ANTFARM_STATE_FADE_IN:
-		s.fade = 255 - (int)((now - s.stateStart) * 255 / ANTFARM_FADE_MS);
+		s.fade = 255 - (int)((now - s.stateStart) * 255 /
+			(unsigned long)(s.fadeInMs > 0 ? s.fadeInMs : ANTFARM_FADE_MS));
 
 		if (s.fade <= 0)
 		{

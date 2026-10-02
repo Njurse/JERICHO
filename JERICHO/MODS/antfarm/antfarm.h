@@ -58,6 +58,12 @@ enum
  * must not show) */
 #define ANTFARM_STILL_MS        2500
 
+/* The very first shot of an activation fades in FAST and begins as soon as its
+ * assets have streamed, instead of waiting out the normal CUT hold: a
+ * screensaver that opens on several seconds of black reads as broken. Every
+ * later cut keeps the normal ANTFARM_FADE_MS transition. */
+#define ANTFARM_FIRST_FADE_MS   500
+
 /* extra black after a shot's region lands, so the destination's texture pages
  * (which the engine streams per AREA, keyed off the camera position) are in
  * VRAM before the scene is revealed */

@@ -112,6 +112,16 @@ That is why the pause-menu row reads `(s.active || s.pendingEnable) ? ON : OFF`
    revealing a shot straight from activation is what produced the old
    grey/skybox first frame.)
 
+**The activation shot is the one exception to the CUT hold.** The normal cut
+waits `ANTFARM_CUT_HOLD_MS + ANTFARM_TEX_SETTLE_MS +` a jump-scaled extra before
+revealing, which on the first cut is a couple of seconds of black. `s.firstShot`
+(set here, cleared when the first `FADE_IN` starts) makes that first cut reveal
+the moment its region is resident and the shot is planned — nothing else — and
+fades in over `ANTFARM_FIRST_FADE_MS` (500 ms) instead of `ANTFARM_FADE_MS`
+(700 ms). Every later cut keeps the full hold and the normal transition, and the
+transition logs `[antfarm] first shot: fading in over 500ms` so the behaviour is
+checkable from the log alone.
+
 ### Deactivation sequence
 
 `AntFarmSetActive(0)` restores pads, overlays, cop flag, master volume,
@@ -135,10 +145,11 @@ SHOW ──(dwell, or subject gone/parked)──▶ FADE_OUT ──(fade 255)─
 |---|---|
 | `SHOW` | the shot is on screen. Ends on `s.dwellMs` (interest-scaled), or early if the subject despawned and no replacement car exists, or if a rig/long-lens subject parks (`ANTFARM_STILL_MS`, `s.stillSince`) or recedes out of range |
 | `FADE_OUT` | `s.fade` ramps 0→255 over `ANTFARM_FADE_MS` (700 ms) |
-| `CUT` | the black beat. Plans the shot, forces the destination region in, waits for it, then reveals |
-| `FADE_IN` | `s.fade` ramps 255→0; on reaching 0 → `SHOW`, `shotStart = now` |
+| `CUT` | the black beat. Plans the shot, forces the destination region in, waits for it, then reveals. On the **first** cut (`s.firstShot`) the wait is skipped and the shot is revealed as soon as it is resident + planned, so activation does not open on black |
+| `FADE_IN` | `s.fade` ramps 255→0 over `s.fadeInMs` (`ANTFARM_FIRST_FADE_MS` 500 on the activation shot, else `ANTFARM_FADE_MS` 700); on reaching 0 → `SHOW`, `shotStart = now` |
 
-Timings live in `antfarm.h`: `ANTFARM_FADE_MS 700`, `ANTFARM_CUT_HOLD_MS 250`,
+Timings live in `antfarm.h`: `ANTFARM_FADE_MS 700`,
+`ANTFARM_FIRST_FADE_MS 500` (the activation shot only), `ANTFARM_CUT_HOLD_MS 250`,
 `ANTFARM_CAR_WAIT_MS 5000`, `ANTFARM_STREAM_TIMEOUT_MS 400`,
 `ANTFARM_BLACK_CAP_MS 700`, `ANTFARM_TEX_SETTLE_MS 250`,
 `ANTFARM_STILL_MS 2500`. Shot length is clamped to `ANTFARM_SHOT_MIN_MS
