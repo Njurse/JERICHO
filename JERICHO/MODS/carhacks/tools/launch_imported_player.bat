@@ -147,6 +147,32 @@ echo   config         : %CFG%
 echo   command        : REDRIVER2_dev.exe -nointro -level %LEVELNAME% -car %MODEL% -weather none -time day %TESTARGS%
 echo.
 
+rem ---- does the SOURCE city even ship this model? --------------------------
+rem A no-op here is the worst outcome: the import falls back, the engine logs "car
+rem model N has no data in this level - player car falls back to resident slot 0", and
+rem the player simply keeps their car - which reads as "the script does not replace the
+rem car". Models 5, 6 and 7 are a GAP in EVERY city (measured with levmodels.py on all
+rem four .LEV files), so a request for one can never be satisfied. Refuse rather than
+rem launch something that cannot work, and do it BEFORE the dry exit so "dry" validates.
+set "LEVFILE=%EXEDIR%\DRIVER2\LEVELS\"
+call :nameof %SRCIDX%
+set "LEVFILE=%LEVFILE%%NAME%.LEV"
+if not exist "%~dp0levmodels.py" goto :skippedcheck
+if not exist "%LEVFILE%" goto :skippedcheck
+python3 "%~dp0levmodels.py" --has-model %MODEL% "%LEVFILE%" >nul 2>&1
+if not errorlevel 1 goto :modelok
+echo.
+echo   REFUSED        : %NAME% does not ship model %MODEL%, so this cannot be an import.
+echo                    (models 5, 6 and 7 exist in NO city)
+echo                    what %NAME% does ship:
+python3 "%~dp0levmodels.py" "%LEVFILE%" 2>nul | findstr "yes"
+endlocal
+exit /b 2
+:skippedcheck
+echo   note           : levmodels.py or %LEVFILE% missing - the model check was SKIPPED
+:modelok
+echo.
+
 if /i not "%MODE%"=="dry" goto :notdry
 echo   dry: nothing written, nothing launched
 endlocal

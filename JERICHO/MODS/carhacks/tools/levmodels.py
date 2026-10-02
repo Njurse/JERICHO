@@ -109,11 +109,42 @@ def dump(path):
     print()
 
 
+def has_model(path, model):
+    """Does this level's car-model block ship `model`? Exit 0 if yes, 1 if no, 2 if the
+    file cannot be read.
+
+    For the launchers. A city ships civilian models 0..4 and its own specials; 5, 6 and 7
+    are a GAP in every city (measured: levmodels.py on all four .LEV files). Asking to
+    import a model a city does not ship used to produce a silent no-op - the engine logged
+    "car model N has no data in this level - player car falls back to resident slot 0" and
+    the player kept their car, which reads as "the script does not replace the car".
+    """
+    try:
+        blob = open(path, "rb").read()
+    except OSError:
+        return 2
+    d1_off = struct.unpack_from("<8i", blob, 8)[0]
+    models, _ = model_table(blob, d1_off)
+    return 0 if models.get(model) else 1
+
+
 def main():
-    if len(sys.argv) < 2:
+    args = sys.argv[1:]
+
+    # --has-model <n> <level.lev>   ->  exit 0 if that level ships model n
+    if len(args) == 2 and args[0] == "--has-model":
+        sys.exit(3)  # wrong shape; the real form is --has-model N PATH
+    if len(args) == 3 and args[0] == "--has-model":
+        try:
+            model = int(args[1])
+        except ValueError:
+            sys.exit(3)
+        return has_model(args[2], model)
+
+    if len(args) < 1:
         print(__doc__)
         return 1
-    for path in sys.argv[1:]:
+    for path in args:
         dump(path)
     return 0
 
