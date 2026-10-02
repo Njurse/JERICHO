@@ -1698,7 +1698,30 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 	int reused = 0;			// entries that reused a CLUT already in VRAM (no new row)
 	int deferred = 0;		// JERICHO: stored CLUTs the row filter left out of VRAM
 	int borrowed = 0;		// JERICHO: skipped CLUTs a needed entry referred to (uploaded on demand)
-	const int rowStart = clutpos.y;	// to report how many COLUMN ROWS this load consumed
+	// JERICHO: WHERE this city's CLUTs go.
+	//
+	// The host's own palettes are the LEVEL's, so they belong in the base column. An
+	// imported city's are not: uploading those there is what took the base strip from 85
+	// safe free rows to 18 in a two-guest mashup, reached into the CD-icon/spool band at
+	// 433..464, and left the host's other cars sharing rows with a foreign table. The arena
+	// column (x960..1023, rows 512..1023) is 512 rows of space nothing stock computes, so a
+	// guest city's table goes THERE - 32..38 rows each, measured.
+	//
+	// The cursor rather than an allocation because this walk does not know how many rows it
+	// needs until it has walked the lump; it commits the rows it used at the end.
+	RECT16 importClut;
+	RECT16 *dst = &clutpos;
+	int importRow0 = 0, importX0 = 0;
+
+	if (CarImportCityHeld(city) && city != GameLevel)
+	{
+		JerVramArenaClutCursor(&importClut);
+		dst = &importClut;
+		importRow0 = importClut.y;
+		importX0 = importClut.x;
+	}
+
+	const int rowStart = dst->y;	// to report how many COLUMN ROWS this load consumed
 
 	// JERICHO: the deferred-upload state (see ProcessImportedPaletteRows).
 	//
@@ -1793,7 +1816,14 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 			// cannot eat the pin band's reserve. Past it, reuse the palette already stored
 			// for THIS PAGE - the car's own page, so its colours stay its own - and only
 			// fall back to the city's first palette if this page has not stored one yet.
-			if (CarImportCityHeld(city) && city != GameLevel && clutpos.y > CAR_CLUT_IMPORT_LIMIT)
+			// The reclaim's trigger is "this upload is eating a SHARED column". For the host that
+			// is the base strip past CAR_CLUT_IMPORT_LIMIT. For a guest the column is the
+			// arena's OWN, so there is nothing to protect and the check becomes the literal
+			// one: is there a row left at all.
+			int outOfRoom = (dst == &clutpos) ? (clutpos.y > CAR_CLUT_IMPORT_LIMIT)
+											 : (dst->y + 4 > JER_VRAM_TOTAL_ROWS);
+
+			if (CarImportCityHeld(city) && city != GameLevel && outOfRoom)
 			{
 				int hit = -1;
 
@@ -1809,11 +1839,11 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 			{
 				int* src = buffPtr;
 
-				LoadImage(&clutpos, (u_long*)buffPtr);
+				LoadImage(dst, (u_long*)buffPtr);
 				buffPtr += 8;
 
-				clutValue = GetClut(clutpos.x, clutpos.y);
-				IncrementClutNum(&clutpos);
+				clutValue = GetClut(dst->x, dst->y);
+				IncrementClutNum(dst);
 
 				// JERICHO: remember this CLUT's source, so a later entry that REFERS to it
 				// can be served even if this one were skipped (see the reference branch).
@@ -1874,9 +1904,9 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 			{
 				if (clutDone[clut_number] == 0)
 				{
-					LoadImage(&clutpos, (u_long*)clutSrc[clut_number]);
-					clutDone[clut_number] = GetClut(clutpos.x, clutpos.y);
-					IncrementClutNum(&clutpos);
+					LoadImage(dst, (u_long*)clutSrc[clut_number]);
+					clutDone[clut_number] = GetClut(dst->x, dst->y);
+					IncrementClutNum(dst);
 					borrowed++;
 				}
 
@@ -1902,12 +1932,18 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		}
 	}
 
+	// JERICHO: commit the rows the guest walk actually used. IncrementClutNum wraps
+	// x 960 -> 1024 to x = 960 and y++, so the ending position says how many whole rows it
+	// took, plus one if it stopped mid-row.
+	if (dst != &clutpos)
+		JerVramArenaClutAdvance((dst->y - importRow0) + ((dst->x > importX0) ? 1 : 0));
+
 	// JERICHO: always report, not only when something was skipped. This is the number
 	// that decides whether the CLUT column fits: the import's whole-table load is what
 	// pushes the level's own layout past the font (cars.h, VRAM.md §6), so the count of
 	// CLUTs and the rows they took has to be visible without a skip happening first.
 	printInfo("cross-city: %s palettes: %d CLUT(s) in the lump, %d row(s) taken (rows %d -> %d), %d reusing an earlier CLUT, %d deferred by the row filter, %d of those borrowed back, %d past the row %d budget\n",
-		LevelNames[city], total_cluts, clutpos.y - rowStart, rowStart, clutpos.y, reused, deferred, borrowed, skipped, CAR_CLUT_IMPORT_LIMIT);
+		LevelNames[city], total_cluts, dst->y - rowStart, rowStart, dst->y, reused, deferred, borrowed, skipped, CAR_CLUT_IMPORT_LIMIT);
 }
 
 // JERICHO: the deferred import palette lumps, ONE PER CITY (see

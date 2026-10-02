@@ -135,6 +135,8 @@ void JerVramArenaPageFree(int slot);
 int  JerVramArenaPageHolds(int slot, int page);
 int  JerVramArenaPageOwned(int x, int y);
 int  JerVramArenaClutAlloc(int rows);
+void JerVramArenaClutCursor(RECT16 *out);	// walk it (IncrementClutNum), then Advance
+void JerVramArenaClutAdvance(int rows);
 int  JerVramArenaPagesUsed(void);
 int  JerVramArenaPagesFree(void);
 int  JerVramArenaClutRowsUsed(void);

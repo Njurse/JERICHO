@@ -287,6 +287,40 @@ int JerVramArenaClutAlloc(int rows)
 	return y;
 }
 
+// JERICHO: the arena CLUT column as a CURSOR, for a caller that walks it one CLUT at a
+// time (IncrementClutNum) instead of knowing its size up front - the imported cities'
+// palette upload is exactly that: it walks a lump and only then knows how many rows it
+// used. Take the cursor, walk it, commit the rows.
+//
+// The x is the same 960 as the base column and IncrementClutNum wraps at 1024, so the
+// walk needs no special case: 4 CLUTs to a row, then y++.
+void JerVramArenaClutCursor(RECT16 *out)
+{
+	out->x = JER_ARENA_CLUT_X;
+	out->y = (short)sJerArenaClutY;
+	out->w = 64;
+	out->h = 4;
+}
+
+void JerVramArenaClutAdvance(int rows)
+{
+	if (rows <= 0)
+		return;
+
+	if (sJerArenaClutY + rows > JER_VRAM_TOTAL_ROWS)
+	{
+		// The column is full. Pin the cursor at the end rather than letting it walk past
+		// VRAM; the upload that overran is dropped and counted, not silently wrapped.
+		sJerArenaClutDropped++;
+		sJerArenaClutY = JER_VRAM_TOTAL_ROWS;
+		sJerArenaClutUsed = JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y;
+		return;
+	}
+
+	sJerArenaClutY += rows;
+	sJerArenaClutUsed += rows;
+}
+
 int JerVramArenaPagesUsed(void)			{ return sJerArenaPagesUsed; }
 int JerVramArenaPagesFree(void)			{ return JER_ARENA_PAGES - sJerArenaPagesUsed; }
 int JerVramArenaClutRowsUsed(void)		{ return sJerArenaClutUsed; }
