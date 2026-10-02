@@ -138,7 +138,7 @@ void IncrementClutNum(RECT16 *clut)
 }
 
 // ---------------------------------------------------------------------------
-// JERICHO: the bottom-half VRAM arena (see JER_VRAM_HALF_Y in cars.h).
+// JERICHO: the bottom-half VRAM pool (see JER_VRAM_HALF_Y in cars.h).
 //
 // Everything JERICHO loads - the cross-city import's pages and palettes, and later the
 // custom textures that name a real page - is placed HERE, in rows 512..1023, instead of
@@ -154,54 +154,54 @@ void IncrementClutNum(RECT16 *clut)
 //
 // No stock walk can reach this: tpagepos[] uses Y in {0,256}, the CLUT cursors are
 // bounded by CD2_CLUT_SAFE_LAST, and IncrementClutNum is clamped by its callers. The
-// arena is therefore "owned" by construction - it is not a mark that could be forgotten,
+// pool is therefore "owned" by construction - it is not a mark that could be forgotten,
 // it is a row range nothing else addresses.
 // ---------------------------------------------------------------------------
-#define JER_PAGE_W			64
-#define JER_PAGE_ROW_H		256
-#define JER_ARENA_CLUT_X	960									// the CLUT column starts here
-#define JER_PAGES_PER_ROW	(JER_ARENA_CLUT_X / JER_PAGE_W)		// 15 -> x 0..895
-#define JER_PAGE_ROWS		2									// Y = 512 and 768
-#define JER_ARENA_PAGES		(JER_PAGES_PER_ROW * JER_PAGE_ROWS)	// 30 pages, 60 KiB
+#define JER_POOL_PAGE_W			64
+#define JER_POOL_PAGE_ROW_H		256
+#define JER_POOL_CLUT_X	960									// the CLUT column starts here
+#define JER_POOL_PAGES_PER_ROW	(JER_POOL_CLUT_X / JER_POOL_PAGE_W)		// 15 -> x 0..895
+#define JER_POOL_PAGE_ROWS		2									// Y = 512 and 768
+#define JER_POOL_PAGES		(JER_POOL_PAGES_PER_ROW * JER_POOL_PAGE_ROWS)	// 30 pages, 60 KiB
 
-static u_char sJerArenaPageUsed[JER_ARENA_PAGES];
-static int sJerArenaPagesUsed;
-static int sJerArenaClutY = JER_VRAM_HALF_Y;	// next free row of the bottom CLUT column
-static int sJerArenaClutUsed;					// rows handed out
-static int sJerArenaClutDropped;				// asks that found no room
+static u_char sJerLowerPoolPageUsed[JER_POOL_PAGES];
+static int sJerLowerPoolPagesUsed;
+static int sJerLowerPoolClutY = JER_VRAM_HALF_Y;	// next free row of the bottom CLUT column
+static int sJerLowerPoolClutUsed;					// rows handed out
+static int sJerLowerPoolClutDropped;				// asks that found no room
 
-// Drop every arena claim. A level load calls this, so one level's imports cannot make
+// Drop every pool claim. A level load calls this, so one level's imports cannot make
 // the next level's look pre-used.
-void JerVramArenaReset(void)
+void JerLowerPoolReset(void)
 {
-	memset(sJerArenaPageUsed, 0, sizeof(sJerArenaPageUsed));
-	sJerArenaPagesUsed = 0;
-	sJerArenaClutY = JER_VRAM_HALF_Y;
-	sJerArenaClutUsed = 0;
-	sJerArenaClutDropped = 0;
+	memset(sJerLowerPoolPageUsed, 0, sizeof(sJerLowerPoolPageUsed));
+	sJerLowerPoolPagesUsed = 0;
+	sJerLowerPoolClutY = JER_VRAM_HALF_Y;
+	sJerLowerPoolClutUsed = 0;
+	sJerLowerPoolClutDropped = 0;
 }
 
-// Where arena page `slot` lives. This is the rectangle a caller uploads into, and what
+// Where lower half pool page `slot` lives. This is the rectangle a caller uploads into, and what
 // the page word it hands the model has to resolve back to (bits 4 and 11 of the tpage Y).
-void JerVramArenaPageRect(int slot, RECT16 *r)
+void JerLowerPoolPageRect(int slot, RECT16 *r)
 {
-	r->x = (short)((slot % JER_PAGES_PER_ROW) * JER_PAGE_W);
-	r->y = (short)(JER_VRAM_HALF_Y + (slot / JER_PAGES_PER_ROW) * JER_PAGE_ROW_H);
-	r->w = JER_PAGE_W;
-	r->h = JER_PAGE_ROW_H;
+	r->x = (short)((slot % JER_POOL_PAGES_PER_ROW) * JER_POOL_PAGE_W);
+	r->y = (short)(JER_VRAM_HALF_Y + (slot / JER_POOL_PAGES_PER_ROW) * JER_POOL_PAGE_ROW_H);
+	r->w = JER_POOL_PAGE_W;
+	r->h = JER_POOL_PAGE_ROW_H;
 }
 
-// Take the first free arena page. Returns the slot, or -1 when the half is full.
-int JerVramArenaPageAlloc(void)
+// Take the first free lower half pool page. Returns the slot, or -1 when the half is full.
+int JerLowerPoolPageAlloc(void)
 {
 	int i;
 
-	for (i = 0; i < JER_ARENA_PAGES; i++)
+	for (i = 0; i < JER_POOL_PAGES; i++)
 	{
-		if (!sJerArenaPageUsed[i])
+		if (!sJerLowerPoolPageUsed[i])
 		{
-			sJerArenaPageUsed[i] = 1;
-			sJerArenaPagesUsed++;
+			sJerLowerPoolPageUsed[i] = 1;
+			sJerLowerPoolPagesUsed++;
 			return i;
 		}
 	}
@@ -209,34 +209,34 @@ int JerVramArenaPageAlloc(void)
 	return -1;
 }
 
-void JerVramArenaPageFree(int slot)
+void JerLowerPoolPageFree(int slot)
 {
-	if (slot < 0 || slot >= JER_ARENA_PAGES)
+	if (slot < 0 || slot >= JER_POOL_PAGES)
 		return;
 
-	if (sJerArenaPageUsed[slot])
+	if (sJerLowerPoolPageUsed[slot])
 	{
-		sJerArenaPageUsed[slot] = 0;
-		sJerArenaPagesUsed--;
+		sJerLowerPoolPageUsed[slot] = 0;
+		sJerLowerPoolPagesUsed--;
 	}
 }
 
-// Is (x,y) the top-left of an ALLOCATED arena page? The arena half is JERICHO's alone, so
+// Is (x,y) the top-left of an ALLOCATED lower half pool page? The lower half is JERICHO's alone, so
 // an allocated page there is by construction owned by whoever asked for it - no separate
 // claim frame is needed, and none of the base game's ownership bookkeeping (which is
 // indexed by tpagepos[] slot) can describe it.
-int JerVramArenaPageOwned(int x, int y)
+int JerLowerPoolPageOwned(int x, int y)
 {
 	int i;
 
-	for (i = 0; i < JER_ARENA_PAGES; i++)
+	for (i = 0; i < JER_POOL_PAGES; i++)
 	{
 		RECT16 r;
 
-		if (!sJerArenaPageUsed[i])
+		if (!sJerLowerPoolPageUsed[i])
 			continue;
 
-		JerVramArenaPageRect(i, &r);
+		JerLowerPoolPageRect(i, &r);
 
 		if (r.x == x && r.y == y)
 			return 1;
@@ -245,18 +245,18 @@ int JerVramArenaPageOwned(int x, int y)
 	return 0;
 }
 
-// Does tpage word `page` address arena page `slot`? The decode is the engine's own, the
+// Does tpage word `page` address lower half pool page `slot`? The decode is the engine's own, the
 // same one CarImportPageRect and the shader use (x = (page & 0xf) * 64, y = bit4 * 256 +
 // bit11 * 512) - NOT the retired 5-bit form.
-int JerVramArenaPageHolds(int slot, int page)
+int JerLowerPoolPageHolds(int slot, int page)
 {
 	RECT16 r;
 	int px, py;
 
-	if (slot < 0 || slot >= JER_ARENA_PAGES)
+	if (slot < 0 || slot >= JER_POOL_PAGES)
 		return 0;
 
-	JerVramArenaPageRect(slot, &r);
+	JerLowerPoolPageRect(slot, &r);
 
 	px = (page & 0xf) * 64;
 	py = (((page >> 4) & 1) * 256) + (((page >> 11) & 1) * 512);
@@ -267,9 +267,9 @@ int JerVramArenaPageHolds(int slot, int page)
 // Reserve `rows` rows of the bottom CLUT column and return the first row, or -1 when the
 // column cannot hold them. The caller decides the row count - for the import it is the
 // same (npal + 3) / 4 + 1 the top half's pin band uses, per set.
-// JERICHO: ONE allocator for the arena's CLUT column, the cursor below.
+// JERICHO: ONE allocator for the lower half pool's CLUT column, the cursor below.
 //
-// There used to be a second, `JerVramArenaClutAlloc(rows)` - an up-front block
+// There used to be a second, `JerLowerPoolClutAlloc(rows)` - an up-front block
 // reservation - and it is GONE on purpose. Two ways to advance one column is exactly how
 // the palettes and the pin's page CLUTs ended up sharing rows 512..: the pin band was
 // reserved by size and the palette tables walked a cursor, so neither knew about the
@@ -279,7 +279,7 @@ int JerVramArenaPageHolds(int slot, int page)
 // same watermark by taking the cursor and advancing it as it walks (texture.c,
 // CarImportPin), so a later taker always starts past the earlier one.
 
-// JERICHO: the arena CLUT column as a CURSOR, for a caller that walks it one CLUT at a
+// JERICHO: the lower half pool CLUT column as a CURSOR, for a caller that walks it one CLUT at a
 // time (IncrementClutNum) instead of knowing its size up front - the imported cities'
 // palette upload is exactly that: it walks a lump and only then knows how many rows it
 // used. Take the cursor, walk it, commit the rows.
@@ -293,38 +293,38 @@ int JerVramArenaPageHolds(int slot, int page)
 // column instead of the shape of one CLUT - so every CLUT copied 256 halfwords: 16 real
 // ones plus 240 read past the source and written over the next three VRAM rows. The base
 // column's cursor is 16x1 for the same reason (texture.c, `clutpos` init).
-void JerVramArenaClutCursor(RECT16 *out)
+void JerLowerPoolClutCursor(RECT16 *out)
 {
-	out->x = JER_ARENA_CLUT_X;
-	out->y = (short)sJerArenaClutY;
+	out->x = JER_POOL_CLUT_X;
+	out->y = (short)sJerLowerPoolClutY;
 	out->w = 16;
 	out->h = 1;
 }
 
-void JerVramArenaClutAdvance(int rows)
+void JerLowerPoolClutAdvance(int rows)
 {
 	if (rows <= 0)
 		return;
 
-	if (sJerArenaClutY + rows > JER_VRAM_TOTAL_ROWS)
+	if (sJerLowerPoolClutY + rows > JER_VRAM_TOTAL_ROWS)
 	{
 		// The column is full. Pin the cursor at the end rather than letting it walk past
 		// VRAM; the upload that overran is dropped and counted, not silently wrapped.
-		sJerArenaClutDropped++;
-		sJerArenaClutY = JER_VRAM_TOTAL_ROWS;
-		sJerArenaClutUsed = JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y;
+		sJerLowerPoolClutDropped++;
+		sJerLowerPoolClutY = JER_VRAM_TOTAL_ROWS;
+		sJerLowerPoolClutUsed = JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y;
 		return;
 	}
 
-	sJerArenaClutY += rows;
-	sJerArenaClutUsed += rows;
+	sJerLowerPoolClutY += rows;
+	sJerLowerPoolClutUsed += rows;
 }
 
-int JerVramArenaPagesUsed(void)			{ return sJerArenaPagesUsed; }
-int JerVramArenaPagesFree(void)			{ return JER_ARENA_PAGES - sJerArenaPagesUsed; }
-int JerVramArenaClutRowsUsed(void)		{ return sJerArenaClutUsed; }
-int JerVramArenaClutRowsFree(void)		{ return JER_VRAM_TOTAL_ROWS - sJerArenaClutY; }
-int JerVramArenaClutDropped(void)		{ return sJerArenaClutDropped; }
+int JerLowerPoolPagesUsed(void)			{ return sJerLowerPoolPagesUsed; }
+int JerLowerPoolPagesFree(void)			{ return JER_POOL_PAGES - sJerLowerPoolPagesUsed; }
+int JerLowerPoolClutRowsUsed(void)		{ return sJerLowerPoolClutUsed; }
+int JerLowerPoolClutRowsFree(void)		{ return JER_VRAM_TOTAL_ROWS - sJerLowerPoolClutY; }
+int JerLowerPoolClutDropped(void)		{ return sJerLowerPoolClutDropped; }
 
 // JERICHO: read or write a CLUT row IN PLACE, at the address a CLUT id already names.
 //
@@ -414,7 +414,7 @@ u_short JerichoMakeClutRow(u_short sourceClut, int r, int g, int b, int strength
 
 	// clut word -> VRAM position (PSX GetClut encoding: y << 6 | x >> 4)
 	src.x = (short)((sourceClut & 0x3f) * 16);
-	src.y = (short)((sourceClut >> 6) & 0x3ff);	// 10-bit Y: the arena sits at 512..1023
+	src.y = (short)((sourceClut >> 6) & 0x3ff);	// 10-bit Y: the lower half pool sits at 512..1023
 	src.w = 16;
 	src.h = 1;
 
@@ -808,12 +808,12 @@ int CarPageRectOwned(int x, int y)
 {
 	int i;
 
-	// JERICHO: anything in the arena half is JERICHO's. Rows 512..1023 are space no stock
+	// JERICHO: anything in the lower half pool half is JERICHO's. Rows 512..1023 are space no stock
 	// path computes - tpagepos[] holds Y in {0,256} - so an upload aimed there is either
 	// one of our own pin uploads (which bypass the guard via sCarPageUploading) or a stray
 	// that must be refused. Checked before the slot table, which cannot describe it.
 	if (y >= JER_VRAM_HALF_Y)
-		return JerVramArenaPageOwned(x, y);
+		return JerLowerPoolPageOwned(x, y);
 
 	for (i = 0; i < 19; i++)
 	{
@@ -1621,9 +1621,9 @@ static int sPalUploaded;		// JERICHO: how many CLUT slots it wrote (0 = nothing,
 static int sPinSet[CAR_PIN_MAX];		// the set number the CAR asks for
 static int sPinIndex[CAR_PIN_MAX];		// the index its page is loaded at
 static int sPinSlot[CAR_PIN_MAX];		// the slot it lives in, -1 while unplaced
-static int sPinArena[CAR_PIN_MAX];		// JERICHO: the bottom-half arena page it lives in
+static int sPinPool[CAR_PIN_MAX];		// JERICHO: the lower half pool page it lives in
 						// instead, or -1 when it is in the base half. An
-						// arena pin has no slot: rows 512..1023 are not
+						// lower half pool pin has no slot: rows 512..1023 are not
 						// tpagepos[] and must stay out of tpageslots /
 						// tpageloaded / slot_clutpos, which are the world
 						// streamer's slot space (spool.c indexes
@@ -1746,7 +1746,7 @@ static void CarPinRecord(int set, int index, int offset, int size, int preferred
 	sPinSet[sPinCount] = set;
 	sPinIndex[sPinCount] = index;
 	sPinSlot[sPinCount] = -1;		// placed at draw time
-	sPinArena[sPinCount] = -1;
+	sPinPool[sPinCount] = -1;
 	sPinOffset[sPinCount] = offset;
 	sPinSize[sPinCount] = size;
 	sPinCity[sPinCount] = city;
@@ -1983,7 +1983,7 @@ void CarImportPin(void)
 					sPalUploaded += 1;
 
 			// Remember what is now in VRAM BEFORE the upload, so a row that is asked for
-			// again later is not re-uploaded (and does not consume a second arena row).
+			// again later is not re-uploaded (and does not consume a second lower half pool row).
 			memcpy(sPalRowsDone, rowNeeded, sizeof(sPalRowsDone));
 
 			ProcessImportedPaletteRows(fresh);
@@ -2049,12 +2049,12 @@ void CarImportPin(void)
 		char* buf;
 		RECT16 tpage, clut;
 		int slot;
-		int arena = -1;
+		int pool = -1;
 
-		// JERICHO: an arena pin cannot be taken back. Rows 512..1023 are not
+		// JERICHO: a lower half pool pin cannot be taken back. Rows 512..1023 are not
 		// tpagepos[], so the world streamer cannot target them and no host page can
 		// land on one - there is nothing to refresh and nothing to re-upload.
-		if (sPinArena[i] >= 0)
+		if (sPinPool[i] >= 0)
 			continue;
 
 		if (sPinSlot[i] >= 0 && tpageslots[sPinSlot[i]] == sPinIndex[i] && tpageloaded[sPinIndex[i]] != 0)
@@ -2065,23 +2065,23 @@ void CarImportPin(void)
 			continue;
 		}
 
-		// JERICHO: THE ARENA FIRST. Rows 512..1023 are space nothing else in the engine
+		// JERICHO: THE LOWER HALF POOL FIRST. Rows 512..1023 are space nothing else in the engine
 		// computes - not the world streamer (tpagepos[] holds Y in {0,256}), not the
 		// CLUT cursors (bounded by CD2_CLUT_SAFE_LAST) - so a page placed here takes
 		// nothing from the world and nothing from a host car. That IS the fix: INV1
 		// ("pinned to a WORLD-pool rectangle") and "buildings show the car's texture"
 		// are both what happens when an import has to TAKE a rectangle. The slot passes
-		// below stay as the fallback for when the arena is full (30 pages, and an import
+		// below stay as the fallback for when the lower half pool is full (30 pages, and an import
 		// needs a handful per set).
 		//
 		// This choice belongs here rather than in CarPageFindSlot: that returns a
-		// tpagepos[] INDEX and the rectangle is derived from it, so an arena page has no
+		// tpagepos[] INDEX and the rectangle is derived from it, so a lower half pool page has no
 		// index to return.
-		arena = JerVramArenaPageAlloc();
+		pool = JerLowerPoolPageAlloc();
 
-		if (arena >= 0)
+		if (pool >= 0)
 		{
-			JerVramArenaPageRect(arena, &tpage);
+			JerLowerPoolPageRect(pool, &tpage);
 			slot = -1;
 		}
 		else
@@ -2111,8 +2111,8 @@ void CarImportPin(void)
 
 		if (buf == NULL)
 		{
-			if (arena >= 0)
-				JerVramArenaPageFree(arena);
+			if (pool >= 0)
+				JerLowerPoolPageFree(pool);
 
 			continue;
 		}
@@ -2124,13 +2124,13 @@ void CarImportPin(void)
 		{
 			free(buf);
 
-			if (arena >= 0)
-				JerVramArenaPageFree(arena);
+			if (pool >= 0)
+				JerLowerPoolPageFree(pool);
 
 			continue;
 		}
 
-		if (arena < 0)
+		if (pool < 0)
 		{
 			tpage.x = tpagepos[slot].x;
 			tpage.y = tpagepos[slot].y;
@@ -2150,7 +2150,7 @@ void CarImportPin(void)
 		// our palette, which is why the palette check said MISMATCH with real positions.
 		if (sPinClutCursor.x == 0 && sPinClutCursor.y == 0)
 		{
-			// JERICHO: the import's CLUT rows come from the ARENA's own column - x960..1023,
+			// JERICHO: the import's CLUT rows come from the lower half pool's own column - x960..1023,
 			// rows 512..1023 - NOT from the base half's strip.
 			//
 			// The strip is the scarce resource, and this was the last thing still competing
@@ -2159,28 +2159,28 @@ void CarImportPin(void)
 			// and sets were refused. Below row 512 there is no font and no slot band: 512
 			// rows, mirrored at the same x, so IncrementClutNum walks it unchanged.
 			//
-			// AND it starts where the arena column is ACTUALLY free - i.e. past the guest
+			// AND it starts where the lower half pool column is ACTUALLY free - i.e. past the guest
 			// palette tables, which are uploaded just above this - and advances the SAME
 			// watermark (see the walk's tail below).
 			//
 			// Both used to start at JER_VRAM_HALF_Y with INDEPENDENT cursors -
-			// `sPinClutCursor` here, `sJerArenaClutY` in the palette upload - so the pin's
+			// `sPinClutCursor` here, `sJerLowerPoolClutY` in the palette upload - so the pin's
 			// page CLUTs were written straight over rows 512.. and the imported car's
 			// flat/GT PANEL polys read page-CLUT data: a broken palette on every panel.
 			// Measured before the fix: the palettes took rows 512..545 and the band then
 			// started at 512 again.
-			RECT16 arenaClut;
+			RECT16 poolClut;
 			int firstFree;
 
-			JerVramArenaClutCursor(&arenaClut);
-			firstFree = arenaClut.y;
+			JerLowerPoolClutCursor(&poolClut);
+			firstFree = poolClut.y;
 
 			sPinClutCursor.x = 960;
 			sPinClutCursor.y = firstFree;
 			sPinClutCursor.w = 16;
 			sPinClutCursor.h = 1;
 
-			sPinBandSafe = 0;	// the arena column, not the base half's strip: nothing to overflow into
+			sPinBandSafe = 0;	// the lower half pool column, not the base half's strip: nothing to overflow into
 
 			printInfo("cross-city: imported CLUT rows start at y=%d (level layout ends at %d, %d slots spare, safe area ends at %d)\n",
 				firstFree, clutpos.y, 19 - slotsused, CD2_CLUT_SAFE_LAST);
@@ -2196,7 +2196,7 @@ void CarImportPin(void)
 		{
 			int npal = *(int*)buf;
 			int need = (npal + 3) / 4 + 1;	// CLUT rows -> VRAM rows, 4 per row, +1 for a mid-row start
-			// JERICHO: the boundary is the END OF VRAM now, not the level font. The arena
+			// JERICHO: the boundary is the END OF VRAM now, not the level font. The pool
 			// column runs x960..1023 / y512..1023 and IncrementClutNum wraps the row at the
 			// bottom, so the only thing worth refusing is a set that would run off the end of
 			// the buffer and be carried back into a real texture page. With 512 rows against
@@ -2211,8 +2211,8 @@ void CarImportPin(void)
 
 				free(buf);
 
-				if (arena >= 0)
-					JerVramArenaPageFree(arena);
+				if (pool >= 0)
+					JerLowerPoolPageFree(pool);
 
 				continue;
 			}
@@ -2227,7 +2227,7 @@ void CarImportPin(void)
 
 		if (clut.x != sPinClutCursor.x || clut.y != sPinClutCursor.y)
 		{
-			// The walker advanced. Keep the ARENA watermark level with it, so the next
+			// The walker advanced. Keep the lower half pool watermark level with it, so the next
 			// walk - another pin's page CLUTs, or a guest palette table - starts PAST this
 			// band instead of on top of it. Without this the two cursors drift apart and
 			// the palettes get overwritten (a broken palette on every panel).
@@ -2236,16 +2236,16 @@ void CarImportPin(void)
 			sPinClutCursor = clut;	// the walker advanced: remember where it got to
 
 			if (clut.y > before)
-				JerVramArenaClutAdvance(clut.y - before);
+				JerLowerPoolClutAdvance(clut.y - before);
 		}
 
-		if (arena >= 0)
+		if (pool >= 0)
 		{
-			// An arena pin. Deliberately NOT recorded in tpageslots / tpageloaded /
+			// An lower half pool pin. Deliberately NOT recorded in tpageslots / tpageloaded /
 			// slot_clutpos - those describe the world streamer's slot space, and a page in
-			// rows 512..1023 is not one of its slots. CarPageRectOwned knows the arena
+			// rows 512..1023 is not one of its slots. CarPageRectOwned knows the lower half pool
 			// separately, so the engine's own uploads are still refused.
-			sPinArena[i] = arena;
+			sPinPool[i] = pool;
 		}
 		else
 		{
@@ -2393,7 +2393,7 @@ void CarImportDumpState(void)
 		unsigned int clut = texture_cluts[sPinIndex[k]][0];
 
 		// Decode the rectangle from the page word the DRAW path will read, rather than from
-		// tpagepos[slot]: an arena pin has no slot (rows 512..1023 are not tpagepos[]), and
+		// tpagepos[slot]: a lower half pool pin has no slot (rows 512..1023 are not tpagepos[]), and
 		// this is what the car actually samples, so it reports the truth for both halves.
 		{
 			int px = -1, py = -1;
@@ -2402,7 +2402,7 @@ void CarImportDumpState(void)
 
 			printInfo("cross-city:   pinned set %d index %d: slot=%d%s, rect=(%d,%d), page=%04x, clut0=%04x=(%d,%d)\n",
 				sPinSet[k], sPinIndex[k], pslot,
-				(sPinArena[k] >= 0) ? " (arena)" : "",
+				(sPinPool[k] >= 0) ? " (pool)" : "",
 				px, py,
 				page, clut, (int)((clut & 0x3f) << 4), (int)(clut >> 6));
 		}
@@ -2424,10 +2424,10 @@ void CarImportDumpState(void)
 	// slot, and calling that 'replaced' was a false report (it was never placed).
 	for (i = 0; i < sPinCount; i++)
 	{
-		// An arena pin keeps tpageloaded[] clear ON PURPOSE - rows 512..1023 are not the
+		// An lower half pool pin keeps tpageloaded[] clear ON PURPOSE - rows 512..1023 are not the
 		// world streamer's slot space - so this test would report every one of them as
-		// replaced. Nothing can replace an arena page; check it first.
-		if (sPinArena[i] >= 0)
+		// replaced. Nothing can replace a lower half pool page; check it first.
+		if (sPinPool[i] >= 0)
 			continue;
 
 		if (tpageloaded[sPinIndex[i]] == 0)
@@ -2642,7 +2642,7 @@ static void CarImportDumpPageRefs(void)
 		CarImportPageRect(texture_pages[sPinIndex[n]], &px, &py);
 		printInfo("cross-city:   pinned set %d index %d: texture_pages=%04x => (%d,%d)%s\n",
 			sPinSet[n], sPinIndex[n], texture_pages[sPinIndex[n]], px, py,
-			(sPinArena[n] >= 0) ? " [arena]" : (sPinSlot[n] >= 0) ? " [placed]" : " [NOT PLACED]");
+			(sPinPool[n] >= 0) ? " [pool]" : (sPinSlot[n] >= 0) ? " [placed]" : " [NOT PLACED]");
 	}
 }
 // from that city's level file draws with its own textures instead of the host's.
@@ -2678,11 +2678,11 @@ void CarImportResetState(void)
 	sPinUnusedTakes = 0;
 	sPinReloads = 0;
 
-	// JERICHO: the bottom-half arena is per LEVEL. Its pages and CLUT rows are handed out
-	// by the pins above, so a new level must start with all of them free, or the arena
+	// JERICHO: the bottom-half pool is per LEVEL. Its pages and CLUT rows are handed out
+	// by the pins above, so a new level must start with all of them free, or the lower half pool
 	// would fill up across a session and quietly push later imports back into the base
 	// half (or refuse them).
-	JerVramArenaReset();
+	JerLowerPoolReset();
 
 	// JERICHO: the palette upload's own lifecycle. These were never cleared, so the upload
 	// ran once per PROCESS rather than once per level: a second level kept sPalDone set,
@@ -3180,16 +3180,16 @@ static void VramAccountReport(void)
 			printInfo("JERICHO-VRAM: WARNING - the CLUT column reaches y=%d, %d row(s) into the level font image (%d..511). See cars.h CD2_CLUT_SAFE_LAST and VRAM.md 6.\n",
 				clutpos.y, clutover, CD2_CLUT_SAFE_LAST + 1);
 
-		// JERICHO: the bottom-half arena, next to the top half's answer. Rows 512..1023 are
+		// JERICHO: the bottom-half pool, next to the top half's answer. Rows 512..1023 are
 		// space no stock path addresses, so the whole budget is free until JERICHO content
 		// claims it - this line is the "did anything land in the new half, and is it full?"
 		// measurement.
-		printInfo("JERICHO-VRAM: arena rows %d..%d: pages %d used of %d (%d free), clut rows %d used (%d free)%s\n",
+		printInfo("JERICHO-VRAM: lower half pool rows %d..%d: pages %d used of %d (%d free), clut rows %d used (%d free)%s\n",
 			JER_VRAM_HALF_Y, JER_VRAM_TOTAL_ROWS - 1,
-			JerVramArenaPagesUsed(), JerVramArenaPagesUsed() + JerVramArenaPagesFree(),
-			JerVramArenaPagesFree(),
-			JerVramArenaClutRowsUsed(), JerVramArenaClutRowsFree(),
-			(JerVramArenaClutDropped() > 0) ? " - DROPPED asks" : "");
+			JerLowerPoolPagesUsed(), JerLowerPoolPagesUsed() + JerLowerPoolPagesFree(),
+			JerLowerPoolPagesFree(),
+			JerLowerPoolClutRowsUsed(), JerLowerPoolClutRowsFree(),
+			(JerLowerPoolClutDropped() > 0) ? " - DROPPED asks" : "");
 	}
 
 	// JERICHO: how many CLUT rows ONE streamed slot can need -- the max over the

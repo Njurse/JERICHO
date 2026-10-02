@@ -4,7 +4,7 @@
 The engine writes `vram_dump.tga` at the end of a run when JERICHO_DUMPVRAM=1 is set
 (see main.c; it calls PsyCross's GR_SaveVRAM). That is emulated PSX VRAM: 1024x1024,
 16-bit, RGB555 - the base game only fills rows 0..511; rows 512..1023 are the JERICHO
-arena (carhacks/docs/VRAM.md), so a dump of them is how you see what JERICHO placed. This turns it into something measurable - per-rectangle statistics -
+lower half pool (carhacks/docs/VRAM.md), so a dump of them is how you see what JERICHO placed. This turns it into something measurable - per-rectangle statistics -
 and into a PNG so a human can look at the same data.
 
 Why it exists: "the imported car's textures look wrong" is not checkable from log
@@ -35,7 +35,7 @@ TPAGEPOS = [
 PAGE_W, PAGE_H = 64, 256
 
 # VRAM is 1024x1024 in this build (PsyX_render.h VRAM_HEIGHT); rows 512..1023 are the
-# JERICHO arena. Used to bound rectangle walks - never assume the dump is 512 tall.
+# JERICHO lower half pool. Used to bound rectangle walks - never assume the dump is 512 tall.
 VRAM_W, VRAM_H = 1024, 1024
 
 

@@ -46,7 +46,7 @@ So "a car from another city" means reading that city's level file.
 uses plain stdio — no CD layer is involved on PC. The sequence:
 
 1. `fopen(gDataFolder + LevelFiles[city], "rb")`; if that fails, retry with an
-   `M` prefix (`gDataFolder + "M" + LevelFiles[city]`) for the multiplayer arena
+   `M` prefix (`gDataFolder + "M" + LevelFiles[city]`) for the multiplayer pool
    file (`models.c:349-356`). City order is CHICAGO, HAVANA, VEGAS, RIO
    (`system.c:130`, `:137`).
 2. `fseek(fp, 8, SEEK_SET)`, then read the 8-int (`4 × XYPAIR`) citylumps table
@@ -111,7 +111,7 @@ getter answers NULL (`models.c:455-537`).
 Measured end-of-run, one line per source city, by
 `carhacks/tools/measure_cities.sh` (it reads the engine's own
 `cross-city:`/JERICHO-VRAM/JERICHO-HEAP lines; `frames=90`, seed 7). The
-`JERICHO-HEAP:` line prints the level heap and the car-poly arena at the end of a
+`JERICHO-HEAP:` line prints the level heap and the car-poly pool at the end of a
 run — main.c's own `malloctab` print is behind `#if DEBUG||PSX`, so a release
 build shows it only through that line.
 
@@ -139,7 +139,7 @@ the level heap from ~75 KB free to ~68 KB free and the poly counter from 1900 to
 | VEGAS + CHICAGO m8 | 788532 / 81800 | 2238 |
 | CHICAGO + VEGAS m8 | 808252 / 62080 | 2280 |
 
-The level heap (870332 B) has room for ~10 more imported cars, and the poly arena
+The level heap (870332 B) has room for ~10 more imported cars, and the poly pool
 (`carPolyBuffer`, a **fixed 3200 cap** shared by every built car) for ~4. **Neither
 is the wall either.**
 
@@ -158,12 +158,12 @@ table (~15 KB ≈ 40+ rows) with **no room at all**. That is why **one guest cit
 PALETTES per level** is honest — the geometry side holds several cities
 (`gCarImports[4]`), but the palette side did not.
 
-**This is no longer the constraint: the import's CLUTs come from the arena.** Since
-the bottom-half work landed, an import's palette rows are taken from the arena's own
+**This is no longer the constraint: the import's CLUTs come from the lower half pool.** Since
+the bottom-half work landed, an import's palette rows are taken from the lower half pool's own
 column at x960..1023 / rows 512..1023 (`firstFree = JER_VRAM_HALF_Y`), so the base
 half's strip is the level's again, rows 466..511 are never written, and the
 "no CLUT-safe room" refusal with its `y=480` fallback are deleted. Measured: a
-3-city mix uses **28** arena CLUT rows of 512, the strip reads "125 rows used, 85
+3-city mix uses **28** lower half pool CLUT rows of 512, the strip reads "125 rows used, 85
 safe free, no overflow", and the font region is byte-identical to a stock run
 (`VRAM.md` §0).
 
@@ -171,7 +171,7 @@ safe free, no overflow", and the font region is byte-identical to a stock run
 a different path (`ProcessPalletLumpForRows`, which walks the foreign palette lump)
 and they stayed on the base `clutpos` when the pin band moved — 32–38 rows per guest
 city, landing at **381..448** in a two-guest mashup, which reaches into the CD-icon
-band at 433..464 and leaves the strip only 18 free rows. They now take the arena
+band at 433..464 and leaves the strip only 18 free rows. They now take the lower half pool
 column too. Measured against a stock run: the base CLUT column's rows 256..465 are
 **0 differing texels**, the host's page slots are 0 differing, and the strip is back
 to 114–124 rows used / 86–96 free. So more than one guest city's palettes now fit

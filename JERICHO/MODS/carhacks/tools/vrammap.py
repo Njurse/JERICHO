@@ -42,7 +42,7 @@ CELL = 64
 FREE = 8            # KiB per 64x64 cell (64*64 texels * 2 bytes = 8 KiB)
 
 # VRAM is 1024x1024 in this build (PsyX_render.h VRAM_HEIGHT). Rows 0..511 are the top
-# half the claims below live in; rows 512..1023 are the JERICHO arena - free by
+# half the claims below live in; rows 512..1023 are the JERICHO lower half pool - free by
 # construction, claimed only by JERICHO content (carhacks/docs/VRAM.md).
 VRAM_W, VRAM_H = 1024, 1024
 
@@ -332,7 +332,7 @@ def main():
     sky_kib = sum(w * h * 2 // 1024 for (n, x, y, w, h, s, t) in claims if n.startswith("sky"))
     clut_kib = 64 * 256 * 2 // 1024
     print()
-    arena_kib = VRAM_W * (VRAM_H - VRAM_H // 2) * 2 // 1024
+    pool_kib = VRAM_W * (VRAM_H - VRAM_H // 2) * 2 // 1024
     print("breakdown of the 2 MiB")
     print(f"  display buffers (x0..319, y0..511, double buffered): {sum(w * h * 2 // 1024 for (_n, _x, _y, w, h, _s, _t) in fbs)} KiB")
     print(f"  top-half texture area (x{TEXT_X}..1023, y0..511):     {tex_kib} KiB")
@@ -343,12 +343,12 @@ def main():
           f"{tex_kib - slot_kib - clut_kib - sky_kib} KiB")
     print(f"  => texture memory: slots + CLUT column + sky = {slot_kib + clut_kib + sky_kib} KiB "
           f"of {tex_kib} KiB; the remainder is the level font and the CD icon.")
-    print(f"  JERICHO arena (rows 512..1023, full width): {arena_kib} KiB - the base game")
+    print(f"  lower half pool (rows 512..1023, full width): {pool_kib} KiB - the base game")
     print("    cannot reach it, so it is free until JERICHO content claims it")
     fb_kib = sum(w * h * 2 // 1024 for (_n, _x, _y, w, h, _s, _t) in fbs)
-    total = fb_kib + tex_kib + arena_kib
+    total = fb_kib + tex_kib + pool_kib
     vram_kib = VRAM_W * VRAM_H * 2 // 1024
-    print(f"  accounting: display {fb_kib} KiB + top-half texture {tex_kib} KiB + arena {arena_kib} KiB "
+    print(f"  accounting: display {fb_kib} KiB + top-half texture {tex_kib} KiB + pool {pool_kib} KiB "
           f"= {total} KiB of {vram_kib} KiB -> {'OK' if total == vram_kib else 'MISMATCH'}")
     print(f"  NB: CELL resolution is {CELL}x{CELL} = {FREE} KiB; a 'free' cell means no dump ever "
           "wrote a non-black texel there, not that nothing claims it.")

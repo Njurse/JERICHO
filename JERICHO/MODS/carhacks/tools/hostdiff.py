@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """hostdiff.py - did a cross-city mashup touch anything the HOST owns?
 
-The import is supposed to take its pages and palettes from the ARENA (rows 512..1023) and
+The import is supposed to take its pages and palettes from the LOWER HALF POOL (rows 512..1023) and
 leave the base half exactly as a stock run would have it. This checks that claim against
 two VRAM dumps of the SAME level, camera, frames and seed:
 
@@ -14,14 +14,14 @@ What must be identical, and why:
     the host's cars all read texture_pages[]/texture_cluts[] here, with no city awareness
     (draw.c, motion_c.c), so ANY difference is the import painting over the host. This is
     the assertion the report "the host's own peds and traffic are mangled" turns into.
-  * the level font, x960..1023 rows 466..511 - the collision that motivated the arena.
+  * the level font, x960..1023 rows 466..511 - the collision that motivated the lower half pool.
 
 What is ALLOWED to differ, and is reported rather than failed:
 
   * the display buffers (x0..319) - they hold the rendered scene, and the mashup has
     different cars in it.
   * the CLUT column's level rows - the imported cities' palette tables still live there
-    (ProcessPalletLumpForRows walks the base clutpos, not the arena column), so those rows
+    (ProcessPalletLumpForRows walks the base clutpos, not the lower half pool column), so those rows
     differ by construction. The tool prints how many and says which it expects.
 
 Exit status: 1 if the host's pages or the font differ, else 0.
@@ -83,7 +83,7 @@ def main(argv):
     pages = sum(diff(x, y, x + 64, y + 256) for y in (0, 256) for x in range(PAGE_X0, PAGE_X1, 64))
     font = diff(CLUT_X0, FONT_Y0, CLUT_X1, FONT_Y1)
     clut = diff(CLUT_X0, CLUT_Y0, CLUT_X1, CLUT_Y1)
-    arena = sum(diff(0, r, wa, r + 1) for r in range(HALF, ha))
+    pool = sum(diff(0, r, wa, r + 1) for r in range(HALF, ha))
 
     print("hostdiff: %s (stock) vs %s (mashup)" % (pos[0], pos[1]))
     print("  host page slots   x%d..%d y0..511 : %6d texels differ   %s"
@@ -92,8 +92,8 @@ def main(argv):
           % (font, "OK (untouched)" if font == 0 else "FAIL - the font was written"))
     print("  CLUT column       256..465 (level rows): %6d texels differ   (allowed: the import's palette tables live here)"
           % clut)
-    print("  arena rows 512..1023                 : %6d texels differ   (the import's own space)"
-          % arena)
+    print("  lower half pool rows 512..1023                 : %6d texels differ   (the import's own space)"
+          % pool)
 
     if log:
         rows = [l.strip() for l in open(log, encoding="utf-8", errors="replace")
@@ -102,7 +102,7 @@ def main(argv):
             print("  the import's palette rows, from %s:" % log)
             for r in rows:
                 print("    " + r)
-        print("  (rows 512..1023 are the arena; a nonzero CLUT-column count above should be")
+        print("  (rows 512..1023 are the lower half pool; a nonzero CLUT-column count above should be")
         print("   the sum of those palette rows x 64 px. Anything more is a host row).")
 
     return 1 if (pages or font) else 0

@@ -249,15 +249,15 @@ live world page. Result: `2 wasted car pages taken, 0 world pages evicted`.
 
 Placement is now strictly "something nobody is drawing", in this order:
 
-0. **the JERICHO arena** — a page in rows 512..1023 (`JerVramArenaPageAlloc`, from
+0. **the lower half pool** — a page in rows 512..1023 (`JerLowerPoolPageAlloc`, from
    `CarImportPin`). Nothing stock is drawn there and nothing stock can even compute its
    rectangle, so this is less "something nobody is drawing" than "something nobody *can*
-   draw". It is asked FIRST; the passes below are only the fallback for a full arena (30
-   pages). The import's CLUT rows come from the arena's own column for the same reason
+   draw". It is asked FIRST; the passes below are only the fallback for a full pool (30
+   pages). The import's CLUT rows come from the lower half pool's own column for the same reason
    (`firstFree = JER_VRAM_HALF_Y`), which hands the base half's strip back to the level —
    see [`VRAM.md`](VRAM.md) §0.
 
-Then, only when the arena cannot take it (`CarPageFindSlot`):
+Then, only when the lower half pool cannot take it (`CarPageFindSlot`):
 
 1. a free slot inside the level's own range — `nperms <= idx < slotsused`, never the
    world's pool;
@@ -314,13 +314,13 @@ hands out (`sReservedSet`, cleared by `CarImportResetState`).
 ## Still open
 
 - ~~**The import's CLUT rows are still carved from the level's own strip.**~~ **RESOLVED
-  by the arena — and it took two moves, not one.** The pin band went to the arena column
+  by the lower half pool — and it took two moves, not one.** The pin band went to the lower half pool column
   first (x960..1023 / rows 512..1023), with the "no CLUT-safe room" refusal and its `y=480`
   fallback (which was INSIDE the font) deleted. But the imported CITIES' PALETTE TABLES are
   a different path (`ProcessPalletLumpForRows`) and stayed on the base `clutpos`, so a guest
   city's table still landed in the level's column — 32–38 rows each, and a two-guest mashup
   put them at **381..448**, reaching into the CD-icon/spool band at 433..464 and taking the
-  strip from 85 safe free rows to **18**. Both now go to the arena column. Measured, against
+  strip from 85 safe free rows to **18**. Both now go to the lower half pool column. Measured, against
   a stock run: the base CLUT column rows 256..465 and the host's page slots are **0
   differing texels**, and the strip reads 114–124 rows used / 86–96 free. The base half's
   "four rows short" arithmetic is the LEVEL's problem alone now.

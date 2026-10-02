@@ -8,15 +8,15 @@ tools/vrammap.py's claims table -- nothing here is illustrative:
     page slots     19 x 64x256                         608 KiB
     CLUT column    x960..1023, y256..511                32 KiB
     sky            x320..448, y0..256                   64 KiB
-  THE ARENA        x0..1023, y512..1023               1024 KiB  <- JERICHO's alone
-    arena pages    30 x 64x256 (rows 512 and 768)
-    arena CLUTs    x960..1023, y512..1023             512 rows
+  THE LOWER HALF POOL        x0..1023, y512..1023               1024 KiB  <- JERICHO's alone
+    lower half pool pages    30 x 64x256 (rows 512 and 768)
+    lower half pool CLUTs    x960..1023, y512..1023             512 rows
 
 The buffer is 2 MiB because it is 1024x1024: rows 512..1023 are addressable (the tpage
 word carries page-Y bit 9 as bit 11) and no stock path computes a rectangle down there, so
-the arena is where the import lives now.
+the lower half pool is where the import lives now.
 
-The two things this figure used to be about are KEPT, because they are why the arena
+The two things this figure used to be about are KEPT, because they are why the lower half pool
 exists - but they are marked as what they are: history.
   level font image rows 466..511   -> was written over by the import; now 0 differing
                                       texels vs a stock run (measured)
@@ -93,7 +93,7 @@ if vram.size != (1024, 1024):
 # The "what this means" block lives in the LEFT column, under the legend, so it can
 # never run off the bottom of the sheet.
 NOTES = (
-    (TEAL,  "the arena: imported pages and CLUTs are rows 512..1023 - 30 pages, 512 CLUT rows"),
+    (TEAL,  "the lower half pool: imported pages and CLUTs are rows 512..1023 - 30 pages, 512 CLUT rows"),
     (GREEN, "measured: world pages evicted 702 -> 0; imported sets lost 5 -> 0"),
     (GREEN, "measured: level font rows 466..511 - 0 differing texels vs a stock run"),
     (GREEN, "measured: 9 of 9 imported pages at y=512, x from 0; CLUTs y512..539"),
@@ -110,7 +110,7 @@ W, H = 1400, max(660, BLOCK_Y + BLOCK_H + 16)
 sheet = Image.new("RGB", (W, H), WHITE)
 d = ImageDraw.Draw(sheet)
 
-d.text((20, 14), "PSX VRAM 2 MiB - and the arena that gave the CLUT column back",
+d.text((20, 14), "PSX VRAM 2 MiB - and the lower half pool that gave the CLUT column back",
        fill=INK, font=big)
 d.text((20, 38), "measured from a live vram_dump.tga of a 3-city mashup run; "
                  "rectangles from tools/vrammap.py", fill=GREY, font=small)
@@ -131,11 +131,11 @@ box(0, 0, 320, 512, GREY)                     # display buffers
 box(320, 0, 1024, 512, BLUE)                  # texture area (base half)
 box(960, 256, 1024, 512, RED)                 # CLUT column
 box(320, 0, 448, 256, GREEN)                  # sky
-box(0, 512, 1024, 1024, TEAL)                 # THE ARENA
+box(0, 512, 1024, 1024, TEAL)                 # THE LOWER HALF POOL
 d.text((SX + 3, SY + 3), "display buffers 320 KiB", fill=GREY, font=small)
 d.text((SX + 85, SY + 3), "texture area 704 KiB", fill=BLUE, font=small)
 d.text((SX + 85, SY + 16), "sky 64 KiB", fill=GREEN, font=small)
-d.text((SX + 3, SY + 132), "THE ARENA rows 512..1023 - 1024 KiB",
+d.text((SX + 3, SY + 132), "THE LOWER HALF POOL rows 512..1023 - 1024 KiB",
        fill=TEAL, font=small)
 d.text((SX + 3, SY + 145), "imported pages + CLUTs live here", fill=TEAL, font=small)
 d.text((SX + 96, SY + 88), "CLUT column", fill=RED, font=small)
@@ -150,7 +150,7 @@ for line in (
     "    page slots    19 x 64x256    608 KiB",
     "    sky           x320..448     64 KiB",
     "    CLUT column   x960..1023    32 KiB  <- 256 rows, the level's again",
-    "ARENA  x0..1023, y512..1023  1 MiB  JERICHO's alone, nobody else computes it",
+    "POOL   x0..1023, y512..1023  1 MiB  JERICHO's alone, nobody else computes it",
 ):
     d.text((SX + 8, y), line, fill=INK, font=small); y += 15
 
@@ -184,12 +184,12 @@ d.text((ZX, ZY + 256 * ZC + 23),
        "It now takes nothing from this column: the level keeps all of it.",
        fill=GREEN, font=small)
 
-# ---- right: the arena's own CLUT column, 1x ---------------------------------
+# ---- right: the lower half pool's own CLUT column, 1x ---------------------------------
 AX, AY, AC = 980, 90, 1
 astrip = vram.crop((CLUT_X, HALF, CLUT_X + 64, 1024))
 sheet.paste(astrip.resize((64 * AC, 512 * AC), Image.NEAREST), (AX, AY))
 d.rectangle([AX, AY, AX + 64 * AC, AY + 512 * AC], outline=INK, width=2)
-# The 3-city mix's own arena CLUT rows, measured from the pinned rects in the log.
+# The 3-city mix's own lower half pool CLUT rows, measured from the pinned rects in the log.
 d.rectangle([AX, AY, AX + 64 * AC, AY + 28 * AC], outline=TEAL, width=2)
 d.text((AX + 64 * AC + 10, AY + 4),
        "imported CLUT rows - y512..539", fill=TEAL, font=small)
@@ -200,7 +200,7 @@ d.text((AX + 64 * AC + 10, AY + 512 - 30),
 d.text((AX + 64 * AC + 10, AY + 512 - 15),
        "so IncrementClutNum walks it unchanged", fill=INK, font=small)
 
-d.text((AX, AY - 20), "the ARENA's CLUT column (x960..1023, y512..1023)",
+d.text((AX, AY - 20), "the LOWER HALF POOL's CLUT column (x960..1023, y512..1023)",
        fill=INK, font=font)
 
 # ---- what that means (left column, under the legend) ------------------------

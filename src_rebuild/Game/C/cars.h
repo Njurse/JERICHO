@@ -89,8 +89,8 @@ extern char RightLight;
 #define CD2_CLUT_SAFE_LAST	465		// the last row above the level font image (466..511)
 #define CAR_CLUT_IMPORT_LIMIT	CD2_CLUT_SAFE_LAST
 
-// JERICHO: the bottom half of VRAM is a JERICHO-owned arena - JerVramArenaPageAlloc /
-// JerVramArenaClutAlloc in texture.c, and carhacks/docs/VRAM.md. VRAM is 1024 rows tall
+// JERICHO: the bottom half of VRAM is a JERICHO-owned pool - JerLowerPoolPageAlloc /
+// JerLowerPoolClutAlloc in texture.c, and carhacks/docs/VRAM.md. VRAM is 1024 rows tall
 // in this build (PsyCross, PsyX_render.h), and the base game only ever addresses rows
 // 0..511: the display buffers at (0,0) and (0,256), the page-slot walk tpagepos[] (Y in
 // {0,256}), the sky, and the level font. Rows 512..1023 are therefore space NO stock
@@ -98,7 +98,7 @@ extern char RightLight;
 // page's rectangle (crosscheck INV1) or a host palette's CLUT row (INV2), because it is
 // not competing for them in the first place.
 #define JER_VRAM_TOTAL_ROWS	1024	// = PsyX VRAM_HEIGHT
-#define JER_VRAM_HALF_Y		512		// the arena's first row (rows 512..1023); tpage Y bit 9
+#define JER_VRAM_HALF_Y		512		// the lower half pool's first row (rows 512..1023); tpage Y bit 9
 
 extern u_short civ_clut[CIV_CLUT_ROWS][32][6];
 

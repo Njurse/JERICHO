@@ -3,6 +3,12 @@
 Each row is one deliberate checkpoint from `tools/chk_vram_checkpoint.sh`,
 with the image it produced in this folder. Row 1 is the **before** baseline.
 
+> **Terminology:** rows before 2026-10-01 call the VRAM rows 512..1023 "the
+> arena". That is now the **lower half pool** - renamed because Caine's Crossfire
+> has its own "arena", which is a `.cca` map layout and has nothing to do with
+> VRAM. The archived image filenames below keep the old word, since they record
+> what was true when they were taken; the numbers in them are unchanged.
+
 | date | level | cities | CLUT rows used | safe free | largest free rect | commit | what changed |
 |---|---|---|---|---|---|---|---|
 | 2026-09-30 | LASVEGAS | 4 | 164 | 46 | (0,0) 0x0 = 0 KiB | 83a7256d | the flat 8-row reserve, and LASVEGAS' own pages needing 9 |

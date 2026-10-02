@@ -1,4 +1,4 @@
-# Where VRAM goes: the base 1 MiB, the JERICHO arena, and how to measure it
+# Where VRAM goes: the base 1 MiB, the lower half pool, and how to measure it
 
 The canonical reference for **VRAM layout and headroom**. Read this before changing any
 VRAM layout, before reserving a region, or when a texture/page/palette misbehaves in a
@@ -40,7 +40,7 @@ of texels, cut in two by what can ADDRESS it rather than by choice:
 | rows | who can write/read it | what it is |
 |---|---|---|
 | **0..511** | every stock path: `tpagepos[]` (Y in {0,256}), the CLUT cursors, the display buffers, the sky, the level font | the base 1 MiB - everything in §§1-6 below |
-| **512..1023** | JERICHO code only | the **arena**: `JerVramArenaPageAlloc` / `JerVramArenaClutAlloc` (`texture.c`), `JER_VRAM_HALF_Y` (`cars.h`) |
+| **512..1023** | JERICHO code only | the **pool**: `JerLowerPoolPageAlloc` / `JerLowerPoolClutAlloc` (`texture.c`), `JER_VRAM_HALF_Y` (`cars.h`) |
 
 Rows >=512 are addressable because the tpage word's Y is not one bit: `getTPage` packs
 bit 4 (Y+256) **and bit 11 (Y+512)**, and the renderer's shader decodes both
@@ -49,23 +49,23 @@ everything downstream. A CLUT's Y is 10 bits (`clut >> 6`) once the 9-bit masks 
 which is what `texture.c` and `pedest.c` now use - and the DR_TPAGE parser keeps bit 11
 its own encoder (`_get_mode`) already wrote.
 
-The arena is **30 pages** of 64x256 (two page-rows x 15 columns) plus a CLUT column
+The pool is **30 pages** of 64x256 (two page-rows x 15 columns) plus a CLUT column
 mirroring the base one at x960..1023, rows 512..1023. It starts at **x=0**: the base half
-cannot, because x0..319 there is the display buffers, which is why the arena gets the full
+cannot, because x0..319 there is the display buffers, which is why the lower half pool gets the full
 width and 1024 KiB rather than a strip.
 
 **Nothing stock can take it.** `tpagepos[]` holds only Y in {0,256} and the CLUT cursors
-are bounded by `CD2_CLUT_SAFE_LAST`, so the arena is not a reservation that a flag could
+are bounded by `CD2_CLUT_SAFE_LAST`, so the lower half pool is not a reservation that a flag could
 leak - it is a row range no base-game path computes. Measured: a full level load leaves
 rows 512..1023 **bit-exactly zero** (`vrammap.py`: `never-written: 1024 KiB of 2048`), and
-the run's census reads `arena rows 512..1023: pages 0 used of 30 (30 free), clut rows 0
+the run's census reads `lower half pool rows 512..1023: pages 0 used of 30 (30 free), clut rows 0
 used (512 free)`.
 
-**State: the import lives in the arena.** Since the placement landed, every imported page
+**State: the import lives in the lower half pool.** Since the placement landed, every imported page
 and every imported CLUT comes from rows 512..1023. `CarImportPin` (`texture.c`) asks
-`JerVramArenaPageAlloc` **first** and only falls back to the base-half passes (previous
-slot / the replaced car's page / a free slot / a world eviction) when the arena is full, and
-the import's CLUT band is the arena's own column (`firstFree = JER_VRAM_HALF_Y`). The base
+`JerLowerPoolPageAlloc` **first** and only falls back to the base-half passes (previous
+slot / the replaced car's page / a free slot / a world eviction) when the lower half pool is full, and
+the import's CLUT band is the lower half pool's own column (`firstFree = JER_VRAM_HALF_Y`). The base
 half's strip is the LEVEL's again, so the "no CLUT-safe room" refusal and its `y=480`
 fallback are deleted outright, and `sPinBandSafe` is now always 0.
 
@@ -74,8 +74,8 @@ its sibling behind: `ProcessPalletLumpForRows` (`cars.c`) still walked the base 
 so a guest city's table went into the same column as the CD-icon/spool band and the
 streamed-slot CLUTs. Measured, that is 32-38 rows per guest city, and a two-guest mashup's
 rows landed at **381..448** - 433..448 of that reaching into the CD-icon band - while taking
-the strip from 85 safe free rows to 18. They now go to the arena column through
-`JerVramArenaClutCursor`/`JerVramArenaClutAdvance`: a cursor rather than an allocation,
+the strip from 85 safe free rows to 18. They now go to the lower half pool column through
+`JerLowerPoolClutCursor`/`JerLowerPoolClutAdvance`: a cursor rather than an allocation,
 because the walk does not know how many rows it needs until it has walked the lump, and it
 shares the pin band's watermark so the two cannot overlap. The HOST's own palettes still
 take the base column, because they are the level's.
@@ -91,21 +91,21 @@ Measured on the 3-city mix (host CHICAGO, 60 frames, seed 7):
 | the host's page slots, x320..960, vs a stock run | (untouched) | **0 differing texels** |
 | imported pages | 1 WORLD page taken | **9 of 9** at y=512, x from 0 in 64px steps |
 | imported CLUT rows | the strip (466..511) | x960/992/1008, **y512..539** |
-| the guest cities' palette tables | base rows 381..448 | **arena rows 512..544** |
+| the guest cities' palette tables | base rows 381..448 | **lower half pool rows 512..544** |
 | `chk_suite.sh` | 2 rows red (INV1, evictions) | 6 of 7 green |
 
 `tools/hostdiff.py` is the check for the "vs a stock run" rows: it dumps a level twice (once
 with `cross_city_vehicles = 0`) and asserts the host-owned regions are byte-identical. All
 four hosts pass.
 
-A subtlety worth keeping: an arena pin has **no slot**. It is deliberately not recorded in
+A subtlety worth keeping: a lower half pool pin has **no slot**. It is deliberately not recorded in
 `tpageslots` / `tpageloaded` / `slot_clutpos` - those describe the world streamer's slot
-space (`spool.c` indexes `slot_clutpos` with `tpageloaded[x] - 1`), and a row in the arena
-is not one of its slots. Ownership is answered instead by `JerVramArenaPageOwned` from
-`CarPageRectOwned`, and `tools/crosscheck.py` knows the `slot=-1 (arena)` marker so it does
+space (`spool.c` indexes `slot_clutpos` with `tpageloaded[x] - 1`), and a row in the lower half pool
+is not one of its slots. Ownership is answered instead by `JerLowerPoolPageOwned` from
+`CarPageRectOwned`, and `tools/crosscheck.py` knows the `slot=-1 (pool)` marker so it does
 not report a placed pin as unplaced.
 
-§§4-6 below describe the BASE half and are still the map of what the arena is avoiding.
+§§4-6 below describe the BASE half and are still the map of what the lower half pool is avoiding.
 §6.1's account of the import's old pin band is historical where marked.
 
 ## 1. The base 1 MiB, in three parts
@@ -162,8 +162,8 @@ here is where the walk *stops*, because everything from there down is contended:
 | stock, full level | 428 | 84 |
 | with one imported car | 485 | 27 |
 
-> **Historical - the arena removed this.** The import no longer takes rows from the strip
-> at all: its palettes and page CLUTs come from the arena's own column below row 512
+> **Historical - the lower half pool removed this.** The import no longer takes rows from the strip
+> at all: its palettes and page CLUTs come from the lower half pool's own column below row 512
 > (§0), and the "no CLUT-safe room" refusal plus its `y=480` fallback are deleted. The
 > strip is the LEVEL's again. This section is kept because it is the clearest statement of
 > why a 64px strip could not hold an import, and because the numbers below are what
@@ -323,7 +323,7 @@ and only the kept rows are uploaded:
 | RIO -> Havana | 57 rows | **38 rows** (428 → 466) | **0** (fits exactly) |
 | CHICAGO -> Vegas | 57 rows | **42 rows** (428 → 470) | **4** |
 
-`chk_suite.sh` is the gate. **With the arena in place, six of seven rows are green**, and
+`chk_suite.sh` is the gate. **With the lower half pool in place, six of seven rows are green**, and
 both former red rows moved: the PLAYER row on the host with the least free VRAM no longer
 takes a WORLD page (INV1 gone; evictions 1 -> 0), and the 3-city `city mix` is clean on
 every space invariant (evictions 702 -> 0, losses 5 -> 0). The mix row still carries one
@@ -344,7 +344,7 @@ longer a claimant there. The moves that would close it remain, in order of measu
 - **option 2** (reclaim un-named car pages) does not help the *CLUT column* at all — it
   returns pages, not rows. It is still the right move for pages;
 - and "where does an import's 15–51 rows of palettes go?" is no longer an open question: the
-  arena's 512 rows below the font answer it, and BOTH consumers are now there — the pin's
+  pool's 512 rows below the font answer it, and BOTH consumers are now there — the pin's
   page-CLUT band (28 rows in the mix) and each guest city's palette table (32–38 rows).
   Measured after the move: the base column's rows 256..465 are **byte-identical to a stock
   run**, and the strip reads 114–124 rows used with 86–96 free, against the 18 free that a

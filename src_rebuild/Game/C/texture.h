@@ -125,22 +125,22 @@ extern void GetTextureDetails(char *name, TEXTURE_DETAILS *info, int defaultToSe
 
 extern void update_slotinfo(int tpage, int slot, RECT16 *pos); // 0x00081038
 
-// JERICHO: the bottom-half VRAM arena (rows 512..1023) - the space the base game never
+// JERICHO: the bottom-half VRAM pool (rows 512..1023) - the space the base game never
 // addresses. Everything JERICHO loads is placed here rather than taken from the top
 // half's claims. See texture.c and JER_VRAM_HALF_Y in cars.h.
-void JerVramArenaReset(void);
-void JerVramArenaPageRect(int slot, RECT16 *r);
-int  JerVramArenaPageAlloc(void);
-void JerVramArenaPageFree(int slot);
-int  JerVramArenaPageHolds(int slot, int page);
-int  JerVramArenaPageOwned(int x, int y);
-void JerVramArenaClutCursor(RECT16 *out);	// walk it (IncrementClutNum), then Advance
-void JerVramArenaClutAdvance(int rows);
-int  JerVramArenaPagesUsed(void);
-int  JerVramArenaPagesFree(void);
-int  JerVramArenaClutRowsUsed(void);
-int  JerVramArenaClutRowsFree(void);
-int  JerVramArenaClutDropped(void);
+void JerLowerPoolReset(void);
+void JerLowerPoolPageRect(int slot, RECT16 *r);
+int  JerLowerPoolPageAlloc(void);
+void JerLowerPoolPageFree(int slot);
+int  JerLowerPoolPageHolds(int slot, int page);
+int  JerLowerPoolPageOwned(int x, int y);
+void JerLowerPoolClutCursor(RECT16 *out);	// walk it (IncrementClutNum), then Advance
+void JerLowerPoolClutAdvance(int rows);
+int  JerLowerPoolPagesUsed(void);
+int  JerLowerPoolPagesFree(void);
+int  JerLowerPoolClutRowsUsed(void);
+int  JerLowerPoolClutRowsFree(void);
+int  JerLowerPoolClutDropped(void);
 
 extern void ProcessTextureInfo(char *lump_ptr); // 0x00081080
 extern void LoadPermanentTPages(int *sector); // 0x00080688

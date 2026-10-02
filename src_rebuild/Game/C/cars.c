@@ -185,10 +185,10 @@ static int CarImportCityBand(int city)
 // ~157 of them, and a third city ran clutpos to 486 - 21 rows INTO the level font. While
 // the import shared that strip, refusing the third was the least-bad answer.
 //
-// The arena removed the reason: an import's palette rows come from the arena's own column
+// The pool removed the reason: an import's palette rows come from the lower half pool's own column
 // now (rows 512..1023, texture.c), so a guest city costs the base half NOTHING. The limit
 // is the civ_clut ARRAY (rows CIV_CLUT_IMPORT_ROW..CIV_CLUT_ROWS-1), not the column, and
-// the measured cost is nowhere near it - a 3-city mix uses ~28 arena rows out of 512.
+// the measured cost is nowhere near it - a 3-city mix uses ~28 lower half pool rows out of 512.
 //
 // Measured at 2, and why it mattered: the third imported car came out with "NO PALETTE
 // BLOCK (refused)" and fell back to the HOST's civ_clut row 0, i.e. an imported car
@@ -1706,7 +1706,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 	// The host's own palettes are the LEVEL's, so they belong in the base column. An
 	// imported city's are not: uploading those there is what took the base strip from 85
 	// safe free rows to 18 in a two-guest mashup, reached into the CD-icon/spool band at
-	// 433..464, and left the host's other cars sharing rows with a foreign table. The arena
+	// 433..464, and left the host's other cars sharing rows with a foreign table. The pool
 	// column (x960..1023, rows 512..1023) is 512 rows of space nothing stock computes, so a
 	// guest city's table goes THERE - 32..38 rows each, measured.
 	//
@@ -1718,7 +1718,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 
 	if (CarImportCityHeld(city) && city != GameLevel)
 	{
-		JerVramArenaClutCursor(&importClut);
+		JerLowerPoolClutCursor(&importClut);
 		dst = &importClut;
 		importRow0 = importClut.y;
 		importX0 = importClut.x;
@@ -1821,7 +1821,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 			// fall back to the city's first palette if this page has not stored one yet.
 			// The reclaim's trigger is "this upload is eating a SHARED column". For the host that
 			// is the base strip past CAR_CLUT_IMPORT_LIMIT. For a guest the column is the
-			// arena's OWN, so there is nothing to protect and the check becomes the literal
+			// pool's OWN, so there is nothing to protect and the check becomes the literal
 			// one: is there a row left at all.
 			int outOfRoom = (dst == &clutpos) ? (clutpos.y > CAR_CLUT_IMPORT_LIMIT)
 											 : (dst->y + 4 > JER_VRAM_TOTAL_ROWS);
@@ -1939,7 +1939,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 	// x 960 -> 1024 to x = 960 and y++, so the ending position says how many whole rows it
 	// took, plus one if it stopped mid-row.
 	if (dst != &clutpos)
-		JerVramArenaClutAdvance((dst->y - importRow0) + ((dst->x > importX0) ? 1 : 0));
+		JerLowerPoolClutAdvance((dst->y - importRow0) + ((dst->x > importX0) ? 1 : 0));
 
 	// JERICHO: always report, not only when something was skipped. This is the number
 	// that decides whether the CLUT column fits: the import's whole-table load is what

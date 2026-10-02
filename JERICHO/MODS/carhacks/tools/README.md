@@ -11,7 +11,7 @@ from the `bin/<config>/` mirror, so run these from the repo, not the bin copy.
 
 Which run needs which module on: the VRAM/palette and cross-city tools need
 `carhacks` (and, for the imports to be visible, the module that drives them);
-the arena/CC tools that stayed behind live in `../../cainescrossfire/tools/`.
+the lower half pool/CC tools that stayed behind live in `../../cainescrossfire/tools/`.
 
 ## The VRAM / car-data tools
 
@@ -48,8 +48,8 @@ writing config or launching.
 | `launch_imported_player.bat [level] [srcCity] [model] [dry\|test [frames]]` | **any level, always an imported player car.** The source city defaults to a foreign one (the level's own + 1, mod 4). Writes the matching `import = <slot>:<city>:<model>` and passes `-car <model>` — a module cannot pick the player's car (`wantedCar` arrives after `mission.c:573`/`SetupResidentModels`); see `../docs/HACK.md`. **It refuses (exit 2) if the source city does not ship the model**, before the dry exit so `dry` validates too — a request for model 5/6/7 can never be satisfied and used to be a silent no-op ("the script doesn't replace the car") |
 | `launch_havana_rio_police.bat [model] [dry\|test [frames]]` | drive RIO's police car (model 0) in HAVANA: import into resident slot 0, `-car 0`. `[model]` tries another Rio body |
 | `launch_rio_havana_police.bat [model] [dry\|test [frames]]` | drive HAVANA's police car (model 0) in RIO: import into resident slot 3 (Rio's own model 0 lives there, so that is the slot to replace), `-car 0` |
-| `launch_mp_foreign_car.bat` | the multiplayer arena with a **guaranteed** foreign player car, drawn from the source city's whole usable roster (civilian bodies 0..4 as well as the specials 8, 9, 10, 12, plus 11 where the city has it). Civilian bodies are imported slot-for-slot over slots 0..4, specials into spare slot 5. Supports `dry` |
-| `launch_mp_random_mix.bat` | the same arena mix with the roll left in: a random arena city, a **different** city to import from, and a random roster. `dry` prints the roll |
+| `launch_mp_foreign_car.bat` | the multiplayer pool with a **guaranteed** foreign player car, drawn from the source city's whole usable roster (civilian bodies 0..4 as well as the specials 8, 9, 10, 12, plus 11 where the city has it). Civilian bodies are imported slot-for-slot over slots 0..4, specials into spare slot 5. Supports `dry` |
+| `launch_mp_random_mix.bat` | the same pool mix with the roll left in: a random pool city, a **different** city to import from, and a random roster. `dry` prints the roll |
 | `cycle_vehicles.bat <city> [frames]` | walk a city's model numbers to find what each one is (this is how `../docs/VEHICLES.md` was measured) |
 
 Both `launch_mp_*` launchers write `JERICHO/CONFIG/carhacks.ini`, so two runs at once
