@@ -91,6 +91,77 @@ jer_pause_menu_register(&myMenu);
 - `crumple`, `d2pl` and `sandbox` are the worked examples — their old
   hardcoded shells were removed from `pause.c`.
 
+## Saying things on screen
+
+A module has four channels for putting words in front of the player (plus the
+full-screen frontend text in [`screens.md`](screens.md)). Choosing between them
+is really two questions: **who is speaking** — your mod, or the game — and
+**where should the line live**: an event that passes, a readout that persists, or
+the game's own single slot.
+
+| Channel | API | Appears | Lasts | Reach for it when… |
+| --- | --- | --- | --- | --- |
+| HUD message | `jer_hud.h` — `jer_hud_message` / `…_segs` / `…_replace` | centred, stacked from the top of the screen | a set number of frames | an **event** happened: *"You killed VASQUEZ"* |
+| HUD readout | `jer_hud.h` — `jer_hud_panel` / `jer_hud_panel_bar` | an anchored corner line or meter | until you clear it or set it again | a **value** whose subject exists: a lock-on name, a health bar under it |
+| Player notice | `jer_notify.h` — `jer_notify` / `jer_notify_clear` | the game's own spot — golden, centred, near the top | a set number of seconds | the **game** is talking: *"You Drowned"* |
+| Error toast | `jericho.h` — `jer_error` / `jer_error_count` / `jer_error_at` | gentle red, down the left edge — frontend **and** in game | ~5 s | something needs telling **now**: a bad argument, a failed join |
+| Presentation screen | `jer_screen.h` / `jer_prompt.h` | a whole frontend frame | until dismissed | boot/progress text and Yes/No prompts — see [`screens.md`](screens.md) |
+
+### The HUD channels — the module's voice
+
+```c
+#include "jer_hud.h"
+
+jer_hud_message("You killed VASQUEZ", 0);        /* 0 frames = the 3 s default */
+```
+
+- A message **expires on its own** — `frames <= 0` means `JER_HUD_DEFAULT_FRAMES`
+  (90, about 3 s at the 30 fps sim step). At most `JER_HUD_MAX` (4) are on screen
+  at once; a burst recycles the slot with the least time left rather than
+  growing, and `jer_hud_message_replace` clears the queue first for a repeater
+  that would otherwise stack.
+- `jer_hud_message_segs(segs, count, frames)` builds **one** line from up to
+  `JER_HUD_SEG_MAX` (6) colour runs, so a name can carry its own colour inside a
+  sentence. A run with `ambient = 1` is drawn in the engine's ambient text colour,
+  which keeps the connective words matching every plain HUD line.
+- Colour is **ambient global state** in the engine, so the drawer saves and
+  restores it: a coloured message never tints whatever draws next.
+- For a **readout** instead of an event, set a panel every frame while its
+  subject exists and clear it when it does not:
+  `jer_hud_panel(slot, anchor, text, r, g, b)` with `anchor` one of
+  `JER_HUD_ANCHOR_TOP_LEFT` / `_TOP_CENTRE` / `_TOP_RIGHT`. Panels sharing an
+  anchor stack downward in slot order (`JER_HUD_PANEL_MAX` = 4), and
+  `jer_hud_panel_bar(slot, anchor, value, max, r, g, b)` puts a small filled
+  **meter** in the same slot — a health bar under a lock-on name.
+- All of it is drawn from the engine's overlay pass (`jer_hud_draw`, next to the
+  pause menu), so a module needs **no draw hook of its own**.
+
+### The game's own voice — `jer_notify` and `jer_error`
+
+These two ride engine paths on purpose; they are not the HUD's, and the
+difference is who is speaking.
+
+- **`jer_notify(text, priority, seconds)`** takes the engine's OWN player-message
+  path (`SetPlayerMessage` → `DrawMessage`), so the line lands exactly where
+  *"You Drowned"* and *"You wrecked your vehicle"* do: golden, centred, near the
+  top, for a fixed number of seconds. Priority `0..JER_NOTIFY_PRIORITY_MAX` (5)
+  decides which line wins the single slot — engine mission lines use 2–3, and a
+  line already showing with a higher priority is not replaced. `seconds <= 0`
+  means 3. The text is **copied engine-side**, so a caller may pass a temporary
+  buffer; `jer_notify_clear()` drops it.
+- **`jer_error(fmt, ...)`** is the opposite: a short-lived gentle-red notice down
+  the **left** of the screen, wrapped by the engine over several one-line rows
+  (34 characters a row), for about 5 seconds, drawn in the frontend **and** in
+  game. The engine raises one itself for a rejected command-line argument, and a
+  module that refuses to load or fails to join should use it too. It is the
+  "something needs to be told, now" channel, not a conversation.
+- **Drawing them yourself.** `jer_error_count()` and `jer_error_at(i)` expose the
+  live lines, which is how the engine prints them with its own text primitives
+  (`State_FrontEnd` in the frontend, `DrawGame` in game). If you draw them too,
+  give each row the **font you are drawing in**: the frontend font is a third
+  taller than the in-game one, so the engine steps frontend rows by 36 px and
+  in-game rows by 12 px.
+
 ## What a module can do
 
 - **React to events** — see `events.md` for the full table. The engine
@@ -134,29 +205,10 @@ jer_pause_menu_register(&myMenu);
   back. Anything that leaves a player sitting in a menu is "idle" by that
   timer, and the demo it starts loads a whole level -- which blocks the main
   thread while it happens.
-- **Say something on screen** — `jer_hud.h`. `jer_hud_message` (and
-  `jer_hud_message_segs` for a partly-coloured line) queues a message that is
-  drawn centred, stacked from the top, and expires on its own — right for an
-  event ("You killed VASQUEZ"). For a READOUT, where a line belongs in a corner
-  for exactly as long as its subject exists, use `jer_hud_panel(slot, anchor,
-  text, r, g, b)` — an anchored line drawn every frame until `jer_hud_panel_clear`
-  or the next set — or `jer_hud_panel_bar(slot, anchor, value, max, r, g, b)` for
-  a small filled meter (a health bar under a lock-on name). Both are drawn from
-  the engine's overlay pass, so a module needs no draw hook of its own.
-- **Say something in the game's own voice** — two channels that are deliberately not the
-  HUD's above, and the difference is who is speaking. `jer_notify(text, priority,
-  seconds)` (`jer_notify.h`) rides the engine's OWN player-message path
-  (`SetPlayerMessage` -> `DrawMessage`), so it lands exactly where "You Drowned" and "You
-  wrecked your vehicle" do: golden, centred, near the top, for a fixed number of seconds,
-  and competing for the slot on priority (`JER_NOTIFY_PRIORITY_MAX` 5; engine mission
-  lines use 2-3). The text is **copied engine-side**, so a caller may pass a temporary
-  buffer; `jer_notify_clear()` drops it. Use it when the line should read as the game
-  talking. `jer_error(fmt, ...)` (`jericho.h`) is the opposite: a short-lived gentle-red
-  notice down the **left** of the screen, wrapped over several rows, ~5 s, drawn in the
-  frontend and in game - the "something needs to be told, now" channel. The engine itself
-  raises one for a rejected command-line argument, and a module that refuses to load or
-  fails to join should use it too. `jer_error_count()` / `jer_error_at(i)` expose the live
-  ones so the engine can print them with its own text primitives.
+- **Say something on screen** — four channels for one job, HUD and game voice;
+  the whole picture is in [Saying things on screen](#saying-things-on-screen).
+  In short: `jer_hud_message` for module chatter, `jer_notify` for the game's own
+  voice, and `jer_error` for "something needs telling, now".
 - **Play a sound without starving the engine** — `jer_sound.h`. There are only 16
   SPU voices and the engine's own collision/explosion sounds play on whatever
   `GetFreeChannel()` hands out, so a module that LOCKS a voice per sound can leave
