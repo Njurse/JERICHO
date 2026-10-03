@@ -411,6 +411,8 @@ down in
 VRAM budget itself is in
 [`carhacks/docs/VRAM.md`](JERICHO/MODS/carhacks/docs/VRAM.md).
 
+![The extended VRAM buffer: the base 1 MiB above, the lower half pool (rows 512..1023) below](readme_images/extended_vram_example.png)
+
 ## Building and running
 
 ### Prerequisites (Windows)
@@ -615,6 +617,24 @@ sound, damage, effects **and** presentation at once.
 ![Caine's Crossfire car-combat gamemode](readme_images/addon_cainescrossfire_gamemode_example.png)
 
 ![A custom explosion effect driven by the FX hooks](readme_images/addon_custom_effects_example.png)
+
+![Killing an opponent in car combat](readme_images/addon_cainescrossfire_killing_opponent.png)
+
+![A vehicle-mounted special weapon](readme_images/addon_cainescrossfire_vehicle_special_weapon_example.png)
+
+### Car Hacks (`carhacks`) — every vehicle, from any city
+
+Vehicle availability + cross-city imports: unlock the extra vehicles the
+frontend hides, replace the Take-a-Ride car screen with a menu that carries a
+**city-roster** row, and load *another city's* vehicles into a level's resident
+slots — a Chicago school bus in Havana, a Rio truck in Vegas. It is the car-data
+foundation the combat and multiplayer addons build on, and the home of the
+engine's cross-city API (`InitCarImport` / `CarImportPin`) and of the palette and
+VRAM work (`civ_clut`, the lower half pool). **Uses:** `JER_EVENT_CAR_AVAILABILITY`,
+`JER_EVENT_CAR_DATA_SOURCE`, `JER_EVENT_CAR_PEER_DRAW`, `JER_EVENT_NET_RECV` plus
+its own `jer_net` channel, and `jer_frontend` for the car-select menu.
+
+![A foreign car driven on a level it does not belong to](readme_images/addon_carhacks_demonstration_updated_2.png)
 
 ### Sandbox — the whole API surface
 
