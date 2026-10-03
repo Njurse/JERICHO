@@ -119,13 +119,38 @@ int chkNetFoldPeerCars(void)
 		if (!gChkNetPeerPickSet[p])
 			continue;
 
-		/* A car from the level's OWN city needs no import: the level already lists
-		 * its own city's vehicles. Skipping those also stops an identity that has
-		 * not settled yet (mp reports a car before a level exists) from claiming a
-		 * spare resident slot with the level's own model 0. Said either way - as
-		 * CHK_CITY_NATIVE or as the level's own index - it is the same car. */
-		if (chkCarIdCity(gChkNetPeerPick[p]) < 0 || chkCarIdCity(gChkNetPeerPick[p]) == GameLevel)
-			continue;
+		/* A car the level's OWN city ships needs no import WHEN THE LEVEL ALREADY
+		 * HOLDS IT: its own list has that model (CHK_CITY_NATIVE names the level's
+		 * city, so both spellings are the same question). That also keeps an
+		 * identity that has not settled yet (a car reported before a level exists,
+		 * i.e. model CHK_MODEL_NONE / a bare 0 the level does pool) from claiming a
+		 * spare resident slot.
+		 *
+		 * WHAT IT MUST NOT DO is assume the level holds everything its city ships.
+		 * A level pools ONE list, and a model outside it has to be brought in like
+		 * a guest -- otherwise the peer's machine resolves a car the host cannot
+		 * build and InitPlayer falls back to resident slot 0, i.e. the host draws
+		 * the client in the HOST's own car: "I picked car 12 and spawned as car 1". */
+		{
+			int pcity = chkCarIdCity(gChkNetPeerPick[p]);
+			int pmodel = chkCarIdModel(gChkNetPeerPick[p]);
+			int holds;
+
+			if (pmodel < 0)
+				continue;		/* nothing settled yet: not a car to import */
+
+			if (pcity < 0)
+				pcity = GameLevel;	/* CHK_CITY_NATIVE = the level's own city */
+
+			/* 1 = the level's pool has it, -1 = cannot tell (this also runs when the
+			 * host publishes its set, outside the hook that hands over the resident
+			 * list): BOTH mean "do not import". Only a provable 0 -- an own-city car
+			 * the level really does not hold -- goes to the import path. */
+			holds = chkImportLevelHoldsModel(pmodel);
+
+			if (pcity == GameLevel && holds != 0)
+				continue;		/* in the level's pool (or unknown): no import */
+		}
 
 		for (slot = 0; slot < CHK_IMPORT_MAX_SLOTS; slot++)
 		{

@@ -53,6 +53,14 @@ void chkImportSetEngineModels(int* models, int count);
  * another module claimed? */
 int chkImportSlotFree(int slot);
 
+/* Does the LEVEL already hold this model in its resident pool? "This level's own
+ * city" does not imply the level has that car (a level reads only the models its
+ * own list names), so the callers that used to skip an own-city car ask this
+ * instead. Hook-only, like chkImportSlotFree: 1 = the pool holds it, 0 = it
+ * provably does not, -1 = cannot tell (no live resident list). A caller that would
+ * IMPORT on a 0 must treat -1 as "leave it alone". */
+int chkImportLevelHoldsModel(int model);
+
 /* Distinguishable source cities the set names, for logging: the FIRST guest city
  * (-1 = none, the level's own) and how many distinct ones there are. */
 int chkImportGuestCity(void);

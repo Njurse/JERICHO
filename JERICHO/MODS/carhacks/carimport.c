@@ -109,6 +109,42 @@ int chkImportSlotFree(int slot)
 	return 1;
 }
 
+/* Does the LEVEL already hold this model in its resident pool?
+ *
+ * "This level's own city" is NOT the same as "this level has that car". A level
+ * reads only the resident models ITS OWN list names, so a model its city ships can
+ * still be missing -- RIO's model 12 (the special) is in RIO's files and in no RIO
+ * take-a-ride level. Every caller that used to skip an own-city car on the old
+ * assumption now asks this instead.
+ *
+ * THREE ANSWERS, and the third one matters: 1 = the pool holds it, 0 = it provably
+ * does not, -1 = CANNOT TELL, because there is no live resident list (this is
+ * hook-only, like chkImportSlotFree: the pointer is handed over by
+ * JER_EVENT_CAR_DATA_SOURCE and dropped at the end of it). A caller that would
+ * IMPORT on a "no" must treat -1 as "leave it alone": the peer fold also runs when
+ * the host PUBLISHES its set (a peer's PICK, a session start), which is not inside
+ * that hook, and guessing "not held" there folded an own-city car the level already
+ * had. An own-city "guest" writes the level's own city's car palettes into a guest
+ * civ_clut block, so the whole session's colours go wrong. */
+int chkImportLevelHoldsModel(int model)
+{
+	int i;
+
+	if (gChkEngineModels == NULL)
+		return -1;
+
+	if (model < 0)
+		return 0;
+
+	for (i = 0; i < gChkEngineCount; i++)
+	{
+		if (gChkEngineModels[i] == model)
+			return 1;
+	}
+
+	return 0;
+}
+
 const char* chkCityName(int city)
 {
 	if (city < 0)
@@ -389,19 +425,37 @@ int chkImportApplyPick(int level, int count)
 	if (city < 0)
 		return 0;
 
-	if (city == level)
+	if (city == level && chkImportLevelHoldsModel(model) != 0)
 	{
-		/* the level's own city: its list already has this car, so there is
-		 * nothing to import - wantedCar alone is enough. */
+		/* the level's own city, and this model is in its resident pool (or we
+		 * cannot see the pool from here): its own list already has this car, so
+		 * there is nothing to import - wantedCar alone is enough. */
 		printInfo("[carhacks] import: the pick (%s model %d) is this level's own car - no import\n",
 			chkCityName(city), model);
 		return 0;
 	}
 
-	/* A FOREIGN pick goes into a spare resident slot. InitPlayer prefers a slot
-	 * the model was IMPORTED into over a native one with the same number
-	 * (players.c), so the spare slot wins even when the level also lists that
-	 * number as one of its own civilians. */
+	if (city == level)
+	{
+		/* THE LEVEL'S OWN CITY IS NOT THE SAME AS THE LEVEL'S OWN POOL. A level
+		 * reads only the resident models its own list names, so a model its city
+		 * ships can still be absent (RIO's model 12 - the special - is in RIO's
+		 * files and in no RIO take-a-ride level). Nothing imports an own-city car
+		 * on the old assumption, and the engine then has nothing to build it from:
+		 * InitPlayer falls back to resident slot 0, i.e. the level's FIRST car,
+		 * which is exactly "I picked car 12 and spawned as car 1". So an own-city
+		 * model the level does not hold is imported like a guest, from its own
+		 * city's files (LoadCarImport reads LevelFiles[city] regardless of whether
+		 * that city is the level's). */
+		printInfo("[carhacks] import: the pick (%s model %d) is this level's own city but not in "
+			"its resident pool - importing it from its own files\n",
+			chkCityName(city), model);
+	}
+
+	/* A pick goes into a spare resident slot. InitPlayer prefers a slot the model
+	 * was IMPORTED into over a native one with the same number (players.c), so the
+	 * spare slot wins even when the level also lists that number as one of its own
+	 * civilians. */
 	for (slot = CHK_IMPORT_SPARE_FIRST; slot < count && slot < CHK_IMPORT_MAX_SLOTS; slot++)
 	{
 		if (chkImportSlotFree(slot))
