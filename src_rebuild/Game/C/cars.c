@@ -2043,7 +2043,19 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		}
 
 		if (palidx < 0)
-			palidx = 0;	// not a car palette in this city - stock behaviour
+		{
+			// JERICHO: resolve an unclassifiable set to the SAME row the BUILD resolves it to
+			// (CarPalIndexForBuild), so the row a model is baked to read is a row this walk
+			// writes. The two used to disagree: the bake sent such a set to the source city's
+			// OWN first row, the walk sent it to the HOST's row 0 - so an imported model read
+			// rows nothing ever wrote and those polys drew colourless ("several corrupted
+			// palettes" on an imported special). For the host level this is unchanged: its
+			// block base is -1 and the fallback stays row 0, which is what the host's own
+			// build already reads.
+			int base = CarImportPaletteBlockBase(city);
+
+			palidx = (base >= 0) ? base : 0;
+		}
 
 		needed = (rowNeeded == NULL) ? 1 : rowNeeded[palidx];
 
