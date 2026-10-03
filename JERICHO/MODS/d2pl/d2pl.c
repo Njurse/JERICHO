@@ -205,7 +205,7 @@ int D2plFovScrZ(int degrees)
 /* JER_EVENT_CAMERA_LOOK - the two-state orbit authority                  */
 /* ================================================================== */
 
-static int D2plOnLook(void* userdata, void* args)
+int D2plOnLook(void* userdata, void* args)
 {
 	JER_ARGS_CAMERA_LOOK* a = (JER_ARGS_CAMERA_LOOK*)args;
 	PLAYER* lp = (PLAYER*)a->player;
@@ -668,7 +668,7 @@ void D2plLogCamera(PLAYER* lp, int baseDirIn, VECTOR* camPos,
 /* JER_EVENT_CAMERA - dispatch to the theme placements                    */
 /* ================================================================== */
 
-static int D2plOnCamera(void* userdata, void* args)
+int D2plOnCamera(void* userdata, void* args)
 {
 	JER_ARGS_CAMERA* a = (JER_ARGS_CAMERA*)args;
 	PLAYER* lp = (PLAYER*)a->player;
@@ -805,7 +805,7 @@ static int D2plOnCamera(void* userdata, void* args)
 /* then the weapon frame update                                          */
 /* ================================================================== */
 
-static int D2plOnFrame(void* userdata, void* args)
+int D2plOnFrame(void* userdata, void* args)
 {
 	PLAYER* lp = &player[0];
 	int pad = 0;
@@ -939,7 +939,7 @@ static const char* gLaserNames[D2PL_LASER_COUNT] = {
 
 static char gD2plLabelBuf[D2PL_ITEM_COUNT][40];
 
-static const char* D2plItemLabel(int item)
+const char* D2plItemLabel(int item)
 {
 	switch (item)
 	{
@@ -1000,7 +1000,7 @@ static const char* D2plItemLabel(int item)
 	return gD2plLabelBuf[item];
 }
 
-static void D2plAdjustItem(int item, int direction)
+void D2plAdjustItem(int item, int direction)
 {
 	switch (item)
 	{

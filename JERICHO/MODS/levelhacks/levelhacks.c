@@ -139,7 +139,7 @@ static int LevelhacksOnDraw(void* userdata, void* args)
 		return JER_RESULT_CONTINUE;
 
 	SetTextColour(255, 255, 0);
-	PrintString(gLhStage == 1 ? "Take a Ride:" : "Multiplayer Map:", 20, 80);
+	PrintString((char*)(gLhStage == 1 ? "Take a Ride:" : "Multiplayer Map:"), 20, 80);
 
 	SetTextColour(255, 255, 255);
 

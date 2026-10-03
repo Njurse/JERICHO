@@ -145,11 +145,6 @@ static int chkRosterCount(int city)
 	return chkRosterBuild(city, NULL, 0);
 }
 
-static const char* chkCityName(int city)
-{
-	return (city >= 0 && city < CHK_CITY_COUNT) ? LevelNames[city] : "?";
-}
-
 static void chkClampCursor(void)
 {
 	int n = chkRosterCount(gChkRosterCity);
