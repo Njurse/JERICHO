@@ -11,7 +11,13 @@ extern char* CosmeticFiles[];
 extern int gcar_num;
 
 extern void LoadCosmetics(int level); // 0x00031160
-extern void SetupSpecCosmetics(char *loadbuffer); // 0x00031360
+
+/* JERICHO cross-city hot load: apply ONE resident slot's imported cosmetics at
+ * runtime, for a car built after the level loaded (geometry hot load's partner).
+ * car_cosmetics carries wheels, shadow corners, the collision box and the COG, so
+ * without this a hot-loaded car wears the host LEVEL's wheels and shadow.
+ * Returns 1 when applied, 0 when the slot has no import source or no model. */
+extern int JerHotLoadCarCosmetics(int slot);extern void SetupSpecCosmetics(char *loadbuffer); // 0x00031360
 
 extern void AddReverseLight(CAR_DATA* cp); // 0x0002F994
 extern void AddIndicatorLight(CAR_DATA *cp, int Type); // 0x0002FAEC

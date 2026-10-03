@@ -18,6 +18,7 @@
 #include "mission.h"		/* residentCarModels[], JerSetCarModelSource */
 #include "models.h"		/* InitCarImport, JerHotLoadCarModel */
 #include "texture.h"		/* CarImportApplyPaletteForCity */
+#include "cosmetic.h"		/* JerHotLoadCarCosmetics */
 
 #include "carid.h"
 #include "carimport.h"
@@ -570,13 +571,20 @@ void chkImportDump(int level)
  *   1. say where each of OUR slots comes from (the arrays the hook would have set)
  *   2. read in the cities the set now names (InitCarImport covers all of them)
  *   3. build this slot's geometry (refused, and left alone, if it does not fit)
+ *   4. apply that city's cosmetics for the slot, in the SAME call: car_cosmetics
+ *      carries the wheels, the shadow corners, the collision box and the COG, and
+ *      mp's swap path reads it when it rebuilds a peer's car
+ *      (cp->ap.carCos + CreateDentableCar). Doing both here means the rebuild mp is
+ *      about to do is the right one, and a machine that could not build the geometry
+ *      leaves the substitute car alone.
  *
  * A no-op before any level has loaded (that level builds everything itself) and
- * for a slot we do not own. Returns the bytes the engine built (0 = not built).
+ * for a slot we do not own. Returns a positive number when anything was applied
+ * (0 = not built, and then the slot keeps the car it has).
  */
 int chkImportHotLoad(int slot)
 {
-	int i;
+	int i, built, cos;
 
 	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS || !gChkSet[slot].used)
 		return 0;
@@ -606,7 +614,14 @@ int chkImportHotLoad(int slot)
 	 * coloured by whichever city the level already had. */
 	CarImportApplyPaletteForCity(GetCarModelSourceCity(slot));
 
-	return JerHotLoadCarModel(slot);
+	built = JerHotLoadCarModel(slot);
+	cos = JerHotLoadCarCosmetics(slot);
+
+	if (built > 0 || cos > 0)
+		printInfo("[carhacks/net] slot %d is now the imported car itself: geometry %s, cosmetics %s\n",
+			slot, (built > 0) ? "built" : "already there", (cos > 0) ? "applied" : "already there");
+
+	return (built > 0) ? built : (cos > 0 ? 1 : 0);
 }
 
 /* The set's own slot for a (city, model) car, or -1. Used to hot-load a peer's

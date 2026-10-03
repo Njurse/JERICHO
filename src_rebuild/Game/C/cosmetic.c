@@ -102,6 +102,47 @@ void ProcessCosmeticsLump(char *lump_ptr, int lump_size)
 #endif
 }
 
+// JERICHO cross-city hot load: apply resident `slot`'s IMPORTED cosmetics, at RUNTIME.
+//
+// ProcessCosmeticsLump above is a level-load function: it walks every slot and also
+// caches the special vehicles. car_cosmetics is not cosmetic-only -- a car's wheel
+// sizes and offsets (wheelSize / wheelDisp, cars.c's DrawCarWheels), its shadow
+// corners (cPoints, handling.c's SetShadowPoints), its collision box and its centre of
+// gravity all come from it. So a slot whose geometry was hot-loaded but whose
+// cosmetics were not wears the HOST LEVEL's wheels and shadow: the reported "the
+// imported car has no wheels or shadow on the other players' machines".
+//
+// Returns 1 when the slot's own cosmetics were applied, 0 when there was nothing to
+// apply (no import source, or no model to read). Model 13 is the special vehicle,
+// which is derived from the first residents and is not a hot-load case.
+int JerHotLoadCarCosmetics(int slot)
+{
+	char* imported;
+	int model, offset;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	imported = GetCarImportCosmetics(slot);
+
+	if (imported == NULL)
+		return 0;			// the level's own car: its cosmetics are already in place
+
+	model = residentCarModels[slot];
+
+	if (model < 0 || model > 12)
+		return 0;
+
+	offset = *(int*)(imported + model * sizeof(int));
+	car_cosmetics[slot] = *(CAR_COSMETICS*)((u_char*)imported + offset);
+	FixCarCos(&car_cosmetics[slot], model);
+
+	printInfo("cross-city: hot-loaded %s model %d cosmetics into slot %d (wheels, shadow, collision box, COG)\n",
+		LevelNames[GetCarModelSourceCity(slot)], model, slot);
+
+	return 1;
+}
+
 // [D] [T]
 void LoadCosmetics(int level)
 {
