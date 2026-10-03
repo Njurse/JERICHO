@@ -189,12 +189,22 @@ AX, AY, AC = 980, 90, 1
 astrip = vram.crop((CLUT_X, HALF, CLUT_X + 64, 1024))
 sheet.paste(astrip.resize((64 * AC, 512 * AC), Image.NEAREST), (AX, AY))
 d.rectangle([AX, AY, AX + 64 * AC, AY + 512 * AC], outline=INK, width=2)
-# The 3-city mix's own lower half pool CLUT rows, measured from the pinned rects in the log.
-d.rectangle([AX, AY, AX + 64 * AC, AY + 28 * AC], outline=TEAL, width=2)
-d.text((AX + 64 * AC + 10, AY + 4),
-       "imported CLUT rows - y512..539", fill=TEAL, font=small)
-d.text((AX + 64 * AC + 10, AY + 19),
-       "(28 of 512; the rest is free)", fill=TEAL, font=small)
+# The lower half pool's CLUT rows actually IN USE, measured from THIS dump. Never
+# hard-coded: the extent moves with how many cities the run mixed, and a stale
+# number here reads as a fact about the run.
+_lowclut = vram.crop((CLUT_X, HALF, CLUT_X + 64, 1024))
+_lowpx = _lowclut.load()
+_lowused = [y for y in range(HALF) if any(sum(_lowpx[x, y]) > 24 for x in range(64))]
+if _lowused:
+    _lowlast = _lowused[-1]
+    d.rectangle([AX, AY, AX + 64 * AC, AY + (_lowlast + 1) * AC], outline=TEAL, width=2)
+    d.text((AX + 64 * AC + 10, AY + 4),
+           "lower-half CLUT rows in use - y512..%d" % (HALF + _lowlast), fill=TEAL, font=small)
+    d.text((AX + 64 * AC + 10, AY + 19),
+           "(%d of 512; the rest is free)" % len(_lowused), fill=TEAL, font=small)
+else:
+    d.text((AX + 64 * AC + 10, AY + 4),
+           "no lower-half CLUT rows in use in this dump", fill=TEAL, font=small)
 d.text((AX + 64 * AC + 10, AY + 512 - 30),
        "512 rows, mirrored at the same x,", fill=INK, font=small)
 d.text((AX + 64 * AC + 10, AY + 512 - 15),
