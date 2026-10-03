@@ -28,7 +28,7 @@ env:
 
 jobs:
   windows:
-    name: Windows (Win32)
+    name: Windows (x64)
     runs-on: windows-2022
     timeout-minutes: 60
     env:
@@ -39,7 +39,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # Deliberately NOT `submodules: recursive`. That walks every entry in
+          # .gitmodules, and a single unfetchable submodule fails the whole
+          # checkout before any build step runs -- which is exactly how this
+          # job spent its entire life failing at step 2. JERICHO/MODS/gaildrv2
+          # is deliberately out of the picture for builds (its repository is
+          # not published), so only the submodules the build needs are fetched,
+          # explicitly, in the step below.
+          submodules: false
+
+      - name: Fetch build submodules
+        shell: bash
+        run: |
+          # An explicit allow-list rather than `--recursive`: adding a submodule
+          # to .gitmodules must not be able to break the build by itself.
+          for path in src_rebuild/PsyCross; do
+            echo "::group::submodule $path"
+            git submodule update --init --depth=1 "$path"
+            echo "::endgroup::"
+          done
 
       - name: Download dependencies
         shell: pwsh
@@ -137,7 +155,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # See the Windows job: an explicit allow-list instead of
+          # `submodules: recursive`, so an unpublished submodule cannot fail
+          # the checkout. gaildrv2 is out of the picture for builds.
+          submodules: false
+
+      - name: Fetch build submodules
+        shell: bash
+        run: |
+          for path in src_rebuild/PsyCross; do
+            echo "::group::submodule $path"
+            git submodule update --init --depth=1 "$path"
+            echo "::endgroup::"
+          done
 
       - name: Install dependencies
         run: |
