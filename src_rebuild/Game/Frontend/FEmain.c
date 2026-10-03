@@ -4228,8 +4228,57 @@ int JerFrontendMenuScreen(int bSetup)
 	{
 		/* no pad: the frontend synthesises a Cross (feNewPad = 0x10) to kick
 		 * the screen when the controller is unplugged - that is not a real
-		 * press, so a module menu must not act on it */
+		 * press, so a module menu must not act on it.
+		 *
+		 * This is also why Triangle cannot be driven headlessly: a padless run never
+		 * reaches a module menu at all. It is a pad-only path, verified by running
+		 * the game rather than by a harness lever. */
 		return 0;
+	}
+
+	/* JERICHO: TRIANGLE. It is the back button on every stock frontend screen, so a
+	 * module menu is offered it too - and it is offered FIRST, before the row logic,
+	 * because back is a property of the SCREEN, not of whichever row happens to be
+	 * selected.
+	 *
+	 * The module answers for itself (`on_back`). The engine must not assume "the
+	 * previous screen": carhacks' car-select Back row returns to the Day/Night
+	 * screen on purpose, NOT to the stock car screen it replaced, because going back
+	 * there would re-run that screen's setup and re-arm the menu - the loop the
+	 * stock return would create.
+	 *
+	 * With no on_back, a menu that declares a row with is_back set gets that row
+	 * pressed, which is what the row is for. With neither, the press is left
+	 * unclaimed: a menu with nowhere to go back to behaves like a stock screen with
+	 * nowhere to go back to, and the caller keeps the input. */
+	if ((feNewPad & MPAD_TRIANGLE) != 0)
+	{
+		if (menu->on_back != NULL)
+		{
+			if (menu->on_back(menu->userdata))
+			{
+				FESound(2);
+				feNewPad = 0;
+				jer_frontend_refresh();
+				return 1;
+			}
+		}
+		else
+		{
+			int i;
+
+			for (i = 0; i < n; i++)
+			{
+				if (menu->items[i].is_back != 0 && menu->items[i].on_activate != NULL)
+				{
+					FESound(2);
+					feNewPad = 0;
+					menu->items[i].on_activate(menu->items[i].userdata);
+					jer_frontend_refresh();
+					return 1;
+				}
+			}
+		}
 	}
 
 	if (pCurrButton != NULL)

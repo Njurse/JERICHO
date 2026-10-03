@@ -8,6 +8,7 @@
  *   < CITY: X >   left/right cycles CHICAGO/HAVANA/VEGAS/RIO - the roster (NEW)
  *   Ride          start the level with the picked car
  *   Back          back to the Day/Night screen
+ *   Triangle      the same back, from any row (JER_FE_MENU.on_back)
  *
  * The roster row sits directly BELOW the car row, as asked. The stock screen only
  * ever shows the LEVEL's own car list (carNumLookup[GameLevel]); this one lets
@@ -103,7 +104,8 @@ static JER_FE_MENU gChkMenu =
 	NULL,			/* on_enter */
 	NULL,			/* userdata */
 	"SELECT CAR",		/* title */
-	NULL			/* get_preview (set below, keeps the initializer readable) */
+	NULL,			/* get_preview (set below, keeps the initializer readable) */
+	NULL			/* on_back (set below, with get_preview) */
 };
 
 /* ---------------------------------------------------------------------------
@@ -298,6 +300,23 @@ static int chkRideWith(int city, int idx)
 	return 1;
 }
 
+/* BACK, as this menu defines it - reached from the Back row (Cross on it) and from
+ * the menu's on_back (Triangle, from ANY row). One function, so the two cannot drift
+ * apart.
+ *
+ * The stock Take-a-Ride chain is main(0) -> city(1) -> day/night(3) -> car(14).
+ * "Back" must land on the Day/Night screen, NOT on the stack (which holds the stock
+ * car screen we replaced): returning there would re-run its setup, re-arm this menu
+ * and trap the player in a loop. */
+static int chkSelBack(void* ud)
+{
+	(void)ud;
+
+	printInfo("[carhacks] car select: back to the day/night screen\n");
+	jer_frontend_goto(CHK_FE_SCREEN_TIMEOFDAY);
+	return 1;
+}
+
 /* Cross on a row. */
 static int chkSelActivate(void* ud)
 {
@@ -307,15 +326,7 @@ static int chkSelActivate(void* ud)
 		return chkRideWith(gChkRosterCity, gChkCarIdx);
 
 	if (row == CHK_ROW_BACK)
-	{
-		/* The stock Take-a-Ride chain is main(0) -> city(1) -> day/night(3) ->
-		 * car(14). "Back" must land on the Day/Night screen, NOT on the stack
-		 * (which holds the stock car screen we replaced): returning there would
-		 * re-run its setup, re-arm this menu and trap the player in a loop. */
-		printInfo("[carhacks] car select: back to the day/night screen\n");
-		jer_frontend_goto(CHK_FE_SCREEN_TIMEOFDAY);
-		return 1;
-	}
+		return chkSelBack(ud);
 
 	return 0;
 }
@@ -525,6 +536,9 @@ void chkCarSelectRegister(JERICHO_CONTEXT* ctx)
 	gChkItems[CHK_ROW_BACK].submenu = -1;
 
 	gChkMenu.get_preview = chkSelPreview;
+
+	/* Triangle, from any row: the same back the Back row performs. */
+	gChkMenu.on_back = chkSelBack;
 
 	chkReadHarness();
 	chkClampCursor();

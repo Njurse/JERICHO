@@ -9,7 +9,18 @@ row the stock screen has no room for: **which city's roster it is drawn from**.
     < CITY: X >    left/right cycles CHICAGO/HAVANA/VEGAS/RIO - the roster  (NEW)
     Ride           start the level with the picked car
     Back           back to the Day/Night screen
+    Triangle       the same back, from any row
 ```
+
+Triangle is the back button on every stock frontend screen, so the menu is offered it
+too (`JER_FE_MENU.on_back`, `jer_frontend.h`). It performs the Back row's action from
+wherever the cursor is, so a player who reaches for Triangle - as they would on any
+stock screen - is not stuck. The two share one function (`chkSelBack`) so they cannot
+drift apart.
+
+It is a **pad-only** path: a module menu ignores input when no pad is connected, and a
+headless run has no pad, so no harness lever can drive it (see "Driving it without a
+pad" below - those env vars drive the *state*, not the buttons).
 
 The roster row sits **directly below** the car row. The stock screen can only ever
 show the level's own list (`carNumLookup[GameLevel]`, `FEmain.c`); this one browses

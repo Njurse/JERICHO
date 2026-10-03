@@ -63,6 +63,16 @@ typedef struct JER_FE_MENU
 	 * city's car icon for it (the stock car-select art). Leave it NULL for no
 	 * icon. */
 	void (*get_preview)(void* ud, int* city, int* model);
+	/* Optional BACK. Triangle is the back button on every stock frontend
+	 * screen, so the host offers it to a module menu too - but a module's back
+	 * is not always "the previous screen": the car-select Back row returns to
+	 * the Day/Night screen, deliberately NOT to the stock car screen it
+	 * replaced. So the module answers for itself. Return 1 to say the press is
+	 * handled (the host then consumes it and relayouts); return 0 or leave this
+	 * NULL and the press falls through to the item with is_back != 0, if the
+	 * menu has one. With neither, Triangle stays unclaimed and does nothing,
+	 * exactly as it does on a stock screen with nowhere to go back to. */
+	int (*on_back)(void* ud);		/* Triangle: 1 = handled */
 } JER_FE_MENU;
 
 /* Register a menu (and submenus). Call from the module entry; the registry

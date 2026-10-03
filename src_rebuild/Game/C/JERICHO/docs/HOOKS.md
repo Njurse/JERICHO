@@ -100,6 +100,12 @@ jer_pause_menu_register(&myMenu);
   engine renders as native frontend screens (`jer_frontend_register_menu`),
   optionally routed from the main menu (`jer_frontend_set_main_entry`). Items
   can open submenus, run callbacks, adjust values with Left/Right, or return.
+  Triangle is offered to the menu too, as it is on every stock screen: set
+  `JER_FE_MENU.on_back` to answer for yourself (the car-select Back row returns
+  to the Day/Night screen, deliberately not to the stock screen it replaced),
+  or leave it NULL and a row with `is_back` set stands in. With neither, the
+  press is left unclaimed. Triangle is a pad-only path — a headless run has no
+  pad, so a module menu is never even reached.
 - **Talk over the network** — `jer_net.h` lets any module send/receive named
   channels over the active multiplayer session (`jer_net_register_channel` +
   `jer_net_send`, delivered back as `JER_EVENT_NET_RECV`). It is a safe no-op
