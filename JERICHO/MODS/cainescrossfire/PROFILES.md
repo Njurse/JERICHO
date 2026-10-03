@@ -130,6 +130,75 @@ on both the scenery and car-vs-car paths.
 - plus the profile the **player** picked in the CC select flow;
 - `CC_PROFILES` overrides the whole set for a headless run (never persisted).
 
+## What the engine affords
+
+This is the one place that states the capacity a battleground has for distinct cars. It
+is not a CC setting — it is the engine's, and carhacks' `docs/CROSS_CITY.md` covers the
+VRAM side of it in depth. Everywhere else that needs a number should point here.
+
+**Resident car slots: `MAX_CAR_RESIDENT_MODELS` = 12** (`src_rebuild/Game/dr2limits.h`),
+with `SPECIAL_CAR_SLOT` defined as `MAX_CAR_RESIDENT_MODELS - 1` (so it moved 7 → 11 when
+the pool grew, and it follows the macro automatically).
+
+| slots | who holds them |
+|---|---|
+| 0..4 | the level's own civilian models — **never repurposed** (stealing one is what made the level's cars look wrong) |
+| 5..10 | free: this is the module's budget — **six** cars |
+| 11 | the special vehicle (`SPECIAL_CAR_SLOT`) |
+
+A native profile does not need a free slot at all: it reuses the resident slot that
+already holds its model number. So an arena can field the level's own cars (in the
+civilian slots they already occupy) **plus six more**, and a roster car whose model is
+already resident costs nothing.
+
+**Guest cities: 3** — that is, every city that can be one (there are four, and the
+level's own is not a guest). `models.c` keeps one `CAR_IMPORT` per city (`gCarImports[4]`,
+`.region == NULL` when not held) and `InitCarImport` loads every city the placed slots ask
+for. A foreign profile is placed into a free slot with **its own city** recorded as that
+slot's model source, and the geometry comes out of that city's own file.
+
+**Guest city palettes: one 8-row civic CLUT block each.** Rows `0..7` are the level's own;
+a guest gets the next free band — measured, CHICAGO `8..15`, HAVANA `16..23`, VEGAS
+`24..31`. The derivation, the `CIV_CLUT_GUEST_CITIES` arithmetic and the VRAM reasoning
+live in carhacks' `docs/CROSS_CITY.md`, which owns the palette side (the tables sit in the
+lower half pool, so the level font at rows 466..511 is never written) — CC depends on
+carhacks, so the pointer runs that way and the number is not restated here. If a city is
+ever refused, `cars.c` says so out loud: `NO PALETTE BLOCK (refused; civ_clut affords N
+guests...)`.
+
+**What the pool costs is per model LOADED, not per slot.** Growing the pool 8 → 12 changed
+neither the texture budget (`JERICHO-VRAM` reports the same 608 KiB of car texture slots,
+same 704/1408 KiB total, no overflow) nor the level heap; only the car poly budget scales
+with the count (3200 → 4800, where a loaded level uses 1900–2700). The capacity is
+allocated when a module claims a slot, so stock levels are unchanged.
+
+**Measured end to end:** one Rio match, the player on Hornet and six contestants, fielded
+**seven cars spanning all four cities** — hornet (slot 10, imported CHICAGO), avalanche
+(9, imported VEGAS), highwayman (8, imported HAVANA), bootlegger (7, imported VEGAS),
+fixer (6, imported CHICAGO), corvo and invocada (RIO's own) — with the engine logging
+three guest imports at once and nothing unfielded.
+
+**The failure mode to recognise.** A profile that cannot be placed logs
+
+```
+[cainescrossfire] profile obelisk: no free spare slot for RIO model 11, not fielded
+```
+
+and that car then ships as **the level's own model at that slot number** — no profile, no
+stat overrides, no special weapon. Anything that shrinks the field or steals a slot shows
+up this way, and it is worth checking for it whenever a car "arrives without its special":
+
+- more cars than the pool can hold: the six free slots (5..10) are what cars that are
+  *not* already resident draw from, so a match wanting several foreign cars at once is
+  where one loses — and the one that loses degrades into its domestic counterpart. The
+  roster is larger than any single battleground can hold, so this is a real ceiling, not
+  a bug in itself; what would be a bug is it happening for a car that fits;
+- a leftover `import = slot:city:model` in `JERICHO/CONFIG/carhacks.ini`, which claims a
+  slot for another module and overrides the placement. `launch_cc_select.bat` neutralises
+  it; neutralise it by hand before judging any placement result;
+- a launch that never started a match (`JER_EVENT_CAR_DATA_SOURCE` only fires inside a
+  level load), which shows as *no* `profile ... ->` lines rather than a failed one.
+
 ## The select flow
 
 Three native frontend menus (`jer_frontend.h`), raised by `-ccmenu` or the main
