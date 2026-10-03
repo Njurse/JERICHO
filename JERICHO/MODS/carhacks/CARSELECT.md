@@ -55,22 +55,41 @@ excludes it — see `VEHICLES.md`).
 ## When it is used, and when it is not
 
 Armed from the `JER_EVENT_CAR_AVAILABILITY` query, which the stock screen fires
-after it *starts* its setup (`FEmain.c`). It declines unless **all** of:
+after it *starts* its setup (`FEmain.c`). **Outside a session** it declines unless
+**both** of:
 
 | condition | why |
 |---|---|
 | `GameType == GAME_TAKEADRIVE` | a mission's own car pick keeps the stock screen |
 | `NumPlayers == 1` | 2-player split-screen keeps the stock screen |
-| no live mp session (`jer_net_is_active()`) | that screen is where **mp** seats players and claims the START (`JER_EVENT_MP_FRONTEND`), so overriding it from another module would break the match |
+
+**Inside a session** those two say nothing and are not asked: the LAN chain leaves
+`NumPlayers` at 2 and a joiner is still `GAME_MISSION` until mp launches, so the
+old condition bailed every time — silently, with no car-select line in the whole
+session — which is why a joining player never saw the roster. With a session live
+the menu is offered too, and `Ride` hands the launch over instead of starting the
+level:
+
+* `Ride` fires `JER_EVENT_MP_FRONTEND` with `JER_MP_FE_START` — the same event the
+  stock frontend raises on `BTN_START_GAME` — so **mp** launches
+  (`MpClientLaunch` for a client, `MpStartMatch` for the host) and picks the pick
+  up from `wantedCar[0]` on the way. Starting the level from here would load it
+  without the session's level, car agreement and spawn.
+* If the session does not take the launch (a refused join), the menu says so and
+  falls through to `SetState(STATE_GAMESTART)`, so a dead `Ride` cannot happen.
+* `Back`/Triangle in a session return 0 and let the engine's own `is_back` row pop
+  the screen, which returns to mp's own chain — the screen that pushed the car
+  screen in the first place.
 
 The menu opens on the next frontend frame, not from the hook: `CarAvailability` is
 only final *after* the setup that hook interrupts — reading it any earlier hands
 back the previous level's list (the open log prints the count, e.g. `10 car(s) in
 its roster`, which is how you can tell the setup landed).
 
-`Back` goes to the **Day/Night screen** (index 3 — the stock Take-a-Ride chain is
-main 0 → city 1 → day/night 3 → car 14), *not* to the stack. Returning to the
-stock car screen would re-run its setup, re-arm this menu and trap the player.
+`Back` outside a session goes to the **Day/Night screen** (index 3 — the stock
+Take-a-Ride chain is main 0 → city 1 → day/night 3 → car 14), *not* to the stack.
+Returning to the stock car screen would re-run its setup, re-arm this menu and
+trap the player.
 
 ## The cross-city consequence
 
@@ -80,13 +99,19 @@ slot, and the engine reads that model from that city's files. `InitPlayer` prefe
 a slot the model was *imported* into over a native one with the same number
 (`players.c`), so the foreign car wins even when the level also lists that number.
 
-Picking from the level's own city needs no import at all (the level already lists
-it) and says so in the log.
+Picking from the level's own city needs no import **when the level's pool already
+holds that model** — a level reads only the models its own list names, so an
+own-city model outside that pool (Rio's model 12, the special, is in Rio's files
+and in no Rio take-a-ride level) is imported from its own city's files exactly
+like a guest. Without that the engine had nothing to build the car from and fell
+back to resident slot 0 — the level's *first* car — which is what "I picked car 12
+and spawned as car 1" was.
 
-The engine reads a level's car data from **one** foreign city (`models.c`), which
-is why a second one is refused loudly rather than silently resolving in the first
-city's table. See `CROSS_CITY.md` for the mechanism and `MP_ADAPTER.md` for what
-that means in a session.
+The engine reads a level's car data from **as many** cities as the set names
+(`models.c` keeps a source city per resident slot), so a mixed set builds and
+spawns; each city needs a palette block, and the bank holds three
+(`civ_clut` rows 8..31). See `CROSS_CITY.md` for the mechanism and `MP_ADAPTER.md`
+for what that means in a session.
 
 ## Config
 

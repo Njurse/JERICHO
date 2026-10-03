@@ -11,9 +11,15 @@
 
 #include "carid.h"
 
-/* The engine's resident car slots (MAX_CAR_RESIDENT_MODELS). Slots 0..4 are the
- * level's civilians, 5..6 spare, 7 SPECIAL_CAR_SLOT. */
-#define CHK_IMPORT_MAX_SLOTS	8
+/* The engine's resident car slots (MAX_CAR_RESIDENT_MODELS = 12). Slots 0..4 are
+ * the level's civilians, the top slot is the engine's SPECIAL_CAR_SLOT, and the
+ * rest are spares an import may take.
+ *
+ * The pool is as deep as the ENGINE's array: capping it at 8 left exactly three
+ * spares (5, 6, 7) once mp had claimed its two, so a third player's car was
+ * refused with "no spare resident slot is free" and the player drove whatever the
+ * level assigned them instead of what they picked. */
+#define CHK_IMPORT_MAX_SLOTS	11	/* 0..10; 11 is SPECIAL_CAR_SLOT */
 #define CHK_IMPORT_SPARE_FIRST	5
 
 /* ---- the set ----------------------------------------------------------- */

@@ -79,15 +79,49 @@ static CHK_IMPORT_ENTRY* chkSlot(int slot)
 
 /* The engine's live resident models for this level, handed over from
  * JER_EVENT_CAR_DATA_SOURCE (models.c) so chkImportSlotFree can see what another
- * module claimed. NULL outside the hook -- the slot choosers fall back to asking
- * only about OUR set then. */
-static int* gChkEngineModels;
-static int  gChkEngineCount;
+ * module claimed. The POINTER is hook-only -- but the list is not: the peer fold
+ * also runs when the host PUBLISHES its set (a peer's PICK, a session start),
+ * which is outside the hook, and the resident list is fixed once a level has
+ * loaded. So a COPY is kept and used whenever the pointer is gone. Without it a
+ * publish-time fold could not see that mp owns slots 5/6 and took one of them. */
+static int* gChkEngineModels;		/* live, only inside the hook */
+static int  gChkEngineCount;		/* live count, or the cached count */
+#define CHK_ENGINE_CACHE	16	/* room for MAX_CAR_RESIDENT_MODELS (12) */
+static int  gChkEngineCache[CHK_ENGINE_CACHE];
+static int  gChkEngineKnown;		/* a level has handed us its list at least once */
 
 void chkImportSetEngineModels(int* models, int count)
 {
+	if (models == NULL)
+	{
+		gChkEngineModels = NULL;	/* keep gChkEngineCache/Known */
+		return;
+	}
+
 	gChkEngineModels = models;
 	gChkEngineCount = (count > 0) ? count : 0;
+
+	if (gChkEngineCount > CHK_ENGINE_CACHE)
+		gChkEngineCount = CHK_ENGINE_CACHE;
+
+	memcpy(gChkEngineCache, models, (size_t)gChkEngineCount * sizeof(int));
+	gChkEngineKnown = 1;
+}
+
+/* What the ENGINE holds in resident `slot`, from the live list inside the hook or
+ * from the copy outside it; -1 when we cannot tell. */
+static int chkEngineModelAt(int slot)
+{
+	if (slot < 0)
+		return -1;
+
+	if (gChkEngineModels != NULL)
+		return (slot < gChkEngineCount) ? gChkEngineModels[slot] : -1;
+
+	if (gChkEngineKnown && slot < gChkEngineCount)
+		return gChkEngineCache[slot];
+
+	return -1;
 }
 
 /* Is `slot` still free to import into? A slot another module already gave a model
@@ -103,8 +137,8 @@ int chkImportSlotFree(int slot)
 	if (gChkSet[slot].used)
 		return 0;			/* already ours */
 
-	if (gChkEngineModels != NULL && slot < gChkEngineCount && gChkEngineModels[slot] >= 0)
-		return 0;			/* another module claimed it */
+	if (chkEngineModelAt(slot) >= 0)
+		return 0;			/* another module (or the level) claimed it */
 
 	return 1;
 }
@@ -130,15 +164,15 @@ int chkImportLevelHoldsModel(int model)
 {
 	int i;
 
-	if (gChkEngineModels == NULL)
-		return -1;
+	if (gChkEngineModels == NULL && !gChkEngineKnown)
+		return -1;			/* no level has told us its list yet */
 
 	if (model < 0)
 		return 0;
 
 	for (i = 0; i < gChkEngineCount; i++)
 	{
-		if (gChkEngineModels[i] == model)
+		if (chkEngineModelAt(i) == model)
 			return 1;
 	}
 
