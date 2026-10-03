@@ -430,16 +430,38 @@ and the field report of mangled host peds needed a different explanation. It got
 
 ### 7.3 What is still open
 
-- **The palette VARIANTS an imported car is spawned with.** A car's colour is picked per car
-  (`ap.palette`) and read as `civ_clut[row][texid][palette + 1]`, so variants 1..5 exist only
-  where the lump carried an entry for them. The field report is "only one or two of the
-  palettes that spawned worked for slot 1", which is consistent with the upload populating
-  only a couple of a `texture_id`'s six slots. The deferred upload's `rowNeeded` is built
-  from the pin's SET LIST, not from the built model's baked indices, so a row a poly can
-  actually read can be left out. That is the next unit.
-- **Set 0.** ~114 polys of every imported car name set 0, which the import skips
-  (`set == 0` continues in `LoadImportedTPages`), so those polys sample
-  `texture_pages[0]` - a host page. That is a "one panel of the car is wrong" mechanism.
+- **The palette VARIANTS an imported car is spawned with.** *Measured 2026-10-03 - the claim
+  that was here ("`rowNeeded` is built from the pin's SET LIST, not from the built model's
+  baked indices") is SUPERSEDED: `CarImportPin` now marks every row of every held city's
+  block as needed, so nothing a model can read is left out of the upload. The real mechanism
+  is a ROW-MAPPING one, and here is the measurement.* A car is drawn from
+  `civ_clut[row][texid][palette + 1]`, and an imported model's pages do not all exist in the
+  source city's palette table. On a CHICAGO level importing HAVANA model 8:
+
+  ```text
+  cross-city: set 21 has no palette row in HAVANA - baking that city's own row 0 (civ_clut 8)
+  JERICHO-DIAG CARDRAW: car=2 ci=2700 polys=220 pg0027:97
+      raw[ci-1..ci+5] 0000 8d3d 0000 0000 0000 0000 0000 | res0..5 8d3d x6   (one colour)
+  ```
+
+  `ci=2700` is `civ_clut` row 15 / `texture_id` 2, and HAVANA's lump carries palettes 0..4 on
+  rows **8, 10 and 11** only - its `carTpages[1][7]` is page 39, and the lump has no palette
+  entries for page 39 at all. So the car's dominant group (97 polys on page 39) reads a row
+  nothing ever writes, and every `ap.palette` collapses to slot 0. `res0..5 = 8d3d x6` is what
+  "only one or two of the palettes that spawned worked" looks like when it is TOTAL.
+  The fix is therefore the dense/aliased row assignment for an IMPORT (map the model's sets
+  onto rows that carry data, per `texture_id`), **not** row coverage and **not** copying a
+  neighbouring row wholesale - that was tried and measured not to change the outcome, because
+  a source row need not carry the `texture_id` the destination needs.
+- **Set 0.** *Measured 2026-10-03: this does not reproduce as described.* On the same run the
+  unclassifiable set is **21**, not 0, and it is handled: `set 21 has no palette row in
+  HAVANA - baking that city's own row 0 (civ_clut 8) rather than a negative index` (the
+  `CarPalIndexForBuild` fallback, aligned with the walk in `83de8f53`). No `set 0` remap or
+  skip appears in the log at all. The "~114 polys naming set 0" figure should be re-derived
+  before any work is planned against it.
+- **The diagnostic itself was hiding this.** `JERICHO_DIAG_PAL` had ONE 250-entry cap, which
+  the host's walk filled, so `grep -c "city=1"` was **0** - a guest city's entries were never
+  printed. Capped per city now (`3a7754ea`): city 0 = 250, city 1 = 250 on the same run.
 - **A same-city `civ_clut` row collision.** Rows are written keyed by `(texture_set, city)`,
   NOT by slot, so two models that resolve to the same host row silently overwrite each
   other. The engine tracks CROSS-CITY writers (`CarPalRowReport`) and not same-city ones,
