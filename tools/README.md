@@ -155,6 +155,31 @@ every C++ name differently, leaving ~981 unresolved `LNK2001`s — and every dev
 build target is x64. The job's name said `(Win32)` until 0.9.0; it was only ever
 a label.
 
+### Switching architecture locally
+
+CI builds x64 only, so it never meets this. Locally, `lib/%{cfg.buildcfg}` is
+**shared between architectures**: `premake_libjpeg.lua` sends the jpeg static
+library to `lib/<cfg>/jpeg.lib`, while the objects *are* separated
+(`dependencies/jpeg-9d/obj/x64` beside `obj/x86`). So one Win32 build overwrites
+the x64 library at that same path, and the next x64 link fails with:
+
+```text
+lib\Release\jpeg.lib : warning LNK4272: library machine type 'x86' conflicts with target machine type 'x64'
+VideoPlayer.obj : error LNK2019: unresolved external symbol jpeg_std_error ...
+..\bin\Release\REDRIVER2.exe : fatal error LNK1120: 8 unresolved externals
+```
+
+Delete the poisoned artifact and rebuild. `*.lib` is gitignored, so this is
+always local-only and never something CI can hit:
+
+```bash
+rm -f src_rebuild/lib/Release/*.lib
+```
+
+It is also why a 0-byte `bin/<cfg>/REDRIVER2.exe` can sit in the tree looking
+like a mystery: the link failed, and the empty file is what the linker left
+behind.
+
 ## The release profile
 
 What a release *runs* is decided by the shipped `JERICHO/CONFIG/modlist.ini`,
