@@ -25,6 +25,27 @@ installed module, and drop into each module's own page. In-game toggles are
 written straight back to `JERICHO/CONFIG/modlist.ini`, and per-module settings
 live in `JERICHO/CONFIG/<modid>.ini`.*
 
+## At a glance
+
+The model in four points:
+
+- **A mod is a C file.** Write against the standalone SDK, drop the folder in
+  `JERICHO/MODS/`, and it builds to a DLL — the game executable is never
+  rebuilt.
+- **Hooks, not patches.** You subscribe to named events instead of editing the
+  engine, so a build with no modules is byte-for-byte stock — every call site is
+  inert until something handles it.
+- **Managed at runtime.** Enable, disable and reorder mods from the in-game
+  **Options → JERICHO** menu; the state persists to
+  `JERICHO/CONFIG/modlist.ini`.
+- **Every capability has a worked example** — car deformation, car combat, LAN
+  multiplayer, cross-city vehicles, custom art and per-car colours — in
+  [Showcase mods](#showcase-mods).
+
+New here? [Two kinds of mods](#two-kinds-of-mods) explains the model in one
+screen; [Building and running](#building-and-running) gets a build going; the
+[JERICHO docs](src_rebuild/Game/C/JERICHO/docs/README.md) are the deep end.
+
 ## Two kinds of mods
 
 JERICHO handles mods two ways, and the split is deliberate.
@@ -211,6 +232,10 @@ and the addon-safe subset is mirrored into the SDK at
 | `jer_map.h` | World-region streaming: query the region you are in and force/stream a region the engine never pre-loaded (teleports, arena spawns). |
 | `jer_car_palette.h` | Per-`CAR_DATA`-slot car colour — inert until set, and stable across machines, so it is safe to sync in multiplayer. |
 | `jer_math.h` | Shared math helpers. |
+
+For picking between the four on-screen message channels (the HUD, `jer_notify`,
+`jer_error`, and the presentation screens), see
+[Saying things on screen](src_rebuild/Game/C/JERICHO/docs/HOOKS.md).
 
 Two escape hatches round out the API:
 
@@ -634,6 +659,8 @@ VRAM work (`civ_clut`, the lower half pool). **Uses:** `JER_EVENT_CAR_AVAILABILI
 `JER_EVENT_CAR_DATA_SOURCE`, `JER_EVENT_CAR_PEER_DRAW`, `JER_EVENT_NET_RECV` plus
 its own `jer_net` channel, and `jer_frontend` for the car-select menu.
 
+![A Rio car driven in Chicago](readme_images/addon_carhacks_rio2_chicago_example.png)
+
 ![A foreign car driven on a level it does not belong to](readme_images/addon_carhacks_demonstration_updated_2.png)
 
 ### Sandbox — the whole API surface
@@ -746,7 +773,7 @@ README — see [`JERICHO/MODS/`](JERICHO/MODS/).
 - [`docs/README.md`](docs/README.md) — the index for the whole documentation set.
 - [`src_rebuild/Game/C/JERICHO/docs/README.md`](src_rebuild/Game/C/JERICHO/docs/README.md) — JERICHO overview (layout, build, runtime).
 - [`src_rebuild/Game/C/JERICHO/docs/events.md`](src_rebuild/Game/C/JERICHO/docs/events.md) — the exhaustive event reference.
-- [`src_rebuild/Game/C/JERICHO/docs/HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) — writing a module.
+- [`src_rebuild/Game/C/JERICHO/docs/HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) — writing a module, from anatomy and pause menus to saying things on screen.
 - [`src_rebuild/Game/C/JERICHO/docs/textures.md`](src_rebuild/Game/C/JERICHO/docs/textures.md) — custom textures (`jer_texture`).
 - [`src_rebuild/Game/C/JERICHO/docs/map-streaming.md`](src_rebuild/Game/C/JERICHO/docs/map-streaming.md) — world-region streaming (`jer_map`).
 - [`src_rebuild/Game/C/JERICHO/docs/module-activation.md`](src_rebuild/Game/C/JERICHO/docs/module-activation.md) — how a module gets enabled (`modlist.ini` → `mod.toml`), and `-nomods` / `-mod`.
