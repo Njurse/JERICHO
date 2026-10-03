@@ -189,10 +189,19 @@ Two supporting facts that are easy to get wrong, both in `cd2VisualApply`:
   model's axes — column 1 is the car's up, column 2 is the car's *backward* (the
   model's nose is local −Z). So forward is **−column 2**; row 2 is *not* forward
   (it equals −column 2 only at heading 0), which is the bug the weight shift had.
-- the sign convention, stated once so nothing has to be re-derived: **positive
-  pitch lifts the FRONT, negative lifts the REAR; positive shift is forward.** Every
-  caller here is written for that (turbo's nose-up wheelie, a frontal collision
-  diving the nose, the accel layer's front-lift under power).
+- the sign convention, and the honest state of it: measured on the ON-SCREEN result
+  (gas held, current build), a **positive** `pitch` reads as the nose going DOWN and a
+  negative one as it coming up — the opposite of what the matrix arithmetic suggests and
+  the opposite of what this paragraph claimed until the motion layer was corrected. The
+  matrix reading and the screen disagree, and the screen wins. An instrument that reads
+  its scale off the same matrix the code shapes agrees with the code by construction (see
+  `CC_VIS_LOG` in `knock/knock.c`), so it cannot settle this — it reported "the nose
+  rises" for the same positive pitch the car was visibly nosing down with.
+- the KNOCK's callers are left on the old sign deliberately: impacts read correctly on
+  screen as they are (a frontal hit dives, the turbo engages with a wheelie), so nothing
+  here was touched. The motion layer's accel contribution is the one that was corrected
+  (`MOTION.md`, "Layer 2"). If a knock ever reads backwards visibly, this paragraph and
+  that one line are where to start.
 
 The **slide lean** (`cainescrossfiresim.c`) rides the same compositor for the same
 reason — it used the world-axis `_RotMatrixZ`, which leans a car facing +Z but rolls

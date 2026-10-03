@@ -75,6 +75,26 @@ The squat is derived from the spring's own position (a shift along the car and a
 downward bob), so it cannot drift out of step with the angle that caused it: nose up,
 weight back, body sitting down on the rear.
 
+**It was still backwards after that, and the cause was simpler than the balance.** The
+paragraph above fixed *which* half a driver can see; it did not change the direction of
+the pose itself. The whole layer — both halves, and the squat derived from them — was
+inverted against the screen: held on the gas it asked for `+19` and the car visibly dug
+its NOSE in, and on the brakes it asked for `-2x` and the nose lifted. The fix is one
+line, on the finished target after both halves have contributed (`target = -target`,
+immediately after the clamp), so the two halves and the derived squat turn over together
+instead of one of them being left behind.
+
+The lesson is worth keeping, because this layer had a probe watching it the whole time:
+`CC_VIS_LOG` read its ruler off the same matrix the module feeds, so it agreed with the
+layer by construction and kept reporting "the nose rises" for the same `+19` the car was
+nosing down with. **An instrument that shares an assumption with the thing it measures
+cannot falsify it.** The screen did, so the screen is the authority for every pitch sign
+in this file; the probe is now calibrated to it and says so in its own comment.
+
+Measured after the flip (car 0): gas `-24` (nose up), braking `+18..27` (nose down),
+reverse a dive at the launch. `KNOCK.md` records the same correction for the knock's own
+convention.
+
 The nose-bob comes from the compression/rebound split and is **bounded**: the body may
 cross level by at most `reboundPct` of the class ceiling, and the cap is on the velocity
 rather than the position, because a position cap removes angle instead of limiting it.
