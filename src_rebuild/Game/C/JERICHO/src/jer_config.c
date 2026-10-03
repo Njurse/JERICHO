@@ -12,6 +12,7 @@
  * ------------------------------------------------------------------ */
 
 #include "jer_config.h"
+#include "jer_internal.h"	/* jerTrim - the shared whitespace trimmer */
 #include "jericho.h"		/* jer_log - it is called below and only declared there */
 
 #include <stdio.h>
@@ -101,21 +102,6 @@ static int jerConfigFind(const char* mod, const char* key)
 	}
 
 	return -1;
-}
-
-/* helper: trim leading + trailing whitespace in place; returns the new start */
-static char* jerTrim(char* s)
-{
-	char* end;
-
-	while (*s == ' ' || *s == '\t')
-		s++;
-
-	end = s + strlen(s);
-	while (end > s && (end[-1] == ' ' || end[-1] == '\t'))
-		*--end = 0;
-
-	return s;
 }
 
 /* A value that does not fit is cut, and because the file is rewritten from

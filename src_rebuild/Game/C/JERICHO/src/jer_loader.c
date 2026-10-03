@@ -43,20 +43,6 @@
 /*   dependencies = ["a", "b"]   or   dependencies = "a,b"             */
 /* ------------------------------------------------------------------ */
 
-static char* jerTrim(char* s)
-{
-	char* end;
-
-	while (*s == ' ' || *s == '\t')
-		s++;
-
-	end = s + strlen(s);
-	while (end > s && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n'))
-		*--end = 0;
-
-	return s;
-}
-
 /* copy a quoted ("...") or bare value into out (bounded) */
 static void jerTomlValue(char* v, char* out, size_t outSize)
 {
