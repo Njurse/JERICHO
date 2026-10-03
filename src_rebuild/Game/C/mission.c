@@ -339,6 +339,20 @@ int GetCarModelSourceCity(int slot)
 	return gCarModelSource[slot];
 }
 
+// JERICHO: point resident `slot` at `city`'s car data, mid-level. The source array
+// is otherwise writable only from JER_EVENT_CAR_DATA_SOURCE, which runs before the
+// level's models are built -- so a module that adds a car to the resident set AFTER
+// the level loaded (a joiner's picked car) had no way to say where its geometry
+// comes from. -1 (or any out-of-range city) means the level's own city. Pair it
+// with JerHotLoadCarModel(), which builds the slot from what this names.
+void JerSetCarModelSource(int slot, int city)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	gCarModelSource[slot] = (city >= 0 && city < 4) ? city : -1;
+}
+
 // [D] [T]
 void SetupResidentModels()
 {

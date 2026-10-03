@@ -112,11 +112,56 @@ unit.
 
 ### The hotload hand-off (next unit)
 
-**Kept as the record of the measurement that started this.** It was taken BEFORE
-the per-city import block landed, when a second city's geometry really was absent,
-and with the one-source-city gate opened by hand (a measurement lever that has
-since been deleted along with the gate itself) so the ENGINE finally saw a set
-naming two cities:
+### The hotload (DONE, with one follow-up)
+
+A joiner's pick, folded into the set after the level loaded, now gets GEOMETRY on the
+machine that lacked it. Measured on the 3-seat rig with a different pick per seat
+(`--seat-env`), the host of a RIO match that never loaded HAVANA's car logs:
+
+```
+cross-city: hot-loaded CHICAGO model 0 into resident slot 7 (10820 bytes, 10820 of 524288 used)
+cross-city: hot-loaded HAVANA model 3 into resident slot 8 (10484 bytes, 21304 of 524288 used)
+...
+[carhacks/net] peer 2 drives HAVANA model 3 and this machine draws exactly that (slot 8) - their own colours
+```
+
+Before this the same peer was `peer 2 drives HAVANA model 3, but this machine draws
+RIO model 3 in slot 2` -- the imported car appearing domestic, as reported.
+
+How it is wired (all three pieces are in the tree):
+
+1. **The build** -- `JerHotLoadCarModel(slot)` (`models.c`): the same three
+   `GetCarModel` calls the per-slot level build makes, into a pool this module owns.
+   It cannot use `malloctab`: that is the level's heap, rewound per load
+   (`main.c`) and live with the level's allocations. `ProcessCarModelLump` frees the
+   pool (a level load rebuilds every model anyway). It **refuses** rather than
+   half-building: the requirement is computed exactly as the loader reserves it
+   (`specMemReq`), and a model that does not fit leaves the slot exactly as it was.
+2. **The source** -- `JerSetCarModelSource(slot, city)` (`mission.c`): the per-slot
+   source array was otherwise writable only from `JER_EVENT_CAR_DATA_SOURCE`, which
+   runs before the models are built, so a mid-level set change had no way to say
+   where a slot's geometry comes from.
+3. **The trigger** -- `chkImportHotLoad(slot)` (`carimport.c`), called from the fold
+   in `net.c`: push our slots into `residentCarModels[]` + the source array, call
+   `InitCarImport()` (which reads every city the set names), then build the slot.
+   `CarImportPin()` uploads the palette rows when the car is first drawn, as for any
+   imported model -- nothing extra needed there.
+
+**Follow-up, measured the same run:** mp's *wire* carstate carries the (city, model)
+of the slot the owner is actually driving (`MpSendCarState`: `src < 0` becomes
+`MP_CAR_CITY_SESSION`), so a peer whose own machine landed on the level's own car of
+the same number reports "session model 3" and every other machine resolves slot 2 --
+the substitute again, this time because the SENDER never sat in its imported car
+(`JERICHO: player 0 car forced to model 3` resolves a model number to *a* resident
+slot, and slot 2 has model 3 too). Fixing that is the remaining piece: the pick's
+city has to decide which slot the picker is put into, not just which slots get
+imported.
+
+The two findings below are kept as the record of the measurement that started this.
+It was taken BEFORE the per-city import block landed, when a second city's geometry
+really was absent, and with the one-source-city gate opened by hand (a measurement
+lever that has since been deleted along with the gate itself) so the ENGINE finally
+saw a set naming two cities:
 
 ```
 [carhacks] import: slot 5 <- model 8 from HAVANA

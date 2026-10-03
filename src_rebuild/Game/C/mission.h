@@ -18,6 +18,11 @@ extern int gCurrentMissionNumber;
 // -1 = the level's own city (the default). Set by a module answering
 // JER_EVENT_CAR_DATA_SOURCE; read when the models are built.
 int GetCarModelSourceCity(int slot);
+
+// JERICHO: set resident `slot`'s source city mid-level (the array is otherwise
+// writable only from JER_EVENT_CAR_DATA_SOURCE, before the models are built). -1 =
+// the level's own city. Pair with JerHotLoadCarModel() (models.h).
+void JerSetCarModelSource(int slot, int city);
 extern MS_MISSION*MissionHeader;
 extern int residentCarModels[MAX_CAR_RESIDENT_MODELS];
 extern STREAM_SOURCE* PlayerStartInfo[8];

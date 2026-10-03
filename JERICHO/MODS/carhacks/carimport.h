@@ -46,6 +46,14 @@ const char* chkCityName(int city);
 /* The identity recorded for `slot` (city = CHK_CITY_NATIVE when nothing). */
 CHK_CAR_ID chkImportSlotId(int slot);
 
+/* Build resident `slot`'s geometry at runtime, from the import data the set names
+ * (mid-level). Returns the bytes built, 0 = not built (no level yet, not our slot,
+ * or it does not fit - and then the slot is left as it was). */
+int chkImportHotLoad(int slot);
+
+/* The set's own slot holding (city, model), or -1. `city` < 0 matches any. */
+int chkImportSlotForCar(int city, int model);
+
 /* ---- slot ownership ---------------------------------------------------- */
 
 /* Hand the set the ENGINE's live resident models for this level (the `models`

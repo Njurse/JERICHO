@@ -672,6 +672,18 @@ char* GetCarImportCosmetics(int slot)
 	return gCarImports[city].cosmetics;
 }
 
+// JERICHO cross-city HOT LOAD. A level builds its resident car models from
+// malloctab (rewound per level, main.c), so a car a module adds to the resident set
+// AFTER the level has loaded has no way to be built there: the level's heap is
+// live with its own allocations. JerHotLoadCarModel builds one such slot from its
+// IMPORT data into this pool instead, which lives until the next level load
+// (ProcessCarModelLump resets it). See models.h.
+#define JER_HOT_CAR_POOL_BYTES	(512 * 1024)
+
+static char* gJerHotCarPool;
+static int   gJerHotCarUsed;
+static int   gJerHotCarSize;
+
 int ProcessCarModelLump(char *lump_ptr, int lump_size)
 {
 	int size;
@@ -686,6 +698,10 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 	int specMemReq;
 
 	specMemReq = 0;
+
+	// JERICHO: a level load rebuilds every resident model from malloctab, so any
+	// car this level HOT-LOADED is superseded here; its pool is free to reuse.
+	gJerHotCarUsed = 0;
 
 	// (The cross-city source + resident-model choices are resolved by
 	// JER_EVENT_CAR_DATA_SOURCE in SetupResidentModels, which runs before this.)
@@ -878,9 +894,133 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 	return 0;
 }
 
-// [D] [T]
-MODEL* FindModelPtrWithName(char *name)
+// JERICHO cross-city hot load: build resident `slot`'s models from its IMPORT data,
+// at RUNTIME. Returns the bytes used (0 = nothing built, with the reason logged).
+//
+// This is what mp needs when a joiner picks a car this machine's running level does
+// not hold: carhacks adds it to the set, InitCarImport() reads that city, and this
+// builds the geometry -- after which the ordinary resolvers (GetCarModelSourceCity /
+// residentCarModels) find the slot, so a peer stops being drawn as the level's own
+// car of the same number. CarImportPin uploads the palette rows when the car is
+// first drawn, exactly as for any imported model.
+//
+// REFUSES rather than half-building: a car whose geometry, normals and low-detail
+// pass do not fit the pool is left exactly as it was, because a partially built
+// model is worse than a substitute car.
+int JerHotLoadCarModel(int slot)
 {
+	char* src_lump;
+	char* slot_models_offset;
+	char* cursor;
+	char* mem;
+	int* offsets;
+	int model_number, cleanOfs, damOfs, lowOfs, size, need;
+	MODEL* model;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	if (gCarCleanModelPtr[slot] != NULL)
+		return 0;			// already built
+
+	if (GetCarModelSourceCity(slot) < 0)
+		return 0;			// the level's own car: nothing to bring in
+
+	src_lump = GetCarImportModels(slot);
+
+	if (src_lump == NULL)
+		return 0;			// that city's data is not read in
+
+	model_number = residentCarModels[slot];
+
+	if (model_number < 0 || model_number > 12)
+		return 0;
+
+	slot_models_offset = src_lump + 4 + 160;
+	offsets = (int *)(src_lump + 4 + model_number * sizeof(int) * 3);
+
+	cleanOfs = offsets[0];
+	damOfs = offsets[1];
+	lowOfs = offsets[2];
+
+	// What this model needs, the same way the level loader reserves it
+	// (ProcessCarModelLump's specMemReq pass): all three models have to lie inside
+	// one allocation.
+	need = 0;
+
+	if (cleanOfs != -1)
+	{
+		size = ((MODEL*)(slot_models_offset + cleanOfs))->poly_block;
+
+		if (damOfs != -1)
+			size += ((MODEL*)(slot_models_offset + damOfs))->normals;
+
+		if (lowOfs != -1)
+			size += ((MODEL*)(slot_models_offset + lowOfs))->poly_block;
+
+		need = (size + 2048) + 2048;
+	}
+
+	if (need <= 0)
+	{
+		printInfo("cross-city: %s model %d has no geometry to build for slot %d\n",
+			LevelNames[GetCarModelSourceCity(slot)], model_number, slot);
+		return 0;
+	}
+
+	if (gJerHotCarPool == NULL)
+	{
+		gJerHotCarPool = (char*)malloc(JER_HOT_CAR_POOL_BYTES);
+		gJerHotCarSize = (gJerHotCarPool != NULL) ? JER_HOT_CAR_POOL_BYTES : 0;
+	}
+
+	if (need > gJerHotCarSize - gJerHotCarUsed)
+	{
+		printInfo("cross-city: %s model %d needs %d bytes to hot-load and only %d are left of %d - slot %d keeps the car it has\n",
+			LevelNames[GetCarModelSourceCity(slot)], model_number, need,
+			gJerHotCarSize - gJerHotCarUsed, gJerHotCarSize, slot);
+		return 0;
+	}
+
+	cursor = gJerHotCarPool + gJerHotCarUsed;
+
+	if (cleanOfs != -1)
+	{
+		mem = slot_models_offset + cleanOfs;
+		model = GetCarModel(mem, (char**)&cursor, 1);
+
+		gCarCleanModelPtr[slot] = model;
+		buildNewCarFromModel(slot, 1, mem, model);
+	}
+
+	if (damOfs != -1)
+	{
+		mem = slot_models_offset + damOfs;
+		model = GetCarModel(mem, (char**)&cursor, 0);
+
+		gCarDamModelPtr[slot] = model;
+	}
+
+	if (lowOfs != -1)
+	{
+		mem = slot_models_offset + lowOfs;
+		model = GetCarModel(mem, (char**)&cursor, 1);
+
+		gCarLowModelPtr[slot] = model;
+		buildNewCarFromModel(slot, 0, mem, model);
+	}
+
+	gJerHotCarUsed += need;
+
+	printInfo("cross-city: hot-loaded %s model %d into resident slot %d (%d bytes, %d of %d used)\n",
+		LevelNames[GetCarModelSourceCity(slot)], model_number, slot, need,
+		gJerHotCarUsed, gJerHotCarSize);
+
+	return need;
+}
+
+// [D] [T]
+MODEL* FindModelPtrWithName(char *name){
 	int idx;
 	idx = FindModelIdxWithName(name);
 

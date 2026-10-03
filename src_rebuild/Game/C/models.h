@@ -34,6 +34,16 @@ extern void ProcessMDSLump(char *lump_file, int lump_size); // 0x00064CFC
 // SetupResidentModels, so both the geometry and the colours are taken from it.
 void InitCarImport(void);
 char* GetCarImportModels(int slot);
+
+// JERICHO cross-city HOT LOAD: build resident `slot`'s geometry at RUNTIME from the
+// import data its source city asked for -- for a car added to the resident set
+// AFTER the level loaded (mp: a joiner's picked car), which the level's own build
+// cannot cover because it happens against the level's heap while it loads.
+// Returns the bytes used, or 0 when nothing was built: no import source, already
+// built, or it does not fit the pool -- and then the slot is left as it was, since
+// a half-built car is worse than a substitute. Call InitCarImport() first, so the
+// city's data is actually there.
+int JerHotLoadCarModel(int slot);
 char* GetCarImportCosmetics(int slot);
 
 // Which city the level is importing from (-1 = none), and that city's car

@@ -187,6 +187,19 @@ int chkNetFoldPeerCars(void)
 			printInfo("[carhacks/net] player %d's car (%s model %d) -> resident slot %d\n",
 				p, chkNetCityName((int)gChkNetPeerPick[p].city),
 				(int)gChkNetPeerPick[p].model, slot);
+
+			/* A car folded in AFTER this machine loaded its level has no geometry:
+			 * the level's own build ran against a heap that is live with its
+			 * allocations, so without this the peer is drawn as the level's own car
+			 * of the same number -- "it appears domestic to all other players and
+			 * the host". chkImportHotLoad pushes the set into the engine's arrays,
+			 * reads the city and builds that one slot into the engine's own pool;
+			 * the resolvers then find it (including mp's own, on its next tick). */
+			if (chkImportHotLoad(slot) <= 0)
+				printInfo("[carhacks/net] player %d's car (%s model %d) is in the set for slot %d, "
+					"but this level could not build it yet - carrying it to the next level\n",
+					p, chkNetCityName((int)gChkNetPeerPick[p].city),
+					(int)gChkNetPeerPick[p].model, slot);
 		}
 	}
 

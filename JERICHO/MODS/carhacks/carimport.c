@@ -15,6 +15,8 @@
 #include "jer_config.h"
 
 #include "system.h"		/* LevelNames[] for the log */
+#include "mission.h"		/* residentCarModels[], JerSetCarModelSource */
+#include "models.h"		/* InitCarImport, JerHotLoadCarModel */
 
 #include "carid.h"
 #include "carimport.h"
@@ -515,8 +517,7 @@ int chkImportApplyPick(int level, int count)
  * The engine write
  * ------------------------------------------------------------------------- */
 
-void chkImportApplyToCarData(int count, int* models, int* modelSource)
-{
+void chkImportApplyToCarData(int count, int* models, int* modelSource){
 	int slot;
 
 	if (models == NULL || modelSource == NULL)
@@ -553,4 +554,71 @@ void chkImportDump(int level)
 	printInfo("[carhacks] import set: level %s, guest cities %d, %d entr%s, version %d\n",
 		chkCityName(level), gChkGuestCityCount,
 		entries, (entries == 1) ? "y" : "ies", gChkSetVersion);
+}
+
+/* Can the ENGINE build resident `slot` NOW?
+ *
+ * A set normally reaches the engine from JER_EVENT_CAR_DATA_SOURCE, before the
+ * level's models are built from the level heap. A car folded in AFTER that (a
+ * joiner's pick, which is the whole point of the mp channel) has no geometry, so
+ * the machine draws the level's own car of the same number instead - "I picked
+ * Havana's car and it looks domestic to everyone else". The resident list and the
+ * per-slot source are module-visible, and the engine can build one slot into its
+ * own pool (JerHotLoadCarModel), so the sequence is:
+ *
+ *   1. say where each of OUR slots comes from (the arrays the hook would have set)
+ *   2. read in the cities the set now names (InitCarImport covers all of them)
+ *   3. build this slot's geometry (refused, and left alone, if it does not fit)
+ *
+ * A no-op before any level has loaded (that level builds everything itself) and
+ * for a slot we do not own. Returns the bytes the engine built (0 = not built).
+ */
+int chkImportHotLoad(int slot)
+{
+	int i;
+
+	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS || !gChkSet[slot].used)
+		return 0;
+
+	if (!gChkEngineKnown)
+		return 0;			/* no level yet: its own build will cover this */
+
+	for (i = CHK_IMPORT_SPARE_FIRST; i < CHK_IMPORT_MAX_SLOTS; i++)
+	{
+		int city, model;
+
+		if (!gChkSet[i].used || gChkSet[i].model < 0)
+			continue;
+
+		model = gChkSet[i].model;
+		city = gChkSet[i].city;
+
+		residentCarModels[i] = model;
+		JerSetCarModelSource(i, city);
+	}
+
+	InitCarImport();
+
+	return JerHotLoadCarModel(slot);
+}
+
+/* The set's own slot for a (city, model) car, or -1. Used to hot-load a peer's
+ * pick on a machine whose running level does not have it. */
+int chkImportSlotForCar(int city, int model)
+{
+	int i;
+
+	if (model < 0)
+		return -1;
+
+	for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
+	{
+		if (!gChkSet[i].used || gChkSet[i].model != model)
+			continue;
+
+		if (city < 0 || gChkSet[i].city == city)
+			return i;
+	}
+
+	return -1;
 }
