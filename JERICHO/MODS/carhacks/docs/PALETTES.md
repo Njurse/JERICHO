@@ -36,8 +36,9 @@ u_short civ_clut[CIV_CLUT_ROWS][32][6];   // cars.c:104   [car palette row][text
 with
 
 ```c
-#define CIV_CLUT_ROWS        16   // cars.h:44   rows 0..7 host level, 8..15 an import
-#define CIV_CLUT_IMPORT_ROW   8   // cars.h:45
+#define CIV_CLUT_ROWS        32   // cars.h:50   rows 0..7 host level, then one 8-row block per guest city
+#define CIV_CLUT_IMPORT_ROW   8   // cars.h:51   the first guest city's block starts here
+#define CIV_CLUT_BLOCK_ROWS   8   // cars.h:52   a city's range is carTpages' range
 ```
 
 **The non-obvious bit.** A GT poly's `clut_uv0` high word is **not** a CLUT id —

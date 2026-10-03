@@ -18,10 +18,10 @@ Two facts, both measured:
    is not expressible on mp's wire at all.
 
 On top of that, while the *geometry* side is now per-city (`gCarImports[4]`,
-one block per slot), the **palette** side still admits one guest city - the
-`civ_clut` import bank, rows 8..15 - so a session has to *agree* which city
-that is.
-Today it is whatever each machine's own `carhacks.ini` happens to say.
+one block per slot), the palette side is one bank of **three guest-city blocks**
+(`civ_clut` rows 8..31, one 8-row block each) — and the import SET still admits
+one foreign source city by default, so a session still has to *agree* which city
+that is. Today it is whatever each machine's own `carhacks.ini` happens to say.
 
 ## The identity schema — `carid.h`
 
@@ -95,12 +95,12 @@ picker, so the local car always comes out palette 0 and none of this would ever
 fire. `CHK_FORCE_PLAYER_PALETTE=<n>` sets it, the way `CHK_FORCE_CAR` drives the
 menu.
 
-**The limit - one guest city's PALETTES.** `chkNetFoldPeerCars()` folds every
+**The limit - one guest city's SET.** `chkNetFoldPeerCars()` folds every
 peer's car into the level's import set, so a peer is drawn as their own vehicle
-where the engine can hold it. The geometry side now holds several cities at once
-(`gCarImports[4]`, one block per slot), but the **palette** side does not: the
-`civ_clut` import bank (rows 8..15) is one city's worth of rows, and the set
-refuses a second city's entry loudly (below). A car from the level's own city is skipped - it needs no import,
+where the engine can hold it. The geometry side holds several cities at once
+(`gCarImports[4]`, one block per slot) and the palette bank holds three
+(`civ_clut` rows 8..31), but the import SET still admits one foreign source city
+by default and refuses a second city's entry loudly (below). A car from the level's own city is skipped - it needs no import,
 and skipping it keeps an identity that has not settled yet from claiming a spare
 slot with the level's own model 0.
 
@@ -150,9 +150,9 @@ has to do:
 
 ## Authority and lifecycle
 
-The **host is authoritative**, and the reason is the palette bank's one-guest-city
-rule: the `civ_clut` import bank admits one city, so the host's choice has to win
-for everyone. `mp_agree_imports = 0` (`carhacks.ini`) turns the whole agreement off —
+The **host is authoritative**, and the reason is the import set's one-guest-city
+rule: `chkClaimGuestCity` admits one foreign source city per level, so the host's
+choice has to win for everyone. `mp_agree_imports = 0` (`carhacks.ini`) turns the whole agreement off —
 every machine keeps its own set, which is what a session where the players
 deliberately want different cars needs, and what the three-city stress test below
 uses.
