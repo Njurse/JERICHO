@@ -8,6 +8,39 @@ Repo-wide maintenance tools. Mod-specific tooling lives next to its mod
 | `publish_release.ps1` | Build, package and publish a release locally — the offline equivalent of the `windows` + `publish` jobs in `.github/workflows/build.yml` |
 | `dmp_fault.py` | Read a minidump and print the exception plus the faulting module and RVA |
 | `map_lookup.py` | Turn that RVA into a function name using a build's `.map` file |
+| `doccheck.py` | Check the documentation: links resolve, every engine event is in `events.md`, every doc is reachable from `docs/README.md`, and the counted claims match the code |
+
+## Checking the documentation
+
+```bash
+python tools/doccheck.py
+```
+
+It exits non-zero on any failure and prints every one it finds, not just the first.
+
+Documentation here drifts in three ways, and all three have had to be caught by hand at
+least once: a relative link to a file that moved or never existed; a claim that is really a
+**number** whose source of truth is code (a slot count, a guest-city ceiling, the size of
+the roster) parting company with it; and a doc that nothing links to. So it checks:
+
+- every relative link in every tracked `.md` resolves;
+- every `JER_EVENT_*` the engine declares appears in the SDK's `events.md`;
+- every doc under a mod's folder is reachable from `docs/README.md`, by resolving the
+  index's links rather than by matching names - matching names would pass every `README.md`
+  in the repo and mean nothing;
+- the counted claims agree with the code they describe: `MAX_CAR_RESIDENT_MODELS` in
+  `dr2limits.h` vs the number `PROFILES.md` states (and that `AI.md` does not restate it),
+  the guest-city ceiling derived from `cars.h` vs `PROFILES.md`, and the length of the
+  profile manifest `gVehRows[]` vs the count the docs advertise.
+
+**Only tracked files are read.** That is deliberate: `bin/Release` and `bin/Release_dev`
+carry untracked mirror copies of the docs from the last build, so anything walking the
+filesystem matches stale text and reports a corrected claim as uncorrected.
+
+When a counted claim changes *intentionally*, change the code's value and the doc together
+- that is the point of the check. `doccheck.py` has been verified in both directions: it
+passes on the tree, and reverting a claim (say `MAX_CAR_RESIDENT_MODELS` in `PROFILES.md`)
+makes it fail by name.
 
 ## Publishing a release without Actions
 

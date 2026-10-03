@@ -71,7 +71,7 @@ file alone — see `cd2_debug.example.txt` for the format.
 ## Scripts
 
 The car-data, VRAM and cross-city tools - and the launchers that drive them - live
-with the **carhacks** module now: [`../carhacks/tools/`](../carhacks/tools/README.md).
+with the **carhacks** module now: [`../../carhacks/tools/`](../../carhacks/tools/README.md).
 That is the index for `vrammap.py`, `vramdump.py`, `cardump.py`, `chk_suite.sh`,
 `crosscheck.py`, the `lev*.py` readers and the cross-city `launch_*` launchers. They
 are not listed below because carhacks is its own addon; Caine's Crossfire only

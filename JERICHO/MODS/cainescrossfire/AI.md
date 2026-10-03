@@ -377,8 +377,8 @@ tries) using the player's orientation columns, and spawns on whichever side is
    "every opponent previously came out as the player's car" — comment 511).
    The chosen slot is `loaded[cd2AiRandSalt(n, index+1)]`, or the player slot
    `pcp->ap.model` when `n == 0` (the level loaded only one usable car, 555-558).
-   `MAX_CAR_RESIDENT_MODELS` is 12 on PC (`src_rebuild/Game/dr2limits.h`; it was
-   8, and 6 before that — see PROFILES.md, "What the engine affords"), 5 on PSX.
+   The candidates are the level's resident slot pool, whose size is not restated
+   here - see PROFILES.md, "What the engine affords" (PSX builds have a smaller pool).
 4. **Palette** (560-566): recolourable civ bodies (`residentCarModels[model]` in
    1..4) get `cd2AiRandSalt(6, index*31+17)`; single-palette bodies (cop /
    special) get 0. A CUTSCENE car *does* take `InitCar`'s palette argument — only
@@ -611,8 +611,8 @@ Navigation layer: `nav.h:15-21` (`MAX_ROUTE` 64, `WP_STEP` 512, `MAX_NODES` 4096
   stays 3 until all die and it re-spawns the full set.
 - **Vehicle pool is level-specific.** Because of the NULL-slot fault (§6),
   opponents can only use slots the level loaded all three models for, and never
-  the player's own slot. `MAX_CAR_RESIDENT_MODELS` is 12 on this build (see
-  PROFILES.md, "What the engine affords"), 5 on PSX.
+  the player's own slot. How many slots that pool holds is PROFILES.md's "What the
+  engine affords", and is not restated here.
 
 ## 10. The published target (`cd2AiTargetPos`)
 

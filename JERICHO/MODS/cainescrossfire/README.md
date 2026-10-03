@@ -205,6 +205,11 @@ gitignored, so re-copy after editing one:
 cp JERICHO/MODS/cainescrossfire/tools/launch_*.bat src_rebuild/bin/Release_dev/
 ```
 
+The docs in this folder are checked by the repo-level **`tools/doccheck.py`**: relative
+links, reachability from `docs/README.md`, and the counted claims (the resident slot pool,
+the guest-city ceiling, the roster size). Run `python tools/doccheck.py` from the repo root
+after editing any of them - it exits non-zero and names what drifted.
+
 ### `arena_test.sh` — multiplayer smoke test
 
 A headless(ish) smoke test that boots a **multiplayer map** (the two-per-city
