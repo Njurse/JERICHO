@@ -1,6 +1,8 @@
 #ifndef JER_PED_PALETTE_H
 #define JER_PED_PALETTE_H
 
+#include "jer_colour.h"		/* a team colour is a JER_COLOUR */
+
 /*
  * jer_ped_palette.h — per-instance pedestrian palettes.
  *
@@ -39,8 +41,14 @@ extern "C" {
 #endif
 
 /* How many teams can be cached at once (each costs one CLUT row per body entry,
- * i.e. two rows today). */
-#define JER_PED_PAL_MAX_TEAMS 16
+ * i.e. two rows today). Sized for the WORST case the game actually produces --
+ * one distinct colour per player (MP_MAX_PLAYERS = 8) plus a mod's own team
+ * colours (cainescrossfire) -- with headroom, because a full cache silently
+ * drops a caller back to stock colours. 32 teams = 64 rows, far inside the
+ * measured free CLUT strip at InitTanner (~336 rows; see
+ * JERICHO/docs/ped-palette.md). The cache is cleared per level
+ * (jer_ped_palette_init -> jer_ped_palette_reset), so it does not accumulate. */
+#define JER_PED_PAL_MAX_TEAMS 32
 
 /*
  * Walk the Tanner skeleton and remember the CLUT entries its body uses, plus
@@ -66,6 +74,14 @@ int jer_ped_palette_pairs(void);
  * jer_ped_palette_set_floor. Identical (r,g,b,strength) asks reuse the same rows.
  */
 int jer_ped_palette_team(int r, int g, int b, int strength);
+
+/*
+ * The same, in JERICHO's canonical colour: a JER_COLOUR (0..255 per channel,
+ * clamped). jer_ped_palette_team is exactly this with the channels unpacked, so
+ * the two share ONE implementation and ONE cache -- the same colour asked either
+ * way returns the same handle. Prefer this form in new code.
+ */
+int jer_ped_palette_team_colour(JER_COLOUR colour, int strength);
 
 /*
  * How far the dark end of the palette is lifted, 0..31 (default 10). A dark suit

@@ -363,9 +363,11 @@ int jer_ped_palette_pairs(void)
 
 // JERICHO-HOOK: build (or reuse) the palette for a team colour. Returns a handle
 // >= 0, or -1 when nothing was recorded or VRAM is exhausted.
-int jer_ped_palette_team(int r, int g, int b, int strength)
+int jer_ped_palette_team_colour(JER_COLOUR colour, int strength)
 {
+	JER_COLOUR c = jer_colour_make(colour.r, colour.g, colour.b);	/* clamp 0..255 */
 	u_short rows[PED_PAL_MAX_PAIRS];
+	int r = c.r, g = c.g, b = c.b;
 	int t, i, n = 0;
 
 	if (gPedPalPairCount == 0)
@@ -443,6 +445,14 @@ int jer_ped_palette_team(int r, int g, int b, int strength)
 	gPedPalKey[gPedPalTeams][4] = gPedPalFloor;
 
 	return gPedPalTeams++;
+}
+
+// The (r,g,b) form of the same call. It only unpacks into the colour type, so
+// there is ONE implementation and ONE cache; new code should use the _colour
+// form. Kept because cainescrossfire (and older callers) use it.
+int jer_ped_palette_team(int r, int g, int b, int strength)
+{
+	return jer_ped_palette_team_colour(jer_colour_make(r, g, b), strength);
 }
 
 // JERICHO-HOOK: how far the dark end of the palette is lifted (0..31). 0 keeps

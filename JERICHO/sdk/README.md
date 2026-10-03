@@ -22,6 +22,8 @@ sdk/
     jer_net.h         addon network bridge (jer_net_send / JER_EVENT_NET_RECV)
     jer_frontend.h    add real frontend menus (jer_frontend_register_menu)
     jer_events.h      event argument structs (game types as void*)
+    jer_colour.h      canonical RGB colour type (pack/unpack for GTE words + CLUTs)
+    jer_ped_palette.h per-instance pedestrian palettes (jer_ped_palette_select)
   lib/x64/Release/
     REDRIVER2.lib     import library for the game exe's exported symbols
   build_mods.bat      compiles one addon folder into a DLL

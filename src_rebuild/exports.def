@@ -713,9 +713,11 @@ EXPORTS
 	jer_ped_palette_enter
 	jer_ped_palette_init
 	jer_ped_palette_leave
+	jer_ped_palette_reset
 	jer_ped_palette_select
 	jer_ped_palette_set_floor
 	jer_ped_palette_team
+	jer_ped_palette_team_colour
 	?ChangeCarPlayerToPed@@YAXH@Z
 	?ChangePedPlayerToCar@@YAXHPEAU_CAR_DATA@@@Z
 	?InitPlayer@@YAXPEAU_PLAYER@@PEAU_CAR_DATA@@DHPEAY03HHHPEAD@Z
@@ -1570,7 +1572,6 @@ EXPORTS
 	MpMarkBusy
 	MpOnCarDataSource
 	MpOnNetSpawn
-	MpPlaceSpawns
 	MpSendHello
 	MpSendInput
 	MpSessionReset

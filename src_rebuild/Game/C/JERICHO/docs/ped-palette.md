@@ -172,3 +172,22 @@ team colour makes the whole outfit read as one flat tone.
 `jer_ped_palette_enter` logs `ped palette: LEAK ...` if the table it is about to
 swap still holds a previous team's row — i.e. if a swap ever escaped its bracket.
 It has never fired, including under `cainescrossfire` with its crew drawing.
+
+## Colour space, and the car path
+
+A team colour is a `JER_COLOUR` (`jer_colour.h`): plain 8-bit RGB, 0..255, in
+red/green/blue order, with the engine's two packings — a polygon/GTE word is
+`B<<16 | G<<8 | R` (**red is the low byte**), a CLUT entry is `stp | b<<10 | g<<5 |
+r` — owned by that header and nowhere else.
+`jer_ped_palette_team_colour(JER_COLOUR, strength)` is the canonical entry point;
+`jer_ped_palette_team(r, g, b, strength)` is the same call with the channels
+unpacked and shares its cache (so the same colour asked either way returns the
+same handle). The cache holds `JER_PED_PAL_MAX_TEAMS` teams, sized so every player
+can have a distinct colour at once, and it is cleared per level and per mp session.
+
+The **car** path's companion is `jer_car_palette.h` — an RGB colour per `CAR_DATA`
+slot. It is inert today (nothing calls it): a car's live colour in a match is
+`cp->ap.palette`, an owner-authoritative *index* carried in `MP_CARSTATE` and
+arbitrated by `JER_EVENT_CAR_PEER_DRAW`. So the ped path speaks an RGB colour and
+the car path speaks a palette index; `jer_colour.h` is where the two would meet if
+a per-car colour were ever wanted (see `jer_car_palette.h`'s note).
