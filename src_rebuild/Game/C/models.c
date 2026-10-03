@@ -721,6 +721,16 @@ char* GetCarImportCosmetics(int slot)
 // (ProcessCarModelLump resets it). See models.h.
 #define JER_HOT_CAR_POOL_BYTES	(512 * 1024)
 
+// One car's worth of pool. Deliberately far above the level loader's specMemReq
+// figure for the same model: that figure is the SPOOL requirement (the largest single
+// pass over the model), NOT what three GetCarModel builds consume one after another.
+// Reserving the spool figure is what made two hot-loaded cars overlap in the pool, and
+// the symptom is a car with polys missing (no wheels, no shadow) and garbage texture
+// ids -- while the very same car built at level load, out of the level's ample heap,
+// looks right. The builds are checked against this block after the fact, so a car that
+// somehow needs more is refused instead of corrupting its neighbour.
+#define JER_HOT_CAR_BLOCK_BYTES	(64 * 1024)
+
 static char* gJerHotCarPool;
 static int   gJerHotCarUsed;
 static int   gJerHotCarSize;
@@ -1015,10 +1025,10 @@ int JerHotLoadCarModel(int slot)
 		gJerHotCarSize = (gJerHotCarPool != NULL) ? JER_HOT_CAR_POOL_BYTES : 0;
 	}
 
-	if (need > gJerHotCarSize - gJerHotCarUsed)
+	if (JER_HOT_CAR_BLOCK_BYTES > gJerHotCarSize - gJerHotCarUsed)
 	{
-		printInfo("cross-city: %s model %d needs %d bytes to hot-load and only %d are left of %d - slot %d keeps the car it has\n",
-			LevelNames[GetCarModelSourceCity(slot)], model_number, need,
+		printInfo("cross-city: no room for %s model %d in the hot-load pool (%d of %d left) - slot %d keeps the car it has\n",
+			LevelNames[GetCarModelSourceCity(slot)], model_number,
 			gJerHotCarSize - gJerHotCarUsed, gJerHotCarSize, slot);
 		return 0;
 	}
@@ -1051,9 +1061,25 @@ int JerHotLoadCarModel(int slot)
 		buildNewCarFromModel(slot, 0, mem, model);
 	}
 
-	gJerHotCarUsed += need;
+	gJerHotCarUsed += JER_HOT_CAR_BLOCK_BYTES;
 
-	printInfo("cross-city: hot-loaded %s model %d into resident slot %d (%d bytes, %d of %d used)\n",
+	/* The builds must have stayed inside their block. If they did not, the slot's
+	 * models overlap the next car's -- so unbuild the slot (leaving the substitute
+	 * car, which is correct-looking) rather than draw corrupted geometry. */
+	if ((int)(cursor - (gJerHotCarPool + gJerHotCarUsed - JER_HOT_CAR_BLOCK_BYTES)) > JER_HOT_CAR_BLOCK_BYTES)
+	{
+		printInfo("cross-city: %s model %d took more than the %d-byte hot-load block - slot %d is left unbuilt\n",
+			LevelNames[GetCarModelSourceCity(slot)], model_number,
+			JER_HOT_CAR_BLOCK_BYTES, slot);
+
+		gCarCleanModelPtr[slot] = NULL;
+		gCarDamModelPtr[slot] = NULL;
+		gCarLowModelPtr[slot] = NULL;
+
+		return 0;
+	}
+
+	printInfo("cross-city: hot-loaded %s model %d into resident slot %d (%d bytes budgeted, %d of %d used)\n",
 		LevelNames[GetCarModelSourceCity(slot)], model_number, slot, need,
 		gJerHotCarUsed, gJerHotCarSize);
 
