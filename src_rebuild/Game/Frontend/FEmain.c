@@ -2177,7 +2177,6 @@ void InitFrontendDisplay(void)
 #define JER_FE_NOTICE_Y		140	/* first line, from the top */
 #define JER_FE_NOTICE_LINE	36	/* FEFONT.BNK cell height = frontend row pitch */
 
-// [A] - was inlined in State_FrontEnd
 static void JerichoDrawNotices(void)
 {
 	int n = jer_error_count(), k;
