@@ -4,6 +4,7 @@
 extern char carTpages[4][8];
 extern char* texturename_buffer;
 extern char* palette_lump;
+extern int palette_lump_size;	// JERICHO: the LUMP_PALLET segment's byte size (see texture.c)
 
 extern SXYPAIR tpagepos[20];
 

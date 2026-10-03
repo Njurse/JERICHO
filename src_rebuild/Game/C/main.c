@@ -283,6 +283,7 @@ void ProcessLumps(char* lump_ptr, int lump_size)
 		{
 			printInfo("LUMP_PALLET: size: %d\n", seg_size);
 			palette_lump = (char*)ptr;
+			palette_lump_size = seg_size;	// JERICHO: the walk's bound (see texture.c)
 		}
 		else if (lump_type == LUMP_TEXTUREINFO)
 		{

@@ -89,6 +89,15 @@ char carTpages[4][8] = {
 
 char *palette_lump;
 
+// JERICHO: the LUMP_PALLET segment's own byte size, recorded at load (main.c). The lump
+// used to be handed on with a size of 0, which left its walk with nothing to bound
+// against: the header's `total_cluts` is a CLUT count (200 on VEGAS), NOT the number of
+// 12-byte RECORDS the lump holds (525), so bounding by it silently stopped the walk
+// two-thirds of the way - and every car whose palette row lived in the tail (VEGAS rows 5
+// and 6, i.e. car pages 32 and 17) kept an empty palette row and drew its panels from
+// whatever the fallback found. The real size is what the byte bound was written for.
+int palette_lump_size;
+
 char* texturename_buffer = NULL;
 int NoTextureMemory = 0;
 
@@ -3315,7 +3324,7 @@ void LoadPermanentTPages(int *sector)
 	fontclutpos = clutpos;
 	
 	IncrementClutNum(&clutpos);
-	ProcessPalletLump(palette_lump, 0);
+	ProcessPalletLump(palette_lump, palette_lump_size);
 	JERICHO_PAL_DIAG("host palettes");
 	ProcessImportedPalette();	// JERICHO-HOOK: a cross-city import's own palettes
 	JERICHO_PAL_DIAG("import palettes");

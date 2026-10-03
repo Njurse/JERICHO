@@ -397,6 +397,10 @@ void plotCarPolyB3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *p
 }
 
 // [D] [T]
+// JERICHO: defined with the GT plotters below, but the FT plotter needs it first - an FT
+// poly's clut is a civ_clut INDEX resolved at draw time, exactly like a GT poly's.
+static u_short CarClutLookup(plotCarGlobals* pg, int ci, int palette);
+
 void plotCarPolyFT3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *pg)
 {
 	int indices;
@@ -440,7 +444,12 @@ void plotCarPolyFT3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *
 			// 0xFFFF - i.e. denting an FT poly could change which palette that poly used (the
 			// "the palette of a dented car goes wrong" report). The GT paths already mask the
 			// low word; this now does too, keeping the uv0->uv1 carry the offset needs.
-			*(u_int*)&prim->u0 = (src->clut_uv0 & 0xffff0000) | ((src->clut_uv0 & 0xffff) + ofse);
+			// JERICHO: the high word is a civ_clut INDEX (baked exactly like a GT poly's), so it
+			// is resolved HERE, at draw time - the pin re-points the row's slot 0 when an
+			// imported page's CLUTs finally reach VRAM, which is long after the bake. Using
+			// the baked word directly is what drew an imported car's underside from the
+			// GetClut(960,16) dummy - the "the bottom of the imported car is corrupted" report.
+			*(u_int*)&prim->u0 = CarClutLookup(pg, src->clut_uv0 >> 0x10, 0) << 0x10 | ((src->clut_uv0 & 0xffff) + ofse);
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
 			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
@@ -1609,7 +1618,17 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						CarModelSetsAdd(index, pft3->texture_set);
 									
 						cp->vindices = M_INT_4R(pft3->v0, pft3->v1, pft3->v2, 0);
-						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(pft3->texture_set)][pft3->texture_id], *(ushort*)&pft3->uv0);
+						// JERICHO: an FT poly's clut is baked as the civ_clut INDEX, exactly like a GT
+						// poly's, and resolved at draw time (plotCarPolyFT3). Baking the VALUE asked
+						// texture_cluts[DST_SET], and for an IMPORTED car that index only holds the
+						// real CLUTs once the car is DRAWN (the pin), so the bake read the (960,16)
+						// dummy and the underside kept it forever.
+						carid = CarPalIndexForBuild(pft3->texture_set, srcCity);
+						clut = (carid - 1) * 6 * 32 + pft3->texture_id * 6;
+
+						civ_clut[carid][pft3->texture_id][0] = texture_cluts[pft3->texture_set][pft3->texture_id];
+
+						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pft3->uv0);
 						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pft3->texture_set), *(ushort*)&pft3->uv1);
 						cp->uv3_uv2 = *(ushort*)&pft3->uv2;
 						cp->originalindex = i;
@@ -1625,7 +1644,13 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						CarModelSetsAdd(index, pft4->texture_set);
 
 						cp->vindices = M_INT_4R(pft4->v0, pft4->v1, pft4->v2, 0);
-						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(pft4->texture_set)][pft4->texture_id], *(ushort *)&pft4->uv0);
+						// JERICHO: same index bake as the FT3 case above.
+						carid = CarPalIndexForBuild(pft4->texture_set, srcCity);
+						clut = (carid - 1) * 6 * 32 + pft4->texture_id * 6;
+
+						civ_clut[carid][pft4->texture_id][0] = texture_cluts[pft4->texture_set][pft4->texture_id];
+
+						cp->clut_uv0 = M_INT_2(clut, *(ushort *)&pft4->uv0);
 						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pft4->texture_set), *(ushort*)&pft4->uv1);
 						cp->uv3_uv2 = *(ushort*)&pft4->uv2;
 						cp->originalindex = i;
@@ -1633,7 +1658,13 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						cp++;
 						
 						cp->vindices = M_INT_4R(pft4->v0, pft4->v2, pft4->v3, 0);
-						cp->clut_uv0 = M_INT_2(texture_cluts[CarSetRemap(polyList[1])][polyList[2]], *(ushort*)&pft4->uv0);
+						// JERICHO: the FT4's second triangle names its set/texid through polyList.
+						carid = CarPalIndexForBuild(polyList[1], srcCity);
+						clut = (carid - 1) * 6 * 32 + polyList[2] * 6;
+
+						civ_clut[carid][polyList[2]][0] = texture_cluts[polyList[1]][polyList[2]];
+
+						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pft4->uv0);
 						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, polyList[1]), *(ushort*)&pft4->uv2);
 						cp->uv3_uv2 = *(ushort*)&pft4->uv3;
 						cp->originalindex = i;
@@ -1917,14 +1948,18 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		int palidx, needed;	// JERICHO: the row this entry belongs to, and whether we keep it
 
 		// BOUNDS, from whichever limit the CALLER actually gave us. The two callers differ:
-		//   * the LEVEL's own lump is passed with size 0 - stock has called
-		//     ProcessPalletLump(palette_lump, 0) since 2020 and relies on the header's own
-		//     count and the -1 terminator - so its bound is that count;
+		//   * the LEVEL's own lump is a pointer into the level file plus the LUMP_PALLET
+		//     segment's byte size (main.c records it, texture.c passes it), so it gets the
+		//     exact byte check;
 		//   * a deferred IMPORT lump is a pointer+size from gCarImports, with no such
-		//     contract, so it gets the exact byte check.
-		// Enforcing the byte check when there is NO size is what silently stopped the host
-		// walk: every level read zero entries, so civ_clut's per-palette columns were never
-		// filled and every traffic model kept a single colour.
+		//     contract, so it gets the same check - and if it arrives with NO size at all
+		//     the header's own count is the backstop.
+		//
+		// `total_cluts` is NOT the record count and must never be used as one: on VEGAS it
+		// is 200 while the lump holds 525 records, so treating it as the count stopped the
+		// walk two-thirds of the way and left the tail's palette rows (VEGAS rows 5 and 6)
+		// empty - which is what made a car whose page lives there draw its panels from
+		// different fallback colours. It is a CLUT count for clutTable sizing, nothing more.
 		if (lump_size > 0)
 		{
 			if ((char*)buffPtr + 12 > (char*)lump_ptr + lump_size)
@@ -1936,7 +1971,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		}
 		else if (entriesRead >= total_cluts)
 		{
-			break;		/* header count exhausted (this caller gave no size) */
+			break;		/* no size given, and the header count is spent (conservative) */
 		}
 
 		if (*buffPtr == -1)
@@ -2465,6 +2500,42 @@ void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR
 				(unsigned)CarClutLookup(&dbgPg, ci0, 0), (unsigned)CarClutLookup(&dbgPg, ci0, 1),
 				(unsigned)CarClutLookup(&dbgPg, ci0, 2), (unsigned)CarClutLookup(&dbgPg, ci0, 3),
 				(unsigned)CarClutLookup(&dbgPg, ci0, 4), (unsigned)CarClutLookup(&dbgPg, ci0, 5));
+
+			/* JERICHO-DIAG: the SPLIT detector - every distinct clut index this model's
+			 * polys bake, with the colour it resolves to for THIS car's palette (and how
+			 * many polys take it). A coherent car answers with ONE colour here; two or
+			 * more means some panels are drawn from another palette, which is the
+			 * "some panels one colour, some another" report. The ci shows WHICH row and
+			 * texture_id each group came from, so the split can be traced to its source
+			 * rather than inferred. */
+			{
+				int uci[24], ures[24], ucnt[24], nu = 0, s, kk, ii;
+
+				for (kk = 0; kk < 2; kk++)
+				for (ii = 0; ii < counts[kk]; ii++)
+				{
+					int ci = lists[kk][ii].clut_uv0 >> 16;
+					int res = CarClutLookup(&dbgPg, ci, palette);
+
+					for (s = 0; s < nu; s++)
+						if (uci[s] == ci && ures[s] == res)
+							break;
+
+					if (s < nu)
+						ucnt[s]++;
+					else if (nu < 24)
+					{
+						uci[nu] = ci;
+						ures[nu] = res;
+						ucnt[nu] = 1;
+						nu++;
+					}
+				}
+
+				for (s = 0; s < nu; s++)
+					printInfo("JERICHO-DIAG SPLIT: car=%d model=%d pal=%d ci=%d polys=%d -> CLUT %04x\n",
+						cp->id, cp->ap.model, palette, uci[s], ucnt[s], (unsigned)ures[s]);
+			}
 		}
 	}
 
