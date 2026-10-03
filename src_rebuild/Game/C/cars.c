@@ -1903,6 +1903,11 @@ static int CarPalIndexInCity(int tpage, int city);
 
 static int sPalDumpCount;
 
+// JERICHO: how many entries the last walk put into each civ_clut row. The import's palette
+// upload uses it to find rows a built model READS but the city's lump has no entries for,
+// and alias those to a row that does (see the upload loop).
+static int sJerRowWritten[CIV_CLUT_ROWS];
+
 static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, const unsigned char *rowNeeded)
 {
 	ushort clutValue;
@@ -2206,6 +2211,11 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 
 			civ_clut[palidx][texnum][slot] = clutValue;
 
+			// JERICHO: which rows this walk actually put something in. The uploader uses it
+			// to find rows a built model READS but this city's lump has NO entries for.
+			if (palidx >= 0 && palidx < CIV_CLUT_ROWS)
+				sJerRowWritten[palidx]++;
+
 			if (palidx >= 0 && palidx < CIV_CLUT_ROWS)
 				histWrite[palidx]++;
 
@@ -2232,7 +2242,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		// city would be blamed for a neighbour's rows it was never asked to fill.
 		for (k = blockBase; k < blockEnd && k < CIV_CLUT_ROWS; k++)
 			if (k >= 0 && rowNeeded[k] && histWrite[k] == 0)
-				printInfo("cross-city: %s palettes: row %d is READ by the built model but the lump wrote nothing to it (%d of its entries map to other rows) - those polys draw colourless\n",
+				printInfo("cross-city: %s palettes: row %d is READ by the built model but the lump wrote nothing to it (%d of its entries map to other rows) - it is aliased to a row that does carry data when the import's palettes are uploaded\n",
 					LevelNames[city], k, histRow[k]);
 	}
 
@@ -2343,7 +2353,64 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 			printInfo("cross-city: %s palettes: wants %d rows and a block is %d - the excess is not placed (CIV_CLUT_BLOCK_ROWS)\n",
 				LevelNames[city], rows, CIV_CLUT_BLOCK_ROWS);
 
-		ProcessPalletLumpForRows(sImpPalLump[city], sImpPalSize[city], city, rowNeeded);
+		// JERICHO: fill the rows a built model READS that this city's lump has NO entries for.
+		//
+		// A city's palette table covers the pages its OWN cars use, and an imported model can
+		// read more rows than that: measured, CHICAGO's model 8 reads eight rows (civ_clut
+		// 8..15) while its file carries colour variants for five. Those rows are requested
+		// (above) but there is nothing in the file to put in them, so their polys fell back to
+		// the page's own CLUT - whatever the model happens to name - which is what "several
+		// corrupted palettes" looks like on an imported special.
+		//
+		// Alias them to the first row in this block that HAS data: the nearest by index, and
+		// the one a model's own set list reaches first. That is a real variant colour rather
+		// than a page CLUT, at the cost of the shade being the aliased row's - there is no
+		// data in the file for a bespoke one, and a wrong shade beats a colourless car.
+		{
+			int srcRow = -1, r2, j, k;
+
+			for (r2 = base; r2 < limit; r2++)
+			{
+				sJerRowWritten[r2] = 0;		// scope the count to THIS city's walk
+			}
+
+			ProcessPalletLumpForRows(sImpPalLump[city], sImpPalSize[city], city, rowNeeded);
+
+			for (r2 = base; r2 < limit; r2++)
+			{
+				if (sJerRowWritten[r2] > 0)
+				{
+					srcRow = r2;
+					break;
+				}
+			}
+
+			if (srcRow >= 0)
+			{
+				for (r2 = base; r2 < limit; r2++)
+				{
+					if (r2 == srcRow || sJerRowWritten[r2] > 0 || !rowNeeded[r2])
+						continue;
+
+					for (j = 0; j < 32; j++)
+						for (k = 0; k < 6; k++)
+							civ_clut[r2][j][k] = civ_clut[srcRow][j][k];
+
+					// Mirror the coverage too, or every slot/clamp query and the row census
+					// still answer for the row as if nothing had written it - the alias would
+					// be real in VRAM and invisible to the diagnostics.
+					sCivClutRowMaxSlot[r2] = sCivClutRowMaxSlot[srcRow];
+
+					for (j = 0; j < 32; j++)
+						sCivClutTexMaxSlot[r2][j] = sCivClutTexMaxSlot[srcRow][j];
+
+					CarPalRowNote(r2, city);
+
+					printInfo("cross-city: %s palettes: row %d is read by a built model but this city's lump has no entries for it - aliased to row %d (the first in its block with data)\n",
+						LevelNames[city], r2, srcRow);
+				}
+			}
+		}
 
 		sImpPalLump[city] = NULL;
 		uploaded = city;
