@@ -196,10 +196,19 @@ int chkNetFoldPeerCars(void)
 			 * reads the city and builds that one slot into the engine's own pool;
 			 * the resolvers then find it (including mp's own, on its next tick). */
 			if (chkImportHotLoad(slot) <= 0)
+			{
 				printInfo("[carhacks/net] player %d's car (%s model %d) is in the set for slot %d, "
 					"but this level could not build it yet - carrying it to the next level\n",
 					p, chkNetCityName((int)gChkNetPeerPick[p].city),
 					(int)gChkNetPeerPick[p].model, slot);
+
+				/* Say it on screen as well: from here the peer looks like this
+				 * level's own car of the same number, which is the one symptom a
+				 * player can see and report. */
+				jer_error("player %d's car (%s model %d) cannot be loaded here yet - they may look like this level's own car",
+					p, chkNetCityName((int)gChkNetPeerPick[p].city),
+					(int)gChkNetPeerPick[p].model);
+			}
 		}
 	}
 
