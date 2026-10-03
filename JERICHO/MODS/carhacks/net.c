@@ -295,8 +295,23 @@ int chkNetApplyAgreedSet(void)
 		int slot = gChkNetAgreed[at];
 		CHK_CAR_ID id = chkCarId(gChkNetAgreed[at + 1], gChkNetAgreed[at + 2]);
 
-		if (chkImportSetSlot(slot, id))
-			n++;
+		if (chkCarIdEqual(chkImportSlotId(slot), id))
+			continue;		/* already ours: nothing to adopt, and nothing to build */
+
+		if (!chkImportSetSlot(slot, id))
+			continue;
+
+		n++;
+
+		/* A joiner adopting the session's set needs the CARS, not just the table: its
+		 * own level loaded before it knew about them - that is what joining a match in
+		 * progress means - so this is where they get built. Same call the fold uses, so
+		 * the geometry, the cosmetics, the texture pages and their rows land together,
+		 * and the peer stops being drawn as the level's own car of that number. */
+		if (chkImportHotLoad(slot) <= 0)
+			printInfo("[carhacks/net] slot %d (%s model %d) is in the agreed set but this level "
+				"could not build it - the peer driving it may look like the level's own car\n",
+				slot, chkNetCityName((int)chkCarIdCity(id)), (int)chkCarIdModel(id));
 	}
 
 	printInfo("[carhacks/net] adopting the session's agreed set: %d entr%s applied "
@@ -521,6 +536,15 @@ static int chkNetOnRecv(void* ud, void* args)
 				}
 
 				chkNetLogCars("from the host");
+
+				/* ...and BUILD what we just learned. This table is how a joiner finds
+				 * out who drives what, and its own level loaded before any of those cars
+				 * existed in it - that is what joining a match in progress means. Folding
+				 * here is the catch-up: each new car enters the set and is hot-loaded
+				 * (geometry, cosmetics, texture pages and their rows) instead of being
+				 * drawn as the level's own car of the same number. Reported as "player 3
+				 * didn't see player 2's imported car". */
+				chkNetFoldPeerCars();
 			}
 			break;
 
