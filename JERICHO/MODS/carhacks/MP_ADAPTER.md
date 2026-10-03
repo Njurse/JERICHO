@@ -197,7 +197,7 @@ any resident slot that already holds a model (`chkImportSlotFree`, fed the engin
 live `models[]` through `chkImportSetEngineModels`). mp's reserved slots win
 deterministically, and so does any other module's claim.
 
-## mp-side deltas — 1 and 2 are DONE
+## mp-side deltas — all three are DONE
 
 1. **Carry the city. DONE** (`MP_PROTO_VERSION` 6). `MP_ROSTER_ENTRY.modelCity` and
    `MP_CARSTATE_ENTRY.modelCity` carry the city (`0xFF` = the session city), and the
@@ -205,10 +205,43 @@ deterministically, and so does any other module's claim.
    the pair to the receiver's OWN slot, and `-mpcar [city:]model` names one.
 2. **Reserved slots. DONE**, by observation rather than a query: carhacks answers the
    source event after mp and skips slots the engine already holds a model in (above).
-3. **Offer the roster in-session. STILL OPEN.** carhacks' menu declines while a
-   session is live precisely because the stock car screen is mp's. Giving the roster
-   row to mp's own car screen — or letting carhacks' Ride drive mp's START — is the
-   next unit.
+   It now also skips them when the host PUBLISHES its set (a peer's PICK, a session
+   start), which is outside that event: the resident list is COPIED out of the hook and
+   answered from the copy, because the publish-time fold used to take mp's slot 5.
+3. **Offer the roster in-session. DONE** (`carselect.c`). The menu arms inside a live
+   session (the single-player gates apply only outside one) and `Ride` fires
+   `JER_EVENT_MP_FRONTEND`/`JER_MP_FE_START` — the event the stock frontend raises on
+   `BTN_START_GAME` — so **mp** launches and the pick travels in `wantedCar[0]` as
+   before. See `CARSELECT.md`. Still open: a peer whose car this machine cannot build
+   is corrected rather than loaded (the hotload below); the set is applied once per
+   level, so it takes effect at the next load.
+
+### An own-city car the level does not pool
+
+`chkImportApplyPick` and `chkNetFoldPeerCars` used to skip a car from the level's own
+city on the assumption that "the level already lists its own city's vehicles". A level
+pools only the models its OWN list names — Rio's model 12 (the special) is in Rio's
+files and in no Rio take-a-ride level — so the host was left with nothing to build the
+peer's car from and `InitPlayer` fell back to resident slot 0: the level's FIRST car,
+which is "I picked car 12 and spawned as car 1". Both callers now ask
+`chkImportLevelHoldsModel` and import the car from its own city's files when the pool
+provably does not hold it.
+
+That helper answers in THREE values (held / provably not / cannot tell), and the third
+is load-bearing: the fold also runs from the publish path outside the hook. Reading
+"cannot tell" as "not held" there folded an own-city car the level already had, and an
+own-city "guest" writes the level's own city's car palettes into a guest `civ_clut`
+block — every colour in the session goes wrong. Callers that would import on a "no"
+treat "cannot tell" as "leave it alone".
+
+### The spare-slot pool
+
+`CHK_IMPORT_MAX_SLOTS` is 11 (resident slots 0..10; 11 is the engine's
+`SPECIAL_CAR_SLOT`), not 8: with the old cap the search had 5, 6, 7, mp claims two of
+those for extra players, and a second cross-city pick was refused with "no spare
+resident slot is free". Each distinct source city still needs a palette block and the
+bank holds three (`civ_clut` rows 8..31), which is the real limit on how many CITIES a
+session can mix — see `docs/VRAM.md`.
 
 ## What is verified today
 
