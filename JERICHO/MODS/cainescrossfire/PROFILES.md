@@ -103,12 +103,16 @@ cars created. So:
    - a **native** profile (its city is the level's) reuses a resident slot that
      already holds its model; failing that it takes an empty **spare** slot, the
      level's own lump supplying the geometry;
-   - a **foreign** profile is placed only when its city is the level's one
-     **guest city**, into an empty spare slot (the engine imports from only one
-     foreign city per level — `InitCarImport` holds a single city, `models.c`).
+   - a **foreign** profile is placed into an empty spare slot with **its own city**
+     recorded as that slot's model source, so the engine reads the model out of that
+     city's own car data rather than the level's. There is no one-guest-city limit:
+     `models.c` keeps a `CAR_IMPORT` **per city** (`gCarImports[4]`) and
+     `InitCarImport` loads every city the slots ask for. Measured (2026-10): one Rio
+     match fielded seven cars spanning all four cities, with the engine logging three
+     guest imports at once — CHICAGO + VEGAS + HAVANA beside Rio's own.
    Civilian slots (0..4) are never repurposed — they carry the level's own models
-   and the ambient traffic, and stealing one is what made the level's cars look
-   wrong. So a car belongs to the city it is picked in.
+     and the ambient traffic, and stealing one is what made the level's cars look
+     wrong.
 2. **GAME_START** — the profile's `CAR_COSMETICS` overrides are written.
 3. **CAR_STEP** — the first time a car of a profiled slot is seen, it is assigned
    its profile, handed its special (filled to capacity, per-car ammo), and given

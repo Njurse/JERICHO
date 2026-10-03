@@ -473,8 +473,15 @@ Two traps, both paid for:
   its own: HAVANA uploaded, VEGAS and RIO uploaded 0. `sPinCity` already recorded each
   page's source city, so use it.
 
-**The measured ceiling is 2 guest cities.** A city's palettes cost about **36 column rows**;
-the CLUT-safe area is 210 rows (256..465) and the level's own layout takes ~157. Two fit;
-three ran `clutpos` to 486, **21 rows into the level font**. So `CIV_CLUT_GUEST_CITIES` is
-2 and the third city is refused out loud with its numbers. Raisising it is the row
-reclamation unit's job - the gate is the column, not the table.
+**The measured ceiling is 3 guest cities - that is, every city that can BE one** (there are
+four cities and the level's own is not a guest). This paragraph used to say 2, and the
+reasoning behind that number still holds for the world it was measured in: a city's palettes
+cost about **36 column rows**, the CLUT-safe area is 210 rows (256..465) and the level's own
+layout took ~157, so two fit, and three ran `clutpos` to 486 - **21 rows into the level font**.
+That was before the palette tables moved to the lower half pool (above). Re-measured 2026-10
+on a Rio level importing CHICAGO, VEGAS and HAVANA at once: the strip reads **171 rows used,
+39 safe free, no overflow**, each guest holds its own civic CLUT rows (`8..15`, `16..23`,
+`24..31`), and `cars.c` refuses nobody - no `NO PALETTE BLOCK` line. So
+`CIV_CLUT_GUEST_CITIES`, which is `(CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) /
+CIV_CLUT_BLOCK_ROWS` = `(32-8)/8` = **3**, is now the honest number rather than
+aspirational, and the gate is no longer the column.

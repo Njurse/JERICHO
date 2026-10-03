@@ -40,7 +40,7 @@ on top of a point-mass rigid body that replaces the stock wheel/suspension sim
   **4096 = stock/normal**; PSX volume **0 = loudest**, **−10000 = silent**.
   See [`SOUNDS.md`](SOUNDS.md) for the sample/bank API.
 - **Car combat** — the direct-velocity handling plus a data-driven weapon layer
-  (a machine-gun sidearm and finite primaries), six **vehicle specials**, and
+  (a machine-gun sidearm and finite primaries), eleven **vehicle specials**, and
   totaled-car wreck effects. The CC select flow (`-ccmenu`) picks an arena and a
   vehicle before the match. The damage model is tuned so a car lasts: one global
   weapon-damage percentage, a scenery-impact threshold (scrapes cost nothing) and
