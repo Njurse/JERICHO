@@ -1901,7 +1901,7 @@ void MangleWheelModels(void)
 // defined below, next to GetCarPalIndex
 static int CarPalIndexInCity(int tpage, int city);
 
-static int sPalDumpCount;
+static int sPalDumpCount[4];	// JERICHO-DIAG PAL: per CITY, so a guest is never crowded out
 
 // JERICHO: how many entries the last walk put into each civ_clut row. The import's palette
 // upload uses it to find rows a built model READS but the city's lump has no entries for,
@@ -2040,11 +2040,15 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		 * traffic cars pick ap.palette from 0..5, so a model's colour VARIETY is the
 		 * number of distinct `palette` fields its (row, texnum) group carries: one field
 		 * per group = one colour per model, however the draw is fixed. */
-		if (getenv("JERICHO_DIAG_PAL") != NULL && sPalDumpCount < 250)
+		// JERICHO-DIAG: capped PER CITY, not globally. A single 250-entry cap let the host's
+		// walk fill the budget, so a GUEST city's entries - the ones a cross-city run is
+		// actually about - were never printed at all. That is the failure mode VRAM.md warns
+		// about: "an assertion that can be suppressed by volume is not an assertion".
+		if (getenv("JERICHO_DIAG_PAL") != NULL && sPalDumpCount[city] < 250)
 		{
-			sPalDumpCount++;
+			sPalDumpCount[city]++;
 			printInfo("JERICHO-DIAG PAL: entry %d city=%d filtered=%d row=%d texnum=%d palette=%d tpage=%d clut=%d\n",
-				sPalDumpCount, city, (rowNeeded != NULL), palidx, texnum, palette, tpageindex, clut_number);
+				sPalDumpCount[city], city, (rowNeeded != NULL), palidx, texnum, palette, tpageindex, clut_number);
 		}
 
 		if (palidx < 0)
