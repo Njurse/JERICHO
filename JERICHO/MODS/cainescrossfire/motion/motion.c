@@ -502,6 +502,25 @@ static void cd2AccelApply(int carId, CD2_MOTION_STATE* st, const CD2_MOTION_CLAS
 
 	target = jer_clamp_int(target, -cls->pitchMax, cls->pitchMax);
 
+	/* THE FLIP - and it belongs here, on the finished target, not at the two sources
+	 * above. Every number in this layer was self-consistent and the whole layer was
+	 * inverted against the screen: held on the gas it asked for +19 and the car visibly
+	 * dug its NOSE in; on the brakes it asked for -2x and the nose lifted. Both halves
+	 * (the sustained hold and the transient delta) are one convention and it is the wrong
+	 * way round, so flipping the finished target flips them together instead of leaving
+	 * one of them behind. The SQUAT terms below are derived from the result, so the body's
+	 * weight shift turns over with the tilt and the gesture stays coherent.
+	 *
+	 * Why the layer's own probe could not catch this, and why the owner's eyes are the
+	 * tiebreaker: CC_VIS_LOG reads its ruler off the very matrix this module feeds, so it
+	 * agreed with the layer by construction - it reported "the nose rises" for the same +19
+	 * the car was visibly nosing down with. A measurement that shares an assumption with
+	 * the thing it measures cannot falsify it; the screen can.
+	 *
+	 * The knock is deliberately NOT touched: impacts read correctly on screen, so its
+	 * own convention stays as it is. Only this layer's contribution turns over. */
+	target = -target;
+
 	/* accel = (target - pos) * stiffness - vel * damping, in /4096 fixed point. The
 	 * class decides how fast it gets there and how much it overshoots. */
 	{
@@ -826,9 +845,9 @@ void cd2MotionDumpAccel(int carId)
 	/* travel is logged because it is the one input the whole reverse path keys off, and its
 	 * sign is not visible anywhere else: it comes from fwdSpeed, which is the velocity
 	 * projected on the car's forward axis. +1 = going forwards, -1 = going backwards. */
-	jer_log("[cainescrossfire] accel f=%d car=%d pitch=%d vel=%d delta=%d thr=%d travel=%d shift=%d bob=%d speed=%d class=%s\n",
+	jer_log("[cainescrossfire] accel f=%d car=%d pitch=%d vel=%d delta=%d thr=%d travel=%d shift=%d bob=%d speed=%d pos=(%d,%d) class=%s\n",
 		FrameCnt, carId, st->accelPitch, st->accelVel, st->delta, st->throttle, st->travel, st->accelShift, st->accelBob,
-		car_data[carId].hd.speed, cd2MotionClassOf(carId)->name);
+		car_data[carId].hd.speed, car_data[carId].hd.where.t[0], car_data[carId].hd.where.t[2], cd2MotionClassOf(carId)->name);
 
 	/* what the renderer actually got, clamp included */
 	jer_log("[cainescrossfire] composed f=%d car=%d pitch=%d roll=%d yaw=%d bob=%d shift=%d\n",

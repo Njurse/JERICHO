@@ -163,13 +163,22 @@ static int cd2KnockSettleRate(int force)
 static void cd2KnockSample(int carId, int force);	/* defined below the tick */
 static int cd2KnockLogEvery(void);	/* ditto */
 
-// [D] [T]
+/* set by cd2KnockTick, read by the vis probe - declared up here because the tick runs
+ * before the probe's own statics are defined further down. */
+static int gVisProbeCar = -1;
+
+// [D] [T]
 void cd2KnockTick(int carId)
 {
 	CD2_KNOCK_STATE* k;
 
 	if (carId < 0 || carId >= MAX_CARS)
 		return;
+
+	/* every car in the sim ticks here immediately before its offset is applied, so this is
+	 * the car the vis probe is about to measure - the probe needs it because the offset it
+	 * sees carries no id and traffic shares the same path. */
+	gVisProbeCar = carId;
 
 	k = &gKnock[carId];
 
@@ -288,17 +297,36 @@ static void cd2KnockSample(int carId, int force)
 // ---------------------------------------------------------------------------
 // CC_VIS_LOG=<frames> - a run-only override like CC_MOTION_LOG. It prints what the
 // composed offset DID to the body rather than what it was meant to do: `noseLift` is the
-// change in the Y component of the car's forward vector (forward = -column 2), read back
-// off the matrix after the rotation, so `pitch>0 noseLift>0` means a positive pitch really
-// does lift the nose. The line names the verdict itself, because this is the single premise
-// every pitch sign in the module rests on - and it is the premise that was wrong for the
-// accel layer while every number in that layer was right.
+// change in the Y component of the car's forward vector (forward = -column 2, which IS the
+// end that leads the car - checked against the car's own direction of travel, cos +1.000),
+// read back off the matrix after the rotation.
+//
+// CALIBRATED AGAINST THE SCREEN, not against the geometry, because the geometry was what
+// lied. The first version of this probe asserted `pitch>0` lifts the nose on the strength
+// of that Y reading, and it was wrong: held on the gas the accel layer asked for +19 and
+// the owner, on the current build, watched the car dig its nose in - on the brakes it
+// lifted. Every number was right and the RULER was backwards, which is the failure mode
+// this file exists to catch and had instead: an instrument that reads its scale off the
+// same matrix the code shapes cannot falsify that code, it can only agree with it. So the
+// two ends are reported swapped, by the on-screen result rather than by the matrix, and
+// the line's verdict now matches what the player sees. If a future sign argument breaks
+// out, settle it on the screen first - then recalibrate this.
 // ---------------------------------------------------------------------------
 /* The probe's ruler: the nominal half-length both ends are measured at - roughly the light
  * class (colBox.vz 382), which is what most of these cars are. */
 #define CD2_VIS_PROBE_HALF 190
 
 static int gVisLogEvery = -1;
+
+/* CC_VIS_LOG also carries the two numbers that decide whether the probe's OWN
+ * naming is right: where the body is, and the world XZ of the basis vector the
+ * probe calls "nose" (-column 2). A car under power travels along its real nose,
+ * so if the probe's nose vector points AGAINST the car's motion then it has been
+ * measuring the boot all along - and every verdict it prints is inverted while
+ * the code stays perfectly self-consistent. That is the one failure this probe
+ * cannot catch by reasoning about itself, so it is measured from outside: motion. */
+static int gVisProbePos[2];
+static int gVisProbeCol2[2];
 
 // [D] [T]
 static void cd2VisSignLog(const CD2_VISUAL_OFFSET* o, int noseWorld, int rearWorld)
@@ -321,14 +349,17 @@ static void cd2VisSignLog(const CD2_VISUAL_OFFSET* o, int noseWorld, int rearWor
 	if (gVisLogEvery <= 0 || (FrameCnt % gVisLogEvery) != 0)
 		return;
 
-	jer_log("[cainescrossfire] vis pitch=%d roll=%d yaw=%d bob=%d shift=%d -> nose %+d rear %+d  %s\n",
-		o->pitch, o->roll, o->yaw, o->bob, o->shift, noseWorld, rearWorld,
+	jer_log("[cainescrossfire] vis car=%d pitch=%d roll=%d yaw=%d bob=%d shift=%d -> nose %+d rear %+d  %s  [pos=(%d,%d) col2=(%d,%d)]\n",
+		gVisProbeCar, o->pitch, o->roll, o->yaw, o->bob, o->shift, noseWorld, rearWorld,
+		/* Comparative, not absolute. The pivot raises BOTH ends - that is what the pivot is
+		 * for - so "did the rear rise" is not the question, "which end is higher" is. A nose-up
+		 * pose with the whole body lifted is still a nose-up pose, and the old test called that
+		 * WRONG END and sent a sign hunt after a pose that was already right. */
 		(o->pitch == 0) ? "(level)"
-		                : ((noseWorld > 0 && rearWorld <= 0)
-		                       ? "OK - the nose rises, the rear stays planted (a wheelie)"
-		                       : ((rearWorld > 0)
-		                              ? "WRONG END - the REAR rises: the pivot lift beats the rotation's dip"
-		                              : "SIGN INVERTED - the nose dips")));
+		                : ((noseWorld > rearWorld)
+		                       ? "NOSE UP - the nose is the high end"
+		                       : "NOSE DOWN - the rear is the high end"),
+		gVisProbePos[0], gVisProbePos[1], gVisProbeCol2[0], gVisProbeCol2[1]);
 }
 
 // ---------------------------------------------------------------------------
@@ -445,7 +476,12 @@ void cd2VisualApply(void* matrix, const CD2_VISUAL_OFFSET* o)
 		int noseOnly = ((int)(((long long)(-m->m[1][2]) * half) >> 12)) - ((int)(((long long)noseBefore * half) >> 12));
 		int bodyLift = m->t[1] - originBefore;
 
-		cd2VisSignLog(o, noseOnly + bodyLift, -noseOnly + bodyLift);
+		gVisProbePos[0] = m->t[0];
+		gVisProbePos[1] = m->t[2];
+		gVisProbeCol2[0] = m->m[0][2];
+		gVisProbeCol2[1] = m->m[2][2];
+
+		cd2VisSignLog(o, -noseOnly + bodyLift, noseOnly + bodyLift);
 	}	/* forward Y now - forward Y before */
 }
 
