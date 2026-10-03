@@ -93,11 +93,11 @@ jer_pause_menu_register(&myMenu);
 
 ## Saying things on screen
 
-A module has four channels for putting words in front of the player (plus the
-full-screen frontend text in [`screens.md`](screens.md)). Choosing between them
-is really two questions: **who is speaking** — your mod, or the game — and
-**where should the line live**: an event that passes, a readout that persists, or
-the game's own single slot.
+A module has **four channels** for putting words in front of the player — the
+HUD, the game's own notice slot, the red error toast, and the full-screen
+frontend frames. Choosing between them is really two questions: **who is
+speaking** — your mod, or the game — and **where should the line live**: an
+event that passes, a readout that persists, or the game's own single slot.
 
 | Channel | API | Appears | Lasts | Reach for it when… |
 | --- | --- | --- | --- | --- |
@@ -157,9 +157,9 @@ difference is who is speaking.
   "something needs to be told, now" channel, not a conversation.
 - **Drawing them yourself.** `jer_error_count()` and `jer_error_at(i)` expose the
   live lines, which is how the engine prints them with its own text primitives
-  (`State_FrontEnd` in the frontend, `DrawGame` in game). If you draw them too,
-  give each row the **font you are drawing in**: the frontend font is a third
-  taller than the in-game one, so the engine steps frontend rows by 36 px and
+  (`State_FrontEnd` in the frontend, `DrawGame` in game). Give each row the pitch
+  of the **font you are drawing in**: the frontend font is about three times the
+  height of the in-game one, so the engine steps frontend rows by 36 px and
   in-game rows by 12 px.
 
 ## What a module can do
