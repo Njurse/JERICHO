@@ -245,10 +245,18 @@ int chkImportLocalPickModel(void)
 }
 
 /* ---------------------------------------------------------------------------
- * The config fallback: "import = slot:city:model, ..." and the traffic knock
- * ------------------------------------------------------------------------- */
+/* The config fallback: "import = slot:city:model, ..." and the traffic knock
+ * -------------------------------------------------------------------------
+ *
+ * `skipGuestEntries` drops the "import" entries but STILL applies the traffic
+ * knock. The caller sets it when the player picked a car from another city in
+ * the car-select menu: the engine reads ONE source city per level, so the
+ * config's guest-city entries would claim it first and make that pick
+ * impossible. The knock picks a native model into a civilian slot
+ * (chkImportSetSlotModel) and never claims a city, so it does not conflict and
+ * is kept. */
 
-int chkImportLoadConfig(const char* section, int count)
+int chkImportLoadConfig(const char* section, int count, int skipGuestEntries)
 {
 	const char* list = jer_config_get_str(section, "import", "");
 	int changes = 0, n = 0;
@@ -314,6 +322,13 @@ int chkImportLoadConfig(const char* section, int count)
 				vals[2] < 0 || vals[2] >= CHK_MODEL_LIMIT)
 			{
 				printInfo("[carhacks] import entry %d ignored (want slot:city:model)\n", n);
+				continue;
+			}
+
+			if (skipGuestEntries)
+			{
+				printInfo("[carhacks] import entry %d (%s) skipped: the player picked a car from another city\n",
+					n, chkCityName(vals[1]));
 				continue;
 			}
 

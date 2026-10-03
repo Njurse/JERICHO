@@ -18,7 +18,9 @@
 
 /* ---- the set ----------------------------------------------------------- */
 
-/* A new level (or a module reload): drop every entry and the pick. */
+/* A new level (or a module reload): drop every entry. The local PICK is kept -
+ * it belongs to the player's menu choice, not to the level - and is consumed
+ * when the set is applied to a level. */
 void chkImportReset(void);
 
 /* Put `id` into `slot`. Returns 1 if the set changed; 0 = refused (bad range, or
@@ -74,7 +76,7 @@ void chkImportClearPick(void);
  * and what the launchers and chk_suite.sh drive. `source_city` is NOT here: it is
  * a level-wide lever, applied by carhacks.c itself. Returns the number of
  * changes. */
-int chkImportLoadConfig(const char* section, int count);
+int chkImportLoadConfig(const char* section, int count, int skipGuestEntries);
 
 /* Apply the player's pick as an import: the pick's city + model into a spare
  * resident slot, so the engine reads that model from THAT city's files. A pick

@@ -191,6 +191,18 @@ static int ChkOnCarDataSource(void* ud, void* args)
 	{
 		src = jer_config_get_int("carhacks", "source_city", -1);
 
+		/* A PICK from the car-select menu that names another city is the player's own
+		 * decision about where this level reads its car data; source_city is a
+		 * launcher/test lever. Letting both stand would give the level TWO source
+		 * cities - the one thing the engine cannot do, and the conflict the module
+		 * exists to prevent - so the pick wins. */
+		{
+			int pickCity = chkImportLocalPickCity();
+
+			if (pickCity >= 0 && pickCity < 4 && pickCity != a->level)
+				src = pickCity;
+		}
+
 		if (src >= 0 && src < 4)
 		{
 			a->sourceLevel = src;
@@ -210,9 +222,26 @@ static int ChkOnCarDataSource(void* ud, void* args)
 
 		/* The local config is this machine's fallback. On a CLIENT that has already
 		 * received the session's agreed set the HOST is authoritative, so the
-		 * config stands down; on the host the config IS the authority. */
-		if (crossCity && !chkNetHasAgreedSet())
-			chkImportLoadConfig("carhacks", a->count);
+		 * config stands down; on the host the config IS the authority.
+		 *
+		 * A pick from the car-select menu that names ANOTHER city is a decision
+		 * about the level's ONE source city, so it replaces the config's guest-city
+		 * entries - otherwise a leftover `import = slot:city:model` claims the
+		 * guest city first and the player's own pick is refused ("this level already
+		 * reads cars from CHICAGO" for a level they just picked a HAVANA car in).
+		 *
+		 * Only a genuine conflict stands the entries down: a pick of the LEVEL'S OWN
+		 * car imports nothing (chkImportApplyPick returns early), and carselect
+		 * defaults the roster city to the level, so merely opening the menu and
+		 * riding must not disable the config. The traffic knock is never dropped -
+		 * it picks a native model and claims no city. */
+		{
+			int pickCity = chkImportLocalPickCity();
+			int dropGuestEntries = (pickCity >= 0 && pickCity != a->level);
+
+			if (crossCity && !chkNetHasAgreedSet())
+				chkImportLoadConfig("carhacks", a->count, dropGuestEntries);
+		}
 
 		chkImportApplyPick(a->level, a->count);
 
