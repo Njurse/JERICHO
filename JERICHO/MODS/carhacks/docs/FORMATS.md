@@ -203,7 +203,7 @@ name misleads), which merges it into `civ_clut`. **How the merge resolves — th
 VRAM — is owned by `PALETTES.md`**; this section is only the byte layout.
 
 ```c
-#define CIV_CLUT_ROWS 16                                  // cars.h:44
+#define CIV_CLUT_ROWS 32                                  // cars.h:50   rows 0..7 host, then one 8-row block per guest city
 u_short civ_clut[CIV_CLUT_ROWS][32][6];   // cars.c:104  [car palette row][texture id][colour slot]
 ```
 

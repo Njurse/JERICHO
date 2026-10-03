@@ -37,10 +37,11 @@ region to put a foreign vehicle's pages in.
    zero entry, reporting nonsense forever.)
 
 5. **Where the pages go** — draw time, not load time. `CarImportPin` (called from
-   `draw.c` just before the car draw loop) places each wanted page: a genuinely free
-   slot if there is one, otherwise it **evicts a world page** — safe because the world
-   is demand-paged and re-streams what it needs. Evicting clears `tpageloaded[held]`,
-   which is the engine's own "not loaded" marker and what makes it reload.
+   `draw.c` just before the car draw loop) places each wanted page into the **lower
+   half pool** (rows 512..1023), then a wasted host car page or a free slot — and if
+   none of those is free it **defers rather than evict a world page**: the world is
+   demand-paged, but a car page sharing a world slot is what painted buildings with a
+   car texture, so the import never takes one (`CarPageFindSlot(allowWorld=0)`).
    Placement is *after* the world has drawn, so the world keeps its pages for its own
    frame and the car gets its own for the car pass.
 
