@@ -143,6 +143,33 @@ static int sCivClutRowCity[CIV_CLUT_ROWS][4];
 static int sCivClutRowMaxSlot[CIV_CLUT_ROWS];       // highest slot written in the row
 static int sCivClutTexMaxSlot[CIV_CLUT_ROWS][32];   // ...and per texture_id within it
 
+// JERICHO: WHICH resident slot baked each civ_clut row, and from which set. The census can
+// say a row offers no colour variants; it cannot say which car reads it, and that is the
+// difference between "some rows are thin" and "the imported special's roof panel is
+// colourless". Recorded at the bake, reported by CarPalRowReport for the empty rows only.
+static int sBakeRowSlot[CIV_CLUT_ROWS][8];
+static int sBakeRowSet[CIV_CLUT_ROWS][8];
+static int sBakeRowN[CIV_CLUT_ROWS];
+
+static void CarBakeRowNote(int row, int slot, int set)
+{
+	int i;
+
+	if (row < 0 || row >= CIV_CLUT_ROWS || slot < 0)
+		return;
+
+	for (i = 0; i < sBakeRowN[row]; i++)
+		if (sBakeRowSlot[row][i] == slot && sBakeRowSet[row][i] == set)
+			return;
+
+	if (sBakeRowN[row] < 8)
+	{
+		sBakeRowSlot[row][sBakeRowN[row]] = slot;
+		sBakeRowSet[row][sBakeRowN[row]] = set;
+		sBakeRowN[row]++;
+	}
+}
+
 // JERICHO: how often the draw clamped a spawned variant down to a column that exists (see
 // CarClutVariant). Zero on a stock level is the invariant: the clamp must never touch the
 // host's own rows 0..7. Reported by CarPalRowReport, which runs at exit.
@@ -174,6 +201,7 @@ static void CarPalRowClear(void)
 	// needs, so a stale maximum would let the draw pick a column this level never filled.
 	memset(sCivClutRowMaxSlot, 0, sizeof(sCivClutRowMaxSlot));
 	memset(sCivClutTexMaxSlot, 0, sizeof(sCivClutTexMaxSlot));
+	memset(sBakeRowN, 0, sizeof(sBakeRowN));
 }
 
 // JERICHO: which civ_clut block this guest city owns.
@@ -321,6 +349,21 @@ void CarPalRowReport(void)
 
 		if (sCivClutRowWriters[r] > 1)
 			collisions++;
+	}
+
+	// JERICHO: and, for the rows that offer nothing, WHICH CARS read them. A colourless row
+	// is only actionable once it has a car's name on it - this is that.
+	for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
+	{
+		if (sCivClutRowMaxSlot[r] > 0 || sBakeRowN[r] == 0)
+			continue;
+
+		printInfo("cross-city: palette map - civ_clut row %d offers NO colour variants and is read by", r);
+
+		for (i = 0; i < sBakeRowN[r]; i++)
+			printInfo(" slot %d (set %d)", sBakeRowSlot[r][i], sBakeRowSet[r][i]);
+
+		printInfo("\n");
 	}
 
 	printInfo("cross-city: palette map - %d of the import bank's %d rows written, %d of them by more than one city\n",
@@ -1680,6 +1723,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						CarModelSetsAdd(index, pgt3->texture_set);
 
 						carid = CarPalIndexForBuild(pgt3->texture_set, srcCity);
+						CarBakeRowNote(carid, index, pgt3->texture_set);
 						clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
 
 						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
@@ -1706,6 +1750,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						// an import reads its own palettes through exactly the host's formula.
 						// A GT poly's clut_uv0 high word is a civ_clut INDEX, not a CLUT id.
 						carid = CarPalIndexForBuild(pgt4->texture_set, srcCity);
+						CarBakeRowNote(carid, index, pgt4->texture_set);
 						clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
 
 						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
