@@ -29,7 +29,7 @@ extern "C" {
 #endif
 
 #ifndef JERICHO_BUILD_VERSION
-#define JERICHO_BUILD_VERSION "1.0.0"
+#define JERICHO_BUILD_VERSION "0.9.0"
 #endif
 
 #define JERICHO_SDK_VERSION 2

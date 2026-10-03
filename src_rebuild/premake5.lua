@@ -160,7 +160,12 @@ local function jer_common_defines()
    defines { "BUILD_CONFIGURATION_STRING=\"%{cfg.buildcfg}\"" }
 
    -- deterministic JERICHO build version: git describe when available,
-   -- otherwise a plain literal (each exe release = a new JERICHO version)
+   -- otherwise a plain literal (each exe release = a new JERICHO version).
+   --
+   -- Release tags are spelled v0.9.0 so that GitHub Actions publishes them --
+   -- the workflow triggers on `v*` and the repo's older REDRIVER2 tags carry
+   -- no prefix at all. The version the game reports strips that leading "v",
+   -- so the binary says "0.9.0", not "v0.9.0".
    local null = (os.target() == "windows") and "2>nul" or "2>/dev/null"
    local desc = ""
    local f = io.popen("git describe --tags --always --dirty " .. null)
@@ -168,8 +173,9 @@ local function jer_common_defines()
       desc = f:read("*l") or ""
       f:close()
    end
+   desc = desc:gsub("^v", "")
    if desc == nil or desc == "" then
-      desc = "1.0.0"
+      desc = "0.9.0"
    end
    defines { ("JERICHO_BUILD_VERSION=\"%s\""):format(desc) }
 end
