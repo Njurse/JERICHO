@@ -296,6 +296,37 @@ static int chkRideWith(int city, int idx)
 		chkCityName(city), list[idx].slot, list[idx].model,
 		chkCityName(GameLevel), wantedCar[0]);
 
+	/* A LIVE SESSION OWNS THE LAUNCH. mp seats players on its own car screen and
+	 * claims the frontend's START, so starting the level from here would load it
+	 * without the session's level, car agreement and spawn. Firing the same event
+	 * the stock frontend raises hands the press to mp, which launches on our
+	 * behalf (MpOnMpFrontend: MpClientLaunch for a client, MpStartMatch for the
+	 * host) and picks the pick up from wantedCar[0] on the way. Nothing is
+	 * launched twice: mp is the only caller of SetState in this path. */
+	if (jer_net_is_active())
+	{
+		JER_ARGS_MP_FRONTEND fe;
+
+		fe.action = JER_MP_FE_START;
+		fe.query = 0;
+		fe.claimed = 0;
+		fe.passthrough = 0;
+
+		jer_fire(JER_EVENT_MP_FRONTEND, &fe);
+
+		if (fe.claimed)
+		{
+			printInfo("[carhacks] car select: the session took the launch (player %d, model %d)\n",
+				jer_net_local_player(), wantedCar[0]);
+			return 1;
+		}
+
+		/* The session exists but would not launch (a refused join is the real
+		 * case). Player-facing, because the alternative is a Ride that looks
+		 * accepted and does nothing. */
+		jer_error("[carhacks] car select: the session did not take the launch - starting the level directly");
+	}
+
 	SetState(STATE_GAMESTART);
 	return 1;
 }
@@ -307,10 +338,22 @@ static int chkRideWith(int city, int idx)
  * The stock Take-a-Ride chain is main(0) -> city(1) -> day/night(3) -> car(14).
  * "Back" must land on the Day/Night screen, NOT on the stack (which holds the stock
  * car screen we replaced): returning there would re-run its setup, re-arm this menu
- * and trap the player in a loop. */
+ * and trap the player in a loop.
+ *
+ * IN A SESSION none of that applies: this screen was pushed by mp's own chain
+ * (mp.lobby -> the stock car screen), and the stock city/day-night screens are not
+ * part of it. Returning 0 hands the press to the engine's own is_back row, which is
+ * exactly the previous-screen pop mp expects - and it cannot re-arm anything,
+ * because the screen it returns to is mp's, not the car screen. */
 static int chkSelBack(void* ud)
 {
 	(void)ud;
+
+	if (jer_net_is_active())
+	{
+		printInfo("[carhacks] car select: back (in a session - the engine pops to mp's own screen)\n");
+		return 0;
+	}
 
 	printInfo("[carhacks] car select: back to the day/night screen\n");
 	jer_frontend_goto(CHK_FE_SCREEN_TIMEOFDAY);
@@ -351,29 +394,30 @@ static int chkOurMenuOnScreen(void)
  * the menu is opened on the next frame rather than from here. */
 void chkCarSelectArm(void)
 {
-	/* only a single-player Take a Ride - a 2-player split-screen and the
-	 * missions' own car pick keep the stock screen */
-	if (GameType != GAME_TAKEADRIVE || NumPlayers != 1)
-		return;
+	int inSession = jer_net_is_active();
 
-	/* and with a session live the car screen is mp's: that screen is where mp
-	 * seats players and where it claims the START (JER_EVENT_MP_FRONTEND), so
-	 * overriding it from another module would break the session. */
-	if (jer_net_is_active())
-	{
-		/* Player-facing: the roster row is not on offer here, and it is worth
-		 * saying why rather than leaving the player wondering. */
-		jer_error("[carhacks] car select: a multiplayer session is live - the stock car screen stays mp's");
+	/* A single-player Take a Ride is the ordinary case: 2-player split-screen and
+	 * a mission's own car pick keep the stock screen.
+	 *
+	 * INSIDE A SESSION those gates say nothing. The LAN flow leaves NumPlayers at
+	 * 2 (its split-screen chain sets it) and a joiner's GameType is still
+	 * GAME_MISSION until mp launches -- so the old condition bailed every time a
+	 * session was live, silently, which is why a joining player never saw the
+	 * roster. With a session up, the only question that matters is whether the
+	 * session wants the pick, and mp's own screen is what we replace -- so the
+	 * menu is offered here and Ride hands the launch back (see chkRideWith). */
+	if (!inSession && (GameType != GAME_TAKEADRIVE || NumPlayers != 1))
 		return;
-	}
 
 	/* the roster opens on the level's own city, i.e. exactly the stock list */
 	gChkRosterCity = (GameLevel >= 0 && GameLevel < CHK_CITY_COUNT) ? GameLevel : 0;
 	gChkCarIdx = 0;
 	gChkArmed = 1;
 
-	printInfo("[carhacks] car select: armed for level %s (its car screen is showing)\n",
-		chkCityName(gChkRosterCity));
+	printInfo("[carhacks] car select: armed for level %s (%s)\n",
+		chkCityName(gChkRosterCity),
+		inSession ? "in a session - the roster is offered, Ride hands the launch to mp"
+			: "its car screen is showing");
 }
 
 /* JER_EVENT_FRAME - fires every frame in the frontend AND in a level; every
