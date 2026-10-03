@@ -33,6 +33,12 @@ extern void ProcessMDSLump(char *lump_file, int lump_size); // 0x00064CFC
 // the level's own" for a slot, or NULL for the normal case. Called from
 // SetupResidentModels, so both the geometry and the colours are taken from it.
 void InitCarImport(void);
+
+// JERICHO: read in the cities the set names WITHOUT disturbing what is already
+// loaded -- for adding a city's data to a level that is already running (the hot
+// load). InitCarImport() is a level-start function and must never be called
+// mid-level: see its sibling's comment in models.c.
+void InitCarImportMidLevel(void);
 char* GetCarImportModels(int slot);
 
 // JERICHO cross-city HOT LOAD: build resident `slot`'s geometry at RUNTIME from the

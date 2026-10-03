@@ -597,7 +597,7 @@ int chkImportHotLoad(int slot)
 		JerSetCarModelSource(i, city);
 	}
 
-	InitCarImport();
+	InitCarImportMidLevel();
 
 	return JerHotLoadCarModel(slot);
 }

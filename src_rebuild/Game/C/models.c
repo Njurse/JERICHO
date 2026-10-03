@@ -482,6 +482,47 @@ void InitCarImport(void)
 	}
 }
 
+// JERICHO: the MID-LEVEL variant, for a car added to the resident set after the level
+// loaded (the hot load). It differs from InitCarImport() in the one way that matters:
+// it never disturbs what is already there. InitCarImport is a level-start function --
+// it runs CarImportResetState() (which empties the live per-slot set lists
+// buildNewCarFromModel fills, i.e. the palette/page bookkeeping of the cars already
+// on the road) and frees EVERY city's buffers, including the ones the running level's
+// built models point into. Called mid-level that is corruption: the symptom is
+// broken car palettes. So: no reset, no frees, and the cities already held are left
+// exactly as they are -- only a city nobody has read yet is loaded.
+void InitCarImportMidLevel(void)
+{
+	int i, city;
+
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+	{
+		int src = GetCarModelSourceCity(i);
+
+		if (src < 0 || src >= 4 || residentCarModels[i] == -1)
+			continue;
+
+		if (gCarImports[src].region != NULL)
+			continue;			// already held: leave it alone
+
+		if (!LoadCarImport(src, &gCarImports[src]))
+		{
+			printInfo("cross-city: no usable car data in %s - slots naming it keep the level's own vehicles\n",
+				LevelFiles[src]);
+			continue;
+		}
+
+		printInfo("cross-city: car data from %s read MID-LEVEL for the hot load (%d bytes of models, %d of car palettes, %d of cosmetics)\n",
+			LevelNames[src], gCarImports[src].carModelsSize, gCarImports[src].palletSize,
+			gCarImports[src].cosmeticsSize);
+
+		if (gCarImportCity < 0)
+			gCarImportCity = src;
+	}
+
+	(void)city;
+}
+
 // The city the level is importing vehicles from, or -1. cars.c uses this to map
 // that city's car texture pages to the palette slots its palettes were stored in.
 int GetCarImportCity(void)
