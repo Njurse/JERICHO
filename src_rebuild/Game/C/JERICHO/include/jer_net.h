@@ -56,6 +56,11 @@ int jer_net_peer_count(void);
 /* This machine's player id (0 = host). -1 when not in a session. */
 int jer_net_local_player(void);
 
+/* Is our own car a real CHOICE yet (a pick, or -mpcar), rather than what mp assigned a
+ * player who has not picked? A carhacks-style module must not publish an assignment:
+ * the session's import set would take a resident slot nobody drives. */
+int jer_net_local_car_chosen(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -678,7 +678,7 @@ static int chkNetOnFrame(void* ud, void* args)
 			 * from -mpcar, so it is advertised either way. A menu pick is deliberate
 			 * whatever city it names, which covers the level's own city dropping a
 			 * model its pool does not hold (the "I picked car 12" case). */
-			deliberate = (chkImportLocalPickCity() >= 0) || (mine.city >= 0 && mine.city != GameLevel);
+			deliberate = jer_net_local_car_chosen();
 
 			if (!deliberate)
 				return JER_RESULT_CONTINUE;
