@@ -193,8 +193,10 @@ a **pin** per imported page — which set, which destination index, the byte off
 length of the page inside the foreign level file, the VRAM rectangle it would prefer
 to reuse, and *which city it came from*. At draw time `CarImportPin` reads those
 bytes (`ReadCarImportFileForCity(pin.city, …)` — never a level-wide singleton),
-uploads them to a VRAM page slot, and uploads the page's CLUT rows. If no page slot
-is free it evicts a world page rather than refuse.
+uploads them to a VRAM page slot, and uploads the page's CLUT rows. It takes the
+**lower half pool first**, then a wasted host car page or a free slot — never a world
+rectangle; if none is free it **defers rather than evict a world page**
+([`VRAM.md`](docs/VRAM.md), "why an import can no longer take a world page").
 
 The palette side runs alongside this: each city's car-palette rows are a separate
 per-city problem in `cars.c`, and the **CLUT column is the binding constraint** —
@@ -299,7 +301,7 @@ change applies on the next level; nothing is cached.
 | `mp_agree_imports` | `1` | in a session, let the host's import set win for everyone |
 | `spawn_imports` | `0` | **measurement lever**: place one car per imported city ahead of the player, once per level |
 | `spawn_spacing` | `1500` | the gap between those placed cars, in world units — the default suits a long body (bus, fire truck, semi); echoed on the spawn summary line so a run records the value |
-| `two_guest_cities` | `0` | **measurement lever**: let more than one foreign city into the set. Off by default because the CLUT column overflows with one; see [Limits](#limits--what-it-does-not-do-today) |
+| `two_guest_cities` | `0` | **measurement lever**: let more than one foreign city into the set. The palette bank holds three guest cities now (one 8-row block each); the lever is kept for the stress tests |
 
 Cities are `0..3` = CHICAGO, HAVANA, VEGAS, RIO. Models are `0..12`.
 
@@ -339,13 +341,15 @@ One rule per call, so no future line has to guess (also stated at the top of
 
 Stated plainly, because each one has a doc and a plan behind it.
 
-- **The CLUT column overflows with one import.** A level's car palettes and the
-  imported ones contend for the same VRAM CLUT rows, and the import's palette table
-  is filtered down but still lands in the level font's band. The colours of imported
-  cars are therefore **not right** in a multi-city run — geometry and placement are,
-  which is what the test tools assert. This is the next unit.
-- **One foreign city per level**, until that budget is fixed
-  (`two_guest_cities` is the lever that overrides the gate for measurement).
+- **An imported car's colour *variants* are the open item.** Geometry, placement,
+  pages and palettes all work; what is still imperfect is that a spawned imported car
+  can come out **one colour** — its dominant page group reads a `civ_clut` row the
+  source city's palette table has no entries for, so every spawned palette collapses
+  to the page's own CLUT ([`VRAM.md`](docs/VRAM.md) §7). The fix is the dense
+  set→row assignment for an import; the harnesses assert geometry and placement, not
+  paint.
+- **Three foreign cities per level** is the palette bank's ceiling (one 8-row block
+  each); the engine's *geometry* side holds up to four.
 - **A foreign car has to be driven, or placed.** Filling a resident model slot does
   not create a vehicle, and the engine spawns only slots `0/1/2/4` as traffic — so
   slots 5/6 can never appear on their own. That is exactly what `spawn_imports`
@@ -377,9 +381,8 @@ go to the next test when you are ready rather than when a timer says so. Pass a 
 for a timed run; `manual` and `0` spell the default out, and the banner prints which one
 it resolved.
 
-All of them show the imported cars with the **wrong colours** until the CLUT band
-placement lands (see [Limits](#limits--what-it-does-not-do-today)) — they judge
-geometry, placement and mix, not paint.
+They judge geometry, placement and mix, not paint — an imported car's colour
+variants are the open item ([Limits](#limits--what-it-does-not-do-today)).
 | `chk_mp_foreign.sh` | a **real mp pair** with a different foreign city on each side, reporting what each machine loaded and what each player ended up driving |
 
 Both city tools assert the same three things per level, and **fail** if any is
@@ -425,8 +428,8 @@ derives `hd.direction` from it). The side is the kerb, or a wall, at any spawn p
 Both positions are logged so the line is checkable by hand.
 
 It is a **measurement lever, not a feature**: the cars are `CONTROL_TYPE_CUTSCENE`
-(nothing drives them, so they stay where they are put) and the colours are not right
-until the CLUT work lands. Full detail:
+(nothing drives them, so they stay where they are put); colour variants are the
+open item. Full detail:
 [`CROSS_CITY.md`](docs/CROSS_CITY.md), "Seeing the imported
 cars".
 
