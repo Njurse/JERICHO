@@ -2987,10 +2987,29 @@ static int CarPalIndexInCity(int tpage, int city)
 	// specTpages page is in neither table, GetCarPalIndex answers 0, and the row is the
 	// HOST's. Map the pair onto the bank's last two rows, exactly where the host's pair
 	// sits (rowbase 0 -> 6/7, the import bank -> 14/15).
-	for (i = 0; i < 12; i++)
+	// JERICHO: a SPECIAL body's pages live in specTpages, not carTpages - but this ONE row
+	// mapping is for the HOST level only, and applying it to a guest is what left an imported
+	// special colourless.
+	//
+	// The host level gets its own pair into carTpages[6]/[7] by OVERWRITING those two entries
+	// at load (texture.c), so without this scan a specTpages page is in neither table,
+	// GetCarPalIndex answers 0, and the row is the HOST's. Mapping it onto the bank's last two
+	// rows is right for the host (rowbase 0 -> 6/7, exactly where the host's pair sits).
+	//
+	// For a GUEST the same mapping lands on rows base+6/base+7 - and the guest's palette lump
+	// holds nothing there. Measured: HAVANA's specTpages are its own 38/39, and its deferred
+	// palette lump is keyed by its CAR page numbers, resolving to base..base+5. So the guest's
+	// special baked rows base+6/+7 while every entry of its lump sat five rows below, and those
+	// panels drew colourless. With the scan restricted to the host, a guest's spec page falls
+	// through to the unclassifiable-set path above, which resolves it to that city's own first
+	// row - a row its lump DOES fill.
+	if (city == GameLevel)
 	{
-		if (tpage == specTpages[city][i])
-			return rowbase + 6 + (i & 1);
+		for (i = 0; i < 12; i++)
+		{
+			if (tpage == specTpages[city][i])
+				return rowbase + 6 + (i & 1);
+		}
 	}
 
 	return -1;
