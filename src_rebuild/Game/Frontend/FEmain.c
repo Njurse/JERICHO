@@ -2158,6 +2158,39 @@ void InitFrontendDisplay(void)
 	SetDispMask(1);
 }
 
+/* ------------------------------------------------------------------ *
+ * JERICHO-HOOK: notice toasts (jer_error - see JERICHO/include/jericho.h).
+ *
+ * The "something needs to be told, now" channel: a block of gentle-red text
+ * down the LEFT of the frontend frame, for a few seconds. One notice is one
+ * line -- a longer message is wrapped by jer_error into several single-line
+ * notices, which then stack down the screen.
+ *
+ * The step below is the FRONTEND font's own line pitch, NOT the in-game one.
+ * A FEFONT.BNK glyph cell is 36px tall and the frontend lays its own rows out
+ * at 36 as well (see the module-menu and mods-screen button layouts in this
+ * file), so the 18 that used to sit here stacked two rows on top of each
+ * other. The in-game notices keep 12, because the in-game font is a third of
+ * the size (Game/C/main.c).
+ * ------------------------------------------------------------------ */
+#define JER_FE_NOTICE_X		32	/* left margin */
+#define JER_FE_NOTICE_Y		140	/* first line, from the top */
+#define JER_FE_NOTICE_LINE	36	/* FEFONT.BNK cell height = frontend row pitch */
+
+// [A] - was inlined in State_FrontEnd
+static void JerichoDrawNotices(void)
+{
+	int n = jer_error_count(), k;
+
+	for (k = 0; k < n; k++)
+	{
+		const char* msg = jer_error_at(k);
+
+		if (msg != NULL)
+			FEPrintString((char*)msg, JER_FE_NOTICE_X, JER_FE_NOTICE_Y + k * JER_FE_NOTICE_LINE, 0, 215, 70, 70);
+	}
+}
+
 // [D] [T]
 void State_FrontEnd(void* param)
 {
@@ -2176,22 +2209,12 @@ void State_FrontEnd(void* param)
 	// runtime; it is drawn with the notices just below.
 	jer_screen_tick();
 
+	/* presentation screens sit under the notices */
+	JerichoDrawScreen();
+
 	// JERICHO-HOOK: error notices (engine + modules) -- gentle red, left of
 	// the screen, ~5 s (e.g. "invalid command line argument")
-	{
-		int jerN = jer_error_count(), jerK;
-
-		/* presentation screens sit under the notices */
-		JerichoDrawScreen();
-
-		for (jerK = 0; jerK < jerN; jerK++)
-		{
-			const char* jerMsg = jer_error_at(jerK);
-
-			if (jerMsg != NULL)
-				FEPrintString((char*)jerMsg, 32, 140 + jerK * 18, 0, 215, 70, 70);
-		}
-	}
+	JerichoDrawNotices();
 
 	PadChecks();
 
