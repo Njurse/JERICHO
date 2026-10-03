@@ -20,13 +20,19 @@
 #define MAX_CARS				20
 
 #ifndef PSX
-/* 8 (was 6): the extra slots beyond the mission header's five exist so a module
- * can keep MANY more distinct vehicles resident at once (cross-city car data,
- * extra models). They are filled with -1 = "no model" in SetupResidentModels, so
- * stock levels are unchanged - the capacity is only used when a module claims a
- * slot. SPECIAL_CAR_SLOT follows this value. Slots 0..4 keep their normal
- * meaning; slot 4 is the engine's own filler. */
-#define MAX_CAR_RESIDENT_MODELS	8			// use all permanently loaded car models available
+/* 12 (was 8, and 6 before that): the extra slots beyond the mission header's five
+ * exist so a module can keep MANY more distinct vehicles resident at once
+ * (cross-city car data, extra models). They are filled with -1 = "no model" in
+ * SetupResidentModels, so stock levels are unchanged - the capacity is only used
+ * when a module claims a slot. SPECIAL_CAR_SLOT follows this value. Slots 0..4 keep
+ * their normal meaning; slot 4 is the engine's own filler.
+ *
+ * 8 was not enough for a full roster in one battleground: slots 0..4 hold the
+ * level's civilian models and SPECIAL_CAR_SLOT holds the special, which left only
+ * 5 and 6 for a module to place into, and cainescrossfire's roster needs up to
+ * seven distinct cars on the field at once (the player plus six contestants).
+ * With 12 the module has six slots of its own. */
+#define MAX_CAR_RESIDENT_MODELS	12			// use all permanently loaded car models available
 #else
 #define MAX_CAR_RESIDENT_MODELS	5
 #endif
