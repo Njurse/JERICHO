@@ -103,11 +103,11 @@ const char* chkNetCityName(int city)
  * hold there. A car already in the set is left alone; a new one takes a spare
  * resident slot. Returns how many were folded.
  *
- * Whether the engine can actually hold the car is NOT this function's call: a car
- * from a second foreign city is refused by the set's one-guest-city rule, loudly
- * (chkImportSetSlot in carimport.c). That refusal is the honest limit - the
- * engine reads one foreign city per level - and the peer keeps the clean fallback
- * instead (ChkOnCarPeerDraw). */
+ * Whether the engine can actually hold the car is the SET's call: it takes a spare
+ * resident slot, from whatever city that car belongs to. A set may name several
+ * cities (chkImportSetSlot in carimport.c), so a peer's car is no longer refused
+ * for coming from a "second" city; only a full set of spare slots is a limit, and
+ * then the peer keeps the clean fallback instead (ChkOnCarPeerDraw). */
 int chkNetFoldPeerCars(void)
 {
 	int folded = 0, p, slot;
@@ -204,9 +204,9 @@ void chkNetPublishSet(void)
 
 	chkNetSendPacket(CHK_NET_SET, gChkNetAgreed, gChkNetAgreedLen);
 
-	printInfo("[carhacks/net] published the agreed set: guest city %s, %d entr%s\n",
-		chkNetCityName(gChkNetAgreedGuest), (int)gChkNetAgreed[1],
-		(gChkNetAgreed[1] == 1) ? "y" : "ies");
+	printInfo("[carhacks/net] published the agreed set: %d entr%s, %d guest cit%s\n",
+		(int)gChkNetAgreed[1], (gChkNetAgreed[1] == 1) ? "y" : "ies",
+		chkImportGuestCityCount(), (chkImportGuestCityCount() == 1) ? "y" : "ies");
 }
 
 int chkNetHasAgreedSet(void)
@@ -225,13 +225,12 @@ int chkNetAgreedGuestCity(void)
 
 int chkNetApplyAgreedSet(void)
 {
-	int i, n = 0, at, count, guest;
+	int i, n = 0, at, count;
 
 	/* only a client adopts - see chkNetHasAgreedSet */
 	if (!chkNetHasAgreedSet())
 		return 0;
 
-	guest = (gChkNetAgreed[0] == CHK_CITY_NATIVE) ? -1 : (int)gChkNetAgreed[0];
 	count = (int)gChkNetAgreed[1];
 	at = 3;						/* past guestCity, count, version */
 
@@ -247,8 +246,9 @@ int chkNetApplyAgreedSet(void)
 			n++;
 	}
 
-	printInfo("[carhacks/net] adopting the session's agreed set: guest city %s, %d entr%s applied\n",
-		chkNetCityName(guest), n, (n == 1) ? "y" : "ies");
+	printInfo("[carhacks/net] adopting the session's agreed set: %d entr%s applied "
+		"(each carries its own source city)\n",
+		n, (n == 1) ? "y" : "ies");
 
 	return n;
 }
@@ -488,16 +488,16 @@ static int chkNetOnRecv(void* ud, void* args)
 				gChkNetAgreedLen = len;
 				gChkNetAgreedGuest = (gChkNetAgreed[0] == CHK_CITY_NATIVE) ? -1 : (int)gChkNetAgreed[0];
 
-				printInfo("[carhacks/net] the host's agreed set arrived: guest city %s, %d entr%s "
+				printInfo("[carhacks/net] the host's agreed set arrived: %d entr%s "
 					"(applied at the next level)\n",
-					chkNetCityName(gChkNetAgreedGuest), (int)gChkNetAgreed[1],
+					(int)gChkNetAgreed[1],
 					(gChkNetAgreed[1] == 1) ? "y" : "ies");
 
-				if (chkImportGuestCity() >= 0 && gChkNetAgreedGuest >= 0 &&
-					chkImportGuestCity() != gChkNetAgreedGuest)
-					printInfo("[carhacks/net] ... this machine reads from %s, the host from %s: "
-						"the host's wins at the next level\n",
-						chkNetCityName(chkImportGuestCity()), chkNetCityName(gChkNetAgreedGuest));
+				if (chkImportGuestCityCount() > 0)
+					printInfo("[carhacks/net] ... this machine's own set names %d guest cit%s; "
+						"the host's set replaces it at the next level\n",
+						chkImportGuestCityCount(),
+						(chkImportGuestCityCount() == 1) ? "y" : "ies");
 			}
 			break;
 

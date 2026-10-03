@@ -145,7 +145,6 @@ for entry in "${ROWS[@]}"; do
 		# run is not just "three cities loaded, none visible".
 		NAME="city mix (3 cities) -> ${CITY_NAME[$HOST]}"
 		{ printf 'cross_city_vehicles = 1\n'
-		  printf 'two_guest_cities = 1\n'
 		  printf 'spawn_imports = 1\n'
 		  printf 'import = 4:%s:%s, 5:%s:%s, 6:%s:%s\n' \
 			"$(( (HOST + 1) % 4 ))" "$MODEL" \

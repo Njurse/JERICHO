@@ -42,8 +42,7 @@ and puts them on the ground to look at:
 ```ini
 [carhacks]
 cross_city_vehicles = 1      ; turn the cross-city half on (opt-in)
-two_guest_cities    = 1      ; measurement lever: allow more than one foreign city
-import              = 4:0:8, 5:1:9, 6:3:12   ; slot:city:model, ...
+import              = 4:0:8, 5:1:9, 6:3:12   ; slot:city:model, ... -- each slot names its own city
 spawn_imports       = 1      ; place one car per imported city ahead of the player
 ```
 
@@ -98,7 +97,7 @@ and six source files, one concern each:
 | file | what lives there |
 |---|---|
 | `carhacks.c` / `.h` | the module entry, the hook table, the availability hack, and the shared logging rule |
-| `carimport.c` / `.h` | the **cross-city import**: the config, the slot bookkeeping, the guest-city gate |
+| `carimport.c` / `.h` | the **cross-city import**: the config, the slot bookkeeping, the per-slot source city |
 | `carselect.c` | the in-game car-select menu ([`CARSELECT.md`](CARSELECT.md)) |
 | `spawn.c` | the `spawn_imports` measurement lever |
 | `net.c` / `net.h` | the multiplayer channel and the import-set agreement ([`MP_ADAPTER.md`](MP_ADAPTER.md)) |
@@ -301,7 +300,6 @@ change applies on the next level; nothing is cached.
 | `mp_agree_imports` | `1` | in a session, let the host's import set win for everyone |
 | `spawn_imports` | `0` | **measurement lever**: place one car per imported city ahead of the player, once per level |
 | `spawn_spacing` | `1500` | the gap between those placed cars, in world units — the default suits a long body (bus, fire truck, semi); echoed on the spawn summary line so a run records the value |
-| `two_guest_cities` | `0` | **measurement lever**: let more than one foreign city into the set. The palette bank holds three guest cities now (one 8-row block each); the lever is kept for the stress tests |
 
 Cities are `0..3` = CHICAGO, HAVANA, VEGAS, RIO. Models are `0..12`.
 

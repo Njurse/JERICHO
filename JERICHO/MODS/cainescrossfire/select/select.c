@@ -14,10 +14,10 @@
 // city and its mission layout and makes it the match's current arena, so its
 // authored spawn points and its barrier apply.
 //
-// Restricting the vehicle list to the arena's own city is deliberate: the engine
-// imports from only ONE foreign city per level (models.c, InitCarImport), so a
-// car belongs to the city it is picked in - that is also what makes its
-// geometry load from its own city.
+// The carousel shows EVERY car in the registry, whatever the arena: a pick is
+// placed from its OWN city (profiles_map.c sets that slot's modelSource), and
+// the engine holds as many source cities as the set names - so a foreign car
+// loads its own geometry wherever it is driven.
 //
 // Raised by -ccmenu (or CC_MENU): the flow opens cc.arena, and the main menu's
 // Deathmatch entry (the replaced Undercover button) opens it too.
@@ -339,9 +339,8 @@ static void cd2SelBuildMenus(void)
 	{
 		gCcVehSel[city] = 0;
 
-		// the carousel shows EVERY car, whatever the arena: only one car is ever
-		// picked, so at most one foreign city is imported for it (the engine's
-		// one-guest-city rule), and the arena only sets the level.
+		// the carousel shows EVERY car, whatever the arena: the arena only sets
+		// the LEVEL, and a picked car is placed from its own city.
 		for (i = 0; i < CD2_VEH_COUNT; i++)
 			gCcVehList[city][i] = i;
 

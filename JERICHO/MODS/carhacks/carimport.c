@@ -27,7 +27,9 @@ typedef struct CHK_IMPORT_ENTRY
 } CHK_IMPORT_ENTRY;
 
 static CHK_IMPORT_ENTRY gChkSet[CHK_IMPORT_MAX_SLOTS];
-static int gChkGuestCity = -1;		/* the set's single foreign city, -1 = none */
+static int gChkGuestCity = -1;		/* the FIRST guest city the set names, -1 = none
+					 * (a set may name several: see chkImportSetSlot) */
+static int gChkGuestCityCount;		/* how many DISTINCT guest cities it names */
 static int gChkSetVersion;		/* bumps on every change */
 
 static CHK_CAR_ID gChkPick;		/* the player's pick */
@@ -52,6 +54,7 @@ void chkImportReset(void)
 	}
 
 	gChkGuestCity = -1;
+	gChkGuestCityCount = 0;
 	gChkSetVersion++;
 }
 
@@ -114,45 +117,48 @@ const char* chkCityName(int city)
 	return (city < CHK_CITY_COUNT_LIMIT) ? LevelNames[city] : "?";
 }
 
-/* The guest-city gate: at most ONE foreign city in the set. */
-static int chkClaimGuestCity(int city, int slot)
+/* The set may name AS MANY source cities as it has slots.
+ *
+ * This used to be a gate - "at most ONE foreign city" - on the belief that the
+ * engine holds one source city per level. It does not: mission.c keeps
+ * gCarModelSource[] per resident SLOT and every consumer (models.c, cars.c,
+ * texture.c, players.c) reads it per slot, so a set drawn from three cities
+ * builds and spawns exactly like a set drawn from one. Measured 2026-10-03 on
+ * CHICAGO with HAVANA, VEGAS and RIO at once: 6/6 slots built and spawned, each
+ * guest city in its own civ_clut block (8..15 / 16..23 / 24..31), base CLUT
+ * column 180 rows used / 30 free - the same numbers as the two-city run.
+ *
+ * The thing that refused the third city was this function, not the engine. */
+
+/* Recompute the set's guest cities: the FIRST one (still reported in the
+ * session's agreed-set header, which predates per-slot cities) and how many
+ * distinct ones it names. */
+static void chkImportRefreshGuestCity(void)
 {
-	if (city < 0)
-		return 1;
+	int i, j;
 
-	if (gChkGuestCity < 0)
+	gChkGuestCity = -1;
+	gChkGuestCityCount = 0;
+
+	for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
 	{
-		gChkGuestCity = city;
-		return 1;
+		int city = gChkSet[i].used ? gChkSet[i].city : -1;
+
+		if (city < 0)
+			continue;
+
+		if (gChkGuestCity < 0)
+			gChkGuestCity = city;
+
+		for (j = 0; j < i; j++)
+		{
+			if (gChkSet[j].used && gChkSet[j].city == city)
+				break;		/* named earlier: not another distinct city */
+		}
+
+		if (j == i)
+			gChkGuestCityCount++;
 	}
-
-	if (gChkGuestCity == city)
-		return 1;
-
-	/* MEASUREMENT LEVER (two_guest_cities = 1): let a second foreign city through
-	 * so the ENGINE's behaviour with one can be observed, instead of only this
-	 * gate's refusal. This is not a supported mode - the level is read from one
-	 * city (models.c), the palette upload keys off GetCarImportCity()
-	 * (cars.c:1623) and the CLUT band is nearly full (VRAM.md) - it exists to say
-	 * what a second city actually costs. See MP_ADAPTER.md's hotload hand-off. */
-	if (jer_config_get_int("carhacks", "two_guest_cities", 0))
-	{
-		printInfo("[carhacks] import: slot %d also from %s (two_guest_cities lever - "
-			"measuring a SECOND source city, not supported)\n",
-			slot, chkCityName(city));
-
-		return 1;
-	}
-
-	/* Player-facing: a car was DROPPED, so say so on screen as well as in the log.
-	 * jer_error() logs the whole message verbatim (prefixed "[error] "), so both
-	 * the "[carhacks]" tag and the "already reads cars from" text the mp harness
-	 * matches are preserved. */
-	jer_error("[carhacks] import: slot %d wants %s but this level already reads cars from %s - "
-		"the engine holds ONE source city per level, so the entry is dropped",
-		slot, chkCityName(city), chkCityName(gChkGuestCity));
-
-	return 0;
 }
 
 int chkImportSetSlot(int slot, CHK_CAR_ID id)
@@ -168,13 +174,12 @@ int chkImportSetSlot(int slot, CHK_CAR_ID id)
 
 	city = chkCarIdCity(id);
 
-	if (!chkClaimGuestCity(city, slot))
-		return 0;
-
 	e->used = 1;
 	e->model = chkCarIdModel(id);
 	e->city = city;
 	gChkSetVersion++;
+
+	chkImportRefreshGuestCity();
 
 	return 1;
 }
@@ -192,6 +197,8 @@ int chkImportSetSlotModel(int slot, int model)
 	 * different body in a civilian slot */
 	gChkSetVersion++;
 
+	chkImportRefreshGuestCity();
+
 	return 1;
 }
 
@@ -207,6 +214,12 @@ CHK_CAR_ID chkImportSlotId(int slot)
 int chkImportGuestCity(void)
 {
 	return gChkGuestCity;
+}
+
+/* How many distinct source cities the set names (0 = none, the level's own). */
+int chkImportGuestCityCount(void)
+{
+	return gChkGuestCityCount;
 }
 
 int chkImportSetVersion(void)
@@ -249,12 +262,12 @@ int chkImportLocalPickModel(void)
  * -------------------------------------------------------------------------
  *
  * `skipGuestEntries` drops the "import" entries but STILL applies the traffic
- * knock. The caller sets it when the player picked a car from another city in
- * the car-select menu: the engine reads ONE source city per level, so the
- * config's guest-city entries would claim it first and make that pick
- * impossible. The knock picks a native model into a civilian slot
- * (chkImportSetSlotModel) and never claims a city, so it does not conflict and
- * is kept. */
+ * knock. It is a caller's choice ("ignore the config's car entries"), not a
+ * conflict guard: a set may name as many source cities as it has slots, and the
+ * player's pick is applied AFTERWARDS and claims only its own slot, so a pick
+ * from one city and config entries from another coexist. The caller passes 0. The
+ * knock picks a native model into a civilian slot (chkImportSetSlotModel) and
+ * claims no city, so it never conflicts. */
 
 int chkImportLoadConfig(const char* section, int count, int skipGuestEntries)
 {
@@ -449,7 +462,7 @@ void chkImportDump(int level)
 			entries++;
 	}
 
-	printInfo("[carhacks] import set: level %s, guest city %s, %d entr%s, version %d\n",
-		chkCityName(level), chkCityName(gChkGuestCity),
+	printInfo("[carhacks] import set: level %s, guest cities %d, %d entr%s, version %d\n",
+		chkCityName(level), gChkGuestCityCount,
 		entries, (entries == 1) ? "y" : "ies", gChkSetVersion);
 }

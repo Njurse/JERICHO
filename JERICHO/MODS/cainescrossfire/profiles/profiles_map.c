@@ -239,15 +239,16 @@ static void cd2VehClaimSlot(int profileId, int slot)
 
 // Find a resident slot for a fielded profile's model.
 //
-// The engine can import from only ONE foreign city per level (InitCarImport
-// holds a single city, models.c), and a native model needs no import at all -
-// the level's own lump carries every model 0..12. So:
+// The set carries a source city PER resident slot (carhacks; models.c keeps
+// gCarModelSource[] and a CAR_IMPORT per city), and a native model needs no
+// import at all - the level's own lump carries every model 0..12. So:
 //
 //   * a NATIVE profile (originCity == the level) reuses a resident slot that
 //     already holds its model; failing that it takes an empty spare slot, the
 //     level's own lump supplying the geometry (modelSource stays -1);
-//   * a FOREIGN profile is placed only when its city is the level's one guest
-//     city, into an empty spare slot with modelSource set for the import.
+//   * a FOREIGN profile takes an empty spare slot with modelSource set to its
+//     OWN city, so the geometry comes from there. Any number of foreign cities
+//     can be fielded at once: there is no one-guest-city limit.
 //
 // Civilian slots (0..4) are never repurposed: they carry the level's own models
 // and the ambient traffic, and stealing one is what made the level's cars look

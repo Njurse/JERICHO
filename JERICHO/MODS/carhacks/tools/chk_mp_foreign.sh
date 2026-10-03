@@ -29,11 +29,10 @@
 #   run a match where the players deliberately want different cars.
 #
 # WHAT TO EXPECT (measured, not hoped for)
-#   The engine holds ONE foreign city per level (models.c: InitCarImport keeps the
-#   first qualifying slot's city, and every importer getter is gated on it), so
-#   each machine loads the level's city + ITS ONE foreign city. Three cities are
-#   therefore in play across the pair, not per machine. The report prints each
-#   side's "cross-city: car data from <CITY>" to show exactly which loaded.
+#   A level holds as many source cities as its set names: the engine keeps a source
+#   city PER resident slot (models.c/gCarModelSource) and every importer reads it
+#   per slot, so one machine can hold all four cities at once. The report prints
+#   each side's "cross-city: car data from <CITY>" lines to show which loaded.
 #
 #   --host-both additionally asks the HOST for a second foreign city
 #   (`import = 5:A:8, 6:B:9`). carhacks REFUSES that loudly (one guest city), and

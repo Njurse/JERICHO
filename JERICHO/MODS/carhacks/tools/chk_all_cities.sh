@@ -18,8 +18,8 @@
 #   * and any fault.
 #
 # Slots: the level keeps its own cars in 0..3, the three other cities take 4, 5 and
-# 6, and 7 stays the level's special body. two_guest_cities is the measurement
-# lever that lets more than one foreign city past the carhacks gate.
+# 6, and 7 stays the level's special body. Each slot carries its own source city,
+# so the set mixes three cities directly.
 #
 # This is the carhacks test - it needs only the carhacks module. It writes
 # JERICHO/CONFIG/carhacks.ini and restores it, and the run self-terminates
@@ -97,7 +97,6 @@ fail=0
 for host in 0 1 2 3; do
 	{
 		printf 'cross_city_vehicles = 1\n'
-		printf 'two_guest_cities = 1\n'
 		printf 'spawn_imports = 1\n'
 		printf 'import ='
 		first=1

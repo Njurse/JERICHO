@@ -23,9 +23,10 @@
  * when the set is applied to a level. */
 void chkImportReset(void);
 
-/* Put `id` into `slot`. Returns 1 if the set changed; 0 = refused (bad range, or
- * a SECOND guest city - the engine reads the whole level from ONE foreign city
- * per level, see models.c/gCarModelSource). */
+/* Put `id` into `slot`. Returns 1 if the set changed; 0 = refused (bad range).
+ * The set may name AS MANY source cities as it has slots -- the engine keeps a
+ * source city PER SLOT (models.c/gCarModelSource), so a mix builds and spawns
+ * like any other set. */
 int chkImportSetSlot(int slot, CHK_CAR_ID id);
 
 /* Put only a model number into `slot`, leaving the source alone (what the
@@ -52,8 +53,10 @@ void chkImportSetEngineModels(int* models, int count);
  * another module claimed? */
 int chkImportSlotFree(int slot);
 
-/* The one foreign city the set reads from, or -1 (the level's own city). */
+/* Distinguishable source cities the set names, for logging: the FIRST guest city
+ * (-1 = none, the level's own) and how many distinct ones there are. */
 int chkImportGuestCity(void);
+int chkImportGuestCityCount(void);	/* distinct source cities the set names */
 
 /* Bumps on every change, so a peer can tell whether it needs the whole set. */
 int chkImportSetVersion(void);

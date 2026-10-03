@@ -193,9 +193,10 @@ static int ChkOnCarDataSource(void* ud, void* args)
 
 		/* A PICK from the car-select menu that names another city is the player's own
 		 * decision about where this level reads its car data; source_city is a
-		 * launcher/test lever. Letting both stand would give the level TWO source
-		 * cities - the one thing the engine cannot do, and the conflict the module
-		 * exists to prevent - so the pick wins. */
+		 * launcher/test lever. This value (sourceLevel) is the one that IS level-wide
+		 * - which city's LEVELS folder is read; the per-slot cities are separate
+		 * (a->modelSource), so the two no longer conflict and the pick simply wins for
+		 * the level-wide value. */
 		{
 			int pickCity = chkImportLocalPickCity();
 
@@ -224,24 +225,13 @@ static int ChkOnCarDataSource(void* ud, void* args)
 		 * received the session's agreed set the HOST is authoritative, so the
 		 * config stands down; on the host the config IS the authority.
 		 *
-		 * A pick from the car-select menu that names ANOTHER city is a decision
-		 * about the level's ONE source city, so it replaces the config's guest-city
-		 * entries - otherwise a leftover `import = slot:city:model` claims the
-		 * guest city first and the player's own pick is refused ("this level already
-		 * reads cars from CHICAGO" for a level they just picked a HAVANA car in).
-		 *
-		 * Only a genuine conflict stands the entries down: a pick of the LEVEL'S OWN
-		 * car imports nothing (chkImportApplyPick returns early), and carselect
-		 * defaults the roster city to the level, so merely opening the menu and
-		 * riding must not disable the config. The traffic knock is never dropped -
-		 * it picks a native model and claims no city. */
-		{
-			int pickCity = chkImportLocalPickCity();
-			int dropGuestEntries = (pickCity >= 0 && pickCity != a->level);
-
-			if (crossCity && !chkNetHasAgreedSet())
-				chkImportLoadConfig("carhacks", a->count, dropGuestEntries);
-		}
+		 * The player's pick is applied AFTERWARDS and claims only ITS OWN slot, so a
+		 * pick from one city and config entries from another coexist. They used to
+		 * conflict: a set could name only one foreign city, so whichever claimed it
+		 * first refused the other ("this level already reads cars from CHICAGO" for a
+		 * level the player had just picked a HAVANA car in). */
+		if (crossCity && !chkNetHasAgreedSet())
+			chkImportLoadConfig("carhacks", a->count, 0);
 
 		chkImportApplyPick(a->level, a->count);
 
@@ -251,8 +241,8 @@ static int ChkOnCarDataSource(void* ud, void* args)
 		/* and what OUR players drive: folding a peer's car in here means the level
 		 * reads that vehicle, so a peer is drawn as their own car rather than as
 		 * whatever this level happens to hold in the slot they were adopted into.
-		 * A car from a second foreign city is refused by the one-guest-city rule
-		 * (loudly), which is the engine's limit, not a choice made here. */
+		 * A peer's car may come from any city -- the set is per-slot, so it adds to
+		 * whatever the config and the pick already named. */
 		chkNetFoldPeerCars();
 
 		chkImportApplyToCarData(a->count, a->models, a->modelSource);

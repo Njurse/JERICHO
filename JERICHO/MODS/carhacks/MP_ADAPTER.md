@@ -95,14 +95,14 @@ picker, so the local car always comes out palette 0 and none of this would ever
 fire. `CHK_FORCE_PLAYER_PALETTE=<n>` sets it, the way `CHK_FORCE_CAR` drives the
 menu.
 
-**The limit - one guest city's SET.** `chkNetFoldPeerCars()` folds every
-peer's car into the level's import set, so a peer is drawn as their own vehicle
-where the engine can hold it. The geometry side holds several cities at once
-(`gCarImports[4]`, one block per slot) and the palette bank holds three
-(`civ_clut` rows 8..31), but the import SET still admits one foreign source city
-by default and refuses a second city's entry loudly (below). A car from the level's own city is skipped - it needs no import,
-and skipping it keeps an identity that has not settled yet from claiming a spare
-slot with the level's own model 0.
+**The set holds as many cities as it names.** `chkNetFoldPeerCars()` folds every
+peer's car into the level's import set, so a peer is drawn as their own vehicle.
+The geometry side holds several cities at once (`gCarImports[4]`, one source city
+per slot) and the palette bank holds three (`civ_clut` rows 8..31) - and the set
+itself now names as many source cities as it has slots: the one-guest-city gate is
+gone. A car from the level's own city is skipped - it needs no import, and
+skipping it keeps an identity that has not settled yet from claiming a spare slot
+with the level's own model 0.
 
 **Why that is not the whole fix.** A level reads its car files ONCE
 (`JER_EVENT_CAR_DATA_SOURCE` → `ProcessCarModelLump`), and a joiner's car is only
@@ -112,11 +112,11 @@ unit.
 
 ### The hotload hand-off (next unit)
 
-**Measured first, BEFORE the per-city import block landed.** The log below is
-from that build, when a second city's geometry really was absent; the per-city
-block has since removed that specific symptom, and this is kept as the record of
-what the measurement looked like. The gate was opened by hand (`two_guest_cities = 1`, a measurement lever in
-`carimport.c`) so the ENGINE finally saw a set naming two cities:
+**Kept as the record of the measurement that started this.** It was taken BEFORE
+the per-city import block landed, when a second city's geometry really was absent,
+and with the one-source-city gate opened by hand (a measurement lever that has
+since been deleted along with the gate itself) so the ENGINE finally saw a set
+naming two cities:
 
 ```
 [carhacks] import: slot 5 <- model 8 from HAVANA
@@ -150,9 +150,9 @@ has to do:
 
 ## Authority and lifecycle
 
-The **host is authoritative**, and the reason is the import set's one-guest-city
-rule: `chkClaimGuestCity` admits one foreign source city per level, so the host's
-choice has to win for everyone. `mp_agree_imports = 0` (`carhacks.ini`) turns the whole agreement off —
+The **host is authoritative**, so every machine draws the same cars. That is no
+longer a limit being worked around: a set may name as many source cities as it has
+slots (see `chkImportSetSlot`), and the host's set simply wins. `mp_agree_imports = 0` (`carhacks.ini`) turns the whole agreement off —
 every machine keeps its own set, which is what a session where the players
 deliberately want different cars needs, and what the three-city stress test below
 uses.
@@ -256,13 +256,18 @@ host, Rio on the client), **each player spawning in its own imported car** —
 and the session live (mp's `adopt: player 1 snap …` counter climbing throughout).
 
 The same script with `--host-both` asks the host for a second foreign city
-(`import = 5:1:8, 6:3:9`) and shows the limit enforced loudly rather than silently:
+(`import = 5:1:8, 6:3:9`). That used to be REFUSED loudly - the entry dropped and
+only one car imported:
 
 ```
 host  [carhacks] import: slot 6 wants RIO but this level already reads cars from HAVANA -
       the engine holds ONE source city per level, so the entry is dropped
 host  [carhacks] import set: level CHICAGO, guest city HAVANA, 1 entry, version 2
 ```
+
+With the gate gone both load. Measured 2026-10-03 on CHICAGO: a 5-entry set naming
+HAVANA, VEGAS and RIO reported `import set: level CHICAGO, guest cities 3, 5
+entries`, imported all 5, and each slot built its geometry from its own city.
 
 ### Every player's car, on every machine
 
@@ -300,11 +305,9 @@ seat b  peer 0 drives HAVANA model 8, but this machine draws RIO model 9 in slot
 [pair] verdict: host_joins=1/1 joiners_accepted=1/1 dumps=0 -> PASS
 ```
 
-One line per change, not per packet — the state stream is continuous. The fold that
-would instead LOAD the peer's car is refused by the engine's one-city rule when the
-cities differ (`import: slot N wants RIO but this level already reads cars from
-HAVANA … dropped`), which is the honest limit, and `chk_suite.sh`'s single-import rows
-stay clean.
+One line per change, not per packet — the state stream is continuous. The fold adds
+the peer's car to the set like any other entry, from whatever city it belongs to
+(`chkNetFoldPeerCars`), and `chk_suite.sh`'s single-import rows stay clean.
 
 ### Not verified
 

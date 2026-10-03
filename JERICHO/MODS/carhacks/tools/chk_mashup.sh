@@ -23,9 +23,10 @@
 # reads, and slot 7, which is SPECIAL_CAR_SLOT and which civ_ai.c forces for the
 # limo. Those two are the ones most likely to fault.
 #
-# KNOWN, BY DESIGN: the imported cars' COLOURS ARE WRONG. Three imports overflow the
-# VRAM CLUT column (JERICHO-VRAM reports 0 safe free), which the band-placement unit
-# fixes. This tool is for judging GEOMETRY, PLACEMENT and MIX -- not colour.
+# COLOUR: the imported cars get their OWN city's palettes. Each guest city owns a
+# civ_clut block (rows 8..15 / 16..23 / 24..31, one per city), and a 4-city run
+# measured the base CLUT column at 180 rows used / 30 free (2026-10-03), so
+# geometry, placement AND colour are all worth judging here now.
 #
 #   ./chk_mashup.sh                     host chicago, all four cities, 60 frames
 #   ./chk_mashup.sh rio 2               host RIO, two cities only
@@ -202,7 +203,6 @@ cd "$BIN" || exit 1
 
 {
 	printf 'cross_city_vehicles = 1\n'
-	printf 'two_guest_cities = 1\n'		# the guest gate allows ONE foreign city by default
 	printf 'spawn_imports = 1\n'
 	[ -n "${CHK_SPACING:-}" ] && printf 'spawn_spacing = %s\n' "$CHK_SPACING"
 	printf 'import ='
@@ -281,7 +281,6 @@ echo "carhacks.ini restored"
 
 if [ "$fail" -eq 0 ]; then
 	echo "== ${CITY_NAME[$host]}: $MIX cities mixed over $want slot(s), every one BUILT and SPAWNED =="
-	echo "   (the imported cars' colours are wrong until the CLUT band placement lands)"
 else
 	echo "== ${CITY_NAME[$host]}: PROBLEMS above =="
 fi
