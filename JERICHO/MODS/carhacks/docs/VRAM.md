@@ -388,45 +388,15 @@ longer a claimant there. The moves that would close it remain, in order of measu
 
 ---
 
-## 7. What was actually wrong, and what is still open
+## 7. Current state, and what is still open
 
-This section used to be "page IDENTITY is the remaining bug", built on one `chk_suite.sh`
-line. Both halves of that have changed, and the honest version is worth keeping because the
-first one was a **false alarm** and the second was **not about identity at all**.
-
-### 7.1 The INV2 "set 1" finding was a false alarm - from a capped log
-
-The reported failure was:
-
-    FAIL  INV2 set 1 is in NEITHER the source cities' carTpages nor their specTpages and the
-          pin did NOT refuse a host row
-
-INV2's rule is that a set no source city banks must have a LOGGED refusal. The engine's
-refusal path was correct - the message was simply capped:
-
-    if (sPinRowLeaks++ < 4)        // texture.c, CarImportPin
-        printInfo("cross-city: pin - set %d resolves to civ_clut row %d ... not re-pointing");
-
-and in the 3-city mix, set 1 is pinned **last**, so its (correct) refusal was the FIFTH and
-was never printed. **An assertion whose output can be suppressed by volume is not an
-assertion**, and a gate that reads refusals out of a log is exactly the thing that gets
-fooled. Every refusal is logged now and the count is in the census (`palette rows REFUSED`),
-so the mix row's INV2 failure became the correct WARN.
-
-### 7.2 "Does the host use this set" was too narrow - and it turned out not to matter
-
-The import's re-index gate asked only whether a set was one of the host's CAR pages
-(`carTpages`/`specTpages`) or inside the 19-entry resolved slot table. It now asks
-`HostUsesTPage(set)` - the level's own page list (`permlist`, where **pedestrians and
-scenery** live), its special-page list, the host car tables and the resolved slot table -
-and `hostOwns` in the log names WHICH list matched.
-
-Measured, so the claim is not left as a scare: it catches **zero** sets the narrow test
-missed, on all four hosts (HAVANA, LASVEGAS, RIO, CHICAGO). The import was never repainting
-the host's pedestrian or scenery pages. The wider test is still the right one - it is the
-invariant, stated where the index is chosen (`FindFreeSetIndex`) - but it did not fix a bug,
-and the field report of mangled host peds needed a different explanation. It got one, in
-§0: the guest cities' palette tables were in the base CLUT column.
+*(Two earlier "remaining bug" entries are folded into the code and no longer read as
+open, so they are recorded here in one line rather than as their own subsections: INV2's
+"set 1 has no refusal" was a capped log line — every refusal is logged now and counted in
+`palette rows REFUSED`, and the lesson "an assertion whose output can be suppressed by
+volume is not an assertion" is the reason `JERICHO_DIAG_PAL` is capped per city — and the
+"does the host use this set" gate was widened to `HostUsesTPage` and then measured to catch
+zero additional sets, which pointed the mangled-host-peds report at §0 instead.)*
 
 ### 7.3 What is still open
 

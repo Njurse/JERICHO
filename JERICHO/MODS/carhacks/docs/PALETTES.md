@@ -331,6 +331,14 @@ missing.
 - The session log is `JERICHO.log` in this build, **not** `REDRIVER2.log`; a stale
   `REDRIVER2.log` can sit in the same folder.
 
+## History — the fix log (read as the trail, not the state)
+
+The dated sections below are the development history: each records what was measured
+and fixed at that point, some of which a later section supersedes. The **current** open
+state is `VRAM.md` §7.3 (the one thing still imperfect is a spawned imported car's colour
+*variants*); the running summary of what the code does *today* is §1–§8 above. Read the
+trail only when a "why" needs the original measurement.
+
 ## The import's model rows and its lump rows are disjoint (measured 2026-10-01)
 
 `civ_clut` rows are now instrumented with the colour columns each row actually got
