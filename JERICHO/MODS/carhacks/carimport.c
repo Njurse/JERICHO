@@ -17,6 +17,7 @@
 #include "system.h"		/* LevelNames[] for the log */
 #include "mission.h"		/* residentCarModels[], JerSetCarModelSource */
 #include "models.h"		/* InitCarImport, JerHotLoadCarModel */
+#include "texture.h"		/* CarImportApplyPaletteForCity */
 
 #include "carid.h"
 #include "carimport.h"
@@ -598,6 +599,12 @@ int chkImportHotLoad(int slot)
 	}
 
 	InitCarImportMidLevel();
+
+	/* A city read in mid-level needs its palette lump deferred too: the rows are
+	 * uploaded on the first draw of a car that names them (CarImportPin ->
+	 * ProcessImportedPaletteRows), and without this the hot-loaded car would be
+	 * coloured by whichever city the level already had. */
+	CarImportApplyPaletteForCity(GetCarModelSourceCity(slot));
 
 	return JerHotLoadCarModel(slot);
 }

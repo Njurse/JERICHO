@@ -2499,6 +2499,38 @@ void ProcessImportedPalette(void)
 	}
 }
 
+// JERICHO: apply ONE city's imported car palettes, for a city read in MID-LEVEL (the
+// hot load). ProcessImportedPalette() above is a level-start function: it clears the
+// whole row map and walks every held city. This does neither and touches only `city`:
+// its palette lump is deferred, and the rows themselves are still uploaded lazily on
+// the first draw of a car that names them (ProcessImportedPaletteRows, from
+// CarImportPin) -- exactly as for a level-load import, so a hot-loaded car's colours
+// come from its own city rather than from whichever city the level already had.
+// Returns 1 when a lump was deferred, 0 when there is nothing to do.
+int CarImportApplyPaletteForCity(int city)
+{
+	int size = 0;
+	char* pallet;
+
+	if (city < 0 || city >= 4 || city == GameLevel)
+		return 0;			// the level's own palettes are already in place
+
+	if (!CarImportCityHeld(city))
+		return 0;			// no data read in for it: nothing to apply
+
+	pallet = GetCarImportPalletForCity(city, &size);
+
+	if (pallet == NULL || size <= 0)
+		return 0;
+
+	ProcessPalletLumpForCity(pallet, size, city);
+
+	printInfo("cross-city: %s car palettes deferred MID-LEVEL for the hot load\n",
+		LevelNames[city]);
+
+	return 1;
+}
+
 // [D] [T]
 void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR_DATA* cp, int detail)
 {

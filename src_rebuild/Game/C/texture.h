@@ -84,6 +84,12 @@ extern void CarSetRemapEnable(int on);
 // JERICHO-HOOK: merge a cross-city import's car palettes (civ_clut) so its
 // vehicles read their own colours. No-op unless a module asked for an import.
 extern void ProcessImportedPalette(void);
+
+// JERICHO: the mid-level counterpart, for ONE city read in after the level loaded (the
+// hot load). Defers that city's car-palette lump; the rows still upload lazily on the
+// first draw of a car that names them. Touches no other city, and clears nothing --
+// ProcessImportedPalette must not be used for this (see cars.c).
+extern int CarImportApplyPaletteForCity(int city);
 // JERICHO-HOOK: the same merge, but uploading ONLY these civ_clut rows (indexed by row,
 // CIV_CLUT_ROWS entries). The import's whole table is 228 CLUTs = 57 column rows, most
 // of which belong to car slots the imported model never draws from. Called from
