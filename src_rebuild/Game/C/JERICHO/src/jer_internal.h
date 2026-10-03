@@ -66,6 +66,10 @@ typedef struct JER_MODULE
 	int metadataSet;		/* module registered metadata via ctx */
 	int sdkVersion;			/* from ctx->jer_register_module */
 	int valid;				/* passes SDK + dependency validation */
+	char refusal[96];		/* WHY valid==0, in player-facing words - empty when fine.
+					 * This is what the notice and the Mods screen say, so a
+					 * refusal is legible from the menu rather than only in the
+					 * log (where it used to be, and nobody reads the log). */
 	int enabledFromModlist;	/* 1 = modlist.ini decided, 0 = mod.toml default */
 	int isDllAddon;			/* mod.toml declares runtime = "dll" (loaded, not compiled in) */
 } JER_MODULE;
@@ -81,6 +85,12 @@ typedef struct JER_MODULE
  * (module listed but not activatable). Returns the number of modules.
  */
 int jer_loader_scan(const char* rootDir, JER_MODULE* table, int max);
+
+/* The `dependencies` a compiled-in (deep) module declares in its own mod.toml. The
+ * generated registry cannot carry them, so without this a deep module's manifest was
+ * never read and its dependency check could never fire. Returns 1 when a list was
+ * found. */
+int jer_loader_read_deps(const char* rootDir, const char* id, char* out, int max);
 
 /* Unload every loaded binary (FreeLibrary/dlclose). Call before rescan. */
 void jer_loader_unload(JER_MODULE* table, int count);

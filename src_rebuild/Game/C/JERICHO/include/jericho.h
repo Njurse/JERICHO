@@ -443,6 +443,12 @@ typedef struct JER_MODULE_INFO
 	const char* name;
 	const char* version;
 	int enabled;
+
+	/* Non-NULL when the module was REFUSED this boot - a missing dependency or an
+	 * SDK mismatch - and carries the reason in player-facing words. A refused
+	 * module always lists as disabled: enabling it again cannot help until the
+	 * thing it needs is there, so the manager shows why instead of offering it. */
+	const char* refusal;
 } JER_MODULE_INFO;
 
 /* Number of compiled-in modules (the generated registry). */

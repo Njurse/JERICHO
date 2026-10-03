@@ -297,6 +297,12 @@ static void jerSnapshotModules(const char* rootDir)
 		m->entry = jer_registry_modules[i].entry;
 		m->defaultEnabled = jer_registry_modules[i].defaultEnabled;
 		m->valid = 1;
+
+		/* The registry carries no manifest data, so the module's `dependencies` come
+		 * from its own mod.toml. Nothing else read them: a deep module could declare
+		 * what it needs and the check would still see an empty list. */
+		jer_loader_read_deps(rootDir, m->id, m->deps, sizeof(m->deps));
+
 		gModuleCount++;
 	}
 
@@ -448,7 +454,14 @@ static void jerCtxRegisterModule(JERICHO_CONTEXT* ctx,
 	if (description != NULL)
 		snprintf(m->description, sizeof(m->description), "%s", description);
 
-	if (deps != NULL)
+	/* mod.toml's `dependencies` WINS. The loader read it before the module ever
+	 * registered, and this used to copy unconditionally - so a module that declares
+	 * its needs in mod.toml and passes "" here (the usual case) had them wiped the
+	 * moment it registered. That is why the dependency check below never fired for
+	 * anything: by the time it ran, every module looked dependency-free. The
+	 * argument is the module's own compile-time declaration and is only used when
+	 * the manifest is silent. */
+	if (deps != NULL && deps[0] != 0)
 		snprintf(m->deps, sizeof(m->deps), "%s", deps);
 
 	m->sdkVersion = sdkVersion;
@@ -751,8 +764,17 @@ static void jerActivateModules(const char* rootDir)
 
 		if (m->sdkVersion != 0 && m->sdkVersion != JERICHO_SDK_VERSION)
 		{
+			snprintf(m->refusal, sizeof(m->refusal), "%s needs a newer JERICHO (it wants SDK v%d, this build is v%d).",
+				m->name[0] != 0 ? m->name : m->id, m->sdkVersion, JERICHO_SDK_VERSION);
+
 			jerLog("[jericho] module \"%s\" needs SDK v%d but host is v%d — DISABLED\n",
 				m->id, m->sdkVersion, JERICHO_SDK_VERSION);
+
+			/* a refusal the player can only discover by reading the log is not a
+			 * refusal: say it on the screen, in the same channel a bad command-line
+			 * argument uses. */
+			jer_error("%s", m->refusal);
+
 			m->valid = 0;
 			continue;
 		}
@@ -760,8 +782,11 @@ static void jerActivateModules(const char* rootDir)
 		if (m->deps[0] != 0)
 		{
 			char dep[40];
+			char missingName[40];	/* WHICH dependency was missing, for the refusal */
 			const char* p = m->deps;
 			int missing = 0;
+
+			missingName[0] = 0;
 
 			while (*p != 0 && !missing)
 			{
@@ -778,7 +803,10 @@ static void jerActivateModules(const char* rootDir)
 					depModule = jerFindModule(dep);
 
 					if (depModule == NULL || !depModule->enabled || !depModule->activated)
+					{
 						missing = 1;
+						snprintf(missingName, sizeof(missingName), "%s", dep);
+					}
 				}
 
 				p = comma != NULL ? comma + 1 : p + strlen(p);
@@ -786,7 +814,12 @@ static void jerActivateModules(const char* rootDir)
 
 			if (missing)
 			{
+				snprintf(m->refusal, sizeof(m->refusal), "%s cannot load without %s.",
+					m->name[0] != 0 ? m->name : m->id, missingName);
+
 				jerLog("[jericho] module \"%s\" DISABLED: missing dependency (\"%s\")\n", m->id, m->deps);
+				jer_error("%s", m->refusal);
+
 				m->valid = 0;
 				continue;
 			}
@@ -980,6 +1013,7 @@ int jer_module_list(JER_MODULE_INFO* out, int max)
 			out[n].id = m->id;
 			out[n].name = m->name != NULL ? m->name : m->id;
 			out[n].version = m->version[0] != 0 ? m->version : "?";
+			out[n].refusal = m->refusal[0] != 0 ? m->refusal : NULL;
 			out[n].enabled = modlist.items[i].enabled && m->valid;
 			n++;
 		}
@@ -1003,6 +1037,7 @@ int jer_module_list(JER_MODULE_INFO* out, int max)
 			out[n].id = gModules[i].id;
 			out[n].name = gModules[i].name != NULL ? gModules[i].name : gModules[i].id;
 			out[n].version = gModules[i].version[0] != 0 ? gModules[i].version : "?";
+			out[n].refusal = gModules[i].refusal[0] != 0 ? gModules[i].refusal : NULL;
 			out[n].enabled = gModules[i].defaultEnabled && gModules[i].valid;
 			n++;
 		}

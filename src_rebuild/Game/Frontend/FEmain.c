@@ -4765,7 +4765,8 @@ int JerichoModsScreen(int bSetup)
 			btn->s_x = 370;
 			btn->s_y = 180 + i * 36;
 
-			snprintf(btn->Name, sizeof(btn->Name), "%s [%s]", mods[pageStart + i].name, mods[pageStart + i].enabled ? "ON" : "OFF");
+			snprintf(btn->Name, sizeof(btn->Name), "%s [%s]", mods[pageStart + i].name,
+				mods[pageStart + i].refusal != NULL ? "BLOCKED" : (mods[pageStart + i].enabled ? "ON" : "OFF"));
 
 			/* u/d are 1-based button indices (0 = no move); they are filled in
 			 * from the vertical chain walk at the end of this block */

@@ -212,6 +212,40 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 	/* a missing id falls back to the folder name (set by the caller) */
 }
 
+/* The dependency list a COMPILED-IN (deep) module declares in its mod.toml.
+ *
+ * The generated registry can only carry id/entry/default-enabled, and the loader's
+ * own manifest parse below is reached only by the runtime-DLL scan - so a deep
+ * module's `dependencies` was read by NOTHING. A module could declare what it needs
+ * in its manifest and the check would never see it: every deep module looked
+ * dependency-free, which is why the refusal never fired for anything.
+ *
+ * Reads the manifest for that one field and nothing else (into a scratch module, so
+ * none of jerParseModToml's other fields leak into the live table).
+ * Returns 1 when a list was found. */
+int jer_loader_read_deps(const char* rootDir, const char* id, char* out, int max)
+{
+	JER_MODULE scratch;
+	char path[512];
+
+	if (rootDir == NULL || id == NULL || out == NULL || max <= 0)
+		return 0;
+
+	out[0] = 0;
+
+	memset(&scratch, 0, sizeof(scratch));
+	snprintf(path, sizeof(path), "%s/MODS/%s/%s", rootDir, id, JER_MODTOML);
+
+	jerParseModToml(path, &scratch);
+
+	if (scratch.deps[0] == 0)
+		return 0;
+
+	snprintf(out, (size_t)max, "%s", scratch.deps);
+
+	return 1;
+}
+
 /* ------------------------------------------------------------------ */
 /* Binary loading                                                      */
 /* ------------------------------------------------------------------ */
