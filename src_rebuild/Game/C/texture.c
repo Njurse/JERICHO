@@ -1606,6 +1606,15 @@ int CarImportPinDstSet(int set)
 // to pin anyway.
 #define CAR_PIN_MAX 16
 
+// JERICHO: the pool must be able to hold EVERY pin. That is what makes the world-side
+// fallback in CarPageFindSlot unreachable rather than merely unlikely: a pin takes a lower
+// half pool page first, and there are never more pins than pool pages (16 <= 30). If this
+// ever stops holding, an import would have to evict a WORLD texture for its own page - the
+// "buildings show the car's texture" corruption - so fail the build rather than ship it.
+#if CAR_PIN_MAX > JER_POOL_PAGES
+#error "CAR_PIN_MAX exceeds the lower half pool (JER_POOL_PAGES): an import could evict a world page"
+#endif
+
 static int sPinCount;
 static int sPinDropped;			// JERICHO: pages asked for after the table filled - see CarPinRecord
 
@@ -1646,6 +1655,8 @@ static int sPinPreferred[CAR_PIN_MAX];		// the rectangle the REPLACED car's page
 static RECT16 sPinClutCursor;			// walking CLUT-row cursor for the imported pages
 static int sPinEvictions;			// world pages taken back this run, for the dump
 static int sPinUnusedTakes;			// wasted host car pages taken instead - the #3 win
+static int sJerPinPoolFull;			// JERICHO: pins that found the lower half pool full
+static int sJerPinNoPage;			// JERICHO: pins refused a world rectangle (should stay 0 - see CAR_PIN_MAX)
 static int sPinReloads;				// times we re-uploaded a page we had already placed - the thrash meter
 static int sPinRowLeaks;			// imported sets whose row came back a HOST row (refused, and logged)
 static int sPinBandSafe;			// the pin band starts inside the CLUT-safe area (above the font)
@@ -1777,7 +1788,7 @@ static void CarPinRecord(int set, int index, int offset, int size, int preferred
 // Never taken: slots below nperms (the level's permanent pages) and anything a host
 // car or the host's special car needs. Breaking those is the thing this work exists
 // to fix.
-static int CarPageFindSlot(void)
+static int CarPageFindSlot(int allowWorld)
 {
 	int i, k;
 	static int sVictim;
@@ -1836,6 +1847,12 @@ static int CarPageFindSlot(void)
 
 		return idx;
 	}
+
+	// JERICHO: the LAST resort - evict a world texture for an imported page. The import
+	// never asks for this (see the call site): it is here so the placement rules live in
+	// one place, and it is unreachable while CAR_PIN_MAX <= JER_POOL_PAGES.
+	if (!allowWorld)
+		return -1;
 
 	for (i = 0; i < 19; i++)
 	{
@@ -2121,6 +2138,20 @@ void CarImportPin(void)
 		}
 		else
 		{
+			// JERICHO: the pool is FULL, so this page has to come out of space the WORLD also
+			// knows about. That is exactly the long-body worry: a model that names more pages
+			// than the pool has free can put a car page on a rectangle the world streams into,
+			// and the world then draws the car's texture. Counted here, and the slot passes
+			// below try the import's OWN rectangles (its previous one, else the replaced car's)
+			// first, so a genuine world slot stays the last resort rather than the first guess.
+			sJerPinPoolFull++;
+
+			if (sJerPinPoolFull <= 4)
+			{
+				printInfo("cross-city: pin - lower half pool FULL (%d of %d pages in use); set %d must come from world-side space\n",
+					sJerLowerPoolPagesUsed, JER_POOL_PAGES, sPinSet[i]);
+			}
+
 			// Where to put it: the slot it had before (taking that rectangle back), else the
 			// rectangle the REPLACED car's page used, else a free one, else a world stream to
 			// evict.
@@ -2136,7 +2167,27 @@ void CarImportPin(void)
 				slot = sPinPreferred[i];
 
 			if (!CarPinPreferredAllowed(slot))
-				slot = CarPageFindSlot();
+			{
+				// JERICHO: NOT the world. CarPageFindSlot's last resort evicts a WORLD texture for
+				// the import's page, and that is what makes a building draw a car's colours. It is
+				// unreachable while CAR_PIN_MAX <= JER_POOL_PAGES - every pin fits in the pool, and
+				// the pool is tried first - and passing 0 keeps it that way even if those numbers
+				// move: an import gets the pool page, a wasted host car page, or a free slot, and
+				// never a world rectangle. Refusing costs a wrong-looking car; taking one costs the
+				// world.
+				slot = CarPageFindSlot(0);
+
+				if (slot < 0)
+				{
+					sJerPinNoPage++;
+
+					if (sJerPinNoPage <= 6)
+					{
+						printInfo("cross-city: pin - set %d has no rectangle it may take (pool full, no wasted car page free): leaving it for a later frame rather than evicting a world page\n",
+							sPinSet[i]);
+					}
+				}
+			}
 
 			if (slot < 0)
 				continue;		// nothing evictable this frame; try again next frame
@@ -2372,6 +2423,44 @@ void CarImportDumpState(void)
 		return;
 
 	printInfo("cross-city: final page state (%d pinned, %d wasted car pages taken, %d world pages evicted, %d page re-uploads, %d claims given back, %d pins DROPPED, %d palette rows uploaded, %d palette rows REFUSED)\n", sPinCount, sPinUnusedTakes, sPinEvictions, sPinReloads, sCarPageGiveBacks, sPinDropped, sPalUploaded, sPinRowLeaks);
+
+	// JERICHO: the pool budget against what the models actually ask for.
+	//
+	// The lower half pool is 30 pages at rows 512..1023, and an import places its pages
+	// THERE precisely so it takes nothing from the world. So "can an import exhaust it?" is
+	// answered by two numbers: how many pages each BUILT model names (its sets - the pages
+	// that must be resident together), and how much of the pool the run used. A long body
+	// names more sets than a short one, which is why a limo or a bus would be first to run out.
+	{
+		char setbuf[160];
+		int pos;
+
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		{
+			if (sModelSetCount[i] == 0)
+				continue;
+
+			pos = 0;
+			setbuf[0] = 0;
+
+			for (k = 0; k < sModelSetCount[i]; k++)
+			{
+				int n = snprintf(setbuf + pos, sizeof(setbuf) - pos, "%s%d", (pos > 0) ? "," : "", sModelSet[i][k]);
+
+				if (n <= 0 || pos + n >= (int)sizeof(setbuf))
+					break;
+
+				pos += n;
+			}
+
+			printInfo("cross-city: model sets - resident slot %d names %d set(s): %s\n",
+				i, sModelSetCount[i], setbuf);
+		}
+
+		printInfo("cross-city: lower half pool at exit: %d of %d pages used (%d free); %d pin(s) had to leave the pool, %d pin(s) refused a world rectangle (want 0)\n",
+			sJerLowerPoolPagesUsed, JER_POOL_PAGES, JER_POOL_PAGES - sJerLowerPoolPagesUsed,
+			sJerPinPoolFull, sJerPinNoPage);
+	}
 
 	// JERICHO: which of the import bank's rows the imported model actually uses.
 	//

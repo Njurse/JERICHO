@@ -231,6 +231,41 @@ later, because `CarModelSet` needs the built model. `civ_clut` is read only at d
 (`cars.c` plot paths, `motion_c.c` peds), so deferring the fill to `LoadImportedTPages`
 is safe.
 
+### The lower half pool, and why an import can no longer take a world page
+
+The pool is `JER_POOL_PAGES` = **30** pages of 64x256 (60 KiB) at x 0..895, y 512 and 768
+(`JerLowerPoolPageAlloc`, `texture.c`). An import places its page there **first**, because
+rows 512..1023 are space no stock code computes — not the world streamer (`tpagepos[]`
+holds Y in {0, 256}) and not the CLUT cursors — so a page there takes nothing from the
+world.
+
+`CarPageFindSlot`'s **last resort** is the one thing that does: it evicts a *world* set
+(`cross-city: paging - evicting world set N from slot M`), and that is the mechanism behind
+"buildings show the car's texture". It is now rejected by the import path outright:
+
+* `CarPageFindSlot(int allowWorld)` returns -1 before that loop unless `allowWorld` is set,
+  and the import (`CarImportPin`) passes **0**. An import may therefore take a pool page, a
+  *wasted* host car page (`sPinUnusedTakes` - a car page no built model names), or a free
+  slot; never a world rectangle. If none is available it is left for a later frame and
+  counted (`sJerPinNoPage`), because refusing costs a wrong-looking car while taking one
+  costs the world.
+* **Why the refusal is unreachable in practice, and kept that way:** at most
+  `CAR_PIN_MAX` (16) pages can ever be pinned, and the pool holds 30 — so the pool can hold
+  every pin, and the pool is tried first. A compile-time guard now enforces the ordering:
+
+  ```c
+  #if CAR_PIN_MAX > JER_POOL_PAGES
+  #error "CAR_PIN_MAX exceeds the lower half pool (JER_POOL_PAGES): an import could evict a world page"
+  #endif
+  ```
+
+Measured (2026-10, 3-city mix with `spawn_imports`, one run per HOST): **8-9 of 30 pages
+used, 0 pins refused, 0 world evictions** — the pool is nowhere near its ceiling on a normal
+mix, which is why the fix is a refusal plus an invariant rather than a bigger pool. The same
+runs report what the models ask for: each resident model names 2-3 sets (the VEGAS special
+names 5), and `cross-city: lower half pool at exit: …` prints the budget next to the two
+counters so a future regression is visible in one line.
+
 ## 4. Everything else that writes VRAM
 
 The complete claim table lives in `tools/vrammap.py` (`CLAIMS`), each row carrying its
