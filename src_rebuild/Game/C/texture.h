@@ -43,6 +43,11 @@ extern void ProcessPalletLump(char *lump_ptr, int lump_size); // 0x00019F44
 // texture_cluts. Called from inside LoadPermanentTPages.
 extern void LoadImportedTPages(void);
 
+/* JERICHO cross-city hot load: record (pin) the texture pages an imported car needs for
+ * a slot built AFTER the level loaded. Idempotent; the palette rows follow when
+ * CarImportPin places the pages. */
+extern void JerHotLoadCarTpages(void);
+
 // JERICHO: re-claim and re-upload imported pages whose slot has been taken back by
 // streaming. Called from the game loop; cheap unless something actually went wrong.
 extern void CarImportPin(void);

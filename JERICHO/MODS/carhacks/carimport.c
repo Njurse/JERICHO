@@ -766,6 +766,19 @@ int chkImportHotLoad(int slot)
 	built = JerHotLoadCarModel(slot);
 	cos = JerHotLoadCarCosmetics(slot);
 
+	/* And its TEXTURE PAGES, which the level-load walk recorded for the slots it knew
+	 * about: without this the hot-loaded model's polys read whatever their baked index
+	 * holds -- the local city's materials, while its cosmetics (and so its handling)
+	 * are already its own. The walk is idempotent now, so the cars already pinned are
+	 * left alone and only this slot's pages are added; CarImportPin places them, and
+	 * their palette rows with them, before the next draw. */
+	/* Only a NEW build brings new sets: the sets a model needs are what the build walks
+	 * and records (CarModelSet), so a slot whose geometry was already there was covered
+	 * by the level-load walk. Keying this on the build also keeps a repeated hot load
+	 * from re-walking and re-logging every slot's sets. */
+	if (built > 0)
+		JerHotLoadCarTpages();
+
 	if (built > 0 || cos > 0)
 		printInfo("[carhacks/net] slot %d is now the imported car itself: geometry %s, cosmetics %s\n",
 			slot, (built > 0) ? "built" : "already there", (cos > 0) ? "applied" : "already there");

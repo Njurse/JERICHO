@@ -1735,6 +1735,20 @@ int CarModelSetUsed(int set)
 
 static void CarPinRecord(int set, int index, int offset, int size, int preferred, int city)
 {
+	/* Idempotent: a set of a city is pinned ONCE. The level load records every imported
+	 * car's sets, and a hot load re-runs that same walk (a car added after the level was
+	 * built has a slot and its own sets, but no pin record) -- so without this the second
+	 * pass would pin each existing set twice, and CarImportPin would place two copies. */
+	{
+		int p;
+
+		for (p = 0; p < sPinCount; p++)
+		{
+			if (sPinSet[p] == set && sPinCity[p] == city)
+				return;		/* already recorded: the pool copy is the one in use */
+		}
+	}
+
 	if (sPinCount >= CAR_PIN_MAX)
 	{
 		// JERICHO: this used to return silently, which is what turned "the import ran out
@@ -1935,6 +1949,22 @@ static int CarPinPreferredAllowed(int slot)
 
 static void VramAccountReport(void);
 static int LevelClutRowsNeeded(void);		// JERICHO: the level's own max CLUT rows
+
+/* JERICHO cross-city hot load: record (and therefore pin) the texture pages an imported
+ * car needs, for a slot built AFTER the level loaded.
+ *
+ * LoadImportedTPages is the level-load walk that does this for every slot. A slot that
+ * appeared later has a city and its own sets (buildNewCarFromModel filled them) but no
+ * pin record, so CarImportPin has nothing to place for it and its polys read whatever
+ * their baked index happens to hold -- measured as "the model retained the local city's
+ * materials". Re-running that walk is exactly the right unit of work: it derives each
+ * slot's sets from the model, and CarPinRecord is now idempotent, so the cars already
+ * pinned are left alone. The rows follow by themselves -- CarImportPin uploads a page's
+ * CLUT rows when it places the page. */
+void JerHotLoadCarTpages(void)
+{
+	LoadImportedTPages();
+}
 
 void CarImportPin(void)
 {
