@@ -51,6 +51,12 @@ CHK_CAR_ID chkImportSlotId(int slot);
  * or it does not fit - and then the slot is left as it was). */
 int chkImportHotLoad(int slot);
 
+/* The session's canonical spare resident slot for `car`: by the lowest owning player
+ * id, ascending, with our own pick at OUR player id (chkImportCarOrder in carimport.c).
+ * -1 = the session needs more spares than the range has. `outCount` (optional) gets the
+ * number of cars the session needs. */
+int chkImportCanonicalSlot(CHK_CAR_ID car, int* outCount);
+
 /* The set's own slot holding (city, model), or -1. `city` < 0 matches any. */
 int chkImportSlotForCar(int city, int model);
 

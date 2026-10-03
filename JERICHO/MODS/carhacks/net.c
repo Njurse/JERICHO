@@ -164,20 +164,26 @@ int chkNetFoldPeerCars(void)
 		if (already)
 			continue;
 
-		for (slot = CHK_IMPORT_SPARE_FIRST; slot < CHK_IMPORT_MAX_SLOTS; slot++)
+		/* The slot is CANONICAL (chkImportCanonicalSlot), derived from every pick in
+		 * the session by owning player id -- never "the first free spare at the moment
+		 * this peer's pick arrived". Arrival order is what used to give the same car
+		 * different slots on different machines, taking the baked page indices and the
+		 * palette rows with it. Ordering by player id is also append-only: a joiner's
+		 * id is higher, so its car cannot displace one that is already in a slot. */
 		{
-			if (chkImportSlotFree(slot))
-				break;
-		}
+			int need = 0;
 
-		if (slot >= CHK_IMPORT_MAX_SLOTS)
-		{
-			/* Player-facing: a peer's car could not be brought in, so the host
-			 * is told on screen as well as in the log. */
-			jer_error("[carhacks/net] player %d wants %s model %d, but no spare resident "
-				"slot is free - not importing it",
-				p, chkNetCityName((int)gChkNetPeerPick[p].city), (int)gChkNetPeerPick[p].model);
-			continue;
+			slot = chkImportCanonicalSlot(gChkNetPeerPick[p], &need);
+
+			if (slot < 0 || !chkImportSlotFree(slot))
+			{
+				/* Player-facing: a peer's car could not be brought in, so the host
+				 * is told on screen as well as in the log. */
+				jer_error("[carhacks/net] player %d wants %s model %d, but no spare resident "
+					"slot is free - not importing it",
+					p, chkNetCityName((int)gChkNetPeerPick[p].city), (int)gChkNetPeerPick[p].model);
+				continue;
+			}
 		}
 
 		if (chkImportSetSlot(slot, gChkNetPeerPick[p]))
@@ -658,6 +664,24 @@ static int chkNetOnFrame(void* ud, void* args)
 		 * is how a peer's car got reported as already-correct for a moment. */
 		{
 			int me = jer_net_local_player();
+			int deliberate;
+
+			/* Only a car that is a CHOICE belongs in the session's import set.
+			 *
+			 * A car of the level's own city is what mp hands a player who has not
+			 * picked yet, and folding that in gave the ASSIGNED car a resident slot --
+			 * after which the real pick (a guest city) found its canonical slot
+			 * occupied by a car nobody drives. That is the mismatch the canonical rule
+			 * exists to remove, so the assignment must not be advertised.
+			 *
+			 * A car from ANOTHER city is never an assignment: it came from a pick or
+			 * from -mpcar, so it is advertised either way. A menu pick is deliberate
+			 * whatever city it names, which covers the level's own city dropping a
+			 * model its pool does not hold (the "I picked car 12" case). */
+			deliberate = (chkImportLocalPickCity() >= 0) || (mine.city >= 0 && mine.city != GameLevel);
+
+			if (!deliberate)
+				return JER_RESULT_CONTINUE;
 
 			if (me >= 0 && me < CHK_NET_MAX_PLAYERS)
 			{

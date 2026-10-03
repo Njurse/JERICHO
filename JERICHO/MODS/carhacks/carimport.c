@@ -19,6 +19,8 @@
 #include "models.h"		/* InitCarImport, JerHotLoadCarModel */
 #include "texture.h"		/* CarImportApplyPaletteForCity */
 #include "cosmetic.h"		/* JerHotLoadCarCosmetics */
+#include "jer_net.h"		/* jer_net_local_player: the canonical slot order */
+#include "net.h"		/* chkNetPeerCar: the peers' cars, in id order */
 
 #include "carid.h"
 #include "carimport.h"
@@ -145,6 +147,147 @@ int chkImportSlotFree(int slot)
 		return 0;			/* another module (or the level) claimed it */
 
 	return 1;
+}
+
+/* Would this car need a spare resident slot at all?
+ *
+ * A car the level's own city ships needs no import WHEN THE LEVEL ALREADY HOLDS IT
+ * (its own list names that model). chkImportLevelHoldsModel is tri-state: -1 means
+ * "cannot tell" -- this also runs on the publish path, outside the hook that hands the
+ * resident list over -- and BOTH 1 and -1 mean "do not import". Only a provable 0 goes
+ * to the import path: a car from the level's own city that its pool really does not
+ * hold (RIO's model 12, for one). This is the rule the pick and the peer fold used to
+ * spell out separately, in one place so the two cannot drift apart. */
+static int chkImportCarNeedsNoSlot(CHK_CAR_ID car)
+{
+	int city = chkCarIdCity(car);
+	int model = chkCarIdModel(car);
+
+	if (model < 0)
+		return 1;			/* nothing settled yet: not a car to host */
+
+	if (city < 0)
+		city = GameLevel;		/* CHK_CITY_NATIVE = the level's own city */
+
+	return (city == GameLevel && chkImportLevelHoldsModel(model) != 0);
+}
+
+/* The distinct cars this session needs, in the CANONICAL order: by the lowest owning
+ * player id, ascending, with our own pick participating at OUR player id.
+ *
+ * Every machine derives the same order from the same picks -- which is the point. Both
+ * callers used to take the "first free spare" at the moment their pick arrived (the
+ * host folding peers as they come in, and each machine placing its OWN pick first,
+ * locally), so the same car could sit in slot 5 on one machine and slot 7 on another,
+ * and everything baked against a slot (the page index in the polys, the palette rows,
+ * the hot-loaded geometry) went with it.
+ *
+ * Ordering by OWNING PLAYER ID also makes the mapping append-only: a player that joins
+ * later has a higher id, so its car is appended and can never displace a car that is
+ * already in a slot. Returns how many were written. */
+static int chkImportCarOrder(CHK_CAR_ID* out, int max)
+{
+	int p, n = 0;
+	int local = jer_net_local_player();
+
+	for (p = 0; p < CHK_NET_MAX_PLAYERS && n < max; p++)
+	{
+		CHK_CAR_ID car;
+		int i, dup = 0;
+
+		if (p == local)
+		{
+			if (!gChkPickSet)
+				continue;
+
+			car = gChkPick;
+		}
+		else
+		{
+			if (!chkNetPeerCar(p, &car))
+				continue;
+		}
+
+		if (chkImportCarNeedsNoSlot(car))
+			continue;
+
+		for (i = 0; i < n; i++)
+		{
+			if (chkCarIdEqual(out[i], car))
+			{
+				dup = 1;
+				break;
+			}
+		}
+
+		if (dup)
+			continue;		/* two players in the same car share one slot */
+
+		out[n++] = car;
+	}
+
+	return n;
+}
+
+/* The canonical resident slot for `car`, or -1 when the session needs more spares than
+ * this level has free. `outCount` (optional) receives how many cars the session needs.
+ *
+ * The i-th car in the canonical order takes the i-th slot this LEVEL leaves free, in
+ * ascending order -- both halves matter. The index alone is not enough: a level may
+ * hold cars of its own in the upper residents (this one keeps models 9 and 10 in slots
+ * 5 and 6 for players 5 and 6), so the free list is part of the mapping. It is the same
+ * list on every machine, because it excludes only what the level itself put there
+ * (a model in the engine's resident table that is not one of ours), never what our own
+ * set happens to have applied so far. */
+int chkImportCanonicalSlot(CHK_CAR_ID car, int* outCount)
+{
+	CHK_CAR_ID order[CHK_NET_MAX_PLAYERS];
+	int spare[CHK_IMPORT_MAX_SLOTS];
+	int n = chkImportCarOrder(order, CHK_NET_MAX_PLAYERS);
+	int k = 0, i, slot;
+
+	/* Already placed: keep it where it is. A slot never MOVES -- its geometry and the
+	 * page indices baked against it would have to be rebuilt, and with player-id
+	 * ordering a car does not have to move in the first place. */
+	for (slot = 0; slot < CHK_IMPORT_MAX_SLOTS; slot++)
+	{
+		if (chkCarIdEqual(chkImportSlotId(slot), car))
+		{
+			if (outCount != NULL)
+				*outCount = n;
+
+			return slot;
+		}
+	}
+
+	/* the spare slots this level leaves for us, ascending */
+	for (slot = CHK_IMPORT_SPARE_FIRST; slot < CHK_IMPORT_MAX_SLOTS; slot++)
+	{
+		if (gChkSet[slot].used)
+			continue;		/* ours, but another car's */
+
+		if (chkEngineModelAt(slot) >= 0)
+			continue;		/* the level's own car lives here */
+
+		spare[k++] = slot;
+	}
+
+	for (i = 0; i < n; i++)
+	{
+		if (!chkCarIdEqual(order[i], car))
+			continue;
+
+		if (outCount != NULL)
+			*outCount = n;
+
+		return (i < k) ? spare[i] : -1;
+	}
+
+	/* not part of this session's set (a caller asking about a car nobody picked) */
+	if (outCount != NULL)
+		*outCount = n + 1;
+
+	return (n < k) ? spare[n] : -1;
 }
 
 /* Does the LEVEL already hold this model in its resident pool?
@@ -490,17 +633,23 @@ int chkImportApplyPick(int level, int count)
 			chkCityName(city), model);
 	}
 
-	/* A pick goes into a spare resident slot. InitPlayer prefers a slot the model
-	 * was IMPORTED into over a native one with the same number (players.c), so the
-	 * spare slot wins even when the level also lists that number as one of its own
-	 * civilians. */
-	for (slot = CHK_IMPORT_SPARE_FIRST; slot < count && slot < CHK_IMPORT_MAX_SLOTS; slot++)
+	/* A pick goes into its CANONICAL spare resident slot, not "the first free one":
+	 * the slot is derived from the whole set of picks by player id
+	 * (chkImportCanonicalSlot), so every machine puts the same car in the same slot,
+	 * and the page indices and palette rows baked against that slot agree too.
+	 * InitPlayer prefers a slot the model was IMPORTED into over a native one with
+	 * the same number (players.c), so this slot wins even when the level also lists
+	 * that number as one of its own civilians. */
 	{
-		if (chkImportSlotFree(slot))
-			break;
+		int need = 0;
+
+		slot = chkImportCanonicalSlot(chkCarId(city, model), &need);
+
+		if (slot >= 0 && slot >= count && need <= count)
+			slot = -1;		/* the caller's pool is smaller than the session needs */
 	}
 
-	if (slot >= count || slot >= CHK_IMPORT_MAX_SLOTS)
+	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS || !chkImportSlotFree(slot))
 	{
 		/* Player-facing: their pick could not be imported, so tell them. */
 		jer_error("[carhacks] import: the pick (%s model %d) needs a spare resident slot and "
