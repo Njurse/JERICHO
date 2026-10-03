@@ -110,3 +110,78 @@ Both this script and CI link each configuration twice:
 by construction, and the linker is handed it for *every* configuration and
 platform. Linking against a stale one fails with hundreds of `LNK2001`s —
 that is the bug that used to make the Windows CI job fail every time.
+
+## The CI build path
+
+`.github/workflows/build.yml` builds both configurations for `windows-2022` and
+`ubuntu-22.04`, uploads them as workflow artifacts, refreshes the rolling
+`alpha` pre-release on every push to `main`, and publishes a permanent release
+for any `v*` tag.
+
+Three things about it are deliberate, and each is easy to undo by accident.
+
+### Submodules are an explicit allow-list, not `--recursive`
+
+`actions/checkout` runs with `submodules: false`, and a following step clones
+each path the build actually needs:
+
+```bash
+for path in src_rebuild/PsyCross; do
+  git submodule update --init --depth=1 "$path"
+done
+```
+
+`submodules: recursive` walks *every* entry in `.gitmodules`, and a single
+unfetchable one fails the whole checkout before any build step runs. That is
+exactly how both platforms spent their entire history failing at step 2, with
+`fatal: repository 'https://github.com/Njurse/gailredriver2.git/' not found`
+on whichever submodule sorts first.
+
+`JERICHO/MODS/gaildrv2` is deliberately **out of the picture for builds** — its
+repository is not published — so it stays registered in `.gitmodules` for local
+work but is never fetched here. The rule to keep: adding a submodule to
+`.gitmodules` must not be able to break the build by itself. Add a path to that
+loop only when a build genuinely needs it.
+
+### Each configuration links twice
+
+See the note on `exports.def` above. This is why the Windows job can produce an
+exe but a naive `msbuild` cannot.
+
+### The Windows job builds x64
+
+A Win32 link cannot work with the `exports.def` mechanism at all — x86 decorates
+every C++ name differently, leaving ~981 unresolved `LNK2001`s — and every dev
+build target is x64. The job's name said `(Win32)` until 0.9.0; it was only ever
+a label.
+
+## The release profile
+
+What a release *runs* is decided by the shipped `JERICHO/CONFIG/modlist.ini`,
+which the build mirrors next to the exe. Since 0.9.0 that file is a deliberate
+release profile — **carhacks and mp on, everything else off**, including
+`crumple`, `levelhacks` and `debugorbit` (the orbit camera seizes the camera at
+level start and never hands it back). Local development is free to differ; the
+frontend's Options → JERICHO rewrites the file on toggle.
+
+## The version
+
+`JERICHO_BUILD_VERSION` comes from `git describe --tags --always --dirty`
+(`premake5.lua`), so a release is versioned by its tag. Release tags are spelled
+`v0.9.0` because the workflow triggers on `v*` — the repo's older REDRIVER2 tags
+carry no prefix at all — and premake strips that leading `v`, so the binary and
+the boot log say `0.9.0`, not `v0.9.0`.
+
+The string is hashed into mp's build identity (`gameBuild` in `mp_proto.h`), so
+two peers on different builds refuse each other. That is the point of bumping it.
+
+To cut one:
+
+```bash
+git tag -a v0.9.0 -m "JERICHO 0.9.0"
+git push origin v0.9.0
+```
+
+Watch the tag land *after* the fixes it should contain: the tag triggers a
+permanent, public release, not a rebuild of a previous one.
+
