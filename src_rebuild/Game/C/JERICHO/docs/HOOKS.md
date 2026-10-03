@@ -143,6 +143,20 @@ jer_pause_menu_register(&myMenu);
   or the next set — or `jer_hud_panel_bar(slot, anchor, value, max, r, g, b)` for
   a small filled meter (a health bar under a lock-on name). Both are drawn from
   the engine's overlay pass, so a module needs no draw hook of its own.
+- **Say something in the game's own voice** — two channels that are deliberately not the
+  HUD's above, and the difference is who is speaking. `jer_notify(text, priority,
+  seconds)` (`jer_notify.h`) rides the engine's OWN player-message path
+  (`SetPlayerMessage` -> `DrawMessage`), so it lands exactly where "You Drowned" and "You
+  wrecked your vehicle" do: golden, centred, near the top, for a fixed number of seconds,
+  and competing for the slot on priority (`JER_NOTIFY_PRIORITY_MAX` 5; engine mission
+  lines use 2-3). The text is **copied engine-side**, so a caller may pass a temporary
+  buffer; `jer_notify_clear()` drops it. Use it when the line should read as the game
+  talking. `jer_error(fmt, ...)` (`jericho.h`) is the opposite: a short-lived gentle-red
+  notice down the **left** of the screen, wrapped over several rows, ~5 s, drawn in the
+  frontend and in game - the "something needs to be told, now" channel. The engine itself
+  raises one for a rejected command-line argument, and a module that refuses to load or
+  fails to join should use it too. `jer_error_count()` / `jer_error_at(i)` expose the live
+  ones so the engine can print them with its own text primitives.
 - **Play a sound without starving the engine** — `jer_sound.h`. There are only 16
   SPU voices and the engine's own collision/explosion sounds play on whatever
   `GetFreeChannel()` hands out, so a module that LOCKS a voice per sound can leave

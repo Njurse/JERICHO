@@ -27,9 +27,11 @@ an empty value, a typo or an unwrapped quoted string leaves it **off**.
 > compiled into the game (no `runtime = "dll"` in its `mod.toml`), the effective
 > default comes from the generated `JERICHO/gen/jer_registry.c`, which premake
 > produces from `mod.toml` at build time (`jer_system.c` fills the table from
-> the registry; `jerParseModToml` only runs for runtime DLL addons). So editing a
+> the registry; `jerParseModToml` runs for runtime DLL addons). So editing a
 > compiled-in module's `default-enabled` has no runtime effect until premake is
-> re-run (`premake5.exe vs2019`) and the game is rebuilt.
+> re-run (`premake5.exe vs2019`) and the game is rebuilt. **The one field that is
+> read back from the manifest at runtime is `dependencies`** - see Dependencies
+> below, because the registry cannot carry it.
 
 Every boot writes the resolution to `REDRIVER2.log`:
 
@@ -51,6 +53,52 @@ Every boot writes the resolution to `REDRIVER2.log`:
 "If `src=default` and `enabled=1`, a module is running that nobody asked for" is
 the single check that catches this class of surprise. `JERICHO/CONFIG/modlist.ini`
 therefore lists **every** installed module explicitly.
+
+## Dependencies (`mod.toml` `dependencies`)
+
+A module declares what it needs in its own manifest:
+
+```toml
+dependencies = ["carhacks"]
+```
+
+A comma-separated string parses the same way (`"carhacks,mp"`), via `jerTomlDeps`. A
+module whose dependency is missing, disabled **or not activated** is **refused**:
+
+```
+[jericho] module "cainescrossfire" DISABLED: missing dependency ("carhacks")
+```
+
+It is marked `valid = 0`, so it is not counted among the active modules and its hooks are
+skipped at dispatch. Note the order: activation runs *before* validation, so a refused
+module's entry has already run and registered its hooks - they are simply never called.
+Worth knowing when a refused module appears to be logging on its own behalf.
+
+The refusal is meant to be readable from the game, not only from the log:
+
+- the reason is recorded on the module (`JER_MODULE.refusal`) in player-facing words;
+- it is raised through the same on-screen notice a rejected command-line argument uses
+  (`jer_error`), so the player reads e.g. *"Caine's Crossfire cannot load without
+  carhacks."*;
+- the Mods manager lists the module as `[BLOCKED]` rather than `ON`/`OFF`
+  (`JER_MODULE_INFO.refusal`), because re-enabling it cannot help until the thing it needs
+  is there. In that list a refused module reports `enabled = 0`; the boot inventory keeps
+  `enabled=1` (the modlist's opinion, unchanged) and marks it `state=INVALID` instead - the
+  two agree about the outcome and differ about how to say it.
+
+The boot inventory shows it as `state=INVALID` and prints the list it acted on in `deps=`.
+
+> **Which manifest the list comes from.** For a **runtime DLL addon** it is read when the
+> loader scans `MODS/<id>/mod.toml`. For a **compiled-in (deep) module** the generated
+> registry can only carry `id` / `entry` / `default-enabled`, so the dependencies are read
+> from that module's own `mod.toml` by `jer_loader_read_deps`, called while the module table
+> is built (`jerSnapshotModules`). Until that call existed a deep module's `dependencies`
+> was read by *nothing* - it could declare what it needed and the check would still see an
+> empty list, which is why this refusal had never once fired.
+>
+> `ctx->jer_register_module(...)` also takes a `deps` argument, and **`mod.toml` wins**:
+> the argument is used only when the manifest says nothing, so passing `""` no longer wipes
+> what the manifest declared. Declare dependencies in `mod.toml`.
 
 ## The `-nomods` switch
 

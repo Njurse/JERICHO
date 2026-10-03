@@ -66,6 +66,16 @@ it off. With the module off, the stock physics and collision path run
 unchanged. Live settings persist to `JERICHO/CONFIG/cainescrossfire.ini` (loaded and
 saved by `cainescrossfire.c` `cd2LoadConfig` / `cd2SaveConfig`).
 
+### It needs carhacks
+
+The same `mod.toml` declares `dependencies = ["carhacks"]`. carhacks owns the car
+identity and cross-city machinery this mod builds on, so **carhacks must be enabled**
+(or the mod refuses to load). The refusal is not silent: the boot log says
+`module "cainescrossfire" DISABLED: missing dependency ("carhacks")`, the player is
+told on screen (*"Caine's Crossfire cannot load without carhacks."*), and the Mods
+manager lists it as `[BLOCKED]` rather than `ON`/`OFF`. See `module-activation.md` in
+the SDK docs for the rule and how it is reported.
+
 ## Documentation
 
 - [`HANDLING.md`](HANDLING.md) — the point-mass handling model: what Caine's Crossfire
