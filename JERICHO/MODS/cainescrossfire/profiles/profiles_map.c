@@ -42,7 +42,6 @@ static int gCd2VehFielded[CD2_VEH_COUNT];		// in this match's field?
 static int gCd2VehPalDone[MAX_CARS];			// paint set for this car already
 static int gCd2CarProfile[MAX_CARS];			// car -> profile (CD2_VEH_NONE)
 static int gCd2VehPlayer = CD2_VEH_NONE;		// the player's chosen profile
-static int gCd2GuestCity = -1;				// the one importable guest city
 
 // ---------------------------------------------------------------------------
 // Fielded set
@@ -277,18 +276,15 @@ static void cd2VehPlaceProfile(int profileId, JER_ARGS_CAR_DATA_SOURCE* a)
 			}
 		}
 	}
-	else
-	{
-		// only one guest city can be imported per level
-		if (gCd2GuestCity == -1)
-			gCd2GuestCity = p->originCity;
-		else if (gCd2GuestCity != p->originCity)
-		{
-			printInfo("[cainescrossfire] profile %s (%s): only one guest city per level (%s already), not fielded\n",
-				p->internalName, LevelNames[p->originCity], LevelNames[gCd2GuestCity]);
-			return;
-		}
-	}
+	// Nothing is refused for being a foreign car any more. This used to allow ONE
+	// guest city per level, on the belief that the engine could hold only one: it
+	// cannot. models.c keeps a CAR_IMPORT per city (gCarImports[4], .region == NULL
+	// when not held), InitCarImport loads every city the slots ask for, and cars.c
+	// affords CIV_CLUT_GUEST_CITIES = (CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) /
+	// CIV_CLUT_BLOCK_ROWS = 3 guest palette blocks - which is every city that can BE
+	// a guest, since there are four cities and the level's own is not one. So a
+	// foreign profile is placed for its own city and sourced from there, and the
+	// roster behaves the same in every battleground.
 
 	// an empty spare slot (5..SPECIAL_CAR_SLOT-1)
 	for (slot = SPECIAL_CAR_SLOT - 1; slot >= 5; slot--)
@@ -334,8 +330,6 @@ static void cd2VehResetState(void)
 		gCd2VehPalDone[i] = 0;
 		gCd2CarProfile[i] = CD2_VEH_NONE;
 	}
-
-	gCd2GuestCity = -1;
 }
 
 static int cd2VehOnCarDataSource(void* ud, void* args)
@@ -346,6 +340,9 @@ static int cd2VehOnCarDataSource(void* ud, void* args)
 	(void)ud;
 
 	cd2VehResetState();
+
+	printInfo("[cainescrossfire] vehdata: event level=%d slots=%d\n", a->level, a->count);
+
 	cd2VehBuildFielded(a->level);
 
 	for (i = 0; i < CD2_VEH_COUNT; i++)
