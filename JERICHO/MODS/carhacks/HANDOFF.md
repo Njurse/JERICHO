@@ -68,19 +68,28 @@ Commits: `f3d65d36`, `29118821`, `103bf4d5`, `917fe509`, `248c6909` (all on `mai
    *re-draws* (the icon reads another city's car data while a menu is up). Add a city-switch
    step to the harness (step the row; don't just set it at start). If it faults, take the dump
    and attribute it with `tools/dmp_fault.py` + `tools/map_lookup.py` **before** touching code.
-3. **Imports must take the lower-half pool (rows 512..1023) on SP *and* MP.** The pool is
-   JERICHO's own space and identical in both; the streaming half is what differs per map.
-   Today a set can land on a page the map streams into ("evicting the world if needed", and
-   `slot N holds X: 2 pin(s) (0 in the pool)`), which is both the broken-texture and the
-   scenery-contamination report — and it shows up on SP-side levels too, so it is not MP-only.
-   Also account for a car's extra roof/window/special panels, each needing a paging slot, with
-   long vehicles as the extreme case.
+3. **Imports take the lower-half pool (rows 512..1023) — in place, and the remaining gaps are
+   narrower than they looked.** Measured 2026-10: every SP mashup (0..3 guest cities, up to
+   11 cars) pins into the pool with **0 world pages evicted** and **0 pins dropped** — the old
+   "evicting the world if needed" and `0 in the pool` lines were *load-time snapshots*, not
+   the final placement (the pin asks the pool first at draw time). `CAR_PIN_MAX` is now 24
+   (3 guest cities × up to 8 sets), and the guest-set `row -1` CLUT refusal is fixed (re-points
+   to the block base row). Still open on this item: the set-0 polys (~16-114 per car sample
+   the host's shared page) and a possible collision with **region-streamed** textures
+   (`HostUsesTPage` checks `permlist`, not the spool's dynamic building pages) — the one path
+   that could still corrupt scenery, unverified.
 4. **Assert leave/drop on the survivors.** The roster-removal fix has no test, which is why it
    kept recurring. Cover a clean leave (`MP_TEST_LEAVE`) and a hard drop, each then rejoining.
 5. **Host only when there is a match.** The listener outlives the session: `MpHostEnd` is
    called only from `MpLeaveSession`, and `MpSessionReset` never closes it. Advertising is
    already gated on `MpStartMatch`; the listener is not. (A sticky listener already cost a
    real "i couldnt reconnect" bug, fixed by making a join a handover.)
+6. **Live-join / hotload for a guest model is engine-side work (deferred, tracked).** A client
+   joining a match already running cannot hotload a guest city's car: `JerHotLoadCarModel` /
+   `JerHotLoadCarTpages` cover a pick that changes mid-match, but a *joiner's own* guest city
+   needs the engine's `malloctab` region and the `MP_ADAPTER.md` notes. Lobby joins (the
+   common case) are fine; this is the "a fifth friend joins mid-race" case, and it is
+   deliberately out of scope until the lobby case is solid.
 
 ## Traps that cost real time here — do not re-learn these
 
