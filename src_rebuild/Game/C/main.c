@@ -2786,6 +2786,7 @@ int redriver2_main(int argc, char** argv)
 			// engine's printInfo already printf's (PsyX_main.cpp, the non-emscripten
 			// path) as well as writing REDRIVER2.log, so the console shows the same
 			// lines - pins, victim choices, give-backs - as they happen.
+#ifdef _WIN32
 			if (AllocConsole())
 			{
 				freopen("CONOUT$", "w", stdout);
@@ -2805,6 +2806,13 @@ int redriver2_main(int argc, char** argv)
 			}
 
 			printInfo("[console] live log console attached\n");
+#else
+			// POSIX has no way to attach a console to a process that is already
+			// running, so there is nothing to attach - but the flag is still ACCEPTED
+			// here, because an unrecognised boot argument makes the engine log and
+			// exit. The log is on stdout and in REDRIVER2.log either way.
+			printInfo("[console] -console is Windows-only; the log is on stdout and in REDRIVER2.log\n");
+#endif
 		}
 		else if (!strcmp(argv[i], "-gamemode"))
 		{
