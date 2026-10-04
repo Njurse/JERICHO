@@ -1835,22 +1835,33 @@ void JerichoFrameTick(void)
 	// JERICHO-DIAG: on the first frame, what the player's car actually IS versus what
 	// was asked for. Distinguishes "the choice never took" from "something replaced it
 	// after the level start".
-	if (gRunFrames == 0)
+	//
+	// ONCE, by a flag of its own. The condition used to be `gRunFrames == 0`, which is
+	// only a "first frame" test when -frames set a budget: without it the counter is 0
+	// for the whole run, so this printed EVERY FRAME and a normal session logged tens of
+	// thousands of lines of it (which is how a leave/rejoin log becomes unreadable).
 	{
-		int resident = -1, pc;
+		static int diagDone;
 
-		if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
-			resident = car_data[MainPlayer.playerCarId].ap.model;
+		if (!diagDone)
+		{
+			int resident = -1, pc;
 
-		printInfo("JERICHO-DIAG: player slot=%d (model=%d, want=%d, startinfo[0]=%d) residents=",
-			resident,
-			(resident >= 0 && resident < MAX_CAR_RESIDENT_MODELS) ? residentCarModels[resident] : -1,
-			wantedCar[0], (PlayerStartInfo[0] != NULL) ? PlayerStartInfo[0]->model : -9);
+			diagDone = 1;
 
-		for (pc = 0; pc < MAX_CAR_RESIDENT_MODELS; pc++)
-			printInfo(" %d", residentCarModels[pc]);
+			if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+				resident = car_data[MainPlayer.playerCarId].ap.model;
 
-		printInfo("\n");
+			printInfo("JERICHO-DIAG: player slot=%d (model=%d, want=%d, startinfo[0]=%d) residents=",
+				resident,
+				(resident >= 0 && resident < MAX_CAR_RESIDENT_MODELS) ? residentCarModels[resident] : -1,
+				wantedCar[0], (PlayerStartInfo[0] != NULL) ? PlayerStartInfo[0]->model : -9);
+
+			for (pc = 0; pc < MAX_CAR_RESIDENT_MODELS; pc++)
+				printInfo(" %d", residentCarModels[pc]);
+
+			printInfo("\n");
+		}
 	}
 
 	if (gExitAfterFrames <= 0 || ++gRunFrames < gExitAfterFrames)
