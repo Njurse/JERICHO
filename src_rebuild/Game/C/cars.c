@@ -215,6 +215,18 @@ static void CarPalRowClear(void)
 // A block is CIV_CLUT_BLOCK_ROWS tall because CarPalIndexInCity's `i` spans
 // carTpages[city][0..7]; a narrower band cannot hold `rowbase + 6` and the fix silently
 // uploads nothing.
+// JERICHO: which civ_clut block a guest city owns.
+//
+// PURE FUNCTION OF (city, GameLevel) -- deliberately NOT of which cities happen to be
+// held right now. It used to count only the HELD cities below this one, which is stable
+// while a level loads and shifts the moment a city is added later: VEGAS was the level's
+// only guest and took block 0 (rows 8..15) at load time, then HAVANA arrived mid-match,
+// found no held city below it, and took block 0 TOO. Measured: "VEGAS palettes: uploading
+// for 8 of its block's 8 rows (civ_clut 8..15)" and "HAVANA palettes: uploading for 0 of
+// its block's 8 rows (civ_clut 8..15)" - the reported "the vegas car imported proper but
+// not the havana one's textures and colors". The level's own city is never a guest, and
+// the three non-level cities therefore rank 0,1,2 in a fixed order - exactly the three
+// blocks the column affords.
 static int CarImportCityBand(int city)
 {
 	int c, band = 0;
@@ -223,8 +235,10 @@ static int CarImportCityBand(int city)
 		return -1;
 
 	for (c = 0; c < city; c++)
-		if (CarImportCityHeld(c) && c != GameLevel)
+	{
+		if (c != GameLevel)
 			band++;
+	}
 
 	return band;
 }

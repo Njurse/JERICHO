@@ -516,6 +516,13 @@ void InitCarImportMidLevel(void)
 			LevelNames[src], gCarImports[src].carModelsSize, gCarImports[src].palletSize,
 			gCarImports[src].cosmeticsSize);
 
+		// ...and its PAGE LISTS, which the level-load parse only did for the cities held
+		// then. Without this the pin walk cannot find this city's sets ("not in its page
+		// list - skipped"), their baked index is never filled, and the car draws whatever
+		// that page holds -- while its palette block is right, which is exactly the
+		// "the palette is correct but the texture still seems wrong" report.
+		CarImportPageListsForCity(src);
+
 		if (gCarImportCity < 0)
 			gCarImportCity = src;
 	}

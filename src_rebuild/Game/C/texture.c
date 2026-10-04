@@ -1267,6 +1267,19 @@ static void ParseImportedTextureInfo(void)
 		ParseImportedTextureInfoForCity(city);
 }
 
+// JERICHO: parse ONE city's page list, for a city read in MID-LEVEL (the hot load).
+//
+// ParseImportedTextureInfo runs once, at level load, for the cities held THEN. A city
+// read in later never got its lists, so the pin walk could not find its sets' pages and
+// skipped them ("HAVANA set 37 is not in its page list - skipped") - the index stayed
+// baked with nothing behind it, so the model drew whatever that page held: "the palette
+// is correct but the texture still seems wrong ... for havana". Called from
+// InitCarImportMidLevel, next to the read that makes the city held in the first place.
+void CarImportPageListsForCity(int city)
+{
+	ParseImportedTextureInfoForCity(city);
+}
+
 // Whether the level's own page load already claimed this texture set. Scans the
 // slot table rather than tpageloaded, because slot 0 is a valid slot and so
 // indistinguishable from "not loaded" in that array.

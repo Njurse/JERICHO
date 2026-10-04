@@ -48,6 +48,11 @@ extern void LoadImportedTPages(void);
  * CarImportPin places the pages. */
 extern void JerHotLoadCarTpages(void);
 
+/* JERICHO: parse one city's page lists, for a city read in MID-LEVEL. The level-load
+ * parse covers only the cities held then, and without this a later city's sets are "not
+ * in its page list" - their baked index stays empty and the car draws another page. */
+extern void CarImportPageListsForCity(int city);
+
 // JERICHO: re-claim and re-upload imported pages whose slot has been taken back by
 // streaming. Called from the game loop; cheap unless something actually went wrong.
 extern void CarImportPin(void);
