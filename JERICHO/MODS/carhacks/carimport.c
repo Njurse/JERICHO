@@ -144,6 +144,40 @@ void chkImportReleaseAll(void)
 	printInfo("[carhacks] session over: every cross-city resource given back\n");
 }
 
+/* Leave the session's PLACEMENT behind without forgetting the player's pick: everything the
+ * slots hold (pins, lower-half pool pages, baked page indices, geometry), the parsed page
+ * lists, the deferred palette lumps and the imported city buffers. Used on the way into the
+ * frontend, where those paged-in car textures and palettes are not needed at all -- they are
+ * re-read when the next level loads, and each level load cannot undo a leak that happened
+ * while there was no level.
+ *
+ * The PICK survives: it is made in the frontend and consumed by the level it starts
+ * (chkImportClearPick is deliberately not called here). */
+void chkImportPurgePlacement(void)
+{
+	int i, held = 0;
+
+	for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
+	{
+		if (gChkSet[i].used)
+			held++;
+	}
+
+	/* no placement and nothing parsed: nothing to give back, and no log noise on the
+	 * screens we pass through on the way in */
+	if (held == 0 && gChkGuestCity < 0)
+		return;
+
+	for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
+		chkImportReleaseSlot(i);
+
+	JerReleaseAllCrossCity();
+
+	chkImportReset();		/* the set entries and the guest city, KEEPING the pick */
+
+	printInfo("[carhacks] frontend: released %d placed slot(s) and the cross-city state - the next level re-imports\n", held);
+}
+
 static CHK_IMPORT_ENTRY* chkSlot(int slot)
 {
 	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS)

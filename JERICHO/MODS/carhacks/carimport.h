@@ -59,6 +59,12 @@ int chkImportReleaseSlot(int slot);
  * reads freed data. */
 void chkImportReleaseAll(void);
 
+/* JERICHO carhacks: give the PLACEMENT back but keep the player's pick - everything the slots
+ * hold, the parsed page lists, the deferred palette lumps and the imported city buffers. Used on
+ * the way into the frontend (the menus need none of it, and the next level re-imports); the
+ * pick survives because the level it starts still consumes it. */
+void chkImportPurgePlacement(void);
+
 /* Build resident `slot`'s geometry at runtime, from the import data the set names
  * (mid-level). Returns the bytes built, 0 = not built (no level yet, not our slot,
  * or it does not fit - and then the slot is left as it was). */
