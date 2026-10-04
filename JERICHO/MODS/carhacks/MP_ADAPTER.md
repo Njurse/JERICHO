@@ -443,3 +443,40 @@ the peer's car to the set like any other entry, from whatever city it belongs to
   authority is verified by construction and by the logs above, not by a
   divergent-config run. The three-city run deliberately turns the agreement off
   (`mp_agree_imports = 0`) for the same reason.
+
+## The live-car request — `mplive.{c,h}`, and mp's pause menu
+
+mp's Multiplayer pause page has a `Change car` picker (city, car, apply). The
+picker is mp's, but two of the things it needs are carhacks', so mp ASKS for them
+over two custom JERICHO events — the contract is
+`JERICHO/MODS/mp/mp_carquery.h`, the one place the ids and argument structs are
+written down, and `mplive.c` is the carhacks side:
+
+| Event | mp asks | carhacks answers |
+| --- | --- | --- |
+| `MP_CARQ_CITIES` | which cities can this session offer? | the 0..3 indices, or `count = 0` for "nobody knows" (the cross-city hack is off, so this machine has only the level's own city) |
+| `MP_CARQ_LOAD` | make `(city, model)` available here and in the session | `ok = 1` once the slot is set, built and the session told |
+
+`MP_CARQ_LOAD` is not new machinery. It is the sequence a mid-match peer pick
+already goes through: `chkImportSlotForCar` (a car already in the set keeps its
+slot — re-slotting it would move a car somebody may be driving), else
+`chkImportCanonicalSlot` for OUR player id, then `chkImportSetSlot` +
+`chkImportHotLoad` (which writes the slot's identity into the engine's arrays,
+reads that city in, builds the slot's geometry in the engine's own pool, applies
+its cosmetics and records its texture pages), then `chkNetAdvertisePick` and, on
+the host, `chkNetPublishSet` so every other machine loads it too.
+
+`ok` is only 1 when `gCarCleanModelPtr[slot]` is non-NULL after that: mp is about
+to point a car at this slot, and a slot with no built geometry is a crash, not a
+cosmetic glitch.
+
+Measured on the pair rig (`MP_TEST_PAUSECAR=40,1`, which runs the same call the
+Apply row does — HAVANA model 2 on a RIO map): the host logs `rebuilt player 0's
+car on slot 7 (model 2 from HAVANA)`, `told the session: HAVANA model 2`, and the
+client logs `cars (from the host): 0=HAVANA model 2` with HAVANA's palettes
+uploaded for its block. So the runtime import path above is now exercised by a
+live pick, not only by the level-load walk.
+
+The one thing this does NOT do is free the slot when a player picks away from a
+car: `chkImportReleaseSlot` on a live re-pick is still the open half of the
+lifecycle (see the "Slot ownership" section).
