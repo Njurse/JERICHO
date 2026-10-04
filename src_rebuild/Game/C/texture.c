@@ -1648,14 +1648,19 @@ int CarImportPinDstSet(int set)
 // JERICHO: how many imported pages can be pinned at once. A 3-city mashup asks for 13
 // (measured: 8 pinned + 5 DROPPED), and a dropped pin is not a miss - the index was
 // already allocated by CarImportDstSetCore and baked into the model's polys, so its
-// polys read the dummy (960,0), a live host slot. The ceiling is the free-index window
-// CarImportDstSetCore allocates from (110..127, 18 indices): past that there is no index
-// to pin anyway.
-#define CAR_PIN_MAX 16
+// polys read the dummy (960,0), a live host slot.
+//
+// The ceiling is NOT the free-index window (110..127, 18 indices): that window only
+// bounds the sets the HOST owns and that are therefore RE-INDEXED. A set the host
+// never resolved keeps its own index (e.g. HAVANA 35/21), so it does not come out of
+// that window at all -- which is how a 3-guest-city lobby can want more than 18 pins.
+// Three guest cities each contributing up to 8 sets (a full civilian carTpages list
+// plus two spec pages) is 24, so size for that; the hard ceiling is JER_POOL_PAGES.
+#define CAR_PIN_MAX 24
 
 // JERICHO: the pool must be able to hold EVERY pin. That is what makes the world-side
 // fallback in CarPageFindSlot unreachable rather than merely unlikely: a pin takes a lower
-// half pool page first, and there are never more pins than pool pages (16 <= 30). If this
+// half pool page first, and there are never more pins than pool pages (24 <= 30). If this
 // ever stops holding, an import would have to evict a WORLD texture for its own page - the
 // "buildings show the car's texture" corruption - so fail the build rather than ship it.
 #if CAR_PIN_MAX > JER_POOL_PAGES
