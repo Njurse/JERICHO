@@ -499,6 +499,30 @@ One line per change, not per packet — the state stream is continuous. The fold
 the peer's car to the set like any other entry, from whatever city it belongs to
 (`chkNetFoldPeerCars`), and `chk_suite.sh`'s single-import rows stay clean.
 
+### Releasing a slot — measured (Windows)
+
+`mp_tries.py --scenario T2/T3/T5/T6` on the Windows box, 2026-10-04, build
+`0.9.0-42-g1d88177d`. The release routine produced exactly the verdicts it promises,
+and the pool summary is the leak detector it was meant to be:
+
+- **T2** — 7 switches against 6 spares: `released - nobody names it and no car is on
+  it` on host and client for every switch, `pages 2 used / 28 free` unchanged
+  throughout, and no `no spare resident slot`. PASS.
+- **T3** — two joiners on the same car, one leaves: `kept - still named by player 2`.
+- **T5** — `deferred - car 1 still on it` then `released`; on a faster run the host has
+  already re-modelled the car when the PICK lands and the release goes straight
+  through. Both outcomes are correct, which is why the defer is reported by the rig
+  rather than required of the run.
+- **T6** — the shared car's slot stays while the other import's slot goes, and
+  `crosscheck.py`'s invariants still hold (0 fail, 5 warn).
+
+Two failures in that run were the **rig**, not the module, and both are fixed:
+the scenarios named their cars by model number while driving them with a roster SLOT
+(slot 1 is model 2 — `mp_tries.py` now goes through `CAR_SLOT_TO_MODEL`), and a 3-seat
+run on one desktop is unreliable (T6's third seat never launched at all). A stray
+pause-menu `Respawn as this car` activation also changes cars behind the scenario's
+back; that is an input/desktop effect, not the release path.
+
 ### Not verified
 
 - **The hotload itself** (above): a peer's car from a city this machine does not
