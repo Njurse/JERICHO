@@ -468,6 +468,17 @@ project "REDRIVER2"
 		dependson { ("mod_" .. JER_MOD) }
 	end
 
+	-- GNU ld resolves static archives in ONE pass, so library order is the
+	-- whole contract: the mods reference JERICHO and the game references the
+	-- mods, so neither "mods first" nor "JERICHO first" is right - and when the
+	-- order is wrong nothing warns you, you just get "undefined reference to
+	-- jer_anim_aim_diff" from the last link step. Ask ld to rescan the set
+	-- instead of hand-ordering it. MSVC tolerates the order, so it is left
+	-- exactly as it was.
+	filter "system:linux"
+		linkgroups "On"
+	filter {}
+
 	filter {}	-- reset before the unfiltered settings below
 
 	if GAME_VERSION ~= nil then
