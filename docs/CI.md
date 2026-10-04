@@ -16,7 +16,11 @@ Each build is packaged with everything needed to run:
 - the game executable (`JERICHO_dev.exe`, or the Linux ELF),
 - the runtime libraries (`SDL2.dll`, `OpenAL32.dll` on Windows; system SDL2/OpenAL on Linux),
 - the `data/` tree, and
-- the `JERICHO/` tree (**`MODS`** and **`CONFIG`**) that the runtime reads.
+- the `JERICHO/` tree (**`MODS`**, **`CONFIG`**) that the runtime reads, and **`CORE`** --
+  the custom frontend art: the menu background the runtime loads and its source PNG. It is
+  tracked deliberately, because a build that arrives without it has no frontend background
+  at all (`jer_texture: cannot read .../CORE/jericho_background.tga`, then the menu draws
+  on `texture 0`), and a CI checkout is exactly where an untracked file goes missing.
 
 Resulting archives:
 
