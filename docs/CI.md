@@ -8,12 +8,12 @@ replacement for the upstream [AppVeyor](#relationship-to-appveyor) pipeline.
 
 | Job | Runner | Toolchain | Configurations |
 |---|---|---|---|
-| `windows` | `windows-2022` | premake5 `vs2022` → MSBuild, **Win32 / x86** | `Release`, `Release_dev` |
-| `linux` | `ubuntu-22.04` | premake5 `gmake2` → `make`, **x86_64** | `release_x64`, `release_dev_x64` |
+| `windows` | `windows-2022` | premake5 `vs2022` → MSBuild, **Win32 / x86** | `Release_dev` |
+| `linux` | `ubuntu-22.04` | premake5 `gmake2` → `make`, **x86_64** | `release_dev_x64` |
 
 Each build is packaged with everything needed to run:
 
-- the game executable (`JERICHO.exe` / `JERICHO_dev.exe`, or the Linux ELF),
+- the game executable (`JERICHO_dev.exe`, or the Linux ELF),
 - the runtime libraries (`SDL2.dll`, `OpenAL32.dll` on Windows; system SDL2/OpenAL on Linux),
 - the `data/` tree, and
 - the `JERICHO/` tree (**`MODS`** and **`CONFIG`**) that the runtime reads.
@@ -21,13 +21,17 @@ Each build is packaged with everything needed to run:
 Resulting archives:
 
 ```
-JERICHO_Release_win32.zip          JERICHO_Release_linux-x64.tar.gz
-JERICHO_Release_dev_win32.zip      JERICHO_Release_dev_linux-x64.tar.gz
+JERICHO_Release_dev_win64.zip      JERICHO_Release_dev_linux-x64.tar.gz
+SHA256SUMS
 ```
 
-`Release` is the clean shipping build. `Release_dev` carries the debug-options /
-console build (`DEBUG_OPTIONS`, `COLLISION_DEBUG`, `CUTSCENE_RECORDER`) that is
-useful for testing.
+Only `Release_dev` is built and published for now: the debug-options / console
+build (`DEBUG_OPTIONS`, `COLLISION_DEBUG`, `CUTSCENE_RECORDER`) that is useful for
+testing. The clean `Release` configuration is not treated as a real release yet,
+so CI does not publish it (add it back to the workflow's build loops and upload
+steps when it is). `SHA256SUMS` lists the archives' SHA256, published beside them
+so a downloader -- the mp remote agent -- can verify an archive against something
+that did not come out of it.
 
 Dependencies are pinned to the versions upstream used:
 premake `5.0.0-beta1`, SDL2 `2.30.2`, OpenAL-soft `1.23.1`, and libjpeg `jpeg-9d`
@@ -37,8 +41,8 @@ premake `5.0.0-beta1`, SDL2 `2.30.2`, OpenAL-soft `1.23.1`, and libjpeg `jpeg-9d
 
 | Trigger | Effect |
 |---|---|
-| push to `main` | build both platforms, upload the four archives as **workflow artifacts**, and refresh the rolling **`alpha`** pre-release |
-| push a `v*` tag | build both platforms and publish a normal **GitHub Release** with the four archives attached |
+| push to `main` | build both platforms, upload the two archives as **workflow artifacts**, and refresh the rolling **`alpha`** pre-release |
+| push a `v*` tag | build both platforms and publish a normal **GitHub Release** with the two archives and `SHA256SUMS` attached |
 | manual run (Actions → Build → *Run workflow*) | same as a push to `main` |
 
 Superseded runs on the same ref are cancelled automatically.
@@ -53,7 +57,7 @@ Superseded runs on the same ref are cancelled automatically.
   git push origin v1.0
   ```
 
-- **Rolling alpha (any push to `main`):** the pre-release tagged `alpha`. Its four
+- **Rolling alpha (any push to `main`):** the pre-release tagged `alpha`. Its
   assets are overwritten on every push, so the download link is always current.
   The `alpha` tag is created and updated automatically — it is not a real version.
   Once tagged releases are the norm, delete the *Update rolling alpha pre-release*
