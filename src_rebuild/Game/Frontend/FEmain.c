@@ -4066,12 +4066,38 @@ void jer_frontend_goto(int screenIndex)
 	bRedrawFrontend = 1;
 }
 
+/* Like jer_frontend_goto, but the target screen TAKES THE PLACE of the current
+ * one instead of being pushed on top of it: the nav stack is left untouched, so
+ * the screen below the replaced one stays below it. A module menu that replaces
+ * a screen in a chain uses this so Back/Triangle return to whatever the replaced
+ * screen would have returned to -- see jer_frontend_open_replace. */
+void jer_frontend_replace(int screenIndex)
+{
+	if (screenIndex < 0 || screenIndex >= (int)(sizeof(PsxScreens) / sizeof(PsxScreens[0])))
+		return;
+
+	pNewScreen = &PsxScreens[screenIndex];
+	bRedrawFrontend = 1;
+}
+
 void jer_frontend_open(int menuIndex)
 {
 	if (menuIndex < 0 || menuIndex >= gFeMenuCount)
 		return;
 
 	jer_frontend_goto(JERICHO_FE_SCREEN_BASE + menuIndex);
+}
+
+/* Open a registered menu as a REPLACEMENT for the current screen (see
+ * jer_frontend_replace): the menu takes the screen's slot on the nav stack, so
+ * Back/Triangle from it return to whatever that screen would have returned to -
+ * the behaviour a menu that stands in for a screen in a chain wants. */
+void jer_frontend_open_replace(int menuIndex)
+{
+	if (menuIndex < 0 || menuIndex >= gFeMenuCount)
+		return;
+
+	jer_frontend_replace(JERICHO_FE_SCREEN_BASE + menuIndex);
 }
 
 /* Which registered module menu is on screen? -1 while the frontend shows

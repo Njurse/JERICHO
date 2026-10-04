@@ -64,14 +64,14 @@ typedef struct JER_FE_MENU
 	 * icon. */
 	void (*get_preview)(void* ud, int* city, int* model);
 	/* Optional BACK. Triangle is the back button on every stock frontend
-	 * screen, so the host offers it to a module menu too - but a module's back
-	 * is not always "the previous screen": the car-select Back row returns to
-	 * the Day/Night screen, deliberately NOT to the stock car screen it
-	 * replaced. So the module answers for itself. Return 1 to say the press is
-	 * handled (the host then consumes it and relayouts); return 0 or leave this
-	 * NULL and the press falls through to the item with is_back != 0, if the
-	 * menu has one. With neither, Triangle stays unclaimed and does nothing,
-	 * exactly as it does on a stock screen with nowhere to go back to. */
+	 * screen, so the host offers it to a module menu too. A menu whose back is
+	 * not simply "the previous screen" answers here: return 1 to say the press is
+	 * handled (the host consumes it and relayouts). Return 0, or leave this NULL,
+	 * and the host applies its OWN back - a row with is_back set if the menu has
+	 * one, otherwise the engine's ordinary previous-screen pop, exactly as
+	 * Triangle behaves on a stock screen. A menu that STANDS IN FOR a screen in a
+	 * chain (opened with jer_frontend_open_replace) wants this default: its back
+	 * is that screen's back. */
 	int (*on_back)(void* ud);		/* Triangle: 1 = handled */
 } JER_FE_MENU;
 
@@ -99,6 +99,15 @@ void jer_frontend_refresh(void);
  * screen index (e.g. for a stock screen a module wants to return to). */
 void jer_frontend_open(int menuIndex);
 void jer_frontend_goto(int screenIndex);
+
+/* As above, but the target TAKES THE PLACE of the current screen instead of
+ * being pushed on top of it: the nav stack is untouched, so Back/Triangle from
+ * the new screen return to whatever the replaced screen would have returned to.
+ * A menu that STANDS IN FOR a screen in a chain (e.g. the car-select menu
+ * replacing the stock car screen) uses this, so backing out does not land on the
+ * screen it replaced; without it the replaced screen is left on the back stack. */
+void jer_frontend_replace(int screenIndex);
+void jer_frontend_open_replace(int menuIndex);
 
 #ifdef __cplusplus
 }

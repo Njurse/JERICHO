@@ -7,8 +7,8 @@
  *   < CAR >       left/right cycles the car inside the roster below
  *   < CITY: X >   left/right cycles CHICAGO/HAVANA/VEGAS/RIO - the roster (NEW)
  *   Ride          start the level with the picked car
- *   Back          back to the Day/Night screen
- *   Triangle      the same back, from any row (JER_FE_MENU.on_back)
+ *   Back          back to whatever opened the car screen (Day/Night)
+ *   Triangle      the same back, from any row (the engine's own back)
  *
  * The roster row sits directly BELOW the car row, as asked. The stock screen only
  * ever shows the LEVEL's own car list (carNumLookup[GameLevel]); this one lets
@@ -22,9 +22,16 @@
  * same call the stock screen's Select makes (SetState(STATE_GAMESTART)) with
  * wantedCar[] set the same way. Only the CHOICE is ours.
  *
- * With a multiplayer session live the stock car screen is NOT replaced: that
- * screen is where mp seats players and claims the START (JER_EVENT_MP_FRONTEND),
- * so overriding it from here would break the session. See MP_ADAPTER.md.
+ * The menu is shown by REPLACING the stock car screen on the nav stack
+ * (jer_frontend_open_replace), not stacking over it, so Back/Triangle from this
+ * menu return to whatever opened the car screen - the same destination the stock
+ * car screen's own back gives. A push would leave the car screen on the back
+ * stack and trap the player in a loop.
+ *
+ * With a multiplayer session live the stock car screen is replaced too: mp seats
+ * players on its own chain, and the roster is offered so a joining player picks a
+ * car, but Ride hands the launch back to mp rather than starting it
+ * (JER_EVENT_MP_FRONTEND). See MP_ADAPTER.md.
  */
 
 #include "driver2.h"
@@ -105,7 +112,7 @@ static JER_FE_MENU gChkMenu =
 	NULL,			/* userdata */
 	"SELECT CAR",		/* title */
 	NULL,			/* get_preview (set below, keeps the initializer readable) */
-	NULL			/* on_back (set below, with get_preview) */
+	NULL			/* on_back (none - the engine's own back applies) */
 };
 
 /* ---------------------------------------------------------------------------
@@ -332,45 +339,16 @@ static int chkRideWith(int city, int idx)
 	return 1;
 }
 
-/* BACK, as this menu defines it - reached from the Back row (Cross on it) and from
- * the menu's on_back (Triangle, from ANY row). One function, so the two cannot drift
- * apart.
- *
- * The stock Take-a-Ride chain is main(0) -> city(1) -> day/night(3) -> car(14).
- * "Back" must land on the Day/Night screen, NOT on the stack (which holds the stock
- * car screen we replaced): returning there would re-run its setup, re-arm this menu
- * and trap the player in a loop.
- *
- * IN A SESSION none of that applies: this screen was pushed by mp's own chain
- * (mp.lobby -> the stock car screen), and the stock city/day-night screens are not
- * part of it. Returning 0 hands the press to the engine's own is_back row, which is
- * exactly the previous-screen pop mp expects - and it cannot re-arm anything,
- * because the screen it returns to is mp's, not the car screen. */
-static int chkSelBack(void* ud)
-{
-	(void)ud;
-
-	if (jer_net_is_active())
-	{
-		printInfo("[carhacks] car select: back (in a session - the engine pops to mp's own screen)\n");
-		return 0;
-	}
-
-	printInfo("[carhacks] car select: back to the day/night screen\n");
-	jer_frontend_goto(CHK_FE_SCREEN_TIMEOFDAY);
-	return 1;
-}
-
-/* Cross on a row. */
+/* Cross on a row. Back is NOT here: the Back row is an engine is_back row and
+ * Triangle is the engine's own back, so both take the stock car screen's own
+ * previous-screen pop - the menu replaced that screen (jer_frontend_open_replace)
+ * and must inherit its back, not pick a destination of its own. */
 static int chkSelActivate(void* ud)
 {
 	int row = (int)(size_t)ud;
 
 	if (row == CHK_ROW_RIDE)
 		return chkRideWith(gChkRosterCity, gChkCarIdx);
-
-	if (row == CHK_ROW_BACK)
-		return chkSelBack(ud);
 
 	return 0;
 }
@@ -441,7 +419,12 @@ static int chkSelOnFrame(void* ud, void* args)
 
 		if (idx >= 0)
 		{
-			jer_frontend_open(idx);
+			/* REPLACE the stock car screen, don't stack over it: this menu
+			 * stands in for screen 14, so Back/Triangle must return to whatever
+			 * opened the car screen (the Day/Night screen, or mp's own screen in
+			 * a session), not to the stock car screen we replaced. A push here
+			 * would leave the car screen on the back stack and trap the player. */
+			jer_frontend_open_replace(idx);
 			printInfo("[carhacks] car select: opening the menu over the stock car screen (level %s, %d car(s) in its roster)\n",
 				chkCityName(gChkRosterCity), chkRosterCount(gChkRosterCity));
 		}
@@ -581,16 +564,19 @@ void chkCarSelectRegister(JERICHO_CONTEXT* ctx)
 	gChkItems[CHK_ROW_RIDE].on_activate = chkSelActivate;
 	gChkItems[CHK_ROW_RIDE].submenu = -1;
 
-	/* Back */
+	/* Back - the engine's own previous-screen pop (BTN_PREVIOUS_SCREEN), the same
+	 * back every stock screen answers to: the menu replaced the stock car screen,
+	 * so this returns to whatever opened the car screen (Day/Night, or mp's). */
 	gChkItems[CHK_ROW_BACK].label = "Back";
 	gChkItems[CHK_ROW_BACK].userdata = (void*)(size_t)CHK_ROW_BACK;
-	gChkItems[CHK_ROW_BACK].on_activate = chkSelActivate;
+	gChkItems[CHK_ROW_BACK].is_back = 1;
 	gChkItems[CHK_ROW_BACK].submenu = -1;
 
 	gChkMenu.get_preview = chkSelPreview;
 
-	/* Triangle, from any row: the same back the Back row performs. */
-	gChkMenu.on_back = chkSelBack;
+	/* No on_back: Triangle falls through to the engine's own previous-screen pop
+	 * (FEmain.c), which is exactly what Back does. A menu that stands in for a
+	 * screen wants that screen's back, not a destination of its own. */
 
 	chkReadHarness();
 	chkClampCursor();

@@ -8,15 +8,17 @@ row the stock screen has no room for: **which city's roster it is drawn from**.
     < CAR >        left/right cycles the car inside the roster below
     < CITY: X >    left/right cycles CHICAGO/HAVANA/VEGAS/RIO - the roster  (NEW)
     Ride           start the level with the picked car
-    Back           back to the Day/Night screen
+    Back           back to whatever opened the car screen (Day/Night)
     Triangle       the same back, from any row
 ```
 
-Triangle is the back button on every stock frontend screen, so the menu is offered it
-too (`JER_FE_MENU.on_back`, `jer_frontend.h`). It performs the Back row's action from
-wherever the cursor is, so a player who reaches for Triangle - as they would on any
-stock screen - is not stuck. The two share one function (`chkSelBack`) so they cannot
-drift apart.
+The menu is shown by **replacing** the stock car screen on the nav stack
+(`jer_frontend_open_replace`, `jer_frontend.h`) - it sits in that screen's slot, not on
+top of it. So Back (the Back row, an `is_back` row the engine drives) and Triangle (the
+engine's own back) are the stock car screen's *own* previous-screen pop: they return to
+whatever opened the car screen. The menu defines no back of its own - the old
+`chkSelBack` is gone, because a push would have left the car screen on the back stack and
+trapped the player.
 
 It is a **pad-only** path: a module menu ignores input when no pad is connected, and a
 headless run has no pad, so no harness lever can drive it (see "Driving it without a
@@ -77,19 +79,19 @@ level:
   without the session's level, car agreement and spawn.
 * If the session does not take the launch (a refused join), the menu says so and
   falls through to `SetState(STATE_GAMESTART)`, so a dead `Ride` cannot happen.
-* `Back`/Triangle in a session return 0 and let the engine's own `is_back` row pop
-  the screen, which returns to mp's own chain — the screen that pushed the car
-  screen in the first place.
+* `Back`/Triangle in a session are the same engine pop - it returns to mp's own
+  chain, the screen that opened the car screen.
 
 The menu opens on the next frontend frame, not from the hook: `CarAvailability` is
 only final *after* the setup that hook interrupts — reading it any earlier hands
 back the previous level's list (the open log prints the count, e.g. `10 car(s) in
 its roster`, which is how you can tell the setup landed).
 
-`Back` outside a session goes to the **Day/Night screen** (index 3 — the stock
-Take-a-Ride chain is main 0 → city 1 → day/night 3 → car 14), *not* to the stack.
-Returning to the stock car screen would re-run its setup, re-arm this menu and
-trap the player.
+`Back` goes to whatever opened the car screen. In the stock Take-a-Ride chain (main 0
+→ city 1 → day/night 3 → car 14) that is the **Day/Night screen** (index 3). Because
+the menu took the car screen's slot, the Day/Night screen's own Back then carries on to
+the city screen - the loop the old push created (popping to the pushed car screen,
+re-running its setup and re-arming this menu) is gone.
 
 ## The cross-city consequence
 
