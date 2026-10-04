@@ -23,6 +23,10 @@ python JERICHO/MODS/mp/tools/mp_tries.py --keep --seconds 55
 # a single try, with an assertion that a line MUST appear
 python JERICHO/MODS/mp/tools/mp_tries.py --try havana:12 --require "draws exactly that"
 
+# the car-switch release scenarios (#14/#12): T2 switch until spares exhaust, T3 a shared
+# car survives a leave, T5 a deferred release, T6 an import shared by two players
+python JERICHO/MODS/mp/tools/mp_tries.py --scenario all --keep
+
 # two real instances on one PC (also 3..8 seats), the underlying harness
 MP_TEST_FRONTEND_JOIN=1 CHK_FORCE_MENU=1 python JERICHO/MODS/mp/tools/mp_localpair.py \
     --players 3 --bot chase --keep
@@ -31,7 +35,8 @@ MP_TEST_FRONTEND_JOIN=1 CHK_FORCE_MENU=1 python JERICHO/MODS/mp/tools/mp_localpa
 - `mp_tries.py` prints a per-try table plus **both seats'** identity and page evidence. A try
   FAILS on an identity problem even when the harness verdict says PASS — "correct on the host
   but the client was still the old car" is invisible to a verdict.
-- `--require [SEAT=]REGEX` asserts a line must appear; `--forbid` asserts one must not.
+- `--require [SEAT=]REGEX` asserts a line must appear; `--forbid` asserts one must not. SEAT is
+  `host`, `client` (any joiner) or `clientN` (the Nth joiner).
 - Known mid-match disconnect is classified (`DROPPED`), not reported as a stall.
 - `--keep` copies each try's two logs to `.mp-tries/tryN/` — read them there, not from the
   shared `JERICHO.log` (see traps).
@@ -42,7 +47,7 @@ MP_TEST_FRONTEND_JOIN=1 CHK_FORCE_MENU=1 python JERICHO/MODS/mp/tools/mp_localpa
 |---|---|
 | A player's identity is the car they **chose**, not the seat the engine put them in | `chkImportChosenCar` + `chkNetLocalCar`; advert stays the chosen car across a re-seat |
 | A guest car is hot-loaded mid-match: geometry, cosmetics, per-slot source, texture pages + rows | `JerHotLoadCarModel` / `JerHotLoadCarCosmetics` / `JerHotLoadCarTpages`; host log "draws exactly that (slot 7) - their own colours" |
-| Leaving releases a slot; leaving the session releases everything | `JerReleaseCarSlot` / `JerReleaseAllCrossCity` / `chkImportReleaseAll`; the leaver's log gives back every slot and the buffers |
+| Leaving releases a slot; leaving the session releases everything | `JerReleaseCarSlot` / `JerReleaseAllCrossCity` / `chkImportReleaseAll`; the leaver's log gives back every slot and the buffers. Since #12/#14 a peer's leave or car change goes through the release routine (`chkNetReleaseSlotIfUnused`: kept while another player names the car, deferred while a car is on the slot) - `mp_tries.py --scenario T3/T5` cover that and are **not yet run on Windows** |
 | A departed player's car disappears from the other machines | roster removal in `MpHandleRoster` (`MpRemovePlayer`) |
 | A join retries three times before failing | verified against a dead port: "attempt 1 of 3 ... retrying" x2, toast only after the third |
 | The level's palette rows for a guest are found by the set the car actually reads | alias/row lines; `CarPalIndexForBuild` agreement |

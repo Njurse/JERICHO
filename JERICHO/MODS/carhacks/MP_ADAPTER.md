@@ -114,8 +114,9 @@ be in the set in time, whatever city it is from; loading it afterwards is `JerHo
 
 Every resource a carhacks import holds is attached to a RESIDENT SLOT (the manifest above
 says which), so every session event is really a question about slots. This is the contract
-to monitor; `CarSlotResReport()` prints it at the moment the session ends, and the
-`cross-city: slot N holds ...` lines print it whenever the pin walk finishes.
+to monitor; `CarSlotResReport()` prints it at the moment the session ends, after every
+release and after every car switch, and the `cross-city: slot N holds ...` lines print it
+whenever the pin walk finishes.
 
 Both columns exist now. The release side is `JerReleaseCarSlot(slot)` - the pins and their
 lower-half pool pages, the baked 110..127 index each of the slot's sets holds (and the
@@ -123,17 +124,22 @@ reservation that keeps it out of the next import), the geometry block, the manif
 plus the module's half (`chkImportReleaseSlot`), which clears the set entry, the slot's
 entry in `residentCarModels[]` and its source city. Leave either half and the slot still
 looks taken (`chkImportSlotFree` checks all of it), so the next joiner is refused a spare
-that is really free.
+that is really free. Neither half is called directly any more: every unload below goes
+through ONE release routine, which decides WHETHER the slot may go (see "Releasing a slot"
+below).
 
 | event | what must LOAD | what must UNLOAD | today |
 |---|---|---|---|
-| **local player picks** (before the level) | the pick's city data (`InitCarImport`), its palette block, its page lists; the pick's slot is canonical | the PREVIOUS pick's slot, if it was a different car | load ✓, unload ✓ (`chkImportApplyPick` releases the old slot) |
-| **local player changes car mid-match** | the new city's data; a hot load into a slot (geometry, cosmetics, pages, rows) | the old slot's resources | load ✓, unload ✓ (same path) |
+| **local player picks** (before the level) | the pick's city data (`InitCarImport`), its palette block, its page lists; the pick's slot is canonical | the PREVIOUS pick's slot, if it was a different car | load ✓, unload ✓ by the level load, which rebuilds the whole set (row below). `chkImportApplyPick` itself releases nothing |
+| **local player changes car mid-match** (pause menu `Change car`) | the new city's data; a hot load into a slot (geometry, cosmetics, pages, rows) | the old car's slot, once nobody names it and no car is on it | load ✓ (`MP_CARQ_LOAD`), unload ✓ (`MP_CARQ_CHOSEN` -> `chkNetLocalSwitched` -> the release routine, "we changed car"). Before #14 nothing was released here, so every switch leaked a spare |
+| **local player gets back into a car on foot** | nothing (the car is already in the world) | the slot of the car they were in, if nobody else names it | ✓ (`MpFollowLocalCar` fires `MP_CARQ_CHOSEN` on the re-entry; same path as the row above). A direct car-to-car move without leaving the car does not fire it |
 | **peer joins, before the match starts** | the peer's city at the next level load (through the set) | nothing | ✓ |
 | **peer joins, match in progress** (the catch-up) | the peer's city read mid-level + a hot load into a slot | nothing (a new slot) | ✓ |
-| **peer leaves** | nothing | that peer's slot | ✓ (`chkNetReleaseDeparted`: engine + module; the car table shows a departure, and the roster catches it when the table cannot - the HOST's own case, `jer_net_player_present`) |
+| **peer changes car mid-match** (to an import OR to a domestic car) | the new car, as a peer pick (hot load) | the peer's old slot | ✓ (`chkNetUnbindChangedPeers`, from the fold and the `PICK` handler: a peer whose recorded slot no longer matches its pick is unbound and the release routine runs, "player P changed car". This includes the import -> domestic pick that the fold skips with `continue`) |
+| **the host changes car mid-match** | on the host: as the local row above; on a client: the host's new car (#13: not imported mid-match yet) | on a client: the host's old slot, if this client held it in a spare | ✓ for the unload (the client records the host's spare slot when it already holds that car, and the fold's unbind releases it). The load half is #13 |
+| **peer leaves** | nothing | that peer's slot | ✓ (`chkNetReleaseDeparted` -> the release routine, "player P left": released, or KEPT while another player still names the car, or DEFERRED while a car is still on the slot. The car table shows a departure, and the roster catches it when the table cannot - the HOST's own case, `jer_net_player_present`) |
 | **local player leaves the session** (back to the frontend) | nothing | EVERYTHING cross-city: the set, the picks, the pins, the pool pages, the blocks, the page lists, the deferred palette lumps | ✓ (`chkImportReleaseAll` -> `JerReleaseAllCrossCity` + `JerReleaseCarImport`) |
-| **a new level loads** (restart, city change, rejoin) | the whole set from scratch | the previous level's state | ✓ (`InitCarImport` -> `CarImportResetState`) |
+| **a new level loads** (restart, city change, rejoin) | the whole set from scratch | the previous level's state | ✓ (`InitCarImport` -> `CarImportResetState`; `chkNetOnLevelReset` drops the peer slot records and any pending release) |
 
 The lifecycle rule the table encodes:
 
@@ -144,7 +150,67 @@ The lifecycle rule the table encodes:
 The monitor criteria, in the same terms: after a leave, `CarSlotResReport()` must show
 **no slot holding pins or geometry that no player is driving**; a slot still listed is a
 leak, and the count should return to what it was before the peer joined. `CarSlotResReport()`
-runs after the release now, so a clean leave prints nothing after it.
+runs after the release now, so a clean leave prints nothing after it. After a switch, the
+`cross-city: pool` line must not keep growing: pins, pages and CLUT rows used should come
+back to the same numbers once the old car is released.
+
+### Releasing a slot
+
+Every unload in the table goes through one routine, `chkNetReleaseSlotIfUnused(slot, why)`
+(`net.c`; the verdict itself is the pure `chkReleaseVerdict` in `slotrelease.h`). It is
+called for a peer leaving, a peer changing car, the local player changing car (picker or
+re-entry on foot), and a hot load that failed. The rule:
+
+  a spare slot is FREED only when no player's carhacks identity still names the car on it
+  (the local car, the local pick, every peer's pick - `chkNetCarWantedBy`) AND no car in
+  `car_data[]` is still on the slot (`chkImportCarsOnSlot`: `controlType != CONTROL_TYPE_NONE`
+  and `ap.model == slot`).
+
+The verdict is one of: **released**; **kept** (somebody still names the car - nothing is
+pending, because whoever names it will free it when they move on); **deferred** (nobody
+names it, but a car is still on the slot - a peer's copy that has not been re-modelled yet,
+a parked car, our own car on the frame of the swap). A deferred slot is retried every frame
+(`chkNetRetryPendingReleases`, from `chkNetOnFrame`) until it can go or something names the
+car again. Only spare slots (`CHK_IMPORT_SPARE_FIRST` and up) are ever released; the
+level's own and the config's import slots are not.
+
+One log line per decision, and one per change of a retried decision (not per frame):
+
+```
+[carhacks] release: slot 5 (VEGAS model 1) released - nobody names it and no car is on it (we changed car)
+[carhacks] release: slot 5 (VEGAS model 1) kept - still named by player 1 (player 2 left)
+[carhacks] release: slot 5 (VEGAS model 1) deferred - car 3 still on it (1 car) (player 1 changed car); retrying each frame
+```
+
+A release frees both halves. The module's (`chkImportReleaseSlot`) clears the set entry
+and the source city and writes the level's own model back into `residentCarModels[slot]`,
+or **-1** for a spare the level never had (0 is a real model number; writing it made a
+freed spare look like it held model 0). The engine's (`JerReleaseCarSlot`) is safe on
+its own terms, because a pinned page can be shared:
+
+- each pin carries a bitmask of the slots that own it (`sPinOwners`); the slot is taken out
+  of every mask, and only pins whose mask reaches 0 give back their pool page;
+- the pin's world texture slot is a separate field (`sPinTexSlot`, -1 = in the pool) - the
+  old `sPinSlot` meant both, so a release could not tell an owner from a placement;
+- a set's baked 110..127 index and its reservation are given back only when no remaining
+  pin pages it in and no other imported slot names the set (`CarRemapReleasable`);
+- each pin's CLUT band (`sPinClutY`/`sPinClutRows`, whole rows at x=960) goes onto a free
+  list, merged with its neighbours; a later pin takes a band from that list before the
+  watermark moves, so switching back and forth does not move the watermark;
+- level-built geometry is un-pointed (`JerReleaseCarGeometry`), hot-loaded geometry freed.
+
+It logs `cross-city: released slot N - P pool page(s), R CLUT row(s), I baked index(es) given
+back; K page(s) kept (another car still names them)`, then `CarSlotResReport()` runs.
+
+**Not reclaimed (TODO).** A guest CITY's palette table (`cars.c`) and its `civ_clut` block
+are per city, not per slot, so no single slot's release frees them; they stay until the
+level goes. The `cross-city: pool` summary prints the CLUT watermark and the free list,
+so their growth is visible.
+
+**Limitation.** If every spare is in use, a peer who switches cars cannot have the new car
+imported here (`no spare resident slot`). Its old car keeps drawing on the old slot, so
+that slot stays deferred until the peer's car moves off it (or the peer leaves). Nothing
+leaks, but the new car is not drawn until a spare frees up.
 
 ### The hotload (DONE: geometry, cosmetics, pages, catch-up)
 
@@ -455,7 +521,8 @@ written down, and `mplive.c` is the carhacks side:
 | Event | mp asks | carhacks answers |
 | --- | --- | --- |
 | `MP_CARQ_CITIES` | which cities can this session offer? | the 0..3 indices, or `count = 0` for "nobody knows" (the cross-city hack is off, so this machine has only the level's own city) |
-| `MP_CARQ_LOAD` | make `(city, model)` available here and in the session | `ok = 1` once the slot is set, built and the session told |
+| `MP_CARQ_LOAD` | make `(city, model)` available here | `ok = 1` once the slot is set and built |
+| `MP_CARQ_CHOSEN` | (a notice, no answer) the local player is now driving `(city, model)` - or, `changed = 0`, the switch did not happen | updates carhacks' identity for this player, tells the session, and releases the old car's slot through the release routine |
 
 `MP_CARQ_LOAD` is not new machinery. It is the sequence a mid-match peer pick
 already goes through: `chkImportSlotForCar` (a car already in the set keeps its
@@ -463,8 +530,16 @@ slot — re-slotting it would move a car somebody may be driving), else
 `chkImportCanonicalSlot` for OUR player id, then `chkImportSetSlot` +
 `chkImportHotLoad` (which writes the slot's identity into the engine's arrays,
 reads that city in, builds the slot's geometry in the engine's own pool, applies
-its cosmetics and records its texture pages), then `chkNetAdvertisePick` and, on
-the host, `chkNetPublishSet` so every other machine loads it too.
+its cosmetics and records its texture pages). It does NOT tell the session any
+more: a car is advertised only once the player is really driving it.
+`MP_CARQ_CHOSEN` (fired by `MpChangeCar` after the swap, and by `MpFollowLocalCar`
+when the player gets back into a car on foot) does that: `ChkMpChosen` ->
+`chkNetLocalSwitched` sets carhacks' local pick, advertises it
+(`chkNetAdvertisePick`; on the host, `chkNetBroadcastCars` + `chkNetPublishSet`) so
+every other machine loads it too, and then runs the release routine on the old car's
+slot. A `changed = 0` notice (the load worked but the swap did not) releases the
+newly loaded slot again if nobody names it. A failed load releases a slot it had
+just taken.
 
 `ok` is only 1 when `gCarCleanModelPtr[slot]` is non-NULL after that: mp is about
 to point a car at this slot, and a slot with no built geometry is a crash, not a
@@ -477,6 +552,7 @@ client logs `cars (from the host): 0=HAVANA model 2` with HAVANA's palettes
 uploaded for its block. So the runtime import path above is now exercised by a
 live pick, not only by the level-load walk.
 
-The one thing this does NOT do is free the slot when a player picks away from a
-car: `chkImportReleaseSlot` on a live re-pick is still the open half of the
-lifecycle (see the "Slot ownership" section).
+Picking away from a car now frees its slot (#14), through the release routine
+described in "Releasing a slot" above. `MP_TEST_PAUSECAR` takes a list of timed
+switches (`30,3,1;45,1,2`), so the rig can switch until the spares would run out
+(`mp_tries.py --scenario T2`).
