@@ -426,7 +426,20 @@ for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
 			                      -- weapons/) includes its own module header by plain name
 		}
 
-		targetdir "bin/%{cfg.buildcfg}"
+		-- A mod's compiled output belongs WITH the mod, not in bin/<cfg> next to the
+		-- exe. The folder then carries what it takes to load it, the module list in
+		-- bin/ stops being a second copy that drifts from the build tree, and a
+		-- distributed mod folder is self-contained.
+		--
+		-- Scoped per configuration AND platform, as bin/<cfg> was: the file is called
+		-- mod_<id>.lib in every configuration, so a single path would let one
+		-- configuration's library be linked into another's build - which it did, and
+		-- the link failed loudly only because Release_dev and Release disagree about
+		-- the C runtime. bin/<cfg> never separated x86 from x64 either, which is how
+		-- an x86 library poisons an x64 link (LNK4272). The mirror below drops this
+		-- output again on its way into bin/ - build artefacts are not game data.
+		targetdir ("../JERICHO/MODS/" .. JER_MOD .. "/lib/%{cfg.buildcfg}/%{cfg.platform}")
+		objdir ("../JERICHO/MODS/" .. JER_MOD .. "/obj/%{cfg.buildcfg}")
 
 		filter "system:Windows"
 			disablewarnings { "4996", "4244", "4018", "4267", "4101", "4013" }
@@ -649,8 +662,27 @@ project "REDRIVER2"
 
     filter { "system:Windows" }
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
-            local JER_TOOLS = "%{cfg.buildtarget.directory}JERICHO\\MODS\\" .. JER_MOD .. "\\tools"
-            postbuildcommands { "if exist \"" .. JER_TOOLS .. "\" rd /S /Q \"" .. JER_TOOLS .. "\"" }
+            local JER_DEST = "%{cfg.buildtarget.directory}JERICHO\\MODS\\" .. JER_MOD
+            local JER_TOOLS = JER_DEST .. "\\tools"
+            postbuildcommands {
+                "if exist \"" .. JER_TOOLS .. "\" rd /S /Q \"" .. JER_TOOLS .. "\"",
+                -- the mod's COMPILED OUTPUT gets the same treatment: each mod_<id>
+                -- project now writes its .lib/.pdb and an obj/ tree into its own
+                -- folder, and the recursive mirror above would copy all of it into
+                -- bin/. None of that is game data, so it is dropped on the way in.
+                -- A runtime addon's <id>.dll IS game data and is left alone.
+                "if exist \"" .. JER_DEST .. "\\obj\" rd /S /Q \"" .. JER_DEST .. "\\obj\"",
+                "if exist \"" .. JER_DEST .. "\\lib\" rd /S /Q \"" .. JER_DEST .. "\\lib\"",
+                -- by EXTENSION, not by name. The artefacts are mod_<id>.lib/.pdb/.idb
+                -- for a compiled-in mod and <id>.pdb/.exp/.idb for a DLL addon, and
+                -- matching those names one at a time is exactly how one gets left
+                -- behind (the .idb was, until this was made exhaustive). A runtime
+                -- addon's <id>.dll is game data and no rule here touches it.
+                "if exist \"" .. JER_DEST .. "\\*.lib\" del /Q \"" .. JER_DEST .. "\\*.lib\"",
+                "if exist \"" .. JER_DEST .. "\\*.pdb\" del /Q \"" .. JER_DEST .. "\\*.pdb\"",
+                "if exist \"" .. JER_DEST .. "\\*.exp\" del /Q \"" .. JER_DEST .. "\\*.exp\"",
+                "if exist \"" .. JER_DEST .. "\\*.idb\" del /Q \"" .. JER_DEST .. "\\*.idb\"",
+            }
         end
 
     filter { "system:linux" }
@@ -662,9 +694,15 @@ project "REDRIVER2"
             "cp -u ../../JERICHO/CONFIG/modlist.ini \"%{cfg.buildtarget.directory}JERICHO/CONFIG/modlist.ini\"",
         }
 
-    -- the same removal as on Windows, after the copy above
+    -- the same removals as on Windows, after the copy above. A static library is
+    -- <id>.a on this toolchain, so both spellings are cleared.
     filter { "system:linux" }
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
-            local JER_TOOLS = "%{cfg.buildtarget.directory}JERICHO/MODS/" .. JER_MOD .. "/tools"
-            postbuildcommands { "rm -rf \"" .. JER_TOOLS .. "\"" }
+            local JER_DEST = "%{cfg.buildtarget.directory}JERICHO/MODS/" .. JER_MOD
+            postbuildcommands {
+                "rm -rf \"" .. JER_DEST .. "/tools\" \"" .. JER_DEST .. "/obj\" \"" .. JER_DEST .. "/lib\"",
+                -- by extension, as on Windows: a static library is .a here and the rest
+                -- are linker/debug output. A runtime addon's <id>.so is game data.
+                "rm -f \"" .. JER_DEST .. "\"/*.a \"" .. JER_DEST .. "\"/*.lib \"" .. JER_DEST .. "\"/*.o \"" .. JER_DEST .. "\"/*.pdb \"" .. JER_DEST .. "\"/*.exp \"" .. JER_DEST .. "\"/*.idb",
+            }
         end

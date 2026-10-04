@@ -40,6 +40,13 @@ src_rebuild/.vs/*
 src_rebuild/.vscode/*
 src_rebuild/bin/*
 src_rebuild/obj/*
+# A deep mod's compiled output lives beside the mod now (premake5.lua points the
+# mod_<id> projects' targetdir/objdir into their own folder, per configuration and
+# platform). *.lib, *.pdb and *.exp are covered above; the obj/ and lib/ trees and
+# MSVC's .idb incremental-build database are not, and would litter git status.
+JERICHO/MODS/*/obj/
+JERICHO/MODS/*/lib/
+*.idb
 src_rebuild/build*
 src_rebuild/*.make
 src_rebuild/Makefile

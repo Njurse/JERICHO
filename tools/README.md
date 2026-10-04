@@ -204,6 +204,25 @@ The consequence worth knowing: a locally built release differs from a CI one in
 exactly that respect. The exe in this tree has gaildrv2 and every other module
 linked in (inactive); a CI exe does not contain gaildrv2 at all.
 
+### Where a deep module's compiled output lives
+
+Inside the module's own folder, not in `bin/<cfg>`:
+
+```text
+JERICHO/MODS/<id>/lib/<config>/<platform>/mod_<id>.lib
+JERICHO/MODS/<id>/obj/<config>/<platform>/
+```
+
+Scoped by configuration *and* platform, because the file is called
+`mod_<id>.lib` in every one of them: a single shared path lets one
+configuration's library be linked into another's build — which it did, and it
+only failed loudly because `Release_dev` and `Release` disagree about the C
+runtime. `bin/<cfg>` never separated x86 from x64 either, which is the other half
+of the same trap. The post-build mirror that copies `JERICHO/` next to the exe
+drops `lib/`, `obj/` and the linker/debug artefacts on the way through, so a
+shipped tree carries a module's source and its manifest but no build output. A
+runtime addon's `<id>.dll` is game data and no rule there touches it.
+
 ## The version
 
 `JERICHO_BUILD_VERSION` comes from `git describe --tags --always --dirty`
