@@ -7,7 +7,7 @@
  *
  *   gcc -std=c99 -Wall -Wextra -I JERICHO/MODS/mp -o /tmp/test_ai_path \
  *       src_rebuild/Game/C/JERICHO/test/test_ai_path.c \
- *       JERICHO/MODS/mp/ai/aimapgrid.c JERICHO/MODS/mp/ai/aistar.c && /tmp/test_ai_path
+ *       JERICHO/MODS/mp/ai/aimapgrid.c JERICHO/MODS/mp/ai/aistar.c \n *       JERICHO/MODS/mp/ai/ailocal.c && /tmp/test_ai_path
  *
  *   (as C++: the module itself is compiled as C++, so the same source must build either way)
  *
@@ -17,6 +17,7 @@
 
 #include "../../../../../JERICHO/MODS/mp/ai/aimap.h"
 #include "../../../../../JERICHO/MODS/mp/ai/aistar.h"
+#include "../../../../../JERICHO/MODS/mp/ai/ailocal.h"
 
 static int gFails, gChecks;
 
@@ -434,6 +435,156 @@ static void test_determinism(void)
 	}
 }
 
+/* ------------------------------------------------------------------ */
+/* The local search: get back to a road                                */
+/* ------------------------------------------------------------------ */
+
+static AIGOAL gGoal;
+
+static void test_local_goal(void)
+{
+	int ix;
+
+	/* nothing but open ground: the answer is OPEN, not silence */
+	gridReset();
+	CHECK(AiLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
+	CHECK(gGoal.kind == AIGOAL_OPEN);
+	CHECK(gGoal.samples == 0);		/* already as open as it gets */
+
+	/* a road strip to the right, reachable: ROAD, and the NEAREST road sample */
+	gridReset();
+	for (ix = 20; ix < AIMAP_SIZE; ix++)
+		gridRoad(ix, 5);
+
+	CHECK(AiLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
+	CHECK(gGoal.kind == AIGOAL_ROAD);
+	CHECK(gGoal.samples == 15);		/* (5,5) -> (20,5) */
+	CHECK(gGoal.x == W(20) && gGoal.z == W(5));
+
+	/* already on the road: the goal is here, and the caller can tell */
+	gridReset();
+	gridRoad(7, 7);
+	CHECK(AiLocalGoal(&gMap, W(7), W(7), &gGoal) == 1);
+	CHECK(gGoal.kind == AIGOAL_ROAD);
+	CHECK(gGoal.samples == 0);
+
+	/* THE ONE THAT MATTERS: a road behind a wall is not a way out. Reachability is the
+	 * reason this floods instead of looking around - a line-of-sight search would pick
+	 * that road and drive the car straight at the wall.
+	 *
+	 * The wall has to actually SEPARATE: a wall one sample thick along z = 5 blocks
+	 * nothing, because the car walks round its end through z = 4. (My first version of
+	 * this test made exactly that mistake and the search was right to ignore it.) So
+	 * the wall is a full column, the whole height of the window. */
+	gridReset();
+	for (ix = 15; ix < AIMAP_SIZE; ix++)
+		gridRoad(ix, 5);
+	{
+		int iz;
+
+		for (iz = 0; iz < AIMAP_SIZE; iz++)
+			gridWall(14, iz);
+	}
+
+	CHECK(AiLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
+	CHECK(gGoal.kind == AIGOAL_OPEN);	/* NOT the unreachable road */
+	CHECK(gGoal.x < W(14));			/* and on our side of the wall */
+
+	/* a road reachable only the LONG way round is still the answer, and this is the
+	 * case that separates a flood from a straight-line look: the wall covers z = 5 for
+	 * x = 0..10, so the only way to the road is round its end. */
+	gridReset();
+	for (ix = 0; ix <= 10; ix++)
+		gridWall(ix, 5);
+	for (ix = 20; ix < AIMAP_SIZE; ix++)
+		gridRoad(ix, 5);
+
+	CHECK(AiLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
+	CHECK(gGoal.kind == AIGOAL_ROAD);
+	CHECK(gGoal.x >= W(20));
+
+	/* walled in completely: nothing to say, and the caller finds out */
+	gridReset();
+	{
+		int dx, dz;
+
+		for (dz = -1; dz <= 1; dz++)
+			for (dx = -1; dx <= 1; dx++)
+				if (dx || dz)
+					gridWall(8 + dx, 8 + dz);
+	}
+	CHECK(AiLocalGoal(&gMap, W(8), W(8), &gGoal) == 1);
+	CHECK(gGoal.kind == AIGOAL_OPEN);
+	CHECK(gGoal.samples == 0);		/* its own sample: the only open one it has */
+
+	/* an invalid grid is never a goal */
+	{
+		AIMAP bad;
+
+		memset(&bad, 0, sizeof(bad));
+		CHECK(AiLocalGoal(&bad, 0, 0, &gGoal) == 0);
+		CHECK(gGoal.kind == AIGOAL_NONE);
+	}
+}
+
+static void test_flee_goal(void)
+{
+	int ix;
+
+	/* the threat is due north; the goal must be AWAY from it, and reachable */
+	gridReset();
+	CHECK(AiLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
+
+	{
+		int sx = 0, sz = 0;
+		int dStart, dGoal;
+
+		CHECK(AiMapSampleIndex(&gMap, gGoal.x, gGoal.z, &sx, &sz) == 1);
+		CHECK(AiMapBlocked(&gMap, sx, sz) == 0);
+		CHECK(AiStarLineClear(&gMap, W(16), W(16), gGoal.x, gGoal.z) == 1);
+
+		dStart = (16 - 16) * (16 - 16) + (16 - 10) * (16 - 10);
+		dGoal = (sx - 16) * (sx - 16) + (sz - 10) * (sz - 10);
+
+		CHECK(dGoal > dStart);		/* further from the threat than we are */
+		CHECK(sz > 16);			/* and it went south, away from it */
+	}
+
+	/* A road is preferred over open ground a couple of samples further out: the road
+	 * bonus (40) outweighs the extra distance from the threat (a couple of samples is
+	 * worth a couple of points). The band goes at z = 24, which is inside the flee ring
+	 * - a road at the far edge of the WINDOW is not a candidate at all, which is the
+	 * ring's job. */
+	gridReset();
+	for (ix = 0; ix < AIMAP_SIZE; ix++)
+		gridRoad(ix, 24);
+
+	CHECK(AiLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
+	CHECK(gGoal.kind == AIGOAL_ROAD);
+
+	/* reachability again: with a full wall down the middle, the goal cannot be on the
+	 * far side, however attractive it looks */
+	gridReset();
+	{
+		int wz;
+
+		for (wz = 0; wz < AIMAP_SIZE; wz++)
+			gridWall(20, wz);
+	}
+
+	CHECK(AiLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
+	CHECK(gGoal.x < W(20));
+
+	/* an invalid grid is never a goal */
+	{
+		AIMAP bad;
+
+		memset(&bad, 0, sizeof(bad));
+		CHECK(AiLocalFleeGoal(&bad, 0, 0, W(4), W(4), &gGoal) == 0);
+		CHECK(gGoal.kind == AIGOAL_NONE);
+	}
+}
+
 int main(void)
 {
 	test_queries();
@@ -446,6 +597,8 @@ int main(void)
 	test_start_inside_a_wall_sample();
 	test_invalid_map();
 	test_determinism();
+	test_local_goal();
+	test_flee_goal();
 
 	printf("%d check(s), %d failed\n", gChecks, gFails);
 
