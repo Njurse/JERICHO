@@ -422,10 +422,10 @@ int chkNetFoldPeerCars(void)
 	 * slot has to be offered back. */
 	chkNetUnbindChangedPeers();
 
-	/* On a CLIENT the host's car (player 0) is not folded below - it reaches us through the
-	 * host's agreed set. But when we already HOLD it, remember the slot, so the host
-	 * switching away releases it here too. Nothing is imported for it (that is #13's
-	 * business, not this pass's). */
+	/* On a CLIENT, when we already HOLD the host's car (player 0) in a spare, remember the
+	 * slot, so the host switching away releases it here too. The loop below records it as
+	 * well for a car it folds or finds already placed; this also covers a host car the
+	 * loop skips as domestic (an own-city car that ended up in a spare). */
 	if (!jer_net_is_host() && gChkNetPeerPickSet[0] && gChkNetPeerSlot[0] < 0)
 	{
 		int hs = chkImportSlotOfCar(gChkNetPeerPick[0]);
@@ -434,7 +434,15 @@ int chkNetFoldPeerCars(void)
 			gChkNetPeerSlot[0] = hs;
 	}
 
-	for (p = 1; p < CHK_NET_MAX_PLAYERS; p++)
+	/* Player 0 is the host. ON THE HOST that row is this machine's own car, which its own
+	 * paths already placed (the level build's pick, or ChkMpLoad for a live switch), so it
+	 * is skipped there as it always was. ON A CLIENT it is a peer's car like any other and
+	 * is folded like one: the host's agreed set is applied only at a level load, so a host
+	 * that switched to an import MID-MATCH (or a client that joined after the host's set
+	 * arrived) never got that car built, and drew the host in its old model (#13). The
+	 * host's new car reaches us in its CHK_NET_CARS row 0 (chkNetLocalSwitched broadcasts
+	 * the table on every switch), whose handler runs this fold. */
+	for (p = (jer_net_is_active() && !jer_net_is_host()) ? 0 : 1; p < CHK_NET_MAX_PLAYERS; p++)
 	{
 		int already = 0;
 
@@ -839,6 +847,12 @@ static int chkNetOnRecv(void* ud, void* args)
 			break;
 
 		case CHK_NET_PICK:
+			/* A PICK from player 0 (the host) is not taken here on purpose. In a match the
+			 * host sends its table (CHK_NET_CARS) right behind its PICK (chkNetOnFrame,
+			 * chkNetLocalSwitched), and that handler records row 0 AND folds it (#13); a
+			 * frontend pick (carselect.c) reaches clients through the agreed set at the level
+			 * load. Taking the PICK as well would only run the unbind/release pass a second
+			 * time for the same change. */
 			if (a->len < 4 || a->peer < 1 || a->peer >= CHK_NET_MAX_PLAYERS)
 				break;
 
