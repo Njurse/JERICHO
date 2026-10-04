@@ -20,6 +20,7 @@
 #include "carid.h"
 #include "carimport.h"
 #include "net.h"
+#include "mplive.h"
 
 /* Engine globals the hacks touch (exported as C++ data symbols; the mod is
  * compiled C++, so a plain extern matches the export). */
@@ -377,6 +378,11 @@ void carhacks_register(JERICHO_CONTEXT* ctx)
 	 * addon net bridge, so a session can agree which city each machine reads its
 	 * car data from. Every call inside is a no-op with no session. */
 	chkNetRegister(ctx);
+
+	/* the live "Change car" bridge (mplive.c): answers mp's custom events asking
+	 * which cities the session can offer, and asking for one car to be made
+	 * available mid-match. Nothing runs without a live mp session. */
+	chkMpLiveRegister(ctx);
 
 	/* the "see the imported cars" measurement lever (spawn.c): places one car per
 	 * imported city in a line ahead of the player, once per level. Off unless
