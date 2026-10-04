@@ -1146,15 +1146,33 @@ int JerHotLoadCarModel(int slot)
 // JERICHO cross-city unload: give back the geometry a hot-loaded slot holds, so the slot (and
 // its block of the pool) can be used again. The model pointers stop pointing into the pool --
 // a caller that still has a car on this slot must rebuild it first (mp does, through its swap
-// path) -- and the block returns to the free list. A slot built at level load has no block and
-// is left alone: its geometry belongs to the level's own heap.
+// path) -- and the block returns to the free list.
+//
+// A slot built at level load has no block: its geometry belongs to the level's own heap and
+// stays there until the level ends. But if it holds a CROSS-CITY model (an import made at level
+// load - the frontend pick, the host's agreed set) its pointers are cleared too: otherwise the
+// slot still looks built, JerHotLoadCarModel's "already built" early-out skips the next car
+// imported into it, and that car is drawn with the released car's body. A level's OWN car
+// (source city -1) is never touched.
 int JerReleaseCarGeometry(int slot)
 {
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return 0;
 
 	if (gJerHotCarBlockOf[slot] < 0)
-		return 0;			// not ours: built at level load, or never built
+	{
+		if (GetCarModelSourceCity(slot) < 0 || gCarCleanModelPtr[slot] == NULL)
+			return 0;		// the level's own car, or never built: not ours
+
+		gCarCleanModelPtr[slot] = NULL;
+		gCarDamModelPtr[slot] = NULL;
+		gCarLowModelPtr[slot] = NULL;
+
+		printInfo("cross-city: slot %d's level-built import let go (its bytes stay in the level heap until the level ends); a later car can be hot-loaded into it\n",
+			slot);
+
+		return 1;
+	}
 
 	gCarCleanModelPtr[slot] = NULL;
 	gCarDamModelPtr[slot] = NULL;
