@@ -577,3 +577,66 @@ void FindSurfaceD2(VECTOR *pos, VECTOR *normal, VECTOR *out, sdPlane **plane)
 		normal->vz = (int)pl->c >> 2;
 	}
 }
+
+// ---------------------------------------------------------------------------
+// JERICHO: the road network, exposed to compiled-in modules.
+//
+// A module that wants to DRIVE - rather than probe for scenery and hope - needs what the
+// engine's traffic and debris systems already use: the surface at a position, and the
+// surfaces that one connects to. See dr2roads.h for the struct.
+// ---------------------------------------------------------------------------
+int JerRoadInfoAt(int x, int y, int z, JER_ROAD_INFO* out)
+{
+	VECTOR v;
+	DRIVER2_ROAD_INFO info;
+	int surfId, i;
+
+	if (out == NULL)
+		return 0;
+
+	v.vx = x;
+	v.vy = y;
+	v.vz = z;
+
+	out->surfId = -1;
+	out->kind = -1;
+	out->numLanes = 0;
+	out->speedLimit = 0;
+	out->laneDirs = 0;
+	out->aiLanes = 0;
+
+	for (i = 0; i < 4; i++)
+		out->connect[i] = -1;
+
+	/* RoadInCell is the engine's own "is there a road here". It returns `plane->surface - 32`
+	 * - which IS the Driver 2 road id the road tables are indexed by - and -1 when there is
+	 * no road OR the region has not been streamed in, which is the map edge, the very thing
+	 * the flee used to mistake for open ground. It also writes the road height back into the
+	 * VECTOR, which is why `v` is ours to throw away. */
+	surfId = RoadInCell(&v);
+
+	if (surfId < 0)
+		return 0;
+
+	if (!GetSurfaceRoadInfo(&info, surfId))
+		return 0;
+
+	out->surfId = surfId;
+	out->kind = IS_JUNCTION_SURFACE(surfId) ? 2 : (IS_CURVED_SURFACE(surfId) ? 1 : 0);
+	out->numLanes = ROAD_LANES_COUNT(&info);
+	out->speedLimit = ROAD_SPEED_LIMIT(&info);
+	out->laneDirs = (unsigned char)info.LaneDirs;
+	out->aiLanes = (unsigned char)info.AILanes;
+
+	for (i = 0; i < 4; i++)
+		out->connect[i] = info.ConnectIdx[i];
+
+	return 1;
+}
+
+int JerRoadAt(int x, int y, int z)
+{
+	JER_ROAD_INFO info;
+
+	return JerRoadInfoAt(x, y, z, &info);
+}

@@ -86,4 +86,32 @@ extern int GetSurfaceIndex(VECTOR *pos); // 0x0001380C
 extern int RoadInCell(VECTOR *pos); // 0x0001322C
 extern sdPlane* sdGetCell(VECTOR *pos);
 
+// ---------------------------------------------------------------------------
+// JERICHO: the road network, for modules that want to DRIVE rather than probe.
+//
+// The engine's own traffic and debris systems navigate with these. `connect` is the point:
+// it is the road GRAPH - the surfaces this one joins - which is the difference between
+// following a road and bouncing between walls and lamp posts.
+//
+// `aiLanes` / `laneDirs` are the same lane bits the civ AI uses, so a module can drive the
+// correct side of the road instead of the geometric centre. `speedLimit` is the road's own
+// speed-limit id (0..3), not a velocity.
+//
+// Compiled-in helpers, like the rest of the Jer* engine hooks, so no exports.def entry: a
+// module includes this header and calls them directly (see JerReleaseCarSlot, texture.h).
+// ---------------------------------------------------------------------------
+typedef struct JER_ROAD_INFO
+{
+	int	surfId;			// < 0 when there is no surface here at all
+	int	kind;			// 0 straight, 1 curve, 2 junction
+	int	numLanes;		// ROAD_LANES_COUNT
+	int	speedLimit;		// ROAD_SPEED_LIMIT
+	unsigned char laneDirs;		// one direction bit per lane pair
+	unsigned char aiLanes;		// one AI-driveable bit per lane pair
+	int	connect[4];		// ConnectIdx: the surfaces this one joins
+} JER_ROAD_INFO;
+
+extern int JerRoadInfoAt(int x, int y, int z, JER_ROAD_INFO *out);	// 1 = a surface here
+extern int JerRoadAt(int x, int y, int z);				// 1 = a DRIVEABLE surface here
+
 #endif
