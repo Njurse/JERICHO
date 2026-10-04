@@ -137,11 +137,11 @@ exactly how both platforms spent their entire history failing at step 2, with
 `fatal: repository 'https://github.com/Njurse/gailredriver2.git/' not found`
 on whichever submodule sorts first.
 
-`JERICHO/MODS/gaildrv2` is deliberately **out of the picture for builds** — its
-repository is not published — so it stays registered in `.gitmodules` for local
-work but is never fetched here. The rule to keep: adding a submodule to
-`.gitmodules` must not be able to break the build by itself. Add a path to that
-loop only when a build genuinely needs it.
+That submodule was `JERICHO/MODS/gaildrv2`, whose repository is private. It has
+since been removed from the tree, so `PsyCross` is the only submodule left and a
+plain `git clone --recurse-submodules` works without credentials. The rule still
+applies: adding a submodule to `.gitmodules` must not be able to break the build
+by itself, so add a path to that loop only when a build genuinely needs it.
 
 ### Each configuration links twice
 
@@ -192,17 +192,16 @@ frontend's Options → JERICHO rewrites the file on toggle.
 ### Compiling only carhacks and mp is deliberately NOT done
 
 The profile above is about **activation**. The binaries still compile every deep
-module under `JERICHO/MODS/` — gaildrv2 excepted, which CI never fetches — and
-merely leave all but carhacks and mp switched off.
+module under `JERICHO/MODS/` and merely leave all but carhacks and mp switched
+off.
 
 Restricting the compiled-in set is a real change to the build system: it means
 teaching the mod scan (`premake_modules/jericho_mods.lua`) and its callers about
 a release subset, and a filter bug there drops a module from the build *silently*
 rather than failing. It is a deliberate non-goal for now, not an oversight.
 
-The consequence worth knowing: a locally built release differs from a CI one in
-exactly that respect. The exe in this tree has gaildrv2 and every other module
-linked in (inactive); a CI exe does not contain gaildrv2 at all.
+The consequence worth knowing: every module in the tree is linked into the exe,
+local or CI, and the release profile only decides which of them run.
 
 ### Where a deep module's compiled output lives
 

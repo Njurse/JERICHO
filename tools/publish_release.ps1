@@ -200,11 +200,10 @@ function New-Package {
         if (Test-Path (Join-Path $bin 'JERICHO')) {
             Copy-Item (Join-Path $bin 'JERICHO') $stage -Recurse -Force
 
-            # gaildrv2 is out of the picture for builds: CI never fetches its
-            # submodule, so a CI payload carries an EMPTY JERICHO/MODS/gaildrv2
-            # and no JERICHO/CONFIG/gaildrv2.ini. This tree does have the source
-            # on disk, so without this the local release would ship a module the
-            # release does not run. Drop both to match.
+            # gaildrv2 has been removed from the repository, but the post-build
+            # mirror only adds files, so a bin/<cfg> built before the removal can
+            # still hold JERICHO/MODS/gaildrv2 and JERICHO/CONFIG/gaildrv2.ini.
+            # A CI payload has neither; drop both so a local release matches.
             $gd = Join-Path $stage 'JERICHO\MODS\gaildrv2'
             if (Test-Path $gd) { Remove-Item $gd -Recurse -Force }
             $gi = Join-Path $stage 'JERICHO\CONFIG\gaildrv2.ini'

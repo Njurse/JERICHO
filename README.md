@@ -171,6 +171,23 @@ and the traps the API hides — is
 
 ## Building and running
 
+### Getting the source
+
+The PsyCross platform layer (`src_rebuild/PsyCross`) is a git submodule, so
+clone with submodules:
+
+```
+git clone --recurse-submodules https://github.com/Njurse/JERICHO.git
+```
+
+In a clone made without that flag, fetch it afterwards:
+
+```
+git submodule update --init --recursive
+```
+
+Every submodule is public, so neither command needs credentials.
+
 ### Prerequisites (Windows)
 
 - **Visual Studio 2019 or 2022** with the **Desktop development with C++**
@@ -368,11 +385,6 @@ elevation. [README](JERICHO/MODS/debugorbit/README.md)
 
 Squash-and-stretch the car body's vertex copy as it drives, drawn without
 touching physics or collision. [JERICHO/MODS/yarisbounce/](JERICHO/MODS/yarisbounce/)
-
-### GAILDRV2 (`gaildrv2`) — the machine-learning bridge *(compiled-in)*
-
-A JERICHO ↔ ML bridge: it exports game state over TCP as compact binary and
-applies agent actions. [README](JERICHO/MODS/gaildrv2/README.md)
 
 ### Example (`example`) — the smoke test *(external)*
 

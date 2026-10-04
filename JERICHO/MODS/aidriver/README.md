@@ -6,7 +6,7 @@ player would when the sandbox hands the player's car to them
 
 Zero coupling: the module reads the AI mode from the game-global
 `g_PlayerControlMode` (which the sandbox menu writes) and observes the
-game state — no cross-module calls, no `gaildrv2` involvement.
+game state — no cross-module calls.
 
 ## Behaviors
 

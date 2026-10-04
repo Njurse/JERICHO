@@ -1496,7 +1496,6 @@ EXPORTS
 	?D2plOnPedInput@@YAHPEAX0@Z
 	?D2plOnPedMove@@YAHPEAX0@Z
 	?D2plPedCamera@@YAXPEAXH@Z
-	jer_module_gaildrv2_entry
 	jer_module_levelhacks_entry
 	MpCameraPose
 	MpGetGameLevel
