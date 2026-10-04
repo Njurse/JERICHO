@@ -114,6 +114,8 @@ const char* chkNetCityName(int city)
  * cities (chkImportSetSlot in carimport.c), so a peer's car is no longer refused
  * for coming from a "second" city; only a full set of spare slots is a limit, and
  * then the peer keeps the clean fallback instead (ChkOnCarPeerDraw). */
+static void chkNetReapDeparted(void);
+
 /* Is ANYBODY still driving this car? The table (the players still here) and our own pick. Two
  * players can pick the same car, and the canonical rule puts them in ONE slot - so a release
  * must ask this before giving a slot back, or the survivor's car disappears with the leaver. */
@@ -740,6 +742,13 @@ static int chkNetOnFrame(void* ud, void* args)
 	}
 	else if (active)
 	{
+		/* Has anyone GONE? This must happen BEFORE the early returns below: they fire on
+		 * every frame where the local car has not changed, which is the normal case - and
+		 * putting the check after them meant it never ran. Only the roster knows a player
+		 * left (the car table simply stops naming them), so this is the HOST's half of
+		 * "a peer leaves -> release its slot". Idempotent. */
+		chkNetReapDeparted();
+
 		/* CHK_FORCE_PLAYER_PALETTE=<n>: a headless run has no colour picker, so the
 		 * local car always comes out palette 0 - which means mp's owner-authoritative
 		 * palette, and carhacks' correction of it, are never exercised from a script.
@@ -848,6 +857,27 @@ static int chkNetOnFrame(void* ud, void* args)
 	}
 
 	return JER_RESULT_CONTINUE;
+}
+
+/* Every frame, while a session is up: has anyone LEFT? A peer going away is the unload event
+ * for its car's resident slot, and the session's own car table cannot report it - the table is
+ * merged into a machine's state and a player who has gone is simply never named again. The
+ * roster is what knows, so ask it (jer_net_player_present) and run the same release pass the
+ * table handler runs. Idempotent: it only acts for players still flagged as present-car.
+ *
+ * Without this the HOST never released anything: a client leaving on its own (MP_TEST_LEAVE,
+ * the pause menu's Exit, a dropped connection) left that client's car - and its lower-half pool
+ * pages, baked page index and geometry - held for the rest of the session, so the next joiner
+ * was refused the slot by chkImportSlotFree. */
+static void chkNetReapDeparted(void)
+{
+	int seen[CHK_NET_MAX_PLAYERS];
+	int i;
+
+	for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
+		seen[i] = jer_net_player_present(i);
+
+	chkNetReleaseDeparted(seen);
 }
 
 static int chkNetOnLevelLaunch(void* ud, void* args)

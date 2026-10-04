@@ -61,6 +61,13 @@ int jer_net_local_player(void);
  * the session's import set would take a resident slot nobody drives. */
 int jer_net_local_car_chosen(void);
 
+/* Is player `id` still in the session? (0 = the host.) A module that holds per-player
+ * state - carhacks holds a resident slot per player's car - needs this to notice a
+ * player LEAVING: the session's car table is what a machine learns about its peers
+ * from, and a player who has gone is simply no longer in it. Returns 1 while the
+ * player is present and 0 with no session at all, so it is safe to call always. */
+int jer_net_player_present(int id);
+
 #ifdef __cplusplus
 }
 #endif
