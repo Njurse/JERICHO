@@ -2604,6 +2604,32 @@ int CentreScreen(int bSetup)
 }
 
 
+#ifndef PSX
+/* Put the chosen CITY back as the frontend's "extra" image (the city picture
+ * drawn over the CITYBACK.RAW backdrop). The car-select screen swaps that extra
+ * to a CAR icon while it is up, so a screen entered from it must put the city
+ * back - the Day/Night screen is the one that shows the city after a car is
+ * picked (see TimeOfDaySelectScreen). The city image is reused from
+ * _frontend_buffer when it is still loaded (loaded[0] != -1), else reloaded. */
+static void FrontendShowCityExtra(void)
+{
+	RECT16 rect = extraRect;
+
+	LoadBackgroundFile("DATA\\CITYBACK.RAW");
+
+	if (loaded[0] == -1)
+	{
+		SetupExtraPoly("DATA\\CITY.RAW", currCity, 0);
+	}
+	else
+	{
+		bDrawExtra = 1;
+		LoadImage(&rect, (u_long*)(_frontend_buffer + currCity * 0x8000));
+		DrawSync(0);
+	}
+}
+#endif
+
 // [D] [T]
 int CarSelectScreen(int bSetup)
 {
@@ -2726,20 +2752,8 @@ int CarSelectScreen(int bSetup)
 		LoadBackgroundFile("DATA\\GFX.RAW");
 		bDrawExtra = 0;
 #else
-		LoadBackgroundFile("DATA\\CITYBACK.RAW");
-
-		if (loaded[0] == -1)
-		{
-			SetupExtraPoly("DATA\\CITY.RAW", currCity, 0);
-		}
-		else
-		{
-			bDrawExtra = 1;
-
-			RECT16 rect = extraRect;
-			LoadImage(&rect, (u_long*)(_frontend_buffer + currCity * 0x8000));
-			DrawSync(0);
-		}
+		/* back to the Day/Night screen: show the CITY again, not the car */
+		FrontendShowCityExtra();
 #endif
 		currPlayer = 1;
 		iScreenSelect = SCREEN_NONE;
@@ -5275,6 +5289,15 @@ int TimeOfDaySelectScreen(int bSetup)
 		// setup time we want to reset it
 		wantedWeather = 0;
 		wantedTimeOfDay = TIME_DAY;
+
+#ifndef PSX
+		/* Arriving from the car-select screen (or the stock car screen's own
+		 * back) leaves the extra on a CAR icon (loaded[0] == -1); Day/Night shows
+		 * the city, so put it back. Coming from the city screen the city is already
+		 * up (loaded[0] != -1) and is left untouched. */
+		if (loaded[0] == -1)
+			FrontendShowCityExtra();
+#endif
 
 		numButtons = BuildButtonsVertical(3, 168, 208);
 
