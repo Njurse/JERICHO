@@ -1099,6 +1099,30 @@ typedef struct
 // city's page list is its own (the same set number means a different page in
 // another city). Indexed by city, so a set is resolved against ITS OWN list.
 static CAR_IMPORT_SETS gCarImportPerms[4];
+
+/* JERICHO: what cross-city resources each resident SLOT holds.
+ *
+ * Nothing mapped a slot to what it owns, which is why a car's resources could not be
+ * given back: the pin table is keyed by set (a record, not a car), the pool pages by
+ * pin, the palette block by CITY, and the hot-load geometry by nothing at all. This is
+ * that map, filled in where each piece is placed (CarSlotResNote after the pin walk,
+ * CarSlotResNoteGeometry from the build) and reset with the rest of the import state.
+ * A release needs it; nothing reads it for behaviour yet.
+ *
+ * Keyed by resident slot, because that is the unit that comes and goes: a player picks,
+ * a peer joins, a peer leaves - each is a slot acquiring or giving up these. */
+typedef struct
+{
+	int	used;			/* 0 = nothing cross-city on this slot */
+	int	city;			/* -1 = the level's own car */
+	int	pins;			/* pins recorded for this slot */
+	int	poolPages;		/* of those, how many hold a lower-half pool page */
+	int	clutRowBase;		/* this city's civ_clut block, -1 = none */
+	int	clutRows;
+	int	geometryBytes;		/* the hot-load pool block, 0 = built at level load */
+} CAR_SLOT_RES;
+
+static CAR_SLOT_RES sCarSlotRes[MAX_CAR_RESIDENT_MODELS];
 static CAR_IMPORT_SETS gCarImportSpecs[4];
 static int gCarImportTexParsed[4];
 
@@ -1746,7 +1770,7 @@ int CarModelSetUsed(int set)
 	return 0;
 }
 
-static void CarPinRecord(int set, int index, int offset, int size, int preferred, int city)
+static void CarPinRecord(int set, int index, int offset, int size, int preferred, int city, int slot)
 {
 	/* Idempotent: a set of a city is pinned ONCE. The level load records every imported
 	 * car's sets, and a hot load re-runs that same walk (a car added after the level was
@@ -1792,7 +1816,7 @@ static void CarPinRecord(int set, int index, int offset, int size, int preferred
 
 	sPinSet[sPinCount] = set;
 	sPinIndex[sPinCount] = index;
-	sPinSlot[sPinCount] = -1;		// placed at draw time
+	sPinSlot[sPinCount] = slot;		// which CAR this page belongs to (the manifest's key)
 	sPinPool[sPinCount] = -1;
 	sPinOffset[sPinCount] = offset;
 	sPinSize[sPinCount] = size;
@@ -1962,6 +1986,76 @@ static int CarPinPreferredAllowed(int slot)
 
 static void VramAccountReport(void);
 static int LevelClutRowsNeeded(void);		// JERICHO: the level's own max CLUT rows
+
+/* JERICHO: fill in the manifest for `slot` from the live tables. Called after the pin
+ * walk, which is when that slot's pins and their pool pages are known. */
+void CarSlotResNote(int slot, int city)
+{
+	CAR_SLOT_RES* r;
+	int p;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	r = &sCarSlotRes[slot];
+
+	r->used = 1;
+	r->city = city;
+	r->pins = 0;
+	r->poolPages = 0;
+
+	for (p = 0; p < sPinCount; p++)
+	{
+		if (sPinSlot[p] != slot)
+			continue;
+
+		r->pins++;
+
+		if (sPinPool[p] >= 0)
+			r->poolPages++;
+	}
+
+	r->clutRowBase = (city >= 0) ? CarImportPaletteBlockBase(city) : -1;
+	r->clutRows = (r->clutRowBase >= 0) ? CIV_CLUT_BLOCK_ROWS : 0;
+
+	printInfo("cross-city: slot %d holds %s: %d pin(s) (%d in the pool), civ_clut %s, geometry %d bytes\n",
+		slot, (city >= 0) ? LevelNames[city] : "the level's own car",
+		r->pins, r->poolPages,
+		(r->clutRowBase >= 0) ? "blocked" : "none", r->geometryBytes);
+}
+
+/* JERICHO: the geometry side of the manifest, from the build that made it. */
+void CarSlotResNoteGeometry(int slot, int bytes)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	sCarSlotRes[slot].used = 1;
+	sCarSlotRes[slot].geometryBytes = bytes;
+}
+
+/* JERICHO: the whole manifest, for the log at level end and for anything that needs to
+ * know what is still held. Returns how many slots hold cross-city resources. */
+int CarSlotResReport(void)
+{
+	int slot, n = 0;
+
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		CAR_SLOT_RES* r = &sCarSlotRes[slot];
+
+		if (!r->used || (r->pins == 0 && r->geometryBytes == 0))
+			continue;
+
+		n++;
+		printInfo("cross-city: held - slot %d (%s): %d pin(s), %d pool page(s), civ_clut %s, geometry %d bytes\n",
+			slot, (r->city >= 0) ? LevelNames[r->city] : "the level's own car",
+			r->pins, r->poolPages,
+			(r->clutRowBase >= 0) ? "blocked" : "none", r->geometryBytes);
+	}
+
+	return n;
+}
 
 /* JERICHO cross-city hot load: record (and therefore pin) the texture pages an imported
  * car needs, for a slot built AFTER the level loaded.
@@ -2839,6 +2933,9 @@ void CarImportResetState(void)
 	int i;
 
 	sPinCount = 0;
+
+	/* the manifest describes what was placed, so it goes with the placement state */
+	memset(sCarSlotRes, 0, sizeof(sCarSlotRes));
 	sRemapCount = 0;
 	sReservedCount = 0;
 	sPinEvictions = 0;
@@ -2883,6 +2980,7 @@ void LoadImportedTPages(void)
 	int city = GetCarImportCity();
 	int base = GetCarImportPageBaseForCity(city);
 	int sets[64];
+	int setSlot[64];		// WHICH resident slot asked for it: the manifest is per slot
 	int setCity[64];		// WHICH city each set belongs to: a page list is per city, and
 					// the same set number means a different page in another
 	int pref[64];		// preferred slot per set: the rectangle the replaced car used, or -1
@@ -2997,6 +3095,7 @@ void LoadImportedTPages(void)
 					// level's permanent pages.
 					pref[nsets] = (specialSlot + k < 19) ? (specialSlot + k) : -1;
 					setCity[nsets] = src;
+					setSlot[nsets] = i;
 					sets[nsets++] = set;
 				}
 			}
@@ -3022,6 +3121,7 @@ void LoadImportedTPages(void)
 					{
 						pref[nsets] = -1;	// no natural rectangle: a spare slot, as for civilians
 						setCity[nsets] = src;
+						setSlot[nsets] = i;
 						sets[nsets++] = set;
 						own++;
 					}
@@ -3057,6 +3157,7 @@ void LoadImportedTPages(void)
 					pref[nsets] = -1;	// civilian body: no single natural rectangle, so the
 										// level's spare slots are used as before
 					setCity[nsets] = src;
+					setSlot[nsets] = i;
 					sets[nsets++] = set;
 				}
 			}
@@ -3204,10 +3305,21 @@ void LoadImportedTPages(void)
 			sRemapCount++;
 		}
 
-		CarPinRecord(set, dstSet, offset, size, pref[i], sc);
+		CarPinRecord(set, dstSet, offset, size, pref[i], sc, setSlot[i]);
 
 		printInfo("cross-city: %s set %d -> index %d, %d bytes at +%d, %d clut rows (paged in at draw time, evicting the world if needed)\n",
 			LevelNames[sc], set, dstSet, size, offset, npalettes);
+	}
+
+	/* The manifest (CAR_SLOT_RES): now that every slot's pins are recorded, say what
+	 * each imported slot holds. This is the map a release needs -- nothing reads it for
+	 * behaviour yet. */
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+	{
+		int src = GetCarModelSourceCity(i);
+
+		if (src >= 0)
+			CarSlotResNote(i, src);
 	}
 }
 

@@ -53,6 +53,14 @@ extern void JerHotLoadCarTpages(void);
  * in its page list" - their baked index stays empty and the car draws another page. */
 extern void CarImportPageListsForCity(int city);
 
+/* JERICHO: the per-slot cross-city resource manifest - what each resident slot holds: its
+ * pins, the pool pages behind them, its civ_clut block and its hot-load geometry, keyed by
+ * resident slot (the unit that comes and goes). Filled in where each piece is placed and
+ * reset with the import state. A release reads it; nothing reads it for behaviour yet. */
+extern void CarSlotResNote(int slot, int city);
+extern void CarSlotResNoteGeometry(int slot, int bytes);
+extern int  CarSlotResReport(void);
+
 // JERICHO: re-claim and re-upload imported pages whose slot has been taken back by
 // streaming. Called from the game loop; cheap unless something actually went wrong.
 extern void CarImportPin(void);

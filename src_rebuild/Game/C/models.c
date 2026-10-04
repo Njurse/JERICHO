@@ -1090,6 +1090,9 @@ int JerHotLoadCarModel(int slot)
 		LevelNames[GetCarModelSourceCity(slot)], model_number, slot, need,
 		gJerHotCarUsed, gJerHotCarSize);
 
+	/* the manifest's geometry side: the block this slot now owns in the hot-load pool */
+	CarSlotResNoteGeometry(slot, JER_HOT_CAR_BLOCK_BYTES);
+
 	return need;
 }
 
