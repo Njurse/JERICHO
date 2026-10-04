@@ -799,29 +799,17 @@ int chkImportApplyPick(int level, int count)
 	printInfo("[carhacks] import: the pick (%s model %d) -> resident slot %d (level %s)\n",
 		chkCityName(city), model, slot, chkCityName(level));
 
-	if (!chkImportSetSlot(slot, chkCarId(city, model)))
-		return 0;
-
-	/* AND TELL THE ENGINE WHICH SLOT, not which model.
+	/* Note for the next reader: do NOT write wantedCar[] from here.
 	 *
-	 * wantedCar[] is matched against residentCarModels[] by players.c to decide the slot the
-	 * player spawns in, so what belongs there is a RESIDENT SLOT. Writing the model number
-	 * (what the menu did in chkRideWith) put a guest pick in the LEVEL'S OWN car of that
-	 * number - measured, the user's try 2 (vegas:1), whose car was imported into slot 7:
-	 *
-	 *   [carhacks] import: the pick (VEGAS model 2) -> resident slot 7 (level CHICAGO)
-	 *   [mp] player 0 changed car: slot 0 -> 1 (the session city model 2)
-	 *
-	 * The mapping cannot be done where the menu is, because at Ride time nothing has been
-	 * imported yet and there is no slot to name (chkImportSlotForCar answers -1). It is known
-	 * HERE, and still early enough: this runs at the level load, and the engine re-applies
-	 * wantedCar as its last word before the level runs. */
-	wantedCar[0] = slot;
-
-	printInfo("[carhacks] import: the pick is resident slot %d -> wantedCar[0]=%d "
-		"(a slot, not a model)\n", slot, wantedCar[0]);
-
-	return 1;
+	 * This was tried as a fix for a guest pick spawning in the level's own car of the same
+	 * number, on the reading that wantedCar[] holds a RESIDENT SLOT. It does not: it holds a
+	 * MODEL. mission.c compares it against the model each resident slot carries
+	 * (`residentCarModels[j] != wantedCar[i]`), and players.c derives the slot from that
+	 * model - so writing the slot index made the guest resolve to no model at all and fall
+	 * back to the first resident car. The model write was already right; the car that ended
+	 * up wrong is chosen in mp's own rebuild path (see mp_session.c, the "changed car"
+	 * lines), not here. */
+	return chkImportSetSlot(slot, chkCarId(city, model));
 }
 
 /* ---------------------------------------------------------------------------
