@@ -18,6 +18,20 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    # Manual runs are how a build of a WORKING BRANCH becomes something another PC
+    # can install: the mp remote agent installs only a PUBLISHED release, so with
+    # no way to publish a branch the only route to a test machine was hand-copying
+    # the zip. Set release_tag to cut one; leave it blank to build an artifact only.
+    # Deliberately no push trigger for working branches: a release per push would
+    # spend CI minutes on every experiment.
+    inputs:
+      release_tag:
+        description: >-
+          Publish this ref's build as a release under this tag (blank = artifact
+          only). Must match the agent's tag rule [A-Za-z0-9][A-Za-z0-9._-]* and must
+          not be 'alpha' or a v* tag, which the other steps own.
+        required: false
+        default: ''
 
 # Cancel a superseded run when a newer commit lands on the same ref.
 concurrency:
@@ -293,6 +307,31 @@ jobs:
           prerelease: false
           # a tag that already has a release: replace the assets rather than fail
           overwrite_files: true
+
+      # On-demand release of whatever ref this run is on, for installing on a test
+      # machine:  mp_remote.py update --peer <ip> --tag <tag>
+      #
+      # Re-running with the same tag replaces the assets, which is the point -- the
+      # tag names a line of work ("pr15"), not a moment. The agent re-checks the
+      # SHA256 from GitHub every time, so a replaced asset cannot go unnoticed.
+      - name: Publish on-demand release
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: ${{ inputs.release_tag }}
+          body: |
+            Build of ${{ github.ref_name }} at ${{ github.sha }}, published on demand.
+
+            Install on a test machine with:
+
+                python mp_remote.py update --peer <ip> --port 1401 --tag ${{ inputs.release_tag }}
+
+            The mp agent accepts only JERICHO_Release_dev_win64.zip from this release.
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: dist/*
 
       # Every push to main refreshes a rolling "alpha" pre-release so there
       # is always a current download until a real tag is cut. Delete this

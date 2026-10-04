@@ -43,7 +43,7 @@ premake `5.0.0-beta1`, SDL2 `2.30.2`, OpenAL-soft `1.23.1`, and libjpeg `jpeg-9d
 |---|---|
 | push to `main` | build both platforms, upload the two archives as **workflow artifacts**, and refresh the rolling **`alpha`** pre-release |
 | push a `v*` tag | build both platforms and publish a normal **GitHub Release** with the two archives and `SHA256SUMS` attached |
-| manual run (Actions → Build → *Run workflow*) | same as a push to `main` |
+| manual run (Actions → Build → *Run workflow*) | same as a push to `main` — or, with the **`release_tag`** input set, publish this ref's build as a release under that tag (see [Installing a CI build on a test machine](#installing-a-ci-build-on-a-test-machine)) |
 
 Superseded runs on the same ref are cancelled automatically.
 
@@ -66,6 +66,39 @@ Superseded runs on the same ref are cancelled automatically.
 - **Per-commit artifacts:** open the run under *Actions* and download from the
   *Artifacts* section. Artifacts require being signed in to GitHub and expire
   after 90 days; releases do not.
+
+## Installing a CI build on a test machine
+
+The mp remote agent (`JERICHO/MODS/mp/tools/remote/mp_agent.ps1`) installs a binary
+only from a **published release** — it has no way to accept a file pushed to it — so a
+build has to reach GitHub before it can reach another PC. From a working branch, where
+neither of the automatic triggers applies:
+
+1. push the branch;
+2. **Actions → Build → Run workflow**, pick the branch, set `release_tag` (for example
+   `pr15`), and run it. Re-running with the same tag replaces the assets, which is the
+   point: the tag names a line of work, not a moment;
+3. from a machine that can reach the test PC:
+
+   ```sh
+   python JERICHO/MODS/mp/tools/remote/mp_remote.py update \
+       --peer 192.168.50.244 --port 1401 --tag pr15
+   ```
+
+The rules that matter on this path, and why:
+
+- the tag must match the agent's rule `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`, and must not be
+  `alpha` or a `v*` tag — those belong to the push-to-main and tag steps;
+- the agent accepts exactly one asset name, `JERICHO_Release_dev_win64.zip`, and verifies
+  it against GitHub's per-asset digest, falling back to the `SHA256SUMS` asset beside it;
+- it installs only `JERICHO_dev.exe`, `JERICHO_dev.pdb`, `JERICHO_dev.map`, `SDL2.dll`,
+  `OpenAL32.dll` and `JERICHO/`. The game content the archive also carries is downloaded
+  and staged but **not** installed, so shipping it costs time and disk, not correctness;
+- the on-demand release is a pre-release and never the *latest*, so it cannot disturb the
+  download anyone else sees;
+- both ends must run the **same** build to join a session, so publishing through CI is
+  what makes "build here, test there" work at all: the version a CI run embeds comes from
+  `git describe` on that commit, and a session refuses a peer whose build differs.
 
 ## Local equivalents
 
