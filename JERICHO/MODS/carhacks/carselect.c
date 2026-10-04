@@ -491,14 +491,14 @@ static int chkSelOnFrame(void* ud, void* args)
 }
 
 /* JER_EVENT_FRONTEND_ENTERED - back in the menus (or here for the first time):
- * allow the flow again, drop a half-made selection, and give the cross-city PLACEMENT back.
+ * allow the flow again and drop a half-made selection.
  *
- * Why release here and not only when a session ends: those are paged-in car textures and
- * CLUT rows, and the menus do not need any of them. Without it the placement of the level
- * we just left sits behind the frontend until some later level load, which is the "they pile
- * up" report. A live session is the exception - there the placement is what the players
- * are driving, and a joiner's car select is itself a frontend screen. The pick survives in
- * both cases (chkImportPurgePlacement), because the level the pick starts still needs it. */
+ * It deliberately does NOT release the cross-city placement. That was tried, on the
+ * reasoning that the menus need no imported car textures -- and it broke the frontend:
+ * the engine's own page lists, CLUT rows and import buffers are still referenced by the
+ * draw path while the menus are up (the frontend draws a car), so giving them back there
+ * damages state that is not ours to free. The release belongs where the map really goes
+ * away: the session ending (chkImportReleaseAll) or the next level load replacing it. */
 static int chkSelOnFrontendEntered(void* ud, void* args)
 {
 	(void)ud;
@@ -507,9 +507,6 @@ static int chkSelOnFrontendEntered(void* ud, void* args)
 	gChkInFrontend = 1;
 	gChkFrontendFrames = 0;
 	gChkCarIdx = 0;
-
-	if (!jer_net_is_active())
-		chkImportPurgePlacement();
 
 	return JER_RESULT_CONTINUE;
 }
