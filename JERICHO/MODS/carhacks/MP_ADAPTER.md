@@ -143,9 +143,29 @@ rows that were baked against that slot agree.
   first is right ("the vegas car imported proper but not the havana one's textures and
   colors"). Two guest cities' pages and CLUT rows are placed in the same pool and bank,
   so this is a collision between guests, not a missing import.
-- The machine that imported a car gets its SCENERY textures contaminated, and its car
-  palettes are "still messed up". Worth testing with **a different palette number per
-  test player** (within the vehicle's own palette count) so a mix-up is unambiguous.
+- The machine that imported a car gets its SCENERY/building textures contaminated, and
+  its car palettes were "still messed up" until the band fix. The contamination is the
+  pin's own wording - "paged in at draw time, **evicting the world if needed**" - and an
+  import has no business taking a world page: the lower-half pool is where it belongs.
+  Worth testing with **a different palette number per test player** (within the vehicle's
+  own palette count) so a mix-up is unambiguous.
+- **OPEN: an access violation when a player leaves a session and rejoins picking a car
+  from a DIFFERENT city than before.** Returning to the frontend means there is no map,
+  and the cross-city state is only reset when a level LOADS (`InitCarImport` ->
+  `CarImportResetState`), so the frontend runs with the last map's cross-city state still
+  in place. Narrowed so far: `FreeCarImport` frees the buffers AND `memset`s the struct
+  (models.c:289-297), so a stale import buffer is NOT a dangling pointer, and
+  `chkImportHotLoad` refuses before any level exists (`gChkEngineKnown`). The candidates
+  left are the state that outlives a level without a level-load reset: the deferred
+  palette lumps (`sImpPalLump[]`/`sImpPalSize[]`, pointers INTO the import buffer, cleared
+  only by `CarImportPaletteReset`), the parsed page lists (`gCarImportPerms[]`/
+  `gCarImportSpecs[]`/`gCarImportTexParsed[]`), and mp's per-player car state
+  (`chkNetLocalCar` reads `player[0].playerCarId` and `car_data[]`). The shape of the fix
+  is the one the report suggests: a real "the map is gone" cleanup for the addons - reset
+  the cross-city state when the session/level ends, not only when the next one loads.
+- The dented variant's textures come out "a little messed up" on an imported car: the
+  damaged model is built (`gCarDamModelPtr`) but its page/row needs are the same walk's,
+  so a damaged-only set is the place to look.
 - The palette bank holds three guest cities (`CIV_CLUT_ROWS 32` / `CIV_CLUT_IMPORT_ROW 8`
   / `CIV_CLUT_BLOCK_ROWS 8`), and the tpage remap indices are `110..127` (18) - both are
   real ceilings, and both are where a multi-city session runs out first.
