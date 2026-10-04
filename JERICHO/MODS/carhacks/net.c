@@ -23,6 +23,7 @@
 #include "carimport.h"
 #include "texture.h"	/* CarSlotResReport: the resource monitor */
 #include "net.h"
+#include "slotrelease.h"	/* the release decision (pure, tested off-engine) */
 
 #include <string.h>
 #include <stdlib.h>		/* atoi: the palette test lever */
@@ -47,6 +48,15 @@ static int gChkNetPeerPickSet[CHK_NET_MAX_PLAYERS];
  * event for its car: the slot is given back (chkImportReleaseSlot) once nobody drives that car
  * any more, which is why the slot is remembered here and not only in the set. */
 static int gChkNetPeerSlot[CHK_NET_MAX_PLAYERS];
+
+/* Release decisions that are WAITING (chkNetReleaseSlotIfUnused): a slot nobody names any more
+ * but that still has a car on it. Retried every frame until the car is gone (or somebody names
+ * the car again). `Last*` is what the previous decision for the slot said, so a retry logs only
+ * when something changed. */
+static int gChkNetRelPending[CHK_IMPORT_MAX_SLOTS];
+static char gChkNetRelWhy[CHK_IMPORT_MAX_SLOTS][48];
+static int gChkNetRelLast[CHK_IMPORT_MAX_SLOTS];		/* CHK_REL_VERDICT */
+static int gChkNetRelLastCars[CHK_IMPORT_MAX_SLOTS];
 
 /* What WE are driving, as last advertised (mp settles the local car after the
  * session starts, so this changes under us). */
@@ -115,13 +125,27 @@ const char* chkNetCityName(int city)
  * for coming from a "second" city; only a full set of spare slots is a limit, and
  * then the peer keeps the clean fallback instead (ChkOnCarPeerDraw). */
 static void chkNetReapDeparted(void);
+static void chkNetBroadcastCars(void);
 
-/* Is ANYBODY still driving this car? The table (the players still here) and our own pick. Two
- * players can pick the same car, and the canonical rule puts them in ONE slot - so a release
+/* Does any player's car identity still name `car`? The table (every player still here, our own
+ * row included), what WE drive now (chkNetLocalCar - the choice, which survives the level
+ * consuming the pick; the old check read the consumed pick and so never saw our own car) and a
+ * frontend pick not yet consumed. `who` gets the player id, or -1 for this machine's player.
+ * Two players can pick the same car, and the canonical rule puts them in ONE slot - so a release
  * must ask this before giving a slot back, or the survivor's car disappears with the leaver. */
-static int chkNetCarStillWanted(CHK_CAR_ID car)
+static int chkNetCarWantedBy(CHK_CAR_ID car, int* who)
 {
+	CHK_CAR_ID mine = chkNetLocalCar();
 	int i;
+
+	if (who != NULL)
+		*who = -1;
+
+	if (!chkCarIdIsSet(car))
+		return 0;
+
+	if (chkCarIdIsSet(mine) && chkCarIdEqual(mine, car))
+		return 1;
 
 	if (chkImportLocalPickCity() >= 0 &&
 		chkCarIdEqual(chkCarId(chkImportLocalPickCity(), chkImportLocalPickModel()), car))
@@ -130,19 +154,194 @@ static int chkNetCarStillWanted(CHK_CAR_ID car)
 	for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
 	{
 		if (gChkNetPeerPickSet[i] && chkCarIdEqual(gChkNetPeerPick[i], car))
+		{
+			if (who != NULL)
+				*who = i;
+
 			return 1;
+		}
 	}
 
 	return 0;
 }
 
+/* THE release routine. Every path that can leave a resident slot unused comes here - a peer
+ * leaving (chkNetReleaseDeparted), a peer changing car (chkNetUnbindChangedPeers, which covers
+ * a switch to a domestic car too), this machine's player changing car (chkNetLocalSwitched, from
+ * mp's MP_CARQ_CHOSEN) and a load that did not end in a switch (mplive.c) - so the rule is
+ * written once (slotrelease.h, chkReleaseVerdict):
+ *
+ *   free the slot only when NO player's identity names its car AND NO car is on it.
+ *
+ *   named          -> kept     (someone draws it, or will again)
+ *   cars on it     -> deferred (freeing the mesh/pages a car is drawn with this frame is #12);
+ *                                retried every frame by chkNetRetryPendingReleases
+ *   neither        -> released (engine + module: chkImportReleaseSlot), every record pointing at
+ *                                the slot forgotten, and the resource monitor printed
+ *
+ * One log line per decision; a retry logs only when its verdict or car count changes. Only the
+ * spare slots (CHK_IMPORT_SPARE_FIRST..) are ever released: below them are the level's own
+ * civilian slots, which a config import may have knocked and which no player owns.
+ *
+ * Returns the verdict. */
+static int chkNetReleaseDecide(int slot, const char* why, int retry)
+{
+	CHK_CAR_ID car;
+	CHK_REL_VERDICT v;
+	int held, wanted, who = -1, cars, first = -1, logIt, k;
+
+	if (slot < CHK_IMPORT_SPARE_FIRST || slot >= CHK_IMPORT_MAX_SLOTS)
+		return CHK_REL_NOT_HELD;
+
+	if (why == NULL)
+		why = "?";
+
+	held = chkImportSlotHeld(slot);
+	car = chkImportSlotId(slot);
+	wanted = held && chkNetCarWantedBy(car, &who);
+	cars = held ? chkImportCarsOnSlot(slot, &first) : 0;
+	v = chkReleaseVerdict(held, wanted, cars);
+
+	logIt = retry ? chkReleaseShouldLog((CHK_REL_VERDICT)gChkNetRelLast[slot], gChkNetRelLastCars[slot], v, cars)
+		: (v != CHK_REL_NOT_HELD);
+
+	gChkNetRelLast[slot] = (int)v;
+	gChkNetRelLastCars[slot] = cars;
+
+	switch (v)
+	{
+		case CHK_REL_NOT_HELD:
+			gChkNetRelPending[slot] = 0;
+			break;
+
+		case CHK_REL_KEEP_WANTED:
+			gChkNetRelPending[slot] = 0;
+
+			if (logIt)
+			{
+				if (who >= 0)
+					printInfo("[carhacks] release: slot %d (%s model %d) kept - still named by player %d (%s)\n",
+						slot, chkNetCityName(chkCarIdCity(car)), chkCarIdModel(car), who, why);
+				else
+					printInfo("[carhacks] release: slot %d (%s model %d) kept - still named by this machine's player (%s)\n",
+						slot, chkNetCityName(chkCarIdCity(car)), chkCarIdModel(car), why);
+			}
+			break;
+
+		case CHK_REL_DEFER_CARS:
+			if (!gChkNetRelPending[slot] || !retry)
+			{
+				gChkNetRelPending[slot] = 1;
+				snprintf(gChkNetRelWhy[slot], sizeof(gChkNetRelWhy[slot]), "%s", why);
+			}
+
+			if (logIt)
+				printInfo("[carhacks] release: slot %d (%s model %d) deferred - car %d still on it (%d car%s) (%s); retrying each frame\n",
+					slot, chkNetCityName(chkCarIdCity(car)), chkCarIdModel(car),
+					first, cars, (cars == 1) ? "" : "s", why);
+			break;
+
+		case CHK_REL_FREE:
+			gChkNetRelPending[slot] = 0;
+
+			/* forget every record pointing at this slot, then give it back */
+			for (k = 0; k < CHK_NET_MAX_PLAYERS; k++)
+			{
+				if (gChkNetPeerSlot[k] == slot)
+					gChkNetPeerSlot[k] = -1;
+			}
+
+			printInfo("[carhacks] release: slot %d (%s model %d) released - nobody names it and no car is on it (%s)\n",
+				slot, chkNetCityName(chkCarIdCity(car)), chkCarIdModel(car), why);
+
+			chkImportReleaseSlot(slot);
+
+			/* the monitor, after every release: what is still held, and the pool's state */
+			CarSlotResReport();
+			break;
+	}
+
+	return (int)v;
+}
+
+int chkNetReleaseSlotIfUnused(int slot, const char* why)
+{
+	return chkNetReleaseDecide(slot, why, 0);
+}
+
+/* Every frame: retry the deferred decisions (a slot whose last car may have gone). */
+static void chkNetRetryPendingReleases(void)
+{
+	int slot;
+
+	for (slot = CHK_IMPORT_SPARE_FIRST; slot < CHK_IMPORT_MAX_SLOTS; slot++)
+	{
+		char why[48];
+
+		if (!gChkNetRelPending[slot])
+			continue;
+
+		memcpy(why, gChkNetRelWhy[slot], sizeof(why));
+		why[sizeof(why) - 1] = '\0';
+
+		chkNetReleaseDecide(slot, why, 1);
+	}
+}
+
+/* A new level: the set was just reset (chkImportReset), so the slot records of the old level are
+ * meaningless - and the level-build fold runs right after this, inside the car-data hook, where a
+ * stale record must not trigger a release. Forget them, and any deferred decision with them. */
+void chkNetOnLevelReset(void)
+{
+	int i;
+
+	for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
+		gChkNetPeerSlot[i] = -1;
+
+	for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
+	{
+		gChkNetRelPending[i] = 0;
+		gChkNetRelLast[i] = CHK_REL_NOT_HELD;
+		gChkNetRelLastCars[i] = 0;
+	}
+}
+
+/* A player whose car identity no longer names the car in the slot recorded for them has
+ * CHANGED CAR (or left - see below): forget the record and let the release routine decide about
+ * the old slot. This is the peer-repick half of the lifecycle, and it is deliberately not inside
+ * the fold's import loop: that loop skips a player whose new car needs no import (a domestic car
+ * the level holds, the `continue` near the top), which is exactly the switch that used to leave
+ * the old import's slot held for the rest of the session. */
+static void chkNetUnbindChangedPeers(void)
+{
+	int p;
+
+	for (p = 0; p < CHK_NET_MAX_PLAYERS; p++)
+	{
+		int slot = gChkNetPeerSlot[p];
+		char why[48];
+
+		if (slot < 0)
+			continue;
+
+		if (gChkNetPeerPickSet[p] && chkCarIdEqual(chkImportSlotId(slot), gChkNetPeerPick[p]))
+			continue;		/* still that car */
+
+		gChkNetPeerSlot[p] = -1;
+
+		snprintf(why, sizeof(why), "player %d changed car", p);
+		chkNetReleaseSlotIfUnused(slot, why);
+	}
+}
+
 /* The unload half of the car table: for every player the previous table named and the current one
- * does not, forget them and give their car's slot back - unless somebody else still drives that
- * car. Runs after the table has been applied and folded, so the surviving picks are current.
+ * does not, forget them and offer their car's slot to the release routine - which keeps it if
+ * somebody else still drives that car, and defers it while their car is still in the world.
  *
  * This is "a peer leaves -> release its slot" from the resource-lifetime table in MP_ADAPTER.md.
  * Before it, a departed player's car stayed in its resident slot (and its lower-half pool pages,
- * baked page index and geometry stayed consumed) for the rest of the session. */
+ * baked page index and geometry stayed consumed) for the rest of the session; and the first
+ * version freed it at once, while the leaver's car was still being drawn (#12). */
 void chkNetReleaseDeparted(const int* seen)
 {
 	int i;
@@ -150,6 +349,7 @@ void chkNetReleaseDeparted(const int* seen)
 	for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
 	{
 		int slot;
+		char why[48];
 
 		if (seen[i] || !gChkNetPeerPickSet[i])
 			continue;			/* still here, or never was */
@@ -165,27 +365,75 @@ void chkNetReleaseDeparted(const int* seen)
 		if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS)
 			continue;
 
-		if (chkNetCarStillWanted(chkImportSlotId(slot)))
-			continue;			/* somebody else drives it: the slot stays */
+		snprintf(why, sizeof(why), "player %d left", i);
+		chkNetReleaseSlotIfUnused(slot, why);
+	}
+}
 
-		{
-			/* forget every record pointing at this slot, then give it back */
-			int k;
+/* This machine's player is now driving `now` (it was `was`) - a successful mid-match switch, told
+ * by mp's MP_CARQ_CHOSEN after the car on the road really changed (mplive.c). The shared identity
+ * moves here and ONLY here, after the load succeeded (an advert for a car that then failed to
+ * load told every machine to build a car nobody drove):
+ *
+ *   the choice (chkImportSetChosen), our own row of the table, the advert dedupe of
+ *   chkNetOnFrame, the advert itself, and on the host the table broadcast and the agreed set;
+ *   then the old car's slot goes to the release routine. */
+void chkNetLocalSwitched(CHK_CAR_ID was, CHK_CAR_ID now)
+{
+	int me = jer_net_local_player();
 
-			for (k = 0; k < CHK_NET_MAX_PLAYERS; k++)
-			{
-				if (gChkNetPeerSlot[k] == slot)
-					gChkNetPeerSlot[k] = -1;
-			}
-		}
+	if (!chkCarIdIsSet(now))
+		return;
 
-		chkImportReleaseSlot(slot);
+	chkImportSetChosen(now);
+
+	if (me >= 0 && me < CHK_NET_MAX_PLAYERS)
+	{
+		gChkNetPeerPick[me] = now;
+		gChkNetPeerPickSet[me] = 1;
+	}
+
+	gChkNetLocal = now;		/* chkNetOnFrame would otherwise advertise it a second time */
+	gChkNetLocalSet = 1;
+
+	chkNetAdvertisePick((int)now.city, (int)now.model);
+
+	if (jer_net_is_host())
+	{
+		chkNetBroadcastCars();
+		chkNetPublishSet();
+	}
+
+	if (chkCarIdIsSet(was) && !chkCarIdEqual(was, now))
+	{
+		int slot = chkImportSlotOfCar(was);
+
+		if (slot >= 0)
+			chkNetReleaseSlotIfUnused(slot, "we changed car");
 	}
 }
 
 int chkNetFoldPeerCars(void)
 {
 	int folded = 0, p, slot;
+
+	/* First the players who are no longer in the car their slot was recorded for: whatever
+	 * the loop below does with their NEW car (import it, or skip it as domestic), the OLD
+	 * slot has to be offered back. */
+	chkNetUnbindChangedPeers();
+
+	/* On a CLIENT the host's car (player 0) is not folded below - it reaches us through the
+	 * host's agreed set. But when we already HOLD it, remember the slot, so the host
+	 * switching away releases it here too. Nothing is imported for it (that is #13's
+	 * business, not this pass's). */
+	if (!jer_net_is_host() && gChkNetPeerPickSet[0] && gChkNetPeerSlot[0] < 0)
+	{
+		int hs = chkImportSlotOfCar(gChkNetPeerPick[0]);
+
+		if (hs >= CHK_IMPORT_SPARE_FIRST)
+			gChkNetPeerSlot[0] = hs;
+	}
+
 	for (p = 1; p < CHK_NET_MAX_PLAYERS; p++)
 	{
 		int already = 0;
@@ -600,6 +848,10 @@ static int chkNetOnRecv(void* ud, void* args)
 			printInfo("[carhacks/net] player %d drives %s model %d\n",
 				a->peer, chkNetCityName((int)p[2]), (int)p[3]);
 
+			/* a new car for this player may leave their old slot unused (the fold in
+			 * chkNetPublishSet does this too, but only when the agreement is on) */
+			chkNetUnbindChangedPeers();
+
 			/* The host owns the SET, so it re-publishes with the claim in - but the
 			 * identity table is not part of the import agreement: every machine needs
 			 * to know which car each peer drives even when each keeps its own set
@@ -639,6 +891,18 @@ static int chkNetOnRecv(void* ud, void* args)
 						continue;
 
 					seen[who] = 1;
+
+					/* OUR OWN row is ours to say once we have chosen a car, not the host's:
+					 * the host's copy can be a table behind (sent before our last switch
+					 * reached it), and taking it back would name our OLD car as still
+					 * wanted here - which the release routine would then keep. */
+					if (who == jer_net_local_player() && chkImportChosenIsSet() &&
+						chkCarIdIsSet(chkImportChosenCar()))
+					{
+						gChkNetPeerPick[who] = chkImportChosenCar();
+						gChkNetPeerPickSet[who] = 1;
+						continue;
+					}
 
 					gChkNetPeerPick[who] = chkCarId(p[at + 1], p[at + 2]);
 					gChkNetPeerPickSet[who] = 1;
@@ -772,6 +1036,10 @@ static int chkNetOnFrame(void* ud, void* args)
 		 * "a peer leaves -> release its slot". Idempotent. */
 		chkNetReapDeparted();
 
+		/* ...and the release decisions still waiting for a car to leave their slot. Also
+		 * before the early returns, for the same reason. */
+		chkNetRetryPendingReleases();
+
 		/* CHK_FORCE_PLAYER_PALETTE=<n>: a headless run has no colour picker, so the
 		 * local car always comes out palette 0 - which means mp's owner-authoritative
 		 * palette, and carhacks' correction of it, are never exercised from a script.
@@ -866,6 +1134,9 @@ static int chkNetOnFrame(void* ud, void* args)
 				gChkNetPeerPickSet[i] = 0;
 				gChkNetPeerSlot[i] = -1;
 			}
+
+			for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
+				gChkNetRelPending[i] = 0;	/* everything goes back below anyway */
 		}
 
 		chkImportReleaseAll();

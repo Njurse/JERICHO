@@ -22,8 +22,11 @@
 #include "jer_net.h"		/* jer_net_local_player: the canonical slot order */
 #include "net.h"		/* chkNetPeerCar: the peers' cars, in id order */
 
+#include "cars.h"		/* car_data[]: which cars are still on a slot (chkImportCarsOnSlot) */
+
 #include "carid.h"
 #include "carimport.h"
+#include "slotrelease.h"	/* chkReleaseResidentValue, chkReleaseCountCars */
 
 typedef struct CHK_IMPORT_ENTRY
 {
@@ -95,6 +98,8 @@ void chkImportClearPick(void)
  * use that slot again eventually".
  *
  * Returns 1 if the slot held anything, 0 if it was already free. */
+static int chkEngineLevelModelAt(int slot);
+
 int chkImportReleaseSlot(int slot)
 {
 	int held;
@@ -104,13 +109,19 @@ int chkImportReleaseSlot(int slot)
 
 	held = gChkSet[slot].used;
 
-	JerReleaseCarSlot(slot);		/* pins, pool pages, baked index, geometry, manifest */
+	JerReleaseCarSlot(slot);		/* pins, pool pages, baked index, geometry, manifest -
+						 * each only once no other car still uses it */
 
 	if (slot < MAX_CAR_RESIDENT_MODELS)
 	{
-		/* the module writes these two, so the module clears them */
+		/* the module writes these two, so the module clears them.
+		 *
+		 * residentCarModels goes back to what the LEVEL had there - -1 for a spare it left
+		 * empty - and not to 0. A 0 says "model 0 lives here": mp's resolver
+		 * (MpResidentSlotForCar) then matched the freed slot as the level's own model 0,
+		 * and anything walking the list saw a car that is not there. */
 		JerSetCarModelSource(slot, -1);
-		residentCarModels[slot] = 0;
+		residentCarModels[slot] = chkReleaseResidentValue(chkEngineLevelModelAt(slot));
 	}
 
 	memset(&gChkSet[slot], 0, sizeof(gChkSet[slot]));
@@ -220,6 +231,17 @@ void chkImportSetEngineModels(int* models, int count)
 
 	memcpy(gChkEngineCache, models, (size_t)gChkEngineCount * sizeof(int));
 	gChkEngineKnown = 1;
+}
+
+/* What the LEVEL put in resident `slot` before any import wrote to it: the copy taken when the
+ * level handed its list over (chkImportSetEngineModels runs before the picks are applied), never
+ * the live list, which by then holds the imported model. -1 when unknown or empty. */
+static int chkEngineLevelModelAt(int slot)
+{
+	if (slot < 0 || !gChkEngineKnown || slot >= gChkEngineCount)
+		return -1;
+
+	return gChkEngineCache[slot];
 }
 
 /* What the ENGINE holds in resident `slot`, from the live list inside the hook or
@@ -597,6 +619,23 @@ int chkImportChosenIsSet(void)
 	return gChkChosenSet;
 }
 
+/* The local player is now driving `id` - after a successful mid-match switch (mp's Change car,
+ * or getting into another car on foot). Only the CHOICE moves: unlike chkImportSetLocalPick
+ * this does not set the frontend pick, which the next level build would consume and import
+ * again. A native car is a valid choice here (the level's own car: the identity is still what
+ * the other machines must draw). */
+void chkImportSetChosen(CHK_CAR_ID id)
+{
+	if (!chkCarIdIsSet(id))
+		return;
+
+	gChkChosen = id;
+	gChkChosenSet = 1;
+
+	printInfo("[carhacks] import: now driving %s model %d (the choice the session is told)\n",
+		chkCityName(chkCarIdCity(id)), chkCarIdModel(id));
+}
+
 CHK_CAR_ID chkImportLocalPick(void)
 {
 	return gChkPick;
@@ -953,4 +992,49 @@ int chkImportSlotForCar(int city, int model)
 	}
 
 	return -1;
+}
+
+/* The set's slot holding exactly `car` (city and model, native included), or -1. */
+int chkImportSlotOfCar(CHK_CAR_ID car)
+{
+	int i;
+
+	if (!chkCarIdIsSet(car))
+		return -1;
+
+	for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
+	{
+		if (gChkSet[i].used && chkCarIdEqual(chkImportSlotId(i), car))
+			return i;
+	}
+
+	return -1;
+}
+
+/* Does the set hold a car in `slot`? */
+int chkImportSlotHeld(int slot)
+{
+	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS)
+		return 0;
+
+	return gChkSet[slot].used && gChkSet[slot].model >= 0;
+}
+
+/* How many cars in the world are drawn from resident `slot` right now (any car, any control
+ * type but CONTROL_TYPE_NONE: a player, a peer's puppet, a parked car left for re-entry,
+ * traffic). `first` gets the first one's car_data index, or -1. A slot with a car on it must not
+ * be released: its geometry and pages are what that car is drawn with this frame. */
+int chkImportCarsOnSlot(int slot, int* first)
+{
+	int live[MAX_CARS];
+	int model[MAX_CARS];
+	int i;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		live[i] = (car_data[i].controlType != CONTROL_TYPE_NONE);
+		model[i] = car_data[i].ap.model;
+	}
+
+	return chkReleaseCountCars(live, model, MAX_CARS, slot, first);
 }

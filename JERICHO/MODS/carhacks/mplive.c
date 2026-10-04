@@ -7,7 +7,14 @@
  * (../mp/mp_carquery.h is the one place the ids and structs are written down):
  *
  *   MP_CARQ_CITIES  "which cities can this session offer?"
- *   MP_CARQ_LOAD    "make (city, model) available here and in the session"
+ *   MP_CARQ_LOAD    "make (city, model) available here"
+ *   MP_CARQ_CHOSEN  "the switch happened (or did not): this is what we drive now"
+ *
+ * LOAD and CHOSEN are two events on purpose. The session is told what this machine drives
+ * only after the switch SUCCEEDED (CHOSEN) - telling it at load time announced a car that
+ * might then fail to build or never be driven, and every other machine built it anyway. And
+ * CHOSEN is the moment the OLD car's slot can be offered back (net.c,
+ * chkNetReleaseSlotIfUnused), which a load alone cannot know.
  *
  * THE LOAD HALF IS NOT NEW MACHINERY. It is the same sequence a mid-match peer
  * pick already goes through -- put the car in the session's canonical spare slot,
@@ -27,6 +34,7 @@
 
 #include "cars.h"		/* gCarCleanModelPtr: is the built mesh really there */
 #include "mission.h"
+#include "texture.h"		/* CarSlotResReport: the per-switch resource dump */
 
 #include "carid.h"
 #include "carimport.h"
@@ -64,7 +72,7 @@ static int ChkMpLoad(void* userdata, void* args)
 {
 	MP_CARQ_LOAD_ARGS* a = (MP_CARQ_LOAD_ARGS*)args;
 	CHK_CAR_ID id;
-	int slot, count = 0;
+	int slot, count = 0, fresh;
 
 	(void)userdata;
 
@@ -86,6 +94,7 @@ static int ChkMpLoad(void* userdata, void* args)
 	 * session's canonical spare for OUR player id: that is the slot every machine
 	 * already agrees this player's cars live in. */
 	slot = chkImportSlotForCar(a->city, a->model);
+	fresh = (slot < 0);		/* this load claims the slot: a failure gives it back */
 
 	if (slot < 0)
 		slot = chkImportCanonicalSlot(id, &count);
@@ -100,14 +109,10 @@ static int ChkMpLoad(void* userdata, void* args)
 	chkImportSetSlot(slot, id);
 	chkImportHotLoad(slot);
 
-	/* Tell the session this machine now drives it. The HOST folds every peer's
-	 * claim into the agreed set and republishes, which is what makes the OTHER
-	 * machines read the city in and build the car too; a client's claim is what
-	 * carries it there. */
-	chkNetAdvertisePick(a->city, a->model);
-
-	if (jer_net_is_host())
-		chkNetPublishSet();
+	/* NOT advertised here (L1). The session is told this machine drives the car when mp
+	 * reports that the switch happened (MP_CARQ_CHOSEN -> ChkMpChosen below): a load can
+	 * still fail, or the switch can still not happen, and an advert sent now had every
+	 * other machine build a car nobody was driving. */
 
 	/* It counts as held only when the mesh is really there: mp is about to point a
 	 * car at this slot, and a slot with no built geometry is a crash, not a
@@ -116,8 +121,62 @@ static int ChkMpLoad(void* userdata, void* args)
 		gCarCleanModelPtr[slot] != NULL) ? 1 : 0;
 
 	if (!a->ok)
+	{
 		printInfo("[carhacks/mp] change car: %s model %d could not be built into slot %d\n",
 			chkCityName(a->city), a->model, slot);
+
+		/* A slot this load claimed and could not fill: offer it straight back (the routine
+		 * keeps it if somebody else turns out to name the car). */
+		if (fresh)
+			chkNetReleaseSlotIfUnused(slot, "load failed");
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+/* mp says the Change car switch is over (MP_CARQ_CHOSEN; also fired when the player gets into
+ * another car after being on foot).
+ *
+ *   changed = 1: the car on the road IS (city, model) now - city -1 for the level's own car.
+ *                If that is not what we last told the session, move the identity (advert, our
+ *                row, the host's table and set) and offer the old car's slot back.
+ *   changed = 0: the switch did not happen. A car the load put in a slot for it is offered
+ *                back (kept if anybody names it).
+ *
+ * Runs with or without the cross-city hack: the identity is the session's either way, and a
+ * player switching between two of the level's own cars still has to be told to the others. */
+static int ChkMpChosen(void* userdata, void* args)
+{
+	MP_CARQ_CHOSEN_ARGS* a = (MP_CARQ_CHOSEN_ARGS*)args;
+	CHK_CAR_ID was, now;
+
+	(void)userdata;
+
+	if (a == NULL || a->model < 0 || a->model >= CHK_MODEL_LIMIT || a->city > 3)
+		return JER_RESULT_CONTINUE;
+
+	now = chkCarId((a->city < 0) ? CHK_CITY_NATIVE : a->city, a->model);
+
+	if (a->changed)
+	{
+		was = chkNetLocalCar();
+
+		if (!chkCarIdEqual(was, now))
+			chkNetLocalSwitched(was, now);
+		else if (!chkImportChosenIsSet())
+			chkImportSetChosen(now);	/* same car, but it is a choice now */
+
+		/* the monitor, on every switch: what each slot holds and the pool's state, so a
+		 * leak is a number that only goes one way */
+		CarSlotResReport();
+	}
+	else
+	{
+		int slot = chkImportSlotOfCar(now);
+
+		if (slot >= 0)
+			chkNetReleaseSlotIfUnused(slot, "loaded for a change that did not happen");
+	}
 
 	return JER_RESULT_CONTINUE;
 }
@@ -126,4 +185,5 @@ void chkMpLiveRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, MP_CARQ_CITIES, ChkMpCities, NULL, 0);
 	ctx->jer_register_hook(ctx, MP_CARQ_LOAD, ChkMpLoad, NULL, 0);
+	ctx->jer_register_hook(ctx, MP_CARQ_CHOSEN, ChkMpChosen, NULL, 0);
 }

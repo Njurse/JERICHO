@@ -115,6 +115,20 @@ int chkNetFoldPeerCars(void);
  * handler, after the table has been applied and folded. */
 void chkNetReleaseDeparted(const int* seen);
 
+/* THE release routine (see net.c): offer resident `slot` back. Freed only when no player's car
+ * identity names its car and no car in the world is on it; kept while named; deferred (and
+ * retried every frame) while a car is still on it. `why` goes into the one log line the decision
+ * writes. Returns the verdict (CHK_REL_VERDICT, slotrelease.h). */
+int chkNetReleaseSlotIfUnused(int slot, const char* why);
+
+/* This machine's player switched from `was` to `now`, and the switch SUCCEEDED (mp's
+ * MP_CARQ_CHOSEN): move the shared identity, advertise it, and offer the old car's slot back. */
+void chkNetLocalSwitched(CHK_CAR_ID was, CHK_CAR_ID now);
+
+/* A new level is being built: forget the old level's slot records and deferred releases.
+ * Called from the car-data hook right after chkImportReset. */
+void chkNetOnLevelReset(void);
+
 /* A city index as a log-friendly name ("level" for CHK_CITY_NATIVE/-1). */
 const char* chkNetCityName(int city);
 

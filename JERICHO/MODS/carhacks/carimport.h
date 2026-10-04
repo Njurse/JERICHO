@@ -52,6 +52,13 @@ CHK_CAR_ID chkImportSlotId(int slot);
  * anything. Called when the car's last driver goes away: a peer leaving, or a local re-pick. */
 int chkImportReleaseSlot(int slot);
 
+/* For the release decision (net.c, chkNetReleaseSlotIfUnused): the slot holding exactly
+ * `car` (-1 = none), whether `slot` holds a car at all, and how many cars in the world are
+ * drawn from `slot` right now (`first` = the first one's car_data index, or -1). */
+int chkImportSlotOfCar(CHK_CAR_ID car);
+int chkImportSlotHeld(int slot);
+int chkImportCarsOnSlot(int slot, int* first);
+
 /* Everything, for when the session ends and there is no map any more: the slots above, and the
  * engine's per-level AND per-city cross-city state (JerReleaseAllCrossCity). This is the path
  * that clears the pointers which used to outlive a level - the deferred palette lumps and the
@@ -122,6 +129,10 @@ int chkImportLocalPickModel(void);
  * they choose; check chkImportChosenIsSet(). */
 CHK_CAR_ID chkImportChosenCar(void);
 int chkImportChosenIsSet(void);
+
+/* The local player switched to `id` mid-match (after the switch succeeded): record it as the
+ * choice. Does NOT touch the frontend pick. Accepts a native car. */
+void chkImportSetChosen(CHK_CAR_ID id);
 
 /* Consume the pick - the level that imported it has read it, so a later level
  * does not import the same car again. */

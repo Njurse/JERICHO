@@ -184,6 +184,11 @@ static int ChkOnCarDataSource(void* ud, void* args)
 	 * made in the frontend and is consumed by the level it starts) */
 	chkImportReset();
 
+	/* ...and the per-player slot records and deferred releases that described the OLD set
+	 * (net.c). The fold below runs inside this hook, and a record left over from the last
+	 * level would otherwise be "released" against the new one. */
+	chkNetOnLevelReset();
+
 	/* re-arm the spawn lever for THIS level: it places its cars once, and a new
 	 * level means a new set to place (spawn.c) */
 	chkSpawnReset();
