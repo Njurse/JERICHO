@@ -2,6 +2,11 @@ name: Build
 
 # Builds downloadable binaries for every push and publishes releases.
 #
+# Only the Release_dev configuration (JERICHO_dev) is built and published for
+# now: the plain Release configuration is not treated as a real release yet,
+# and the mp remote agent installs JERICHO_Release_dev_win64.zip and nothing
+# else. Add 'Release' back to the loops and upload steps below to bring it back.
+#
 #  - push to main        -> build + upload workflow artifacts, refresh the
 #                           rolling "alpha" pre-release
 #  - push a "v*" tag     -> build + publish a normal GitHub Release
@@ -109,7 +114,7 @@ jobs:
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build (Release + Release_dev)
+      - name: Build (Release_dev)
         shell: pwsh
         run: |
           # exports.def is produced by gen_exports from a LINKER MAP, and the
@@ -124,7 +129,7 @@ jobs:
           # So build it per configuration: link once against a throwaway empty
           # def (that pass is what writes the .map), regenerate the def from
           # that map, then relink. The relink is incremental -- only the exe.
-          foreach ($cfg in @('Release', 'Release_dev')) {
+          foreach ($cfg in @('Release_dev')) {
             $exe = if ($cfg -eq 'Release') { 'JERICHO' } else { 'JERICHO_dev' }
 
             Write-Host "::group::msbuild $cfg (pass 1: empty def, emits the map)"
@@ -144,7 +149,7 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          foreach ($cfg in @('Release', 'Release_dev')) {
+          foreach ($cfg in @('Release_dev')) {
             $bin = "src_rebuild/bin/$cfg"
             # runtime DLLs bundled next to the exe (x64)
             Copy-Item "$env:SDL2_DIR/lib/x64/SDL2.dll" "$bin/SDL2.dll" -Force
@@ -153,13 +158,6 @@ jobs:
             Copy-Item "data/*" "$bin/" -Recurse -Force
             Compress-Archive -Path "$bin/*" -DestinationPath "JERICHO_${cfg}_win64.zip" -Force
           }
-
-      - name: Upload Release (win64) artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: JERICHO_Release_win64
-          path: JERICHO_Release_win64.zip
-          if-no-files-found: warn
 
       - name: Upload Release_dev (win64) artifact
         uses: actions/upload-artifact@v4
@@ -222,10 +220,10 @@ jobs:
         working-directory: src_rebuild
         run: ./premake5 gmake2
 
-      - name: Build (release_x64 + release_dev_x64)
+      - name: Build (release_dev_x64)
         working-directory: src_rebuild/build
         run: |
-          for cfg in release_x64 release_dev_x64; do
+          for cfg in release_dev_x64; do
             echo "::group::make $cfg"
             make config=$cfg -j"$(nproc)"
             echo "::endgroup::"
@@ -233,19 +231,12 @@ jobs:
 
       - name: Package
         run: |
-          for cfg in Release Release_dev; do
+          for cfg in Release_dev; do
             d="src_rebuild/bin/$cfg"
             # game data (the post-build step already mirrored JERICHO/ into $d)
             cp -R data/. "$d"/
             ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" * )
           done
-
-      - name: Upload Release (linux-x64) artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: JERICHO_Release_linux-x64
-          path: JERICHO_Release_linux-x64.tar.gz
-          if-no-files-found: warn
 
       - name: Upload Release_dev (linux-x64) artifact
         uses: actions/upload-artifact@v4
@@ -275,6 +266,22 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      # A checksum list published NEXT TO the archives, so a downloader (the mp
+      # remote agent) can verify an asset against something that did not come
+      # out of the same archive. GitHub's own per-asset "digest" is preferred
+      # when present; this is the fallback. Rides along via files: dist/*.
+      - name: Write SHA256SUMS
+        shell: bash
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | LC_ALL=C sort > ../sums.list
+          if [ -s ../sums.list ]; then
+            xargs -d '\n' sha256sum -- < ../sums.list > SHA256SUMS
+            cat SHA256SUMS
+          else
+            echo "::warning::no artifacts to checksum"
+          fi
 
       # Push a "v*" tag -> permanent, public GitHub Release.
       - name: Publish tagged release
