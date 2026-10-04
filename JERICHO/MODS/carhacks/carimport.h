@@ -115,6 +115,14 @@ CHK_CAR_ID chkImportLocalPick(void);
 int chkImportLocalPickCity(void);
 int chkImportLocalPickModel(void);
 
+/* JERICHO carhacks: the car the local player CHOSE. Unlike chkImportLocalPick* this survives
+ * the level consuming the pick, because the question "what is this player driving?" is about
+ * the choice and not about the seat the engine put them in - an engine that re-seats a player
+ * (a late-join spawn) must not silently change what the session thinks they drive. Unset until
+ * they choose; check chkImportChosenIsSet(). */
+CHK_CAR_ID chkImportChosenCar(void);
+int chkImportChosenIsSet(void);
+
 /* Consume the pick - the level that imported it has read it, so a later level
  * does not import the same car again. */
 void chkImportClearPick(void);

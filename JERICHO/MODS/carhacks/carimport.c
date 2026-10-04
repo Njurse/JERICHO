@@ -41,6 +41,11 @@ static int gChkSetVersion;		/* bumps on every change */
 static CHK_CAR_ID gChkPick;		/* the player's pick */
 static int gChkPickSet;			/* 0 = nothing picked yet */
 
+/* The CHOICE, which survives the consume (chkImportClearPick) that the level does when it
+ * has read the pick. See chkImportSetLocalPick for why the two cannot be the same record. */
+static CHK_CAR_ID gChkChosen;
+static int gChkChosenSet;
+
 /* ---------------------------------------------------------------------------
  * Lifecycle
  * ------------------------------------------------------------------------- */
@@ -559,7 +564,37 @@ void chkImportSetLocalPick(int city, int model)
 	gChkPick = chkCarId(city, model);
 	gChkPickSet = 1;
 
+	/* And keep it as the CHOSEN car, which the consume below does NOT clear. The
+	 * difference matters the moment anyone asks "what is this player driving?": that
+	 * question is about the CHOICE, not about the seat. Measured on a real session, on
+	 * the host watching a client who had picked VEGAS model 3:
+	 *
+	 *   [carhacks/net] player 1 drives VEGAS model 3
+	 *   [mp] late joiner: player 1 -> slot 1 model 3 (city 0)      <- the engine seats them
+	 *   [mp] player 1 changed car: slot 7 -> 2 (the session city model 3)
+	 *   [carhacks/net] player 1 drives level model 3               <- identity follows the SEAT
+	 *
+	 * From there every machine "knows" the player drives CHICAGO 3, so the imported car is
+	 * replaced by the level's own - "it loaded in correctly but then got replaced by the
+	 * chicago slot 3". The pick was right the whole time; only the reporting was wrong. */
+	gChkChosen = gChkPick;
+	gChkChosenSet = 1;
+
 	printInfo("[carhacks] import: pick set to %s model %d\n", chkCityName(city), model);
+}
+
+/* The car the local player CHOSE, whether or not the level has consumed the pick yet.
+ * -1/unset until they choose one. This is what the session should be told a player is
+ * driving - see chkNetLocalCar, and gChkChosen for the measurement that made the
+ * difference. */
+CHK_CAR_ID chkImportChosenCar(void)
+{
+	return gChkChosenSet ? gChkChosen : chkCarId(CHK_CITY_NATIVE, CHK_MODEL_NONE);
+}
+
+int chkImportChosenIsSet(void)
+{
+	return gChkChosenSet;
 }
 
 CHK_CAR_ID chkImportLocalPick(void)

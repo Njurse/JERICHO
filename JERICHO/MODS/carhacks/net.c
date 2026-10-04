@@ -407,11 +407,34 @@ int chkNetApplyAgreedSet(void)
  * local car's resident slot, the city that slot's data came from, and the model
  * it holds. A slot the level imported from elsewhere names its source city; any
  * other slot is the level's own car, which needs no import on any machine, so it
- * reports CHK_CITY_NATIVE. */
+ * reports CHK_CITY_NATIVE.
+ *
+ * EXCEPT WHEN THEY CHOSE ONE, and then the choice decides. The seat is not the
+ * identity: mp seats a late joiner in a car (that is how the engine gets a player into
+ * the world at all), and reporting THAT as what the player drives replaced their imported
+ * car on every machine the moment the engine re-seated them:
+ *
+ *   [carhacks/net] player 1 drives VEGAS model 3        <- the pick, correctly advertised
+ *   [mp] late joiner: player 1 -> slot 1 model 3 (city 0)
+ *   [mp] player 1 changed car: slot 7 -> 2 (the session city model 3), mesh rebuilt
+ *   [carhacks/net] player 1 drives level model 3        <- the SEAT, advertised from here on
+ *
+ * "It loaded in correctly but then got replaced by the chicago slot 3". The choice is what
+ * the other machines must build, so it wins; the seat stays an engine detail. */
 CHK_CAR_ID chkNetLocalCar(void)
 {
 	CAR_DATA* cp;
 	int slot, city, model;
+
+	/* the choice, when there is one (chkImportChosenCar survives the level consuming the
+	 * pick - see carimport.c) */
+	if (chkImportChosenIsSet())
+	{
+		CHK_CAR_ID chosen = chkImportChosenCar();
+
+		if (chkCarIdIsSet(chosen))
+			return chosen;
+	}
 
 	if (player[0].playerCarId < 0 || player[0].playerCarId >= MAX_CARS)
 		return chkCarId(CHK_CITY_NATIVE, CHK_MODEL_NONE);
