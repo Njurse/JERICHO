@@ -112,6 +112,38 @@ unit.
 
 ### The hotload hand-off (next unit)
 
+### The resource lifecycle: what each join/leave event must load and unload
+
+Every resource a carhacks import holds is attached to a RESIDENT SLOT (the manifest above
+says which), so every session event is really a question about slots. This is the contract
+to monitor; `CarSlotResReport()` prints it at the moment the session ends, and the
+`cross-city: slot N holds ...` lines print it whenever the pin walk finishes.
+
+What exists today is the LOAD column. The UNLOAD column is the work: nothing gives back a
+slot's pins, pool pages, civ_clut block or geometry except a whole level load.
+
+| event | what must LOAD | what must UNLOAD | today |
+|---|---|---|---|
+| **local player picks** (before the level) | the pick's city data (`InitCarImport`), its palette block, its page lists; the pick's slot is canonical | the PREVIOUS pick's slot, if it was a different car | load ✓, unload ✗ |
+| **local player changes car mid-match** | the new city's data; a hot load into a slot (geometry, cosmetics, pages, rows) | the old slot's resources | load ✓, unload ✗ |
+| **peer joins, before the match starts** | the peer's city at the next level load (through the set) | nothing | ✓ |
+| **peer joins, match in progress** (the catch-up) | the peer's city read mid-level + a hot load into a slot | nothing (a new slot) | ✓ |
+| **peer leaves** | nothing | that peer's slot: pins, pool pages, civ_clut rows if its city is now unused, geometry block | ✗ (the slot stays held) |
+| **local player leaves the session** (back to the frontend) | nothing | EVERYTHING cross-city: the set, the picks, the pins, the pool pages, the blocks, the page lists, the deferred palette lumps - there is no map any more | ✗ (and this is the reported access violation on rejoining with a different city) |
+| **a new level loads** (restart, city change, rejoin) | the whole set from scratch | the previous level's state | ✓ (`InitCarImport` -> `CarImportResetState`) |
+
+The two rows with nothing today are the two the work needs: **peer leaves** (a slot that
+becomes unused) and **the local player leaves** (the frontend, where no level will load to
+clean up after us). The lifecycle rule that falls out of the table:
+
+  a slot's resources are the LOAD of the event that created it, and must be given back by
+  the UNLOAD of the event that removed it - either that peer leaving, that pick being
+  replaced, the local player leaving the session, or the level going away.
+
+The monitor criteria, in the same terms: after a leave, `CarSlotResReport()` must show
+**no slot holding pins or geometry that no player is driving**; a slot still listed is a
+leak, and the count should return to what it was before the peer joined.
+
 ### The hotload (DONE: geometry, cosmetics, pages, catch-up)
 
 A car folded in after the level loaded gets **all four** things a level-load import gets,

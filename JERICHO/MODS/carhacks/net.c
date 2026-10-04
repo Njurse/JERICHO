@@ -21,6 +21,7 @@
 
 #include "carid.h"
 #include "carimport.h"
+#include "texture.h"	/* CarSlotResReport: the resource monitor */
 #include "net.h"
 
 #include <string.h>
@@ -726,6 +727,13 @@ static int chkNetOnFrame(void* ud, void* args)
 		gChkNetAgreedGuest = -1;
 
 		printInfo("[carhacks/net] session ended - back to the local import set\n");
+
+		/* The monitor: what each resident slot still holds cross-city, at the moment the
+		 * session goes away. This is the line to read for "did anything leak?" - a slot
+		 * that still shows pins or geometry after everyone has left is a slot whose
+		 * resources were never given back. See the resource-lifecycle table in
+		 * MP_ADAPTER.md for what each join/leave event is supposed to load and unload. */
+		CarSlotResReport();
 	}
 
 	return JER_RESULT_CONTINUE;
