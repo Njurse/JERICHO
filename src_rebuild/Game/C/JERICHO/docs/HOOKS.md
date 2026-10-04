@@ -56,7 +56,7 @@ premake5.exe --with-mods="myid,crumple" vs2019   # optional filter
 
 The runtime reads `JERICHO/CONFIG/modlist.ini` (regenerated on first boot)
 and activates the enabled modules in load order, logging one line per
-module and per hook into `REDRIVER2.log`.
+module and per hook into `JERICHO.log`.
 
 ## Module pause menus
 
@@ -232,7 +232,7 @@ difference is who is speaking.
 ## Logging
 
 `ctx->jer_log(ctx, fmt, ...)` goes through the JERICHO logger, which the
-game routes into `REDRIVER2.log` (and the console in `_DEBUG` builds).
+game routes into `JERICHO.log` (and the console in `_DEBUG` builds).
 Prefix module lines with `[myid]` so the boot inventory stays readable.
 
 ## Boot arguments (debug builds)
@@ -241,7 +241,7 @@ The game accepts frontend-bypass launch arguments (PC only, `DEBUG_OPTIONS`
 builds) for fast testing:
 
 ```
-REDRIVER2_dev.exe -nointro -nofmv -level <city> -car <slot#> -gamemode <mode>
+JERICHO_dev.exe -nointro -nofmv -level <city> -car <slot#> -gamemode <mode>
                  -time <time> -weather <weather>
 ```
 

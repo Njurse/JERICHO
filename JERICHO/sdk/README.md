@@ -31,7 +31,7 @@ sdk/
     jer_screen.h      module-provided presentation screens
     jer_texture.h     custom texture injection (images and raw pages)
   lib/x64/Release/
-    REDRIVER2.lib     import library for the game exe's exported symbols
+    JERICHO.lib     import library for the game exe's exported symbols
   build_mods.bat      compiles one addon folder into a DLL
   example/            a minimal working addon (copy it to start)
 ```

@@ -2297,7 +2297,7 @@ void PrintCommandLineArguments()
 #endif
 
 /*
- * JERICHO-HOOK: route the mod runtime's logs into REDRIVER2.log through the
+ * JERICHO-HOOK: route the mod runtime's logs into JERICHO.log through the
  * PsyX logger (console spew in _DEBUG builds + the log file) instead of plain
  * stdout. JERICHO messages carry their own context ([jericho], [module]...),
  * so the log level is picked from the message's own keywords — a failed
@@ -2438,7 +2438,7 @@ int redriver2_main(int argc, char** argv)
 	SetDispMask(0);
 
 	// JERICHO-HOOK: boot the mod runtime. Route JERICHO/module logs into
-	// REDRIVER2.log via the PsyX logger first, then activate the modules.
+	// JERICHO.log via the PsyX logger first, then activate the modules.
 	// The central JERICHO framework folder (MODS + CONFIG) sits next to the
 	// exe — mirrored there from the repo by premake's postbuild. Paths are
 	// resolved the same way the game resolves everything else (relative to
@@ -2784,7 +2784,7 @@ int redriver2_main(int argc, char** argv)
 		{
 			// JERICHO: attach a Win32 console so the engine's log is visible live. The
 			// engine's printInfo already printf's (PsyX_main.cpp, the non-emscripten
-			// path) as well as writing REDRIVER2.log, so the console shows the same
+			// path) as well as writing JERICHO.log, so the console shows the same
 			// lines - pins, victim choices, give-backs - as they happen.
 #ifdef _WIN32
 			if (AllocConsole())
@@ -2810,8 +2810,8 @@ int redriver2_main(int argc, char** argv)
 			// POSIX has no way to attach a console to a process that is already
 			// running, so there is nothing to attach - but the flag is still ACCEPTED
 			// here, because an unrecognised boot argument makes the engine log and
-			// exit. The log is on stdout and in REDRIVER2.log either way.
-			printInfo("[console] -console is Windows-only; the log is on stdout and in REDRIVER2.log\n");
+			// exit. The log is on stdout and in JERICHO.log either way.
+			printInfo("[console] -console is Windows-only; the log is on stdout and in JERICHO.log\n");
 #endif
 		}
 		else if (!strcmp(argv[i], "-gamemode"))

@@ -5,14 +5,14 @@ $ErrorActionPreference = "SilentlyContinue"
 $dev = "C:\Users\Jaret\Documents\Projects\REDRIVER2\src_rebuild\bin\Release_dev"
 $py  = "C:\Users\Jaret\Documents\Projects\REDRIVER2\JERICHO\MODS\gaildrv2\python"
 
-Get-Process REDRIVER2_dev, python -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process JERICHO_dev, python -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 2
 
 $out = @()
 $out += "=== delivery check v2 ==="
 $out += "config: " + (Get-Content "$dev\JERICHO\CONFIG\gaildrv2.ini" -Raw)
 
-Start-Process -FilePath "$dev\REDRIVER2_dev.exe" -ArgumentList '-level','havana','-gamemode','takeadrive' -WorkingDirectory $dev
+Start-Process -FilePath "$dev\JERICHO_dev.exe" -ArgumentList '-level','havana','-gamemode','takeadrive' -WorkingDirectory $dev
 $out += "game launched, probing for a live mod (up to 120s) ..."
 
 $probe = & python -u "$py\probe.py" --timeout 120 2>&1
@@ -33,9 +33,9 @@ if ($probe -match "probe OK") {
     $out += "RESULT: FAIL (mod never became live in gameplay)"
 }
 
-$alive = (Get-Process REDRIVER2_dev -ErrorAction SilentlyContinue) -ne $null
+$alive = (Get-Process JERICHO_dev -ErrorAction SilentlyContinue) -ne $null
 $out += "game alive after tests: $alive"
 $out += "--- game log (gaildrv2 tail) ---"
-$out += (Get-Content "$dev\REDRIVER2.log" | Select-String -Pattern "gaildrv2" | Select-Object -Last 8)
+$out += (Get-Content "$dev\JERICHO.log" | Select-String -Pattern "gaildrv2" | Select-Object -Last 8)
 
 $out | Out-File "$dev\delivery_outcome.txt" -Encoding utf8

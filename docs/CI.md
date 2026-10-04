@@ -13,7 +13,7 @@ replacement for the upstream [AppVeyor](#relationship-to-appveyor) pipeline.
 
 Each build is packaged with everything needed to run:
 
-- the game executable (`REDRIVER2.exe` / `REDRIVER2_dev.exe`, or the Linux ELF),
+- the game executable (`JERICHO.exe` / `JERICHO_dev.exe`, or the Linux ELF),
 - the runtime libraries (`SDL2.dll`, `OpenAL32.dll` on Windows; system SDL2/OpenAL on Linux),
 - the `data/` tree, and
 - the `JERICHO/` tree (**`MODS`** and **`CONFIG`**) that the runtime reads.
@@ -21,8 +21,8 @@ Each build is packaged with everything needed to run:
 Resulting archives:
 
 ```
-REDRIVER2_Release_win32.zip          REDRIVER2_Release_linux-x64.tar.gz
-REDRIVER2_Release_dev_win32.zip      REDRIVER2_Release_dev_linux-x64.tar.gz
+JERICHO_Release_win32.zip          JERICHO_Release_linux-x64.tar.gz
+JERICHO_Release_dev_win32.zip      JERICHO_Release_dev_linux-x64.tar.gz
 ```
 
 `Release` is the clean shipping build. `Release_dev` carries the debug-options /
@@ -68,7 +68,7 @@ Superseded runs on the same ref are cancelled automatically.
 The CI mirrors the existing local helpers, which remain the fastest way to build:
 
 - Windows: `windows_dev_prepare.ps1` (fetch deps + `premake5 vs2022`), then
-  `src_rebuild/build_redriver2.bat` (Release x64) or `src_rebuild/gen_vc2019.bat`.
+  `src_rebuild/build_jericho.bat` (Release x64) or `src_rebuild/gen_vc2019.bat`.
 - Linux: `linux_dev_prepare.sh` (fetch premake + `premake5 gmake2`), then
   `make config=release_x64` in `src_rebuild/build/`.
 - Multiarch Docker build: `Dockerfile` + `dockerbuild.sh`.

@@ -2,15 +2,15 @@
 --
 -- Generates one DLL project per installed module (auto-scanned from
 -- JERICHO/MODS via premake_modules/jericho_mods.lua) into a separate
--- solution (build_mods/REDRIVER2_MODS.sln) that NEVER touches the game
+-- solution (build_mods/JERICHO_MODS.sln) that NEVER touches the game
 -- exe. Each module links against the game's import library
--- (src_rebuild/bin/<cfg>/REDRIVER2.lib — generated once when the exe is
+-- (src_rebuild/bin/<cfg>/JERICHO.lib — generated once when the exe is
 -- built with /DEF:exports.def) so it can call game functions and read
 -- game globals directly.
 --
 -- Usage (from src_rebuild/):
 --     premake5.exe --file=premake5_mods.lua vs2019
---     msbuild build_mods/REDRIVER2_MODS.sln /p:Configuration=Release /p:Platform=x64
+--     msbuild build_mods/JERICHO_MODS.sln /p:Configuration=Release /p:Platform=x64
 --
 -- DLLs land in JERICHO/MODS/<id>/<id>.dll, where the runtime loader
 -- (jer_loader.c) picks them up — no exe rebuild, no mod list anywhere.
@@ -56,12 +56,12 @@ for _, id in ipairs(ALL_MODS) do
 	end
 end
 
-workspace "REDRIVER2_MODS"
+workspace "JERICHO_MODS"
 	location "build_mods"
 	configurations { "Release" }
 	platforms { "x64" }
 
-	-- the game exe export surface (bin/<cfg>/REDRIVER2.lib) is built in the
+	-- the game exe export surface (bin/<cfg>/JERICHO.lib) is built in the
 	-- same configuration family; Release is the canonical mod target
 	configuration "Release"
 		defines { "NDEBUG", "JERICHO_MODULE_BUILD" }
@@ -101,7 +101,7 @@ for _, JER_MOD in ipairs(MODS) do
 
 		-- link against the game exe's exported symbols
 		libdirs { "bin/%{cfg.buildcfg}" }
-		links { "REDRIVER2" }
+		links { "JERICHO" }
 
 		-- output next to mod.toml so the runtime loader finds <id>.dll
 		-- (paths here are relative to the premake script dir, src_rebuild)

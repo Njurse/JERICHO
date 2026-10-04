@@ -110,8 +110,8 @@ expected_upper() { echo "$(echo "$1" | tr 'a-z' 'A-Z')"; }
 HOST_UPPER=$(expected_upper "$HOST_CITY")
 CLIENT_UPPER=$(expected_upper "$CLIENT_CITY")
 
-if [ ! -x "$BIN/REDRIVER2_dev.exe" ] && [ ! -f "$BIN/REDRIVER2_dev.exe" ]; then
-	echo "no REDRIVER2_dev.exe in $BIN - build it first"; exit 1
+if [ ! -x "$BIN/JERICHO_dev.exe" ] && [ ! -f "$BIN/JERICHO_dev.exe" ]; then
+	echo "no JERICHO_dev.exe in $BIN - build it first"; exit 1
 fi
 
 # The harness rmdir's + recreates BOTH run dirs and copies JERICHO/CONFIG into
@@ -193,7 +193,7 @@ if [ -f "$CLIENT_INI" ]; then
 		i=$((i + 1))
 
 		# stop early once the client process is up and its file still holds ours
-		if [ "$i" -gt 2 ] && [ -n "$(pgrep -f 'REDRIVER2_dev.exe.*-join' 2>/dev/null)" ]; then
+		if [ "$i" -gt 2 ] && [ -n "$(pgrep -f 'JERICHO_dev.exe.*-join' 2>/dev/null)" ]; then
 			break
 		fi
 	done

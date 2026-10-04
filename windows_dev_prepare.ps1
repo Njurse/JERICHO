@@ -42,4 +42,4 @@ Rename-Item -Path ($windows_jpeg_dir + '\\jconfig.vc') -NewName "jconfig.h"
 & .\\premake5 vs2022
 
 # Open solution
-& .\\project_vs2022_windows\\REDRIVER2.sln
+& .\\project_vs2022_windows\\JERICHO.sln

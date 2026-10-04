@@ -81,8 +81,8 @@ powershell -ExecutionPolicy Bypass -File tools/publish_release.ps1 -Tag v1.2.0 -
 powershell -ExecutionPolicy Bypass -File tools/publish_release.ps1 -Publish -SkipBuild
 ```
 
-Artifacts land in `dist/` as `REDRIVER2_Release_win64.zip` and
-`REDRIVER2_Release_dev_win64.zip`. Each holds the exe, the runtime DLLs
+Artifacts land in `dist/` as `JERICHO_Release_win64.zip` and
+`JERICHO_Release_dev_win64.zip`. Each holds the exe, the runtime DLLs
 (`SDL2.dll`, `OpenAL32.dll`, `soft_oal.dll`), the `JERICHO/` module tree and
 the `data/` runtime tree. **The FMV videos are deliberately not shipped** —
 they are 1.5 GB of the 1.6 GB build and `-nofmv` is supported.
@@ -166,7 +166,7 @@ the x64 library at that same path, and the next x64 link fails with:
 ```text
 lib\Release\jpeg.lib : warning LNK4272: library machine type 'x86' conflicts with target machine type 'x64'
 VideoPlayer.obj : error LNK2019: unresolved external symbol jpeg_std_error ...
-..\bin\Release\REDRIVER2.exe : fatal error LNK1120: 8 unresolved externals
+..\bin\Release\JERICHO.exe : fatal error LNK1120: 8 unresolved externals
 ```
 
 Delete the poisoned artifact and rebuild. `*.lib` is gitignored, so this is
@@ -176,7 +176,7 @@ always local-only and never something CI can hit:
 rm -f src_rebuild/lib/Release/*.lib
 ```
 
-It is also why a 0-byte `bin/<cfg>/REDRIVER2.exe` can sit in the tree looking
+It is also why a 0-byte `bin/<cfg>/JERICHO.exe` can sit in the tree looking
 like a mystery: the link failed, and the empty file is what the linker left
 behind.
 

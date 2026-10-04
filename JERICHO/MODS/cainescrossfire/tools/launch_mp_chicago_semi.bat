@@ -26,4 +26,4 @@ if not exist "%SEMI%" (
 )
 
 echo Chicago multiplayer arena 1: %CARARG%
-start "" "REDRIVER2_dev.exe" -nointro -mp 1 -level chicago %CARARG% -gamemode takeadrive
+start "" "JERICHO_dev.exe" -nointro -mp 1 -level chicago %CARARG% -gamemode takeadrive

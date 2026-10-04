@@ -41,7 +41,7 @@
 #
 # The run's text is captured to a per-row log rather than read from the session log: the
 # log is `<appName>.log`, and this build's app name is JERICHO, so the live file is
-# JERICHO.log while a stale REDRIVER2.log can sit there looking authoritative.
+# JERICHO.log while a stale JERICHO.log can sit there looking authoritative.
 #
 # carhacks is switched ON and cainescrossfire OFF for the run: carhacks is standalone, and
 # only-carhacks keeps the module set deterministic whatever the bin mirror last held. The
@@ -65,7 +65,7 @@ MSB="C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/MSBuild/Curre
 if [ -z "${SKIPBUILD:-}" ]; then
 	echo "== building Release_dev =="
 	cd "$SRC" || exit 1
-	OUT="$("$MSB" build/REDRIVER2.vcxproj -p:Configuration=Release_dev -p:Platform=x64 \
+	OUT="$("$MSB" build/JERICHO.vcxproj -p:Configuration=Release_dev -p:Platform=x64 \
 		-m -v:m -nologo 2>&1)"
 	if ! printf '%s' "$OUT" | grep -qiE "REDRIVER2[A-Za-z_]*\.exe"; then
 		echo "BUILD FAILED - no link line:"
@@ -75,7 +75,7 @@ if [ -z "${SKIPBUILD:-}" ]; then
 fi
 
 cd "$BIN" || exit 1
-echo "exe: $(ls -l --time-style=+%H:%M:%S REDRIVER2_dev.exe | awk '{print $6, $5" bytes"}')"
+echo "exe: $(ls -l --time-style=+%H:%M:%S JERICHO_dev.exe | awk '{print $6, $5" bytes"}')"
 
 # A second instance (the player's own session) shares JERICHO.log and it is appended, not
 # replaced, so a stray session would be read back as this run's lines. Warn rather than
@@ -156,7 +156,7 @@ for entry in "${ROWS[@]}"; do
 	esac
 
 	RUNLOG="/tmp/chk_suite_$$_${IDX}_${KIND}.log"
-	JERICHO_DUMPVRAM=1 "./REDRIVER2_dev.exe" -nointro -level "${CITY_NAME[$HOST]}" $CARARG \
+	JERICHO_DUMPVRAM=1 "./JERICHO_dev.exe" -nointro -level "${CITY_NAME[$HOST]}" $CARARG \
 		-weather none -time day -frames "$FRAMES" -seed "$SEED" > "$RUNLOG" 2>&1
 	RC=$?
 	IDX=$((IDX + 1))

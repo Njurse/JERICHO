@@ -154,7 +154,7 @@ sample, &rocket.pos, &rocket.vel)`.
 There's no in-game sample browser yet; the quick way to try a candidate is to
 temporarily play it from the pause-menu Debug toggle (or log its id), or —
 during a playtest with **Modules → Caine's Crossfire → Debug → Telemetry Log ON** —
-watch `REDRIVER2.log` for the `[cainescrossfire]` weapon lines (`weapons frame`,
+watch `JERICHO.log` for the `[cainescrossfire]` weapon lines (`weapons frame`,
 `MG fired`, `draw world`) to correlate fire events with what you hear. Pick
 `bank`/`sample`, set a `volume` near `-2000..-3000` and `pitch` around `4096`,
 then tune up/down by ear.

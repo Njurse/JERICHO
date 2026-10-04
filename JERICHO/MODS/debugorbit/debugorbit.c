@@ -22,8 +22,8 @@
  *
  *  - It is SDK-ONLY (jericho.h and friends; no game headers, no engine
  *    symbols). A module DLL that imports engine symbols is bound to the exe
- *    name baked into its import library (REDRIVER2.exe in the SDK copy,
- *    REDRIVER2_dev.exe in the dev tree), so it would fail to load under any
+ *    name baked into its import library (JERICHO.exe in the SDK copy,
+ *    JERICHO_dev.exe in the dev tree), so it would fail to load under any
  *    other build; calling nothing but the context's function pointers keeps
  *    this addon loadable everywhere. The cost is that the two engine structs
  *    it writes through are mirrored below instead of included.
@@ -173,7 +173,7 @@ static int dbgDegrees(int psx)
  * Config, without importing the host.
  *
  * jer_config_* live in the host exe (JERICHO.lib). Calling them directly would
- * put REDRIVER2.exe in this DLL's import table — the name baked into the import
+ * put JERICHO.exe in this DLL's import table — the name baked into the import
  * library — so the DLL would refuse to load inside any other build, and the
  * only symptom is the loader's "enabled but no compiled binary found". They are
  * therefore resolved from the RUNNING host at entry (GetModuleHandle(NULL) +

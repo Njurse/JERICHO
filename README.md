@@ -184,10 +184,10 @@ and the traps the API hides — is
 
 ```
 premake5.exe vs2019
-msbuild build\REDRIVER2.sln /p:Configuration=Release /p:Platform=x64
+msbuild build\JERICHO.sln /p:Configuration=Release /p:Platform=x64
 ```
 
-Helpers: [`src_rebuild/build_redriver2.bat`](src_rebuild/build_redriver2.bat)
+Helpers: [`src_rebuild/build_jericho.bat`](src_rebuild/build_jericho.bat)
 (Release) and [`src_rebuild/build_dev.bat`](src_rebuild/build_dev.bat)
 (`Release_dev`).
 
@@ -224,7 +224,7 @@ JERICHO\sdk\build_mods.bat mymodule
 ```
 
 The standalone SDK ([`JERICHO/sdk/`](JERICHO/sdk/)) ships the API headers, the
-game import library (`REDRIVER2.lib`) and the compiler glue, so a module author
+game import library (`JERICHO.lib`) and the compiler glue, so a module author
 needs no game source, no PsyCross and no SDL/OpenAL/JPEG.
 
 > **At build time.** Only `runtime = "dll"` folders become external libraries;
@@ -246,7 +246,7 @@ reload of the Mods screen.
   follows its `default-enabled` flag from `mod.toml`.
 - **Per-module settings** live in `JERICHO/CONFIG/<modid>.ini` (the
   `jer_config.h` store) and can be hand-edited while the game is closed.
-- The active modules are listed in **`REDRIVER2.log`** at boot; how a module
+- The active modules are listed in **`JERICHO.log`** at boot; how a module
   gets enabled, and the `-nomods` / forced-module switches, are in
   [`module-activation.md`](src_rebuild/Game/C/JERICHO/docs/module-activation.md).
 
@@ -271,7 +271,7 @@ and the `JERICHO/` tree the runtime reads. See [`docs/CI.md`](docs/CI.md).
 - **Debug boot arguments** (`-level`, `-car`, `-gamemode`, `-nomods`,
   `-testmode`, `-shot`, …) are documented in
   [`HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) and printed by
-  `REDRIVER2_dev.exe -help`.
+  `JERICHO_dev.exe -help`.
 - **Repo-wide tools** — release publishing and crash-dump triage — are in
   [`tools/README.md`](tools/README.md); each module ships its own workbench in
   its folder.

@@ -202,7 +202,7 @@ end
 
 ------------------------------------------
 	
-workspace "REDRIVER2"
+workspace "JERICHO"
 	if _ACTION ~= "vscode" then
 		if os.target() == "emscripten" then
     		location "build_web"
@@ -310,7 +310,7 @@ workspace "REDRIVER2"
 		platforms { "x86", "x64" }
 	end
 	
-	startproject "REDRIVER2"
+	startproject "JERICHO"
 	
 	configuration "raspberry-pi"
 		defines { "__RPI__" }
@@ -376,7 +376,7 @@ include "premake5_psycross.lua"
 
 -- game iteslf
 -- JERICHO runtime + compiled-in modules -----------------------------------
-project "JERICHO"
+project "JERICHO_runtime"
 	kind "StaticLib"
 	language "c++"
 
@@ -455,7 +455,7 @@ end
 
 filter {}	-- reset any leaked filter (old premake leaks across project())
 
-project "REDRIVER2"
+project "JERICHO"
     kind "WindowedApp"
 
     language "c++"
@@ -473,8 +473,8 @@ project "REDRIVER2"
     defines { GAME_REGION }
 	defines { "BUILD_CONFIGURATION_STRING=\"%{cfg.buildcfg}\"" }
 
-    links { "JERICHO" }
-    dependson { "JERICHO" }
+    links { "JERICHO_runtime" }
+    dependson { "JERICHO_runtime" }
 
 	for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
 		links { ("mod_" .. JER_MOD) }

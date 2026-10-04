@@ -201,7 +201,7 @@ The master switch is a **true off**: with it off the composed offset is exactly 
 knock's, i.e. what a car did before any of this existed. That matters for a bisect —
 "off" has to mean "as if it were not there".
 
-`CC_MOTION_LOG=<frames>` samples the layers every N frames into `REDRIVER2.log`, a
+`CC_MOTION_LOG=<frames>` samples the layers every N frames into `JERICHO.log`, a
 run-only override like `CC_OPPONENTS`:
 
     [cainescrossfire] idle car=0 pitch=6 roll=-1 yaw=-3 bob=0 scale=4096 speed=0 class=MEDIUM

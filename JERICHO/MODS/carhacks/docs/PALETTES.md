@@ -301,7 +301,7 @@ missing.
 
 > **Which log file?** The session log is `<appName>.log`, and this build's app name is
 > JERICHO (`PsyX_Initialise("JERICHO", …)`, `PsyX_main.cpp:380`), so the live file is
-> `JERICHO.log`. A stale `REDRIVER2.log` from an older build name may still be in the
+> `JERICHO.log`. A stale `JERICHO.log` from an older build name may still be in the
 > folder — do not grep it. Capturing the run's stdout works just as well (and is what
 > `chk_suite.sh` does) because `printInfo` writes both.
 
@@ -328,8 +328,8 @@ missing.
 - `JerichoMakeClutRow` (`texture.c:153`, team/ped dye) allocates rows from the same
   runtime `clutpos` cursor (`texture.c:342-345`), guarded only by `clutpos.y > 511`.
 - The cross-city invariant hashes `civ_clut` (all rows now) and says nothing about VRAM.
-- The session log is `JERICHO.log` in this build, **not** `REDRIVER2.log`; a stale
-  `REDRIVER2.log` can sit in the same folder.
+- The session log is `JERICHO.log` in this build, **not** `JERICHO.log`; a stale
+  `JERICHO.log` can sit in the same folder.
 
 ## History — the fix log (read as the trail, not the state)
 

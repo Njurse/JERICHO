@@ -19,14 +19,14 @@ A claim that is changing is live. A claim that is static is resident.
 
     python3 vrammap.py vram_dump.tga
     python3 vrammap.py vram_frontend.tga vram_dump.tga          # static vs changing
-    python3 vrammap.py vram_live.tga --log ../REDRIVER2.log     # + the CLUT cursor
+    python3 vrammap.py vram_live.tga --log ../JERICHO.log     # + the CLUT cursor
     python3 vrammap.py vram_dump.tga --lev LEVELS/HAVANA.LEV
 
 Dumps come from `JERICHO_DUMPVRAM=1` (vram_dump.tga) or `-vramview [frames]`
 (vram_live.tga, re-dumped every N frames - a series of them is the best input, since
 two dumps far apart separate "streamed" from "loaded once").
 
-Note the session log is `<appName>.log` = JERICHO.log here, not REDRIVER2.log (see
+Note the session log is `<appName>.log` = JERICHO.log here, not JERICHO.log (see
 carhacks/docs/PALETTES.md). Read-only, stdlib only; shares vramdump.py's TGA decoder.
 """
 

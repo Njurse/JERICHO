@@ -57,6 +57,6 @@ menu).
 Firing `JER_EVENT_MODULE_CUSTOM + 10` (SANDBOX_CUSTOM_TOGGLE) flips
 no-damage — any module or future console command can toggle it.
 
-All module output goes to **`REDRIVER2.log`** (via the JERICHO logger,
+All module output goes to **`JERICHO.log`** (via the JERICHO logger,
 wired at boot) — look for the `[sandbox]` lines right after the JERICHO
 boot inventory in the log file.

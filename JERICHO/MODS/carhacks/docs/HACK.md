@@ -127,8 +127,8 @@ import = 5:3:9      # RIO model 9 into spare resident slot 5
   `combatd2 = 1` line in `modlist.ini` silently enables nothing.
 - **Batch**: `> file echo text` may not write, and an `echo` containing parentheses
   inside a parenthesised `if` block breaks the parse of everything after it.
-- **The session log is `JERICHO.log` in this build, not `REDRIVER2.log`** (`<appName>.log`;
-  the app name is JERICHO). A stale `REDRIVER2.log` can sit beside it. The log flushes at
+- **The session log is `JERICHO.log` in this build, not `JERICHO.log`** (`<appName>.log`;
+  the app name is JERICHO). A stale `JERICHO.log` can sit beside it. The log flushes at
   close, so a kill on a late-flushed run throws the session away — runs use `-frames` and
   exit by themselves, and the text to read is the run's captured stdout.
 
@@ -194,7 +194,7 @@ the host's page: `set 1 is the level's own - re-indexed to 110 for the imported 
 Reproduce with:
 
 ```
-JERICHO_DUMPVRAM=1 ./REDRIVER2_dev.exe -nointro -level havana -car 9 ... -frames 200 -seed 7
+JERICHO_DUMPVRAM=1 ./JERICHO_dev.exe -nointro -level havana -car 9 ... -frames 200 -seed 7
 grep "imported slot\|poly tpage index\|pinned set\|page check" JERICHO.log
 python3 carhacks/tools/vramdump.py vram_dump.tga --log JERICHO.log --samples --png overlay.png
 ```

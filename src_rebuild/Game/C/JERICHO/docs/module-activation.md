@@ -33,7 +33,7 @@ an empty value, a typo or an unwrapped quoted string leaves it **off**.
 > read back from the manifest at runtime is `dependencies`** - see Dependencies
 > below, because the registry cannot carry it.
 
-Every boot writes the resolution to `REDRIVER2.log`:
+Every boot writes the resolution to `JERICHO.log`:
 
 ```
 [jericho] --- module inventory (11 loaded) ---
@@ -152,7 +152,7 @@ in bend-gated branches of the engine (see below), so an undamaged car is stock.
 **Guaranteeing vanilla handling:** `-nomods`, or a `modlist.ini` with
 `collisiondevil = 0` and `cainescrossfire = 0`. The shipped `modlist.ini` pins both to
 `0`, so a default install runs no handling override. Verify with the boot log —
-`grep 'state=active' REDRIVER2.log` must not name either module.
+`grep 'state=active' JERICHO.log` must not name either module.
 
 ## Why the engine is stock when no module is loaded
 

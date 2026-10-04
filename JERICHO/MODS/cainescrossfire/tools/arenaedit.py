@@ -4174,8 +4174,8 @@ def _find_game_exe(override=None):
     if cand:
         return cand if os.path.exists(cand) else None
     root = _repo_root()
-    for cfg, name in (("Release_dev", "REDRIVER2_dev.exe"),
-                      ("Release", "REDRIVER2.exe")):
+    for cfg, name in (("Release_dev", "JERICHO_dev.exe"),
+                      ("Release", "JERICHO.exe")):
         p = os.path.join(root, "src_rebuild", "bin", cfg, name)
         if os.path.exists(p):
             return p
@@ -4219,7 +4219,7 @@ def launch_game(a, exe_override=None, dry=False):
 
     exe = _find_game_exe(exe_override or _EXE_OVERRIDE)
     if not exe:
-        return None, ("no game exe - build it (src_rebuild/bin/<cfg>/REDRIVER2_dev.exe) "
+        return None, ("no game exe - build it (src_rebuild/bin/<cfg>/JERICHO_dev.exe) "
                       "or pass --exe / set CC_GAME_EXE")
 
     args = arena_launch_args(a, exe)

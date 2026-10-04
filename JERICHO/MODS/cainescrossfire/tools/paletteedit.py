@@ -744,7 +744,7 @@ def main(argv=None):
     ap.add_argument("--out", help="the override file (default: <bin>/JERICHO/CONFIG/%s)" % OVR_NAME)
     ap.add_argument("--topmost", action="store_true", help="float above the game window")
     ap.add_argument("--offline", action="store_true", help="do not poll for a live map")
-    ap.add_argument("--launch", nargs="?", const="REDRIVER2_dev.exe", metavar="CMD",
+    ap.add_argument("--launch", nargs="?", const="JERICHO_dev.exe", metavar="CMD",
                     help="start the game (with the map dump enabled). Default command: the dev exe")
     ap.add_argument("--level", metavar="LEV",
                     help="work OFFLINE from a level's palette lump (DriverLevelTool/*.LEV) - "

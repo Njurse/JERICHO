@@ -75,7 +75,7 @@ echo   player car     : RIO model %MODEL%  (0 = the Rio police car)
 echo   import         : slot %ISLOT% to RIO model %MODEL%
 if /i "%MODE%"=="test" echo   test mode      : frames=%FRAMES% seed=%SEED%
 echo   config         : %CFG%
-echo   command        : REDRIVER2_dev.exe -nointro -mp 1 -level %LEVEL% -car %MODEL% -weather none -time day %TESTARGS%
+echo   command        : JERICHO_dev.exe -nointro -mp 1 -level %LEVEL% -car %MODEL% -weather none -time day %TESTARGS%
 echo.
 
 if /i not "%MODE%"=="dry" goto :notdry
@@ -102,5 +102,5 @@ type "%CFG%"
 echo.
 
 cd /d "%EXEDIR%"
-start "" "REDRIVER2_dev.exe" -nointro -mp 1 -level %LEVEL% -car %MODEL% -weather none -time day %TESTARGS%
+start "" "JERICHO_dev.exe" -nointro -mp 1 -level %LEVEL% -car %MODEL% -weather none -time day %TESTARGS%
 endlocal

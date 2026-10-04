@@ -522,7 +522,7 @@ typedef struct CD2_CONFIG
 	int tightInput;    // CD2_TIGHT_INPUT_*
 	int tmbButtons;    // 0/1: TMB in-car button layout (Square gas, Circle brake)
 	int tmbTight;      // 0/1: which face button is Tight Turn (0=Cross/bottom, 1=Square/left)
-	int debugLog;      // 0/1: log player-car input/velocity telemetry to REDRIVER2.log
+	int debugLog;      // 0/1: log player-car input/velocity telemetry to JERICHO.log
 	int allWeapons;    // 0/1: test grant - spawn with every REGULAR weapon at max
 			   // capacity; each car's own special still comes from its profile
 

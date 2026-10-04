@@ -3,7 +3,7 @@
 #
 #   ./antfarm_test.sh [frames] [city] [weather] [time]
 #
-# Boots REDRIVER2_dev.exe straight into a single-player take-a-drive with the
+# Boots JERICHO_dev.exe straight into a single-player take-a-drive with the
 # screensaver force-enabled and its cut interval shortened, so a short run
 # still contains several cuts (and therefore several camera archetypes). The
 # verdict is read from the module's own log lines.
@@ -19,8 +19,8 @@
 #   * never kill by image name; only the PID we launched is killed, and only
 #     on a genuine hang;
 #   * never delete JERICHO.log — it is snapshotted;  (the engine's session log
-#     is <appName>.log = JERICHO.log here, NOT REDRIVER2.log — a stale
-#     REDRIVER2.log from an older build made this harness read the wrong file)
+#     is <appName>.log = JERICHO.log here, NOT JERICHO.log — a stale
+#     JERICHO.log from an older build made this harness read the wrong file)
 #   * antfarm is compiled INTO the exe, so a stale exe silently ignores code
 #     changes. Check the link line / exe timestamp before trusting a run.
 set -u
@@ -39,7 +39,7 @@ SEED="${SEED:-$(date +%s)}"
 TEST_INTERVAL="${TEST_INTERVAL:-10}"
 
 BIN="C:/Users/Jaret/Documents/Projects/REDRIVER2/src_rebuild/bin/Release_dev"
-EXE="REDRIVER2_dev.exe"
+EXE="JERICHO_dev.exe"
 INI="$BIN/JERICHO/CONFIG/antfarm.ini"
 MODLIST="$BIN/JERICHO/CONFIG/modlist.ini"
 LOG="$BIN/JERICHO.log"
@@ -72,7 +72,7 @@ log_before="$(stat -c %Y "$LOG" 2>/dev/null || echo 0)"
 # truncates JERICHO.log and then dies, and the run looks like a pass read
 # from a stale log.
 for _ in $(seq 1 40); do
-	tasklist 2>/dev/null | grep -qi "REDRIVER2_dev.exe" || break
+	tasklist 2>/dev/null | grep -qi "JERICHO_dev.exe" || break
 	sleep 1
 done
 
@@ -106,7 +106,7 @@ fi
 echo "Ant Farm test: city=$CITY weather=$WEATHER time=$TIME frames=$FRAMES seed=$SEED interval=${TEST_INTERVAL}s style=${STYLE:-<all>} (muted, antfarm-only)"
 
 # NOTE the ./: bash does not search the current directory for a bare name,
-# so a plain "REDRIVER2_dev.exe" is "command not found" and the run silently
+# so a plain "JERICHO_dev.exe" is "command not found" and the run silently
 # exits without ever launching.
 # Launch plainly (the user's standing permission for this phase): a focused
 # minimised launch via Start-Process turned out not to give a reliable ready

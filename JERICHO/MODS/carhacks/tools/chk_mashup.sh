@@ -64,8 +64,8 @@ esac
 BIN="$REPO/src_rebuild/bin/Release_dev"
 INI="$BIN/JERICHO/CONFIG/carhacks.ini"
 
-if [ ! -f "$BIN/REDRIVER2_dev.exe" ]; then
-	echo "chk_mashup: no game at $BIN/REDRIVER2_dev.exe" >&2
+if [ ! -f "$BIN/JERICHO_dev.exe" ]; then
+	echo "chk_mashup: no game at $BIN/JERICHO_dev.exe" >&2
 	echo "  run it from the checkout, or pass REPO=/path/to/REDRIVER2" >&2
 	exit 2
 fi
@@ -229,11 +229,11 @@ log="/tmp/chk_mashup_${LEVEL_NAME[$host]}.log"
 PLAYER_MODEL="${SLOT_ASSIGN[0]##*:}"
 
 if [ "${CHK_SHOW:-0}" = "1" ]; then
-	./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -playercar "$PLAYER_MODEL" \
+	./JERICHO_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -playercar "$PLAYER_MODEL" \
 		-weather none -time day ${FRAME_ARGS[@]+"${FRAME_ARGS[@]}"} -seed 7 2>&1 | tee "$log"
 	rc="${PIPESTATUS[0]}"
 else
-	./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -playercar "$PLAYER_MODEL" \
+	./JERICHO_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -playercar "$PLAYER_MODEL" \
 		-weather none -time day ${FRAME_ARGS[@]+"${FRAME_ARGS[@]}"} -seed 7 > "$log" 2>&1
 	rc=$?
 fi

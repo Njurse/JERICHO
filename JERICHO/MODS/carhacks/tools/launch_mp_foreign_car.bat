@@ -136,7 +136,7 @@ if /i "%~1"=="dry" (
 	echo import = %IMPORT%
 	echo.
 	echo == would launch ==
-	echo REDRIVER2_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive
+	echo JERICHO_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive
 	endlocal
 	exit /b 0
 )
@@ -178,6 +178,6 @@ echo   test mode      : frames=%FRAMES% seed=%SEED%
 :notest
 
 cd /d "%EXEDIR%"
-echo   running        : REDRIVER2_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
-start "" "REDRIVER2_dev.exe" -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
+echo   running        : JERICHO_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
+start "" "JERICHO_dev.exe" -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
 endlocal

@@ -144,7 +144,7 @@ echo   player car     : %SRCNAME% model %MODEL%  (imported into resident slot %I
 echo   import         : import = %ISLOT%:%SRCIDX%:%MODEL%
 if /i "%MODE%"=="test" echo   test mode      : frames=%FRAMES% seed=%SEED%
 echo   config         : %CFG%
-echo   command        : REDRIVER2_dev.exe -nointro -level %LEVELNAME% -car %MODEL% -weather none -time day %TESTARGS%
+echo   command        : JERICHO_dev.exe -nointro -level %LEVELNAME% -car %MODEL% -weather none -time day %TESTARGS%
 echo.
 
 rem ---- does the SOURCE city even ship this model? --------------------------
@@ -201,7 +201,7 @@ type "%CFG%"
 echo.
 
 cd /d "%EXEDIR%"
-start "" "REDRIVER2_dev.exe" -nointro -level %LEVELNAME% -car %MODEL% -weather none -time day %TESTARGS%
+start "" "JERICHO_dev.exe" -nointro -level %LEVELNAME% -car %MODEL% -weather none -time day %TESTARGS%
 endlocal
 exit /b 0
 

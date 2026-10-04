@@ -125,18 +125,18 @@ jobs:
           # def (that pass is what writes the .map), regenerate the def from
           # that map, then relink. The relink is incremental -- only the exe.
           foreach ($cfg in @('Release', 'Release_dev')) {
-            $exe = if ($cfg -eq 'Release') { 'REDRIVER2' } else { 'REDRIVER2_dev' }
+            $exe = if ($cfg -eq 'Release') { 'JERICHO' } else { 'JERICHO_dev' }
 
             Write-Host "::group::msbuild $cfg (pass 1: empty def, emits the map)"
             Set-Content -Path src_rebuild/exports.def -Value 'EXPORTS'
-            msbuild src_rebuild/build/REDRIVER2.sln /p:Configuration=$cfg /p:Platform=x64 /m /nologo /v:m
+            msbuild src_rebuild/build/JERICHO.sln /p:Configuration=$cfg /p:Platform=x64 /m /nologo /v:m
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             Write-Host "::endgroup::"
 
             Write-Host "::group::gen_exports $cfg + relink (pass 2)"
             & "src_rebuild/bin/$cfg/gen_exports.exe" "src_rebuild/bin/$cfg/$exe.map" "src_rebuild/exports.def"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            msbuild src_rebuild/build/REDRIVER2.sln /p:Configuration=$cfg /p:Platform=x64 /m /nologo /v:m
+            msbuild src_rebuild/build/JERICHO.sln /p:Configuration=$cfg /p:Platform=x64 /m /nologo /v:m
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             Write-Host "::endgroup::"
           }
@@ -151,21 +151,21 @@ jobs:
             Copy-Item "$env:OPENAL_DIR/bin/Win64/soft_oal.dll" "$bin/OpenAL32.dll" -Force
             # game data (the post-build step already mirrored JERICHO/ into $bin)
             Copy-Item "data/*" "$bin/" -Recurse -Force
-            Compress-Archive -Path "$bin/*" -DestinationPath "REDRIVER2_${cfg}_win64.zip" -Force
+            Compress-Archive -Path "$bin/*" -DestinationPath "JERICHO_${cfg}_win64.zip" -Force
           }
 
       - name: Upload Release (win64) artifact
         uses: actions/upload-artifact@v4
         with:
-          name: REDRIVER2_Release_win64
-          path: REDRIVER2_Release_win64.zip
+          name: JERICHO_Release_win64
+          path: JERICHO_Release_win64.zip
           if-no-files-found: warn
 
       - name: Upload Release_dev (win64) artifact
         uses: actions/upload-artifact@v4
         with:
-          name: REDRIVER2_Release_dev_win64
-          path: REDRIVER2_Release_dev_win64.zip
+          name: JERICHO_Release_dev_win64
+          path: JERICHO_Release_dev_win64.zip
           if-no-files-found: warn
 
   linux:
@@ -237,21 +237,21 @@ jobs:
             d="src_rebuild/bin/$cfg"
             # game data (the post-build step already mirrored JERICHO/ into $d)
             cp -R data/. "$d"/
-            ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/REDRIVER2_${cfg}_linux-x64.tar.gz" * )
+            ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" * )
           done
 
       - name: Upload Release (linux-x64) artifact
         uses: actions/upload-artifact@v4
         with:
-          name: REDRIVER2_Release_linux-x64
-          path: REDRIVER2_Release_linux-x64.tar.gz
+          name: JERICHO_Release_linux-x64
+          path: JERICHO_Release_linux-x64.tar.gz
           if-no-files-found: warn
 
       - name: Upload Release_dev (linux-x64) artifact
         uses: actions/upload-artifact@v4
         with:
-          name: REDRIVER2_Release_dev_linux-x64
-          path: REDRIVER2_Release_dev_linux-x64.tar.gz
+          name: JERICHO_Release_dev_linux-x64
+          path: JERICHO_Release_dev_linux-x64.tar.gz
           if-no-files-found: warn
 
   publish:

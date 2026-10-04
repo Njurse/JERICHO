@@ -6,7 +6,7 @@ rem
 rem  Usage:  build.bat        (run it from anywhere)
 rem
 rem  Why a helper: the mods-only premake solution only declares a
-rem  Release config and links bin/Release/REDRIVER2.lib, which this
+rem  Release config and links bin/Release/JERICHO.lib, which this
 rem  tree does not have, while the running exe is Release_dev. The
 rem  SDK build is self-contained (cl.exe + the SDK import lib), and
 rem  this script then mirrors the result where the loader looks.

@@ -26,14 +26,14 @@
 #
 # House rules (same as arena_test.sh):
 #   * the game exits by itself (-frames); no image-name kills
-#   * REDRIVER2.log is never deleted, only copied per run
+#   * JERICHO.log is never deleted, only copied per run
 #   * the player's cainescrossfire.ini is NOT touched - CC_PLAYER_FACTION and
 #     CC_OPPONENTS are run-only overrides
 
 set -u
 
 BIN_DIR="${BIN_DIR:-/c/Users/Jaret/Documents/Projects/REDRIVER2/src_rebuild/bin/Release_dev}"
-EXE="REDRIVER2_dev.exe"
+EXE="JERICHO_dev.exe"
 
 FRAMES="${1:-240}"
 shift 1 2>/dev/null || true
@@ -93,7 +93,7 @@ for fi in "${!FACS[@]}"; do
 			sleep 1
 		done
 
-		cp -f REDRIVER2.log "$LOG" 2>/dev/null
+		cp -f JERICHO.log "$LOG" 2>/dev/null
 
 		# what the run actually did
 		ONFOOT=$(grep -ac "cainescrossfire\] -onfoot: swapping" "$LOG" 2>/dev/null)

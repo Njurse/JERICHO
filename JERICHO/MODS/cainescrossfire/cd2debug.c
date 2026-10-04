@@ -110,7 +110,7 @@ static CD2_DBG_STEP sSteps[CD2_DBG_MAX];
 // step in the file keeps working without it. The presence of a script is not consent -
 // the run has to say it is a test:
 //
-//     JERICHO_CC_INJECT=1 ./REDRIVER2_dev.exe -nointro -level havana ...
+//     JERICHO_CC_INJECT=1 ./JERICHO_dev.exe -nointro -level havana ...
 //
 // A script that asks for injection while the marker is absent says so once, loudly, in
 // the log - so a forgotten script explains itself instead of driving the player quietly.

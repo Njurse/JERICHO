@@ -135,7 +135,7 @@ means adding a line there, then regenerating:
 
 ```
 msbuild build/gen_exports.vcxproj /p:Configuration=Release_dev /p:Platform=x64
-bin/Release_dev/gen_exports.exe bin/Release_dev/REDRIVER2_dev.map exports.def
+bin/Release_dev/gen_exports.exe bin/Release_dev/JERICHO_dev.map exports.def
 ```
 
 Rebuild `gen_exports.exe` first — a stale binary emits `??_C@` string-literal

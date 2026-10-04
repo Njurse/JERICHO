@@ -91,13 +91,13 @@ leverages it (it declares carhacks as a dependency in `../mod.toml`).
 
 ## House rules these follow, learned the hard way
 
-- **Never kill by image name.** `taskkill /IM REDRIVER2_dev.exe` also kills the user's
+- **Never kill by image name.** `taskkill /IM JERICHO_dev.exe` also kills the user's
   own session. Harnesses here let the game exit itself; the only kill is PID-scoped
   and only fires on a genuine hang.
 - **Never delete the session log** — the user's sessions write it too. Snapshot it.
 - **The session log is `<appName>.log`, and this build's app name is JERICHO**
   (`PsyX_Initialise("JERICHO", …)`, `PsyX_main.cpp:380`) — so the live file is
-  `JERICHO.log`. A `REDRIVER2.log` may still sit in the folder from an older build
+  `JERICHO.log`. A `JERICHO.log` may still sit in the folder from an older build
   name and look authoritative; grepping it silently reads a stale file. Prefer
   capturing the run's **stdout** (which `printInfo` also writes), which is correct
   and per-scenario.

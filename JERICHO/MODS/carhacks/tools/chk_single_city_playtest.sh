@@ -71,8 +71,8 @@ esac
 BIN="$REPO/src_rebuild/bin/Release_dev"
 INI="$BIN/JERICHO/CONFIG/carhacks.ini"
 
-if [ ! -f "$BIN/REDRIVER2_dev.exe" ]; then
-	echo "chk_single_city_playtest: no game at $BIN/REDRIVER2_dev.exe" >&2
+if [ ! -f "$BIN/JERICHO_dev.exe" ]; then
+	echo "chk_single_city_playtest: no game at $BIN/JERICHO_dev.exe" >&2
 	echo "  run it from the checkout, or pass REPO=/path/to/REDRIVER2" >&2
 	exit 2
 fi
@@ -161,11 +161,11 @@ echo "----- running host ${CITY_NAME[$host]} (level ${LEVEL_NAME[$host]}, $FRAME
 # CHK_SHOW=1 also prints the game's own log to the terminal, so a run can be
 # watched while it happens rather than read afterwards.
 if [ "${CHK_SHOW:-0}" = "1" ]; then
-	./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
+	./JERICHO_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
 		-weather none -time day ${FRAME_ARGS[@]+"${FRAME_ARGS[@]}"} -seed 7 2>&1 | tee "$log"
 	rc="${PIPESTATUS[0]}"
 else
-	./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
+	./JERICHO_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -car slot2 \
 		-weather none -time day ${FRAME_ARGS[@]+"${FRAME_ARGS[@]}"} -seed 7 > "$log" 2>&1
 	rc=$?
 fi

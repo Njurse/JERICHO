@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Build, package and optionally publish a REDRIVER2 release locally.
+  Build, package and optionally publish a JERICHO release locally.
 
 .DESCRIPTION
   Local equivalent of the `windows` + `publish` jobs in
@@ -14,7 +14,7 @@
     2. build Release and Release_dev for x64, each with the two-pass
        exports.def recipe CI uses -- see the note below
     3. stage data/ plus the runtime DLLs next to each exe and zip it as
-       REDRIVER2_<cfg>_win64.zip
+       JERICHO_<cfg>_win64.zip
     4. with -Publish, create or refresh a GitHub release through the REST API
        and attach the zips
 
@@ -54,7 +54,7 @@
   re-publishing an unchanged build.
 
 .PARAMETER LanPackage
-  Also build REDRIVER2_mp_lan.7z (the partner-facing LAN package with its own
+  Also build JERICHO_mp_lan.7z (the partner-facing LAN package with its own
   launchers) into -OutDir, so the release carries it too. Needs 7-Zip.
 
 .EXAMPLE
@@ -132,8 +132,8 @@ function Invoke-Build {
     param([string] $MsBuild)
 
     foreach ($cfg in $Configuration) {
-        $exe = if ($cfg -eq 'Release') { 'REDRIVER2' } else { 'REDRIVER2_dev' }
-        $sln = Join-Path $SrcRebuild 'build\REDRIVER2.sln'
+        $exe = if ($cfg -eq 'Release') { 'JERICHO' } else { 'JERICHO_dev' }
+        $sln = Join-Path $SrcRebuild 'build\JERICHO.sln'
         $def = Join-Path $SrcRebuild 'exports.def'
 
         Step "Building $cfg (pass 1: empty def, emits the .map)"
@@ -181,7 +181,7 @@ function New-Package {
     foreach ($cfg in $Configuration) {
         Step "Packaging $cfg"
         $bin = Join-Path $SrcRebuild "bin\$cfg"
-        $exe = if ($cfg -eq 'Release') { 'REDRIVER2' } else { 'REDRIVER2_dev' }
+        $exe = if ($cfg -eq 'Release') { 'JERICHO' } else { 'JERICHO_dev' }
 
         # Curate the payload instead of zipping the build directory: a local
         # bin/<cfg> is a working tree that also holds DRIVER/, 1.5 GB of FMV,
@@ -215,7 +215,7 @@ function New-Package {
         Copy-Item (Join-Path $env:OPENAL_DIR 'bin\Win64\soft_oal.dll') $stage -Force
         Copy-Item (Join-Path $env:OPENAL_DIR 'bin\Win64\soft_oal.dll') (Join-Path $stage 'OpenAL32.dll') -Force
 
-        $zip = Join-Path $OutPath "REDRIVER2_${cfg}_win64.zip"
+        $zip = Join-Path $OutPath "JERICHO_${cfg}_win64.zip"
         Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
         Remove-Item $stage -Recurse -Force
         Write-Host ("    {0}  ({1:N1} MB)" -f (Split-Path -Leaf $zip), ((Get-Item $zip).Length / 1MB))
@@ -229,8 +229,8 @@ function New-LanPackage {
         Warn "-LanPackage: $script not found, skipping"
         return
     }
-    Step "Building the LAN package (REDRIVER2_mp_lan.7z)"
-    $out = Join-Path $OutPath 'REDRIVER2_mp_lan.7z'
+    Step "Building the LAN package (JERICHO_mp_lan.7z)"
+    $out = Join-Path $OutPath 'JERICHO_mp_lan.7z'
     & cmd /c "`"$script`" `"$out`""
     if ($LASTEXITCODE -ne 0) { Fail "make_lan_package.bat failed ($LASTEXITCODE)." }
 }
@@ -319,7 +319,7 @@ function Invoke-Publish {
 }
 
 # --- main ------------------------------------------------------------------
-Write-Host "REDRIVER2 release -- repo $Repo, tag $Tag, configs $($Configuration -join ', ')" -ForegroundColor Green
+Write-Host "JERICHO release -- repo $Repo, tag $Tag, configs $($Configuration -join ', ')" -ForegroundColor Green
 
 if (-not $SkipBuild) {
     $msbuild = Get-MSBuild

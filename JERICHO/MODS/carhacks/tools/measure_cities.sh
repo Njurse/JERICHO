@@ -37,7 +37,7 @@ run() {   # run <srcCity> <levelIdx> <tag>   srcCity=-1 => stock
 		{ printf 'cross_city_vehicles = 1\n'; printf 'import = 5:%d:8\n' "$src"; } > "$INI"
 	fi
 
-	./REDRIVER2_dev.exe -nointro -level "${LEVEL_NAME[$lvl]}" -car slot2 \
+	./JERICHO_dev.exe -nointro -level "${LEVEL_NAME[$lvl]}" -car slot2 \
 		-weather none -time day -frames "$FRAMES" -seed 7 > "$log" 2>&1
 
 	echo "----- $tag (level ${CITY_NAME[$lvl]}) -----"

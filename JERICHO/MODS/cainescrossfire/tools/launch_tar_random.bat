@@ -34,4 +34,4 @@ if %T%==3 set TIME=night
 
 echo Take-a-Ride: city=%CITYNAME% car=slot%SLOT% weather=%WEATHER% time=%TIME%
 cd /d "C:\Users\Jaret\Documents\Projects\REDRIVER2\src_rebuild\bin\Release_dev"
-start "" "REDRIVER2_dev.exe" -level %CITYNAME% -car slot%SLOT% -weather %WEATHER% -time %TIME% -gamemode takeadrive
+start "" "JERICHO_dev.exe" -level %CITYNAME% -car slot%SLOT% -weather %WEATHER% -time %TIME% -gamemode takeadrive

@@ -87,7 +87,7 @@ src_rebuild/tools/gen_exports/     maps the linker map to exports.def
 
 ```
 premake5.exe vs2019        (or the gen_vc2019*.bat scripts)
-msbuild build/REDRIVER2.sln /p:Configuration=Release /p:Platform=x64
+msbuild build/JERICHO.sln /p:Configuration=Release /p:Platform=x64
 ```
 
 - premake **auto-scans** `JERICHO/MODS`: every folder with a `mod.toml`
@@ -141,7 +141,7 @@ At boot the game calls `jer_init("JERICHO")`:
    follow their `default-enabled` flag from `mod.toml`.
 3. Activates each enabled module in load order via its entry.
 4. Fires `JER_EVENT_BOOT`, prints the banner and a module/hook inventory
-   to REDRIVER2.log.
+   to JERICHO.log.
 
 ```
 == JERICHO v1 (build 8.0-18-g0f35465f-dirty) == ...

@@ -289,8 +289,8 @@ played level shows none — the difference between "not filled yet" and "full".
 
 ```
 # offline: one or more dumps, plus a log for the CLUT cursor
-JERICHO_DUMPVRAM=1 ./REDRIVER2_dev.exe -nointro -level havana ...      # -> vram_dump.tga
-./REDRIVER2_dev.exe ... -vramview 1 -frames 300                        # -> vram_live.tga (last frame)
+JERICHO_DUMPVRAM=1 ./JERICHO_dev.exe -nointro -level havana ...      # -> vram_dump.tga
+./JERICHO_dev.exe ... -vramview 1 -frames 300                        # -> vram_live.tga (last frame)
 python3 tools/vrammap.py vram_frontend.tga vram_dump.tga --log JERICHO.log
 python3 tools/vrammap.py early.tga late.tga                            # same session, two maturities
 

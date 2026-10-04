@@ -223,7 +223,7 @@ menus:
 
 ```sh
 CC_FORCE_ARENA=3 CC_FORCE_CAR=6 CC_FORCE_OPPONENTS=6 \
-  REDRIVER2_dev.exe -nointro -ccmenu -frames 900
+  JERICHO_dev.exe -nointro -ccmenu -frames 900
 ```
 
 ## The test roster

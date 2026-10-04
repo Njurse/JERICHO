@@ -88,7 +88,7 @@ goto :done
 
 :exe
 echo JERICHO: linking the game exe (%CONF%)
-"%MSBUILD%" build\REDRIVER2.vcxproj /p:Configuration=%CONF% /p:Platform=x64 /m /v:m /nologo
+"%MSBUILD%" build\JERICHO.vcxproj /p:Configuration=%CONF% /p:Platform=x64 /m /v:m /nologo
 set "ERR=%errorlevel%"
 goto :done
 

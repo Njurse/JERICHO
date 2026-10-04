@@ -38,7 +38,7 @@ goto :done
 :one
 echo.
 echo === %CITY%  model %1   launch: -level %CITY% -car %1 ===
-".\REDRIVER2_dev.exe" -nointro -level %CITY% -car %1 -weather none -time day -frames %FRAMES%
+".\JERICHO_dev.exe" -nointro -level %CITY% -car %1 -weather none -time day -frames %FRAMES%
 exit /b 0
 
 :done

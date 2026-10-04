@@ -141,8 +141,8 @@ def main():
     width, height, px = read_tga(tga)
     if log is None:
         # the session log is <appName>.log; JERICHO.log here. Fall back to the older name
-        # only if it is the one on disk, so a stale REDRIVER2.log is never silently read.
-        log = "JERICHO.log" if os.path.exists("JERICHO.log") or not os.path.exists("REDRIVER2.log") else "REDRIVER2.log"
+        # only if it is the one on disk, so a stale JERICHO.log is never silently read.
+        log = "JERICHO.log" if os.path.exists("JERICHO.log") or not os.path.exists("JERICHO.log") else "JERICHO.log"
     sets = parse_log(log) if os.path.exists(log) else {}
     if not sets:
         print(f"{log}: no imported-page lines (no import active, or a log with no 'set N -> index M' line)")

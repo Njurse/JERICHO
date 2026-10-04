@@ -56,7 +56,7 @@ cl /nologo /LD /TP /EHsc /DNDEBUG /DJERICHO_MODULE_BUILD ^
    "/I%SDK_DIR%include" "/I%MOD_FOLDER%" ^
    /Fo%TEMP%\jericho_build\ ^
    @%RSP% ^
-   /link "/LIBPATH:%SDK_DIR%lib\x64\Release" REDRIVER2.lib ^
+   /link "/LIBPATH:%SDK_DIR%lib\x64\Release" JERICHO.lib ^
    "/OUT:%MOD_FOLDER%\%MOD_ID%.dll"
 
 if errorlevel 1 (

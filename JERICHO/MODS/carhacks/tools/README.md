@@ -39,7 +39,7 @@ the lower half pool/CC tools that stayed behind live in `../../cainescrossfire/t
 
 ## Launchers
 
-They all `cd` into `bin\Release_dev\` and `start` `REDRIVER2_dev.exe`. `test [frames]`
+They all `cd` into `bin\Release_dev\` and `start` `JERICHO_dev.exe`. `test [frames]`
 makes a run self-terminate and print a replayable seed; `dry` prints the plan without
 writing config or launching.
 
@@ -59,11 +59,11 @@ launchers call it: the repo's `modlist.ini` pins gameplay modules OFF.
 
 ## House rules these follow, learned the hard way
 
-- **Never kill by image name.** `taskkill /IM REDRIVER2_dev.exe` also kills the user's
+- **Never kill by image name.** `taskkill /IM JERICHO_dev.exe` also kills the user's
   own session. Harnesses here let the game exit itself (`-frames`).
 - **Never delete the session log** — the user's sessions write it too. Snapshot it.
 - **The session log is `<appName>.log`, and this build's app name is JERICHO** — so the
-  live file is `JERICHO.log`. A `REDRIVER2.log` may sit beside it from an older build
+  live file is `JERICHO.log`. A `JERICHO.log` may sit beside it from an older build
   name and look authoritative; prefer capturing the run's **stdout**.
 - **A launcher's `start` detaches**, so its PID is unknowable afterwards: never kill
   after a launcher run — use `dry`, or a direct launch with a captured PID.

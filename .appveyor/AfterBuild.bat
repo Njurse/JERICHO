@@ -8,5 +8,5 @@ for %%c in (%config::= %) do (
     copy %windows_openal_dir%\bin\Win32\soft_oal.dll OpenAL32.dll /Y
 
     xcopy /e /v %data_folder% .\ /Y
-    7z a "REDRIVER2_%%c.zip" ".\*"
+    7z a "JERICHO_%%c.zip" ".\*"
 )

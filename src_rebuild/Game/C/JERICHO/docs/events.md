@@ -361,13 +361,13 @@ the engine pause never opens.
 ## Diagnostics
 
 At boot (and on every Mods-menu reload) the runtime logs into
-**`REDRIVER2.log`** (via the PsyX logger, wired in `main.c`):
+**`JERICHO.log`** (via the PsyX logger, wired in `main.c`):
 - one line per compiled-in module (id, version, enabled, state, author,
   deps) — `state=INVALID` means SDK/dependency validation failed and the
   reason is logged right above it;
 - one line per registered hook handler (event, owning module, priority).
 
-So a quick scan of `REDRIVER2.log` right after boot tells you which of the
+So a quick scan of `JERICHO.log` right after boot tells you which of the
 hooks in this table are actually live, and which modules are running them.
 
 ## Override slots

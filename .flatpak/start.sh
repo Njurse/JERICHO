@@ -9,7 +9,7 @@ function importDefaultData {
 	  echo "Config file not found, importing default config."
 	  cp /app/game/data/config.ini /var/data/config.ini
 	fi
-	echo "$AppVersion" > /var/cache/REDRIVER2.cache
+	echo "$AppVersion" > /var/cache/JERICHO.cache
 }
 
 if [ ! -d /var/data/DRIVER2 ]; then
@@ -17,13 +17,13 @@ if [ ! -d /var/data/DRIVER2 ]; then
 	exit 0
 fi
 
-if [ ! -f /var/cache/REDRIVER2.cache ]; then
+if [ ! -f /var/cache/JERICHO.cache ]; then
   echo "Cache not found, overwriting files."
 	importDefaultData
 fi
 
-if [[ $(< /var/cache/REDRIVER2.cache) != "$AppVersion" ]]; then
-  echo "REDRIVER2 version not matching, overwriting files."
+if [[ $(< /var/cache/JERICHO.cache) != "$AppVersion" ]]; then
+  echo "JERICHO version not matching, overwriting files."
   importDefaultData
 fi
 
@@ -34,9 +34,9 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 cd /app/game/bin/
-case $REDRIVER2_BUILD in
-	release) ./REDRIVER2 $([ ! -z "$args" ] && echo "$args"); shift;;
-	dev) ./REDRIVER2_dev $([ ! -z "$args" ] && echo "$args"); shift;;
-	debug) ./REDRIVER2_dbg $([ ! -z "$args" ] && echo "$args"); shift;;
-	*) ./REDRIVER2 $([ ! -z "$args" ] && echo "$args"); # Fallback
+case $JERICHO_BUILD in
+	release) ./JERICHO $([ ! -z "$args" ] && echo "$args"); shift;;
+	dev) ./JERICHO_dev $([ ! -z "$args" ] && echo "$args"); shift;;
+	debug) ./JERICHO_dbg $([ ! -z "$args" ] && echo "$args"); shift;;
+	*) ./JERICHO $([ ! -z "$args" ] && echo "$args"); # Fallback
 esac

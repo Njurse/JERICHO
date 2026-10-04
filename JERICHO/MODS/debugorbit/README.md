@@ -85,7 +85,7 @@ pointers, mirrors the two engine structs it writes through (`VECTOR`,
 module for it — `GetModuleHandle(NULL)` + `GetProcAddress("jer_config_get_int")`
 and friends, with the built-in defaults as the fallback. The reason is that a
 module DLL importing *any* engine symbol is bound to the exe name baked into its
-import library (`REDRIVER2.exe` in the SDK copy, `REDRIVER2_dev.exe` in the dev
+import library (`JERICHO.exe` in the SDK copy, `JERICHO_dev.exe` in the dev
 tree), so it only loads under whichever build that library came from — and the
 only symptom is the loader's "enabled but no compiled binary found", which reads
 like a missing build rather than a failed load. Importing nothing keeps the addon
@@ -116,8 +116,8 @@ The module narrates itself, so a run can be checked without a debugger:
 
 ```
 cd src_rebuild\bin\Release_dev
-REDRIVER2_dev.exe -nointro -level chicago -car slot2 -weather none -time day -frames 200 -shot 120
-REDRIVER2_dev.exe -nointro -level chicago -car slot2 -weather none -time day -frames 400 -shot 330
+JERICHO_dev.exe -nointro -level chicago -car slot2 -weather none -time day -frames 200 -shot 120
+JERICHO_dev.exe -nointro -level chicago -car slot2 -weather none -time day -frames 400 -shot 330
 ```
 
 * `-frames N` exits cleanly after N gameplay frames; `-shot M` writes

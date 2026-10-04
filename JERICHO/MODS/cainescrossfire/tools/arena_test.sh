@@ -20,16 +20,16 @@
 # House rules this script follows:
 #   * The game exits BY ITSELF now (-frames). This script used to capture a PID and
 #     kill it; that is gone. Beyond the PID-guessing that image-name kills caused,
-#     REDRIVER2.log only flushes at close, so a kill threw away exactly the
+#     JERICHO.log only flushes at close, so a kill threw away exactly the
 #     evidence the run existed to collect. The watchdog below kills only if the
 #     process actually hangs, and only that PID.
-#   * REDRIVER2.log is NOT deleted - the user's own sessions write it too. It is
+#   * JERICHO.log is NOT deleted - the user's own sessions write it too. It is
 #     copied to a per-run file (arena_test_<city>_<weather>_<seed>_<stamp>.log).
 
 set -u
 
 BIN_DIR="${BIN_DIR:-/c/Users/Jaret/Documents/Projects/REDRIVER2/src_rebuild/bin/Release_dev}"
-EXE="REDRIVER2_dev.exe"
+EXE="JERICHO_dev.exe"
 
 FRAMES="${1:-1350}"          # 30 fps sim => 1350 frames = 45s
 shift 1 2>/dev/null || true  # drop $1 (the frame count) — 2 here silently ate the first extra arg
@@ -94,11 +94,11 @@ echo "   replay exactly:  SEED=$SEED ./arena_test.sh $FRAMES"
 echo "   direct:          ./$EXE -nointro -mp $ARENA -level $CITY -car $CAR -weather $WEATHER -time $TIME -frames $FRAMES -seed $SEED $*"
 
 # note any pre-existing dump so we only report a NEW one
-DUMP_BEFORE="$(ls -t REDRIVER2.dmp REDRIVER2-crash-*.dmp 2>/dev/null | head -1)"
+DUMP_BEFORE="$(ls -t JERICHO.dmp JERICHO-crash-*.dmp 2>/dev/null | head -1)"
 
-# The run's OWN output is the snapshot. The module logs to stdout; REDRIVER2.log
+# The run's OWN output is the snapshot. The module logs to stdout; JERICHO.log
 # is only written when the module's debug_log is on, so grepping that file made a
-# healthy run read as "DIED - no summary line". REDRIVER2.log is left alone.
+# healthy run read as "DIED - no summary line". JERICHO.log is left alone.
 STAMP="$(date +%H%M%S)"
 OUT="arena_test_${CITY}_${WEATHER}_${SEED}_${STAMP}.log"
 
@@ -140,7 +140,7 @@ echo "-- modules active: $MODULES --"
 echo "-- crash markers:  $CRASHES --"
 
 # a NEW dump means the game crashed this run
-DUMP_AFTER="$(ls -t REDRIVER2.dmp REDRIVER2-crash-*.dmp 2>/dev/null | head -1)"
+DUMP_AFTER="$(ls -t JERICHO.dmp JERICHO-crash-*.dmp 2>/dev/null | head -1)"
 DUMP_NOTE=""
 if [ -n "$DUMP_AFTER" ] && [ "$DUMP_AFTER" != "$DUMP_BEFORE" ]; then
 	DUMP_NOTE=" (new dump: $DUMP_AFTER)"

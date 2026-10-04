@@ -8,6 +8,6 @@ event every 60 frames).
 
 Build id: `example` (the folder `JERICHO/MODS/example/` is auto-discovered by premake).
 
-All module output goes to **`REDRIVER2.log`** (via the JERICHO logger,
+All module output goes to **`JERICHO.log`** (via the JERICHO logger,
 wired at boot); the boot inventory at startup lists this module and its
 hooks, so a missing log line means it isn't compiled in or is disabled.

@@ -168,6 +168,6 @@ consistency check), and each car's assignment is logged when
 [cainescrossfire] faction: car=7 -> VASQUEZ (Vasquez)
 ```
 
-`grep '\[cainescrossfire\] faction'` on `REDRIVER2.log` after a run is the whole
+`grep '\[cainescrossfire\] faction'` on `JERICHO.log` after a run is the whole
 feature's evidence. The HUD colouring itself needs eyes — boot an arena
 (`tools/arena_test.sh`) and wreck someone.

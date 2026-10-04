@@ -10,7 +10,7 @@ every code change needs a rebuild: `src_rebuild/build_dev.bat`, i.e.
 
 ```
 premake5 vs2019          # only needed when files are ADDED
-msbuild build/REDRIVER2.vcxproj /p:Configuration=Release_dev /p:Platform=x64
+msbuild build/JERICHO.vcxproj /p:Configuration=Release_dev /p:Platform=x64
 ```
 
 A stale exe silently ignores code changes, so check the exe timestamp.
@@ -558,8 +558,8 @@ rows plus one per style.
   archetype's camera code ran;
 * watches by **PID** and only kills that PID, and only on a genuine hang; it
   never deletes the session log (it snapshots it);
-* the session log is **`JERICHO.log`** (`<appName>.log`), *not* `REDRIVER2.log`
-  — a stale `REDRIVER2.log` made an earlier version of this script read the
+* the session log is **`JERICHO.log`** (`<appName>.log`), *not* `JERICHO.log`
+  — a stale `JERICHO.log` made an earlier version of this script read the
   wrong file and fail a passing run;
 * verdict: PASS needs `[antfarm] ready`, `[antfarm] enabled`, no new `*.dmp`, no
   engine error marker, and either `JERICHO-RUN … status=ok` or `LOG CLOSED`;

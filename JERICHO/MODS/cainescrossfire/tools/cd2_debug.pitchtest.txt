@@ -3,7 +3,7 @@
 # Run it as a test run (the two levers need the marker, because they latch):
 #
 #     cp tools/cd2_debug.pitchtest.txt bin/Release_dev/JERICHO/CONFIG/cc_debug.txt
-#     JERICHO_CC_INJECT=1 CC_KNOCK_LOG=30 ./REDRIVER2_dev.exe -nointro -level havana \
+#     JERICHO_CC_INJECT=1 CC_KNOCK_LOG=30 ./JERICHO_dev.exe -nointro -level havana \
 #         -weather none -time day -frames 300 -seed 7
 #     grep knocksample JERICHO.log
 #

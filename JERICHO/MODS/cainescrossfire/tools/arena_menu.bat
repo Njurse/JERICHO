@@ -41,7 +41,7 @@ if not defined REPO for %%I in ("%TOOLS%..\..\..\..") do set "REPO=%%~fI"
 set "ARENAS=%REPO%\JERICHO\MODS\cainescrossfire\arenas"
 set "BIN=%REPO%\src_rebuild\bin\Release_dev"
 set "GAME_ARENAS=%BIN%\JERICHO\MODS\cainescrossfire\arenas"
-set "EXE=%BIN%\REDRIVER2_dev.exe"
+set "EXE=%BIN%\JERICHO_dev.exe"
 rem the repo's editor, not this copy's - a mirror copy is stale
 set "EDITOR=%REPO%\JERICHO\MODS\cainescrossfire\tools\arenaedit.py"
 if not exist "%EDITOR%" set "EDITOR=%TOOLS%arenaedit.py"

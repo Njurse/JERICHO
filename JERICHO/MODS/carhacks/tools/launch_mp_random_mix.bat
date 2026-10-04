@@ -145,7 +145,7 @@ if /i "%~1"=="dry" (
 	echo import = %IMPORT%
 	echo.
 	echo == would launch ==
-	echo REDRIVER2_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive
+	echo JERICHO_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive
 	endlocal
 	exit /b 0
 )
@@ -174,7 +174,7 @@ echo   (wrote %INI%)
 
 rem ---- optional test mode: "launch_mp_random_mix.bat test [frames]" --------
 rem With -frames the game exits by itself at the budget, so nothing needs killing.
-rem That matters: REDRIVER2.log only flushes at close, so a kill discarded the log
+rem That matters: JERICHO.log only flushes at close, so a kill discarded the log
 rem the run existed to produce. The seed is printed so the scenario is reproducible.
 set "TESTARGS="
 set "FRAMES=%~2"
@@ -187,6 +187,6 @@ echo   test mode      : frames=%FRAMES% seed=%SEED%
 :notest
 
 cd /d "%EXEDIR%"
-echo   running        : REDRIVER2_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
-start "" "REDRIVER2_dev.exe" -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
+echo   running        : JERICHO_dev.exe -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
+start "" "JERICHO_dev.exe" -nointro -mp %ARENA% -level %CITYNAME% %CARARG% -weather %WEATHER% -time %TIME% -gamemode takeadrive %TESTARGS%
 endlocal

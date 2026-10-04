@@ -27,7 +27,7 @@ if exist "%~dp0..\..\premake5_mods.lua" (
     set "SRC_REBUILD=%~dp0..\src_rebuild"
     set "REPO_JERICHO=%~dp0"
 ) else (
-    echo JERICHO: cannot find the mods premake - run this from the REDRIVER2
+    echo JERICHO: cannot find the mods premake - run this from the JERICHO
     echo          development tree ^(src_rebuild^).
     exit /b 4
 )
@@ -59,7 +59,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-"%MSBUILD%" build_mods\REDRIVER2_MODS.sln /p:Configuration=Release /p:Platform=x64 /m /v:m /nologo
+"%MSBUILD%" build_mods\JERICHO_MODS.sln /p:Configuration=Release /p:Platform=x64 /m /v:m /nologo
 set "BUILD_ERR=%errorlevel%"
 
 popd

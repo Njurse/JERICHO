@@ -233,15 +233,15 @@ launches with `-nointro -mp <arena> -level <city> -car <slot> -weather <w>
   command — never by image name (see *Safety rules*);
 - treats a process that exited on its own before the timer as a **CRASH** (the
   old script never noticed a dead game and reported "0 errors");
-- notes any pre-existing `REDRIVER2.dmp` and flags a **new** one as a crash;
-- **snapshots** `REDRIVER2.log` to `arena_test_<city>_<weather>_<time>_<stamp>.log`
+- notes any pre-existing `JERICHO.dmp` and flags a **new** one as a crash;
+- **snapshots** `JERICHO.log` to `arena_test_<city>_<weather>_<time>_<stamp>.log`
   (**it does not delete the log**) and greps the snapshot: `verdict: reached
   GAMEPLAY` when a gameplay marker is found, otherwise the last log line, plus
   counts of active modules and crash markers.
 
 ### Launchers
 
-All five `cd` into `bin\Release_dev\`, then `start` `REDRIVER2_dev.exe`:
+All five `cd` into `bin\Release_dev\`, then `start` `JERICHO_dev.exe`:
 
 | Launcher | What it does |
 |---|---|
@@ -289,9 +289,9 @@ any index past a level's loaded car pool crashes the same way.
 - **Kill by PID only.** The game never self-exits, and killing by image name
   would also take down a session the user is running by hand. `arena_test.sh`
   prints the exact `taskkill //F //PID <pid>` it used.
-- **Never delete `REDRIVER2.log`.** The user's own sessions write that file too.
+- **Never delete `JERICHO.log`.** The user's own sessions write that file too.
   Snapshot it (copy to a per-run name, as `arena_test.sh` does) instead.
-- `REDRIVER2.log` is **truncated at session start and flushed at close** (see
+- `JERICHO.log` is **truncated at session start and flushed at close** (see
   `carhacks/docs/FORMATS.md` §8), so a log snapshotted right after a `taskkill` can
   be cut off mid-session — treat a missing tail accordingly.
 

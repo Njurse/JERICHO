@@ -362,6 +362,6 @@ print(total, sets)
   pixels while the car keeps sampling its coordinates, which reads as wrong UVs.
 - The session log is `<appName>.log` — **`JERICHO.log` here** (the app name is
   JERICHO, `PsyX_main.cpp:380`), flushed at close with `---- LOG CLOSED ----` as its last
-  line. A stale `REDRIVER2.log` from an older build name may sit beside it: do not grep
+  line. A stale `JERICHO.log` from an older build name may sit beside it: do not grep
   it, and a `taskkill` on a late-flushed run throws the session away. Capturing the run's
   stdout is the safe read.

@@ -59,7 +59,7 @@ pedestrian, switches control, and pings the car out once the level is
 playable):
 
 ```
-REDRIVER2_dev.exe -nointro -nofmv -level chicago -onfoot
+JERICHO_dev.exe -nointro -nofmv -level chicago -onfoot
 ```
 
 ## Camera behaviour (GTA IV-style)
@@ -91,7 +91,7 @@ close.
 
 ## Camera diagnostics
 
-While in-game the module logs the camera state to **`REDRIVER2.log`** every
+While in-game the module logs the camera state to **`JERICHO.log`** every
 60 frames (and immediately on a collision push):
 
 ```

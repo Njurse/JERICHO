@@ -22,7 +22,7 @@ set "EXEDIR=C:\Users\Jaret\Documents\Projects\REDRIVER2\src_rebuild\bin\Release_
 set "RUN=-nointro -ccmenu"
 
 if /I "%~1"=="dry" (
-	echo would run: REDRIVER2_dev.exe %RUN%
+	echo would run: JERICHO_dev.exe %RUN%
 	exit /b 0
 )
 
@@ -40,5 +40,5 @@ rem a clean carhacks.ini: no cross-city import, so the arena's own cars load
 	echo car_list = 8,9,10
 )
 
-echo CC select: REDRIVER2_dev.exe %RUN%
-start "" "REDRIVER2_dev.exe" %RUN%
+echo CC select: JERICHO_dev.exe %RUN%
+start "" "JERICHO_dev.exe" %RUN%
