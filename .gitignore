@@ -64,3 +64,12 @@ __pycache__/
 
 # local release artifacts from tools/publish_release.ps1
 dist/
+
+# mp remote agent (tools/remote/mp_agent.ps1) local state in the game folder:
+# the agent's secret token, its install record, staging/rollback folders, log
+mp_agent.config.json
+mp_agent.installed.json
+mp_agent.log
+_mp_staging/
+_mp_previous/
+_mp_previous.next/
