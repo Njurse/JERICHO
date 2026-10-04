@@ -51,15 +51,16 @@ Commits: `f3d65d36`, `29118821`, `103bf4d5`, `917fe509`, `248c6909` (all on `mai
 
 ## Open, in the order worth doing
 
-1. **The VEGAS palette walk consumes its lump ~2.6x too fast.** *Measured, and the size is
-   NOT the problem* — see the "VEGAS palettes" memory or `levpalette.py` output: VEGAS's
-   `LUMP_PALLET` segment is 14808 bytes and holds 525 records (~28 B each), yet the engine's
-   walk in `Game/C/cars.c` (~2007-2160) stops after **200** entries. Its advances are
-   `buffPtr += 4` (16-byte header) and `+= 8` (32-byte inline CLUT), all on `int*`, matching
-   the tool — so the extra consumption is in a branch not yet read end to end.
-   **Next action:** log `(char*)buffPtr - lump_ptr` once per entry, run one VEGAS guest try,
-   and the branch shows itself. **Do not** widen the size or use `total_cluts` as a count;
-   both are disproved.
+1. ~~The VEGAS palette walk consumes its lump ~2.6x too fast.~~ **Resolved 2026-10 — a
+   misdiagnosis; the walk was always correct.** The "200 entries read" in the old
+   `no terminator within 14808 bytes` line was `clutStored` (the **inline-CLUT** count), not
+   the record count: VEGAS reads all 525 records — 200 inline CLUTs + 325 "reuse an earlier
+   CLUT", and the summary line `325 reusing an earlier CLUT` proves it. The lump ends in a
+   **lone 4-byte `-1`** (not a full 16-byte record), and the old guard required 12 bytes of
+   headroom *before* the terminator test, so it tripped 4 bytes early on every city and
+   printed a false "the lump is mis-sized". Fixed in `Game/C/cars.c`: the `-1` terminator is
+   read first (4-byte guard), then the full 16-byte record is required; the false message is
+   gone and the walk ends on the real terminator.
 2. **Switching cities in the vehicle selector disconnects the client.** Reported with a
    *git-release host against a develop client* — **rule the build mismatch out first** by
    reproducing on matched builds in the rig. The module's city row itself is bounds-checked
@@ -107,7 +108,7 @@ Commits: `f3d65d36`, `29118821`, `103bf4d5`, `917fe509`, `248c6909` (all on `mai
 - Keep green: `python tools/doccheck.py`, `python JERICHO/MODS/mp/tools/check_debug_independence.py`,
   `JERICHO/MODS/carhacks/tools/chk_suite.sh` (its `mix 3/3` crosscheck failure is pre-existing).
 - Build: `cd src_rebuild && cmd //c build_dev.bat`, run dir `src_rebuild/bin/Release_dev`.
-- A live host for hand testing: `MP_DEBUG=1 MP_AUTOSTART=host ./REDRIVER2_dev.exe -nointro -nofmv -host 1318`
+- A live host for hand testing: `MP_DEBUG=1 MP_AUTOSTART=host ./JERICHO_dev.exe -nointro -nofmv -host 1318`
   (it self-terminates if you pass `-frames N`; otherwise kill it by PID).
 - The user's two-PC run is the acceptance test; headless runs cannot judge how colours *look*,
   only the palette/page state behind them.

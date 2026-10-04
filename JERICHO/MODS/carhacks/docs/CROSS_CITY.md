@@ -422,11 +422,17 @@ is checked against the table *and* against what was actually stored, and `clutSt
 clamped. The reproducer (`CHK_REPRO=1 chk_mashup.sh havana 4 60`) runs to `built 3/3,
 spawned 3/3` with no dump.
 
-**Still open, now visible instead of fatal:** the walk reports
-`no terminator within N bytes` — the deferred lump and its size do not agree with the
-entry format this code assumes (a city's table is 219 CLUTs in a 15576-byte lump). From
-here that would show as wrong colours for a cross-row reference, not as a crash. It and
-the one-city bank are what the CLUT band unit takes on.
+**Follow-up (2026-10): the "no terminator" line was a false alarm, not a size error.**
+A city's lump holds `header_total` inline CLUTs plus the reuse records that reference them,
+and ends in a **lone 4-byte `-1`** (not a full 16-byte record — `levpalette.py` measures 4
+bytes left over in each city). The walk always consumed the whole lump and read every
+record; the summary line proves it (`200 CLUT(s) in the lump … 325 reusing an earlier CLUT`
+= 525 records = the entire VEGAS lump). The old guard required 12 bytes of headroom and ran
+*before* the terminator test, so it tripped 4 bytes early on every city and printed a false
+"mis-sized" while reporting `clutStored` (the inline-CLUT count) as "entries read" — the
+source of the "~2.6x stride" misreading. The guard now reads the lone `-1` terminator first
+and only then requires the full record, so the false message is gone and the walk ends on
+the real terminator.
 
 ## Related
 

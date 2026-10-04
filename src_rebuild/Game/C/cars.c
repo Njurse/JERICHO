@@ -2024,12 +2024,21 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		// walk two-thirds of the way and left the tail's palette rows (VEGAS rows 5 and 6)
 		// empty - which is what made a car whose page lives there draw its panels from
 		// different fallback colours. It is a CLUT count for clutTable sizing, nothing more.
+		//
+		// The terminator is a lone `-1` int (4 bytes), NOT a full 16-byte record: every
+		// city's lump ends that way (levpalette.py measures 4 bytes left over in each).
+		// So guard just the 4 bytes needed to read *buffPtr, test the terminator, and only
+		// then require the full record. The old +12 check ran before the terminator test
+		// and tripped 4 bytes early on EVERY city, printing a false "the lump is mis-sized"
+		// and reporting clutStored (the inline-CLUT count) as "entries read" - which is
+		// what made a correct walk look like a ~2.6x stride bug. The walk always read all
+		// 525 records; it just never got to see the -1.
 		if (lump_size > 0)
 		{
-			if ((char*)buffPtr + 12 > (char*)lump_ptr + lump_size)
+			if ((char*)buffPtr + 4 > (char*)lump_ptr + lump_size)
 			{
-				printInfo("cross-city: %s palettes: no terminator within %d bytes (%d entries read) - the lump is mis-sized; stopping\n",
-					LevelNames[city], lump_size, clutStored);
+				printInfo("cross-city: %s palettes: ran out of lump after %d entries with no terminator - the lump is truncated; stopping\n",
+					LevelNames[city], entriesRead);
 				break;
 			}
 		}
@@ -2040,6 +2049,14 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 
 		if (*buffPtr == -1)
 			break;
+
+		// A record is four ints; require them all before reading.
+		if (lump_size > 0 && (char*)buffPtr + 16 > (char*)lump_ptr + lump_size)
+		{
+			printInfo("cross-city: %s palettes: truncated record at entry %d - the lump is truncated; stopping\n",
+				LevelNames[city], entriesRead);
+			break;
+		}
 
 		palette = buffPtr[0];
 		texnum = buffPtr[1];
