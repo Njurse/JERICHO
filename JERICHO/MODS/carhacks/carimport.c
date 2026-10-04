@@ -799,7 +799,29 @@ int chkImportApplyPick(int level, int count)
 	printInfo("[carhacks] import: the pick (%s model %d) -> resident slot %d (level %s)\n",
 		chkCityName(city), model, slot, chkCityName(level));
 
-	return chkImportSetSlot(slot, chkCarId(city, model));
+	if (!chkImportSetSlot(slot, chkCarId(city, model)))
+		return 0;
+
+	/* AND TELL THE ENGINE WHICH SLOT, not which model.
+	 *
+	 * wantedCar[] is matched against residentCarModels[] by players.c to decide the slot the
+	 * player spawns in, so what belongs there is a RESIDENT SLOT. Writing the model number
+	 * (what the menu did in chkRideWith) put a guest pick in the LEVEL'S OWN car of that
+	 * number - measured, the user's try 2 (vegas:1), whose car was imported into slot 7:
+	 *
+	 *   [carhacks] import: the pick (VEGAS model 2) -> resident slot 7 (level CHICAGO)
+	 *   [mp] player 0 changed car: slot 0 -> 1 (the session city model 2)
+	 *
+	 * The mapping cannot be done where the menu is, because at Ride time nothing has been
+	 * imported yet and there is no slot to name (chkImportSlotForCar answers -1). It is known
+	 * HERE, and still early enough: this runs at the level load, and the engine re-applies
+	 * wantedCar as its last word before the level runs. */
+	wantedCar[0] = slot;
+
+	printInfo("[carhacks] import: the pick is resident slot %d -> wantedCar[0]=%d "
+		"(a slot, not a model)\n", slot, wantedCar[0]);
+
+	return 1;
 }
 
 /* ---------------------------------------------------------------------------

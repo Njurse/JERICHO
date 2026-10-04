@@ -285,11 +285,30 @@ static int chkRideWith(int city, int idx)
 	/* and tell a session, so the host can fold it into the agreed set (net.c) */
 	chkNetAdvertisePick(city, list[idx].model);
 
-	wantedCar[0] = list[idx].model;
+	/* wantedCar[] is a RESIDENT SLOT to the engine, not a model number: players.c matches
+	 * it against residentCarModels[] to decide which slot to spawn the player in. For a
+	 * car the level already holds, slot and model coincide -- which is why writing the
+	 * model worked for the level's own cars, and why it broke exactly the GUEST picks:
+	 * carhacks imports a guest into a spare slot, and the model number then pointed at the
+	 * LEVEL'S OWN car of that number. Measured, the user's try 2 (vegas:1):
+	 *
+	 *   [carhacks/net] told the session: VEGAS model 2
+	 *   [carhacks] import: the pick (VEGAS model 2) -> resident slot 7
+	 *   [mp] player 0 changed car: slot 0 -> 1 (the session city model 2)
+	 *
+	 * The car was in slot 7 and the player was put in the level's model 2 -- "the client
+	 * was still rio car 1". chkImportSlotForCar is the mapping (the slot the pick's car was
+	 * brought in at); -1 means the level's own pool holds it, where the model IS the slot. */
+	{
+		int slot = chkImportSlotForCar(city, list[idx].model);
 
-	printInfo("[carhacks] car select: RIDE %s slot %d -> model %d (level city %s) wantedCar=%d\n",
-		chkCityName(city), list[idx].slot, list[idx].model,
-		chkCityName(GameLevel), wantedCar[0]);
+		wantedCar[0] = (slot >= 0) ? slot : list[idx].model;
+
+		printInfo("[carhacks] car select: RIDE %s slot %d -> model %d -> wantedCar[0]=%d "
+			"(resident slot %d, level city %s)\n",
+			chkCityName(city), list[idx].slot, list[idx].model, wantedCar[0],
+			slot, chkCityName(GameLevel));
+	}
 
 	/* A LIVE SESSION OWNS THE LAUNCH. mp seats players on its own car screen and
 	 * claims the frontend's START, so starting the level from here would load it
