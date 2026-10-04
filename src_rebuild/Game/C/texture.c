@@ -1582,27 +1582,25 @@ static int CarImportDstSetCore(int set)
 
 	// A set the level has already resolved keeps its meaning (the host city owns that
 	// number), so the imported page goes to a free index instead - allocated at BUILD
-	// time so the bake cannot disagree with the pin.
+	// time so the bake cannot disagree with the pin. A set the level never resolved is
+	// left as it is: the pin replaces texture_pages[set] with the imported page, and the
+	// polys read exactly that.
 	//
-	// A SET THE LEVEL NEVER RESOLVED GETS ONE TOO, and that is a fix, not a widening.
-	// The old rule left such a set as it was, on the reasoning that nothing else used the
-	// index so the pin could simply replace its page. The index is the GUEST CITY's
-	// number, though, and in THIS level that number is a slot the world streamer owns -
-	// so the pin had to take a world rectangle for it. Measured on a real session, on the
-	// host drawing a client's HAVANA model 1:
+	// REVERTED FROM "always take an import index", and the reason matters more than the
+	// code: that version was meant to stop an imported car landing on a world page (the
+	// HAVANA "0 in the pool" case), and instead the user came back with "the frontend
+	// completely fails to work correctly and is still accepting input but visually does
+	// not update at all after returning to the frontend menu". Taking a remap index for
+	// every set put imported pages into the index space the FRONTEND draws from (the
+	// attract screen and the menus draw cars), so the menus stopped updating while the
+	// input still worked. The imported-page problem needs a fix that cannot reach the
+	// frontend's pages - see the pool/authority notes in MP_ADAPTER.md - not a wider grab.
 	//
-	//   candidate HAVANA set 35 hostOwns=0 (-)
-	//   HAVANA set 35 keeps its own index (the level never resolved it)
-	//   HAVANA set 35 -> index 35 ... (paged in at draw time, evicting the world if needed)
-	//   slot 7 holds HAVANA: 2 pin(s) (0 in the pool) ...
-	//
-	// which is both symptoms at once: the car samples whatever the world streamed over its
-	// page (broken textures) and the world draws the car's colours (the scenery
-	// contamination). The imported car's page must live in the import range and be
-	// pool-pinned, whatever the level drew. JERICHO: the test is HostUsesTPage - "does the
-	// host draw with this set at all?" - not the old "is it one of the 19 resolved slots,
-	// or one of the host's car pages". See HostUsesTPage for what the narrow version cost
-	// (repainted pedestrians); always taking our own index can only reduce what we touch.
+	// JERICHO: the test is HostUsesTPage - "does the host draw with this set at all?" -
+	// not the old "is it one of the 19 resolved slots, or one of the host's car pages".
+	// See HostUsesTPage for what the narrow version cost (repainted pedestrians).
+	if (!HostUsesTPage(set))
+		return set;
 
 	free = FindFreeSetIndex();
 
