@@ -738,9 +738,17 @@ char* GetCarImportCosmetics(int slot)
 // somehow needs more is refused instead of corrupting its neighbour.
 #define JER_HOT_CAR_BLOCK_BYTES	(64 * 1024)
 
+// JERICHO: the pool is dealt out in BLOCKS, one per slot, and a block is given BACK when a
+// car goes away (JerReleaseCarGeometry). A bump cursor could not do that, so a slot that was
+// hot-loaded once consumed its space for the rest of the level - fine while nothing ever
+// released a slot, wrong now that a peer leaving (or the local player leaving the session)
+// must hand its resources back. JER_HOT_CAR_BLOCKS blocks fit the pool by construction.
+#define JER_HOT_CAR_BLOCKS		(JER_HOT_CAR_POOL_BYTES / JER_HOT_CAR_BLOCK_BYTES)
+
 static char* gJerHotCarPool;
-static int   gJerHotCarUsed;
 static int   gJerHotCarSize;
+static int   gJerHotCarUsed;					// blocks in use, for the log line
+static int   gJerHotCarBlockOf[MAX_CAR_RESIDENT_MODELS];	// slot -> block, -1 = none
 
 int ProcessCarModelLump(char *lump_ptr, int lump_size)
 {
@@ -757,9 +765,16 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 
 	specMemReq = 0;
 
-	// JERICHO: a level load rebuilds every resident model from malloctab, so any
-	// car this level HOT-LOADED is superseded here; its pool is free to reuse.
-	gJerHotCarUsed = 0;
+	// JERICHO: a level load rebuilds every resident model from malloctab, so any car this
+	// level HOT-LOADED is superseded here; its blocks are free to reuse.
+	{
+		int b;
+
+		gJerHotCarUsed = 0;
+
+		for (b = 0; b < MAX_CAR_RESIDENT_MODELS; b++)
+			gJerHotCarBlockOf[b] = -1;
+	}
 
 	// (The cross-city source + resident-model choices are resolved by
 	// JER_EVENT_CAR_DATA_SOURCE in SetupResidentModels, which runs before this.)
@@ -1028,19 +1043,50 @@ int JerHotLoadCarModel(int slot)
 
 	if (gJerHotCarPool == NULL)
 	{
+		int b;
+
 		gJerHotCarPool = (char*)malloc(JER_HOT_CAR_POOL_BYTES);
 		gJerHotCarSize = (gJerHotCarPool != NULL) ? JER_HOT_CAR_POOL_BYTES : 0;
+
+		for (b = 0; b < MAX_CAR_RESIDENT_MODELS; b++)
+			gJerHotCarBlockOf[b] = -1;
 	}
 
-	if (JER_HOT_CAR_BLOCK_BYTES > gJerHotCarSize - gJerHotCarUsed)
 	{
-		printInfo("cross-city: no room for %s model %d in the hot-load pool (%d of %d left) - slot %d keeps the car it has\n",
-			LevelNames[GetCarModelSourceCity(slot)], model_number,
-			gJerHotCarSize - gJerHotCarUsed, gJerHotCarSize, slot);
-		return 0;
-	}
+		int b, block = -1;
 
-	cursor = gJerHotCarPool + gJerHotCarUsed;
+		for (b = 0; b < JER_HOT_CAR_BLOCKS; b++)
+		{
+			int k, taken = 0;
+
+			for (k = 0; k < MAX_CAR_RESIDENT_MODELS; k++)
+			{
+				if (gJerHotCarBlockOf[k] == b)
+				{
+					taken = 1;
+					break;
+				}
+			}
+
+			if (!taken)
+			{
+				block = b;
+				break;
+			}
+		}
+
+		if (block < 0)
+		{
+			printInfo("cross-city: no free hot-load block for %s model %d (%d of %d in use) - slot %d keeps the car it has\n",
+				LevelNames[GetCarModelSourceCity(slot)], model_number, gJerHotCarUsed, JER_HOT_CAR_BLOCKS, slot);
+			return 0;
+		}
+
+		gJerHotCarBlockOf[slot] = block;
+		gJerHotCarUsed++;
+
+		cursor = gJerHotCarPool + (block * JER_HOT_CAR_BLOCK_BYTES);
+	}
 
 	if (cleanOfs != -1)
 	{
@@ -1068,14 +1114,12 @@ int JerHotLoadCarModel(int slot)
 		buildNewCarFromModel(slot, 0, mem, model);
 	}
 
-	gJerHotCarUsed += JER_HOT_CAR_BLOCK_BYTES;
-
-	/* The builds must have stayed inside their block. If they did not, the slot's
-	 * models overlap the next car's -- so unbuild the slot (leaving the substitute
-	 * car, which is correct-looking) rather than draw corrupted geometry. */
-	if ((int)(cursor - (gJerHotCarPool + gJerHotCarUsed - JER_HOT_CAR_BLOCK_BYTES)) > JER_HOT_CAR_BLOCK_BYTES)
+	/* The builds must have stayed inside the slot's block: two cars' models must never
+	 * overlap. If one did, unbuild the slot (the substitute car, which looks right)
+	 * rather than draw corrupted geometry -- and hand the block back. */
+	if (cursor > gJerHotCarPool + ((gJerHotCarBlockOf[slot] + 1) * JER_HOT_CAR_BLOCK_BYTES))
 	{
-		printInfo("cross-city: %s model %d took more than the %d-byte hot-load block - slot %d is left unbuilt\n",
+		printInfo("cross-city: %s model %d took more than its %d-byte hot-load block - slot %d is left unbuilt\n",
 			LevelNames[GetCarModelSourceCity(slot)], model_number,
 			JER_HOT_CAR_BLOCK_BYTES, slot);
 
@@ -1083,22 +1127,77 @@ int JerHotLoadCarModel(int slot)
 		gCarDamModelPtr[slot] = NULL;
 		gCarLowModelPtr[slot] = NULL;
 
+		gJerHotCarBlockOf[slot] = -1;
+		gJerHotCarUsed--;
+
 		return 0;
 	}
-
-	printInfo("cross-city: hot-loaded %s model %d into resident slot %d (%d bytes budgeted, %d of %d used)\n",
-		LevelNames[GetCarModelSourceCity(slot)], model_number, slot, need,
-		gJerHotCarUsed, gJerHotCarSize);
 
 	/* the manifest's geometry side: the block this slot now owns in the hot-load pool */
 	CarSlotResNoteGeometry(slot, JER_HOT_CAR_BLOCK_BYTES);
 
+	printInfo("cross-city: hot-loaded %s model %d into resident slot %d (%d bytes budgeted, block %d, %d of %d blocks used)\n",
+		LevelNames[GetCarModelSourceCity(slot)], model_number, slot, need,
+		gJerHotCarBlockOf[slot], gJerHotCarUsed, JER_HOT_CAR_BLOCKS);
+
 	return need;
 }
 
+// JERICHO cross-city unload: give back the geometry a hot-loaded slot holds, so the slot (and
+// its block of the pool) can be used again. The model pointers stop pointing into the pool --
+// a caller that still has a car on this slot must rebuild it first (mp does, through its swap
+// path) -- and the block returns to the free list. A slot built at level load has no block and
+// is left alone: its geometry belongs to the level's own heap.
+int JerReleaseCarGeometry(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	if (gJerHotCarBlockOf[slot] < 0)
+		return 0;			// not ours: built at level load, or never built
+
+	gCarCleanModelPtr[slot] = NULL;
+	gCarDamModelPtr[slot] = NULL;
+	gCarLowModelPtr[slot] = NULL;
+
+	gJerHotCarBlockOf[slot] = -1;
+	gJerHotCarUsed--;
+
+	return 1;
+}
+
+// JERICHO cross-city unload: give back the imported cities' data AND the hot-load pool. Called
+// when there is no map any more (the frontend, after leaving a session), where nothing should
+// be holding a pointer into an import buffer or into the pool. A level load does the same work
+// through InitCarImport, so this is the "no level will come along to clean up" case.
+int JerReleaseCarImport(void)
+{
+	int city, n = 0, b;
+
+	for (city = 0; city < 4; city++)
+	{
+		if (gCarImports[city].region != NULL)
+		{
+			FreeCarImport(&gCarImports[city]);
+			n++;
+		}
+	}
+
+	gCarImportCity = -1;
+
+	gJerHotCarUsed = 0;
+
+	for (b = 0; b < MAX_CAR_RESIDENT_MODELS; b++)
+		gJerHotCarBlockOf[b] = -1;
+
+	if (n > 0)
+		printInfo("cross-city: released %d imported city buffer(s) and the hot-load pool\n", n);
+
+	return n;
+}
+
 // [D] [T]
-MODEL* FindModelPtrWithName(char *name){
-	int idx;
+MODEL* FindModelPtrWithName(char *name){	int idx;
 	idx = FindModelIdxWithName(name);
 
 	return idx >= 0 ? modelpointers[idx] : NULL;

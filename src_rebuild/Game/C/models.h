@@ -50,7 +50,19 @@ char* GetCarImportModels(int slot);
 // a half-built car is worse than a substitute. Call InitCarImport() first, so the
 // city's data is actually there.
 int JerHotLoadCarModel(int slot);
-char* GetCarImportCosmetics(int slot);
+
+// JERICHO cross-city UNLOAD: give back the geometry a hot-loaded slot holds and return its pool
+// block, so the slot can be built again later. Returns 1 when something was given back, 0 when
+// the slot held no hot-load geometry (it was built at level load, or never built) - in which
+// case the caller has nothing to release on this side. Anything still driving that slot must be
+// rebuilt afterwards; mp does that through its own swap path.
+int JerReleaseCarGeometry(int slot);
+
+// JERICHO cross-city unload, all of it: hand back the imported cities' buffers and the hot-load
+// pool. Called when no map is loaded (the frontend, after leaving a session) - a level load does
+// the same work through InitCarImport, so this exists for the case where no level will come along
+// to clean up. Returns how many city buffers were freed.
+int JerReleaseCarImport(void);char* GetCarImportCosmetics(int slot);
 
 // Which city the level is importing from (-1 = none), and that city's car
 // palettes. cars.c needs both: a foreign vehicle's texture pages must map to the

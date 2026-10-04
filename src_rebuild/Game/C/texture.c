@@ -2928,6 +2928,143 @@ static void CarImportDumpPageRefs(void)
 // Called from InitCarImport (models.c), which runs BEFORE the level's car models are
 // built - so the per-slot set lists start empty and buildNewCarFromModel fills them
 // for the imported slots.
+// JERICHO cross-city UNLOAD, for ONE slot: give back everything that slot holds, so it can be
+// used again (a peer leaving, or the local player replacing their car). The manifest says what
+// that is; this walks the real tables.
+//
+// Order matters: the slot's SETS are known only from its pins, so they are collected before
+// the pins are removed, and the geometry goes last because the sets live in the built model.
+// Anything still driving this slot must be rebuilt afterwards -- mp does that through its own
+// swap path -- and a caller that is not replacing the car should also take the slot out of its
+// resident set (that is the module's side, not the engine's).
+int JerReleaseCarSlot(int slot)
+{
+	int sets[16];
+	int i, k, nsets = 0, released = 0;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	/* 1. the pins recorded for this slot, and the pool pages behind them */
+	for (i = 0; i < sPinCount; i++)
+	{
+		if (sPinSlot[i] != slot)
+			continue;
+
+		if (sPinPool[i] >= 0)
+		{
+			JerLowerPoolPageFree(sPinPool[i]);
+			released++;
+		}
+
+		if (nsets < 16)
+			sets[nsets++] = sPinSet[i];
+
+		for (k = i; k < sPinCount - 1; k++)
+		{
+			sPinSet[k] = sPinSet[k + 1];
+			sPinIndex[k] = sPinIndex[k + 1];
+			sPinSlot[k] = sPinSlot[k + 1];
+			sPinPool[k] = sPinPool[k + 1];
+			sPinOffset[k] = sPinOffset[k + 1];
+			sPinSize[k] = sPinSize[k + 1];
+			sPinCity[k] = sPinCity[k + 1];
+		}
+
+		sPinCount--;
+		i--;			/* the pin that shifted in is examined next */
+	}
+
+	/* 2. the baked index each of those sets was given (and its reservation, which exists
+	 * precisely so the next import does not take the same index) */
+	for (i = 0; i < nsets; i++)
+	{
+		int r;
+
+		for (r = 0; r < sRemapCount; r++)
+		{
+			int t;
+
+			if (sRemapFrom[r] != sets[i])
+				continue;
+
+			/* drop the reservation this set's index holds */
+			for (t = 0; t < sReservedCount; t++)
+			{
+				if (sReservedSet[t] != sRemapTo[r])
+					continue;
+
+				for (k = t; k < sReservedCount - 1; k++)
+					sReservedSet[k] = sReservedSet[k + 1];
+
+				sReservedCount--;
+				break;
+			}
+
+			for (k = r; k < sRemapCount - 1; k++)
+			{
+				sRemapFrom[k] = sRemapFrom[k + 1];
+				sRemapTo[k] = sRemapTo[k + 1];
+			}
+
+			sRemapCount--;
+			released++;
+			break;
+		}
+	}
+
+	/* 3. the geometry, and the manifest entry that described it */
+	if (JerReleaseCarGeometry(slot))
+		released++;
+
+	sCarSlotRes[slot].used = 0;
+	sCarSlotRes[slot].city = -1;
+	sCarSlotRes[slot].pins = 0;
+	sCarSlotRes[slot].poolPages = 0;
+	sCarSlotRes[slot].clutRowBase = -1;
+	sCarSlotRes[slot].clutRows = 0;
+	sCarSlotRes[slot].geometryBytes = 0;
+
+	if (released > 0)
+		printInfo("cross-city: released slot %d - %d thing(s) given back (pins, pool pages, baked index, geometry)\n",
+			slot, released);
+
+	return released;
+}
+
+// JERICHO cross-city UNLOAD, everything: the state a level installs, given back while there is
+// NO level -- the frontend, after leaving a session. CarImportResetState covers the pins, the
+// remap, the reservations and the pool, but NOT the two things that are per CITY: the parsed
+// page lists and the deferred palette lumps (pointers INTO the import buffer). Those are
+// exactly the state that outlives a level, and reading them with no map loaded is the reported
+// access violation when a player leaves and rejoins with a car from another city.
+void JerReleaseAllCrossCity(void)
+{
+	int slot, city;
+
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		if (sCarSlotRes[slot].used)
+			JerReleaseCarSlot(slot);
+	}
+
+	CarImportResetState();
+
+	/* the per-city state CarImportResetState does not know about */
+	CarImportPaletteReset();
+
+	for (city = 0; city < 4; city++)
+	{
+		gCarImportPerms[city].count = 0;
+		gCarImportSpecs[city].count = 0;
+		gCarImportTexParsed[city] = 0;
+	}
+
+	JerReleaseCarImport();
+
+	printInfo("cross-city: released everything - no map is loaded, so nothing cross-city is held\n");
+}
+
 void CarImportResetState(void)
 {
 	int i;

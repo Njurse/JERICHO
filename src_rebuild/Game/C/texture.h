@@ -84,6 +84,16 @@ extern int  CarModelSetUsed(int set);
 // which runs before the level's car models are built.
 extern void CarImportResetState(void);
 
+// JERICHO cross-city UNLOAD (texture.c):
+//  - JerReleaseCarSlot(slot): give back one slot's pins, pool pages, baked index and geometry, so
+//    the slot can be used again. Returns what was given back. Anything still driving that slot
+//    must be rebuilt afterwards (mp does it through its swap path).
+//  - JerReleaseAllCrossCity(): give back everything, for when NO map is loaded - the status a
+//    level installs is dropped, including the per-city state a level load would otherwise clear
+//    (the parsed page lists and the deferred palette lumps: pointers that outlive a level).
+extern int JerReleaseCarSlot(int slot);
+extern void JerReleaseAllCrossCity(void);
+
 // JERICHO: whether a VRAM rectangle (a tpage position) is owned by an imported page.
 // The spool's own upload paths must respect this - they bypass LoadTPageAndCluts.
 extern int CarPageRectOwned(int x, int y);
