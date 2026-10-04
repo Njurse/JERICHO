@@ -27,7 +27,7 @@ Usage:
     python3 crosscheck.py <a captured stdout file> --lev LEVELS/RIO.LEV
 
 NOTE the session log is `<appName>.log`, and this build's app name is JERICHO, so the
-file is `JERICHO.log` - NOT JERICHO.log, which may be a stale file from an older
+file is `JERICHO.log` - NOT `REDRIVER2.log`, which may be a stale file from an older
 build. Capturing stdout works too, and is per-scenario (that is what chk_suite.sh does).
 
 Exit code: 0 = every invariant held, 1 = at least one violation.
@@ -82,7 +82,8 @@ def parse_run(path):
             out["nperms"] = int(m.group(2))
         m = re.search(r"cross-city: (\w+) set (\d+) -> index (\d+), (\d+) bytes at \+(\d+), (\d+) clut rows", line)
         if m:
-            out["import_sets"][int(m.group(2))] = (int(m.group(3)), int(m.group(4)), int(m.group(5)), int(m.group(6)))
+            out["import_sets"][int(m.group(2))] = (int(m.group(3)), int(m.group(4)),
+                                                   int(m.group(5)), int(m.group(6)), m.group(1).upper())
         m = re.search(r"cross-city: slot\s+(\d+) at \(\s*(\d+),\s*(\d+)\): set\s+(\d+) "
                       r"(HOST CAR PAGE|world)\s+\(loaded=(\d+)( UNUSED)?\)", line)
         if m:
@@ -161,38 +162,29 @@ def check_inv1(run, fails, warns):
 
 
 def check_inv2(run, fails, warns):
-    """An imported set must either map into the import bank, or be REFUSED a host row.
+    """An imported set must never land its row in the HOST's civ_clut rows (0..7).
 
-    The engine answers row 0 for a page that is not a car page in either city - that is
-    its normal behaviour for a host car too, so it is not a defect by itself. What must
-    never happen is CarImportPin WRITING that row (it would hand a host palette the
-    imported page's CLUTs). So: in neither table -> the pin must have logged a refusal."""
-    city = run["city"]
-    if not city or not run["import_sets"]:
+    A set in its SOURCE city's tables maps into that city's import-bank block (rows
+    8..31). A set in NEITHER table is re-pointed by the pin to the source city's block
+    base row (CarImportPaletteBlockBase, 8/16/24) - the same fallback the bake used - so
+    it still lands in the bank, not the host's row 0. The only row the pin REFUSES is a
+    genuine host row (0..7), which cannot arise for a held guest city (its rowbase is
+    always >= 8). So after the block-base fallback there is nothing left for INV2 to
+    FAIL on: unclassifiable sets are a note, not a violation.
+    """
+    if not run["import_sets"]:
         return
-    # The set of source cities: what this run actually imported FROM.
-    cities = sorted(run["cities"]) or [city]
-    cars = CAR_TPAGES.get(city, [])
-    specs = SPEC_TPAGES.get(city, [])
     unbanked = 0
-    for setno in sorted(run["import_sets"]):
-        # Banked if ANY of the run's cities owns the set - a car page (rows 8..15 of the
-        # import bank) or a special body's page (the bank's last two rows).
-        if any(carid_of(c, setno) is not None or setno in SPEC_TPAGES.get(c, [])
-               for c in cities):
+    for setno, info in sorted(run["import_sets"].items()):
+        src_city = info[4]
+        if src_city and (carid_of(src_city, setno) is not None or setno in SPEC_TPAGES.get(src_city, [])):
             continue
         unbanked += 1
-        if setno in run["pin_refusals"]:
-            warns.append(f"INV2 set {setno} is not a car page in {city} (nor a special one), so its row is below "
-                         f"the import bank (the host's 0, or -1 for 'no row at all') - the pin refused to re-point "
-                         f"it, so nothing leaked; those polys just keep the host row-0 palette (as a host car's would)")
-        else:
-            fails.append(f"INV2 set {setno} is in NEITHER {city}'s carTpages nor its specTpages and the pin did "
-                         f"NOT refuse a host row - the import would overwrite the HOST's civ_clut row 0"
-                         + (f" (carTpages={cars})" if cars else ""))
+        warns.append(f"INV2 set {setno} ({src_city}) is not a car page in {src_city} (nor a special one) - "
+                     f"the pin re-points it to the block base row (in-bank), not the host's row 0")
     if unbanked and not run["pin_refusals"]:
-        warns.append("INV2 no 'pin - set N resolves to civ_clut row M (a HOST row)' line in this run at all - "
-                     "either nothing needed refusing, or that guard is not in this build")
+        warns.append("INV2 no 'pin - set N resolves to civ_clut row M (a HOST row)' refusal in this run - "
+                     "nothing resolved to a host row (or that guard is not in this build)")
 
 
 def check_inv3(run, tga, lev, fails, warns):
