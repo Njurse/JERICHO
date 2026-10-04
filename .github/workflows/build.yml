@@ -47,6 +47,11 @@ jobs:
           # not published), so only the submodules the build needs are fetched,
           # explicitly, in the step below.
           submodules: false
+          # Full history and tags. With a shallow clone `git describe` finds no
+          # reachable tag and silently falls back to a bare SHA, so the version a
+          # build reports says nothing and cannot be compared across builds.
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Fetch build submodules
         shell: bash
@@ -81,17 +86,20 @@ jobs:
           # libjpeg ships jconfig.vc; the project expects jconfig.h
           Move-Item "$deps/jpeg-9d/jconfig.vc" "$deps/jpeg-9d/jconfig.h" -Force
 
-      - name: Report the version this build will embed
+      - name: Settle and report the version this build will embed
         shell: bash
         run: |
-          # What premake bakes in, and the tree state it derives it from. A -dirty
-          # suffix HERE means the RELEASED binary says so too, and mp's strict
-          # version check compares it - so it belongs in the log, not discovered
-          # later inside a shipped binary.
+          # -dirty must mean the tree really differs from the commit, not that the
+          # index's stat cache is stale. A fresh CI checkout can leave that cache
+          # stale, and `git describe` then appends -dirty to a RELEASED binary's
+          # version - 0.9.0 shipped as 0.9.0-dirty, on both platforms. Refreshing
+          # the cache is the fix and it changes no file, so a genuinely dirty
+          # developer tree still reports -dirty.
+          git update-index -q --refresh || true
           echo "git describe: $(git describe --tags --always --dirty)"
           echo "porcelain:    $(git status --porcelain | wc -l) path(s)"
           git status --porcelain | head -10 || true
-          echo "diff-index:   $(git diff-index --name-only HEAD | wc -l) path(s), no index refresh"
+          echo "diff-index:   $(git diff-index --name-only HEAD | wc -l) path(s)"
           git diff-index --name-only HEAD | head -10 || true
 
       - name: Generate project files (vs2022)
@@ -172,6 +180,10 @@ jobs:
           # `submodules: recursive`, so an unpublished submodule cannot fail
           # the checkout. gaildrv2 is out of the picture for builds.
           submodules: false
+          # See the Windows job: without full history and tags, `git describe`
+          # falls back to a bare SHA.
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Fetch build submodules
         shell: bash
@@ -194,15 +206,16 @@ jobs:
           tar xf premake5.tar.gz -C src_rebuild
           chmod +x src_rebuild/premake5
 
-      - name: Report the version this build will embed
+      - name: Settle and report the version this build will embed
         shell: bash
         run: |
-          # See the Windows job: the baked-in version string, and why it might
-          # carry a -dirty suffix that reaches a released binary.
+          # See the Windows job: refresh the index cache first, so -dirty means a
+          # real difference and not a stale stat cache, then report the string.
+          git update-index -q --refresh || true
           echo "git describe: $(git describe --tags --always --dirty)"
           echo "porcelain:    $(git status --porcelain | wc -l) path(s)"
           git status --porcelain | head -10 || true
-          echo "diff-index:   $(git diff-index --name-only HEAD | wc -l) path(s), no index refresh"
+          echo "diff-index:   $(git diff-index --name-only HEAD | wc -l) path(s)"
           git diff-index --name-only HEAD | head -10 || true
 
       - name: Generate project files (gmake2)
