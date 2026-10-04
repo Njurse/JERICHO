@@ -81,6 +81,19 @@ jobs:
           # libjpeg ships jconfig.vc; the project expects jconfig.h
           Move-Item "$deps/jpeg-9d/jconfig.vc" "$deps/jpeg-9d/jconfig.h" -Force
 
+      - name: Report the version this build will embed
+        shell: bash
+        run: |
+          # What premake bakes in, and the tree state it derives it from. A -dirty
+          # suffix HERE means the RELEASED binary says so too, and mp's strict
+          # version check compares it - so it belongs in the log, not discovered
+          # later inside a shipped binary.
+          echo "git describe: $(git describe --tags --always --dirty)"
+          echo "porcelain:    $(git status --porcelain | wc -l) path(s)"
+          git status --porcelain | head -10 || true
+          echo "diff-index:   $(git diff-index --name-only HEAD | wc -l) path(s), no index refresh"
+          git diff-index --name-only HEAD | head -10 || true
+
       - name: Generate project files (vs2022)
         working-directory: src_rebuild
         run: .\premake5.exe vs2022
@@ -180,6 +193,17 @@ jobs:
           curl -fL https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-linux.tar.gz -o premake5.tar.gz
           tar xf premake5.tar.gz -C src_rebuild
           chmod +x src_rebuild/premake5
+
+      - name: Report the version this build will embed
+        shell: bash
+        run: |
+          # See the Windows job: the baked-in version string, and why it might
+          # carry a -dirty suffix that reaches a released binary.
+          echo "git describe: $(git describe --tags --always --dirty)"
+          echo "porcelain:    $(git status --porcelain | wc -l) path(s)"
+          git status --porcelain | head -10 || true
+          echo "diff-index:   $(git diff-index --name-only HEAD | wc -l) path(s), no index refresh"
+          git diff-index --name-only HEAD | head -10 || true
 
       - name: Generate project files (gmake2)
         working-directory: src_rebuild
