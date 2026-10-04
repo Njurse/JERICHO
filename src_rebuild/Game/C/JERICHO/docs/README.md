@@ -2,7 +2,7 @@
 > (`src_rebuild/Game/C/JERICHO/docs/`). The copies under `docs/JERICHO/` are
 > short pointers to this directory.
 
-# JERICHO — Just-in-Time Extensible Runtime Interface for Compiled Hooks & Overrides
+# JERICHO — Just an Event Relay for In-engine Callbacks, Handlers and Opt-ins
 
 JERICHO is a tiny, platform-neutral C/C++ API that turns REDRIVER2 into a
 **host** for mods. There are two kinds of mods, and they are handled very

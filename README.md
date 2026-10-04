@@ -1,6 +1,6 @@
 # JERICHO
 
-Junction Engine Runtime for Intercepted Calls, Hooks and Overrides.
+Just an Event Relay for In-engine Callbacks, Handlers and Opt-ins.
 
 JERICHO is a mod host built into a fork of [OpenDriver2/REDRIVER2](REDRIVER2.md),
 a source-level reimplementation of Driver 2. It is not a library you drop onto
@@ -310,6 +310,8 @@ into a level's resident slots — a Chicago school bus in Havana, a Rio truck in
 Vegas. [README](JERICHO/MODS/carhacks/README.md)
 
 ![A Rio car driven in Chicago](readme_images/addon_carhacks_rio2_chicago_example.png)
+
+![A cross-city car example (Havana)](readme_images/addon_carhacks_2_havana_example.png)
 
 ![A foreign car driven on a level it does not belong to](readme_images/addon_carhacks_demonstration_updated_2.png)
 
