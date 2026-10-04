@@ -2500,12 +2500,23 @@ void CarImportPin(void)
 			int j;
 
 			// JERICHO: never write a HOST row for an imported set. A row below the import
-			// bank means either (0..7) the set IS a host page - re-pointing then hands a host
-			// palette the imported page's CLUTs, i.e. the import repaints a local car - or
-			// (-1) the set is in neither of the source city's tables, so there is no row for
-			// it at all. Both are refused and said out loud: a silent skip is how this class
-			// of leak stayed invisible. (-1 rather than 0 is the more precise answer, and is
-			// what CarPalIndexInCityFor now returns when the city genuinely has no row.)
+			// bank means the set IS a host page (0..7) - re-pointing then hands a host
+			// palette the imported page's CLUTs, i.e. the import repaints a local car - and
+			// that is still refused and said out loud.
+			//
+			// A set with NO row at all (-1, in neither of the source city's tables) is a
+			// DIFFERENT case now: the build already resolved it to the source city's own
+			// block base row (CarPalIndexForBuild, cars.c) rather than bake a wild index, so
+			// the pin must re-point to THAT row - refusing left the baked row 8 reading a
+			// civ_clut column nothing wrote (the "corrupted colours" on a set the city has
+			// no table entry for). The two must agree, or the bake and the pin disagree.
+			if (row < 0)
+			{
+				int base = CarImportPaletteBlockBase(sPinCity[i]);
+
+				row = (base >= 0) ? base : 0;
+			}
+
 			if (row < CIV_CLUT_IMPORT_ROW)
 			{
 				// JERICHO: log EVERY refusal, and count them.
@@ -2519,7 +2530,7 @@ void CarImportPin(void)
 				// per level.
 				sPinRowLeaks++;
 
-				printInfo("cross-city: pin - set %d resolves to civ_clut row %d (below the import bank: a host row, or no row at all): not re-pointing, palette leak avoided\n",
+				printInfo("cross-city: pin - set %d resolves to civ_clut row %d (below the import bank: a host row): not re-pointing, palette leak avoided\n",
 					sPinSet[i], row);
 			}
 			else
