@@ -109,6 +109,12 @@ int chkNetPeerCount(void);
  * only limit is a full run of spare resident slots. */
 int chkNetFoldPeerCars(void);
 
+/* The unload half of the car table: players the previous table named and the current one does not
+ * have left, so their car's slot is given back (unless another player still drives that car).
+ * `seen` is the current table, indexed by player id: 1 = still here. Runs from the CHK_NET_CARS
+ * handler, after the table has been applied and folded. */
+void chkNetReleaseDeparted(const int* seen);
+
 /* A city index as a log-friendly name ("level" for CHK_CITY_NATIVE/-1). */
 const char* chkNetCityName(int city);
 

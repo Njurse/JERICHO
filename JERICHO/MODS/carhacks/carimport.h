@@ -46,6 +46,19 @@ const char* chkCityName(int city);
 /* The identity recorded for `slot` (city = CHK_CITY_NATIVE when nothing). */
 CHK_CAR_ID chkImportSlotId(int slot);
 
+/* JERICHO carhacks UNLOAD: give a resident slot back - the engine's pins, lower-half pool pages,
+ * baked page index and geometry, plus the set entry and the engine arrays that claimed it, so the
+ * slot is free for the next car (chkImportSlotFree says so again). Returns 1 if the slot held
+ * anything. Called when the car's last driver goes away: a peer leaving, or a local re-pick. */
+int chkImportReleaseSlot(int slot);
+
+/* Everything, for when the session ends and there is no map any more: the slots above, and the
+ * engine's per-level AND per-city cross-city state (JerReleaseAllCrossCity). This is the path
+ * that clears the pointers which used to outlive a level - the deferred palette lumps and the
+ * parsed page lists - so leaving a session and rejoining with a car from another city no longer
+ * reads freed data. */
+void chkImportReleaseAll(void);
+
 /* Build resident `slot`'s geometry at runtime, from the import data the set names
  * (mid-level). Returns the bytes built, 0 = not built (no level yet, not our slot,
  * or it does not fit - and then the slot is left as it was). */

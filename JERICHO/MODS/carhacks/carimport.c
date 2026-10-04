@@ -75,6 +75,75 @@ void chkImportClearPick(void)
  * The set
  * ------------------------------------------------------------------------- */
 
+/* Give ONE resident slot back: everything the engine placed for it, plus the set entry that
+ * claimed it, so the slot returns to the canonical assignment as if nothing had been imported
+ * into it. Used when the car's last driver goes away (a peer leaving, or the local player
+ * leaving/repicking) -- "the resources of a slot are the load of the event that created it,
+ * given back by the unload of the event that removed it" (MP_ADAPTER.md).
+ *
+ * Both halves matter. The engine side (JerReleaseCarSlot) walks what was actually placed: the
+ * pins and their lower-half pool pages, the baked 110..127 index each of the slot's sets holds,
+ * its geometry block and its manifest entry. The module side clears the set entry AND the two
+ * engine arrays the module writes through: residentCarModels[slot] and the slot's source city.
+ * Leave either of those and the slot still looks taken -- chkImportSlotFree checks both -- so
+ * the next joiner is refused a spare that is really free. That is the user's "in case we want to
+ * use that slot again eventually".
+ *
+ * Returns 1 if the slot held anything, 0 if it was already free. */
+int chkImportReleaseSlot(int slot)
+{
+	int held;
+
+	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS)
+		return 0;
+
+	held = gChkSet[slot].used;
+
+	JerReleaseCarSlot(slot);		/* pins, pool pages, baked index, geometry, manifest */
+
+	if (slot < MAX_CAR_RESIDENT_MODELS)
+	{
+		/* the module writes these two, so the module clears them */
+		JerSetCarModelSource(slot, -1);
+		residentCarModels[slot] = 0;
+	}
+
+	memset(&gChkSet[slot], 0, sizeof(gChkSet[slot]));
+	gChkSet[slot].model = -1;
+	gChkSet[slot].city = -1;
+
+	if (held)
+	{
+		gChkSetVersion++;
+		printInfo("[carhacks] released resident slot %d - free for the next car\n", slot);
+	}
+
+	return held;
+}
+
+/* Leave the session: give everything back, cross-city. Called when the session ends, i.e. when
+ * this machine is going back to the frontend and there is no map any more.
+ *
+ * The engine's JerReleaseAllCrossCity covers the placement state a level installs AND the two
+ * per-city pointers that outlive a level (the parsed page lists and the deferred palette
+ * lumps): reading those once the map is gone is the access violation reported when a player
+ * left and rejoined with a car from a different city. This side clears the set, the guest-city
+ * record and the pick, so the next session starts from nothing. */
+void chkImportReleaseAll(void)
+{
+	int i;
+
+	for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
+		chkImportReleaseSlot(i);
+
+	JerReleaseAllCrossCity();
+
+	chkImportReset();		/* the set entries (already cleared), the guest city, a new version */
+	chkImportClearPick();
+
+	printInfo("[carhacks] session over: every cross-city resource given back\n");
+}
+
 static CHK_IMPORT_ENTRY* chkSlot(int slot)
 {
 	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS)

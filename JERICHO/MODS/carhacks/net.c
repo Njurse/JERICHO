@@ -43,6 +43,11 @@ static int gChkNetSession;		/* a session was live last frame */
 static CHK_CAR_ID gChkNetPeerPick[CHK_NET_MAX_PLAYERS];
 static int gChkNetPeerPickSet[CHK_NET_MAX_PLAYERS];
 
+/* The resident slot each player's car was folded into, -1 = none. A peer leaving is the unload
+ * event for its car: the slot is given back (chkImportReleaseSlot) once nobody drives that car
+ * any more, which is why the slot is remembered here and not only in the set. */
+static int gChkNetPeerSlot[CHK_NET_MAX_PLAYERS];
+
 /* What WE are driving, as last advertised (mp settles the local car after the
  * session starts, so this changes under us). */
 static CHK_CAR_ID gChkNetLocal;
@@ -109,10 +114,76 @@ const char* chkNetCityName(int city)
  * cities (chkImportSetSlot in carimport.c), so a peer's car is no longer refused
  * for coming from a "second" city; only a full set of spare slots is a limit, and
  * then the peer keeps the clean fallback instead (ChkOnCarPeerDraw). */
+/* Is ANYBODY still driving this car? The table (the players still here) and our own pick. Two
+ * players can pick the same car, and the canonical rule puts them in ONE slot - so a release
+ * must ask this before giving a slot back, or the survivor's car disappears with the leaver. */
+static int chkNetCarStillWanted(CHK_CAR_ID car)
+{
+	int i;
+
+	if (chkImportLocalPickCity() >= 0 &&
+		chkCarIdEqual(chkCarId(chkImportLocalPickCity(), chkImportLocalPickModel()), car))
+		return 1;
+
+	for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
+	{
+		if (gChkNetPeerPickSet[i] && chkCarIdEqual(gChkNetPeerPick[i], car))
+			return 1;
+	}
+
+	return 0;
+}
+
+/* The unload half of the car table: for every player the previous table named and the current one
+ * does not, forget them and give their car's slot back - unless somebody else still drives that
+ * car. Runs after the table has been applied and folded, so the surviving picks are current.
+ *
+ * This is "a peer leaves -> release its slot" from the resource-lifetime table in MP_ADAPTER.md.
+ * Before it, a departed player's car stayed in its resident slot (and its lower-half pool pages,
+ * baked page index and geometry stayed consumed) for the rest of the session. */
+void chkNetReleaseDeparted(const int* seen)
+{
+	int i;
+
+	for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
+	{
+		int slot;
+
+		if (seen[i] || !gChkNetPeerPickSet[i])
+			continue;			/* still here, or never was */
+
+		printInfo("[carhacks/net] player %d left the session\n", i);
+
+		gChkNetPeerPickSet[i] = 0;
+		gChkNetPeerPick[i] = chkCarId(CHK_CITY_NATIVE, CHK_MODEL_NONE);
+
+		slot = gChkNetPeerSlot[i];
+		gChkNetPeerSlot[i] = -1;
+
+		if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS)
+			continue;
+
+		if (chkNetCarStillWanted(chkImportSlotId(slot)))
+			continue;			/* somebody else drives it: the slot stays */
+
+		{
+			/* forget every record pointing at this slot, then give it back */
+			int k;
+
+			for (k = 0; k < CHK_NET_MAX_PLAYERS; k++)
+			{
+				if (gChkNetPeerSlot[k] == slot)
+					gChkNetPeerSlot[k] = -1;
+			}
+		}
+
+		chkImportReleaseSlot(slot);
+	}
+}
+
 int chkNetFoldPeerCars(void)
 {
 	int folded = 0, p, slot;
-
 	for (p = 1; p < CHK_NET_MAX_PLAYERS; p++)
 	{
 		int already = 0;
@@ -158,6 +229,7 @@ int chkNetFoldPeerCars(void)
 			if (chkCarIdEqual(chkImportSlotId(slot), gChkNetPeerPick[p]))
 			{
 				already = 1;
+				gChkNetPeerSlot[p] = slot;	/* two players can share one car: one slot */
 				break;
 			}
 		}
@@ -190,6 +262,8 @@ int chkNetFoldPeerCars(void)
 		if (chkImportSetSlot(slot, gChkNetPeerPick[p]))
 		{
 			folded++;
+
+			gChkNetPeerSlot[p] = slot;	/* remember it: a peer leaving gives this slot back */
 
 			printInfo("[carhacks/net] player %d's car (%s model %d) -> resident slot %d\n",
 				p, chkNetCityName((int)gChkNetPeerPick[p].city),
@@ -522,6 +596,13 @@ static int chkNetOnRecv(void* ud, void* args)
 				int count = (int)p[2];
 				int at = 3, i;
 
+				/* Who this table still names. A player the LAST table named and this one
+				 * does not have left the session - see the release pass below. */
+				int seen[CHK_NET_MAX_PLAYERS];
+
+				for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
+					seen[i] = 0;
+
 				if (count > CHK_NET_MAX_PLAYERS)
 					count = CHK_NET_MAX_PLAYERS;
 
@@ -531,6 +612,8 @@ static int chkNetOnRecv(void* ud, void* args)
 
 					if (who < 0 || who >= CHK_NET_MAX_PLAYERS)
 						continue;
+
+					seen[who] = 1;
 
 					gChkNetPeerPick[who] = chkCarId(p[at + 1], p[at + 2]);
 					gChkNetPeerPickSet[who] = 1;
@@ -546,6 +629,14 @@ static int chkNetOnRecv(void* ud, void* args)
 				 * drawn as the level's own car of the same number. Reported as "player 3
 				 * didn't see player 2's imported car". */
 				chkNetFoldPeerCars();
+
+				/* The other half of the same contract: a player who is GONE unloads.
+				 * Give their car's slot back - engine (pins, pool pages, baked index,
+				 * geometry) and module (the set entry, residentCarModels, the source
+				 * city) both - so it is free for whoever joins next. Only when nobody
+				 * else drives that car: two players can pick the same one, and the
+				 * canonical rule gives them a single slot. */
+				chkNetReleaseDeparted(seen);
 			}
 			break;
 
@@ -728,11 +819,31 @@ static int chkNetOnFrame(void* ud, void* args)
 
 		printInfo("[carhacks/net] session ended - back to the local import set\n");
 
+		/* The unload: this machine is going back to the frontend, so there is no map any
+		 * more and nothing cross-city may stay held. Everything goes back - the slots
+		 * (pins, lower-half pool pages, baked page indices, geometry) and the per-city
+		 * state a level load would otherwise clear: the parsed page lists and the
+		 * deferred palette lumps, which are pointers INTO the import buffers and are
+		 * exactly what used to be read after a leave -> rejoin with a car from another
+		 * city (the access violation reported doing that). */
+		{
+			int i;
+
+			for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
+			{
+				gChkNetPeerPickSet[i] = 0;
+				gChkNetPeerSlot[i] = -1;
+			}
+		}
+
+		chkImportReleaseAll();
+
 		/* The monitor: what each resident slot still holds cross-city, at the moment the
 		 * session goes away. This is the line to read for "did anything leak?" - a slot
 		 * that still shows pins or geometry after everyone has left is a slot whose
-		 * resources were never given back. See the resource-lifecycle table in
-		 * MP_ADAPTER.md for what each join/leave event is supposed to load and unload. */
+		 * resources were never given back. With the release above it should be silent.
+		 * See the resource-lifecycle table in MP_ADAPTER.md for what each join/leave
+		 * event is supposed to load and unload. */
 		CarSlotResReport();
 	}
 
