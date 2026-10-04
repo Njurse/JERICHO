@@ -796,6 +796,20 @@ typedef struct JER_ARGS_NET_RECV
  * supports, and that is the one the renderer uses. Without an answer the owner's
  * palette is taken as-is, which paints the wrong colours onto a car that is not
  * the owner's (see carhacks' MP_ADAPTER.md). */
+/* JER_EVENT_GAME_QUIT - the game is about to ACT on a pause-menu quit code.
+ * `code` is the engine's own MENU_QUIT_* value (Game/C/pause.h): restart, quit to
+ * the frontend, film director, quick replay, next mission. A module that wants
+ * something else to happen for one of them returns JER_RESULT_STOP, and then the
+ * engine runs NONE of its endings -- the module owns what happens next, including
+ * unpausing, because the pause menu itself has already been closed by the time
+ * this fires. (Multiplayer uses it to turn Restart into a soft reset: respawn the
+ * player at the world start, repair the car, clear the felony, and keep the
+ * session, instead of tearing the level down under everyone else.) */
+typedef struct JER_ARGS_GAME_QUIT
+{
+	int code;	/* in: the engine's MENU_QUIT_* code */
+} JER_ARGS_GAME_QUIT;
+
 typedef struct JER_ARGS_CAR_PEER_DRAW
 {
 	int player;		/* in: the owning player id (0 = host) */

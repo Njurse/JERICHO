@@ -244,6 +244,13 @@ enum
 				   palette when this machine does not actually hold
 				   that player's vehicle (JER_ARGS_CAR_PEER_DRAW) */
 
+	JER_EVENT_GAME_QUIT,		/* the game is about to ACT on a pause-menu quit
+				   code -- restart the level, leave for the
+				   frontend, film director, quick replay. A module may
+				   take the action over by returning JER_RESULT_STOP,
+				   which stops the engine doing any of it
+				   (JER_ARGS_GAME_QUIT) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

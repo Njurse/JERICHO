@@ -1703,6 +1703,24 @@ void CheckForPause(void)
 	{
 		ret = UpdatePauseMenu(PauseMode);
 
+		// JERICHO-HOOK: a module may TAKE OVER what the pause menu's answer does.
+		// Multiplayer uses this to turn Restart into a soft reset -- respawn the
+		// player at the world start with their car repaired, and keep the session
+		// -- instead of tearing the level down under the other players. Returning
+		// JER_RESULT_STOP means "I handled it": none of the endings below run, and
+		// the module owns what happens next, INCLUDING unpausing, because the pause
+		// menu has already closed itself. With no modules registered the fire is a
+		// no-op and the vanilla behaviour is unchanged.
+		if (ret != 0)
+		{
+			JER_ARGS_GAME_QUIT jerQuit;
+
+			jerQuit.code = ret;
+
+			if (jer_fire(JER_EVENT_GAME_QUIT, &jerQuit) == JER_RESULT_STOP)
+				ret = 0;
+		}
+
 		switch (ret)
 		{
 		case MENU_QUIT_CONTINUE:
