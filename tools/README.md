@@ -189,6 +189,21 @@ release profile — **carhacks and mp on, everything else off**, including
 level start and never hands it back). Local development is free to differ; the
 frontend's Options → JERICHO rewrites the file on toggle.
 
+### Compiling only carhacks and mp is deliberately NOT done
+
+The profile above is about **activation**. The binaries still compile every deep
+module under `JERICHO/MODS/` — gaildrv2 excepted, which CI never fetches — and
+merely leave all but carhacks and mp switched off.
+
+Restricting the compiled-in set is a real change to the build system: it means
+teaching the mod scan (`premake_modules/jericho_mods.lua`) and its callers about
+a release subset, and a filter bug there drops a module from the build *silently*
+rather than failing. It is a deliberate non-goal for now, not an oversight.
+
+The consequence worth knowing: a locally built release differs from a CI one in
+exactly that respect. The exe in this tree has gaildrv2 and every other module
+linked in (inactive); a CI exe does not contain gaildrv2 at all.
+
 ## The version
 
 `JERICHO_BUILD_VERSION` comes from `git describe --tags --always --dirty`

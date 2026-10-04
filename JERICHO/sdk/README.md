@@ -24,6 +24,12 @@ sdk/
     jer_events.h      event argument structs (game types as void*)
     jer_colour.h      canonical RGB colour type (pack/unpack for GTE words + CLUTs)
     jer_ped_palette.h per-instance pedestrian palettes (jer_ped_palette_select)
+    jer_car_palette.h per-instance CAR colours (the car-path companion)
+    jer_map.h         world region helper: where am I, and stream the map there
+    jer_notify.h      the engine's own on-screen notice
+    jer_prompt.h      a host-owned Yes/No prompt
+    jer_screen.h      module-provided presentation screens
+    jer_texture.h     custom texture injection (images and raw pages)
   lib/x64/Release/
     REDRIVER2.lib     import library for the game exe's exported symbols
   build_mods.bat      compiles one addon folder into a DLL

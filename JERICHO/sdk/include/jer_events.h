@@ -335,7 +335,23 @@ typedef struct JER_ARGS_PED_SKELETON
  * black (a burning / bailed-out body), or set any of tintR/G/B to >= 0 for a
  * flat full-brightness tint (unset channels default to 255). Colours are 0..255
  * per channel; the engine packs them B<<16 | G<<8 | R. With no handler (or all
- * fields 0/-1) the ped renders stock. */
+ * fields 0/-1) the ped renders stock.
+ *
+ * The same handler may also select a per-instance PALETTE (jer_ped_palette.h),
+ * which is a real CLUT swap on the ped's outfit rather than a flat colour: the
+ * engine swaps the recoloured rows in for this one ped's draw, so a module can
+ * put individual characters in team colours.
+ *
+ * CAVEAT on the flat/tint fields: the engine applies them by holding
+ * plotContext.planeColours at one value, which only feeds the shaded colour
+ * table. The skeleton body is plotted with PLOT_NO_SHADE and takes its colour
+ * from combointensity instead (draw.c: "if (ptype == 21 || (pc->flags &
+ * PLOT_NO_SHADE)) pc->colour = combo...", around draw.c:1097), so flatBlack /
+ * tintR/G/B are currently inert on the body - `combointensity` is the lever that
+ * works there, which is what the head does for night (DoCivHead,
+ * motion_c.c:2240). Left as-is deliberately: changing the contract is a
+ * behaviour change, and the palette path above is the one used by cainescrossfire.
+ */
 typedef struct JER_ARGS_PED_DRAW
 {
 	void* ped;		/* LPPEDESTRIAN being drawn */
@@ -499,7 +515,8 @@ typedef struct JER_ARGS_CAR_DRAW_COLOR
  * The engine still applies its own speed gates (smoke only under ~98 speed
  * units, the fire only under ~7 and never in reverse) even when handled = 1:
  * those limits are the smoke pool's budget (MAX_SMOKE particles), not part of
- * the ladder. */
+ * the ladder. A module that wants fire on a wreck that is still sliding cannot
+ * get it through this hook alone - the gate would drop it. */
 typedef struct JER_ARGS_CAR_DAMAGE_FX
 {
 	void* car;		/* in: CAR_DATA* being drawn */
@@ -790,9 +807,10 @@ typedef struct JER_ARGS_CAR_PEER_DRAW
 	int handled;		/* out: 1 = use paletteOut */
 } JER_ARGS_CAR_PEER_DRAW;
 
-/* JER_EVENT_CMDLINE - fired once, right after the engine has parsed its own
+/* JER_EVENT_CMDLINE — fired once, right after the engine has parsed its own
  * command line, so a module can pick up its OWN shortcuts (e.g. mp's
- * -host / -join) without the engine knowing about them. */
+ * -host / -join) without the engine knowing about them. `argv` is owned by
+ * the engine; read only. */
 typedef struct JER_ARGS_CMDLINE
 {
 	int    argc;
@@ -825,5 +843,20 @@ typedef struct JER_ARGS_NET_SPAWN
 	int padIdBase;		/* in: first negative pad id for added slots */
 	int added;		/* out: extra player cars the module created */
 } JER_ARGS_NET_SPAWN;
+
+/* JER_EVENT_FRONTEND_MAIN_MENU — fired once for EVERY row of the frontend's
+ * MAIN menu while it is being built (FEmain.c MainScreen), so a module can
+ * reshape the title screen: rename a row, point it at one of the module's own
+ * menus (jer_frontend.h), disable it, or hide it entirely (the "omit an element
+ * so you can put something else in its place" case). The engine applies the
+ * outputs after all handlers have run; `index` is the row (0 = the first). */
+typedef struct JER_ARGS_FRONTEND_ENTRY
+{
+	int  index;		/* in: which main-menu row (0-based) */
+	char label[32];		/* in/out: the row's text (in = the stock label) */
+	int  hidden;		/* out: 1 = do not draw this row */
+	int  disabled;		/* out: 1 = draw it but make it unselectable */
+	int  openMenu;		/* out: >= 0 = open this registered module menu */
+} JER_ARGS_FRONTEND_ENTRY;
 
 #endif /* JERICHO_JER_EVENTS_H */

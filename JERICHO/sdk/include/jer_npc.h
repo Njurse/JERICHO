@@ -31,17 +31,29 @@ JerNpc* jer_npc_spawn(int x, int z);
 JerNpc* jer_npc_spawn_model(int pedModel, int x, int z);
 
 /* freeze a ped where it stands: both state slots become no-ops, so it neither
- * walks, turns nor re-poses, and its current animation frame is held. */
+ * walks, turns nor re-poses, and its current animation frame is held. Use it
+ * before driving the transform yourself with jer_npc_set_world. */
 void jer_npc_park(JerNpc* n);
 
 /* hold an action pose: type = a PED_ACTION_* value (e.g. PED_ACTION_GETOUTCAR)
  * with the animation frozen at `frame` (0..15; 14 is the last "climbing out"
- * frame). Parks the ped as well, so the pose stays put. */
+ * frame). Both the parsed `frame1` animation frame and the raw motion block
+ * for `action` are set. Parks the ped as well, so the pose stays put. */
 void jer_npc_set_action(JerNpc* n, int action, int frame);
 
-/* place the ped outright: world x/z, raw engine Y (`position.vy`; Y-DOWN, so
- * ground level is -MapHeight) and the whole-body yaw (0..4095). */
+/* place the ped outright: world x/z, raw engine Y (`position.vy`; the engine
+ * is Y-DOWN, so ground level is -MapHeight and the ped origin sits 130 units
+ * above it) and the whole-body yaw (0..4095). A parked ped holds this exactly,
+ * so a module can hang it out of a car window from the car's transform. */
 void jer_npc_set_world(JerNpc* n, int x, int y, int z, int yaw);
+
+/* as jer_npc_set_world, but sets the FULL body orientation: the engine builds
+ * a ped's root matrix with RotMatrixYXZ(dir) over all three of dir.vx/vy/vz,
+ * so pitch and roll are settable too. Pass the parent's body rotation (a car's
+ * body tilt, say) so a carried ped banks with it instead of staying upright.
+ * yaw here is the same value jer_npc_set_world takes; pitch/roll are 0 when
+ * upright. */
+void jer_npc_set_orient(JerNpc* n, int pitch, int yaw, int roll);
 
 /* remove the ped from the world (safe on NULL / already-despawned) */
 void jer_npc_despawn(JerNpc* n);
@@ -66,6 +78,18 @@ int jer_npc_speed(const JerNpc* n);
 /* STUB for the future police AI: have the ped's driver (if any) bail out
  * of its car onto the street. Returns 0 when unimplemented/not possible. */
 int jer_npc_leave_car(JerNpc* n);
+
+/* ---- engine-side (not for modules) ------------------------------------
+ * Ownership: the JERICHO ped hooks that let a module pose a ped
+ * (JER_EVENT_PED_POSE / JER_EVENT_PED_SKELETON) fire only for peds a MODULE
+ * owns, so the engine never pays for ambient pedestrians and a random civ can
+ * never be posed. Ownership is granted by spawning through this API
+ * (jer_npc_spawn / jer_npc_spawn_model) and released by jer_npc_despawn.
+ *
+ * The engine (motion_c.c) calls jer_npc_owned() at the hook sites. It also
+ * verifies the ped is still live, so a ped the engine destroyed behind our
+ * back reports 0 rather than posing whatever slot got recycled. */
+int jer_npc_owned(const void* ped);
 
 #ifdef __cplusplus
 }

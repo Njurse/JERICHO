@@ -7,7 +7,9 @@ hand at least once:
   1. a relative link points at a file that moved, or was never written;
   2. a claim that is really a NUMBER has a source of truth in the code, and the two
      parted company - a slot count, a guest-city ceiling, the size of the roster;
-  3. a doc exists but nothing links to it, so nobody finds it.
+  3. a doc exists but nothing links to it, so nobody finds it;
+  4. an SDK header no longer matches the engine's copy, although the SDK's README
+     says the two are mirrors.
 
 Run from the repo root:
 
@@ -180,8 +182,45 @@ def check_claims():
                      % (doc, word, count))
 
 
+def check_sdk_mirror():
+    """The SDK headers must mirror the game's.
+
+    JERICHO/sdk/README.md promises that the SDK headers "mirror the ones shipped
+    in the game's development tree (src_rebuild/)". Nothing enforced it, and the
+    promise had rotted: jericho.h, jer_menu.h, jer_npc.h and jer_events.h had
+    fallen behind the engine's copies, and six public headers (jer_car_palette,
+    jer_map, jer_notify, jer_prompt, jer_screen, jer_texture) were missing from
+    the SDK altogether - so an addon built against the SDK could not see events
+    and APIs the engine already ships.
+
+    read() normalises line endings (text mode, universal newlines), which is what
+    keeps this honest: the engine's jer_events.h is CRLF and the SDK's copy is
+    LF, and that difference is not drift.
+    """
+    sdk_dir = "JERICHO/sdk/include"
+
+    engine = [p for p in git_ls("src_rebuild/Game/C/JERICHO/include") if p.endswith(".h")]
+    engine.append("src_rebuild/Game/C/jer_events.h")   # lives one level up in the engine
+
+    mirrored = set()
+    for src in engine:
+        name = os.path.basename(src)
+        mirrored.add(name)
+        dst = "%s/%s" % (sdk_dir, name)
+        if not os.path.exists(os.path.join(ROOT, dst)):
+            fail("sdk", "the engine ships %s but the SDK does not (%s)" % (name, dst))
+        elif read(src) != read(dst):
+            fail("sdk", "%s has drifted from %s - the SDK headers are a mirror, so "
+                        "re-copy the engine's" % (dst, src))
+
+    for path in git_ls(sdk_dir):
+        name = os.path.basename(path)
+        if name.endswith(".h") and name not in mirrored:
+            fail("sdk", "%s has no counterpart in the engine - is it stale?" % path)
+
+
 def main():
-    for check in (check_links, check_events, check_index, check_claims):
+    for check in (check_links, check_events, check_index, check_claims, check_sdk_mirror):
         check()
 
     if failures:
@@ -191,7 +230,7 @@ def main():
         return 1
 
     print("doccheck: OK - links resolve, every event is documented, every doc is indexed, "
-          "and the counted claims match the code")
+          "the SDK headers mirror the engine's, and the counted claims match the code")
     return 0
 
 

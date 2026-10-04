@@ -215,6 +215,17 @@ enum
 					   tint on a ped the skeleton path is drawing
 					   (see JER_ARGS_PED_DRAW) */
 
+	JER_EVENT_FRONTEND_MAIN_MENU,	/* fired once per row while the frontend MAIN
+					   menu is built: a module may rename a row,
+					   redirect it to its own menu, disable or hide
+					   it (see JER_ARGS_FRONTEND_ENTRY) */
+
+	JER_EVENT_FRONTEND_ENTERED,	/* fired when the game (re)enters the frontend
+					   (State_InitFrontEnd), i.e. on the way back from a
+					   match: a module drops its per-run gameplay state -
+					   the player's forced car, live weapons, sounds -
+					   so nothing lingers or plays in the menus. No args. */
+
 	JER_EVENT_FRONTEND_IDLE,	/* the frontend's idle timer is about to start the
 				   attract demo: a module may suppress it (see
 				   JER_ARGS_FRONTEND_IDLE). A multiplayer lobby
@@ -233,7 +244,8 @@ enum
 				   palette when this machine does not actually hold
 				   that player's vehicle (JER_ARGS_CAR_PEER_DRAW) */
 
-	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */};
+	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
+};
 
 /* Common return values from hook handlers. */
 enum
@@ -355,6 +367,31 @@ typedef struct JER_REGISTRY_ENTRY
  */
 void jer_init(const char* rootDir);
 
+/*
+ * Hard-disable every module for this boot: no module is activated and no hook
+ * is registered, regardless of modlist.ini or any mod.toml default-enabled
+ * flag. Must be called BEFORE jer_init (the engine's -nomods flag does exactly
+ * this). This is the "provably zero modules" switch — the only way to be sure
+ * no silently default-enabled module is influencing the sim.
+ */
+void jer_disable_all_modules(void);
+
+/* Non-zero when every module was force-disabled via jer_disable_all_modules. */
+int jer_modules_disabled(void);
+
+/*
+ * Force ONE module on (or off) for this boot, before jer_init: a hard override
+ * that beats both modlist.ini and the module's own `default-enabled`. Used by the
+ * engine's diagnostic/test flags so `-testmode` works without editing the user's
+ * modlist first. `-nomods` still wins over it.
+ *
+ * The override belongs to the PROCESS, not to one activation pass: it is not
+ * cleared afterwards, so jer_manager_reload (the Mods menu) re-applies it and the
+ * module comes back even if the player just turned it off. A boot flag owns the
+ * boot; both the set and the re-apply are logged.
+ */
+void jer_force_module(const char* id, int enabled);
+
 /* Fire an event through the runtime (the engine's thin entry point). */
 int jer_fire(int event, void* args);
 
@@ -406,6 +443,12 @@ typedef struct JER_MODULE_INFO
 	const char* name;
 	const char* version;
 	int enabled;
+
+	/* Non-NULL when the module was REFUSED this boot - a missing dependency or an
+	 * SDK mismatch - and carries the reason in player-facing words. A refused
+	 * module always lists as disabled: enabling it again cannot help until the
+	 * thing it needs is there, so the manager shows why instead of offering it. */
+	const char* refusal;
 } JER_MODULE_INFO;
 
 /* Number of compiled-in modules (the generated registry). */
@@ -417,6 +460,59 @@ int jer_module_list(JER_MODULE_INFO* out, int max);
 /* The central JERICHO folder passed to jer_init (used by the manager). */
 const char* jer_root_dir(void);
 
+/* ------------------------------------------------------------------ */
+/* Deep-mod builds (host side)                                         */
+/* ------------------------------------------------------------------ */
+
+#define JER_MOD_ID_MAX 40
+
+/* One module that must be compiled INTO the game (a "deep" mod): its
+ * mod.toml does not declare runtime = "dll". Changing or adding one of
+ * these needs the game exe rebuilt, which is what a restart is for. */
+typedef struct JER_DEEP_MOD
+{
+	char id[JER_MOD_ID_MAX];
+	char name[64];
+} JER_DEEP_MOD;
+
+/*
+ * Host-side: list the installed deep mods, in build order, so a caller can
+ * report "<name> [i/n]" progress while they are compiled. Returns the count
+ * (up to max), or 0 when there is nothing to compile. Does no loading.
+ */
+int jer_deep_mod_list(JER_DEEP_MOD* out, int max);
+
+/*
+ * Host-side: has a deep-mod rebuild been requested? Set by "Compile Mods"
+ * (see jer_build_mark_pending), consumed at the next boot by
+ * jer_build_run_pending(). The flag lives in <root>/CONFIG/.
+ */
+int jer_build_pending(void);
+void jer_build_mark_pending(void);
+void jer_build_clear_pending(void);
+
+/*
+ * Host-side: compile the deep mods into a fresh game exe (premake + MSBuild),
+ * driving a presentation screen (jer_screen.h) whose body is
+ * "<name> [i/n]". Does nothing when no build is pending.
+ *
+ * Split so the engine stays in charge of drawing:
+ *
+ *     if (jer_build_begin())          // clears the marker, raises the screen
+ *     {
+ *         JerichoRunBootScreens();    // the engine pumps it
+ *         jer_build_finish();         // logs the outcome + raises a notice
+ *     }
+ *
+ * The running exe is renamed aside first (Windows locks the image), so the
+ * freshly built exe lands under the normal name and is what runs next time --
+ * hence "restart to run them". jer_build_begin() returns non-zero when a build
+ * was attempted, so the caller knows to pump the screen. Windows only (else
+ * both return 0).
+ */
+int jer_build_begin(void);
+void jer_build_finish(void);
+
 /*
  * Host-side: compile every installed runtime "dll" addon into a loadable
  * module using the game's own toolchain (JERICHO/build_mods.bat). The game
@@ -425,6 +521,14 @@ const char* jer_root_dir(void);
  * no-op returning 0). Used by the in-game "Compile Mods" action.
  */
 int jer_compile_mods(void);
+
+/*
+ * Host-side: what "Compile Mods" does once the player confirms. Builds the
+ * runtime "dll" addons right away (they load without a restart) and requests
+ * the deep-mod rebuild, which can only happen at the next boot because it
+ * relinks the exe. Safe to use as a jer_prompt.h Yes action.
+ */
+void jer_compile_request(void);
 
 #ifdef __cplusplus
 }
