@@ -107,10 +107,8 @@ with the level's own model 0.
 **Why that is not the whole fix.** A level reads its car files ONCE
 (`JER_EVENT_CAR_DATA_SOURCE` → `ProcessCarModelLump`), and a joiner's car is only
 known after it joins - so on the machine that loaded first, a peer's car can never
-be in the set in time, whatever city it is from. Loading it afterwards is the next
-unit.
-
-### The hotload hand-off (next unit)
+be in the set in time, whatever city it is from; loading it afterwards is `JerHotLoadCarModel`,
+`JerHotLoadCarCosmetics` and `JerHotLoadCarTpages` (all `✓` below).
 
 ### The resource lifecycle: what each join/leave event must load and unload
 
@@ -119,30 +117,34 @@ says which), so every session event is really a question about slots. This is th
 to monitor; `CarSlotResReport()` prints it at the moment the session ends, and the
 `cross-city: slot N holds ...` lines print it whenever the pin walk finishes.
 
-What exists today is the LOAD column. The UNLOAD column is the work: nothing gives back a
-slot's pins, pool pages, civ_clut block or geometry except a whole level load.
+Both columns exist now. The release side is `JerReleaseCarSlot(slot)` - the pins and their
+lower-half pool pages, the baked 110..127 index each of the slot's sets holds (and the
+reservation that keeps it out of the next import), the geometry block, the manifest entry -
+plus the module's half (`chkImportReleaseSlot`), which clears the set entry, the slot's
+entry in `residentCarModels[]` and its source city. Leave either half and the slot still
+looks taken (`chkImportSlotFree` checks all of it), so the next joiner is refused a spare
+that is really free.
 
 | event | what must LOAD | what must UNLOAD | today |
 |---|---|---|---|
-| **local player picks** (before the level) | the pick's city data (`InitCarImport`), its palette block, its page lists; the pick's slot is canonical | the PREVIOUS pick's slot, if it was a different car | load ✓, unload ✗ |
-| **local player changes car mid-match** | the new city's data; a hot load into a slot (geometry, cosmetics, pages, rows) | the old slot's resources | load ✓, unload ✗ |
+| **local player picks** (before the level) | the pick's city data (`InitCarImport`), its palette block, its page lists; the pick's slot is canonical | the PREVIOUS pick's slot, if it was a different car | load ✓, unload ✓ (`chkImportApplyPick` releases the old slot) |
+| **local player changes car mid-match** | the new city's data; a hot load into a slot (geometry, cosmetics, pages, rows) | the old slot's resources | load ✓, unload ✓ (same path) |
 | **peer joins, before the match starts** | the peer's city at the next level load (through the set) | nothing | ✓ |
 | **peer joins, match in progress** (the catch-up) | the peer's city read mid-level + a hot load into a slot | nothing (a new slot) | ✓ |
-| **peer leaves** | nothing | that peer's slot: pins, pool pages, civ_clut rows if its city is now unused, geometry block | ✗ (the slot stays held) |
-| **local player leaves the session** (back to the frontend) | nothing | EVERYTHING cross-city: the set, the picks, the pins, the pool pages, the blocks, the page lists, the deferred palette lumps - there is no map any more | ✗ (and this is the reported access violation on rejoining with a different city) |
+| **peer leaves** | nothing | that peer's slot | ✓ (`chkNetReleaseDeparted`: engine + module; the car table shows a departure, and the roster catches it when the table cannot - the HOST's own case, `jer_net_player_present`) |
+| **local player leaves the session** (back to the frontend) | nothing | EVERYTHING cross-city: the set, the picks, the pins, the pool pages, the blocks, the page lists, the deferred palette lumps | ✓ (`chkImportReleaseAll` -> `JerReleaseAllCrossCity` + `JerReleaseCarImport`) |
 | **a new level loads** (restart, city change, rejoin) | the whole set from scratch | the previous level's state | ✓ (`InitCarImport` -> `CarImportResetState`) |
 
-The two rows with nothing today are the two the work needs: **peer leaves** (a slot that
-becomes unused) and **the local player leaves** (the frontend, where no level will load to
-clean up after us). The lifecycle rule that falls out of the table:
+The lifecycle rule the table encodes:
 
-  a slot's resources are the LOAD of the event that created it, and must be given back by
-  the UNLOAD of the event that removed it - either that peer leaving, that pick being
-  replaced, the local player leaving the session, or the level going away.
+  a slot's resources are the LOAD of the event that created it, and are given back by the
+  UNLOAD of the event that removed it - either that peer leaving, that pick being replaced,
+  the local player leaving the session, or the level going away.
 
 The monitor criteria, in the same terms: after a leave, `CarSlotResReport()` must show
 **no slot holding pins or geometry that no player is driving**; a slot still listed is a
-leak, and the count should return to what it was before the peer joined.
+leak, and the count should return to what it was before the peer joined. `CarSlotResReport()`
+runs after the release now, so a clean leave prints nothing after it.
 
 ### The hotload (DONE: geometry, cosmetics, pages, catch-up)
 
@@ -181,20 +183,19 @@ rows that were baked against that slot agree.
   import has no business taking a world page: the lower-half pool is where it belongs.
   Worth testing with **a different palette number per test player** (within the vehicle's
   own palette count) so a mix-up is unambiguous.
-- **OPEN: an access violation when a player leaves a session and rejoins picking a car
-  from a DIFFERENT city than before.** Returning to the frontend means there is no map,
-  and the cross-city state is only reset when a level LOADS (`InitCarImport` ->
-  `CarImportResetState`), so the frontend runs with the last map's cross-city state still
-  in place. Narrowed so far: `FreeCarImport` frees the buffers AND `memset`s the struct
-  (models.c:289-297), so a stale import buffer is NOT a dangling pointer, and
-  `chkImportHotLoad` refuses before any level exists (`gChkEngineKnown`). The candidates
-  left are the state that outlives a level without a level-load reset: the deferred
-  palette lumps (`sImpPalLump[]`/`sImpPalSize[]`, pointers INTO the import buffer, cleared
-  only by `CarImportPaletteReset`), the parsed page lists (`gCarImportPerms[]`/
-  `gCarImportSpecs[]`/`gCarImportTexParsed[]`), and mp's per-player car state
-  (`chkNetLocalCar` reads `player[0].playerCarId` and `car_data[]`). The shape of the fix
-  is the one the report suggests: a real "the map is gone" cleanup for the addons - reset
-  the cross-city state when the session/level ends, not only when the next one loads.
+- **CLOSED: an access violation when a player leaves a session and rejoins picking a car
+  from a DIFFERENT city than before.** Returning to the frontend means there is no map, and
+the cross-city state used to be reset only when a level LOADED (`InitCarImport` ->
+`CarImportResetState`), so the frontend ran with the last map's cross-city state in place:
+the deferred palette lumps (`sImpPalLump[]`/`sImpPalSize[]`) and the parsed page lists
+(`gCarImportPerms[]`/`gCarImportSpecs[]`/`gCarImportTexParsed[]`) are pointers INTO the
+import buffers and were only cleared by the next level's load, and the import buffers
+themselves were freed there too. The fix is the cleanup the report asked for:
+`chkImportReleaseAll()` on the session ending -> `JerReleaseAllCrossCity()` (every slot,
+then `CarImportResetState`, `CarImportPaletteReset`, the page lists) and
+`JerReleaseCarImport()` (the buffers and the hot-load pool). Verified with `MP_TEST_LEAVE`:
+the leaver's own log shows the session ending, every slot released, the buffers freed and
+`released everything - no map is loaded`, with no dump.
 - The dented variant's textures come out "a little messed up" on an imported car: the
   damaged model is built (`gCarDamModelPtr`) but its page/row needs are the same walk's,
   so a damaged-only set is the place to look.
