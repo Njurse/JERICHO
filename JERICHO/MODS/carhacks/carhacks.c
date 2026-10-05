@@ -184,7 +184,15 @@ static void ChkFillCarAvailability(void)
 	char line[192];
 	int city, slot;
 
+	/* Before deciding what a city can offer, give the cities that have no frontend
+ * list of their own the cars their imported data carries. Without this a Driver 1
+ * car-data city offers nothing: the frontend table only ever initialised Driver
+ * 2 four rows. It fills only an unclaimed row, so a Driver 2 city - which
+ * already has a list of its own - cannot be disturbed. */
 	for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
+		chkFillCarTableFromImport(city);
+
+for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
 	{
 		for (slot = 0; slot < CHK_CAR_SLOT_COUNT; slot++)
 			CarAvailability[city][slot] = (chkImportCanOffer(city, slot) == CHK_OFFER_OK);

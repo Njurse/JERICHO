@@ -129,6 +129,11 @@ typedef enum CHK_OFFER
 	CHK_OFFER_NO_CAR	/* the slot names no car (model 0, or -1 = none here) */
 } CHK_OFFER;
 
+/* Give a city with no frontend car list of its own the cars its IMPORTED data
+ * actually carries. Fills nothing for a city that already has a list, so Driver
+ * 2's four cities are untouched. */
+void chkFillCarTableFromImport(int city);
+
 CHK_OFFER chkImportCanOffer(int city, int slot);
 
 /* The model number `city`'s `slot` names, read the same SIGNED way the offer rule reads it:

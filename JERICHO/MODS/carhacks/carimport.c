@@ -497,9 +497,57 @@ int chkImportSlotModel(int city, int slot)
 	return (int)(signed char)carNumLookup[city][slot];
 }
 
-const char* chkOfferReason(CHK_OFFER why)
+/* Fill a city's frontend car table from the car data that city ACTUALLY carries.
+ *
+ * The frontend's two tables are fixed arrays in FEmain.c and only Driver 2's four
+ * rows were ever initialised, so the rows for the Driver 1 car-data cities are
+ * zero and those cities offered nothing at all - literally "car list: ... MIAMI
+ * 0/10 (0 the level already has)".
+ *
+ * Restating Driver 2's table for them would be a second hardcoded copy, and it
+ * would silently rot: which models a transplanted city holds is decided by the
+ * transplant (tools/bake.py) and is OURS to change. So the list is read from the
+ * import instead - "these were imported, so offer them".
+ *
+ * Ascending model onto ascending slot, which reproduces Driver 2's frontend
+ * semantics for free: models 1,2,3,4 land on select-slots 0..3 (the four a stock
+ * city shows) and any extras follow on 4. */
+void chkFillCarTableFromImport(int city)
 {
-	switch (why)
+	extern char carNumLookup[CITY_COUNT][10];
+	unsigned present;
+	int slot, model;
+
+	if (city < 0 || city >= CHK_CAR_CITY_COUNT)
+		return;
+
+	/* A city that already has a list of its own keeps it - this only ever fills a
+	 * row nothing has claimed, so Driver 2's four cities are untouched. */
+	for (slot = 0; slot < CHK_CAR_SLOT_COUNT; slot++)
+		if (carNumLookup[city][slot] != 0)
+			return;
+
+	present = JerCarImportModels(city);
+
+	if (present == 0)
+		return;				/* nothing imported, so nothing to offer */
+
+	slot = 0;
+
+	for (model = 0; model < CHK_MODEL_LIMIT && slot < CHK_CAR_SLOT_COUNT; model++)
+	{
+		if (!(present & (1u << model)))
+			continue;
+
+		carNumLookup[city][slot++] = (char)model;
+	}
+
+	printInfo("[carhacks] car list: %s had no list of its own - offering the %d car(s) its imported data carries\n",
+		chkCityName(city), slot);
+}
+
+const char* chkOfferReason(CHK_OFFER why)
+{	switch (why)
 	{
 	case CHK_OFFER_OK:		return "offered";
 	case CHK_OFFER_BAD:		return "not a city/slot this game has";
