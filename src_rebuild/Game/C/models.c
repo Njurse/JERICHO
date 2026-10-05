@@ -234,12 +234,14 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_MODELS	28	// LUMP_CAR_MODELS
 #define CAR_IMPORT_LUMP_PALLET	25	// LUMP_PALLET - the car palettes (civ_clut)
 #define CAR_IMPORT_LUMP_TEXINFO	34	// LUMP_TEXTUREINFO - the page lists
+#define CAR_IMPORT_MODEL_SLOTS	13	// LUMP_CAR_MODELS is a fixed 13-entry table
 
 typedef struct
 {
 	char* region;		// malloc'd DATA1 copy the car-models block points into
 	char* carModels;	// LUMP_CAR_MODELS body, or NULL
 	int carModelsSize;
+	unsigned carModelsPresent;	// bit N = model N really holds a car in this file
 	char* pallet;		// LUMP_PALLET body (car palettes), or NULL
 	int palletSize;
 	char* cosmetics;	// the city's .LCF (car colours), or NULL
@@ -410,6 +412,31 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 	// DATA1's body is itself a container lump, so its segments start 8 bytes in
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_MODELS, &imp->carModels, &imp->carModelsSize);
 
+	// JERICHO: WHICH models does this file actually carry?
+	//
+	// Asked here, at the one place the table is read, so a module can offer exactly
+	// the cars that were imported instead of being handed a list to hardcode. That
+	// matters most for a Driver 1 city, whose cars were transplanted onto Driver 2's
+	// compliant models (tools/bake.py) - the module has no way to know which numbers
+	// those are, and must not assume a layout.
+	//
+	// The table is a fixed 13 entries of three int32 (clean/damaged/low offsets)
+	// starting 4 bytes in - the same walk GetCarImportModels does.
+	imp->carModelsPresent = 0;
+	if (imp->carModels != NULL)
+	{
+		int* offs = (int*)(imp->carModels + 4);
+		int m;
+
+		for (m = 0; m < CAR_IMPORT_MODEL_SLOTS; m++)
+		{
+			int clean = offs[m * 3];
+
+			if (clean != -1 && clean < imp->carModelsSize)
+				imp->carModelsPresent |= 1u << m;
+		}
+	}
+
 	if (imp->carModels == NULL)
 	{
 		FreeCarImport(imp);
@@ -563,6 +590,18 @@ int GetCarImportCity(void)
 int CarImportCityHeld(int city)
 {
 	return (city >= 0 && city < CITY_COUNT && gCarImports[city].region != NULL);
+}
+
+// The models `city`'s car data ACTUALLY carries, as a bitmask: bit N = model N.
+// 0 when the city is not held.
+//
+// This is the "list what was imported" door. A module should not assume which
+// numbers a city's cars sit on - a transplanted Driver 1 city's layout is decided
+// by the transplant (tools/bake.py), not by any table the module can see - so it
+// asks here and offers what comes back.
+unsigned JerCarImportModels(int city)
+{
+	return CarImportCityHeld(city) ? gCarImports[city].carModelsPresent : 0;
 }
 
 // The imported city's car palettes (LUMP_PALLET body), or NULL. `size` receives

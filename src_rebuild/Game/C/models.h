@@ -76,6 +76,10 @@ int JerReleaseCarImport(void);char* GetCarImportCosmetics(int slot);
 int GetCarImportCity(void);
 int CarImportCityHeld(int city);
 
+// The models `city`'s car data actually carries, as a bitmask: bit N = model N.
+// The "list what was imported" door - see models.c.
+unsigned JerCarImportModels(int city);
+
 char* GetCarImportPallet(int* size);
 char* GetCarImportPalletForCity(int city, int* size);
 
