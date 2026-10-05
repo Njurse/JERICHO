@@ -344,28 +344,27 @@ static char* ReadWholeFile(const char* filename, int* outSize)
 // Read <city>'s level file and pull out its car-models block: the file's DATA1
 // region (citylumps[0]), walked as segments. Returns 0 (leaving imp empty) if
 // anything is missing.
-static int LoadCarImport(int city, CAR_IMPORT* imp)
+/* JERICHO: read car data out of an ARBITRARY file - the loader behind the
+ * load-lev hook. Everything past the path resolution - the lump header, the
+ * citylump table, DATA1, the car models, the palettes, the page lists - is
+ * independent of which disc the file came from, so this takes paths rather than a
+ * city index. LoadCarImport below is the stock wrapper that turns a city into its
+ * two paths and calls this.
+ *
+ * `lcfPath` may be NULL: the import then has no colours of its own.
+ * Returns 1 on success; on failure anything it allocated is already freed. */
+int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPORT* imp)
 {
-	char filename[64];
 	unsigned int table[8];
 	FILE* fp;
 	long data1Off, data1Size;
 
 	memset(imp, 0, sizeof(*imp));
 
-	if (city < 0 || city >= CITY_COUNT)
+	if (levPath == NULL)
 		return 0;
 
-	// the full single-player level first, then the arena variant
-	sprintf(filename, "%s%s", JerGetCityDataRoot(city), LevelFiles[city]);
-	fp = fopen(filename, "rb");
-
-	// the arena variant of the file; Driver 1's car-data cities have none
-	if (fp == NULL && city < CITY_D2_COUNT)
-	{
-		sprintf(filename, "%sM%s", JerGetCityDataRoot(city), LevelFiles[city]);
-		fp = fopen(filename, "rb");
-	}
+	fp = fopen(levPath, "rb");
 
 	if (fp == NULL)
 		return 0;
@@ -427,11 +426,32 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 	// themselves sit right after DATA1 in the file, which it reads separately.
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_TEXINFO, &imp->texInfo, &imp->texInfoSize);
 
-	// the car colours live beside it, as LEVELS\<city>.LCF
-	sprintf(filename, "%s%s", JerGetCityDataRoot(city), CosmeticFiles[city]);
-	imp->cosmetics = ReadWholeFile(filename, &imp->cosmeticsSize);
+	// the car colours, beside the car data as LEVELS\<city>.LCF - or none at all
+	if (lcfPath != NULL)
+		imp->cosmetics = ReadWholeFile(lcfPath, &imp->cosmeticsSize);
 
 	return 1;
+}
+
+/* The stock path: a city index -> the two paths that city's data lives at, then
+ * the loader above. Unchanged in behaviour for Driver 2's four cities. */
+static int LoadCarImport(int city, CAR_IMPORT* imp)
+{
+	char level[64], cosmetic[64];
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	// the full single-player level first, then the arena variant
+	sprintf(level, "%s%s", JerGetCityDataRoot(city), LevelFiles[city]);
+
+	// the arena variant of the file; Driver 1's car-data cities have none
+	if (!FileExists(level) && city < CITY_D2_COUNT)
+		sprintf(level, "%sM%s", JerGetCityDataRoot(city), LevelFiles[city]);
+
+	sprintf(cosmetic, "%s%s", JerGetCityDataRoot(city), CosmeticFiles[city]);
+
+	return JerLoadCarImportFromFile(level, cosmetic, imp);
 }
 
 // Load the foreign car data the module asked for. Called from
@@ -461,7 +481,7 @@ void InitCarImport(void)
 	{
 		int src = GetCarModelSourceCity(i);
 
-		if (src < 0 || src >= 4 || residentCarModels[i] == -1)
+		if (src < 0 || src >= CITY_COUNT || residentCarModels[i] == -1)
 			continue;
 
 		if (gCarImports[src].region != NULL)
@@ -500,7 +520,7 @@ void InitCarImportMidLevel(void)
 	{
 		int src = GetCarModelSourceCity(i);
 
-		if (src < 0 || src >= 4 || residentCarModels[i] == -1)
+		if (src < 0 || src >= CITY_COUNT || residentCarModels[i] == -1)
 			continue;
 
 		if (gCarImports[src].region != NULL)
