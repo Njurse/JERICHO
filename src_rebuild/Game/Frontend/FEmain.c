@@ -2658,16 +2658,30 @@ int CarSelectScreen(int bSetup)
 		// per-model data checks below still apply, so a model with no data stays
 		// unavailable (forcing one crashed the game in load).
 		int unlockExtra = 0;
+		int ownList = 0;
 		{
 			JER_ARGS_CAR_AVAILABILITY jerAvail;
 
 			jerAvail.level = GameLevel;
 			jerAvail.result = 0;
+			jerAvail.own_list = 0;
 			jer_fire(JER_EVENT_CAR_AVAILABILITY, &jerAvail);
 			unlockExtra = jerAvail.result;
+			ownList = jerAvail.own_list;
 		}
 
-		if ((gFurthestMission == 40 && NumPlayers == 1) || unlockExtra)
+		if (ownList)
+		{
+			// JERICHO-HOOK: a module wrote the WHOLE table (every city, every slot) and
+			// owns the list, so re-gating here would only throw its work away. These gates
+			// describe one row - CarAvailability[GameLevel][...] - because that row is all
+			// the stock screen ever reads, which is why a player could not pick the rest of
+			// the cars the game has: the table starts as {1,1,1,1,0,...} for every city and
+			// is lifted for the extras only by game completion, by a cheat, or by the hook
+			// above - and the cheat slot is cleared outright in multiplayer (NumPlayers == 1
+			// gates it), so it can never appear in a session.
+		}
+		else if ((gFurthestMission == 40 && NumPlayers == 1) || unlockExtra)
 		{
 			for (int i = 4; i < 9; i++)
 			{

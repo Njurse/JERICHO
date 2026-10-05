@@ -574,11 +574,20 @@ typedef struct JER_ARGS_DAMAGE_SCALE
  * vehicles (fire truck / buses / truck) for `level`, bypassing the stock
  * gFurthestMission == 40 && NumPlayers == 1 gate. Leave 0 for stock behaviour.
  * The engine still refuses a vehicle whose model data is missing (that check
- * exists to avoid a load crash), so this cannot make a data-less model appear. */
+ * exists to avoid a load crash), so this cannot make a data-less model appear.
+ *
+ * Set own_list = 1 to say the module has written CarAvailability for every city
+ * and slot itself, and the engine must not re-gate it. The stock gates are
+ * computed AFTER this hook returns, so a table written here is overwritten
+ * without the flag - and the stock code has no notion of another city's row at
+ * all (every one of its own reads is CarAvailability[GameLevel][...]). A module
+ * that sets it is responsible for clearing every slot it does not mean to offer,
+ * because the engine will not do that for it. */
 typedef struct JER_ARGS_CAR_AVAILABILITY
 {
 	int level;	/* in: GameLevel whose car list is being built */
 	int result;	/* in/out: 1 = unlock the extra vehicles, 0 = stock */
+	int own_list;	/* in: 1 = the module wrote the whole table; do not re-gate */
 } JER_ARGS_CAR_AVAILABILITY;
 
 
