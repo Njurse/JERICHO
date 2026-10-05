@@ -340,12 +340,17 @@ print(total, sets)
 - A `texture_set` means a different page in every city; unknown sets resolve to
   the dummy tpage `(960,0)` / CLUT `(960,16)`, which renders as nothing.
 - Models 5/6/7 are absent in **every** city; Chicago's 11 is absent too.
-- Car model polygons are **compressed**, not a sequence of `PolySizes`-sized PSX
-  primitives. Walking them with `PolySizes[*p & 0x1f]` *stalls* from polygon 5 — that
-  type's entry is `0`, so the walk re-reads the same bytes forever and reports
-  nonsense sets. `Find_TexID` in `texture.c` is marked UNUSED, probably for this
-  reason. Never trust a poly walk here without checking it against a local model
-  whose car renders textured.
+- Car model polygons are **not** compressed — a car model's `poly_block` is a
+  plain stream of PSX-style poly records advanced by `PolySizes[type & 0x1f]`,
+  which is exactly how `buildNewCarFromModel` (`cars.c:1792`) and
+  `CollectModelSets` (`texture.c`) read them. Measured on CHICAGO: every model
+  walks its full `num_polys` with **0 zero-steps**, using only types 20 (FT3) and
+  22 (GT3). An earlier version of this note claimed a `PolySizes` walk "stalls
+  from polygon 5"; that is not a property of car models — a zero-size step only
+  appears once the walk runs *past* `num_polys` (into the next model or other
+  data), so the real caveat is to **bound the walk**, not that the stream is
+  compressed. Driver 1's car models use the same encoding; see
+  `MODS/d1cars/docs/DRIVER1.md`.
 - City car sets live in the low numbers (**10..68** across all four cities), so set
   indices **110+ are free** and safe to re-index an imported page onto.
 - `LUMP_TEXTUREINFO` (type **34**, DATA1) is **not** "a count then entries". The layout
