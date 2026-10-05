@@ -985,6 +985,32 @@ void chkNetAdvertisePick(int city, int model)
 	if (!jer_net_is_active())
 		return;
 
+	/* CHK_DROP_ADVERT=<n>: throw away the first n adverts.
+	 *
+	 * A lost message is otherwise only reachable by dropping a real packet, and losing one
+	 * is the exact failure the re-announce in chkNetOnFrame exists for - so the test has to
+	 * be able to cause it. Logged, because otherwise the run looks like a car that simply
+	 * took a few seconds to arrive. */
+	{
+		static int dropped;
+		static int want = -1;
+
+		if (want < 0)
+		{
+			const char* s = getenv("CHK_DROP_ADVERT");
+
+			want = (s != NULL) ? atoi(s) : 0;
+		}
+
+		if (dropped < want)
+		{
+			dropped++;
+			printInfo("[carhacks/net] CHK_DROP_ADVERT: dropping advert %d of %d (%s model %d)\n",
+				dropped, want, chkNetCityName(city), model);
+			return;
+		}
+	}
+
 	pay[0] = (unsigned char)city;
 	pay[1] = (unsigned char)model;
 
@@ -1006,9 +1032,28 @@ void chkNetRequestSet(void)
  * Session lifecycle
  * ------------------------------------------------------------------------- */
 
+/* ------------------------------------------------------------------ */
+/* Announcing what we drive                                            */
+/* ------------------------------------------------------------------ */
+
+/* How often an UNCHANGED car is announced again - see the dedupe in chkNetOnFrame. A few
+ * seconds of redundancy on one small message, and it is what turns a lost pick into a
+ * self-healing one.
+ *
+ * Counted in FRAMES, not milliseconds: carhacks takes no platform headers - mp keeps
+ * windows.h out of its mod files for winsock ordering, and <time.h> is shadowed by the
+ * game's own on this include path - and the engine's fixed step makes a frame count a good
+ * enough heartbeat for something whose whole job is to be repeated. ~3 s at this rate. */
+#define CHK_NET_ADVERT_FRAMES 90
+
+static unsigned long gChkNetFrame;		/* ++ once per frame */
+static unsigned long gChkNetAdvertFrame;	/* the frame we last announced on */
+
 static int chkNetOnFrame(void* ud, void* args)
 {
 	int active = jer_net_is_active();
+
+	gChkNetFrame++;
 
 	(void)ud;
 	(void)args;
@@ -1021,6 +1066,11 @@ static int chkNetOnFrame(void* ud, void* args)
 
 		for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
 			gChkNetPeerPickSet[i] = 0;
+
+		/* and re-announce our own car, for the same reason the agreed set is dropped: a
+		 * second session must re-negotiate rather than inherit the last one */
+		gChkNetLocalSet = 0;
+		gChkNetAdvertFrame = 0;
 
 		/* dropping the agreed set here is what makes a SECOND session
 		 * re-negotiate instead of inheriting the last one's cars */
@@ -1073,14 +1123,31 @@ static int chkNetOnFrame(void* ud, void* args)
 
 		/* Keep the session up to date with what we are driving. A change matters:
 		 * mp spawns the local car and settles -mpcar AFTER the session is up, so a
-		 * one-shot advert at join time would announce an unspawned car. */
+		 * one-shot advert at join time would announce an unspawned car.
+		 *
+		 * A MISSED ADVERT MUST NOT STICK.
+		 *
+		 * This used to be "unchanged -> never advertise again", which is only right while
+		 * every message arrives. It is the session's ONE one-shot direction: the host
+		 * re-broadcasts its agreed set and its roster on a timer, so a client that misses
+		 * those recovers by itself - but a client's own pick is announced once, and losing
+		 * that advert, or the import it triggers on the host, leaves the host drawing that
+		 * player's OLD car for the rest of the match with nothing left to retry it. That
+		 * is a missed asset load that never heals.
+		 *
+		 * So an unchanged car is announced again every CHK_NET_ADVERT_MS. Everything below
+		 * is a re-send (our row, the advert, the host's table) and the deliberate check is
+		 * a query, so repeating it on an unchanged car changes no state - it just makes the
+		 * announcement redundant enough to survive a loss. */
 		CHK_CAR_ID mine = chkNetLocalCar();
 
-		if (gChkNetLocalSet && chkCarIdEqual(mine, gChkNetLocal))
+		if (gChkNetLocalSet && chkCarIdEqual(mine, gChkNetLocal) &&
+			gChkNetFrame - gChkNetAdvertFrame < CHK_NET_ADVERT_FRAMES)
 			return JER_RESULT_CONTINUE;
 
 		gChkNetLocal = mine;
 		gChkNetLocalSet = 1;
+		gChkNetAdvertFrame = gChkNetFrame;
 
 		if (!chkCarIdIsSet(mine))
 			return JER_RESULT_CONTINUE;
