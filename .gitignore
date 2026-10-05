@@ -73,3 +73,6 @@ mp_agent.log
 _mp_staging/
 _mp_previous/
 _mp_previous.next/
+
+# Local dev comms bot. Holds a Telegram bot token - never commit it.
+tmp/tgbot/

@@ -139,8 +139,19 @@ static void ChkLogCarList(void)
 
 	for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
 	{
-		int offered = chkImportOfferedCount(city);
-		int held = chkImportOfferedHeldCount(city);
+		int offered, held;
+
+		/* Fill FIRST, here as well as in the availability pass. This report reads
+		 * chkImportCanOffer directly rather than the CarAvailability table, so it
+		 * showed "MIAMI 0/10" while the table it was describing was fine - the
+		 * report was asking a question nobody had answered yet. Calling the fill
+		 * at both sites, rather than only the one I assumed ran, is what makes
+		 * the report and the table agree by construction. It is idempotent: a
+		 * city that already has a list is left alone. */
+		chkFillCarTableFromImport(city);
+
+		offered = chkImportOfferedCount(city);
+		held = chkImportOfferedHeldCount(city);
 		size_t used = strlen(cities);
 
 		if (used < sizeof(cities) - 40)
