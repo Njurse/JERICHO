@@ -58,10 +58,10 @@
 /* Engine globals the menu reads (exported as C++ data symbols; the mod is
  * compiled C++, so a plain extern matches the export - the same pattern
  * carhacks.c already uses for these two). */
-extern int  CarAvailability[4][10];	/* frontend car list: [level][slot] */
-extern char carNumLookup[4][10];	/* frontend slot -> model number */
+extern int  CarAvailability[CITY_COUNT][10];	/* frontend car list: [level][slot] */
+extern char carNumLookup[CITY_COUNT][10];	/* frontend slot -> model number */
 
-#define CHK_CITY_COUNT		4	/* LevelNames: CHICAGO, HAVANA, VEGAS, RIO */
+#define CHK_CITY_COUNT		CITY_COUNT	/* the engine's own table: D2's four, then the D1 car-data cities. Not a literal - a module that hardcodes 4 cannot see a city the game has grown. */
 #define CHK_SLOTS		10	/* frontend slots per city (carNumLookup[city][0..9]) */
 #define CHK_ROSTER_MAX		CHK_SLOTS
 

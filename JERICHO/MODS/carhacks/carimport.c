@@ -471,7 +471,7 @@ const char* chkCityName(int city)
  * served says so in words - so a slot is offered whenever it names a car. */
 CHK_OFFER chkImportCanOffer(int city, int slot)
 {
-	extern char carNumLookup[4][10];
+	extern char carNumLookup[CITY_COUNT][10];
 	int model;
 
 	if (city < 0 || city >= CHK_CAR_CITY_COUNT || slot < 0 || slot >= CHK_CAR_SLOT_COUNT)
@@ -487,7 +487,7 @@ CHK_OFFER chkImportCanOffer(int city, int slot)
 
 int chkImportSlotModel(int city, int slot)
 {
-	extern char carNumLookup[4][10];
+	extern char carNumLookup[CITY_COUNT][10];
 
 	if (city < 0 || city >= CHK_CAR_CITY_COUNT || slot < 0 || slot >= CHK_CAR_SLOT_COUNT)
 		return 0;
@@ -524,7 +524,7 @@ int chkImportOfferedCount(int city)
 
 int chkImportOfferedHeldCount(int city)
 {
-	extern char carNumLookup[4][10];
+	extern char carNumLookup[CITY_COUNT][10];
 	int slot, n = 0;
 
 	for (slot = 0; slot < CHK_CAR_SLOT_COUNT; slot++)

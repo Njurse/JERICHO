@@ -63,7 +63,7 @@ static int ChkMpCities(void* userdata, void* args)
 	if (!carhacks_enabled(CHK_HACK_CROSS_CITY))
 		return JER_RESULT_CONTINUE;
 
-	for (city = 0; city < 4 && a->count < a->max; city++)
+	for (city = 0; city < CITY_COUNT && a->count < a->max; city++)
 		a->cities[a->count++] = city;
 
 	return JER_RESULT_CONTINUE;

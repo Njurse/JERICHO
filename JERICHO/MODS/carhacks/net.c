@@ -111,7 +111,7 @@ static int chkNetSendPacket(int tag, const unsigned char* payload, int payloadLe
 
 const char* chkNetCityName(int city)
 {
-	return (city >= 0 && city < 4) ? LevelNames[city] : "level";
+	return (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "level";
 }
 
 /* Fold every peer's car into this machine's set, so it LOADS what the other

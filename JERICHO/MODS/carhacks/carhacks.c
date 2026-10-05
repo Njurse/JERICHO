@@ -25,8 +25,8 @@
 /* Engine globals the hacks touch (exported as C++ data symbols; the mod is
  * compiled C++, so a plain extern matches the export). */
 extern int FileExists(char* name);
-extern int CarAvailability[4][10];	/* frontend car list: [level][slot] */
-extern char carNumLookup[4][10];	/* frontend slot -> model number */
+extern int CarAvailability[CITY_COUNT][10];	/* frontend car list: [level][slot] */
+extern char carNumLookup[CITY_COUNT][10];	/* frontend slot -> model number */
 extern int wantedCar[2];		/* the player's chosen car model per player */
 
 #define CHK_LEVEL_CHICAGO	0
@@ -180,7 +180,7 @@ static void ChkLogCarList(void)
  * stock version of it only ever describes the level's own row, four cars deep. */
 static void ChkFillCarAvailability(void)
 {
-	extern int CarAvailability[4][10];
+	extern int CarAvailability[CITY_COUNT][10];
 	char line[192];
 	int city, slot;
 
@@ -347,7 +347,7 @@ static int ChkOnCarDataSource(void* ud, void* args)
 				src = pickCity;
 		}
 
-		if (src >= 0 && src < 4)
+		if (src >= 0 && src < CHK_CITY_COUNT_LIMIT)
 		{
 			a->sourceLevel = src;
 
