@@ -472,9 +472,24 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 	// the full single-player level first, then the arena variant
 	sprintf(level, "%s%s", JerGetCityDataRoot(city), LevelFiles[city]);
 
-	// the arena variant of the file; Driver 1's car-data cities have none
-	if (!FileExists(level) && city < CITY_D2_COUNT)
-		sprintf(level, "%sM%s", JerGetCityDataRoot(city), LevelFiles[city]);
+	// the arena variant of the file; Driver 1's car-data cities have none.
+	//
+	// Probe with a direct fopen, NOT FileExists(): `level` is already rooted
+	// (JerGetCityDataRoot prepends "DRIVER2\" or "DRIVER\"), and FileExists() prefixes
+	// gDataFolder AGAIN - so it tested "DRIVER2\DRIVER2\LEVELS\VEGAS.LEV", always missing,
+	// and the loader fell through to MLEVELS every time. pageBase was then computed from
+	// the M file while ReadCarImportFileForCity read the single-player one; the two DATA1
+	// sizes differ, so every imported set read short and landed inside DATA1 - the
+	// "set N looks corrupt (289676305 clut rows)" rot. The read path fopens this same
+	// rooted string, so the probe must too.
+	{
+		FILE* probe = fopen(level, "rb");
+
+		if (probe)
+			fclose(probe);
+		else if (city < CITY_D2_COUNT)
+			sprintf(level, "%sM%s", JerGetCityDataRoot(city), LevelFiles[city]);
+	}
 
 	sprintf(cosmetic, "%s%s", JerGetCityDataRoot(city), CosmeticFiles[city]);
 
