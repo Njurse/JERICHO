@@ -61,7 +61,7 @@ jobs:
           # Deliberately NOT `submodules: recursive`. That walks every entry in
           # .gitmodules, and a single unfetchable submodule fails the whole
           # checkout before any build step runs -- which is exactly how this
-          # job spent its entire life failing at step 2. JERICHO/MODS/gaildrv2
+          # job spent its entire life failing at step 2. JERICHO/MODS/gaildrv2 and JERICHO/MODS/d1cars
           # is deliberately out of the picture for builds (its repository is
           # not published), so only the submodules the build needs are fetched,
           # explicitly, in the step below.
@@ -190,7 +190,7 @@ jobs:
         with:
           # See the Windows job: an explicit allow-list instead of
           # `submodules: recursive`, so an unpublished submodule cannot fail
-          # the checkout. gaildrv2 is out of the picture for builds.
+          # the checkout. gaildrv2 and d1cars are out of the picture for builds.
           submodules: false
           # See the Windows job: without full history and tags, `git describe`
           # falls back to a bare SHA.
