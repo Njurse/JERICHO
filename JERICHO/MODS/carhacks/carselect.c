@@ -101,6 +101,8 @@ static int gChkForceCity = -1;	/* harness: CHK_FORCE_ROSTER_CITY */
 static int gChkForceCar = -1;	/* harness: CHK_FORCE_CAR */
 static int gChkForceLevel = -1;	/* harness: CHK_FORCE_LEVEL (the synthetic level city) */
 static int gChkForceMenu;	/* harness: CHK_FORCE_MENU - walk to the car screen */
+static int gChkRosterLoggedCity = -1;	/* the city whose roster was last described */
+static int gChkRosterLoggedCount = -1;	/* ...and what it offered then */
 
 static JER_FE_ITEM gChkItems[4];
 static JER_FE_MENU gChkMenu =
@@ -142,6 +144,43 @@ static int chkRosterBuild(int city, CHK_ROSTER_ENTRY* out, int max)
 		}
 
 		n++;
+	}
+
+	/* Say what is NOT on offer, when a city's roster CHANGES rather than once per city: the
+	 * screen builds a roster before the frontend's availability hook has filled the table, so
+	 * the first read is the stock four cars and the next is the real list. Logging on change
+	 * shows both, which is exactly the before-and-after worth having in a log. The reason
+	 * comes from the same query that fills the table, so the two cannot disagree. */
+	if (gChkRosterLoggedCity != city || gChkRosterLoggedCount != n)
+	{
+		char hidden[160];
+		int first = 1;
+
+		gChkRosterLoggedCity = city;
+		gChkRosterLoggedCount = n;
+		hidden[0] = 0;
+
+		for (slot = 0; slot < CHK_SLOTS; slot++)
+		{
+			CHK_OFFER why = chkImportCanOffer(city, slot);
+			size_t used;
+
+			if (why == CHK_OFFER_OK)
+				continue;
+
+			used = strlen(hidden);
+
+			if (used >= sizeof(hidden) - 32)
+				continue;
+
+			snprintf(hidden + used, sizeof(hidden) - used, "%s[%d] %s",
+				first ? "" : ", ", slot, chkOfferReason(why));
+			first = 0;
+		}
+
+		printInfo("[carhacks] car select: %s offers %d of %d slot(s)%s%s\n",
+			chkCityName(city), n, CHK_SLOTS,
+			(hidden[0] != 0) ? "; hidden: " : "", hidden);
 	}
 
 	return n;

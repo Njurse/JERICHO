@@ -50,9 +50,37 @@ city shows its own availability, not the level's. The icon is the engine's own
 (`JER_FE_MENU.get_preview` returns the car's **own** city + model), so a Havana car
 previews with Havana's art while the level is Chicago.
 
-Consequence worth knowing: a city with no data for a model simply does not list it
-(Chicago's model 11 has no `CARMODEL` and `CarSelectScreen`'s setup already
-excludes it — see `VEHICLES.md`).
+**Who fills that table changed — this module owns it now.** The stock version starts
+as `{1,1,1,1,0,0,0,0,0,0}` for every city and lifts the tail slots only for a
+finished game, a cheat in single player, or this module's unlock hook. So a player
+could pick four cars a city and nothing else, and a `car_list` remap landed in slots
+that stayed dark: the stock unlock loop stops at slot 8, and slot 9 is only ever the
+cheat slot, which is cleared outright in multiplayer (`NumPlayers == 1` gates it).
+Now, with `unlock_extra_vehicles` on, this module writes **every** city's row from one
+query (`chkImportCanOffer`) and tells the engine it owns the list
+(`JER_ARGS_CAR_AVAILABILITY.own_list`), which is what makes `CarSelectScreen` skip its
+own gates instead of overwriting the table a line later. Measured on a stock install:
+**9 of 10 slots per city** in all four rows, the exception being slot 4, which names no
+car at all. 7 of those 9 are cars the level already has; the rest come in on the pick.
+
+Editing the list is not a load: listing draws a 2D icon and nothing is imported until a
+pick, so a list can show every car the game has without bringing any of their data into
+the level. The only way a car is imported with no pick behind it is the
+`cross_city_vehicles` config's `import=` / `traffic_*` entries, which are opt-in.
+
+Two honest limits:
+
+- The **stock** screen draws its icon by SLOT — `SetupExtraPoly(gfxNames[GameLevel],
+  carSelection, 0)` — so on that screen a `car_list` remap shows the slot's stock art
+  rather than the remapped car's. This module's own screen draws by the car's own city +
+  model and is unaffected, and it is the default. The car the player gets is right either
+  way; only the picture differs.
+- A car whose data cannot be found still fails at PICK time rather than being hidden from
+  the list: the pick path says so in words ("needs a spare resident slot and none is
+  free", "riding the level's own car of that number"). Availability cannot answer "is this
+  car's data here?" on this build — a whole install holds two `CARMODEL_*.dmodel` files and
+  levels take their cars from their own package — so a file probe would have hidden nearly
+  every car. `chkImportCanOffer` explains that at length.
 
 ## When it is used, and when it is not
 
