@@ -45,6 +45,18 @@ static int gChkSetVersion;		/* bumps on every change */
 static CHK_CAR_ID gChkPick;		/* the player's pick */
 static int gChkPickSet;			/* 0 = nothing picked yet */
 
+/* JERICHO: the pick AS SPENT - the id, and the level it was spent for.
+ *
+ * chkImportClearPick eats both the flag AND the id, so "was there a pick" is not enough
+ * to put it back. These keep the pair, so the SAME level re-entering - a restart in Take
+ * a Ride - can be given its car again. A different level never sees them, which keeps
+ * the original intent: a LATER level does not import the same car.
+ *
+ * Deliberately NOT cleared by chkImportReset: surviving this level is the whole point. */
+static CHK_CAR_ID gChkPickSpent;
+static int gChkPickSpentSet;
+static int gChkPickSpentLevel = -1;
+
 /* The CHOICE, which survives the consume (chkImportClearPick) that the level does when it
  * has read the pick. See chkImportSetLocalPick for why the two cannot be the same record. */
 static CHK_CAR_ID gChkChosen;
@@ -71,6 +83,41 @@ void chkImportReset(void)
 	gChkGuestCity = -1;
 	gChkGuestCityCount = 0;
 	gChkSetVersion++;
+}
+
+/* JERICHO: consume the pick FOR A LEVEL - keeping the pair so that level can be
+ * re-entered with its car. See gChkPickSpent above. Callers that are not a level
+ * start (a release, a repick) still use chkImportClearPick below. */
+void chkImportClearPickForLevel(int level)
+{
+	gChkPickSpent = gChkPick;
+	gChkPickSpentSet = gChkPickSet;
+	gChkPickSpentLevel = level;
+
+	chkImportClearPick();
+}
+
+/* JERICHO: put the pick back for a level that has already had it - a RESTART.
+ *
+ * Returns 1 when it re-armed. A no-op for a different level, when a pick is
+ * already live, and when nothing was ever spent. This is what makes a restart
+ * import the car again instead of falling back to the level's own. */
+int chkImportRearmPickForLevel(int level)
+{
+	if (gChkPickSet || !gChkPickSpentSet)
+		return 0;
+
+	if (level < 0 || level != gChkPickSpentLevel)
+		return 0;
+
+	/* chkCarIdCity answers -1 for the "nothing" id chkImportClearPick writes. */
+	if (chkCarIdCity(gChkPickSpent) < 0)
+		return 0;
+
+	gChkPick = gChkPickSpent;
+	gChkPickSet = 1;
+
+	return 1;
 }
 
 /* Consume the pick: the level that imported it has read it. */

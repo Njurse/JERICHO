@@ -207,6 +207,13 @@ void chkImportSetChosen(CHK_CAR_ID id);
  * does not import the same car again. */
 void chkImportClearPick(void);
 
+/* JERICHO: consume the pick FOR A LEVEL, remembering it so that level can be
+ * re-entered with its car - a restart in Take a Ride. */
+void chkImportClearPickForLevel(int level);
+
+/* Put the pick back for a level that has already had it. 1 when re-armed. */
+int chkImportRearmPickForLevel(int level);
+
 /* ---- building the set -------------------------------------------------- */
 
 /* Read the [carhacks] config (import = slot:city:model, traffic_model,

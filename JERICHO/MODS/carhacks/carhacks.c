@@ -340,6 +340,13 @@ static int ChkOnCarDataSource(void* ud, void* args)
 	 * made in the frontend and is consumed by the level it starts) */
 	chkImportReset();
 
+	/* JERICHO: a RE-ENTRY of the level the pick was already spent on gets it back -
+	 * a restart in Take a Ride. By this point chkImportReset has cleared our own slot
+	 * state, so gChkSet is empty and the restore lands on a clean set. */
+	if (chkImportRearmPickForLevel(a->level))
+		printInfo("[carhacks] import: level %d again - re-arming the pick (%s model %d)\n",
+			a->level, chkCityName(chkImportLocalPickCity()), chkImportLocalPickModel());
+
 	/* ...and the per-player slot records and deferred releases that described the OLD set
 	 * (net.c). The fold below runs inside this hook, and a record left over from the last
 	 * level would otherwise be "released" against the new one. */
@@ -430,8 +437,14 @@ static int ChkOnCarDataSource(void* ud, void* args)
 	 * clients (still in the menus) load the same cars (net.c) */
 	chkNetNotifySetBuilt();
 
-	/* the pick is spent: a later level must not import the same car again */
-	chkImportClearPick();
+	/* the pick is spent: a later level must not import the same car again.
+	 *
+	 * ...but THIS level may be re-entered, which is exactly what a restart in Take
+	 * a Ride does. Consuming it outright meant the restart applied no import and the
+	 * slot fell back to the level's own car ("riding the level's own car of that
+	 * number"). Remembering the id and the level lets the re-entry re-arm it; a
+	 * different level still never sees it. */
+	chkImportClearPickForLevel(a->level);
 
 	return JER_RESULT_CONTINUE;
 }
