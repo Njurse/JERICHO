@@ -86,6 +86,65 @@ int chkImportCanonicalSlot(CHK_CAR_ID car, int* outCount);
 /* The set's own slot holding (city, model), or -1. `city` < 0 matches any. */
 int chkImportSlotForCar(int city, int model);
 
+/* ---- what a car list may offer ----------------------------------------- */
+
+/* The engine's car list table: CarAvailability[city][slot] and carNumLookup[city][slot]. */
+#define CHK_CAR_CITY_COUNT	4
+#define CHK_CAR_SLOT_COUNT	10
+
+/* MAY (city, slot) BE OFFERED in a car list?
+ *
+ * CarAvailability starts as {1,1,1,1,0,...} for EVERY city and is lifted for the extras
+ * only by finishing the game, by a cheat in single player, or by the unlock hook - so a
+ * modded game offers four cars per city and hides everything else, including any car a
+ * `car_list` was configured to put in a slot. This is the one question that replaces those
+ * gates: the slot names a real car.
+ *
+ * WHY THAT IS THE WHOLE TEST, and not a check that the car's data is present:
+ *
+ *  - CarAvailability is a MENU GATE, not a load instruction. The engine's only reads of it
+ *    are the stock screen's cursor walk (FEmain.c:2773,2786), so widening it cannot by
+ *    itself ask for a car to be loaded.
+ *  - Offering is free. The car list draws a 2D icon; nothing is loaded by listing, and
+ *    moving the highlight triggers no load, so a list can show every car without bringing
+ *    any of their data into the level.
+ *  - Import happens only on a PICK, and the pick path already refuses in words when it
+ *    cannot serve one ("needs a spare resident slot and none is free", "riding the level's
+ *    own car of that number"). That is a better outcome than a slot the player cannot see.
+ *  - A data probe CANNOT be answered here anyway, and getting it wrong hides cars rather
+ *    than showing them: on this build the car data is not per-model files. A whole install
+ *    holds two CARMODEL_*.dmodel overrides, while every level's cars come out of its own
+ *    package - which is exactly what the mid-level city read does (carhacks.c logs "car data
+ *    from HAVANA read MID-LEVEL"). Probing LEVELS\<CITY>\CARMODEL_<n>.COS (the PSX-era
+ *    name that cars.c/cosmetic.c still carry) would report "no data" for almost every car
+ *    in the game.
+ *
+ * So a slot is offered when it names a car, and whether that car is the level's own or has
+ * to be imported is reported separately (see chkImportOfferedCount / the per-level log),
+ * because that difference is useful to see and wrong to gate on. */
+typedef enum CHK_OFFER
+{
+	CHK_OFFER_OK = 0,	/* offer it */
+	CHK_OFFER_BAD,		/* not a city or slot this game has */
+	CHK_OFFER_NO_CAR	/* the slot names no car (model 0, or -1 = none here) */
+} CHK_OFFER;
+
+CHK_OFFER chkImportCanOffer(int city, int slot);
+
+/* Short human name for a verdict, for the one line a level logs about its list. */
+const char* chkOfferReason(CHK_OFFER why);
+
+/* How many of `city`'s slots a car list would show. */
+int chkImportOfferedCount(int city);
+
+/* How many of those the level ALREADY has (chkImportLevelHoldsModel == 1), i.e. the ones a
+ * pick can serve without bringing anything in. Reported, never gated on.
+ *
+ * Strictly == 1: that function is tri-state, and its -1 means "no level has told us its list
+ * yet" - which is the whole frontend, before a level is loaded. Counting that as held made a
+ * menu-time log line claim cars the level had never been asked about. */
+int chkImportOfferedHeldCount(int city);
+
 /* ---- slot ownership ---------------------------------------------------- */
 
 /* Hand the set the ENGINE's live resident models for this level (the `models`

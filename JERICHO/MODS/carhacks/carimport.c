@@ -464,6 +464,71 @@ const char* chkCityName(int city)
 	return (city < CHK_CITY_COUNT_LIMIT) ? LevelNames[city] : "?";
 }
 
+/* ---- what a car list may offer -----------------------------------------
+ *
+ * The rule, and why it is only this, is argued in carimport.h. In one line: the engine's
+ * CarAvailability is a menu cursor gate, offering loads nothing, and a pick that cannot be
+ * served says so in words - so a slot is offered whenever it names a car. */
+CHK_OFFER chkImportCanOffer(int city, int slot)
+{
+	extern char carNumLookup[4][10];
+	int model;
+
+	if (city < 0 || city >= CHK_CAR_CITY_COUNT || slot < 0 || slot >= CHK_CAR_SLOT_COUNT)
+		return CHK_OFFER_BAD;
+
+	/* SIGNED: 0 is "no car in this slot at all" (the table has holes), and -1 is "the
+	 * level has no car of this number". Both refuse, for different reasons. */
+	model = (int)(signed char)carNumLookup[city][slot];
+
+	if (model <= 0)
+		return CHK_OFFER_NO_CAR;
+
+	return CHK_OFFER_OK;
+}
+
+const char* chkOfferReason(CHK_OFFER why)
+{
+	switch (why)
+	{
+	case CHK_OFFER_OK:		return "offered";
+	case CHK_OFFER_BAD:		return "not a city/slot this game has";
+	case CHK_OFFER_NO_CAR:	return "no car in that slot";
+	}
+
+	return "?";
+}
+
+int chkImportOfferedCount(int city)
+{
+	int slot, n = 0;
+
+	for (slot = 0; slot < CHK_CAR_SLOT_COUNT; slot++)
+	{
+		if (chkImportCanOffer(city, slot) == CHK_OFFER_OK)
+			n++;
+	}
+
+	return n;
+}
+
+int chkImportOfferedHeldCount(int city)
+{
+	extern char carNumLookup[4][10];
+	int slot, n = 0;
+
+	for (slot = 0; slot < CHK_CAR_SLOT_COUNT; slot++)
+	{
+		if (chkImportCanOffer(city, slot) != CHK_OFFER_OK)
+			continue;
+
+		if (chkImportLevelHoldsModel((int)(signed char)carNumLookup[city][slot]) == 1)
+			n++;
+	}
+
+	return n;
+}
+
 /* The set may name AS MANY source cities as it has slots.
  *
  * This used to be a gate - "at most ONE foreign city" - on the belief that the

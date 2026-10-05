@@ -116,9 +116,103 @@ static void ChkApplyCarList(int level)
 	printInfo("[carhacks] level %d car list: slots %d..%d -> %s\n", level, slot, slot + n - 1, list);
 }
 
+/* One line per level saying what the car list will OFFER, because "I cannot pick all the
+ * slots" is a question a run has to be able to answer about itself. Hidden slots are named
+ * with their reason, so a slot that is missing is explained rather than mysterious.
+ *
+ * "(N the level already has)" is the part that matters when reading a session: a slot the
+ * level already has needs nothing imported, and one it does not have has to be brought in on
+ * the pick. It is a report, never a gate - see chkImportCanOffer. In the frontend - before a
+ * level exists to have told us its list - it reads 0, which is the truth. */
+static void ChkLogCarList(void)
+{
+	char cities[192];
+	char hidden[192];
+	int city, slot, first = 1;
+
+	cities[0] = 0;
+	hidden[0] = 0;
+
+	for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
+	{
+		int offered = chkImportOfferedCount(city);
+		int held = chkImportOfferedHeldCount(city);
+		size_t used = strlen(cities);
+
+		if (used < sizeof(cities) - 40)
+			snprintf(cities + used, sizeof(cities) - used, "%s%s %d/%d (%d the level already has)",
+				(city > 0) ? ", " : "", chkCityName(city), offered, CHK_CAR_SLOT_COUNT, held);
+
+		for (slot = 0; slot < CHK_CAR_SLOT_COUNT; slot++)
+		{
+			CHK_OFFER why = chkImportCanOffer(city, slot);
+
+			if (why == CHK_OFFER_OK)
+				continue;
+
+			used = strlen(hidden);
+
+			if (used >= sizeof(hidden) - 32)
+				continue;
+
+			snprintf(hidden + used, sizeof(hidden) - used, "%s%s[%d]=%s",
+				first ? "" : " ", chkCityName(city), slot,
+				(why == CHK_OFFER_NO_CAR) ? "empty" : "bad");
+			first = 0;
+		}
+	}
+
+	printInfo("[carhacks] car list: %s\n", cities);
+
+	if (hidden[0] != 0)
+		printInfo("[carhacks] car list: hidden slots: %s\n", hidden);
+}
+
+/* Write the WHOLE car list table - every city, every slot - from chkImportCanOffer, and tell
+ * the engine it owns it (a->own_list, see JER_ARGS_CAR_AVAILABILITY).
+ *
+ * One pass replaces the stock gates for every reader at once: carhacks' own car-select screen,
+ * the mp pause picker and the stock screen's cursor walk all read this one table, and the
+ * stock version of it only ever describes the level's own row, four cars deep. */
+static void ChkFillCarAvailability(void)
+{
+	extern int CarAvailability[4][10];
+	char line[192];
+	int city, slot;
+
+	for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
+	{
+		for (slot = 0; slot < CHK_CAR_SLOT_COUNT; slot++)
+			CarAvailability[city][slot] = (chkImportCanOffer(city, slot) == CHK_OFFER_OK);
+	}
+
+	/* READ BACK what was just written, rather than restating the query: this line is the
+	 * evidence that the table - the thing every car list reads - really holds the full
+	 * list now, and it is the line to compare against "car list: ... 9/10" above. */
+	line[0] = 0;
+
+	for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
+	{
+		int n = 0;
+		size_t used = strlen(line);
+
+		for (slot = 0; slot < CHK_CAR_SLOT_COUNT; slot++)
+			if (CarAvailability[city][slot] != 0)
+				n++;
+
+		if (used < sizeof(line) - 32)
+			snprintf(line + used, sizeof(line) - used, "%s%s %d",
+				(city > 0) ? ", " : "", chkCityName(city), n);
+	}
+
+	printInfo("[carhacks] car list: table now offers %s of %d slot(s) per city (the engine will not re-gate it)\n",
+		line, CHK_CAR_SLOT_COUNT);
+}
+
 /* JER_EVENT_CAR_AVAILABILITY: the frontend is building `level`'s car list and
  * asks whether the normally-locked extra vehicles may be offered. */
 static int gChkLoggedLevel = -1;
+static int gChkListLoggedLevel = -1;
 
 static int ChkOnCarAvailability(void* ud, void* args)
 {
@@ -133,6 +227,11 @@ static int ChkOnCarAvailability(void* ud, void* args)
 	{
 		a->result = 1;
 
+		/* and the whole table, not just this level's row: the player should be able to
+		 * pick any car the game has, in any of the four cities. a->own_list stops the
+		 * engine's stock gates (which run after this hook) from overwriting it. */
+		a->own_list = 1;
+
 		if (gChkLoggedLevel != a->level)
 		{
 			gChkLoggedLevel = a->level;
@@ -140,8 +239,42 @@ static int ChkOnCarAvailability(void* ud, void* args)
 		}
 	}
 
+	/* The car_list remap and the availability write both work on the same table, and in this
+	 * order: the remap names the models, the fill then says which of them can be offered. */
 	if (carhacks_enabled(CHK_HACK_CROSS_CITY))
 		ChkApplyCarList(a->level);
+
+	/* Claiming the list means the PICKS are ours to serve, so it is only claimed when our own
+	 * car-select screen is the one in use.
+	 *
+	 * Why that matters: this level's row is the one the STOCK screen's cursor walks, and a
+	 * stock Select writes wantedCar[0] straight out (FEmain.c:2810) without recording a pick
+	 * for this module - there is no event on a car being chosen, and chkImportSetLocalPick has
+	 * exactly one caller, our own screen. So on a stock screen an offered car the level cannot
+	 * load is a car nothing will import, i.e. the load crash the stock content check exists to
+	 * prevent. With our screen in place (the default) every tail slot is ours to serve, so the
+	 * whole list can be offered. */
+	if (a->own_list && !carhacks_enabled(CHK_HACK_CAR_SELECT))
+	{
+		a->own_list = 0;
+
+		if (gChkListLoggedLevel != a->level)
+		{
+			gChkListLoggedLevel = a->level;
+			printInfo("[carhacks] car list: the stock car screen is in use, so its gated list is left alone (enable the car select menu to offer every slot)\n");
+		}
+	}
+
+	if (a->own_list)
+		ChkFillCarAvailability();
+
+	/* After the list is applied, so the counts are what the player will actually see. Once
+	 * per level, because this hook runs every time the car screen sets up. */
+	if (gChkListLoggedLevel != a->level)
+	{
+		gChkListLoggedLevel = a->level;
+		ChkLogCarList();
+	}
 
 	/* The car-select menu (carselect.c) takes the stock car screen's place. The
 	 * screen has only STARTED its setup here - this hook runs before the code
@@ -259,6 +392,16 @@ static int ChkOnCarDataSource(void* ud, void* args)
 	/* one line for the log, and the thing a peer will want to compare against
 	 * (MP_ADAPTER.md) */
 	chkImportDump(a->level);
+
+	/* ...and what a car list will offer for this level. The same question the frontend
+	 * hook logs, asked from the level-load path too, because that is the path a headless
+	 * session takes: a pair run never opens the car screen, so "which slots can I pick?"
+	 * has to be answerable from the run's own log. */
+	if (gChkListLoggedLevel != a->level)
+	{
+		gChkListLoggedLevel = a->level;
+		ChkLogCarList();
+	}
 
 	/* the set is real now: if this machine is hosting, tell the session, so the
 	 * clients (still in the menus) load the same cars (net.c) */
