@@ -422,19 +422,29 @@ int chkNetFoldPeerCars(void)
 	 * slot has to be offered back. */
 	chkNetUnbindChangedPeers();
 
-	/* On a CLIENT the host's car (player 0) is not folded below - it reaches us through the
-	 * host's agreed set. But when we already HOLD it, remember the slot, so the host
-	 * switching away releases it here too. Nothing is imported for it (that is #13's
-	 * business, not this pass's). */
-	if (!jer_net_is_host() && gChkNetPeerPickSet[0] && gChkNetPeerSlot[0] < 0)
-	{
-		int hs = chkImportSlotOfCar(gChkNetPeerPick[0]);
-
-		if (hs >= CHK_IMPORT_SPARE_FIRST)
-			gChkNetPeerSlot[0] = hs;
-	}
-
-	for (p = 1; p < CHK_NET_MAX_PLAYERS; p++)
+	/* ON A CLIENT, the host's car (player 0) is folded HERE TOO, like any other peer's -
+	 * this is #13.
+	 *
+	 * It used to be left to the host's agreed set, and a set is applied once per level
+	 * (CHK_NET_SET above). So a host who changed car MID-MATCH stayed, on the client,
+	 * whatever that client's level had for the player - and since a level pools only its own
+	 * list, the client drew them out of its OWN car's resident slot:
+	 *
+	 *   [carhacks/net] peer 0 drives HAVANA model 4, but this machine draws RIO model 1 in
+	 *   slot 0 - using that car's own colours (theirs is not loaded here)
+	 *
+	 * Six times in one ten-switch run, on every switch. The loop below is exactly the
+	 * machinery that fixes it: it resolves the car to a canonical spare and hot-loads it
+	 * (geometry, cosmetics, pages and rows), and records the slot so the release path -
+	 * chkNetUnbindChangedPeers, which already covers player 0 - gives it back when the host
+	 * switches again.
+	 *
+	 * The host folds from p = 1, because player 0 is ITSELF: folding your own car is not a
+	 * thing. The pre-pass that only REMEMBERED a slot for the host's car went with this
+	 * change - the loop computes the slot, so remembering it separately was the half of the
+	 * job that could be done without importing anything, and it recorded a slot the release
+	 * path could then free while the car was still being drawn. */
+	for (p = jer_net_is_host() ? 1 : 0; p < CHK_NET_MAX_PLAYERS; p++)
 	{
 		int already = 0;
 
