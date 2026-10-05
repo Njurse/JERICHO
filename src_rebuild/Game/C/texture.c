@@ -1156,6 +1156,60 @@ static void CopyImportSetList(const XYPAIR* list, int n, CAR_IMPORT_SETS* out)
 // [tpage_amount][texamount][TP array][one length-prefixed TEXINF array per
 // tpage][nperms][permlist][16-entry region][nspecpages][speclist].
 // A no-op when that city is not held, and it fails safe on anything malformed.
+// JERICHO: give a guest city the page numbers its own imported data uses.
+//
+// carTpages is a static table and only the four Driver 2 rows are initialised, so a
+// guest city's slots 1..7 read ZERO. The palette walk matches the imported lump's
+// tpage against this table, so with zeros in those slots only a tpage of 0 could ever
+// resolve - and it resolved to the block's first row, because slot 0 happens to hold 0
+// too. Every other entry fell through and the whole palette lump landed on one row:
+// measured as "rows 9..15 are READ by the built model but the lump wrote nothing to
+// them", which is a car drawn in a single colour.
+//
+// The numbers come from the city's OWN lists, just parsed by the caller: six static
+// permanent entries then the two the host level takes at run time - the same layout
+// Driver 2's own rows use, and the order CarPalIndexInCity assumes.
+//
+// Never touches the host: carTpages[GameLevel] is the level's own and its 6/7 are
+// written by the level loader.
+static void CarImportFillCarTpages(int city)
+{
+	int i;
+
+	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
+		return;
+
+	for (i = 0; i < 8; i++)
+		carTpages[city][i] = 0;
+
+	for (i = 0; i < 6 && i < gCarImportPerms[city].count; i++)
+	{
+		int set = gCarImportPerms[city].set[i];
+
+		// carTpages is a char[8], and the comparison reads it as an int. A set
+		// number that does not fit would silently become another page, so leave
+		// the slot zero and say so rather than store a truncated number.
+		if (set < 0 || set > 127)
+		{
+			printInfo("cross-city: %s set %d does not fit carTpages (%d..127) - leaving slot %d empty\n",
+				LevelNames[city], set, 0, i);
+			continue;
+		}
+
+		carTpages[city][i] = (char)set;
+	}
+
+	for (i = 0; i < 2 && i < gCarImportSpecs[city].count; i++)
+	{
+		int set = gCarImportSpecs[city].set[i];
+
+		if (set < 0 || set > 127)
+			continue;
+
+		carTpages[city][6 + i] = (char)set;
+	}
+}
+
 static void ParseImportedTextureInfoForCity(int city)
 {
 	char* lump;
@@ -1231,6 +1285,9 @@ static void ParseImportedTextureInfoForCity(int city)
 	}
 
 	gCarImportTexParsed[city] = 1;
+
+	// both lists are parsed now, so the guest's page numbers are known
+	CarImportFillCarTpages(city);
 
 	// Say whether this city's CAR sets are among the loaded page lists - those
 	// are the sets an imported vehicle's polygons name. Entries 6..7 of
