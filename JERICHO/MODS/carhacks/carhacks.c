@@ -80,8 +80,12 @@ int carhacks_enabled(int index)
 /* Offer the extended vehicle pool in the frontend's car-select list. The stock
  * list is ten slots mapped through carNumLookup; `car_list = 8,9,10` replaces
  * the LAST slots with those model numbers, so the extra vehicles can be picked.
- * CarAvailability is left to the unlock query (result = 1 makes the slots
- * selectable); only the model mapping is rewritten here. */
+ *
+ * This only rewrites the MODEL MAPPING. Which of those slots is selectable is the
+ * availability side's business (ChkFillCarAvailability, below the availability
+ * hook) - and that matters for a car_list: it lands in tail slots the stock gates
+ * leave dark, so before the module owned the table a configured car was written
+ * where nothing would offer it. */
 static void ChkApplyCarList(int level)
 {
 	const char* list = jer_config_get_str("carhacks", "car_list", "");

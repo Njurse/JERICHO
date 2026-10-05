@@ -88,7 +88,7 @@ its own key, so they switch on and off separately:
 
 | hack | key | default | what it does |
 |---|---|---|---|
-| Unlock extra vehicles | `unlock_extra_vehicles` | **1** | lift the progression + single-player gate on the frontend's extra vehicles |
+| Unlock extra vehicles | `unlock_extra_vehicles` | **1** | lift the progression + single-player gate on the frontend's extra vehicles, and let this module own the whole car list - every city, every slot (see `CARSELECT.md`) |
 | Cross-city vehicles | `cross_city_vehicles` | **0** (opt-in) | import vehicles that belong to *another* city's data |
 | Car select menu | `car_select_menu` | **1** | replace the stock Take-a-Ride car screen with the menu that carries the city-roster row |
 
@@ -285,7 +285,7 @@ change applies on the next level; nothing is cached.
 
 | key | default | meaning |
 |---|---|---|
-| `unlock_extra_vehicles` | `1` | unlock the extra vehicles on the frontend car list |
+| `unlock_extra_vehicles` | `1` | unlock the extra vehicles on the frontend car list, and write the whole list (all four cities) instead of just this level's row |
 | `cross_city_vehicles` | `0` | turn the cross-city half on (everything below needs this) |
 | `car_select_menu` | `1` | the car-select menu with the city-roster row |
 
