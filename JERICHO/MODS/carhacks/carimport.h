@@ -89,7 +89,7 @@ int chkImportSlotForCar(int city, int model);
 /* ---- what a car list may offer ----------------------------------------- */
 
 /* The engine's car list table: CarAvailability[city][slot] and carNumLookup[city][slot]. */
-#define CHK_CAR_CITY_COUNT	8
+#define CHK_CAR_CITY_COUNT	9
 #define CHK_CAR_SLOT_COUNT	10
 
 /* MAY (city, slot) BE OFFERED in a car list?

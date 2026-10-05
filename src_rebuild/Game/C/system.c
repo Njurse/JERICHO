@@ -159,6 +159,9 @@ char* LevelNames[] = {
 	"FRISCO",
 	"LA",
 	"NEWYORK",
+	/* Driver 1's cheat-only level: its geometry is the credits drive, kept in
+	 * CREDITS.LEV, so that is where its car data is read from (tools/bake.py). */
+	"NEWCASTLE",
 };
 
 char* LevelFiles[] = {
@@ -172,6 +175,7 @@ char* LevelFiles[] = {
 	"D1CARS\\FRISCO.LEV",
 	"D1CARS\\LA.LEV",
 	"D1CARS\\NEWYORK.LEV",
+	"D1CARS\\NEWCASTLE.LEV",
 };
 
 char* LoadingScreenNames[] = {

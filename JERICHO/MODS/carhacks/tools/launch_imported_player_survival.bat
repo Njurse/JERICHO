@@ -240,7 +240,9 @@ if /i "%N%"=="miami"   set "IDX=4"
 if /i "%N%"=="frisco"  set "IDX=5"
 if /i "%N%"=="la"      set "IDX=6"
 if /i "%N%"=="newyork" set "IDX=7"
-echo %N%|findstr /r "^[0-7]$" >nul
+if /i "%N%"=="newcastle" set "IDX=8"
+if /i "%N%"=="credits"   set "IDX=8"
+echo %N%|findstr /r "^[0-8]$" >nul
 if not errorlevel 1 set "IDX=%N%"
 if "%IDX%"=="" goto :eof
 call :nameof %IDX%
@@ -259,6 +261,7 @@ if "%~1"=="4" set "NAME=MIAMI"
 if "%~1"=="5" set "NAME=FRISCO"
 if "%~1"=="6" set "NAME=LA"
 if "%~1"=="7" set "NAME=NEWYORK"
+if "%~1"=="8" set "NAME=NEWCASTLE"
 goto :eof
 
 :badlevel

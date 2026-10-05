@@ -22,6 +22,7 @@ char* CosmeticFiles[] = {
 	"D1CARS\\FRISCO.LCF",
 	"D1CARS\\LA.LCF",
 	"D1CARS\\NEWYORK.LCF",
+	"D1CARS\\NEWCASTLE.LCF",
 };
 
 CAR_COSMETICS car_cosmetics[MAX_CAR_RESIDENT_MODELS];

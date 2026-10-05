@@ -47,7 +47,7 @@ extern char gDataFolder[32];
  * gDataFolder; the rows after them are the Driver 1 car-data cities and read from
  * gD1DataFolder. Keep CITY_COUNT in step with those three tables. */
 #define CITY_D2_COUNT 4
-#define CITY_D1_COUNT 4
+#define CITY_D1_COUNT 5
 #define CITY_COUNT    (CITY_D2_COUNT + CITY_D1_COUNT)
 
 extern char gD1DataFolder[32];
