@@ -249,18 +249,66 @@ static void CarPalRowClear(void)
 // Counting only the guests that are HELD keeps the blocks dense and independent of the
 // registry's size, so three loaded guests always fit - which is the actual budget. It also
 // matches how the rest of the import reasons: about what is held, never about ordinals.
+//
+// But it is NOT stable: the block was recomputed from whatever is held RIGHT NOW, so the
+// moment a later city was added mid-match the earlier guests slid to a new block while
+// their polys were already baked to the old one - progressive colour rot across a two-seat
+// cycle (VEGAS took block 0, HAVANA arrived below it, VEGAS slid to block 1). A band must
+// therefore be assigned ONCE per level and kept until the level resets, so it is recorded
+// in the table below on first use and only cleared by CarImportCityBandReset.
+static int sCarImportBandByCity[CITY_COUNT];
+static int sCarImportBandInit = 0;
+
+void CarImportCityBandReset(void)
+{
+	int c;
+
+	for (c = 0; c < CITY_COUNT; c++)
+		sCarImportBandByCity[c] = -1;
+
+	sCarImportBandInit = 1;
+}
+
 static int CarImportCityBand(int city)
 {
-	int c, band = 0;
+	int c, band;
 
 	if (city < 0 || city >= CITY_COUNT)
 		return -1;
 
-	for (c = 0; c < city; c++)
+	// A static array zero-initialises to 0, which is a VALID band, so before the first
+	// level reset every city would read as "owns block 0". Initialise once, here, so the
+	// reset's -1 sentinel is what the first-ever call sees.
+	if (!sCarImportBandInit)
+		CarImportCityBandReset();
+
+	// Already owns a band - or was refused one (the CIV_CLUT_GUEST_CITIES sentinel is
+	// also recorded, so a refused city stays refused rather than being retried and
+	// possibly taking a band that appeared free in the meantime). Stability is the point.
+	if (sCarImportBandByCity[city] >= 0)
+		return sCarImportBandByCity[city];
+
+	// Take the lowest free band, 0..CIV_CLUT_GUEST_CITIES-1. If none is free the loop
+	// falls through with band == CIV_CLUT_GUEST_CITIES, which CarImportBankRow turns
+	// into a refusal - the three-guest budget is real, not a thing to widen here.
+	for (band = 0; band < CIV_CLUT_GUEST_CITIES; band++)
 	{
-		if (c != GameLevel && CarImportCityHeld(c))
-			band++;
+		int taken = 0;
+
+		for (c = 0; c < CITY_COUNT; c++)
+		{
+			if (sCarImportBandByCity[c] == band)
+			{
+				taken = 1;
+				break;
+			}
+		}
+
+		if (!taken)
+			break;
 	}
+
+	sCarImportBandByCity[city] = band;
 
 	return band;
 }

@@ -1306,6 +1306,10 @@ int JerReleaseCarImport(void)
 	for (b = 0; b < MAX_CAR_RESIDENT_MODELS; b++)
 		gJerHotCarBlockOf[b] = -1;
 
+	// The palette blocks went with the city buffers, so free them too - a fresh load
+	// must be able to hand block 0 to whatever city arrives first.
+	CarImportCityBandReset();
+
 	if (n > 0)
 		printInfo("cross-city: released %d imported city buffer(s) and the hot-load pool\n", n);
 

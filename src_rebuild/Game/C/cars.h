@@ -128,6 +128,7 @@ extern int CivClutTexMaxSlot(int row, int texid);
 extern int CarImportPaletteBlockBase(int city);
 extern int CarPalIndexInCityFor(int tpage, int city); // JERICHO: the same, given the city (cars.c)
 extern void CarImportPaletteReset(void); // JERICHO: forget a level's deferred palette work (cars.c)
+extern void CarImportCityBandReset(void); // JERICHO: free every guest city's palette block (cars.c)
 
 /* Cross-city car data: which city's LEVELS\<CITY> folder the CARMODEL_* files
  * (.MDL/.COS/.DEN) are read from. -1 = the level's own city (stock). A module

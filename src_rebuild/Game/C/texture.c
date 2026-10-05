@@ -3464,6 +3464,11 @@ void CarImportResetState(void)
 	// half (or refuse them).
 	JerLowerPoolReset();
 
+	// JERICHO: the guest palette blocks are per level too - a city keeps the block it
+	// was handed for the whole level (see CarImportCityBand), so a new level starts
+	// with every block free again.
+	CarImportCityBandReset();
+
 	// JERICHO: the palette upload's own lifecycle. These were never cleared, so the upload
 	// ran once per PROCESS rather than once per level: a second level kept sPalDone set,
 	// never re-uploaded, and dereferenced the previous level's deferred lumps. The
