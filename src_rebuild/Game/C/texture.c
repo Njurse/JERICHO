@@ -1728,8 +1728,13 @@ int CarImportPinDstSet(int set)
 // never resolved keeps its own index (e.g. HAVANA 35/21), so it does not come out of
 // that window at all -- which is how a 3-guest-city lobby can want more than 18 pins.
 // Three guest cities each contributing up to 8 sets (a full civilian carTpages list
-// plus two spec pages) is 24, so size for that; the hard ceiling is JER_POOL_PAGES.
-#define CAR_PIN_MAX 24
+// plus two spec pages) is 24, so the ORIGINAL table sized for that. The D1 registry
+// made it 9 source cities, and a multi-city cycle can hold pages for more than three
+// cities at once (pages go to the lower half pool, not the 3-block civ_clut column),
+// so the ceiling is raised to the pool's own size. The deeper fix - releasing a city's
+// pins/palette tables when its last car is released - is TODO(#14); this headroom is
+// the safe stopgap, not the cure. The hard ceiling is JER_POOL_PAGES.
+#define CAR_PIN_MAX 30
 
 // JERICHO: the pool must be able to hold EVERY pin. That is what makes the world-side
 // fallback in CarPageFindSlot unreachable rather than merely unlikely: a pin takes a lower
