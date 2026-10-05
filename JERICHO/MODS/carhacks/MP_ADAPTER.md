@@ -354,6 +354,28 @@ any resident slot that already holds a model (`chkImportSlotFree`, fed the engin
 live `models[]` through `chkImportSetEngineModels`). mp's reserved slots win
 deterministically, and so does any other module's claim.
 
+### The car LIST mp's picker reads — owned by this module now (DONE)
+
+`mp.c`'s pause picker, this module's own car screen and the stock screen all read the
+engine's `CarAvailability[4][10]`. The stock version starts as `{1,1,1,1,0,...}` for EVERY
+city and lifts the tail slots only for a finished game, a cheat in single player (cleared
+outright in multiplayer), or `unlock_extra_vehicles` — so the picker offered four cars a
+city and nothing else, and a `car_list` remap landed in slots that stayed dark. This module
+now writes every city's row from one query (`chkImportCanOffer`) and tells the engine it
+owns the list (`JER_EVENT_CAR_AVAILABILITY.own_list`), which stops the engine's own gates
+from overwriting it a line later. Measured: **9 of 10 slots per city**, the exception being
+slot 4, which names no car.
+
+Two consequences for mp:
+
+- a peer can now pick a car this machine has never seen, so the pick-time import path is
+  reached MORE often, not less — which is exactly the path the hotload section and the
+  own-city/slot-pool notes below are about;
+- the list is claimed only when this module's own car-select screen is on, because claiming
+  it means the PICKS are ours to serve (a stock Select records nothing for us). With the
+  stock screen in use the table is left to the engine's gates and mp's picker sees the old
+  four-cars-a-city list.
+
 ## mp-side deltas — all three are DONE
 
 1. **Carry the city. DONE** (`MP_PROTO_VERSION` 6). `MP_ROSTER_ENTRY.modelCity` and
