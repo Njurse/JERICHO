@@ -117,8 +117,17 @@ static int ChkMpLoad(void* userdata, void* args)
 	if (!carhacks_enabled(CHK_HACK_CROSS_CITY))
 		return JER_RESULT_CONTINUE;
 
-	if (a->city < 0 || a->city > 3 || a->model < 0 || a->model > 12)
+	if (a->city < 0 || a->city >= CHK_CAR_CITY_COUNT || a->model < 0 || a->model > 12)
+	{
+		/* SAY SO. This used to read "a->city > 3" and return in silence, so a
+		 * request for a Driver 1 car-data city was declined with no trace
+		 * anywhere - mp asked, nothing happened, and the player saw only
+		 * "not loaded here". It looked like nothing was ever requested. */
+		printInfo("[carhacks/mp] change car: REFUSED %s model %d - city out of range "
+			  "(0..%d)\n",
+			  chkCityName(a->city), a->model, CHK_CAR_CITY_COUNT - 1);
 		return JER_RESULT_CONTINUE;
+	}
 
 	id = chkCarId(a->city, a->model);
 
@@ -185,7 +194,8 @@ static int ChkMpChosen(void* userdata, void* args)
 
 	(void)userdata;
 
-	if (a == NULL || a->model < 0 || a->model >= CHK_MODEL_LIMIT || a->city > 3)
+	if (a == NULL || a->model < 0 || a->model >= CHK_MODEL_LIMIT ||
+	    a->city >= CHK_CAR_CITY_COUNT)
 		return JER_RESULT_CONTINUE;
 
 	now = chkCarId((a->city < 0) ? CHK_CITY_NATIVE : a->city, a->model);
