@@ -139,6 +139,12 @@ rem this first got an empty model out of a seven-word line.
 python3 "%~dp0slotmap.py" --model "%CARNAME%" "%SLOTARG%" > "%TEMP%\sltmodel.txt" 2>&1
 for /f "tokens=1" %%L in (%TEMP%\sltmodel.txt) do set "MODEL=%%L"
 for /f "tokens=*" %%L in (%TEMP%\slt.txt) do set "TRANSLATED=%%L"
+rem cmd re-parses an EXPANDED value, so the arrow in "slot 1 -> model 1" was
+rem read as a redirect - it left a stray file called "model" in this folder
+rem and the line never printed. Drop the arrow from the value, once, and every
+rem use of it is safe.
+set "TRANSLATED=%TRANSLATED:->=to%#"
+set "TRANSLATED=%TRANSLATED:#=%"
 echo   %TRANSLATED%
 goto :slotok
 
