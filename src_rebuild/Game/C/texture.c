@@ -2697,7 +2697,7 @@ static int CarImportAnyHeld(void)
 {
 	int c;
 
-	for (c = 0; c < 4; c++)
+	for (c = 0; c < CITY_COUNT; c++)
 		if (CarImportCityHeld(c))
 			return 1;
 

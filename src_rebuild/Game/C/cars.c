@@ -132,7 +132,16 @@ u_short civ_clut[CIV_CLUT_ROWS][32][6];
 // CarPalRowNote records the write where it happens; CarPalRowReport prints the map at
 // exit, next to the slot each car was loaded into.
 static int sCivClutRowWriters[CIV_CLUT_ROWS];
-static int sCivClutRowCity[CIV_CLUT_ROWS][4];
+// One entry per city that can SHARE a row: the host, plus one per guest block.
+// The 4 was a magic number that happened to equal this; tied to the macro so it
+// cannot drift if the guest budget ever changes.
+// How many guest cities get a palette block. Defined up here because the per-row city
+// list below is sized from it; the reasoning for the VALUE is a little further down,
+// beside the refusal that enforces it.
+#define CIV_CLUT_GUEST_CITIES	((CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) / CIV_CLUT_BLOCK_ROWS)
+
+#define CIV_CLUT_ROW_CITIES	(CIV_CLUT_GUEST_CITIES + 1)
+static int sCivClutRowCity[CIV_CLUT_ROWS][CIV_CLUT_ROW_CITIES];
 
 // JERICHO: and WHICH COLOUR COLUMN of each row was actually filled. A spawned car picks
 // its variant (0..5, civ_ai.c) and the draw reads civ_clut[row][texture_id][variant+1],
@@ -186,7 +195,7 @@ static void CarPalRowNote(int row, int city)
 		if (sCivClutRowCity[row][i] == city)
 			return;		// this city already owns the row
 
-	if (sCivClutRowWriters[row] < 4)
+	if (sCivClutRowWriters[row] < CIV_CLUT_ROW_CITIES)
 		sCivClutRowCity[row][sCivClutRowWriters[row]++] = city;
 }
 
@@ -272,8 +281,6 @@ static int CarImportCityBand(int city)
 // BLOCK (refused)" and fell back to the HOST's civ_clut row 0, i.e. an imported car
 // wearing a local car's colours. That is what "the imported NPC cars have the wrong
 // textures" looks like.
-#define CIV_CLUT_GUEST_CITIES	((CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) / CIV_CLUT_BLOCK_ROWS)
-
 static int CarImportBankRow(int city)
 {
 	int band = CarImportCityBand(city);
@@ -2497,7 +2504,7 @@ void CarImportPaletteReset(void)
 {
 	int c, cleared = 0;
 
-	for (c = 0; c < 4; c++)
+	for (c = 0; c < CITY_COUNT; c++)
 	{
 		if (sImpPalLump[c] != NULL)
 			cleared++;
@@ -3256,7 +3263,7 @@ char GetCarPalIndex(int tpage)
 	// the car is painted with the HOST's palette, which is what 'foreign palettes
 	// do not load' looks like. Map through a HELD city's table instead, which is
 	// where its palettes were stored. More than one city can be held.
-	for (imported = 0; imported < 4; imported++)
+	for (imported = 0; imported < CITY_COUNT; imported++)
 	{
 		if (!CarImportCityHeld(imported) || imported == GameLevel)
 			continue;

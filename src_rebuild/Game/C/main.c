@@ -3064,7 +3064,7 @@ int redriver2_main(int argc, char** argv)
 	{
 		if (gBootCarStr[0] != 0)
 		{
-			extern char carNumLookup[4][10];
+			extern char carNumLookup[CITY_COUNT][10];      /* the registry, not Driver 2's four */
 
 			if (gBootCarStr[0] >= '0' && gBootCarStr[0] <= '9')
 			{

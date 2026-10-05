@@ -362,7 +362,7 @@ static int ChkOnCarDataSource(void* ud, void* args)
 		{
 			int pickCity = chkImportLocalPickCity();
 
-			if (pickCity >= 0 && pickCity < 4 && pickCity != a->level)
+			if (pickCity >= 0 && pickCity < CHK_CITY_COUNT_LIMIT && pickCity != a->level)
 				src = pickCity;
 		}
 
