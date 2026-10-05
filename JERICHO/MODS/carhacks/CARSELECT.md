@@ -82,6 +82,17 @@ Two honest limits:
   levels take their cars from their own package — so a file probe would have hidden nearly
   every car. `chkImportCanOffer` explains that at length.
 
+**In game, the pause menu asks the SAME question.** `mp.c`'s car picker used to read the
+engine's `CarAvailability`, and that table is written by the *frontend* car screen's setup
+— which a session started with `-host`/`-join` never reaches, so in game it still held its
+initialiser and the picker hid most of the cars whatever the mods could serve. The picker
+now goes through `MpCarListForCity`, which asks this module over `MP_CARQ_SLOTS`
+(`mp_carquery.h`, the same custom-event contract as the city list) and only falls back to
+the engine's table when nobody answers — so a session without carhacks behaves exactly as
+it did, and one with carhacks shows the same list this screen does. The PAUSECAR test
+lever builds its roster through that one function too, which is why a padless run can see
+what the menu would offer.
+
 ## When it is used, and when it is not
 
 Armed from the `JER_EVENT_CAR_AVAILABILITY` query, which the stock screen fires

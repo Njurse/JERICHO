@@ -422,6 +422,26 @@ resident slot is free". Each distinct source city still needs a palette block an
 bank holds three (`civ_clut` rows 8..31), which is the real limit on how many CITIES a
 session can mix — see `docs/VRAM.md`.
 
+**How many spares are actually usable: four** (resident 7..10). The pool runs 5..10,
+mp claims 5 and 6 for extra players, and that leaves 7, 8, 9 and 10 for imports — so
+"6 spares" is the size of the pool, not the room in it. (A configured `import=` or
+`traffic_slot` that names a non-spare slot, e.g. `import = 4:3:2`, does not come out of
+this; it takes a level slot that was not a spare anyway.)
+
+Measured by cycling cars, because the arithmetic matters for whether a switch can be
+served: **13 switches on the host and 10 on the client, across all four cities, every one
+served — and the two spares used alternate.** A player's successive cars reuse the same
+two resident slots (7 and 8, alternating), the one they leave is released each time
+(`released resident slot N - free for the next car`), and the pool stays at 2 pins:
+
+```
+[mp] car status: driving model 2 (resident 8, source HAVANA); mesh loaded
+[carhacks] released resident slot 7 - free for the next car
+```
+
+That is what makes a long cycle survive: a mid-match change frees the car being replaced
+and re-occupies a slot it already holds, rather than taking a new spare per pick.
+
 ## What is verified today
 
 ### The channel, over a real session
