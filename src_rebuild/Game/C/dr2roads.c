@@ -618,7 +618,23 @@ int JerRoadInfoAt(int x, int y, int z, JER_ROAD_INFO* out)
 	if (surfId < 0)
 		return 0;
 
-	if (!GetSurfaceRoadInfo(&info, surfId))
+	/* A JUNCTION IS A ROAD. GetSurfaceRoadInfo only fills the lane data for a STRAIGHT or
+	 * a CURVE; for a junction surface it sets ConnectIdx from ExitIdx and then returns 0,
+	 * because the engine's own civ_ai.c treats a junction as a special node and depends on
+	 * that answer. This hook's contract (dr2roads.h) is "1 = a DRIVEABLE surface", and a
+	 * junction is driveable - so it answers the question itself rather than inheriting a
+	 * "no" that was never about driveability.
+	 *
+	 * Reading a junction as "not a road" put a hole in the road network at EVERY
+	 * intersection: aimap never marked a junction AIMAP_ROAD (so the pathfinder's road
+	 * preference lost the crossings), MpBotOnRoadTo's road scan missed them, and a car
+	 * sitting on a junction - which is most of the time when crossing one - was read as
+	 * OFF the road and told to go and find the nearest road it was already on.
+	 *
+	 * GetSurfaceRoadInfo has still filled ConnectIdx (the junction's exits) for us, so the
+	 * only thing missing was the return value. Any surface that is none of the three is
+	 * still a "no", which is the case where ConnectIdx would be a NULL deref. */
+	if (!GetSurfaceRoadInfo(&info, surfId) && !IS_JUNCTION_SURFACE(surfId))
 		return 0;
 
 	out->surfId = surfId;
