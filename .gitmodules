@@ -4,3 +4,6 @@
 [submodule "JERICHO/MODS/gaildrv2"]
 	path = JERICHO/MODS/gaildrv2
 	url = https://github.com/Njurse/gailredriver2.git
+[submodule "JERICHO/MODS/d1cars"]
+	path = JERICHO/MODS/d1cars
+	url = https://github.com/Njurse/JERICHO-D1.git
