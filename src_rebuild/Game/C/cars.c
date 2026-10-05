@@ -1921,7 +1921,7 @@ void MangleWheelModels(void)
 // defined below, next to GetCarPalIndex
 static int CarPalIndexInCity(int tpage, int city);
 
-static int sPalDumpCount[4];	// JERICHO-DIAG PAL: per CITY, so a guest is never crowded out
+static int sPalDumpCount[CITY_COUNT];	// JERICHO-DIAG PAL: per CITY, so a guest is never crowded out
 
 // JERICHO: how many entries the last walk put into each civ_clut row. The import's palette
 // upload uses it to find rows a built model READS but the city's lump has no entries for,
@@ -2305,8 +2305,8 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 // ProcessImportedPaletteRows). A level can hold more than one city's car data now
 // (models.c's gCarImports[4]), and each city's own LUMP_PALLET is deferred until
 // the built model says which rows it draws from.
-static char* sImpPalLump[4];
-static int sImpPalSize[4];
+static char* sImpPalLump[CITY_COUNT];
+static int sImpPalSize[CITY_COUNT];
 
 // JERICHO: the host path, and the entry point every existing caller uses.
 //

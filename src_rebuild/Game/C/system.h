@@ -51,7 +51,7 @@ extern char gDataFolder[32];
 #define CITY_COUNT    (CITY_D2_COUNT + CITY_D1_COUNT)
 
 extern char gD1DataFolder[32];
-extern const char* GetCityDataRoot(int city);
+extern const char* JerGetCityDataRoot(int city);
 
 #define PSX_MALLOC_SIZE 870332
 

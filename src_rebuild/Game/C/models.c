@@ -357,13 +357,13 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 		return 0;
 
 	// the full single-player level first, then the arena variant
-	sprintf(filename, "%s%s", GetCityDataRoot(city), LevelFiles[city]);
+	sprintf(filename, "%s%s", JerGetCityDataRoot(city), LevelFiles[city]);
 	fp = fopen(filename, "rb");
 
 	// the arena variant of the file; Driver 1's car-data cities have none
 	if (fp == NULL && city < CITY_D2_COUNT)
 	{
-		sprintf(filename, "%sM%s", GetCityDataRoot(city), LevelFiles[city]);
+		sprintf(filename, "%sM%s", JerGetCityDataRoot(city), LevelFiles[city]);
 		fp = fopen(filename, "rb");
 	}
 
@@ -428,7 +428,7 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_TEXINFO, &imp->texInfo, &imp->texInfoSize);
 
 	// the car colours live beside it, as LEVELS\<city>.LCF
-	sprintf(filename, "%s%s", GetCityDataRoot(city), CosmeticFiles[city]);
+	sprintf(filename, "%s%s", JerGetCityDataRoot(city), CosmeticFiles[city]);
 	imp->cosmetics = ReadWholeFile(filename, &imp->cosmeticsSize);
 
 	return 1;
@@ -614,13 +614,13 @@ int ReadCarImportFileForCity(int city, int offset, void* dst, int len)
 	if (!CarImportCityHeld(city) || offset < 0 || len <= 0 || dst == NULL)
 		return 0;
 
-	sprintf(filename, "%s%s", GetCityDataRoot(city), LevelFiles[city]);
+	sprintf(filename, "%s%s", JerGetCityDataRoot(city), LevelFiles[city]);
 	fp = fopen(filename, "rb");
 
 	// the arena variant of the file; Driver 1's car-data cities have none
 	if (fp == NULL && city < CITY_D2_COUNT)
 	{
-		sprintf(filename, "%sM%s", GetCityDataRoot(city), LevelFiles[city]);
+		sprintf(filename, "%sM%s", JerGetCityDataRoot(city), LevelFiles[city]);
 		fp = fopen(filename, "rb");
 	}
 

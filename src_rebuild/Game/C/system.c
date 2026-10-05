@@ -28,7 +28,13 @@ char gDataFolder[32] = "DRIVER2\\";
  * subfolder and installing it cannot clobber the user's Driver 1 disc. */
 char gD1DataFolder[32] = "DRIVER\\";
 
-const char* GetCityDataRoot(int city)
+/* JERICHO addition - the engine had no per-city data root, because every city it
+ * knew about lived under gDataFolder. A call site that builds a car-data or
+ * cosmetics path uses this instead of gDataFolder directly, so a city's files
+ * come from its own disc. The Jer prefix is deliberate: this is ours, not stock,
+ * and it is the single place the "which disc is this city on" question is
+ * answered. */
+const char* JerGetCityDataRoot(int city)
 {
 	return (city >= CITY_D2_COUNT) ? gD1DataFolder : gDataFolder;
 }
@@ -148,7 +154,7 @@ char* LevelNames[] = {
 	"VEGAS",
 	"RIO",
 	/* JERICHO: Driver 1's car-data cities - source cities only, never played.
-	 * Everything a city's index feeds was widened for these; see GetCityDataRoot. */
+	 * Everything a city's index feeds was widened for these; see JerGetCityDataRoot. */
 	"MIAMI",
 	"FRISCO",
 	"LA",

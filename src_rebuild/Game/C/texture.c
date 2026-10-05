@@ -1125,7 +1125,7 @@ typedef struct
 
 static CAR_SLOT_RES sCarSlotRes[MAX_CAR_RESIDENT_MODELS];
 static CAR_IMPORT_SETS gCarImportSpecs[CITY_COUNT];
-static int gCarImportTexParsed[4];
+static int gCarImportTexParsed[CITY_COUNT];
 
 static void CopyImportSetList(const XYPAIR* list, int n, CAR_IMPORT_SETS* out)
 {
