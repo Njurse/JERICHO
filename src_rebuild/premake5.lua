@@ -660,11 +660,27 @@ project "JERICHO"
         table.insert(jer_mirrored_mods, path.getname(JER_DIR))
     end
 
+    -- Modules that are NOT mirrored into the build at all.
+    --
+    -- d1cars and gaildrv2 are PRIVATE submodules: not in the CI submodule allow-list, and
+    -- not built into releases (modlist.ini keeps them 0). The recursive xcopy above mirrors
+    -- every folder on disk, so without this the WHOLE submodule lands in
+    -- bin/<cfg>/JERICHO/MODS/ - and d1cars carries Driver 1 car content (shapes as
+    -- .obj/.json, textures, LEV/LCF level data) that must not ride along in a build output
+    -- or in a package made from one. A shipped LAN zip was found carrying 58 d1cars/gaildrv2
+    -- entries for exactly this reason.
+    --
+    -- Dropping the folder also means modlist.ini must not list these ids: the runtime scans
+    -- MODS/ and logs "modlist references unknown module" for an id with no installed folder
+    -- (jer_system.c), so the two lines are gone from the shipped profile and the note that
+    -- used to live there is in its header comment instead.
+    local JER_MIRROR_EXCLUDE = { d1cars = true, gaildrv2 = true }
+
     filter { "system:Windows" }
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
             local JER_DEST = "%{cfg.buildtarget.directory}JERICHO\\MODS\\" .. JER_MOD
             local JER_TOOLS = JER_DEST .. "\\tools"
-            postbuildcommands {
+            local JER_CMDS = {
                 "if exist \"" .. JER_TOOLS .. "\" rd /S /Q \"" .. JER_TOOLS .. "\"",
                 -- the mod's COMPILED OUTPUT gets the same treatment: each mod_<id>
                 -- project now writes its .lib/.pdb and an obj/ tree into its own
@@ -683,6 +699,14 @@ project "JERICHO"
                 "if exist \"" .. JER_DEST .. "\\*.exp\" del /Q \"" .. JER_DEST .. "\\*.exp\"",
                 "if exist \"" .. JER_DEST .. "\\*.idb\" del /Q \"" .. JER_DEST .. "\\*.idb\"",
             }
+
+            -- and, for the private/not-built modules, the whole folder - see the note on
+            -- JER_MIRROR_EXCLUDE. Last, so it also removes anything the rules above left.
+            if JER_MIRROR_EXCLUDE[JER_MOD] then
+                table.insert(JER_CMDS, "if exist \"" .. JER_DEST .. "\" rd /S /Q \"" .. JER_DEST .. "\"")
+            end
+
+            postbuildcommands(JER_CMDS)
         end
 
     filter { "system:linux" }
@@ -699,10 +723,18 @@ project "JERICHO"
     filter { "system:linux" }
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
             local JER_DEST = "%{cfg.buildtarget.directory}JERICHO/MODS/" .. JER_MOD
-            postbuildcommands {
+            local JER_CMDS = {
                 "rm -rf \"" .. JER_DEST .. "/tools\" \"" .. JER_DEST .. "/obj\" \"" .. JER_DEST .. "/lib\"",
                 -- by extension, as on Windows: a static library is .a here and the rest
                 -- are linker/debug output. A runtime addon's <id>.so is game data.
                 "rm -f \"" .. JER_DEST .. "\"/*.a \"" .. JER_DEST .. "\"/*.lib \"" .. JER_DEST .. "\"/*.o \"" .. JER_DEST .. "\"/*.pdb \"" .. JER_DEST .. "\"/*.exp \"" .. JER_DEST .. "\"/*.idb",
             }
+
+            -- the private/not-built modules come out of the mirror entirely - same reason
+            -- as on Windows, see JER_MIRROR_EXCLUDE above
+            if JER_MIRROR_EXCLUDE[JER_MOD] then
+                table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "\"")
+            end
+
+            postbuildcommands(JER_CMDS)
         end
