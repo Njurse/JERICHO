@@ -481,6 +481,28 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 	return JerLoadCarImportFromFile(level, cosmetic, imp);
 }
 
+// JERICHO: load a city's car data NOW, into its own import slot, and answer whether
+// it is held.
+//
+// The module needs this at FRONTEND time. The car-select list is built before the
+// level's car data is read, so a Driver 1 city whose import is not held yet offers
+// NOTHING - the menu reads "car list: ... MIAMI 0/10 (0 the level already has)" for
+// every transplanted city and there is no car to choose. Asking here makes the
+// answer available when the question is actually asked.
+//
+// A no-op when the city is already held, so calling it every time the list is
+// rebuilt costs one pointer test.
+int JerLoadCarImportForCity(int city)
+{
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	if (gCarImports[city].region != NULL)
+		return 1;
+
+	return LoadCarImport(city, &gCarImports[city]);
+}
+
 // Load the foreign car data the module asked for. Called from
 // SetupResidentModels once the resident models and their sources are final, so
 // it runs before both the geometry (ProcessCarModelLump) and the colours

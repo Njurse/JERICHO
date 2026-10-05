@@ -26,6 +26,7 @@
 
 #include "carid.h"
 #include "carimport.h"
+#include "d1citymodels.h"	/* GENERATED: which models each D1 city carries */
 #include "slotrelease.h"	/* chkReleaseResidentValue, chkReleaseCountCars */
 
 typedef struct CHK_IMPORT_ENTRY
@@ -528,6 +529,23 @@ void chkFillCarTableFromImport(int city)
 			return;
 
 	present = JerCarImportModels(city);
+
+	if (present == 0)
+	{
+		/* The import is NOT held, and it cannot be loaded here either: this runs
+		 * before the CD subsystem is up, so nothing can be read from disk at the
+		 * moment a city's availability is decided. A run says so plainly -
+		 * "CD subsystem is not initialized yet!" one line after the car list is
+		 * built. Driver 2's own cities are described by a static table in FEmain.c
+		 * for exactly this reason.
+		 *
+		 * So the answer is GENERATED, not loaded: d1citymodels.h is written by the
+		 * transplant tools from what was actually baked (and checked against the
+		 * blob), so it is still "the cars this addon imported", available at the
+		 * instant the list is built. */
+		if (city < (int)(sizeof(chkD1CityModels) / sizeof(chkD1CityModels[0])))
+			present = chkD1CityModels[city];
+	}
 
 	if (present == 0)
 		return;				/* nothing imported, so nothing to offer */

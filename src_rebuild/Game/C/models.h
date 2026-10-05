@@ -80,6 +80,11 @@ int CarImportCityHeld(int city);
 // The "list what was imported" door - see models.c.
 unsigned JerCarImportModels(int city);
 
+// Load a city's car data NOW into its own import slot, and answer whether it is
+// held. Needed at FRONTEND time: the car-select list is built before the level's
+// data is read, so an unheld import offers no cars at all. A no-op when held.
+int JerLoadCarImportForCity(int city);
+
 char* GetCarImportPallet(int* size);
 char* GetCarImportPalletForCity(int city, int* size);
 
