@@ -44,6 +44,11 @@ def main(argv=None):
     ap.add_argument("--gap", type=float, default=3.0, help="seconds between frames")
     ap.add_argument("--frames", type=int, default=1)
     ap.add_argument("--vramview", action="store_true")
+    ap.add_argument("--env", action="append", default=[], metavar="K=V",
+                    help="environment for the game, e.g. --env JERICHO_DUMPVRAM=1")
+    ap.add_argument("--wait-for-exit", action="store_true",
+                    help="let the run finish on its own rather than ending it, so "
+                         "end-of-run output (the VRAM dump) is actually written")
     ap.add_argument("--gif")
     ap.add_argument("--tag", default="run")
     ap.add_argument("rest", nargs=argparse.REMAINDER,
@@ -60,7 +65,13 @@ def main(argv=None):
         cmd.append("-vramview")
     print("launching: %s" % " ".join(cmd))
 
-    p = subprocess.Popen(cmd, cwd=os.path.abspath(EXEDIR))
+    env = dict(os.environ)
+    for kv in a.env:
+        k, _, v = kv.partition("=")
+        env[k] = v
+        print("  env %s=%s" % (k, v))
+
+    p = subprocess.Popen(cmd, cwd=os.path.abspath(EXEDIR), env=env)
     shots = []
     try:
         print("settling %.0fs (pid %d) ..." % (a.settle, p.pid))
@@ -77,6 +88,14 @@ def main(argv=None):
                 time.sleep(a.gap)
     finally:
         # the PID is ours, because we launched it ourselves
+        if a.wait_for_exit and p.poll() is None:
+            # An end-of-run artifact (the VRAM dump) is only written on a real exit,
+            # so give it that exit rather than terminating it out from under one.
+            print("waiting for the run to end on its own ...")
+            try:
+                p.wait(timeout=max(60.0, a.settle * 6))
+            except subprocess.TimeoutExpired:
+                print("  still running; ending it")
         if p.poll() is None:
             p.terminate()
             try:
