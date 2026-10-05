@@ -2238,7 +2238,15 @@ void CarImportPin(void)
 		//
 		// This is NOT what fixes a colourless imported special: that car reads rows whose
 		// data is absent from its lump entirely (see PALETTES.md). It fixes variants.
-		for (i = 0; i < 4; i++)
+		// JERICHO: every city, not the first four.
+		//
+		// This read `i < 4` - CHICAGO/HAVANA/VEGAS/RIO. Correct when those were all the
+		// cities there were, and silently wrong the moment the registry grew: a Driver 1
+		// city is 4 or above, so its rows were never marked here, never uploaded, and its
+		// cars had no colours - while every log line about it looked reasonable.
+		// CarImportPaletteBlockBase returns -1 for a city with no block, which the guard
+		// below already handles, so widening the bound costs nothing.
+		for (i = 0; i < CITY_COUNT; i++)
 		{
 			int base = CarImportPaletteBlockBase(i), r2, end;
 
