@@ -551,7 +551,7 @@ static void test_flee_goal(void)
 	}
 
 	/* A road is preferred over open ground a couple of samples further out: the road
-	 * bonus (40) outweighs the extra distance from the threat (a couple of samples is
+	 * bonus (120) outweighs the extra distance from the threat (a couple of samples is
 	 * worth a couple of points). The band goes at z = 24, which is inside the flee ring
 	 * - a road at the far edge of the WINDOW is not a candidate at all, which is the
 	 * ring's job. */
@@ -585,6 +585,34 @@ static void test_flee_goal(void)
 	}
 }
 
+/* REACHABILITY, NOT LINE OF SIGHT. A road that can only be reached by driving AROUND a
+ * wall is still a goal. The old gate was AiStarLineClear, which asks "is the straight
+ * line clear" - so this road was rejected outright and the flee never used the network
+ * next to it (the "it does not follow the road" symptom). The wall below blocks the
+ * direct line to every in-ring road sample, but the flood walks round its end and finds
+ * the road, so the chosen goal must still be a ROAD. */
+static void test_flee_goal_around_a_corner(void)
+{
+	int ix;
+
+	gridReset();
+
+	/* the threat is due north; the road lies due south, behind a wall that spans the whole
+	 * line of sight to it but stops short of the window's east edge */
+	for (ix = 0; ix <= 24; ix++)
+		gridWall(ix, 20);
+
+	for (ix = 0; ix < AIMAP_SIZE; ix++)
+		gridRoad(ix, 24);
+
+	CHECK(AiLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
+	CHECK(gGoal.kind == AIGOAL_ROAD);
+
+	/* and prove the point: the direct line to the road straight ahead of the car really is
+	 * blocked, so a line-of-sight gate could not have picked it */
+	CHECK(AiStarLineClear(&gMap, W(16), W(16), W(16), W(24)) == 0);
+}
+
 int main(void)
 {
 	test_queries();
@@ -599,6 +627,7 @@ int main(void)
 	test_determinism();
 	test_local_goal();
 	test_flee_goal();
+	test_flee_goal_around_a_corner();
 
 	printf("%d check(s), %d failed\n", gChecks, gFails);
 
