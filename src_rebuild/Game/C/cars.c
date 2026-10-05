@@ -227,6 +227,19 @@ static void CarPalRowClear(void)
 // not the havana one's textures and colors". The level's own city is never a guest, and
 // the three non-level cities therefore rank 0,1,2 in a fixed order - exactly the three
 // blocks the column affords.
+// JERICHO: which palette BLOCK a guest city owns - the Nth guest, not the Nth city.
+//
+// This counted this city's ORDINAL until now, skipping the host. That was right when
+// there were four cities (ordinals topped out at 2, inside the budget of 3) and wrong
+// the moment the registry grew: FRISCO is city 5, so with HAVANA as the host its band
+// came back as 4, and CarImportBankRow refused it a block no matter how FEW cities were
+// actually loaded. The car then fell back to the host's row 0 - an imported car wearing
+// a local car's colours, which is exactly what "the imported cars have the wrong
+// textures" looks like. Measured: 0 of the import bank's 24 rows written.
+//
+// Counting only the guests that are HELD keeps the blocks dense and independent of the
+// registry's size, so three loaded guests always fit - which is the actual budget. It also
+// matches how the rest of the import reasons: about what is held, never about ordinals.
 static int CarImportCityBand(int city)
 {
 	int c, band = 0;
@@ -236,7 +249,7 @@ static int CarImportCityBand(int city)
 
 	for (c = 0; c < city; c++)
 	{
-		if (c != GameLevel)
+		if (c != GameLevel && CarImportCityHeld(c))
 			band++;
 	}
 
