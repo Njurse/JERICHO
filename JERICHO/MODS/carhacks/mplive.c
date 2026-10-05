@@ -7,6 +7,7 @@
  * (../mp/mp_carquery.h is the one place the ids and structs are written down):
  *
  *   MP_CARQ_CITIES  "which cities can this session offer?"
+ *   MP_CARQ_SLOTS   "which slots may a city be offered in, and what models?"
  *   MP_CARQ_LOAD    "make (city, model) available here"
  *   MP_CARQ_CHOSEN  "the switch happened (or did not): this is what we drive now"
  *
@@ -64,6 +65,38 @@ static int ChkMpCities(void* userdata, void* args)
 
 	for (city = 0; city < 4 && a->count < a->max; city++)
 		a->cities[a->count++] = city;
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int ChkMpSlots(void* userdata, void* args)
+{
+	MP_CARQ_SLOTS_ARGS* a = (MP_CARQ_SLOTS_ARGS*)args;
+	int slot;
+
+	(void)userdata;
+
+	if (a == NULL || a->slots == NULL || a->models == NULL || a->max <= 0)
+		return JER_RESULT_CONTINUE;
+
+	a->count = 0;
+
+	/* The same hack that owns the frontend list owns this answer, so a session cannot be
+	 * offered a wider list than the menus would show. Leaving count at 0 is the answer
+	 * "nobody knows": mp then keeps its own list, which without this hack is what the
+	 * frontend table says anyway. */
+	if (!carhacks_enabled(CHK_HACK_UNLOCK_EXTRA))
+		return JER_RESULT_CONTINUE;
+
+	for (slot = 0; slot < CHK_CAR_SLOT_COUNT && a->count < a->max; slot++)
+	{
+		if (chkImportCanOffer(a->city, slot) != CHK_OFFER_OK)
+			continue;
+
+		a->slots[a->count] = slot;
+		a->models[a->count] = chkImportSlotModel(a->city, slot);
+		a->count++;
+	}
 
 	return JER_RESULT_CONTINUE;
 }
@@ -184,6 +217,7 @@ static int ChkMpChosen(void* userdata, void* args)
 void chkMpLiveRegister(JERICHO_CONTEXT* ctx)
 {
 	ctx->jer_register_hook(ctx, MP_CARQ_CITIES, ChkMpCities, NULL, 0);
+	ctx->jer_register_hook(ctx, MP_CARQ_SLOTS, ChkMpSlots, NULL, 0);
 	ctx->jer_register_hook(ctx, MP_CARQ_LOAD, ChkMpLoad, NULL, 0);
 	ctx->jer_register_hook(ctx, MP_CARQ_CHOSEN, ChkMpChosen, NULL, 0);
 }

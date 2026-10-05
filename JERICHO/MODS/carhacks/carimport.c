@@ -477,14 +477,24 @@ CHK_OFFER chkImportCanOffer(int city, int slot)
 	if (city < 0 || city >= CHK_CAR_CITY_COUNT || slot < 0 || slot >= CHK_CAR_SLOT_COUNT)
 		return CHK_OFFER_BAD;
 
-	/* SIGNED: 0 is "no car in this slot at all" (the table has holes), and -1 is "the
-	 * level has no car of this number". Both refuse, for different reasons. */
-	model = (int)(signed char)carNumLookup[city][slot];
+	model = chkImportSlotModel(city, slot);
 
 	if (model <= 0)
 		return CHK_OFFER_NO_CAR;
 
 	return CHK_OFFER_OK;
+}
+
+int chkImportSlotModel(int city, int slot)
+{
+	extern char carNumLookup[4][10];
+
+	if (city < 0 || city >= CHK_CAR_CITY_COUNT || slot < 0 || slot >= CHK_CAR_SLOT_COUNT)
+		return 0;
+
+	/* SIGNED: 0 is "no car in this slot at all" (the table has holes), and -1 is "the
+	 * level has no car of this number". Both refuse, for different reasons. */
+	return (int)(signed char)carNumLookup[city][slot];
 }
 
 const char* chkOfferReason(CHK_OFFER why)

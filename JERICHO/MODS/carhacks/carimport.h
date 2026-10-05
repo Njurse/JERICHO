@@ -131,6 +131,11 @@ typedef enum CHK_OFFER
 
 CHK_OFFER chkImportCanOffer(int city, int slot);
 
+/* The model number `city`'s `slot` names, read the same SIGNED way the offer rule reads it:
+ * 0 for a hole in the table, -1 for "the level has no car of that number". One place reads
+ * the table, so a caller cannot disagree with chkImportCanOffer about what is in a slot. */
+int chkImportSlotModel(int city, int slot);
+
 /* Short human name for a verdict, for the one line a level logs about its list. */
 const char* chkOfferReason(CHK_OFFER why);
 
