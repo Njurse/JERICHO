@@ -34,7 +34,7 @@ SXYPAIR tpagepos[20] =
 	{ -1, -1 }
 };
 
-char specTpages[4][12] = {
+char specTpages[CITY_COUNT][12] = {
 	{
 		54, 55, 
 		66, 67, 
@@ -69,7 +69,7 @@ char specTpages[4][12] = {
 	}
 };
 
-char carTpages[4][8] = {
+char carTpages[CITY_COUNT][8] = {
 	{ 
 		01, 58, 65, 62, 50, 63,
 		54, 55
@@ -1099,7 +1099,7 @@ typedef struct
 // ONE list per city: a level can hold more than one city's car data, and each
 // city's page list is its own (the same set number means a different page in
 // another city). Indexed by city, so a set is resolved against ITS OWN list.
-static CAR_IMPORT_SETS gCarImportPerms[4];
+static CAR_IMPORT_SETS gCarImportPerms[CITY_COUNT];
 
 /* JERICHO: what cross-city resources each resident SLOT holds.
  *
@@ -1124,7 +1124,7 @@ typedef struct
 } CAR_SLOT_RES;
 
 static CAR_SLOT_RES sCarSlotRes[MAX_CAR_RESIDENT_MODELS];
-static CAR_IMPORT_SETS gCarImportSpecs[4];
+static CAR_IMPORT_SETS gCarImportSpecs[CITY_COUNT];
 static int gCarImportTexParsed[4];
 
 static void CopyImportSetList(const XYPAIR* list, int n, CAR_IMPORT_SETS* out)
@@ -1288,7 +1288,7 @@ static void ParseImportedTextureInfo(void)
 {
 	int city;
 
-	for (city = 0; city < 4; city++)
+	for (city = 0; city < CITY_COUNT; city++)
 		ParseImportedTextureInfoForCity(city);
 }
 
@@ -3367,7 +3367,7 @@ void JerReleaseAllCrossCity(void)
 	/* the per-city state CarImportResetState does not know about */
 	CarImportPaletteReset();
 
-	for (city = 0; city < 4; city++)
+	for (city = 0; city < CITY_COUNT; city++)
 	{
 		gCarImportPerms[city].count = 0;
 		gCarImportSpecs[city].count = 0;

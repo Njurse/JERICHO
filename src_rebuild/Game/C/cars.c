@@ -231,7 +231,7 @@ static int CarImportCityBand(int city)
 {
 	int c, band = 0;
 
-	if (city < 0 || city >= 4)
+	if (city < 0 || city >= CITY_COUNT)
 		return -1;
 
 	for (c = 0; c < city; c++)
@@ -292,7 +292,7 @@ static int CarImportBankRow(int city)
 // has no block at all: it is the host level, it is not held, or the column cannot afford it.
 int CarImportPaletteBlockBase(int city)
 {
-	if (city < 0 || city >= 4 || city == GameLevel)
+	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
 		return -1;
 
 	if (!CarImportCityHeld(city))
@@ -1493,9 +1493,15 @@ void startBuildNewCars(int isSpecial)
  * to read. Set by a module via JER_EVENT_CAR_DATA_SOURCE. */
 int gCarDataSourceLevel = -1;
 
+/* JERICHO: this names the LEVELS\<CITY> folder the per-car CARMODEL_* overrides
+ * are read from, so it must answer for the Driver 1 car-data cities too. Those
+ * have no override folder on the disc, which is fine: the loaders test the file
+ * with FileExists first and simply find nothing, so a D1 car keeps the cosmetics
+ * derived for it. Note the overrides resolve under gDataFolder, so a D1 override
+ * folder would have to be created under DRIVER2\ - see SPOOFED_CITIES.md. */
 const char* GetCarDataFolder(void)
 {
-	if (gCarDataSourceLevel >= 0 && gCarDataSourceLevel < 4)
+	if (gCarDataSourceLevel >= 0 && gCarDataSourceLevel < CITY_COUNT)
 		return LevelNames[gCarDataSourceLevel];
 
 	return LevelNames[GameLevel];
@@ -2342,7 +2348,7 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 {
 	int city, uploaded = -1;
 
-	for (city = 0; city < 4; city++)
+	for (city = 0; city < CITY_COUNT; city++)
 	{
 		int rows = 0, r, base, limit;
 
@@ -2510,7 +2516,7 @@ void ProcessImportedPalette(void)
 	// hand to the pin (ProcessPalletLumpForCity defers it), so a second city's cars
 	// are described by their OWN palettes instead of being silently coloured by the
 	// first city's rows.
-	for (city = 0; city < 4; city++)
+	for (city = 0; city < CITY_COUNT; city++)
 	{
 		int size = 0;
 		char* pallet;
@@ -2543,7 +2549,7 @@ int CarImportApplyPaletteForCity(int city)
 	int size = 0;
 	char* pallet;
 
-	if (city < 0 || city >= 4 || city == GameLevel)
+	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
 		return 0;			// the level's own palettes are already in place
 
 	if (!CarImportCityHeld(city))
@@ -3110,7 +3116,7 @@ static int CarPalIndexInCity(int tpage, int city)
 	int i;
 	int rowbase;
 
-	if (city < 0 || city >= 4)
+	if (city < 0 || city >= CITY_COUNT)
 		return -1;
 
 	rowbase = (CarImportCityHeld(city) && city != GameLevel) ? CarImportBankRow(city) : 0;
@@ -3172,7 +3178,7 @@ static int CarPalIndexInCity(int tpage, int city)
 // blocks stay empty and their cars read whatever the first city put there.
 int CarPalIndexInCityFor(int tpage, int city)
 {
-	if (city < 0 || city >= 4)
+	if (city < 0 || city >= CITY_COUNT)
 		return GetCarPalIndex(tpage);
 
 	return CarPalIndexInCity(tpage, city);
@@ -3215,7 +3221,7 @@ static int CarPalIndexForBuild(int tpage, int city)
 
 		if (sPalBakeMiss++ < 4)
 			printInfo("cross-city: set %d has no palette row in %s - baking that city's own row 0 (civ_clut %d) rather than a negative index\n",
-				tpage, (city >= 0 && city < 4) ? LevelNames[city] : "?", (base >= 0) ? base : 0);
+				tpage, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", (base >= 0) ? base : 0);
 
 		idx = (base >= 0) ? base : GetCarPalIndex(tpage);
 	}

@@ -18,6 +18,21 @@
 
 char gDataFolder[32] = "DRIVER2\\";
 
+/* JERICHO: Driver 1's car-data cities live under the DRIVER\ folder BESIDE
+ * Driver 2's - the sibling layout the two discs already use (bin/Release_dev
+ * holds both DRIVER and DRIVER2). Cities 0..CITY_D2_COUNT-1 are Driver 2's and
+ * read from gDataFolder exactly as before; the rest read from here.
+ *
+ * The Driver 1 entries deliberately do NOT point at the Driver 1 levels: DRIVER\
+ * LEVELS\MIAMI.LEV and friends are real levels, so the car data goes in its own
+ * subfolder and installing it cannot clobber the user's Driver 1 disc. */
+char gD1DataFolder[32] = "DRIVER\\";
+
+const char* GetCityDataRoot(int city)
+{
+	return (city >= CITY_D2_COUNT) ? gD1DataFolder : gDataFolder;
+}
+
 #ifdef PSX
 
 /* those should be passed to linker script
@@ -132,6 +147,12 @@ char* LevelNames[] = {
 	"HAVANA",
 	"VEGAS",
 	"RIO",
+	/* JERICHO: Driver 1's car-data cities - source cities only, never played.
+	 * Everything a city's index feeds was widened for these; see GetCityDataRoot. */
+	"MIAMI",
+	"FRISCO",
+	"LA",
+	"NEWYORK",
 };
 
 char* LevelFiles[] = {
@@ -139,6 +160,12 @@ char* LevelFiles[] = {
 	"LEVELS\\HAVANA.LEV",
 	"LEVELS\\VEGAS.LEV",
 	"LEVELS\\RIO.LEV",
+	/* JERICHO: under DRIVER\, in their own folder so they cannot shadow the real
+	 * Driver 1 levels of the same name. */
+	"D1CARS\\MIAMI.LEV",
+	"D1CARS\\FRISCO.LEV",
+	"D1CARS\\LA.LEV",
+	"D1CARS\\NEWYORK.LEV",
 };
 
 char* LoadingScreenNames[] = {

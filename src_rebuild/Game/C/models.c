@@ -255,7 +255,7 @@ typedef struct
 // The PALETTE side is still single-city -- the CLUT column is the limit, see
 // CROSS_CITY.md "The budget" -- so the single-city getters keep answering with the
 // FIRST held city until that is lifted.
-static CAR_IMPORT gCarImports[4];	// CHICAGO/HAVANA/VEGAS/RIO; .region == NULL = not held
+static CAR_IMPORT gCarImports[CITY_COUNT];	// CHICAGO/HAVANA/VEGAS/RIO; .region == NULL = not held
 static int gCarImportCity = -1;		// the first held city, -1 = none (single-city getters)
 
 // Find a segment inside a lump body. ProcessLumps advances 4-byte aligned, so
@@ -353,16 +353,17 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 
 	memset(imp, 0, sizeof(*imp));
 
-	if (city < 0 || city >= 4)
+	if (city < 0 || city >= CITY_COUNT)
 		return 0;
 
 	// the full single-player level first, then the arena variant
-	sprintf(filename, "%s%s", gDataFolder, LevelFiles[city]);
+	sprintf(filename, "%s%s", GetCityDataRoot(city), LevelFiles[city]);
 	fp = fopen(filename, "rb");
 
-	if (fp == NULL)
+	// the arena variant of the file; Driver 1's car-data cities have none
+	if (fp == NULL && city < CITY_D2_COUNT)
 	{
-		sprintf(filename, "%sM%s", gDataFolder, LevelFiles[city]);
+		sprintf(filename, "%sM%s", GetCityDataRoot(city), LevelFiles[city]);
 		fp = fopen(filename, "rb");
 	}
 
@@ -427,7 +428,7 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_TEXINFO, &imp->texInfo, &imp->texInfoSize);
 
 	// the car colours live beside it, as LEVELS\<city>.LCF
-	sprintf(filename, "%s%s", gDataFolder, CosmeticFiles[city]);
+	sprintf(filename, "%s%s", GetCityDataRoot(city), CosmeticFiles[city]);
 	imp->cosmetics = ReadWholeFile(filename, &imp->cosmeticsSize);
 
 	return 1;
@@ -447,7 +448,7 @@ void InitCarImport(void)
 	// CarImportResetState in texture.c.
 	CarImportResetState();
 
-	for (city = 0; city < 4; city++)
+	for (city = 0; city < CITY_COUNT; city++)
 		FreeCarImport(&gCarImports[city]);
 
 	gCarImportCity = -1;
@@ -541,7 +542,7 @@ int GetCarImportCity(void)
 // to a caller that has a city (or a slot's city) in hand.
 int CarImportCityHeld(int city)
 {
-	return (city >= 0 && city < 4 && gCarImports[city].region != NULL);
+	return (city >= 0 && city < CITY_COUNT && gCarImports[city].region != NULL);
 }
 
 // The imported city's car palettes (LUMP_PALLET body), or NULL. `size` receives
@@ -613,12 +614,13 @@ int ReadCarImportFileForCity(int city, int offset, void* dst, int len)
 	if (!CarImportCityHeld(city) || offset < 0 || len <= 0 || dst == NULL)
 		return 0;
 
-	sprintf(filename, "%s%s", gDataFolder, LevelFiles[city]);
+	sprintf(filename, "%s%s", GetCityDataRoot(city), LevelFiles[city]);
 	fp = fopen(filename, "rb");
 
-	if (fp == NULL)
+	// the arena variant of the file; Driver 1's car-data cities have none
+	if (fp == NULL && city < CITY_D2_COUNT)
 	{
-		sprintf(filename, "%sM%s", gDataFolder, LevelFiles[city]);
+		sprintf(filename, "%sM%s", GetCityDataRoot(city), LevelFiles[city]);
 		fp = fopen(filename, "rb");
 	}
 
@@ -654,7 +656,7 @@ char* GetCarImportModels(int slot)
 	// THIS slot's city, not the level's one guest city: two cities can be held now.
 	city = GetCarModelSourceCity(slot);
 
-	if (city < 0 || city >= 4)
+	if (city < 0 || city >= CITY_COUNT)
 		return NULL;
 
 	imp = &gCarImports[city];
@@ -714,7 +716,7 @@ char* GetCarImportCosmetics(int slot)
 
 	city = GetCarModelSourceCity(slot);
 
-	if (city < 0 || city >= 4)
+	if (city < 0 || city >= CITY_COUNT)
 		return NULL;
 
 	return gCarImports[city].cosmetics;
@@ -1192,7 +1194,7 @@ int JerReleaseCarImport(void)
 {
 	int city, n = 0, b;
 
-	for (city = 0; city < 4; city++)
+	for (city = 0; city < CITY_COUNT; city++)
 	{
 		if (gCarImports[city].region != NULL)
 		{

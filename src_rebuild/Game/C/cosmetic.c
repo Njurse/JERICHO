@@ -16,6 +16,12 @@ char* CosmeticFiles[] = {
 	"LEVELS\\HAVANA.LCF",
 	"LEVELS\\VEGAS.LCF",
 	"LEVELS\\RIO.LCF",
+	/* JERICHO: the Driver 1 car-data cities' colours, under DRIVER\ - beside the
+	 * car data they belong to, and out of the way of the real Driver 1 levels. */
+	"D1CARS\\MIAMI.LCF",
+	"D1CARS\\FRISCO.LCF",
+	"D1CARS\\LA.LCF",
+	"D1CARS\\NEWYORK.LCF",
 };
 
 CAR_COSMETICS car_cosmetics[MAX_CAR_RESIDENT_MODELS];
@@ -146,6 +152,13 @@ int JerHotLoadCarCosmetics(int slot)
 // [D] [T]
 void LoadCosmetics(int level)
 {
+	// JERICHO: only ever called with GameLevel (main.c:419) - the level being
+	// PLAYED - which is always one of Driver 2's cities. The Driver 1 car-data
+	// cities never take this path: their colours arrive through the cross-city
+	// import (GetCarImportCosmetics), which reads their own .LCF from beside their
+	// own .LEV under DRIVER\. So this stays on gDataFolder, via LoadfileSeg,
+	// deliberately - changing it would be an untestable edit to a path nothing
+	// reaches.
 	LoadfileSeg(CosmeticFiles[level], (char*)_other_buffer, 0, 3120);
 	ProcessCosmeticsLump((char*)_other_buffer, 0);
 }

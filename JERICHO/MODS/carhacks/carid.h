@@ -22,7 +22,7 @@
 #ifndef CHK_CARID_H
 #define CHK_CARID_H
 
-#define CHK_CITY_COUNT_LIMIT	4	/* CHICAGO, HAVANA, VEGAS, RIO */
+#define CHK_CITY_COUNT_LIMIT	8	/* CHICAGO..RIO, then Driver 1's four (car-data only) */
 #define CHK_MODEL_LIMIT		13	/* CARMODEL_0..12 */
 
 #define CHK_CITY_NATIVE		0xFF	/* the level's own city: no import */

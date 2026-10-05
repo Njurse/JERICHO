@@ -350,7 +350,7 @@ void JerSetCarModelSource(int slot, int city)
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return;
 
-	gCarModelSource[slot] = (city >= 0 && city < 4) ? city : -1;
+	gCarModelSource[slot] = (city >= 0 && city < CITY_COUNT) ? city : -1;
 }
 
 // [D] [T]

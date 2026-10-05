@@ -42,6 +42,17 @@ extern volatile char* _replay_buffer;		// 0x1FABBC
 
 extern char gDataFolder[32];
 
+/* JERICHO: how many cities are Driver 2's own. Rows 0..CITY_D2_COUNT-1 of
+ * LevelNames / LevelFiles / CosmeticFiles are the stock four and read from
+ * gDataFolder; the rows after them are the Driver 1 car-data cities and read from
+ * gD1DataFolder. Keep CITY_COUNT in step with those three tables. */
+#define CITY_D2_COUNT 4
+#define CITY_D1_COUNT 4
+#define CITY_COUNT    (CITY_D2_COUNT + CITY_D1_COUNT)
+
+extern char gD1DataFolder[32];
+extern const char* GetCityDataRoot(int city);
+
 #define PSX_MALLOC_SIZE 870332
 
 extern volatile char* malloctab;
@@ -100,7 +111,7 @@ extern int leadAILoaded;
 extern int pathAILoaded;
 
 extern char* LevelNames[];
-extern char* LevelFiles[];	// LEVELS\<CITY>.LEV, indexed by GameLevel
+extern char* LevelFiles[];	// LEVELS\<CITY>.LEV, indexed by GameLevel; CITY_COUNT rows
 extern char* LoadingScreenNames[];
 
 struct DB

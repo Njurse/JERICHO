@@ -1,7 +1,11 @@
 #ifndef TEXTURE_H
 #define TEXTURE_H
 
-extern char carTpages[4][8];
+/* JERICHO: for CITY_COUNT - carTpages/specTpages have a row per city, and the
+ * Driver 1 car-data cities are rows too. */
+#include "system.h"
+
+extern char carTpages[CITY_COUNT][8];
 extern char* texturename_buffer;
 extern char* palette_lump;
 extern int palette_lump_size;	// JERICHO: the LUMP_PALLET segment's byte size (see texture.c)
@@ -35,7 +39,7 @@ extern short specialSlot;
 extern int slotsused;
 extern int nperms;
 extern int NoTextureMemory;
-extern char specTpages[4][12];
+extern char specTpages[CITY_COUNT][12];
 
 extern void ProcessPalletLump(char *lump_ptr, int lump_size); // 0x00019F44
 

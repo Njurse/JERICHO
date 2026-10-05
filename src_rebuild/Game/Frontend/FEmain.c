@@ -629,21 +629,21 @@ char cutUnlock[] = {
 	28
 };
 
-int CarAvailability[4][10] = {
+int CarAvailability[CITY_COUNT][10] = {
 	{1,1,1,1,0,0,0,0,0,0},
 	{1,1,1,1,0,0,0,0,0,0},
 	{1,1,1,1,0,0,0,0,0,0},
 	{1,1,1,1,0,0,0,0,0,0},
 };
 
-char carNumLookup[4][10] = {
+char carNumLookup[CITY_COUNT][10] = {
 	{1, 2, 3, 4, 0, 8, 9, 10, 11, 12},
 	{1, 2, 3, 4, 0, 8, 9, 10, 11, 12},
 	{1, 2, 3, 4, 0, 8, 9, 10, 11, 12},
 	{1, 2, 3, 4, 0, 8, 9, 10, 11, 12},
 };
 
-int minmaxSelections[4][2] = {
+int minmaxSelections[CITY_COUNT][2] = {
 
 	{ 0, 8 },
 	{ 8, 18 },
