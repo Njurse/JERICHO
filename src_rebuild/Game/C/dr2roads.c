@@ -633,7 +633,13 @@ int JerRoadInfoAt(int x, int y, int z, JER_ROAD_INFO* out)
 	 *
 	 * GetSurfaceRoadInfo has still filled ConnectIdx (the junction's exits) for us, so the
 	 * only thing missing was the return value. Any surface that is none of the three is
-	 * still a "no", which is the case where ConnectIdx would be a NULL deref. */
+	 * still a "no", which is the case where ConnectIdx would be a NULL deref.
+	 *
+	 * NOTE: a junction has no lane data of its own (the junction table holds exits, not
+	 * lanes), so numLanes/speedLimit/laneDirs/aiLanes come back 0 with kind == 2. That is
+	 * honest - there is no lane split at an intersection - and no caller reads them for a
+	 * junction today (JerRoadAt/JerRoadInfoAt consumers only test the boolean). A caller
+	 * that ever wants to drive a junction's LANES has to pick one of its exits. */
 	if (!GetSurfaceRoadInfo(&info, surfId) && !IS_JUNCTION_SURFACE(surfId))
 		return 0;
 
