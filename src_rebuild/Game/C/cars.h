@@ -23,6 +23,21 @@ extern MODEL* gCarCleanModelPtr[MAX_CAR_RESIDENT_MODELS];
 extern int whichCP;		// car poly counter
 extern int baseSpecCP;	// special car poly counter
 
+/* JERICHO: the CAR_POLY arena buildNewCarFromModel writes into, and its cap. Defaults to
+ * the level-load arena (carPolyBuffer / MAX_CAR_POLYS); the cross-city hot load points it
+ * at a per-slot block instead, so a mid-match car change cannot exhaust the level's arena
+ * (an exhausted arena builds 0 polys and the car is invisible - see cars.c). */
+extern CAR_POLY* gJerCarPolyBase;
+extern int gJerCarPolyCap;
+
+/* A block of the hot-load poly arena, or NULL when all are held. JerHotPolyGive returns it. */
+CAR_POLY* JerHotPolyTake(int slot, int* cap);
+void JerHotPolyGive(int slot);
+
+/* Build into `base` (a fresh block of `cap` entries), then restore. */
+void JerBuildPolyArenaPush(CAR_POLY* base, int cap);
+void JerBuildPolyArenaPop(void);
+
 extern SVECTOR gTempCarVertDump[MAX_CARS][MAX_DENTING_VERTS];
 extern DENTUVS gTempHDCarUVDump[MAX_CARS][MAX_DENTING_UVS];
 extern DENTUVS gTempLDCarUVDump[MAX_CARS][MAX_DENTING_LOD_UVS];

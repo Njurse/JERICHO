@@ -1087,6 +1087,8 @@ int JerHotLoadCarModel(int slot)
 	int* offsets;
 	int model_number, cleanOfs, damOfs, lowOfs, size, need;
 	MODEL* model;
+	CAR_POLY* jerPolyBase;
+	int jerPolyCap;
 
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return 0;
@@ -1186,6 +1188,29 @@ int JerHotLoadCarModel(int slot)
 		cursor = gJerHotCarPool + (block * JER_HOT_CAR_BLOCK_BYTES);
 	}
 
+	/* JERICHO: the CAR_POLY half of the same reservation. buildNewCarFromModel's polies MUST
+	 * NOT go into the level-load bump: that cursor is filled once, at level start, and a
+	 * mid-match build could never give its entries back - after a few car changes it reached
+	 * MAX_CAR_POLYS and every later model built 0 polys (an INVISIBLE car whose pages still
+	 * uploaded). A block taken here is returned by JerReleaseCarGeometry. */
+	jerPolyBase = JerHotPolyTake(slot, &jerPolyCap);
+
+	if (jerPolyBase == NULL)
+	{
+		printInfo("cross-city: no free hot-load poly block for %s model %d - slot %d keeps the car it has\n",
+			LevelNames[GetCarModelSourceCity(slot)], model_number, slot);
+
+		gJerHotCarBlockOf[slot] = -1;
+		gJerHotCarUsed--;
+
+		return 0;
+	}
+
+	/* JERICHO: from here to the end of the builds, write into THIS slot's poly block, with the
+	 * cursor starting at 0 in it. The level-load cursor is saved and restored, so a hot build
+	 * neither reads nor advances the arena the level's own cars live in. */
+	JerBuildPolyArenaPush(jerPolyBase, jerPolyCap);
+
 	if (cleanOfs != -1)
 	{
 		mem = slot_models_offset + cleanOfs;
@@ -1212,6 +1237,8 @@ int JerHotLoadCarModel(int slot)
 		buildNewCarFromModel(slot, 0, mem, model);
 	}
 
+	JerBuildPolyArenaPop();
+
 	/* The builds must have stayed inside the slot's block: two cars' models must never
 	 * overlap. If one did, unbuild the slot (the substitute car, which looks right)
 	 * rather than draw corrupted geometry -- and hand the block back. */
@@ -1227,6 +1254,7 @@ int JerHotLoadCarModel(int slot)
 
 		gJerHotCarBlockOf[slot] = -1;
 		gJerHotCarUsed--;
+		JerHotPolyGive(slot);
 
 		return 0;
 	}
@@ -1278,6 +1306,7 @@ int JerReleaseCarGeometry(int slot)
 
 	gJerHotCarBlockOf[slot] = -1;
 	gJerHotCarUsed--;
+	JerHotPolyGive(slot);
 
 	return 1;
 }

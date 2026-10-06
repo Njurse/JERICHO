@@ -463,6 +463,115 @@ int whichCP = 0;
 int baseSpecCP = 0;
 CAR_POLY carPolyBuffer[MAX_CAR_POLYS + 1];
 
+/* JERICHO: WHERE buildNewCarFromModel writes, and how far it may go.
+ *
+ * carPolyBuffer is the LEVEL-LOAD arena: a bump cursor (`whichCP`) that the 12 resident
+ * slots fill ONCE at level start, with no way to give any of it back. A car imported
+ * MID-MATCH was built into the same bump, so every car change permanently consumed a few
+ * hundred entries. Measured: by the fourth or fifth change `whichCP` == MAX_CAR_POLYS and
+ * buildNewCarFromModel's loop condition (`newNumPolys < MAX_CAR_POLYS`) was already false,
+ * so the model was built with 0 polys - the car was INVISIBLE while its pages still
+ * uploaded, which reads as "the VRAM changes but the models are not there".
+ *
+ * So a hot-loaded car takes a block of its OWN arena instead (JerHotPolyTake), and gives it
+ * back when its slot is released (JerHotPolyGive). The level-load build is untouched. */
+CAR_POLY* gJerCarPolyBase = carPolyBuffer;
+int gJerCarPolyCap = MAX_CAR_POLYS;
+
+#define JER_HOT_POLY_BLOCKS		8
+#define JER_HOT_POLY_PER_BLOCK	((MAX_CAR_POLYS / 4))	/* 1200: three builds of a ~250-poly car */
+
+static CAR_POLY* sJerHotPoly;
+static int sJerHotPolyBlockOf[MAX_CAR_RESIDENT_MODELS];
+
+static void JerHotPolyInit(void)
+{
+	int i;
+
+	if (sJerHotPoly != NULL)
+		return;
+
+	sJerHotPoly = (CAR_POLY*)malloc(sizeof(CAR_POLY) * JER_HOT_POLY_PER_BLOCK * JER_HOT_POLY_BLOCKS);
+
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		sJerHotPolyBlockOf[i] = -1;
+}
+
+/* A free block of the hot polies, or NULL when all eight are held. */
+CAR_POLY* JerHotPolyTake(int slot, int* cap)
+{
+	int b, k, taken;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return NULL;
+
+	JerHotPolyInit();
+
+	if (sJerHotPoly == NULL)
+		return NULL;
+
+	for (b = 0; b < JER_HOT_POLY_BLOCKS; b++)
+	{
+		taken = 0;
+
+		for (k = 0; k < MAX_CAR_RESIDENT_MODELS; k++)
+		{
+			if (sJerHotPolyBlockOf[k] == b)
+			{
+				taken = 1;
+				break;
+			}
+		}
+
+		if (!taken)
+		{
+			sJerHotPolyBlockOf[slot] = b;
+
+			/* the block is a FRESH 1200-entry region, so the cursor starts at 0 in it -
+			 * the caller saves/restores the level-load cursor around the build */
+			if (cap != NULL)
+				*cap = JER_HOT_POLY_PER_BLOCK;
+
+			return sJerHotPoly + (b * JER_HOT_POLY_PER_BLOCK);
+		}
+	}
+
+	return NULL;
+}
+
+void JerHotPolyGive(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	sJerHotPolyBlockOf[slot] = -1;
+}
+
+/* Save the level-load arena, point builds at `base` (a fresh block, so the cursor restarts
+ * at 0 in it), and restore it afterwards. The pair keeps the arena's internals in this file:
+ * a caller only has to say "build into this block" and "done". */
+static CAR_POLY* sJerArenaSaveBase;
+static int sJerArenaSaveCap;
+static int sJerArenaSaveCP;
+
+void JerBuildPolyArenaPush(CAR_POLY* base, int cap)
+{
+	sJerArenaSaveBase = gJerCarPolyBase;
+	sJerArenaSaveCap = gJerCarPolyCap;
+	sJerArenaSaveCP = whichCP;
+
+	gJerCarPolyBase = base;
+	gJerCarPolyCap = cap;
+	whichCP = 0;
+}
+
+void JerBuildPolyArenaPop(void)
+{
+	gJerCarPolyBase = sJerArenaSaveBase;
+	gJerCarPolyCap = sJerArenaSaveCap;
+	whichCP = sJerArenaSaveCP;
+}
+
 static int gt3DiagCount = 0;
 
 char LeftLight = 0;
@@ -1698,19 +1807,19 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 		polyList = GET_RELOC_MODEL_DATA(u_char, polySrcModel, poly_block);
 
 		if (pass == 1)
-			car->pFT3 = carPolyBuffer + whichCP;
+			car->pFT3 = gJerCarPolyBase + whichCP;
 		else if (pass == 0)
-			car->pGT3 = carPolyBuffer + whichCP;
+			car->pGT3 = gJerCarPolyBase + whichCP;
 		else if (pass == 2)
-			car->pB3 = carPolyBuffer + whichCP;
+			car->pB3 = gJerCarPolyBase + whichCP;
 
 		newNumPolys = whichCP;
 
-		for (i = 0; newNumPolys < MAX_CAR_POLYS && i < model->num_polys; i++)
+		for (i = 0; newNumPolys < gJerCarPolyCap && i < model->num_polys; i++)
 		{
 			ptype = *polyList;
 
-			cp = carPolyBuffer + newNumPolys;
+			cp = gJerCarPolyBase + newNumPolys;
 
 			switch (ptype & 0x1f) 
 			{
@@ -1875,6 +1984,16 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 
 		whichCP = newNumPolys;
 	}
+
+	// JERICHO: a build that produced NOTHING while the model has polys. The one cause in
+	// practice is the poly arena being full (whichCP at MAX_CAR_POLYS): the cursor is a bump
+	// allocator that a mid-match hot load advances and can never give back, so after a few
+	// car changes every later model builds 0 polys - the car is INVISIBLE while its pages
+	// still upload, which reads as "the textures load but the model is not there". Say it,
+	// because the symptom is otherwise indistinguishable from a bad page.
+	if ((car->numGT3 + car->numFT3 + car->numB3) == 0 && model->num_polys > 0)
+		printInfo("JERICHO: car model build for slot %d produced 0 polys of %d (poly arena %d of %d used) - this car is not drawn\n",
+			index, model->num_polys, whichCP, gJerCarPolyCap);
 }
 
 // [D] [T]
@@ -1992,8 +2111,9 @@ static int CarPalIndexInCity(int tpage, int city);
 static int sPalDumpCount[CITY_COUNT];	// JERICHO-DIAG PAL: per CITY, so a guest is never crowded out
 
 // JERICHO: how many entries the last walk put into each civ_clut row. The import's palette
-// upload uses it to find rows a built model READS but the city's lump has no entries for,
-// and alias those to a row that does (see the upload loop).
+// upload uses it to report rows a built model READS but the city's lump has no entries for -
+// those rows stay empty and their polys draw their own page CLUT (slot 0). Nothing is
+// fabricated for them (see the upload loop).
 static int sJerRowWritten[CIV_CLUT_ROWS];
 
 static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, const unsigned char *rowNeeded)
@@ -2335,11 +2455,11 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		}
 	}
 
-	// JERICHO: a row the built model reads but this city's lump cannot fill. The car then
-	// draws those polys from an all-zero palette row - a garbled car - and no amount of
-	// uploading fixes it, because the data is not in the lump at all. Say it here, where the
-	// mismatch is known, rather than leaving it to be rediscovered as "some cars still look
-	// wrong". Measured on a HAVANA-in-CHICAGO import: the model names rows 14 and 15 (its
+	// JERICHO: a row the built model reads but this city's lump cannot fill. The polys on it
+	// then draw their OWN page CLUT (slot 0) - which is the page's real colours - rather than
+	// a neighbour's. Nothing is fabricated to cover the gap. Say it here, where the mismatch
+	// is known, rather than leaving it to be rediscovered as "some cars still look wrong".
+	// Measured on a HAVANA-in-CHICAGO import: the model names rows 14 and 15 (its
 	// special-body pair) and the lump holds 0 entries that map to either, while the 30..140
 	// entries it does hold map to rows 8..13, which the model does not read.
 	if (rowNeeded != NULL)
@@ -2351,7 +2471,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		// city would be blamed for a neighbour's rows it was never asked to fill.
 		for (k = blockBase; k < blockEnd && k < CIV_CLUT_ROWS; k++)
 			if (k >= 0 && rowNeeded[k] && histWrite[k] == 0)
-				printInfo("cross-city: %s palettes: row %d is READ by the built model but the lump wrote nothing to it (%d of its entries map to other rows) - it is aliased to a row that does carry data when the import's palettes are uploaded\n",
+				printInfo("cross-city: %s palettes: row %d is READ by the built model but the lump wrote nothing to it (%d of its entries map to other rows) - the row stays empty and its polys draw their own page CLUT (slot 0)\n",
 					LevelNames[city], k, histRow[k]);
 	}
 
@@ -2462,21 +2582,27 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 			printInfo("cross-city: %s palettes: wants %d rows and a block is %d - the excess is not placed (CIV_CLUT_BLOCK_ROWS)\n",
 				LevelNames[city], rows, CIV_CLUT_BLOCK_ROWS);
 
-		// JERICHO: fill the rows a built model READS that this city's lump has NO entries for.
+		// JERICHO: a row a built model READS that this city's lump has NO entries for is now
+		// LEFT EMPTY - nothing is fabricated.
 		//
 		// A city's palette table covers the pages its OWN cars use, and an imported model can
 		// read more rows than that: measured, CHICAGO's model 8 reads eight rows (civ_clut
-		// 8..15) while its file carries colour variants for five. Those rows are requested
-		// (above) but there is nothing in the file to put in them, so their polys fell back to
-		// the page's own CLUT - whatever the model happens to name - which is what "several
-		// corrupted palettes" looks like on an imported special.
+		// 8..15) while its file carries colour variants for five.
 		//
-		// Alias them to the first row in this block that HAS data: the nearest by index, and
-		// the one a model's own set list reaches first. That is a real variant colour rather
-		// than a page CLUT, at the cost of the shade being the aliased row's - there is no
-		// data in the file for a bespoke one, and a wrong shade beats a colourless car.
+		// This block used to ALIAS those rows: it copied the first row in the block that has
+		// data into every needed row that does not, six colour columns wholesale INCLUDING
+		// slot 0. That is the "some panels correct, most wrong, on cars from every Driver 1
+		// city" report: slot 0 is the poly's own page CLUT (written at build from
+		// texture_cluts[set][texid] and re-pointed by CarImportPin), and CarClutLookup accepts
+		// any non-zero slot - so a copied FOREIGN CLUT was drawn as if it were this page's
+		// paint. A wrong shade that shadows the right one is worse than an honest empty row.
+		//
+		// Empty is already handled, and only reachable now that the bake never numbers a car
+		// page 0 (so the pin takes every set a model names): CarImportPin fills slot 0 with the
+		// poly's own page CLUT, CarClutVariant clamps a spawned palette to the row's real
+		// coverage (none -> slot 0), and CarClutLookup falls back to the group's slot 0.
 		{
-			int srcRow = -1, r2, j, k;
+			int r2;
 
 			for (r2 = base; r2 < limit; r2++)
 			{
@@ -2487,37 +2613,9 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 
 			for (r2 = base; r2 < limit; r2++)
 			{
-				if (sJerRowWritten[r2] > 0)
-				{
-					srcRow = r2;
-					break;
-				}
-			}
-
-			if (srcRow >= 0)
-			{
-				for (r2 = base; r2 < limit; r2++)
-				{
-					if (r2 == srcRow || sJerRowWritten[r2] > 0 || !rowNeeded[r2])
-						continue;
-
-					for (j = 0; j < 32; j++)
-						for (k = 0; k < 6; k++)
-							civ_clut[r2][j][k] = civ_clut[srcRow][j][k];
-
-					// Mirror the coverage too, or every slot/clamp query and the row census
-					// still answer for the row as if nothing had written it - the alias would
-					// be real in VRAM and invisible to the diagnostics.
-					sCivClutRowMaxSlot[r2] = sCivClutRowMaxSlot[srcRow];
-
-					for (j = 0; j < 32; j++)
-						sCivClutTexMaxSlot[r2][j] = sCivClutTexMaxSlot[srcRow][j];
-
-					CarPalRowNote(r2, city);
-
-					printInfo("cross-city: %s palettes: row %d is read by a built model but this city's lump has no entries for it - aliased to row %d (the first in its block with data)\n",
-						LevelNames[city], r2, srcRow);
-				}
+				if (sJerRowWritten[r2] == 0 && rowNeeded[r2])
+					printInfo("cross-city: %s palettes: row %d is read by a built model but this city's lump has no entries for it - left to the poly's own page CLUT (slot 0), nothing fabricated\n",
+						LevelNames[city], r2);
 			}
 		}
 
