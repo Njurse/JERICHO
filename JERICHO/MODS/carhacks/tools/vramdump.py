@@ -111,7 +111,7 @@ def parse_log(path):
                                "offset": int(off), "cluts": int(cluts),
                                "slot": None, "rect": None, "clutpos": None}
             continue
-        m = re.search(r"pinned set (\d+) index (\d+): slot=(-?\d+), rect=\((\d+),(\d+)\), page=\w+, clut0=\w+=\((\d+),(\d+)\)", line)
+        m = re.search(r"pinned set (\d+) index (\d+): slot=(-?\d+)(?: \([^)]*\))?, rect=\((\d+),(\d+)\), page=\w+, clut0=\w+=\((\d+),(\d+)\)", line)
         if m:
             setno = int(m.group(1))
             if setno in out:

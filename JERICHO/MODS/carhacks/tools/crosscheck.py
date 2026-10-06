@@ -207,6 +207,18 @@ def check_inv3(run, tga, lev, fails, warns):
         else:
             print(f"  INV3 set {setno} page ({x},{y}): {n} colours (still a page)")
         if base is not None and setno in run["import_sets"]:
+            # JERICHO: only compare a set against the city it CAME FROM. Set numbers are
+            # per city, so in a multi-city run `import_sets` is keyed by a number several
+            # cities share: the 3-city mix's "set 1" is RIO's, and judging it against
+            # VEGAS.LEV failed the mix row for a run that was clean (a documented tool
+            # artefact, VRAM.md section on the INV3 gate). chk_suite passes each source
+            # city's level in turn, so skipping the sets that are not this city's makes
+            # each pass check exactly its own sets.
+            src_city = run["import_sets"][setno][4]
+
+            if src_city != os.path.basename(lev).split(".")[0]:
+                continue
+
             off = run["import_sets"][setno][2]
             expected = clut_rows_from_entry(open(lev, "rb").read(), base + off)
             if not expected:
