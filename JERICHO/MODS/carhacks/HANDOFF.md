@@ -13,6 +13,39 @@ pick happens before the match or mid-match, and whether the chosen car belongs t
 own city or a guest city. Secondarily: cars must clean up correctly when a player leaves, and
 the mp session must not misbehave around hosting/joining.
 
+## The 2026-10 pass (what changed, and what is left)
+
+Four defects, all "the resource is not what it seems". Each is committed and verified; the
+detail lives in the topic docs.
+
+1. **A car page numbered `set 0` was never paged in** (`d1cars` bake). `texture_set 0` is the
+   engine's "no page" sentinel - the pin walk skips it and `CarSetRemap` sends it to a HOST
+   slot - and `build_page_plan` handed the FIRST used page that number. Measured on the baked
+   NEWCASTLE blob: model 1 = 75 of 135 polys on set 0, model 2 = 78 of 139, model 3 = 20 of 233
+   (only its untextured ones) - the "invisible hood on car 1, cars 1 and 2 half broken, car 3
+   fine" report. The bake now numbers from 1 (`PAGE_SET_BASE`) and drops Driver 1's flat
+   untextured polys instead of faking them as textured on set 0. See `d1cars/docs/DRIVER1.md`.
+
+2. **A palette row the lump cannot fill was FABRICATED** (`cars.c`). The alias copied a
+   neighbouring row's six columns including slot 0 - which the draw then accepted as this
+   page's paint. Now the row is left empty and its polys draw their own page CLUT. See
+   `PALETTES.md` §7, which also records the still-open "extra panels" corruption.
+
+3. **A mid-match hot load exhausted the level's CAR_POLY arena** (`cars.c`, `cars.h`,
+   `models.c`) - the real "cars go invisible after cycling": the bump cursor reached
+   `MAX_CAR_POLYS` and every later model built 0 polys, invisible while its pages still
+   uploaded. A hot load now takes a block of its own arena and `JerReleaseCarGeometry` returns
+   it. Measured before/after with `JERICHO_DIAG_CARDRAW=1` and the new "produced 0 polys" line.
+
+4. **A car change while ON FOOT left the player's Tanner standing** (`mp`). `MpChangeCar` used
+   `ChangePedPlayerToCar` alone; the engine's own `PedGetInCar` also destroys the ped and gives
+   its Tanner slot back. Added `RemovePlayerPedestrian`.
+
+**State:** `chk_suite.sh` reports "all 7 rows clean" (the 3-city mix row used to read FAILURES
+on a clean build - a `crosscheck.py` INV3 bug, now fixed so each set is judged against its own
+source city). A 12-switch multi-city cycle builds every car, plateaus its pool and returns
+everything. **Open:** the extra-panels corruption above.
+
 ## The rig (use it before you touch the game)
 
 ```

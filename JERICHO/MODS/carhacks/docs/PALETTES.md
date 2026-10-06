@@ -501,3 +501,41 @@ their own lump. The draw-time fallback keeps them *visible* rather than framebuf
 **Diagnostics added for the next reader:** `JERICHO_DIAG_PAL=1` (the lump's entries, with the
 computed row/texnum/palette) and `JERICHO_DIAG_CARDRAW=1` (per-model page/CLUT census and the
 six resolved palette CLUTs, in `DrawCarObject`). Both off by default.
+
+---
+
+## 7. An empty row is left EMPTY (the fabricated alias is gone)
+
+`ProcessImportedPaletteRows` used to FABRICATE a row a built model reads but the city's lump
+cannot fill: it copied the first row in the block that HAS data into every empty needed row,
+six colour columns wholesale **including slot 0**. That was `ad62815f`, added for "several
+corrupted palettes" on an imported special.
+
+It was the wrong trade, and it produced the opposite of its intent. Slot 0 is the poly's own
+page CLUT - written at build from `texture_cluts[set][texid]` and re-pointed by
+`CarImportPin` - and `CarClutLookup` accepts ANY non-zero slot. So a copied FOREIGN CLUT was
+drawn as if it were this page's paint: "some panels correct, most wrong, on cars from every
+city".
+
+The row is now left empty and reported. Empty is already handled end to end:
+
+* `CarImportPin` fills slot 0 with the poly's OWN page CLUT;
+* `CarClutVariant` clamps a spawned palette to the row's real coverage (none -> slot 0);
+* `CarClutLookup` falls back to the group's slot 0, never to the framebuffer.
+
+This is only reachable because a bake never numbers a car page 0 any more (see
+`d1cars/docs/DRIVER1.md`): with the sentinel set back, the pin takes every set a model names,
+so slot 0 is always filled. Verified: a RIO level importing CHICAGO model 8 passes all three
+`crosscheck.py` invariants, INV3 included (its CLUT rows still MATCH `CHICAGO.LEV`), and
+`cardump.py` reports those pages as "only the page's own CLUT applies (no leak)".
+
+**Still open (the "extra panels" corruption).** A guest city gets EIGHT `civ_clut` rows
+(`CIV_CLUT_BLOCK_ROWS`) and `CarPalIndexInCity` resolves a set to a row by searching
+`carTpages[city][0..7]`. A Driver 1 city bakes 11-13 sets (MIAMI 11, NEWYORK 13) across its
+cars, so the sets past the eighth resolve to `-1` and `CarPalIndexForBuild` sends them to the
+block base row - those panels draw their own PINNED page but the FIRST page's palette. That is
+the visible "minor corruption on vehicles with extra panels" (VEGAS ambulance, large SUVs,
+long cars). Two candidate fixes, neither tried: fill `carTpages`' unused zero slots with the
+city's remaining sets (D1 cities use only 5 of the 8 today, so it recovers three), or assign
+rows per MODEL at build time from `CarModelSet`/`CarModelSetCount` instead of from the
+city-wide table. The second is the real fix, because 8 rows cannot hold 13 sets.
