@@ -153,7 +153,25 @@ enum
 	 * GET_LABEL -> result: const char* label. ADJUST -> value carries the
 	 * item id, result carries the direction (-1/0/+1). */
 	JER_PAUSE_D2PL_GET_LABEL,
-	JER_PAUSE_D2PL_ADJUST
+	JER_PAUSE_D2PL_ADJUST,
+
+	/* The engine is about to ARM THE GAME OVER - fired from CheckForPause when the
+	 * death fade (gDieWithFade) reaches its end, and from EnablePause when a mission
+	 * asks for PAUSEMODE_GAMEOVER.
+	 *
+	 * A handler that returns JER_RESULT_STOP REFUSES it: the engine then leaves the
+	 * game-over pause unarmed and drops the death fade instead of blackening the
+	 * screen, and the module owns what happens next. This is the only way to refuse,
+	 * and it has to be the ENGINE that honours it, because the fade and the engine's
+	 * WantPause are statics a module cannot reach.
+	 *
+	 * mp uses it so that dying inside a session is a respawn rather than a game over
+	 * (a black screen with a module-owned pause menu over it has nothing to press).
+	 *
+	 * Deliberately APPENDED: the actions above are compile-time values a module
+	 * dispatches on, so inserting here would silently renumber them for any module
+	 * built against an older header. */
+	JER_PAUSE_GAMEOVER
 };
 
 /* d2pl settings item ids (JER_ARGS_PAUSE_MENU.value for the d2pl actions).

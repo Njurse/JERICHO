@@ -1644,6 +1644,45 @@ void StepGame(void)
 		EndGame(GAMEMODE_QUIT);
 }
 
+// JERICHO: ask the modules whether the game over may be armed, and cancel the engine's own
+// game-over bookkeeping when one refuses. Returns 1 when it was refused.
+//
+// The refusal has to be the ENGINE's to honour, and cancelling the engine's own game-over
+// state is what makes it a real refusal rather than a pause nobody opens:
+//
+//   * Mission.gameover_delay - the mission's death route calls
+//     SetMissionOver(PAUSEMODE_GAMEOVER) (gameover_delay = 60) and then HandleGameOver calls
+//     EnablePause EVERY frame once the delay reaches 0, so a refusal that left it set would
+//     refuse forever, and a handler that respawns would respawn forever with it.
+//   * gStopPadReads - HandleGameOver sets the game-over LOCK on the controls on its way to
+//     the pause, and nothing clears it when the pause never opens (the normal path clears it
+//     leaving the pause menu). Left set, the player respawns into a car they cannot drive:
+//     "the controls were never released from the game over lock".
+//
+// The DEATH FADE is not this function's to drop: CheckForPause owns gDieWithFade.
+static int JerGameOverRefused(void)
+{
+	JER_ARGS_PAUSE_MENU jerOver;
+
+	jerOver.action = JER_PAUSE_GAMEOVER;
+	jerOver.result = NULL;
+	jerOver.value = 0;
+
+	if (jer_fire(JER_EVENT_PAUSE_MENU, &jerOver) != JER_RESULT_STOP)
+		return 0;
+
+	Mission.gameover_delay = -1;
+	gStopPadReads = 0;
+
+	// Logged once per refusal, and a refusal happens once per death now that the delay is
+	// cancelled above - so this is the line that says the whole refusal landed (fade dropped
+	// by the caller, delay cancelled and controls released here), rather than leaving "why
+	// can I not drive" to be rediscovered.
+	printInfo("JERICHO: game over REFUSED by a module - the game-over delay is cancelled and the control lock released\n");
+
+	return 1;
+}
+
 // [D] [T]
 void CheckForPause(void)
 {
@@ -1651,10 +1690,20 @@ void CheckForPause(void)
 
 	if (gDieWithFade == 16 && (quick_replay || !NoPlayerControl))
 	{
-		PauseMode = PAUSEMODE_GAMEOVER;
-		WantPause = 1;
+		if (JerGameOverRefused())
+		{
+			// Not a game over: the fade is what blackens the screen, so it goes with the
+			// refusal, and gDieWithFade == 0 lets the car's own state decide if it re-arms
+			// (which a handler that respawned has already fixed).
+			gDieWithFade = 0;
+		}
+		else
+		{
+			PauseMode = PAUSEMODE_GAMEOVER;
+			WantPause = 1;
 
-		gDieWithFade = 32;
+			gDieWithFade = 32;
+		}
 	}
 
 	// check pads for pause here
@@ -2104,6 +2153,13 @@ void EndGame(GAMEMODE mode)
 // [D] [T]
 void EnablePause(PAUSEMODE mode)
 {
+	// JERICHO-HOOK: the same refusal CheckForPause's death fade consults, so a game over the
+	// mission asked for is refused by the same answer - one rule, both routes (see
+	// JER_PAUSE_GAMEOVER). PAUSEMODE_COMPLETE never comes here: finishing a ride is not
+	// dying, and how a session ends belongs to the session.
+	if (mode == PAUSEMODE_GAMEOVER && JerGameOverRefused())
+		return;
+
 	if (quick_replay == 0 && NoPlayerControl && mode == PAUSEMODE_GAMEOVER)
 		return;
 

@@ -358,6 +358,22 @@ in `args->value`, the label returned via `args->result`) and
 pause menu (the sandbox overlay) claims the press with `JER_RESULT_STOP` and
 the engine pause never opens.
 
+`JER_PAUSE_GAMEOVER` is the partner of `JER_PAUSE_OPEN` for the *other* pause
+the engine arms by itself: it fires just before the game-over pause, both when
+the death fade (`gDieWithFade`, armed when the player's car drops below
+`y = -1000`) reaches its end and when a mission asks for
+`PAUSEMODE_GAMEOVER`. A module refusing with `JER_RESULT_STOP` means "this is
+not a game over": the engine leaves the pause unarmed and **drops the death
+fade** instead of fading to black, and the module owns what happens next. The
+refusal has to be the engine's to honour — the fade and `WantPause` are engine
+statics a module cannot clear — which is the whole reason this action exists.
+`mp` uses it so that dying inside a session respawns the player in place (a
+black screen with a module-owned pause menu over it has nothing to press).
+
+After a refusal the engine does *not* re-arm the fade by itself, so a handler
+that respawns must actually move the car out of the dying condition (the fade
+re-arms from the same `where.t[1] < -1000` test).
+
 ## Diagnostics
 
 At boot (and on every Mods-menu reload) the runtime logs into
