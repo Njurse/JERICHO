@@ -19,3 +19,5 @@ with the image it produced in this folder. Row 1 is the **before** baseline.
 | 2026-10-01 | CHICAGO | 3 | 192 | 18 | (320,512) 704x512 = 704 KiB | f121e525 | the import lives in rows 512..1023 now; the level font is untouched and the base column is the level's again |
 | 2026-10-01 | CHICAGO | 3 | 125 | 85 | (320,512) 704x512 = 704 KiB | 09b7fe6b | both of the import's palette conditioners now take the arena column - the pin band and each guest city's palette table; the base CLUT column is byte-identical to a stock run |
 | 2026-10-03 | CHICAGO | 4 | 180 | 30 | (320,512) 704x512 = 704 KiB | d0ccdfd3 | the one-source-city gate lifted via the two_guest_cities lever: HAVANA, VEGAS and RIO each hold their own civ_clut block (8..15 / 16..23 / 24..31) in the same run; no overflow |
+| 2026-10-05 | CHICAGO | 4 | 180 | 30 | (320,512) 704x512 = 704 KiB | 314ae029 | the reserved-set-0 bake, the empty palette row, and the hot-load poly arena all landed |
+| 2026-10-05 | RIO | 4 | 171 | 39 | (320,512) 704x512 = 704 KiB | 314ae029 | Rio is where the extra-panels palette-row limit shows; numbers compared |
