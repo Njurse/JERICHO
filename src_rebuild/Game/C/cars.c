@@ -480,21 +480,53 @@ int gJerCarPolyCap = MAX_CAR_POLYS;
 
 #define JER_HOT_POLY_BLOCKS		8
 #define JER_HOT_POLY_PER_BLOCK	((MAX_CAR_POLYS / 4))	/* 1200: three builds of a ~250-poly car */
+/* One spare entry per block, exactly as the level arena has (carPolyBuffer[MAX_CAR_POLYS + 1]):
+ * the build loop tests the cap BEFORE a GT4/FT4 iteration, and such a poly adds TWO records,
+ * so a straddling one writes at index cap. Without the spare that entry is the first of the
+ * NEXT slot's block. */
+#define JER_HOT_POLY_STRIDE		(JER_HOT_POLY_PER_BLOCK + 1)
 
 static CAR_POLY* sJerHotPoly;
 static int sJerHotPolyBlockOf[MAX_CAR_RESIDENT_MODELS];
+static int sJerHotPolyInited;
 
 static void JerHotPolyInit(void)
 {
 	int i;
 
-	if (sJerHotPoly != NULL)
+	if (sJerHotPolyInited)
 		return;
 
-	sJerHotPoly = (CAR_POLY*)malloc(sizeof(CAR_POLY) * JER_HOT_POLY_PER_BLOCK * JER_HOT_POLY_BLOCKS);
+	sJerHotPolyInited = 1;
+	sJerHotPoly = (CAR_POLY*)malloc(sizeof(CAR_POLY) * JER_HOT_POLY_STRIDE * JER_HOT_POLY_BLOCKS);
 
+	/* The table is a static, so it starts ZEROED - which reads as "slot k holds block 0" and
+	 * made the first level boundary claim to free 12 blocks. Fill it before anything reads
+	 * it. */
 	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 		sJerHotPolyBlockOf[i] = -1;
+}
+
+/* A level boundary: the cars built at load and the hot loads are all going away, so the
+ * whole table is free again. Without this, blocks a previous level's hot loads held stay
+ * marked taken for the life of the PROCESS, and a level that used all eight leaves the next
+ * one unable to hot-load a car at all. Mirrors the gJerHotCarBlockOf reset in models.c. */
+void JerHotPolyReset(void)
+{
+	int i, n = 0;
+
+	JerHotPolyInit();		/* must be initialised before it can be counted */
+
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+	{
+		if (sJerHotPolyBlockOf[i] >= 0)
+			n++;
+
+		sJerHotPolyBlockOf[i] = -1;
+	}
+
+	if (n > 0)
+		printInfo("cross-city: the level boundary freed %d hot-load poly block(s)\n", n);
 }
 
 /* A free block of the hot polies, or NULL when all eight are held. */
@@ -532,7 +564,7 @@ CAR_POLY* JerHotPolyTake(int slot, int* cap)
 			if (cap != NULL)
 				*cap = JER_HOT_POLY_PER_BLOCK;
 
-			return sJerHotPoly + (b * JER_HOT_POLY_PER_BLOCK);
+			return sJerHotPoly + (b * JER_HOT_POLY_STRIDE);
 		}
 	}
 
@@ -545,6 +577,21 @@ void JerHotPolyGive(int slot)
 		return;
 
 	sJerHotPolyBlockOf[slot] = -1;
+}
+
+/* How many hot-load poly blocks are held, for the run summary. It is the one number that
+ * shows whether a level boundary gave them all back. */
+int JerHotPolyBlocksUsed(void)
+{
+	int i, n = 0;
+
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+	{
+		if (sJerHotPolyBlockOf[i] >= 0)
+			n++;
+	}
+
+	return n;
 }
 
 /* Save the level-load arena, point builds at `base` (a fresh block, so the cursor restarts

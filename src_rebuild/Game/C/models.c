@@ -872,6 +872,8 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 
 		for (b = 0; b < MAX_CAR_RESIDENT_MODELS; b++)
 			gJerHotCarBlockOf[b] = -1;
+
+		JerHotPolyReset();
 	}
 
 	// (The cross-city source + resident-model choices are resolved by
@@ -1237,6 +1239,10 @@ int JerHotLoadCarModel(int slot)
 		buildNewCarFromModel(slot, 0, mem, model);
 	}
 
+	if (whichCP > jerPolyCap)
+		printInfo("cross-city: the hot-load poly block for slot %d overflowed (%d of %d) - its polies may have run into the next slot's\n",
+			slot, whichCP, jerPolyCap);
+
 	JerBuildPolyArenaPop();
 
 	/* The builds must have stayed inside the slot's block: two cars' models must never
@@ -1334,6 +1340,8 @@ int JerReleaseCarImport(void)
 
 	for (b = 0; b < MAX_CAR_RESIDENT_MODELS; b++)
 		gJerHotCarBlockOf[b] = -1;
+
+	JerHotPolyReset();
 
 	// The palette blocks went with the city buffers, so free them too - a fresh load
 	// must be able to hand block 0 to whatever city arrives first.

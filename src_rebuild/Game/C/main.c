@@ -1921,9 +1921,9 @@ void JerichoFrameTick(void)
 	{
 		long heapUsed = (long)(mallocptr - malloctab);
 
-		printInfo("JERICHO-HEAP: level heap %ld/%d bytes used, %ld free; car polys %d/%d used\n",
+		printInfo("JERICHO-HEAP: level heap %ld/%d bytes used, %ld free; car polys %d/%d used; hot-load poly blocks %d/8 held\n",
 			heapUsed, PSX_MALLOC_SIZE, (long)PSX_MALLOC_SIZE - heapUsed,
-			whichCP, (200 * 2) * MAX_CAR_RESIDENT_MODELS);
+			whichCP, (200 * 2) * MAX_CAR_RESIDENT_MODELS, JerHotPolyBlocksUsed());
 	}
 
 	// JERICHO: the pixel artefact, so 'where did this page land and is it intact' can be

@@ -34,6 +34,13 @@ extern int gJerCarPolyCap;
 CAR_POLY* JerHotPolyTake(int slot, int* cap);
 void JerHotPolyGive(int slot);
 
+/* A level boundary: every block is free again (a block held across a level load would stay
+ * marked taken for the life of the process). Call wherever gJerHotCarBlockOf is reset. */
+void JerHotPolyReset(void);
+
+/* Blocks of the hot-load poly arena currently held (for the run summary). */
+int JerHotPolyBlocksUsed(void);
+
 /* Build into `base` (a fresh block of `cap` entries), then restore. */
 void JerBuildPolyArenaPush(CAR_POLY* base, int cap);
 void JerBuildPolyArenaPop(void);
