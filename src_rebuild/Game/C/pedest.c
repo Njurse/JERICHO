@@ -1669,6 +1669,31 @@ void PedGetInCar(LPPEDESTRIAN pPed)
 	}
 }
 
+// JERICHO: put the player's own pedestrian away when something OTHER than the walk-up
+// path takes them back into a car - mp's pause-menu car change is the case. PedGetInCar
+// above does the same three things inline, and all three matter:
+//
+//   * ChangePedPlayerToCar only stops the PLAYER pointing at the ped (players.c sets
+//     pPed = NULL). The ped is a real object in the world, so without DestroyPedestrian
+//     the Tanner stays standing exactly where they got out - the "you put me back in the
+//     car but did not remove my Tanner" report.
+//   * without the counter the destroyed ped still occupies a Tanner slot for good
+//     (CreatePedestrian refuses once numTannerPeds > 7), so a session that changes cars a
+//     few times while on foot stops being able to produce a ped at all.
+//
+// Only the caller's OWN player ped is passed in; a remote player's is a stand-in (jer_npc)
+// and is not ours to remove here.
+void RemovePlayerPedestrian(LPPEDESTRIAN pPed)
+{
+	if (pPed == NULL)
+		return;
+
+	if (pPed->pedType == TANNER_MODEL || (ActiveCheats.cheat12 && pPed->pedType == OTHER_MODEL))
+		numTannerPeds--;
+
+	DestroyPedestrian(pPed);
+}
+
 // [D] [T]
 void SetupPressButton(LPPEDESTRIAN pPed)
 {

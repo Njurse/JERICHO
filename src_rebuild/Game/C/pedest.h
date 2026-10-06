@@ -43,6 +43,10 @@ extern void ControlPedestrians(); // 0x0006F16C
 
 extern void DeActivatePlayerPedestrian(LPPEDESTRIAN pPed); // 0x0007216C
 
+// JERICHO: destroy the player's own pedestrian and give its Tanner slot back. For a caller
+// that takes the player back into a car by a route other than PedGetInCar (mp's car change).
+extern void RemovePlayerPedestrian(LPPEDESTRIAN pPed);
+
 extern void SetupCivPedRouteData(VECTOR *pPos); // 0x0007313C
 
 extern void PingInPedestrians(); // 0x0007047C
