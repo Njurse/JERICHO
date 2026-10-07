@@ -39,7 +39,7 @@ Each mod documents itself in its own folder.
 | example | [`README.md`](../JERICHO/MODS/example/README.md) |
 | aidriver | [`README.md`](../JERICHO/MODS/aidriver/README.md) |
 | gaildrv2 | [`README.md`](../JERICHO/MODS/gaildrv2/README.md) |
-| mp | [`README.md`](../JERICHO/MODS/mp/README.md) (LAN multiplayer) — start with [`JERICHO-MP.md`](../JERICHO/MODS/mp/docs/JERICHO-MP.md), then [`SYNC_CHECKLIST.md`](../JERICHO/MODS/mp/docs/SYNC_CHECKLIST.md) (**what "synchronised" means per domain, how to verify each, the accepted v1 limitations, and the release sign-off gate**); test tools in [`tools/`](../JERICHO/MODS/mp/tools/README.md) |
+| mp | [`README.md`](../JERICHO/MODS/mp/README.md) (LAN multiplayer) — start with [`JERICHO-MP.md`](../JERICHO/MODS/mp/docs/JERICHO-MP.md), then [`SYNC_CHECKLIST.md`](../JERICHO/MODS/mp/docs/SYNC_CHECKLIST.md) (**what "synchronised" means per domain, how to verify each, the accepted v1 limitations, and the release sign-off gate**); test tools in [`tools/`](../JERICHO/MODS/mp/tools/README.md), packaging in [`pack_lan/`](../JERICHO/MODS/mp/tools/pack_lan/README.md) |
 | testmode | [`README.md`](../JERICHO/MODS/testmode/README.md) (asset-test mode: quiet world, census) |
 | debugorbit | [`README.md`](../JERICHO/MODS/debugorbit/README.md) (**Debug Orbit Camera** — camera-only: takes the camera over at level start and orbits the player at a fixed radius/elevation, for inspecting a car or Tanner from every side; also the worked example of the camera y inversion) |
 
