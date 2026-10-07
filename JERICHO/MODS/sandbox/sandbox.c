@@ -396,6 +396,23 @@ static int SandboxLevelCity(void)
 	return (GameLevel >= 0 && GameLevel < CITY_COUNT) ? GameLevel : 0;
 }
 
+/* THE CITY THE ROWS ARE ACTUALLY ON: the player's pick, or -- until they make one --
+ * the level being played.
+ *
+ * Resolved on demand rather than stored, because GameLevel is only authoritative
+ * once the MISSION has loaded (mission.c sets it from the mission header) and the
+ * GAME_START hook fires before that: a pick resolved there lands on index 0, and
+ * "keep the pick while the city list still offers it" then keeps it for good,
+ * because Chicago is always offered. That is how the row came to say Chicago on a
+ * Rio map. -1 in gSandboxCity means exactly "no pick yet, follow the level". */
+static int SandboxActiveCity(void)
+{
+	if (gSandboxCity >= 0 && gSandboxCity < CITY_COUNT)
+		return gSandboxCity;
+
+	return SandboxLevelCity();
+}
+
 static void SandboxCarListRefresh(void);
 static void SandboxCarListCommit(void);
 
@@ -536,13 +553,10 @@ static void SandboxCarSourceRefresh(void)
 		gSandboxCityCount = 1;
 	}
 
-	/* Keep the pick while it is still offered, and otherwise start on the level's own
-	 * city -- the pool a player expects to find there. */
-	if (!SandboxCityInList(gSandboxCity))
-	{
-		gSandboxCity = SandboxCityInList(SandboxLevelCity())
-			? SandboxLevelCity() : gSandboxCities[0];
-	}
+	/* A pick that is no longer offered is dropped -- and dropping it means going back
+	 * to following the level, not to whichever city happens to be first. */
+	if (gSandboxCity >= 0 && !SandboxCityInList(gSandboxCity))
+		gSandboxCity = SBX_CITY_NATIVE;
 
 	SandboxCarListRefresh();
 }
@@ -557,12 +571,8 @@ static void SandboxCarListRefresh(void)
 	int listSlots[SBX_MAX_CARS];
 	MP_CARQ_SLOTS_ARGS sa;
 	extern char carNumLookup[CITY_COUNT][10];
+	int city = SandboxActiveCity();
 	int i, k, n;
-
-	/* A city index the row cannot be showing -- nothing has resolved it yet -- must
-	 * never read another city's table. */
-	if (gSandboxCity < 0 || gSandboxCity >= CITY_COUNT)
-		gSandboxCity = SandboxLevelCity();
 
 	gSandboxCarCount = 0;
 
@@ -578,7 +588,7 @@ static void SandboxCarListRefresh(void)
 	 * own list is 1 2 3 3 4), so each model is added once. */
 	for (i = 0; i < 10 && gSandboxCarCount < SBX_MAX_CARS; i++)
 	{
-		int model = (int)(signed char)carNumLookup[gSandboxCity][i];
+		int model = (int)(signed char)carNumLookup[city][i];
 
 		if (model <= 0 || model >= CAR_MODEL_LUMP_ENTRIES)
 			continue;
@@ -598,7 +608,7 @@ static void SandboxCarListRefresh(void)
 	/* 2. PLUS whatever carhacks says this machine could offer there, which can name a
 	 * car the table above does not (an import it has arranged). */
 	memset(&sa, 0, sizeof(sa));
-	sa.city = gSandboxCity;
+	sa.city = city;
 	sa.slots = listSlots;
 	sa.models = offerModels;
 	sa.max = SBX_MAX_CARS;
@@ -640,7 +650,7 @@ static void SandboxCarListRefresh(void)
 
 			src = GetCarModelSourceCity(i);
 
-			if (src >= 0 && src != gSandboxCity)
+			if (src >= 0 && src != city)
 				continue;
 
 			gSandboxCarModels[gSandboxCarCount++] = residentCarModels[i];
@@ -653,7 +663,7 @@ static void SandboxCarListRefresh(void)
 	SandboxCarListCommit();
 
 	jer_log("[sandbox] car source: %s - %d car(s)%s\n",
-		SandboxCityName(gSandboxCity), gSandboxCarCount,
+		SandboxCityName(city), gSandboxCarCount,
 		(gSandboxCarCount > 0 && gSandboxSpawnModel < 0) ? " (none loaded here yet)" : "");
 }
 
@@ -663,7 +673,7 @@ static void SandboxCarListRefresh(void)
 static void SandboxCarListCommit(void)
 {
 	gSandboxSpawnModel = (gSandboxCarCount > 0)
-		? SandboxCarSlotFor(gSandboxCity, gSandboxCarModels[gSandboxCarIdx])
+		? SandboxCarSlotFor(SandboxActiveCity(), gSandboxCarModels[gSandboxCarIdx])
 		: -1;
 }
 
@@ -679,7 +689,7 @@ static void SandboxSpawnSelectedCar(CAR_DATA* pc)
 		return;
 	}
 
-	city = gSandboxCity;
+	city = SandboxActiveCity();
 	model = gSandboxCarModels[gSandboxCarIdx];
 
 	slot = SandboxCarMakeResident(city, model);
@@ -740,7 +750,7 @@ static void SandboxSpawnPageEnter(CAR_DATA* pc)
 
 		for (i = 0; i < gSandboxCarCount; i++)
 		{
-			if (SandboxCarSlotFor(gSandboxCity, gSandboxCarModels[i]) == pc->ap.model)
+			if (SandboxCarSlotFor(SandboxActiveCity(), gSandboxCarModels[i]) == pc->ap.model)
 			{
 				gSandboxCarIdx = i;
 				SandboxCarListCommit();
@@ -1254,14 +1264,14 @@ static const char* SandboxSpawnLabel(int cursor)
 	case 0:
 		return gSandboxSpawnMode ? "Spawn Position: Teleport In" : "Spawn Position: In Front";
 	case 1:
-		sprintf(buf, "Source City: %s", SandboxCityName(gSandboxCity));
+		sprintf(buf, "Source City: %s", SandboxCityName(SandboxActiveCity()));
 		return buf;
 	case 2:
 		if (gSandboxCarCount <= 0)
 			return "Car: (none this level can build)";
 
 		sprintf(buf, "Car: %d/%d (%s model %d)", gSandboxCarIdx + 1, gSandboxCarCount,
-			SandboxCityName(gSandboxCity), gSandboxCarModels[gSandboxCarIdx]);
+			SandboxCityName(SandboxActiveCity()), gSandboxCarModels[gSandboxCarIdx]);
 
 		return buf;
 	default:
@@ -1547,19 +1557,22 @@ static void SandboxAdjustItem(int dir)
 
 	if (gSandboxPage == SBX_PAGE_SPAWN && gSandboxCursor == 1)
 	{
-		/* source city: cycle the list, and bring that city's cars with it */
+		/* source city: cycle the list, and bring that city's cars with it. The cycle
+		 * starts from the city actually in use, which is the level's own until the
+		 * player picks one. */
 		if (gSandboxCityCount > 0)
 		{
+			int active = SandboxActiveCity();
 			int idx = 0, i;
 
 			for (i = 0; i < gSandboxCityCount; i++)
 			{
-				if (gSandboxCities[i] == gSandboxCity)
+				if (gSandboxCities[i] == active)
 					idx = i;
 			}
 
 			idx = (idx + dir + gSandboxCityCount) % gSandboxCityCount;
-			gSandboxCity = gSandboxCities[idx];
+			gSandboxCity = gSandboxCities[idx];	/* an explicit pick from here on */
 		}
 
 		gSandboxCarIdx = 0;
@@ -1889,8 +1902,10 @@ static int SandboxOnGameStart(void* userdata, void* args)
 		gDoOverlays = gSandboxSavedDoOverlays;
 	}
 
-	/* a new level means a new set of cars: the level's own differ, and an import
-	 * from before it may no longer be there */
+	/* A new level means a new set of cars: the level's own differ, and an import from
+	 * before it may no longer be there. The pick goes back to FOLLOWING the level --
+	 * see SandboxActiveCity for why it must not be resolved to a city here. */
+	gSandboxCity = SBX_CITY_NATIVE;
 	SandboxCarSourceRefresh();
 
 	/* new level = new session: drop the pristine-cosmetics cache and the
