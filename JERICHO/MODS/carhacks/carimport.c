@@ -281,6 +281,16 @@ void chkImportSetEngineModels(int* models, int count)
 	gChkEngineKnown = 1;
 }
 
+/* Has a level handed us its car list yet? A peer's car folded in BEFORE that point is not a
+ * failure to report: the level's own build covers every slot it knows about, so the car turns
+ * up correctly without a hot load. chkImportHotLoad also returns 0 for that case, which is why
+ * its caller has to be able to tell the two apart -- one is "nothing to do", the other is "the
+ * peer is about to be drawn as this level's own car of the same number". */
+int chkImportEngineKnown(void)
+{
+	return gChkEngineKnown;
+}
+
 /* What the LEVEL put in resident `slot` before any import wrote to it: the copy taken when the
  * level handed its list over (chkImportSetEngineModels runs before the picks are applied), never
  * the live list, which by then holds the imported model. -1 when unknown or empty. */

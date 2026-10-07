@@ -77,6 +77,11 @@ void chkImportPurgePlacement(void);
  * or it does not fit - and then the slot is left as it was). */
 int chkImportHotLoad(int slot);
 
+/* Is there a level yet whose car list we have been handed? See chkImportHotLoad's 0 return:
+ * "no level yet" and "could not build it" are different answers and only the second is a
+ * symptom the player can see. */
+int chkImportEngineKnown(void);
+
 /* The session's canonical spare resident slot for `car`: by the lowest owning player
  * id, ascending, with our own pick at OUR player id (chkImportCarOrder in carimport.c).
  * -1 = the session needs more spares than the range has. `outCount` (optional) gets the

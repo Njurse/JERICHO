@@ -538,17 +538,35 @@ int chkNetFoldPeerCars(void)
 			 * the resolvers then find it (including mp's own, on its next tick). */
 			if (chkImportHotLoad(slot) <= 0)
 			{
-				printInfo("[carhacks/net] player %d's car (%s model %d) is in the set for slot %d, "
-					"but this level could not build it yet - carrying it to the next level\n",
-					p, chkNetCityName((int)gChkNetPeerPick[p].city),
-					(int)gChkNetPeerPick[p].model, slot);
+				/* TWO answers wear this one return code, and only one of them is worth
+				 * telling anybody about. "No level yet" means the pick arrived before
+				 * this machine had a car list to fold it into: the level's own build
+				 * covers that slot when it runs, so the car turns up correctly and
+				 * there is nothing to report. Only a genuine failure -- a level is up
+				 * and this slot still has no geometry -- leaves the peer drawn as this
+				 * level's own car of the same number, and that IS a symptom a player
+				 * can see, so it goes on screen as well as in the log. */
+				if (!chkImportEngineKnown())
+				{
+					printInfo("[carhacks/net] player %d's car (%s model %d) folded into slot %d "
+						"before this machine had a level - its own build will load it\n",
+						p, chkNetCityName((int)gChkNetPeerPick[p].city),
+						(int)gChkNetPeerPick[p].model, slot);
+				}
+				else
+				{
+					printInfo("[carhacks/net] player %d's car (%s model %d) is in the set for slot %d, "
+						"but this level could not build it yet - carrying it to the next level\n",
+						p, chkNetCityName((int)gChkNetPeerPick[p].city),
+						(int)gChkNetPeerPick[p].model, slot);
 
-				/* Say it on screen as well: from here the peer looks like this
-				 * level's own car of the same number, which is the one symptom a
-				 * player can see and report. */
-				jer_error("player %d's car (%s model %d) cannot be loaded here yet - they may look like this level's own car",
-					p, chkNetCityName((int)gChkNetPeerPick[p].city),
-					(int)gChkNetPeerPick[p].model);
+					/* Say it on screen as well: from here the peer looks like this
+					 * level's own car of the same number, which is the one symptom a
+					 * player can see and report. */
+					jer_error("player %d's car (%s model %d) cannot be loaded here yet - they may look like this level's own car",
+						p, chkNetCityName((int)gChkNetPeerPick[p].city),
+						(int)gChkNetPeerPick[p].model);
+				}
 			}
 		}
 	}
