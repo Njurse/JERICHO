@@ -252,7 +252,10 @@ jobs:
               # skips the objects that already built and re-runs only the failing
               # step, so its tail is the actual diagnostic.
               echo "::group::make $cfg -j1 (retry for a readable error)"
-              make config=$cfg -j1 2>&1 | tail -25 | while IFS= read -r line; do
+              # GitHub keeps only the FIRST 10 annotations we emit, so emit just the
+              # last few lines -- and drop the per-project banners, which otherwise
+              # crowd them out. The failing command's own message ends the tail.
+              make config=$cfg -j1 2>&1 | grep -v '^==== ' | tail -10 | while IFS= read -r line; do
                 [ -n "$line" ] && echo "::error title=$cfg::${line}"
               done
               echo "::endgroup::"
