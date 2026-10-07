@@ -11,6 +11,7 @@
 #include "jer_events.h"
 #include "jer_config.h"
 #include "jer_pause_menu.h"
+#include "../mp/mp_carquery.h"	/* the car-source contract: carhacks answers MP_CARQ_* */
 
 #include "driver2.h"
 #include "cars.h"
@@ -43,6 +44,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* custom event: firing this toggles no-damage */
 #define SANDBOX_CUSTOM_TOGGLE (JER_EVENT_MODULE_CUSTOM + 10)
@@ -96,7 +98,10 @@ static void SandboxStepSim(void)
 /* Spawning helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-/* spawn a car with the given internal model in front of the player */
+/* spawn a car with the given internal model in front of the player. Returns the
+ * car_data index it built (or -1), so the caller can take it away again: an
+ * "In Front" spawn leaves its car where the NEXT one lands, and two overlapping
+ * cars is a collision the solver resolves by throwing them both. */
 static int SandboxSpawnCarModel(int model, int palette)
 {
 	CAR_DATA* carCnt;
@@ -148,7 +153,7 @@ static int SandboxSpawnCarModel(int model, int palette)
 		ChangePedPlayerToCar(0, pNewCar);
 		PingOutCar(pc);
 
-		return 0;
+		return (int)(pNewCar - car_data);
 	}
 
 	/* a couple of car-lengths in front of the player */
@@ -161,7 +166,7 @@ static int SandboxSpawnCarModel(int model, int palette)
 
 	InitCar(pNewCar, direction, &pos, CONTROL_TYPE_CIV_AI, model, palette, (char*)&civDat);
 
-	return 0;
+	return (int)(pNewCar - car_data);
 }
 
 /* find a valid packed-cell slot for spawned objects (damage_object
@@ -237,7 +242,7 @@ enum
 
 #define SBX_MAIN_ITEMS 8	/* Vehicle, Spawn, World, Cheats, Replace Pause, Open Pause, Teleport, Close */
 #define SBX_VEHICLE_ITEMS 6	/* Repair, Upright, Set Damage, Set Felony, Player AI Mode, Tune Car */
-#define SBX_SPAWN_ITEMS 5	/* Position, Car ID, Spawn Car, Object, AI Car */
+#define SBX_SPAWN_ITEMS 6	/* Position, City, Car, Spawn Car, Object, AI Car */
 #define SBX_WORLD_ITEMS 3	/* Time of Day, Weather, Auto-Retry Game Over */
 #define SBX_AICAR_ITEMS 7	/* Vehicle, Mode, Param, Position, Spawn, Remove, Back */
 #define SBX_CHEATS_ITEMS 9	/* invincibility, immunity, secret car, jericho, mini, bonus, buddha, unlock all, back */
@@ -251,7 +256,7 @@ static const char* const gSandboxVehicleItems[SBX_VEHICLE_ITEMS] = {
 	"Repair Car", "Make Car Upright", "Set Damage", "Set Felony", "Player AI Mode", "Tune Car"
 };
 static const char* const gSandboxSpawnItems[SBX_SPAWN_ITEMS] = {
-	"Spawn Position", "Car ID", "Spawn Car", "Spawn Object", "AI Car"
+	"Spawn Position", "Source City", "Car", "Spawn Car", "Spawn Object", "AI Car"
 };
 static const char* const gSandboxWorldItems[SBX_WORLD_ITEMS] = {
 	"Set Time of Day", "Set Weather", "Auto-Retry Game Over"
@@ -354,6 +359,358 @@ static void SandboxPreviewScratchCar(int model, int palette)
 
 static const char* const gSandboxAIModeNames[3] = { "Civilian", "Cop", "Lead" };
 
+/* ------------------------------------------------------------------ */
+/* THE CAR SOURCE: which CITY a spawned car comes from, and which car   */
+/*                                                                     */
+/* The sandbox used to spawn by raw model NUMBER. A number is not an    */
+/* identity: the same one is a DIFFERENT vehicle in every city, and a   */
+/* car from another city -- Driver 1's included -- is not in this        */
+/* level's CAR_MODELS lump at all until an import has put it there, so   */
+/* building it is a crash rather than a cosmetic glitch.                 */
+/*                                                                     */
+/* So we ask the two questions the rest of the game asks, as the SAME    */
+/* custom events mp's Change car uses (MP_CARQ_*, ../mp/mp_carquery.h):  */
+/* carhacks answers when it is installed, and its answer is the only one */
+/* that can be trusted, because its cross-city import is what decides    */
+/* what is really holdable. With nothing to answer -- no carhacks, or    */
+/* its cross-city hack off -- the only city a car can come from is the   */
+/* LEVEL'S OWN, and the only cars are the ones it already holds.         */
+/* ------------------------------------------------------------------ */
+
+#define SBX_CITY_NATIVE		(-1)	/* "unset": resolved to the level's own city */
+#define SBX_MAX_CITIES		9	/* 0..3 the Driver 2 four, 4..8 Driver 1's */
+#define SBX_MAX_CARS		32
+
+static int gSandboxCity = SBX_CITY_NATIVE;	/* where a spawned car comes from */
+static int gSandboxCities[SBX_MAX_CITIES];
+static int gSandboxCityCount;
+static int gSandboxCarModels[SBX_MAX_CARS];	/* the cars that city offers */
+static int gSandboxCarCount;
+static int gSandboxCarIdx;
+static int gSandboxSpawnedCar = -1;	/* the last car the Spawn Car row built */
+
+/* The city the level being played belongs to -- the pool a player expects to see
+ * first, and the only source when there is nothing to ask. */
+static int SandboxLevelCity(void)
+{
+	return (GameLevel >= 0 && GameLevel < CITY_COUNT) ? GameLevel : 0;
+}
+
+static void SandboxCarListRefresh(void);
+static void SandboxCarListCommit(void);
+
+/* a city's name for the menu. LevelNames is the engine's own table and already
+ * covers the Driver 1 cities (system.h), so nothing is listed twice. */
+static const char* SandboxCityName(int city)
+{
+	if (city < 0 || city >= CITY_COUNT || LevelNames[city] == NULL)
+		return "this level";
+
+	return LevelNames[city];
+}
+
+/* The resident slot THIS machine has for (city, model), or -1. A pure lookup:
+ * looking at a car never loads it. */
+static int SandboxCarSlotFor(int city, int model)
+{
+	int levelCity = SBX_CITY_NATIVE;
+	int i;
+
+	if (model < 0)
+		return -1;
+
+	/* Which city index this level's own is. Needed because the two ends spell "the
+	 * level's own cars" differently: they have no source city here
+	 * (GetCarModelSourceCity < 0), while a menu offers them under the level's city
+	 * index. Without it, "RIO model 8" would not match the level's own model 8 on a
+	 * Rio map. (Same reasoning as mp's MpResidentSlotForCar.) */
+	if (GameLevel >= 0 && LevelNames[GameLevel] != NULL)
+	{
+		for (i = 0; i < CITY_COUNT; i++)
+		{
+			if (LevelNames[i] != NULL && strcmp(LevelNames[i], LevelNames[GameLevel]) == 0)
+			{
+				levelCity = i;
+				break;
+			}
+		}
+	}
+
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+	{
+		int src;
+
+		if (residentCarModels[i] != model || !JerCarSlotUsable(i))
+			continue;
+
+		src = GetCarModelSourceCity(i);
+
+		if (city < 0)
+		{
+			if (src < 0)
+				return i;	/* the level's own car */
+		}
+		else if (src == city || (src < 0 && city == levelCity))
+		{
+			return i;	/* the same car, spelled two ways */
+		}
+	}
+
+	return -1;
+}
+
+/* Make (city, model) resident HERE so it can be built, and return the slot to build.
+ *
+ * carhacks' import/hotload is the only thing that can do it -- another city's car is
+ * not in this level's lump until that has run. This is the "make it available" step
+ * mp's Change car does, through the same event, so a car the sandbox can spawn is
+ * one the rest of the game would make too. Returns -1 when it cannot be had. */
+static int SandboxCarMakeResident(int city, int model)
+{
+	MP_CARQ_LOAD_ARGS la;
+	int slot;
+
+	slot = SandboxCarSlotFor(city, model);
+
+	if (slot >= 0)
+		return slot;		/* already here: nothing to ask for */
+
+	if (city < 0)
+		return -1;		/* the level's own car, and it has no such model */
+
+	memset(&la, 0, sizeof(la));
+	la.city = city;
+	la.model = model;
+
+	jer_fire(MP_CARQ_LOAD, &la);
+
+	if (!la.ok)
+		return -1;
+
+	return SandboxCarSlotFor(city, model);
+}
+
+/* Is this city one the row offers? */
+static int SandboxCityInList(int city)
+{
+	int i;
+
+	for (i = 0; i < gSandboxCityCount; i++)
+	{
+		if (gSandboxCities[i] == city)
+			return 1;
+	}
+
+	return 0;
+}
+
+/* The cities a car can be sourced from, and the cars in one of them.
+ *
+ * carhacks owns the city answer when it is installed (its cross-city import can hold
+ * several cities' car data at once, Driver 1's included). With nothing to ask, the
+ * only city this machine can source a car from is the ONE THE LEVEL IS PLAYING -- and
+ * that is the city whose pool the row must show, not index 0 (which is Chicago, and
+ * which is why the fallback used to offer Chicago's cars on a Rio map). */
+static void SandboxCarSourceRefresh(void)
+{
+	MP_CARQ_CITIES_ARGS ca;
+	int n;
+
+	gSandboxCityCount = 0;
+
+	memset(&ca, 0, sizeof(ca));
+	ca.cities = gSandboxCities;
+	ca.max = SBX_MAX_CITIES;
+	jer_fire(MP_CARQ_CITIES, &ca);
+
+	n = (ca.count > 0) ? ca.count : 0;
+
+	if (n > SBX_MAX_CITIES)
+		n = SBX_MAX_CITIES;
+
+	gSandboxCityCount = n;
+
+	if (gSandboxCityCount <= 0)
+	{
+		gSandboxCities[0] = SandboxLevelCity();
+		gSandboxCityCount = 1;
+	}
+
+	/* Keep the pick while it is still offered, and otherwise start on the level's own
+	 * city -- the pool a player expects to find there. */
+	if (!SandboxCityInList(gSandboxCity))
+	{
+		gSandboxCity = SandboxCityInList(SandboxLevelCity())
+			? SandboxLevelCity() : gSandboxCities[0];
+	}
+
+	SandboxCarListRefresh();
+}
+
+static void SandboxCarListRefresh(void)
+{
+	/* MP_CARQ_SLOTS fills parallel slot/model arrays, but its "slot" is a CITY-LIST
+	 * index (carNumLookup[city][slot]), NOT a resident slot -- so only the models
+	 * are kept, and the slot is resolved from them when it is needed. Reading one as
+	 * the other indexes the wrong table. */
+	int offerModels[SBX_MAX_CARS];
+	int listSlots[SBX_MAX_CARS];
+	MP_CARQ_SLOTS_ARGS sa;
+	extern char carNumLookup[CITY_COUNT][10];
+	int i, k, n;
+
+	/* A city index the row cannot be showing -- nothing has resolved it yet -- must
+	 * never read another city's table. */
+	if (gSandboxCity < 0 || gSandboxCity >= CITY_COUNT)
+		gSandboxCity = SandboxLevelCity();
+
+	gSandboxCarCount = 0;
+
+	/* 1. THE CITY'S OWN ROSTER, ALWAYS.
+	 *
+	 * This is what the frontend car screen lists (carNumLookup is the engine's
+	 * per-city table), and it is the list a player expects to find under a city's
+	 * name. It is read for EVERY city, foreign ones included, because a city's cars
+	 * have to be SELECTABLE even when none of them is loaded yet -- picking one is
+	 * what imports it (SandboxCarMakeResident). Only ever offering what is already
+	 * resident is how a foreign city ends up saying "no cars available". Holes and
+	 * "no such car" rows are 0 and -1, and a model may legitimately repeat (Havana's
+	 * own list is 1 2 3 3 4), so each model is added once. */
+	for (i = 0; i < 10 && gSandboxCarCount < SBX_MAX_CARS; i++)
+	{
+		int model = (int)(signed char)carNumLookup[gSandboxCity][i];
+
+		if (model <= 0 || model >= CAR_MODEL_LUMP_ENTRIES)
+			continue;
+
+		for (k = 0; k < gSandboxCarCount; k++)
+		{
+			if (gSandboxCarModels[k] == model)
+				break;
+		}
+
+		if (k < gSandboxCarCount)
+			continue;	/* already listed */
+
+		gSandboxCarModels[gSandboxCarCount++] = model;
+	}
+
+	/* 2. PLUS whatever carhacks says this machine could offer there, which can name a
+	 * car the table above does not (an import it has arranged). */
+	memset(&sa, 0, sizeof(sa));
+	sa.city = gSandboxCity;
+	sa.slots = listSlots;
+	sa.models = offerModels;
+	sa.max = SBX_MAX_CARS;
+	jer_fire(MP_CARQ_SLOTS, &sa);
+
+	n = (sa.count > 0) ? sa.count : 0;
+
+	if (n > SBX_MAX_CARS)
+		n = SBX_MAX_CARS;
+
+	for (i = 0; i < n && gSandboxCarCount < SBX_MAX_CARS; i++)
+	{
+		if (offerModels[i] <= 0 || offerModels[i] >= CAR_MODEL_LUMP_ENTRIES)
+			continue;
+
+		for (k = 0; k < gSandboxCarCount; k++)
+		{
+			if (gSandboxCarModels[k] == offerModels[i])
+				break;
+		}
+
+		if (k < gSandboxCarCount)
+			continue;
+
+		gSandboxCarModels[gSandboxCarCount++] = offerModels[i];
+	}
+
+	/* 3. Still nothing at all -- a level whose own list has not been built, and no
+	 * carhacks to ask -- so fall back to what this level already holds in a resident
+	 * slot. That is the stock sandbox behavior. */
+	if (gSandboxCarCount <= 0)
+	{
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS && gSandboxCarCount < SBX_MAX_CARS; i++)
+		{
+			int src;
+
+			if (!JerCarSlotUsable(i))
+				continue;
+
+			src = GetCarModelSourceCity(i);
+
+			if (src >= 0 && src != gSandboxCity)
+				continue;
+
+			gSandboxCarModels[gSandboxCarCount++] = residentCarModels[i];
+		}
+	}
+
+	if (gSandboxCarIdx < 0 || gSandboxCarIdx >= gSandboxCarCount)
+		gSandboxCarIdx = 0;
+
+	SandboxCarListCommit();
+
+	jer_log("[sandbox] car source: %s - %d car(s)%s\n",
+		SandboxCityName(gSandboxCity), gSandboxCarCount,
+		(gSandboxCarCount > 0 && gSandboxSpawnModel < 0) ? " (none loaded here yet)" : "");
+}
+
+/* point the preview + the spawn at the row's current pick. A car of another city
+ * that is not loaded here yet has no slot, and -1 is how that is said: the preview
+ * skips it and the spawn loads it first. */
+static void SandboxCarListCommit(void)
+{
+	gSandboxSpawnModel = (gSandboxCarCount > 0)
+		? SandboxCarSlotFor(gSandboxCity, gSandboxCarModels[gSandboxCarIdx])
+		: -1;
+}
+
+/* Spawn Car: make the pick exist here, then build it -- and say so when it cannot
+ * be had, rather than building a slot that holds nothing. */
+static void SandboxSpawnSelectedCar(CAR_DATA* pc)
+{
+	int city, model, slot;
+
+	if (gSandboxCarCount <= 0)
+	{
+		jer_error("[sandbox] spawn car: nothing this level can build\n");
+		return;
+	}
+
+	city = gSandboxCity;
+	model = gSandboxCarModels[gSandboxCarIdx];
+
+	slot = SandboxCarMakeResident(city, model);
+
+	if (slot < 0)
+	{
+		jer_error("[sandbox] spawn car: %s model %d could not be loaded here\n",
+			SandboxCityName(city), model);
+		return;
+	}
+
+	/* TAKE AWAY THE ONE WE SPAWNED LAST, first. In "In Front" mode the new car is put
+	 * a couple of car-lengths ahead of the player, which is exactly where the previous
+	 * one is sitting: the two are inside each other and the collision pass flings them
+	 * both. ("Teleport In" has no such problem -- it moves the player into the new car
+	 * and pings the old one out itself.) Only a car that is STILL OURS is removed: if
+	 * the player has since got into it, it is their car now. */
+	if (gSandboxSpawnedCar >= 0 && gSandboxSpawnedCar < MAX_CARS)
+	{
+		CAR_DATA* old = &car_data[gSandboxSpawnedCar];
+
+		if (old->controlType == CONTROL_TYPE_CIV_AI)
+			PingOutCar(old);
+	}
+
+	gSandboxSpawnedCar = SandboxSpawnCarModel(slot, pc != NULL ? pc->ap.palette : 0);
+
+	/* an import may have landed it in a slot the list did not name */
+	gSandboxSpawnModel = slot;
+}
+
 /* the level-object list for the spawn page (smashable[] with a name) */
 #define SBX_SMASHABLE_COUNT 37	/* sizeof(smashable)/sizeof(smashable[0]) in objanim.c */
 
@@ -368,12 +725,29 @@ static void SandboxTuneRestore(void);
 /* the map-teleport starter (defined below) — the main menu opens it */
 static int SandboxTeleportStart(void* userdata, int direction);
 
-/* first visit to the spawn page: default the Car ID to the player's own
- * car (the historical Spawn Car behavior) */
+/* entering the spawn page: refresh what this machine can offer (a level load, or a
+ * carhacks answer, may have changed it since last time), then default the pick to
+ * the car the player is in -- the historical Spawn Car behavior. */
 static void SandboxSpawnPageEnter(CAR_DATA* pc)
 {
-	if (gSandboxSpawnModel < 0)
-		gSandboxSpawnModel = pc != NULL ? pc->ap.model : 0;
+	SandboxCarSourceRefresh();
+
+	if (pc != NULL)
+	{
+		/* select the player's own car when the list has it, so the first Spawn Car is
+		 * still "one of these, please" */
+		int i;
+
+		for (i = 0; i < gSandboxCarCount; i++)
+		{
+			if (SandboxCarSlotFor(gSandboxCity, gSandboxCarModels[i]) == pc->ap.model)
+			{
+				gSandboxCarIdx = i;
+				SandboxCarListCommit();
+				break;
+			}
+		}
+	}
 
 	gSandboxPage = SBX_PAGE_SPAWN;
 	gSandboxCursor = 0;
@@ -867,18 +1241,28 @@ static const char* SandboxAICarLabel(int cursor)
 	}
 }
 
-/* spawn page label: the position item shows the live mode, the Car ID
- * item shows the cycled model index */
+/* spawn page label: the position item shows the live mode, then the two rows that
+ * say WHERE the car comes from -- the city, and the car within it. A car is only an
+ * identity together with its city, which is why this replaced the raw "Car ID" row
+ * (that one could not name a car the level does not ship at all). */
 static const char* SandboxSpawnLabel(int cursor)
 {
-	static char buf[24];
+	static char buf[48];
 
 	switch (cursor)
 	{
 	case 0:
 		return gSandboxSpawnMode ? "Spawn Position: Teleport In" : "Spawn Position: In Front";
 	case 1:
-		sprintf(buf, "Car ID: %d", gSandboxSpawnModel);
+		sprintf(buf, "Source City: %s", SandboxCityName(gSandboxCity));
+		return buf;
+	case 2:
+		if (gSandboxCarCount <= 0)
+			return "Car: (none this level can build)";
+
+		sprintf(buf, "Car: %d/%d (%s model %d)", gSandboxCarIdx + 1, gSandboxCarCount,
+			SandboxCityName(gSandboxCity), gSandboxCarModels[gSandboxCarIdx]);
+
 		return buf;
 	default:
 		return SandboxMenuItemLabel(SBX_PAGE_SPAWN, cursor);
@@ -1041,25 +1425,23 @@ static void SandboxMenuDoAction(int page, int cursor)
 		switch (cursor)
 		{
 		case 0: gSandboxSpawnMode ^= 1; break;	/* spawn position */
-		case 1: break;				/* Car ID — cycled with L/R */
-		case 2:
-			/* spawn the car selected with the Car ID item, clean, in the
-			 * player's palette (matches the preview — the same NULL guard
-			 * so the button can't spawn a non-resident model the preview
-			 * hides) */
-			if (JerCarSlotUsable(gSandboxSpawnModel))
-			{
-				SandboxSpawnCarModel(gSandboxSpawnModel,
-					pc != NULL ? pc->ap.palette : 0);
-			}
-			break;
+		case 1: break;				/* source city -- cycled with L/R */
+		case 2: break;				/* car         -- cycled with L/R */
 		case 3:
+			/* spawn the car the two rows above name, clean, in the player's palette.
+			 * It goes through the load handshake first: a car from another city (Driver
+			 * 1's included) is not in this level's lump until carhacks' import has put
+			 * it there, and building a slot that holds nothing is the crash this menu
+			 * used to be able to invite. */
+			SandboxSpawnSelectedCar(pc);
+			break;
+		case 4:
 			SandboxMenuBuildObjectList();
 			gSandboxObjectPage = 0;
 			gSandboxObjectCursor = 0;
 			gSandboxPage = SBX_PAGE_OBJECTS;
 			break;
-		case 4:
+		case 5:
 			gSandboxPage = SBX_PAGE_AICAR;
 			gSandboxCursor = 0;
 			gSandboxSubPage = 0;
@@ -1165,13 +1547,35 @@ static void SandboxAdjustItem(int dir)
 
 	if (gSandboxPage == SBX_PAGE_SPAWN && gSandboxCursor == 1)
 	{
-		/* Car ID: cycle the model to spawn (left/right) */
-		gSandboxSpawnModel += dir;
+		/* source city: cycle the list, and bring that city's cars with it */
+		if (gSandboxCityCount > 0)
+		{
+			int idx = 0, i;
 
-		if (gSandboxSpawnModel < 0)
-			gSandboxSpawnModel = MAX_CAR_RESIDENT_MODELS - 1;
-		else if (gSandboxSpawnModel >= MAX_CAR_RESIDENT_MODELS)
-			gSandboxSpawnModel = 0;
+			for (i = 0; i < gSandboxCityCount; i++)
+			{
+				if (gSandboxCities[i] == gSandboxCity)
+					idx = i;
+			}
+
+			idx = (idx + dir + gSandboxCityCount) % gSandboxCityCount;
+			gSandboxCity = gSandboxCities[idx];
+		}
+
+		gSandboxCarIdx = 0;
+		SandboxCarListRefresh();	/* the new city brings its own cars */
+		return;
+	}
+
+	if (gSandboxPage == SBX_PAGE_SPAWN && gSandboxCursor == 2)
+	{
+		/* car: cycle this city's list (left/right) */
+		if (gSandboxCarCount > 0)
+		{
+			gSandboxCarIdx = (gSandboxCarIdx + dir + gSandboxCarCount) % gSandboxCarCount;
+			SandboxCarListCommit();
+		}
+
 		return;
 	}
 
@@ -1485,6 +1889,10 @@ static int SandboxOnGameStart(void* userdata, void* args)
 		gDoOverlays = gSandboxSavedDoOverlays;
 	}
 
+	/* a new level means a new set of cars: the level's own differ, and an import
+	 * from before it may no longer be there */
+	SandboxCarSourceRefresh();
+
 	/* new level = new session: drop the pristine-cosmetics cache and the
 	 * multiplier so the next tune session starts from the level's values */
 	memset(gSandboxOrigValid, 0, sizeof(gSandboxOrigValid));
@@ -1511,6 +1919,132 @@ static int SandboxOnCameraLook(void* userdata, void* args)
 /* Frame hook: no-damage + sandbox-menu input                          */
 /* ------------------------------------------------------------------ */
 
+/* TEST LEVER -- inert unless SANDBOX_TEST_SPAWN=<frames>[,<city>[,<model>]].
+ *
+ * Drives the Spawn Car path with no pad: after <frames> frames with the player in a
+ * car, it makes the named car resident and builds it, exactly as the menu row does
+ * (SandboxCarMakeResident -> SandboxSpawnCarModel). That handshake is the half that
+ * can fail quietly, and the menu needs a human at a pad, so without this it would
+ * only ever be looked at by hand.
+ *
+ * <city> defaults to -1 (this level). <model> defaults to the first car the spawn
+ * page would offer for that city. */
+static void SandboxTestSpawnTick(void)
+{
+	/* city/model/wait are STATIC on purpose: this runs once per frame and the parse
+	 * below happens only on the first call, so automatics would be back at their
+	 * initialisers on every later call -- which is how this lever once spawned "this
+	 * level" whatever city it had been asked for. */
+	static int armed, reached, waited, wait, spawned, gap;
+	static int city = SBX_CITY_NATIVE, model = -1;
+	const char* s;
+	CAR_DATA* pc;
+	char work[64];
+	char* p;
+
+	if (!armed)
+	{
+		s = getenv("SANDBOX_TEST_SPAWN");
+
+		if (s == NULL || *s == '\0')
+			return;
+
+		armed = 1;
+		snprintf(work, sizeof(work), "%s", s);
+
+		p = strchr(work, ',');
+
+		if (p != NULL)
+		{
+			*p++ = '\0';
+			city = atoi(p);
+
+			p = strchr(p, ',');
+
+			if (p != NULL)
+				model = atoi(p + 1);
+		}
+
+		wait = atoi(work);
+
+		jer_log("[sandbox] test: SANDBOX_TEST_SPAWN=%s armed (%d frame(s), city %d model %d)\n",
+			s, wait, city, model);
+	}
+
+	if (spawned >= 2)
+		return;
+
+	pc = SandboxPlayerCar();
+
+	if (pc == NULL)
+		return;
+
+	if (!reached)
+	{
+		if (++waited < wait)
+			return;
+
+		reached = 1;
+
+		/* Dump what EVERY offered city now lists, so "a foreign city says no cars" is
+		 * a log line rather than a memory. This runs once the level is up, because the
+		 * per-city roster tables are built with the level. */
+		{
+			int c, keep = gSandboxCity;
+
+			for (c = 0; c < gSandboxCityCount; c++)
+			{
+				gSandboxCity = gSandboxCities[c];
+				SandboxCarListRefresh();
+			}
+
+			gSandboxCity = keep;
+		}
+
+		/* Point the page at the pick the lever was given, then spawn through the SAME
+		 * path the Spawn Car row uses -- so what is under test is the menu's behaviour
+		 * and not a second implementation of it. */
+		gSandboxCity = (city >= 0 && city < CITY_COUNT) ? city : SandboxLevelCity();
+		gSandboxCarIdx = 0;
+
+		SandboxCarListRefresh();
+
+		if (model >= 0 && gSandboxCarCount > 0)
+		{
+			int i;
+
+			for (i = 0; i < gSandboxCarCount; i++)
+			{
+				if (gSandboxCarModels[i] == model)
+				{
+					gSandboxCarIdx = i;
+					break;
+				}
+			}
+
+			if (i >= gSandboxCarCount)
+				jer_log("[sandbox] test: %s does not list model %d - using the first car\n",
+					SandboxCityName(gSandboxCity), model);
+		}
+
+		SandboxCarListCommit();
+	}
+
+	if (spawned > 0 && ++gap < 40)
+		return;				/* let the last one settle */
+
+	jer_log("[sandbox] test: spawn %d from %s, pick %d/%d (model %d)\n",
+		spawned + 1, SandboxCityName(gSandboxCity), gSandboxCarIdx + 1, gSandboxCarCount,
+		(gSandboxCarCount > 0) ? gSandboxCarModels[gSandboxCarIdx] : -1);
+
+	SandboxSpawnSelectedCar(pc);
+
+	++spawned;
+	gap = 0;
+
+	jer_log("[sandbox] test: spawn %d -> car_data %d\n", spawned, gSandboxSpawnedCar);
+}
+
 static int SandboxOnFrame(void* userdata, void* args)
 {
 	CAR_DATA* playerCar;
@@ -1520,6 +2054,8 @@ static int SandboxOnFrame(void* userdata, void* args)
 	(void)args;
 
 	gFrameCount++;
+
+	SandboxTestSpawnTick();
 
 	if (gSandboxMenuOpen)
 		SandboxMenuInput(Pads[0].mapnew);

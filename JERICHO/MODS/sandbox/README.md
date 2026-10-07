@@ -52,6 +52,34 @@ selects, Triangle closes. The world keeps simulating behind the menu — traffic
 keeps moving, the player's car coasts to a stop (the pad is captured by the
 menu).
 
+## Spawning a car from any city
+
+The Spawn page's **Source City** and **Car** rows decide what `Spawn Car` builds,
+and they are driven by carhacks when it is installed:
+
+| Row | What it lists |
+| --- | --- |
+| Source City | carhacks' cities — the four Driver 2 ones and Driver 1's five (MIAMI, FRISCO, LA, NEWYORK, NEWCASTLE). With nothing to ask it is the level you are playing, and it starts there |
+| Car | that city's ROSTER — the same per-city list the frontend car screen shows (MIAMI 7 cars, NEWYORK 8, NEWCASTLE 3, …) |
+
+The roster is listed whether or not those cars are resident here yet, because
+choosing one that is not **is** the request that brings it in: `Spawn Car` asks
+carhacks to import it first (the same `MP_CARQ_LOAD` request mp's Change car
+makes) and only says so when it genuinely cannot be loaded. A car from another
+city — Driver 1's included — therefore spawns exactly like a domestic one. (The
+rows used to offer only what was already resident, which made every foreign city
+read "no cars available".)
+
+Each spawn **replaces** the last car that row spawned. The new car is dropped a
+couple of car-lengths ahead, which is where the previous one is sitting, and two
+overlapping cars is a collision the solver resolves by throwing them both across
+the map. `Teleport In` has no such problem — it moves the player into the new car
+and removes the old one itself.
+
+Headless: `SANDBOX_TEST_SPAWN=<frames>[,<city>[,<model>]]` drives that path with
+no pad — it dumps every offered city's roster and then spawns twice, the second
+reusing the first's `car_data` slot, which is what proves the replacement works.
+
 ## Custom event
 
 Firing `JER_EVENT_MODULE_CUSTOM + 10` (SANDBOX_CUSTOM_TOGGLE) flips
