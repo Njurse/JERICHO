@@ -59,7 +59,7 @@ end
 -- Modules a RELEASE build pre-includes.
 --
 -- A DEV build compiles every installed mod -- that is what lets a mod be worked
--- on -- but a release ships only these three, so a person who downloads JERICHO
+-- on -- but a release ships only these four, so a person who downloads JERICHO
 -- gets the game and a small, legible mod list rather than every experimental
 -- module at once. The rest still live in the tree and still build for dev; they
 -- are distributed separately (a mod-repo release).
@@ -69,9 +69,10 @@ end
 -- everything. So one `premake5 vs2019` produces both a full dev build and a
 -- trimmed release build, and neither needs its own checkout.
 JERICHO_RELEASE_MODS = {
-	carhacks = true,	-- vehicle unlock + cross-city car imports (imported by mp)
-	crumple  = true,	-- vehicle deformation + wheel-damage physics
-	mp       = true,	-- LAN multiplayer
+	carhacks   = true,	-- vehicle unlock + cross-city car imports (imported by mp)
+	crumple    = true,	-- vehicle deformation + wheel-damage physics
+	levelhacks = true,	-- the Singleplayer / Multiplayer prompt on a take-a-ride
+	mp         = true,	-- LAN multiplayer
 }
 
 -- true when id is pre-included in a release build.
@@ -813,20 +814,28 @@ project "JERICHO"
             postbuildcommands(JER_CMDS)
         end
 
+    -- NOTE the explicit '/' before JERICHO in every path below. On MSBuild
+    -- %{cfg.buildtarget.directory} expands to $(TargetDir), which ENDS in a
+    -- separator, so "$(TargetDir)JERICHO" is right there. The gmake generator
+    -- expands it to a literal ../bin/<cfg> with NO trailing separator, so the same
+    -- concatenation produced "../bin/ReleaseJERICHO/MODS" -- a directory nobody
+    -- reads. That meant a Linux build mirrored the mods somewhere the game never
+    -- looks (and the package step then tarred a JERICHO/ with no mods in it), while
+    -- the build still reported success.
     filter { "system:linux" }
         postbuildcommands {
-            "mkdir -p \"%{cfg.buildtarget.directory}JERICHO/MODS\" && cp -R ../../JERICHO/MODS/. \"%{cfg.buildtarget.directory}JERICHO/MODS/\"",
-            "mkdir -p \"%{cfg.buildtarget.directory}JERICHO/CONFIG\" && cp -Rn ../../JERICHO/CONFIG/. \"%{cfg.buildtarget.directory}JERICHO/CONFIG/\"",
+            "mkdir -p \"%{cfg.buildtarget.directory}/JERICHO/MODS\" && cp -R ../../JERICHO/MODS/. \"%{cfg.buildtarget.directory}/JERICHO/MODS/\"",
+            "mkdir -p \"%{cfg.buildtarget.directory}/JERICHO/CONFIG\" && cp -Rn ../../JERICHO/CONFIG/. \"%{cfg.buildtarget.directory}/JERICHO/CONFIG/\"",
             -- as on Windows: let a repo-side modlist.ini edit reach bin/, but only when
             -- it is the newer file (cp -u), so a runtime toggle there still survives.
-            "cp -u ../../JERICHO/CONFIG/modlist.ini \"%{cfg.buildtarget.directory}JERICHO/CONFIG/modlist.ini\"",
+            "cp -u ../../JERICHO/CONFIG/modlist.ini \"%{cfg.buildtarget.directory}/JERICHO/CONFIG/modlist.ini\"",
         }
 
     -- the same removals as on Windows, after the copy above. A static library is
     -- <id>.a on this toolchain, so both spellings are cleared.
     filter { "system:linux" }
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
-            local JER_DEST = "%{cfg.buildtarget.directory}JERICHO/MODS/" .. JER_MOD
+            local JER_DEST = "%{cfg.buildtarget.directory}/JERICHO/MODS/" .. JER_MOD
             local JER_CMDS = {
                 "rm -rf \"" .. JER_DEST .. "/tools\" \"" .. JER_DEST .. "/obj\" \"" .. JER_DEST .. "/lib\"",
                 -- by extension, as on Windows: a static library is .a here and the rest
@@ -845,10 +854,10 @@ project "JERICHO"
 
     -- A RELEASE build's mirror carries only the pre-included modules, so the
     -- shipped JERICHO/MODS matches exactly what the release exe links: someone who
-    -- downloads JERICHO sees three mods, not every experimental one. A dev build
-    -- keeps them all. Done as a second, Release-only pass over the same folder list
-    -- so the shared commands above do not have to grow a condition, and it runs
-    -- last, after the mirror copy.
+    -- downloads JERICHO sees only those mods, not every experimental one. A dev
+    -- build keeps them all. Done as a second, Release-only pass over the same
+    -- folder list so the shared commands above do not have to grow a condition, and
+    -- it runs last, after the mirror copy.
     filter { "system:Windows", "configurations:Release" }
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
             if not jericho_is_release_mod(JER_MOD) then
@@ -863,7 +872,7 @@ project "JERICHO"
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
             if not jericho_is_release_mod(JER_MOD) then
                 postbuildcommands {
-                    "rm -rf \"%{cfg.buildtarget.directory}JERICHO/MODS/" .. JER_MOD .. "\"",
+                    "rm -rf \"%{cfg.buildtarget.directory}/JERICHO/MODS/" .. JER_MOD .. "\"",
                 }
             end
         end
@@ -881,6 +890,6 @@ project "JERICHO"
 
     filter { "system:linux", "configurations:Release" }
         postbuildcommands {
-            "cp -f \"../Game/C/JERICHO/gen/modlist_release.ini\" \"%{cfg.buildtarget.directory}JERICHO/CONFIG/modlist.ini\"",
+            "cp -f \"../Game/C/JERICHO/gen/modlist_release.ini\" \"%{cfg.buildtarget.directory}/JERICHO/CONFIG/modlist.ini\"",
         }
     filter {}

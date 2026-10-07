@@ -235,7 +235,7 @@ jobs:
         working-directory: src_rebuild
         run: ./premake5 gmake2
 
-      - name: Build (release_dev_x64)
+      - name: Build (release_x64)
         working-directory: src_rebuild/build
         run: |
           for cfg in release_x64; do
@@ -258,7 +258,10 @@ jobs:
         with:
           name: JERICHO_Release_linux-x64
           path: JERICHO_Release_linux-x64.tar.gz
-          if-no-files-found: warn
+          # ERROR, not warn: a green Linux job must MEAN the artifact exists. The
+          # publish job still tolerates a failed platform (that stays as it is), but
+          # the Linux job itself should not pass while producing nothing.
+          if-no-files-found: error
 
   publish:
     name: Publish

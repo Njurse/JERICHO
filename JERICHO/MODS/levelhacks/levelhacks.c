@@ -21,6 +21,7 @@
 #include "jericho.h"
 #include "jer_events.h"
 #include "jer_menu.h"
+#include "jer_net.h"		/* jer_net_is_active - a LAN session owns the take-a-ride confirm */
 
 #include "players.h"
 #include "main.h"
@@ -58,6 +59,14 @@ static int LevelhacksOnFrontend(void* userdata, void* args)
 	JER_ARGS_FRONTEND* a = (JER_ARGS_FRONTEND*)args;
 
 	(void)userdata;
+
+	/* In a LAN session the mp mod OWNS this confirm: it asks its own Single Player /
+	 * Multiplayer question (mp.mode) and hands the launch back itself, so asking
+	 * here as well would stack two prompts on one city confirm. jer_net_is_active()
+	 * is exactly "a session role is set" (mp's MpIsActive), so the two forks are
+	 * mutually exclusive by construction, whatever order the hooks run in. */
+	if (jer_net_is_active())
+		return JER_RESULT_CONTINUE;
 
 	if (a->gameType != GAME_TAKEADRIVE || gLhDone)
 		return JER_RESULT_CONTINUE;

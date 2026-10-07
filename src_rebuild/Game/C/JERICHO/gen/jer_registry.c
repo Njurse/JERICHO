@@ -22,9 +22,10 @@ void jer_module_yarisbounce_entry(JERICHO_CONTEXT* ctx);
 extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "carhacks", jer_module_carhacks_entry, 0 },
 	{ "crumple", jer_module_crumple_entry, 1 },
+	{ "levelhacks", jer_module_levelhacks_entry, 1 },
 	{ "mp", jer_module_mp_entry, 1 },
 };
-extern const int jer_registry_module_count = 3;
+extern const int jer_registry_module_count = 4;
 #else
 extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "antfarm", jer_module_antfarm_entry, 0 },
