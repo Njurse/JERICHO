@@ -1047,9 +1047,7 @@ static void SandboxMenuDoAction(int page, int cursor)
 			 * player's palette (matches the preview — the same NULL guard
 			 * so the button can't spawn a non-resident model the preview
 			 * hides) */
-			if (gSandboxSpawnModel >= 0 &&
-				gSandboxSpawnModel < MAX_CAR_RESIDENT_MODELS &&
-				gCarCleanModelPtr[gSandboxSpawnModel] != NULL)
+			if (JerCarSlotUsable(gSandboxSpawnModel))
 			{
 				SandboxSpawnCarModel(gSandboxSpawnModel,
 					pc != NULL ? pc->ap.palette : 0);
@@ -1837,8 +1835,7 @@ static void SandboxDrawPreview(void)
 	else if (gSandboxPage == SBX_PAGE_AICAR)
 	{
 		/* the AI car about to be spawned: model + chosen palette */
-		if (gSandboxAIModel >= 0 && gSandboxAIModel < MAX_CAR_RESIDENT_MODELS &&
-			gCarCleanModelPtr[gSandboxAIModel] != NULL)
+		if (JerCarSlotUsable(gSandboxAIModel))
 		{
 			SandboxPreviewScratchCar(gSandboxAIModel,
 				gSandboxAIMode == 0 ? gSandboxAIParam : 0);
@@ -1856,8 +1853,7 @@ static void SandboxDrawPreview(void)
 		int model = gSandboxSpawnModel;
 		int palette = pc != NULL ? pc->ap.palette : 0;
 
-		if (model < 0 || model >= MAX_CAR_RESIDENT_MODELS ||
-			gCarCleanModelPtr[model] == NULL)
+		if (!JerCarSlotUsable(model))
 			return;
 
 		SandboxPreviewScratchCar(model, palette);

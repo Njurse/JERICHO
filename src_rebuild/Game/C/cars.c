@@ -2985,9 +2985,9 @@ void DrawCar(CAR_DATA* cp, int view)
 
 	// JERICHO: no geometry for this slot in this level (its model was never
 	// loaded) -> there is nothing to draw, and the draw path dereferences the
-	// model. Skip the car rather than fault. InitPlayer now clamps an unavailable
-	// player car to a resident slot, so this is a backstop.
-	if (model < 0 || model >= MAX_CAR_RESIDENT_MODELS || gCarCleanModelPtr[model] == NULL)
+	// model (the one shared rule, cars.h). Skip the car rather than fault. InitPlayer
+	// clamps an unavailable player car to a resident slot, so this is a backstop.
+	if (!JerCarSlotUsable(model))
 	{
 		if (jerDiagCarDraw())
 			printInfo("JERICHO-DIAG CARDRAW: SKIP car=%d model=%d (no geometry)\n", cp->id, model);

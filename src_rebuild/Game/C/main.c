@@ -3150,8 +3150,8 @@ int redriver2_main(int argc, char** argv)
 			 * an unknown name just below. */
 			if (gBootCar > CAR_MODEL_LUMP_ENTRIES)
 			{
-				printError("-car %d is not a car this game has (0..%d, or %d for the special)\n",
-					gBootCar, CAR_MODEL_LUMP_ENTRIES - 1, CAR_MODEL_LUMP_ENTRIES);
+				printError("-car %d is not a car this game has (0..%d)\n",
+					gBootCar, CAR_MODEL_LUMP_ENTRIES);
 
 				return -1;
 			}

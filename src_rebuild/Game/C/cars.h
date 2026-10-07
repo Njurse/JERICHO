@@ -173,9 +173,11 @@ extern const char* GetCarDataFolder(void);
  * bitten: an index past MAX_CAR_RESIDENT_MODELS walks off
  * residentCarModels[]/gCarCleanModelPtr[], and a slot whose mesh was never built
  * faults as soon as the lighting pass or the draw path dereferences it (the
- * historical access violation in ComputeCarLightingLevels). EVERY site that gives a
- * car a model asks here, so the rule cannot drift into five slightly different
- * tests. */
+ * historical access violation in ComputeCarLightingLevels). Every site that HANDS
+ * A CAR OUT or CONSTRUCTS one asks here, so THAT rule cannot drift into five
+ * slightly different tests. Questions of the "is this geometry present, or is it
+ * ours" kind (models.c's build and hotload paths) are a different question and are
+ * deliberately not routed through it. */
 enum
 {
 	JER_CAR_SLOT_OK = 0,
