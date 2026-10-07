@@ -245,14 +245,15 @@ jobs:
             rc=${PIPESTATUS[0]}
             set -e
             if [ "$rc" -ne 0 ]; then
-              # Surface the tail of the log as check annotations. Job LOGS need
-              # admin rights to download, but annotations are readable by anyone,
-              # so a red Linux build is legible from the commit page instead of
-              # being a bare "exit code 2". The tail is what matters: the real
-              # compiler/linker diagnostic sits just above the make errors, and
-              # its wording is not predictable enough to grep for.
-              tail -60 "/tmp/make-$cfg.log" | while IFS= read -r line; do
-                [ -n "$line" ] && echo "::error title=make $cfg::${line}"
+              # Retry with -j1 and annotate THAT. Job LOGS need admin rights to
+              # download, but annotations are readable by anyone. The first pass's
+              # tail is useless: -j interleaves every project's output, so the last
+              # lines belong to whichever compile was still running. A serial retry
+              # skips the objects that already built and re-runs only the failing
+              # step, so its tail is the actual diagnostic.
+              echo "::group::make $cfg -j1 (retry for a readable error)"
+              make config=$cfg -j1 2>&1 | tail -25 | while IFS= read -r line; do
+                [ -n "$line" ] && echo "::error title=$cfg::${line}"
               done
               echo "::endgroup::"
               exit "$rc"
