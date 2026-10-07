@@ -243,21 +243,22 @@ jobs:
             set +e
             make config=$cfg -j"$(nproc)" 2>&1 | tee "/tmp/make-$cfg.log"
             rc=${PIPESTATUS[0]}
-            set -e
             if [ "$rc" -ne 0 ]; then
-              # Retry with -j1 and annotate THAT. Job LOGS need admin rights to
-              # download, but annotations are readable by anyone. The first pass's
-              # tail is useless: -j interleaves every project's output, so the last
-              # lines belong to whichever compile was still running. A serial retry
-              # skips the objects that already built and re-runs only the failing
-              # step, so its tail is the actual diagnostic.
-              echo "::group::make $cfg -j1 (retry for a readable error)"
-              # GitHub keeps only the FIRST 10 annotations we emit, so emit just the
-              # last few lines -- and drop the per-project banners, which otherwise
-              # crowd them out. The failing command's own message ends the tail.
+              # A PARALLEL build of the generated makefile is flaky on Linux: it can
+              # fail at the exe's link/post-build step (JERICHO.make) while the same
+              # build serially succeeds. Objects are already built by this point, so a
+              # -j1 retry only re-runs the failing step -- cheap, and it is what makes
+              # this job's green actually mean "Linux builds". If the retry ALSO
+              # fails, annotate its tail: job LOGS need admin rights to download, but
+              # annotations are public, so a red build stays legible from the commit.
+              echo "::warning title=$cfg::parallel build failed - retrying serially"
               make config=$cfg -j1 2>&1 | grep -v '^==== ' | tail -10 | while IFS= read -r line; do
                 [ -n "$line" ] && echo "::error title=$cfg::${line}"
               done
+              rc=${PIPESTATUS[0]}
+            fi
+            set -e
+            if [ "$rc" -ne 0 ]; then
               echo "::endgroup::"
               exit "$rc"
             fi
