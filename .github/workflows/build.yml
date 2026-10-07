@@ -240,7 +240,22 @@ jobs:
         run: |
           for cfg in release_x64; do
             echo "::group::make $cfg"
-            make config=$cfg -j"$(nproc)"
+            set +e
+            make config=$cfg -j"$(nproc)" 2>&1 | tee "/tmp/make-$cfg.log"
+            rc=${PIPESTATUS[0]}
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              # Surface the real diagnostics as check annotations. Job LOGS need
+              # admin rights to download, but annotations are readable by anyone,
+              # so a red Linux build is legible from the commit page instead of
+              # being a bare "exit code 2".
+              grep -aE "error:|undefined reference|No such file or directory|Error [0-9]" "/tmp/make-$cfg.log" \
+                | tail -30 | while IFS= read -r line; do
+                    echo "::error title=make $cfg::${line}"
+                  done
+              echo "::endgroup::"
+              exit "$rc"
+            fi
             echo "::endgroup::"
           done
 
