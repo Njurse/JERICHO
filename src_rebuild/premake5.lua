@@ -56,10 +56,82 @@ for _, id in ipairs(jericho_scan_mods()) do
 	end
 end
 
+-- Modules a RELEASE build pre-includes.
+--
+-- A DEV build compiles every installed mod -- that is what lets a mod be worked
+-- on -- but a release ships only these three, so a person who downloads JERICHO
+-- gets the game and a small, legible mod list rather than every experimental
+-- module at once. The rest still live in the tree and still build for dev; they
+-- are distributed separately (a mod-repo release).
+--
+-- The set is applied PER CONFIGURATION, not per generation: the `Release`
+-- configuration compiles/links/mirrors only these, while `Release_dev` keeps
+-- everything. So one `premake5 vs2019` produces both a full dev build and a
+-- trimmed release build, and neither needs its own checkout.
+JERICHO_RELEASE_MODS = {
+	carhacks = true,	-- vehicle unlock + cross-city car imports (imported by mp)
+	crumple  = true,	-- vehicle deformation + wheel-damage physics
+	mp       = true,	-- LAN multiplayer
+}
+
+-- true when id is pre-included in a release build.
+function jericho_is_release_mod(id)
+	return JERICHO_RELEASE_MODS[id] == true
+end
+
 -- Generate JERICHO/gen/jer_registry.c listing the compiled-in modules.
 -- The game project compiles this file; it declares each module's entry
 -- (extern "C" so C modules link cleanly against the C++ game) and exposes
 -- the id->entry table the runtime walks at boot alongside the loader.
+-- `default-enabled` for one module, fail-closed to match the runtime loader
+-- (jer_loader.c): a module is OFF unless its mod.toml explicitly says
+-- `default-enabled = true`. An absent key must never silently turn a module on
+-- (that is how collisiondevil/cainescrossfire/d2pl ran unannounced).
+local function jericho_mod_default_enabled(m)
+	local defaultEnabled = 0
+	local toml = io.open(string.format("../JERICHO/MODS/%s/mod.toml", m), "r")
+
+	if toml then
+		local line = toml:read("*l")
+
+		while line do
+			-- Strip '#' comments first: a commented-out
+			-- `# default-enabled = true` must not enable the module.
+			local code = line:gsub("#.*$", "")
+			local v = code:match("default%-enabled%s*=%s*[\"']?(%w+)[\"']?")
+
+			if v == "true" or v == "1" or v == "enabled" then
+				defaultEnabled = 1
+			elseif v == "false" or v == "0" or v == "disabled" then
+				defaultEnabled = 0
+			end
+
+			line = toml:read("*l")
+		end
+
+		toml:close()
+	end
+
+	return defaultEnabled
+end
+
+-- Write one registry table + its count for the given module set.
+local function jericho_write_registry_table(f, mods)
+	f:write("extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {\n")
+
+	if #mods == 0 then
+		f:write("\t{ NULL, NULL, 0 },\n")
+	end
+
+	for _, m in ipairs(mods) do
+		f:write(string.format("\t{ \"%s\", jer_module_%s_entry, %d },\n",
+			m, m, jericho_mod_default_enabled(m)))
+	end
+
+	f:write("};\n")
+	f:write(string.format("extern const int jer_registry_module_count = %d;\n", #mods))
+end
+
 local function jericho_generate_registry(mods)
 	local dir = "Game/C/JERICHO/gen"
 	local f
@@ -72,56 +144,68 @@ local function jericho_generate_registry(mods)
 	f:write("#include \"jericho.h\"\n\n")
 	f:write("#ifdef __cplusplus\nextern \"C\" {\n#endif\n")
 
+	-- Declare EVERY installed module's entry. Only the selected set is REFERENCED,
+	-- so a release build (which links only JERICHO_RELEASE_MODS) leaves the rest
+	-- declared-but-unused -- which is exactly what a trimmed link needs, and why
+	-- the whole scan does not have to change.
 	for _, m in ipairs(mods) do
 		f:write(string.format("void jer_module_%s_entry(JERICHO_CONTEXT* ctx);\n", m))
 	end
 
 	f:write("\n")
-	f:write("extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {\n")
 
-	if #mods == 0 then
-		f:write("\t{ NULL, NULL, 0 },\n")
-	end
+	-- A RELEASE build (JERICHO_RELEASE_MODS defined at compile) carries only the
+	-- pre-included modules; every other build carries them all. The DEFINE is set
+	-- on the Release configuration of the game project, and the JERICHO project
+	-- links the same subset, so the table and the link always agree.
+	local releaseMods = {}
 
 	for _, m in ipairs(mods) do
-		-- Fail closed, to match the runtime loader (jer_loader.c): a module is
-		-- OFF unless its mod.toml explicitly says `default-enabled = true`. An
-		-- absent key must never silently turn a module on (that is how
-		-- collisiondevil/cainescrossfire/d2pl ran unannounced).
-		local defaultEnabled = 0
-		local toml = io.open(string.format("../JERICHO/MODS/%s/mod.toml", m), "r")
-
-		if toml then
-			local line = toml:read("*l")
-
-			while line do
-				-- Strip '#' comments first: a commented-out
-				-- `# default-enabled = true` must not enable the module.
-				local code = line:gsub("#.*$", "")
-				local v = code:match("default%-enabled%s*=%s*[\"']?(%w+)[\"']?")
-
-				if v == "true" or v == "1" or v == "enabled" then
-					defaultEnabled = 1
-				elseif v == "false" or v == "0" or v == "disabled" then
-					defaultEnabled = 0
-				end
-
-				line = toml:read("*l")
-			end
-
-			toml:close()
+		if jericho_is_release_mod(m) then
+			table.insert(releaseMods, m)
 		end
-
-		f:write(string.format("\t{ \"%s\", jer_module_%s_entry, %d },\n", m, m, defaultEnabled))
 	end
 
-	f:write("};\n")
-	f:write(string.format("extern const int jer_registry_module_count = %d;\n", #mods))
+	f:write("#ifdef JERICHO_RELEASE_MODS\n")
+	jericho_write_registry_table(f, releaseMods)
+	f:write("#else\n")
+	jericho_write_registry_table(f, mods)
+	f:write("#endif\n")
 	f:write("#ifdef __cplusplus\n}\n#endif\n")
 	f:close()
 end
 
 jericho_generate_registry(JERICHO_COMPILED_MODS)
+
+-- Write JERICHO/gen/modlist_release.ini: the RELEASE modlist, holding ONLY the
+-- pre-included modules, all enabled. A release exe registers only these, so a
+-- modlist that named the other modules would log "modlist references unknown
+-- module" for each of them. Generated from the same JERICHO_RELEASE_MODS list the
+-- registry and the link use, so the three cannot drift. The Release configuration
+-- copies it over bin/<cfg>/JERICHO/CONFIG/modlist.ini (see the post-build
+-- commands); a dev build keeps the repo's full modlist.
+local function jericho_generate_release_modlist(mods)
+	local dir = "Game/C/JERICHO/gen"
+	local f
+
+	os.mkdir(dir)
+
+	f = io.open(dir .. "/modlist_release.ini", "w")
+
+	f:write("# generated by premake5.lua -- do not edit.\n")
+	f:write("# The RELEASE modlist: only the pre-included modules (JERICHO_RELEASE_MODS\n")
+	f:write("# in premake5.lua), all enabled. A release exe registers only these.\n")
+
+	for _, m in ipairs(mods) do
+		if jericho_is_release_mod(m) then
+			f:write(string.format("%s = 1\n", m))
+		end
+	end
+
+	f:close()
+end
+
+jericho_generate_release_modlist(JERICHO_COMPILED_MODS)
 
 -- Common include dirs/defines for anything that includes the game headers.
 local function jer_game_includedirs()
@@ -476,10 +560,26 @@ project "JERICHO"
     links { "JERICHO_runtime" }
     dependson { "JERICHO_runtime" }
 
-	for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
-		links { ("mod_" .. JER_MOD) }
-		dependson { ("mod_" .. JER_MOD) }
-	end
+	-- Mod links, PER CONFIGURATION. A dev/debug build compiles in EVERY installed
+	-- mod; a release pre-includes only JERICHO_RELEASE_MODS (the table near the
+	-- top). Both sets are written as positive filters on purpose: a `not Release`
+	-- filter and an unconditional loop both mis-resolved in this premake build and
+	-- dropped the DEV links entirely (a release-only link set), where enumerating
+	-- the configurations is unambiguous. removeLinks does not exist here either.
+	filter "configurations:Debug or Release_dev"
+		for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
+			links { ("mod_" .. JER_MOD) }
+			dependson { ("mod_" .. JER_MOD) }
+		end
+
+	filter "configurations:Release"
+		for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
+			if jericho_is_release_mod(JER_MOD) then
+				links { ("mod_" .. JER_MOD) }
+				dependson { ("mod_" .. JER_MOD) }
+			end
+		end
+	filter {}
 
 	-- GNU ld resolves static archives in ONE pass, so library order is the
 	-- whole contract: the mods reference JERICHO and the game references the
@@ -608,6 +708,10 @@ project "JERICHO"
 
     filter "configurations:Release"
         optimize "Speed"
+        -- A release pre-includes only JERICHO_RELEASE_MODS: this define trims the
+        -- generated registry (Game/C/JERICHO/gen/jer_registry.c) to the same set
+        -- the link filter above uses. A dev build (no define) keeps them all.
+        defines { "JERICHO_RELEASE_MODS" }
 		
 	filter "configurations:Release_dev"
 		targetsuffix "_dev"
@@ -738,3 +842,45 @@ project "JERICHO"
 
             postbuildcommands(JER_CMDS)
         end
+
+    -- A RELEASE build's mirror carries only the pre-included modules, so the
+    -- shipped JERICHO/MODS matches exactly what the release exe links: someone who
+    -- downloads JERICHO sees three mods, not every experimental one. A dev build
+    -- keeps them all. Done as a second, Release-only pass over the same folder list
+    -- so the shared commands above do not have to grow a condition, and it runs
+    -- last, after the mirror copy.
+    filter { "system:Windows", "configurations:Release" }
+        for _, JER_MOD in ipairs(jer_mirrored_mods) do
+            if not jericho_is_release_mod(JER_MOD) then
+                postbuildcommands {
+                    "if exist \"%{cfg.buildtarget.directory}JERICHO\\MODS\\" .. JER_MOD .. "\" rd /S /Q \"%{cfg.buildtarget.directory}JERICHO\\MODS\\" .. JER_MOD .. "\"",
+                }
+            end
+        end
+    filter {}
+
+    filter { "system:linux", "configurations:Release" }
+        for _, JER_MOD in ipairs(jer_mirrored_mods) do
+            if not jericho_is_release_mod(JER_MOD) then
+                postbuildcommands {
+                    "rm -rf \"%{cfg.buildtarget.directory}JERICHO/MODS/" .. JER_MOD .. "\"",
+                }
+            end
+        end
+    filter {}
+
+    -- A RELEASE build ships the RELEASE modlist (only the pre-included modules),
+    -- so the shipped CONFIG/modlist.ini never names a module the release does not
+    -- register. Runs after the mirror copy above; Release-only, so a dev tree keeps
+    -- the repo's full modlist (and can still enable d1cars locally).
+    filter { "system:Windows", "configurations:Release" }
+        postbuildcommands {
+            "copy /Y \"..\\Game\\C\\JERICHO\\gen\\modlist_release.ini\" \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\\modlist.ini\"",
+        }
+    filter {}
+
+    filter { "system:linux", "configurations:Release" }
+        postbuildcommands {
+            "cp -f \"../Game/C/JERICHO/gen/modlist_release.ini\" \"%{cfg.buildtarget.directory}JERICHO/CONFIG/modlist.ini\"",
+        }
+    filter {}

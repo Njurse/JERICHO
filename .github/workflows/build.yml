@@ -2,10 +2,11 @@ name: Build
 
 # Builds downloadable binaries for every push and publishes releases.
 #
-# Only the Release_dev configuration (JERICHO_dev) is built and published for
-# now: the plain Release configuration is not treated as a real release yet,
-# and the mp remote agent installs JERICHO_Release_dev_win64.zip and nothing
-# else. Add 'Release' back to the loops and upload steps below to bring it back.
+# The RELEASE configuration (JERICHO.exe) is what is built and published: it
+# pre-includes only carhacks + crumple + mp (premake5.lua JERICHO_RELEASE_MODS),
+# so a download is the game and three mods rather than every experimental module.
+# The DEV configuration (Release_dev / JERICHO_dev.exe, every mod) is NOT built
+# here and stays local. The mp remote agent installs JERICHO_Release_win64.zip.
 #
 #  - push to main        -> build + upload workflow artifacts, refresh the
 #                           rolling "alpha" pre-release
@@ -128,7 +129,7 @@ jobs:
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build (Release_dev)
+      - name: Build (Release)
         shell: pwsh
         run: |
           # exports.def is produced by gen_exports from a LINKER MAP, and the
@@ -143,7 +144,7 @@ jobs:
           # So build it per configuration: link once against a throwaway empty
           # def (that pass is what writes the .map), regenerate the def from
           # that map, then relink. The relink is incremental -- only the exe.
-          foreach ($cfg in @('Release_dev')) {
+          foreach ($cfg in @('Release')) {
             $exe = if ($cfg -eq 'Release') { 'JERICHO' } else { 'JERICHO_dev' }
 
             Write-Host "::group::msbuild $cfg (pass 1: empty def, emits the map)"
@@ -163,7 +164,7 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          foreach ($cfg in @('Release_dev')) {
+          foreach ($cfg in @('Release')) {
             $bin = "src_rebuild/bin/$cfg"
             # runtime DLLs bundled next to the exe (x64)
             Copy-Item "$env:SDL2_DIR/lib/x64/SDL2.dll" "$bin/SDL2.dll" -Force
@@ -173,11 +174,11 @@ jobs:
             Compress-Archive -Path "$bin/*" -DestinationPath "JERICHO_${cfg}_win64.zip" -Force
           }
 
-      - name: Upload Release_dev (win64) artifact
+      - name: Upload Release (win64) artifact
         uses: actions/upload-artifact@v4
         with:
-          name: JERICHO_Release_dev_win64
-          path: JERICHO_Release_dev_win64.zip
+          name: JERICHO_Release_win64
+          path: JERICHO_Release_win64.zip
           if-no-files-found: warn
 
   linux:
@@ -237,7 +238,7 @@ jobs:
       - name: Build (release_dev_x64)
         working-directory: src_rebuild/build
         run: |
-          for cfg in release_dev_x64; do
+          for cfg in release_x64; do
             echo "::group::make $cfg"
             make config=$cfg -j"$(nproc)"
             echo "::endgroup::"
@@ -245,18 +246,18 @@ jobs:
 
       - name: Package
         run: |
-          for cfg in Release_dev; do
+          for cfg in Release; do
             d="src_rebuild/bin/$cfg"
             # game data (the post-build step already mirrored JERICHO/ into $d)
             cp -R data/. "$d"/
             ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" * )
           done
 
-      - name: Upload Release_dev (linux-x64) artifact
+      - name: Upload Release (linux-x64) artifact
         uses: actions/upload-artifact@v4
         with:
-          name: JERICHO_Release_dev_linux-x64
-          path: JERICHO_Release_dev_linux-x64.tar.gz
+          name: JERICHO_Release_linux-x64
+          path: JERICHO_Release_linux-x64.tar.gz
           if-no-files-found: warn
 
   publish:
@@ -327,7 +328,7 @@ jobs:
 
                 python mp_remote.py update --peer <ip> --port 1401 --tag ${{ inputs.release_tag }}
 
-            The mp agent accepts only JERICHO_Release_dev_win64.zip from this release.
+            The mp agent accepts only JERICHO_Release_win64.zip from this release.
           prerelease: true
           make_latest: false
           overwrite_files: true

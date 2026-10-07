@@ -18,6 +18,14 @@ void jer_module_sandbox_entry(JERICHO_CONTEXT* ctx);
 void jer_module_testmode_entry(JERICHO_CONTEXT* ctx);
 void jer_module_yarisbounce_entry(JERICHO_CONTEXT* ctx);
 
+#ifdef JERICHO_RELEASE_MODS
+extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
+	{ "carhacks", jer_module_carhacks_entry, 0 },
+	{ "crumple", jer_module_crumple_entry, 1 },
+	{ "mp", jer_module_mp_entry, 1 },
+};
+extern const int jer_registry_module_count = 3;
+#else
 extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "antfarm", jer_module_antfarm_entry, 0 },
 	{ "cainescrossfire", jer_module_cainescrossfire_entry, 1 },
@@ -34,6 +42,7 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "yarisbounce", jer_module_yarisbounce_entry, 1 },
 };
 extern const int jer_registry_module_count = 13;
+#endif
 #ifdef __cplusplus
 }
 #endif
