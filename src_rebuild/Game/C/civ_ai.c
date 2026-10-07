@@ -107,6 +107,39 @@ int InitCar(CAR_DATA* cp, int direction, LONGVECTOR4* startPos, unsigned char co
 {
 	VECTOR tmpStart;
 
+	// JERICHO: NEVER BUILD A CAR ON A SLOT THE LEVEL HAS NO MODEL IN.
+	//
+	// Doing it here covers every spawn site at once -- the engine's own level spawn,
+	// the multiplayer traffic mirror, carhacks, antfarm and the sandbox all construct
+	// through InitCar -- and NO caller checks the return value, so simply refusing
+	// would leave a half-built CAR_DATA in the active list instead of nothing at all.
+	// Substituting the first slot that DOES have geometry keeps the invariant "every
+	// car in the world has a mesh" true, which is what car_cosmetics[], the lighting
+	// pass and DrawCar all rely on. Placed BEFORE ClearMem so a refusal (no models at
+	// all) leaves the caller's car exactly as it was.
+	if (!JerCarSlotUsable(model))
+	{
+		int fallback = -1;
+		int i;
+
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		{
+			if (JerCarSlotUsable(i))
+			{
+				fallback = i;
+				break;
+			}
+		}
+
+		if (fallback < 0)
+			return 0;		/* this level built no car models at all */
+
+		printInfo("JERICHO: car model %d %s - built as slot %d (model %d) instead\n",
+			model, JerCarSlotRefusal(model), fallback, residentCarModels[fallback]);
+
+		model = fallback;
+	}
+
 	ClearMem((char*)cp, sizeof(CAR_DATA));
 
 	cp->wasOnGround = 1;

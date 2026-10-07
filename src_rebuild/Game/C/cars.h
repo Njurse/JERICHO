@@ -160,4 +160,31 @@ extern void CarImportCityBandReset(void); // JERICHO: free every guest city's pa
 extern int gCarDataSourceLevel;
 extern const char* GetCarDataFolder(void);
 
+/* How many per-model offsets a CAR_MODELS lump carries: valid model indices are
+ * 0..CAR_MODEL_LUMP_ENTRIES-1. residentCarModels[] is filled from the level (and
+ * from the command line), so an index outside this range reads past the lump's
+ * table rather than failing - see ProcessCarModelLump. */
+#define CAR_MODEL_LUMP_ENTRIES	13
+
+/* Can this car SLOT be handed to a car right now?
+ *
+ * A slot is usable only when it is IN RANGE and the level's CAR_MODELS lump
+ * actually built a mesh for it (gCarCleanModelPtr[slot] != NULL). Both halves have
+ * bitten: an index past MAX_CAR_RESIDENT_MODELS walks off
+ * residentCarModels[]/gCarCleanModelPtr[], and a slot whose mesh was never built
+ * faults as soon as the lighting pass or the draw path dereferences it (the
+ * historical access violation in ComputeCarLightingLevels). EVERY site that gives a
+ * car a model asks here, so the rule cannot drift into five slightly different
+ * tests. */
+enum
+{
+	JER_CAR_SLOT_OK = 0,
+	JER_CAR_SLOT_OUT_OF_RANGE,	/* < 0 or >= MAX_CAR_RESIDENT_MODELS */
+	JER_CAR_SLOT_NO_MESH,		/* in range, but nothing was built in that slot */
+};
+
+extern int JerCarSlotState(int slot);
+extern int JerCarSlotUsable(int slot);			/* == (state == JER_CAR_SLOT_OK) */
+extern const char* JerCarSlotRefusal(int slot);		/* NULL when usable, else why not */
+
 #endif

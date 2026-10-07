@@ -3469,3 +3469,34 @@ char GetCarPalIndex(int tpage)
 
 	return 0;
 }
+
+// [D] JERICHO: THE ONE DECISION ON WHETHER A CAR SLOT CAN BE HANDED OUT.
+//
+// See cars.h. Every site that gives a car a model routes through this rather than
+// testing the range and the mesh itself, so a new spawn path cannot be written with
+// a slightly weaker test than the one next to it.
+int JerCarSlotState(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return JER_CAR_SLOT_OUT_OF_RANGE;
+
+	if (gCarCleanModelPtr[slot] == NULL)
+		return JER_CAR_SLOT_NO_MESH;
+
+	return JER_CAR_SLOT_OK;
+}
+
+int JerCarSlotUsable(int slot)
+{
+	return JerCarSlotState(slot) == JER_CAR_SLOT_OK;
+}
+
+const char* JerCarSlotRefusal(int slot)
+{
+	switch (JerCarSlotState(slot))
+	{
+	case JER_CAR_SLOT_OUT_OF_RANGE:	return "not a car this level can load";
+	case JER_CAR_SLOT_NO_MESH:	return "no model for it in this level";
+	default:			return NULL;
+	}
+}

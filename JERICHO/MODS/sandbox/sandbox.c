@@ -322,6 +322,30 @@ static void SandboxPreviewScratchCar(int model, int palette)
 
 	memset(&gSandboxPreviewCar, 0, sizeof(gSandboxPreviewCar));
 
+	/* JERICHO: this scratch car gets DRAWN, so it must not point at a slot the
+	 * level has no geometry for -- the same rule as every other site that gives a
+	 * car a model (cars.c / JerCarSlotUsable). Substituting a real slot keeps the
+	 * preview drawable instead of dereferencing an unbuilt or out-of-range
+	 * car_cosmetics entry. */
+	if (!JerCarSlotUsable(model))
+	{
+		int i, fallback = -1;
+
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		{
+			if (JerCarSlotUsable(i))
+			{
+				fallback = i;
+				break;
+			}
+		}
+
+		if (fallback < 0)
+			return;		/* no drawable car in this level at all */
+
+		model = fallback;
+	}
+
 	gSandboxPreviewCar.id = -1;	/* no crumple bend/damage lookup */
 	gSandboxPreviewCar.ap.model = (u_char)model;
 	gSandboxPreviewCar.ap.palette = (u_char)palette;

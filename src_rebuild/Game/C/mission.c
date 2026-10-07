@@ -455,6 +455,19 @@ void SetupResidentModels()
 					foundRM = j;
 			}
 			
+			// JERICHO: a wantedCar outside the lump's table is caught at build time
+			// (ProcessCarModelLump leaves the slot empty rather than faulting), but say
+			// so HERE, where the value came from, and give the player a real car
+			// instead of an empty slot. 13 is tolerated for the lump's SPECIAL
+			// sentinel (see CAR_MODEL_LUMP_ENTRIES) - it is not a resident slot.
+			if (wantedCar[i] < 0 || wantedCar[i] > CAR_MODEL_LUMP_ENTRIES)
+			{
+				printInfo("JERICHO: wanted car %d for player %d is not a model this level has - using model 0\n",
+					wantedCar[i], i);
+
+				wantedCar[i] = 0;
+			}
+
 			PlayerStartInfo[i]->model = wantedCar[i];
 
 			singlePal = (wantedCar[i] == 0 || wantedCar[i] > 4);

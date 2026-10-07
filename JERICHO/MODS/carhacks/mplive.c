@@ -160,7 +160,7 @@ static int ChkMpLoad(void* userdata, void* args)
 	 * car at this slot, and a slot with no built geometry is a crash, not a
 	 * cosmetic glitch (see mp's MpAdoptRemoteCar). */
 	a->ok = (chkImportSlotForCar(a->city, a->model) == slot &&
-		gCarCleanModelPtr[slot] != NULL) ? 1 : 0;
+		JerCarSlotUsable(slot)) ? 1 : 0;
 
 	if (!a->ok)
 	{

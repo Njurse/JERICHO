@@ -950,6 +950,26 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 				model_number = 4;
 		}
 
+		// JERICHO: residentCarModels[] is filled from the level file AND from the
+		// command line, so it can hold anything - an unbounded -car value, a stale
+		// wantedCar[], a figure only another city understands. The lump's per-model
+		// offset table has CAR_MODEL_LUMP_ENTRIES entries, so indexing it with a
+		// larger number reads whatever follows the lump and then faults while the
+		// geometry is built: the documented "crash after LUMP_CAR_MODELS, no dump".
+		// An out-of-range value is therefore treated as "this slot has no model" -
+		// the build below is skipped and the slot stays EMPTY, which is a state the
+		// rest of the game already handles (JerCarSlotUsable reports NO_MESH for it,
+		// so nothing is ever spawned on it). The import path further down has always
+		// checked this; the level's own path did not. -1 is the lump's OWN "empty
+		// slot" sentinel and is expected, so it is not reported.
+		if (model_number != -1 && (model_number < 0 || model_number >= CAR_MODEL_LUMP_ENTRIES))
+		{
+			printInfo("JERICHO: car model %d in slot %d is outside the lump's 0..%d table - slot left empty\n",
+				model_number, i, CAR_MODEL_LUMP_ENTRIES - 1);
+
+			model_number = -1;
+		}
+
 		if (model_number != -1)
 		{
 			// JERICHO: a slot may take its geometry from another city's level file
@@ -1108,7 +1128,7 @@ int JerHotLoadCarModel(int slot)
 
 	model_number = residentCarModels[slot];
 
-	if (model_number < 0 || model_number > 12)
+	if (model_number < 0 || model_number >= CAR_MODEL_LUMP_ENTRIES)
 		return 0;
 
 	slot_models_offset = src_lump + 4 + 160;

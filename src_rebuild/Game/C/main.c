@@ -3140,6 +3140,22 @@ int redriver2_main(int argc, char** argv)
 				gBootCar = -2;
 			}
 
+			/* JERICHO: a model the lump's table cannot answer for walks off it during
+			 * the load (see CAR_MODEL_LUMP_ENTRIES / ProcessCarModelLump). 13 is let
+			 * through rather than refused, because the lump's own table treats 13 as
+			 * its SPECIAL sentinel and remaps it (models.c); it is not a resident slot
+			 * index, so a plain `-car 13` does not by itself select the special car.
+			 * Anything above 13 is refused HERE, so a bad -car is a legible error
+			 * instead of a crash after LUMP_CAR_MODELS - the same shape of refusal as
+			 * an unknown name just below. */
+			if (gBootCar > CAR_MODEL_LUMP_ENTRIES)
+			{
+				printError("-car %d is not a car this game has (0..%d, or %d for the special)\n",
+					gBootCar, CAR_MODEL_LUMP_ENTRIES - 1, CAR_MODEL_LUMP_ENTRIES);
+
+				return -1;
+			}
+
 			if (gBootCar == -2)
 			{
 				printError("Unknown -car '%s'! (model number or slot1..slot10)\n", gBootCarStr);
