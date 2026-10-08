@@ -172,6 +172,35 @@ void EnablePercentageBar(PERCENTAGE_BAR *bar, int max)
 	bar->active = 1;
 }
 
+#ifndef PSX
+/* pres.c: non-zero once the HQ ("hires") font is loaded. The HQ glyphs are drawn
+ * a few pixels ABOVE the nominal y (GetHiresBakedQuadScaled adds its own baseline
+ * offset), where the PSX font draws downward FROM y. The caption's lift below is
+ * tuned so the label just clears its bar in the PSX font; under the HQ font that
+ * same lift leaves a visible ~5 px gap, so it is reduced. */
+extern unsigned int gHiresFontTexture;
+#endif
+
+// The bar's caption. `lift` is how far above the bar's top edge the text sits:
+// 11 just clears the bar in the PSX font; the HQ glyphs sit higher, so 7 puts
+// them in the same place. Both DrawPercentageBar and DrawProximityBar use this.
+static void DrawBarTag(PERCENTAGE_BAR *bar, int min_x, int max_x, int min_y)
+{
+	int lift = 11;
+
+#ifndef PSX
+	if (gHiresFontTexture)
+		lift = 7;
+#endif
+
+	SetTextColour(128, 128, 64);
+
+	if (bar->flags & 0x1)
+		PrintStringRightAligned(bar->tag, max_x - 8, min_y - lift);
+	else
+		PrintString(bar->tag, min_x + 8, min_y - lift);
+}
+
 // [D] [T]
 void DrawPercentageBar(PERCENTAGE_BAR *bar)
 {
@@ -324,14 +353,7 @@ void DrawPercentageBar(PERCENTAGE_BAR *bar)
 	TransparencyOn(current->ot + 1, 0x20);
 
 	if (bar->tag != NULL)
-	{
-		SetTextColour(128, 128, 64);
-
-		if (bar->flags & 0x1)
-			PrintStringRightAligned(bar->tag, max_x - 8, min_y - 11);
-		else
-			PrintString(bar->tag, min_x + 8, min_y - 11);
-	}
+		DrawBarTag(bar, min_x, max_x, min_y);
 }
 
 // [D] [T]
@@ -472,14 +494,7 @@ void DrawProximityBar(PERCENTAGE_BAR *bar)
 	TransparencyOn(current->ot + 1, 0x20);
 
 	if (bar->tag != NULL)
-	{
-		SetTextColour(128, 128, 64);
-
-		if ((bar->flags & 1U) == 0)
-			PrintString(bar->tag, min_x + 8, min_y - 11);
-		else 
-			PrintStringRightAligned(bar->tag, max_x - 8, min_y - 11);
-	}
+		DrawBarTag(bar, min_x, max_x, min_y);
 }
 
 char OverlayFlashValue = 0;
