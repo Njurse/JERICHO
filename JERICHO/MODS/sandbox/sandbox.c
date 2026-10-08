@@ -11,6 +11,7 @@
 #include "jer_events.h"
 #include "jer_config.h"
 #include "jer_pause_menu.h"
+#include "jer_map.h"		/* jer_map_spool_to: a hop must stream its destination */
 #include "../mp/mp_carquery.h"	/* the car-source contract: carhacks answers MP_CARQ_* */
 
 #include "driver2.h"
@@ -73,6 +74,7 @@ extern void SetRightWayUp(int direction);
 
 /* cars.c exports these but does not declare them in cars.h */
 extern void DrawCarObject(CAR_MODEL* car, MATRIX* matrix, VECTOR* pos, int palette, CAR_DATA* cp, int detail);
+extern void ComputeCarLightingLevels(CAR_DATA* cp, char detail);	/* cars.c: the world's per-vertex light bake */
 extern void DrawCarWheels(CAR_DATA* cp, MATRIX* rearMatrix, VECTOR* pos, int zclip);
 extern DENTUVS* gTempCarUVPtr;
 
@@ -102,6 +104,42 @@ static void SandboxStepSim(void)
  * car_data index it built (or -1), so the caller can take it away again: an
  * "In Front" spawn leaves its car where the NEXT one lands, and two overlapping
  * cars is a collision the solver resolves by throwing them both. */
+/* Anything already parked where the new car is about to be placed has to go
+ * first, or the two end up inside each other and the collision pass flings them
+ * both. Only TRAFFIC is removed, and never a car a player is driving -- a car
+ * someone is in is theirs, and the caller already deals with the player's own. */
+#define SBX_SPAWN_CLEAR_DIST	350	/* world units in x/z: about a car's length */
+
+static int SandboxClearSpawnSpot(const LONGVECTOR4* pos)
+{
+	int i, removed = 0;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		CAR_DATA* cp = &car_data[i];
+		long dx, dz;
+
+		if (cp->controlType != CONTROL_TYPE_CIV_AI)
+			continue;
+
+		if (i == player[0].playerCarId || i == player[1].playerCarId)
+			continue;
+
+		/* 64-bit: a 32-bit squared distance wraps negative, and a wrapped value
+		 * reads as a car that is right on top of us when it is miles away */
+		dx = (long)cp->hd.where.t[0] - (long)(*pos)[0];
+		dz = (long)cp->hd.where.t[2] - (long)(*pos)[2];
+
+		if ((dx * dx + dz * dz) > (long)SBX_SPAWN_CLEAR_DIST * SBX_SPAWN_CLEAR_DIST)
+			continue;
+
+		PingOutCar(cp);
+		removed++;
+	}
+
+	return removed;
+}
+
 static int SandboxSpawnCarModel(int model, int palette)
 {
 	CAR_DATA* carCnt;
@@ -149,6 +187,7 @@ static int SandboxSpawnCarModel(int model, int palette)
 		memset(&civDat, 0, sizeof(civDat));
 		civDat.palette = palette;
 
+		SandboxClearSpawnSpot(&pos);
 		InitCar(pNewCar, direction, &pos, CONTROL_TYPE_CIV_AI, model, palette, (char*)&civDat);
 		ChangePedPlayerToCar(0, pNewCar);
 		PingOutCar(pc);
@@ -164,6 +203,7 @@ static int SandboxSpawnCarModel(int model, int palette)
 	memset(&civDat, 0, sizeof(civDat));
 	civDat.palette = palette;
 
+	SandboxClearSpawnSpot(&pos);
 	InitCar(pNewCar, direction, &pos, CONTROL_TYPE_CIV_AI, model, palette, (char*)&civDat);
 
 	return (int)(pNewCar - car_data);
@@ -355,6 +395,59 @@ static void SandboxPreviewScratchCar(int model, int palette)
 	gSandboxPreviewCar.ap.model = (u_char)model;
 	gSandboxPreviewCar.ap.palette = (u_char)palette;
 	gSandboxPreviewCar.ap.carCos = &car_cosmetics[model];
+}
+
+/* ------------------------------------------------------------------ */
+/* Lighting a preview that has no car_data slot                         */
+/*                                                                     */
+/* The world lights a car by baking a Gouraud colour into the .pad of    */
+/* every vertex of gTempCarVertDump[cp->id] and pointing the model's     */
+/* nlist at that array -- cars.c's DrawCar does it, and a preview of the */
+/* PLAYER'S car gets it for free because it reuses the same dump (the    */
+/* non-scratch path below).                                              */
+/*                                                                     */
+/* A scratch preview has no slot of its own, so it used to point nlist   */
+/* at the model's raw vertices: those carry no baked colour, so the body */
+/* drew flat and washed out while everything around it was lit.          */
+/*                                                                     */
+/* Hand-rolling the bake would mean reproducing cars.c's GTE loop in a   */
+/* module. Instead borrow a DUMP KEY: ComputeCarLightingLevels is        */
+/* exported, and it only reads our cp's own fields and writes            */
+/* gTempCarVertDump[cp->id] -- so a car slot that is NOT IN USE gives us */
+/* a private row. Its index is used purely as an array key; nothing is   */
+/* written into car_data, and the preview is a -1 again before we return.*/
+static int SandboxPreviewDumpSlot(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		if (car_data[i].controlType == CONTROL_TYPE_NONE)
+			return i;
+	}
+
+	return -1;
+}
+
+static void SandboxLightScratchPreview(CAR_DATA* car, CAR_MODEL* model)
+{
+	int slot = SandboxPreviewDumpSlot();
+
+	if (slot < 0 || car->ap.model >= MAX_CAR_RESIDENT_MODELS)
+		return;		/* nothing spare: leave it on the unlit vertices */
+
+	car->id = slot;
+
+	/* The bake caches its result and skips itself when the car's orientation has
+	 * not changed, so nudge the field that decision reads. Without this the
+	 * preview would point at a dump that was never written. */
+	car->st.n.orientation[1] = 1000;
+	ComputeCarLightingLevels(car, 1);
+	car->st.n.orientation[1] = 0;
+
+	model->nlist = gTempCarVertDump[slot];
+
+	car->id = -1;		/* the preview is not a car; never leave it looking like one */
 }
 
 static const char* const gSandboxAIModeNames[3] = { "Civilian", "Cop", "Lead" };
@@ -2292,14 +2385,22 @@ static void SandboxDrawHudModel(MODEL* model, CAR_DATA* car, int screenX, int sc
 		if (scratch)
 		{
 			/* clean geometry + zeroed damage UVs (the spawn target).
-			 * NOTE: the preview car's lights are NOT calculated here —
+			 * NOTE: the preview car's LIGHT POLYS are not calculated here —
 			 * the scratch car is outside car_data, so AddNightLights would
 			 * position its polys from the zeroed hd.where (the world
-			 * origin) and smear them across the screen. The preview is
-			 * lit by the frame's own light matrices (the DrawCarObject
-			 * shading); the headlight/brake polys are skipped. */
-			CarModelPtr->vlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[car->ap.model], vertices);
-			CarModelPtr->nlist = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[car->ap.model], vertices);
+			 * origin) and smear them across the screen. The headlight/brake
+			 * polys are skipped. */
+			SVECTOR* cleanVerts = GET_MODEL_DATA(SVECTOR, gCarCleanModelPtr[car->ap.model], vertices);
+
+			CarModelPtr->vlist = cleanVerts;
+			CarModelPtr->nlist = cleanVerts;
+
+			/* ...but the BODY must still be lit, or the preview draws flat
+			 * and washed out next to the world's own cars. Borrow a dump
+			 * key and run the engine's own bake -- see
+			 * SandboxLightScratchPreview. */
+			SandboxLightScratchPreview(car, CarModelPtr);
+
 			gTempCarUVPtr = gSandboxCleanUv;
 		}
 		else
@@ -2730,7 +2831,12 @@ static void SandboxTeleportToCursor(void)
 	if (!SandboxNearestRoad(&cursorPos, &road))
 		return;
 
-	/* land the car on the road the same way InitCar does */
+	/* Land the car on the road the same way InitCar does. SPOOL THE DESTINATION
+	 * FIRST: MapHeight answers 0 for a point whose region is not resident, so
+	 * teleporting to a spot the player is not standing in used to drop the car at
+	 * ground 0 -- into the void. This is the same trap as any other hop. */
+	jer_map_spool_to(road.vx, road.vz);
+
 	ground.vx = road.vx;
 	ground.vz = road.vz;
 	ground.vy = 100;

@@ -47,6 +47,17 @@ with its *final geometry* (CRUMPLE-deformed vertices + damage UVs), rotating
 on a turntable. On the Spawn Object page the preview swaps to the selected
 level object model.
 
+The preview is **lit**. The world lights a car by baking a Gouraud colour into
+every vertex of `gTempCarVertDump[cp->id]` and pointing the model's `nlist` at
+it; a preview of the *player's* car gets that free because it reuses the same
+dump. A *scratch* preview (a car that has not been spawned yet, so it has no
+`car_data` slot) used to point `nlist` at the model's raw vertices, which carry
+no baked colour — so it drew flat and washed out next to everything else. It
+now borrows a dump key: a car slot that is not in use supplies a private row of
+`gTempCarVertDump`, and the engine's own `ComputeCarLightingLevels` is run for
+it. Nothing is written into `car_data`, and the preview is `id = -1` again
+before the call returns.
+
 **Controls while the menu is open**: D-Pad up/down moves the cursor, Cross
 selects, Triangle closes. The world keeps simulating behind the menu — traffic
 keeps moving, the player's car coasts to a stop (the pad is captured by the
@@ -75,6 +86,16 @@ couple of car-lengths ahead, which is where the previous one is sitting, and two
 overlapping cars is a collision the solver resolves by throwing them both across
 the map. `Teleport In` has no such problem — it moves the player into the new car
 and removes the old one itself.
+
+Before anything is placed, the spot is **cleared of traffic**
+(`SandboxClearSpawnSpot`): a civilian car already parked where the new one lands
+is otherwise left inside it, and the solver throws both. Only traffic goes, and
+never a car a player is driving — a car someone is in is theirs.
+
+`Teleport to Map` **streams its destination first** (`jer_map_spool_to`).
+`MapHeight` answers 0 for a point whose region is not resident, so teleporting
+to somewhere the player is not standing used to drop the car at ground 0 — into
+the void. It is the same trap as any other hop.
 
 Headless: `SANDBOX_TEST_SPAWN=<frames>[,<city>[,<model>]]` drives that path with
 no pad — it dumps every offered city's roster and then spawns twice, the second
