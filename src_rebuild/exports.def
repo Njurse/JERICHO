@@ -391,7 +391,9 @@ EXPORTS
 	?UpdateCarPoints@@YAXPEAUCAR_COSMETICS@@@Z
 	?initOBox@@YAXPEAU_CAR_DATA@@@Z
 	jer_car_palette_init
-	jer_console_clear
+	jer_console_clear
+	jer_console_chat
+	jer_console_input
 	jer_console_count
 	jer_console_draw
 	jer_console_enabled
