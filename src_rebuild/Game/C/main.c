@@ -3,6 +3,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_hud.h"	// JERICHO-HOOK: on-screen HUD messages
+#include "jer_console.h"	// JERICHO-HOOK: unified status console stream
 #include "jer_texture.h"	// JERICHO-HOOK: custom texture injection (reload/free)
 #include "jer_car_palette.h"	// JERICHO-HOOK: per-instance car colour (inert table)
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
@@ -2082,6 +2083,13 @@ void DrawGame(void)
 		// JERICHO-HOOK: HUD messages (jer_hud.h), drawn with the pause menu so
 		// they land in the display buffer before the module overlays below.
 		jer_hud_draw();
+
+		// JERICHO-HOOK: the status console (jer_console.h) -- the unified
+		// bottom-left stream, in-game half of the two draw sites (the other is
+		// the frontend, State_FrontEnd). Single-view only, exactly like
+		// jer_hud_draw and the JER_EVENT_DRAW_OVERLAY block below: NumPlayers > 1
+		// is LOCAL split-screen, which neither the mp mod nor these HUDs use.
+		jer_console_draw(0);
 
 		// JERICHO-HOOK: module overlays (e.g. the sandbox menu) draw here,
 		// into the display buffer like the pause menu

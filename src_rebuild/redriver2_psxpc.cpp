@@ -20,6 +20,7 @@
 #include "C/players.h"
 #include "C/time.h"
 #include "C/draw.h"
+#include "C/JERICHO/include/jer_console.h"	// jer_console_toggle (~ key)
 
 #include "utils/ini.h"
 
@@ -114,6 +115,37 @@ void FreeCameraKeyboardHandler(int nKey, char down)
 	{
 		g_FreeCameraEnabled ^= 1;
 		printf("Free camera: %s\n", g_FreeCameraEnabled ? "ON" : "OFF");
+	}
+}
+
+/* JERICHO: the `~` / backtick key toggles the on-screen status console
+ * (jer_console.h). PsyX has ONE debug-key slot and mp chains it too (chat), so
+ * this keeps whatever handler was installed and calls it first -- a key that is
+ * not ours falls through untouched, and file order does not matter. */
+static GameDebugKeysHandlerFunc gJerConsolePrevKeys = NULL;
+static int gJerGraveDown = 0;		/* guard against key auto-repeat */
+
+static void JerConsoleKeyboardHandler(int nKey, char down)
+{
+	if (gJerConsolePrevKeys != NULL)
+		gJerConsolePrevKeys(nKey, down);
+
+	if (nKey != SDL_SCANCODE_GRAVE)
+		return;
+
+	if (!down)
+	{
+		gJerGraveDown = 0;
+		return;
+	}
+
+	/* Toggle on the KEY-DOWN TRANSITION only: PsyX's hook carries no SDL repeat
+	 * flag, and a held `~` sends a stream of keydowns that would otherwise flip
+	 * the console on and off many times a second. */
+	if (!gJerGraveDown)
+	{
+		gJerGraveDown = 1;
+		jer_console_toggle();
 	}
 }
 
@@ -632,6 +664,12 @@ int main(int argc, char** argv)
 	g_dbg_gameDebugMouse = FreeCameraMouseHandler;
 
 #endif
+
+	/* JERICHO: wrap whatever was installed so `~` toggles the status console.
+	 * Done last so the chain is console -> (GameDebugKeys | FreeCamera | NULL);
+	 * mp installs its handler later (at module boot) and chains this one. */
+	gJerConsolePrevKeys = g_dbg_gameDebugKeys;
+	g_dbg_gameDebugKeys = JerConsoleKeyboardHandler;
 
 	PsyX_Initialise("JERICHO", fullScreen ? screenWidth : windowWidth, fullScreen ? screenHeight : windowHeight, fullScreen);
 

@@ -3,6 +3,7 @@
 #include "jericho.h"		/* jer_fire */
 #include "../C/jer_events.h"	/* JER_EVENT_CAR_AVAILABILITY */
 #include "../C/JERICHO/include/jer_texture.h"	/* custom menu background */
+#include "../C/JERICHO/include/jer_console.h"	/* unified status console stream */
 #include "../C/jer_menu_bg.h"	/* the background itself */
 
 // JERICHO: -shotfront <frame> (set and counted in main.c) and PsyCross's live-window
@@ -2214,6 +2215,12 @@ void State_FrontEnd(void* param)
 	// JERICHO-HOOK: error notices (engine + modules) -- gentle red, left of
 	// the screen, ~5 s (e.g. "invalid command line argument")
 	JerichoDrawNotices();
+
+	// JERICHO-HOOK: the status console (jer_console.h) -- the unified bottom-left
+	// stream, frontend half of the two draw sites (the other is in-game, DrawGame).
+	// Drawn here because the connection handshake lines it shows happen while the
+	// frontend is up; the ring is shared, so they are still there in-game too.
+	jer_console_draw(1);
 
 	PadChecks();
 
