@@ -20,10 +20,23 @@ because only the game can draw into the display buffer). Header:
 ## API
 
 ```c
+/* status lines -- single colour, dimmed with age, hidden when the console is off */
 void jer_console_line(const char* text);          /* one ready-made line   */
 void jer_console_log(const char* fmt, ...);       /* printf-style          */
+
+/* chat lines -- built from colour runs, drawn EVEN WHILE the console is off */
+typedef struct JER_CONSOLE_SEG {
+    const char* text;
+    unsigned char r, g, b;
+    int ambient;          /* non-zero = keep the plain line colour */
+} JER_CONSOLE_SEG;
+void jer_console_chat(const JER_CONSOLE_SEG* segs, int count);
+
+/* the line being typed (the chat prompt) -- always drawn while set */
+void jer_console_input(const char* text);
+
 void jer_console_clear(void);                     /* empty the ring        */
-int  jer_console_count(void);                     /* lines currently held  */
+int  jer_console_count(void);                     /* rows currently held   */
 
 int  jer_console_enabled(void);                   /* is the console shown? */
 void jer_console_set_enabled(int on);             /* set + SAVE            */
@@ -32,8 +45,10 @@ int  jer_console_toggle(void);                    /* flip + SAVE, returns the ne
 
 A line is **kept** (scrollback), not flashed: the join sequence runs in the
 frontend, and the same ring is drawn there too, so a "connected" line is still on
-screen once the level is up. The ring is `JER_CONSOLE_MAX` (8) lines of
-`JER_CONSOLE_LINE_MAX` (96) bytes; the oldest falls off.
+screen once the level is up. Text longer than a row is **wrapped** onto the next
+row (breaking at a space near the limit) instead of running off the edge, and the
+ring is `JER_CONSOLE_MAX` (8) rows of `JER_CONSOLE_LINE_MAX` (96) bytes; the
+oldest falls off.
 
 Every line is also mirrored to the session log as `[console] <text>`, so whatever
 is on screen is greppable exactly like `MpConnEvent`'s own lines.
@@ -57,6 +72,11 @@ if (jer_console_enabled())
 }
 ```
 
+**Chat is the exception.** A chat line and the input line are drawn even while
+the console is off — a conversation is not debug output, and what you are typing
+must never be invisible. That is why a chat row carries its own `chat` flag
+rather than being just another status line.
+
 ## Drawing
 
 Two draw sites, because the two states use different fonts:
@@ -65,6 +85,10 @@ Two draw sites, because the two states use different fonts:
 | --- | --- | --- |
 | in-game | `jer_console_draw(0)` in `DrawGame` (`main.c`) | `PrintStringHiresScaledSpaced`, scale `0.138f` (half the `0.275f` default) + `0.75f` px tracking |
 | frontend | `jer_console_draw(1)` in `State_FrontEnd` (`FEmain.c`) | `FEPrintStringSized`, scale `2048` (half the frontend's `4096`) |
+
+Layout is bottom-left: `x = 6`, newest row at `y = 196`, rows `11` px apart
+(frontend `x = 32`, `y = 456`, rows `18` px). The typed chat line sits under the
+block at `y = 232` (`496` in the frontend).
 
 The in-game text carries a little **tracking** (`JER_CONSOLE_TRACKING`): at half
 size the HQ font's own side bearings collapse to under a pixel (measured: a
