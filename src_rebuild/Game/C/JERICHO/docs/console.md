@@ -45,10 +45,12 @@ int  jer_console_toggle(void);                    /* flip + SAVE, returns the ne
 
 A line is **kept** (scrollback), not flashed: the join sequence runs in the
 frontend, and the same ring is drawn there too, so a "connected" line is still on
-screen once the level is up. Text longer than a row is **wrapped** onto the next
-row (breaking at a space near the limit) instead of running off the edge, and the
-ring is `JER_CONSOLE_MAX` (8) rows of `JER_CONSOLE_LINE_MAX` (96) bytes; the
-oldest falls off.
+screen once the level is up. Text that will not fit a row is **wrapped** onto the
+next row (breaking at a space where one is close to the limit) instead of running
+off the edge — the wrap is by **measured** glyph width, not a character count,
+because the widest glyph (`W`, ~7.2 px at this scale) is nearly twice a typical
+one. The ring is `JER_CONSOLE_MAX` (8) rows of `JER_CONSOLE_LINE_MAX` (96) bytes;
+the oldest falls off.
 
 Every line is also mirrored to the session log as `[console] <text>`, so whatever
 is on screen is greppable exactly like `MpConnEvent`'s own lines.

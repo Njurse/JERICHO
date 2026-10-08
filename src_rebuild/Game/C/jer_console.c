@@ -44,6 +44,15 @@ extern unsigned int gHiresFontTexture;
  * header because the frontend keeps its printers file-local. */
 extern int FEPrintStringSized(char* string, int x, int y, int scale, int transparent, int r, int g, int b);
 
+/* pres.c's per-glyph quad, declared here the way sandbox.c declares it: all the
+ * wrap needs is to ask how wide ONE character is drawn. */
+struct FONT_QUAD
+{
+	float x0, y0, s0, t0;	// top-left
+	float x1, y1, s1, t1;	// bottom-right
+};
+extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, struct FONT_QUAD* q, float scale);
+
 /* Where the console's saved state lives (jer_config -> CONFIG/hud.ini). */
 #define JER_CONSOLE_MOD		"hud"
 #define JER_CONSOLE_KEY		"console"
@@ -77,9 +86,13 @@ extern int FEPrintStringSized(char* string, int x, int y, int scale, int transpa
 #define JER_CONSOLE_INPUT_G		255
 #define JER_CONSOLE_INPUT_B		150
 
-/* How many characters fit on one row before it wraps. Both views are "half
- * size" in their own space and fit roughly the same number. */
-#define JER_CONSOLE_WRAP		72
+/* How wide a row may get before it wraps, in screen pixels (the 320-wide screen
+ * less the left margin and a small right margin). NOTE: the wrap is by MEASURED
+ * width, not a character count -- the widest glyph ('W', ~7.2 px at this scale)
+ * is nearly twice a typical one, so a fixed count overflows on wide text and
+ * wastes the row on narrow text. */
+#define JER_CONSOLE_WRAP_PX		310
+#define JER_CONSOLE_FALLBACK_CHAR	6	/* px, when no HQ font is loaded */
 
 /* The flattened text of one push, before wrapping (6 runs x 64). */
 #define JER_CONSOLE_FLAT_MAX		(JER_CONSOLE_SEG_MAX * JER_CONSOLE_SEG_TEXT_MAX)
@@ -107,6 +120,23 @@ static int  sEnabled = -1;		/* -1 = not loaded from the config yet */
 
 static char sInput[JER_CONSOLE_LINE_MAX];
 static int  sInputSet = 0;
+
+/* How wide one character is drawn, in screen pixels, as the IN-GAME font draws
+ * it (the tighter of the two views; the frontend has more room, so being
+ * conservative there costs nothing). GetHiresBakedQuadScaled advances *xpos by
+ * the glyph's advance. */
+static int jerCharWidth(unsigned char ch)
+{
+	struct FONT_QUAD q;
+	float fx = 0.0f, fy = 0.0f;
+
+	if (!gHiresFontTexture || ch < 32 || ch >= 127)
+		return JER_CONSOLE_FALLBACK_CHAR;
+
+	GetHiresBakedQuadScaled((int)ch, &fx, &fy, &q, JER_CONSOLE_TEXT_SCALE);
+
+	return (int)(fx + JER_CONSOLE_TRACKING + 0.5f);
+}
 
 /* Newest row brightest, older ones dimmer so the eye lands on the latest. */
 static int jerConsoleAgeColour(int age)
@@ -219,27 +249,31 @@ static void jerConsolePush(const JER_CONSOLE_SEG* segs, int count, int chat)
 
 	for (pos = 0; pos < len; )
 	{
-		int take = len - pos;
+		int w = 0;
+		int take = 0;
+		int lastSpace = -1;
 
-		if (take > JER_CONSOLE_WRAP)
+		while (pos + take < len && take < JER_CONSOLE_LINE_MAX - 1)
 		{
-			int cut = -1;
+			int cw = jerCharWidth((unsigned char)flat[pos + take]);
 
-			take = JER_CONSOLE_WRAP;
+			if (take > 0 && w + cw > JER_CONSOLE_WRAP_PX)
+				break;
 
-			/* prefer breaking at a space in the back half of the row */
-			for (i = take; i > JER_CONSOLE_WRAP / 2; i--)
-			{
-				if (flat[pos + i] == ' ')
-				{
-					cut = i;
-					break;
-				}
-			}
+			w += cw;
 
-			if (cut > 0)
-				take = cut;
+			if (flat[pos + take] == ' ')
+				lastSpace = take;
+
+			take++;
 		}
+
+		if (take <= 0)
+			take = 1;
+
+		/* break at a space when that is not throwing away most of the row */
+		if (pos + take < len && lastSpace > take / 2)
+			take = lastSpace;
 
 		jerConsoleAddRow(flat + pos, cr + pos, cg + pos, cb + pos, camb + pos, take, chat);
 
