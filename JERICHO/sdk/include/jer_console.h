@@ -20,7 +20,9 @@
  *     age. Hidden while the console is toggled off.
  *   - CHAT (jer_console_chat), drawn from colour RUNS so the speaker's name can
  *     carry their own colour. Chat is a conversation, not debug output, so a
- *     chat line is drawn even while the console is off.
+ *     chat line is drawn even while the console is off. The r/g/b you pass are
+ *     the colours as they should LOOK — the console applies the HQ font's x2
+ *     doubling itself, so pass 240 for the near-white a chat message uses.
  *
  * The implementation lives in the GAME (jer_console.c) because only the game
  * can draw into the display buffer, exactly like jer_hud.c. Modules just call

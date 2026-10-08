@@ -408,6 +408,23 @@ static int jerConsoleLeftX(int frontend)
 #endif
 }
 
+/* The HQ font is drawn with the PSX texture filter on (x2), so a modulation of C
+ * lands on screen as 2C, clipped. Measured on a real frame: passing 120 renders
+ * 240, and passing 128 renders 255. Every colour the console passes is therefore
+ * halved, so a colour handed to the console -- by a module, or by the age ladder
+ * below -- is the colour that is SEEN. Without this nothing dims (the age
+ * ladder's 150 and 190 both clip to white) and a caller's colour washes out (the
+ * old (150,255,150) prompt came out white). */
+static u_char jerConsoleInk(int v)
+{
+	if (v <= 0)
+		return 0;
+	if (v >= 255)
+		return 128;		/* 128 * 2 = 256, clipped back to 255 */
+
+	return (u_char)((v * 128) / 255);
+}
+
 static void jerConsoleDrawRow(const JER_CONSOLE_ROW* row, int frontend, int y, int age)
 {
 	char tmp[JER_CONSOLE_LINE_MAX];
@@ -427,9 +444,9 @@ static void jerConsoleDrawRow(const JER_CONSOLE_ROW* row, int frontend, int y, i
 		tmp[len] = '\0';
 
 		if (run->ambient)
-			SetTextColour((u_char)base, (u_char)base, (u_char)base);
+			SetTextColour(jerConsoleInk(base), jerConsoleInk(base), jerConsoleInk(base));
 		else
-			SetTextColour(run->r, run->g, run->b);
+			SetTextColour(jerConsoleInk(run->r), jerConsoleInk(run->g), jerConsoleInk(run->b));
 
 		if (frontend)
 			x = FEPrintStringSized(tmp, x, y, JER_CONSOLE_FE_SCALE, 0,
@@ -444,12 +461,14 @@ static void jerConsoleDrawRow(const JER_CONSOLE_ROW* row, int frontend, int y, i
 static void jerConsoleDrawInput(int frontend)
 {
 	int x = jerConsoleLeftX(frontend);
+	u_char r = jerConsoleInk(JER_CONSOLE_INPUT_R);
+	u_char g = jerConsoleInk(JER_CONSOLE_INPUT_G);
+	u_char b = jerConsoleInk(JER_CONSOLE_INPUT_B);
 
-	SetTextColour(JER_CONSOLE_INPUT_R, JER_CONSOLE_INPUT_G, JER_CONSOLE_INPUT_B);
+	SetTextColour(r, g, b);
 
 	if (frontend)
-		FEPrintStringSized(sInput, x, JER_CONSOLE_FE_INPUT_Y, JER_CONSOLE_FE_SCALE, 0,
-			JER_CONSOLE_INPUT_R, JER_CONSOLE_INPUT_G, JER_CONSOLE_INPUT_B);
+		FEPrintStringSized(sInput, x, JER_CONSOLE_FE_INPUT_Y, JER_CONSOLE_FE_SCALE, 0, r, g, b);
 	else if (gHiresFontTexture)
 		PrintStringHiresScaledSpaced(sInput, x, JER_CONSOLE_INPUT_Y, JER_CONSOLE_TEXT_SCALE, JER_CONSOLE_TRACKING);
 	else

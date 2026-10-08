@@ -24,11 +24,13 @@ because only the game can draw into the display buffer). Header:
 void jer_console_line(const char* text);          /* one ready-made line   */
 void jer_console_log(const char* fmt, ...);       /* printf-style          */
 
-/* chat lines -- built from colour runs, drawn EVEN WHILE the console is off */
+/* chat lines -- built from colour runs, drawn EVEN WHILE the console is off.
+ * The r/g/b are the colours as they should LOOK; the console applies the font's
+ * doubling itself (see "Colours are the colours you see" below). */
 typedef struct JER_CONSOLE_SEG {
     const char* text;
     unsigned char r, g, b;
-    int ambient;          /* non-zero = keep the plain line colour */
+    int ambient;          /* non-zero = use the age colour instead of r/g/b */
 } JER_CONSOLE_SEG;
 void jer_console_chat(const JER_CONSOLE_SEG* segs, int count);
 
@@ -121,6 +123,28 @@ split-screen, which neither the mp mod nor these HUDs use.
 
 `jer_console_draw` saves and restores `gFontColour`, like `jer_hud.c`: the module
 overlays drawn after it expect the colour they left behind.
+
+### Colours are the colours you see
+
+The HQ font is drawn with the PSX texture filter on (**x2**), so a modulation of
+`C` lands on screen as `2C`, clipped. Measured on a real frame: passing 120
+renders 240, and passing 128 renders 255. Both the in-game hires path and the
+frontend path double.
+
+`jer_console` therefore halves every colour it passes (`jerConsoleInk`), so a
+colour handed to the console -- by a module, or by the age ladder -- is the colour
+that is **seen**. Without it nothing dims at all: the age ladder's 150 and 190
+both clip to white, and a caller's colour washes out (the old `(150,255,150)` chat
+prompt came out white).
+
+The practical targets, as passed:
+
+| want to see | pass |
+| --- | --- |
+| white | 128 or more |
+| a chat message (mp's default) | 240 |
+| cream, for a speaker with no custom colour | 255, 253, 208 |
+| a speaker's own colour | their r/g/b, unchanged |
 
 ## Related
 
