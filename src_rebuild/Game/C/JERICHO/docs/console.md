@@ -88,9 +88,25 @@ Two draw sites, because the two states use different fonts:
 | in-game | `jer_console_draw(0)` in `DrawGame` (`main.c`) | `PrintStringHiresScaledSpaced`, scale `0.138f` (half the `0.275f` default) + `0.75f` px tracking |
 | frontend | `jer_console_draw(1)` in `State_FrontEnd` (`FEmain.c`) | `FEPrintStringSized`, scale `2048` (half the frontend's `4096`) |
 
-Layout is bottom-left: `x = 6`, newest row at `y = 196`, rows `11` px apart
-(frontend `x = 32`, `y = 456`, rows `18` px). The typed chat line sits under the
-block at `y = 232` (`496` in the frontend).
+Layout is bottom-left: `JER_CONSOLE_X = 13`, newest row at `y = 196`, rows `11` px
+apart (frontend `x = 32`, `y = 456`, rows `18` px). The typed chat line sits under
+the block at `y = 232` (`496` in the frontend).
+
+### The left inset is a *screen* inset, not a PSX x
+
+PSX 2D coordinates are not the whole story. PsyX maps the 4:3 HUD space into a
+16:9 render, so the visible area extends further left than PSX `x = 0` — on a
+1920x1080 window the mapped viewport starts at PSX `x = -53`. The engine anchors
+its own left-aligned HUD the same way (`DisplayOverlays` does
+`gOverlayXPos = 16 + vp.x`), so drawing at a raw PSX x strands the console ~53
+PSX px (about 240 screen px) in from the left edge.
+
+`jerConsoleLeftX()` anchors to the viewport instead
+(`PsyX_GetPSXWidescreenMappedViewport`), so `JER_CONSOLE_X` is the inset **from
+the edge the player actually sees**: 13 puts the text 62 screen px in on a 1920
+window. On a 4:3 display `vp.x` is 0 and this is a no-op. Only the in-game feed
+does this — in the frontend the console keeps the frontend's own `x = 32`, so it
+stays aligned with the frontend's other text.
 
 The in-game text carries a little **tracking** (`JER_CONSOLE_TRACKING`): at half
 size the HQ font's own side bearings collapse to under a pixel (measured: a

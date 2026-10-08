@@ -60,8 +60,11 @@ extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, st
 /* --- layout ------------------------------------------------------------- */
 /* In-game: bottom-left, half size. The newest row sits at BOTTOM; the mp
  * HOST/CLIENT tag block keeps rows 208..232 below it, and the chat input line
- * (jer_console_input) is the row under that. */
-#define JER_CONSOLE_X			6
+ * (jer_console_input) is the row under that.
+ *
+ * JER_CONSOLE_X is the inset from the edge the player actually SEES, not a raw
+ * PSX x -- see jerConsoleLeftX. */
+#define JER_CONSOLE_X			13
 #define JER_CONSOLE_TEXT_SCALE		0.138f	/* half of the 0.275f default */
 #define JER_CONSOLE_LINE_H		11
 #define JER_CONSOLE_BOTTOM		196
@@ -374,11 +377,42 @@ int jer_console_toggle(void)
 }
 
 /* --- draw --------------------------------------------------------------- */
+
+/* The console's left edge, anchored to the edge the player actually sees.
+ *
+ * PSX 2D coordinates are not the whole story: PsyX maps the 4:3 HUD space into a
+ * 16:9 render, so the visible area extends further left than PSX x=0 (on a
+ * 1920x1080 window the mapped viewport starts at PSX x=-53). The engine anchors
+ * its own left-aligned HUD the same way -- DisplayOverlays does
+ * `gOverlayXPos = 16 + vp.x` -- so drawing at a raw PSX x leaves the console
+ * stranded ~53 PSX px (about 240 screen px) in from the left edge. Anchor to the
+ * viewport instead. On a 4:3 display vp.x is 0 and this is a no-op.
+ *
+ * Only the in-game feed does this. In the FRONTEND the console shares its margin
+ * with the frontend's own text (x=32 of the same coordinate space), so shifting
+ * it there would break that alignment rather than fix anything. */
+static int jerConsoleLeftX(int frontend)
+{
+#ifdef PSX
+	return frontend ? JER_CONSOLE_FE_X : JER_CONSOLE_X;
+#else
+	if (frontend)
+		return JER_CONSOLE_FE_X;
+
+	{
+		RECT16 vp;
+
+		PsyX_GetPSXWidescreenMappedViewport(&vp);
+		return JER_CONSOLE_X + vp.x;
+	}
+#endif
+}
+
 static void jerConsoleDrawRow(const JER_CONSOLE_ROW* row, int frontend, int y, int age)
 {
 	char tmp[JER_CONSOLE_LINE_MAX];
 	int base = jerConsoleAgeColour(age);
-	int x = frontend ? JER_CONSOLE_FE_X : JER_CONSOLE_X;
+	int x = jerConsoleLeftX(frontend);
 	int r;
 
 	for (r = 0; r < row->runCount; r++)
@@ -409,15 +443,17 @@ static void jerConsoleDrawRow(const JER_CONSOLE_ROW* row, int frontend, int y, i
 
 static void jerConsoleDrawInput(int frontend)
 {
+	int x = jerConsoleLeftX(frontend);
+
 	SetTextColour(JER_CONSOLE_INPUT_R, JER_CONSOLE_INPUT_G, JER_CONSOLE_INPUT_B);
 
 	if (frontend)
-		FEPrintStringSized(sInput, JER_CONSOLE_FE_X, JER_CONSOLE_FE_INPUT_Y, JER_CONSOLE_FE_SCALE, 0,
+		FEPrintStringSized(sInput, x, JER_CONSOLE_FE_INPUT_Y, JER_CONSOLE_FE_SCALE, 0,
 			JER_CONSOLE_INPUT_R, JER_CONSOLE_INPUT_G, JER_CONSOLE_INPUT_B);
 	else if (gHiresFontTexture)
-		PrintStringHiresScaledSpaced(sInput, JER_CONSOLE_X, JER_CONSOLE_INPUT_Y, JER_CONSOLE_TEXT_SCALE, JER_CONSOLE_TRACKING);
+		PrintStringHiresScaledSpaced(sInput, x, JER_CONSOLE_INPUT_Y, JER_CONSOLE_TEXT_SCALE, JER_CONSOLE_TRACKING);
 	else
-		PrintString(sInput, JER_CONSOLE_X, JER_CONSOLE_INPUT_Y);
+		PrintString(sInput, x, JER_CONSOLE_INPUT_Y);
 }
 
 void jer_console_draw(int frontend)
