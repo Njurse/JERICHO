@@ -6,7 +6,9 @@
  * jer_hud.c: only the game can draw into the display buffer.
  *
  * The two states use DIFFERENT fonts, so the drawer has two paths:
- *   in-game   PrintStringHiresScaled at 0.138f (half of the 0.275f default),
+ *   in-game   PrintStringHiresScaledSpaced at 0.138f (half of the 0.275f
+ *             default), with a little tracking -- at half size the HQ glyphs'
+ *             own side bearings collapse to under a pixel;
  *             falling back to the plain PSX printer when no HQ font is loaded;
  *   frontend  FEPrintStringSized at 2048 (half of the 4096 the frontend's own
  *             FEPrintString uses) — the frontend never sees the in-game font.
@@ -48,6 +50,12 @@ extern int FEPrintStringSized(char* string, int x, int y, int scale, int transpa
 #define JER_CONSOLE_TEXT_SCALE		0.138f	/* half of the 0.275f default */
 #define JER_CONSOLE_LINE_H		11
 #define JER_CONSOLE_BOTTOM		200
+
+/* Extra pixels between glyphs. At the half-size scale the HQ font's own side
+ * bearings collapse to well under a pixel (measured: a ~4.5 px 'M' advance
+ * carried a ~0.6 px gap) and the letters read as jammed together -- about half
+ * the gap the default 0.275f text has. This nudges it back to roughly that. */
+#define JER_CONSOLE_TRACKING		0.75f
 
 /* Frontend: the FE draws in its own (larger) coordinate space and font. */
 #define JER_CONSOLE_FE_X		32
@@ -182,7 +190,7 @@ void jer_console_draw(int frontend)
 		}
 		else if (gHiresFontTexture)
 		{
-			PrintStringHiresScaled(sLines[i], JER_CONSOLE_X, y, JER_CONSOLE_TEXT_SCALE);
+			PrintStringHiresScaledSpaced(sLines[i], JER_CONSOLE_X, y, JER_CONSOLE_TEXT_SCALE, JER_CONSOLE_TRACKING);
 		}
 		else
 		{

@@ -291,10 +291,15 @@ int PrintStringHires(char* string, int x, int y)
 	return width;
 }
 
-/* Scaled variant of PrintStringHires: same HQ font, but the glyphs are
- * drawn at `scale` (0.275f is the default size). Used by overlay menus
- * that need more text on screen (e.g. the sandbox menu). */
-int PrintStringHiresScaled(char* string, int x, int y, float scale)
+/* Scaled variant of PrintStringHires: same HQ font, but the glyphs are drawn at
+ * `scale` (0.275f is the default size) plus `extra` pixels of TRACKING on every
+ * advance. Used by overlay menus that need more text on screen (e.g. the sandbox
+ * menu), and by jer_console, which draws half-size text: the HQ glyphs carry
+ * their own side bearings, but at a small scale those collapse to well under a
+ * pixel and the letters read as jammed together, so the console asks for a
+ * little extra. The public entry points are PrintStringHiresScaled (extra 0 --
+ * the old behaviour) and PrintStringHiresScaledSpaced. */
+static int jerPrintHiresScaled(char* string, int x, int y, float scale, float extra)
 {
 	u_char chr;
 	float width;
@@ -336,6 +341,7 @@ int PrintStringHiresScaled(char* string, int x, int y, float scale)
 		fy = y;
 		FONT_QUAD q;
 		GetHiresBakedQuadScaled(chr, &fx, &fy, &q, scale);
+		fx += extra;	/* tracking: widens the advance, not the glyph */
 
 		fontFT4 = (POLY_FT4*)current->primptr;
 
@@ -384,6 +390,16 @@ int PrintStringHiresScaled(char* string, int x, int y, float scale)
 		DrawSync(0);
 
 	return width;
+}
+
+int PrintStringHiresScaled(char* string, int x, int y, float scale)
+{
+	return jerPrintHiresScaled(string, x, y, scale, 0.0f);
+}
+
+int PrintStringHiresScaledSpaced(char* string, int x, int y, float scale, float extra)
+{
+	return jerPrintHiresScaled(string, x, y, scale, extra);
 }
 
 void PrintStringBoxedHires(char* string, int ix, int iy)

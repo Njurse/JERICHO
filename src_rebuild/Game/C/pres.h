@@ -32,6 +32,7 @@ extern int PrintString(char *string, int x, int y); // 0x00073EA0
 extern short PrintDigit(int x, int y, char *string); // 0x00074140
 extern int PrintStringFeature(char *string, int x, int y, int w, int h, int transparent); // 0x00074D34
 extern int PrintStringHiresScaled(char* string, int x, int y, float scale);	// sandbox menu
+extern int PrintStringHiresScaledSpaced(char* string, int x, int y, float scale, float extra);	// jer_console tracking
 extern void PrintStringBoxed(char *string, int ix, int iy); // 0x00074364
 
 extern void SetCLUT16Flags(ushort clutID, ushort mask, char transparent);

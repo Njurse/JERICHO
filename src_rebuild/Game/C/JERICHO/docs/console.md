@@ -63,8 +63,14 @@ Two draw sites, because the two states use different fonts:
 
 | state | call | font |
 | --- | --- | --- |
-| in-game | `jer_console_draw(0)` in `DrawGame` (`main.c`) | `PrintStringHiresScaled`, scale `0.138f` (half the `0.275f` default) |
+| in-game | `jer_console_draw(0)` in `DrawGame` (`main.c`) | `PrintStringHiresScaledSpaced`, scale `0.138f` (half the `0.275f` default) + `0.75f` px tracking |
 | frontend | `jer_console_draw(1)` in `State_FrontEnd` (`FEmain.c`) | `FEPrintStringSized`, scale `2048` (half the frontend's `4096`) |
+
+The in-game text carries a little **tracking** (`JER_CONSOLE_TRACKING`): at half
+size the HQ font's own side bearings collapse to under a pixel (measured: a
+4.50 px `M` advance with a 3.9 px glyph — a 0.6 px gap, about half what the
+default text has), so the letters read as jammed. `PrintStringHiresScaledSpaced`
+adds the extra per-advance width; the frontend's larger font does not need it.
 
 Without an HQ font loaded the in-game path falls back to the plain PSX printer.
 Both draw sites are single-view only, exactly like `jer_hud_draw` and the
