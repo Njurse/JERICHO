@@ -46,6 +46,16 @@ on a clean build - a `crosscheck.py` INV3 bug, now fixed so each set is judged a
 source city). A 12-switch multi-city cycle builds every car, plateaus its pool and returns
 everything. **Open:** the extra-panels corruption above.
 
+**Slot reuse (later, 2026-10).** A car change now reuses the slot the old car vacated, so a
+change holds ONE slot instead of the transient TWO that made concurrent changes run the import
+pool dry. This is **local-only** (mplive.c, `ebcb5792` + `fec7def4`): the fold that re-models a
+*remote* car's slot cannot free it directly, because the remote car is still drawn on it — the
+`slotrelease.h` "cars on it → deferred" rule — so the peer/fold side still takes a canonical
+spare. The agreed set (`CHK_NET_SET`) is the slot-authoritative mechanism for the peer side;
+making the fold apply it mid-match *regressed* (273 refusals vs 17) because the fold-side
+re-model needs the deferred ordering first, so that half was reverted. Measured: `mp_carstress`
+3 seats / 60 s = 114 REUSED / 27 fresh, 21 refusals, coverage 41/41/41, no dumps.
+
 ## The rig (use it before you touch the game)
 
 ```
