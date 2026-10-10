@@ -988,26 +988,33 @@ void SetupScreenSprts(PSXSCREEN *pScr)
 
 	if (pScr->userFunctionNum == 0 || pScr->userFunctionNum == 128)
 	{
-		if (pNewButton != NULL) 
-		{
-			pCurrButton = pNewButton;
-			pNewButton = NULL;
-		}
-		else 
-			pCurrButton = pScr->buttons;
+		pCurrButton = pNewButton;	/* the row we came FROM, or NULL for the top */
 	}
-	else
+	else if ((fpUserFunctions[pScr->userFunctionNum - 1])(1) == 0)
 	{
-		if ((fpUserFunctions[pScr->userFunctionNum - 1])(1) == 0)
-		{
-			if (pNewButton != NULL) 
-			{
-				pCurrButton = pNewButton;
-				pNewButton = NULL;
-			}
-			else
-				pCurrButton = pCurrScreen->buttons;
-		}
+		/* The screen function may ask for a row itself (it writes pNewButton and
+		 * returns 0), so read it back AFTER the call. A function that returns
+		 * non-zero sets pCurrButton itself - it is showing its own current
+		 * setting - and is left alone. */
+		pCurrButton = pNewButton;
+	}
+
+	/* The row a Back press carried here belongs to THIS entry only. It points
+	 * into the button array of the screen we came from, so a later entry that
+	 * does not set one of its own must not inherit it: it used to survive when
+	 * the screen function returned non-zero, and the next screen to be entered
+	 * then highlighted a row computed from another screen's array - i.e. nothing
+	 * sensible. */
+	pNewButton = NULL;
+
+	/* And the row must still EXIST. A screen that rebuilt its rows - a module
+	 * menu whose list shrank, the car list - may have fewer than the one we left
+	 * it on, and a stale pointer highlights nothing at all. Anything out of range
+	 * falls back to the top row. */
+	if (pCurrButton == NULL || pCurrButton < pScr->buttons ||
+		pCurrButton >= pScr->buttons + pScr->numButtons)
+	{
+		pCurrButton = pScr->buttons;
 	}
 }
 
@@ -4362,7 +4369,12 @@ int JerFrontendMenuScreen(int bSetup)
 		if (n > JER_FE_MAX_ITEMS)
 			n = JER_FE_MAX_ITEMS;
 		if (n <= 0)
+		{
+			/* An EMPTY menu owns no rows. Leaving numButtons stale would keep a
+			 * highlight on a row this menu no longer has. */
+			pCurrScreen->numButtons = 0;
 			return bSetup ? 1 : 0;
+		}
 
 		pCurrScreen->numButtons = n;
 
@@ -4414,7 +4426,22 @@ int JerFrontendMenuScreen(int bSetup)
 		 * row every frame and the cursor gets stuck there */
 		if (bSetup)
 		{
-			pCurrButton = &pCurrScreen->buttons[0];
+			/* BACKING OUT lands on the row the player left this menu by. The
+			 * engine hands that row down in pNewButton (a Back press carries the
+			 * button off the nav stack); a FRESH entry has none, and so does a row
+			 * that no longer exists - a live roster that shrank, a menu whose
+			 * items changed - because a stale index would leave the highlight
+			 * nowhere. Either way, the top row. */
+			int cur = 0;
+
+			if (pNewButton != NULL && pNewButton >= pCurrScreen->buttons &&
+				pNewButton < pCurrScreen->buttons + n)
+			{
+				cur = (int)(pNewButton - pCurrScreen->buttons);
+			}
+
+			pNewButton = NULL;
+			pCurrButton = &pCurrScreen->buttons[cur];
 		}
 		else
 		{

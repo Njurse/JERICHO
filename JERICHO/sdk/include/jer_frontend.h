@@ -29,6 +29,13 @@
  *
  * The engine calls on_enter before each layout; a module whose item list
  * changes calls jer_frontend_refresh() to rebuild the screen.
+ *
+ * Backing out of a menu returns to the row the player left the screen BELOW it
+ * by, not to the top row: the engine keeps the pressed button on its nav stack
+ * and re-highlights it. A row that no longer exists — a live roster that shrank,
+ * a menu whose items changed — falls back to the first row, so the highlight is
+ * always on a row the screen actually has. Nothing for a module to do; a menu
+ * that wants the selection to follow something else sets it in on_enter.
  * ------------------------------------------------------------------ */
 
 #ifdef __cplusplus
