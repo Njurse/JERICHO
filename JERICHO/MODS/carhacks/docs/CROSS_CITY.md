@@ -238,8 +238,18 @@ import = 2:0:10
 `2` VEGAS, `3` RIO (`system.c:130`). Slots 0..4 feed ambient traffic (the model
 list is `modelRandomList`, `civ_ai.c:47`), 5.. up to count-2 are spare capacity
 that stock levels leave empty, and the last slot (`SPECIAL_CAR_SLOT =
-MAX_CAR_RESIDENT_MODELS - 1` = 7, `dr2limits.h:29`, `:34`) is the special slot
+MAX_CAR_RESIDENT_MODELS - 1`, `dr2limits.h:29`, `:34`) is the special slot
 (`jer_events.h:512`); several entries may name different cities.
+
+> **Slot 11 is reserved — a footnote for later.** In the 12-resident build,
+> `SPECIAL_CAR_SLOT` is **11** (`dr2limits.h:35` → `:40`). It is the engine's
+> mission-special slot — the Vegas ambulance and its kin (`cars.c:3311`,
+> `jer_events.h:512`). carhacks deliberately never touches it: `CHK_IMPORT_MAX_SLOTS`
+> is `11`, i.e. the import pool is slots **0..10**, so a cross-city import can never
+> evict whatever the engine puts there. We are keeping it that way on purpose — slot 11
+> is the one resident slot with no importer contending for it, so if a feature ever
+> wants a dedicated, never-evicted resident car (a scripted special, a boss vehicle,
+> a shared ride), slot 11 is the place to put it.
 
 Verified in the log by the size of the block that was actually read — with
 `import = 2:0:10` on a **Havana** level:
