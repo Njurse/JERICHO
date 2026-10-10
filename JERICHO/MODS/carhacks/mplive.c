@@ -32,6 +32,7 @@
 
 #include "jericho.h"
 #include "jer_net.h"
+#include "jer_console.h"	/* SLOT-TRACE headline lines also go to the on-screen console */
 
 #include "cars.h"		/* gCarCleanModelPtr: is the built mesh really there */
 #include "mission.h"
@@ -145,6 +146,9 @@ static int ChkMpLoad(void* userdata, void* args)
 		printInfo("[carhacks/mp] SLOT-TRACE: asks %s model %d; local car in slot %d\n",
 			chkCityName(a->city), a->model, oldSlot);
 
+		jer_console_log("[carhacks/mp] change: %s model %d (was slot %d)",
+			chkCityName(a->city), a->model, oldSlot);
+
 		for (s = CHK_IMPORT_SPARE_FIRST; s < CHK_IMPORT_MAX_SLOTS; s++)
 		{
 			CHK_CAR_ID held = chkImportSlotId(s);
@@ -209,6 +213,9 @@ static int ChkMpLoad(void* userdata, void* args)
 
 		printInfo("[carhacks/mp] SLOT-TRACE: -> slot %d (%s)\n", slot,
 			(slot == oldSlot) ? "REUSED the vacated slot" : "fresh spare");
+
+		jer_console_log("[carhacks/mp] -> slot %d (%s)", slot,
+			(slot == oldSlot) ? "REUSED" : "fresh spare");
 	}
 
 	chkImportSetSlot(slot, id);
