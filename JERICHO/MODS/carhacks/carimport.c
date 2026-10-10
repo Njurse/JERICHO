@@ -460,22 +460,39 @@ int chkImportCanonicalSlot(CHK_CAR_ID car, int* outCount)
 		spare[k++] = slot;
 	}
 
-	for (i = 0; i < n; i++)
+	/* Place the cars that do NOT have a slot yet, in canonical order.
+	 *
+	 * `spare[]` lists only the slots free of OUR cars, so only a car still without one
+	 * may consume an entry. Indexing it by the position in order[] -- which counts
+	 * every wanted car, placed or not -- conflates the two lists: with 3 wanted, 2
+	 * already placed and 2 slots free, the third wanted car asked for spare[2] of a
+	 * two-entry list and was REFUSED a slot the session had. That is the measured
+	 * "no spare resident slot" storm (three seats on the car stress, each holding a
+	 * car while changing to another), and it is why retrying never helped: the
+	 * arithmetic said no room, not the pool. */
 	{
-		if (!chkCarIdEqual(order[i], car))
-			continue;
+		int need = 0;
 
+		for (i = 0; i < n; i++)
+		{
+			if (chkCarIdEqual(order[i], car))
+			{
+				if (outCount != NULL)
+					*outCount = n;
+
+				return (need < k) ? spare[need] : -1;
+			}
+
+			if (chkImportSlotOfCar(order[i]) < 0)
+				need++;			/* a car already placed consumes nothing */
+		}
+
+		/* not part of this session's set (a caller asking about a car nobody picked) */
 		if (outCount != NULL)
-			*outCount = n;
+			*outCount = n + 1;
 
-		return (i < k) ? spare[i] : -1;
+		return (need < k) ? spare[need] : -1;
 	}
-
-	/* not part of this session's set (a caller asking about a car nobody picked) */
-	if (outCount != NULL)
-		*outCount = n + 1;
-
-	return (n < k) ? spare[n] : -1;
 }
 
 /* Does the LEVEL already hold this model in its resident pool?
