@@ -785,6 +785,21 @@ static int crumpleResolveImpactNormal(CRUMPLE_IMPACT* im, const SVECTOR* cleanV,
 	return 1;
 }
 
+/* The clean mesh for a resident-model index, or NULL when the index is out of range or
+ * the slot has no mesh.
+ *
+ * ap.model is a u_char (0..255, dr2types.h) used as an index into gCarCleanModelPtr[],
+ * which is sized MAX_CAR_RESIDENT_MODELS (12). An out-of-range value therefore reads
+ * PAST the array and the pointer it happens to find there faults the moment it is
+ * dereferenced -- which is the intermittent crash seen on a JOINER, in this file.
+ * JerCarSlotUsable is the engine's one rule for "is this resident slot in range AND
+ * built" (cars.h:189), so every raw index in this file's deform and repair paths goes
+ * through here (crumpleBuildModelData keeps its own explicit range check instead). */
+static MODEL* crumpleCleanMesh(int model)
+{
+	return JerCarSlotUsable(model) ? gCarCleanModelPtr[model] : NULL;
+}
+
 static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 {
 	CRUMPLE_CAR_STATE* st;
@@ -814,7 +829,7 @@ static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 
 	model = cp->ap.model;
 
-	clean = gCarCleanModelPtr[model];
+	clean = crumpleCleanMesh(model);
 	if (clean == NULL)
 		return;
 
@@ -869,7 +884,18 @@ static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 		}
 		else
 		{
-			int otherMass = car_data[st->otherCarId].ap.carCos->mass;
+			int otherMass = 0;
+
+			/* Only a REAL other car has a mass to weigh. st->otherCarId indexes
+			 * car_data[], so it must be range-checked, and the other car's cosmetics can
+			 * still be NULL -- a remote car whose cosmetics have not been applied yet,
+			 * which is exactly the JOINER's first contact. Reading through a NULL carCos
+			 * (or past car_data[]) is the access violation this guard prevents: the
+			 * unreadable case falls through to 0 and is treated as a world impact, which
+			 * is the safe, and the right, answer. */
+			if (st->otherCarId >= 0 && st->otherCarId < MAX_CARS &&
+				car_data[st->otherCarId].ap.carCos != NULL)
+				otherMass = car_data[st->otherCarId].ap.carCos->mass;
 
 			if (otherMass <= 0)
 				massFactor = p->worldImpactFactor;
@@ -1297,7 +1323,7 @@ static void crumpleDebugTickInternal(void)
 		// ease the damaged mesh back toward the clean vertices (the body
 		// transforms back as the panels/health do — one consistent motion)
 		{
-			MODEL* clean = gCarCleanModelPtr[cp->ap.model];
+			MODEL* clean = crumpleCleanMesh(cp->ap.model);
 			SVECTOR* cleanV = NULL;
 			SVECTOR* out = gTempCarVertDump[cp->id];
 			int n = 0;
@@ -1325,7 +1351,7 @@ static void crumpleDebugTickInternal(void)
 			// fully repaired: restore the exact clean mesh, zero every impact
 			// and bend, then run ONE final denting pass so the UV damage
 			// levels settle to clean too (body, panels and lights in sync)
-			MODEL* clean = gCarCleanModelPtr[cp->ap.model];
+			MODEL* clean = crumpleCleanMesh(cp->ap.model);
 			SVECTOR* cleanV = NULL;
 			SVECTOR* out = gTempCarVertDump[cp->id];
 			int n = 0;
