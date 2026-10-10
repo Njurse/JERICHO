@@ -3415,6 +3415,7 @@ int CarPalIndexInCityFor(int tpage, int city)
 // worst, which is a wrong COLOUR rather than a wild write - and say so once.
 static int sPalBakeMiss;
 static int sPalBakeDiag;
+static int sPalSetsDumping;	/* set while the set dump calls the resolver, so it does not re-enter the miss diag */
 
 // JERICHO-DIAG (JERICHO_DIAG_PALBAKE=1): a set the classification could not place. Prints
 // the RUNTIME page table for that city -- the static initialiser in texture.c is replaced
@@ -3429,7 +3430,13 @@ static void PalBakeMissDiag(int tpage, int city)
 	char* lump;
 	int* p;
 
-	if (getenv("JERICHO_DIAG_PALBAKE") == NULL || sPalBakeDiag >= 200)
+	if (getenv("JERICHO_DIAG_PALBAKE") == NULL || sPalBakeDiag >= 24)
+		return;
+
+	/* The set dump calls the resolver, and the resolver calls this on a miss. Without
+	 * this guard the dump would emit a miss line per unresolved set, inflating the very
+	 * count it is being used to measure. */
+	if (sPalSetsDumping)
 		return;
 
 	sPalBakeDiag++;
@@ -3574,6 +3581,7 @@ static void PalBakeSetsDiag(int slot)
 
 	city = GetCarModelSourceCity(slot);
 	n = CarModelSetsCount(slot);
+	sPalSetsDumping = 1;	/* the resolver below must not log misses */
 
 	len += snprintf(buf + len, sizeof(buf) - len,
 		"JERICHO-DIAG PALBAKE-SETS: slot=%d model=%d city=%s n=%d pageTable=[",
@@ -3593,11 +3601,18 @@ static void PalBakeSetsDiag(int slot)
 	{
 		int set = CarModelSetsGet(slot, i);
 
-		len += snprintf(buf + len, sizeof(buf) - len, "%d->row%d%s", set,
-			CarPalIndexInCityFor(set, city), (i < n - 1) ? "," : "");
+		/* own = what the model's OWN city can classify it as (-1 = it cannot);
+		 * fin = the row the bake actually bakes, after the miss branch. Before the
+		 * miss branch preferred the all-cities search, fin was the block base for
+		 * every own=-1; now it is the search hit when a held city has the page. */
+		len += snprintf(buf + len, sizeof(buf) - len, "%d(o%d/f%d)%s", set,
+			CarPalIndexInCityFor(set, city), CarPalIndexForBuild(set, city),
+			(i < n - 1) ? "," : "");
 	}
 
 	len += snprintf(buf + len, sizeof(buf) - len, "]");
+
+	sPalSetsDumping = 0;
 
 	printInfo("%s\n", buf);
 }
