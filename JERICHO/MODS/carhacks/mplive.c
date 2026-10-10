@@ -35,6 +35,7 @@
 
 #include "cars.h"		/* gCarCleanModelPtr: is the built mesh really there */
 #include "mission.h"
+#include "players.h"		/* player[0].playerCarId: the local player's car_data entry */
 #include "texture.h"		/* CarSlotResReport: the per-switch resource dump */
 
 #include "carid.h"
@@ -131,6 +132,31 @@ static int ChkMpLoad(void* userdata, void* args)
 
 	id = chkCarId(a->city, a->model);
 
+	/* DIAGNOSTIC (CHK_DIAG_SLOT_TRACE): prove where the new car lands relative to the
+	 * slot the local player is vacating. The premise this tests: a local change takes a
+	 * FRESH spare (chkImportCanonicalSlot) while the old slot stays `used` until
+	 * chkNetLocalSwitched releases it AFTER the adopt -- one change holds two slots. */
+	if (getenv("CHK_DIAG_SLOT_TRACE") != NULL)
+	{
+		CHK_CAR_ID was = chkNetLocalCar();
+		int oldSlot = chkCarIdIsSet(was) ? chkImportSlotOfCar(was) : -1;
+		int s;
+
+		printInfo("[carhacks/mp] SLOT-TRACE: asks %s model %d; local car in slot %d\n",
+			chkCityName(a->city), a->model, oldSlot);
+
+		for (s = CHK_IMPORT_SPARE_FIRST; s < CHK_IMPORT_MAX_SLOTS; s++)
+		{
+			CHK_CAR_ID held = chkImportSlotId(s);
+			int c = chkCarIdCity(held);
+			int cars = chkImportCarsOnSlot(s, NULL);
+
+			printInfo("[carhacks/mp] SLOT-TRACE:   spare %d: held=%d %s model %d (cars on it %d)\n",
+				s, chkImportSlotHeld(s),
+				(c >= 0) ? chkCityName(c) : "-", chkCarIdModel(held), cars);
+		}
+	}
+
 	/* A car the set already holds keeps the slot it is already in -- re-slotting
 	 * it would move a car another player may be driving. Otherwise take the
 	 * session's canonical spare for OUR player id: that is the slot every machine
@@ -139,13 +165,50 @@ static int ChkMpLoad(void* userdata, void* args)
 	fresh = (slot < 0);		/* this load claims the slot: a failure gives it back */
 
 	if (slot < 0)
+	{
+		/* RETIRE THE OLD SLOT FIRST. The local player's own change vacates the slot
+		 * they are in, so give it straight back BEFORE asking for a spare: the canonical
+		 * mapping then sees that slot as free, and a change holds ONE slot instead of two
+		 * (the old one kept until chkNetLocalSwitched released it AFTER the adopt). That
+		 * two-slot transient is what made three seats changing at once run out of the
+		 * four-slot import pool (7..10) with "no spare resident slot".
+		 *
+		 * Safe because it is synchronous and the slot is the player's own: chkImportReleaseSlot
+		 * frees the mesh the player's car is drawn with, but the replacement is built into the
+		 * set inside this SAME call (no frame, no draw, runs in between), and mp's adopt then
+		 * re-points the car before the next render. The guard insists the sole car on the slot
+		 * IS the local player's own car_data entry -- a shared car, a peer's remote copy, or a
+		 * leftover civilian all fail it and the ordinary fresh-slot path runs instead. */
+		CHK_CAR_ID was = chkNetLocalCar();
+		int oldSlot = chkCarIdIsSet(was) ? chkImportSlotOfCar(was) : -1;
+		int localCar = player[0].playerCarId;
+		int cars, first = -1;
+
+		cars = (oldSlot >= 0) ? chkImportCarsOnSlot(oldSlot, &first) : 0;
+
+		if (oldSlot >= CHK_IMPORT_SPARE_FIRST && oldSlot < CHK_IMPORT_MAX_SLOTS &&
+			cars == 1 && first == localCar && localCar >= 0)
+		{
+			chkImportReleaseSlot(oldSlot);
+		}
+
 		slot = chkImportCanonicalSlot(id, &count);
+	}
 
 	if (slot < 0)
 	{
 		printInfo("[carhacks/mp] change car: no spare resident slot for %s model %d (%d car(s) wanted)\n",
 			chkCityName(a->city), a->model, count);
 		return JER_RESULT_CONTINUE;
+	}
+
+	if (getenv("CHK_DIAG_SLOT_TRACE") != NULL)
+	{
+		CHK_CAR_ID was = chkNetLocalCar();
+		int oldSlot = chkCarIdIsSet(was) ? chkImportSlotOfCar(was) : -1;
+
+		printInfo("[carhacks/mp] SLOT-TRACE: -> slot %d (%s)\n", slot,
+			(slot == oldSlot) ? "REUSED the vacated slot" : "fresh spare");
 	}
 
 	chkImportSetSlot(slot, id);
@@ -166,6 +229,11 @@ static int ChkMpLoad(void* userdata, void* args)
 	{
 		printInfo("[carhacks/mp] change car: %s model %d could not be built into slot %d\n",
 			chkCityName(a->city), a->model, slot);
+		printInfo("[carhacks/mp]   detail: slotOfCar=%d usable=%d resident=%d srcCity=%d\n",
+			chkImportSlotForCar(a->city, a->model),
+			JerCarSlotUsable(slot),
+			residentCarModels[slot],
+			GetCarModelSourceCity(slot));
 
 		/* A slot this load claimed and could not fill: offer it straight back (the routine
 		 * keeps it if somebody else turns out to name the car). */

@@ -557,6 +557,14 @@ CHK_OFFER chkImportCanOffer(int city, int slot)
 	if (model <= 0)
 		return CHK_OFFER_NO_CAR;
 
+	/* A car the game's DATA does not carry, even though the level's car LIST names it.
+	 * CHICAGO model 11 is the "empty truck slot": its list entry points at CARMODEL_11,
+	 * which CHICAGO's package does not ship, so a cross-city import of it can only be
+	 * refused ("could not be built" - JerHotLoadCarModel's "no such model" path). Offering
+	 * it makes the picker show a car that cannot be served, so don't. */
+	if (city == 0 && model == 11)
+		return CHK_OFFER_NO_CAR;
+
 	return CHK_OFFER_OK;
 }
 
