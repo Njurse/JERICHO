@@ -62,8 +62,19 @@ author = "You"
 description = "what it does"
 default-enabled = true    # optional, used when modlist.ini omits it
 dependencies = []         # optional: ["othermod"] or "othermod"
+incompatible = []         # optional: ["othermod"] — this addon will not run
+                          # BESIDE that one (see below)
 runtime = "dll"           # REQUIRED: marks this as a runtime DLL addon
 ```
+
+`dependencies` and `incompatible` both name other mod **ids**. A missing dependency
+disables the addon; so does one that is active and listed in `incompatible`. The
+difference is the meaning: a dependency is something you need, an incompatibility is
+something you cannot share with. **You mark yourself** — the declaring mod is the one
+that stands down, and the reason the player is shown names the other mod, both as an
+error on the screen and as a line on the Mods screen. Two mods that each declare the
+other both stand down and each say why; nothing is ever disabled by a third party's
+manifest.
 
 The source must export the entry point and register itself:
 

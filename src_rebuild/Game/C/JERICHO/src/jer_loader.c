@@ -41,6 +41,8 @@
 /*                              defaults to DISABLED — it must opt in, never   */
 /*                              inherit "on"; see jerParseModToml)             */
 /*   dependencies = ["a", "b"]   or   dependencies = "a,b"             */
+/*   incompatible = ["x", "y"]   or   incompatible = "x,y"   (mods this one */
+/*                              must NOT run beside; see jer_system.c)   */
 /* ------------------------------------------------------------------ */
 
 /* copy a quoted ("...") or bare value into out (bounded) */
@@ -182,6 +184,8 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 		}
 		else if (strcmp(key, "dependencies") == 0)
 			jerTomlDeps(val, m->deps, sizeof(m->deps));
+		else if (strcmp(key, "incompatible") == 0 || strcmp(key, "incompatible-with") == 0)
+			jerTomlDeps(val, m->incompat, sizeof(m->incompat));
 		else if (strcmp(key, "runtime") == 0)
 		{
 			/* runtime = "dll" means a loadable addon; anything else (including
@@ -209,7 +213,13 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
  * Reads the manifest for that one field and nothing else (into a scratch module, so
  * none of jerParseModToml's other fields leak into the live table).
  * Returns 1 when a list was found. */
-int jer_loader_read_deps(const char* rootDir, const char* id, char* out, int max)
+/* Read ONE list field (the dependency list, or the incompatibility list) out of a
+ * module's own mod.toml. Shared by jer_loader_read_deps and _read_incompat.
+ *
+ * Reads that one field and nothing else (into a scratch module, so none of
+ * jerParseModToml's other fields leak into the live table). Returns 1 when a list
+ * was found. */
+static int jerManifestList(const char* rootDir, const char* id, char* out, int max, int incompat)
 {
 	JER_MODULE scratch;
 	char path[512];
@@ -224,12 +234,32 @@ int jer_loader_read_deps(const char* rootDir, const char* id, char* out, int max
 
 	jerParseModToml(path, &scratch);
 
-	if (scratch.deps[0] == 0)
-		return 0;
+	if (incompat)
+	{
+		if (scratch.incompat[0] == 0)
+			return 0;
 
-	snprintf(out, (size_t)max, "%s", scratch.deps);
+		snprintf(out, (size_t)max, "%s", scratch.incompat);
+	}
+	else
+	{
+		if (scratch.deps[0] == 0)
+			return 0;
+
+		snprintf(out, (size_t)max, "%s", scratch.deps);
+	}
 
 	return 1;
+}
+
+int jer_loader_read_deps(const char* rootDir, const char* id, char* out, int max)
+{
+	return jerManifestList(rootDir, id, out, max, 0);
+}
+
+int jer_loader_read_incompat(const char* rootDir, const char* id, char* out, int max)
+{
+	return jerManifestList(rootDir, id, out, max, 1);
 }
 
 /* ------------------------------------------------------------------ */

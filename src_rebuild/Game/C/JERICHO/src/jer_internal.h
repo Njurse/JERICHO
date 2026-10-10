@@ -58,6 +58,9 @@ typedef struct JER_MODULE
 	char author[64];
 	char description[128];
 	char deps[128];
+	char incompat[128];		/* mod.toml `incompatible`: mods this one cannot run BESIDE (comma list).
+					 * A conflict is reported the same way a missing dependency is -- the
+					 * declaring module is refused, and the reason names the other mod. */
 	void* handle;			/* DLL/.so handle (NULL when not compiled) */
 	JER_MODULE_ENTRY entry;	/* resolved entry point (NULL when not compiled) */
 	int defaultEnabled;		/* mod.toml default-enabled (used when modlist omits) */
@@ -91,6 +94,11 @@ int jer_loader_scan(const char* rootDir, JER_MODULE* table, int max);
  * never read and its dependency check could never fire. Returns 1 when a list was
  * found. */
 int jer_loader_read_deps(const char* rootDir, const char* id, char* out, int max);
+
+/* The same, for `incompatible`. Read from the manifest for every module, deep or
+ * DLL, so no exported signature has to change to carry it. Returns 1 when a list
+ * was found. */
+int jer_loader_read_incompat(const char* rootDir, const char* id, char* out, int max);
 
 /* Unload every loaded binary (FreeLibrary/dlclose). Call before rescan. */
 void jer_loader_unload(JER_MODULE* table, int count);

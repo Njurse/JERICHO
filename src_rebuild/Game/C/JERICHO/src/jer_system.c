@@ -303,6 +303,9 @@ static void jerSnapshotModules(const char* rootDir)
 		 * what it needs and the check would still see an empty list. */
 		jer_loader_read_deps(rootDir, m->id, m->deps, sizeof(m->deps));
 
+		/* ...and the same for `incompatible`, which the registry cannot carry either. */
+		jer_loader_read_incompat(rootDir, m->id, m->incompat, sizeof(m->incompat));
+
 		gModuleCount++;
 	}
 
@@ -818,6 +821,64 @@ static void jerActivateModules(const char* rootDir)
 					m->name[0] != 0 ? m->name : m->id, missingName);
 
 				jerLog("[jericho] module \"%s\" DISABLED: missing dependency (\"%s\")\n", m->id, m->deps);
+				jer_error("%s", m->refusal);
+
+				m->valid = 0;
+				continue;
+			}
+		}
+
+		/* Incompatibility: this module declared mods it cannot run BESIDE. Refuse it --
+		 * naming the other one -- when any of them is actually active, in exactly the
+		 * way a missing dependency is refused above: the reason is player-facing (an
+		 * error on the screen and a line on the Mods screen), not just a log line.
+		 *
+		 * One-sided on purpose. A module marks ITSELF incompatible with another, and
+		 * it is the one that stands down: two mods that each declare the other both
+		 * stand down, and each says why. Nothing is silently disabled by a third
+		 * party's manifest. */
+		if (m->incompat[0] != 0)
+		{
+			char other[40];
+			char clashName[40];	/* WHICH conflicting mod was active, for the refusal */
+			const char* p = m->incompat;
+			int clash = 0;
+
+			clashName[0] = 0;
+
+			while (*p != 0 && !clash)
+			{
+				const char* comma = strchr(p, ',');
+				int len = comma != NULL ? (int)(comma - p) : (int)strlen(p);
+
+				if (len > 0 && len < (int)sizeof(other))
+				{
+					JER_MODULE* otherModule;
+
+					memcpy(other, p, (size_t)len);
+					other[len] = 0;
+
+					/* Only an ACTIVE other module conflicts: one that is switched off,
+					 * or itself refused, is not running beside us. */
+					otherModule = jerFindModule(other);
+
+					if (otherModule != NULL && otherModule != m && otherModule->enabled && otherModule->activated)
+					{
+						clash = 1;
+						snprintf(clashName, sizeof(clashName), "%s",
+							otherModule->name[0] != 0 ? otherModule->name : otherModule->id);
+					}
+				}
+
+				p = comma != NULL ? comma + 1 : p + strlen(p);
+			}
+
+			if (clash)
+			{
+				snprintf(m->refusal, sizeof(m->refusal), "%s will not run with %s.",
+					m->name[0] != 0 ? m->name : m->id, clashName);
+
+				jerLog("[jericho] module \"%s\" DISABLED: incompatible with \"%s\"\n", m->id, m->incompat);
 				jer_error("%s", m->refusal);
 
 				m->valid = 0;

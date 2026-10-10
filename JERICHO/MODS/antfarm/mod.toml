@@ -5,3 +5,11 @@ author = "REDRIVER2 community"
 description = "Passive city observer / idle screensaver: tours the map with 17 cinematic camera angles - roadside tripod/overhead/kerb, flyover and crane dollies, an orbit, waterfront drift, a junction vantage, and six angles locked onto a moving car (fender, sill, nose-3/4 and tail-3/4 rigs plus a zooming tripod and a long-lens far pan) - with gentle fades while the city keeps living."
 dependencies = []
 default-enabled = false
+
+# Ant Farm drives the CAMERA itself (its whole point is to tour the map on its own
+# rigs), so it cannot share a session with a mod that also owns the camera and the
+# car. mp does. Measured, not guessed: with both enabled a pair run dumped an access
+# violation and the on-foot stand-in's height read 1918 instead of ~-130. Ant Farm is
+# the one that stands down (`incompatible` refusing the DECLARING mod), and the reason
+# is raised as a player-facing error naming Multiplayer.
+incompatible = ["mp"]

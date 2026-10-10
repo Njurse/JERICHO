@@ -65,6 +65,9 @@ Composition, when several modules are active:
 - Two modules on the same out-param **do not merge**.
 - `dependencies` means the dependency is **present and enabled**, not
   initialised first.
+- `incompatible` is its mirror: naming a mod there disables **this** one while
+  that mod is active, and the reason shown on screen names it. A mod marks
+  itself, so nothing is ever disabled by a third party's manifest.
 - Load order is **`modlist.ini` line order**.
 
 ## Limits
