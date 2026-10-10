@@ -267,6 +267,34 @@ void jer_npc_stop(JerNpc* n)
 	pPed->fpAgitatedState = NULL;
 }
 
+/* pedest.c, and deliberately not in a header: this is the animation/integration
+ * pass a ped's own state function calls. */
+extern void AnimatePed(LPPEDESTRIAN pPed);
+
+void jer_npc_tick(JerNpc* n)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
+
+	if (pPed == NULL)
+		return;
+
+	/* A PARKED ped is held exactly where the module put it -- both its state slots
+	 * are the frozen no-op. Ticking it would move it out from under that. */
+	if (pPed->fpRestState == jer_npc_frozen_state)
+		return;
+
+	/* AnimatePed is the whole reason a stock pedestrian walks: it advances the
+	 * walk/run/idle animation from `speed` AND integrates `position` from speed and
+	 * `dir`. Two of its side effects are worth knowing for a stand-in:
+	 *   - it plays Tanner footstep sounds for a TANNER_MODEL ped (fine -- a walking
+	 *     character should make a noise);
+	 *   - for any NON-civilian ped it writes player[ABS(padId)].pos, which for a
+	 *     stand-in (padId = -1) lands on the unused slot 1. ABS(-1)=1 is why the
+	 *     stand-in's padId MUST stay negative: at 0 it would overwrite the LOCAL
+	 *     player's own position every frame. */
+	AnimatePed(pPed);
+}
+
 int jer_npc_leave_car(JerNpc* n)
 {
 	(void)n;	/* STUB: the police bail-out is future work */

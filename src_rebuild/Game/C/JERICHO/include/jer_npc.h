@@ -72,6 +72,16 @@ void jer_npc_move_to(JerNpc* n, int x, int z, int speed);
 /* halt the ped (speed 0 + idle state) */
 void jer_npc_stop(JerNpc* n);
 
+/* advance an owned ped one frame: move it at its current speed along its heading
+ * AND advance its walk animation. The ambient pedestrian system only drives
+ * CIVILIAN peds (ControlPedestrians), and the player-ped loop only drives the
+ * LOCAL player's own ped -- so a ped a module spawned with jer_npc_spawn_model
+ * (a NON-civilian model such as 0 = Tanner) is driven by NEITHER and would stand
+ * still / glide instead of walking. A module driving such a ped must call this
+ * once per frame after setting the intent (jer_npc_move_to, or jer_npc_stop +
+ * jer_npc_face). A PARKED ped (jer_npc_park / jer_npc_set_action) is left alone. */
+void jer_npc_tick(JerNpc* n);
+
 /* query: the ped's current speed (for decision making) */
 int jer_npc_speed(const JerNpc* n);
 
