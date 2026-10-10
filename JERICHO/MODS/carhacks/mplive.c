@@ -107,7 +107,7 @@ static int ChkMpLoad(void* userdata, void* args)
 {
 	MP_CARQ_LOAD_ARGS* a = (MP_CARQ_LOAD_ARGS*)args;
 	CHK_CAR_ID id;
-	int slot, count = 0, fresh;
+	int slot, count = 0, fresh, reused = 0;
 
 	(void)userdata;
 
@@ -143,9 +143,6 @@ static int ChkMpLoad(void* userdata, void* args)
 		int oldSlot = chkCarIdIsSet(was) ? chkImportSlotOfCar(was) : -1;
 		int s;
 
-		printInfo("[carhacks/mp] SLOT-TRACE: asks %s model %d; local car in slot %d\n",
-			chkCityName(a->city), a->model, oldSlot);
-
 		jer_console_log("[carhacks/mp] change: %s model %d (was slot %d)",
 			chkCityName(a->city), a->model, oldSlot);
 
@@ -155,7 +152,7 @@ static int ChkMpLoad(void* userdata, void* args)
 			int c = chkCarIdCity(held);
 			int cars = chkImportCarsOnSlot(s, NULL);
 
-			printInfo("[carhacks/mp] SLOT-TRACE:   spare %d: held=%d %s model %d (cars on it %d)\n",
+			jer_console_log("[carhacks/mp]   spare %d: held=%d %s model %d (cars on it %d)",
 				s, chkImportSlotHeld(s),
 				(c >= 0) ? chkCityName(c) : "-", chkCarIdModel(held), cars);
 		}
@@ -187,6 +184,7 @@ static int ChkMpLoad(void* userdata, void* args)
 		int oldSlot = chkCarIdIsSet(was) ? chkImportSlotOfCar(was) : -1;
 		int localCar = player[0].playerCarId;
 		int cars, first = -1;
+		int retired = 0;
 
 		cars = (oldSlot >= 0) ? chkImportCarsOnSlot(oldSlot, &first) : 0;
 
@@ -194,9 +192,20 @@ static int ChkMpLoad(void* userdata, void* args)
 			cars == 1 && first == localCar && localCar >= 0)
 		{
 			chkImportReleaseSlot(oldSlot);
+			retired = 1;
 		}
 
-		slot = chkImportCanonicalSlot(id, &count);
+		/* REUSE the slot just vacated: the new car takes the old one's place in the
+		 * SAME resident slot, so a change never accumulates a second slot. The canonical
+		 * spare stays the fallback for a change that did not retire a slot (a shared car,
+		 * a fresh pick with nothing to vacate, an on-foot pick). */
+		if (retired && chkImportSlotFree(oldSlot))
+		{
+			slot = oldSlot;
+			reused = 1;
+		}
+		else
+			slot = chkImportCanonicalSlot(id, &count);
 	}
 
 	if (slot < 0)
@@ -208,14 +217,8 @@ static int ChkMpLoad(void* userdata, void* args)
 
 	if (getenv("CHK_DIAG_SLOT_TRACE") != NULL)
 	{
-		CHK_CAR_ID was = chkNetLocalCar();
-		int oldSlot = chkCarIdIsSet(was) ? chkImportSlotOfCar(was) : -1;
-
-		printInfo("[carhacks/mp] SLOT-TRACE: -> slot %d (%s)\n", slot,
-			(slot == oldSlot) ? "REUSED the vacated slot" : "fresh spare");
-
 		jer_console_log("[carhacks/mp] -> slot %d (%s)", slot,
-			(slot == oldSlot) ? "REUSED" : "fresh spare");
+			reused ? "REUSED" : "fresh spare");
 	}
 
 	chkImportSetSlot(slot, id);
