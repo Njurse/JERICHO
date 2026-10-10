@@ -1,5 +1,13 @@
 # Level Hacks
 
+**DISABLED and dropped from the shipped set.** The take-a-ride Singleplayer /
+Multiplayer prompt now belongs to the multiplayer module's own `mp.mode` menu
+(`JERICHO/MODS/mp/`), which asks the same question AND decides the map the
+session loads; because this module answered the same city confirm, running both
+would stack two prompts on one press. `JERICHO/CONFIG/modlist.ini` sets
+`levelhacks = 0` and it is no longer in `JERICHO_RELEASE_MODS`, so a release
+does not carry it. The module is kept in the tree for its Driver 1 work.
+
 Take-a-Ride level hacks, built as a JERICHO module. After the frontend's
 take-a-ride **city confirm**, it intercepts the start, asks **Singleplayer or
 Multiplayer**, and (for Multiplayer) shows the four cities' small multiplayer
@@ -48,14 +56,18 @@ single-player and needs no second controller.
 
 ## Enabling
 
-Enable the module in `JERICHO/CONFIG/modlist.ini`:
+The checked-in `JERICHO/CONFIG/modlist.ini` now pins `levelhacks = 0` (see the
+note at the top), so the prompt does NOT appear: mp's `mp.mode` answers that
+city confirm instead. To run this module again, set it back to 1 there — and
+take mp's `mp.mode` prompt out of the same confirm, or both will open on one
+press.
 
 ```
 levelhacks = 1
 ```
 
-`JERICHO/MODS/levelhacks/mod.toml` ships `default-enabled = true`. The
-checked-in `JERICHO/CONFIG/modlist.ini` already sets `levelhacks = 1`, so the
-prompt appears on the next Take-a-Ride. There are no per-module tunables — the
-behaviour is unconditional once the module is enabled, and only fires on a
-`GAME_TAKEADRIVE` level with one player.
+`JERICHO/MODS/levelhacks/mod.toml` still ships `default-enabled = true`, so a
+tree that does not list the module would run it (the modlist is pinned for
+exactly that reason). There are no per-module tunables — the behaviour is
+unconditional once the module is enabled, and only fires on a `GAME_TAKEADRIVE`
+level with one player.

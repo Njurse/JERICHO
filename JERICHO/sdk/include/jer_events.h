@@ -313,11 +313,14 @@ typedef struct JER_ARGS_PED_POSE
 	void* skel;		/* BONE* Skel[] (index with JER_LIMB_*) */
 } JER_ARGS_PED_POSE;
 
-/* JER_EVENT_FRONTEND — fired in the frontend's take-a-ride city-select
- * confirm (CutSceneCitySelectScreen, after GameLevel = currCity). A module
- * may set defer = 1 to take over the start (its own menu runs over the
- * frozen frontend); otherwise it may rewrite gameLevel/gameType/numPlayers
- * and the stock flow continues. */
+/* JER_EVENT_FRONTEND — fired in the frontend's take-a-ride CITY CONFIRM: both
+ * city screens can reach one, so it fires on the Take-a-Ride city list (screen
+ * 1, from the generic button path, after SetVariable has written the picked
+ * city into GameLevel) and on the mission/cutscene city screen
+ * (CutSceneCitySelectScreen). A module may set defer = 1 to take over the
+ * start -- its own menu runs over the frozen frontend, and the engine then
+ * leaves the stock screen switch to it; otherwise it may rewrite
+ * gameLevel/gameType/numPlayers and the stock flow continues. */
 typedef struct JER_ARGS_FRONTEND
 {
 	int gameLevel;		/* in/out: the pending level */

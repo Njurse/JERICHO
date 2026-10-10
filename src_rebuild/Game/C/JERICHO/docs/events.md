@@ -35,7 +35,7 @@ world streamer / making a region resident (`jer_map.h`, see
 | `JER_EVENT_PED_INPUT` | `JER_ARGS_PED_INPUT` | ped control loop | rewrite the on-foot pad before it drives Tanner |
 | `JER_EVENT_PED_MOVE` | `JER_ARGS_PED_MOVE` | `AnimatePed` (`pedest.c:638`) | player ped is about to move — the one point where a `pPed->speed` write survives the runner's per-frame re-arm; only a `TANNER_MODEL` ped with `padId >= 0`; no handler = stock speed |
 | `JER_EVENT_PED_POSE` | `JER_ARGS_PED_POSE` | `DrawTanner` (`motion_c.c:1696`) | per-bone ROTATION window between `SetupTannerSkeleton` and `newRotateBones` (player ped only); module mutates `*Skel[i].pvRotation`; no handler = stock motion pose |
-| `JER_EVENT_FRONTEND` | `JER_ARGS_FRONTEND` | `CutSceneCitySelectScreen` (`FEmain.c:3089`) | take-a-ride city confirm — module may rewrite `gameLevel`/`gameType`/`numPlayers`, or set `defer = 1` to run its own start over the frozen frontend; no handler = stock flow |
+| `JER_EVENT_FRONTEND` | `JER_ARGS_FRONTEND` | `JerichoFrontendCityConfirm` (`FEmain.c`), called from `CutSceneCitySelectScreen` and from `HandleKeyPress` on the Take-a-Ride city screen | take-a-ride city confirm — module may rewrite `gameLevel`/`gameType`/`numPlayers`, or set `defer = 1` to run its own start over the frozen frontend (the stock screen switch is then skipped); no handler = stock flow |
 | `JER_EVENT_FRONTEND_MAIN_MENU` | `JER_ARGS_FRONTEND_ENTRY` | `MainScreen` (`FEmain.c`) | fired once per row while the title screen is built — rename (`label`), redirect to a module menu (`openMenu`), `disabled`, `hidden`; the engine always applies the struct; no handler = stock rows |
 | `JER_EVENT_FRONTEND_ENTERED` | — | `State_InitFrontEnd` (`glaunch.c:325`) | the game (re)entered the frontend — modules drop per-run gameplay state (a forced car, live weapons, looped sounds) so nothing lingers or plays in the menus; no args, no handler = nothing |
 | `JER_EVENT_FRONTEND_IDLE` | `JER_ARGS_FRONTEND_IDLE` | the frontend's idle timer (`FEmain.c`), before the attract demo starts | the timer is about to boot the attract demo after ~30 s with no input: a module sets `suppress = 1` to push it back. A multiplayer lobby is idle by definition, so with no veto the demo launches a level nobody asked for and blocks the main thread for the whole load, dropping every player who was joining |
@@ -295,12 +295,17 @@ no handler.
   in/out and the engine writes them back, so a module may redirect the launch
   (e.g. bump a take-a-ride mission number into the multiplayer-map range). No
   handler = stock values.
-- **`JER_EVENT_FRONTEND`** fires in `CutSceneCitySelectScreen`
-  (`FEmain.c:3089`) when the player confirms a take-a-ride city (CROSS),
-  before the frontend leaves. `gameLevel` / `gameType` / `numPlayers` are
-  in/out; setting `defer = 1` makes the module own the start (its own menu
-  runs over the frozen frontend) and the engine returns without scheduling the
-  level. No handler = stock flow.
+- **`JER_EVENT_FRONTEND`** fires when the player confirms a take-a-ride CITY, and
+  BOTH city screens that can reach one fire it through the same helper
+  (`JerichoFrontendCityConfirm`, `FEmain.c`): the Take-a-Ride city list (SCRS.BIN
+  screen 1, whose Cross goes through the generic button path, so the hook is fired
+  there right after `SetVariable` has written the picked city) and the
+  mission/cutscene city screen (`CutSceneCitySelectScreen`). Firing it on screen 1
+  is what makes the step reachable at all — before that the event was only ever
+  fired from the cutscene screen, which a Take-a-Ride never visits.
+  `gameLevel` / `gameType` / `numPlayers` are in/out; setting `defer = 1` makes the
+  module own the start (its own menu runs over the frozen frontend) and that press
+  does NOT run the stock screen switch. No handler = stock flow.
 - **`JER_EVENT_FRONTEND_MAIN_MENU`** fires once for every row of the title
   screen while `MainScreen` builds it (before the stock Multiplayer routing).
   `JER_ARGS_FRONTEND_ENTRY { index, label[32], hidden, disabled, openMenu }` is
