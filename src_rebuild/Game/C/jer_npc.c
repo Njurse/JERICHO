@@ -179,6 +179,14 @@ JerNpc* jer_npc_spawn(int x, int z)
 	if (pPed == NULL)
 		return NULL;
 
+	/* A module-spawned ped is never a PLAYER's ped. CreatePedestrian reuses a
+	 * pooled slot and leaves `padId` as the previous occupant had it, so a stray
+	 * value here would (a) read as "someone's character" to a padId-keyed scan and
+	 * (b) make AnimatePed write player[ABS(padId)].pos -- at padId 0 that
+	 * overwrites the LOCAL player's position every frame. -1 is the safe "no
+	 * player" value: ABS(-1) = 1, the unused slot. */
+	pPed->padId = -1;
+
 	pPed->position.vx = pos.vx;
 	pPed->position.vz = pos.vz;
 	pPed->position.vy = pos.vy - 130;
