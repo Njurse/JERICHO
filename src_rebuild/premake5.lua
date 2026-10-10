@@ -59,7 +59,7 @@ end
 -- Modules a RELEASE build pre-includes.
 --
 -- A DEV build compiles every installed mod -- that is what lets a mod be worked
--- on -- but a release ships only these four, so a person who downloads JERICHO
+-- on -- but a release ships only these three, so a person who downloads JERICHO
 -- gets the game and a small, legible mod list rather than every experimental
 -- module at once. The rest still live in the tree and still build for dev; they
 -- are distributed separately (a mod-repo release).
@@ -71,8 +71,7 @@ end
 JERICHO_RELEASE_MODS = {
 	carhacks   = true,	-- vehicle unlock + cross-city car imports (imported by mp)
 	crumple    = true,	-- vehicle deformation + wheel-damage physics
-	levelhacks = true,	-- the Singleplayer / Multiplayer prompt on a take-a-ride
-	mp         = true,	-- LAN multiplayer
+	mp         = true,	-- LAN multiplayer (owns the take-a-ride Single Player / Multiplayer prompt)
 }
 
 -- true when id is pre-included in a release build.
