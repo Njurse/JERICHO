@@ -3411,6 +3411,114 @@ int CarPalIndexInCityFor(int tpage, int city)
 // fall back to the held-city search (GetCarPalIndex), which always answers a real row - 0 at
 // worst, which is a wrong COLOUR rather than a wild write - and say so once.
 static int sPalBakeMiss;
+static int sPalBakeDiag;
+
+// JERICHO-DIAG (JERICHO_DIAG_PALBAKE=1): a set the classification could not place. Prints
+// the RUNTIME page table for that city -- the static initialiser in texture.c is replaced
+// on a guest by that city's own parsed list (CarImportFillCarTpages), so reading the table
+// in the source is not reading the table in the build -- and whether the remembered palette
+// lump knows the page at all. Those two answers decide whether the row is knowable from the
+// lump (fixable in place) or genuinely absent (a data question).
+static void PalBakeMissDiag(int tpage, int city)
+{
+	char buf[512];
+	int i, len = 0, records = 0, pageInLump = 0, firstRec = 0, total = 0;
+	char* lump;
+	int* p;
+
+	if (getenv("JERICHO_DIAG_PALBAKE") == NULL || sPalBakeDiag >= 200)
+		return;
+
+	sPalBakeDiag++;
+
+	lump = (city >= 0 && city < CITY_COUNT) ? sImpPalLump[city] : NULL;
+
+	len += snprintf(buf + len, sizeof(buf) - len,
+		"JERICHO-DIAG PALBAKE: tpage=%d city=%s(%d) lumpHeld=%d carTpages=[",
+		tpage, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", city,
+		(lump != NULL) ? 1 : 0);
+
+	if (city >= 0 && city < CITY_COUNT)
+	{
+		for (i = 0; i < 8; i++)
+			len += snprintf(buf + len, sizeof(buf) - len, "%d%s",
+				(int)carTpages[city][i], (i < 7) ? "," : "");
+	}
+
+	len += snprintf(buf + len, sizeof(buf) - len, "]");
+
+	if (lump != NULL)
+	{
+		/* Walk with the SAME bound the real walk uses -- the lump's own byte size. The
+		 * first version of this probe stopped on a lone -1 int instead, and the lump's
+		 * tail is texture data, not records, so a coincidental -1 there made it read
+		 * text bytes as pages. Anything that reads a foreign lump has to be bounded by
+		 * the size it was given, exactly as ProcessPalletLumpForRows is. */
+		int size = (city >= 0 && city < CITY_COUNT) ? sImpPalSize[city] : 0;
+		int* q = (int*)(lump + 4);
+		char* end = (size > 0) ? (lump + size) : NULL;
+		int pages[24], np = 0;
+		int k;
+
+		total = *(int*)lump;
+
+		for (k = 0; k < 4096; k++)
+		{
+			int pg, found;
+
+			if (end != NULL)
+			{
+				if ((char*)q + 4 > end)
+					break;
+
+				if (*q == -1)
+					break;
+
+				if ((char*)q + 16 > end)
+					break;
+			}
+			else if (*q == -1)
+			{
+				break;
+			}
+
+			records++;
+			pg = q[2];
+
+			if (pg == tpage && !pageInLump)
+			{
+				pageInLump = 1;
+				firstRec = records;
+			}
+
+			found = 0;
+
+			for (i = 0; i < np; i++)
+				if (pages[i] == pg) { found = 1; break; }
+
+			if (!found && np < 24)
+				pages[np++] = pg;
+
+			/* The stride is NOT fixed. An entry is four ints, and when its
+			 * clut_number is -1 an INLINE CLUT of eight more ints follows
+			 * (ProcessPalletLumpForRows does `buffPtr += 8` there). Stepping a flat
+			 * four read that CLUT's pixels as the next pages -- which is why the
+			 * first version of this probe printed text bytes as page numbers. */
+			q += (q[3] == -1) ? 12 : 4;
+		}
+
+		len += snprintf(buf + len, sizeof(buf) - len,
+			" lumpCluts=%d bytes=%d records=%d pageInLump=%d rec=%d lumpPages=",
+			total, size, records, pageInLump, firstRec);
+
+		for (i = 0; i < np; i++)
+			len += snprintf(buf + len, sizeof(buf) - len, "%d%s",
+				pages[i], (i < np - 1) ? "," : "");
+	}
+
+	printInfo("%s\n", buf);
+}
+
 static int CarPalIndexForBuild(int tpage, int city)
 {
 	int idx = CarPalIndexInCityFor(tpage, city);
@@ -3431,6 +3539,8 @@ static int CarPalIndexForBuild(int tpage, int city)
 		//    block base (8/16/24), which is positive, so those polys become safe; the old
 		//    `GetCarPalIndex` fallback answered 0 and left the wild index in place.
 		int base = CarImportPaletteBlockBase(city);
+
+		PalBakeMissDiag(tpage, city);	/* JERICHO-DIAG (JERICHO_DIAG_PALBAKE) */
 
 		if (sPalBakeMiss++ < 4)
 			printInfo("cross-city: set %d has no palette row in %s - baking that city's own row 0 (civ_clut %d) rather than a negative index\n",

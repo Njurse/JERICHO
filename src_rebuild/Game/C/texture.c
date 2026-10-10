@@ -1174,9 +1174,38 @@ static void CopyImportSetList(const XYPAIR* list, int n, CAR_IMPORT_SETS* out)
 // written by the level loader.
 static void CarImportFillCarTpages(int city)
 {
-	int i;
+	int i, have = 0;
 
 	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
+		return;
+
+	/* JERICHO: a city the static table ALREADY describes keeps its own row.
+	 *
+	 * Measured 2026-10-10 (JERICHO_DIAG_PALBAKE): the imported palette lump is keyed by
+	 * these very pages. HAVANA's lump holds 10,35,20,37,51 and its static row is
+	 * {10,36,35,20,37,51,...}; CHICAGO's lump holds 1,65,62,50,63 against its static
+	 * {1,58,65,62,50,63,...}; VEGAS's holds 41,54,62,17,32 against {41,59,54,62,17,32,...}.
+	 * Three cities, every lump page a static-table page and not one of them in the row
+	 * this function used to write.
+	 *
+	 * That row came from gCarImportPerms, which is parsed from the city's PERMLIST --
+	 * its permanent page list (texture.c, "permlist IS the host's own page list"), so
+	 * XYPAIR.x there is a page, just not a CAR page: HAVANA's parses to 0,1,2,3,4,10.
+	 * Refilling carTpages from it pointed every lookup at pages the lump does not use,
+	 * so a model's bake AND the palette walk both failed to classify the pages they were
+	 * given and fell to the block base row -- which is the city's own first car row --
+	 * and overwrote each other there. Several imported cars sharing one wrong palette is
+	 * exactly what that looks like.
+	 *
+	 * The refill exists for a guest the static table has NO row for, which is the case
+	 * below: those eight slots read zero and this still fills them. */
+	for (i = 0; i < 8; i++)
+	{
+		if (carTpages[city][i] != 0)
+			have = 1;
+	}
+
+	if (have)
 		return;
 
 	for (i = 0; i < 8; i++)
