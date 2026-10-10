@@ -108,6 +108,8 @@ static int ChkMpLoad(void* userdata, void* args)
 	MP_CARQ_LOAD_ARGS* a = (MP_CARQ_LOAD_ARGS*)args;
 	CHK_CAR_ID id;
 	int slot, count = 0, fresh, reused = 0;
+	CHK_CAR_ID was;
+	int oldSlot = -1;
 
 	(void)userdata;
 
@@ -180,8 +182,8 @@ static int ChkMpLoad(void* userdata, void* args)
 		 * re-points the car before the next render. The guard insists the sole car on the slot
 		 * IS the local player's own car_data entry -- a shared car, a peer's remote copy, or a
 		 * leftover civilian all fail it and the ordinary fresh-slot path runs instead. */
-		CHK_CAR_ID was = chkNetLocalCar();
-		int oldSlot = chkCarIdIsSet(was) ? chkImportSlotOfCar(was) : -1;
+		was = chkNetLocalCar();
+		oldSlot = chkCarIdIsSet(was) ? chkImportSlotOfCar(was) : -1;
 		int localCar = player[0].playerCarId;
 		int cars, first = -1;
 		int retired = 0;
@@ -203,6 +205,12 @@ static int ChkMpLoad(void* userdata, void* args)
 		{
 			slot = oldSlot;
 			reused = 1;
+
+			/* The old car IS released here (its mesh freed), just in place: the new car takes
+			 * the slot in the same call. Log it like the other releases so the release audit -
+			 * and the scenarios that read it - still see the old slot go. */
+			printInfo("[carhacks] release: slot %d (%s model %d) released - reused in place (the local car changed into it)\n",
+				oldSlot, chkCityName(chkCarIdCity(was)), chkCarIdModel(was));
 		}
 		else
 			slot = chkImportCanonicalSlot(id, &count);
@@ -218,7 +226,7 @@ static int ChkMpLoad(void* userdata, void* args)
 	if (getenv("CHK_DIAG_SLOT_TRACE") != NULL)
 	{
 		jer_console_log("[carhacks/mp] -> slot %d (%s)", slot,
-			reused ? "REUSED" : "fresh spare");
+			reused ? "REUSED" : (fresh ? "fresh spare" : "kept"));
 	}
 
 	chkImportSetSlot(slot, id);
@@ -244,6 +252,16 @@ static int ChkMpLoad(void* userdata, void* args)
 			JerCarSlotUsable(slot),
 			residentCarModels[slot],
 			GetCarModelSourceCity(slot));
+
+		/* If this change retired the old slot to reuse it, the old car's mesh is already
+		 * gone and the replacement failed to build -- restore the old car rather than leave
+		 * a held slot with no geometry. Best effort: the old car was working. */
+		if (reused && chkCarIdIsSet(was) && oldSlot >= 0)
+		{
+			chkImportSetSlot(oldSlot, was);
+			chkImportHotLoad(oldSlot);
+			jer_console_log("[carhacks/mp]   restored the old car into slot %d (load failed)", oldSlot);
+		}
 
 		/* A slot this load claimed and could not fill: offer it straight back (the routine
 		 * keeps it if somebody else turns out to name the car). */
