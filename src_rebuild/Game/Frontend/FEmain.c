@@ -35,6 +35,8 @@ void PsyX_TakeScreenshot(void);
 #include "C/spool.h"
 #include "C/state.h"
 
+#include <stdlib.h>	// JERICHO-HOOK: getenv/atoi — the frontend press test lever only
+
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (mods manager frontend)
 #include "../C/jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "../C/JERICHO/include/jer_frontend.h"	// JERICHO-HOOK: module frontend menus
@@ -403,6 +405,11 @@ int DemoScreen(int bSetup);
 int MiniCarsOnOffScreen(int bSetup);
 int JerichoModsScreen(int bSetup);
 int JerFrontendMenuScreen(int bSetup);	// JERICHO-HOOK: module frontend menus
+
+// JERICHO-HOOK: the runtime frontend screens a Take-a-Ride passes through
+// (DATA\SCRS.BIN): 0 main menu, 1 the city list, 3 time of day, 14 car select.
+// Screen 1 is the one whose confirm asks Singleplayer vs Multiplayer.
+#define JERICHO_TAKEARIDE_CITY_SCREEN 1
 
 // JERICHO-HOOK: frontend Mods manager screen (built into a spare screen slot)
 #define JERICHO_MODS_SCREEN 41
@@ -1816,6 +1823,31 @@ void NewSelection(short dir)
 #endif
 }
 
+// JERICHO-HOOK: the frontend take-a-ride CITY CONFIRM. Fires JER_EVENT_FRONTEND so a
+// module may rewrite the pending level/gametype/player count or DEFER (run its own
+// start over the frozen frontend). Returns the module's `defer` flag: the caller must
+// not continue the stock flow when it is set. Two city screens can reach a Take-a-Ride
+// -- the city list itself (screen 1) and the mission/cutscene city list
+// (CutSceneCitySelectScreen) -- so both fire the event from here rather than each
+// carrying its own copy.
+static int JerichoFrontendCityConfirm(void)
+{
+	JER_ARGS_FRONTEND jerFe;
+
+	jerFe.gameLevel = GameLevel;
+	jerFe.gameType = GameType;
+	jerFe.numPlayers = NumPlayers;
+	jerFe.defer = 0;
+
+	jer_fire(JER_EVENT_FRONTEND, &jerFe);
+
+	GameLevel = jerFe.gameLevel;
+	GameType = (GAMETYPE)jerFe.gameType;
+	NumPlayers = jerFe.numPlayers;
+
+	return jerFe.defer;
+}
+
 // [D] [T]
 int HandleKeyPress(void)
 {
@@ -1838,12 +1870,23 @@ int HandleKeyPress(void)
 
 		if (action != BTN_DISABLED)
 		{
+			int defer = 0;
+
 			FESound(2);
 
 			if (pCurrButton->var != -1)
 				SetVariable(pCurrButton->var);
 
-			switch (action)
+			/* JERICHO-HOOK: the Take-a-Ride city confirm. Screen 1 navigates
+			 * through the button actions below rather than through a screen
+			 * function, so the module hook is fired HERE -- after SetVariable has
+			 * committed the picked city to GameLevel -- and a module that DEFERS
+			 * owns the start (the switch below is skipped), exactly as on the
+			 * mission/cutscene city screen, which fires the same hook. */
+			if (pCurrScreen == &PsxScreens[JERICHO_TAKEARIDE_CITY_SCREEN])
+				defer = JerichoFrontendCityConfirm();
+
+			if (!defer) switch (action)
 			{
 				case BTN_NEXT_SCREEN:
 					pScreenStack[ScreenDepth] = pCurrScreen;
@@ -1955,6 +1998,118 @@ void PadChecks(void)
 	numPadsConnected = 0;
 	feNewPad = Pads[0].mapnew;
 	fePad = Pads[0].mapped;
+
+	/* JERICHO TEST LEVER (JERICHO_TEST_FEPRESS=<screen>[:<row>],...): press Cross
+	 * on the named frontend screen with the cursor on row <row> (0 = the top row,
+	 * reached by pressing Down), and log every frontend screen change so what the
+	 * press caused is visible. Steps run in order: only the FIRST screen is
+	 * navigated to; every later step's screen has to be the one the previous
+	 * press produced, or the chain the press should have caused did not happen.
+	 *
+	 * e.g. JERICHO_TEST_FEPRESS=1:0  answers "take-a-ride city, first city";
+	 *      JERICHO_TEST_FEPRESS=1:0,3:0  then goes on to time of day.
+	 *
+	 * The frontend reads Pads[0] straight out of ReadControllers() above, and a
+	 * module cannot inject a pad: its FRAME hook runs before this function, so
+	 * anything it wrote to Pads[0] is overwritten here. A screen that is only left
+	 * by a real press is therefore unreachable in a padless run, and the hooks that
+	 * press fires -- the Take-a-Ride city confirm above all -- cannot be asserted
+	 * any other way. Inert unless set. */
+	{
+		#define JERICHO_FE_PRESS_MAX 12
+		static int feStepScreens[JERICHO_FE_PRESS_MAX];
+		static int feStepRows[JERICHO_FE_PRESS_MAX];
+		static int feStepCount = -1;	/* -1 = not parsed yet */
+		static int feStepIdx;
+		static int feStepRow;
+		static int feStepFrames;
+		static int feStepLast = -2;
+		const char* fep = getenv("JERICHO_TEST_FEPRESS");
+
+		if (fep != NULL)
+		{
+			int screenCount = (int)(sizeof(PsxScreens) / sizeof(PsxScreens[0]));
+			int cur = (pCurrScreen != NULL && pCurrScreen >= PsxScreens && pCurrScreen < PsxScreens + screenCount)
+				? (int)(pCurrScreen - PsxScreens) : -1;
+
+			if (feStepCount < 0)
+			{
+				const char* s = fep;
+
+				feStepCount = 0;
+
+				while (*s != '\0' && feStepCount < JERICHO_FE_PRESS_MAX)
+				{
+					feStepScreens[feStepCount] = atoi(s);
+
+					while (*s != '\0' && *s != ',' && *s != ':')
+						s++;
+
+					feStepRows[feStepCount] = (*s == ':') ? atoi(s + 1) : 0;
+
+					while (*s != '\0' && *s != ',')
+						s++;
+
+					if (*s == ',')
+						s++;
+
+					feStepCount++;
+				}
+
+				jer_log("[jericho] test: JERICHO_TEST_FEPRESS driving %d frontend step(s)\n", feStepCount);
+			}
+
+			if (cur != feStepLast)
+			{
+				feStepLast = cur;
+				jer_log("[jericho] test: frontend screen -> %d (JERICHO_TEST_FEPRESS)\n", cur);
+			}
+
+			if (feStepIdx < feStepCount)
+			{
+				int scr = feStepScreens[feStepIdx];
+				int row = feStepRows[feStepIdx];
+
+				if (scr < 0 || scr >= screenCount)
+				{
+					feStepIdx = feStepCount;
+				}
+				else if (cur != scr)
+				{
+					/* Only the FIRST step is navigated to: after that, the screen
+					 * the previous press produced has to BE the next step's screen. */
+					if (feStepIdx == 0)
+					{
+						pNewScreen = &PsxScreens[scr];
+						bRedrawFrontend = 1;
+					}
+
+					feStepRow = 0;
+					feStepFrames = 0;
+				}
+				else if (++feStepFrames >= 2)
+				{
+					feStepFrames = 0;
+
+					if (feStepRow < row)
+					{
+						feNewPad |= MPAD_D_DOWN;
+						feStepRow++;
+					}
+					else
+					{
+						feNewPad |= MPAD_CROSS;
+
+						jer_log("[jericho] test: JERICHO_TEST_FEPRESS pressed Cross on screen %d row %d\n", scr, row);
+
+						feStepIdx++;
+						feStepRow = 0;
+					}
+				}
+			}
+		}
+		#undef JERICHO_FE_PRESS_MAX
+	}
 
 	for (int i = 0; i < 2; i++) 
 	{
@@ -3455,23 +3610,8 @@ int CutSceneCitySelectScreen(int bSetup)
 		// JERICHO-HOOK: the take-a-ride city confirm — modules may defer the
 		// start (their own menu runs over the frozen frontend) or rewrite
 		// the pending level/gametype/player count
-		{
-			JER_ARGS_FRONTEND jerFe;
-
-			jerFe.gameLevel = GameLevel;
-			jerFe.gameType = GameType;
-			jerFe.numPlayers = NumPlayers;
-			jerFe.defer = 0;
-
-			jer_fire(JER_EVENT_FRONTEND, &jerFe);
-
-			GameLevel = jerFe.gameLevel;
-			GameType = (GAMETYPE)jerFe.gameType;
-			NumPlayers = jerFe.numPlayers;
-
-			if (jerFe.defer)
-				return 0;	/* the module starts the game itself */
-		}
+		if (JerichoFrontendCityConfirm())
+			return 0;	/* the module starts the game itself */
 
 		lastCity = -1;
 		lastCutCity = GameLevel;
