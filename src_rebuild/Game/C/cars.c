@@ -1804,6 +1804,7 @@ MODEL* GetCarModel(char* src, char** dest, int KeepNormals)
 // [D] [T] [A]
 // JERICHO: the palette row a built poly may bake. Never negative - see its definition.
 static int CarPalIndexForBuild(int tpage, int city);
+static void PalBakeSetsDiag(int slot);	/* JERICHO-DIAG (JERICHO_DIAG_PALBAKE) */
 
 void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 {
@@ -2041,6 +2042,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 	if ((car->numGT3 + car->numFT3 + car->numB3) == 0 && model->num_polys > 0)
 		printInfo("JERICHO: car model build for slot %d produced 0 polys of %d (poly arena %d of %d used) - this car is not drawn\n",
 			index, model->num_polys, whichCP, gJerCarPolyCap);
+
+	PalBakeSetsDiag(index);	/* JERICHO-DIAG (JERICHO_DIAG_PALBAKE) */
 }
 
 // [D] [T]
@@ -3550,6 +3553,53 @@ static int CarPalIndexForBuild(int tpage, int city)
 	}
 
 	return idx;
+}
+
+// JERICHO-DIAG (JERICHO_DIAG_PALBAKE=1): what a BUILT car actually names, against the
+// pages its city's table claims. This is the pair of lists that decides whether a bake
+// miss is a defect or a fact: if the sets are the city's own pages, something is wrong
+// with the table or the lookup; if they are a different numbering entirely (a page index
+// within the model, say), then no table could classify them and the fallback is the only
+// answer available at build time.
+static void PalBakeSetsDiag(int slot)
+{
+	char buf[768];
+	int i, n, city, len = 0;
+
+	if (getenv("JERICHO_DIAG_PALBAKE") == NULL)
+		return;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	city = GetCarModelSourceCity(slot);
+	n = CarModelSetsCount(slot);
+
+	len += snprintf(buf + len, sizeof(buf) - len,
+		"JERICHO-DIAG PALBAKE-SETS: slot=%d model=%d city=%s n=%d pageTable=[",
+		slot, residentCarModels[slot],
+		(city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", n);
+
+	if (city >= 0 && city < CITY_COUNT)
+	{
+		for (i = 0; i < 8; i++)
+			len += snprintf(buf + len, sizeof(buf) - len, "%d%s",
+				(int)carTpages[city][i], (i < 7) ? "," : "");
+	}
+
+	len += snprintf(buf + len, sizeof(buf) - len, "] modelNames=[");
+
+	for (i = 0; i < n; i++)
+	{
+		int set = CarModelSetsGet(slot, i);
+
+		len += snprintf(buf + len, sizeof(buf) - len, "%d->row%d%s", set,
+			CarPalIndexInCityFor(set, city), (i < n - 1) ? "," : "");
+	}
+
+	len += snprintf(buf + len, sizeof(buf) - len, "]");
+
+	printInfo("%s\n", buf);
 }
 
 char GetCarPalIndex(int tpage)

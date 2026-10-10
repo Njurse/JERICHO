@@ -1874,6 +1874,28 @@ void CarModelSetsAdd(int slot, int set)
 	sModelSet[slot][sModelSetCount[slot]++] = (unsigned char)set;
 }
 
+// JERICHO-DIAG: read back the sets a built model named. The store is file-static, so a
+// diagnostic that wants to compare "what the model names" against "what the city's page
+// table claims" needs these two accessors rather than poking the arrays.
+int CarModelSetsCount(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	return sModelSetCount[slot];
+}
+
+int CarModelSetsGet(int slot, int i)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return -1;
+
+	if (i < 0 || i >= sModelSetCount[slot])
+		return -1;
+
+	return sModelSet[slot][i];
+}
+
 int CarModelSetCount(int slot)
 {
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)

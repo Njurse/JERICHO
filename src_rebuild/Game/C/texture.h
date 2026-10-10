@@ -79,6 +79,8 @@ extern void CarImportDumpState(void);
 // walks the polys, and LoadImportedTPages imports only what it holds.
 extern void CarModelSetsClear(int slot);
 extern void CarModelSetsAdd(int slot, int set);
+extern int CarModelSetsCount(int slot);	/* JERICHO-DIAG: how many sets a built model named */
+extern int CarModelSetsGet(int slot, int i);	/* JERICHO-DIAG: the i-th of those sets */
 extern int  CarModelSetCount(int slot);
 extern int  CarModelSet(int slot, int k);
 extern int  CarModelSetUsed(int set);
