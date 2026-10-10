@@ -35,7 +35,7 @@ Each mod documents itself in its own folder.
 | sandbox | [`README.md`](../JERICHO/MODS/sandbox/README.md) |
 | collisiondevil | [`README.md`](../JERICHO/MODS/collisiondevil/README.md) |
 | antfarm | [`readme.md`](../JERICHO/MODS/antfarm/readme.md) (what it is + how to use it), [`ARCHITECTURE.md`](../JERICHO/MODS/antfarm/ARCHITECTURE.md) (**internals: every hook, the cut state machine, the archetype table and each camera model's maths, the trail cam, shot planning, region/area streaming and the recovery, audio, config, testing**) |
-| levelhacks | [`README.md`](../JERICHO/MODS/levelhacks/README.md) |
+| levelhacks | [`README.md`](../JERICHO/MODS/levelhacks/README.md) — **DISABLED** and out of the shipped set: mp owns the take-a-ride Singleplayer/Multiplayer prompt now |
 | example | [`README.md`](../JERICHO/MODS/example/README.md) |
 | aidriver | [`README.md`](../JERICHO/MODS/aidriver/README.md) |
 | gaildrv2 | [`README.md`](../JERICHO/MODS/gaildrv2/README.md) |
