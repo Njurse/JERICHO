@@ -56,7 +56,7 @@ jobs:
   # a doc typo must not stop a downloadable build. A red check is the signal; the
   # release stays tolerant, as it already is for the two platforms.
   checks:
-    name: Checks (docs / debug / mp smoke)
+    name: Checks (docs / debug / mp gate)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -74,17 +74,19 @@ jobs:
       - name: No debug switch changes behaviour
         run: python JERICHO/MODS/mp/tools/check_debug_independence.py
 
-      # The smoke cannot PASS on a hosted runner: it needs the 1.6 GB of game
-      # data and a window for two instances. mp_smoke.py exits 2 for exactly that
-      # case, which is a SKIP and not a pass -- so it is announced rather than
-      # silently green. Run it locally (or on a self-hosted runner with the game)
-      # to get the real verdict.
-      - name: mp smoke (skips where the game assets are absent)
+      # The rigs cannot PASS on a hosted runner: they need the 1.6 GB of game data
+      # and a window per seat. run_gate.py answers 2 for exactly that case, which is
+      # a SKIP and not a pass -- so it is announced rather than silently green. It
+      # runs ALL THREE rigs where the assets ARE present, so the same command is the
+      # local gate and the CI gate. Point this job at a self-hosted runner with the
+      # game to get the real verdict, and pass --require-assets on the release job so
+      # that "no assets" fails (3) instead of skipping.
+      - name: mp delivery gate (skips where the game assets are absent)
         run: |
-          python3 JERICHO/MODS/mp/tools/mp_smoke.py || code=$?
+          python3 JERICHO/MODS/mp/tools/run_gate.py || code=$?
           code=${code:-0}
           if [ "$code" -eq 2 ]; then
-            echo "::notice title=mp smoke::SKIPPED - no game assets on this runner; run mp_smoke.py where the game is installed"
+            echo "::notice title=mp gate::SKIPPED - no game assets on this runner; run run_gate.py where the game is installed"
           elif [ "$code" -ne 0 ]; then
             exit "$code"
           fi
