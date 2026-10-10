@@ -466,6 +466,13 @@ static int crumpleGetResistance(int model, int vertNo)
 {
 	CRUMPLE_MODEL_DATA* md;
 
+	/* Same rule as the deform path: an out-of-range model must not index the table
+	 * (crumpleModelData is MAX_CAR_RESIDENT_MODELS entries and `model` is a u_char).
+	 * Every caller passes a checked model today, so this is the guard that keeps it
+	 * true if one ever does not. */
+	if (model < 0 || model >= MAX_CAR_RESIDENT_MODELS)
+		return gCrumpleParams.noseResistance;
+
 	crumpleBuildModelData(model);
 
 	md = &crumpleModelData[model];
@@ -533,7 +540,7 @@ static void crumpleTransformWheelVertsInternal(int carId, int wheelnum, SVECTOR*
 	int cosC, sinC, cosT, sinT;
 	int i;
 
-	if (bend == NULL || verts == NULL)
+	if (bend == NULL || verts == NULL || wheelnum < 0 || wheelnum >= 4)
 		return;
 
 	camberAngle = FIXEDH(bend[wheelnum].vx * p->wheelCamberScale);
