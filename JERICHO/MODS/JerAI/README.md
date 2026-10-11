@@ -129,6 +129,12 @@ It gives the follower its own run directory, so its log and `mp.ini` cannot
 collide with the host's; `--clearance`, `--range`, `--yaw-lead` and `--client-car`
 override the defaults, and `--dry` prints the command instead of launching.
 
+**Enable JerAI only on a machine whose car nobody is driving**, here and on the
+LAN: with `mode = 1` JerAI substitutes the pad, so on YOUR instance it would take
+the wheel from you (set `mode = 0`, or turn JerAI off in the mods menu). The
+follower the script starts is configured for you, with the host's own port in its
+`mp.ini` so the two cannot disagree about where the session is.
+
 ## What the planner will and will not route through
 
 The A\* runs on an occupancy grid of `CellEmpty` probes - and **`CellEmpty`
