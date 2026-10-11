@@ -20,8 +20,30 @@
  */
 
 #include "jericho.h"
+#include "jer_pause_menu.h"	/* jer_pause_menu_add_items: carhacks adds to mp's car page */
 
 #include "carhacks.h"
+
+/* carhacks contributes ONE row to mp's Car options page, as the demonstration of
+ * jer_pause_menu_add_items: a module adding to a menu it does not own, matched by
+ * the menu's STABLE id ("mp.car") so mp rewording a row cannot break the link.
+ * The action is carhacks' own domain - the cross-city identity of the car being
+ * driven - which is exactly the state mp's page only borrows from here. */
+static int ChkCarInfo(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	jer_log("[carhacks] Car info (contributed row): the cross-city identity of your "
+		"car is owned here - see the roster and import tables in JERICHO.log\n");
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static const JER_PAUSE_MENU_ITEM kChkCarInfoItems[] =
+{
+	{ "Car info (carhacks)", NULL, ChkCarInfo, NULL, NULL, 0 },
+};
 
 JER_MODULE_ENTRY(jer_module_carhacks_entry)(JERICHO_CONTEXT* ctx)
 {
@@ -39,4 +61,9 @@ JER_MODULE_ENTRY(jer_module_carhacks_entry)(JERICHO_CONTEXT* ctx)
 	/* the unit: its config keys, its engine hooks, and (later) its own
 	 * frontend car-select menu. Safe on a reload. */
 	carhacks_register(ctx);
+
+	/* ...and one row in mp's Car options page, to prove the extension point. The
+	 * target is matched by id, so mp's layout can move and this still lands. */
+	jer_pause_menu_add_items("mp.car", kChkCarInfoItems,
+		(int)(sizeof(kChkCarInfoItems) / sizeof(kChkCarInfoItems[0])));
 }
