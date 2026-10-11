@@ -84,6 +84,7 @@ typedef struct JERAI_STATE
 	int	brakeG;			/* braking authority, for the braking-distance term */
 	int	cornerLookahead;	/* how far ahead the plan is scanned for corners */
 	int	speedScale;		/* the target speed as a percentage (100 = as computed) */
+	int	turnCost;		/* A* extra cost for a direction change between samples */
 	int	targetSpeed;		/* grip-limited speed the driver may carry now */
 	int	gripPct;		/* 100 = hooked up, falling as the car slides */
 

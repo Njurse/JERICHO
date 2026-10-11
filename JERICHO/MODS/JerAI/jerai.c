@@ -69,6 +69,7 @@ void JerAiRefreshConfig(void)
 	gJerAi.brakeG = jer_config_get_int("JerAI", JERAI_CFG_BRAKE_GAIN, 1);
 	gJerAi.cornerLookahead = jer_config_get_int("JerAI", JERAI_CFG_CORNER_LOOKAHEAD, 6000);
 	gJerAi.speedScale = jer_config_get_int("JerAI", JERAI_CFG_SPEED_SCALE, 100);
+	gJerAi.turnCost = jer_config_get_int("JerAI", JERAI_CFG_TURN_COST, 40);
 
 	gJerAi.vizGrid = jer_config_get_int("JerAI", JERAI_CFG_VIZ_GRID, 0);
 	gJerAi.vizRoad = jer_config_get_int("JerAI", JERAI_CFG_VIZ_ROAD, 1);
@@ -110,6 +111,7 @@ void JerAiWriteConfigDefaults(void)
 	jer_config_set_int("JerAI", JERAI_CFG_BRAKE_GAIN, gJerAi.brakeG);
 	jer_config_set_int("JerAI", JERAI_CFG_CORNER_LOOKAHEAD, gJerAi.cornerLookahead);
 	jer_config_set_int("JerAI", JERAI_CFG_SPEED_SCALE, gJerAi.speedScale);
+	jer_config_set_int("JerAI", JERAI_CFG_TURN_COST, gJerAi.turnCost);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_GRID, gJerAi.vizGrid);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_ROAD, gJerAi.vizRoad);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_PATH, gJerAi.vizPath);

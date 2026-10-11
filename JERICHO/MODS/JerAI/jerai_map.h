@@ -58,6 +58,7 @@ typedef struct JERAI_MAP
 
 	unsigned char cell[JERAI_MAP_SIZE][JERAI_MAP_SIZE];
 	int	clear[JERAI_MAP_SIZE][JERAI_MAP_SIZE];	/* samples to the nearest blocked one, capped */
+	int	turnCost;	/* extra cost for changing direction between samples (0 = off) */
 } JERAI_MAP;
 
 /* Build the window centred on (x, y, z). Returns 1 when the world was there to

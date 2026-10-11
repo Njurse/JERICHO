@@ -329,6 +329,19 @@ int JerAiStarPlan(const JERAI_MAP* map, int fromX, int fromZ, int toX, int toZ, 
 				g = sNodes[current].g +
 					step * (JerAiMapCost(map, cx, cz) + JerAiMapCost(map, nx, nz)) / 20;
 
+				/* turn penalty: a route that changes direction between samples is a
+				 * staircase through the grid, i.e. a wiggly drive. Charging for the
+				 * turn makes the planner prefer straight, fast roads even when the
+				 * wiggly route is otherwise marginally shorter. */
+				if (map->turnCost > 0 && sNodes[current].parent >= 0)
+				{
+					int px = sNodes[current].parent % JERAI_MAP_SIZE;
+					int pz = sNodes[current].parent / JERAI_MAP_SIZE;
+
+					if (cx - px != dx || cz - pz != dz)
+						g += map->turnCost;
+				}
+
 				if (sNodes[n].state == JERAI_STAR_OPEN && g >= sNodes[n].g)
 					continue;
 

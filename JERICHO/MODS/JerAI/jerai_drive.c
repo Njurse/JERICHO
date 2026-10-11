@@ -115,6 +115,7 @@ int JerAiDrivePlanTo(CAR_DATA* car, int toX, int toZ, int force)
 	if (!JerAiMapBuild(&gJerAi.map, cx, cy, cz))
 		return gJerAi.havePlan;
 
+	gJerAi.map.turnCost = gJerAi.turnCost;
 	gJerAi.incomplete = !JerAiStarPlan(&gJerAi.map, cx, cz, toX, toZ, &gJerAi.path);
 	gJerAi.plannedAt = gJerAi.tick;
 	gJerAi.goalX = toX;

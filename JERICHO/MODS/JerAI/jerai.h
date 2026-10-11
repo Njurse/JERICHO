@@ -61,6 +61,10 @@
  * grip model computes it, lower = more cautious) */
 #define JERAI_CFG_SPEED_SCALE       "speed_scale"
 
+/* A* route shaping: extra cost for changing direction between grid samples, so
+ * the planner prefers straight roads over a wiggly staircase (0 = off) */
+#define JERAI_CFG_TURN_COST         "turn_cost"
+
 /* visualization layers (0/1) */
 #define JERAI_CFG_VIZ_GRID          "viz_grid"
 #define JERAI_CFG_VIZ_ROAD          "viz_road"
