@@ -1207,6 +1207,45 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 			}
 		}
 
+		/* JERICHO-DIAG: catch a car whose drawn vertices have been corrupted to a
+		 * huge offset (the "stretched geometry" report). Runs the vertex check at
+		 * most once per car per second, and names the car, model, vertex and value
+		 * so the corruption is findable without a debugger. The DETAIL path only:
+		 * the low-detail path compares the dump (which always holds the detail
+		 * model's vertices) against the LOW model, so it is skipped. */
+		if (detail && model != NULL)
+		{
+			static int sLastFrame[MAX_CARS];
+
+			if (CameraCnt - sLastFrame[cp->id] > 30)
+			{
+				SVECTOR* cleanV = GET_MODEL_DATA(SVECTOR, model, vertices);
+				SVECTOR* dumpV = gTempCarVertDump[cp->id];
+				int n = model->num_vertices;
+				int i;
+
+				if (cleanV != NULL)
+				{
+					for (i = 0; i < n; i++)
+					{
+						int dx = dumpV[i].vx - cleanV[i].vx;
+						int dy = dumpV[i].vy - cleanV[i].vy;
+						int dz = dumpV[i].vz - cleanV[i].vz;
+
+						if (dx > 2000 || dx < -2000 || dy > 2000 || dy < -2000 || dz > 2000 || dz < -2000)
+						{
+							jer_log("[cars] STRETCHED VERTEX: car %d model %d vertex %d dump(%d,%d,%d) clean(%d,%d,%d)\n",
+								cp->id, cp->ap.model, i,
+								dumpV[i].vx, dumpV[i].vy, dumpV[i].vz,
+								cleanV[i].vx, cleanV[i].vy, cleanV[i].vz);
+							sLastFrame[cp->id] = CameraCnt;
+							break;
+						}
+					}
+				}
+			}
+		}
+
 		restoreLightingMatrices();
 	}
 }
