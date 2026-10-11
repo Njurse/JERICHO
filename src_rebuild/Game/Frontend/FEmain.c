@@ -5593,7 +5593,13 @@ int UserReplaySelectScreen(int bSetup)
 			for (int i = 0; i < numButtons; i++)
 			{
 				PSXBUTTON& btn = pCurrScreen->buttons[i];
-				strncpy(btn.Name, gFEReplayList[i], sizeof(btn.Name));
+
+				/* snprintf, not strncpy with the full destination size: a replay
+				 * name can be MAX_REPLAY_NAME_LENGTH-1 chars, and strncpy stops
+				 * copying WITHOUT a terminator once it has filled sizeof(btn.Name),
+				 * so the strchr below (and every draw of the label) would read into
+				 * the next button. */
+				snprintf(btn.Name, sizeof(btn.Name), "%s", gFEReplayList[i]);
 
 				tmp = strchr(btn.Name, '.');
 
