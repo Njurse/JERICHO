@@ -160,6 +160,22 @@ See `jerai.h` for the key names and defaults. The car-dynamics knobs:
 `brake_gain` is in speed^2 per world unit; 40 swamps the term (the target never
 drops), so keep it near 1.
 
+### Not built, on purpose
+
+An **apex / racing-line bias** (offsetting the aim toward the inside of a corner
+to use the full road width) was proposed and deliberately NOT built. The A* cost
+model already hugs the middle of the road hard, and this car's recurring failure
+is grinding along walls, not leaving time on the table - pulling the aim off the
+centreline toward an apex is exactly the change that would put it back into the
+scenery. The feelers (which push the aim AWAY from a wall) are the safer
+line-shaping lever and are what is used.
+
+A grip-budget **steer-authority cap** was also dropped: the injected steering is a
+digital pad, so authority cannot be scaled smoothly, and the analog channel is
+neutered by `handling.c`'s return-to-centre block (it zeroes any analog angle
+below ~65). Steering is damped with hysteresis plus the speed-scaled look-ahead
+instead.
+
 ## Build
 
 ```
