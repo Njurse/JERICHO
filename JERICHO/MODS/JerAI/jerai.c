@@ -20,6 +20,7 @@
 
 #include "jer_config.h"
 #include "jer_events.h"
+#include "jer_hud.h"
 
 #include "players.h"
 #include "cars.h"
@@ -29,6 +30,7 @@
 #include <intrin.h>	/* __rdtsc, for a per-run RNG seed */
 #endif
 
+#include <stdio.h>
 #include <string.h>
 
 /* the single shared state */
@@ -56,7 +58,7 @@ void JerAiRefreshConfig(void)
 	gJerAi.maxSteer = jer_config_get_int("JerAI", JERAI_CFG_MAX_STEER, 512);
 
 	gJerAi.vizGrid = jer_config_get_int("JerAI", JERAI_CFG_VIZ_GRID, 0);
-	gJerAi.vizRoad = jer_config_get_int("JerAI", JERAI_CFG_VIZ_ROAD, 0);
+	gJerAi.vizRoad = jer_config_get_int("JerAI", JERAI_CFG_VIZ_ROAD, 1);
 	gJerAi.vizPath = jer_config_get_int("JerAI", JERAI_CFG_VIZ_PATH, 1);
 	gJerAi.vizHud = jer_config_get_int("JerAI", JERAI_CFG_VIZ_HUD, 1);
 
@@ -204,11 +206,25 @@ static int JerAiOnFrame(void* userdata, void* args)
 			const JERAI_BEHAVIOR* b = JerAiBehaviorFor(gJerAi.mode);
 
 			gJerAi.ctx->jer_log(gJerAi.ctx,
-				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d wp=%d complete=%d diff=%d pad=%x goal=(%d,%d) aim=(%d,%d)\n",
+				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d wp=%d complete=%d diff=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d\n",
 				b != NULL ? b->name : "?",
 				car->hd.where.t[0], car->hd.where.t[2], car->hd.speed, car->hd.direction,
 				gJerAi.path.waypoints, gJerAi.path.complete, gJerAi.lastDiff, gJerAi.lastPad,
-				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ);
+				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ, JerAiVizLines());
+
+			if (gJerAi.vizHud)
+			{
+				char hud[160];
+
+				snprintf(hud, sizeof(hud),
+					"JerAI %s  spd=%d wp=%d %s  nodes=%d edges=%d lines=%d",
+					b != NULL ? b->name : "?",
+					car->hd.speed, gJerAi.path.waypoints,
+					gJerAi.path.complete ? "" : "(partial)",
+					gJerAi.road.nodeCount, gJerAi.road.edgeCount, JerAiVizLines());
+
+				jer_hud_message(hud, 30);
+			}
 		}
 	}
 
@@ -269,6 +285,7 @@ JER_MODULE_ENTRY(jer_module_JerAI_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PAD, JerAiOnCarPad, &gJerAi, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, JerAiOnFrame, &gJerAi, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, JerAiOnGameStart, &gJerAi, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WORLD, JerAiOnDrawWorld, &gJerAi, 0);
 
 	ctx->jer_log(ctx, "[JerAI] registered - enabled=%d mode=%d (%s) pace=%d pct\n",
 		gJerAi.enabled, gJerAi.mode, JerAiBehaviorName(gJerAi.mode), gJerAi.pacePct);

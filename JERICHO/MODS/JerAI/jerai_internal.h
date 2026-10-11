@@ -110,4 +110,10 @@ void JerAiWriteConfigDefaults(void);
  * its edges against the engine's own ConnectIdx. */
 int JerAiEnsureRoadGraph(void);
 
+/* JER_EVENT_DRAW_WORLD handler (jerai_viz.c): draws the enabled debug layers. */
+int JerAiOnDrawWorld(void* userdata, void* args);
+
+/* lines drawn by the last JerAiOnDrawWorld, for the readout */
+int JerAiVizLines(void);
+
 #endif /* JERAI_INTERNAL_H */
