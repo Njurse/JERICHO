@@ -211,12 +211,45 @@ void CreateDentableCar(CAR_DATA *cp)
 
 		vcount = srcModel->num_vertices;
 
-		while (vcount-- != -1) 
-			*dst++ = *src++;
-
-		for (count = 0; count < srcModel->num_polys; count++)
+		/* BOUNDED, and this is not a tidy-up: gTempCarVertDump is the car's WORKING
+		 * vertex buffer and the renderer points CarModelPtr's vlist AND nlist at it
+		 * (cars.c), so nlist IS the lighting. An unbounded copy past the end writes
+		 * into the NEXT car's dump and leaves the lighting list reading whatever
+		 * follows - which renders as a car that is solid black, with its texture
+		 * looking ruined. The loop copies one more than num_vertices (it decrements
+		 * in the condition), so the budget it must fit is MAX_DENTING_VERTS - 1.
+		 *
+		 * That budget is the PSX's, and an imported car from another game is exactly
+		 * the shape of model that exceeds it. A model that does not fit cannot be
+		 * restored here AT ALL - a truncated copy is worse than no copy - so it is
+		 * left alone and said out loud, through jer_log because printError writes to
+		 * stdout and the session log is where this has to be findable. */
+		if (vcount + 1 > MAX_DENTING_VERTS)
 		{
-			gTempHDCarUVDump[cp->id][count].u3 = 0;
+			jer_log("[denting] CreateDentableCar: resident model %d has %d vertices, over the "
+				"%d-vertex denting budget - NOT restoring its vertices (this is what renders "
+				"a car black: nlist shares this buffer)\n",
+				model, vcount, MAX_DENTING_VERTS);
+		}
+		else
+		{
+			while (vcount-- != -1)
+				*dst++ = *src++;
+
+			/* the same budget question for the dents, whose table is a separate one */
+			if (srcModel->num_polys > MAX_DENTING_UVS)
+			{
+				jer_log("[denting] CreateDentableCar: resident model %d has %d polys, over the "
+					"%d-UV denting budget - only the first %d are reset\n",
+					model, srcModel->num_polys, MAX_DENTING_UVS, MAX_DENTING_UVS);
+			}
+			else
+			{
+				for (count = 0; count < srcModel->num_polys; count++)
+				{
+					gTempHDCarUVDump[cp->id][count].u3 = 0;
+				}
+			}
 		}
 	}
 	else
@@ -227,9 +260,19 @@ void CreateDentableCar(CAR_DATA *cp)
 	srcModel = gCarLowModelPtr[model];
 	if (srcModel != NULL)
 	{
-		for (count = 0; count < srcModel->num_polys; count++)
+		/* same budget question as the detailed table above */
+		if (srcModel->num_polys > MAX_DENTING_UVS)
 		{
-			gTempLDCarUVDump[cp->id][count].u3 = 0;
+			jer_log("[denting] CreateDentableCar: low-detail model %d has %d polys, over the "
+				"%d-UV denting budget - only the first %d are reset\n",
+				model, srcModel->num_polys, MAX_DENTING_UVS, MAX_DENTING_UVS);
+		}
+		else
+		{
+			for (count = 0; count < srcModel->num_polys; count++)
+			{
+				gTempLDCarUVDump[cp->id][count].u3 = 0;
+			}
 		}
 	}
 	else
