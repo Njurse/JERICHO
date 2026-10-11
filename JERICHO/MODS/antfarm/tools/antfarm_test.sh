@@ -82,7 +82,7 @@ sed -i "s/^enabled *=.*/enabled = 1/; s/^interval *=.*/interval = $TEST_INTERVAL
 
 # STYLE=<key> isolates ONE camera archetype (all others off), so a single cut
 # proves that archetype's camera code ran.
-for k in chase static overhead tripod flyover orbit crane low fender sill nose34 tail34 kerb tripzoom farpan water junction; do
+for k in chase static overhead tripod flyover orbit crane low fender sill nose34 tail34 kerb tripzoom farpan water junction highchase lowchase sidetrack; do
 	v=1
 	if [ -n "${STYLE:-}" ] && [ "$k" != "$STYLE" ]; then v=0; fi
 	grep -q "^style_$k *=" "$INI" || echo "style_$k = $v" >> "$INI"
@@ -212,15 +212,26 @@ zspan=$(grep -o 'model=\(tripodz\|dolly\) .*fov [0-9]*\.\.[0-9]*' "$LOG" 2>/dev/
 	| awk -F'[.][.]' '{ d = $2 - $1; if (d > m) m = d } END { print m + 0 }')
 echo "max subject distance: $dmax   closest: $dmin   largest lens span: $zspan"
 
+# Subject mix: how many shots framed a vehicle vs a road. This is the measurement
+# the "more interesting vehicle cameras" work is judged against.
+cars=$(grep -c 'subject=car' "$LOG" 2>/dev/null || echo 0)
+roads=$(grep -c 'subject=road' "$LOG" 2>/dev/null || echo 0)
+echo "subjects: car=$cars road=$roads  (shots that framed a vehicle vs a road)"
+
 # Pitch guard: no shot may pitch further DOWN than ANTFARM_PITCH_DOWN_MAX (220
 # units; camera_angle.vx is 0 at level, + = down, 4096 = 360 deg, so 220 is
 # ~19 deg). This is the "never stare at the ground" rule, read straight out of
 # the reported pitch ranges (which may be negative = looking up).
 pmax=$(grep -o 'pitch -\?[0-9][0-9]*\.\.-\?[0-9][0-9]*' "$LOG" 2>/dev/null | sed 's/pitch //' \
 	| awk -F'[.][.]' '{ if ($2 + 0 > m) m = $2 + 0 } END { print m + 0 }')
-echo "max rendered pitch: $pmax  (down, 4096 = 360 deg; guard 220 = ~19 deg)"
+pmin=$(grep -o 'pitch -\?[0-9][0-9]*\.\.-\?[0-9][0-9]*' "$LOG" 2>/dev/null | sed 's/pitch //' \
+	| awk -F'[.][.]' '{ v = $1 + 0; if (!seen || v < m) { m = v; seen = 1 } } END { print (seen ? m : 0) }')
+echo "rendered pitch: $pmin..$pmax  (down, 4096 = 360 deg; guards -340 up .. 220 down)"
 if [ "${pmax:-0}" -gt 220 ]; then
 	echo "FAIL: a shot pitched ${pmax} units down — past the ANTFARM_PITCH_DOWN_MAX guard"; fail=1
+fi
+if [ "${pmin:-0}" -lt -340 ]; then
+	echo "FAIL: a shot pitched ${pmin} units up — past the ANTFARM_PITCH_UP_MAX guard"; fail=1
 fi
 
 case "${STYLE:-}" in

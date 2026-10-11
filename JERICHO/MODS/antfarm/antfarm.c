@@ -288,26 +288,33 @@ typedef struct ANT_STYLE_DEF
  * fighting the row. Lower here means the framing is right by construction. */
 static const ANT_STYLE_DEF antStyleDefs[ANTFARM_STYLE_COUNT] = {
 	/* label          key          model            wt rOnly car beh zoom  hLo  hHi scrLo scrHi sLo sHi  fLo  fHi aimLo aimHi orbLo orbHi acr set dwell  nw */
-	{ "Chase cam",    "chase",     ANT_MODEL_FOLLOW,   4,   0,   1,  0,  0,  180,  340,  260,  276,    0,    0,   0,    0,    0,    0,    0,    0,  0,   8,   90 },
+	{ "Chase cam",    "chase",     ANT_MODEL_FOLLOW,   8,   0,   1,  0,  0,  180,  340,  260,  276,    0,    0,   0,    0,    0,    0,    0,    0,  0,   8,   90 },
 	{ "Static track", "static",    ANT_MODEL_TRACK,   22,   0,   1,  0,  0,  180,  300,  258,  280,    0,    0,   0,    0,    0,    0,    0,    0,  0,   6,  120 },
 	{ "Overhead",     "overhead",  ANT_MODEL_ROADSIDE,26,   0,   0,  0,  0,  300,  520,  218,  242,  180,  360,   0,    0,  900, 1100,  300,  760,  0,  14,  130 },
-	{ "Tripod",       "tripod",    ANT_MODEL_ROADSIDE,16,   1,   0,  0,  0,  140,  260,  238,  268,  135,  270,   0,    0,  900, 1100,  820, 1140,  0,  16,  120 },
-	{ "Flyover",      "flyover",   ANT_MODEL_DOLLY,   12,   1,   0,  0,  0,  300,  500,  248,  272,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  140 },
+	{ "Tripod",       "tripod",    ANT_MODEL_ROADSIDE,16,   0,   0,  0,  0,  140,  260,  238,  268,  135,  270,   0,    0,  900, 1100,  820, 1140,  0,  16,  120 },
+	{ "Flyover",      "flyover",   ANT_MODEL_DOLLY,   12,   0,   1,  0,  0,  300,  500,  248,  272,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  140 },
 	{ "Orbit",        "orbit",     ANT_MODEL_ORBIT,   12,   0,   0,  0,  0,  200,  440,  232,  262,    0,    0,   0,    0,    0,    0,    0,    0,  0,  20,  140 },
-	{ "Crane",        "crane",     ANT_MODEL_CRANE,  10,   1,   0,  0,  0,   90,  560,  240,  270,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  150 },
-	{ "Ant level",    "low",       ANT_MODEL_ROADSIDE,10,   1,   0,  0,  0,   45,   95,  250,  282,  180,  360,   0,    0,    0,  220,  200,  480,  1,  16,  120 },
+	{ "Crane",        "crane",     ANT_MODEL_CRANE,  10,   0,   1,  0,  0,   90,  560,  240,  270,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  150 },
+	{ "Ant level",    "low",       ANT_MODEL_ROADSIDE,10,   0,   0,  0,  0,   45,   95,  250,  282,  180,  360,   0,    0,    0,  220,  200,  480,  1,  16,  120 },
 	/* --- car-attached rigs (damped, yaw-only: see ANT_MODEL_ATTACH) --- */
 	{ "Fender",       "fender",    ANT_MODEL_ATTACH,  12,   0,   1,  0,  0,   45,   85,  250,  272,   20,   60, 260,  380,  900, 1200,    0,    0,  0,   3,  110 },
 	{ "Sill",         "sill",      ANT_MODEL_ATTACH,  12,   0,   1,  0,  0,   40,   75,  245,  265,  240,  330, -60,   60,  400,  700,    0,    0,  0,   3,  110 },
 	{ "Nose 3/4",     "nose34",    ANT_MODEL_ATTACH,  12,   0,   1,  0,  0,   90,  150,  250,  272,  200,  300, 320,  480,  500,  800,    0,    0,  0,   5,  120 },
 	{ "Tail 3/4",     "tail34",    ANT_MODEL_ATTACH,  12,   0,   1,  1,  0,   90,  150,  245,  268,  180,  280, 260,  420,  500,  800,    0,    0,  0,   5,  120 },
 	/* --- free / static angles --- */
-	{ "Kerb pass",    "kerb",      ANT_MODEL_ROADSIDE,12,   1,   0,  0,  0,   40,   80,  290,  320,  200,  320,   0,    0,    0,  200,  180,  420,  1,  14,  120 },
+	{ "Kerb pass",    "kerb",      ANT_MODEL_ROADSIDE,12,   0,   0,  0,  0,   40,   80,  290,  320,  200,  320,   0,    0,    0,  200,  180,  420,  1,  14,  120 },
 	{ "Tripod zoom",  "tripzoom",  ANT_MODEL_TRIPODZ, 12,   0,   1,  0,  1,  120,  220,  235,  300,  200,  360, 500, 1500,  900, 1200,  300,  600,  0,  18,  150 },
 	{ "Far pan",      "farpan",    ANT_MODEL_TRIPODZ, 10,   0,   1,  0,  1,  200,  340,  290,  340, 1400, 2200, 2000, 4000,  900, 1300,  400,  900,  0,  20,  150 },
 	{ "Waterfront",   "water",     ANT_MODEL_DOLLY,   10,   1,   0,  0,  0,   60,  180,  250,  275,    0,    0,   0,    0,  700, 1000,    0,    0,  0,  16,  150,  1 },
 	/* --- parked vantage on a junction (see ANT_MODEL_JUNCTION) --- */
 	{ "Junction",     "junction",  ANT_MODEL_JUNCTION,12,   1,   0,  0,  0,  120,  320,  236,  266,  170,  300,   0,    0,  250,  700,  300,  700,  0,  14,  135 },
+	/* --- car-following chase family (ANT_MODEL_FOLLOW). A row that sets its
+	 * FORWARD range drives the trail framing itself: height -> camera height,
+	 * fwd -> trail distance, side -> rear-3/4 offset, aim -> look-ahead (see
+	 * AntFarmFollowCam). A row leaving fwd at 0 keeps the legacy trail. --- */
+	{ "High chase",   "highchase", ANT_MODEL_FOLLOW,   8,   0,   1,  0,  0,  420,  760,  264,  280,    0,    0, 1500, 2400,  900, 1300,    0,    0,  0,   9,  110 },
+	{ "Low chase",    "lowchase",  ANT_MODEL_FOLLOW,   8,   0,   1,  0,  0,   90,  150,  250,  276,    0,    0,  500,  900,  450,  750,    0,    0,  0,   6,  110 },
+	{ "Side track",   "sidetrack", ANT_MODEL_FOLLOW,   9,   0,   1,  0,  0,  150,  280,  248,  274,  350,  750,  250,  650,  500,  900,    0,    0,  0,   6,  110 },
 };
 
 /* ------------------------------------------------------------------ */
@@ -583,7 +590,10 @@ static void AntFarmBuildRoadCache(void)
 		for (i = 0; i < n; i++) {
 			DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[i];
 
-			if (rd->length > 400 && rd->angle < 2048)
+			/* Every long straight is usable. (The old filter also demanded
+			 * angle < 2048, which silently dropped every road whose heading was in
+			 * the second half of the compass - half the map never got a shot.) */
+			if (rd->length > 400)
 				g_usableRoads[count++] = i;
 		}
 
@@ -711,6 +721,38 @@ static int AntFarmPickRoadNear(int x, int z)
 	return best;
 }
 
+/* A driveable surface is either a STRAIGHT or a CURVE. A curve carries
+ * start/end angles, an inside radius and lane data but NO length or angle field,
+ * so its length is the engine's own arc-length form (civ_ai.c:
+ * curveLength = ((end - start) & 0xfff) * inside * 11 / 7). These two accessors
+ * let the probes and the dolly treat either without caring which it is - a
+ * straight and a curve meeting at a junction is the common case. */
+static int AntFarmRoadLen(int surfId)
+{
+	if (IS_CURVED_SURFACE(surfId))
+	{
+		DRIVER2_CURVE* c = GET_CURVE(surfId);
+
+		return (int)(((long)((c->end - c->start) & 0xfffU) * c->inside * 11) / 7);
+	}
+
+	if (IS_STRAIGHT_SURFACE(surfId))
+		return (int)Driver2StraightsPtr[surfId].length;
+
+	return 0;
+}
+
+static int AntFarmRoadHeading(int surfId)
+{
+	if (IS_CURVED_SURFACE(surfId))
+		return GET_CURVE(surfId)->start & 0xfff;
+
+	if (IS_STRAIGHT_SURFACE(surfId))
+		return Driver2StraightsPtr[surfId].angle & 0xfff;
+
+	return 0;
+}
+
 /* sample a point ON a road surface at a lane + distance along it, and the
  * traffic heading for that lane. x/z come out in WORLD space (positive-up);
  * the heading is 0..4095. */
@@ -783,7 +825,7 @@ static int AntFarmShotRoadRender(int distAlong, VECTOR* roadPt, int* heading)
  * showed when it used one. Returns 1 and the end point + heading when it
  * really is a junction. */
 static int AntFarmJunctionEnd(int roadId, int laneNo, int atFar,
-	int* x, int* z, int* heading)
+	int* x, int* z, int* heading, int* outNeigh)
 {
 	DRIVER2_STRAIGHT* rd;
 	VECTOR tip;
@@ -804,12 +846,20 @@ static int AntFarmJunctionEnd(int roadId, int laneNo, int atFar,
 
 	neigh = GetSurfaceIndex(&tip);
 
-	if (neigh < 0 || neigh >= NumDriver2Straights || neigh == roadId)
+	/* A junction is where this straight meets ANY other driveable road - a
+	 * straight OR a curve. A curve's surface id carries the 0x4000 bit, so the
+	 * old `neigh >= NumDriver2Straights` test threw every curved meeting away
+	 * (a straight running into a bend read as "no junction"). */
+	if (neigh == roadId ||
+		(!IS_STRAIGHT_SURFACE(neigh) && !IS_CURVED_SURFACE(neigh)))
 		return 0;
 
 	*x = ex;
 	*z = ez;
 	*heading = eh;
+
+	if (outNeigh != NULL)
+		*outNeigh = neigh;
 
 	return 1;
 }
@@ -973,7 +1023,7 @@ static void AntFarmPickNearArea(void)
 		DRIVER2_STRAIGHT* rd = &Driver2StraightsPtr[i];
 		long long dx, dz, d2;
 
-		if (rd->length <= 400 || rd->angle >= 2048)
+		if (rd->length <= 400)
 			continue;
 
 		dx = (long long)rd->Midx - camera_position.vx;
@@ -1671,8 +1721,10 @@ static int AntFarmFovTarget(void)
 static void AntFarmFollowCam(CAR_DATA* cp, const VECTOR* carPos, int dir, int h,
 	VECTOR* desired, VECTOR* aim, int* outLerp)
 {
+	const ANT_STYLE_DEF* d = &antStyleDefs[s.style];
 	int vz = 300, vy = 120;
-	int back, high, speed;
+	int back, high, side, aimAhead;
+	int speed = ABS(cp->hd.speed);
 	int yaw;
 
 	if (cp->ap.carCos)
@@ -1687,33 +1739,52 @@ static void AntFarmFollowCam(CAR_DATA* cp, const VECTOR* carPos, int dir, int h,
 	if (vy < 80)
 		vy = 80;
 
-	/* framing: back off the tail by the body length plus a margin */
-	back = vz * 2 + vy + 420;
-
-	if (back < 700)
-		back = 700;
-
-	if (back > 1400)
-		back = 1400;
-
-	/* a little more room at speed (hd.speed is a signed fixed-ish count) */
-	speed = ABS(cp->hd.speed);
-
-	if (speed > 8)
+	/* A follow row that sets its forward range opts into TABLE-DRIVEN framing:
+	 * height -> camera height, fwd -> trail distance, side -> a lateral (rear
+	 * 3/4) offset, aim -> how far ahead to look. A row that leaves fwd at 0
+	 * (Chase cam) keeps the legacy computed trail below, unchanged. */
+	if (d->fwdHi > 0)
 	{
-		back += speed * 3;
+		back = s.shotFwd;
+		high = s.shotHeight;
+		side = s.shotSide * s.shotSideSign;
+		aimAhead = (s.shotLookAhead > 0) ? s.shotLookAhead : 700;
+	}
+	else
+	{
+		/* framing: back off the tail by the body length plus a margin */
+		back = vz * 2 + vy + 420;
 
-		if (back > 1900)
-			back = 1900;
+		if (back < 700)
+			back = 700;
+
+		if (back > 1400)
+			back = 1400;
+
+		/* a little more room at speed (hd.speed is a signed fixed-ish count) */
+		if (speed > 8)
+		{
+			back += speed * 3;
+
+			if (back > 1900)
+				back = 1900;
+		}
+
+		high = 190 + vy / 2;
+
+		if (high > 420)
+			high = 420;
+
+		if (high < 150)
+			high = 150;
+
+		side = 0;
+		aimAhead = 600 + speed * 4;
 	}
 
-	high = 190 + vy / 2;
-
-	if (high > 420)
-		high = 420;
-
-	if (high < 150)
-		high = 150;
+	/* never put the trail cam at road level */
+	if (high < 40)
+		high = 40;
 
 	/* The yaw the camera WANTS: the car's own heading (so it sits behind the
 	 * car). The slow slew toward it happens in the state below, one frame at a
@@ -1725,9 +1796,13 @@ static void AntFarmFollowCam(CAR_DATA* cp, const VECTOR* carPos, int dir, int h,
 		/* seed the trail on the car's heading so the first frame is already a
 		 * sensible behind-shot rather than a swing in from wherever the
 		 * gameplay camera happened to be */
+		int right = (yaw + 3072) & 0xfff;
+
 		s.trailYaw = yaw;
-		s.trailPos.vx = carPos->vx - FIXEDH(RSIN(yaw) * back);
-		s.trailPos.vz = carPos->vz - FIXEDH(RCOS(yaw) * back);
+		s.trailPos.vx = carPos->vx - FIXEDH(RSIN(yaw) * back)
+			+ FIXEDH(RSIN(right) * side);
+		s.trailPos.vz = carPos->vz - FIXEDH(RCOS(yaw) * back)
+			+ FIXEDH(RCOS(right) * side);
 		s.trailPos.vy = -(h + high);
 		s.trailSet = 1;
 	}
@@ -1746,8 +1821,11 @@ static void AntFarmFollowCam(CAR_DATA* cp, const VECTOR* carPos, int dir, int h,
 	/* --- position: ease toward the ideal trail point at a fixed, gentle rate
 	 * (damped, not snapped) --- */
 	{
-		int idealX = carPos->vx - FIXEDH(RSIN(s.trailYaw) * back);
-		int idealZ = carPos->vz - FIXEDH(RCOS(s.trailYaw) * back);
+		int right = (s.trailYaw + 3072) & 0xfff;
+		int idealX = carPos->vx - FIXEDH(RSIN(s.trailYaw) * back)
+			+ FIXEDH(RSIN(right) * side);
+		int idealZ = carPos->vz - FIXEDH(RCOS(s.trailYaw) * back)
+			+ FIXEDH(RCOS(right) * side);
 		int idealY = -(h + high);
 
 		s.trailPos.vx += (idealX - s.trailPos.vx) * 6 / 100;
@@ -1758,12 +1836,32 @@ static void AntFarmFollowCam(CAR_DATA* cp, const VECTOR* carPos, int dir, int h,
 	*desired = s.trailPos;
 
 	/* aim a little ahead of the car so it sits low in frame */
-	aim->vx = carPos->vx + FIXEDH(RSIN(dir) * (600 + speed * 4));
-	aim->vz = carPos->vz + FIXEDH(RCOS(dir) * (600 + speed * 4));
+	aim->vx = carPos->vx + FIXEDH(RSIN(dir) * aimAhead);
+	aim->vz = carPos->vz + FIXEDH(RCOS(dir) * aimAhead);
 	aim->vy = -(carPos->vy + 30);
 
 	/* the position is already smoothed above, so the generic lerp is a no-op */
 	*outLerp = 100;
+}
+
+/* A ROAD-model shot that keeps a CAR framed while the camera moves with it:
+ * hold an offset in the car's own frame (longitudinal `fwd` ahead of it,
+ * lateral `side` off its flank, `high` above the ground) and aim at the car, so
+ * the car holds its place in frame and the city travels past. The trail cam
+ * (AntFarmFollowCam) is the behind variant of the same idea; these are the
+ * beside (ROADSIDE/JUNCTION) and ahead (DOLLY/CRANE) variants. */
+static void AntFarmTrackCarCam(const VECTOR* carPos, int dir, int h, int fwd,
+	int side, int high, VECTOR* desired, VECTOR* aim)
+{
+	int right = (dir + 3072) & 0xfff;
+
+	desired->vx = carPos->vx + FIXEDH(RSIN(dir) * fwd) + FIXEDH(RSIN(right) * side);
+	desired->vz = carPos->vz + FIXEDH(RCOS(dir) * fwd) + FIXEDH(RCOS(right) * side);
+	desired->vy = -(h + high);
+
+	aim->vx = carPos->vx;
+	aim->vz = carPos->vz;
+	aim->vy = -(carPos->vy + 40);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1831,14 +1929,18 @@ static void AntFarmSetupRoadShot(void)
 				}
 			}
 
-			if (AntFarmJunctionEnd(s.roadSurfId, s.roadLane, endAtFar, &ex, &ez, &eh))
+			int jnNeigh = -1;
+
+			if (AntFarmJunctionEnd(s.roadSurfId, s.roadLane, endAtFar, &ex, &ez, &eh,
+				&jnNeigh))
 			{
 				s.roadDist = endAtFar ? len : 0;
 				s.junctionCorner = endAtFar ? 1 : 0;
 
 				s.ctx->jer_log(s.ctx,
-					"[antfarm] junction shot: road %d %s end %d,%d -> junction found\n",
-					s.roadSurfId, endAtFar ? "far" : "near", ex, ez);
+					"[antfarm] junction shot: road %d %s end %d,%d -> %s junction found\n",
+					s.roadSurfId, endAtFar ? "far" : "near", ex, ez,
+					IS_CURVED_SURFACE(jnNeigh) ? "curve" : "straight");
 				break;
 			}
 
@@ -2311,13 +2413,13 @@ static int AntFarmNextRoad(int roadId, int heading)
 		int c = rd->ConnectIdx[i];
 		int ang, dot;
 
-		if (c < 0 || c >= NumDriver2Straights || c == roadId)
+		if (c == roadId || (!IS_STRAIGHT_SURFACE(c) && !IS_CURVED_SURFACE(c)))
 			continue;
 
-		if (Driver2StraightsPtr[c].length < 200)
+		if (AntFarmRoadLen(c) < 200)
 			continue;
 
-		ang = Driver2StraightsPtr[c].angle;
+		ang = AntFarmRoadHeading(c);
 		dot = RSIN(ang) * RSIN(heading) + RCOS(ang) * RCOS(heading);
 
 		if (dot > bestDot)
@@ -2346,8 +2448,9 @@ static int AntFarmNextRoad(int roadId, int heading)
 
 		surf = GetSurfaceIndex(&tip);
 
-		if (surf >= 0 && surf < NumDriver2Straights && surf != roadId &&
-			Driver2StraightsPtr[surf].length >= 200)
+		if (surf != roadId &&
+			(IS_STRAIGHT_SURFACE(surf) || IS_CURVED_SURFACE(surf)) &&
+			AntFarmRoadLen(surf) >= 200)
 			best = surf;
 	}
 
@@ -2361,7 +2464,7 @@ static int AntFarmNextRoad(int roadId, int heading)
  * the road so far and cannot navigate intersections". */
 static void AntFarmAdvanceDolly(unsigned long now)
 {
-	int len = Driver2StraightsPtr[s.roadSurfId].length;
+	int len = AntFarmRoadLen(s.roadSurfId);
 	unsigned long shotMs = (unsigned long)(s.dwellMs > 0 ? s.dwellMs : AntIntervalMs());
 	unsigned long dt = now - s.lastDollyMs;
 	long long advance;
@@ -2393,11 +2496,11 @@ static void AntFarmAdvanceDolly(unsigned long now)
 		s.roadDist -= len;
 		s.roadSurfId = next;
 		s.handoffs++;
-		len = Driver2StraightsPtr[next].length;
+		len = AntFarmRoadLen(next);
 
 		s.ctx->jer_log(s.ctx,
-			"[antfarm] dolly continued onto the next road (junction %d)\n",
-			s.handoffs);
+			"[antfarm] dolly continued onto the next road (%s, junction %d)\n",
+			IS_CURVED_SURFACE(next) ? "curve" : "straight", s.handoffs);
 	}
 }
 
@@ -2515,6 +2618,29 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 			aim = carPos;
 			aim.vy = -(carPos.vy + 50);
 		}
+		else if (d->model == ANT_MODEL_ROADSIDE || d->model == ANT_MODEL_JUNCTION)
+		{
+			/* A road vantage that keeps a CAR framed: hold a lateral offset off
+			 * the car's flank (clear of its body) at the row's height and aim at
+			 * the car, so the camera travels alongside it and the car holds its
+			 * place in frame while the city moves past. */
+			int side = (s.shotSide + s.shotMargin) * s.shotSideSign;
+
+			AntFarmTrackCarCam(&carPos, dir, h, 0, side, s.shotHeight,
+				&desired, &aim);
+			lerp = 100 / d->settle;
+		}
+		else if (d->model == ANT_MODEL_DOLLY || d->model == ANT_MODEL_CRANE)
+		{
+			/* A travelling shot that keeps a CAR framed: run the camera AHEAD of
+			 * the car at the row's height and aim back at it, so the car drives
+			 * toward the lens (a leading shot). */
+			int fwd = ANTFARM_TRACK_LEAD + s.shotFwd;
+
+			AntFarmTrackCarCam(&carPos, dir, h, fwd, s.shotSide * s.shotSideSign,
+				s.shotHeight, &desired, &aim);
+			lerp = 100 / d->settle;
+		}
 		else
 		{
 			/* FOLLOW: the damped trail cam (see AntFarmFollowCam). It smooths
@@ -2580,8 +2706,8 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 				if (aimDist < 0)
 					aimDist = 0;
 
-				if (aimDist > Driver2StraightsPtr[s.roadSurfId].length)
-					aimDist = Driver2StraightsPtr[s.roadSurfId].length;
+				if (aimDist > AntFarmRoadLen(s.roadSurfId))
+					aimDist = AntFarmRoadLen(s.roadSurfId);
 
 				if (AntFarmShotRoadRender(aimDist, &aim, &heading) == 0)
 				{
@@ -2619,7 +2745,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 				AntFarmAdvanceDolly(now);
 
-				len = Driver2StraightsPtr[s.roadSurfId].length;
+				len = AntFarmRoadLen(s.roadSurfId);
 				curDist = (s.roadDist < 0) ? 0 : (s.roadDist > len ? len : s.roadDist);
 
 				AntFarmShotRoadRender(curDist, &camPt, &dummyHeading);
@@ -2676,7 +2802,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 				AntFarmAdvanceDolly(now);
 
-				len = Driver2StraightsPtr[s.roadSurfId].length;
+				len = AntFarmRoadLen(s.roadSurfId);
 				curDist = (s.roadDist < 0) ? 0 : (s.roadDist > len ? len : s.roadDist);
 
 				AntFarmShotRoadRender(curDist, &camPt, &dummyHeading);
@@ -2911,7 +3037,7 @@ static void AntFarmSetActive(int on)
 		s.cutStart = s.stateStart;
 
 		{
-			char styleList[220];  /* all 17 style keys fit - 80 silently truncated the log */
+			char styleList[220];  /* all 20 style keys fit - 80 silently truncated the log */
 			int n = 0, j;
 
 			styleList[0] = '\0';
@@ -3781,10 +3907,12 @@ static int AntFarmOnCamera(void* userdata, void* args)
 				pv -= 4096;
 
 			if (pv > ANTFARM_PITCH_DOWN_MAX)
-			{
 				pv = ANTFARM_PITCH_DOWN_MAX;
-				tgt.vx = (short)(pv & 0xfff);
-			}
+
+			if (pv < -ANTFARM_PITCH_UP_MAX)
+				pv = -ANTFARM_PITCH_UP_MAX;
+
+			tgt.vx = (short)(pv & 0xfff);
 		}
 
 		/* a barely-there horizon roll keeps the frame from feeling rigid */
@@ -4273,7 +4401,7 @@ static int AntFarmOnBoot(void* userdata, void* args)
 	AntFarmBuildRoadCache();
 
 	{
-		char styleList[220];  /* all 17 style keys fit - 80 silently truncated the log */
+		char styleList[220];  /* all 20 style keys fit - 80 silently truncated the log */
 		int n = 0;
 
 		styleList[0] = '\0';

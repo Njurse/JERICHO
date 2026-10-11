@@ -24,6 +24,9 @@ enum
 	ANTFARM_STYLE_FARPAN,  /* distant long lens, slow pan + zoom */
 	ANTFARM_STYLE_WATERFRONT,/* dolly along a waterfront road */
 	ANTFARM_STYLE_JUNCTION,/* parked vantage watching a junction mouth */
+	ANTFARM_STYLE_HIGHCHASE,/* a high, pulled-back chase of a car */
+	ANTFARM_STYLE_LOWCHASE,/* a ground-hugging chase of a car */
+	ANTFARM_STYLE_SIDETRACK,/* a rear-3/4 chase off the car's flank */
 	ANTFARM_STYLE_COUNT
 };
 
@@ -98,6 +101,19 @@ enum
  * AntFarmOnCamera), for every model, so no archetype or row value can defeat
  * it. A shot that would exceed it looks across the scene instead. */
 #define ANTFARM_PITCH_DOWN_MAX  220
+
+/* ...and no shot may pitch further UP than this (again in camera_angle.vx
+ * units; 340 is ~30 deg). Normally nothing looks up: the trail cam, the rigs
+ * and the road vantages all sit above their subject. But a junction on a steep
+ * grade - or a shot that ends up very close to its aim, on ground far above the
+ * camera - can leave the lens pointing at the sky (measured: a junction shot at
+ * -1039, ~91 deg up). A symmetric cap keeps every angle a framing. */
+#define ANTFARM_PITCH_UP_MAX    340
+
+/* How far AHEAD of a car a DOLLY/CRANE shot that is framing that car runs,
+ * before the row's own forward offset is added: the car drives toward the lens
+ * (a leading shot). See AntFarmTrackCarCam. */
+#define ANTFARM_TRACK_LEAD      1800
 
 /* The very first shot of an activation fades in FAST and begins as soon as its
  * assets have streamed, instead of waiting out the normal CUT hold: a
