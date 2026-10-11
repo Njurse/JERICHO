@@ -24,6 +24,8 @@
 
 #include "players.h"
 #include "cars.h"
+#include "felony.h"	/* GetPlayerFelony, pedestrianFelony */
+#include "cop_ai.h"	/* copsAreInPursuit, CopsCanSeePlayer */
 #include "dr2roads.h"	/* NumDriver2Straights/Curves/Junctions, for the graph log */
 
 #if defined(_MSC_VER)
@@ -39,6 +41,10 @@ JERAI_STATE gJerAi;
 /* how often (frames) the tunables are re-read from the config cache */
 #define JERAI_CONFIG_REFRESH 30
 
+/* immunity helpers (defined below, used by the frame hook) */
+static int JerAiImmuneActive(void);
+static void JerAiClearWanted(void);
+
 /* ------------------------------------------------------------------ */
 /* config                                                              */
 /* ------------------------------------------------------------------ */
@@ -47,6 +53,8 @@ void JerAiRefreshConfig(void)
 {
 	gJerAi.enabled = jer_config_get_int("JerAI", JERAI_CFG_ENABLED, 1);
 	gJerAi.mode = jer_config_get_int("JerAI", JERAI_CFG_MODE, 0);
+	gJerAi.immune = jer_config_get_int("JerAI", JERAI_CFG_IMMUNE, 1);
+	gJerAi.aimTest = jer_config_get_int("JerAI", JERAI_CFG_AIM_TEST, -1);
 	gJerAi.pacePct = jer_config_get_int("JerAI", JERAI_CFG_PACE_PCT, 25);
 	gJerAi.topSpeed = jer_config_get_int("JerAI", JERAI_CFG_TOP_SPEED, 255);
 	gJerAi.runLights = jer_config_get_int("JerAI", JERAI_CFG_RUN_LIGHTS, 1);
@@ -83,6 +91,7 @@ void JerAiWriteConfigDefaults(void)
 	 * deliberately NOT re-saved later, or a live edit would be clobbered. */
 	jer_config_set_int("JerAI", JERAI_CFG_ENABLED, gJerAi.enabled);
 	jer_config_set_int("JerAI", JERAI_CFG_MODE, gJerAi.mode);
+	jer_config_set_int("JerAI", JERAI_CFG_IMMUNE, gJerAi.immune);
 	jer_config_set_int("JerAI", JERAI_CFG_PACE_PCT, gJerAi.pacePct);
 	jer_config_set_int("JerAI", JERAI_CFG_TOP_SPEED, gJerAi.topSpeed);
 	jer_config_set_int("JerAI", JERAI_CFG_RUN_LIGHTS, gJerAi.runLights);
@@ -183,6 +192,11 @@ static int JerAiOnFrame(void* userdata, void* args)
 	/* the menu reads the PHYSICAL pad, so it works while JerAI drives */
 	JerAiMenuTick();
 
+	/* immunity: keep the wanted level at zero so no cop sirens chase the drive
+	 * (the damage half is JER_EVENT_GET_BUDDHA, below) */
+	if (JerAiImmuneActive())
+		JerAiClearWanted();
+
 	if (++gJerAi.frame % JERAI_CONFIG_REFRESH == 0)
 		JerAiRefreshConfig();
 
@@ -216,10 +230,10 @@ static int JerAiOnFrame(void* userdata, void* args)
 			const JERAI_BEHAVIOR* b = JerAiBehaviorFor(gJerAi.mode);
 
 			gJerAi.ctx->jer_log(gJerAi.ctx,
-				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d wp=%d complete=%d diff=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d\n",
+				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d wp=%d complete=%d diff=%d bias=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d\n",
 				b != NULL ? b->name : "?",
 				car->hd.where.t[0], car->hd.where.t[2], car->hd.speed, car->hd.direction,
-				gJerAi.path.waypoints, gJerAi.path.complete, gJerAi.lastDiff, gJerAi.lastPad,
+				gJerAi.path.waypoints, gJerAi.path.complete, gJerAi.lastDiff, gJerAi.lastBias, gJerAi.lastPad,
 				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ, JerAiVizLines());
 
 			if (gJerAi.vizHud)
@@ -270,6 +284,42 @@ static int JerAiOnGameStart(void* userdata, void* args)
 }
 
 /* ------------------------------------------------------------------ */
+/* immunity                                                            */
+/* ------------------------------------------------------------------ */
+
+/* While JerAI is driving, the car is invulnerable and the wanted level stays at
+ * zero: no damage totals it (see JER_EVENT_GET_BUDDHA) and no cop sirens chase
+ * the test drive. Gated on an active, enabled drive so Manual play is normal. */
+static int JerAiImmuneActive(void)
+{
+	return gJerAi.enabled && gJerAi.immune && gJerAi.mode != JERAI_MODE_MANUAL;
+}
+
+static int JerAiOnGetBuddha(void* userdata, void* args)
+{
+	JER_ARGS_QUERY_FLAG* q = (JER_ARGS_QUERY_FLAG*)args;
+
+	(void)userdata;
+
+	if (q != NULL && JerAiImmuneActive())
+		q->result = 1;
+
+	return JER_RESULT_CONTINUE;
+}
+
+static void JerAiClearWanted(void)
+{
+	int id = player[0].playerCarId;
+
+	if (id >= 0 && id < MAX_CARS)
+		car_data[id].felonyRating = 0;
+
+	copsAreInPursuit = 0;
+	CopsCanSeePlayer = 0;
+	pedestrianFelony = 0;
+}
+
+/* ------------------------------------------------------------------ */
 /* module entry                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -295,9 +345,10 @@ JER_MODULE_ENTRY(jer_module_JerAI_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_PAD, JerAiOnCarPad, &gJerAi, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, JerAiOnFrame, &gJerAi, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, JerAiOnGameStart, &gJerAi, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_BUDDHA, JerAiOnGetBuddha, &gJerAi, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WORLD, JerAiOnDrawWorld, &gJerAi, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, JerAiOnDrawOverlay, &gJerAi, 0);
 
-	ctx->jer_log(ctx, "[JerAI] registered - enabled=%d mode=%d (%s) pace=%d pct\n",
-		gJerAi.enabled, gJerAi.mode, JerAiBehaviorName(gJerAi.mode), gJerAi.pacePct);
+	ctx->jer_log(ctx, "[JerAI] registered - enabled=%d mode=%d (%s) immune=%d pace=%d pct\n",
+		gJerAi.enabled, gJerAi.mode, JerAiBehaviorName(gJerAi.mode), gJerAi.immune, gJerAi.pacePct);
 }

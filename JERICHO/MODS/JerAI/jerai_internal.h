@@ -46,6 +46,7 @@ typedef struct JERAI_STATE
 	/* tunables, re-read from JERICHO/CONFIG/JerAI.ini every so often */
 	int	enabled;
 	int	mode;			/* active behavior id (JERAI_MODE_*, 0 = manual) */
+	int	immune;			/* while driving: no damage, no wanted level */
 	int	pacePct;		/* joyride pace above the road limit (%) */
 	int	topSpeed;		/* flat-out speed cap (0..255) */
 	int	runLights;		/* 1 = never park, never stop at lights/yields */
@@ -72,10 +73,14 @@ typedef struct JERAI_STATE
 	int	incomplete;		/* 1 while the current plan is a partial route */
 	int	aimX, aimZ;		/* the point the driver is steering at this frame */
 	int	lastDiff;		/* last signed heading error (game units) */
+	int	lastBias;		/* last feeler steering bias (game units) */
 	int	lastPad;		/* last pad the driver produced */
 
 	/* a dump the menu / config asked for, serviced when the world is loaded */
 	int	dumpRequested;
+
+	/* debug: a fixed aim heading (game units), or -1 to use the plan */
+	int	aimTest;
 
 	/* set by the stuck recovery: a behavior should pick a fresh destination
 	 * rather than keep driving at one it cannot reach */

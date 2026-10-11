@@ -64,4 +64,13 @@
  * capture; the module clears it back to 0. */
 #define JERAI_CFG_MENU_OPEN         "menu_open"
 
+/* while JerAI is driving: make the player's car immune (no damage totals it,
+ * via JER_EVENT_GET_BUDDHA) and keep the wanted level at zero, so the car is not
+ * destroyed and no cop sirens chase the test drive (1 = on). */
+#define JERAI_CFG_IMMUNE            "immune"
+
+/* debug: override the aim with a FIXED heading (game units, -1 = off). Used to
+ * settle the steering sign in isolation from a moving plan. */
+#define JERAI_CFG_AIM_TEST          "aim_test"
+
 #endif /* JERAI_H */

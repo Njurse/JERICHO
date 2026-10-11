@@ -76,6 +76,10 @@ static void JerAiMenuRebuild(void)
 		sRows++;
 	}
 
+	snprintf(sLabels[sRows], JERAI_MENU_LABEL, "Immunity: %s", gJerAi.immune ? "ON" : "off");
+	sItems[sRows] = sLabels[sRows];
+	sRows++;
+
 	snprintf(sLabels[sRows], JERAI_MENU_LABEL, "Dump road graph now");
 	sItems[sRows++] = sLabels[sRows - 1];
 
@@ -104,6 +108,11 @@ static void JerAiMenuConfirm(int row)
 		jer_config_set_int("JerAI", sLayerKey[i], *field);
 	}
 	else if (row == n + 4)
+	{
+		gJerAi.immune = !gJerAi.immune;
+		jer_config_set_int("JerAI", JERAI_CFG_IMMUNE, gJerAi.immune);
+	}
+	else if (row == n + 5)
 	{
 		gJerAi.dumpRequested = 1;
 	}

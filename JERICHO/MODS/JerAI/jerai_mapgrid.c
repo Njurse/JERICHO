@@ -56,8 +56,16 @@ int JerAiMapCost(const JERAI_MAP* map, int ix, int iz)
 	if (!JerAiMapRoad(map, ix, iz))
 		cost += 40;
 
-	/* and hug the middle, so a route does not graze a wall all the way down a street */
-	cost += (JERAI_MAP_CLEAR_MAX - JerAiMapClearance(map, ix, iz)) * 6;
+	/* Hug the middle HARD. The clearance term has to be able to outweigh extra
+	 * distance, or A* chooses to squeeze a short gap past a building over driving
+	 * around the block - which the car then grinds into. Squared, so a sample
+	 * right against a wall costs several times an open one:
+	 *   clearance 0 -> +144, 1 -> +100, 2 -> +64, 3 -> +36, 6 -> +0 (base 100). */
+	{
+		int tight = JERAI_MAP_CLEAR_MAX - JerAiMapClearance(map, ix, iz);
+
+		cost += tight * tight * 4;
+	}
 
 	return cost;
 }

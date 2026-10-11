@@ -18,6 +18,10 @@
 #include "players.h"
 #include "cars.h"
 #include "dr2math.h"	/* ratan2, RSIN, RCOS */
+#include "objcoll.h"	/* CellEmpty: the engine's own scenery test, for the feelers */
+#include "dr2roads.h"	/* MapHeight */
+
+#include <math.h>
 
 /* ------------------------------------------------------------------ */
 /* the run RNG                                                          */
@@ -94,58 +98,117 @@ int JerAiDrivePlanTo(CAR_DATA* car, int toX, int toZ, int force)
 	return gJerAi.havePlan;
 }
 
+static long JerAiSegLen(long ax, long az, long bx, long bz)
+{
+	double dx = (double)(bx - ax);
+	double dz = (double)(bz - az);
+
+	return (long)sqrt(dx * dx + dz * dz);
+}
+
 int JerAiDriveAim(int* aimX, int* aimZ)
 {
 	CAR_DATA* car = JerAiOwnCar();
-	int cx, cz, k, nearest = 0, best;
-	long look2, bestd = -1;
+	int n, k;
+	long cx, cz;
+	long bestD2 = -1, bestArc = 0, arc, target;
 
 	if (car == NULL || !gJerAi.havePlan || gJerAi.path.waypoints <= 0)
 		return 0;
 
+	n = gJerAi.path.waypoints;
 	cx = car->hd.where.t[0];
 	cz = car->hd.where.t[2];
-	look2 = (long)gJerAi.lookAhead * gJerAi.lookAhead;
 
-	/* the nearest waypoint to the car: the path portion behind it is not
-	 * somewhere to aim at. Aiming at "the furthest within the look-ahead"
-	 * without this let the car target a waypoint it had already PASSED, so the
-	 * error pinned to +/-180 deg and the car spun on the spot. */
-	for (k = 0; k < gJerAi.path.waypoints; k++)
+	/* debug override: a fixed aim heading, to test the steering in isolation */
+	if (gJerAi.aimTest >= 0)
 	{
-		int dx = gJerAi.path.wx[k] - cx;
-		int dz = gJerAi.path.wz[k] - cz;
-		long d2 = (long)dx * dx + (long)dz * dz;
+		int d = gJerAi.aimTest & 0xfff;
 
-		if (bestd < 0 || d2 < bestd)
+		gJerAi.aimX = (int)(cx + 4000L * RSIN(d) / 4096);
+		gJerAi.aimZ = (int)(cz + 4000L * RCOS(d) / 4096);
+
+		if (aimX) *aimX = gJerAi.aimX;
+		if (aimZ) *aimZ = gJerAi.aimZ;
+
+		return 1;
+	}
+
+	/* First find where the car is ALONG the plan: project it onto each segment
+	 * and keep the closest, together with the arc length to that foot. */
+	arc = 0;
+
+	for (k = 1; k < n; k++)
+	{
+		long ax = gJerAi.path.wx[k - 1], az = gJerAi.path.wz[k - 1];
+		long bx = gJerAi.path.wx[k], bz = gJerAi.path.wz[k];
+		long dx = bx - ax, dz = bz - az;
+		long len2 = dx * dx + dz * dz;
+		long segLen = JerAiSegLen(ax, az, bx, bz);
+		long t, px, pz, d2;
+
+		if (len2 > 0)
 		{
-			bestd = d2;
-			nearest = k;
+			t = (cx - ax) * dx + (cz - az) * dz;
+
+			if (t < 0) t = 0;
+			if (t > len2) t = len2;
 		}
-	}
-
-	/* then the furthest waypoint FORWARD of that one within the look-ahead, so
-	 * the car drives through corners instead of clipping the next grid step */
-	best = nearest;
-
-	for (k = nearest + 1; k < gJerAi.path.waypoints; k++)
-	{
-		int dx = gJerAi.path.wx[k] - cx;
-		int dz = gJerAi.path.wz[k] - cz;
-
-		if ((long)dx * dx + (long)dz * dz <= look2)
-			best = k;
 		else
-			break;
+		{
+			t = 0;
+		}
+
+		px = ax + (len2 > 0 ? dx * t / len2 : 0);
+		pz = az + (len2 > 0 ? dz * t / len2 : 0);
+		d2 = (cx - px) * (cx - px) + (cz - pz) * (cz - pz);
+
+		if (bestD2 < 0 || d2 < bestD2)
+		{
+			bestD2 = d2;
+			bestArc = arc + (len2 > 0 ? segLen * t / len2 : 0);
+		}
+
+		arc += segLen;
 	}
 
-	if (best == nearest && nearest + 1 < gJerAi.path.waypoints)
-		best = nearest + 1;
+	/* Then look a fixed distance FURTHER ALONG the plan. Aiming a set distance
+	 * along the path - rather than at the furthest waypoint in range - is what
+	 * makes the car TRACK the plan instead of cutting to a far corner, and it can
+	 * never point the car at a waypoint it has already passed. */
+	target = bestArc + gJerAi.lookAhead;
+	arc = 0;
 
-	if (aimX) *aimX = gJerAi.path.wx[best];
-	if (aimZ) *aimZ = gJerAi.path.wz[best];
-	gJerAi.aimX = gJerAi.path.wx[best];
-	gJerAi.aimZ = gJerAi.path.wz[best];
+	for (k = 1; k < n; k++)
+	{
+		long ax = gJerAi.path.wx[k - 1], az = gJerAi.path.wz[k - 1];
+		long bx = gJerAi.path.wx[k], bz = gJerAi.path.wz[k];
+		long dx = bx - ax, dz = bz - az;
+		long len2 = dx * dx + dz * dz;
+		long segLen = JerAiSegLen(ax, az, bx, bz);
+
+		if (segLen > 0 && arc + segLen >= target)
+		{
+			long f = target - arc;
+			long nx = ax + dx * f / segLen;
+			long nz = az + dz * f / segLen;
+
+			if (aimX) *aimX = (int)nx;
+			if (aimZ) *aimZ = (int)nz;
+			gJerAi.aimX = (int)nx;
+			gJerAi.aimZ = (int)nz;
+
+			return 1;
+		}
+
+		arc += segLen;
+	}
+
+	/* past the end of the plan: head for the goal waypoint */
+	if (aimX) *aimX = gJerAi.path.wx[n - 1];
+	if (aimZ) *aimZ = gJerAi.path.wz[n - 1];
+	gJerAi.aimX = gJerAi.path.wx[n - 1];
+	gJerAi.aimZ = gJerAi.path.wz[n - 1];
 
 	return 1;
 }
@@ -198,6 +261,50 @@ static int JerAiCarAhead(CAR_DATA* car)
 	return JERAI_AHEAD_NONE;
 }
 
+/* ------------------------------------------------------------------ */
+/* feelers                                                             */
+/* ------------------------------------------------------------------ */
+/* Short, fresh, thin CellEmpty probes fanned in front of the car. The A* grid is
+ * coarse (512-unit samples), the window is only rebuilt every replan_ms, and
+ * CellEmpty deliberately ignores smashables - so there are places the plan does
+ * not have the full picture. These feelers look at the REAL scenery just ahead
+ * and produce a steering bias (and a nose-blocked flag), which nudges the pursuit
+ * aim around what the plan missed. They are short on purpose: a long probe reacts
+ * to walls the car would have turned before reaching.
+ *
+ * A wall on the LEFT pushes the aim RIGHT (a negative angle) and the reverse,
+ * so a street with walls both sides cancels out and only a genuine drift toward
+ * one is corrected. */
+
+static int JerAiFeelClear(CAR_DATA* car, int off, int dist, int radius)
+{
+	int dir = (car->hd.direction + off) & 0xfff;
+	VECTOR v;
+
+	v.vx = car->hd.where.t[0] + (int)((long)dist * RSIN(dir) / 4096);
+	v.vz = car->hd.where.t[2] + (int)((long)dist * RCOS(dir) / 4096);
+	v.vy = MapHeight(&v);	/* probe at the ground THERE, not at our own height */
+
+	return CellEmpty(&v, radius) != 0;
+}
+
+static int JerAiFeelers(CAR_DATA* car, int* frontBlocked)
+{
+	int bias = 0;
+
+	*frontBlocked = 0;
+
+	/* left feelers push right (negative), right feelers push left (positive) */
+	if (!JerAiFeelClear(car, 512, 900, 200))	bias -= 300;
+	if (!JerAiFeelClear(car, 256, 1200, 200))	bias -= 150;
+	if (!JerAiFeelClear(car, -256, 1200, 200))	bias += 150;
+	if (!JerAiFeelClear(car, -512, 900, 200))	bias += 300;
+
+	if (!JerAiFeelClear(car, 0, 800, 240))		*frontBlocked = 1;
+
+	return bias;
+}
+
 /* Stuck recovery. A car wedged against scenery (or spun so its aim is behind
  * it) will sit at ~0 speed forever if left to steer forward; after a moment of
  * that, back up while turning, which frees it and lets the next plan take. */
@@ -213,11 +320,20 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 	int dx = aimX - car->hd.where.t[0];
 	int dz = aimZ - car->hd.where.t[2];
 	int want = ratan2(dx, dz) & 0xfff;
-	int diff = ((want - car->hd.direction + 2048) & 0xfff) - 2048;
-	int adiff = diff < 0 ? -diff : diff;
-	int spd = car->hd.speed;
+	int frontBlocked = 0;
+	int bias = JerAiFeelers(car, &frontBlocked);
+	int diff, adiff, spd;
 	int ahead;
 	unsigned int pad = CAR_PAD_ACCEL;
+
+	gJerAi.lastBias = bias;
+
+	/* nudge the aim around what the plan could not see (the feelers) */
+	want = (want + bias) & 0xfff;
+
+	diff = ((want - car->hd.direction + 2048) & 0xfff) - 2048;
+	adiff = diff < 0 ? -diff : diff;
+	spd = car->hd.speed;
 
 	gJerAi.lastDiff = diff;
 
@@ -240,7 +356,7 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 		sRecoverFrames--;
 
 		/* back up, turning toward the aim side, to peel off the wall */
-		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_LEFT : CAR_PAD_RIGHT);
+		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT);
 	}
 
 	if (sStuckFrames >= JERAI_STUCK_FRAMES)
@@ -254,12 +370,12 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 		gJerAi.havePlan = 0;
 		gJerAi.forceNewGoal = 1;
 
-		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_LEFT : CAR_PAD_RIGHT);
+		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT);
 	}
 
 	/* steer: a small dead-band so the car does not saw at the wheel */
 	if (adiff > 60)
-		pad |= (diff > 0) ? CAR_PAD_LEFT : CAR_PAD_RIGHT;
+		pad |= (diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT;
 
 	/* NO braking for a heading error. The engine already adds autoBrake while
 	 * the wheel is turned (handling.c), and stopping the car is exactly what
@@ -273,6 +389,15 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 
 	if (ahead != JERAI_AHEAD_NONE)
 		pad &= ~(unsigned int)CAR_PAD_ACCEL;
+
+	/* The nose is genuinely blocked - a FRESH probe, not the coarse grid: brake.
+	 * The feeler bias above steers around it; this is the backstop for when there
+	 * is nothing to steer around. */
+	if (frontBlocked)
+	{
+		pad &= ~(unsigned int)CAR_PAD_ACCEL;
+		pad |= CAR_PAD_BRAKE;
+	}
 
 	/* Walls are the A* path's job: it routes around blocked samples, and it
 	 * re-plans every replan_ms. A forward wall probe here only fought the plan -

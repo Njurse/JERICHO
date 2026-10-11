@@ -23,14 +23,32 @@ Two engine details that cost real time and are load-bearing:
 - the injected pad must set `useAnalogue = 0`; steering from `CAR_PAD_LEFT/RIGHT`
   is only read when the analogue flag is clear (`handling.c`), so leaving the
   physical pad's flag set gives a car that accelerates but never turns;
+- **`CAR_PAD_LEFT` DECREASES the heading.** `diff = want - dir`, so a positive
+  error needs `CAR_PAD_RIGHT`. Getting this backwards makes the car steer away
+  from its target, wind the error up to +/-180 deg and U-turn - which reads as
+  "it keeps turning the wrong way";
 - `CAR_PAD_HANDBRAKE` must never be emitted: the stock handler cycles
   `g_PlayerControlMode` on a handbrake press edge and would hand the car back to
   the engine AI.
 
-Driving is governed by: the A\* plan (which routes around walls), a steering
-dead-band, a lift-off when a car is close ahead, and a **stuck recovery** that
-back out of a wedge (and asks the behavior for a new destination) after ~1.3 s at
-a standstill.
+Driving is governed by:
+
+- **pure-pursuit** path tracking: the car is projected onto the plan polyline and
+  aims a fixed `look_ahead` distance further ALONG it, so it tracks the line
+  instead of cutting to a far corner (and can never point at a waypoint it has
+  already passed);
+- **feelers** - short, FRESH, thin `CellEmpty` probes fanned in front of the car,
+  which bias the aim around scenery the coarse (512-unit) and up-to-a-replan-old
+  A\* grid cannot see. A wall on one side pushes the aim to the other; a street
+  with walls both sides cancels out. The centre feeler brakes when the nose is
+  genuinely blocked;
+- a steering dead-band, and a lift-off when a car is close ahead (no braking for
+  traffic - that made the car crawl past oncoming vehicles);
+- a **stuck recovery** that back out of a wedge (and asks the behavior for a new
+  destination) after ~1.3 s at a standstill.
+
+The A\* cost model hugs the middle hard (a squared clearance penalty), so it
+routes around a block rather than squeezing a short gap past a building.
 
 ## Behaviors (`mode`)
 
@@ -54,6 +72,14 @@ lines):
 - `viz_path` — the current A\* plan (red), the goal cross (yellow) and the aim
   line (green);
 - `viz_hud` — a one-line text readout (mode, speed, waypoints, graph size, lines).
+
+## Immunity
+
+While JerAI is driving (and `immune = 1`, the default) the player's car is
+invulnerable: `JER_EVENT_GET_BUDDHA` clamps its damage below the totaled
+threshold, and the frame hook keeps the wanted level at zero
+(`felonyRating`/`copsAreInPursuit`/`CopsCanSeePlayer`/`pedestrianFelony`), so no
+cop sirens chase the test drive. Manual play (`mode = 0`) is left untouched.
 
 ## Control menu
 
