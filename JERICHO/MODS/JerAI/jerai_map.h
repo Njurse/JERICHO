@@ -33,7 +33,7 @@ extern "C" {
 #endif
 
 #define JERAI_MAP_SIZE		49	/* samples per side; odd, so one sits on the centre */
-#define JERAI_MAP_STEP		512	/* world units between samples (a quarter of a cell) */
+#define JERAI_MAP_STEP		256	/* world units between samples (an eighth of a cell) */
 #define JERAI_MAP_RADIUS	350	/* the probe's radius: about a car's width */
 
 /* Sample flags. */
