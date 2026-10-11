@@ -13,7 +13,7 @@ rem  never collide with yours. Ctrl+C stops it.
 rem
 rem  Usage:
 rem    follow_host.bat                      (default: 127.0.0.1:1400)
-rem    follow_host.bat --port 1400 --client-car slot3
+rem    follow_host.bat --port 1400 --client-car slot4
 rem    follow_host.bat --clearance 2500 --range 0
 rem    follow_host.bat --dry                (print, do not launch)
 rem

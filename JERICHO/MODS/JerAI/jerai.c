@@ -63,6 +63,8 @@ void JerAiRefreshConfig(void)
 	gJerAi.fleeCar = jer_config_get_int("JerAI", JERAI_CFG_FLEE_CAR, -1);
 	gJerAi.fleePolice = jer_config_get_int("JerAI", JERAI_CFG_FLEE_POLICE, 1);
 	gJerAi.panicWheelspin = jer_config_get_int("JerAI", JERAI_CFG_PANIC_WHEELSPIN, 1);
+	gJerAi.panicOffroad = jer_config_get_int("JerAI", JERAI_CFG_PANIC_OFFROAD, 30);
+	gJerAi.panicLookAhead = jer_config_get_int("JerAI", JERAI_CFG_PANIC_LOOKAHEAD, 1600);
 	gJerAi.yawLead = jer_config_get_int("JerAI", JERAI_CFG_YAW_LEAD, 4);
 	gJerAi.steerTrace = jer_config_get_int("JerAI", JERAI_CFG_STEER_TRACE, 0);
 	gJerAi.aimTest = jer_config_get_int("JerAI", JERAI_CFG_AIM_TEST, -1);
@@ -117,6 +119,8 @@ void JerAiWriteConfigDefaults(void)
 	jer_config_set_int("JerAI", JERAI_CFG_FLEE_CAR, gJerAi.fleeCar);
 	jer_config_set_int("JerAI", JERAI_CFG_FLEE_POLICE, gJerAi.fleePolice);
 	jer_config_set_int("JerAI", JERAI_CFG_PANIC_WHEELSPIN, gJerAi.panicWheelspin);
+	jer_config_set_int("JerAI", JERAI_CFG_PANIC_OFFROAD, gJerAi.panicOffroad);
+	jer_config_set_int("JerAI", JERAI_CFG_PANIC_LOOKAHEAD, gJerAi.panicLookAhead);
 	jer_config_set_int("JerAI", JERAI_CFG_YAW_LEAD, gJerAi.yawLead);
 	jer_config_set_int("JerAI", JERAI_CFG_STEER_TRACE, gJerAi.steerTrace);
 	jer_config_set_int("JerAI", JERAI_CFG_PACE_PCT, gJerAi.pacePct);

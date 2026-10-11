@@ -205,11 +205,13 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 		gJerAi.panicFlee = gJerAi.policeActive;	/* police = flat out, no pace limit */
 
 		/* A CLOSING pursuer covers replan_move almost instantly, so the plain
-		 * "the threat moved" trigger re-picked the bolt-hole every few frames and
-		 * the car dithered between escape directions instead of committing to
-		 * one. Make the police case wait twice as long before redrawing. */
+		 * "the threat moved" trigger redrew the bolt-hole every ~12 frames - and
+		 * a destination that is redrawn 2.5 times a second is never DRIVEN TO:
+		 * the aim swings, the heading error stays huge and the car looks lazy
+		 * while it thrashes. A fleeing car COMMITS to a direction, so the police
+		 * case draws a much longer line before reconsidering. */
 		if (gJerAi.policeActive)
-			move += move;
+			move *= 6;
 
 		/* A fresh bolt-hole when we have none, have arrived, the plan failed, the
 		 * stuck recovery asks for one, or the threat has moved far enough that

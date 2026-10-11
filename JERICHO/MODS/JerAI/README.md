@@ -199,9 +199,31 @@ goes back to following or wandering the moment the pursuit ends.
 the wanted level at zero, so with the default immunity no pursuit ever starts and
 this can never trigger.
 
-A closing pursuer covers `replan_move` almost instantly, so the police case waits
-twice as long before redrawing its bolt-hole. Without that the car dithered between
-escape directions instead of committing to one.
+A closing pursuer covers `replan_move` almost instantly, so the plain "the threat
+moved" trigger used to redraw the bolt-hole every ~12 frames. A destination
+redrawn 2.5 times a second is never DRIVEN TO: the aim swings, the heading error
+stays huge, and the car reads as lazy while it thrashes. The police case now waits
+**six times** as long before reconsidering - a fleeing car commits to a direction.
+Measured effect: goal changes fell from 34 to 18 over a 700-frame survival run.
+
+### Being chased: letting go of the road
+
+Under a chase the pull back to the road is a liability - a car that keeps snapping
+onto the road loses whatever line it had, and its speed with it. Two knobs answer
+that, both applied only while panicking:
+
+- `panic_offroad` (default 30, against the normal `offroad_cost` 90) weakens the
+  road preference, so the planner will take a direct line across open ground;
+- `panic_lookahead` (default 1600) is ADDED to the aim's look-ahead, so the aim
+  sits much further down the road and the car commits to the line instead of
+  correcting short and often.
+
+Measured: the look-ahead does take effect (la rose from ~2194 to ~3508 in a
+survival run). What has NOT changed yet is the headline number - the heading error
+still averages ~950 game units and the car still sits at full lock over half the
+time - so these knobs are necessary but not sufficient. The remaining cause is the
+one the steer trace points at everywhere: the destination/aim the behaviour picks,
+not the driver's hold on it.
 
 ### Wheelspin, and why it is currently inert
 
@@ -314,6 +336,8 @@ The multiplayer-follow knobs (see *Following the host*):
 | `flee` | 1 | while the HOST in a session, run from the nearest other player (0 = never) |
 | `flee_police` | 1 | run from the police FLAT OUT when they are after us (needs `immune = 0`) |
 | `panic_wheelspin` | 1 | may use the wheelspin launch while fleeing the police (straight-line only) |
+| `panic_offroad` | 30 | the road preference to use WHILE CHASED, replacing `offroad_cost` (0 = take the direct line) |
+| `panic_lookahead` | 1600 | added to the aim's look-ahead while chased, to hold speed down a longer line |
 | `flee_car` | -1 | TEST LEVER: a `car_data` index to run from with no session |
 | `offroad_cost` | 90 | extra A* cost for an off-road sample (on-road is 100); 0 = no road preference |
 

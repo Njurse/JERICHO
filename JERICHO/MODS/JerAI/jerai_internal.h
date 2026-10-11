@@ -70,6 +70,8 @@ typedef struct JERAI_STATE
 	int	policeActive;		/* last frame: the cop we were running from was police */
 	int	panicFlee;		/* last frame: running flat out (police) - see JerAiSpeedTarget */
 	int	panicWheelspin;		/* 1 = may use the wheelspin launch while panicking */
+	int	panicOffroad;		/* offroad_cost to use while being chased - see jerai.h */
+	int	panicLookAhead;		/* extra aim look-ahead while being chased (world units) */
 	int	followCarId;		/* CAR_DATA index being followed/run from, -1 = none */
 
 	int	yawLead;		/* steering damper: frames of yaw the aim leads by */

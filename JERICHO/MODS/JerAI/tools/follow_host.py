@@ -14,7 +14,7 @@ directory (directory junctions share the game's big trees; only JERICHO/CONFIG i
 a private copy), so its JERICHO.log and mp.ini cannot collide with yours.
 
     python JERICHO/MODS/JerAI/tools/follow_host.py                 # port 1400
-    python JERICHO/MODS/JerAI/tools/follow_host.py --port 1400 --client-car slot3
+    python JERICHO/MODS/JerAI/tools/follow_host.py --port 1400 --client-car slot4
     python JERICHO/MODS/JerAI/tools/follow_host.py --clearance 2500 --range 0
     python JERICHO/MODS/JerAI/tools/follow_host.py --dry            # print, do not launch
 
@@ -115,7 +115,7 @@ def main():
                     help="where the follower's private run directory lives "
                          "(default <game-dir>/.mp-follow)")
     ap.add_argument("--name", default="Follower", help="the joining player's name")
-    ap.add_argument("--client-car", default="slot3",
+    ap.add_argument("--client-car", default="slot4",
                     help="the follower's car: a model number, slotN, 'random', or 'default' "
                          "(= pass no -mpcar and let the level choose)")
     ap.add_argument("--clearance", type=int, default=None,

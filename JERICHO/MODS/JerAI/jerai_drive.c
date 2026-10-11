@@ -137,7 +137,10 @@ int JerAiDrivePlanTo(CAR_DATA* car, int toX, int toZ, int force)
 		return gJerAi.havePlan;
 
 	gJerAi.map.turnCost = gJerAi.turnCost;
-	gJerAi.map.offroadCost = gJerAi.offroadCost;
+
+	/* While being CHASED, the pull back to the road is what makes the car lose
+	 * its line and its speed, so it is weakened (see JERAI_CFG_PANIC_OFFROAD). */
+	gJerAi.map.offroadCost = gJerAi.panicFlee ? gJerAi.panicOffroad : gJerAi.offroadCost;
 	gJerAi.incomplete = !JerAiStarPlan(&gJerAi.map, cx, cz, toX, toZ, &gJerAi.path);
 	gJerAi.plannedAt = gJerAi.tick;
 	gJerAi.goalX = toX;
@@ -377,6 +380,12 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 
 	/* a longer look-ahead at speed: smoother, no sawing */
 	la = gJerAi.lookAhead + (long)JerAiAbs(car->hd.speed) * JERAI_AIM_SPEED_GAIN;
+
+	/* ...and a MUCH longer one while being chased: aiming further down the road
+	 * is what lets the car commit to a line and keep its speed up, instead of
+	 * correcting short and often (see JERAI_CFG_PANIC_LOOKAHEAD). */
+	if (gJerAi.panicFlee)
+		la += gJerAi.panicLookAhead;
 
 	gJerAi.aimLook = (int)la;   /* the once-a-second log reads this */
 

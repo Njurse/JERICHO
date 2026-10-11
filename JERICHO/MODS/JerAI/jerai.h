@@ -154,4 +154,19 @@
  * force, so it is only used STRAIGHT (see the guard in the driver). 0 = off. */
 #define JERAI_CFG_PANIC_WHEELSPIN   "panic_wheelspin"
 
+/* While being CHASED (the police case), the road preference is a liability: a car
+ * that keeps snapping back onto the road loses whatever line it had, and its
+ * speed with it. Two knobs answer that - weaken the pull toward the road, and
+ * aim FURTHER down it so the car commits to a line instead of twitching on and
+ * off it.
+ *
+ * `panic_offroad` replaces `offroad_cost` while panicking (0 = no road
+ * preference at all, i.e. take the direct line across the ground). */
+#define JERAI_CFG_PANIC_OFFROAD     "panic_offroad"
+
+/* `panic_lookahead` is ADDED to the aim's look-ahead while panicking, in world
+ * units, so the aim sits much further down the road: the car holds its speed
+ * through the turn instead of correcting short and often. */
+#define JERAI_CFG_PANIC_LOOKAHEAD   "panic_lookahead"
+
 #endif /* JERAI_H */
