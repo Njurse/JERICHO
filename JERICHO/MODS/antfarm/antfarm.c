@@ -226,6 +226,17 @@ static const char* AntFarmModelName(int model)
 	}
 }
 
+/* The road-following models: the ones that frame a road (along or across it)
+ * and therefore share the upward framing bias (ANTFARM_ROAD_AIM_LIFT +
+ * ANTFARM_ROAD_PITCH_UP) and the never-stare-at-the-ground pitch guard. The
+ * attached rigs, the trail cam, the orbit and the tripod-zoom keep their own
+ * framing. */
+static int AntFarmModelIsRoadFacing(int model)
+{
+	return model == ANT_MODEL_ROADSIDE || model == ANT_MODEL_DOLLY ||
+		model == ANT_MODEL_CRANE || model == ANT_MODEL_JUNCTION;
+}
+
 /* integer square root, so distances can be logged without pulling in floats */
 static int AntFarmDist(int dx, int dz)
 {
@@ -268,16 +279,22 @@ typedef struct ANT_STYLE_DEF
 } ANT_STYLE_DEF;
 
 /* The archetype table. Weight, subject capability and all the per-cut
- * framing ranges live here; picking and framing both read it. */
+ * framing ranges live here; picking and framing both read it.
+ *
+ * The elevated rows (Overhead / Flyover / Crane) keep their heights in a
+ * showcase 3/4 band rather than a top-down: with the height-scaled aim lift
+ * (AntFarmRoadAimLift) a 500-high vantage would otherwise aim straight down
+ * the near lane, and the pitch guard (ANTFARM_PITCH_DOWN_MAX) would then be
+ * fighting the row. Lower here means the framing is right by construction. */
 static const ANT_STYLE_DEF antStyleDefs[ANTFARM_STYLE_COUNT] = {
 	/* label          key          model            wt rOnly car beh zoom  hLo  hHi scrLo scrHi sLo sHi  fLo  fHi aimLo aimHi orbLo orbHi acr set dwell  nw */
 	{ "Chase cam",    "chase",     ANT_MODEL_FOLLOW,   4,   0,   1,  0,  0,  180,  340,  260,  276,    0,    0,   0,    0,    0,    0,    0,    0,  0,   8,   90 },
 	{ "Static track", "static",    ANT_MODEL_TRACK,   22,   0,   1,  0,  0,  180,  300,  258,  280,    0,    0,   0,    0,    0,    0,    0,    0,  0,   6,  120 },
-	{ "Overhead",     "overhead",  ANT_MODEL_ROADSIDE,26,   0,   0,  0,  0,  400,  700,  218,  242,  180,  360,   0,    0,  900, 1100,  300,  760,  0,  14,  130 },
+	{ "Overhead",     "overhead",  ANT_MODEL_ROADSIDE,26,   0,   0,  0,  0,  300,  520,  218,  242,  180,  360,   0,    0,  900, 1100,  300,  760,  0,  14,  130 },
 	{ "Tripod",       "tripod",    ANT_MODEL_ROADSIDE,16,   1,   0,  0,  0,  140,  260,  238,  268,  135,  270,   0,    0,  900, 1100,  820, 1140,  0,  16,  120 },
-	{ "Flyover",      "flyover",   ANT_MODEL_DOLLY,   12,   1,   0,  0,  0,  400,  650,  248,  272,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  140 },
+	{ "Flyover",      "flyover",   ANT_MODEL_DOLLY,   12,   1,   0,  0,  0,  300,  500,  248,  272,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  140 },
 	{ "Orbit",        "orbit",     ANT_MODEL_ORBIT,   12,   0,   0,  0,  0,  200,  440,  232,  262,    0,    0,   0,    0,    0,    0,    0,    0,  0,  20,  140 },
-	{ "Crane",        "crane",     ANT_MODEL_CRANE,  10,   1,   0,  0,  0,   90,  820,  240,  270,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  150 },
+	{ "Crane",        "crane",     ANT_MODEL_CRANE,  10,   1,   0,  0,  0,   90,  560,  240,  270,    0,    0,   0,    0,    0,    0,    0,    0,  0,  18,  150 },
 	{ "Ant level",    "low",       ANT_MODEL_ROADSIDE,10,   1,   0,  0,  0,   45,   95,  250,  282,  180,  360,   0,    0,    0,  220,  200,  480,  1,  16,  120 },
 	/* --- car-attached rigs (damped, yaw-only: see ANT_MODEL_ATTACH) --- */
 	{ "Fender",       "fender",    ANT_MODEL_ATTACH,  12,   0,   1,  0,  0,   45,   85,  250,  272,   20,   60, 260,  380,  900, 1200,    0,    0,  0,   3,  110 },
@@ -448,6 +465,20 @@ typedef struct ANTFARM_STATE
 } ANTFARM_STATE;
 
 static ANTFARM_STATE s;
+
+/* How far ABOVE the road point a road-following camera should aim, for a
+ * camera `height` above its ground. The lift scales with the camera's own
+ * height so a high vantage looks ACROSS the scene rather than down at the road
+ * surface; a low camera keeps the flat baseline (ANTFARM_ROAD_AIM_LIFT). Pass
+ * the height the camera is ACTUALLY at (a crane rises, so its lift must track
+ * the rising height, not the shot's final one). See antfarm.h for the
+ * reasoning (a flat lift was invisible at height 400+). */
+static int AntFarmRoadAimLift(int height)
+{
+	int lift = height * ANTFARM_ROAD_AIM_PCT / 100;
+
+	return lift > ANTFARM_ROAD_AIM_LIFT ? lift : ANTFARM_ROAD_AIM_LIFT;
+}
 
 /* ------------------------------------------------------------------ */
 /* forward declarations for functions used before they are defined    */
@@ -1596,6 +1627,17 @@ static int AntFarmFovTarget(void)
 		return s.shotScrZ;
 
 	shotMs = (unsigned long)(s.dwellMs > 0 ? s.dwellMs : AntIntervalMs());
+
+	/* Run the push over the FIRST THIRD of the shot (bounded below so a short
+	 * dwell still zooms slowly) and hold the near end afterwards. Spreading it
+	 * over the whole dwell meant a shot that got cut early - common for a
+	 * long-lens vantage whose subject drives off - never moved its lens at all,
+	 * so the "zoom" row read as a static frame. */
+	shotMs = shotMs / 3;
+
+	if (shotMs < ANTFARM_ZOOM_MIN_MS)
+		shotMs = ANTFARM_ZOOM_MIN_MS;
+
 	elapsed = AntTicks() - s.shotStart;
 
 	t = (elapsed >= shotMs) ? 1000 : (int)(elapsed * 1000 / shotMs);
@@ -2546,7 +2588,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 					aim = roadPt;
 				}
 
-				aim.vy = aim.vy - 12 - ANTFARM_ROAD_AIM_LIFT;
+				aim.vy = aim.vy - 12 - AntFarmRoadAimLift(s.shotHeight);
 			}
 			else if (d->model == ANT_MODEL_ORBIT)
 			{
@@ -2592,7 +2634,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 				AntFarmShotRoadRender(aimDist, &aimPt, &dummyHeading);
 				aim = aimPt;
-				aim.vy = aimPt.vy - 40 - ANTFARM_ROAD_AIM_LIFT;
+				aim.vy = aimPt.vy - 40 - AntFarmRoadAimLift(curH);
 			}
 			else if (d->model == ANT_MODEL_JUNCTION)
 			{
@@ -2623,7 +2665,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 				aim.vx = mouth.vx + FIXEDH(RSIN((heading + 1024) & 0xfff) * sweep);
 				aim.vz = mouth.vz + FIXEDH(RCOS((heading + 1024) & 0xfff) * sweep);
-				aim.vy = mouth.vy - 20 - ANTFARM_ROAD_AIM_LIFT;
+				aim.vy = mouth.vy - 20 - AntFarmRoadAimLift(s.shotHeight);
 			}
 			else	/* ANT_MODEL_DOLLY */
 			{
@@ -2648,7 +2690,7 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 
 				AntFarmShotRoadRender(aimDist, &aimPt, &dummyHeading);
 				aim = aimPt;
-				aim.vy = aimPt.vy - 60 - ANTFARM_ROAD_AIM_LIFT;
+				aim.vy = aimPt.vy - 60 - AntFarmRoadAimLift(s.shotHeight);
 			}
 		}
 
@@ -2709,17 +2751,12 @@ static void AntFarmComputeCamera(VECTOR* outPos, SVECTOR* outAngle)
 		SVECTOR ang;
 		PointAtTarget(&s.camPos, &aim, &ang);
 
-		/* Road-following cameras (roadside/dolly/crane/junction) tilt a touch
-		 * further UP than the raw aim implies, so the frame reads more of the
-		 * environment instead of pointing too far down - the ever-so-slight lift
-		 * the aim above already started. Attached rigs, the trail cam, the orbit
-		 * and the tripod-zoom keep their own framing; vx is 0 at level and grows
-		 * downward, so subtracting tilts the view up. */
-		if (s.targetKind == ANTFARM_TARGET_ROAD &&
-			(d->model == ANT_MODEL_ROADSIDE || d->model == ANT_MODEL_DOLLY ||
-				d->model == ANT_MODEL_CRANE || d->model == ANT_MODEL_JUNCTION))
-			ang.vx = (ang.vx - ANTFARM_ROAD_PITCH_UP) & 0xfff;
-
+		/* NOTE: the road-following models' upward pitch bias
+		 * (ANTFARM_ROAD_PITCH_UP) is NOT applied here. This angle is thrown
+		 * away by AntFarmOnCamera, which recomputes PointAtTarget from the
+		 * clamped camera and the aim and then slews s.camAngle toward THAT -
+		 * so a bias written into `ang` here never reached the screen. It now
+		 * lands on the angle that is actually rendered, in AntFarmOnCamera. */
 		*outPos = s.camPos;
 		*outAngle = ang;
 	}
@@ -3721,6 +3758,35 @@ static int AntFarmOnCamera(void* userdata, void* args)
 
 		PointAtTarget(&cam, &s.aimPos, &tgt);
 
+		/* Road-following cameras tilt a touch further UP than the raw aim
+		 * implies, so the frame reads more of the street and skyline instead
+		 * of pointing too far down. This bias has to land HERE, on the angle
+		 * the slew below actually reaches: the same correction computed in
+		 * AntFarmComputeCamera writes a local that the slew then overwrites,
+		 * so it never reached the screen. vx is 0 at level and grows
+		 * downward, so subtracting tilts the view up. */
+		if (s.targetKind == ANTFARM_TARGET_ROAD &&
+			AntFarmModelIsRoadFacing(antStyleDefs[s.style].model))
+			tgt.vx = (tgt.vx - ANTFARM_ROAD_PITCH_UP) & 0xfff;
+
+		/* ...and never look at the ground. Clamp the rendered pitch for EVERY
+		 * model and subject, so no archetype or table row can leave a shot
+		 * staring at tarmac. vx is 0 at level and grows downward, so only
+		 * values in (0, 2048) are "down" and are clamped; an upward tilt is
+		 * left alone (the skyline is the point). */
+		{
+			int pv = tgt.vx;
+
+			if (pv > 2048)
+				pv -= 4096;
+
+			if (pv > ANTFARM_PITCH_DOWN_MAX)
+			{
+				pv = ANTFARM_PITCH_DOWN_MAX;
+				tgt.vx = (short)(pv & 0xfff);
+			}
+		}
+
 		/* a barely-there horizon roll keeps the frame from feeling rigid */
 		if (s.rollOn)
 			tgt.vz = (short)(RSIN((AntTicks() / 400) & 4095) >> 7);
@@ -3797,6 +3863,18 @@ static int AntFarmOnCamera(void* userdata, void* args)
 	/* breathe the lens between shots instead of snapping it, and let a zoom row
 	 * push in and ease back out across the shot */
 	s.fovCurrent += (AntFarmFovTarget() - s.fovCurrent) / 18;
+
+	/* Keep the lens inside the module's own range. fovCurrent is seeded from
+	 * the GAMEPLAY lens (scr_z) at activation - which the engine may have left
+	 * anywhere from its floor to a distant telephoto - and AntFarmFovTarget()
+	 * returns 0 until the first shot is planned, so without this clamp the
+	 * first frames sweep the lens far outside 256..360 (measured: down to 17,
+	 * i.e. a fisheye). That sweep is the "too extreme zoom out". */
+	if (s.fovCurrent < ANTFARM_FOV_MIN)
+		s.fovCurrent = ANTFARM_FOV_MIN;
+	if (s.fovCurrent > ANTFARM_FOV_MAX)
+		s.fovCurrent = ANTFARM_FOV_MAX;
+
 	SetGeomScreen(scr_z = s.fovCurrent);
 
 	if (s.targetKind == ANTFARM_TARGET_CAR && s.targetCarId >= 0 &&

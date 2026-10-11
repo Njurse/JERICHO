@@ -67,16 +67,37 @@ enum
 #define ANTFARM_FOV_MIN         256
 #define ANTFARM_FOV_MAX         360
 
-/* Road-following cameras (roadside, dolly, crane, junction) aim this many
- * world units ABOVE the road, so the frame carries more of the street and what
- * is beyond it instead of pointing too far down. The per-model aim offsets
- * below are the base; this is added to them. */
+/* Road-following cameras (roadside, dolly, crane, junction) aim this far ABOVE
+ * the road at MINIMUM, so the frame carries more of the street and what is
+ * beyond it instead of pointing too far down. The per-model aim offsets below
+ * are the base; this is added to them. */
 #define ANTFARM_ROAD_AIM_LIFT   60
+
+/* ...and the lift SCALES with the camera's height: the higher the vantage, the
+ * higher the aim, so an elevated shot (Overhead / Flyover / Crane) looks ACROSS
+ * the scene rather than down at the road surface. The lift is
+ * shotHeight * ANTFARM_ROAD_AIM_PCT / 100, floored at ANTFARM_ROAD_AIM_LIFT so
+ * a low camera keeps its flat baseline. A flat 60 was invisible at height 400+
+ * (60 units over a ~1000-unit aim is ~3 deg), which is why those vantages still
+ * pitched 30 deg down onto tarmac. 50 = aim at half of eye height, keeping the
+ * street and traffic in the lower frame while the skyline reads above it. See
+ * AntFarmRoadAimLift(). */
+#define ANTFARM_ROAD_AIM_PCT    50
 
 /* ...plus a small upward bias on the final pitch, in the same units as
  * camera_angle.vx (4096 = 360 deg, so ~11.4 units per degree; this is ~1.8 deg).
  * vx is 0 at level, positive = looking down, so subtracting tilts the view up. */
 #define ANTFARM_ROAD_PITCH_UP   20
+
+/* Never stare at the ground. No shot may pitch further DOWN than this, in the
+ * same units as camera_angle.vx (4096 = 360 deg). 220 is ~19 deg - a steep
+ * three-quarter, not a top-down: an elevated vantage (Overhead / Flyover /
+ * Crane) left to aim at a point on the road surface pitched 30-34 deg down,
+ * which is all tarmac and reads as "the camera is looking at the ground". The
+ * clamp is applied to the angle the shot actually renders with (tgt.vx in
+ * AntFarmOnCamera), for every model, so no archetype or row value can defeat
+ * it. A shot that would exceed it looks across the scene instead. */
+#define ANTFARM_PITCH_DOWN_MAX  220
 
 /* The very first shot of an activation fades in FAST and begins as soon as its
  * assets have streamed, instead of waiting out the normal CUT hold: a
@@ -119,6 +140,12 @@ enum
 
 /* one full revolution in an ORBIT shot */
 #define ANTFARM_ORBIT_PERIOD_MS  60000
+
+/* A zoom row pushes its lens over the first third of the shot, but never over
+ * less than this window: spreading the push across the whole dwell meant a shot
+ * cut early (a long-lens vantage whose subject drove off) never moved its lens
+ * at all. 4 s keeps the push gentle while making it visible in any shot. */
+#define ANTFARM_ZOOM_MIN_MS      4000
 
 /* presentation dressing: bar height top/bottom (~16:10 visible frame) and
  * how long an occasional place-name caption stays up */

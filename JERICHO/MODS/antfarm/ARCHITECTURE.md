@@ -451,16 +451,33 @@ opposite side to the previous one and ~25 % repeat it (`s.lastSideSign`).
   * smooth `s.camPos` toward the desired by `lerp/100`;
   * `PointAtTarget` for the angle, with the angle then slewed 18 %/frame (short
     way round), plus an optional barely-there horizon roll;
-  * **road-following tilt.** The four road models (roadside, dolly, crane,
-    junction) aim `ANTFARM_ROAD_AIM_LIFT` (60) units above the road, and their
-    final pitch gets a further small upward bias (`ANTFARM_ROAD_PITCH_UP`, 20 —
-    ~1.8°; `camera_angle.vx` is 0 at level and grows downward, so subtracting
-    tilts up). The stock framing read as pointing too far down, so this shows a
-    little more street and skyline. Attached rigs, the trail cam, orbit and
+  * **road-following tilt, height-scaled.** The four road models (roadside,
+    dolly, crane, junction) aim `AntFarmRoadAimLift()` units above the road —
+    `max(ANTFARM_ROAD_AIM_LIFT, shotHeight × ANTFARM_ROAD_AIM_PCT/100)`, i.e. 60
+    for a low camera and half the eye height for an elevated one (the crane
+    passes its *current* height, since it rises). A flat 60 was invisible at
+    height 400+ (≈3° over a 1000-unit aim), which is why those vantages aimed
+    at tarmac. Their final pitch also gets a small upward bias
+    (`ANTFARM_ROAD_PITCH_UP`, 20 ≈ 1.8°) — but that bias lands in
+    `AntFarmOnCamera`, on the angle the slew actually reaches: the same
+    correction in `AntFarmComputeCamera` writes a local the slew overwrites, so
+    it never reached the screen. Attached rigs, the trail cam, orbit and
     tripod-zoom keep their own framing;
-  * breathe the lens: `s.fovCurrent += (AntFarmFovTarget() − s.fovCurrent)/18`
-    then `SetGeomScreen(scr_z = s.fovCurrent)`. `AntFarmFovTarget` returns the
-    shot's lens, or, for a zoom row, a half-sine push to the other end and back;
+  * **never stare at the ground.** Whatever the model, the rendered pitch is
+    clamped to `ANTFARM_PITCH_DOWN_MAX` (220 ≈ 19°; `camera_angle.vx` is 0 at
+    level and grows downward, so only downward values are clamped). An
+    archetype or row value can no longer leave a shot pointing at the road
+    surface — the shot looks across the scene instead;
+  * breathe the lens: `s.fovCurrent += (AntFarmFovTarget() − s.fovCurrent)/18`,
+    then clamped to `ANTFARM_FOV_MIN`…`ANTFARM_FOV_MAX` and passed to
+    `SetGeomScreen(scr_z = s.fovCurrent)`. The clamp matters: `fovCurrent` is
+    seeded from the *gameplay* lens (`scr_z`) at activation and
+    `AntFarmFovTarget` returns 0 until the first shot is planned, so without it
+    the first frames swept the lens far outside the range (measured down to
+    **17** — a fisheye). `AntFarmFovTarget` returns the shot's lens, or, for a
+    zoom row, a half-sine push to the other end and back — now run over the
+    **first third** of the shot (`ANTFARM_ZOOM_MIN_MS` floor), because spreading
+    it over the whole dwell meant a shot cut early never moved its lens at all;
   * `CameraCar = s.targetCarId` for a FOLLOW shot on a car.
 
 A degenerate aim == camera pair is pushed 500 units along the current view
@@ -616,6 +633,12 @@ generate time).
 * **The player's car is hidden by `CONTROL_TYPE_NONE`** (the draw loop skips
   those) and pinned to the shot focus every frame; hand it back before any
   engine-driven camera (pause, cutscene, replay, restart) uses it.
+* **`AntFarmComputeCamera`'s `*outAngle` is discarded.** `AntFarmOnCamera`
+  recomputes `PointAtTarget` from the clamped camera and the aim, then slews
+  `s.camAngle` toward *that*. Any pitch tweak written into the local `ang` in
+  `AntFarmComputeCamera` is silently overwritten — that is why the old
+  `ANTFARM_ROAD_PITCH_UP` "tilt up" fix never showed. Put framing corrections
+  on `tgt` in `AntFarmOnCamera`.
 * **Module code is compiled into the exe** — a stale exe ignores your changes.
 * **`PingInCivCar` no longer spams the log.** The `JERICHO-DIAG PINGIN:` census
   lines fire on every ping, so they are gated behind `JERICHO_DIAG_PINGIN=1`
