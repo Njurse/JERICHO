@@ -977,7 +977,13 @@ static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 
 		im->applied = 1;
 
-		strength = howHard / p->impactNormalize;
+		/* FIXED-POINT, like the wheel path (crumpleAccumulateWheelBend):
+		 * strength = (howHard << 12) / impactNormalize, so a full-scale hit
+		 * (howHard >= impactNormalize) gives 4096 = 1.0. Without the << 12 the
+		 * division landed in the 0..1 range and every FIXEDH() below turned it
+		 * into ~0 - body dents were ~4096x too weak and a crash left the car
+		 * looking undamaged. */
+		strength = (int)(((long long)howHard << 12) / p->impactNormalize);
 		if (strength < 0)
 			strength = 0;
 		else if (strength > 4096)
