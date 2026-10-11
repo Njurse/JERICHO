@@ -61,6 +61,7 @@ void JerAiRefreshConfig(void)
 	gJerAi.followRange = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW_RANGE, 0);
 	gJerAi.fleeEnabled = jer_config_get_int("JerAI", JERAI_CFG_FLEE, 1);
 	gJerAi.fleeCar = jer_config_get_int("JerAI", JERAI_CFG_FLEE_CAR, -1);
+	gJerAi.fleeHost = jer_config_get_int("JerAI", JERAI_CFG_FLEE_HOST, 0);
 	gJerAi.fleePolice = jer_config_get_int("JerAI", JERAI_CFG_FLEE_POLICE, 1);
 	gJerAi.panicWheelspin = jer_config_get_int("JerAI", JERAI_CFG_PANIC_WHEELSPIN, 1);
 	gJerAi.panicOffroad = jer_config_get_int("JerAI", JERAI_CFG_PANIC_OFFROAD, 30);
@@ -117,6 +118,7 @@ void JerAiWriteConfigDefaults(void)
 	jer_config_set_int("JerAI", JERAI_CFG_FOLLOW_RANGE, gJerAi.followRange);
 	jer_config_set_int("JerAI", JERAI_CFG_FLEE, gJerAi.fleeEnabled);
 	jer_config_set_int("JerAI", JERAI_CFG_FLEE_CAR, gJerAi.fleeCar);
+	jer_config_set_int("JerAI", JERAI_CFG_FLEE_HOST, gJerAi.fleeHost);
 	jer_config_set_int("JerAI", JERAI_CFG_FLEE_POLICE, gJerAi.fleePolice);
 	jer_config_set_int("JerAI", JERAI_CFG_PANIC_WHEELSPIN, gJerAi.panicWheelspin);
 	jer_config_set_int("JerAI", JERAI_CFG_PANIC_OFFROAD, gJerAi.panicOffroad);

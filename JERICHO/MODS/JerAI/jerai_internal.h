@@ -65,6 +65,8 @@ typedef struct JERAI_STATE
 	 * nearest other player, so a joining follower has something to chase. */
 	int	fleeEnabled;		/* 1 = run from the peers when we are the host */
 	int	fleeCar;		/* TEST LEVER: CAR_DATA index to run from, -1 = off */
+	int	fleeHost;		/* 1 = a CLIENT runs from the HOST (0 = off, so a
+					 * joining AI still CHASES the host by default) */
 	int	fleeActive;		/* last frame: we were fleeing */
 	int	fleePolice;		/* 1 = run from the police when they are after us */
 	int	policeActive;		/* last frame: the cop we were running from was police */

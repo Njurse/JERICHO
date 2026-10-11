@@ -124,6 +124,11 @@
 /* TEST LEVER: a CAR_DATA index to run FROM with no session (-1 = off). */
 #define JERAI_CFG_FLEE_CAR          "flee_car"
 
+/* The CLIENT half of the multiplayer flee: while a session is live and this machine
+ * is a CLIENT, run FROM the host instead of driving to it. Off by default (0), so a
+ * joining AI car still chases the host unless it is asked for. */
+#define JERAI_CFG_FLEE_HOST         "flee_host"
+
 /* Police: when the engine says the cops are after us (a pursuit is running or one
  * has line of sight), drop everything - follow included - and run from the nearest
  * police car FLAT OUT, then resume what we were doing once they are gone. 0 = off.

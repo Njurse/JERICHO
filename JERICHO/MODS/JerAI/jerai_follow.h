@@ -52,6 +52,12 @@ int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2);
  * all, so the escape can be exercised in single player. */
 int JerAiThreatTarget(CAR_DATA* car, int* x, int* z);
 
+/* The CLIENT's half of the multiplayer flee (config flee_host): 1 and the host's
+ * position when this machine is a CLIENT in a live session and flee_host is on, 0
+ * otherwise. Off by default - a joining AI car chases the host, it does not run from
+ * it - and it loses to nothing but being switched off. */
+int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z);
+
 /* Resolve the nearest POLICE car when the cops are actually after this car.
  * Returns 1 and writes its position when there is one.
  *

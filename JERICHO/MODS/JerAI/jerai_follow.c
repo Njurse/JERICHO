@@ -176,6 +176,69 @@ int JerAiThreatTarget(CAR_DATA* car, int* x, int* z)
 	return 1;
 }
 
+/* The CLIENT's half of the multiplayer flee (config flee_host): run FROM the host.
+ *
+ * JerAiThreatTarget above is deliberately the host's half and returns 0 on a client,
+ * because a client's job was to CHASE the host (JerAiFollowTarget). With flee_host on
+ * it is the other way round, and this answers "who am I running from" the same way -
+ * player 0 - so the caller's flee block, and JerAiLocalFleeGoal behind it (which
+ * scores the bolt-hole on the reachable grid rather than a straight line away through
+ * a building), are reused as they are.
+ *
+ * Off by default: a joining AI car still chases. */
+int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
+{
+	MP_PLAYER* host;
+	int slot;
+	const char* why = NULL;
+
+	if (car == NULL)
+		return 0;
+
+	/* The host has JerAiThreatTarget; a single-player run has nobody to run from. */
+	if (!jer_net_is_active() || jer_net_is_host())
+		return 0;
+
+	host = MpGetPlayer(0);		/* the host's row is id 0 on every machine */
+
+	if (host == NULL)
+		why = "no host row in the table";
+	else if (host->isLocal)
+		why = "the host row is this machine";
+	else if (!host->connected)
+		why = "the host row is not connected";
+	else if (host->onFoot)
+		why = "the host is on foot";
+	else
+	{
+		slot = host->carId;
+
+		if (slot < 0 || slot >= MAX_CARS)
+			why = "the host has no car slot yet";
+		else if (&car_data[slot] == car)
+			why = "the host's car slot is our own";
+		else
+		{
+			gJerAi.followCarId = slot;	/* a destination, not traffic - see JerAiCarAhead */
+
+			if (x != NULL) *x = car_data[slot].hd.where.t[0];
+			if (z != NULL) *z = car_data[slot].hd.where.t[2];
+
+			return 1;
+		}
+	}
+
+	/* A CLIENT in a live session that cannot name the host is worth one line: it is
+	 * the whole reason the flee silently does nothing. Throttled, and only reachable
+	 * on the client side of a session. */
+	if (gJerAi.ctx != NULL && (gJerAi.tick % 120) == 0)
+		gJerAi.ctx->jer_log(gJerAi.ctx,
+			"[JerAI] flee_host is on but cannot run from the host: %s (local player %d)\n",
+			why, jer_net_local_player());
+
+	return 0;
+}
+
 /* The nearest police car, when the police are actually after this car. See
  * jerai_follow.h - the flags are the engine's own pursuit state, so a police car
  * merely parked nearby is not a threat. */

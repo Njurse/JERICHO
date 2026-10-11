@@ -195,7 +195,8 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 	if (gJerAi.fleePolice && JerAiPoliceThreat(car, &targetX, &targetZ))
 		gJerAi.policeActive = 1;	/* panicFlee below lifts the pace limit */
 
-	if (gJerAi.policeActive || (gJerAi.fleeEnabled && JerAiThreatTarget(car, &targetX, &targetZ)))
+	if (gJerAi.policeActive || (gJerAi.fleeEnabled && JerAiThreatTarget(car, &targetX, &targetZ))
+		|| (gJerAi.fleeHost && JerAiHostThreatTarget(car, &targetX, &targetZ)))
 	{
 		long long mdx = (long long)targetX - sThreatX;
 		long long mdz = (long long)targetZ - sThreatZ;
