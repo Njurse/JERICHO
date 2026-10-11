@@ -15,11 +15,24 @@ repainted (PALETTES.md §6). This reads a single run and checks what actually ma
   INV2 (palette rows)
        no imported set may resolve to a HOST civ_clut row (rows 0..7). A set that is
        in neither the source city's carTpages nor its specTpages makes GetCarPalIndex
-       return 0, and CarImportPin then overwrites civ_clut[0] - the host's row.
+       return 0, and CarImportPin then overwrites civ_clut[0] - the host's row. The
+       pin REFUSES that row and logs it, so the refusal IS the violation: a note is
+       not enough, because the resolution is what repaints a local car.
 
   INV3 (VRAM, with a dump)  via --tga
        each pinned page's rectangle must still hold a page (non-uniform), and its
        CLUTs must match the source city's file byte-for-byte (vramdump.py's check).
+
+  INV4 (palette coverage, capacity and collisions)  no --tga needed
+       the row-mapping half of the same story, all of it read from the engine's own
+       lines so it cannot silently pass:
+         - no row a BUILT MODEL reads may have been left empty (the row carries only
+           the poly's own page CLUT, so those panels draw colourless);
+         - no row a slot reads may offer NO colour variants;
+         - no row may be written by more than one city (two cars wearing each other);
+         - 0 pins DROPPED and 0 palette rows REFUSED (capacity, not truncation);
+         - the lower half pool never overflows: 0 pins had to leave it, 0 refused a
+           world rectangle, pages used <= the pool size.
 
 Usage:
     python3 crosscheck.py JERICHO.log
@@ -60,6 +73,15 @@ def parse_run(path):
         "evicts": [],               # "world set N from slot S"
         "pin_refusals": set(),      # sets the pin refused to re-point into a HOST row
         "final": None,              # dict
+        "empty_rows": set(),        # (city, row) a BUILT model reads but the lump left empty
+        "no_variant_rows": [],      # (row, slot, set) a row with no colour variants a slot reads
+        "pins_dropped": None,       # final census: pins DROPPED
+        "rows_refused": None,       # final census: palette rows REFUSED
+        "pool": None,               # (pages_used, pages_max, left_pool, refused_world)
+        "rows_multi_city": None,    # palette map: rows written by more than one city
+        "no_pal_row": [],            # (slot, city, sets, base_row) sets a model bakes with no row
+        "reads_rows": [],            # (slot, city, model, lo, hi) rows a built model reads
+        "rows_written": set(),       # civ_clut rows the pin WROTE (its slot 0 is filled)
     }
     for line in open(path, errors="ignore"):
         m = re.search(r"cross-city: car data from (\w+)\b", line)
@@ -119,6 +141,47 @@ def parse_run(path):
         if m:
             out["final"] = {"pinned": int(m.group(1)), "wasted": int(m.group(2)), "evicted": int(m.group(3)),
                             "reuploads": int(m.group(4)), "givebacks": int(m.group(5))}
+        # ---- INV4: the row-mapping / capacity / collision lines ----
+        # Both forms the engine emits when a BUILT model reads a row the lump left empty.
+        m = re.search(r"cross-city: (\w+) palettes: row (\d+) is READ by the built model but the lump "
+                      r"wrote nothing to it", line)
+        if m:
+            out["empty_rows"].add((m.group(1), int(m.group(2))))
+        m = re.search(r"cross-city: (\w+) palettes: row (\d+) is read by a built model but this city's "
+                      r"lump has no entries for it", line)
+        if m:
+            out["empty_rows"].add((m.group(1), int(m.group(2))))
+        m = re.search(r"cross-city: palette map - civ_clut row (\d+) offers NO colour variants and is "
+                      r"read by slot (\d+) \(set (\d+)\)", line)
+        if m:
+            out["no_variant_rows"].append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
+        m = re.search(r"(\d+) pins DROPPED, (\d+) palette rows uploaded, (\d+) palette rows REFUSED", line)
+        if m:
+            out["pins_dropped"] = int(m.group(1))
+            out["rows_refused"] = int(m.group(3))
+        m = re.search(r"cross-city: lower half pool at exit: (\d+) of (\d+) pages used .*?"
+                      r"(\d+) pin\(s\) had to leave the pool, (\d+) pin\(s\) refused a world rectangle", line)
+        if m:
+            out["pool"] = (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4)))
+        m = re.search(r"cross-city: palette map - (\d+) of the import bank's (\d+) rows written, "
+                      r"(\d+) of them by more than one city", line)
+        if m:
+            out["rows_multi_city"] = int(m.group(3))
+        # ALWAYS-ON (PalBakeSetsDiag): sets a BUILT model bakes with no palette row of their
+        # own, so they all land on the block base row - the "extra panels" collapse.
+        m = re.search(r"cross-city: palette - slot (\d+) \((\w+) model -?\d+\) sets \[([\d, ]+)\] "
+                      r"have no \w+ palette row -> baking base row (\d+)", line)
+        if m:
+            out["no_pal_row"].append((int(m.group(1)), m.group(2),
+                                      m.group(3).strip(), int(m.group(4))))
+        m = re.search(r"cross-city: palette map - resident slot (\d+): (\w+) model \d+ reads "
+                      r"civ_clut rows (\d+)\.\.(\d+)", line)
+        if m:
+            out["reads_rows"].append((int(m.group(1)), m.group(2), int(m.group(3)), int(m.group(4))))
+        m = re.search(r"cross-city: palette map - civ_clut row (\d+) \((?:slot 0 only|has colour "
+                      r"variants)\) written by \w+", line)
+        if m:
+            out["rows_written"].add(int(m.group(1)))
     return out
 
 
@@ -164,14 +227,18 @@ def check_inv1(run, fails, warns):
 def check_inv2(run, fails, warns):
     """An imported set must never land its row in the HOST's civ_clut rows (0..7).
 
-    A set in its SOURCE city's tables maps into that city's import-bank block (rows
-    8..31). A set in NEITHER table is re-pointed by the pin to the source city's block
-    base row (CarImportPaletteBlockBase, 8/16/24) - the same fallback the bake used - so
-    it still lands in the bank, not the host's row 0. The only row the pin REFUSES is a
-    genuine host row (0..7), which cannot arise for a held guest city (its rowbase is
-    always >= 8). So after the block-base fallback there is nothing left for INV2 to
-    FAIL on: unclassifiable sets are a note, not a violation.
+    The pin REFUSES a host row and logs it; that refusal is the violation, not a note -
+    a set resolving to rows 0..7 is the palette leak the guard exists to stop (the pin's
+    write is what repaints a local car, and a future refactor could drop the guard).
+
+    A set that is in NEITHER of its source city's tables is NOT a failure on its own:
+    the pin re-points it to that city's block base row (an in-bank row), the same
+    fallback the bake used. Say so and move on.
     """
+    if run["pin_refusals"]:
+        fails.append("INV2 the pin REFUSED to re-point a HOST civ_clut row for set(s) "
+                     f"{sorted(run['pin_refusals'])} - an imported set resolved to rows 0..7 "
+                     "(the host's own), which is the palette leak")
     if not run["import_sets"]:
         return
     unbanked = 0
@@ -185,6 +252,55 @@ def check_inv2(run, fails, warns):
     if unbanked and not run["pin_refusals"]:
         warns.append("INV2 no 'pin - set N resolves to civ_clut row M (a HOST row)' refusal in this run - "
                      "nothing resolved to a host row (or that guard is not in this build)")
+
+
+def check_inv4(run, fails, warns):
+    """The rows a built model reads must carry data, the pool must not overflow, and no
+    row may be shared by two cities. All of it read from the engine's own lines.
+
+    The three empty rows a guest city can bake (base+1, base+6, base+7 - the special-body
+    pair plus one) are what this catches: the row keeps only the poly's own page CLUT, so
+    those panels draw colourless. INV3 cannot see it (the page and its CLUTs are all
+    present); only the row's OWN coverage can.
+    """
+    for city, row in sorted(run["empty_rows"]):
+        fails.append(f"INV4 civ_clut row {row} is read by a built model but {city}'s lump left it "
+                     f"empty - its polys fall back to the page's own CLUT (colourless panels)")
+    for row, slot, setno in run["no_variant_rows"]:
+        fails.append(f"INV4 civ_clut row {row} offers NO colour variants but slot {slot} (set {setno}) "
+                     f"reads it - the car draws without its colour variants")
+    if run["rows_multi_city"]:
+        fails.append(f"INV4 {run['rows_multi_city']} civ_clut row(s) were written by more than one city "
+                     f"- two cars would wear each other's colours")
+    for slot, city, sets, base in run["no_pal_row"]:
+        fails.append(f"INV4 slot {slot} ({city}) bakes set(s) {sets} with no palette row of their own "
+                     f"- they all fall to base row {base}, so those panels wear each other's colours")
+    # Every row a built model READS must have been written by the pin (its slot 0 filled from
+    # the page's own CLUT). A row that was never written draws the build-time dummy CLUT.
+    if run["rows_written"] and run["reads_rows"]:
+        for slot, city, lo, hi in run["reads_rows"]:
+            missing = [r for r in range(lo, hi + 1) if r not in run["rows_written"]]
+            if missing:
+                fails.append(f"INV4 slot {slot} ({city}) reads row(s) {missing} the pin never wrote "
+                             f"- slot 0 is empty there, so those polys draw the dummy CLUT")
+    if run["pins_dropped"]:
+        fails.append(f"INV4 {run['pins_dropped']} pin(s) were DROPPED - the import hit CAR_PIN_MAX and "
+                     f"lost a page instead of failing loudly")
+    if run["rows_refused"]:
+        fails.append(f"INV4 {run['rows_refused']} palette row(s) were REFUSED - the import ran out of "
+                     f"in-bank rows")
+    if run["pool"]:
+        used, cap, left, refused = run["pool"]
+        if left:
+            fails.append(f"INV4 {left} pin(s) had to leave the lower half pool - the pool is the only "
+                         f"space an import may safely own")
+        if refused:
+            fails.append(f"INV4 {refused} pin(s) refused a world rectangle (want 0)")
+        if used > cap:
+            fails.append(f"INV4 lower half pool over capacity: {used} of {cap} pages used")
+    elif run["import_sets"]:
+        warns.append("INV4 no 'lower half pool at exit' line in this run - the pool census is not "
+                     "in this build, so the capacity check was skipped")
 
 
 def check_inv3(run, tga, lev, fails, warns):
@@ -274,6 +390,7 @@ def main():
     check_inv1(run, fails, warns)
     check_inv2(run, fails, warns)
     check_inv3(run, tga, lev, fails, warns)
+    check_inv4(run, fails, warns)
 
     for w in warns:
         print(f"  WARN  {w}")

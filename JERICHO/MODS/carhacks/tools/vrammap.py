@@ -300,26 +300,28 @@ def main():
         print("  none")
     print(f"  -> {overlaps} overlap(s), {findings} of them finding(s)")
 
-    # Containment in the CLUT column is by design, but WHERE inside it matters: the import
-    # reserves rows from 480 down, so anything a claim puts at or below that collides with
-    # the imported car's palette rows.
+    # Containment in the CLUT column is by design, but WHERE inside it matters. The import's
+    # palette rows are NOT the base half's column any more (the old 480..511 band is gone):
+    # they come from the LOWER HALF pool's own column - x 960..1023 at y >= JER_VRAM_HALF_Y
+    # (512) - so a claim that reaches down into the lower half is the collision to look for.
+    import_y = 512
     col = [c for c in claims if c[0].startswith("CLUT column")]
     if col:
         _n, cx, _cy, cw, ch, _s, _t = col[0]
         print()
-        print(f"CLUT column contents, rows, vs the import's reserved rows (480..511); the "
-              f"level's own layout ends at y={_cy + ch}")
+        print(f"CLUT column contents, rows, vs the import's palette rows (lower half, "
+              f"y >= {import_y}); the level's own layout ends at y={_cy + ch}")
         for c in claims:
             # x-contained in the column (any y): the point is to catch things that sit
             # BELOW where the level's cursor stopped, which a y-containment test hides
             if c is col[0] or not (cx <= c[1] and c[1] + c[3] <= cx + cw):
                 continue
             last = c[2] + c[4] - 1
-            verdict = ("COLLIDES with the import's rows" if last >= 480
-                       else "above them (fine)")
+            verdict = ("COLLIDES with the import's lower-half rows" if last >= import_y
+                       else "base half (the level's own)")
             print(f"  {c[0]:<22} rows {c[2]}..{last:<3} {verdict}")
-        print(f"  {'import pin band':<22} rows 480..511  (reserved; starts at "
-              f"max(clutpos.y+4, 480))")
+        print(f"  {'import palette rows':<22} rows {import_y}..1023  (the lower half pool's "
+              f"own CLUT column)")
     print()
     print(f"  {len(claims)} claim rectangles listed (page slots included); "
           "a 'free'/RESERVED BUT UNUSED row is the actionable one.")

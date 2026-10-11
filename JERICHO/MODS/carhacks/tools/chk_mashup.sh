@@ -62,6 +62,7 @@ case "$JER_SELF" in
 esac
 
 BIN="$REPO/src_rebuild/bin/Release_dev"
+TOOLS="$(cd "$(dirname "$0")" && pwd)"
 INI="$BIN/JERICHO/CONFIG/carhacks.ini"
 
 if [ ! -f "$BIN/JERICHO_dev.exe" ]; then
@@ -228,6 +229,8 @@ log="/tmp/chk_mashup_${LEVEL_NAME[$host]}.log"
 # slot 0's import with the player's model -- so the player's car is pinned to the mix.
 PLAYER_MODEL="${SLOT_ASSIGN[0]##*:}"
 
+# Dump VRAM so crosscheck's INV3 page/CLUT check has something to read.
+export JERICHO_DUMPVRAM=1
 if [ "${CHK_SHOW:-0}" = "1" ]; then
 	./JERICHO_dev.exe -nointro -level "${LEVEL_NAME[$host]}" -playercar "$PLAYER_MODEL" \
 		-weather none -time day ${FRAME_ARGS[@]+"${FRAME_ARGS[@]}"} -seed 7 2>&1 | tee "$log"
@@ -275,6 +278,21 @@ echo "  -> built $ngeom/$want, spawned $nspawn/$want"
 
 [ "$ngeom" -ne "$want" ] && fail=1
 [ "$nspawn" -ne "$want" ] && fail=1
+
+# The invariants the engine's own summaries cannot see (crosscheck.py INV1..INV4): no
+# imported page in a WORLD / live local-car rectangle, no guest set on a HOST civ_clut row,
+# the rows a BUILT model reads carrying data (no colourless panels, no D1 base-row collapse),
+# and the lower half pool inside its limits.
+if [ -f "$BIN/vram_dump.tga" ]; then
+	XC="$(python3 "$TOOLS/crosscheck.py" "$log" --tga "$BIN/vram_dump.tga" 2>&1)"; XC_RC=$?
+	if [ "$XC_RC" -eq 1 ]; then
+		echo "  !! crosscheck FAILED"
+		printf '%s\n' "$XC" | grep -aE "INV[0-9]|crosscheck:" | sed 's/^/     /'
+		fail=1
+	elif [ "$XC_RC" -eq 0 ]; then
+		echo "  -> crosscheck: all invariants held"
+	fi
+fi
 
 [ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || printf 'cross_city_vehicles = 0\n' > "$INI"
 echo "carhacks.ini restored"
