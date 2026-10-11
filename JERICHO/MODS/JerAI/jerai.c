@@ -68,6 +68,13 @@ void JerAiRefreshConfig(void)
 		gJerAi.dumpRequested = 1;
 		jer_config_set_int("JerAI", JERAI_CFG_DUMP_NOW, 0);
 	}
+
+	/* the same for forcing the menu open (a headless capture lever) */
+	if (jer_config_get_int("JerAI", JERAI_CFG_MENU_OPEN, 0) != 0)
+	{
+		JerAiMenuForceOpen();
+		jer_config_set_int("JerAI", JERAI_CFG_MENU_OPEN, 0);
+	}
 }
 
 void JerAiWriteConfigDefaults(void)
@@ -172,6 +179,9 @@ static int JerAiOnFrame(void* userdata, void* args)
 	(void)args;
 
 	gJerAi.tick++;
+
+	/* the menu reads the PHYSICAL pad, so it works while JerAI drives */
+	JerAiMenuTick();
 
 	if (++gJerAi.frame % JERAI_CONFIG_REFRESH == 0)
 		JerAiRefreshConfig();
@@ -286,6 +296,7 @@ JER_MODULE_ENTRY(jer_module_JerAI_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, JerAiOnFrame, &gJerAi, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, JerAiOnGameStart, &gJerAi, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_WORLD, JerAiOnDrawWorld, &gJerAi, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_OVERLAY, JerAiOnDrawOverlay, &gJerAi, 0);
 
 	ctx->jer_log(ctx, "[JerAI] registered - enabled=%d mode=%d (%s) pace=%d pct\n",
 		gJerAi.enabled, gJerAi.mode, JerAiBehaviorName(gJerAi.mode), gJerAi.pacePct);

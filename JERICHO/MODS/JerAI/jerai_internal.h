@@ -116,4 +116,10 @@ int JerAiOnDrawWorld(void* userdata, void* args);
 /* lines drawn by the last JerAiOnDrawWorld, for the readout */
 int JerAiVizLines(void);
 
+/* the in-game control menu (jerai_menu.c): reads the PHYSICAL pad and is drawn
+ * over the game. */
+void JerAiMenuTick(void);
+void JerAiMenuForceOpen(void);
+int JerAiOnDrawOverlay(void* userdata, void* args);
+
 #endif /* JERAI_INTERNAL_H */

@@ -60,4 +60,8 @@
  * the module clears it back to 0 after writing. */
 #define JERAI_CFG_DUMP_NOW          "dump_now"
 
+/* force the control menu open on the next config refresh (0/1), for a headless
+ * capture; the module clears it back to 0. */
+#define JERAI_CFG_MENU_OPEN         "menu_open"
+
 #endif /* JERAI_H */
