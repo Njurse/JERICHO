@@ -4,6 +4,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_texture.h"	// JERICHO-HOOK: custom texture injection (reload)
+#include "jer_sound.h"		// JERICHO-HOOK: release module-held SFX voices on the menu return
 
 #include "system.h"
 #include "main.h"
@@ -341,6 +342,27 @@ void State_InitFrontEnd(void* param)
 	// drop its per-run gameplay state - a forced car, live weapons, looped
 	// sounds - so nothing lingers or plays while the menus are up.
 	jer_fire(JER_EVENT_FRONTEND_ENTERED, NULL);
+
+	/* ...and STOP THE VOICES AFTER THE MODULES HAVE HAD THEIR SAY.
+	 *
+	 * State_GameComplete already stopped every channel on the way out, but that is
+	 * a FADE earlier: the fade runs for several frames during which FRAME hooks
+	 * still fire - and a module's FRAME hook fires in the frontend too - so a
+	 * module that re-plays a loop (a still-held death channel, a siren) after that
+	 * stop leaves it sounding over the menu. Reported as "sometimes sounds aren't
+	 * properly killed when returning to the main menu" - sometimes, because it
+	 * needs a module to re-trigger between the two points.
+	 *
+	 * Here is the last point before the menus are live, so it catches both the
+	 * module that cleaned up in its handler above and the one that did not. */
+	StopAllChannels();
+
+	/* ...and hand back the VOICES a module locked. Stopping the channels silences
+	 * them; it does not clear CHAN_LOCKED, which only ResetSound (at the next
+	 * level) touches - so a module that took a voice for the whole match would keep
+	 * it out of the pool for as long as the menus are up, and the engine's own SFX
+	 * would be refused. See jer_sound_release_all. */
+	jer_sound_release_all();
 
 	// jer_texture: the menus are a natural moment to pick up re-edited art.
 	jer_texture_reload_all();

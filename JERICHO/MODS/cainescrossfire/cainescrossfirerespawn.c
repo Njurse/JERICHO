@@ -20,6 +20,7 @@
 #include "dr2math.h"
 #include "jericho.h"
 #include "jer_events.h"
+#include "jer_sound.h"		/* the menu-return teardown gives our cached voice back */
 #include "sound.h"
 #include "gamesnd.h"
 #include "mc_snd.h"	/* GetMissionSound */
@@ -67,6 +68,24 @@ typedef struct CD2_MASS_MOD
 
 static CD2_MASS_MOD gCd2MassMod[8];
 static int gCd2DeathChannel = -1;
+
+/* The menus are up: give back the voice we cached for the match.
+ *
+ * There is nothing to SILENCE here - the engine stops every channel on the way out
+ * (State_GameComplete, and again on the frontend entry right after the module hooks
+ * run this). What has to happen is our CACHED channel and its lock going away: leave
+ * it, and the next match's bang reuses a voice we are half-holding while the menus
+ * are up, and the lock keeps a voice out of the pool the whole time.
+ *
+ * Called from the module's JER_EVENT_FRONTEND_ENTERED hook. */
+void cd2DropHeldVoices(void)
+{
+	if (gCd2DeathChannel >= 0)
+	{
+		jer_sound_unlock(gCd2DeathChannel);
+		gCd2DeathChannel = -1;
+	}
+}
 
 void cd2TrafficTumble(CAR_DATA* cp)
 {

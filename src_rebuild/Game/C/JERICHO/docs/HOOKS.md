@@ -1,6 +1,10 @@
 # Writing a JERICHO module
 
-A module is a C/C++ source file compiled into the game. The full list of
+A module is a folder with a `mod.toml` and a C/C++ source file. It joins the
+game one of two ways: **compiled in** (a deep mod — no `runtime` key; it may
+include engine headers and read/write game globals), or as a
+**runtime-loaded shared library** (`runtime = "dll"`, API-only). Everything
+below works for both unless a section says otherwise. The full list of
 events, their argument structs, and the engine-side bridges is in
 [`events.md`](events.md) and `src_rebuild/Game/C/jer_events.h`.
 
@@ -80,24 +84,34 @@ static const JER_PAUSE_MENU myMenu = { "My Mod", items, 3 };
 jer_pause_menu_register(&myMenu);
 ```
 
-- The engine collects registered menus under a **"Modules"** submenu in the
-  pause screen (`Continue` → `Modules` → your menu → items).
+- The engine collects registered menus under a **"JERICHO Addons"** container
+  in the pause screen (`Continue` → `JERICHO Addons` → your page → items).
 - `get_label` is re-queried every time the pause opens and after every
   activation, so toggles/adjustments show live state.
 - `on_activate` returns a `JER_PAUSE_QUIT_*` code (e.g.
   `JER_PAUSE_QUIT_CONTINUE` to leave the pause, `JER_PAUSE_QUIT_NONE` to
   stay). With `adjust = 1` it receives `-1`/`1` on left/right.
-- Depth: root → Modules → your menu → one submenu level.
+- **Nesting.** Your page may hold submenus up to `JER_PAUSE_MENU_MAX_DEPTH`
+  (5) levels below it. The engine derives its navigation-stack size from that
+  constant, so a tree that would nest deeper is refused and logged rather than
+  built half-way. `jer_menu.h` exposes the same ceiling (`JER_MENU_MAX_DEPTH`)
+  for a module that draws its own nested menu.
+- **Contributing to someone else's menu.** Give your menu a stable `id`
+  (`JER_PAUSE_MENU.id`) and another module can append rows to it with
+  `jer_pause_menu_add_items(target, items, count)` — resolved when the menu is
+  built, so order does not matter, and the owner's own rows are never
+  displaced (carhacks contributes its car actions to mp's car page this way).
 - `crumple`, `d2pl` and `sandbox` are the worked examples — their old
   hardcoded shells were removed from `pause.c`.
 
 ## Saying things on screen
 
-A module has **four channels** for putting words in front of the player — the
-HUD, the game's own notice slot, the red error toast, and the full-screen
-frontend frames. Choosing between them is really two questions: **who is
-speaking** — your mod, or the game — and **where should the line live**: an
-event that passes, a readout that persists, or the game's own single slot.
+A module has **five channels** for putting words in front of the player — the
+HUD, the unified status console, the game's own notice slot, the red error
+toast, and the full-screen frontend frames. Choosing between them is really two
+questions: **who is speaking** — your mod, or the game — and **where should the
+line live**: an event that passes, a readout that persists, or the game's own
+single slot.
 
 | Channel | API | Appears | Lasts | Reach for it when… |
 | --- | --- | --- | --- | --- |
@@ -105,6 +119,7 @@ event that passes, a readout that persists, or the game's own single slot.
 | HUD readout | `jer_hud.h` — `jer_hud_panel` / `jer_hud_panel_bar` | an anchored corner line or meter | until you clear it or set it again | a **value** whose subject exists: a lock-on name, a health bar under it |
 | Player notice | `jer_notify.h` — `jer_notify` / `jer_notify_clear` | the game's own spot — golden, centred, near the top | a set number of seconds | the **game** is talking: *"You Drowned"* |
 | Error toast | `jericho.h` — `jer_error` / `jer_error_count` / `jer_error_at` | gentle red, down the left edge — frontend **and** in game | ~5 s | something needs telling **now**: a bad argument, a failed join |
+| Status console | `jer_console.h` — `jer_console_line` / `jer_console_log` / `jer_console_chat` | bottom-left, half size, newest row at the bottom | ~5 s (4 s hold + 1 s fade) | a running **status feed** in one place — the mp connection/handshake lines; see [`console.md`](console.md) |
 | Presentation screen | `jer_screen.h` / `jer_prompt.h` | a whole frontend frame | until dismissed | boot/progress text and Yes/No prompts — see [`screens.md`](screens.md) |
 
 ### The HUD channels — the module's voice
@@ -188,8 +203,8 @@ difference is who is speaking.
   module author owns).
 - **Own pause-menu items** — register menus/submenus with
   `jer_pause_menu_register()` from `jer_pause_menu.h` (see the "Module
-  pause menus" section). The engine collects everything under a "Modules"
-  submenu in the pause screen — no per-module code in `pause.c`.
+  pause menus" section). The engine collects everything under a "JERICHO
+  Addons" container in the pause screen — no per-module code in `pause.c`.
 - **Replace whole behaviors** — `ctx->jer_override(ctx, SLOT, fn)`
   swaps an engine function-pointer slot (`JER_OVERRIDE_SLOT_SIM` today);
   `jer_get_override(slot)` returns the previous one so a module can chain.
@@ -202,16 +217,23 @@ difference is who is speaking.
   handler, for the ped being drawn). The engine swaps recoloured CLUT rows in for
   that one draw, so a module can put individual characters in team colours.
   Measured footprint and mechanism: `ped-palette.md`.
+- **Spawn and own NPCs** — `jer_npc.h`: `jer_npc_spawn` / `jer_npc_spawn_model`
+  create a ped and hand it to your module (so the ped skeleton/pose hooks fire
+  for it), `jer_npc_owned()` answers whether a ped is yours and still alive (the
+  engine checks `pUsedPeds`, so a recycled slot never matches), and
+  `jer_npc_despawn` releases it. `jer_npc_set_world` / `_move_to` / `_stop` /
+  `_face` / `_tick` drive it; ambient pedestrians never fire those hooks.
 - **Suppress the frontend's idle demo** — `JER_EVENT_FRONTEND_IDLE`
   (`JER_ARGS_FRONTEND_IDLE`) fires from the timer that would boot the attract
   demo after ~30 s without input; set `suppress = 1` and the timer is pushed
   back. Anything that leaves a player sitting in a menu is "idle" by that
   timer, and the demo it starts loads a whole level -- which blocks the main
   thread while it happens.
-- **Say something on screen** — four channels for one job, HUD and game voice;
+- **Say something on screen** — five channels for one job, HUD and game voice;
   the whole picture is in [Saying things on screen](#saying-things-on-screen).
-  In short: `jer_hud_message` for module chatter, `jer_notify` for the game's own
-  voice, and `jer_error` for "something needs telling, now".
+  In short: `jer_hud_message` for module chatter, `jer_console_line` for a
+  status feed, `jer_notify` for the game's own voice, and `jer_error` for
+  "something needs telling, now".
 - **Play a sound without starving the engine** — `jer_sound.h`. There are only 16
   SPU voices and the engine's own collision/explosion sounds play on whatever
   `GetFreeChannel()` hands out, so a module that LOCKS a voice per sound can leave
@@ -219,6 +241,15 @@ difference is who is speaking.
   `jer_sound_ensure(&channel)` is the one-call form for a cached `-1` channel
   (acquire, re-lock after a level change, or give up gracefully). A refused lock
   still yields a voice to play on — never treat it as "no sound".
+- **Give the voice back when the player leaves the game** — a voice locked with
+  `jer_sound_lock` survives a level change (`ResetSound` clears the locks at the next
+  level's start) but NOT the return to the menus, so a module that caches a channel
+  for the whole match keeps a voice out of the pool while the menus are up. The
+  frontend entry now stops every channel (`StopAllChannels`) and calls
+  `jer_sound_release_all()` — but that only clears the LOCK: a module must also drop
+  its cached channel index, or the next match reuses a half-held voice. Do it in a
+  `JER_EVENT_FRONTEND_ENTERED` hook (cainescrossfire's `cd2OnFrontendEntered` →
+  `cd2DropHeldVoices` is the worked example).
 - **Move somewhere the world has not streamed to** — `jer_map.h`. The engine
   streams the map as a 2×2 window of REGIONS and only pre-loads neighbours, so a
   region you HOP into (a teleport, or a spawn far from the level start) is never

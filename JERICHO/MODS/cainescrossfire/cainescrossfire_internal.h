@@ -100,6 +100,11 @@ int cd2OnFramePursuit(void* ud, void* args);		// cainescrossfire.c (music hold)
 void cd2TrafficTumble(CAR_DATA* cp);
 void cd2RespawnTick(CAR_DATA* cp);
 
+/* Back in the menus: release the voice cached for the match (its lock included) so
+ * it is not held out of the SFX pool while the menus are up. Fired from the module's
+ * JER_EVENT_FRONTEND_ENTERED hook; see cainescrossfirerespawn.c. */
+void cd2DropHeldVoices(void);
+
 // ---------------------------------------------------------------------------
 // Deferred "Total Car" (cainescrossfiresim.c): the pause menu QUEUES it and the next
 // physics frame applies it, so the wreck + explosion never fire while the menu

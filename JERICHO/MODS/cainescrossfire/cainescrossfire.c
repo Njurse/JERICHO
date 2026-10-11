@@ -599,6 +599,19 @@ static int cd2OnShutdown(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* Back in the menus. The engine has stopped (or is about to stop) every channel, so
+ * this is about our OWN state: the voice cached for the match goes back, lock and
+ * all, so it is not held out of the SFX pool while the menus are up. */
+static int cd2OnFrontendEntered(void* ud, void* args)
+{
+	(void)ud;
+	(void)args;
+
+	cd2DropHeldVoices();
+
+	return JER_RESULT_CONTINUE;
+}
+
 static int cd2OnBoot(void* ud, void* args)
 {
 	(void)ud;
@@ -848,6 +861,7 @@ JER_MODULE_ENTRY(jer_module_cainescrossfire_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_DEBUG_TICK, cd2OnDebugTick, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2OnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_SHUTDOWN, cd2OnShutdown, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, cd2OnFrontendEntered, NULL, 0);
 
 	/* these are not part of the pursuit-music option: the on-foot swap, the turbo
 	 * bar and the collision knock are all wanted whatever that flag is set to. */

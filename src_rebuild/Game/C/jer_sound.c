@@ -55,6 +55,26 @@ void jer_sound_unlock(int channel)
 	UnlockChannel(channel);
 }
 
+/* Drop every lock, the engine's own included: ResetSound clears them all at a level
+ * change and main.c re-locks the three it reserves, so a blanket clear here is the
+ * same state a fresh level starts from, and it is the only thing that can recover a
+ * voice a module locked and never gave back. */
+void jer_sound_release_all(void)
+{
+	int i, n = 0;
+
+	for (i = 0; i < MAX_SFX_CHANNELS; i++)
+	{
+		if (channels[i].flags & CHAN_LOCKED)
+			n++;
+
+		UnlockChannel(i);
+	}
+
+	jer_log("[jer_sound] frontend entry: %d locked voice(s) released (%d/%d held after)\n",
+		n, jer_sound_locked_count(), MAX_SFX_CHANNELS);
+}
+
 int jer_sound_ensure(int* channel)
 {
 	if (channel == NULL)

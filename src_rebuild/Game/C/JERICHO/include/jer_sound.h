@@ -52,6 +52,14 @@ int jer_sound_ensure(int* channel);
 /* Release a channel (one locked with jer_sound_lock, or any other). */
 void jer_sound_unlock(int channel);
 
+/* Release EVERY locked voice. A module's lock survives a level change (ResetSound
+ * clears them at the next level's start) but NOT the return to the menu, so a
+ * module that held a voice for the whole match keeps it out of the pool while the
+ * menus are up - the engine's own SFX then get refused. Called on the frontend
+ * entry, after StopAllChannels, so the pool the menus leave behind is the pool a
+ * fresh session starts with. */
+void jer_sound_release_all(void);
+
 /* 1 while the channel is still playing — use it to release an idle cached
  * channel rather than hold a voice for a sound that has finished. */
 int jer_sound_channel_busy(int channel);
