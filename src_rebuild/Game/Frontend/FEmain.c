@@ -2416,6 +2416,38 @@ void InitFrontendDisplay(void)
 	SetDispMask(1);
 }
 
+/*
+ * JERICHO-HOOK: frontend primitive-buffer probe.
+ *
+ * The frontend bumps current->primptr by hand with no bounds check, and
+ * ShowSavingWaitMessage (vanilla "Save Settings") opens a scene of its own and
+ * draws text WITHOUT rewinding it - so PsyX_EndScene then walks an ordering
+ * table that still references the previous frame's primitives. This reports how
+ * full the buffer is, plus the notice count (the mod-conflict toast was raised
+ * again on every modlist reload, which is exactly when this case came up).
+ *
+ * JERICHO_FE_TRACE=1 -> one line every ~30 FE frames.
+ * Always -> one line whenever free space drops under 8 KB (should be never).
+ */
+static void JerichoPrimProbe(const DB* db, int notices)
+{
+	static int sTick;
+	int used, freeb;
+
+	if (db == NULL || db->primptr == NULL || db->primtab == NULL)
+		return;
+
+	used = (int)(db->primptr - db->primtab);
+	freeb = PRIMTAB_SIZE - used;
+
+	if (getenv("JERICHO_FE_TRACE") != NULL && (sTick++ % 30) == 0)
+		jer_log("[fe-prim] used=%d free=%d notices=%d\n", used, freeb, notices);
+
+	if (freeb < 8192 && (sTick % 30) == 0)
+		jer_log("[fe-prim] LOW free=%d used=%d notices=%d PRIMTAB_SIZE=%d\n",
+			freeb, used, notices, PRIMTAB_SIZE);
+}
+
 /* ------------------------------------------------------------------ *
  * JERICHO-HOOK: notice toasts (jer_error - see JERICHO/include/jericho.h).
  *
@@ -2589,6 +2621,8 @@ void EndFrame(void)
 
 	db_hold = current;
 	current = last;
+
+	JerichoPrimProbe(last, jer_error_count());
 
 	last->primptr = last->primtab;
 	last = db_hold;
