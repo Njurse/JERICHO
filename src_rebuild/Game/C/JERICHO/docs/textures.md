@@ -29,6 +29,17 @@ That is the same rule the arena loader uses, so the file a tool writes is the fi
 the game reads. The result is frozen to an **absolute** path, because the game
 changes its working directory while loading a level.
 
+Freeze it with the platform's own resolver — `realpath` on POSIX, `_fullpath` on
+Windows — and give that resolver a `PATH_MAX` buffer, not a `JER_TEX_PATH_MAX`
+one. glibc's *fortified* `realpath` requires a destination of at least `PATH_MAX`
+bytes and otherwise calls `__chk_fail()` ("*** buffer overflow detected ***:
+terminated") **before** it resolves anything, whatever the length of the path. A
+smaller buffer therefore aborts the game on the first texture load for anyone
+whose toolchain enables `_FORTIFY_SOURCE` (Debian 13 and Ubuntu 24.10+ do; the CI
+image did not, which is how the bug shipped) — see `docs/CI.md`. The module and
+core path helpers copy the resolved path into the caller's buffer afterwards, so
+`cap` still bounds what the caller receives.
+
 ## Drawing
 
 Draw from `JER_EVENT_DRAW_WORLD` (mid-render, camera matrices live) or

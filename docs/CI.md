@@ -114,6 +114,47 @@ The rules that matter on this path, and why:
   what makes "build here, test there" work at all: the version a CI run embeds comes from
   `git describe` on that commit, and a session refuses a peer whose build differs.
 
+## Hardening: `_FORTIFY_SOURCE` on the Linux builds
+
+The Linux Release and `Release_dev` configurations are compiled with
+`_FORTIFY_SOURCE=2` (`premake5.lua`, in a `filter { "system:Linux",
+"configurations:Release or Release_dev" }` — Debug is left out because fortify
+needs `-O1` or better and would only warn at `-O0`). The Windows build does not
+get it; MSVC has no equivalent.
+
+This matters because the published Linux binary and a locally built one were not
+being checked the same way. Debian 13 and Ubuntu 24.10+ enable `_FORTIFY_SOURCE`
+in a normal `gcc` build, but the `ubuntu-22.04` image the `linux` job uses does
+not — so a fixed-buffer defect could pass CI for months and abort the moment
+somebody built the same commit on a current distribution. That is exactly what
+happened: `jer_texture.c` handed a 512-byte buffer to `realpath()`, whose fortify
+wrapper requires `PATH_MAX` and calls `__chk_fail()` *before* resolving anything,
+so the game died at the frontend menu background with
+
+```
+[jer_console] console ON (from CONFIG/hud.ini)
+*** buffer overflow detected ***: terminated
+Aborted
+```
+
+while CI stayed green. Turning fortify on for the CI Linux job means the build
+the project publishes is the build it checked.
+
+The trade-off is deliberate: a remaining overflow now **aborts** on Linux instead
+of corrupting memory quietly. If that is ever unwanted, scope the filter to a
+CI-only configuration rather than deleting it — the diagnostics are the point.
+
+Two local checks worth knowing when a Linux-only abort like this shows up:
+
+```sh
+gcc -dM -E - </dev/null | grep FORTIFY_SOURCE   # is the toolchain fortifying?
+make config=release_x64 2>&1 | grep -i "path_max\|stringop-overflow\|fortify"
+```
+
+The first answers "why only on my machine"; the second catches the calls whose
+*declared* size is wrong (the `realpath` case, which aborts whatever the path),
+as opposed to the ones that only abort when the data happens to be too long.
+
 ## Local equivalents
 
 The CI mirrors the existing local helpers, which remain the fastest way to build:

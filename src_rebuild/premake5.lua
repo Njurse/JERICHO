@@ -410,7 +410,31 @@ workspace "JERICHO"
         }
 		
 		cppdialect "C++11"
-		
+
+	-- Fortify the Linux release builds.
+	--
+	-- _FORTIFY_SOURCE turns the libc string/IO routines into their __*_chk forms,
+	-- so a write that does not fit a fixed buffer ABORTS (and, for the calls whose
+	-- contract includes a buffer size - realpath is the one that bit us - it aborts
+	-- even when the write itself would have been small). Without it the same bug
+	-- silently corrupts memory instead, which is why this class of defect could sit
+	-- in the tree for years: Debian 13 / Ubuntu 24.10+ gcc enable _FORTIFY_SOURCE
+	-- in a normal build, but the ubuntu-22.04 CI image does not, so the LINUX
+	-- RELEASE we published looked healthy while a local Linux build died at the
+	-- frontend menu background.
+	--
+	-- Building with it here means the CI Linux job sees the same libc checks the
+	-- people downloading the Linux build do. The cost is deliberate: a remaining
+	-- overflow now aborts a Linux user's game loudly instead of corrupting it
+	-- quietly. If that trade is ever unwanted, scope this filter to a CI-only
+	-- configuration rather than deleting it.
+	--
+	-- Debug is excluded on purpose: fortify needs -O1 or better, and at -O0 glibc
+	-- only emits "#warning _FORTIFY_SOURCE requires compiling with optimization".
+	-- The -U comes first in case a distro's gcc already defines it (redefinition).
+	filter { "system:Linux", "configurations:Release or Release_dev" }
+		buildoptions { "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=2" }
+
 	filter {"system:Linux", "platforms:x86"}
 		buildoptions { "-m32" }
 		linkoptions { "-m32" }
