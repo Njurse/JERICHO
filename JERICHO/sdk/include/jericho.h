@@ -411,6 +411,10 @@ void jer_log(const char* fmt, ...);
  * command-line arguments, a failed join, a lost connection, ... */
 int jer_error(const char* fmt, ...);
 
+/* Drop every live notice (the mod loader uses this when a pass finds nothing
+ * wrong, so a fixed conflict stops lingering on the screen). */
+void jer_error_clear(void);
+
 /* The live error notices, oldest first -- the ENGINE asks for these and
  * prints them itself (it owns the text primitives). */
 int         jer_error_count(void);
