@@ -1110,6 +1110,73 @@ void restoreLightingMatrices(void)
 	gte_SetLightMatrix(&save_light_matrix);
 }
 
+/* JERICHO-DIAG: the OTHER shape of the "stretched geometry" report - a POLY whose vertex
+ * indices are wrong, so one triangle spans the car (or the level) while every vertex is
+ * exactly where it should be. The vertex check in ComputeCarLightingLevels cannot see it:
+ * it compares dump[i] against clean[i] for the SAME i, so a poly that names the wrong i is
+ * invisible to it.
+ *
+ * Walked against the model's OWN vertices (the list the polys were built from), NOT
+ * NewCarModel[slot].vlist - that pointer is a shared template field DrawCar repoints at the
+ * last-drawn car's dump on every frame, so reading it here measures a DIFFERENT car. A car
+ * spans a few hundred units, so an edge past the threshold names a bad index without a
+ * debugger. Returns 1 when it logged. */
+#define JER_STRETCH_EDGE	3000	/* a triangle edge this long is not a car */
+
+static int JerCheckStretchedPolys(CAR_DATA* cp, MODEL* model)
+{
+	int slot = cp->ap.model;
+	CAR_MODEL* cm;
+	SVECTOR* vlist;
+	CAR_POLY* list[3];
+	int count[3];
+	int li, i;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || model == NULL)
+		return 0;
+
+	cm = &NewCarModel[slot];
+	vlist = GET_MODEL_DATA(SVECTOR, model, vertices);
+
+	if (vlist == NULL)
+		return 0;
+
+	list[0] = cm->pFT3; count[0] = cm->numFT3;
+	list[1] = cm->pGT3; count[1] = cm->numGT3;
+	list[2] = cm->pB3;  count[2] = cm->numB3;
+
+	for (li = 0; li < 3; li++)
+	{
+		for (i = 0; i < count[li]; i++)
+		{
+			int vi = list[li][i].vindices;
+			int a = vi & 0xff;
+			int b = (vi >> 8) & 0xff;
+			int c = (vi >> 16) & 0xff;
+			int e0 = ABS(vlist[a].vx - vlist[b].vx) +
+				ABS(vlist[a].vy - vlist[b].vy) +
+				ABS(vlist[a].vz - vlist[b].vz);
+			int e1 = ABS(vlist[b].vx - vlist[c].vx) +
+				ABS(vlist[b].vy - vlist[c].vy) +
+				ABS(vlist[b].vz - vlist[c].vz);
+			int e2 = ABS(vlist[c].vx - vlist[a].vx) +
+				ABS(vlist[c].vy - vlist[a].vy) +
+				ABS(vlist[c].vz - vlist[a].vz);
+
+			if (e0 > JER_STRETCH_EDGE || e1 > JER_STRETCH_EDGE || e2 > JER_STRETCH_EDGE)
+			{
+				jer_log("[cars] STRETCHED POLY: car %d slot %d list %d poly %d "
+					"v(%d,%d,%d) edges(%d,%d,%d)\n",
+					cp->id, slot, li, i, a, b, c, e0, e1, e2);
+
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
 // [D] [T]
 void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 {
@@ -1243,6 +1310,19 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 						}
 					}
 				}
+			}
+		}
+
+		/* JERICHO-DIAG: the poly half of the same report (see JerCheckStretchedPolys).
+		 * Its own once-per-second gate, so it is not walked every frame. */
+		if (detail && model != NULL)
+		{
+			static int sLastPolyFrame[MAX_CARS];
+
+			if (CameraCnt - sLastPolyFrame[cp->id] > 30)
+			{
+				sLastPolyFrame[cp->id] = CameraCnt;
+				JerCheckStretchedPolys(cp, model);
 			}
 		}
 
