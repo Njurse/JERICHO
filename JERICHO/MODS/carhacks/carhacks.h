@@ -34,11 +34,11 @@
  *                      "cross-city:"/"JERICHO-*" lines carhacks' lines sit beside,
  *                      and the one the harnesses read from a run's captured
  *                      stdout. Prefix with "[carhacks]" or "[carhacks/net]".
- *   - jer_error(...)   a line the PLAYER must see (a dropped car, a refused
- *                      pick, a menu that will not come up). It logs the whole
- *                      message verbatim as "[error] ..." AND raises the on-screen
- *                      notice, so it is the single call for a player-facing
- *                      refusal -- do NOT pair it with a printInfo.
+ *   - jer_console_log(...)  a line the PLAYER must see (a dropped car, a
+ *                      refused pick, a menu that will not come up). It goes to
+ *                      the unified status console (jer_console.h) -- carhacks
+ *                      now uses that for every player-facing line, so the corner
+ *                      reads as one feed -- do NOT pair it with a printInfo.
  *   - ctx->jer_log(...) ONLY inside a module entry/registration function, where
  *                      `ctx` is the handle in hand and calling it is the SDK
  *                      idiom (carhacks_register, chkNetRegister,

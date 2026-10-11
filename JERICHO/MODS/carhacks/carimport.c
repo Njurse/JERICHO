@@ -11,7 +11,8 @@
 
 #include "driver2.h"
 
-#include "jericho.h"		/* jer_error: a player-facing refusal notice */
+#include "jericho.h"		/* the module host: events, overrides, config */
+#include "jer_console.h"	/* the unified status console: carhacks' player-facing lines */
 #include "jer_config.h"
 
 #include "system.h"		/* LevelNames[] for the log */
@@ -1052,7 +1053,7 @@ int chkImportApplyPick(int level, int count)
 	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS || !chkImportSlotFree(slot))
 	{
 		/* Player-facing: their pick could not be imported, so tell them. */
-		jer_error("[carhacks] import: the pick (%s model %d) needs a spare resident slot and "
+		jer_console_log("[carhacks] import: the pick (%s model %d) needs a spare resident slot and "
 			"none is free - riding the level's own car of that number",
 			chkCityName(city), model);
 		return 0;

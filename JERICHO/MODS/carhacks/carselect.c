@@ -38,6 +38,7 @@
 #include "dr2types.h"		/* GAMETYPE / GAME_TAKEADRIVE */
 
 #include "jericho.h"
+#include "jer_console.h"	/* the unified status console: carhacks' player-facing lines */
 #include "jer_events.h"
 #include "jer_frontend.h"
 #include "jer_net.h"		/* jer_net_is_active - a live session owns the car screen */
@@ -316,7 +317,7 @@ static int chkRideWith(int city, int idx)
 	{
 		/* Player-facing: the pick could not be started, so tell them (the menu
 		 * normally prevents this, but a refused Ride must not be silent). */
-		jer_error("[carhacks] car select: ride refused - no car %d in %s's roster (%d available)",
+		jer_console_log("[carhacks] car select: ride refused - no car %d in %s's roster (%d available)",
 			idx, chkCityName(city), n);
 		return 0;
 	}
@@ -371,7 +372,7 @@ static int chkRideWith(int city, int idx)
 		/* The session exists but would not launch (a refused join is the real
 		 * case). Player-facing, because the alternative is a Ride that looks
 		 * accepted and does nothing. */
-		jer_error("[carhacks] car select: the session did not take the launch - starting the level directly");
+		jer_console_log("[carhacks] car select: the session did not take the launch - starting the level directly");
 	}
 
 	SetState(STATE_GAMESTART);

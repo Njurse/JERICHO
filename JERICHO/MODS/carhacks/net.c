@@ -10,6 +10,7 @@
 #include "driver2.h"
 
 #include "jericho.h"
+#include "jer_console.h"	/* the unified status console: carhacks' player-facing lines */
 #include "jer_events.h"
 #include "jer_config.h"
 #include "jer_net.h"
@@ -658,7 +659,7 @@ int chkNetFoldPeerCars(void)
 				/* The wait ran out with the car named in the set but no geometry: from here
 				 * the peer looks like this level's own car of the same number, which is the
 				 * one symptom a player can see, so it is said once. */
-				jer_error("player %d's car (%s model %d) could not be loaded here - they may look like this level's own car",
+				jer_console_log("player %d's car (%s model %d) could not be loaded here - they may look like this level's own car",
 					p, chkNetCityName((int)gChkNetPeerPick[p].city), (int)gChkNetPeerPick[p].model);
 			}
 
@@ -690,11 +691,11 @@ int chkNetFoldPeerCars(void)
 				 * forbid the terminal phrase (mp_tries T2: with slot reuse a switch must
 				 * NOT exhaust the spares), so a transient that heals must not wear it. */
 				if (now == CHK_NET_RETRY_FIRST)
-					jer_error("[carhacks/net] player %d wants %s model %d, but every spare resident "
+					jer_console_log("[carhacks/net] player %d wants %s model %d, but every spare resident "
 						"slot is busy right now - retrying",
 						p, chkNetCityName((int)gChkNetPeerPick[p].city), (int)gChkNetPeerPick[p].model);
 				else if (now == CHK_NET_RETRY_GAVEUP)
-					jer_error("[carhacks/net] player %d wants %s model %d, but no spare resident "
+					jer_console_log("[carhacks/net] player %d wants %s model %d, but no spare resident "
 						"slot came free - not importing it",
 						p, chkNetCityName((int)gChkNetPeerPick[p].city), (int)gChkNetPeerPick[p].model);
 
@@ -757,7 +758,7 @@ int chkNetFoldPeerCars(void)
 						p, chkNetCityName((int)gChkNetPeerPick[p].city),
 						(int)gChkNetPeerPick[p].model, slot);
 
-					jer_error("player %d's car (%s model %d) cannot be loaded here yet - retrying",
+					jer_console_log("player %d's car (%s model %d) cannot be loaded here yet - retrying",
 						p, chkNetCityName((int)gChkNetPeerPick[p].city),
 						(int)gChkNetPeerPick[p].model);
 				}
@@ -768,7 +769,7 @@ int chkNetFoldPeerCars(void)
 						p, chkNetCityName((int)gChkNetPeerPick[p].city),
 						(int)gChkNetPeerPick[p].model, slot);
 
-					jer_error("player %d's car (%s model %d) could not be loaded here - they may look like this level's own car",
+					jer_console_log("player %d's car (%s model %d) could not be loaded here - they may look like this level's own car",
 						p, chkNetCityName((int)gChkNetPeerPick[p].city),
 						(int)gChkNetPeerPick[p].model);
 				}
