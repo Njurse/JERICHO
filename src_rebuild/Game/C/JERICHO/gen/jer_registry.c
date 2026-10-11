@@ -4,6 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+void jer_module_JerAI_entry(JERICHO_CONTEXT* ctx);
 void jer_module_antfarm_entry(JERICHO_CONTEXT* ctx);
 void jer_module_cainescrossfire_entry(JERICHO_CONTEXT* ctx);
 void jer_module_carhacks_entry(JERICHO_CONTEXT* ctx);
@@ -27,6 +28,7 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 extern const int jer_registry_module_count = 3;
 #else
 extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
+	{ "JerAI", jer_module_JerAI_entry, 0 },
 	{ "antfarm", jer_module_antfarm_entry, 0 },
 	{ "cainescrossfire", jer_module_cainescrossfire_entry, 1 },
 	{ "carhacks", jer_module_carhacks_entry, 0 },
@@ -41,7 +43,7 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "testmode", jer_module_testmode_entry, 0 },
 	{ "yarisbounce", jer_module_yarisbounce_entry, 1 },
 };
-extern const int jer_registry_module_count = 13;
+extern const int jer_registry_module_count = 14;
 #endif
 #ifdef __cplusplus
 }

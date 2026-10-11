@@ -37,7 +37,7 @@ Each mod documents itself in its own folder.
 | antfarm | [`readme.md`](../JERICHO/MODS/antfarm/readme.md) (what it is + how to use it), [`ARCHITECTURE.md`](../JERICHO/MODS/antfarm/ARCHITECTURE.md) (**internals: every hook, the cut state machine, the archetype table and each camera model's maths, the trail cam, shot planning, region/area streaming and the recovery, audio, config, testing**) |
 | levelhacks | [`README.md`](../JERICHO/MODS/levelhacks/README.md) — **DISABLED** and out of the shipped set: mp owns the take-a-ride Singleplayer/Multiplayer prompt now |
 | example | [`README.md`](../JERICHO/MODS/example/README.md) |
-| aidriver | [`README.md`](../JERICHO/MODS/aidriver/README.md) |
+| JerAI | [`README.md`](../JERICHO/MODS/JerAI/README.md) (**AI driver for the player's car** — A* pathfinding, road-graph extraction, joyride/random-wander behaviors, debug visualization and a control menu) |
 | gaildrv2 | [`README.md`](../JERICHO/MODS/gaildrv2/README.md) |
 | mp | [`README.md`](../JERICHO/MODS/mp/README.md) (LAN multiplayer) — start with [`JERICHO-MP.md`](../JERICHO/MODS/mp/docs/JERICHO-MP.md), then [`SYNC_CHECKLIST.md`](../JERICHO/MODS/mp/docs/SYNC_CHECKLIST.md) (**what "synchronised" means per domain, how to verify each, the accepted v1 limitations, the 2026-10-07 measured baseline + blocker triage, and the release sign-off gate**), and [`MISSION_CRITICAL.md`](../JERICHO/MODS/mp/docs/MISSION_CRITICAL.md) (**the critique: what is mission-critical for this scope, and where it falls short**); test tools in [`tools/`](../JERICHO/MODS/mp/tools/README.md), packaging in [`pack_lan/`](../JERICHO/MODS/mp/tools/pack_lan/README.md) |
 | testmode | [`README.md`](../JERICHO/MODS/testmode/README.md) (asset-test mode: quiet world, census) |

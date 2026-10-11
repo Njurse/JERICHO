@@ -264,7 +264,7 @@ static void dbgReadConfig(DBG_STATE* st)
 
 /*
  * Write the resolved values back once at boot so CONFIG/debugorbit.ini
- * materialises with every knob visible and editable (the aidriver/testmode
+ * materialises with every knob visible and editable (the JerAI/testmode
  * pattern). Reading first means a value the player edited is written back
  * unchanged; it is deliberately NOT re-saved later, or a live edit would be
  * clobbered by the periodic re-read.

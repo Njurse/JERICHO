@@ -1,0 +1,14 @@
+# JerAI — general-purpose AI driver for the player's car.
+#
+# A COMPILED-IN (deep) module: no `runtime = "dll"`. It needs the engine's
+# compiled-in road graph (JerRoadInfoAt) and 3D debug lines (Debug_AddLineDepth),
+# neither of which is importable into a DLL, and it reads/writes the car and
+# player data globals directly — exactly like the mp module it borrows the
+# A* / occupancy-grid code from.
+id = "JerAI"
+name = "JerAI"
+version = "0.1.0"
+author = "Jaret Ludvik"
+description = "General-purpose AI driver for the player's car: A* pathfinding over an engine occupancy grid, road-graph extraction, joyride/random-wander behaviors, in-game debug visualization and a small control menu."
+dependencies = []
+default-enabled = false

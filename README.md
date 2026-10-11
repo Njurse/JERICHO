@@ -336,10 +336,12 @@ A modern dual-stick third-person camera plus an overridable weapon system.
 An arcade handling overhaul that derives every value from existing chassis
 stats. [README](JERICHO/MODS/collisiondevil/README.md)
 
-### AI Driver (`aidriver`) — a runtime AI driver *(external)*
+### JerAI (`JerAI`) — an A\* AI driver for the player's car *(compiled-in)*
 
-A general-purpose AI driver for the player's car, built against the API alone.
-[README](JERICHO/MODS/aidriver/README.md)
+A general-purpose AI driver for the player's car: A\* pathfinding over an
+engine occupancy grid, road-graph extraction, joyride/random-wander behaviors,
+debug visualization and a control menu.
+[README](JERICHO/MODS/JerAI/README.md)
 
 ### Ant Farm (`antfarm`) — a screensaver / idle mode *(compiled-in)*
 
