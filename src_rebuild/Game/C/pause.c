@@ -964,7 +964,10 @@ static MENU_ITEM gJerPauseRootItems[JER_PAUSE_ROOT_ITEMS];	/* root copy + Module
 static MENU_HEADER gJerPauseRoot;				/* dynamic root when modules exist */
 
 /* bridge slot -> owning (menu, item index): set for activatable items */
-typedef struct JER_PAUSE_BRIDGE { const JER_PAUSE_MENU* menu; int item; } JER_PAUSE_BRIDGE;
+/* A bridge row points at the MODULE ITEM it came from -- the owner's or a
+ * contributed one -- so the dispatch below reaches it the same way either way, and
+ * a contribution needs no synthetic menu wrapper. */
+typedef struct JER_PAUSE_BRIDGE { const JER_PAUSE_MENU_ITEM* mi; } JER_PAUSE_BRIDGE;
 static JER_PAUSE_BRIDGE gJerBridge[JER_PAUSE_MAX_ITEMS];
 static int gJerBridgeCount;		/* items used (incl. terminators) */
 static int gJerModuleHeaderCount;
@@ -992,7 +995,6 @@ static void JerPauseBridgeFunc(int direction)
 {
 	MENU_ITEM* item = ActiveItem[VisibleMenu];
 	int idx;
-	const JER_PAUSE_MENU* menu;
 	const JER_PAUSE_MENU_ITEM* mi;
 	int quit;
 	int i;
@@ -1002,15 +1004,10 @@ static void JerPauseBridgeFunc(int direction)
 
 	idx = (int)(item - gJerModuleItems);
 
-	if (idx < 0 || idx >= gJerBridgeCount || gJerBridge[idx].menu == NULL)
+	if (idx < 0 || idx >= gJerBridgeCount || gJerBridge[idx].mi == NULL)
 		return;
 
-	menu = gJerBridge[idx].menu;
-
-	if (gJerBridge[idx].item < 0 || gJerBridge[idx].item >= menu->item_count)
-		return;
-
-	mi = &menu->items[gJerBridge[idx].item];
+	mi = gJerBridge[idx].mi;
 
 	quit = mi->on_activate != NULL ? mi->on_activate(mi->userdata, direction) : JER_PAUSE_QUIT_NONE;
 
@@ -1019,16 +1016,81 @@ static void JerPauseBridgeFunc(int direction)
 	/* toggles/adjustments change labels: refresh all module labels */
 	for (i = 0; i < gJerBridgeCount; i++)
 	{
-		const JER_PAUSE_MENU* m = gJerBridge[i].menu;
+		const JER_PAUSE_MENU_ITEM* mit = gJerBridge[i].mi;
 
-		if (m != NULL)
-		{
-			const JER_PAUSE_MENU_ITEM* mit = &m->items[gJerBridge[i].item];
-
-			if (mit->get_label != NULL)
-				mit->get_label(mit->userdata, gJerModuleText[i], JER_PAUSE_ITEM_TEXT);
-		}
+		if (mit != NULL && mit->get_label != NULL)
+			mit->get_label(mit->userdata, gJerModuleText[i], JER_PAUSE_ITEM_TEXT);
 	}
+}
+
+/* forward: the writer resolves submenus, which recurses back into the builder */
+static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth);
+
+/* Write one module item -- the OWNER's or a CONTRIBUTED one -- into the bridge's
+ * item pool, resolving its label once, so owner rows and contributed rows are
+ * built by the same code path. A SUBMENU row is written as a placeholder here and
+ * attached after the parent's run is committed (see the deferred pass in
+ * JerPauseBuildMenuRec): that is what gives each submenu its own contiguous run
+ * instead of interleaving its items into the parent's. Returns the built
+ * MENU_ITEM*, or NULL when the pool is exhausted. */
+static MENU_ITEM* JerPauseWriteItem(const JER_PAUSE_MENU_ITEM* mi)
+{
+	MENU_ITEM* it;
+	int idx;
+
+	if (gJerBridgeCount >= JER_PAUSE_MAX_ITEMS - 1)
+		return NULL;
+
+	idx = gJerBridgeCount;
+	it = &gJerModuleItems[gJerBridgeCount++];
+
+	memset(it, 0, sizeof(*it));
+	it->Text = gJerModuleText[idx];
+	it->Justify = 2;
+	it->ExitValue = MENU_QUIT_NONE;
+
+	/* the dispatch reads this only when it->func is set (the non-submenu branch),
+	 * but store it either way so a contributed SUBMENU row has a record too */
+	gJerBridge[idx].mi = mi;
+
+	if (mi->submenu != NULL)
+	{
+		it->Type = PAUSE_TYPE_SUBMENU;
+		it->SubMenu = NULL;	/* attached by the caller's deferred pass */
+	}
+	else
+	{
+		it->Type = (u_char)(PAUSE_TYPE_FUNC | (mi->adjust ? PAUSE_TYPE_DIRFUNC : 0));
+		it->func = JerPauseBridgeFunc;
+	}
+
+	if (mi->get_label != NULL)
+		mi->get_label(mi->userdata, gJerModuleText[idx], JER_PAUSE_ITEM_TEXT);
+	else if (mi->label != NULL)
+		snprintf(gJerModuleText[idx], JER_PAUSE_ITEM_TEXT, "%s", mi->label);
+	else
+		gJerModuleText[idx][0] = 0;
+
+	return it;
+}
+
+/* write one item and, if it is a submenu, queue it for the deferred pass */
+static int JerPauseWriteAndDefer(const JER_PAUSE_MENU_ITEM* mi,
+	const JER_PAUSE_MENU** subMenu, MENU_ITEM** subTarget, int* deferred)
+{
+	MENU_ITEM* it = JerPauseWriteItem(mi);
+
+	if (it == NULL)
+		return 0;
+
+	if (mi->submenu != NULL && *deferred < JER_PAUSE_MAX_MENUS)
+	{
+		subMenu[*deferred] = mi->submenu;
+		subTarget[*deferred] = it;
+		(*deferred)++;
+	}
+
+	return 1;
 }
 
 /* build the bridge header for one module menu (recursively its submenus).
@@ -1042,6 +1104,16 @@ static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
 	MENU_ITEM* items;
 	int built = 0;
 	int j;
+
+	/* DEFERRED SUBMENUS. A page's submenu items must NOT be written into the
+	 * page's own contiguous run -- if they were, the page's run would end at the
+	 * first submenu's ENDITEMS terminator and everything after it would vanish.
+	 * So submenu rows are written as placeholders now, the page's run is committed
+	 * (with its terminator), and each submenu is built AFTER it. Capacity: a page
+	 * cannot hold more submenus than the pool has headers. */
+	const JER_PAUSE_MENU* subMenu[JER_PAUSE_MAX_MENUS];
+	MENU_ITEM* subTarget[JER_PAUSE_MAX_MENUS];
+	int deferred = 0;
 
 	/* HOW DEEP A MODULE'S TREE MAY GO, derived from the navigation stack rather
 	 * than written down separately: the bridge does not own the first levels
@@ -1077,56 +1149,36 @@ static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
 
 	for (j = 0; j < menu->item_count; j++)
 	{
-		const JER_PAUSE_MENU_ITEM* mi = &menu->items[j];
-		MENU_ITEM* it;
-		int idx;
+		if (JerPauseWriteAndDefer(&menu->items[j], subMenu, subTarget, &deferred))
+			built++;
+	}
 
-		if (gJerBridgeCount >= JER_PAUSE_MAX_ITEMS - 1)
-			break;
+	/* CONTRIBUTED ROWS, appended after the owner's. They go through the SAME
+	 * writer, so a contribution's own submenu resolves and depth-checks exactly
+	 * like an owner row -- the trap to avoid was appending raw MENU_ITEMs, which
+	 * would skip both. Matched by the menu's id, then by its title, so a module
+	 * that contributes by title still lands when the menu has no id. */
+	{
+		const char* const keys[2] = { menu->id, menu->title };
+		int k;
 
-		idx = gJerBridgeCount;
-		it = &gJerModuleItems[gJerBridgeCount++];
-
-		memset(it, 0, sizeof(*it));
-		it->Text = gJerModuleText[idx];
-		it->Justify = 2;
-		it->ExitValue = MENU_QUIT_NONE;
-		gJerBridge[idx].menu = NULL;
-		gJerBridge[idx].item = 0;
-
-		if (mi->submenu != NULL)
+		for (k = 0; k < 2; k++)
 		{
-			MENU_HEADER* sub = JerPauseBuildMenuRec(mi->submenu, depth + 1);
+			int n, e;
 
-			if (sub != NULL)
+			if (keys[k] == NULL)
+				continue;
+
+			n = jer_pause_menu_extra_count(keys[k]);
+
+			for (e = 0; e < n; e++)
 			{
-				it->Type = PAUSE_TYPE_SUBMENU;
-				it->SubMenu = sub;
-			}
-			else
-			{
-				/* submenu couldn't be built (pool/depth): dead entry, so the
-				 * engine never dereferences a NULL SubMenu on CROSS */
-				it->Type = 0;
-				it->ExitValue = MENU_QUIT_NONE;
+				const JER_PAUSE_MENU_ITEM* mi = jer_pause_menu_extra_at(keys[k], e);
+
+				if (mi != NULL && JerPauseWriteAndDefer(mi, subMenu, subTarget, &deferred))
+					built++;
 			}
 		}
-		else
-		{
-			it->Type = (u_char)(PAUSE_TYPE_FUNC | (mi->adjust ? PAUSE_TYPE_DIRFUNC : 0));
-			it->func = JerPauseBridgeFunc;
-			gJerBridge[idx].menu = menu;
-			gJerBridge[idx].item = j;
-		}
-
-		if (mi->get_label != NULL)
-			mi->get_label(mi->userdata, gJerModuleText[idx], JER_PAUSE_ITEM_TEXT);
-		else if (mi->label != NULL)
-			snprintf(gJerModuleText[idx], JER_PAUSE_ITEM_TEXT, "%s", mi->label);
-		else
-			gJerModuleText[idx][0] = 0;
-
-		built++;
 	}
 
 	if (built == 0)
@@ -1136,7 +1188,7 @@ static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
 		return NULL;
 	}
 
-	/* commit the header now that it has real items */
+	/* commit the page's own run now that it has real items */
 	hdr->Title = (char*)menu->title;
 	hdr->Bound.x = hdr->Bound.y = hdr->Bound.w = hdr->Bound.h = 0;
 	hdr->NumItems = 0;		/* SetupMenu computes */
@@ -1147,6 +1199,23 @@ static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
 	memset(&gJerModuleItems[gJerBridgeCount], 0, sizeof(MENU_ITEM));
 	gJerModuleItems[gJerBridgeCount].Type = PAUSE_TYPE_ENDITEMS;
 	gJerBridgeCount++;
+
+	/* NOW build each deferred submenu, after the page's terminator, so each owns
+	 * a contiguous region of its own */
+	for (j = 0; j < deferred; j++)
+	{
+		MENU_HEADER* sub = JerPauseBuildMenuRec(subMenu[j], depth + 1);
+
+		if (sub != NULL)
+			subTarget[j]->SubMenu = sub;
+		else
+		{
+			/* submenu couldn't be built (pool/depth): dead entry, so the engine
+			 * never dereferences a NULL SubMenu on CROSS */
+			subTarget[j]->Type = 0;
+			subTarget[j]->ExitValue = MENU_QUIT_NONE;
+		}
+	}
 
 	return hdr;
 }
@@ -1195,6 +1264,27 @@ static int JerPauseBuildModuleMenus(void)
 					"bridged (cap %d headers/%d items, %d submenu level(s) per page)\n",
 					count, gJerModuleHeaderCount, gJerBridgeCount,
 					JER_PAUSE_MAX_MENUS, JER_PAUSE_MAX_ITEMS, JER_PAUSE_BRIDGE_MAX_DEPTH);
+
+			/* per-page contents, so a page whose rows leaked into a submenu (or
+			 * vice versa) is visible in the log instead of only on screen */
+			if (gJerTopCount > 0)
+			{
+				int i;
+
+				for (i = 0; i < gJerModuleHeaderCount; i++)
+				{
+					MENU_HEADER* H = &gJerModuleHeaders[i];
+					MENU_ITEM* mit = H->MenuItems;
+					int ni = 0;
+
+					if (mit != NULL)
+						while (mit[ni].Type != PAUSE_TYPE_ENDITEMS)
+							ni++;
+
+					jer_log("[jericho] pause menus:   page '%s' -> %d item(s)\n",
+						H->Title != NULL ? H->Title : "?", ni);
+				}
+			}
 		}
 	}
 

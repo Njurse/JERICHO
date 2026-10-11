@@ -73,11 +73,48 @@ typedef struct JER_PAUSE_MENU
 	const char* title;
 	const JER_PAUSE_MENU_ITEM* items;	/* item_count entries (no terminator) */
 	int item_count;
+
+	/* A STABLE KEY, so other modules can contribute rows to THIS menu
+	 * (jer_pause_menu_add_items). Optional -- appended at the end precisely so every
+	 * existing initialiser stays valid and means what it always did.
+	 *
+	 * Set one whenever the menu is worth extending. A TITLE is display text and gets
+	 * reworded ("Change car" became "Car options" in this very tree); contributing
+	 * by title still works, but it is a string a rename can quietly break, which is
+	 * exactly the failure a stable key exists to prevent. By convention use the
+	 * owning module's prefix: "mp.car", "mp.warp". */
+	const char* id;
 } JER_PAUSE_MENU;
 
 /* Register a menu (and its submenus). Call from the module entry; safe to
  * call once per activation (the registry is reset on every reload). */
 void jer_pause_menu_register(const JER_PAUSE_MENU* menu);
+
+/* CONTRIBUTE ROWS TO A MENU YOU DO NOT OWN.
+ *
+ * `target` is the menu's id (jer_pause_menu.id), or its title when it has no id.
+ * The rows land at the END of that menu, before nothing in particular -- the menu's
+ * own items keep their order and positions, so a contribution can never displace
+ * what the owner put there.
+ *
+ * A module owns its page and decides nothing else: this is how carhacks puts its
+ * car actions into mp's car page without either module including the other, and it
+ * is deliberately one-way (there is no remove, and no reordering).
+ *
+ * Resolved when the menu is BUILT, not when this is called, so a contribution may
+ * be made in any order relative to the menu being registered.
+ *
+ * Returns 1 when recorded. Returns 0 -- AND SAYS WHY IN THE LOG -- when there is no
+ * room left, so a contribution that never appears can be found rather than
+ * wondered about. A `target` that matches no menu yet is NOT an error: the match
+ * happens at build time. */
+int jer_pause_menu_add_items(const char* target, const JER_PAUSE_MENU_ITEM* items, int count);
+
+/* Reading the contributions back. THE BRIDGE USES THESE when it builds a menu; they
+ * are here (rather than engine-side) because the two copies of this header must be
+ * identical, and a module has no less right to see what was contributed to it. */
+int jer_pause_menu_extra_count(const char* target);
+const JER_PAUSE_MENU_ITEM* jer_pause_menu_extra_at(const char* target, int index);
 
 /* Host-side (engine): clear the registry before each module activation
  * batch so re-registration after a reload doesn't accumulate duplicates. */
