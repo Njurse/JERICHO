@@ -16,8 +16,15 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>	/* PATH_MAX - see cd2ArenaDir's realpath */
 #include <sys/stat.h>	/* stat - is a candidate arena folder actually there? */
 #include <stdlib.h>	/* _fullpath - freeze the arena folder to an absolute path */
+
+// Not every libc defines PATH_MAX; the value only has to cover the longest path
+// the platform allows, which is all realpath asks of its destination buffer.
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -79,8 +86,19 @@ static const char* cd2ArenaDir(void)
 		if (_fullpath(dir, raw, sizeof(dir)) == NULL)
 			snprintf(dir, sizeof(dir), "%s", raw);
 #else
-		if (realpath(raw, dir) == NULL)
+		// POSIX realpath needs a destination of at least PATH_MAX bytes, however
+		// short the path it resolves - and glibc's fortified realpath() enforces
+		// that against the buffer's COMPILE-TIME size, calling __chk_fail()
+		// ("*** buffer overflow detected ***: terminated", abort) when it is
+		// smaller. 512 is smaller, so resolve into a PATH_MAX scratch and copy the
+		// result into dir, which is what dir's size is for. This is the same fix as
+		// jer_texture.c's jerTexAbsolute.
+		char resolved[PATH_MAX];
+
+		if (realpath(raw, resolved) == NULL)
 			snprintf(dir, sizeof(dir), "%s", raw);
+		else
+			snprintf(dir, sizeof(dir), "%s", resolved);
 #endif
 	}
 

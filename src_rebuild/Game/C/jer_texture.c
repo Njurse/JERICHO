@@ -57,6 +57,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 
 #define JER_TEX_MAX		64
 #define JER_TEX_KEY_MAX		400
@@ -165,14 +166,40 @@ static int jerTexFileExists(const char* path)
 	return 1;
 }
 
+// PATH_MAX, for the POSIX realpath() below. Not every libc defines it, and the
+// value only has to be large enough for the longest path the platform allows.
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
+
+// Make a path absolute.
+//
+// POSIX realpath() is NOT the drop-in the Windows call is: it requires the
+// destination to have room for PATH_MAX bytes, whatever the length of the path
+// it resolves. glibc enforces that on the CALLER's buffer size when it is known
+// at compile time - its fortified realpath() calls __chk_fail() unless the
+// buffer is NULL or at least PATH_MAX long - and __chk_fail() prints
+// "*** buffer overflow detected ***: terminated" and aborts the process. Every
+// buffer this file hands over is JER_TEX_PATH_MAX (512), so on any glibc built
+// with _FORTIFY_SOURCE (Debian 13 / Ubuntu 24.10+ enable it by default; the CI
+// image does not, which is why the CI Linux build looked healthy) the first
+// texture load aborted the game at the frontend menu background.
+//
+// So resolve into a PATH_MAX scratch and COPY the result into the caller's
+// buffer, which is what `cap` was always for. _fullpath already honours `cap`,
+// so the Windows branch keeps calling straight into `out`.
 static void jerTexAbsolute(char* out, int cap, const char* raw)
 {
 #if defined(_WIN32)
 	if (_fullpath(out, raw, cap) == NULL)
 		snprintf(out, cap, "%s", raw);
 #else
-	if (realpath(raw, out) == NULL)
+	char resolved[PATH_MAX];
+
+	if (realpath(raw, resolved) == NULL)
 		snprintf(out, cap, "%s", raw);
+	else
+		snprintf(out, cap, "%s", resolved);
 #endif
 }
 
