@@ -393,6 +393,31 @@ int CivClutTexMaxSlot(int row, int texid)
 	return sCivClutTexMaxSlot[row][texid];
 }
 
+// JERICHO: WHICH row of `city`'s block actually CARRIES data for `texid` (0..31).
+//
+// The palette walk records per-(row, texture_id) coverage, so this answers from what the
+// lump really wrote instead of from the page table's order - and the two disagree for a
+// car whose texture sets are laid out NON-STANDARDLY (a special body's pair, a Driver 1
+// model's extra panels, a model naming a set the city's table does not list). The bake
+// uses it to put a poly's palette on a row that HAS the colour rather than on the row the
+// table's position implies, which can be empty (base+1, base+6, base+7).
+//
+// Returns the absolute civ_clut row, or -1 when no row of the block carries that texid.
+static int CarPalRowForTexId(int city, int texid)
+{
+	int base = (city == GameLevel) ? 0 : CarImportBankRow(city);
+	int i;
+
+	if (base < 0 || texid < 0 || texid >= 32)
+		return -1;
+
+	for (i = 0; i < CIV_CLUT_BLOCK_ROWS; i++)
+		if (CivClutTexMaxSlot(base + i, texid) > 0)
+			return base + i;
+
+	return -1;
+}
+
 void CarPalRowReport(void)
 {
 	int r, i, slot, collisions = 0, claimed = 0;
