@@ -32,6 +32,7 @@
 #include "jerai_star.h"
 #include "jerai_local.h"
 #include "jerai_road.h"
+#include "jerai_drive.h"
 
 /* ------------------------------------------------------------------ */
 /* the module's single live state                                       */
@@ -75,6 +76,19 @@ typedef struct JERAI_STATE
 	int	lastDiff;		/* last signed heading error (game units) */
 	int	lastBias;		/* last feeler steering bias (game units) */
 	int	lastPad;		/* last pad the driver produced */
+
+	/* corner-speed model (phase: car dynamics) */
+	int	cornerG;		/* lateral-g budget: folds grip + units into one knob */
+	int	brakeG;			/* braking authority, for the braking-distance term */
+	int	cornerLookahead;	/* how far ahead the plan is scanned for corners */
+	int	targetSpeed;		/* grip-limited speed the driver may carry now */
+	int	gripPct;		/* 100 = hooked up, falling as the car slides */
+
+	/* what the car is actually doing, read every driving frame */
+	JERAI_CARSTATE carState;
+
+	/* the corner the plan leads into (jerai_drive.c) */
+	JERAI_CURVE	curve;
 
 	/* a dump the menu / config asked for, serviced when the world is loaded */
 	int	dumpRequested;

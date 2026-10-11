@@ -50,6 +50,13 @@
 /* steering lock used by direct-steer behaviors (game units, civ maxSteer = 512) */
 #define JERAI_CFG_MAX_STEER         "max_steer"
 
+/* the corner-speed model: a lateral-g budget (bigger = the car carries more
+ * speed through the same curve), the braking authority used for the
+ * braking-distance term, and how far ahead the plan is scanned for corners */
+#define JERAI_CFG_CORNER_G          "corner_g"
+#define JERAI_CFG_BRAKE_GAIN        "brake_gain"
+#define JERAI_CFG_CORNER_LOOKAHEAD  "corner_lookahead"
+
 /* visualization layers (0/1) */
 #define JERAI_CFG_VIZ_GRID          "viz_grid"
 #define JERAI_CFG_VIZ_ROAD          "viz_road"

@@ -54,6 +54,32 @@ CAR_DATA* JerAiOwnCar(void)
 	return &car_data[id];
 }
 
+JERAI_CARSTATE JerAiReadCar(CAR_DATA* car)
+{
+	JERAI_CARSTATE s;
+	int vx, vz, vdir;
+
+	s.speed = car->hd.wheel_speed;
+	s.dir = car->hd.direction;
+	s.yawRate = car->st.n.angularVelocity[1];
+	s.slip = 0;
+
+	/* st.n.fposition is where<<4, so linearVelocity lives in that same <<4
+	 * frame; the ANGLE between it and the heading is scale-independent, which
+	 * is all we read it for. A slip near 0 means the car is hooked up; a large
+	 * slip means the body is not pointing where it is going - a slide. */
+	vx = car->st.n.linearVelocity[0];
+	vz = car->st.n.linearVelocity[2];
+
+	if (vx != 0 || vz != 0)
+	{
+		vdir = ratan2(vx, vz) & 0xfff;
+		s.slip = ((vdir - s.dir + 2048) & 0xfff) - 2048;
+	}
+
+	return s;
+}
+
 /* ------------------------------------------------------------------ */
 /* planning                                                             */
 /* ------------------------------------------------------------------ */
@@ -104,6 +130,180 @@ static long JerAiSegLen(long ax, long az, long bx, long bz)
 	double dz = (double)(bz - az);
 
 	return (long)sqrt(dx * dx + dz * dz);
+}
+
+/* Where the car sits ALONG the plan: the arc length to the closest point of the
+ * polyline. 0 when there is no plan. */
+static long JerAiProjectArc(int cx, int cz)
+{
+	int n = gJerAi.path.waypoints, k;
+	long bestD2 = -1, bestArc = 0, arc = 0;
+
+	for (k = 1; k < n; k++)
+	{
+		long ax = gJerAi.path.wx[k - 1], az = gJerAi.path.wz[k - 1];
+		long bx = gJerAi.path.wx[k], bz = gJerAi.path.wz[k];
+		long dx = bx - ax, dz = bz - az;
+		long len2 = dx * dx + dz * dz;
+		long segLen = JerAiSegLen(ax, az, bx, bz);
+		long t, px, pz, d2;
+
+		if (len2 > 0)
+		{
+			t = (cx - ax) * dx + (cz - az) * dz;
+			if (t < 0) t = 0;
+			if (t > len2) t = len2;
+		}
+		else
+		{
+			t = 0;
+		}
+
+		px = ax + (len2 > 0 ? dx * t / len2 : 0);
+		pz = az + (len2 > 0 ? dz * t / len2 : 0);
+		d2 = (cx - px) * (cx - px) + (cz - pz) * (cz - pz);
+
+		if (bestD2 < 0 || d2 < bestD2)
+		{
+			bestD2 = d2;
+			bestArc = arc + (len2 > 0 ? segLen * t / len2 : 0);
+		}
+
+		arc += segLen;
+	}
+
+	return bestArc;
+}
+
+JERAI_CURVE JerAiScanCurve(int cx, int cz, int horizon)
+{
+	JERAI_CURVE c;
+	int n = gJerAi.path.waypoints, k;
+	long startArc, arc = 0;
+	int sharp = 0, sharpDist = 0, sharpSign = 0, sharpSpan = 0, haveCurrent = 0;
+
+	c.sharp = 0;
+	c.dist = 0;
+	c.sign = 0;
+	c.current = 0;
+	c.span = 0;
+
+	if (!gJerAi.havePlan || n < 3)
+		return c;
+
+	startArc = JerAiProjectArc(cx, cz);
+
+	/* At each interior waypoint, the turn is the heading change from the leg in
+	 * to the leg out. Track the biggest within the horizon (so the speed model
+	 * slows for the real corner, not a kink), and the very next one ahead. */
+	for (k = 1; k < n - 1; k++)
+	{
+		long ax = gJerAi.path.wx[k - 1], az = gJerAi.path.wz[k - 1];
+		long bx = gJerAi.path.wx[k], bz = gJerAi.path.wz[k];
+		long ex = gJerAi.path.wx[k + 1], ez = gJerAi.path.wz[k + 1];
+		long legIn = JerAiSegLen(ax, az, bx, bz);
+		long legOut = JerAiSegLen(bx, bz, ex, ez);
+		int inDir = ratan2(bx - ax, bz - az) & 0xfff;
+		int outDir = ratan2(ex - bx, ez - bz) & 0xfff;
+		int turn = ((outDir - inDir + 2048) & 0xfff) - 2048;
+		long distAhead;
+
+		arc += legIn;
+		distAhead = arc - startArc;
+
+		if (distAhead < 0)
+			distAhead = 0;
+
+		if (!haveCurrent && arc >= startArc)
+		{
+			c.current = turn;
+			haveCurrent = 1;
+		}
+
+		if (distAhead <= horizon && (turn < 0 ? -turn : turn) > (sharp < 0 ? -sharp : sharp))
+		{
+			sharp = turn;
+			sharpDist = (int)distAhead;
+			sharpSign = turn > 0 ? 1 : (turn < 0 ? -1 : 0);
+			sharpSpan = (int)(legIn + legOut);
+		}
+	}
+
+	c.sharp = sharp;
+	c.dist = sharpDist;
+	c.sign = sharpSign;
+	c.span = sharpSpan;
+
+	return c;
+}
+
+/* ------------------------------------------------------------------ */
+/* the corner-speed model                                               */
+/* ------------------------------------------------------------------ */
+
+/* The slip angle at which the car counts as fully sliding: the grip readout
+ * falls from 100 (hooked up) to 0 as |slip| approaches this. */
+#define JERAI_SLIP_LIMIT	600
+
+/* The speed that keeps the car inside the lateral-g budget through a corner of
+ * radius r. corner_g folds the grip and the unit conversions into one knob:
+ * bigger = the car carries more speed through the same curve. */
+static int JerAiSpeedForRadius(int r)
+{
+	int v;
+
+	if (r <= 0)
+		return gJerAi.topSpeed;
+
+	v = (int)sqrt((double)gJerAi.cornerG * (double)r);
+
+	if (v > gJerAi.topSpeed) v = gJerAi.topSpeed;
+	if (v < 8) v = 8;
+
+	return v;
+}
+
+/* The speed the driver may carry RIGHT NOW so it can still be down to the corner
+ * speed by the time it reaches the corner: v^2 = vCorner^2 + 2*aBrake*dist.
+ * This is the momentum term - slowing only once the corner arrives is exactly
+ * how a car ploughs into the outside wall. */
+int JerAiSpeedTarget(void)
+{
+	const JERAI_CURVE* c = &gJerAi.curve;
+	int r, vCorner, vNow;
+	double turnRad;
+
+	if (!gJerAi.havePlan || c->sharp == 0 || c->span <= 0)
+		return gJerAi.topSpeed;
+
+	turnRad = (double)(c->sharp < 0 ? -c->sharp : c->sharp) * 6.283185307 / 4096.0;
+
+	if (turnRad < 0.02)
+		return gJerAi.topSpeed;
+
+	r = (int)((double)c->span / turnRad);
+	vCorner = JerAiSpeedForRadius(r);
+
+	vNow = (int)sqrt((double)vCorner * (double)vCorner + 2.0 * (double)gJerAi.brakeG * (double)c->dist);
+
+	if (vNow > gJerAi.topSpeed) vNow = gJerAi.topSpeed;
+
+	return vNow;
+}
+
+/* How much grip is left: 100 when hooked up, falling as the car slides. The slip
+ * angle is the honest "am I asking for more than the tyres have" measure. */
+static int JerAiGripPct(void)
+{
+	int s = gJerAi.carState.slip;
+
+	if (s < 0)
+		s = -s;
+
+	if (s >= JERAI_SLIP_LIMIT)
+		return 0;
+
+	return 100 - s * 100 / JERAI_SLIP_LIMIT;
 }
 
 /* cos(angle) fixed-point: a point is "not behind" the car when the cosine
@@ -373,6 +573,18 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 	int diff, adiff, spd;
 	int ahead;
 	unsigned int pad = CAR_PAD_ACCEL;
+
+	/* what the car is doing right now - speed, yaw rate, slide. The controller
+	 * reads this; it is the difference between driving and walking a line. */
+	gJerAi.carState = JerAiReadCar(car);
+
+	/* and what the plan is about to do - the corner ahead and how far off */
+	gJerAi.curve = JerAiScanCurve(car->hd.where.t[0], car->hd.where.t[2], gJerAi.cornerLookahead);
+
+	/* the grip-limited speed the car may carry into that corner, and how much
+	 * grip is left right now */
+	gJerAi.targetSpeed = JerAiSpeedTarget();
+	gJerAi.gripPct = JerAiGripPct();
 
 	gJerAi.lastBias = bias;
 

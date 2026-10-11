@@ -64,6 +64,9 @@ void JerAiRefreshConfig(void)
 	gJerAi.avoidDist = jer_config_get_int("JerAI", JERAI_CFG_AVOID_DIST, 1800);
 	gJerAi.copClearance = jer_config_get_int("JerAI", JERAI_CFG_COP_CLEARANCE, 6000);
 	gJerAi.maxSteer = jer_config_get_int("JerAI", JERAI_CFG_MAX_STEER, 512);
+	gJerAi.cornerG = jer_config_get_int("JerAI", JERAI_CFG_CORNER_G, 2);
+	gJerAi.brakeG = jer_config_get_int("JerAI", JERAI_CFG_BRAKE_GAIN, 40);
+	gJerAi.cornerLookahead = jer_config_get_int("JerAI", JERAI_CFG_CORNER_LOOKAHEAD, 6000);
 
 	gJerAi.vizGrid = jer_config_get_int("JerAI", JERAI_CFG_VIZ_GRID, 0);
 	gJerAi.vizRoad = jer_config_get_int("JerAI", JERAI_CFG_VIZ_ROAD, 1);
@@ -101,6 +104,9 @@ void JerAiWriteConfigDefaults(void)
 	jer_config_set_int("JerAI", JERAI_CFG_AVOID_DIST, gJerAi.avoidDist);
 	jer_config_set_int("JerAI", JERAI_CFG_COP_CLEARANCE, gJerAi.copClearance);
 	jer_config_set_int("JerAI", JERAI_CFG_MAX_STEER, gJerAi.maxSteer);
+	jer_config_set_int("JerAI", JERAI_CFG_CORNER_G, gJerAi.cornerG);
+	jer_config_set_int("JerAI", JERAI_CFG_BRAKE_GAIN, gJerAi.brakeG);
+	jer_config_set_int("JerAI", JERAI_CFG_CORNER_LOOKAHEAD, gJerAi.cornerLookahead);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_GRID, gJerAi.vizGrid);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_ROAD, gJerAi.vizRoad);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_PATH, gJerAi.vizPath);
@@ -230,9 +236,12 @@ static int JerAiOnFrame(void* userdata, void* args)
 			const JERAI_BEHAVIOR* b = JerAiBehaviorFor(gJerAi.mode);
 
 			gJerAi.ctx->jer_log(gJerAi.ctx,
-				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d wp=%d complete=%d diff=%d bias=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d\n",
+				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d\n",
 				b != NULL ? b->name : "?",
 				car->hd.where.t[0], car->hd.where.t[2], car->hd.speed, car->hd.direction,
+				gJerAi.carState.slip, gJerAi.carState.yawRate,
+				gJerAi.targetSpeed, gJerAi.gripPct,
+				gJerAi.curve.sharp, gJerAi.curve.dist,
 				gJerAi.path.waypoints, gJerAi.path.complete, gJerAi.lastDiff, gJerAi.lastBias, gJerAi.lastPad,
 				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ, JerAiVizLines());
 
@@ -241,9 +250,11 @@ static int JerAiOnFrame(void* userdata, void* args)
 				char hud[160];
 
 				snprintf(hud, sizeof(hud),
-					"JerAI %s  spd=%d wp=%d %s  nodes=%d edges=%d lines=%d",
+					"JerAI %s  spd=%d tgt=%d grip=%d  corner=%d@%d  wp=%d %s  nodes=%d edges=%d lines=%d",
 					b != NULL ? b->name : "?",
-					car->hd.speed, gJerAi.path.waypoints,
+					car->hd.speed, gJerAi.targetSpeed, gJerAi.gripPct,
+					gJerAi.curve.sharp, gJerAi.curve.dist,
+					gJerAi.path.waypoints,
 					gJerAi.path.complete ? "" : "(partial)",
 					gJerAi.road.nodeCount, gJerAi.road.edgeCount, JerAiVizLines());
 

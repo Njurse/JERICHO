@@ -43,4 +43,34 @@ void JerAiRandSeed(unsigned int s);
  * injection drives. */
 CAR_DATA* JerAiOwnCar(void);
 
+/* What the car is actually DOING, as opposed to where the plan says to go.
+ * `speed` and `slip` are the difference between walking a line and driving a
+ * car: a car carries momentum, and its velocity can point somewhere other than
+ * its nose - that angle IS the slide, and it is what makes the car understeer
+ * into a corner it entered too fast. */
+typedef struct JERAI_CARSTATE
+{
+	int	speed;		/* forward speed, engine units (hd.wheel_speed) */
+	int	dir;		/* heading */
+	int	yawRate;	/* body rotation, engine units/frame */
+	int	slip;		/* signed angle velocity-vs-heading, game units (-2048..2048) */
+} JERAI_CARSTATE;
+
+JERAI_CARSTATE JerAiReadCar(CAR_DATA* car);
+
+/* The corner the plan leads into: a car cannot turn or brake instantly, so the
+ * driver has to know what the line does BEFORE it arrives. `sharp` is the
+ * heading change at the sharpest waypoint ahead within the horizon (game units,
+ * signed: + right, - left), `dist` is how far along the plan it sits. */
+typedef struct JERAI_CURVE
+{
+	int	sharp;		/* sharpest heading change ahead, game units (-2048..2048) */
+	int	dist;		/* world units from the car to that corner */
+	int	sign;		/* +1 / -1: which way the sharpest turn goes */
+	int	current;	/* heading change at the very next waypoint ahead */
+	int	span;		/* arc length the sharp turn happens over (its in+out legs) */
+} JERAI_CURVE;
+
+JERAI_CURVE JerAiScanCurve(int cx, int cz, int horizon);
+
 #endif /* JERAI_DRIVE_H */
