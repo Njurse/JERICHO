@@ -1592,7 +1592,6 @@ EXPORTS
 	MpSpawnLateJoiners
 	MpStartMatch
 	MpNotify
-	MpNotifyf
 	MpUiDrawOverlay
 	MpUiInit
 	MpUiOpenCarSelect
