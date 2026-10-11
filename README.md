@@ -314,7 +314,7 @@ Vegas. [README](JERICHO/MODS/carhacks/README.md)
 
 ![A Rio car driven in Chicago](readme_images/addon_carhacks_rio2_chicago_example.png)
 
-![A cross-city car example (Havana)](readme_images/addon_carhacks_2_havana_example.png)
+![A cross-city car example (Havana)](readme_images/addon_carhacks_2_havana_example.png?v=2)
 
 ![A foreign car driven on a level it does not belong to](readme_images/addon_carhacks_demonstration_updated_2.png)
 

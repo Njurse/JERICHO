@@ -63,10 +63,12 @@ def strip_code(text):
 
 
 def links_in(path):
-    """Relative link targets in a tracked markdown file, anchors stripped.
+    """Relative link targets in a tracked markdown file, anchors and queries stripped.
 
-    Targets are normalised to forward slashes, because git reports paths that way and
-    os.path.normpath does not on Windows - comparing the two forms silently reports
+    A target's `#anchor` and `?query` are not part of the path on disk: a cache-busting
+    `image.png?v=2` still points at image.png, and calling that a broken link would make
+    the checker cry wolf. Normalised to forward slashes, because git reports paths that way
+    and os.path.normpath does not on Windows - comparing the two forms silently reports
     every link as broken.
 
     A target must look like a path (contain a slash or a dot) or it is not treated as a
@@ -75,7 +77,7 @@ def links_in(path):
     """
     out = []
     for target in re.findall(r"\]\(([^)]+)\)", strip_code(read(path))):
-        target = target.split("#")[0].strip()
+        target = target.split("#")[0].split("?")[0].strip()
         if not target or "://" in target or target.startswith("mailto:"):
             continue
         if "/" not in target and "." not in target:
