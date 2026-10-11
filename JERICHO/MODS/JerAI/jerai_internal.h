@@ -17,6 +17,7 @@
  *   jerai_dump.c       writes the road graph to a file
  *   jerai_drive.{h,c}  pad injection + waypoint following
  *   jerai_behavior.{h,c} the modular behavior table (mode -> tick fn)
+ *   jerai_follow.{h,c} who the AI car chases in multiplayer (the mp host)
  *   jerai_viz.c        debug drawing: grid / path / road graph / HUD
  *   jerai_menu.c       the in-game control menu
  */
@@ -33,6 +34,7 @@
 #include "jerai_local.h"
 #include "jerai_road.h"
 #include "jerai_drive.h"
+#include "jerai_follow.h"
 
 /* ------------------------------------------------------------------ */
 /* the module's single live state                                       */
@@ -48,6 +50,17 @@ typedef struct JERAI_STATE
 	int	enabled;
 	int	mode;			/* active behavior id (JERAI_MODE_*, 0 = manual) */
 	int	immune;			/* while driving: no damage, no wanted level */
+
+	/* MULTIPLAYER FOLLOW (jerai_follow.c): when a session is live and this
+	 * machine is not the host, joyride drives to the HOST's car instead of a
+	 * random road sample, then idles within followClearance of it. */
+	int	followEnabled;		/* 1 = chase the host (config `follow`) */
+	int	followClearance;	/* hold this far from the target (config `follow_clearance`) */
+	int	followCar;		/* TEST LEVER: CAR_DATA index to follow, -1 = off */
+	int	followRange;		/* give the host up past this distance; 0 = unlimited */
+	int	followActive;		/* last frame: we had a target to follow */
+	int	followDist;		/* last frame: distance to it (world units, clamped) */
+	int	yawLead;		/* steering damper: frames of yaw the aim leads by */
 	int	pacePct;		/* joyride pace above the road limit (%) */
 	int	topSpeed;		/* flat-out speed cap (0..255) */
 	int	runLights;		/* 1 = never park, never stop at lights/yields */

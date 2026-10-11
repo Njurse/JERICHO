@@ -347,11 +347,11 @@ static int JerAiGripPct(void)
  * wheel; stretching it with speed is the cheapest cure for that oscillation. */
 #define JERAI_AIM_SPEED_GAIN	8
 
-/* Frames of yaw to lead the steering by. These cars are heavy with real
- * rotational momentum, so steering on the CURRENT heading error always arrives
- * late and oversteers; leading with the yaw rate straightens (and
- * countersteers) the wheel before the error even closes. */
-#define JERAI_YAW_LEAD		8
+/* The steering lead is configurable (`yaw_lead`, default 4): the number of frames
+ * of the car's own yaw the aim leads the heading error by. It damps the wheel so
+ * the car does not saw at it or oscillate up a straight, but too much of it
+ * straightens the wheel as soon as the car begins turning - which reads as "it
+ * steers far too slowly". See JERAI_CFG_YAW_LEAD. */
 
 int JerAiDriveAim(int* aimX, int* aimZ)
 {
@@ -889,7 +889,7 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 		 * carry real rotational momentum, so chasing the current error overshoots;
 		 * subtracting yaw*lead lets the wheel straighten - and countersteer - before
 		 * the error closes, which is what stops the up-the-street oscillation. */
-		int pred = diff - gJerAi.carState.yaw * JERAI_YAW_LEAD;
+		int pred = diff - gJerAi.carState.yaw * gJerAi.yawLead;
 		int apred = pred < 0 ? -pred : pred;
 		int dir = pred > 0 ? 1 : -1;
 
@@ -948,6 +948,38 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 unsigned int JerAiDriveSteerPad(CAR_DATA* car, int aimX, int aimZ)
 {
 	unsigned int pad = JerAiSteerPadImpl(car, aimX, aimZ);
+
+	gJerAi.lastPad = (int)pad;
+
+	return pad;
+}
+
+/* Hold: come to a stop and stay there. See jerai_drive.h for why this is a
+ * separate primitive rather than a flag on the steering pad. */
+unsigned int JerAiDriveHoldPad(CAR_DATA* car)
+{
+	int spd;
+	unsigned int pad;
+
+	if (car == NULL)
+		return 0;
+
+	spd = car->hd.speed;
+
+	if (spd < 0)
+		spd = -spd;
+
+	/* The once-a-second log prints carState and the last-* fields, and this path
+	 * never reaches JerAiSteerPadImpl to fill them - so refresh them here or the
+	 * readout freezes at whatever the last real steering frame left. */
+	gJerAi.carState = JerAiReadCar(car);
+	gJerAi.targetSpeed = 0;
+	gJerAi.lastDiff = 0;
+	gJerAi.lastBias = 0;
+	gJerAi.lastSteerDir = 0;
+	gJerAi.wantHandbrake = 0;
+
+	pad = (spd > 8) ? CAR_PAD_BRAKE : 0;
 
 	gJerAi.lastPad = (int)pad;
 

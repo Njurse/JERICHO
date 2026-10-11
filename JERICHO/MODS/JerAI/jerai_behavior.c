@@ -11,6 +11,8 @@
 #include "jerai_behavior.h"
 #include "jerai_drive.h"
 
+#include "pad.h"	/* CAR_PAD_ACCEL / CAR_PAD_BRAKE, for the follow clearance hold */
+
 #include "dr2math.h"	/* ratan2, RSIN, RCOS */
 
 #include <math.h>
@@ -126,10 +128,107 @@ static int JerAiJoyArrived(CAR_DATA* car)
 	return (long)dx * dx + (long)dz * dz < 1600L * 1600L;
 }
 
+/* The A* window is JERAI_MAP_SIZE samples of JERAI_MAP_STEP units, centred on
+ * the car - so a goal further than ~12,000 world units cannot even be SAMPLED,
+ * and JerAiStarPlan refuses outright (no waypoints at all). A chase target is
+ * routinely further than that: the host drives off and is gone. Clamp the PLAN
+ * goal to the window edge in the target's direction, so the car drives as far
+ * toward them as it can plan; every re-plan recentres the window further along,
+ * so it keeps closing the gap. The REAL distance (below) still drives the
+ * clearance hold and the log, so the clamp changes nothing about the hold. */
+static void JerAiClampToWindow(CAR_DATA* car, int* x, int* z)
+{
+	long long dx = (long long)*x - (long long)car->hd.where.t[0];
+	long long dz = (long long)*z - (long long)car->hd.where.t[2];
+	long long d2 = dx * dx + dz * dz;
+	long limit = (long long)(JERAI_MAP_SIZE / 2 - 2) * JERAI_MAP_STEP;
+	double d;
+
+	if (d2 <= limit * limit)
+		return;
+
+	d = sqrt((double)d2);
+
+	if (d <= 0.0)
+		return;
+
+	*x = car->hd.where.t[0] + (int)((double)dx * (double)limit / d);
+	*z = car->hd.where.t[2] + (int)((double)dz * (double)limit / d);
+}
+
 static unsigned int JerAiJoyride(CAR_DATA* car)
 {
 	int aimX, aimZ;
 	int force = 0;
+	int followX = 0, followZ = 0;
+	long long followD2 = 0;
+
+	/* MULTIPLAYER. With a session live the destination is the HOST's car, so
+	 * the AI car tails the host around the map instead of driving to a random
+	 * road sample. JerAiFollowTarget answers 0 outside a session, on the host
+	 * machine itself, and when the host has no car - and then the normal wander
+	 * below runs unchanged. */
+	if (gJerAi.followEnabled && JerAiFollowTarget(car, &followX, &followZ, &followD2))
+	{
+		long long clearance = (long long)gJerAi.followClearance;
+		unsigned int pad;
+
+		/* the once-a-second log reads these; the distance is CLAMPED so a far
+		 * target does not wrap on the way into an int */
+		gJerAi.followActive = 1;
+		gJerAi.followDist = (followD2 > 2000000000LL) ? 2000000000 : (int)followD2;
+
+		/* the pad actually handed over this frame; the early exits below leave it
+		 * at 0, so the log never shows a stale pad from an earlier frame */
+		gJerAi.lastPad = 0;
+
+		/* CLEARANCE: close enough. Stop and hold instead of driving into the
+		 * host - and hold through JerAiDriveHoldPad, not the steering pad, so
+		 * the stuck detector in there cannot fire a reverse burst at the car we
+		 * are keeping clear of. */
+		if (followD2 < clearance * clearance)
+			return JerAiDriveHoldPad(car);
+
+		/* The goal IS the host, and the host moves: re-stamp it every frame.
+		 * Deliberately NOT the repick block below - that rebuilds the occupancy
+		 * grid, and it treats an INCOMPLETE plan (a host standing off the road)
+		 * as a reason to abandon the goal. JerAiDrivePlanTo re-plans on its own
+		 * once the host has drifted past replan_move. Clamped to the planner's
+		 * window, because a host across the city is beyond what A* can sample. */
+		JerAiClampToWindow(car, &followX, &followZ);
+
+		sGhostX = followX;
+		sGhostZ = followZ;
+		sHasGoal = 1;
+		gJerAi.forceNewGoal = 0;
+
+		if (!JerAiDrivePlanTo(car, sGhostX, sGhostZ, 0))
+			return 0;	/* no plan: coast, and try again next frame */
+
+		if (!JerAiDriveAim(&aimX, &aimZ))
+			return 0;
+
+		gJerAi.aimX = aimX;
+		gJerAi.aimZ = aimZ;
+
+		pad = JerAiDriveSteerPad(car, aimX, aimZ);
+
+		/* Ease off on the approach: within twice the clearance, do not power
+		 * toward the host, so the stop is a coast-and-brake rather than a lunge
+		 * (the pad's own close-traffic brake is the hard backstop). */
+		if (followD2 < clearance * clearance * 4)
+			pad &= ~(unsigned int)CAR_PAD_ACCEL;
+
+		/* lastPad is what the once-a-second log prints, and JerAiDriveSteerPad
+		 * set it to the pad BEFORE the ease-off strip - re-stamp it so the line
+		 * shows the pad the engine actually received. */
+		gJerAi.lastPad = (int)pad;
+
+		return pad;
+	}
+
+	gJerAi.followActive = 0;
+	gJerAi.followDist = 0;
 
 	/* A fresh destination when we have none, have arrived, when the plan could
 	 * not be made at all, when A* could not REACH the current goal, or when the

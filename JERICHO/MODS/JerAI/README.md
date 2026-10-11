@@ -87,6 +87,45 @@ routes around a block rather than squeezing a short gap past a building.
 Adding a behavior is one function (`CAR_DATA* -> pad`) plus one row in
 `jerai_behavior.c`'s table; the menu and config pick it up automatically.
 
+## Following the host (multiplayer)
+
+With a session live, the joyride behavior does **not** pick a random road
+sample: it drives to the **host's car** and holds a **clearance**, so the AI car
+tails the host around the map while a match is being tested instead of ramming
+them. The session state comes from the SDK (`jer_net_is_active`) and the host's
+car slot/pose from the compiled-in `mp` module (`MpGetPlayer(0)->carId`, then
+that slot's world pose); see `jerai_follow.c`.
+
+**Which machine it runs on:** JerAI drives the *local* car, so the following
+happens on a **client**. On the host machine itself there is nobody to chase and
+the normal wander runs instead - as it does in single player, and whenever the
+host has no car (not picked yet, or on foot).
+
+Within `follow_clearance` the car stops and holds instead of closing the last
+stretch. That hold goes through `JerAiDriveHoldPad`, **not** the steering pad, so
+the stuck recovery that lives in the steering pad cannot mistake a
+parked-on-purpose car for a wedged one and reverse into the host. Between the
+clearance and twice the clearance the throttle is dropped, for a coast-and-brake
+approach rather than a lunge.
+
+`follow_car` is a **test lever**: it names a `car_data` index to follow with no
+session at all, so the approach, the clearance and the idle can be exercised in
+single player.
+
+**Range: unlimited by default.** `follow_range` is 0, and 0 means *no limit* - the
+chase is CHUNKED, not truncated. The A\* window is centred on the car and is only
+~12,000 units across, so a host on the far side of a city cannot be planned to
+directly. The goal is therefore **clamped to the window edge in the host's
+direction** and re-planned as the car closes, which is what lets it cross a whole
+map to rendezvous. Set a non-zero `follow_range` to make the AI give the target up
+(and go back to wandering) once it is farther away than that.
+
+A script does the whole thing for you: host a match as usual, then run
+`tools/follow_host.py` (or `tools/follow_host.bat`) to bring in a joining follower.
+It gives the follower its own run directory, so its log and `mp.ini` cannot
+collide with the host's; `--clearance`, `--range`, `--yaw-lead` and `--client-car`
+override the defaults, and `--dry` prints the command instead of launching.
+
 ## Visualization (`viz_*`)
 
 Drawn in `JER_EVENT_DRAW_WORLD` with `Debug_AddLineDepth` (buildings occlude the
@@ -138,8 +177,10 @@ the working directory:
 | `jerai_dump.c` | the offline road-graph export |
 | `jerai_drive.*` | pad injection + waypoint following |
 | `jerai_behavior.*` | the modular behavior table |
+| `jerai_follow.*` | who the AI chases in multiplayer (the mp host) + the clearance |
 | `jerai_viz.c` | debug drawing |
 | `jerai_menu.c` | the control menu |
+| `tools/follow_host.*` | join a match on localhost as an extra player that follows the host |
 
 The search library (`jerai_map` / `jerai_mapgrid` / `jerai_star` / `jerai_local`)
 is a namespaced copy of `mp`'s `ai/` — both modules are compiled into the same
@@ -156,9 +197,19 @@ See `jerai.h` for the key names and defaults. The car-dynamics knobs:
 | `brake_gain` | 1 | braking authority for the braking-distance term |
 | `corner_lookahead` | 6000 | how far ahead the plan is scanned for corners (world units) |
 | `speed_scale` | 100 | overall aggression: the corner target as a percentage |
+| `yaw_lead` | 4 | steering damper: frames of the car's own yaw the aim leads by. **Lower steers harder**; higher straightens the wheel earlier (the old fixed value was 8, which read as steering far too slowly) |
 
 `brake_gain` is in speed^2 per world unit; 40 swamps the term (the target never
 drops), so keep it near 1.
+
+The multiplayer-follow knobs (see *Following the host*):
+
+| key | default | meaning |
+|-----|---------|---------|
+| `follow` | 1 | retarget joyride at the host's car while a session is live (0 = never) |
+| `follow_clearance` | 1500 | world units held from the followed car before stopping |
+| `follow_range` | 0 | give the target up past this distance; **0 = unlimited** (a chunked chase across the whole map) |
+| `follow_car` | -1 | TEST LEVER: a `car_data` index to follow with no session |
 
 ### Not built, on purpose
 

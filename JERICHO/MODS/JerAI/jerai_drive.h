@@ -32,6 +32,13 @@ int JerAiDriveAim(int* aimX, int* aimZ);
  * avoidance. */
 unsigned int JerAiDriveSteerPad(CAR_DATA* car, int aimX, int aimZ);
 
+/* A STOPPING pad: brake while still rolling, then nothing. Used by the
+ * multiplayer follow behavior when it is holding at its clearance from the
+ * host - deliberately NOT JerAiDriveSteerPad, so the stuck detector (which
+ * lives in there) can never mistake a parked-on-purpose car for a wedged one
+ * and fire a reverse burst at the car it is supposed to be keeping clear of. */
+unsigned int JerAiDriveHoldPad(CAR_DATA* car);
+
 /* A seeded RNG. The engine's Random2 is frame-deterministic (it replays the
  * same sequence every run), so a wander that used it would drive the same route
  * every time; this is seeded per run instead (JER_EVENT_GAME_START). */

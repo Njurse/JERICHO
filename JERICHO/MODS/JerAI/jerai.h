@@ -84,8 +84,34 @@
  * destroyed and no cop sirens chase the test drive (1 = on). */
 #define JERAI_CFG_IMMUNE            "immune"
 
+/* MULTIPLAYER: while a session is live (and this machine is NOT the host),
+ * retarget the joyride behavior at the HOST's car, so the AI car tails the host
+ * around the map and holds a clearance instead of driving into them. 0 keeps
+ * the plain random wander (1 = on). See jerai_follow.c. */
+#define JERAI_CFG_FOLLOW            "follow"
+
+/* the clearance held from the followed car, in world units: within this the AI
+ * car stops and idles rather than closing the last stretch into the host. */
+#define JERAI_CFG_FOLLOW_CLEARANCE  "follow_clearance"
+
+/* how far (world units) the followed car may get before the AI gives it up and
+ * goes back to wandering. 0 (the default) = NO LIMIT: the chase is CHUNKED, not
+ * truncated - the plan goal is clamped to the planner's window and re-planned as
+ * the car closes, so an unlimited chase still crosses a whole city. */
+#define JERAI_CFG_FOLLOW_RANGE      "follow_range"
+
+/* TEST LEVER: a CAR_DATA index to follow with NO session at all (-1 = off), so
+ * the approach + clearance + idle can be exercised in single player. */
+#define JERAI_CFG_FOLLOW_CAR        "follow_car"
+
 /* debug: override the aim with a FIXED heading (game units, -1 = off). Used to
  * settle the steering sign in isolation from a moving plan. */
 #define JERAI_CFG_AIM_TEST          "aim_test"
+
+/* How much the steering leads the heading error by the car's own yaw rate
+ * (frames of yaw). It is the damper that stops the wheel sawing at the wheel and
+ * the car oscillating up a straight - but too much of it and the wheel straightens
+ * the moment the car starts turning, which reads as "it steers far too slowly". */
+#define JERAI_CFG_YAW_LEAD          "yaw_lead"
 
 #endif /* JERAI_H */

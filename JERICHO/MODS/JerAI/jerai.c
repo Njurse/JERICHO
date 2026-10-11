@@ -55,6 +55,11 @@ void JerAiRefreshConfig(void)
 	gJerAi.enabled = jer_config_get_int("JerAI", JERAI_CFG_ENABLED, 1);
 	gJerAi.mode = jer_config_get_int("JerAI", JERAI_CFG_MODE, 0);
 	gJerAi.immune = jer_config_get_int("JerAI", JERAI_CFG_IMMUNE, 1);
+	gJerAi.followEnabled = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW, 1);
+	gJerAi.followClearance = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW_CLEARANCE, 1500);
+	gJerAi.followCar = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW_CAR, -1);
+	gJerAi.followRange = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW_RANGE, 0);
+	gJerAi.yawLead = jer_config_get_int("JerAI", JERAI_CFG_YAW_LEAD, 4);
 	gJerAi.aimTest = jer_config_get_int("JerAI", JERAI_CFG_AIM_TEST, -1);
 	gJerAi.pacePct = jer_config_get_int("JerAI", JERAI_CFG_PACE_PCT, 25);
 	gJerAi.topSpeed = jer_config_get_int("JerAI", JERAI_CFG_TOP_SPEED, 255);
@@ -98,6 +103,11 @@ void JerAiWriteConfigDefaults(void)
 	jer_config_set_int("JerAI", JERAI_CFG_ENABLED, gJerAi.enabled);
 	jer_config_set_int("JerAI", JERAI_CFG_MODE, gJerAi.mode);
 	jer_config_set_int("JerAI", JERAI_CFG_IMMUNE, gJerAi.immune);
+	jer_config_set_int("JerAI", JERAI_CFG_FOLLOW, gJerAi.followEnabled);
+	jer_config_set_int("JerAI", JERAI_CFG_FOLLOW_CLEARANCE, gJerAi.followClearance);
+	jer_config_set_int("JerAI", JERAI_CFG_FOLLOW_CAR, gJerAi.followCar);
+	jer_config_set_int("JerAI", JERAI_CFG_FOLLOW_RANGE, gJerAi.followRange);
+	jer_config_set_int("JerAI", JERAI_CFG_YAW_LEAD, gJerAi.yawLead);
 	jer_config_set_int("JerAI", JERAI_CFG_PACE_PCT, gJerAi.pacePct);
 	jer_config_set_int("JerAI", JERAI_CFG_TOP_SPEED, gJerAi.topSpeed);
 	jer_config_set_int("JerAI", JERAI_CFG_RUN_LIGHTS, gJerAi.runLights);
@@ -269,7 +279,7 @@ static int JerAiOnFrame(void* userdata, void* args)
 			const JERAI_BEHAVIOR* b = JerAiBehaviorFor(gJerAi.mode);
 
 			gJerAi.ctx->jer_log(gJerAi.ctx,
-				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d\n",
+				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d follow=%d fdist=%d\n",
 				b != NULL ? b->name : "?",
 				car->hd.where.t[0], car->hd.where.t[2], car->hd.speed, car->hd.direction,
 				gJerAi.carState.slip, gJerAi.carState.yawRate,
@@ -277,20 +287,22 @@ static int JerAiOnFrame(void* userdata, void* args)
 				gJerAi.curve.sharp, gJerAi.curve.dist,
 				gJerAi.path.waypoints, gJerAi.path.complete, gJerAi.lastDiff, gJerAi.lastBias,
 				gJerAi.lastSteerDir, gJerAi.wantHandbrake, gJerAi.lastPad,
-				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ, JerAiVizLines());
+				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ, JerAiVizLines(),
+				gJerAi.followActive, gJerAi.followDist);
 
 			if (gJerAi.vizHud)
 			{
 				char hud[160];
 
 				snprintf(hud, sizeof(hud),
-					"JerAI %s  spd=%d tgt=%d grip=%d  corner=%d@%d  wp=%d %s  nodes=%d edges=%d lines=%d",
+					"JerAI %s  spd=%d tgt=%d grip=%d  corner=%d@%d  wp=%d %s  nodes=%d edges=%d lines=%d follow=%d fdist=%d",
 					b != NULL ? b->name : "?",
 					car->hd.speed, gJerAi.targetSpeed, gJerAi.gripPct,
 					gJerAi.curve.sharp, gJerAi.curve.dist,
 					gJerAi.path.waypoints,
 					gJerAi.path.complete ? "" : "(partial)",
-					gJerAi.road.nodeCount, gJerAi.road.edgeCount, JerAiVizLines());
+					gJerAi.road.nodeCount, gJerAi.road.edgeCount, JerAiVizLines(),
+					gJerAi.followActive, gJerAi.followDist);
 
 				jer_hud_message(hud, 30);
 			}
