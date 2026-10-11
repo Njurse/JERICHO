@@ -113,10 +113,10 @@ that is the bug that used to make the Windows CI job fail every time.
 
 ## The CI build path
 
-`.github/workflows/build.yml` builds both configurations for `windows-2022` and
-`ubuntu-22.04`, uploads them as workflow artifacts, refreshes the rolling
-`alpha` pre-release on every push to `main`, and publishes a permanent release
-for any `v*` tag.
+`.github/workflows/build.yml` builds the `Release` configuration for
+`windows-2022` and `ubuntu-22.04`, uploads it as a workflow artifact, refreshes
+the rolling `alpha` pre-release on every push to `main`, and publishes a
+permanent release for any `v*` tag.
 
 Three things about it are deliberate, and each is easy to undo by accident.
 
@@ -182,27 +182,32 @@ behind.
 
 ## The release profile
 
-What a release *runs* is decided by the shipped `JERICHO/CONFIG/modlist.ini`,
-which the build mirrors next to the exe. Since 0.9.0 that file is a deliberate
-release profile — **carhacks and mp on, everything else off**, including
-`crumple`, `levelhacks` and `debugorbit` (the orbit camera seizes the camera at
-level start and never hands it back). Local development is free to differ; the
-frontend's Options → JERICHO rewrites the file on toggle.
+A release **runs**, and **contains**, exactly three modules: `carhacks`,
+`crumple` and `mp`. That is a **build** property, not just an activation one —
+`JERICHO_RELEASE_MODS` (near the top of `src_rebuild/premake5.lua`) names the set,
+and the Release configuration applies it in three places so they cannot drift:
 
-### Compiling only carhacks and mp is deliberately NOT done
+- the generated registry (`JERICHO/gen/jer_registry.c`) carries a second table
+  under `#ifdef JERICHO_RELEASE_MODS`, so a release registers only the three;
+- the link set is per configuration — Dev/`Release_dev` link every module,
+  `Release` links just the three;
+- a Release-only mirror pass drops the other `JERICHO/MODS/<id>` folders from
+  `bin/Release`, and a Release-only post-build copies
+  `JERICHO/gen/modlist_release.ini` over the shipped `CONFIG/modlist.ini`, so a
+  release never names a module it does not carry.
 
-The profile above is about **activation**. The binaries still compile every deep
-module under `JERICHO/MODS/` — gaildrv2 excepted, which CI never fetches — and
-merely leave all but carhacks and mp switched off.
+`gaildrv2` and `d1cars` are additionally dropped from every mirror
+(`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`) and are not in the CI
+submodule allow-list, so a release never carries them at all.
 
-Restricting the compiled-in set is a real change to the build system: it means
-teaching the mod scan (`premake_modules/jericho_mods.lua`) and its callers about
-a release subset, and a filter bug there drops a module from the build *silently*
-rather than failing. It is a deliberate non-goal for now, not an oversight.
+A **dev** build is unchanged: it compiles and mirrors every installed module, and
+the repo's own `JERICHO/CONFIG/modlist.ini` pins every installed module
+explicitly — the three shipped ones on, the rest off, so nothing runs
+unannounced (absence used to mean "silently on"). Local development is free to
+differ; the frontend's Options → JERICHO rewrites the file on toggle.
 
-The consequence worth knowing: a locally built release differs from a CI one in
-exactly that respect. The exe in this tree has gaildrv2 and every other module
-linked in (inactive); a CI exe does not contain gaildrv2 at all.
+So a locally built `Release` and a CI `Release` agree (three modules, no
+`gaildrv2`); it is `Release_dev` that differs, carrying every module.
 
 ### Where a deep module's compiled output lives
 

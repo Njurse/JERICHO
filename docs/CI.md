@@ -8,12 +8,12 @@ replacement for the upstream [AppVeyor](#relationship-to-appveyor) pipeline.
 
 | Job | Runner | Toolchain | Configurations |
 |---|---|---|---|
-| `windows` | `windows-2022` | premake5 `vs2022` → MSBuild, **Win32 / x86** | `Release_dev` |
-| `linux` | `ubuntu-22.04` | premake5 `gmake2` → `make`, **x86_64** | `release_dev_x64` |
+| `windows` | `windows-2022` | premake5 `vs2022` → MSBuild, **x64** | `Release` |
+| `linux` | `ubuntu-22.04` | premake5 `gmake2` → `make`, **x86_64** | `release_x64` |
 
 Each build is packaged with everything needed to run:
 
-- the game executable (`JERICHO_dev.exe`, or the Linux ELF),
+- the game executable (`JERICHO.exe`, or the Linux ELF),
 - the runtime libraries (`SDL2.dll`, `OpenAL32.dll` on Windows; system SDL2/OpenAL on Linux),
 - the `data/` tree, and
 - the `JERICHO/` tree (**`MODS`**, **`CONFIG`**) that the runtime reads, and **`CORE`** --
@@ -25,17 +25,25 @@ Each build is packaged with everything needed to run:
 Resulting archives:
 
 ```
-JERICHO_Release_dev_win64.zip      JERICHO_Release_dev_linux-x64.tar.gz
+JERICHO_Release_win64.zip      JERICHO_Release_linux-x64.tar.gz
 SHA256SUMS
 ```
 
-Only `Release_dev` is built and published for now: the debug-options / console
-build (`DEBUG_OPTIONS`, `COLLISION_DEBUG`, `CUTSCENE_RECORDER`) that is useful for
-testing. The clean `Release` configuration is not treated as a real release yet,
-so CI does not publish it (add it back to the workflow's build loops and upload
-steps when it is). `SHA256SUMS` lists the archives' SHA256, published beside them
-so a downloader -- the mp remote agent -- can verify an archive against something
-that did not come out of it.
+Only `Release` is built and published: the clean shipping build, which
+pre-includes just the three release mods (`JERICHO_RELEASE_MODS` in
+`premake5.lua` — carhacks, crumple, mp). The `Release_dev` configuration — every
+installed module plus the debug options / console (`DEBUG_OPTIONS`,
+`COLLISION_DEBUG`, `CUTSCENE_RECORDER`) — is **not** built here and stays local.
+`SHA256SUMS` lists the archives' SHA256, published beside them so a downloader --
+the mp remote agent -- can verify an archive against something that did not come
+out of it.
+
+A third job, `checks`, runs on every push and takes seconds; it covers what a
+build cannot see: `tools/doccheck.py` (docs consistent with the code), a
+"no debug switch changes behaviour" test, and the mp delivery gate — which
+**skips** where the 1.6 GB of game assets are absent rather than passing. It is
+deliberately *not* a dependency of the publish job, so a docs typo cannot stop a
+downloadable build; a red check is the signal.
 
 Dependencies are pinned to the versions upstream used:
 premake `5.0.0-beta1`, SDL2 `2.30.2`, OpenAL-soft `1.23.1`, and libjpeg `jpeg-9d`
@@ -93,11 +101,13 @@ The rules that matter on this path, and why:
 
 - the tag must match the agent's rule `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`, and must not be
   `alpha` or a `v*` tag — those belong to the push-to-main and tag steps;
-- the agent accepts exactly one asset name, `JERICHO_Release_dev_win64.zip`, and verifies
-  it against GitHub's per-asset digest, falling back to the `SHA256SUMS` asset beside it;
-- it installs only `JERICHO_dev.exe`, `JERICHO_dev.pdb`, `JERICHO_dev.map`, `SDL2.dll`,
-  `OpenAL32.dll` and `JERICHO/`. The game content the archive also carries is downloaded
-  and staged but **not** installed, so shipping it costs time and disk, not correctness;
+- the agent accepts exactly one asset name, `JERICHO_Release_win64.zip`, and
+  verifies it against GitHub's per-asset digest, falling back to the `SHA256SUMS`
+  asset beside it;
+- it installs the game exe, its `.pdb`/`.map`, `SDL2.dll`, `OpenAL32.dll` and
+  `JERICHO/` (the exact set is `$InstallSet` in `mp_agent.ps1`). The game content
+  the archive also carries is downloaded and staged but **not** installed, so
+  shipping it costs time and disk, not correctness;
 - the on-demand release is a pre-release and never the *latest*, so it cannot disturb the
   download anyone else sees;
 - both ends must run the **same** build to join a session, so publishing through CI is

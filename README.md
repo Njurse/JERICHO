@@ -178,21 +178,26 @@ and the traps the API hides — is
 
 - **Visual Studio 2019 or 2022** with the **Desktop development with C++**
   workload (the MSVC x64 toolset and MSBuild).
-- **`premake5.exe`** — committed at the repo root.
+- **premake 5** — `premake5.exe` at the repo root and in `src_rebuild/`
+  (fetched by [`windows_dev_prepare.ps1`](windows_dev_prepare.ps1)).
 - The third-party dependencies (SDL2, OpenAL, libjpeg), pinned to the upstream
   versions (SDL2 `2.30.2`, OpenAL-soft `1.23.1`, libjpeg `jpeg-9d`). Fetch them
   once with [`windows_dev_prepare.ps1`](windows_dev_prepare.ps1).
 
 ### Building the game
 
+premake's project script lives in `src_rebuild/` and generates the solution
+into `src_rebuild/build/`:
+
 ```
+cd src_rebuild
 premake5.exe vs2019
 msbuild build\JERICHO.sln /p:Configuration=Release /p:Platform=x64
 ```
 
-Helpers: [`src_rebuild/build_jericho.bat`](src_rebuild/build_jericho.bat)
-(Release) and [`src_rebuild/build_dev.bat`](src_rebuild/build_dev.bat)
-(`Release_dev`).
+Helpers (they `cd` into `src_rebuild/` themselves):
+[`src_rebuild/build_jericho.bat`](src_rebuild/build_jericho.bat) (Release) and
+[`src_rebuild/build_dev.bat`](src_rebuild/build_dev.bat) (`Release_dev`).
 
 - premake **auto-scans `JERICHO/MODS`**: every folder with a `mod.toml` that
   does *not* declare `runtime = "dll"` is compiled into the game — there is no
@@ -256,9 +261,10 @@ reload of the Mods screen.
 ### Prebuilt downloads
 
 Every push to `main` and every `v*` tag is built by GitHub Actions and published
-as downloadable archives: a Windows x86 build and a Linux x86_64 build, each in
-`Release` and `Release_dev`, packed with the runtime libraries, the `data/` tree
-and the `JERICHO/` tree the runtime reads. See [`docs/CI.md`](docs/CI.md).
+as downloadable archives: a Windows **x64** build and a Linux **x86_64** build,
+both in the clean `Release` configuration, packed with the runtime libraries,
+the `data/` tree and the `JERICHO/` tree the runtime reads. See
+[`docs/CI.md`](docs/CI.md).
 
 ### Linux and other platforms
 
@@ -352,7 +358,9 @@ cops passive, while a cinematic camera tours the map.
 ### Level Hacks (`levelhacks`) — frontend flow *(compiled-in)*
 
 Intercepts take-a-ride after the city confirm and can boot a city's small
-multiplayer map in single player. [README](JERICHO/MODS/levelhacks/README.md)
+multiplayer map in single player. **Off in the shipped profile** — mp owns the
+take-a-ride Singleplayer/Multiplayer prompt now, and running both would stack two
+prompts on one confirm. [README](JERICHO/MODS/levelhacks/README.md)
 
 ### Multiplayer (`mp`) — networking *(compiled-in)*
 

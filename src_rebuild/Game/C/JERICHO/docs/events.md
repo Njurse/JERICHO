@@ -30,7 +30,7 @@ world streamer / making a region resident (`jer_map.h`, see
 | `JER_EVENT_GET_IMPACT_INFO` | `JER_ARGS_IMPACT_INFO` | debug overlay | query: newest impact |
 | `JER_EVENT_DRAW_WHEEL` | `JER_ARGS_DRAW_WHEEL` | `DrawCarWheels` | distort a wheel's vertex copy, or `hide=1` to skip it |
 | `JER_EVENT_CAMERA` | `JER_ARGS_CAMERA` | `InitCamera` (chase cam) | adjust/override the camera transform |
-| `JER_EVENT_GAME_START` | — | `State_GameInit` (`main.c:803`) | a level is starting (fresh / restart / next) — modules reset transient state; notification, no handler = nothing. Carries `JER_ARGS_GAME_START { seed }`: the debug `-seed` run seed, or 0, so a module can make itself reproducible under test |
+| `JER_EVENT_GAME_START` | `JER_ARGS_GAME_START` | `State_GameInit` (`main.c:843`) | a level is starting (fresh / restart / next) — modules reset transient state; notification, no handler = nothing. Carries `JER_ARGS_GAME_START { seed }`: the debug `-seed` run seed, or 0, so a module can make itself reproducible under test |
 | `JER_EVENT_CAMERA_LOOK` | `JER_ARGS_CAMERA_LOOK` | `TurnHead` | right-stick look input, before the stock look handling |
 | `JER_EVENT_PED_INPUT` | `JER_ARGS_PED_INPUT` | ped control loop | rewrite the on-foot pad before it drives Tanner |
 | `JER_EVENT_PED_MOVE` | `JER_ARGS_PED_MOVE` | `AnimatePed` (`pedest.c:638`) | player ped is about to move — the one point where a `pPed->speed` write survives the runner's per-frame re-arm; only a `TANNER_MODEL` ped with `padId >= 0`; no handler = stock speed |
@@ -159,8 +159,8 @@ reads the (possibly updated) fields back. No handler = stock behavior.
 
 ## The car handling events (collisiondevil uses these)
 
-Five transform/observe hooks added for handling overhauls. Each fires once
-per car per physics frame (or per draw, for `CAR_DRAW`) and is a no-op with
+The transform and observe hooks added for handling overhauls. Each fires once
+per car per physics frame (or per draw, for the draw hooks) and is a no-op with
 no handler.
 
 - **`JER_EVENT_CAR_REVS`** fires at the top of `ControlCarRevs` once per
@@ -280,15 +280,16 @@ no-op with no handler.
 
 ## The level-start events (levelhacks / Caine's Crossfire / d2pl use these)
 
-Three notification hooks fire around launching a level; each is a no-op with
+Five hooks fire around launching a level; each is a no-op with
 no handler.
 
-- **`JER_EVENT_GAME_START`** fires in `State_GameInit` (`main.c:803`) once a
+- **`JER_EVENT_GAME_START`** fires in `State_GameInit` (`main.c:843`) once a
   level is starting — a fresh launch, a restart, or the next mission — after
   controllers are re-opened, before the state switches to `STATE_GAMELOOP`. It
-  carries no args (fired with `NULL`); modules use it to reset transient state
-  (e.g. the sandbox closes its menu so it does not reopen unprompted, and
-  Caine's Crossfire re-arms its per-level inventory).
+  carries `JER_ARGS_GAME_START { seed }` (the debug `-seed` run seed, or 0) so
+  a module can make itself reproducible under test; modules use it to reset
+  transient state (e.g. the sandbox closes its menu so it does not reopen
+  unprompted, and Caine's Crossfire re-arms its per-level inventory).
 - **`JER_EVENT_LEVEL_LAUNCH`** fires at the end of `State_GameStart`
   (`glaunch.c:309`), after the pending level / gametype / player count /
   mission number are finalised but before the level loads. All four fields are
@@ -320,7 +321,7 @@ no handler.
 
 ## The multiplayer events (the mp module uses these)
 
-Five hooks added for LAN multiplayer (`JERICHO/MODS/mp`):
+Six hooks added for LAN multiplayer (`JERICHO/MODS/mp`):
 
 - **`JER_EVENT_MP_FRONTEND`** — fired from the frontend main screen
   (`MainScreen`, as a query, to enable the multiplayer entry without a second
@@ -344,6 +345,11 @@ Five hooks added for LAN multiplayer (`JERICHO/MODS/mp`):
 - **`JER_EVENT_NET_RECV`** — the JERICHO addon network bridge (see
   `jer_net.h`): the mp module delivers every inbound channel payload
   (`channel`, `peer`, `data`, `len`) to modules that registered the channel.
+- **`JER_EVENT_NET_SPAWN`** — fired in `InitGameVariables` (`main.c`) when a
+  level's player cars are about to be created. A network module fills
+  `PlayerStartInfo[slot]` for the remote players and raises
+  `numPlayersToCreate`; the extra slots get negative pad ids, so no local pad
+  drives them. No handler = only the local players spawn.
 
 `JER_EVENT_LEVEL_LAUNCH` also carries in/out `timeOfDay`/`weather`, so a host
 can impose its chosen time of day and weather on the level load (`LoadMission`

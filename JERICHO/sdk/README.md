@@ -14,10 +14,11 @@ sdk/
     jer_config.h      persistent per-module settings (CONFIG/<id>.ini)
     jer_pause_menu.h  module-provided pause menus
     jer_anim.h        player-skeleton animation helpers
-    jer_menu.h        module-provided frontend menus
+    jer_menu.h        a reusable list / yes-no / carousel menu (cursor + nesting)
     jer_npc.h         NPC helpers
     jer_hud.h         on-screen HUD messages (jer_hud_message) and readouts
                       (jer_hud_panel / jer_hud_panel_bar)
+    jer_console.h     the unified status console (jer_console_line / jer_console_chat)
     jer_sound.h       sound-voice reservation (jer_sound_lock / jer_sound_ensure)
     jer_net.h         addon network bridge (jer_net_send / JER_EVENT_NET_RECV)
     jer_frontend.h    add real frontend menus (jer_frontend_register_menu)
@@ -38,9 +39,12 @@ sdk/
 
 The SDK headers and import lib mirror the ones shipped in the game's
 development tree (`src_rebuild/`); they are refreshed whenever the game is
-built. The import lib exports every symbol of the game's own code plus the
-JERICHO API, so addons may call game functions and read game globals
-(`player[]`, `car_data[]`, ...) directly — no exe modification.
+built. The import lib carries the game's exported **functions** plus the JERICHO
+API, so an addon can call game functions — but it cannot import the game's
+**data** globals (`player[]`, `car_data[]`, ...): Windows will not let a separate
+library import a data symbol, so an addon reaches game state through the API and
+the event args. Code that must read or write those globals belongs in a
+compiled-in module.
 
 ## Writing an addon
 
