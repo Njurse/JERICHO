@@ -292,6 +292,7 @@ A useful run proves three things instead:
 | whether a run's palettes/pages actually behaved | `carhacks/tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — asserts the three invariants in §6 (exit 0 held / 1 violated / 2 no import) |
 | what is actually in VRAM right now | `-vramview [frames]` (live window) / `carhacks/tools/vramdump.py vram_dump.tga --png out.png` |
 | which sets/rows a level uses | the engine's own lines: `cross-city: level page state …`, `cross-city: %s set %d -> index %d …`, `cross-city: pinned set %d index %d: slot=%d, rect=(%d,%d) …` |
+| which car bakes a fallback row, and for which set | `cross-city: palette - slot %d (%s model %d) sets [ … ] have no %s palette row -> baking base row %d` — always on, one line per built car, deduped per slot by the set list. This is the line the open palette item needed: it names the car and the exact set from the log alone (`cars.c`, `PalBakeSetsDiag`). |
 
 The exporter tools are how a fix is shown *visually*: `levpalette.py` gives the
 expected colours offline, `cardump.py` gives what the last run actually drew under

@@ -3568,21 +3568,76 @@ static int CarPalIndexForBuild(int tpage, int city)
 // with the table or the lookup; if they are a different numbering entirely (a page index
 // within the model, say), then no table could classify them and the fallback is the only
 // answer available at build time.
+/* Per-slot signature of the last fallback line logged, so a rebuild of the same car (same
+ * set list) does not repeat it and a change does. */
+static u_int sPalFallbackSig[MAX_CAR_RESIDENT_MODELS];
+
 static void PalBakeSetsDiag(int slot)
 {
 	char buf[768];
-	int i, n, city, len = 0;
-
-	if (getenv("JERICHO_DIAG_PALBAKE") == NULL)
-		return;
+	int i, n, city, base, nfb = 0, len = 0, first = 1;
+	u_int sig = 2166136261u;	/* FNV-1a over the set list */
 
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return;
 
 	city = GetCarModelSourceCity(slot);
 	n = CarModelSetsCount(slot);
+	base = CarImportPaletteBlockBase(city);
 	sPalSetsDumping = 1;	/* the resolver below must not log misses */
 
+	for (i = 0; i < n; i++)
+	{
+		int set = CarModelSetsGet(slot, i);
+
+		sig = sig * 16777619u ^ (u_int)set;
+
+		if (CarPalIndexInCityFor(set, city) < 0)
+			nfb++;
+	}
+
+	/* ALWAYS-ON: name the exact sets this car has NO palette row for, and the row they
+	 * fall to. A car whose colours look wrong can then be traced to the set from the log
+	 * alone, instead of from a screenshot. Deduped per slot by the set list. */
+	if (nfb > 0 && sig != sPalFallbackSig[slot])
+	{
+		sPalFallbackSig[slot] = sig;
+
+		len += snprintf(buf + len, sizeof(buf) - len,
+			"cross-city: palette - slot %d (%s model %d) sets [",
+			slot, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?",
+			residentCarModels[slot]);
+
+		for (i = 0; i < n; i++)
+		{
+			int set = CarModelSetsGet(slot, i);
+
+			if (CarPalIndexInCityFor(set, city) >= 0)
+				continue;		/* classified: not a fallback */
+
+			len += snprintf(buf + len, sizeof(buf) - len, "%s%d", first ? "" : ", ", set);
+			first = 0;
+		}
+
+		len += snprintf(buf + len, sizeof(buf) - len,
+			"] have no %s palette row -> baking base row %d (every such set on this city "
+			"shares it, so those panels wear each other's colours)\n",
+			(city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", (base >= 0) ? base : 0);
+
+		printInfo("%s", buf);
+	}
+
+	sPalFallbackSig[slot] = sig;
+
+	/* VERBOSE (JERICHO_DIAG_PALBAKE=1): the full picture - the city's page table and every
+	 * set with its own-city index (o) beside the row the bake actually bakes (f). */
+	if (getenv("JERICHO_DIAG_PALBAKE") == NULL)
+	{
+		sPalSetsDumping = 0;
+		return;
+	}
+
+	len = 0;
 	len += snprintf(buf + len, sizeof(buf) - len,
 		"JERICHO-DIAG PALBAKE-SETS: slot=%d model=%d city=%s n=%d pageTable=[",
 		slot, residentCarModels[slot],
