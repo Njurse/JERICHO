@@ -42,6 +42,16 @@ extern "C" {
  * session the SDK calls are safe no-ops. */
 int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2);
 
+/* Resolve the car to RUN FROM - the host-side counterpart of the follow, so that
+ * a joining AI car has something to chase. Returns 1 and writes its world
+ * position when there is one.
+ *
+ * In a session this is the NEAREST other player's car, and only on the HOST: a
+ * client chases the host, so a client has nothing to run from and answers 0.
+ * The `flee_car` lever names a car_data index to run from with no session at
+ * all, so the escape can be exercised in single player. */
+int JerAiThreatTarget(CAR_DATA* car, int* x, int* z);
+
 #ifdef __cplusplus
 }
 #endif

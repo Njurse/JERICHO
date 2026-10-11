@@ -87,19 +87,22 @@ routes around a block rather than squeezing a short gap past a building.
 Adding a behavior is one function (`CAR_DATA* -> pad`) plus one row in
 `jerai_behavior.c`'s table; the menu and config pick it up automatically.
 
-## Following the host (multiplayer)
+## Multiplayer: follow and flee
 
-With a session live, the joyride behavior does **not** pick a random road
-sample: it drives to the **host's car** and holds a **clearance**, so the AI car
-tails the host around the map while a match is being tested instead of ramming
-them. The session state comes from the SDK (`jer_net_is_active`) and the host's
-car slot/pose from the compiled-in `mp` module (`MpGetPlayer(0)->carId`, then
-that slot's world pose); see `jerai_follow.c`.
+With a session live the joyride behavior does **not** pick a random road sample.
+Each machine plays its half:
 
-**Which machine it runs on:** JerAI drives the *local* car, so the following
-happens on a **client**. On the host machine itself there is nobody to chase and
-the normal wander runs instead - as it does in single player, and whenever the
-host has no car (not picked yet, or on foot).
+- a **CLIENT** drives to the **host's car** and holds a **clearance**, so it tails
+the host around the map while a match is being tested instead of ramming them;
+- the **HOST** runs FROM the nearest other player, so the cars that joined to
+follow have something to chase. Its bolt-hole is scored on the occupancy grid,
+so it is a place the car can actually DRIVE to and not a straight line away
+through a building.
+
+The session state comes from the SDK (`jer_net_is_active` / `jer_net_is_host`) and
+the cars from the compiled-in `mp` module (`MpGetPlayer(i)->carId`); see
+`jerai_follow.c`. Both halves answer 0 when they do not apply, so single player,
+and a session with nobody else in it, keep the plain random wander.
 
 Within `follow_clearance` the car stops and holds instead of closing the last
 stretch. That hold goes through `JerAiDriveHoldPad`, **not** the steering pad, so
@@ -125,6 +128,21 @@ A script does the whole thing for you: host a match as usual, then run
 It gives the follower its own run directory, so its log and `mp.ini` cannot
 collide with the host's; `--clearance`, `--range`, `--yaw-lead` and `--client-car`
 override the defaults, and `--dry` prints the command instead of launching.
+
+## What the planner will and will not route through
+
+The A\* runs on an occupancy grid of `CellEmpty` probes - and **`CellEmpty`
+deliberately ignores smashable scenery** (light posts, chairs, a lot of fencing),
+so the grid used to route straight through props the car then grinds into.
+`jerai_map.c` now runs **both** tests: the engine's own, and the same one with the
+smashable branch kept (`JerAiMapCellHasSmashable`, shared with the steering
+feelers). A sample with either in it is BLOCKED, and the planner never expands a
+blocked sample - so it routes AROUND the scenery rather than through it.
+
+The road network is a **preference, never a wall**: an off-road sample costs
+`offroad_cost` more than an on-road one (90 vs the base 100), so the planner
+takes the roads when they go the same way as the target, and still leaves them to
+reach a goal that is not on one. At 0 there is no road preference at all.
 
 ## Visualization (`viz_*`)
 
@@ -210,6 +228,9 @@ The multiplayer-follow knobs (see *Following the host*):
 | `follow_clearance` | 1500 | world units held from the followed car before stopping |
 | `follow_range` | 0 | give the target up past this distance; **0 = unlimited** (a chunked chase across the whole map) |
 | `follow_car` | -1 | TEST LEVER: a `car_data` index to follow with no session |
+| `flee` | 1 | while the HOST in a session, run from the nearest other player (0 = never) |
+| `flee_car` | -1 | TEST LEVER: a `car_data` index to run from with no session |
+| `offroad_cost` | 90 | extra A* cost for an off-road sample (on-road is 100); 0 = no road preference |
 
 ### Not built, on purpose
 

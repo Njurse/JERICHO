@@ -65,6 +65,12 @@
  * the planner prefers straight roads over a wiggly staircase (0 = off) */
 #define JERAI_CFG_TURN_COST         "turn_cost"
 
+/* How much dearer an OFF-ROAD sample is than an on-road one (on-road is 100).
+ * The road network is a PREFERENCE, never a wall: the planner takes the roads
+ * when they go the same way as the target, and still leaves them to reach a goal
+ * that is not on one. */
+#define JERAI_CFG_OFFROAD_COST      "offroad_cost"
+
 /* visualization layers (0/1) */
 #define JERAI_CFG_VIZ_GRID          "viz_grid"
 #define JERAI_CFG_VIZ_ROAD          "viz_road"
@@ -103,6 +109,15 @@
 /* TEST LEVER: a CAR_DATA index to follow with NO session at all (-1 = off), so
  * the approach + clearance + idle can be exercised in single player. */
 #define JERAI_CFG_FOLLOW_CAR        "follow_car"
+
+/* MULTIPLAYER, the other half: while a session is live and this machine IS the
+ * host, run FROM the nearest other player instead of wandering - the host-side
+ * counterpart of the follow, so a joining AI car has something to chase. 0 turns
+ * it off (1 = on). */
+#define JERAI_CFG_FLEE              "flee"
+
+/* TEST LEVER: a CAR_DATA index to run FROM with no session (-1 = off). */
+#define JERAI_CFG_FLEE_CAR          "flee_car"
 
 /* debug: override the aim with a FIXED heading (game units, -1 = off). Used to
  * settle the steering sign in isolation from a moving plan. */

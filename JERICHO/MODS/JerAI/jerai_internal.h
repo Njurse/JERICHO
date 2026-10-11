@@ -60,6 +60,13 @@ typedef struct JERAI_STATE
 	int	followRange;		/* give the host up past this distance; 0 = unlimited */
 	int	followActive;		/* last frame: we had a target to follow */
 	int	followDist;		/* last frame: distance to it (world units, clamped) */
+
+	/* MULTIPLAYER, the host's half (jerai_follow.c): the host RUNS FROM the
+	 * nearest other player, so a joining follower has something to chase. */
+	int	fleeEnabled;		/* 1 = run from the peers when we are the host */
+	int	fleeCar;		/* TEST LEVER: CAR_DATA index to run from, -1 = off */
+	int	fleeActive;		/* last frame: we were fleeing */
+
 	int	yawLead;		/* steering damper: frames of yaw the aim leads by */
 	int	pacePct;		/* joyride pace above the road limit (%) */
 	int	topSpeed;		/* flat-out speed cap (0..255) */
@@ -98,6 +105,7 @@ typedef struct JERAI_STATE
 	int	cornerLookahead;	/* how far ahead the plan is scanned for corners */
 	int	speedScale;		/* the target speed as a percentage (100 = as computed) */
 	int	turnCost;		/* A* extra cost for a direction change between samples */
+	int	offroadCost;		/* A* extra cost for an off-road sample (the road preference) */
 	int	targetSpeed;		/* grip-limited speed the driver may carry now */
 	int	gripPct;		/* 100 = hooked up, falling as the car slides */
 
@@ -147,6 +155,12 @@ void JerAiWriteConfigDefaults(void);
  * when the graph is available. Logs the counts, and (first build) cross-checks
  * its edges against the engine's own ConnectIdx. */
 int JerAiEnsureRoadGraph(void);
+
+/* The same scenery test CellEmpty makes, with the SMASHABLE branch KEPT - it only
+ * ADDS the objects CellEmpty skips (light posts, fencing, chairs), so it can
+ * never report something safe as blocked. Defined in jerai_map.c; used by the
+ * occupancy grid (so the A* routes around them) and by the steering feelers. */
+int JerAiMapCellHasSmashable(VECTOR* p, int radius);
 
 /* JER_EVENT_DRAW_WORLD handler (jerai_viz.c): draws the enabled debug layers. */
 int JerAiOnDrawWorld(void* userdata, void* args);

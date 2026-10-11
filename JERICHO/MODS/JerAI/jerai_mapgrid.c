@@ -51,10 +51,13 @@ int JerAiMapCost(const JERAI_MAP* map, int ix, int iz)
 
 	cost = 100;	/* must stay JERAI_STAR_COST_MIN in jerai_star.h */
 
-	/* off the road is allowed and discouraged: the whole point of a road
-	 * preference is that it must not make anywhere unreachable */
+	/* Off the road is allowed and discouraged: the whole point of a road preference
+	 * is that it must not make anywhere unreachable. How much it costs to be off it
+	 * is the map's `offroadCost` (JERICHO/CONFIG/JerAI.ini `offroad_cost`), so the
+	 * planner takes the road network WHEN THE ROAD GOES THE SAME WAY while still
+	 * being able to leave it to reach a goal that is not on it. */
 	if (!JerAiMapRoad(map, ix, iz))
-		cost += 40;
+		cost += map->offroadCost;
 
 	/* Hug the middle HARD. The clearance term has to be able to outweigh extra
 	 * distance, or A* chooses to squeeze a short gap past a building over driving

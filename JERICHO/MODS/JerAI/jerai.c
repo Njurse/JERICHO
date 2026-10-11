@@ -59,6 +59,8 @@ void JerAiRefreshConfig(void)
 	gJerAi.followClearance = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW_CLEARANCE, 1500);
 	gJerAi.followCar = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW_CAR, -1);
 	gJerAi.followRange = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW_RANGE, 0);
+	gJerAi.fleeEnabled = jer_config_get_int("JerAI", JERAI_CFG_FLEE, 1);
+	gJerAi.fleeCar = jer_config_get_int("JerAI", JERAI_CFG_FLEE_CAR, -1);
 	gJerAi.yawLead = jer_config_get_int("JerAI", JERAI_CFG_YAW_LEAD, 4);
 	gJerAi.aimTest = jer_config_get_int("JerAI", JERAI_CFG_AIM_TEST, -1);
 	gJerAi.pacePct = jer_config_get_int("JerAI", JERAI_CFG_PACE_PCT, 25);
@@ -75,6 +77,7 @@ void JerAiRefreshConfig(void)
 	gJerAi.cornerLookahead = jer_config_get_int("JerAI", JERAI_CFG_CORNER_LOOKAHEAD, 6000);
 	gJerAi.speedScale = jer_config_get_int("JerAI", JERAI_CFG_SPEED_SCALE, 100);
 	gJerAi.turnCost = jer_config_get_int("JerAI", JERAI_CFG_TURN_COST, 80);
+	gJerAi.offroadCost = jer_config_get_int("JerAI", JERAI_CFG_OFFROAD_COST, JERAI_MAP_OFFROAD_DEFAULT);
 
 	gJerAi.vizGrid = jer_config_get_int("JerAI", JERAI_CFG_VIZ_GRID, 0);
 	gJerAi.vizRoad = jer_config_get_int("JerAI", JERAI_CFG_VIZ_ROAD, 1);
@@ -107,6 +110,8 @@ void JerAiWriteConfigDefaults(void)
 	jer_config_set_int("JerAI", JERAI_CFG_FOLLOW_CLEARANCE, gJerAi.followClearance);
 	jer_config_set_int("JerAI", JERAI_CFG_FOLLOW_CAR, gJerAi.followCar);
 	jer_config_set_int("JerAI", JERAI_CFG_FOLLOW_RANGE, gJerAi.followRange);
+	jer_config_set_int("JerAI", JERAI_CFG_FLEE, gJerAi.fleeEnabled);
+	jer_config_set_int("JerAI", JERAI_CFG_FLEE_CAR, gJerAi.fleeCar);
 	jer_config_set_int("JerAI", JERAI_CFG_YAW_LEAD, gJerAi.yawLead);
 	jer_config_set_int("JerAI", JERAI_CFG_PACE_PCT, gJerAi.pacePct);
 	jer_config_set_int("JerAI", JERAI_CFG_TOP_SPEED, gJerAi.topSpeed);
@@ -122,6 +127,7 @@ void JerAiWriteConfigDefaults(void)
 	jer_config_set_int("JerAI", JERAI_CFG_CORNER_LOOKAHEAD, gJerAi.cornerLookahead);
 	jer_config_set_int("JerAI", JERAI_CFG_SPEED_SCALE, gJerAi.speedScale);
 	jer_config_set_int("JerAI", JERAI_CFG_TURN_COST, gJerAi.turnCost);
+	jer_config_set_int("JerAI", JERAI_CFG_OFFROAD_COST, gJerAi.offroadCost);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_GRID, gJerAi.vizGrid);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_ROAD, gJerAi.vizRoad);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_PATH, gJerAi.vizPath);
@@ -279,7 +285,7 @@ static int JerAiOnFrame(void* userdata, void* args)
 			const JERAI_BEHAVIOR* b = JerAiBehaviorFor(gJerAi.mode);
 
 			gJerAi.ctx->jer_log(gJerAi.ctx,
-				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d follow=%d fdist=%d\n",
+				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d follow=%d fdist=%d flee=%d\n",
 				b != NULL ? b->name : "?",
 				car->hd.where.t[0], car->hd.where.t[2], car->hd.speed, car->hd.direction,
 				gJerAi.carState.slip, gJerAi.carState.yawRate,
@@ -288,7 +294,7 @@ static int JerAiOnFrame(void* userdata, void* args)
 				gJerAi.path.waypoints, gJerAi.path.complete, gJerAi.lastDiff, gJerAi.lastBias,
 				gJerAi.lastSteerDir, gJerAi.wantHandbrake, gJerAi.lastPad,
 				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ, JerAiVizLines(),
-				gJerAi.followActive, gJerAi.followDist);
+				gJerAi.followActive, gJerAi.followDist, gJerAi.fleeActive);
 
 			if (gJerAi.vizHud)
 			{

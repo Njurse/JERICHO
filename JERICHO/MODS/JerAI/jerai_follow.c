@@ -106,3 +106,65 @@ int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2)
 
 	return 1;
 }
+
+/* The car to RUN FROM: the nearest other player's, on the host only. See
+ * jerai_follow.h - this is the host's half of the multiplayer pairing, the
+ * mirror of JerAiFollowTarget's client half. */
+int JerAiThreatTarget(CAR_DATA* car, int* x, int* z)
+{
+	int best = -1;
+	long long bestD2 = 0;
+	int i;
+
+	if (car == NULL)
+		return 0;
+
+	if (gJerAi.fleeCar >= 0)
+	{
+		best = gJerAi.fleeCar;
+	}
+	else
+	{
+		/* In a session only the HOST runs: a client is the one CHASING, and
+		 * giving it a threat as well would have it flee from the car it was
+		 * told to follow. */
+		if (!jer_net_is_active() || !jer_net_is_host())
+			return 0;
+
+		for (i = 0; i < MP_MAX_PLAYERS; i++)
+		{
+			MP_PLAYER* p = MpGetPlayer(i);
+			long long dx, dz, d2;
+			int slot;
+
+			if (p == NULL || p->isLocal || !p->connected || p->onFoot)
+				continue;
+
+			slot = p->carId;
+
+			if (slot < 0 || slot >= MAX_CARS || &car_data[slot] == car)
+				continue;
+
+			dx = (long long)car_data[slot].hd.where.t[0] - (long long)car->hd.where.t[0];
+			dz = (long long)car_data[slot].hd.where.t[2] - (long long)car->hd.where.t[2];
+			d2 = dx * dx + dz * dz;
+
+			if (best < 0 || d2 < bestD2)
+			{
+				best = slot;
+				bestD2 = d2;
+			}
+		}
+	}
+
+	if (best < 0 || best >= MAX_CARS)
+		return 0;
+
+	if (&car_data[best] == car)
+		return 0;	/* never run from ourselves */
+
+	if (x != NULL) *x = car_data[best].hd.where.t[0];
+	if (z != NULL) *z = car_data[best].hd.where.t[2];
+
+	return 1;
+}

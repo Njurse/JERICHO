@@ -46,6 +46,12 @@ static void gridReset(void)
 	gMap.originZ = 0;
 	gMap.valid = 1;
 
+	/* The road preference lives in the map, so a hand-built one has to set it the
+	 * way the driver does (JerAiMapBuild defaults it, JerAiDrivePlanTo takes the
+	 * config value). At 0 there is no road preference at all and the
+	 * "the road sample is cheaper" check below would fail on a bare grid. */
+	gMap.offroadCost = JERAI_MAP_OFFROAD_DEFAULT;
+
 	/* wide open until a wall is put down */
 	for (iz = 0; iz < JERAI_MAP_SIZE; iz++)
 		for (ix = 0; ix < JERAI_MAP_SIZE; ix++)

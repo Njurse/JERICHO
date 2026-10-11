@@ -116,9 +116,10 @@ static int JerAiJoyPickGoal(CAR_DATA* car, int wild, int* gx, int* gz)
 	return 1;
 }
 
-static int sGhostX, sGhostZ;	/* the current joyride destination, in world units */
+static int sGhostX, sGhostZ;	/* the current destination, in world units */
 static int sHasGoal;
 static int sLastPickTick;	/* throttle: a re-pick costs a grid build */
+static int sThreatX, sThreatZ;	/* where the threat was when the bolt-hole was picked */
 
 static int JerAiJoyArrived(CAR_DATA* car)
 {
@@ -160,25 +161,84 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 {
 	int aimX, aimZ;
 	int force = 0;
-	int followX = 0, followZ = 0;
+	int targetX = 0, targetZ = 0;
 	long long followD2 = 0;
+	int following = 0;
+	unsigned int pad;
 
-	/* MULTIPLAYER. With a session live the destination is the HOST's car, so
-	 * the AI car tails the host around the map instead of driving to a random
-	 * road sample. JerAiFollowTarget answers 0 outside a session, on the host
-	 * machine itself, and when the host has no car - and then the normal wander
-	 * below runs unchanged. */
-	if (gJerAi.followEnabled && JerAiFollowTarget(car, &followX, &followZ, &followD2))
+	gJerAi.fleeActive = 0;
+
+	/* The destination, in priority order:
+	 *
+	 *   1. FLEE   - in a session, the HOST runs from the nearest other player, so
+	 *               the cars that joined to follow have something to chase;
+	 *   2. FOLLOW - in a session, a CLIENT drives to the host's car;
+	 *   3. wander - a random road sample (single player, or a session with nobody
+	 *               else in it).
+	 *
+	 * JerAiThreatTarget and JerAiFollowTarget each answer 0 when their half does
+	 * not apply, so exactly one of the three runs and the wander below is the
+	 * unchanged single-player behaviour. */
+	if (gJerAi.fleeEnabled && JerAiThreatTarget(car, &targetX, &targetZ))
+	{
+		long long mdx = (long long)targetX - sThreatX;
+		long long mdz = (long long)targetZ - sThreatZ;
+		long long move = (long long)gJerAi.replanMove;
+
+		gJerAi.fleeActive = 1;
+
+		/* A fresh bolt-hole when we have none, have arrived, the plan failed, the
+		 * stuck recovery asks for one, or the threat has moved far enough that
+		 * "away from it" is now somewhere else. */
+		if ((!sHasGoal || JerAiJoyArrived(car) || !gJerAi.havePlan || gJerAi.forceNewGoal ||
+		     (mdx * mdx + mdz * mdz) > move * move) &&
+		    gJerAi.tick - sLastPickTick >= 10)
+		{
+			JERAI_GOAL goal;
+
+			sLastPickTick = gJerAi.tick;
+			gJerAi.forceNewGoal = 0;
+			sThreatX = targetX;
+			sThreatZ = targetZ;
+
+			/* Fleeing is scored on the SAME grid the plan uses: the goal is a
+			 * sample the car can actually REACH that is furthest from the threat,
+			 * not a straight line away from it through a building. */
+			if (JerAiMapBuild(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[1], car->hd.where.t[2]) &&
+			    JerAiLocalFleeGoal(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[2], targetX, targetZ, &goal))
+			{
+				sGhostX = goal.x;
+				sGhostZ = goal.z;
+				sHasGoal = 1;
+				force = 1;
+			}
+			else
+			{
+				/* nowhere to bolt to: get back to a road and try again next frame */
+				sHasGoal = 0;
+
+				if (JerAiLocalGoal(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[2], &goal))
+				{
+					sGhostX = goal.x;
+					sGhostZ = goal.z;
+					sHasGoal = 1;
+					force = 1;
+				}
+			}
+		}
+	}
+	else if (gJerAi.followEnabled && JerAiFollowTarget(car, &targetX, &targetZ, &followD2))
 	{
 		long long clearance = (long long)gJerAi.followClearance;
-		unsigned int pad;
+
+		following = 1;
 
 		/* the once-a-second log reads these; the distance is CLAMPED so a far
 		 * target does not wrap on the way into an int */
 		gJerAi.followActive = 1;
 		gJerAi.followDist = (followD2 > 2000000000LL) ? 2000000000 : (int)followD2;
 
-		/* the pad actually handed over this frame; the early exits below leave it
+		/* the pad actually handed over this frame; the early exit below leaves it
 		 * at 0, so the log never shows a stale pad from an earlier frame */
 		gJerAi.lastPad = 0;
 
@@ -195,77 +255,55 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 		 * as a reason to abandon the goal. JerAiDrivePlanTo re-plans on its own
 		 * once the host has drifted past replan_move. Clamped to the planner's
 		 * window, because a host across the city is beyond what A* can sample. */
-		JerAiClampToWindow(car, &followX, &followZ);
+		JerAiClampToWindow(car, &targetX, &targetZ);
 
-		sGhostX = followX;
-		sGhostZ = followZ;
+		sGhostX = targetX;
+		sGhostZ = targetZ;
 		sHasGoal = 1;
 		gJerAi.forceNewGoal = 0;
-
-		if (!JerAiDrivePlanTo(car, sGhostX, sGhostZ, 0))
-			return 0;	/* no plan: coast, and try again next frame */
-
-		if (!JerAiDriveAim(&aimX, &aimZ))
-			return 0;
-
-		gJerAi.aimX = aimX;
-		gJerAi.aimZ = aimZ;
-
-		pad = JerAiDriveSteerPad(car, aimX, aimZ);
-
-		/* Ease off on the approach: within twice the clearance, do not power
-		 * toward the host, so the stop is a coast-and-brake rather than a lunge
-		 * (the pad's own close-traffic brake is the hard backstop). */
-		if (followD2 < clearance * clearance * 4)
-			pad &= ~(unsigned int)CAR_PAD_ACCEL;
-
-		/* lastPad is what the once-a-second log prints, and JerAiDriveSteerPad
-		 * set it to the pad BEFORE the ease-off strip - re-stamp it so the line
-		 * shows the pad the engine actually received. */
-		gJerAi.lastPad = (int)pad;
-
-		return pad;
 	}
-
-	gJerAi.followActive = 0;
-	gJerAi.followDist = 0;
-
-	/* A fresh destination when we have none, have arrived, when the plan could
-	 * not be made at all, when A* could not REACH the current goal, or when the
-	 * stuck recovery asks for one. The last three are the important ones: a goal
-	 * that has drifted out of the grid window makes A* refuse, and a goal across
-	 * a barrier leaves a partial path the car never completes - without re-picking
-	 * it would sit there forever ("glued"). */
-	if ((!sHasGoal || JerAiJoyArrived(car) || !gJerAi.havePlan || gJerAi.incomplete || gJerAi.forceNewGoal) &&
-	    gJerAi.tick - sLastPickTick >= 10)
+	else
 	{
-		sLastPickTick = gJerAi.tick;
-		JerAiMapBuild(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[1], car->hd.where.t[2]);
-		gJerAi.forceNewGoal = 0;
+		gJerAi.followActive = 0;
+		gJerAi.followDist = 0;
 
-		if (JerAiJoyPickGoal(car, gJerAi.reposition, &sGhostX, &sGhostZ))
+		/* A fresh destination when we have none, have arrived, when the plan could
+		 * not be made at all, when A* could not REACH the current goal, or when the
+		 * stuck recovery asks for one. The last three are the important ones: a goal
+		 * that has drifted out of the grid window makes A* refuse, and a goal across
+		 * a barrier leaves a partial path the car never completes - without re-picking
+		 * it would sit there forever ("glued"). */
+		if ((!sHasGoal || JerAiJoyArrived(car) || !gJerAi.havePlan || gJerAi.incomplete || gJerAi.forceNewGoal) &&
+		    gJerAi.tick - sLastPickTick >= 10)
 		{
-			sHasGoal = 1;
-			gJerAi.reposition = 0;
-			force = 1;
-		}
-		else
-		{
-			/* no road in the window (e.g. off-map): fall back to the local search
-			 * so the car heads back toward a road rather than idling */
-			JERAI_GOAL goal;
+			sLastPickTick = gJerAi.tick;
+			JerAiMapBuild(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[1], car->hd.where.t[2]);
+			gJerAi.forceNewGoal = 0;
 
-			sHasGoal = 0;
-
-			if (JerAiLocalGoal(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[2], &goal))
+			if (JerAiJoyPickGoal(car, gJerAi.reposition, &sGhostX, &sGhostZ))
 			{
-				sGhostX = goal.x;
-				sGhostZ = goal.z;
 				sHasGoal = 1;
+				gJerAi.reposition = 0;
 				force = 1;
 			}
+			else
+			{
+				/* no road in the window (e.g. off-map): fall back to the local search
+				 * so the car heads back toward a road rather than idling */
+				JERAI_GOAL goal;
+
+				sHasGoal = 0;
+
+				if (JerAiLocalGoal(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[2], &goal))
+				{
+					sGhostX = goal.x;
+					sGhostZ = goal.z;
+					sHasGoal = 1;
+					force = 1;
+				}
+			}
 		}
-	}
+	}	/* end: the random-wander destination */
 
 	if (!JerAiDrivePlanTo(car, sGhostX, sGhostZ, force))
 		return 0;	/* no plan: coast, and re-pick the goal next frame */
@@ -276,7 +314,25 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 	gJerAi.aimX = aimX;
 	gJerAi.aimZ = aimZ;
 
-	return JerAiDriveSteerPad(car, aimX, aimZ);
+	pad = JerAiDriveSteerPad(car, aimX, aimZ);
+
+	if (following)
+	{
+		long long clearance = (long long)gJerAi.followClearance;
+
+		/* Ease off on the approach: within twice the clearance, do not power
+		 * toward the host, so the stop is a coast-and-brake rather than a lunge
+		 * (the pad's own close-traffic brake is the hard backstop). */
+		if (followD2 < clearance * clearance * 4)
+			pad &= ~(unsigned int)CAR_PAD_ACCEL;
+
+		/* lastPad is what the once-a-second log prints, and JerAiDriveSteerPad set
+		 * it to the pad BEFORE that strip - re-stamp it so the line shows the pad
+		 * the engine actually received. */
+		gJerAi.lastPad = (int)pad;
+	}
+
+	return pad;
 }
 
 /* ------------------------------------------------------------------ */

@@ -59,7 +59,14 @@ typedef struct JERAI_MAP
 	unsigned char cell[JERAI_MAP_SIZE][JERAI_MAP_SIZE];
 	int	clear[JERAI_MAP_SIZE][JERAI_MAP_SIZE];	/* samples to the nearest blocked one, capped */
 	int	turnCost;	/* extra cost for changing direction between samples (0 = off) */
+	int	offroadCost;	/* extra cost for an OFF-ROAD sample (the road preference) */
 } JERAI_MAP;
+
+/* The extra cost an off-road sample carries. On-road samples cost 100, so this
+ * only says how strongly the planner prefers the road network WHEN THE ROAD GOES
+ * THE SAME WAY: off-road is still allowed, or a car that has wandered off the
+ * road (or a goal that is off it) could never be planned to. */
+#define JERAI_MAP_OFFROAD_DEFAULT	90
 
 /* Build the window centred on (x, y, z). Returns 1 when the world was there to
  * sample, 0 when it was not (frontend, loading screen, between levels). */
