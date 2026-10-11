@@ -123,10 +123,14 @@ static int sThreatX, sThreatZ;	/* where the threat was when the bolt-hole was pi
 
 static int JerAiJoyArrived(CAR_DATA* car)
 {
-	int dx = sGhostX - car->hd.where.t[0];
-	int dz = sGhostZ - car->hd.where.t[2];
+	/* 64-bit on purpose: a 32-bit squared world distance WRAPS NEGATIVE past
+	 * ~46,000 units, so a goal on the far side of the level would read as
+	 * "arrived" and the pick would spin, re-choosing a destination every 10
+	 * frames while the car merely looked close to it. */
+	long long dx = (long long)sGhostX - (long long)car->hd.where.t[0];
+	long long dz = (long long)sGhostZ - (long long)car->hd.where.t[2];
 
-	return (long)dx * dx + (long)dz * dz < 1600L * 1600L;
+	return (dx * dx + dz * dz) < (1600LL * 1600LL);
 }
 
 /* The A* window is JERAI_MAP_SIZE samples of JERAI_MAP_STEP units, centred on
@@ -167,6 +171,7 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 	unsigned int pad;
 
 	gJerAi.fleeActive = 0;
+	gJerAi.followCarId = -1;	/* the resolvers below set it when there IS one */
 
 	/* The destination, in priority order:
 	 *
@@ -198,6 +203,7 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 
 			sLastPickTick = gJerAi.tick;
 			gJerAi.forceNewGoal = 0;
+			gJerAi.reposition = 0;	/* a fresh bolt-hole IS the relocation */
 			sThreatX = targetX;
 			sThreatZ = targetZ;
 
@@ -233,6 +239,8 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 
 		following = 1;
 
+		int jink = 0;
+
 		/* the once-a-second log reads these; the distance is CLAMPED so a far
 		 * target does not wrap on the way into an int */
 		gJerAi.followActive = 1;
@@ -249,18 +257,45 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 		if (followD2 < clearance * clearance)
 			return JerAiDriveHoldPad(car);
 
-		/* The goal IS the host, and the host moves: re-stamp it every frame.
-		 * Deliberately NOT the repick block below - that rebuilds the occupancy
-		 * grid, and it treats an INCOMPLETE plan (a host standing off the road)
-		 * as a reason to abandon the goal. JerAiDrivePlanTo re-plans on its own
-		 * once the host has drifted past replan_move. Clamped to the planner's
-		 * window, because a host across the city is beyond what A* can sample. */
-		JerAiClampToWindow(car, &targetX, &targetZ);
+		/* JINK. The stuck recovery has just backed the car off something and
+		 * asked for a different destination. Re-stamping the host here would
+		 * send it straight back through the same wedge, and the loop would never
+		 * break - so for ONE pick, take the recovery's advice and aim at the
+		 * nearest reachable open ground instead. The next frame follows the host
+		 * again from wherever that leaves the car. */
+		if (gJerAi.forceNewGoal)
+		{
+			JERAI_GOAL escape;
 
-		sGhostX = targetX;
-		sGhostZ = targetZ;
-		sHasGoal = 1;
-		gJerAi.forceNewGoal = 0;
+			gJerAi.forceNewGoal = 0;
+			gJerAi.reposition = 0;
+
+			if (JerAiMapBuild(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[1], car->hd.where.t[2]) &&
+			    JerAiLocalGoal(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[2], &escape))
+			{
+				sGhostX = escape.x;
+				sGhostZ = escape.z;
+				sHasGoal = 1;
+				jink = 1;
+			}
+		}
+
+		if (!jink)
+		{
+			/* The goal IS the host, and the host moves: re-stamp it every frame.
+			 * Deliberately NOT the repick block below - that rebuilds the
+			 * occupancy grid, and it treats an INCOMPLETE plan (a host standing
+			 * off the road) as a reason to abandon the goal. JerAiDrivePlanTo
+			 * re-plans on its own once the host has drifted past replan_move.
+			 * Clamped to the planner's window, because a host across the city is
+			 * beyond what A* can sample. */
+			JerAiClampToWindow(car, &targetX, &targetZ);
+
+			sGhostX = targetX;
+			sGhostZ = targetZ;
+			sHasGoal = 1;
+			gJerAi.forceNewGoal = 0;
+		}
 	}
 	else
 	{

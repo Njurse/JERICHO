@@ -104,6 +104,9 @@ int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2)
 	if (z != NULL) *z = car_data[slot].hd.where.t[2];
 	if (dist2 != NULL) *dist2 = d2;
 
+	/* tell the driver this car is a DESTINATION, not traffic - see JerAiCarAhead */
+	gJerAi.followCarId = slot;
+
 	return 1;
 }
 
@@ -162,6 +165,8 @@ int JerAiThreatTarget(CAR_DATA* car, int* x, int* z)
 
 	if (&car_data[best] == car)
 		return 0;	/* never run from ourselves */
+
+	gJerAi.followCarId = best;	/* a destination, not traffic - see JerAiCarAhead */
 
 	if (x != NULL) *x = car_data[best].hd.where.t[0];
 	if (z != NULL) *z = car_data[best].hd.where.t[2];

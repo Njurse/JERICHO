@@ -41,8 +41,13 @@
 /* steer at the furthest waypoint at least this far out (world units) */
 #define JERAI_CFG_LOOK_AHEAD        "look_ahead"
 
-/* traffic/wall avoidance: start slowing for a car ahead within this range */
+/* Traffic/wall avoidance: start slowing for a car ahead within this range, in
+ * world units. Capped at JERAI_AVOID_MAX - a car does not brake for traffic half
+ * a street away - and a larger value is logged rather than silently ignored. */
 #define JERAI_CFG_AVOID_DIST        "avoid_dist"
+
+/* The hard cap on `avoid_dist`, in world units. See JERAI_CFG_AVOID_DIST. */
+#define JERAI_AVOID_MAX             1200
 
 /* evade trigger: a cop closer than this (world units) counts as a threat */
 #define JERAI_CFG_COP_CLEARANCE     "cop_clearance"
@@ -128,5 +133,12 @@
  * the car oscillating up a straight - but too much of it and the wheel straightens
  * the moment the car starts turning, which reads as "it steers far too slowly". */
 #define JERAI_CFG_YAW_LEAD          "yaw_lead"
+
+/* STEER TRACE: log a compact line about the STEERING LOOP itself every N frames
+ * (0 = off). The once-a-second drive line is too coarse to see a saw - this
+ * prints the pad, the heading error, the damped error, the feeler bias, the
+ * speed, the look-ahead and the ACTUAL front wheel angle, which is the number
+ * that shows the engine yanking the wheel to centre between corrections. */
+#define JERAI_CFG_STEER_TRACE       "steer_trace"
 
 #endif /* JERAI_H */

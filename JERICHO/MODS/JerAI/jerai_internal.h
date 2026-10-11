@@ -66,8 +66,12 @@ typedef struct JERAI_STATE
 	int	fleeEnabled;		/* 1 = run from the peers when we are the host */
 	int	fleeCar;		/* TEST LEVER: CAR_DATA index to run from, -1 = off */
 	int	fleeActive;		/* last frame: we were fleeing */
+	int	followCarId;		/* CAR_DATA index being followed/run from, -1 = none */
 
 	int	yawLead;		/* steering damper: frames of yaw the aim leads by */
+	int	steerTrace;		/* log a compact steering-loop line every N frames (0 = off) */
+	int	lastPred;		/* the damped heading error the steer decision used */
+	int	lastWheel;		/* the front wheel angle AFTER the pad was applied (handling.c) */
 	int	pacePct;		/* joyride pace above the road limit (%) */
 	int	topSpeed;		/* flat-out speed cap (0..255) */
 	int	runLights;		/* 1 = never park, never stop at lights/yields */
@@ -96,6 +100,12 @@ typedef struct JERAI_STATE
 	int	lastDiff;		/* last signed heading error (game units) */
 	int	lastBias;		/* last feeler steering bias (game units) */
 	int	lastPad;		/* last pad the driver produced */
+	int	stuckFrames;		/* frames at a standstill, for the recovery trigger */
+	int	recoverFrames;	/* frames left in the reverse burst (0 = not recovering) */
+	int	aimLook;		/* the look-ahead distance the aim actually used this frame */
+	int	aimDist;		/* how far ahead the chosen aim point sits (world units) */
+	int	aimPathDir;		/* the PATH's own direction where the aim sits (0..4095) */
+	int	aimOff;		/* how far the car is OFF the planned line (cross-track) */
 	int	lastSteerDir;		/* -1/0/+1: hysteresis on the steer command */
 	int	wantHandbrake;		/* set for a wall-evasion tight turn (applied via handled) */
 

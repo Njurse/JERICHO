@@ -62,6 +62,7 @@ void JerAiRefreshConfig(void)
 	gJerAi.fleeEnabled = jer_config_get_int("JerAI", JERAI_CFG_FLEE, 1);
 	gJerAi.fleeCar = jer_config_get_int("JerAI", JERAI_CFG_FLEE_CAR, -1);
 	gJerAi.yawLead = jer_config_get_int("JerAI", JERAI_CFG_YAW_LEAD, 4);
+	gJerAi.steerTrace = jer_config_get_int("JerAI", JERAI_CFG_STEER_TRACE, 0);
 	gJerAi.aimTest = jer_config_get_int("JerAI", JERAI_CFG_AIM_TEST, -1);
 	gJerAi.pacePct = jer_config_get_int("JerAI", JERAI_CFG_PACE_PCT, 25);
 	gJerAi.topSpeed = jer_config_get_int("JerAI", JERAI_CFG_TOP_SPEED, 255);
@@ -69,7 +70,7 @@ void JerAiRefreshConfig(void)
 	gJerAi.replanMs = jer_config_get_int("JerAI", JERAI_CFG_REPLAN_MS, 700);
 	gJerAi.replanMove = jer_config_get_int("JerAI", JERAI_CFG_REPLAN_MOVE, 700);
 	gJerAi.lookAhead = jer_config_get_int("JerAI", JERAI_CFG_LOOK_AHEAD, 1400);
-	gJerAi.avoidDist = jer_config_get_int("JerAI", JERAI_CFG_AVOID_DIST, 1800);
+	gJerAi.avoidDist = jer_config_get_int("JerAI", JERAI_CFG_AVOID_DIST, JERAI_AVOID_MAX);
 	gJerAi.copClearance = jer_config_get_int("JerAI", JERAI_CFG_COP_CLEARANCE, 6000);
 	gJerAi.maxSteer = jer_config_get_int("JerAI", JERAI_CFG_MAX_STEER, 512);
 	gJerAi.cornerG = jer_config_get_int("JerAI", JERAI_CFG_CORNER_G, 2);
@@ -113,6 +114,7 @@ void JerAiWriteConfigDefaults(void)
 	jer_config_set_int("JerAI", JERAI_CFG_FLEE, gJerAi.fleeEnabled);
 	jer_config_set_int("JerAI", JERAI_CFG_FLEE_CAR, gJerAi.fleeCar);
 	jer_config_set_int("JerAI", JERAI_CFG_YAW_LEAD, gJerAi.yawLead);
+	jer_config_set_int("JerAI", JERAI_CFG_STEER_TRACE, gJerAi.steerTrace);
 	jer_config_set_int("JerAI", JERAI_CFG_PACE_PCT, gJerAi.pacePct);
 	jer_config_set_int("JerAI", JERAI_CFG_TOP_SPEED, gJerAi.topSpeed);
 	jer_config_set_int("JerAI", JERAI_CFG_RUN_LIGHTS, gJerAi.runLights);
@@ -219,6 +221,25 @@ static int JerAiOnCarPad(void* userdata, void* args)
 		car->wheelspin = 0;
 	}
 
+	/* STEER TRACE (`steer_trace` = log every N frames, 0 = off). The once-a-second
+	 * drive line cannot show a saw: it samples 30 frames apart while the wheel is
+	 * turned on and off in ones and twos. This is the loop itself - the pad, the
+	 * heading error, the DAMPED error the decision used, the feeler bias, the
+	 * speed, the look-ahead the aim used, and the ACTUAL front wheel angle, which
+	 * is where the engine's 64/frame centring shows up. */
+	if (gJerAi.steerTrace > 0 && (gJerAi.tick % gJerAi.steerTrace) == 0)
+	{
+		gJerAi.ctx->jer_log(gJerAi.ctx,
+			"[JerAI] steer t=%d pad=%x dir=%d diff=%d pred=%d bias=%d spd=%d tgt=%d wa=%d la=%d aimd=%d pdir=%d off=%d ax=%d az=%d gx=%d gz=%d wp=%d st=%d rec=%d hb=%d\n",
+			gJerAi.tick, (int)pad, gJerAi.lastSteerDir, gJerAi.lastDiff, gJerAi.lastPred,
+			gJerAi.lastBias, car->hd.speed, gJerAi.targetSpeed, gJerAi.lastWheel,
+			gJerAi.aimLook, gJerAi.aimDist, gJerAi.aimPathDir, gJerAi.aimOff,
+			gJerAi.aimX, gJerAi.aimZ,
+			gJerAi.goalX, gJerAi.goalZ, gJerAi.path.waypoints,
+			gJerAi.stuckFrames, gJerAi.recoverFrames,
+			gJerAi.wantHandbrake);
+	}
+
 	/* one-shot probe: the pad the engine offered vs the one we return, so the
 	 * bit meanings are never guessed at again */
 	{
@@ -285,7 +306,7 @@ static int JerAiOnFrame(void* userdata, void* args)
 			const JERAI_BEHAVIOR* b = JerAiBehaviorFor(gJerAi.mode);
 
 			gJerAi.ctx->jer_log(gJerAi.ctx,
-				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d follow=%d fdist=%d flee=%d\n",
+				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) la=%d aimd=%d stuck=%d rec=%d vizlines=%d follow=%d fdist=%d flee=%d\n",
 				b != NULL ? b->name : "?",
 				car->hd.where.t[0], car->hd.where.t[2], car->hd.speed, car->hd.direction,
 				gJerAi.carState.slip, gJerAi.carState.yawRate,
@@ -293,9 +314,10 @@ static int JerAiOnFrame(void* userdata, void* args)
 				gJerAi.curve.sharp, gJerAi.curve.dist,
 				gJerAi.path.waypoints, gJerAi.path.complete, gJerAi.lastDiff, gJerAi.lastBias,
 				gJerAi.lastSteerDir, gJerAi.wantHandbrake, gJerAi.lastPad,
-				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ, JerAiVizLines(),
+				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ,
+				gJerAi.aimLook, gJerAi.aimDist, gJerAi.stuckFrames, gJerAi.recoverFrames,
+				JerAiVizLines(),
 				gJerAi.followActive, gJerAi.followDist, gJerAi.fleeActive);
-
 			if (gJerAi.vizHud)
 			{
 				char hud[160];

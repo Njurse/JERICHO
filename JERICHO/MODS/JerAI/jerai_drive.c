@@ -363,12 +363,15 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 	int dir, fwdX, fwdZ;
 	long bestX, bestZ;
 	long la;
+	long segDx = 0, segDz = 0;	/* the plan segment the aim landed on */
 
 	if (car == NULL || !gJerAi.havePlan || gJerAi.path.waypoints <= 0)
 		return 0;
 
 	/* a longer look-ahead at speed: smoother, no sawing */
 	la = gJerAi.lookAhead + (long)JerAiAbs(car->hd.speed) * JERAI_AIM_SPEED_GAIN;
+
+	gJerAi.aimLook = (int)la;   /* the once-a-second log reads this */
 
 	n = gJerAi.path.waypoints;
 	cx = car->hd.where.t[0];
@@ -428,6 +431,11 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 		arc += segLen;
 	}
 
+	/* cross-track: how far the car sits off the planned line - the term that
+	 * turns a small lateral error into a large bearing error when the look-ahead
+	 * is short. Magnitude only; the steer trace reads it. */
+	gJerAi.aimOff = (bestD2 > 0) ? (int)sqrt((double)bestD2 + 0.5) : 0;
+
 	/* Walk FORWARD from there and take the first point that is both at least
 	 * look_ahead further along AND not behind the car (the DIRECTIONAL GUIDE).
 	 * Skimming the segment in ~512-unit steps means a point behind the car is
@@ -475,6 +483,8 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 				{
 					bestX = px;
 					bestZ = pz;
+					segDx = dx;
+					segDz = dz;
 					done = 1;
 				}
 				else
@@ -485,6 +495,8 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 					{
 						bestX = px;
 						bestZ = pz;
+						segDx = dx;
+						segDz = dz;
 						done = 1;
 					}
 				}
@@ -504,6 +516,22 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 	if (aimZ) *aimZ = (int)bestZ;
 	gJerAi.aimX = (int)bestX;
 	gJerAi.aimZ = (int)bestZ;
+
+	/* how far ahead the aim actually landed - the once-a-second log prints it,
+	 * and it is the honest readout for "is it aiming down the road or at its own
+	 * bumper" (a look-ahead the plan cannot satisfy falls back to the goal). */
+	{
+		long ax = bestX - cx, az = bestZ - cz;
+
+		gJerAi.aimDist = (int)sqrt((double)(ax * ax + az * az) + 0.5);
+
+		/* the PATH's own direction where the aim sits - the bearing of the plan
+		 * segment that carries it, NOT the bearing from the car to it (that is
+		 * `want`, and using it here would make the readout tautological). With
+		 * aimOff this splits the heading error into "the car is not aligned with
+		 * the path" and "the aim sits off to one side of the car". */
+		gJerAi.aimPathDir = (segDx != 0 || segDz != 0) ? (ratan2(segDx, segDz) & 0xfff) : 0;
+	}
 
 	return 1;
 }
@@ -532,8 +560,23 @@ static int JerAiCarAhead(CAR_DATA* car, long* dist2Out, int* relOut)
 	if (dist2Out) *dist2Out = -1;
 	if (relOut) *relOut = 0;
 
-	if (range > 1200)
-		range = 1200;	/* a car does not brake for traffic half a street away */
+	if (range > JERAI_AVOID_MAX)
+	{
+		/* The cap is deliberate - a car does not brake for traffic half a street
+		 * away - but it used to be SILENT, so `avoid_dist = 1800` in the config
+		 * did nothing at all and looked broken. Say so once. */
+		static int warned;
+
+		if (!warned && gJerAi.ctx != NULL)
+		{
+			gJerAi.ctx->jer_log(gJerAi.ctx,
+				"[JerAI] avoid_dist %d exceeds the %d cap; using %d\n",
+				range, JERAI_AVOID_MAX, JERAI_AVOID_MAX);
+			warned = 1;
+		}
+
+		range = JERAI_AVOID_MAX;
+	}
 
 	range2 = (long)range * range;
 
@@ -544,6 +587,13 @@ static int JerAiCarAhead(CAR_DATA* car, long* dist2Out, int* relOut)
 		long d2;
 
 		if (o == car || o->controlType == CONTROL_TYPE_NONE)
+			continue;
+
+		/* A car we are FOLLOWING (or running from) is the destination, not
+		 * traffic: swerving around it and braking for it is what made a follower
+		 * try to overtake the car it was told to tail. The follow clearance is
+		 * what keeps the two apart. */
+		if (i == gJerAi.followCarId)
 			continue;
 
 		ox = o->hd.where.t[0] - cx;
@@ -640,7 +690,15 @@ static int JerAiFeelers(CAR_DATA* car, int* frontBlocked)
 
 /* Stuck recovery. A car wedged against scenery (or spun so its aim is behind
  * it) will sit at ~0 speed forever if left to steer forward; after a moment of
- * that, back up while turning, which frees it and lets the next plan take. */
+ * that, back up while turning, which frees it and lets the next plan take.
+ *
+ * THE STEER BIT IS INVERTED IN A BURST, and that is not a typo. CAR_PAD_BRAKE
+ * at a standstill is REVERSE thrust (handling.c: `-rws < 23` -> a fixed -5000),
+ * and steering while reversing rotates the nose the OPPOSITE way to the same
+ * bit going forward. Steering "toward the aim side" with the forward sign while
+ * backing up therefore swings the nose AWAY from where the car wants to go, so
+ * every burst left the heading error worse than it found it and the car
+ * re-wedged - the observed 15-second reverse loop. */
 #define JERAI_STUCK_FRAMES	40	/* ~1.3 s at the fixed 30 Hz logic rate */
 #define JERAI_RECOVER_FRAMES	25
 
@@ -719,18 +777,27 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 		sStuckFrames++;
 	}
 
+	gJerAi.stuckFrames = sStuckFrames;
+	gJerAi.recoverFrames = sRecoverFrames;
+
 	if (sRecoverFrames > 0)
 	{
 		sRecoverFrames--;
 
-		/* back up, turning toward the aim side, to peel off the wall */
-		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT);
+		/* back up, steering so the NOSE swings toward the aim (the bit is
+		 * inverted because we are reversing - see JERAI_RECOVER_FRAMES) */
+		gJerAi.recoverFrames = sRecoverFrames;
+
+		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_LEFT : CAR_PAD_RIGHT);
 	}
 
 	if (sStuckFrames >= JERAI_STUCK_FRAMES)
 	{
 		sStuckFrames = 0;
 		sRecoverFrames = JERAI_RECOVER_FRAMES;
+
+		gJerAi.stuckFrames = 0;
+		gJerAi.recoverFrames = sRecoverFrames;
 
 		/* the plan is what led us here: throw it away so the next frame re-plans
 		 * from wherever the reverse burst leaves us, and ask the behavior for a
@@ -740,7 +807,7 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 		gJerAi.forceNewGoal = 1;
 		gJerAi.reposition = 1;
 
-		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT);
+		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_LEFT : CAR_PAD_RIGHT);
 	}
 
 	/* --- wall evasion: a tight handbrake turn when the nose gets close -----
@@ -778,7 +845,7 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 		sRecoverFrames = JERAI_RECOVER_FRAMES;
 		gJerAi.lastSteerDir = 0;
 
-		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT);
+		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_LEFT : CAR_PAD_RIGHT);
 	}
 
 	/* --- speed: brake into the corner, power out of it --------------------
@@ -819,6 +886,8 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 		int pred = diff - gJerAi.carState.yaw * gJerAi.yawLead;
 		int apred = pred < 0 ? -pred : pred;
 		int dir = pred > 0 ? 1 : -1;
+
+		gJerAi.lastPred = pred;	/* the steer trace reads this */
 
 		if (gJerAi.lastSteerDir == dir && apred > holdBand)
 			;					/* stay on it */
@@ -877,6 +946,12 @@ unsigned int JerAiDriveSteerPad(CAR_DATA* car, int aimX, int aimZ)
 	unsigned int pad = JerAiSteerPadImpl(car, aimX, aimZ);
 
 	gJerAi.lastPad = (int)pad;
+
+	/* the ACTUAL front wheel angle, read back after the engine applied the pad
+	 * (30 Hz logic, one frame behind). This is the readout that shows the wheel
+	 * being centred between corrections - see JERAI_CFG_STEER_TRACE. */
+	if (car != NULL)
+		gJerAi.lastWheel = car->wheel_angle;
 
 	return pad;
 }
