@@ -17,8 +17,26 @@
  *   ...in the module entry...
  *   jer_pause_menu_register(&menu);
  *
- * Menu depth: root -> Modules -> your menu -> one submenu level.
+ * Menu depth: the root pause menu -> the "JERICHO Addons" container -> your
+ * page -> up to JER_PAUSE_MENU_MAX_DEPTH submenu levels (see below).
  * ------------------------------------------------------------------ */
+
+/* HOW DEEP YOUR MENU MAY NEST, measured in submenu levels BELOW your own page.
+ *
+ *   0 = a page with no submenus at all (most modules)
+ *   1 = your page -> a submenu
+ *   2 = your page -> a submenu -> a sub-submenu
+ *   ...
+ *
+ * The engine's pause screen owns the levels above your page (the root pause menu
+ * and the "JERICHO Addons" container), and its navigation stack is a fixed array,
+ * so this is a CEILING rather than a hint: a tree that would nest deeper than this
+ * is refused and logged -- the deeper menu is left out, never built half-way.
+ *
+ * The engine sizes that stack FROM this constant (PAUSE_MENU_LEVELS in pause.c is
+ * derived from it), so raising it here is a compile-visible act rather than a
+ * secret agreement between two files that can drift apart. */
+#define JER_PAUSE_MENU_MAX_DEPTH 5
 
 #ifdef __cplusplus
 extern "C" {

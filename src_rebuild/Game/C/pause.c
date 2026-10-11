@@ -22,7 +22,33 @@
 #define REPLAY_NAME_LEN		16
 #define SCORE_NAME_LEN		5
 
-#define PAUSE_MENU_LEVELS 4	/* root + Modules container + module menu + one submenu */
+/* The levels of the navigation stack the MODULE BRIDGE does not own: 0 is the root
+ * pause menu and 1 is the "JERICHO Addons" container, so a module's own page is
+ * level 2 and its submenus take 3 upwards. */
+#define JER_PAUSE_BRIDGE_ROOT_LEVELS	2
+
+/* How deep the pause menu's OWN navigation stack goes, and therefore how deep a
+ * module's menu tree may be. The levels are spent in this order:
+ *
+ *     0  the root pause menu
+ *     1  the "JERICHO Addons" container
+ *     2  a module's own page          <- JER_PAUSE_MENU_MAX_DEPTH counts from here
+ *     3+ that page's submenus, sub-submenus, ...
+ *
+ * DERIVED from the SDK's contract rather than written down here: the SDK says how
+ * deep a page may nest (JER_PAUSE_MENU_MAX_DEPTH, jer_pause_menu.h) and this is
+ * what the engine must hold to honour it. Raising the contract therefore resizes
+ * the stack at compile time instead of leaving two numbers to drift -- which is
+ * exactly how a hard-coded `depth > 1` and a 4-level stack came to disagree, with
+ * the deeper menu dropped and nothing said.
+ *
+ * VisibleMenus[]/ActiveItem[] below are sized to this and indexed by the navigation
+ * code, so it is a CEILING, not a hint. */
+#define PAUSE_MENU_LEVELS	(JER_PAUSE_BRIDGE_ROOT_LEVELS + 1 + JER_PAUSE_MENU_MAX_DEPTH)
+
+/* The bridge's own ceiling IS the SDK's contract, named here so the bridge's checks
+ * read in terms of the stack they index. */
+#define JER_PAUSE_BRIDGE_MAX_DEPTH	JER_PAUSE_MENU_MAX_DEPTH
 
 static int gScoreEntered = 0;
 static char EnterNameText[32] = { 0 };		// translated text
@@ -861,8 +887,37 @@ void SetupMenu(MENU_HEADER *menu, int back)
 
 	ActiveMenu->Bound.x = ((304 - len) / 2) - 4;
 	ActiveMenu->Bound.w = len + 24;
-	ActiveMenu->Bound.y = MAX(48, (SCREEN_H - (numItems + 1) * 15) / 2);
-	ActiveMenu->Bound.h = (numItems + 1) * 15 + 10;
+
+	/* FIT THE WHOLE LIST ON SCREEN.
+	 *
+	 * The menu is centred, but that centre is capped at y = 48 for the look -- and
+	 * the cap is what sends a long list off the bottom. Once the list is too tall
+	 * for a centred position (about ten rows) it starts at 48 whatever its length,
+	 * and past about thirteen rows the bottom ones simply run off the screen.
+	 * mp's pause page is eight rows and growing, so the cap yields WHEN THE LIST
+	 * WOULD NOT FIT and not otherwise: the menu is nudged up just far enough to
+	 * keep every row visible, which is the point of showing them at all.
+	 *
+	 * The condition is deliberately "would overflow" rather than "is tall": a menu
+	 * that fits at 48 is drawn exactly where it always was, so nothing that is fine
+	 * today moves because of this. The +1 row is the title, as it always was here.
+	 * A list too tall for the screen even at the top cannot be fixed by nudging, so
+	 * it starts at the top margin and is left as it comes. */
+	{
+		int rows = numItems + 1;
+		int y = (SCREEN_H - rows * 15) / 2;
+
+		if (y < 48)
+		{
+			y = (48 + rows * 15 > SCREEN_H) ? (SCREEN_H - rows * 15 - 8) : 48;
+
+			if (y < 4)
+				y = 4;
+		}
+
+		ActiveMenu->Bound.y = y;
+		ActiveMenu->Bound.h = rows * 15 + 10;
+	}
 
 	ActiveItem[VisibleMenu] = &ActiveMenu->MenuItems[ActiveMenuItem];
 }
@@ -886,9 +941,16 @@ void SetupMenu(MENU_HEADER *menu, int back)
  * four submenus, so the old 8 was already full - adding one more submenu pushed
  * a DIFFERENT module's menu out, which is the kind of bug that looks like the
  * other module broke. Headroom is the fix; the refusal is logged below so it can
- * never be silent again. */
-#define JER_PAUSE_MAX_MENUS 24		/* registered menus (incl. submenus) */
-#define JER_PAUSE_MAX_ITEMS 192		/* bridge items (incl. terminators) */
+ * never be silent again.
+ *
+ * DEPTH MULTIPLIES THIS. A page may nest JER_PAUSE_BRIDGE_MAX_DEPTH levels, and
+ * every submenu costs a header whatever its depth, so one module's tree can claim
+ * many more headers than the flat menus these numbers were first sized for. The
+ * relationship to size against is therefore MENUS vs ITEMS (a tree cannot have
+ * more headers than items, since every submenu needs an item to reach it), not
+ * MENUS vs the number of modules. */
+#define JER_PAUSE_MAX_MENUS 48		/* registered menus (incl. every submenu header) */
+#define JER_PAUSE_MAX_ITEMS 256		/* bridge items (incl. terminators) */
 #define JER_PAUSE_ITEM_TEXT 48		/* label buffer per bridge item */
 #define JER_PAUSE_ROOT_ITEMS 24		/* dynamic root copy capacity */
 
@@ -971,8 +1033,8 @@ static void JerPauseBridgeFunc(int direction)
 
 /* build the bridge header for one module menu (recursively its submenus).
  * Items + terminators come from the single shared pool. depth counts from
- * the module menu (0); submenus may only nest one level (the engine's
- * pause stack is PAUSE_MENU_LEVELS = root/Modules/menu/submenu). Returns
+ * the module menu (0), and JER_PAUSE_BRIDGE_MAX_DEPTH is derived from the
+ * engine's own navigation stack rather than written down here. Returns
  * NULL when nothing fits — callers must treat that as "no submenu". */
 static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
 {
@@ -981,12 +1043,20 @@ static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
 	int built = 0;
 	int j;
 
-	if (menu == NULL || depth > 1)
+	/* HOW DEEP A MODULE'S TREE MAY GO, derived from the navigation stack rather
+	 * than written down separately: the bridge does not own the first levels
+	 * (0 = the root pause menu, 1 = the JERICHO Addons container, 2 = the module's
+	 * own page), so bridge depth d lives at engine level d + JER_PAUSE_BRIDGE_ROOT.
+	 * The deepest menu the stack can hold is PAUSE_MENU_LEVELS - 1. Deriving it
+	 * means raising the stack cannot silently disagree with this check -- which is
+	 * exactly the drift this used to have as a hard-coded `depth > 1`. */
+	if (menu == NULL || depth > JER_PAUSE_BRIDGE_MAX_DEPTH)
 	{
 		if (menu != NULL)
 			jer_log("[jericho] pause menus: '%s' is nested %d deep and was dropped - "
-				"the engine supports one submenu level (see jer_pause_menu.h)\n",
-				menu->title != NULL ? menu->title : "?", depth);
+				"a module page may nest %d submenu level(s) (see jer_pause_menu.h)\n",
+				menu->title != NULL ? menu->title : "?", depth,
+				JER_PAUSE_BRIDGE_MAX_DEPTH);
 
 		return NULL;
 	}
@@ -1104,6 +1174,29 @@ static int JerPauseBuildModuleMenus(void)
 		jer_log("[jericho] pause menus: only %d of %d module menus fit (%d submenu headers used) - "
 			"raise JER_PAUSE_MAX_MENUS in pause.c\n",
 			gJerTopCount, count, gJerModuleHeaderCount);
+
+	/* Say what DID come up, once per change. The refusals above only fire when
+	 * something was dropped, so without this "my mod's menu is missing" and "my
+	 * mod's menu is fine" are both silence -- and the positive answer is the one a
+	 * person testing a menu actually needs. Logged on change rather than per pause,
+	 * because InitaliseMenu runs every time the pause opens. */
+	{
+		static int lastHeaders = -1, lastItems = -1, lastTop = -1;
+
+		if (gJerModuleHeaderCount != lastHeaders || gJerBridgeCount != lastItems ||
+		    gJerTopCount != lastTop)
+		{
+			lastHeaders = gJerModuleHeaderCount;
+			lastItems = gJerBridgeCount;
+			lastTop = gJerTopCount;
+
+			if (gJerTopCount > 0)
+				jer_log("[jericho] pause menus: %d module menu(s) -> %d header(s), %d item(s) "
+					"bridged (cap %d headers/%d items, %d submenu level(s) per page)\n",
+					count, gJerModuleHeaderCount, gJerBridgeCount,
+					JER_PAUSE_MAX_MENUS, JER_PAUSE_MAX_ITEMS, JER_PAUSE_BRIDGE_MAX_DEPTH);
+		}
+	}
 
 	return gJerTopCount;
 }
@@ -1618,7 +1711,20 @@ void ControlMenu(void)
 		if (pItem->Type & PAUSE_TYPE_SUBMENU)
 		{
 			menu = pItem->SubMenu;
-	
+
+			/* The stack is a fixed array, so descending past its end would write
+			 * over whatever follows it. Refuse instead of overflowing, and say so:
+			 * the bridge already refuses to BUILD a menu deeper than the stack
+			 * allows, so reaching here means the two limits have drifted apart --
+			 * which is exactly the thing worth a log line. */
+			if (VisibleMenu + 1 >= PAUSE_MENU_LEVELS)
+			{
+				jer_log("[jericho] pause menu: '%s' is deeper than the %d-level "
+					"navigation stack - not entering it (raise PAUSE_MENU_LEVELS in pause.c)\n",
+					(menu != NULL && menu->Title != NULL) ? menu->Title : "?", PAUSE_MENU_LEVELS);
+				return;
+			}
+
 			VisibleMenu++;
 			VisibleMenus[VisibleMenu] = menu;
 	
@@ -1635,7 +1741,12 @@ void ControlMenu(void)
 
 		if (pItem->ExitValue == MENU_QUIT_BACKMENU)
 		{
-			VisibleMenu--;		// go back in menu stack
+			/* Level 2 is a module's own page and level 1 is the Addons container:
+			 * nothing below 0 to fall back to, and an underflow would index the
+			 * arrays from the far end. */
+			if (VisibleMenu > 0)
+				VisibleMenu--;		// go back in menu stack
+
 			SetupMenu(VisibleMenus[VisibleMenu], 1);
 		}
 		else
@@ -1668,7 +1779,11 @@ void ControlMenu(void)
 			// only triangle
 			if(paddata & 0x10)
 			{
-				VisibleMenu--;
+				/* Same underflow guard as the BACKMENU path: level 0 is the root
+				 * pause menu, which this branch only runs when we are NOT at. */
+				if (VisibleMenu > 0)
+					VisibleMenu--;
+
 				SetupMenu(VisibleMenus[VisibleMenu], 1);
 			}
 		}
