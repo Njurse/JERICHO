@@ -16,6 +16,7 @@
 #include "jer_pause_menu.h"
 #include "jer_frontend.h"
 #include "jer_screen.h"
+#include "jer_console.h"	/* jer_console_log: mod conflicts print to the console */
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -213,6 +214,15 @@ int jer_error(const char* fmt, ...)
 	}
 
 	return 1;
+}
+
+/* Drop every live notice. The mod loader raises notices at boot and again on
+ * each modlist reload, so a conflict the player has since fixed otherwise sat
+ * on the screen until it aged out on its own. */
+void jer_error_clear(void)
+{
+	memset(gJerErrors, 0, sizeof(gJerErrors));
+	gJerErrorNext = 0;
 }
 
 /* The DRAWING lives in the engine (pres.h needs the full PSX type preamble,
@@ -623,6 +633,7 @@ static void jerActivateModules(const char* rootDir)
 	const char* order[JER_MAX_MODULES];
 	int orderCount = 0;
 	int active = 0;
+	int complaints = 0;	/* refusals raised this pass (see the tail of the fn) */
 	int i, j;
 
 	/*
@@ -773,10 +784,14 @@ static void jerActivateModules(const char* rootDir)
 			jerLog("[jericho] module \"%s\" needs SDK v%d but host is v%d — DISABLED\n",
 				m->id, m->sdkVersion, JERICHO_SDK_VERSION);
 
-			/* a refusal the player can only discover by reading the log is not a
-			 * refusal: say it on the screen, in the same channel a bad command-line
-			 * argument uses. */
-			jer_error("%s", m->refusal);
+			/* A module that will not load (a conflict, a version mismatch or a
+			 * missing dependency) is a modding-time problem, not something the
+			 * player can act on mid-game, so it goes to the CONSOLE status stream;
+			 * the reason also stays on the Mods screen, which is where it gets
+			 * fixed. It used to be a screen toast that the next modlist reload
+			 * re-popped. */
+			jer_console_log("%s", m->refusal);
+			complaints++;
 
 			m->valid = 0;
 			continue;
@@ -821,7 +836,8 @@ static void jerActivateModules(const char* rootDir)
 					m->name[0] != 0 ? m->name : m->id, missingName);
 
 				jerLog("[jericho] module \"%s\" DISABLED: missing dependency (\"%s\")\n", m->id, m->deps);
-				jer_error("%s", m->refusal);
+				jer_console_log("%s", m->refusal);
+				complaints++;
 
 				m->valid = 0;
 				continue;
@@ -879,7 +895,8 @@ static void jerActivateModules(const char* rootDir)
 					m->name[0] != 0 ? m->name : m->id, clashName);
 
 				jerLog("[jericho] module \"%s\" DISABLED: incompatible with \"%s\"\n", m->id, m->incompat);
-				jer_error("%s", m->refusal);
+				jer_console_log("%s", m->refusal);
+				complaints++;
 
 				m->valid = 0;
 				continue;
@@ -888,6 +905,12 @@ static void jerActivateModules(const char* rootDir)
 	}
 
 	jerLog("[jericho] %d module(s) active (SDK v%d)\n", active, JERICHO_SDK_VERSION);
+
+	/* A pass that found nothing wrong drops any notice an earlier pass left on
+	 * the screen: a mod conflict the player has just fixed should disappear
+	 * when the Mods menu reloads, not sit there until it ages out. */
+	if (complaints == 0)
+		jer_error_clear();
 
 	/* record the effective load order for the manager UI */
 	gLoadOrderCount = 0;

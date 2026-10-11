@@ -1155,6 +1155,7 @@ EXPORTS
 	jer_disable_all_modules
 	jer_error
 	jer_error_at
+	jer_error_clear
 	jer_error_count
 	jer_fire
 	jer_force_module
