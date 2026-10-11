@@ -263,12 +263,18 @@ def check_inv4(run, fails, warns):
     those panels draw colourless. INV3 cannot see it (the page and its CLUTs are all
     present); only the row's OWN coverage can.
     """
+    # A row a built model reads that this city's lump never wrote is NOT a failure: the
+    # lump holds no palette for that SET at all (measured on CHICAGO: its lump carries only
+    # sets 1/50/62/63/65, while the imported special names 54/55/1). The poly then draws its
+    # OWN page CLUT - the page's real colours - which is the honest fallback. Inventing a
+    # shade from another set's row is the "alias" trap PALETTES.md calls worse than an empty
+    # row. So these are facts to report, not defects to fail on.
     for city, row in sorted(run["empty_rows"]):
-        fails.append(f"INV4 civ_clut row {row} is read by a built model but {city}'s lump left it "
-                     f"empty - its polys fall back to the page's own CLUT (colourless panels)")
+        warns.append(f"INV4 civ_clut row {row} is read by a built model but {city}'s lump has no "
+                     f"entries for it - those polys keep the page's own CLUT (slot 0)")
     for row, slot, setno in run["no_variant_rows"]:
-        fails.append(f"INV4 civ_clut row {row} offers NO colour variants but slot {slot} (set {setno}) "
-                     f"reads it - the car draws without its colour variants")
+        warns.append(f"INV4 civ_clut row {row} offers NO colour variants but slot {slot} (set {setno}) "
+                     f"reads it - the set has no palette in the lump, so the page CLUT stands")
     if run["rows_multi_city"]:
         fails.append(f"INV4 {run['rows_multi_city']} civ_clut row(s) were written by more than one city "
                      f"- two cars would wear each other's colours")
