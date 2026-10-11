@@ -876,8 +876,19 @@ void SetupMenu(MENU_HEADER *menu, int back)
 /* root menu. No per-module code lives here.                           */
 /* ------------------------------------------------------------------ */
 
-#define JER_PAUSE_MAX_MENUS 8		/* registered menus (incl. submenus) */
-#define JER_PAUSE_MAX_ITEMS 64		/* bridge items (incl. terminators) */
+/* CAPACITY, and it has to be generous.
+ *
+ * These are static pools shared by EVERY module's pause menus, and the build
+ * REFUSES SILENTLY when they run out: JerPauseBuildMenuRec returns NULL and
+ * JerPauseBuildModuleMenus simply skips that menu, so the symptom is "my mod's
+ * options are not in the pause menu any more", with nothing in the log to say
+ * why. Seven modules register pause menus and mp alone contributes a page plus
+ * four submenus, so the old 8 was already full - adding one more submenu pushed
+ * a DIFFERENT module's menu out, which is the kind of bug that looks like the
+ * other module broke. Headroom is the fix; the refusal is logged below so it can
+ * never be silent again. */
+#define JER_PAUSE_MAX_MENUS 24		/* registered menus (incl. submenus) */
+#define JER_PAUSE_MAX_ITEMS 192		/* bridge items (incl. terminators) */
 #define JER_PAUSE_ITEM_TEXT 48		/* label buffer per bridge item */
 #define JER_PAUSE_ROOT_ITEMS 24		/* dynamic root copy capacity */
 
@@ -971,11 +982,25 @@ static MENU_HEADER* JerPauseBuildMenuRec(const JER_PAUSE_MENU* menu, int depth)
 	int j;
 
 	if (menu == NULL || depth > 1)
+	{
+		if (menu != NULL)
+			jer_log("[jericho] pause menus: '%s' is nested %d deep and was dropped - "
+				"the engine supports one submenu level (see jer_pause_menu.h)\n",
+				menu->title != NULL ? menu->title : "?", depth);
+
 		return NULL;
+	}
 
 	/* no room for another header, or for its items + terminator */
 	if (gJerModuleHeaderCount >= JER_PAUSE_MAX_MENUS || gJerBridgeCount >= JER_PAUSE_MAX_ITEMS)
+	{
+		jer_log("[jericho] pause menus: no room for '%s' (%d/%d menus, %d/%d items) - "
+			"raise JER_PAUSE_MAX_* in pause.c\n",
+			menu->title != NULL ? menu->title : "?",
+			gJerModuleHeaderCount, JER_PAUSE_MAX_MENUS, gJerBridgeCount, JER_PAUSE_MAX_ITEMS);
+
 		return NULL;
+	}
 
 	hdr = &gJerModuleHeaders[gJerModuleHeaderCount];
 	items = &gJerModuleItems[gJerBridgeCount];
@@ -1074,6 +1099,11 @@ static int JerPauseBuildModuleMenus(void)
 		if (h != NULL)
 			gJerTopHeaders[gJerTopCount++] = h;
 	}
+
+	if (i < count)
+		jer_log("[jericho] pause menus: only %d of %d module menus fit (%d submenu headers used) - "
+			"raise JER_PAUSE_MAX_MENUS in pause.c\n",
+			gJerTopCount, count, gJerModuleHeaderCount);
 
 	return gJerTopCount;
 }
