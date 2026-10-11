@@ -76,11 +76,14 @@ typedef struct JERAI_STATE
 	int	lastDiff;		/* last signed heading error (game units) */
 	int	lastBias;		/* last feeler steering bias (game units) */
 	int	lastPad;		/* last pad the driver produced */
+	int	lastSteerDir;		/* -1/0/+1: hysteresis on the steer command */
+	int	wantHandbrake;		/* set for a wall-evasion tight turn (applied via handled) */
 
 	/* corner-speed model (phase: car dynamics) */
 	int	cornerG;		/* lateral-g budget: folds grip + units into one knob */
 	int	brakeG;			/* braking authority, for the braking-distance term */
 	int	cornerLookahead;	/* how far ahead the plan is scanned for corners */
+	int	speedScale;		/* the target speed as a percentage (100 = as computed) */
 	int	targetSpeed;		/* grip-limited speed the driver may carry now */
 	int	gripPct;		/* 100 = hooked up, falling as the car slides */
 

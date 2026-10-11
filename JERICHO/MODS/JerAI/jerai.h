@@ -57,6 +57,10 @@
 #define JERAI_CFG_BRAKE_GAIN        "brake_gain"
 #define JERAI_CFG_CORNER_LOOKAHEAD  "corner_lookahead"
 
+/* overall aggression: the corner target speed as a percentage (100 = as the
+ * grip model computes it, lower = more cautious) */
+#define JERAI_CFG_SPEED_SCALE       "speed_scale"
+
 /* visualization layers (0/1) */
 #define JERAI_CFG_VIZ_GRID          "viz_grid"
 #define JERAI_CFG_VIZ_ROAD          "viz_road"

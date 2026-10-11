@@ -24,6 +24,7 @@
 
 #include "players.h"
 #include "cars.h"
+#include "pad.h"	/* CAR_PAD_* */
 #include "felony.h"	/* GetPlayerFelony, pedestrianFelony */
 #include "cop_ai.h"	/* copsAreInPursuit, CopsCanSeePlayer */
 #include "dr2roads.h"	/* NumDriver2Straights/Curves/Junctions, for the graph log */
@@ -65,8 +66,9 @@ void JerAiRefreshConfig(void)
 	gJerAi.copClearance = jer_config_get_int("JerAI", JERAI_CFG_COP_CLEARANCE, 6000);
 	gJerAi.maxSteer = jer_config_get_int("JerAI", JERAI_CFG_MAX_STEER, 512);
 	gJerAi.cornerG = jer_config_get_int("JerAI", JERAI_CFG_CORNER_G, 2);
-	gJerAi.brakeG = jer_config_get_int("JerAI", JERAI_CFG_BRAKE_GAIN, 40);
+	gJerAi.brakeG = jer_config_get_int("JerAI", JERAI_CFG_BRAKE_GAIN, 1);
 	gJerAi.cornerLookahead = jer_config_get_int("JerAI", JERAI_CFG_CORNER_LOOKAHEAD, 6000);
+	gJerAi.speedScale = jer_config_get_int("JerAI", JERAI_CFG_SPEED_SCALE, 100);
 
 	gJerAi.vizGrid = jer_config_get_int("JerAI", JERAI_CFG_VIZ_GRID, 0);
 	gJerAi.vizRoad = jer_config_get_int("JerAI", JERAI_CFG_VIZ_ROAD, 1);
@@ -107,6 +109,7 @@ void JerAiWriteConfigDefaults(void)
 	jer_config_set_int("JerAI", JERAI_CFG_CORNER_G, gJerAi.cornerG);
 	jer_config_set_int("JerAI", JERAI_CFG_BRAKE_GAIN, gJerAi.brakeG);
 	jer_config_set_int("JerAI", JERAI_CFG_CORNER_LOOKAHEAD, gJerAi.cornerLookahead);
+	jer_config_set_int("JerAI", JERAI_CFG_SPEED_SCALE, gJerAi.speedScale);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_GRID, gJerAi.vizGrid);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_ROAD, gJerAi.vizRoad);
 	jer_config_set_int("JerAI", JERAI_CFG_VIZ_PATH, gJerAi.vizPath);
@@ -182,8 +185,36 @@ static int JerAiOnCarPad(void* userdata, void* args)
 	 * analogue flag set is why the car accelerated but never turned. */
 	p->padSteer = 0;
 	p->useAnalogue = 0;
-	/* handled stays 0: the stock path turns the pad into pedals and steering,
-	 * which is exactly the point - we feed it a synthetic pad. */
+	/* handled stays 0 for normal driving: the stock path turns the pad into
+	 * pedals and steering, which is exactly the point - we feed it a synthetic
+	 * pad. It is set to 1 only for the wall-evasion handbrake below. */
+
+	/* Wall-evasion handbrake, applied through the HANDLED side door: setting the
+	 * pad's HANDBRAKE bit would make handling.c cycle g_PlayerControlMode (its
+	 * press edge does), handing the car to the engine's AI. Writing cp->handbrake
+	 * with handled = 1 skips the stock block entirely, so the mode is untouched. */
+	if (gJerAi.wantHandbrake)
+	{
+		p->handled = 1;
+		car->handbrake = 1;
+		car->thrust = 0;
+		car->wheelspin = 0;
+	}
+
+	/* one-shot probe: the pad the engine offered vs the one we return, so the
+	 * bit meanings are never guessed at again */
+	{
+		static int probed = 0;
+
+		if (probed < 3)
+		{
+			probed++;
+			gJerAi.ctx->jer_log(gJerAi.ctx,
+				"[JerAI] pad probe: in=%x out=%x accel=%x brake=%x left=%x right=%x handbrake=%x\n",
+				(unsigned int)p->pad, pad, (unsigned int)CAR_PAD_ACCEL, (unsigned int)CAR_PAD_BRAKE,
+				(unsigned int)CAR_PAD_LEFT, (unsigned int)CAR_PAD_RIGHT, (unsigned int)CAR_PAD_HANDBRAKE);
+		}
+	}
 
 	return JER_RESULT_CONTINUE;
 }
@@ -236,13 +267,14 @@ static int JerAiOnFrame(void* userdata, void* args)
 			const JERAI_BEHAVIOR* b = JerAiBehaviorFor(gJerAi.mode);
 
 			gJerAi.ctx->jer_log(gJerAi.ctx,
-				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d\n",
+				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) vizlines=%d\n",
 				b != NULL ? b->name : "?",
 				car->hd.where.t[0], car->hd.where.t[2], car->hd.speed, car->hd.direction,
 				gJerAi.carState.slip, gJerAi.carState.yawRate,
 				gJerAi.targetSpeed, gJerAi.gripPct,
 				gJerAi.curve.sharp, gJerAi.curve.dist,
-				gJerAi.path.waypoints, gJerAi.path.complete, gJerAi.lastDiff, gJerAi.lastBias, gJerAi.lastPad,
+				gJerAi.path.waypoints, gJerAi.path.complete, gJerAi.lastDiff, gJerAi.lastBias,
+				gJerAi.lastSteerDir, gJerAi.wantHandbrake, gJerAi.lastPad,
 				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ, JerAiVizLines());
 
 			if (gJerAi.vizHud)

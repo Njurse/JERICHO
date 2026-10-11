@@ -245,6 +245,11 @@ JERAI_CURVE JerAiScanCurve(int cx, int cz, int horizon)
  * falls from 100 (hooked up) to 0 as |slip| approaches this. */
 #define JERAI_SLIP_LIMIT	600
 
+/* How far over the corner speed the car must be before the driver brakes rather
+ * than merely lifting off (engine speed units). A small margin keeps it from
+ * dithering between throttle and brake. */
+#define JERAI_BRAKE_BAND	25
+
 /* The speed that keeps the car inside the lateral-g budget through a corner of
  * radius r. corner_g folds the grip and the unit conversions into one knob:
  * bigger = the car carries more speed through the same curve. */
@@ -286,6 +291,10 @@ int JerAiSpeedTarget(void)
 
 	vNow = (int)sqrt((double)vCorner * (double)vCorner + 2.0 * (double)gJerAi.brakeG * (double)c->dist);
 
+	/* the aggression dial: scale the whole thing, then cap at the car's limit */
+	if (gJerAi.speedScale > 0 && gJerAi.speedScale != 100)
+		vNow = vNow * gJerAi.speedScale / 100;
+
 	if (vNow > gJerAi.topSpeed) vNow = gJerAi.topSpeed;
 
 	return vNow;
@@ -311,6 +320,11 @@ static int JerAiGripPct(void)
  * (-0.35 ~= 110 deg, so a perpendicular intersection turn still counts). */
 #define JERAI_AIM_BEHIND_COS	(-1450)
 
+/* How much further up the plan the aim looks per unit of speed. A fixed
+ * look-ahead makes a fast car chase every wiggle of the path and saw at the
+ * wheel; stretching it with speed is the cheapest cure for that oscillation. */
+#define JERAI_AIM_SPEED_GAIN	8
+
 int JerAiDriveAim(int* aimX, int* aimZ)
 {
 	CAR_DATA* car = JerAiOwnCar();
@@ -319,9 +333,13 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 	long bestD2 = -1, bestArc = 0, arc;
 	int dir, fwdX, fwdZ;
 	long bestX, bestZ;
+	long la;
 
 	if (car == NULL || !gJerAi.havePlan || gJerAi.path.waypoints <= 0)
 		return 0;
+
+	/* a longer look-ahead at speed: smoother, no sawing */
+	la = gJerAi.lookAhead + (long)JerAiAbs(car->hd.speed) * JERAI_AIM_SPEED_GAIN;
 
 	n = gJerAi.path.waypoints;
 	cx = car->hd.where.t[0];
@@ -418,7 +436,7 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 			if (thisArc < bestArc)
 				continue;	/* still behind our own projection */
 
-			if (thisArc - bestArc >= gJerAi.lookAhead)
+			if (thisArc - bestArc >= la)
 			{
 				long rx = px - cx, rz = pz - cz;
 				long rlen2 = rx * rx + rz * rz;
@@ -572,11 +590,12 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 	int bias = JerAiFeelers(car, &frontBlocked);
 	int diff, adiff, spd;
 	int ahead;
-	unsigned int pad = CAR_PAD_ACCEL;
+	unsigned int pad = 0;
 
 	/* what the car is doing right now - speed, yaw rate, slide. The controller
 	 * reads this; it is the difference between driving and walking a line. */
 	gJerAi.carState = JerAiReadCar(car);
+	gJerAi.wantHandbrake = 0;
 
 	/* and what the plan is about to do - the corner ahead and how far off */
 	gJerAi.curve = JerAiScanCurve(car->hd.where.t[0], car->hd.where.t[2], gJerAi.cornerLookahead);
@@ -633,14 +652,93 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT);
 	}
 
-	/* steer: a small dead-band so the car does not saw at the wheel */
-	if (adiff > 60)
-		pad |= (diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT;
+	/* --- wall evasion: a tight handbrake turn when the nose gets close -----
+	 * The handbrake is NOT sent as a pad bit: handling.c cycles
+	 * g_PlayerControlMode on that bit's press edge (manual -> traffic -> cop ->
+	 * lead), which would hand the car to the engine's AI. The CAR_PAD hook's
+	 * handled path sets cp->handbrake directly, so the mode is never touched. */
+	if (spd > 12 && !JerAiFeelClear(car, 0, 1100, 240))
+	{
+		int rightClear = JerAiFeelClear(car, 512, 1100, 200);
+		int leftClear = JerAiFeelClear(car, -512, 1100, 200);
 
-	/* NO braking for a heading error. The engine already adds autoBrake while
-	 * the wheel is turned (handling.c), and stopping the car is exactly what
-	 * stops it turning - a stationary car pivots at full lock and never comes
-	 * round. Keep the throttle on and let the steer do the work. */
+		gJerAi.wantHandbrake = 1;
+		pad = 0;	/* a handbrake turn drives no throttle */
+
+		/* turn toward whichever side is open; if neither clearly is, toward the
+		 * aim */
+		if (rightClear && !leftClear)
+			pad |= CAR_PAD_RIGHT;
+		else if (leftClear && !rightClear)
+			pad |= CAR_PAD_LEFT;
+		else
+			pad |= (diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT;
+
+		gJerAi.lastSteerDir = 0;
+
+		return pad;
+	}
+
+	/* Scenery right on the nose AND barely moving: back up NOW rather than wait
+	 * out the whole stuck timer - the earlier the car peels off, the less it
+	 * grinds along the wall. */
+	if (spd < 15 && !JerAiFeelClear(car, 0, 480, 240))
+	{
+		sRecoverFrames = JERAI_RECOVER_FRAMES;
+		gJerAi.lastSteerDir = 0;
+
+		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT);
+	}
+
+	/* --- speed: brake into the corner, power out of it --------------------
+	 * target_speed already folds in the corner AND the braking distance to it,
+	 * so simply tracking it is what makes the car slow BEFORE the corner rather
+	 * than at it. That is the momentum term the old driver had no idea about. */
+	if (car->hd.speed < 0)
+	{
+		pad = CAR_PAD_ACCEL;		/* reversing: power back out */
+	}
+	else if (spd > gJerAi.targetSpeed + JERAI_BRAKE_BAND)
+	{
+		pad = CAR_PAD_BRAKE;		/* well over the corner speed: brake */
+	}
+	else if (spd > gJerAi.targetSpeed)
+	{
+		pad = 0;			/* a little over: just lift off */
+	}
+	else if (spd < gJerAi.targetSpeed - 12)
+	{
+		pad = CAR_PAD_ACCEL;		/* under it: power out */
+	}
+	else
+	{
+		pad = 0;			/* on the target: hold steady */
+	}
+
+	/* steer with hysteresis, so it does not saw at the wheel: start turning when
+	 * the error passes START, keep turning until it falls back under HOLD, and
+	 * never flip sides on noise. */
+	{
+		int startBand = 70;
+		int holdBand = 30;
+		int dir = diff > 0 ? 1 : -1;
+
+		if (gJerAi.lastSteerDir == dir && adiff > holdBand)
+			;					/* stay on it */
+		else if (adiff > startBand)
+			gJerAi.lastSteerDir = dir;
+		else
+			gJerAi.lastSteerDir = 0;
+	}
+
+	if (gJerAi.lastSteerDir > 0)
+		pad |= CAR_PAD_RIGHT;
+	else if (gJerAi.lastSteerDir < 0)
+		pad |= CAR_PAD_LEFT;
+
+	/* No brake for a heading error alone: the engine already adds autoBrake while
+	 * the wheel is turned (handling.c), and stopping the car is what stops it
+	 * turning. The brake above is only ever for genuine over-speed. */
 
 	/* A car close ahead in our lane: lift off the throttle. NO brake - braking
 	 * for traffic is what made the car crawl down a street with oncoming cars.
