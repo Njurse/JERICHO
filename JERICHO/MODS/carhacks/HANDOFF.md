@@ -93,6 +93,8 @@ MP_TEST_FRONTEND_JOIN=1 CHK_FORCE_MENU=1 python JERICHO/MODS/mp/tools/mp_localpa
 | Leaving releases a slot; leaving the session releases everything | `JerReleaseCarSlot` / `JerReleaseAllCrossCity` / `chkImportReleaseAll`; the leaver's log gives back every slot and the buffers. Since #12/#14 a peer's leave or car change goes through the release routine (`chkNetReleaseSlotIfUnused`: kept while another player names the car, deferred while a car is on the slot). Run on Windows 2026-10-04 (build `0.9.0-42-g1d88177d`): the three verdicts appear as documented (`released - nobody names it and no car is on it`, `kept - still named by player N`, `deferred - car N still on it`) and T2's pool summary stays flat across seven switches. See "Releasing a slot - measured (Windows)" in MP_ADAPTER.md |
 | A departed player's car disappears from the other machines | roster removal in `MpHandleRoster` (`MpRemovePlayer`) |
 | A join retries three times before failing | verified against a dead port: "attempt 1 of 3 ... retrying" x2, toast only after the third |
+| A refused car load heals by itself | the fold retries a busy slot / unbuilt car every ~0.4 s and gives up once at ~8 s; `CHK_REFUSE_LOAD=3` on a host: 3 refusals, then `-> resident slot 7` and `draws exactly that (slot 7)`. See MP_ADAPTER.md "Retrying a load that could not happen yet" |
+| A session ends cleanly on the way to the frontend | `MpSessionReset` closes the listener + discovery (so an ended host stops accepting peers) and forgets a pending "Change car" |
 | The level's palette rows for a guest are found by the set the car actually reads | alias/row lines; `CarPalIndexForBuild` agreement |
 
 Commits: `f3d65d36`, `29118821`, `103bf4d5`, `917fe509`, `248c6909` (all on `main`, pushed).
@@ -128,10 +130,14 @@ Commits: `f3d65d36`, `29118821`, `103bf4d5`, `917fe509`, `248c6909` (all on `mai
    that could still corrupt scenery, unverified.
 4. **Assert leave/drop on the survivors.** The roster-removal fix has no test, which is why it
    kept recurring. Cover a clean leave (`MP_TEST_LEAVE`) and a hard drop, each then rejoining.
-5. **Host only when there is a match.** The listener outlives the session: `MpHostEnd` is
-   called only from `MpLeaveSession`, and `MpSessionReset` never closes it. Advertising is
-   already gated on `MpStartMatch`; the listener is not. (A sticky listener already cost a
-   real "i couldnt reconnect" bug, fixed by making a join a handover.)
+5. ~~**Host only when there is a match.** The listener outlives the session: `MpHostEnd` is
+   called only from `MpLeaveSession`, and `MpSessionReset` never closes it.~~ **FIXED
+   2026-10.** `MpSessionReset` (the one primitive every "session over" path goes through -
+   `MpReturnToFrontend` and both `Begin*`) now closes the listener and stops discovery when
+   one is up, so a host that ends its match any other way no longer comes back to the
+   frontend still accepting peers into a session that is gone (and no longer holds the
+   port). A pending "Change car" is forgotten there too - add `MpHostEnd`/`MpDiscoveryStop`
+   to `MpSessionReset` (mp_session.c). See the note on `MpSessionReset`.
 6. **Live-join / hotload for a guest model is engine-side work (deferred, tracked).** A client
    joining a match already running cannot hotload a guest city's car: `JerHotLoadCarModel` /
    `JerHotLoadCarTpages` cover a pick that changes mid-match, but a *joiner's own* guest city

@@ -311,6 +311,62 @@ has to do:
    (`CreateDentableCar`, mp's `MpAdoptRemoteCar`). `ChkOnCarPeerDraw` then stops
    correcting that player, because the car drawn IS theirs.
 
+### Retrying a load that could not happen yet (DONE)
+
+A fold can fail for a moment and succeed a moment later, and until this landed a
+failure was **final**: the peer stayed drawn as this level's own car of the same
+number for the rest of the match, and the only thing that ever tried again was
+the peer's own pick advert seconds later, if it arrived at all. The two reasons a
+fold fails are both transient -
+
+- the canonical spare slot is **busy**: a slot whose last car is still drawn on it
+  is *deferred* by the release routine (`chkNetRetryPendingReleases`), which frees
+  it a frame or two later; and
+- the build did **not fit yet**: `JerHotLoadCarModel` refuses when the hot-load
+  blocks (`JER_HOT_CAR_BLOCKS`) are all in use - they come back through
+  `JerReleaseCarGeometry` when a car changes away.
+
+So `net.c` now keeps a small retry per player (`gChkNetLoadRetry*`,
+`chkNetLoadRetryArm`/`Clear`) and, every frame, re-runs the fold when a waiting
+car is due (`chkNetRetryPendingLoads`, from `chkNetOnFrame`, next to the release
+retry). The delay is `CHK_NET_LOAD_RETRY_FRAMES` (10 frames, ~0.4 s - one beat,
+enough for the deferred release to land and not so eager that it walks the set
+every frame), and the wait is bounded at `CHK_NET_LOAD_RETRY_MAX` (20 attempts,
+~8 s) so a slot held for a reason that outlives it still ends: the refusal is then
+logged **once** as final. The wait clears itself the moment the car is really
+there (`JerCarSlotUsable`), so a fold that has nothing left to do says nothing.
+
+It heals both failure shapes above - the slot-busy case (the `no spare resident
+slot is free` refusal) and the build case (the car is in the set for a slot but
+`JerCarSlotUsable` is still false, caught in the fold's "already in the set"
+branch) - and it resets on a new pick, a level reset and a session end, and is
+dropped for a player who leaves (`gChkNetPeerPickSet`).
+
+**Proof, made deterministic with a lever.** A transient refusal is otherwise only
+reachable by luck (a slot has to be busy at the exact moment a pick arrives), so
+`CHK_REFUSE_LOAD=<n>` holds back the first *n* fold attempts for every player, the
+way `CHK_DROP_ADVERT` does for a lost message. With `CHK_REFUSE_LOAD=3` on a host
+in a two-seat run:
+
+```
+[carhacks/net] CHK_REFUSE_LOAD: refusing player 1's car (attempt 1 of 3) to exercise the retry
+[error] [carhacks/net] player 1 wants VEGAS model 10, but every spare resident slot is busy right now - retrying
+[carhacks/net] CHK_REFUSE_LOAD: refusing player 1's car (attempt 2 of 3) ...
+[carhacks/net] CHK_REFUSE_LOAD: refusing player 1's car (attempt 3 of 3) ...
+[carhacks/net] player 1's car (VEGAS model 10) -> resident slot 7
+[carhacks/net] peer 1 drives VEGAS model 10 and this machine draws exactly that (slot 7) - their own colours
+```
+
+and with `CHK_REFUSE_LOAD` larger than the budget, exactly **one** `no spare
+resident slot came free - not importing it` (the give-up) and exactly **one**
+`... is busy right now - retrying` (the first attempt) - a retry is not news, so it
+does not spam the screen or the log. The terminal phrase is kept distinct from the
+wait on purpose: `mp_tries` T2 forbids it (a slot-reusing switch must never exhaust
+the spares), so a transient that heals must not wear it. At the car-stress cadence
+(~3 changes/s) the churn
+supersedes most picks before a slot frees, which is the mechanism working rather
+than failing; at a human's rate the beat is what turns a refused pick into a car.
+
 ## Authority and lifecycle
 
 The **host is authoritative**, so every machine draws the same cars. That is no

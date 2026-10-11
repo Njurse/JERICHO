@@ -58,6 +58,23 @@ static char gChkNetRelWhy[CHK_IMPORT_MAX_SLOTS][48];
 static int gChkNetRelLast[CHK_IMPORT_MAX_SLOTS];		/* CHK_REL_VERDICT */
 static int gChkNetRelLastCars[CHK_IMPORT_MAX_SLOTS];
 
+/* A peer's car that could not be BUILT here yet, and the frame to try again on. This is the
+ * other half of "a load that heals by itself": a slot whose last car is still on it is
+ * deferred and freed a frame or two later, and the hot-load pool is shared with every other
+ * pick, so "not this time" is usually "not yet". See chkNetLoadRetryArm. `RetryCar` is the
+ * car the attempt count belongs to, so a genuinely NEW pick starts over (and is worth
+ * announcing) while a peer re-advertising the same car it cannot load stays quiet. */
+static unsigned long gChkNetLoadRetryAt[CHK_NET_MAX_PLAYERS];
+static int gChkNetLoadAttempts[CHK_NET_MAX_PLAYERS];
+static CHK_CAR_ID gChkNetLoadRetryCar[CHK_NET_MAX_PLAYERS];
+
+/* One tick per frame: the retry deadlines and the advert period are counted in frames. Not
+ * milliseconds - carhacks takes no platform headers (mp keeps windows.h out of its mod files
+ * for winsock ordering, and <time.h> is shadowed by the game's own on this include path) - and
+ * the engine's fixed step makes a frame count a good enough heartbeat for both. */
+static unsigned long gChkNetFrame;		/* ++ once per frame */
+static unsigned long gChkNetAdvertFrame;	/* the frame we last announced on */
+
 /* What WE are driving, as last advertised (mp settles the local car after the
  * session starts, so this changes under us). */
 static CHK_CAR_ID gChkNetLocal;
@@ -288,6 +305,121 @@ static void chkNetRetryPendingReleases(void)
 	}
 }
 
+/* ---------------------------------------------------------------------------
+ * Retrying a peer's car that could not be loaded yet
+ * -------------------------------------------------------------------------
+ *
+ * WHY THIS EXISTS. Folding a peer's car into the set needs a free spare resident slot and,
+ * for a car this level did not build itself, a hot-load block. BOTH can be busy for a moment:
+ * a slot whose last car is still drawn on it is DEFERRED (chkNetRetryPendingReleases frees it
+ * a frame or two later), and the hot-load blocks are shared with every other pick. A refusal
+ * used to be FINAL - the peer stayed drawn as this level's own car of the same number for the
+ * rest of the match - and the only thing that ever retried it was the peer's own pick advert
+ * seconds later, if it arrived at all. This is the retry that makes the load heal by itself.
+ *
+ * The delay is deliberate: the NEXT frame is too eager (each attempt walks the set and can log,
+ * and the thing that frees a slot is the release pass, which itself runs every frame), and the
+ * peer's advert is far too slow. A short beat is enough for the deferred release to land. It is
+ * bounded - a slot can also be held for a reason that outlives the wait - and after
+ * CHK_NET_LOAD_RETRY_MAX attempts the ask is dropped and the refusal is logged once as final. */
+#define CHK_NET_LOAD_RETRY_FRAMES	10	/* ~0.4 s at this rate - see the note above */
+#define CHK_NET_LOAD_RETRY_MAX		20	/* attempts before the ask is dropped (~8 s) */
+
+enum
+{
+	CHK_NET_RETRY_DONE   = -2,	/* already gave up on this car: say nothing */
+	CHK_NET_RETRY_GAVEUP = -1,	/* the wait just ran out: say so once */
+	CHK_NET_RETRY_AGAIN  =  0,	/* retrying, quietly */
+	CHK_NET_RETRY_FIRST  =  1	/* the first attempt: worth saying */
+};
+
+/* The car is loaded (or needs nothing): stop waiting for it, and let a later ask be "first"
+ * again. */
+static void chkNetLoadRetryClear(int p)
+{
+	gChkNetLoadRetryAt[p] = 0;
+	gChkNetLoadAttempts[p] = 0;
+	gChkNetLoadRetryCar[p] = chkCarId(CHK_CITY_NATIVE, CHK_MODEL_NONE);
+}
+
+/* Could not load `p`'s car this time: try again after the delay. Returns CHK_NET_RETRY_* so the
+ * caller can decide what, if anything, to say - a first attempt is news, a retry is not, and
+ * the give-up is said exactly once. A new car for this player (they picked something else)
+ * resets the count, so it is announced again. */
+static int chkNetLoadRetryArm(int p)
+{
+	if (!chkCarIdEqual(gChkNetPeerPick[p], gChkNetLoadRetryCar[p]))
+	{
+		gChkNetLoadRetryCar[p] = gChkNetPeerPick[p];
+		gChkNetLoadAttempts[p] = 0;
+	}
+
+	if (gChkNetLoadAttempts[p] >= CHK_NET_LOAD_RETRY_MAX)
+	{
+		gChkNetLoadRetryAt[p] = 0;
+
+		/* the transition out of the wait is the one time this is worth saying */
+		if (gChkNetLoadAttempts[p] == CHK_NET_LOAD_RETRY_MAX)
+		{
+			gChkNetLoadAttempts[p]++;
+			return CHK_NET_RETRY_GAVEUP;
+		}
+
+		return CHK_NET_RETRY_DONE;
+	}
+
+	gChkNetLoadAttempts[p]++;
+	gChkNetLoadRetryAt[p] = gChkNetFrame + CHK_NET_LOAD_RETRY_FRAMES;
+
+	return (gChkNetLoadAttempts[p] == 1) ? CHK_NET_RETRY_FIRST : CHK_NET_RETRY_AGAIN;
+}
+
+/* Every frame: run the fold again when any waiting car is due. One pass covers every waiting
+ * player - the fold already walks them all, and skips a car that is now in a slot. */
+static void chkNetRetryPendingLoads(void)
+{
+	int p, due = 0;
+
+	for (p = 0; p < CHK_NET_MAX_PLAYERS; p++)
+	{
+		if (gChkNetLoadRetryAt[p] != 0 && gChkNetFrame >= gChkNetLoadRetryAt[p])
+		{
+			due = 1;
+			break;
+		}
+	}
+
+	if (due)
+		chkNetFoldPeerCars();
+}
+
+/* CHK_REFUSE_LOAD=<n>: hold back the first n load attempts for EVERY player, so the retry above
+ * is exercised on purpose. Without a lever like this the retry is only reachable by luck - a
+ * slot has to be busy at the exact moment a pick arrives - which is the same reason the module
+ * carries CHK_DROP_ADVERT and CHK_FORCE_CAR. Logged, so a run that used it says so. */
+static int chkNetTestRefuseLoad(int p)
+{
+	static int want = -2;
+	static int refused[CHK_NET_MAX_PLAYERS];
+
+	if (want == -2)
+	{
+		const char* s = getenv("CHK_REFUSE_LOAD");
+
+		want = (s != NULL) ? atoi(s) : -1;
+	}
+
+	if (want <= 0 || p < 0 || p >= CHK_NET_MAX_PLAYERS || refused[p] >= want)
+		return 0;
+
+	refused[p]++;
+
+	printInfo("[carhacks/net] CHK_REFUSE_LOAD: refusing player %d's car (attempt %d of %d) to exercise the retry\n",
+		p, refused[p], want);
+
+	return 1;
+}
+
 /* A new level: the set was just reset (chkImportReset), so the slot records of the old level are
  * meaningless - and the level-build fold runs right after this, inside the car-data hook, where a
  * stale record must not trigger a release. Forget them, and any deferred decision with them. */
@@ -296,7 +428,10 @@ void chkNetOnLevelReset(void)
 	int i;
 
 	for (i = 0; i < CHK_NET_MAX_PLAYERS; i++)
+	{
 		gChkNetPeerSlot[i] = -1;
+		chkNetLoadRetryClear(i);	/* the new level's build does this itself */
+	}
 
 	for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
 	{
@@ -449,7 +584,13 @@ int chkNetFoldPeerCars(void)
 		int already = 0;
 
 		if (!gChkNetPeerPickSet[p])
+		{
+			/* No identity for this player (they left, or nothing was reported yet): there
+			 * is nothing to load, and a retry armed for them must not survive - it would
+			 * keep the fold running every frame for a player who is gone. */
+			chkNetLoadRetryClear(p);
 			continue;
+		}
 
 		/* A car the level's OWN city ships needs no import WHEN THE LEVEL ALREADY
 		 * HOLDS IT: its own list has that model (CHK_CITY_NATIVE names the level's
@@ -469,7 +610,10 @@ int chkNetFoldPeerCars(void)
 			int holds;
 
 			if (pmodel < 0)
-				continue;		/* nothing settled yet: not a car to import */
+			{
+				chkNetLoadRetryClear(p);	/* nothing settled yet: not a car to import */
+				continue;
+			}
 
 			if (pcity < 0)
 				pcity = GameLevel;	/* CHK_CITY_NATIVE = the level's own city */
@@ -481,7 +625,10 @@ int chkNetFoldPeerCars(void)
 			holds = chkImportLevelHoldsModel(pmodel);
 
 			if (pcity == GameLevel && holds != 0)
-				continue;		/* in the level's pool (or unknown): no import */
+			{
+				chkNetLoadRetryClear(p);	/* in the level's pool (or unknown): no import */
+				continue;
+			}
 		}
 
 		for (slot = 0; slot < CHK_IMPORT_MAX_SLOTS; slot++)
@@ -495,7 +642,28 @@ int chkNetFoldPeerCars(void)
 		}
 
 		if (already)
+		{
+			/* The car is already in the set. If its geometry is really there the load is
+			 * DONE; if it is NOT (a build that failed, or a level that had not loaded when
+			 * this car was folded in), then THIS fold is the retry - try the build again and
+			 * keep waiting (or give up) on the same schedule. */
+			int slot0 = gChkNetPeerSlot[p];
+
+			if (JerCarSlotUsable(slot0) || chkImportHotLoad(slot0) > 0)
+			{
+				chkNetLoadRetryClear(p);
+			}
+			else if (chkNetLoadRetryArm(p) == CHK_NET_RETRY_GAVEUP)
+			{
+				/* The wait ran out with the car named in the set but no geometry: from here
+				 * the peer looks like this level's own car of the same number, which is the
+				 * one symptom a player can see, so it is said once. */
+				jer_error("player %d's car (%s model %d) could not be loaded here - they may look like this level's own car",
+					p, chkNetCityName((int)gChkNetPeerPick[p].city), (int)gChkNetPeerPick[p].model);
+			}
+
 			continue;
+		}
 
 		/* The slot is CANONICAL (chkImportCanonicalSlot), derived from every pick in
 		 * the session by owning player id -- never "the first free spare at the moment
@@ -508,13 +676,28 @@ int chkNetFoldPeerCars(void)
 
 			slot = chkImportCanonicalSlot(gChkNetPeerPick[p], &need);
 
-			if (slot < 0 || !chkImportSlotFree(slot))
+			if (slot < 0 || !chkImportSlotFree(slot) || chkNetTestRefuseLoad(p))
 			{
-				/* Player-facing: a peer's car could not be brought in, so the host
-				 * is told on screen as well as in the log. */
-				jer_error("[carhacks/net] player %d wants %s model %d, but no spare resident "
-					"slot is free - not importing it",
-					p, chkNetCityName((int)gChkNetPeerPick[p].city), (int)gChkNetPeerPick[p].model);
+				int now = chkNetLoadRetryArm(p);
+
+				/* A busy slot is usually a WAIT, not a refusal: the slot's last car is
+				 * still on it, and the release pass frees it a frame or two later - so the
+				 * retry (chkNetRetryPendingLoads) gets it. Say so once on screen. A retry
+				 * is not news, so the notice stays quiet while the retries run; only when
+				 * the wait runs out does the refusal on screen become final.
+				 *
+				 * The WAIT says "busy" and the FINAL says "no ... came free": the rigs
+				 * forbid the terminal phrase (mp_tries T2: with slot reuse a switch must
+				 * NOT exhaust the spares), so a transient that heals must not wear it. */
+				if (now == CHK_NET_RETRY_FIRST)
+					jer_error("[carhacks/net] player %d wants %s model %d, but every spare resident "
+						"slot is busy right now - retrying",
+						p, chkNetCityName((int)gChkNetPeerPick[p].city), (int)gChkNetPeerPick[p].model);
+				else if (now == CHK_NET_RETRY_GAVEUP)
+					jer_error("[carhacks/net] player %d wants %s model %d, but no spare resident "
+						"slot came free - not importing it",
+						p, chkNetCityName((int)gChkNetPeerPick[p].city), (int)gChkNetPeerPick[p].model);
+
 				continue;
 			}
 		}
@@ -536,34 +719,56 @@ int chkNetFoldPeerCars(void)
 			 * the host". chkImportHotLoad pushes the set into the engine's arrays,
 			 * reads the city and builds that one slot into the engine's own pool;
 			 * the resolvers then find it (including mp's own, on its next tick). */
-			if (chkImportHotLoad(slot) <= 0)
+			chkImportHotLoad(slot);
+
+			/* Was it really built? "Yes" ends the wait for this car. "No" is ONE of
+			 * two things, told apart by whether a level exists yet - and either way the
+			 * ask is a WAIT, not a refusal, so it goes on the retry schedule rather than
+			 * standing final (chkNetRetryPendingLoads is what makes it heal). */
+			if (JerCarSlotUsable(slot))
 			{
-				/* TWO answers wear this one return code, and only one of them is worth
-				 * telling anybody about. "No level yet" means the pick arrived before
-				 * this machine had a car list to fold it into: the level's own build
-				 * covers that slot when it runs, so the car turns up correctly and
-				 * there is nothing to report. Only a genuine failure -- a level is up
-				 * and this slot still has no geometry -- leaves the peer drawn as this
-				 * level's own car of the same number, and that IS a symptom a player
-				 * can see, so it goes on screen as well as in the log. */
-				if (!chkImportEngineKnown())
-				{
+				chkNetLoadRetryClear(p);
+			}
+			else if (!chkImportEngineKnown())
+			{
+				/* No level yet: the pick arrived before this machine had a car list to
+				 * fold it into, so the level's own build covers that slot when it runs -
+				 * and the retry clears the moment it does. There is nothing to report,
+				 * so this is said once, quietly. */
+				if (chkNetLoadRetryArm(p) == CHK_NET_RETRY_FIRST)
 					printInfo("[carhacks/net] player %d's car (%s model %d) folded into slot %d "
 						"before this machine had a level - its own build will load it\n",
 						p, chkNetCityName((int)gChkNetPeerPick[p].city),
 						(int)gChkNetPeerPick[p].model, slot);
-				}
-				else
+			}
+			else
+			{
+				/* A level is up and this slot still has no geometry: the level's pool
+				 * or the hot-load blocks are busy for a moment. Retry; only a wait that
+				 * never succeeds leaves the peer drawn as this level's own car of the
+				 * same number - the one symptom a player can see, so it is said on
+				 * screen too, once, when the wait finally gives up. */
+				int now = chkNetLoadRetryArm(p);
+
+				if (now == CHK_NET_RETRY_FIRST)
 				{
 					printInfo("[carhacks/net] player %d's car (%s model %d) is in the set for slot %d, "
-						"but this level could not build it yet - carrying it to the next level\n",
+						"but this level could not build it yet - retrying\n",
 						p, chkNetCityName((int)gChkNetPeerPick[p].city),
 						(int)gChkNetPeerPick[p].model, slot);
 
-					/* Say it on screen as well: from here the peer looks like this
-					 * level's own car of the same number, which is the one symptom a
-					 * player can see and report. */
-					jer_error("player %d's car (%s model %d) cannot be loaded here yet - they may look like this level's own car",
+					jer_error("player %d's car (%s model %d) cannot be loaded here yet - retrying",
+						p, chkNetCityName((int)gChkNetPeerPick[p].city),
+						(int)gChkNetPeerPick[p].model);
+				}
+				else if (now == CHK_NET_RETRY_GAVEUP)
+				{
+					printInfo("[carhacks/net] player %d's car (%s model %d) is in the set for slot %d, "
+						"but this level never built it - carrying it to the next level\n",
+						p, chkNetCityName((int)gChkNetPeerPick[p].city),
+						(int)gChkNetPeerPick[p].model, slot);
+
+					jer_error("player %d's car (%s model %d) could not be loaded here - they may look like this level's own car",
 						p, chkNetCityName((int)gChkNetPeerPick[p].city),
 						(int)gChkNetPeerPick[p].model);
 				}
@@ -1064,9 +1269,6 @@ void chkNetRequestSet(void)
  * enough heartbeat for something whose whole job is to be repeated. ~3 s at this rate. */
 #define CHK_NET_ADVERT_FRAMES 90
 
-static unsigned long gChkNetFrame;		/* ++ once per frame */
-static unsigned long gChkNetAdvertFrame;	/* the frame we last announced on */
-
 static int chkNetOnFrame(void* ud, void* args)
 {
 	int active = jer_net_is_active();
@@ -1117,6 +1319,11 @@ static int chkNetOnFrame(void* ud, void* args)
 		/* ...and the release decisions still waiting for a car to leave their slot. Also
 		 * before the early returns, for the same reason. */
 		chkNetRetryPendingReleases();
+
+		/* ...and the peer cars whose fold could not get a slot, or whose build did not
+		 * land yet. Same reason: this must run on the frames where nothing else about
+		 * the session changed - which is exactly when a retry is due. */
+		chkNetRetryPendingLoads();
 
 		/* CHK_FORCE_PLAYER_PALETTE=<n>: a headless run has no colour picker, so the
 		 * local car always comes out palette 0 - which means mp's owner-authoritative
@@ -1228,6 +1435,7 @@ static int chkNetOnFrame(void* ud, void* args)
 			{
 				gChkNetPeerPickSet[i] = 0;
 				gChkNetPeerSlot[i] = -1;
+				chkNetLoadRetryClear(i);	/* no session: nothing to wait for */
 			}
 
 			for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
