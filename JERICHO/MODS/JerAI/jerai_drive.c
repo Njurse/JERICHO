@@ -20,6 +20,7 @@
 #include "dr2math.h"	/* ratan2, RSIN, RCOS */
 #include "objcoll.h"	/* CellEmpty: the engine's own scenery test, for the feelers */
 #include "dr2roads.h"	/* MapHeight */
+#include "map.h"		/* units_across_halved: the level's bounds */
 
 #include <math.h>
 
@@ -590,6 +591,14 @@ static int JerAiFeelClear(CAR_DATA* car, int off, int dist, int radius)
 
 	v.vx = car->hd.where.t[0] + (int)((long)dist * RSIN(dir) / 4096);
 	v.vz = car->hd.where.t[2] + (int)((long)dist * RCOS(dir) / 4096);
+
+	/* OUTSIDE the loaded level is never "clear": CellEmpty reads an out-of-level
+	 * cell as EMPTY, so a feeler beyond the map edge would otherwise wave the car
+	 * straight off it. The ground is only read once we know it is in-bounds. */
+	if (v.vx + units_across_halved < 0 || v.vx - units_across_halved >= 0 ||
+	    v.vz + units_down_halved < 0 || v.vz - units_down_halved >= 0)
+		return 0;
+
 	v.vy = MapHeight(&v);	/* probe at the ground THERE, not at our own height */
 
 	return CellEmpty(&v, radius) != 0;
