@@ -124,6 +124,13 @@
 /* TEST LEVER: a CAR_DATA index to run FROM with no session (-1 = off). */
 #define JERAI_CFG_FLEE_CAR          "flee_car"
 
+/* Police: when the engine says the cops are after us (a pursuit is running or one
+ * has line of sight), drop everything - follow included - and run from the nearest
+ * police car FLAT OUT, then resume what we were doing once they are gone. 0 = off.
+ * Needs `immune = 0`, because immunity keeps the wanted level at zero and so no
+ * pursuit ever starts. */
+#define JERAI_CFG_FLEE_POLICE       "flee_police"
+
 /* debug: override the aim with a FIXED heading (game units, -1 = off). Used to
  * settle the steering sign in isolation from a moving plan. */
 #define JERAI_CFG_AIM_TEST          "aim_test"
@@ -140,5 +147,11 @@
  * speed, the look-ahead and the ACTUAL front wheel angle, which is the number
  * that shows the engine yanking the wheel to centre between corrections. */
 #define JERAI_CFG_STEER_TRACE       "steer_trace"
+
+/* WHEELSPIN launch: while panicking (running from the police), get off the line
+ * with the engine's wheelspin (the Circle bind) rather than plain throttle - it
+ * applies maximum thrust regardless of the pedal. It also starves the rear tyre
+ * force, so it is only used STRAIGHT (see the guard in the driver). 0 = off. */
+#define JERAI_CFG_PANIC_WHEELSPIN   "panic_wheelspin"
 
 #endif /* JERAI_H */

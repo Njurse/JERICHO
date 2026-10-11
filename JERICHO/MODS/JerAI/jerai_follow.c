@@ -15,6 +15,8 @@
 
 #include "cars.h"	/* car_data, MAX_CARS */
 #include "jer_net.h"	/* jer_net_is_active / jer_net_is_host */
+#include "cop_ai.h"	/* copsAreInPursuit - the engine's own "they are after us" */
+#include "felony.h"	/* CopsCanSeePlayer */
 #include "mp/mp.h"	/* MpGetPlayer, MP_PLAYER - the compiled-in mp module */
 
 /* Which CAR_DATA index should be followed right now, or -1 for "nothing".
@@ -165,6 +167,54 @@ int JerAiThreatTarget(CAR_DATA* car, int* x, int* z)
 
 	if (&car_data[best] == car)
 		return 0;	/* never run from ourselves */
+
+	gJerAi.followCarId = best;	/* a destination, not traffic - see JerAiCarAhead */
+
+	if (x != NULL) *x = car_data[best].hd.where.t[0];
+	if (z != NULL) *z = car_data[best].hd.where.t[2];
+
+	return 1;
+}
+
+/* The nearest police car, when the police are actually after this car. See
+ * jerai_follow.h - the flags are the engine's own pursuit state, so a police car
+ * merely parked nearby is not a threat. */
+int JerAiPoliceThreat(CAR_DATA* car, int* x, int* z)
+{
+	int best = -1;
+	long long bestD2 = 0;
+	int i;
+
+	if (car == NULL)
+		return 0;
+
+	/* The engine's own answer to "are they after us": either a pursuit is
+	 * running or a cop has line of sight. Both are cleared by JerAI's `immune`
+	 * option, which is why immunity makes this unreachable (see the header). */
+	if (!copsAreInPursuit && !CopsCanSeePlayer)
+		return 0;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		CAR_DATA* o = &car_data[i];
+		long long dx, dz, d2;
+
+		if (o == car || o->controlType != CONTROL_TYPE_PURSUER_AI)
+			continue;
+
+		dx = (long long)o->hd.where.t[0] - (long long)car->hd.where.t[0];
+		dz = (long long)o->hd.where.t[2] - (long long)car->hd.where.t[2];
+		d2 = dx * dx + dz * dz;		/* 64-bit: see JerAiFollowTarget */
+
+		if (best < 0 || d2 < bestD2)
+		{
+			best = i;
+			bestD2 = d2;
+		}
+	}
+
+	if (best < 0)
+		return 0;
 
 	gJerAi.followCarId = best;	/* a destination, not traffic - see JerAiCarAhead */
 

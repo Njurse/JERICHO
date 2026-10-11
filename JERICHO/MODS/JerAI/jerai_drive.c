@@ -301,6 +301,13 @@ int JerAiSpeedTarget(void)
 	int r, vCorner, vNow;
 	double turnRad;
 
+	/* PANIC: running from the police, the point is to be gone, not to be tidy.
+	 * Ignore the corner model and the aggression dial entirely and ask for the
+	 * car's whole top speed - the steering, the feelers and the stuck recovery
+	 * still keep it off the walls. */
+	if (gJerAi.panicFlee)
+		return gJerAi.topSpeed;
+
 	if (!gJerAi.havePlan || c->sharp == 0 || c->span <= 0)
 		return gJerAi.topSpeed;
 
@@ -946,6 +953,28 @@ unsigned int JerAiDriveSteerPad(CAR_DATA* car, int aimX, int aimZ)
 	unsigned int pad = JerAiSteerPadImpl(car, aimX, aimZ);
 
 	gJerAi.lastPad = (int)pad;
+
+	/* WHEELSPIN launch. CAR_PAD_WHEELSPIN makes the engine apply MAXIMUM thrust
+	 * regardless of the pedal (wheelforces.c: thrust = powerRatio * 5000), which
+	 * is how a chased car gets off the line. It buys that by loading the front
+	 * tyre force and starving the rear (`*rearFS = 0x780 - *frontFS`), so a
+	 * wheelspun car has little rear grip and spins out the moment it is asked to
+	 * turn - and Circle is the handbrake's opposite rather than a free button.
+	 *
+	 * So it is used ONLY to get going in a straight line while running for it,
+	 * and the pad goes back to plain throttle the moment the car has to point
+	 * anywhere. The guard is the FRONT WHEEL ANGLE and the heading error, not
+	 * the pad bits: the bits lead the wheel by a frame or two, so requiring "no
+	 * steering bit" as well asked for something that almost never holds and made
+	 * the whole thing a no-op. The engine also cancels wheelspin by itself above
+	 * a wheel speed, which is the last line of defence. */
+	if (gJerAi.panicFlee && gJerAi.panicWheelspin && car != NULL &&
+	    (pad & CAR_PAD_ACCEL) && JerAiAbs(gJerAi.lastDiff) < 150 &&
+	    JerAiAbs(car->wheel_angle) < 80)
+	{
+		pad = (pad & ~(unsigned int)CAR_PAD_ACCEL) | (unsigned int)CAR_PAD_WHEELSPIN;
+		gJerAi.lastPad = (int)pad;
+	}
 
 	/* the ACTUAL front wheel angle, read back after the engine applied the pad
 	 * (30 Hz logic, one frame behind). This is the readout that shows the wheel

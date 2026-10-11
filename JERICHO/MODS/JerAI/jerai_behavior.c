@@ -171,26 +171,45 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 	unsigned int pad;
 
 	gJerAi.fleeActive = 0;
+	gJerAi.policeActive = 0;
+	gJerAi.panicFlee = 0;
 	gJerAi.followCarId = -1;	/* the resolvers below set it when there IS one */
 
 	/* The destination, in priority order:
 	 *
-	 *   1. FLEE   - in a session, the HOST runs from the nearest other player, so
+	 *   1. POLICE - the cops are after us: drop everything, follow included, and run
+	 *               from the nearest police car FLAT OUT. Whatever was otherwise
+	 *               happening resumes the moment the pursuit ends;
+	 *   2. FLEE   - in a session, the HOST runs from the nearest other player, so
 	 *               the cars that joined to follow have something to chase;
-	 *   2. FOLLOW - in a session, a CLIENT drives to the host's car;
-	 *   3. wander - a random road sample (single player, or a session with nobody
+	 *   3. FOLLOW - in a session, a CLIENT drives to the host's car;
+	 *   4. wander - a random road sample (single player, or a session with nobody
 	 *               else in it).
 	 *
-	 * JerAiThreatTarget and JerAiFollowTarget each answer 0 when their half does
-	 * not apply, so exactly one of the three runs and the wander below is the
-	 * unchanged single-player behaviour. */
-	if (gJerAi.fleeEnabled && JerAiThreatTarget(car, &targetX, &targetZ))
+	 * Each resolver answers 0 when its condition does not apply, so exactly one
+	 * branch runs and the wander below stays the plain single-player behaviour.
+	 *
+	 * The police and the host-flee SHARE one body: both want "the furthest
+	 * reachable point from a threat" and differ only in who the threat is and in
+	 * whether the pace limit is lifted. */
+	if (gJerAi.fleePolice && JerAiPoliceThreat(car, &targetX, &targetZ))
+		gJerAi.policeActive = 1;	/* panicFlee below lifts the pace limit */
+
+	if (gJerAi.policeActive || (gJerAi.fleeEnabled && JerAiThreatTarget(car, &targetX, &targetZ)))
 	{
 		long long mdx = (long long)targetX - sThreatX;
 		long long mdz = (long long)targetZ - sThreatZ;
 		long long move = (long long)gJerAi.replanMove;
 
 		gJerAi.fleeActive = 1;
+		gJerAi.panicFlee = gJerAi.policeActive;	/* police = flat out, no pace limit */
+
+		/* A CLOSING pursuer covers replan_move almost instantly, so the plain
+		 * "the threat moved" trigger re-picked the bolt-hole every few frames and
+		 * the car dithered between escape directions instead of committing to
+		 * one. Make the police case wait twice as long before redrawing. */
+		if (gJerAi.policeActive)
+			move += move;
 
 		/* A fresh bolt-hole when we have none, have arrived, the plan failed, the
 		 * stuck recovery asks for one, or the threat has moved far enough that

@@ -66,6 +66,10 @@ typedef struct JERAI_STATE
 	int	fleeEnabled;		/* 1 = run from the peers when we are the host */
 	int	fleeCar;		/* TEST LEVER: CAR_DATA index to run from, -1 = off */
 	int	fleeActive;		/* last frame: we were fleeing */
+	int	fleePolice;		/* 1 = run from the police when they are after us */
+	int	policeActive;		/* last frame: the cop we were running from was police */
+	int	panicFlee;		/* last frame: running flat out (police) - see JerAiSpeedTarget */
+	int	panicWheelspin;		/* 1 = may use the wheelspin launch while panicking */
 	int	followCarId;		/* CAR_DATA index being followed/run from, -1 = none */
 
 	int	yawLead;		/* steering damper: frames of yaw the aim leads by */

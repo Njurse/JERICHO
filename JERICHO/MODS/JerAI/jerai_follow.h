@@ -52,6 +52,19 @@ int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2);
  * all, so the escape can be exercised in single player. */
 int JerAiThreatTarget(CAR_DATA* car, int* x, int* z);
 
+/* Resolve the nearest POLICE car when the cops are actually after this car.
+ * Returns 1 and writes its position when there is one.
+ *
+ * Gated on the engine's own pursuit flags (`copsAreInPursuit` /
+ * `CopsCanSeePlayer`), not just on a cop being in the neighbourhood - a police
+ * car parked down the road is scenery, not a threat. The car to run from is a
+ * `CONTROL_TYPE_PURSUER_AI` slot.
+ *
+ * NOTE: JerAI's `immune` option (on by default) zeroes the wanted state every
+ * frame, so with immunity on the police never pursue and this never answers 1.
+ * Set `immune = 0` to be chaseable. */
+int JerAiPoliceThreat(CAR_DATA* car, int* x, int* z);
+
 #ifdef __cplusplus
 }
 #endif

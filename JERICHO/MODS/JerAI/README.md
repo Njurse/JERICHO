@@ -186,6 +186,44 @@ crossing a blocked sample, so the straight run is genuinely clear). The fault is
 therefore in **the destination/aim the behaviour supplies**, not in the driver - and
 `pdir` plus `ax`/`az` in the trace are what the next pass needs to pin it down.
 
+## Running from the police
+
+When the engine says the cops are after this car - `copsAreInPursuit` or
+`CopsCanSeePlayer` - the police outrank EVERYTHING else, the follow included. The
+car runs from the nearest `CONTROL_TYPE_PURSUER_AI` car, and unlike the other
+behaviours it does so with the corner-speed model and the aggression dial bypassed
+(`panicFlee` in the driver: `JerAiSpeedTarget` returns the whole top speed), then
+goes back to following or wandering the moment the pursuit ends.
+
+`flee_police` (default 1) turns it off. **It needs `immune = 0`**: immunity pins
+the wanted level at zero, so with the default immunity no pursuit ever starts and
+this can never trigger.
+
+A closing pursuer covers `replan_move` almost instantly, so the police case waits
+twice as long before redrawing its bolt-hole. Without that the car dithered between
+escape directions instead of committing to one.
+
+### Wheelspin, and why it is currently inert
+
+`panic_wheelspin` (default 1) lets the car use the engine's wheelspin (the Circle
+bind) rather than plain throttle to get off the line: `CAR_PAD_WHEELSPIN` makes
+wheelforces apply maximum thrust regardless of the pedal. It pays for that by
+loading the front tyre force and starving the rear (`*rearFS = 0x780 - *frontFS`),
+so a wheelspun car has little rear grip and spins out the moment it is asked to
+turn - which is why the guard is the FRONT WHEEL ANGLE and the heading error,
+not the pad bits (the bits lead the wheel by a frame or two, so requiring "no
+steering bit" as well asked for something that almost never holds).
+
+**Measured: it fired on 0 of 110 sampled frames** in a HAVANA survival run. The
+car's heading error averaged ~966 game units (about 85 degrees) and it sat at full
+lock half the time, so it was essentially never straight and accelerating and the
+guard never opened. That is the same fault the steer trace found everywhere else:
+the car cannot track the destination it is given, so it spends its life at full
+lock wrestling a bearing it never reaches - and anything that rewards being
+straight (a clean launch, real corner-exit speed) never happens. The wheelspin
+path is kept because it is correct and guarded, but it is **unverified in
+practice** until the aim problem is fixed.
+
 ## Visualization (`viz_*`)
 
 Drawn in `JER_EVENT_DRAW_WORLD` with `Debug_AddLineDepth` (buildings occlude the
@@ -274,6 +312,8 @@ The multiplayer-follow knobs (see *Following the host*):
 | `follow_range` | 0 | give the target up past this distance; **0 = unlimited** (a chunked chase across the whole map) |
 | `follow_car` | -1 | TEST LEVER: a `car_data` index to follow with no session |
 | `flee` | 1 | while the HOST in a session, run from the nearest other player (0 = never) |
+| `flee_police` | 1 | run from the police FLAT OUT when they are after us (needs `immune = 0`) |
+| `panic_wheelspin` | 1 | may use the wheelspin launch while fleeing the police (straight-line only) |
 | `flee_car` | -1 | TEST LEVER: a `car_data` index to run from with no session |
 | `offroad_cost` | 90 | extra A* cost for an off-road sample (on-road is 100); 0 = no road preference |
 

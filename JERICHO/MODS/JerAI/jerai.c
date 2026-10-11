@@ -61,6 +61,8 @@ void JerAiRefreshConfig(void)
 	gJerAi.followRange = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW_RANGE, 0);
 	gJerAi.fleeEnabled = jer_config_get_int("JerAI", JERAI_CFG_FLEE, 1);
 	gJerAi.fleeCar = jer_config_get_int("JerAI", JERAI_CFG_FLEE_CAR, -1);
+	gJerAi.fleePolice = jer_config_get_int("JerAI", JERAI_CFG_FLEE_POLICE, 1);
+	gJerAi.panicWheelspin = jer_config_get_int("JerAI", JERAI_CFG_PANIC_WHEELSPIN, 1);
 	gJerAi.yawLead = jer_config_get_int("JerAI", JERAI_CFG_YAW_LEAD, 4);
 	gJerAi.steerTrace = jer_config_get_int("JerAI", JERAI_CFG_STEER_TRACE, 0);
 	gJerAi.aimTest = jer_config_get_int("JerAI", JERAI_CFG_AIM_TEST, -1);
@@ -113,6 +115,8 @@ void JerAiWriteConfigDefaults(void)
 	jer_config_set_int("JerAI", JERAI_CFG_FOLLOW_RANGE, gJerAi.followRange);
 	jer_config_set_int("JerAI", JERAI_CFG_FLEE, gJerAi.fleeEnabled);
 	jer_config_set_int("JerAI", JERAI_CFG_FLEE_CAR, gJerAi.fleeCar);
+	jer_config_set_int("JerAI", JERAI_CFG_FLEE_POLICE, gJerAi.fleePolice);
+	jer_config_set_int("JerAI", JERAI_CFG_PANIC_WHEELSPIN, gJerAi.panicWheelspin);
 	jer_config_set_int("JerAI", JERAI_CFG_YAW_LEAD, gJerAi.yawLead);
 	jer_config_set_int("JerAI", JERAI_CFG_STEER_TRACE, gJerAi.steerTrace);
 	jer_config_set_int("JerAI", JERAI_CFG_PACE_PCT, gJerAi.pacePct);
@@ -306,7 +310,7 @@ static int JerAiOnFrame(void* userdata, void* args)
 			const JERAI_BEHAVIOR* b = JerAiBehaviorFor(gJerAi.mode);
 
 			gJerAi.ctx->jer_log(gJerAi.ctx,
-				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) la=%d aimd=%d stuck=%d rec=%d vizlines=%d follow=%d fdist=%d flee=%d\n",
+				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) la=%d aimd=%d stuck=%d rec=%d vizlines=%d follow=%d fdist=%d flee=%d police=%d\n",
 				b != NULL ? b->name : "?",
 				car->hd.where.t[0], car->hd.where.t[2], car->hd.speed, car->hd.direction,
 				gJerAi.carState.slip, gJerAi.carState.yawRate,
@@ -317,7 +321,8 @@ static int JerAiOnFrame(void* userdata, void* args)
 				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ,
 				gJerAi.aimLook, gJerAi.aimDist, gJerAi.stuckFrames, gJerAi.recoverFrames,
 				JerAiVizLines(),
-				gJerAi.followActive, gJerAi.followDist, gJerAi.fleeActive);
+				gJerAi.followActive, gJerAi.followDist, gJerAi.fleeActive, gJerAi.policeActive);
+
 			if (gJerAi.vizHud)
 			{
 				char hud[160];
