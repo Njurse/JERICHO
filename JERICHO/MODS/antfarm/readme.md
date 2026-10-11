@@ -13,20 +13,25 @@ the whole map — every cut hops to a far area and picks a fresh shot:
 
 Road and free angles:
 
-- **Static track** — a fixed roadside camera a car drives past; the camera
-  pans to follow, then relocates when the car leaves its reach.
+- **Static track** — *(retired)* a fixed roadside camera a car drives past that
+  relocated every time the car left its reach, which read as a jump every few
+  seconds. The row is kept only so the style ids do not renumber; it is never
+  offered.
 - **Overhead** — scenic elevated 3/4 view down onto traffic (either
   high-following a car or watching a whole road).
 - **Tripod** — parked, swaying (sometimes panning) roadside camera, aimed
-  down the lane cars actually drive in.
+  down the lane cars actually drive in; it will also hold a lateral offset and
+  travel alongside a car.
 - **Kerb pass** — the same placement at wheel height with a long lens, so
-  traffic sweeps past with foreground occlusion.
+  traffic sweeps past with foreground occlusion (road or a car passing).
 - **Flyover** — a slow, eased dolly along a long straight, which carries on
   onto the connected road at a junction rather than stopping at the end of it.
-- **Crane** — a slow vertical rise from road level, revealing the street ahead.
+  It can also run *ahead* of a car and aim back at it (a leading shot).
+- **Crane** — a slow vertical rise from road level, revealing the street ahead
+  (or rising over a car it is leading).
 - **Orbit** — a slow circle around the subject (a car or a point on the road).
 - **Ant level** — a ground-level camera beside the road, looking *across* it so
-  traffic sweeps past the lens.
+  traffic sweeps past the lens (or alongside a car at wheel height).
 - **Waterfront** — a low dolly along a road that actually runs beside water
   (found by probing the surface for water / deep water / sand).
 - **Junction** — a parked vantage on a junction mouth: it sits off the corner
@@ -43,6 +48,28 @@ Road and free angles:
   car's yaw slowly and the short way round, never inherits roll or pitch, and
   aims a little ahead so the car rides low in frame. It opens up a little at
   speed. Off by default: it is the most agitated of the archetypes.
+- **High chase** — the same trail cam pulled high and far back for a wide
+  establishing chase.
+- **Low chase** — close to the road behind the car, so the tarmac and the
+  wheels read.
+- **Side track** — the trail cam offset off the car's flank (a rear 3/4), so
+  the car is seen from behind-and-to-the-side as it goes.
+
+The three extra chase rows are **table-driven**: a row that sets its forward
+range controls the trail distance, camera height, lateral offset and
+look-ahead itself (`AntFarmFollowCam`), so a new chase angle is a single table
+row. Unlike Chase they default on.
+
+Road-framing styles also take a car subject now (see `AntFarmTrackCarCam`):
+ROADSIDE/JUNCTION hold a lateral offset and travel alongside the car, and
+DOLLY/CRANE run ahead of it and aim back, so a car can be followed from beside,
+from ahead and from behind.
+
+Roads are followed whether they are **straight or curved**: the probes accept
+both (a curve's surface id carries the 0x4000 bit and has no length field, so
+the module uses the engine's own arc-length form), so a dolly continues onto a
+bend at a junction instead of stopping, and a junction is found where a straight
+meets a curve.
 
 Angles locked onto a car (all of these focus on *one moving car*, and cut away
 if it stops - a frozen frame is the one thing a screensaver must not show):

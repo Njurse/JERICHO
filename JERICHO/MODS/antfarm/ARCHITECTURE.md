@@ -266,8 +266,8 @@ camera case. Columns (`ANT_STYLE_DEF`):
 | `zoom` | push the lens in and back out across the shot |
 | `heightLo/Hi` | camera elevation above ground/road |
 | `scrZLo/Hi` | FOV (projection distance; smaller = wider). For a zoom row these are the ramp's two ends. Both clamp to `ANTFARM_FOV_MIN` 256 … `ANTFARM_FOV_MAX` 360 |
-| `sideLo/Hi` | lateral offset (rig offset, or the roadside margin) |
-| `fwdLo/Hi` | longitudinal offset (attached rigs) |
+| `sideLo/Hi` | lateral offset (rig offset, the roadside margin, or a follow row's rear-3/4 offset) |
+| `fwdLo/Hi` | longitudinal offset: attached rigs' along-the-body position; a **follow** row's trail distance (and the switch that makes the row table-driven); a dolly/crane road row's extra lead |
 | `aimLo/Hi` | how far ahead of the subject the aim sits |
 | `orbitLo/Hi` | pan/sweep amplitude (0 = hold still) |
 | `across` | aim across the road rather than along it |
@@ -279,11 +279,11 @@ camera case. Columns (`ANT_STYLE_DEF`):
 
 | Model | Drives | Used by |
 |---|---|---|
-| `ROADSIDE` | camera parked `side` off the lane, `height` above the road, aiming `shotLookAhead` along (or across, if `across`) the lane; optional slow pan (`shotOrbitAmp`), tiny sway/bob | Overhead, Tripod, Ant level, Kerb |
-| `DOLLY` | travels along the road, carrying on onto the connected road at a junction (`AntFarmAdvanceDolly` + `AntFarmNextRoad`) | Flyover, Waterfront |
-| `CRANE` | a dolly that also rises from `ANTFARM_CRANE_LOW` to `shotHeight` across the shot | Crane |
+| `ROADSIDE` | camera parked `side` off the lane, `height` above the road, aiming `shotLookAhead` along (or across, if `across`) the lane; optional slow pan (`shotOrbitAmp`), tiny sway/bob. On a CAR subject it holds `side + margin` off the car's flank and travels with it (`AntFarmTrackCarCam`) | Overhead, Tripod, Ant level, Kerb |
+| `DOLLY` | travels along the road, carrying on onto the connected road at a junction (`AntFarmAdvanceDolly` + `AntFarmNextRoad`) — and that continuation may be a **curve**. On a CAR subject it runs `ANTFARM_TRACK_LEAD + fwd` AHEAD of the car and aims back at it (a leading shot) | Flyover, Waterfront |
+| `CRANE` | a dolly that also rises from `ANTFARM_CRANE_LOW` to `shotHeight` across the shot; on a CAR subject it leads like the dolly | Crane |
 | `ORBIT` | slow circle around the subject, one revolution per `ANTFARM_ORBIT_PERIOD_MS` | Orbit |
-| `FOLLOW` | the **trail cam** (see below) | Chase |
+| `FOLLOW` | the **trail cam** (see below); four rows, the extra three table-driven | Chase, High chase, Low chase, Side track |
 | `ATTACH` | a damped, yaw-only rig on the car's own body (scaled by `colBox`), offsets in the car's frame | Fender, Sill, Nose 3/4, Tail 3/4 |
 | `TRIPODZ` | a fixed vantage resolved from the car once per shot; the camera yaw-tracks while the lens pushes | Tripod zoom, Far pan |
 | `JUNCTION` | parked off a crossroads corner; the **aim** slides slowly across the mouth | Junction |
@@ -293,6 +293,14 @@ camera case. Columns (`ANT_STYLE_DEF`):
 never offered by the picker and never defaults on. That is how a row is retired
 without renumbering the enum (indices must stay aligned with
 `ANTFARM_STYLE_*` in `antfarm.h` and with `antStyleDefs[]`).
+
+A `ROADSIDE`/`JUNCTION`/`DOLLY`/`CRANE` row that takes a **car** subject does not
+fall through to the trail cam any more: `AntFarmTrackCarCam` holds a fixed offset
+in the car's own frame — `side + margin` off its flank for ROADSIDE/JUNCTION, so
+the camera travels alongside it; `ANTFARM_TRACK_LEAD + fwd` ahead of it for
+DOLLY/CRANE, so the car drives toward the lens — and aims at the car. That is
+what makes Flyover/Crane travelling car shots and Kerb/Tripod/Ant level/Overhead
+side-tracking car shots.
 
 ### Picking a style — the weighted director
 
@@ -374,6 +382,16 @@ was scrap. `AntFarmFollowCam` replaces it with **one continuous perspective**:
 * it returns `outLerp = 100`, i.e. it disables the generic per-frame position
   lerp — **no double smoothing**.
 
+### Table-driven follow rows (High chase, Low chase, Side track)
+
+The legacy numbers above are the default when a row leaves its forward range at
+`0` (Chase cam does, so its shot is unchanged). A follow row that **sets**
+`fwdLo/Hi` drives the whole framing itself: `heightLo/Hi` → camera height,
+`fwdLo/Hi` → trail distance, `sideLo/Hi` (× `shotSideSign`) → a lateral rear-3/4
+offset along the car's right, `aimLo/Hi` → the look-ahead. That is how the three
+extra chase angles exist with no new model and no new struct field — only the
+legacy path is kept so the original chase framing is bit-for-bit the same.
+
 ---
 
 ## 6. Retired: Static track
@@ -401,20 +419,31 @@ subject the car is attached *after* planning (`AntFarmSetCarSubject`), because
   and treats "untouched" as a failed sample, because `GetNodePos` declines to
   write its outputs for some segments (which used to leave the shot anchored at
   the world origin).
+* **Curves.** A driveable surface is a STRAIGHT or a CURVE, and a curve's
+  surface id carries the `0x4000` bit (`IS_CURVED_SURFACE`/`GET_CURVE`) and has
+  `start`/`end` angles and an `inside` radius but NO `length` or `angle` field.
+  `AntFarmRoadLen`/`AntFarmRoadHeading` give either one, a curve's length being
+  the engine's own arc-length form `((end-start) & 0xfff) * inside * 11 / 7`
+  (civ_ai.c). The probes and the dolly use them, so a straight meeting or
+  continuing onto a curve is found (before the fix both neighbour probes tested
+  `surf < NumDriver2Straights`, which threw every curved meeting away) and the
+  dolly does not index `Driver2StraightsPtr` with a curve id.
 * **Roadside shots** sometimes frame a road **end** (`AntRandChance(40)`), where
   junctions cluster; 45 % of those sit just past the end looking back.
 * **Travelling shots** start at distance 0 and advance every frame.
 * **Junction shots** always sit on a road **end**, but only one that is a *real*
   crossroads: `AntFarmJunctionEnd` steps 320 units past the end along the lane
   heading and asks `GetSurfaceIndex` which surface is there. A different usable
-  straight means the roads meet; no road (a boundary end) means the vantage
-  would look off the edge of the world, so the plan tries the other end and then
-  other roads (10 tries), and says so if it finds nothing.
+  surface (straight **or curve**) means the roads meet; no road (a boundary end)
+  means the vantage would look off the edge of the world, so the plan tries the
+  other end and then other roads (10 tries), and says so (and which kind it
+  found) if it finds nothing.
 * **Dolly handoff.** `AntFarmAdvanceDolly` advances by the shot's share of the
   road; when it runs out, `AntFarmNextRoad` continues onto the connected road —
   `ConnectIdx` first, and since these level files leave it unpopulated, by
   stepping just past the end and asking `GetSurfaceIndex` (exactly how the civ
-  AI tracks its current road). Up to 8 handoffs.
+  AI tracks its current road); the continuation may be a **curve** (the log says
+  which). Up to 8 handoffs.
 
 `AntFarmInitShotVars` randomises the framing from the row's ranges, sets the FOV
 (one end of the ramp for a zoom row), decides whether the row pans
@@ -463,9 +492,15 @@ opposite side to the previous one and ~25 % repeat it (`s.lastSideSign`).
     correction in `AntFarmComputeCamera` writes a local the slew overwrites, so
     it never reached the screen. Attached rigs, the trail cam, orbit and
     tripod-zoom keep their own framing;
-  * **never stare at the ground.** Whatever the model, the rendered pitch is
-    clamped to `ANTFARM_PITCH_DOWN_MAX` (220 ≈ 19°; `camera_angle.vx` is 0 at
-    level and grows downward, so only downward values are clamped). An
+  * **Never stare at the ground — or the sky.** Whatever the model, the rendered
+  pitch is clamped 
+    * down to `ANTFARM_PITCH_DOWN_MAX` (220 ≈ 19°), and
+    * up to `-ANTFARM_PITCH_UP_MAX` (340 ≈ 30°).
+  `camera_angle.vx` is 0 at level, grows downward and wraps at 4096, so the
+  clamp reads the signed value and rewrites `tgt.vx`. The down cap stops an
+  elevated vantage aiming at tarmac; the up cap catches a shot whose aim sits on
+  ground far above the camera (a junction on a steep grade was measured at
+  −1039, ≈ 91° up). An archetype or row value can no longer defeat either.
     archetype or row value can no longer leave a shot pointing at the road
     surface — the shot looks across the scene instead;
   * breathe the lens: `s.fovCurrent += (AntFarmFovTarget() − s.fovCurrent)/18`,
@@ -563,6 +598,12 @@ rows** — the engine builds submenus eagerly, and a mismatch is an access
 violation. `antMenuItems[ANTFARM_STYLE_COUNT + 5]` is sized to fit the fixed
 rows plus one per style.
 
+There are **20** style rows (17 original + High chase, Low chase, Side track);
+`ANTFARM_STYLE_COUNT` in `antfarm.h`, the enum, the table, the config keys and
+the harness's style-key list must all stay in step. Chase is the one archetype
+that defaults **off** (`def = implemented && i != ANTFARM_STYLE_CHASE`), because
+it is the most agitated; the three extra chase rows default on.
+
 ---
 
 ## 13. Testing
@@ -581,12 +622,16 @@ rows plus one per style.
 * verdict: PASS needs `[antfarm] ready`, `[antfarm] enabled`, no new `*.dmp`, no
   engine error marker, and either `JERICHO-RUN … status=ok` or `LOG CLOSED`;
 * it prints cuts, distinct areas, `black-cap hits` (each used to be ~6 s of
-  grey), `void guards`, the shot telemetry, and checks invariants straight out
-  of that telemetry (a rig stays inside its envelope; a zoom row must actually
-  move its lens; a long-lens row must get its subject into range).
+  grey), `void guards`, the shot telemetry, the vehicle-vs-road subject mix
+  (`subjects: car=N road=M`), and checks invariants straight out of that
+  telemetry (a rig stays inside its envelope; a zoom row must actually move its
+  lens; a long-lens row must get its subject into range; the rendered pitch must
+  stay inside `ANTFARM_PITCH_DOWN_MAX`/`ANTFARM_PITCH_UP_MAX`).
 
 Good runs read: several cuts, several **distinct** areas, `black-cap hits 0`,
-`void guards 0`.
+`void guards 0`. (A single void guard at cut #1 turns up in a minority of runs
+and has done since long before the vehicle/curve work — it is the first shot's
+region still streaming, and the guard recovers immediately.)
 
 ---
 
@@ -639,6 +684,11 @@ generate time).
   `AntFarmComputeCamera` is silently overwritten — that is why the old
   `ANTFARM_ROAD_PITCH_UP` "tilt up" fix never showed. Put framing corrections
   on `tgt` in `AntFarmOnCamera`.
+* **A curve's surface id is not a straight index.** A curved surface carries the
+  `0x4000` bit (`IS_CURVED_SURFACE`/`GET_CURVE`) and has no `length`/`angle`
+  field. Indexing `Driver2StraightsPtr` with one reads the wrong road (or out of
+  bounds). When a surfId could be either, go through `AntFarmRoadLen` /
+  `AntFarmRoadHeading`.
 * **Module code is compiled into the exe** — a stale exe ignores your changes.
 * **`PingInCivCar` no longer spams the log.** The `JERICHO-DIAG PINGIN:` census
   lines fire on every ping, so they are gated behind `JERICHO_DIAG_PINGIN=1`
