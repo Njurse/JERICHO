@@ -47,6 +47,11 @@ int JerAiLocalGoal(const JERAI_MAP* map, int fromX, int fromZ, JERAI_GOAL* out);
  * or 0 when nothing in the ring is both reachable and worth going to. */
 int JerAiLocalFleeGoal(const JERAI_MAP* map, int fromX, int fromZ, int threatX, int threatZ, JERAI_GOAL* out);
 
+/* Where to go to get AROUND an obstacle on the way to a target: the reachable
+ * spot most SIDEWAYS (perpendicular) to the car->target line, so a stuck follower
+ * detours sideways before re-routing instead of rejoining the same wedge. */
+int JerAiLocalTangentialGoal(const JERAI_MAP* map, int fromX, int fromZ, int targetX, int targetZ, JERAI_GOAL* out);
+
 #ifdef __cplusplus
 }
 #endif

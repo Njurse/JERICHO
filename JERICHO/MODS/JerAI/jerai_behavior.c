@@ -202,6 +202,7 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 		long long move = (long long)gJerAi.replanMove;
 
 		gJerAi.fleeActive = 1;
+		gJerAi.tanActive = 0;	/* the follow detour is not for fleeing */
 		gJerAi.panicFlee = gJerAi.policeActive;	/* police = flat out, no pace limit */
 
 		/* A CLOSING pursuer covers replan_move almost instantly, so the plain
@@ -291,11 +292,40 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 			gJerAi.forceNewGoal = 0;
 			gJerAi.reposition = 0;
 
+			/* TANGENTIAL DETOUR. The stuck recovery just backed the car off
+			 * something while following, so re-stamping the host would drive it
+			 * straight back into the same wedge and the loop never breaks. Instead
+			 * pick a spot SIDEWAYS to the car->host line -- perpendicular to it, so
+			 * the wedge is broken rather than rejoined -- and drive TO it before
+			 * re-routing. The old jink used the nearest reachable open ground,
+			 * which can be back through the very gap the car is wedged in. */
 			if (JerAiMapBuild(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[1], car->hd.where.t[2]) &&
-			    JerAiLocalGoal(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[2], &escape))
+			    JerAiLocalTangentialGoal(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[2],
+				    targetX, targetZ, &escape))
 			{
+				gJerAi.tanX = escape.x;
+				gJerAi.tanZ = escape.z;
+				gJerAi.tanActive = 1;
+
 				sGhostX = escape.x;
 				sGhostZ = escape.z;
+				sHasGoal = 1;
+				jink = 1;
+			}
+		}
+
+		/* HOLD the tangential waypoint until reached, then re-route to the host.
+		 * This is the "drive to a tangentially related spot FIRST" half: without
+		 * it the detour lasts one frame and the car is back to head-butting the
+		 * same obstacle. */
+		if (gJerAi.tanActive && !jink)
+		{
+			if (JerAiJoyArrived(car))
+				gJerAi.tanActive = 0;	/* next frame follows the host again */
+			else
+			{
+				sGhostX = gJerAi.tanX;
+				sGhostZ = gJerAi.tanZ;
 				sHasGoal = 1;
 				jink = 1;
 			}
@@ -322,6 +352,7 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 	{
 		gJerAi.followActive = 0;
 		gJerAi.followDist = 0;
+		gJerAi.tanActive = 0;	/* no host, no detour to it */
 
 		/* A fresh destination when we have none, have arrived, when the plan could
 		 * not be made at all, when A* could not REACH the current goal, or when the

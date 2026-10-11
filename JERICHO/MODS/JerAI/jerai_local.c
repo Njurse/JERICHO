@@ -276,3 +276,119 @@ int JerAiLocalFleeGoal(const JERAI_MAP* map, int fromX, int fromZ, int threatX, 
 
 	return 1;
 }
+
+/* ------------------------------------------------------------------ */
+/* The question the tangential escape answers: how to get AROUND the   */
+/* obstacle between the car and its target                              */
+/* ------------------------------------------------------------------ */
+
+/* How far out a tangential escape is looked for, in samples. */
+#define JERAI_LOCAL_TAN_RING	16
+
+/* Where to go to get AROUND whatever is between the car and its target. Scores
+ * every reachable sample in a ring and takes the one most SIDEWAYS to the
+ * car->target line: the car keeps trying to drive at the target, so the thing
+ * that un-wedges it is a spot perpendicular to that line, not another point on
+ * it (which just rejoins the same obstacle). Returns 1 and fills `out`, or 0
+ * when nothing in the ring is both reachable and worth going to. */
+int JerAiLocalTangentialGoal(const JERAI_MAP* map, int fromX, int fromZ, int targetX, int targetZ, JERAI_GOAL* out)
+{
+	int cix, ciz, ix, iz, q, reached, best = -1, bestScore = -1000000000, bestClear = 0;
+	long tdx, tdz;
+
+	if (out == NULL)
+		return 0;
+
+	JerAiLocalFail(out);
+
+	if (!JerAiMapValid(map))
+		return 0;
+
+	if (!JerAiMapSampleIndex(map, fromX, fromZ, &cix, &ciz))
+		return 0;
+
+	if (!JerAiMapNearestOpen(map, cix, ciz, &cix, &ciz))
+		return 0;
+
+	/* the target direction, in SAMPLES so it is comparable with a candidate's
+	 * sample offset. The target may be off the window; only the ratio matters. */
+	tdx = ((long)targetX - (long)fromX) / JERAI_MAP_STEP;
+	tdz = ((long)targetZ - (long)fromZ) / JERAI_MAP_STEP;
+
+	reached = JerAiLocalFlood(map, cix, ciz);
+
+	for (q = 0; q < reached; q++)
+	{
+		int cur = sQueue[q];
+		int dx, dz;
+		int score;
+		long cross, dot, dotAbs;
+
+		ix = cur % JERAI_MAP_SIZE;
+		iz = cur / JERAI_MAP_SIZE;
+
+		dx = ix - cix;
+		dz = iz - ciz;
+
+		/* it has to be somewhere worth going: near-here is not an escape */
+		{
+			int adx = dx < 0 ? -dx : dx;
+			int adz = dz < 0 ? -dz : dz;
+
+			if (adx < JERAI_LOCAL_TAN_RING / 3 && adz < JERAI_LOCAL_TAN_RING / 3)
+				continue;
+
+			if (adx > JERAI_LOCAL_TAN_RING || adz > JERAI_LOCAL_TAN_RING)
+				continue;
+		}
+
+		/* perpendicular component (signed) and along-the-line component of the
+		 * offset, both against the target direction. */
+		cross = (long)dx * tdz - (long)dz * tdx;
+		dot = (long)dx * tdx + (long)dz * tdz;
+
+		if (cross < 0)
+			cross = -cross;
+
+		if (dot < 0)
+			dot = -dot;
+
+		dotAbs = dot;
+
+		/* sideways is good, along-the-line is not (it rejoins the wedge) */
+		score = (int)cross - (int)dotAbs;
+
+		if (JerAiMapRoad(map, ix, iz))
+			score += JERAI_LOCAL_ROAD_BONUS;
+
+		score += JerAiMapClearance(map, ix, iz) * 2;
+
+		if (best < 0 || score > bestScore)
+		{
+			bestScore = score;
+			best = cur;
+			bestClear = JerAiMapClearance(map, ix, iz);
+		}
+	}
+
+	if (best < 0)
+		return 0;
+
+	{
+		int bx = best % JERAI_MAP_SIZE;
+		int bz = best / JERAI_MAP_SIZE;
+
+		JerAiMapWorld(map, bx, bz, &out->x, &out->z);
+		out->kind = JerAiMapRoad(map, bx, bz) ? JERAI_GOAL_ROAD : JERAI_GOAL_OPEN;
+		out->clearance = bestClear;
+		out->samples = ((bx - cix) < 0 ? (cix - bx) : (bx - cix));
+		{
+			int dzz = ((bz - ciz) < 0 ? (ciz - bz) : (bz - ciz));
+
+			if (dzz > out->samples)
+				out->samples = dzz;
+		}
+	}
+
+	return 1;
+}

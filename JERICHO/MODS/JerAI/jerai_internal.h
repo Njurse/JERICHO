@@ -143,6 +143,11 @@ typedef struct JERAI_STATE
 	 * rather than keep driving at one it cannot reach */
 	int	forceNewGoal;
 
+	/* the follow behavior's tangential detour: while tanActive, drive to
+	 * (tanX, tanZ) -- a spot SIDEWAYS to the target -- before re-routing */
+	int	tanX, tanZ;
+	int	tanActive;
+
 	/* the engine road graph (built on demand; see jerai_road.c) */
 	JERAI_ROAD_GRAPH road;
 	int	roadBuilt;
