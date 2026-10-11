@@ -27,16 +27,19 @@ Two engine details that cost real time and are load-bearing:
   error needs `CAR_PAD_RIGHT`. Getting this backwards makes the car steer away
   from its target, wind the error up to +/-180 deg and U-turn - which reads as
   "it keeps turning the wrong way";
-- `CAR_PAD_HANDBRAKE` must never be emitted: the stock handler cycles
-  `g_PlayerControlMode` on a handbrake press edge and would hand the car back to
-  the engine AI.
+- `CAR_PAD_HANDBRAKE` must never be emitted as a **pad bit**: the stock handler
+  cycles `g_PlayerControlMode` on a handbrake press edge and would hand the car
+  back to the engine AI. The wall-evasion handbrake below is applied through the
+  `JER_EVENT_CAR_PAD` `handled` path instead (writing `cp->handbrake` with
+  `handled = 1` skips the stock block, so the mode is never touched).
 
 Driving is governed by:
 
 - **pure-pursuit** path tracking: the car is projected onto the plan polyline and
-  aims a fixed `look_ahead` distance further ALONG it, so it tracks the line
-  instead of cutting to a far corner (and can never point at a waypoint it has
-  already passed);
+  aims a distance further ALONG it, so it tracks the line instead of cutting to a
+  far corner (and can never point at a waypoint it has already passed). The
+  look-ahead **stretches with speed** (`JERAI_AIM_SPEED_GAIN`): a fast car looks
+  further up the plan rather than chasing every wiggle and sawing at the wheel;
 - a **directional guide**: the aim walk takes the first point that is both far
   enough ahead AND not behind the car (cos > -0.35 ~= within 110 deg, so a
   perpendicular intersection turn still counts), and the joyride goal picker skips
@@ -47,10 +50,29 @@ Driving is governed by:
   A\* grid cannot see. A wall on one side pushes the aim to the other; a street
   with walls both sides cancels out. The centre feeler brakes when the nose is
   genuinely blocked;
-- a steering dead-band, and a lift-off when a car is close ahead (no braking for
-  traffic - that made the car crawl past oncoming vehicles);
-- a **stuck recovery** that back out of a wedge (and asks the behavior for a new
-  destination) after ~1.3 s at a standstill.
+- a steering dead-band **with hysteresis** (start at 70, keep turning to 30) so
+  it does not flip sides on noise, and a lift-off when a car is close ahead (no
+  braking for traffic - that made the car crawl past oncoming vehicles);
+- a **stuck recovery** that backs out of a wedge (and asks the behavior for a new
+  destination) after ~1.3 s at a standstill, plus an **early reverse** the moment
+  scenery is right on the nose while barely moving (backing off sooner grinds
+  less than waiting out the timer).
+
+## Car dynamics (speed, grip, corners)
+
+Walking a line is not driving: a car carries momentum and its velocity can point
+somewhere other than its nose. JerAI reads that (`JERAI_CARSTATE.slip`, the angle
+between `st.n.linearVelocity` and the heading) and drives to a **grip budget**:
+
+- `JerAiScanCurve` finds the sharpest turn on the plan within `corner_lookahead`
+  (its heading change, how far off it is, and the arc it happens over);
+- `JerAiSpeedTarget` turns that into a speed the car may carry now: the grip limit
+  for the corner radius (`sqrt(corner_g * r)`), backed off by the braking distance
+  to it (`sqrt(vCorner^2 + 2*brake_gain*dist)`) so the car lifts BEFORE the
+  corner instead of at it. `speed_scale` is an overall aggression dial.
+- the pad then brakes over that target, lifts slightly over, and powers out under;
+- a **wall-evasion handbrake** tight-turns when scenery is close ahead;
+- `grip` (100 = hooked up) falls with the slide, and is on the HUD.
 
 The A\* cost model hugs the middle hard (a squared clearance penalty), so it
 routes around a block rather than squeezing a short gap past a building.
@@ -126,7 +148,17 @@ exe, so the symbols must not collide. The pure half is exercised engine-free by
 
 ## Tunables (`JERICHO/CONFIG/JerAI.ini`, namespace `[JerAI]`, read live)
 
-See `jerai.h` for the key names and defaults.
+See `jerai.h` for the key names and defaults. The car-dynamics knobs:
+
+| key | default | meaning |
+|-----|---------|---------|
+| `corner_g` | 2 | lateral-g budget; bigger = more speed through the same curve |
+| `brake_gain` | 1 | braking authority for the braking-distance term |
+| `corner_lookahead` | 6000 | how far ahead the plan is scanned for corners (world units) |
+| `speed_scale` | 100 | overall aggression: the corner target as a percentage |
+
+`brake_gain` is in speed^2 per world unit; 40 swamps the term (the target never
+drops), so keep it near 1.
 
 ## Build
 
