@@ -156,8 +156,15 @@ for entry in "${ROWS[@]}"; do
 	esac
 
 	RUNLOG="/tmp/chk_suite_$$_${IDX}_${KIND}.log"
-	JERICHO_DUMPVRAM=1 "./JERICHO_dev.exe" -nointro -level "${CITY_NAME[$HOST]}" $CARARG \
-		-weather none -time day -frames "$FRAMES" -seed "$SEED" > "$RUNLOG" 2>&1
+	# Start MINIMIZED: the game opens an SDL window, and seven rows in a row stealing
+	# focus is unbearable. run_minimized.ps1 (Start-Process) minimizes AND keeps stdout,
+	# and the run still self-terminates via -frames, so nothing is killed by name. The
+	# lever the row sets (JERICHO_DUMPVRAM) is exported so the child inherits it.
+	export JERICHO_DUMPVRAM=1
+	powershell -ExecutionPolicy Bypass -File "$TOOLS/run_minimized.ps1" \
+		"./JERICHO_dev.exe" "$RUNLOG" \
+		-nointro -level "${CITY_NAME[$HOST]}" $CARARG \
+		-weather none -time day -frames "$FRAMES" -seed "$SEED"
 	RC=$?
 	IDX=$((IDX + 1))
 

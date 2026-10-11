@@ -144,6 +144,25 @@ Commits: `f3d65d36`, `29118821`, `103bf4d5`, `917fe509`, `248c6909` (all on `mai
    needs the engine's `malloctab` region and the `MP_ADAPTER.md` notes. Lobby joins (the
    common case) are fine; this is the "a fifth friend joins mid-race" case, and it is
    deliberately out of scope until the lobby case is solid.
+7. **The VEGAS pickup (model 4) "stretched geometry" — investigated 2026-10, NOT
+   reproduced.** The report is a few triangles stretching to extreme distances on an
+   ambient AI car. Ruled out by measurement: the source model is clean (129 verts, max
+   vertex index 128; those counts are right), the denting buffers are bounded
+   (`MAX_DENTING_VERTS` 256 > 129), the drawn body vertices match the clean model (the
+   `STRETCHED VERTEX` canary, `cars.c`), and the baked polys index the model's own vertices
+   correctly (the `STRETCHED POLY` canary added alongside it). Booting VEGAS with the player
+   in model 4 for 900/1800/2500 frames — player and ambient, detail and low detail — trips
+   neither. So it is NOT the body vertices, NOT the poly indices, NOT the denting copy
+   bound, and NOT a crumple displacement (see below). **The instruments are in the build:
+   a live occurrence will print `[cars] STRETCHED VERTEX` / `STRETCHED POLY` with the car,
+   slot, vertex/poly and values — ask for that line.** One lead is on file: `NewCarModel[].
+   vlist` is a SHARED template field that `DrawCar` repoints at the last-drawn car's dump
+   EVERY frame, so any consumer of it outside `DrawCar` reads a different car's vertices.
+8. **Body dents were ~4096x too weak (FIXED 2026-10).** `crumpleApplyImpact`'s body path
+   divided by `impactNormalize` without the `<< 12` the wheel path has, so `strength` landed
+   in 0..1 and every downstream `FIXEDH()` made it ~0 — a crash left the car undamaged. Now
+   it matches the wheel path. This is the OPPOSITE of the stretch report, so it was not the
+   cause, but it is real and it is fixed.
 
 ## Traps that cost real time here — do not re-learn these
 
