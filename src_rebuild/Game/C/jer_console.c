@@ -29,6 +29,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "jericho.h"
@@ -100,6 +101,20 @@ extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, st
 /* The flattened text of one push, before wrapping (6 runs x 64). */
 #define JER_CONSOLE_FLAT_MAX		(JER_CONSOLE_SEG_MAX * JER_CONSOLE_SEG_TEXT_MAX)
 
+/* --- lifetime ----------------------------------------------------------- */
+/* A row is drawn at full strength for JER_CONSOLE_HOLD_FRAMES, then fades to
+ * nothing over JER_CONSOLE_FADE_FRAMES and is dropped. So a message is readable
+ * for a few seconds and then gets out of the way, instead of sitting in the
+ * corner until 8 newer lines push it off.
+ *
+ * Timed in FRAMES, not milliseconds: the engine holds the game at 30 fps (2
+ * vblanks -- main.c, FilterFrameTime) and has no engine-side clock, which is the
+ * same convention jer_error's JER_ERROR_FRAMES uses. 120 + 30 frames is the
+ * "gone after 4 s, over 1 s" the fade is for. */
+#define JER_CONSOLE_HOLD_FRAMES		120	/* 4 s at 30 Hz: full brightness */
+#define JER_CONSOLE_FADE_FRAMES		30	/* 1 s at 30 Hz: fading out */
+#define JER_CONSOLE_LIFE_FRAMES		(JER_CONSOLE_HOLD_FRAMES + JER_CONSOLE_FADE_FRAMES)
+
 /* --- storage ------------------------------------------------------------ */
 typedef struct JER_CONSOLE_RUN
 {
@@ -114,11 +129,13 @@ typedef struct JER_CONSOLE_ROW
 	char text[JER_CONSOLE_LINE_MAX];
 	unsigned char runCount;		/* >= 1 for a live row */
 	unsigned char chat;		/* 1 = a chat row (drawn even when off) */
+	int bornFrame;			/* the drawn frame this row was pushed on */
 	JER_CONSOLE_RUN runs[JER_CONSOLE_SEG_MAX];
 } JER_CONSOLE_ROW;
 
 static JER_CONSOLE_ROW sRows[JER_CONSOLE_MAX];
 static int  sCount = 0;
+static int  sFrame = 0;			/* drawn frames so far: the fade's clock */
 static int  sEnabled = -1;		/* -1 = not loaded from the config yet */
 
 static char sInput[JER_CONSOLE_LINE_MAX];
@@ -147,6 +164,22 @@ static int jerConsoleAgeColour(int age)
 	return (age == 0) ? 255 : (age < 3 ? 190 : 150);
 }
 
+/* The fade multiplier for a row of `age` frames (0..255, in the colour space the
+ * row's colours are given in). 255 for the whole hold, then a linear ramp to 0
+ * over the fade window; a row at or past its life is dropped by the caller. */
+static int jerConsoleFade(int age)
+{
+	age -= JER_CONSOLE_HOLD_FRAMES;
+
+	if (age <= 0)
+		return 255;
+
+	if (age >= JER_CONSOLE_FADE_FRAMES)
+		return 0;
+
+	return 255 - (age * 255) / JER_CONSOLE_FADE_FRAMES;
+}
+
 /* --- ring --------------------------------------------------------------- */
 static void jerConsoleAddRow(const char* text, const unsigned char* r,
 	const unsigned char* g, const unsigned char* b, const unsigned char* amb,
@@ -172,6 +205,7 @@ static void jerConsoleAddRow(const char* text, const unsigned char* r,
 	memcpy(row->text, text, (size_t)len);
 	row->text[len] = '\0';
 	row->chat = (unsigned char)(chat ? 1 : 0);
+	row->bornFrame = sFrame;
 	row->runCount = 0;
 
 	/* Group consecutive same-colour characters into runs. */
@@ -425,10 +459,14 @@ static u_char jerConsoleInk(int v)
 	return (u_char)((v * 128) / 255);
 }
 
-static void jerConsoleDrawRow(const JER_CONSOLE_ROW* row, int frontend, int y, int age)
+/* `stack` is how many rows are drawn NEWER than this one (0 = the newest), which
+ * is what jerConsoleAgeColour's ladder reads; `fade` (0..255) scales the row's
+ * colour, so an ambient run AND a chat run with its own r/g/b dim together over
+ * the row's last second. */
+static void jerConsoleDrawRow(const JER_CONSOLE_ROW* row, int frontend, int y, int stack, int fade)
 {
 	char tmp[JER_CONSOLE_LINE_MAX];
-	int base = jerConsoleAgeColour(age);
+	int base = (jerConsoleAgeColour(stack) * fade) / 255;
 	int x = jerConsoleLeftX(frontend);
 	int r;
 
@@ -446,7 +484,9 @@ static void jerConsoleDrawRow(const JER_CONSOLE_ROW* row, int frontend, int y, i
 		if (run->ambient)
 			SetTextColour(jerConsoleInk(base), jerConsoleInk(base), jerConsoleInk(base));
 		else
-			SetTextColour(jerConsoleInk(run->r), jerConsoleInk(run->g), jerConsoleInk(run->b));
+			SetTextColour(jerConsoleInk((run->r * fade) / 255),
+				jerConsoleInk((run->g * fade) / 255),
+				jerConsoleInk((run->b * fade) / 255));
 
 		if (frontend)
 			x = FEPrintStringSized(tmp, x, y, JER_CONSOLE_FE_SCALE, 0,
@@ -475,6 +515,43 @@ static void jerConsoleDrawInput(int frontend)
 		PrintString(sInput, x, JER_CONSOLE_INPUT_Y);
 }
 
+/* --- headless test lever ------------------------------------------------- */
+/* JERICHO_TEST_CONSOLE=<secs>[,<text>]: push ONE status line (the text after the
+ * comma, else a placeholder) that many seconds after the first drawn frame.
+ *
+ * Nothing else puts a line in the console without a live mp session, so this is
+ * what lets the console's layout -- and the row lifetime above -- be captured
+ * headlessly with -shot, and it is the same shape as the frontend's
+ * JERICHO_TEST_FEPRESS lever. Inert unless the variable is set and positive. */
+static void jerConsoleTestLever(void)
+{
+	static int atFrame = -2;	/* -2 = not read yet; -1 = not armed */
+	static int fired;
+	static char text[64];
+	const char* comma;
+
+	if (atFrame == -2)
+	{
+		const char* s = getenv("JERICHO_TEST_CONSOLE");
+
+		atFrame = -1;
+
+		if (s != NULL && atoi(s) > 0)
+		{
+			atFrame = atoi(s) * 30;		/* seconds -> the engine's 30 fps */
+			comma = strchr(s, ',');
+			snprintf(text, sizeof(text), "%s",
+				(comma != NULL && comma[1] != 0) ? comma + 1 : "console test line");
+		}
+	}
+
+	if (atFrame > 0 && !fired && sFrame >= atFrame)
+	{
+		fired = 1;
+		jer_console_line(text);
+	}
+}
+
 void jer_console_draw(int frontend)
 {
 	CVECTOR ambient;
@@ -489,10 +566,26 @@ void jer_console_draw(int frontend)
 
 	ambient = gFontColour;
 
+	/* THE CLOCK. Both draw sites run once per rendered frame, so this counter IS the
+	 * frame count -- and it advances whether or not the console is shown, so a row
+	 * hidden behind the toggle still ages (and expires) on time. */
+	sFrame++;
+
+	jerConsoleTestLever();
+
+	/* AGE OUT FIRST. Rows are pushed in time order, so the expired ones are always a
+	 * PREFIX of the ring: drop those, and everything behind them keeps its order. */
+	while (sCount > 0 && (sFrame - sRows[0].bornFrame) >= JER_CONSOLE_LIFE_FRAMES)
+	{
+		memmove(&sRows[0], &sRows[1], sizeof(sRows[0]) * (size_t)(sCount - 1));
+		sCount--;
+	}
+
 	/* Newest first, bottom-up. A chat row draws even while the console is off:
 	 * it is a conversation, not debug output. */
 	for (i = sCount - 1; i >= 0; i--)
 	{
+		int rowAge = sFrame - sRows[i].bornFrame;
 		int y;
 
 		if (!enabled && !sRows[i].chat)
@@ -503,7 +596,7 @@ void jer_console_draw(int frontend)
 		else
 			y = JER_CONSOLE_BOTTOM - placed * JER_CONSOLE_LINE_H;
 
-		jerConsoleDrawRow(&sRows[i], frontend, y, placed);
+		jerConsoleDrawRow(&sRows[i], frontend, y, placed, jerConsoleFade(rowAge));
 		placed++;
 	}
 

@@ -3,26 +3,30 @@
 
 /* jer_console — a unified, scrolling STATUS STREAM for JERICHO.
  *
- * The bottom-left status messages used to be scattered: mp drew its own
- * HOST/CLIENT tag and two connection lines, and its notifications lived in a
- * separate ring. jer_console is the one place for the STREAM: a small ring of
- * short lines, drawn half-size at the bottom left, newest at the bottom, so a
- * connection handshake, a join and a chat message read as a single log.
+ * The bottom-left status messages used to be scattered: mp's connection events
+ * went to a ring of its own, its notifications to another, and a HOST/CLIENT tag
+ * plus two connection lines were drawn straight from the module. jer_console is
+ * the one place for the STREAM: a small ring of short lines, drawn half-size at
+ * the bottom left, newest at the bottom, so a connection handshake, a join and a
+ * chat message read as a single log.
  *
- * A line is KEPT (scrollback), not flashed: the join sequence runs in the
- * frontend, and the same ring is drawn there too, so a "connected" line is
- * still on screen once the level is up. Text longer than a row WRAPS onto the
- * next row rather than running off the edge. The ring is deliberately small —
- * the oldest row falls off rather than the buffer growing without bound.
+ * A line is KEPT, not flashed: the join sequence runs in the frontend, and the
+ * same ring is drawn there too, so a "connected" line is still on screen once
+ * the level is up. It then FADES OUT on its own — full for about four seconds,
+ * gone over the next one — so the corner clears itself instead of accumulating
+ * scrollback. Text longer than a row WRAPS onto the next row rather than running
+ * off the edge, and the ring is deliberately small: a row past its life goes,
+ * and the oldest falls off.
  *
  * TWO KINDS OF LINE:
  *   - STATUS (jer_console_line / jer_console_log), single colour, dimmed with
  *     age. Hidden while the console is toggled off.
  *   - CHAT (jer_console_chat), drawn from colour RUNS so the speaker's name can
  *     carry their own colour. Chat is a conversation, not debug output, so a
- *     chat line is drawn even while the console is off. The r/g/b you pass are
- *     the colours as they should LOOK — the console applies the HQ font's x2
- *     doubling itself, so pass 240 for the near-white a chat message uses.
+ *     chat line is drawn even while the console is off — but it ages out on the
+ *     same clock. The r/g/b you pass are the colours as they should LOOK — the
+ *     console applies the HQ font's x2 doubling itself, so pass 240 for the
+ *     near-white a chat message uses.
  *
  * The implementation lives in the GAME (jer_console.c) because only the game
  * can draw into the display buffer, exactly like jer_hud.c. Modules just call
@@ -30,10 +34,8 @@
  *
  * TOGGLE. `~` / backtick flips the console on or off and the choice is saved
  * (jer_config, CONFIG/hud.ini, key `console`). While it is off the status
- * stream is hidden — and so are the mp pieces drawn as part of the same block
- * (its HOST/CLIENT tag and connection lines), which ask jer_console_enabled()
- * before drawing. The chat input line (jer_console_input) always draws, so what
- * you are typing is never invisible.
+ * stream is hidden. The chat input line (jer_console_input) always draws, so
+ * what you are typing is never invisible.
  */
 
 #ifdef __cplusplus

@@ -20,7 +20,8 @@ because only the game can draw into the display buffer). Header:
 ## API
 
 ```c
-/* status lines -- single colour, dimmed with age, hidden when the console is off */
+/* status lines -- single colour, dimmed with age and faded out after ~5 s;
+ * hidden when the console is off */
 void jer_console_line(const char* text);          /* one ready-made line   */
 void jer_console_log(const char* fmt, ...);       /* printf-style          */
 
@@ -45,14 +46,34 @@ void jer_console_set_enabled(int on);             /* set + SAVE            */
 int  jer_console_toggle(void);                    /* flip + SAVE, returns the new state */
 ```
 
-A line is **kept** (scrollback), not flashed: the join sequence runs in the
+A line is **kept for a few seconds**, not flashed: the join sequence runs in the
 frontend, and the same ring is drawn there too, so a "connected" line is still on
 screen once the level is up. Text that will not fit a row is **wrapped** onto the
 next row (breaking at a space where one is close to the limit) instead of running
 off the edge — the wrap is by **measured** glyph width, not a character count,
 because the widest glyph (`W`, ~7.2 px at this scale) is nearly twice a typical
 one. The ring is `JER_CONSOLE_MAX` (8) rows of `JER_CONSOLE_LINE_MAX` (96) bytes;
-the oldest falls off.
+a row past its life is dropped and the oldest falls off.
+
+### Lifetime: 4 s at full strength, then a 1 s fade
+
+A row is drawn at full strength for `JER_CONSOLE_HOLD_FRAMES` (120), then fades
+linearly to nothing over `JER_CONSOLE_FADE_FRAMES` (30) and is dropped — about
+four seconds visible, then gone over one. The corner therefore clears itself
+instead of accumulating scrollback, and a chat line does not sit there for the
+rest of the match.
+
+Timed in **frames**, not milliseconds: the engine holds the game at 30 fps
+(`main.c`'s `FilterFrameTime`, 2 vblanks) and has no engine-side clock, which is
+the convention `jer_error`'s `JER_ERROR_FRAMES` uses too. The clock is advanced by
+`jer_console_draw`, so it ticks in the frontend and in game, and **whether or not
+the console is shown** — a row hidden behind the toggle still expires on time
+rather than reappearing stale.
+
+The fade scales the row's colour — the ambient ladder and a chat run's own r/g/b
+alike — *before* `jerConsoleInk`, so the colour it fades to is the colour seen.
+Rows are pushed in time order, so expiry always takes a **prefix** of the ring:
+what is behind it keeps its order and the newest stays at the bottom.
 
 Every line is also mirrored to the session log as `[console] <text>`, so whatever
 is on screen is greppable exactly like `MpConnEvent`'s own lines.
@@ -65,21 +86,19 @@ is on screen is greppable exactly like `MpConnEvent`'s own lines.
 (`g_dbg_gameDebugKeys`) instead of claiming it, so mp's chat handler still works;
 the toggle fires once per key **press**, not per auto-repeat.
 
-While the console is OFF the whole **bottom HUD block** is hidden — the stream
-*and* mp's `HOST`/`CLIENT` tag and its two connection lines. Modules that own part
-of that block ask `jer_console_enabled()` before drawing:
-
-```c
-if (jer_console_enabled())
-{
-    /* HOST / CLIENT tag + live connection lines */
-}
-```
+While the console is OFF the whole **bottom HUD block** is hidden — the stream,
+and any module piece drawn as part of the same block (a module asks
+`jer_console_enabled()` before drawing it). mp's own `HOST`/`CLIENT` tag and its
+two connection lines used to be that piece; **they were removed**, because the
+console already owns the corner. The same facts are in the session log —
+`[mp] conn: …` per event and `[mp] conn status: …` for the two-line rollup.
 
 **Chat is the exception.** A chat line and the input line are drawn even while
 the console is off — a conversation is not debug output, and what you are typing
 must never be invisible. That is why a chat row carries its own `chat` flag
-rather than being just another status line.
+rather than being just another status line. A chat row ages and fades on the same
+clock as a status row; the input line is the only thing that stays until it is
+cleared.
 
 ## Drawing
 
@@ -145,6 +164,31 @@ The practical targets, as passed:
 | a chat message (mp's default) | 240 |
 | cream, for a speaker with no custom colour | 255, 253, 208 |
 | a speaker's own colour | their r/g/b, unchanged |
+
+## Headless test lever
+
+Nothing puts a line in the console without a live mp session, so the layout and the
+lifetime above are checked with one:
+
+```
+JERICHO_TEST_CONSOLE=<secs>[,<text>]
+```
+
+It pushes **one** status line (the text after the comma, else a placeholder) that
+many seconds after the first drawn frame — the same shape as the frontend's
+`JERICHO_TEST_FEPRESS`. Inert unless the variable is set and positive.
+
+```
+# the newest row sits at PSX y=196 with one line in the ring
+JERICHO_TEST_CONSOLE=8,hello JERICHO_dev.exe -nointro -level chicago \
+    -gamemode takeadrive -time night -frames 430 -shot 400
+```
+
+Measured that way (age = shot frame − `secs` × 30): the row is identical at full
+strength for the whole hold — 2016 px above 60 at age 40 and again at 110, peak
+255 — still there but dimmed at age 135 (nothing above 150, peak 144, the world's
+own 1837 px baseline showing through), and **gone** from age 160 on (back to the
+world's baseline exactly). That is the 120 + 30 frame life, visible in pixels.
 
 ## Related
 
