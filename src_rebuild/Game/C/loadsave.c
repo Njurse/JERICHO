@@ -1,5 +1,6 @@
 #include "driver2.h"
 #include "loadsave.h"
+#include "Frontend/FEmain.h"	// JERICHO-HOOK: JerichoResetFEPrimState
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "replays.h"
@@ -71,6 +72,14 @@ void ShowSavingWaitMessage(char *message, int height)
 	LoadFont(NULL);
 
 #ifndef PSX
+	/* JERICHO-HOOK: this paints a frame of its own and does NOT go through the
+	 * frontend's EndFrame, which is what normally rewinds the primitive buffer
+	 * and clears the ordering table. Do it here: otherwise the frontend's OT
+	 * still points at the frame that was in flight when Save Settings was
+	 * pressed, and the draw that follows walks prims this message overwrote -
+	 * an access violation in ParsePrimitivesLinkedList. */
+	JerichoResetFEPrimState();
+
 	PsyX_BeginScene();
 	SetDispMask(1);
 #endif

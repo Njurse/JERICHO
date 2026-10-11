@@ -2417,6 +2417,25 @@ void InitFrontendDisplay(void)
 }
 
 /*
+ * JERICHO-HOOK: restore the frontend's primitive buffer + ordering table to the
+ * state EndFrame() expects.
+ *
+ * EndFrame() rewinds current->primptr as part of its buffer swap and clears the
+ * OT it has drawn. Anything that paints a frame WITHOUT going through EndFrame
+ * must do the same, or the OT keeps pointing at the frame that was in flight and
+ * the next DrawOTag walks prims that were overwritten - the access violation
+ * seen in ParsePrimitivesLinkedList -> ProcessFlatPoly after Save Settings.
+ */
+void JerichoResetFEPrimState(void)
+{
+	if (current == NULL || current->primtab == NULL)
+		return;
+
+	current->primptr = current->primtab;
+	ClearOTagR((u_long*)current->ot, FE_OTSIZE);
+}
+
+/*
  * JERICHO-HOOK: frontend primitive-buffer probe.
  *
  * The frontend bumps current->primptr by hand with no bounds check, and
