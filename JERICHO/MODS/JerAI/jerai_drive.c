@@ -62,7 +62,22 @@ JERAI_CARSTATE JerAiReadCar(CAR_DATA* car)
 	s.speed = car->hd.wheel_speed;
 	s.dir = car->hd.direction;
 	s.yawRate = car->st.n.angularVelocity[1];
+	s.yaw = 0;
 	s.slip = 0;
+
+	/* the ACTUAL heading change since last frame, in the same game units as the
+	 * heading error - the raw angular velocity is in engine fixed-point and the
+	 * two are not directly comparable, so derive the yaw this way instead. This
+	 * is what the predictive steering leads by. */
+	if (gJerAi.prevDir >= 0)
+	{
+		s.yaw = ((s.dir - gJerAi.prevDir + 2048) & 0xfff) - 2048;
+
+		if (s.yaw > 256) s.yaw = 256;
+		if (s.yaw < -256) s.yaw = -256;
+	}
+
+	gJerAi.prevDir = s.dir;
 
 	/* st.n.fposition is where<<4, so linearVelocity lives in that same <<4
 	 * frame; the ANGLE between it and the heading is scale-independent, which
@@ -326,6 +341,12 @@ static int JerAiGripPct(void)
  * wheel; stretching it with speed is the cheapest cure for that oscillation. */
 #define JERAI_AIM_SPEED_GAIN	8
 
+/* Frames of yaw to lead the steering by. These cars are heavy with real
+ * rotational momentum, so steering on the CURRENT heading error always arrives
+ * late and oversteers; leading with the yaw rate straightens (and
+ * countersteers) the wheel before the error even closes. */
+#define JERAI_YAW_LEAD		8
+
 int JerAiDriveAim(int* aimX, int* aimZ)
 {
 	CAR_DATA* car = JerAiOwnCar();
@@ -487,16 +508,22 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 /* is a car roughly ahead of us, close enough to matter? returns its heading
  * offset (signed) when it is, or a sentinel when it is not. Only the cars that
  * are truly close, and roughly in our lane, count: a wider net brakes for
- * oncoming traffic and makes the car crawl. */
+ * oncoming traffic and makes the car crawl. Also reports the CLOSEST one's
+ * squared distance and which side it sits on, for steering around it. */
 #define JERAI_AHEAD_NONE	0x7fffffff
 
-static int JerAiCarAhead(CAR_DATA* car)
+static int JerAiCarAhead(CAR_DATA* car, long* dist2Out, int* relOut)
 {
 	int i;
 	int cx = car->hd.where.t[0];
 	int cz = car->hd.where.t[2];
 	int range = gJerAi.avoidDist;
 	long range2;
+	long bestD2 = -1;
+	int bestRel = 0;
+
+	if (dist2Out) *dist2Out = -1;
+	if (relOut) *relOut = 0;
 
 	if (range > 1200)
 		range = 1200;	/* a car does not brake for traffic half a street away */
@@ -521,11 +548,24 @@ static int JerAiCarAhead(CAR_DATA* car)
 
 		rel = ((ratan2(ox, oz) - car->hd.direction + 2048) & 0xfff) - 2048;
 
-		if (rel > -450 && rel < 450)
-			return rel;	/* within ~40 deg of our nose */
+		if (rel <= -450 || rel >= 450)
+			continue;	/* not within ~40 deg of our nose */
+
+		/* keep the CLOSEST one, not the first found */
+		if (bestD2 < 0 || d2 < bestD2)
+		{
+			bestD2 = d2;
+			bestRel = rel;
+		}
 	}
 
-	return JERAI_AHEAD_NONE;
+	if (bestD2 < 0)
+		return JERAI_AHEAD_NONE;
+
+	if (dist2Out) *dist2Out = bestD2;
+	if (relOut) *relOut = bestRel;
+
+	return bestRel;
 }
 
 /* ------------------------------------------------------------------ */
@@ -589,8 +629,10 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 	int want = ratan2(dx, dz) & 0xfff;
 	int frontBlocked = 0;
 	int bias = JerAiFeelers(car, &frontBlocked);
-	int diff, adiff, spd;
+	int diff, spd;
 	int ahead;
+	long aheadD2 = -1;
+	int aheadRel = 0;
 	unsigned int pad = 0;
 
 	/* what the car is doing right now - speed, yaw rate, slide. The controller
@@ -608,11 +650,31 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 
 	gJerAi.lastBias = bias;
 
-	/* nudge the aim around what the plan could not see (the feelers) */
+	/* Another car close ahead in our lane: steer around it AND be ready to brake.
+	 * The steer bias picks the side with room (or the side AWAY from the car), so
+	 * it goes around rather than into it; the brake in the pedal section below is
+	 * the backstop for when there is no room to go around at all. */
+	ahead = JerAiCarAhead(car, &aheadD2, &aheadRel);
+
+	if (ahead != JERAI_AHEAD_NONE)
+	{
+		int rightClear = JerAiFeelClear(car, 512, 1400, 200);
+		int leftClear = JerAiFeelClear(car, -512, 1400, 200);
+
+		if (rightClear && !leftClear)
+			bias += 220;		/* room to the right -> aim right */
+		else if (leftClear && !rightClear)
+			bias -= 220;		/* room to the left -> aim left */
+		else
+			bias += (aheadRel > 0) ? -220 : 220;	/* else away from the car */
+
+		gJerAi.lastBias = bias;
+	}
+
+	/* nudge the aim around what the plan could not see (the feelers + traffic) */
 	want = (want + bias) & 0xfff;
 
 	diff = ((want - car->hd.direction + 2048) & 0xfff) - 2048;
-	adiff = diff < 0 ? -diff : diff;
 	spd = car->hd.speed;
 
 	gJerAi.lastDiff = diff;
@@ -646,9 +708,11 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 
 		/* the plan is what led us here: throw it away so the next frame re-plans
 		 * from wherever the reverse burst leaves us, and ask the behavior for a
-		 * destination it can actually reach */
+		 * destination it can actually reach - WILD, i.e. anywhere in the window,
+		 * so the car relocates instead of niggling at the same wedge */
 		gJerAi.havePlan = 0;
 		gJerAi.forceNewGoal = 1;
+		gJerAi.reposition = 1;
 
 		return CAR_PAD_BRAKE | ((diff > 0) ? CAR_PAD_RIGHT : CAR_PAD_LEFT);
 	}
@@ -722,11 +786,17 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 	{
 		int startBand = 70;
 		int holdBand = 30;
-		int dir = diff > 0 ? 1 : -1;
+		/* Lead the heading error with where the nose is ABOUT to be. Heavy cars
+		 * carry real rotational momentum, so chasing the current error overshoots;
+		 * subtracting yaw*lead lets the wheel straighten - and countersteer - before
+		 * the error closes, which is what stops the up-the-street oscillation. */
+		int pred = diff - gJerAi.carState.yaw * JERAI_YAW_LEAD;
+		int apred = pred < 0 ? -pred : pred;
+		int dir = pred > 0 ? 1 : -1;
 
-		if (gJerAi.lastSteerDir == dir && adiff > holdBand)
+		if (gJerAi.lastSteerDir == dir && apred > holdBand)
 			;					/* stay on it */
-		else if (adiff > startBand)
+		else if (apred > startBand)
 			gJerAi.lastSteerDir = dir;
 		else
 			gJerAi.lastSteerDir = 0;
@@ -744,10 +814,16 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 	/* A car close ahead in our lane: lift off the throttle. NO brake - braking
 	 * for traffic is what made the car crawl down a street with oncoming cars.
 	 * The engine handles any contact; this only stops us driving into it. */
-	ahead = JerAiCarAhead(car);
-
+	/* Another car in our lane: lift, and brake if it is genuinely close. Going
+	 * around is the steer bias above; this is the "absolutely do not hit it"
+	 * backstop for when there is nowhere to go around. */
 	if (ahead != JERAI_AHEAD_NONE)
+	{
 		pad &= ~(unsigned int)CAR_PAD_ACCEL;
+
+		if (aheadD2 >= 0 && aheadD2 < 750L * 750L)
+			pad |= CAR_PAD_BRAKE;
+	}
 
 	/* The nose is genuinely blocked - a FRESH probe, not the coarse grid: brake.
 	 * The feeler bias above steers around it; this is the backstop for when there

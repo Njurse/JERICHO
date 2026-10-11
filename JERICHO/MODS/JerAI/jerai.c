@@ -69,7 +69,7 @@ void JerAiRefreshConfig(void)
 	gJerAi.brakeG = jer_config_get_int("JerAI", JERAI_CFG_BRAKE_GAIN, 1);
 	gJerAi.cornerLookahead = jer_config_get_int("JerAI", JERAI_CFG_CORNER_LOOKAHEAD, 6000);
 	gJerAi.speedScale = jer_config_get_int("JerAI", JERAI_CFG_SPEED_SCALE, 100);
-	gJerAi.turnCost = jer_config_get_int("JerAI", JERAI_CFG_TURN_COST, 40);
+	gJerAi.turnCost = jer_config_get_int("JerAI", JERAI_CFG_TURN_COST, 80);
 
 	gJerAi.vizGrid = jer_config_get_int("JerAI", JERAI_CFG_VIZ_GRID, 0);
 	gJerAi.vizRoad = jer_config_get_int("JerAI", JERAI_CFG_VIZ_ROAD, 1);
@@ -373,6 +373,7 @@ JER_MODULE_ENTRY(jer_module_JerAI_entry)(JERICHO_CONTEXT* ctx)
 	memset(&gJerAi, 0, sizeof(gJerAi));
 	gJerAi.ctx = ctx;
 	gJerAi.roadLimit = 56;
+	gJerAi.prevDir = -1;	/* no last heading yet: the first frame has no yaw */
 	JerAiRandSeed(0x12345678u);
 
 	ctx->jer_register_module(ctx,

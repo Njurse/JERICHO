@@ -24,8 +24,8 @@
  * destination the car would have to turn around for is exactly the "it keeps
  * U-turning" complaint. Reservoir-sampled, so every eligible road sample has an
  * equal chance. Returns 1 and writes world coords. */
-#define JERAI_JOY_MIN_RING	6	/* samples (~3,000 world units) */
-#define JERAI_JOY_MAX_RING	12	/* samples (~6,000); must stay well inside the
+#define JERAI_JOY_MIN_RING	12	/* samples (~6,000 world units) */
+#define JERAI_JOY_MAX_RING	20	/* samples (~10,000); must stay well inside the
 					 * window (radius 24) or the goal falls out of
 					 * it on a re-plan and A* cannot plan at all */
 
@@ -33,7 +33,7 @@
  * 110 deg: straight ahead, a turn away, and a little past perpendicular all pass) */
 #define JERAI_JOY_BEHIND_COS	(-1450)
 
-static int JerAiJoyPickGoal(CAR_DATA* car, int* gx, int* gz)
+static int JerAiJoyPickGoal(CAR_DATA* car, int wild, int* gx, int* gz)
 {
 	int cx, cz, ix, iz;
 	int candX = 0, candZ = 0, count = 0;
@@ -65,8 +65,18 @@ static int JerAiJoyPickGoal(CAR_DATA* car, int* gx, int* gz)
 
 			r = (dx > dz) ? dx : dz;
 
-			if (r < JERAI_JOY_MIN_RING || r > JERAI_JOY_MAX_RING)
+			if (wild)
+			{
+				/* a WILD re-pick after a stutter: anywhere in reach (the whole
+				 * window), so the car leaves whatever wedged it instead of niggling
+				 * at the same spot - and with no directional gate, either */
+				if (r < JERAI_JOY_MIN_RING)
+					continue;
+			}
+			else if (r < JERAI_JOY_MIN_RING || r > JERAI_JOY_MAX_RING)
+			{
 				continue;
+			}
 
 			JerAiMapWorld(&gJerAi.map, ix, iz, &wx, &wz);
 
@@ -74,13 +84,16 @@ static int JerAiJoyPickGoal(CAR_DATA* car, int* gx, int* gz)
 			rz = wz - cwZ;
 			rlen2 = rx * rx + rz * rz;
 
-			/* the directional guide: do not pick a destination behind us */
-			cosScaled = (rlen2 > 0)
-				? ((long)fwdX * rx + (long)fwdZ * rz) / (long)(sqrt((double)rlen2) + 1.0)
-				: 4096;
+			if (!wild)
+			{
+				/* the directional guide: do not pick a destination behind us */
+				cosScaled = (rlen2 > 0)
+					? ((long)fwdX * rx + (long)fwdZ * rz) / (long)(sqrt((double)rlen2) + 1.0)
+					: 4096;
 
-			if (cosScaled < JERAI_JOY_BEHIND_COS)
-				continue;
+				if (cosScaled < JERAI_JOY_BEHIND_COS)
+					continue;
+			}
 
 			count++;
 
@@ -131,9 +144,10 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 		JerAiMapBuild(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[1], car->hd.where.t[2]);
 		gJerAi.forceNewGoal = 0;
 
-		if (JerAiJoyPickGoal(car, &sGhostX, &sGhostZ))
+		if (JerAiJoyPickGoal(car, gJerAi.reposition, &sGhostX, &sGhostZ))
 		{
 			sHasGoal = 1;
+			gJerAi.reposition = 0;
 			force = 1;
 		}
 		else

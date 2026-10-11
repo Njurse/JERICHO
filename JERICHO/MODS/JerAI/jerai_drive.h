@@ -52,7 +52,8 @@ typedef struct JERAI_CARSTATE
 {
 	int	speed;		/* forward speed, engine units (hd.wheel_speed) */
 	int	dir;		/* heading */
-	int	yawRate;	/* body rotation, engine units/frame */
+	int	yawRate;	/* body rotation, engine units/frame (raw angular velocity) */
+	int	yaw;		/* heading change since last frame, in GAME UNITS/frame */
 	int	slip;		/* signed angle velocity-vs-heading, game units (-2048..2048) */
 } JERAI_CARSTATE;
 

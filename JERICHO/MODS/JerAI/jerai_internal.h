@@ -90,6 +90,8 @@ typedef struct JERAI_STATE
 
 	/* what the car is actually doing, read every driving frame */
 	JERAI_CARSTATE carState;
+	int	prevDir;		/* last frame's heading, for the yaw in game units */
+	int	reposition;		/* stuck: pick a WILD new destination, not a near one */
 
 	/* the corner the plan leads into (jerai_drive.c) */
 	JERAI_CURVE	curve;
