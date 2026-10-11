@@ -1029,7 +1029,9 @@ void DisplayOnScreenText(void)
 {
 	char* text;
 
-	sprintf(ScreenTitle, NullStr);
+	/* The breadcrumb is BUILT below, so start from empty rather than sprintf-ing a
+	 * variable format string (NullStr) into it. */
+	ScreenTitle[0] = 0;
 
 	if (padsConnected[0] == 0) {
 		int transparent = 0;
@@ -1051,12 +1053,29 @@ void DisplayOnScreenText(void)
 	{
 		if (iScreenSelect != SCREEN_SCORES && iScreenSelect != SCREEN_CAR)
 		{
+			/* ScreenTitle is 128 bytes; ScreenNames[i] is a button NAME (up to 31
+			 * chars) and ScreenDepth can be 12 deep, with a module free to push
+			 * levels of its own -- so the old strcat chain could run off the end,
+			 * which aborts outright under glibc's _FORTIFY_SOURCE. Append only what
+			 * still fits, and skip a name that is still NULL (the array is zeroed at
+			 * boot and only filled as screens are opened). */
+			int used = 0;
+
 			for (int i = 0; i < ScreenDepth; i++)
 			{
-				if (i > 0)
-					strcat(ScreenTitle, " - ");
+				int room = (int)sizeof(ScreenTitle) - used;
+				int wrote;
 
-				strcat(ScreenTitle, ScreenNames[i]);
+				if (ScreenNames[i] == NULL)
+					continue;
+
+				wrote = snprintf(ScreenTitle + used, (size_t)room, "%s%s",
+					(used > 0) ? " - " : "", ScreenNames[i]);
+
+				if (wrote < 0 || wrote >= room)
+					break;		/* the rest does not fit; stop here */
+
+				used += wrote;
 			}
 
 			FEPrintStringSized(ScreenTitle, 40, 400, 3072, 1, 64, 64, 64);
@@ -1455,22 +1474,38 @@ void jer_menu_draw(const JerMenu* m, int x, int y)
 		if (m->depth > 0)
 		{
 			int d;
-			int used = (int)strlen(title);
+			int used = snprintf(tbuf, sizeof(tbuf), "%s", title);
 
-			if (used > (int)sizeof(tbuf) - 8)
-				used = (int)sizeof(tbuf) - 8;
-
-			memcpy(tbuf, title, (size_t)used);
-			tbuf[used] = 0;
+			/* snprintf reports the length it WOULD have written, so a clipped
+			 * title leaves `used` past the end of the buffer. */
+			if (used < 0)
+				used = 0;
+			else if (used > (int)sizeof(tbuf) - 1)
+				used = (int)sizeof(tbuf) - 1;
 
 			for (d = 1; d <= m->depth && d < JER_MENU_MAX_DEPTH; d++)
 			{
 				const char* lbl = m->stack[d].label;
+				int room, wrote;
 
-				if (lbl == NULL || used > (int)sizeof(tbuf) - 16)
+				if (lbl == NULL)
 					continue;
 
-				used += sprintf(tbuf + used, " > %s", lbl);
+				room = (int)sizeof(tbuf) - used;
+
+				/* Bound by the space actually LEFT, not by a fixed threshold: a
+				 * submenu label comes from the module and may be any length, and
+				 * appending one unchecked is what used to run off the end of this
+				 * buffer -- an outright abort under glibc's _FORTIFY_SOURCE. */
+				if (room <= 4)		/* not even room for " > x" + NUL */
+					break;
+
+				wrote = snprintf(tbuf + used, (size_t)room, " > %s", lbl);
+
+				if (wrote < 0 || wrote >= room)
+					break;		/* did not fit; tbuf is still terminated */
+
+				used += wrote;
 			}
 
 			title = tbuf;
@@ -1487,7 +1522,7 @@ void jer_menu_draw(const JerMenu* m, int x, int y)
 		vals[0] = "Yes";
 		vals[1] = "No";
 
-		sprintf(line, "%s%s        %s%s",
+		snprintf(line, sizeof(line), "%s%s        %s%s",
 			(m->cursor == 0) ? "> " : "  ", vals[0],
 			(m->cursor == 1) ? "> " : "  ", vals[1]);
 
@@ -1500,7 +1535,10 @@ void jer_menu_draw(const JerMenu* m, int x, int y)
 		const char* lbl = jer_menu_label(m);
 		char line[80];
 
-		sprintf(line, "<  %s  >", (lbl != NULL && lbl[0] != 0) ? lbl : "-");
+		/* A carousel label is the module's own string and may be any length, so it is
+		 * CLIPPED into the row rather than sprintf-ed past it (which would abort under
+		 * glibc's _FORTIFY_SOURCE). */
+		snprintf(line, sizeof(line), "<  %s  >", (lbl != NULL && lbl[0] != 0) ? lbl : "-");
 		FEPrintString(line, x - FEStringWidth(line) / 2, y, 0, 255, 235, 130);
 		return;
 	}
@@ -1520,7 +1558,8 @@ void jer_menu_draw(const JerMenu* m, int x, int y)
 		    m->subs[i].items != NULL && m->subs[i].count > 0)
 			opens = 1;
 
-		sprintf(line, "%s%s%s", sel ? "> " : "  ", lbl, opens ? "  >" : "");
+		/* As the carousel above: a module's item label is clipped, not trusted. */
+		snprintf(line, sizeof(line), "%s%s%s", sel ? "> " : "  ", lbl, opens ? "  >" : "");
 		FEPrintString(line, x - 70, y + i * 14, 0,
 			sel ? 255 : 190, 255, sel ? 140 : 190);
 	}
@@ -4884,7 +4923,13 @@ int CheatScreen(int bSetup)
 		pCurrScreen->buttons[0].d = 1;
 		pCurrScreen->buttons[0].action = FE_MAKEVAR(BTN_PREVIOUS_SCREEN, 0);
 
-		sprintf(pCurrScreen->buttons[0].Name, GET_GAME_TXT(cheatText[0]));
+		/* The cheat labels come from the LANGUAGE table, and one of them does not fit
+		 * PSXBUTTON.Name (32 bytes) in a shipped language: the German "Sorry, keine
+		 * Geheimnisse freigespielt" is 37 chars. sprintf-ing that does not just clip -
+		 * under glibc's _FORTIFY_SOURCE it ABORTS the process, and without fortify it
+		 * runs into the rest of the button. Clip it instead. */
+		snprintf(pCurrScreen->buttons[0].Name, sizeof(pCurrScreen->buttons[0].Name),
+			"%s", GET_GAME_TXT(cheatText[0]));
 
 		return 0;
 	}
@@ -4910,7 +4955,9 @@ int CheatScreen(int bSetup)
 	{
 		if (evilRuss[i] || gFurthestMission == 40)
 		{
-			sprintf(pCurrScreen->buttons[i].Name, GET_GAME_TXT(cheatText[i + 1]));
+			/* ...and the same clip for the cheat rows (see the note above). */
+			snprintf(pCurrScreen->buttons[i].Name, sizeof(pCurrScreen->buttons[i].Name),
+				"%s", GET_GAME_TXT(cheatText[i + 1]));
 			cheatOn[k++] = i;
 		}
 	}
