@@ -1445,6 +1445,38 @@ void jer_menu_draw(const JerMenu* m, int x, int y)
 
 	title = jer_menu_title(m);
 
+	/* BREADCRUMB. Inside a submenu the title alone is ambiguous -- with two or
+	 * three levels open "Vehicles" does not say which page you came through --
+	 * so the path down to here is shown after it. Flat menus (depth 0) are drawn
+	 * exactly as they always were. */
+	{
+		static char tbuf[160];
+
+		if (m->depth > 0)
+		{
+			int d;
+			int used = (int)strlen(title);
+
+			if (used > (int)sizeof(tbuf) - 8)
+				used = (int)sizeof(tbuf) - 8;
+
+			memcpy(tbuf, title, (size_t)used);
+			tbuf[used] = 0;
+
+			for (d = 1; d <= m->depth && d < JER_MENU_MAX_DEPTH; d++)
+			{
+				const char* lbl = m->stack[d].label;
+
+				if (lbl == NULL || used > (int)sizeof(tbuf) - 16)
+					continue;
+
+				used += sprintf(tbuf + used, " > %s", lbl);
+			}
+
+			title = tbuf;
+		}
+	}
+
 	if (title != NULL && title[0] != 0)
 		FEPrintString((char*)title, x - FEStringWidth((char*)title) / 2, y - 18, 0, 235, 235, 235);
 
@@ -1479,8 +1511,16 @@ void jer_menu_draw(const JerMenu* m, int x, int y)
 		char line[80];
 		const char* lbl = (m->items != NULL && m->items[i] != NULL) ? m->items[i] : "";
 		int sel = (i == m->cursor);
+		int opens = 0;
 
-		sprintf(line, "%s%s", sel ? "> " : "  ", lbl);
+		/* An item that opens a submenu is marked, so "this goes deeper" is visible
+		 * before the player commits. Read straight off the table rather than through
+		 * jer_menu_has_sub (which answers for the CURSOR only). */
+		if (m->subs != NULL && i < m->subCount &&
+		    m->subs[i].items != NULL && m->subs[i].count > 0)
+			opens = 1;
+
+		sprintf(line, "%s%s%s", sel ? "> " : "  ", lbl, opens ? "  >" : "");
 		FEPrintString(line, x - 70, y + i * 14, 0,
 			sel ? 255 : 190, 255, sel ? 140 : 190);
 	}
