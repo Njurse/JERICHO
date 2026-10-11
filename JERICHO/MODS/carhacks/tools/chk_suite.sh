@@ -58,6 +58,7 @@ TOOLS="$(cd "$(dirname "$0")" && pwd)"
 CITY_NAME=(CHICAGO HAVANA VEGAS RIO)
 INI="$BIN/JERICHO/CONFIG/carhacks.ini"
 MODLIST="$BIN/JERICHO/CONFIG/modlist.ini"
+CONFIG="$BIN/config.ini"
 FRAMES="${1:-60}"
 SEED="${SEED:-7}"
 MSB="C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/MSBuild/Current/Bin/MSBuild.exe"
@@ -92,6 +93,25 @@ if [ -n "$SAVED_MODLIST" ]; then
 		| sed -e 's/^\(carhacks[[:space:]]*=[[:space:]]*\)0/\11/' \
 		      -e 's/^\(cainescrossfire[[:space:]]*=[[:space:]]*\)1/\10/' > "$MODLIST"
 fi
+
+# A rig must run the game at its NORMAL resolution in a normal window: one minimised
+# or fullscreen renders at a degenerate size and the captures stop being representative.
+# Force the shipped windowed default for the run and restore it on any exit.
+SAVED_CONFIG="$(cat "$CONFIG" 2>/dev/null || true)"
+if [ -n "$SAVED_CONFIG" ]; then
+	printf '%s\n' "$SAVED_CONFIG" \
+		| sed -e 's/^windowWidth=.*/windowWidth=1280/' \
+		      -e 's/^windowHeight=.*/windowHeight=720/' \
+		      -e 's/^fullscreen=.*/fullscreen=0/' > "$CONFIG"
+fi
+
+restore_files() {
+	[ -n "${SAVED_CONFIG:-}" ] && printf '%s\n' "$SAVED_CONFIG" > "$CONFIG"
+	if [ -n "${SAVED:-}" ]; then printf '%s\n' "$SAVED" > "$INI"
+	else printf 'cross_city_vehicles = 0\n' > "$INI"; fi
+	[ -n "${SAVED_MODLIST:-}" ] && printf '%s\n' "$SAVED_MODLIST" > "$MODLIST"
+}
+trap restore_files EXIT
 
 # host index | kind.  'model' for a player row is the host's own index into SPECIALS, so
 # the four hosts cover four different bodies; 'src' is always the next city round the
@@ -156,15 +176,10 @@ for entry in "${ROWS[@]}"; do
 	esac
 
 	RUNLOG="/tmp/chk_suite_$$_${IDX}_${KIND}.log"
-	# Start MINIMIZED: the game opens an SDL window, and seven rows in a row stealing
-	# focus is unbearable. run_minimized.ps1 (Start-Process) minimizes AND keeps stdout,
-	# and the run still self-terminates via -frames, so nothing is killed by name. The
-	# lever the row sets (JERICHO_DUMPVRAM) is exported so the child inherits it.
-	export JERICHO_DUMPVRAM=1
-	powershell -ExecutionPolicy Bypass -File "$TOOLS/run_minimized.ps1" \
-		"./JERICHO_dev.exe" "$RUNLOG" \
-		-nointro -level "${CITY_NAME[$HOST]}" $CARARG \
-		-weather none -time day -frames "$FRAMES" -seed "$SEED"
+	# A normal visible window at normal resolution (see the config.ini note above).
+	# -frames makes the run self-terminate, so nothing is ever killed by name.
+	JERICHO_DUMPVRAM=1 "./JERICHO_dev.exe" -nointro -level "${CITY_NAME[$HOST]}" $CARARG \
+		-weather none -time day -frames "$FRAMES" -seed "$SEED" > "$RUNLOG" 2>&1
 	RC=$?
 	IDX=$((IDX + 1))
 
@@ -247,8 +262,7 @@ for entry in "${ROWS[@]}"; do
 		"${PINNED:-0}" "${EVICTED:-0}" "$LOST" "$ERRORS" "$XC" "$FROM"
 done
 
-[ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || printf 'cross_city_vehicles = 0\n' > "$INI"
-[ -n "$SAVED_MODLIST" ] && printf '%s\n' "$SAVED_MODLIST" > "$MODLIST"
+restore_files
 
 echo
 if [ "$FAILED" -eq 0 ]; then
