@@ -2006,15 +2006,31 @@ void PadChecks(void)
 	feNewPad = Pads[0].mapnew;
 	fePad = Pads[0].mapped;
 
-	/* JERICHO TEST LEVER (JERICHO_TEST_FEPRESS=<screen>[:<row>],...): press Cross
-	 * on the named frontend screen with the cursor on row <row> (0 = the top row,
-	 * reached by pressing Down), and log every frontend screen change so what the
-	 * press caused is visible. Steps run in order: only the FIRST screen is
-	 * navigated to; every later step's screen has to be the one the previous
-	 * press produced, or the chain the press should have caused did not happen.
+	/* JERICHO TEST LEVER (JERICHO_TEST_FEPRESS=<screen>[:<row>[<action>]],...):
+	 * press a pad button on the named frontend screen with the cursor on row <row>
+	 * (0 = the top row, reached by pressing Down), and log every frontend screen
+	 * change so what the press caused is visible. Steps run in order: only the
+	 * FIRST screen is navigated to; every later step's screen has to be the one the
+	 * previous press produced, or the chain the press should have caused did not
+	 * happen.
 	 *
-	 * e.g. JERICHO_TEST_FEPRESS=1:0  answers "take-a-ride city, first city";
-	 *      JERICHO_TEST_FEPRESS=1:0,3:0  then goes on to time of day.
+	 * <action> is optional and defaults to a single Cross:
+	 *     (nothing)   press Cross
+	 *     R / L       press RIGHT / LEFT, for an ADJUST row
+	 *     R<n> / L<n> press it n times
+	 *
+	 * The action exists because Cross alone cannot get past an ADJUST row: a menu
+	 * whose rows are left/right values (mp's Host Game session settings, for one)
+	 * stops a Cross-only walk dead, and the step after it never runs -- which is
+	 * exactly what "the harness needs a human to finish that menu" looks like from
+	 * the outside. Nothing else had to change: Cross stays the default, so every
+	 * existing step list means what it always did.
+	 *
+	 * e.g. JERICHO_TEST_FEPRESS=1:0    answers "take-a-ride city, first city";
+	 *      JERICHO_TEST_FEPRESS=1:0,3:0 then goes on to time of day;
+	 *      JERICHO_TEST_FEPRESS=3:0R2   sets row 0 of the Host Game page two steps
+	 *                                   to the right, then...
+	 *      JERICHO_TEST_FEPRESS=3:0R2,3:4 carries on to row 4 (Take a Ride) there.
 	 *
 	 * The frontend reads Pads[0] straight out of ReadControllers() above, and a
 	 * module cannot inject a pad: its FRAME hook runs before this function, so
@@ -2026,6 +2042,9 @@ void PadChecks(void)
 		#define JERICHO_FE_PRESS_MAX 12
 		static int feStepScreens[JERICHO_FE_PRESS_MAX];
 		static int feStepRows[JERICHO_FE_PRESS_MAX];
+		static int feStepPad[JERICHO_FE_PRESS_MAX];	/* MPAD_* for the step's press */
+		static int feStepPresses[JERICHO_FE_PRESS_MAX];	/* how many times, 1 for Cross */
+		static int feStepLeft;				/* presses still owed this step */
 		static int feStepCount = -1;	/* -1 = not parsed yet */
 		static int feStepIdx;
 		static int feStepRow;
@@ -2053,6 +2072,28 @@ void PadChecks(void)
 						s++;
 
 					feStepRows[feStepCount] = (*s == ':') ? atoi(s + 1) : 0;
+
+					feStepPad[feStepCount] = MPAD_CROSS;
+					feStepPresses[feStepCount] = 1;
+
+					if (*s == ':')
+					{
+						const char* t = s + 1;
+
+						while (*t >= '0' && *t <= '9')
+							t++;
+
+						if (*t == 'L' || *t == 'l' || *t == 'R' || *t == 'r')
+						{
+							feStepPad[feStepCount] = (*t == 'L' || *t == 'l') ? MPAD_D_LEFT : MPAD_D_RIGHT;
+							feStepPresses[feStepCount] = (t[1] >= '0' && t[1] <= '9') ? atoi(t + 1) : 1;
+
+							if (feStepPresses[feStepCount] < 1)
+								feStepPresses[feStepCount] = 1;
+						}
+
+						s = t;	/* past the row digits and any action */
+					}
 
 					while (*s != '\0' && *s != ',')
 						s++;
@@ -2093,6 +2134,7 @@ void PadChecks(void)
 
 					feStepRow = 0;
 					feStepFrames = 0;
+					feStepLeft = (feStepIdx < feStepCount) ? feStepPresses[feStepIdx] : 0;
 				}
 				else if (++feStepFrames >= 2)
 				{
@@ -2103,14 +2145,27 @@ void PadChecks(void)
 						feNewPad |= MPAD_D_DOWN;
 						feStepRow++;
 					}
-					else
+					else if (feStepLeft > 0)
 					{
-						feNewPad |= MPAD_CROSS;
+						feNewPad |= feStepPad[feStepIdx];
+						feStepLeft--;
 
-						jer_log("[jericho] test: JERICHO_TEST_FEPRESS pressed Cross on screen %d row %d\n", scr, row);
+						jer_log("[jericho] test: JERICHO_TEST_FEPRESS pressed %s on screen %d row %d%s\n",
+							(feStepPad[feStepIdx] == MPAD_D_LEFT) ? "LEFT" :
+							(feStepPad[feStepIdx] == MPAD_D_RIGHT) ? "RIGHT" : "Cross",
+							scr, row, (feStepLeft > 0) ? " (more)" : "");
 
-						feStepIdx++;
-						feStepRow = 0;
+						if (feStepLeft == 0)
+						{
+							feStepIdx++;
+							feStepRow = 0;
+
+							/* Arm the NEXT step here as well as on entry: when the
+							 * following step's screen is already the current one the
+							 * mismatch branch never runs, so this is the only place
+							 * its press count would ever be set. */
+							feStepLeft = (feStepIdx < feStepCount) ? feStepPresses[feStepIdx] : 0;
+						}
 					}
 				}
 			}
