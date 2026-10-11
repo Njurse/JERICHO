@@ -56,7 +56,11 @@ Driving is governed by:
 - a **stuck recovery** that backs out of a wedge (and asks the behavior for a new
   destination) after ~1.3 s at a standstill, plus an **early reverse** the moment
   scenery is right on the nose while barely moving (backing off sooner grinds
-  less than waiting out the timer).
+  less than waiting out the timer). **The steer bit in a burst is INVERTED**: while
+  backing up, turning the wheel the way forward steering would swings the NOSE the
+  other way, so the forward sign used to drive the nose *away* from the aim and
+  every burst left the error worse than it found it - which is why a wedged car
+  could sit in a reverse loop for fifteen seconds.
 
 ## Car dynamics (speed, grip, corners)
 
@@ -150,6 +154,38 @@ The road network is a **preference, never a wall**: an off-road sample costs
 takes the roads when they go the same way as the target, and still leaves them to
 reach a goal that is not on one. At 0 there is no road preference at all.
 
+## Measuring the steering loop
+
+The once-a-second `[JerAI] drive` line **cannot show a saw**: it samples 30 frames
+apart while the wheel is turned on and off in ones and twos. Set `steer_trace = N`
+and the module instead logs a `[JerAI] steer` line every N frames carrying the pad,
+the heading error, the **damped** error the steer decision actually used, the feeler
+bias, the speed, the corner-speed target, the **real front wheel angle** (`wa` - the
+number that shows the engine integrating the pad), the look-ahead asked for vs where
+the aim landed, the cross-track offset, the aim point, the plan's own bearing, and
+the stuck/recover counters.
+
+```
+python JERICHO/MODS/JerAI/tools/jerai_steer_stats.py <log>
+```
+
+### What that measurement has established
+
+A fixed-aim run (`aim_test = 0`, so the steering loop is driven by a *stable*
+setpoint and nothing else) tracks cleanly: mean heading error in the tens, a wheel
+angle around 41 (nowhere near the 352 lock), steering engaged 14% of the time,
+**zero** direction reversals, and speed up to 181. So the pad law, the hysteresis
+and the engine's 32/frame build vs 64/frame centring are **not** what makes the car
+weave. Do not "fix" them on a hunch.
+
+With a real destination the car instead runs a persistent heading error in the
+hundreds (20-30 degrees) at partial-to-full lock while its cross-track error grows
+against a plan that is usually a **2-waypoint straight run** (the goal only changes
+every few seconds, so the line is stable, and `JerAiStarLineClear` refuses any line
+crossing a blocked sample, so the straight run is genuinely clear). The fault is
+therefore in **the destination/aim the behaviour supplies**, not in the driver - and
+`pdir` plus `ax`/`az` in the trace are what the next pass needs to pin it down.
+
 ## Visualization (`viz_*`)
 
 Drawn in `JER_EVENT_DRAW_WORLD` with `Debug_AddLineDepth` (buildings occlude the
@@ -205,6 +241,7 @@ the working directory:
 | `jerai_viz.c` | debug drawing |
 | `jerai_menu.c` | the control menu |
 | `tools/follow_host.*` | join a match on localhost as an extra player that follows the host |
+| `tools/jerai_steer_stats.py` | summarise a `steer_trace` log (the steering loop's own numbers) |
 
 The search library (`jerai_map` / `jerai_mapgrid` / `jerai_star` / `jerai_local`)
 is a namespaced copy of `mp`'s `ai/` — both modules are compiled into the same
@@ -221,6 +258,8 @@ See `jerai.h` for the key names and defaults. The car-dynamics knobs:
 | `brake_gain` | 1 | braking authority for the braking-distance term |
 | `corner_lookahead` | 6000 | how far ahead the plan is scanned for corners (world units) |
 | `speed_scale` | 100 | overall aggression: the corner target as a percentage |
+| `avoid_dist` | 1200 | start avoiding a car ahead within this range (**capped at `JERAI_AVOID_MAX` = 1200**; a larger value is logged, not silently ignored) |
+| `steer_trace` | 0 | log a compact steering-loop line every N frames (0 = off) - see *Measuring the steering loop* |
 | `yaw_lead` | 4 | steering damper: frames of the car's own yaw the aim leads by. **Lower steers harder**; higher straightens the wheel earlier (the old fixed value was 8, which read as steering far too slowly) |
 
 `brake_gain` is in speed^2 per world unit; 40 swamps the term (the target never
