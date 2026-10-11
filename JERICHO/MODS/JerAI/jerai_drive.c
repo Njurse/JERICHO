@@ -21,6 +21,11 @@
 #include "objcoll.h"	/* CellEmpty: the engine's own scenery test, for the feelers */
 #include "dr2roads.h"	/* MapHeight */
 #include "map.h"		/* units_across_halved: the level's bounds */
+#include "cell.h"		/* Get*PackedCop, CELL_ITERATOR */
+#include "models.h"		/* modelpointers */
+#include "draw.h"		/* matrixtable */
+/* GET_MODEL_DATA / COLLISION_PACKET / MODEL_FLAG_* arrive via driver2.h ->
+ * dr2types.h -> engine/mdl.h */
 
 #include <math.h>
 
@@ -584,6 +589,83 @@ static int JerAiCarAhead(CAR_DATA* car, long* dist2Out, int* relOut)
  * so a street with walls both sides cancels out and only a genuine drift toward
  * one is corrected. */
 
+/* CellEmpty deliberately IGNORES smashable scenery: objcoll.c:49 requires
+ * `flags2 & (MODEL_FLAG_CHAIR | MODEL_FLAG_SMASHABLE) == 0`. So light posts,
+ * chairs and a lot of fencing are INVISIBLE to it, and the feelers (and the
+ * occupancy grid) waved the car straight at them. This is the SAME collision
+ * test with the smashable branch KEPT - it only ADDS the objects CellEmpty
+ * skips, so it can never report something safe as blocked. */
+static int JerAiCellHasSmashable(VECTOR* p, int radius)
+{
+	int cell_x = (p->vx + units_across_halved) / MAP_CELL_SIZE;
+	int cell_z = (p->vz + units_down_halved) / MAP_CELL_SIZE;
+	CELL_ITERATOR ci;
+	PACKED_CELL_OBJECT* ppco;
+
+	if (p->vx + units_across_halved < 0 || p->vx - units_across_halved >= 0 ||
+	    p->vz + units_down_halved < 0 || p->vz - units_down_halved >= 0)
+		return 0;	/* out of level: no objects to find */
+
+	for (ppco = GetFirstPackedCop(cell_x, cell_z, &ci, 0); ppco != NULL; ppco = GetNextPackedCop(&ci))
+	{
+		int type = (ppco->value >> 6) | ((ppco->pos.vy & 1) << 10);
+		MODEL* pModel = modelpointers[type];
+		CELL_OBJECT co;
+		int num_cb, box_loop, xd, zd, xxd, zzd, yang, theta, cs, sn;
+		int xs, zs, ypos;
+		long sphere_sq;
+		COLLISION_PACKET* collide;
+		MATRIX2* mat;
+
+		if (pModel == NULL || pModel->collision_block <= 0)
+			continue;
+
+		if ((pModel->flags2 & (MODEL_FLAG_CHAIR | MODEL_FLAG_SMASHABLE)) == 0)
+			continue;	/* CellEmpty already handles the solid ones */
+
+		QuickUnpackCellObject(ppco, &ci.nearCell, &co);
+
+		xd = co.pos.vx - p->vx;
+		zd = co.pos.vz - p->vz;
+
+		sphere_sq = pModel->bounding_sphere + 580;
+		sphere_sq = sphere_sq * sphere_sq;
+
+		if ((long)xd * xd + (long)zd * zd >= sphere_sq)
+			continue;
+
+		num_cb = *GET_MODEL_DATA(int, pModel, collision_block);
+		collide = GET_MODEL_DATA_OFS(COLLISION_PACKET, pModel, collision_block, sizeof(int));
+
+		yang = -co.yang & 63;
+		theta = (co.yang + collide->yang) * 64;
+		mat = &matrixtable[yang];
+		cs = RCOS(theta);
+		sn = RSIN(theta);
+
+		for (box_loop = 0; box_loop < num_cb; box_loop++, collide++)
+		{
+			xxd = FIXEDH(collide->xpos * mat->m[0][0] + collide->zpos * mat->m[2][0]);
+			zzd = FIXEDH(collide->xpos * mat->m[0][2] + collide->zpos * mat->m[2][2]);
+
+			xd = (co.pos.vx - p->vx) + xxd;
+			zd = (co.pos.vz - p->vz) + zzd;
+
+			zs = ((collide->zsize + 10) * 2048 + radius * 4096);
+			xs = ((collide->xsize + 10) * 2048 + radius * 4096);
+
+			ypos = p->vy + (co.pos.vy + collide->ypos);
+
+			if (collide->ysize / 2 > ABS(ypos) &&
+				xs > ABS(xd * cs - zd * sn) &&
+				zs > ABS(zd * cs + xd * sn))
+				return 1;
+		}
+	}
+
+	return 0;
+}
+
 static int JerAiFeelClear(CAR_DATA* car, int off, int dist, int radius)
 {
 	int dir = (car->hd.direction + off) & 0xfff;
@@ -601,7 +683,15 @@ static int JerAiFeelClear(CAR_DATA* car, int off, int dist, int radius)
 
 	v.vy = MapHeight(&v);	/* probe at the ground THERE, not at our own height */
 
-	return CellEmpty(&v, radius) != 0;
+	if (!CellEmpty(&v, radius))
+		return 0;
+
+	/* ...and the SAME probe again, this time also counting the smashable props
+	 * CellEmpty skips (light posts, fencing) */
+	if (JerAiCellHasSmashable(&v, radius))
+		return 0;
+
+	return 1;
 }
 
 static int JerAiFeelers(CAR_DATA* car, int* frontBlocked)
