@@ -60,7 +60,7 @@ void JerAiRefreshConfig(void)
 	gJerAi.runLights = jer_config_get_int("JerAI", JERAI_CFG_RUN_LIGHTS, 1);
 	gJerAi.replanMs = jer_config_get_int("JerAI", JERAI_CFG_REPLAN_MS, 700);
 	gJerAi.replanMove = jer_config_get_int("JerAI", JERAI_CFG_REPLAN_MOVE, 700);
-	gJerAi.lookAhead = jer_config_get_int("JerAI", JERAI_CFG_LOOK_AHEAD, 2500);
+	gJerAi.lookAhead = jer_config_get_int("JerAI", JERAI_CFG_LOOK_AHEAD, 1400);
 	gJerAi.avoidDist = jer_config_get_int("JerAI", JERAI_CFG_AVOID_DIST, 1800);
 	gJerAi.copClearance = jer_config_get_int("JerAI", JERAI_CFG_COP_CLEARANCE, 6000);
 	gJerAi.maxSteer = jer_config_get_int("JerAI", JERAI_CFG_MAX_STEER, 512);

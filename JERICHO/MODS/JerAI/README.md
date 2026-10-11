@@ -37,6 +37,11 @@ Driving is governed by:
   aims a fixed `look_ahead` distance further ALONG it, so it tracks the line
   instead of cutting to a far corner (and can never point at a waypoint it has
   already passed);
+- a **directional guide**: the aim walk takes the first point that is both far
+  enough ahead AND not behind the car (cos > -0.35 ~= within 110 deg, so a
+  perpendicular intersection turn still counts), and the joyride goal picker skips
+  destinations behind the car. Both exist to stop the car targeting something it
+  has passed and turning back for it;
 - **feelers** - short, FRESH, thin `CellEmpty` probes fanned in front of the car,
   which bias the aim around scenery the coarse (512-unit) and up-to-a-replan-old
   A\* grid cannot see. A wall on one side pushes the aim to the other; a street

@@ -106,12 +106,19 @@ static long JerAiSegLen(long ax, long az, long bx, long bz)
 	return (long)sqrt(dx * dx + dz * dz);
 }
 
+/* cos(angle) fixed-point: a point is "not behind" the car when the cosine
+ * between the car's heading and the direction to the point exceeds this
+ * (-0.35 ~= 110 deg, so a perpendicular intersection turn still counts). */
+#define JERAI_AIM_BEHIND_COS	(-1450)
+
 int JerAiDriveAim(int* aimX, int* aimZ)
 {
 	CAR_DATA* car = JerAiOwnCar();
 	int n, k;
 	long cx, cz;
-	long bestD2 = -1, bestArc = 0, arc, target;
+	long bestD2 = -1, bestArc = 0, arc;
+	int dir, fwdX, fwdZ;
+	long bestX, bestZ;
 
 	if (car == NULL || !gJerAi.havePlan || gJerAi.path.waypoints <= 0)
 		return 0;
@@ -119,6 +126,9 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 	n = gJerAi.path.waypoints;
 	cx = car->hd.where.t[0];
 	cz = car->hd.where.t[2];
+	dir = car->hd.direction;
+	fwdX = RSIN(dir);
+	fwdZ = RCOS(dir);
 
 	/* debug override: a fixed aim heading, to test the steering in isolation */
 	if (gJerAi.aimTest >= 0)
@@ -134,8 +144,7 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 		return 1;
 	}
 
-	/* First find where the car is ALONG the plan: project it onto each segment
-	 * and keep the closest, together with the arc length to that foot. */
+	/* where the car is ALONG the plan: the closest point on the polyline */
 	arc = 0;
 
 	for (k = 1; k < n; k++)
@@ -172,43 +181,82 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 		arc += segLen;
 	}
 
-	/* Then look a fixed distance FURTHER ALONG the plan. Aiming a set distance
-	 * along the path - rather than at the furthest waypoint in range - is what
-	 * makes the car TRACK the plan instead of cutting to a far corner, and it can
-	 * never point the car at a waypoint it has already passed. */
-	target = bestArc + gJerAi.lookAhead;
+	/* Walk FORWARD from there and take the first point that is both at least
+	 * look_ahead further along AND not behind the car (the DIRECTIONAL GUIDE).
+	 * Skimming the segment in ~512-unit steps means a point behind the car is
+	 * stepped over rather than aimed at, so the car never turns back for a
+	 * waypoint it has already passed. Falls through to the goal if the whole
+	 * remaining plan is behind - then a turn really is the only way on. */
 	arc = 0;
+	bestX = gJerAi.path.wx[n - 1];
+	bestZ = gJerAi.path.wz[n - 1];
 
 	for (k = 1; k < n; k++)
 	{
 		long ax = gJerAi.path.wx[k - 1], az = gJerAi.path.wz[k - 1];
 		long bx = gJerAi.path.wx[k], bz = gJerAi.path.wz[k];
 		long dx = bx - ax, dz = bz - az;
-		long len2 = dx * dx + dz * dz;
 		long segLen = JerAiSegLen(ax, az, bx, bz);
+		long steps, s;
+		int done = 0;
 
-		if (segLen > 0 && arc + segLen >= target)
+		if (segLen <= 0)
 		{
-			long f = target - arc;
-			long nx = ax + dx * f / segLen;
-			long nz = az + dz * f / segLen;
-
-			if (aimX) *aimX = (int)nx;
-			if (aimZ) *aimZ = (int)nz;
-			gJerAi.aimX = (int)nx;
-			gJerAi.aimZ = (int)nz;
-
-			return 1;
+			arc += segLen;
+			continue;
 		}
+
+		steps = segLen / 512 + 1;
+
+		for (s = 0; s <= steps; s++)
+		{
+			long f = segLen * s / steps;
+			long px = ax + dx * f / segLen;
+			long pz = az + dz * f / segLen;
+			long thisArc = arc + f;
+
+			if (thisArc < bestArc)
+				continue;	/* still behind our own projection */
+
+			if (thisArc - bestArc >= gJerAi.lookAhead)
+			{
+				long rx = px - cx, rz = pz - cz;
+				long rlen2 = rx * rx + rz * rz;
+				long cosScaled;
+
+				if (rlen2 <= 0)
+				{
+					bestX = px;
+					bestZ = pz;
+					done = 1;
+				}
+				else
+				{
+					cosScaled = ((long)fwdX * rx + (long)fwdZ * rz) / (long)(sqrt((double)rlen2) + 1.0);
+
+					if (cosScaled > JERAI_AIM_BEHIND_COS)
+					{
+						bestX = px;
+						bestZ = pz;
+						done = 1;
+					}
+				}
+
+				if (done)
+					break;
+			}
+		}
+
+		if (done)
+			break;
 
 		arc += segLen;
 	}
 
-	/* past the end of the plan: head for the goal waypoint */
-	if (aimX) *aimX = gJerAi.path.wx[n - 1];
-	if (aimZ) *aimZ = gJerAi.path.wz[n - 1];
-	gJerAi.aimX = gJerAi.path.wx[n - 1];
-	gJerAi.aimZ = gJerAi.path.wz[n - 1];
+	if (aimX) *aimX = (int)bestX;
+	if (aimZ) *aimZ = (int)bestZ;
+	gJerAi.aimX = (int)bestX;
+	gJerAi.aimZ = (int)bestZ;
 
 	return 1;
 }

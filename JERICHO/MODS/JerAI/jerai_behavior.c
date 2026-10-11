@@ -11,24 +11,36 @@
 #include "jerai_behavior.h"
 #include "jerai_drive.h"
 
-#include "dr2math.h"
+#include "dr2math.h"	/* ratan2, RSIN, RCOS */
+
+#include <math.h>
 
 /* ------------------------------------------------------------------ */
 /* Joyride                                                             */
 /* ------------------------------------------------------------------ */
 
 /* Pick a goal: a random ROAD sample in the window, far enough away to be a
- * drive and near enough to be one plan's worth. Reservoir-sampled, so every
- * road sample in the ring has an equal chance. Returns 1 and writes world coords. */
+ * drive and near enough to be one plan's worth, AND not behind the car - a
+ * destination the car would have to turn around for is exactly the "it keeps
+ * U-turning" complaint. Reservoir-sampled, so every eligible road sample has an
+ * equal chance. Returns 1 and writes world coords. */
 #define JERAI_JOY_MIN_RING	6	/* samples (~3,000 world units) */
 #define JERAI_JOY_MAX_RING	12	/* samples (~6,000); must stay well inside the
 					 * window (radius 24) or the goal falls out of
 					 * it on a re-plan and A* cannot plan at all */
 
-static int JerAiJoyPickGoal(int* gx, int* gz)
+/* a candidate this far behind the car's heading is skipped (cos > -0.35 ~= within
+ * 110 deg: straight ahead, a turn away, and a little past perpendicular all pass) */
+#define JERAI_JOY_BEHIND_COS	(-1450)
+
+static int JerAiJoyPickGoal(CAR_DATA* car, int* gx, int* gz)
 {
 	int cx, cz, ix, iz;
 	int candX = 0, candZ = 0, count = 0;
+	int cwX = car->hd.where.t[0];
+	int cwZ = car->hd.where.t[2];
+	int fwdX = RSIN(car->hd.direction);
+	int fwdZ = RCOS(car->hd.direction);
 
 	if (!JerAiMapValid(&gJerAi.map))
 		return 0;
@@ -40,7 +52,8 @@ static int JerAiJoyPickGoal(int* gx, int* gz)
 	{
 		for (ix = 0; ix < JERAI_MAP_SIZE; ix++)
 		{
-			int dx, dz, r;
+			int dx, dz, r, wx, wz;
+			long rx, rz, rlen2, cosScaled;
 
 			if (!JerAiMapRoad(&gJerAi.map, ix, iz))
 				continue;
@@ -55,11 +68,26 @@ static int JerAiJoyPickGoal(int* gx, int* gz)
 			if (r < JERAI_JOY_MIN_RING || r > JERAI_JOY_MAX_RING)
 				continue;
 
+			JerAiMapWorld(&gJerAi.map, ix, iz, &wx, &wz);
+
+			rx = wx - cwX;
+			rz = wz - cwZ;
+			rlen2 = rx * rx + rz * rz;
+
+			/* the directional guide: do not pick a destination behind us */
+			cosScaled = (rlen2 > 0)
+				? ((long)fwdX * rx + (long)fwdZ * rz) / (long)(sqrt((double)rlen2) + 1.0)
+				: 4096;
+
+			if (cosScaled < JERAI_JOY_BEHIND_COS)
+				continue;
+
 			count++;
 
 			if (JerAiRand() % count == 0)
 			{
-				JerAiMapWorld(&gJerAi.map, ix, iz, &candX, &candZ);
+				candX = wx;
+				candZ = wz;
 			}
 		}
 	}
@@ -103,7 +131,7 @@ static unsigned int JerAiJoyride(CAR_DATA* car)
 		JerAiMapBuild(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[1], car->hd.where.t[2]);
 		gJerAi.forceNewGoal = 0;
 
-		if (JerAiJoyPickGoal(&sGhostX, &sGhostZ))
+		if (JerAiJoyPickGoal(car, &sGhostX, &sGhostZ))
 		{
 			sHasGoal = 1;
 			force = 1;
