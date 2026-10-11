@@ -250,6 +250,14 @@ difference is who is speaking.
   its cached channel index, or the next match reuses a half-held voice. Do it in a
   `JER_EVENT_FRONTEND_ENTERED` hook (cainescrossfire's `cd2OnFrontendEntered` →
   `cd2DropHeldVoices` is the worked example).
+- **Put a 2D label on a 3D thing** — `jer_screen.h`, `jer_screen_remap_x`. The 3D
+  projection lands in the widescreen-MAPPED viewport, not in the 320x240 buffer that
+  `PrintString` and friends draw into: the PSX 3D view is a centred 240-unit
+  square-pixel band (viewport `[40, 280]` at 4:3, `[-53, 373]` at 16:9). Project a
+  world point yourself and draw it unremapped and the label drifts off its object —
+  a little at 4:3, a lot on a wide aspect. `jer_screen_remap_x` is the engine's own
+  conversion (the one `sky.c` applies to the GTE-projected sun): pass the projected
+  x, get the x to draw at. Y is not affected — the aspect matrix is PAL-only, not AR.
 - **Move somewhere the world has not streamed to** — `jer_map.h`. The engine
   streams the map as a 2×2 window of REGIONS and only pre-loads neighbours, so a
   region you HOP into (a teleport, or a spawn far from the level start) is never

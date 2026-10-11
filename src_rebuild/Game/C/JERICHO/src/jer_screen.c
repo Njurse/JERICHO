@@ -10,11 +10,59 @@
 
 #include "jer_screen.h"
 
+/* PsyX's widescreen viewport probe, DECLARED rather than included: this file builds
+ * into the lean runtime lib, whose TUs have no game headers - and PsyX_public.h
+ * drags in math/SDL defines that collide with the game's (the same C4005 reason
+ * mp.c declares its debug-key hook instead of including it). The rect is the PSX
+ * RECT16 the call fills; only x and w are read. C linkage, so the symbol resolves
+ * against PsyX at link time whatever it is named here. */
+typedef struct JerWideRect { short x, y, w, h; } JerWideRect;
+extern void PsyX_GetPSXWidescreenMappedViewport(JerWideRect* rect);
+
 static JER_SCREEN gScreens[JER_SCREEN_MAX];
 static int gScreenCount = 0;
 
 /* index of the visible screen, or -1 */
 static int gVisible = -1;
+
+/* See jer_screen.h. Mirrors sky.c's sun remap: the GTE projection lands in the
+ * widescreen-MAPPED viewport (a centred 240-unit square-pixel band inside the
+ * 320-wide buffer, so [40, 280] at 4:3 and [70, 250] at 16:9), and 2D drawing
+ * happens in the 320x240 framebuffer. It is NOT the identity even at 4:3 - it is a
+ * small correction there and a large one on a wide aspect, which is why the report
+ * is about 16:9. */
+int jer_screen_remap_x(int x)
+{
+#ifndef PSX
+	JerWideRect vp;
+
+	PsyX_GetPSXWidescreenMappedViewport(&vp);
+
+	/* The viewport is stable through a level, so log it only when it CHANGES: that
+	 * one line answers "what is the mapping" for a run, and shows when a display-mode
+	 * switch (frontend, map screen, a fade) moves it. */
+	{
+		static int lastX = 0x7fffffff, lastW = 0x7fffffff;
+
+		if (vp.x != lastX || vp.w != lastW)
+		{
+			lastX = vp.x;
+			lastW = vp.w;
+			jer_log("[jer_screen] widescreen viewport x=%d right=%d (span %d)\n",
+				vp.x, vp.w, vp.w - vp.x);
+		}
+	}
+
+	/* NOTE the encoding: this rect's w is the RIGHT EDGE (PsyX_render does
+	 * rect->w += rect->x), not a width, so test the span rather than w > 320.
+	 * The body is dr2math's RemapVal(x, vp.x, vp.w, 0, 320), written out because
+	 * that header is not reachable from here. */
+	if (vp.w > vp.x)
+		x = (int)(320.0f * ((float)x - (float)vp.x) / ((float)vp.w - (float)vp.x));
+#endif
+
+	return x;
+}
 
 void jer_screen_reset(void)
 {

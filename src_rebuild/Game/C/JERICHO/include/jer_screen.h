@@ -72,6 +72,19 @@ void jer_screen_dismiss(void);
  * auto-dismisses when it reports finished. Safe to call with nothing visible. */
 void jer_screen_tick(void);
 
+/* Host-side (engine): a 3D-projected screen x, converted to the 320x240
+ * FRAMEBUFFER x that PrintString and the other 2D primitives draw into.
+ *
+ * Under widescreen the 3D projection lands in the MAPPED viewport, not the
+ * framebuffer: the PSX 3D view is a centred 240-unit square-pixel band inside the
+ * 320-wide buffer (viewport [40, 280] at 4:3, [70, 250] at 16:9), so an x taken from
+ * a 3D projection and handed straight to a 2D primitive sits off the thing it
+ * belongs to - a small correction at 4:3, and a large one the wider the aspect (this
+ * is the "nametags are wrong at 16:9" report). It is exactly the remap sky.c applies
+ * to the GTE-projected sun before blitting it, so it is the engine's own convention
+ * and safe to apply unconditionally. */
+int  jer_screen_remap_x(int x);
+
 /* Host-side (engine): non-zero while a screen should be drawn. */
 int  jer_screen_active(void);
 
