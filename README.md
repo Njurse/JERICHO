@@ -324,6 +324,12 @@ Vegas. [README](JERICHO/MODS/carhacks/README.md)
 
 ![A foreign car driven on a level it does not belong to](readme_images/addon_carhacks_demonstration_updated_2.png)
 
+![Several cities' cars in one level](readme_images/addon_carhacks_demonstration.png)
+
+![A cross-city import placed on the ground, next to the level's own traffic](readme_images/addon_carhacks_demonstration_scene_1_2.png)
+
+![Driver 1 cars imported into a multiplayer match](readme_images/addon_carhacks_d1cars_multiplayer_demonstration.png)
+
 ### Sandbox (`sandbox`) — the whole API surface *(compiled-in)*
 
 A demo package: no-damage, a time-scale world-step override, a map-teleport
@@ -366,6 +372,8 @@ prompts on one confirm. [README](JERICHO/MODS/levelhacks/README.md)
 
 LAN multiplayer: host/join with UDP discovery, real frontend menus and
 synchronized play. [README](JERICHO/MODS/mp/README.md)
+
+![A multiplayer match in progress](readme_images/addon_mp_wow.png)
 
 ### Test Mode (`testmode`) — the asset-test harness *(compiled-in)*
 
