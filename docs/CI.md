@@ -27,6 +27,16 @@ Each build is packaged with everything needed to run:
   tracked deliberately, because a build that arrives without it has no frontend background
   at all (`jer_texture: cannot read .../CORE/jericho_background.tga`, then the menu draws
   on `texture 0`), and a CI checkout is exactly where an untracked file goes missing.
+- the **Driver 1 bake tooling** — `BAKE_D1_CARS.bat` and `BAKE_D1_CARS.sh` at the
+  package root, plus `JERICHO/MODS/d1cars/tools`. JERICHO ships the *way* to bake
+  the five Driver 1 car-data cities (MIAMI, FRISCO, LA, NEWYORK, NEWCASTLE), never
+  the baked data: those files are derived from Driver 1's copyrighted content, so
+  the player bakes them from their own copy (put it in `DRIVER/`, run the script
+  once — it writes `DRIVER/D1CARS/`, and carhacks offers the cities from then on).
+  The tools live in the `d1cars` submodule, whose folder is excluded from the build
+  mirror (`JER_MIRROR_EXCLUDE`), so the packaging step fetches them from that repo
+  by the URL in `.gitmodules`, for packaging only. A build with no baked data is
+  simply one whose five Driver 1 cities are not offered.
 
 Resulting archives:
 

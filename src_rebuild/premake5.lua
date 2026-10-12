@@ -825,8 +825,9 @@ project "JERICHO"
 
     -- Modules that are NOT mirrored into the build at all.
     --
-    -- d1cars and gaildrv2 are PRIVATE submodules: not in the CI submodule allow-list, and
-    -- not built into releases (modlist.ini keeps them 0). The recursive xcopy above mirrors
+    -- d1cars and gaildrv2 are submodules that CI does not fetch (the allow-list in
+    -- .github/workflows/build.yml fetches only PsyCross), and this keeps their folder out
+    -- of the build output even when present locally. The recursive xcopy above mirrors
     -- every folder on disk, so without this the WHOLE submodule lands in
     -- bin/<cfg>/JERICHO/MODS/ - and d1cars carries Driver 1 car content (shapes as
     -- .obj/.json, textures, LEV/LCF level data) that must not ride along in a build output

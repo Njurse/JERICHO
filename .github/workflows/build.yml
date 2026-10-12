@@ -215,6 +215,15 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
+          # Driver 1 bake tooling. JERICHO ships the WAY to bake, never the baked
+          # data -- that is derived from Driver 1's copyrighted files. The tools
+          # live in the d1cars submodule, whose folder the dev mirror EXCLUDES
+          # (JER_MIRROR_EXCLUDE) and the build never fetches, so they are pulled
+          # from that repo for packaging only. The URL comes from .gitmodules, so
+          # it cannot drift from the submodule entry.
+          $d1url = (git config -f .gitmodules --get submodule.JERICHO/MODS/d1cars.url)
+          git clone --quiet --depth 1 "$d1url" "$env:RUNNER_TEMP/d1cars"
+
           foreach ($cfg in @('Release', 'Release_dev')) {
             $bin = "src_rebuild/bin/$cfg"
             # runtime DLLs bundled next to the exe (x64)
@@ -236,6 +245,17 @@ jobs:
             Get-ChildItem "$bin/*" -File |
               Where-Object { $_.Extension -in @('.lib', '.exp', '.a', '.obj', '.idb') } |
               Remove-Item -Force -ErrorAction SilentlyContinue
+
+            # The bake tools, and both bake scripts at the package root beside the
+            # exe. A player drops their own Driver 1 data into DRIVER\ and runs
+            # BAKE_D1_CARS.bat (or .sh) once; carhacks offers the five cities from
+            # then on. See docs/CI.md.
+            $d1dst = "$bin/JERICHO/MODS/d1cars/tools"
+            New-Item -ItemType Directory -Force -Path $d1dst | Out-Null
+            Copy-Item "$env:RUNNER_TEMP/d1cars/tools/*.py" $d1dst -Force
+            Copy-Item "$env:RUNNER_TEMP/d1cars/tools/README.md" "$bin/JERICHO/MODS/d1cars/" -Force
+            Copy-Item "JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.bat" "$bin/" -Force
+            Copy-Item "JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.sh" "$bin/" -Force
 
             Compress-Archive -Path "$bin/*" -DestinationPath "JERICHO_${cfg}_win64.zip" -Force
           }
@@ -354,6 +374,12 @@ jobs:
 
       - name: Package
         run: |
+          # Driver 1 bake tooling: see the Windows job. Fetched from the d1cars
+          # submodule's repo (the dev mirror excludes the folder; the build never
+          # fetches it), for packaging only.
+          d1url=$(git config -f .gitmodules --get submodule.JERICHO/MODS/d1cars.url)
+          git clone --quiet --depth 1 "$d1url" "$RUNNER_TEMP/d1cars"
+
           for cfg in Release Release_dev; do
             d="src_rebuild/bin/$cfg"
             # game data (the post-build step already mirrored JERICHO/ into $d)
@@ -362,6 +388,14 @@ jobs:
             # gen_exports and the static libraries (libJERICHO_runtime.a, libPsyCross.a)
             # as well, none of which is run or linked by a player. The Windows package
             # keeps JERICHO.pdb/.map for crash triage; there is no equivalent here.
+            # The bake tools, and both bake scripts at the package root (as on
+            # Windows). chmod so BAKE_D1_CARS.sh arrives runnable.
+            mkdir -p "$d/JERICHO/MODS/d1cars/tools"
+            cp "$RUNNER_TEMP/d1cars/tools/"*.py "$d/JERICHO/MODS/d1cars/tools/"
+            cp "$RUNNER_TEMP/d1cars/tools/README.md" "$d/JERICHO/MODS/d1cars/"
+            cp JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.bat "$d/"
+            cp JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.sh "$d/"
+            chmod +x "$d/BAKE_D1_CARS.sh"
             ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" \
                 --exclude=FontTool --exclude=gen_exports --exclude='lib*.a' * )
           done
