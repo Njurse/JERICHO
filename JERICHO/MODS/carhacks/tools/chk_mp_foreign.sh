@@ -35,8 +35,9 @@
 #   each side's "cross-city: car data from <CITY>" lines to show which loaded.
 #
 #   --host-both additionally asks the HOST for a second foreign city
-#   (`import = 5:A:8, 6:B:9`). carhacks REFUSES that loudly (one guest city), and
-#   the engine would degrade it anyway; the run shows both.
+#   (`import = 5:A:8, 6:B:9`). That is allowed now - the one-guest-city gate is gone, so a
+#   set names as many source cities as it has slots (the palette bank holds three guest
+#   blocks). The run shows both sides loading.
 #
 # USAGE
 #   chk_mp_foreign.sh                          # chicago + havana(host) + rio(client)

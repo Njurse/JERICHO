@@ -2,8 +2,8 @@
 
 How carhacks and the multiplayer module (`JERICHO/MODS/mp/`) fit together: the car
 **identity** schema, the **channel** carhacks multiplexes over the bridge mp
-exposes, the host-authority rule, and the mp-side deltas (1 and 2 are now landed;
-3, the in-session roster, is still open).
+exposes, the host-authority rule, and the mp-side deltas (**all three are landed**;
+see "mp-side deltas" below).
 
 ## The problem this exists to solve
 
@@ -17,11 +17,11 @@ Two facts, both measured:
    same number is a *different* vehicle in each (`VEHICLES.md`). So "Rio's model 9"
    is not expressible on mp's wire at all.
 
-On top of that, while the *geometry* side is now per-city (`gCarImports[4]`,
+On top of that, while the *geometry* side is per-city (`gCarImports[CITY_COUNT]`,
 one block per slot), the palette side is one bank of **three guest-city blocks**
-(`civ_clut` rows 8..31, one 8-row block each) — and the import SET still admits
-one foreign source city by default, so a session still has to *agree* which city
-that is. Today it is whatever each machine's own `carhacks.ini` happens to say.
+(`civ_clut` rows 8..31, one 8-row block each). A session can mix as many source
+cities as it can hold: the old "one guest city" gate is gone, so a set names whatever
+it needs and the host's set is the one that counts (`mp_agree_imports`).
 
 ## The identity schema — `carid.h`
 
@@ -103,7 +103,7 @@ menu.
 
 **The set holds as many cities as it names.** `chkNetFoldPeerCars()` folds every
 peer's car into the level's import set, so a peer is drawn as their own vehicle.
-The geometry side holds several cities at once (`gCarImports[4]`, one source city
+The geometry side holds several cities at once (`gCarImports[CITY_COUNT]`, one source city
 per slot) and the palette bank holds three (`civ_clut` rows 8..31) - and the set
 itself now names as many source cities as it has slots: the one-guest-city gate is
 gone. A car from the level's own city is skipped - it needs no import, and

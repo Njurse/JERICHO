@@ -119,9 +119,10 @@ static int jerDiagCarDraw(void);
 // pedestrian palette at 0 and next are cars
 // model_id, texture_number, palette
 //
-// JERICHO: CIV_CLUT_ROWS is 16, not 8. Rows 0..7 are the host level's own car palettes;
-// rows 8..15 are a cross-city import's, which is what lets a foreign car be painted
-// from its own city's palettes without overwriting the host's. The row is chosen by
+// JERICHO: CIV_CLUT_ROWS is 32, not 8. Rows 0..7 are the host level's own car palettes;
+// rows 8..31 are the guest-city blocks (one 8-row block per imported city, three of
+// them), which is what lets a foreign car be painted from its own city's palettes
+// without overwriting the host's. The row is chosen by
 // carid in buildNewCarFromModel, and read back as
 // pciv_clut[(carid-1)*192 + tex*6 + palette] (pciv_clut is &civ_clut[1]).
 u_short civ_clut[CIV_CLUT_ROWS][32][6];

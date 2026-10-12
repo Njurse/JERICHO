@@ -19,11 +19,12 @@ python3 tools/levmodels.py DRIVER2/LEVELS/CHICAGO.LEV DRIVER2/LEVELS/HAVANA.LEV 
   slot: `-car slot5` = model **0**, `-car slot6` = model 8, `-car slot7` = model 9.
 - **`-car <n>`** takes a model number directly. This is the one to use: it is not
   offset by the specials.
-- **Resident slots 0..7** are what the level actually holds: 0..4 = the mission
-  header's civilian models, 5..6 = spare (modules), 7 = `SPECIAL_CAR_SLOT` (the cop /
-  special body). `import = <slot>:<city>:<model>` writes a foreign model into a
-  resident slot; `ap.model` on a live car is a **resident slot**, not a model number
-  (so `JERICHO-RUN` prints `carslot=` and `model=` separately).
+- **Resident slots 0..11** are what the level actually holds (`MAX_CAR_RESIDENT_MODELS`
+  = 12, `dr2limits.h:35`): 0..4 = the mission header's civilian models, **5..10 = the
+  spare block modules place into**, and **11 = `SPECIAL_CAR_SLOT`** (the cop / special
+  body). `import = <slot>:<city>:<model>` writes a foreign model into a resident slot;
+  `ap.model` on a live car is a **resident slot**, not a model number (so `JERICHO-RUN`
+  prints `carslot=` and `model=` separately).
 
 ## This install: which models exist where
 

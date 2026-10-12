@@ -252,7 +252,7 @@ world.
   counted (`sJerPinNoPage`), because refusing costs a wrong-looking car while taking one
   costs the world.
 * **Why the refusal is unreachable in practice, and kept that way:** at most
-  `CAR_PIN_MAX` (16) pages can ever be pinned, and the pool holds 30 — so the pool can hold
+  `CAR_PIN_MAX` (30) pages can ever be pinned, and the pool holds 30 — so the pool can hold
   every pin, and the pool is tried first. A compile-time guard now enforces the ordering:
 
   ```c

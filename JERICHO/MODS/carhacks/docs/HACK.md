@@ -32,9 +32,10 @@ region to put a foreign vehicle's pages in.
 
 4. **Which texture sets** — `carTpages[srcCity][0..5]` for a civilian body,
    `specTpages[srcCity]` for a special one. This is the engine's own answer; it never
-   walks polygons, and neither do we. (A polygon walk was written and abandoned: car
-   model polys are *compressed*, and a `PolySizes` walk stalls from polygon 5 on a
-   zero entry, reporting nonsense forever.)
+   walks polygons, and neither do we. (A polygon walk was written and abandoned: it
+   had to be bounded, and an earlier note wrongly blamed a *compressed* stream and a
+   `PolySizes` "stall from polygon 5" — car polys are not compressed and a zero-size
+   step only appears once the walk runs past `num_polys`. See FORMATS.md.)
 
 5. **Where the pages go** — draw time, not load time. `CarImportPin` (called from
    `draw.c` just before the car draw loop) places each wanted page into the **lower
@@ -127,8 +128,8 @@ import = 5:3:9      # RIO model 9 into spare resident slot 5
   `combatd2 = 1` line in `modlist.ini` silently enables nothing.
 - **Batch**: `> file echo text` may not write, and an `echo` containing parentheses
   inside a parenthesised `if` block breaks the parse of everything after it.
-- **The session log is `JERICHO.log` in this build, not `JERICHO.log`** (`<appName>.log`;
-  the app name is JERICHO). A stale `JERICHO.log` can sit beside it. The log flushes at
+- **The session log is `JERICHO.log` in this build, not `REDRIVER2.log`** (`<appName>.log`;
+  the app name is JERICHO, so an older build's `REDRIVER2.log` can sit beside it). The log flushes at
   close, so a kill on a late-flushed run throws the session away — runs use `-frames` and
   exit by themselves, and the text to read is the run's captured stdout.
 
@@ -394,7 +395,8 @@ textures bleed into the wheel textures" is: the wheels are the host's shared mod
 their page is what the dummy rectangle was holding.
 
 It now logs and counts the drops (the exit census reports `N pins DROPPED`), and
-`CAR_PIN_MAX` is 16 - inside the 18-index window `CarImportDstSetCore` allocates from.
-A 3-city mashup asks for 13 pages (8 pinned + 5 dropped), so the old 8 was short by five.
+`CAR_PIN_MAX` is 30 - the number of pages the lower half pool holds (`JER_POOL_PAGES`), so
+an import can never need more pins than the pool has room for (a compile-time guard,
+below, fails the build if the two drift). A 3-city mashup asks for 13 pages.
 Measured after: pins dropped 5 -> 0, and the three slots that were wearing the host's page
 went from 30/250, 84/244, 30/253 to 234/250, 228/244, 235/253.

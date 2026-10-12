@@ -91,9 +91,10 @@ other's colours"). See `PALETTES.md` §7.
 - the per-model row assignment for that collapse (rows from `CarModelSet`/`CarModelSetCount`
   at bake time — the real fix, since 8 rows cannot hold 13 sets), plus arbitration so two
   cars never share a row;
-- **hide D1 cities (MIAMI/FRISCO) from the car-select / import list when their Driver 1
-  assets are absent** — the list is built from the generated `d1citymodels.h` before assets
-  are known (`carimport.c:587-626`), so it offers them unconditionally today;
+- **hide D1 cities (MIAMI/FRISCO/LA/NEWYORK/NEWCASTLE) from the car-select / import list
+  when their Driver 1 assets are absent** — the list is built from the generated
+  `d1citymodels.h` before assets are known (`carimport.c:587-626`), so it offers them
+  unconditionally today;
 - the D1 exporter's own freshness is a **separate workstream** (out of scope here).
 
 ## The in-game picker's city row (fixed)
@@ -198,8 +199,8 @@ Commits: `f3d65d36`, `29118821`, `103bf4d5`, `917fe509`, `248c6909` (all on `mai
    narrower than they looked.** Measured 2026-10: every SP mashup (0..3 guest cities, up to
    11 cars) pins into the pool with **0 world pages evicted** and **0 pins dropped** — the old
    "evicting the world if needed" and `0 in the pool` lines were *load-time snapshots*, not
-   the final placement (the pin asks the pool first at draw time). `CAR_PIN_MAX` is now 24
-   (3 guest cities × up to 8 sets), and the guest-set `row -1` CLUT refusal is fixed (re-points
+   the final placement (the pin asks the pool first at draw time). `CAR_PIN_MAX` is now 30
+   (the lower-half pool's own size; a 3-guest-city mashup asks for 13 pages), and the guest-set `row -1` CLUT refusal is fixed (re-points
    to the block base row). Still open on this item: the set-0 polys (~16-114 per car sample
    the host's shared page) and a possible collision with **region-streamed** textures
    (`HostUsesTPage` checks `permlist`, not the spool's dynamic building pages) — the one path

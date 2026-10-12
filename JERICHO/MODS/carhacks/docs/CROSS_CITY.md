@@ -100,8 +100,8 @@ The import mallocs and holds the **whole foreign DATA1 region**
 (the block is a sub-range; `FORMATS.md` §1 sizes DATA1, §3 sizes the block) —
 plus the foreign `.LCF` (4096 bytes on disk). All of it is held for the **whole
 level**: it is freed only when the next level initialises the import again
-(`FreeCarImport` at `models.c:424`), or on a failed load. Up to **four** cities' data can be resident at once
-(`gCarImports[4]`), one block per imported slot.
+(`FreeCarImport` at `models.c:424`), or on a failed load. Up to `CITY_COUNT` (**9**) cities' data can be resident at once
+(`gCarImports[CITY_COUNT]`, `models.c:260`), one block per imported slot.
 
 A stock level pays nothing: `gCarImportCity` stays `-1` and every `GetCarImport*`
 getter answers NULL (`models.c:455-537`).
@@ -156,7 +156,7 @@ level font) to do it — the import's rows were force-started at `y=480`, which 
 inside the glyphs (`VRAM.md` §3, §6.1). A second city adds a whole second palette
 table (~15 KB ≈ 40+ rows) with **no room at all**. That is why **one guest city's
 PALETTES per level** is honest — the geometry side holds several cities
-(`gCarImports[4]`), but the palette side did not.
+(`gCarImports[CITY_COUNT]`), but the palette side did not.
 
 **This is no longer the constraint: the import's CLUTs come from the lower half pool.** Since
 the bottom-half work landed, an import's palette rows are taken from the lower half pool's own
@@ -296,10 +296,11 @@ order — each step of it earned by a measurement rather than a guess:
 1. **Which sets to load** come from the engine's own tables, never from inspecting
    polygons: `carTpages[srcCity][0..5]` for a civilian body, `specTpages[srcCity]`
    for a special one — exactly what `LoadPermanentTPages` does for the host's own
-   cars. (A polygon walk was tried first and abandoned: car model polys are a
-   *compressed* format, and the walk stalled on a `PolySizes` entry of 0 from
-   polygon 5 onward. `Find_TexID` being marked UNUSED in `texture.c` looks like the
-   fossil of someone reaching the same conclusion.)
+   cars. (A polygon walk was tried first and abandoned: it has to be **bounded**, and
+   an earlier note blamed a *compressed* stream and a `PolySizes` entry of 0 "from
+   polygon 5 onward" — car polies are not compressed; a zero-size step only appears
+   once the walk runs past `num_polys`. `Find_TexID` being marked UNUSED in
+   `texture.c` looks like the fossil of someone reaching the same conclusion.)
 2. **Where the pages go**: the level's free slot indices, positioned by
    `tpagepos[slot]` — the slot-indexed mapping the spool itself uses
    (`spool.c:1722`). *Not* by the tail loop's `tpage` walk, which starts after the
@@ -407,10 +408,10 @@ recolourable body (`0..4`), else `0` -- so a recolourable car gets a distinct co
 and a special body is not mis-tinted. `CONTROL_TYPE_CUTSCENE` is deliberate: nothing
 drives the car, so it stays where it is put and can be looked at.
 
-**Two honest limits.** The colours are NOT right yet: three imports overflow the
-CLUT column (`JERICHO-VRAM` reports 0 safe free) and the band-placement unit is what
-fixes that -- so this lever proves **geometry and placement**, not pixels. And it is
-a measurement lever, not a feature.
+**Two honest limits.** The colours are NOT right yet: the import's CLUTs do come from the
+lower half pool now, but a set with no palette row of its own still collapses onto its
+city's block base row (PALETTES.md §7), so this lever proves **geometry and placement**,
+not pixels. And it is a measurement lever, not a feature.
 
 `tools/chk_all_cities.sh` runs it for every host level, setting `spawn_imports = 1`
 and asserting `lumps 3/3, geometry 3/3, spawned 3/3`.

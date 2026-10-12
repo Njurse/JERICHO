@@ -130,7 +130,8 @@ what `LoadTPageAndCluts` parses, and why the first int of an entry is a sane
 sanity check (RIO's car sets report 28-31 rows). Measured, RIO's six car sets sit
 at +151552, +210944, +235520, +262144, +286720 and +311296 with 23-27 KB each.
 
-**Per-city set assignments** live in `char carTpages[4][8]` (`texture.c:70`):
+**Per-city set assignments** live in `char carTpages[CITY_COUNT][8]` (`texture.c:72`,
+`CITY_COUNT` = 9 cities):
 eight texture-set numbers per city, filled in partly statically and partly at
 runtime (`spool.c:1719`, `texture.c:555`). `GetCarPalIndex` (`cars.c:1876`) is
 nothing more than "which of this city's eight entries equals this `texture_set`".
@@ -367,6 +368,6 @@ print(total, sets)
   pixels while the car keeps sampling its coordinates, which reads as wrong UVs.
 - The session log is `<appName>.log` — **`JERICHO.log` here** (the app name is
   JERICHO, `PsyX_main.cpp:380`), flushed at close with `---- LOG CLOSED ----` as its last
-  line. A stale `JERICHO.log` from an older build name may sit beside it: do not grep
+  line. A stale `REDRIVER2.log` from an older build name may sit beside it: do not grep
   it, and a `taskkill` on a late-flushed run throws the session away. Capturing the run's
   stdout is the safe read.

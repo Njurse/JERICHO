@@ -74,10 +74,11 @@ snapshot and debugging it is debugging the wrong file.
 | where | what |
 |---|---|
 | `carhacks.c/.h` | registration, the six event handlers, the config keys |
-| `carimport.c` `carselect.c` `net.c` `spawn.c` | the import, the car-select
-menu, the session wiring, the spawn lever |
-| `docs/` | `CROSS_CITY.md`, `HACK.md`, `VEHICLES.md`, `PALETTES.md`, `VRAM.md`
-— moved here from Caine's Crossfire, which keeps only `FORMATS.md` |
+| `carimport.c` `carselect.c` `mplive.c` `net.c` `spawn.c` | the import, the car-select
+menu, the live in-game car queries, the session wiring, the spawn lever |
+| `docs/` | `CROSS_CITY.md`, `HACK.md`, `VEHICLES.md`, `PALETTES.md`, `VRAM.md`,
+`FORMATS.md` — carhacks' own copies (`FORMATS.md` came across from Caine's Crossfire and
+lives here now) |
 | `tools/` | the `chk_*.sh` harnesses **and** the car-data tools
 (`vrammap.py`, `levgeom.py`, `levmodels.py`, `levpages.py`, `levpalette.py`,
 `make_vram_issues_png.py`) |
@@ -92,13 +93,14 @@ its own key, so they switch on and off separately:
 | Cross-city vehicles | `cross_city_vehicles` | **1** | import vehicles that belong to *another* city's data |
 | Car select menu | `car_select_menu` | **1** | replace the stock Take-a-Ride car screen with the menu that carries the city-roster row |
 
-and six source files, one concern each:
+and seven source files, one concern each:
 
 | file | what lives there |
 |---|---|
 | `carhacks.c` / `.h` | the module entry, the hook table, the availability hack, and the shared logging rule |
 | `carimport.c` / `.h` | the **cross-city import**: the config, the slot bookkeeping, the per-slot source city |
 | `carselect.c` | the in-game car-select menu ([`CARSELECT.md`](CARSELECT.md)) |
+| `mplive.c` / `mplive.h` | the live car queries mp's pause picker asks (`MP_CARQ_CITIES` / `_SLOTS` / `_LOAD` / `_CHOSEN`) — which cities, which slots, make one available, and what we ended up driving ([`MP_ADAPTER.md`](MP_ADAPTER.md)) |
 | `spawn.c` | the `spawn_imports` measurement lever |
 | `net.c` / `net.h` | the multiplayer channel and the import-set agreement ([`MP_ADAPTER.md`](MP_ADAPTER.md)) |
 | `carid.h` | a car's identity — **(city, model)** — and its wire form |
@@ -128,8 +130,10 @@ rather than merely un-hiding the stock tail.
 
 ## Problem 2 — a level only knows its own city
 
-Handled by `cross_city_vehicles` (default **on**; it changes engine state, so set it
-to 0 to run carhacks with a level's own city only).
+Handled by `cross_city_vehicles` (default **on**; set it to 0 to keep the *config-driven*
+halves — `import=`, `traffic_*`, `spawn_imports` — off). It does **not** gate a player's
+explicit PICK: choosing a car imports it, in the frontend car screen and in the in-game
+picker alike (see [`CARSELECT.md`](CARSELECT.md)).
 
 This is the substantial half, and the rest of this section is what it does.
 
@@ -171,8 +175,8 @@ contract — everything after this is the engine following those two arrays.
 **3. The engine reads the foreign level file.** For every city named in
 `modelSource[]`, the engine opens that city's level file, finds the `CAR` lump and
 loads its model list, its *page* lists (the `perm` and `spec` texture sets) and the
-page base offset. One import block per city — `gCarImports[4]` — so a level can hold
-several cities at once.
+page base offset. One import block per city — `gCarImports[CITY_COUNT]` (`models.c:260`,
+nine cities) — so a level can hold several cities at once.
 
 **4. Each slot's model is built from its own city.** The normal builder walks the
 model's geometry; with an import, it asks for the model through
@@ -209,8 +213,10 @@ shares the same `MAX_CAR_RESIDENT_MODELS` array:
 | slots | who |
 |---|---|
 | `0..4` | the level's own city's civilians — `mission.c:350-354` fills these from the mission header, and `4` is the engine's own traffic filler (`dr2limits.h:23-28`) |
-| `5..6` | **free** — the spare pair. This is where imports go, and where **mp** puts an extra player's car |
-| `7` | the level's special body (`SPECIAL_CAR_SLOT`) |
+| `5..10` | **free** — the spare block. This is where imports go, and where **mp** puts an extra player's car |
+| `11` | the level's special body (`SPECIAL_CAR_SLOT`, = `MAX_CAR_RESIDENT_MODELS - 1`) |
+
+The array is `MAX_CAR_RESIDENT_MODELS` = **12** (`dr2limits.h:35`; it was 8, then 6).
 
 Two of the civilian slots are load-bearing and must not be imported over casually:
 **slot 3 is the cop car** (`externalCopModel = residentCarModels[3]`, `civ_ai.c:3390`)
@@ -218,8 +224,8 @@ and **slot 4 is the traffic filler**. A set *may* name 0..4 — the parser accep
 slot below the count — but that recolours the level's own traffic, because traffic
 rolls slots 0/1/2/4 (`civ_ai.c:47`). The module's own choosers start at **5**.
 
-With `mp` loaded, slots **5 and 6** belong to the session (one per additional
-player). This is why carhacks' `CAR_DATA_SOURCE` handler runs at priority 10: the
+With `mp` loaded, the spare block (**5..10**) is shared with the session (one slot per
+additional player). This is why carhacks' `CAR_DATA_SOURCE` handler runs at priority 10: the
 engine hands over `models[]` *after* mp has written its own, so carhacks can see
 which slots are taken and skip them (`chkImportSlotFree` /
 `chkImportSetEngineModels`). Two modules writing the same slot is a correctness bug,
@@ -234,7 +240,7 @@ Chicago and another in Rio ([`VEHICLES.md`](docs/VEHICLES.md)).
 So carhacks names a car as a pair, `carid.h`:
 
 ```
-(city, model)      city 0..3 = CHICAGO/HAVANA/VEGAS/RIO
+(city, model)      city 0..8 = CHICAGO/HAVANA/VEGAS/RIO + Driver 1's MIAMI/FRISCO/LA/NEWYORK/NEWCASTLE
                    model 0..12
 CHK_CITY_NATIVE    "the level's own city" — no import implied
 CHK_MODEL_NONE     "no car"
@@ -294,14 +300,15 @@ change applies on the next level; nothing is cached.
 | key | default | meaning |
 |---|---|---|
 | `import` | — | `slot:city:model, ...` — the import set. `import = 4:0:8, 5:1:9` puts `city 0 CHICAGO model 8` into slot 4 and `city 1 HAVANA model 9` into slot 5 |
-| `source_city` | `-1` | make the whole level read its car data from this city instead (`0..3`); `-1` = the level's own |
+| `source_city` | `-1` | make the whole level read its car data from this city instead (`0..8`); `-1` = the level's own |
 | `car_list` | — | `8,9,10` — replace the last slots of the level's frontend car list with these model numbers |
 | `traffic_model`, `traffic_slot` | — | put a foreign model into a civilian slot so ambient traffic uses it |
 | `mp_agree_imports` | `1` | in a session, let the host's import set win for everyone |
 | `spawn_imports` | `0` | **measurement lever**: place one car per imported city ahead of the player, once per level |
 | `spawn_spacing` | `1500` | the gap between those placed cars, in world units — the default suits a long body (bus, fire truck, semi); echoed on the spawn summary line so a run records the value |
 
-Cities are `0..3` = CHICAGO, HAVANA, VEGAS, RIO. Models are `0..12`.
+Cities are `0..8` = CHICAGO, HAVANA, VEGAS, RIO, then Driver 1's five car-data cities
+(MIAMI, FRISCO, LA, NEWYORK, NEWCASTLE — the `CITY_COUNT` registry). Models are `0..12`.
 
 ---
 
@@ -319,6 +326,7 @@ so carhacks never swallows an event another module needs.
 | `JER_EVENT_LEVEL_LAUNCH` | 0 | deliberately a **no-op**, and kept so nobody "fixes" it back: it fires *before* the level's car data exists, so publishing the import set here sent an empty one. The real moment is when the set finishes building |
 | `JER_EVENT_NET_RECV` | 0 | the mp channel |
 | `JER_EVENT_FRAME` | 0 | three of them — the menu's input, the net keepalive, and the spawn lever. Each is cheap when idle |
+| `MP_CARQ_CITIES` / `_SLOTS` / `_LOAD` / `_CHOSEN` | 0 | **custom ids fired by mp**, not by the engine: its pause picker asks which cities / which slots, asks for one car to be made available, then reports what it switched to. See [`MP_ADAPTER.md`](MP_ADAPTER.md) |
 
 ---
 
@@ -347,7 +355,7 @@ Stated plainly, because each one has a doc and a plan behind it.
   set→row assignment for an import; the harnesses assert geometry and placement, not
   paint.
 - **Three foreign cities per level** is the palette bank's ceiling (one 8-row block
-  each); the engine's *geometry* side holds up to four.
+  each); the engine's *geometry* side has one import block per city (`gCarImports[CITY_COUNT]`, nine).
 - **A foreign car has to be driven, or placed.** Filling a resident model slot does
   not create a vehicle, and the engine spawns only slots `0/1/2/4` as traffic — so
   slots 5/6 can never appear on their own. That is exactly what `spawn_imports`
@@ -372,6 +380,7 @@ This module's own tools (in `tools/`):
 | `chk_single_city_playtest.sh [city] [frames]` | one host level, one car from every **other** city, **placed on the ground** to look at. `CHK_SHOW=1` streams the game log live. The watchable one |
 | `chk_all_cities.sh [frames]` | the same, but for **every** host level in turn |
 | `chk_mashup.sh [host] [mix] [frames]` | the biggest mix the engine can hold: cars from **2-4 cities** shuffled into the resident slots that are placed *and* driven, verified `built N/N, spawned N/N` |
+| `chk_mp_foreign.sh [--host-city C] [--client-city C] [frames]` | a **real mp pair** with a different foreign city on each side, reporting what each machine loaded and what each player ended up driving |
 
 **No frames argument means MANUAL**: `-frames` is left off entirely, so the game runs
 until you close it and the tool moves on then — one close per level in the suite, so you
@@ -381,7 +390,6 @@ it resolved.
 
 They judge geometry, placement and mix, not paint — an imported car's colour
 variants are the open item ([Limits](#limits--what-it-does-not-do-today)).
-| `chk_mp_foreign.sh` | a **real mp pair** with a different foreign city on each side, reporting what each machine loaded and what each player ended up driving |
 
 Both city tools assert the same three things per level, and **fail** if any is
 missing — loaded, built *and* placed:
@@ -448,7 +456,7 @@ Everything is in the run's log; grep for these:
 | `JERICHO-CLUT:` | the level's own pages need N..M CLUT rows, and what the slot band reserves |
 | `JERICHO-VRAM:` | the texture/CLUT budget, and whether the CLUT strip overflowed |
 | `JERICHO-HEAP:` | level heap and car-poly usage |
-| `[error] …` | a player-facing refusal — the thing the player was told |
+| `[console] …` | a player-facing line — a refused pick or a failed hot-load goes to the unified status console (`jer_console_log`), not a toast |
 
 ---
 

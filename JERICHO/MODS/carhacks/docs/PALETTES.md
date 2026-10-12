@@ -121,9 +121,12 @@ renumbers its own art onto the same eight slots, so a `texture_set` number is on
 meaningful together with the city:
 
 ```c
-char carTpages[4][8];    // texture.c:71   [city][palette slot] -> texture_set
-char specTpages[4][12];  // texture.c:36   [city] -> 6 special bodies x 2 pages
+char carTpages[CITY_COUNT][8];    // texture.c:72   [city][palette slot] -> texture_set
+char specTpages[CITY_COUNT][12];  // texture.c:37   [city] -> 6 special bodies x 2 pages
 ```
+
+(`CITY_COUNT` is 9 — CHICAGO/HAVANA/VEGAS/RIO and Driver 1's five car-data cities —
+since the registry grew; these were `[4][…]` literals.)
 
 `CarPalIndexInCity` (`cars.c:1954`) is nothing more than "which of `carTpages[city][0..7]`
 equals this set", plus the import bank:
@@ -215,8 +218,9 @@ CLUTs: `SendTPage` uses `slot_clutpos[slot]` (`spool.c:491-492`) and
 **Why this matters:** the strip is a single 256-row budget shared by the host
 palettes, the import's palettes, the level's page CLUTs and the world's streamed
 CLUTs. Measured end-of-load `clutpos`: **428 stock, 485 with a Havana->Rio import**
-(the import's palettes and page CLUTs consumed 57 of the 256 rows, leaving 27). `CAR_CLUT_IMPORT_LIMIT = 476`
-(`cars.h:51`) exists only to stop an import walking the cursor into the band the
+(the import's palettes and page CLUTs consumed 57 of the 256 rows, leaving 27). `CAR_CLUT_IMPORT_LIMIT` is the last row above the level font image
+(**465** = `CD2_CLUT_SAFE_LAST`, `cars.h:110-112`; it used to be the literal 476, which
+was *inside* the font) and exists only to stop an import walking the cursor into the band the
 per-frame pin reserves — past it, `ProcessPalletLumpForCity` reuses the city's
 first palette for the remaining entries and logs how many (`cars.c:1532-1536`,
 `:1564-1566`). That is a band-aid: the import and the world are competing for one
@@ -252,9 +256,11 @@ That single line is the load-time/draw-time seam. It is safe while `row` is one 
 the import's own rows (8..15) — and it is a **leak** when `row` comes back 0 for a
 special-body import (§3), because row 0 is the host's.
 
-The import's own CLUT rows come from a second, separate cursor (`sPinClutCursor`,
-`texture.c:1441-1461`) that starts at `max(clutpos.y + 4, 480)` and is bounded
-below 512, so the imported *pages*' CLUTs never land in the level's band.
+The import's own CLUT rows come from the **lower half pool's** own cursor
+(`JerLowerPoolClutCursor`, `texture.c`), which starts at `JER_VRAM_HALF_Y` (**512**) and
+walks the lower half of the CLUT column, so the imported *pages*' CLUTs never land in the
+level's (base-half) band. The old `sPinClutCursor` and its `max(clutpos.y + 4, 480)` start
+belonged to the base-half band that predates the pool.
 
 ---
 
@@ -302,7 +308,7 @@ missing.
 
 > **Which log file?** The session log is `<appName>.log`, and this build's app name is
 > JERICHO (`PsyX_Initialise("JERICHO", …)`, `PsyX_main.cpp:380`), so the live file is
-> `JERICHO.log`. A stale `JERICHO.log` from an older build name may still be in the
+> `JERICHO.log`. A stale `REDRIVER2.log` from an older build name may still be in the
 > folder — do not grep it. Capturing the run's stdout works just as well (and is what
 > `chk_suite.sh` does) because `printInfo` writes both.
 
@@ -329,8 +335,8 @@ missing.
 - `JerichoMakeClutRow` (`texture.c:153`, team/ped dye) allocates rows from the same
   runtime `clutpos` cursor (`texture.c:342-345`), guarded only by `clutpos.y > 511`.
 - The cross-city invariant hashes `civ_clut` (all rows now) and says nothing about VRAM.
-- The session log is `JERICHO.log` in this build, **not** `JERICHO.log`; a stale
-  `JERICHO.log` can sit in the same folder.
+- The session log is `JERICHO.log` in this build, **not `REDRIVER2.log`**; a stale
+  `REDRIVER2.log` can sit in the same folder.
 
 ## History — the fix log (read as the trail, not the state)
 

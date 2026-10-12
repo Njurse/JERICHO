@@ -20,13 +20,14 @@
 #     cities selected by `mix`, so the level really holds 2..4 cities at once.
 #
 # Deliberately NOT used (see MASH_SLOTS below): slot 3, which the mission header
-# reads, and slot 7, which is SPECIAL_CAR_SLOT and which civ_ai.c forces for the
+# reads, and slot 11, which is SPECIAL_CAR_SLOT and which civ_ai.c forces for the
 # limo. Those two are the ones most likely to fault.
 #
 # COLOUR: the imported cars get their OWN city's palettes. Each guest city owns a
-# civ_clut block (rows 8..15 / 16..23 / 24..31, one per city), and a 4-city run
-# measured the base CLUT column at 180 rows used / 30 free (2026-10-03), so
-# geometry, placement AND colour are all worth judging here now.
+# civ_clut block (rows 8..15 / 16..23 / 24..31, one per city, three of them) and the
+# import's own CLUT rows now come from the lower half pool (VRAM.md), so geometry,
+# placement AND colour are all worth judging here. The per-set row assignment is still
+# open (PALETTES.md 7).
 #
 #   ./chk_mashup.sh                     host chicago, all four cities, 60 frames
 #   ./chk_mashup.sh rio 2               host RIO, two cities only
