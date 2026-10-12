@@ -215,6 +215,21 @@ jobs:
             Copy-Item "$env:OPENAL_DIR/bin/Win64/soft_oal.dll" "$bin/OpenAL32.dll" -Force
             # game data (the post-build step already mirrored JERICHO/ into $bin)
             Copy-Item "data/*" "$bin/" -Recurse -Force
+
+            # Ship the GAME, not the build tree. The archive used to carry FontTool.exe,
+            # gen_exports.exe, the MSVC import/static libraries (*.lib, *.exp) and the
+            # PsyCross / JERICHO_runtime symbol files beside the game - none of which a
+            # player runs, and none of which is linked at run time. JERICHO.pdb and
+            # JERICHO.map STAY: tools/dmp_fault.py and tools/map_lookup.py need them to
+            # attribute a crash from a dump.
+            Remove-Item "$bin/FontTool.exe", "$bin/FontTool.pdb",
+                        "$bin/gen_exports.exe", "$bin/gen_exports.pdb",
+                        "$bin/JERICHO_runtime.pdb", "$bin/PsyCross.pdb" `
+                        -Force -ErrorAction SilentlyContinue
+            Get-ChildItem "$bin/*" -File |
+              Where-Object { $_.Extension -in @('.lib', '.exp', '.a', '.obj', '.idb') } |
+              Remove-Item -Force -ErrorAction SilentlyContinue
+
             Compress-Archive -Path "$bin/*" -DestinationPath "JERICHO_${cfg}_win64.zip" -Force
           }
 
@@ -315,7 +330,12 @@ jobs:
             d="src_rebuild/bin/$cfg"
             # game data (the post-build step already mirrored JERICHO/ into $d)
             cp -R data/. "$d"/
-            ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" * )
+            # Ship the GAME, not the build tree: the archive used to carry FontTool,
+            # gen_exports and the static libraries (libJERICHO_runtime.a, libPsyCross.a)
+            # as well, none of which is run or linked by a player. The Windows package
+            # keeps JERICHO.pdb/.map for crash triage; there is no equivalent here.
+            ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" \
+                --exclude=FontTool --exclude=gen_exports --exclude='lib*.a' * )
           done
 
       - name: Upload Release (linux-x64) artifact
