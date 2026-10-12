@@ -633,7 +633,19 @@ int chkCityAssetsPresent(int city)
 	if (city - city0 >= (int)(sizeof(d1LevFiles) / sizeof(d1LevFiles[0])))
 		return 0;
 
-	f = fopen(d1LevFiles[city - city0], "rb");
+	/* JERICHO: the table above is Windows-style, so normalise before the open -- the
+	 * engine does exactly this (FS_FixPathSlashes, declared through
+	 * driver2.h -> platform.h -> utils/fs.h). Without it the probe only ever matched
+	 * on Windows: on Linux '\\' is not a separator, so every Driver 1 city read as
+	 * ABSENT and the five cities were never offered -- the "I baked the D1 cars and
+	 * they do not show up in game" report. */
+	{
+		char path[64];
+
+		sprintf(path, "%s", d1LevFiles[city - city0]);
+		FS_FixPathSlashes(path);
+		f = fopen(path, "rb");
+	}
 
 	if (f == NULL)
 		return 0;
@@ -641,7 +653,6 @@ int chkCityAssetsPresent(int city)
 	fclose(f);
 	return 1;
 }
-
 void chkFillCarTableFromImport(int city)
 {
 	extern char carNumLookup[CITY_COUNT][10];

@@ -472,6 +472,17 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 	// the full single-player level first, then the arena variant
 	sprintf(level, "%s%s", JerGetCityDataRoot(city), LevelFiles[city]);
 
+	// JERICHO: normalise before opening, exactly as Loadfile/FileExists do. Every
+	// path in this file is built from Windows-style tables -- gDataFolder is
+	// "DRIVER2\\" and LevelFiles[] are "LEVELS\\<CITY>.LEV" -- and the rest of the
+	// engine runs such a path through FS_FixPathSlashes (which makes it unix-style
+	// on Linux). These cross-city opens did not, so the path only ever matched on
+	// Windows: on Linux '\\' is not a separator, EVERY import failed with "no usable
+	// car data in LEVELS\\<CITY>.LEV", and each imported slot silently kept the
+	// level's own model -- which is the cross-play report (a car that is a
+	// distorted version of the host's / of slot 1).
+	FS_FixPathSlashes(level);
+
 	// the arena variant of the file; Driver 1's car-data cities have none.
 	//
 	// Probe with a direct fopen, NOT FileExists(): `level` is already rooted
@@ -488,10 +499,14 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 		if (probe)
 			fclose(probe);
 		else if (city < CITY_D2_COUNT)
+		{
 			sprintf(level, "%sM%s", JerGetCityDataRoot(city), LevelFiles[city]);
+			FS_FixPathSlashes(level);
+		}
 	}
 
 	sprintf(cosmetic, "%s%s", JerGetCityDataRoot(city), CosmeticFiles[city]);
+	FS_FixPathSlashes(cosmetic);
 
 	return JerLoadCarImportFromFile(level, cosmetic, imp);
 }
@@ -711,12 +726,14 @@ int ReadCarImportFileForCity(int city, int offset, void* dst, int len)
 		return 0;
 
 	sprintf(filename, "%s%s", JerGetCityDataRoot(city), LevelFiles[city]);
+	FS_FixPathSlashes(filename);	// unix-style on Linux; see the note in LoadCarImport
 	fp = fopen(filename, "rb");
 
 	// the arena variant of the file; Driver 1's car-data cities have none
 	if (fp == NULL && city < CITY_D2_COUNT)
 	{
 		sprintf(filename, "%sM%s", JerGetCityDataRoot(city), LevelFiles[city]);
+		FS_FixPathSlashes(filename);
 		fp = fopen(filename, "rb");
 	}
 
