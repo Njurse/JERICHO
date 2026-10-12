@@ -569,6 +569,24 @@ project "JERICHO"
     language "c++"
     targetdir "bin/%{cfg.buildcfg}"
 
+    -- The Linux RELEASE binary must not be named exactly "JERICHO".
+    --
+    -- The runtime tree the game reads is <root>/JERICHO (main.c calls
+    -- jer_init("JERICHO")), and the post-build mirror lays it down inside the
+    -- target directory. A file and a directory cannot share a name, so with the
+    -- binary at bin/<cfg>/JERICHO the mirror's `mkdir -p .../JERICHO/MODS` failed
+    -- with "Not a directory" -- and the Linux package therefore shipped with no
+    -- MODS, CONFIG or CORE at all, for as long as the mirror has existed. Windows
+    -- never saw it because the executable is JERICHO.exe, and the dev configs
+    -- (JERICHO_dev / JERICHO_dbg) do not collide either, so their names - which the
+    -- rigs and launchers use - are deliberately left alone.
+    --
+    -- Lowercase is enough: on a case-sensitive filesystem `jericho` and the
+    -- `JERICHO/` tree sit side by side in one directory.
+    filter { "system:linux", "configurations:Release" }
+        targetname "jericho"
+    filter {}
+
     includedirs { 
         "Game", 
         "Game/C/JERICHO/include",

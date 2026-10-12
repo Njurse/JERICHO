@@ -311,6 +311,16 @@ jobs:
               # fails, annotate its tail: job LOGS need admin rights to download, but
               # annotations are public, so a red build stays legible from the commit.
               echo "::warning title=$cfg::parallel build failed - retrying serially"
+              # ...but a retry only helps if it RE-RUNS what failed. Premake puts the
+              # post-build mirror in the LINK rule, so when the link itself succeeded
+              # and only the mirror failed, make sees the target as up to date and
+              # "retries" by doing nothing - exiting 0 over a real failure. That is
+              # exactly how the Linux package shipped with no JERICHO/ tree (no MODS,
+              # no CONFIG, no CORE) while this job stayed green: the mirror's
+              # `mkdir -p ../bin/Release/JERICHO/MODS` was failing against the exe of
+              # the same name. Drop the target so the rule, and the mirror with it,
+              # runs again. Both spellings, so this survives the targetname change.
+              rm -f ../bin/Release/jericho ../bin/Release/JERICHO
               make config=$cfg -j1 2>&1 | grep -v '^==== ' | tail -10 | while IFS= read -r line; do
                 [ -n "$line" ] && echo "::error title=$cfg::${line}"
               done

@@ -13,7 +13,13 @@ replacement for the upstream [AppVeyor](#relationship-to-appveyor) pipeline.
 
 Each build is packaged with everything needed to run:
 
-- the game executable (`JERICHO.exe`, or the Linux ELF),
+- the game executable (`JERICHO.exe` on Windows; `jericho` on Linux — lowercase, because
+  the `JERICHO/` tree below has to share a directory with it and a file and a directory
+  cannot share a name on a case-sensitive filesystem. Naming the Linux binary exactly
+  `JERICHO` made the post-build mirror's `mkdir -p .../JERICHO/MODS` fail, which is how a
+  Linux release came to be published with no `MODS`, `CONFIG` or `CORE` at all. The dev
+  builds — `JERICHO_dev`, `JERICHO_dbg` — never collided and keep their names, which the
+  rigs and launchers use),
 - the runtime libraries (`SDL2.dll`, `OpenAL32.dll` on Windows; system SDL2/OpenAL on Linux),
 - the `data/` tree, and
 - the `JERICHO/` tree (**`MODS`**, **`CONFIG`**) that the runtime reads, and **`CORE`** --
