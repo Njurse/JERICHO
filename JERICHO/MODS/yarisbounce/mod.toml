@@ -4,4 +4,7 @@ version = "1.0.0"
 author = "Nattdy"
 description = "The squishy-Yaris meme effect: squash & stretch the car body's vertex copy as it drives (RSIN phase + quartic ease), drawn without touching physics or collision."
 dependencies = []
-default-enabled = true
+# OFF out of the box (2026-10-12): a dev/experiment module that no release ships.
+# Nothing should be switched on for somebody who has not asked for it; turn it on
+# in Options -> JERICHO.
+default-enabled = false

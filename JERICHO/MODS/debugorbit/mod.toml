@@ -9,6 +9,9 @@ version = "0.1.0"
 author = "Jaret Ludvik"
 description = "Takes the camera over at level start and orbits the player at a fixed radius and elevation (a short static hold, then a slow 360), for inspecting a vehicle or Tanner from every side."
 dependencies = []
-default-enabled = true
+# OFF out of the box (2026-10-12): a dev/experiment module that no release ships.
+# Nothing should be switched on for somebody who has not asked for it; turn it on
+# in Options -> JERICHO.
+default-enabled = false
 # API-only addon: built into a DLL and loaded at runtime (no game rebuild).
 runtime = "dll"

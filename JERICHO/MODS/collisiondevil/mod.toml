@@ -4,4 +4,7 @@ version = "0.1.0"
 author = "JERICHO"
 description = "Arcade handling overhaul: derived speed boost, brake-tap powerslides, render-only visual drama, and a clean 2-page pause menu."
 dependencies = []
-default-enabled = true
+# OFF out of the box (2026-10-12): a dev/experiment module that no release ships.
+# Nothing should be switched on for somebody who has not asked for it; turn it on
+# in Options -> JERICHO.
+default-enabled = false
