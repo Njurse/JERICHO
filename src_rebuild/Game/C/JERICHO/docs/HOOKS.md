@@ -277,15 +277,22 @@ difference is who is speaking.
 game routes into `JERICHO.log` (and the console in `_DEBUG` builds).
 Prefix module lines with `[myid]` so the boot inventory stays readable.
 
-## Boot arguments (debug builds)
+## Boot arguments (every PC build)
 
-The game accepts frontend-bypass launch arguments (PC only, `DEBUG_OPTIONS`
-builds) for fast testing:
+The game accepts frontend-bypass launch arguments (PC only) for fast testing.
+They are accepted by EVERY configuration, Release included — they used to be
+compiled out of a Release build, which made the binary we ship impossible to drive
+with a rig (and every scripted launch of it died at startup):
 
 ```
-JERICHO_dev.exe -nointro -nofmv -level <city> -car <slot#> -gamemode <mode>
-                 -time <time> -weather <weather>
+JERICHO.exe -nointro -nofmv -level <city> -car <slot#> -gamemode <mode>
+            -time <time> -weather <weather>
 ```
+
+Only `-exportxasubtitles` is still `DEBUG_OPTIONS`-only (it does its work at parse
+time rather than only steering the run). The stock `Debug Options` pause submenu is
+the opposite case: a build defining `JERICHO_RELEASE_MODS` (i.e. a release) omits the
+menu, while `DEBUG_OPTIONS` still enables the rest of the debug surface.
 
 - `-level`: `chicago` / `havana` / `lasvegas` / `rio`
 - `-car`: a slot number (0-9) or a car name

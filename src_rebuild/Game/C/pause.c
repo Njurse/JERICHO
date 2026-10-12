@@ -135,7 +135,12 @@ enum MenuItemType
 	PAUSE_TYPE_ENDITEMS		= (1 << 7),
 };
 
-#if defined(_DEBUG) || defined(DEBUG_OPTIONS)
+/* JERICHO: the stock Debug Options submenu -- its handlers, its item list and its
+ * header (whose title is the string "Debug Options"). A release build
+ * (JERICHO_RELEASE_MODS) omits the whole submenu, which is why the two pause-menu
+ * entries that reach it are guarded the same way; DEBUG_OPTIONS still enables the
+ * rest of the debug surface elsewhere in the engine. */
+#if (defined(_DEBUG) || defined(DEBUG_OPTIONS)) && !defined(JERICHO_RELEASE_MODS)
 
 void SetRightWayUp(int direction)
 {
@@ -341,7 +346,7 @@ MENU_ITEM MainPauseItems[] =
 	{ G_LTXT_ID(GTXT_MusicVolume), PAUSE_TYPE_MUSICVOLUME | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&MusicVolume, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_FilmDirector), 1u, 2u, NULL, MENU_QUIT_DIRECTOR, NULL},
 	{ G_LTXT_ID(GTXT_QuickReplay),1u,2u,NULL,MENU_QUIT_QUICKREPLAY,NULL},
-#if defined(_DEBUG) || defined(DEBUG_OPTIONS)
+#if (defined(_DEBUG) || defined(DEBUG_OPTIONS)) && !defined(JERICHO_RELEASE_MODS)
 	{ "Debug Options", PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &DebugOptionsHeader },
 #endif
 	{ G_LTXT_ID(GTXT_Exit), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoQuitHeader },
@@ -366,7 +371,7 @@ MENU_ITEM CutscenePauseItems[] =
 	{ G_LTXT_ID(GTXT_Restart), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoRestartHeader },
 	{ G_LTXT_ID(GTXT_SfxVolume), PAUSE_TYPE_SFXVOLUME | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&SfxVolume, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_MusicVolume), PAUSE_TYPE_MUSICVOLUME | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&MusicVolume, MENU_QUIT_NONE, NULL },
-#if defined(_DEBUG) || defined(DEBUG_OPTIONS)
+#if (defined(_DEBUG) || defined(DEBUG_OPTIONS)) && !defined(JERICHO_RELEASE_MODS)
 	{ "Debug Options", PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &DebugOptionsHeader },
 #endif
 	{ G_LTXT_ID(GTXT_Exit), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoQuitHeader },

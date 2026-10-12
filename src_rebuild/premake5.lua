@@ -748,12 +748,28 @@ project "JERICHO"
          }
 		 symbols "On"
 
-    filter "configurations:Release"
+	filter "configurations:Release"
         optimize "Speed"
         -- A release pre-includes only JERICHO_RELEASE_MODS: this define trims the
         -- generated registry (Game/C/JERICHO/gen/jer_registry.c) to the same set
         -- the link filter above uses. A dev build (no define) keeps them all.
-        defines { "JERICHO_RELEASE_MODS" }
+        --
+        -- JERICHO: this config defines DEBUG_OPTIONS too. It used to not, so a
+        -- Release build silently lacked the engine's debug surface -- the Debug
+        -- Options pause submenu and its handlers, the free-camera exemption, the
+        -- -startpos override, the collision-debug draw, the ghost road plane and
+        -- the frontend version stamp -- and it also lacked the boot options, until
+        -- those were un-gated in main.c. Two builds that differ in what they can do
+        -- behave differently, which is what "it works on dev but not on release"
+        -- turned out to be. The module SET is still trimmed by the define above;
+        -- the debug surface is not.
+        --
+        -- The one thing a release DOES keep out is the stock Debug Options pause
+        -- submenu: pause.c guards that menu entry on
+        -- (DEBUG_OPTIONS && !JERICHO_RELEASE_MODS), so players do not get a
+        -- right-way-up / free-camera / collision-debug menu, while everything the
+        -- flag enables elsewhere (and every boot option) is present.
+        defines { "JERICHO_RELEASE_MODS", "DEBUG_OPTIONS" }
 		
 	filter "configurations:Release_dev"
 		targetsuffix "_dev"

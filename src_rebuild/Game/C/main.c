@@ -2215,13 +2215,13 @@ void SsSetSerialVol(short s_num, short voll, short volr)
 //-------------------------------------------
 
 /* -onfoot: defined unconditionally (the d2pl module references it from
- * every PC build config, including plain Release and emscripten; only
- * the argument parsing is DEBUG_OPTIONS-gated below). */
+ * every PC build config, including plain Release and emscripten; the boot
+ * arguments are accepted in every config too). */
 int gBootOnFoot = 0;
 
 /* -mp: defined unconditionally (glaunch.c reads it when it computes the
- * take-a-ride mission number); only the argument parsing is
- * DEBUG_OPTIONS-gated below. gBootMpArena selects which of the two
+ * take-a-ride mission number); the boot arguments are accepted in every
+ * config. gBootMpArena selects which of the two
  * multiplayer maps per city (0 = the take-a-ride default arena, 1 = the
  * second arena; becomes gSubGameNumber). */
 int gBootMpLevel = 0;
@@ -2238,7 +2238,6 @@ int gBootSuppressLevel = 0;
 #if !defined(PSX) && !defined(__EMSCRIPTEN__)
 #include <SDL_messagebox.h>
 
-#ifdef DEBUG_OPTIONS
 /* --- frontend-bypass boot arguments (testing convenience) ---
  * -level <name|0-3> is the anchor; -car/-gamemode/-weather/-time need it.
  * Game mode defaults to Take a Ride when not overridden. */
@@ -2318,7 +2317,6 @@ static int BootParseTime(const char* s)
 
 	return -1;
 }
-#endif // DEBUG_OPTIONS
 
 void PrintCommandLineArguments()
 {
@@ -2328,6 +2326,8 @@ void PrintCommandLineArguments()
 		"  -cdimage <filename.iso> : starts game with specific ISO/BIN image file\n"
 #ifdef DEBUG_OPTIONS
 		"  -exportxasubtitles: Exports strings from XA WAV files to SBN\n"
+#endif
+
 		"  -startpos <x> <z>: Set player start position\n"
 		"  -players <count> : Set player count (1 or 2)\n"
 		"  -playercar <number>, -player2car <number> : set player wanted car\n"
@@ -2350,7 +2350,6 @@ void PrintCommandLineArguments()
 		"  -time <dawn|day|dusk|night> : time-of-day override (with -level)\n"
 		"  -mp [0|1] : load the small multiplayer map instead of the full city\n"
 		"        (with -level; 0 = first arena, 1 = second arena per city)\n"
-#endif // DEBUG_OPTIONS
 		"  -replay <filename.d2rp> : starts replay from file\n"
 #ifdef CUTSCENE_RECORDER
 		"  -recordcutscene <filename> : starts cutscene recording session. Specify INI filename with it\n"
@@ -2696,6 +2695,16 @@ int redriver2_main(int argc, char** argv)
 			extern void StoreXASubtitles();
 			StoreXASubtitles();
 		}
+#endif
+		/* JERICHO: every boot argument from here down is accepted by EVERY
+		 * configuration, Release included. They used to sit inside the DEBUG_OPTIONS
+		 * block above - which Release does not define - so a Release build treated
+		 * -level, -car, -mp, -weather, -time, -frames and the rest as UNRECOGNISED, and
+		 * an unrecognised argument makes the engine log and exit before the frontend.
+		 * That left the binary we SHIP impossible to drive with the rigs: every
+		 * scripted launch of it died at startup and simply looked like "it does not
+		 * work on release". -exportxasubtitles stays dev-only (it does its work at
+		 * parse time rather than only steering the run). */
 		else if (!strcmp(argv[i], "-frames"))
 		{
 			// JERICHO: run N gameplay frames, then exit cleanly. See gExitAfterFrames.
@@ -2971,7 +2980,6 @@ int redriver2_main(int argc, char** argv)
 				}
 			}
 		}
-#endif // _DEBUG_OPTIONS
 		else if (!strcmp(argv[i], "-replay"))
 		{
 			if (argc - i < 2)
@@ -3114,8 +3122,7 @@ int redriver2_main(int argc, char** argv)
 	}
 
 #if !defined(PSX) && !defined(__EMSCRIPTEN__)
-#ifdef DEBUG_OPTIONS
-	/* Frontend-bypass boot (testing convenience): -level [options...].
+	/* Frontend-bypass boot: -level [options...].
 	 * Game mode defaults to Take A Ride; -car/-gamemode/-weather/-time all
 	 * need -level. A -car "slotN" is resolved against the frontend's car
 	 * table for the selected city.
@@ -3230,7 +3237,6 @@ int redriver2_main(int argc, char** argv)
 		printError("-car / -gamemode / -weather / -time need -level (e.g. -level havana)\n");
 		jer_error("-car / -gamemode / -weather / -time need -level");
 	}
-#endif // DEBUG_OPTIONS
 #endif // !PSX && !EMSCRIPTEN
 
 	DoStateLoop();
