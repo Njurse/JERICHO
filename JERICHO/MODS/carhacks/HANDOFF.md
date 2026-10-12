@@ -56,6 +56,46 @@ making the fold apply it mid-match *regressed* (273 refusals vs 17) because the 
 re-model needs the deferred ordering first, so that half was reverted. Measured: `mp_carstress`
 3 seats / 60 s = 114 REUSED / 27 fresh, 21 refusals, coverage 41/41/41, no dumps.
 
+## The 2026-10-11 palette pass (make it provable first, then fix it)
+
+The palette work began by making the failure **provable**, because the acceptance suite was
+green while rows a built model reads had no palette at all.
+
+* **The gate can fail now.** `crosscheck.py` **INV2** (a guest set resolving to a HOST
+  `civ_clut` row) is a hard FAIL, and **INV4** is new: the rows a built model READS must
+  carry data, no `civ_clut` row may be written by two cities, no model may bake sets with no
+  palette row of their own, 0 pins DROPPED / palette rows REFUSED, and the lower half pool
+  must stay inside its limits. `vrammap.py`'s CLUT-column check reads the lower-half column
+  (`y >= 512`) instead of the dead 480..511 band, and `chk_mashup.sh` dumps VRAM and runs
+  crosscheck too.
+* **The rig stopped minimising.** Harnesses run the game in the normal shipped window
+  (windowed 1280x720); `run_minimized.ps1` is gone. A minimised or fullscreen window renders
+  at a degenerate size, so a VRAM dump or any capture stops being representative.
+  `chk_suite.sh` forces `config.ini` windowed and restores it — with `carhacks.ini` and the
+  modlist — on any exit.
+* **Carhacks' player-facing lines go to the unified console.** The module's eight
+  `jer_error` toasts are now `jer_console_log`, so a refused pick or a failed hot-load reads
+  in the same bottom-left feed mp uses; `jer_error` is no longer used in the module. (The
+  console's *status* lines are hidden while the console is toggled off.)
+
+**Measured, and it changes what "fixed" means.** An empty palette row is a defect only when
+the SET has data the row mapping failed to place. CHICAGO's `LUMP_PALLET` carries palettes
+for page sets **{1, 50, 62, 63, 65}** only, so its sets 58, 54 and 55 have no palette data
+anywhere — rows base+1/+6/+7 are correct on slot 0, and INV4 reports them as warnings. The
+real defect is a set with no row of its own collapsing onto the block base row (today:
+HAVANA 21 → row 8, VEGAS 68/67/4 → row 16, RIO 69/70/1 → row 24 — "those panels wear each
+other's colours"). See `PALETTES.md` §7.
+
+**Open:**
+
+- the per-model row assignment for that collapse (rows from `CarModelSet`/`CarModelSetCount`
+  at bake time — the real fix, since 8 rows cannot hold 13 sets), plus arbitration so two
+  cars never share a row;
+- **hide D1 cities (MIAMI/FRISCO) from the car-select / import list when their Driver 1
+  assets are absent** — the list is built from the generated `d1citymodels.h` before assets
+  are known (`carimport.c:587-626`), so it offers them unconditionally today;
+- the D1 exporter's own freshness is a **separate workstream** (out of scope here).
+
 ## The rig (use it before you touch the game)
 
 ```

@@ -31,10 +31,10 @@ the lower half pool/CC tools that stayed behind live in `../../cainescrossfire/t
 
 | tool | what it does |
 |---|---|
-| `chk_suite.sh [frames]` | **the carhacks acceptance test**: build, then run every row - a stock control, the imported PLAYER once per host city, a 3-city `city mix`, a traffic import - and print one verdict. Exit 0 = all clean. Restores your `carhacks.ini` and the modlist afterwards. `SKIPBUILD=1` assumes the exe is current |
-| `crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` | assert the cross-city invariants on ONE run: no imported page in the WORLD's slots, no world eviction, no imported set resolving to a HOST `civ_clut` row, and (with `--tga`) each pinned page still present with matching CLUTs. Exit 0 = held, 1 = violated, 2 = no import in this run |
+| `chk_suite.sh [frames]` | **the carhacks acceptance test**: build, then run every row - a stock control, the imported PLAYER once per host city, a 3-city `city mix`, a traffic import - and print one verdict. It runs `crosscheck.py` on every row. Exit 0 = all clean. Restores your `carhacks.ini`, the modlist and `config.ini` afterwards. `SKIPBUILD=1` assumes the exe is current |
+| `crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` | assert the cross-city invariants on ONE run: **INV1** no imported page in the WORLD's slots / no world eviction; **INV2** no imported set resolving to a HOST `civ_clut` row - a **hard FAIL**, not a note; **INV3** (with `--tga`) each pinned page still present with matching CLUTs; **INV4** the rows a built model READS carrying data (a row the lump never wrote is a *warn* - the set has no palette at all, so the page's own CLUT stands), no `civ_clut` row written by two cities, no model baking sets with no palette row of their own (they collapse onto the block base row), 0 pins DROPPED / palette rows REFUSED, and the lower half pool inside its limits. Exit 0 = held, 1 = violated, 2 = no import in this run |
 | `measure_cities.sh` | the import's budget, one line per run, from the engine's own log lines |
-| `chk_mashup.sh [host] [mix] [frames]` | a true 2–4-city mashup into several resident slots, and the log greps that say whether each import placed |
+| `chk_mashup.sh [host] [mix] [frames]` | a true 2–4-city mashup into several resident slots, and the log greps that say whether each import placed. Dumps VRAM (`JERICHO_DUMPVRAM=1`) and runs `crosscheck.py` on the run, folding a FAIL into its verdict |
 | `chk_all_cities.sh`, `chk_single_city_playtest.sh`, `chk_mp_foreign.sh` | the per-city, single-city playtest and mp-pair variants |
 
 ## Launchers
@@ -69,3 +69,7 @@ launchers call it: the repo's `modlist.ini` pins gameplay modules OFF.
   after a launcher run — use `dry`, or a direct launch with a captured PID.
 - **Never use `-car slot9`** (car model 11, the reserved truck slot): no city ships data
   for it in Chicago, and forcing it kills the game during load with no dump.
+- **Run the game in a NORMAL window** — the shipped windowed 1280x720, not minimised and
+  not fullscreen. A minimised or fullscreen window renders at a degenerate size, so a VRAM
+  dump or any capture stops being representative. `chk_suite.sh` forces `config.ini`
+  windowed for the run and restores the file on any exit.

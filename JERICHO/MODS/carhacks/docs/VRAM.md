@@ -23,7 +23,9 @@ mashup run**, with the rectangles taken from `tools/vrammap.py` rather than draw
 hand (the script is `tools/make_vram_issues_png.py`). The strip on the right is the CLUT
 column itself, x960..1023 y256..511, at 2x — and the overlapping bands in it are the
 problem: the level font image is rows **466..511** while the import's pin band is rows
-**480..511**, so the pin band sits *entirely inside the font*.
+**480..511**, so the pin band sat *entirely inside the font* — that is the old base-half
+band. An import's palette rows now come from the **lower half** pool's own column
+(x960..1023, y512..1023), which is what `tools/vrammap.py` checks against today.
 
 The figure above is a **checkpoint**: every deliberate step of the CLUT work drops a
 dated copy with its measured numbers into [`docs/vram/`](vram/README.md), so the

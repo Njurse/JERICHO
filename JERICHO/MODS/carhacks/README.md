@@ -330,7 +330,7 @@ One rule per call, so no future line has to guess (also stated at the top of
 | call | for | notes |
 |---|---|---|
 | `printInfo(...)` | every **diagnostic** line | the engine's own informational channel — the same one emitting the `cross-city:` / `JERICHO-*` lines carhacks' messages sit beside, and the one the harnesses read out of a run's captured stdout. Prefix `[carhacks]` / `[carhacks/net]`. |
-| `jer_error(...)` | a line the **player** must see | a dropped car, a refused pick, a menu that will not come up. Logs the message verbatim as `[error] …` **and** raises the on-screen notice — so it is the *single* call for a player-facing refusal. Do not pair it with a `printInfo`. |
+| `jer_console_log(...)` | a line the **player** must see | a dropped car, a refused pick, a menu that will not come up. It goes to the **unified status console** (`jer_console.h`, the bottom-left feed mp's connection lines also use), so a player-facing refusal reads in the same place — the module no longer uses `jer_error`. Note the console's *status* lines are hidden while the console is toggled off. Do not pair it with a `printInfo`. |
 | `ctx->jer_log(ctx, …)` | a **module entry / registration** function | only where `ctx` is the handle in hand (`carhacks_register`, `chkNetRegister`, `chkCarSelectRegister`); it lands in the same log as `printInfo`. |
 
 ---

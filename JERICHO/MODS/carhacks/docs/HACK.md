@@ -90,7 +90,7 @@ region to put a foreign vehicle's pages in.
 | where VRAM went, and what is left | the engine's own `JERICHO-VRAM: texture used=704/704 KiB (slots 608 + clut 32 + sky 64); clut strip 172/256 rows (84 free); … largest free in texture area=…` line, printed once per level load (see also `tools/vrammap.py`) |
 | what a city's car palettes *should* be | `tools/levpalette.py LEVELS/<CITY>.LEV --out out/` — a swatch PNG + a text table per city, from `LUMP_PALLET` (see `PALETTES.md` §7) |
 | the last run's car textures under each palette | `carhacks/tools/cardump.py vram_dump.tga --log JERICHO.log --out out/` — one PNG per imported set, a row per palette, plus the run's actual page CLUT as a control (`PALETTES.md` §7) |
-| whether a run's palettes/pages behaved | `carhacks/tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — the three invariants the engine's own summary misses (exit 0 held / 1 violated / 2 no import) |
+| whether a run's palettes/pages behaved | `carhacks/tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — the invariants the engine's own summary misses, INV1–INV4 (exit 0 held / 1 violated / 2 no import) |
 | VRAM live, while you play | `-vramview [frames]` opens a second window showing the live VRAM every frame (and re-dumps `vram_live.tga` every N frames, default 15, for `vramdump.py`) |
 | replay a run exactly | `-seed N` (the seed picks module randomness) |
 

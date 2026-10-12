@@ -289,7 +289,7 @@ A useful run proves three things instead:
 |---|---|
 | what a city's car palettes *should* look like | `tools/levpalette.py <CITY>.LEV` — reads `LUMP_PALLET` and writes a swatch sheet per city + the raw rows (`--out DIR`) |
 | what a car's texture looks like under **each** of its palettes, from the **last run** | `carhacks/tools/cardump.py` — takes the run's `vram_dump.tga` (`JERICHO_DUMPVRAM=1`) plus the run's log, and blits each imported car's texture page(s) through each palette to one PNG per palette |
-| whether a run's palettes/pages actually behaved | `carhacks/tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — asserts the three invariants in §6 (exit 0 held / 1 violated / 2 no import) |
+| whether a run's palettes/pages actually behaved | `carhacks/tools/crosscheck.py <run text> [--tga vram_dump.tga] [--lev SRC.LEV]` — asserts the invariants in §6, now INV1–INV4 (exit 0 held / 1 violated / 2 no import) |
 | what is actually in VRAM right now | `-vramview [frames]` (live window) / `carhacks/tools/vramdump.py vram_dump.tga --png out.png` |
 | which sets/rows a level uses | the engine's own lines: `cross-city: level page state …`, `cross-city: %s set %d -> index %d …`, `cross-city: pinned set %d index %d: slot=%d, rect=(%d,%d) …` |
 | which car bakes a fallback row, and for which set | `cross-city: palette - slot %d (%s model %d) sets [ … ] have no %s palette row -> baking base row %d` — always on, one line per built car, deduped per slot by the set list. This is the line the open palette item needed: it names the car and the exact set from the log alone (`cars.c`, `PalBakeSetsDiag`). |
@@ -540,3 +540,26 @@ long cars). Two candidate fixes, neither tried: fill `carTpages`' unused zero sl
 city's remaining sets (D1 cities use only 5 of the 8 today, so it recovers three), or assign
 rows per MODEL at build time from `CarModelSet`/`CarModelSetCount` instead of from the
 city-wide table. The second is the real fix, because 8 rows cannot hold 13 sets.
+
+### The lump's own coverage decides which case you have (measured 2026-10-11)
+
+An empty row is not one thing, and the difference decides whether anything should change:
+
+* **A row whose SET the lump never mentions is a FACT.** Measured on CHICAGO: its
+  `LUMP_PALLET` carries palettes only for page sets **{1, 50, 62, 63, 65}**
+  (`levpalette.py`, one line per set), while its page table is
+  `[1,58,65,62,50,63,54,55]`. So sets **58, 54, 55** have no palette data *anywhere*,
+  and rows base+1 / base+6 / base+7 stay on slot 0. The imported special (CHICAGO
+  model 8) is built from sets {54, 55, 1}, so two of its three pages legitimately
+  keep the page's own CLUT. That is the honest answer, not a mapping bug — a guest's
+  sets are simply not always laid out the way its page table's order implies.
+  `crosscheck.py` reports it as a **WARN**, never a FAIL.
+* **A set with NO row of its own is a DEFECT** — the "extra panels" case above:
+  several sets share the block base row, so those panels wear the first page's
+  palette. `crosscheck.py` **INV4** fails on exactly this
+  (`palette - slot N (CITY) sets [...] have no CITY palette row -> baking base row M`),
+  and on any `civ_clut` row two cities both wrote.
+
+**INV2 is a hard FAIL now too.** The pin refuses to re-point a HOST row and logs it;
+that refusal *is* the violation (the guard is what stops an import repainting a local
+car), so `crosscheck.py` no longer files it as a note.
