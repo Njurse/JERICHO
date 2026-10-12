@@ -90,7 +90,18 @@ int gCrumpleGlobalScale = 4096;
 CRUMPLE_PARAMS gCrumpleParams =
 {
 	// impact strength
-	100000,		// impactNormalize     howHard that counts as a full-scale dent
+	200000,		// impactNormalize     howHard that counts as a full-scale dent.
+					//                      NOT ~100k: the body path only became
+					//                      capable of denting at all when it was put
+					//                      in proper 4096 fixed point (see the note in
+					//                      crumpleDeformInternal), so at 100000 an
+					//                      ordinary crash already saturates and the
+					//                      car flattens in one hit. 200000 puts the
+					//                      maximum dent at the engine's own
+					//                      "civilian car destroyed" threshold
+					//                      (~204800, handling.c), so everything below
+					//                      that dents proportionally. Wheels are
+					//                      calibrated separately (wheelNormalize).
 	1024,		// impactMinHowHard    below this: no deformation
 	4290,		// maxDisplacement     max push per impact (world units) — dramatic
 					//                      crumple at the impact point (x1.65)

@@ -285,7 +285,7 @@ Wheel index order is consistent everywhere: `0 = front-right, 1 = rear-right,
 
 | Field | Default | Effect |
 |-------|---------|--------|
-| `impactNormalize` | 90000 | `howHard` that counts as a full-scale dent (car-car damage starts ≈ 56k, civ cars die > 204800) |
+| `impactNormalize` | 200000 | `howHard` that counts as a full-scale dent (car-car damage starts ≈ 56k, civ cars die > 204800). Set to the "destroyed" threshold, not ~100k: the body path only dents at all now that it is in proper 4096 fixed point, and at 100k an ordinary crash saturated and flattened the car in one hit |
 | `impactMinHowHard` | 2048 | below this, no deformation (safety; denting only runs when damage was applied anyway) |
 | `maxDisplacement` | 3000 | hard cap on per-impact vertex push (world units) — dramatic crumple at the impact point |
 | `compoundCap` | 3500 | max TOTAL per-vertex push across all recorded impacts (compounding guard) |
