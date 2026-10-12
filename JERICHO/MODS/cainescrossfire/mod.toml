@@ -4,4 +4,10 @@ version = "0.6.0"
 author = "JERICHO"
 description = "Twisted Metal: Black style car combat: point-mass handling, Tight Turn pivot, TMB buttons, momentum-absorbing walls, totaled-car wreck effects, engine presentation tuners, weapon prototype."
 dependencies = ["carhacks"]
-default-enabled = true
+# OFF out of the box (2026-10-12), for the same reason as crumple: it replaces how the
+# cars handle and adds a whole weapon layer, which is not what somebody downloading
+# JERICHO is asking for by default. It also depends on carhacks, which is now ON by
+# default - before that this module could never activate (state=INVALID), so leaving
+# it on would have switched a combat overhaul on as a side effect of enabling
+# carhacks. Options -> JERICHO turns it on.
+default-enabled = false

@@ -380,6 +380,7 @@ This module's own tools (in `tools/`):
 | `chk_single_city_playtest.sh [city] [frames]` | one host level, one car from every **other** city, **placed on the ground** to look at. `CHK_SHOW=1` streams the game log live. The watchable one |
 | `chk_all_cities.sh [frames]` | the same, but for **every** host level in turn |
 | `chk_mashup.sh [host] [mix] [frames]` | the biggest mix the engine can hold: cars from **2-4 cities** shuffled into the resident slots that are placed *and* driven, verified `built N/N, spawned N/N` |
+| `chk_d1_cities.sh [--exe Release]` | the **Driver 1 cities (4-8)**, which every other rig above misses because they all enumerate cities 0-3. Prints the engine's own verdicts per slot and fails on a car that did not load or a city whose palette bank was refused |
 | `chk_mp_foreign.sh [--host-city C] [--client-city C] [frames]` | a **real mp pair** with a different foreign city on each side, reporting what each machine loaded and what each player ended up driving |
 
 **No frames argument means MANUAL**: `-frames` is left off entirely, so the game runs

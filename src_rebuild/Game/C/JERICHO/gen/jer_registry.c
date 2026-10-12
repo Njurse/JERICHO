@@ -31,7 +31,7 @@ extern const int jer_registry_module_count = 4;
 extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "JerAI", jer_module_JerAI_entry, 0 },
 	{ "antfarm", jer_module_antfarm_entry, 0 },
-	{ "cainescrossfire", jer_module_cainescrossfire_entry, 1 },
+	{ "cainescrossfire", jer_module_cainescrossfire_entry, 0 },
 	{ "carhacks", jer_module_carhacks_entry, 1 },
 	{ "collisiondevil", jer_module_collisiondevil_entry, 1 },
 	{ "crumple", jer_module_crumple_entry, 0 },
