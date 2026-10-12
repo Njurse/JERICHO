@@ -687,6 +687,40 @@ static int JerAiFeelClear(CAR_DATA* car, int off, int dist, int radius)
 	return 1;
 }
 
+/* RELEASE HYSTERESIS - the obstacle response needs its own, and this is where.
+ *
+ * A probe that has read blocked keeps counting for a few frames after it first
+ * reads clear. Without it the bias has hard edges: pass a pole and the 300 (or
+ * 150) that feeler contributed vanishes the SAME frame the probe clears, which
+ * steps the aim by up to 26 deg and hands the heading loop a step input - the
+ * wheel saws and the car fishtails. Holding the edge turns the step into a ramp.
+ *
+ * The NOSE is held too, on purpose: its only consumer is a brake, and a brake
+ * that outlives the obstacle by 0.2 s is strictly safer than stamping back on
+ * the throttle the instant the grille clears. (The wall-evasion and the
+ * nose-on-scenery-at-a-standstill probes below are deliberately NOT held - they
+ * are the emergency paths, and there a fresh reading is the honest one.) */
+#define JERAI_FEEL_HOLD	6	/* frames a cleared feeler keeps counting */
+
+static int sFeelHold[5];	/* [0..3] the four side feelers, [4] the nose */
+
+static int JerAiFeelBlocked(int which, int clear)
+{
+	if (!clear)
+	{
+		sFeelHold[which] = JERAI_FEEL_HOLD;
+		return 1;
+	}
+
+	if (sFeelHold[which] > 0)
+	{
+		sFeelHold[which]--;
+		return 1;
+	}
+
+	return 0;
+}
+
 static int JerAiFeelers(CAR_DATA* car, int* frontBlocked)
 {
 	int bias = 0;
@@ -694,14 +728,37 @@ static int JerAiFeelers(CAR_DATA* car, int* frontBlocked)
 	*frontBlocked = 0;
 
 	/* left feelers push right (negative), right feelers push left (positive) */
-	if (!JerAiFeelClear(car, 512, 900, 200))	bias -= 300;
-	if (!JerAiFeelClear(car, 256, 1200, 200))	bias -= 150;
-	if (!JerAiFeelClear(car, -256, 1200, 200))	bias += 150;
-	if (!JerAiFeelClear(car, -512, 900, 200))	bias += 300;
+	if (JerAiFeelBlocked(0, JerAiFeelClear(car, 512, 900, 200)))	bias -= 300;
+	if (JerAiFeelBlocked(1, JerAiFeelClear(car, 256, 1200, 200)))	bias -= 150;
+	if (JerAiFeelBlocked(2, JerAiFeelClear(car, -256, 1200, 200)))	bias += 150;
+	if (JerAiFeelBlocked(3, JerAiFeelClear(car, -512, 900, 200)))	bias += 300;
 
-	if (!JerAiFeelClear(car, 0, 800, 240))		*frontBlocked = 1;
+	if (JerAiFeelBlocked(4, JerAiFeelClear(car, 0, 800, 240)))	*frontBlocked = 1;
 
 	return bias;
+}
+
+/* SLEW LIMIT on the aim nudge. The hold above ramps a single feeler, but several
+ * can still flip in one frame (a gap between two probes opens and closes) and the
+ * traffic bias then adds another 220 on top, so the TOTAL is moved toward its new
+ * value by at most JERAI_BIAS_SLEW a frame rather than assigned. A step into the
+ * aim is a step into the heading loop, and that is what the wheel saws on. */
+#define JERAI_BIAS_SLEW	120	/* aim units per frame */
+
+static int sBiasApplied;
+
+static int JerAiBiasSlew(int want)
+{
+	int d = want - sBiasApplied;
+
+	if (d > JERAI_BIAS_SLEW)
+		d = JERAI_BIAS_SLEW;
+	else if (d < -JERAI_BIAS_SLEW)
+		d = -JERAI_BIAS_SLEW;
+
+	sBiasApplied += d;
+
+	return sBiasApplied;
 }
 
 /* Stuck recovery. A car wedged against scenery (or spun so its aim is behind
@@ -748,8 +805,6 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 	gJerAi.targetSpeed = JerAiSpeedTarget();
 	gJerAi.gripPct = JerAiGripPct();
 
-	gJerAi.lastBias = bias;
-
 	/* Another car close ahead in our lane: steer around it AND be ready to brake.
 	 * The steer bias picks the side with room (or the side AWAY from the car), so
 	 * it goes around rather than into it; the brake in the pedal section below is
@@ -768,10 +823,13 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 		else
 			bias += (aheadRel > 0) ? -220 : 220;	/* else away from the car */
 
-		gJerAi.lastBias = bias;
 	}
 
-	/* nudge the aim around what the plan could not see (the feelers + traffic) */
+	/* nudge the aim around what the plan could not see (the feelers + traffic).
+	 * SLEWED, not assigned - see JerAiBiasSlew. */
+	bias = JerAiBiasSlew(bias);
+	gJerAi.lastBias = bias;
+
 	want = (want + bias) & 0xfff;
 
 	diff = ((want - car->hd.direction + 2048) & 0xfff) - 2048;
