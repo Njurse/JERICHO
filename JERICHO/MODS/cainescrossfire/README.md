@@ -60,9 +60,10 @@ JERICHO** frontend also rewrites):
 Caine's Crossfire = 1
 ```
 
-`JERICHO/MODS/cainescrossfire/mod.toml` ships `default-enabled = true`, so a build
-that does not list the module still runs it; an explicit `cainescrossfire = 0` turns
-it off. With the module off, the stock physics and collision path run
+`JERICHO/MODS/cainescrossfire/mod.toml` ships `default-enabled = false`
+(2026-10-12), so a build that does not list the module leaves it off; an explicit
+`cainescrossfire = 1` turns it on. With the module off, the stock physics and
+collision path run
 unchanged. Live settings persist to `JERICHO/CONFIG/cainescrossfire.ini` (loaded and
 saved by `cainescrossfire.c` `cd2LoadConfig` / `cd2SaveConfig`).
 

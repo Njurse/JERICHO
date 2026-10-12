@@ -569,3 +569,61 @@ An empty row is not one thing, and the difference decides whether anything shoul
 **INV2 is a hard FAIL now too.** The pin refuses to re-point a HOST row and logs it;
 that refusal *is* the violation (the guard is what stops an import repainting a local
 car), so `crosscheck.py` no longer files it as a note.
+
+### The bank holds THREE guest cities, and Driver 1 is five of them (measured 2026-10-12)
+
+The other half of the same problem, and the worse half: it takes out whole cities rather
+than panels. `CIV_CLUT_ROWS` is 32 (`cars.h:72`), `CIV_CLUT_IMPORT_ROW` is 8 and a guest
+city's block is `CIV_CLUT_BLOCK_ROWS` 8, so `CIV_CLUT_GUEST_CITIES` (`cars.c:142`) is
+**3**. Past that `CarImportBankRow` returns -1 and the import refuses the city out loud:
+
+```
+cross-city: FRISCO palettes: REFUSED - civ_clut affords 3 guest cities and the others
+            have them (rows 8..31 are the import bank)
+cross-city: palette - slot 5 (FRISCO model 8) sets [6, 7] have no FRISCO palette row
+            -> baking base row 0
+```
+
+**`base row 0` is the tell that the whole city lost its bank.** Every city that has a real
+block reports that block's own base — 8, 16, 24 for MIAMI, FRISCO, LA — while a **0** means
+there is no block at all, so every row the city's cars name resolves to the HOST's first
+row. That is not a panel wearing the wrong colour; it is a city's entire car list wearing
+the level's colours.
+
+Driver 1 has five car-data cities (MIAMI 4, FRISCO 5, LA 6, NEWYORK 7, NEWCASTLE 8 — the
+same five `DRIVER\D1CARS\<CITY>.LEV` files `carimport.c` loads), so the fifth import
+overruns the bank. Measured on this tree: importing all five at once refuses **FRISCO and
+LA**, and every page check in the same run still reads `N of N polys resolve to a pinned
+imported page` — the cars load perfectly and come out the wrong colour. This is what
+"some of the Driver 1 cars have broken palettes" is: the more cities are mixed, the more
+of them lose their colours at once.
+
+**The lump has the rows; the table is what cannot reach them.** For MIAMI:
+
+* its `LUMP_PALLET` carries `total_cluts=68` and 68 records covering texture ids
+  **0..12** (four palette slots each) — including ids 6 and 7, the sets the log says have
+  "no MIAMI palette row";
+* its `carTpages` is **`[1,2,3,0,0,0,4,5]`** — eight entries, three of them zero, so the
+  table names five sets and leaves three slots unused.
+
+So the extra-panel case is not missing data either. `CarPalIndexInCityFor` searches that
+eight-entry table, answers -1 for a set it does not list, and `CarPalIndexForBuild` sends
+it to the block base. The rows exist in the lump and the table cannot address them — and
+the same eight-row table is what fixes the bank at three cities, because the column is
+carved into fixed 8-row blocks whether a city fills them or not.
+
+**The direction (chosen 2026-10-12; not yet implemented).** Assign the row per BUILT
+MODEL — per imported car — out of a shared pool instead of per `(city, set)` out of the
+city's block. A car's polys then carry rows chosen from the rows that city actually needs
+(3–5 for a Driver 1 model, not 8), two cities no longer need exclusive blocks, and the
+panel sets get rows of their own — which fixes the capacity limit and the extra-panel case
+together. The pieces already exist to build on: `rowNeeded[]` (the upload already loads
+only the rows a model named), `CivClutTexMaxSlot` and `CarPalRowForTexId` (row choice
+already consults what the lump actually wrote rather than the table's order), and
+`CarImportBankRow`'s band arithmetic, which is what has to become a per-car allocation
+with a lifetime across the hot-load and slot-reuse paths.
+
+**The rig that keeps this honest** is `tools/chk_d1_cities.sh`: nothing else in the tree
+enumerates cities past 3, so a Driver 1 defect could not have been seen at all. It imports
+cities 4–8 and fails on a car that did not load *or* a refused block, which is how the
+five-city case above was found.

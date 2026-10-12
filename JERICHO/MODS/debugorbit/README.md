@@ -4,9 +4,9 @@ Takes the camera over the moment a level starts and turns the subject into a
 turntable, so a car — or Tanner on foot — can be inspected from every side:
 both flanks, the wheels, the roof, and how the shadow falls.
 
-**On by default** (`mod.toml`: `default-enabled = true`, and pinned to `1` in
-`JERICHO/CONFIG/modlist.ini`). Turn it off in `modlist.ini` or in the frontend's
-Options → JERICHO screen.
+**Off by default** (`mod.toml`: `default-enabled = false`, 2026-10-12: it is a
+dev/experiment module that no release ships). Turn it on in `modlist.ini` or in the
+frontend's Options → JERICHO screen.
 
 ## What it does
 

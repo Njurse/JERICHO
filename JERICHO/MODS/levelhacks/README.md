@@ -66,8 +66,9 @@ press.
 levelhacks = 1
 ```
 
-`JERICHO/MODS/levelhacks/mod.toml` still ships `default-enabled = true`, so a
-tree that does not list the module would run it (the modlist is pinned for
-exactly that reason). There are no per-module tunables — the behaviour is
+`JERICHO/MODS/levelhacks/mod.toml` ships `default-enabled = false` (2026-10-12: a
+dev module no release ships), so a tree that does not list the module leaves it off;
+there is an explicit `levelhacks = 1` above for turning it on. There are no per-module
+tunables — the behaviour is
 unconditional once the module is enabled, and only fires on a `GAME_TAKEADRIVE`
 level with one player.

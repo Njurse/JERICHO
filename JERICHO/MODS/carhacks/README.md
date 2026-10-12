@@ -24,8 +24,8 @@ turns it into a module.
 
 ## Quick start
 
-It is **off by default** (`mod.toml: default-enabled = false`). Turn it on in
-`JERICHO/CONFIG/modlist.ini`:
+It is **on by default** (`mod.toml: default-enabled = true`), since it is the module a
+release exists to provide. Turn it off in `JERICHO/CONFIG/modlist.ini`:
 
 ```
 carhacks = 1
