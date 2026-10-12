@@ -24,9 +24,13 @@
  * texture pages. What this adds is the OPENING: mp asking for a car the player
  * chose, instead of one that arrived on the wire.
  *
- * Nothing here runs without a live mp session (mp only asks in one), and nothing
- * runs when the cross-city hack is off: then this machine has only the level's own
- * city and mp's picker offers exactly that.
+ * Nothing here runs without a live mp session (mp only asks in one). The CITY list and
+ * the CAR list are owned by CHK_HACK_UNLOCK_EXTRA -- the hack that fills the frontend
+ * roster -- so the pause picker offers exactly what the frontend car screen offers, and a
+ * pick is the request that imports the car whether or not the config-driven cross-city
+ * hack (`cross_city_vehicles`) is on. With the roster hack itself off, no city list and no
+ * slot list is answered and mp falls back to the session's own city and its frontend table,
+ * which is the whole feature minus the extra vehicles -- exactly as it was.
  */
 #include "driver2.h"
 
@@ -59,13 +63,21 @@ static int ChkMpCities(void* userdata, void* args)
 
 	a->count = 0;
 
-	/* Cross-city off: no extra cities to offer. Leaving count at 0 is the answer
-	 * "nobody knows better", and mp then offers the session's own city alone --
-	 * exactly right, because without the import this machine only ever has it. */
-	if (!carhacks_enabled(CHK_HACK_CROSS_CITY))
+	/* The SAME hack that owns the frontend car list owns this answer (ChkMpSlots
+	 * below), so the picker's city row can never disagree with the cars it offers.
+	 *
+	 * This used to be gated on CHK_HACK_CROSS_CITY, and that gate is what made the
+	 * in-game picker show the session's own city and nothing else: with the
+	 * config-driven hack off mp got count 0 ("nobody knows better") and offered one
+	 * city, while the frontend menu -- which has no such gate, because a PICK is
+	 * what imports the car -- still let the player browse every city. The two
+	 * screens ask the same question and must answer the same way. Leaving count at
+	 * 0 is still the answer "nobody knows better", and mp then offers the session's
+	 * own city alone; that is now only reached when the roster hack itself is off. */
+	if (!carhacks_enabled(CHK_HACK_UNLOCK_EXTRA))
 		return JER_RESULT_CONTINUE;
 
-	for (city = 0; city < CITY_COUNT && a->count < a->max; city++)
+	for (city = 0; city < CHK_CAR_CITY_COUNT && a->count < a->max; city++)
 		a->cities[a->count++] = city;
 
 	return JER_RESULT_CONTINUE;
@@ -118,9 +130,13 @@ static int ChkMpLoad(void* userdata, void* args)
 
 	a->ok = 0;
 
-	if (!carhacks_enabled(CHK_HACK_CROSS_CITY))
-		return JER_RESULT_CONTINUE;
-
+	/* NO CONFIG GATE HERE. MP_CARQ_LOAD is only ever fired for a PLAYER'S EXPLICIT
+	 * PICK -- mp's picker (mp_session.c) and the sandbox both ask for the car the
+	 * player just chose -- and a pick is itself the request that imports it. That is
+	 * the same rule the frontend car screen already follows: carhacks.c's
+	 * ChkOnCarDataSource imports the menu's pick "even when the config-driven hack is
+	 * off". Gating here on CHK_HACK_CROSS_CITY is what made a mid-match pick from
+	 * another city silently refused while the frontend would have served it. */
 	if (a->city < 0 || a->city >= CHK_CAR_CITY_COUNT || a->model < 0 || a->model > 12)
 	{
 		/* SAY SO. This used to read "a->city > 3" and return in silence, so a
