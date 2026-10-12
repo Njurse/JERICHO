@@ -96,6 +96,41 @@ other's colours"). See `PALETTES.md` §7.
   are known (`carimport.c:587-626`), so it offers them unconditionally today;
 - the D1 exporter's own freshness is a **separate workstream** (out of scope here).
 
+## The in-game picker's city row (fixed)
+
+"The pause menu's `Vehicle Options` picker only shows the host city, so I cannot reach
+another city's cars in game" had one cause: `ChkMpCities` (carhacks/mplive.c) answered
+`MP_CARQ_CITIES` only when the `cross_city_vehicles` config key was on, and that key
+defaulted to off — so mp was handed `count = 0` and offered the session's own city alone,
+while the frontend car screen (which has no such gate, because a PICK is what imports the
+car) still browsed every city. `ChkMpLoad` carried the same gate, so a mid-match pick from
+another city was refused in silence even once the row offered it.
+
+Now:
+
+- both the city answer and the slot answer are owned by **`unlock_extra_vehicles`** — the
+  hack that fills the frontend roster — so the two car screens cannot disagree;
+- `MP_CARQ_LOAD` has **no config gate**: a player's explicit pick imports the car in game
+  exactly as it already did from the frontend menu;
+- **`cross_city_vehicles` defaults to on**, and the rigs that restore a caller's
+  `carhacks.ini` no longer write `cross_city_vehicles = 0` when there was no saved file
+  (that silently undid the new default).
+
+Measured (Release_dev): a CHICAGO pair with the pause opened logs, on both seats, `9
+city/cities on the row - CHICAGO HAVANA VEGAS RIO MIAMI FRISCO LA NEWYORK NEWCASTLE`, and
+`MP_TEST_CITYCHANGE` reaches HAVANA. Single player with `cross_city_vehicles = 0`: the
+picker still offers HAVANA's 9-slot roster and the pick still imports (`car data from
+HAVANA read MID-LEVEL`). The picker's own line (`[mp] car select: N city/cities on the
+row - ...`) is the instrument: it is what a padless run reads.
+
+**Observation, not fixed (not reproduced, cause not established).** In two of five headless
+single-player runs the engine pause opened by itself (an external START; the pause hook
+does not fire in the other three), and once open the picker's city row showed the LAST city
+with a car change applied — i.e. the pause was steered with no pad. The handlers involved
+(`MpCcAdjustCity`, `MpCcApply`) are `mp.c`'s picker rows and are untouched by the change
+above; they are only reachable from engine pause input. Worth an investigation if a player
+ever reports "my car changed by itself when I opened the pause".
+
 ## The rig (use it before you touch the game)
 
 ```
@@ -136,6 +171,7 @@ MP_TEST_FRONTEND_JOIN=1 CHK_FORCE_MENU=1 python JERICHO/MODS/mp/tools/mp_localpa
 | A refused car load heals by itself | the fold retries a busy slot / unbuilt car every ~0.4 s and gives up once at ~8 s; `CHK_REFUSE_LOAD=3` on a host: 3 refusals, then `-> resident slot 7` and `draws exactly that (slot 7)`. See MP_ADAPTER.md "Retrying a load that could not happen yet" |
 | A session ends cleanly on the way to the frontend | `MpSessionReset` closes the listener + discovery (so an ended host stops accepting peers) and forgets a pending "Change car" |
 | The level's palette rows for a guest are found by the set the car actually reads | alias/row lines; `CarPalIndexForBuild` agreement |
+| The in-game `Vehicle Options` picker offers **every** city, and a mid-match pick imports with `cross_city_vehicles` off | `[mp] car select: 9 city/cities on the row - CHICAGO ... NEWCASTLE` on both pair seats; `MP_TEST_CITYCHANGE -> HAVANA model 1` -> `[carhacks] import: now driving HAVANA model 1`; single player with the key off: `PAUSECAR city 1 roster: 9 slot(s)` then `car data from HAVANA read MID-LEVEL`. See "The in-game picker's city row (fixed)" above |
 
 Commits: `f3d65d36`, `29118821`, `103bf4d5`, `917fe509`, `248c6909` (all on `main`, pushed).
 

@@ -41,7 +41,7 @@ and puts them on the ground to look at:
 
 ```ini
 [carhacks]
-cross_city_vehicles = 1      ; turn the cross-city half on (opt-in)
+cross_city_vehicles = 1      ; the cross-city half (on by default; set 0 to disable)
 import              = 4:0:8, 5:1:9, 6:3:12   ; slot:city:model, ... -- each slot names its own city
 spawn_imports       = 1      ; place one car per imported city ahead of the player
 ```
@@ -89,7 +89,7 @@ its own key, so they switch on and off separately:
 | hack | key | default | what it does |
 |---|---|---|---|
 | Unlock extra vehicles | `unlock_extra_vehicles` | **1** | lift the progression + single-player gate on the frontend's extra vehicles, and let this module own the whole car list - every city, every slot (see `CARSELECT.md`) |
-| Cross-city vehicles | `cross_city_vehicles` | **0** (opt-in) | import vehicles that belong to *another* city's data |
+| Cross-city vehicles | `cross_city_vehicles` | **1** | import vehicles that belong to *another* city's data |
 | Car select menu | `car_select_menu` | **1** | replace the stock Take-a-Ride car screen with the menu that carries the city-roster row |
 
 and six source files, one concern each:
@@ -128,8 +128,8 @@ rather than merely un-hiding the stock tail.
 
 ## Problem 2 — a level only knows its own city
 
-Handled by `cross_city_vehicles` (default **off**; opt-in because it is the part
-that changes engine state).
+Handled by `cross_city_vehicles` (default **on**; it changes engine state, so set it
+to 0 to run carhacks with a level's own city only).
 
 This is the substantial half, and the rest of this section is what it does.
 
@@ -285,8 +285,8 @@ change applies on the next level; nothing is cached.
 
 | key | default | meaning |
 |---|---|---|
-| `unlock_extra_vehicles` | `1` | unlock the extra vehicles on the frontend car list, and write the whole list (all four cities) instead of just this level's row |
-| `cross_city_vehicles` | `0` | turn the cross-city half on (everything below needs this) |
+| `unlock_extra_vehicles` | `1` | unlock the extra vehicles on the frontend car list, and write the whole list (every city) instead of just this level's row |
+| `cross_city_vehicles` | `1` | the cross-city half (everything below needs this) |
 | `car_select_menu` | `1` | the car-select menu with the city-roster row |
 
 ### Cross-city — read only when `cross_city_vehicles = 1`

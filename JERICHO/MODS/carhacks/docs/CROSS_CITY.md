@@ -225,14 +225,19 @@ did not load".
 
 ## Turning it on
 
-In `JERICHO/CONFIG/carhacks.ini` (off by default — `carhacks.c:55`):
+In `JERICHO/CONFIG/carhacks.ini` (on by default — `carhacks.c:55`; set it to `0` to
+run with the level's own city only):
 
 ```
 cross_city_vehicles = 1
 import = 2:0:10
 ```
 
-`cross_city_vehicles` gates the whole hack. `import` takes comma-separated
+`cross_city_vehicles` gates the config-driven half of the hack. A player's explicit
+PICK is not gated by it: choosing a car in the frontend car screen, or in the
+in-game `Vehicle Options` picker, is itself the request that imports it (the two
+screens offer every city whenever `unlock_extra_vehicles` is on). `import` takes
+comma-separated
 `slot:city:model` entries (`carimport.c:251-345`) — here, Chicago's school bus
 (model 10) into resident slot 2. City numbers are `0` CHICAGO, `1` HAVANA,
 `2` VEGAS, `3` RIO (`system.c:130`). Slots 0..4 feed ambient traffic (the model

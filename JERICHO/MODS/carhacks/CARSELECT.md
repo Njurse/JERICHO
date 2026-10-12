@@ -93,6 +93,15 @@ it did, and one with carhacks shows the same list this screen does. The PAUSECAR
 lever builds its roster through that one function too, which is why a padless run can see
 what the menu would offer.
 
+That picker also has a **city row**, fed by this module over `MP_CARQ_CITIES`. Both answers
+are owned by the same hack - `unlock_extra_vehicles`, the one that fills the frontend roster
+- so the two screens cannot disagree about which cities exist, and a mid-match pick imports
+the car whether or not `cross_city_vehicles` is set: a PICK is the request that imports it,
+exactly as on this screen. (The city row used to be gated on `cross_city_vehicles`, which
+meant an in-game picker that showed the host city and nothing else while the frontend menu
+still browsed every city.) A padless run prints the list it is cycling:
+`[mp] car select: 9 city/cities on the row - CHICAGO HAVANA ... NEWCASTLE`.
+
 ## When it is used, and when it is not
 
 Armed from the `JER_EVENT_CAR_AVAILABILITY` query, which the stock screen fires
