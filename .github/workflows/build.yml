@@ -268,6 +268,13 @@ jobs:
             Copy-Item "$env:RUNNER_TEMP/d1cars/tools/README.md" "$bin/JERICHO/MODS/d1cars/" -Force
             Copy-Item "JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.bat" "$bin/" -Force
             Copy-Item "JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.sh" "$bin/" -Force
+            # The updater, both spellings so a player on either OS has one. It
+            # fetches the latest RELEASE (never the alpha pre-release), verifies the
+            # checksum, and copies over the install while leaving CONFIG/ and DRIVER/
+            # alone - so it is safe to hand somebody instead of "re-download and
+            # work out which files are yours".
+            Copy-Item "JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat" "$bin/" -Force
+            Copy-Item "JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh" "$bin/" -Force
 
             Compress-Archive -Path "$bin/*" -DestinationPath "JERICHO_${cfg}_win64.zip" -Force
           }
@@ -408,6 +415,10 @@ jobs:
             cp JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.bat "$d/"
             cp JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.sh "$d/"
             chmod +x "$d/BAKE_D1_CARS.sh"
+            # The updater, both spellings, same reasoning as the bake scripts above.
+            cp JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat "$d/"
+            cp JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh "$d/"
+            chmod +x "$d/update_jericho.sh"
             # Two things a release must never carry: CONFIG/modlist.ini (the player's
             # module toggles -- an archive cannot ask before replacing them, so a
             # release ships none and each module runs from its mod.toml default) and

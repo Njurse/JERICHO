@@ -37,6 +37,15 @@ Each build is packaged with everything needed to run:
   mirror (`JER_MIRROR_EXCLUDE`), so the packaging step fetches them from that repo
   by the URL in `.gitmodules`, for packaging only. A build with no baked data is
   simply one whose five Driver 1 cities are not offered.
+- the **updater** — `update_jericho.bat` and `update_jericho.sh` at the package root.
+  It resolves `https://github.com/<repo>/releases/latest/download/<asset>`, which GitHub
+  answers with the newest **non-prerelease** release, so the rolling `alpha` pre-release is
+  excluded by construction: no version parsing, no API gate and no `gh`. It verifies the
+  asset against `SHA256SUMS` before unpacking anything, then copies over the install while
+  never writing `CONFIG/` (the player's module toggles and settings), never touching
+  `DRIVER/` (their baked Driver 1 car data) and **never deleting a file** — so a module
+  they added themselves survives. Overwrite-only is deliberate: it is what makes the
+  updater safe to hand somebody instead of "download and work out which files are yours".
 
 Resulting archives:
 
