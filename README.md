@@ -417,3 +417,14 @@ This tree tracks **OpenDriver2/REDRIVER2**; the hook sites are tagged
 
 Some bundled modules carry their own authorship in their `mod.toml` / folder
 README — see [`JERICHO/MODS/`](JERICHO/MODS/).
+
+**How it was built.** This fork made extensive use of an AI assistant —
+**DeepSeek**, driven through the **Reasonix** agent harness — for both engine
+**research** (reading the reverse-engineered sources, the level and car-data
+formats, the render, VRAM and palette behaviour) and **feature implementation**
+(the module host and its hooks, the multiplayer layer, carhacks, and the
+Driver 1 tooling). The direction, the judgement calls and the final say are
+human, and the assistant was kept honest by measurement: it was run against the
+game, and the commits record what was verified rather than assumed. It is
+credited plainly because getting to this level took a lot of technical
+back-and-forth, and because how the work was made is part of judging it.
