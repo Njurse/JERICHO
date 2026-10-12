@@ -201,8 +201,8 @@ by the menu, so it only appears if you put it there.
 | On-road framing | `GetSurfaceRoadInfo` + `GetNodePos` (lane + distance) + `ROAD_LANE_DIR` for the traffic heading — same helpers the civ AI drives on |
 | Scenery clearance | `lineClear` LOS pull-back + `CheckScenaryCollisions` camera-collider push-out (world-space Y conversion, `camera.c:604` pattern) |
 | Region streaming | the spool (`MainPlayer.spoolXZ`) is redirected to a module-owned `VECTOR`, re-asserted every frame in the camera hook (after `UpdatePlayers()` resets it), and pointed at the *camera* once a shot is live |
-| Far hops | the engine only pre-loads *neighbouring* regions as you move, so a hop calls `UnpackRegion()` to force the destination region in, and the cut waits (black) for it before fading in |
-| Traffic pre-seed | `PingInCivCar` (the game's own spawner) fills the focus with civilian traffic at **level start, on activation and once per cut** — the region is streamed in first, so no car is ever spawned into an unloaded cell ("invisible" cars) |
+| Far hops | the engine only pre-loads *neighbouring* regions as you move, so a hop forces the destination region in **and the block around it** (its x/z/diagonal neighbours, each in its own barrel), and the cut waits for that whole block before fading in — otherwise the new area opens as one island of geometry in a void |
+| Traffic pre-seed | `PingInCivCar` (the game's own spawner) fills the **region block** around the focus — at **level start, on activation and once per cut** — after evicting the previous area's stranded traffic so the spawner has free slots; each region is streamed in first, so no car is ever spawned into an unloaded cell ("invisible" cars) |
 | Fade | semi-transparent fullscreen wash drawn in `JER_EVENT_DRAW_OVERLAY` (same look as the stock `FadeGameScreen`), plus optional letterbox bars and the caption |
 | FOV | per-shot `SetGeomScreen(scr_z = …)`, interpolated so the lens breathes; clamped so a shot is never wider than the engine's own widest lens (`ANTFARM_FOV_MIN` 256) |
 | Timing / state machine | `JER_EVENT_FRAME` (wall-clock, SDL_GetTicks) |
@@ -219,14 +219,18 @@ by the menu, so it only appears if you put it there.
   pad/overlay/cop/projection (`scr_z`) and `CameraCar` state.
 - The engine keeps only **four** regions resident (a 2×2 barrel window,
   `regions_unpacked[4]`), and only ever pre-loads neighbours as you drive. A
-  far hop therefore has to force its destination in and wait for it — that
-  wait is the black between cuts. Without it the camera is shown over
-  unloaded geometry (skybox/nodraw), which is what made earlier versions look
-  broken.
+  far hop therefore has to force its destination **and the block around it** in
+  and wait for the whole block — that wait is the black between cuts. Without it
+  the camera is shown over unloaded geometry (skybox/nodraw), which is what made
+  earlier versions look broken. On a **`-mp` (multiplayer-arena) level the engine
+  streams nothing at all** — it loads four fixed regions at level start and stops
+  — so this block-streaming is the only thing that makes a hop there show a world
+  instead of empty space. That is what the old *first* mp shot always did.
 - While a shot is live the spool follows the camera (the renderer culls from
   `camera_position`), so the rendered region is the resident one. A guard
-  holds the previous camera if a shot would ever move into a region that is
-  not resident yet.
+  holds the last camera that was over a **loaded** region if a shot would ever
+  move into a region that is not resident yet, so a hop's first frame is never a
+  bare skybox (the "blank void" a shot could open on after unpausing).
 - The fade uses the game's stock semi-transparent wash look rather than a
   true black — matching how the original game does its own screen fades.
 - **Void / uncrolled scenery.** The camera is held whenever its region is not

@@ -398,6 +398,8 @@ typedef struct ANTFARM_STATE
 	int streamDone;		/* the new area's regions have been accepted+loaded */
 	int shotPlanned;	/* 1 when the shot for this cut has been fully planned */
 	int seededThisCut;	/* traffic has been pre-seeded for this cut's area */
+	int blockReady;		/* regions of the destination's block that are resident */
+	int blockUsable;	/* how many of the block's regions have data (the target) */
 
 	/* rogue-car (lead AI) event */
 	int leadMode;		/* following a rogue car until it is totaled */
@@ -437,6 +439,8 @@ typedef struct ANTFARM_STATE
 	 * camera instead of drawing an unloaded one */
 	unsigned long holdSince;
 	int voidHolds;
+	VECTOR holdPos;		/* last camera that rendered a RESIDENT region */
+	SVECTOR holdAngle;	/* its angle, held with it while re-streaming */
 
 	/* world recovery: how long the camera has been in an un-resident region,
 	 * and how many times the tour has had to re-anchor itself on a road */
@@ -1077,6 +1081,172 @@ static int AntFarmTrafficNear(const VECTOR* pos, int radius)
 }
 
 /* ------------------------------------------------------------------ */
+/* the region block around a point (world pre-seed)                   */
+/* ------------------------------------------------------------------ */
+/* The engine keeps only FOUR regions resident - a 2x2 parity barrel,
+ * regions_unpacked[4] - and, driving normally, fills the three neighbour slots
+ * itself as you approach a region edge (map.c CheckUnpackNewRegions). A far hop
+ * forces in ONLY the region under the destination, so the other three barrels
+ * still hold the PREVIOUS shot's regions: the new area is a small island of
+ * loaded geometry in a void. That is what "the world is empty when it loads into
+ * a new region" looks like.
+ *
+ * These helpers fill the destination's own block the way the engine would have
+ * left it: the region under the point, its x-neighbour, its z-neighbour and the
+ * matching diagonal, each on the side of the region the point sits nearest (the
+ * direction its view reaches furthest). Every one of the four lands in its own
+ * parity barrel - (rx & 1) + (rz & 1) * 2, which flips on exactly one axis per
+ * neighbour - so forcing one never evicts another the block needs. */
+
+static int AntFarmRegionBarrel(int region)
+{
+	int rx = region % regions_across;
+	int rz = region / regions_across;
+
+	return (rx & 1) + (rz & 1) * 2;
+}
+
+/* The four regions a camera at `pos` needs resident, as region numbers (-1 for a
+ * slot that is off the map). Returns how many were written.
+ *
+ * The side picked per axis MIRRORS the engine's own neighbour rule
+ * (map.c CheckUnpackNewRegions: a neighbour is enqueued when the cell within the
+ * region is inside `force_load_boundary` of that edge, 18 with no lead car, else
+ * 13). Matching it matters: if antfarm picked the opposite neighbour it would
+ * fight the engine, which would reload its side every frame and evict antfarm's
+ * - a region load per frame for the whole cut. */
+static int AntFarmBlockAround(const VECTOR* pos, int out[4])
+{
+	int region = AntFarmRegionOf(pos);
+	int rx, rz, xcell, zcell, sx, sz, nx, nz, boundary;
+
+	if (!AntFarmMapReady() || region < 0 || region >= regions_across * regions_down)
+		return 0;
+
+	rx = region % regions_across;
+	rz = region / regions_across;
+
+	/* same boundary the engine uses to decide when to pre-load a neighbour */
+	boundary = (lead_car == 0) ? 18 : 13;
+
+	/* which side of the region the point is nearest: that is the direction its
+	 * view reaches furthest, so that is the neighbour worth keeping loaded */
+	xcell = (pos->vx + units_across_halved) / MAP_CELL_SIZE - rx * MAP_REGION_SIZE;
+	zcell = (pos->vz + units_down_halved) / MAP_CELL_SIZE - rz * MAP_REGION_SIZE;
+	sx = (xcell < boundary) ? -1 : 1;
+	sz = (zcell < boundary) ? -1 : 1;
+
+	nx = rx + sx;
+	nz = rz + sz;
+
+	out[0] = region;
+	out[1] = (nx >= 0 && nx < regions_across) ? region + sx : -1;
+	out[2] = (nz >= 0 && nz < regions_down) ? region + sz * regions_across : -1;
+	out[3] = (nx >= 0 && nx < regions_across && nz >= 0 && nz < regions_down)
+		? region + sx + sz * regions_across : -1;
+
+	return 4;
+}
+
+/* how many of the block's regions have data at all - the achievable target,
+ * since an off-map or data-less neighbour can never be streamed in */
+static int AntFarmBlockUsable(const int* block, int n)
+{
+	int i, r = 0;
+
+	for (i = 0; i < n; i++)
+		if (block[i] >= 0 && AntFarmRegionHasData(block[i]))
+			r++;
+
+	return r;
+}
+
+/* how many of the block's regions are actually resident right now */
+static int AntFarmBlockResident(const int* block, int n)
+{
+	int i, r = 0;
+
+	for (i = 0; i < n; i++)
+		if (block[i] >= 0 && AntFarmRegionHasData(block[i]) && AntFarmRegionUnpacked(block[i]))
+			r++;
+
+	return r;
+}
+
+/* Force one region into its own parity barrel, the way the engine does when it
+ * streams you into a region: clear the barrel, unpack the region, flush the spool
+ * (synchronous on PC, so the geometry + PVS are in by the time this returns).
+ * Skips a region already in its barrel, and one that is mid-load (the engine
+ * finishes it). Returns 1 if the region is resident when this returns. */
+static int AntFarmForceRegion(int region)
+{
+	int barrel;
+
+	if (!AntFarmMapReady() || region < 0 || region >= regions_across * regions_down)
+		return 0;
+
+	if (!AntFarmRegionHasData(region))
+		return 0;		/* a void - nothing to stream in */
+
+	barrel = AntFarmRegionBarrel(region);
+
+	if (regions_unpacked[barrel] == region)
+		return 1;		/* already the region in its barrel */
+
+	if (loading_region[barrel] != -1)
+		return 0;		/* mid-load; the engine will finish it */
+
+	ClearRegion(barrel);
+	UnpackRegion(region, barrel);
+	StartSpooling();
+	UpdateSpool();
+
+	return regions_unpacked[barrel] == region;
+}
+
+/* Stream the whole block in and report how many of its regions are resident.
+ * Called once per cut, during the black, so the shot opens on a loaded
+ * neighbourhood instead of one island of geometry. */
+static int AntFarmStreamBlock(const int* block, int n)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+		if (block[i] >= 0)
+			AntFarmForceRegion(block[i]);
+
+	return AntFarmBlockResident(block, n);
+}
+
+/* a world point at the centre of a region, for seeding traffic into it */
+static void AntFarmRegionCentre(int region, VECTOR* out)
+{
+	int rx = region % regions_across;
+	int rz = region / regions_across;
+
+	out->vx = (rx * MAP_REGION_SIZE + MAP_REGION_SIZE / 2) * MAP_CELL_SIZE - units_across_halved;
+	out->vz = (rz * MAP_REGION_SIZE + MAP_REGION_SIZE / 2) * MAP_CELL_SIZE - units_down_halved;
+	out->vy = 0;
+	AntFarmClampToWorld(out);
+}
+
+/* On a doSpooling == 0 level (an mp arena) the engine never streams: mission.c
+ * sets doSpooling only for region == 0, so ControlMap is never called, only the
+ * four multiplayerregions load at level start, and current_region stays -1 for
+ * the whole session. The engine's own area loader, CheckLoadAreaData, indexes
+ * spoolinfo_offsets[current_region] - so with -1 the shot's texture area and
+ * scenery models are never loaded (and the read is out of bounds). Point it at
+ * the region we are about to use. On a normal level ControlMap sets
+ * current_region every frame, so this is a no-op there. */
+static void AntFarmSeedCurrentRegion(void)
+{
+	int r = AntFarmRegionOf(&s.spool);
+
+	if (!doSpooling && r >= 0 && r < regions_across * regions_down)
+		current_region = r;
+}
+
+/* ------------------------------------------------------------------ */
 /* traffic pre-seed                                                   */
 /* ------------------------------------------------------------------ */
 /* The engine dribbles civilians in only a few per frame, around
@@ -1085,23 +1255,30 @@ static int AntFarmTrafficNear(const VECTOR* pos, int radius)
  * at once with the engine's own spawner (PingInCivCar) - the very call the
  * game uses, so the cars are ordinary traffic, not a special case.
  *
+ * It seeds the whole NEIGHBOURHOOD BLOCK, not one point: the block is what the
+ * camera can see, so traffic only in the destination region still reads as an
+ * empty city at the edges of the frame. The budget is split across the block's
+ * usable regions and the spool is pointed at each region's centre in turn.
+ *
  * "Cars do not spawn invisible": InitCar places every pinger with MapHeight(),
  * which answers 0 for a cell that is not resident - the car lands in the void
- * and is never drawn. So the focus region is streamed in first and the seed is
- * skipped (loudly) if it still has no data or is not resident, rather than
- * dropping a batch of cars into nothing. */
+ * and is never drawn. So the whole block is streamed in first and a region that
+ * is still not resident is skipped (loudly), rather than dropping a batch of
+ * cars into nothing. */
 static void AntFarmPreseedTraffic(int nMax)
 {
 	VECTOR focus;
 	VECTOR* savedSpool;
-	int region, spawned = 0, i;
+	int block[4];
+	int nb, usable, perRegion, k, spawned = 0, seededRegions = 0;
 
 	if (!AntFarmMapReady())
 		return;
 
-	/* The spawner reads MainPlayer.spoolXZ; hand it the focus we want the
-	 * traffic at - the module's shot area while active, otherwise the player's
-	 * own spool (a level start, before the first cut has picked an area). */
+	/* The spawner reads MainPlayer.spoolXZ; hand it the point we want the
+	 * traffic around - the module's shot area while active, otherwise the
+	 * player's own spool (a level start, before the first cut has picked an
+	 * area). */
 	if (s.active)
 	{
 		focus = s.spool;
@@ -1115,38 +1292,84 @@ static void AntFarmPreseedTraffic(int nMax)
 		focus.vz = MainPlayer.spoolXZ->vz;
 	}
 
-	savedSpool = MainPlayer.spoolXZ;
-	MainPlayer.spoolXZ = &focus;
+	nb = AntFarmBlockAround(&focus, block);
+	usable = AntFarmBlockUsable(block, nb);
 
-	region = AntFarmRegionOf(&focus);
+	if (usable == 0)
+		return;
 
-	/* stream the destination in before pinging into it, so the cars land on
-	 * loaded ground instead of in the void */
-	if (!AntFarmRegionUnpacked(region) && AntFarmRegionHasData(region))
-		jer_map_spool_to(focus.vx, focus.vz);
+	/* stream the whole block in before pinging into it, so no car lands on a
+	 * cell that is not loaded (see the "invisible cars" note above) */
+	AntFarmStreamBlock(block, nb);
 
-	if (AntFarmRegionHasData(region) && AntFarmRegionUnpacked(region))
+	/* Free the slots a far hop leaves stranded. The engine evicts civilian
+	 * traffic once it is more than 24000 units from the spool (its own ping-out
+	 * in civ_ai.c), but only a few per frame - so right after a hop the slots
+	 * are still full of the PREVIOUS area's cars and PingInCivCar refuses every
+	 * ping, leaving the new area empty ("0 civ car(s)"). Do the same eviction at
+	 * once, measured against the NEW focus, so the seed has slots to fill. Only
+	 * civilian cars are touched; the pinned player car is CONTROL_TYPE_NONE. */
 	{
-		for (i = 0; i < nMax; i++)
+		long long stray2 = 24000LL * 24000LL;
+		int i;
+
+		for (i = 0; i < MAX_CARS; i++)
+		{
+			CAR_DATA* cp = &car_data[i];
+			long long dx, dz;
+
+			if (cp->controlType != CONTROL_TYPE_CIV_AI)
+				continue;
+
+			dx = (long long)cp->hd.where.t[0] - focus.vx;
+			dz = (long long)cp->hd.where.t[2] - focus.vz;
+
+			if (dx * dx + dz * dz > stray2)
+				PingOutCar(cp);
+		}
+	}
+
+	savedSpool = MainPlayer.spoolXZ;
+
+	/* ceil, so a small budget still spreads across every usable region */
+	perRegion = (nMax + usable - 1) / usable;
+
+	for (k = 0; k < nb; k++)
+	{
+		VECTOR seed;
+		int got = 0;
+
+		if (block[k] < 0 || !AntFarmRegionHasData(block[k]))
+			continue;
+
+		if (!AntFarmRegionUnpacked(block[k]))
+		{
+			s.ctx->jer_log(s.ctx,
+				"[antfarm] pre-seed: region %d not resident (cars would spawn invisible)\n",
+				block[k]);
+			continue;
+		}
+
+		AntFarmRegionCentre(block[k], &seed);
+		MainPlayer.spoolXZ = &seed;
+
+		while (got < perRegion)
 		{
 			if (PingInCivCar(15900) == 0)
 				break;		/* no free slot / no valid lane this ping */
 
-			spawned++;
+			got++;
 		}
-	}
-	else
-	{
-		s.ctx->jer_log(s.ctx,
-			"[antfarm] pre-seed skipped: region %d not resident (cars would spawn invisible)\n",
-			region);
+
+		spawned += got;
+		seededRegions++;
 	}
 
 	MainPlayer.spoolXZ = savedSpool;
 
 	s.ctx->jer_log(s.ctx,
-		"[antfarm] pre-seed: %d civ car(s) around (%d,%d) region %d\n",
-		spawned, focus.vx, focus.vz, region);
+		"[antfarm] pre-seed: %d civ car(s) across %d/%d region(s) around (%d,%d)\n",
+		spawned, seededRegions, usable, focus.vx, focus.vz);
 }
 
 /* ------------------------------------------------------------------ */
@@ -2230,7 +2453,17 @@ static void AntFarmRecoverToRoad(void)
 	s.targetPos = s.areaPos;
 
 	MainPlayer.spoolXZ = &s.spool;
+	AntFarmSeedCurrentRegion();
 	jer_map_spool_to(s.spool.vx, s.spool.vz);
+
+	/* the block around the new anchor too, so the re-planned shot opens on a
+	 * loaded neighbourhood rather than one island of geometry */
+	{
+		int block[4];
+		int nb = AntFarmBlockAround(&s.spool, block);
+
+		AntFarmStreamBlock(block, nb);
+	}
 
 	s.recoveries++;
 	s.ctx->jer_log(s.ctx,
@@ -2984,6 +3217,11 @@ static void AntFarmSetActive(int on)
 		s.dwellMs = AntIntervalMs();
 		s.holdSince = 0;
 		s.voidHolds = 0;
+		/* seed the void guard's hold with the camera we are taking over from -
+		 * it is definitely over loaded geometry, so the first frame after
+		 * activation can never render a void */
+		s.holdPos = camera_position;
+		s.holdAngle = camera_angle;
 		s.stuckSince = 0;
 		s.recoveries = 0;
 		s.captionUntil = 0;
@@ -3352,6 +3590,8 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			s.streamDone = 0;
 			s.shotPlanned = 0;
 			s.seededThisCut = 0;	/* the cut's area is seeded once its region is in */
+			s.blockReady = 0;	/* the destination block starts un-streamed */
+			s.blockUsable = 0;
 			s.holdSince = 0;
 			s.vantageSet = 0;	/* a fixed vantage is resolved per shot */
 
@@ -3395,6 +3635,8 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			int spoolRegion = AntFarmRegionOf(&s.spool);
 			int regionsReady;
 			int nodesReady = (NumDriver2Straights > 0);
+			int block[4];
+			int blockCount, blockUsable, blockReady, allReady;
 
 			/* The engine only ever pre-loads NEIGHBOURING regions as you move
 			 * (CheckUnpackNewRegions / force_load_boundary — map.c:222-286), so
@@ -3409,6 +3651,11 @@ static int AntFarmOnFrame(void* userdata, void* args)
 			/* The streamer follows MainPlayer.spoolXZ, and jer_map_spool_to reads
 			 * it - so hand it the destination BEFORE asking for the stream. */
 			MainPlayer.spoolXZ = &s.spool;
+
+			/* On a doSpooling==0 level (an mp arena) ControlMap never runs, so
+			 * the engine's current_region stays -1 and its area loader reads
+			 * spoolinfo_offsets[-1]; seed it here. See AntFarmSeedCurrentRegion. */
+			AntFarmSeedCurrentRegion();
 
 			/* Force the destination in through the SHARED world-spool helper.
 			 * It uses the engine's own level-start path, so the barrel's
@@ -3427,7 +3674,25 @@ static int AntFarmOnFrame(void* userdata, void* args)
 
 			regionsReady = (AntFarmRegionHasData(spoolRegion) && AntFarmRegionsReady(spoolRegion));
 
-			if (!(regionsReady && nodesReady) && !s.streamDone)
+			/* Fill the WHOLE block around the destination, not just its own
+			 * region. The engine keeps four regions resident (a parity 2x2
+			 * barrel) and a far hop forces only the one, so the other three
+			 * barrels still hold the previous shot's regions: the new area opens
+			 * as a small island of geometry (or nothing) around the shot - "the
+			 * world is empty when it loads into a new region". blockUsable is how
+			 * many of the block's regions could be loaded (on the map, with
+			 * data); blockReady is how many are resident now, and the cut waits
+			 * for all of the usable ones. */
+			blockCount = AntFarmBlockAround(&s.spool, block);
+			blockUsable = AntFarmBlockUsable(block, blockCount);
+			blockReady = AntFarmStreamBlock(block, blockCount);
+
+			s.blockReady = blockReady;
+			s.blockUsable = blockUsable;
+
+			allReady = (regionsReady && nodesReady && blockReady >= blockUsable);
+
+			if (!allReady && !s.streamDone)
 			{
 				if (now - s.cutStart >= ANTFARM_STREAM_TIMEOUT_MS)
 				{
@@ -3468,10 +3733,11 @@ static int AntFarmOnFrame(void* userdata, void* args)
 						int barrel = (brx & 1) + (brz & 1) * 2;
 
 						s.ctx->jer_log(s.ctx,
-							"[antfarm] diag: area %d,%d -> region %d (rx=%d rz=%d barrel=%d unpacked=%d loading=%d data=%d) engine: current=%d rx=%d rz=%d cell=%d,%d\n",
+							"[antfarm] diag: area %d,%d -> region %d (rx=%d rz=%d barrel=%d unpacked=%d loading=%d data=%d) block %d/%d engine: current=%d rx=%d rz=%d cell=%d,%d\n",
 							s.areaPos.vx, s.areaPos.vz, spoolRegion, brx, brz, barrel,
 							regions_unpacked[barrel], loading_region[barrel],
 							(spoolinfo_offsets[spoolRegion] == 0xffff) ? 0 : 1,
+							blockReady, blockUsable,
 							current_region, region_x, region_z,
 							current_barrel_region_xcell, current_barrel_region_zcell);
 					}
@@ -3491,7 +3757,7 @@ static int AntFarmOnFrame(void* userdata, void* args)
 				break;
 			}
 
-			if (!s.streamDone && (regionsReady || s.streamRetries >= 3))
+			if (!s.streamDone && (allReady || s.streamRetries >= 3))
 			{
 				s.streamDone = 1;
 				s.spool = s.targetPos;
@@ -3555,6 +3821,21 @@ static int AntFarmOnFrame(void* userdata, void* args)
 					s.shotPlanned = 1;
 				}
 			}
+
+			/* A car subject re-anchors s.spool onto the car
+			 * (AntFarmSetCarSubject), which can sit in a region outside the block
+			 * streamed above - the anywhere-fallback pick is not bounded to the
+			 * area. Force the block around the FINAL anchor in too, so the subject
+			 * is framed on loaded geometry; the force is synchronous, so this
+			 * needs no extra waiting. */
+			if (s.streamDone && s.shotPlanned)
+			{
+				int b2[4];
+				int n2 = AntFarmBlockAround(&s.spool, b2);
+
+				s.blockReady = AntFarmStreamBlock(b2, n2);
+				s.blockUsable = AntFarmBlockUsable(b2, n2);
+			}
 		}
 
 		/* How long the black CUT is held before the shot is revealed. Every
@@ -3614,12 +3895,17 @@ static int AntFarmOnFrame(void* userdata, void* args)
 				s.captionUntil = now + ANTFARM_CAPTION_MS;
 
 			s.cutCount++;
-			s.ctx->jer_log(s.ctx,
-				"[antfarm] cut #%d -> area %d,%d region %d/%d style %d%s\n",
-				s.cutCount, s.areaPos.vx, s.areaPos.vz,
-				current_region / regions_across, current_region % regions_across,
-				s.style,
-				(s.targetKind == ANTFARM_TARGET_CAR) ? " car" : "");
+			{
+				int ar = AntFarmRegionOf(&s.areaPos);
+
+				s.ctx->jer_log(s.ctx,
+					"[antfarm] cut #%d -> area %d,%d region %d block %d/%d style %d%s (frame %d)\n",
+					s.cutCount, s.areaPos.vx, s.areaPos.vz,
+					ar, s.blockReady, s.blockUsable,
+					s.style,
+					(s.targetKind == ANTFARM_TARGET_CAR) ? " car" : "",
+					FrameCnt);
+			}
 		}
 		break;
 
@@ -3645,7 +3931,8 @@ static int AntFarmOnFrame(void* userdata, void* args)
 	 * area data explicitly, exactly as the CUT does for a destination, so the
 	 * pages are requested the moment they are needed. (The CUT already does
 	 * this for the shot it is streaming in, so it is skipped there.) */
-	if (s.active && s.state != ANTFARM_STATE_CUT && AntFarmMapReady())
+	if (s.active && s.state != ANTFARM_STATE_CUT && AntFarmMapReady() &&
+		current_region >= 0 && current_region < regions_across * regions_down)
 	{
 		int cx = (camera_position.vx + units_across_halved) / MAP_CELL_SIZE;
 		int cz = (camera_position.vz + units_down_halved) / MAP_CELL_SIZE;
@@ -3806,6 +4093,15 @@ static int AntFarmOnCamera(void* userdata, void* args)
 		*(SVECTOR*)a->cameraAngle = camera_angle;
 		a->override = 1;
 
+		/* The parked camera is over geometry the CUT just forced resident, so it
+		 * is the last frame the void guard can safely hold if the shot's own
+		 * camera turns out to be in a region that has not streamed yet (see the
+		 * guard below). Without this the guard held the freshly-snapped shot
+		 * camera - which IS the void - so the first frame of a hop's shot after
+		 * a pause/level start / in an mp level showed nothing but the skybox. */
+		s.holdPos = camera_position;
+		s.holdAngle = camera_angle;
+
 		return JER_RESULT_CONTINUE;
 	}
 
@@ -3836,11 +4132,16 @@ static int AntFarmOnCamera(void* userdata, void* args)
 
 	/* --- void guard -----------------------------------------------------
 	 * If the camera sits in a region that has not streamed, the frame is
-	 * skybox + nodraw, so hold the previous camera until it is resident. Only
-	 * the CAMERA's region is checked: the aim is merely a direction and the
-	 * renderer does not cull from it, so requiring it too caused needless holds
-	 * whenever the subject drove across a boundary. The cap means a data-less
-	 * region can never freeze the view forever. */
+	 * skybox + nodraw, so hold the last camera that was over a RESIDENT region
+	 * until the new one is. Only the CAMERA's region is checked: the aim is
+	 * merely a direction and the renderer does not cull from it, so requiring it
+	 * too caused needless holds whenever the subject drove across a boundary.
+	 * The cap means a data-less region can never freeze the view forever.
+	 *
+	 * s.holdPos - not s.camPos - is what is held: camPos is snapped to the new
+	 * shot on the first frame of a shot, so holding it held the very void this
+	 * guard exists to hide ("blank void with just skybox" on the first frame of
+	 * a shot after unpausing or in an mp level). */
 	{
 		int camReady = AntFarmRegionUnpacked(AntFarmRegionOf(&cam));
 
@@ -3858,10 +4159,10 @@ static int AntFarmOnCamera(void* userdata, void* args)
 					s.voidHolds);
 			}
 
-			*(VECTOR*)a->cameraPosition = s.camPos;
-			*(SVECTOR*)a->cameraAngle = s.camAngle;
-			camera_position = s.camPos;
-			camera_angle = s.camAngle;
+			*(VECTOR*)a->cameraPosition = s.holdPos;
+			*(SVECTOR*)a->cameraAngle = s.holdAngle;
+			camera_position = s.holdPos;
+			camera_angle = s.holdAngle;
 			a->override = 1;
 
 			return JER_RESULT_CONTINUE;
@@ -3961,6 +4262,12 @@ static int AntFarmOnCamera(void* userdata, void* args)
 
 	camera_position = cam;
 	camera_angle = ang;
+
+	/* this frame IS over a resident region (the guard above passed), so it is
+	 * the camera the guard may hold if the next frame's camera lands somewhere
+	 * that has not streamed */
+	s.holdPos = cam;
+	s.holdAngle = ang;
 
 	/* fold this frame into the shot's telemetry (reported at FADE_OUT) */
 	if (s.state != ANTFARM_STATE_CUT)

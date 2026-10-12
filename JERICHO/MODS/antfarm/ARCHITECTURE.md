@@ -116,7 +116,8 @@ That is why the pause-menu row reads `(s.active || s.pendingEnable) ? ON : OFF`
 waits `ANTFARM_CUT_HOLD_MS + ANTFARM_TEX_SETTLE_MS +` a jump-scaled extra before
 revealing, which on the first cut is a couple of seconds of black. `s.firstShot`
 (set here, cleared when the first `FADE_IN` starts) makes that first cut reveal
-the moment its region is resident and the shot is planned — nothing else — and
+the moment its region *block* is resident and the shot is planned — nothing
+else — and
 fades in over `ANTFARM_FIRST_FADE_MS` (500 ms) instead of `ANTFARM_FADE_MS`
 (700 ms). Every later cut keeps the full hold and the normal transition, and the
 transition logs `[antfarm] first shot: fading in over 500ms` so the behaviour is
@@ -189,7 +190,7 @@ Then, per frame while black:
    back to a road-only style), then hold the black for
    `ANTFARM_CUT_HOLD_MS + ANTFARM_TEX_SETTLE_MS + jump-scaled extra` and reveal.
 
-### Region residency — the two engine facts that shaped this
+### Region residency — the engine facts that shaped this
 
 * `regions_unpacked[4]` / `loading_region[4]` are indexed by **barrel slot**,
   not by region number. Treating them as a per-region map reads out of bounds
@@ -200,15 +201,61 @@ Then, per frame while black:
   "this region has data (`spoolinfo_offsets[r] != 0xffff`) and it is the region
   currently unpacked into its barrel slot".
 
+### The region block — pre-seeding the world around a hop
+
+The four barrels are the *whole* window: the engine fills the three neighbour
+slots itself as you drive (only when you come within `force_load_boundary` of a
+region edge, `map.c CheckUnpackNewRegions`). A far hop forces in **only** the
+region under the destination (`jer_map_spool_to`), so the other three barrels
+still hold the *previous* shot's regions — the new area opens as one island of
+loaded geometry, `block N/M` short of what it should be. That is the “empty
+world when it loads into a new region” look.
+
+`AntFarmBlockAround(pos, out[4])` computes the four regions a camera at `pos`
+needs: the region under it, its x-neighbour, its z-neighbour and the matching
+diagonal, each on the side the point sits nearest (the boundary rule mirrors the
+engine’s, 18 cells / 13 with a lead car, so antfarm and the engine never pick
+opposite neighbours and thrash a region load every frame). Every one of the four
+lands in its own parity barrel — `(rx & 1) + (rz & 1) * 2` — so forcing one
+never evicts another the block needs.
+
+`AntFarmStreamBlock(block, n)` forces each region in by the engine’s own method
+(`ClearRegion` + `UnpackRegion` + a synchronous spool flush), and the CUT now
+waits for `blockReady >= blockUsable` — all of the block’s regions that *can*
+load (an off-map or data-less neighbour is excluded from the count) — before it
+reveals. The cut log carries it: `cut #N -> area x,z region R block 4/4 style S
+… (frame F)`. `AntFarmRecoverToRoad` streams the block around its new anchor
+too, and the CUT re-streams it around the **final** anchor after a car subject
+(`AntFarmSetCarSubject` moves `s.spool` onto the car, whose anywhere-fallback
+pick is not bounded to the area).
+
+**`doSpooling == 0` levels (an mp arena) never stream on their own.**
+`ControlMap` is only called when `doSpooling` is set, and `mission.c` sets
+`doSpooling = (MissionHeader->region == 0)` — false for an mp level
+(`-mp`), where only the four `multiplayerregions` are loaded at level start and
+nothing else ever is. On such a level `current_region` also stays `-1`, so
+`CheckLoadAreaData` (the engine’s area/model loader) indexes
+`spoolinfo_offsets[current_region]` out of bounds and the shot’s texture area and
+scenery models never load. `AntFarmSeedCurrentRegion()` therefore points
+`current_region` at the region the shot is about to use (a no-op on a normal
+level, where ControlMap sets it every frame), and the region block is what
+actually makes the world stream there. (This is why the *first* mp shot used to sit in a void:
+it is the one shot that skips the long black hold.)
+
 ### The void guard (render time, `AntFarmOnCamera`)
 
 The renderer culls from `camera_position`, so the **camera's own region** is
-what must be resident. If it is not, the module holds the previous camera
-(`s.camPos`) instead of drawing an unloaded one, and logs
-`void guard: region not resident, holding camera (#n)`. A 4 s cap means a
-data-less region can never freeze the view forever. The spool is pointed at the
-camera *before* this guard, or the hold would freeze the spool and the camera
-could never become resident (a deadlock).
+what must be resident. If it is not, the module holds the last camera that
+*was* over a resident region — `s.holdPos`/`s.holdAngle`, not `s.camPos`, which
+is snapped to the new shot on its first frame — and logs
+`void guard: region not resident, holding camera (#n)`. (Holding `s.camPos` held
+the very void the guard exists to hide: the first frame of a shot after
+unpausing, or in an mp level, was a blank skybox.) A 4 s cap means a data-less
+region can never freeze the view forever; `s.holdPos` is seeded from the
+pre-takeover camera at activation and from the CUT's parked camera while black,
+so it is always a loaded spot. The spool is pointed at the camera *before* this
+guard, or the hold would freeze the spool and the camera could never become
+resident (a deadlock).
 
 ### The texture-area guard (frame time)
 
@@ -216,7 +263,9 @@ A travelling shot (dolly, flyover, crane) crosses map cells faster than the
 pager settles — the "scenery / palette did not load" look. When the camera
 enters a new cell during a live shot, `AntFarmOnFrame` calls
 `CheckLoadAreaData(cellX, cellZ)` + `StartSpooling`/`UpdateSpool`, exactly as the
-CUT does for a destination. Tracked by `s.lastCellX/lastCellZ`.
+CUT does for a destination. Tracked by `s.lastCellX/lastCellZ`. It only runs
+while `current_region` is valid — on a `doSpooling == 0` level that loader
+indexes `spoolinfo_offsets[current_region]`, and `-1` would read out of bounds.
 
 ### Traffic pre-seed (`AntFarmPreseedTraffic`)
 
@@ -232,19 +281,56 @@ re-engage** (`AntFarmSetActive(1)`), and **once per cut** as soon as that cut's
 destination region is resident (`s.seededThisCut`, reset in the CUT's `cutInit`,
 right before the shot is planned — so a car-subject cut has a subject waiting).
 
-It hands `MainPlayer.spoolXZ` the focus for the duration (the module's shot area
-while active, otherwise the player's own spool) and restores it after. The
-player's car is never a candidate: it is pinned with `reservedSlots[] = 1` and
-`CONTROL_TYPE_NONE`, which the spawner's free-slot search skips.
+It fills the whole **region block**, not one point: the budget is split across
+the block's usable regions (`ceil(nMax / usable)`) and `MainPlayer.spoolXZ` is
+pointed at each region's centre in turn, so the traffic the camera can actually
+see is spread across the area rather than piled into one. It restores the spool
+after. The player's car is never a candidate: it is pinned with
+`reservedSlots[] = 1` and `CONTROL_TYPE_NONE`, which the spawner's free-slot
+search skips.
+
+**Stranded slots.** The engine evicts a civilian once it is more than 24000
+units from the spool, but only a few per frame — so right after a hop the slots
+are still full of the *previous* area's cars and `PingInCivCar` refuses every
+ping (the old “0 civ car(s)” seed). The pre-seed does that eviction at once,
+measured against the new focus, before it pings.
 
 **No invisible cars.** `InitCar` places every pinger with `MapHeight()`, which
 answers 0 for a cell that is not resident — the car lands in the void and is
-never drawn. So the focus region is streamed in first (`jer_map_spool_to` when
-it is not resident) and the seed only pings when the region has data *and* is
-resident; otherwise it logs
-`[antfarm] pre-seed skipped: region N not resident (cars would spawn invisible)`
-and spawns nothing. Each seed logs its count:
-`[antfarm] pre-seed: N civ car(s) around (x,z) region R`.
+never drawn. So the whole block is streamed in first, and a region that is still
+not resident is skipped (loudly: `pre-seed: region N not resident (cars would
+spawn invisible)`) rather than dropping cars into nothing. Each seed logs its
+count and coverage:
+`[antfarm] pre-seed: N civ car(s) across S/U region(s) around (x,z)`.
+
+### Known limits / further work
+
+The block is streamed **at the cut** — once, under the black. Two cases are
+therefore still only as good as the engine's own streaming, and on a
+`doSpooling == 0` (mp) level that is nothing:
+
+1. **A travelling shot crossing a region boundary** (dolly / flyover / crane,
+   or a long chase). The camera moves into a region that was not in the cut's
+   block. On a normal level `ControlMap` streams it within a frame; on an mp
+   level it does not, so the far half of the travel can show unloaded geometry
+   until the next cut. The texture-area guard covers the *textures* of a cell
+   change, not the *region*. A fix would re-run `AntFarmStreamBlock` for the
+   camera's region when the camera crosses into a new one mid-shot (the same
+   `s.lastCellX/lastCellZ` hook the area guard already uses).
+2. **A subject that drives out of the block.** The car-subject block is forced
+   at the final anchor, but a chase then follows the car across a boundary; the
+   void guard only checks the *camera's* region, so an unloaded subject region
+   silently stops drawing the car rather than showing a void. A matching
+   subject-region check (or a re-block when the subject's region changes) would
+   close it.
+3. **`block N/M` below `4/4` is not always a bug.** On an mp arena only some of
+   the block's regions have spool data (measured 2/2 at rio `-mp 0`), and the
+   cut ignores the unusable ones rather than waiting for a region that can never
+   load. A `M < 4` is the map, not a failure.
+
+Also worth knowing when reading logs: the cut line's `region R` is the region
+of the shot's *area* (computed from `s.areaPos`); it used to be
+`current_region`, which is `-1` on an mp level.
 
 ---
 
@@ -661,10 +747,18 @@ generate time).
 ## 15. Traps to remember
 
 * **`regions_unpacked[]` is a barrel table, not a region map** — and only four
-  regions are ever resident.
+  regions are ever resident. A far hop must force the whole **block** around the
+  destination (`AntFarmBlockAround` / `AntFarmStreamBlock`), not just its own
+  region, or the shot opens as one island of geometry.
+* **On a `doSpooling == 0` level (an mp arena) the engine never streams at all**
+  — only the four `multiplayerregions` load at level start, and `current_region`
+  stays `-1` so `CheckLoadAreaData` indexes `spoolinfo_offsets[-1]`. antfarm has
+  to force the regions itself and seed `current_region`.
 * **The renderer culls from `camera_position`; the spool drives the regions.**
   Point the spool at the camera *before* the void guard, or the hold freezes the
   spool and the camera can never become resident.
+* **Hold `s.holdPos`, not `s.camPos`, in the void guard** — `camPos` is snapped
+  to the new shot on its first frame, so holding it holds the void.
 * **Texture pages stream per AREA off `camera_position`** — park the camera at
   the destination during a cut, and re-request the area when a travelling shot
   crosses a cell.
