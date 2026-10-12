@@ -271,6 +271,11 @@ JERAI_CURVE JerAiScanCurve(int cx, int cz, int horizon)
  * falls from 100 (hooked up) to 0 as |slip| approaches this. */
 #define JERAI_SLIP_LIMIT	600
 
+/* How much of its corner speed a full-slide car is still asked for. Not zero: a car
+ * at a standstill cannot steer out of a slide, so the floor keeps it moving while
+ * the grip comes back. */
+#define JERAI_GRIP_FLOOR	40
+
 /* How far over the corner speed the car must be before the driver brakes rather
  * than merely lifting off (engine speed units). A small margin keeps it from
  * dithering between throttle and brake. */
@@ -298,6 +303,22 @@ static int JerAiSpeedForRadius(int r)
  * speed by the time it reaches the corner: v^2 = vCorner^2 + 2*aBrake*dist.
  * This is the momentum term - slowing only once the corner arrives is exactly
  * how a car ploughs into the outside wall. */
+/* Fold the grip the car ACTUALLY has into a speed request. The corner model is a
+ * full-grip model; asking for full-grip corner speed while already sliding is what
+ * turns a slide into a spin. gripPct has been computed every frame (JerAiGripPct,
+ * from the slip angle) and used only by the log - this is where it earns its keep.
+ * The panic path deliberately does NOT call this: running from the police is flat
+ * out on purpose. */
+static int JerAiGripCap(int v)
+{
+	int grip = gJerAi.gripPct;
+
+	if (grip < JERAI_GRIP_FLOOR)
+		grip = JERAI_GRIP_FLOOR;
+
+	return v * grip / 100;
+}
+
 int JerAiSpeedTarget(void)
 {
 	const JERAI_CURVE* c = &gJerAi.curve;
@@ -312,7 +333,7 @@ int JerAiSpeedTarget(void)
 		return gJerAi.topSpeed;
 
 	if (!gJerAi.havePlan || c->sharp == 0 || c->span <= 0)
-		return gJerAi.topSpeed;
+		return JerAiGripCap(gJerAi.topSpeed);
 
 	turnRad = (double)(c->sharp < 0 ? -c->sharp : c->sharp) * 6.283185307 / 4096.0;
 
@@ -330,7 +351,7 @@ int JerAiSpeedTarget(void)
 
 	if (vNow > gJerAi.topSpeed) vNow = gJerAi.topSpeed;
 
-	return vNow;
+	return JerAiGripCap(vNow);
 }
 
 /* How much grip is left: 100 when hooked up, falling as the car slides. The slip
@@ -800,10 +821,11 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 	/* and what the plan is about to do - the corner ahead and how far off */
 	gJerAi.curve = JerAiScanCurve(car->hd.where.t[0], car->hd.where.t[2], gJerAi.cornerLookahead);
 
-	/* the grip-limited speed the car may carry into that corner, and how much
-	 * grip is left right now */
-	gJerAi.targetSpeed = JerAiSpeedTarget();
+	/* how much grip is left right now, and the grip-limited speed the car may carry
+	 * into that corner. gripPct is read FIRST: JerAiSpeedTarget folds it in, and it
+	 * used to run a frame behind. */
 	gJerAi.gripPct = JerAiGripPct();
+	gJerAi.targetSpeed = JerAiSpeedTarget();
 
 	/* Another car close ahead in our lane: steer around it AND be ready to brake.
 	 * The steer bias picks the side with room (or the side AWAY from the car), so
