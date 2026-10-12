@@ -48,6 +48,10 @@ JERICHO/MODS/*/obj/
 JERICHO/MODS/*/lib/
 *.idb
 src_rebuild/build*
+# ...but NOT the two build helpers the README links (a clone that does not have
+# them has broken links, and the checks job builds doccheck from a clone).
+!src_rebuild/build_jericho.bat
+!src_rebuild/build_dev.bat
 src_rebuild/*.make
 src_rebuild/Makefile
 /.reasonix

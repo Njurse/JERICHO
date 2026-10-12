@@ -96,11 +96,34 @@ def find(path, pattern, group=1):
 # ---------------------------------------------------------------------------
 # 1. relative links resolve
 # ---------------------------------------------------------------------------
+def submodule_paths():
+    """The submodules' paths, from .gitmodules.
+
+    A link INTO a submodule cannot be resolved from a clone that has not
+    initialised it, and the checks job deliberately does not: two of the three
+    submodules are not published (gaildrv2 and d1cars are private), which is why
+    the build jobs fetch the submodules they need by name instead of using
+    `submodules: recursive`. Failing these links would make the job red for a file
+    that IS tracked one level down, and would push the docs into not linking the
+    submodules at all - which is worse than not verifying them here."""
+    paths = []
+    for line in read(".gitmodules").splitlines():
+        line = line.strip()
+        if line.startswith("path"):
+            paths.append(line.split("=", 1)[1].strip())
+    return paths
+
+
 def check_links():
+    subs = submodule_paths()
+
     for doc in git_ls("*.md"):
         for resolved in links_in(doc):
-            if not os.path.exists(os.path.join(ROOT, resolved)):
-                fail("links", "%s -> %s (does not exist)" % (doc, resolved))
+            if os.path.exists(os.path.join(ROOT, resolved)):
+                continue
+            if any(resolved == s or resolved.startswith(s + "/") for s in subs):
+                continue		# inside a submodule: not ours to verify from here
+            fail("links", "%s -> %s (does not exist)" % (doc, resolved))
 
 
 # ---------------------------------------------------------------------------
