@@ -596,6 +596,52 @@ int chkImportSlotModel(int city, int slot)
  * Ascending model onto ascending slot, which reproduces Driver 2's frontend
  * semantics for free: models 1,2,3,4 land on select-slots 0..3 (the four a stock
  * city shows) and any extras follow on 4. */
+/* Is this city's data actually on THIS install?
+ *
+ * The five Driver 1 car-data cities come from DRIVER\D1CARS, which is a SIBLING of
+ * DRIVER2 and is only there when the Driver 1 content was baked and shipped (the
+ * public release does not include it at all). Their car list is generated rather than
+ * read - it has to be, because the frontend builds its list before the CD subsystem
+ * comes up - so nothing was stopping a machine with no D1 data from being offered
+ * D1 cars it cannot build. That is the report "in release the palettes on some
+ * vehicles from d1 are busted": the pick fell back to the level's own vehicle.
+ *
+ * Driver 2's own cities are always present (their data is the level's own).
+ *
+ * NOT FileExists(): that resolves against gDataFolder ("DRIVER2\"), so it would probe
+ * DRIVER2\DRIVER\D1CARS\... and always fail - the same trap jer_d1_file_exists hit in
+ * the engine. Hence a raw, CWD-relative open. */
+int chkCityAssetsPresent(int city)
+{
+	static const char* const d1LevFiles[] =
+	{
+		"DRIVER\\D1CARS\\MIAMI.LEV",
+		"DRIVER\\D1CARS\\FRISCO.LEV",
+		"DRIVER\\D1CARS\\LA.LEV",
+		"DRIVER\\D1CARS\\NEWYORK.LEV",
+		"DRIVER\\D1CARS\\NEWCASTLE.LEV",
+	};
+	const int city0 = CITY_D2_COUNT;
+	FILE* f;
+
+	if (city < 0 || city >= CHK_CAR_CITY_COUNT)
+		return 0;
+
+	if (city < city0)
+		return 1;
+
+	if (city - city0 >= (int)(sizeof(d1LevFiles) / sizeof(d1LevFiles[0])))
+		return 0;
+
+	f = fopen(d1LevFiles[city - city0], "rb");
+
+	if (f == NULL)
+		return 0;
+
+	fclose(f);
+	return 1;
+}
+
 void chkFillCarTableFromImport(int city)
 {
 	extern char carNumLookup[CITY_COUNT][10];
@@ -626,8 +672,12 @@ void chkFillCarTableFromImport(int city)
 		 * transplant tools from what was actually baked (and checked against the
 		 * blob), so it is still "the cars this addon imported", available at the
 		 * instant the list is built. */
-		if (city < (int)(sizeof(chkD1CityModels) / sizeof(chkD1CityModels[0])))
-			present = chkD1CityModels[city];
+			/* The generated answer says what the TRANSPLANT holds, not what THIS
+			 * INSTALL has. A city whose data is absent must not be offered: that is how a
+			 * plain Release install came to list five Driver 1 cities whose every car
+			 * failed to build. */
+			if (chkCityAssetsPresent(city) && city < (int)(sizeof(chkD1CityModels) / sizeof(chkD1CityModels[0])))
+				present = chkD1CityModels[city];
 	}
 
 	if (present == 0)

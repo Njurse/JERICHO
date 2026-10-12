@@ -237,7 +237,20 @@ static int chkSelAdjust(void* ud, int dir)
 
 	if (row == CHK_ROW_CITY)
 	{
-		gChkRosterCity = (gChkRosterCity + dir + CHK_CITY_COUNT) % CHK_CITY_COUNT;
+		/* Step to a city this install can actually serve: a Driver 1 city whose data
+		 * is not here is not offered at all (chkCityAssetsPresent), so the row must
+		 * never rest on one and show an empty list. Driver 2's own four always answer
+		 * yes, so the loop always terminates. */
+		int step;
+
+		for (step = 0; step < CHK_CITY_COUNT; step++)
+		{
+			gChkRosterCity = (gChkRosterCity + dir + CHK_CITY_COUNT) % CHK_CITY_COUNT;
+
+			if (chkCityAssetsPresent(gChkRosterCity))
+				break;
+		}
+
 		chkClampCursor();
 
 		printInfo("[carhacks] car select: roster city %s (%d car(s) available)\n",

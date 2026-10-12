@@ -78,7 +78,15 @@ static int ChkMpCities(void* userdata, void* args)
 		return JER_RESULT_CONTINUE;
 
 	for (city = 0; city < CHK_CAR_CITY_COUNT && a->count < a->max; city++)
+	{
+		/* Only cities this install can actually serve. A Driver 1 city with no data
+		 * here is not offered at all, rather than offered with cars that cannot be
+		 * built (chkCityAssetsPresent). */
+		if (!chkCityAssetsPresent(city))
+			continue;
+
 		a->cities[a->count++] = city;
+	}
 
 	return JER_RESULT_CONTINUE;
 }
