@@ -2,11 +2,13 @@ name: Build
 
 # Builds downloadable binaries for every push and publishes releases.
 #
-# The RELEASE configuration (JERICHO.exe) is what is built and published: it
-# pre-includes only carhacks + crumple + mp (premake5.lua JERICHO_RELEASE_MODS),
-# so a download is the game and three mods rather than every experimental module.
-# The DEV configuration (Release_dev / JERICHO_dev.exe, every mod) is NOT built
-# here and stays local. The mp remote agent installs JERICHO_Release_win64.zip.
+# TWO configurations are built and published. The RELEASE configuration
+# (JERICHO.exe) pre-includes only the release mods (premake5.lua
+# JERICHO_RELEASE_MODS), so a download is the game and a small, legible mod set
+# rather than every experimental module. The DEV configuration (Release_dev /
+# JERICHO_dev) compiles every module and is what the test rigs use. Both are
+# packaged per platform, so a run also refreshes the dev archives. The mp remote
+# agent installs only the Release asset, JERICHO_Release_win64.zip.
 #
 #  - push to main        -> build + upload workflow artifacts, refresh the
 #                           rolling "alpha" pre-release
@@ -173,7 +175,7 @@ jobs:
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build (Release)
+      - name: Build (Release, Release_dev)
         shell: pwsh
         run: |
           # exports.def is produced by gen_exports from a LINKER MAP, and the
@@ -188,7 +190,12 @@ jobs:
           # So build it per configuration: link once against a throwaway empty
           # def (that pass is what writes the .map), regenerate the def from
           # that map, then relink. The relink is incremental -- only the exe.
-          foreach ($cfg in @('Release')) {
+          #
+          # BOTH configurations are built. exports.def is regenerated per config
+          # from that config's own map, and each config's pass 2 relink runs
+          # before the next config resets the def, so the two exes never share a
+          # def generated for the other one.
+          foreach ($cfg in @('Release', 'Release_dev')) {
             $exe = if ($cfg -eq 'Release') { 'JERICHO' } else { 'JERICHO_dev' }
 
             Write-Host "::group::msbuild $cfg (pass 1: empty def, emits the map)"
@@ -208,7 +215,7 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          foreach ($cfg in @('Release')) {
+          foreach ($cfg in @('Release', 'Release_dev')) {
             $bin = "src_rebuild/bin/$cfg"
             # runtime DLLs bundled next to the exe (x64)
             Copy-Item "$env:SDL2_DIR/lib/x64/SDL2.dll" "$bin/SDL2.dll" -Force
@@ -238,6 +245,13 @@ jobs:
         with:
           name: JERICHO_Release_win64
           path: JERICHO_Release_win64.zip
+          if-no-files-found: warn
+
+      - name: Upload Release_dev (win64) artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JERICHO_Release_dev_win64
+          path: JERICHO_Release_dev_win64.zip
           if-no-files-found: warn
 
   linux:
@@ -294,10 +308,10 @@ jobs:
         working-directory: src_rebuild
         run: ./premake5 gmake2
 
-      - name: Build (release_x64)
+      - name: Build (release_x64, release_dev_x64)
         working-directory: src_rebuild/build
         run: |
-          for cfg in release_x64; do
+          for cfg in release_x64 release_dev_x64; do
             echo "::group::make $cfg"
             set +e
             make config=$cfg -j"$(nproc)" 2>&1 | tee "/tmp/make-$cfg.log"
@@ -320,7 +334,11 @@ jobs:
               # `mkdir -p ../bin/Release/JERICHO/MODS` was failing against the exe of
               # the same name. Drop the target so the rule, and the mirror with it,
               # runs again. Both spellings, so this survives the targetname change.
-              rm -f ../bin/Release/jericho ../bin/Release/JERICHO
+              # The output dir is bin/<buildcfg>: Release for release_x64,
+              # Release_dev for release_dev_x64. Drop the exe (every spelling) so
+              # the link rule, and the mirror inside it, actually re-runs.
+              case "$cfg" in release_dev_x64) bincfg=Release_dev ;; *) bincfg=Release ;; esac
+              rm -f "../bin/$bincfg/jericho" "../bin/$bincfg/JERICHO" "../bin/$bincfg/JERICHO_dev"
               make config=$cfg -j1 2>&1 | grep -v '^==== ' | tail -10 | while IFS= read -r line; do
                 [ -n "$line" ] && echo "::error title=$cfg::${line}"
               done
@@ -336,7 +354,7 @@ jobs:
 
       - name: Package
         run: |
-          for cfg in Release; do
+          for cfg in Release Release_dev; do
             d="src_rebuild/bin/$cfg"
             # game data (the post-build step already mirrored JERICHO/ into $d)
             cp -R data/. "$d"/
@@ -356,6 +374,13 @@ jobs:
           # ERROR, not warn: a green Linux job must MEAN the artifact exists. The
           # publish job still tolerates a failed platform (that stays as it is), but
           # the Linux job itself should not pass while producing nothing.
+          if-no-files-found: error
+
+      - name: Upload Release_dev (linux-x64) artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JERICHO_Release_dev_linux-x64
+          path: JERICHO_Release_dev_linux-x64.tar.gz
           if-no-files-found: error
 
   publish:

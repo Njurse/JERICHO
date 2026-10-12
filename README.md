@@ -262,9 +262,9 @@ reload of the Mods screen.
 
 Every push to `main` and every `v*` tag is built by GitHub Actions and published
 as downloadable archives: a Windows **x64** build and a Linux **x86_64** build,
-both in the clean `Release` configuration, packed with the runtime libraries,
-the `data/` tree and the `JERICHO/` tree the runtime reads. See
-[`docs/CI.md`](docs/CI.md).
+each in both the clean `Release` configuration and the full `Release_dev` one,
+packed with the runtime libraries, the `data/` tree and the `JERICHO/` tree the
+runtime reads. See [`docs/CI.md`](docs/CI.md).
 
 ### Linux and other platforms
 

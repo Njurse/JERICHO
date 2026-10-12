@@ -8,8 +8,8 @@ replacement for the upstream [AppVeyor](#relationship-to-appveyor) pipeline.
 
 | Job | Runner | Toolchain | Configurations |
 |---|---|---|---|
-| `windows` | `windows-2022` | premake5 `vs2022` → MSBuild, **x64** | `Release` |
-| `linux` | `ubuntu-22.04` | premake5 `gmake2` → `make`, **x86_64** | `release_x64` |
+| `windows` | `windows-2022` | premake5 `vs2022` → MSBuild, **x64** | `Release`, `Release_dev` |
+| `linux` | `ubuntu-22.04` | premake5 `gmake2` → `make`, **x86_64** | `release_x64`, `release_dev_x64` |
 
 Each build is packaged with everything needed to run:
 
@@ -31,18 +31,23 @@ Each build is packaged with everything needed to run:
 Resulting archives:
 
 ```
-JERICHO_Release_win64.zip      JERICHO_Release_linux-x64.tar.gz
+JERICHO_Release_win64.zip          JERICHO_Release_linux-x64.tar.gz
+JERICHO_Release_dev_win64.zip      JERICHO_Release_dev_linux-x64.tar.gz
 SHA256SUMS
 ```
 
-Only `Release` is built and published: the clean shipping build, which
-pre-includes just the release mods (`JERICHO_RELEASE_MODS` in `premake5.lua` —
-carhacks, crumple, d1cars, mp). The `Release_dev` configuration — every
+Both configurations are built and published. `Release` is the clean shipping
+build, which pre-includes just the release mods (`JERICHO_RELEASE_MODS` in
+`premake5.lua` — carhacks, crumple, d1cars, mp). `Release_dev` compiles every
 installed module plus the debug options / console (`DEBUG_OPTIONS`,
-`COLLISION_DEBUG`, `CUTSCENE_RECORDER`) — is **not** built here and stays local.
-`SHA256SUMS` lists the archives' SHA256, published beside them so a downloader --
-the mp remote agent -- can verify an archive against something that did not come
-out of it.
+`COLLISION_DEBUG`, `CUTSCENE_RECORDER`); it is the build the test rigs run.
+
+CI deliberately does not fetch the private submodules, so a `Release_dev` build
+here compiles every module present in a fresh checkout and leaves the private
+ones out — the same set the workflow's `submodules` allow-list selects.
+`SHA256SUMS` lists every archive's SHA256, published beside them so a downloader
+-- the mp remote agent -- can verify an archive against something that did not
+come out of it.
 
 A third job, `checks`, runs on every push and takes seconds; it covers what a
 build cannot see: `tools/doccheck.py` (docs consistent with the code), a
@@ -59,8 +64,8 @@ premake `5.0.0-beta1`, SDL2 `2.30.2`, OpenAL-soft `1.23.1`, and libjpeg `jpeg-9d
 
 | Trigger | Effect |
 |---|---|
-| push to `main` | build both platforms, upload the two archives as **workflow artifacts**, and refresh the rolling **`alpha`** pre-release |
-| push a `v*` tag | build both platforms and publish a normal **GitHub Release** with the two archives and `SHA256SUMS` attached |
+| push to `main` | build both platforms and configurations, upload the four archives as **workflow artifacts**, and refresh the rolling **`alpha`** pre-release |
+| push a `v*` tag | build both platforms and configurations and publish a normal **GitHub Release** with the four archives and `SHA256SUMS` attached |
 | manual run (Actions → Build → *Run workflow*) | same as a push to `main` — or, with the **`release_tag`** input set, publish this ref's build as a release under that tag (see [Installing a CI build on a test machine](#installing-a-ci-build-on-a-test-machine)) |
 
 Superseded runs on the same ref are cancelled automatically.
