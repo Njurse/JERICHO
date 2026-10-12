@@ -52,5 +52,7 @@ run 3 1 src_RIO
 run 0 2 src_CHICAGO_into_VEGAS
 run 2 0 src_VEGAS_into_CHICAGO
 
-[ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || printf 'cross_city_vehicles = 0\n' > "$INI"
+# Nothing was saved: remove the ini so the module's own defaults apply (writing the
+# old cross_city_vehicles = 0 here would silently undo the new default).
+[ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || rm -f "$INI"
 echo "carhacks.ini restored"

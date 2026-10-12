@@ -50,10 +50,15 @@ typedef struct CHK_HACK
 /* Named rows, so no handler depends on table order (CHK_HACK_* live in
  * carhacks.h so sibling sources - carselect.c - can name them too). */
 
+/* All three default ON, so a fresh install can pick a car from any city out of
+ * the box. (cross_city_vehicles used to be opt-in; it made the in-game picker show
+ * only the level's own city, while the frontend menu already browsed every city --
+ * the two screens now agree.) A rig that wants the cross-city-off path as a control
+ * still writes `cross_city_vehicles = 0` explicitly. */
 static const CHK_HACK gChkHacks[] =
 {
 	{ "Unlock extra vehicles", "unlock_extra_vehicles", 1 },
-	{ "Cross-city vehicles",   "cross_city_vehicles",   0 },	/* opt-in */
+	{ "Cross-city vehicles",   "cross_city_vehicles",   1 },
 	{ "Car select menu",       "car_select_menu",      1 },
 };
 

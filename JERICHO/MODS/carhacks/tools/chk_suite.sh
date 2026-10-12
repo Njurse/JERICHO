@@ -107,8 +107,10 @@ fi
 
 restore_files() {
 	[ -n "${SAVED_CONFIG:-}" ] && printf '%s\n' "$SAVED_CONFIG" > "$CONFIG"
+	# Nothing was saved: remove the ini so the module's own defaults apply.
+	# (Writing the old cross_city_vehicles = 0 here would silently undo the new default.)
 	if [ -n "${SAVED:-}" ]; then printf '%s\n' "$SAVED" > "$INI"
-	else printf 'cross_city_vehicles = 0\n' > "$INI"; fi
+	else rm -f "$INI"; fi
 	[ -n "${SAVED_MODLIST:-}" ] && printf '%s\n' "$SAVED_MODLIST" > "$MODLIST"
 }
 trap restore_files EXIT

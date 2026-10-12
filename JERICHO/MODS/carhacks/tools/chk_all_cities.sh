@@ -163,7 +163,9 @@ for host in 0 1 2 3; do
 	[ "$nspawn" -ne 3 ] && fail=1
 done
 
-[ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || printf 'cross_city_vehicles = 0\n' > "$INI"
+# Nothing was saved: remove the ini so the module's own defaults apply (writing the
+# old cross_city_vehicles = 0 here would silently undo the new default).
+[ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || rm -f "$INI"
 echo "carhacks.ini restored"
 
 if [ "$fail" -eq 0 ]; then

@@ -203,7 +203,9 @@ echo "  -> lumps $nlumps/3, geometry $ngeom/3, spawned $nspawn/3"
 # to look at (see the header), so no spawn is a failure of this test.
 [ "$nspawn" -ne 3 ] && fail=1
 
-[ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || printf 'cross_city_vehicles = 0\n' > "$INI"
+# Nothing was saved: remove the ini so the module's own defaults apply (writing the
+# old cross_city_vehicles = 0 here would silently undo the new default).
+[ -n "$SAVED" ] && printf '%s\n' "$SAVED" > "$INI" || rm -f "$INI"
 echo "carhacks.ini restored"
 
 if [ "$fail" -eq 0 ]; then
