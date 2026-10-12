@@ -246,6 +246,18 @@ jobs:
               Where-Object { $_.Extension -in @('.lib', '.exp', '.a', '.obj', '.idb') } |
               Remove-Item -Force -ErrorAction SilentlyContinue
 
+            # Two things a release must never carry.
+            #
+            # 1. CONFIG/modlist.ini -- the player's module toggles. An archive cannot
+            #    ask before replacing it, so a release ships none and each module runs
+            #    from its mod.toml default. (A Release build deletes it already; this
+            #    is the belt to that brace, in case a stale bin is packaged.)
+            # 2. DRIVER/ -- the Driver 1 car data. JERICHO ships the WAY to bake it,
+            #    never the data: that is derived from Driver 1's copyrighted files, and
+            #    the player bakes their own with the tooling this package carries.
+            Remove-Item "$bin/JERICHO/CONFIG/modlist.ini" -Force -ErrorAction SilentlyContinue
+            Remove-Item "$bin/DRIVER" -Recurse -Force -ErrorAction SilentlyContinue
+
             # The bake tools, and both bake scripts at the package root beside the
             # exe. A player drops their own Driver 1 data into DRIVER\ and runs
             # BAKE_D1_CARS.bat (or .sh) once; carhacks offers the five cities from
@@ -396,8 +408,16 @@ jobs:
             cp JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.bat "$d/"
             cp JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.sh "$d/"
             chmod +x "$d/BAKE_D1_CARS.sh"
+            # Two things a release must never carry: CONFIG/modlist.ini (the player's
+            # module toggles -- an archive cannot ask before replacing them, so a
+            # release ships none and each module runs from its mod.toml default) and
+            # DRIVER/ (the Driver 1 car data -- JERICHO ships the WAY to bake it, never
+            # the data, which is derived from Driver 1's copyrighted files).
+            rm -f "$d/JERICHO/CONFIG/modlist.ini"
+            rm -rf "$d/DRIVER"
             ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" \
-                --exclude=FontTool --exclude=gen_exports --exclude='lib*.a' * )
+                --exclude=FontTool --exclude=gen_exports --exclude='lib*.a' \
+                --exclude=DRIVER --exclude='JERICHO/CONFIG/modlist.ini' * )
           done
 
       - name: Upload Release (linux-x64) artifact

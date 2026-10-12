@@ -4,4 +4,8 @@ version = "1.0.0"
 author = "Nattdy + DeepSeek"
 description = "Impact-driven vertex deformation + wheel damage. The flagship JERICHO package: dents, crumples, bent wheels, surface-roughness amplification, and the Crumple Debug pause submenu."
 dependencies = []
-default-enabled = true
+# OFF out of the box (2026-10-12). crumple changes how every crash feels, which is
+# not something to switch on for somebody who has not asked for it - and a release
+# no longer ships a modlist.ini, so THIS value is what "default" now means. Turn it
+# on in Options -> JERICHO, which writes the modlist from then on.
+default-enabled = false

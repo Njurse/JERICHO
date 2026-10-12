@@ -192,9 +192,10 @@ and the Release configuration applies it in three places so they cannot drift:
 - the link set is per configuration — Dev/`Release_dev` link every module,
   `Release` links just the three;
 - a Release-only mirror pass drops the other `JERICHO/MODS/<id>` folders from
-  `bin/Release`, and a Release-only post-build copies
-  `JERICHO/gen/modlist_release.ini` over the shipped `CONFIG/modlist.ini`, so a
-  release never names a module it does not carry.
+  `bin/Release`, and a Release-only post-build DELETES the mirrored
+  `CONFIG/modlist.ini`, so a release cannot replace a player's own module toggles;
+  with no modlist each module runs from its `mod.toml` `default-enabled`, which the
+  generated registry bakes in (carhacks and mp on, crumple off).
 
 `gaildrv2` and `d1cars` are additionally dropped from every mirror
 (`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`) and are not in the CI
