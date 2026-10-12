@@ -91,10 +91,18 @@ other's colours"). See `PALETTES.md` §7.
 - the per-model row assignment for that collapse (rows from `CarModelSet`/`CarModelSetCount`
   at bake time — the real fix, since 8 rows cannot hold 13 sets), plus arbitration so two
   cars never share a row;
-- **hide D1 cities (MIAMI/FRISCO/LA/NEWYORK/NEWCASTLE) from the car-select / import list
-  when their Driver 1 assets are absent** — the list is built from the generated
-  `d1citymodels.h` before assets are known (`carimport.c:587-626`), so it offers them
-  unconditionally today;
+- **DONE (2026-10-11): hide D1 cities (MIAMI/FRISCO/LA/NEWYORK/NEWCASTLE) when their
+  Driver 1 assets are absent.** The list is generated (`d1citymodels.h`) rather than read,
+  because the frontend builds it before the CD subsystem is up, so it used to offer them
+  unconditionally — a plain Release install showed five cities whose every car failed to
+  build ("in release the palettes on some vehicles from d1 are busted" was this, not a
+  palette bug). One gate now covers all three surfaces: `chkCityAssetsPresent()`
+  (`carimport.c`) tests `DRIVER\D1CARS\<CITY>.LEV` with a RAW CWD-relative `fopen` — not
+  `FileExists()`, which resolves against `gDataFolder` and would probe
+  `DRIVER2\DRIVER\D1CARS\...` (the trap `jer_d1_file_exists` hit) — and
+  `chkFillCarTableFromImport`, `mplive.c`'s `ChkMpCities` and carselect's city row all
+  gate on it. d1cars is now part of the release too (see below), so a shipped copy has
+  the data and shows the cities;
 - the D1 exporter's own freshness is a **separate workstream** (out of scope here).
 
 ## The in-game picker's city row (fixed)

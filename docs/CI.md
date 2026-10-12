@@ -36,8 +36,8 @@ SHA256SUMS
 ```
 
 Only `Release` is built and published: the clean shipping build, which
-pre-includes just the three release mods (`JERICHO_RELEASE_MODS` in
-`premake5.lua` — carhacks, crumple, mp). The `Release_dev` configuration — every
+pre-includes just the release mods (`JERICHO_RELEASE_MODS` in `premake5.lua` —
+carhacks, crumple, d1cars, mp). The `Release_dev` configuration — every
 installed module plus the debug options / console (`DEBUG_OPTIONS`,
 `COLLISION_DEBUG`, `CUTSCENE_RECORDER`) — is **not** built here and stays local.
 `SHA256SUMS` lists the archives' SHA256, published beside them so a downloader --
