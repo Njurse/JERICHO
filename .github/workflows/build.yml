@@ -492,6 +492,51 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          # The overview below HEADS the notes; generate_release_notes then appends
+          # GitHub's own "What's Changed" underneath it (the action concatenates
+          # body + blank line + generated notes and clears the API flag itself).
+          # Without a body the release page was ONLY that auto changelog, which on a
+          # release with no merged pull requests is a bare "Full Changelog" link and
+          # tells a first-time downloader nothing about what they are getting.
+          body: |
+            JERICHO is a mod host built into a fork of REDRIVER2, a source-level
+            reimplementation of **Driver 2** that runs natively on PC rather than
+            under an emulator. This archive carries the game, the runtime libraries,
+            the frontend art the project rebuilds, and the `JERICHO/` tree the mods
+            live in.
+
+            **What to expect**
+
+            - **Driver 2, on PC** - the whole game, with long-standing original bugs
+              fixed. As with REDRIVER2 it reads its map, models and cutscenes from
+              `DRIVER2/` beside the executable, so a complete install is this archive
+              plus your own copy of the game's data. Cutscene video needs converting
+              from your discs (`install/conv.bat` / `conv.sh`) or skipping with
+              `-nofmv`.
+            - **A mods menu** - *Options -> JERICHO* lists every installed module:
+              enable, disable, reorder, and open each one's own page. Toggles are
+              written straight back to `JERICHO/CONFIG/modlist.ini`.
+            - **LAN multiplayer** (`mp`) - host or join, everyone on the same build,
+              each player driving their own car (cross-city imports included). A bot
+              can take a seat when you are testing alone.
+            - **Any vehicle, from any city** (`carhacks`) - unlocks the cars the
+              frontend hides and loads another city's vehicles into a level.
+            - **Impact damage** (`crumple`) - body deformation and wheel damage on top
+              of the stock damaged-model system.
+            - **Driver 1 car shapes** (`d1cars`) - bake them once from your own copy of
+              Driver 1 with `BAKE_D1_CARS.bat` / `BAKE_D1_CARS.sh`.
+            - **Staying current** - `update_jericho.bat` / `update_jericho.sh` beside
+              the game refresh this install from the newest release, keeping your
+              `CONFIG/` and any module you added. Pass `dev` for the `Release_dev`
+              build instead.
+
+            `Release` ships the four modules above. `Release_dev` compiles every
+            module plus the debug console and dev tooling - take it only if you mean
+            to tinker.
+
+            Windows: unzip anywhere and run `JERICHO.exe`. Linux: `tar -xzf` and run
+            `./jericho`. The game writes its log and config next to the executable, so
+            it does not need installing.
           generate_release_notes: true
           prerelease: false
           # a tag that already has a release: replace the assets rather than fail

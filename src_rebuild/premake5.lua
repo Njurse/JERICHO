@@ -783,6 +783,13 @@ project "JERICHO"
             "xcopy /Y /D \"..\\..\\JERICHO\\CONFIG\\modlist.ini\" \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\\modlist.ini\"",
             "copy /Y \"..\\..\\JERICHO\\build_mods.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.bat\"",
             "copy /Y \"..\\..\\JERICHO\\build_game.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.bat\"",
+            -- The updater, at the build's ROOT next to the exe, so a locally built
+            -- install carries exactly what a downloaded one does. The packaging step
+            -- used to be the only thing that placed these, which meant bin/<cfg> - the
+            -- tree people actually run from - never had an updater. Both spellings, as
+            -- the packages carry both: whichever OS the folder is copied to, one fits.
+            "copy /Y \"..\\..\\JERICHO\\MODS\\mp\\tools\\pack_lan\\update_jericho.bat\" \"%{cfg.buildtarget.directory}update_jericho.bat\"",
+            "copy /Y \"..\\..\\JERICHO\\MODS\\mp\\tools\\pack_lan\\update_jericho.sh\" \"%{cfg.buildtarget.directory}update_jericho.sh\"",
         }
 
     -- The TOOLS are deliberately NOT mirrored. They are source, not game data: the
@@ -867,6 +874,12 @@ project "JERICHO"
             -- as on Windows: let a repo-side modlist.ini edit reach bin/, but only when
             -- it is the newer file (cp -u), so a runtime toggle there still survives.
             "cp -u ../../JERICHO/CONFIG/modlist.ini \"%{cfg.buildtarget.directory}/JERICHO/CONFIG/modlist.ini\"",
+            -- the updater at the build's root, next to the exe - see the Windows block.
+            -- cp does not carry the executable bit reliably and this one is a script, so
+            -- the chmod is not decoration: the file is meant to be run from here.
+            "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
+            "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat \"%{cfg.buildtarget.directory}/update_jericho.bat\"",
+            "chmod +x \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
         }
 
     -- the same removals as on Windows, after the copy above. A static library is

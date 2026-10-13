@@ -215,6 +215,15 @@ function New-Package {
         Copy-Item (Join-Path $env:OPENAL_DIR 'bin\Win64\soft_oal.dll') $stage -Force
         Copy-Item (Join-Path $env:OPENAL_DIR 'bin\Win64\soft_oal.dll') (Join-Path $stage 'OpenAL32.dll') -Force
 
+        # the updater, at the payload root next to the exe. It is also written into
+        # bin\<cfg> by the post-build step; copied here from the same canonical source
+        # CI uses, because this function curates the payload and would otherwise omit
+        # a root-level file a local release must match a CI one on.
+        $packLan = Join-Path $RepoRoot 'JERICHO\MODS\mp\tools\pack_lan'
+        foreach ($u in 'update_jericho.bat', 'update_jericho.sh') {
+            Copy-Item (Join-Path $packLan $u) $stage -Force
+        }
+
         $zip = Join-Path $OutPath "JERICHO_${cfg}_win64.zip"
         Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
         Remove-Item $stage -Recurse -Force

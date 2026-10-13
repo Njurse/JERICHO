@@ -46,6 +46,11 @@ Each build is packaged with everything needed to run:
   `DRIVER/` (their baked Driver 1 car data) and **never deleting a file** — so a module
   they added themselves survives. Overwrite-only is deliberate: it is what makes the
   updater safe to hand somebody instead of "download and work out which files are yours".
+  The packaging step places it at the archive root, and the post-build step
+  (`src_rebuild/premake5.lua`) writes the same two files into `bin/<cfg>/` beside the
+  exe — so the tree people actually run from carries an updater too, not only the
+  zips. Both spellings go to both platforms, so whichever OS the folder is copied to
+  has the right one.
 
 Resulting archives:
 
@@ -88,6 +93,15 @@ premake `5.0.0-beta1`, SDL2 `2.30.2`, OpenAL-soft `1.23.1`, and libjpeg `jpeg-9d
 | manual run (Actions → Build → *Run workflow*) | same as a push to `main` — or, with the **`release_tag`** input set, publish this ref's build as a release under that tag (see [Installing a CI build on a test machine](#installing-a-ci-build-on-a-test-machine)) |
 
 Superseded runs on the same ref are cancelled automatically.
+
+A **tagged** release's page opens with a hand-written **overview of the game** — what
+the download is and what to expect from it, including that the map, models and
+cutscenes come from the player's own copy of Driver 2's data — with GitHub's
+auto-generated changelog appended beneath it. The overview lives in the *Publish
+tagged release* step's `body:`; that step keeps `generate_release_notes: true`, and the
+action concatenates body + blank line + generated notes (it clears the API flag and
+merges them itself). Without a body the page was only the auto changelog, which on a
+release with no merged pull requests is a bare "Full Changelog" link.
 
 ## Getting a binary
 
