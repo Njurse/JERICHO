@@ -99,9 +99,11 @@ collision point `P` and inward unit normal `n̂` in car-local space:
      through `P` — exactly the verts that should be pushed inward.
    - `proj ≤ 0` → already inside/behind the plane: no inward push.
 3. **Radial falloff** `falloff = 1 − |d|²/R²` (optionally squared for a
-   smoother edge), so only nearby verts move. `R = falloffRadius` — set wide
-   enough (400) that a hit **contaminates the surrounding body structure**
-   (hood, fenders, doors) and not just the zone that was struck.
+   smoother edge), so only nearby verts move. `R = dentRadiusPct · refHalf` —
+   a **fraction of the car's own half-length** (§3.1). Wide enough that a hit
+   **contaminates the surrounding body structure** (hood, fenders, doors) and
+   not just the zone that was struck, while staying local on a long car and a
+   stubby one alike.
 4. **Clamp** so a vertex can never travel past the collision point:
    `disp = min(disp, proj)` — a vertex starting `proj` units outside the plane
    stops exactly ON the plane (no stretch / overshoot).
@@ -110,6 +112,25 @@ collision point `P` and inward unit normal `n̂` in car-local space:
 6. **Structural resistance** scales everything: a per-vertex table derived
    from the model AABB (see §5), folded together with impact strength, mass
    asymmetry and accumulated damage (see §4).
+
+### 3.1 The magnitudes are fractions of the car, not world units
+
+The three deformation magnitudes — the dent radius, the per-impact push cap and
+the total (compounding) cap — are **fractions of the car's own size**, in 4096
+fixed point (`4096` = `1.0`), against `refHalf`: the larger **horizontal**
+half-extent of the model AABB (its half-length), cached per model in
+`crumpleModelData[]` and read back through `crumpleRefHalf(model)`.
+
+They used to be absolute "world unit" constants (4290 / 3550 / 700), and that is
+what made the crumple **massively overscaled**: 4290 units of per-impact push is
+roughly **1.05× a car's half-length**, so a single ordinary hit could drag a
+bumper vertex to the middle of the body — while the very same number would barely
+mark anything longer. Sizing from the model's own AABB makes it right for every
+car by construction, and keeps every cap below half the car, so nothing can be
+folded through itself.
+
+A model whose AABB has not been built yet falls back to `CRUMPLE_REF_FALLBACK`
+(2048) rather than 0, so the deform path always has a usable number.
 
 ### Narrow vs wide objects (contact profile)
 
@@ -135,14 +156,14 @@ resets to clean when a different panel is hit" bug: the old code rebuilt the
 whole mesh from clean every pass).
 
 - `crumple_recordImpact` pushes each collision into a per-car impact ring
-  (`CRUMPLE_MAX_IMPACTS = 8`). Hits within `falloffRadius/2` of an existing
+  (`CRUMPLE_MAX_IMPACTS = 8`). Hits within `dentRadius/2` of an existing
   dent **merge** into it (howHard accumulates, strength saturates via the
   curve).
 - Each impact is **baked once** (`applied` flag) into the damaged mesh; a
   merge clears the flag so the dent deepens — clamped by the impact plane, so
   it converges instead of overshooting.
-- The mesh may never deviate from clean by more than `compoundCap` per axis
-  (inversion guard).
+- The mesh may never deviate from clean by more than `compoundCapPct · refHalf`
+  per axis (inversion guard) — by construction below the car's half-length.
 - `crumple_resetCar` (car spawn) and **Repair Car** (see §9) restore the
   clean mesh.
 
@@ -150,8 +171,8 @@ Final vertex (first application of impact `i`):
 
 ```
 disp_i = curve(strength_i) · massFactor · falloff_i · (softness + healthBoost)
-         · depthScale_i · globalScale · maxDisplacement
-disp_i = min(disp_i, maxDisplacement, proj_i)
+         · depthScale_i · globalScale · maxDisplacementPct · refHalf
+disp_i = min(disp_i, maxDisplacementPct · refHalf, proj_i)
 v'     = v + disp_i·n̂_i + noiseMix·(damaged − clean)
 ```
 
@@ -283,14 +304,17 @@ Wheel index order is consistent everywhere: `0 = front-right, 1 = rear-right,
 
 ## 8. Tuning guide (`CRUMPLE_PARAMS` in `crumple.c`)
 
+**`*Pct` fields are fractions of the car's own half-length** (4096 = 1.0), not
+world units — see §3.1 for why. Raising one raises it for every car at once.
+
 | Field | Default | Effect |
 |-------|---------|--------|
 | `impactNormalize` | 200000 | `howHard` that counts as a full-scale dent (car-car damage starts ≈ 56k, civ cars die > 204800). Set to the "destroyed" threshold, not ~100k: the body path only dents at all now that it is in proper 4096 fixed point, and at 100k an ordinary crash saturated and flattened the car in one hit |
 | `impactMinHowHard` | 2048 | below this, no deformation (safety; denting only runs when damage was applied anyway) |
-| `maxDisplacement` | 3000 | hard cap on per-impact vertex push (world units) — dramatic crumple at the impact point |
-| `compoundCap` | 3500 | max TOTAL per-vertex push across all recorded impacts (compounding guard) |
+| `maxDisplacementPct` | 1024 (0.25×) | hard cap on per-impact vertex push — a fraction of the car's **half-length** (4096 = 1.0), see §3.1 |
+| `compoundCapPct` | 1229 (0.30×) | max TOTAL per-vertex push across all recorded impacts (compounding guard), same units |
 | `damageBoostScale` | 0 | zone-damage amplification. **Keep 0**: a per-zone boost steps at zone boundaries (visible seams) and makes the dent shape depend on the last panel hit — the procedural dent should be purely impact-shaped |
-| `falloffRadius` | 350 | dent radius (world units) — **concentrated**: a hit crumples locally instead of translating the whole body (was 1800) |
+| `dentRadiusPct` | 410 (0.10×) | dent radius as a fraction of the car's half-length — **concentrated**: a hit crumples locally instead of translating the whole body |
 | `contactDeepen` | 1024 | extra depth (0..4096) for oblique pole/edge impacts (see §3 contact profile) |
 | `falloffSmooth` | 1 | 0 = linear falloff, 1 = squared (smoother edge) |
 | `cabinResistance` | 4096 | resistance at the cabin centre (rigid) |

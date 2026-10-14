@@ -103,16 +103,25 @@ CRUMPLE_PARAMS gCrumpleParams =
 					//                      that dents proportionally. Wheels are
 					//                      calibrated separately (wheelNormalize).
 	1024,		// impactMinHowHard    below this: no deformation
-	4290,		// maxDisplacement     max push per impact (world units) — dramatic
-					//                      crumple at the impact point (x1.65)
-	3550,		// compoundCap         max TOTAL per-vertex push across all impacts (x1.65)
+	1024,		// maxDisplacementPct  max push per impact, as a fraction of the
+					//                      car's own half-length (4096 = 1.0 -> 0.25x).
+					//                      Was an absolute 4290 "world units", about
+					//                      1.05x a car's half-length: ONE hit could drag
+					//                      a bumper vertex to the middle of the body --
+					//                      that is the overscale this replaces.
+	1229,		// compoundCapPct      max TOTAL per-vertex push across all impacts,
+					//                      same units (0.30x of the half-length). A car
+					//                      can never lose more than 30% of its length
+					//                      to damage, so no hit folds it through itself.
 	0,			// damageBoostScale    zone-damage amplification (0 = impact-shaped only,
 					//                      avoids zone-boundary seams)
 
 	// falloff
-	700,		// falloffRadius       dent radius (world units) — concentrated, so
-					//                      a hit crumples locally instead of translating
-					//                      the whole body (x2)
+	410,		// dentRadiusPct       dent radius, as a fraction of the car's own
+					//                      half-length (0.10x), so a hit crumples
+					//                      locally on a long car and a stubby one alike.
+					//                      Was an absolute 700 "world units" (~0.17x),
+					//                      which spread the dent over most of the body.
 	1024,		// contactDeepen       extra depth for oblique (pole/edge) impacts
 	1,			// falloffSmooth       0 = linear, 1 = squared
 
@@ -219,6 +228,11 @@ typedef struct CRUMPLE_MODEL_DATA
 	int valid;				// cache built for this model index
 	int numVerts;			// cached vertex count (0 = unusable)
 	int centerX, centerY, centerZ;
+	// The car's own size reference: the larger HORIZONTAL half-extent of the
+	// AABB (half-length). The deformation magnitudes are fractions of THIS, so a
+	// cap can never exceed the car and every car crumples proportionally -
+	// see crumpleRefHalf().
+	int refHalf;
 	short resistance[MAX_DENTING_VERTS];
 } CRUMPLE_MODEL_DATA;
 
@@ -398,6 +412,7 @@ static void crumpleBuildModelData(int model)
 	md->valid = 1;
 	md->modelPtr = mdl;
 	md->numVerts = 0;
+	md->refHalf = 0;
 
 	if (mdl == NULL)
 		return;
@@ -436,6 +451,11 @@ static void crumpleBuildModelData(int model)
 		int hx = MAX(1, (maxX - minX) / 2);
 		int hy = MAX(1, (maxY - minY) / 2);
 		int hz = MAX(1, (maxZ - minZ) / 2);
+
+		/* the reference the deformation magnitudes are fractions OF: the larger
+		 * HORIZONTAL half-extent. Horizontal because body damage is a length/
+		 * width story - a roof dent is not what \"crumple\" means here. */
+		md->refHalf = MAX(hx, hz);
 		int cabin = gCrumpleParams.cabinResistance;
 		int delta = cabin - gCrumpleParams.noseResistance;
 		int cabinT = gCrumpleParams.cabinSize;
@@ -492,6 +512,51 @@ static int crumpleGetResistance(int model, int vertNo)
 		return gCrumpleParams.noseResistance;
 
 	return md->resistance[vertNo];
+}
+
+/* ---------------------------------------------------------------------------
+ * The deformation MAGNITUDES, as fractions of the car's own size.
+ *
+ * These were absolute "world unit" constants, and that is what made the crumple
+ * massively overscaled: 4290 units of per-impact push is about 1.05x a car's
+ * half-length, so one ordinary hit could drag a bumper vertex to the middle of the
+ * body - while the SAME number would barely mark anything longer. Sizing from the
+ * model's own AABB is right for every car by construction, and keeps the cap below
+ * the car, so no impact can fold it through itself.
+ *
+ * All 4096 fixed point, 4096 = 1.0. See the *Pct fields in CRUMPLE_PARAMS.
+ * ------------------------------------------------------------------------ */
+#define CRUMPLE_REF_FALLBACK 2048	/* no cached AABB yet (a model not built) */
+
+static int crumpleRefHalf(int model)
+{
+	if (model < 0 || model >= MAX_CAR_RESIDENT_MODELS)
+		return CRUMPLE_REF_FALLBACK;
+
+	crumpleBuildModelData(model);
+
+	if (!crumpleModelData[model].valid || crumpleModelData[model].refHalf <= 0)
+		return CRUMPLE_REF_FALLBACK;
+
+	return crumpleModelData[model].refHalf;
+}
+
+/* Dent falloff radius for a model: how far from the collision point vertices move. */
+static int crumpleDentRadius(int model)
+{
+	return FIXEDH(crumpleRefHalf(model) * gCrumpleParams.dentRadiusPct);
+}
+
+/* Per-impact push cap for a model. */
+static int crumpleMaxDisp(int model)
+{
+	return FIXEDH(crumpleRefHalf(model) * gCrumpleParams.maxDisplacementPct);
+}
+
+/* Total-push cap per vertex across every recorded impact, for a model. */
+static int crumpleCompoundCap(int model)
+{
+	return FIXEDH(crumpleRefHalf(model) * gCrumpleParams.compoundCapPct);
 }
 
 static SVECTOR* crumpleGetWheelBendInternal(int carId)
@@ -613,13 +678,12 @@ static void crumpleGetImpactInfoInternal(int carId, VECTOR* point, VECTOR* norma
 }
 
 // Record one collision in the per-car impact ring. Dents COMPOUND across
-// hits: a new impact within ~falloffRadius/2 of an existing one merges into
+// hits: a new impact within ~dentRadius/2 of an existing one merges into
 // it (howHard accumulates; strength saturates naturally via the curve), and
 // distinct impacts each keep their own dent until the ring fills (FIFO).
 static void crumpleAddImpact(CRUMPLE_CAR_STATE* st, const VECTOR* worldPoint, const VECTOR* inwardNormal, int howHard,
-	int lx, int ly, int lz, int nx, int ny, int nz)
+	int lx, int ly, int lz, int nx, int ny, int nz, int dentRadius)
 {
-	CRUMPLE_PARAMS* p = &gCrumpleParams;
 	int mergeR2;
 	int i;
 
@@ -632,7 +696,7 @@ static void crumpleAddImpact(CRUMPLE_CAR_STATE* st, const VECTOR* worldPoint, co
 	st->impactNormal.vz = inwardNormal->vz;
 	st->howHard = howHard;
 
-	mergeR2 = (p->falloffRadius / 2) * (p->falloffRadius / 2);
+	mergeR2 = (dentRadius / 2) * (dentRadius / 2);
 
 	// merge with a nearby existing impact (same spot keeps getting hit)
 	for (i = 0; i < st->impactCount; i++)
@@ -705,7 +769,8 @@ static void crumpleRecordImpactInternal(CAR_DATA* cp0, CAR_DATA* cp1, const VECT
 	crumpleWorldToLocal(&cp0->hd.where, worldPoint, &lx, &ly, &lz);
 	crumpleRotateToLocal(&cp0->hd.where, &inward, &nx, &ny, &nz);
 
-	crumpleAddImpact(st0, worldPoint, &inward, howHard, lx, ly, lz, nx, ny, nz);
+	crumpleAddImpact(st0, worldPoint, &inward, howHard, lx, ly, lz, nx, ny, nz,
+		crumpleDentRadius(cp0->ap.model));
 	crumpleAccumulateWheelBend(cp0, worldPoint, nx, ny, nz, howHard, wheelMask);
 
 	if (cp1 != NULL)
@@ -727,7 +792,8 @@ static void crumpleRecordImpactInternal(CAR_DATA* cp0, CAR_DATA* cp1, const VECT
 		crumpleWorldToLocal(&cp1->hd.where, worldPoint, &lx, &ly, &lz);
 		crumpleRotateToLocal(&cp1->hd.where, &inward, &nx, &ny, &nz);
 
-		crumpleAddImpact(st1, worldPoint, &inward, howHard, lx, ly, lz, nx, ny, nz);
+		crumpleAddImpact(st1, worldPoint, &inward, howHard, lx, ly, lz, nx, ny, nz,
+			crumpleDentRadius(cp1->ap.model));
 		crumpleAccumulateWheelBend(cp1, worldPoint, nx, ny, nz, howHard, wheelMask);
 	}
 }
@@ -762,9 +828,8 @@ static void crumpleNormalizeApprox(int* vx, int* vy, int* vz)
 // Degenerate impact normal (shouldn't happen in the real paths): build the
 // inward direction from (nearby vertex barycenter - impact point). Returns 0
 // if there are no nearby verts at all (the pass falls back to interpolation).
-static int crumpleResolveImpactNormal(CRUMPLE_IMPACT* im, const SVECTOR* cleanV, int numVerts)
+static int crumpleResolveImpactNormal(CRUMPLE_IMPACT* im, const SVECTOR* cleanV, int numVerts, int dentRadius)
 {
-	CRUMPLE_PARAMS* p = &gCrumpleParams;
 	int cx = 0, cy = 0, cz = 0, cnt = 0;
 	int nLen2, r2;
 	int i;
@@ -774,7 +839,7 @@ static int crumpleResolveImpactNormal(CRUMPLE_IMPACT* im, const SVECTOR* cleanV,
 	if (nLen2 >= 4096)
 		return 1;
 
-	r2 = p->falloffRadius * p->falloffRadius;
+	r2 = dentRadius * dentRadius;
 
 	for (i = 0; i < numVerts; i++)
 	{
@@ -832,6 +897,8 @@ static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 	int j;
 
 	int maxDisp;
+	int dentRadius;
+	int compCap;
 
 	int healthBoost;
 	int massFactor;
@@ -867,6 +934,13 @@ static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 
 	st = &crumpleCarState[cp->id];
 	p = &gCrumpleParams;
+
+	// The three deformation magnitudes are per-car - fractions of THIS model's
+	// own size - so resolve them before anything reads them: the contact-profile
+	// loop below needs dentRadius, and the deform loop needs all three.
+	maxDisp = crumpleMaxDisp(model);
+	dentRadius = crumpleDentRadius(model);
+	compCap = crumpleCompoundCap(model);
 
 	// ---- no unapplied impacts: the persistent damaged mesh stays as-is ----
 	if (st->impactCount <= 0)
@@ -937,7 +1011,7 @@ static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 	// ---- resolve any degenerate impact normals (defense) ----
 	for (j = 0; j < st->impactCount; j++)
 	{
-		if (!crumpleResolveImpactNormal(&st->impacts[j], cleanV, numVerts))
+		if (!crumpleResolveImpactNormal(&st->impacts[j], cleanV, numVerts, dentRadius))
 			return;
 	}
 
@@ -951,8 +1025,8 @@ static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 	{
 		CRUMPLE_IMPACT* im = &st->impacts[j];
 		int align = MAX(ABS(im->localNormalX), ABS(im->localNormalZ));
-		int widthFactor = 2048 + (align >> 1);	// 0.5x..1.0x of falloffRadius
-		int effR = (p->falloffRadius * widthFactor) >> 12;
+		int widthFactor = 2048 + (align >> 1);	// 0.5x..1.0x of the dent radius
+		int effR = (dentRadius * widthFactor) >> 12;
 
 		im->effRadius2 = effR * effR;
 		im->depthScale = 4096 + FIXEDH((4096 - align) * p->contactDeepen);
@@ -966,7 +1040,6 @@ static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 	// "resetting to clean" when a different panel was hit). Every impact is
 	// baked ONCE (applied flag); a merge clears the flag so the dent deepens,
 	// clamped by the impact plane. Repair/reset restores the clean mesh.
-	maxDisp = p->maxDisplacement;
 
 	for (j = 0; j < st->impactCount; j++)
 	{
@@ -1104,24 +1177,24 @@ static void crumpleDeformInternal(CAR_DATA* cp, const short* tempDamage)
 	{
 		int dx = out[i].vx - cleanV[i].vx;
 
-		if (dx > p->compoundCap)
-			out[i].vx = cleanV[i].vx + p->compoundCap;
-		else if (dx < -p->compoundCap)
-			out[i].vx = cleanV[i].vx - p->compoundCap;
+		if (dx > compCap)
+			out[i].vx = cleanV[i].vx + compCap;
+		else if (dx < -compCap)
+			out[i].vx = cleanV[i].vx - compCap;
 
 		dx = out[i].vy - cleanV[i].vy;
 
-		if (dx > p->compoundCap)
-			out[i].vy = cleanV[i].vy + p->compoundCap;
-		else if (dx < -p->compoundCap)
-			out[i].vy = cleanV[i].vy - p->compoundCap;
+		if (dx > compCap)
+			out[i].vy = cleanV[i].vy + compCap;
+		else if (dx < -compCap)
+			out[i].vy = cleanV[i].vy - compCap;
 
 		dx = out[i].vz - cleanV[i].vz;
 
-		if (dx > p->compoundCap)
-			out[i].vz = cleanV[i].vz + p->compoundCap;
-		else if (dx < -p->compoundCap)
-			out[i].vz = cleanV[i].vz - p->compoundCap;
+		if (dx > compCap)
+			out[i].vz = cleanV[i].vz + compCap;
+		else if (dx < -compCap)
+			out[i].vz = cleanV[i].vz - compCap;
 	}
 }
 

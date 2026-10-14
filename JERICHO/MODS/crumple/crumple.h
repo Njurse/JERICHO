@@ -44,11 +44,15 @@ typedef struct CRUMPLE_PARAMS
 	int impactNormalize;
 	// howHard below this produces no deformation at all.
 	int impactMinHowHard;
-	// Maximum distance (world units) a vertex may be pushed by one impact.
-	int maxDisplacement;
+	// Maximum distance a vertex may be pushed by ONE impact, as a fraction of
+	// the car's own half-length in 4096 fixed point (4096 = 1.0). A FRACTION,
+	// not world units: one absolute number flattened a compact and barely
+	// marked a bus, and it could exceed the car itself. See crumpleRefHalf().
+	int maxDisplacementPct;
 	// Maximum TOTAL displacement per vertex across all recorded impacts
-	// (compounding guard — prevents a vertex inverting through the body).
-	int compoundCap;
+	// (compounding guard — prevents a vertex inverting through the body),
+	// same units. Below the half-length by construction, so it cannot fold a car.
+	int compoundCapPct;
 	// Per-vertex zone damage multiplier: 4096 + tempDamage * damageBoostScale / 4096.
 	// tempDamage is the accumulated zone damage (0..~6142) from denting.c.
 	// NOTE: keep at 0 — a per-zone boost steps at zone boundaries (visible
@@ -56,10 +60,12 @@ typedef struct CRUMPLE_PARAMS
 	int damageBoostScale;
 
 	// -- falloff -----------------------------------------------------------
-	// Radial falloff radius (world units) around the collision point. Large
-	// enough that a hit contaminates the surrounding body structure (hood,
-	// fenders, doors) and not just the zone that was struck.
-	int falloffRadius;
+	// Radial falloff radius around the collision point, as a fraction of the
+	// car's half-length (4096 = 1.0). Large enough that a hit contaminates the
+	// surrounding body structure (hood, fenders, doors) and not just the zone
+	// struck, but a fraction of the car so it stays local on a long car and a
+	// stubby one alike.
+	int dentRadiusPct;
 	// Oblique impacts (poles, edges — normal NOT aligned with a car face)
 	// concentrate into a deeper, tighter dent; face-perpendicular hits
 	// (walls, car sides) spread wide. This is the depth side of that split
