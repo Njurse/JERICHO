@@ -1260,6 +1260,150 @@ int chkImportHotLoad(int slot)
 
 /* The set's own slot for a (city, model) car, or -1. Used to hot-load a peer's
  * pick on a machine whose running level does not have it. */
+/* ---------------------------------------------------------------------------
+ * "The imported car in memory is BUILT - but is it wearing the imported city?"
+ *
+ * A hot load can land half-applied: the geometry builds and the slot reports
+ * usable, while every poly still names a texture page the import never pinned, so
+ * the car draws with the LEVEL's materials and palette instead of its own. It is
+ * neither fatal nor permanent - the same hot load re-defers the palette, rebuilds
+ * the model and re-pins the pages - so check what actually landed and retry.
+ *
+ * The signal is the engine's own (JerCarImportHealth): of the polys in the slot's
+ * built model, how many resolve to a PINNED page index. An imported slot with polys
+ * and NONE on a pinned page is the "0 of 254 polys read the imported page" failure
+ * from the cross-city notes. ONLY slots this module holds are checked, so the
+ * level's own cars - which correctly read the level's pages - are never touched.
+ *
+ * Bounded like the peer-car load retry: a few attempts, spaced, then one line and
+ * silence, so a genuinely broken import cannot spin for the whole session.
+ * ------------------------------------------------------------------------- */
+#define CHK_VERIFY_RETRY_MAX	3
+#define CHK_VERIFY_RETRY_GAP	45	/* frames between attempts */
+#define CHK_VERIFY_SETTLE	10	/* frames a new car is given before it is judged */
+
+static int chkVerifyTries[CHK_IMPORT_MAX_SLOTS];
+static int chkVerifyDue[CHK_IMPORT_MAX_SLOTS];
+static int chkVerifyGaveUp[CHK_IMPORT_MAX_SLOTS];
+static int chkVerifyCity[CHK_IMPORT_MAX_SLOTS];
+static int chkVerifyModel[CHK_IMPORT_MAX_SLOTS];
+static int chkVerifySince[CHK_IMPORT_MAX_SLOTS];
+static int chkVerifyFrame;
+
+/* Measurement lever, in the shape CHK_REFUSE_LOAD set for the load retry:
+ * CHK_VERIFY_DEBUG=1 prints what the verifier SEES for each slot it holds, once per
+ * change, so a run can show the numbers rather than only the absence of a reload
+ * (which healthy and never-checked look identical from the outside). */
+static int chkVerifyDebug = -1;
+static int chkVerifyDbgPolys[CHK_IMPORT_MAX_SLOTS];
+static int chkVerifyDbgPinned[CHK_IMPORT_MAX_SLOTS];
+
+/* A different car on the slot gets a clean slate: the retries so far were about
+ * the old one. */
+static void chkVerifyReset(int slot)
+{
+	chkVerifyTries[slot] = 0;
+	chkVerifyDue[slot] = 0;
+	chkVerifyGaveUp[slot] = 0;
+	chkVerifyCity[slot] = gChkSet[slot].city;
+	chkVerifyModel[slot] = gChkSet[slot].model;
+	chkVerifySince[slot] = chkVerifyFrame;
+}
+
+/* One slot. Returns 1 when it is fine (or not ours to judge), 0 when a reload was
+ * started. */
+int chkImportVerifySlot(int slot)
+{
+	int polys = 0, onPinned = 0, palUploaded = 0;
+
+	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS)
+		return 1;
+
+	if (!gChkSet[slot].used || !gChkEngineKnown)
+		return 1;
+
+	if (chkVerifyCity[slot] != gChkSet[slot].city || chkVerifyModel[slot] != gChkSet[slot].model)
+		chkVerifyReset(slot);
+
+	if (chkVerifyGaveUp[slot])
+		return 1;
+
+	/* Let a car SETTLE before it is judged. A hot load builds the model first and the
+	 * pin that puts its pages in VRAM runs from the next DRAW (CarImportPin), so a
+	 * slot checked in between looks garbled while it is only a frame early - and a
+	 * spurious reload here would be log noise on every mid-match car change. */
+	if (chkVerifyFrame < chkVerifySince[slot] + CHK_VERIFY_SETTLE)
+		return 1;
+
+	/* no model built for the slot yet: early, not garbled */
+	if (!JerCarImportHealth(slot, &polys, &onPinned, &palUploaded))
+		return 1;
+
+	if (chkVerifyDebug < 0)
+		chkVerifyDebug = (getenv("CHK_VERIFY_DEBUG") != NULL) ? 1 : 0;
+
+	if (chkVerifyDebug && polys > 0 &&
+		(chkVerifyDbgPolys[slot] != polys || chkVerifyDbgPinned[slot] != onPinned))
+	{
+		chkVerifyDbgPolys[slot] = polys;
+		chkVerifyDbgPinned[slot] = onPinned;
+
+		printInfo("[carhacks] verify: slot %d health: %d poly(s), %d on an imported page, %d palette row(s) uploaded\n",
+			slot, polys, onPinned, palUploaded);
+	}
+
+	if (polys <= 0 || onPinned > 0)
+		return 1;				/* it reads the imported page: nothing to do */
+
+	if (chkVerifyTries[slot] >= CHK_VERIFY_RETRY_MAX)
+	{
+		chkVerifyGaveUp[slot] = 1;
+
+		printInfo("[carhacks] verify: slot %d (city %d model %d) still reads NO imported page after %d reload(s) - %d poly(s), %d palette row(s) uploaded. Leaving the level's materials on it.\n",
+			slot, gChkSet[slot].city, gChkSet[slot].model,
+			chkVerifyTries[slot], polys, palUploaded);
+
+		return 1;
+	}
+
+	chkVerifyTries[slot]++;
+
+	printInfo("[carhacks] verify: slot %d (city %d model %d) is drawing with the LEVEL's materials - %d poly(s), none on an imported page, %d palette row(s) uploaded; reloading (attempt %d/%d)\n",
+		slot, gChkSet[slot].city, gChkSet[slot].model, polys, palUploaded,
+		chkVerifyTries[slot], CHK_VERIFY_RETRY_MAX);
+
+	/* the same reload the fold uses: re-defer the palette, rebuild the model,
+	 * re-walk the pages. The pin uploads them on the next draw. */
+	chkImportHotLoad(slot);
+
+	chkVerifyDue[slot] = chkVerifyFrame + CHK_VERIFY_RETRY_GAP;
+
+	return 0;
+}
+
+/* Every frame: a bounded pass over the slots we hold. Called from the module's one
+ * FRAME hook, before the session-only early returns, so a config import in a
+ * single-player level is verified too. */
+void chkImportVerifyTick(void)
+{
+	int i;
+
+	chkVerifyFrame++;
+
+	for (i = 0; i < CHK_IMPORT_MAX_SLOTS; i++)
+	{
+		if (!gChkSet[i].used || chkVerifyGaveUp[i])
+			continue;
+
+		if (chkVerifyDue[i] != 0 && chkVerifyFrame < chkVerifyDue[i])
+			continue;
+
+		chkVerifyDue[i] = 0;
+
+		chkImportVerifySlot(i);
+	}
+}
+
 int chkImportSlotForCar(int city, int model)
 {
 	int i;

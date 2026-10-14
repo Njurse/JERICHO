@@ -130,6 +130,11 @@ extern int CarImportApplyPaletteForCity(int city);
 // CarImportPin, the first point the built model's rows exist.
 // Returns 1 when a deferred lump was uploaded, 0 when there was none.
 extern int ProcessImportedPaletteRows(const unsigned char* rowNeeded);
+
+/* JERICHO: how a resident slot's built model reads its materials - the numbers
+ * behind carhacks' garbled-import retry. Fills polys / polys-on-a-pinned-page /
+ * uploaded palette rows; returns 0 when the slot has no model built yet. */
+extern int JerCarImportHealth(int slot, int* outPolys, int* outOnPinned, int* outPalUploaded);
 extern void load_civ_palettes(RECT16 *cluts); // 0x0001A094
 
 extern void IncrementClutNum(RECT16 *clut); // 0x00080DDC

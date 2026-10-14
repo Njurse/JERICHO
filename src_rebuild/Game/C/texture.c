@@ -3004,6 +3004,68 @@ static void CarImportPageRect(unsigned int page, int* px, int* py)
 	if (py) *py = (int)(((page >> 4) & 1) * 256 + ((page >> 11) & 1) * 512);
 }
 
+/* JERICHO: the numbers behind carhacks' "is this imported car garbled?" retry
+ * (chkImportVerifySlot in carimport.c).
+ *
+ * polys       - polys walked in the slot's built model, detail + low LOD
+ * onPinned    - how many of them name a tpage INDEX the import actually PINNED
+ *               (sPinIndex). An imported model that was built but reads NONE of them
+ *               is drawing with the LEVEL's materials and palette - the "0 of 254
+ *               polys read the imported page" failure in the cross-city notes.
+ * palUploaded - palette CLUT slots this level has uploaded (sPalUploaded; 0 means
+ *               the deferred upload wrote nothing at all).
+ *
+ * Returns 0 when the slot has no built model yet, so a caller can tell "not yet"
+ * from "built wrong" and leave the former alone. */
+int JerCarImportHealth(int slot, int* outPolys, int* outOnPinned, int* outPalUploaded)
+{
+	CAR_MODEL* models[2];
+	int npoly = 0, nOnPinned = 0;
+	int mi, list, k;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	models[0] = &NewCarModel[slot];
+	models[1] = &NewLowCarModel[slot];
+
+	for (mi = 0; mi < 2; mi++)
+	{
+		CAR_MODEL* m = models[mi];
+
+		for (list = 0; list < 3; list++)
+		{
+			CAR_POLY* polys = (list == 0) ? m->pFT3 : (list == 1) ? m->pGT3 : m->pB3;
+			int num = (list == 0) ? m->numFT3 : (list == 1) ? m->numGT3 : m->numB3;
+
+			for (k = 0; k < num; k++)
+			{
+				/* the bake stores the INDEX, so resolve it against the pin table the
+				 * way the draw path does (CAR_TPAGE_OF) - see CarImportDumpOneModel */
+				unsigned int id = (unsigned int)((polys[k].tpage_uv1 >> 16) & 0xffff);
+				int n;
+
+				npoly++;
+
+				for (n = 0; n < sPinCount; n++)
+				{
+					if ((unsigned int)sPinIndex[n] == id)
+					{
+						nOnPinned++;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	if (outPolys) *outPolys = npoly;
+	if (outOnPinned) *outOnPinned = nOnPinned;
+	if (outPalUploaded) *outPalUploaded = sPalUploaded;
+
+	return 1;
+}
+
 static void CarImportDumpOneModel(const char* which, int slot, CAR_MODEL* m)
 {
 	unsigned int seen[8];

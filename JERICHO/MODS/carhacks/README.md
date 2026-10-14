@@ -250,6 +250,42 @@ Two bytes on the wire, and **versioned**: a peer that does not understand the
 version refuses the set rather than guesses. This is the schema the whole module is
 written against, and it is what a peer needs to describe a car it is driving.
 
+### Verifying what landed, and reloading it if it did not
+
+A car's palette rows and texture pages are established **deferred** — the page is
+placed and the rows are uploaded from the draw path (`CarImportPin`), not at the
+moment the model is built. So a hot load can land half-applied: the geometry builds
+and the slot reports usable, while every poly still names a page the import never
+pinned, and the car draws with the **level's** materials and colours. Nothing in
+`JerCarSlotUsable` can see that; it is only a "is there a mesh" test.
+
+So the module asks the engine for the numbers behind the question —
+`JerCarImportHealth(slot)` in `texture.c` returns how many polys the slot's built
+model has, how many of them read a **pinned** page, and how many palette rows the
+level has uploaded — and treats an imported slot with polys but **none** on a
+pinned page as garbled. That is the `0 of 254 polys read the imported page` failure
+from the cross-city notes, and it is the same walk the `JerCarImportDump` debug
+dump does.
+
+A garbled slot is simply **reloaded**: `chkImportHotLoad` re-defers the palette,
+rebuilds the model and re-pins the pages, and the pin uploads on the next draw.
+Bounded, like the peer-car load retry — three attempts 45 frames apart, then one
+line and silence, so a genuinely broken import cannot spin for the session. Only
+slots carhacks holds are checked, so a level's own cars (which correctly read the
+level's pages) are never touched.
+
+```
+[carhacks] verify: slot 7 (city 1 model 3) is drawing with the LEVEL's materials
+            - 254 poly(s), none on an imported page, 0 palette row(s) uploaded;
+            reloading (attempt 1/3)
+[carhacks] verify: slot 7 (city 1 model 3) still reads NO imported page after 3
+            reload(s) - 254 poly(s), 0 palette row(s) uploaded. Leaving the
+            level's materials on it.
+```
+
+The verifier runs from the module's single `FRAME` hook (before the session-only
+branches), so a config import in a single-player level is covered too.
+
 ---
 
 ## The car-select menu

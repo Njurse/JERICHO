@@ -1276,6 +1276,10 @@ static int chkNetOnFrame(void* ud, void* args)
 
 	gChkNetFrame++;
 
+	/* Before anything session-shaped: an import is verified whenever one is held,
+	 * in single player too (a config import is not a session). */
+	chkImportVerifyTick();
+
 	(void)ud;
 	(void)args;
 

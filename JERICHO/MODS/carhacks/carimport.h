@@ -250,4 +250,14 @@ void chkImportApplyToCarData(int count, int* models, int* modelSource);
 /* One line per entry, for the log. */
 void chkImportDump(int level);
 
+/* ---- the verifier ----------------------------------------------------- */
+
+/* Per frame: check that each imported slot we hold is actually wearing the
+ * imported city (its polys reading a pinned page) and reload it if not, a few
+ * bounded attempts. See the note above chkImportVerifySlot. */
+void chkImportVerifyTick(void);
+
+/* One slot, for a test or a direct call. Returns 1 when it is fine. */
+int chkImportVerifySlot(int slot);
+
 #endif /* CHK_CARIMPORT_H */
