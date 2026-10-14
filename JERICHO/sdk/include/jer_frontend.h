@@ -42,7 +42,12 @@
 extern "C" {
 #endif
 
-#define JER_FE_MAX_MENUS	12
+// The module-menu registry. Menus append in modlist load order, so every module's
+// index depends on what loaded before it - which is why callers must resolve their
+// own menus with jer_frontend_find(id) and never hardcode an index. 12 was not
+// enough for the shipped set plus cainescrossfire (carhacks 1 + mp 9 + CC 6 = 16);
+// and an over-cap register used to be dropped without a word.
+#define JER_FE_MAX_MENUS	24
 #define JER_FE_MAX_ITEMS	12
 
 typedef struct JER_FE_ITEM

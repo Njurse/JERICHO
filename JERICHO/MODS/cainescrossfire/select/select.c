@@ -56,11 +56,32 @@ static int gCcOpened;			/* we have opened the arena menu once */
 // ---------------------------------------------------------------------------
 // Menus
 // ---------------------------------------------------------------------------
-#define CC_MENU_ARENA		0
-#define CC_MENU_VEH_BASE	1	/* the vehicle menus follow (one per city) */
-#define CC_MENU_OPPONENTS	5	/* after the vehicles: how many opponents */
-
 #define CC_CITY_COUNT		4	/* LevelNames: Chicago, Havana, Vegas, Rio */
+
+// The frontend menu registry is a SINGLE global list, appended in modlist load
+// order (jer_frontend_register_menu) - so a registry index is NOT ours to assume.
+// carhacks registers its "chk.car" car screen first and mp adds nine more, and the
+// literals 0/1/5 this used to hardcode then pointed at OTHER MODS' menus: the arena
+// entry opened carhacks' SELECT CAR, which is the reported "carhacks overrides
+// Caine's Crossfire's vehicle select". Resolve by stable id (cd2SelResolveMenus)
+// and never hardcode a registry index again.
+static int gCcMenuArena = -1;					/* jer_frontend_find("cc.arena") */
+static int gCcMenuVeh[CC_CITY_COUNT] = { -1, -1, -1, -1 };
+static int gCcMenuOpponents = -1;				/* ...("cc.opponents") */
+
+// Open one of our menus, and refuse an unregistered one: jer_frontend_open(-1)
+// would goto the screen BEFORE the module block (JERICHO_FE_SCREEN_BASE - 1).
+static void cd2SelOpenMenu(int menuIndex, const char* what)
+{
+	if (menuIndex < 0)
+	{
+		printInfo("[cainescrossfire] CC select: menu '%s' is not registered; cannot open it\n", what);
+		return;
+	}
+
+	jer_frontend_open(menuIndex);
+}
+
 
 // The arena menu: one row per registry arena + Back.
 static JER_FE_ITEM gCcArenaItems[CD2_ARENA_MAX_ARENAS + 1];
@@ -202,7 +223,7 @@ static int cd2SelVehActivate(void* ud)
 	// from there, so a player always gets to choose the field size
 	gCcPendingCar = gCcVehSel[city];
 
-	jer_frontend_open(CC_MENU_OPPONENTS);
+	cd2SelOpenMenu(gCcMenuOpponents, "cc.opponents");
 	return 1;
 }
 
@@ -213,11 +234,11 @@ static int cd2SelArenaActivate(void* ud)
 	int idx = (int)(size_t)ud;
 	const CD2_ARENA_PROFILE* a = cd2ArenaDef(gCcArenaId[idx]);
 
-	if (a == NULL)
+	if (a == NULL || a->city < 0 || a->city >= CC_CITY_COUNT)
 		return 0;
 
 	gCcChosenArena = gCcArenaId[idx];
-	jer_frontend_open(CC_MENU_VEH_BASE + a->city);
+	cd2SelOpenMenu(gCcMenuVeh[a->city], gCcVehIds[a->city]);
 	return 1;
 }
 
@@ -486,7 +507,7 @@ static int cd2SelOnMainMenu(void* ud, void* args)
 	if (e->index == 0)
 	{
 		snprintf(e->label, sizeof(e->label), "%s", "Deathmatch");
-		e->openMenu = CC_MENU_ARENA;
+		e->openMenu = gCcMenuArena;
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -503,9 +524,11 @@ static int cd2SelOnFrame(void* ud, void* args)
 
 	// jer_frontend_open pushes the current screen, so open exactly once; the
 	// engine reports -1 until the frontend is actually on our menu.
-	jer_frontend_open(CC_MENU_ARENA);
+	cd2SelOpenMenu(gCcMenuArena, "cc.arena");
 
-	if (jer_frontend_current_menu() == CC_MENU_ARENA)
+	// guard -1: jer_frontend_current_menu() reports -1 when we are not on a module
+	// menu, so a missing arena menu must not be allowed to match it
+	if (gCcMenuArena >= 0 && jer_frontend_current_menu() == gCcMenuArena)
 	{
 		gCcOpened = 1;
 		gCcForced = 0;
@@ -542,12 +565,36 @@ static int cd2SelOnFrontendEntered(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+// Read our menus' real registry indices back by STABLE ID, once, after
+// registration. -1 means the registry was full (JER_FE_MAX_MENUS) and the menu was
+// dropped - silently, until now: the flow then opened whatever sat at the old
+// hardcoded index instead of noticing.
+static void cd2SelResolveMenus(void)
+{
+	int city;
+
+	gCcMenuArena = jer_frontend_find("cc.arena");
+	gCcMenuOpponents = jer_frontend_find("cc.opponents");
+
+	for (city = 0; city < CC_CITY_COUNT; city++)
+		gCcMenuVeh[city] = jer_frontend_find(gCcVehIds[city]);
+
+	printInfo("[cainescrossfire] CC select: menus arena=%d opponents=%d veh=%d/%d/%d/%d\n",
+		gCcMenuArena, gCcMenuOpponents,
+		gCcMenuVeh[0], gCcMenuVeh[1], gCcMenuVeh[2], gCcMenuVeh[3]);
+
+	if (gCcMenuArena < 0 || gCcMenuOpponents < 0)
+		printInfo("[cainescrossfire] CC select: a menu is MISSING from the registry - "
+			"the flow cannot run (another mod took the slots?)\n");
+}
+
 void cd2SelectRegister(JERICHO_CONTEXT* ctx)
 {
 	cd2SelBuildMenus();
 
-	// ORDER MATTERS: the arena menu first, so it is index 0; the per-city
-	// vehicle menus follow as CC_MENU_VEH_BASE + city.
+	// Registration order no longer has to put us first: cd2SelResolveMenus() reads
+	// each menu's real index back by id, so a mod registering before us simply
+	// shifts us along instead of stealing our rows.
 	jer_frontend_register_menu(&gCcArenaMenu);
 	jer_frontend_register_menu(&gCcVehMenu[0]);
 	jer_frontend_register_menu(&gCcVehMenu[1]);
@@ -555,7 +602,9 @@ void cd2SelectRegister(JERICHO_CONTEXT* ctx)
 	jer_frontend_register_menu(&gCcVehMenu[3]);
 	jer_frontend_register_menu(&gCcOppMenu);
 
-	// a fallback route: the main menu's entry opens the arena menu
+	cd2SelResolveMenus();
+
+	// a fallback route: the main menu's entry opens the arena menu (by id too)
 	jer_frontend_set_main_entry("cc.arena");
 
 	ctx->jer_register_hook(ctx, JER_EVENT_CMDLINE, cd2SelOnCmdline, NULL, 0);

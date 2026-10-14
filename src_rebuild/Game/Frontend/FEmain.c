@@ -4374,8 +4374,19 @@ void jer_frontend_reset(void)
 
 void jer_frontend_register_menu(const JER_FE_MENU* menu)
 {
-	if (menu == NULL || gFeMenuCount >= JER_FE_MAX_MENUS)
+	if (menu == NULL)
 		return;
+
+	if (gFeMenuCount >= JER_FE_MAX_MENUS)
+	{
+		/* Refusing is right; refusing SILENTLY is how a module's menu went missing
+		 * with no trace. The caller then has no index and the frontend opens
+		 * whatever sits at the number it assumed - name the casualty instead. */
+		jer_log("[jericho] frontend menu registry FULL (%d): dropped menu '%s'\n",
+			JER_FE_MAX_MENUS, (menu->id != NULL) ? menu->id : "?");
+
+		return;
+	}
 
 	gFeMenus[gFeMenuCount++] = menu;
 }
