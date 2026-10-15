@@ -17,6 +17,10 @@
 
 #include "handling.h"
 #include "jer_math.h"
+
+/* A working vertex this far from its clean position is not a dent, it is corruption
+ * (the same threshold the STRETCHED VERTEX canary in cars.c uses). */
+#define JER_STRETCH_VERT	2000
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
 
@@ -131,6 +135,37 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 		jerArgs.car = cp;
 		jerArgs.damage = tempDamage;
 		jer_fire(JER_EVENT_DENT_PASS, &jerArgs);
+
+		/* JERICHO: clamp any vertex the deformation pass moved a corrupt distance from
+		 * the clean model (the "stretched geometry" report). The crumple pass writes the
+		 * working buffer; a wild write past the stretch edge is not a dent, it is a
+		 * corrupted vertex, so reset that vertex to its clean position rather than render
+		 * a car stretched across the map. */
+		{
+			SVECTOR* cleanV = GET_MODEL_DATA(SVECTOR, pCleanModel, vertices);
+			SVECTOR* workV = gTempCarVertDump[cp->id];
+			int n = pCleanModel->num_vertices;
+			int vi;
+
+			if (cleanV != NULL)
+			{
+				for (vi = 0; vi < n; vi++)
+				{
+					int dx = workV[vi].vx - cleanV[vi].vx;
+					int dy = workV[vi].vy - cleanV[vi].vy;
+					int dz = workV[vi].vz - cleanV[vi].vz;
+
+					if (dx > JER_STRETCH_VERT || dx < -JER_STRETCH_VERT ||
+						dy > JER_STRETCH_VERT || dy < -JER_STRETCH_VERT ||
+						dz > JER_STRETCH_VERT || dz < -JER_STRETCH_VERT)
+					{
+						jer_log("[denting] clamped vertex %d of car %d: deformation (%d,%d,%d) past the %d stretch edge\n",
+							vi, cp->id, dx, dy, dz, JER_STRETCH_VERT);
+						workV[vi] = cleanV[vi];
+					}
+				}
+			}
+		}
 	}
 
 	// update polygon UVs

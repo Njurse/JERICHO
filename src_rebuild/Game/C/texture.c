@@ -1539,6 +1539,15 @@ static const char *HostUseReason(int tpage)
 {
 	int i;
 
+	// JERICHO: the level's FULL page space is 0..tpage_amount-1 — the permanent pages AND
+	// the region-streamed building pages the spool loads on demand. The checks below see
+	// only the permanent/spec ones (permlist/speclist), so an imported set that collided
+	// with a STREAMED page kept its number and the spool later overwrote it — scenery
+	// wearing a car texture, or the car wearing a building. Treat every level page as
+	// host-owned so such a set is remapped off it (CarImportDstSetCore).
+	if (tpage >= 0 && tpage < tpage_amount)
+		return "level page";
+
 	if (HostOwnsCarTPage(tpage))
 		return "host car page";
 

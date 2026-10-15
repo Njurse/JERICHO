@@ -2839,6 +2839,14 @@ void CarImportPaletteReset(void)
 
 	CarPalRowClear();
 
+	// JERICHO: the import bank's civ_clut rows are the ONE palette array the level loader
+	// does NOT clear. LoadPermanentTPages clears texture_pages/texture_cluts every level,
+	// and the host's rows 0..7 are re-filled by LUMP_PALLET, but rows 8..31 are only
+	// re-filled by the deferred import upload -- so a restart kept the previous level's
+	// imported CLUTs in them for the frame before the new upload ran. Clear them here.
+	memset(&civ_clut[CIV_CLUT_IMPORT_ROW][0][0], 0,
+		(CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) * 32 * 6 * sizeof(civ_clut[0][0][0]));
+
 	// JERICHO: this runs on the per-level reset path (models.c InitCarImport), and it is
 	// what makes the deferred upload happen once per LEVEL. Logged because the failure it
 	// fixes is invisible on a single-level run: the SECOND level used to keep CarImportPin's
