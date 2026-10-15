@@ -22,6 +22,10 @@ extern int gMissionCompletionState;
  * from a module (used by the sandbox's map teleport) */
 extern int PauseReturnValue;
 
+/* JERICHO-HOOK: mp sets this non-zero while a session is live, so the engine's
+ * main pause menu shows "Respawn" (a direct action) instead of "Restart". */
+extern int gJerPauseRestartAsRespawn;
+
 extern int UpdatePauseMenu(PAUSEMODE mode);
 extern void ShowPauseMenu(PAUSEMODE mode);
 

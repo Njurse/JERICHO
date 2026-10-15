@@ -54,6 +54,7 @@ static int gScoreEntered = 0;
 static char EnterNameText[32] = { 0 };		// translated text
 
 int PauseReturnValue;	// JERICHO-HOOK: exported so modules can unpause (e.g. after a map teleport)
+int gJerPauseRestartAsRespawn = 0;	// JERICHO-HOOK: mp sets this in a session, turning the main menu's "Restart" into a direct "Respawn"
 
 int pauseflag = 0;
 int gShowMap = 0;
@@ -865,6 +866,32 @@ int MaxMenuStringLength(MENU_HEADER *pMenu)
 
 
 // [D] [T]
+/* JERICHO: mp turns the main pause menu's "Restart" into a direct "Respawn" (back on
+ * the nearest road) for the length of a session. The item is patched in place; its
+ * original values are the constants it was initialised with, so they are restored the
+ * same way once the session ends and the flag clears. */
+static void JerPauseApplyRestartOverride(void)
+{
+	MENU_ITEM *it = &MainPauseItems[2];
+
+	if (gJerPauseRestartAsRespawn)
+	{
+		it->Text = "Respawn";
+		it->Type = 1;					/* plain item, no "Are you sure?" submenu */
+		it->func = NULL;
+		it->ExitValue = MENU_QUIT_RESTART;	/* mp intercepts this and respawns */
+		it->SubMenu = NULL;
+	}
+	else
+	{
+		it->Text = G_LTXT_ID(GTXT_Restart);
+		it->Type = PAUSE_TYPE_SUBMENU;
+		it->func = NULL;
+		it->ExitValue = MENU_QUIT_NONE;
+		it->SubMenu = &YesNoRestartHeader;
+	}
+}
+
 void SetupMenu(MENU_HEADER *menu, int back)
 {
 	int len;
@@ -887,6 +914,9 @@ void SetupMenu(MENU_HEADER *menu, int back)
 
 	ActiveMenu = menu;
 	ActiveMenu->NumItems = numItems;
+
+	if (menu == &PauseMenuHeader)
+		JerPauseApplyRestartOverride();
 
 	len = MaxMenuStringLength(ActiveMenu);
 
