@@ -1314,7 +1314,7 @@ static void chkVerifyReset(int slot)
  * started. */
 int chkImportVerifySlot(int slot)
 {
-	int polys = 0, onPinned = 0, palUploaded = 0;
+	int polys = 0, onPinned = 0, palUploaded = 0, palBad = 0;
 
 	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS)
 		return 1;
@@ -1336,8 +1336,14 @@ int chkImportVerifySlot(int slot)
 		return 1;
 
 	/* no model built for the slot yet: early, not garbled */
-	if (!JerCarImportHealth(slot, &polys, &onPinned, &palUploaded))
+	if (!JerCarImportHealth(slot, &polys, &onPinned, &palUploaded, &palBad))
 		return 1;
+
+	/* Test lever: CHK_FORCE_VERIFY_RELOAD=1 makes the verifier see a corrupted palette
+	 * once per slot, so the reload path is exercised on a healthy build (the same shape
+	 * as CHK_REFUSE_LOAD for the peer-car load retry). */
+	if (palBad == 0 && getenv("CHK_FORCE_VERIFY_RELOAD") != NULL && chkVerifyTries[slot] == 0)
+		palBad = 1;
 
 	if (chkVerifyDebug < 0)
 		chkVerifyDebug = (getenv("CHK_VERIFY_DEBUG") != NULL) ? 1 : 0;
@@ -1348,28 +1354,31 @@ int chkImportVerifySlot(int slot)
 		chkVerifyDbgPolys[slot] = polys;
 		chkVerifyDbgPinned[slot] = onPinned;
 
-		printInfo("[carhacks] verify: slot %d health: %d poly(s), %d on an imported page, %d palette row(s) uploaded\n",
-			slot, polys, onPinned, palUploaded);
+		printInfo("[carhacks] verify: slot %d health: %d poly(s), %d on an imported page, %d palette row(s) uploaded, %d bad palette row(s)\n",
+			slot, polys, onPinned, palUploaded, palBad);
 	}
 
-	if (polys <= 0 || onPinned > 0)
-		return 1;				/* it reads the imported page: nothing to do */
+	/* JERICHO: it reads the imported page with a clean palette - nothing to do. A car
+	 * whose palette row is a HOST row or an empty row is just as wrong as one drawing the
+	 * level's materials, so it is reloaded too (the same bounded retry below). */
+	if (polys <= 0 || (onPinned > 0 && palBad == 0))
+		return 1;
 
 	if (chkVerifyTries[slot] >= CHK_VERIFY_RETRY_MAX)
 	{
 		chkVerifyGaveUp[slot] = 1;
 
-		printInfo("[carhacks] verify: slot %d (city %d model %d) still reads NO imported page after %d reload(s) - %d poly(s), %d palette row(s) uploaded. Leaving the level's materials on it.\n",
+		printInfo("[carhacks] verify: slot %d (city %d model %d) still corrupt after %d reload(s) - %d poly(s), %d on an imported page, %d bad palette row(s). Leaving it as-is.\n",
 			slot, gChkSet[slot].city, gChkSet[slot].model,
-			chkVerifyTries[slot], polys, palUploaded);
+			chkVerifyTries[slot], polys, onPinned, palBad);
 
 		return 1;
 	}
 
 	chkVerifyTries[slot]++;
 
-	printInfo("[carhacks] verify: slot %d (city %d model %d) is drawing with the LEVEL's materials - %d poly(s), none on an imported page, %d palette row(s) uploaded; reloading (attempt %d/%d)\n",
-		slot, gChkSet[slot].city, gChkSet[slot].model, polys, palUploaded,
+	printInfo("[carhacks] verify: slot %d (city %d model %d) is corrupt - %d poly(s), %d on an imported page, %d bad palette row(s); reloading (attempt %d/%d)\n",
+		slot, gChkSet[slot].city, gChkSet[slot].model, polys, onPinned, palBad,
 		chkVerifyTries[slot], CHK_VERIFY_RETRY_MAX);
 
 	/* the same reload the fold uses: re-defer the palette, rebuild the model,

@@ -134,7 +134,7 @@ extern int ProcessImportedPaletteRows(const unsigned char* rowNeeded);
 /* JERICHO: how a resident slot's built model reads its materials - the numbers
  * behind carhacks' garbled-import retry. Fills polys / polys-on-a-pinned-page /
  * uploaded palette rows; returns 0 when the slot has no model built yet. */
-extern int JerCarImportHealth(int slot, int* outPolys, int* outOnPinned, int* outPalUploaded);
+extern int JerCarImportHealth(int slot, int* outPolys, int* outOnPinned, int* outPalUploaded, int* outPalBad);
 extern void load_civ_palettes(RECT16 *cluts); // 0x0001A094
 
 extern void IncrementClutNum(RECT16 *clut); // 0x00080DDC

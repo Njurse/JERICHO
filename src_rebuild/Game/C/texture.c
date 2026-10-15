@@ -2200,7 +2200,7 @@ void CarSlotResNote(int slot, int city)
 	}
 
 	r->clutRowBase = (city >= 0) ? CarImportPaletteBlockBase(city) : -1;
-	r->clutRows = (r->clutRowBase >= 0) ? CIV_CLUT_BLOCK_ROWS : 0;
+	r->clutRows = (r->clutRowBase >= 0) ? CarImportCityRowCount(city) : 0;
 
 	printInfo("cross-city: slot %d holds %s: %d pin(s) (%d in the pool), civ_clut %s, geometry %d bytes\n",
 		slot, (city >= 0) ? LevelNames[city] : "the level's own car",
@@ -2361,17 +2361,18 @@ void CarImportPin(void)
 		// below already handles, so widening the bound costs nothing.
 		for (i = 0; i < CITY_COUNT; i++)
 		{
-			int base = CarImportPaletteBlockBase(i), r2, end;
+			// JERICHO: mark every ROW this city has allocated (the per-(city, set)
+			// dictionary, PALETTES.md §7), not a fixed 8-row block. A city with no
+			// allocated row contributes nothing.
+			int n = CarImportCityRowCount(i), r2;
 
-			if (base < 0)
-				continue;
+			for (r2 = 0; r2 < n; r2++)
+			{
+				int row = CarImportCityRowAt(i, r2);
 
-			end = base + CIV_CLUT_BLOCK_ROWS;
-			if (end > CIV_CLUT_ROWS)
-				end = CIV_CLUT_ROWS;
-
-			for (r2 = base; r2 < end; r2++)
-				rowNeeded[r2] = 1;
+				if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS)
+					rowNeeded[row] = 1;
+			}
 		}
 
 		// JERICHO: what is needed that has NOT already been uploaded.
@@ -3017,11 +3018,11 @@ static void CarImportPageRect(unsigned int page, int* px, int* py)
  *
  * Returns 0 when the slot has no built model yet, so a caller can tell "not yet"
  * from "built wrong" and leave the former alone. */
-int JerCarImportHealth(int slot, int* outPolys, int* outOnPinned, int* outPalUploaded)
+int JerCarImportHealth(int slot, int* outPolys, int* outOnPinned, int* outPalUploaded, int* outPalBad)
 {
 	CAR_MODEL* models[2];
-	int npoly = 0, nOnPinned = 0;
-	int mi, list, k;
+	int npoly = 0, nOnPinned = 0, nPalBad = 0;
+	int mi, list, k, i;
 
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return 0;
@@ -3059,9 +3060,27 @@ int JerCarImportHealth(int slot, int* outPolys, int* outOnPinned, int* outPalUpl
 		}
 	}
 
+	// JERICHO: palette-row health. Each PINNED set resolves to a civ_clut row; a row
+	// below the import bank is a HOST row (a leak: the import repaints a local car), and
+	// an import-bank row whose slot 0 CLUT is still 0 was never re-pointed by the pin (the
+	// car draws nothing). Either is a corrupted palette, distinct from a missing page.
+	for (i = 0; i < sPinCount; i++)
+	{
+		int row = CarPalIndexInCityFor(sPinIndex[i], sPinCity[i]);
+
+		if (row < 0)
+			continue;
+
+		if (row < CIV_CLUT_IMPORT_ROW)
+			nPalBad++;
+		else if (row < CIV_CLUT_ROWS && civ_clut[row][0][0] == 0)
+			nPalBad++;
+	}
+
 	if (outPolys) *outPolys = npoly;
 	if (outOnPinned) *outOnPinned = nOnPinned;
 	if (outPalUploaded) *outPalUploaded = sPalUploaded;
+	if (outPalBad) *outPalBad = nPalBad;
 
 	return 1;
 }

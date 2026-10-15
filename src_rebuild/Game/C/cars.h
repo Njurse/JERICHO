@@ -148,6 +148,8 @@ extern int CivClutTexMaxSlot(int row, int texid);
 // JERICHO: the civ_clut row block a held guest city owns (-1 = none), so a caller can ask
 // for the whole block instead of only the rows one model named.
 extern int CarImportPaletteBlockBase(int city);
+extern int CarImportCityRowCount(int city); // JERICHO: how many civ_clut rows this held guest city owns (cars.c)
+extern int CarImportCityRowAt(int city, int k); // JERICHO: the k-th of those rows, ascending (cars.c)
 extern int CarPalIndexInCityFor(int tpage, int city); // JERICHO: the same, given the city (cars.c)
 extern void CarImportPaletteReset(void); // JERICHO: forget a level's deferred palette work (cars.c)
 extern void CarImportCityBandReset(void); // JERICHO: free every guest city's palette block (cars.c)

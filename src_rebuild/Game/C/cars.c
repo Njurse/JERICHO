@@ -257,108 +257,95 @@ static void CarPalRowClear(void)
 // cycle (VEGAS took block 0, HAVANA arrived below it, VEGAS slid to block 1). A band must
 // therefore be assigned ONCE per level and kept until the level resets, so it is recorded
 // in the table below on first use and only cleared by CarImportCityBandReset.
-static int sCarImportBandByCity[CITY_COUNT];
-static int sCarImportBandInit = 0;
+static signed char sSetRow[CITY_COUNT][128];	// city -> set -> civ_clut row, -1 = none
+static int sPoolNextRow;
 
 void CarImportCityBandReset(void)
 {
-	int c;
+	int c, s;
 
 	for (c = 0; c < CITY_COUNT; c++)
-		sCarImportBandByCity[c] = -1;
+		for (s = 0; s < 128; s++)
+			sSetRow[c][s] = -1;
 
-	sCarImportBandInit = 1;
+	sPoolNextRow = CIV_CLUT_IMPORT_ROW;
 }
 
-static int CarImportCityBand(int city)
+// JERICHO: allocate a civ_clut row for a guest city's set. Called ONLY from the build
+// path (CarPalIndexForBuild), so a row is taken only when a built model names the set.
+// Returns the row (>= CIV_CLUT_IMPORT_ROW) or -1 when the shared pool is exhausted.
+static int CarAllocSetRow(int set, int city)
 {
-	int c, band;
-
-	if (city < 0 || city >= CITY_COUNT)
+	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
 		return -1;
 
-	// A static array zero-initialises to 0, which is a VALID band, so before the first
-	// level reset every city would read as "owns block 0". Initialise once, here, so the
-	// reset's -1 sentinel is what the first-ever call sees.
-	if (!sCarImportBandInit)
-		CarImportCityBandReset();
+	if (set <= 0 || set >= 128)
+		return -1;
 
-	// Already owns a band - or was refused one (the CIV_CLUT_GUEST_CITIES sentinel is
-	// also recorded, so a refused city stays refused rather than being retried and
-	// possibly taking a band that appeared free in the meantime). Stability is the point.
-	if (sCarImportBandByCity[city] >= 0)
-		return sCarImportBandByCity[city];
+	if (sSetRow[city][set] >= 0)
+		return sSetRow[city][set];
 
-	// Take the lowest free band, 0..CIV_CLUT_GUEST_CITIES-1. If none is free the loop
-	// falls through with band == CIV_CLUT_GUEST_CITIES, which CarImportBankRow turns
-	// into a refusal - the three-guest budget is real, not a thing to widen here.
-	for (band = 0; band < CIV_CLUT_GUEST_CITIES; band++)
+	if (sPoolNextRow >= CIV_CLUT_ROWS)
 	{
-		int taken = 0;
+		static int said;
 
-		for (c = 0; c < CITY_COUNT; c++)
+		if (!said)
 		{
-			if (sCarImportBandByCity[c] == band)
-			{
-				taken = 1;
-				break;
-			}
+			said = 1;
+			printInfo("cross-city: palette pool exhausted (%d shared rows) - later sets fall back to their city's first row\n",
+				CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW);
 		}
 
-		if (!taken)
-			break;
+		return -1;
 	}
 
-	sCarImportBandByCity[city] = band;
+	sSetRow[city][set] = (signed char)sPoolNextRow;
 
-	return band;
+	return sPoolNextRow++;
 }
 
-// JERICHO: how many guest cities get a palette block.
-//
-// WAS 2, and the reason was the base half: one guest city's palettes cost ~36 rows of the
-// CLUT COLUMN, the CLUT-safe area is 210 rows (256..465), the level's own layout took
-// ~157 of them, and a third city ran clutpos to 486 - 21 rows INTO the level font. While
-// the import shared that strip, refusing the third was the least-bad answer.
-//
-// The pool removed the reason: an import's palette rows come from the lower half pool's own column
-// now (rows 512..1023, texture.c), so a guest city costs the base half NOTHING. The limit
-// is the civ_clut ARRAY (rows CIV_CLUT_IMPORT_ROW..CIV_CLUT_ROWS-1), not the column, and
-// the measured cost is nowhere near it - a 3-city mix uses ~28 lower half pool rows out of 512.
-//
-// Measured at 2, and why it mattered: the third imported car came out with "NO PALETTE
-// BLOCK (refused)" and fell back to the HOST's civ_clut row 0, i.e. an imported car
-// wearing a local car's colours. That is what "the imported NPC cars have the wrong
-// textures" looks like.
-static int CarImportBankRow(int city)
+// JERICHO: how many civ_clut rows a held guest city has allocated, and the k-th of them
+// (ascending). The "block" callers iterate these instead of base..base+CIV_CLUT_BLOCK_ROWS.
+int CarImportCityRowCount(int city)
 {
-	int band = CarImportCityBand(city);
-	int base;
+	int s, n = 0;
 
-	if (band < 0)
-		return CIV_CLUT_IMPORT_ROW;
+	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
+		return 0;
 
-	// Past what the column can pay for: no block at all, so the caller can refuse this
-	// city out loud instead of taking a neighbour's rows or the font's.
-	if (band >= CIV_CLUT_GUEST_CITIES)
+	for (s = 1; s < 128; s++)
+		if (sSetRow[city][s] >= 0)
+			n++;
+
+	return n;
+}
+
+int CarImportCityRowAt(int city, int k)
+{
+	int s, n = 0;
+
+	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
 		return -1;
 
-	base = CIV_CLUT_IMPORT_ROW + band * CIV_CLUT_BLOCK_ROWS;
-
-	if (base + CIV_CLUT_BLOCK_ROWS > CIV_CLUT_ROWS)
+	for (s = 1; s < 128; s++)
 	{
-		printInfo("cross-city: %s wants palette block %d but civ_clut holds %d - staying on the first block\n",
-			LevelNames[city], band, (CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) / CIV_CLUT_BLOCK_ROWS);
+		if (sSetRow[city][s] >= 0)
+		{
+			if (n == k)
+				return sSetRow[city][s];
 
-		return CIV_CLUT_IMPORT_ROW;
+			n++;
+		}
 	}
 
-	return base;
+	return -1;
 }
 
-// JERICHO: the civ_clut block a held guest city owns, for a caller that must reason about
-// the whole block rather than the rows one built model happened to name. -1 when this city
-// has no block at all: it is the host level, it is not held, or the column cannot afford it.
+// JERICHO: the civ_clut row base a held guest city owns, for a caller that must reason
+// about a whole city rather than the rows one built model happened to name. With the
+// per-(city, set) dictionary there is no fixed block, so "base" is the city's FIRST
+// allocated row. -1 when it has none: the host level, a city not held, or no model has
+// named a set for it yet (see PALETTES.md §7).
 int CarImportPaletteBlockBase(int city)
 {
 	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
@@ -367,7 +354,7 @@ int CarImportPaletteBlockBase(int city)
 	if (!CarImportCityHeld(city))
 		return -1;
 
-	return CarImportBankRow(city);
+	return CarImportCityRowAt(city, 0);
 }
 
 static int CarPalIndexInCity(int tpage, int city);
@@ -406,15 +393,21 @@ int CivClutTexMaxSlot(int row, int texid)
 // Returns the absolute civ_clut row, or -1 when no row of the block carries that texid.
 static int CarPalRowForTexId(int city, int texid)
 {
-	int base = (city == GameLevel) ? 0 : CarImportBankRow(city);
-	int i;
+	int base = (city == GameLevel) ? 0 : CarImportPaletteBlockBase(city);
+	int i, n;
 
 	if (base < 0 || texid < 0 || texid >= 32)
 		return -1;
 
-	for (i = 0; i < CIV_CLUT_BLOCK_ROWS; i++)
-		if (CivClutTexMaxSlot(base + i, texid) > 0)
-			return base + i;
+	n = (city == GameLevel) ? CIV_CLUT_BLOCK_ROWS : CarImportCityRowCount(city);
+
+	for (i = 0; i < n; i++)
+	{
+		int row = (city == GameLevel) ? (base + i) : CarImportCityRowAt(city, i);
+
+		if (row >= 0 && row < CIV_CLUT_ROWS && CivClutTexMaxSlot(row, texid) > 0)
+			return row;
+	}
 
 	return -1;
 }
@@ -430,14 +423,15 @@ void CarPalRowReport(void)
 		if (city < 0)
 			continue;
 
-		int base = (city == GameLevel) ? 0 : CarImportBankRow(city);
+		int base = (city == GameLevel) ? 0 : CarImportPaletteBlockBase(city);
 
 		if (base < 0)
-			printInfo("cross-city: palette map - resident slot %d: %s model %d - NO PALETTE BLOCK (refused; civ_clut affords %d guests, so this car has no colours of its own)\n",
-				slot, LevelNames[city], residentCarModels[slot], CIV_CLUT_GUEST_CITIES);
+			printInfo("cross-city: palette map - resident slot %d: %s model %d - NO PALETTE ROWS (no set of its own has a row; this car has no colours of its own)\n",
+				slot, LevelNames[city], residentCarModels[slot]);
 		else
-			printInfo("cross-city: palette map - resident slot %d: %s model %d reads civ_clut rows %d..%d\n",
-				slot, LevelNames[city], residentCarModels[slot], base, base + CIV_CLUT_BLOCK_ROWS - 1);
+			printInfo("cross-city: palette map - resident slot %d: %s model %d reads %d civ_clut row(s), first %d\n",
+				slot, LevelNames[city], residentCarModels[slot],
+				(city == GameLevel) ? CIV_CLUT_BLOCK_ROWS : CarImportCityRowCount(city), base);
 	}
 
 	for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
@@ -2473,20 +2467,16 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 
 		if (palidx < 0)
 		{
-			// JERICHO: resolve an unclassifiable set to the SAME row the BUILD resolves it to
-			// (CarPalIndexForBuild), so the row a model is baked to read is a row this walk
-			// writes. The two used to disagree: the bake sent such a set to the source city's
-			// OWN first row, the walk sent it to the HOST's row 0 - so an imported model read
-			// rows nothing ever wrote and those polys drew colourless ("several corrupted
-			// palettes" on an imported special). For the host level this is unchanged: its
-			// block base is -1 and the fallback stays row 0, which is what the host's own
-			// build already reads.
-			int base = CarImportPaletteBlockBase(city);
-
-			palidx = (base >= 0) ? base : 0;
+			// JERICHO: a GUEST set with no allocated row is one no built model named (the
+			// build allocates a row for every set it names), so its palette is not uploaded
+			// at all - palidx stays < 0 and `needed` below resolves to 0, so the CLUT is
+			// recorded for references but written into no civ_clut row. The host level's
+			// unclassifiable sets keep the old row 0 fallback.
+			if (!(CarImportCityHeld(city) && city != GameLevel))
+				palidx = 0;
 		}
 
-		needed = (rowNeeded == NULL) ? 1 : rowNeeded[palidx];
+		needed = (rowNeeded == NULL) ? 1 : ((palidx >= 0 && palidx < CIV_CLUT_ROWS) ? rowNeeded[palidx] : 0);
 
 		if (rowNeeded != NULL && palidx >= 0 && palidx < CIV_CLUT_ROWS)
 		{
@@ -2659,15 +2649,16 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 	// entries it does hold map to rows 8..13, which the model does not read.
 	if (rowNeeded != NULL)
 	{
-		int blockBase = CarImportBankRow(city);
-		int blockEnd = (blockBase < 0) ? 0 : blockBase + CIV_CLUT_BLOCK_ROWS;
-
-		// Only this city's OWN block: the mask spans every guest's rows, so without this a
+		// Only this city's OWN rows: the mask spans every guest's rows, so without this a
 		// city would be blamed for a neighbour's rows it was never asked to fill.
-		for (k = blockBase; k < blockEnd && k < CIV_CLUT_ROWS; k++)
-			if (k >= 0 && rowNeeded[k] && histWrite[k] == 0)
+		for (k = 0; k < CarImportCityRowCount(city); k++)
+		{
+			int row = CarImportCityRowAt(city, k);
+
+			if (row >= 0 && row < CIV_CLUT_ROWS && rowNeeded[row] && histWrite[row] == 0)
 				printInfo("cross-city: %s palettes: row %d is READ by the built model but the lump wrote nothing to it (%d of its entries map to other rows) - the row stays empty and its polys draw their own page CLUT (slot 0)\n",
-					LevelNames[city], k, histRow[k]);
+					LevelNames[city], row, histRow[row]);
+		}
 	}
 
 	// JERICHO: commit the rows the guest walk actually used. IncrementClutNum wraps
@@ -2733,49 +2724,36 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 
 	for (city = 0; city < CITY_COUNT; city++)
 	{
-		int rows = 0, r, base, limit;
+		int rows = 0, r, base, k;
 
 		if (sImpPalLump[city] == NULL)
 			continue;
 
-		// JERICHO: THIS CITY'S block, not the whole bank. The bank used to admit a single
-		// city - a second was REFUSED - so a mashup's other cities got nothing while
-		// their cars still read the block. A block each means the rows uploaded here and
-		// the row CarPalIndexInCity hands the model are the same rows, for every city.
-		base = CarImportBankRow(city);
+		// JERICHO: this city's ALLOCATED rows, not a fixed block. A city has no rows only
+		// when no built model named a set for it - in which case nothing reads its lump, so
+		// skip it without the old "REFUSED" (the shared pool is the budget now, and it is
+		// enforced at build time in CarAllocSetRow).
+		base = CarImportPaletteBlockBase(city);
 
 		if (base < 0)
 		{
-			// The honest refusal, at the measured threshold: the column can pay for
-			// CIV_CLUT_GUEST_CITIES cities' palettes, and this is one more. Refusing is
-			// recoverable (this car has no colours); overflowing is not (the glyphs go).
-			printInfo("cross-city: %s palettes: REFUSED - civ_clut affords %d guest cities and %s have them (rows %d..%d are the import bank)\n",
-				LevelNames[city], CIV_CLUT_GUEST_CITIES, "the others",
-				CIV_CLUT_IMPORT_ROW, CIV_CLUT_ROWS - 1);
-
 			sImpPalLump[city] = NULL;
 			continue;
 		}
 
-		limit = base + CIV_CLUT_BLOCK_ROWS;
-		if (limit > CIV_CLUT_ROWS)
-			limit = CIV_CLUT_ROWS;
+		for (k = 0; k < CarImportCityRowCount(city); k++)
+		{
+			r = CarImportCityRowAt(city, k);
 
-		for (r = base; r < limit; r++)
-			if (rowNeeded[r])
+			if (r >= 0 && r < CIV_CLUT_ROWS && rowNeeded[r])
 			{
 				rows++;
 				CarPalRowNote(r, city);
 			}
+		}
 
-		printInfo("cross-city: %s palettes: uploading for %d of its block's %d rows (civ_clut %d..%d)\n",
-			LevelNames[city], rows, CIV_CLUT_BLOCK_ROWS, base, limit - 1);
-
-		// The honest refusal, now per city: a city whose own palettes need more rows than
-		// a block has loses the excess rather than a neighbour's block.
-		if (rows > CIV_CLUT_BLOCK_ROWS)
-			printInfo("cross-city: %s palettes: wants %d rows and a block is %d - the excess is not placed (CIV_CLUT_BLOCK_ROWS)\n",
-				LevelNames[city], rows, CIV_CLUT_BLOCK_ROWS);
+		printInfo("cross-city: %s palettes: uploading for %d of its %d allocated rows (civ_clut %d..)\n",
+			LevelNames[city], rows, CarImportCityRowCount(city), base);
 
 		// JERICHO: a row a built model READS that this city's lump has NO entries for is now
 		// LEFT EMPTY - nothing is fabricated.
@@ -2797,20 +2775,25 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 		// poly's own page CLUT, CarClutVariant clamps a spawned palette to the row's real
 		// coverage (none -> slot 0), and CarClutLookup falls back to the group's slot 0.
 		{
-			int r2;
+			int r2, rn = CarImportCityRowCount(city);
 
-			for (r2 = base; r2 < limit; r2++)
+			for (r2 = 0; r2 < rn; r2++)
 			{
-				sJerRowWritten[r2] = 0;		// scope the count to THIS city's walk
+				int row = CarImportCityRowAt(city, r2);
+
+				if (row >= 0 && row < CIV_CLUT_ROWS)
+					sJerRowWritten[row] = 0;	// scope the count to THIS city's walk
 			}
 
 			ProcessPalletLumpForRows(sImpPalLump[city], sImpPalSize[city], city, rowNeeded);
 
-			for (r2 = base; r2 < limit; r2++)
+			for (r2 = 0; r2 < rn; r2++)
 			{
-				if (sJerRowWritten[r2] == 0 && rowNeeded[r2])
+				int row = CarImportCityRowAt(city, r2);
+
+				if (row >= 0 && row < CIV_CLUT_ROWS && sJerRowWritten[row] == 0 && rowNeeded[row])
 					printInfo("cross-city: %s palettes: row %d is read by a built model but this city's lump has no entries for it - left to the poly's own page CLUT (slot 0), nothing fabricated\n",
-						LevelNames[city], r2);
+						LevelNames[city], row);
 			}
 		}
 
@@ -3480,13 +3463,13 @@ static int CarPalIndexInCity(int tpage, int city)
 	if (city < 0 || city >= CITY_COUNT)
 		return -1;
 
-	rowbase = (CarImportCityHeld(city) && city != GameLevel) ? CarImportBankRow(city) : 0;
+	// JERICHO: a GUEST city's set resolves through the per-(city, set) dictionary, not the
+	// fixed 8-entry carTpages scan (PALETTES.md §7). Lookup-only: the build allocates the
+	// row and this must agree with it. The host keeps the table scan (rows 0..7).
+	if (CarImportCityHeld(city) && city != GameLevel)
+		return (tpage > 0 && tpage < 128) ? sSetRow[city][tpage] : -1;
 
-	// A city the column cannot afford has no block. Its cars then fall back to the host's
-	// row 0 (and ProcessImportedPaletteRows says why), which is a wrong colour rather than
-	// a write into someone else's block or into the level font.
-	if (rowbase < 0)
-		rowbase = 0;
+	rowbase = 0;
 
 	for (i = 0; i < 8; i++)
 	{
@@ -3680,28 +3663,26 @@ static int CarPalIndexForBuild(int tpage, int city)
 
 	if (idx < 0)
 	{
-		// JERICHO: an unclassifiable set resolves to the SOURCE CITY'S OWN first row, not to
-		// the host's row 0. Set 0 is the usual one - every city's models carry 8-16 polys
-		// naming it, and no city has a car page there.
-		//
-		// Two reasons, and the second is a bug fix rather than a preference:
-		//
-		// 1. The host reads its OWN row 0 for a set it cannot classify. Applying that rule
-		//    where the car actually came from is the same rule, not a new one.
-		// 2. `carid` is the row in `clut = (carid-1)*6*32 + texture_id*6`, which is NEGATIVE
-		//    at carid 0 - and the poly's clut_uv0 high word is a civ_clut INDEX into
-		//    `&civ_clut[1]`, so a negative one reads BEFORE the array. A guest's row 0 is its
-		//    block base (8/16/24), which is positive, so those polys become safe; the old
-		//    `GetCarPalIndex` fallback answered 0 and left the wild index in place.
-		int base = CarImportPaletteBlockBase(city);
+		// JERICHO: a GUEST set with no row yet takes one from the shared pool (PALETTES.md
+		// §7) - this is what gives every (city, set) a distinct row and fixes the
+		// extra-panels collapse. The host keeps its table fallback (CarAllocSetRow refuses
+		// the host level).
+		idx = CarAllocSetRow(tpage, city);
 
-		PalBakeMissDiag(tpage, city);	/* JERICHO-DIAG (JERICHO_DIAG_PALBAKE) */
+		if (idx < 0)
+		{
+			// Pool exhausted, or an unclassifiable HOST set: fall back to the city's first
+			// row (never a host row for a guest) rather than bake a wild index.
+			int base = CarImportPaletteBlockBase(city);
 
-		if (sPalBakeMiss++ < 4)
-			printInfo("cross-city: set %d has no palette row in %s - baking that city's own row 0 (civ_clut %d) rather than a negative index\n",
-				tpage, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", (base >= 0) ? base : 0);
+			PalBakeMissDiag(tpage, city);	/* JERICHO-DIAG (JERICHO_DIAG_PALBAKE) */
 
-		idx = (base >= 0) ? base : GetCarPalIndex(tpage);
+			if (sPalBakeMiss++ < 4)
+				printInfo("cross-city: set %d has no palette row in %s - baking that city's own first row (civ_clut %d) rather than a negative index\n",
+					tpage, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", (base >= 0) ? base : 0);
+
+			idx = (base >= 0) ? base : GetCarPalIndex(tpage);
+		}
 	}
 
 	return idx;
