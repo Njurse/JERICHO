@@ -2782,9 +2782,20 @@ void MRCancelCarRequest(MS_TARGET* target)
 // [D] [T]
 void MRHandleCarRequests(void)
 {
-	if (_CutRec_IsOn())
+	// Only while RECORDING. A recorded cutscene is the streams cutscene_recorder.ini
+	// declares, and the "less invasive" recipe deliberately keeps the mission's own car
+	// requests out of it - that is why this gate exists at all.
+	//
+	// While PLAYING it is wrong. The mission runs on playback too (its variables come
+	// back from the saved MISSION_DATA), so its requested cars are part of the recorded
+	// world, and the request is the ONLY way a cop target reaches its replay-stream slot
+	// (MRCreateCar -> Swap2Cars, newslot = NumReplayStreams + cop_adjust). Blocking it
+	// there meant a replay never built those cars and never ran their swaps, so the
+	// replayed world came out different from the recorded one - the "car swaps don't
+	// happen in replays" inconsistency. Gate on the RECORDING side only.
+	if (_CutRec_IsRecording())
 		return;
-	
+
 	if (Mission.CarTarget)
 		MRCreateCar(Mission.CarTarget);
 }
