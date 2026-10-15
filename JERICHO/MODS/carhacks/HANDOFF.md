@@ -44,7 +44,8 @@ detail lives in the topic docs.
 **State:** `chk_suite.sh` reports "all 7 rows clean" (the 3-city mix row used to read FAILURES
 on a clean build - a `crosscheck.py` INV3 bug, now fixed so each set is judged against its own
 source city). A 12-switch multi-city cycle builds every car, plateaus its pool and returns
-everything. **Open:** the extra-panels corruption above.
+everything. **Closed 2026-10-15:** the extra-panels corruption and the 3-city bank limit
+(see "The per-(city,set) row dictionary" in §7 of PALETTES.md).
 
 **Slot reuse (later, 2026-10).** A car change now reuses the slot the old car vacated, so a
 change holds ONE slot instead of the transient TWO that made concurrent changes run the import
@@ -88,9 +89,11 @@ other's colours"). See `PALETTES.md` §7.
 
 **Open:**
 
-- the per-model row assignment for that collapse (rows from `CarModelSet`/`CarModelSetCount`
-  at bake time — the real fix, since 8 rows cannot hold 13 sets), plus arbitration so two
-  cars never share a row;
+- **DONE (2026-10-15): the per-model row assignment for that collapse.** Implemented as a
+  per-`(city, set)` row dictionary over a shared pool of rows 8..31 (`CarAllocSetRow` /
+  `sSetRow` in cars.c) instead of the fixed 8-row city block — see PALETTES.md §7. Sets
+  6..13 get rows of their own, five D1 cities fit, and arbitration is moot (the pool cursor
+  never reuses a row, so two cars cannot share one);
 - **DONE (2026-10-11): hide D1 cities (MIAMI/FRISCO/LA/NEWYORK/NEWCASTLE) when their
   Driver 1 assets are absent.** The list is generated (`d1citymodels.h`) rather than read,
   because the frontend builds it before the CD subsystem is up, so it used to offer them
