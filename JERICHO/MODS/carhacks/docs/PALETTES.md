@@ -612,16 +612,40 @@ it to the block base. The rows exist in the lump and the table cannot address th
 the same eight-row table is what fixes the bank at three cities, because the column is
 carved into fixed 8-row blocks whether a city fills them or not.
 
-**The direction (chosen 2026-10-12; not yet implemented).** Assign the row per BUILT
-MODEL — per imported car — out of a shared pool instead of per `(city, set)` out of the
-city's block. A car's polys then carry rows chosen from the rows that city actually needs
-(3–5 for a Driver 1 model, not 8), two cities no longer need exclusive blocks, and the
-panel sets get rows of their own — which fixes the capacity limit and the extra-panel case
-together. The pieces already exist to build on: `rowNeeded[]` (the upload already loads
-only the rows a model named), `CivClutTexMaxSlot` and `CarPalRowForTexId` (row choice
-already consults what the lump actually wrote rather than the table's order), and
-`CarImportBankRow`'s band arithmetic, which is what has to become a per-car allocation
-with a lifetime across the hot-load and slot-reuse paths.
+**The design (implemented 2026-10-15).** A guest city's `set → civ_clut row` mapping is a
+**dynamic per-`(city, set)` dictionary** fed from a shared pool of rows `8..31`, replacing
+the fixed 8-entry `carTpages[city][0..7]` scan for guests. The host level keeps the table
+scan (rows `0..7`).
+
+- **Measured this pass** (`JERICHO_DIAG_PALBAKE=1`): a baked Driver 1 model names **2–4
+  distinct `texture_set`s**, and the sets past the five live `carTpages` entries
+  (`6..13`) resolve to `-1` → the block base row — so those panels wear the first page's
+  palette (the "extra panels" corruption). A 4th/5th D1 city is refused a block entirely
+  (FRISCO/LA → every set collapses to host rows `0/1/2`).
+- **Why per-`(city,set)`, not per-model:** two models of one city that share a set read the
+  *same* `(set, texnum)` palette (the lump keys by set), so they should share one row.
+  Sharing is correct and uses fewer rows than a per-car run.
+- **Allocation:** `CarAllocSetRow(set, city)` runs from the build path
+  (`CarPalIndexForBuild`) the first time a built model names that set; it takes the next
+  free row from `sPoolNextRow` (starts at `CIV_CLUT_IMPORT_ROW`). `CarPalIndexInCity` is
+  **lookup-only** for guests, so the deferred lump walk and the pin never allocate a row
+  nobody reads.
+- **Lifetime:** rows are sticky per `(city, set)` until the level reset
+  (`CarImportCityBandReset` / `CarImportResetState`) — the same lifetime the old
+  per-city band had — so a set keeps its row across a hot-load and a slot reuse. Never
+  freed mid-level.
+- **Capacity:** a 5-city mix is 5 slots × 2–4 sets ≈ **10–20 rows ≤ 24**. The worst case
+  (7 slots × 4 = 28) overruns the pool, so exhaustion refuses cleanly: the set falls back
+  to the city's first allocated row, or `CIV_CLUT_IMPORT_ROW` — never below row 8, so no
+  host-row leak.
+- **Collision-free by construction:** the pool cursor never reuses a row, so two sets can
+  no longer share a row; the exit report's `COLLISION` line becomes a canary rather than a
+  thing that fires.
+- **The extra-panels fix is a consequence:** set 6 (and 7, 8, …) get a row of their own,
+  so `CarImportPin` re-points that row's slot 0 to the set's *own* page CLUT and the panel
+  stops wearing the first page's palette. Sets whose lump carries colour-variant data still
+  get those rows filled; sets with none keep slot 0 (the page's own CLUT), which is already
+  handled end to end.
 
 **The rig that keeps this honest** is `tools/chk_d1_cities.sh`: nothing else in the tree
 enumerates cities past 3, so a Driver 1 defect could not have been seen at all. It imports

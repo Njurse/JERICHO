@@ -261,11 +261,13 @@ pinned, and the car draws with the **level's** materials and colours. Nothing in
 
 So the module asks the engine for the numbers behind the question —
 `JerCarImportHealth(slot)` in `texture.c` returns how many polys the slot's built
-model has, how many of them read a **pinned** page, and how many palette rows the
-level has uploaded — and treats an imported slot with polys but **none** on a
-pinned page as garbled. That is the `0 of 254 polys read the imported page` failure
-from the cross-city notes, and it is the same walk the `JerCarImportDump` debug
-dump does.
+model has, how many of them read a **pinned** page, how many palette rows the
+level has uploaded, and how many of the pinned sets resolve to a **bad** palette
+row (a HOST row below the import bank, or an import row whose slot-0 CLUT was
+never re-pointed). An imported slot with polys but **none** on a pinned page, or
+with a bad palette row, is treated as garbled and reloaded. That is the
+`0 of 254 polys read the imported page` failure from the cross-city notes, and it
+is the same walk the `JerCarImportDump` debug dump does.
 
 A garbled slot is simply **reloaded**: `chkImportHotLoad` re-defers the palette,
 rebuilds the model and re-pins the pages, and the pin uploads on the next draw.
