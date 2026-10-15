@@ -11,7 +11,7 @@
 #       host   = --host-city    (default havana)   -> its own carhacks.ini
 #       client = --client-city  (default rio)      -> ITS OWN carhacks.ini
 #
-#   Each player then DRIVES the imported car (--host-car/--client-car are model
+#   Each player then DRIVES the imported car (--host-car/--client-car are CITY:MODEL
 #   numbers, so -mpcar points at the imported model rather than at one of the
 #   level's own frontend slots - which is what a bare `-mpcar slotN` did, and why
 #   the pair used to spawn both players in the level's own vehicles).
@@ -144,7 +144,7 @@ EOF
 if [ "$DRY" = "1" ]; then
 	echo "-- dry: would write the host config to $INI, then run"
 	echo "   mp_pair.bat --keep --settle $SETTLE --seconds $SECONDS_RUN --level $LEVEL \\"
-	echo "               --host-car $HOST_MODEL --client-car $CLIENT_MODEL"
+	echo "               --host-car $HI:$HOST_MODEL --client-car $CI:$CLIENT_MODEL"
 	echo "   and overwrite $PAIRDIR/b/JERICHO/CONFIG/carhacks.ini with the client's import"
 	exit 0
 fi
@@ -165,7 +165,7 @@ trap restore EXIT
 
 # ---- build the run dirs, then launch ---------------------------------------
 "$PAIR" --keep --settle "$SETTLE" --seconds "$SECONDS_RUN" \
-	--level "$LEVEL" --host-car "$HOST_MODEL" --client-car "$CLIENT_MODEL" \
+	--level "$LEVEL" --host-car "$HI:$HOST_MODEL" --client-car "$CI:$CLIENT_MODEL" \
 	> /tmp/chk_mp_foreign_pair.log 2>&1 &
 PAIR_PID=$!
 
@@ -240,8 +240,13 @@ grep -aE "^\[pair\] verdict" /tmp/chk_mp_foreign_pair.log || echo "  (no pair ve
 
 # Each side must have loaded ITS OWN city. Counting "car data from" alone would
 # pass a run where the client silently got the host's import, so match the city.
-host_ok=$(grep -acE "cross-city: car data from $HOST_UPPER" "$PAIRDIR/a/JERICHO.log" 2>/dev/null || echo 0)
-client_ok=$(grep -acE "cross-city: car data from $CLIENT_UPPER" "$PAIRDIR/b/JERICHO.log" 2>/dev/null || echo 0)
+# NOT `|| echo 0`: grep -c prints 0 AND exits 1 when nothing matches, so the || fired
+# as well and the value became "0\n0", which `[ "$host_ok" -gt 0 ]` rejects with
+# "integer expected" - in exactly the case the rig most needs to report cleanly.
+host_ok=$(grep -acE "cross-city: car data from $HOST_UPPER" "$PAIRDIR/a/JERICHO.log" 2>/dev/null)
+client_ok=$(grep -acE "cross-city: car data from $CLIENT_UPPER" "$PAIRDIR/b/JERICHO.log" 2>/dev/null)
+host_ok=${host_ok:-0}
+client_ok=${client_ok:-0}
 host_wrong=$(grep -acE "cross-city: car data from " "$PAIRDIR/a/JERICHO.log" 2>/dev/null || echo 0)
 client_wrong=$(grep -acE "cross-city: car data from " "$PAIRDIR/b/JERICHO.log" 2>/dev/null || echo 0)
 
