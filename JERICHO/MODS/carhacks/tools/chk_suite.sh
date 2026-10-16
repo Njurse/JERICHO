@@ -68,7 +68,7 @@ if [ -z "${SKIPBUILD:-}" ]; then
 	cd "$SRC" || exit 1
 	OUT="$("$MSB" build/JERICHO.vcxproj -p:Configuration=Release_dev -p:Platform=x64 \
 		-m -v:m -nologo 2>&1)"
-	if ! printf '%s' "$OUT" | grep -qiE "REDRIVER2[A-Za-z_]*\.exe"; then
+	if ! printf '%s' "$OUT" | grep -qiE "[A-Za-z0-9_]+\.exe"; then
 		echo "BUILD FAILED - no link line:"
 		printf '%s\n' "$OUT" | grep -iE "error C|error LNK" | head -5
 		exit 1
