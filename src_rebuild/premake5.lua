@@ -219,10 +219,10 @@ local function jer_game_includedirs()
    end
 end
 
-local function jer_common_defines()
-   defines { GAME_REGION }
-   defines { "BUILD_CONFIGURATION_STRING=\"%{cfg.buildcfg}\"" }
-
+-- The build's identity: the app version, the commit and the build stamp. Every target
+-- that reports it gets these - JERICHO_runtime (its boot banner) and the exe (the
+-- frontend's version readout, which must not fall back to "unknown").
+local function jer_version_defines()
    -- deterministic JERICHO build version: git describe when available,
    -- otherwise a plain literal (each exe release = a new JERICHO version).
    --
@@ -231,17 +231,46 @@ local function jer_common_defines()
    -- no prefix at all. The version the game reports strips that leading "v",
    -- so the binary says "0.9.0", not "v0.9.0".
    local null = (os.target() == "windows") and "2>nul" or "2>/dev/null"
-   local desc = ""
-   local f = io.popen("git describe --tags --always --dirty " .. null)
-   if f then
-      desc = f:read("*l") or ""
-      f:close()
+
+   -- one line of a git command's output, or "" when git cannot answer
+   local function git(cmd)
+      local s = ""
+      local f = io.popen(cmd .. " " .. null)
+      if f then
+         s = f:read("*l") or ""
+         f:close()
+      end
+      return (s:gsub("%s+$", ""))
    end
-   desc = desc:gsub("^v", "")
-   if desc == nil or desc == "" then
+
+   -- The APP version. A tag when the build sits exactly on one, otherwise
+   -- "<tag>-<n>-g<hash>", or a bare hash for a checkout with no tags at all. The
+   -- leading "v" the release tags carry is stripped, so the binary says "0.10.2".
+   local desc = git("git describe --tags --always --dirty"):gsub("^v", "")
+   if desc == "" then
       desc = "0.9.0"
    end
    defines { ("JERICHO_BUILD_VERSION=\"%s\""):format(desc) }
+
+   -- The commit on its own. git describe only carries a hash when the build is
+   -- AHEAD of a tag, so a release built exactly on a tag would otherwise have no
+   -- hash anywhere - and "which commit is this?" is the first thing anyone asks.
+   local hash = git("git rev-parse --short HEAD")
+   if hash == "" then
+      hash = "unknown"
+   end
+   defines { ("JERICHO_GIT_HASH=\"%s\""):format(hash) }
+
+   -- When this project was generated, which for a CI build is the build itself.
+   -- Reported by the boot banner (dev builds) and the frontend's version toast.
+   defines { ("JERICHO_BUILD_TIME=\"%s\""):format(os.date("%d %b %Y %H:%M")) }
+end
+
+local function jer_common_defines()
+   defines { GAME_REGION }
+   defines { "BUILD_CONFIGURATION_STRING=\"%{cfg.buildcfg}\"" }
+
+   jer_version_defines()
 end
 
 table.insert(premake.option.get("os").allowed, { "emscripten", "Emscripten" })
@@ -548,6 +577,8 @@ project "JERICHO"
 
     language "c++"
     targetdir "bin/%{cfg.buildcfg}"
+
+    jer_version_defines()
 
     -- The Linux RELEASE binary must not be named exactly "JERICHO".
     --

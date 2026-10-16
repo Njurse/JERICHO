@@ -32,6 +32,24 @@ extern "C" {
 #define JERICHO_BUILD_VERSION "0.9.0"
 #endif
 
+/* The commit and the build stamp behind JERICHO_BUILD_VERSION. premake5.lua
+ * defines both on the command line (jer_common_defines); these fallbacks are for
+ * a translation unit built without them, such as a module DLL, which gets no
+ * version defines of its own. */
+#ifndef JERICHO_GIT_HASH
+#define JERICHO_GIT_HASH "unknown"
+#endif
+
+#ifndef JERICHO_BUILD_TIME
+#define JERICHO_BUILD_TIME "unknown"
+#endif
+
+/* The build facts as one line of text: "<version> (<hash>, built <stamp>)". The
+ * boot banner (dev builds) and the frontend's version readout both format this,
+ * so the two can never disagree about which build is running. */
+#define JERICHO_BUILD_INFO_FMT "%s (%s, built %s)"
+#define JERICHO_BUILD_INFO_ARGS JERICHO_BUILD_VERSION, JERICHO_GIT_HASH, JERICHO_BUILD_TIME
+
 #define JERICHO_SDK_VERSION 2
 
 /* Maximum number of compiled-in modules (registry + modlist capacity). */

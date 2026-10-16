@@ -954,7 +954,16 @@ void jer_init(const char* rootDir)
 		gJerichoRoot[0] = 0;
 	}
 
-	jerLog("== JERICHO v%d (build %s) == Just-in-Time Extensible Runtime Interface for Compiled Hooks & Overrides\n", JERICHO_SDK_VERSION, JERICHO_BUILD_VERSION);
+	/* The boot banner names the BUILD - the first thing to read when a player's
+	 * log does not match the release they think they are running. It reports the
+	 * app version, not the SDK ABI number: "v2" is not a JERICHO release, and
+	 * reading it as one is exactly how a log gets mistaken for the wrong build.
+	 * It is a dev affordance, so a release build stays quiet - players read the
+	 * version in Options -> JERICHO (the frontend's version toast). */
+#ifndef JERICHO_RELEASE_MODS
+	jerLog("== JERICHO " JERICHO_BUILD_INFO_FMT " == Just-in-Time Extensible Runtime Interface for Compiled Hooks & Overrides\n",
+		JERICHO_BUILD_INFO_ARGS);
+#endif
 
 	/* persistent module config lives under <root>/CONFIG/ */
 	jer_config_init(rootDir);
