@@ -550,12 +550,21 @@ jobs:
               build instead.
 
             `Release` ships the four modules above. `Release_dev` compiles every
-            module plus the debug console and dev tooling - take it only if you mean
-            to tinker.
+            module plus the debug console and dev tooling; it exists for testing the
+            mods under development.
 
             Windows: unzip anywhere and run `JERICHO.exe`. Linux: `tar -xzf` and run
             `./jericho`. The game writes its log and config next to the executable, so
             it does not need installing.
+
+            ---
+
+            **Download the Release binary - `JERICHO_Release_win64.zip` or
+            `JERICHO_Release_linux-x64.tar.gz`.** If you are not sure which one to
+            pick, it is that one. **Do not download `Release_dev` unless you know what
+            you are doing:** it is a developer build - every module compiled in, the
+            debug console and dev tooling enabled - so it is heavier and rougher, and
+            it is not what a normal install should run.
           generate_release_notes: true
           prerelease: false
           # a tag that already has a release: replace the assets rather than fail
@@ -598,6 +607,13 @@ jobs:
           body: |
             Rolling alpha build from `main` at ${{ github.sha }}.
             Not a stable release - download and test at your own risk.
+
+            ---
+
+            **Download the Release binary - `JERICHO_Release_win64.zip` or
+            `JERICHO_Release_linux-x64.tar.gz`.** **Do not download `Release_dev`
+            unless you know what you are doing:** it is a developer build - every
+            module compiled in, the debug console and dev tooling enabled.
           prerelease: true
           make_latest: false
           # the asset names repeat on every push to main, so replacing them is

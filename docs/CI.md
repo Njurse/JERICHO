@@ -107,6 +107,13 @@ action concatenates body + blank line + generated notes (it clears the API flag 
 merges them itself). Without a body the page was only the auto changelog, which on a
 release with no merged pull requests is a bare "Full Changelog" link.
 
+Both the tagged-release body and the rolling `alpha` body also end with a bold
+**download the Release binary / do not download `Release_dev` unless you know what you
+are doing** note, set off by a `---`. The dev archive sits beside the shipping one on
+the same page, and downloaders kept taking it by mistake; the note names both archives
+so the choice is unambiguous. It is a note, not a separation — the four archives are
+still published together.
+
 ## Getting a binary
 
 - **Latest tagged release:** the repo's *Releases* page. Pushing a tag is how a
