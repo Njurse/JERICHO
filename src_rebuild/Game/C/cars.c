@@ -258,7 +258,19 @@ static void CarPalRowClear(void)
 // therefore be assigned ONCE per level and kept until the level resets, so it is recorded
 // in the table below on first use and only cleared by CarImportCityBandReset.
 static signed char sSetRow[CITY_COUNT][128];	// city -> set -> civ_clut row, -1 = none
-static int sPoolNextRow;
+
+// JERICHO: is civ_clut row `row` already owned by some (city, set)?
+static int CarRowInUse(int row)
+{
+	int c, s;
+
+	for (c = 0; c < CITY_COUNT; c++)
+		for (s = 1; s < 128; s++)
+			if (sSetRow[c][s] == row)
+				return 1;
+
+	return 0;
+}
 
 void CarImportCityBandReset(void)
 {
@@ -267,8 +279,6 @@ void CarImportCityBandReset(void)
 	for (c = 0; c < CITY_COUNT; c++)
 		for (s = 0; s < 128; s++)
 			sSetRow[c][s] = -1;
-
-	sPoolNextRow = CIV_CLUT_IMPORT_ROW;
 }
 
 // JERICHO: allocate a civ_clut row for a guest city's set. Called ONLY from the build
@@ -276,6 +286,8 @@ void CarImportCityBandReset(void)
 // Returns the row (>= CIV_CLUT_IMPORT_ROW) or -1 when the shared pool is exhausted.
 static int CarAllocSetRow(int set, int city)
 {
+	int r;
+
 	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
 		return -1;
 
@@ -285,7 +297,20 @@ static int CarAllocSetRow(int set, int city)
 	if (sSetRow[city][set] >= 0)
 		return sSetRow[city][set];
 
-	if (sPoolNextRow >= CIV_CLUT_ROWS)
+	// Take the LOWEST free row, so a row a released car gave back (CarImportReclaimRows)
+	// is handed out again before the pool grows past it. Without this the pool only ever
+	// grew and cycling cars across cities exhausted the 24 rows - every later set then
+	// collapsed onto its city's first row and the palettes rotted progressively.
+	for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
+	{
+		if (!CarRowInUse(r))
+		{
+			sSetRow[city][set] = (signed char)r;
+
+			return r;
+		}
+	}
+
 	{
 		static int said;
 
@@ -295,13 +320,9 @@ static int CarAllocSetRow(int set, int city)
 			printInfo("cross-city: palette pool exhausted (%d shared rows) - later sets fall back to their city's first row\n",
 				CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW);
 		}
-
-		return -1;
 	}
 
-	sSetRow[city][set] = (signed char)sPoolNextRow;
-
-	return sPoolNextRow++;
+	return -1;
 }
 
 // JERICHO: how many civ_clut rows a held guest city has allocated, and the k-th of them
@@ -355,6 +376,58 @@ int CarImportPaletteBlockBase(int city)
 		return -1;
 
 	return CarImportCityRowAt(city, 0);
+}
+
+// JERICHO: is any LIVE resident slot's built model naming (city, set)? A guest (city, set)
+// row may be given back only when no live car bakes it - a live car's polys already carry
+// its row as their palette index, so freeing a row still in use would recolour that car.
+static int CarSetNamedByLiveSlot(int city, int set)
+{
+	int slot, i;
+
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		if (residentCarModels[slot] < 0)
+			continue;
+
+		if (GetCarModelSourceCity(slot) != city)
+			continue;
+
+		for (i = 0; i < CarModelSetsCount(slot); i++)
+			if (CarModelSetsGet(slot, i) == set)
+				return 1;
+	}
+
+	return 0;
+}
+
+// JERICHO: give back every guest (city, set) row no live car names any more, and return how
+// many. Called after a slot is released (JerReleaseCarSlot). Before this the row dictionary
+// was additive-only within a level: a car-change to a new city took fresh rows and gave none
+// back, so cycling across cities exhausted the 24-row pool and the palettes rotted.
+int CarImportReclaimRows(void)
+{
+	int c, s, n = 0;
+
+	for (c = 0; c < CITY_COUNT; c++)
+	{
+		if (c == GameLevel)
+			continue;
+
+		for (s = 1; s < 128; s++)
+		{
+			if (sSetRow[c][s] < 0)
+				continue;
+
+			if (CarSetNamedByLiveSlot(c, s))
+				continue;
+
+			sSetRow[c][s] = -1;
+			n++;
+		}
+	}
+
+	return n;
 }
 
 static int CarPalIndexInCity(int tpage, int city);

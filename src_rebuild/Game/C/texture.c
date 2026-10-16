@@ -3550,6 +3550,17 @@ int JerReleaseCarSlot(int slot)
 	sCarSlotRes[slot].clutRows = 0;
 	sCarSlotRes[slot].geometryBytes = 0;
 
+	/* 5. the guest (city, set) palette rows this car's model was the last live user of.
+	 * The set list is now empty, so none of them is counted against it. Without this the
+	 * row dictionary only ever grew and cycling across cities exhausted the 24-row pool. */
+	{
+		int reclaimed = CarImportReclaimRows();
+
+		if (reclaimed > 0)
+			printInfo("cross-city: reclaimed %d guest palette row(s) after releasing slot %d\n",
+				reclaimed, slot);
+	}
+
 	if (released > 0 || shared > 0)
 		printInfo("cross-city: released slot %d - %d pool page(s), %d CLUT row(s), %d baked index(es) given back; %d page(s) kept (another car still names them)\n",
 			slot, pages, bandRows, indices, shared);
