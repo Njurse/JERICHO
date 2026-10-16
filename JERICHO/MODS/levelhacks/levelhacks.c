@@ -173,6 +173,30 @@ static int LevelhacksOnGameStart(void* userdata, void* args)
 	gLhStage = 0;
 	gLhDone = 0;
 
+	/* Cops on the mp maps, SP half. The small multiplayer maps (M58..M65) ship
+	 * cops.max == 0 in their mission header, so LoadMission sets CopsAllowed = 0
+	 * and maxCopCars = 0 and ControlCops never pings a cop in. Re-enable the
+	 * pursuit here so a take-a-ride on one of those maps can still be chased —
+	 * the same override the mp session applies for online play. The police model
+	 * is already resident slot 3 (residentModels[3] == 0), so only the count
+	 * gate needs opening. */
+	if (GameType == GAME_TAKEADRIVE && MissionHeader != NULL && MissionHeader->region != 0)
+	{
+		static int reported = 0;
+
+		maxCopCars = 4;
+		gMinimumCops = 0;
+		gDontPingInCops = 0;
+		CopsAllowed = 1;
+
+		if (!reported)
+		{
+			reported = 1;
+			printInfo("levelhacks: mp map in SP take-a-ride -> cops on (CopsAllowed=%d maxCopCars=%d gDontPingInCops=%d)\n",
+				CopsAllowed, maxCopCars, gDontPingInCops);
+		}
+	}
+
 	return JER_RESULT_CONTINUE;
 }
 

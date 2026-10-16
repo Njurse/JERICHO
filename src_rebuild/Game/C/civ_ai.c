@@ -1868,8 +1868,9 @@ int CreateStationaryCivCar(int direction, int orientX, int orientZ, LONGVECTOR4*
 		} while (carCnt < &car_data[MAX_CARS]);
 
 		if (jerDiagPingIn())
-			printInfo("JERICHO-DIAG PINGIN: slot=%d cookie=%d\n",
-				newCar != NULL ? (int)(newCar - car_data) : -1, cookieCount);
+			printInfo("JERICHO-DIAG PINGIN: slot=%d cookie=%d cop=%d\n",
+				newCar != NULL ? (int)(newCar - car_data) : -1, cookieCount,
+				(controlFlags & CONTROL_FLAG_COP) ? 1 : 0);
 
 		if (newCar)
 		{
@@ -2099,8 +2100,9 @@ int PingInCivCar(int minPingInDist)
 		} while (carCnt < &car_data[MAX_CARS]);
 
 		if (jerDiagPingIn())
-			printInfo("JERICHO-DIAG PINGIN: slot=%d cookie=%d\n",
-				newCar != NULL ? (int)(newCar - car_data) : -1, cookieCount);
+			printInfo("JERICHO-DIAG PINGIN: slot=%d cookie=%d cop=%d\n",
+				newCar != NULL ? (int)(newCar - car_data) : -1, cookieCount,
+				requestCopCar ? 1 : 0);
 
 		if (newCar == NULL)
 		{
