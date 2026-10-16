@@ -771,6 +771,21 @@ typedef struct JER_ARGS_MP_FRONTEND
 				   (e.g. the stock split-screen flow) */
 } JER_ARGS_MP_FRONTEND;
 
+/* JER_EVENT_FRONTEND_DRAW -- fired in State_FrontEnd once the current screen has
+ * been drawn (FEmain.c, right after DrawScreen), every frontend frame.
+ *
+ * This is the module's one chance to put text ON a menu row. JER_EVENT_FRAME is
+ * fired earlier in the same function, BEFORE DrawScreen, so anything drawn there
+ * is covered by the menu box that follows -- which is why the status console
+ * (bottom-left, clear of the menu) could use FRAME and a table on the rows could
+ * not. See jer_text.h for measuring and placing text, and
+ * jer_frontend_row_rect() (jer_frontend.h) for the row a menu will highlight. */
+typedef struct JER_ARGS_FRONTEND_DRAW
+{
+	int menu;	/* in: the menu on screen, as jer_frontend_current_menu()
+			   reports it (-1 = not a module menu) */
+} JER_ARGS_FRONTEND_DRAW;
+
 /* JER_EVENT_NET_INPUT — per player car per frame, before the pad drives it.
  * A module may write `pad` (engine-native mapped bits, MPAD_*) and set
  * `handled = 1` to substitute a remote player's input for this car. No

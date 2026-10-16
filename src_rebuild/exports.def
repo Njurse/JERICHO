@@ -429,6 +429,9 @@ EXPORTS
 	jer_npc_stop
 	jer_sound_lock
 	jer_sound_locked_count
+	jer_text_draw_at
+	jer_text_draw_centred
+	jer_text_width
 	jer_texture_core_path
 	jer_texture_count
 	jer_texture_draw_card

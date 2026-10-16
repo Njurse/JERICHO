@@ -107,6 +107,13 @@ void jer_frontend_set_main_entry(const char* id);
 /* Module-side: the current menu's items changed — rebuild the screen. */
 void jer_frontend_refresh(void);
 
+/* Where the engine will place row `index` of a menu with `count` items, so a
+ * module that draws its own row content (jer_text.h) sits on the row the engine
+ * highlights. The x/w/h are constant; y moves with the index and, for a menu too
+ * tall for the screen, with the count (the engine slides the block up to fit).
+ * Returns 0 — and writes nothing — for an index off the menu. */
+int  jer_frontend_row_rect(int index, int count, int* x, int* y, int* w, int* h);
+
 /* Module-side: navigate to a registered menu (by index) or a raw frontend
  * screen index (e.g. for a stock screen a module wants to return to). */
 void jer_frontend_open(int menuIndex);

@@ -2627,6 +2627,16 @@ void State_FrontEnd(void* param)
 	}
 #endif
 
+	/* JERICHO-HOOK: the screen has just been drawn, so this is where a module
+	 * puts text ON a menu row. NOT JER_EVENT_FRAME: that fires earlier in this
+	 * function and the menu box drawn below it would cover the text. */
+	{
+		JER_ARGS_FRONTEND_DRAW drawArgs;
+
+		drawArgs.menu = jer_frontend_current_menu();
+		jer_fire(JER_EVENT_FRONTEND_DRAW, &drawArgs);
+	}
+
 	/* Ask the modules before the attract demo starts. A multiplayer lobby is
 	 * idle by definition, so without this the demo would launch a level nobody
 	 * asked for -- and that load blocks the main thread for its whole
@@ -4433,6 +4443,44 @@ void jer_frontend_refresh(void)
 	bRedrawFrontend = 1;
 }
 
+/* --- module-menu row geometry -------------------------------------------
+ * The engine lays out a module menu's rows; a module that draws its OWN row
+ * content (jer_text.h) has to put its text on those rows, so both sides read the
+ * metrics from here. One definition, so they cannot drift. */
+#define JER_FE_ROW_X		167
+#define JER_FE_ROW_W		256
+#define JER_FE_ROW_STEP		36
+#define JER_FE_ROW_TOP		190
+#define JER_FE_ROW_BOTTOM	462
+#define JER_FE_ROW_MIN_TOP	40
+
+/* Rows start at JER_FE_ROW_TOP; only a menu too tall for the screen slides up. */
+static int jerFrontendRowTop(int count)
+{
+	int top = JER_FE_ROW_TOP;
+
+	if (top + (count - 1) * JER_FE_ROW_STEP > JER_FE_ROW_BOTTOM)
+		top = JER_FE_ROW_BOTTOM - (count - 1) * JER_FE_ROW_STEP;
+
+	if (top < JER_FE_ROW_MIN_TOP)
+		top = JER_FE_ROW_MIN_TOP;
+
+	return top;
+}
+
+int jer_frontend_row_rect(int index, int count, int* x, int* y, int* w, int* h)
+{
+	if (count <= 0 || index < 0 || index >= count)
+		return 0;
+
+	if (x != NULL) *x = JER_FE_ROW_X;
+	if (w != NULL) *w = JER_FE_ROW_W;
+	if (h != NULL) *h = JER_FE_ROW_STEP;
+	if (y != NULL) *y = jerFrontendRowTop(count) + index * JER_FE_ROW_STEP;
+
+	return 1;
+}
+
 void jer_frontend_goto(int screenIndex)
 {
 	if (screenIndex < 0 || screenIndex >= (int)(sizeof(PsxScreens) / sizeof(PsxScreens[0])))
@@ -4581,23 +4629,20 @@ int JerFrontendMenuScreen(int bSetup)
 
 		pCurrScreen->numButtons = n;
 
-		/* stock frontend row metrics: rows start at 190 and step by 36. Only
-		 * shift a tall menu up (never a small one) so it still fits. */
-		rowStep = 36;
-		rowTop = 190;
-		if (rowTop + (n - 1) * rowStep > 462)
-			rowTop = 462 - (n - 1) * rowStep;
-		if (rowTop < 40)
-			rowTop = 40;
+		/* stock frontend row metrics (jerFrontendRowTop/jer_frontend_row_rect are
+		 * the one definition of them). Only shift a tall menu up (never a small
+		 * one) so it still fits. */
+		rowStep = JER_FE_ROW_STEP;
+		rowTop = jerFrontendRowTop(n);
 
 		for (i = 0; i < n; i++)
 		{
 			const JER_FE_ITEM* it = &menu->items[i];
 			PSXBUTTON* btn = &pCurrScreen->buttons[i];
 
-			btn->x = 167;
+			btn->x = JER_FE_ROW_X;
 			btn->y = rowTop + i * rowStep;
-			btn->w = 256;
+			btn->w = JER_FE_ROW_W;
 			btn->h = rowStep;
 			btn->s_x = 370;
 			btn->s_y = rowTop + i * rowStep;

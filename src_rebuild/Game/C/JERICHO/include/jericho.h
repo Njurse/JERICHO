@@ -269,6 +269,14 @@ enum
 				   which stops the engine doing any of it
 				   (JER_ARGS_GAME_QUIT) */
 
+	JER_EVENT_FRONTEND_DRAW,	/* the frontend has drawn the current screen
+				   (menu box, rows, highlight): modules draw
+				   their own text/rows HERE. Fired once per
+				   frontend frame, AFTER DrawScreen, so
+				   anything drawn lands on top of the menu
+				   rather than under it (see
+				   JER_ARGS_FRONTEND_DRAW) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 
