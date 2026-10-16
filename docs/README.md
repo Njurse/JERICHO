@@ -65,7 +65,9 @@ Each mod documents itself in its own folder.
   server ([`dediserver/`](../JERICHO/MODS/mp/tools/servers/dediserver/README.md)) and the
   master discovery service ([`masterserver/`](../JERICHO/MODS/mp/tools/servers/masterserver/README.md) —
   a **separate project**, not part of the mod); see
-  [`servers/README.md`](../JERICHO/MODS/mp/tools/servers/README.md).
+  [`servers/README.md`](../JERICHO/MODS/mp/tools/servers/README.md) and
+  [`TESTING.md`](../JERICHO/MODS/mp/tools/servers/TESTING.md) (running and testing
+  the stack on one PC).
 - [`changelog.txt`](../changelog.txt) — upstream changelog.
 
 ## Conventions
