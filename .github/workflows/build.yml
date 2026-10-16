@@ -246,7 +246,7 @@ jobs:
               Where-Object { $_.Extension -in @('.lib', '.exp', '.a', '.obj', '.idb') } |
               Remove-Item -Force -ErrorAction SilentlyContinue
 
-            # Two things a release must never carry.
+            # Three things a release must never carry.
             #
             # 1. CONFIG/modlist.ini -- the player's module toggles. An archive cannot
             #    ask before replacing it, so a release ships none and each module runs
@@ -255,8 +255,12 @@ jobs:
             # 2. DRIVER/ -- the Driver 1 car data. JERICHO ships the WAY to bake it,
             #    never the data: that is derived from Driver 1's copyrighted files, and
             #    the player bakes their own with the tooling this package carries.
+            # 3. DRIVER2/ -- the game data (levels, models, cutscenes). The repo's
+            #    copy is placeholder data, and the real files are the player's own
+            #    Driver 2 data, which they drop in beside the exe.
             Remove-Item "$bin/JERICHO/CONFIG/modlist.ini" -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/DRIVER" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item "$bin/DRIVER2" -Recurse -Force -ErrorAction SilentlyContinue
 
             # The bake tools, and both bake scripts at the package root beside the
             # exe. A player drops their own Driver 1 data into DRIVER\ and runs
@@ -419,16 +423,19 @@ jobs:
             cp JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat "$d/"
             cp JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh "$d/"
             chmod +x "$d/update_jericho.sh"
-            # Two things a release must never carry: CONFIG/modlist.ini (the player's
+            # Three things a release must never carry: CONFIG/modlist.ini (the player's
             # module toggles -- an archive cannot ask before replacing them, so a
-            # release ships none and each module runs from its mod.toml default) and
+            # release ships none and each module runs from its mod.toml default),
             # DRIVER/ (the Driver 1 car data -- JERICHO ships the WAY to bake it, never
-            # the data, which is derived from Driver 1's copyrighted files).
+            # the data, which is derived from Driver 1's copyrighted files), and
+            # DRIVER2/ (the game data -- the repo copy is placeholders; the real files
+            # are the player's own Driver 2 data).
             rm -f "$d/JERICHO/CONFIG/modlist.ini"
             rm -rf "$d/DRIVER"
+            rm -rf "$d/DRIVER2"
             ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" \
                 --exclude=FontTool --exclude=gen_exports --exclude='lib*.a' \
-                --exclude=DRIVER --exclude='JERICHO/CONFIG/modlist.ini' * )
+                --exclude=DRIVER --exclude=DRIVER2 --exclude='JERICHO/CONFIG/modlist.ini' * )
           done
 
       - name: Upload Release (linux-x64) artifact

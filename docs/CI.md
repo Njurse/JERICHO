@@ -21,7 +21,10 @@ Each build is packaged with everything needed to run:
   builds — `JERICHO_dev`, `JERICHO_dbg` — never collided and keep their names, which the
   rigs and launchers use),
 - the runtime libraries (`SDL2.dll`, `OpenAL32.dll` on Windows; system SDL2/OpenAL on Linux),
-- the `data/` tree, and
+- the `data/` tree **minus `DRIVER2/`** — the game data (levels, models, cutscenes)
+  is the player's own Driver 2 files and is not redistributed (the repo's copy is
+  placeholders), so a complete install is this archive plus the player's own
+  `DRIVER2/` beside the exe, and
 - the `JERICHO/` tree (**`MODS`**, **`CONFIG`**) that the runtime reads, and **`CORE`** --
   the custom frontend art: the menu background the runtime loads and its source PNG. It is
   tracked deliberately, because a build that arrives without it has no frontend background
@@ -43,7 +46,8 @@ Each build is packaged with everything needed to run:
   excluded by construction: no version parsing, no API gate and no `gh`. It verifies the
   asset against `SHA256SUMS` before unpacking anything, then copies over the install while
   never writing `CONFIG/` (the player's module toggles and settings), never touching
-  `DRIVER/` (their baked Driver 1 car data) and **never deleting a file** — so a module
+  `DRIVER/` (their baked Driver 1 car data) or `DRIVER2/` (their own game data) and
+  **never deleting a file** — so a module
   they added themselves survives. Overwrite-only is deliberate: it is what makes the
   updater safe to hand somebody instead of "download and work out which files are yours".
   The packaging step places it at the archive root, and the post-build step
