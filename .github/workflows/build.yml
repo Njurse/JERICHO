@@ -58,7 +58,7 @@ jobs:
   # a doc typo must not stop a downloadable build. A red check is the signal; the
   # release stays tolerant, as it already is for the two platforms.
   checks:
-    name: Checks (docs / debug / mp gate)
+    name: Checks (docs / debug / mp gate / servers)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -75,6 +75,16 @@ jobs:
 
       - name: No debug switch changes behaviour
         run: python JERICHO/MODS/mp/tools/check_debug_independence.py
+
+      # The server-side tools are pure Python and need no game assets, so unlike
+      # the rigs below they really run here: the wire-mirror guard (which caught a
+      # real MP_WELCOME drift), the master discovery self-test, and the
+      # master + dedicated-server + client end-to-end path -- all loopback only.
+      - name: mp servers (wire mirror, master self-test, master+dedi e2e)
+        run: |
+          python3 JERICHO/MODS/mp/tools/servers/proto_check.py
+          python3 JERICHO/MODS/mp/tools/servers/masterserver/test_masterserver.py
+          python3 JERICHO/MODS/mp/tools/servers/test_e2e.py
 
       # The rigs cannot PASS on a hosted runner: they need the 1.6 GB of game data
       # and a window per seat. run_gate.py answers 2 for exactly that case, which is
