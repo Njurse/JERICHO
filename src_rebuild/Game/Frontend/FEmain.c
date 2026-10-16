@@ -5142,6 +5142,17 @@ int MiniCarsOnOffScreen(int bSetup)
 // up/down navigates, Back returns.
 static void jer_mods_rebuild_button_names(void);
 
+/* JERICHO: the credits toast the Credits button on the mods screen pushes. A few
+ * console lines for now - the runtime's status rows age out on their own, which is
+ * exactly the "short toast" wanted here; a real credits roll can replace it. */
+static void jer_show_credits(void)
+{
+	jer_console_line("Credits");
+	jer_console_line("JERICHO - a mod host for Driver 2");
+	jer_console_line("Built on REDRIVER2 / OpenDriver2");
+	jer_console_line("Driver 2 is a trademark of its owner - no game data ships here");
+}
+
 int JerichoModsScreen(int bSetup)
 {
 	JER_MODULE_INFO mods[JER_MAX_MODULES];
@@ -5153,13 +5164,15 @@ int JerichoModsScreen(int bSetup)
 	int hasNext;
 	int hasCompile;		// Compile Mods button (Windows only)
 	/* Button index map (0-based). The vertical list is laid out top-to-bottom as
-	 * modules..., Prev, Next, Compile, Back; each button's u/d is derived from
-	 * that chain (see the walk in the setup block) and the per-frame cross
+	 * modules..., Prev, Next, Compile, Credits, Back; each button's u/d is derived
+	 * from that chain (see the walk in the setup block) and the per-frame cross
 	 * handling below uses the same indices instead of recomputing them. */
 	int idxPrev;
 	int idxNext;
 	int compileIdx;
+	int creditsIdx;
 	int backIdx;
+	int topShift;	// how far the whole list is lifted so the last row still fits
 	int i;
 
 	count = jer_module_list(mods, JER_MAX_MODULES);
@@ -5192,7 +5205,20 @@ int JerichoModsScreen(int bSetup)
 	idxPrev = shown;								// only used when hasPrev
 	idxNext = shown + (hasPrev ? 1 : 0);			// only used when hasNext
 	compileIdx = shown + (hasPrev ? 1 : 0) + (hasNext ? 1 : 0);
-	backIdx = compileIdx + (hasCompile ? 1 : 0);
+	creditsIdx = compileIdx + (hasCompile ? 1 : 0);
+	backIdx = creditsIdx + 1;
+
+	/* Rows run from y=180: the module list steps 36 (the stock frontend metric) and
+	 * the action rows step 30. With Credits above Back the tallest page now reaches
+	 * past 462, the bottom the stock screens keep to, so lift the whole list by the
+	 * overshoot rather than let the last row run off the screen. */
+	topShift = 462 - (180 + (backIdx + 1) * 30 + 8);
+
+	if (topShift > 0)
+		topShift = 0;
+
+	if (180 + topShift < 40)
+		topShift = 40 - 180;
 
 	/* Layout the screen on entry (bSetup) and again after a page change
 	 * (gJerichoModsNeedSetup): the engine only calls setup when the screen
@@ -5201,7 +5227,7 @@ int JerichoModsScreen(int bSetup)
 	{
 		PSXBUTTON* btn;
 		int numButtons = shown;		// module buttons first
-		int chain[JERICHO_MODS_MODULES_PER_PAGE + 4];
+		int chain[JERICHO_MODS_MODULES_PER_PAGE + 6];
 		int chainCount = 0;
 		int c;
 
@@ -5297,6 +5323,27 @@ int JerichoModsScreen(int bSetup)
 			btn->var = -1;
 		}
 
+		/* JERICHO: the credits. A short toast, not a screen of its own - the runtime
+		 * console is already drawn down the frontend's left edge, so this is one more
+		 * row of it. Fan it out later if it wants to be a real credits roll. */
+		btn = &pCurrScreen->buttons[creditsIdx];
+
+		btn->x = 167;
+		btn->y = 180 + (creditsIdx + 1) * 30 + 8;
+		btn->w = 256;
+		btn->h = 26;
+		btn->s_x = 370;
+		btn->s_y = 180 + (creditsIdx + 1) * 30 + 8;
+
+		sprintf(btn->Name, "Credits");
+
+		btn->u = 0;
+		btn->d = 0;
+		btn->l = 0;
+		btn->r = 0;
+		btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
+		btn->var = -1;
+
 		btn = &pCurrScreen->buttons[backIdx];
 
 		btn->x = 167;
@@ -5315,8 +5362,18 @@ int JerichoModsScreen(int bSetup)
 		btn->action = FE_MAKEVAR(BTN_PREVIOUS_SCREEN, 0);
 		btn->var = -1;
 
+		/* lift the whole list so the last row still fits (see topShift above) */
+		if (topShift != 0)
+		{
+			for (i = 0; i < backIdx + 1; i++)
+			{
+				pCurrScreen->buttons[i].y += (short)topShift;
+				pCurrScreen->buttons[i].s_y += (short)topShift;
+			}
+		}
+
 		/* Derive every button's up/down from the vertical chain so the whole
-		 * list is reachable and wraps: modules..., Prev, Next, Compile, Back.
+		 * list is reachable and wraps: modules..., Prev, Next, Compile, Credits, Back.
 		 * Up/down are 1-based button ids (0 = no move). */
 		for (i = 0; i < shown; i++)
 			chain[chainCount++] = i;
@@ -5327,6 +5384,8 @@ int JerichoModsScreen(int bSetup)
 			chain[chainCount++] = idxNext;
 		if (hasCompile && chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
 			chain[chainCount++] = compileIdx;
+		if (chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
+			chain[chainCount++] = creditsIdx;
 		if (chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
 			chain[chainCount++] = backIdx;
 
@@ -5342,7 +5401,15 @@ int JerichoModsScreen(int bSetup)
 		pCurrButton = &pCurrScreen->buttons[0];
 
 		if (bSetup)
+		{
+			/* JERICHO: the version readout. A release build logs no boot banner
+			 * (jer_system.c), so this is where a player sees which build they are
+			 * actually running - version, commit and build stamp - down the left,
+			 * where the runtime console already draws. */
+			jer_console_log("JERICHO " JERICHO_BUILD_INFO_FMT, JERICHO_BUILD_INFO_ARGS);
+
 			return 1;
+		}
 	}
 
 	/* per-frame: claim cross (toggle/page) and left/right (reorder) on module
@@ -5433,6 +5500,17 @@ int JerichoModsScreen(int bSetup)
 			}
 		}
 #endif
+		else if (idx == creditsIdx)
+		{
+			/* JERICHO: the credits, as a short toast (jer_show_credits) */
+			if (feNewPad & MPAD_CROSS)
+			{
+				FESound(2);
+				jer_show_credits();
+				bRedrawFrontend = 1;
+				return 1;
+			}
+		}
 	}
 
 	return 0;
