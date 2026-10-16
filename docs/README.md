@@ -40,7 +40,7 @@ Each mod documents itself in its own folder.
 | example | [`README.md`](../JERICHO/MODS/example/README.md) |
 | JerAI | [`README.md`](../JERICHO/MODS/JerAI/README.md) (**AI driver for the player's car** — A* pathfinding, road-graph extraction, joyride/random-wander behaviors, debug visualization and a control menu) |
 | gaildrv2 | [`README.md`](../JERICHO/MODS/gaildrv2/README.md) |
-| mp | [`README.md`](../JERICHO/MODS/mp/README.md) (LAN multiplayer) — start with [`JERICHO-MP.md`](../JERICHO/MODS/mp/docs/JERICHO-MP.md), then [`SYNC_CHECKLIST.md`](../JERICHO/MODS/mp/docs/SYNC_CHECKLIST.md) (**what "synchronised" means per domain, how to verify each, the accepted v1 limitations, the 2026-10-07 measured baseline + blocker triage, and the release sign-off gate**), and [`MISSION_CRITICAL.md`](../JERICHO/MODS/mp/docs/MISSION_CRITICAL.md) (**the critique: what is mission-critical for this scope, and where it falls short**); test tools in [`tools/`](../JERICHO/MODS/mp/tools/README.md), packaging in [`pack_lan/`](../JERICHO/MODS/mp/tools/pack_lan/README.md) |
+| mp | [`README.md`](../JERICHO/MODS/mp/README.md) (LAN multiplayer) — start with [`JERICHO-MP.md`](../JERICHO/MODS/mp/docs/JERICHO-MP.md), then [`SYNC_CHECKLIST.md`](../JERICHO/MODS/mp/docs/SYNC_CHECKLIST.md) (**what "synchronised" means per domain, how to verify each, the accepted v1 limitations, the 2026-10-07 measured baseline + blocker triage, and the release sign-off gate**), and [`MISSION_CRITICAL.md`](../JERICHO/MODS/mp/docs/MISSION_CRITICAL.md) (**the critique: what is mission-critical for this scope, and where it falls short**), plus [`MASTER_SERVER.md`](../JERICHO/MODS/mp/docs/MASTER_SERVER.md) (**the game-side plan for internet discovery** — the master server + dedicated-server kit live in [`tools/servers/`](../JERICHO/MODS/mp/tools/servers/README.md)); test tools in [`tools/`](../JERICHO/MODS/mp/tools/README.md), packaging in [`pack_lan/`](../JERICHO/MODS/mp/tools/pack_lan/README.md) |
 | testmode | [`README.md`](../JERICHO/MODS/testmode/README.md) (asset-test mode: quiet world, census) |
 | debugorbit | [`README.md`](../JERICHO/MODS/debugorbit/README.md) (**Debug Orbit Camera** — camera-only: takes the camera over at level start and orbits the player at a fixed radius/elevation, for inspecting a car or Tanner from every side; also the worked example of the camera y inversion) |
 
@@ -61,6 +61,11 @@ Each mod documents itself in its own folder.
   folder holds the `.cca` arena files ([`arenas/README.md`](../JERICHO/MODS/cainescrossfire/arenas/README.md)).
 - `JERICHO/MODS/carhacks/tools/` — the cross-city import checks and the VRAM/car-data
   tools; see [`README.md`](../JERICHO/MODS/carhacks/tools/README.md).
+- `JERICHO/MODS/mp/tools/servers/` — the mp **server kit**: the headless dedicated
+  server ([`dediserver/`](../JERICHO/MODS/mp/tools/servers/dediserver/README.md)) and the
+  master discovery service ([`masterserver/`](../JERICHO/MODS/mp/tools/servers/masterserver/README.md) —
+  a **separate project**, not part of the mod); see
+  [`servers/README.md`](../JERICHO/MODS/mp/tools/servers/README.md).
 - [`changelog.txt`](../changelog.txt) — upstream changelog.
 
 ## Conventions
