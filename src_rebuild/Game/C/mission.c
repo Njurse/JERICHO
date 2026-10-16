@@ -724,6 +724,23 @@ void LoadMission(int missionnum)
 	gCopMaxPowerScale = MissionHeader->cops.power;
 	CopsAllowed = (maxCopCars != 0);
 
+	// JERICHO: the small multiplayer maps ship cops.min = cops.max = 0 - no pursuit at all -
+	// and hide the felony bar (mission type 0x10, below). An mp map is still a city with a
+	// police force, so open the pursuit system here. MpSessionRulesTick then narrows this to
+	// the session's own rule (gMp.ruleCops) every frame, so a session that wants no cops
+	// still gets none.
+	if (gMultiplayerLevels)
+	{
+		if (maxCopCars < 1)
+			maxCopCars = 4;
+
+		if (gMinimumCops < 1)
+			gMinimumCops = 1;
+
+		gDontPingInCops = 0;
+		CopsAllowed = 1;
+	}
+
 	if (GameType == GAME_SURVIVAL)
 	{
 		gCopData.immortal = 1;
@@ -3344,6 +3361,23 @@ void HandleMission(void)
 			FelonyBar.active = 0;
 		default:
 			FelonyBar.active = 0;
+		}
+
+		// JERICHO: the small multiplayer maps are mission type 0x10 (no felony bar). With
+		// cops opened for an mp map (InitialiseMission, above) a felony can be raised there,
+		// so show the bar for it after all - the driver needs to see the pursuit.
+		if (gMultiplayerLevels)
+		{
+			static int saidFelony;
+
+			FelonyBar.active = 1;
+
+			if (!saidFelony)
+			{
+				saidFelony = 1;
+				printInfo("JERICHO: mp map (region %d, mission type 0x%02X) - felony bar forced active\n",
+					MissionHeader->region, MissionHeader->type & 0x30);
+			}
 		}
 	}
 

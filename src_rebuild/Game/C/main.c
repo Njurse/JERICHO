@@ -702,6 +702,12 @@ void State_GameInit(void* param)
 	if (pathAILoaded)
 		InitCops();
 
+	// JERICHO: say whether the pursuit system is up. The small multiplayer maps (region != 0)
+	// open it in LoadMission, but InitCops - and so ControlCops each frame - only runs when
+	// the path AI loaded. If cops never ping in on an mp map, this line says which gate.
+	printInfo("JERICHO: pursuit setup - pathAILoaded=%d CopsAllowed=%d maxCopCars=%d gMinimumCops=%d gDontPingInCops=%d\n",
+		pathAILoaded, CopsAllowed, maxCopCars, gMinimumCops, gDontPingInCops);
+
 	InitCamera(&MainPlayer);
 
 	if (gLoadedOverlay && NoPlayerControl == 0)

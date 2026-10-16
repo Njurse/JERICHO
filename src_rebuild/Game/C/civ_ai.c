@@ -2310,6 +2310,13 @@ int PingInCivCar(int minPingInDist)
 	// [A] fix crashes on missing models
 	if(!gCarCleanModelPtr[model])
 	{
+		// JERICHO-DIAG (JERICHO_DIAG_PINGIN=1): a requested cop the level cannot build.
+		// The police model (3) is not resident on every map, and when it is missing the
+		// request is dropped here - so no cop ever appears even though the count gate
+		// said one should.
+		if (requestCopCar && jerDiagPingIn())
+			printInfo("JERICHO-DIAG PINGIN: cop request DROPPED - model %d has no clean model in this level\n", model);
+
 		return 0;
 	}
 #endif
@@ -2520,7 +2527,13 @@ int PingInCivCar(int minPingInDist)
 
 	// init Cop
 	if (newCar->controlFlags & CONTROL_FLAG_COP)
+	{
 		PassiveCopTasks(newCar);
+
+		if (jerDiagPingIn())
+			printInfo("JERICHO-DIAG PINGIN: COP SPAWNED slot=%d controlType=%d numCopCars=%d\n",
+				(int)(newCar - car_data), newCar->controlType, numCopCars);
+	}
 
 	PingOutCivsOnly = 0;
 
