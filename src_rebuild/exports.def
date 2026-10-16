@@ -1044,6 +1044,7 @@ EXPORTS
 	jer_frontend_refresh
 	jer_frontend_register_menu
 	jer_frontend_reset
+	jer_frontend_row_rect
 	jer_frontend_set_main_entry
 	?DeinitStringMng@@YAXXZ
 	?InitStringMng@@YAHXZ

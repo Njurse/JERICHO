@@ -36,6 +36,10 @@ struct FONT_QUAD
 extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, struct FONT_QUAD* q, float scale);
 extern unsigned int gHiresFontTexture;
 
+/* The frontend's hires-font-loaded flag, which FEStringWidth/FEPrintStringSized
+ * branch on. Read only. */
+extern unsigned int gHiresFEFontTexture;
+
 /* --- the 100% reference: what the console draws at -------------------------
  * Half of the FE font's standard 4096 and half of the HQ font's 0.275f, with the
  * console's glyph tracking. A table's percentages are relative to these. */
@@ -65,12 +69,44 @@ static int jerTextPct(int scale_pct)
 	return (scale_pct > 0) ? scale_pct : JER_TEXT_SCALE_CONSOLE;
 }
 
+/* The frontend's scale at a percentage. (Defined before jerTextFeWidth, which
+ * needs it.) */
 static int jerTextFeScale(int scale_pct)
 {
 	return (JER_TEXT_FE_SCALE * jerTextPct(scale_pct)) / 100;
 }
 
-static float jerTextHqScale(int scale_pct)
+/* The frontend width, matching FEPrintStringSized's OWN advance rather than a
+ * scaled sum of it. That printer advances a SPACE by a fixed 4 UNSCALED and every
+ * other glyph by (w * scale) / 4096, so scaling FEStringWidth's total would scale
+ * the spaces with it and a centred line would drift 4px per space at any scale
+ * but 100. The hires path bakes every glyph including the space, so there the sum
+ * scales.
+ *
+ * (FEStringWidth reports the bitmap sum with that same fixed 4 per space, which is
+ * why the spaces come back out before scaling.) */
+static int jerTextFeWidth(const char* text, int scale_pct)
+{
+	const char* p;
+	int spaces = 0;
+	int w;
+	int scale = jerTextFeScale(scale_pct);
+
+	if (gHiresFEFontTexture)
+		return (FEStringWidth((char*)text) * scale) / JER_TEXT_FE_UNIT;
+
+	for (p = text; *p != '\0'; p++)
+	{
+		if (*p == ' ')
+			spaces++;
+	}
+
+	w = FEStringWidth((char*)text) - 4 * spaces;
+
+	return (w * scale) / JER_TEXT_FE_UNIT + 4 * spaces;
+}
+
+static int jerTextHqScale(int scale_pct)
 {
 	return (JER_TEXT_HQ_SCALE * (float)jerTextPct(scale_pct)) / 100.0f;
 }
@@ -104,10 +140,7 @@ int jer_text_width(int frontend, int scale_pct, const char* text)
 
 	if (frontend)
 	{
-		/* FEStringWidth measures at the FE's standard scale, so scale it down to
-		 * what we draw at — the conversion FEPrintStringSized makes per glyph
-		 * ((w * scale) / 4096), applied to the whole string. */
-		w = (FEStringWidth((char*)text) * jerTextFeScale(scale_pct)) / JER_TEXT_FE_UNIT;
+		w = jerTextFeWidth(text, scale_pct);
 	}
 	else
 	{
