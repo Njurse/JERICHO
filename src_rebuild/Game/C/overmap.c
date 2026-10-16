@@ -1889,6 +1889,7 @@ void DrawCopIndicators(void)
 	int cc, cs;
 	int dx, dz;
 	int p, q;
+	int drawn = 0;
 	CAR_DATA *cp;
 
 	cc = RCOS(MainPlayer.dir);
@@ -1907,10 +1908,25 @@ void DrawCopIndicators(void)
 			if (ABS(p) < q)
 			{
 				CopIndicator((p * 266) / q + 160, 0x3fff0 / ((q >> 3) + 600));
+				drawn++;
 			}
 		}
 		cp++;
 	} while (cp <= &car_data[MAX_CARS]);
+
+	// JERICHO-DIAG (JERICHO_DIAG_PINGIN=1): prove the cop arrows really reach the minimap.
+	// An arrow is only drawn for a pursuer BEHIND the player (ABS(p) < q), so say when the
+	// first one lands - the icon a chasing player is meant to see.
+	if (drawn > 0 && getenv("JERICHO_DIAG_PINGIN") != NULL)
+	{
+		static int said;
+
+		if (!said)
+		{
+			said = 1;
+			printInfo("JERICHO-DIAG PINGIN: DrawCopIndicators drew %d cop arrow(s) on the map\n", drawn);
+		}
+	}
 }
 
 // [D] [T]
