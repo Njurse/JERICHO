@@ -196,19 +196,33 @@ msbuild build\JERICHO.sln /p:Configuration=Release /p:Platform=x64
 ```
 
 Helpers (they `cd` into `src_rebuild/` themselves):
-[`src_rebuild/build_jericho.bat`](src_rebuild/build_jericho.bat) (Release) and
-[`src_rebuild/build_dev.bat`](src_rebuild/build_dev.bat) (`Release_dev`).
+[`src_rebuild/build_jericho.bat`](src_rebuild/build_jericho.bat) (**Release** - build
+this one) and [`src_rebuild/build_dev.bat`](src_rebuild/build_dev.bat) (`Release_dev`).
 
 - premake **auto-scans `JERICHO/MODS`**: every folder with a `mod.toml` that
   does *not* declare `runtime = "dll"` is compiled into the game — there is no
   mod list to maintain. `--with-mods="crumple,carhacks"` builds a subset;
   `--with-mods=""` gives a zero-module build.
-- `Release` is the clean shipping build; `Release_dev` adds the debug options,
-  console and dev tooling (`DEBUG_OPTIONS`, `COLLISION_DEBUG`,
-  `CUTSCENE_RECORDER`).
+- **Build `Release` unless you specifically want the dev tooling.** It is what
+  ships, so it is the build a bug report is about: `Release_dev` adds
+  `DEBUG_OPTIONS`, `COLLISION_DEBUG`, `CUTSCENE_RECORDER` and the console, and
+  pre-includes modules a release leaves out. A symptom that appears in
+  `Release_dev` but not in `Release` is nearly always the dev tooling, so check
+  `Release` before reporting one - and expect it to be smaller and quicker to
+  load.
+- Both builds record the version in their log (`JERICHO <version> ...`) and in
+  the boot banner - that is the build record a player can send. `Release_dev`
+  *also* stamps it across the frontend menus; a release does not, because
+  "Options -> JERICHO" reports it there instead.
 - The executable exports its own symbols through the generated
-  [`exports.def`](src_rebuild/exports.def). Regenerate it (build with `/MAP`,
-  then run `tools/gen_exports`) only when the game's own symbol set changes.
+  [`exports.def`](src_rebuild/exports.def). `gen_exports` derives it from a
+  **linker map**, so the committed copy matches exactly one configuration - the
+  one a developer built last. It is handed to the linker for every
+  configuration, so building with a bare `msbuild` against a def from the other
+  one fails with `LNK2001`. Both helpers above handle it themselves (link,
+  regenerate from that configuration's map, relink, put the committed copy
+  back); see the header of
+  [`build_config.bat`](src_rebuild/build_config.bat).
 
 ### Building external modules
 
