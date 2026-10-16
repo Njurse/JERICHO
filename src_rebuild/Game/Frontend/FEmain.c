@@ -1149,7 +1149,6 @@ void DrawButton(PSXBUTTON* pBtn, int i)
 // [D] [T]
 void DrawScreen(PSXSCREEN *pScr)
 {
-	char version_info[32];
 	int numBtnsToDraw;
 	int i;
 
@@ -1179,8 +1178,6 @@ void DrawScreen(PSXSCREEN *pScr)
 	
 	if (pScr)
 	{
-		GetTimeStamp(version_info);
-
 		if (iScreenSelect == SCREEN_CUTCITY && (gFurthestMission < 39))
 		{
 			// hide the Director's Cut button
@@ -1221,10 +1218,18 @@ void DrawScreen(PSXSCREEN *pScr)
 		}
 #endif
 
-		// debug version text
-#if defined(_DEBUG) || defined(DEBUG_OPTIONS)
-		FEPrintString(version_info, 40, 16, 0, 128, 128, 0);
-		FEPrintString("--- " GAME_VERSION " ---", 320, 16, 0, 128, 128, 0);
+		// debug version text, and NOT on a release screen. A release still records
+		// the build in its log (the boot banner) and reports it in Options ->
+		// JERICHO, so stamping it across every menu is noise rather than
+		// information. Same rule as the Debug Options submenu in pause.c. The
+		// buffer lives in here too, so a release does not even build the string.
+#if (defined(_DEBUG) || defined(DEBUG_OPTIONS)) && !defined(JERICHO_RELEASE_MODS)
+		{
+			char version_info[32];
+			GetTimeStamp(version_info);
+			FEPrintString(version_info, 40, 16, 0, 128, 128, 0);
+			FEPrintString("--- " GAME_VERSION " ---", 320, 16, 0, 128, 128, 0);
+		}
 #endif
 
 		SetTextColour(128, 0, 0);
@@ -5402,10 +5407,10 @@ int JerichoModsScreen(int bSetup)
 
 		if (bSetup)
 		{
-			/* JERICHO: the version readout. A release build logs no boot banner
-			 * (jer_system.c), so this is where a player sees which build they are
-			 * actually running - version, commit and build stamp - down the left,
-			 * where the runtime console already draws. */
+			/* JERICHO: the version readout. A release keeps the build in its log
+			 * but stamps nothing on screen, so this is where a player can see
+			 * which build they are running - version, commit and build stamp -
+			 * down the left, where the runtime console already draws. */
 			jer_console_log("JERICHO " JERICHO_BUILD_INFO_FMT, JERICHO_BUILD_INFO_ARGS);
 
 			return 1;

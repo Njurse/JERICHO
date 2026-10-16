@@ -673,14 +673,12 @@ int main(int argc, char** argv)
 
 	PsyX_Initialise("JERICHO", fullScreen ? screenWidth : windowWidth, fullScreen ? screenHeight : windowHeight, fullScreen);
 
-	/* The build banner. A release build stays quiet: the frontend reports the build
-	 * (Options -> JERICHO) and a player's log reads better without a boot line. Dev
-	 * builds keep it - it is the first thing to check against a stale exe. */
-#ifndef JERICHO_RELEASE_MODS
+	/* The build banner, logged on every build. The log is the build record a player
+	 * can send, so a release keeps it; only the frontend's on-screen stamps are
+	 * hidden in a release (see FEmain.c). */
 	char version_info[32];
 	GetTimeStamp(version_info);
 	PsyX_Log_Info("%s %s (%s)\n", GAME_VERSION, version_info, BUILD_CONFIGURATION_STRING);
-#endif
 
 	// configure Psy-X CD image reader
 	if (cdImageFileName)
