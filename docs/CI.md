@@ -40,6 +40,13 @@ Each build is packaged with everything needed to run:
   mirror (`JER_MIRROR_EXCLUDE`), so the packaging step fetches them from that repo
   by the URL in `.gitmodules`, for packaging only. A build with no baked data is
   simply one whose five Driver 1 cities are not offered.
+- **not** car-data *banks* — the BetterCars-style packs (`BC*.LEV` / `BC*.LCF`, a
+  `BetterCars/` folder) and the `*.sparse.bak` a local `bankfill.py` fill leaves
+  behind. Same rule as `DRIVER/`: a package ships the tools that complete and read a
+  bank (`JERICHO/MODS/carhacks/tools/bankfill.py`), never the banks themselves, which
+  are somebody else's car art. Both packagers now **fail** on one rather than sweep
+  it, so a bank that ever gets committed into `data/` or `JERICHO/` is caught at
+  packaging time instead of shipped.
 - the **updater** — `update_jericho.bat` and `update_jericho.sh` at the package root.
   It resolves `https://github.com/<repo>/releases/latest/download/<asset>`, which GitHub
   answers with the newest **non-prerelease** release, so the rolling `alpha` pre-release is

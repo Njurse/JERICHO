@@ -210,6 +210,18 @@ function New-Package {
             $gi = Join-Path $stage 'JERICHO\CONFIG\gaildrv2.ini'
             if (Test-Path $gi) { Remove-Item $gi -Force }
         }
+
+        # Car-data BANKS are third-party car art and are NOT packaged: the same rule as
+        # DRIVER/ in the CI job. A package ships the tools that complete and read a
+        # bank (carhacks tools/bankfill.py), never the banks - so refuse instead of
+        # sweeping, which is what catches a bank that ever lands in data/ or JERICHO/.
+        $banks = @(Get-ChildItem $stage -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like 'BC*.LEV' -or $_.Name -like 'BC*.LCF' -or
+                           $_.Name -like '*.sparse.bak' -or $_.DirectoryName -like '*BetterCars*' })
+        if ($banks.Count -gt 0) {
+            Write-Host "    ERROR: car-data bank in the payload: $($banks[0].FullName)" -ForegroundColor Red
+            throw "refusing to package car-data banks (third-party car art)"
+        }
         # runtime DLLs next to the exe (x64), as CI does
         Copy-Item (Join-Path $env:SDL2_DIR   'lib\x64\SDL2.dll') $stage -Force
         Copy-Item (Join-Path $env:OPENAL_DIR 'bin\Win64\soft_oal.dll') $stage -Force

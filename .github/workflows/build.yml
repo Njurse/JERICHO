@@ -291,6 +291,19 @@ jobs:
             Remove-Item "$bin/DRIVER" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/DRIVER2" -Recurse -Force -ErrorAction SilentlyContinue
 
+            # 4. Car-data BANKS -- BetterCars-style car packs (BC*.LEV / BC*.LCF) and
+            #    the *.sparse.bak a local bankfill leaves. Third-party car ART, the
+            #    same rule as DRIVER/: a package ships the tools that complete and read
+            #    a bank, never the banks. An install may hold them beside DRIVER2\; a
+            #    package may not - so FAIL instead of sweeping, which is what catches a
+            #    bank that ever gets committed into data/ or JERICHO/.
+            $banks = @(Get-ChildItem $bin -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like 'BC*.LEV' -or $_.Name -like 'BC*.LCF' -or
+                               $_.Name -like '*.sparse.bak' -or $_.DirectoryName -like '*BetterCars*' })
+            if ($banks.Count -gt 0) {
+                throw "refusing to package car-data banks (third-party car art): $($banks[0].FullName)"
+            }
+
             # The bake tools, and both bake scripts at the package root beside the
             # exe. A player drops their own Driver 1 data into DRIVER\ and runs
             # BAKE_D1_CARS.bat (or .sh) once; carhacks offers the five cities from
@@ -464,6 +477,18 @@ jobs:
             rm -f "$d/JERICHO/CONFIG/modlist.ini"
             rm -rf "$d/DRIVER"
             rm -rf "$d/DRIVER2"
+
+            # ...and a fourth: car-data BANKS (BetterCars-style BC*.LEV/BC*.LCF, and the
+            # *.sparse.bak a local bankfill leaves). Third-party car art, same rule as
+            # DRIVER/: the package ships the tools that complete and read a bank, never
+            # the banks. Fail rather than sweep, so a bank committed into data/ or
+            # JERICHO/ is caught here instead of shipped.
+            banks=$(find "$d" \( -iname 'BC*.LEV' -o -iname 'BC*.LCF' -o \
+                -iname '*.sparse.bak' -o -iname 'BetterCars' \) -print -quit)
+            if [ -n "$banks" ]; then
+                echo "::error::car-data bank in the package payload: $banks"
+                exit 1
+            fi
             ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" \
                 --exclude=FontTool --exclude=gen_exports --exclude='lib*.a' \
                 --exclude=DRIVER --exclude=DRIVER2 --exclude='JERICHO/CONFIG/modlist.ini' * )
