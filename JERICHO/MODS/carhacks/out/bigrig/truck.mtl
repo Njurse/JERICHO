@@ -1,0 +1,17 @@
+# one material per texture set, pointing at the decoded page
+newmtl set_1
+Kd 0.8 0.8 0.8
+map_Kd pages/SET_1.png
+
+newmtl set_50
+Kd 0.8 0.8 0.8
+map_Kd pages/SET_50.png
+
+newmtl set_68
+Kd 0.8 0.8 0.8
+map_Kd pages/SET_68.png
+
+newmtl set_69
+Kd 0.8 0.8 0.8
+map_Kd pages/SET_69.png
+

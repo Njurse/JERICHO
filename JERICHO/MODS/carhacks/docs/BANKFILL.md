@@ -102,6 +102,10 @@ writes `truck_clean.obj`, `truck_low.obj`, `truck.mtl`, `pages/SET_{1,50,68,69}.
 (each page decoded with palette row 0 — for looking at the art, not a claim about
 in-game colours) and `truck.json` with both geometries and the decoded cosmetics.
 
+An extracted copy of the installed truck is checked in under
+[`../out/bigrig/`](../out/bigrig/) — open `truck_clean.obj` in Blender, or read
+`truck.json` for the numbers.
+
 ### what is NOT done
 
 The bank itself: `BIGRIG.LEV` + `BIGRIG.LCF` and its handling profile are deliberately
