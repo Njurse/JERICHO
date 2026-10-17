@@ -86,7 +86,11 @@ jobs:
         run: |
           python3 JERICHO/MODS/mp/tools/servers/proto_check.py
           python3 JERICHO/MODS/mp/tools/servers/check_images.py
+          python3 JERICHO/MODS/mp/tools/servers/console_selftest.py
           python3 JERICHO/MODS/mp/tools/servers/masterserver/test_masterserver.py
+          python3 JERICHO/MODS/mp/tools/servers/masterserver/test_console.py
+          python3 JERICHO/MODS/mp/tools/servers/dediserver/test_console.py
+          python3 JERICHO/MODS/mp/tools/servers/test_console_stdin.py
           python3 JERICHO/MODS/mp/tools/servers/rigs/test_e2e.py
 
       # The shell entry points are Linux-only by definition, so THIS is the platform
