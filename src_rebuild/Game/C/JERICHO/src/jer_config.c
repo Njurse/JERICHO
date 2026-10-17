@@ -160,7 +160,10 @@ static void jerConfigLoadMod(const char* mod)
 		key = jerTrim(line);
 		val = jerTrim(eq + 1);
 
-		if (key[0] == 0 || val[0] == 0)
+		/* An EMPTY VALUE is a value, not a missing key: `master_url =` has to mean
+		 * "no master" rather than "absent, use the default". Dropping the line made
+		 * it impossible to switch a defaulted setting off from the file. */
+		if (key[0] == 0)
 			continue;
 
 		/* last value wins if the file somehow has duplicate keys */
