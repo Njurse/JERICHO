@@ -227,6 +227,17 @@ int main(int argc, char** argv)
 				name[3] == 'C' && name[4] == '@')
 				continue;
 
+			/* floating-point LITERALS (__real@3fd999999999999a and friends) are
+			 * the raw bit patterns of float/double constants. Nobody can call one,
+			 * no mod can usefully import one, and exporting one as DATA is worse
+			 * than noise: a DOUBLE literal is not an addressable symbol at all, so
+			 * the link fails outright with
+			 *   unresolved external symbol __real@3fd999999999999a
+			 * and the error names no file, no function and no reason. One 0.4 in
+			 * the wrong unit was enough to stop the whole build this way. */
+			if (strncmp(name, "__real@", 7) == 0)
+				continue;
+
 			fprintf(out, "\t%s%s\n", name, (isCode || kindFn) ? "" : " DATA");
 			emitted++;
 
