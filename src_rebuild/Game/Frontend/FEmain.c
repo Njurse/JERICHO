@@ -4461,20 +4461,26 @@ void jer_frontend_refresh(void)
 #define JER_FE_ROW_BOTTOM	462
 #define JER_FE_ROW_MIN_TOP	40
 
-/* The box the menu that is currently laid out actually uses. Written by the
- * layout below (the only place that knows the menu), read by
+/* The box and pitch the menu that is currently laid out actually uses. Written by
+ * the layout below (the only place that knows the menu), read by
  * jer_frontend_row_rect. */
 static int gFeRowX = JER_FE_ROW_DX;
 static int gFeRowW = JER_FE_ROW_DW;
+static int gFeRowStep = JER_FE_ROW_STEP;
 static int gFeRowCount;
+static int gFeRowListN;		/* how many of them are list rows (the rest are the
+				 * bottom-pinned controls) */
+static int gFeRowListTop;	/* the list's first row's y... */
+static int gFeRowBottomTop;	/* ...and the bottom group's */
 
-/* Rows start at JER_FE_ROW_TOP; only a menu too tall for the screen slides up. */
-static int jerFrontendRowTop(int count)
+/* Rows start at JER_FE_ROW_TOP and step by `step`; only a block too tall for the
+ * space slides up. */
+static int jerFrontendRowTop(int count, int step, int limit)
 {
 	int top = JER_FE_ROW_TOP;
 
-	if (top + (count - 1) * JER_FE_ROW_STEP > JER_FE_ROW_BOTTOM)
-		top = JER_FE_ROW_BOTTOM - (count - 1) * JER_FE_ROW_STEP;
+	if (top + (count - 1) * step > limit)
+		top = limit - (count - 1) * step;
 
 	if (top < JER_FE_ROW_MIN_TOP)
 		top = JER_FE_ROW_MIN_TOP;
@@ -4494,8 +4500,13 @@ int jer_frontend_row_rect(int index, int* x, int* y, int* w, int* h)
 
 	if (x != NULL) *x = gFeRowX;
 	if (w != NULL) *w = gFeRowW;
-	if (h != NULL) *h = JER_FE_ROW_STEP;
-	if (y != NULL) *y = jerFrontendRowTop(gFeRowCount) + index * JER_FE_ROW_STEP;
+	if (h != NULL) *h = gFeRowStep;
+
+	if (y != NULL)
+	{
+		*y = (index < gFeRowListN) ? (gFeRowListTop + index * gFeRowStep)
+					   : (gFeRowBottomTop + (index - gFeRowListN) * gFeRowStep);
+	}
 
 	return 1;
 }
@@ -4588,7 +4599,7 @@ int JerFrontendMenuScreen(int bSetup)
 	if (bSetup || gFeNeedSetup)
 	{
 		int i;
-		int rowTop, rowStep;
+		int rowTop, rowStep, bottom, listN, bottomTop;
 
 		gFeNeedSetup = 0;
 
@@ -4651,14 +4662,27 @@ int JerFrontendMenuScreen(int bSetup)
 		/* stock frontend row metrics (jerFrontendRowTop/jer_frontend_row_rect are
 		 * the one definition of them). Only shift a tall menu up (never a small
 		 * one) so it still fits. */
-		rowStep = JER_FE_ROW_STEP;
-		rowTop = jerFrontendRowTop(n);
+		/* ROWS. A menu may ask for a TIGHTER pitch (a long list) and for its last few
+		 * items to be CONTROLS on the bottom edge (so they do not move while the list
+		 * above them is rebuilt) -- both are the menu's to say, since only it knows. */
+		bottom = (menu->bottom_items > 0 && menu->bottom_items < n) ? menu->bottom_items : 0;
+		listN = n - bottom;
+		rowStep = (menu->row_step > 0) ? menu->row_step : JER_FE_ROW_STEP;
+
+		/* the list stops above the controls, and slides up only if it must */
+		bottomTop = JER_FE_ROW_BOTTOM - bottom * rowStep;
+		rowTop = jerFrontendRowTop(listN, rowStep,
+			bottom ? (bottomTop - rowStep) : JER_FE_ROW_BOTTOM);
 
 		/* A menu can ask for WIDER rows (a table needs them). The stock box stays
 		 * exactly where it has always been, so only a menu that asks moves. */
 		gFeRowW = (menu->row_w > 0) ? menu->row_w : JER_FE_ROW_DW;
 		gFeRowX = (menu->row_w > 0) ? (JER_FE_SCREEN_W - gFeRowW) / 2 : JER_FE_ROW_DX;
+		gFeRowStep = rowStep;
 		gFeRowCount = n;
+		gFeRowListN = listN;
+		gFeRowListTop = rowTop;
+		gFeRowBottomTop = bottomTop;
 
 		for (i = 0; i < n; i++)
 		{
@@ -4666,7 +4690,8 @@ int JerFrontendMenuScreen(int bSetup)
 			PSXBUTTON* btn = &pCurrScreen->buttons[i];
 
 			btn->x = gFeRowX / 2;
-			btn->y = rowTop + i * rowStep;
+			btn->y = (i < listN) ? (rowTop + i * rowStep)
+					     : (bottomTop + (i - listN) * rowStep);
 			btn->w = gFeRowW;
 			btn->h = rowStep;
 			btn->s_x = 370;

@@ -93,6 +93,15 @@ typedef struct JER_FE_MENU
 	 * highlights stay the same shape. (Trailing on purpose: every existing menu
 	 * initialiser leaves it 0.) */
 	int row_w;
+
+	/* Optional ROW PITCH (0 = the stock 36), for a long list that wants to show
+	 * more rows without the screen growing. */
+	int row_step;
+
+	/* Optional "the last N items are CONTROLS": they are laid out upward from the
+	 * bottom edge instead of following the list, so they do not move while the
+	 * list above them grows, shrinks or is rebuilt. 0 = every item is a list row. */
+	int bottom_items;
 } JER_FE_MENU;
 
 /* Register a menu (and submenus). Call from the module entry; the registry
