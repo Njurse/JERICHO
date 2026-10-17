@@ -84,7 +84,18 @@ jobs:
         run: |
           python3 JERICHO/MODS/mp/tools/servers/proto_check.py
           python3 JERICHO/MODS/mp/tools/servers/masterserver/test_masterserver.py
-          python3 JERICHO/MODS/mp/tools/servers/test_e2e.py
+          python3 JERICHO/MODS/mp/tools/servers/rigs/test_e2e.py
+
+      # The shell entry points are Linux-only by definition, so THIS is the platform
+      # that can check them: parse every one, and run the servers' dispatcher, whose
+      # `help` path exercises the file without starting anything.
+      - name: mp shell entry points (Linux)
+        run: |
+          for f in JERICHO/MODS/mp/tools/*.sh JERICHO/MODS/mp/tools/servers/run.sh; do
+            echo "-- $f"
+            sh -n "$f"
+          done
+          sh JERICHO/MODS/mp/tools/servers/run.sh help
 
       # The rigs cannot PASS on a hosted runner: they need the 1.6 GB of game data
       # and a window per seat. run_gate.py answers 2 for exactly that case, which is
