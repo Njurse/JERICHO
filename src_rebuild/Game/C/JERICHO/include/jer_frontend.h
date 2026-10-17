@@ -114,6 +114,13 @@ typedef struct JER_FE_MENU
 	 * close enough to the menu TITLE that a heading drawn just above the first row
 	 * lands on top of the title, and no gap is left between the heading and the rows. */
 	int row_top;
+
+	/* 1 = CENTRE the list rows in the band between row_top and the bottom-pinned
+	 * controls, instead of hanging them off the top. A browser whose list is often
+	 * shorter than the band wants this: the roster stays the middle of the screen
+	 * instead of leaving a void under it. 0 = top-anchored (the stock behaviour).
+	 * The ENGINE does the shifting, so the highlight and the rows still agree. */
+	int list_align;
 } JER_FE_MENU;
 
 /* Register a menu (and submenus). Call from the module entry; the registry

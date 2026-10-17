@@ -4470,7 +4470,8 @@ static int gFeRowStep = JER_FE_ROW_STEP;
 static int gFeRowCount;
 static int gFeRowListN;		/* how many of them are list rows (the rest are the
 				 * bottom-pinned controls) */
-static int gFeRowListTop;	/* the list's first row's y... */
+static int gFeRowListTop;	/* the LIST AREA's top (a heading measures from here)... */
+static int gFeRowFirst;		/* ...and where the first list ROW is, after any centring */
 static int gFeRowBottomTop;	/* ...and the bottom group's */
 
 /* Rows start at JER_FE_ROW_TOP and step by `step`; only a block too tall for the
@@ -4512,7 +4513,7 @@ int jer_frontend_row_rect(int index, int* x, int* y, int* w, int* h)
 
 	if (y != NULL)
 	{
-		*y = (index < gFeRowListN) ? (gFeRowListTop + index * gFeRowStep)
+		*y = (index < gFeRowListN) ? (gFeRowFirst + index * gFeRowStep)
 					   : (gFeRowBottomTop + (index - gFeRowListN) * gFeRowStep);
 	}
 
@@ -4607,7 +4608,7 @@ int JerFrontendMenuScreen(int bSetup)
 	if (bSetup || gFeNeedSetup)
 	{
 		int i;
-		int rowTop, rowStep, bottom, listN, bottomTop, rowBottom, rowTopWanted;
+		int rowTop, rowStep, bottom, listN, bottomTop, rowBottom, rowTopWanted, areaTop;
 
 		gFeNeedSetup = 0;
 
@@ -4684,6 +4685,19 @@ int JerFrontendMenuScreen(int bSetup)
 		rowTop = jerFrontendRowTop(listN, rowStep,
 			bottom ? (bottomTop - rowStep) : rowBottom, rowTopWanted);
 
+		/* CENTRED: slide the whole list down by half of what it does not use. Done
+		 * here rather than by the caller so the row rects -- and therefore the
+		 * highlight the player sees move -- stay exactly where the rows are drawn. */
+		areaTop = rowTop;
+
+		if (menu->list_align == 1 && bottom && listN > 0)
+		{
+			int slack = (bottomTop - rowTop) - listN * rowStep;
+
+			if (slack > 0)
+				rowTop += slack / 2;      /* the AREA stays put; the rows move inside it */
+		}
+
 		/* A menu can ask for WIDER rows (a table needs them). The stock box stays
 		 * exactly where it has always been, so only a menu that asks moves. */
 		gFeRowW = (menu->row_w > 0) ? menu->row_w : JER_FE_ROW_DW;
@@ -4691,7 +4705,8 @@ int JerFrontendMenuScreen(int bSetup)
 		gFeRowStep = rowStep;
 		gFeRowCount = n;
 		gFeRowListN = listN;
-		gFeRowListTop = rowTop;
+		gFeRowListTop = areaTop;
+		gFeRowFirst = rowTop;
 		gFeRowBottomTop = bottomTop;
 
 		for (i = 0; i < n; i++)
