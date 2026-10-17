@@ -238,14 +238,24 @@ static int chkSelAdjust(void* ud, int dir)
 	if (row == CHK_ROW_CITY)
 	{
 		/* Step to a city this install can actually serve: a Driver 1 city whose data
-		 * is not here is not offered at all (chkCityAssetsPresent), so the row must
-		 * never rest on one and show an empty list. Driver 2's own four always answer
-		 * yes, so the loop always terminates. */
+		 * is not here is not offered at all (chkCityAssetsPresent), and neither is a
+		 * configured runtime bank that is not installed, so the row must never rest
+		 * on one and show an empty list. Driver 2's own four always answer yes, so
+		 * the loop always terminates.
+		 *
+		 * JERICHO: wrap against the number of cities this install HAS
+		 * (chkCityCount), not the row capacity - the bank rows are a range with
+		 * holes in it, and wrapping at the capacity would step through rows that do
+		 * not exist. */
 		int step;
+		int n = chkCityCount();
 
-		for (step = 0; step < CHK_CITY_COUNT; step++)
+		if (n <= 0)
+			n = CHK_CITY_COUNT;
+
+		for (step = 0; step < n; step++)
 		{
-			gChkRosterCity = (gChkRosterCity + dir + CHK_CITY_COUNT) % CHK_CITY_COUNT;
+			gChkRosterCity = (gChkRosterCity + dir + n) % n;
 
 			if (chkCityAssetsPresent(gChkRosterCity))
 				break;

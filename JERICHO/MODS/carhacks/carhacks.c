@@ -142,7 +142,9 @@ static void ChkLogCarList(void)
 	cities[0] = 0;
 	hidden[0] = 0;
 
-	for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
+	/* JERICHO: to the number of cities this install HAS - a bank row that is not
+	 * registered is not a city, and must not appear in the report. */
+	for (city = 0; city < chkCityCount(); city++)
 	{
 		int offered, held;
 
@@ -205,10 +207,13 @@ static void ChkFillCarAvailability(void)
  * car-data city offers nothing: the frontend table only ever initialised Driver
  * 2 four rows. It fills only an unclaimed row, so a Driver 2 city - which
  * already has a list of its own - cannot be disturbed. */
-	for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
+	for (city = 0; city < chkCityCount(); city++)
 		chkFillCarTableFromImport(city);
 
-for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
+	/* JERICHO: to the number of cities this install HAS, not the row capacity - a
+	 * configured runtime bank that is not installed leaves a hole, and writing its
+	 * row would offer cars out of a city that does not exist. */
+	for (city = 0; city < chkCityCount(); city++)
 	{
 		for (slot = 0; slot < CHK_CAR_SLOT_COUNT; slot++)
 			CarAvailability[city][slot] = (chkImportCanOffer(city, slot) == CHK_OFFER_OK);
@@ -219,7 +224,7 @@ for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
 	 * list now, and it is the line to compare against "car list: ... 9/10" above. */
 	line[0] = 0;
 
-	for (city = 0; city < CHK_CAR_CITY_COUNT; city++)
+	for (city = 0; city < chkCityCount(); city++)
 	{
 		int n = 0;
 		size_t used = strlen(line);
@@ -374,16 +379,18 @@ static int ChkOnCarDataSource(void* ud, void* args)
 		{
 			int pickCity = chkImportLocalPickCity();
 
-			if (pickCity >= 0 && pickCity < CHK_CITY_COUNT_LIMIT && pickCity != a->level)
+			/* JERICHO: a pick naming a bank that is not installed is not a city. */
+			if (pickCity >= 0 && chkCityRegistered(pickCity) && pickCity != a->level)
 				src = pickCity;
 		}
 
-		if (src >= 0 && src < CHK_CITY_COUNT_LIMIT)
+		/* JERICHO: a source that is not a registered city cannot be read from. */
+		if (src >= 0 && chkCityRegistered(src))
 		{
 			a->sourceLevel = src;
 
 			printInfo("[carhacks] cross-city: level %d will read car data from %s\n",
-				a->level, LevelNames[src]);
+				a->level, chkCityName(src));
 		}
 	}
 

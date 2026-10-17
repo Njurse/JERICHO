@@ -176,7 +176,8 @@ contract — everything after this is the engine following those two arrays.
 `modelSource[]`, the engine opens that city's level file, finds the `CAR` lump and
 loads its model list, its *page* lists (the `perm` and `spec` texture sets) and the
 page base offset. One import block per city — `gCarImports[CITY_COUNT]` (`models.c:260`,
-nine cities) — so a level can hold several cities at once.
+nine compiled cities plus any runtime bank; `CITY_COUNT` is a capacity, see
+`docs/CROSS_CITY.md` "City banks") — so a level can hold several cities at once.
 
 **4. Each slot's model is built from its own city.** The normal builder walks the
 model's geometry; with an import, it asks for the model through

@@ -100,9 +100,21 @@ int chkImportSlotForCar(int city, int model);
 
 /* ---- what a car list may offer ----------------------------------------- */
 
-/* The engine's car list table: CarAvailability[city][slot] and carNumLookup[city][slot]. */
-#define CHK_CAR_CITY_COUNT	9
+/* The engine's car list table: CarAvailability[city][slot] and carNumLookup[city][slot].
+ * CITY_COUNT rows (the capacity), because that is what the engine declares them with. */
+#define CHK_CAR_CITY_COUNT	CITY_COUNT
 #define CHK_CAR_SLOT_COUNT	10
+
+/* JERICHO: the number of city rows this install actually has - the stock nine plus
+ * the runtime banks whose car-data file is present (see JERICHO/CONFIG/cities.ini).
+ * Walk a user-visible list to this, and skip every row chkCityRegistered() says no
+ * to: a configured bank that is not installed leaves a HOLE in the row range, so a
+ * bare `for (city = 0; city < CHK_CAR_CITY_COUNT; city++)` would offer cities that
+ * do not exist. */
+int chkCityCount(void);
+
+/* 1 when that city row is real (always true for 0..8). */
+int chkCityRegistered(int city);
 
 /* MAY (city, slot) BE OFFERED in a car list?
  *

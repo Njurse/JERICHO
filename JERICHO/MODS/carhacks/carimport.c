@@ -537,7 +537,12 @@ const char* chkCityName(int city)
 	if (city < 0)
 		return "level";
 
-	return (city < CHK_CITY_COUNT_LIMIT) ? LevelNames[city] : "?";
+	/* JERICHO: an unregistered row (a configured bank that is not installed) has no
+	 * name - LevelNames[city] is NULL there and printing it would crash. */
+	if (city >= CHK_CITY_COUNT_LIMIT || !JerCityRegistered(city))
+		return "?";
+
+	return LevelNames[city];
 }
 
 /* ---- what a car list may offer -----------------------------------------
@@ -551,6 +556,11 @@ CHK_OFFER chkImportCanOffer(int city, int slot)
 	int model;
 
 	if (city < 0 || city >= CHK_CAR_CITY_COUNT || slot < 0 || slot >= CHK_CAR_SLOT_COUNT)
+		return CHK_OFFER_BAD;
+
+	/* JERICHO: a configured bank that is not installed is not a city - its row has
+	 * no name and no data, so nothing may be offered from it. */
+	if (!JerCityRegistered(city))
 		return CHK_OFFER_BAD;
 
 	model = chkImportSlotModel(city, slot);
@@ -611,47 +621,44 @@ int chkImportSlotModel(int city, int slot)
  * NOT FileExists(): that resolves against gDataFolder ("DRIVER2\"), so it would probe
  * DRIVER2\DRIVER\D1CARS\... and always fail - the same trap jer_d1_file_exists hit in
  * the engine. Hence a raw, CWD-relative open. */
+int chkCityCount(void)
+{
+	return JerCityCount();
+}
+
+int chkCityRegistered(int city)
+{
+	return JerCityRegistered(city);
+}
+
+/* Is this city's car data HERE, on this install?
+ *
+ * Driver 2's own cities always are: their data is the level's own. Everything else
+ * is a car-data source read from another folder - Driver 1's five under DRIVER\,
+ * and any runtime bank the config named - and the ENGINE's city registry already
+ * answers for all of them: JerCityRegistered() is true only for a row whose file
+ * actually opened, and the bank rows are re-probed before every car list and every
+ * level load.
+ *
+ * That is the whole point of the registry: this function used to keep its OWN copy
+ * of the file names (a DRIVER\D1CARS table), so a bank whose files were installed
+ * was still invisible to every menu - the engine could have loaded it, nothing
+ * would ever ask it to. Now the answer comes from the one place the engine reads
+ * its paths from, so a bank is offered exactly when the engine can serve it.
+ *
+ * The reason this matters is unchanged: the frontend builds its list before a
+ * level exists, so nothing was stopping a machine with no D1 data (or no bank) from
+ * being offered cars it cannot build - the report "in release the palettes on some
+ * vehicles from d1 are busted", where the pick fell back to the level's own car. */
 int chkCityAssetsPresent(int city)
 {
-	static const char* const d1LevFiles[] =
-	{
-		"DRIVER\\D1CARS\\MIAMI.LEV",
-		"DRIVER\\D1CARS\\FRISCO.LEV",
-		"DRIVER\\D1CARS\\LA.LEV",
-		"DRIVER\\D1CARS\\NEWYORK.LEV",
-		"DRIVER\\D1CARS\\NEWCASTLE.LEV",
-	};
-	const int city0 = CITY_D2_COUNT;
-	FILE* f;
-
 	if (city < 0 || city >= CHK_CAR_CITY_COUNT)
 		return 0;
 
-	if (city < city0)
+	if (city < CITY_D2_COUNT)
 		return 1;
 
-	if (city - city0 >= (int)(sizeof(d1LevFiles) / sizeof(d1LevFiles[0])))
-		return 0;
-
-	/* JERICHO: the table above is Windows-style, so normalise before the open -- the
-	 * engine does exactly this (FS_FixPathSlashes, declared through
-	 * driver2.h -> platform.h -> utils/fs.h). Without it the probe only ever matched
-	 * on Windows: on Linux '\\' is not a separator, so every Driver 1 city read as
-	 * ABSENT and the five cities were never offered -- the "I baked the D1 cars and
-	 * they do not show up in game" report. */
-	{
-		char path[64];
-
-		sprintf(path, "%s", d1LevFiles[city - city0]);
-		FS_FixPathSlashes(path);
-		f = fopen(path, "rb");
-	}
-
-	if (f == NULL)
-		return 0;
-
-	fclose(f);
-	return 1;
+	return JerCityRegistered(city);
 }
 void chkFillCarTableFromImport(int city)
 {
@@ -672,17 +679,25 @@ void chkFillCarTableFromImport(int city)
 
 	if (present == 0)
 	{
-		/* The import is NOT held, and it cannot be loaded here either: this runs
-		 * before the CD subsystem is up, so nothing can be read from disk at the
-		 * moment a city's availability is decided. A run says so plainly -
-		 * "CD subsystem is not initialized yet!" one line after the car list is
-		 * built. Driver 2's own cities are described by a static table in FEmain.c
-		 * for exactly this reason.
+		/* Not held yet. For anything past the stock nine the answer is the BANK's
+		 * own answer, and the engine can read it here: a runtime bank has no
+		 * generated model table (nothing baked it), so its LUMP_CAR_MODELS is the
+		 * only honest source. JerCityCarModels loads the city's car data first when
+		 * it is not held - the same read JerLoadCarImportForCity does - and answers
+		 * 0 for a city that is not registered or not installed.
 		 *
-		 * So the answer is GENERATED, not loaded: d1citymodels.h is written by the
-		 * transplant tools from what was actually baked (and checked against the
-		 * blob), so it is still "the cars this addon imported", available at the
-		 * instant the list is built. */
+		 * The install check comes FIRST, as it always has, so a configured bank
+		 * whose files are gone is never offered cars it cannot build. */
+		if (chkCityAssetsPresent(city))
+			present = JerCityCarModels(city);
+	}
+
+	if (present == 0)
+	{
+		/* Fall back to the GENERATED answer, which is what the Driver 1 cities need:
+		 * d1citymodels.h is written by the transplant tools from what was actually
+		 * baked (and checked against the blob), so it says what the transplant holds
+		 * even where nothing can be loaded at the instant the list is built. */
 			/* The generated answer says what the TRANSPLANT holds, not what THIS
 			 * INSTALL has. A city whose data is absent must not be offered: that is how a
 			 * plain Release install came to list five Driver 1 cities whose every car
@@ -868,6 +883,10 @@ void chkImportSetLocalPick(int city, int model)
 	if (city < 0 || city >= CHK_CITY_COUNT_LIMIT || model < 0 || model >= CHK_MODEL_LIMIT)
 		return;
 
+	/* JERICHO: only a city this install has can be picked. */
+	if (!JerCityRegistered(city))
+		return;
+
 	gChkPick = chkCarId(city, model);
 	gChkPickSet = 1;
 
@@ -1014,6 +1033,17 @@ int chkImportLoadConfig(const char* section, int count, int skipGuestEntries)
 				vals[2] < 0 || vals[2] >= CHK_MODEL_LIMIT)
 			{
 				printInfo("[carhacks] import entry %d ignored (want slot:city:model)\n", n);
+				continue;
+			}
+
+			/* JERICHO: a city that is not REGISTERED is not a city - the engine has no
+			 * file to read it from, so the slot would silently keep the level's own car.
+			 * Say so here, where the config is read, instead of one level load later. */
+			if (!JerCityRegistered(vals[1]))
+			{
+				printInfo("[carhacks] import entry %d ignored: city %d is not a city this "
+					"install has (0..%d, see JERICHO/CONFIG/cities.ini)\n",
+					n, vals[1], JerCityCount() - 1);
 				continue;
 			}
 

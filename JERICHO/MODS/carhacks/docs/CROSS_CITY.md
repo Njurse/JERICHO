@@ -45,10 +45,12 @@ So "a car from another city" means reading that city's level file.
 `InitCarImport` (`models.c:419`) calls `LoadCarImport` (`models.c:336`), which
 uses plain stdio â€” no CD layer is involved on PC. The sequence:
 
-1. `fopen(gDataFolder + LevelFiles[city], "rb")`; if that fails, retry with an
-   `M` prefix (`gDataFolder + "M" + LevelFiles[city]`) for the multiplayer pool
-   file (`models.c:349-356`). City order is CHICAGO, HAVANA, VEGAS, RIO
-   (`system.c:130`, `:137`).
+1. `fopen(JerCityPath(city, ...), "rb")`; if that fails, retry with an `M`
+   prefix for the multiplayer pool file (`models.c:349-356`). `JerCityPath` is
+   the ONE place a city's file is resolved: the city's data root, the path the
+   table (or, for a runtime bank, `cities.ini`) holds, and `FS_FixPathSlashes`.
+   City order is CHICAGO, HAVANA, VEGAS, RIO, then Driver 1's MIAMI, FRISCO, LA,
+   NEWYORK, NEWCASTLE, then any runtime bank (see "City banks" below).
 2. `fseek(fp, 8, SEEK_SET)`, then read the 8-int (`4 Ã— XYPAIR`) citylumps table
    (`models.c:362`). See `FORMATS.md` Â§1 for the table layout and the container
    fact that follows.
@@ -64,6 +66,41 @@ uses plain stdio â€” no CD layer is involved on PC. The sequence:
    CosmeticFiles[city]` (`models.c:409`), read whole.
 
 The file handle is closed before the walk; only the mallocs survive.
+
+## City banks — an arbitrary car-data source
+
+The nine cities above are *compiled* names: rows of the engine's `LevelNames` /
+`LevelFiles` / `CosmeticFiles` tables. A bank of cars that is not one of those
+names (a retexture pack, a private car set) can still be an import source — it is
+registered at runtime from `JERICHO/CONFIG/cities.ini`:
+
+```ini
+[cities]
+city_0 = BCCHI, ..\BetterCars\BCCHI.LEV, ..\BetterCars\BCCHI.LCF
+```
+
+`city_N` owns city index `9 + N`, the index is fixed for the process, and the
+paths are relative to the game's data folder (`..` allowed, so a pack beside
+`DRIVER2\` works). A bank is registered only when its `.LEV` is on disk, and the
+list is re-scanned before every car list and every level load — install the files
+and it appears, delete them and it is gone.
+
+Nothing in carhacks needed a new code path for this: `import = 5:9:10` is the
+same policy shape as `import = 5:2:10`. What *did* change is where the answers
+come from:
+
+- `chkCityAssetsPresent` asks `JerCityRegistered` instead of keeping its own copy
+  of the `DRIVER\D1CARS\*.LEV` names; it used to be the reason a bank the engine
+  could load was still invisible to every menu.
+- `chkFillCarTableFromImport` asks `JerCityCarModels(city)` — the bank's own
+  `LUMP_CAR_MODELS`, loaded on demand — so a bank's roster is exactly the models
+  it carries (a retexture pack that replaces two cars offers two).
+- Every list a player can see walks `chkCityCount()` and skips
+  `chkCityRegistered()` rows: `CITY_COUNT` is a **capacity** (25 rows), and a
+  configured-but-missing bank leaves a hole in the row range.
+
+Full detail, including what a bank's model block must look like and the traps:
+[`city-registry.md`](../../../../src_rebuild/Game/C/JERICHO/docs/city-registry.md).
 
 ## What the import carries
 

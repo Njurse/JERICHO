@@ -648,7 +648,7 @@ written down, and `mplive.c` is the carhacks side:
 
 | Event | mp asks | carhacks answers |
 | --- | --- | --- |
-| `MP_CARQ_CITIES` | which cities can this session offer? | every car-data city (`CHK_CAR_CITY_COUNT` = 9: CHICAGO..RIO plus Driver 1's five), or `count = 0` for "nobody knows" (the roster hack `unlock_extra_vehicles` is off, so this machine's picker has only the level's own city) |
+| `MP_CARQ_CITIES` | which cities can this session offer? | every car-data city this install HAS (`chkCityCount()`: CHICAGO..RIO, Driver 1's five, and any runtime bank registered in `JERICHO/CONFIG/cities.ini` whose files are on disk), or `count = 0` for "nobody knows" (the roster hack `unlock_extra_vehicles` is off, so this machine's picker has only the level's own city) |
 | `MP_CARQ_LOAD` | make `(city, model)` available here | `ok = 1` once the slot is set and built |
 | `MP_CARQ_CHOSEN` | (a notice, no answer) the local player is now driving `(city, model)` - or, `changed = 0`, the switch did not happen | updates carhacks' identity for this player, tells the session, and releases the old car's slot through the release routine |
 

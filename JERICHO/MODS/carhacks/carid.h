@@ -22,7 +22,17 @@
 #ifndef CHK_CARID_H
 #define CHK_CARID_H
 
-#define CHK_CITY_COUNT_LIMIT	9	/* CHICAGO..RIO, then Driver 1's five (car-data only) */
+/* JERICHO: CITY_COUNT - how many city ROWS the engine has room for (the stock
+ * nine plus its 16 runtime bank slots). The engine's city registry is the
+ * authority; see system.h and JERICHO/CONFIG/cities.ini. */
+#include "system.h"
+
+/* The largest city index that can exist, for array bounds and range guards. NOT
+ * the number of cities this install has: the stock nine are always there, the
+ * bank rows only when their files are, so a user-visible list must be walked to
+ * chkCityCount() and skip the rows where chkCityRegistered() is 0. */
+#define CHK_CITY_COUNT_LIMIT	CITY_COUNT
+
 #define CHK_MODEL_LIMIT		13	/* CARMODEL_0..12 */
 
 #define CHK_CITY_NATIVE		0xFF	/* the level's own city: no import */

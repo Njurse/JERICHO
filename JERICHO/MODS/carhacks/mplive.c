@@ -77,11 +77,14 @@ static int ChkMpCities(void* userdata, void* args)
 	if (!carhacks_enabled(CHK_HACK_UNLOCK_EXTRA))
 		return JER_RESULT_CONTINUE;
 
-	for (city = 0; city < CHK_CAR_CITY_COUNT && a->count < a->max; city++)
+	/* JERICHO: to the number of cities this install HAS, not the row capacity -
+	 * a configured runtime bank that is not installed leaves a hole. */
+	for (city = 0; city < chkCityCount() && a->count < a->max; city++)
 	{
 		/* Only cities this install can actually serve. A Driver 1 city with no data
 		 * here is not offered at all, rather than offered with cars that cannot be
-		 * built (chkCityAssetsPresent). */
+		 * built (chkCityAssetsPresent) - and that now covers the runtime banks too,
+		 * since the answer comes from the engine's registry. */
 		if (!chkCityAssetsPresent(city))
 			continue;
 
@@ -153,7 +156,17 @@ static int ChkMpLoad(void* userdata, void* args)
 		 * "not loaded here". It looked like nothing was ever requested. */
 		printInfo("[carhacks/mp] change car: REFUSED %s model %d - city out of range "
 			  "(0..%d)\n",
-			  chkCityName(a->city), a->model, CHK_CAR_CITY_COUNT - 1);
+			  chkCityName(a->city), a->model, chkCityCount() - 1);
+		return JER_RESULT_CONTINUE;
+	}
+
+	/* JERICHO: and a city whose car data is not HERE cannot be loaded from either -
+	 * a Driver 1 city with no transplant, or a configured runtime bank that is not
+	 * installed. Refusing loudly beats a pick that silently keeps the old car. */
+	if (!chkCityAssetsPresent(a->city))
+	{
+		printInfo("[carhacks/mp] change car: REFUSED %s model %d - that city's car data is "
+			  "not installed\n", chkCityName(a->city), a->model);
 		return JER_RESULT_CONTINUE;
 	}
 

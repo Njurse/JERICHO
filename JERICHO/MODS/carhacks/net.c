@@ -129,7 +129,9 @@ static int chkNetSendPacket(int tag, const unsigned char* payload, int payloadLe
 
 const char* chkNetCityName(int city)
 {
-	return (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "level";
+	/* JERICHO: JerCityRegistered rather than a range check - an unregistered bank
+	 * row has no name (LevelNames[city] is NULL) and printing it would crash. */
+	return JerCityRegistered(city) ? LevelNames[city] : "level";
 }
 
 /* Fold every peer's car into this machine's set, so it LOADS what the other
