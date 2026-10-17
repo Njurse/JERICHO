@@ -4445,14 +4445,28 @@ void jer_frontend_refresh(void)
 
 /* --- module-menu row geometry -------------------------------------------
  * The engine lays out a module menu's rows; a module that draws its OWN row
- * content (jer_text.h) has to put its text on those rows, so both sides read the
- * metrics from here. One definition, so they cannot drift. */
-#define JER_FE_ROW_X		167
-#define JER_FE_ROW_W		256
+ * content (jer_text.h) has to put that content on those rows, so both sides read
+ * the metrics from here.
+ *
+ * They are in the DRAW space (the frontend's 640x480). The BUTTON's own x/w are in
+ * HALF that: the engine draws a row's label at 2*x + w, right-aligned, which is
+ * the box's right edge -- so a box of DX..DX+DW becomes x = DX/2, w = DW. Getting
+ * this wrong puts a module's text beside the menu instead of on it, which is
+ * exactly what happened the first time. */
+#define JER_FE_ROW_DX		334	/* the stock box's left edge, in draw space */
+#define JER_FE_ROW_DW		256	/* and its width */
+#define JER_FE_SCREEN_W		640	/* the frontend's draw width */
 #define JER_FE_ROW_STEP		36
 #define JER_FE_ROW_TOP		190
 #define JER_FE_ROW_BOTTOM	462
 #define JER_FE_ROW_MIN_TOP	40
+
+/* The box the menu that is currently laid out actually uses. Written by the
+ * layout below (the only place that knows the menu), read by
+ * jer_frontend_row_rect. */
+static int gFeRowX = JER_FE_ROW_DX;
+static int gFeRowW = JER_FE_ROW_DW;
+static int gFeRowCount;
 
 /* Rows start at JER_FE_ROW_TOP; only a menu too tall for the screen slides up. */
 static int jerFrontendRowTop(int count)
@@ -4468,15 +4482,20 @@ static int jerFrontendRowTop(int count)
 	return top;
 }
 
-int jer_frontend_row_rect(int index, int count, int* x, int* y, int* w, int* h)
+int jer_frontend_row_rect(int index, int* x, int* y, int* w, int* h)
 {
-	if (count <= 0 || index < 0 || index >= count)
+	if (gFeRowCount <= 0 || index < 0 || index >= gFeRowCount)
 		return 0;
 
-	if (x != NULL) *x = JER_FE_ROW_X;
-	if (w != NULL) *w = JER_FE_ROW_W;
+	/* the statics outlive the menu they were set for, so make sure one of ours is
+	 * still the screen being drawn */
+	if (jer_frontend_current_menu() < 0)
+		return 0;
+
+	if (x != NULL) *x = gFeRowX;
+	if (w != NULL) *w = gFeRowW;
 	if (h != NULL) *h = JER_FE_ROW_STEP;
-	if (y != NULL) *y = jerFrontendRowTop(count) + index * JER_FE_ROW_STEP;
+	if (y != NULL) *y = jerFrontendRowTop(gFeRowCount) + index * JER_FE_ROW_STEP;
 
 	return 1;
 }
@@ -4635,14 +4654,20 @@ int JerFrontendMenuScreen(int bSetup)
 		rowStep = JER_FE_ROW_STEP;
 		rowTop = jerFrontendRowTop(n);
 
+		/* A menu can ask for WIDER rows (a table needs them). The stock box stays
+		 * exactly where it has always been, so only a menu that asks moves. */
+		gFeRowW = (menu->row_w > 0) ? menu->row_w : JER_FE_ROW_DW;
+		gFeRowX = (menu->row_w > 0) ? (JER_FE_SCREEN_W - gFeRowW) / 2 : JER_FE_ROW_DX;
+		gFeRowCount = n;
+
 		for (i = 0; i < n; i++)
 		{
 			const JER_FE_ITEM* it = &menu->items[i];
 			PSXBUTTON* btn = &pCurrScreen->buttons[i];
 
-			btn->x = JER_FE_ROW_X;
+			btn->x = gFeRowX / 2;
 			btn->y = rowTop + i * rowStep;
-			btn->w = JER_FE_ROW_W;
+			btn->w = gFeRowW;
 			btn->h = rowStep;
 			btn->s_x = 370;
 			btn->s_y = rowTop + i * rowStep;

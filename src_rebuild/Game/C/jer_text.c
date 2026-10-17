@@ -4,11 +4,11 @@
  * JERICHO/src) because it has to call the engine's own printers, which the
  * frontend and pres.c keep file-local and do not export through a header.
  *
- * Both paths are the SAME calls jer_console's feed makes, at the same reference
- * size, so text drawn through here at 100 looks exactly like console text. The
- * only things this file adds are the measure the console never needed (it wraps
- * one string by measured width; it never had to place a column) and the scale,
- * which a table needs to fit five columns where one console line fits one.
+ * Each font is the SAME call the engine makes for that state, so text drawn here
+ * at 100 looks exactly like console text, and at 200 like the frontend's own
+ * labels. The only things this file adds are the measure the console never needed
+ * (it wraps one string by measured width; it never had to place a column) and the
+ * scale, which a table needs to fit several columns where one line fits one.
  */
 
 #include "driver2.h"
@@ -131,14 +131,14 @@ static int jerTextCharW(unsigned char ch, int scale_pct)
 	return (int)(fx + track + 0.5f);
 }
 
-int jer_text_width(int frontend, int scale_pct, const char* text)
+int jer_text_width(int font, int scale_pct, const char* text)
 {
 	int w = 0;
 
 	if (text == NULL || text[0] == '\0')
 		return 0;
 
-	if (frontend)
+	if (font == JER_TEXT_FE)
 	{
 		w = jerTextFeWidth(text, scale_pct);
 	}
@@ -153,7 +153,7 @@ int jer_text_width(int frontend, int scale_pct, const char* text)
 	return w;
 }
 
-int jer_text_draw_at(int frontend, int scale_pct, int x, int y, const char* text, int r, int g, int b)
+int jer_text_draw_at(int font, int scale_pct, int x, int y, const char* text, int r, int g, int b)
 {
 	int end;
 
@@ -166,7 +166,7 @@ int jer_text_draw_at(int frontend, int scale_pct, int x, int y, const char* text
 
 	SetTextColour((u_char)r, (u_char)g, (u_char)b);
 
-	if (frontend)
+	if (font == JER_TEXT_FE)
 	{
 		end = FEPrintStringSized((char*)text, x, y, jerTextFeScale(scale_pct), 0, r, g, b);
 	}
@@ -186,14 +186,14 @@ int jer_text_draw_at(int frontend, int scale_pct, int x, int y, const char* text
 	return (end < 0) ? x : end;
 }
 
-int jer_text_draw_centred(int frontend, int scale_pct, int cx, int y, const char* text, int r, int g, int b)
+int jer_text_draw_centred(int font, int scale_pct, int cx, int y, const char* text, int r, int g, int b)
 {
-	int w = jer_text_width(frontend, scale_pct, text);
+	int w = jer_text_width(font, scale_pct, text);
 
 	if (w <= 0)
 		return 0;
 
-	jer_text_draw_at(frontend, scale_pct, cx - w / 2, y, text, r, g, b);
+	jer_text_draw_at(font, scale_pct, cx - w / 2, y, text, r, g, b);
 
 	return w;
 }

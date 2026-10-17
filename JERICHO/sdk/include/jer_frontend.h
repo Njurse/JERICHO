@@ -85,6 +85,14 @@ typedef struct JER_FE_MENU
 	 * chain (opened with jer_frontend_open_replace) wants this default: its back
 	 * is that screen's back. */
 	int (*on_back)(void* ud);		/* Triangle: 1 = handled */
+
+	/* Optional ROW WIDTH, in the frontend's own 640x480 draw space, for a menu whose
+	 * rows carry more than a label -- a table, say. 0 = the stock box; either way
+	 * jer_frontend_row_rect() reports what is in force, and the engine's box and
+	 * highlight grow with it, so a module's own content and the row the engine
+	 * highlights stay the same shape. (Trailing on purpose: every existing menu
+	 * initialiser leaves it 0.) */
+	int row_w;
 } JER_FE_MENU;
 
 /* Register a menu (and submenus). Call from the module entry; the registry
@@ -107,12 +115,15 @@ void jer_frontend_set_main_entry(const char* id);
 /* Module-side: the current menu's items changed — rebuild the screen. */
 void jer_frontend_refresh(void);
 
-/* Where the engine will place row `index` of a menu with `count` items, so a
+/* Where the engine will place row `index` of the menu that is ON SCREEN, so a
  * module that draws its own row content (jer_text.h) sits on the row the engine
- * highlights. The x/w/h are constant; y moves with the index and, for a menu too
- * tall for the screen, with the count (the engine slides the block up to fit).
- * Returns 0 — and writes nothing — for an index off the menu. */
-int  jer_frontend_row_rect(int index, int count, int* x, int* y, int* w, int* h);
+ * highlights. Read from the current menu -- which is the one being drawn -- so
+ * there is no count to pass and a menu with its own row_w is reported at ITS
+ * width. The x/w are constant for a menu; y moves with the index and, for a menu
+ * too tall for the screen, with the count (the engine slides the block up to
+ * fit). Returns 0 -- and writes nothing -- when no module menu is up or the index
+ * is off it. */
+int  jer_frontend_row_rect(int index, int* x, int* y, int* w, int* h);
 
 /* Module-side: navigate to a registered menu (by index) or a raw frontend
  * screen index (e.g. for a stock screen a module wants to return to). */
