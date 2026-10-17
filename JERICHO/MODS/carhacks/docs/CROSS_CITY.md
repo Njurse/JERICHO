@@ -102,6 +102,11 @@ come from:
 Full detail, including what a bank's model block must look like and the traps:
 [`city-registry.md`](../../../../src_rebuild/Game/C/JERICHO/docs/city-registry.md).
 
+A retexture bank usually carries only the models it repaints, so the rest of the
+city's car list falls back to the level's own car. [`BANKFILL.md`](BANKFILL.md) has
+the tool that fills those blanks from the host city's own level file, and the
+measured account of how the engine reads such a bank.
+
 ## What the import carries
 
 Three pieces come from the foreign city, each behind a `GetCarImport*` getter:
