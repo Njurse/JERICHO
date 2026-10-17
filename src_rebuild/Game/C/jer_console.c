@@ -115,6 +115,20 @@ extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, st
 #define JER_CONSOLE_FADE_FRAMES		30	/* 1 s at 30 Hz: fading out */
 #define JER_CONSOLE_LIFE_FRAMES		(JER_CONSOLE_HOLD_FRAMES + JER_CONSOLE_FADE_FRAMES)
 
+/* CHAT lives much longer, and the reason is the toggle.
+ *
+ * A status row is debug output: it is drawn while the console is on, which means
+ * the player is looking at the corner, so 5 s is plenty. A chat row is a line
+ * somebody SAID to you, and it is drawn whether the console is on or off -- with
+ * the console off it is the only thing in that corner, so the player is not
+ * watching it. Five seconds of visibility is how "chat does not print with the
+ * console disabled" happened: the line arrived, drew, and was gone before anyone
+ * looked. Twenty seconds + a 3 s fade is long enough to read what you missed and
+ * still clears itself. */
+#define JER_CONSOLE_CHAT_HOLD_FRAMES	600	/* 20 s at 30 Hz: full brightness */
+#define JER_CONSOLE_CHAT_FADE_FRAMES	90	/* 3 s at 30 Hz: fading out */
+#define JER_CONSOLE_CHAT_LIFE_FRAMES	(JER_CONSOLE_CHAT_HOLD_FRAMES + JER_CONSOLE_CHAT_FADE_FRAMES)
+
 /* --- storage ------------------------------------------------------------ */
 typedef struct JER_CONSOLE_RUN
 {
@@ -167,17 +181,26 @@ static int jerConsoleAgeColour(int age)
 /* The fade multiplier for a row of `age` frames (0..255, in the colour space the
  * row's colours are given in). 255 for the whole hold, then a linear ramp to 0
  * over the fade window; a row at or past its life is dropped by the caller. */
-static int jerConsoleFade(int age)
+/* How long a row may stay, by kind (see the chat lifetime above). */
+static int jerConsoleRowLife(const JER_CONSOLE_ROW* row)
 {
-	age -= JER_CONSOLE_HOLD_FRAMES;
+	return row->chat ? JER_CONSOLE_CHAT_LIFE_FRAMES : JER_CONSOLE_LIFE_FRAMES;
+}
+
+static int jerConsoleFade(int age, int chat)
+{
+	int hold = chat ? JER_CONSOLE_CHAT_HOLD_FRAMES : JER_CONSOLE_HOLD_FRAMES;
+	int span = chat ? JER_CONSOLE_CHAT_FADE_FRAMES : JER_CONSOLE_FADE_FRAMES;
+
+	age -= hold;
 
 	if (age <= 0)
 		return 255;
 
-	if (age >= JER_CONSOLE_FADE_FRAMES)
+	if (age >= span)
 		return 0;
 
-	return 255 - (age * 255) / JER_CONSOLE_FADE_FRAMES;
+	return 255 - (age * 255) / span;
 }
 
 /* --- ring --------------------------------------------------------------- */
@@ -573,12 +596,25 @@ void jer_console_draw(int frontend)
 
 	jerConsoleTestLever();
 
-	/* AGE OUT FIRST. Rows are pushed in time order, so the expired ones are always a
-	 * PREFIX of the ring: drop those, and everything behind them keeps its order. */
-	while (sCount > 0 && (sFrame - sRows[0].bornFrame) >= JER_CONSOLE_LIFE_FRAMES)
+	/* AGE OUT FIRST, per ROW KIND. A chat line lives far longer than a status
+	 * line, so the expired rows are no longer necessarily a PREFIX of the ring --
+	 * a chat row in front can outlive the status rows behind it. Compact the ring
+	 * in one pass instead: keep every live row, in order, and drop the rest. */
 	{
-		memmove(&sRows[0], &sRows[1], sizeof(sRows[0]) * (size_t)(sCount - 1));
-		sCount--;
+		int w = 0;
+
+		for (i = 0; i < sCount; i++)
+		{
+			if ((sFrame - sRows[i].bornFrame) >= jerConsoleRowLife(&sRows[i]))
+				continue;	/* expired */
+
+			if (w != i)
+				sRows[w] = sRows[i];
+
+			w++;
+		}
+
+		sCount = w;
 	}
 
 	/* Newest first, bottom-up. A chat row draws even while the console is off:
@@ -596,7 +632,7 @@ void jer_console_draw(int frontend)
 		else
 			y = JER_CONSOLE_BOTTOM - placed * JER_CONSOLE_LINE_H;
 
-		jerConsoleDrawRow(&sRows[i], frontend, y, placed, jerConsoleFade(rowAge));
+		jerConsoleDrawRow(&sRows[i], frontend, y, placed, jerConsoleFade(rowAge, sRows[i].chat));
 		placed++;
 	}
 

@@ -23,8 +23,11 @@
  *     age. Hidden while the console is toggled off.
  *   - CHAT (jer_console_chat), drawn from colour RUNS so the speaker's name can
  *     carry their own colour. Chat is a conversation, not debug output, so a
- *     chat line is drawn even while the console is off — but it ages out on the
- *     same clock. The r/g/b you pass are the colours as they should LOOK — the
+ *     chat line is drawn even while the console is off — and it LIVES FAR LONGER
+ *     than a status line (20 s full + a 3 s fade, against 4 s + 1 s). Five
+ *     seconds was not enough: with the console off that corner is the only place
+ *     a message appears, nobody is watching it, and the line was gone before the
+ *     player looked. The r/g/b you pass are the colours as they should LOOK — the
  *     console applies the HQ font's x2 doubling itself, so pass 240 for the
  *     near-white a chat message uses.
  *
