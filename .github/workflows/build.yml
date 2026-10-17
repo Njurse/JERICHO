@@ -80,9 +80,12 @@ jobs:
       # the rigs below they really run here: the wire-mirror guard (which caught a
       # real MP_WELCOME drift), the master discovery self-test, and the
       # master + dedicated-server + client end-to-end path -- all loopback only.
-      - name: mp servers (wire mirror, master self-test, master+dedi e2e)
+      # check_images is here because a shared module that no Dockerfile COPYs builds
+      # an image that dies at import, on the box, at the worst moment.
+      - name: mp servers (wire mirror, image copies, master self-test, master+dedi e2e)
         run: |
           python3 JERICHO/MODS/mp/tools/servers/proto_check.py
+          python3 JERICHO/MODS/mp/tools/servers/check_images.py
           python3 JERICHO/MODS/mp/tools/servers/masterserver/test_masterserver.py
           python3 JERICHO/MODS/mp/tools/servers/rigs/test_e2e.py
 
