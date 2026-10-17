@@ -323,6 +323,34 @@ jobs:
             Copy-Item "JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh" "$bin/" -Force
             Copy-Item "JERICHO/MODS/mp/tools/pack_lan/merge_config.ps1" "$bin/" -Force
 
+            # 5. The DEDICATED SERVER -- and ONLY the dedicated server.
+            #    A player who wants to leave a match running needs the Python dedi,
+            #    and it is not in the mirror (every mod's tools/ directory is
+            #    stripped on the way in), so it is staged here like the bake tools.
+            #    Its own imports decide the payload: dediserver.py pulls in
+            #    serverkit, mp_test (the one Python copy of the wire) and
+            #    proto_check, and proto_check reads mp_proto.h out of the mirror.
+            #
+            #    The MASTER discovery service is NOT shipped: it is the shared
+            #    service every install points at, so an install running its own
+            #    would only fragment the player base -- and it is infrastructure,
+            #    not a feature of the game. Fail rather than trust the copy rules,
+            #    so a stray masterserver/ can never ride out in a release.
+            $mpTools = "JERICHO/MODS/mp/tools"
+            $srvDst = "$bin/JERICHO/MODS/mp/tools/servers"
+            New-Item -ItemType Directory -Force -Path $srvDst | Out-Null
+            Copy-Item "$mpTools/mp_test.py" "$bin/JERICHO/MODS/mp/tools/" -Force
+            Copy-Item "$mpTools/servers/*.py" $srvDst -Force
+            Copy-Item "$mpTools/servers/*.md" $srvDst -Force
+            Copy-Item "$mpTools/servers/run.bat" $srvDst -Force
+            Copy-Item "$mpTools/servers/run.sh" $srvDst -Force
+            Copy-Item "$mpTools/servers/dediserver" $srvDst -Recurse -Force
+            Get-ChildItem "$bin/JERICHO/MODS/mp/tools" -Recurse -Directory -Filter '__pycache__' |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path "$bin/JERICHO/MODS/mp/tools/servers/masterserver") {
+                throw "refusing to package the master server: it is our infrastructure, not the player's"
+            }
+
             Compress-Archive -Path "$bin/*" -DestinationPath "JERICHO_${cfg}_win64.zip" -Force
           }
 
@@ -467,6 +495,23 @@ jobs:
             cp JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh "$d/"
             cp JERICHO/MODS/mp/tools/pack_lan/merge_config.ps1 "$d/"
             chmod +x "$d/update_jericho.sh"
+            # The DEDICATED SERVER, and only it -- the same payload as the Windows
+            # job stages, same reasoning (the master discovery service is shared
+            # infrastructure and is not shipped). Staged by hand because the mirror
+            # never has a mod's tools/ directory: it is stripped on the way in.
+            srv_dst="$d/JERICHO/MODS/mp/tools/servers"
+            mkdir -p "$srv_dst"
+            cp JERICHO/MODS/mp/tools/mp_test.py "$d/JERICHO/MODS/mp/tools/"
+            cp JERICHO/MODS/mp/tools/servers/*.py "$srv_dst/"
+            cp JERICHO/MODS/mp/tools/servers/*.md "$srv_dst/"
+            cp JERICHO/MODS/mp/tools/servers/run.sh "$srv_dst/"
+            cp JERICHO/MODS/mp/tools/servers/run.bat "$srv_dst/"
+            cp -r JERICHO/MODS/mp/tools/servers/dediserver "$srv_dst/"
+            find "$d/JERICHO/MODS/mp/tools" -name '__pycache__' -type d -prune -exec rm -rf {} +
+            if [ -e "$srv_dst/masterserver" ]; then
+                echo "::error::refusing to package the master server: it is our infrastructure, not the player's"
+                exit 1
+            fi
             # Three things a release must never carry: CONFIG/modlist.ini (the player's
             # module toggles -- an archive cannot ask before replacing them, so a
             # release ships none and each module runs from its mod.toml default),
