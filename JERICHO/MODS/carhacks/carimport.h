@@ -113,6 +113,11 @@ int chkImportSlotForCar(int city, int model);
  * do not exist. */
 int chkCityCount(void);
 
+/* The four cities whose car list is the ENGINE's own (FEmain.c's carNumLookup). They
+ * are the only rows where model 0 means the POLICE CAR rather than an empty slot --
+ * see the exemption in chkImportCanOffer. */
+#define CHK_NATIVE_CITY_COUNT	4
+
 /* 1 when that city row is real (always true for 0..8). */
 int chkCityRegistered(int city);
 

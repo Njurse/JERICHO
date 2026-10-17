@@ -565,7 +565,18 @@ CHK_OFFER chkImportCanOffer(int city, int slot)
 
 	model = chkImportSlotModel(city, slot);
 
-	if (model <= 0)
+	/* MODEL 0 IS THE POLICE CAR in the engine's own car list. FEmain.c's
+	 * carNumLookup row is {1,2,3,4,0,8,9,10,11,12}, so model 0 sits at select-slot
+	 * 4 and `model <= 0 -> NO_CAR` refused it -- which is why the police cars
+	 * disappeared from every car menu while the rest of the list was fine.
+	 *
+	 * The zero-means-empty reading is still right for a GENERATED (Driver 1) city,
+	 * whose table is filled from its own data and leaves 0 in a hole, so the
+	 * exemption is only for the four cities whose list is the engine's. */
+	if (model < 0)
+		return CHK_OFFER_NO_CAR;
+
+	if (model == 0 && city >= CHK_NATIVE_CITY_COUNT)
 		return CHK_OFFER_NO_CAR;
 
 	/* A car the game's DATA does not carry, even though the level's car LIST names it.
