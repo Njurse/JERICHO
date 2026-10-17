@@ -67,45 +67,41 @@ uses plain stdio â€” no CD layer is involved on PC. The sequence:
 
 The file handle is closed before the walk; only the mallocs survive.
 
-## City banks — an arbitrary car-data source
+## City banks â€” an arbitrary car-data source
 
 The nine cities above are *compiled* names: rows of the engine's `LevelNames` /
 `LevelFiles` / `CosmeticFiles` tables. A bank of cars that is not one of those
-names (a retexture pack, a private car set) can still be an import source — it is
-registered at runtime from `JERICHO/CONFIG/cities.ini`:
+names (a retexture pack, a private car set) can still be an import source â€” it
+is registered at runtime from `JERICHO/CONFIG/cities.ini`:
 
 ```ini
 [cities]
 city_0 = BCCHI, ..\BetterCars\BCCHI.LEV, ..\BetterCars\BCCHI.LCF
 ```
 
-`city_N` owns city index `9 + N`, the index is fixed for the process, and the
-paths are relative to the game's data folder (`..` allowed, so a pack beside
-`DRIVER2\` works). A bank is registered only when its `.LEV` is on disk, and the
-list is re-scanned before every car list and every level load — install the files
-and it appears, delete them and it is gone.
+`city_N` owns city index `9 + N`, the index is fixed for the process, and the paths
+are relative to the game's data folder (`..` allowed, so a pack beside `DRIVER2\`
+works). A bank is registered only when its `.LEV` is on disk, and the list is
+re-scanned before every car list and every level load â€” install the files and it
+appears, delete them and it is gone.
 
-Nothing in carhacks needed a new code path for this: `import = 5:9:10` is the
-same policy shape as `import = 5:2:10`. What *did* change is where the answers
-come from:
+Nothing in carhacks needed a new code path for this: `import = 5:9:10` is the same
+policy shape as `import = 5:2:10`. What *did* change is where the answers come from:
 
-- `chkCityAssetsPresent` asks `JerCityRegistered` instead of keeping its own copy
-  of the `DRIVER\D1CARS\*.LEV` names; it used to be the reason a bank the engine
-  could load was still invisible to every menu.
-- `chkFillCarTableFromImport` asks `JerCityCarModels(city)` — the bank's own
-  `LUMP_CAR_MODELS`, loaded on demand — so a bank's roster is exactly the models
-  it carries (a retexture pack that replaces two cars offers two).
-- Every list a player can see walks `chkCityCount()` and skips
-  `chkCityRegistered()` rows: `CITY_COUNT` is a **capacity** (25 rows), and a
-  configured-but-missing bank leaves a hole in the row range.
+- `chkCityAssetsPresent` asks `JerCityRegistered` instead of keeping its own copy of
+  the `DRIVER\D1CARS\*.LEV` names; that duplicate table used to be the reason a bank
+  the engine could load was still invisible to every menu.
+- `chkFillCarTableFromImport` asks `JerCityCarModels(city)` â€” the bank's own
+  `LUMP_CAR_MODELS`, loaded on demand â€” so a bank's roster is exactly the models it
+  carries (a retexture pack that replaces two cars offers two).
+- Every list a player can see walks `chkCityCount()` and skips `chkCityRegistered()`
+  rows: `CITY_COUNT` is a **capacity** (25 rows), and a configured-but-missing bank
+  leaves a hole in the row range.
 
-Full detail, including what a bank's model block must look like and the traps:
-[`city-registry.md`](../../../../src_rebuild/Game/C/JERICHO/docs/city-registry.md).
-
-A retexture bank usually carries only the models it repaints, so the rest of the
-city's car list falls back to the level's own car. [`BANKFILL.md`](BANKFILL.md) has
-the tool that fills those blanks from the host city's own level file, and the
-measured account of how the engine reads such a bank.
+A sparse pack can also be COMPLETED from its host city's own level file, so the bank
+carries the whole host car list: that is `tools/bankfill.py` â€” see
+[`BANKFILL.md`](BANKFILL.md). Full detail, including what a bank's model block must
+look like and the traps: [`city-registry.md`](../../../../src_rebuild/Game/C/JERICHO/docs/city-registry.md).
 
 ## What the import carries
 

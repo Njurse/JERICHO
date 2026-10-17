@@ -76,6 +76,13 @@ Banks also have no `M<CITY>.LEV` arena variant — only Driver 2's own four citi
 do — and no `LEVELS\<CITY>` override folder, so per-car `CARMODEL_*` overrides do
 not apply to them.
 
+**A sparse bank can be completed.** Copying the missing models out of the host
+city's own level file (byte for byte, plus the page sets and palette rows they
+need) is `JERICHO/MODS/carhacks/tools/bankfill.py`; run its `--report` first to see
+what a bank lacks and `--verify` after writing. The rules it follows — including
+why a copied model's texture ids need no rewrite — are in
+[`BANKFILL.md`](../../../../../JERICHO/MODS/carhacks/docs/BANKFILL.md).
+
 ## The API
 
 `jer_city.h` (SDK + engine copies, kept identical by `tools/doccheck.py`):

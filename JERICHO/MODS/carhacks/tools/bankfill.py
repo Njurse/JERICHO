@@ -696,7 +696,8 @@ def verify_bank(bank_path, base_path, host):
 
 def main(argv):
     ap = argparse.ArgumentParser(
-        description="Report on (and, later, fill) sparse car-data banks.")
+        description="Report on, fill, or verify a sparse car-data bank "
+                    "(see JERICHO/MODS/carhacks/docs/BANKFILL.md).")
     ap.add_argument("banks", nargs="+", help="bank .LEV file(s), or a glob")
     ap.add_argument("--report", action="store_true",
                     help="print what each bank carries against its host city (the default)")
