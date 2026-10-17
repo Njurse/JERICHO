@@ -1037,6 +1037,7 @@ EXPORTS
 	?State_FrontEnd@@YAXPEAX@Z
 	jer_frontend_current_menu
 	jer_frontend_goto
+	jer_frontend_list_top
 	jer_frontend_menu_count
 	jer_frontend_open
 	jer_frontend_open_replace

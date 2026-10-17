@@ -4475,9 +4475,9 @@ static int gFeRowBottomTop;	/* ...and the bottom group's */
 
 /* Rows start at JER_FE_ROW_TOP and step by `step`; only a block too tall for the
  * space slides up. */
-static int jerFrontendRowTop(int count, int step, int limit)
+static int jerFrontendRowTop(int count, int step, int limit, int wanted)
 {
-	int top = JER_FE_ROW_TOP;
+	int top = wanted;
 
 	if (top + (count - 1) * step > limit)
 		top = limit - (count - 1) * step;
@@ -4486,6 +4486,14 @@ static int jerFrontendRowTop(int count, int step, int limit)
 		top = JER_FE_ROW_MIN_TOP;
 
 	return top;
+}
+
+int jer_frontend_list_top(void)
+{
+	if (gFeRowCount <= 0)
+		return 0;
+
+	return gFeRowListTop;
 }
 
 int jer_frontend_row_rect(int index, int* x, int* y, int* w, int* h)
@@ -4599,7 +4607,7 @@ int JerFrontendMenuScreen(int bSetup)
 	if (bSetup || gFeNeedSetup)
 	{
 		int i;
-		int rowTop, rowStep, bottom, listN, bottomTop;
+		int rowTop, rowStep, bottom, listN, bottomTop, rowBottom, rowTopWanted;
 
 		gFeNeedSetup = 0;
 
@@ -4668,11 +4676,13 @@ int JerFrontendMenuScreen(int bSetup)
 		bottom = (menu->bottom_items > 0 && menu->bottom_items < n) ? menu->bottom_items : 0;
 		listN = n - bottom;
 		rowStep = (menu->row_step > 0) ? menu->row_step : JER_FE_ROW_STEP;
+		rowBottom = (menu->row_bottom > 0) ? menu->row_bottom : JER_FE_ROW_BOTTOM;
+		rowTopWanted = (menu->row_top > 0) ? menu->row_top : JER_FE_ROW_TOP;
 
 		/* the list stops above the controls, and slides up only if it must */
-		bottomTop = JER_FE_ROW_BOTTOM - bottom * rowStep;
+		bottomTop = rowBottom - bottom * rowStep;
 		rowTop = jerFrontendRowTop(listN, rowStep,
-			bottom ? (bottomTop - rowStep) : JER_FE_ROW_BOTTOM);
+			bottom ? (bottomTop - rowStep) : rowBottom, rowTopWanted);
 
 		/* A menu can ask for WIDER rows (a table needs them). The stock box stays
 		 * exactly where it has always been, so only a menu that asks moves. */
@@ -4695,7 +4705,11 @@ int JerFrontendMenuScreen(int bSetup)
 			btn->w = gFeRowW;
 			btn->h = rowStep;
 			btn->s_x = 370;
-			btn->s_y = rowTop + i * rowStep;
+			/* the SPRITE follows the row, not the list position. With bottom-pinned
+			 * controls the two differ, and art left at the list's y made a control look
+			 * as though it had never moved -- which is exactly how the pinned Back and
+			 * Manual rows first read. In the stock path y and s_y are equal anyway. */
+			btn->s_y = btn->y;
 
 			if (it->get_label != NULL)
 				it->get_label(it->userdata, btn->Name, sizeof(btn->Name));

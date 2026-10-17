@@ -102,6 +102,18 @@ typedef struct JER_FE_MENU
 	 * bottom edge instead of following the list, so they do not move while the
 	 * list above them grows, shrinks or is rebuilt. 0 = every item is a list row. */
 	int bottom_items;
+
+	/* Optional LOWER EDGE, in the same 640x480 draw space (0 = the stock 462). With
+	 * bottom_items, this is what the controls sit ON: a screen whose list is empty
+	 * but whose controls should still read as "the bottom of the screen" asks for a
+	 * lower value here rather than for the stock one. */
+	int row_bottom;
+
+	/* Optional TOP of the LIST, in the same draw space (0 = the stock 190). A
+	 * screen with its own heading line wants the list lower: the stock top sits
+	 * close enough to the menu TITLE that a heading drawn just above the first row
+	 * lands on top of the title, and no gap is left between the heading and the rows. */
+	int row_top;
 } JER_FE_MENU;
 
 /* Register a menu (and submenus). Call from the module entry; the registry
@@ -133,6 +145,12 @@ void jer_frontend_refresh(void);
  * fit). Returns 0 -- and writes nothing -- when no module menu is up or the index
  * is off it. */
 int  jer_frontend_row_rect(int index, int* x, int* y, int* w, int* h);
+
+/* The y the FIRST LIST row occupies (or would, when the list is empty), in the
+ * same draw space. A screen with bottom-pinned controls cannot get this from
+ * row_rect(0): with an empty list that index IS the first control, so a heading
+ * drawn above it lands in the middle of the screen instead of above the table. */
+int  jer_frontend_list_top(void);
 
 /* Module-side: navigate to a registered menu (by index) or a raw frontend
  * screen index (e.g. for a stock screen a module wants to return to). */
