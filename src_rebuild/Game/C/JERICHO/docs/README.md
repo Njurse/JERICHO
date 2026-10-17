@@ -90,6 +90,11 @@ src_rebuild/tools/gen_exports/     maps the linker map to exports.def
   helper to stream somewhere it has not been (arena spawns, teleports).
 - [`console.md`](console.md) — **the unified status console**: the `jer_console.h`
   API, the `~` toggle and its `CONFIG/hud.ini` setting, and the two draw sites.
+- [`city-registry.md`](city-registry.md) — **the city registry**: arbitrary
+  car-data banks registered at runtime from `JERICHO/CONFIG/cities.ini` (city
+  index `9 + N`, the `jer_city.h` API, disk-driven availability), so a car bank
+  that is not one of the engine's compiled-in cities can be imported like any
+  other city.
 - [`ped-animation.md`](ped-animation.md), [`ped-palette.md`](ped-palette.md),
   [`screens.md`](screens.md), [`module-activation.md`](module-activation.md).
 

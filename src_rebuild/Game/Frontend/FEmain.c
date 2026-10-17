@@ -3033,6 +3033,11 @@ int CarSelectScreen(int bSetup)
 		{
 			JER_ARGS_CAR_AVAILABILITY jerAvail;
 
+			/* JERICHO: re-scan for runtime city banks first, so the list a module
+			 * answers about includes - or has stopped including - a bank whose files
+			 * were installed or removed since this screen was last built. */
+			JerCityRegistryRefresh();
+
 			jerAvail.level = GameLevel;
 			jerAvail.result = 0;
 			jerAvail.own_list = 0;

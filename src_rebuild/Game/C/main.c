@@ -2575,6 +2575,14 @@ int redriver2_main(int argc, char** argv)
 
 	jer_init("JERICHO");
 
+	/* JERICHO: the runtime city banks, from JERICHO/CONFIG/cities.ini. This runs as
+	 * soon as the config store exists (jer_init sets it up) and BEFORE the frontend
+	 * or a level asks any city-indexed question, so a bank is a city by the time
+	 * anything looks. It only reads what is on disk - a bank whose files are absent
+	 * is simply not registered - and JerCityRegistryRefresh re-scans later for
+	 * banks that appear or go away while the game runs. */
+	JerCityRegistryInit();
+
 	StopCallback();
 	ResetCallback();
 	ResetGraph(0);

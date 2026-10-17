@@ -461,32 +461,34 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 }
 
 /* The stock path: a city index -> the two paths that city's data lives at, then
- * the loader above. Unchanged in behaviour for Driver 2's four cities. */
+ * the loader above. Unchanged in behaviour for Driver 2's four cities.
+ *
+ * JERICHO: the paths come from JerBuildCityPath, which is the ONE place a city's
+ * file is resolved (data root + table entry + FS_FixPathSlashes) and which
+ * refuses an unregistered row - a bank slot with no bank in it has NULL table
+ * entries, and the old `sprintf("%s%s", root, NULL)` would have crashed there. It
+ * also carries the slash normalisation this function used to do by hand: every
+ * path table here is Windows-style and the rest of the engine runs such a path
+ * through FS_FixPathSlashes, so without it the opens only ever matched on Windows
+ * (on Linux '\\' is not a separator, every import failed, and each imported slot
+ * silently kept the level's own model). */
 static int LoadCarImport(int city, CAR_IMPORT* imp)
 {
-	char level[64], cosmetic[64];
+	char level[192], cosmetic[192];
+	const char* lcfPath = NULL;
 
-	if (city < 0 || city >= CITY_COUNT)
+	if (!JerCityRegistered(city))
 		return 0;
 
 	// the full single-player level first, then the arena variant
-	sprintf(level, "%s%s", JerGetCityDataRoot(city), LevelFiles[city]);
+	if (!JerCityPath(city, level, sizeof(level), JER_CITY_FILE_LEVEL, 0))
+		return 0;
 
-	// JERICHO: normalise before opening, exactly as Loadfile/FileExists do. Every
-	// path in this file is built from Windows-style tables -- gDataFolder is
-	// "DRIVER2\\" and LevelFiles[] are "LEVELS\\<CITY>.LEV" -- and the rest of the
-	// engine runs such a path through FS_FixPathSlashes (which makes it unix-style
-	// on Linux). These cross-city opens did not, so the path only ever matched on
-	// Windows: on Linux '\\' is not a separator, EVERY import failed with "no usable
-	// car data in LEVELS\\<CITY>.LEV", and each imported slot silently kept the
-	// level's own model -- which is the cross-play report (a car that is a
-	// distorted version of the host's / of slot 1).
-	FS_FixPathSlashes(level);
-
-	// the arena variant of the file; Driver 1's car-data cities have none.
+	// the arena variant of the file; Driver 1's car-data cities and the runtime
+	// banks have none.
 	//
 	// Probe with a direct fopen, NOT FileExists(): `level` is already rooted
-	// (JerGetCityDataRoot prepends "DRIVER2\" or "DRIVER\"), and FileExists() prefixes
+	// (JerBuildCityPath prepends "DRIVER2\" or "DRIVER\"), and FileExists() prefixes
 	// gDataFolder AGAIN - so it tested "DRIVER2\DRIVER2\LEVELS\VEGAS.LEV", always missing,
 	// and the loader fell through to MLEVELS every time. pageBase was then computed from
 	// the M file while ReadCarImportFileForCity read the single-player one; the two DATA1
@@ -499,16 +501,16 @@ static int LoadCarImport(int city, CAR_IMPORT* imp)
 		if (probe)
 			fclose(probe);
 		else if (city < CITY_D2_COUNT)
-		{
-			sprintf(level, "%sM%s", JerGetCityDataRoot(city), LevelFiles[city]);
-			FS_FixPathSlashes(level);
-		}
+			JerCityPath(city, level, sizeof(level), JER_CITY_FILE_LEVEL, 1);
 	}
 
-	sprintf(cosmetic, "%s%s", JerGetCityDataRoot(city), CosmeticFiles[city]);
-	FS_FixPathSlashes(cosmetic);
+	// A bank may have no colours file at all, which is legal: the cars then keep the
+	// cosmetics derived from the model. JerBuildCityPath answers 0 for that, and the
+	// loader takes NULL rather than trying to read a file that is not named.
+	if (JerCityPath(city, cosmetic, sizeof(cosmetic), JER_CITY_FILE_COSMETIC, 0))
+		lcfPath = cosmetic;
 
-	return JerLoadCarImportFromFile(level, cosmetic, imp);
+	return JerLoadCarImportFromFile(level, lcfPath, imp);
 }
 
 // JERICHO: load a city's car data NOW, into its own import slot, and answer whether
@@ -547,6 +549,12 @@ void InitCarImport(void)
 	// CarImportResetState in texture.c.
 	CarImportResetState();
 
+	// JERICHO: and the runtime city banks are re-scanned first, so a set that names a
+	// bank installed (or uninstalled) since boot is resolved against what is on disk
+	// NOW. Dropping a bank here is safe: this is the one moment nothing points into
+	// an import yet - the frees below are about to empty every city anyway.
+	JerCityRegistryRefresh();
+
 	for (city = 0; city < CITY_COUNT; city++)
 		FreeCarImport(&gCarImports[city]);
 
@@ -569,12 +577,12 @@ void InitCarImport(void)
 		if (!LoadCarImport(src, &gCarImports[src]))
 		{
 			printInfo("cross-city: no usable car data in %s - slots naming it keep the level's own vehicles\n",
-				LevelFiles[src]);
+				JerCityFile(src, JER_CITY_FILE_LEVEL));
 			continue;
 		}
 
 		printInfo("cross-city: car data from %s (%d bytes of models, %d of car palettes, %d of cosmetics)\n",
-			LevelNames[src], gCarImports[src].carModelsSize, gCarImports[src].palletSize,
+			JerCityName(src), gCarImports[src].carModelsSize, gCarImports[src].palletSize,
 			gCarImports[src].cosmeticsSize);
 
 		if (gCarImportCity < 0)
@@ -608,12 +616,12 @@ void InitCarImportMidLevel(void)
 		if (!LoadCarImport(src, &gCarImports[src]))
 		{
 			printInfo("cross-city: no usable car data in %s - slots naming it keep the level's own vehicles\n",
-				LevelFiles[src]);
+				JerCityFile(src, JER_CITY_FILE_LEVEL));
 			continue;
 		}
 
 		printInfo("cross-city: car data from %s read MID-LEVEL for the hot load (%d bytes of models, %d of car palettes, %d of cosmetics)\n",
-			LevelNames[src], gCarImports[src].carModelsSize, gCarImports[src].palletSize,
+			JerCityName(src), gCarImports[src].carModelsSize, gCarImports[src].palletSize,
 			gCarImports[src].cosmeticsSize);
 
 		// ...and its PAGE LISTS, which the level-load parse only did for the cities held
@@ -654,6 +662,23 @@ int CarImportCityHeld(int city)
 unsigned JerCarImportModels(int city)
 {
 	return CarImportCityHeld(city) ? gCarImports[city].carModelsPresent : 0;
+}
+
+// JERICHO: the models a city carries, LOADING ITS CAR DATA FIRST when it is not
+// held. This is the answer a runtime bank's roster needs: unlike the stock cities a
+// bank has no generated model table (nothing baked it), so the only honest source is
+// the bank's own LUMP_CAR_MODELS. Returns 0 for an unregistered row, a bank that is
+// not installed, or one whose data carries nothing - all of which mean "offer no
+// cars from this city".
+unsigned JerCityCarModels(int city)
+{
+	if (!JerCityRegistered(city))
+		return 0;
+
+	if (!CarImportCityHeld(city) && !JerLoadCarImportForCity(city))
+		return 0;
+
+	return JerCarImportModels(city);
 }
 
 // The imported city's car palettes (LUMP_PALLET body), or NULL. `size` receives
@@ -719,21 +744,24 @@ int ReadCarImportFile(int offset, void* dst, int len)
 
 int ReadCarImportFileForCity(int city, int offset, void* dst, int len)
 {
-	char filename[64];
+	char filename[192];
 	FILE* fp;
 
 	if (!CarImportCityHeld(city) || offset < 0 || len <= 0 || dst == NULL)
 		return 0;
 
-	sprintf(filename, "%s%s", JerGetCityDataRoot(city), LevelFiles[city]);
-	FS_FixPathSlashes(filename);	// unix-style on Linux; see the note in LoadCarImport
+	// the same single place a city's file is resolved as LoadCarImport - including
+	// the refusal of an unregistered row and the slash normalisation
+	if (!JerCityPath(city, filename, sizeof(filename), JER_CITY_FILE_LEVEL, 0))
+		return 0;
+
 	fp = fopen(filename, "rb");
 
-	// the arena variant of the file; Driver 1's car-data cities have none
+	// the arena variant of the file; Driver 1's car-data cities and the runtime
+	// banks have none
 	if (fp == NULL && city < CITY_D2_COUNT)
 	{
-		sprintf(filename, "%sM%s", JerGetCityDataRoot(city), LevelFiles[city]);
-		FS_FixPathSlashes(filename);
+		JerCityPath(city, filename, sizeof(filename), JER_CITY_FILE_LEVEL, 1);
 		fp = fopen(filename, "rb");
 	}
 

@@ -1934,11 +1934,16 @@ int gCarDataSourceLevel = -1;
  * have no override folder on the disc, which is fine: the loaders test the file
  * with FileExists first and simply find nothing, so a D1 car keeps the cosmetics
  * derived for it. Note the overrides resolve under gDataFolder, so a D1 override
- * folder would have to be created under DRIVER2\ - see SPOOFED_CITIES.md. */
+ * folder would have to be created under DRIVER2\ - see SPOOFED_CITIES.md.
+ *
+ * JERICHO: and it must answer for a runtime bank, whose name is its own folder -
+ * or rather for a bank slot with no bank in it, where the table entry is NULL.
+ * JerCityName answers "" for an unregistered row instead of handing a NULL to the
+ * `%s` that builds the override path. */
 const char* GetCarDataFolder(void)
 {
-	if (gCarDataSourceLevel >= 0 && gCarDataSourceLevel < CITY_COUNT)
-		return LevelNames[gCarDataSourceLevel];
+	if (JerCityRegistered(gCarDataSourceLevel))
+		return JerCityName(gCarDataSourceLevel);
 
 	return LevelNames[GameLevel];
 }

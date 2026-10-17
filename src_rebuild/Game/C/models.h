@@ -80,6 +80,11 @@ int CarImportCityHeld(int city);
 // The "list what was imported" door - see models.c.
 unsigned JerCarImportModels(int city);
 
+// JERICHO: the same answer for a city that may not be loaded yet - it loads the
+// city's car data first. What a runtime bank's roster needs, since a bank has no
+// generated model table; 0 = offer no cars from this city.
+unsigned JerCityCarModels(int city);
+
 // Load a city's car data NOW into its own import slot, and answer whether it is
 // held. Needed at FRONTEND time: the car-select list is built before the level's
 // data is read, so an unheld import offers no cars at all. A no-op when held.

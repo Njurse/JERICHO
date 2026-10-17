@@ -45,13 +45,85 @@ extern char gDataFolder[32];
 /* JERICHO: how many cities are Driver 2's own. Rows 0..CITY_D2_COUNT-1 of
  * LevelNames / LevelFiles / CosmeticFiles are the stock four and read from
  * gDataFolder; the rows after them are the Driver 1 car-data cities and read from
- * gD1DataFolder. Keep CITY_COUNT in step with those three tables. */
+ * gD1DataFolder. Keep CITY_COUNT in step with those three tables.
+ *
+ * JERICHO: CITY_COUNT IS A CAPACITY, NOT A COUNT. The stock nine rows are filled
+ * at compile time; the CITY_CUSTOM_MAX rows after them are filled at RUNTIME by
+ * JerCityRegistryInit() from JERICHO/CONFIG/cities.ini - one arbitrary car-data
+ * bank per row - and stay NULL until a bank is installed there. Every [CITY_COUNT]
+ * table is sized for the capacity, so:
+ *
+ *   - ask JerCityCount() how many cities this install actually has, and
+ *     JerCityRegistered(city) whether one particular row is usable;
+ *   - loop to CITY_COUNT only to sweep STORAGE (free, reset, dump) - never to
+ *     build a list a player can see, which would show the empty rows;
+ *   - never index LevelNames/LevelFiles/CosmeticFiles on an unregistered row.
+ *     They are NULL there and a `%s` of that is a crash: use JerBuildCityPath. */
 #define CITY_D2_COUNT 4
 #define CITY_D1_COUNT 5
-#define CITY_COUNT    (CITY_D2_COUNT + CITY_D1_COUNT)
+#define CITY_CUSTOM_MAX 16
+#define CITY_COUNT    (CITY_D2_COUNT + CITY_D1_COUNT + CITY_CUSTOM_MAX)
 
 extern char gD1DataFolder[32];
 extern const char* JerGetCityDataRoot(int city);
+
+/* ---- JERICHO: the runtime city registry ---------------------------------
+ *
+ * WHY THIS EXISTS: a city index used to be a row of the three compile-time tables
+ * above, so the engine could only open a car-data file it had been compiled to
+ * name ("LEVELS\\CHICAGO.LEV", "D1CARS\\MIAMI.LEV", ...). carhacks' cross-city
+ * import is policy ("slot 5 = city 2, model 7") and is already index-based, so a
+ * bank that is not one of those compiled names could not be offered at all - the
+ * engine would never open the filename. Rows CITY_D2_COUNT+... are that gap
+ * closed: registered from config, each with its own display name and its own
+ * arbitrary (sub)folder-relative paths, and every city-indexed path carhacks
+ * already walks works on it unchanged.
+ *
+ * A registered bank is a CAR-DATA SOURCE, exactly like Driver 1's five: importable,
+ * never played - no GameLevel, no frontend city row, no spool, no loading screen. */
+#define JER_CITY_FILE_LEVEL     0	/* the car-data .LEV (LUMP_CAR_MODELS etc.) */
+#define JER_CITY_FILE_COSMETIC  1	/* the .LCF beside it (optional; may be none) */
+
+/* How many cities this install has: the stock nine plus the banks whose files are
+ * present. THE COUNT TO LOOP TO for anything a player can see. */
+int JerCityCount(void);
+/* First row a bank can occupy (the stock rows are 0..this-1). */
+int JerCityFirstCustom(void);
+/* 1 when the row has a name AND a file, i.e. it is safe to read the tables. */
+int JerCityRegistered(int city);
+/* Display name, "" when unregistered. Never NULL. */
+const char* JerCityName(int city);
+/* The table's own relative path for that file kind, "" when there is none.
+ * This is what cities.ini said - NOT rooted, NOT slash-normalised. */
+const char* JerCityFile(int city, int kind);
+
+/* Register one arbitrary bank and answer its city index, or -1 when there is no
+ * free row, the name/level file is empty, or the level file is not on disk. The
+ * strings are COPIED into engine storage, so the caller may free its own. A NULL
+ * `levFile` unregisters that index (the entry was removed). `lcfFile` may be NULL
+ * or "" - a bank with no colours file is legal and the cars keep their derived
+ * cosmetics. */
+int JerCityRegister(const char* name, const char* levFile, const char* lcfFile);
+
+/* Build a city's on-disk path for fopen: data root + table entry, slashes
+ * normalised (`FS_FixPathSlashes`). `arenaVariant` asks for the M<CITY>.LEV
+ * multiplayer pool, which only Driver 2's own four cities have. Returns 1 on
+ * success and 0 for an unregistered row or a short buffer - never builds a path
+ * out of a NULL table entry. */
+int JerCityPath(int city, char* out, int outSize, int kind, int arenaVariant);
+/* The same path, opened: 1 when it exists, 0 otherwise. Used by the registry's own
+ * presence probe, so it is exactly the file the loader will later read. */
+int JerCityFileExists(int city, int kind);
+
+/* Read JERICHO/CONFIG/cities.ini and register every bank whose files are present.
+ * Idempotent; called once at boot from JerCityRegistryBoot, and safe to call from
+ * a module. Answers the number of registered banks. */
+int JerCityRegistryInit(void);
+/* Re-scan the config and the disk: registers banks that have appeared since the
+ * last scan and DROPS a bank whose level file has gone. Called before a car list
+ * or a level's car data is built, so availability follows the disk without a
+ * restart. Answers the number of registered banks. */
+int JerCityRegistryRefresh(void);
 
 #define PSX_MALLOC_SIZE 870332
 

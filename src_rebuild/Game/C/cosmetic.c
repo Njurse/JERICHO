@@ -11,7 +11,7 @@
 #include "director.h"
 #include "main.h"
 
-char* CosmeticFiles[] = {
+char* CosmeticFiles[CITY_COUNT] = {
 	"LEVELS\\CHICAGO.LCF",
 	"LEVELS\\HAVANA.LCF",
 	"LEVELS\\VEGAS.LCF",
@@ -23,6 +23,8 @@ char* CosmeticFiles[] = {
 	"D1CARS\\LA.LCF",
 	"D1CARS\\NEWYORK.LCF",
 	"D1CARS\\NEWCASTLE.LCF",
+	/* JERICHO: the runtime bank slots - NULL until a bank is registered, and NULL
+	 * for a registered bank that has no colours file (legal: see JerRegisterCity). */
 };
 
 CAR_COSMETICS car_cosmetics[MAX_CAR_RESIDENT_MODELS];

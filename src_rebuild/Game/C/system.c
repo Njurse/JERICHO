@@ -2,7 +2,9 @@
 
 #ifndef PSX
 #include <stdint.h>
+#include <string.h>		// JERICHO: the city registry compares and measures names
 #include <SDL.h>
+#include "jer_config.h"	// JERICHO: the runtime city banks are read from CONFIG/cities.ini
 #endif // !PSX
 #include "system.h"
 
@@ -28,16 +30,504 @@ char gDataFolder[32] = "DRIVER2\\";
  * subfolder and installing it cannot clobber the user's Driver 1 disc. */
 char gD1DataFolder[32] = "DRIVER\\";
 
+/* JERICHO: how many compile-time (stock) rows the city tables have - Driver 2's
+ * four plus Driver 1's five. The runtime banks start here; see JerGetCityDataRoot
+ * and the registry below. */
+#define JER_CITY_STOCK_COUNT	(CITY_D2_COUNT + CITY_D1_COUNT)
+
 /* JERICHO addition - the engine had no per-city data root, because every city it
  * knew about lived under gDataFolder. A call site that builds a car-data or
  * cosmetics path uses this instead of gDataFolder directly, so a city's files
  * come from its own disc. The Jer prefix is deliberate: this is ours, not stock,
  * and it is the single place the "which disc is this city on" question is
- * answered. */
+ * answered.
+ *
+ * The runtime banks (city >= JER_CITY_STOCK_COUNT) are NOT on Driver 1's disc:
+ * their paths are given by cities.ini relative to the game's own data folder, so
+ * they resolve under gDataFolder like a stock Driver 2 city. */
 const char* JerGetCityDataRoot(int city)
 {
-	return (city >= CITY_D2_COUNT) ? gD1DataFolder : gDataFolder;
+	if (city >= CITY_D2_COUNT && city < JER_CITY_STOCK_COUNT)
+		return gD1DataFolder;
+
+	return gDataFolder;
 }
+
+/* ---- JERICHO: the runtime city registry ---------------------------------
+ *
+ * See system.h for the contract. Rows 0..JER_CITY_STOCK_COUNT-1 are the stock nine
+ * and are always usable. The CITY_CUSTOM_MAX rows after them are arbitrary
+ * car-data banks, filled from JERICHO/CONFIG/cities.ini.
+ *
+ * ROW -> KEY IS FIXED. Config key city_N owns row JER_CITY_STOCK_COUNT + N for the
+ * life of the process, whichever of the others are present. That matters because
+ * carhacks names source cities by INDEX ("import = 5:10:3"): a row that moved
+ * when some other bank was uninstalled would silently re-point a car at a
+ * different bank's data. A key with no bank leaves a HOLE, which is why a loop
+ * over JerCityCount() must skip rows where JerCityRegistered() is 0.
+ *
+ * A bank whose level file is absent is not registered at all, so the city list
+ * follows the disk with no restart: install the files and it appears, delete them
+ * and it is gone. Nothing dangles - the row's table entries go back to NULL, and
+ * JerBuildCityPath refuses it, so no `%s` of a NULL path can reach fopen. */
+
+#define JER_CUSTOM_NAME_LEN	32
+#define JER_CUSTOM_PATH_LEN	96
+
+/* cosmetic.c's table; declared here rather than pulling that include chain in. */
+extern char* CosmeticFiles[];
+
+static char JerCustomName[CITY_CUSTOM_MAX][JER_CUSTOM_NAME_LEN];
+static char JerCustomLev[CITY_CUSTOM_MAX][JER_CUSTOM_PATH_LEN];
+static char JerCustomLcf[CITY_CUSTOM_MAX][JER_CUSTOM_PATH_LEN];
+
+/* One past the highest bank row ever assigned (-1 = none). The sweep bound: a hole
+ * below it is still a hole. */
+static int JerCustomHigh = -1;
+
+static void JerCopyStr(char* dst, int size, const char* src)
+{
+	int i = 0;
+
+	if (size <= 0)
+		return;
+
+	while (src != NULL && src[i] != 0 && i < size - 1)
+	{
+		dst[i] = src[i];
+		i++;
+	}
+
+	dst[i] = 0;
+}
+
+static int JerPathFrom(const char* root, const char* file, char* out, int outSize, int arenaVariant)
+{
+	int len;
+
+	if (root == NULL || file == NULL || file[0] == 0 || outSize <= 0)
+		return 0;
+
+	len = (int)strlen(root) + (int)strlen(file) + 2;
+
+	if (len > outSize)
+		return 0;
+
+	/* Only Driver 2's own cities have the M<CITY>.LEV multiplayer pool. */
+	if (arenaVariant)
+		sprintf(out, "%sM%s", root, file);
+	else
+		sprintf(out, "%s%s", root, file);
+
+	/* Windows-style tables, unix filesystem on Linux - the same normalisation
+	 * every other path in the engine gets (see models.c LoadCarImport). */
+	FS_FixPathSlashes(out);
+
+	return 1;
+}
+
+static int JerFilePresent(const char* path)
+{
+	FILE* f = fopen(path, "rb");
+
+	if (f == NULL)
+		return 0;
+
+	fclose(f);
+	return 1;
+}
+
+int JerCityFirstCustom(void)
+{
+	return JER_CITY_STOCK_COUNT;
+}
+
+int JerCityCount(void)
+{
+	int n = JER_CITY_STOCK_COUNT;
+
+	if (JerCustomHigh >= 0)
+		n += JerCustomHigh + 1;
+
+	if (n > CITY_COUNT)
+		n = CITY_COUNT;
+
+	return n;
+}
+
+int JerCityRegistered(int city)
+{
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	/* A row is usable when its two required entries are there. That is the whole
+	 * test: the stock nine always are, a bank's are set by registration only. */
+	return (LevelNames[city] != NULL && LevelFiles[city] != NULL);
+}
+
+const char* JerCityName(int city)
+{
+	return JerCityRegistered(city) ? LevelNames[city] : "";
+}
+
+const char* JerCityFile(int city, int kind)
+{
+	if (!JerCityRegistered(city))
+		return "";
+
+	if (kind == JER_CITY_FILE_COSMETIC)
+		return (CosmeticFiles != NULL && CosmeticFiles[city] != NULL) ? CosmeticFiles[city] : "";
+
+	return LevelFiles[city];
+}
+
+int JerCityPath(int city, char* out, int outSize, int kind, int arenaVariant)
+{
+	const char* file;
+
+	if (out == NULL || outSize <= 0)
+		return 0;
+
+	out[0] = 0;
+
+	if (!JerCityRegistered(city))
+		return 0;
+
+	file = JerCityFile(city, kind);
+
+	if (file == NULL || file[0] == 0)
+		return 0;
+
+	return JerPathFrom(JerGetCityDataRoot(city), file, out, outSize, arenaVariant);
+}
+
+int JerCityFileExists(int city, int kind)
+{
+	char path[192];
+
+	if (!JerCityPath(city, path, sizeof(path), kind, 0))
+		return 0;
+
+	return JerFilePresent(path);
+}
+
+/* Write (or clear, when the name/level file is NULL or empty) one bank row. Only
+ * ever touches bank rows - a stock city's entries are compile-time data and must
+ * not be rewritten. */
+static void JerCitySetRow(int city, const char* name, const char* levFile, const char* lcfFile)
+{
+	int slot = city - JER_CITY_STOCK_COUNT;
+
+	if (slot < 0 || slot >= CITY_CUSTOM_MAX)
+		return;
+
+	if (name == NULL || levFile == NULL || name[0] == 0 || levFile[0] == 0)
+	{
+		LevelNames[city] = NULL;
+		LevelFiles[city] = NULL;
+		CosmeticFiles[city] = NULL;
+		return;
+	}
+
+	JerCopyStr(JerCustomName[slot], JER_CUSTOM_NAME_LEN, name);
+	JerCopyStr(JerCustomLev[slot], JER_CUSTOM_PATH_LEN, levFile);
+
+	LevelNames[city] = JerCustomName[slot];
+	LevelFiles[city] = JerCustomLev[slot];
+	CosmeticFiles[city] = NULL;
+
+	if (lcfFile != NULL && lcfFile[0] != 0)
+	{
+		JerCopyStr(JerCustomLcf[slot], JER_CUSTOM_PATH_LEN, lcfFile);
+		CosmeticFiles[city] = JerCustomLcf[slot];
+	}
+
+	if (slot > JerCustomHigh)
+		JerCustomHigh = slot;
+}
+
+/* Register into ONE specific row. This is what the city_N config key uses, so a
+ * key's index never depends on which other banks are installed. Answers the city
+ * index, or -1 (the row is left empty) when the entry is unusable or its level
+ * file is not on disk. */
+static int JerRegisterCitySlot(int slot, const char* name, const char* levFile, const char* lcfFile)
+{
+	int city = JER_CITY_STOCK_COUNT + slot;
+	char path[192];
+
+	if (slot < 0 || slot >= CITY_CUSTOM_MAX)
+		return -1;
+
+	if (name == NULL || name[0] == 0 || levFile == NULL || levFile[0] == 0)
+	{
+		JerCitySetRow(city, NULL, NULL, NULL);
+		return -1;
+	}
+
+	/* The file must be there NOW, probed through the very path the loader will use
+	 * (root + entry, slashes normalised), so a bank cannot register under one
+	 * spelling and fail to load under another. Root is gDataFolder for a bank. */
+	if (!JerPathFrom(gDataFolder, levFile, path, sizeof(path), 0) || !JerFilePresent(path))
+	{
+		JerCitySetRow(city, NULL, NULL, NULL);
+		return -1;
+	}
+
+	JerCitySetRow(city, name, levFile, lcfFile);
+
+	if (lcfFile != NULL && lcfFile[0] != 0 && !JerCityFileExists(city, JER_CITY_FILE_COSMETIC))
+	{
+		/* No colours for this bank after all: legal, and better than a path that
+		 * does not exist. The cars keep their derived cosmetics. */
+		JerCustomLcf[slot][0] = 0;
+		CosmeticFiles[city] = NULL;
+	}
+
+	return city;
+}
+
+int JerCityRegister(const char* name, const char* levFile, const char* lcfFile)
+{
+	int i;
+
+	if (name == NULL || name[0] == 0)
+		return -1;
+
+	/* A NULL level file means "this bank has gone": clear the row that carries the
+	 * name, so the index is free for the next bank to appear. */
+	if (levFile == NULL)
+	{
+		for (i = 0; i < CITY_CUSTOM_MAX; i++)
+		{
+			int city = JER_CITY_STOCK_COUNT + i;
+
+			if (LevelNames[city] != NULL && strcmp(LevelNames[city], name) == 0)
+				JerCitySetRow(city, NULL, NULL, NULL);
+		}
+
+		return -1;
+	}
+
+	/* Already here (a module asking twice, or the config reloaded): update in
+	 * place and keep the index it already has. */
+	for (i = 0; i < CITY_CUSTOM_MAX; i++)
+	{
+		int city = JER_CITY_STOCK_COUNT + i;
+
+		if (LevelNames[city] != NULL && strcmp(LevelNames[city], name) == 0)
+			return JerRegisterCitySlot(i, name, levFile, lcfFile);
+	}
+
+	for (i = 0; i < CITY_CUSTOM_MAX; i++)
+	{
+		if (!JerCityRegistered(JER_CITY_STOCK_COUNT + i))
+			return JerRegisterCitySlot(i, name, levFile, lcfFile);
+	}
+
+	printInfo("city registry: no free row for bank %s - %d banks are the maximum\n",
+		name, CITY_CUSTOM_MAX);
+	return -1;
+}
+
+/* ---- JERICHO: JERICHO/CONFIG/cities.ini ---------------------------------
+ *
+ *   [cities]                        <- the file is JERICHO/CONFIG/cities.ini; the
+ *   city_0 = BETTERCHI, LEVELS\BCCHI.LEV, LEVELS\BCCHI.LCF
+ *   city_1 = MYBANK, MODS\banks\MB.LEV
+ *
+ * One line per arbitrary car-data bank. `city_N` fixes the bank's CITY INDEX at
+ * JER_CITY_STOCK_COUNT + N (9 + N), so the number a carhacks `import = 5:10:3`
+ * names is the same number tomorrow, whichever other banks are installed. The
+ * value is NAME, then the level file, then an OPTIONAL cosmetics file - all paths
+ * relative to the game's data folder (a subfolder is fine), with the slashes in
+ * either style.
+ *
+ * Nothing here is cached in a way that can go stale against the disk: every scan
+ * re-probes each named file, so a bank appears the moment its .LEV is dropped in
+ * and disappears when it is deleted. */
+#define JER_CITY_INI_MOD	"cities"
+#define JER_CITY_INI_KEY_LEN	16
+#define JER_CITY_FIELD_MAX	3
+
+/* The config store only exists on the PC builds; the PSX build answers the two
+ * public entry points with "no banks" and never compiles the parser. */
+#ifndef PSX
+
+/* Split "NAME, LEV[, LCF]" into trimmed fields. Answers how many fields were
+ * found (0 = nothing usable). */
+static int JerCityParseEntry(const char* value, char fields[JER_CITY_FIELD_MAX][JER_CUSTOM_PATH_LEN])
+{
+	int n = 0;
+	int i = 0;
+
+	while (n < JER_CITY_FIELD_MAX && value != NULL && value[i] != 0)
+	{
+		int len = 0;
+		int start;
+
+		while (value[i] == ' ' || value[i] == '\t')
+			i++;
+
+		start = i;
+
+		while (value[i] != 0 && value[i] != ',')
+			i++;
+
+		len = i - start;
+
+		/* trailing blanks belong to the separator, not the value */
+		while (len > 0 && (value[start + len - 1] == ' ' || value[start + len - 1] == '\t'))
+			len--;
+
+		if (len > JER_CUSTOM_PATH_LEN - 1)
+			len = JER_CUSTOM_PATH_LEN - 1;
+
+		if (len > 0)
+		{
+			memcpy(fields[n], value + start, len);
+			fields[n][len] = 0;
+			n++;
+		}
+
+		if (value[i] == ',')
+			i++;
+	}
+
+	return n;
+}
+
+/* What the last scan said about each bank slot, so the log records a CHANGE rather
+ * than repeating itself at every car list and every level load:
+ * 0 = not yet scanned, 1 = registered, 2 = configured but not installed, 3 = the
+ * line does not parse. */
+static signed char JerKeyState[CITY_CUSTOM_MAX];
+
+/* Bring one bank row in line with its config key and the disk. Answers 1 when the
+ * row is registered afterwards. */
+static int JerCityApplyKey(int slot)
+{
+	char key[JER_CITY_INI_KEY_LEN];
+	char fields[JER_CITY_FIELD_MAX][JER_CUSTOM_PATH_LEN];
+	char oldFile[JER_CUSTOM_PATH_LEN];
+	const char* value;
+	int city = JER_CITY_STOCK_COUNT + slot;
+	int was;
+	int same;
+	int r;
+
+	sprintf(key, "city_%d", slot);
+	value = jer_config_get_str(JER_CITY_INI_MOD, key, NULL);
+
+	was = JerCityRegistered(city);
+
+	/* The row is about to be rewritten, so remember what it said: the "lost its
+	 * file" line is about a row that will already have been cleared by then. */
+	JerCopyStr(oldFile, sizeof(oldFile), JerCityFile(city, JER_CITY_FILE_LEVEL));
+
+	if (value == NULL || value[0] == 0)
+	{
+		if (was)
+		{
+			printInfo("city registry: %s (city %d) is no longer in cities.ini - removing it\n",
+				JerCityName(city), city);
+			JerCitySetRow(city, NULL, NULL, NULL);
+		}
+
+		JerKeyState[slot] = 0;
+		return 0;
+	}
+
+	if (JerCityParseEntry(value, fields) < 2)
+	{
+		if (JerKeyState[slot] != 3)
+			printInfo("city registry: cities.ini %s = \"%s\" is not NAME, LEVEL[, LCF] - ignored\n",
+				key, value);
+
+		JerKeyState[slot] = 3;
+		return was;
+	}
+
+	same = was && strcmp(JerCityName(city), fields[0]) == 0 &&
+		strcmp(JerCityFile(city, JER_CITY_FILE_LEVEL), fields[1]) == 0;
+
+	r = JerRegisterCitySlot(slot, fields[0], fields[1],
+		(fields[2][0] != 0) ? fields[2] : NULL);
+
+	if (r >= 0)
+	{
+		if (JerKeyState[slot] != 1 || !same)
+			printInfo("city registry: city %d = %s, car data %s%s%s\n",
+				r, fields[0], fields[1],
+				(fields[2][0] != 0) ? ", colours " : "",
+				(fields[2][0] != 0) ? fields[2] : "");
+
+		JerKeyState[slot] = 1;
+	}
+	else if (was)
+	{
+		printInfo("city registry: %s (city %d) has lost its level file %s - removed\n",
+			fields[0], city, oldFile[0] != 0 ? oldFile : fields[1]);
+
+		JerCitySetRow(city, NULL, NULL, NULL);
+		JerKeyState[slot] = 2;
+	}
+	else
+	{
+		if (JerKeyState[slot] != 2)
+			printInfo("city registry: %s is not installed (no %s%s) - not offered\n",
+				fields[0], gDataFolder, fields[1]);
+
+		JerKeyState[slot] = 2;
+	}
+
+	return (r >= 0);
+}
+
+int JerCityRegistryRefresh(void)
+{
+	int i;
+	int banks = 0;
+
+	for (i = 0; i < CITY_CUSTOM_MAX; i++)
+		banks += JerCityApplyKey(i);
+
+	return banks;
+}
+
+int JerCityRegistryInit(void)
+{
+	static int loaded = 0;
+	int banks;
+
+	if (loaded)
+		return JerCityRegistryRefresh();
+
+	loaded = 1;
+	banks = JerCityRegistryRefresh();
+
+	if (banks > 0)
+		printInfo("city registry: %d bank(s) registered, %d city index(es) in all (city %d is the first bank)\n",
+			banks, JerCityCount(), JER_CITY_STOCK_COUNT);
+	else
+		printInfo("city registry: no banks in JERICHO/CONFIG/cities.ini - the %d stock cities are all there is\n",
+			JER_CITY_STOCK_COUNT);
+
+	return banks;
+}
+
+#else // PSX: no config store, so no runtime banks either
+
+int JerCityRegistryRefresh(void)
+{
+	return 0;
+}
+
+int JerCityRegistryInit(void)
+{
+	return 0;
+}
+
+#endif // !PSX
 
 #ifdef PSX
 
@@ -148,7 +638,7 @@ int leadAIRequired = 0;
 int leadAILoaded = 0;
 int pathAILoaded = 0;
 
-char* LevelNames[] = {
+char* LevelNames[CITY_COUNT] = {
 	"CHICAGO",
 	"HAVANA",
 	"VEGAS",
@@ -162,9 +652,11 @@ char* LevelNames[] = {
 	/* Driver 1's cheat-only level: its geometry is the credits drive, kept in
 	 * CREDITS.LEV, so that is where its car data is read from (tools/bake.py). */
 	"NEWCASTLE",
+	/* JERICHO: the CITY_CUSTOM_MAX rows after this are the runtime bank slots and
+	 * are NULL until JerCityRegistryInit registers one - see system.h. */
 };
 
-char* LevelFiles[] = {
+char* LevelFiles[CITY_COUNT] = {
 	"LEVELS\\CHICAGO.LEV",
 	"LEVELS\\HAVANA.LEV",
 	"LEVELS\\VEGAS.LEV",
@@ -176,6 +668,7 @@ char* LevelFiles[] = {
 	"D1CARS\\LA.LEV",
 	"D1CARS\\NEWYORK.LEV",
 	"D1CARS\\NEWCASTLE.LEV",
+	/* ...then the runtime bank slots, NULL until registered. */
 };
 
 char* LoadingScreenNames[] = {
