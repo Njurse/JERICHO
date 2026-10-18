@@ -4,6 +4,20 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## Unreleased
+
+- **Dedicated server chat commands and admins.** Lines starting with `!` or `/` are
+  commands, answered privately and not shown to others: `!help`, `!whoami`, `!who`,
+  and for admins `!kick`, `!cops on|off`, `!difficulty 0-2`, `!motd`, `!say`. Admins are
+  listed by player id in `dediserver.json` (`!whoami` shows yours) or log in with an
+  optional `admin_password` (`!login`, rate limited).
+- **Per-install player id.** The game generates a random id once (`[mp] player_id`)
+  and sends it when joining, so a server can recognise you. Older servers ignore it;
+  no protocol change. It is a bearer secret, not a login.
+- **Dedicated server plugins.** The server is now a small core plus plugins
+  (`commands`, `admin`), and you can add your own in its `plugins/` folder (see the
+  dediserver README; `example_hello.py` shows how).
+
 ## v0.10.4
 
 ### Headline fix: the player car no longer drives at "fast-forward" speed
