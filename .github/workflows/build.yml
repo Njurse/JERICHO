@@ -704,6 +704,32 @@ jobs:
           # a tag that already has a release: replace the assets rather than fail
           overwrite_files: true
 
+      # A RE-CUT (the tag moved, the release already existed) keeps its OLD body:
+      # the action only replaces assets there. So rewrite the "What's new" section
+      # of whatever body the release has now from this commit's CHANGELOG notes.
+      - name: Refresh release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body > body.md
+          python3 - <<'PY'
+          import os, re
+          tag = os.environ["TAG"]
+          body = open("body.md", encoding="utf-8").read()
+          notes = open("notes.md", encoding="utf-8").read().strip("\n")
+          head = "## What's new in " + tag
+          i = body.find(head)
+          if i < 0:
+              raise SystemExit("release body has no '%s' heading" % head)
+          j = body.find("\n---\n", i)
+          j = len(body) if j < 0 else j
+          body = body[:i] + head + "\n\n" + notes + "\n" + body[j:]
+          open("body.md", "w", encoding="utf-8").write(body)
+          PY
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file body.md
+
       # On-demand release of whatever ref this run is on, for installing on a test
       # machine:  mp_remote.py update --peer <ip> --tag <tag>
       #
