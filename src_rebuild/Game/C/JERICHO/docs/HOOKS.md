@@ -298,10 +298,59 @@ sets them. `grep padprobe JERICHO.log` is the whole report:
 - `JERICHO_PADPROBE_FORCE=left|right|back` — pin a look bit into `paddCamera`
   instead (handled in `camera.c`), which separates "the camera forgot how to look"
   from "the pad never sent it".
+- `JERICHO_PADPROBE_AXIS=<0..255>` — hold the LEFT STICK X at a known deflection for
+  the whole run **and put the pad in ANALOG mode**, so the car's *analogue* steering
+  path runs (128 = centred, 0 = full left, 255 = full right). The two steering paths
+  are different code: the digital one clamps `cp->wheel_angle` to 352, the analogue
+  one computes it from the stick. A build with no controller attached never reaches
+  the analogue path at all (a keyboard slot is forced digital), so a report of "it
+  steers far too fast" was untestable without this.
 - `JERICHO_HANDBRAKE_AIMODE=1` — restore the sandbox-era convenience where a
   handbrake edge cycles the player AI mode. It is OFF by default because sandbox
   keys its `CAMERA_LOOK` suppression off that mode, so one Triangle press used to
   kill look-left/right (and look-back on R3) for the rest of the level, silently.
+
+## "My car drives way too fast": the handling probe
+
+`JERICHO_HANDLING_PROBE=1` answers that report with numbers instead of adjectives.
+The three causes look identical from the driver's seat — the CLOCK running fast, the
+INPUT over-driving the car, or the car's own DATA — so the probe prints all three:
+
+```
+[JER-PROBE] t=4s speed=147 wheel=0/352 thrust=4915 hndType=0 slot=0 model=1 \
+            power=4096 traction=4096 mass=4096 twistY=224 grip=896/1100 handbrake=0 \
+            ff=0 lock=0 skip=0
+JERICHO-PROBE: steps=239 ms=7986 steps_per_sec=29 max_speed=168 ff=0 lock=0 skip=0 verdict=RATE_OK
+```
+
+- One `[JER-PROBE]` line per **simulated** second, for the local player's car only —
+  `MainPlayer`'s car by identity, because in a session the peer cars on this machine
+  are player cars too and a looser test samples whichever one stepped last.
+- `wheel=N/352` is the input check (the analogue path can exceed the lock; the stock
+  digital path cannot). `power/traction/mass/twistY` are the car's `CAR_COSMETICS`
+  record — the numbers everything else derives from, so a record belonging to the
+  wrong car (cross-city import, resident-slot mix-up) shows up here first. `grip` is
+  the front/rear friction scale the tyres actually resolved.
+- `steps_per_sec` is the clock check, measured against **real milliseconds**
+  (`PsyX_GetTicks`), never the vblank counter — the frame skip inflates that counter,
+  which would make the fast case read *slow*.
+- 30 = stock. ~210 = `FastForward` (7 steps/frame). Anything else above 30 with
+  `ff=0` is the PsyX frame skip below (`skip=1`), which is what a latched BACKSPACE
+  produced: **355 steps/second, ~12x**, with the car's per-sim-second speed curve
+  unchanged (0, 67, 98, 130 ...) — i.e. the handling was never the problem.
+- Drive it headlessly: `JERICHO_HANDLING_PROBE=1 JERICHO_PADPROBE_FORCE=cross
+  JERICHO_dev.exe -level chicago -frames 240` (gas is `cross`; use `square` under the
+  tmb_buttons scheme). The verdict line only prints on the `-frames` exit path.
+
+What the probe paid for: the fork's physics is **stock-equivalent for an undamaged
+car**. `handlingType[]` is byte-identical to upstream, the `wdx/sdx -> wdir` wheel
+rewrite in `wheelforces.c` computes the same front/rear directions, every new
+physics default (`GRAVITY_FORCE`, `angularDamping 128`, `springRate 230`,
+`springDamping 100`) equals the stock constant, and `bcollide.c`'s wall-restitution
+branch falls through to the stock impulse when no module answers. And the modules a
+release ships (carhacks, crumple, mp, d1cars) never write `thrust`, `wheel_angle`,
+`frontFS`/`rearFS`, `aacc` or a cosmetics field — so "the handling model is bugged"
+can be ruled out by measurement before anything is tuned.
 
 ## The clock: who owns fast-forward
 
@@ -322,6 +371,38 @@ frame while the map re-set it each frame made the two fight: for as long as the 
 was open the sim toggled fast/normal every frame. mp raises the lock for the length
 of a match (`MpOnFrame`) and logs the fact once — a fast-forwarded client runs at a
 different rate from every other machine, which is a desync by definition.
+
+### There is a SECOND fast-forward, and the lock has to cover it
+
+`FastForwardLocked` gated the engine's own `BACKSPACE` handler but not PsyX's, and
+PsyX has its own: on BACKSPACE key-down it sets `g_skipSwapInterval`, which makes
+`PsyX_Sys_GetVBlankCount()` advance the counter an extra time per call, so the game's
+2-vblank/30 Hz gate in `FilterFrameTime` passes on nearly every frame and the sim
+runs at whatever rate the machine renders. Turning off "the fast-forward key" in a
+session therefore turned off one of two, and the surviving one was worse: it is
+latched on key-DOWN and cleared **only** by key-UP, so a key-up that never arrives
+(focus stolen mid-press, a handler that swallows it) leaves the skip on for the rest
+of the process.
+
+That is a ~12x sim, measured at **355 steps/second against a stock 29-30**, and it
+reads as "the player's car drives way too fast / the handling model is broken". Three
+things close it:
+
+- `PsyX_SetFastForwardLocked(int)` (`PsyX_public.h`) mirrors the engine's
+  `FastForwardLocked`; the engine pushes it once per frame from `State_GameLoop`.
+  While locked, BACKSPACE no longer sets the skip **and a latched skip is released**
+  (logged: `[Psy-X] fast-forward locked: cleared a latched frame skip`).
+- `SDL_WINDOWEVENT_FOCUS_LOST` releases the skip, because that is the event that
+  usually eats the key-up (logged: `[Psy-X] focus lost: released the frame skip`).
+- `overlay.c` clears `FastForward` **before** its early returns (cutscene,
+  `NoPlayerControl`, player 0's split-screen frame). The clear used to sit below
+  them, so those frames inherited whatever a map or a BACKSPACE tap had set and the
+  sim stayed at 7 steps/frame afterwards.
+
+`JERICHO_FF_LATCH=1` reproduces the latched state at boot for testing (it is the
+skipped key-up, without the keyboard); it is test-only. A live 2-seat session with it
+set is the end-to-end check: both seats log the release on the first frame, and
+every probe sample afterwards reads `lock=1 skip=0`.
 
 ## Boot arguments (every PC build)
 
