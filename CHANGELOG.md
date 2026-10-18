@@ -25,6 +25,9 @@ is in [changelog.txt](changelog.txt).
   if they had faded, and Page Up / Page Down scroll back through the last 48 lines.
 - **Scoreboard CAR column names the car.** It showed the level's resident slot
   ("car 3"); it now shows `city:model`, the way car selection identifies a car.
+- **Dedicated server shows a player's car straight away.** It now handles the car pick
+  like a game host: the roster lists the chosen car at once instead of after the
+  player's first position update.
 - **Dedicated server measures ping.** It sent 0 ms for every player in the roster;
   it now pings each client and reports the round trip, like a game host.
 - **Warp to a player on foot.** "Warp to player" refused anyone out of their car; it now
