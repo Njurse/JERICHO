@@ -2655,7 +2655,7 @@ void State_FrontEnd(void* param)
 	 * same thing (GAME_VERSION_FULL, version.h). */
 	if ((PsxScreens[0].buttons[4].action >> 8) == BTN_NEXT_SCREEN &&
 	    pCurrScreen == &PsxScreens[PsxScreens[0].buttons[4].action & 0xFF])
-		jer_text_draw_at(JER_TEXT_FE, 100, 24, 486, GAME_VERSION_FULL, 160, 160, 160);
+		jer_text_draw_at(JER_TEXT_FE, 100, 24, 448, GAME_VERSION_FULL, 255, 255, 255);
 
 	/* Ask the modules before the attract demo starts. A multiplayer lobby is
 	 * idle by definition, so without this the demo would launch a level nobody
@@ -5322,8 +5322,8 @@ static const char* const kJerichoCreditsRight[] = {	/* the engine underneath */
 	"and every REDRIVER2 contributor",
 };
 
-#define JERICHO_CREDITS_GAP	40	/* between the two columns, 640-wide FE space */
-#define JERICHO_CREDITS_MAX_W	600	/* the pair must fit inside this */
+#define JERICHO_CREDITS_GAP	28	/* between the two columns, 640-wide FE space */
+#define JERICHO_CREDITS_MAX_W	620	/* the pair must fit inside this */
 #define JERICHO_CREDITS_MID_Y	230	/* vertical centre of both columns (BACK sits at 440) */
 
 static int JerichoCreditsColumnW(const char* const* lines, int n, int scale)
@@ -5361,7 +5361,7 @@ static void JerichoDrawCredits(void)
 {
 	int nL = (int)(sizeof(kJerichoCreditsLeft) / sizeof(kJerichoCreditsLeft[0]));
 	int nR = (int)(sizeof(kJerichoCreditsRight) / sizeof(kJerichoCreditsRight[0]));
-	static const int scales[] = { 130, 115, 100, 90 };
+	static const int scales[] = { 150, 140, 130, 115, 100, 90 };
 	int k, scale = 90, wL = 0, wR = 0, left;
 
 	for (k = 0; k < (int)(sizeof(scales) / sizeof(scales[0])); k++)
