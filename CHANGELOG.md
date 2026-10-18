@@ -21,6 +21,11 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **`dediserver.json` is no longer tracked.** The repo and packages ship
+  `dediserver.example.json`; the server creates your `dediserver.json` from it on
+  first start and never overwrites one, so pulls and updates keep your settings.
+  **Git checkouts: back up your `dediserver.json` before pulling this change**
+  (pulling deletes an unmodified tracked copy; see the dedicated server README).
 - **Dedicated server: `!vote <city>`.** Players vote the server onto another city; on a
   majority it saves the city, updates the listing and asks everyone to rejoin.
 - **Siren works after Change car.** Changing into a police car lit the light bar but the
