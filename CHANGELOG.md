@@ -21,6 +21,11 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **Corrupted car meshes until respawn (D1 cop cars).** A carhacks hot load that builds
+  a model into a resident slot now rebuilds the drawn vertex buffer of every car already
+  on that slot (keeping damage); before, a car pinged in before the import landed kept
+  the old model's vertices under the new polys. As a safety net, the existing
+  "STRETCHED VERTEX" check now rebuilds a car's mesh the way a respawn does.
 - **MP: no game over on foot.** Being busted by a cop, drowning or a train while on
   foot opened the game-over menu over a session (camera lost its target, rejoin
   needed). It is refused like the in-car wreck already was: not dying, felony cleared,

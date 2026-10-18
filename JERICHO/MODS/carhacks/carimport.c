@@ -24,6 +24,7 @@
 #include "net.h"		/* chkNetPeerCar: the peers' cars, in id order */
 
 #include "cars.h"		/* car_data[]: which cars are still on a slot (chkImportCarsOnSlot) */
+#include "denting.h"		/* CreateDentableCar: re-seat cars already on a hot-loaded slot */
 
 #include "carid.h"
 #include "carimport.h"
@@ -1290,7 +1291,24 @@ int chkImportHotLoad(int slot)
 	 * by the level-load walk. Keying this on the build also keeps a repeated hot load
 	 * from re-walking and re-logging every slot's sets. */
 	if (built > 0)
+	{
 		JerHotLoadCarTpages();
+
+		/* Cars ALREADY on the road in this slot (a cop pinged in a frame before the
+		 * import landed, say) still hold the OLD model's vertices in their drawn dump
+		 * (gTempCarVertDump), and the new polys index into them: a corrupted mesh
+		 * until that car respawns. Rebuild their dump from the new model now, keeping
+		 * their damage, exactly as a respawn's CreateDentableCar would. */
+		{
+			int c, keep = gDontResetCarDamage;
+
+			gDontResetCarDamage = 1;
+			for (c = 0; c < MAX_CARS; c++)
+				if (car_data[c].controlType != CONTROL_TYPE_NONE && car_data[c].ap.model == slot)
+					CreateDentableCar(&car_data[c]);
+			gDontResetCarDamage = keep;
+		}
+	}
 
 	if (built > 0 || cos > 0)
 		printInfo("[carhacks/net] slot %d is now the imported car itself: geometry %s, cosmetics %s\n",

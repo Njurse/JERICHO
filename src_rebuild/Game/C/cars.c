@@ -4,6 +4,7 @@
 #include "overmap.h"
 #include "draw.h"
 #include "mission.h"
+#include "denting.h"	// JERICHO: CreateDentableCar - rebuild a corrupted drawn mesh
 #include "system.h"
 #include "debris.h"
 #include "main.h"
@@ -1424,11 +1425,23 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 
 						if (dx > 2000 || dx < -2000 || dy > 2000 || dy < -2000 || dz > 2000 || dz < -2000)
 						{
-							jer_log("[cars] STRETCHED VERTEX: car %d model %d vertex %d dump(%d,%d,%d) clean(%d,%d,%d)\n",
+							jer_log("[cars] STRETCHED VERTEX: car %d model %d vertex %d dump(%d,%d,%d) clean(%d,%d,%d) - rebuilding its mesh\n",
 								cp->id, cp->ap.model, i,
 								dumpV[i].vx, dumpV[i].vy, dumpV[i].vz,
 								cleanV[i].vx, cleanV[i].vy, cleanV[i].vz);
 							sLastFrame[cp->id] = CameraCnt;
+
+							/* JERICHO: no dent moves a vertex 2000 units, so the dump is
+							 * another model's (or garbage): rebuild it the way a respawn
+							 * does instead of drawing a broken car until then. Damage
+							 * state is kept. */
+							{
+								int keep = gDontResetCarDamage;
+
+								gDontResetCarDamage = 1;
+								CreateDentableCar(cp);
+								gDontResetCarDamage = keep;
+							}
 							break;
 						}
 					}
