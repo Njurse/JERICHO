@@ -91,6 +91,7 @@ jobs:
           python3 JERICHO/MODS/mp/tools/servers/masterserver/test_console.py
           python3 JERICHO/MODS/mp/tools/servers/masterserver/test_probe.py
           python3 JERICHO/MODS/mp/tools/servers/dediserver/test_console.py
+          python3 JERICHO/MODS/mp/tools/servers/dediserver/test_plugins.py
           python3 JERICHO/MODS/mp/tools/servers/test_console_stdin.py
           python3 JERICHO/MODS/mp/tools/servers/rigs/test_e2e.py
 
