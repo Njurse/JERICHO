@@ -179,7 +179,8 @@ and the traps the API hides — is
 - **Visual Studio 2019 or 2022** with the **Desktop development with C++**
   workload (the MSVC x64 toolset and MSBuild).
 - **premake 5** — `premake5.exe` at the repo root and in `src_rebuild/`
-  (fetched by [`windows_dev_prepare.ps1`](windows_dev_prepare.ps1)).
+  (fetched and SHA-256-verified by [`windows_dev_prepare.ps1`](windows_dev_prepare.ps1);
+  CI pins the same hashes in `.github/workflows/build.yml`).
 - The third-party dependencies (SDL2, OpenAL, libjpeg), pinned to the upstream
   versions (SDL2 `2.30.2`, OpenAL-soft `1.23.1`, libjpeg `jpeg-9d`). Fetch them
   once with [`windows_dev_prepare.ps1`](windows_dev_prepare.ps1).
@@ -233,7 +234,8 @@ shared library (`.dll` on Windows, `.so` on Linux):
 JERICHO\build_mods.bat
 ```
 
-Or press **Compile Mods** in the game (Options → JERICHO). Either way the script
+Or press **Compile Mods** in the game (Options → JERICHO; Windows `Release_dev`
+builds only — the Release build hides the button). Either way the script
 generates the module solution
 ([`premake5_mods.lua`](src_rebuild/premake5_mods.lua) → one project per
 `runtime = "dll"` folder), builds it against the exported symbols, and copies
@@ -416,7 +418,10 @@ frames. [README](JERICHO/MODS/example/README.md)
 
 ## Credits
 
-**JERICHO and this fork — Jaret Ludvik.**
+**JERICHO and this fork — Jaret ([Njurse](https://github.com/Njurse)).**
+
+**Contributors:** **Commando52Colton** — palette and texture paging information,
+mission script research.
 
 This project stands on **REDRIVER2**, the reverse-engineered Driver 2 rewrite it
 is forked from, and the engine underneath is the work of its authors: **SoapyMan**

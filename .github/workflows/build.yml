@@ -54,9 +54,9 @@ jobs:
   # the code, a debug switch that changes behaviour, and (where the assets exist)
   # a pair that no longer plays a match.
   #
-  # NOT in publish's `needs` on purpose: the rolling alpha is built from main and
-  # a doc typo must not stop a downloadable build. A red check is the signal; the
-  # release stays tolerant, as it already is for the two platforms.
+  # In publish's `needs` so a TAGGED release waits for it and requires it; the
+  # rolling alpha and on-demand builds still publish when it is red (a doc typo must
+  # not stop a downloadable build there). See publish's `if`.
   checks:
     name: Checks (docs / debug / mp gate / servers)
     runs-on: ubuntu-latest
@@ -166,16 +166,24 @@ jobs:
           $deps = 'src_rebuild/dependencies'
           New-Item -ItemType Directory -Force -Path $deps | Out-Null
 
-          Invoke-WebRequest 'https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-windows.zip' -OutFile premake5.zip
+          # Every archive is pinned by SHA-256 and fetched over https (Refs #8). A
+          # version bump in env: must update its hash here too, or the step fails.
+          function Get-Pinned([string]$url, [string]$out, [string]$sha256) {
+            Invoke-WebRequest $url -OutFile $out
+            $got = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
+            if ($got -ne $sha256) { throw "checksum mismatch for ${out}: got $got, want $sha256" }
+          }
+
+          Get-Pinned 'https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-windows.zip' premake5.zip 'd8f958162b202fe88a2fa1897d3c5342dd137f19d1265de8802880126a808a65'
           Expand-Archive premake5.zip -DestinationPath src_rebuild -Force
 
-          Invoke-WebRequest 'https://github.com/libsdl-org/SDL/releases/download/release-${{ env.SDL2_VERSION }}/SDL2-devel-${{ env.SDL2_VERSION }}-VC.zip' -OutFile sdl2.zip
+          Get-Pinned 'https://github.com/libsdl-org/SDL/releases/download/release-${{ env.SDL2_VERSION }}/SDL2-devel-${{ env.SDL2_VERSION }}-VC.zip' sdl2.zip 'fc5d6c096a6b82f86613060dfef553a09b9e08afcb401fefac4b9ca221265cda'
           Expand-Archive sdl2.zip -DestinationPath $deps -Force
 
-          Invoke-WebRequest 'https://github.com/kcat/openal-soft/releases/download/${{ env.OPENAL_VERSION }}/openal-soft-${{ env.OPENAL_VERSION }}-bin.zip' -OutFile openal.zip
+          Get-Pinned 'https://github.com/kcat/openal-soft/releases/download/${{ env.OPENAL_VERSION }}/openal-soft-${{ env.OPENAL_VERSION }}-bin.zip' openal.zip 'ea8bc36fd7fa05f64e13400d20886de753a227202a4ea3781913489a26b36fc6'
           Expand-Archive openal.zip -DestinationPath $deps -Force
 
-          Invoke-WebRequest 'http://www.ijg.org/files/jpegsr9d.zip' -OutFile jpeg.zip
+          Get-Pinned 'https://www.ijg.org/files/jpegsr9d.zip' jpeg.zip '5dc857551201d749dc0f48d26aa4cde9f6b53fe65080cbed9cb6641479119433'
           Expand-Archive jpeg.zip -DestinationPath $deps -Force
 
           # libjpeg ships jconfig.vc; the project expects jconfig.h
@@ -403,6 +411,7 @@ jobs:
       - name: Download premake5
         run: |
           curl -fL https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-linux.tar.gz -o premake5.tar.gz
+          echo '074fc07be17888ef41ca07eea1c527c390a04ea4550bf7962eeb0bea0cc9d2f5  premake5.tar.gz' | sha256sum -c -   # Refs #8
           tar xf premake5.tar.gz -C src_rebuild
           chmod +x src_rebuild/premake5
 
@@ -558,7 +567,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [windows, linux]
+    needs: [checks, windows, linux]
     # Publish whatever WAS built. Requiring both platforms to succeed meant one
     # flaky platform silently stopped EVERY release -- the wrong trade for a
     # rolling alpha, where a Windows-only artifact is still a usable download.
@@ -566,7 +575,11 @@ jobs:
     if: >-
       always() && !cancelled() &&
       github.event_name != 'pull_request' &&
-      (needs.windows.result == 'success' || needs.linux.result == 'success')
+      (needs.windows.result == 'success' || needs.linux.result == 'success') &&
+      (!startsWith(github.ref, 'refs/tags/v') || needs.checks.result == 'success')
+    # A TAGGED release additionally requires the checks job: a numbered release is
+    # what people install, so a doc/debug/mp-gate failure must stop it. The rolling
+    # alpha and on-demand builds stay tolerant (see the note on the checks job).
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -593,6 +606,32 @@ jobs:
           else
             echo "::warning::no artifacts to checksum"
           fi
+
+      # The tag's own section of CHANGELOG.md ("## vX.Y.Z" up to the next "## ")
+      # goes into the release body, under the overview. No section -> empty, and
+      # the release still publishes with the overview and GitHub's generated notes.
+      - name: Checkout CHANGELOG.md
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/checkout@v4
+        with:
+          path: src
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - name: Extract this tag's CHANGELOG section
+        id: changelog
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          awk -v t="$tag" '
+            /^## / { if (on) exit; split($0, w, " "); if (w[2] == t) { on = 1; next } }
+            on { print }' src/CHANGELOG.md > notes.md || true
+          [ -s notes.md ] || echo "::warning::CHANGELOG.md has no '## $tag' section"
+          {
+            echo 'notes<<JERICHO_NOTES_EOF'
+            cat notes.md
+            echo 'JERICHO_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       # Push a "v*" tag -> permanent, public GitHub Release.
       - name: Publish tagged release
@@ -645,6 +684,12 @@ jobs:
             Windows: unzip anywhere and run `JERICHO.exe`. Linux: `tar -xzf` and run
             `./jericho`. The game writes its log and config next to the executable, so
             it does not need installing.
+
+            ---
+
+            ## What's new in ${{ github.ref_name }}
+
+            ${{ steps.changelog.outputs.notes }}
 
             ---
 

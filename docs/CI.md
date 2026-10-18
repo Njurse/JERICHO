@@ -87,12 +87,13 @@ come out of it.
 A third job, `checks`, runs on every push and takes seconds; it covers what a
 build cannot see: `tools/doccheck.py` (docs consistent with the code), a
 "no debug switch changes behaviour" test, and the mp delivery gate — which
-**skips** where the 1.6 GB of game assets are absent rather than passing. It is
-deliberately *not* a dependency of the publish job, so a docs typo cannot stop a
-downloadable build; a red check is the signal.
+**skips** where the 1.6 GB of game assets are absent rather than passing. A **tagged**
+(`v*`) release requires it to pass; the rolling alpha and on-demand builds still
+publish when it is red, so a docs typo cannot stop a downloadable build there.
 
 Dependencies are pinned to the versions upstream used:
-premake `5.0.0-beta1`, SDL2 `2.30.2`, OpenAL-soft `1.23.1`, and libjpeg `jpeg-9d`
+premake `5.0.0-beta1`, SDL2 `2.30.2`, OpenAL-soft `1.23.1`, and libjpeg `jpeg-9d` (each archive verified against a SHA-256 pinned in `build.yml`; a version
+bump must update its hash)
 (whose `jconfig.vc` is renamed to `jconfig.h` before generation).
 
 ## When it runs
@@ -108,7 +109,9 @@ Superseded runs on the same ref are cancelled automatically.
 A **tagged** release's page opens with a hand-written **overview of the game** — what
 the download is and what to expect from it, including that the map, models and
 cutscenes come from the player's own copy of Driver 2's data — with GitHub's
-auto-generated changelog appended beneath it. The overview lives in the *Publish
+auto-generated changelog appended beneath it. A tagged release also carries that tag's section of
+[`CHANGELOG.md`](../CHANGELOG.md) (`## vX.Y.Z` up to the next `## `), under a
+"What's new" heading. The overview lives in the *Publish
 tagged release* step's `body:`; that step keeps `generate_release_notes: true`, and the
 action concatenates body + blank line + generated notes (it clears the API flag and
 merges them itself). Without a body the page was only the auto changelog, which on a

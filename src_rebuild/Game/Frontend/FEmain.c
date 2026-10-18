@@ -43,6 +43,7 @@ void PsyX_TakeScreenshot(void);
 #include "../C/JERICHO/include/jer_screen.h"	// JERICHO-HOOK: presentation screens
 #include "../C/JERICHO/include/jer_menu.h"	// JERICHO-HOOK: jer_menu_draw (shared menu look)
 #include "../C/JERICHO/include/jer_prompt.h"	// JERICHO-HOOK: host yes/no prompt
+#include "../C/JERICHO/include/jer_text.h"	// JERICHO: the credits page text
 
 #ifndef PSX
 
@@ -416,8 +417,14 @@ int JerFrontendMenuScreen(int bSetup);	// JERICHO-HOOK: module frontend menus
 // JERICHO-HOOK: module-provided frontend menus live in slots 42..(42+MAX-1)
 #define JERICHO_FE_SCREEN_BASE 42
 // 8 buttons max (PSXSCREEN::buttons[8]): modules + Prev/Next + Compile + Back.
-// Windows shows a Compile Mods button, so one less module fits per page.
-#if defined(_WIN32)
+// Windows dev builds show a Compile Mods button, so one less module fits per page.
+// A RELEASE build (JERICHO_RELEASE_MODS) hides the button -- players get the
+// modules a release ships; compiling modules is a modder's tool (Release_dev).
+#if defined(_WIN32) && !defined(JERICHO_RELEASE_MODS)
+#define JERICHO_FE_HAS_COMPILE_MODS 1
+#endif
+
+#if defined(JERICHO_FE_HAS_COMPILE_MODS)
 #define JERICHO_MODS_MODULES_PER_PAGE 4
 #else
 #define JERICHO_MODS_MODULES_PER_PAGE 5
@@ -431,6 +438,8 @@ static int gJerichoOptionsButtonAdded;
 static int gJerichoModsPage;		// paginated mod list: current page
 static int gJerichoModsNeedSetup;	// a page change needs the buttons rebuilt
 static int gJerichoModsPrompted;	// a host prompt was up on the mods screen
+static int gJerichoCreditsOpen;	// the mods screen is showing its Credits page
+static void JerichoDrawCredits(void);
 
 // JERICHO-HOOK: module-provided frontend menus (jer_frontend.h)
 static const JER_FE_MENU* gFeMenus[JER_FE_MAX_MENUS];
@@ -2636,6 +2645,17 @@ void State_FrontEnd(void* param)
 		drawArgs.menu = jer_frontend_current_menu();
 		jer_fire(JER_EVENT_FRONTEND_DRAW, &drawArgs);
 	}
+
+	/* JERICHO: the Credits page draws its lines over the screen, like a module menu */
+	if (gJerichoCreditsOpen && pCurrScreen == &PsxScreens[JERICHO_MODS_SCREEN])
+		JerichoDrawCredits();
+
+	/* JERICHO: the build, small and bottom-left, on the Options screen only (the
+	 * screen the main menu's Options button opens) -- the window title says the
+	 * same thing (GAME_VERSION_FULL, version.h). */
+	if ((PsxScreens[0].buttons[4].action >> 8) == BTN_NEXT_SCREEN &&
+	    pCurrScreen == &PsxScreens[PsxScreens[0].buttons[4].action & 0xFF])
+		jer_text_draw_at(JER_TEXT_FE, 100, 24, 486, GAME_VERSION_FULL, 160, 160, 160);
 
 	/* Ask the modules before the attract demo starts. A multiplayer lobby is
 	 * idle by definition, so without this the demo would launch a level nobody
@@ -5276,15 +5296,129 @@ int MiniCarsOnOffScreen(int bSetup)
 // up/down navigates, Back returns.
 static void jer_mods_rebuild_button_names(void);
 
-/* JERICHO: the credits toast the Credits button on the mods screen pushes. A few
- * console lines for now - the runtime's status rows age out on their own, which is
- * exactly the "short toast" wanted here; a real credits roll can replace it. */
-static void jer_show_credits(void)
+/* JERICHO: the Credits page. The mods screen's Credits button turns the screen
+ * into this page: the same background, one BACK button bottom-right, and two
+ * columns of lines centred over it in the frontend's face. Names come from README.md's
+ * Credits section and REDRIVER2.md's upstream credits -- keep them in step. */
+static const char* const kJerichoCreditsLeft[] = {	/* JERICHO and its contributors */
+	"JERICHO",
+	"Created by Jaret (Njurse)",
+	"",
+	"Contributors",
+	"Commando52Colton",
+	"palette and texture paging information,",
+	"mission script research",
+};
+
+static const char* const kJerichoCreditsRight[] = {	/* the engine underneath */
+	"Built on REDRIVER2 / OpenDriver2",
+	"thank you to:",
+	"",
+	"SoapyMan - lead reverse engineer, programmer",
+	"Fireboyd78 - code refactoring, improvements",
+	"Krishty, someone972 - early formats decoding",
+	"Gh0stBlade - HLE emulator base for Psy-Cross",
+	"Ben Lincoln - TDR",
+	"Stohrendorf - Symdump",
+	"and every REDRIVER2 contributor",
+};
+
+#define JERICHO_CREDITS_GAP	40	/* between the two columns, 640-wide FE space */
+#define JERICHO_CREDITS_MAX_W	600	/* the pair must fit inside this */
+#define JERICHO_CREDITS_MID_Y	230	/* vertical centre of both columns (BACK sits at 440) */
+
+static int JerichoCreditsColumnW(const char* const* lines, int n, int scale)
 {
-	jer_console_line("Credits");
-	jer_console_line("JERICHO - a mod host for Driver 2");
-	jer_console_line("Built on REDRIVER2 / OpenDriver2");
-	jer_console_line("Driver 2 is a trademark of its owner - no game data ships here");
+	int i, w = 0;
+
+	for (i = 0; i < n; i++)
+	{
+		int lw = jer_text_width(JER_TEXT_FE, scale, lines[i]);
+
+		if (lw > w)
+			w = lw;
+	}
+
+	return w;
+}
+
+static void JerichoCreditsColumn(const char* const* lines, int n, int cx, int scale, int step)
+{
+	int y = JERICHO_CREDITS_MID_Y - (n * step) / 2;
+	int i;
+
+	/* the column's heading line (index 0) in the cream the frontend uses for
+	 * titles; the rest in plain white */
+	for (i = 0; i < n; i++, y += step)
+		jer_text_draw_centred(JER_TEXT_FE, scale, cx, y, lines[i],
+			255, i == 0 ? 235 : 255, i == 0 ? 170 : 255);
+}
+
+/* Two columns, centred as a pair: JERICHO's own credits on the left, the
+ * REDRIVER2 / OpenDriver2 thanks on the right. The scale steps down until the
+ * pair fits, so a longer line can never push a column off the screen or into the
+ * other one. */
+static void JerichoDrawCredits(void)
+{
+	int nL = (int)(sizeof(kJerichoCreditsLeft) / sizeof(kJerichoCreditsLeft[0]));
+	int nR = (int)(sizeof(kJerichoCreditsRight) / sizeof(kJerichoCreditsRight[0]));
+	static const int scales[] = { 130, 115, 100, 90 };
+	int k, scale = 90, wL = 0, wR = 0, left;
+
+	for (k = 0; k < (int)(sizeof(scales) / sizeof(scales[0])); k++)
+	{
+		scale = scales[k];
+		wL = JerichoCreditsColumnW(kJerichoCreditsLeft, nL, scale);
+		wR = JerichoCreditsColumnW(kJerichoCreditsRight, nR, scale);
+
+		if (wL + JERICHO_CREDITS_GAP + wR <= JERICHO_CREDITS_MAX_W)
+			break;
+	}
+
+	left = 320 - (wL + JERICHO_CREDITS_GAP + wR) / 2;
+
+	JerichoCreditsColumn(kJerichoCreditsLeft, nL, left + wL / 2, scale, (scale * 22) / 100);
+	JerichoCreditsColumn(kJerichoCreditsRight, nR, left + wL + JERICHO_CREDITS_GAP + wR / 2, scale, (scale * 22) / 100);
+}
+
+/* The page's own setup and pad handling. BACK (cross on it, or triangle) returns
+ * to the mods list rather than leaving the screen. */
+static int JerichoCreditsPage(int bSetup)
+{
+	if (bSetup || gJerichoModsNeedSetup)
+	{
+		PSXBUTTON* btn = &pCurrScreen->buttons[0];
+
+		gJerichoModsNeedSetup = 0;
+		pCurrScreen->numButtons = 1;
+
+		btn->x = 470;
+		btn->y = 440;
+		btn->w = 120;
+		btn->h = 26;
+		btn->s_x = 500;
+		btn->s_y = 440;
+		sprintf(btn->Name, "Back");
+		btn->u = btn->d = btn->l = btn->r = 0;
+		btn->action = 0;	/* handled below, so the engine does not leave the screen */
+		btn->var = -1;
+
+		pCurrButton = btn;
+		bRedrawFrontend = 1;
+
+		return bSetup ? 1 : 0;
+	}
+
+	if (feNewPad & (MPAD_CROSS | MPAD_TRIANGLE))
+	{
+		FESound(0);
+		gJerichoCreditsOpen = 0;
+		gJerichoModsNeedSetup = 1;	/* rebuild the mods list */
+		bRedrawFrontend = 1;
+		return 1;
+	}
+
+	return 0;
 }
 
 int JerichoModsScreen(int bSetup)
@@ -5309,6 +5443,13 @@ int JerichoModsScreen(int bSetup)
 	int topShift;	// how far the whole list is lifted so the last row still fits
 	int i;
 
+	/* a fresh entry always opens on the mods list; the Credits page is its own mode */
+	if (bSetup)
+		gJerichoCreditsOpen = 0;
+
+	if (gJerichoCreditsOpen)
+		return JerichoCreditsPage(0);
+
 	count = jer_module_list(mods, JER_MAX_MODULES);
 
 	pageCount = (count + JERICHO_MODS_MODULES_PER_PAGE - 1) / JERICHO_MODS_MODULES_PER_PAGE;
@@ -5328,8 +5469,8 @@ int JerichoModsScreen(int bSetup)
 	hasPrev = gJerichoModsPage > 0;
 	hasNext = gJerichoModsPage + 1 < pageCount;
 
-	hasCompile = 0;		// Compile Mods button (Windows only)
-#if defined(_WIN32)
+	hasCompile = 0;		// Compile Mods button (Windows dev builds only)
+#if defined(JERICHO_FE_HAS_COMPILE_MODS)
 	hasCompile = 1;
 #endif
 
@@ -5457,9 +5598,8 @@ int JerichoModsScreen(int bSetup)
 			btn->var = -1;
 		}
 
-		/* JERICHO: the credits. A short toast, not a screen of its own - the runtime
-		 * console is already drawn down the frontend's left edge, so this is one more
-		 * row of it. Fan it out later if it wants to be a real credits roll. */
+		/* JERICHO: Credits - opens the Credits page (JerichoCreditsPage) on this
+		 * same screen, with its own BACK to this list. */
 		btn = &pCurrScreen->buttons[creditsIdx];
 
 		btn->x = 167;
@@ -5615,7 +5755,7 @@ int JerichoModsScreen(int bSetup)
 				return 1;
 			}
 		}
-#if defined(_WIN32)
+#if defined(JERICHO_FE_HAS_COMPILE_MODS)
 		/* Compile Mods: build every installed module into a DLL, then reload
 		 * so freshly compiled (or newly dropped) mods appear immediately */
 		else if (idx == compileIdx)
@@ -5636,13 +5776,13 @@ int JerichoModsScreen(int bSetup)
 #endif
 		else if (idx == creditsIdx)
 		{
-			/* JERICHO: the credits, as a short toast (jer_show_credits) */
+			/* JERICHO: open the Credits page (JerichoCreditsPage) */
 			if (feNewPad & MPAD_CROSS)
 			{
 				FESound(2);
-				jer_show_credits();
-				bRedrawFrontend = 1;
-				return 1;
+				gJerichoCreditsOpen = 1;
+				gJerichoModsNeedSetup = 1;
+				return JerichoCreditsPage(0), 1;
 			}
 		}
 	}

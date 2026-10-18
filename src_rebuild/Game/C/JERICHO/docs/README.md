@@ -121,7 +121,8 @@ msbuild build/JERICHO.sln /p:Configuration=Release /p:Platform=x64
 JERICHO\build_mods.bat
 ```
 
-or the **Compile Mods** button in the Mods menu. This runs
+or the **Compile Mods** button in the Mods menu (Windows `Release_dev` only; Release
+hides it). This runs
 `premake5_mods.lua` (generates one DLL project per `runtime = "dll"`
 addon), builds them against the game's import library, and copies the DLLs
 next to the exe. Reloading the Mods screen activates them. No exe rebuild.

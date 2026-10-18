@@ -319,7 +319,7 @@ INPUT over-driving the car, or the car's own DATA — so the probe prints all th
 ```
 [JER-PROBE] t=4s speed=147 wheel=0/352 thrust=4915 hndType=0 slot=0 model=1 \
             power=4096 traction=4096 mass=4096 twistY=224 grip=896/1100 handbrake=0 \
-            ff=0 lock=0 skip=0
+            mbc=0/30 ff=0 lock=0 skip=0
 JERICHO-PROBE: steps=239 ms=7986 steps_per_sec=29 max_speed=168 ff=0 lock=0 skip=0 verdict=RATE_OK
 ```
 
@@ -352,6 +352,27 @@ release ships (carhacks, crumple, mp, d1cars) never write `thrust`, `wheel_angle
 `frontFS`/`rearFS`, `aacc` or a cosmetics field — so "the handling model is bugged"
 can be ruled out by measurement before anything is tuned.
 
+### The real "too fast" bug: the player car was integrated twice (v0.10.3)
+
+The rate fixes below were all real, but the report that survived them was "my car is
+fast-forwarded until another car comes near, then it is normal". That is not the
+clock: `steps_per_sec` stays at 30 throughout. It is `GlobalTimeStep()` (`handling.c`)
+moving the player car **twice in one step**.
+
+`GlobalTimeStep` has two integrators: a plain Euler move for cars with no pair, and
+the precise RK collision pass for cars that may be colliding. A player-handled car
+(`hndType == 0`) must always take the RK pass and **never** the Euler move. Stock said
+so with a sentinel bit (`1 << 31`) in `mayBeColliding`; `d016e42f` (MAX_CARS 32) made
+bit 31 a real car, retired the sentinel and moved the rule into the two RK skip tests
+(`mayBeColliding == 0 && hndType != 0`) — but not into the Euler test, which still
+read only `mayBeColliding`. With no car near, the player car took both moves (~2x);
+with a car near, the pair bit skipped the Euler move and it was back to normal.
+
+The Euler test is now `mayBeColliding || hndType == 0`. **All three tests must agree**
+on "a player car is always precise"; change one, change all three. The probe's `mbc=N/30`
+field (steps in the last second with a pair bit) exists to catch a regression: for the
+same throttle, `speed` must not differ between `mbc=0/30` and `mbc>0` seconds.
+
 ## The clock: who owns fast-forward
 
 The engine offers fast-forward two ways, and both are the sim's business, so a
@@ -368,8 +389,9 @@ stock behaviour returns.
 
 **Lock it, don't clear `FastForward` per frame.** A module that cleared the flag each
 frame while the map re-set it each frame made the two fight: for as long as the map
-was open the sim toggled fast/normal every frame. mp raises the lock for the length
-of a match (`MpOnFrame`) and logs the fact once — a fast-forwarded client runs at a
+was open the sim toggled fast/normal every frame. mp raises the lock for the whole
+session (`MpOnFrame`: `gMp.running || MpIsActive()`, so the load/countdown window
+before lockstep starts is covered too) and logs the fact once — a fast-forwarded client runs at a
 different rate from every other machine, which is a desync by definition.
 
 ### There is a SECOND fast-forward, and the lock has to cover it
@@ -409,9 +431,18 @@ every probe sample afterwards reads `lock=1 skip=0`.
 The original gate was `VSync(-1) - frame < 2`: a step per two *simulated vblanks*. On
 a PSX that was a hard 30 Hz; on PC the counter is faked by a spinning thread and can
 be advanced extra times by the frame skip, so the step rate followed the counter's
-mood rather than the clock. `FilterFrameTime()` now takes a step only when 33 ms of
-`PsyX_GetTicks()` have elapsed (PSX keeps the vblank path), which makes the rate
-independent of render load, of the frame skip, and of the fast-forward flags.
+mood rather than the clock. `FilterFrameTime()` now runs on `PsyX_GetTicks()` (PSX keeps the vblank path),
+which makes the rate independent of render load, of the frame skip, and of the
+fast-forward flags.
+
+It is an **accumulator**, not a "33 ms since the last step" timer: step *n* is due at
+`anchor + n*1000/30` ms, so the part of a frame past the deadline carries into the
+next one and the long-run rate is exactly 30.0 (the old `last = now` form landed on
+whole presented frames — 28.8 steps/s at 144 Hz — and let machines with different
+refresh rates drift apart). It still takes **at most one step per call; there is no
+catch-up**. If the game falls more than 3 steps behind (a stall, a load, a debugger)
+the anchor resyncs to now rather than owing a burst; the probe counts those as
+`resyncs=` and flags a second under 28 steps with `BEHIND`.
 
 Two consequences worth knowing:
 
@@ -438,7 +469,7 @@ Every run also logs which gate it was built with, next to the build id:
 
 ```
 JERICHO 0.10.3-6-g7aba4e57-dirty Oct 17 2026 20:58:34 (Release_dev)
-[JERICHO] step gate: wall clock, 33 ms per step (~30 steps/s, independent of render rate and frame skip)
+[JERICHO] step gate: wall clock, exact 30 steps/s (accumulated 1000/30 ms, resync after 3 missed steps, no catch-up; independent of render rate and frame skip)
 ```
 
 That line exists because the banner alone cannot answer "is the fix in this binary?":

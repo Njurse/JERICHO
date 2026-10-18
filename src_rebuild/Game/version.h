@@ -17,3 +17,16 @@
 
 #define GAME_TITLE			"JERICHO"
 #define GAME_VERSION		GAME_TITLE " " GAME_VERSION_N
+
+/* JERICHO: the build flavour, spelled out. GAME_VERSION_N is git describe, which
+ * already ends in "-dirty" when the tree differed from its commit (CI refreshes the
+ * index first, so a clean CI build never does). On top of that, every build that is
+ * not the shipping Release -- Release_dev, Debug -- says "-dev", so a screenshot or
+ * a window title is never ambiguous about which binary it came from. */
+#if defined(JERICHO_RELEASE_MODS) && !defined(_DEBUG)
+#define GAME_BUILD_SUFFIX	""
+#else
+#define GAME_BUILD_SUFFIX	"-dev"
+#endif
+
+#define GAME_VERSION_FULL	GAME_VERSION GAME_BUILD_SUFFIX	/* "JERICHO 0.10.4-3-gabc1234[-dirty][-dev]" */

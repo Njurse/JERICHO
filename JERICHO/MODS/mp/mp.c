@@ -1021,7 +1021,10 @@ static int MpOnFrame(void* userdata, void* args)
 
 		static int lockAnnounced;
 
-		FastForwardLocked = gMp.running ? 1 : 0;
+		/* The WHOLE session, not just a live match: between level load and the
+		 * moment gMp.running goes up (spawn hand-off, countdown) a BACKSPACE or a
+		 * map open would otherwise still step 7x before lockstep starts. */
+		FastForwardLocked = (gMp.running || MpIsActive()) ? 1 : 0;
 
 		if (FastForwardLocked != 0 && !lockAnnounced)
 		{
@@ -1033,8 +1036,8 @@ static int MpOnFrame(void* userdata, void* args)
 					"run the sim fast, which would desync it)\n");
 		}
 
-		if (gMp.running && FastForward != 0)
-			FastForward = 0;	/* a press from before the match started */
+		if (FastForwardLocked && FastForward != 0)
+			FastForward = 0;	/* a press from before the session started */
 	}
 
 	/* A Change car that asked for a car this machine does not hold yet and was told to
@@ -2556,6 +2559,40 @@ static int MpOnGameQuit(void* userdata, void* args)
 	return JER_RESULT_STOP;
 }
 
+/* Back in the menus FROM A MATCH (JER_EVENT_FRONTEND_ENTERED, glaunch.c): the
+ * session is over for this machine, whoever we were in it.
+ *
+ * Only the HOST had a teardown for this (MpHostLeftMatch, polled per frame). A
+ * CLIENT that chose Quit in the pause menu (MpOnGameQuit leaves Quit to the
+ * engine) came back to the main menu still role CLIENT and still running, so
+ * the next single-player Take a Ride was not single player: the city confirm
+ * skipped the Single Player / Multiplayer question (it is gated on !running)
+ * and MpOnMpFrontend's client branch claimed START -- rejoining the old session
+ * or failing with "Not connected to a server" -- instead of the stock launch.
+ * Leave the session here, and reset the map shape the mode question writes so
+ * a later session starts from the full city. NumPlayers is left to the stock
+ * frontend, which sets it per path. */
+static int MpOnFrontendEntered(void* userdata, void* args)
+{
+	(void)userdata;
+	(void)args;
+
+	if (gMp.role == MP_ROLE_NONE || !gMp.running)
+		return JER_RESULT_CONTINUE;
+
+	if (gMpCtx != NULL)
+		gMpCtx->jer_log(gMpCtx, "[mp] back in the frontend from a match - leaving the session (role %d)\n",
+			(int)gMp.role);
+
+	if (gMp.role == MP_ROLE_HOST)
+		MpHostByeAll();
+
+	MpLeaveSession();	/* a client says its own bye in here */
+	MpSetMapShape(0, 0);
+
+	return JER_RESULT_CONTINUE;
+}
+
 static int MpOnPedInput(void* userdata, void* args)
 {
 	JER_ARGS_PED_INPUT* in = (JER_ARGS_PED_INPUT*)args;
@@ -3160,6 +3197,7 @@ JER_MODULE_ENTRY(jer_module_mp_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, MpOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_DRAW_MAP, MpOnDrawMap, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_IDLE, MpOnFrontendIdle, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, MpOnFrontendEntered, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_DRAW, MpOnFrontendDraw, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_PAUSE_MENU, MpOnPauseMenu, NULL, 0);
 

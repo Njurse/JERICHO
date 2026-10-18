@@ -38,6 +38,9 @@
  *   traction derived from. A record that does not belong to the car being driven
  *   /mass    (cross-city import, resident-slot mix-up) shows up here first.
  *   grip     the front/rear friction scales the tyres actually resolved.
+ *   mbc      of the last 30 steps, how many had a car-pair bit in mayBeColliding
+ *            (another car near). Speed must NOT depend on it: a gap between
+ *            mbc=0 and mbc>0 runs is the v0.10.3 double-integration signature.
  *
  * Nothing is printed unless JERICHO_HANDLING_PROBE is set, so this is inert in a
  * normal session and in a release.
@@ -56,6 +59,8 @@
 
 #include <stdlib.h>		// getenv (JERICHO_HANDLING_PROBE)
 
+extern unsigned int gJerStepGateResyncs;	// main.c FilterFrameTime (PC)
+
 /* the stock rate the sim is supposed to run at: two vblanks per step */
 #define PROBE_STEPS_PER_SEC		30
 
@@ -67,6 +72,7 @@
 static int probeSamples;		/* StepOneCar calls for the local player's car */
 static int probeSteps;			/* StepGame calls (1 per simulated step) */
 static int probeMaxSpeed;
+static int probeMbcSteps;		/* samples in the current second with a pair bit */
 static int probeGripFront = -1;
 static int probeGripRear = -1;
 static unsigned int probeTickStart;	/* PsyX_GetTicks() at the first sample */
@@ -121,7 +127,7 @@ static void JerProbeStartClock(void)
 void JerHandleProbeStep(CAR_DATA* cp)
 {
 	CAR_COSMETICS* cos;
-	int slot, model;
+	int slot, model, mbc;
 
 	if (!JerProbeOn() || !JerProbeIsLocalPlayer(cp))
 		return;
@@ -133,6 +139,9 @@ void JerHandleProbeStep(CAR_DATA* cp)
 
 	probeSamples++;
 
+	if (cp->hd.mayBeColliding != 0)
+		probeMbcSteps++;
+
 	/* one line per simulated second (every 30th car sample) */
 	if ((probeSamples % PROBE_STEPS_PER_SEC) != 1)
 		return;
@@ -142,11 +151,15 @@ void JerHandleProbeStep(CAR_DATA* cp)
 
 	cos = cp->ap.carCos;
 
+	/* mbc covers the window that ENDS with this line; the next one starts now */
+	mbc = probeMbcSteps;
+	probeMbcSteps = 0;
+
 	if (cos == NULL && slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS)
 		cos = &car_cosmetics[slot];
 
 	printInfo("[JER-PROBE] t=%ds speed=%d wheel=%d/%d thrust=%d hndType=%d slot=%d model=%d "
-			  "power=%d traction=%d mass=%d twistY=%d grip=%d/%d handbrake=%d ff=%d lock=%d skip=%d\n",
+			  "power=%d traction=%d mass=%d twistY=%d grip=%d/%d handbrake=%d mbc=%d/%d ff=%d lock=%d skip=%d\n",
 		probeSamples / PROBE_STEPS_PER_SEC,
 		(int)cp->hd.speed, (int)cp->wheel_angle, PROBE_STEER_LOCK, (int)cp->thrust,
 		(int)cp->hndType, slot, model,
@@ -156,6 +169,7 @@ void JerHandleProbeStep(CAR_DATA* cp)
 		(cos != NULL) ? (int)cos->twistRateY : -1,
 		probeGripFront, probeGripRear,
 		(int)cp->handbrake,
+		mbc, PROBE_STEPS_PER_SEC,
 		FastForward, FastForwardLocked, PsyX_GetFrameSkip());
 }
 
@@ -202,6 +216,7 @@ void JerHandleProbeFrame(void)
 {
 	static unsigned int lastLine;
 	static int lastSteps;
+	static unsigned int lastResyncs;
 	static int lastFf = -1, lastLock = -1, lastSkip = -1, lastCut = -1;
 	unsigned int now;
 	int steps, ff, lock, skip, cut;
@@ -244,10 +259,16 @@ void JerHandleProbeFrame(void)
 		 * GATED step (the state machine itself spins millions of times a second and
 		 * returns immediately when the gate refuses), so frames-presented and steps
 		 * are the same number and an fps column would only restate the rate. */
-		printInfo("[JER-PROBE] rate=%d steps/s gap=%d..%dms "
-				  "(ff=%d lock=%d skip=%d skipcutscene=%d)\n",
-			steps, probeMinGap, probeMaxGap, ff, lock, skip, cut);
+		/* BEHIND: the gate does no catch-up, so a frame that takes longer than a
+		 * step costs sim time; under 28 steps/s with no fast-forward, say so, with
+		 * the number of backlog resyncs the gate made in this second. */
+		printInfo("[JER-PROBE] rate=%d steps/s gap=%d..%dms resyncs=%u "
+				  "(ff=%d lock=%d skip=%d skipcutscene=%d)%s\n",
+			steps, probeMinGap, probeMaxGap, gJerStepGateResyncs - lastResyncs,
+			ff, lock, skip, cut,
+			(lastLine != 0 && ff == 0 && steps < 28) ? " BEHIND: sim below 30 Hz (frames slower than 33 ms)" : "");
 
+		lastResyncs = gJerStepGateResyncs;
 		lastLine = now;
 		lastSteps = probeSteps;
 
