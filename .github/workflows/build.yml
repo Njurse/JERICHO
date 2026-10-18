@@ -92,6 +92,7 @@ jobs:
           python3 JERICHO/MODS/mp/tools/servers/masterserver/test_probe.py
           python3 JERICHO/MODS/mp/tools/servers/dediserver/test_console.py
           python3 JERICHO/MODS/mp/tools/servers/dediserver/test_plugins.py
+          python3 JERICHO/MODS/mp/tools/test_player_id.py
           python3 JERICHO/MODS/mp/tools/servers/test_console_stdin.py
           python3 JERICHO/MODS/mp/tools/servers/rigs/test_e2e.py
 
@@ -349,6 +350,7 @@ jobs:
             $srvDst = "$bin/JERICHO/MODS/mp/tools/servers"
             New-Item -ItemType Directory -Force -Path $srvDst | Out-Null
             Copy-Item "$mpTools/mp_test.py" "$bin/JERICHO/MODS/mp/tools/" -Force
+            Copy-Item "$mpTools/player_id.py" "$bin/JERICHO/MODS/mp/tools/" -Force
             Copy-Item "$mpTools/servers/*.py" $srvDst -Force
             Copy-Item "$mpTools/servers/*.md" $srvDst -Force
             Copy-Item "$mpTools/servers/run.bat" $srvDst -Force
@@ -512,6 +514,7 @@ jobs:
             srv_dst="$d/JERICHO/MODS/mp/tools/servers"
             mkdir -p "$srv_dst"
             cp JERICHO/MODS/mp/tools/mp_test.py "$d/JERICHO/MODS/mp/tools/"
+            cp JERICHO/MODS/mp/tools/player_id.py "$d/JERICHO/MODS/mp/tools/"
             cp JERICHO/MODS/mp/tools/servers/*.py "$srv_dst/"
             cp JERICHO/MODS/mp/tools/servers/*.md "$srv_dst/"
             cp JERICHO/MODS/mp/tools/servers/run.sh "$srv_dst/"
