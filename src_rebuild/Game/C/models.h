@@ -43,9 +43,10 @@ char* GetCarImportModels(int slot);
 
 // The wheel models an imported city carries in its own LUMP_CAR_WHEELS segment
 // (the D1 bake writes it). `kind` is one of CAR_IMPORT_WHEEL_*; NULL means that
-// variant is absent or unusable, and the caller must keep the host level's
-// CLEANWHEEL/FASTWHEEL/DAMWHEEL. The models are copied out of the import buffer
-// and already FT4 + set-remapped + mangled, ready for DrawWheelObject.
+// variant is absent or unusable, and the caller keeps the host level's wheel
+// texture. The models are copied out of the import buffer, already FT4 +
+// set-remapped + mangled, and are used as the texture/UV source over the host
+// wheel mesh.
 #define CAR_IMPORT_WHEEL_CLEAN		0
 #define CAR_IMPORT_WHEEL_DAMAGED	1
 #define CAR_IMPORT_WHEEL_FAST		2

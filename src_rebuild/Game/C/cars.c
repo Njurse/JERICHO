@@ -1467,7 +1467,7 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 }
 
 // [D] [T]
-void DrawWheelObject(MODEL* model, SVECTOR* verts, int transparent, int wheelnum)
+void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transparent, int wheelnum)
 {
 	ushort clut;
 	ushort tpage;
@@ -1477,14 +1477,16 @@ void DrawWheelObject(MODEL* model, SVECTOR* verts, int transparent, int wheelnum
 	int combo;
 	POLY_FT4* poly;
 	POLYFT4* src;
+	POLYFT4* tex;
+	int texCount;
+	int texIndex;
 	u_int dim;
 	u_int bright;
 
 	src = GET_MODEL_DATA(POLYFT4, model, poly_block);
+	tex = (texModel != NULL) ? GET_MODEL_DATA(POLYFT4, texModel, poly_block) : NULL;
+	texCount = (texModel != NULL) ? texModel->num_polys : 0;
 	poly = (POLY_FT4*)current->primptr;
-
-	clut = texture_cluts[src->texture_set][src->texture_id];
-	tpage = texture_pages[src->texture_set] | 0x20;
 
 
 	// This controls the color of the wheels
@@ -1506,6 +1508,7 @@ void DrawWheelObject(MODEL* model, SVECTOR* verts, int transparent, int wheelnum
 	}
 
 	i = model->num_polys;
+	texIndex = 0;
 
 	while (i-- != -1)
 	{
@@ -1540,16 +1543,29 @@ void DrawWheelObject(MODEL* model, SVECTOR* verts, int transparent, int wheelnum
 
 			gte_stsxy3(&poly->x1, &poly->x3, &poly->x2);
 
-			*(u_short*)&poly->u0 = *(u_short*)&src->uv0;
-			*(u_short*)&poly->u1 = *(u_short*)&src->uv1;
-			*(u_short*)&poly->u2 = *(u_short*)&src->uv3;
-			*(u_short*)&poly->u3 = *(u_short*)&src->uv2;
+			{
+				POLYFT4* ts = (tex != NULL && texIndex < texCount) ? &tex[texIndex] : src;
+
+				/* JERICHO: an imported car keeps the host wheel MESH and borrows
+				 * the source city's wheel TEXTURE and palette. The record's own
+				 * set/id is resolved here, per poly: a fast wheel can name more
+				 * than one texture id, and resolving it once would paint them
+				 * all with the first one's CLUT. */
+				clut = texture_cluts[ts->texture_set][ts->texture_id];
+				tpage = texture_pages[ts->texture_set] | 0x20;
+
+				*(u_short*)&poly->u0 = *(u_short*)&ts->uv0;
+				*(u_short*)&poly->u1 = *(u_short*)&ts->uv1;
+				*(u_short*)&poly->u2 = *(u_short*)&ts->uv3;
+				*(u_short*)&poly->u3 = *(u_short*)&ts->uv2;
+			}
 			poly->clut = clut;
 			poly->tpage = tpage;
 
 			poly++;
 		}
 		src++;
+		texIndex++;
 	}
 	current->primptr = (char*)poly;
 }
@@ -1572,6 +1588,12 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	MODEL* WheelClean;
 	MODEL* WheelFast;
 	MODEL* WheelDam;
+	MODEL* WheelTexClean;
+	MODEL* WheelTexFast;
+	MODEL* WheelTexDam;
+	MODEL* WheelTexFront;
+	MODEL* WheelTexBack;
+	MODEL* texModel;
 	MODEL* model;
 	SVECTOR* bend;
 	SVECTOR wheelVerts[24];	// per-wheel copy for the damage transform
@@ -1602,34 +1624,39 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	if (cp->hd.wheel[3].locked != 0)
 		BackWheelIncrement = 0;
 
-	// JERICHO: an imported car brings its own wheel models when its source city's
-	// data carries them (the Driver 1 bake does). The engine's wheels are GLOBAL,
-	// so without this a D1 car wore the host level's wheel texture. Missing
-	// variants keep the host model - never share one model between the front and
-	// back axles, because the rotation below writes that model's vertices.
+	// JERICHO: an imported car keeps the HOST level's wheel mesh (the geometry,
+	// wheelSize and wheelDisp are already right) and borrows its source city's
+	// wheel TEXTURE and palette. The imported wheel model is used only as the
+	// texture/UV source; its own vertices are ignored. This is the path that
+	// keeps a D1 car's wheels looking like wheels instead of sampling the host
+	// body page with the imported mesh's topology.
 	WheelClean = gCleanWheelModelPtr;
 	WheelFast = gFastWheelModelPtr;
 	WheelDam = gDamWheelModelPtr;
+
+	WheelTexClean = NULL;
+	WheelTexFast = NULL;
+	WheelTexDam = NULL;
 
 	if (cp->ap.model >= 0 && cp->ap.model < MAX_CAR_RESIDENT_MODELS)
 		wheelCity = GetCarModelSourceCity(cp->ap.model);
 
 	if (wheelCity >= 0)
 	{
-		MODEL* imported = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_CLEAN);
+		WheelTexClean = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_CLEAN);
+		WheelTexFast = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_FAST);
+		WheelTexDam = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_DAMAGED);
 
-		if (imported != NULL)
+		if (WheelTexClean != NULL)
 		{
-			MODEL* fast = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_FAST);
-			MODEL* dam = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_DAMAGED);
+			/* A city with no damaged/fast wheel still has a wheel texture; use
+			 * its clean one rather than falling back to the host's. */
+			if (WheelTexFast == NULL)
+				WheelTexFast = WheelTexClean;
+			if (WheelTexDam == NULL)
+				WheelTexDam = WheelTexClean;
 
-			WheelClean = imported;
-			WheelFast = (fast != NULL) ? fast : gFastWheelModelPtr;
-			WheelDam = (dam != NULL) ? dam : gDamWheelModelPtr;
-
-			/* One line per resident slot per level: what this car actually wears.
-			 * A missing variant shows as "host", which is the fallback the bake's
-			 * absent-wheel path is meant to produce. */
+			/* One line per resident slot per level: host mesh, imported texture. */
 			{
 				static int sWheelLogLevel = -1;
 				static unsigned int sWheelLogMask;
@@ -1644,25 +1671,37 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 				{
 					sWheelLogMask |= 1u << cp->ap.model;
 
-					printInfo("[car wheels] slot %d (%s): clean %s, damaged %s, fast %s\n",
+					printInfo("[car wheels] slot %d (%s): host mesh, imported textures (clean %s, damaged %s, fast %s)\n",
 						cp->ap.model, LevelNames[wheelCity],
-						(WheelClean != gCleanWheelModelPtr) ? "imported" : "host",
-						(WheelDam != gDamWheelModelPtr) ? "imported" : "host",
-						(WheelFast != gFastWheelModelPtr) ? "imported" : "host");
+						(WheelTexClean != NULL) ? "yes" : "host",
+						(WheelTexDam != NULL) ? "yes" : "host",
+						(WheelTexFast != NULL) ? "yes" : "host");
 				}
 			}
 		}
 	}
 
 	if (FrontWheelIncrement + 400U < 801)
+	{
 		WheelModelFront = WheelClean;
+		WheelTexFront = WheelTexClean;
+	}
 	else
+	{
 		WheelModelFront = WheelFast;
+		WheelTexFront = WheelTexFast;
+	}
 
 	if (BackWheelIncrement + 400U < 801)
+	{
 		WheelModelBack = WheelClean;
+		WheelTexBack = WheelTexClean;
+	}
 	else
+	{
 		WheelModelBack = WheelFast;
+		WheelTexBack = WheelTexFast;
+	}
 
 	wheelSize = car_cosmetics[cp->ap.model].wheelSize;
 	
@@ -1778,9 +1817,15 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 
 	do {
 		if ((wheelnum & 1) != 0)
+		{
 			model = WheelModelBack;
+			texModel = WheelTexBack;
+		}
 		else
+		{
 			model = WheelModelFront;
+			texModel = WheelTexFront;
+		}
 
 		VertPtr = GET_MODEL_DATA(SVECTOR, model, vertices);
 
@@ -1796,6 +1841,7 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		if (cp->ap.flags & (1 << wheelnum)) // [A] used appearance flags to store hubcap presence
 		{
 			model = WheelDam;
+			texModel = WheelTexDam;
 		}
 
 		// Nattdy - crumple wheel damage: draw the wheel at the same bent local
@@ -1893,9 +1939,9 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 			if (jerArgs.hide == 0)
 			{
 				if (numWheelVerts > 0)
-					DrawWheelObject(model, wheelVerts, TransparentObject, wheelnum);
+					DrawWheelObject(model, texModel, wheelVerts, TransparentObject, wheelnum);
 				else
-					DrawWheelObject(model, VertPtr, TransparentObject, wheelnum);
+					DrawWheelObject(model, texModel, VertPtr, TransparentObject, wheelnum);
 			}
 		}
 

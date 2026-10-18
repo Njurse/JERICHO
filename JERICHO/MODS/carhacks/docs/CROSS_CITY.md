@@ -118,8 +118,10 @@ The wheel segment is optional and additive: a Driver 2 level has none, so its
 imported cars keep the host's shared wheels. The D1 bake writes the city's
 `CLEANWHEEL` / `DAMWHEEL` / `FASTWHEEL` as FT4 models, carries their pages in the
 city's own `LUMP_TEXTUREINFO`, and the engine pins them with the car's pages.
-`GetCarImportWheel` returns NULL for an absent variant, and the renderer keeps
-the host wheel for that variant.
+`GetCarImportWheel` returns NULL for an absent variant. The renderer always uses
+the host level's wheel MESH and takes only the texture set/id and UVs from the
+imported model, so a D1 car wears its own wheel texture and palette without
+importing a second wheel topology.
 
 For geometry, `ProcessCarModelLump` swaps only its **base pointer** (`models.c:642-651`)
 — the foreign block has the same layout as the level's own, so the offset-table
