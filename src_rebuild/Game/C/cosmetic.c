@@ -54,6 +54,49 @@ void LoadCustomCarCosmetics(CAR_COSMETICS* dest, int modelNumber)
 #endif
 
 // [D] [T]
+// JERICHO: a car ported from Driver 1 (d1cars, cities 4..) is made left/right
+// symmetric as it loads. The bake re-proportions its wheels and COG from a Driver 2
+// donor; a lateral offset there (a body or donor box not centred on x, rounding)
+// leaves an axle's two wheels at different |x|, y or z, or the COG off the centre
+// line, and the car pulls to one side. Per axle (wheels 0/2 and 1/3) the track is
+// averaged and mirrored and y/z shared; cog.vx is zeroed. Stock Driver 2 cars never
+// come through here. The engine puts wheel i at x = (i & 2 ? -17 : 17) - vx
+// (cars.c), so mirrored means v2.vx = -v0.vx.
+static int JerAbs(int v) { return v < 0 ? -v : v; }
+
+static void JerSymmetrizeD1Cosmetics(CAR_COSMETICS* cc, int slot, int model)
+{
+	int a, worst = 0;
+	int city = GetCarModelSourceCity(slot);
+
+	if (city < 4)
+		return;
+
+	for (a = 0; a < 2; a++)
+	{
+		SVECTOR* l = &cc->wheelDisp[a];
+		SVECTOR* r = &cc->wheelDisp[a + 2];
+		int xl = 17 - l->vx, xr = -17 - r->vx;
+		int half = (xl - xr) / 2;
+		int vy = (l->vy + r->vy) / 2, vz = (l->vz + r->vz) / 2;
+
+		if (JerAbs(xl + xr) > worst) worst = JerAbs(xl + xr);
+		if (JerAbs(l->vy - r->vy) > worst) worst = JerAbs(l->vy - r->vy);
+		if (JerAbs(l->vz - r->vz) > worst) worst = JerAbs(l->vz - r->vz);
+
+		l->vx = (short)(17 - half);
+		r->vx = (short)(half - 17);
+		l->vy = r->vy = (short)vy;
+		l->vz = r->vz = (short)vz;
+	}
+
+	if (cc->cog.vx != 0 || worst != 0)
+		printInfo("d1cars: symmetrized city %d model %d (slot %d): L/R wheel mismatch up to %d, cog x %d -> 0\n",
+			city, model, slot, worst, cc->cog.vx);
+
+	cc->cog.vx = 0;
+}
+
 void ProcessCosmeticsLump(char *lump_ptr, int lump_size)
 {
 	int model;
@@ -83,6 +126,7 @@ void ProcessCosmeticsLump(char *lump_ptr, int lump_size)
 			{
 				offset = *(int*)(imported + model * sizeof(int));
 				car_cosmetics[i] = *(CAR_COSMETICS*)((u_char*)imported + offset);
+				JerSymmetrizeD1Cosmetics(&car_cosmetics[i], i, model);
 				FixCarCos(&car_cosmetics[i], model);
 			}
 			else
@@ -144,6 +188,7 @@ int JerHotLoadCarCosmetics(int slot)
 
 	offset = *(int*)(imported + model * sizeof(int));
 	car_cosmetics[slot] = *(CAR_COSMETICS*)((u_char*)imported + offset);
+	JerSymmetrizeD1Cosmetics(&car_cosmetics[slot], slot, model);
 	FixCarCos(&car_cosmetics[slot], model);
 
 	printInfo("cross-city: hot-loaded %s model %d cosmetics into slot %d (wheels, shadow, collision box, COG)\n",
