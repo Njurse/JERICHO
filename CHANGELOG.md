@@ -14,6 +14,16 @@ is in [changelog.txt](changelog.txt).
 - **Per-install player id.** The game generates a random id once (`[mp] player_id`)
   and sends it when joining, so a server can recognise you. Older servers ignore it;
   no protocol change. It is a bearer secret, not a login.
+- **Dedicated server now applies its cops setting.** It sent "no rules" to every
+  player, so cops were off whatever `dediserver.json` said; the configured rules
+  now reach players.
+- **Time of day and weather for dedicated servers:** `"time_of_day"` (dawn/day/dusk/
+  night) and `"weather"` (clear/rain/wet), plus admin `!time` / `!weather` (from the
+  next level load).
+- **More admin tools:** `!admin add|remove|list` (saved to `dediserver.json`),
+  `!motd save`, `!help <command>`, join/leave announcements, and admin actions are
+  logged with who ran them. Player ids are shown as standard UUIDs and created at
+  first game launch.
 - **Dedicated server plugins.** The server is now a small core plus plugins
   (`commands`, `admin`), and you can add your own in its `plugins/` folder (see the
   dediserver README; `example_hello.py` shows how).
