@@ -21,6 +21,10 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **Scoreboard CAR column names the car.** It showed the level's resident slot
+  ("car 3"); it now shows `city:model`, the way car selection identifies a car.
+- **Dedicated server measures ping.** It sent 0 ms for every player in the roster;
+  it now pings each client and reports the round trip, like a game host.
 - **Warp to a player on foot.** "Warp to player" refused anyone out of their car; it now
   lands you beside where they are standing.
 - **Multiplayer cops fixes.** Another player crashing into walls or fences no longer
