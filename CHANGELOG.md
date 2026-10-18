@@ -16,6 +16,10 @@ is in [changelog.txt](changelog.txt).
   is moved there; a damaged file is kept as `player.id.bad` and a new id made), and sends it when joining, so a server can recognise you. Older servers ignore it;
   no protocol change. It is a bearer secret, not a login. Read yours with `!whoami`, the
   game log, or `python JERICHO/MODS/mp/tools/player_id.py`.
+- **Multiplayer cops fixes.** Another player crashing into walls or fences no longer
+  raises *your* wanted level. Your patrol cops are no longer deleted when another
+  player is nearby. With cops on, each machine keeps one traffic slot free for a cop,
+  so police still turn up when the streets are full.
 - **Dedicated server now applies its cops setting.** It sent "no rules" to every
   player, so cops were off whatever `dediserver.json` said; the configured rules
   now reach players.
