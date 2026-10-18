@@ -166,7 +166,7 @@ int InitCar(CAR_DATA* cp, int direction, LONGVECTOR4* startPos, unsigned char co
 		return 1;
 
 	InitCarPhysics(cp, (LONGVECTOR4 *)&tmpStart, direction);
-	cp->ap.palette = palette;
+	cp->ap.palette = CarSlotClampPalette(model, palette);	// JERICHO: only palettes this model has
 
 	cp->controlType = control;
 

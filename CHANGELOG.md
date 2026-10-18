@@ -6,6 +6,13 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- **Car colours no longer break after Change car.** A palette chosen on one car is now
+  checked against the car you switch to: a car with a single palette (every Driver 1 car,
+  specials, cops) uses its own colours, and the Palette row shows 1/1 there. Your choice
+  comes back on a car that has it. The same check covers spawns, respawns, the car kept
+  across a map change or reconnect, and other players' cars (an out-of-range palette from
+  a peer is drawn in that car's own colours).
+
 ## v0.10.5
 
 *Released 2026-10-18.*
