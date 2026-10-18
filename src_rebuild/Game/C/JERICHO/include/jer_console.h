@@ -77,6 +77,11 @@ void jer_console_chat(const JER_CONSOLE_SEG* segs, int count);
  * (an input buffer is short). */
 void jer_console_input(const char* text);
 
+/* Page the chat history shown while the prompt is open: +n = older, -n = newer.
+ * Clamped; returns how many rows back the view now is (0 = newest). Reset by
+ * jer_console_input(NULL). */
+int  jer_console_scroll(int delta);
+
 /* Drop every line (the stream is empty again). */
 void jer_console_clear(void);
 

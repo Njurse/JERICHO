@@ -21,6 +21,8 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **Chat history.** While typing a chat message, the last chat lines show again even
+  if they had faded, and Page Up / Page Down scroll back through the last 48 lines.
 - **Scoreboard CAR column names the car.** It showed the level's resident slot
   ("car 3"); it now shows `city:model`, the way car selection identifies a car.
 - **Dedicated server measures ping.** It sent 0 ms for every player in the roster;
