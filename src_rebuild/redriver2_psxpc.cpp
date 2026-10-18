@@ -510,6 +510,8 @@ void SwitchMappings(int menu)
 	}
 }
 
+extern "C" int gJerUpdateForce;	// jer_update.c: -forceupdatecheck (dev builds only)
+
 int main(int argc, char** argv)
 {
 	ini_t* config;
@@ -562,6 +564,12 @@ int main(int argc, char** argv)
 		{
 			i++;
 			configFilename = argv[i];
+		}
+		else if (!strcmp(argv[i], "-forceupdatecheck"))
+		{
+			// JERICHO: dev builds only (jer_update.c checks the flavour): show the
+			// update screen against the real latest release, whatever this build is.
+			gJerUpdateForce = 1;
 		}
 		else if(!strcmp(argv[i], "-cdimage"))
 		{

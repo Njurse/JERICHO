@@ -75,6 +75,8 @@ const char* jer_root_dir(void);
 int jer_build_is_dev(void);	/* FEmain.c: the EXE knows its flavour, this library does not */
 void jer_update_start(void);
 void jer_update_frontend_tick(int onMainMenu);
+void jer_frontend_dim_rect(int x, int y, int w, int h, int shade);	/* FEmain.c */
+extern int gJerUpdateForce;	/* -forceupdatecheck (redriver2_psxpc.cpp) */
 #ifdef __cplusplus
 }
 #endif
@@ -108,6 +110,25 @@ static int gUpdRecut;
 static char gUpdLines[JER_UPD_LINES][JER_UPD_LINE_W];
 static int gUpdLineCount;
 static int gUpdScroll;
+static int gUpdForced;		/* this check runs as if the installed build were 0.0.0 */
+int gJerUpdateForce;
+
+/* LAYOUT, in the frontend's 640x480 draw space. The left column carries the text,
+ * the options sit bottom-right in the stock box (right edge 590, the anchor every
+ * frontend list uses), so the notes wrap to UPD_NOTES_W and stop well short of
+ * the widest option (~300 wide in the menu font, i.e. from x ~290). */
+#define UPD_X		40
+#define UPD_NOTES_W	236
+#define UPD_TITLE_Y	104
+#define UPD_VER_Y	146
+#define UPD_NOTES_Y	172
+#define UPD_LINE_STEP	18
+#define UPD_NOTES_END	436	/* no notes line STARTS below this */
+#define UPD_FOOT_Y	446
+#define UPD_ROW_BOTTOM	460	/* the options' lower edge */
+#define UPD_ROW_STEP	32
+
+static int UpdVisibleLines(void);
 static char gUpdHeader[160];
 
 static void UpdPath(char* out, size_t n, const char* leaf)
@@ -126,7 +147,13 @@ void jer_update_start(void)
 {
 	char part[600];
 
-	if (gUpdState != UPD_IDLE || !UpdEnabled())
+	if (gUpdState != UPD_IDLE)
+		return;
+	/* DEV builds only: -forceupdatecheck or jericho.ini update_force=1 shows the
+	 * screen against the real latest release, whatever this build is. */
+	gUpdForced = jer_build_is_dev() &&
+		(gJerUpdateForce || jer_config_get_int("jericho", "update_force", 0) != 0);
+	if (!gUpdForced && !UpdEnabled())
 		return;
 
 	UpdPath(part, sizeof(part), "update_check.part");
@@ -359,7 +386,7 @@ static void UpdAddLine(const char* text, int indent)
 {
 	char line[JER_UPD_LINE_W];
 	const char* p = text;
-	int maxW = 500 - indent;
+	int maxW = UPD_NOTES_W - (indent ? jer_text_width(JER_TEXT_FE, 100, "  ") : 0);
 
 	while (*p && gUpdLineCount < JER_UPD_LINES)
 	{
@@ -486,12 +513,8 @@ static void UpdBuildNotes(const char* body, const char* tag)
 			}
 			for (i = 0; s[i] && k + 1 < sizeof(clean); i++)
 			{
-				if (s[i] == '\r' || s[i] == '`' || (s[i] == '*' && s[i + 1] == '*'))
-				{
-					if (s[i] == '*')
-						i++;
+				if (s[i] == '\r' || s[i] == '`' || s[i] == '*')	/* bold, italics, code */
 					continue;
-				}
 				clean[k++] = s[i];
 			}
 			clean[k] = '\0';
@@ -548,7 +571,12 @@ static int UpdEvaluate(const char* path)
 	UpdString(UpdFindKey(json, "tag_name"), gUpdTag, sizeof(gUpdTag));
 	if (!UpdParseVer(gUpdTag, rv, &rest) || *rest != '\0')
 		goto out;	/* not a plain vX.Y.Z: a pre-release name, never an update */
-	if (!UpdParseVer(JERICHO_BUILD_VERSION, lv, &rest))
+	if (gUpdForced)
+	{
+		lv[0] = lv[1] = lv[2] = 0;	/* pretend to be older than anything */
+		rest = "-forced";
+	}
+	else if (!UpdParseVer(JERICHO_BUILD_VERSION, lv, &rest))
 		goto out;	/* no release behind this build: nothing to compare */
 
 	cmp = UpdCmp(rv, lv);
@@ -598,9 +626,11 @@ static int UpdEvaluate(const char* path)
 	}
 	if (gUpdRecut)
 		snprintf(gUpdHeader, sizeof(gUpdHeader), "%s was re-cut: it has been rebuilt since you installed it", gUpdTag);
+	else if (gUpdForced)
+		snprintf(gUpdHeader, sizeof(gUpdHeader), "JERICHO %s  (you have %s)", gUpdTag + 1, JERICHO_BUILD_VERSION);
 	else
-		snprintf(gUpdHeader, sizeof(gUpdHeader), "%s  (you have %d.%d.%d%s)", gUpdTag, lv[0], lv[1], lv[2],
-			JER_UPD_DEV ? ", dev build" : "");
+		snprintf(gUpdHeader, sizeof(gUpdHeader), "JERICHO %s  (you have %d.%d.%d%s)", gUpdTag + 1, lv[0], lv[1], lv[2],
+			JER_UPD_DEV ? "-dev" : "");
 	show = 1;
 	jer_log("[update] %s available: %s\n", gUpdTag, gUpdRecut ? "re-cut" : "newer");
 out:
@@ -730,9 +760,11 @@ static int UpdDisable(void* ud)
 static int UpdScrollNotes(void* ud, int dir)
 {
 	(void)ud;
-	gUpdScroll += dir * 6;
-	if (gUpdScroll > gUpdLineCount - 1)
-		gUpdScroll = gUpdLineCount - 1;
+	int vis = UpdVisibleLines();
+
+	gUpdScroll += dir * (vis - 1);
+	if (gUpdScroll > gUpdLineCount - vis)
+		gUpdScroll = gUpdLineCount - vis;
 	if (gUpdScroll < 0)
 		gUpdScroll = 0;
 	return 1;
@@ -748,39 +780,65 @@ static int UpdBack(void* ud)
 static const JER_FE_ITEM kUpdItems[] = {
 	{ "Update JERICHO (Restart)", NULL, NULL, UpdDoUpdate, UpdScrollNotes, -1, 0 },
 	{ "Remind me next launch", NULL, NULL, UpdRemind, UpdScrollNotes, -1, 0 },
-	{ "Go away and leave me alone (Disable update checks)", NULL, NULL, UpdDisable, UpdScrollNotes, -1, 0 },
+	{ "Disable update checks", NULL, NULL, UpdDisable, UpdScrollNotes, -1, 0 },
 };
 
 static const JER_FE_MENU kUpdMenu = {
 	"jericho.update",
 	kUpdItems, 3,
 	NULL, NULL,
-	"A NEW VERSION OF JERICHO IS AVAILABLE.",
+	NULL,	/* title: drawn by UpdDrawNotes, top-left, not at the stock (100,150) */
 	NULL,
 	UpdBack,
-	600,	/* row_w: the third option is long */
-	30,	/* row_step */
-	3,	/* bottom_items: the options sit at the bottom, the notes above */
-	0, 0, 0
+	0,		/* row_w: the stock box, so the labels right-align at x 590 */
+	UPD_ROW_STEP,
+	3,		/* bottom_items: every option pinned to the bottom edge */
+	UPD_ROW_BOTTOM,
+	0, 0
 };
+
+static int UpdVisibleLines(void)
+{
+	int top = UPD_NOTES_Y + (gUpdForced ? UPD_LINE_STEP : 0);
+
+	return (UPD_NOTES_END - top) / UPD_LINE_STEP + 1;
+}
 
 static void UpdDrawNotes(void)
 {
-	int x, y, w, h, top = 112, bottom, line, i;
+	static const char kTitle[] = "A NEW VERSION OF JERICHO IS AVAILABLE.";
+	int top = UPD_NOTES_Y, vis, i, line, scale = 150;
+	char foot[96];
 
-	if (!jer_frontend_row_rect(0, &x, &y, &w, &h))
-		y = 360;
-	bottom = y - 10;
+	/* darken the busy background behind the text column (and only there) */
+	jer_frontend_dim_rect(UPD_X - 12, UPD_TITLE_Y - 10, UPD_NOTES_W + 24 + 12,
+		UPD_FOOT_Y + 22 - (UPD_TITLE_Y - 10), 96);
 
-	jer_text_draw_centred(JER_TEXT_FE, 110, 320, top, gUpdHeader, 255, gUpdRecut ? 200 : 255, gUpdRecut ? 120 : 255);
-	top += 30;
+	/* the mockup's orange title, shrunk to the dimmed column so it never
+	 * reaches the options column */
+	while (scale > 100 && jer_text_width(JER_TEXT_FE, scale, kTitle) > UPD_NOTES_W + 12)
+		scale -= 10;
+	jer_text_draw_at(JER_TEXT_FE, scale, UPD_X, UPD_TITLE_Y, kTitle, 255, 150, 0);
 
-	for (i = gUpdScroll, line = top; i < gUpdLineCount && line + 20 <= bottom; i++, line += 20)
-		jer_text_draw_at(JER_TEXT_FE, 100, 70, line, gUpdLines[i], 220, 220, 220);
+	jer_text_draw_at(JER_TEXT_FE, 110, UPD_X, UPD_VER_Y, gUpdHeader,
+		255, gUpdRecut ? 200 : 255, gUpdRecut ? 120 : 255);
+	if (gUpdForced)
+	{
+		jer_text_draw_at(JER_TEXT_FE, 90, UPD_X, top,
+			"FORCED CHECK (dev): Update installs this release over this folder", 255, 220, 0);
+		top += UPD_LINE_STEP;
+	}
 
-	if (gUpdScroll > 0 || i < gUpdLineCount)
-		jer_text_draw_centred(JER_TEXT_FE, 80, 320, bottom - 2,
-			"LEFT / RIGHT scrolls the changes", 150, 150, 150);
+	vis = UpdVisibleLines();
+	for (i = gUpdScroll, line = top; i < gUpdLineCount && i < gUpdScroll + vis; i++, line += UPD_LINE_STEP)
+		jer_text_draw_at(JER_TEXT_FE, 100, UPD_X, line, gUpdLines[i], 255, 255, 255);
+
+	if (gUpdLineCount > vis)
+		snprintf(foot, sizeof(foot), "Lines %d-%d of %d   LEFT / RIGHT: scroll", gUpdScroll + 1,
+			(gUpdScroll + vis < gUpdLineCount) ? gUpdScroll + vis : gUpdLineCount, gUpdLineCount);
+	else
+		snprintf(foot, sizeof(foot), "%d line%s", gUpdLineCount, gUpdLineCount == 1 ? "" : "s");
+	jer_text_draw_at(JER_TEXT_FE, 80, UPD_X, UPD_FOOT_Y, foot, 170, 170, 170);
 }
 
 /* FEmain.c, every frontend frame after the screen is drawn. onMainMenu = the
