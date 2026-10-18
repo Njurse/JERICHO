@@ -1447,6 +1447,7 @@ void StepSim(void)
 // [A] checks VSync if can time step
 int FilterFrameTime()
 {
+#ifdef PSX
 	static int frame = 0;
 
 	// always stay 30 FPS (2 vblanks)
@@ -1456,6 +1457,37 @@ int FilterFrameTime()
 	frame = VSync(-1);
 
 	return 1;
+#else
+	// JERICHO: gate the SIM on real milliseconds, not on the vblank counter.
+	//
+	// The counter is a simulation of PSX vblanks: PsyCross advances it from a
+	// spinning interrupt thread, and the BACKSPACE debug fast-forward advances it
+	// EXTRA times per call. Two consequences, both measured:
+	//
+	//   * a latched fast-forward ran the sim at 355 steps/second instead of 30,
+	//     which reads from the driver's seat as "my car drives way too fast" and
+	//     "the handling model is broken";
+	//   * because the counter's fidelity depends on that thread keeping up, the
+	//     step rate could also WANDER (the reported "fast forward and normal speed
+	//     flip every 1-3 seconds"), with nothing in the physics changing.
+	//
+	// Wall-clock milliseconds have neither problem: 33 ms per step is 30 steps a
+	// second no matter what the renderer is doing, and a frame skip can only make
+	// the game draw less, never step more. The engine's own fast-forward still
+	// works -- it multiplies STEPS PER FRAME (State_GameLoop: cnt = 7), which this
+	// gate does not touch, so a deliberate fast-forward stays deliberate.
+	//
+	// PSX keeps the vblank gate: it has real vblanks and no PsyX_GetTicks.
+	static unsigned int lastStepTick;
+	unsigned int now = PsyX_GetTicks();
+
+	if ((unsigned int)(now - lastStepTick) < (1000 / 30))
+		return 0;
+
+	lastStepTick = now;
+
+	return 1;
+#endif
 }
 
 // [D] [T]
@@ -2048,6 +2080,11 @@ void State_GameLoop(void* param)
 	 * that one live, and a client running the sim fast is a desync by definition --
 	 * so a module that owns the clock takes BOTH. */
 	PsyX_SetFastForwardLocked(FastForwardLocked);
+
+	// JERICHO: one rate line per real second plus a line per clock-flag change, when
+	// JERICHO_HANDLING_PROBE is set. Inert otherwise. This is what tells a
+	// "fast/normal flip every few seconds" report apart from a steady over-speed.
+	JerHandleProbeFrame();
 
 	UpdatePadData();
 	CheckForPause();

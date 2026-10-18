@@ -51,6 +51,7 @@
 #include "mission.h"		// residentCarModels (slot -> model number)
 #include "dr2limits.h"
 #include "director.h"		// FastForward / FastForwardLocked
+#include "cutscene.h"		// gSkipInGameCutscene (the other path that bypasses the step gate)
 #include "handling_probe.h"
 
 #include <stdlib.h>		// getenv (JERICHO_HANDLING_PROBE)
@@ -158,6 +159,61 @@ void JerHandleProbeStepGame(void)
 	JerProbeStartClock();
 
 	probeSteps++;
+}
+
+/* Once per frame. One line per REAL second with the measured step rate, plus a line
+ * whenever any of the three clock flags changes.
+ *
+ * This is the instrument for the other half of the report -- "the fast forward and
+ * normal speed flip every 1-3 seconds". The per-simulated-second lines above cannot
+ * show that, because if the sim runs at two rates its own seconds are not wall
+ * seconds. A flip has to be timed against the real clock, and it needs a NAME:
+ * FastForward (7 steps/frame), the lock, or PsyX's frame skip. Whichever of the
+ * three moves here is the cause; if NONE moves and the rate still flips, the step
+ * gate itself is unstable -- which is why it now runs on wall-clock milliseconds. */
+void JerHandleProbeFrame(void)
+{
+	static unsigned int lastLine;
+	static int lastSteps;
+	static int lastFf = -1, lastLock = -1, lastSkip = -1, lastCut = -1;
+	unsigned int now;
+	int steps, ff, lock, skip, cut;
+
+	if (!JerProbeOn())
+		return;
+
+	JerProbeStartClock();
+
+	now = PsyX_GetTicks();
+
+	ff = FastForward;
+	lock = FastForwardLocked;
+	skip = PsyX_GetFrameSkip();
+	cut = gSkipInGameCutscene;
+
+	if (ff != lastFf || lock != lastLock || skip != lastSkip || cut != lastCut)
+	{
+		printInfo("[JER-PROBE] clock change at %ums: ff %d->%d lock %d->%d skip %d->%d "
+				  "skipcutscene %d->%d (steps so far %d)\n",
+			now - probeTickStart, lastFf, ff, lastLock, lock, lastSkip, skip, lastCut, cut,
+			probeSteps);
+
+		lastFf = ff;
+		lastLock = lock;
+		lastSkip = skip;
+		lastCut = cut;
+	}
+
+	if ((unsigned int)(now - lastLine) >= 1000)
+	{
+		steps = probeSteps - lastSteps;
+
+		printInfo("[JER-PROBE] rate=%d steps/s (ff=%d lock=%d skip=%d skipcutscene=%d)\n",
+			steps, ff, lock, skip, cut);
+
+		lastLine = now;
+		lastSteps = probeSteps;
+	}
 }
 
 void JerHandleProbeGrip(CAR_DATA* cp, int frontFS, int rearFS)

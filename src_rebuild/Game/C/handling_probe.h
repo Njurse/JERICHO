@@ -16,6 +16,10 @@ void JerHandleProbeStep(CAR_DATA* cp);
 /* once per simulated step (StepGame): the sim-rate counter */
 void JerHandleProbeStepGame(void);
 
+/* once per FRAME (State_GameLoop): a rate line per real second, and a line for
+ * every change of the clock's three flags -- how a fast/normal flip names itself. */
+void JerHandleProbeFrame(void);
+
 /* end of GetFrictionScalesDriver1: the grip the tyres actually got this step */
 void JerHandleProbeGrip(CAR_DATA* cp, int frontFS, int rearFS);
 
