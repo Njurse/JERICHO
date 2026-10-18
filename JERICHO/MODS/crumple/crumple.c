@@ -90,7 +90,7 @@ int gCrumpleGlobalScale = 4096;
 CRUMPLE_PARAMS gCrumpleParams =
 {
 	// impact strength
-	200000,		// impactNormalize     howHard that counts as a full-scale dent.
+	120000,		// impactNormalize     howHard that counts as a full-scale dent.
 					//                      NOT ~100k: the body path only became
 					//                      capable of denting at all when it was put
 					//                      in proper 4096 fixed point (see the note in
@@ -102,8 +102,8 @@ CRUMPLE_PARAMS gCrumpleParams =
 					//                      (~204800, handling.c), so everything below
 					//                      that dents proportionally. Wheels are
 					//                      calibrated separately (wheelNormalize).
-	1024,		// impactMinHowHard    below this: no deformation
-	1024,		// maxDisplacementPct  max push per impact, as a fraction of the
+	768,		// impactMinHowHard    below this: no deformation
+	512,		// maxDisplacementPct  max push per impact, as a fraction of the
 					//                      car's own half-length (4096 = 1.0 -> 0.25x).
 					//                      Was an absolute 4290 "world units", about
 					//                      1.05x a car's half-length: ONE hit could drag
@@ -122,7 +122,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 					//                      locally on a long car and a stubby one alike.
 					//                      Was an absolute 700 "world units" (~0.17x),
 					//                      which spread the dent over most of the body.
-	1024,		// contactDeepen       extra depth for oblique (pole/edge) impacts
+	326,		// contactDeepen       extra depth for oblique (pole/edge) impacts
 	1,			// falloffSmooth       0 = linear, 1 = squared
 
 	// structure
@@ -130,7 +130,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 	128,		// noseResistance       soft at the AABB extremes
 	2048,		// resistanceInfluence  how much resistance limits movement
 	2048,		// cabinSize           central ~half of the AABB stays rigid
-	4096,		// globalScale         master deformation multiplier (1.0x)
+	6144,		// globalScale         master deformation multiplier (1.0x)
 
 	// mass / health
 	384,		// massFactorMin       light-vs-heavy clamp (0.094x)
