@@ -41,6 +41,17 @@ void InitCarImport(void);
 void InitCarImportMidLevel(void);
 char* GetCarImportModels(int slot);
 
+// The wheel models an imported city carries in its own LUMP_CAR_WHEELS segment
+// (the D1 bake writes it). `kind` is one of CAR_IMPORT_WHEEL_*; NULL means that
+// variant is absent or unusable, and the caller must keep the host level's
+// CLEANWHEEL/FASTWHEEL/DAMWHEEL. The models are copied out of the import buffer
+// and already FT4 + set-remapped + mangled, ready for DrawWheelObject.
+#define CAR_IMPORT_WHEEL_CLEAN		0
+#define CAR_IMPORT_WHEEL_DAMAGED	1
+#define CAR_IMPORT_WHEEL_FAST		2
+#define CAR_IMPORT_WHEEL_VARIANTS	3
+MODEL* GetCarImportWheel(int city, int kind);
+
 // JERICHO cross-city HOT LOAD: build resident `slot`'s geometry at RUNTIME from the
 // import data its source city asked for -- for a car added to the resident set
 // AFTER the level loaded (mp: a joiner's picked car), which the level's own build

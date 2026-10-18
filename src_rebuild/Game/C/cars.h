@@ -54,6 +54,12 @@ extern MODEL *gCleanWheelModelPtr;
 extern MODEL *gFastWheelModelPtr;
 extern MODEL *gDamWheelModelPtr;
 
+/* JERICHO: apply the source-city set remap to one wheel model and collapse it to
+ * the four rim quads the engine draws. Factored out of MangleWheelModels so an
+ * IMPORTED wheel (cars.h/models.c) goes through the exact same transform as the
+ * host level's own CLEANWHEEL/FASTWHEEL/DAMWHEEL. */
+extern void MangleWheelModel(MODEL* model);
+
 extern short FrontWheelRotation[MAX_CARS];
 extern short BackWheelRotation[MAX_CARS];
 

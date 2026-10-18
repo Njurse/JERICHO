@@ -1569,10 +1569,14 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	int car_id;
 	MODEL* WheelModelBack;
 	MODEL* WheelModelFront;
+	MODEL* WheelClean;
+	MODEL* WheelFast;
+	MODEL* WheelDam;
 	MODEL* model;
 	SVECTOR* bend;
 	SVECTOR wheelVerts[24];	// per-wheel copy for the damage transform
 	int numWheelVerts;
+	int wheelCity = -1;
 
 #ifdef PSX
 	MATRIX& WheelPos = *(MATRIX*)((u_char*)getScratchAddr(0) + sizeof(MATRIX) * 2);
@@ -1598,15 +1602,67 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	if (cp->hd.wheel[3].locked != 0)
 		BackWheelIncrement = 0;
 
+	// JERICHO: an imported car brings its own wheel models when its source city's
+	// data carries them (the Driver 1 bake does). The engine's wheels are GLOBAL,
+	// so without this a D1 car wore the host level's wheel texture. Missing
+	// variants keep the host model - never share one model between the front and
+	// back axles, because the rotation below writes that model's vertices.
+	WheelClean = gCleanWheelModelPtr;
+	WheelFast = gFastWheelModelPtr;
+	WheelDam = gDamWheelModelPtr;
+
+	if (cp->ap.model >= 0 && cp->ap.model < MAX_CAR_RESIDENT_MODELS)
+		wheelCity = GetCarModelSourceCity(cp->ap.model);
+
+	if (wheelCity >= 0)
+	{
+		MODEL* imported = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_CLEAN);
+
+		if (imported != NULL)
+		{
+			MODEL* fast = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_FAST);
+			MODEL* dam = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_DAMAGED);
+
+			WheelClean = imported;
+			WheelFast = (fast != NULL) ? fast : gFastWheelModelPtr;
+			WheelDam = (dam != NULL) ? dam : gDamWheelModelPtr;
+
+			/* One line per resident slot per level: what this car actually wears.
+			 * A missing variant shows as "host", which is the fallback the bake's
+			 * absent-wheel path is meant to produce. */
+			{
+				static int sWheelLogLevel = -1;
+				static unsigned int sWheelLogMask;
+
+				if (sWheelLogLevel != GameLevel)
+				{
+					sWheelLogLevel = GameLevel;
+					sWheelLogMask = 0;
+				}
+
+				if ((sWheelLogMask & (1u << cp->ap.model)) == 0)
+				{
+					sWheelLogMask |= 1u << cp->ap.model;
+
+					printInfo("[car wheels] slot %d (%s): clean %s, damaged %s, fast %s\n",
+						cp->ap.model, LevelNames[wheelCity],
+						(WheelClean != gCleanWheelModelPtr) ? "imported" : "host",
+						(WheelDam != gDamWheelModelPtr) ? "imported" : "host",
+						(WheelFast != gFastWheelModelPtr) ? "imported" : "host");
+				}
+			}
+		}
+	}
+
 	if (FrontWheelIncrement + 400U < 801)
-		WheelModelFront = gCleanWheelModelPtr;
+		WheelModelFront = WheelClean;
 	else
-		WheelModelFront = gFastWheelModelPtr;
+		WheelModelFront = WheelFast;
 
 	if (BackWheelIncrement + 400U < 801)
-		WheelModelBack = gCleanWheelModelPtr;
+		WheelModelBack = WheelClean;
 	else
-		WheelModelBack = gFastWheelModelPtr;
+		WheelModelBack = WheelFast;
 
 	wheelSize = car_cosmetics[cp->ap.model].wheelSize;
 	
@@ -1739,7 +1795,7 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 
 		if (cp->ap.flags & (1 << wheelnum)) // [A] used appearance flags to store hubcap presence
 		{
-			model = gDamWheelModelPtr;
+			model = WheelDam;
 		}
 
 		// Nattdy - crumple wheel damage: draw the wheel at the same bent local
@@ -2307,111 +2363,111 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 }
 
 // [D] [T]
-void MangleWheelModels(void)
+// JERICHO: one wheel model's transform. The host's three wheels are mangled in
+// MangleWheelModels below; an IMPORTED city's wheels come through here too, so
+// they are drawn exactly like the host's (four rim quads, same UV folding).
+void MangleWheelModel(MODEL* m)
 {
 	UV_INFO tmpUV2;
 	u_char tmpUV;
 	u_int v0, v1, v2;
-	POLYFT4*src;
-	MODEL *m;
-	int i, j;
+	POLYFT4* src;
+	int j;
 
-	for (i = 0; i < 3; i++)
+	if (m == NULL || m->num_polys < 7 || m->poly_block <= 0)
+		return;
+
+	src = GET_MODEL_DATA(POLYFT4, m, poly_block);
+
+	if (src == NULL || (src->id & 0x1f) != 21)
+		return;		// not the 8-quad FT4 wheel this transform expects
+
+	// do some fuckery swaps
+	v0 = *(u_int *)&src[2].v0;
+	v1 = *(u_int *)&src[2].uv0;
+	v2 = *(u_int *)&src[2].uv2;
+	*(u_int *)src = *(u_int *)(src + 2);
+	*(u_int *)&src->v0 = v0;
+	*(u_int *)&src->uv0 = v1;
+	*(u_int *)&src->uv2 = v2;
+	src->color = src[2].color;
+
+	v0 = *(u_int *)&src[3].v0;
+	v1 = *(u_int *)&src[3].uv0;
+	v2 = *(u_int *)&src[3].uv2;
+	*(u_int *)(src + 1) = *(u_int *)(src + 3);
+	*(u_int *)&src[1].v0 = v0;
+	*(u_int *)&src[1].uv0 = v1;
+	*(u_int *)&src[1].uv2 = v2;
+	src[1].color = src[3].color;
+
+	v0 = *(u_int *)&src[4].v0;
+	v1 = *(u_int *)&src[4].uv0;
+	v2 = *(u_int *)&src[4].uv2;
+	*(u_int *)(src + 2) = *(u_int *)(src + 4);
+	*(u_int *)&src[2].v0 = v0;
+	*(u_int *)&src[2].uv0 = v1;
+	*(u_int *)&src[2].uv2 = v2;
+	src[2].color = src[4].color;
+
+	v0 = *(u_int *)&src[6].v0;
+	v1 = *(u_int *)&src[6].uv0;
+	v2 = *(u_int *)&src[6].uv2;
+	*(u_int *)(src + 3) = *(u_int *)(src + 6);
+	*(u_int *)&src[3].v0 = v0;
+	*(u_int *)&src[3].uv0 = v1;
+	*(u_int *)&src[3].uv2 = v2;
+	src[3].color = src[6].color;
+
+	src[2].v2 = 23;
+	src[2].v3 = 22;
+	src[3].v0 = 21;
+	src[3].v1 = 20;
+	src[3].v2 = 19;
+	src[3].v3 = 18;
+	src[2].v1 = 17;
+	src[2].v0 = 16;
+
+	tmpUV = (src->uv0.u + src->uv2.u) / 2;
+	src[3].uv3.u = tmpUV;
+	src[3].uv2.u = tmpUV;
+	src[3].uv1.u = tmpUV;
+	src[3].uv0.u = tmpUV;
+	src[2].uv3.u = tmpUV;
+	src[2].uv2.u = tmpUV;
+	src[2].uv1.u = tmpUV;
+	src[2].uv0.u = tmpUV;
+
+	tmpUV = (src->uv0.v + src->uv2.v) / 2;
+	src[3].uv3.v = tmpUV;
+	src[3].uv2.v = tmpUV;
+	src[3].uv1.v = tmpUV;
+	src[3].uv0.v = tmpUV;
+	src[2].uv3.v = tmpUV;
+	src[2].uv2.v = tmpUV;
+	src[2].uv1.v = tmpUV;
+	src[2].uv0.v = tmpUV;
+
+	m->num_polys = 4;
+
+	for (j = 0; j < 2; j++)
 	{
-		if (i == 1)
-			m = gFastWheelModelPtr;
-		else if (i == 2)
-			m = gDamWheelModelPtr;
-		else
-			m = gCleanWheelModelPtr;
-
-		// do some fuckery swaps
-		src = GET_MODEL_DATA(POLYFT4, m, poly_block);
+		tmpUV2 = src->uv0;
 		
-		v0 = *(u_int *)&src[2].v0;
-		v1 = *(u_int *)&src[2].uv0;
-		v2 = *(u_int *)&src[2].uv2;
-		*(u_int *)src = *(u_int *)(src + 2);
-		*(u_int *)&src->v0 = v0;
-		*(u_int *)&src->uv0 = v1;
-		*(u_int *)&src->uv2 = v2;
-		src->color = src[2].color;
+		src->uv0 = src->uv1;
+		src->uv1 = src->uv2;
+		src->uv2 = src->uv3;
+		src->uv3 = tmpUV2;
 
-		v0 = *(u_int *)&src[3].v0;
-		v1 = *(u_int *)&src[3].uv0;
-		v2 = *(u_int *)&src[3].uv2;
-		*(u_int *)(src + 1) = *(u_int *)(src + 3);
-		*(u_int *)&src[1].v0 = v0;
-		*(u_int *)&src[1].uv0 = v1;
-		*(u_int *)&src[1].uv2 = v2;
-		src[1].color = src[3].color;
-
-		v0 = *(u_int *)&src[4].v0;
-		v1 = *(u_int *)&src[4].uv0;
-		v2 = *(u_int *)&src[4].uv2;
-		*(u_int *)(src + 2) = *(u_int *)(src + 4);
-		*(u_int *)&src[2].v0 = v0;
-		*(u_int *)&src[2].uv0 = v1;
-		*(u_int *)&src[2].uv2 = v2;
-		src[2].color = src[4].color;
-
-		v0 = *(u_int *)&src[6].v0;
-		v1 = *(u_int *)&src[6].uv0;
-		v2 = *(u_int *)&src[6].uv2;
-		*(u_int *)(src + 3) = *(u_int *)(src + 6);
-		*(u_int *)&src[3].v0 = v0;
-		*(u_int *)&src[3].uv0 = v1;
-		*(u_int *)&src[3].uv2 = v2;
-		src[3].color = src[6].color;
-
-		src[2].v2 = 23;
-		src[2].v3 = 22;
-		src[3].v0 = 21;
-		src[3].v1 = 20;
-		src[3].v2 = 19;
-		src[3].v3 = 18;
-		src[2].v1 = 17;
-		src[2].v0 = 16;
-
-		tmpUV = (src->uv0.u + src->uv2.u) / 2;
-		src[3].uv3.u = tmpUV;
-		src[3].uv2.u = tmpUV;
-		src[3].uv1.u = tmpUV;
-		src[3].uv0.u = tmpUV;
-		src[2].uv3.u = tmpUV;
-		src[2].uv2.u = tmpUV;
-		src[2].uv1.u = tmpUV;
-		src[2].uv0.u = tmpUV;
-
-		tmpUV = (src->uv0.v + src->uv2.v) / 2;
-		src[3].uv3.v = tmpUV;
-		src[3].uv2.v = tmpUV;
-		src[3].uv1.v = tmpUV;
-		src[3].uv0.v = tmpUV;
-		src[2].uv3.v = tmpUV;
-		src[2].uv2.v = tmpUV;
-		src[2].uv1.v = tmpUV;
-		src[2].uv0.v = tmpUV;
-
-		m->num_polys = 4;
-
-		for (j = 0; j < 2; j++)
-		{
-			tmpUV2 = src->uv0;
-			
-			src->uv0 = src->uv1;
-			src->uv1 = src->uv2;
-			src->uv2 = src->uv3;
-			src->uv3 = tmpUV2;
-
-			src++;
-		}
-
+		src++;
 	}
+}
 
-	// HACK: Show clean model only in Rio.
-	//if (GameLevel == 3) 
-	//	gFastWheelModelPtr = gCleanWheelModelPtr;
+void MangleWheelModels(void)
+{
+	MangleWheelModel(gCleanWheelModelPtr);
+	MangleWheelModel(gFastWheelModelPtr);
+	MangleWheelModel(gDamWheelModelPtr);
 }
 
 // [D] [T]

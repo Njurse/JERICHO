@@ -105,13 +105,21 @@ look like and the traps: [`city-registry.md`](../../../../src_rebuild/Game/C/JER
 
 ## What the import carries
 
-Three pieces come from the foreign city, each behind a `GetCarImport*` getter:
+Four pieces come from the foreign city, each behind a `GetCarImport*` getter:
 
 | Piece | Where | Getter | Consumer |
 |---|---|---|---|
 | Car geometry (`LUMP_CAR_MODELS`, id 28) | foreign `.LEV` DATA1 | `GetCarImportModels(slot)` (`models.c:475`) | `ProcessCarModelLump` (`models.c:633`) |
 | Car colours (`CAR_COSMETICS`) | foreign `<CITY>.LCF` | `GetCarImportCosmetics(slot)` (`models.c:529`) | `ProcessCosmeticsLump` (`cosmetic.c:71`) |
 | Car palettes (`LUMP_PALLET`, id 25) | foreign `.LEV` DATA1 | `GetCarImportPallet(&size)` (`models.c:462`) | `ProcessImportedPalette` (`cars.c:1496`) |
+| Wheel models (`LUMP_CAR_WHEELS`, id 200) | foreign `.LEV` DATA1 (D1 bakes only) | `GetCarImportWheel(city, kind)` | `DrawCarWheels` (`cars.c`) |
+
+The wheel segment is optional and additive: a Driver 2 level has none, so its
+imported cars keep the host's shared wheels. The D1 bake writes the city's
+`CLEANWHEEL` / `DAMWHEEL` / `FASTWHEEL` as FT4 models, carries their pages in the
+city's own `LUMP_TEXTUREINFO`, and the engine pins them with the car's pages.
+`GetCarImportWheel` returns NULL for an absent variant, and the renderer keeps
+the host wheel for that variant.
 
 For geometry, `ProcessCarModelLump` swaps only its **base pointer** (`models.c:642-651`)
 — the foreign block has the same layout as the level's own, so the offset-table

@@ -3668,6 +3668,7 @@ void LoadImportedTPages(void)
 	int pref[64];		// preferred slot per set: the rectangle the replaced car used, or -1
 	int nsets = 0;
 	int i, j;
+	int wc, wk;
 
 	// (placement moved to draw time - see CarImportPin/CarPageFindSlot - so the load
 	// no longer tracks slots, positions or CLUT rows)
@@ -3856,7 +3857,67 @@ void LoadImportedTPages(void)
 		}
 	}
 
-	printInfo("cross-city: %s - %d set(s) wanted from carTpages/specTpages\n", LevelNames[city], nsets);
+	// JERICHO: an imported city's wheel models are NOT in a resident slot, so the
+	// walk above cannot see their pages. Register them against the slots that
+	// would draw them (every resident slot sourced from that city), so the pin /
+	// release bookkeeping is the same as for a car page.
+	for (wc = 0; wc < CITY_COUNT; wc++)
+	{
+		int owners = 0;
+
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		{
+			if (GetCarModelSourceCity(i) == wc)
+				owners |= CarPinOwnerBit(i);
+		}
+
+		if (owners == 0)
+			continue;
+
+		for (wk = 0; wk < CAR_IMPORT_WHEEL_VARIANTS; wk++)
+		{
+			MODEL* wheel = GetCarImportWheel(wc, wk);
+			int found[8];
+			int n, k;
+
+			if (wheel == NULL)
+				continue;
+
+			n = CollectModelSets(wheel, found, 0, 8);
+
+			for (k = 0; k < n; k++)
+			{
+				int set = found[k];
+				int at = -1;
+
+				if (set == 0)
+					continue;
+
+				for (j = 0; j < nsets; j++)
+				{
+					if (sets[j] == set && setCity[j] == wc)
+					{
+						at = j;
+						break;
+					}
+				}
+
+				if (at >= 0)
+				{
+					setMask[at] |= owners;
+				}
+				else if (nsets < 64)
+				{
+					pref[nsets] = -1;
+					setCity[nsets] = wc;
+					setMask[nsets] = owners;
+					sets[nsets++] = set;
+				}
+			}
+		}
+	}
+
+	printInfo("cross-city: %s - %d set(s) wanted from carTpages/specTpages/wheels\n", LevelNames[city], nsets);
 
 	// Each set goes into a slot the level left FREE, at that slot's own already
 	// assigned position - and now at DRAW time rather than load time: the load only
