@@ -1517,17 +1517,8 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 	while (i-- != -1)
 	{
 		POLYFT4* ts = (tex != NULL && texIndex < texCount) ? &tex[texIndex] : src;
-		int skipPoly = 0;
-
-		/* A source wheel with a different poly count from the host mesh cannot be
-		 * mapped 1:1 (the D1 bake's DAMWHEEL is the four-quad form; the host
-		 * DAMWHEEL has three records). Drawing the host's hubcap there samples a
-		 * blue placeholder, so leave that one poly out. A D2 city's wheel model
-		 * has the same record count as its host wheel, so its own hubcap record
-		 * maps directly. */
-		if (ts != src && texCount != model->num_polys &&
-			(src->texture_id != primaryId || src->texture_set != primarySet))
-			skipPoly = 1;
+		int isHubcap = (ts != src &&
+			(src->texture_id != primaryId || src->texture_set != primarySet));
 
 		gte_ldv3(&verts[src->v0], &verts[src->v1], &verts[src->v2]);
 
@@ -1544,7 +1535,7 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 
 		gte_stotz(&otZ);
 
-		if (otZ > 2 && !skipPoly)
+		if (otZ > 2)
 		{
 			setPolyFT4(poly);
 			addPrim(current->ot + (otZ >> 1) + 5, poly);
@@ -1565,14 +1556,62 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 				 * the source city's wheel TEXTURE and palette. The record's own
 				 * set/id is resolved here, per poly: a fast wheel can name more
 				 * than one texture id, and resolving it once would paint them
-				 * all with the first one's CLUT. */
-				clut = texture_cluts[ts->texture_set][ts->texture_id];
-				tpage = texture_pages[ts->texture_set] | 0x20;
+				 * all with the first one's CLUT.
+				 *
+				 * The host hubcap is a separate poly with its own UV rect on the
+				 * host page. It is just a square image, so put the SOURCE wheel
+				 * texture on it: map the host poly's UV rect onto the source
+				 * wheel's first-poly UV square instead of leaving it on the host
+				 * page's blue placeholder. */
+				POLYFT4* texSrc = isHubcap ? tex : ts;
 
-				*(u_short*)&poly->u0 = *(u_short*)&ts->uv0;
-				*(u_short*)&poly->u1 = *(u_short*)&ts->uv1;
-				*(u_short*)&poly->u2 = *(u_short*)&ts->uv3;
-				*(u_short*)&poly->u3 = *(u_short*)&ts->uv2;
+				clut = texture_cluts[texSrc->texture_set][texSrc->texture_id];
+				tpage = texture_pages[texSrc->texture_set] | 0x20;
+
+				if (isHubcap)
+				{
+					UV_INFO hostUV[4] = { src->uv0, src->uv1, src->uv3, src->uv2 };
+					UV_INFO srcUV[4] = { tex->uv0, tex->uv1, tex->uv3, tex->uv2 };
+					UV_INFO out[4];
+					int hu0 = hostUV[0].u, hu1 = hostUV[0].u;
+					int hv0 = hostUV[0].v, hv1 = hostUV[0].v;
+					int su0 = srcUV[0].u, su1 = srcUV[0].u;
+					int sv0 = srcUV[0].v, sv1 = srcUV[0].v;
+					int k;
+
+					for (k = 1; k < 4; k++)
+					{
+						if (hostUV[k].u < hu0) hu0 = hostUV[k].u;
+						if (hostUV[k].u > hu1) hu1 = hostUV[k].u;
+						if (hostUV[k].v < hv0) hv0 = hostUV[k].v;
+						if (hostUV[k].v > hv1) hv1 = hostUV[k].v;
+						if (srcUV[k].u < su0) su0 = srcUV[k].u;
+						if (srcUV[k].u > su1) su1 = srcUV[k].u;
+						if (srcUV[k].v < sv0) sv0 = srcUV[k].v;
+						if (srcUV[k].v > sv1) sv1 = srcUV[k].v;
+					}
+
+					for (k = 0; k < 4; k++)
+					{
+						int hu = hu1 - hu0;
+						int hv = hv1 - hv0;
+
+						out[k].u = (u_char)(su0 + (((int)hostUV[k].u - hu0) * (su1 - su0)) / (hu ? hu : 1));
+						out[k].v = (u_char)(sv0 + (((int)hostUV[k].v - hv0) * (sv1 - sv0)) / (hv ? hv : 1));
+					}
+
+					*(u_short*)&poly->u0 = *(u_short*)&out[0];
+					*(u_short*)&poly->u1 = *(u_short*)&out[1];
+					*(u_short*)&poly->u2 = *(u_short*)&out[2];
+					*(u_short*)&poly->u3 = *(u_short*)&out[3];
+				}
+				else
+				{
+					*(u_short*)&poly->u0 = *(u_short*)&ts->uv0;
+					*(u_short*)&poly->u1 = *(u_short*)&ts->uv1;
+					*(u_short*)&poly->u2 = *(u_short*)&ts->uv3;
+					*(u_short*)&poly->u3 = *(u_short*)&ts->uv2;
+				}
 			}
 			poly->clut = clut;
 			poly->tpage = tpage;
