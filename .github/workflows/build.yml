@@ -166,16 +166,24 @@ jobs:
           $deps = 'src_rebuild/dependencies'
           New-Item -ItemType Directory -Force -Path $deps | Out-Null
 
-          Invoke-WebRequest 'https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-windows.zip' -OutFile premake5.zip
+          # Every archive is pinned by SHA-256 and fetched over https (Refs #8). A
+          # version bump in env: must update its hash here too, or the step fails.
+          function Get-Pinned([string]$url, [string]$out, [string]$sha256) {
+            Invoke-WebRequest $url -OutFile $out
+            $got = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
+            if ($got -ne $sha256) { throw "checksum mismatch for ${out}: got $got, want $sha256" }
+          }
+
+          Get-Pinned 'https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-windows.zip' premake5.zip 'd8f958162b202fe88a2fa1897d3c5342dd137f19d1265de8802880126a808a65'
           Expand-Archive premake5.zip -DestinationPath src_rebuild -Force
 
-          Invoke-WebRequest 'https://github.com/libsdl-org/SDL/releases/download/release-${{ env.SDL2_VERSION }}/SDL2-devel-${{ env.SDL2_VERSION }}-VC.zip' -OutFile sdl2.zip
+          Get-Pinned 'https://github.com/libsdl-org/SDL/releases/download/release-${{ env.SDL2_VERSION }}/SDL2-devel-${{ env.SDL2_VERSION }}-VC.zip' sdl2.zip 'fc5d6c096a6b82f86613060dfef553a09b9e08afcb401fefac4b9ca221265cda'
           Expand-Archive sdl2.zip -DestinationPath $deps -Force
 
-          Invoke-WebRequest 'https://github.com/kcat/openal-soft/releases/download/${{ env.OPENAL_VERSION }}/openal-soft-${{ env.OPENAL_VERSION }}-bin.zip' -OutFile openal.zip
+          Get-Pinned 'https://github.com/kcat/openal-soft/releases/download/${{ env.OPENAL_VERSION }}/openal-soft-${{ env.OPENAL_VERSION }}-bin.zip' openal.zip 'ea8bc36fd7fa05f64e13400d20886de753a227202a4ea3781913489a26b36fc6'
           Expand-Archive openal.zip -DestinationPath $deps -Force
 
-          Invoke-WebRequest 'http://www.ijg.org/files/jpegsr9d.zip' -OutFile jpeg.zip
+          Get-Pinned 'https://www.ijg.org/files/jpegsr9d.zip' jpeg.zip '5dc857551201d749dc0f48d26aa4cde9f6b53fe65080cbed9cb6641479119433'
           Expand-Archive jpeg.zip -DestinationPath $deps -Force
 
           # libjpeg ships jconfig.vc; the project expects jconfig.h
@@ -403,6 +411,7 @@ jobs:
       - name: Download premake5
         run: |
           curl -fL https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-linux.tar.gz -o premake5.tar.gz
+          echo '074fc07be17888ef41ca07eea1c527c390a04ea4550bf7962eeb0bea0cc9d2f5  premake5.tar.gz' | sha256sum -c -   # Refs #8
           tar xf premake5.tar.gz -C src_rebuild
           chmod +x src_rebuild/premake5
 
