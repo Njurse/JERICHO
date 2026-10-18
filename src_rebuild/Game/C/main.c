@@ -1445,6 +1445,10 @@ void StepSim(void)
 }
 
 // [A] checks VSync if can time step
+// JERICHO: times the PC step gate gave up a backlog (3+ steps behind) and
+// resynced to now; the handling probe reports it per second.
+unsigned int gJerStepGateResyncs = 0;
+
 int FilterFrameTime()
 {
 #ifdef PSX
@@ -1478,13 +1482,49 @@ int FilterFrameTime()
 	// gate does not touch, so a deliberate fast-forward stays deliberate.
 	//
 	// PSX keeps the vblank gate: it has real vblanks and no PsyX_GetTicks.
-	static unsigned int lastStepTick;
+	//
+	// JERICHO: exact 30 Hz, no drift. The gate used to set "last = now" on every
+	// step, which threw away the part of each frame past 33 ms: steps then landed on
+	// whole presented frames (34.7 ms at 144 Hz = 28.8 steps/s) and two machines with
+	// different refresh rates ran the sim at different speeds. It now counts steps
+	// against an anchor: step n is due at anchor + n*1000/30 ms (integer maths, no
+	// rounding to 33), so the remainder carries. No catch-up: at most ONE step per
+	// call, as before. If the game falls 3+ steps behind (a stall, loading, a
+	// debugger, alt-tab) the anchor resyncs to now instead of owing a burst.
+	static unsigned int anchor;
+	static unsigned int stepsSinceAnchor;
+	static int started;
 	unsigned int now = PsyX_GetTicks();
+	unsigned int elapsed, owed;
 
-	if ((unsigned int)(now - lastStepTick) < (1000 / 30))
+	if (!started)
+	{
+		started = 1;
+		anchor = now;
+		stepsSinceAnchor = 0;
+	}
+
+	elapsed = now - anchor;
+	owed = (unsigned int)(((unsigned long long)elapsed * 30) / 1000) + 1;	// step 0 is due at the anchor
+
+	if (stepsSinceAnchor >= owed)
 		return 0;
 
-	lastStepTick = now;
+	if (owed - stepsSinceAnchor > 3)
+	{
+		gJerStepGateResyncs++;
+		anchor = now;
+		stepsSinceAnchor = 0;
+	}
+
+	stepsSinceAnchor++;
+
+	// keep elapsed far from 32-bit wrap: 30000 steps is exactly 1000000 ms
+	if (stepsSinceAnchor > 30000 && elapsed >= 1000000)
+	{
+		anchor += 1000000;
+		stepsSinceAnchor -= 30000;
+	}
 
 	return 1;
 #endif

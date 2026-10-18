@@ -430,9 +430,18 @@ every probe sample afterwards reads `lock=1 skip=0`.
 The original gate was `VSync(-1) - frame < 2`: a step per two *simulated vblanks*. On
 a PSX that was a hard 30 Hz; on PC the counter is faked by a spinning thread and can
 be advanced extra times by the frame skip, so the step rate followed the counter's
-mood rather than the clock. `FilterFrameTime()` now takes a step only when 33 ms of
-`PsyX_GetTicks()` have elapsed (PSX keeps the vblank path), which makes the rate
-independent of render load, of the frame skip, and of the fast-forward flags.
+mood rather than the clock. `FilterFrameTime()` now runs on `PsyX_GetTicks()` (PSX keeps the vblank path),
+which makes the rate independent of render load, of the frame skip, and of the
+fast-forward flags.
+
+It is an **accumulator**, not a "33 ms since the last step" timer: step *n* is due at
+`anchor + n*1000/30` ms, so the part of a frame past the deadline carries into the
+next one and the long-run rate is exactly 30.0 (the old `last = now` form landed on
+whole presented frames — 28.8 steps/s at 144 Hz — and let machines with different
+refresh rates drift apart). It still takes **at most one step per call; there is no
+catch-up**. If the game falls more than 3 steps behind (a stall, a load, a debugger)
+the anchor resyncs to now rather than owing a burst; the probe counts those as
+`resyncs=` and flags a second under 28 steps with `BEHIND`.
 
 Two consequences worth knowing:
 
@@ -459,7 +468,7 @@ Every run also logs which gate it was built with, next to the build id:
 
 ```
 JERICHO 0.10.3-6-g7aba4e57-dirty Oct 17 2026 20:58:34 (Release_dev)
-[JERICHO] step gate: wall clock, 33 ms per step (~30 steps/s, independent of render rate and frame skip)
+[JERICHO] step gate: wall clock, exact 30 steps/s (accumulated 1000/30 ms, resync after 3 missed steps, no catch-up; independent of render rate and frame skip)
 ```
 
 That line exists because the banner alone cannot answer "is the fix in this binary?":

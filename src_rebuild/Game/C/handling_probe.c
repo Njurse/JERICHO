@@ -59,6 +59,8 @@
 
 #include <stdlib.h>		// getenv (JERICHO_HANDLING_PROBE)
 
+extern unsigned int gJerStepGateResyncs;	// main.c FilterFrameTime (PC)
+
 /* the stock rate the sim is supposed to run at: two vblanks per step */
 #define PROBE_STEPS_PER_SEC		30
 
@@ -214,6 +216,7 @@ void JerHandleProbeFrame(void)
 {
 	static unsigned int lastLine;
 	static int lastSteps;
+	static unsigned int lastResyncs;
 	static int lastFf = -1, lastLock = -1, lastSkip = -1, lastCut = -1;
 	unsigned int now;
 	int steps, ff, lock, skip, cut;
@@ -256,10 +259,16 @@ void JerHandleProbeFrame(void)
 		 * GATED step (the state machine itself spins millions of times a second and
 		 * returns immediately when the gate refuses), so frames-presented and steps
 		 * are the same number and an fps column would only restate the rate. */
-		printInfo("[JER-PROBE] rate=%d steps/s gap=%d..%dms "
-				  "(ff=%d lock=%d skip=%d skipcutscene=%d)\n",
-			steps, probeMinGap, probeMaxGap, ff, lock, skip, cut);
+		/* BEHIND: the gate does no catch-up, so a frame that takes longer than a
+		 * step costs sim time; under 28 steps/s with no fast-forward, say so, with
+		 * the number of backlog resyncs the gate made in this second. */
+		printInfo("[JER-PROBE] rate=%d steps/s gap=%d..%dms resyncs=%u "
+				  "(ff=%d lock=%d skip=%d skipcutscene=%d)%s\n",
+			steps, probeMinGap, probeMaxGap, gJerStepGateResyncs - lastResyncs,
+			ff, lock, skip, cut,
+			(lastLine != 0 && ff == 0 && steps < 28) ? " BEHIND: sim below 30 Hz (frames slower than 33 ms)" : "");
 
+		lastResyncs = gJerStepGateResyncs;
 		lastLine = now;
 		lastSteps = probeSteps;
 

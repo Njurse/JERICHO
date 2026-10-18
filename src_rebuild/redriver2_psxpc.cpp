@@ -701,7 +701,7 @@ int main(int argc, char** argv)
 #ifdef PSX
 	PsyX_Log_Info("[JERICHO] step gate: PSX vblank, 2 vblanks per step (~30 Hz)\n");
 #else
-	PsyX_Log_Info("[JERICHO] step gate: wall clock, 33 ms per step (~30 steps/s, independent of render rate and frame skip)\n");
+	PsyX_Log_Info("[JERICHO] step gate: wall clock, exact 30 steps/s (accumulated 1000/30 ms, resync after 3 missed steps, no catch-up; independent of render rate and frame skip)\n");
 #endif
 
 	/* JERICHO: TEST-ONLY lever for the cutscene-skip step path.
