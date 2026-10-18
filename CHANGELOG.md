@@ -19,6 +19,8 @@ is in [changelog.txt](changelog.txt).
 - **Dedicated server relays on-foot players and traffic.** It dropped both message
   types, so on a dedicated server nobody saw a player walking around, nor the cars
   and police another machine was driving. It now forwards them like a game host does.
+  Car bumps (to the player hit), car colours (the whole table, late joiners included)
+  and mods' network channel are forwarded too.
 - **Multiplayer cops fixes.** Another player crashing into walls or fences no longer
   raises *your* wanted level. Your patrol cops are no longer deleted when another
   player is nearby. With cops on, each machine keeps one traffic slot free for a cop,
