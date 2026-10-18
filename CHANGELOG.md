@@ -60,6 +60,24 @@ anyone updating from an earlier v0.10.3 or v0.10.2 install.
   `JERICHO 0.10.4`, or `JERICHO 0.10.4-3-gabc1234-dev` for a dev build; `-dirty`
   only on a build from modified sources), and the Options screen shows it small at
   the bottom-left.
+- **Your own chat shows up on a dedicated server.** The dedicated server relayed a
+  player's line to everyone except the sender, but the game only prints its own
+  line when the server echoes it back, so on a VPS/dedicated server you never saw
+  what you typed. It now echoes to everyone; each received line is also logged
+  (`[mp] chat from ...`).
+- **Dedicated server rules are readable and default to cops on.** `dediserver.json`
+  takes `"cops"`, `"cop_difficulty"` (0..2), `"cop_immunity"` and `"invulnerable"`
+  (with matching `--cops/--no-cops`, `--cop-difficulty N`, `--cop-immunity`,
+  `--invulnerable` flags) instead of a packed `"rules"` number, and `status` shows
+  them in words. Existing `dediserver.json` files with `"rules": 0` are kept by
+  updates and still mean cops off until you change them.
+- **Map arrows in player colours:** each player's arrow on the map uses their
+  preferred car colour (yours too, when you have one set).
+- **Police light bars follow the car:** a cop car imported from another city
+  flashes in its own city's light-bar pattern and colours instead of the host
+  city's. (Siren sounds still come from the host city's bank.)
+- **Options version text** is now fully on screen and white; the Credits text is
+  a size larger.
 - **Compile Mods is hidden in the Release build** (it stays in `Release_dev`, where
   modders use it).
 - **Mod loader:** a `mod.toml` `id` can no longer point the loader at a library
