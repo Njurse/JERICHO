@@ -420,7 +420,7 @@ frames. [README](JERICHO/MODS/example/README.md)
 
 **JERICHO and this fork — Jaret ([Njurse](https://github.com/Njurse)).**
 
-**Contributors:** **Commando52Colton** — palette and texture paging information,
+**Special thanks:** **Commando52Colton** — advice on palette and texture paging,
 mission script research.
 
 This project stands on **REDRIVER2**, the reverse-engineered Driver 2 rewrite it

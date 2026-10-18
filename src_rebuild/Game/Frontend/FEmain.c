@@ -5300,14 +5300,13 @@ static void jer_mods_rebuild_button_names(void);
  * into this page: the same background, one BACK button bottom-right, and two
  * columns of lines centred over it in the frontend's face. Names come from README.md's
  * Credits section and REDRIVER2.md's upstream credits -- keep them in step. */
-static const char* const kJerichoCreditsLeft[] = {	/* JERICHO and its contributors */
+static const char* const kJerichoCreditsLeft[] = {	/* JERICHO, and thanks */
 	"JERICHO",
 	"Created by Jaret (Njurse)",
 	"",
-	"Contributors",
-	"Commando52Colton",
-	"palette and texture paging information,",
-	"mission script research",
+	"Special thanks",
+	"Commando52Colton - advice on palette",
+	"and texture paging, mission script research",
 };
 
 static const char* const kJerichoCreditsRight[] = {	/* the engine underneath */
