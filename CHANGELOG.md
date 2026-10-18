@@ -21,6 +21,12 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **Auto-reconnect on a server city change.** A passed `!vote` now kicks with a rejoin
+  flag (KICK `reserved[0]`, no protocol bump); the client says "Server changing city -
+  reconnecting...", re-joins the same server through the normal join (retries ~20 s,
+  Esc cancels), loads the new city and restores its previous car (model + city, via
+  Change car; falls back to the default and logs if it can't). Normal kicks never
+  reconnect. Plugin API: `kick(..., rejoin=True)`. Car colour is not carried over.
 - **Kick reasons.** `!kick <slot|name> [reason]`, console `kick <id> [reason]` and the
   plugin `kick(player, reason=None)`: the kicked player sees "Kicked by admin: <reason>"
   (an optional 64-byte text tail on the KICK frame, cut to 63 bytes on a UTF-8
