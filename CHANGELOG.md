@@ -66,6 +66,12 @@ anyone updating from an earlier v0.10.3 or v0.10.2 install.
   left/right symmetric as they load (stock Driver 2 cars untouched), and the bake no
   longer produces the offset. The log says `d1cars: symmetrized ...` for each car it
   corrected.
+- **Take a Ride is always called Take a Ride.** The server browser, join log and
+  advertise log named the mode from the cops setting ("COPS N ROBBERS" with cops on);
+  they now name it from the server's game mode, so cops on/off no longer renames it.
+- **Release re-cuts refresh their notes.** Moving a release tag used to leave the old
+  "What's new" text on the existing GitHub Release; the publish job now rewrites that
+  section from CHANGELOG.md every time.
 - **Your own chat shows up on a dedicated server.** The dedicated server relayed a
   player's line to everyone except the sender, but the game only prints its own
   line when the server echoes it back, so on a VPS/dedicated server you never saw
