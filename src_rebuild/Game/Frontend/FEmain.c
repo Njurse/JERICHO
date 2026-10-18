@@ -416,8 +416,14 @@ int JerFrontendMenuScreen(int bSetup);	// JERICHO-HOOK: module frontend menus
 // JERICHO-HOOK: module-provided frontend menus live in slots 42..(42+MAX-1)
 #define JERICHO_FE_SCREEN_BASE 42
 // 8 buttons max (PSXSCREEN::buttons[8]): modules + Prev/Next + Compile + Back.
-// Windows shows a Compile Mods button, so one less module fits per page.
-#if defined(_WIN32)
+// Windows dev builds show a Compile Mods button, so one less module fits per page.
+// A RELEASE build (JERICHO_RELEASE_MODS) hides the button -- players get the
+// modules a release ships; compiling modules is a modder's tool (Release_dev).
+#if defined(_WIN32) && !defined(JERICHO_RELEASE_MODS)
+#define JERICHO_FE_HAS_COMPILE_MODS 1
+#endif
+
+#if defined(JERICHO_FE_HAS_COMPILE_MODS)
 #define JERICHO_MODS_MODULES_PER_PAGE 4
 #else
 #define JERICHO_MODS_MODULES_PER_PAGE 5
@@ -5328,8 +5334,8 @@ int JerichoModsScreen(int bSetup)
 	hasPrev = gJerichoModsPage > 0;
 	hasNext = gJerichoModsPage + 1 < pageCount;
 
-	hasCompile = 0;		// Compile Mods button (Windows only)
-#if defined(_WIN32)
+	hasCompile = 0;		// Compile Mods button (Windows dev builds only)
+#if defined(JERICHO_FE_HAS_COMPILE_MODS)
 	hasCompile = 1;
 #endif
 
@@ -5615,7 +5621,7 @@ int JerichoModsScreen(int bSetup)
 				return 1;
 			}
 		}
-#if defined(_WIN32)
+#if defined(JERICHO_FE_HAS_COMPILE_MODS)
 		/* Compile Mods: build every installed module into a DLL, then reload
 		 * so freshly compiled (or newly dropped) mods appear immediately */
 		else if (idx == compileIdx)
