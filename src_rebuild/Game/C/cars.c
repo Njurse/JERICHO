@@ -476,6 +476,32 @@ int CivClutRowMaxSlot(int row)
 	return sCivClutRowMaxSlot[row];
 }
 
+// JERICHO: body palettes per resident slot (cars.h). The same rule the spawners use (civ_ai
+// picks 0..5 only for models 0..4; carhacks spawn.c likewise), plus: a Driver 1 car is
+// single-palette whatever its model number says. A palette past what a slot has is not
+// caught by CarClutVariant for the host's own rows, and after a hot swap those rows can
+// still hold the PREVIOUS car's colour columns - that is the broken-colours report.
+int CarModelPaletteCount(int city, int model)
+{
+	if (city >= CITY_D2_COUNT && city < CITY_D2_COUNT + CITY_D1_COUNT)
+		return 1;
+
+	return (model >= 0 && model <= 4) ? 6 : 1;
+}
+
+int CarSlotPaletteCount(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 1;
+
+	return CarModelPaletteCount(GetCarModelSourceCity(slot), residentCarModels[slot]);
+}
+
+int CarSlotClampPalette(int slot, int palette)
+{
+	return (palette >= 0 && palette < CarSlotPaletteCount(slot)) ? palette : 0;
+}
+
 // JERICHO: the same question for one texture_id of a row (0 = the page's own CLUT only).
 int CivClutTexMaxSlot(int row, int texid)
 {

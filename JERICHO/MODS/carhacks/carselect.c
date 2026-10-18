@@ -49,6 +49,7 @@
 
 #include "carhacks.h"
 #include "carid.h"
+#include "cars.h"		/* CarModelPaletteCount: how many palettes a model has */
 #include "carimport.h"
 #include "net.h"
 
@@ -76,8 +77,10 @@ extern char carNumLookup[CITY_COUNT][10];	/* frontend slot -> model number */
 /* Menu rows. */
 #define CHK_ROW_CAR		0
 #define CHK_ROW_CITY		1
-#define CHK_ROW_RIDE		2
-#define CHK_ROW_BACK		3
+#define CHK_ROW_PALETTE		2
+#define CHK_ROW_RIDE		3
+#define CHK_ROW_BACK		4
+#define CHK_ROW_COUNT		5
 
 typedef struct CHK_ROSTER_ENTRY
 {
@@ -105,17 +108,21 @@ static int gChkForceMenu;	/* harness: CHK_FORCE_MENU - walk to the car screen */
 static int gChkRosterLoggedCity = -1;	/* the city whose roster was last described */
 static int gChkRosterLoggedCount = -1;	/* ...and what it offered then */
 
-static JER_FE_ITEM gChkItems[4];
+static JER_FE_ITEM gChkItems[CHK_ROW_COUNT];
 static JER_FE_MENU gChkMenu =
 {
 	"chk.car",		/* id */
 	gChkItems,		/* items */
-	4,			/* item_count */
+	CHK_ROW_COUNT,		/* item_count */
 	NULL,			/* on_enter */
 	NULL,			/* userdata */
 	"SELECT CAR",		/* title */
 	NULL,			/* get_preview (set below, keeps the initializer readable) */
-	NULL			/* on_back (none - the engine's own back applies) */
+	NULL,			/* on_back (none - the engine's own back applies) */
+	0,			/* row_w: the stock box (labels right-align at 590) */
+	0,			/* row_step */
+	2,			/* bottom_items: Ride and Back sit bottom-right */
+	0, 0, 0
 };
 
 /* ---------------------------------------------------------------------------
@@ -230,6 +237,34 @@ static void chkCityLabel(void* ud, char* out, int max)
 	snprintf(out, max, "< CITY: %s >", chkCityName(gChkRosterCity));
 }
 
+/* ---------------------------------------------------------------------------
+ * Palette: the colour variant the player's car spawns in (main.c's
+ * defaultPlayerPalette, which InitCar clamps to the model and mp saves as [mp]
+ * palette). The count is the SELECTED model's: a Driver 1 car or a special has one
+ * palette and reads 1/1, so nothing is offered that it would break on.
+ * ------------------------------------------------------------------------- */
+extern u_char defaultPlayerPalette;
+
+static int chkSelPaletteCount(void)
+{
+	CHK_ROSTER_ENTRY list[CHK_ROSTER_MAX];
+	int n = chkRosterBuild(gChkRosterCity, list, CHK_ROSTER_MAX);
+
+	if (n <= 0 || gChkCarIdx < 0 || gChkCarIdx >= n)
+		return 1;
+
+	return CarModelPaletteCount(gChkRosterCity, list[gChkCarIdx].model);
+}
+
+static void chkPaletteLabel(void* ud, char* out, int max)
+{
+	int n = chkSelPaletteCount();
+	int cur = ((int)defaultPlayerPalette < n) ? (int)defaultPlayerPalette : 0;
+
+	(void)ud;
+	snprintf(out, max, "< PALETTE %d/%d >", cur + 1, n);
+}
+
 /* Left/Right: the car row moves the cursor, the city row moves the roster. */
 static int chkSelAdjust(void* ud, int dir)
 {
@@ -265,6 +300,17 @@ static int chkSelAdjust(void* ud, int dir)
 
 		printInfo("[carhacks] car select: roster city %s (%d car(s) available)\n",
 			chkCityName(gChkRosterCity), chkRosterCount(gChkRosterCity));
+	}
+	else if (row == CHK_ROW_PALETTE)
+	{
+		int n = chkSelPaletteCount();
+		int cur = ((int)defaultPlayerPalette < n) ? (int)defaultPlayerPalette : 0;
+
+		if (n <= 1)
+			return 1;	/* single-palette car: nothing to cycle, the choice is kept */
+
+		defaultPlayerPalette = (u_char)((cur + dir + n) % n);
+		printInfo("[carhacks] car select: palette %d/%d\n", (int)defaultPlayerPalette + 1, n);
 	}
 	else if (row == CHK_ROW_CAR)
 	{
@@ -621,6 +667,12 @@ void chkCarSelectRegister(JERICHO_CONTEXT* ctx)
 	gChkItems[CHK_ROW_CITY].on_adjust = chkSelAdjust;
 	gChkItems[CHK_ROW_CITY].submenu = -1;
 
+	/* < PALETTE n/N > - the selected model's colour variants */
+	gChkItems[CHK_ROW_PALETTE].get_label = chkPaletteLabel;
+	gChkItems[CHK_ROW_PALETTE].userdata = (void*)(size_t)CHK_ROW_PALETTE;
+	gChkItems[CHK_ROW_PALETTE].on_adjust = chkSelAdjust;
+	gChkItems[CHK_ROW_PALETTE].submenu = -1;
+
 	/* Ride */
 	gChkItems[CHK_ROW_RIDE].label = "Ride";
 	gChkItems[CHK_ROW_RIDE].userdata = (void*)(size_t)CHK_ROW_RIDE;
@@ -652,7 +704,7 @@ void chkCarSelectRegister(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, chkSelOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRONTEND_ENTERED, chkSelOnFrontendEntered, NULL, 0);
 
-	ctx->jer_log(ctx, "[carhacks] car select: menu '%s' registered (%d rows: car, city, ride, back; %s)\n",
+	ctx->jer_log(ctx, "[carhacks] car select: menu '%s' registered (%d rows: car, city, palette, ride, back; %s)\n",
 		gChkMenu.id, gChkMenu.item_count,
 		(gChkForceCity >= 0 || gChkForceCar >= 0 || gChkForceMenu) ? "harness overrides set" : "no harness overrides");
 }

@@ -6,6 +6,34 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+## v0.10.6
+
+*Released 2026-10-18.*
+
+Car colours are fixed and you can now pick them before you drive. Changing car no longer
+leaves you with broken colours, and the Take a Ride car select has a Palette picker.
+
+### Highlights
+
+- **Pick your car's colours in Take a Ride.** The car select has a new Palette row
+  (Left/Right) showing n/N for the selected car. Single-palette cars, such as every
+  Driver 1 car, show 1/1. The car spawns in the palette you pick.
+
+### Fixes
+
+- **Car colours no longer break after Change car.** The pause menu's Change car now checks
+  the palette you chose on one car against the car you switch to. A car with a single
+  palette (every Driver 1 car, specials, cops) uses its own colours, and the Palette row
+  shows 1/1 there. Your choice comes back on a car that has it. The same check covers
+  spawns, respawns, and the car kept across a map change or reconnect.
+- **Other players' cars always draw correctly.** If a peer or an older client sends a
+  palette its car doesn't have, that car is drawn in its own colours instead of broken ones.
+
+### For server admins and updating
+
+- No protocol or config changes. Mixed v0.10.5 and v0.10.6 clients and servers can play
+  together. The in-game updater picks up v0.10.6 as usual.
+
 ## v0.10.5
 
 *Released 2026-10-18.*
