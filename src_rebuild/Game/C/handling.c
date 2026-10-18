@@ -1173,6 +1173,7 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	int player_id;
 	int int_steer;
 	int analog_angle;
+	int padIdx;
 	PED_MODEL_TYPES whoExit;
 	JER_ARGS_CAR_PAD jerPadArgs;
 	int carPadHandled;
@@ -1181,6 +1182,15 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 
 	int_steer = PadSteer;
 	player_id = GetPlayerId(cp);
+
+	/* JERICHO: the index this car's damage cap may be read with.
+	 *
+	 * A REMOTE player car has a NEGATIVE pad id (main.c's spawn loop gives slots
+	 * >= NumPlayers `padid = -i`), so indexing MaxPlayerDamage[*cp->ai.padid] read
+	 * BEFORE the array and could land on anything. Clamp ONCE, here, and use this
+	 * everywhere in this function: the lock test below and the CAR_PAD hook's
+	 * `live` flag both needed it and only the first one had it. */
+	padIdx = (cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2) ? *cp->ai.padid : 0;
 
 	// Handle player car controls...
 	if (cp->controlType == CONTROL_TYPE_PLAYER)
@@ -1210,12 +1220,9 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 		// gives slots >= NumPlayers `padid = -i`), so indexing MaxPlayerDamage
 		// with *cp->ai.padid read BEFORE the array and could land on a value that
 		// trips this lock -- which forces the handbrake and leaves a remote car
-		// unable to move at all. Fall back to slot 0 for a car with no local pad.
+		// unable to move at all. padIdx (top of the function) clamps it.
 		{
-			int dmgPad = (cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2)
-				? *cp->ai.padid : 0;
-
-			if (gStopPadReads != 0 || MaxPlayerDamage[dmgPad] <= cp->totalDamage || gCantDrive != 0)
+			if (gStopPadReads != 0 || MaxPlayerDamage[padIdx] <= cp->totalDamage || gCantDrive != 0)
 			{
 				pad = CAR_PAD_HANDBRAKE;
 
@@ -1252,7 +1259,7 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	jerPadArgs.useAnalogue = use_analogue;
 	jerPadArgs.live = (cp->controlType == CONTROL_TYPE_PLAYER && NoPlayerControl == 0 &&
 		gStopPadReads == 0 && gCantDrive == 0 && cp->ai.padid != NULL &&
-		MaxPlayerDamage[*cp->ai.padid] > cp->totalDamage) ? 1 : 0;
+		MaxPlayerDamage[padIdx] > cp->totalDamage) ? 1 : 0;
 	jerPadArgs.handled = 0;
 	jer_fire(JER_EVENT_CAR_PAD, &jerPadArgs);
 	pad = (u_int)jerPadArgs.pad;
