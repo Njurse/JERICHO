@@ -389,8 +389,9 @@ stock behaviour returns.
 
 **Lock it, don't clear `FastForward` per frame.** A module that cleared the flag each
 frame while the map re-set it each frame made the two fight: for as long as the map
-was open the sim toggled fast/normal every frame. mp raises the lock for the length
-of a match (`MpOnFrame`) and logs the fact once — a fast-forwarded client runs at a
+was open the sim toggled fast/normal every frame. mp raises the lock for the whole
+session (`MpOnFrame`: `gMp.running || MpIsActive()`, so the load/countdown window
+before lockstep starts is covered too) and logs the fact once — a fast-forwarded client runs at a
 different rate from every other machine, which is a desync by definition.
 
 ### There is a SECOND fast-forward, and the lock has to cover it
