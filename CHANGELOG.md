@@ -21,6 +21,21 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **MP: no game over on foot.** Being busted by a cop, drowning or a train while on
+  foot opened the game-over menu over a session (camera lost its target, rejoin
+  needed). It is refused like the in-car wreck already was: not dying, felony cleared,
+  pulled out of the water to the level start if drowning.
+- **MP: live joiners spawn on a road away from others**, not on the level start where
+  the host came in: a random road spot 1.5-4.5k units out, clear of other players'
+  cars by 2000 units, facing along the road (falls back to the start and logs).
+- **MP: respawned cars face along the road** (the road's direction nearest the car's).
+- **MP: an on-foot pose relayed by the in-game host must describe its sender** (the dedi
+  already enforced this).
+- **`chat_hold_seconds`** in `[mp]` of mp.ini (2..120): how long a chat line stays at
+  full brightness before fading. Default **12 s (was a fixed 20 s)**; new engine call
+  `jer_console_set_chat_hold()`.
+- **Auto-reconnect keeps a car picked by slot**: a car-select slot is per city, so the
+  rejoin now remembers the model on the road instead of skipping the restore.
 - **Auto-reconnect on a server city change.** A passed `!vote` now kicks with a rejoin
   flag (KICK `reserved[0]`, no protocol bump); the client says "Server changing city -
   reconnecting...", re-joins the same server through the normal join (retries ~20 s,

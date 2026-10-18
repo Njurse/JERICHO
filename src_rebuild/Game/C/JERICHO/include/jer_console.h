@@ -82,6 +82,10 @@ void jer_console_input(const char* text);
  * jer_console_input(NULL). */
 int  jer_console_scroll(int delta);
 
+/* How long a CHAT row stays at full brightness before it fades, in seconds
+ * (clamped to 2..120; default 12). Plain console lines are unaffected. */
+void jer_console_set_chat_hold(int seconds);
+
 /* Drop every line (the stream is empty again). */
 void jer_console_clear(void);
 

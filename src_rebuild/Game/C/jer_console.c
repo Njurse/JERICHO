@@ -125,7 +125,9 @@ extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, st
  * console disabled" happened: the line arrived, drew, and was gone before anyone
  * looked. Twenty seconds + a 3 s fade is long enough to read what you missed and
  * still clears itself. */
-#define JER_CONSOLE_CHAT_HOLD_FRAMES	600	/* 20 s at 30 Hz: full brightness */
+static int sChatHoldFrames = 12 * 30;
+
+#define JER_CONSOLE_CHAT_HOLD_FRAMES	sChatHoldFrames	/* full brightness: 12 s at 30 Hz by default (was a fixed 20 s); jer_console_set_chat_hold */
 #define JER_CONSOLE_CHAT_FADE_FRAMES	90	/* 3 s at 30 Hz: fading out */
 #define JER_CONSOLE_CHAT_LIFE_FRAMES	(JER_CONSOLE_CHAT_HOLD_FRAMES + JER_CONSOLE_CHAT_FADE_FRAMES)
 
@@ -741,4 +743,14 @@ void jer_console_draw(int frontend)
 
 	/* leave the text colour exactly as it was found (see the file header) */
 	gFontColour = ambient;
+}
+
+void jer_console_set_chat_hold(int seconds)
+{
+	if (seconds < 2)
+		seconds = 2;
+	if (seconds > 120)
+		seconds = 120;
+
+	sChatHoldFrames = seconds * 30;
 }
