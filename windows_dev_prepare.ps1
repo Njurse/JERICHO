@@ -53,4 +53,5 @@ Rename-Item -Path ($windows_jpeg_dir + '\\jconfig.vc') -NewName "jconfig.h"
 & .\\premake5 vs2022
 
 # Open solution
-& .\\project_vs2022_windows\\JERICHO.sln
+# premake5.lua writes the solution to build/ (premake5.lua: location "build")
+& .\\build\\JERICHO.sln

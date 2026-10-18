@@ -15,6 +15,8 @@ PREMAKE=$(pwd)/premake5
 cd "src_rebuild"
 $PREMAKE gmake2
 $PREMAKE vscode
-cd project_gmake2_linux
+# premake5.lua writes the makefiles to build/ (location "build")
+cd build
+echo "Now: make config=release_x64   (or release_dev_x64)"
 
 

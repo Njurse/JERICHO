@@ -179,7 +179,8 @@ and the traps the API hides — is
 - **Visual Studio 2019 or 2022** with the **Desktop development with C++**
   workload (the MSVC x64 toolset and MSBuild).
 - **premake 5** — `premake5.exe` at the repo root and in `src_rebuild/`
-  (fetched by [`windows_dev_prepare.ps1`](windows_dev_prepare.ps1)).
+  (fetched and SHA-256-verified by [`windows_dev_prepare.ps1`](windows_dev_prepare.ps1);
+  CI pins the same hashes in `.github/workflows/build.yml`).
 - The third-party dependencies (SDL2, OpenAL, libjpeg), pinned to the upstream
   versions (SDL2 `2.30.2`, OpenAL-soft `1.23.1`, libjpeg `jpeg-9d`). Fetch them
   once with [`windows_dev_prepare.ps1`](windows_dev_prepare.ps1).
