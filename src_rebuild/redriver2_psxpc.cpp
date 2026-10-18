@@ -570,6 +570,35 @@ int main(int argc, char** argv)
 		}
 	}
 
+	// JERICHO: a release ships config.default.ini, never config.ini, so unpacking
+	// one over an install cannot replace the player's settings. Seed config.ini
+	// from it the first time (only for the stock name: an explicit -ini is the
+	// caller's own file). The engine never writes config.ini itself.
+	if (!strcmp(configFilename, "config.ini"))
+	{
+		FILE* have = fopen("config.ini", "rb");
+
+		if (have)
+			fclose(have);
+		else
+		{
+			FILE* src = fopen("config.default.ini", "rb");
+
+			if (src)
+			{
+				FILE* dst = fopen("config.ini", "wb");
+				char cbuf[4096];
+				size_t got;
+
+				while (dst && (got = fread(cbuf, 1, sizeof(cbuf), src)) > 0)
+					fwrite(cbuf, 1, got, dst);
+				if (dst)
+					fclose(dst);
+				fclose(src);
+			}
+		}
+	}
+
 	config = ini_load(configFilename);
 
 	// best distance
