@@ -231,7 +231,7 @@ runtime addon's `<id>.dll` is game data and no rule there touches it.
 
 ## The version
 
-`JERICHO_BUILD_VERSION` comes from `git describe --tags --always --dirty`
+`JERICHO_BUILD_VERSION` comes from `git describe --tags --match 'v*' --always --dirty`
 (`premake5.lua`), so a release is versioned by its tag. Release tags are spelled
 `v0.9.0` because the workflow triggers on `v*` — the repo's older REDRIVER2 tags
 carry no prefix at all — and premake strips that leading `v`, so the binary and
