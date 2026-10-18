@@ -2650,6 +2650,13 @@ void State_FrontEnd(void* param)
 	if (gJerichoCreditsOpen && pCurrScreen == &PsxScreens[JERICHO_MODS_SCREEN])
 		JerichoDrawCredits();
 
+	/* JERICHO: the build, small and bottom-left, on the Options screen only (the
+	 * screen the main menu's Options button opens) -- the window title says the
+	 * same thing (GAME_VERSION_FULL, version.h). */
+	if ((PsxScreens[0].buttons[4].action >> 8) == BTN_NEXT_SCREEN &&
+	    pCurrScreen == &PsxScreens[PsxScreens[0].buttons[4].action & 0xFF])
+		jer_text_draw_at(JER_TEXT_FE, 100, 24, 486, GAME_VERSION_FULL, 160, 160, 160);
+
 	/* Ask the modules before the attract demo starts. A multiplayer lobby is
 	 * idle by definition, so without this the demo would launch a level nobody
 	 * asked for -- and that load blocks the main thread for its whole

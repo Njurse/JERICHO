@@ -679,7 +679,7 @@ int main(int argc, char** argv)
 	gJerConsolePrevKeys = g_dbg_gameDebugKeys;
 	g_dbg_gameDebugKeys = JerConsoleKeyboardHandler;
 
-	PsyX_Initialise("JERICHO", fullScreen ? screenWidth : windowWidth, fullScreen ? screenHeight : windowHeight, fullScreen);
+	PsyX_Initialise((char*)GAME_VERSION_FULL, fullScreen ? screenWidth : windowWidth, fullScreen ? screenHeight : windowHeight, fullScreen);
 
 	/* The build banner, logged on every build. The log is the build record a player
 	 * can send, so a release keeps it; only the frontend's on-screen stamps are
