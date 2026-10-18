@@ -68,7 +68,7 @@ extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, st
 #define JER_CONSOLE_X			13
 #define JER_CONSOLE_TEXT_SCALE		0.138f	/* half of the 0.275f default */
 #define JER_CONSOLE_LINE_H		11
-#define JER_CONSOLE_BOTTOM		196
+#define JER_CONSOLE_BOTTOM		190	/* JERICHO: 6 px up, so the block clears the input row */
 
 /* Extra pixels between glyphs. At the half-size scale the HQ font's own side
  * bearings collapse to well under a pixel (measured: a ~4.5 px 'M' advance
@@ -80,12 +80,12 @@ extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, st
 #define JER_CONSOLE_FE_X		32
 #define JER_CONSOLE_FE_SCALE		2048	/* half of the FE's standard 4096 */
 #define JER_CONSOLE_FE_LINE_H		18
-#define JER_CONSOLE_FE_BOTTOM		456
+#define JER_CONSOLE_FE_BOTTOM		444
 
 /* The typed chat line: the row under the whole HUD block, drawn whether or not
  * the console is on. */
-#define JER_CONSOLE_INPUT_Y		232
-#define JER_CONSOLE_FE_INPUT_Y		496
+#define JER_CONSOLE_INPUT_Y		226	/* was 232: the descenders sat on the screen's last rows */
+#define JER_CONSOLE_FE_INPUT_Y		484
 #define JER_CONSOLE_INPUT_R		150
 #define JER_CONSOLE_INPUT_G		255
 #define JER_CONSOLE_INPUT_B		150
@@ -95,7 +95,7 @@ extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, st
  * width, not a character count -- the widest glyph ('W', ~7.2 px at this scale)
  * is nearly twice a typical one, so a fixed count overflows on wide text and
  * wastes the row on narrow text. */
-#define JER_CONSOLE_WRAP_PX		310
+#define JER_CONSOLE_WRAP_PX		294	/* was 310: 13 + 310 ran past the 320 edge, clipping each row's tail */
 #define JER_CONSOLE_FALLBACK_CHAR	6	/* px, when no HQ font is loaded */
 
 /* The flattened text of one push, before wrapping (6 runs x 64). */
@@ -524,6 +524,18 @@ static void jerConsoleDrawRow(const JER_CONSOLE_ROW* row, int frontend, int y, i
 static void jerConsoleDrawInput(int frontend)
 {
 	int x = jerConsoleLeftX(frontend);
+	const char* shown = sInput;
+	int w = 0;
+	const char* p;
+
+	/* JERICHO: a typed line longer than the row used to run off the right edge,
+	 * so the end of what you were typing (and the cursor) was invisible. Show the
+	 * TAIL instead: drop leading characters until the rest fits the wrap width. */
+	for (p = sInput; *p; p++)
+		w += jerCharWidth((unsigned char)*p);
+
+	while (*shown && w > JER_CONSOLE_WRAP_PX)
+		w -= jerCharWidth((unsigned char)*shown++);
 	u_char r = jerConsoleInk(JER_CONSOLE_INPUT_R);
 	u_char g = jerConsoleInk(JER_CONSOLE_INPUT_G);
 	u_char b = jerConsoleInk(JER_CONSOLE_INPUT_B);
@@ -531,11 +543,11 @@ static void jerConsoleDrawInput(int frontend)
 	SetTextColour(r, g, b);
 
 	if (frontend)
-		FEPrintStringSized(sInput, x, JER_CONSOLE_FE_INPUT_Y, JER_CONSOLE_FE_SCALE, 0, r, g, b);
+		FEPrintStringSized((char*)shown, x, JER_CONSOLE_FE_INPUT_Y, JER_CONSOLE_FE_SCALE, 0, r, g, b);
 	else if (gHiresFontTexture)
-		PrintStringHiresScaledSpaced(sInput, x, JER_CONSOLE_INPUT_Y, JER_CONSOLE_TEXT_SCALE, JER_CONSOLE_TRACKING);
+		PrintStringHiresScaledSpaced((char*)shown, x, JER_CONSOLE_INPUT_Y, JER_CONSOLE_TEXT_SCALE, JER_CONSOLE_TRACKING);
 	else
-		PrintString(sInput, x, JER_CONSOLE_INPUT_Y);
+		PrintString((char*)shown, x, JER_CONSOLE_INPUT_Y);
 }
 
 /* --- headless test lever ------------------------------------------------- */
