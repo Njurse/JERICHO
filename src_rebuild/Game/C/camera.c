@@ -16,6 +16,10 @@
 #include "objcoll.h"
 #include "pad.h"
 #include "players.h"
+#include "overlay.h"	// JERICHO-HOOK: g_PlayerControlMode (the padprobe reports it)
+#include <stdlib.h>	// getenv (JERICHO_PADPROBE)
+#include <limits.h>	// INT_MIN (padprobe state)
+#include <string.h>	// strcmp (JERICHO_PADPROBE_FORCE)
 #include "draw.h"
 #include "cell.h"
 #include "models.h"
@@ -394,16 +398,18 @@ void TurnHead(PLAYER *lp)
 {
 	LPPEDESTRIAN pPlayerPed;
 	int jerLookSuppressed = 0;
+	int jerLookDrove = 0;	// a handler wrote lp->headTarget itself
 	
 	pPlayerPed = lp->pPed;
 
 	// JERICHO-HOOK: modules may drive or suppress the look before the stock
 	// L2/R2/L3 handling runs (e.g. right-stick free-look, aim suspension).
 	// A handler writes args->suppress to skip the stock look-left/right/back
-	// branches below AND to keep the free-look target it wrote into
-	// lp->headTarget alive (the engine smooths it via headPos below).
+	// branches below. A handler that also WROTE lp->headTarget keeps it (the
+	// engine smooths it via headPos below); suppression alone does not.
 	{
 		JER_ARGS_CAMERA_LOOK jerLook;
+		int headTargetBefore = lp->headTarget;
 
 		jerLook.player = lp;
 		jerLook.paddCamera = paddCamera;
@@ -425,11 +431,79 @@ void TurnHead(PLAYER *lp)
 		 * another module's later "release" in the same frame */
 		jerLookSuppressed |= jerLook.suppress;
 		jerLookGripOrbit = jerLook.gripOrbit;
+		jerLookDrove |= (lp->headTarget != headTargetBefore);
 
 		if (jerLookSuppressed)
 		{
 			paddCamera &= ~(CAMERA_PAD_LOOK_LEFT | CAMERA_PAD_LOOK_RIGHT |
 				CAMERA_PAD_LOOK_BACK | CAMERA_PAD_LOOK_BACK_DED);
+		}
+	}
+
+	// JERICHO-HOOK: JERICHO_PADPROBE=1 — the camera half of the trigger report.
+	// The pad probe (PsyX_pad.cpp) says whether L2/R2 ever reach the engine; this
+	// one says what the camera had to work with, and why, so a dead look is never
+	// a mystery again. On change only, so a run costs a handful of lines.
+	//
+	//   pads      what InitCamera sampled from Pads[lp->padid].mapped
+	//   lookbits  what SURVIVED the handler pass: a module's suppress clears
+	//             left, right, back and R3 together, so if left/right are dead
+	//             while R3 (0x400) is set here, no module is suppressing and the
+	//             bits never arrived (i.e. it is the pad/pad-layer half).
+	//   aimode    sandbox hands the look off while its Player AI mode is not 0.
+	{
+		static int probe = -1;
+		static int lastPads = -1, lastBits = -1, lastSuppress = -1, lastMode = -1, lastHead = INT_MIN;
+
+		if (probe < 0)
+			probe = (getenv("JERICHO_PADPROBE") != NULL) ? 1 : 0;
+
+		if (probe != 0)
+		{
+			int lookBits = paddCamera & (CAMERA_PAD_LOOK_LEFT | CAMERA_PAD_LOOK_RIGHT | CAMERA_PAD_LOOK_BACK_DED);
+			int aimode = g_PlayerControlMode;
+			int headPos = (int)lp->headPos >> 16;
+			int headTarget = (int)lp->headTarget >> 16;
+
+			if (paddCamera != lastPads || lookBits != lastBits ||
+				jerLookSuppressed != lastSuppress || aimode != lastMode || headPos != lastHead)
+			{
+				lastPads = paddCamera;
+				lastBits = lookBits;
+				lastSuppress = jerLookSuppressed;
+				lastMode = aimode;
+				lastHead = headPos;
+
+				/* headPos/headTarget are what the camera ANGLE is built from
+				 * (camAngle = cameraAngle - (headPos >> 16)), so a look that
+				 * works shows headPos walking toward the +-0x400 target; a look
+				 * whose bits are missing shows both pinned at 0. */
+				jer_log("[padprobe] look: padid %d pads=0x%04X lookbits=0x%03X suppress=%d aimode=%d head %d->%d\n",
+					lp->padid, paddCamera, lookBits, jerLookSuppressed, aimode, headPos, headTarget);
+			}
+		}
+	}
+
+	// JERICHO-HOOK: JERICHO_PADPROBE_FORCE — the other half of that report.
+	// "left"/"right"/"back" pin a look bit into paddCamera, so it answers the
+	// one question the pad can't: does the look still work when the bits are
+	// there? (Button names like cross/triangle are handled further down, at the
+	// pad layer in PsyX_pad.cpp, so the bit travels the real path.) A run with it
+	// says whether a dead left/right is the camera forgetting how to look
+	// (lookbits set, head pinned at 0) or the pad never sending it (lookbits
+	// clear, head 0->0). Test-only: nothing reads it unless the environment
+	// sets it.
+	{
+		const char* padProbeForce = getenv("JERICHO_PADPROBE_FORCE");
+
+		if (padProbeForce != NULL)
+		{
+			if (!strcmp(padProbeForce, "left"))
+				paddCamera |= CAMERA_PAD_LOOK_LEFT;
+			else if (!strcmp(padProbeForce, "right"))
+				paddCamera |= CAMERA_PAD_LOOK_RIGHT;
+			else if (!strcmp(padProbeForce, "back"))
+				paddCamera |= CAMERA_PAD_LOOK_BACK_DED;
 		}
 	}
 
@@ -466,10 +540,13 @@ void TurnHead(PLAYER *lp)
 
 		lp->headTimer = 0;
 
-		// JERICHO-HOOK: a module driving the free-look set lp->headTarget
-		// above (and suppressed the stock look); keep it so the smoothing
-		// below eases headPos toward it instead of snapping it back.
-		if (jerLookSuppressed == 0)
+		// JERICHO-HOOK: a module that DROVE the free-look (wrote
+		// lp->headTarget during the handler pass) keeps its target, so the
+		// smoothing below eases to it. Merely SUPPRESSING the look (aiming, or
+		// sandbox handing the camera to its AI mode) must not freeze the head
+		// where it was: it used to stay pegged at the last look angle for as long
+		// as the suppression lasted, which parked the camera ~90 deg to the side.
+		if (jerLookSuppressed == 0 || jerLookDrove == 0)
 			lp->headTarget = 0;
 	}
 

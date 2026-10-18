@@ -277,6 +277,32 @@ difference is who is speaking.
 game routes into `JERICHO.log` (and the console in `_DEBUG` builds).
 Prefix module lines with `[myid]` so the boot inventory stays readable.
 
+## Input debugging (environment levers)
+
+"The look does nothing" is the kind of report that costs a day, because the chain
+is four layers deep (`SDL trigger axis -> PSX button word -> Pads[n].mapped ->
+paddCamera -> TurnHead`) and every layer fails the same way from the driver's seat.
+Three test-only levers make it legible; nothing reads them unless the environment
+sets them. `grep padprobe JERICHO.log` is the whole report:
+
+- `JERICHO_PADPROBE=1` — on change only: the resolved L2/R2 mapping ints
+  (`0x4000` = the AXIS flag, `-1` = bound to nothing), the RAW axis value the
+  `> 16384` gate sees, and the PSX button word (`[Psy-X] [padprobe] slot N ...`);
+  then, from `TurnHead`, `pads`/`lookbits` (after the CAMERA_LOOK handlers
+  suppressed or not), the AI mode, and `headPos->headTarget` — which is the number
+  the camera ANGLE is built from, so a working look walks it to ±1024.
+- `JERICHO_PADPROBE_FORCE=<button>` — hold one PSX button down for the whole run
+  (`cross square triangle circle l1 r1 l2 r2 l3 r3 select start`). It enters at the
+  pad layer, so the bit travels the real path — the way to measure what a press
+  DOES without a human on the pad.
+- `JERICHO_PADPROBE_FORCE=left|right|back` — pin a look bit into `paddCamera`
+  instead (handled in `camera.c`), which separates "the camera forgot how to look"
+  from "the pad never sent it".
+- `JERICHO_HANDBRAKE_AIMODE=1` — restore the sandbox-era convenience where a
+  handbrake edge cycles the player AI mode. It is OFF by default because sandbox
+  keys its `CAMERA_LOOK` suppression off that mode, so one Triangle press used to
+  kill look-left/right (and look-back on R3) for the rest of the level, silently.
+
 ## Boot arguments (every PC build)
 
 The game accepts frontend-bypass launch arguments (PC only) for fast testing.

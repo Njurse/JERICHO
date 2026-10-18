@@ -132,7 +132,13 @@ reads the (possibly updated) fields back. No handler = stock behavior.
   (`stickX`/`stickY`). A module drives the look (e.g. GTA-style orbit by
   writing `lp->cameraAngle` + `gripOrbit = 1`, which makes the engine skip
   its settle-back lerp) and may set `suppress` to skip the stock L2/R2
-  look-left/right/back handling.
+  look-left/right/back handling. `suppress` alone does NOT keep
+  `lp->headTarget`: a handler that wants the stock head smoothing to ease to
+  a look of its own has to WRITE `lp->headTarget` (the engine compares it
+  across the handler pass), so merely suppressing — aiming, or handing the
+  camera to an AI mode — eases the head back to centre instead of freezing it
+  at the last look angle (which used to park the camera ~90° to the side for
+  as long as the suppression lasted).
 - **`JER_EVENT_PED_INPUT`** fires right before `ProcessTannerPad` with the
   pad that is about to drive the on-foot player. The module can rewrite the
   pad bits (or write `lp->dir` directly, as d2pl does for camera-relative

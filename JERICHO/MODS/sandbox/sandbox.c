@@ -2014,11 +2014,31 @@ static int SandboxOnGameStart(void* userdata, void* args)
 static int SandboxOnCameraLook(void* userdata, void* args)
 {
 	JER_ARGS_CAMERA_LOOK* look = (JER_ARGS_CAMERA_LOOK*)args;
+	static int announced = 0;
 
 	(void)userdata;
 
 	if (g_PlayerControlMode != 0)
+	{
 		look->suppress = 1;
+
+		/* Say so ONCE per suppression: this takes look-left/right AND
+		 * look-back (R3) away for as long as the AI mode is not Manual, which
+		 * is impossible to tell from the driver's seat. It used to be reachable
+		 * by a single handbrake press (the engine cycled the mode, now gated
+		 * behind JERICHO_HANDBRAKE_AIMODE) and it failed silently. */
+		if (!announced)
+		{
+			announced = 1;
+
+			jer_log("[sandbox] look suppressed: Player AI mode %d owns the camera "
+				"(L2/R2/R3 look is off until the mode is Manual)\n", g_PlayerControlMode);
+		}
+	}
+	else
+	{
+		announced = 0;
+	}
 
 	return JER_RESULT_CONTINUE;
 }
