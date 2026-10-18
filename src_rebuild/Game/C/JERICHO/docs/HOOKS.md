@@ -404,6 +404,47 @@ skipped key-up, without the keyboard); it is test-only. A live 2-seat session wi
 set is the end-to-end check: both seats log the release on the first frame, and
 every probe sample afterwards reads `lock=1 skip=0`.
 
+### The step gate itself is wall-clock, and every step path goes through it
+
+The original gate was `VSync(-1) - frame < 2`: a step per two *simulated vblanks*. On
+a PSX that was a hard 30 Hz; on PC the counter is faked by a spinning thread and can
+be advanced extra times by the frame skip, so the step rate followed the counter's
+mood rather than the clock. `FilterFrameTime()` now takes a step only when 33 ms of
+`PsyX_GetTicks()` have elapsed (PSX keeps the vblank path), which makes the rate
+independent of render load, of the frame skip, and of the fast-forward flags.
+
+Two consequences worth knowing:
+
+- **There is no fps to report.** The state machine is polled millions of times a
+  second and returns immediately when the gate refuses, and the engine presents
+  exactly one frame per *gated* step — so frames-presented and steps are the same
+  number by construction. The probe therefore prints the step rate and the
+  min..max inter-step gap instead; the gap is what shows a burst inside a second.
+- **Every step path is gated.** The audit, so a future change can re-run it:
+
+  | entry | where | gate |
+  |---|---|---|
+  | normal play, PC | `State_GameLoop`, `cnt = FastForward ? 7 : 1` loop (`main.c`) | after `FilterFrameTime()` |
+  | normal play, PSX | the `gMultiStep`/`numFrames` loop (`main.c`) | after `FilterFrameTime()` |
+  | cutscene skip | `gSkipInGameCutscene` branch (`main.c`) | **its own** `FilterFrameTime()` — it used to step once per state-machine iteration |
+  | physics | `GlobalTimeStep()` has exactly one caller: `StepGame()` | inherits whichever gate above stepped it |
+  | text entry | `pause.c` name entry | `FilterFrameTime()` polls only; never steps the sim |
+
+`JERICHO_SKIP_CUTSCENE=1` holds the cutscene-skip branch on (the level-start cutscene
+clears the flag, so it cannot be latched once) — test-only, and the rate must stay
+~30 with it set.
+
+Every run also logs which gate it was built with, next to the build id:
+
+```
+JERICHO 0.10.3-6-g7aba4e57-dirty Oct 17 2026 20:58:34 (Release_dev)
+[JERICHO] step gate: wall clock, 33 ms per step (~30 steps/s, independent of render rate and frame skip)
+```
+
+That line exists because the banner alone cannot answer "is the fix in this binary?":
+it is stamped at *premake* time, so it goes stale the moment another commit lands (one
+session shipped a build whose banner still named the previous commit).
+
 ## Boot arguments (every PC build)
 
 The game accepts frontend-bypass launch arguments (PC only) for fast testing.
