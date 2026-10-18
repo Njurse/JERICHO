@@ -13,6 +13,7 @@ is in [changelog.txt](changelog.txt).
   leave me alone* turns the check off (`update_check=0` in `JERICHO/CONFIG/jericho.ini`).
   It also tells you when the release you have was **re-cut** (rebuilt under the same tag
   since you installed it). A `Release_dev` build updates to the `Release_dev` download.
+  Dev builds can force the screen with `-forceupdatecheck` (README, dev tooling).
 - **Your `config.ini` is no longer overwritten by a new download.** Releases ship
   `config.default.ini`; the game creates `config.ini` from it when you have none.
 - **`update_jericho` keeps your flavour** (a `Release_dev` install updates to

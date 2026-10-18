@@ -307,6 +307,12 @@ settings; the game creates `config.ini` from the default when there is none.
   `-testmode`, `-shot`, …) are documented in
   [`HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) and printed by
   `JERICHO_dev.exe -help`.
+- **`-forceupdatecheck`** (or `update_force=1` in `JERICHO/CONFIG/jericho.ini`) —
+  `Release_dev`/Debug builds only: the update check treats this build as 0.0.0, so
+  the update screen always appears with the real latest release's notes (even with
+  `update_check=0`). *Update JERICHO (Restart)* still works there: it really
+  downloads that release (`Release_dev` flavour) and installs it over the folder,
+  which the screen says in yellow. A shipping Release ignores both.
 - **Repo-wide tools** — release publishing and crash-dump triage — are in
   [`tools/README.md`](tools/README.md); each module ships its own workbench in
   its folder.
