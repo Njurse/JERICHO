@@ -151,6 +151,7 @@ extern int CivClutTexMaxSlot(int row, int texid);
 // car -- has 1. Every car switch passes the wanted palette through the clamp, so a palette
 // cycled on one car never reaches a car that does not have it.
 extern int CarSlotPaletteCount(int slot);
+extern int CarModelPaletteCount(int city, int model);	// the same, by (absolute city, model): a car select
 extern int CarSlotClampPalette(int slot, int palette);
 
 // JERICHO: the civ_clut row block a held guest city owns (-1 = none), so a caller can ask

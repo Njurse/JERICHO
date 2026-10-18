@@ -12,6 +12,9 @@ is in [changelog.txt](changelog.txt).
   comes back on a car that has it. The same check covers spawns, respawns, the car kept
   across a map change or reconnect, and other players' cars (an out-of-range palette from
   a peer is drawn in that car's own colours).
+- **Pick your car's colours in Take a Ride.** The car select has a new Palette row
+  (Left/Right) showing n/N for the selected car; single-palette cars show 1/1. The car
+  spawns in the palette you pick.
 
 ## v0.10.5
 
