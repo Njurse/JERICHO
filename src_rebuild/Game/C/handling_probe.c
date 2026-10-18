@@ -72,6 +72,14 @@ static int probeGripRear = -1;
 static unsigned int probeTickStart;	/* PsyX_GetTicks() at the first sample */
 static int probeClockStarted;
 
+/* the load-independence window: a one-second STEP COUNT can hide a burst inside a
+ * second, so the same window also tracks how many frames were DRAWN and the
+ * shortest/longest gap between two steps. If the step rate were tracking render
+ * rate, fps and the gap spread would move together with the count. */
+static unsigned int probeLastStepTick;
+static int probeMinGap = -1;	/* ms between consecutive steps, window min */
+static int probeMaxGap = -1;	/* ms between consecutive steps, window max */
+
 // Read once: the lever is run-wide, not a per-frame knob.
 static int JerProbeOn(void)
 {
@@ -153,11 +161,30 @@ void JerHandleProbeStep(CAR_DATA* cp)
 
 void JerHandleProbeStepGame(void)
 {
+	unsigned int now;
+	int gap;
+
 	if (!JerProbeOn())
 		return;
 
 	JerProbeStartClock();
 
+	now = PsyX_GetTicks();
+
+	/* gap since the previous step: the WALL-CLOCK spread is the direct test of
+	 * "is the step rate tied to the renderer" -- a gate that follows render rate
+	 * shows a wide min/max spread that moves with fps. */
+	if (probeLastStepTick != 0)
+	{
+		gap = (int)(now - probeLastStepTick);
+
+		if (probeMinGap < 0 || gap < probeMinGap)
+			probeMinGap = gap;
+		if (gap > probeMaxGap)
+			probeMaxGap = gap;
+	}
+
+	probeLastStepTick = now;
 	probeSteps++;
 }
 
@@ -208,11 +235,24 @@ void JerHandleProbeFrame(void)
 	{
 		steps = probeSteps - lastSteps;
 
-		printInfo("[JER-PROBE] rate=%d steps/s (ff=%d lock=%d skip=%d skipcutscene=%d)\n",
-			steps, ff, lock, skip, cut);
+		/* The gap spread is what separates "the gate caps the rate" from "the rate
+		 * follows the renderer": a render-coupled gate shows a wide, lurching min/max
+		 * gap, while a wall-clock gate holds a steady ~33 ms. A per-second step COUNT
+		 * alone cannot show a burst inside the second; this can.
+		 *
+		 * There is deliberately no fps field: this engine presents one frame per
+		 * GATED step (the state machine itself spins millions of times a second and
+		 * returns immediately when the gate refuses), so frames-presented and steps
+		 * are the same number and an fps column would only restate the rate. */
+		printInfo("[JER-PROBE] rate=%d steps/s gap=%d..%dms "
+				  "(ff=%d lock=%d skip=%d skipcutscene=%d)\n",
+			steps, probeMinGap, probeMaxGap, ff, lock, skip, cut);
 
 		lastLine = now;
 		lastSteps = probeSteps;
+
+		probeMinGap = -1;
+		probeMaxGap = -1;
 	}
 }
 
