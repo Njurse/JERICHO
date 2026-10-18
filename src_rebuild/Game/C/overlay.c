@@ -766,6 +766,22 @@ void DisplayOverlays(void)
 	}
 #endif
 
+	/* JERICHO: own the fast-forward CLEAR before anything can return early.
+	 *
+	 * `FastForward` is offered by the map screen (the gShowMap != 0 branch below) and
+	 * by BACKSPACE (redriver2_psxpc.cpp), and it makes State_GameLoop step the sim
+	 * SEVEN times per frame instead of one. The clear used to live only in the
+	 * gShowMap == 0 branch at the bottom -- so every frame that returned above it
+	 * (a cutscene, NoPlayerControl, player 0's half of a split screen) left the flag
+	 * exactly as it found it. A map opened and then closed into a cutscene, or a
+	 * BACKSPACE tap whose next frame was a cutscene, kept the sim at 7x afterwards,
+	 * which reads from the driver's seat as "the car drives way too fast".
+	 *
+	 * The map branch re-sets it each frame it is open, so clearing here costs the
+	 * map nothing and makes the flag impossible to inherit. */
+	if (gShowMap == 0)
+		FastForward = 0;
+
 	if (NoPlayerControl || gInGameCutsceneActive || gInGameCutsceneDelay)
 		return;
 
@@ -783,8 +799,6 @@ void DisplayOverlays(void)
 
 	if (gShowMap == 0)
 	{
-		FastForward = 0;
-
 		if (!gDoOverlays)
 			return;
 
