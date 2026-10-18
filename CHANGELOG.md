@@ -28,6 +28,10 @@ is in [changelog.txt](changelog.txt).
 - **Dedicated server shows a player's car straight away.** It now handles the car pick
   like a game host: the roster lists the chosen car at once instead of after the
   player's first position update.
+- **Scoreboard rx / tx / loss for every player.** The host (or dedicated server) now
+  shares each player's link stats in a new optional message, so the columns show
+  values instead of "--" for other players. Older games ignore it. A dedicated server
+  reports loss as unknown ("--").
 - **Dedicated server measures ping.** It sent 0 ms for every player in the roster;
   it now pings each client and reports the round trip, like a game host.
 - **Warp to a player on foot.** "Warp to player" refused anyone out of their car; it now
