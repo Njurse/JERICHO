@@ -74,21 +74,24 @@
  * seven distinct cars on the field at once (the player plus six contestants).
  * With 12 the module has six slots of its own.
  *
- * 12 -> 16 for a SIXTEEN-player mp lobby: sixteen players can each pick a
- * different car, and a model that is not resident cannot be built - the car is
- * simply not there. Slots 12..15 are the extra ones, so stock levels are still
- * unchanged (they are filled with -1 = "no model"). */
-#define MAX_CAR_RESIDENT_MODELS	16			// use all permanently loaded car models available
+ * Kept at 12 for now. 12 -> 16 was tried for a sixteen-player mp lobby (sixteen
+ * players can each pick a different car, and a model that is not resident cannot
+ * be built at all), but the raise was landing in the same breath as the capacity
+ * work and cross-city imports started showing palette/texture faults, so it is a
+ * FOLLOW-UP with its own VRAM measurement rather than part of this change: 16
+ * players simply share the resident set and some drive duplicates. */
+#define MAX_CAR_RESIDENT_MODELS	12			// use all permanently loaded car models available
 #else
 #define MAX_CAR_RESIDENT_MODELS	5
 #endif
 
-/* Deliberately NOT (MAX_CAR_RESIDENT_MODELS-1) any more. This is a MODEL number,
- * not "the last slot": it is compared against cp->ap.model (the Vegas ambulance
- * in cars.c, mission 33's limo in civ_ai.c), it names the slot levelSpecCosmetics
- * indexes, and residentCarModels[SPECIAL_CAR_SLOT] is how the special model is
- * spooled. It was 11 when the array was 12 long - pinning it keeps every one of
- * those working while the array grew past it. Slots 12..15 are the module's. */
+/* Deliberately NOT (MAX_CAR_RESIDENT_MODELS-1). This is a MODEL number, not "the
+ * last slot": it is compared against cp->ap.model (the Vegas ambulance in cars.c,
+ * mission 33's limo in civ_ai.c), it names the slot levelSpecCosmetics indexes,
+ * and residentCarModels[SPECIAL_CAR_SLOT] is how the special model is spooled. It
+ * is 11 today either way -- pinning it keeps it 11 if the pool grows again, which
+ * is exactly what a 12 -> 16 raise would otherwise have changed underneath the
+ * mission checks. */
 #ifndef PSX
 #define SPECIAL_CAR_SLOT        11
 #else
