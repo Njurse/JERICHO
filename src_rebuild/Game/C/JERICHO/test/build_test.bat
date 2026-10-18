@@ -1,6 +1,7 @@
 @echo off
-call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
-cd /d C:\Users\Jaret\Documents\Projects\REDRIVER2
+rem Run from a Visual Studio x64 Developer Command Prompt (cl on PATH).
+rem The repo root is five levels above this script.
+cd /d "%~dp0..\..\..\..\.."
 cl /nologo /EHsc /TP ^
   /I src_rebuild\Game\C\JERICHO\include /I src_rebuild\Game\C /I src_rebuild\Game ^
   /I src_rebuild\dependencies\SDL2-2.30.2\include ^
@@ -12,6 +13,8 @@ cl /nologo /EHsc /TP ^
   src_rebuild\Game\C\JERICHO\src\jer_manager.c ^
   src_rebuild\Game\C\JERICHO\src\jer_config.c ^
   src_rebuild\Game\C\JERICHO\src\jer_pause_menu.c ^
+  src_rebuild\Game\C\JERICHO\src\jer_loader.c ^
+  src_rebuild\Game\C\JERICHO\src\jer_screen.c ^
   src_rebuild\Game\C\JERICHO\test\test_registry.c ^
   JERICHO\MODS\example\example.c ^
   /Fe:jer_test.exe

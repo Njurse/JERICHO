@@ -23,6 +23,18 @@ static int print_list(const char* what)
 	return count;
 }
 
+/* every expectation is checked: a smoke test that always returns 0 cannot fail */
+static int failures;
+
+static void expect(int ok, const char* what)
+{
+	if (!ok)
+	{
+		failures++;
+		printf("--- jer_test: FAIL: %s ---\n", what);
+	}
+}
+
 int main(int argc, char** argv)
 {
 	const char* root = argc > 1 ? argv[1] : "JERICHO";
@@ -46,6 +58,7 @@ int main(int argc, char** argv)
 	}
 
 	print_list("modules after boot");
+	expect(origEnabled >= 0, "the example module is listed after boot");
 
 	/* exercise the manager: toggle example to the OPPOSITE of its current
 	 * state, reload, verify the ini round-trip persisted the status */
@@ -60,8 +73,11 @@ int main(int argc, char** argv)
 	for (i = 0; i < count; i++)
 	{
 		if (strcmp(mods[i].id, "example") == 0)
+		{
 			printf("--- jer_test: example enabled=%d (expected %d after toggle) ---\n",
 				mods[i].enabled, !origEnabled);
+			expect(mods[i].enabled == !origEnabled, "the enable toggle round-trips through modlist.ini");
+		}
 	}
 
 	print_list("modules after toggle");
@@ -82,6 +98,7 @@ int main(int argc, char** argv)
 	/* module pause menus: the registry is empty until a module registers;
 	 * example registers none, so count must be 0 here */
 	printf("--- jer_test: pause menu count=%d (expected 0, example registers none) ---\n", jer_pause_menu_count());
+	expect(jer_pause_menu_count() == 0, "no pause menus registered");
 
 	printf("--- jer_test: firing JER_EVENT_FRAME ---\n");
 	jer_fire(JER_EVENT_FRAME, NULL);
@@ -89,6 +106,6 @@ int main(int argc, char** argv)
 	printf("--- jer_test: firing custom event (should be ignored) ---\n");
 	jer_fire(JER_EVENT_MODULE_CUSTOM + 1, NULL);
 
-	printf("--- jer_test: done ---\n");
-	return 0;
+	printf("--- jer_test: done, %d failure(s) ---\n", failures);
+	return failures != 0 ? 1 : 0;
 }
