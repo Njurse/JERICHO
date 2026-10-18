@@ -281,15 +281,31 @@ void CarImportCityBandReset(void)
 			sSetRow[c][s] = -1;
 }
 
+// JERICHO: give back every guest (city, set) row no live car names any more, and return how
+// many. Called after a slot is released (JerReleaseCarSlot) AND at allocation time when the
+// pool is full (CarAllocSetRow) - a hot-loading client churns rows faster than slots are
+// released. Before this the row dictionary was additive-only within a level: a car-change to
+// a new city took fresh rows and gave none back, so cycling across cities exhausted the
+// 24-row pool and the palettes rotted.
+int CarImportReclaimRows(void);
+
 // JERICHO: allocate a civ_clut row for a guest city's set. Called ONLY from the build
 // path (CarPalIndexForBuild), so a row is taken only when a built model names the set.
 // Returns the row (>= CIV_CLUT_IMPORT_ROW) or -1 when the shared pool is exhausted.
 static int CarAllocSetRow(int set, int city)
 {
-	int r;
+	int r, pass;
 
-	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
+	if (city < 0 || city >= CITY_COUNT)
 		return -1;
+
+	/* THE HOST LEVEL IS ALLOWED A POOL ROW TOO. It used to be refused on the grounds
+	 * that the host has a table of its own - but the table covers the models the level
+	 * ships with, not the set a player's IMPORTED car names, and a client hot-loading a
+	 * car into a level builds it against the level's city. Refused, the build fell through
+	 * to GetCarPalIndex() and baked row 0 for a set the level's table never listed, so the
+	 * car drew in the level's first palette ("bakes set 1 with no palette row of their
+	 * own"). A pool row is a civ_clut row like any other; CarRowInUse keeps it unique. */
 
 	if (set <= 0 || set >= 128)
 		return -1;
@@ -301,14 +317,28 @@ static int CarAllocSetRow(int set, int city)
 	// is handed out again before the pool grows past it. Without this the pool only ever
 	// grew and cycling cars across cities exhausted the 24 rows - every later set then
 	// collapsed onto its city's first row and the palettes rotted progressively.
-	for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
+	for (pass = 0; pass < 2; pass++)
 	{
-		if (!CarRowInUse(r))
+		for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
 		{
-			sSetRow[city][set] = (signed char)r;
+			if (!CarRowInUse(r))
+			{
+				sSetRow[city][set] = (signed char)r;
 
-			return r;
+				return r;
+			}
 		}
+
+		/* POOL FULL: take back every row no LIVE model names and try once more, rather
+		 * than giving up and letting the caller bake a fallback row. The reclaim used to
+		 * run only when a resident slot was RELEASED, which is too late in a session:
+		 * a client hot-loading cars takes rows per (city,set), and a car replaced
+		 * moments ago is exactly the set of rows nobody names any more. Giving up here
+		 * is what produced "sets [1] have no RIO palette row -> baking base row 0" in a
+		 * three-seat match - row 0 being the HOST's, i.e. that car drew in the wrong
+		 * level's colours. One retry only: the reclaim frees, it never allocates. */
+		if (pass == 0 && CarImportReclaimRows() > 0)
+			continue;
 	}
 
 	{
@@ -3749,10 +3779,10 @@ static int CarPalIndexForBuild(int tpage, int city)
 
 	if (idx < 0)
 	{
-		// JERICHO: a GUEST set with no row yet takes one from the shared pool (PALETTES.md
+		// JERICHO: a set with no row yet takes one from the shared pool (PALETTES.md
 		// §7) - this is what gives every (city, set) a distinct row and fixes the
-		// extra-panels collapse. The host keeps its table fallback (CarAllocSetRow refuses
-		// the host level).
+		// extra-panels collapse. Host and guest alike: the host's own table only lists
+		// the models the level ships with.
 		idx = CarAllocSetRow(tpage, city);
 
 		if (idx < 0)
@@ -3760,14 +3790,31 @@ static int CarPalIndexForBuild(int tpage, int city)
 			// Pool exhausted, or an unclassifiable HOST set: fall back to the city's first
 			// row (never a host row for a guest) rather than bake a wild index.
 			int base = CarImportPaletteBlockBase(city);
+			int fallback;
+
+			/* A CAR MUST NOT FALL BACK TO A HOST ROW IT DOES NOT OWN. GetCarPalIndex()
+			 * answers 0 for a page the city's table never listed, and row 0 is the HOST
+			 * level's first palette - so that fallback doesn't just miss, it paints the
+			 * car in the local level's colours (which is what INV2 calls the palette leak,
+			 * and what a player sees as "the imported car wrecked my colours"). The honest
+			 * fallback is an EMPTY pool row: the polys then keep their own page CLUT, which
+			 * is the documented behaviour for a row with no entries. Applies to the host
+			 * level too - its table lists the models the level SHIPS with, not every set an
+			 * imported car names. */
+			if (base >= 0)
+				fallback = base;
+			else
+				fallback = CIV_CLUT_IMPORT_ROW;
 
 			PalBakeMissDiag(tpage, city);	/* JERICHO-DIAG (JERICHO_DIAG_PALBAKE) */
 
 			if (sPalBakeMiss++ < 4)
-				printInfo("cross-city: set %d has no palette row in %s - baking that city's own first row (civ_clut %d) rather than a negative index\n",
-					tpage, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", (base >= 0) ? base : 0);
+				printInfo("cross-city: set %d has no palette row in %s - baking %s (civ_clut %d) rather than a negative index or a host row\n",
+					tpage, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?",
+					(base >= 0) ? "that city's own first row" : "an empty import row",
+					fallback);
 
-			idx = (base >= 0) ? base : GetCarPalIndex(tpage);
+			idx = fallback;
 		}
 	}
 
