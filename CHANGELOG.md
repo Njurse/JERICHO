@@ -16,6 +16,9 @@ is in [changelog.txt](changelog.txt).
   is moved there; a damaged file is kept as `player.id.bad` and a new id made), and sends it when joining, so a server can recognise you. Older servers ignore it;
   no protocol change. It is a bearer secret, not a login. Read yours with `!whoami`, the
   game log, or `python JERICHO/MODS/mp/tools/player_id.py`.
+- **Dedicated server relays on-foot players and traffic.** It dropped both message
+  types, so on a dedicated server nobody saw a player walking around, nor the cars
+  and police another machine was driving. It now forwards them like a game host does.
 - **Multiplayer cops fixes.** Another player crashing into walls or fences no longer
   raises *your* wanted level. Your patrol cops are no longer deleted when another
   player is nearby. With cops on, each machine keeps one traffic slot free for a cop,
