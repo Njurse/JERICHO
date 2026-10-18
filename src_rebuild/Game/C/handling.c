@@ -14,6 +14,7 @@
 #include "felony.h"
 #include "debris.h"
 #include "pad.h"
+#include <stdlib.h>	// getenv (JERICHO_HANDBRAKE_AIMODE)
 #include "cop_ai.h"
 #include "bcollide.h"
 #include "bcoll3d.h"
@@ -1149,6 +1150,19 @@ void CheckCarToCarCollisions(void)
 	} while (loop1 < MAX_CARS);
 }
 
+// JERICHO: is the sandbox-era handbrake -> Player AI mode cycle enabled? Read
+// once -- the lever is a run-wide switch, not a per-frame knob. See the note at
+// its single use in ProcessCarPad for why it is off by default.
+static int HandbrakeAiModeEnabled(void)
+{
+	static int enabled = -1;
+
+	if (enabled < 0)
+		enabled = (getenv("JERICHO_HANDBRAKE_AIMODE") != NULL) ? 1 : 0;
+
+	return enabled;
+}
+
 // [D] [T]
 void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 {
@@ -1249,10 +1263,21 @@ void ProcessCarPad(CAR_DATA* cp, u_int pad, char PadSteer, char use_analogue)
 	{
 		cp->handbrake = 1;
 
-		// cycle the player's AI mode (manual -> traffic -> cop -> lead),
-		// edge-triggered so holding the handbrake doesn't spin it per frame
-		if ((cp->lastPad & CAR_PAD_HANDBRAKE) == 0)
+		// [A] DEV CONVENIENCE, OFF BY DEFAULT: a handbrake edge cycling the
+		// player's AI mode (manual -> traffic -> cop -> lead) is not a game rule,
+		// and as an implicit one it was invisible AND destructive -- sandbox keys
+		// its CAMERA_LOOK suppression off g_PlayerControlMode, so one Triangle
+		// press silently killed look-left/right (and look-back on R3) for the rest
+		// of the level with nothing on screen to say why. Ask for it with
+		// JERICHO_HANDBRAKE_AIMODE=1; sandbox's own Vehicle page has the cycler.
+		// Edge-triggered, so holding the handbrake does not spin it per frame.
+		if ((cp->lastPad & CAR_PAD_HANDBRAKE) == 0 && HandbrakeAiModeEnabled())
+		{
 			g_PlayerControlMode = (g_PlayerControlMode + 1) & 3;
+
+			jer_log("[pad] handbrake cycled the player AI mode to %d (JERICHO_HANDBRAKE_AIMODE is on)\n",
+				g_PlayerControlMode);
+		}
 	}
 	else
 	{
