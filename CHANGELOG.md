@@ -11,9 +11,11 @@ is in [changelog.txt](changelog.txt).
   and for admins `!kick`, `!cops on|off`, `!difficulty 0-2`, `!motd`, `!say`. Admins are
   listed by player id in `dediserver.json` (`!whoami` shows yours) or log in with an
   optional `admin_password` (`!login`, rate limited).
-- **Per-install player id.** The game generates a random id once (`[mp] player_id`)
-  and sends it when joining, so a server can recognise you. Older servers ignore it;
-  no protocol change. It is a bearer secret, not a login.
+- **Per-install player id.** The game generates a random id once, keeps it in its
+  own obfuscated, checksummed file `JERICHO/CONFIG/player.id` (an older `[mp] player_id`
+  is moved there; a damaged file is kept as `player.id.bad` and a new id made), and sends it when joining, so a server can recognise you. Older servers ignore it;
+  no protocol change. It is a bearer secret, not a login. Read yours with `!whoami`, the
+  game log, or `python JERICHO/MODS/mp/tools/player_id.py`.
 - **Dedicated server now applies its cops setting.** It sent "no rules" to every
   player, so cops were off whatever `dediserver.json` said; the configured rules
   now reach players.
