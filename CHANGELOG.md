@@ -13,6 +13,9 @@ is in [changelog.txt](changelog.txt).
 - **Leavers are cleaned up.** When a player leaves or drops, their on-foot Tanner and
   the car they last got out of are removed for everyone, unless another player has
   taken that car. The dedicated server now sends the updated roster at once.
+- **Faster late-join placement.** A live joiner's car is placed on the road on the
+  first frame it exists (retrying while roads stream in) with the camera snapped,
+  instead of sitting on the host for 15 frames and then jumping.
 - **Dedicated server chat commands and admins.** Lines starting with `!` or `/` are
   commands, answered privately and not shown to others: `!help`, `!whoami`, `!who`,
   and for admins `!kick`, `!cops on|off`, `!difficulty 0-2`, `!motd`, `!say`. Admins are
