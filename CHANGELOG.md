@@ -40,6 +40,14 @@ anyone updating from an earlier v0.10.3 or v0.10.2 install.
   alt-tab) the game resumes at normal speed instead of rushing to catch up.
 - **Multiplayer:** fast-forward (BACKSPACE, map screen) is locked for the whole
   session, including level load and the countdown.
+- **Take a Ride after online play:** a player who joined someone else's match and
+  quit back to the menu could not start a single-player Take a Ride (the game still
+  treated them as in the old session). Leaving a match now ends the session.
+- **Credits page:** *Options -> JERICHO -> Credits* now opens a credits screen (who
+  made JERICHO, and thanks to the REDRIVER2 / OpenDriver2 authors) instead of a few
+  console lines.
+- **Compile Mods is hidden in the Release build** (it stays in `Release_dev`, where
+  modders use it).
 - **Mod loader:** a `mod.toml` `id` can no longer point the loader at a library
   outside the module's own folder (part of #4).
 
