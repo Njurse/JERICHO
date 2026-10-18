@@ -125,7 +125,9 @@ extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, st
  * console disabled" happened: the line arrived, drew, and was gone before anyone
  * looked. Twenty seconds + a 3 s fade is long enough to read what you missed and
  * still clears itself. */
-#define JER_CONSOLE_CHAT_HOLD_FRAMES	600	/* 20 s at 30 Hz: full brightness */
+static int sChatHoldFrames = 12 * 30;
+
+#define JER_CONSOLE_CHAT_HOLD_FRAMES	sChatHoldFrames	/* full brightness: 12 s at 30 Hz by default (was a fixed 20 s); jer_console_set_chat_hold */
 #define JER_CONSOLE_CHAT_FADE_FRAMES	90	/* 3 s at 30 Hz: fading out */
 #define JER_CONSOLE_CHAT_LIFE_FRAMES	(JER_CONSOLE_CHAT_HOLD_FRAMES + JER_CONSOLE_CHAT_FADE_FRAMES)
 
@@ -148,6 +150,17 @@ typedef struct JER_CONSOLE_ROW
 } JER_CONSOLE_ROW;
 
 static JER_CONSOLE_ROW sRows[JER_CONSOLE_MAX];
+
+/* CHAT HISTORY. The live ring above forgets a row once it fades, so a missed
+ * line was gone for good. Every chat row is ALSO copied here (never expired);
+ * while the chat prompt is open the console draws this instead, at full
+ * strength, and jer_console_scroll pages back through it. 48 rows x ~140 bytes
+ * is under 7 KB. */
+#define JER_CONSOLE_HIST_MAX	48
+
+static JER_CONSOLE_ROW sHist[JER_CONSOLE_HIST_MAX];
+static int  sHistCount = 0;		/* rows held, oldest first */
+static int  sScroll = 0;		/* rows scrolled back from the newest */
 static int  sCount = 0;
 static int  sFrame = 0;			/* drawn frames so far: the fade's clock */
 static int  sEnabled = -1;		/* -1 = not loaded from the config yet */
@@ -337,6 +350,24 @@ static void jerConsolePush(const JER_CONSOLE_SEG* segs, int count, int chat)
 
 		jerConsoleAddRow(flat + pos, cr + pos, cg + pos, cb + pos, camb + pos, take, chat);
 
+		/* the row just written is always the ring's last one */
+		if (chat)
+		{
+			if (sHistCount == JER_CONSOLE_HIST_MAX)
+			{
+				memmove(&sHist[0], &sHist[1], sizeof(sHist[0]) * (JER_CONSOLE_HIST_MAX - 1));
+				sHistCount--;
+
+				if (sScroll > 0)	/* keep a scrolled-back view on the same lines */
+					sScroll--;
+			}
+
+			sHist[sHistCount++] = sRows[sCount - 1];
+
+			if (sScroll > 0)
+				sScroll++;
+		}
+
 		pos += take;
 
 		while (pos < len && flat[pos] == ' ')	/* swallow the break space */
@@ -378,12 +409,31 @@ void jer_console_chat(const JER_CONSOLE_SEG* segs, int count)
 	jerConsolePush(segs, count, 1);
 }
 
+int jer_console_scroll(int delta)
+{
+	int maxScroll = sHistCount - JER_CONSOLE_MAX;
+
+	if (maxScroll < 0)
+		maxScroll = 0;
+
+	sScroll += delta;
+
+	if (sScroll > maxScroll)
+		sScroll = maxScroll;
+
+	if (sScroll < 0)
+		sScroll = 0;
+
+	return sScroll;
+}
+
 void jer_console_input(const char* text)
 {
 	if (text == NULL || text[0] == '\0')
 	{
 		sInputSet = 0;
 		sInput[0] = '\0';
+		sScroll = 0;	/* closing the prompt returns to the live view */
 		return;
 	}
 
@@ -395,6 +445,8 @@ void jer_console_input(const char* text)
 void jer_console_clear(void)
 {
 	sCount = 0;
+	sHistCount = 0;
+	sScroll = 0;
 }
 
 int jer_console_count(void)
@@ -629,6 +681,44 @@ void jer_console_draw(int frontend)
 		sCount = w;
 	}
 
+	/* PROMPT OPEN: the chat history instead of the live rows -- every recent chat
+	 * line, faded or not, at full strength, scrolled back by sScroll (PgUp/PgDn),
+	 * with a marker on top while not at the newest. */
+	if (sInputSet && sHistCount > 0)
+	{
+		int last = sHistCount - 1 - sScroll;
+		int shown = 0;
+
+		for (i = last; i >= 0 && shown < JER_CONSOLE_MAX; i--, shown++)
+		{
+			int y = frontend ? JER_CONSOLE_FE_BOTTOM - shown * JER_CONSOLE_FE_LINE_H
+					 : JER_CONSOLE_BOTTOM - shown * JER_CONSOLE_LINE_H;
+
+			jerConsoleDrawRow(&sHist[i], frontend, y, 0, 255);
+		}
+
+		if (sScroll > 0)
+		{
+			JER_CONSOLE_ROW mark;
+			int y = frontend ? JER_CONSOLE_FE_BOTTOM - shown * JER_CONSOLE_FE_LINE_H
+					 : JER_CONSOLE_BOTTOM - shown * JER_CONSOLE_LINE_H;
+
+			memset(&mark, 0, sizeof(mark));
+			snprintf(mark.text, sizeof(mark.text), "-- %d newer below (PgDn) --", sScroll);
+			mark.runCount = 1;
+			mark.chat = 1;
+			mark.runs[0].len = (unsigned char)strlen(mark.text);
+			mark.runs[0].r = 255;
+			mark.runs[0].g = 190;
+			mark.runs[0].b = 90;
+			jerConsoleDrawRow(&mark, frontend, y, 0, 255);
+		}
+
+		jerConsoleDrawInput(frontend);
+		gFontColour = ambient;
+		return;
+	}
+
 	/* Newest first, bottom-up. A chat row draws even while the console is off:
 	 * it is a conversation, not debug output. */
 	for (i = sCount - 1; i >= 0; i--)
@@ -653,4 +743,14 @@ void jer_console_draw(int frontend)
 
 	/* leave the text colour exactly as it was found (see the file header) */
 	gFontColour = ambient;
+}
+
+void jer_console_set_chat_hold(int seconds)
+{
+	if (seconds < 2)
+		seconds = 2;
+	if (seconds > 120)
+		seconds = 120;
+
+	sChatHoldFrames = seconds * 30;
 }

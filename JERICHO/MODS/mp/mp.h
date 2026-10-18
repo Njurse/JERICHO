@@ -36,6 +36,7 @@ typedef struct MP_CONFIG
 {
 	int  port;			/* UDP+TCP port (default 1318) */
 	char playerName[MP_NAME_MAX];	/* this player's name */
+	unsigned char playerId[MP_PLAYER_ID_LEN];	/* per-install id ([mp] player_id), sent in HELLO */
 	char hostName[MP_NAME_MAX];	/* advertised server name when hosting */
 	int  beaconMs;			/* discovery beacon interval */
 	int  keepaliveMs;		/* liveness ping cadence */
@@ -55,6 +56,8 @@ typedef struct MP_CONFIG
 				 * same axis as `cops`: this leaves them on the map and
 				 * takes away their reason to bother you. */
 	int  invuln;			/* 1 = no car can be damaged (gInvincibleCar) */
+	int  palette;			/* palette: our car's colour variant 0..5 (defaultPlayerPalette) */
+	int  chatHoldSec;		/* chat_hold_seconds: full-brightness time of a chat line */
 	int  car;			/* this machine's vehicle for the match, -1 = level default */
 	int  carIsSlot;			/* 1 = `car` is a 1..10 frontend slot, resolved per city */
 	int  carCity;			/* the city `car`'s MODEL NUMBER belongs to, -1 = the session's
@@ -91,6 +94,8 @@ typedef struct MP_PLAYER
 	int  carCity;			/* the city that car number belongs to, -1 = the session's own */
 	int  palette;			/* that player's car colour (0 = default) */
 	int  isLocal;			/* 1 = this machine's own player */
+	int  hasPlayerId;		/* the HELLO carried a JPID block (host side) */
+	unsigned char playerId[MP_PLAYER_ID_LEN];	/* that block's id */
 	int  connected;			/* peer link still alive */
 	int  isHost;			/* the host's own row (first in the list) */
 	int  pingMs;			/* round trip, measured by the host */
@@ -107,6 +112,12 @@ typedef struct MP_PLAYER
 	int   pedSpeed;
 	unsigned long pedLastMs;	/* when we last heard a pose for it */
 
+	/* This player's link to the HOST, as the host reports it (MP_TAG_STATS): what
+	 * the scoreboard shows for a row this machine has no connection of its own to. */
+	unsigned long netRxBps, netTxBps;
+	int   netLoss;			/* 0..100, or MP_STATS_LOSS_UNKNOWN */
+	unsigned long netLastMs;	/* when the last report arrived; 0 = never */
+
 	/* The owner's carstate says this player is ON FOOT (MP_CARSTATE_NO_CAR).
 	 * carId < 0 says the same thing, but only until the next roster arrives:
 	 * the roster names the car a player OWNS, so it cannot be used to decide
@@ -119,6 +130,12 @@ typedef struct MP_PLAYER
 	 * On OUR OWN row it is set by MpFollowLocalCar when we get out, so that getting
 	 * into a car again is reported as a choice (MP_CARQ_CHOSEN) - and only then. */
 	int   onFoot;
+
+	/* The car this player last got OUT of (slot + 1, 0 = none) and its model, so a
+	 * leaver's abandoned car can go with them -- unless someone else has since
+	 * taken it (see MpCleanupLeaverWorld). */
+	int   leftCarSlot1;
+	int   leftCarModel;
 
 	/* That player's chosen colour, as THEIR machine reported it. Off means their
 	 * character keeps the colours the game gave it. */
@@ -218,6 +235,7 @@ MP_PLAYER* MpGetPlayerByCar(int carId);	/* NULL when carId is not a player */
 int MpLocalCarChosen(void);
 MP_PLAYER* MpAddPlayer(int id, const char* name, int isLocal);
 void       MpRemovePlayer(int id);
+void       MpCleanupLeaverWorld(MP_PLAYER* p);	/* a leaver's stand-in ped + abandoned car */
 void       MpReleaseOurCarSlot(int slot);	/* drop the sticky "ours" mark (a leaver's car) */
 void       MpResetPlayers(void);
 
@@ -504,11 +522,19 @@ void MpConsoleChat(const char* name, int colorOn, int r, int g, int b, const cha
  * machine can hold. Returns 1 if the car on the road changed. */
 int MpChangeCar(int city, int model);
 
+/* Auto-rejoin after a server city change (MP_KICK_FLAG_REJOIN): mp_session.c.
+ * Tick runs every frame (frontend too); Cancel is Esc or any other join/host. */
+void MpRejoinTick(void);
+void MpPlaceSelfTick(void);	/* live join: move our car off the level start */
+int  MpRejoinActive(void);
+void MpRejoinCancel(const char* why);
+
 /* A city's display name (a 0..3 index, or -1 for the session's own city). */
 const char* MpCarCityName(int city);
 
 /* The mode a server plays, named from its gamemode id (MP_GAMEMODE_*); session
  * rules such as cops never rename it. Paired with the tools' mode_name() in mp_test.py. */
+void MpFormatPlayerId(const unsigned char* id, char* out);	/* dashed UUID, out >= 37 chars */
 const char* MpModeName(int gamemode);	/* MP_GAMEMODE_* -> display name */
 
 /* The city name for a row of SOMEONE ELSE'S server: the engine's name, or "-"

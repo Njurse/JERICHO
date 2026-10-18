@@ -164,6 +164,9 @@ typedef struct MP_ROSTER
 } MP_ROSTER;
 #pragma pack(pop)
 #define MP_TAG_CHAT	"JPCX"	/* either side: a chat line */
+#define MP_TAG_STATS	"JPSX"	/* host -> all: each player's link to the host (rx/tx/loss).
+				 * OPTIONAL: a peer that does not know it ignores it (unknown
+				 * tags are dropped), so it needs no protocol bump. */
 
 /* Envelope flags */
 #define MP_FLAG_RELIABLE	0x01	/* sender wants an ordered/reliable channel */
@@ -274,7 +277,15 @@ typedef struct MP_MOD_INFO
 	uint8_t  reserved;
 } MP_MOD_INFO;
 
-/* 'JPHL' -- client -> host. Followed by modCount MP_MOD_INFO rows. */
+/* 'JPHL' -- client -> host. Followed by modCount MP_MOD_INFO rows, then
+ * optionally the PLAYER ID block: MP_HELLO_ID_TAG + MP_PLAYER_ID_LEN bytes, a
+ * random per-install id (mp_config.c, [mp] player_id) a server can recognise a
+ * player by (admins). No protocol bump: every host reads exactly modCount rows and
+ * ignores what follows (C MpHandleHello; dediserver reads whole 42-byte rows, and
+ * 20 bytes is less than one), so old hosts accept it and old clients just omit it.
+ * It is a bearer secret, not authentication: the link is unencrypted. */
+#define MP_HELLO_ID_TAG		"JPID"
+#define MP_PLAYER_ID_LEN	16
 typedef struct MP_HELLO
 {
 	uint16_t protoVersion;
@@ -566,7 +577,7 @@ typedef struct MP_CAR
 {
 	uint8_t  model;		/* the chosen model; 0xFF = none */
 	uint8_t  city;		/* 0..3 = the city it belongs to, 0xFF = the session's own */
-	uint8_t  reserved[2];
+	uint8_t  reserved[2];	/* [0] palette, [1] 1 = [0] is set (optional; old peers send 0) */
 } MP_CAR;
 
 /* A chat line: a player's message, announced to every seat. */
@@ -592,6 +603,15 @@ typedef struct MP_KICK
 	uint8_t reserved[3];
 } MP_KICK;
 
+/* Optional tail: a KICK may be followed by MP_KICK_TEXT_LEN bytes of
+ * NUL-terminated text the kicked player is shown instead of the stock
+ * "You were kicked by the host" (e.g. "Kicked by admin: <reason>"). Old
+ * clients read only the 4-byte head, so no protocol bump. */
+#define MP_KICK_TEXT_LEN	64
+
+/* MP_KICK.reserved[0] flags. Old clients ignore them (a plain kick). */
+#define MP_KICK_FLAG_REJOIN	0x01	/* the server is changing city: rejoin it shortly */
+
 /* A contact report. Cars are owner-authoritative, so a machine can only move
  * the ONE car it owns: when MY car touches YOURS I push MINE, and I send you
  * this so you push YOURS. Both cars move, and each stays the owner's truth.
@@ -602,6 +622,26 @@ typedef struct MP_KICK
  * owner of that slot applies the impulse: on the observer the mirror is rewritten
  * verbatim every frame, so a push there would be discarded. */
 #define MP_HIT_F_TRAFFIC	0x01	/* targetId is a car_data slot, not a player id */
+
+/* Each player's link as the HOST measures it (MpPeerStats), so every machine can
+ * show rx / tx / loss for everyone, not only for its own connection. Sent with
+ * the roster. A client only has a link to the host, which is why this travels. */
+#define MP_STATS_LOSS_UNKNOWN	0xFF	/* this hub does not measure loss */
+
+typedef struct MP_STATS_ENTRY
+{
+	uint8_t  playerId;
+	uint8_t  lossPct;	/* 0..100, or MP_STATS_LOSS_UNKNOWN */
+	uint16_t pingMs;
+	uint32_t rxBps;		/* bytes/s the host RECEIVES from this player */
+	uint32_t txBps;		/* bytes/s the host SENDS to this player */
+} MP_STATS_ENTRY;		/* 12 bytes */
+
+typedef struct MP_STATS
+{
+	uint8_t  count;
+	uint8_t  reserved[3];
+} MP_STATS;	/* header only: the entries follow */
 
 typedef struct MP_HIT
 {
@@ -627,6 +667,7 @@ static_assert(sizeof(MP_INPUT) == 4, "MP_INPUT layout");
 static_assert(sizeof(MP_ROSTER_ENTRY) == 29, "MP_ROSTER_ENTRY layout");
 static_assert(sizeof(MP_CARSTATE_ENTRY) == 53, "MP_CARSTATE_ENTRY layout");
 static_assert(sizeof(MP_HIT) == 16, "MP_HIT layout");
+static_assert(sizeof(MP_STATS_ENTRY) == 12, "MP_STATS_ENTRY layout");
 static_assert(sizeof(MP_CARSTATE) == 8, "MP_CARSTATE layout");
 static_assert(sizeof(MP_TRAFFIC_ENTRY) == 56, "MP_TRAFFIC_ENTRY layout");
 static_assert(sizeof(MP_TRAFFIC) == 8, "MP_TRAFFIC layout");

@@ -27,7 +27,7 @@ supervisor (or a test) can pipe commands in.
 | `status` | name, session port, city, gamemode, rules (readable), players, uptime, beacon, master |
 | `list` | connected players: id, name, address, how long connected |
 | `say <text>` | one line into every player's console, prefixed `SERVER:` |
-| `kick <id>` | drop a player — the protocol's own kick message, so they are told why |
+| `kick <id> [reason]` | drop a player — the protocol's own kick message; with a reason they see "Kicked by admin: <reason>" (cut to 63 bytes) and chat is told |
 | `beacon [on|off]` | the LAN beacon's state, or turn it off (a LAN you do not want to appear on) |
 | `master` | discovery registration: the URL, whether registered, what last happened |
 | `stop` | close the server (unregisters from the master, closes players) |
@@ -35,7 +35,8 @@ supervisor (or a test) can pipe commands in.
 ## Options
 
 ```
---config FILE        JSON config (default: dediserver.json beside this script)
+--config FILE        JSON config (default: dediserver.json beside this script; created
+                     from dediserver.example.json on the first start if missing)
 --port N             TCP session port (default 1318)
 --name "..."         name shown in the browser / registered with the master
 --city N             GameLevel the clients should load (0..3)
@@ -73,6 +74,17 @@ built-in defaults are used.
 
 ## `dediserver.json`
 
+`dediserver.json` is **yours and not tracked by git**: the repo and the release
+packages ship `dediserver.example.json`, and the server copies it to
+`dediserver.json` the first time it starts without one (it never overwrites an
+existing file). Updates and `git pull` therefore leave your settings alone.
+
+> **Upgrading a git checkout from before this change:** pulling the commit that
+> untracks the file deletes an *unmodified* tracked `dediserver.json`, and a
+> modified one blocks the checkout. Back it up first:
+> `cp dediserver.json ~/dediserver.json.bak && git checkout -- dediserver.json && git checkout GETRDUN-JERICHO && git pull && cp ~/dediserver.json.bak dediserver.json`
+> (run in this folder; afterwards `git status` does not list it -- it is ignored).
+
 ```jsonc
 {
   "port": 1318,
@@ -105,6 +117,126 @@ built-in defaults are used.
   "master_timeout_s": 5.0
 }
 ```
+
+## Chat commands and admins
+
+Players type commands in chat, starting with `!` (or `/`). A command is not shown to
+the other players; the reply comes back privately. `!help` lists what *you* can run.
+
+| command | who | what it does |
+| --- | --- | --- |
+| `!help [command]` | everyone | the commands you can use, or one command's details |
+| `!whoami` | everyone | your slot, name and **player id** |
+| `!who` | everyone | who is connected (admins also see player ids and addresses) |
+| `!login <password>` / `!logout` | everyone | admin for this session, if `admin_password` is set |
+| `!kick <slot\|name> [reason]` | admin | remove a player; a reason is shown to them ("Kicked by admin <you>: <reason>"), announced in chat and logged |
+| `!cops on\|off`, `!difficulty 0-2` | admin | session rules: apply from the next level load; the discovery listing updates at once |
+| `!time dawn\|day\|dusk\|night`, `!weather clear\|rain\|wet` | admin | time of day / weather, from the next level load |
+| `!admin add\|remove <slot\|name\|uuid>`, `!admin list` | admin | manage the admins list; **saved to dediserver.json** |
+| `!motd [text\|save]` | admin | show or set the join greeting; `!motd save` writes it to the file |
+| `!say <text>` | admin | a line from the server to everyone |
+| `!vote <city>` / `!vote` / `!vote cancel` | everyone / admin to cancel | vote to switch city (see below) |
+
+`cops`, `difficulty`, `time`, `weather`, `motd` and `admin` also work at the server
+console. Every admin command is logged with who ran it. Joins and leaves are
+announced in chat (`"announce_joins": false` turns that off). Saving rewrites
+`dediserver.json` atomically and keeps your other keys, but not comments or layout.
+
+### Voting for a city
+
+`!vote <city>` starts a vote (or votes yes in the one running). City is `0`-`3` or
+`chicago`, `havana`, `vegas`, `rio`. One vote per player id. It passes as soon as
+**more than half** the connected players have voted yes, or fails after 30 s; the
+next vote can start 60 s after one ends. Admins can `!vote cancel`.
+
+On a pass the city is saved to `dediserver.json`, becomes the session city and the
+discovery listing updates. **Everyone is then disconnected with the KICK's rejoin
+flag** (the game cannot change level under a running session). Current clients show
+"Server changing city - reconnecting...", rejoin the same server by themselves after
+~2.5 s (retrying for ~20 s; Esc or joining/hosting anything else cancels), load the
+new city and put their previous car back through Change car (cross-city works; if
+the car can't be used there they keep the default, and the log says why). Older
+clients just see "Kicked by vote: server switched to ... - rejoin" and rejoin by hand.
+Plugins can do the same with `kick(player, reason, rejoin=True)`.
+
+Keys: `"vote"` (`false` turns `!vote` off), `"vote_duration"` (seconds, 30),
+`"vote_threshold"` (fraction that must be exceeded, 0.5), `"vote_cooldown"` (60).
+
+Session settings in `dediserver.json`: `"time_of_day"` (`dawn`, `day`, `dusk`,
+`night`) and `"weather"` (`clear`, `rain`, `wet`), or `--time-of-day` / `--weather`.
+Players read them (and the cops rules) as they load a level, so a change reaches a
+player the next time they join or load.
+
+### Making yourself an admin
+
+1. Get your player id, a UUID such as `0f8e2a4c-1d3b-4a5e-9c7d-112233445566`. Your
+   game creates it at first launch and keeps it in `JERICHO/CONFIG/player.id`.
+   Any of these shows it:
+   - join any server and type `!whoami`;
+   - the game log, line `[mp] player id ...` at launch;
+   - `python JERICHO/MODS/mp/tools/player_id.py` in the game folder (or give it the
+     path of a `player.id` copied from the player's PC).
+2. Put it in `dediserver.json`: `"admins": ["0f8e2a4c-1d3b-4a5e-9c7d-112233445566"]`
+   (dashed or plain hex, any case). Restart the server.
+3. When you join it says *You are an admin on this server*. From then on you can
+   add others in game with `!admin add <name>`.
+
+Or set `"admin_password"` and use `!login <password>` (3 wrong tries in 60 s lock
+`!login` for 5 minutes).
+
+**Security:** there is no account server. The player id is a *bearer secret*:
+anyone who copies your `CONFIG/player.id` is "you" to this server. Game traffic is not
+encrypted, so the id and a `!login` password can be read by anyone on the network
+path. The file is obfuscated and checksummed so it can't be casually read or
+edited, but the key ships in the game, so that is not real protection. Fine for a hobby server; don't reuse the password anywhere else.
+
+## Plugins
+
+The server is a small core (`dedi/core.py`) plus plugins. Built-ins live in
+`dedi/builtin/` (`commands`, `admin`); your own go in `plugins/` beside
+`dediserver.py` (or the folder named by `"plugins_dir"`). Updates add files but do
+not delete yours (keep your own names; `example_hello.py` is overwritten).
+
+```json
+"plugins": null,                 // null = every plugin found, built-ins first
+"plugins_disabled": ["example"], // ... minus these
+"plugins_dir": "plugins"
+```
+
+`"plugins": ["commands", "admin", "mine"]` loads exactly those, in that order. A
+plugin that fails to import or raises is logged and disabled; the server keeps
+running. The console's `plugins` command shows what loaded and what was disabled.
+
+### Writing one
+
+A plugin is a `.py` file; every hook is optional. `plugins/example_hello.py`
+(disabled by default) is a working starting point:
+
+```python
+ENABLED_BY_DEFAULT = False      # only load when listed in "plugins"
+_server = None
+
+def on_load(server):            # server: dedi.plugins.ServerAPI
+    global _server
+    _server = server
+    server.register_command("hello", lambda caller, args: "hello, %s!" % caller.name)
+
+def on_player_join(player):     # player.id .name .addr .player_id .admin .state
+    _server.send_private(player, "Welcome, %s!" % player.name)
+
+def on_chat(player, text):      # return True to swallow the line
+    return False
+```
+
+Hooks: `on_load(server)`, `on_unload()`, `on_player_join(player)`,
+`on_player_leave(player)`, `on_chat(player, text)`, `on_tick()` (about once a
+second). `server` offers `players()`, `find_player(slot|name)`,
+`send_private(player, text, color)`, `broadcast(text, color)`, `kick(player, reason=None, by="admin", announce=True)` (a reason is shown to the player as "Kicked by <by>: <reason>"),
+`config_get/config_set`, `set_rules(cops=, cop_difficulty=, cop_immunity=,
+invulnerable=)`, `set_cops`, `set_difficulty`, `readvertise()`, `log`, and
+`register_command(name, handler, admin=False, help="", console=False)` where
+`handler(caller, args)` returns the reply text. Hooks run on the server's threads:
+keep them quick and don't block.
 
 ## Mod lists
 

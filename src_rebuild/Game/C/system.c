@@ -1228,10 +1228,36 @@ void SwapDrawBuffers2(int player)
 short paddp;
 short padd;
 
+/* JERICHO: jer_input_block's flag (jer_system.c, C linkage). */
+#ifdef __cplusplus
+extern "C" int gJerInputBlocked;
+#else
+extern int gJerInputBlocked;
+#endif
+
 // [D] [T]
 void UpdatePadData(void)
 {	
 	ReadControllers();
+
+	/* JERICHO: jer_input_block -- a mod's text prompt owns the keyboard, so no
+	 * typed key may also be a game button. Held buttons stay swallowed after the
+	 * block lifts until they are all released (no stuck or stray presses). */
+	{
+		static int latched = 0;
+
+		if (gJerInputBlocked || latched)
+		{
+			if (!gJerInputBlocked && Pads[0].direct == 0)
+				latched = 0;
+			else
+			{
+				latched = 1;
+				Pads[0].direct = Pads[0].dirnew = 0;
+				Pads[0].mapped = Pads[0].mapnew = 0;
+			}
+		}
+	}
 
 	paddp = Pads[0].mapnew;
 	padd = Pads[0].mapped;

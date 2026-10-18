@@ -1,6 +1,7 @@
 #include "driver2.h"
 
 #include "jericho.h"		/* jer_fire */
+#include "jer_notify.h"	/* car select: the palette notice */
 #include "../C/jer_events.h"	/* JER_EVENT_CAR_AVAILABILITY */
 #include "../C/JERICHO/include/jer_texture.h"	/* custom menu background */
 #include "../C/JERICHO/include/jer_console.h"	/* unified status console stream */
@@ -3237,6 +3238,21 @@ int CarSelectScreen(int bSetup)
 	{
 		currSelIndex = pCurrButton->d - 1;
 	}
+#ifndef PSX
+	else if (feNewPad & MPAD_SQUARE)
+	{
+		/* JERICHO: SQUARE cycles the player's car palette (the six colour variants;
+		 * the preview picture cannot show it, so a notice names it). The spawn reads
+		 * defaultPlayerPalette; mp saves it to mp.ini [mp] palette. */
+		extern u_char defaultPlayerPalette;
+		char msg[48];
+
+		defaultPlayerPalette = (u_char)((defaultPlayerPalette + 1) % 6);
+		snprintf(msg, sizeof(msg), "Palette %d/6", defaultPlayerPalette + 1);
+		jer_notify(msg, 0, 2);
+		FESound(3);
+	}
+#endif
 
 	return 0;
 }
@@ -5305,8 +5321,8 @@ static const char* const kJerichoCreditsLeft[] = {	/* JERICHO, and thanks */
 	"Created by Jaret (Njurse)",
 	"",
 	"Special thanks",
-	"Commando52Colton - advice on palette",
-	"and texture paging, mission script research",
+	"Commando52Colton - Valuable advice",
+	"on palettes, texture paging, mission script research",
 };
 
 static const char* const kJerichoCreditsRight[] = {	/* the engine underneath */

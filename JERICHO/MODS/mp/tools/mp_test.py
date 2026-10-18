@@ -65,10 +65,32 @@ TAG = {
     "carstate": b"JPCS", "ping": b"JPPN", "pong": b"JPPO",
     "channel": b"JPCH", "leave": b"JPLV", "kick": b"JPKK", "chat": b"JPCX",
     "roster": b"JPRS", "car": b"JPCC",
+    "ped": b"JPPD", "traffic": b"JPTF", "hit": b"JPHI", "color": b"JPCL",
+    "stats": b"JPSX",
 }
 # NOTE: no "session" entry. 'JPSS' was retired from mp_proto.h -- it was reserved for
 # a standalone session/lobby broadcast that nothing ever sent or handled. Keep this
 # table to the tags the code actually has; a retired one is dropped here too.
+# MP_PEDSTATE (count + 3 reserved) and its 24-byte MP_PEDSTATE_ENTRY rows
+# (playerId, flags, spare, x, y, z, heading, speed): an on-foot player's pose.
+PEDSTATE = struct.Struct("<B3x")
+PEDSTATE_ENTRY = struct.Struct("<BBHiiiii")
+# MP_HIT: targetId, flags (MP_HIT_F_TRAFFIC = targetId is a car_data slot), 2 reserved,
+# int32 impulse[3]. MP_COLOR: count + 3 reserved, then 8-byte rows
+# (playerId, on, r, g, b, 3 spare). (MP_CHANNEL is CHANNEL, below.)
+HIT = struct.Struct("<BB2xiii")
+HIT_F_TRAFFIC = 0x01
+# MP_STATS (count + 3 reserved) + 12-byte MP_STATS_ENTRY rows: playerId, lossPct
+# (0xFF = unknown), pingMs, rxBps, txBps -- each player's link to the hub.
+STATS = struct.Struct("<B3x")
+STATS_ENTRY = struct.Struct("<BBHII")
+STATS_LOSS_UNKNOWN = 0xFF
+CAR_PICK = struct.Struct("<BB2x")    # MP_CAR: model (0xFF none), city (0xFF = session)
+COLOR = struct.Struct("<B3x")
+COLOR_ENTRY = struct.Struct("<BBBBB3x")
+TRAFFIC_SLOT_FIRST = 20          # dr2limits.h JER_SLOT_TRAFFIC_FIRST (MAX_CARS 32 - 12)
+TRAFFIC_SLOT_COUNT = 12
+MAX_CARS = 32
 UDP_MAGIC = 0x31504D4A
 DISCOVERY_PORT = 1318          # mp_proto.h MP_DISCOVERY_PORT -- FIXED and shared. A
                                # beacon goes HERE; the session port travels INSIDE
@@ -83,6 +105,8 @@ REJECT = struct.Struct("<4B64s")         # 68 bytes
 BEACON = struct.Struct("<IHH32s6BHH")    # 50 bytes; the last u16 is `rules` (mp_proto.h renamed MP_BEACON's `spare` to it -- same offset, same size, so the wire is unchanged)
 CHANNEL = struct.Struct("<16sHIBB2B")    # 26 bytes
 CHAT = struct.Struct("<B3B96s")          # 100 bytes: playerId, reserved[3], text[96]
+KICK_FLAG_REJOIN = 0x01                  # KICK reserved[0]: the server is changing city, rejoin shortly
+KICK_TEXT_LEN = 64                       # optional KICK tail: NUL-terminated text shown to the player
 KICK = struct.Struct("<B3B")             # 4 bytes: playerId, reserved[3] -- the host
                                          # removing a player (the client acts on it)
 SESSION = struct.Struct("<4BIBBH")       # 12 bytes (gamemode,city,tod,weather,seed,numPlayers,state,spare)
@@ -135,11 +159,47 @@ def recv_frame(sock):
     return tag, payload
 
 
-def build_hello(name, mods=(), build=0):
+HELLO_ID_TAG = b"JPID"                   # mp_proto.h MP_HELLO_ID_TAG
+PLAYER_ID_LEN = 16                      # mp_proto.h MP_PLAYER_ID_LEN
+
+
+def build_hello(name, mods=(), build=0, player_id=None):
+    """MP_HELLO + its manifest, then (optionally) the JPID player-id block."""
     body = HELLO.pack(PROTO, SDK, build, 0, name.encode()[:31], len(mods), 0, 0, 0)
     for mid, ver in mods:
         body += MODI.pack(mid.encode()[:23], ver.encode()[:15], 1, 0)
+    if player_id is not None:
+        if len(player_id) != PLAYER_ID_LEN:
+            raise ValueError("player id must be %d bytes" % PLAYER_ID_LEN)
+        body += HELLO_ID_TAG + bytes(player_id)
     return body
+
+
+def parse_player_id(payload):
+    """The JPID block after a HELLO's modCount manifest rows, as a dashed UUID
+    string, or None when the client sent none (an older build)."""
+    if len(payload) < HELLO.size:
+        return None
+    modc = HELLO.unpack_from(payload, 0)[5]
+    at = HELLO.size + modc * MODI.size
+    if len(payload) < at + 4 + PLAYER_ID_LEN or payload[at:at + 4] != HELLO_ID_TAG:
+        return None
+    return format_player_id(payload[at + 4:at + 4 + PLAYER_ID_LEN])
+
+
+def format_player_id(raw):
+    """16 bytes -> the dashed UUID form (8-4-4-4-12, lowercase) every tool shows."""
+    h = bytes(raw).hex()
+    return "%s-%s-%s-%s-%s" % (h[:8], h[8:12], h[12:16], h[16:20], h[20:])
+
+
+def normalize_player_id(text):
+    """A player id typed by a person -- dashed or plain hex, any case, braces ok --
+    as the canonical dashed lowercase form, or None if it is not 16 bytes of hex."""
+    h = str(text or "").strip().strip("{}").replace("-", "").lower()
+    if len(h) != PLAYER_ID_LEN * 2 or any(c not in "0123456789abcdef" for c in h):
+        return None
+    return format_player_id(bytes.fromhex(h))
 
 
 # ---------------------------------------------------------------- modes

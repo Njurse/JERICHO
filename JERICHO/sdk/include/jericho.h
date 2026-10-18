@@ -441,6 +441,12 @@ int jer_error(const char* fmt, ...);
  * wrong, so a fixed conflict stops lingering on the screen). */
 void jer_error_clear(void);
 
+/* Block the game's pad/keyboard input (driving, horn, camera, pause, every
+ * bound action) while a mod's text prompt owns the keyboard -- e.g. the MP
+ * chat. Buttons still held when the block lifts stay ignored until they are
+ * released, so the key that closed the prompt never fires or sticks. */
+void jer_input_block(int on);
+
 /* The live error notices, oldest first -- the ENGINE asks for these and
  * prints them itself (it owns the text primitives). */
 int         jer_error_count(void);

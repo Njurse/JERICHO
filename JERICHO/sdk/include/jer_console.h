@@ -46,7 +46,7 @@ extern "C" {
 #endif
 
 #define JER_CONSOLE_LINE_MAX	96	/* longest ROW; a longer line wraps */
-#define JER_CONSOLE_MAX		8	/* rows kept (and drawn) at once */
+#define JER_CONSOLE_MAX		10	/* rows kept (and drawn) at once (was 8: a server !help overflowed) */
 
 #define JER_CONSOLE_SEG_MAX	6	/* colour runs in one line */
 #define JER_CONSOLE_SEG_TEXT_MAX 64	/* text in one run, terminator included */
@@ -76,6 +76,15 @@ void jer_console_chat(const JER_CONSOLE_SEG* segs, int count);
  * prompt is open and jer_console_input(NULL) to clear it. Truncated to one row
  * (an input buffer is short). */
 void jer_console_input(const char* text);
+
+/* Page the chat history shown while the prompt is open: +n = older, -n = newer.
+ * Clamped; returns how many rows back the view now is (0 = newest). Reset by
+ * jer_console_input(NULL). */
+int  jer_console_scroll(int delta);
+
+/* How long a CHAT row stays at full brightness before it fades, in seconds
+ * (clamped to 2..120; default 12). Plain console lines are unaffected. */
+void jer_console_set_chat_hold(int seconds);
 
 /* Drop every line (the stream is empty again). */
 void jer_console_clear(void);

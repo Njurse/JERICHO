@@ -1143,3 +1143,11 @@ const char* jer_root_dir(void)
 {
 	return gJerichoRoot[0] != 0 ? gJerichoRoot : "JERICHO";
 }
+
+/* jer_input_block: read by UpdatePadData (system.c) every frame. */
+int gJerInputBlocked = 0;
+
+void jer_input_block(int on)
+{
+	gJerInputBlocked = on ? 1 : 0;
+}

@@ -24,6 +24,7 @@
 #include "system.h"	/* CITY_COUNT and LevelNames: the city registry MpCarCityName reads */
 #include "denting.h"	/* CreateDentableCar: the only writer of the drawn vertex dump */
 #include "civ_ai.h"	/* reservedSlots: the array PingInCivCar's free-slot scan reads */
+#include "cop_ai.h"	/* requestCopCar: a cop is waiting for a slot (the cop slot hold) */
 #include "felony.h"	/* felonyRating / pedestrianFelony: what a restart clears */
 extern int gBootMpLevel;	/* main.c: 1 = the small multiplayer map, 0 = the full city */
 extern int gBootMpArena;	/* main.c: which multiplayer map (0/1) */
@@ -37,6 +38,7 @@ extern int gWantNight;		/* glaunch.c: 1 = the night take-a-ride level variant */
 #include "jer_map.h"	/* jer_map_*: the region maths behind "is the ground there?" */
 #include "pedest.h"	/* pUsedPeds: our player's own pedestrian, when on foot */
 #include "jer_npc.h"	/* jer_npc_*: the pedestrian we stand in for a REMOTE one */
+#include "camera.h"	/* InitCamera: snap the camera with a placed late joiner */
 #include "jer_ped_palette.h"	/* jer_ped_palette_reset: scope the suit-colour cache to a session */
 
 #include <string.h>
@@ -110,11 +112,24 @@ extern int MapHeight(VECTOR* pos);	/* the engine's ground height at an x/z */
  * the match appears to restart the moment the joiner arrives. Cleared by
  * MpSessionReset, so a new session can launch again. */
 static int gMpLaunched;
+
+/* A LIVE join: the engine builds OUR car on the level's own start point, which is
+ * where the host (and everyone before us) came in. MpPlaceSelfTick moves it to a
+ * random road spot away from the other players once the level is up. */
+/* Placement is tried from the FIRST frame our car exists, and retried every frame
+ * (the road data around the probe may still be streaming in) for up to this many
+ * frames before giving up on the level start. It used to wait a fixed 15 frames
+ * and then try once, which is the visible "sits on the host, then pops away". */
+#define MP_PLACE_SELF_SETTLE	1
+#define MP_PLACE_SELF_TRIES	90
+static int gMpPlaceSelfFrames;
+static int gMpPlaceSelfTry;	/* frames spent trying to place (MpPlaceSelfTick) */
 static int gMpLocalAppliedPad = -1;	/* the pad that drove OUR car, -1 = none seen yet */
 
 /* The road search (defined with the warp/respawn helpers, used by the join spawn
  * far above them). Its gates are the warp's: JerRoadAt, then a resident and clear
  * cell, and the caller streams the winner once. */
+static int MpRoadHeadingNear(int x, int z, int want);
 static int MpFindRoadSpotNear(int cx, int cy, int cz, int seed,
 	int* outX, int* outZ, int* outDir, int* outRing);
 
@@ -187,6 +202,8 @@ void MpSessionReset(void)
 
 int MpBeginHost(void)
 {
+	MpRejoinCancel("hosting");
+
 	/* Already the host: do NOT reset.
 	 *
 	 * Re-entering the host menu, or the frontend reaching this a second time,
@@ -243,6 +260,8 @@ int MpBeginHost(void)
  * MP_AUTOSTART all use it), so a slow or dead address never stalls a frame. */
 int MpBeginJoinAsync(const char* host, int port)
 {
+	MpRejoinCancel("another join");
+
 	if (host == NULL || host[0] == '\0')
 		host = "127.0.0.1";
 
@@ -355,6 +374,15 @@ static void MpSendPickedCar(int model, int city)
 	memset(&c, 0, sizeof(c));
 	c.model = (model >= 0 && model < 0xFF) ? (uint8_t)model : 0xFF;
 	c.city = (city >= 0 && city < CITY_COUNT) ? (uint8_t)city : 0xFF;
+
+	/* reserved[0] = our palette, reserved[1] = 1 "palette present" (old hosts
+	 * ignore both): so the roster names our colour before our first carstate. */
+	{
+		extern u_char defaultPlayerPalette;
+
+		c.reserved[0] = (uint8_t)defaultPlayerPalette;
+		c.reserved[1] = 1;
+	}
 
 	MpSendToHost(MP_TAG_CAR, 0, &c, sizeof(c));
 
@@ -824,6 +852,81 @@ static int MpAssignedCarModel(int playerId)
 static int MpAssignedCarCity(void)
 {
 	return MP_CAR_CITY_SESSION;
+}
+
+/* Every player's link to us, for everyone's scoreboard (MP_TAG_STATS). Host only;
+ * the same numbers the host's own scoreboard draws from MpPeerStats. */
+static void MpHostSendStats(void)
+{
+	unsigned char buf[sizeof(MP_STATS) + MP_MAX_PLAYERS * sizeof(MP_STATS_ENTRY)];
+	MP_STATS h;
+	int id, n = 0;
+
+	if (!MpIsHost())
+		return;
+
+	for (id = 1; id < MP_MAX_PLAYERS; id++)
+	{
+		MP_PEER_STATS st;
+		MP_STATS_ENTRY e;
+
+		if (!MpPeerStats(id, &st) || st.linkMs == 0)
+			continue;
+
+		memset(&e, 0, sizeof(e));
+		e.playerId = (uint8_t)id;
+		e.lossPct = (uint8_t)(st.lossPct < 0 ? 0 : (st.lossPct > 100 ? 100 : st.lossPct));
+		e.pingMs = (uint16_t)(st.pingMs > 0xFFFF ? 0xFFFF : st.pingMs);
+		e.rxBps = (uint32_t)(st.rxBytes * 1000UL / st.linkMs);
+		e.txBps = (uint32_t)(st.txBytes * 1000UL / st.linkMs);
+		memcpy(buf + sizeof(h) + n * sizeof(e), &e, sizeof(e));
+		n++;
+	}
+
+	if (n == 0)
+		return;
+
+	memset(&h, 0, sizeof(h));
+	h.count = (uint8_t)n;
+	memcpy(buf, &h, sizeof(h));
+	MpHostBroadcast(MP_TAG_STATS, 0, buf, (int)(sizeof(h) + n * sizeof(MP_STATS_ENTRY)));
+}
+
+/* The host's report of everyone's link. A client keeps it per player for the
+ * scoreboard; the host measures its own and ignores this. */
+static void MpHandleStats(const unsigned char* p, int len)
+{
+	MP_STATS h;
+	int i, n;
+
+	if (MpIsHost() || len < (int)sizeof(MP_STATS))
+		return;
+
+	memcpy(&h, p, sizeof(h));
+	n = h.count > MP_MAX_PLAYERS ? MP_MAX_PLAYERS : h.count;
+
+	if (len < (int)(sizeof(MP_STATS) + (size_t)n * sizeof(MP_STATS_ENTRY)))
+		return;
+
+	for (i = 0; i < n; i++)
+	{
+		MP_STATS_ENTRY e;
+		MP_PLAYER* pl;
+
+		memcpy(&e, p + sizeof(MP_STATS) + i * sizeof(e), sizeof(e));
+		pl = MpGetPlayer(e.playerId);
+
+		if (pl == NULL || pl->isLocal)
+			continue;
+
+		pl->netRxBps = e.rxBps;
+		pl->netTxBps = e.txBps;
+		pl->netLoss = e.lossPct;
+		pl->netLastMs = MpNowMs();
+
+		if (e.pingMs != 0)
+			pl->pingMs = e.pingMs;
+	}
 }
 
 void MpHostSendRoster(void)
@@ -1630,9 +1733,9 @@ int MpStartMatch(void)
 /* ------------------------------------------------------------------ */
 void MpSendHello(void)
 {
-	unsigned char buf[sizeof(MP_HELLO) + MP_MAX_MODS * sizeof(MP_MOD_INFO)];
+	unsigned char buf[sizeof(MP_HELLO) + MP_MAX_MODS * sizeof(MP_MOD_INFO) + 4 + MP_PLAYER_ID_LEN];
 	MP_HELLO h;
-	int n;
+	int n, len;
 
 	n = MpBuildManifest((MP_MOD_INFO*)(buf + sizeof(MP_HELLO)), MP_MAX_MODS);
 
@@ -1668,8 +1771,13 @@ void MpSendHello(void)
 
 	memcpy(buf, &h, sizeof(h));
 
-	MpSendToHost(MP_TAG_HELLO, MP_FLAG_RELIABLE, buf,
-		(int)(sizeof(h) + (size_t)n * sizeof(MP_MOD_INFO)));
+	/* the player id block after the manifest (mp_proto.h, MP_HELLO_ID_TAG) */
+	len = (int)(sizeof(h) + (size_t)n * sizeof(MP_MOD_INFO));
+	memcpy(buf + len, MP_HELLO_ID_TAG, 4);
+	memcpy(buf + len + 4, gMp.config.playerId, MP_PLAYER_ID_LEN);
+	len += 4 + MP_PLAYER_ID_LEN;
+
+	MpSendToHost(MP_TAG_HELLO, MP_FLAG_RELIABLE, buf, len);
 
 	if (gMpCtx)
 		gMpCtx->jer_log(gMpCtx, "[mp] hello sent (%d mods)\n", n);
@@ -1831,6 +1939,8 @@ static void MpHandleCar(int connIndex, const unsigned char* p, int len)
 	pl->carIsSlot = 0;
 	pl->carCity = (c.city < CITY_COUNT) ? (int)c.city : -1;
 	pl->carConfirmed = 1;
+	if (c.reserved[1] == 1)
+		pl->palette = (int)c.reserved[0];	/* the colour they will drive in */
 
 	if (gMpCtx != NULL)
 		gMpCtx->jer_log(gMpCtx, "[mp] player %d picked car model %d (city %d)\n",
@@ -1947,6 +2057,19 @@ static void MpHandleHello(int connIndex, const unsigned char* p, int len)
 			pl->carIsSlot = h.reserved[0] ? 1 : 0;
 			pl->carCity = (h.reserved[2] < CITY_COUNT) ? (int)h.reserved[2] : -1;
 			pl->palette = (int)h.reserved[1];
+
+			/* the optional player id block after the manifest (mp_proto.h) */
+			{
+				int at = (int)(sizeof(MP_HELLO) + (size_t)n * sizeof(MP_MOD_INFO));
+
+				pl->hasPlayerId = 0;
+
+				if (len >= at + 4 + MP_PLAYER_ID_LEN && memcmp(p + at, MP_HELLO_ID_TAG, 4) == 0)
+				{
+					memcpy(pl->playerId, p + at + 4, MP_PLAYER_ID_LEN);
+					pl->hasPlayerId = 1;
+				}
+			}
 
 			if (gMpCtx)
 				gMpCtx->jer_log(gMpCtx, "[mp] hello from player %d: vehicle %d\n", id, pl->car);
@@ -2108,6 +2231,177 @@ void MpKickPlayer(int playerId)
 	 * and never printed "kicked by the host".) */
 }
 
+/* AUTO-REJOIN after a server city change. A dedicated server's !vote switches
+ * city by kicking everyone with MP_KICK_FLAG_REJOIN set; we remember the address
+ * and our car, take the ordinary leave path, then re-join through the ordinary
+ * join (MpBeginJoinAsync, as an auto session so no menus are needed) and, once
+ * the new level is up, put our old car back through Change car. Client only. */
+static const char* MpChangeCarRefusal(int city, int model);
+
+#define MP_REJOIN_FIRST_MS	2500
+#define MP_REJOIN_EVERY_MS	4000
+#define MP_REJOIN_WINDOW_MS	20000
+
+static struct
+{
+	int active;		/* waiting to (re)try the join */
+	int settling;		/* joined: waiting for the level to put the car back */
+	int joining;		/* inside our own MpBeginJoinAsync (not a cancel) */
+	int prevAuto;		/* gMp.autoSession before we forced it */
+	char host[64];
+	int port;
+	unsigned long nextMs, deadlineMs;
+	int carCity, carModel;	/* -1 model = nothing to restore */
+} gMpRejoin;
+
+int MpRejoinActive(void)
+{
+	return gMpRejoin.active;
+}
+
+static void MpRejoinEnd(void)
+{
+	if (gMpRejoin.active || gMpRejoin.settling)
+		gMp.autoSession = gMpRejoin.prevAuto;
+
+	gMpRejoin.active = 0;
+	gMpRejoin.settling = 0;
+	gMpRejoin.carModel = -1;
+}
+
+void MpRejoinCancel(const char* why)
+{
+	if (gMpRejoin.joining || (!gMpRejoin.active && !gMpRejoin.settling))
+		return;
+
+	if (gMpCtx != NULL)
+		gMpCtx->jer_log(gMpCtx, "[mp] rejoin cancelled: %s\n", why ? why : "?");
+
+	/* Esc while a connect is in flight: drop it, as a refused join would. */
+	if (gMpRejoin.active && gMp.role == MP_ROLE_CLIENT && !gMp.running)
+	{
+		MpClientDisconnect();
+		gMp.role = MP_ROLE_NONE;
+		MpJoinStateSet(MP_JOIN_IDLE);
+	}
+
+	MpRejoinEnd();
+}
+
+static void MpRejoinArm(void)
+{
+	MP_PLAYER* me = MpLocalPlayer();
+	const char* host = MpJoinTarget();
+
+	memset(&gMpRejoin, 0, sizeof(gMpRejoin));
+	gMpRejoin.carModel = -1;
+
+	if (host == NULL || host[0] == '\0')
+	{
+		jer_error("The server is changing city - please rejoin");
+		return;
+	}
+
+	snprintf(gMpRejoin.host, sizeof(gMpRejoin.host), "%s", host);
+	gMpRejoin.port = MpJoinTargetPort();
+
+	/* Our car as Change car names it: an ABSOLUTE city (a -1 "session city"
+	 * would mean the NEW city after the switch) plus the model. */
+	if (me != NULL && me->car >= 0 && !me->carIsSlot)
+	{
+		gMpRejoin.carCity = (me->carCity < 0) ? gMp.city : me->carCity;
+		gMpRejoin.carModel = me->car;
+	}
+	else if (me != NULL && me->carIsSlot && me->carId >= 0 && me->carId < MAX_CARS)
+	{
+		/* A car-select SLOT (the usual pick) is per city, so it would name a
+		 * different car in the new one: remember the model on the road instead.
+		 * A slot is always the session city's own car. */
+		gMpRejoin.carCity = gMp.city;
+		gMpRejoin.carModel = car_data[me->carId].ap.model;
+	}
+
+	gMpRejoin.prevAuto = gMp.autoSession;
+	gMpRejoin.nextMs = MpNowMs() + MP_REJOIN_FIRST_MS;
+	gMpRejoin.deadlineMs = gMpRejoin.nextMs + MP_REJOIN_WINDOW_MS;
+	gMpRejoin.active = 1;
+
+	if (gMpCtx != NULL)
+		gMpCtx->jer_log(gMpCtx, "[mp] server changing city: rejoining %s:%d (car city %d model %d)\n",
+			gMpRejoin.host, gMpRejoin.port, gMpRejoin.carCity, gMpRejoin.carModel);
+
+	jer_error("Server changing city - reconnecting... (Esc cancels)");
+}
+
+void MpRejoinTick(void)
+{
+	unsigned long now;
+
+	if (gMpRejoin.settling)
+	{
+		MP_PLAYER* me;
+
+		if (gMp.role != MP_ROLE_CLIENT)
+		{
+			MpRejoinEnd();	/* the session went away before the level came up */
+			return;
+		}
+
+		me = MpLocalPlayer();
+
+		if (!gMp.running || me == NULL || me->carId < 0)
+			return;
+
+		if (gMpRejoin.carModel >= 0)
+		{
+			int city = gMpRejoin.carCity, model = gMpRejoin.carModel;
+
+			if (gMpCtx != NULL)
+				gMpCtx->jer_log(gMpCtx, "[mp] rejoin: restoring car %s model %d\n",
+					MpCarCityName(city), model);
+
+			/* A refusal is logged by Change car itself and leaves the default car. */
+			if (!MpChangeCar(city, model) && gMpCtx != NULL)
+				gMpCtx->jer_log(gMpCtx, "[mp] rejoin: car not restored now (%s) - default car kept unless the retry lands\n",
+					MpChangeCarRefusal(city, model));
+		}
+
+		MpRejoinEnd();
+		return;
+	}
+
+	if (!gMpRejoin.active)
+		return;
+
+	now = MpNowMs();
+
+	if (gMp.role == MP_ROLE_CLIENT)
+	{
+		if (MpJoinState() == MP_JOIN_READY)
+		{
+			gMpRejoin.active = 0;
+			gMpRejoin.settling = 1;
+		}
+		return;	/* a connect is in flight */
+	}
+
+	if (gMp.role != MP_ROLE_NONE || (long)(now - gMpRejoin.nextMs) < 0)
+		return;
+
+	if ((long)(now - gMpRejoin.deadlineMs) >= 0)
+	{
+		jer_error("Could not reconnect to %s:%d", gMpRejoin.host, gMpRejoin.port);
+		MpRejoinEnd();
+		return;
+	}
+
+	gMpRejoin.nextMs = now + MP_REJOIN_EVERY_MS;
+	gMp.autoSession = 1;	/* no menus: launch into the new city on WELCOME */
+	gMpRejoin.joining = 1;
+	MpBeginJoinAsync(gMpRejoin.host, gMpRejoin.port);
+	gMpRejoin.joining = 0;
+}
+
 /* MP_TAG_KICK -- the host removed us. Take the SAME clean-leave path a
  * deliberate quit uses (MpLeaveSession sends our LEAVE back, which the host
  * turns into the connection drop), rather than tearing down on our own: that
@@ -2132,7 +2426,37 @@ static void MpHandleKick(int connIndex, const unsigned char* p, int len)
 	if (gMpCtx != NULL)
 		gMpCtx->jer_log(gMpCtx, "[mp] kicked by the host (player %d)\n", (int)k.playerId);
 
-	jer_error("You were kicked by the host");
+	if (k.reserved[0] & MP_KICK_FLAG_REJOIN)
+	{
+		MpRejoinArm();
+		MpLeaveSession();
+		MpReturnToFrontend();
+		return;
+	}
+
+	if (len >= (int)sizeof(MP_KICK) + MP_KICK_TEXT_LEN)
+	{
+		char text[MP_KICK_TEXT_LEN];
+		int i;
+
+		memcpy(text, p + sizeof(MP_KICK), sizeof(text));
+		text[sizeof(text) - 1] = '\0';	/* wire string: never trust it terminated */
+
+		for (i = 0; text[i]; i++)	/* no format/control characters reach the UI */
+			if ((unsigned char)text[i] < 32 || text[i] == '%')
+				text[i] = ' ';
+
+		if (text[0])
+		{
+			if (gMpCtx != NULL)
+				gMpCtx->jer_log(gMpCtx, "[mp] kick message: %s\n", text);
+			jer_error("%s", text);
+		}
+		else
+			jer_error("You were kicked by the host");
+	}
+	else
+		jer_error("You were kicked by the host");
 
 	MpLeaveSession();
 	MpReturnToFrontend();
@@ -2338,6 +2662,9 @@ static void MpHandleWelcome(const unsigned char* p, int len)
 
 		if (gMpCtx)
 			gMpCtx->jer_log(gMpCtx, "[mp] joined a LIVE match - pick a car\n");
+
+		gMpPlaceSelfTry = 0;
+		gMpPlaceSelfFrames = MP_PLACE_SELF_SETTLE;	/* our car starts on the level start = on the host: move it */
 
 		if (gMp.autoSession)
 		{
@@ -3379,6 +3706,25 @@ static void MpHeartbeatTick(void)
 #define MP_TRAFFIC_SLOT_COUNT	JER_SLOT_TRAFFIC_COUNT			/* 12 traffic slots, fixed */
 
 static unsigned char gMpBandReserved[MAX_CARS];	/* slots WE turned on, so we clear only ours */
+/* THE COP SLOT HOLD. Civilians and cops share this machine's band, and in
+ * single player the engine never runs the pool dry (19 free slots against a
+ * civilian cap of 13), so a cop request always finds a slot. A band is at most
+ * 12 slots and the cap does not shrink with it, so traffic fills every slot and
+ * a cop has to wait for a civilian to drive out of range -- which, for players
+ * staying in one area, is a long time. While the session has cops on and fewer
+ * than maxCopCars are out, the LAST free slot of the band is held back from the
+ * civilian spawner (reservedSlots, like the band), and released on the frame a
+ * cop is requested so the cop takes it. -1 = holding nothing. */
+static int gMpCopHold = -1;
+
+static void MpCopHoldRelease(void)
+{
+	if (gMpCopHold >= 0 && !gMpBandReserved[gMpCopHold])
+		reservedSlots[gMpCopHold] = 0;
+
+	gMpCopHold = -1;
+}
+
 static int gMpBandFirst = -1;			/* this machine's band, inclusive; -1 = none */
 static int gMpBandLast = -1;
 
@@ -3449,6 +3795,8 @@ static void MpTrafficBandFor(int rank, int nMachines, int* first, int* last)
 void MpTrafficBandClear(void)
 {
 	int i;
+
+	MpCopHoldRelease();
 
 	for (i = 0; i < MAX_CARS; i++)
 	{
@@ -3725,6 +4073,32 @@ static void MpTrafficBandRefresh(void)
 	gMpBandFirst = f;
 	gMpBandLast = l;
 
+	/* The cop slot hold (see gMpCopHold): re-decided every frame, before the
+	 * spawner runs. Only with the session's cops on, so a no-cops session and
+	 * single player keep every slot for traffic. */
+	MpCopHoldRelease();
+
+	if (f >= 0 && gMp.ruleSet && gMp.ruleCops && CopsAllowed &&
+	    numCopCars < maxCopCars && !requestCopCar)
+	{
+		int freeCount = 0, lastFree = -1;
+
+		for (i = f; i <= l; i++)
+		{
+			if (car_data[i].controlType == CONTROL_TYPE_NONE && !reservedSlots[i])
+			{
+				freeCount++;
+				lastFree = i;
+			}
+		}
+
+		if (freeCount == 1)
+		{
+			reservedSlots[lastFree] = 1;
+			gMpCopHold = lastFree;
+		}
+	}
+
 	if (changed && gMpCtx != NULL)
 		gMpCtx->jer_log(gMpCtx,
 			"[mp] traffic band: machine %d of %d owns car_data slots %d..%d\n",
@@ -3868,6 +4242,12 @@ static void MpTrafficClaimPass(void)
 		int owner;
 
 		if (cp->controlType != CONTROL_TYPE_CIV_AI)
+			continue;	/* PURSUER_AI (a cop in pursuit) is never handed off */
+
+		/* Nor a patrolling cop: a cop off duty is a CIV_AI car with CONTROL_FLAG_COP
+		 * (dr2types.h). It is OUR cop, there for OUR player; the peer's copy of the
+		 * area is not chasing us, so handing it off deleted our police. */
+		if (cp->controlFlags & CONTROL_FLAG_COP)
 			continue;
 
 		census++;
@@ -3991,7 +4371,10 @@ void MpLockstepFrame(void)
 	/* refreshed so the pause menu's names/vehicles/ping are live, and so a
 	 * player joining a match already in progress learns the roster */
 	if ((gMp.frame % 120) == 0)
+	{
 		MpHostSendRoster();
+		MpHostSendStats();
+	}
 
 	/* the same cadence, and for the same reason: a machine that joins late or
 	 * misses one still ends up with everybody's colour */
@@ -5121,7 +5504,7 @@ static void MpSendOwnPedState(void)
 static void MpHandlePedState(int connIndex, const unsigned char* p, int len)
 {
 	MP_PEDSTATE h;
-	int i, n;
+	int i, n, forged = 0;
 
 	if (len < (int)sizeof(MP_PEDSTATE))
 		return;
@@ -5148,6 +5531,14 @@ static void MpHandlePedState(int connIndex, const unsigned char* p, int len)
 		if (pl == NULL || pl->isLocal)
 			continue;
 
+		/* A pose may only describe its SENDER (the dedi enforces the same rule):
+		 * otherwise one client could walk another player's Tanner around. */
+		if (MpIsHost() && connIndex >= 0 && e.playerId != MpConnPlayerId(connIndex))
+		{
+			forged = 1;
+			continue;
+		}
+
 		pl->pedX = e.x;
 		pl->pedY = e.y;
 		pl->pedZ = e.z;
@@ -5161,7 +5552,7 @@ static void MpHandlePedState(int connIndex, const unsigned char* p, int len)
 	 * host ever sees an on-foot CLIENT -- every other client sees a gap where a
 	 * person should be, which reads as "I can see the host on foot but not each
 	 * other". The carstate relay (MpHandleCarState) is the same rule. */
-	if (MpIsHost() && connIndex >= 0)
+	if (MpIsHost() && connIndex >= 0 && !forged)
 		MpHostRelay(connIndex, MP_TAG_PED, 0, p, len);
 }
 
@@ -5254,19 +5645,20 @@ static void MpDriveRemotePed(MP_PLAYER* p)
 			gMpCtx->jer_log(gMpCtx, "[mp] ped: player %d corrected %d units\n", p->id, err);
 	}
 
-	if (p->pedSpeed != 0)
+	/* Mirror the owner's gait directly: their heading, their speed (negative =
+	 * backing up), and the idle/walk/run clip that goes with it. The old
+	 * move_to aimed at a point 300 units along the owner's heading but measured
+	 * from the OWNER, so a lagging stand-in flipped to face the far side and the
+	 * clip/reverse flag were never set -- the "stuck walking backwards" Tanner.
+	 * A pose older than 400 ms means the owner stopped sending: stand idle
+	 * rather than walk on forever. */
 	{
-		/* move_to takes a POINT, so aim a little way along the owner's heading:
-		 * that is the same thing as "walk forward at this speed". */
-		int tx = p->pedX + (int)(((long)rsin(p->pedHeading) * 300) >> 12);
-		int tz = p->pedZ + (int)(((long)rcos(p->pedHeading) * 300) >> 12);
+		int spd = p->pedSpeed;
 
-		jer_npc_move_to(n, tx, tz, p->pedSpeed);
-	}
-	else
-	{
-		jer_npc_stop(n);
-		jer_npc_face(n, p->pedHeading);
+		if (MpNowMs() - p->pedLastMs > 400)
+			spd = 0;
+
+		jer_npc_set_gait(n, p->pedHeading, spd);
 	}
 
 	/* NOW animate + integrate it. Setting the intent is not enough: this ped is
@@ -5783,6 +6175,59 @@ static void MpReleaseRemoteCar(MP_PLAYER* p)
 	}
 }
 
+/* Some OTHER player (or us) is now in this slot: it belongs to them. */
+static int MpCarSlotTakenByOther(const MP_PLAYER* leaver, int slot)
+{
+	int i;
+
+	for (i = 0; i < MP_MAX_PLAYERS; i++)
+	{
+		const MP_PLAYER* o = &gMp.players[i];
+
+		if (o != leaver && o->active && o->carId == slot)
+			return 1;
+	}
+
+	return 0;
+}
+
+/* A player is leaving (LEAVE, timeout, or dropped from the roster): take their
+ * stand-in Tanner away, and the car they abandoned on foot, unless another
+ * player has commandeered it since -- then it is that player's car and stays.
+ * Their CURRENT car is handled by MpRemovePlayer (same ownership check). */
+void MpCleanupLeaverWorld(MP_PLAYER* p)
+{
+	int slot;
+
+	if (p == NULL || p->isLocal)
+		return;
+
+	if (p->ped != NULL)
+	{
+		jer_npc_despawn((JerNpc*)p->ped);
+		p->ped = NULL;
+
+		if (gMpCtx != NULL)
+			gMpCtx->jer_log(gMpCtx, "[mp] ped: player %d left; stand-in removed\n", p->id);
+	}
+
+	slot = p->leftCarSlot1 - 1;
+
+	if (slot >= 0 && slot < MAX_CARS && slot != p->carId &&
+		car_data[slot].controlType != CONTROL_TYPE_NONE &&
+		car_data[slot].ap.model == p->leftCarModel &&
+		!MpCarSlotTakenByOther(p, slot))
+	{
+		MpReleaseOurCarSlot(slot);
+		car_data[slot].controlType = CONTROL_TYPE_NONE;
+
+		if (gMpCtx != NULL)
+			gMpCtx->jer_log(gMpCtx, "[mp] removed player %d's abandoned car (slot %d)\n", p->id, slot);
+	}
+
+	p->leftCarSlot1 = 0;
+}
+
 /* A city's name, for logs and menu labels. `city` is a 0..3 index or -1 for the
  * session's own city (the value the wire uses for "the level's own car data"). */
 const char* MpCarCityName(int city)
@@ -5985,6 +6430,21 @@ static int MpAdoptCar(int carSlot, int city, int model, MP_PLAYER* who)
 
 		CreateDentableCar(cp);
 		gMpAdoptModel[carSlot] = model;
+
+		/* OUR car: rebind its engine and SIREN sounds to the new model, exactly as
+		 * getting in does (players.c ChangePedPlayerToCar -> StartPlayerCarSounds).
+		 * The siren is a looping channel (player*3+2) that is only STARTED there, and
+		 * the per-frame control just unmutes it while the horn is held -- so changing
+		 * from a car with no siren into a police car left that channel never started:
+		 * light bar on, siren silent until you got out and back in. Going the other
+		 * way, stop the old siren loop so it cannot hang on. */
+		if (carSlot == player[0].playerCarId && player[0].playerType == PLAYER_TYPE_CAR)
+		{
+			if (CarHasSiren(slot) == 0)
+				StopChannel(2);
+
+			StartPlayerCarSounds(0, slot, (VECTOR*)cp->hd.where.t);
+		}
 
 		/* Say it: the car was REBUILT, not merely re-pointed. A hot-loaded car also
 		 * had its cosmetics replaced the moment they landed (JerHotLoadCarCosmetics),
@@ -6758,7 +7218,41 @@ int MpRespawnAfterDeath(void)
 
 	me = MpLocalPlayer();
 
-	if (me == NULL || me->carId < 0 || me->carId >= MAX_CARS)
+	if (me == NULL)
+		return 0;
+
+	/* ON FOOT: busted by a cop (the "You've been caught" route), drowned or hit by
+	 * a train. The engine's game over there tore the session down -- the menu
+	 * opened over a world the camera no longer had a target in, and the player
+	 * had to rejoin. Refuse it the same way: not dying, not wanted, and off the
+	 * water if that is what was killing us. */
+	if (me->carId < 0 && player[0].playerType == PLAYER_TYPE_PEDESTRIAN)
+	{
+		PEDESTRIAN* ped = player[0].pPed;
+
+		tannerDeathTimer = 0;
+		player[0].dying = 0;
+		pedestrianFelony = 0;
+
+		if (ped != NULL)
+		{
+			int surf = GetSurfaceIndex((VECTOR*)&ped->position);
+
+			if ((surf == -26 || surf == -23) && PlayerStartInfo[0] != NULL)
+			{
+				ped->position.vx = PlayerStartInfo[0]->position.vx;
+				ped->position.vz = PlayerStartInfo[0]->position.vz;
+				ped->position.vy = -62 - MapHeight((VECTOR*)&ped->position);	/* standing height, as pedest.c places him */
+			}
+		}
+
+		if (gMpCtx != NULL)
+			gMpCtx->jer_log(gMpCtx, "[mp] death on foot in a session - game over refused\n");
+
+		return 1;
+	}
+
+	if (me->carId < 0 || me->carId >= MAX_CARS)
 		return 0;
 
 	cp = &car_data[me->carId];
@@ -6794,6 +7288,10 @@ int MpRespawnAfterDeath(void)
 	start[1] = 0;				/* the engine resolves the ground under the car */
 	start[2] = z;
 	start[3] = 0;
+
+	/* Face ALONG THE ROAD: a wreck usually ends at an angle (or upside down
+	 * across the lanes), and respawning it that way left the driver to sort it out. */
+	dir = MpRoadHeadingNear(x, z, dir & 0xfff);
 
 	InitCarPhysics(cp, &start, dir);
 
@@ -7130,6 +7628,120 @@ static int MpFindRoadSpotNear(int cx, int cy, int cz, int seed,
 	return 0;
 }
 
+/* The road's heading at (x, z), turned to whichever of its two directions is
+ * closer to `want` (a car already pointing down the road keeps its way). */
+static int MpRoadHeadingNear(int x, int z, int want)
+{
+	int dir;
+
+	if (!MpRoadHeadingAt(x, 0, z, &dir))
+		return want;
+
+	if (((dir - want + 4096 + 1024) & 0xfff) >= 2048)
+		dir = (dir + 2048) & 0xfff;
+
+	return dir;
+}
+
+void MpPlaceSelfTick(void)
+{
+	MP_PLAYER* me;
+	CAR_DATA* cp;
+	unsigned int rnd;
+	int k, i;
+
+	if (gMpPlaceSelfFrames <= 0)
+		return;
+
+	if (!gMp.running || gMp.role != MP_ROLE_CLIENT)
+	{
+		if (!gMp.running && gMp.role == MP_ROLE_NONE)
+			gMpPlaceSelfFrames = 0;
+		return;
+	}
+
+	me = MpLocalPlayer();
+
+	if (me == NULL || me->carId < 0 || me->carId >= MAX_CARS || PlayerStartInfo[0] == NULL)
+		return;
+
+	/* gMpPlaceSelfFrames: >1 = settle countdown, then 1..-TRIES = try each frame */
+	if (gMpPlaceSelfFrames > 1)
+	{
+		gMpPlaceSelfFrames--;
+		return;
+	}
+
+	gMpPlaceSelfTry++;
+
+	cp = &car_data[me->carId];
+	rnd = gMp.seed ^ (unsigned int)((me->id + 7) * 2654435761u) ^ (unsigned int)MpNowMs();
+
+	for (k = 0; k < 8; k++)
+	{
+		int ang, r, cx, cz, x, z, dir = -1, clear = 1;
+
+		rnd = rnd * 1103515245u + 12345u;
+		ang = (int)((rnd >> 8) & 0xfff);
+		r = 1500 + (int)((rnd >> 20) % 3000u);
+		cx = PlayerStartInfo[0]->position.vx + (int)(((long)rsin(ang) * r) >> 12);
+		cz = PlayerStartInfo[0]->position.vz + (int)(((long)rcos(ang) * r) >> 12);
+
+		if (!MpFindRoadSpotNear(cx, 0, cz, me->id + k * 64, &x, &z, &dir, NULL) || !MpWarpSpotOk(x, z))
+			continue;
+
+		for (i = 0; i < MP_MAX_PLAYERS && clear; i++)
+		{
+			MP_PLAYER* o = MpGetPlayer(i);
+
+			if (o != NULL && o->active && o != me && o->carId >= 0 && o->carId < MAX_CARS)
+			{
+				int dx = car_data[o->carId].hd.where.t[0] - x;
+				int dz = car_data[o->carId].hd.where.t[2] - z;
+
+				if (dx > -2000 && dx < 2000 && dz > -2000 && dz < 2000)
+					clear = 0;
+			}
+		}
+
+		if (!clear)
+			continue;
+
+		{
+			LONGVECTOR4 start;
+
+			start[0] = x;
+			start[1] = 0;		/* the engine resolves the ground under the car */
+			start[2] = z;
+			start[3] = 0;
+
+			InitCarPhysics(cp, &start, (dir >= 0) ? dir : PlayerStartInfo[0]->rotation);
+			cp->hd.speed = 0;
+			player[0].cameraAngle = cp->hd.direction + 1536;
+
+			/* snap the camera with the car instead of letting it swing across */
+			player[0].pos[0] = x;
+			player[0].pos[2] = z;
+			InitCamera(&player[0]);
+		}
+
+		if (gMpCtx != NULL)
+			gMpCtx->jer_log(gMpCtx, "[mp] live join: placed our car at %d,%d dir %d (try %d, frame %d)\n",
+				x, z, dir, k, gMpPlaceSelfTry);
+
+		gMpPlaceSelfFrames = 0;
+		return;
+	}
+
+	if (gMpPlaceSelfTry < MP_PLACE_SELF_TRIES)
+		return;		/* road data may still be streaming: try again next frame */
+
+	gMpPlaceSelfFrames = 0;
+
+	if (gMpCtx != NULL)
+		gMpCtx->jer_log(gMpCtx, "[mp] live join: no clear road spot found - kept the level start\n");
+}
+
 /* Where to put the car, in the target's own axes: `along` is measured along
  * their FORWARD axis and every value is <= 0, which is the definition of "not in
  * their trajectory". Beside first (least in the way), then behind, then further
@@ -7137,6 +7749,11 @@ static int MpFindRoadSpotNear(int cx, int cy, int cz, int seed,
 static const int kWarpAlong[]  = { -MP_WARP_NEAR, -MP_WARP_NEAR, -900, -900, -1600, -MP_WARP_FAR, 0, 0 };
 static const int kWarpAcross[] = { 600, -600, 900, -900, 0, 0, 900, -900 };
 
+
+/* How old an on-foot pose may be and still be a warp target: poses arrive every
+ * few frames while someone is on foot, so a few seconds of silence means the copy
+ * is stale (they got back in, or left). */
+#define MP_WARP_PED_FRESH_MS	5000
 
 int MpWarpToPlayer(int playerId)
 {
@@ -7159,20 +7776,40 @@ int MpWarpToPlayer(int playerId)
 		return 0;
 	}
 
-	if (tp == NULL || tp->id == gMp.localPlayerId ||
-	    tp->carId < 0 || tp->carId >= MAX_CARS)
+	if (tp == NULL || tp->id == gMp.localPlayerId)
 	{
-		MpNotify("Warp: that player has no car to go to");
+		MpNotify("Warp: that player is not in the match");
 		return 0;
 	}
 
 	myc = &car_data[me->carId];
-	tgt = &car_data[tp->carId];
 
-	tx = tgt->hd.where.t[0];
-	ty = tgt->hd.where.t[1];
-	tz = tgt->hd.where.t[2];
-	dir = tgt->hd.direction;
+	if (tp->carId >= 0 && tp->carId < MAX_CARS)
+	{
+		tgt = &car_data[tp->carId];
+		tx = tgt->hd.where.t[0];
+		ty = tgt->hd.where.t[1];
+		tz = tgt->hd.where.t[2];
+		dir = tgt->hd.direction;
+	}
+	else if (tp->pedLastMs != 0 && MpNowMs() - tp->pedLastMs < MP_WARP_PED_FRESH_MS)
+	{
+		/* ON FOOT: a player out of their car has no car_data slot, only the pose
+		 * their owner keeps sending (MP_TAG_PED -> MpHandlePedState). Land beside
+		 * that, facing their way (ped heading is the same 0..4095 yaw). This used
+		 * to refuse with "that player has no car to go to". */
+		tgt = NULL;
+		tx = tp->pedX;
+		ty = tp->pedY;
+		tz = tp->pedZ;
+		dir = tp->pedHeading & 0xFFF;
+	}
+	else
+	{
+		MpNotify("Warp: no position for that player yet");
+		return 0;
+	}
+	(void)tgt;
 
 	/* Aim the streamer at the TARGET first, so the region its neighbours fall in
 	 * has a chance of being present before the candidates are judged. Harmless
@@ -7438,6 +8075,13 @@ static void MpHandleCarState(int connIndex, const unsigned char* p, int len)
 		{
 			MpReleaseRemoteCar(pl);
 
+			/* remember what they walked away from: if they leave, it goes too */
+			if (pl->carId >= 0 && pl->carId < MAX_CARS)
+			{
+				pl->leftCarSlot1 = pl->carId + 1;
+				pl->leftCarModel = car_data[pl->carId].ap.model;
+			}
+
 			/* ...AND mark the PLAYER as on foot.
 			 *
 			 * Releasing the car was not enough, and this is why neither machine
@@ -7627,6 +8271,9 @@ static void MpHandleCarState(int connIndex, const unsigned char* p, int len)
 		 * modules answer whether this machine really holds this player's car. A car
 		 * that only looks like the owner's gets the palette it can actually support,
 		 * instead of colours that belong to a vehicle that is not here */
+		if (!pl->isLocal)
+			pl->palette = (int)e.palette;	/* the roster (late joiners) names the owner's colour */
+
 		if (!pl->isLocal)
 		{
 			int pal = (int)e.palette;
@@ -8257,6 +8904,12 @@ void MpHandleMessage(int connIndex, const char* tag, const unsigned char* payloa
 	if (memcmp(tag, MP_TAG_PED, 4) == 0)
 	{
 		MpHandlePedState(connIndex, payload, len);
+		return;
+	}
+
+	if (memcmp(tag, MP_TAG_STATS, 4) == 0)
+	{
+		MpHandleStats(payload, len);
 		return;
 	}
 

@@ -45,6 +45,9 @@ extern MpTextInputFn g_cfg_gameOnTextInput;
 #define MP_KEY_CHAT_SEND	40	/* SDL_SCANCODE_RETURN */
 #define MP_KEY_CHAT_SEND_KP	88	/* SDL_SCANCODE_KP_ENTER */
 #define MP_KEY_CHAT_CANCEL	41	/* SDL_SCANCODE_ESCAPE */
+#define MP_KEY_CHAT_PGUP	75	/* SDL_SCANCODE_PAGEUP: older chat (prompt open only) */
+#define MP_KEY_CHAT_PGDN	78	/* SDL_SCANCODE_PAGEDOWN: newer chat */
+#define MP_CHAT_PAGE_ROWS	(JER_CONSOLE_MAX - 1)	/* one row of overlap per page */
 
 /* Either Enter sends the chat line.
  *
@@ -76,6 +79,7 @@ static int MpIsChatSendKey(int nKey)
 #include <stdlib.h>
 
 #include "mp.h"
+#include "jer_console.h"	/* jer_console_scroll: PgUp/PgDn through the chat history */
 #include "mp_bot.h"	/* the test bot; testing only, inert unless MP_BOT is set */
 
 MP_STATE gMp;
@@ -771,6 +775,9 @@ static void MpOnDebugKey(int nKey, char down)
 	if (!down)
 		return;
 
+	if (nKey == MP_KEY_CHAT_CANCEL && MpRejoinActive())
+		MpRejoinCancel("Esc");
+
 	/* The manual address field is in the FRONTEND, so this sits BEFORE the in-game
 	 * gate below: while it is editing it owns Enter and Escape. */
 	if (MpUiManualEditing())
@@ -792,12 +799,23 @@ static void MpOnDebugKey(int nKey, char down)
 	{
 		MpChatOpen();
 		MpChatGrabKeyboard(1);	/* the prompt owns the keyboard while it is up */
+		jer_input_block(1);	/* from this frame: the chat key itself must not leak */
 	}
 	else if (MpIsChatSendKey(nKey) && gMp.chatOpen)
 	{
 		/* Enter sends: the owner echoes the line and the host fans it out. */
 		MpChatSendText(gMp.chatBuf);
 		MpChatGrabKeyboard(0);
+	}
+	else if (nKey == MP_KEY_CHAT_PGUP && gMp.chatOpen)
+	{
+		/* Only while typing: the prompt already owns the keyboard then (nothing is
+		 * chained), so PgUp/PgDn cannot collide with an engine or module key. */
+		jer_console_scroll(MP_CHAT_PAGE_ROWS);
+	}
+	else if (nKey == MP_KEY_CHAT_PGDN && gMp.chatOpen)
+	{
+		jer_console_scroll(-MP_CHAT_PAGE_ROWS);
 	}
 	else if (nKey == MP_KEY_CHAT_CANCEL && gMp.chatOpen)
 	{
@@ -1106,6 +1124,9 @@ static int MpOnFrame(void* userdata, void* args)
 	/* Chat owns PsyX's single text-input slot exactly while the prompt is up.
 	 * Re-asserted every frame so a missed release self-heals. */
 	MpChatGrabKeyboard((gMp.chatOpen || MpUiManualEditing()) ? 1 : 0);
+	jer_input_block(gMp.chatOpen);	/* typing never drives the car, horn, camera or pause */
+	MpRejoinTick();		/* a server city change: rejoin, then restore our car */
+	MpPlaceSelfTick();	/* a live join: off the level start, onto a road away from others */
 
 	/* Test lever: MP_TEST_CITYCONFIRM=<secs>[,<gameType>[,<role>]] fires the
 	 * take-a-ride CITY CONFIRM the way the frontend does (CutSceneCitySelectScreen
@@ -1674,6 +1695,7 @@ static void MpDrawPlayerList(void)
 		char net[72];
 		int lossPct = -1;
 		int veh = -1;
+		int vehCity = -1;
 		int y;
 
 		if (p == NULL)
@@ -1685,13 +1707,27 @@ static void MpDrawPlayerList(void)
 		{
 			cp = &car_data[p->carId];
 
-			if (cp->controlType != CONTROL_TYPE_NONE)
-				veh = cp->ap.model;
+			/* WHICH car, the way car selection names it: the city whose car list
+			 * it comes from and its model number in that city (MP_CAR's model +
+			 * modelCity). ap.model is only the RESIDENT SLOT the level loaded it
+			 * into, which says nothing about the car itself. */
+			if (cp->controlType != CONTROL_TYPE_NONE &&
+			    cp->ap.model >= 0 && cp->ap.model < MAX_CAR_RESIDENT_MODELS)
+			{
+				veh = residentCarModels[cp->ap.model];
+				vehCity = GetCarModelSourceCity(cp->ap.model);
+
+				if (vehCity < 0)
+					vehCity = GameLevel;
+			}
 		}
 
 		MpFormatPanelName(name, sizeof(name), p);
 
-		snprintf(car, sizeof(car), veh >= 0 ? "car %d" : "on foot", veh);
+		if (veh >= 0)
+			snprintf(car, sizeof(car), "%d:%d", vehCity, veh);
+		else
+			snprintf(car, sizeof(car), "on foot");
 
 		{
 			MP_PEER_STATS st;
@@ -1719,6 +1755,21 @@ static void MpDrawPlayerList(void)
 				snprintf(rx, sizeof(rx), "--");
 				snprintf(tx, sizeof(tx), "--");
 				snprintf(loss, sizeof(loss), "--");
+
+				/* A row we have no link of our own to (a client looking at another
+				 * client): the HOST's measurement of that player's link, when it
+				 * sent one lately (MP_TAG_STATS). */
+				if (!p->isLocal && p->netLastMs != 0 && MpNowMs() - p->netLastMs < 10000UL)
+				{
+					MpFormatRate(rx, sizeof(rx), p->netRxBps);
+					MpFormatRate(tx, sizeof(tx), p->netTxBps);
+
+					if (p->netLoss != MP_STATS_LOSS_UNKNOWN)
+					{
+						lossPct = p->netLoss;
+						snprintf(loss, sizeof(loss), "%d%%", p->netLoss);
+					}
+				}
 			}
 		}
 
@@ -2300,6 +2351,43 @@ static int MpCcApply(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+/* PALETTE: the six colour variants every car's CLUT rows offer (civ_clut[..][..][0..5];
+ * a variant a city never filled falls back to the base colours in CarClutLookup).
+ * Applied to OUR car at once -- the owner's carstate carries ap.palette, so every
+ * peer repaints it on the next packet -- and kept in defaultPlayerPalette, which the
+ * next spawn (and the frontend car select) uses, and in mp.ini [mp] palette. */
+#define MP_PALETTES	6
+
+extern u_char defaultPlayerPalette;	/* main.c: the palette the player's car spawns in */
+
+static void MpCcLabelPalette(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Palette: %d/%d", (int)defaultPlayerPalette % MP_PALETTES + 1, MP_PALETTES);
+}
+
+static int MpCcAdjustPalette(void* ud, int dir)
+{
+	MP_PLAYER* me = MpLocalPlayer();
+	int pal = ((int)defaultPlayerPalette + dir + MP_PALETTES) % MP_PALETTES;
+
+	(void)ud;
+
+	defaultPlayerPalette = (u_char)pal;
+	gMp.config.palette = pal;
+	MpConfigSave();
+
+	if (me != NULL)
+		me->palette = pal;
+
+	if (me != NULL && me->carId >= 0 && me->carId < MAX_CARS)
+		car_data[me->carId].ap.palette = (u_char)pal;
+	else if (!gMp.running && player[0].playerCarId >= 0 && player[0].playerCarId < MAX_CARS)
+		car_data[player[0].playerCarId].ap.palette = (u_char)pal;	/* single player */
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
 /* Defined with the player actions further down; the Change car submenu wants it
  * up here, where the CAR options live. */
 static int MpOptRepair(void* ud, int dir);
@@ -2309,6 +2397,7 @@ static const JER_PAUSE_MENU_ITEM mpChangeCarItems[] =
 	/* label, get_label, on_activate, userdata, submenu, adjust */
 	{ NULL, MpCcLabelCity, MpCcAdjustCity, NULL, NULL, 1 },
 	{ NULL, MpCcLabelCar, MpCcAdjustCar, NULL, NULL, 1 },
+	{ NULL, MpCcLabelPalette, MpCcAdjustPalette, NULL, NULL, 1 },
 	{ "Respawn as this car", NULL, MpCcApply, NULL, NULL, 0 },
 	/* Repair belongs with the car, not under Player options: it is a car action and
 	 * "Respawn as this car" next to it is the one that also MOVES you. */

@@ -4,6 +4,123 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## Unreleased
+
+- **Remote on-foot players walk properly.** A remote Tanner no longer gets stuck in
+  the walking-backwards animation: it now mirrors the owner's heading and speed and
+  plays the matching idle, walk or run clip (reverse only when the owner backs up),
+  and stands idle if their poses stop arriving.
+- **Leavers are cleaned up.** When a player leaves or drops, their on-foot Tanner and
+  the car they last got out of are removed for everyone, unless another player has
+  taken that car. The dedicated server now sends the updated roster at once.
+- **Faster late-join placement.** A live joiner's car is placed on the road on the
+  first frame it exists (retrying while roads stream in) with the camera snapped,
+  instead of sitting on the host for 15 frames and then jumping.
+- **Dedicated server chat commands and admins.** Lines starting with `!` or `/` are
+  commands, answered privately and not shown to others: `!help`, `!whoami`, `!who`,
+  and for admins `!kick`, `!cops on|off`, `!difficulty 0-2`, `!motd`, `!say`. Admins are
+  listed by player id in `dediserver.json` (`!whoami` shows yours) or log in with an
+  optional `admin_password` (`!login`, rate limited).
+- **Per-install player id.** The game generates a random id once, keeps it in its
+  own obfuscated, checksummed file `JERICHO/CONFIG/player.id` (an older `[mp] player_id`
+  is moved there; a damaged file is kept as `player.id.bad` and a new id made), and sends it when joining, so a server can recognise you. Older servers ignore it;
+  no protocol change. It is a bearer secret, not a login. Read yours with `!whoami`, the
+  game log, or `python JERICHO/MODS/mp/tools/player_id.py`.
+- **Dedicated server relays on-foot players and traffic.** It dropped both message
+  types, so on a dedicated server nobody saw a player walking around, nor the cars
+  and police another machine was driving. It now forwards them like a game host does.
+  Car bumps (to the player hit), car colours (the whole table, late joiners included)
+  and mods' network channel are forwarded too.
+- **Car palette choice.** Change car menu (pause > Vehicle Options) has a
+  "Palette: N/6" row (left/right) that repaints your car at once; the frontend car
+  select cycles it with SQUARE (a notice shows "Palette N/6"). Saved as `[mp] palette`
+  in mp.ini and used for the next spawn. Palettes a city never filled fall back to the
+  car's base colours.
+- **Palette sync (#31).** The car pick (JPCC) now carries the palette (MP_CAR
+  reserved[0], flagged by reserved[1]; no protocol bump) and the dedi keeps the HELLO /
+  pick palette for the roster, so late joiners see the right colour before the owner's
+  first carstate; the host's roster follows the carstate palette too.
+- **Nametags at the screen sides (widescreen).** A tag is kept while its car is still
+  partly on screen (pinned to the edge) instead of vanishing when the car's centre
+  reaches the edge.
+- **Corrupted car meshes until respawn (D1 cop cars).** A carhacks hot load that builds
+  a model into a resident slot now rebuilds the drawn vertex buffer of every car already
+  on that slot (keeping damage); before, a car pinged in before the import landed kept
+  the old model's vertices under the new polys. As a safety net, the existing
+  "STRETCHED VERTEX" check now rebuilds a car's mesh the way a respawn does.
+- **MP: no game over on foot.** Being busted by a cop, drowning or a train while on
+  foot opened the game-over menu over a session (camera lost its target, rejoin
+  needed). It is refused like the in-car wreck already was: not dying, felony cleared,
+  pulled out of the water to the level start if drowning.
+- **MP: live joiners spawn on a road away from others**, not on the level start where
+  the host came in: a random road spot 1.5-4.5k units out, clear of other players'
+  cars by 2000 units, facing along the road (falls back to the start and logs).
+- **MP: respawned cars face along the road** (the road's direction nearest the car's).
+- **MP: an on-foot pose relayed by the in-game host must describe its sender** (the dedi
+  already enforced this).
+- **`chat_hold_seconds`** in `[mp]` of mp.ini (2..120): how long a chat line stays at
+  full brightness before fading. Default **12 s (was a fixed 20 s)**; new engine call
+  `jer_console_set_chat_hold()`.
+- **Auto-reconnect keeps a car picked by slot**: a car-select slot is per city, so the
+  rejoin now remembers the model on the road instead of skipping the restore.
+- **Auto-reconnect on a server city change.** A passed `!vote` now kicks with a rejoin
+  flag (KICK `reserved[0]`, no protocol bump); the client says "Server changing city -
+  reconnecting...", re-joins the same server through the normal join (retries ~20 s,
+  Esc cancels), loads the new city and restores its previous car (model + city, via
+  Change car; falls back to the default and logs if it can't). Normal kicks never
+  reconnect. Plugin API: `kick(..., rejoin=True)`. Car colour is not carried over.
+- **Kick reasons.** `!kick <slot|name> [reason]`, console `kick <id> [reason]` and the
+  plugin `kick(player, reason=None)`: the kicked player sees "Kicked by admin: <reason>"
+  (an optional 64-byte text tail on the KICK frame, cut to 63 bytes on a UTF-8
+  boundary; old clients still get the stock message), chat is told and the log keeps it.
+  No reason = unchanged. The in-game host's pause-menu kick is unchanged (no text entry).
+- **Typing in chat no longer drives the game.** While the MP chat prompt is open, all
+  pad/keyboard game input (driving, horn, handbrake, camera, pause...) is blocked via the
+  new engine call `jer_input_block()`; keys held when it closes are ignored until
+  released. The car coasts; other players still see it move.
+- **Chat shows 10 lines** (was 8), so a server `!help` fits; PgUp/PgDn page by 9.
+- **`dediserver.json` is no longer tracked.** The repo and packages ship
+  `dediserver.example.json`; the server creates your `dediserver.json` from it on
+  first start and never overwrites one, so pulls and updates keep your settings.
+  **Git checkouts: back up your `dediserver.json` before pulling this change**
+  (pulling deletes an unmodified tracked copy; see the dedicated server README).
+- **Dedicated server: `!vote <city>`.** Players vote the server onto another city; on a
+  majority it saves the city, updates the listing and asks everyone to rejoin.
+- **Siren works after Change car.** Changing into a police car lit the light bar but the
+  siren stayed silent until you got out and back in; the car's sounds now follow the change.
+- **Chat history.** While typing a chat message, the last chat lines show again even
+  if they had faded, and Page Up / Page Down scroll back through the last 48 lines.
+- **Scoreboard CAR column names the car.** It showed the level's resident slot
+  ("car 3"); it now shows `city:model`, the way car selection identifies a car.
+- **Dedicated server shows a player's car straight away.** It now handles the car pick
+  like a game host: the roster lists the chosen car at once instead of after the
+  player's first position update.
+- **Scoreboard rx / tx / loss for every player.** The host (or dedicated server) now
+  shares each player's link stats in a new optional message, so the columns show
+  values instead of "--" for other players. Older games ignore it. A dedicated server
+  reports loss as unknown ("--").
+- **Dedicated server measures ping.** It sent 0 ms for every player in the roster;
+  it now pings each client and reports the round trip, like a game host.
+- **Warp to a player on foot.** "Warp to player" refused anyone out of their car; it now
+  lands you beside where they are standing.
+- **Multiplayer cops fixes.** Another player crashing into walls or fences no longer
+  raises *your* wanted level. Your patrol cops are no longer deleted when another
+  player is nearby. With cops on, each machine keeps one traffic slot free for a cop,
+  so police still turn up when the streets are full.
+- **Dedicated server now applies its cops setting.** It sent "no rules" to every
+  player, so cops were off whatever `dediserver.json` said; the configured rules
+  now reach players.
+- **Time of day and weather for dedicated servers:** `"time_of_day"` (dawn/day/dusk/
+  night) and `"weather"` (clear/rain/wet), plus admin `!time` / `!weather` (from the
+  next level load).
+- **More admin tools:** `!admin add|remove|list` (saved to `dediserver.json`),
+  `!motd save`, `!help <command>`, join/leave announcements, and admin actions are
+  logged with who ran them. Player ids are shown as standard UUIDs and created at
+  first game launch.
+- **Dedicated server plugins.** The server is now a small core plus plugins
+  (`commands`, `admin`), and you can add your own in its `plugins/` folder (see the
+  dediserver README; `example_hello.py` shows how).
+
 ## v0.10.4
 
 ### Headline fix: the player car no longer drives at "fast-forward" speed
