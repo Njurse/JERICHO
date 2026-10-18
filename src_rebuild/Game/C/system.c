@@ -1233,6 +1233,26 @@ void UpdatePadData(void)
 {	
 	ReadControllers();
 
+	/* JERICHO: jer_input_block -- a mod's text prompt owns the keyboard, so no
+	 * typed key may also be a game button. Held buttons stay swallowed after the
+	 * block lifts until they are all released (no stuck or stray presses). */
+	{
+		extern int gJerInputBlocked;
+		static int latched = 0;
+
+		if (gJerInputBlocked || latched)
+		{
+			if (!gJerInputBlocked && Pads[0].direct == 0)
+				latched = 0;
+			else
+			{
+				latched = 1;
+				Pads[0].direct = Pads[0].dirnew = 0;
+				Pads[0].mapped = Pads[0].mapnew = 0;
+			}
+		}
+	}
+
 	paddp = Pads[0].mapnew;
 	padd = Pads[0].mapped;
 

@@ -46,7 +46,7 @@ extern "C" {
 #endif
 
 #define JER_CONSOLE_LINE_MAX	96	/* longest ROW; a longer line wraps */
-#define JER_CONSOLE_MAX		8	/* rows kept (and drawn) at once */
+#define JER_CONSOLE_MAX		10	/* rows kept (and drawn) at once (was 8: a server !help overflowed) */
 
 #define JER_CONSOLE_SEG_MAX	6	/* colour runs in one line */
 #define JER_CONSOLE_SEG_TEXT_MAX 64	/* text in one run, terminator included */

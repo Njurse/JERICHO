@@ -21,6 +21,16 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **Kick reasons.** `!kick <slot|name> [reason]`, console `kick <id> [reason]` and the
+  plugin `kick(player, reason=None)`: the kicked player sees "Kicked by admin: <reason>"
+  (an optional 64-byte text tail on the KICK frame, cut to 63 bytes on a UTF-8
+  boundary; old clients still get the stock message), chat is told and the log keeps it.
+  No reason = unchanged. The in-game host's pause-menu kick is unchanged (no text entry).
+- **Typing in chat no longer drives the game.** While the MP chat prompt is open, all
+  pad/keyboard game input (driving, horn, handbrake, camera, pause...) is blocked via the
+  new engine call `jer_input_block()`; keys held when it closes are ignored until
+  released. The car coasts; other players still see it move.
+- **Chat shows 10 lines** (was 8), so a server `!help` fits; PgUp/PgDn page by 9.
 - **`dediserver.json` is no longer tracked.** The repo and packages ship
   `dediserver.example.json`; the server creates your `dediserver.json` from it on
   first start and never overwrites one, so pulls and updates keep your settings.
