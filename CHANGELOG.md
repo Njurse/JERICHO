@@ -43,9 +43,16 @@ anyone updating from an earlier v0.10.3 or v0.10.2 install.
 - **Take a Ride after online play:** a player who joined someone else's match and
   quit back to the menu could not start a single-player Take a Ride (the game still
   treated them as in the old session). Leaving a match now ends the session.
-- **Credits page:** *Options -> JERICHO -> Credits* now opens a credits screen (who
-  made JERICHO, and thanks to the REDRIVER2 / OpenDriver2 authors) instead of a few
-  console lines.
+- **Credits page:** *Options -> JERICHO -> Credits* now opens a two-column credits
+  screen - JERICHO by Jaret (Njurse) with contributor Commando52Colton (palette and
+  texture paging information, mission script research), and thanks to the REDRIVER2
+  / OpenDriver2 authors - instead of a few console lines.
+- **Multiplayer chat is no longer cut off.** A dedicated server's long message of
+  the day (and its `say` lines) now arrive whole, split over several chat lines
+  instead of being cut at 95 characters; chat rows wrap inside the screen instead of
+  losing their last letters at the right edge; a long line you are typing shows its
+  end rather than running off screen. The chat area and input line sit a little
+  higher, clear of the bottom edge.
 - **Attract-mode demos no longer softlock the game.** When the idle demo's replay
   (`REPLAYS/ATTRACT.n` from your Driver 2 data) is missing or unreadable, the game
   goes back to the menus instead of hanging on the loading screen.
@@ -64,7 +71,7 @@ anyone updating from an earlier v0.10.3 or v0.10.2 install.
 - A numbered release is published only when the docs/debug/multiplayer checks pass.
 - `jer_test` now fails when it should; setup scripts and CONTRIBUTING match the tree
   (part of #6, #7).
-- `JERICHO_HANDLING_PROBE=1` reports `mbc=N/30` (seconds with another car near),
+- `JERICHO_HANDLING_PROBE=1` reports `mbc=N/30` (steps in the last second with another car near),
   `resyncs=N`, and a `BEHIND` marker below 28 steps/s.
 
 ### Known issues
