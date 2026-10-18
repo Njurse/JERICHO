@@ -255,6 +255,8 @@ typedef struct
 	int carWheelsSize;
 	char* wheelMem;		// malloc'd copies of the wheel MODELs below
 	MODEL* wheels[CAR_IMPORT_WHEEL_VARIANTS];
+	unsigned char wheelSet[CAR_IMPORT_WHEEL_VARIANTS][8];	// source-city set numbers
+	int wheelSetCount[CAR_IMPORT_WHEEL_VARIANTS];		// ...before CarSetRemap
 	int pageBase;		// byte offset of this file's permanent page data
 } CAR_IMPORT;
 
@@ -908,6 +910,57 @@ static void RemapWheelSets(MODEL* m)
 	CarSetRemapEnable(0);
 }
 
+// The wheel's SOURCE-CITY set numbers, before RemapWheelSets rewrites them.
+// LoadImportedTPages needs these: it maps a source set to the index its page was
+// loaded at with CarImportPinDstSet, exactly as it does for a car's sets. Feeding
+// it the remapped index (what CollectModelSets sees after RemapWheelSets) makes
+// the page-list lookup fail, the wheel page is never pinned, and the wheel
+// samples whatever host page that index happens to hold - the yellow spikes.
+static int CollectWheelSets(MODEL* m, unsigned char* out, int max)
+{
+	char* p;
+	int i, n = 0;
+
+	if (m == NULL || m->poly_block <= 0 || m->num_polys <= 0 || out == NULL)
+		return 0;
+
+	p = (char*)m + m->poly_block;
+
+	for (i = 0; i < m->num_polys; i++)
+	{
+		int type = (u_char)*p & 0x1f;
+		int step = (type >= 0 && type < 56) ? PolySizes[type] : 0;
+
+		if (step <= 0)
+			break;
+
+		if (type == 20 || type == 21 || type == 22 || type == 23)
+		{
+			int set = (u_char)p[1];
+			int k, seen = 0;
+
+			if (set != 0 && set != 255)
+			{
+				for (k = 0; k < n; k++)
+				{
+					if (out[k] == set)
+					{
+						seen = 1;
+						break;
+					}
+				}
+
+				if (!seen && n < max)
+					out[n++] = (unsigned char)set;
+			}
+		}
+
+		p += step;
+	}
+
+	return n;
+}
+
 static void BuildCarImportWheels(int city)
 {
 	CAR_IMPORT* imp;
@@ -998,6 +1051,8 @@ static void BuildCarImportWheels(int city)
 		src = (MODEL*)(imp->carWheels + offsets[i]);
 		m = GetCarModel((char*)src, &cursor, 1);
 
+		imp->wheelSetCount[i] = CollectWheelSets(m, imp->wheelSet[i], 8);
+
 		RemapWheelSets(m);
 		MangleWheelModel(m);
 
@@ -1020,6 +1075,29 @@ MODEL* GetCarImportWheel(int city, int kind)
 		return NULL;
 
 	return gCarImports[city].wheels[kind];
+}
+
+// The source-city set numbers a wheel model names, captured before CarSetRemap
+// rewrote them. texture.c's pin walk needs the SOURCE number (it maps it through
+// CarImportPinDstSet); the MODEL itself carries the destination index the draw
+// uses. Returns the count, or 0 for an absent wheel.
+int GetCarImportWheelSets(int city, int kind, unsigned char* out, int max)
+{
+	int i, n;
+
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
+		out == NULL || max <= 0)
+		return 0;
+
+	n = gCarImports[city].wheelSetCount[kind];
+
+	if (n > max)
+		n = max;
+
+	for (i = 0; i < n; i++)
+		out[i] = gCarImports[city].wheelSet[kind][i];
+
+	return n;
 }
 
 // The foreign car colours for `slot`, or NULL. cosmetic.c uses this so an

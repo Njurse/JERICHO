@@ -52,6 +52,10 @@ char* GetCarImportModels(int slot);
 #define CAR_IMPORT_WHEEL_VARIANTS	3
 MODEL* GetCarImportWheel(int city, int kind);
 
+// The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
+// maps these to the page it pins; the MODEL carries the remapped draw index.
+int GetCarImportWheelSets(int city, int kind, unsigned char* out, int max);
+
 // JERICHO cross-city HOT LOAD: build resident `slot`'s geometry at RUNTIME from the
 // import data its source city asked for -- for a car added to the resident set
 // AFTER the level loaded (mp: a joiner's picked car), which the level's own build

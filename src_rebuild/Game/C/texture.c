@@ -3876,14 +3876,10 @@ void LoadImportedTPages(void)
 
 		for (wk = 0; wk < CAR_IMPORT_WHEEL_VARIANTS; wk++)
 		{
-			MODEL* wheel = GetCarImportWheel(wc, wk);
-			int found[8];
+			unsigned char found[8];
 			int n, k;
 
-			if (wheel == NULL)
-				continue;
-
-			n = CollectModelSets(wheel, found, 0, 8);
+			n = GetCarImportWheelSets(wc, wk, found, 8);
 
 			for (k = 0; k < n; k++)
 			{
