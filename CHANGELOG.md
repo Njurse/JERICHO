@@ -6,6 +6,55 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+## v0.10.5
+
+*Released 2026-10-18.*
+
+### Highlights
+
+- **Update checker and one-click update.** At start the game checks for a new
+  release in the background and shows what changed. *Update JERICHO (Restart)*
+  downloads it, checks its SHA256, installs it over your folder (keeping your
+  settings) and restarts the game. You can also say *Remind me next launch* or turn
+  the check off.
+- **Dedicated server grown up.** Chat commands (`!help`, `!who`, `!kick` with a
+  reason, `!cops`, `!difficulty`, `!motd`, ...), admins by player id or password,
+  plugins, time of day and weather, and `!vote <city>`. Everyone reconnects
+  automatically when the city changes.
+- **On-foot multiplayer.** Players on foot walk and run properly for everyone, the
+  dedicated server relays them, you can warp to someone on foot, and being busted or
+  drowned on foot no longer ends your match.
+- **Pick your car's colour.** Choose a palette in Change car or press SQUARE on the
+  car select. Everyone sees the colour you picked.
+- **Dedicated server parity.** Cars show straight away, cops follow the server's
+  setting, ping, rx/tx and loss are real, and joins show the player's version and mods.
+- **Chat.** Typing no longer drives your car. Chat shows 10 lines, keeps its history
+  while you type, pages with PgUp/PgDn, and `chat_hold_seconds` sets how long lines stay.
+
+### Fixes
+
+- Cops: other players crashing into walls no longer raises your felony; cop cars
+  no longer get corrupted meshes; the siren works after Change car.
+- Live joiners spawn on a road away from others; respawned cars face along the road.
+- Leavers' cars and on-foot players are cleaned up; nametags stay visible at the
+  sides of a widescreen.
+- The window title shows the release version again.
+
+### For server admins and updating
+
+- **Back up `JERICHO/CONFIG/` and `config.ini` before updating** (good practice; the
+  updater keeps them).
+- `config.ini` is no longer overwritten: releases ship `config.default.ini`, and the
+  game creates `config.ini` from it when you have none.
+- `dediserver.json` is no longer shipped or tracked. The server creates it from
+  `dediserver.example.json` on first start; an existing one is left alone.
+- **Updating from v0.10.4:** that version's `update_jericho` can break halfway through
+  when it overwrites itself. Copy it somewhere else and run the copy, or just
+  download v0.10.5 by hand. From v0.10.5 on, the in-game updater and the scripts
+  handle this.
+
+### All changes
+
 - **Update check.** After the loading screen the game checks GitHub once, in the
   background (no wait when offline), and when a newer release is out shows its changes
   before the main menu: *Update JERICHO (Restart)* downloads, verifies and installs it
