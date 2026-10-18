@@ -188,10 +188,14 @@ void GameDebugKeys(int nKey, char down)
 	{
 		/* Debug/cutscene fast-forward. A SESSION MUST NOT USE IT: the sim would
 		 * run at a different rate from every other machine's, which is a desync by
-		 * definition. mp clears this every frame while a match is live
-		 * (MpOnFrame), so the key stays useful in single player and inert online. */
+		 * definition. mp raises FastForwardLocked while a match is live (MpOnFrame)
+		 * and the engine then never offers it, so the key stays useful in single
+		 * player and is inert online. */
 		extern int FastForward;
-		FastForward = 1;
+		extern int FastForwardLocked;
+
+		if (FastForwardLocked == 0)
+			FastForward = 1;
 	}
 #ifdef _DEBUG
 	else if (nKey == SDL_SCANCODE_0)

@@ -303,6 +303,26 @@ sets them. `grep padprobe JERICHO.log` is the whole report:
   keys its `CAMERA_LOOK` suppression off that mode, so one Triangle press used to
   kill look-left/right (and look-back on R3) for the rest of the level, silently.
 
+## The clock: who owns fast-forward
+
+The engine offers fast-forward two ways, and both are the sim's business, so a
+module that owns the sim rate (an mp session) must be able to turn the offer OFF:
+
+- `BACKSPACE` — a debug/cutscene convenience (`redriver2_psxpc.cpp`): one press runs
+  the sim fast from then on.
+- the fullscreen map — `overlay.c` sets `FastForward` on **every frame** the map is
+  open, so the world keeps moving behind it.
+
+`int FastForwardLocked` (`director.c`, `extern` in `director.h`) is that switch. Set
+it non-zero and the engine simply never offers fast-forward; clear it and the
+stock behaviour returns.
+
+**Lock it, don't clear `FastForward` per frame.** A module that cleared the flag each
+frame while the map re-set it each frame made the two fight: for as long as the map
+was open the sim toggled fast/normal every frame. mp raises the lock for the length
+of a match (`MpOnFrame`) and logs the fact once — a fast-forwarded client runs at a
+different rate from every other machine, which is a desync by definition.
+
 ## Boot arguments (every PC build)
 
 The game accepts frontend-bypass launch arguments (PC only) for fast testing.

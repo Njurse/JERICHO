@@ -90,6 +90,7 @@ unsigned char menu5[] = { 0x13, 0x14, 0x15, 0x16, 0xFF };
 unsigned char menu6[] = { 0xA, 0xB, 0xC, 0xE, 0xF, 0x10, 0xFF };
 
 int FastForward = 0;
+int FastForwardLocked = 0;	// JERICHO-HOOK: a module (mp) owns the clock; see director.h
 int EditMode = 0;
 
 PLAYBACKCAMERA* LastChange = NULL;

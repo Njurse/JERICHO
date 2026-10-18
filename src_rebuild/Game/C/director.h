@@ -23,6 +23,12 @@ extern TEXTURE_DETAILS icon_save2card;
 extern TEXTURE_DETAILS icon_restart;
 
 extern int FastForward;
+/* JERICHO-HOOK: set by a module that owns the clock (an mp session) so the engine
+ * stops OFFERING fast-forward. A LOCK, not a per-frame clear: the two used to
+ * overwrite each other -- the fullscreen map sets FastForward every frame it is
+ * open, a session cleared it every frame, and the sim toggled fast/normal for as
+ * long as the map was up. With the lock the engine simply never offers it. */
+extern int FastForwardLocked;
 extern int EditMode;
 extern int ClearCameras;
 

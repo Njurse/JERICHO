@@ -814,7 +814,11 @@ void DisplayOverlays(void)
 	}
 	else
 	{
-		FastForward = 1;
+		/* the map screen runs the sim fast so the world keeps moving behind it - but
+		 * not when a module owns the clock (mp: a fast-forwarded sim is a desync). */
+		if (FastForwardLocked == 0)
+			FastForward = 1;
+
 		DrawFullscreenMap();
 	}
 }
