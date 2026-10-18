@@ -21,6 +21,8 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **Dedicated server: `!vote <city>`.** Players vote the server onto another city; on a
+  majority it saves the city, updates the listing and asks everyone to rejoin.
 - **Siren works after Change car.** Changing into a police car lit the light bar but the
   siren stayed silent until you got out and back in; the car's sounds now follow the change.
 - **Chat history.** While typing a chat message, the last chat lines show again even
