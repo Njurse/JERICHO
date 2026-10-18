@@ -87,12 +87,13 @@ come out of it.
 A third job, `checks`, runs on every push and takes seconds; it covers what a
 build cannot see: `tools/doccheck.py` (docs consistent with the code), a
 "no debug switch changes behaviour" test, and the mp delivery gate — which
-**skips** where the 1.6 GB of game assets are absent rather than passing. It is
-deliberately *not* a dependency of the publish job, so a docs typo cannot stop a
-downloadable build; a red check is the signal.
+**skips** where the 1.6 GB of game assets are absent rather than passing. A **tagged**
+(`v*`) release requires it to pass; the rolling alpha and on-demand builds still
+publish when it is red, so a docs typo cannot stop a downloadable build there.
 
 Dependencies are pinned to the versions upstream used:
-premake `5.0.0-beta1`, SDL2 `2.30.2`, OpenAL-soft `1.23.1`, and libjpeg `jpeg-9d`
+premake `5.0.0-beta1`, SDL2 `2.30.2`, OpenAL-soft `1.23.1`, and libjpeg `jpeg-9d` (each archive verified against a SHA-256 pinned in `build.yml`; a version
+bump must update its hash)
 (whose `jconfig.vc` is renamed to `jconfig.h` before generation).
 
 ## When it runs
