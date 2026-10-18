@@ -388,6 +388,18 @@ void SetupResidentModels()
 	residentCarModels[SPECIAL_CAR_SLOT] = MissionHeader->residentModels[4];
 #endif // MAX_CAR_RESIDENT_MODELS > 5
 
+	/* Slots ABOVE the special one are spare as well -- they only exist for a
+	 * module to claim (more models resident than the level's own). They must
+	 * default to -1 like the slots below the special one: left at their static 0
+	 * they read as "model 0", and the spooler then believes a resident car model
+	 * lives there (it is the police model in most cities). The loop above stops
+	 * at SPECIAL_CAR_SLOT, which was the LAST slot while the array was 12 long --
+	 * raising MAX_CAR_RESIDENT_MODELS to 16 opened four behind it. */
+#if MAX_CAR_RESIDENT_MODELS > 5
+	for (i = SPECIAL_CAR_SLOT + 1; i < MAX_CAR_RESIDENT_MODELS; ++i)
+		residentCarModels[i] = -1;
+#endif
+
 	// check if start data is required
 	if (MissionHeader->type & 1)
 	{
