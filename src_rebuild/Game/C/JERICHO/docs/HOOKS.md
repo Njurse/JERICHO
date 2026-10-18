@@ -319,7 +319,7 @@ INPUT over-driving the car, or the car's own DATA — so the probe prints all th
 ```
 [JER-PROBE] t=4s speed=147 wheel=0/352 thrust=4915 hndType=0 slot=0 model=1 \
             power=4096 traction=4096 mass=4096 twistY=224 grip=896/1100 handbrake=0 \
-            ff=0 lock=0 skip=0
+            mbc=0/30 ff=0 lock=0 skip=0
 JERICHO-PROBE: steps=239 ms=7986 steps_per_sec=29 max_speed=168 ff=0 lock=0 skip=0 verdict=RATE_OK
 ```
 
@@ -351,6 +351,27 @@ branch falls through to the stock impulse when no module answers. And the module
 release ships (carhacks, crumple, mp, d1cars) never write `thrust`, `wheel_angle`,
 `frontFS`/`rearFS`, `aacc` or a cosmetics field — so "the handling model is bugged"
 can be ruled out by measurement before anything is tuned.
+
+### The real "too fast" bug: the player car was integrated twice (v0.10.3)
+
+The rate fixes below were all real, but the report that survived them was "my car is
+fast-forwarded until another car comes near, then it is normal". That is not the
+clock: `steps_per_sec` stays at 30 throughout. It is `GlobalTimeStep()` (`handling.c`)
+moving the player car **twice in one step**.
+
+`GlobalTimeStep` has two integrators: a plain Euler move for cars with no pair, and
+the precise RK collision pass for cars that may be colliding. A player-handled car
+(`hndType == 0`) must always take the RK pass and **never** the Euler move. Stock said
+so with a sentinel bit (`1 << 31`) in `mayBeColliding`; `d016e42f` (MAX_CARS 32) made
+bit 31 a real car, retired the sentinel and moved the rule into the two RK skip tests
+(`mayBeColliding == 0 && hndType != 0`) — but not into the Euler test, which still
+read only `mayBeColliding`. With no car near, the player car took both moves (~2x);
+with a car near, the pair bit skipped the Euler move and it was back to normal.
+
+The Euler test is now `mayBeColliding || hndType == 0`. **All three tests must agree**
+on "a player car is always precise"; change one, change all three. The probe's `mbc=N/30`
+field (steps in the last second with a pair bit) exists to catch a regression: for the
+same throttle, `speed` must not differ between `mbc=0/30` and `mbc>0` seconds.
 
 ## The clock: who owns fast-forward
 

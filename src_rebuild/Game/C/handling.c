@@ -377,7 +377,15 @@ void GlobalTimeStep(void)
 		if ((tmp < st->n.angularVelocity[2]) || (tmp = -tmp, st->n.angularVelocity[2] < tmp))
 			st->n.angularVelocity[2] = tmp;
 
-		if (cp->hd.mayBeColliding)
+		/* JERICHO: a player-handled car (hndType 0) is ALWAYS integrated by the
+		 * precise RK pass below (both of its skip tests read hndType), so it must
+		 * never ALSO take this Euler move. Stock expressed that with a sentinel bit
+		 * in mayBeColliding; d016e42f retired the sentinel (bit 31 is car 31 now)
+		 * and moved the rule into the two RK skip tests but not into this one, so a
+		 * player car with no pair was moved TWICE per step ("fast-forward physics")
+		 * and went back to normal the moment another car came near. All three tests
+		 * must agree. */
+		if (cp->hd.mayBeColliding || cp->hndType == 0)
 		{
 			continue;
 		}

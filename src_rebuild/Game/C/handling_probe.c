@@ -38,6 +38,9 @@
  *   traction derived from. A record that does not belong to the car being driven
  *   /mass    (cross-city import, resident-slot mix-up) shows up here first.
  *   grip     the front/rear friction scales the tyres actually resolved.
+ *   mbc      of the last 30 steps, how many had a car-pair bit in mayBeColliding
+ *            (another car near). Speed must NOT depend on it: a gap between
+ *            mbc=0 and mbc>0 runs is the v0.10.3 double-integration signature.
  *
  * Nothing is printed unless JERICHO_HANDLING_PROBE is set, so this is inert in a
  * normal session and in a release.
@@ -67,6 +70,7 @@
 static int probeSamples;		/* StepOneCar calls for the local player's car */
 static int probeSteps;			/* StepGame calls (1 per simulated step) */
 static int probeMaxSpeed;
+static int probeMbcSteps;		/* samples in the current second with a pair bit */
 static int probeGripFront = -1;
 static int probeGripRear = -1;
 static unsigned int probeTickStart;	/* PsyX_GetTicks() at the first sample */
@@ -121,7 +125,7 @@ static void JerProbeStartClock(void)
 void JerHandleProbeStep(CAR_DATA* cp)
 {
 	CAR_COSMETICS* cos;
-	int slot, model;
+	int slot, model, mbc;
 
 	if (!JerProbeOn() || !JerProbeIsLocalPlayer(cp))
 		return;
@@ -133,6 +137,9 @@ void JerHandleProbeStep(CAR_DATA* cp)
 
 	probeSamples++;
 
+	if (cp->hd.mayBeColliding != 0)
+		probeMbcSteps++;
+
 	/* one line per simulated second (every 30th car sample) */
 	if ((probeSamples % PROBE_STEPS_PER_SEC) != 1)
 		return;
@@ -142,11 +149,15 @@ void JerHandleProbeStep(CAR_DATA* cp)
 
 	cos = cp->ap.carCos;
 
+	/* mbc covers the window that ENDS with this line; the next one starts now */
+	mbc = probeMbcSteps;
+	probeMbcSteps = 0;
+
 	if (cos == NULL && slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS)
 		cos = &car_cosmetics[slot];
 
 	printInfo("[JER-PROBE] t=%ds speed=%d wheel=%d/%d thrust=%d hndType=%d slot=%d model=%d "
-			  "power=%d traction=%d mass=%d twistY=%d grip=%d/%d handbrake=%d ff=%d lock=%d skip=%d\n",
+			  "power=%d traction=%d mass=%d twistY=%d grip=%d/%d handbrake=%d mbc=%d/%d ff=%d lock=%d skip=%d\n",
 		probeSamples / PROBE_STEPS_PER_SEC,
 		(int)cp->hd.speed, (int)cp->wheel_angle, PROBE_STEER_LOCK, (int)cp->thrust,
 		(int)cp->hndType, slot, model,
@@ -156,6 +167,7 @@ void JerHandleProbeStep(CAR_DATA* cp)
 		(cos != NULL) ? (int)cos->twistRateY : -1,
 		probeGripFront, probeGripRear,
 		(int)cp->handbrake,
+		mbc, PROBE_STEPS_PER_SEC,
 		FastForward, FastForwardLocked, PsyX_GetFrameSkip());
 }
 
