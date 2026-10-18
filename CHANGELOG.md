@@ -21,6 +21,8 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **Warp to a player on foot.** "Warp to player" refused anyone out of their car; it now
+  lands you beside where they are standing.
 - **Multiplayer cops fixes.** Another player crashing into walls or fences no longer
   raises *your* wanted level. Your patrol cops are no longer deleted when another
   player is nearby. With cops on, each machine keeps one traffic slot free for a cop,
