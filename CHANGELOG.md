@@ -46,6 +46,13 @@ anyone updating from an earlier v0.10.3 or v0.10.2 install.
 - **Credits page:** *Options -> JERICHO -> Credits* now opens a credits screen (who
   made JERICHO, and thanks to the REDRIVER2 / OpenDriver2 authors) instead of a few
   console lines.
+- **Attract-mode demos no longer softlock the game.** When the idle demo's replay
+  (`REPLAYS/ATTRACT.n` from your Driver 2 data) is missing or unreadable, the game
+  goes back to the menus instead of hanging on the loading screen.
+- **Version shown:** the window title is the full build version (for example
+  `JERICHO 0.10.4`, or `JERICHO 0.10.4-3-gabc1234-dev` for a dev build; `-dirty`
+  only on a build from modified sources), and the Options screen shows it small at
+  the bottom-left.
 - **Compile Mods is hidden in the Release build** (it stays in `Release_dev`, where
   modders use it).
 - **Mod loader:** a `mod.toml` `id` can no longer point the loader at a library
