@@ -1,0 +1,194 @@
+/*
+ * handling_probe.c — JERICHO: make "my car drives way too fast" a number.
+ *
+ * WHY THIS EXISTS
+ * A "too fast" report has three very different causes and they look identical
+ * from the driver's seat:
+ *
+ *   1. the CLOCK — State_GameLoop steps the sim once per two vblanks (30 Hz) but
+ *      SEVEN times per frame while FastForward is on, so a leaked fast-forward
+ *      makes everything run at ~7x and the car feels over-powered;
+ *   2. the INPUT — cp->thrust / cp->wheel_angle come straight from the pad, and
+ *      the analogue steering curve is cubic, so a stick value that is scaled
+ *      wrong turns a small deflection into more than the 352 lock;
+ *   3. the DATA/physics — the car's own CAR_COSMETICS record (powerRatio,
+ *      traction, mass, twistRateY) or the tyre grip it resolves.
+ *
+ * This probe prints those three in one line per simulated second, and a verdict
+ * line at the end of a -frames run, so the answer is read rather than guessed.
+ * It only ever reads engine state: it writes nothing and changes no behaviour.
+ *
+ * HOW TO RUN IT
+ *   JERICHO_HANDLING_PROBE=1  JERICHO_PADPROBE_FORCE=cross  JERICHO_dev.exe \
+ *       -level chicago -frames 900
+ *
+ * (JERICHO_PADPROBE_FORCE holds the button at the pad layer, so the car actually
+ * accelerates — see HOOKS.md "Input debugging". Use "square" when the pad is in
+ * the tmb_buttons scheme.)
+ *
+ * HOW TO READ IT
+ *   t=..s    one simulated second — 30 steps at the stock rate. If these lines
+ *            arrive much faster than one per second of wall time, the problem is
+ *            the clock, not the car (the verdict line says so explicitly).
+ *   speed    cp->hd.speed: the engine's own speed number.
+ *   wheel    cp->wheel_angle against (lock 352). Beyond the lock means the
+ *            input path is over-driving the steering, not the physics.
+ *   thrust   cp->thrust, the engine force the pad produced.
+ *   power/   the car's CAR_COSMETICS record — the numbers everything above is
+ *   traction derived from. A record that does not belong to the car being driven
+ *   /mass    (cross-city import, resident-slot mix-up) shows up here first.
+ *   grip     the front/rear friction scales the tyres actually resolved.
+ *
+ * Nothing is printed unless JERICHO_HANDLING_PROBE is set, so this is inert in a
+ * normal session and in a release.
+ */
+
+#include "driver2.h"
+#include "main.h"
+#include "players.h"
+#include "cosmetic.h"
+#include "cars.h"		// car_data (the local view's car by identity)
+#include "mission.h"		// residentCarModels (slot -> model number)
+#include "dr2limits.h"
+#include "director.h"		// FastForward / FastForwardLocked
+#include "handling_probe.h"
+
+#include <stdlib.h>		// getenv (JERICHO_HANDLING_PROBE)
+
+/* the stock rate the sim is supposed to run at: two vblanks per step */
+#define PROBE_STEPS_PER_SEC		30
+
+/* the steering lock ProcessCarPad's digital path clamps to; the analogue path
+ * computes its own angle, so a value past this is a signal, not a bug in here */
+#define PROBE_STEER_LOCK		352
+
+/* per-run state, reset by nothing: one process is one run */
+static int probeSamples;		/* StepOneCar calls for the local player's car */
+static int probeSteps;			/* StepGame calls (1 per simulated step) */
+static int probeMaxSpeed;
+static int probeGripFront = -1;
+static int probeGripRear = -1;
+static unsigned int probeTickStart;	/* PsyX_GetTicks() at the first sample */
+static int probeClockStarted;
+
+// Read once: the lever is run-wide, not a per-frame knob.
+static int JerProbeOn(void)
+{
+	static int on = -1;
+
+	if (on < 0)
+		on = (getenv("JERICHO_HANDLING_PROBE") != NULL) ? 1 : 0;
+
+	return on;
+}
+
+// The car this report is about: the LOCAL player's, and only that one.
+//
+// It has to be the local view's car by IDENTITY, not by "controlType == PLAYER":
+// in a session the peer cars on this machine are player cars too, so a looser
+// test sampled whichever of them StepOneCar happened to touch that step -- the
+// probe's second counter then ran several times a second and its slot/model
+// wandered (seen on the first pair run). MainPlayer is this machine's view, so
+// its car is the only one whose numbers mean "my car".
+static int JerProbeIsLocalPlayer(CAR_DATA* cp)
+{
+	int carId = (int)MainPlayer.playerCarId;
+
+	return cp != NULL && carId >= 0 && carId < MAX_CARS &&
+		cp == &car_data[carId] &&
+		cp->controlType == CONTROL_TYPE_PLAYER &&
+		cp->ai.padid != NULL && *cp->ai.padid >= 0 && *cp->ai.padid < 2;
+}
+
+static void JerProbeStartClock(void)
+{
+	if (!probeClockStarted)
+	{
+		probeClockStarted = 1;
+		probeTickStart = PsyX_GetTicks();
+	}
+}
+
+void JerHandleProbeStep(CAR_DATA* cp)
+{
+	CAR_COSMETICS* cos;
+	int slot, model;
+
+	if (!JerProbeOn() || !JerProbeIsLocalPlayer(cp))
+		return;
+
+	JerProbeStartClock();
+
+	if (cp->hd.speed > probeMaxSpeed)
+		probeMaxSpeed = cp->hd.speed;
+
+	probeSamples++;
+
+	/* one line per simulated second (every 30th car sample) */
+	if ((probeSamples % PROBE_STEPS_PER_SEC) != 1)
+		return;
+
+	slot = cp->ap.model;
+	model = (slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS) ? residentCarModels[slot] : -1;
+
+	cos = cp->ap.carCos;
+
+	if (cos == NULL && slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS)
+		cos = &car_cosmetics[slot];
+
+	printInfo("[JER-PROBE] t=%ds speed=%d wheel=%d/%d thrust=%d hndType=%d slot=%d model=%d "
+			  "power=%d traction=%d mass=%d twistY=%d grip=%d/%d handbrake=%d ff=%d lock=%d skip=%d\n",
+		probeSamples / PROBE_STEPS_PER_SEC,
+		(int)cp->hd.speed, (int)cp->wheel_angle, PROBE_STEER_LOCK, (int)cp->thrust,
+		(int)cp->hndType, slot, model,
+		(cos != NULL) ? (int)cos->powerRatio : -1,
+		(cos != NULL) ? (int)cos->traction : -1,
+		(cos != NULL) ? (int)cos->mass : -1,
+		(cos != NULL) ? (int)cos->twistRateY : -1,
+		probeGripFront, probeGripRear,
+		(int)cp->handbrake,
+		FastForward, FastForwardLocked, PsyX_GetFrameSkip());
+}
+
+void JerHandleProbeStepGame(void)
+{
+	if (!JerProbeOn())
+		return;
+
+	JerProbeStartClock();
+
+	probeSteps++;
+}
+
+void JerHandleProbeGrip(CAR_DATA* cp, int frontFS, int rearFS)
+{
+	if (!JerProbeOn() || !JerProbeIsLocalPlayer(cp))
+		return;
+
+	probeGripFront = frontFS;
+	probeGripRear = rearFS;
+}
+
+void JerHandleProbeSummary(void)
+{
+	unsigned int elapsedMs, perSec;
+
+	if (!JerProbeOn())
+		return;
+
+	JerProbeStartClock();
+
+	elapsedMs = PsyX_GetTicks() - probeTickStart;
+	perSec = (elapsedMs >= 100) ? (unsigned int)(((unsigned long long)probeSteps * 1000) / elapsedMs) : 0;
+
+	// The clock is PsyX_GetTicks (real milliseconds), NOT the vblank counter: while
+	// the frame skip is on the vblank counter advances extra times per frame, so a
+	// rate derived from it reads LOW in exactly the case this has to catch.
+	// 30 = stock. ~210 = FastForward (main.c: cnt = 7). Above 30 with ff=0 is the
+	// PsyX frame-skip path (skip=1), which Psyx_SetFastForwardLocked now gates.
+	printInfo("JERICHO-PROBE: steps=%u ms=%u steps_per_sec=%u max_speed=%d ff=%d lock=%d skip=%d verdict=%s\n",
+		(unsigned int)probeSteps, elapsedMs, perSec, probeMaxSpeed, FastForward, FastForwardLocked,
+		PsyX_GetFrameSkip(),
+		(perSec > (unsigned int)(PROBE_STEPS_PER_SEC + PROBE_STEPS_PER_SEC / 2)) ? "CLOCK_FAST"
+			: (perSec == 0) ? "NO_STEPS" : "RATE_OK");
+}

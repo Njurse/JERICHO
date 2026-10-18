@@ -6,6 +6,7 @@
 #include "jer_console.h"	// JERICHO-HOOK: unified status console stream
 #include "jer_texture.h"	// JERICHO-HOOK: custom texture injection (reload/free)
 #include "jer_car_palette.h"	// JERICHO-HOOK: per-instance car colour (inert table)
+#include "handling_probe.h"	// JERICHO: "my car is way too fast" measurement (env-gated, inert)
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
 #ifdef _WIN32
@@ -1463,6 +1464,12 @@ void StepGame(void)
 	int i;
 	PLAYER* pl;
 
+	// JERICHO: the sim-rate counter for the handling probe (inert unless
+	// JERICHO_HANDLING_PROBE is set). Counted here, not per frame: State_GameLoop
+	// runs this 1x normally and 7x under FastForward, which is exactly the
+	// difference the probe has to be able to see.
+	JerHandleProbeStepGame();
+
 	if (CameraCnt == 3 && !pauseflag)
 		StartXM(gDriver1Music);
 
@@ -1967,6 +1974,12 @@ void JerichoFrameTick(void)
 			LevelNames[GameLevel], carslot, model, gRunFrames, gDebugSeed);
 	}
 
+	// JERICHO: the handling verdict (steps/second + the fastest the player's car
+	// got). Off unless JERICHO_HANDLING_PROBE is set. This is what separates "the
+	// car is over-powered" from "the sim is running at 7x": 30 steps_per_sec is
+	// stock, ~210 is FastForward.
+	JerHandleProbeSummary();
+
 	// JERICHO: the LEVEL HEAP and the car-poly arena, at the end of a run. main.c's
 	// own malloctab print is behind #if DEBUG||PSX, so a release build never shows
 	// it -- and the cross-city import's per-city geometry has to fit THIS heap. The
@@ -2028,6 +2041,13 @@ void State_GameLoop(void* param)
 	// back. This is the fix for imported cars sampling whatever streamed in over their
 	// pages, which looks like wrong UVs. A handful of compares when nothing is wrong.
 	CarImportPin();
+
+	/* JERICHO-HOOK: mirror the engine's fast-forward lock into PsyX, which owns the
+	 * SECOND fast-forward path (its own BACKSPACE key handler latches a frame skip
+	 * that runs the sim at render rate). Turning off only the engine's handler left
+	 * that one live, and a client running the sim fast is a desync by definition --
+	 * so a module that owns the clock takes BOTH. */
+	PsyX_SetFastForwardLocked(FastForwardLocked);
 
 	UpdatePadData();
 	CheckForPause();

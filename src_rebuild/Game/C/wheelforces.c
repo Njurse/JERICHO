@@ -15,6 +15,7 @@
 #include "cutscene.h"
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "handling_probe.h"	// JERICHO: "my car is way too fast" measurement (env-gated, inert)
 
 #define GRAVITY_FORCE		(-7456)			// D1 has -10922
 
@@ -181,6 +182,10 @@ void GetFrictionScalesDriver1(CAR_DATA* cp, CAR_LOCALS* cl, int* frontFS, int* r
 		*frontFS = jerArgs.frontFS;
 		*rearFS = jerArgs.rearFS;
 	}
+
+	// JERICHO: the grip the tyres actually resolved this step (probe is inert
+	// unless JERICHO_HANDLING_PROBE is set).
+	JerHandleProbeGrip(cp, *frontFS, *rearFS);
 }
 
 // [D] [T]
@@ -755,6 +760,11 @@ void StepOneCar(CAR_DATA* cp)
 		speed = a + b / 2;
 
 	cp->hd.speed = speed;
+
+	// JERICHO: sample the local player's car for the handling report. Sits here
+	// because this is the one place per step where speed, thrust, steering and
+	// the resolved cosmetics are all in hand. Inert without JERICHO_HANDLING_PROBE.
+	JerHandleProbeStep(cp);
 
 	// JERICHO-HOOK: observe car state at the top of StepOneCar.
 	{
