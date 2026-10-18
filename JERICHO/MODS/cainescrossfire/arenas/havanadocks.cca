@@ -17,9 +17,14 @@ spawn: 267365 -27002 0
 pickup: health 384519 -132907 250
 pickup: weapon missile 394123 -31151 0
 pickup: weapon SEEKER 312231 -91918 0
-pickup: weapon mg 332725 -15159 0
 pickup: weapon freeze 413956 -31181 0
 pickup: health 424798 -92277 250
 pickup: health 380394 -41486 2500
 pickup: health 275852 4566 2500
 pickup: health 440397 -101489 2500
+pickup: weapon FREEZE 268023 -87341 2
+pickup: weapon FREEZE 386196 -24139 2
+pickup: weapon CLUSTER 402658 -25608 2
+pickup: weapon ZOOMY 353272 -112622 2
+pickup: weapon MINE 333577 -13556 4
+pickup: weapon SHOTGUN 416475 -124086 4
