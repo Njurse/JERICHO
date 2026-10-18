@@ -1516,6 +1516,19 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 
 	while (i-- != -1)
 	{
+		POLYFT4* ts = (tex != NULL && texIndex < texCount) ? &tex[texIndex] : src;
+		int skipPoly = 0;
+
+		/* A source wheel with a different poly count from the host mesh cannot be
+		 * mapped 1:1 (the D1 bake's DAMWHEEL is the four-quad form; the host
+		 * DAMWHEEL has three records). Drawing the host's hubcap there samples a
+		 * blue placeholder, so leave that one poly out. A D2 city's wheel model
+		 * has the same record count as its host wheel, so its own hubcap record
+		 * maps directly. */
+		if (ts != src && texCount != model->num_polys &&
+			(src->texture_id != primaryId || src->texture_set != primarySet))
+			skipPoly = 1;
+
 		gte_ldv3(&verts[src->v0], &verts[src->v1], &verts[src->v2]);
 
 		gte_rtpt();
@@ -1531,7 +1544,7 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 
 		gte_stotz(&otZ);
 
-		if (otZ > 2)
+		if (otZ > 2 && !skipPoly)
 		{
 			setPolyFT4(poly);
 			addPrim(current->ot + (otZ >> 1) + 5, poly);
@@ -1548,16 +1561,6 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 			gte_stsxy3(&poly->x1, &poly->x3, &poly->x2);
 
 			{
-				POLYFT4* ts = (tex != NULL && texIndex < texCount) ? &tex[texIndex] : src;
-
-				/* A hubcap poly is the one whose host texture set/id differs from
-				 * the wheel's tire poly. The D1 wheel texture has no matching
-				 * hubcap rect on this page, so use the HOST hubcap record for that
-				 * poly - otherwise it samples an empty/blue area of the D1 page
-				 * (the blue-square hubcaps). */
-				if (ts != src && (src->texture_id != primaryId || src->texture_set != primarySet))
-					ts = src;
-
 				/* JERICHO: an imported car keeps the host wheel MESH and borrows
 				 * the source city's wheel TEXTURE and palette. The record's own
 				 * set/id is resolved here, per poly: a fast wheel can name more
