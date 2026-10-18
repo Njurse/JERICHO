@@ -2053,10 +2053,41 @@ void State_GameLoop(void* param)
 {
 	int cnt;
 
+	/* JERICHO: TEST-ONLY (JERICHO_SKIP_CUTSCENE). The cutscene-skip branch below is
+	 * taken only while a cutscene is being skipped, and the level-start cutscene clears
+	 * the flag, so setting it once cannot exercise the branch. Hold it here instead --
+	 * the lever is resolved once, and the per-poll cost is a single int test. */
+	{
+		static int jerSkipCutsceneLever = -1;
+
+		if (jerSkipCutsceneLever < 0)
+			jerSkipCutsceneLever = (getenv("JERICHO_SKIP_CUTSCENE") != NULL) ? 1 : 0;
+
+		if (jerSkipCutsceneLever)
+			gSkipInGameCutscene = 1;
+	}
+
 	if (gSkipInGameCutscene)
 	{
-		StepGame();
-		ClearCurrentDrawBuffers();
+		/* JERICHO: cutscene skipping steps the sim TOO, so it goes through the same
+		 * wall-clock budget as normal play. It used to call StepGame() unconditionally
+		 * -- once per iteration of the state machine, i.e. as fast as the machine could
+		 * spin -- which is a second way for the sim rate to escape the 30 Hz gate. On
+		 * PSX the unthrottled step was indistinguishable from the intended one; here it
+		 * is whatever the CPU can do. A skipped cutscene should still run at 30 Hz,
+		 * just without waiting on the character animation. */
+		if (FilterFrameTime())
+		{
+			StepGame();
+			ClearCurrentDrawBuffers();
+
+			/* the rate line must keep reporting on this path too, or a latched-skip run
+			 * would look like "no data" instead of "held at 30"; -frames must also still
+			 * terminate a run that spends its whole time here. */
+			JerHandleProbeFrame();
+			JerichoFrameTick();
+		}
+
 		return;
 	}
 
@@ -2082,8 +2113,10 @@ void State_GameLoop(void* param)
 	PsyX_SetFastForwardLocked(FastForwardLocked);
 
 	// JERICHO: one rate line per real second plus a line per clock-flag change, when
-	// JERICHO_HANDLING_PROBE is set. Inert otherwise. This is what tells a
-	// "fast/normal flip every few seconds" report apart from a steady over-speed.
+	// JERICHO_HANDLING_PROBE is set. Inert otherwise. Called here, after the step gate:
+	// the state machine itself is polled millions of times a second and returns
+	// immediately when the gate refuses, so anything per-poll would be both meaningless
+	// and a measurable cost. Once per GATED frame is once per presented frame.
 	JerHandleProbeFrame();
 
 	UpdatePadData();

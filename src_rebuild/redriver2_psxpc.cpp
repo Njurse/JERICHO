@@ -688,6 +688,39 @@ int main(int argc, char** argv)
 	GetTimeStamp(version_info);
 	PsyX_Log_Info("%s %s (%s)\n", GAME_VERSION, version_info, BUILD_CONFIGURATION_STRING);
 
+	/* JERICHO: say WHICH step gate this binary was built with.
+	 *
+	 * "The game runs way too fast" has twice been the step gate, not the physics:
+	 * the original vblank gate (2 simulated vblanks per step) tracks the render rate
+	 * and the PsyX frame skip, while the wall-clock gate takes a step every 33 ms
+	 * whatever the machine is doing. A player reporting the symptom and a reader of
+	 * their log otherwise cannot tell which build they have -- and the build banner
+	 * is not enough, because it is stamped at PREMAKE time and goes stale the moment
+	 * another commit lands (this session shipped one that still said the previous
+	 * commit). One line, every run, no lever. */
+#ifdef PSX
+	PsyX_Log_Info("[JERICHO] step gate: PSX vblank, 2 vblanks per step (~30 Hz)\n");
+#else
+	PsyX_Log_Info("[JERICHO] step gate: wall clock, 33 ms per step (~30 steps/s, independent of render rate and frame skip)\n");
+#endif
+
+	/* JERICHO: TEST-ONLY lever for the cutscene-skip step path.
+	 *
+	 * State_GameLoop has a second branch that steps the sim (gSkipInGameCutscene) and it
+	 * used to do so on every iteration of the state machine. There is no gameplay way to
+	 * latch that state headlessly, so this latches it at boot -- the same shape as
+	 * JERICHO_FF_LATCH for the frame skip. With the gate in place the rate must stay
+	 * ~30 steps/s; before it did, it tracked the machine. */
+	if (getenv("JERICHO_SKIP_CUTSCENE") != NULL)
+	{
+		/* The flag is also re-asserted per iteration of State_GameLoop, because the
+		 * level-start cutscene clears it -- see the lever there. */
+		gSkipInGameCutscene = 1;
+		PsyX_Log_Info("[JERICHO] JERICHO_SKIP_CUTSCENE: cutscene-skip step path held ON for this run\n");
+	}
+
+
+
 	// configure Psy-X CD image reader
 	if (cdImageFileName)
 		PsyX_CDFS_Init(cdImageFileName, 0, 0);
