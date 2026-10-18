@@ -252,6 +252,10 @@ local function jer_version_defines()
    if desc == "" then
       desc = "0.9.0"
    end
+   -- TEST BRANCH ONLY (test/update-screen): pretend to be 0.10.3 so the update
+   -- screen fires against the real v0.10.4 release. jer_update.c compares the
+   -- leading X.Y.Z only; the suffix just marks the window title. Never merge.
+   desc = "0.10.3-updatetest"
    defines { ("JERICHO_BUILD_VERSION=\"%s\""):format(desc) }
 
    -- The commit on its own. git describe only carries a hash when the build is
