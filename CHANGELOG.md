@@ -4,6 +4,15 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## Unreleased
+
+- **Driver 1 cars no longer pull to one side.** Cars ported from Driver 1 (d1cars)
+  could have the two wheels of an axle placed unevenly, or a centre of gravity off the
+  centre line, left over from re-proportioning a Driver 2 donor. They are now made
+  left/right symmetric as they load (stock Driver 2 cars untouched), and the bake no
+  longer produces the offset. The log says `d1cars: symmetrized ...` for each car it
+  corrected.
+
 ## v0.10.4
 
 ### Headline fix: the player car no longer drives at "fast-forward" speed
