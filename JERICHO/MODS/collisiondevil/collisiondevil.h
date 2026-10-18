@@ -1,116 +1,91 @@
-// COLLISIONDEVIL — arcade handling overhaul for REDRIVER2 (JERICHO module).
-//
-// A compiled-in JERICHO deep mod. It listens to the five car-handling events
-// added by this package (JER_EVENT_CAR_*) and re-shapes the stock physics
-// with a handful of macro sliders:
-//
-//   Arcade Aggression  0..1  -> engine force (acceleration + emergent top speed)
-//   Drift Eagerness    0..1  -> rear-grip drop + yaw kick (brake-tap powerslides)
-//   Boost Intensity    0..1  -> extra engine multiplier
-//   Visual Drama       0..1  -> render-only body roll/pitch/yaw + FOV pull
-//
-// Golden rule: DERIVE, DON'T INVENT. Every number scales an existing chassis
-// stat (car_cosmetics[].powerRatio / traction / twistRateY, cp->wheel_angle,
-// the frontFS/rearFS friction scales) — there are no per-car tuning tables.
-//
-// The visual pass never touches physics: drama rotates a render-only copy of
-// cp->hd.drawCarMat (see the JER_EVENT_CAR_DRAW call site in cars.c).
+// COLLISIONDEVIL — new handling model (Paradise-oriented).
+// Drift is a self-limiting state: mild rear grip loss + short initiation yaw
+// that fades and is countered once the car is already rotating.
+// No continuous thruster, no inverted damping, hard floors on grip and yaw rate.
 
 #ifndef COLLISIONDEVIL_H
 #define COLLISIONDEVIL_H
 
 // --------------------------- tunables ------------------------------------
 
-// Drift entry: minimum steering magnitude (PSX angle units) to count as
-// "steering into" a brake-tap drift, and the minimum speed (cp->hd.speed,
-// world units) before a drift can start.
-#define CD_STEER_MIN        24
-#define CD_DRIFT_MIN_SPEED  2
+#define CD_STEER_MIN            16
+#define CD_DRIFT_MIN_SPEED      8
 
-// Drift grip blend: exponential approach divisor (higher = slower in/out).
-#define CD_BLEND_LERP       3
+// How fast the drift intensity approaches its target (higher = slower)
+#define CD_INTENSITY_LERP       6
 
-// Visual smoothing divisor (higher = slower body roll/pitch/yaw settle).
-#define CD_VISUAL_LERP      2
+// Rear grip reduction at full intensity (4096 = 100 %).
+// 1200 → rear stays ≥ ~0.70×. Enough to step out, still self-righting.
+#define CD_GRIP_DROP_FRAC       1200
+#define CD_GRIP_FLOOR           1800   // absolute minimum rearFS scale (≈0.44× of original)
 
-// Grip drop: fraction of the REAR friction removed at full eagerness
-// (4096 = 100%). 2253/4096 ~= 0.55 -> rear grip ~0.45x — the manifesto's
-// "Drift Grip = base_friction * 0.45".
-#define CD_GRIP_DROP_FRAC   2277
+// Yaw initiation scale (derived from twistRateY). Small on purpose.
+#define CD_YAW_INIT_SCALE       6
+// How quickly the initiation fades once the car is rotating (higher = faster fade)
+#define CD_YAW_FADE_SHIFT       3
+// Hard cap on added yaw torque (fraction of twistRateY)
+#define CD_YAW_MAX_FRAC         900    // ~0.22× twistRateY
 
-// Yaw kick: yaw angular-acceleration added per frame during a drift, derived
-// from the car's yaw inertia (twistRateY). kick = twistRateY * SCALE / 2 at
-// full drift blend + full eagerness. 16 -> ~8000 units/frame for a mid car.
-#define CD_YAW_KICK_SCALE   126
+// Mild damping soften only (>>5 ≈ 0.03, same order as stock -avel*128/4096)
+#define CD_DAMP_SHIFT           5
 
-// Visual drama magnitudes (PSX angle units; 4096 = 360 deg, ~11.4 units/deg).
-#define CD_DRAMA_ROLL_SHIFT 4     // |wheel_angle| * drama >> 4 (~2 deg max)
-#define CD_DRAMA_PITCH_BASE 5    // nose up/down angle at full drama + speed
-#define CD_DRAMA_YAW_SHIFT  5     // drift blend * drama >> 5 (~11 deg max)
-#define CD_DRAMA_REF_SPEED  10    // speed (world units) at which drama saturates
-// Side-slip -> body roll gain: lateral velocity (fixed point) >> shift gives
-// a PSX-angle-unit lean. 9 => ~10 m/s side slip leans ~7 deg.
-#define CD_SLIP_SHIFT       11
+// Brake soften while *not* in deep drift. Once intensity is high we leave
+// brake closer to stock so speed bleeds and the slide cannot feed forever.
+#define CD_BRAKE_SOFTEN         3600   // ~0.88×
 
-// Brake force scale while braking/reversing (4096 = stock, 2458 ~= 0.6x) —
-// a gentler brake that lets the car rotate into a drift instead of stopping.
-#define CD_BRAKE_SOFTEN     2458
+// Speed gates
+#define CD_YAW_LOW_SPEED        6
+#define CD_YAW_HIGH_SPEED       28
+#define CD_YAW_HIGH_FLOOR       800    // almost no initiation at high speed
 
-// Clamp the visual body angle (PSX angle units; ~11.4 units/deg).
-#define CD_BODY_MAX_ROLL     30    // ~2.6 deg lean
-#define CD_BODY_MAX_PITCH    22    // ~2 deg nose dive/lift
+// Handbrake multipliers (sharper but still finite)
+#define CD_HB_GRIP_MULT         1.4f
+#define CD_HB_YAW_MULT          1.5f
+#define CD_HB_DURATION_FRAMES   18     // after this many frames the handbrake bonus decays
 
-// Crash reactivity: impact force >> shift = angular-velocity kick on collision.
-#define CD_CRASH_SPIN_SHIFT  32
+// Visual (unchanged philosophy: render-only)
+#define CD_VISUAL_LERP          2
+#define CD_DRAMA_ROLL_SHIFT     3
+#define CD_DRAMA_PITCH_BASE     7
+#define CD_DRAMA_REF_SPEED      90
+#define CD_SLIP_SHIFT           10
+#define CD_BODY_MAX_ROLL        42
+#define CD_BODY_MAX_PITCH       28
+#define CD_FOV_PULL_SCRZ        190
+#define CD_CRASH_SPIN_SHIFT     2
 
-// Angular damping soften: counter the stock -avel*128/4096 with +avel>>shift
-// (6 halves the settle so cars twist/flip longer).
-#define CD_DAMP_SHIFT        2
-
-// Yaw-kick speed gate: full drift yaw authority near standstill, tapering to
-// a floor as speed rises so drifts slide instead of jackknifing the car.
-#define CD_YAW_KICK_LOW_SPEED   10
-#define CD_YAW_KICK_HIGH_SPEED  25
-#define CD_YAW_KICK_FLOOR       2638   // ~0.4x kick at/above high speed
-
-// FOV pull: scr_z reduction (from gCameraDefaultScrZ = 256) at full pull+speed.
-#define CD_FOV_PULL_SCRZ    180
-
-// presets
-enum
-{
-	CD_PRESET_BURNOUT = 0,   // high aggression + eagerness, mid drama
-	CD_PRESET_PARADISE = 1,  // mid aggression, high drama
-	CD_PRESET_CUSTOM = 2
+enum {
+    CD_PRESET_BURNOUT = 0,
+    CD_PRESET_PARADISE = 1,
+    CD_PRESET_CUSTOM = 2
 };
 
 // --------------------------- state ---------------------------------------
 
-typedef struct COLLISIONDEVIL_CONFIG
-{
-	int enabled;
-	int aggression;   // 0..100
-	int eagerness;    // 0..100
-	int drama;        // 0..100
-	int boost;        // 0..100
-	int preset;       // CD_PRESET_*
-	int fovPull;      // 0..100
+typedef struct COLLISIONDEVIL_CONFIG {
+    int enabled;
+    int aggression;
+    int eagerness;
+    int drama;
+    int boost;
+    int preset;
+    int fovPull;
 } COLLISIONDEVIL_CONFIG;
 
-typedef struct COLLISIONDEVIL_DRIFT
-{
-	int active;
-	int direction;    // +1 / -1
-	int blend;        // 0..4096
+typedef struct COLLISIONDEVIL_DRIFT {
+    int intensity;          // 0..4096 smoothed target
+    int direction;          // +1 / -1
+    int handbrake;          // 1 if currently handbrake-driven
+    int hbFrames;           // frames handbrake has been held this slide
+    int lastYawRate;        // previous frame |angularVelocity[1]| for fade
 } COLLISIONDEVIL_DRIFT;
 
-typedef struct COLLISIONDEVIL_VISUAL
-{
-	int roll;         // smoothed PSX angle units
-	int pitch;
-	int yaw;
+typedef struct COLLISIONDEVIL_VISUAL {
+    int roll;
+    int pitch;
+    int yaw;
 } COLLISIONDEVIL_VISUAL;
 
 extern COLLISIONDEVIL_CONFIG gCdCfg;
 
-#endif /* COLLISIONDEVIL_H */
+#endif
