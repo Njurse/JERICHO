@@ -932,6 +932,11 @@ static void jerActivateModules(const char* rootDir)
 /* Public host-side API                                                */
 /* ------------------------------------------------------------------ */
 
+#ifdef __cplusplus
+extern "C"
+#endif
+void jer_update_start(void);	/* jer_update.c */
+
 void jer_init(const char* rootDir)
 {
 	if (!gCtxBuilt)
@@ -965,6 +970,9 @@ void jer_init(const char* rootDir)
 
 	/* persistent module config lives under <root>/CONFIG/ */
 	jer_config_init(rootDir);
+
+	/* the update check: spawns one curl and returns at once (jer_update.c) */
+	jer_update_start();
 
 	jerSnapshotModules(rootDir);
 	jerActivateModules(rootDir);

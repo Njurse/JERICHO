@@ -442,6 +442,21 @@ static int gJerichoModsPrompted;	// a host prompt was up on the mods screen
 static int gJerichoCreditsOpen;	// the mods screen is showing its Credits page
 static void JerichoDrawCredits(void);
 
+// JERICHO: the update check lives in the runtime (jer_update.c), which is built
+// without the exe's JERICHO_RELEASE_MODS, so the exe answers the flavour for it.
+#ifdef __cplusplus
+extern "C" {
+#endif
+void jer_update_frontend_tick(int onMainMenu);
+int jer_build_is_dev(void);
+#ifdef __cplusplus
+}
+#endif
+int jer_build_is_dev(void)
+{
+	return GAME_BUILD_SUFFIX[0] != '\0';	/* version.h: "" on the shipping Release */
+}
+
 // JERICHO-HOOK: module-provided frontend menus (jer_frontend.h)
 static const JER_FE_MENU* gFeMenus[JER_FE_MAX_MENUS];
 static int gFeMenuCount;
@@ -2646,6 +2661,10 @@ void State_FrontEnd(void* param)
 		drawArgs.menu = jer_frontend_current_menu();
 		jer_fire(JER_EVENT_FRONTEND_DRAW, &drawArgs);
 	}
+
+	/* JERICHO: the update check (JERICHO/src/jer_update.c) -- decides once, on
+	 * the main menu, and draws the changelog on its own screen. */
+	jer_update_frontend_tick(pCurrScreen == &PsxScreens[0] && ScreenDepth == 0);
 
 	/* JERICHO: the Credits page draws its lines over the screen, like a module menu */
 	if (gJerichoCreditsOpen && pCurrScreen == &PsxScreens[JERICHO_MODS_SCREEN])
