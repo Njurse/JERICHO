@@ -275,6 +275,47 @@ void jer_npc_stop(JerNpc* n)
 	pPed->fpAgitatedState = NULL;
 }
 
+/* Drive a ped like a mirrored player: face `heading`, move at `speed` (negative =
+ * backing up, as Tanner does), and pick the matching motion clip. move_to/stop
+ * only set `type`, never the motion data or the reverse-playback flag (4), so a
+ * stand-in kept whatever clip and direction it spawned/pooled with -- which is
+ * the "stuck walking backwards" remote Tanner. Clip changes only on a gait
+ * change so the frame counter keeps running. */
+void jer_npc_set_gait(JerNpc* n, int heading, int speed)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
+	int type;
+
+	if (pPed == NULL)
+		return;
+
+	if (speed == 0)
+		type = PED_ACTION_BACK;		/* the stock idle ("DoNowt") clip */
+	else if (speed >= 30)
+		type = PED_ACTION_RUN;
+	else
+		type = PED_ACTION_WALK;
+
+	pPed->fpAgitatedState = NULL;
+	pPed->dir.vy = heading & 0xfff;
+	pPed->dir.vz = 0;
+	pPed->head_rot = 0;
+	pPed->speed = (char)speed;
+
+	if (speed < 0)
+		pPed->flags |= 4;		/* play the walk clip in reverse */
+	else
+		pPed->flags &= ~4;
+
+	if (pPed->type != type || pPed->motion == NULL)
+	{
+		pPed->type = (char)type;
+		SetupPedMotionData(pPed);
+	}
+
+	pPed->flags |= 0x10;
+}
+
 /* pedest.c, and deliberately not in a header: this is the animation/integration
  * pass a ped's own state function calls. */
 extern void AnimatePed(LPPEDESTRIAN pPed);

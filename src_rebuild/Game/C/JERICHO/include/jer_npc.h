@@ -71,6 +71,9 @@ void jer_npc_move_to(JerNpc* n, int x, int z, int speed);
 
 /* halt the ped (speed 0 + idle state) */
 void jer_npc_stop(JerNpc* n);
+/* Mirror a player's gait: heading, speed (<0 = backing up), and the matching
+ * idle/walk/run clip. Call jer_npc_tick after it. */
+void jer_npc_set_gait(JerNpc* n, int heading, int speed);
 
 /* advance an owned ped one frame: move it at its current speed along its heading
  * AND advance its walk animation. The ambient pedestrian system only drives
