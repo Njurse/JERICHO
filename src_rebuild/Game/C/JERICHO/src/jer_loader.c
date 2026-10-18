@@ -114,6 +114,8 @@ static void jerTomlDeps(char* v, char* out, size_t outSize)
 	}
 }
 
+static int jerValidId(const char* id);
+
 static void jerParseModToml(const char* path, JER_MODULE* m)
 {
 	FILE* f;
@@ -158,7 +160,18 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 		val = jerTrim(eq + 1);
 
 		if (strcmp(key, "id") == 0)
-			jerTomlValue(val, m->id, sizeof(m->id));
+		{
+			/* the id builds the binary path and the entry symbol, so it gets the
+			 * same check as a folder name: a manifest saying id = "../x" must not
+			 * open a library outside its folder. An invalid id is ignored and the
+			 * folder's (already validated) name stands. */
+			char idv[sizeof(m->id)];
+
+			jerTomlValue(val, idv, sizeof(idv));
+
+			if (jerValidId(idv))
+				snprintf(m->id, sizeof(m->id), "%s", idv);
+		}
 		else if (strcmp(key, "name") == 0)
 			jerTomlValue(val, m->name, sizeof(m->name));
 		else if (strcmp(key, "version") == 0)
