@@ -21,6 +21,8 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **Siren works after Change car.** Changing into a police car lit the light bar but the
+  siren stayed silent until you got out and back in; the car's sounds now follow the change.
 - **Chat history.** While typing a chat message, the last chat lines show again even
   if they had faded, and Page Up / Page Down scroll back through the last 48 lines.
 - **Scoreboard CAR column names the car.** It showed the level's resident slot
