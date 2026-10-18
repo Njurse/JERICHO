@@ -1228,6 +1228,13 @@ void SwapDrawBuffers2(int player)
 short paddp;
 short padd;
 
+/* JERICHO: jer_input_block's flag (jer_system.c, C linkage). */
+#ifdef __cplusplus
+extern "C" int gJerInputBlocked;
+#else
+extern int gJerInputBlocked;
+#endif
+
 // [D] [T]
 void UpdatePadData(void)
 {	
@@ -1237,7 +1244,6 @@ void UpdatePadData(void)
 	 * typed key may also be a game button. Held buttons stay swallowed after the
 	 * block lifts until they are all released (no stuck or stray presses). */
 	{
-		extern int gJerInputBlocked;
 		static int latched = 0;
 
 		if (gJerInputBlocked || latched)
