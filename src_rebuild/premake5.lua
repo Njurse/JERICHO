@@ -246,7 +246,9 @@ local function jer_version_defines()
    -- The APP version. A tag when the build sits exactly on one, otherwise
    -- "<tag>-<n>-g<hash>", or a bare hash for a checkout with no tags at all. The
    -- leading "v" the release tags carry is stripped, so the binary says "0.10.2".
-   local desc = git("git describe --tags --always --dirty"):gsub("^v", "")
+   -- --match "v*": only RELEASE tags name a version; a checkpoint/... tag must
+   -- never become the window title (it once read "checkpoint/getrdun-...").
+   local desc = git("git describe --tags --match \"v*\" --always --dirty"):gsub("^v", "")
    if desc == "" then
       desc = "0.9.0"
    end

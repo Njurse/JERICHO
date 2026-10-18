@@ -510,6 +510,8 @@ void SwitchMappings(int menu)
 	}
 }
 
+extern "C" int gJerUpdateForce;	// jer_update.c: -forceupdatecheck (dev builds only)
+
 int main(int argc, char** argv)
 {
 	ini_t* config;
@@ -563,10 +565,45 @@ int main(int argc, char** argv)
 			i++;
 			configFilename = argv[i];
 		}
+		else if (!strcmp(argv[i], "-forceupdatecheck"))
+		{
+			// JERICHO: dev builds only (jer_update.c checks the flavour): show the
+			// update screen against the real latest release, whatever this build is.
+			gJerUpdateForce = 1;
+		}
 		else if(!strcmp(argv[i], "-cdimage"))
 		{
 			i++;
 			cdImageFileName = argv[i];
+		}
+	}
+
+	// JERICHO: a release ships config.default.ini, never config.ini, so unpacking
+	// one over an install cannot replace the player's settings. Seed config.ini
+	// from it the first time (only for the stock name: an explicit -ini is the
+	// caller's own file). The engine never writes config.ini itself.
+	if (!strcmp(configFilename, "config.ini"))
+	{
+		FILE* have = fopen("config.ini", "rb");
+
+		if (have)
+			fclose(have);
+		else
+		{
+			FILE* src = fopen("config.default.ini", "rb");
+
+			if (src)
+			{
+				FILE* dst = fopen("config.ini", "wb");
+				char cbuf[4096];
+				size_t got;
+
+				while (dst && (got = fread(cbuf, 1, sizeof(cbuf), src)) > 0)
+					fwrite(cbuf, 1, got, dst);
+				if (dst)
+					fclose(dst);
+				fclose(src);
+			}
 		}
 	}
 

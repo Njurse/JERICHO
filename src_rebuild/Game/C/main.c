@@ -2460,6 +2460,7 @@ void PrintCommandLineArguments()
 		"Example: REDRIVER2 <command> [arguments]\n\n"
 		"  -ini <filename.ini> : starts game with specific configuration ini\n"
 		"  -cdimage <filename.iso> : starts game with specific ISO/BIN image file\n"
+		"  -forceupdatecheck : (Release_dev/Debug) always show the update screen for the latest release\n"
 #ifdef DEBUG_OPTIONS
 		"  -exportxasubtitles: Exports strings from XA WAV files to SBN\n"
 #endif
@@ -3238,6 +3239,11 @@ int redriver2_main(int argc, char** argv)
 			/* (cainescrossfire module) force the CC select flow. A bare flag -
 			 * the module reads it itself from JER_EVENT_CMDLINE, below; it is
 			 * recognised here so it is not reported as an invalid argument. */
+		}
+		else if (!strcmp(argv[i], "-forceupdatecheck"))
+		{
+			/* (update check, jer_update.c) read in redriver2_psxpc.cpp's early
+			 * scan; recognised here so it is not reported as invalid */
 		}
 		else if (!strcmp(argv[i], "-cceditor"))
 		{
