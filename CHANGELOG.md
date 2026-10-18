@@ -4,15 +4,6 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
-## Unreleased
-
-- **Driver 1 cars no longer pull to one side.** Cars ported from Driver 1 (d1cars)
-  could have the two wheels of an axle placed unevenly, or a centre of gravity off the
-  centre line, left over from re-proportioning a Driver 2 donor. They are now made
-  left/right symmetric as they load (stock Driver 2 cars untouched), and the bake no
-  longer produces the offset. The log says `d1cars: symmetrized ...` for each car it
-  corrected.
-
 ## v0.10.4
 
 ### Headline fix: the player car no longer drives at "fast-forward" speed
@@ -69,6 +60,12 @@ anyone updating from an earlier v0.10.3 or v0.10.2 install.
   `JERICHO 0.10.4`, or `JERICHO 0.10.4-3-gabc1234-dev` for a dev build; `-dirty`
   only on a build from modified sources), and the Options screen shows it small at
   the bottom-left.
+- **Driver 1 cars no longer pull to one side.** Cars ported from Driver 1 (d1cars)
+  could have the two wheels of an axle placed unevenly, or a centre of gravity off the
+  centre line, left over from re-proportioning a Driver 2 donor. They are now made
+  left/right symmetric as they load (stock Driver 2 cars untouched), and the bake no
+  longer produces the offset. The log says `d1cars: symmetrized ...` for each car it
+  corrected.
 - **Your own chat shows up on a dedicated server.** The dedicated server relayed a
   player's line to everyone except the sender, but the game only prints its own
   line when the server echoes it back, so on a VPS/dedicated server you never saw
