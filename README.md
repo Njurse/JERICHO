@@ -282,6 +282,16 @@ each in both the clean `Release` configuration and the full `Release_dev` one,
 packed with the runtime libraries, the `data/` tree and the `JERICHO/` tree the
 runtime reads. See [`docs/CI.md`](docs/CI.md).
 
+**Staying up to date.** At start the game asks GitHub once (in the background,
+never holding up boot) whether a newer `vX.Y.Z` release exists, and if so shows
+its changes before the main menu with three choices: *Update JERICHO (Restart)*
+runs `update_jericho` for you and restarts the game, *Remind me next launch*, or
+*Disable update checks* (`update_check=0` in `JERICHO/CONFIG/jericho.ini`; set it
+to `1` to turn them back on). The alpha pre-release never counts, and a build past
+a release (alpha or your own) compares as that release. Archives ship
+`config.default.ini`, never `config.ini`, so unpacking one over an install keeps your
+settings; the game creates `config.ini` from the default when there is none.
+
 ### Linux and other platforms
 
 - **Linux:** [`linux_dev_prepare.sh`](linux_dev_prepare.sh) fetches premake and

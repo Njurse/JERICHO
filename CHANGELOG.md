@@ -6,6 +6,24 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- **Update check.** After the loading screen the game checks GitHub once, in the
+  background (no wait when offline), and when a newer release is out shows its changes
+  before the main menu: *Update JERICHO (Restart)* downloads, verifies and installs it
+  with `update_jericho` and restarts the game; *Remind me next launch*; or *Go away and
+  leave me alone* turns the check off (`update_check=0` in `JERICHO/CONFIG/jericho.ini`).
+  It also tells you when the release you have was **re-cut** (rebuilt under the same tag
+  since you installed it). A `Release_dev` build updates to the `Release_dev` download.
+- **Your `config.ini` is no longer overwritten by a new download.** Releases ship
+  `config.default.ini`; the game creates `config.ini` from it when you have none.
+- **`update_jericho` keeps your flavour** (a `Release_dev` install updates to
+  `Release_dev`), records what it installed in `JERICHO/CONFIG/installed.json`, and no
+  longer trips over its own replacement mid-update.
+- **Join toast.** A host now shows who joined with their version and a short mods
+  checksum, e.g. "Bob joined (v0.10.4-dev, mods 3fa2c1)"; a dedicated server announces
+  the same in chat. Older clients show "?" for the version. No protocol change.
+- **The window title shows the release version again**, not the name of the latest
+  non-release tag (`git describe` now only considers `v*` tags).
+
 - **Remote on-foot players walk properly.** A remote Tanner no longer gets stuck in
   the walking-backwards animation: it now mirrors the owner's heading and speed and
   plays the matching idle, walk or run clip (reverse only when the owner backs up),
