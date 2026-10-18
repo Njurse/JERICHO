@@ -5297,34 +5297,88 @@ int MiniCarsOnOffScreen(int bSetup)
 static void jer_mods_rebuild_button_names(void);
 
 /* JERICHO: the Credits page. The mods screen's Credits button turns the screen
- * into this page: the same background, one BACK button bottom-right, and these
- * lines centred over it in the frontend's face. Names come from README.md's
+ * into this page: the same background, one BACK button bottom-right, and two
+ * columns of lines centred over it in the frontend's face. Names come from README.md's
  * Credits section and REDRIVER2.md's upstream credits -- keep them in step. */
-static const char* const kJerichoCredits[] = {
+static const char* const kJerichoCreditsLeft[] = {	/* JERICHO and its contributors */
 	"JERICHO",
-	"Created by Jaret Ludvik (Njurse)",
+	"Created by Jaret (Njurse)",
 	"",
-	"Built on REDRIVER2 / OpenDriver2 - thank you to:",
-	"SoapyMan - lead reverse engineer and programmer",
-	"Fireboyd78 - code refactoring and improvements",
+	"Contributors",
+	"Commando52Colton",
+	"palette and texture paging information,",
+	"mission script research",
+};
+
+static const char* const kJerichoCreditsRight[] = {	/* the engine underneath */
+	"Built on REDRIVER2 / OpenDriver2",
+	"thank you to:",
+	"",
+	"SoapyMan - lead reverse engineer, programmer",
+	"Fireboyd78 - code refactoring, improvements",
 	"Krishty, someone972 - early formats decoding",
 	"Gh0stBlade - HLE emulator base for Psy-Cross",
-	"Ben Lincoln - This Dust Remembers What It Once Was",
+	"Ben Lincoln - TDR",
 	"Stohrendorf - Symdump",
 	"and every REDRIVER2 contributor",
 };
 
-#define JERICHO_CREDITS_SCALE	150	/* jer_text percent: a readable size on 640x512 */
-#define JERICHO_CREDITS_STEP	26	/* line pitch at that scale */
+#define JERICHO_CREDITS_GAP	40	/* between the two columns, 640-wide FE space */
+#define JERICHO_CREDITS_MAX_W	600	/* the pair must fit inside this */
+#define JERICHO_CREDITS_MID_Y	230	/* vertical centre of both columns (BACK sits at 440) */
 
-static void JerichoDrawCredits(void)
+static int JerichoCreditsColumnW(const char* const* lines, int n, int scale)
 {
-	int n = (int)(sizeof(kJerichoCredits) / sizeof(kJerichoCredits[0]));
-	int y = (512 - n * JERICHO_CREDITS_STEP) / 2 - 20;	/* block centred, nudged above BACK */
+	int i, w = 0;
+
+	for (i = 0; i < n; i++)
+	{
+		int lw = jer_text_width(JER_TEXT_FE, scale, lines[i]);
+
+		if (lw > w)
+			w = lw;
+	}
+
+	return w;
+}
+
+static void JerichoCreditsColumn(const char* const* lines, int n, int cx, int scale, int step)
+{
+	int y = JERICHO_CREDITS_MID_Y - (n * step) / 2;
 	int i;
 
-	for (i = 0; i < n; i++, y += JERICHO_CREDITS_STEP)
-		jer_text_draw_centred(JER_TEXT_FE, JERICHO_CREDITS_SCALE, 320, y, kJerichoCredits[i], 255, 255, 255);
+	/* the column's heading line (index 0) in the cream the frontend uses for
+	 * titles; the rest in plain white */
+	for (i = 0; i < n; i++, y += step)
+		jer_text_draw_centred(JER_TEXT_FE, scale, cx, y, lines[i],
+			255, i == 0 ? 235 : 255, i == 0 ? 170 : 255);
+}
+
+/* Two columns, centred as a pair: JERICHO's own credits on the left, the
+ * REDRIVER2 / OpenDriver2 thanks on the right. The scale steps down until the
+ * pair fits, so a longer line can never push a column off the screen or into the
+ * other one. */
+static void JerichoDrawCredits(void)
+{
+	int nL = (int)(sizeof(kJerichoCreditsLeft) / sizeof(kJerichoCreditsLeft[0]));
+	int nR = (int)(sizeof(kJerichoCreditsRight) / sizeof(kJerichoCreditsRight[0]));
+	static const int scales[] = { 130, 115, 100, 90 };
+	int k, scale = 90, wL = 0, wR = 0, left;
+
+	for (k = 0; k < (int)(sizeof(scales) / sizeof(scales[0])); k++)
+	{
+		scale = scales[k];
+		wL = JerichoCreditsColumnW(kJerichoCreditsLeft, nL, scale);
+		wR = JerichoCreditsColumnW(kJerichoCreditsRight, nR, scale);
+
+		if (wL + JERICHO_CREDITS_GAP + wR <= JERICHO_CREDITS_MAX_W)
+			break;
+	}
+
+	left = 320 - (wL + JERICHO_CREDITS_GAP + wR) / 2;
+
+	JerichoCreditsColumn(kJerichoCreditsLeft, nL, left + wL / 2, scale, (scale * 22) / 100);
+	JerichoCreditsColumn(kJerichoCreditsRight, nR, left + wL + JERICHO_CREDITS_GAP + wR / 2, scale, (scale * 22) / 100);
 }
 
 /* The page's own setup and pad handling. BACK (cross on it, or triangle) returns

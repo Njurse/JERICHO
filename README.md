@@ -418,7 +418,10 @@ frames. [README](JERICHO/MODS/example/README.md)
 
 ## Credits
 
-**JERICHO and this fork — Jaret Ludvik.**
+**JERICHO and this fork — Jaret ([Njurse](https://github.com/Njurse)).**
+
+**Contributors:** **Commando52Colton** — palette and texture paging information,
+mission script research.
 
 This project stands on **REDRIVER2**, the reverse-engineered Driver 2 rewrite it
 is forked from, and the engine underneath is the work of its authors: **SoapyMan**
