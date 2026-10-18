@@ -10,6 +10,9 @@ is in [changelog.txt](changelog.txt).
   the walking-backwards animation: it now mirrors the owner's heading and speed and
   plays the matching idle, walk or run clip (reverse only when the owner backs up),
   and stands idle if their poses stop arriving.
+- **Leavers are cleaned up.** When a player leaves or drops, their on-foot Tanner and
+  the car they last got out of are removed for everyone, unless another player has
+  taken that car. The dedicated server now sends the updated roster at once.
 - **Dedicated server chat commands and admins.** Lines starting with `!` or `/` are
   commands, answered privately and not shown to others: `!help`, `!whoami`, `!who`,
   and for admins `!kick`, `!cops on|off`, `!difficulty 0-2`, `!motd`, `!say`. Admins are
