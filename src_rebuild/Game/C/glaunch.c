@@ -204,6 +204,17 @@ void State_GameStart(void* param)
 
 				SetState(STATE_GAMELAUNCH);
 			}
+			else
+			{
+				/* JERICHO: no playable REPLAYS\ATTRACT.<n> (missing from the
+				 * install, or not a Driver 2 replay). Stock just broke out here, which
+				 * left the state machine in STATE_GAMESTART -- re-entering this
+				 * function every poll with gInFrontend already cleared and the
+				 * please-wait screen up: the idle-demo softlock. Go back to the
+				 * menus instead; the frontend picks the next demo next time. */
+				printWarning("attract demo %d: no playable replay - back to the frontend\n", gCurrentMissionNumber);
+				SetState(STATE_INITFRONTEND);
+			}
 
 			break;
 		case GAME_PURSUIT:
