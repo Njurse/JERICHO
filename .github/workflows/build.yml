@@ -607,6 +607,32 @@ jobs:
             echo "::warning::no artifacts to checksum"
           fi
 
+      # The tag's own section of CHANGELOG.md ("## vX.Y.Z" up to the next "## ")
+      # goes into the release body, under the overview. No section -> empty, and
+      # the release still publishes with the overview and GitHub's generated notes.
+      - name: Checkout CHANGELOG.md
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/checkout@v4
+        with:
+          path: src
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - name: Extract this tag's CHANGELOG section
+        id: changelog
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          awk -v t="$tag" '
+            /^## / { if (on) exit; split($0, w, " "); if (w[2] == t) { on = 1; next } }
+            on { print }' src/CHANGELOG.md > notes.md || true
+          [ -s notes.md ] || echo "::warning::CHANGELOG.md has no '## $tag' section"
+          {
+            echo 'notes<<JERICHO_NOTES_EOF'
+            cat notes.md
+            echo 'JERICHO_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       # Push a "v*" tag -> permanent, public GitHub Release.
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -658,6 +684,12 @@ jobs:
             Windows: unzip anywhere and run `JERICHO.exe`. Linux: `tar -xzf` and run
             `./jericho`. The game writes its log and config next to the executable, so
             it does not need installing.
+
+            ---
+
+            ## What's new in ${{ github.ref_name }}
+
+            ${{ steps.changelog.outputs.notes }}
 
             ---
 

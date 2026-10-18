@@ -109,7 +109,9 @@ Superseded runs on the same ref are cancelled automatically.
 A **tagged** release's page opens with a hand-written **overview of the game** — what
 the download is and what to expect from it, including that the map, models and
 cutscenes come from the player's own copy of Driver 2's data — with GitHub's
-auto-generated changelog appended beneath it. The overview lives in the *Publish
+auto-generated changelog appended beneath it. A tagged release also carries that tag's section of
+[`CHANGELOG.md`](../CHANGELOG.md) (`## vX.Y.Z` up to the next `## `), under a
+"What's new" heading. The overview lives in the *Publish
 tagged release* step's `body:`; that step keeps `generate_release_notes: true`, and the
 action concatenates body + blank line + generated notes (it clears the API flag and
 merges them itself). Without a body the page was only the auto changelog, which on a
