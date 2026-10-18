@@ -65,6 +65,12 @@ anyone updating from an earlier v0.10.3 or v0.10.2 install.
   line when the server echoes it back, so on a VPS/dedicated server you never saw
   what you typed. It now echoes to everyone; each received line is also logged
   (`[mp] chat from ...`).
+- **Dedicated server rules are readable and default to cops on.** `dediserver.json`
+  takes `"cops"`, `"cop_difficulty"` (0..2), `"cop_immunity"` and `"invulnerable"`
+  (with matching `--cops/--no-cops`, `--cop-difficulty N`, `--cop-immunity`,
+  `--invulnerable` flags) instead of a packed `"rules"` number, and `status` shows
+  them in words. Existing `dediserver.json` files with `"rules": 0` are kept by
+  updates and still mean cops off until you change them.
 - **Map arrows in player colours:** each player's arrow on the map uses their
   preferred car colour (yours too, when you have one set).
 - **Police light bars follow the car:** a cop car imported from another city
