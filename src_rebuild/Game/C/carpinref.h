@@ -26,7 +26,8 @@
  *     sPinPreferred, so a later pin inherited the removed pin's preferred rectangle).
  */
 
-#define CAR_PIN_OWNERS_MAX	31		/* resident slots a mask can name (MAX_CAR_RESIDENT_MODELS is 12) */
+#define CAR_PIN_OWNERS_MAX	31		/* resident slots a mask can name. MAX_CAR_RESIDENT_MODELS is 16 (it was
+						 * 12): 31 is a hard ceiling from the 32-bit mask, not a copy of it. */
 
 static inline int CarPinOwnerBit(int slot)
 {

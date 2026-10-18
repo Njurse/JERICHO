@@ -342,7 +342,10 @@ typedef struct _HANDLING_DATA
 	int direction;
 	int front_vel;
 	int rear_vel;
-	int mayBeColliding;		// [A] now used as a bitfield to create collision pairs
+	unsigned int mayBeColliding;		// [A] a 32-bit car-index bitfield of collision pairs:
+					// bit N is "this car may be touching car_data[N]". UNSIGNED
+					// because MAX_CARS is 32, so the highest pair is bit 31 --
+					// a signed int must not shift into its sign bit.
 	short revs;
 	char gear;
 	char changingGear;

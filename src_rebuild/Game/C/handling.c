@@ -299,7 +299,7 @@ void GlobalTimeStep(void)
 	static RigidBodyState _d0[MAX_CARS]; // offset 0x410
 	static RigidBodyState _d1[MAX_CARS]; // offset 0x820
 
-	int mayBeCollidingBits;
+	unsigned int mayBeCollidingBits;
 	int tmp;
 	RigidBodyState* thisState_i, *thisState_j, * thisDelta;
 	CAR_DATA* cp, * c1;
@@ -422,8 +422,9 @@ void GlobalTimeStep(void)
 
 				mayBeCollidingBits = cp->hd.mayBeColliding;
 
-				// if has any collision, process with double precision
-				if (mayBeCollidingBits == 0)
+				// if has any collision, process with double precision (a player-
+				// handled car always does -- see the note in GlobalTimeStep)
+				if (mayBeCollidingBits == 0 && cp->hndType != 0)
 				{
 					continue;
 				}
@@ -467,7 +468,7 @@ void GlobalTimeStep(void)
 
 					// [A] optimized run to not use the box checking
 					// as it has already composed bitfield / pairs
-					if ((mayBeCollidingBits & (1 << CAR_INDEX(c1))) == 0 || (c1->hd.speed == 0 && cp->hd.speed == 0))
+					if ((mayBeCollidingBits & (1u << CAR_INDEX(c1))) == 0 || (c1->hd.speed == 0 && cp->hd.speed == 0))
 					{
 						continue;
 					}
@@ -726,8 +727,13 @@ void GlobalTimeStep(void)
 			{
 				cp = active_car_list[i];
 
-				// if has any collision, process with double precision
-				if (cp->hd.mayBeColliding == 0)
+				// if has any collision, process with double precision. A player-
+				// handled car is ALWAYS done precisely, even with no pair: that used
+				// to be expressed by writing a sentinel bit into mayBeColliding
+				// (1 << 31), which stopped being a sentinel the moment MAX_CARS
+				// reached 32 -- bit 31 is then a real car and the pair got tested
+				// against it. The rule lives in the test now, not in the bitmask.
+				if (cp->hd.mayBeColliding == 0 && cp->hndType != 0)
 				{
 					continue;
 				}
@@ -1067,11 +1073,9 @@ void CheckCarToCarCollisions(void)
 		bb->y0 = (cp->hd.where.t[1] - colBox->vy * 2) / 16;
 		bb->y1 = (cp->hd.where.t[1] + colBox->vy * 4) / 16;
 
-		// make player handled cars always processed with precision
-		if (cp->hndType == 0)
-		{
-			cp->hd.mayBeColliding = (1 << 31);
-		}
+		/* No "player cars are always precise" sentinel here any more: the two
+		 * skip tests read cp->hndType directly (see GlobalTimeStep), so this field
+		 * is purely a pair bitmask and bit 31 stays usable for car 31. */
 
 		loop1++;
 		bb++;
@@ -1093,8 +1097,8 @@ void CheckCarToCarCollisions(void)
 				bb2->x0 < bb1->x1 && bb2->z0 < bb1->z1 && bb1->x0 < bb2->x1 &&
 				bb1->z0 < bb2->z1 && bb2->y0 < bb1->y1 && bb1->y0 < bb2->y1)
 			{
-				car_data[loop1].hd.mayBeColliding |= (1 << loop2);
-				car_data[loop2].hd.mayBeColliding |= (1 << loop1);
+				car_data[loop1].hd.mayBeColliding |= (1u << loop2);
+				car_data[loop2].hd.mayBeColliding |= (1u << loop1);
 			}
 
 			loop2++;
