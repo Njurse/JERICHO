@@ -1480,12 +1480,16 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 	POLYFT4* tex;
 	int texCount;
 	int texIndex;
+	int primaryId;
+	int primarySet;
 	u_int dim;
 	u_int bright;
 
 	src = GET_MODEL_DATA(POLYFT4, model, poly_block);
 	tex = (texModel != NULL) ? GET_MODEL_DATA(POLYFT4, texModel, poly_block) : NULL;
 	texCount = (texModel != NULL) ? texModel->num_polys : 0;
+	primaryId = src->texture_id;
+	primarySet = src->texture_set;
 	poly = (POLY_FT4*)current->primptr;
 
 
@@ -1545,6 +1549,14 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 
 			{
 				POLYFT4* ts = (tex != NULL && texIndex < texCount) ? &tex[texIndex] : src;
+
+				/* A hubcap poly is the one whose host texture set/id differs from
+				 * the wheel's tire poly. The D1 wheel texture has no matching
+				 * hubcap rect on this page, so use the HOST hubcap record for that
+				 * poly - otherwise it samples an empty/blue area of the D1 page
+				 * (the blue-square hubcaps). */
+				if (ts != src && (src->texture_id != primaryId || src->texture_set != primarySet))
+					ts = src;
 
 				/* JERICHO: an imported car keeps the host wheel MESH and borrows
 				 * the source city's wheel TEXTURE and palette. The record's own
