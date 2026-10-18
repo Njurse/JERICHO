@@ -44,8 +44,8 @@ anyone updating from an earlier v0.10.3 or v0.10.2 install.
   quit back to the menu could not start a single-player Take a Ride (the game still
   treated them as in the old session). Leaving a match now ends the session.
 - **Credits page:** *Options -> JERICHO -> Credits* now opens a two-column credits
-  screen - JERICHO by Jaret (Njurse) with contributor Commando52Colton (palette and
-  texture paging information, mission script research), and thanks to the REDRIVER2
+  screen - JERICHO by Jaret (Njurse), special thanks to Commando52Colton (advice on
+  palette and texture paging, mission script research), and thanks to the REDRIVER2
   / OpenDriver2 authors - instead of a few console lines.
 - **Multiplayer chat is no longer cut off.** A dedicated server's long message of
   the day (and its `say` lines) now arrive whole, split over several chat lines
