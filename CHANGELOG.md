@@ -21,6 +21,18 @@ is in [changelog.txt](changelog.txt).
   and police another machine was driving. It now forwards them like a game host does.
   Car bumps (to the player hit), car colours (the whole table, late joiners included)
   and mods' network channel are forwarded too.
+- **Car palette choice.** Change car menu (pause > Vehicle Options) has a
+  "Palette: N/6" row (left/right) that repaints your car at once; the frontend car
+  select cycles it with SQUARE (a notice shows "Palette N/6"). Saved as `[mp] palette`
+  in mp.ini and used for the next spawn. Palettes a city never filled fall back to the
+  car's base colours.
+- **Palette sync (#31).** The car pick (JPCC) now carries the palette (MP_CAR
+  reserved[0], flagged by reserved[1]; no protocol bump) and the dedi keeps the HELLO /
+  pick palette for the roster, so late joiners see the right colour before the owner's
+  first carstate; the host's roster follows the carstate palette too.
+- **Nametags at the screen sides (widescreen).** A tag is kept while its car is still
+  partly on screen (pinned to the edge) instead of vanishing when the car's centre
+  reaches the edge.
 - **Corrupted car meshes until respawn (D1 cop cars).** A carhacks hot load that builds
   a model into a resident slot now rebuilds the drawn vertex buffer of every car already
   on that slot (keeping damage); before, a car pinged in before the import landed kept
