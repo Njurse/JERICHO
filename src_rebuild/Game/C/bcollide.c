@@ -10,6 +10,7 @@
 #include "glaunch.h"
 #include "mission.h"
 #include "felony.h"
+#include "players.h"	// MainPlayer (the felony gate below)
 #include "wheelforces.h"
 #include "handling.h"
 #include "camera.h"
@@ -887,7 +888,11 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 
 			if (strikeVel > 0)
 			{
-				if (cp->controlType == CONTROL_TYPE_PLAYER) 
+				// [A] JERICHO: only the LOCAL player's car. felonyData is this machine's (MainPlayer's)
+				// felony, and in multiplayer every remote player's car is CONTROL_TYPE_PLAYER too, so a
+				// peer smashing a fence or hitting a wall put the cops on US. Car-car hits (handling.c)
+				// and ped scares (pedest.c) already gate on MainPlayer.playerCarId the same way.
+				if (cp->controlType == CONTROL_TYPE_PLAYER && cp->id == MainPlayer.playerCarId)
 				{
 					short scale;
 
