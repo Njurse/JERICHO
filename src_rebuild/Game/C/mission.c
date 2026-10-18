@@ -388,6 +388,18 @@ void SetupResidentModels()
 	residentCarModels[SPECIAL_CAR_SLOT] = MissionHeader->residentModels[4];
 #endif // MAX_CAR_RESIDENT_MODELS > 5
 
+	/* Slots ABOVE the special one are spare as well -- they only exist for a
+	 * module to claim (more models resident than the level's own). They must
+	 * default to -1 like the slots below the special one: left at their static 0
+	 * they read as "model 0", and the spooler then believes a resident car model
+	 * lives there (it is the police model in most cities). The loop above stops
+	 * at SPECIAL_CAR_SLOT, which was the LAST slot while the array was 12 long --
+	 * raising MAX_CAR_RESIDENT_MODELS to 16 opened four behind it. */
+#if MAX_CAR_RESIDENT_MODELS > 5
+	for (i = SPECIAL_CAR_SLOT + 1; i < MAX_CAR_RESIDENT_MODELS; ++i)
+		residentCarModels[i] = -1;
+#endif
+
 	// check if start data is required
 	if (MissionHeader->type & 1)
 	{
@@ -1415,7 +1427,7 @@ int Swap2Cars(int curslot, int newslot)
 	int pnodeNewId;
 	int ctrlNodeCurId;
 	int pnodeCurId;
-	int tmp;
+	unsigned long long tmp;
 
 	CAR_DATA cd;
 
@@ -1474,15 +1486,15 @@ int Swap2Cars(int curslot, int newslot)
 	memcpy((u_char*)&car_data[newslot], (u_char*)&car_data[curslot], sizeof(CAR_DATA));
 	memcpy((u_char*)&car_data[curslot], (u_char*)&cd, sizeof(CAR_DATA));
 
-	// [A] event - swap cars on boat
-	tmp = carsOnBoat & (1 << newslot);
-	carsOnBoat &= ~(1 << newslot);
+	// [A] event - swap cars on boat (64-bit mask: MAX_CARS car bits + Tanner above them)
+	tmp = carsOnBoat & (1ull << newslot);
+	carsOnBoat &= ~(1ull << newslot);
 
-	if (carsOnBoat & (1 << curslot))
-		carsOnBoat |= (1 << newslot);
+	if (carsOnBoat & (1ull << curslot))
+		carsOnBoat |= (1ull << newslot);
 
 	if(tmp)
-		carsOnBoat |= (1 << curslot);
+		carsOnBoat |= (1ull << curslot);
 
 	// swap ids
 	car_data[newslot].id = newslot;

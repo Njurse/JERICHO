@@ -137,13 +137,15 @@ is not a CC setting — it is the engine's, and carhacks' `docs/CROSS_CITY.md` c
 VRAM side of it in depth. Everywhere else that needs a number should point here.
 
 **Resident car slots: `MAX_CAR_RESIDENT_MODELS` = 12** (`src_rebuild/Game/dr2limits.h`),
-with `SPECIAL_CAR_SLOT` defined as `MAX_CAR_RESIDENT_MODELS - 1` (so it moved 7 → 11 when
-the pool grew, and it follows the macro automatically).
+with `SPECIAL_CAR_SLOT` **pinned at 11** — not `MAX_CAR_RESIDENT_MODELS - 1` any more. It
+is a MODEL number compared against `cp->ap.model` (the Vegas ambulance, mission 33's limo)
+and names the slot the special model is spooled into, so it must not follow a capacity
+change: it was 11 only because the pool used to be 12 long. Slots above it are spare.
 
 | slots | who holds them |
 |---|---|
 | 0..4 | the level's own civilian models — **never repurposed** (stealing one is what made the level's cars look wrong) |
-| 5..10 | free: this is the module's budget — **six** cars |
+| 5..10 | free: the module's budget — **six** cars |
 | 11 | the special vehicle (`SPECIAL_CAR_SLOT`) |
 
 A native profile does not need a free slot at all: it reuses the resident slot that
