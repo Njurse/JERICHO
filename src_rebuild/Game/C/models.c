@@ -1018,9 +1018,10 @@ static void BuildCarImportWheels(int city)
 {
 	CAR_IMPORT* imp;
 	int offsets[CAR_IMPORT_WHEEL_VARIANTS];
+	int recSize[CAR_IMPORT_WHEEL_VARIANTS];
 	int count, i, total;
 	char* mem;
-	char* cursor;
+	int memOfs;
 
 	if (city < 0 || city >= CITY_COUNT)
 		return;
@@ -1052,8 +1053,10 @@ static void BuildCarImportWheels(int city)
 	for (i = 0; i < CAR_IMPORT_WHEEL_VARIANTS; i++)
 	{
 		MODEL* src;
+		int next;
 
 		offsets[i] = (i < count) ? *(int*)(imp->carWheels + 4 + i * (int)sizeof(int)) : -1;
+		recSize[i] = 0;
 
 		if (offsets[i] == -1)
 			continue;
@@ -1067,20 +1070,30 @@ static void BuildCarImportWheels(int city)
 			continue;
 		}
 
+		/* The record is the whole MODEL block: header + vertices + poly stream.
+		 * Its end is the next wheel's offset (the bake writes them back to back),
+		 * or the end of the segment for the last one. GetCarModel is the wrong tool
+		 * here: it copies only `poly_block` bytes, which stops BEFORE the poly
+		 * stream - that left the source wheel with no polys to read, hence no
+		 * source set and the host's blue placeholder. */
+		next = (i + 1 < count && offsets[i + 1] > offsets[i]) ? offsets[i + 1] : imp->carWheelsSize;
+		recSize[i] = next - offsets[i];
+
 		src = (MODEL*)(imp->carWheels + offsets[i]);
 
 		if (src->poly_block <= (int)sizeof(MODEL) ||
-			src->poly_block > imp->carWheelsSize - offsets[i] ||
+			src->poly_block > recSize[i] ||
 			src->num_vertices <= 0 || src->num_vertices > 24 || src->num_polys <= 0)
 		{
 			printInfo("cross-city: %s wheel %d has an unusable MODEL header (verts %d, polys %d, %d bytes) - absent\n",
 				LevelNames[city], i, src->num_vertices, src->num_polys, src->poly_block);
 
 			offsets[i] = -1;
+			recSize[i] = 0;
 			continue;
 		}
 
-		total += (src->poly_block + 3) & ~3;
+		total += recSize[i];
 	}
 
 	if (total <= 0)
@@ -1091,7 +1104,7 @@ static void BuildCarImportWheels(int city)
 	if (mem == NULL)
 		return;
 
-	cursor = mem;
+	memOfs = 0;
 
 	for (i = 0; i < CAR_IMPORT_WHEEL_VARIANTS; i++)
 	{
@@ -1102,9 +1115,16 @@ static void BuildCarImportWheels(int city)
 			continue;
 
 		src = (MODEL*)(imp->carWheels + offsets[i]);
-		m = GetCarModel((char*)src, &cursor, 1);
+		m = (MODEL*)(mem + memOfs);
+		memcpy(m, src, recSize[i]);
+		m->instance_number = -1;
+		memOfs += recSize[i];
 
 		imp->wheelSetCount[i] = CollectWheelSets(m, imp->wheelSet[i], 8);
+
+		printInfo("cross-city: %s wheel %d source sets %d (first %d), polys %d\n",
+			LevelNames[city], i, imp->wheelSetCount[i],
+			(imp->wheelSetCount[i] > 0) ? imp->wheelSet[i][0] : -1, m->num_polys);
 
 		RemapWheelSets(m);
 		MangleWheelModel(m);
