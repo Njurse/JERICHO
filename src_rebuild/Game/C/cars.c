@@ -1603,19 +1603,32 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 					 * host id names a host palette and would recolour only that
 					 * square. */
 					UV_INFO out[4];
+					JER_WHEEL_TEX use = *texRect;
+					int isD2Hubcap = (src->texture_id != primaryId ||
+						src->texture_set != primarySet);
 					int clutId = texRect->hubClut;
 
-					/* The source wheel page's last row is the wheel palette
-					 * (WHLBOTH). The host poly's primary row is a CAR page row;
-					 * HAVANA's primary happened to be green. Use the source
-					 * row for every poly on this wheel. */
+					/* A damaged wheel keeps WHLCLEAN for the tyre and takes only
+					 * the hubcap poly from WHLBOTH. Mapping the whole tyre onto
+					 * the hubcap sprite is what garbled it. */
+					if (isD2Hubcap)
+					{
+						use.u0 = texRect->hubU0;
+						use.v0 = texRect->hubV0;
+						use.u1 = texRect->hubU1;
+						use.v1 = texRect->hubV1;
+					}
+
+					/* The source wheel page's last row is the wheel palette. The
+					 * host poly's primary row is a CAR page row (HAVANA's was
+					 * green). */
 					if (clutId <= 0)
 						clutId = primaryId;
 
 					if (clutId > 31)
 						clutId = 0;
 
-					MapWheelUVToRect(src, texRect, out);
+					MapWheelUVToRect(src, &use, out);
 
 					clut = texture_cluts[texRect->set][clutId];
 					tpage = texture_pages[texRect->set] | 0x20;

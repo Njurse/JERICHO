@@ -64,6 +64,7 @@ typedef struct JER_WHEEL_TEX
 	int clut;
 	int hubClut;	// the WHLBOTH-specific row (last row of the source page)
 	int u0, v0, u1, v1;
+	int hubU0, hubV0, hubU1, hubV1;	// WHLBOTH rect (hubcap/damaged) on the same page
 } JER_WHEEL_TEX;
 
 int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out);

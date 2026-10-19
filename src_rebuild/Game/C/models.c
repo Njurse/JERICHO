@@ -1354,8 +1354,14 @@ static int BuildD2WheelTextureRects(int city)
 		imp->wheelSetCount[CAR_IMPORT_WHEEL_CLEAN] = 1;
 		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] = (unsigned char)cleanSource;
 		imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] = 1;
-		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] = (unsigned char)damSource;
+		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] = (unsigned char)cleanSource;
 		imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] = 1;
+
+		if (damSource != cleanSource)
+		{
+			imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][1] = (unsigned char)damSource;
+			imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] = 2;
+		}
 	}
 
 	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].present = 1;
@@ -1365,16 +1371,27 @@ static int BuildD2WheelTextureRects(int city)
 	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].v0 = cleanV0;
 	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].u1 = cleanU1;
 	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].v1 = cleanV1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubU0 = damU0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubV0 = damV0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubU1 = damU1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubV1 = damV1;
 
 	imp->wheelTex[CAR_IMPORT_WHEEL_FAST] = imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
 
+	/* A damaged wheel keeps the CLEAN tyre sprite and takes only its hubcap
+	 * poly from WHLBOTH. Using WHLBOTH for the whole wheel is what garbled
+	 * the tyre (a hubcap image stretched over it). */
 	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].present = 1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].set = damSet;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].set = cleanSet;
 	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].clut = 0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u0 = damU0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v0 = damV0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u1 = damU1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v1 = damV1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u0 = cleanU0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v0 = cleanV0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u1 = cleanU1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v1 = cleanV1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubU0 = damU0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubV0 = damV0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubU1 = damU1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubV1 = damV1;
 
 	return 1;
 }
