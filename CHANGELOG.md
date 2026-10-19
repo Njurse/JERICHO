@@ -6,6 +6,19 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+## v0.10.11
+
+*Released 2026-10-19.*
+
+Fixes a spawn crash with Driver 1 cars introduced in v0.10.9.
+
+### Fixes
+
+- Spawning in or loading a Driver 1 car no longer crashes, or on Windows, slowly flips the camera over and drops the car through the map. Driver 1 cars now keep the standard wheel models and use only their own wheel texture and palette.
+- Fixed wheel drawing reading past the texture table on every car (no visible change).
+
+Thanks: Jaret (Njurse).
+
 ## v0.10.10
 
 *Released 2026-10-18.*
