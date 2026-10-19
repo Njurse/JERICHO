@@ -5,6 +5,7 @@
 #include "../C/jer_events.h"	/* JER_EVENT_CAR_AVAILABILITY */
 #include "../C/JERICHO/include/jer_texture.h"	/* custom menu background */
 #include "../C/JERICHO/include/jer_console.h"	/* unified status console stream */
+#include "../C/JERICHO/include/jer_text.h"	/* measuring and placing text (the prompt) */
 #include "../C/jer_menu_bg.h"	/* the background itself */
 
 // JERICHO: -shotfront <frame> (set and counted in main.c) and PsyCross's live-window
@@ -836,6 +837,7 @@ void EndFrame(void);
 /* JERICHO-HOOK: presentation screens (jer_screen.h) */
 void SetFEDrawMode(void);			/* defined below; used by the boot screen loop */
 int  JerichoDrawScreen(void);
+static void JerichoDrawPrompt(void);	/* a host prompt (jer_prompt.h) */
 void JerichoRunBootScreens(void);
 
 // [D] [T]
@@ -1258,6 +1260,12 @@ void DrawScreen(PSXSCREEN *pScr)
 			len = FEStringWidth(G_LTXT(GTXT_NO));
 			FEPrintString(G_LTXT(GTXT_NO), 320 + quitLen / 4 - len/2, 288, 0, 128, 128, bQuitToSystemSel ? 128 : 0);
 		}
+				else if (jer_prompt_active())
+		{
+			/* a host prompt takes the screen: the question wrapped and centred, the
+			 * answers centred as a pair, and the screen's own buttons NOT drawn */
+			JerichoDrawPrompt();
+		}
 		else
 		{
 			NewSelection(0);
@@ -1470,6 +1478,139 @@ void LoadBackgroundFile(char* name)
  * is owned by JERICHO and its modules.
  * ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------
+ * A host prompt (JERICHO/include/jer_prompt.h).
+ *
+ * The engine's own quit prompt is the reference for the colours and the place --
+ * a grey question above, the highlighted answer in yellow -- but NOT for the
+ * spacing: it puts its two answers at +-questionWidth/4, which is fine for its own
+ * six-word question and throws them to the edges of a longer one. Here Yes and No
+ * are measured and centred as ONE pair with a fixed gap, so the layout does not
+ * depend on the length of the question.
+ *
+ * The question itself is wrapped with jer_text_width, because a single centred
+ * line of a long question runs off the screen (and the frontend's own drawing
+ * clips it rather than wrapping it). The block is anchored at the BOTTOM, so a
+ * two- or three-line question grows upwards and never runs into the answers.
+ * ------------------------------------------------------------------ */
+#define JER_PROMPT_WRAP_MAX	4
+#define JER_PROMPT_LINE_LEN	192
+#define JER_PROMPT_WIDTH	470
+#define JER_PROMPT_SCALE	150
+#define JER_PROMPT_LINE_H	26
+#define JER_PROMPT_ANSWERS_Y	300
+#define JER_PROMPT_GAP		48
+
+static int JerichoWrapText(const char* text, int maxWidth, char lines[JER_PROMPT_WRAP_MAX][JER_PROMPT_LINE_LEN])
+{
+	const char* p = text;
+	int count = 0;
+
+	while (p != NULL && *p != 0 && count < JER_PROMPT_WRAP_MAX)
+	{
+		size_t len = strlen(p);
+		size_t take;
+
+		if (len > JER_PROMPT_LINE_LEN - 1)
+			len = JER_PROMPT_LINE_LEN - 1;
+
+		memcpy(lines[count], p, len);
+		lines[count][len] = 0;
+
+		/* the longest prefix of what is left that fits the line */
+		take = len;
+		while (take > 0 && jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, lines[count]) > maxWidth)
+		{
+			take--;
+			lines[count][take] = 0;
+		}
+
+		/* cut mid-word? back up to the space before it */
+		if (take > 0 && p[take] != 0 && p[take] != ' ')
+		{
+			size_t back = take;
+
+			while (back > 0 && p[back] != ' ')
+				back--;
+
+			if (back > 0)
+			{
+				take = back;
+				lines[count][take] = 0;
+			}
+		}
+
+		while (take > 0 && lines[count][take - 1] == ' ')
+			lines[count][--take] = 0;
+
+		count++;
+
+		p += take;
+		while (*p == ' ')
+			p++;
+	}
+
+	return count;
+}
+
+static void JerichoDrawPrompt(void)
+{
+	static char lines[JER_PROMPT_WRAP_MAX][JER_PROMPT_LINE_LEN];
+	const char* question = jer_prompt_question();
+	int yesSel = jer_prompt_selected_yes();
+	int count;
+	int i;
+	int y;
+	int wy;
+	int wn;
+	int x;
+
+	if (question == NULL)
+		question = "Are you sure?";
+
+	count = JerichoWrapText(question, JER_PROMPT_WIDTH, lines);
+
+	/* anchored at the bottom of the question area, so more lines grow upwards */
+	y = JER_PROMPT_ANSWERS_Y - 26 - (count > 0 ? (count - 1) * JER_PROMPT_LINE_H : 0);
+
+	for (i = 0; i < count; i++)
+	{
+		jer_text_draw_centred(JER_TEXT_FE, JER_PROMPT_SCALE, 320, y + i * JER_PROMPT_LINE_H,
+			lines[i], 235, 235, 235);
+	}
+
+	wy = jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, "Yes");
+	wn = jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, "No");
+
+	x = 320 - (wy + JER_PROMPT_GAP + wn) / 2;
+
+	/* one line per prompt, the first frame it is drawn: where the layout ended
+	 * up is exactly what is wrong when a prompt looks wrong, and guessing it from
+	 * a screenshot is guesswork */
+	{
+		static char loggedQuestion[160] = "";
+
+		if (strncmp(loggedQuestion, question, sizeof(loggedQuestion) - 1) != 0)
+		{
+			snprintf(loggedQuestion, sizeof(loggedQuestion), "%s", question);
+			printInfo("[prompt] \"%s\" -> %d line(s) at y=%d, Yes x=%d w=%d, No x=%d w=%d\n",
+				question, count, y, x, wy, x + wy + JER_PROMPT_GAP, wn);
+
+			for (i = 0; i < count; i++)
+			{
+				printInfo("[prompt]   line %d w=%d: \"%s\"\n",
+					i, jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, lines[i]), lines[i]);
+			}
+		}
+	}
+
+	jer_text_draw_at(JER_TEXT_FE, JER_PROMPT_SCALE, x, JER_PROMPT_ANSWERS_Y, "Yes",
+		yesSel ? 255 : 130, yesSel ? 215 : 130, yesSel ? 60 : 130);
+
+	jer_text_draw_at(JER_TEXT_FE, JER_PROMPT_SCALE, x + wy + JER_PROMPT_GAP, JER_PROMPT_ANSWERS_Y, "No",
+		yesSel ? 130 : 255, yesSel ? 130 : 215, yesSel ? 130 : 60);
+}
+
 /* One frame of the active screen. Returns 1 if a screen was drawn. */
 int JerichoDrawScreen(void)
 {
@@ -1477,6 +1618,11 @@ int JerichoDrawScreen(void)
 	char body[JER_SCREEN_BODY_MAX];
 	const char* title = jer_screen_title();
 	int x;
+
+	/* a host prompt owns the screen while it is up: two screens on one frame is
+	 * how a prompt ends up with a progress line bleeding through it */
+	if (jer_prompt_active())
+		return 0;
 
 	if (title == NULL || current == NULL)
 		return 0;
@@ -2678,7 +2824,11 @@ void State_FrontEnd(void* param)
 
 	/* JERICHO-HOOK: the screen has just been drawn, so this is where a module
 	 * puts text ON a menu row. NOT JER_EVENT_FRAME: that fires earlier in this
-	 * function and the menu box drawn below it would cover the text. */
+	 * function and the menu box drawn below it would cover the text.
+	 *
+	 * ...unless a host prompt (jer_prompt.h) is up: it owns the screen, and a
+	 * question with a module's table painted through it is not a prompt. */
+	if (!jer_prompt_active())
 	{
 		JER_ARGS_FRONTEND_DRAW drawArgs;
 

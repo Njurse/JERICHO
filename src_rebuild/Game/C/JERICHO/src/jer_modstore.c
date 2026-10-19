@@ -1251,6 +1251,10 @@ static void StoreItemsBuild(void)
  * own test scripts. Harmless when unset: every branch is behind a value. */
 static int StoreJobRunning(void);
 static const char* StoreStateText(int state);
+/* the menu's row actions, defined with the menus further down; the test lever
+ * drives them so the real Cross / Left-Right path is what gets exercised */
+static int ModsRowActivate(void* ud);
+static int ModsRowAdjust(void* ud, int dir);
 enum
 {
 	STORE_TEST_NONE = 0,
@@ -2653,6 +2657,12 @@ static void StoreDraw(void)
 	int repo = jer_frontend_find("jericho.mods.repo");
 
 	if (menu < 0)
+		return;
+
+	/* A host prompt owns the screen while it is up: the frontend paints the
+	 * question in the engine's own prompt style, and painting our table under it
+	 * is what made a prompt look like text dropped on a live menu. */
+	if (jer_prompt_active())
 		return;
 
 	if (menu == mods)
