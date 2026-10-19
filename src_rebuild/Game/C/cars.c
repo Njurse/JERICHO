@@ -1466,8 +1466,37 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 	}
 }
 
+// Map one host wheel poly's UV rect onto the source city's wheel sprite rect.
+// The host wheel mesh is kept; only its UVs and page/clut are replaced.
+static void MapWheelUVToRect(POLYFT4* src, const JER_WHEEL_TEX* r, UV_INFO out[4])
+{
+	UV_INFO host[4] = { src->uv0, src->uv1, src->uv3, src->uv2 };
+	int hu0 = host[0].u, hu1 = host[0].u;
+	int hv0 = host[0].v, hv1 = host[0].v;
+	int rw = r->u1 - r->u0;
+	int rh = r->v1 - r->v0;
+	int k;
+
+	for (k = 1; k < 4; k++)
+	{
+		if (host[k].u < hu0) hu0 = host[k].u;
+		if (host[k].u > hu1) hu1 = host[k].u;
+		if (host[k].v < hv0) hv0 = host[k].v;
+		if (host[k].v > hv1) hv1 = host[k].v;
+	}
+
+	for (k = 0; k < 4; k++)
+	{
+		int hu = hu1 - hu0;
+		int hv = hv1 - hv0;
+
+		out[k].u = (u_char)(r->u0 + (((int)host[k].u - hu0) * rw) / (hu ? hu : 1));
+		out[k].v = (u_char)(r->v0 + (((int)host[k].v - hv0) * rh) / (hv ? hv : 1));
+	}
+}
+
 // [D] [T]
-void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transparent, int wheelnum)
+void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect, SVECTOR* verts, int transparent, int wheelnum)
 {
 	ushort clut;
 	ushort tpage;
@@ -1565,6 +1594,24 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 				 * page's blue placeholder. */
 				POLYFT4* texSrc = isHubcap ? tex : ts;
 
+				if (texRect != NULL && texRect->present)
+				{
+					/* D2: the wheel art is a TEXINF sprite, not a model. Keep the
+					 * host poly and map its UV rect onto WHLCLEAN/WHLBOTH. */
+					UV_INFO out[4];
+
+					MapWheelUVToRect(src, texRect, out);
+
+					clut = texture_cluts[texRect->set][texRect->clut];
+					tpage = texture_pages[texRect->set] | 0x20;
+
+					*(u_short*)&poly->u0 = *(u_short*)&out[0];
+					*(u_short*)&poly->u1 = *(u_short*)&out[1];
+					*(u_short*)&poly->u2 = *(u_short*)&out[2];
+					*(u_short*)&poly->u3 = *(u_short*)&out[3];
+				}
+				else
+				{
 				clut = texture_cluts[texSrc->texture_set][texSrc->texture_id];
 				tpage = texture_pages[texSrc->texture_set] | 0x20;
 
@@ -1612,6 +1659,7 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 					*(u_short*)&poly->u2 = *(u_short*)&ts->uv3;
 					*(u_short*)&poly->u3 = *(u_short*)&ts->uv2;
 				}
+				}
 			}
 			poly->clut = clut;
 			poly->tpage = tpage;
@@ -1644,6 +1692,13 @@ static int JerWheelTextureReady(MODEL* m)
 		texture_cluts[p->texture_set][p->texture_id] != 0;
 }
 
+static int JerWheelTextureReadyRect(const JER_WHEEL_TEX* r)
+{
+	return r != NULL && r->present &&
+		texture_pages[r->set] != 0 &&
+		texture_cluts[r->set][r->clut] != 0;
+}
+
 // [D] [T]
 void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 {
@@ -1669,6 +1724,12 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	MODEL* WheelTexBack;
 	MODEL* texModel;
 	MODEL* model;
+	JER_WHEEL_TEX WheelTexCleanRect = { 0 };
+	JER_WHEEL_TEX WheelTexFastRect = { 0 };
+	JER_WHEEL_TEX WheelTexDamRect = { 0 };
+	JER_WHEEL_TEX* WheelTexFrontRect;
+	JER_WHEEL_TEX* WheelTexBackRect;
+	JER_WHEEL_TEX* texRect;
 	SVECTOR* bend;
 	SVECTOR wheelVerts[24];	// per-wheel copy for the damage transform
 	int numWheelVerts;
@@ -1717,9 +1778,17 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 
 	if (wheelCity >= 0)
 	{
+		memset(&WheelTexCleanRect, 0, sizeof(WheelTexCleanRect));
+		memset(&WheelTexFastRect, 0, sizeof(WheelTexFastRect));
+		memset(&WheelTexDamRect, 0, sizeof(WheelTexDamRect));
+
 		WheelTexClean = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_CLEAN);
 		WheelTexFast = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_FAST);
 		WheelTexDam = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_DAMAGED);
+
+		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_CLEAN, &WheelTexCleanRect);
+		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_FAST, &WheelTexFastRect);
+		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_DAMAGED, &WheelTexDamRect);
 
 		/* Fail soft: a wheel page that is not resident yet (or was dropped)
 		 * must not leave the wheel on the dummy page. */
@@ -1729,6 +1798,13 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 			WheelTexFast = NULL;
 		if (WheelTexDam != NULL && !JerWheelTextureReady(WheelTexDam))
 			WheelTexDam = NULL;
+
+		if (WheelTexCleanRect.present && !JerWheelTextureReadyRect(&WheelTexCleanRect))
+			WheelTexCleanRect.present = 0;
+		if (WheelTexFastRect.present && !JerWheelTextureReadyRect(&WheelTexFastRect))
+			WheelTexFastRect.present = 0;
+		if (WheelTexDamRect.present && !JerWheelTextureReadyRect(&WheelTexDamRect))
+			WheelTexDamRect.present = 0;
 
 		/* A source variant is independent: a missing FASTWHEEL/DAMWHEEL stays
 		 * NULL, so that axle keeps the HOST wheel texture. The city-level
@@ -1751,12 +1827,12 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 			{
 				sWheelLogMask |= 1u << cp->ap.model;
 
-				if (WheelTexClean != NULL)
+				if (WheelTexClean != NULL || WheelTexCleanRect.present)
 					printInfo("[car wheels] slot %d (%s): host mesh, imported textures (clean %s, damaged %s, fast %s)\n",
 						cp->ap.model, LevelNames[wheelCity],
-						(WheelTexClean != NULL) ? "yes" : "host",
-						(WheelTexDam != NULL) ? "yes" : "host",
-						(WheelTexFast != NULL) ? "yes" : "host");
+						(WheelTexClean != NULL || WheelTexCleanRect.present) ? "yes" : "host",
+						(WheelTexDam != NULL || WheelTexDamRect.present) ? "yes" : "host",
+						(WheelTexFast != NULL || WheelTexFastRect.present) ? "yes" : "host");
 				else
 					printInfo("[car wheels] slot %d (%s): no imported wheel texture - host wheels\n",
 						cp->ap.model, LevelNames[wheelCity]);
@@ -1768,22 +1844,26 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	{
 		WheelModelFront = WheelClean;
 		WheelTexFront = WheelTexClean;
+		WheelTexFrontRect = &WheelTexCleanRect;
 	}
 	else
 	{
 		WheelModelFront = WheelFast;
 		WheelTexFront = WheelTexFast;
+		WheelTexFrontRect = &WheelTexFastRect;
 	}
 
 	if (BackWheelIncrement + 400U < 801)
 	{
 		WheelModelBack = WheelClean;
 		WheelTexBack = WheelTexClean;
+		WheelTexBackRect = &WheelTexCleanRect;
 	}
 	else
 	{
 		WheelModelBack = WheelFast;
 		WheelTexBack = WheelTexFast;
+		WheelTexBackRect = &WheelTexFastRect;
 	}
 
 	wheelSize = car_cosmetics[cp->ap.model].wheelSize;
@@ -1903,11 +1983,13 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		{
 			model = WheelModelBack;
 			texModel = WheelTexBack;
+			texRect = WheelTexBackRect;
 		}
 		else
 		{
 			model = WheelModelFront;
 			texModel = WheelTexFront;
+			texRect = WheelTexFrontRect;
 		}
 
 		VertPtr = GET_MODEL_DATA(SVECTOR, model, vertices);
@@ -1925,6 +2007,7 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		{
 			model = WheelDam;
 			texModel = WheelTexDam;
+			texRect = &WheelTexDamRect;
 		}
 
 		// Nattdy - crumple wheel damage: draw the wheel at the same bent local
@@ -2022,9 +2105,9 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 			if (jerArgs.hide == 0)
 			{
 				if (numWheelVerts > 0)
-					DrawWheelObject(model, texModel, wheelVerts, TransparentObject, wheelnum);
+					DrawWheelObject(model, texModel, texRect, wheelVerts, TransparentObject, wheelnum);
 				else
-					DrawWheelObject(model, texModel, VertPtr, TransparentObject, wheelnum);
+					DrawWheelObject(model, texModel, texRect, VertPtr, TransparentObject, wheelnum);
 			}
 		}
 

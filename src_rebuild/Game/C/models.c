@@ -236,6 +236,7 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_TEXINFO	34	// LUMP_TEXTUREINFO - the page lists
 #define CAR_IMPORT_LUMP_WHEELS	200	// JERICHO: optional wheel models (the D1 bake)
 #define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
+#define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
 #define CAR_IMPORT_LUMP_MODELNAMES	12	// LUMP_MODELNAMES (DATA1)
 #define CAR_IMPORT_MODEL_SLOTS	13	// LUMP_CAR_MODELS is a fixed 13-entry table
 
@@ -266,6 +267,9 @@ typedef struct
 	int modelsSize;
 	char* modelNames;	// LUMP_MODELNAMES body in region
 	int modelNamesSize;
+	char* textureNames;	// LUMP_TEXTURENAMES body in region
+	int textureNamesSize;
+	JER_WHEEL_TEX wheelTex[CAR_IMPORT_WHEEL_VARIANTS];	// D2 TEXINF wheel sprites
 	int pageBase;		// byte offset of this file's permanent page data
 } CAR_IMPORT;
 
@@ -509,6 +513,7 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 	// and how big each set's data is. texture.c parses this; the page bytes
 	// themselves sit right after DATA1 in the file, which it reads separately.
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_TEXINFO, &imp->texInfo, &imp->texInfoSize);
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_TEXTURENAMES, &imp->textureNames, &imp->textureNamesSize);
 
 	// JERICHO: optional wheel models. A Driver 1 bake writes them beside the car
 	// models so an imported D1 car can wear D1 wheels; a real Driver 2 level has
@@ -1150,6 +1155,17 @@ MODEL* GetCarImportWheel(int city, int kind)
 	return gCarImports[city].wheels[kind];
 }
 
+int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out)
+{
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
+		out == NULL)
+		return 0;
+
+	*out = gCarImports[city].wheelTex[kind];
+
+	return out->present;
+}
+
 // A texture-only copy of a Driver 2 named wheel model. The renderer uses the
 // host wheel MESH and this model only for its texture records and UVs, so the
 // vertices and normals are deliberately dropped; the poly stream is copied and
@@ -1191,6 +1207,159 @@ static MODEL* MakeD2WheelTextureModel(MODEL* src, int size)
 // there so an imported D2 car wears ITS city's wheel texture, not the host's.
 // The models are texture-only: DrawCarWheels keeps the host geometry and uses
 // these records for the texture set/id and UVs.
+// ---------------------------------------------------------------------------
+// D2 wheel texture source
+//
+// The D2 level does not name a wheel MODEL. It carries the wheel art as two
+// TEXINF details on a permanent page:
+//   WHLCLEAN  - the clean/fast wheel sprite (HAVANA calls it WHEEL)
+//   WHLBOTH   - the damaged wheel / hubcap sprite
+// Their page index is the page set (all four cities keep it in permlist), and
+// the rect is a 64x64 square. We record that page/rect here; the renderer keeps
+// the host wheel mesh and maps its UVs onto the rect.
+//
+// The set still has to go through CarSetRemap, exactly like a car's or a D1
+// wheel's set, and the SOURCE number is what the pin walk needs.
+// ---------------------------------------------------------------------------
+
+static int BuildD2WheelTextureRects(int city)
+{
+	CAR_IMPORT* imp;
+	char* p;
+	char* end;
+	int tpageAmount;
+	int page;
+	int haveClean = 0;
+	int haveDam = 0;
+	int cleanSet = -1;
+	int damSet = -1;
+	int cleanU0 = 0, cleanV0 = 0, cleanU1 = 0, cleanV1 = 0;
+	int damU0 = 0, damV0 = 0, damU1 = 0, damV1 = 0;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	imp = &gCarImports[city];
+
+	if (imp->texInfo == NULL || imp->textureNames == NULL ||
+		imp->texInfoSize < 16 || imp->textureNamesSize < 2)
+		return 0;
+
+	tpageAmount = *(int*)imp->texInfo;
+
+	if (tpageAmount <= 0 || tpageAmount > 128)
+		return 0;
+
+	if ((size_t)tpageAmount * 8 + 8 > (size_t)imp->texInfoSize)
+		return 0;
+
+	p = (char*)&((TP*)(imp->texInfo + 8))[tpageAmount + 1];
+	end = imp->texInfo + imp->texInfoSize;
+
+	for (page = 0; page < tpageAmount; page++)
+	{
+		int count;
+		int k;
+
+		if (p + 4 > end)
+			return 0;
+
+		count = *(int*)p;
+		p += 4;
+
+		if (count < 0 || p + (size_t)count * sizeof(TEXINF) > end)
+			return 0;
+
+		for (k = 0; k < count; k++)
+		{
+			TEXINF* t = (TEXINF*)p;
+			char* name;
+
+			p += sizeof(TEXINF);
+
+			if (t->nameoffset >= imp->textureNamesSize)
+				continue;
+
+			name = imp->textureNames + t->nameoffset;
+
+			if (name >= imp->textureNames + imp->textureNamesSize)
+				continue;
+
+			if (strcmp(name, "WHLBOTH") == 0)
+			{
+				damSet = page;
+				damU0 = t->x; damV0 = t->y;
+				damU1 = t->x + t->width; damV1 = t->y + t->height;
+				haveDam = 1;
+			}
+			else if (strcmp(name, "WHLCLEAN") == 0 || strcmp(name, "WHEEL") == 0)
+			{
+				cleanSet = page;
+				cleanU0 = t->x; cleanV0 = t->y;
+				cleanU1 = t->x + t->width; cleanV1 = t->y + t->height;
+				haveClean = 1;
+			}
+		}
+	}
+
+	if (!haveClean && !haveDam)
+		return 0;
+
+	if (!haveClean)
+	{
+		cleanSet = damSet;
+		cleanU0 = damU0; cleanV0 = damV0;
+		cleanU1 = damU1; cleanV1 = damV1;
+	}
+
+	if (!haveDam)
+	{
+		damSet = cleanSet;
+		damU0 = cleanU0; damV0 = cleanV0;
+		damU1 = cleanU1; damV1 = cleanV1;
+	}
+
+	/* Page set -> destination index. The pin walk resolves the SOURCE set with
+	 * CarImportPinDstSet; the draw uses this remapped index. */
+	{
+		int cleanSource = cleanSet;
+		int damSource = damSet;
+
+		CarSetRemapEnable(1);
+		cleanSet = CarSetRemap(cleanSource);
+		damSet = CarSetRemap(damSource);
+		CarSetRemapEnable(0);
+
+		/* SOURCE sets for the pin walk, not the remapped draw indices. */
+		imp->wheelSet[CAR_IMPORT_WHEEL_CLEAN][0] = (unsigned char)cleanSource;
+		imp->wheelSetCount[CAR_IMPORT_WHEEL_CLEAN] = 1;
+		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] = (unsigned char)cleanSource;
+		imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] = 1;
+		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] = (unsigned char)damSource;
+		imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] = 1;
+	}
+
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].present = 1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].set = cleanSet;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].clut = 0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].u0 = cleanU0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].v0 = cleanV0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].u1 = cleanU1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].v1 = cleanV1;
+
+	imp->wheelTex[CAR_IMPORT_WHEEL_FAST] = imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
+
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].present = 1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].set = damSet;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].clut = 0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u0 = damU0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v0 = damV0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u1 = damU1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v1 = damV1;
+
+	return 1;
+}
+
 static void BuildD2WheelTextureSources(int city)
 {
 	static const char* wheelNames[CAR_IMPORT_WHEEL_VARIANTS] = {
@@ -1217,6 +1386,15 @@ static void BuildD2WheelTextureSources(int city)
 
 	if (imp->data2 == NULL)
 		return;
+
+	if (BuildD2WheelTextureRects(city))
+	{
+		printInfo("cross-city: %s wheels - WHLCLEAN/WHLBOTH TEXINF sprites (sets %d/%d)\n",
+			LevelNames[city],
+			imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].set,
+			imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].set);
+		return;
+	}
 
 	if (imp->region == NULL || imp->models == NULL || imp->modelNames == NULL)
 	{

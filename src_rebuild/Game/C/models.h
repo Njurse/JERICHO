@@ -53,6 +53,20 @@ char* GetCarImportModels(int slot);
 #define CAR_IMPORT_WHEEL_VARIANTS	3
 MODEL* GetCarImportWheel(int city, int kind);
 
+// A D2 city's wheel art is a pair of TEXINF details on a permanent page
+// (WHLCLEAN/WHLBOTH; HAVANA calls WHLCLEAN "WHEEL"), not a MODEL. `set` is the
+// destination set after CarSetRemap; the caller puts the HOST wheel mesh's UVs
+// onto (u0,v0)-(u1,v1) and samples this page/CLUT.
+typedef struct JER_WHEEL_TEX
+{
+	int present;
+	int set;
+	int clut;
+	int u0, v0, u1, v1;
+} JER_WHEEL_TEX;
+
+int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out);
+
 // The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
 // maps these to the page it pins; the MODEL carries the remapped draw index.
 int GetCarImportWheelSets(int city, int kind, unsigned char* out, int max);
