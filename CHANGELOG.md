@@ -10,6 +10,7 @@ is in [changelog.txt](changelog.txt).
 - "My colour" in the Multiplayer pause page is now called "Player Color".
 - Vehicle Options: the Palette row now shows the palette and palette count of the car selected in the picker, updating as you browse City and Car.
 - "Respawn as this car" now applies a new palette even when you pick the car you are already driving, so you no longer have to switch to another model and back.
+- Vehicle Options now opens on the car you are driving (its city, model and palette) instead of the first car; on foot it keeps your last selection.
 
 ## v0.10.8
 
