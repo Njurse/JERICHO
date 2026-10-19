@@ -1603,9 +1603,14 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 					 * host id names a host palette and would recolour only that
 					 * square. */
 					UV_INFO out[4];
-					int isD2Hubcap = (src->texture_id != primaryId ||
-						src->texture_set != primarySet);
-					int clutId = isD2Hubcap ? texRect->hubClut : primaryId;
+					int clutId = texRect->hubClut;
+
+					/* The source wheel page's last row is the wheel palette
+					 * (WHLBOTH). The host poly's primary row is a CAR page row;
+					 * HAVANA's primary happened to be green. Use the source
+					 * row for every poly on this wheel. */
+					if (clutId <= 0)
+						clutId = primaryId;
 
 					if (clutId > 31)
 						clutId = 0;
