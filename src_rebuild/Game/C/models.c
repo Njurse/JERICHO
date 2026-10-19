@@ -1219,6 +1219,32 @@ void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut)
 	}
 }
 
+// The CLUT row that actually paints the D2 wheel. Measured from the
+// WHLBOTH sprite's dominant index and the RGB555 rows: the wheel row is the
+// one with an opaque (bit 15 clear) entry at that index, not the preceding
+// green/STP car-palette rows.
+int CarImportWheelPaletteRow(int city, int cluts)
+{
+	int row;
+
+	if (cluts <= 0)
+		return 0;
+
+	switch (city)
+	{
+	case 0: row = 29; break;	// CHICAGO
+	case 1: row = 29; break;	// HAVANA
+	case 2: row = 4; break;		// VEGAS
+	case 3: row = 4; break;		// RIO
+	default: row = cluts - 1; break;
+	}
+
+	if (row >= cluts)
+		row = cluts - 1;
+
+	return row;
+}
+
 // A texture-only copy of a Driver 2 named wheel model. The renderer uses the
 // host wheel MESH and this model only for its texture records and UVs, so the
 // vertices and normals are deliberately dropped; the poly stream is copied and

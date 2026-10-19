@@ -4042,8 +4042,14 @@ void LoadImportedTPages(void)
 		 * CLUT, but not this civ_clut row. */
 		if (npalettes > 0 && npalettes <= 32 && CarImportIsWheelSet(sc, set))
 		{
-			int wheelClut = CarImportReserveWheelPalette(sc,
-				(const unsigned char*)buf + 4 + (npalettes - 1) * 32);
+			int wheelRow = CarImportWheelPaletteRow(sc, npalettes);
+			int wheelClut;
+
+			printInfo("cross-city: %s wheel palette source row %d of %d\n",
+				LevelNames[sc], wheelRow, npalettes);
+
+			wheelClut = CarImportReserveWheelPalette(sc,
+				(const unsigned char*)buf + 4 + wheelRow * 32);
 
 			if (wheelClut != 0)
 				CarImportSetWheelPaletteClut(sc, set, wheelClut);
