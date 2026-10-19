@@ -123,6 +123,20 @@ the host level's wheel MESH and takes only the texture set/id and UVs from the
 imported model, so a D1 car wears its own wheel texture and palette without
 importing a second wheel topology.
 
+**D2 source cities keep the host wheel texture, deliberately.** A D2 city has no
+named wheel model: HAVANA's `LUMP_MODELNAMES` is 42 `BASE*` strings and none is
+`CLEANWHEEL`/`DAMWHEEL`/`FASTWHEEL`. The host wheel sprite lives on the host
+level's car page: CHICAGO CLEAN is set 63/id 28 at UV (192,224)-(255,255) (64x32),
+DAM is set 1/id 3 at (128,64)-(223,127) (96x64), and the DAM hubcap is set 0/id 4.
+Mapping the host set through `carTpages` (HAVANA 51/10, VEGAS 32/41, RIO 60/55)
+does not reproduce the sprite: those crops are different, and RIO/VEGAS CLEAN is
+blank. An exact scan of every HAVANA/RIO/VEGAS page found no 64x32 or 64x64 copy
+of the host wheel. HAVANA's only named wheel detail is `WHEEL` on set 20 at
+(192,64), 64x64, which is different art and has no cross-city equivalent.
+Therefore a D2 import logs `no CLEANWHEEL/DAMWHEEL/FASTWHEEL model; using the
+host wheel texture` and keeps the host wheel. Do not wire a carTpages-derived
+wheel page unless a crop comparison proves it is the wheel sprite.
+
 For geometry, `ProcessCarModelLump` swaps only its **base pointer** (`models.c:642-651`)
 — the foreign block has the same layout as the level's own, so the offset-table
 walk is unchanged. The foreign bytes are only read during the build:
