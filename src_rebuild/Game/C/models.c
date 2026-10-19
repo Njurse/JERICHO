@@ -5,6 +5,7 @@
 #include "mission.h"
 #include "cars.h"
 #include "cosmetic.h"
+#include "gamesnd.h"	// JERICHO: imported cars get their own engine/idle sounds
 #include "texture.h"	// JERICHO: CarImportResetState (cross-city per-level reset)
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
@@ -1928,7 +1929,13 @@ int JerHotLoadCarModel(int slot)
 		return 0;
 
 	if (gCarCleanModelPtr[slot] != NULL)
+	{
+		// Already built by an earlier hot load: the geometry is fine, but this
+		// slot may only now have been pointed at a car whose sound bank is not
+		// loaded yet. Idempotent for the common repeated call.
+		LoadCarSoundForSlot(slot);
 		return 0;			// already built
+	}
 
 	if (GetCarModelSourceCity(slot) < 0)
 		return 0;			// the level's own car: nothing to bring in
@@ -2116,6 +2123,11 @@ int JerHotLoadCarModel(int slot)
 	printInfo("cross-city: hot-loaded %s model %d into resident slot %d (%d bytes budgeted, block %d, %d of %d blocks used)\n",
 		LevelNames[GetCarModelSourceCity(slot)], model_number, slot, need,
 		gJerHotCarBlockOf[slot], gJerHotCarUsed, JER_HOT_CAR_BLOCKS);
+
+	// The geometry is built, so the slot is genuinely this car: append its
+	// engine/idle/horn bank and let GetCarBankSample find it. A failed build
+	// returned above, leaving the stand-in car's sound in place.
+	LoadCarSoundForSlot(slot);
 
 	return need;
 }

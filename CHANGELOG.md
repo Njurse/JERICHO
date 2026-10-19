@@ -6,6 +6,11 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- **Imported cars sound like themselves.** A cross-city vehicle now gets the engine,
+  idle and horn bank of the city it came from, including cars imported into the spare
+  resident slots and cars hot-loaded after the level started. Driver 1 and runtime-bank
+  cars have no sound table of their own, so they fall back to the host city's bank
+  rather than running silent.
 - **Remote on-foot players walk properly.** A remote Tanner no longer gets stuck in
   the walking-backwards animation: it now mirrors the owner's heading and speed and
   plays the matching idle, walk or run clip (reverse only when the owner backs up),

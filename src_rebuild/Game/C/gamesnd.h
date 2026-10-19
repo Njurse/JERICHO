@@ -84,6 +84,11 @@ extern void LoadBankFromLump(int bank, int lump); // 0x00052460
 extern int CarHasSiren(int index); // 0x000522EC
 extern int GetCarBankSample(int model); // 0x0004D690
 
+/* Give resident `slot` the car sound bank its imported model needs, and record
+ * the SOUND_BANK_CARS block for GetCarBankSample. Called at level load for the
+ * spare slots and by the hot-load path when a guest car is built mid-level. */
+extern void LoadCarSoundForSlot(int slot);
+
 extern void LoadLevelSFX(int missionNum); // 0x0004D784
 
 extern void StartGameSounds(); // 0x0004DE30
