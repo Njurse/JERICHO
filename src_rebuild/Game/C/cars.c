@@ -188,7 +188,7 @@ static int sClutClampCount;
 
 // JERICHO: the one reserved VRAM CLUT id for each city's D2 wheel palette.
 // Declared before CarPalRowClear, which resets it per level.
-static u_short sWheelPalClut[CITY_COUNT];
+static u_short sWheelPalClut[CITY_COUNT][2];	// [city][0 = tyre/whole wheel, 1 = hubcap]
 
 static void CarPalRowNote(int row, int city)
 {
@@ -266,6 +266,7 @@ static void CarPalRowClear(void)
 // in the table below on first use and only cleared by CarImportCityBandReset.
 static signed char sSetRow[CITY_COUNT][128];	// city -> set -> civ_clut row, -1 = none
 #define CAR_IMPORT_WHEEL_PAL_SET 127
+#define CAR_IMPORT_WHEEL_HUB_PAL_SET 126	// the D2 hubcap (WHLBOTH) row, when it differs from the tyre's
 
 // JERICHO: is civ_clut row `row` already owned by some (city, set)?
 static int CarRowInUse(int row)
@@ -367,7 +368,7 @@ static int CarAllocSetRow(int set, int city)
 // reserved civ_clut row in the JERICHO half. The returned value is the VRAM
 // CLUT id the wheel polys should use; the row is owned by this city and is not
 // the page pin's CLUT, so a later page upload cannot take it away.
-int CarImportReserveWheelPalette(int city, const unsigned char* colors)
+int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 {
 	int row;
 	u_short clut;
@@ -376,10 +377,12 @@ int CarImportReserveWheelPalette(int city, const unsigned char* colors)
 	if (city < 0 || city >= CITY_COUNT || colors == NULL)
 		return 0;
 
-	if (sWheelPalClut[city] != 0)
-		return sWheelPalClut[city];
+	hub = hub ? 1 : 0;
 
-	row = CarAllocSetRow(CAR_IMPORT_WHEEL_PAL_SET, city);
+	if (sWheelPalClut[city][hub] != 0)
+		return sWheelPalClut[city][hub];
+
+	row = CarAllocSetRow(hub ? CAR_IMPORT_WHEEL_HUB_PAL_SET : CAR_IMPORT_WHEEL_PAL_SET, city);
 
 	if (row < 0)
 		return 0;
@@ -392,10 +395,10 @@ int CarImportReserveWheelPalette(int city, const unsigned char* colors)
 		civ_clut[row][0][i] = clut;
 
 	CarPalRowNote(row, city);
-	sWheelPalClut[city] = clut;
+	sWheelPalClut[city][hub] = clut;
 
-	printInfo("cross-city: %s wheel palette reserved in civ_clut row %d (clut %04x)\n",
-		LevelNames[city], row, clut);
+	printInfo("cross-city: %s wheel %s palette reserved in civ_clut row %d (clut %04x)\n",
+		LevelNames[city], hub ? "hubcap" : "tyre", row, clut);
 
 	return clut;
 }
@@ -1674,7 +1677,11 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 
 					MapWheelUVToRect(src, &use, out);
 
-					clut = texRect->reservedClut ?
+					/* WHLCLEAN (tyre) and WHLBOTH (hubcap) are separate sprites
+					 * and need not share a CLUT row; each has its own reserved row. */
+					clut = (isD2Hubcap && texRect->reservedHubClut) ?
+						(ushort)texRect->reservedHubClut :
+						texRect->reservedClut ?
 						(ushort)texRect->reservedClut :
 						texture_cluts[texRect->set][clutId];
 					tpage = texture_pages[texRect->set] | 0x20;

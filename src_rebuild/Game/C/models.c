@@ -8,6 +8,7 @@
 #include "texture.h"	// JERICHO: CarImportResetState (cross-city per-level reset)
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "../ASM/compres.h"	// decomp_asm: the wheel page image, for its CLUT row
 
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
@@ -1202,7 +1203,7 @@ int CarImportIsWheelSet(int city, int sourceSet)
 	return 0;
 }
 
-void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut)
+void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub)
 {
 	int v, k;
 
@@ -1214,7 +1215,12 @@ void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut)
 		for (k = 0; k < gCarImports[city].wheelSetCount[v]; k++)
 		{
 			if (gCarImports[city].wheelSet[v][k] == sourceSet)
-				gCarImports[city].wheelTex[v].reservedClut = clut;
+			{
+				if (hub)
+					gCarImports[city].wheelTex[v].reservedHubClut = clut;
+				else
+					gCarImports[city].wheelTex[v].reservedClut = clut;
+			}
 		}
 	}
 }
@@ -1243,6 +1249,152 @@ int CarImportWheelPaletteRow(int city, int cluts)
 		row = cluts - 1;
 
 	return row;
+}
+
+// Derive a D2 wheel sprite's CLUT row from the page itself instead of a
+// per-city table. WHLCLEAN (tyre) and WHLBOTH (hubcap) are separate sprites on
+// the source page and are NOT painted by the same row (HAVANA: 25 and 29), so
+// each is derived on its own. hub = 1 for WHLBOTH, 0 for WHLCLEAN. Returns -1
+// (caller keeps the measured table) for a D1 baked city, a page that does not
+// unpack, or a sprite no row paints.
+int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub)
+{
+	CAR_IMPORT* imp;
+	const JER_WHEEL_TEX* wt;
+	const unsigned char* pix;
+	int npal, hist[16];
+	int u0, v0, u1, v1, u, v, r, i, best = -1, bestScore = 0, dam;
+
+	if (city < 0 || city >= CITY_COUNT || page == NULL || size < 4 || !JerCityRegistered(city))
+		return -1;
+
+	npal = *(const int*)page;
+
+	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32)
+		return -1;
+
+	imp = &gCarImports[city];
+	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
+
+	if (!wt->present)
+		return -1;
+
+	/* hub: the WHLBOTH hubcap rect (on the damaged variant's last source set),
+	 * else the WHLCLEAN tyre rect (on the clean set). */
+	dam = hub;
+
+	if (imp->wheelSetCount[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN] <= 0 ||
+		imp->wheelSet[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN]
+			[imp->wheelSetCount[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN] - 1] != sourceSet)
+		return -1;
+
+	if (dam)
+	{
+		u0 = wt->hubU0; v0 = wt->hubV0; u1 = wt->hubU1; v1 = wt->hubV1;
+	}
+	else
+	{
+		u0 = wt->u0; v0 = wt->v0; u1 = wt->u1; v1 = wt->v1;
+	}
+
+	if (u0 < 0 || v0 < 0 || u1 > 256 || v1 > 256 || u1 <= u0 || v1 <= v0)
+		return -1;
+
+	memset(hist, 0, sizeof(hist));
+
+	/* The page image is stored compressed (LoadTPageAndCluts runs decomp_asm on
+	 * it too): unpack a private copy of the 256x256 4bpp image. */
+	{
+		static unsigned char* sUnpacked = NULL;
+
+		if (sUnpacked == NULL)
+			sUnpacked = (unsigned char*)malloc(0x10000);
+
+		if (sUnpacked == NULL)
+			return -1;
+
+		memset(sUnpacked, 0, 0x10000);
+		decomp_asm((char*)sUnpacked, (char*)page + 4 + npal * 32);
+		pix = sUnpacked;
+	}
+
+	for (v = v0; v < v1; v++)
+	{
+		for (u = u0; u < u1; u++)
+		{
+			unsigned char b = pix[v * 128 + (u >> 1)];
+			hist[(u & 1) ? (b >> 4) : (b & 15)]++;
+		}
+	}
+
+	/* For each row: the mean luminance step between horizontally adjacent
+	 * sprite pixels, divided by the mean step between two random sprite
+	 * pixels under that row. The row the art was drawn with is smooth (its
+	 * ramp follows the index layout), so the ratio is lowest there; any other
+	 * row turns the sprite into noise. Transparent (0x0000) entries are
+	 * skipped. On HAVANA this picks 29 for WHLBOTH and 25 for WHLCLEAN. */
+	{
+		double bestRatio = 1e30;
+
+		for (r = 0; r < npal; r++)
+		{
+			const unsigned short* row = (const unsigned short*)(page + 4 + r * 32);
+			int lum[16];
+			double adj = 0.0, all = 0.0, nAll = 0.0, ratio;
+			int nAdj = 0, a, b2;
+
+			for (i = 0; i < 16; i++)
+				lum[i] = (row[i] & 31) * 3 + ((row[i] >> 5) & 31) * 6 + ((row[i] >> 10) & 31);
+
+			for (v = v0; v < v1; v++)
+			{
+				for (u = u0; u < u1 - 1; u++)
+				{
+					unsigned char p0 = pix[v * 128 + (u >> 1)];
+					unsigned char p1 = pix[v * 128 + ((u + 1) >> 1)];
+
+					a = (u & 1) ? (p0 >> 4) : (p0 & 15);
+					b2 = ((u + 1) & 1) ? (p1 >> 4) : (p1 & 15);
+
+					if (row[a] == 0 || row[b2] == 0)
+						continue;
+
+					adj += abs(lum[a] - lum[b2]);
+					nAdj++;
+				}
+			}
+
+			for (a = 0; a < 16; a++)
+			{
+				for (b2 = 0; b2 < 16; b2++)
+				{
+					if (row[a] == 0 || row[b2] == 0)
+						continue;
+
+					all += (double)hist[a] * hist[b2] * abs(lum[a] - lum[b2]);
+					nAll += (double)hist[a] * hist[b2];
+				}
+			}
+
+			if (nAdj < 64 || nAll <= 0.0 || all <= 0.0)
+				continue;	/* (near) flat or fully transparent under this row */
+
+			ratio = (adj / nAdj) / (all / nAll);
+
+			if (ratio < bestRatio)
+			{
+				bestRatio = ratio;
+				best = r;
+			}
+		}
+
+		bestScore = (int)(bestRatio * 100.0 + 0.5);
+
+		printInfo("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d) -> row %d (smoothness %d%%)\n",
+			LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, best, bestScore);
+	}
+
+	return best;
 }
 
 // A texture-only copy of a Driver 2 named wheel model. The renderer uses the
