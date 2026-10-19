@@ -1603,7 +1603,9 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 					 * host id names a host palette and would recolour only that
 					 * square. */
 					UV_INFO out[4];
-					int clutId = primaryId;
+					int isD2Hubcap = (src->texture_id != primaryId ||
+						src->texture_set != primarySet);
+					int clutId = isD2Hubcap ? texRect->hubClut : primaryId;
 
 					if (clutId > 31)
 						clutId = 0;

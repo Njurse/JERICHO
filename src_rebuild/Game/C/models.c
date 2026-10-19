@@ -1166,6 +1166,25 @@ int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out)
 	return out->present;
 }
 
+// The page loader knows how many CLUT rows the source wheel page really has.
+// The WHLBOTH (hubcap) palette is the page's last row; record it for the wheel
+// structs that name this source set.
+void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts)
+{
+	int v;
+
+	if (city < 0 || city >= CITY_COUNT || cluts <= 0)
+		return;
+
+	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	{
+		CAR_IMPORT* imp = &gCarImports[city];
+
+		if (imp->wheelSetCount[v] > 0 && imp->wheelSet[v][0] == sourceSet)
+			imp->wheelTex[v].hubClut = (cluts > 32) ? 31 : cluts - 1;
+	}
+}
+
 // A texture-only copy of a Driver 2 named wheel model. The renderer uses the
 // host wheel MESH and this model only for its texture records and UVs, so the
 // vertices and normals are deliberately dropped; the poly stream is copied and

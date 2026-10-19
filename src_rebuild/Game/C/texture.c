@@ -4045,6 +4045,11 @@ void LoadImportedTPages(void)
 			continue;
 		}
 
+		/* The WHLBOTH/hubcap palette is the last row on the source wheel page.
+		 * Record it for the wheel structs that name this source set, so the
+		 * renderer can use the hubcap row rather than the tyre row. */
+		CarImportSetWheelPageCluts(sc, set, npalettes);
+
 		// The remap becomes real together with the pin: the page WILL be placed (at draw
 		// time, evicting the world if need be), short of a failed read.
 		if (remapFrom >= 0 && sRemapCount < CAR_REMAP_MAX)

@@ -62,10 +62,12 @@ typedef struct JER_WHEEL_TEX
 	int present;
 	int set;
 	int clut;
+	int hubClut;	// the WHLBOTH-specific row (last row of the source page)
 	int u0, v0, u1, v1;
 } JER_WHEEL_TEX;
 
 int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out);
+void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts);
 
 // The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
 // maps these to the page it pins; the MODEL carries the remapped draw index.
