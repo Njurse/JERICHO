@@ -2620,7 +2620,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						carid = CarPalIndexForBuild(pft3->texture_set, srcCity);
 						clut = (carid - 1) * 6 * 32 + pft3->texture_id * 6;
 
-						civ_clut[carid][pft3->texture_id][0] = texture_cluts[pft3->texture_set][pft3->texture_id];
+						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
+							civ_clut[carid][pft3->texture_id][0] = texture_cluts[pft3->texture_set][pft3->texture_id];
 
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pft3->uv0);
 						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pft3->texture_set), *(ushort*)&pft3->uv1);
@@ -2642,7 +2643,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						carid = CarPalIndexForBuild(pft4->texture_set, srcCity);
 						clut = (carid - 1) * 6 * 32 + pft4->texture_id * 6;
 
-						civ_clut[carid][pft4->texture_id][0] = texture_cluts[pft4->texture_set][pft4->texture_id];
+						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
+							civ_clut[carid][pft4->texture_id][0] = texture_cluts[pft4->texture_set][pft4->texture_id];
 
 						cp->clut_uv0 = M_INT_2(clut, *(ushort *)&pft4->uv0);
 						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pft4->texture_set), *(ushort*)&pft4->uv1);
@@ -2656,7 +2658,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						carid = CarPalIndexForBuild(polyList[1], srcCity);
 						clut = (carid - 1) * 6 * 32 + polyList[2] * 6;
 
-						civ_clut[carid][polyList[2]][0] = texture_cluts[polyList[1]][polyList[2]];
+						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
+							civ_clut[carid][polyList[2]][0] = texture_cluts[polyList[1]][polyList[2]];
 
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pft4->uv0);
 						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, polyList[1]), *(ushort*)&pft4->uv2);
@@ -2677,7 +2680,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						CarBakeRowNote(carid, index, pgt3->texture_set);
 						clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
 
-						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
+						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
+							civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
 
 						cp->vindices = M_INT_4R(pgt3->v0, pgt3->v1, pgt3->v2, 0);
 						cp->nindices = M_INT_4R(pgt3->n0, pgt3->n1, pgt3->n2, 0);
@@ -2704,7 +2708,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						CarBakeRowNote(carid, index, pgt4->texture_set);
 						clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
 
-						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
+						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
+							civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
 
 						cp->vindices = M_INT_4R(pgt4->v0, pgt4->v1, pgt4->v2, 0);
 						cp->nindices = M_INT_4R(pgt4->n0, pgt4->n1, pgt4->n2, 0);
@@ -4052,6 +4057,12 @@ static int CarPalIndexInCity(int tpage, int city)
 			return i + rowbase;
 	}
 
+	// JERICHO: a host-city page an IMPORTED own-city car was given a pool row for (a
+	// special the level does not load, see CarPalIndexForBuild): the pin and the walk must
+	// agree with the build, not fall to the shared special rows 6/7 below.
+	if (tpage > 0 && tpage < 128 && sSetRow[city][tpage] >= 0)
+		return sSetRow[city][tpage];
+
 	// JERICHO: a SPECIAL body's pages live in specTpages, not carTpages. The host level
 	// gets its own pair into carTpages[6]/[7] by OVERWRITING those two entries at load
 	// (texture.c:2025), and only the resident body is ever built - so without this scan a
@@ -4235,6 +4246,19 @@ static void PalBakeMissDiag(int tpage, int city)
 static int CarPalIndexForBuild(int tpage, int city)
 {
 	int idx = CarPalIndexInCityFor(tpage, city);
+
+	// JERICHO: city == GameLevel here means an own-city IMPORT (a host car is built with
+	// city -1). Its special pages resolve to the level special's rows 6/7, which this
+	// build would then overwrite: the "slot 12 eats the host's palettes" report. A page
+	// that is not the level special's own pair gets a pool row of its own instead.
+	if (city == GameLevel && city >= 0 && (idx == 6 || idx == 7) &&
+		tpage != carTpages[city][6] && tpage != carTpages[city][7])
+	{
+		int own = CarAllocSetRow(tpage, city);
+
+		if (own >= 0)
+			idx = own;
+	}
 
 	if (idx < 0)
 	{
