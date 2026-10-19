@@ -1675,14 +1675,15 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		if (votes[i] > votes[bg])
 			bg = i;
 
+	/* The fast face names its own row (MIAMI's FASTWHEEL: 8). The clean
+	 * sprite's tyre row (6) painted it colour-inverted. */
+	if (wt->clut >= 0 && wt->clut < npal)
+		tyreRow = wt->clut;
+
 	memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
 
-	printInfo("cross-city: %s fast wheel sprite (%d,%d)-(%d,%d) background index %d is %04x in tyre row %d%s\n",
-		LevelNames[city], wt->u0, wt->v0, wt->u1, wt->v1, bg, row[bg], tyreRow,
-		row[bg] ? " - clearing it in a fast-only row" : "");
-
-	if (row[bg] == 0)
-		return;
+	printInfo("cross-city: %s fast wheel sprite (%d,%d)-(%d,%d) row %d, background index %d is %04x - cleared in a fast-only row\n",
+		LevelNames[city], wt->u0, wt->v0, wt->u1, wt->v1, tyreRow, bg, row[bg]);
 
 	row[bg] = 0;
 	clut = CarImportReserveWheelPalette(city, 2, (const unsigned char*)row);
