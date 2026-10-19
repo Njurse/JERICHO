@@ -448,6 +448,7 @@ static void JerichoDrawCredits(void);
 extern "C" {
 #endif
 void jer_update_frontend_tick(int onMainMenu);
+int jer_update_screen_active(void);
 int jer_build_is_dev(void);
 void jer_frontend_dim_rect(int x, int y, int w, int h, int shade);
 #ifdef __cplusplus
@@ -2708,7 +2709,9 @@ void State_FrontEnd(void* param)
 		idleArgs.suppress = 0;
 		jer_fire(JER_EVENT_FRONTEND_IDLE, &idleArgs);
 
-		if (idleArgs.suppress)
+		/* JERICHO: the update screen is not idle time -- hold the clock so the
+		 * attract demo cannot start a level from under it. */
+		if (idleArgs.suppress || jer_update_screen_active())
 			idle_timer = VSync(-1);
 	}
 

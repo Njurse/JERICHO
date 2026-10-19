@@ -841,19 +841,31 @@ static void UpdDrawNotes(void)
 	jer_text_draw_at(JER_TEXT_FE, 80, UPD_X, UPD_FOOT_Y, foot, 170, 170, 170);
 }
 
+/* Is the updater's own screen the one on display? FEmain.c holds the attract
+ * demo's idle clock while it is: reading a changelog is not idling, and the
+ * demo would otherwise start a level from under this screen. */
+int jer_update_screen_active(void)
+{
+	int menu = jer_frontend_find("jericho.update");
+
+	return menu >= 0 && jer_frontend_current_menu() == menu;
+}
+
 /* FEmain.c, every frontend frame after the screen is drawn. onMainMenu = the
  * stock main menu is the current screen. */
 void jer_update_frontend_tick(int onMainMenu)
 {
-	int menu = jer_frontend_find("jericho.update");
+	int menu;
 
-	if (menu >= 0 && jer_frontend_current_menu() == menu)
+	if (jer_update_screen_active())
 	{
 		UpdDrawNotes();
 		return;
 	}
 
 	UpdPoll();
+
+	menu = jer_frontend_find("jericho.update");
 
 	if (gUpdDecided || gUpdState == UPD_IDLE || !onMainMenu)
 		return;
