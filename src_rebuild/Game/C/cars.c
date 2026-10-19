@@ -1597,12 +1597,19 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 				if (texRect != NULL && texRect->present)
 				{
 					/* D2: the wheel art is a TEXINF sprite, not a model. Keep the
-					 * host poly and map its UV rect onto WHLCLEAN/WHLBOTH. */
+					 * host poly and map its UV rect onto WHLCLEAN/WHLBOTH. The
+					 * host poly's texture_id is the CLUT row on the wheel page;
+					 * using row 0 here is what paints the wheel with a car body
+					 * palette. */
 					UV_INFO out[4];
+					int clutId = src->texture_id;
+
+					if (clutId > 31)
+						clutId = 0;
 
 					MapWheelUVToRect(src, texRect, out);
 
-					clut = texture_cluts[texRect->set][texRect->clut];
+					clut = texture_cluts[texRect->set][clutId];
 					tpage = texture_pages[texRect->set] | 0x20;
 
 					*(u_short*)&poly->u0 = *(u_short*)&out[0];
@@ -1695,8 +1702,7 @@ static int JerWheelTextureReady(MODEL* m)
 static int JerWheelTextureReadyRect(const JER_WHEEL_TEX* r)
 {
 	return r != NULL && r->present &&
-		texture_pages[r->set] != 0 &&
-		texture_cluts[r->set][r->clut] != 0;
+		texture_pages[r->set] != 0;
 }
 
 // [D] [T]
