@@ -2070,8 +2070,8 @@ int jer_modstore_rebake(void)
 /* is what lets a row be four columns instead of one centred string.    */
 /* ================================================================== */
 
-#define MODS_ROWS_MAX	6	/* table rows a page of the mods list shows */
-#define REPO_ROWS_MAX	6	/* same for the repo browser */
+#define MODS_ROWS_MAX	8	/* table rows a page of the mods list shows */
+#define REPO_ROWS_MAX	8	/* same for the repo browser */
 
 static int  gModsPage;
 static int  gRepoPage;
@@ -2452,9 +2452,9 @@ static void StoreEnsureMenus(void)
 		 * table's rows get lifted to. The heading is ours, above the header row. */
 		gModsMenu.title = NULL;
 		gModsMenu.row_w = 560;
-		gModsMenu.row_step = 28;
-		gModsMenu.row_top = 200;
-		gModsMenu.row_bottom = 466;
+		gModsMenu.row_step = 26;
+		gModsMenu.row_top = 130;
+		gModsMenu.row_bottom = 470;
 		gModsMenu.list_align = 0;	/* hang the rows off the top: a table with a
 									 * heading reads wrong centred (mp's reason) */
 
@@ -2464,9 +2464,9 @@ static void StoreEnsureMenus(void)
 		gRepoMenu.on_enter = RepoMenuEnter;
 		gRepoMenu.title = NULL;
 		gRepoMenu.row_w = 560;
-		gRepoMenu.row_step = 28;
-		gRepoMenu.row_top = 200;
-		gRepoMenu.row_bottom = 466;
+		gRepoMenu.row_step = 26;
+		gRepoMenu.row_top = 130;
+		gRepoMenu.row_bottom = 470;
 		gRepoMenu.list_align = 0;
 
 		gMenusBuilt = 1;
@@ -2499,16 +2499,16 @@ static void ModsDrawTable(void)
 	top = jer_frontend_list_top();
 
 	/* the store's last word, under the rows and clear of the pinned controls */
-	jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 2), 470, jer_modstore_status(), 190, 190, 190);
+	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 78, jer_modstore_status(), 190, 190, 190);
 
 	/* the heading. The stock menu title is not used (see StoreEnsureMenus): a tall
 	 * table is lifted, and the stock title is right where the rows land. */
-	jer_text_draw_at(JER_TEXT_FE, 150, StoreTextX(x, w, 2), top - 52, "MODS", 255, 176, 64);
+	jer_text_draw_at(JER_TEXT_FE, 180, StoreTextX(x, w, 2), top - 52, "MODS", 255, 176, 64);
 
-	jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 2), top - 22, "MODULE", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 50), top - 22, "VERSION", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 64), top - 22, "STATE", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 80), top - 22, "SOURCE", 255, 176, 64);
+	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 22, "MODULE", 255, 176, 64);
+	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 50), top - 22, "VERSION", 255, 176, 64);
+	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 64), top - 22, "STATE", 255, 176, 64);
+	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 80), top - 22, "SOURCE", 255, 176, 64);
 
 	for (i = 0; i < gModsRows; i++)
 	{
@@ -2530,17 +2530,17 @@ static void ModsDrawTable(void)
 		if (!jer_modstore_module_at(gModsPage * MODS_ROWS_MAX + i, &mod))
 			continue;
 
-		jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 2), ry + 4,
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 2), ry + 4,
 			(mod.name != NULL) ? mod.name : mod.id, 255, 255, 255);
-		jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 50), ry + 4,
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 50), ry + 4,
 			(mod.version != NULL) ? mod.version : "?", 200, 200, 200);
 
 		if (mod.refusal != NULL)
-			jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 64), ry + 4, "BLOCKED", 255, 128, 128);
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "BLOCKED", 255, 128, 128);
 		else if (mod.enabled)
-			jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 64), ry + 4, "ON", 128, 255, 128);
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "ON", 128, 255, 128);
 		else
-			jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 64), ry + 4, "OFF", 150, 150, 150);
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "OFF", 150, 150, 150);
 
 		if (mod.replaced)
 			snprintf(buf, sizeof(buf), "store %s (replaced)", (mod.storeVersion != NULL) ? mod.storeVersion : "?");
@@ -2549,7 +2549,7 @@ static void ModsDrawTable(void)
 		else
 			snprintf(buf, sizeof(buf), "bundled");
 
-		jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 80), ry + 4, buf, 170, 190, 210);
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 80), ry + 4, buf, 170, 190, 210);
 	}
 }
 
@@ -2579,16 +2579,16 @@ static void StoreDrawRepoTable(void)
 	top = jer_frontend_list_top();
 
 	if (jer_modstore_busy())
-		jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 2), 470, status, 255, 220, 120);
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 78, status, 255, 220, 120);
 	else
-		jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 2), 470, status, 190, 190, 190);
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 78, status, 190, 190, 190);
 
-	jer_text_draw_at(JER_TEXT_FE, 150, StoreTextX(x, w, 2), top - 52, "MOD REPO", 255, 176, 64);
+	jer_text_draw_at(JER_TEXT_FE, 180, StoreTextX(x, w, 2), top - 52, "MOD REPO", 255, 176, 64);
 
-	jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 2), top - 22, "MOD", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 34), top - 22, "VERSION", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 48), top - 22, "STATE", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 64), top - 22, "NOTE", 255, 176, 64);
+	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 22, "MOD", 255, 176, 64);
+	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 34), top - 22, "VERSION", 255, 176, 64);
+	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 48), top - 22, "STATE", 255, 176, 64);
+	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 64), top - 22, "NOTE", 255, 176, 64);
 
 	if (gRepoRows == 0)
 	{
@@ -2601,7 +2601,7 @@ static void StoreDrawRepoTable(void)
 		else
 			msg = "(no mods listed)";
 
-		jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(x, w, 2), top + 6, msg, 170, 170, 170);
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top + 6, msg, 170, 170, 170);
 		return;
 	}
 
@@ -2618,31 +2618,31 @@ static void StoreDrawRepoTable(void)
 		if (it == NULL)
 			continue;
 
-		jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 2), ry + 4, it->name, 255, 255, 255);
-		jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 34), ry + 4, it->version, 200, 200, 200);
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 2), ry + 4, it->name, 255, 255, 255);
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 34), ry + 4, it->version, 200, 200, 200);
 
 		switch (it->state)
 		{
 			case JER_MODSTORE_ST_INSTALLED:
-				jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 48), ry + 4, StoreStateText(it->state), 128, 255, 128);
+				jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 48), ry + 4, StoreStateText(it->state), 128, 255, 128);
 				break;
 			case JER_MODSTORE_ST_UPDATE:
 			case JER_MODSTORE_ST_REPLACED:
-				jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 48), ry + 4, StoreStateText(it->state), 255, 220, 120);
+				jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 48), ry + 4, StoreStateText(it->state), 255, 220, 120);
 				break;
 			case JER_MODSTORE_ST_NEEDS_CORE:
 			case JER_MODSTORE_ST_NEEDS_DEP:
-				jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 48), ry + 4, StoreStateText(it->state), 255, 128, 128);
+				jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 48), ry + 4, StoreStateText(it->state), 255, 128, 128);
 				break;
 			default:
-				jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 48), ry + 4, StoreStateText(it->state), 190, 190, 190);
+				jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 48), ry + 4, StoreStateText(it->state), 190, 190, 190);
 				break;
 		}
 
 		if (it->note != NULL && it->note[0] != 0)
-			jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 64), ry + 4, it->note, 170, 190, 210);
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, it->note, 170, 190, 210);
 		else
-			jer_text_draw_at(JER_TEXT_FE, 100, StoreTextX(rx, rw, 64), ry + 4, it->author, 170, 190, 210);
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, it->author, 170, 190, 210);
 	}
 }
 

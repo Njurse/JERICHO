@@ -350,6 +350,12 @@ static void jerSnapshotModules(const char* rootDir)
 		/* ...and the same for `incompatible`, which the registry cannot carry either. */
 		jer_loader_read_incompat(rootDir, m->id, m->incompat, sizeof(m->incompat));
 
+		/* ...and the manifest's name, version and author. Without this a deep mod
+		 * reported its folder name as its name and "?" as its version, which left
+		 * the store's SOURCE/version columns and any repo comparison blind. */
+		jer_loader_read_meta(rootDir, m->id, m->name, sizeof(m->name),
+			m->version, sizeof(m->version), m->author, sizeof(m->author));
+
 		gModuleCount++;
 	}
 
@@ -497,6 +503,14 @@ static void jerCtxRegisterModule(JERICHO_CONTEXT* ctx,
 
 	if (author != NULL)
 		snprintf(m->author, sizeof(m->author), "%s", author);
+
+	/* ...and then the MANIFEST wins for all three, exactly as it does for
+	 * dependencies just below. A module that hardcodes "0.1.0" in its entry used to
+	 * shadow the version it actually ships as -- mp's mod.toml said 0.12.0 while the
+	 * module table, the inventory and the mod store's SOURCE column all said 0.1.0.
+	 * mod.toml is the record; the registration call is the fallback. */
+	jer_loader_read_meta(jer_root_dir(), id, m->name, sizeof(m->name),
+		m->version, sizeof(m->version), m->author, sizeof(m->author));
 
 	if (description != NULL)
 		snprintf(m->description, sizeof(m->description), "%s", description);

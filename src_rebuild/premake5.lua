@@ -887,6 +887,14 @@ project "JERICHO"
             -- JER_MIRROR_EXCLUDE. Last, so it also removes anything the rules above left.
             if JER_MIRROR_EXCLUDE[JER_MOD] then
                 table.insert(JER_CMDS, "if exist \"" .. JER_DEST .. "\" rd /S /Q \"" .. JER_DEST .. "\"")
+
+                -- ...but the MANIFEST comes back. The module is compiled into the exe,
+                -- so the game lists it either way; without a mod.toml it could only report
+                -- its folder name and "?" as its version, and the mod store had nothing to
+                -- compare against a repo entry. mod.toml carries no Driver 1 content --
+                -- the exclusion is about the data, not the manifest.
+                table.insert(JER_CMDS, "if not exist \"" .. JER_DEST .. "\" mkdir \"" .. JER_DEST .. "\"")
+                table.insert(JER_CMDS, "copy /Y \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" \"" .. JER_DEST .. "\\mod.toml\" > nul")
             end
 
             postbuildcommands(JER_CMDS)
@@ -928,9 +936,12 @@ project "JERICHO"
             }
 
             -- the private/not-built modules come out of the mirror entirely - same reason
-            -- as on Windows, see JER_MIRROR_EXCLUDE above
+            -- as on Windows, see JER_MIRROR_EXCLUDE above - but their MANIFEST stays, so a
+            -- compiled-in module can still report its name, version and author
             if JER_MIRROR_EXCLUDE[JER_MOD] then
                 table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "\"")
+                table.insert(JER_CMDS, "mkdir -p \"" .. JER_DEST .. "\"")
+                table.insert(JER_CMDS, "cp -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" \"" .. JER_DEST .. "/mod.toml\"")
             end
 
             postbuildcommands(JER_CMDS)

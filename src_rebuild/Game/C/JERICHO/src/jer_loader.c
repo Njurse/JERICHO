@@ -265,6 +265,38 @@ static int jerManifestList(const char* rootDir, const char* id, char* out, int m
 	return 1;
 }
 
+/* Read the manifest's DESCRIPTIVE fields (name, version, author) for one module.
+ *
+ * The compiled-in half of the module table is built from the game's registry,
+ * and the registry carries none of these: a deep mod used to show its folder name
+ * as its name and "?" as its version, which left the store with nothing to
+ * compare against a repo's entry. Reads into a scratch module, so nothing else in
+ * the manifest leaks into the live table. */
+int jer_loader_read_meta(const char* rootDir, const char* id,
+	char* name, int nameMax, char* version, int versionMax, char* author, int authorMax)
+{
+	JER_MODULE scratch;
+	char path[512];
+
+	if (rootDir == NULL || id == NULL)
+		return 0;
+
+	memset(&scratch, 0, sizeof(scratch));
+	snprintf(path, sizeof(path), "%s/MODS/%s/%s", rootDir, id, JER_MODTOML);
+	jerParseModToml(path, &scratch);
+
+	/* only overwrite with what the manifest actually says: a module with no
+	 * mod.toml keeps the id/name the registry gave it */
+	if (name != NULL && nameMax > 0 && scratch.name[0] != 0)
+		snprintf(name, (size_t)nameMax, "%s", scratch.name);
+	if (version != NULL && versionMax > 0 && scratch.version[0] != 0)
+		snprintf(version, (size_t)versionMax, "%s", scratch.version);
+	if (author != NULL && authorMax > 0 && scratch.author[0] != 0)
+		snprintf(author, (size_t)authorMax, "%s", scratch.author);
+
+	return 1;
+}
+
 int jer_loader_read_deps(const char* rootDir, const char* id, char* out, int max)
 {
 	return jerManifestList(rootDir, id, out, max, 0);

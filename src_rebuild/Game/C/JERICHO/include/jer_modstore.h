@@ -25,9 +25,11 @@
  *     ships) -- removal needs the provenance record the script wrote;
  *   - downgrade a bundled mod below what the release shipped.
  *
- * This API is core-internal: the store is part of the game, not an addon, so
- * there is no SDK mirror of this header. A module that wants to query it can be
- * given an accessor later; nothing exposes engine internals here.
+ * This API is CORE-INTERNAL: the store is part of the game, not an addon, and the
+ * engine never exposes its own state through it. The copy in JERICHO/sdk/include
+ * exists because every engine header is mirrored there (tools/doccheck.py enforces
+ * a 1:1 mirror) — an addon should not call these functions, and nothing here is
+ * promised to stay put the way the jer_*.h API is.
  * ------------------------------------------------------------------ */
 
 #ifdef __cplusplus

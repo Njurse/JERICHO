@@ -93,6 +93,9 @@ int jer_loader_scan(const char* rootDir, JER_MODULE* table, int max);
  * generated registry cannot carry them, so without this a deep module's manifest was
  * never read and its dependency check could never fire. Returns 1 when a list was
  * found. */
+/* name/version/author from the module's own mod.toml (see jer_loader_read_meta) */
+int jer_loader_read_meta(const char* rootDir, const char* id,
+	char* name, int nameMax, char* version, int versionMax, char* author, int authorMax);
 int jer_loader_read_deps(const char* rootDir, const char* id, char* out, int max);
 
 /* The same, for `incompatible`. Read from the manifest for every module, deep or

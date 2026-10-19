@@ -97,6 +97,10 @@ src_rebuild/tools/gen_exports/     maps the linker map to exports.def
   other city.
 - [`ped-animation.md`](ped-animation.md), [`ped-palette.md`](ped-palette.md),
   [`screens.md`](screens.md), [`module-activation.md`](module-activation.md).
+- [`mod-repo.md`](mod-repo.md) — **the mod store**: how to host a repo (one
+  `mods.json` plus a package per mod), the index and package format, the hash and
+  version rules the store enforces, and the five-minute local test recipe
+  (`JERICHO/CORE/modstore/test`).
 
 ## Building the game
 
