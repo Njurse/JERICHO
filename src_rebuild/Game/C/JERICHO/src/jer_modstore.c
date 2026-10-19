@@ -1362,7 +1362,7 @@ static void StoreTestTick(void)
 
 				if (pick < 0)
 				{
-					gStore.testStage = 4;
+					gStore.testStage = 7;
 					jer_log("[modstore][test] nothing to install (%d row(s))\n", rows);
 					break;
 				}
@@ -1377,7 +1377,8 @@ static void StoreTestTick(void)
 				JER_MODSTORE_MODULE mod;
 				int n = 0, i, found = 0;
 
-				gStore.testStage = 4;
+				gStore.testStage = 7;	/* 7 is the terminal stage: StoreTestTick returns there,
+									 * so the report is logged once rather than every tick */
 				for (i = 0; i < jer_modstore_module_count(); i++)
 				{
 					if (!jer_modstore_module_at(i, &mod))
@@ -1401,7 +1402,7 @@ static void StoreTestTick(void)
 			}
 			else
 			{
-				gStore.testStage = 4;
+				gStore.testStage = 7;
 				jer_log("[modstore][test] remove finished: %s\n", jer_modstore_status());
 			}
 			break;
@@ -2768,7 +2769,12 @@ void jer_modstore_frontend_tick(void)
 		{
 			jer_log("[modstore] the Driver 1 bake is older than the tooling (baked %d, expected %d)\n",
 				StoreBakedVersion(), StoreToolingBakeVersion());
-			jer_prompt_begin("Your Driver 1 cars were baked with older tooling. Re-bake them now?", StoreRebakeYes);
+
+			/* a test-lever run must not raise this: it is a headless check, and the
+			 * prompt would be answered by whatever the pad happens to read, which
+			 * starts a real bake in the middle of a test */
+			if (gStore.testLever == STORE_TEST_NONE)
+				jer_prompt_begin("Your Driver 1 cars were baked with older tooling. Re-bake them now?", StoreRebakeYes);
 		}
 	}
 

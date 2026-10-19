@@ -101,6 +101,10 @@ src_rebuild/tools/gen_exports/     maps the linker map to exports.def
   `mods.json` plus a package per mod), the index and package format, the hash and
   version rules the store enforces, and the five-minute local test recipe
   (`JERICHO/CORE/modstore/test`).
+- [`modding.md`](modding.md) — **publishing a mod in five commands**: package it,
+  rebuild the index, validate it, serve it, publish it. Plus the scaffold for a
+  self-contained repo with a CI workflow, and the rules that keep a repo
+  installable (never hand-edit a hash; bump the version every time).
 
 ## Building the game
 

@@ -85,13 +85,35 @@ mod compiled into the exe.
 ## 3. Get the hash and size
 
 The store will not install anything it cannot verify, so a published entry needs
-the real hash of the exact file:
+the real hash of the exact file. Do not type it — one command packages the mod
+and prints the whole entry:
+
+```sh
+sh JERICHO/CORE/modstore/make_mod_package.sh d1cars --out out
+# -> out/d1cars-0.2.0.zip + out/d1cars-0.2.0.entry.json (sha256 + size computed)
+```
+
+or, to package every mod and rebuild the index in one go:
+
+```sh
+sh JERICHO/CORE/modstore/gen_mods_json.sh --out out
+```
+
+If you are writing an entry by hand for some other reason:
 
 ```sh
 sha256sum   d1cars-0.2.0.zip          # Linux / macOS / git-bash
 certutil -hashfile d1cars-0.2.0.zip SHA256   # Windows cmd
 wc -c < d1cars-0.2.0.zip              # size in bytes
 ```
+
+and then run the validator over the result — it recomputes both from the file:
+
+```sh
+python3 JERICHO/CORE/modstore/check_mod_repo.py out/mods.json --previous old/mods.json
+```
+
+The workflow view of all of this is [`modding.md`](modding.md).
 
 ## 4. Try it locally in five minutes
 
