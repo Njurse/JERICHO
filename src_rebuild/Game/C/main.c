@@ -1776,6 +1776,12 @@ void CheckForPause(void)
 
 	if (gDieWithFade == 16 && (quick_replay || !NoPlayerControl))
 	{
+		/* The player is dead (or dying in a way the mission asked for): the
+		 * pursuit is over, whoever ends up handling the game over. A module that
+		 * refuses it turns this into a RESPAWN, and the cops must not still be
+		 * ramming the spot they put the car back on. */
+		ReleasePursuingCopsToTraffic();
+
 		if (JerGameOverRefused())
 		{
 			// Not a game over: the fade is what blackens the screen, so it goes with the
@@ -2301,8 +2307,17 @@ void EnablePause(PAUSEMODE mode)
 	// mission asked for is refused by the same answer - one rule, both routes (see
 	// JER_PAUSE_GAMEOVER). PAUSEMODE_COMPLETE never comes here: finishing a ride is not
 	// dying, and how a session ends belongs to the session.
-	if (mode == PAUSEMODE_GAMEOVER && JerGameOverRefused())
-		return;
+	if (mode == PAUSEMODE_GAMEOVER)
+	{
+		/* The game over is being decided here - including the case where a module
+		 * refuses it and respawns the player instead. Either way the pursuit is
+		 * over: the pursuing cops go back to ordinary traffic rather than keep
+		 * ramming the player, or stop dead where they are. */
+		ReleasePursuingCopsToTraffic();
+
+		if (JerGameOverRefused())
+			return;
+	}
 
 	if (quick_replay == 0 && NoPlayerControl && mode == PAUSEMODE_GAMEOVER)
 		return;

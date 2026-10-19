@@ -6,6 +6,11 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- **Cops stop chasing a player who is out of the game.** A wreck, being caught on
+  foot or any other game-over condition (including a multiplayer death that is
+  refused and respawned) now puts the pursuing police cars back into ordinary
+  traffic. They no longer keep ramming a player whose wanted level was just
+  cleared, and they no longer stop dead in the road when a pursuit ends.
 - **Driver 1 imported cars now use Driver 1 car sounds.** The synthetic
   `DRIVER/D1CARS/*.LEV` files carry a per-model car-sound segment built from
   `DRIVER/SOUND/VOICES.BLK`; the engine loads those embedded engine/idle/horn
