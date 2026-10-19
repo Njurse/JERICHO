@@ -186,6 +186,10 @@ static void CarBakeRowNote(int row, int slot, int set)
 // host's own rows 0..7. Reported by CarPalRowReport, which runs at exit.
 static int sClutClampCount;
 
+// JERICHO: the one reserved VRAM CLUT id for each city's D2 wheel palette.
+// Declared before CarPalRowClear, which resets it per level.
+static u_short sWheelPalClut[CITY_COUNT];
+
 static void CarPalRowNote(int row, int city)
 {
 	int i;
@@ -207,6 +211,8 @@ static void CarPalRowClear(void)
 
 	for (r = 0; r < CIV_CLUT_ROWS; r++)
 		sCivClutRowWriters[r] = 0;
+
+	memset(sWheelPalClut, 0, sizeof(sWheelPalClut));
 
 	// The colour-column coverage goes with the writers: a new level re-uploads the rows it
 	// needs, so a stale maximum would let the draw pick a column this level never filled.
@@ -259,6 +265,7 @@ static void CarPalRowClear(void)
 // therefore be assigned ONCE per level and kept until the level resets, so it is recorded
 // in the table below on first use and only cleared by CarImportCityBandReset.
 static signed char sSetRow[CITY_COUNT][128];	// city -> set -> civ_clut row, -1 = none
+#define CAR_IMPORT_WHEEL_PAL_SET 127
 
 // JERICHO: is civ_clut row `row` already owned by some (city, set)?
 static int CarRowInUse(int row)
@@ -354,6 +361,43 @@ static int CarAllocSetRow(int set, int city)
 	}
 
 	return -1;
+}
+
+// JERICHO: copy one source CLUT row (16 RGB555 colours, 32 bytes) into a
+// reserved civ_clut row in the JERICHO half. The returned value is the VRAM
+// CLUT id the wheel polys should use; the row is owned by this city and is not
+// the page pin's CLUT, so a later page upload cannot take it away.
+int CarImportReserveWheelPalette(int city, const unsigned char* colors)
+{
+	int row;
+	u_short clut;
+	int i;
+
+	if (city < 0 || city >= CITY_COUNT || colors == NULL)
+		return 0;
+
+	if (sWheelPalClut[city] != 0)
+		return sWheelPalClut[city];
+
+	row = CarAllocSetRow(CAR_IMPORT_WHEEL_PAL_SET, city);
+
+	if (row < 0)
+		return 0;
+
+	LoadImage(&clutpos, (u_long*)colors);
+	clut = GetClut(clutpos.x, clutpos.y);
+	IncrementClutNum(&clutpos);
+
+	for (i = 0; i < 6; i++)
+		civ_clut[row][0][i] = clut;
+
+	CarPalRowNote(row, city);
+	sWheelPalClut[city] = clut;
+
+	printInfo("cross-city: %s wheel palette reserved in civ_clut row %d (clut %04x)\n",
+		LevelNames[city], row, clut);
+
+	return clut;
 }
 
 // JERICHO: how many civ_clut rows a held guest city has allocated, and the k-th of them
@@ -1630,7 +1674,9 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 
 					MapWheelUVToRect(src, &use, out);
 
-					clut = texture_cluts[texRect->set][clutId];
+					clut = texRect->reservedClut ?
+						(ushort)texRect->reservedClut :
+						texture_cluts[texRect->set][clutId];
 					tpage = texture_pages[texRect->set] | 0x20;
 
 					*(u_short*)&poly->u0 = *(u_short*)&out[0];

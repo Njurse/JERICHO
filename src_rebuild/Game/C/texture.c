@@ -4037,6 +4037,18 @@ void LoadImportedTPages(void)
 		// slot at all - and lets a page take a world slot back when there is none.
 		npalettes = *(int*)buf;
 
+		/* Reserve the wheel page's last CLUT row in the JERICHO half before the
+		 * page buffer is released. A later page upload can take the page's own
+		 * CLUT, but not this civ_clut row. */
+		if (npalettes > 0 && npalettes <= 32 && CarImportIsWheelSet(sc, set))
+		{
+			int wheelClut = CarImportReserveWheelPalette(sc,
+				(const unsigned char*)buf + 4 + (npalettes - 1) * 32);
+
+			if (wheelClut != 0)
+				CarImportSetWheelPaletteClut(sc, set, wheelClut);
+		}
+
 		free(buf);
 
 		if (npalettes <= 0 || npalettes > 32)

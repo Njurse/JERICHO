@@ -65,10 +65,14 @@ typedef struct JER_WHEEL_TEX
 	int hubClut;	// the WHLBOTH-specific row (last row of the source page)
 	int u0, v0, u1, v1;
 	int hubU0, hubV0, hubU1, hubV1;	// WHLBOTH rect (hubcap/damaged) on the same page
+	int reservedClut;	// stable CLUT id in the JERICHO import bank, 0 = use page
 } JER_WHEEL_TEX;
 
 int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out);
 void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts);
+int CarImportIsWheelSet(int city, int sourceSet);
+void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut);
+int CarImportReserveWheelPalette(int city, const unsigned char* colors);
 
 // The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
 // maps these to the page it pins; the MODEL carries the remapped draw index.

@@ -1185,6 +1185,40 @@ void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts)
 	}
 }
 
+int CarImportIsWheelSet(int city, int sourceSet)
+{
+	int v, k;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	{
+		for (k = 0; k < gCarImports[city].wheelSetCount[v]; k++)
+			if (gCarImports[city].wheelSet[v][k] == sourceSet)
+				return 1;
+	}
+
+	return 0;
+}
+
+void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut)
+{
+	int v, k;
+
+	if (city < 0 || city >= CITY_COUNT || clut <= 0)
+		return;
+
+	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	{
+		for (k = 0; k < gCarImports[city].wheelSetCount[v]; k++)
+		{
+			if (gCarImports[city].wheelSet[v][k] == sourceSet)
+				gCarImports[city].wheelTex[v].reservedClut = clut;
+		}
+	}
+}
+
 // A texture-only copy of a Driver 2 named wheel model. The renderer uses the
 // host wheel MESH and this model only for its texture records and UVs, so the
 // vertices and normals are deliberately dropped; the poly stream is copied and
