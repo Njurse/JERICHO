@@ -9,6 +9,7 @@
 #include "system.h"
 #include "handling.h"
 #include "mission.h"
+#include "models.h"		// JERICHO: embedded D1 car-sound banks
 #include "mc_snd.h"
 #include "glaunch.h"
 #include "loadview.h"
@@ -410,6 +411,58 @@ static void RestartCarNoiseForSlot(int slot)
 	}
 }
 
+/* Try a city's embedded (Driver 1 bake) bank for `slot` before the host-city
+ * fallback. The blob is already a D2 dynamic bank, so this only has to align,
+ * load and record the block. Returns 1 when it took over the slot. */
+static int LoadEmbeddedCarSoundForSlot(int slot)
+{
+	int city, model, before, after;
+	char* bank;
+	int size;
+
+	if (!car_sound_ready)
+		return 0;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || slot == SPECIAL_CAR_SLOT)
+		return 0;
+
+	city = GetCarModelSourceCity(slot);
+	model = residentCarModels[slot];
+
+	if (city < 0 || model < 0)
+		return 0;
+
+	if (car_slot_sample[slot] >= 0 &&
+		car_slot_city[slot] == city && car_slot_model[slot] == model)
+		return 1;
+
+	if (!GetCarImportSoundBank(city, model, &bank, &size))
+		return 0;
+
+	AlignSoundBankSamples(SOUND_BANK_CARS, 3);
+
+	before = GetSoundBankSampleCount(SOUND_BANK_CARS);
+	car_slot_sample[slot] = -1;
+
+	if (LoadSoundBankDynamic(bank, size, SOUND_BANK_CARS) <= 0)
+		return 0;
+
+	after = GetSoundBankSampleCount(SOUND_BANK_CARS);
+
+	if (after <= before)
+		return 0;
+
+	car_slot_sample[slot] = before / 3;
+	car_slot_city[slot] = city;
+	car_slot_model[slot] = model;
+
+	printInfo("gamesnd: resident slot %d uses embedded D1 car sounds (%s model %d) -> block %d\n",
+		slot, LevelNames[city], model, car_slot_sample[slot]);
+
+	RestartCarNoiseForSlot(slot);
+	return 1;
+}
+
 /* Give `slot` a car sound bank of its own and record the SOUND_BANK_CARS sample
  * block it landed in. Unlike the stock slots, an imported slot's bank is
  * appended AFTER the level's own and special banks, so GetCarBankSample cannot
@@ -425,6 +478,10 @@ void LoadCarSoundForSlot(int slot)
 		return;
 
 	if (!car_sound_ready)
+		return;
+
+	// A Driver 1 city's synthetic LEV carries its own engine/idle bank.
+	if (LoadEmbeddedCarSoundForSlot(slot))
 		return;
 
 	model = residentCarModels[slot];
@@ -524,17 +581,24 @@ void LoadLevelSFX(int missionNum)
 		car_slot_model[i] = -1;
 	}
 
+	car_sound_ready = 1;
+
 	cop_bank = missionNum % 4 + 1;
 	cop_model = 3;
 
 	// init sound bank memory
 	LoadSoundBankDynamic(NULL, 0, 0);
 
-	// load car banks
+	// load car banks. An embedded (Driver 1 bake) bank wins over the D2 host
+	// lookup; without one the stock path is exactly as before.
 	for (i = 0; i < 3; i++)
-		LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(i));
+	{
+		if (!LoadEmbeddedCarSoundForSlot(i))
+			LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(i));
+	}
 #if MAX_CAR_RESIDENT_MODELS > 5
-	LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(4));
+	if (!LoadEmbeddedCarSoundForSlot(4))
+		LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(4));
 #endif
 
 	ShowLoading();
@@ -733,8 +797,6 @@ void LoadLevelSFX(int missionNum)
 	{
 		gDoCopSpeech = 1;
 	}
-
-	car_sound_ready = 1;
 
 #if MAX_CAR_RESIDENT_MODELS > 5
 	// Imported slots' banks are appended after the level's own and special

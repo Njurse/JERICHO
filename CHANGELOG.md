@@ -6,6 +6,11 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- **Driver 1 imported cars now use Driver 1 car sounds.** The synthetic
+  `DRIVER/D1CARS/*.LEV` files carry a per-model car-sound segment built from
+  `DRIVER/SOUND/VOICES.BLK`; the engine loads those embedded engine/idle/horn
+  banks for a Driver 1 source city instead of borrowing the host city's sound.
+  Older bakes with no sound segment keep the host fallback.
 - **Imported cars sound like themselves.** A cross-city vehicle now gets the engine,
   idle and horn bank of the city it came from, including cars imported into the spare
   resident slots and cars hot-loaded after the level started. Driver 1 and runtime-bank

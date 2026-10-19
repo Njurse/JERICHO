@@ -131,6 +131,11 @@ int JerLoadCarImportForCity(int city);
 char* GetCarImportPallet(int* size);
 char* GetCarImportPalletForCity(int city, int* size);
 
+// JERICHO: one model's embedded car-sound bank from a D1 city's synthetic LEV.
+// The body is a D2 dynamic-bank blob (int num_samples, SAMPLE_DATA[], VAG data);
+// returns 0 when the city has no sound segment or this model has no entry.
+int GetCarImportSoundBank(int city, int model, char** bank, int* size);
+
 // The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
 // walks. texture.c parses it (the TP/TEXINF types the layout needs live there).
 char* GetCarImportTextureInfo(int* size);

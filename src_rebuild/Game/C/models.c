@@ -236,6 +236,7 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_PALLET	25	// LUMP_PALLET - the car palettes (civ_clut)
 #define CAR_IMPORT_LUMP_TEXINFO	34	// LUMP_TEXTUREINFO - the page lists
 #define CAR_IMPORT_LUMP_WHEELS	200	// JERICHO: optional wheel models (the D1 bake)
+#define CAR_IMPORT_LUMP_SOUNDS	201	// JERICHO: embedded per-model car sounds (the D1 bake)
 #define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
 #define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
 #define CAR_IMPORT_LUMP_MODELNAMES	12	// LUMP_MODELNAMES (DATA1)
@@ -257,6 +258,8 @@ typedef struct
 	int texInfoSize;
 	char* carWheels;	// LUMP_CAR_WHEELS body, or NULL (no wheel segment)
 	int carWheelsSize;
+	char* carSounds;	// LUMP_CAR_SOUNDS body, or NULL (no embedded car sounds)
+	int carSoundsSize;
 	char* wheelMem;		// malloc'd copies of the wheel MODELs below
 	MODEL* wheels[CAR_IMPORT_WHEEL_VARIANTS];
 	char* wheelTexMem[CAR_IMPORT_WHEEL_VARIANTS];	// per-model D2 texture-source blocks
@@ -521,6 +524,11 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 	// no such segment and keeps the host level's shared wheel models.
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_WHEELS, &imp->carWheels, &imp->carWheelsSize);
 
+	// JERICHO: the synthetic Driver 1 LEVs embed a per-model car-sound table in
+	// their own segment. Optional: D2 levels and older D1 bakes simply have none,
+	// and gamesnd keeps the host-city fallback for them.
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_SOUNDS, &imp->carSounds, &imp->carSoundsSize);
+
 	// JERICHO: a real Driver 2 level's named wheel models. DATA2 holds
 	// LUMP_MODELS (the model table) and DATA1 holds LUMP_MODELNAMES; the names are
 	// indexed by the same slot number the engine's FindModelIdxWithName uses.
@@ -774,6 +782,79 @@ char* GetCarImportPalletForCity(int city, int* size)
 		*size = imp ? imp->palletSize : 0;
 
 	return imp ? imp->pallet : NULL;
+}
+
+// JERICHO: one model's embedded car-sound bank from a D1 city's synthetic LEV,
+// or 0. The body is already in the D2 dynamic-bank shape (int num_samples, that
+// many SAMPLE_DATA, then the VAG payload), so gamesnd can hand it straight to
+// LoadSoundBankDynamic. Addresses are bank-payload-relative.
+int GetCarImportSoundBank(int city, int model, char** bank, int* size)
+{
+	CAR_IMPORT* imp;
+	int off, n, i, dir, payload;
+
+	if (bank)
+		*bank = NULL;
+
+	if (size)
+		*size = 0;
+
+	if (model < 0 || model >= CAR_IMPORT_MODEL_SLOTS)
+		return 0;
+
+	if (!CarImportCityHeld(city))
+		return 0;
+
+	imp = &gCarImports[city];
+
+	if (imp->carSounds == NULL ||
+		imp->carSoundsSize < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int))
+		return 0;
+
+	if (*(int*)imp->carSounds != 1 ||
+		*(int*)(imp->carSounds + 4) != CAR_IMPORT_MODEL_SLOTS)
+		return 0;
+
+	off = ((int*)(imp->carSounds + 8))[model];
+
+	if (off < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int) ||
+		off + 4 > imp->carSoundsSize)
+		return 0;
+
+	n = *(int*)(imp->carSounds + off);
+
+	if (n != 3)
+		return 0;
+
+	dir = 4 + n * 16;
+
+	if (off + dir > imp->carSoundsSize)
+		return 0;
+
+	payload = 0;
+
+	for (i = 0; i < n; i++)
+	{
+		int a = *(int*)(imp->carSounds + off + 4 + i * 16);
+		int length = *(int*)(imp->carSounds + off + 8 + i * 16);
+
+		if (a + length > payload)
+			payload = a + length;
+	}
+
+	if (off + dir + payload > imp->carSoundsSize)
+		return 0;
+
+	printInfo("cross-city: %s model %d carries embedded car sounds\n",
+		LevelNames[city], model);
+
+	if (bank)
+		*bank = imp->carSounds + off;
+
+	if (size)
+		*size = dir + payload;
+
+	return 1;
 }
 
 // The imported city's LUMP_TEXTUREINFO (its texture-page lists). Only valid for
