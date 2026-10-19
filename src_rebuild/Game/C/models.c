@@ -785,36 +785,13 @@ char* GetCarImportPalletForCity(int city, int* size)
 	return imp ? imp->pallet : NULL;
 }
 
-// JERICHO: one model's embedded car-sound bank from a D1 city's synthetic LEV,
-// or 0. The body is already in the D2 dynamic-bank shape (int num_samples, that
-// many SAMPLE_DATA, then the VAG payload), so gamesnd can hand it straight to
-// LoadSoundBankDynamic. Addresses are bank-payload-relative.
-int GetCarImportSoundBank(int city, int model, char** bank, int* size)
+// JERICHO: the embedded car-sound entry for `model` in a D1 city's synthetic LEV,
+// or 0 when it is missing or malformed. The body is already in the D2 dynamic-bank
+// shape (int num_samples, that many SAMPLE_DATA, then the VAG payload), so gamesnd
+// can hand it straight to LoadSoundBankDynamic. Addresses are bank-payload-relative.
+static int CarImportSoundEntry(CAR_IMPORT* imp, int model, char** bank, int* size)
 {
-	CAR_IMPORT* imp;
 	int off, n, i, dir, payload;
-
-	if (bank)
-		*bank = NULL;
-
-	if (size)
-		*size = 0;
-
-	if (model < 0 || model >= CAR_IMPORT_MODEL_SLOTS)
-		return 0;
-
-	if (!CarImportCityHeld(city))
-		return 0;
-
-	imp = &gCarImports[city];
-
-	if (imp->carSounds == NULL ||
-		imp->carSoundsSize < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int))
-		return 0;
-
-	if (*(int*)imp->carSounds != 1 ||
-		*(int*)(imp->carSounds + 4) != CAR_IMPORT_MODEL_SLOTS)
-		return 0;
 
 	off = ((int*)(imp->carSounds + 8))[model];
 
@@ -839,6 +816,9 @@ int GetCarImportSoundBank(int city, int model, char** bank, int* size)
 		int a = *(int*)(imp->carSounds + off + 4 + i * 16);
 		int length = *(int*)(imp->carSounds + off + 8 + i * 16);
 
+		if (a < 0 || length < 0)
+			return 0;
+
 		if (a + length > payload)
 			payload = a + length;
 	}
@@ -846,16 +826,57 @@ int GetCarImportSoundBank(int city, int model, char** bank, int* size)
 	if (off + dir + payload > imp->carSoundsSize)
 		return 0;
 
-	printInfo("cross-city: %s model %d carries embedded car sounds\n",
-		LevelNames[city], model);
+	*bank = imp->carSounds + off;
+	*size = dir + payload;
+	return 1;
+}
+
+// JERICHO: the embedded car-sound bank a D1 city's car uses, or 0. Driver 1 gave
+// EVERY car the same generic engine and idle, so the model number is not used to
+// pick the bank: every car gets the city's first valid entry. Indexing per model
+// gave some cars the wrong loop and left models with no entry silent.
+int GetCarImportSoundBank(int city, int model, char** bank, int* size)
+{
+	CAR_IMPORT* imp;
+	char* b;
+	int sz, m;
+
+	(void)model;
 
 	if (bank)
-		*bank = imp->carSounds + off;
+		*bank = NULL;
 
 	if (size)
-		*size = dir + payload;
+		*size = 0;
 
-	return 1;
+	if (!CarImportCityHeld(city))
+		return 0;
+
+	imp = &gCarImports[city];
+
+	if (imp->carSounds == NULL ||
+		imp->carSoundsSize < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int))
+		return 0;
+
+	if (*(int*)imp->carSounds != 1 ||
+		*(int*)(imp->carSounds + 4) != CAR_IMPORT_MODEL_SLOTS)
+		return 0;
+
+	for (m = 0; m < CAR_IMPORT_MODEL_SLOTS; m++)
+	{
+		if (!CarImportSoundEntry(imp, m, &b, &sz))
+			continue;
+
+		if (bank)
+			*bank = b;
+
+		if (size)
+			*size = sz;
+
+		return 1;
+	}
+
+	return 0;
 }
 
 // The imported city's LUMP_TEXTUREINFO (its texture-page lists). Only valid for

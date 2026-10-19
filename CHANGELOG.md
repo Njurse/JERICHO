@@ -10,7 +10,11 @@ is in [changelog.txt](changelog.txt).
   `DRIVER/D1CARS/*.LEV` files carry a per-model car-sound segment built from
   `DRIVER/SOUND/VOICES.BLK`; the engine loads those embedded engine/idle/horn
   banks for a Driver 1 source city instead of borrowing the host city's sound.
-  Older bakes with no sound segment keep the host fallback.
+  Every Driver 1 car uses the same generic engine and idle, as in Driver 1, loaded
+  once and shared. Older bakes with no sound segment keep the host fallback.
+- Picking a car in Take a Ride that the `import` config already puts in a slot
+  (for example `import = 5:4:9` and Miami car 6) now rides that slot instead of
+  reporting "none is free".
 - **Imported cars sound like themselves.** A cross-city vehicle now gets the engine,
   idle and horn bank of the city it came from, including cars imported into the spare
   resident slots and cars hot-loaded after the level started. Driver 1 and runtime-bank

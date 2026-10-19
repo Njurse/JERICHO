@@ -264,9 +264,11 @@ That covers slots the stock loader never loaded, including the spare slots picks
 land in and cars hot-loaded after the level starts. Driver 1's transplanted cities
 go one step further: the synthetic `DRIVER/D1CARS/*.LEV` files carry a
 `LUMP_CAR_SOUNDS` segment (type 201) with a three-sample bank per model, baked
-from `DRIVER/SOUND/VOICES.BLK`, and the engine prefers it. A synthetic LEV
-without that segment, a runtime bank with no car-sound table, or a model the bake
-left empty falls back to the host city's row for the same model number — an
+from `DRIVER/SOUND/VOICES.BLK`, and the engine prefers it. Driver 1 gave every car
+the same engine and idle, so the engine ignores the per-model entries and uses the
+city's first valid one for every D1 car, loaded once per level and shared by all D1
+slots. A synthetic LEV without that segment, or a runtime bank with no car-sound
+table, falls back to the host city's row for the same model number — an
 engine and idle loop rather than silence.
 
 ### Verifying what landed, and reloading it if it did not
