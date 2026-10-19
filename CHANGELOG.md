@@ -8,6 +8,8 @@ is in [changelog.txt](changelog.txt).
 
 - The Multiplayer pause page now lists the most used options first: Respawn, Vehicle Options, Warp To Player and Player Color, then Invincibility and Immunity, with Kick player and Write diagnostics now at the bottom.
 - "My colour" in the Multiplayer pause page is now called "Player Color".
+- Vehicle Options: the Palette row now shows the palette and palette count of the car selected in the picker, updating as you browse City and Car.
+- "Respawn as this car" now applies a new palette even when you pick the car you are already driving, so you no longer have to switch to another model and back.
 
 ## v0.10.8
 
