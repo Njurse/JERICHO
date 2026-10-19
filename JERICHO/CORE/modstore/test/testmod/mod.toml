@@ -1,0 +1,13 @@
+id = "testmod"
+name = "Test Mod"
+version = "0.1.0"
+author = "JERICHO"
+description = "A do-nothing addon used to prove the mod store's fetch, verify and install path end to end. It registers, logs, and hooks nothing."
+dependencies = []
+runtime = "dll"
+default-enabled = false
+
+# The store's own fixture, not a mod anybody plays. It is deliberately an
+# API-only addon (runtime = "dll") so an install of it is a REAL addon
+# install: copied into MODS/testmod/, picked up by the loader's rescan on
+# jer_manager_reload, and removable again.

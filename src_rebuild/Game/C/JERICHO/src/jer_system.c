@@ -17,6 +17,7 @@
 #include "jer_frontend.h"
 #include "jer_screen.h"
 #include "jer_console.h"	/* jer_console_log: mod conflicts print to the console */
+#include "jer_modstore.h"	/* the mod store: init before the module scan (see jer_init) */
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -1003,6 +1004,12 @@ void jer_init(const char* rootDir)
 
 	/* persistent module config lives under <root>/CONFIG/ */
 	jer_config_init(rootDir);
+
+	/* the mod store: its own config, its records, and the cached repo index.
+	 * BEFORE jerSnapshotModules, deliberately -- a mod the store was asked to
+	 * remove (or one a core update replaced) must be settled before the loader
+	 * looks at MODS/, or this boot would load a half-removed folder. */
+	jer_modstore_init(rootDir);
 
 	/* the update check: spawns one curl and returns at once (jer_update.c) */
 	jer_update_start();
