@@ -187,6 +187,7 @@ static struct
 	char testId[STORE_ID_MAX];
 	int  testStage;
 	int  drawLogged;
+	int  bakePrompt;	/* ask about a stale Driver 1 bake once per session */
 } gStore;
 
 /* ------------------------------------------------------------------ */
@@ -894,6 +895,220 @@ static int StoreIndexLoad(int repo)
 /* Rows for the repo browser                                            */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Dependencies and the Driver 1 bake                                  */
+/* ------------------------------------------------------------------ */
+
+static int StoreHasModule(const char* id)
+{
+	JER_MODULE_INFO info[JER_MAX_MODULES];
+	int count = jer_module_list(info, JER_MAX_MODULES);
+	int i;
+
+	for (i = 0; i < count; i++)
+	{
+		if (store_stricmp(info[i].id, id) == 0)
+			return 1;
+	}
+	return 0;
+}
+
+/* The first mod named in `requires` that is not installed here, or NULL. The
+ * field is a comma or space separated list ("carhacks, mp"), the same shape
+ * mod.toml uses, so one idiom covers both. */
+static const char* StoreMissingDep(const char* requires, char* buf, int max)
+{
+	const char* p = requires;
+	int n = 0;
+
+	if (requires == NULL || requires[0] == 0)
+		return NULL;
+
+	while (*p != 0)
+	{
+		char id[STORE_ID_MAX];
+		int k = 0;
+
+		while (*p == ' ' || *p == '\t' || *p == ',')
+			p++;
+		while (*p != 0 && *p != ',' && *p != ' ' && *p != '\t' && *p != '"' && k < STORE_ID_MAX - 1)
+			id[k++] = *p++;
+		id[k] = 0;
+
+		if (k == 0)
+			break;
+		if (!StoreValidId(id))
+			continue;
+		if (!StoreHasModule(id))
+		{
+			StoreCopy(buf, max, id);
+			n = 1;
+			break;
+		}
+	}
+
+	return n ? buf : NULL;
+}
+
+/* The first integer in a file, or -1 when there is none. */
+static int StoreFileInt(const char* path, const char* afterKey)
+{
+	char buf[8192];
+	const char* p;
+	int len;
+
+	len = StoreReadFile(path, buf, sizeof(buf));
+	if (len <= 0)
+		return -1;
+
+	p = buf;
+	if (afterKey != NULL)
+	{
+		const char* hit = strstr(buf, afterKey);
+
+		if (hit == NULL)
+			return -1;
+		p = hit + strlen(afterKey);
+	}
+
+	while (*p != 0 && !isdigit((unsigned char)*p))
+		p++;
+	if (*p == 0)
+		return -1;
+
+	return atoi(p);
+}
+
+/* What the SHIPPED tooling expects, from BAKE_VERSION in the bake script. The
+ * script is the record: bumping it is what says "the cars must be baked again". */
+static int StoreToolingBakeVersion(void)
+{
+	const char* names[] =
+	{
+		"BAKE_D1_CARS.sh", "BAKE_D1_CARS.bat",
+		"MODS/mp/tools/pack_lan/BAKE_D1_CARS.sh", "MODS/mp/tools/pack_lan/BAKE_D1_CARS.bat"
+	};
+	int i;
+
+	for (i = 0; i < (int)(sizeof(names) / sizeof(names[0])); i++)
+	{
+		char path[STORE_PATH_MAX];
+		int v;
+
+		snprintf(path, sizeof(path), "%s/%s", (i < 2) ? gStore.exeDir : gStore.root, names[i]);
+		v = StoreFileInt(path, "BAKE_VERSION");
+		if (v >= 0)
+			return v;
+	}
+	return -1;
+}
+
+/* Is there anything in this folder? Used for "a bake exists but predates the
+ * stamp", which is a real state on machines baked before BAKE_VERSION existed. */
+static int StoreDirHasEntries(const char* path)
+{
+#if defined(_WIN32)
+	{
+		char pattern[STORE_PATH_MAX + 8];
+		WIN32_FIND_DATAA fd;
+		HANDLE hFind;
+		int found = 0;
+
+		snprintf(pattern, sizeof(pattern), "%s/*", path);
+		hFind = FindFirstFileA(pattern, &fd);
+		if (hFind == INVALID_HANDLE_VALUE)
+			return 0;
+
+		do
+		{
+			if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0)
+				continue;
+			found = 1;
+			break;
+		}
+		while (FindNextFileA(hFind, &fd));
+
+		FindClose(hFind);
+		return found;
+	}
+#else
+	{
+		DIR* d = opendir(path);
+		struct dirent* e;
+		int found = 0;
+
+		if (d == NULL)
+			return 0;
+
+		while ((e = readdir(d)) != NULL)
+		{
+			if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
+				continue;
+			found = 1;
+			break;
+		}
+		closedir(d);
+		return found;
+	}
+#endif
+}
+
+/* What is baked on THIS machine. -1 = no bake at all (nothing to report), 0 = a
+ * bake from before the stamp existed (so older than any tooling that has one). */
+static int StoreBakedVersion(void)
+{
+	char path[STORE_PATH_MAX];
+	char dir[STORE_PATH_MAX];
+	int v;
+
+	/* <install>/JERICHO is the root, so the game data sits one level up */
+	snprintf(dir, sizeof(dir), "%s/../DRIVER/D1CARS", gStore.root);
+	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
+
+	v = StoreFileInt(path, NULL);
+	if (v >= 0)
+		return v;
+
+	/* unstamped: a bake from the tooling that predates the version, which is by
+	 * definition older than the tooling beside the game now */
+	return StoreDirHasEntries(dir) ? 0 : -1;
+}
+
+/* The version the repo's own d1cars entry asks for (a release that changes the
+ * bake data without touching the script bumps this instead). */
+static int StoreIndexBakeVersion(const char* id)
+{
+	int i;
+
+	for (i = 0; i < gStore.modCount; i++)
+	{
+		if (store_stricmp(gStore.mods[i].id, id) == 0)
+			return gStore.mods[i].bakeVersion;
+	}
+	return 0;
+}
+
+/* 1 when this machine has a Driver 1 bake older than what the shipped tooling (or
+ * the repo's d1cars entry) expects. That is the only case worth asking about. */
+static int StoreBakeStale(void)
+{
+	int baked = StoreBakedVersion();
+	int wanted = StoreToolingBakeVersion();
+	int fromIndex;
+
+	if (baked < 0)
+		return 0;			/* nothing baked: nothing to re-bake */
+
+	fromIndex = StoreIndexBakeVersion("d1cars");
+	if (fromIndex > wanted)
+		wanted = fromIndex;
+
+	if (wanted < 0)
+		return 0;			/* nothing says what is expected */
+
+	return baked < wanted;
+}
+
 /* Fill one row's state from the index entry, the record and the live module
  * inventory. This is where the ownership rules live: a bundled mod the release
  * ships is updatable, never downgradable, and after a core update it reads as
@@ -932,6 +1147,19 @@ static void StoreRowState(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int n
 		snprintf(note, (size_t)noteMax, "needs JERICHO %s or newer", m->minCore);
 		it->canInstall = 0;
 		return;
+	}
+
+	/* a mod that needs another mod, which is not here */
+	{
+		char missing[STORE_ID_MAX];
+
+		if (StoreMissingDep(m->requires, missing, sizeof(missing)) != NULL)
+		{
+			it->state = JER_MODSTORE_ST_NEEDS_DEP;
+			snprintf(note, (size_t)noteMax, "needs %s", missing);
+			it->canInstall = 0;
+			return;
+		}
 	}
 
 	if (rec == NULL)
@@ -1087,7 +1315,7 @@ static void StoreTestTick(void)
 			}
 			else if (gStore.testStage >= 1)
 			{
-				gStore.testStage = 4;
+				gStore.testStage = 7;
 				jer_log("[modstore][test] index: %d mod(s), state=%d, note=\"%s\"\n",
 					gStore.modCount, gStore.indexState, gStore.indexNote);
 			}
@@ -1554,6 +1782,12 @@ static void StoreJobFinish(void)
 					jer_manager_reload(jer_root_dir());
 				}
 			}
+
+			/* an install can carry newer Driver 1 bake tooling, so ask before the
+			 * cars are left baked by the previous one */
+			if (ok)
+				gStore.bakePrompt = 1;
+
 			StoreRecordsLoad();
 			gStore.itemsDirty = 1;
 			break;
@@ -1659,6 +1893,7 @@ void jer_modstore_init(const char* rootDir)
 	}
 
 	gStore.ready = 1;
+	gStore.bakePrompt = 1;	/* the update may have brought newer bake tooling */
 
 	jer_log("[modstore] initialised: %d repo(s), %d install record(s), helper %s\n",
 		gStore.repoCount, gStore.recordCount,
@@ -1924,6 +2159,12 @@ static void StoreInstallYes(void)
 static void StoreRemoveYes(void)
 {
 	jer_modstore_remove(gPendingId);
+}
+
+/* "re-bake them now": the same job the menu can start, run from the prompt. */
+static void StoreRebakeYes(void)
+{
+	jer_modstore_rebake();
 }
 
 static int RepoRowActivate(void* ud)
@@ -2502,6 +2743,22 @@ void jer_modstore_frontend_tick(void)
 		else
 		{
 			gModsReopen = 1;	/* try again next frame */
+		}
+	}
+
+	/* a Driver 1 bake older than the tooling beside it: ask ONCE, on the first
+	 * frame that is free of a job, so an update does not silently leave the cars
+	 * baked by the previous tooling. Asking only when a bake EXISTS is deliberate:
+	 * a player with no Driver 1 data has nothing to re-bake. */
+	if (gStore.bakePrompt && !StoreJobRunning())
+	{
+		gStore.bakePrompt = 0;
+
+		if (StoreBakeStale())
+		{
+			jer_log("[modstore] the Driver 1 bake is older than the tooling (baked %d, expected %d)\n",
+				StoreBakedVersion(), StoreToolingBakeVersion());
+			jer_prompt_begin("Your Driver 1 cars were baked with older tooling. Re-bake them now?", StoreRebakeYes);
 		}
 	}
 
