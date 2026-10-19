@@ -9,6 +9,7 @@
 #include "system.h"
 #include "handling.h"
 #include "mission.h"
+#include "models.h"		// JERICHO: embedded D1 car-sound banks
 #include "mc_snd.h"
 #include "glaunch.h"
 #include "loadview.h"
@@ -130,6 +131,21 @@ char phrase_top = 0;
 
 static othercarsound siren_noise[MAX_SIREN_NOISES];
 static othercarsound car_noise[MAX_CAR_NOISES];
+
+/* JERICHO cross-city imports: the SOUND_BANK_CARS sample block each resident
+ * slot's car actually lives in. The stock GetCarBankSample() derives a block
+ * from the slot index, which only works because LoadLevelSFX loads banks in
+ * that same order. An imported slot is appended AFTER the stock and special
+ * banks, so its block cannot be derived from its index -- record it here when
+ * the bank is loaded. -1 = use the stock formula.
+ *
+ * city/model are kept with the block so a slot that is released and reused (a
+ * pick changed, a peer's car freed) notices it must load a different bank. */
+static int car_slot_sample[MAX_CAR_RESIDENT_MODELS];
+static int car_slot_city[MAX_CAR_RESIDENT_MODELS];
+static int car_slot_model[MAX_CAR_RESIDENT_MODELS];
+static int car_d1_generic_block = -1;	// JERICHO: the block holding the shared D1 engine/idle, once loaded
+static int car_sound_ready;
 static int loudhail_time = 0;
 
 static int copmusic = 0;
@@ -267,6 +283,7 @@ int ResidentModelsBodge(void)
 int GetCarBankSample(int model)
 {
 	int bankStartSample;
+
 	if (model == SPECIAL_CAR_SLOT)
 	{
 #if MAX_CAR_RESIDENT_MODELS > 5
@@ -275,27 +292,74 @@ int GetCarBankSample(int model)
 		bankStartSample = ResidentModelsBodge();
 #endif
 	}
+	else if (car_sound_ready && model >= 0 && model < MAX_CAR_RESIDENT_MODELS &&
+		car_slot_sample[model] >= 0)
+	{
+		// A bank appended after the stock ones: its block was recorded when it
+		// was loaded, so it cannot be derived from the slot index.
+		bankStartSample = car_slot_sample[model];
+	}
 	else if (model < 3)
 		bankStartSample = model;
 	else
 		bankStartSample = model - 1;
+
 	return bankStartSample;
+}
+
+// The four Driver 2 cities' car-sound tables, indexed by model number. Only
+// these cities have per-model engine/idle/horn banks in VOICES2.BLK; a
+// transplanted Driver 1 city or a runtime bank has none of its own.
+static const char car_banks[4][9] =
+{
+	{12, 4, 13, 5, 16, 9, 2, 15, 10},
+	{10, 11, 7, 6, 17, 17, 2, 5, 4},
+	{14, 3, 4, 6, 11, 9, 2, 17, 10},
+	{8, 7, 13, 9, 2, 17, 17, 11, 16},
+};
+
+// The bank lump carrying a car's engine, idle and horn samples. `city` is the
+// city whose car-data table `model` belongs to - which is NOT always GameLevel,
+// because a cross-city import keeps the model number of the city it came from.
+//
+// A city without a table (Driver 1's transplanted cities, a runtime bank)
+// falls back to the host level's row: the sound for the same model number is
+// not ideal, but an engine and an idle loop beat a silent car.
+static int MapCarModelToBank(int city, int model)
+{
+	int ret;
+
+	if (city < 0 || city >= (int)(sizeof(car_banks) / sizeof(car_banks[0])))
+		city = GameLevel;
+
+	if (city < 0 || city >= (int)(sizeof(car_banks) / sizeof(car_banks[0])))
+		city = 0;
+
+	ret = model - 1;
+
+	if (model == 0)
+		ret = 1;
+
+	if (ret > 6)
+		ret -= 3;
+
+	// The callers clamp model 13 (the special sentinel) already; keep a bad
+	// model number from walking off the row rather than faulting.
+	if (ret < 0)
+		ret = 0;
+
+	if (ret > 8)
+		ret = 8;
+
+	return car_banks[city][ret];
 }
 
 // [D] [T]
 int MapCarIndexToBank(int index)
 {
-	static char car_banks[4][9] =
-	{
-		{12, 4, 13, 5, 16, 9, 2, 15, 10},
-		{10, 11, 7, 6, 17, 17, 2, 5, 4},
-		{14, 3, 4, 6, 11, 9, 2, 17, 10},
-		{8, 7, 13, 9, 2, 17, 17, 11, 16},
-	};
-
 	int* RM;
 	int model;
-	int ret;
+	int city;
 
 	RM = residentCarModels;
 
@@ -312,16 +376,204 @@ int MapCarIndexToBank(int index)
 			model = 5;
 	}
 
-	ret = model - 1;
+	// A slot imported from another city keeps that city's model number, so its
+	// sound has to be looked up in THAT city's table. Native slots (source -1)
+	// stay exactly on GameLevel, which is the stock path.
+	city = GetCarModelSourceCity(index);
 
-	if (model == 0)
-		ret = 1;
+	if (city < 0)
+		city = GameLevel;
 
-	if (ret > 6)
-		ret -= 3;
-
-	return car_banks[GameLevel][ret];
+	return MapCarModelToBank(city, model);
 }
+
+/* Restart any looping car-noise channel a slot already owns, so a bank that
+ * arrives mid-level is used on the next SoundTasks tick instead of leaving the
+ * old (stand-in) car's engine loop running. */
+static void RestartCarNoiseForSlot(int slot)
+{
+	int j;
+
+	for (j = 0; j < MAX_CAR_NOISES; j++)
+	{
+		if (!car_noise[j].in_use || car_noise[j].car < 0 || car_noise[j].car >= MAX_CARS)
+			continue;
+
+		if (car_data[car_noise[j].car].ap.model != slot)
+			continue;
+
+		StopChannel(car_noise[j].chan);
+		UnlockChannel(car_noise[j].chan);
+
+		car_noise[j].chan = -1;
+		car_noise[j].car = MAX_CARS;
+		car_noise[j].stopped = 1;
+		car_noise[j].in_use = 0;
+	}
+}
+
+/* Try a city's embedded (Driver 1 bake) bank for `slot` before the host-city
+ * fallback. The blob is already a D2 dynamic bank, so this only has to align,
+ * load and record the block. Returns 1 when it took over the slot. */
+static int LoadEmbeddedCarSoundForSlot(int slot)
+{
+	int city, model, before, after;
+	char* bank;
+	int size;
+
+	if (!car_sound_ready)
+		return 0;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || slot == SPECIAL_CAR_SLOT)
+		return 0;
+
+	city = GetCarModelSourceCity(slot);
+	model = residentCarModels[slot];
+
+	if (city < 0 || model < 0)
+		return 0;
+
+	if (car_slot_sample[slot] >= 0 &&
+		car_slot_city[slot] == city && car_slot_model[slot] == model)
+		return 1;
+
+	if (!GetCarImportSoundBank(city, model, &bank, &size))
+		return 0;
+
+	// Every D1 car shares the one generic bank: load it once per level and point
+	// later D1 slots at it, instead of filling SPU memory with copies.
+	if (car_d1_generic_block >= 0)
+	{
+		car_slot_sample[slot] = car_d1_generic_block;
+		car_slot_city[slot] = city;
+		car_slot_model[slot] = model;
+
+		printInfo("gamesnd: resident slot %d shares the generic D1 engine/idle (%s model %d) -> block %d\n",
+			slot, LevelNames[city], model, car_d1_generic_block);
+
+		RestartCarNoiseForSlot(slot);
+		return 1;
+	}
+
+	AlignSoundBankSamples(SOUND_BANK_CARS, 3);
+
+	before = GetSoundBankSampleCount(SOUND_BANK_CARS);
+	car_slot_sample[slot] = -1;
+
+	if (LoadSoundBankDynamic(bank, size, SOUND_BANK_CARS) <= 0)
+		return 0;
+
+	after = GetSoundBankSampleCount(SOUND_BANK_CARS);
+
+	if (after <= before)
+		return 0;
+
+	car_slot_sample[slot] = before / 3;
+	car_slot_city[slot] = city;
+	car_slot_model[slot] = model;
+	car_d1_generic_block = car_slot_sample[slot];
+
+	printInfo("gamesnd: resident slot %d uses the generic embedded D1 engine/idle (%s model %d) -> block %d\n",
+		slot, LevelNames[city], model, car_slot_sample[slot]);
+
+	RestartCarNoiseForSlot(slot);
+	return 1;
+}
+
+/* Give `slot` a car sound bank of its own and record the SOUND_BANK_CARS sample
+ * block it landed in. Unlike the stock slots, an imported slot's bank is
+ * appended AFTER the level's own and special banks, so GetCarBankSample cannot
+ * derive its block from the slot index.
+ *
+ * Idempotent: the same (city, model) already mapped for this slot is a no-op.
+ * A released/reused slot therefore notices it needs a different bank. */
+void LoadCarSoundForSlot(int slot)
+{
+	int city, model, before, after;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || slot == SPECIAL_CAR_SLOT)
+		return;
+
+	if (!car_sound_ready)
+		return;
+
+	// A Driver 1 city's synthetic LEV carries its own engine/idle bank.
+	if (LoadEmbeddedCarSoundForSlot(slot))
+		return;
+
+	model = residentCarModels[slot];
+
+	if (model < 0 || model >= CAR_MODEL_LUMP_ENTRIES)
+	{
+		car_slot_sample[slot] = -1;
+		return;
+	}
+
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0)
+		city = GameLevel;
+
+	if (car_slot_sample[slot] >= 0 &&
+		car_slot_city[slot] == city && car_slot_model[slot] == model)
+		return;
+
+	// A car's samples are addressed as block*3, so the appended bank must start
+	// on a 3-sample boundary. The level's special banks need not end on one.
+	AlignSoundBankSamples(SOUND_BANK_CARS, 3);
+
+	before = GetSoundBankSampleCount(SOUND_BANK_CARS);
+
+	// drop the old mapping first: if the load fails the slot must fall back to
+	// the stock formula rather than keep pointing at its previous car's samples
+	car_slot_sample[slot] = -1;
+
+	LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(slot));
+
+	after = GetSoundBankSampleCount(SOUND_BANK_CARS);
+
+	if (after <= before)
+	{
+		printWarning("gamesnd: no car sound bank for resident slot %d (%s model %d)\n",
+			slot, LevelNames[city], model);
+		return;
+	}
+
+	car_slot_sample[slot] = before / 3;
+	car_slot_city[slot] = city;
+	car_slot_model[slot] = model;
+
+	printInfo("gamesnd: resident slot %d (%s model %d) -> car sound block %d\n",
+		slot, LevelNames[city], model, car_slot_sample[slot]);
+
+	RestartCarNoiseForSlot(slot);
+}
+
+#if MAX_CAR_RESIDENT_MODELS > 5
+/* Append banks for the slots LoadLevelSFX does not stock-load: slot 3 (when it
+ * is not sharing slot 2's bank) and every spare slot. This runs before
+ * LoadGameLevel builds the geometry, so it keys off the resident models the
+ * import set wrote; a car that later fails to build keeps this bank, which is
+ * the least surprising outcome (its slot still names that model). */
+static void LoadExtraCarSoundBanks(void)
+{
+	int slot;
+
+	for (slot = 3; slot < SPECIAL_CAR_SLOT; slot++)
+	{
+		if (slot == 4)
+			continue;			// stock-loaded beside slots 0..2
+
+		if (residentCarModels[slot] < 0 || residentCarModels[slot] >= CAR_MODEL_LUMP_ENTRIES)
+			continue;
+
+		if (slot == 3 && GetCarModelSourceCity(3) < 0)
+			continue;			// stock cop car keeps sharing slot 2's bank
+
+		LoadCarSoundForSlot(slot);
+	}
+}
+#endif
 
 static char cop_model = 0;
 int gDoCopSpeech = 1;		// [A]
@@ -335,17 +587,36 @@ void LoadLevelSFX(int missionNum)
 
 	city_night_fx = (gTimeOfDay == TIME_NIGHT);
 
+	// A new level reloads every car bank. Drop the per-slot blocks an earlier
+	// level's imports recorded so GetCarBankSample cannot point at a block that
+	// this level has not loaded.
+	car_sound_ready = 0;
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+	{
+		car_slot_sample[i] = -1;
+		car_slot_city[i] = -1;
+		car_slot_model[i] = -1;
+	}
+
+	car_d1_generic_block = -1;
+	car_sound_ready = 1;
+
 	cop_bank = missionNum % 4 + 1;
 	cop_model = 3;
 
 	// init sound bank memory
 	LoadSoundBankDynamic(NULL, 0, 0);
 
-	// load car banks
+	// load car banks. An embedded (Driver 1 bake) bank wins over the D2 host
+	// lookup; without one the stock path is exactly as before.
 	for (i = 0; i < 3; i++)
-		LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(i));
+	{
+		if (!LoadEmbeddedCarSoundForSlot(i))
+			LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(i));
+	}
 #if MAX_CAR_RESIDENT_MODELS > 5
-	LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(4));
+	if (!LoadEmbeddedCarSoundForSlot(4))
+		LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(4));
 #endif
 
 	ShowLoading();
@@ -544,6 +815,12 @@ void LoadLevelSFX(int missionNum)
 	{
 		gDoCopSpeech = 1;
 	}
+
+#if MAX_CAR_RESIDENT_MODELS > 5
+	// Imported slots' banks are appended after the level's own and special
+	// banks, so their stock block arithmetic above is left exactly as it was.
+	LoadExtraCarSoundBanks();
+#endif
 }
 
 int TimeSinceLastSpeech = 0;

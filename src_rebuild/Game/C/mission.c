@@ -3258,6 +3258,14 @@ void SetMissionOver(PAUSEMODE mode)
 
 	gBombTargetVehicle = NULL;
 
+	/* A game over is the end of the chase, whichever way it was triggered (a
+	 * wreck, the player caught, a mission failed): the cops that were pursuing
+	 * go back to ordinary traffic now, rather than chasing the corpse through
+	 * the game-over delay and then sitting where they stopped. The engine's
+	 * direct death-fade route is covered where that pause is decided (main.c). */
+	if (mode == PAUSEMODE_GAMEOVER)
+		ReleasePursuingCopsToTraffic();
+
 	Mission.gameover_delay = 60;
 	Mission.gameover_mode = mode;
 	Mission.ChaseTarget = NULL;

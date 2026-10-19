@@ -1153,6 +1153,23 @@ int chkImportApplyPick(int level, int count)
 			slot = -1;		/* the caller's pool is smaller than the session needs */
 	}
 
+	/* The set already holds this exact car (a config "import = 5:4:9" entry naming the
+	 * same car as the pick): ride it there. Refusing left wantedCar naming a model no
+	 * usable slot was built for, and the player spawned with no car under the map. */
+	{
+		int s;
+
+		for (s = 0; s < count && s < CHK_IMPORT_MAX_SLOTS; s++)
+		{
+			if (gChkSet[s].used && gChkSet[s].city == city && gChkSet[s].model == model)
+			{
+				printInfo("[carhacks] import: the pick (%s model %d) is already in resident slot %d\n",
+					chkCityName(city), model, s);
+				return 0;
+			}
+		}
+	}
+
 	if (slot < 0 || slot >= CHK_IMPORT_MAX_SLOTS || !chkImportSlotFree(slot))
 	{
 		/* Player-facing: their pick could not be imported, so tell them. */

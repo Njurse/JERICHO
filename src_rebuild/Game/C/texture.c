@@ -3668,6 +3668,7 @@ void LoadImportedTPages(void)
 	int pref[64];		// preferred slot per set: the rectangle the replaced car used, or -1
 	int nsets = 0;
 	int i, j;
+	int wc, wk;
 
 	// (placement moved to draw time - see CarImportPin/CarPageFindSlot - so the load
 	// no longer tracks slots, positions or CLUT rows)
@@ -3856,7 +3857,63 @@ void LoadImportedTPages(void)
 		}
 	}
 
-	printInfo("cross-city: %s - %d set(s) wanted from carTpages/specTpages\n", LevelNames[city], nsets);
+	// JERICHO: an imported city's wheel models are NOT in a resident slot, so the
+	// walk above cannot see their pages. Register them against the slots that
+	// would draw them (every resident slot sourced from that city), so the pin /
+	// release bookkeeping is the same as for a car page.
+	for (wc = 0; wc < CITY_COUNT; wc++)
+	{
+		int owners = 0;
+
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		{
+			if (GetCarModelSourceCity(i) == wc)
+				owners |= CarPinOwnerBit(i);
+		}
+
+		if (owners == 0)
+			continue;
+
+		for (wk = 0; wk < CAR_IMPORT_WHEEL_VARIANTS; wk++)
+		{
+			unsigned char found[8];
+			int n, k;
+
+			n = GetCarImportWheelSets(wc, wk, found, 8);
+
+			for (k = 0; k < n; k++)
+			{
+				int set = found[k];
+				int at = -1;
+
+				if (set == 0)
+					continue;
+
+				for (j = 0; j < nsets; j++)
+				{
+					if (sets[j] == set && setCity[j] == wc)
+					{
+						at = j;
+						break;
+					}
+				}
+
+				if (at >= 0)
+				{
+					setMask[at] |= owners;
+				}
+				else if (nsets < 64)
+				{
+					pref[nsets] = -1;
+					setCity[nsets] = wc;
+					setMask[nsets] = owners;
+					sets[nsets++] = set;
+				}
+			}
+		}
+	}
+
+	printInfo("cross-city: %s - %d set(s) wanted from carTpages/specTpages/wheels\n", LevelNames[city], nsets);
 
 	// Each set goes into a slot the level left FREE, at that slot's own already
 	// assigned position - and now at DRAW time rather than load time: the load only
@@ -3980,6 +4037,44 @@ void LoadImportedTPages(void)
 		// slot at all - and lets a page take a world slot back when there is none.
 		npalettes = *(int*)buf;
 
+		/* Reserve the wheel page's last CLUT row in the JERICHO half before the
+		 * page buffer is released. A later page upload can take the page's own
+		 * CLUT, but not this civ_clut row. */
+		if (npalettes > 0 && npalettes <= 32 && CarImportIsWheelSet(sc, set))
+		{
+			int tableRow = CarImportWheelPaletteRow(sc, npalettes);
+			int hubRow = CarImportDeriveWheelPaletteRow(sc, set, (const unsigned char*)buf, size, 1);
+			int tyreRow = CarImportDeriveWheelPaletteRow(sc, set, (const unsigned char*)buf, size, 0);
+			int wheelRow;
+			int wheelClut;
+
+			/* The measured table was taken from the hubcap sprite; it stays the
+			 * fallback for both when a sprite's row cannot be derived. */
+			if (hubRow < 0)
+				hubRow = tableRow;
+
+			wheelRow = (tyreRow >= 0) ? tyreRow : hubRow;
+
+			printInfo("cross-city: %s wheel palette source rows tyre %d, hubcap %d of %d (%s; table row %d)\n",
+				LevelNames[sc], wheelRow, hubRow, npalettes,
+				tyreRow >= 0 ? "derived from the sprites" : "table", tableRow);
+
+			if (hubRow != wheelRow)
+			{
+				int hubClut = CarImportReserveWheelPalette(sc, 1,
+					(const unsigned char*)buf + 4 + hubRow * 32);
+
+				if (hubClut != 0)
+					CarImportSetWheelPaletteClut(sc, set, hubClut, 1);
+			}
+
+			wheelClut = CarImportReserveWheelPalette(sc, 0,
+				(const unsigned char*)buf + 4 + wheelRow * 32);
+
+			if (wheelClut != 0)
+				CarImportSetWheelPaletteClut(sc, set, wheelClut, 0);
+		}
+
 		free(buf);
 
 		if (npalettes <= 0 || npalettes > 32)
@@ -3987,6 +4082,11 @@ void LoadImportedTPages(void)
 			printInfo("cross-city: %s set %d looks corrupt (%d clut rows) - skipped\n", LevelNames[sc], set, npalettes);
 			continue;
 		}
+
+		/* The WHLBOTH/hubcap palette is the last row on the source wheel page.
+		 * Record it for the wheel structs that name this source set, so the
+		 * renderer can use the hubcap row rather than the tyre row. */
+		CarImportSetWheelPageCluts(sc, set, npalettes);
 
 		// The remap becomes real together with the pin: the page WILL be placed (at draw
 		// time, evicting the world if need be), short of a failed read.

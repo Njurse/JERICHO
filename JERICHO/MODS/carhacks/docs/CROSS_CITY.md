@@ -105,13 +105,37 @@ look like and the traps: [`city-registry.md`](../../../../src_rebuild/Game/C/JER
 
 ## What the import carries
 
-Three pieces come from the foreign city, each behind a `GetCarImport*` getter:
+Four pieces come from the foreign city, each behind a `GetCarImport*` getter:
 
 | Piece | Where | Getter | Consumer |
 |---|---|---|---|
 | Car geometry (`LUMP_CAR_MODELS`, id 28) | foreign `.LEV` DATA1 | `GetCarImportModels(slot)` (`models.c:475`) | `ProcessCarModelLump` (`models.c:633`) |
 | Car colours (`CAR_COSMETICS`) | foreign `<CITY>.LCF` | `GetCarImportCosmetics(slot)` (`models.c:529`) | `ProcessCosmeticsLump` (`cosmetic.c:71`) |
 | Car palettes (`LUMP_PALLET`, id 25) | foreign `.LEV` DATA1 | `GetCarImportPallet(&size)` (`models.c:462`) | `ProcessImportedPalette` (`cars.c:1496`) |
+| Wheel models (`LUMP_CAR_WHEELS`, id 200) | foreign `.LEV` DATA1 (D1 bakes only) | `GetCarImportWheel(city, kind)` | `DrawCarWheels` (`cars.c`) |
+
+The wheel segment is optional and additive: a Driver 2 level has none, so its
+imported cars keep the host's shared wheels. The D1 bake writes the city's
+`CLEANWHEEL` / `DAMWHEEL` / `FASTWHEEL` as FT4 models, carries their pages in the
+city's own `LUMP_TEXTUREINFO`, and the engine pins them with the car's pages.
+`GetCarImportWheel` returns NULL for an absent variant. The renderer always uses
+the host level's wheel MESH and takes only the texture set/id and UVs from the
+imported model, so a D1 car wears its own wheel texture and palette without
+importing a second wheel topology.
+
+**D2 source cities keep the host wheel texture, deliberately.** A D2 city has no
+named wheel model: HAVANA's `LUMP_MODELNAMES` is 42 `BASE*` strings and none is
+`CLEANWHEEL`/`DAMWHEEL`/`FASTWHEEL`. The host wheel sprite lives on the host
+level's car page: CHICAGO CLEAN is set 63/id 28 at UV (192,224)-(255,255) (64x32),
+DAM is set 1/id 3 at (128,64)-(223,127) (96x64), and the DAM hubcap is set 0/id 4.
+Mapping the host set through `carTpages` (HAVANA 51/10, VEGAS 32/41, RIO 60/55)
+does not reproduce the sprite: those crops are different, and RIO/VEGAS CLEAN is
+blank. An exact scan of every HAVANA/RIO/VEGAS page found no 64x32 or 64x64 copy
+of the host wheel. HAVANA's only named wheel detail is `WHEEL` on set 20 at
+(192,64), 64x64, which is different art and has no cross-city equivalent.
+Therefore a D2 import logs `no CLEANWHEEL/DAMWHEEL/FASTWHEEL model; using the
+host wheel texture` and keeps the host wheel. Do not wire a carTpages-derived
+wheel page unless a crop comparison proves it is the wheel sprite.
 
 For geometry, `ProcessCarModelLump` swaps only its **base pointer** (`models.c:642-651`)
 — the foreign block has the same layout as the level's own, so the offset-table

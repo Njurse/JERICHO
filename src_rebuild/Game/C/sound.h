@@ -78,6 +78,17 @@ extern void UnlockChannel(int c); // 0x0007AE64
 extern int LoadSoundBank(char *address, int length, int bank); // 0x0007AE90
 extern int LoadSoundBankDynamic(char *address, int length, int dbank); // 0x00079BCC
 
+/* How many samples a dynamically loaded bank currently holds. gamesnd uses
+ * this to give an appended car bank a real sample block instead of deriving
+ * one from the resident slot index. */
+extern int GetSoundBankSampleCount(int bank);
+
+/* Append zero-length metadata entries until the bank's sample count is a
+ * multiple of `multiple`. A car bank's sample block is addressed as block*3
+ * (engine, idle, horn), so an imported bank must start on a 3-sample boundary
+ * even when the level's special banks did not end on one. */
+extern void AlignSoundBankSamples(int bank, int multiple);
+
 extern void UpdateXMSamples(int num_samps); // 0x0007B1C4
 
 extern void FreeXM(); // 0x0007AF84

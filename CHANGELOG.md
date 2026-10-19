@@ -6,6 +6,28 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- **Imported cars sound like themselves.** A cross-city vehicle now gets the engine,
+  idle and horn bank of the city it came from, including cars imported into the spare
+  resident slots and cars hot-loaded after the level started. Driver 1 and runtime-bank
+  cars have no sound table of their own, so they fall back to the host city's bank
+  rather than running silent.
+- **Driver 1 imported cars now use Driver 1 car sounds.** The synthetic
+  `DRIVER/D1CARS/*.LEV` files carry a per-model car-sound segment built from
+  `DRIVER/SOUND/VOICES.BLK`; the engine loads those embedded engine/idle/horn
+  banks for a Driver 1 source city instead of borrowing the host city's sound.
+  Every Driver 1 car uses the same generic engine and idle, as in Driver 1, loaded
+  once and shared, and the idle now plays Driver 1's own idle loop instead of the
+  engine sound. Older bakes with no sound segment keep the host fallback.
+- **Cops stop chasing a player who is out of the game.** A wreck, being caught on
+  foot or any other game-over condition (including a multiplayer death that is
+  refused and respawned) now puts the pursuing police cars back into ordinary
+  traffic. They no longer keep ramming a player whose wanted level was just
+  cleared, and they no longer stop dead in the road when a pursuit ends.
+- Picking a city's special car (model 12) on that city's own level no longer writes into the
+  level's own special-car palette rows; it gets palette rows of its own.
+- Picking a car in Take a Ride that the `import` config already puts in a slot
+  (for example `import = 5:4:9` and Miami car 6) now rides that slot instead of
+  reporting "none is free".
 - The Multiplayer pause page now lists the most used options first: Respawn, Vehicle Options, Warp To Player and Player Color, then Invincibility and Immunity, with Kick player and Write diagnostics now at the bottom.
 - "My colour" in the Multiplayer pause page is now called "Player Color".
 - Vehicle Options: the Palette row now shows the palette and palette count of the car selected in the picker, updating as you browse City and Car.

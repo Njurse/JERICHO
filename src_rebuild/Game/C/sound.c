@@ -11,6 +11,17 @@
 #define SPU_CHANNEL_COUNT 24
 #define LSB_BANK_COUNT 7
 
+/* Samples one dynamic bank can hold. Stock uses at most 21 in SOUND_BANK_CARS
+ * (four residents + up to three special banks); each imported spare slot
+ * appends another three. 35 was the original metadata size and is not enough
+ * once cross-city cars are present, so leave room for every resident slot.
+ * The PSX build has nowhere to put imported slots, so it keeps the old size. */
+#ifdef PSX
+#define MAX_SOUND_BANK_SAMPLES 35
+#else
+#define MAX_SOUND_BANK_SAMPLES 64
+#endif
+
 typedef struct __LSBDinfo
 {
 	int addr;
@@ -43,7 +54,7 @@ int banksize[2] = { 88064, 412672 };
 
 char banks[24] = { 0 };
 
-SAMPLE_DATA samples[LSB_BANK_COUNT][35];
+SAMPLE_DATA samples[LSB_BANK_COUNT][MAX_SOUND_BANK_SAMPLES];
 CHANNEL_DATA channels[MAX_SFX_CHANNELS]; // offset 0xDE480
 
 int master_volume = 0;	// why need two?
@@ -944,6 +955,14 @@ int LoadSoundBank(char *address, int length, int bank)
 	spuaddress = bankaddr[bank];
 
 	num_samples = *(int *)address;
+
+	if (num_samples < 0 || num_samples > MAX_SOUND_BANK_SAMPLES)
+	{
+		printWarning("WARNING: sound bank sample count %d does not fit %d slots\n",
+			num_samples, MAX_SOUND_BANK_SAMPLES);
+		return 0;
+	}
+
 	slength = num_samples * sizeof(SAMPLE_DATA) + sizeof(int);
 
 	// copy sample info
@@ -979,6 +998,9 @@ int LoadSoundBankDynamic(char *address, int length, int dbank)
 	int i;
 	int slength;
 	int num_samples;
+
+	if (dbank < 0 || dbank >= LSB_BANK_COUNT)
+		return 0;
 
 	if (address == NULL) 
 	{
@@ -1024,6 +1046,14 @@ int LoadSoundBankDynamic(char *address, int length, int dbank)
 	}
 
 	num_samples = *(int *)address;
+
+	if (num_samples < 0 || lsbTabs.count[dbank] + num_samples > MAX_SOUND_BANK_SAMPLES)
+	{
+		printWarning("WARNING: sound bank %d is full (%d of %d samples, need %d)\n",
+			dbank, lsbTabs.count[dbank], MAX_SOUND_BANK_SAMPLES, num_samples);
+		return 0;
+	}
+
 	slength = num_samples * sizeof(SAMPLE_DATA) + sizeof(int);
 
 	memcpy((u_char*)(samples[dbank] + lsbTabs.count[dbank]), (u_char*)(address + sizeof(int)), num_samples * sizeof(SAMPLE_DATA));
@@ -1045,6 +1075,33 @@ int LoadSoundBankDynamic(char *address, int length, int dbank)
 	lsbTabs.addr += length - slength;
 
 	return num_samples;
+}
+
+int GetSoundBankSampleCount(int bank)
+{
+	if (bank < 0 || bank >= LSB_BANK_COUNT)
+		return 0;
+
+	return lsbTabs.count[bank];
+}
+
+void AlignSoundBankSamples(int bank, int multiple)
+{
+	if (bank < 0 || bank >= LSB_BANK_COUNT || multiple <= 0)
+		return;
+
+	while ((lsbTabs.count[bank] % multiple) != 0)
+	{
+		if (lsbTabs.count[bank] >= MAX_SOUND_BANK_SAMPLES)
+		{
+			printWarning("WARNING: sound bank %d cannot align to %d samples\n",
+				bank, multiple);
+			return;
+		}
+
+		memset(&samples[bank][lsbTabs.count[bank]], 0, sizeof(SAMPLE_DATA));
+		lsbTabs.count[bank]++;
+	}
 }
 
 // [D] [T]

@@ -39,6 +39,14 @@ extern void CopControl(CAR_DATA *cp); // 0x0002F60C
 
 extern void PassiveCopTasks(CAR_DATA *cp); // 0x0002F6FC
 
+/* Hand a pursuing cop back to the ordinary traffic AI: the engine's own outcome
+ * once a pursuit is over, instead of leaving it pursuing or inert. Only a
+ * vanilla cop (a siren car) is converted. Returns 1 when it was. */
+extern int ReleaseCopToTraffic(CAR_DATA *cp);
+
+/* ...and the same for every car currently pursuing. Returns how many moved. */
+extern int ReleasePursuingCopsToTraffic(void);
+
 extern int ReplayLog_Fnarr_He_Said_Log(int val);
 
 #endif

@@ -41,6 +41,46 @@ void InitCarImport(void);
 void InitCarImportMidLevel(void);
 char* GetCarImportModels(int slot);
 
+// The wheel models an imported city carries in its own LUMP_CAR_WHEELS segment
+// (the D1 bake writes it). `kind` is one of CAR_IMPORT_WHEEL_*; NULL means that
+// variant is absent or unusable, and the caller keeps the host level's wheel
+// texture. The models are copied out of the import buffer, already FT4 +
+// set-remapped + mangled, and are used as the texture/UV source over the host
+// wheel mesh.
+#define CAR_IMPORT_WHEEL_CLEAN		0
+#define CAR_IMPORT_WHEEL_DAMAGED	1
+#define CAR_IMPORT_WHEEL_FAST		2
+#define CAR_IMPORT_WHEEL_VARIANTS	3
+MODEL* GetCarImportWheel(int city, int kind);
+
+// A D2 city's wheel art is a pair of TEXINF details on a permanent page
+// (WHLCLEAN/WHLBOTH; HAVANA calls WHLCLEAN "WHEEL"), not a MODEL. `set` is the
+// destination set after CarSetRemap; the caller puts the HOST wheel mesh's UVs
+// onto (u0,v0)-(u1,v1) and samples this page/CLUT.
+typedef struct JER_WHEEL_TEX
+{
+	int present;
+	int set;
+	int clut;
+	int hubClut;	// the WHLBOTH-specific row (last row of the source page)
+	int u0, v0, u1, v1;
+	int hubU0, hubV0, hubU1, hubV1;	// WHLBOTH rect (hubcap/damaged) on the same page
+	int reservedClut;	// stable CLUT id in the JERICHO import bank, 0 = use page
+	int reservedHubClut;	// D2 WHLBOTH hubcap row, when it has its own (0 = reservedClut)
+} JER_WHEEL_TEX;
+
+int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out);
+void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts);
+int CarImportIsWheelSet(int city, int sourceSet);
+void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub);
+int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors);
+int CarImportWheelPaletteRow(int city, int cluts);
+int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub);
+
+// The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
+// maps these to the page it pins; the MODEL carries the remapped draw index.
+int GetCarImportWheelSets(int city, int kind, unsigned char* out, int max);
+
 // JERICHO cross-city HOT LOAD: build resident `slot`'s geometry at RUNTIME from the
 // import data its source city asked for -- for a car added to the resident set
 // AFTER the level loaded (mp: a joiner's picked car), which the level's own build
@@ -92,6 +132,12 @@ int JerLoadCarImportForCity(int city);
 
 char* GetCarImportPallet(int* size);
 char* GetCarImportPalletForCity(int city, int* size);
+
+// JERICHO: the embedded car-sound bank from a D1 city's synthetic LEV.
+// Every D1 car shares one generic engine/idle bank, so `model` is not used. The
+// body is a D2 dynamic-bank blob (int num_samples, SAMPLE_DATA[], VAG data);
+// returns 0 when the city has no usable sound segment (the caller falls back).
+int GetCarImportSoundBank(int city, int model, char** bank, int* size);
 
 // The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
 // walks. texture.c parses it (the TP/TEXINF types the layout needs live there).
