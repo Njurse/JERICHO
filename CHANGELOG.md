@@ -6,6 +6,11 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- **`!login` passwords are never shown to other players.** A dedicated server now keeps
+  every `!`/`/` command line to its sender even if the commands plugin is missing or
+  disabled, and logs it masked (`!login ****`). A game host (listen server), which runs no
+  commands, no longer relays a typed `!command` line to the other players.
+
 ## v0.10.6
 
 *Released 2026-10-18.*
