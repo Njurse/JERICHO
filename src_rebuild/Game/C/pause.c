@@ -892,6 +892,71 @@ static void JerPauseApplyRestartOverride(void)
 	}
 }
 
+/* JERICHO: in an ONLINE session (gJerPauseRestartAsRespawn, set by mp) a restart has no
+ * meaning -- the level belongs to every player -- and the game-over / finished menus'
+ * Restart, Retry and Play Again rows left the player stuck. Such menus are shown from a
+ * filtered copy with those rows REMOVED (not blanked), so the selection index, the
+ * row count and the box size are those of the shorter list. One copy per menu, built
+ * once and kept: the navigation remembers item POINTERS (ActiveItem[]), so a menu must
+ * come back as the same array when the player backs into it. Offline, nothing changes. */
+#define JER_PAUSE_FILTER_MAX	12
+#define JER_PAUSE_FILTER_ITEMS	24
+static MENU_HEADER* gJerFilterSrc[JER_PAUSE_FILTER_MAX];
+static MENU_HEADER gJerFilterHdr[JER_PAUSE_FILTER_MAX];
+static MENU_ITEM gJerFilterItems[JER_PAUSE_FILTER_MAX][JER_PAUSE_FILTER_ITEMS];
+
+static int JerPauseItemIsRestart(const MENU_ITEM* it)
+{
+	return it->SubMenu == &YesNoRestartHeader || it->ExitValue == MENU_QUIT_RESTART;
+}
+
+static MENU_HEADER* JerPauseOnlineMenu(MENU_HEADER* menu)
+{
+	MENU_ITEM* it;
+	int i, n, hit = 0;
+
+	if (!gJerPauseRestartAsRespawn || menu == NULL || menu->MenuItems == NULL)
+		return menu;
+
+	for (i = 0; i < JER_PAUSE_FILTER_MAX; i++)
+		if (gJerFilterSrc[i] != NULL && &gJerFilterHdr[i] == menu)
+			menu = gJerFilterSrc[i];	/* backing into a filtered menu: rebuild from its source */
+
+	for (it = menu->MenuItems; it->Type != PAUSE_TYPE_ENDITEMS; it++)
+		if (JerPauseItemIsRestart(it))
+			hit = 1;
+
+	if (!hit)
+		return menu;
+
+	/* Its slot (rebuilt every time, in place, so a module that changed the source
+	 * list is followed while the item pointers stay where the navigation expects). */
+	for (i = 0; i < JER_PAUSE_FILTER_MAX && gJerFilterSrc[i] != menu; i++)
+		;
+	if (i >= JER_PAUSE_FILTER_MAX)
+		for (i = 0; i < JER_PAUSE_FILTER_MAX && gJerFilterSrc[i] != NULL; i++)
+			;
+	if (i >= JER_PAUSE_FILTER_MAX)
+		return menu;		/* table full: show it as it is rather than break it */
+
+	n = 0;
+	for (it = menu->MenuItems; it->Type != PAUSE_TYPE_ENDITEMS && n < JER_PAUSE_FILTER_ITEMS - 1; it++)
+		if (!JerPauseItemIsRestart(it))
+			gJerFilterItems[i][n++] = *it;
+	gJerFilterItems[i][n] = *it;	/* the ENDITEMS terminator */
+	if (gJerFilterItems[i][n].Type != PAUSE_TYPE_ENDITEMS)
+	{
+		memset(&gJerFilterItems[i][n], 0, sizeof(MENU_ITEM));
+		gJerFilterItems[i][n].Type = PAUSE_TYPE_ENDITEMS;
+	}
+
+	gJerFilterHdr[i].Title = menu->Title;
+	gJerFilterHdr[i].Bound = menu->Bound;
+	gJerFilterHdr[i].MenuItems = gJerFilterItems[i];
+	gJerFilterSrc[i] = menu;
+	return &gJerFilterHdr[i];
+}
+
 void SetupMenu(MENU_HEADER *menu, int back)
 {
 	int len;
@@ -899,6 +964,20 @@ void SetupMenu(MENU_HEADER *menu, int back)
 	int numItems;
 
 	numItems = 0;
+
+	if (menu == &PauseMenuHeader)
+		JerPauseApplyRestartOverride();
+
+	{
+		MENU_HEADER* shown = JerPauseOnlineMenu(menu);
+
+		if (shown != menu)
+		{
+			if (VisibleMenus[VisibleMenu] == menu)
+				VisibleMenus[VisibleMenu] = shown;	/* drawn from the same list it navigates */
+			menu = shown;
+		}
+	}
 
 	ActiveMenuItem = 0;
 
@@ -914,9 +993,6 @@ void SetupMenu(MENU_HEADER *menu, int back)
 
 	ActiveMenu = menu;
 	ActiveMenu->NumItems = numItems;
-
-	if (menu == &PauseMenuHeader)
-		JerPauseApplyRestartOverride();
 
 	len = MaxMenuStringLength(ActiveMenu);
 
