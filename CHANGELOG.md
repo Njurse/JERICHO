@@ -6,34 +6,31 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
-- **Imported cars sound like themselves.** A cross-city vehicle now gets the engine,
-  idle and horn bank of the city it came from, including cars imported into the spare
-  resident slots and cars hot-loaded after the level started. Driver 1 and runtime-bank
-  cars have no sound table of their own, so they fall back to the host city's bank
-  rather than running silent.
-- **Driver 1 imported cars now use Driver 1 car sounds.** The synthetic
-  `DRIVER/D1CARS/*.LEV` files carry a per-model car-sound segment built from
-  `DRIVER/SOUND/VOICES.BLK`; the engine loads those embedded engine/idle/horn
-  banks for a Driver 1 source city instead of borrowing the host city's sound.
-  Every Driver 1 car uses the same generic engine and idle, as in Driver 1, loaded
-  once and shared, and the idle now plays Driver 1's own idle loop instead of the
-  engine sound. Older bakes with no sound segment keep the host fallback.
-- **Cops stop chasing a player who is out of the game.** A wreck, being caught on
-  foot or any other game-over condition (including a multiplayer death that is
-  refused and respawned) now puts the pursuing police cars back into ordinary
-  traffic. They no longer keep ramming a player whose wanted level was just
-  cleared, and they no longer stop dead in the road when a pursuit ends.
-- Picking a city's special car (model 12) on that city's own level no longer writes into the
-  level's own special-car palette rows; it gets palette rows of its own.
-- Picking a car in Take a Ride that the `import` config already puts in a slot
-  (for example `import = 5:4:9` and Miami car 6) now rides that slot instead of
-  reporting "none is free".
-- The Multiplayer pause page now lists the most used options first: Respawn, Vehicle Options, Warp To Player and Player Color, then Invincibility and Immunity, with Kick player and Write diagnostics now at the bottom.
-- "My colour" in the Multiplayer pause page is now called "Player Color".
-- Vehicle Options: the Palette row now shows the palette and palette count of the car selected in the picker, updating as you browse City and Car.
-- "Respawn as this car" now applies a new palette even when you pick the car you are already driving, so you no longer have to switch to another model and back.
-- Vehicle Options now opens on the car you are driving (its city, model and palette) instead of the first car; on foot it keeps your last selection.
-- Dedicated server: chat from a server admin now shows "[Admin]" before their name (needs this client build; older clients show the name as before).
+## v0.10.9
+
+*Released 2026-10-18.*
+
+Imported cars look and sound like themselves, cops stop chasing once a ride ends, and the Multiplayer pause menu is easier to use.
+
+### Highlights
+
+- **Imported cars sound like themselves.** A car from another city uses that city's engine, idle and horn, including cars loaded mid-game.
+- **Driver 1 cars use Driver 1 sounds.** Every Driver 1 car shares Driver 1's generic engine and idle, as in the original game.
+- **Imported wheels look right.** Tyres and hubcaps on imported cars now match their own city's cars (no more garbled Rio wheels or Havana hubcap wedges).
+- **Cops stop chasing after a game over or respawn.** Pursuing police go back to normal traffic instead of ramming you or stopping dead in the road.
+
+### Multiplayer
+
+- The Multiplayer pause page lists the most used options first: Respawn, Vehicle Options, Warp To Player, Player Color, then Invincibility and Immunity, with Kick player and Write diagnostics now at the bottom. "My colour" is now "Player Color".
+- Vehicle Options opens on the car you are driving. The Palette row follows the car you select, and "Respawn as this car" applies a palette-only change.
+- Dedicated servers show "[Admin]" before a server admin's name in chat (players need this version to see it).
+
+### Fixes
+
+- Picking a city's special car on that city's own level no longer messes up the colours of the level's own special car.
+- Picking a car in Take a Ride that the `import` setting already loads now rides that car instead of saying no slot is free.
+
+Thanks: Jaret (Njurse).
 
 ## v0.10.8
 
