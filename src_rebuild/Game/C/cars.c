@@ -1513,8 +1513,55 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 	}
 }
 
-// Map one host wheel poly's UV rect onto the source city's wheel sprite rect.
+// The HOST level's own wheel sprite rects (WHLCLEAN or WHEEL, and WHLBOTH),
+// looked up once per level from its TEXINF. [0] = tyre, [1] = hubcap.
+static int sHostWheelLevel = -1;
+static int sHostWheelRect[2][4];
+static int sHostWheelHave[2];
+
+static void HostWheelRects(void)
+{
+	static char* names[3] = { "WHLCLEAN", "WHEEL", "WHLBOTH" };
+	int n, k;
+
+	if (sHostWheelLevel == GameLevel)
+		return;
+
+	sHostWheelLevel = GameLevel;
+	sHostWheelHave[0] = sHostWheelHave[1] = 0;
+
+	for (n = 0; n < 3; n++)
+	{
+		int tp, ti;
+		TEXINF* t;
+
+		k = (n == 2) ? 1 : 0;
+
+		if (sHostWheelHave[k])
+			continue;
+
+		t = GetTEXINFName(names[n], &tp, &ti);
+
+		if (t == NULL || t->width == 0 || t->height == 0)
+			continue;
+
+		sHostWheelRect[k][0] = t->x;
+		sHostWheelRect[k][1] = t->y;
+		sHostWheelRect[k][2] = t->x + t->width;
+		sHostWheelRect[k][3] = t->y + t->height;
+		sHostWheelHave[k] = 1;
+	}
+}
+
+// Map one host wheel poly's UVs onto the source city's wheel sprite rect.
 // The host wheel mesh is kept; only its UVs and page/clut are replaced.
+//
+// The host polys are not one square each: the tread strips and the hubcap
+// wedges sample PART of the host sprite. So the UVs are mapped relative to the
+// HOST sprite rect the poly lies in (same place in the source sprite), not by
+// stretching each poly's own UV box over the whole source sprite - which drew
+// every thin tread strip as the full wheel image squashed (the noisy wedges).
+// A poly outside both host sprites keeps the old per-poly stretch.
 static void MapWheelUVToRect(POLYFT4* src, const JER_WHEEL_TEX* r, UV_INFO out[4])
 {
 	UV_INFO host[4] = { src->uv0, src->uv1, src->uv3, src->uv2 };
@@ -1530,6 +1577,31 @@ static void MapWheelUVToRect(POLYFT4* src, const JER_WHEEL_TEX* r, UV_INFO out[4
 		if (host[k].u > hu1) hu1 = host[k].u;
 		if (host[k].v < hv0) hv0 = host[k].v;
 		if (host[k].v > hv1) hv1 = host[k].v;
+	}
+
+	HostWheelRects();
+
+	for (k = 0; k < 2; k++)
+	{
+		const int* hr = sHostWheelRect[k];
+		int hw, hh, j;
+
+		if (!sHostWheelHave[k] || hu0 < hr[0] || hv0 < hr[1] || hu1 > hr[2] || hv1 > hr[3])
+			continue;
+
+		hw = hr[2] - hr[0];
+		hh = hr[3] - hr[1];
+
+		for (j = 0; j < 4; j++)
+		{
+			int u = r->u0 + (((int)host[j].u - hr[0]) * rw) / (hw ? hw : 1);
+			int v = r->v0 + (((int)host[j].v - hr[1]) * rh) / (hh ? hh : 1);
+
+			out[j].u = (u_char)(u > 255 ? 255 : u);
+			out[j].v = (u_char)(v > 255 ? 255 : v);
+		}
+
+		return;
 	}
 
 	for (k = 0; k < 4; k++)
