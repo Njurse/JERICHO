@@ -6,6 +6,25 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+## v0.10.8
+
+*Released 2026-10-18.*
+
+A quick online follow-up to v0.10.7. Some players on dedicated servers were still being
+put back on the road (and repaired, with their felony cleared) when someone else joined or
+picked a car. We have not been able to pin down the exact cause yet, so this update adds a
+hard safety guard plus clear logging: another player joining, picking or spawning a car can
+no longer rebuild, move, take over or remove your own car.
+
+### Fixes
+
+- Another player's car pick, spawn, car updates, traffic or leaving can no longer reset,
+  move or remove your car; any such attempt is skipped and written to the log as
+  `[mp] ignored remote ... targeting local car`.
+- Every online respawn and join placement now logs why it happened (`[mp] respawn reason:`
+  / `[mp] place-self reason:`) and the last network message received, so if a reset still
+  happens, the log shows exactly what caused it. Please send us your log if you see one.
+
 ## v0.10.7
 
 *Released 2026-10-18.*
