@@ -10,6 +10,11 @@ is in [changelog.txt](changelog.txt).
   every `!`/`/` command line to its sender even if the commands plugin is missing or
   disabled, and logs it masked (`!login ****`). A game host (listen server), which runs no
   commands, no longer relays a typed `!command` line to the other players.
+- **Server configs pick up new settings on their own.** On start, the dedicated server
+  (`dediserver.json`) and the master server (`--config` file) add any settings a newer
+  version introduced, with their default values, and log which ones. Your existing keys
+  and values are never changed or removed; the old file is kept as `.bak`, and a config
+  with nothing missing is not rewritten.
 
 ## v0.10.6
 
