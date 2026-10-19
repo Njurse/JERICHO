@@ -266,8 +266,19 @@ static int ChkMpLoad(void* userdata, void* args)
 			reused ? "REUSED" : (fresh ? "fresh spare" : "kept"));
 	}
 
-	chkImportSetSlot(slot, id);
-	chkImportHotLoad(slot);
+	{
+		/* A slot that ALREADY holds this car with its geometry built is not reloaded.
+		 * Re-running the hot load while another live car still draws the slot (the
+		 * car this player just got out of, parked on the same model) re-walks the
+		 * palettes and rebuilds cosmetics for no reason - and it is exactly the
+		 * window the release retry is trying to keep stable. */
+		int already = (chkImportSlotForCar(a->city, a->model) == slot);
+
+		chkImportSetSlot(slot, id);
+
+		if (!already || !JerCarSlotUsable(slot))
+			chkImportHotLoad(slot);
+	}
 
 	/* NOT advertised here (L1). The session is told this machine drives the car when mp
 	 * reports that the switch happened (MP_CARQ_CHOSEN -> ChkMpChosen below): a load can

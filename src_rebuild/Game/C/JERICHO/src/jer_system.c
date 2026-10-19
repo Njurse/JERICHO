@@ -21,6 +21,12 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>	/* GetTickCount: the notice timer */
+#else
+#include <time.h>	/* clock_gettime: the notice timer */
+#endif
 
 #define JER_MAX_HANDLERS 256
 
@@ -127,17 +133,53 @@ static void jerLog(const char* fmt, ...)
 #define JER_ERROR_WRAP		34	/* characters that fit on one notice row -- both draw
 					 * sites print ONE entry per line (x=32 in the frontend,
 					 * x=8 in game), so a longer line was clipped at the edge */
-#define JER_ERROR_FRAMES	150	/* ~5 s at 30 Hz */
+#define JER_ERROR_MS		5000	/* on screen for 5 s of WALL time */
 
 typedef struct JER_ERROR_MSG
 {
 	char text[JER_ERROR_TEXT];
-	int  untilFrame;		/* 0 = empty slot */
+	int  untilFrame;		/* 0 = empty slot, else live */
+	unsigned shownMs;		/* when a draw site first asked for it, 0 = not yet */
 } JER_ERROR_MSG;
+
+/* Monotonic milliseconds. Notices used to age by JER_EVENT_FRAME count (150 =
+ * "~5 s at 30 Hz"), but the frontend ticks at its own rate, so a boot-time notice
+ * such as "invalid command line argument" sat there far longer. The clock starts
+ * when a notice is first DRAWN, so one raised during the intro is still seen. */
+static unsigned jerErrorNowMs(void)
+{
+#ifdef _WIN32
+	return (unsigned)GetTickCount();
+#else
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (unsigned)(ts.tv_sec * 1000u + ts.tv_nsec / 1000000);
+#endif
+}
+
+/* live and (once shown) younger than JER_ERROR_MS; starts the clock on first ask */
+static int jerErrorLive(JER_ERROR_MSG* e)
+{
+	unsigned now;
+
+	if (e->untilFrame == 0)
+		return 0;
+	now = jerErrorNowMs();
+	if (now == 0)
+		now = 1;
+	if (e->shownMs == 0)
+		e->shownMs = now;
+	if (now - e->shownMs >= JER_ERROR_MS)
+	{
+		e->untilFrame = 0;
+		return 0;
+	}
+	return 1;
+}
 
 static JER_ERROR_MSG gJerErrors[JER_ERROR_MAX];
 static int gJerErrorNext;
-static int gJerErrorFrame;
 
 /* Push ONE already-wrapped line as its own notice. The engine's draw loops
  * stack live notices (+k*18 in the frontend, +k*12 in game), so a message that
@@ -153,7 +195,8 @@ static void jerErrorEmitLine(const char* s, int n)
 		memcpy(gJerErrors[slot].text, s, (size_t)n);
 
 	gJerErrors[slot].text[n] = 0;
-	gJerErrors[slot].untilFrame = gJerErrorFrame + JER_ERROR_FRAMES;
+	gJerErrors[slot].untilFrame = 1;
+	gJerErrors[slot].shownMs = 0;
 	gJerErrorNext = (slot + 1) % JER_ERROR_MAX;
 }
 
@@ -234,7 +277,7 @@ int jer_error_count(void)
 
 	for (i = 0; i < JER_ERROR_MAX; i++)
 	{
-		if (gJerErrors[i].untilFrame != 0 && gJerErrorFrame < gJerErrors[i].untilFrame)
+		if (jerErrorLive(&gJerErrors[i]))
 			n++;
 	}
 
@@ -250,7 +293,7 @@ const char* jer_error_at(int index)
 	{
 		int idx = (gJerErrorNext + i) % JER_ERROR_MAX;
 
-		if (gJerErrors[idx].untilFrame == 0 || gJerErrorFrame >= gJerErrors[idx].untilFrame)
+		if (!jerErrorLive(&gJerErrors[idx]))
 			continue;
 
 		if (seen++ == index)
@@ -260,16 +303,6 @@ const char* jer_error_at(int index)
 	return NULL;
 }
 
-/* JER_EVENT_FRAME: age the messages (the engine draws them). */
-static int jerErrorFrameHook(void* userdata, void* args)
-{
-	(void)userdata;
-	(void)args;
-
-	++gJerErrorFrame;
-
-	return JER_RESULT_CONTINUE;
-}
 
 static JER_MODULE* jerFindModule(const char* id)
 {
@@ -932,6 +965,11 @@ static void jerActivateModules(const char* rootDir)
 /* Public host-side API                                                */
 /* ------------------------------------------------------------------ */
 
+#ifdef __cplusplus
+extern "C"
+#endif
+void jer_update_start(void);	/* jer_update.c */
+
 void jer_init(const char* rootDir)
 {
 	if (!gCtxBuilt)
@@ -966,12 +1004,11 @@ void jer_init(const char* rootDir)
 	/* persistent module config lives under <root>/CONFIG/ */
 	jer_config_init(rootDir);
 
+	/* the update check: spawns one curl and returns at once (jer_update.c) */
+	jer_update_start();
+
 	jerSnapshotModules(rootDir);
 	jerActivateModules(rootDir);
-
-	/* the runtime's own hook: error toasts are aged and drawn from the frame
-	 * tick (registered LAST so module handlers run first) */
-	jerCtxRegisterHook(&gCtx, JER_EVENT_FRAME, jerErrorFrameHook, NULL, 1000);
 
 	jer_fire(JER_EVENT_BOOT, NULL);
 }

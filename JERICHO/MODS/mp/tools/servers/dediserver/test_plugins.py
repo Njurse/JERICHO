@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, HERE)
 
 import dediserver as d          # noqa: E402
+HERE_T = os.path.dirname(os.path.abspath(__file__))
 import mp_test as m             # noqa: E402
 
 GOOD = '''
@@ -123,6 +124,16 @@ def main():
               server.plugins.commands["help"].plugin == "commands")
         check("no JPID -> None", m.parse_player_id(m.build_hello("Old", mods=[("mp", "1")])) is None)
         check("JPID is not read as a mod row", len(d.parse_manifest(hello)) == 1)
+        vh = m.build_hello("Ver", mods=[("mp", "0.12.0"), ("carhacks", "1.0")],
+                           player_id=bytes.fromhex(pid_hex), version="0.10.4-dev")
+        check("JPVR parses after JPID", m.parse_hello_version(vh) == "0.10.4-dev", m.parse_hello_version(vh))
+        check("JPVR is not read as a mod row", len(d.parse_manifest(vh)) == 2)
+        check("no JPVR -> None", m.parse_hello_version(hello) is None)
+        check("JPID+JPVR stay under one manifest row (old servers)",
+              len(m.build_hello("x", player_id=bytes(16), version="9" * 40)) - m.HELLO.size < m.MODI.size)
+        check("mods digest ignores order and disabled rows",
+              m.mods_digest([("a", "1", 1), ("b", "2", 1), ("c", "3", 0)])
+              == m.mods_digest([("b", "2", 1), ("a", "1", 1)]))
 
         # -- routing
         bob = join(server, 1, "Bob")
@@ -218,6 +229,29 @@ def main():
         clock[0] += admin.LOGIN_LOCKOUT_S + 1
         out = say(server, bob, "!login s3cret")
         check("right password after the lockout", server.clients[bob].get("admin") is True, out)
+
+        # -- !login is never shown to anyone else, and never logged in full
+        logged = []
+        real_info = server.log.info
+        server.log.info = lambda msg, *a: logged.append(msg % a if a else msg)
+        try:
+            out = say(server, bob, "!login s3cret")
+            check("!login reply goes only to the caller",
+                  out and all(c is bob for c, _t in out), out)
+            check("!login password is never sent out", not any("s3cret" in t for _c, t in out), out)
+            check("!login is logged masked",
+                  any("!login ****" in l for l in logged) and not any("s3cret" in l for l in logged), logged)
+            # without any plugin consuming it (commands plugin missing/disabled)
+            real_chat = server.plugins.chat
+            server.plugins.chat = lambda player, text: False
+            logged.clear()
+            out = say(server, bob, "!login s3cret")
+            server.plugins.chat = real_chat
+            check("an unhandled !command is not relayed",
+                  out and all(c is bob for c, _t in out) and not any("s3cret" in t for _c, t in out), out)
+            check("an unhandled !command is logged masked", not any("s3cret" in l for l in logged), logged)
+        finally:
+            server.log.info = real_info
         out = say(server, bob, "!kick Boss")
         check("a logged-in admin can kick", out[-1][1].startswith("kicked player 2"), out)
         join(server, 5, "Big Mouth")
@@ -289,6 +323,95 @@ def main():
         check("an explicit list loads exactly those (and disabled-by-default ones)",
               [n for n, _ in server2.plugins.plugins] == ["commands"]
               and "off" in server2.plugins.disabled, server2.plugins.disabled)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # -- a car pick: recorded under the PICKER's id only; no row for slot 0 (the
+    #    clients' invented "Host") and the other player's row untouched
+    tmp = tempfile.mkdtemp()
+    try:
+        server = build(tmp)
+        a_conn = join(server, 1, "Alice")
+        b_conn = join(server, 2, "Bob")
+        before = server.roster_bytes()
+        ok = server.note_car_pick(b_conn, bytes([7, 1, 3, 1]))
+        rows = {}
+        raw = server.roster_bytes()
+        n = m.ROSTER.unpack_from(raw, 0)[0]
+        for i in range(n):
+            e = m.ROSTER_ENTRY.unpack_from(raw, m.ROSTER.size + i * m.ROSTER_ENTRY.size)
+            rows[e[0]] = e
+        check("car pick: recorded under the picker's id",
+              ok and rows[2][2] == 7 and rows[2][3] == 1 and rows[2][6] == 3, rows.get(2))
+        check("car pick: the other player's row is untouched",
+              rows[1] == m.ROSTER_ENTRY.unpack_from(before, m.ROSTER.size), (rows[1],))
+        check("car pick: no row for id 0 (the server has no player)", 0 not in rows, sorted(rows))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # -- config upgrade: missing keys are added, existing ones never changed
+    tmp = tempfile.mkdtemp()
+    try:
+        import json
+        import serverkit
+        path = os.path.join(tmp, "dediserver.json")
+        mine = {"name": "Jaret's VPS", "port": 4242, "admins": ["abc"], "custom": {"x": 1},
+                "mod_versions": {"carhacks": "1.0"}, "admin_password": "pw"}
+        with open(path, "w") as f:
+            json.dump(mine, f)
+        cfg, _p = d.build_config(["--config", path])
+        with open(path) as f:
+            after = json.load(f)
+        check("cfg: existing keys and values kept verbatim",
+              all(after[k] == v for k, v in mine.items()), after)
+        check("cfg: existing key order kept, new keys appended",
+              list(after)[:len(mine)] == list(mine), list(after))
+        check("cfg: missing default keys added",
+              all(k in after for k in d.DEFAULTS if not k.startswith("_")),
+              [k for k in d.DEFAULTS if k not in after])
+        check("cfg: the running config still uses the file's values",
+              cfg["port"] == 4242 and cfg["name"] == "Jaret's VPS", cfg["port"])
+        with open(path + ".bak") as f:
+            check("cfg: the old file is backed up", json.load(f) == mine)
+        os.remove(path + ".bak")
+        st = os.stat(path).st_mtime_ns
+        with open(path) as f:
+            before = f.read()
+        d.build_config(["--config", path])
+        with open(path) as f:
+            check("cfg: nothing missing -> file not rewritten, no backup",
+                  f.read() == before and os.stat(path).st_mtime_ns == st
+                  and not os.path.exists(path + ".bak"))
+
+        nested = {"a": 1, "sub": {"keep": "mine"}}
+        with open(path, "w") as f:
+            json.dump(nested, f)
+        added = serverkit.upgrade_config(path, {"a": 2, "sub": {"keep": "default", "new": 3}, "b": [1]},
+                                         say=lambda msg: None)
+        with open(path) as f:
+            got = json.load(f)
+        check("cfg: nested dicts only gain missing keys",
+              got == {"a": 1, "sub": {"keep": "mine", "new": 3}, "b": [1]}
+              and sorted(added) == ["b", "sub.new"], (got, added))
+
+        with open(path, "w") as f:
+            json.dump({"rules": 3}, f)
+        cfg, _p = d.build_config(["--config", path])
+        with open(path) as f:
+            got = json.load(f)
+        check("cfg: a legacy 'rules' file does not gain the readable rule keys",
+              not any(k in got for k in d.RULE_KEYS) and cfg["rules"] == 3 and "port" in got, got)
+
+        sys.path.insert(0, os.path.join(os.path.dirname(HERE_T), "masterserver"))
+        import masterserver as ms
+        mpath = os.path.join(tmp, "masterserver.json")
+        with open(mpath, "w") as f:
+            json.dump({"port": 8100, "motd": "hi"}, f)
+        added = serverkit.upgrade_config(mpath, ms.DEFAULTS, say=lambda msg: None)
+        with open(mpath) as f:
+            got = json.load(f)
+        check("cfg: masterserver config gains missing keys, keeps its own",
+              got["port"] == 8100 and got["motd"] == "hi" and set(ms.DEFAULTS) <= set(got), got)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

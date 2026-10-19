@@ -4042,17 +4042,37 @@ void LoadImportedTPages(void)
 		 * CLUT, but not this civ_clut row. */
 		if (npalettes > 0 && npalettes <= 32 && CarImportIsWheelSet(sc, set))
 		{
-			int wheelRow = CarImportWheelPaletteRow(sc, npalettes);
+			int tableRow = CarImportWheelPaletteRow(sc, npalettes);
+			int hubRow = CarImportDeriveWheelPaletteRow(sc, set, (const unsigned char*)buf, size, 1);
+			int tyreRow = CarImportDeriveWheelPaletteRow(sc, set, (const unsigned char*)buf, size, 0);
+			int wheelRow;
 			int wheelClut;
 
-			printInfo("cross-city: %s wheel palette source row %d of %d\n",
-				LevelNames[sc], wheelRow, npalettes);
+			/* The measured table was taken from the hubcap sprite; it stays the
+			 * fallback for both when a sprite's row cannot be derived. */
+			if (hubRow < 0)
+				hubRow = tableRow;
 
-			wheelClut = CarImportReserveWheelPalette(sc,
+			wheelRow = (tyreRow >= 0) ? tyreRow : hubRow;
+
+			printInfo("cross-city: %s wheel palette source rows tyre %d, hubcap %d of %d (%s; table row %d)\n",
+				LevelNames[sc], wheelRow, hubRow, npalettes,
+				tyreRow >= 0 ? "derived from the sprites" : "table", tableRow);
+
+			if (hubRow != wheelRow)
+			{
+				int hubClut = CarImportReserveWheelPalette(sc, 1,
+					(const unsigned char*)buf + 4 + hubRow * 32);
+
+				if (hubClut != 0)
+					CarImportSetWheelPaletteClut(sc, set, hubClut, 1);
+			}
+
+			wheelClut = CarImportReserveWheelPalette(sc, 0,
 				(const unsigned char*)buf + 4 + wheelRow * 32);
 
 			if (wheelClut != 0)
-				CarImportSetWheelPaletteClut(sc, set, wheelClut);
+				CarImportSetWheelPaletteClut(sc, set, wheelClut, 0);
 		}
 
 		free(buf);

@@ -46,6 +46,12 @@ def parse(path):
         tid, _ = struct.unpack_from("<II", data, rva)
         code, flags, _excptr, addr = struct.unpack_from("<IIQQ", data, rva + 8)
         out.update(thread=tid, code=code, flags=flags, address=addr)
+        # MINIDUMP_EXCEPTION: NumberParameters(24) alignment(28) then
+        # ExceptionInformation[0] = the access kind, [1] = the address touched.
+        nparams, = struct.unpack_from("<I", data, rva + 8 + 24)
+        if nparams >= 2:
+            kind, touched = struct.unpack_from("<QQ", data, rva + 8 + 32)
+            out.update(access=kind, touched=touched)
         for base, sz, name in mods:
             if base <= addr < base + sz:
                 out["module"] = name
@@ -80,6 +86,9 @@ def main(paths):
                 print("   in module %s at rva 0x%X" % (info["module"], info["rva"]))
             else:
                 print("   NOT inside any listed module")
+            if "touched" in info:
+                kind = {0: "read", 1: "write", 8: "execute"}.get(info["access"], "access %d" % info["access"])
+                print("   %s of 0x%X" % (kind, info["touched"]))
         print("   modules:" if info["modules"] else "   (no module list)")
         for base, sz, name in sorted(info["modules"]):
             print("      0x%012X %9d  %s" % (base, sz, name))
