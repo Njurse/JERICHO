@@ -14,6 +14,7 @@ Driver 1 cars now actually get the wheels and engine sounds promised in v0.10.9.
 
 ### Fixes
 
+- **Joining as a Driver 1 (or other cross-city) car.** `-mpcar <city>:<model>` now keeps the city prefix, so the joiner is actually imported and adopted as that car. The import waits for the level to settle: applying it on the first sim frame crashed in the Driver 1 wheel hotload. The mp pair rig also finds the versioned `JERICHO*.log` again.
 - Driver 1 cars now get their own wheels and engine sounds after you re-run `BAKE_D1_CARS`. The v0.10.9 package shipped old bake tools, so a fresh bake still left them out. The bake now adds Driver 1's car sounds from `DRIVER/SOUND/VOICES.BLK` as a last step.
 - The game warns once, and `BAKE_D1_CARS` says so too, when `DRIVER/D1CARS` is from an older bake that lacks Driver 1 wheels and sounds.
 
