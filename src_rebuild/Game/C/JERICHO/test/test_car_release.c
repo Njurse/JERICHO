@@ -112,6 +112,43 @@ static void test_defer_path(void)
 	CHECK(logged == 2);		/* "deferred" once, "released" once */
 }
 
+/* The crash run's own state: an imported car held on slot 7, the local player
+ * parked on the same slot while they walked into a native traffic car, then the
+ * import picked again. The release must DEFER while the parked car is still on
+ * the slot, KEEP once the player names it again, and only FREE after both are
+ * true no longer. */
+static void test_import_release_reentry(void)
+{
+	int live[3] = { 1, 1, 1 };	/* car 0 parked, car 27 the player, car 1 traffic */
+	int model[3] = { 7, 1, 3 };	/* car 0 still draws import slot 7 */
+	int first = -1, cars;
+
+	/* on foot -> entered native slot 27: slot 7 is not named, but car 0 is on it */
+	cars = chkReleaseCountCars(live, model, 3, 7, &first);
+	CHECK(cars == 1 && first == 0);
+	CHECK(chkReleaseVerdict(1, 0, cars) == CHK_REL_DEFER_CARS);
+
+	/* picked the import again: car 27 adopts slot 7, so it is named once more */
+	model[1] = 7;
+	cars = chkReleaseCountCars(live, model, 3, 7, &first);
+	CHECK(cars == 2 && first == 0);
+	CHECK(chkReleaseVerdict(1, 1, cars) == CHK_REL_KEEP_WANTED);
+	CHECK(chkReleaseShouldLog(CHK_REL_DEFER_CARS, 1, CHK_REL_KEEP_WANTED, 2));
+
+	/* the parked car is cleared (PingOutCar): it is not live any more */
+	live[0] = 0;
+	model[0] = 0;
+	cars = chkReleaseCountCars(live, model, 3, 7, &first);
+	CHECK(cars == 1 && first == 1);
+	CHECK(chkReleaseVerdict(1, 1, cars) == CHK_REL_KEEP_WANTED);
+
+	/* the player switches to a native car: nobody names it and no car is on it */
+	model[1] = 3;
+	cars = chkReleaseCountCars(live, model, 3, 7, &first);
+	CHECK(cars == 0 && first == -1);
+	CHECK(chkReleaseVerdict(1, 0, cars) == CHK_REL_FREE);
+}
+
 /* ------------------------------------------------------------------ */
 /* engine: pin owners                                                  */
 /* ------------------------------------------------------------------ */
@@ -417,6 +454,7 @@ int main(void)
 	test_count_cars();
 	test_resident_value();
 	test_defer_path();
+	test_import_release_reentry();
 	test_owner_mask();
 	test_drop_owner();
 	test_array_remove();

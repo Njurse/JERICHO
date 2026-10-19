@@ -2568,6 +2568,10 @@ void AttemptUnPark(CAR_DATA * cp)
 
 int sideMul = 10;
 int collDat = 0;
+
+/* Slots already reported for the "live car with no cosmetics" guard in
+ * SetUpCivCollFlags: one line per slot, not one per frame. */
+static unsigned long long sJerNoCarCosLogged;
 int carnum = 0;
 const int newAccel = 2000;
 
@@ -2873,6 +2877,28 @@ void SetUpCivCollFlags(void)
 		extraLength = ABS(extraLength);
 
 		car0_cos = cp0->ap.carCos;
+
+		/* JERICHO: a live CIV_AI car with no cosmetics cannot be collided with -
+		 * its box, its COG and every other measure in this pass come from it. That
+		 * state is a bug elsewhere (a cleared CAR_DATA must not be put back in the
+		 * world), but dereferencing NULL here took the whole game down with an
+		 * access violation at 0xD8 (CAR_COSMETICS.colBox.vz). Skip the car and say
+		 * so once per slot; MpKeepOurCarsFromTrafficAi is the path that used to
+		 * create it. */
+		if (car0_cos == NULL)
+		{
+			int idx = CAR_INDEX(cp0);
+
+			if (idx >= 0 && idx < 64 && !(sJerNoCarCosLogged & (1ULL << idx)))
+			{
+				sJerNoCarCosLogged |= (1ULL << idx);
+				printInfo("[civ_ai] car slot %d is live (controlType %d) but has no cosmetics - skipped in SetUpCivCollFlags\n",
+					idx, (int)cp0->controlType);
+			}
+
+			continue;
+		}
+
 		cp0Length = car0_cos->colBox.vz;
 
 		cd[0].length[0] = cp0Length + extraLength + 93;
@@ -2914,6 +2940,23 @@ void SetUpCivCollFlags(void)
 			}
 			else
 			{
+				/* The real dereference: colBox.vz is 0xD8 in CAR_COSMETICS, which
+				 * is the crash this guard exists for. A live car without cosmetics
+				 * is a bug, not a car; skip it rather than take the process down. */
+				if (car1_cos == NULL)
+				{
+					int idx = CAR_INDEX(cp1);
+
+					if (idx >= 0 && idx < 64 && !(sJerNoCarCosLogged & (1ULL << idx)))
+					{
+						sJerNoCarCosLogged |= (1ULL << idx);
+						printInfo("[civ_ai] car slot %d is live (controlType %d) but has no cosmetics - skipped as a collision partner\n",
+							idx, (int)cp1->controlType);
+					}
+
+					continue;
+				}
+
 				cd[1].length[0] = car1_cos->colBox.vz;
 				cd[1].length[1] = car1_cos->colBox.vx;
 				cd[1].x.vx = cp1->hd.oBox.location.vx;
