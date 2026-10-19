@@ -137,6 +137,20 @@ const char* jer_modstore_repo_url(int index);
 int jer_modstore_repo_selected(void);
 void jer_modstore_repo_select(int index);
 
+/* How a repo reads in the browser: "fetched", "not fetched" or "failed", and how
+ * old its cached index is ("just now", "5m", "3h", "2d"). Both return a static
+ * string that stays valid until the next call, so draw one row at a time. */
+const char* jer_modstore_repo_state(int index);
+const char* jer_modstore_repo_age(int index);
+
+/* Non-zero when the helper script beside the exe speaks another protocol version
+ * than this build (a game update and its script have drifted apart). Reports both
+ * versions through the out-params when they are not NULL. */
+int jer_modstore_script_mismatch(int* seen, int* expected);
+
+/* Re-read CONFIG/modstore.ini, so an added repo appears without a restart. */
+void jer_modstore_repos_reload(void);
+
 /* Fetch the selected repo's index. Returns JER_MODSTORE_OK when the job started;
  * the browser shows the result. */
 int jer_modstore_refresh(void);

@@ -344,6 +344,12 @@ jobs:
             # work out which files are yours".
             Copy-Item "JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat" "$bin/" -Force
             Copy-Item "JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh" "$bin/" -Force
+
+            # The MOD STORE's helper, both spellings: the Mod Repo screen cannot
+            # install anything without it, so a package that lacks it ships a game
+            # whose store is dead. The local build stages them via premake too.
+            Copy-Item "JERICHO/CORE/modstore/modstore.bat" "$bin/" -Force
+            Copy-Item "JERICHO/CORE/modstore/modstore.sh" "$bin/" -Force
             Copy-Item "JERICHO/MODS/mp/tools/pack_lan/merge_config.ps1" "$bin/" -Force
 
             # 5. The DEDICATED SERVER -- and ONLY the dedicated server.
@@ -527,6 +533,10 @@ jobs:
             cp JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh "$d/"
             cp JERICHO/MODS/mp/tools/pack_lan/merge_config.ps1 "$d/"
             chmod +x "$d/update_jericho.sh"
+            # The mod store's helper, both spellings - the store is dead without it.
+            cp JERICHO/CORE/modstore/modstore.bat "$d/"
+            cp JERICHO/CORE/modstore/modstore.sh "$d/"
+            chmod +x "$d/modstore.sh"
             # The DEDICATED SERVER, and only it -- the same payload as the Windows
             # job stages, same reasoning (the master discovery service is shared
             # infrastructure and is not shipped). Staged by hand because the mirror

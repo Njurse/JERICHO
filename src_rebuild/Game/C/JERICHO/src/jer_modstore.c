@@ -37,6 +37,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <direct.h>
+#include <sys/stat.h>	/* _stat: the cached index's age */
 #else
 #include <unistd.h>
 #include <dirent.h>
@@ -155,6 +156,9 @@ static struct
 	char repoName[STORE_MAX_REPOS][STORE_ID_MAX];
 	char repoUrl[STORE_MAX_REPOS][STORE_URL_MAX];
 	int  repoSelected;
+	int  repoState[STORE_MAX_REPOS];	/* 0 never fetched, 1 loaded, 2 failed */
+	int  scriptMismatch;			/* the helper beside the exe speaks another version */
+	int  scriptVersionSeen;
 
 	/* the selected repo's index */
 	STORE_MOD mods[STORE_MAX_MODS];
@@ -481,6 +485,79 @@ static void StoreIndexPath(char* out, int max, int repo)
 	StoreStatePath(out, max, leaf);
 }
 
+/* "just now" / "12m" / "3h" / "2d" for the cached index of a repo. */
+static const char* StoreIndexAge(int repo)
+{
+	static char age[4][16];
+	static int slot = 0;
+	char path[STORE_PATH_MAX];
+#if defined(_WIN32)
+	struct _stat st;
+#else
+	struct stat st;
+#endif
+	time_t now;
+	long secs;
+	char* out;
+
+	if (repo < 0 || repo >= STORE_MAX_REPOS)
+		return "-";
+
+	out = age[slot++ & 3];
+
+	StoreIndexPath(path, sizeof(path), repo);
+
+	/* MSVC keeps the POSIX names behind a macro, so the type and the call differ */
+#if defined(_WIN32)
+	if (_stat(path, &st) != 0)
+#else
+	if (stat(path, &st) != 0)
+#endif
+	{
+		snprintf(out, 16, "no index");
+		return out;
+	}
+
+	now = time(NULL);
+	secs = (long)(now - (time_t)st.st_mtime);
+	if (secs < 0)
+		secs = 0;
+
+	if (secs < 60)
+		snprintf(out, 16, "just now");
+	else if (secs < 3600)
+		snprintf(out, 16, "%ldm old", secs / 60);
+	else if (secs < 86400)
+		snprintf(out, 16, "%ldh old", secs / 3600);
+	else
+		snprintf(out, 16, "%ldd old", secs / 86400);
+
+	return out;
+}
+
+static const char* StoreRepoStateText(int repo)
+{
+	if (repo < 0 || repo >= STORE_MAX_REPOS)
+		return "?";
+
+	switch (gStore.repoState[repo])
+	{
+		case 1:  return "fetched";
+		case 2:  return "failed";
+		default: return "not fetched";
+	}
+}
+
+const char* jer_modstore_repo_state(int index)
+{
+	return StoreRepoStateText(index);
+}
+
+const char* jer_modstore_repo_age(int index)
+{
+	return StoreIndexAge(index);
+}
+
 static void StoreRecordPath(char* out, int max, const char* id)
 {
 	snprintf(out, (size_t)max, "%s/installed/%s.json", gStore.stateDir, id);
@@ -559,6 +636,54 @@ static void StoreFindScript(void)
 /* Repos                                                               */
 /* ------------------------------------------------------------------ */
 
+/* Write a commented CONFIG/modstore.ini the first time the store runs. Nothing
+ * here is required -- the official repo is compiled in -- but a player who wants
+ * a second repo should start from a file that explains itself rather than from an
+ * empty one. Never overwrites: CONFIG/ is preserved across updates, so an existing
+ * file is the player's. */
+static void StoreWriteIniTemplate(void)
+{
+	char path[STORE_PATH_MAX];
+	FILE* f;
+
+	snprintf(path, sizeof(path), "%s/CONFIG/modstore.ini", gStore.root);
+
+	f = fopen(path, "rb");
+	if (f != NULL)
+	{
+		fclose(f);
+		return;
+	}
+
+	f = fopen(path, "wb");
+	if (f == NULL)
+		return;
+
+	fprintf(f, "; JERICHO mod store -- which repos the Mod Repo screen talks to.\n"
+		";\n"
+		"; The official repo is compiled into the game, so this file only matters if\n"
+		"; you want another one: a friend's repo, a mod author's, or your own test\n"
+		"; repo. This file is preserved by the updater -- your repos survive an\n"
+		"; update.\n"
+		";\n"
+		"; Add as many as you like, numbered from 2:\n"
+		";\n"
+		";   repo2      = http://127.0.0.1:8099/mods.json\n"
+		";   repo2_name = My test repo\n"
+		";\n"
+		"; `repo` (no number) replaces the OFFICIAL repo instead of adding one, which\n"
+		"; is how you point the game at a local test index:\n"
+		";\n"
+		";   repo = http://127.0.0.1:8099/mods.json\n"
+		";\n"
+		"; A repo is a URL to a mods.json. The packages it names are downloaded from\n"
+		"; the URLs it gives; a package named with no URL is looked for next to the\n"
+		"; index. See JERICHO/CORE/modstore/ and docs/mod-repo.md for the format.\n");
+
+	fclose(f);
+	jer_log("[modstore] wrote a starter %s\n", path);
+}
+
 static void StoreReposLoad(void)
 {
 	int i;
@@ -567,6 +692,16 @@ static void StoreReposLoad(void)
 
 	StoreCopy(gStore.repoName[0], STORE_ID_MAX, STORE_OFFICIAL_NAME);
 	StoreCopy(gStore.repoUrl[0], STORE_URL_MAX, STORE_OFFICIAL_URL);
+
+	/* `repo = <url>` replaces the compiled-in official repo. This is the one-line
+	 * setup every doc shows, and it used to be ignored: only repo2..repoN were read,
+	 * so a player who followed the instructions pointed at nothing. */
+	{
+		const char* official = jer_config_get_str("modstore", "repo", "");
+
+		if (official != NULL && official[0] != 0)
+			StoreCopy(gStore.repoUrl[0], STORE_URL_MAX, official);
+	}
 
 	/* A test can point the official slot somewhere local, so the whole flow runs
 	 * without the network (JERICHO_TEST_MODSTORE_URL=file:///.../mods.json). */
@@ -1464,6 +1599,20 @@ static void StoreTestTick(void)
 					jer_frontend_current_menu(), jer_frontend_find("jericho.mods.repo"),
 					jer_modstore_repo_count(), jer_modstore_item_count());
 
+				/* what each repo row says: state and index age are the two things a
+				 * player needs to tell "stale", "never fetched" and "unreachable" apart */
+				{
+					int r;
+
+					for (r = 0; r < jer_modstore_repo_count(); r++)
+					{
+						jer_log("[modstore][test]   repo %d: %s state=%s age=%s%s\n",
+							r, jer_modstore_repo_name(r), jer_modstore_repo_state(r),
+							jer_modstore_repo_age(r),
+							r == jer_modstore_repo_selected() ? " (selected)" : "");
+					}
+				}
+
 				rows = jer_modstore_item_count();
 				if (rows > 4)
 					rows = 4;
@@ -1749,15 +1898,24 @@ static void StoreJobFinish(void)
 		kind == STORE_JOB_INSTALL ? "install" :
 		kind == STORE_JOB_REMOVE ? "remove" : "rebake", msg);
 
-	if (ver != 0 && ver != JER_MODSTORE_SCRIPT_VERSION)
+	if (ver != 0)
 	{
-		jer_log("[modstore] warning: the helper script speaks v%d, this build expects v%d "
-			"- a game update and its script have drifted apart\n", ver, JER_MODSTORE_SCRIPT_VERSION);
+		gStore.scriptVersionSeen = ver;
+		gStore.scriptMismatch = (ver != JER_MODSTORE_SCRIPT_VERSION);
+
+		if (gStore.scriptMismatch)
+		{
+			jer_log("[modstore] warning: the helper script speaks v%d, this build expects v%d "
+				"- a game update and its script have drifted apart\n", ver, JER_MODSTORE_SCRIPT_VERSION);
+		}
 	}
 
 	switch (kind)
 	{
 		case STORE_JOB_INDEX:
+			if (gStore.jobRepo >= 0 && gStore.jobRepo < STORE_MAX_REPOS)
+				gStore.repoState[gStore.jobRepo] = ok ? 1 : 2;
+
 			if (ok)
 			{
 				if (StoreIndexLoad(gStore.jobRepo) <= 0)
@@ -1878,6 +2036,7 @@ void jer_modstore_init(const char* rootDir)
 	StoreFindExeDir();
 	StoreFindScript();
 	StoreTestParse();
+	StoreWriteIniTemplate();	/* only if CONFIG/modstore.ini is not there yet */
 	StoreReposLoad();
 	StoreRecordsLoad();
 
@@ -1890,6 +2049,7 @@ void jer_modstore_init(const char* rootDir)
 		{
 			fclose(f);
 			StoreIndexLoad(gStore.repoSelected);
+			gStore.repoState[gStore.repoSelected] = 1;
 		}
 		else
 		{
@@ -1920,6 +2080,25 @@ const char* jer_modstore_status(void)
 	if (gStore.status[0] == 0)
 		return "Idle";
 	return gStore.status;
+}
+
+/* Non-zero when the helper script beside the exe speaks another protocol version,
+ * which the browser shows as a row rather than leaving in the log. */
+int jer_modstore_script_mismatch(int* seen, int* expected)
+{
+	if (seen != NULL)
+		*seen = gStore.scriptVersionSeen;
+	if (expected != NULL)
+		*expected = JER_MODSTORE_SCRIPT_VERSION;
+
+	return gStore.scriptMismatch;
+}
+
+/* Re-read CONFIG/modstore.ini (the browser's "Reload repos"). */
+void jer_modstore_repos_reload(void)
+{
+	StoreReposLoad();
+	jer_log("[modstore] repos reloaded: %d configured\n", gStore.repoCount);
 }
 
 int jer_modstore_repo_count(void)
@@ -2080,6 +2259,10 @@ int jer_modstore_rebake(void)
 
 static int  gModsPage;
 static int  gRepoPage;
+static int  gRepoPageRows = REPO_ROWS_MAX;	/* mod rows on a page (the budget) */
+static int  gRepoFirstRow;				/* first repo row in the menu */
+static int  gRepoCountRows;				/* how many repo rows there are */
+static int  gRepoModFirstRow;			/* first MOD row in the menu */
 static int  gModsRows;			/* list rows on the page being shown */
 static int  gRepoRows;
 static int  gModsReopen;		/* a reload wiped the registry: re-open us */
@@ -2216,6 +2399,30 @@ static int RepoRowAdjust(void* ud, int dir)
 	StoreCopy(gPendingId, sizeof(gPendingId), it->id);
 	snprintf(gPromptText, sizeof(gPromptText), "Remove %s? It is deleted when JERICHO closes.", it->name);
 	jer_prompt_begin(gPromptText, StoreRemoveYes);
+	return 1;
+}
+
+/* Cross on a repo row: make it the selected one and fetch it. */
+static int RepoPickRepo(void* ud)
+{
+	int index = (int)(size_t)ud;
+
+	jer_modstore_repo_select(index);
+	gRepoPage = 0;
+	jer_modstore_refresh();
+	jer_frontend_refresh();
+	return 1;
+}
+
+/* Re-read CONFIG/modstore.ini: the file is the way to add a repo, so the browser
+ * has to be able to pick up an edit without restarting the game. */
+static int RepoReload(void* ud)
+{
+	(void)ud;
+
+	jer_modstore_repos_reload();
+	gRepoPage = 0;
+	jer_frontend_refresh();
 	return 1;
 }
 
@@ -2361,11 +2568,25 @@ static void ModsMenuEnter(void* ud)
 static void RepoMenuEnter(void* ud)
 {
 	int count = jer_modstore_item_count();
-	int pages, start, rows, i, n = 0, controls = 0;
+	int repoN = jer_modstore_repo_count();
+	int pages, start, rows, i, n = 0, controls = 0, budget;
 
 	(void)ud;
 
-	pages = (count + REPO_ROWS_MAX - 1) / REPO_ROWS_MAX;
+	if (repoN < 1)
+		repoN = 1;
+
+	/* The row budget: the menu holds JER_FE_MAX_ITEMS, and the repos, the pager
+	 * and the pinned controls all come out of it before the mods get a row. With
+	 * three repos configured that leaves six mod rows, which is still a page. */
+	controls = 3;		/* Refresh, Reload repos, Back */
+	budget = JER_FE_MAX_ITEMS - repoN - controls - 1;
+	if (budget > REPO_ROWS_MAX)
+		budget = REPO_ROWS_MAX;
+	if (budget < 1)
+		budget = 1;
+
+	pages = (count + budget - 1) / budget;
 	if (pages < 1)
 		pages = 1;
 	if (gRepoPage >= pages)
@@ -2373,27 +2594,34 @@ static void RepoMenuEnter(void* ud)
 	if (gRepoPage < 0)
 		gRepoPage = 0;
 
-	start = gRepoPage * REPO_ROWS_MAX;
+	start = gRepoPage * budget;
 	rows = count - start;
-	if (rows > REPO_ROWS_MAX)
-		rows = REPO_ROWS_MAX;
+	if (rows > budget)
+		rows = budget;
 	if (rows < 0)
 		rows = 0;
 
 	gRepoRows = rows;
+	gRepoPageRows = budget;
 
-	/* the first row names the repo and cycles it: one row, three jobs */
+	/* One row per configured repo, each showing its own index state: the old
+	 * single cycling row could not say which repo was stale or unreachable, and
+	 * with two repos it hid one of them entirely. */
+	gRepoFirstRow = n;
+	gRepoCountRows = repoN;
+
+	for (i = 0; i < repoN; i++)
 	{
 		JER_FE_ITEM* it = &gRepoItems[n++];
 
 		memset(it, 0, sizeof(*it));
-		snprintf(gLabelRepo, sizeof(gLabelRepo), "Repo: %s  < >",
-			jer_modstore_repo_name(jer_modstore_repo_selected()));
-		it->label = gLabelRepo;
-		it->on_adjust = RepoCycle;
-		it->on_activate = RepoRefresh;
+		it->label = NULL;			/* we draw the row */
+		it->userdata = (void*)(size_t)i;
+		it->on_activate = RepoPickRepo;
 		it->submenu = -1;
 	}
+
+	gRepoModFirstRow = n;
 
 	for (i = 0; i < rows; i++)
 	{
@@ -2424,6 +2652,16 @@ static void RepoMenuEnter(void* ud)
 		memset(it, 0, sizeof(*it));
 		it->label = "Refresh";
 		it->on_activate = RepoRefresh;
+		it->submenu = -1;
+		controls++;
+	}
+
+	{
+		JER_FE_ITEM* it = &gRepoItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Reload repos";	/* re-read CONFIG/modstore.ini */
+		it->on_activate = RepoReload;
 		it->submenu = -1;
 		controls++;
 	}
@@ -2610,16 +2848,42 @@ static void StoreDrawRepoTable(void)
 		return;
 	}
 
+	/* the configured repos, each with its own index state and age: which one is
+	 * stale or unreachable is the first thing worth knowing here, and the old
+	 * single cycling row could not show it (nor show more than one repo) */
+	for (i = 0; i < gRepoCountRows; i++)
+	{
+		int rx = 0, ry = 0, rw = 0, rh = 0;
+		int selected = (i == jer_modstore_repo_selected());
+		const char* state = jer_modstore_repo_state(i);
+		const char* age = jer_modstore_repo_age(i);
+		char mark[64];
+
+		if (!jer_frontend_row_rect(gRepoFirstRow + i, &rx, &ry, &rw, &rh))
+			break;
+
+		snprintf(mark, sizeof(mark), "%s %s", selected ? ">" : " ", jer_modstore_repo_name(i));
+
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 2), ry + 4, mark,
+			selected ? 255 : 200, selected ? 220 : 200, selected ? 120 : 200);
+
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 48), ry + 4, state,
+			state[1] == 'e' ? 255 : (state[1] == 'o' ? 170 : 150),
+			state[1] == 'e' ? 200 : 200,
+			state[1] == 'e' ? 128 : 190);
+
+		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, age, 180, 180, 180);
+	}
+
 	for (i = 0; i < gRepoRows; i++)
 	{
 		int rx = 0, ry = 0, rw = 0, rh = 0;
 		const JER_MODSTORE_ITEM* it;
 
-		/* row 0 is the repo selector, so the table starts at 1 */
-		if (!jer_frontend_row_rect(1 + i, &rx, &ry, &rw, &rh))
+		if (!jer_frontend_row_rect(gRepoModFirstRow + i, &rx, &ry, &rw, &rh))
 			break;
 
-		it = jer_modstore_item(gRepoPage * REPO_ROWS_MAX + i);
+		it = jer_modstore_item(gRepoPage * gRepoPageRows + i);
 		if (it == NULL)
 			continue;
 

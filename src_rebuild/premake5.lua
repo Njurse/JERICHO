@@ -823,6 +823,12 @@ project "JERICHO"
             -- the packages carry both: whichever OS the folder is copied to, one fits.
             "copy /Y \"..\\..\\JERICHO\\MODS\\mp\\tools\\pack_lan\\update_jericho.bat\" \"%{cfg.buildtarget.directory}update_jericho.bat\"",
             "copy /Y \"..\\..\\JERICHO\\MODS\\mp\\tools\\pack_lan\\update_jericho.sh\" \"%{cfg.buildtarget.directory}update_jericho.sh\"",
+            -- The MOD STORE's helper, same reasoning as the updater above: the store
+            -- cannot install without it, and it only sat next to the exe because
+            -- someone copied it by hand - so a clean build (and CI) produced a game
+            -- whose Mod Repo screen could download nothing. Both spellings.
+            "copy /Y \"..\\..\\JERICHO\\CORE\\modstore\\modstore.bat\" \"%{cfg.buildtarget.directory}modstore.bat\"",
+            "copy /Y \"..\\..\\JERICHO\\CORE\\modstore\\modstore.sh\" \"%{cfg.buildtarget.directory}modstore.sh\"",
         }
 
     -- The TOOLS are deliberately NOT mirrored. They are source, not game data: the
@@ -921,6 +927,10 @@ project "JERICHO"
             "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
             "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat \"%{cfg.buildtarget.directory}/update_jericho.bat\"",
             "chmod +x \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
+            -- the mod store's helper, next to the exe too - see the Windows block
+            "cp -f ../../JERICHO/CORE/modstore/modstore.sh \"%{cfg.buildtarget.directory}/modstore.sh\"",
+            "cp -f ../../JERICHO/CORE/modstore/modstore.bat \"%{cfg.buildtarget.directory}/modstore.bat\"",
+            "chmod +x \"%{cfg.buildtarget.directory}/modstore.sh\"",
         }
 
     -- the same removals as on Windows, after the copy above. A static library is
