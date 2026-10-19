@@ -3286,7 +3286,14 @@ int CarSelectScreen(int bSetup)
 	{
 		/* JERICHO: SQUARE cycles the player's car palette (the six colour variants;
 		 * the preview picture cannot show it, so a notice names it). The spawn reads
-		 * defaultPlayerPalette; mp saves it to mp.ini [mp] palette. */
+		 * defaultPlayerPalette; mp saves it to mp.ini [mp] palette.
+		 *
+		 * The six steps are the engine's six civ_clut slots: 0 is the page's own
+		 * CLUT and 1..5 are variants. Stock D2 fills 1..5; a Driver 1 car fills
+		 * only 1..4, so its last step clamps to the fourth and the two highest
+		 * steps repeat. Kept global on purpose: this point in the frontend does
+		 * not know the selected car's source city, and the same duplicate already
+		 * exists for a stock D2 car whose row has fewer than five variants. */
 		extern u_char defaultPlayerPalette;
 		char msg[48];
 
