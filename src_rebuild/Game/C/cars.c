@@ -1598,11 +1598,12 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 				{
 					/* D2: the wheel art is a TEXINF sprite, not a model. Keep the
 					 * host poly and map its UV rect onto WHLCLEAN/WHLBOTH. The
-					 * host poly's texture_id is the CLUT row on the wheel page;
-					 * using row 0 here is what paints the wheel with a car body
-					 * palette. */
+					 * tire and the hubcap are one sprite/one palette, so use the
+					 * model's primary CLUT row for every poly. The hubcap's own
+					 * host id names a host palette and would recolour only that
+					 * square. */
 					UV_INFO out[4];
-					int clutId = src->texture_id;
+					int clutId = primaryId;
 
 					if (clutId > 31)
 						clutId = 0;
