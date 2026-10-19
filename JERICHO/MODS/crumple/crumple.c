@@ -89,96 +89,78 @@ int gCrumpleGlobalScale = 4096;
 //-----------------------------------------------------------------------------
 CRUMPLE_PARAMS gCrumpleParams =
 {
-	// impact strength
-	120000,		// impactNormalize     howHard that counts as a full-scale dent.
-					//                      NOT ~100k: the body path only became
-					//                      capable of denting at all when it was put
-					//                      in proper 4096 fixed point (see the note in
-					//                      crumpleDeformInternal), so at 100000 an
-					//                      ordinary crash already saturates and the
-					//                      car flattens in one hit. 200000 puts the
-					//                      maximum dent at the engine's own
-					//                      "civilian car destroyed" threshold
-					//                      (~204800, handling.c), so everything below
-					//                      that dents proportionally. Wheels are
-					//                      calibrated separately (wheelNormalize).
-	768,		// impactMinHowHard    below this: no deformation
-	512,		// maxDisplacementPct  max push per impact, as a fraction of the
-					//                      car's own half-length (4096 = 1.0 -> 0.25x).
-					//                      Was an absolute 4290 "world units", about
-					//                      1.05x a car's half-length: ONE hit could drag
-					//                      a bumper vertex to the middle of the body --
-					//                      that is the overscale this replaces.
-	1229,		// compoundCapPct      max TOTAL per-vertex push across all impacts,
-					//                      same units (0.30x of the half-length). A car
-					//                      can never lose more than 30% of its length
-					//                      to damage, so no hit folds it through itself.
-	0,			// damageBoostScale    zone-damage amplification (0 = impact-shaped only,
-					//                      avoids zone-boundary seams)
+	// impact strength — slightly softer threshold so moderate crashes start
+	// deforming the body before the wheel fully breaks
+	100000,		// impactNormalize     howHard that counts as a full-scale dent
+	512,		// impactMinHowHard    below this: no deformation
 
-	// falloff
-	410,		// dentRadiusPct       dent radius, as a fraction of the car's own
-					//                      half-length (0.10x), so a hit crumples
-					//                      locally on a long car and a stubby one alike.
-					//                      Was an absolute 700 "world units" (~0.17x),
-					//                      which spread the dent over most of the body.
-	326,		// contactDeepen       extra depth for oblique (pole/edge) impacts
-	1,			// falloffSmooth       0 = linear, 1 = squared
+	// body displacement — larger per-hit and compound caps so dents reach
+	// the wheel wells instead of stopping short of them
+	768,		// maxDisplacementPct  max push per impact (was 512 / 0.125x)
+	1843,		// compoundCapPct      max total per-vertex (was 1229 / ~0.30x)
 
-	// structure
-	4096,		// cabinResistance     rigid at the cabin
-	128,		// noseResistance       soft at the AABB extremes
-	2048,		// resistanceInfluence  how much resistance limits movement
-	2048,		// cabinSize           central ~half of the AABB stays rigid
-	6144,		// globalScale         master deformation multiplier (1.0x)
+	0,			// damageBoostScale    leave at 0 (zone seams)
 
-	// mass / health
-	384,		// massFactorMin       light-vs-heavy clamp (0.094x)
-	8192,		// massFactorMax       heavy-vs-light clamp (2.0x)
-	4096,		// worldImpactFactor   static/world hits
-	2048,		// healthInfluence     damaged cars crumple more easily
+	// falloff — wider radius so a hit near a wheel contaminates the fender,
+	// door, and hood instead of staying a tight local dimple
+	820,		// dentRadiusPct       ~0.20x half-length (was 410 / ~0.10x)
+	420,		// contactDeepen       a bit more depth on poles/edges
+	1,			// falloffSmooth       squared
+
+	// structure — slightly less rigid cabin so the body folds more
+	// continuously into the wheel area
+	3584,		// cabinResistance     (was 4096)
+	96,			// noseResistance      softer extremes
+	2560,		// resistanceInfluence
+	1843,		// cabinSize           slightly smaller rigid midsection
+
+	// master scale — modest bump so body and wheel response feel matched
+	7168,		// globalScale         ~1.75x
+
+	// mass / health — keep the existing asymmetry
+	384,		// massFactorMin
+	8192,		// massFactorMax
+	4096,		// worldImpactFactor
+	2560,		// healthInfluence     damaged cars crumple a bit more readily
 
 	// surface noise
-	192,		// damageModelMix      fraction of baked damaged-model delta (~4.7%)
+	256,		// damageModelMix      a little more baked-model texture
 
-	// wheels
-	160, 		// wheelProximity      impact distance that counts as near a wheel
-	60000,		// wheelMinHowHard     threshold before a wheel bends (above damage threshold ~56k... tuned down so the d-pad sim can bend wheels)
-	120000,		// wheelNormalize      howHard for a full bend kick
-	24,			// wheelBendStep       damage level added per full kick — 2-3 kicks
-					//                      reach max, so one absolute T-bone
-					//                      (a few frames of contact) breaks a wheel
-	31,			// wheelBendMaxLevel   max cumulative damage level (bend = level * direction) — x0.65
-	31,			// wheelBendMaxX       max lateral bend (component clamp) — x0.65
-	16,			// wheelBendMaxY       max vertical bend (visual sag only) — x0.65
-	16,			// wheelBendMaxZ       max toe bend (component clamp) — x0.5, so the
-					//                      wheels don't distort as far longitudinally
+	// wheels — respond to the same class of impact that dents the body,
+	// and the proximity radius now overlaps the body dent radius
+	280,		// wheelProximity      (was 160) — reaches into the fender
+	48000,		// wheelMinHowHard     lower so body dents and wheel kicks
+					//                      start closer together
+	100000,		// wheelNormalize      full kick at roughly the same howHard
+					//                      that saturates body deformation
+	32,			// wheelBendStep       a bit stronger per kick
+	40,			// wheelBendMaxLevel
+	40,			// wheelBendMaxX
+	20,			// wheelBendMaxY
+	20,			// wheelBendMaxZ
 
 	// impact curve
-	2,			// impactCurve          squared: hard hits dent much deeper
+	2,			// impactCurve         still squared
 
 	// wheel physics
-	192,		// wheelScrubForce      ~4.7% lateral drag per unit of bend
-	10,			// wheelBendCooldown    frames between wheel-bend kicks (a real
-					//                      crash lasts several frames of contact)
+	256,		// wheelScrubForce     a little more scrub so bent wheels
+					//                      actually fight the driver
+	8,			// wheelBendCooldown   slightly more frequent kicks during
+					//                      sustained contact
 
-	// wheel draw (visual mesh only - the vert camber/toe lean, x2 so the
-	// distortion reads clearly to the player)
-	29012,		// wheelCamberScale     max lateral bend -> ~30deg camber (roll)
-	38740,		// wheelToeScale        max longitudinal bend -> ~40deg toe (yaw)
-	38827,		// wheelSteerScale      FRONT max lateral bend -> ~40deg steering deviation
-	3883,		// wheelSteerScaleRear  REAR max lateral bend -> ~4deg (twist only,
-					//                      must not steer the car or distort the drive)
+	// wheel draw — keep the existing visual scales (they already read well)
+	29012,		// wheelCamberScale
+	38740,		// wheelToeScale
+	38827,		// wheelSteerScale
+	3883,		// wheelSteerScaleRear
 
-	// debug / repair
-	1000000,	// simHowHard           d-pad simulate impact strength (edge)
-	90000,		// simTickHowHard       d-pad held per-frame strength (grinding)
-	40,			// simJitter            simulated-hit position jitter (world units)
-	2048*4,		// simAngleJitter       simulated-hit normal tilt (up to ~28deg) ----- to do: some basic fucking arithmetic, dude (me)
-	8,			// repairRate           zone damage removed per frame (small = slow,
-					//                      watchable morph while driving)
+	// debug / repair — unchanged
+	1000000,	// simHowHard
+	90000,		// simTickHowHard
+	40,			// simJitter
+	2048*4,		// simAngleJitter
+	8,			// repairRate
 };
-
 //-----------------------------------------------------------------------------
 // Per-car state — indexed by cp->id, same convention as gTempCarVertDump.
 // No changes to CAR_DATA / APPEARANCE_DATA / any core struct.
