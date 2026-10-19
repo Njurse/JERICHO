@@ -442,6 +442,42 @@ static int gJerichoModsPrompted;	// a host prompt was up on the mods screen
 static int gJerichoCreditsOpen;	// the mods screen is showing its Credits page
 static void JerichoDrawCredits(void);
 
+// JERICHO: the update check lives in the runtime (jer_update.c), which is built
+// without the exe's JERICHO_RELEASE_MODS, so the exe answers the flavour for it.
+#ifdef __cplusplus
+extern "C" {
+#endif
+void jer_update_frontend_tick(int onMainMenu);
+int jer_build_is_dev(void);
+void jer_frontend_dim_rect(int x, int y, int w, int h, int shade);
+#ifdef __cplusplus
+}
+#endif
+/* Darken a rectangle of the frontend (draw space) by `shade` (0..255), for text
+ * that has to read over the busy background. Subtractive, at ot+10: after the
+ * background (ot+11), before the highlight (ot+6) and the font (ot+1). One per
+ * frame -- the statics stay in the OT until EndFrame. */
+void jer_frontend_dim_rect(int x, int y, int w, int h, int shade)
+{
+	static POLY_F4 dim;
+	static DR_TPAGE mode;
+
+	if (current == NULL)
+		return;
+	setPolyF4(&dim);
+	setSemiTrans(&dim, 1);
+	setRGB0(&dim, shade, shade, shade);
+	setXYWH(&dim, x, y, w, h);
+	setDrawTPage(&mode, 1, 0, getTPage(0, 2, 0, 0));	/* abr 2: background - poly */
+	addPrim(current->ot + 10, &dim);
+	addPrim(current->ot + 10, &mode);	/* head of the slot: applied first */
+}
+
+int jer_build_is_dev(void)
+{
+	return GAME_BUILD_SUFFIX[0] != '\0';	/* version.h: "" on the shipping Release */
+}
+
 // JERICHO-HOOK: module-provided frontend menus (jer_frontend.h)
 static const JER_FE_MENU* gFeMenus[JER_FE_MAX_MENUS];
 static int gFeMenuCount;
@@ -2647,6 +2683,10 @@ void State_FrontEnd(void* param)
 		jer_fire(JER_EVENT_FRONTEND_DRAW, &drawArgs);
 	}
 
+	/* JERICHO: the update check (JERICHO/src/jer_update.c) -- decides once, on
+	 * the main menu, and draws the changelog on its own screen. */
+	jer_update_frontend_tick(pCurrScreen == &PsxScreens[0] && ScreenDepth == 0);
+
 	/* JERICHO: the Credits page draws its lines over the screen, like a module menu */
 	if (gJerichoCreditsOpen && pCurrScreen == &PsxScreens[JERICHO_MODS_SCREEN])
 		JerichoDrawCredits();
@@ -4715,7 +4755,8 @@ int JerFrontendMenuScreen(int bSetup)
 		/* ROWS. A menu may ask for a TIGHTER pitch (a long list) and for its last few
 		 * items to be CONTROLS on the bottom edge (so they do not move while the list
 		 * above them is rebuilt) -- both are the menu's to say, since only it knows. */
-		bottom = (menu->bottom_items > 0 && menu->bottom_items < n) ? menu->bottom_items : 0;
+		/* <= n: a menu that is ALL controls (the update screen) pins every row too */
+		bottom = (menu->bottom_items > 0 && menu->bottom_items <= n) ? menu->bottom_items : 0;
 		listN = n - bottom;
 		rowStep = (menu->row_step > 0) ? menu->row_step : JER_FE_ROW_STEP;
 		rowBottom = (menu->row_bottom > 0) ? menu->row_bottom : JER_FE_ROW_BOTTOM;

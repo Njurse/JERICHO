@@ -201,7 +201,7 @@ jobs:
           # the cache is the fix and it changes no file, so a genuinely dirty
           # developer tree still reports -dirty.
           git update-index -q --refresh || true
-          echo "git describe: $(git describe --tags --always --dirty)"
+          echo "git describe: $(git describe --tags --match "v*" --always --dirty)"
           echo "porcelain:    $(git status --porcelain | wc -l) path(s)"
           git status --porcelain | head -10 || true
           echo "diff-index:   $(git diff-index --name-only HEAD | wc -l) path(s)"
@@ -270,6 +270,12 @@ jobs:
             Copy-Item "$env:OPENAL_DIR/bin/Win64/soft_oal.dll" "$bin/OpenAL32.dll" -Force
             # game data (the post-build step already mirrored JERICHO/ into $bin)
             Copy-Item "data/*" "$bin/" -Recurse -Force
+            # config.ini ships as config.default.ini: unzipping a release over an
+            # install used to replace the player's own window/binds/options file.
+            # The game copies the default to config.ini on first start when there
+            # is none (redriver2_psxpc.cpp), and update_jericho merges new keys
+            # from it into an existing one.
+            Move-Item "$bin/config.ini" "$bin/config.default.ini" -Force
 
             # Ship the GAME, not the build tree. The archive used to carry FontTool.exe,
             # gen_exports.exe, the MSVC import/static libraries (*.lib, *.exp) and the
@@ -424,7 +430,7 @@ jobs:
           # See the Windows job: refresh the index cache first, so -dirty means a
           # real difference and not a stale stat cache, then report the string.
           git update-index -q --refresh || true
-          echo "git describe: $(git describe --tags --always --dirty)"
+          echo "git describe: $(git describe --tags --match "v*" --always --dirty)"
           echo "porcelain:    $(git status --porcelain | wc -l) path(s)"
           git status --porcelain | head -10 || true
           echo "diff-index:   $(git diff-index --name-only HEAD | wc -l) path(s)"
@@ -490,6 +496,8 @@ jobs:
             d="src_rebuild/bin/$cfg"
             # game data (the post-build step already mirrored JERICHO/ into $d)
             cp -R data/. "$d"/
+            # config.ini ships as config.default.ini -- see the Windows job.
+            mv -f "$d/config.ini" "$d/config.default.ini"
             # Ship the GAME, not the build tree: the archive used to carry FontTool,
             # gen_exports and the static libraries (libJERICHO_runtime.a, libPsyCross.a)
             # as well, none of which is run or linked by a player. The Windows package

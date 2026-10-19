@@ -63,6 +63,18 @@ Each build is packaged with everything needed to run:
   zips. Both spellings go to both platforms, so whichever OS the folder is copied to
   has the right one.
 
+  The game drives the same scripts: its update screen (`jer_update.c`) runs them with
+  `--tag vX.Y.Z --wait <pid> --relaunch <exe>` and the flavour (`dev` / `release`) of
+  the running build, so a `Release_dev` install stays on `JERICHO_Release_dev_*`. Run by
+  hand with no flavour, a script keeps the one `JERICHO/CONFIG/installed.json` records;
+  each successful update writes that file (tag, asset, SHA256), which is also how the
+  game notices a re-cut tag (the release's asset `digest` no longer matches). Both
+  scripts first copy themselves to a temp file and run from there, because the release
+  carries them too and overwriting a running script derails it.
+- `config.ini` is packaged as **`config.default.ini`**: an archive unpacked over an install
+  must not replace the player's window, binds and options. The game seeds `config.ini`
+  from it when there is none, and the updater merges new keys from it into an existing one.
+
 Resulting archives:
 
 ```

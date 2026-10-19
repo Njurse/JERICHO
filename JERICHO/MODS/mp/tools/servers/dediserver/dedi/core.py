@@ -18,7 +18,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # .../servers/dediserver
 sys.path.insert(0, os.path.dirname(HERE))                            # .../servers (serverkit)
 
-from serverkit import (LEVELS, Console, Log, apply_overrides,   # noqa: E402
+from serverkit import (LEVELS, Console, Log, apply_overrides, upgrade_config,   # noqa: E402
                        duration, install_signals, load_config)
 
 TOOLS = os.path.dirname(os.path.dirname(HERE))      # .../mp/tools
@@ -117,8 +117,15 @@ def parse_manifest(payload):
     """
     body = m.HELLO.size
     rows = []
+    # modCount rows and no more: the optional JPID / JPVR blocks follow them, and
+    # reading every whole row in the payload (as this once did) would take a long
+    # enough trailer for a mod. Older servers still do, which is why the game keeps
+    # the trailer under one row (mp_proto.h MP_HELLO_VER_MAX).
+    count = (len(payload) - body) // m.MODI.size
+    if len(payload) >= body:
+        count = min(count, m.HELLO.unpack_from(payload, 0)[5])
 
-    for i in range(0, (len(payload) - body) // m.MODI.size):
+    for i in range(0, count):
         chunk = payload[body + i * m.MODI.size:body + (i + 1) * m.MODI.size]
 
         try:
@@ -156,6 +163,18 @@ def mods_match(declared, required, versions, level):
                 return False
 
     return True
+
+
+def _is_command(line):
+    """A chat COMMAND: '!' or '/' then a non-space, non-'!'/'/' character (the
+    commands plugin's test, and the C host's MpChatIsCommand)."""
+    return len(line) >= 2 and line[0] in "!/" and line[1] not in " !/"
+
+
+def _mask_command(line):
+    """The command word only, with any arguments shown as ****: "!login ****"."""
+    parts = line.split(None, 1)
+    return parts[0] + (" ****" if len(parts) > 1 else "")
 
 
 def _chat_chunks(text, limit=95):
@@ -634,8 +653,14 @@ class Dedicated:
         # Plugins first: a command ("!help") is consumed and never relayed.
         with self.lock:
             info = self.clients.get(conn)
-        if info is not None and self.plugins.chat(Player(conn, info), line):
-            self.log.info("[cmd] %s: %s" % (name, line.split(None, 1)[0]))
+        consumed = info is not None and self.plugins.chat(Player(conn, info), line)
+        if consumed or _is_command(line):
+            # Never relayed, never logged in full: "!login hunter2" is a password.
+            # Even with the commands plugin missing or disabled, a command-shaped
+            # line stays with its sender instead of reaching every seat.
+            self.log.info("[cmd] %s: %s" % (name, _mask_command(line)))
+            if not consumed and info is not None:
+                self.send_server_chat("commands are not available on this server", conn=conn)
             return
 
         self.log.info("[chat] %s: %s" % (name, line))
@@ -721,6 +746,8 @@ class Dedicated:
             else:
                 self.clients[conn] = {"id": pid, "name": name, "addr": who,
                                       "player_id": m.parse_player_id(payload),
+                                      "version": m.parse_hello_version(payload),
+                                      "mods_digest": m.mods_digest(mods),
                                       "palette": _b}       # HELLO reserved[1]: their car palette
 
         if refused_full:
@@ -1382,6 +1409,19 @@ def resolve_rules(cfg, file_keys):
     return False
 
 
+def _legacy_rule_skip(path):
+    """A legacy file ("rules", none of the readable rule keys) is honoured as-is;
+    adding the readable keys would silently replace it, so they are not added."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            keys = set(json.load(f))
+    except (OSError, ValueError, TypeError):
+        return ()
+    if "rules" in keys and not any(k in keys for k in RULE_KEYS):
+        return RULE_KEYS
+    return ()
+
+
 def build_config(argv):
     args = parse_args(argv)
     path = args.config
@@ -1391,6 +1431,9 @@ def build_config(argv):
         if note:
             print("[dedi] " + note, file=sys.stderr)
         path = default_path if os.path.exists(default_path) else ""
+    if path:
+        upgrade_config(path, DEFAULTS, skip=_legacy_rule_skip(path),
+                       say=lambda msg: print("[dedi] " + msg, file=sys.stderr))
     cfg = load_config(path, DEFAULTS)
     apply_overrides(cfg, args, (
         ("port", "port"), ("name", "name"), ("city", "city"), ("gamemode", "gamemode"),

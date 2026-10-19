@@ -282,6 +282,16 @@ each in both the clean `Release` configuration and the full `Release_dev` one,
 packed with the runtime libraries, the `data/` tree and the `JERICHO/` tree the
 runtime reads. See [`docs/CI.md`](docs/CI.md).
 
+**Staying up to date.** At start the game asks GitHub once (in the background,
+never holding up boot) whether a newer `vX.Y.Z` release exists, and if so shows
+its changes before the main menu with three choices: *Update JERICHO (Restart)*
+runs `update_jericho` for you and restarts the game, *Remind me next launch*, or
+*Disable update checks* (`update_check=0` in `JERICHO/CONFIG/jericho.ini`; set it
+to `1` to turn them back on). The alpha pre-release never counts, and a build past
+a release (alpha or your own) compares as that release. Archives ship
+`config.default.ini`, never `config.ini`, so unpacking one over an install keeps your
+settings; the game creates `config.ini` from the default when there is none.
+
 ### Linux and other platforms
 
 - **Linux:** [`linux_dev_prepare.sh`](linux_dev_prepare.sh) fetches premake and
@@ -297,6 +307,12 @@ runtime reads. See [`docs/CI.md`](docs/CI.md).
   `-testmode`, `-shot`, …) are documented in
   [`HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) and printed by
   `JERICHO_dev.exe -help`.
+- **`-forceupdatecheck`** (or `update_force=1` in `JERICHO/CONFIG/jericho.ini`) —
+  `Release_dev`/Debug builds only: the update check treats this build as 0.0.0, so
+  the update screen always appears with the real latest release's notes (even with
+  `update_check=0`). *Update JERICHO (Restart)* still works there: it really
+  downloads that release (`Release_dev` flavour) and installs it over the folder,
+  which the screen says in yellow. A shipping Release ignores both.
 - **Repo-wide tools** — release publishing and crash-dump triage — are in
   [`tools/README.md`](tools/README.md); each module ships its own workbench in
   its folder.
