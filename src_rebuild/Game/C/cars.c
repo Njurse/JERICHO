@@ -1624,6 +1624,26 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, SVECTOR* verts, int transpar
 	current->primptr = (char*)poly;
 }
 
+// JERICHO: is an imported wheel's texture page actually resident? CarImportPin
+// fills texture_pages/texture_cluts at draw time; if the page could not be
+// pinned (or has not been pinned yet), those entries are 0/dummy. Use the host
+// wheel texture for that frame rather than drawing the dummy page.
+static int JerWheelTextureReady(MODEL* m)
+{
+	POLYFT4* p;
+
+	if (m == NULL || m->poly_block <= 0 || m->num_polys <= 0)
+		return 0;
+
+	p = GET_MODEL_DATA(POLYFT4, m, poly_block);
+
+	if (p == NULL)
+		return 0;
+
+	return texture_pages[p->texture_set] != 0 &&
+		texture_cluts[p->texture_set][p->texture_id] != 0;
+}
+
 // [D] [T]
 void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 {
@@ -1700,6 +1720,15 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		WheelTexClean = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_CLEAN);
 		WheelTexFast = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_FAST);
 		WheelTexDam = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_DAMAGED);
+
+		/* Fail soft: a wheel page that is not resident yet (or was dropped)
+		 * must not leave the wheel on the dummy page. */
+		if (WheelTexClean != NULL && !JerWheelTextureReady(WheelTexClean))
+			WheelTexClean = NULL;
+		if (WheelTexFast != NULL && !JerWheelTextureReady(WheelTexFast))
+			WheelTexFast = NULL;
+		if (WheelTexDam != NULL && !JerWheelTextureReady(WheelTexDam))
+			WheelTexDam = NULL;
 
 		if (WheelTexClean != NULL)
 		{
