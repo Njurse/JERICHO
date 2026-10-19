@@ -261,7 +261,14 @@ jobs:
           # from that repo for packaging only. The URL comes from .gitmodules, so
           # it cannot drift from the submodule entry.
           $d1url = (git config -f .gitmodules --get submodule.JERICHO/MODS/d1cars.url)
-          git clone --quiet --depth 1 "$d1url" "$env:RUNNER_TEMP/d1cars"
+          # Check out the commit the submodule PINS, not the repo's default branch:
+          # cloning the default branch shipped stale tools (no add_car_sounds.py,
+          # a bake.py without the wheel lump) in v0.10.9.
+          $d1sha = (git ls-tree HEAD JERICHO/MODS/d1cars).Split()[2]
+          git init --quiet "$env:RUNNER_TEMP/d1cars"
+          git -C "$env:RUNNER_TEMP/d1cars" fetch --quiet --depth 1 "$d1url" $d1sha
+          git -C "$env:RUNNER_TEMP/d1cars" checkout --quiet FETCH_HEAD
+          if (-not (Test-Path "$env:RUNNER_TEMP/d1cars/tools/add_car_sounds.py")) { throw "d1cars $d1sha has no tools/add_car_sounds.py" }
 
           foreach ($cfg in @('Release', 'Release_dev')) {
             $bin = "src_rebuild/bin/$cfg"
@@ -490,7 +497,12 @@ jobs:
           # submodule's repo (the dev mirror excludes the folder; the build never
           # fetches it), for packaging only.
           d1url=$(git config -f .gitmodules --get submodule.JERICHO/MODS/d1cars.url)
-          git clone --quiet --depth 1 "$d1url" "$RUNNER_TEMP/d1cars"
+          # the PINNED submodule commit, not the default branch (see the Windows job)
+          d1sha=$(git ls-tree HEAD JERICHO/MODS/d1cars | awk '{print $3}')
+          git init --quiet "$RUNNER_TEMP/d1cars"
+          git -C "$RUNNER_TEMP/d1cars" fetch --quiet --depth 1 "$d1url" "$d1sha"
+          git -C "$RUNNER_TEMP/d1cars" checkout --quiet FETCH_HEAD
+          test -f "$RUNNER_TEMP/d1cars/tools/add_car_sounds.py" || { echo "d1cars $d1sha has no tools/add_car_sounds.py"; exit 1; }
 
           for cfg in Release Release_dev; do
             d="src_rebuild/bin/$cfg"
