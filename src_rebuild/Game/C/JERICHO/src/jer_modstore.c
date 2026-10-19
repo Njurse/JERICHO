@@ -1384,6 +1384,10 @@ static void StoreItemsBuild(void)
  * whole path -- fetch an index, install a package, see the module appear -- can
  * be exercised headlessly, which is how it is verified in CI and in the repo's
  * own test scripts. Harmless when unset: every branch is behind a value. */
+/* the Mods menu's "Mod Repo (N updates)" label, built on each layout */
+static char gLabelRepoItem[64];
+
+static void StoreDrawWrapped(int x, int y, int width, const char* text, int maxLines, int r, int g, int b);
 static int StoreJobRunning(void);
 static const char* StoreStateText(int state);
 /* the menu's row actions, defined with the menus further down; the test lever
@@ -1556,6 +1560,11 @@ static void StoreTestTick(void)
 				int i, rows;
 
 				gStore.testStage = 2;
+				/* the Mods menu advertises waiting updates on its Mod Repo item, so a
+				 * player notices without opening the browser */
+				jer_log("[modstore][test] Mod Repo item: \"%s\" (updates=%d)\n",
+					gLabelRepoItem[0] != 0 ? gLabelRepoItem : "Mod Repo", StoreCountUpdates());
+
 				jer_log("[modstore][test] screen->menu: current=%d jericho.mods=%d repo=%d modules=%d\n",
 					jer_frontend_current_menu(), jer_frontend_find("jericho.mods"),
 					jer_frontend_find("jericho.mods.repo"), jer_modstore_module_count());
@@ -2524,8 +2533,23 @@ static void ModsMenuEnter(void* ud)
 	{
 		JER_FE_ITEM* it = &gModsItems[n++];
 
+		int ups = StoreCountUpdates();
+
 		memset(it, 0, sizeof(*it));
-		it->label = "Mod Repo";
+
+		/* "Mod Repo (2 updates)" - the store works without anyone opening the
+		 * browser, and a quiet store is a store nobody updates */
+		if (ups > 0)
+		{
+			snprintf(gLabelRepoItem, sizeof(gLabelRepoItem), "Mod Repo (%d update%s)",
+				ups, ups == 1 ? "" : "s");
+			it->label = gLabelRepoItem;
+		}
+		else
+		{
+			it->label = "Mod Repo";
+		}
+
 		it->submenu = repoMenu;			/* engine navigation */
 		controls++;
 	}
@@ -2796,6 +2820,26 @@ static void ModsDrawTable(void)
 	}
 }
 
+/* How many rows the repo is offering as an update (or as a bundled copy the
+ * store replaced), so the Mods menu can say so without the browser being open. */
+static int StoreCountUpdates(void)
+{
+	int i, n = 0;
+
+	for (i = 0; i < jer_modstore_item_count(); i++)
+	{
+		const JER_MODSTORE_ITEM* it = jer_modstore_item(i);
+
+		if (it == NULL)
+			continue;
+
+		if (it->state == JER_MODSTORE_ST_UPDATE || it->state == JER_MODSTORE_ST_REPLACED)
+			n++;
+	}
+
+	return n;
+}
+
 static const char* StoreStateText(int state)
 {
 	switch (state)
@@ -2826,12 +2870,49 @@ static void StoreDrawRepoTable(void)
 	else
 		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 78, status, 190, 190, 190);
 
+	/* A game update and its helper script can drift apart (a package that carried
+	 * one but not the other). The store then talks a protocol the script does not
+	 * speak, so say it here instead of leaving it in the log. */
+	{
+		int seen = 0, expected = 0;
+
+		if (jer_modstore_script_mismatch(&seen, &expected))
+		{
+			char msg[128];
+
+			snprintf(msg, sizeof(msg),
+				"helper script v%d, this build expects v%d - reinstall the game files",
+				seen, expected);
+
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 100, msg, 255, 128, 128);
+		}
+	}
+
 	jer_text_draw_at(JER_TEXT_FE, 180, StoreTextX(x, w, 2), top - 52, "MOD REPO", 255, 176, 64);
 
 	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 22, "MOD", 255, 176, 64);
 	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 34), top - 22, "VERSION", 255, 176, 64);
 	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 48), top - 22, "STATE", 255, 176, 64);
 	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 64), top - 22, "NOTE", 255, 176, 64);
+
+	/* the highlighted entry's description, under the table: the index has carried
+	 * one all along and nothing showed it */
+	if (gRepoRows > 0)
+	{
+		int sel = jer_frontend_selected() - gRepoModFirstRow;
+
+		if (sel >= 0 && sel < gRepoRows)
+		{
+			const JER_MODSTORE_ITEM* it = jer_modstore_item(gRepoPage * gRepoPageRows + sel);
+			int lx = 0, ly = 0, lw = 0, lh = 0;
+
+			if (it != NULL && it->description != NULL && it->description[0] != 0 &&
+				jer_frontend_row_rect(gRepoModFirstRow + gRepoRows - 1, &lx, &ly, &lw, &lh))
+			{
+				StoreDrawWrapped(StoreTextX(lx, lw, 2), ly + lh + 10, 470, it->description, 2, 150, 150, 150);
+			}
+		}
+	}
 
 	if (gRepoRows == 0)
 	{
@@ -2912,6 +2993,70 @@ static void StoreDrawRepoTable(void)
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, it->note, 170, 190, 210);
 		else
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, it->author, 170, 190, 210);
+	}
+}
+
+/* Wrap `text` to `width` and draw at most `maxLines` lines from (x, y). Our own
+ * wrapper rather than the frontend's: this is module-side text at table scale. */
+static void StoreDrawWrapped(int x, int y, int width, const char* text, int maxLines, int r, int g, int b)
+{
+	char line[192];
+	const char* p = text;
+	int drawn = 0;
+
+	if (text == NULL)
+		return;
+
+	while (p != NULL && *p != 0 && drawn < maxLines)
+	{
+		const char* cut = p;
+		const char* best = p;
+		size_t len;
+
+		while (*p == ' ')
+			p++;
+
+		for (;;)
+		{
+			const char* wordEnd = cut;
+
+			while (*wordEnd != 0 && *wordEnd != ' ')
+				wordEnd++;
+
+			len = (size_t)(wordEnd - p);
+			if (len > sizeof(line) - 1)
+				len = sizeof(line) - 1;
+
+			memcpy(line, p, len);
+			line[len] = 0;
+
+			if (best != p && jer_text_width(JER_TEXT_FE, 110, line) > width)
+				break;
+
+			best = wordEnd;
+			cut = wordEnd;
+
+			if (*wordEnd == 0)
+				break;
+
+			while (*cut == ' ')
+				cut++;
+		}
+
+		len = (size_t)(best - p);
+		if (len > sizeof(line) - 1)
+			len = sizeof(line) - 1;
+
+		memcpy(line, p, len);
+		line[len] = 0;
+
+		while (len > 0 && line[len - 1] == ' ')
+			line[--len] = 0;
+
+		jer_text_draw_at(JER_TEXT_FE, 110, x, y + drawn * 16, line, r, g, b);
+
+		drawn++;
+		p = best;
 	}
 }
 

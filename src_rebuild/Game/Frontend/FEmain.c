@@ -4728,6 +4728,14 @@ static int jerFrontendRowTop(int count, int step, int limit, int wanted)
 	return top;
 }
 
+/* Which row the engine is highlighting right now. A module that draws its own
+ * row content needs this to show something ABOUT the row under the cursor
+ * (a description, say) rather than about row 0. */
+int jer_frontend_selected(void)
+{
+	return currSelIndex;
+}
+
 int jer_frontend_list_top(void)
 {
 	if (gFeRowCount <= 0)

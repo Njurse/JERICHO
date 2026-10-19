@@ -76,6 +76,30 @@ jobs:
       - name: No debug switch changes behaviour
         run: python JERICHO/MODS/mp/tools/check_debug_independence.py
 
+      # The mod store's installer and publishing tools are shell + Python and need
+      # no game assets, so they run here in full: the installer's own 32-assertion
+      # suite (checksum refusal, foreign and traversal ids, overwrite-only install,
+      # deferred removal), then a package -> index -> validate round trip. A store
+      # bug is otherwise only visible from inside the game.
+      - name: mod store (installer suite, then package -> index -> validate)
+        run: |
+          set -e
+          sh JERICHO/CORE/modstore/test/verify.sh
+          rm -rf /tmp/modstore-ci
+          sh JERICHO/CORE/modstore/gen_mods_json.sh --out /tmp/modstore-ci testmode
+          python3 JERICHO/CORE/modstore/check_mod_repo.py /tmp/modstore-ci/mods.json
+          # the checker must FAIL on a corrupted hash, or it is not a check
+          python3 - <<'PY'
+          import json
+          d = json.load(open("/tmp/modstore-ci/mods.json"))
+          d["mods"][0]["sha256"] = "0" * 64
+          json.dump(d, open("/tmp/modstore-ci/mods-bad.json", "w"), indent=2)
+          PY
+          if python3 JERICHO/CORE/modstore/check_mod_repo.py /tmp/modstore-ci/mods-bad.json --quiet; then
+            echo "check_mod_repo accepted a corrupted hash" >&2
+            exit 1
+          fi
+
       # The server-side tools are pure Python and need no game assets, so unlike
       # the rigs below they really run here: the wire-mirror guard (which caught a
       # real MP_WELCOME drift), the master discovery self-test, and the
