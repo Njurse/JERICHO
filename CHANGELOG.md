@@ -6,6 +6,18 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- **Joining no longer resets players who are already driving.** A player joining
+  could get another player's car rebuilt as a fresh car on a road near the level start
+  (repaired, wanted level cleared). A new player's car now never takes a slot someone is
+  driving, and the joiner's own road placement only moves a car that is still on the
+  level start.
+- **Respawn puts you somewhere new.** The pause-menu Respawn and the respawn after a
+  wreck now pick a clear road roughly 60–150 m away (away from other players' cars,
+  facing along the road), falling back to the nearest road if none is found.
+- **No Restart in online games.** The pause and end-of-ride menus no longer offer
+  Restart / Retry / Play Again during an online session (it got stuck); the remaining
+  rows close up with no gap.
+
 - **`!login` passwords are never shown to other players.** A dedicated server now keeps
   every `!`/`/` command line to its sender even if the commands plugin is missing or
   disabled, and logs it masked (`!login ****`). A game host (listen server), which runs no
