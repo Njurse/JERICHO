@@ -1025,6 +1025,17 @@ int ReleaseCopToTraffic(CAR_DATA* cp)
 
 	InitCivState(cp, NULL);
 
+	/* Undo what activation counted (ActivatePassiveCop: numCivCars--, numActiveCops++).
+	 * Left as they were, every release leaked one active cop - numActiveCops < maxCopCars
+	 * gates new pursuers, so after a few respawns no cop would chase at all - and PingOutCar
+	 * then took numCivCars down a second time for this car. The cop flag makes PingOutCar
+	 * give back the numCopCars this car still holds. */
+	cp->controlFlags |= CONTROL_FLAG_COP;
+	numCivCars++;
+
+	if (numActiveCops > 0)
+		numActiveCops--;
+
 	/* A cop's handling profile is not a civilian's: InitCopState picked 2..4,
 	 * while every ordinary traffic car runs profile 1 (InitCar's CIV_AI branch).
 	 * The conversion is only complete if the car handles like the traffic it has
