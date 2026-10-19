@@ -6,27 +6,45 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
-- **Joining no longer resets players who are already driving.** A player joining
-  could get another player's car rebuilt as a fresh car on a road near the level start
-  (repaired, wanted level cleared). A new player's car now never takes a slot someone is
-  driving, and the joiner's own road placement only moves a car that is still on the
-  level start.
-- **Respawn puts you somewhere new.** The pause-menu Respawn and the respawn after a
-  wreck now pick a clear road roughly 60–150 m away (away from other players' cars,
-  facing along the road), falling back to the nearest road if none is found.
-- **No Restart in online games.** The pause and end-of-ride menus no longer offer
-  Restart / Retry / Play Again during an online session (it got stuck); the remaining
-  rows close up with no gap.
+## v0.10.7
 
-- **`!login` passwords are never shown to other players.** A dedicated server now keeps
-  every `!`/`/` command line to its sender even if the commands plugin is missing or
-  disabled, and logs it masked (`!login ****`). A game host (listen server), which runs no
-  commands, no longer relays a typed `!command` line to the other players.
-- **Server configs pick up new settings on their own.** On start, the dedicated server
-  (`dediserver.json`) and the master server (`--config` file) add any settings a newer
-  version introduced, with their default values, and log which ones. Your existing keys
-  and values are never changed or removed; the old file is kept as `.bak`, and a config
-  with nothing missing is not rewritten.
+*Released 2026-10-18.*
+
+A small online update. Respawning now puts you back on the road a short drive away
+instead of on the spot you crashed, Restart is gone from online games, and players
+already in a match should no longer be reset when someone joins. Server admins also get
+private `!login` and configs that pick up new settings by themselves.
+
+### Highlights
+
+- **Respawn somewhere new.** Respawn from the pause menu, or after a wreck, now puts you
+  on a clear road roughly 60–150 m away, facing along the road and away from other
+  players. If there is no such road nearby, you go to the nearest road as before.
+- **No more Restart in online games.** Restart, Retry and Play Again are no longer in
+  the pause and end-of-ride menus during an online game, where they could get stuck.
+  Use Respawn on the Multiplayer page instead.
+
+### Fixes
+
+- **Joining shouldn't reset other players any more.** When someone joined, players
+  already driving could be put back on a road near the start with their damage and
+  wanted level cleared. A new player's car can no longer take over a car someone is
+  driving. If it still happens to you, please send us your log from that session.
+- **`!login` passwords stay private.** A `!login` line (or any `!` command) is never
+  shown to other players, and the server log shows it as `!login ****`. In games hosted
+  from the game itself, `!` command lines are no longer sent to other players.
+
+### For server admins and updating
+
+- **Update your server for this release.** Pull the latest server files and restart
+  `dediserver.py` (and `masterserver.py` if you run one). That brings the `!login`
+  privacy fix and config auto-upgrade:
+  - On start, the server adds any new settings to your `dediserver.json` or master
+    config, with their default values, and logs which ones it added.
+  - Your existing settings are never changed or removed. The old file is kept as
+    `.bak`, and a config with nothing missing is left untouched.
+- No protocol changes: v0.10.6 and v0.10.7 players can play together. The in-game
+  updater offers v0.10.7 as usual.
 
 ## v0.10.6
 
