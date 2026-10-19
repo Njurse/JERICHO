@@ -1563,7 +1563,7 @@ static void StoreTestTick(void)
 				/* the Mods menu advertises waiting updates on its Mod Repo item, so a
 				 * player notices without opening the browser */
 				jer_log("[modstore][test] Mod Repo item: \"%s\" (updates=%d)\n",
-					gLabelRepoItem[0] != 0 ? gLabelRepoItem : "Mod Repo", StoreCountUpdates());
+					gLabelRepoItem[0] != 0 ? gLabelRepoItem : "Browse Mod Repo", StoreCountUpdates());
 
 				jer_log("[modstore][test] screen->menu: current=%d jericho.mods=%d repo=%d modules=%d\n",
 					jer_frontend_current_menu(), jer_frontend_find("jericho.mods"),
@@ -2263,8 +2263,8 @@ int jer_modstore_rebake(void)
 /* is what lets a row be four columns instead of one centred string.    */
 /* ================================================================== */
 
-#define MODS_ROWS_MAX	8	/* table rows a page of the mods list shows */
-#define REPO_ROWS_MAX	8	/* same for the repo browser */
+#define MODS_ROWS_MAX	7	/* table rows a page of the mods list shows */
+#define REPO_ROWS_MAX	7	/* same for the repo browser */
 
 static int  gModsPage;
 static int  gRepoPage;
@@ -2541,13 +2541,13 @@ static void ModsMenuEnter(void* ud)
 		 * browser, and a quiet store is a store nobody updates */
 		if (ups > 0)
 		{
-			snprintf(gLabelRepoItem, sizeof(gLabelRepoItem), "Mod Repo (%d update%s)",
+			snprintf(gLabelRepoItem, sizeof(gLabelRepoItem), "Browse Mod Repo (%d update%s)",
 				ups, ups == 1 ? "" : "s");
 			it->label = gLabelRepoItem;
 		}
 		else
 		{
-			it->label = "Mod Repo";
+			it->label = "Browse Mod Repo";
 		}
 
 		it->submenu = repoMenu;			/* engine navigation */
@@ -2719,7 +2719,7 @@ static void StoreEnsureMenus(void)
 		 * table's rows get lifted to. The heading is ours, above the header row. */
 		gModsMenu.title = NULL;
 		gModsMenu.row_w = 560;
-		gModsMenu.row_step = 26;
+		gModsMenu.row_step = 28;
 		gModsMenu.row_top = 130;
 		gModsMenu.row_bottom = 470;
 		gModsMenu.list_align = 0;	/* hang the rows off the top: a table with a
@@ -2731,7 +2731,7 @@ static void StoreEnsureMenus(void)
 		gRepoMenu.on_enter = RepoMenuEnter;
 		gRepoMenu.title = NULL;
 		gRepoMenu.row_w = 560;
-		gRepoMenu.row_step = 26;
+		gRepoMenu.row_step = 28;
 		gRepoMenu.row_top = 130;
 		gRepoMenu.row_bottom = 470;
 		gRepoMenu.list_align = 0;
@@ -2765,17 +2765,56 @@ static void ModsDrawTable(void)
 	jer_frontend_row_rect(0, &x, &y, &w, &h);
 	top = jer_frontend_list_top();
 
-	/* the store's last word, under the rows and clear of the pinned controls */
-	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 78, jer_modstore_status(), 190, 190, 190);
+	/* The header stack. The stock menu title is not used (see StoreEnsureMenus): a
+	 * tall table is lifted, and the stock title is right where the rows land.
+	 *
+	 * The offsets are measured, not eyeballed: the frontend font's cell is 36px at
+	 * scale 200, so the 180-scale title is 32px tall and the 120-scale cells are
+	 * 22px. Each line is placed so its BOTTOM clears the next one's top - the
+	 * first version put the title 30px above the column headings, which is less
+	 * than its own height, and they overlapped. */
+	{
+		int yStatus = top - 104;
+		int yTitle = top - 74;
 
-	/* the heading. The stock menu title is not used (see StoreEnsureMenus): a tall
-	 * table is lifted, and the stock title is right where the rows land. */
-	jer_text_draw_at(JER_TEXT_FE, 180, StoreTextX(x, w, 2), top - 52, "MODS", 255, 176, 64);
+		if (yStatus >= 2)
+		{
+			int seen = 0, expected = 0;
 
-	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 22, "MODULE", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 50), top - 22, "VERSION", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 64), top - 22, "STATE", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 80), top - 22, "SOURCE", 255, 176, 64);
+			/* A game update and its helper script can drift apart (a package that
+			 * carried one but not the other). That outranks the last status line, so
+			 * it takes its place rather than crowding a fourth line in above it. */
+			if (jer_modstore_script_mismatch(&seen, &expected))
+			{
+				char msg[128];
+
+				snprintf(msg, sizeof(msg),
+					"helper script v%d, this build expects v%d - reinstall the game files",
+					seen, expected);
+
+				jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), yStatus, msg, 255, 128, 128);
+			}
+			else if (jer_modstore_busy())
+			{
+				jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), yStatus, jer_modstore_status(), 255, 220, 120);
+			}
+			else
+			{
+				jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), yStatus, jer_modstore_status(), 190, 190, 190);
+			}
+		}
+
+		if (yTitle >= 2)
+			jer_text_draw_at(JER_TEXT_FE, 160, StoreTextX(x, w, 2), yTitle, "MODS", 255, 176, 64);
+	}
+
+	if (top - 34 >= 2)
+	{
+		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), top - 34, "MODULE", 255, 176, 64);
+		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 50), top - 34, "VERSION", 255, 176, 64);
+		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 64), top - 34, "STATE", 255, 176, 64);
+		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 80), top - 34, "SOURCE", 255, 176, 64);
+	}
 
 	for (i = 0; i < gModsRows; i++)
 	{
@@ -2797,9 +2836,9 @@ static void ModsDrawTable(void)
 		if (!jer_modstore_module_at(gModsPage * MODS_ROWS_MAX + i, &mod))
 			continue;
 
-		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 2), ry + 4,
+		jer_text_draw_at(JER_TEXT_FE, 120, StoreTextX(rx, rw, 2), ry + 3,
 			(mod.name != NULL) ? mod.name : mod.id, 255, 255, 255);
-		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 50), ry + 4,
+		jer_text_draw_at(JER_TEXT_FE, 120, StoreTextX(rx, rw, 50), ry + 3,
 			(mod.version != NULL) ? mod.version : "?", 200, 200, 200);
 
 		if (mod.refusal != NULL)
@@ -2866,9 +2905,9 @@ static void StoreDrawRepoTable(void)
 	top = jer_frontend_list_top();
 
 	if (jer_modstore_busy())
-		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 78, status, 255, 220, 120);
+		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), top - 104, status, 255, 220, 120);
 	else
-		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 78, status, 190, 190, 190);
+		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), top - 104, status, 190, 190, 190);
 
 	/* A game update and its helper script can drift apart (a package that carried
 	 * one but not the other). The store then talks a protocol the script does not
@@ -2884,16 +2923,22 @@ static void StoreDrawRepoTable(void)
 				"helper script v%d, this build expects v%d - reinstall the game files",
 				seen, expected);
 
-			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 100, msg, 255, 128, 128);
+			jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), top - 104, msg, 255, 128, 128);
 		}
 	}
 
-	jer_text_draw_at(JER_TEXT_FE, 180, StoreTextX(x, w, 2), top - 52, "MOD REPO", 255, 176, 64);
+	/* the same measured stack as the mods table: 180-scale title, then the
+	 * 110-scale column line, each clearing the next by a few pixels */
+	if (top - 74 >= 2)
+		jer_text_draw_at(JER_TEXT_FE, 160, StoreTextX(x, w, 2), top - 74, "MOD REPO", 255, 176, 64);
 
-	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 2), top - 22, "MOD", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 34), top - 22, "VERSION", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 48), top - 22, "STATE", 255, 176, 64);
-	jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(x, w, 64), top - 22, "NOTE", 255, 176, 64);
+	if (top - 34 >= 2)
+	{
+		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), top - 34, "MOD", 255, 176, 64);
+		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 34), top - 34, "VERSION", 255, 176, 64);
+		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 48), top - 34, "STATE", 255, 176, 64);
+		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 64), top - 34, "NOTE", 255, 176, 64);
+	}
 
 	/* the highlighted entry's description, under the table: the index has carried
 	 * one all along and nothing showed it */
@@ -2906,10 +2951,13 @@ static void StoreDrawRepoTable(void)
 			const JER_MODSTORE_ITEM* it = jer_modstore_item(gRepoPage * gRepoPageRows + sel);
 			int lx = 0, ly = 0, lw = 0, lh = 0;
 
-			if (it != NULL && it->description != NULL && it->description[0] != 0 &&
-				jer_frontend_row_rect(gRepoModFirstRow + gRepoRows - 1, &lx, &ly, &lw, &lh))
+			/* the rect first: the fit test needs its numbers, and asking before the
+			 * call meant the guard tested zeros and always passed */
+			if (jer_frontend_row_rect(gRepoModFirstRow + gRepoRows - 1, &lx, &ly, &lw, &lh) &&
+				it != NULL && it->description != NULL && it->description[0] != 0 &&
+				ly + lh + 56 <= 470)
 			{
-				StoreDrawWrapped(StoreTextX(lx, lw, 2), ly + lh + 10, 470, it->description, 2, 150, 150, 150);
+				StoreDrawWrapped(StoreTextX(lx, lw, 2), ly + lh + 8, 470, it->description, 2, 150, 150, 150);
 			}
 		}
 	}
@@ -2945,15 +2993,15 @@ static void StoreDrawRepoTable(void)
 
 		snprintf(mark, sizeof(mark), "%s %s", selected ? ">" : " ", jer_modstore_repo_name(i));
 
-		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 2), ry + 4, mark,
+		jer_text_draw_at(JER_TEXT_FE, 120, StoreTextX(rx, rw, 2), ry + 3, mark,
 			selected ? 255 : 200, selected ? 220 : 200, selected ? 120 : 200);
 
-		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 48), ry + 4, state,
+		jer_text_draw_at(JER_TEXT_FE, 120, StoreTextX(rx, rw, 48), ry + 3, state,
 			state[1] == 'e' ? 255 : (state[1] == 'o' ? 170 : 150),
 			state[1] == 'e' ? 200 : 200,
 			state[1] == 'e' ? 128 : 190);
 
-		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, age, 180, 180, 180);
+		jer_text_draw_at(JER_TEXT_FE, 120, StoreTextX(rx, rw, 64), ry + 3, age, 180, 180, 180);
 	}
 
 	for (i = 0; i < gRepoRows; i++)
@@ -2968,7 +3016,7 @@ static void StoreDrawRepoTable(void)
 		if (it == NULL)
 			continue;
 
-		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 2), ry + 4, it->name, 255, 255, 255);
+		jer_text_draw_at(JER_TEXT_FE, 120, StoreTextX(rx, rw, 2), ry + 3, it->name, 255, 255, 255);
 		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 34), ry + 4, it->version, 200, 200, 200);
 
 		switch (it->state)
@@ -3053,7 +3101,7 @@ static void StoreDrawWrapped(int x, int y, int width, const char* text, int maxL
 		while (len > 0 && line[len - 1] == ' ')
 			line[--len] = 0;
 
-		jer_text_draw_at(JER_TEXT_FE, 110, x, y + drawn * 16, line, r, g, b);
+		jer_text_draw_at(JER_TEXT_FE, 110, x, y + drawn * 22, line, r, g, b);
 
 		drawn++;
 		p = best;
