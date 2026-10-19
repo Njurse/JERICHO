@@ -1072,7 +1072,7 @@ static void StoreTestParse(void)
 
 static void StoreTestTick(void)
 {
-	if (gStore.testLever == STORE_TEST_NONE || gStore.testStage >= 4)
+	if (gStore.testLever == STORE_TEST_NONE || gStore.testStage >= 7)
 		return;
 	if (StoreJobRunning())
 		return;	/* one step at a time; the job's own completion advances us */
@@ -1216,10 +1216,17 @@ static void StoreTestTick(void)
 				jer_frontend_open(jer_frontend_find("jericho.mods.repo"));
 				break;
 			}
+			if (gStore.testStage == 3)
+			{
+				/* one settle tick: the engine switches screens between frames */
+				gStore.testStage = 4;
+				break;
+			}
+			if (gStore.testStage == 4)
 			{
 				int i, rows;
 
-				gStore.testStage = 4;
+				gStore.testStage = 5;
 				jer_log("[modstore][test] repo menu: current=%d (repo=%d) repos=%d rows=%d\n",
 					jer_frontend_current_menu(), jer_frontend_find("jericho.mods.repo"),
 					jer_modstore_repo_count(), jer_modstore_item_count());
@@ -1235,6 +1242,43 @@ static void StoreTestTick(void)
 						jer_log("[modstore][test]   repo row %d: %s %s state=%s canInstall=%d note=\"%s\"\n",
 							i, it->name, it->version, StoreStateText(it->state), it->canInstall, it->note);
 				}
+
+				/* now drive the LIST's own action -- the same callback Cross calls --
+				 * so the toggle + reload + re-open path is exercised, not assumed */
+				{
+					JER_MODSTORE_MODULE before;
+
+					if (jer_modstore_module_at(0, &before))
+						jer_log("[modstore][test] toggling row 0 (%s), was enabled=%d\n",
+							before.name, before.enabled);
+				}
+				ModsRowActivate((void*)(size_t)0);
+				break;
+			}
+			if (gStore.testStage == 5)
+			{
+				JER_MODSTORE_MODULE after;
+
+				if (jer_modstore_module_at(0, &after))
+					jer_log("[modstore][test] after toggle: %s enabled=%d; current menu=%d (mods=%d)\n",
+						after.name, after.enabled, jer_frontend_current_menu(),
+						jer_frontend_find("jericho.mods"));
+
+				/* Left/Right on a row: the same callback the menu wires up */
+				jer_log("[modstore][test] moving row 0 down one\n");
+				ModsRowAdjust((void*)(size_t)0, 1);
+				gStore.testStage = 6;
+				break;
+			}
+			if (gStore.testStage == 6)
+			{
+				JER_MODSTORE_MODULE m0, m1;
+
+				gStore.testStage = 7;
+				if (jer_modstore_module_at(0, &m0) && jer_modstore_module_at(1, &m1))
+					jer_log("[modstore][test] after move: row0=%s row1=%s; current menu=%d (mods=%d)\n",
+						m0.name, m1.name, jer_frontend_current_menu(),
+						jer_frontend_find("jericho.mods"));
 			}
 			break;
 
@@ -2436,22 +2480,32 @@ void jer_modstore_frontend_tick(void)
 	StoreEnsureMenus();
 	StoreTestTick();
 
-	/* after DrawScreen (FEmain.c calls this next to the updater's own tick), which
-	 * is where a module's text belongs -- JER_EVENT_FRAME fires before the box. */
-	StoreDraw();
-
-	/* a reload inside an ACTION wiped the registry under our feet: put the menu
-	 * back in the screen's place and re-lay it out */
+	/* a reload inside an ACTION wiped the registry under our feet -- including our
+	 * own menus, which no module re-registers for us. Register again, then put the
+	 * menu back in the screen's place; the flag clears only once that worked, or the
+	 * player would be left on a screen slot that no longer holds a menu. */
 	reopen = gModsReopen;
 	if (reopen)
 	{
-		int idx = jer_frontend_find("jericho.mods");
+		int idx;
 
 		gModsReopen = 0;
+		StoreEnsureMenus();
+
+		idx = jer_frontend_find("jericho.mods");
 		if (idx >= 0)
 		{
+			gModsReopen = 0;
 			jer_frontend_open_replace(idx);
 			jer_frontend_refresh();
 		}
+		else
+		{
+			gModsReopen = 1;	/* try again next frame */
+		}
 	}
+
+	/* after DrawScreen (FEmain.c calls this next to the updater's own tick), which
+	 * is where a module's text belongs -- JER_EVENT_FRAME fires before the box. */
+	StoreDraw();
 }
