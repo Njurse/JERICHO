@@ -186,6 +186,10 @@ static void CarBakeRowNote(int row, int slot, int set)
 // host's own rows 0..7. Reported by CarPalRowReport, which runs at exit.
 static int sClutClampCount;
 
+// JERICHO: the one reserved VRAM CLUT id for each city's D2 wheel palette.
+// Declared before CarPalRowClear, which resets it per level.
+static u_short sWheelPalClut[CITY_COUNT][2];	// [city][0 = tyre/whole wheel, 1 = hubcap]
+
 static void CarPalRowNote(int row, int city)
 {
 	int i;
@@ -207,6 +211,8 @@ static void CarPalRowClear(void)
 
 	for (r = 0; r < CIV_CLUT_ROWS; r++)
 		sCivClutRowWriters[r] = 0;
+
+	memset(sWheelPalClut, 0, sizeof(sWheelPalClut));
 
 	// The colour-column coverage goes with the writers: a new level re-uploads the rows it
 	// needs, so a stale maximum would let the draw pick a column this level never filled.
@@ -259,6 +265,8 @@ static void CarPalRowClear(void)
 // therefore be assigned ONCE per level and kept until the level resets, so it is recorded
 // in the table below on first use and only cleared by CarImportCityBandReset.
 static signed char sSetRow[CITY_COUNT][128];	// city -> set -> civ_clut row, -1 = none
+#define CAR_IMPORT_WHEEL_PAL_SET 127
+#define CAR_IMPORT_WHEEL_HUB_PAL_SET 126	// the D2 hubcap (WHLBOTH) row, when it differs from the tyre's
 
 // JERICHO: is civ_clut row `row` already owned by some (city, set)?
 static int CarRowInUse(int row)
@@ -354,6 +362,45 @@ static int CarAllocSetRow(int set, int city)
 	}
 
 	return -1;
+}
+
+// JERICHO: copy one source CLUT row (16 RGB555 colours, 32 bytes) into a
+// reserved civ_clut row in the JERICHO half. The returned value is the VRAM
+// CLUT id the wheel polys should use; the row is owned by this city and is not
+// the page pin's CLUT, so a later page upload cannot take it away.
+int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
+{
+	int row;
+	u_short clut;
+	int i;
+
+	if (city < 0 || city >= CITY_COUNT || colors == NULL)
+		return 0;
+
+	hub = hub ? 1 : 0;
+
+	if (sWheelPalClut[city][hub] != 0)
+		return sWheelPalClut[city][hub];
+
+	row = CarAllocSetRow(hub ? CAR_IMPORT_WHEEL_HUB_PAL_SET : CAR_IMPORT_WHEEL_PAL_SET, city);
+
+	if (row < 0)
+		return 0;
+
+	LoadImage(&clutpos, (u_long*)colors);
+	clut = GetClut(clutpos.x, clutpos.y);
+	IncrementClutNum(&clutpos);
+
+	for (i = 0; i < 6; i++)
+		civ_clut[row][0][i] = clut;
+
+	CarPalRowNote(row, city);
+	sWheelPalClut[city][hub] = clut;
+
+	printInfo("cross-city: %s wheel %s palette reserved in civ_clut row %d (clut %04x)\n",
+		LevelNames[city], hub ? "hubcap" : "tyre", row, clut);
+
+	return clut;
 }
 
 // JERICHO: how many civ_clut rows a held guest city has allocated, and the k-th of them
@@ -1492,8 +1539,109 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 	}
 }
 
+// The HOST level's own wheel sprite rects (WHLCLEAN or WHEEL, and WHLBOTH),
+// looked up once per level from its TEXINF. [0] = tyre, [1] = hubcap.
+static int sHostWheelLevel = -1;
+static int sHostWheelRect[2][4];
+static int sHostWheelHave[2];
+
+static void HostWheelRects(void)
+{
+	static char* names[3] = { "WHLCLEAN", "WHEEL", "WHLBOTH" };
+	int n, k;
+
+	if (sHostWheelLevel == GameLevel)
+		return;
+
+	sHostWheelLevel = GameLevel;
+	sHostWheelHave[0] = sHostWheelHave[1] = 0;
+
+	for (n = 0; n < 3; n++)
+	{
+		int tp, ti;
+		TEXINF* t;
+
+		k = (n == 2) ? 1 : 0;
+
+		if (sHostWheelHave[k])
+			continue;
+
+		t = GetTEXINFName(names[n], &tp, &ti);
+
+		if (t == NULL || t->width == 0 || t->height == 0)
+			continue;
+
+		sHostWheelRect[k][0] = t->x;
+		sHostWheelRect[k][1] = t->y;
+		sHostWheelRect[k][2] = t->x + t->width;
+		sHostWheelRect[k][3] = t->y + t->height;
+		sHostWheelHave[k] = 1;
+	}
+}
+
+// Map one host wheel poly's UVs onto the source city's wheel sprite rect.
+// The host wheel mesh is kept; only its UVs and page/clut are replaced.
+//
+// The host polys are not one square each: the tread strips and the hubcap
+// wedges sample PART of the host sprite. So the UVs are mapped relative to the
+// HOST sprite rect the poly lies in (same place in the source sprite), not by
+// stretching each poly's own UV box over the whole source sprite - which drew
+// every thin tread strip as the full wheel image squashed (the noisy wedges).
+// A poly outside both host sprites keeps the old per-poly stretch.
+static void MapWheelUVToRect(POLYFT4* src, const JER_WHEEL_TEX* r, UV_INFO out[4])
+{
+	UV_INFO host[4] = { src->uv0, src->uv1, src->uv3, src->uv2 };
+	int hu0 = host[0].u, hu1 = host[0].u;
+	int hv0 = host[0].v, hv1 = host[0].v;
+	int rw = r->u1 - r->u0;
+	int rh = r->v1 - r->v0;
+	int k;
+
+	for (k = 1; k < 4; k++)
+	{
+		if (host[k].u < hu0) hu0 = host[k].u;
+		if (host[k].u > hu1) hu1 = host[k].u;
+		if (host[k].v < hv0) hv0 = host[k].v;
+		if (host[k].v > hv1) hv1 = host[k].v;
+	}
+
+	HostWheelRects();
+
+	for (k = 0; k < 2; k++)
+	{
+		const int* hr = sHostWheelRect[k];
+		int hw, hh, j;
+
+		if (!sHostWheelHave[k] || hu0 < hr[0] || hv0 < hr[1] || hu1 > hr[2] || hv1 > hr[3])
+			continue;
+
+		hw = hr[2] - hr[0];
+		hh = hr[3] - hr[1];
+
+		for (j = 0; j < 4; j++)
+		{
+			int u = r->u0 + (((int)host[j].u - hr[0]) * rw) / (hw ? hw : 1);
+			int v = r->v0 + (((int)host[j].v - hr[1]) * rh) / (hh ? hh : 1);
+
+			out[j].u = (u_char)(u > 255 ? 255 : u);
+			out[j].v = (u_char)(v > 255 ? 255 : v);
+		}
+
+		return;
+	}
+
+	for (k = 0; k < 4; k++)
+	{
+		int hu = hu1 - hu0;
+		int hv = hv1 - hv0;
+
+		out[k].u = (u_char)(r->u0 + (((int)host[k].u - hu0) * rw) / (hu ? hu : 1));
+		out[k].v = (u_char)(r->v0 + (((int)host[k].v - hv0) * rh) / (hv ? hv : 1));
+	}
+}
+
 // [D] [T]
-void DrawWheelObject(MODEL* model, SVECTOR* verts, int transparent, int wheelnum)
+void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect, SVECTOR* verts, int transparent, int wheelnum)
 {
 	ushort clut;
 	ushort tpage;
@@ -1503,14 +1651,20 @@ void DrawWheelObject(MODEL* model, SVECTOR* verts, int transparent, int wheelnum
 	int combo;
 	POLY_FT4* poly;
 	POLYFT4* src;
+	POLYFT4* tex;
+	int texCount;
+	int texIndex;
+	int primaryId;
+	int primarySet;
 	u_int dim;
 	u_int bright;
 
 	src = GET_MODEL_DATA(POLYFT4, model, poly_block);
+	tex = (texModel != NULL) ? GET_MODEL_DATA(POLYFT4, texModel, poly_block) : NULL;
+	texCount = (texModel != NULL) ? texModel->num_polys : 0;
+	primaryId = src->texture_id;
+	primarySet = src->texture_set;
 	poly = (POLY_FT4*)current->primptr;
-
-	clut = texture_cluts[src->texture_set][src->texture_id];
-	tpage = texture_pages[src->texture_set] | 0x20;
 
 
 	// This controls the color of the wheels
@@ -1532,9 +1686,14 @@ void DrawWheelObject(MODEL* model, SVECTOR* verts, int transparent, int wheelnum
 	}
 
 	i = model->num_polys;
+	texIndex = 0;
 
 	while (i-- != -1)
 	{
+		POLYFT4* ts = (tex != NULL && texIndex < texCount) ? &tex[texIndex] : src;
+		int isHubcap = (ts != src &&
+			(src->texture_id != primaryId || src->texture_set != primarySet));
+
 		gte_ldv3(&verts[src->v0], &verts[src->v1], &verts[src->v2]);
 
 		gte_rtpt();
@@ -1566,18 +1725,156 @@ void DrawWheelObject(MODEL* model, SVECTOR* verts, int transparent, int wheelnum
 
 			gte_stsxy3(&poly->x1, &poly->x3, &poly->x2);
 
-			*(u_short*)&poly->u0 = *(u_short*)&src->uv0;
-			*(u_short*)&poly->u1 = *(u_short*)&src->uv1;
-			*(u_short*)&poly->u2 = *(u_short*)&src->uv3;
-			*(u_short*)&poly->u3 = *(u_short*)&src->uv2;
+			{
+				/* JERICHO: an imported car keeps the host wheel MESH and borrows
+				 * the source city's wheel TEXTURE and palette. The record's own
+				 * set/id is resolved here, per poly: a fast wheel can name more
+				 * than one texture id, and resolving it once would paint them
+				 * all with the first one's CLUT.
+				 *
+				 * The host hubcap is a separate poly with its own UV rect on the
+				 * host page. It is just a square image, so put the SOURCE wheel
+				 * texture on it: map the host poly's UV rect onto the source
+				 * wheel's first-poly UV square instead of leaving it on the host
+				 * page's blue placeholder. */
+				POLYFT4* texSrc = isHubcap ? tex : ts;
+
+				if (texRect != NULL && texRect->present)
+				{
+					/* D2: the wheel art is a TEXINF sprite, not a model. Keep the
+					 * host poly and map its UV rect onto WHLCLEAN/WHLBOTH. The
+					 * tire and the hubcap are one sprite/one palette, so use the
+					 * model's primary CLUT row for every poly. The hubcap's own
+					 * host id names a host palette and would recolour only that
+					 * square. */
+					UV_INFO out[4];
+					JER_WHEEL_TEX use = *texRect;
+					int isD2Hubcap = (src->texture_id != primaryId ||
+						src->texture_set != primarySet);
+					int clutId = texRect->hubClut;
+
+					/* A damaged wheel keeps WHLCLEAN for the tyre and takes only
+					 * the hubcap poly from WHLBOTH. Mapping the whole tyre onto
+					 * the hubcap sprite is what garbled it. */
+					if (isD2Hubcap)
+					{
+						use.u0 = texRect->hubU0;
+						use.v0 = texRect->hubV0;
+						use.u1 = texRect->hubU1;
+						use.v1 = texRect->hubV1;
+					}
+
+					/* The source wheel page's last row is the wheel palette. The
+					 * host poly's primary row is a CAR page row (HAVANA's was
+					 * green). */
+					if (clutId <= 0)
+						clutId = primaryId;
+
+					if (clutId > 31)
+						clutId = 0;
+
+					MapWheelUVToRect(src, &use, out);
+
+					/* WHLCLEAN (tyre) and WHLBOTH (hubcap) are separate sprites
+					 * and need not share a CLUT row; each has its own reserved row. */
+					clut = (isD2Hubcap && texRect->reservedHubClut) ?
+						(ushort)texRect->reservedHubClut :
+						texRect->reservedClut ?
+						(ushort)texRect->reservedClut :
+						texture_cluts[texRect->set][clutId];
+					tpage = texture_pages[texRect->set] | 0x20;
+
+					*(u_short*)&poly->u0 = *(u_short*)&out[0];
+					*(u_short*)&poly->u1 = *(u_short*)&out[1];
+					*(u_short*)&poly->u2 = *(u_short*)&out[2];
+					*(u_short*)&poly->u3 = *(u_short*)&out[3];
+				}
+				else
+				{
+				clut = texture_cluts[texSrc->texture_set][texSrc->texture_id];
+				tpage = texture_pages[texSrc->texture_set] | 0x20;
+
+				if (isHubcap)
+				{
+					UV_INFO hostUV[4] = { src->uv0, src->uv1, src->uv3, src->uv2 };
+					UV_INFO srcUV[4] = { tex->uv0, tex->uv1, tex->uv3, tex->uv2 };
+					UV_INFO out[4];
+					int hu0 = hostUV[0].u, hu1 = hostUV[0].u;
+					int hv0 = hostUV[0].v, hv1 = hostUV[0].v;
+					int su0 = srcUV[0].u, su1 = srcUV[0].u;
+					int sv0 = srcUV[0].v, sv1 = srcUV[0].v;
+					int k;
+
+					for (k = 1; k < 4; k++)
+					{
+						if (hostUV[k].u < hu0) hu0 = hostUV[k].u;
+						if (hostUV[k].u > hu1) hu1 = hostUV[k].u;
+						if (hostUV[k].v < hv0) hv0 = hostUV[k].v;
+						if (hostUV[k].v > hv1) hv1 = hostUV[k].v;
+						if (srcUV[k].u < su0) su0 = srcUV[k].u;
+						if (srcUV[k].u > su1) su1 = srcUV[k].u;
+						if (srcUV[k].v < sv0) sv0 = srcUV[k].v;
+						if (srcUV[k].v > sv1) sv1 = srcUV[k].v;
+					}
+
+					for (k = 0; k < 4; k++)
+					{
+						int hu = hu1 - hu0;
+						int hv = hv1 - hv0;
+
+						out[k].u = (u_char)(su0 + (((int)hostUV[k].u - hu0) * (su1 - su0)) / (hu ? hu : 1));
+						out[k].v = (u_char)(sv0 + (((int)hostUV[k].v - hv0) * (sv1 - sv0)) / (hv ? hv : 1));
+					}
+
+					*(u_short*)&poly->u0 = *(u_short*)&out[0];
+					*(u_short*)&poly->u1 = *(u_short*)&out[1];
+					*(u_short*)&poly->u2 = *(u_short*)&out[2];
+					*(u_short*)&poly->u3 = *(u_short*)&out[3];
+				}
+				else
+				{
+					*(u_short*)&poly->u0 = *(u_short*)&ts->uv0;
+					*(u_short*)&poly->u1 = *(u_short*)&ts->uv1;
+					*(u_short*)&poly->u2 = *(u_short*)&ts->uv3;
+					*(u_short*)&poly->u3 = *(u_short*)&ts->uv2;
+				}
+				}
+			}
 			poly->clut = clut;
 			poly->tpage = tpage;
 
 			poly++;
 		}
 		src++;
+		texIndex++;
 	}
 	current->primptr = (char*)poly;
+}
+
+// JERICHO: is an imported wheel's texture page actually resident? CarImportPin
+// fills texture_pages/texture_cluts at draw time; if the page could not be
+// pinned (or has not been pinned yet), those entries are 0/dummy. Use the host
+// wheel texture for that frame rather than drawing the dummy page.
+static int JerWheelTextureReady(MODEL* m)
+{
+	POLYFT4* p;
+
+	if (m == NULL || m->poly_block <= 0 || m->num_polys <= 0)
+		return 0;
+
+	p = GET_MODEL_DATA(POLYFT4, m, poly_block);
+
+	if (p == NULL)
+		return 0;
+
+	return texture_pages[p->texture_set] != 0 &&
+		texture_cluts[p->texture_set][p->texture_id] != 0;
+}
+
+static int JerWheelTextureReadyRect(const JER_WHEEL_TEX* r)
+{
+	return r != NULL && r->present &&
+		texture_pages[r->set] != 0;
 }
 
 // [D] [T]
@@ -1595,10 +1892,26 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	int car_id;
 	MODEL* WheelModelBack;
 	MODEL* WheelModelFront;
+	MODEL* WheelClean;
+	MODEL* WheelFast;
+	MODEL* WheelDam;
+	MODEL* WheelTexClean;
+	MODEL* WheelTexFast;
+	MODEL* WheelTexDam;
+	MODEL* WheelTexFront;
+	MODEL* WheelTexBack;
+	MODEL* texModel;
 	MODEL* model;
+	JER_WHEEL_TEX WheelTexCleanRect = { 0 };
+	JER_WHEEL_TEX WheelTexFastRect = { 0 };
+	JER_WHEEL_TEX WheelTexDamRect = { 0 };
+	JER_WHEEL_TEX* WheelTexFrontRect;
+	JER_WHEEL_TEX* WheelTexBackRect;
+	JER_WHEEL_TEX* texRect;
 	SVECTOR* bend;
 	SVECTOR wheelVerts[24];	// per-wheel copy for the damage transform
 	int numWheelVerts;
+	int wheelCity = -1;
 
 #ifdef PSX
 	MATRIX& WheelPos = *(MATRIX*)((u_char*)getScratchAddr(0) + sizeof(MATRIX) * 2);
@@ -1624,15 +1937,112 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	if (cp->hd.wheel[3].locked != 0)
 		BackWheelIncrement = 0;
 
+	// JERICHO: an imported car keeps the HOST level's wheel mesh (the geometry,
+	// wheelSize and wheelDisp are already right) and borrows its source city's
+	// wheel TEXTURE and palette. The imported wheel model is used only as the
+	// texture/UV source; its own vertices are ignored. This is the path that
+	// keeps a D1 car's wheels looking like wheels instead of sampling the host
+	// body page with the imported mesh's topology.
+	WheelClean = gCleanWheelModelPtr;
+	WheelFast = gFastWheelModelPtr;
+	WheelDam = gDamWheelModelPtr;
+
+	WheelTexClean = NULL;
+	WheelTexFast = NULL;
+	WheelTexDam = NULL;
+
+	if (cp->ap.model >= 0 && cp->ap.model < MAX_CAR_RESIDENT_MODELS)
+		wheelCity = GetCarModelSourceCity(cp->ap.model);
+
+	if (wheelCity >= 0)
+	{
+		memset(&WheelTexCleanRect, 0, sizeof(WheelTexCleanRect));
+		memset(&WheelTexFastRect, 0, sizeof(WheelTexFastRect));
+		memset(&WheelTexDamRect, 0, sizeof(WheelTexDamRect));
+
+		WheelTexClean = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_CLEAN);
+		WheelTexFast = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_FAST);
+		WheelTexDam = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_DAMAGED);
+
+		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_CLEAN, &WheelTexCleanRect);
+		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_FAST, &WheelTexFastRect);
+		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_DAMAGED, &WheelTexDamRect);
+
+		/* Fail soft: a wheel page that is not resident yet (or was dropped)
+		 * must not leave the wheel on the dummy page. */
+		if (WheelTexClean != NULL && !JerWheelTextureReady(WheelTexClean))
+			WheelTexClean = NULL;
+		if (WheelTexFast != NULL && !JerWheelTextureReady(WheelTexFast))
+			WheelTexFast = NULL;
+		if (WheelTexDam != NULL && !JerWheelTextureReady(WheelTexDam))
+			WheelTexDam = NULL;
+
+		if (WheelTexCleanRect.present && !JerWheelTextureReadyRect(&WheelTexCleanRect))
+			WheelTexCleanRect.present = 0;
+		if (WheelTexFastRect.present && !JerWheelTextureReadyRect(&WheelTexFastRect))
+			WheelTexFastRect.present = 0;
+		if (WheelTexDamRect.present && !JerWheelTextureReadyRect(&WheelTexDamRect))
+			WheelTexDamRect.present = 0;
+
+		/* A source variant is independent: a missing FASTWHEEL/DAMWHEEL stays
+		 * NULL, so that axle keeps the HOST wheel texture. The city-level
+		 * "wheels - clean/damaged/fast" line records which variants came
+		 * across. */
+
+		/* One line per resident slot per level: host mesh, imported or host
+		 * texture. A D2 city with no named wheel data lands here as "host". */
+		{
+			static int sWheelLogLevel = -1;
+			static unsigned int sWheelLogMask;
+
+			if (sWheelLogLevel != GameLevel)
+			{
+				sWheelLogLevel = GameLevel;
+				sWheelLogMask = 0;
+			}
+
+			if ((sWheelLogMask & (1u << cp->ap.model)) == 0)
+			{
+				sWheelLogMask |= 1u << cp->ap.model;
+
+				if (WheelTexClean != NULL || WheelTexCleanRect.present)
+					printInfo("[car wheels] slot %d (%s): host mesh, imported textures (clean %s, damaged %s, fast %s)\n",
+						cp->ap.model, LevelNames[wheelCity],
+						(WheelTexClean != NULL || WheelTexCleanRect.present) ? "yes" : "host",
+						(WheelTexDam != NULL || WheelTexDamRect.present) ? "yes" : "host",
+						(WheelTexFast != NULL || WheelTexFastRect.present) ? "yes" : "host");
+				else
+					printInfo("[car wheels] slot %d (%s): no imported wheel texture - host wheels\n",
+						cp->ap.model, LevelNames[wheelCity]);
+			}
+		}
+	}
+
 	if (FrontWheelIncrement + 400U < 801)
-		WheelModelFront = gCleanWheelModelPtr;
+	{
+		WheelModelFront = WheelClean;
+		WheelTexFront = WheelTexClean;
+		WheelTexFrontRect = &WheelTexCleanRect;
+	}
 	else
-		WheelModelFront = gFastWheelModelPtr;
+	{
+		WheelModelFront = WheelFast;
+		WheelTexFront = WheelTexFast;
+		WheelTexFrontRect = &WheelTexFastRect;
+	}
 
 	if (BackWheelIncrement + 400U < 801)
-		WheelModelBack = gCleanWheelModelPtr;
+	{
+		WheelModelBack = WheelClean;
+		WheelTexBack = WheelTexClean;
+		WheelTexBackRect = &WheelTexCleanRect;
+	}
 	else
-		WheelModelBack = gFastWheelModelPtr;
+	{
+		WheelModelBack = WheelFast;
+		WheelTexBack = WheelTexFast;
+		WheelTexBackRect = &WheelTexFastRect;
+	}
 
 	wheelSize = car_cosmetics[cp->ap.model].wheelSize;
 	
@@ -1748,9 +2158,17 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 
 	do {
 		if ((wheelnum & 1) != 0)
+		{
 			model = WheelModelBack;
+			texModel = WheelTexBack;
+			texRect = WheelTexBackRect;
+		}
 		else
+		{
 			model = WheelModelFront;
+			texModel = WheelTexFront;
+			texRect = WheelTexFrontRect;
+		}
 
 		VertPtr = GET_MODEL_DATA(SVECTOR, model, vertices);
 
@@ -1765,7 +2183,9 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 
 		if (cp->ap.flags & (1 << wheelnum)) // [A] used appearance flags to store hubcap presence
 		{
-			model = gDamWheelModelPtr;
+			model = WheelDam;
+			texModel = WheelTexDam;
+			texRect = &WheelTexDamRect;
 		}
 
 		// Nattdy - crumple wheel damage: draw the wheel at the same bent local
@@ -1863,9 +2283,9 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 			if (jerArgs.hide == 0)
 			{
 				if (numWheelVerts > 0)
-					DrawWheelObject(model, wheelVerts, TransparentObject, wheelnum);
+					DrawWheelObject(model, texModel, texRect, wheelVerts, TransparentObject, wheelnum);
 				else
-					DrawWheelObject(model, VertPtr, TransparentObject, wheelnum);
+					DrawWheelObject(model, texModel, texRect, VertPtr, TransparentObject, wheelnum);
 			}
 		}
 
@@ -2200,7 +2620,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						carid = CarPalIndexForBuild(pft3->texture_set, srcCity);
 						clut = (carid - 1) * 6 * 32 + pft3->texture_id * 6;
 
-						civ_clut[carid][pft3->texture_id][0] = texture_cluts[pft3->texture_set][pft3->texture_id];
+						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
+							civ_clut[carid][pft3->texture_id][0] = texture_cluts[pft3->texture_set][pft3->texture_id];
 
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pft3->uv0);
 						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pft3->texture_set), *(ushort*)&pft3->uv1);
@@ -2222,7 +2643,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						carid = CarPalIndexForBuild(pft4->texture_set, srcCity);
 						clut = (carid - 1) * 6 * 32 + pft4->texture_id * 6;
 
-						civ_clut[carid][pft4->texture_id][0] = texture_cluts[pft4->texture_set][pft4->texture_id];
+						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
+							civ_clut[carid][pft4->texture_id][0] = texture_cluts[pft4->texture_set][pft4->texture_id];
 
 						cp->clut_uv0 = M_INT_2(clut, *(ushort *)&pft4->uv0);
 						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, pft4->texture_set), *(ushort*)&pft4->uv1);
@@ -2236,7 +2658,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						carid = CarPalIndexForBuild(polyList[1], srcCity);
 						clut = (carid - 1) * 6 * 32 + polyList[2] * 6;
 
-						civ_clut[carid][polyList[2]][0] = texture_cluts[polyList[1]][polyList[2]];
+						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
+							civ_clut[carid][polyList[2]][0] = texture_cluts[polyList[1]][polyList[2]];
 
 						cp->clut_uv0 = M_INT_2(clut, *(ushort*)&pft4->uv0);
 						cp->tpage_uv1 = M_INT_2(CAR_BAKE_TPAGE(imported, polyList[1]), *(ushort*)&pft4->uv2);
@@ -2257,7 +2680,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						CarBakeRowNote(carid, index, pgt3->texture_set);
 						clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
 
-						civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
+						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
+							civ_clut[carid][pgt3->texture_id][0] = texture_cluts[pgt3->texture_set][pgt3->texture_id];
 
 						cp->vindices = M_INT_4R(pgt3->v0, pgt3->v1, pgt3->v2, 0);
 						cp->nindices = M_INT_4R(pgt3->n0, pgt3->n1, pgt3->n2, 0);
@@ -2284,7 +2708,8 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						CarBakeRowNote(carid, index, pgt4->texture_set);
 						clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
 
-						civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
+						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
+							civ_clut[carid][pgt4->texture_id][0] = texture_cluts[pgt4->texture_set][pgt4->texture_id];
 
 						cp->vindices = M_INT_4R(pgt4->v0, pgt4->v1, pgt4->v2, 0);
 						cp->nindices = M_INT_4R(pgt4->n0, pgt4->n1, pgt4->n2, 0);
@@ -2333,111 +2758,111 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 }
 
 // [D] [T]
-void MangleWheelModels(void)
+// JERICHO: one wheel model's transform. The host's three wheels are mangled in
+// MangleWheelModels below; an IMPORTED city's wheels come through here too, so
+// they are drawn exactly like the host's (four rim quads, same UV folding).
+void MangleWheelModel(MODEL* m)
 {
 	UV_INFO tmpUV2;
 	u_char tmpUV;
 	u_int v0, v1, v2;
-	POLYFT4*src;
-	MODEL *m;
-	int i, j;
+	POLYFT4* src;
+	int j;
 
-	for (i = 0; i < 3; i++)
+	if (m == NULL || m->num_polys < 7 || m->poly_block <= 0)
+		return;
+
+	src = GET_MODEL_DATA(POLYFT4, m, poly_block);
+
+	if (src == NULL || (src->id & 0x1f) != 21)
+		return;		// not the 8-quad FT4 wheel this transform expects
+
+	// do some fuckery swaps
+	v0 = *(u_int *)&src[2].v0;
+	v1 = *(u_int *)&src[2].uv0;
+	v2 = *(u_int *)&src[2].uv2;
+	*(u_int *)src = *(u_int *)(src + 2);
+	*(u_int *)&src->v0 = v0;
+	*(u_int *)&src->uv0 = v1;
+	*(u_int *)&src->uv2 = v2;
+	src->color = src[2].color;
+
+	v0 = *(u_int *)&src[3].v0;
+	v1 = *(u_int *)&src[3].uv0;
+	v2 = *(u_int *)&src[3].uv2;
+	*(u_int *)(src + 1) = *(u_int *)(src + 3);
+	*(u_int *)&src[1].v0 = v0;
+	*(u_int *)&src[1].uv0 = v1;
+	*(u_int *)&src[1].uv2 = v2;
+	src[1].color = src[3].color;
+
+	v0 = *(u_int *)&src[4].v0;
+	v1 = *(u_int *)&src[4].uv0;
+	v2 = *(u_int *)&src[4].uv2;
+	*(u_int *)(src + 2) = *(u_int *)(src + 4);
+	*(u_int *)&src[2].v0 = v0;
+	*(u_int *)&src[2].uv0 = v1;
+	*(u_int *)&src[2].uv2 = v2;
+	src[2].color = src[4].color;
+
+	v0 = *(u_int *)&src[6].v0;
+	v1 = *(u_int *)&src[6].uv0;
+	v2 = *(u_int *)&src[6].uv2;
+	*(u_int *)(src + 3) = *(u_int *)(src + 6);
+	*(u_int *)&src[3].v0 = v0;
+	*(u_int *)&src[3].uv0 = v1;
+	*(u_int *)&src[3].uv2 = v2;
+	src[3].color = src[6].color;
+
+	src[2].v2 = 23;
+	src[2].v3 = 22;
+	src[3].v0 = 21;
+	src[3].v1 = 20;
+	src[3].v2 = 19;
+	src[3].v3 = 18;
+	src[2].v1 = 17;
+	src[2].v0 = 16;
+
+	tmpUV = (src->uv0.u + src->uv2.u) / 2;
+	src[3].uv3.u = tmpUV;
+	src[3].uv2.u = tmpUV;
+	src[3].uv1.u = tmpUV;
+	src[3].uv0.u = tmpUV;
+	src[2].uv3.u = tmpUV;
+	src[2].uv2.u = tmpUV;
+	src[2].uv1.u = tmpUV;
+	src[2].uv0.u = tmpUV;
+
+	tmpUV = (src->uv0.v + src->uv2.v) / 2;
+	src[3].uv3.v = tmpUV;
+	src[3].uv2.v = tmpUV;
+	src[3].uv1.v = tmpUV;
+	src[3].uv0.v = tmpUV;
+	src[2].uv3.v = tmpUV;
+	src[2].uv2.v = tmpUV;
+	src[2].uv1.v = tmpUV;
+	src[2].uv0.v = tmpUV;
+
+	m->num_polys = 4;
+
+	for (j = 0; j < 2; j++)
 	{
-		if (i == 1)
-			m = gFastWheelModelPtr;
-		else if (i == 2)
-			m = gDamWheelModelPtr;
-		else
-			m = gCleanWheelModelPtr;
-
-		// do some fuckery swaps
-		src = GET_MODEL_DATA(POLYFT4, m, poly_block);
+		tmpUV2 = src->uv0;
 		
-		v0 = *(u_int *)&src[2].v0;
-		v1 = *(u_int *)&src[2].uv0;
-		v2 = *(u_int *)&src[2].uv2;
-		*(u_int *)src = *(u_int *)(src + 2);
-		*(u_int *)&src->v0 = v0;
-		*(u_int *)&src->uv0 = v1;
-		*(u_int *)&src->uv2 = v2;
-		src->color = src[2].color;
+		src->uv0 = src->uv1;
+		src->uv1 = src->uv2;
+		src->uv2 = src->uv3;
+		src->uv3 = tmpUV2;
 
-		v0 = *(u_int *)&src[3].v0;
-		v1 = *(u_int *)&src[3].uv0;
-		v2 = *(u_int *)&src[3].uv2;
-		*(u_int *)(src + 1) = *(u_int *)(src + 3);
-		*(u_int *)&src[1].v0 = v0;
-		*(u_int *)&src[1].uv0 = v1;
-		*(u_int *)&src[1].uv2 = v2;
-		src[1].color = src[3].color;
-
-		v0 = *(u_int *)&src[4].v0;
-		v1 = *(u_int *)&src[4].uv0;
-		v2 = *(u_int *)&src[4].uv2;
-		*(u_int *)(src + 2) = *(u_int *)(src + 4);
-		*(u_int *)&src[2].v0 = v0;
-		*(u_int *)&src[2].uv0 = v1;
-		*(u_int *)&src[2].uv2 = v2;
-		src[2].color = src[4].color;
-
-		v0 = *(u_int *)&src[6].v0;
-		v1 = *(u_int *)&src[6].uv0;
-		v2 = *(u_int *)&src[6].uv2;
-		*(u_int *)(src + 3) = *(u_int *)(src + 6);
-		*(u_int *)&src[3].v0 = v0;
-		*(u_int *)&src[3].uv0 = v1;
-		*(u_int *)&src[3].uv2 = v2;
-		src[3].color = src[6].color;
-
-		src[2].v2 = 23;
-		src[2].v3 = 22;
-		src[3].v0 = 21;
-		src[3].v1 = 20;
-		src[3].v2 = 19;
-		src[3].v3 = 18;
-		src[2].v1 = 17;
-		src[2].v0 = 16;
-
-		tmpUV = (src->uv0.u + src->uv2.u) / 2;
-		src[3].uv3.u = tmpUV;
-		src[3].uv2.u = tmpUV;
-		src[3].uv1.u = tmpUV;
-		src[3].uv0.u = tmpUV;
-		src[2].uv3.u = tmpUV;
-		src[2].uv2.u = tmpUV;
-		src[2].uv1.u = tmpUV;
-		src[2].uv0.u = tmpUV;
-
-		tmpUV = (src->uv0.v + src->uv2.v) / 2;
-		src[3].uv3.v = tmpUV;
-		src[3].uv2.v = tmpUV;
-		src[3].uv1.v = tmpUV;
-		src[3].uv0.v = tmpUV;
-		src[2].uv3.v = tmpUV;
-		src[2].uv2.v = tmpUV;
-		src[2].uv1.v = tmpUV;
-		src[2].uv0.v = tmpUV;
-
-		m->num_polys = 4;
-
-		for (j = 0; j < 2; j++)
-		{
-			tmpUV2 = src->uv0;
-			
-			src->uv0 = src->uv1;
-			src->uv1 = src->uv2;
-			src->uv2 = src->uv3;
-			src->uv3 = tmpUV2;
-
-			src++;
-		}
-
+		src++;
 	}
+}
 
-	// HACK: Show clean model only in Rio.
-	//if (GameLevel == 3) 
-	//	gFastWheelModelPtr = gCleanWheelModelPtr;
+void MangleWheelModels(void)
+{
+	MangleWheelModel(gCleanWheelModelPtr);
+	MangleWheelModel(gFastWheelModelPtr);
+	MangleWheelModel(gDamWheelModelPtr);
 }
 
 // [D] [T]
@@ -3632,6 +4057,12 @@ static int CarPalIndexInCity(int tpage, int city)
 			return i + rowbase;
 	}
 
+	// JERICHO: a host-city page an IMPORTED own-city car was given a pool row for (a
+	// special the level does not load, see CarPalIndexForBuild): the pin and the walk must
+	// agree with the build, not fall to the shared special rows 6/7 below.
+	if (tpage > 0 && tpage < 128 && sSetRow[city][tpage] >= 0)
+		return sSetRow[city][tpage];
+
 	// JERICHO: a SPECIAL body's pages live in specTpages, not carTpages. The host level
 	// gets its own pair into carTpages[6]/[7] by OVERWRITING those two entries at load
 	// (texture.c:2025), and only the resident body is ever built - so without this scan a
@@ -3815,6 +4246,19 @@ static void PalBakeMissDiag(int tpage, int city)
 static int CarPalIndexForBuild(int tpage, int city)
 {
 	int idx = CarPalIndexInCityFor(tpage, city);
+
+	// JERICHO: city == GameLevel here means an own-city IMPORT (a host car is built with
+	// city -1). Its special pages resolve to the level special's rows 6/7, which this
+	// build would then overwrite: the "slot 12 eats the host's palettes" report. A page
+	// that is not the level special's own pair gets a pool row of its own instead.
+	if (city == GameLevel && city >= 0 && (idx == 6 || idx == 7) &&
+		tpage != carTpages[city][6] && tpage != carTpages[city][7])
+	{
+		int own = CarAllocSetRow(tpage, city);
+
+		if (own >= 0)
+			idx = own;
+	}
 
 	if (idx < 0)
 	{

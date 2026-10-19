@@ -6,6 +6,32 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+## v0.10.9
+
+*Released 2026-10-18.*
+
+Imported cars look and sound like themselves, cops stop chasing once a ride ends, and the Multiplayer pause menu is easier to use.
+
+### Highlights
+
+- **Imported cars sound like themselves.** A car from another city uses that city's engine, idle and horn, including cars loaded mid-game.
+- **Driver 1 cars use Driver 1 sounds.** Every Driver 1 car shares Driver 1's generic engine and idle, as in the original game.
+- **Imported wheels look right.** Tyres and hubcaps on imported cars now match their own city's cars (no more garbled Rio wheels or Havana hubcap wedges).
+- **Cops stop chasing after a game over or respawn.** Pursuing police go back to normal traffic instead of ramming you or stopping dead in the road.
+
+### Multiplayer
+
+- The Multiplayer pause page lists the most used options first: Respawn, Vehicle Options, Warp To Player, Player Color, then Invincibility and Immunity, with Kick player and Write diagnostics now at the bottom. "My colour" is now "Player Color".
+- Vehicle Options opens on the car you are driving. The Palette row follows the car you select, and "Respawn as this car" applies a palette-only change.
+- Dedicated servers show "[Admin]" before a server admin's name in chat (players need this version to see it).
+
+### Fixes
+
+- Picking a city's special car on that city's own level no longer messes up the colours of the level's own special car.
+- Picking a car in Take a Ride that the `import` setting already loads now rides that car instead of saying no slot is free.
+
+Thanks: Jaret (Njurse).
+
 ## v0.10.8
 
 *Released 2026-10-18.*

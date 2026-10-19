@@ -2237,7 +2237,10 @@ static void MpHandleChat(int connIndex, const unsigned char* p, int len)
 	from = MpConnPlayerId(connIndex);
 
 	if (MpIsHost() && from >= 0)
+	{
 		c.playerId = (uint8_t)from;
+		memset(c.reserved, 0, sizeof(c.reserved));	/* a peer cannot mark itself [Admin] */
+	}
 
 	/* A peer's "!login ..." reached a game host, which runs no commands: drop it
 	 * unseen. Printing or relaying it would show a password to every player. */
@@ -2270,7 +2273,15 @@ static void MpHandleChat(int connIndex, const unsigned char* p, int len)
 				pl != NULL ? pl->name : "SERVER", c.text);
 
 		if (pl != NULL)
-			MpConsoleChat(pl->name, pl->colorOn, pl->colorR, pl->colorG, pl->colorB, c.text, ink);
+		{
+			char tagged[MP_NAME_MAX + 8];
+			int admin = (c.reserved[0] == MP_CHAT_MARK_ADMIN && c.reserved[1] == 0 && c.reserved[2] == 0);
+
+			if (admin)
+				snprintf(tagged, sizeof(tagged), "[Admin] %s", pl->name);
+
+			MpConsoleChat(admin ? tagged : pl->name, pl->colorOn, pl->colorR, pl->colorG, pl->colorB, c.text, ink);
+		}
 		else
 			MpConsoleChat(NULL, 0, 0, 0, 0, c.text, ink);
 	}
@@ -6558,7 +6569,31 @@ static int MpAdoptCar(int carSlot, int city, int model, MP_PLAYER* who)
 		int was = cp->ap.model;
 
 		if (was == slot && gMpAdoptModel[carSlot] == model)
-			return 0;		/* already that car, and its verts match */
+		{
+			/* Already that car, and its verts match. OUR car may still want a new
+			 * palette ("Respawn as this car" after only the palette changed): repaint
+			 * it; the carstate's ap.palette carries it to the peers. */
+			extern u_char defaultPlayerPalette;
+			int want;
+
+			if (who != NULL && !who->isLocal)
+				return 0;
+
+			want = CarSlotClampPalette(slot, (int)defaultPlayerPalette);
+
+			if (want == (int)cp->ap.palette)
+				return 0;
+
+			cp->ap.palette = (u_char)want;
+
+			if (who != NULL)
+				who->palette = want;
+
+			if (gMpCtx != NULL)
+				gMpCtx->jer_log(gMpCtx, "[mp] same car on slot %d: repainted in palette %d\n", slot, want);
+
+			return 1;
+		}
 
 		cp->ap.model = slot;
 

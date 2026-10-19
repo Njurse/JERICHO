@@ -2372,30 +2372,52 @@ static int MpCcOwnCar(void)
 	return -1;
 }
 
-/* How many palettes the car we drive has (cars.h): a Driver 1 car or a special has
- * one, so the row reads 1/1 there instead of offering colours it would break on. */
+/* How many palettes the car SELECTED in the picker has (cars.h): the row describes
+ * the car "Respawn as this car" would give you, so browsing City/Car updates it at
+ * once. A Driver 1 car or a special has one, so it reads 1/1 there. */
 static int MpCcPaletteCount(void)
 {
-	int c = MpCcOwnCar();
+	if (mpCcModelCount <= 0 || mpCcModelIdx < 0 || mpCcModelIdx >= mpCcModelCount)
+	{
+		int c = MpCcOwnCar();
 
-	return (c >= 0) ? CarSlotPaletteCount(car_data[c].ap.model) : MP_PALETTES;
+		return (c >= 0) ? CarSlotPaletteCount(car_data[c].ap.model) : MP_PALETTES;
+	}
+
+	return CarModelPaletteCount(MpCcCity(), mpCcModels[mpCcModelIdx]);
+}
+
+/* Is the picker's selection the car we are driving? Then a palette change shows live. */
+static int MpCcPickIsOwnCar(int c)
+{
+	if (c < 0 || mpCcModelCount <= 0 || mpCcModelIdx < 0 || mpCcModelIdx >= mpCcModelCount)
+		return 0;
+
+	return MpResidentSlotForCar(MpCcCity(), mpCcModels[mpCcModelIdx]) == car_data[c].ap.model;
+}
+
+/* The palette the row shows: the player's choice (defaultPlayerPalette) clamped to
+ * what the selected car has -- the one "Respawn as this car" will paint it in. */
+static int MpCcCurPalette(int n)
+{
+	int cur = (int)defaultPlayerPalette;
+
+	return (cur >= 0 && cur < n) ? cur : 0;
 }
 
 static void MpCcLabelPalette(void* ud, char* out, int max)
 {
-	int c = MpCcOwnCar(), n = MpCcPaletteCount();
-	int cur = (c >= 0) ? (int)car_data[c].ap.palette : (int)defaultPlayerPalette;
+	int n = MpCcPaletteCount();
 
 	(void)ud;
-	snprintf(out, max, "Palette: %d/%d", (cur % n) + 1, n);
+	snprintf(out, max, "Palette: %d/%d", MpCcCurPalette(n) + 1, n);
 }
 
 static int MpCcAdjustPalette(void* ud, int dir)
 {
 	MP_PLAYER* me = MpLocalPlayer();
 	int c = MpCcOwnCar(), n = MpCcPaletteCount();
-	int cur = (c >= 0) ? (int)car_data[c].ap.palette : (int)defaultPlayerPalette;
-	int pal = ((cur % n) + dir + n) % n;
+	int pal = (MpCcCurPalette(n) + dir + n) % n;
 
 	(void)ud;
 
@@ -2409,12 +2431,65 @@ static int MpCcAdjustPalette(void* ud, int dir)
 	if (me != NULL)
 		me->palette = pal;
 
-	if (me != NULL && me->carId >= 0 && me->carId < MAX_CARS)
-		car_data[me->carId].ap.palette = (u_char)pal;
-	else if (!gMp.running && player[0].playerCarId >= 0 && player[0].playerCarId < MAX_CARS)
-		car_data[player[0].playerCarId].ap.palette = (u_char)pal;	/* single player */
+	/* Live only on the car we drive, and only when it is the one selected; a palette
+	 * for another car waits for "Respawn as this car". */
+	if (MpCcPickIsOwnCar(c))
+		car_data[c].ap.palette = (u_char)CarSlotClampPalette(car_data[c].ap.model, pal);
 
 	return JER_PAUSE_QUIT_NONE;
+}
+
+/* Point the picker at the car we drive, so Vehicle Options opens on it (and its
+ * palette) instead of the first city/car. Called once per pause open, never while
+ * browsing. Not in a car (on foot, before a spawn) or a car the roster does not
+ * list: leave the previous selection alone. */
+static void MpCcSnapToOwnCar(void)
+{
+	int c = MpCcOwnCar(), slot, city, model, i;
+
+	if (c < 0 || player[0].playerType != PLAYER_TYPE_CAR)
+		return;
+
+	slot = car_data[c].ap.model;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	city = GetCarModelSourceCity(slot);
+	if (city < 0)
+		city = GameLevel;	/* the level's own car */
+	model = residentCarModels[slot];
+
+	for (i = 0; i < mpCcCityCount; i++)
+	{
+		if (mpCcCities[i] != city)
+			continue;
+
+		{
+			int oldCity = mpCcCityIdx, oldModel = mpCcModelIdx, m;
+
+			mpCcCityIdx = i;
+			MpCcRebuild();		/* that city's roster */
+
+			for (m = 0; m < mpCcModelCount; m++)
+			{
+				if (mpCcModels[m] == model)
+				{
+					mpCcModelIdx = m;
+					/* the row shows the palette the car wears */
+					defaultPlayerPalette = car_data[c].ap.palette;
+					return;
+				}
+			}
+
+			mpCcCityIdx = oldCity;	/* not offered: keep the previous pick */
+			MpCcRebuild();
+			mpCcModelIdx = oldModel;
+			if (mpCcModelIdx < 0 || mpCcModelIdx >= mpCcModelCount)
+				mpCcModelIdx = 0;
+			return;
+		}
+	}
 }
 
 /* Defined with the player actions further down; the Change car submenu wants it
@@ -2458,7 +2533,7 @@ static const JER_PAUSE_MENU_ITEM mpColorItems[] =
 };
 
 static const JER_PAUSE_MENU mpColorMenu =
-{ "My colour", mpColorItems, MP_MENU_ITEMS(mpColorItems), "mp.colour" };
+{ "Player Color", mpColorItems, MP_MENU_ITEMS(mpColorItems), "mp.colour" };
 
 static int MpOnPauseMenu(void* userdata, void* args)
 {
@@ -2492,6 +2567,7 @@ static int MpOnPauseMenu(void* userdata, void* args)
 		 * unconditionally) and its roster needs the same refresh -- the city list is
 		 * carhacks' answer, which may have changed since the menu was last opened. */
 		MpCcRebuild();
+		MpCcSnapToOwnCar();
 
 		return JER_RESULT_CONTINUE;
 	}
@@ -2513,6 +2589,7 @@ static int MpOnPauseMenu(void* userdata, void* args)
 	 * reads the city list (which a carhacks set may have changed since the last
 	 * time the menu was opened) and the city's frontend car list. */
 	MpCcRebuild();
+	MpCcSnapToOwnCar();
 
 	return JER_RESULT_CONTINUE;
 }
@@ -3176,17 +3253,15 @@ static const JER_PAUSE_MENU_ITEM mpPauseItems[] =
 {
 	/* label, get_label, on_activate, userdata, submenu, adjust */
 
-	/* The two SUBMENUS first - everything about the car behind one door, everything
-	 * about going to somebody behind the other - then the two switches and the
-	 * recovery action that sit alongside them. */
+	/* Most used first: Respawn is the row a player reaches for, then the car,
+	 * going to somebody and their own colour; the two switches after those, and
+	 * the admin/debug rows (kick, diagnostics) last. */
+	{ "Respawn", NULL, MpRespawn, NULL, NULL, 0 },
 	{ "Vehicle Options", NULL, NULL, NULL, &mpChangeCarMenu, 0 },
 	{ "Warp To Player", NULL, NULL, NULL, &mpWarpMenu, 0 },
+	{ "Player Color", NULL, NULL, NULL, &mpColorMenu, 0 },
 	{ NULL, MpOptLabelInvincible, MpOptToggleInvincible, NULL, NULL, 0 },
 	{ NULL, MpOptLabelImmune, MpOptToggleImmune, NULL, NULL, 0 },
-	{ "Respawn", NULL, MpRespawn, NULL, NULL, 0 },
-
-	/* ...then the rest, so the reordering costs nothing that was already here. */
-	{ "My colour", NULL, NULL, NULL, &mpColorMenu, 0 },
 	{ "Kick player", NULL, NULL, NULL, &mpKickMenu, 0 },
 	{ "Write diagnostics now", NULL, MpMenuWriteDiag, NULL, NULL, 0 },
 };

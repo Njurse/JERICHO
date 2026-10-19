@@ -251,6 +251,26 @@ Two bytes on the wire, and **versioned**: a peer that does not understand the
 version refuses the set rather than guesses. This is the schema the whole module is
 written against, and it is what a peer needs to describe a car it is driving.
 
+### Engine and idle sounds
+
+A car's engine, idle and horn are three consecutive `SOUND_BANK_CARS` samples,
+selected by a bank id per model. Because a model number means a different vehicle
+in each city, the bank has to be looked up in the **source city's** table, not the
+host level's. `gamesnd.c` now does that (`MapCarModelToBank`) and, for imported
+slots, appends the source bank after the level's own and special banks and records
+the resulting sample block per resident slot (`LoadCarSoundForSlot`).
+
+That covers slots the stock loader never loaded, including the spare slots picks
+land in and cars hot-loaded after the level starts. Driver 1's transplanted cities
+go one step further: the synthetic `DRIVER/D1CARS/*.LEV` files carry a
+`LUMP_CAR_SOUNDS` segment (type 201) with a three-sample bank per model, baked
+from `DRIVER/SOUND/VOICES.BLK`, and the engine prefers it. Driver 1 gave every car
+the same engine and idle, so the engine ignores the per-model entries and uses the
+city's first valid one for every D1 car, loaded once per level and shared by all D1
+slots. A synthetic LEV without that segment, or a runtime bank with no car-sound
+table, falls back to the host city's row for the same model number — an
+engine and idle loop rather than silence.
+
 ### Verifying what landed, and reloading it if it did not
 
 A car's palette rows and texture pages are established **deferred** — the page is

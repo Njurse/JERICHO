@@ -925,10 +925,17 @@ void ControlCopDetection(void)
 				// make cop lose target if target is hidden
 				if (newPositionVisible(&vec, CopWorkMem, ccx, ccz) == 0 && cp->ai.p.hiddenTimer++ > 50)
 				{
-					cp->controlType = CONTROL_TYPE_NONE;
 					cp->ai.p.hiddenTimer = 0;
 					cp->thrust = 0;
-					numCopCars--;
+
+					/* The pursuit is over: the cop becomes ordinary traffic. A car
+					 * that is not a vanilla cop (no siren) still falls back to the
+					 * inert state it had before. */
+					if (!ReleaseCopToTraffic(cp))
+					{
+						cp->controlType = CONTROL_TYPE_NONE;
+						numCopCars--;
+					}
 				}
 			}
 
@@ -986,6 +993,67 @@ void PassiveCopTasks(CAR_DATA *cp)
 
 	numCivCars--;
 	numActiveCops++;
+}
+
+/* A PURSUIT THAT IS OVER LEAVES A TRAFFIC CAR, NOT A PARKED ONE.
+ *
+ * There are two ways a cop can stop pursuing, and both used to leave it useless
+ * on the road: the engine kept it PURSUER_AI with nothing to chase (bumper-to-
+ * bumper with a player whose wanted level had just been cleared), or it wrote
+ * CONTROL_TYPE_NONE, which stops the car dead until it happens to ping out.
+ *
+ * InitCivState is the engine's own "this car is a civilian now": it flips
+ * controlType AND initialises the CIV_STATE that CivControl reads. A bare
+ * controlType write is not enough - the AI state is a union, so a car switched
+ * that way runs civ AI on a cop's state.
+ *
+ * Only a VANILLA cop is converted. No siren means a roadblock car, an armoured
+ * or mission van: not traffic, and not ours to hand to the civilian AI. */
+int ReleaseCopToTraffic(CAR_DATA* cp)
+{
+	if (cp == NULL || cp->controlType != CONTROL_TYPE_PURSUER_AI)
+		return 0;
+
+	/* A wrecked cop is not "traffic again": it is mid-death (CopControl1 walks
+	 * ai.p.dying to 85 and the car is cleaned up after that), and converting it
+	 * would revive a car that is on its way out. */
+	if (cp->ai.p.dying != 0)
+		return 0;
+
+	if (!CarHasSiren(cp->ap.model))
+		return 0;
+
+	InitCivState(cp, NULL);
+
+	/* Undo what activation counted (ActivatePassiveCop: numCivCars--, numActiveCops++).
+	 * Left as they were, every release leaked one active cop - numActiveCops < maxCopCars
+	 * gates new pursuers, so after a few respawns no cop would chase at all - and PingOutCar
+	 * then took numCivCars down a second time for this car. The cop flag makes PingOutCar
+	 * give back the numCopCars this car still holds. */
+	cp->controlFlags |= CONTROL_FLAG_COP;
+	numCivCars++;
+
+	if (numActiveCops > 0)
+		numActiveCops--;
+
+	/* A cop's handling profile is not a civilian's: InitCopState picked 2..4,
+	 * while every ordinary traffic car runs profile 1 (InitCar's CIV_AI branch).
+	 * The conversion is only complete if the car handles like the traffic it has
+	 * just joined. */
+	cp->hndType = 1;
+	cp->thrust = 0;
+
+	return 1;
+}
+
+int ReleasePursuingCopsToTraffic(void)
+{
+	int i, released = 0;
+
+	for (i = 0; i < MAX_CARS; i++)
+		released += ReleaseCopToTraffic(&car_data[i]);
+
+	return released;
 }
 
 // [D] [T]

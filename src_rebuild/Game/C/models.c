@@ -5,9 +5,11 @@
 #include "mission.h"
 #include "cars.h"
 #include "cosmetic.h"
+#include "gamesnd.h"	// JERICHO: imported cars get their own engine/idle sounds
 #include "texture.h"	// JERICHO: CarImportResetState (cross-city per-level reset)
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "../ASM/compres.h"	// decomp_asm: the wheel page image, for its CLUT row
 
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
@@ -234,7 +236,14 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_MODELS	28	// LUMP_CAR_MODELS
 #define CAR_IMPORT_LUMP_PALLET	25	// LUMP_PALLET - the car palettes (civ_clut)
 #define CAR_IMPORT_LUMP_TEXINFO	34	// LUMP_TEXTUREINFO - the page lists
+#define CAR_IMPORT_LUMP_WHEELS	200	// JERICHO: optional wheel models (the D1 bake)
+#define CAR_IMPORT_LUMP_SOUNDS	201	// JERICHO: embedded per-model car sounds (the D1 bake)
+#define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
+#define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
+#define CAR_IMPORT_LUMP_MODELNAMES	12	// LUMP_MODELNAMES (DATA1)
 #define CAR_IMPORT_MODEL_SLOTS	13	// LUMP_CAR_MODELS is a fixed 13-entry table
+
+extern int PolySizes[56];		// draw.c: the poly-stream walk
 
 typedef struct
 {
@@ -248,6 +257,24 @@ typedef struct
 	int cosmeticsSize;
 	char* texInfo;		// LUMP_TEXTUREINFO body (page lists), or NULL
 	int texInfoSize;
+	char* carWheels;	// LUMP_CAR_WHEELS body, or NULL (no wheel segment)
+	int carWheelsSize;
+	char* carSounds;	// LUMP_CAR_SOUNDS body, or NULL (no embedded car sounds)
+	int carSoundsSize;
+	char* wheelMem;		// malloc'd copies of the wheel MODELs below
+	MODEL* wheels[CAR_IMPORT_WHEEL_VARIANTS];
+	char* wheelTexMem[CAR_IMPORT_WHEEL_VARIANTS];	// per-model D2 texture-source blocks
+	unsigned char wheelSet[CAR_IMPORT_WHEEL_VARIANTS][8];	// source-city set numbers
+	int wheelSetCount[CAR_IMPORT_WHEEL_VARIANTS];		// ...before CarSetRemap
+	char* data2;		// malloc'd DATA2 (D2 levels: the model table lives here)
+	int data2Size;
+	char* models;		// LUMP_MODELS body in data2
+	int modelsSize;
+	char* modelNames;	// LUMP_MODELNAMES body in region
+	int modelNamesSize;
+	char* textureNames;	// LUMP_TEXTURENAMES body in region
+	int textureNamesSize;
+	JER_WHEEL_TEX wheelTex[CAR_IMPORT_WHEEL_VARIANTS];	// D2 TEXINF wheel sprites
 	int pageBase;		// byte offset of this file's permanent page data
 } CAR_IMPORT;
 
@@ -295,6 +322,18 @@ static void FreeCarImport(CAR_IMPORT* imp)
 
 	if (imp->cosmetics)
 		free(imp->cosmetics);
+
+	if (imp->wheelMem)
+		free(imp->wheelMem);
+
+	if (imp->data2)
+		free(imp->data2);
+
+	for (int w = 0; w < CAR_IMPORT_WHEEL_VARIANTS; w++)
+	{
+		if (imp->wheelTexMem[w])
+			free(imp->wheelTexMem[w]);
+	}
 
 	memset(imp, 0, sizeof(*imp));
 }
@@ -407,6 +446,33 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 		return 0;
 	}
 
+	/* JERICHO: a real Driver 2 level keeps its model table and its wheel models
+	 * in DATA2, and the model NAMES in DATA1. An imported D2 car should wear its
+	 * own city's wheel texture, so read both halves when present. A Driver 1 bake
+	 * has no DATA2; it carries LUMP_CAR_WHEELS instead. */
+	{
+		unsigned int data2Off = table[4];
+		unsigned int data2Size = table[5];
+
+		if (data2Off > 0 && data2Size > 8 && data2Size <= 4 * 1024 * 1024)
+		{
+			imp->data2 = (char*)malloc(data2Size);
+
+			if (imp->data2 != NULL &&
+				fseek(fp, data2Off, SEEK_SET) == 0 &&
+				fread(imp->data2, 1, data2Size, fp) == (size_t)data2Size)
+			{
+				imp->data2Size = (int)data2Size;
+			}
+			else
+			{
+				free(imp->data2);
+				imp->data2 = NULL;
+				imp->data2Size = 0;
+			}
+		}
+	}
+
 	fclose(fp);
 
 	// DATA1's body is itself a container lump, so its segments start 8 bytes in
@@ -452,6 +518,25 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 	// and how big each set's data is. texture.c parses this; the page bytes
 	// themselves sit right after DATA1 in the file, which it reads separately.
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_TEXINFO, &imp->texInfo, &imp->texInfoSize);
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_TEXTURENAMES, &imp->textureNames, &imp->textureNamesSize);
+
+	// JERICHO: optional wheel models. A Driver 1 bake writes them beside the car
+	// models so an imported D1 car can wear D1 wheels; a real Driver 2 level has
+	// no such segment and keeps the host level's shared wheel models.
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_WHEELS, &imp->carWheels, &imp->carWheelsSize);
+
+	// JERICHO: the synthetic Driver 1 LEVs embed a per-model car-sound table in
+	// their own segment. Optional: D2 levels and older D1 bakes simply have none,
+	// and gamesnd keeps the host-city fallback for them.
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_SOUNDS, &imp->carSounds, &imp->carSoundsSize);
+
+	// JERICHO: a real Driver 2 level's named wheel models. DATA2 holds
+	// LUMP_MODELS (the model table) and DATA1 holds LUMP_MODELNAMES; the names are
+	// indexed by the same slot number the engine's FindModelIdxWithName uses.
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_MODELNAMES, &imp->modelNames, &imp->modelNamesSize);
+
+	if (imp->data2 != NULL)
+		FindLumpSegment(imp->data2 + 8, imp->data2Size - 8, CAR_IMPORT_LUMP_MODELS_D2, &imp->models, &imp->modelsSize);
 
 	// the car colours, beside the car data as LEVELS\<city>.LCF - or none at all
 	if (lcfPath != NULL)
@@ -700,6 +785,175 @@ char* GetCarImportPalletForCity(int city, int* size)
 	return imp ? imp->pallet : NULL;
 }
 
+// JERICHO: the embedded car-sound entry for `model` in a D1 city's synthetic LEV,
+// or 0 when it is missing or malformed. The body is already in the D2 dynamic-bank
+// shape (int num_samples, that many SAMPLE_DATA, then the VAG payload), so gamesnd
+// can hand it straight to LoadSoundBankDynamic. Addresses are bank-payload-relative.
+static int CarImportSoundEntry(CAR_IMPORT* imp, int model, char** bank, int* size)
+{
+	int off, n, i, dir, payload;
+
+	off = ((int*)(imp->carSounds + 8))[model];
+
+	if (off < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int) ||
+		off + 4 > imp->carSoundsSize)
+		return 0;
+
+	n = *(int*)(imp->carSounds + off);
+
+	if (n != 3)
+		return 0;
+
+	dir = 4 + n * 16;
+
+	if (off + dir > imp->carSoundsSize)
+		return 0;
+
+	payload = 0;
+
+	for (i = 0; i < n; i++)
+	{
+		int a = *(int*)(imp->carSounds + off + 4 + i * 16);
+		int length = *(int*)(imp->carSounds + off + 8 + i * 16);
+
+		if (a < 0 || length < 0)
+			return 0;
+
+		if (a + length > payload)
+			payload = a + length;
+	}
+
+	if (off + dir + payload > imp->carSoundsSize)
+		return 0;
+
+	*bank = imp->carSounds + off;
+	*size = dir + payload;
+	return 1;
+}
+
+// JERICHO: the embedded car-sound bank a D1 city's car uses, or 0. Driver 1 gave
+// EVERY car the same generic engine and idle, so the model number is not used to
+// pick the bank: every car gets the city's one generic engine + idle pair (below).
+// Indexing per model gave some cars the wrong loop and left models with no entry silent.
+int GetCarImportSoundBank(int city, int model, char** bank, int* size)
+{
+	CAR_IMPORT* imp;
+	char* b;
+	int sz, m;
+
+	(void)model;
+
+	if (bank)
+		*bank = NULL;
+
+	if (size)
+		*size = 0;
+
+	if (!CarImportCityHeld(city))
+		return 0;
+
+	imp = &gCarImports[city];
+
+	if (imp->carSounds == NULL ||
+		imp->carSoundsSize < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int))
+		return 0;
+
+	if (*(int*)imp->carSounds != 1 ||
+		*(int*)(imp->carSounds + 4) != CAR_IMPORT_MODEL_SLOTS)
+		return 0;
+
+	// Engine: the first valid entry (the bake gives it D1 loop 1, the engine). Idle: the
+	// engine sample of the NEXT entry with a different loop (D1 loop 2, the low idle
+	// rumble). The bake writes each entry as engine, engine-again-as-idle, horn, so
+	// using one entry alone played the engine for the idle too. The pair is composed
+	// into one D2 bank (engine, idle, horn) once per held segment.
+	{
+		static char* composed[CITY_COUNT];
+		static char* composedFrom[CITY_COUNT];
+		static int composedSize[CITY_COUNT];
+		char *eb = NULL, *ib = NULL;
+		int esz = 0, isz = 0;
+		int* ed;
+		int* id;
+
+		if (composedFrom[city] == imp->carSounds && composed[city] != NULL)
+		{
+			if (bank) *bank = composed[city];
+			if (size) *size = composedSize[city];
+			return 1;
+		}
+
+		for (m = 0; m < CAR_IMPORT_MODEL_SLOTS; m++)
+		{
+			if (!CarImportSoundEntry(imp, m, &b, &sz))
+				continue;
+
+			if (eb == NULL)
+			{
+				eb = b; esz = sz;
+			}
+			else if (((int*)b)[2] != ((int*)eb)[2])	/* a different loop length: another D1 loop */
+			{
+				ib = b; isz = sz;
+				break;
+			}
+		}
+
+		if (eb == NULL)
+			return 0;
+
+		ed = (int*)(eb + 4);	/* SAMPLE_DATA[3]: address, length, loop, samplerate */
+
+		if (ib == NULL)
+		{
+			/* only one loop in the segment: engine for both, as before */
+			if (bank) *bank = eb;
+			if (size) *size = esz;
+			return 1;
+		}
+
+		id = (int*)(ib + 4);
+		free(composed[city]);
+		composedSize[city] = 4 + 3 * 16 + ed[1] + id[1] + ed[9];
+		composed[city] = (char*)malloc(composedSize[city]);
+
+		if (composed[city] == NULL)
+		{
+			composedFrom[city] = NULL;
+			if (bank) *bank = eb;
+			if (size) *size = esz;
+			return 1;
+		}
+
+		{
+			int* hd = (int*)composed[city];
+			char* pay = composed[city] + 4 + 3 * 16;
+			char* epay = eb + 4 + 3 * 16;
+			char* ipay = ib + 4 + 3 * 16;
+
+			hd[0] = 3;
+			/* engine */
+			hd[1] = 0; hd[2] = ed[1]; hd[3] = ed[2]; hd[4] = ed[3];
+			memcpy(pay, epay + ed[0], ed[1]);
+			/* idle */
+			hd[5] = ed[1]; hd[6] = id[1]; hd[7] = id[2]; hd[8] = id[3];
+			memcpy(pay + ed[1], ipay + id[0], id[1]);
+			/* horn: the engine entry's */
+			hd[9] = ed[1] + id[1]; hd[10] = ed[9]; hd[11] = ed[10]; hd[12] = ed[11];
+			memcpy(pay + ed[1] + id[1], epay + ed[8], ed[9]);
+		}
+
+		composedFrom[city] = imp->carSounds;
+
+		printInfo("cross-city: %s D1 car sounds: engine %d bytes @%d Hz, idle %d bytes @%d Hz\n",
+			LevelNames[city], ed[1], ed[3], id[1], id[3]);
+
+		if (bank) *bank = composed[city];
+		if (size) *size = composedSize[city];
+		return 1;
+	}
+}
+
 // The imported city's LUMP_TEXTUREINFO (its texture-page lists). Only valid for
 // the level's duration, and only when an import is active. texture.c parses it -
 // the TP/TEXINF types the layout needs live there.
@@ -844,6 +1098,858 @@ char* GetCarImportModels(int slot)
 		return NULL;
 
 	return imp->carModels;
+}
+
+// ---------------------------------------------------------------------------
+// JERICHO: an imported city's own wheel models
+// ---------------------------------------------------------------------------
+//
+// The engine draws every car's wheels from three GLOBAL models
+// (gCleanWheelModelPtr/gFastWheelModelPtr/gDamWheelModelPtr), found by name in
+// the host level. An imported Driver 1 car therefore wore the host's wheels -
+// including the host's wheel TEXTURE. The D1 bake now writes a LUMP_CAR_WHEELS
+// segment beside the car models; this copies those models out and leaves them
+// ready for DrawWheelObject.
+//
+// The models are FT4-only and carry no normals (the wheel draw never uses
+// them). The source-city set index has to go through the same CarSetRemap the
+// car polys use, or a wheel would sample the host page its source number
+// collides with. That remap is only settled once the city's cars have been
+// built, so the builder runs from ProcessCarModelLump / the hot-load path, NOT
+// from the file read.
+
+static void RemapWheelSets(MODEL* m)
+{
+	char* p;
+	int i;
+
+	if (m == NULL || m->poly_block <= 0 || m->num_polys <= 0)
+		return;
+
+	p = (char*)m + m->poly_block;
+
+	CarSetRemapEnable(1);
+
+	for (i = 0; i < m->num_polys; i++)
+	{
+		int type = (u_char)*p & 0x1f;
+		int step = (type >= 0 && type < 56) ? PolySizes[type] : 0;
+
+		if (step <= 0)
+			break;
+
+		if (type == 20 || type == 21 || type == 22 || type == 23)
+			p[1] = (char)(u_char)CarSetRemap((u_char)p[1]);
+
+		p += step;
+	}
+
+	CarSetRemapEnable(0);
+}
+
+// The wheel's SOURCE-CITY set numbers, before RemapWheelSets rewrites them.
+// LoadImportedTPages needs these: it maps a source set to the index its page was
+// loaded at with CarImportPinDstSet, exactly as it does for a car's sets. Feeding
+// it the remapped index (what CollectModelSets sees after RemapWheelSets) makes
+// the page-list lookup fail, the wheel page is never pinned, and the wheel
+// samples whatever host page that index happens to hold - the yellow spikes.
+static int CollectWheelSets(MODEL* m, unsigned char* out, int max)
+{
+	char* p;
+	int i, n = 0;
+
+	if (m == NULL || m->poly_block <= 0 || m->num_polys <= 0 || out == NULL)
+		return 0;
+
+	p = (char*)m + m->poly_block;
+
+	for (i = 0; i < m->num_polys; i++)
+	{
+		int type = (u_char)*p & 0x1f;
+		int step = (type >= 0 && type < 56) ? PolySizes[type] : 0;
+
+		if (step <= 0)
+			break;
+
+		if (type == 20 || type == 21 || type == 22 || type == 23)
+		{
+			int set = (u_char)p[1];
+			int k, seen = 0;
+
+			if (set != 0 && set != 255)
+			{
+				for (k = 0; k < n; k++)
+				{
+					if (out[k] == set)
+					{
+						seen = 1;
+						break;
+					}
+				}
+
+				if (!seen && n < max)
+					out[n++] = (unsigned char)set;
+			}
+		}
+
+		p += step;
+	}
+
+	return n;
+}
+
+static void BuildCarImportWheels(int city)
+{
+	CAR_IMPORT* imp;
+	int offsets[CAR_IMPORT_WHEEL_VARIANTS];
+	int recSize[CAR_IMPORT_WHEEL_VARIANTS];
+	int count, i, total;
+	char* mem;
+	int memOfs;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return;
+
+	imp = &gCarImports[city];
+
+	if (imp->region == NULL || imp->carWheels == NULL || imp->wheelMem != NULL)
+		return;
+
+	if (imp->carWheelsSize < 4)
+	{
+		printInfo("cross-city: %s wheel segment is too small (%d bytes) - keeping the host wheels\n",
+			LevelNames[city], imp->carWheelsSize);
+		return;
+	}
+
+	count = *(int*)imp->carWheels;
+
+	if (count < 1 || count > CAR_IMPORT_WHEEL_VARIANTS ||
+		4 + count * (int)sizeof(int) > imp->carWheelsSize)
+	{
+		printInfo("cross-city: %s wheel segment is malformed (count %d, %d bytes) - keeping the host wheels\n",
+			LevelNames[city], count, imp->carWheelsSize);
+		return;
+	}
+
+	total = 0;
+
+	for (i = 0; i < CAR_IMPORT_WHEEL_VARIANTS; i++)
+	{
+		MODEL* src;
+		int next;
+
+		offsets[i] = (i < count) ? *(int*)(imp->carWheels + 4 + i * (int)sizeof(int)) : -1;
+		recSize[i] = 0;
+
+		if (offsets[i] == -1)
+			continue;
+
+		if (offsets[i] < 0 || offsets[i] + (int)sizeof(MODEL) > imp->carWheelsSize)
+		{
+			printInfo("cross-city: %s wheel %d offset %d is outside the segment (%d bytes) - absent\n",
+				LevelNames[city], i, offsets[i], imp->carWheelsSize);
+
+			offsets[i] = -1;
+			continue;
+		}
+
+		/* The record is the whole MODEL block: header + vertices + poly stream.
+		 * Its end is the next wheel's offset (the bake writes them back to back),
+		 * or the end of the segment for the last one. GetCarModel is the wrong tool
+		 * here: it copies only `poly_block` bytes, which stops BEFORE the poly
+		 * stream - that left the source wheel with no polys to read, hence no
+		 * source set and the host's blue placeholder. */
+		next = (i + 1 < count && offsets[i + 1] > offsets[i]) ? offsets[i + 1] : imp->carWheelsSize;
+		recSize[i] = next - offsets[i];
+
+		src = (MODEL*)(imp->carWheels + offsets[i]);
+
+		if (src->poly_block <= (int)sizeof(MODEL) ||
+			src->poly_block > recSize[i] ||
+			src->num_vertices <= 0 || src->num_vertices > 24 || src->num_polys <= 0)
+		{
+			printInfo("cross-city: %s wheel %d has an unusable MODEL header (verts %d, polys %d, %d bytes) - absent\n",
+				LevelNames[city], i, src->num_vertices, src->num_polys, src->poly_block);
+
+			offsets[i] = -1;
+			recSize[i] = 0;
+			continue;
+		}
+
+		total += recSize[i];
+	}
+
+	if (total <= 0)
+		return;
+
+	mem = (char*)malloc(total);
+
+	if (mem == NULL)
+		return;
+
+	memOfs = 0;
+
+	for (i = 0; i < CAR_IMPORT_WHEEL_VARIANTS; i++)
+	{
+		MODEL* src;
+		MODEL* m;
+
+		if (offsets[i] == -1)
+			continue;
+
+		src = (MODEL*)(imp->carWheels + offsets[i]);
+		m = (MODEL*)(mem + memOfs);
+		memcpy(m, src, recSize[i]);
+		m->instance_number = -1;
+		memOfs += recSize[i];
+
+		imp->wheelSetCount[i] = CollectWheelSets(m, imp->wheelSet[i], 8);
+
+		printInfo("cross-city: %s wheel %d source sets %d (first %d), polys %d\n",
+			LevelNames[city], i, imp->wheelSetCount[i],
+			(imp->wheelSetCount[i] > 0) ? imp->wheelSet[i][0] : -1, m->num_polys);
+
+		RemapWheelSets(m);
+		MangleWheelModel(m);
+
+		imp->wheels[i] = m;
+	}
+
+	imp->wheelMem = mem;
+
+	printInfo("cross-city: %s wheels - clean %s, damaged %s, fast %s (%d bytes)\n",
+		LevelNames[city],
+		(imp->wheels[CAR_IMPORT_WHEEL_CLEAN] != NULL) ? "imported" : "host",
+		(imp->wheels[CAR_IMPORT_WHEEL_DAMAGED] != NULL) ? "imported" : "host",
+		(imp->wheels[CAR_IMPORT_WHEEL_FAST] != NULL) ? "imported" : "host",
+		total);
+}
+
+MODEL* GetCarImportWheel(int city, int kind)
+{
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS)
+		return NULL;
+
+	return gCarImports[city].wheels[kind];
+}
+
+int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out)
+{
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
+		out == NULL)
+		return 0;
+
+	*out = gCarImports[city].wheelTex[kind];
+
+	return out->present;
+}
+
+// The page loader knows how many CLUT rows the source wheel page really has.
+// The WHLBOTH (hubcap) palette is the page's last row; record it for the wheel
+// structs that name this source set.
+void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts)
+{
+	int v;
+
+	if (city < 0 || city >= CITY_COUNT || cluts <= 0)
+		return;
+
+	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	{
+		CAR_IMPORT* imp = &gCarImports[city];
+
+		if (imp->wheelSetCount[v] > 0 && imp->wheelSet[v][0] == sourceSet)
+			imp->wheelTex[v].hubClut = (cluts > 32) ? 31 : cluts - 1;
+	}
+}
+
+int CarImportIsWheelSet(int city, int sourceSet)
+{
+	int v, k;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	{
+		for (k = 0; k < gCarImports[city].wheelSetCount[v]; k++)
+			if (gCarImports[city].wheelSet[v][k] == sourceSet)
+				return 1;
+	}
+
+	return 0;
+}
+
+void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub)
+{
+	int v, k;
+
+	if (city < 0 || city >= CITY_COUNT || clut <= 0)
+		return;
+
+	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	{
+		for (k = 0; k < gCarImports[city].wheelSetCount[v]; k++)
+		{
+			if (gCarImports[city].wheelSet[v][k] == sourceSet)
+			{
+				if (hub)
+					gCarImports[city].wheelTex[v].reservedHubClut = clut;
+				else
+					gCarImports[city].wheelTex[v].reservedClut = clut;
+			}
+		}
+	}
+}
+
+// The CLUT row that actually paints the D2 wheel. Measured from the
+// WHLBOTH sprite's dominant index and the RGB555 rows: the wheel row is the
+// one with an opaque (bit 15 clear) entry at that index, not the preceding
+// green/STP car-palette rows.
+int CarImportWheelPaletteRow(int city, int cluts)
+{
+	int row;
+
+	if (cluts <= 0)
+		return 0;
+
+	switch (city)
+	{
+	case 0: row = 29; break;	// CHICAGO
+	case 1: row = 29; break;	// HAVANA
+	case 2: row = 4; break;		// VEGAS
+	case 3: row = 4; break;		// RIO
+	default: row = cluts - 1; break;
+	}
+
+	if (row >= cluts)
+		row = cluts - 1;
+
+	return row;
+}
+
+// Derive a D2 wheel sprite's CLUT row from the page itself instead of a
+// per-city table. WHLCLEAN (tyre) and WHLBOTH (hubcap) are separate sprites on
+// the source page and are NOT painted by the same row (HAVANA: 25 and 29), so
+// each is derived on its own. hub = 1 for WHLBOTH, 0 for WHLCLEAN. Returns -1
+// (caller keeps the measured table) for a D1 baked city, a page that does not
+// unpack, or a sprite no row paints.
+int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub)
+{
+	CAR_IMPORT* imp;
+	const JER_WHEEL_TEX* wt;
+	const unsigned char* pix;
+	int npal, hist[16];
+	int u0, v0, u1, v1, u, v, r, i, best = -1, bestScore = 0, dam;
+
+	if (city < 0 || city >= CITY_COUNT || page == NULL || size < 4 || !JerCityRegistered(city))
+		return -1;
+
+	npal = *(const int*)page;
+
+	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32)
+		return -1;
+
+	imp = &gCarImports[city];
+	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
+
+	if (!wt->present)
+		return -1;
+
+	/* hub: the WHLBOTH hubcap rect (on the damaged variant's last source set),
+	 * else the WHLCLEAN tyre rect (on the clean set). */
+	dam = hub;
+
+	if (imp->wheelSetCount[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN] <= 0 ||
+		imp->wheelSet[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN]
+			[imp->wheelSetCount[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN] - 1] != sourceSet)
+		return -1;
+
+	if (dam)
+	{
+		u0 = wt->hubU0; v0 = wt->hubV0; u1 = wt->hubU1; v1 = wt->hubV1;
+	}
+	else
+	{
+		u0 = wt->u0; v0 = wt->v0; u1 = wt->u1; v1 = wt->v1;
+	}
+
+	if (u0 < 0 || v0 < 0 || u1 > 256 || v1 > 256 || u1 <= u0 || v1 <= v0)
+		return -1;
+
+	memset(hist, 0, sizeof(hist));
+
+	/* The page image is stored compressed (LoadTPageAndCluts runs decomp_asm on
+	 * it too): unpack a private copy of the 256x256 4bpp image. */
+	{
+		static unsigned char* sUnpacked = NULL;
+
+		if (sUnpacked == NULL)
+			sUnpacked = (unsigned char*)malloc(0x10000);
+
+		if (sUnpacked == NULL)
+			return -1;
+
+		memset(sUnpacked, 0, 0x10000);
+		decomp_asm((char*)sUnpacked, (char*)page + 4 + npal * 32);
+		pix = sUnpacked;
+	}
+
+	for (v = v0; v < v1; v++)
+	{
+		for (u = u0; u < u1; u++)
+		{
+			unsigned char b = pix[v * 128 + (u >> 1)];
+			hist[(u & 1) ? (b >> 4) : (b & 15)]++;
+		}
+	}
+
+	/* For each row: the mean luminance step between horizontally adjacent
+	 * sprite pixels, divided by the mean step between two random sprite
+	 * pixels under that row. The row the art was drawn with is smooth (its
+	 * ramp follows the index layout), so the ratio is lowest there; any other
+	 * row turns the sprite into noise. Transparent (0x0000) entries are
+	 * skipped. On HAVANA this picks 29 for WHLBOTH and 25 for WHLCLEAN. */
+	{
+		double bestRatio = 1e30;
+		int bg = 0, pass;
+		int cu[4], cv[4], votes[16] = { 0 };
+
+		/* The sprite's background (its corner index) must be transparent
+		 * (0x0000) in the right row - otherwise the square's corners draw.
+		 * CHICAGO's light rows 6-9 are smooth too but opaque there. Rows that
+		 * fail this are only considered when no row passes it. */
+		cu[0] = u0; cu[1] = u1 - 1; cu[2] = u0; cu[3] = u1 - 1;
+		cv[0] = v0; cv[1] = v0; cv[2] = v1 - 1; cv[3] = v1 - 1;
+
+		for (i = 0; i < 4; i++)
+		{
+			unsigned char cb = pix[cv[i] * 128 + (cu[i] >> 1)];
+			votes[(cu[i] & 1) ? (cb >> 4) : (cb & 15)]++;
+		}
+
+		for (i = 1; i < 16; i++)
+			if (votes[i] > votes[bg])
+				bg = i;
+
+		for (pass = 0; pass < 2 && best < 0; pass++)
+		for (r = 0; r < npal; r++)
+		{
+			const unsigned short* row = (const unsigned short*)(page + 4 + r * 32);
+			int lum[16];
+			double adj = 0.0, all = 0.0, nAll = 0.0, ratio;
+			int nAdj = 0, a, b2;
+
+			if (pass == 0 && row[bg] != 0)
+				continue;
+
+			for (i = 0; i < 16; i++)
+				lum[i] = (row[i] & 31) * 3 + ((row[i] >> 5) & 31) * 6 + ((row[i] >> 10) & 31);
+
+			for (v = v0; v < v1; v++)
+			{
+				for (u = u0; u < u1 - 1; u++)
+				{
+					unsigned char p0 = pix[v * 128 + (u >> 1)];
+					unsigned char p1 = pix[v * 128 + ((u + 1) >> 1)];
+
+					a = (u & 1) ? (p0 >> 4) : (p0 & 15);
+					b2 = ((u + 1) & 1) ? (p1 >> 4) : (p1 & 15);
+
+					if (row[a] == 0 || row[b2] == 0)
+						continue;
+
+					adj += abs(lum[a] - lum[b2]);
+					nAdj++;
+				}
+			}
+
+			for (a = 0; a < 16; a++)
+			{
+				for (b2 = 0; b2 < 16; b2++)
+				{
+					if (row[a] == 0 || row[b2] == 0)
+						continue;
+
+					all += (double)hist[a] * hist[b2] * abs(lum[a] - lum[b2]);
+					nAll += (double)hist[a] * hist[b2];
+				}
+			}
+
+			if (nAdj < 64 || nAll <= 0.0 || all <= 0.0)
+				continue;	/* (near) flat or fully transparent under this row */
+
+			ratio = (adj / nAdj) / (all / nAll);
+
+			if (ratio < bestRatio)
+			{
+				bestRatio = ratio;
+				best = r;
+			}
+		}
+
+		bestScore = (int)(bestRatio * 100.0 + 0.5);
+
+		printInfo("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d) background index %d -> row %d (smoothness %d%%)\n",
+			LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, bg, best, bestScore);
+	}
+
+	return best;
+}
+
+// A texture-only copy of a Driver 2 named wheel model. The renderer uses the
+// host wheel MESH and this model only for its texture records and UVs, so the
+// vertices and normals are deliberately dropped; the poly stream is copied and
+// the header is made self-contained (instance_number = -1) because a D2
+// DAMWHEEL is an instance whose vertices live on a parent model.
+static MODEL* MakeD2WheelTextureModel(MODEL* src, int size)
+{
+	MODEL* m;
+	int polyStart, polyLen;
+
+	if (src == NULL || src->poly_block <= 0 || src->num_polys <= 0)
+		return NULL;
+
+	polyStart = src->poly_block;
+	polyLen = size - polyStart;
+
+	if (polyLen <= 0)
+		return NULL;
+
+	m = (MODEL*)malloc(sizeof(MODEL) + polyLen);
+
+	if (m == NULL)
+		return NULL;
+
+	memset(m, 0, sizeof(MODEL));
+
+	m->shape_flags = 0x8001;
+	m->instance_number = -1;
+	m->poly_block = (int)sizeof(MODEL);
+	m->num_polys = src->num_polys;
+
+	memcpy((char*)m + sizeof(MODEL), (char*)src + polyStart, polyLen);
+
+	return m;
+}
+
+// A real Driver 2 city keeps its named wheels in LUMP_MODELS (DATA2) with the
+// names in LUMP_MODELNAMES (DATA1). Read CLEANWHEEL / DAMWHEEL / FASTWHEEL from
+// there so an imported D2 car wears ITS city's wheel texture, not the host's.
+// The models are texture-only: DrawCarWheels keeps the host geometry and uses
+// these records for the texture set/id and UVs.
+// ---------------------------------------------------------------------------
+// D2 wheel texture source
+//
+// The D2 level does not name a wheel MODEL. It carries the wheel art as two
+// TEXINF details on a permanent page:
+//   WHLCLEAN  - the clean/fast wheel sprite (HAVANA calls it WHEEL)
+//   WHLBOTH   - the damaged wheel / hubcap sprite
+// Their page index is the page set (all four cities keep it in permlist), and
+// the rect is a 64x64 square. We record that page/rect here; the renderer keeps
+// the host wheel mesh and maps its UVs onto the rect.
+//
+// The set still has to go through CarSetRemap, exactly like a car's or a D1
+// wheel's set, and the SOURCE number is what the pin walk needs.
+// ---------------------------------------------------------------------------
+
+static int BuildD2WheelTextureRects(int city)
+{
+	CAR_IMPORT* imp;
+	char* p;
+	char* end;
+	int tpageAmount;
+	int page;
+	int haveClean = 0;
+	int haveDam = 0;
+	int cleanSet = -1;
+	int damSet = -1;
+	int cleanU0 = 0, cleanV0 = 0, cleanU1 = 0, cleanV1 = 0;
+	int damU0 = 0, damV0 = 0, damU1 = 0, damV1 = 0;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	imp = &gCarImports[city];
+
+	if (imp->texInfo == NULL || imp->textureNames == NULL ||
+		imp->texInfoSize < 16 || imp->textureNamesSize < 2)
+		return 0;
+
+	tpageAmount = *(int*)imp->texInfo;
+
+	if (tpageAmount <= 0 || tpageAmount > 128)
+		return 0;
+
+	if ((size_t)tpageAmount * 8 + 8 > (size_t)imp->texInfoSize)
+		return 0;
+
+	p = (char*)&((TP*)(imp->texInfo + 8))[tpageAmount + 1];
+	end = imp->texInfo + imp->texInfoSize;
+
+	for (page = 0; page < tpageAmount; page++)
+	{
+		int count;
+		int k;
+
+		if (p + 4 > end)
+			return 0;
+
+		count = *(int*)p;
+		p += 4;
+
+		if (count < 0 || p + (size_t)count * sizeof(TEXINF) > end)
+			return 0;
+
+		for (k = 0; k < count; k++)
+		{
+			TEXINF* t = (TEXINF*)p;
+			char* name;
+
+			p += sizeof(TEXINF);
+
+			if (t->nameoffset >= imp->textureNamesSize)
+				continue;
+
+			name = imp->textureNames + t->nameoffset;
+
+			if (name >= imp->textureNames + imp->textureNamesSize)
+				continue;
+
+			if (strcmp(name, "WHLBOTH") == 0)
+			{
+				damSet = page;
+				damU0 = t->x; damV0 = t->y;
+				damU1 = t->x + t->width; damV1 = t->y + t->height;
+				haveDam = 1;
+			}
+			else if (strcmp(name, "WHLCLEAN") == 0 || strcmp(name, "WHEEL") == 0)
+			{
+				cleanSet = page;
+				cleanU0 = t->x; cleanV0 = t->y;
+				cleanU1 = t->x + t->width; cleanV1 = t->y + t->height;
+				haveClean = 1;
+			}
+		}
+	}
+
+	if (!haveClean && !haveDam)
+		return 0;
+
+	if (!haveClean)
+	{
+		cleanSet = damSet;
+		cleanU0 = damU0; cleanV0 = damV0;
+		cleanU1 = damU1; cleanV1 = damV1;
+	}
+
+	if (!haveDam)
+	{
+		damSet = cleanSet;
+		damU0 = cleanU0; damV0 = cleanV0;
+		damU1 = cleanU1; damV1 = cleanV1;
+	}
+
+	/* Page set -> destination index. The pin walk resolves the SOURCE set with
+	 * CarImportPinDstSet; the draw uses this remapped index. */
+	{
+		int cleanSource = cleanSet;
+		int damSource = damSet;
+
+		CarSetRemapEnable(1);
+		cleanSet = CarSetRemap(cleanSource);
+		damSet = CarSetRemap(damSource);
+		CarSetRemapEnable(0);
+
+		/* SOURCE sets for the pin walk, not the remapped draw indices. */
+		imp->wheelSet[CAR_IMPORT_WHEEL_CLEAN][0] = (unsigned char)cleanSource;
+		imp->wheelSetCount[CAR_IMPORT_WHEEL_CLEAN] = 1;
+		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] = (unsigned char)cleanSource;
+		imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] = 1;
+		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] = (unsigned char)cleanSource;
+		imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] = 1;
+
+		if (damSource != cleanSource)
+		{
+			imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][1] = (unsigned char)damSource;
+			imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] = 2;
+		}
+	}
+
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].present = 1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].set = cleanSet;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].clut = 0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].u0 = cleanU0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].v0 = cleanV0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].u1 = cleanU1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].v1 = cleanV1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubU0 = damU0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubV0 = damV0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubU1 = damU1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubV1 = damV1;
+
+	imp->wheelTex[CAR_IMPORT_WHEEL_FAST] = imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
+
+	/* A damaged wheel keeps the CLEAN tyre sprite and takes only its hubcap
+	 * poly from WHLBOTH. Using WHLBOTH for the whole wheel is what garbled
+	 * the tyre (a hubcap image stretched over it). */
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].present = 1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].set = cleanSet;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].clut = 0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u0 = cleanU0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v0 = cleanV0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u1 = cleanU1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v1 = cleanV1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubU0 = damU0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubV0 = damV0;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubU1 = damU1;
+	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubV1 = damV1;
+
+	return 1;
+}
+
+static void BuildD2WheelTextureSources(int city)
+{
+	static const char* wheelNames[CAR_IMPORT_WHEEL_VARIANTS] = {
+		"CLEANWHEEL", "DAMWHEEL", "FASTWHEEL"
+	};
+	CAR_IMPORT* imp;
+	int idx[CAR_IMPORT_WHEEL_VARIANTS];
+	char* p;
+	char* end;
+	int n, v, i;
+	int count;
+	char* cur;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return;
+
+	/* Only registered car-data cities have a level file to read. D1 baked files
+	 * have no DATA2 and resolve their wheels through LUMP_CAR_WHEELS, so there is
+	 * nothing to say here. */
+	if (!JerCityRegistered(city))
+		return;
+
+	imp = &gCarImports[city];
+
+	if (imp->data2 == NULL)
+		return;
+
+	if (BuildD2WheelTextureRects(city))
+	{
+		printInfo("cross-city: %s wheels - WHLCLEAN/WHLBOTH TEXINF sprites (sets %d/%d)\n",
+			LevelNames[city],
+			imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].set,
+			imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].set);
+		return;
+	}
+
+	if (imp->region == NULL || imp->models == NULL || imp->modelNames == NULL)
+	{
+		printInfo("cross-city: %s wheels - no named wheel data; using the host wheel texture\n",
+			LevelNames[city]);
+		return;
+	}
+
+	if (imp->wheels[0] != NULL || imp->wheels[1] != NULL || imp->wheels[2] != NULL)
+		return;
+
+	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+		idx[v] = -1;
+
+	p = imp->modelNames;
+	end = p + imp->modelNamesSize;
+	n = 0;
+
+	while (p < end && *p != 0)
+	{
+		for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+		{
+			if (idx[v] < 0 && strcmp(p, wheelNames[v]) == 0)
+				idx[v] = n;
+		}
+
+		p += strlen(p) + 1;
+		n++;
+	}
+
+	if (idx[0] < 0 && idx[1] < 0 && idx[2] < 0)
+	{
+		printInfo("cross-city: %s wheels - no CLEANWHEEL/DAMWHEEL/FASTWHEEL model; using the host wheel texture\n",
+			LevelNames[city]);
+		return;
+	}
+
+	if (imp->modelsSize < 4)
+		return;
+
+	count = *(int*)imp->models;
+	cur = imp->models + 4;
+
+	for (i = 0; i < count; i++)
+	{
+		int size;
+		MODEL* src;
+
+		if (cur + 4 > imp->models + imp->modelsSize)
+			break;
+
+		size = *(int*)cur;
+		src = (MODEL*)(cur + 4);
+
+		if (size <= 0 || cur + 4 + size > imp->models + imp->modelsSize)
+			break;
+
+		for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+		{
+			if (i != idx[v] || imp->wheels[v] != NULL)
+				continue;
+
+			{
+				MODEL* m = MakeD2WheelTextureModel(src, size);
+
+				if (m != NULL)
+				{
+					imp->wheelSetCount[v] = CollectWheelSets(m, imp->wheelSet[v], 8);
+					RemapWheelSets(m);
+					imp->wheels[v] = m;
+					imp->wheelTexMem[v] = (char*)m;
+				}
+			}
+		}
+
+		cur += 4 + size;
+	}
+
+	printInfo("cross-city: %s wheels - clean %s, damaged %s, fast %s (D2 named models)\n",
+		LevelNames[city],
+		(imp->wheels[0] != NULL) ? "imported" : "host",
+		(imp->wheels[1] != NULL) ? "imported" : "host",
+		(imp->wheels[2] != NULL) ? "imported" : "host");
+}
+
+// The source-city set numbers a wheel model names, captured before CarSetRemap
+// rewrote them. texture.c's pin walk needs the SOURCE number (it maps it through
+// CarImportPinDstSet); the MODEL itself carries the destination index the draw
+// uses. Returns the count, or 0 for an absent wheel.
+int GetCarImportWheelSets(int city, int kind, unsigned char* out, int max)
+{
+	int i, n;
+
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
+		out == NULL || max <= 0)
+		return 0;
+
+	n = gCarImports[city].wheelSetCount[kind];
+
+	if (n > max)
+		n = max;
+
+	for (i = 0; i < n; i++)
+		out[i] = gCarImports[city].wheelSet[kind][i];
+
+	return n;
 }
 
 // The foreign car colours for `slot`, or NULL. cosmetic.c uses this so an
@@ -1115,6 +2221,20 @@ int ProcessCarModelLump(char *lump_ptr, int lump_size)
 		}
 	}
 
+	// JERICHO: now that every imported city's cars have been built, their set
+	// remaps are settled. Build that city's wheel texture sources with the SAME
+	// mapping - a wheel built earlier would have baked a different index. A D1
+	// bake carries LUMP_CAR_WHEELS; a real D2 city is read from its named models.
+	for (i = 0; i < CITY_COUNT; i++)
+	{
+		BuildCarImportWheels(i);
+
+		if (gCarImports[i].wheels[0] == NULL &&
+			gCarImports[i].wheels[1] == NULL &&
+			gCarImports[i].wheels[2] == NULL)
+			BuildD2WheelTextureSources(i);
+	}
+
 	D_MALLOC_BEGIN();
 
 #if USE_PC_FILESYSTEM
@@ -1161,7 +2281,13 @@ int JerHotLoadCarModel(int slot)
 		return 0;
 
 	if (gCarCleanModelPtr[slot] != NULL)
+	{
+		// Already built by an earlier hot load: the geometry is fine, but this
+		// slot may only now have been pointed at a car whose sound bank is not
+		// loaded yet. Idempotent for the common repeated call.
+		LoadCarSoundForSlot(slot);
 		return 0;			// already built
+	}
 
 	if (GetCarModelSourceCity(slot) < 0)
 		return 0;			// the level's own car: nothing to bring in
@@ -1333,9 +2459,27 @@ int JerHotLoadCarModel(int slot)
 	/* the manifest's geometry side: the block this slot now owns in the hot-load pool */
 	CarSlotResNoteGeometry(slot, JER_HOT_CAR_BLOCK_BYTES);
 
+	// JERICHO: a city read in mid-level needs its wheel texture sources too,
+	// built after this slot's polys have settled the set remap they share.
+	{
+		int srcCity = GetCarModelSourceCity(slot);
+
+		BuildCarImportWheels(srcCity);
+
+		if (gCarImports[srcCity].wheels[0] == NULL &&
+			gCarImports[srcCity].wheels[1] == NULL &&
+			gCarImports[srcCity].wheels[2] == NULL)
+			BuildD2WheelTextureSources(srcCity);
+	}
+
 	printInfo("cross-city: hot-loaded %s model %d into resident slot %d (%d bytes budgeted, block %d, %d of %d blocks used)\n",
 		LevelNames[GetCarModelSourceCity(slot)], model_number, slot, need,
 		gJerHotCarBlockOf[slot], gJerHotCarUsed, JER_HOT_CAR_BLOCKS);
+
+	// The geometry is built, so the slot is genuinely this car: append its
+	// engine/idle/horn bank and let GetCarBankSample find it. A failed build
+	// returned above, leaving the stand-in car's sound in place.
+	LoadCarSoundForSlot(slot);
 
 	return need;
 }
