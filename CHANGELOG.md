@@ -6,6 +6,9 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- Cars dent again when the crumple module is off (the default). Stock Driver 2 denting had been lost when crumple became a module.
+- Traffic cars honk at you again when you block them. The horn had been switched off with a comment.
+
 ## v0.10.9
 
 *Released 2026-10-18.*

@@ -3058,12 +3058,14 @@ void SetUpCivCollFlags(void)
 
 						sample = GetCarBankSample(cp0->ap.model);
 
-						// Disable this annoying ass horn in a very quick and dirty way because I don't want to outright remove it - Nattdy
-						// [A] use tracking sound
-						/*Start3DTrackingSound(hornchanflag[i], SOUND_BANK_CARS, sample * 3 + 2,
-							(VECTOR*)cp0->hd.where.t,
-							(LONGVECTOR3*)cp0->st.n.linearVelocity);
-						*/
+						// [A] use tracking sound. JERICHO: horn restored (was commented
+						// out); the index guard keeps an imported/D1 bank that carries
+						// no horn sample from reading past the loaded car samples
+						if (sample >= 0 && sample * 3 + 2 < GetSoundBankSampleCount(SOUND_BANK_CARS))
+							Start3DTrackingSound(hornchanflag[i], SOUND_BANK_CARS, sample * 3 + 2,
+								(VECTOR*)cp0->hd.where.t,
+								(LONGVECTOR3*)cp0->st.n.linearVelocity);
+
 						SetChannelVolume(hornchanflag[i], -2000, 0);
 
 						horncarflag[i] = cp0;
