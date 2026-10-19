@@ -1545,7 +1545,10 @@ static int crumpleOnDentPass(void* userdata, void* args)
 	(void)userdata;
 
 	if (a != NULL)
+	{
+		a->handled = 1;	// crumple owns the body mesh: skip the stock blend
 		crumpleDeformInternal((CAR_DATA*)a->car, (const short*)a->damage);
+	}
 
 	return JER_RESULT_CONTINUE;
 }
