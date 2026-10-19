@@ -33,11 +33,14 @@ typedef struct JER_ARGS_COLLISION
 } JER_ARGS_COLLISION;
 
 /* JER_EVENT_DENT_PASS — the vertex deformation pass.
- * car: CAR_DATA*; damage: int* (the 6 zone-damage values). */
+ * car: CAR_DATA*; damage: short* (per-vertex dent weights).
+ * handled: a module that owns the body deformation sets it to 1; when it is
+ * left 0 the engine applies the stock (vanilla) clean->damaged vertex blend. */
 typedef struct JER_ARGS_DENT_PASS
 {
 	void* car;
 	void* damage;
+	int handled;
 } JER_ARGS_DENT_PASS;
 
 /* JER_EVENT_RESET_CAR — a car's damage state is being reset. */

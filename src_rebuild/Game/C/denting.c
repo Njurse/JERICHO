@@ -134,7 +134,24 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 
 		jerArgs.car = cp;
 		jerArgs.damage = tempDamage;
+		jerArgs.handled = 0;
 		jer_fire(JER_EVENT_DENT_PASS, &jerArgs);
+
+		// no module owns the deformation (crumple off): stock REDRIVER2 blend
+		// of the clean and damaged meshes, weighted by the per-vertex dent
+		if (jerArgs.handled == 0 && gCarDamModelPtr[model] != NULL)
+		{
+			SVECTOR* DamVertPtr = GET_MODEL_DATA(SVECTOR, gCarDamModelPtr[model], vertices);
+			SVECTOR* CleanVertPtr = GET_MODEL_DATA(SVECTOR, pCleanModel, vertices);
+			int numVerts = MIN(pCleanModel->num_vertices, MAX_DENTING_VERTS);
+
+			for (VertNo = 0; VertNo < numVerts; VertNo++, DamVertPtr++, CleanVertPtr++)
+			{
+				gTempCarVertDump[cp->id][VertNo].vx = CleanVertPtr->vx + FIXEDH((DamVertPtr->vx - CleanVertPtr->vx) * tempDamage[VertNo] / 2);
+				gTempCarVertDump[cp->id][VertNo].vy = CleanVertPtr->vy + FIXEDH((DamVertPtr->vy - CleanVertPtr->vy) * tempDamage[VertNo] / 2);
+				gTempCarVertDump[cp->id][VertNo].vz = CleanVertPtr->vz + FIXEDH((DamVertPtr->vz - CleanVertPtr->vz) * tempDamage[VertNo] / 2);
+			}
+		}
 
 		/* JERICHO: clamp any vertex the deformation pass moved a corrupt distance from
 		 * the clean model (the "stretched geometry" report). The crumple pass writes the

@@ -29,6 +29,8 @@ Imported cars look and sound like themselves, cops stop chasing once a ride ends
 
 - Picking a city's special car on that city's own level no longer messes up the colours of the level's own special car.
 - Picking a car in Take a Ride that the `import` setting already loads now rides that car instead of saying no slot is free.
+- Cars dent again in crashes. With the crumple module off (the default), bodywork had stopped showing any damage.
+- Traffic honks at you again when you block it. Civilian car horns had been switched off.
 
 Thanks: Jaret (Njurse).
 
