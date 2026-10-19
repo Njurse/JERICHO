@@ -24,6 +24,8 @@ no longer rebuild, move, take over or remove your own car.
 - Every online respawn and join placement now logs why it happened (`[mp] respawn reason:`
   / `[mp] place-self reason:`) and the last network message received, so if a reset still
   happens, the log shows exactly what caused it. Please send us your log if you see one.
+- Fixed a crash when changing car online after leaving an imported car (a cleared car
+  slot could come back with no car data).
 
 ## v0.10.7
 
