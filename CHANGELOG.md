@@ -6,6 +6,9 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- The Multiplayer pause page now lists the most used options first: Respawn, Vehicle Options, Warp To Player and Player Color, then Invincibility and Immunity, with Kick player and Write diagnostics now at the bottom.
+- "My colour" in the Multiplayer pause page is now called "Player Color".
+
 ## v0.10.8
 
 *Released 2026-10-18.*
