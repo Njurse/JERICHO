@@ -4082,7 +4082,10 @@ void LoadImportedTPages(void)
 				(const unsigned char*)buf + 4 + wheelRow * 32);
 
 			if (wheelClut != 0)
+			{
 				CarImportSetWheelPaletteClut(sc, set, wheelClut, 0);
+				CarImportReserveFastWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow);
+			}
 		}
 
 		free(buf);
