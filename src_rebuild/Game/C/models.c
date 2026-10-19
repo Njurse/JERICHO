@@ -523,6 +523,11 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 	if (imp->data2 != NULL)
 		FindLumpSegment(imp->data2 + 8, imp->data2Size - 8, CAR_IMPORT_LUMP_MODELS_D2, &imp->models, &imp->modelsSize);
 
+	printInfo("JER-DIAG import %s: data1=%ld data2=%u/%u names=%p/%d models=%p/%d\n",
+		levPath, data1Size, table[4], table[5],
+		(void*)imp->modelNames, imp->modelNamesSize,
+		(void*)imp->models, imp->modelsSize);
+
 	// the car colours, beside the car data as LEVELS\<city>.LCF - or none at all
 	if (lcfPath != NULL)
 		imp->cosmetics = ReadWholeFile(lcfPath, &imp->cosmeticsSize);
@@ -1209,8 +1214,20 @@ static void BuildD2WheelTextureSources(int city)
 
 	imp = &gCarImports[city];
 
+	/* JERICHO-DIAG (temporary): why does a real D2 import not build its wheel
+	 * sources? Report the two segment pointers before any early return, then the
+	 * name→index mapping and the model-table entry each index lands on. */
+	printInfo("cross-city: %s D2 wheel lookup - data2=%p/%d modelNames=%p/%d models=%p/%d\n",
+		LevelNames[city], (void*)imp->data2, imp->data2Size,
+		(void*)imp->modelNames, imp->modelNamesSize,
+		(void*)imp->models, imp->modelsSize);
+
 	if (imp->region == NULL || imp->models == NULL || imp->modelNames == NULL)
+	{
+		printInfo("cross-city: %s wheels - no named wheel data; using the host wheel texture\n",
+			LevelNames[city]);
 		return;
+	}
 
 	if (imp->wheels[0] != NULL || imp->wheels[1] != NULL || imp->wheels[2] != NULL)
 		return;
@@ -1234,8 +1251,25 @@ static void BuildD2WheelTextureSources(int city)
 		n++;
 	}
 
+	printInfo("cross-city: %s D2 wheel names - %d string(s), CLEANWHEEL=%d DAMWHEEL=%d FASTWHEEL=%d\n",
+		LevelNames[city], n, idx[0], idx[1], idx[2]);
+
+	{ 
+		char* q = imp->modelNames;
+		int k;
+		for (k = 0; k < 4 && q < end && *q; k++)
+		{
+			printInfo("  name[%d]='%s'\n", k, q);
+			q += strlen(q) + 1;
+		}
+	}
+
 	if (idx[0] < 0 && idx[1] < 0 && idx[2] < 0)
+	{
+		printInfo("cross-city: %s wheels - no CLEANWHEEL/DAMWHEEL/FASTWHEEL model; using the host wheel texture\n",
+			LevelNames[city]);
 		return;
+	}
 
 	if (imp->modelsSize < 4)
 		return;
@@ -1261,6 +1295,9 @@ static void BuildD2WheelTextureSources(int city)
 		{
 			if (i != idx[v] || imp->wheels[v] != NULL)
 				continue;
+
+			printInfo("cross-city: %s D2 wheel %d model %d: size=%d instance=%d npolys=%d poly_block=%d\n",
+				LevelNames[city], v, i, size, src->instance_number, src->num_polys, src->poly_block);
 
 			{
 				MODEL* m = MakeD2WheelTextureModel(src, size);

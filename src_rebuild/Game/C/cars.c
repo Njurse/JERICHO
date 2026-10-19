@@ -1709,28 +1709,33 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 				WheelTexFast = WheelTexClean;
 			if (WheelTexDam == NULL)
 				WheelTexDam = WheelTexClean;
+		}
 
-			/* One line per resident slot per level: host mesh, imported texture. */
+		/* One line per resident slot per level: host mesh, imported or host
+		 * texture. A D2 city with no named wheel data lands here as "host". */
+		{
+			static int sWheelLogLevel = -1;
+			static unsigned int sWheelLogMask;
+
+			if (sWheelLogLevel != GameLevel)
 			{
-				static int sWheelLogLevel = -1;
-				static unsigned int sWheelLogMask;
+				sWheelLogLevel = GameLevel;
+				sWheelLogMask = 0;
+			}
 
-				if (sWheelLogLevel != GameLevel)
-				{
-					sWheelLogLevel = GameLevel;
-					sWheelLogMask = 0;
-				}
+			if ((sWheelLogMask & (1u << cp->ap.model)) == 0)
+			{
+				sWheelLogMask |= 1u << cp->ap.model;
 
-				if ((sWheelLogMask & (1u << cp->ap.model)) == 0)
-				{
-					sWheelLogMask |= 1u << cp->ap.model;
-
+				if (WheelTexClean != NULL)
 					printInfo("[car wheels] slot %d (%s): host mesh, imported textures (clean %s, damaged %s, fast %s)\n",
 						cp->ap.model, LevelNames[wheelCity],
 						(WheelTexClean != NULL) ? "yes" : "host",
 						(WheelTexDam != NULL) ? "yes" : "host",
 						(WheelTexFast != NULL) ? "yes" : "host");
-				}
+				else
+					printInfo("[car wheels] slot %d (%s): no imported wheel texture - host wheels\n",
+						cp->ap.model, LevelNames[wheelCity]);
 			}
 		}
 	}
