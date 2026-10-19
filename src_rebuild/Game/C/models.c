@@ -833,8 +833,8 @@ static int CarImportSoundEntry(CAR_IMPORT* imp, int model, char** bank, int* siz
 
 // JERICHO: the embedded car-sound bank a D1 city's car uses, or 0. Driver 1 gave
 // EVERY car the same generic engine and idle, so the model number is not used to
-// pick the bank: every car gets the city's first valid entry. Indexing per model
-// gave some cars the wrong loop and left models with no entry silent.
+// pick the bank: every car gets the city's one generic engine + idle pair (below).
+// Indexing per model gave some cars the wrong loop and left models with no entry silent.
 int GetCarImportSoundBank(int city, int model, char** bank, int* size)
 {
 	CAR_IMPORT* imp;
@@ -862,21 +862,96 @@ int GetCarImportSoundBank(int city, int model, char** bank, int* size)
 		*(int*)(imp->carSounds + 4) != CAR_IMPORT_MODEL_SLOTS)
 		return 0;
 
-	for (m = 0; m < CAR_IMPORT_MODEL_SLOTS; m++)
+	// Engine: the first valid entry (the bake gives it D1 loop 1, the engine). Idle: the
+	// engine sample of the NEXT entry with a different loop (D1 loop 2, the low idle
+	// rumble). The bake writes each entry as engine, engine-again-as-idle, horn, so
+	// using one entry alone played the engine for the idle too. The pair is composed
+	// into one D2 bank (engine, idle, horn) once per held segment.
 	{
-		if (!CarImportSoundEntry(imp, m, &b, &sz))
-			continue;
+		static char* composed[CITY_COUNT];
+		static char* composedFrom[CITY_COUNT];
+		static int composedSize[CITY_COUNT];
+		char *eb = NULL, *ib = NULL;
+		int esz = 0, isz = 0;
+		int* ed;
+		int* id;
 
-		if (bank)
-			*bank = b;
+		if (composedFrom[city] == imp->carSounds && composed[city] != NULL)
+		{
+			if (bank) *bank = composed[city];
+			if (size) *size = composedSize[city];
+			return 1;
+		}
 
-		if (size)
-			*size = sz;
+		for (m = 0; m < CAR_IMPORT_MODEL_SLOTS; m++)
+		{
+			if (!CarImportSoundEntry(imp, m, &b, &sz))
+				continue;
 
+			if (eb == NULL)
+			{
+				eb = b; esz = sz;
+			}
+			else if (((int*)b)[2] != ((int*)eb)[2])	/* a different loop length: another D1 loop */
+			{
+				ib = b; isz = sz;
+				break;
+			}
+		}
+
+		if (eb == NULL)
+			return 0;
+
+		ed = (int*)(eb + 4);	/* SAMPLE_DATA[3]: address, length, loop, samplerate */
+
+		if (ib == NULL)
+		{
+			/* only one loop in the segment: engine for both, as before */
+			if (bank) *bank = eb;
+			if (size) *size = esz;
+			return 1;
+		}
+
+		id = (int*)(ib + 4);
+		free(composed[city]);
+		composedSize[city] = 4 + 3 * 16 + ed[1] + id[1] + ed[9];
+		composed[city] = (char*)malloc(composedSize[city]);
+
+		if (composed[city] == NULL)
+		{
+			composedFrom[city] = NULL;
+			if (bank) *bank = eb;
+			if (size) *size = esz;
+			return 1;
+		}
+
+		{
+			int* hd = (int*)composed[city];
+			char* pay = composed[city] + 4 + 3 * 16;
+			char* epay = eb + 4 + 3 * 16;
+			char* ipay = ib + 4 + 3 * 16;
+
+			hd[0] = 3;
+			/* engine */
+			hd[1] = 0; hd[2] = ed[1]; hd[3] = ed[2]; hd[4] = ed[3];
+			memcpy(pay, epay + ed[0], ed[1]);
+			/* idle */
+			hd[5] = ed[1]; hd[6] = id[1]; hd[7] = id[2]; hd[8] = id[3];
+			memcpy(pay + ed[1], ipay + id[0], id[1]);
+			/* horn: the engine entry's */
+			hd[9] = ed[1] + id[1]; hd[10] = ed[9]; hd[11] = ed[10]; hd[12] = ed[11];
+			memcpy(pay + ed[1] + id[1], epay + ed[8], ed[9]);
+		}
+
+		composedFrom[city] = imp->carSounds;
+
+		printInfo("cross-city: %s D1 car sounds: engine %d bytes @%d Hz, idle %d bytes @%d Hz\n",
+			LevelNames[city], ed[1], ed[3], id[1], id[3]);
+
+		if (bank) *bank = composed[city];
+		if (size) *size = composedSize[city];
 		return 1;
 	}
-
-	return 0;
 }
 
 // The imported city's LUMP_TEXTUREINFO (its texture-page lists). Only valid for
