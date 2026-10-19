@@ -1791,8 +1791,19 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 				}
 				else
 				{
-				clut = texture_cluts[texSrc->texture_set][texSrc->texture_id];
-				tpage = texture_pages[texSrc->texture_set] | 0x20;
+				/* JERICHO: the host's collapsed tread quads (and the one past
+				 * num_polys this loop also reads) carry set 255 - "the first
+				 * poly's page", which is how the stock code resolved it, once. */
+				int set = texSrc->texture_set, id = texSrc->texture_id;
+
+				if (set >= 128 || id >= 32)
+				{
+					set = primarySet;
+					id = primaryId;
+				}
+
+				clut = texture_cluts[set][id];
+				tpage = texture_pages[set] | 0x20;
 
 				if (isHubcap)
 				{
@@ -1873,7 +1884,7 @@ static int JerWheelTextureReady(MODEL* m)
 
 static int JerWheelTextureReadyRect(const JER_WHEEL_TEX* r)
 {
-	return r != NULL && r->present &&
+	return r != NULL && r->present && r->set > 0 && r->set < 128 &&
 		texture_pages[r->set] != 0;
 }
 

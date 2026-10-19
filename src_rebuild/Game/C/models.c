@@ -1126,8 +1126,8 @@ char* GetCarImportModels(int slot)
 // (gCleanWheelModelPtr/gFastWheelModelPtr/gDamWheelModelPtr), found by name in
 // the host level. An imported Driver 1 car therefore wore the host's wheels -
 // including the host's wheel TEXTURE. The D1 bake now writes a LUMP_CAR_WHEELS
-// segment beside the car models; this copies those models out and leaves them
-// ready for DrawWheelObject.
+// segment beside the car models; BuildCarImportWheels reads its TEXTURE (page,
+// rects) for DrawWheelObject, and the host wheel models stay the meshes.
 //
 // The models are FT4-only and carry no normals (the wheel draw never uses
 // them). The source-city set index has to go through the same CarSetRemap the
@@ -1216,22 +1216,53 @@ static int CollectWheelSets(MODEL* m, unsigned char* out, int max)
 	return n;
 }
 
+// One record poly's UV box, as the exclusive rect MapWheelUVToRect maps onto.
+static void WheelPolyRect(const POLYFT4* p, int* u0, int* v0, int* u1, int* v1)
+{
+	const UV_INFO uv[4] = { p->uv0, p->uv1, p->uv2, p->uv3 };
+	int k;
+
+	*u0 = *u1 = uv[0].u;
+	*v0 = *v1 = uv[0].v;
+
+	for (k = 1; k < 4; k++)
+	{
+		if (uv[k].u < *u0) *u0 = uv[k].u;
+		if (uv[k].u > *u1) *u1 = uv[k].u;
+		if (uv[k].v < *v0) *v0 = uv[k].v;
+		if (uv[k].v > *v1) *v1 = uv[k].v;
+	}
+
+	*u1 += 1;
+	*v1 += 1;
+}
+
+// JERICHO: a D1 car keeps the HOST wheel models (CLEANWHEEL/FASTWHEEL/DAMWHEEL)
+// and takes only its wheel TEXTURE from LUMP_CAR_WHEELS: the record is read in
+// place for its page, its face rect (polys 2/3, the quads MangleWheelModel keeps
+// as the rim) and its tread rect (polys 4/6), and the wheel draws through the
+// same JER_WHEEL_TEX path as a D2 city. No wheel MODEL is copied or mangled:
+// that copy sized each record from an offset not read yet, which overran the
+// segment at spawn (the hot-load crash, and on Windows the camera flipping and
+// the car falling through the map).
 static void BuildCarImportWheels(int city)
 {
 	CAR_IMPORT* imp;
-	int offsets[CAR_IMPORT_WHEEL_VARIANTS];
-	int recSize[CAR_IMPORT_WHEEL_VARIANTS];
-	int count, i, total;
-	char* mem;
-	int memOfs;
+	int count, i;
 
 	if (city < 0 || city >= CITY_COUNT)
 		return;
 
 	imp = &gCarImports[city];
 
-	if (imp->region == NULL || imp->carWheels == NULL || imp->wheelMem != NULL)
+	if (imp->region == NULL || imp->carWheels == NULL)
 		return;
+
+	for (i = 0; i < CAR_IMPORT_WHEEL_VARIANTS; i++)
+	{
+		if (imp->wheelTex[i].present)
+			return;		// already built (level load, then a hot load)
+	}
 
 	if (imp->carWheelsSize < 4)
 	{
@@ -1250,98 +1281,75 @@ static void BuildCarImportWheels(int city)
 		return;
 	}
 
-	total = 0;
-
-	for (i = 0; i < CAR_IMPORT_WHEEL_VARIANTS; i++)
+	for (i = 0; i < count; i++)
 	{
+		int off = *(int*)(imp->carWheels + 4 + i * (int)sizeof(int));
+		JER_WHEEL_TEX* wt = &imp->wheelTex[i];
 		MODEL* src;
-		int next;
+		POLYFT4* p;
+		int k;
 
-		offsets[i] = (i < count) ? *(int*)(imp->carWheels + 4 + i * (int)sizeof(int)) : -1;
-		recSize[i] = 0;
-
-		if (offsets[i] == -1)
+		if (off == -1)
 			continue;
 
-		if (offsets[i] < 0 || offsets[i] + (int)sizeof(MODEL) > imp->carWheelsSize)
+		if (off < 0 || off + (int)sizeof(MODEL) > imp->carWheelsSize)
 		{
 			printInfo("cross-city: %s wheel %d offset %d is outside the segment (%d bytes) - absent\n",
-				LevelNames[city], i, offsets[i], imp->carWheelsSize);
-
-			offsets[i] = -1;
+				LevelNames[city], i, off, imp->carWheelsSize);
 			continue;
 		}
 
-		/* The record is the whole MODEL block: header + vertices + poly stream.
-		 * Its end is the next wheel's offset (the bake writes them back to back),
-		 * or the end of the segment for the last one. GetCarModel is the wrong tool
-		 * here: it copies only `poly_block` bytes, which stops BEFORE the poly
-		 * stream - that left the source wheel with no polys to read, hence no
-		 * source set and the host's blue placeholder. */
-		next = (i + 1 < count && offsets[i + 1] > offsets[i]) ? offsets[i + 1] : imp->carWheelsSize;
-		recSize[i] = next - offsets[i];
+		src = (MODEL*)(imp->carWheels + off);
 
-		src = (MODEL*)(imp->carWheels + offsets[i]);
-
-		if (src->poly_block <= (int)sizeof(MODEL) ||
-			src->poly_block > recSize[i] ||
-			src->num_vertices <= 0 || src->num_vertices > 24 || src->num_polys <= 0)
+		if (src->num_polys < 8 || src->num_polys > 24 || src->poly_block <= (int)sizeof(MODEL) ||
+			src->poly_block + src->num_polys * (int)sizeof(POLYFT4) > imp->carWheelsSize - off)
 		{
-			printInfo("cross-city: %s wheel %d has an unusable MODEL header (verts %d, polys %d, %d bytes) - absent\n",
-				LevelNames[city], i, src->num_vertices, src->num_polys, src->poly_block);
-
-			offsets[i] = -1;
-			recSize[i] = 0;
+			printInfo("cross-city: %s wheel %d has an unusable MODEL header (polys %d, %d bytes) - absent\n",
+				LevelNames[city], i, src->num_polys, src->poly_block);
 			continue;
 		}
 
-		total += recSize[i];
-	}
+		p = (POLYFT4*)((char*)src + src->poly_block);
 
-	if (total <= 0)
-		return;
+		for (k = 0; k < 8; k++)
+		{
+			if ((p[k].id & 0x1f) != 21)
+				break;
+		}
 
-	mem = (char*)malloc(total);
+		if (k < 8)
+		{
+			printInfo("cross-city: %s wheel %d is not the 8-quad FT4 wheel - absent\n", LevelNames[city], i);
+			continue;
+		}
 
-	if (mem == NULL)
-		return;
+		// the SOURCE set numbers, for the pin; CollectWheelSets only reads the record
+		imp->wheelSetCount[i] = CollectWheelSets(src, imp->wheelSet[i], 8);
 
-	memOfs = 0;
-
-	for (i = 0; i < CAR_IMPORT_WHEEL_VARIANTS; i++)
-	{
-		MODEL* src;
-		MODEL* m;
-
-		if (offsets[i] == -1)
+		if (imp->wheelSetCount[i] <= 0)
 			continue;
 
-		src = (MODEL*)(imp->carWheels + offsets[i]);
-		m = (MODEL*)(mem + memOfs);
-		memcpy(m, src, recSize[i]);
-		m->instance_number = -1;
-		memOfs += recSize[i];
+		WheelPolyRect(&p[2], &wt->u0, &wt->v0, &wt->u1, &wt->v1);
+		WheelPolyRect(&p[4], &wt->hubU0, &wt->hubV0, &wt->hubU1, &wt->hubV1);
 
-		imp->wheelSetCount[i] = CollectWheelSets(m, imp->wheelSet[i], 8);
+		CarSetRemapEnable(1);
+		wt->set = CarSetRemap(p[2].texture_set);
+		CarSetRemapEnable(0);
 
-		printInfo("cross-city: %s wheel %d source sets %d (first %d), polys %d\n",
-			LevelNames[city], i, imp->wheelSetCount[i],
-			(imp->wheelSetCount[i] > 0) ? imp->wheelSet[i][0] : -1, m->num_polys);
+		wt->clut = p[2].texture_id;
+		wt->hubClut = p[4].texture_id;	// the page loader puts the wheel row here
+		wt->present = (wt->set > 0 && wt->set < 128);
 
-		RemapWheelSets(m);
-		MangleWheelModel(m);
-
-		imp->wheels[i] = m;
+		printInfo("cross-city: %s wheel %d texture: source set %d -> %d, face (%d,%d)-(%d,%d), tread (%d,%d)-(%d,%d)\n",
+			LevelNames[city], i, p[2].texture_set, wt->set,
+			wt->u0, wt->v0, wt->u1, wt->v1, wt->hubU0, wt->hubV0, wt->hubU1, wt->hubV1);
 	}
 
-	imp->wheelMem = mem;
-
-	printInfo("cross-city: %s wheels - clean %s, damaged %s, fast %s (%d bytes)\n",
+	printInfo("cross-city: %s wheels - host meshes, imported textures: clean %s, damaged %s, fast %s\n",
 		LevelNames[city],
-		(imp->wheels[CAR_IMPORT_WHEEL_CLEAN] != NULL) ? "imported" : "host",
-		(imp->wheels[CAR_IMPORT_WHEEL_DAMAGED] != NULL) ? "imported" : "host",
-		(imp->wheels[CAR_IMPORT_WHEEL_FAST] != NULL) ? "imported" : "host",
-		total);
+		imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].present ? "yes" : "host",
+		imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].present ? "yes" : "host",
+		imp->wheelTex[CAR_IMPORT_WHEEL_FAST].present ? "yes" : "host");
 }
 
 MODEL* GetCarImportWheel(int city, int kind)
