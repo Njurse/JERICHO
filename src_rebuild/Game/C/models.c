@@ -1335,13 +1335,36 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 	 * skipped. On HAVANA this picks 29 for WHLBOTH and 25 for WHLCLEAN. */
 	{
 		double bestRatio = 1e30;
+		int bg = 0, pass;
+		int cu[4], cv[4], votes[16] = { 0 };
 
+		/* The sprite's background (its corner index) must be transparent
+		 * (0x0000) in the right row - otherwise the square's corners draw.
+		 * CHICAGO's light rows 6-9 are smooth too but opaque there. Rows that
+		 * fail this are only considered when no row passes it. */
+		cu[0] = u0; cu[1] = u1 - 1; cu[2] = u0; cu[3] = u1 - 1;
+		cv[0] = v0; cv[1] = v0; cv[2] = v1 - 1; cv[3] = v1 - 1;
+
+		for (i = 0; i < 4; i++)
+		{
+			unsigned char cb = pix[cv[i] * 128 + (cu[i] >> 1)];
+			votes[(cu[i] & 1) ? (cb >> 4) : (cb & 15)]++;
+		}
+
+		for (i = 1; i < 16; i++)
+			if (votes[i] > votes[bg])
+				bg = i;
+
+		for (pass = 0; pass < 2 && best < 0; pass++)
 		for (r = 0; r < npal; r++)
 		{
 			const unsigned short* row = (const unsigned short*)(page + 4 + r * 32);
 			int lum[16];
 			double adj = 0.0, all = 0.0, nAll = 0.0, ratio;
 			int nAdj = 0, a, b2;
+
+			if (pass == 0 && row[bg] != 0)
+				continue;
 
 			for (i = 0; i < 16; i++)
 				lum[i] = (row[i] & 31) * 3 + ((row[i] >> 5) & 31) * 6 + ((row[i] >> 10) & 31);
@@ -1390,8 +1413,8 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 
 		bestScore = (int)(bestRatio * 100.0 + 0.5);
 
-		printInfo("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d) -> row %d (smoothness %d%%)\n",
-			LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, best, bestScore);
+		printInfo("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d) background index %d -> row %d (smoothness %d%%)\n",
+			LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, bg, best, bestScore);
 	}
 
 	return best;
