@@ -530,6 +530,24 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 	// and gamesnd keeps the host-city fallback for them.
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_SOUNDS, &imp->carSounds, &imp->carSoundsSize);
 
+	// JERICHO: a Driver 1 bake (no DATA2) from before v0.10.9 carries neither
+	// segment, so its cars keep the host's wheels and engine. Say so once.
+	if (imp->data2 == NULL && (imp->carWheels == NULL || imp->carSounds == NULL))
+	{
+		static int staleD1Warned = 0;
+
+		printWarning("carimport: %s is an old Driver 1 bake (no %s%s%s) - re-run BAKE_D1_CARS for D1 wheels and sounds\n",
+			levPath, imp->carWheels == NULL ? "wheels" : "",
+			imp->carWheels == NULL && imp->carSounds == NULL ? ", " : "",
+			imp->carSounds == NULL ? "sounds" : "");
+
+		if (!staleD1Warned)
+		{
+			staleD1Warned = 1;
+			jer_error("DRIVER/D1CARS is out of date: re-run BAKE_D1_CARS for Driver 1 wheels and sounds");
+		}
+	}
+
 	// JERICHO: a real Driver 2 level's named wheel models. DATA2 holds
 	// LUMP_MODELS (the model table) and DATA1 holds LUMP_MODELNAMES; the names are
 	// indexed by the same slot number the engine's FindModelIdxWithName uses.

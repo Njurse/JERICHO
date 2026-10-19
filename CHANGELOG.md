@@ -6,6 +6,9 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- Driver 1 cars now get their own wheels and engine sounds after you re-run `BAKE_D1_CARS`. The v0.10.9 package shipped old bake tools, so a fresh bake still left them out. The bake now adds Driver 1's car sounds from `DRIVER/SOUND/VOICES.BLK` as a last step.
+- The game warns once, and `BAKE_D1_CARS` says so too, when `DRIVER/D1CARS` is from an older bake that lacks Driver 1 wheels and sounds.
+
 ## v0.10.9
 
 *Released 2026-10-18.*
