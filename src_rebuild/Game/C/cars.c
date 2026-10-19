@@ -1730,15 +1730,10 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		if (WheelTexDam != NULL && !JerWheelTextureReady(WheelTexDam))
 			WheelTexDam = NULL;
 
-		if (WheelTexClean != NULL)
-		{
-			/* A city with no damaged/fast wheel still has a wheel texture; use
-			 * its clean one rather than falling back to the host's. */
-			if (WheelTexFast == NULL)
-				WheelTexFast = WheelTexClean;
-			if (WheelTexDam == NULL)
-				WheelTexDam = WheelTexClean;
-		}
+		/* A source variant is independent: a missing FASTWHEEL/DAMWHEEL stays
+		 * NULL, so that axle keeps the HOST wheel texture. The city-level
+		 * "wheels - clean/damaged/fast" line records which variants came
+		 * across. */
 
 		/* One line per resident slot per level: host mesh, imported or host
 		 * texture. A D2 city with no named wheel data lands here as "host". */
