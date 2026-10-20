@@ -1426,6 +1426,24 @@ static int SetIndexInList(int* sets, int n, int set)
 	return -1;
 }
 
+// JERICHO: the same, for the pin walk's parallel sets[]/setCity[] arrays. A set NUMBER is
+// per-city: NEWYORK set 1 and MIAMI set 1 are different pages, so merging them by number
+// alone pinned only the first city's copy. That left every later city's set 1 (and any
+// other number two cities share) with no pin, while its polys still baked an index - the
+// readiness gate now reports exactly that, and this is the lookup that keeps them apart.
+static int SetIndexInCityList(const int* sets, const int* cities, int n, int set, int city)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+	{
+		if (sets[i] == set && cities[i] == city)
+			return i;
+	}
+
+	return -1;
+}
+
 // Whether a set is already in a collected list.
 static int SetInList(int* sets, int n, int set)
 {
@@ -3957,7 +3975,7 @@ void LoadImportedTPages(void)
 			{
 				int set = (spec + k >= 0 && spec + k < 12) ? specTpages[src][spec + k] : 0;
 
-				int at = (set != 0) ? SetIndexInList(sets, nsets, set) : -1;
+				int at = (set != 0) ? SetIndexInCityList(sets, setCity, nsets, set, src) : -1;
 
 				if (at >= 0)
 					setMask[at] |= CarPinOwnerBit(i);	// taken already: this car owns it too
@@ -3992,7 +4010,7 @@ void LoadImportedTPages(void)
 				for (k = 0; k < count; k++)
 				{
 					int set = CarModelSet(i, k);
-					int at = (set != 0) ? SetIndexInList(sets, nsets, set) : -1;
+					int at = (set != 0) ? SetIndexInCityList(sets, setCity, nsets, set, src) : -1;
 
 					if (at >= 0)
 						setMask[at] |= CarPinOwnerBit(i);
@@ -4030,7 +4048,7 @@ void LoadImportedTPages(void)
 			for (k = 0; k < count; k++)
 			{
 				int set = (count == 6) ? carTpages[src][k] : CarModelSet(i, k);
-				int at = (set != 0) ? SetIndexInList(sets, nsets, set) : -1;
+				int at = (set != 0) ? SetIndexInCityList(sets, setCity, nsets, set, src) : -1;
 
 				if (at >= 0)
 					setMask[at] |= CarPinOwnerBit(i);
@@ -4123,7 +4141,10 @@ void LoadImportedTPages(void)
 		int npalettes;
 		char* buf;
 
-		if (set == 0 || SetInList(sets, i, set))
+		// Every entry is unique by (set, city) - the car and wheel loops use
+		// SetIndexInCityList - so this walk must NOT skip a set number that an earlier
+		// city already contributed: MIAMI set 1 and NEWYORK set 1 are different pages.
+		if (set == 0)
 			continue;
 
 		// JERICHO-DIAG: every candidate, before any guard can hide it - which slot it

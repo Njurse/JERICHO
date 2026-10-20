@@ -15,12 +15,15 @@ is in [changelog.txt](changelog.txt).
 
 ### Changes
 
-- Driver 1 car data now also exports IVIEW and TRAIN, so every Driver 1 level with car geometry can be offered in the car lists. Re-run `BAKE_D1_CARS` (now BAKE_VERSION 5) to bake the two new cities.
+- Driver 1 car data now also exports IVIEW and TRAIN, so every Driver 1 level with car geometry can be offered in the car lists. Re-run `BAKE_D1_CARS` (now BAKE_VERSION 6); the bake now packs the palette down to the rows a city's models actually name, and an older bake is rebuilt.
 
 ### Fixes
 
 - Multiplayer: a car whose model has not loaded yet (yours or a peer's) is drawn as the host city's car 1 in solid grey until it does, instead of a slot with no mesh — the stopgap for the spinning camera / fall-through. Both transitions are logged.
 - Driver 1: IVIEW and TRAIN now appear in the car list from the generated model table, and TRAIN's untextured bodies get a solid-colour page instead of an unpinned set 255 (188 of 188 polys now resolve).
+- Driver 1: changing cars — or a client adopting the session's set — no longer reuses a palette row still uploaded from the previous car. A reclaimed row is forgotten and re-uploaded, so the new car gets its own colours instead of the old one's.
+- Driver 1: an imported car is not handed out or drawn until every set it names has a live page pin and a mapped palette row. If a car is already on the road when that stops being true, single-player now shows the same host-city car 1 in grey as multiplayer instead of drawing nothing.
+- Driver 1: fixed two different cities' same-numbered sets being merged into one page pin (only the first city's copy was pinned), and unused source palette rows no longer overwrite a compacted row a model reads.
 
 ## v0.10.12
 
