@@ -144,6 +144,7 @@ static othercarsound car_noise[MAX_CAR_NOISES];
 static int car_slot_sample[MAX_CAR_RESIDENT_MODELS];
 static int car_slot_city[MAX_CAR_RESIDENT_MODELS];
 static int car_slot_model[MAX_CAR_RESIDENT_MODELS];
+static int car_slot_imported[MAX_CAR_RESIDENT_MODELS];	// 1 = slot owns an imported per-model bank
 static int car_d1_generic_block = -1;	// JERICHO: the block holding the shared D1 engine/idle, once loaded
 static int car_sound_ready;
 static int loudhail_time = 0;
@@ -166,6 +167,9 @@ static int ImportedCarHasSiren(int index)
 		int model = car_slot_model[slot];
 
 		if (city < 0 || model < 0)
+			continue;
+
+		if (!car_slot_imported[slot])
 			continue;
 
 		if (slot != index && model != index)
@@ -327,6 +331,16 @@ int ResidentModelsBodge(void)
 int GetCarBankSample(int model)
 {
 	int bankStartSample;
+	int slot;
+
+	// An imported model can sit in a different resident slot; the per-model bank
+	// is recorded on that slot, so find it before the stock slot-index formula.
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		if (car_slot_imported[slot] && car_slot_model[slot] == model &&
+			car_slot_sample[slot] >= 0)
+			return car_slot_sample[slot];
+	}
 
 	if (model == SPECIAL_CAR_SLOT)
 	{
@@ -484,21 +498,8 @@ static int LoadEmbeddedCarSoundForSlot(int slot)
 	if (!GetCarImportSoundBank(city, model, &bank, &size))
 		return 0;
 
-	// Every D1 car shares the one generic bank: load it once per level and point
-	// later D1 slots at it, instead of filling SPU memory with copies.
-	if (car_d1_generic_block >= 0)
-	{
-		car_slot_sample[slot] = car_d1_generic_block;
-		car_slot_city[slot] = city;
-		car_slot_model[slot] = model;
-
-		printInfo("gamesnd: resident slot %d shares the generic D1 engine/idle (%s model %d) -> block %d\n",
-			slot, LevelNames[city], model, car_d1_generic_block);
-
-		RestartCarNoiseForSlot(slot);
-		return 1;
-	}
-
+	// Per-model banks: every imported model carries its own engine, idle and
+	// horn, so load this slot's model bank instead of sharing one generic block.
 	AlignSoundBankSamples(SOUND_BANK_CARS, 3);
 
 	before = GetSoundBankSampleCount(SOUND_BANK_CARS);
@@ -515,9 +516,10 @@ static int LoadEmbeddedCarSoundForSlot(int slot)
 	car_slot_sample[slot] = before / 3;
 	car_slot_city[slot] = city;
 	car_slot_model[slot] = model;
+	car_slot_imported[slot] = 1;
 	car_d1_generic_block = car_slot_sample[slot];
 
-	printInfo("gamesnd: resident slot %d uses the generic embedded D1 engine/idle (%s model %d) -> block %d\n",
+	printInfo("gamesnd: resident slot %d uses the imported model bank (%s model %d) -> block %d\n",
 		slot, LevelNames[city], model, car_slot_sample[slot]);
 
 	RestartCarNoiseForSlot(slot);
@@ -550,6 +552,7 @@ void LoadCarSoundForSlot(int slot)
 	if (model < 0 || model >= CAR_MODEL_LUMP_ENTRIES)
 	{
 		car_slot_sample[slot] = -1;
+		car_slot_imported[slot] = 0;
 		return;
 	}
 
@@ -571,6 +574,7 @@ void LoadCarSoundForSlot(int slot)
 	// drop the old mapping first: if the load fails the slot must fall back to
 	// the stock formula rather than keep pointing at its previous car's samples
 	car_slot_sample[slot] = -1;
+	car_slot_imported[slot] = 0;
 
 	LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(slot));
 
@@ -586,6 +590,7 @@ void LoadCarSoundForSlot(int slot)
 	car_slot_sample[slot] = before / 3;
 	car_slot_city[slot] = city;
 	car_slot_model[slot] = model;
+	car_slot_imported[slot] = 0;
 
 	printInfo("gamesnd: resident slot %d (%s model %d) -> car sound block %d\n",
 		slot, LevelNames[city], model, car_slot_sample[slot]);
@@ -640,6 +645,7 @@ void LoadLevelSFX(int missionNum)
 		car_slot_sample[i] = -1;
 		car_slot_city[i] = -1;
 		car_slot_model[i] = -1;
+		car_slot_imported[i] = 0;
 	}
 
 	car_d1_generic_block = -1;

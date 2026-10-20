@@ -922,8 +922,6 @@ int GetCarImportSoundBank(int city, int model, char** bank, int* size)
 	char* b;
 	int sz, m;
 
-	(void)model;
-
 	if (bank)
 		*bank = NULL;
 
@@ -934,6 +932,24 @@ int GetCarImportSoundBank(int city, int model, char** bank, int* size)
 		return 0;
 
 	imp = &gCarImports[city];
+
+	// Per-model bank: the bake writes engine/idle/horn for every model, and the
+	// engine now loads each imported model's own bank so its third sample is the
+	// per-slot horn (or the cop siren). Old banks without per-model entries fall
+	// through to the generic composed pair below.
+	{
+		char* mb = NULL;
+		int msz = 0;
+
+		if (CarImportSoundEntry(imp, model, &mb, &msz))
+		{
+			if (bank)
+				*bank = mb;
+			if (size)
+				*size = msz;
+			return 1;
+		}
+	}
 
 	if (imp->carSounds == NULL ||
 		imp->carSoundsSize < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int))
