@@ -188,7 +188,7 @@ static int sClutClampCount;
 
 // JERICHO: the one reserved VRAM CLUT id for each city's D2 wheel palette.
 // Declared before CarPalRowClear, which resets it per level.
-static u_short sWheelPalClut[CITY_COUNT][2];	// [city][0 = tyre/whole wheel, 1 = hubcap]
+static u_short sWheelPalClut[CITY_COUNT][3];	// [city][0 = tyre/whole wheel, 1 = hubcap, 2 = fast]
 
 static void CarPalRowNote(int row, int city)
 {
@@ -267,6 +267,7 @@ static void CarPalRowClear(void)
 static signed char sSetRow[CITY_COUNT][128];	// city -> set -> civ_clut row, -1 = none
 #define CAR_IMPORT_WHEEL_PAL_SET 127
 #define CAR_IMPORT_WHEEL_HUB_PAL_SET 126	// the D2 hubcap (WHLBOTH) row, when it differs from the tyre's
+#define CAR_IMPORT_WHEEL_FAST_PAL_SET 125	// the tyre row with the FAST sprite's background cleared
 
 // JERICHO: is civ_clut row `row` already owned by some (city, set)?
 static int CarRowInUse(int row)
@@ -377,19 +378,36 @@ int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 	if (city < 0 || city >= CITY_COUNT || colors == NULL)
 		return 0;
 
-	hub = hub ? 1 : 0;
+	if (hub < 0 || hub > 2)
+		hub = 1;
 
 	if (sWheelPalClut[city][hub] != 0)
 		return sWheelPalClut[city][hub];
 
-	row = CarAllocSetRow(hub ? CAR_IMPORT_WHEEL_HUB_PAL_SET : CAR_IMPORT_WHEEL_PAL_SET, city);
+	row = CarAllocSetRow(hub == 2 ? CAR_IMPORT_WHEEL_FAST_PAL_SET :
+		hub ? CAR_IMPORT_WHEEL_HUB_PAL_SET : CAR_IMPORT_WHEEL_PAL_SET, city);
 
 	if (row < 0)
 		return 0;
 
-	LoadImage(&clutpos, (u_long*)colors);
-	clut = GetClut(clutpos.x, clutpos.y);
-	IncrementClutNum(&clutpos);
+	/* The import's own row, in the lower half pool's CLUT column (y >= 512),
+	 * not at the host level's clutpos: the wheel's CLUT is then the same in
+	 * every host city and no host CLUT can land on it. */
+	if (JerLowerPoolClutRowsFree() > 0)
+	{
+		RECT16 pc;
+
+		JerLowerPoolClutCursor(&pc);
+		LoadImage(&pc, (u_long*)colors);
+		clut = GetClut(pc.x, pc.y);
+		JerLowerPoolClutAdvance(1);
+	}
+	else
+	{
+		LoadImage(&clutpos, (u_long*)colors);
+		clut = GetClut(clutpos.x, clutpos.y);
+		IncrementClutNum(&clutpos);
+	}
 
 	for (i = 0; i < 6; i++)
 		civ_clut[row][0][i] = clut;
@@ -398,7 +416,7 @@ int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 	sWheelPalClut[city][hub] = clut;
 
 	printInfo("cross-city: %s wheel %s palette reserved in civ_clut row %d (clut %04x)\n",
-		LevelNames[city], hub ? "hubcap" : "tyre", row, clut);
+		LevelNames[city], hub == 2 ? "fast tyre" : hub ? "hubcap" : "tyre", row, clut);
 
 	return clut;
 }
