@@ -209,6 +209,8 @@ else
 	run_one "LA" "4:6:3, 5:6:8, 6:6:10" || rc=1
 	run_one "NEWYORK (the only D1 city with model 11)" "4:7:1, 5:7:8, 6:7:11" || rc=1
 	run_one "NEWCASTLE (bodies only)" "4:8:1, 5:8:2, 6:8:3" || rc=1
+	run_one "IVIEW" "4:9:1, 5:9:2, 6:9:3" || rc=1
+	run_one "TRAIN" "4:10:1, 5:10:2, 6:10:3" || rc=1
 	run_one "BETAMIAMI (the Euro-43 beta, city 11)" "4:11:1, 5:11:2, 6:11:3" || rc=1
 	run_one "all five D1 cities at once - the palette bank's limit" \
 		"4:4:1, 5:5:2, 6:6:3, 0:7:8, 1:8:1" || rc=1
