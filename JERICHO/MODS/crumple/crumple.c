@@ -90,7 +90,7 @@ int gCrumpleGlobalScale = 4096;
 CRUMPLE_PARAMS gCrumpleParams =
 {
 	// impact strength
-	120000,		// impactNormalize     howHard that counts as a full-scale dent.
+	110000,		// impactNormalize     howHard that counts as a full-scale dent.
 					//                      NOT ~100k: the body path only became
 					//                      capable of denting at all when it was put
 					//                      in proper 4096 fixed point (see the note in
@@ -117,7 +117,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 					//                      avoids zone-boundary seams)
 
 	// falloff
-	410,		// dentRadiusPct       dent radius, as a fraction of the car's own
+	440,		// dentRadiusPct       dent radius, as a fraction of the car's own
 					//                      half-length (0.10x), so a hit crumples
 					//                      locally on a long car and a stubby one alike.
 					//                      Was an absolute 700 "world units" (~0.17x),
@@ -139,7 +139,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 	2048,		// healthInfluence     damaged cars crumple more easily
 
 	// surface noise
-	192,		// damageModelMix      fraction of baked damaged-model delta (~4.7%)
+	213,		// damageModelMix      fraction of baked damaged-model delta (~4.7%)
 
 	// wheels
 	160, 		// wheelProximity      impact distance that counts as near a wheel
@@ -151,7 +151,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 	31,			// wheelBendMaxLevel   max cumulative damage level (bend = level * direction) — x0.65
 	31,			// wheelBendMaxX       max lateral bend (component clamp) — x0.65
 	16,			// wheelBendMaxY       max vertical bend (visual sag only) — x0.65
-	16,			// wheelBendMaxZ       max toe bend (component clamp) — x0.5, so the
+	8,			// wheelBendMaxZ       max toe bend (component clamp) — x0.5, so the
 					//                      wheels don't distort as far longitudinally
 
 	// impact curve
@@ -167,7 +167,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 	29012,		// wheelCamberScale     max lateral bend -> ~30deg camber (roll)
 	38740,		// wheelToeScale        max longitudinal bend -> ~40deg toe (yaw)
 	38827,		// wheelSteerScale      FRONT max lateral bend -> ~40deg steering deviation
-	3883,		// wheelSteerScaleRear  REAR max lateral bend -> ~4deg (twist only,
+	9883,		// wheelSteerScaleRear  REAR max lateral bend -> ~4deg (twist only,
 					//                      must not steer the car or distort the drive)
 
 	// debug / repair
@@ -175,7 +175,7 @@ CRUMPLE_PARAMS gCrumpleParams =
 	90000,		// simTickHowHard       d-pad held per-frame strength (grinding)
 	40,			// simJitter            simulated-hit position jitter (world units)
 	2048*4,		// simAngleJitter       simulated-hit normal tilt (up to ~28deg) ----- to do: some basic fucking arithmetic, dude (me)
-	8,			// repairRate           zone damage removed per frame (small = slow,
+	4,			// repairRate           zone damage removed per frame (small = slow,
 					//                      watchable morph while driving)
 };
 
