@@ -94,15 +94,15 @@ echo "[3/4] writing the car cosmetics ..."
 echo "[4/4] adding the car sounds ..."
 if [ -f "DRIVER/SOUND/VOICES.BLK" ]; then
 	for C in MIAMI FRISCO LA NEWYORK NEWCASTLE IVIEW TRAIN; do
-		"$PY" "$T/add_car_sounds.py" --lev "$OUT/$C.LEV" --voices "DRIVER/SOUND/VOICES.BLK" || fail "add_car_sounds.py $C failed"
+		"$PY" "$T/add_car_sounds.py" --lev "$OUT/$C.LEV" --voices "DRIVER/SOUND/VOICES.BLK" --city "$C" || fail "add_car_sounds.py $C failed"
 	done
 else
 	echo "  (no DRIVER/SOUND/VOICES.BLK -- Driver 1 cars will use the host city's sounds)"
 fi
 if [ -f "EURO43/SOUND/SOUND.SBK" ]; then
-	"$PY" "$T/add_car_sounds.py" --lev "$OUT/BETAMIAMI.LEV" --voices "EURO43/SOUND/SOUND.SBK" || fail "add_car_sounds.py BETAMIAMI failed"
+	"$PY" "$T/add_car_sounds.py" --lev "$OUT/BETAMIAMI.LEV" --voices "EURO43/SOUND/SOUND.SBK" --city BETAMIAMI || fail "add_car_sounds.py BETAMIAMI failed"
 elif [ -f "DRIVER/SOUND/VOICES.BLK" ]; then
-	"$PY" "$T/add_car_sounds.py" --lev "$OUT/BETAMIAMI.LEV" --voices "DRIVER/SOUND/VOICES.BLK" || fail "add_car_sounds.py BETAMIAMI failed"
+	"$PY" "$T/add_car_sounds.py" --lev "$OUT/BETAMIAMI.LEV" --voices "DRIVER/SOUND/VOICES.BLK" --city BETAMIAMI || fail "add_car_sounds.py BETAMIAMI failed"
 else
 	echo "  (no EURO43/SOUND/SOUND.SBK or DRIVER/SOUND/VOICES.BLK -- BETAMIAMI will use the host city's sounds)"
 fi

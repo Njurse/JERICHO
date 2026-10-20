@@ -96,16 +96,16 @@ rem SOUND.SBK when it is present (pitched-down traffic idle + acceleration loop)
 echo [4/4] adding the car sounds ...
 if exist "DRIVER\SOUND\VOICES.BLK" (
 	for %%C in (MIAMI FRISCO LA NEWYORK NEWCASTLE IVIEW TRAIN) do (
-		%PY% "%T%\add_car_sounds.py" --lev "%OUT%\%%C.LEV" --voices "DRIVER\SOUND\VOICES.BLK" || goto :fail
+		%PY% "%T%\add_car_sounds.py" --lev "%OUT%\%%C.LEV" --voices "DRIVER\SOUND\VOICES.BLK" --city %%C || goto :fail
 	)
 ) else (
 	echo   ^(no DRIVER\SOUND\VOICES.BLK -- Driver 1 cars will use the host city's sounds^)
 )
 
 if exist "EURO43\SOUND\SOUND.SBK" (
-	%PY% "%T%\add_car_sounds.py" --lev "%OUT%\BETAMIAMI.LEV" --voices "EURO43\SOUND\SOUND.SBK" || goto :fail
+	%PY% "%T%\add_car_sounds.py" --lev "%OUT%\BETAMIAMI.LEV" --voices "EURO43\SOUND\SOUND.SBK" --city BETAMIAMI || goto :fail
 ) else if exist "DRIVER\SOUND\VOICES.BLK" (
-	%PY% "%T%\add_car_sounds.py" --lev "%OUT%\BETAMIAMI.LEV" --voices "DRIVER\SOUND\VOICES.BLK" || goto :fail
+	%PY% "%T%\add_car_sounds.py" --lev "%OUT%\BETAMIAMI.LEV" --voices "DRIVER\SOUND\VOICES.BLK" --city BETAMIAMI || goto :fail
 ) else (
 	echo   ^(no EURO43\SOUND\SOUND.SBK or DRIVER\SOUND\VOICES.BLK -- BETAMIAMI will use the host city's sounds^)
 )
