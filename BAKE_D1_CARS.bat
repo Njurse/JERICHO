@@ -64,11 +64,11 @@ if errorlevel 1 (
 )
 
 rem BAKE_VERSION: bump when the bake gains something the game reads
-set "BAKE_VERSION=5"
+set "BAKE_VERSION=6"
 set "HAVE_VERSION="
 if exist "%OUT%\BAKE_VERSION" set /p HAVE_VERSION=<"%OUT%\BAKE_VERSION"
 if exist "%OUT%" if not "%HAVE_VERSION%"=="%BAKE_VERSION%" (
-	echo Your existing %OUT% is from an older bake ^(no D1 wheels/sounds, or pre-Miami wheels^) -- rebuilding it.
+	echo Your existing %OUT% is from an older bake ^(no D1 wheels/sounds, pre-Miami wheels, or unpacked palette rows^) -- rebuilding it.
 	echo.
 )
 
