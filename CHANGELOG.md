@@ -6,6 +6,10 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### Changes
+
+- Driver 1 car data now also exports IVIEW and TRAIN, so every Driver 1 level with car geometry can be offered in the car lists. Re-run `BAKE_D1_CARS` (now BAKE_VERSION 4) to bake the two new cities.
+
 ## v0.10.12
 
 *Released 2026-10-19.*

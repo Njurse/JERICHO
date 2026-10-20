@@ -70,7 +70,7 @@ and they are driven by carhacks when it is installed:
 
 | Row | What it lists |
 | --- | --- |
-| Source City | carhacks' cities — the four Driver 2 ones and Driver 1's five (MIAMI, FRISCO, LA, NEWYORK, NEWCASTLE). With nothing to ask it is the level you are playing, and it starts there |
+| Source City | carhacks' cities — the four Driver 2 ones and Driver 1's seven (MIAMI, FRISCO, LA, NEWYORK, NEWCASTLE, IVIEW, TRAIN). With nothing to ask it is the level you are playing, and it starts there |
 | Car | that city's ROSTER — the same per-city list the frontend car screen shows (MIAMI 7 cars, NEWYORK 8, NEWCASTLE 3, …) |
 
 The roster is listed whether or not those cars are resident here yet, because

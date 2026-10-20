@@ -23,6 +23,8 @@ char* CosmeticFiles[CITY_COUNT] = {
 	"D1CARS\\LA.LCF",
 	"D1CARS\\NEWYORK.LCF",
 	"D1CARS\\NEWCASTLE.LCF",
+	"D1CARS\\IVIEW.LCF",
+	"D1CARS\\TRAIN.LCF",
 	/* JERICHO: the runtime bank slots - NULL until a bank is registered, and NULL
 	 * for a registered bank that has no colours file (legal: see JerRegisterCity). */
 };
