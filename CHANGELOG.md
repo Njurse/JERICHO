@@ -12,7 +12,7 @@ is in [changelog.txt](changelog.txt).
 
 ### Fixes
 
-- Multiplayer: while a car is being reloaded, the player briefly drives the host city's car 1 instead of a slot with no mesh — the stopgap for the spinning camera / fall-through, with both transitions logged.
+- Multiplayer: a car whose model has not loaded yet (yours or a peer's) is drawn as the host city's car 1 in solid grey until it does, instead of a slot with no mesh — the stopgap for the spinning camera / fall-through. Both transitions are logged.
 - Driver 1: IVIEW and TRAIN now appear in the car list from the generated model table, and TRAIN's untextured bodies get a solid-colour page instead of an unpinned set 255 (188 of 188 polys now resolve).
 
 ## v0.10.12
