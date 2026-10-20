@@ -645,6 +645,39 @@ int JerLoadCarImportForCity(int city)
 void InitCarImport(void)
 {
 	int i, city;
+	int wanted = 0, all_held = 1;
+
+	// JERICHO: a RESTART of the same level does not re-read the level file, so
+	// ProcessCarModelLump does not run again -- and that is what records the page
+	// pins the deferred palette upload rides on. Clearing the import state here
+	// therefore drops the palette rows with nothing left to put them back: the
+	// car keeps its geometry but loses its colours. If every source the restart
+	// asked for is already held, leave the level's import alone. A genuinely
+	// different source set (or a fresh level) falls through to the full reset.
+	if (!NewLevel && gCarImportCity >= 0)
+	{
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		{
+			int src = GetCarModelSourceCity(i);
+
+			if (src < 0 || src >= CITY_COUNT || residentCarModels[i] == -1)
+				continue;
+
+			wanted = 1;
+
+			if (!CarImportCityHeld(src))
+			{
+				all_held = 0;
+				break;
+			}
+		}
+
+		if (wanted && all_held)
+		{
+			printInfo("cross-city: restart of the same level - keeping the held car import and its palettes\n");
+			return;
+		}
+	}
 
 	// JERICHO: a new level starts from a clean cross-city slate. This runs BEFORE the
 	// level's car models are built, so the per-slot set lists buildNewCarFromModel
