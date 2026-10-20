@@ -6,6 +6,9 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+- Multiplayer: getting out of your car and back into it (or using Change car while on foot) no longer leaves a second copy of the vehicle on other players' screens. The machine that saw you get out now reuses the body you left instead of creating a new one.
+- Test Mode's quiet world no longer deletes a player's parked car when they get out; it only clears traffic and police.
+
 ## v0.10.13
 
 *Released 2026-10-19.*
