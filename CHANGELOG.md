@@ -6,6 +6,27 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+## v0.10.12
+
+*Released 2026-10-19.*
+
+Driver 1 wheels look right in every city, plus multiplayer fixes.
+
+### Fixes
+
+- Driver 1 cars from every city now use Driver 1 Miami's wheel textures, which fixes black squares and inverted colours on fast wheels.
+- Fixed a Driver 1 car's body sometimes taking on its wheels' colours.
+- Multiplayer: you can now get into a car another player has left.
+- Multiplayer: late joiners no longer run out of car slots and turn up invisible.
+
+### Changes
+
+- Pause menu: Vehicle Options now comes before Respawn, and there's a new "Reload all cars" item.
+
+**If you use Driver 1 cars, run `BAKE_D1_CARS.bat` (or `.sh`) once after updating.**
+
+Thanks: Jaret (Njurse).
+
 ## v0.10.11
 
 *Released 2026-10-19.*
