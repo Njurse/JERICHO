@@ -10,6 +10,11 @@ is in [changelog.txt](changelog.txt).
 
 - Driver 1 car data now also exports IVIEW and TRAIN, so every Driver 1 level with car geometry can be offered in the car lists. Re-run `BAKE_D1_CARS` (now BAKE_VERSION 4) to bake the two new cities.
 
+### Fixes
+
+- Multiplayer: while a car is being reloaded, the player briefly drives the host city's car 1 instead of a slot with no mesh — the stopgap for the spinning camera / fall-through, with both transitions logged.
+- Driver 1: IVIEW and TRAIN now appear in the car list from the generated model table, and TRAIN's untextured bodies get a solid-colour page instead of an unpinned set 255 (188 of 188 polys now resolve).
+
 ## v0.10.12
 
 *Released 2026-10-19.*
