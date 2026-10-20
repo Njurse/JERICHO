@@ -91,8 +91,8 @@ CRUMPLE_PARAMS gCrumpleParams =
 {
 	// impact strength — slightly softer threshold so moderate crashes start
 	// deforming the body before the wheel fully breaks
-	100000,		// impactNormalize     howHard that counts as a full-scale dent
-	512,		// impactMinHowHard    below this: no deformation
+	85000,		// impactNormalize     howHard that counts as a full-scale dent
+	384,		// impactMinHowHard    below this: no deformation
 
 	// body displacement — larger per-hit and compound caps so dents reach
 	// the wheel wells instead of stopping short of them
@@ -128,16 +128,16 @@ CRUMPLE_PARAMS gCrumpleParams =
 
 	// wheels — respond to the same class of impact that dents the body,
 	// and the proximity radius now overlaps the body dent radius
-	280,		// wheelProximity      (was 160) — reaches into the fender
+	200,		// wheelProximity      (was 160) — reaches into the fender
 	48000,		// wheelMinHowHard     lower so body dents and wheel kicks
 					//                      start closer together
 	100000,		// wheelNormalize      full kick at roughly the same howHard
 					//                      that saturates body deformation
-	32,			// wheelBendStep       a bit stronger per kick
-	40,			// wheelBendMaxLevel
-	40,			// wheelBendMaxX
-	20,			// wheelBendMaxY
-	20,			// wheelBendMaxZ
+	16,			// wheelBendStep       a bit stronger per kick
+	28,			// wheelBendMaxLevel
+	24,			// wheelBendMaxX
+	12,			// wheelBendMaxY
+	12,			// wheelBendMaxZ
 
 	// impact curve
 	2,			// impactCurve         still squared
