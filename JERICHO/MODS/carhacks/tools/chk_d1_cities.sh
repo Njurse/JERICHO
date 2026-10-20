@@ -1,23 +1,30 @@
 #!/usr/bin/env bash
-# Import DRIVER 1 cars (cities 4..8) on a Driver 2 host and report what the ENGINE
-# says it did with them, then check the archive rules that keep D1's data out of a
-# release.
+# Import DRIVER 1 cars (cities 4..11, including the Euro-43 beta) on a Driver 2 host
+# and report what the ENGINE says it did with them, then check the archive rules that
+# keep D1's data out of a release.
 #
 # WHY THIS EXISTS: every other rig here enumerates cities 0..3. chk_all_cities.sh
 # loops "for host in 0 1 2 3 / for c in 0 1 2 3", and chk_mashup.sh's guests come
-# from the same four - a Driver 1 city (MIAMI 4 ... NEWCASTLE 8) appears in none of
+# from the same four - a Driver 1 city (MIAMI 4 ... BETAMIAMI 11) appears in none of
 # them, and the data tools cannot read one either (levpalette.py / levmodels.py die
 # with KeyError: 'MIAMI', their carTpages table being Driver 2's four cities only).
 # The result was that a whole city family - the one the d1cars transplant exists to
 # import - had never been exercised by anything in the tree.
 #
-# The two verdict lines this reads are the engine's own, so this is a driver for
+# The verdict lines this reads are the engine's own, so this is a driver for
 # them rather than a second opinion:
 #
 #   page check - slot N clean: X of Y polys resolve to a pinned imported page
 #       X < Y  =>  that car did NOT fully load (geometry/pages)
 #   palette - slot N (CITY model M) sets [..] have no CITY palette row
 #       =>  those panels wear the bank's base row (colours)
+#   slotmap - slot N (CITY model M): ... body set(s) NOT READY
+#       =>  a set the model names has no live pin, mapped row, placed page or
+#           uploaded row. JERICHO_DIAG_SLOT_MAP=1 also prints the set -> row ->
+#           page detail that led there.
+#
+# All three are failures now: the palette packing (BAKE_VERSION 6) and the per-set
+# row dictionary are expected to leave a D1 city with no gaps.
 #
 # Usage:
 #   ./chk_d1_cities.sh              # the default matrix, on chicago
@@ -87,7 +94,7 @@ run_one() {
 	echo "HOST $HOST  --  $label"
 	echo "  import = $imports"
 	echo "--------------------------------------------------------------"
-	( cd "$BIN" && ./$EXE -nointro -level "$HOST" -car slot2 \
+	( cd "$BIN" && JERICHO_DIAG_SLOT_MAP=1 ./$EXE -nointro -level "$HOST" -car slot2 \
 		-weather none -time day -frames "$FRAMES" -seed 7 >/dev/null 2>&1 )
 	echo "  exit=$?"
 
@@ -102,26 +109,29 @@ run_one() {
 		| sed 's/^/    /' | sort -u
 	echo "  PAGE CHECKS - a short count means that car did not fully load:"
 	grep -aE "cross-city: page check - slot" "$LOG" | sed 's/^[[:space:]]*/    /'
-	echo "  PALETTE GAPS - panels that lose their own row (KNOWN OPEN ITEM, not a failure):"
+	echo "  PALETTE GAPS - panels that lose their own row (a failure):"
 	grep -aE "cross-city: palette - slot .*have no .* palette row" "$LOG" \
 		| sed 's/^[[:space:]]*/    /' | sort -u
 	echo "  BLOCK REFUSALS - a whole city that got no palette bank:"
 	grep -aE "cross-city: .* palettes: REFUSED" "$LOG" | sed 's/^[[:space:]]*/    /' | sort -u
+	echo "  SLOT MAP - a body set with no pin/row/page/upload (a failure):"
+	grep -aE "cross-city: slotmap" "$LOG" | sed 's/^[[:space:]]*/    /' | head -80
 	grep -aE "access violation|fatal error" "$LOG" | head -3 | sed 's/^/    FAULT: /'
 
-	# A short page check is a car that did not load; a REFUSED block is a whole city
-	# with no colours. Both fail the run. The per-panel gaps above do NOT: they are
-	# real (see carhacks/docs/PALETTES.md, the extra-panels item - 8 rows cannot hold
-	# the 11-13 sets a Driver 1 city bakes) but they are present even in a healthy
-	# run, so failing on them would make this always red and tell us nothing.
+	# A short page check is a car that did not load; a refused block is a whole city
+	# with no colours; a palette gap is a panel wearing the wrong row; and a slotmap
+	# miss is a set the readiness gate refused. All are failures now that the bake
+	# packs its rows and every set gets its own row.
 	short=$(grep -aE "cross-city: page check - slot" "$LOG" \
 		| grep -vcE "([0-9]+) of \1 polys" || true)
 	refused=$(grep -acE "cross-city: .* palettes: REFUSED" "$LOG" || true)
 	gaps=$(grep -acE "cross-city: palette - slot .*have no .* palette row" "$LOG" || true)
+	slotmap=$(grep -acE "cross-city: slotmap: .*body set\(s\).*NOT READY" "$LOG" || true)
 	faults=$(grep -acE "access violation|fatal error" "$LOG" || true)
-	echo "  short page checks: $short   refused blocks: $refused   panel gaps: $gaps   faults: $faults"
+	echo "  short page checks: $short   refused blocks: $refused   panel gaps: $gaps   slotmap misses: $slotmap   faults: $faults"
 	echo
-	[ "$short" = "0" ] && [ "$refused" = "0" ] && [ "$faults" = "0" ]
+	[ "$short" = "0" ] && [ "$refused" = "0" ] && [ "$gaps" = "0" ] \
+		&& [ "$slotmap" = "0" ] && [ "$faults" = "0" ]
 }
 
 rc=0
@@ -136,6 +146,7 @@ else
 	run_one "LA" "4:6:3, 5:6:8, 6:6:10" || rc=1
 	run_one "NEWYORK (the only D1 city with model 11)" "4:7:1, 5:7:8, 6:7:11" || rc=1
 	run_one "NEWCASTLE (bodies only)" "4:8:1, 5:8:2, 6:8:3" || rc=1
+	run_one "BETAMIAMI (the Euro-43 beta, city 11)" "4:11:1, 5:11:2, 6:11:3" || rc=1
 	run_one "all five D1 cities at once - the palette bank's limit" \
 		"4:4:1, 5:5:2, 6:6:3, 0:7:8, 1:8:1" || rc=1
 fi
@@ -148,9 +159,9 @@ grep -q 'bin/DRIVER' "$REPO/.github/workflows/build.yml" && echo "yes" || echo "
 
 if [ "$rc" = "0" ]; then
 	echo
-	echo "chk_d1_cities: OK - every imported car resolved, and no block was refused"
+	echo "chk_d1_cities: OK - every imported car resolved, no block was refused, no palette gap, no slotmap miss"
 else
 	echo
-	echo "chk_d1_cities: FAILURES ABOVE (a car that did not load, or a city with no palette bank)"
+	echo "chk_d1_cities: FAILURES ABOVE (a car that did not load, a city with no palette bank, a palette gap, or a slotmap miss)"
 fi
 exit "$rc"
