@@ -61,7 +61,19 @@ esac
 BIN="$REPO/src_rebuild/bin/$CFG"
 INI="$BIN/JERICHO/CONFIG/carhacks.ini"
 BAK="$INI.chk_d1_cities.bak"
-LOG="$BIN/JERICHO.log"
+# A Release install writes JERICHO.log; a dev build writes a versioned
+# "JERICHO <version>-dev.log" and APPENDS to it. Pick whichever exists and
+# extract only this run's bytes, or the counts would accumulate across runs.
+GAMELOG="$BIN/JERICHO.log"
+if [ ! -f "$GAMELOG" ]; then
+	GAMELOG=$(ls -t "$BIN"/JERICHO*.log 2>/dev/null | head -1)
+fi
+RUNLOG="$BIN/.chk_d1_cities_run.log"
+LOGBAK=""
+if [ -n "$GAMELOG" ] && [ -f "$GAMELOG" ]; then
+	LOGBAK="$GAMELOG.chk_d1_cities.bak"
+	cp "$GAMELOG" "$LOGBAK"
+fi
 
 if [ ! -f "$BIN/$EXE" ]; then
 	echo "chk_d1_cities: no $BIN/$EXE (build that configuration first)" >&2
@@ -81,6 +93,10 @@ cleanup() {
 	else
 		rm -f "$INI"
 	fi
+	rm -f "$RUNLOG"
+	if [ -n "$LOGBAK" ] && [ -f "$LOGBAK" ]; then
+		mv "$LOGBAK" "$GAMELOG"
+	fi
 }
 trap cleanup EXIT
 
@@ -94,13 +110,51 @@ run_one() {
 	echo "HOST $HOST  --  $label"
 	echo "  import = $imports"
 	echo "--------------------------------------------------------------"
+	# Start each run from an empty log. A dev build TRUNCATES and rewrites its
+	# versioned log, so a size-based "new bytes" tail can start past this run's
+	# page checks when the new file happens to be larger than the old one.
+	if [ -n "$GAMELOG" ] && [ -f "$GAMELOG" ]; then
+		: > "$GAMELOG"
+	fi
+	before=0
+	if [ -n "$GAMELOG" ] && [ -f "$GAMELOG" ]; then
+		before=$(wc -c < "$GAMELOG")
+	fi
 	( cd "$BIN" && JERICHO_DIAG_SLOT_MAP=1 ./$EXE -nointro -level "$HOST" -car slot2 \
 		-weather none -time day -frames "$FRAMES" -seed 7 >/dev/null 2>&1 )
 	echo "  exit=$?"
 
-	# The engine writes the session log; stdout is not where these land.
-	if [ ! -f "$LOG" ]; then
-		echo "  !! no session log at $LOG"
+	# Let the previous process release the log before reading it: on a fast
+	# back-to-back matrix the next launch can otherwise fail to open the same file
+	# and the run looks like it imported nothing.
+	sleep 1
+
+	# The engine writes the session log; stdout is not where these land. If the
+	# chosen log did not grow, the build chose a different name: take the newest.
+	after=0
+	if [ -n "$GAMELOG" ] && [ -f "$GAMELOG" ]; then
+		after=$(wc -c < "$GAMELOG")
+	fi
+	if [ "$after" -le "$before" ]; then
+		newest=$(ls -t "$BIN"/JERICHO*.log 2>/dev/null | head -1)
+		if [ -n "$newest" ]; then
+			# Same file but shorter: the build truncated/rewrote it for this run.
+			# (An append-only log grows and takes the branch above.)
+			GAMELOG="$newest"
+			before=0
+		fi
+	fi
+
+	if [ -z "$GAMELOG" ] || [ ! -f "$GAMELOG" ]; then
+		echo "  !! no session log under $BIN (JERICHO.log or JERICHO*.log)"
+		return 1
+	fi
+
+	tail -c +$((before + 1)) "$GAMELOG" > "$RUNLOG"
+	LOG="$RUNLOG"
+
+	if [ ! -s "$LOG" ]; then
+		echo "  !! session log did not grow during this run ($GAMELOG)"
 		return 1
 	fi
 
@@ -117,6 +171,15 @@ run_one() {
 	echo "  SLOT MAP - a body set with no pin/row/page/upload (a failure):"
 	grep -aE "cross-city: slotmap" "$LOG" | sed 's/^[[:space:]]*/    /' | head -80
 	grep -aE "access violation|fatal error" "$LOG" | head -3 | sed 's/^/    FAULT: /'
+
+	# Imports were requested, so a run with no page-check verdicts did not load them
+	# (or its log was not captured). Counting zero short checks out of zero is not a
+	# pass - that is exactly how an empty extraction used to look healthy.
+	pagechecks=$(grep -ac "cross-city: page check - slot" "$LOG" || true)
+	if [ "$pagechecks" = "0" ]; then
+		echo "  !! no page checks in this run - the import did not load, or the log was not captured"
+		return 1
+	fi
 
 	# A short page check is a car that did not load; a refused block is a whole city
 	# with no colours; a palette gap is a panel wearing the wrong row; and a slotmap
