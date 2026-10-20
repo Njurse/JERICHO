@@ -4,6 +4,13 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+> **Critical spawn fix — what you will notice in game.** A failed or still-loading
+> car can no longer leave you with no vehicle. You briefly drive the host city's
+> car 1 in **solid grey** while the real one loads; the camera stays on a real car;
+> and a death or Respawn puts you back on the road instead of spinning the camera
+> or dropping you through the map. This build contains the fix for that
+> critical/game-breaking spawn bug.
+
 ## Unreleased
 
 ### Changes
