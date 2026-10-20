@@ -863,6 +863,16 @@ static int CarImportSoundEntry(CAR_IMPORT* imp, int model, char** bank, int* siz
 {
 	int off, n, i, dir, payload;
 
+	// A Driver 2 city has no embedded D1 sound bank at all: cross-city imports of a
+	// D2 city (RIO into CHICAGO, RIO into RIO's slot 5) are held and have car data,
+	// but carSounds is NULL. Indexing the per-model table before this check read
+	// address 8 + model*4 (0x2C for model 9) and crashed on the sound load. An
+	// out-of-range model is the same class of caller bug.
+	if (imp == NULL || imp->carSounds == NULL ||
+		imp->carSoundsSize < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int) ||
+		model < 0 || model >= CAR_IMPORT_MODEL_SLOTS)
+		return 0;
+
 	off = ((int*)(imp->carSounds + 8))[model];
 
 	if (off < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int) ||
