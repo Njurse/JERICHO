@@ -6,6 +6,8 @@
 id = "debugorbit"
 name = "Debug Orbit Camera"
 version = "0.1.0"
+# the JERICHO interface (SDK) this mod is built against
+interface = 2
 author = "Jaret Ludvik"
 description = "Takes the camera over at level start and orbits the player at a fixed radius and elevation (a short static hold, then a slow 360), for inspecting a vehicle or Tanner from every side."
 dependencies = []

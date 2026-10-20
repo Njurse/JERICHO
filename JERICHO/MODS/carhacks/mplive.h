@@ -2,7 +2,7 @@
 #define CHK_MPLIVE_H
 
 /* carhacks/mplive.h — the bridge to mp's live "Change car" row.
- * See ../mp/mp_carquery.h for the event contract, and mplive.c for what the
+ * See jer_carquery.h (a core contract header) for the event contract, and mplive.c for what the
  * load half actually does. */
 
 #include "jericho.h"

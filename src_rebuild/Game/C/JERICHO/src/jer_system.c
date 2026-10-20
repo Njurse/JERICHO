@@ -845,6 +845,27 @@ static void jerActivateModules(const char* rootDir)
 			continue;
 		}
 
+		/* The manifest's own declaration, checked before activation. This is what
+		 * catches a mod from ANOTHER BUILD: the sdkVersion check above only sees
+		 * modules that got as far as registering, and a bundled mod always
+		 * compiles against the header beside it -- so without this a mod built
+		 * for interface 2 in a core at 3 activates and misbehaves quietly. */
+		if (m->interfaceVersion != 0 && m->interfaceVersion != JERICHO_SDK_VERSION)
+		{
+			snprintf(m->refusal, sizeof(m->refusal),
+				"%s was built for JERICHO interface v%d; this build is v%d. Reinstall or update the mod.",
+				m->name[0] != 0 ? m->name : m->id, m->interfaceVersion, JERICHO_SDK_VERSION);
+
+			jerLog("[jericho] module \"%s\" declares interface v%d but host is v%d - DISABLED\n",
+				m->id, m->interfaceVersion, JERICHO_SDK_VERSION);
+
+			jer_console_log("%s", m->refusal);
+			complaints++;
+
+			m->valid = 0;
+			continue;
+		}
+
 		if (m->deps[0] != 0)
 		{
 			char dep[40];

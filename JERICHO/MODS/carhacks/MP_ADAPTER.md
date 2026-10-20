@@ -137,8 +137,8 @@ below).
 | event | what must LOAD | what must UNLOAD | today |
 |---|---|---|---|
 | **local player picks** (before the level) | the pick's city data (`InitCarImport`), its palette block, its page lists; the pick's slot is canonical | the PREVIOUS pick's slot, if it was a different car | load ✓, unload ✓ by the level load, which rebuilds the whole set (row below). `chkImportApplyPick` itself releases nothing |
-| **local player changes car mid-match** (pause menu `Change car`) | the new city's data; a hot load into a slot (geometry, cosmetics, pages, rows) | the old car's slot, once nobody names it and no car is on it | load ✓ (`MP_CARQ_LOAD`), unload ✓ (`MP_CARQ_CHOSEN` -> `chkNetLocalSwitched` -> the release routine, "we changed car"). Before #14 nothing was released here, so every switch leaked a spare |
-| **local player gets back into a car on foot** | nothing (the car is already in the world) | the slot of the car they were in, if nobody else names it | ✓ (`MpFollowLocalCar` fires `MP_CARQ_CHOSEN` on the re-entry; same path as the row above). A direct car-to-car move without leaving the car does not fire it |
+| **local player changes car mid-match** (pause menu `Change car`) | the new city's data; a hot load into a slot (geometry, cosmetics, pages, rows) | the old car's slot, once nobody names it and no car is on it | load ✓ (`JER_CARQ_LOAD`), unload ✓ (`JER_CARQ_CHOSEN` -> `chkNetLocalSwitched` -> the release routine, "we changed car"). Before #14 nothing was released here, so every switch leaked a spare |
+| **local player gets back into a car on foot** | nothing (the car is already in the world) | the slot of the car they were in, if nobody else names it | ✓ (`MpFollowLocalCar` fires `JER_CARQ_CHOSEN` on the re-entry; same path as the row above). A direct car-to-car move without leaving the car does not fire it |
 | **peer joins, before the match starts** | the peer's city at the next level load (through the set) | nothing | ✓ |
 | **peer joins, match in progress** (the catch-up) | the peer's city read mid-level + a hot load into a slot | nothing (a new slot) | ✓ |
 | **peer changes car mid-match** (to an import OR to a domestic car) | the new car, as a peer pick (hot load) | the peer's old slot | ✓ (`chkNetUnbindChangedPeers`, from the fold and the `PICK` handler: a peer whose recorded slot no longer matches its pick is unbound and the release routine runs, "player P changed car". This includes the import -> domestic pick that the fold skips with `continue`) |
@@ -643,16 +643,16 @@ back; that is an input/desktop effect, not the release path.
 mp's Multiplayer pause page has a `Change car` picker (city, car, apply). The
 picker is mp's, but two of the things it needs are carhacks', so mp ASKS for them
 over two custom JERICHO events — the contract is
-`JERICHO/MODS/mp/mp_carquery.h`, the one place the ids and argument structs are
+`Game/C/JERICHO/include/jer_carquery.h` (a core contract header), the one place the ids and argument structs are
 written down, and `mplive.c` is the carhacks side:
 
 | Event | mp asks | carhacks answers |
 | --- | --- | --- |
-| `MP_CARQ_CITIES` | which cities can this session offer? | every car-data city this install HAS (`chkCityCount()`: CHICAGO..RIO, Driver 1's five, and any runtime bank registered in `JERICHO/CONFIG/cities.ini` whose files are on disk), or `count = 0` for "nobody knows" (the roster hack `unlock_extra_vehicles` is off, so this machine's picker has only the level's own city) |
-| `MP_CARQ_LOAD` | make `(city, model)` available here | `ok = 1` once the slot is set and built |
-| `MP_CARQ_CHOSEN` | (a notice, no answer) the local player is now driving `(city, model)` - or, `changed = 0`, the switch did not happen | updates carhacks' identity for this player, tells the session, and releases the old car's slot through the release routine |
+| `JER_CARQ_CITIES` | which cities can this session offer? | every car-data city this install HAS (`chkCityCount()`: CHICAGO..RIO, Driver 1's five, and any runtime bank registered in `JERICHO/CONFIG/cities.ini` whose files are on disk), or `count = 0` for "nobody knows" (the roster hack `unlock_extra_vehicles` is off, so this machine's picker has only the level's own city) |
+| `JER_CARQ_LOAD` | make `(city, model)` available here | `ok = 1` once the slot is set and built |
+| `JER_CARQ_CHOSEN` | (a notice, no answer) the local player is now driving `(city, model)` - or, `changed = 0`, the switch did not happen | updates carhacks' identity for this player, tells the session, and releases the old car's slot through the release routine |
 
-`MP_CARQ_LOAD` is not new machinery. It is the sequence a mid-match peer pick
+`JER_CARQ_LOAD` is not new machinery. It is the sequence a mid-match peer pick
 already goes through: `chkImportSlotForCar` (a car already in the set keeps its
 slot — re-slotting it would move a car somebody may be driving), else
 `chkImportCanonicalSlot` for OUR player id, then `chkImportSetSlot` +
@@ -660,7 +660,7 @@ slot — re-slotting it would move a car somebody may be driving), else
 reads that city in, builds the slot's geometry in the engine's own pool, applies
 its cosmetics and records its texture pages). It does NOT tell the session any
 more: a car is advertised only once the player is really driving it.
-`MP_CARQ_CHOSEN` (fired by `MpChangeCar` after the swap, and by `MpFollowLocalCar`
+`JER_CARQ_CHOSEN` (fired by `MpChangeCar` after the swap, and by `MpFollowLocalCar`
 when the player gets back into a car on foot) does that: `ChkMpChosen` ->
 `chkNetLocalSwitched` sets carhacks' local pick, advertises it
 (`chkNetAdvertisePick`; on the host, `chkNetBroadcastCars` + `chkNetPublishSet`) so

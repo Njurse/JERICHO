@@ -159,6 +159,11 @@ int  jer_frontend_row_rect(int index, int* x, int* y, int* w, int* h);
  * drawn above it lands in the middle of the screen instead of above the table. */
 int  jer_frontend_list_top(void);
 
+/* The index of the row the engine is highlighting (0 when nothing is up). A
+ * module that draws its own rows uses it to show something about the row under
+ * the cursor. */
+int  jer_frontend_selected(void);
+
 /* Module-side: navigate to a registered menu (by index) or a raw frontend
  * screen index (e.g. for a stock screen a module wants to return to). */
 void jer_frontend_open(int menuIndex);

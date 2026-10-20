@@ -107,7 +107,11 @@ void jer_modstore_init(const char* rootDir);
 /* Every frontend frame, from FEmain.c next to the updater's own tick: polls a
  * running job, redraws the tables, and opens the Mods menu in the mods screen's
  * place. */
-void jer_modstore_frontend_tick(void);
+/* onMainMenu: non-zero when the MAIN MENU is the current screen and nothing else
+ * is up (the frontend passes what it passes the updater). A prompt must not be
+ * raised over the update changelog or another presentation screen, so the store
+ * waits for this rather than firing on the first free frame. */
+void jer_modstore_frontend_tick(int onMainMenu);
 
 /* Non-zero while a job is running (install/remove/index/rebake). The frontend
  * keeps running meanwhile: the helper is a child process, never a block. */
@@ -136,6 +140,20 @@ const char* jer_modstore_repo_url(int index);
 /* Which repo the browser is showing (left/right on the repo row). */
 int jer_modstore_repo_selected(void);
 void jer_modstore_repo_select(int index);
+
+/* How a repo reads in the browser: "fetched", "not fetched" or "failed", and how
+ * old its cached index is ("just now", "5m", "3h", "2d"). Both return a static
+ * string that stays valid until the next call, so draw one row at a time. */
+const char* jer_modstore_repo_state(int index);
+const char* jer_modstore_repo_age(int index);
+
+/* Non-zero when the helper script beside the exe speaks another protocol version
+ * than this build (a game update and its script have drifted apart). Reports both
+ * versions through the out-params when they are not NULL. */
+int jer_modstore_script_mismatch(int* seen, int* expected);
+
+/* Re-read CONFIG/modstore.ini, so an added repo appears without a restart. */
+void jer_modstore_repos_reload(void);
 
 /* Fetch the selected repo's index. Returns JER_MODSTORE_OK when the job started;
  * the browser shows the result. */

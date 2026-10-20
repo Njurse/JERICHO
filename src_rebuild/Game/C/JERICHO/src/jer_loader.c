@@ -40,7 +40,11 @@
 /*   default-enabled = false   (true/false; when the key is ABSENT the module  */
 /*                              defaults to DISABLED — it must opt in, never   */
 /*                              inherit "on"; see jerParseModToml)             */
+/*   interface = 2                 the SDK version this mod was built against;  */
+/*                              an exact mismatch is refused, like the runtime  */
+/*                              check (jericho.h: JERICHO_SDK_VERSION)          */
 /*   dependencies = ["a", "b"]   or   dependencies = "a,b"             */
+/*   requires = [...]          the same thing; the repo index calls it that */
 /*   incompatible = ["x", "y"]   or   incompatible = "x,y"   (mods this one */
 /*                              must NOT run beside; see jer_system.c)   */
 /* ------------------------------------------------------------------ */
@@ -195,7 +199,22 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 			else
 				m->defaultEnabled = 0;
 		}
-		else if (strcmp(key, "dependencies") == 0)
+		else if (strcmp(key, "interface") == 0)
+		{
+			/* the SDK version this mod was built against. A number, not a range:
+			 * the host refuses an exact mismatch at registration (jericho.h says to
+			 * bump JERICHO_SDK_VERSION on any change to this header), so the manifest
+			 * says the same thing the runtime gate does. Absent or 0 = not declared,
+			 * which is how every mod predating this key reads. */
+			char norm[16];
+
+			jerTomlValue(val, norm, sizeof(norm));
+			m->interfaceVersion = atoi(norm);
+		}
+		/* `requires` is the spelling a REPO INDEX uses for the same idea (see
+		 * mods.json.example), so a manifest that copies an index entry reads the way
+		 * it was written instead of being silently ignored. */
+		else if (strcmp(key, "dependencies") == 0 || strcmp(key, "requires") == 0)
 			jerTomlDeps(val, m->deps, sizeof(m->deps));
 		else if (strcmp(key, "incompatible") == 0 || strcmp(key, "incompatible-with") == 0)
 			jerTomlDeps(val, m->incompat, sizeof(m->incompat));

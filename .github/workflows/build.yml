@@ -73,6 +73,36 @@ jobs:
       - name: Docs are consistent (links, events, indexed, counted claims)
         run: python tools/doccheck.py
 
+      # The mod interface is what lets a mod be built and released on its own, so
+      # it is checked on every push: each manifest's `interface` against the
+      # engine's JERICHO_SDK_VERSION, no two mods claiming the same custom event
+      # id, ids inside the block their owner was given, and no mod including
+      # another mod's path. Then the SAME checks run against a planted-fault tree,
+      # so a checker that has quietly stopped checking fails here.
+      - name: Mod interface (manifests, custom ids, no cross-mod includes)
+        run: |
+          set -e
+          python3 tools/check_mod_interface.py
+          rm -rf /tmp/iface-faults
+          mkdir -p /tmp/iface-faults/JERICHO/MODS/a /tmp/iface-faults/JERICHO/MODS/b
+          mkdir -p /tmp/iface-faults/src_rebuild/Game/C/JERICHO/include
+          mkdir -p /tmp/iface-faults/src_rebuild/Game/C/JERICHO/docs
+          echo '#define JERICHO_SDK_VERSION 2' > /tmp/iface-faults/src_rebuild/Game/C/JERICHO/include/jericho.h
+          cp src_rebuild/Game/C/JERICHO/docs/interfaces.md /tmp/iface-faults/src_rebuild/Game/C/JERICHO/docs/
+          echo 'id = "a"' > /tmp/iface-faults/JERICHO/MODS/a/mod.toml
+          echo 'interface = 2' >> /tmp/iface-faults/JERICHO/MODS/a/mod.toml
+          echo '#define A_EVENT (JER_EVENT_MODULE_CUSTOM + 7)' > /tmp/iface-faults/JERICHO/MODS/a/a.c
+          echo '#include "../b/b.h"' >> /tmp/iface-faults/JERICHO/MODS/a/a.c
+          echo 'id = "b"' > /tmp/iface-faults/JERICHO/MODS/b/mod.toml
+          echo 'interface = 3' >> /tmp/iface-faults/JERICHO/MODS/b/mod.toml
+          echo '#define B_EVENT (JER_EVENT_MODULE_CUSTOM + 7)' > /tmp/iface-faults/JERICHO/MODS/b/b.c
+          # it must FAIL, and it must fail for the reason we think
+          if python3 tools/check_mod_interface.py --root /tmp/iface-faults; then
+            echo 'check_mod_interface accepted a planted-fault tree' >&2
+            exit 1
+          fi
+          python3 tools/check_mod_interface.py --root /tmp/iface-faults | grep -q 'is already taken by'
+          rm -rf /tmp/iface-faults
       - name: No debug switch changes behaviour
         run: python JERICHO/MODS/mp/tools/check_debug_independence.py
 

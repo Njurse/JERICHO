@@ -101,6 +101,10 @@ set "VALUE="
 call :toml "%SRC%\mod.toml" min_jericho
 set "MMIN=!VALUE!"
 
+set "VALUE="
+call :toml "%SRC%\mod.toml" interface
+set "MIFACE=!VALUE!"
+
 for %%i in ("%SRC%") do set "BASENAME=%%~nxi"
 if /i not "!BASENAME!"=="!MID!" (
 	echo %INFO% the folder is "!BASENAME!" but its mod.toml says id = "!MID!" - they must match, because the store installs to MODS\%MID%>&2
@@ -221,6 +225,11 @@ set "L=  !Q!file!Q!: !Q!!JFILE!!Q!,"
 set "L=  !Q!sha256!Q!: !Q!!SHA!!Q!,"
 >> "%ENTRY%" echo(!L!
 
+if not defined MIFACE goto entry_mincore
+set "L=  !Q!interface!Q!: !MIFACE!,"
+>> "%ENTRY%" echo(!L!
+
+:entry_mincore
 if not defined MMIN goto entry_size
 call :jsonesc "!MMIN!"
 set "L=  !Q!min_jericho!Q!: !Q!!JESC!!Q!,"

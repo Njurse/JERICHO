@@ -443,7 +443,7 @@ extern "C" {
 #endif
 void jer_update_frontend_tick(int onMainMenu);
 int jer_build_is_dev(void);
-void jer_modstore_frontend_tick(void);	/* jer_modstore.c: polls the store's helper */
+void jer_modstore_frontend_tick(int onMainMenu);	/* jer_modstore.c: polls the store's helper */
 void jer_modstore_open_menu(void);	/* jer_modstore.c: open the Mods table menu */
 /* The three host-side actions the Mods menu calls back into. Declared HERE, with
  * C linkage, so the definitions further down inherit it: jer_modstore.c is
@@ -1262,9 +1262,10 @@ void DrawScreen(PSXSCREEN *pScr)
 		}
 				else if (jer_prompt_active())
 		{
-			/* a host prompt takes the screen: the question wrapped and centred, the
-			 * answers centred as a pair, and the screen's own buttons NOT drawn */
-			JerichoDrawPrompt();
+			/* a host prompt takes the screen: the screen's own buttons are NOT drawn.
+			 * The prompt itself is painted from the per-frame hook below, not here --
+			 * a module menu draws on its own path and would otherwise leave an active
+			 * prompt invisible while it still ate the pad. */
 		}
 		else
 		{
@@ -2843,7 +2844,15 @@ void State_FrontEnd(void* param)
 	/* JERICHO: the mod store (JERICHO/src/jer_modstore.c) -- polls a running
 	 * install/remove/index job and draws its own tables. Runs every frontend
 	 * frame, like the updater above: a job is a child process, never a block. */
-	jer_modstore_frontend_tick();
+	/* ...and it is told whether the MAIN MENU is up, for the same reason the updater
+	 * is: the store's prompt must not be raised over the changelog screen. */
+	jer_modstore_frontend_tick(pCurrScreen == &PsxScreens[0] && ScreenDepth == 0);
+
+	/* A host prompt is drawn here rather than on the screen path: it must be
+	 * visible whatever is behind it (a stock screen OR a module menu), and it has
+	 * already suppressed the screen's own buttons. */
+	if (jer_prompt_active())
+		JerichoDrawPrompt();
 
 	/* JERICHO: the Credits page draws its lines over the screen, like a module menu */
 	if (gJerichoCreditsOpen && pCurrScreen == &PsxScreens[JERICHO_MODS_SCREEN])

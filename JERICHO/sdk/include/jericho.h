@@ -15,9 +15,28 @@
  *     data into a DLL without dllimport, so these are compiled in by
  *     premake's auto-scan (see docs/JERICHO/README.md).
  *
- * ABI: this header is the contract. Bump JERICHO_SDK_VERSION on any change
- * that breaks module compatibility; the runtime refuses mismatched modules
- * with a clear reason.
+ * ABI: this header is the contract. JERICHO_SDK_VERSION is that contract's
+ * version, and a module's manifest says which one it was built against
+ * (`interface = N` in mod.toml). MISMATCHES ARE REFUSED WITH A REASON, twice:
+ *
+ *   - at load, for a loadable addon whose registered sdkVersion differs
+ *     (jer_system.c), and
+ *   - before activation, from the manifest, which is what catches a bundled
+ *     mod from another build (the one case the load check cannot see).
+ *
+ * BUMP IT WHEN A MOD COULD BREAK, which is any of:
+ *   - an event id is added, removed or renumbered, or a JER_ARGS_* struct's
+ *     fields change order/size (a module casts through them),
+ *   - a contract header's ids or structs change (see docs/interfaces.md),
+ *   - MOD_CONTEXT / JERICHO_CONTEXT gains, loses or reorders a member, or
+ *     jer_register_module's signature changes.
+ *
+ * Do NOT bump for a comment, a new engine-internal hook no module can see, or a
+ * doc change. The bump is not free: every module must be rebuilt, and every
+ * published package must be re-released with the new `interface` value.
+ *
+ * The custom-event id registry (who owns which JER_EVENT_MODULE_CUSTOM + n) and
+ * the full list of what a mod may rely on live in docs/interfaces.md.
  */
 #ifndef JERICHO_JERICHO_H
 #define JERICHO_JERICHO_H

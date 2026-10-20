@@ -10,6 +10,10 @@
     --allow-missing      a package file that is not present locally is only a
                          warning (for checking an index whose zips live on a
                          release host)
+    --interface <n>      also require every entry's "interface" to be n: the SDK
+                         version the packages were built against. A package on
+                         another interface is refused by the loader at activation,
+                         so a mismatch here is a broken release, not a warning
     --quiet              only print problems
 
 Why this exists: the store trusts the index completely and correctly -- it
@@ -90,7 +94,7 @@ def local_path_for(file_value, index_dir, packages_dir):
     return os.path.join(packages_dir or index_dir, name)
 
 
-def check(path, packages_dir, previous_path, allow_missing, quiet):
+def check(path, packages_dir, previous_path, allow_missing, quiet, expect_interface=None):
     try:
         with open(path, "r", encoding="utf-8") as fh:
             doc = json.load(fh)
@@ -171,6 +175,17 @@ def check(path, packages_dir, previous_path, allow_missing, quiet):
         if min_j is not None and parse_version(min_j) is None:
             err(where, 'bad "min_jericho" (%r)' % (min_j,))
 
+        iface = entry.get("interface")
+        if iface is not None:
+            if not isinstance(iface, int) or iface < 1:
+                err(where, 'bad "interface" (%r) - it is the JERICHO interface (SDK)'
+                           ' version the package was built against, as an integer'
+                    % (iface,))
+            elif expect_interface is not None and iface != expect_interface:
+                err(where, 'built for interface %d, but this is being checked against %d'
+                           ' - the loader refuses that at activation'
+                    % (iface, expect_interface))
+
         requires = entry.get("requires")
         if requires is not None and not isinstance(requires, list):
             err(where, '"requires" must be an array of mod ids')
@@ -246,6 +261,7 @@ def main(argv):
     previous_path = None
     allow_missing = False
     quiet = False
+    expect_interface = None
 
     i = 0
     while i < len(argv):
@@ -262,6 +278,13 @@ def main(argv):
                 print("check_mod_repo: --previous needs a file", file=sys.stderr)
                 return 2
             previous_path = argv[i]
+        elif a == "--interface":
+            i += 1
+            if i >= len(argv) or not argv[i].isdigit():
+                print("check_mod_repo: --interface needs the SDK version this repo is"
+                      " checked against (e.g. 2)", file=sys.stderr)
+                return 2
+            expect_interface = int(argv[i])
         elif a == "--allow-missing":
             allow_missing = True
         elif a == "--quiet":
@@ -290,7 +313,7 @@ def main(argv):
     if packages_dir is None:
         packages_dir = os.path.dirname(os.path.abspath(target))
 
-    check(target, packages_dir, previous_path, allow_missing, quiet)
+    check(target, packages_dir, previous_path, allow_missing, quiet, expect_interface)
 
     for line in warnings:
         print("WARN  " + line)

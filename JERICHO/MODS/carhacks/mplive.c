@@ -4,12 +4,13 @@
  * that city's cars, and have it spawn as a replacement for the vehicle you are
  * driving. The picker itself lives in mp (it is mp's menu), but the two things it
  * cannot know on its own live here, and are asked for over custom JERICHO events
- * (../mp/mp_carquery.h is the one place the ids and structs are written down):
+ * (jer_carquery.h -- a CORE contract header, so this mod builds whether or not
+ * mp is installed -- is the one place the ids and structs are written down):
  *
- *   MP_CARQ_CITIES  "which cities can this session offer?"
- *   MP_CARQ_SLOTS   "which slots may a city be offered in, and what models?"
- *   MP_CARQ_LOAD    "make (city, model) available here"
- *   MP_CARQ_CHOSEN  "the switch happened (or did not): this is what we drive now"
+ *   JER_CARQ_CITIES  "which cities can this session offer?"
+ *   JER_CARQ_SLOTS   "which slots may a city be offered in, and what models?"
+ *   JER_CARQ_LOAD    "make (city, model) available here"
+ *   JER_CARQ_CHOSEN  "the switch happened (or did not): this is what we drive now"
  *
  * LOAD and CHOSEN are two events on purpose. The session is told what this machine drives
  * only after the switch SUCCEEDED (CHOSEN) - telling it at load time announced a car that
@@ -49,11 +50,11 @@
 #include "net.h"
 #include "mplive.h"
 
-#include "../mp/mp_carquery.h"
+#include "jer_carquery.h"
 
 static int ChkMpCities(void* userdata, void* args)
 {
-	MP_CARQ_CITIES_ARGS* a = (MP_CARQ_CITIES_ARGS*)args;
+	JER_CARQ_CITIES_ARGS* a = (JER_CARQ_CITIES_ARGS*)args;
 	int city;
 
 	(void)userdata;
@@ -96,7 +97,7 @@ static int ChkMpCities(void* userdata, void* args)
 
 static int ChkMpSlots(void* userdata, void* args)
 {
-	MP_CARQ_SLOTS_ARGS* a = (MP_CARQ_SLOTS_ARGS*)args;
+	JER_CARQ_SLOTS_ARGS* a = (JER_CARQ_SLOTS_ARGS*)args;
 	int slot;
 
 	(void)userdata;
@@ -128,7 +129,7 @@ static int ChkMpSlots(void* userdata, void* args)
 
 static int ChkMpLoad(void* userdata, void* args)
 {
-	MP_CARQ_LOAD_ARGS* a = (MP_CARQ_LOAD_ARGS*)args;
+	JER_CARQ_LOAD_ARGS* a = (JER_CARQ_LOAD_ARGS*)args;
 	CHK_CAR_ID id;
 	int slot, count = 0, fresh, reused = 0;
 	CHK_CAR_ID was;
@@ -141,7 +142,7 @@ static int ChkMpLoad(void* userdata, void* args)
 
 	a->ok = 0;
 
-	/* NO CONFIG GATE HERE. MP_CARQ_LOAD is only ever fired for a PLAYER'S EXPLICIT
+	/* NO CONFIG GATE HERE. JER_CARQ_LOAD is only ever fired for a PLAYER'S EXPLICIT
 	 * PICK -- mp's picker (mp_session.c) and the sandbox both ask for the car the
 	 * player just chose -- and a pick is itself the request that imports it. That is
 	 * the same rule the frontend car screen already follows: carhacks.c's
@@ -281,7 +282,7 @@ static int ChkMpLoad(void* userdata, void* args)
 	}
 
 	/* NOT advertised here (L1). The session is told this machine drives the car when mp
-	 * reports that the switch happened (MP_CARQ_CHOSEN -> ChkMpChosen below): a load can
+	 * reports that the switch happened (JER_CARQ_CHOSEN -> ChkMpChosen below): a load can
 	 * still fail, or the switch can still not happen, and an advert sent now had every
 	 * other machine build a car nobody was driving. */
 
@@ -320,7 +321,7 @@ static int ChkMpLoad(void* userdata, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
-/* mp says the Change car switch is over (MP_CARQ_CHOSEN; also fired when the player gets into
+/* mp says the Change car switch is over (JER_CARQ_CHOSEN; also fired when the player gets into
  * another car after being on foot).
  *
  *   changed = 1: the car on the road IS (city, model) now - city -1 for the level's own car.
@@ -333,7 +334,7 @@ static int ChkMpLoad(void* userdata, void* args)
  * player switching between two of the level's own cars still has to be told to the others. */
 static int ChkMpChosen(void* userdata, void* args)
 {
-	MP_CARQ_CHOSEN_ARGS* a = (MP_CARQ_CHOSEN_ARGS*)args;
+	JER_CARQ_CHOSEN_ARGS* a = (JER_CARQ_CHOSEN_ARGS*)args;
 	CHK_CAR_ID was, now;
 
 	(void)userdata;
@@ -370,8 +371,8 @@ static int ChkMpChosen(void* userdata, void* args)
 
 void chkMpLiveRegister(JERICHO_CONTEXT* ctx)
 {
-	ctx->jer_register_hook(ctx, MP_CARQ_CITIES, ChkMpCities, NULL, 0);
-	ctx->jer_register_hook(ctx, MP_CARQ_SLOTS, ChkMpSlots, NULL, 0);
-	ctx->jer_register_hook(ctx, MP_CARQ_LOAD, ChkMpLoad, NULL, 0);
-	ctx->jer_register_hook(ctx, MP_CARQ_CHOSEN, ChkMpChosen, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_CARQ_CITIES, ChkMpCities, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_CARQ_SLOTS, ChkMpSlots, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_CARQ_LOAD, ChkMpLoad, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_CARQ_CHOSEN, ChkMpChosen, NULL, 0);
 }

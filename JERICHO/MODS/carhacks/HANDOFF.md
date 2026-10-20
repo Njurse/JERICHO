@@ -113,7 +113,7 @@ other's colours"). See `PALETTES.md` §7.
 
 "The pause menu's `Vehicle Options` picker only shows the host city, so I cannot reach
 another city's cars in game" had one cause: `ChkMpCities` (carhacks/mplive.c) answered
-`MP_CARQ_CITIES` only when the `cross_city_vehicles` config key was on, and that key
+`JER_CARQ_CITIES` only when the `cross_city_vehicles` config key was on, and that key
 defaulted to off — so mp was handed `count = 0` and offered the session's own city alone,
 while the frontend car screen (which has no such gate, because a PICK is what imports the
 car) still browsed every city. `ChkMpLoad` carried the same gate, so a mid-match pick from
@@ -123,7 +123,7 @@ Now:
 
 - both the city answer and the slot answer are owned by **`unlock_extra_vehicles`** — the
   hack that fills the frontend roster — so the two car screens cannot disagree;
-- `MP_CARQ_LOAD` has **no config gate**: a player's explicit pick imports the car in game
+- `JER_CARQ_LOAD` has **no config gate**: a player's explicit pick imports the car in game
   exactly as it already did from the frontend menu;
 - **`cross_city_vehicles` defaults to on**, and the rigs that restore a caller's
   `carhacks.ini` no longer write `cross_city_vehicles = 0` when there was no saved file

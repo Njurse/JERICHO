@@ -122,7 +122,7 @@ void chkNetReleaseDeparted(const int* seen);
 int chkNetReleaseSlotIfUnused(int slot, const char* why);
 
 /* This machine's player switched from `was` to `now`, and the switch SUCCEEDED (mp's
- * MP_CARQ_CHOSEN): move the shared identity, advertise it, and offer the old car's slot back. */
+ * JER_CARQ_CHOSEN): move the shared identity, advertise it, and offer the old car's slot back. */
 void chkNetLocalSwitched(CHK_CAR_ID was, CHK_CAR_ID now);
 
 /* A new level is being built: forget the old level's slot records and deferred releases.

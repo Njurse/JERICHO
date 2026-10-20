@@ -25,6 +25,7 @@
 #include "jer_frontend.h"
 #include "jer_notify.h"
 #include "jer_prompt.h"
+#include "jer_screen.h"	/* jer_screen_active: never prompt over a presentation screen */
 #include "jer_text.h"
 
 #include <stdio.h>
@@ -119,6 +120,9 @@ typedef struct STORE_MOD
 	char sha[STORE_SHA_MAX];
 	char requires[STORE_ID_MAX * 2];
 	char minCore[STORE_VER_MAX];
+	char interfaceVer[8];		/* the index entry's `interface`: the SDK version it was BUILT
+								 * against. Empty = not declared (an entry written before
+								 * the key existed). */
 	int  size;
 	int  defaultEnabled;
 	int  bakeVersion;
@@ -965,6 +969,14 @@ static int StoreIndexParse(const char* json, int len, int repo)
 		JsonString(JsonFindValue(objStart, objEnd, "sha256"), objEnd, m->sha, sizeof(m->sha));
 		JsonString(JsonFindValue(objStart, objEnd, "requires"), objEnd, m->requires, sizeof(m->requires));
 		JsonString(JsonFindValue(objStart, objEnd, "min_jericho"), objEnd, m->minCore, sizeof(m->minCore));
+		/* a number in the index (the packager writes it unquoted), so read it as one
+		 * and keep the text for the row note */
+		{
+			int iface = JsonInt(JsonFindValue(objStart, objEnd, "interface"), objEnd, 0);
+
+			if (iface > 0)
+				snprintf(m->interfaceVer, sizeof(m->interfaceVer), "%d", iface);
+		}
 
 		m->size = JsonInt(JsonFindValue(objStart, objEnd, "size"), objEnd, 0);
 		m->defaultEnabled = JsonInt(JsonFindValue(objStart, objEnd, "default_enabled"), objEnd, 0);
@@ -1280,6 +1292,19 @@ static void StoreRowState(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int n
 	{
 		it->state = JER_MODSTORE_ST_NEEDS_CORE;
 		snprintf(note, (size_t)noteMax, "needs JERICHO %s or newer", m->minCore);
+		it->canInstall = 0;
+		return;
+	}
+
+	/* A package built against another INTERFACE cannot be installed at all: the
+	 * loader refuses it at activation, so downloading it would only cost the player
+	 * a restart and a confusing refusal. This is the store-side half of that check;
+	 * jer_system.c makes it at activation, from the manifest. */
+	if (m->interfaceVer[0] != 0 && atoi(m->interfaceVer) != JERICHO_SDK_VERSION)
+	{
+		it->state = JER_MODSTORE_ST_NEEDS_CORE;
+		snprintf(note, (size_t)noteMax, "built for interface %s, this build is %d",
+			m->interfaceVer, JERICHO_SDK_VERSION);
 		it->canInstall = 0;
 		return;
 	}
@@ -3179,7 +3204,7 @@ int jer_modstore_module_at(int index, JER_MODSTORE_MODULE* out)
 	return 1;
 }
 
-void jer_modstore_frontend_tick(void)
+void jer_modstore_frontend_tick(int onMainMenu)
 {
 	int reopen;
 
@@ -3214,15 +3239,20 @@ void jer_modstore_frontend_tick(void)
 		}
 	}
 
-	/* a Driver 1 bake older than the tooling beside it: ask ONCE, on the first
-	 * frame that is free of a job, so an update does not silently leave the cars
-	 * baked by the previous tooling. Asking only when a bake EXISTS is deliberate:
-	 * a player with no Driver 1 data has nothing to re-bake. */
-	if (gStore.bakePrompt && !StoreJobRunning())
+	/* A Driver 1 bake older than the tooling beside it: ask ONCE, and only while
+	 * the MAIN MENU is up with no presentation screen in front of it. Otherwise
+	 * the question lands on top of the update changelog or a compile screen - both
+	 * of which are the store's own presentation screens, and a prompt over one of
+	 * them is unreadable. The flag stays set until it is actually asked, so
+	 * waiting for the menu costs nothing. Asking only when a bake EXISTS is
+	 * deliberate: a player with no Driver 1 data has nothing to re-bake. */
+	if (gStore.bakePrompt && !StoreJobRunning() && onMainMenu && !jer_screen_active())
 	{
-		gStore.bakePrompt = 0;
-
-		if (StoreBakeStale())
+		if (!StoreBakeStale())
+		{
+			gStore.bakePrompt = 0;			/* nothing to ask about */
+		}
+		else
 		{
 			jer_log("[modstore] the Driver 1 bake is older than the tooling (baked %d, expected %d)\n",
 				StoreBakedVersion(), StoreToolingBakeVersion());
@@ -3230,6 +3260,8 @@ void jer_modstore_frontend_tick(void)
 			/* a test-lever run must not raise this: it is a headless check, and the
 			 * prompt would be answered by whatever the pad happens to read, which
 			 * starts a real bake in the middle of a test */
+			gStore.bakePrompt = 0;			/* asked once, at the menu */
+
 			if (gStore.testLever == STORE_TEST_NONE)
 				jer_prompt_begin("Your Driver 1 cars were baked with older tooling. Re-bake them now?", StoreRebakeYes);
 		}

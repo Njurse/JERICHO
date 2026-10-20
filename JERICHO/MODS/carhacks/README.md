@@ -100,7 +100,7 @@ and seven source files, one concern each:
 | `carhacks.c` / `.h` | the module entry, the hook table, the availability hack, and the shared logging rule |
 | `carimport.c` / `.h` | the **cross-city import**: the config, the slot bookkeeping, the per-slot source city |
 | `carselect.c` | the in-game car-select menu ([`CARSELECT.md`](CARSELECT.md)) |
-| `mplive.c` / `mplive.h` | the live car queries mp's pause picker asks (`MP_CARQ_CITIES` / `_SLOTS` / `_LOAD` / `_CHOSEN`) — which cities, which slots, make one available, and what we ended up driving ([`MP_ADAPTER.md`](MP_ADAPTER.md)) |
+| `mplive.c` / `mplive.h` | the live car queries mp's pause picker asks (`JER_CARQ_CITIES` / `_SLOTS` / `_LOAD` / `_CHOSEN`) — which cities, which slots, make one available, and what we ended up driving ([`MP_ADAPTER.md`](MP_ADAPTER.md)) |
 | `spawn.c` | the `spawn_imports` measurement lever |
 | `net.c` / `net.h` | the multiplayer channel and the import-set agreement ([`MP_ADAPTER.md`](MP_ADAPTER.md)) |
 | `carid.h` | a car's identity — **(city, model)** — and its wire form |
@@ -385,7 +385,7 @@ so carhacks never swallows an event another module needs.
 | `JER_EVENT_LEVEL_LAUNCH` | 0 | deliberately a **no-op**, and kept so nobody "fixes" it back: it fires *before* the level's car data exists, so publishing the import set here sent an empty one. The real moment is when the set finishes building |
 | `JER_EVENT_NET_RECV` | 0 | the mp channel |
 | `JER_EVENT_FRAME` | 0 | three of them — the menu's input, the net keepalive, and the spawn lever. Each is cheap when idle |
-| `MP_CARQ_CITIES` / `_SLOTS` / `_LOAD` / `_CHOSEN` | 0 | **custom ids fired by mp**, not by the engine: its pause picker asks which cities / which slots, asks for one car to be made available, then reports what it switched to. See [`MP_ADAPTER.md`](MP_ADAPTER.md) |
+| `JER_CARQ_CITIES` / `_SLOTS` / `_LOAD` / `_CHOSEN` | 0 | **custom ids fired by mp**, not by the engine: its pause picker asks which cities / which slots, asks for one car to be made available, then reports what it switched to. See [`MP_ADAPTER.md`](MP_ADAPTER.md) |
 
 ---
 

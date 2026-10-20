@@ -188,7 +188,7 @@ static int chkNetCarWantedBy(CHK_CAR_ID car, int* who)
 /* THE release routine. Every path that can leave a resident slot unused comes here - a peer
  * leaving (chkNetReleaseDeparted), a peer changing car (chkNetUnbindChangedPeers, which covers
  * a switch to a domestic car too), this machine's player changing car (chkNetLocalSwitched, from
- * mp's MP_CARQ_CHOSEN) and a load that did not end in a switch (mplive.c) - so the rule is
+ * mp's JER_CARQ_CHOSEN) and a load that did not end in a switch (mplive.c) - so the rule is
  * written once (slotrelease.h, chkReleaseVerdict):
  *
  *   free the slot only when NO player's identity names its car AND NO car is on it.
@@ -509,7 +509,7 @@ void chkNetReleaseDeparted(const int* seen)
 }
 
 /* This machine's player is now driving `now` (it was `was`) - a successful mid-match switch, told
- * by mp's MP_CARQ_CHOSEN after the car on the road really changed (mplive.c). The shared identity
+ * by mp's JER_CARQ_CHOSEN after the car on the road really changed (mplive.c). The shared identity
  * moves here and ONLY here, after the load succeeded (an advert for a car that then failed to
  * load told every machine to build a car nobody drove):
  *

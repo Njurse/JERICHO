@@ -12,7 +12,7 @@
 #include "jer_config.h"
 #include "jer_pause_menu.h"
 #include "jer_map.h"		/* jer_map_spool_to: a hop must stream its destination */
-#include "../mp/mp_carquery.h"	/* the car-source contract: carhacks answers MP_CARQ_* */
+#include "jer_carquery.h"	/* the car-source contract: carhacks answers JER_CARQ_* */
 
 #include "driver2.h"
 #include "cars.h"
@@ -462,7 +462,7 @@ static const char* const gSandboxAIModeNames[3] = { "Civilian", "Cop", "Lead" };
 /* building it is a crash rather than a cosmetic glitch.                 */
 /*                                                                     */
 /* So we ask the two questions the rest of the game asks, as the SAME    */
-/* custom events mp's Change car uses (MP_CARQ_*, ../mp/mp_carquery.h):  */
+/* the live-car query contract, a CORE header (JER_CARQ_*, jer_carquery.h): */
 /* carhacks answers when it is installed, and its answer is the only one */
 /* that can be trusted, because its cross-city import is what decides    */
 /* what is really holdable. With nothing to answer -- no carhacks, or    */
@@ -577,7 +577,7 @@ static int SandboxCarSlotFor(int city, int model)
  * one the rest of the game would make too. Returns -1 when it cannot be had. */
 static int SandboxCarMakeResident(int city, int model)
 {
-	MP_CARQ_LOAD_ARGS la;
+	JER_CARQ_LOAD_ARGS la;
 	int slot;
 
 	slot = SandboxCarSlotFor(city, model);
@@ -592,7 +592,7 @@ static int SandboxCarMakeResident(int city, int model)
 	la.city = city;
 	la.model = model;
 
-	jer_fire(MP_CARQ_LOAD, &la);
+	jer_fire(JER_CARQ_LOAD, &la);
 
 	if (!la.ok)
 		return -1;
@@ -623,7 +623,7 @@ static int SandboxCityInList(int city)
  * which is why the fallback used to offer Chicago's cars on a Rio map). */
 static void SandboxCarSourceRefresh(void)
 {
-	MP_CARQ_CITIES_ARGS ca;
+	JER_CARQ_CITIES_ARGS ca;
 	int n;
 
 	gSandboxCityCount = 0;
@@ -631,7 +631,7 @@ static void SandboxCarSourceRefresh(void)
 	memset(&ca, 0, sizeof(ca));
 	ca.cities = gSandboxCities;
 	ca.max = SBX_MAX_CITIES;
-	jer_fire(MP_CARQ_CITIES, &ca);
+	jer_fire(JER_CARQ_CITIES, &ca);
 
 	n = (ca.count > 0) ? ca.count : 0;
 
@@ -656,13 +656,13 @@ static void SandboxCarSourceRefresh(void)
 
 static void SandboxCarListRefresh(void)
 {
-	/* MP_CARQ_SLOTS fills parallel slot/model arrays, but its "slot" is a CITY-LIST
+	/* JER_CARQ_SLOTS fills parallel slot/model arrays, but its "slot" is a CITY-LIST
 	 * index (carNumLookup[city][slot]), NOT a resident slot -- so only the models
 	 * are kept, and the slot is resolved from them when it is needed. Reading one as
 	 * the other indexes the wrong table. */
 	int offerModels[SBX_MAX_CARS];
 	int listSlots[SBX_MAX_CARS];
-	MP_CARQ_SLOTS_ARGS sa;
+	JER_CARQ_SLOTS_ARGS sa;
 	extern char carNumLookup[CITY_COUNT][10];
 	int city = SandboxActiveCity();
 	int i, k, n;
@@ -705,7 +705,7 @@ static void SandboxCarListRefresh(void)
 	sa.slots = listSlots;
 	sa.models = offerModels;
 	sa.max = SBX_MAX_CARS;
-	jer_fire(MP_CARQ_SLOTS, &sa);
+	jer_fire(JER_CARQ_SLOTS, &sa);
 
 	n = (sa.count > 0) ? sa.count : 0;
 

@@ -101,6 +101,10 @@ src_rebuild/tools/gen_exports/     maps the linker map to exports.def
   `mods.json` plus a package per mod), the index and package format, the hash and
   version rules the store enforces, and the five-minute local test recipe
   (`JERICHO/CORE/modstore/test`).
+- [`interfaces.md`](interfaces.md) — **the mod interface**: the SDK version a
+  manifest declares and what forces a bump, the custom-event id registry (who owns
+  which `JER_EVENT_MODULE_CUSTOM + n`), the core contract headers, and the
+  manifest and index keys a mod or a repo may rely on.
 - [`modding.md`](modding.md) — **publishing a mod in five commands**: package it,
   rebuild the index, validate it, serve it, publish it. Plus the scaffold for a
   self-contained repo with a CI workflow, and the rules that keep a repo

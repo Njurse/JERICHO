@@ -107,7 +107,11 @@ void jer_modstore_init(const char* rootDir);
 /* Every frontend frame, from FEmain.c next to the updater's own tick: polls a
  * running job, redraws the tables, and opens the Mods menu in the mods screen's
  * place. */
-void jer_modstore_frontend_tick(void);
+/* onMainMenu: non-zero when the MAIN MENU is the current screen and nothing else
+ * is up (the frontend passes what it passes the updater). A prompt must not be
+ * raised over the update changelog or another presentation screen, so the store
+ * waits for this rather than firing on the first free frame. */
+void jer_modstore_frontend_tick(int onMainMenu);
 
 /* Non-zero while a job is running (install/remove/index/rebake). The frontend
  * keeps running meanwhile: the helper is a child process, never a block. */

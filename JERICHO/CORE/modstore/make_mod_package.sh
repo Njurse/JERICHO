@@ -81,6 +81,7 @@ MAUTHOR=$(toml_get "$SRC/mod.toml" author)
 MDESC=$(toml_get "$SRC/mod.toml" description)
 MREQ=$(toml_get "$SRC/mod.toml" requires)
 MMIN=$(toml_get "$SRC/mod.toml" min_jericho)
+MIFACE=$(toml_get "$SRC/mod.toml" interface)
 
 BASENAME=$(basename "$SRC")
 [ "$BASENAME" = "$MID" ] || die "the folder is '$BASENAME' but its mod.toml says id = \"$MID\" - they must match, because the store installs to MODS/<id>/"
@@ -176,6 +177,9 @@ fi
 		printf '    "requires": [%s],\n' "$(printf '%s' "$MREQ" | sed 's/[ 	]*,[ 	]*/, /g; s/^/"/; s/$/"/')"
 	fi
 	[ -z "$MMIN" ] || printf '    "min_jericho": "%s",\n' "$(jsonesc "$MMIN")"
+	# the interface the package was built against: a core on another one refuses it
+	# at activation, so the index says it up front and the store can hide the row
+	[ -z "$MIFACE" ] || printf '    "interface": %s,\n' "$MIFACE"
 	printf '    "size": %s\n' "$SIZE"
 	printf '  }'
 } > "$OUT/$MID-$MVER.entry.json"
