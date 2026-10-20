@@ -1913,6 +1913,11 @@ int gMultiStep = 0;
 	// State_GameLoop), which is where the F12 handler reads the window too.
 	int gScreenshotFrame = -1;
 
+	// JERICHO: debug/test - request the engine's own pause-menu restart on gameplay
+	// frame N, so the restart lifecycle (and the palette reload bug) can be tested
+	// without driving the pause menu. -1 = never. Pair with -frames M where M > N.
+	int gRestartFrame = -1;
+
 	// JERICHO: debug/test - the same, for FRONTEND frames. -shot counts gameplay frames
 	// (gRunFrames), which never advance while the menus are up, so a menu can only be
 	// captured with this. Set by -shotfront <frame>; consumed in FEmain.c.
@@ -2285,6 +2290,15 @@ void DrawGame(void)
 		gScreenshotFrame = -1;
 		PsyX_TakeScreenshot();
 		printInfo("JERICHO-SHOT: wrote SCREENSHOT.BMP on frame %d\n", gRunFrames);
+	}
+
+	// JERICHO: -restart <frame> -- fire the same GAMEMODE_RESTART the pause menu
+	// uses, once, so the restart lifecycle can be exercised headlessly.
+	if (gRestartFrame >= 0 && gRunFrames >= gRestartFrame)
+	{
+		gRestartFrame = -1;
+		printInfo("JERICHO-RESTART: requesting GAMEMODE_RESTART on frame %d\n", gRunFrames);
+		EndGame(GAMEMODE_RESTART);
 	}
 #endif
 
@@ -2883,6 +2897,13 @@ int redriver2_main(int argc, char** argv)
 			// check). Pair with -frames M where M > N, since the -frames exit wins.
 			if (i + 1 < argc)
 				gScreenshotFrame = atoi(argv[++i]);
+		}
+		else if (!strcmp(argv[i], "-restart"))
+		{
+			// JERICHO: request GAMEMODE_RESTART on gameplay frame N, so the restart
+			// lifecycle can be tested headlessly. Pair with -frames M > N.
+			if (i + 1 < argc)
+				gRestartFrame = atoi(argv[++i]);
 		}
 		else if (!strcmp(argv[i], "-seed"))
 		{

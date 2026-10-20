@@ -1274,13 +1274,38 @@ int chkImportHotLoad(int slot)
 
 	for (i = CHK_IMPORT_SPARE_FIRST; i < CHK_IMPORT_MAX_SLOTS; i++)
 	{
-		int city, model;
+		int city, model, curCity, curModel;
 
 		if (!gChkSet[i].used || gChkSet[i].model < 0)
 			continue;
 
 		model = gChkSet[i].model;
 		city = gChkSet[i].city;
+		curCity = GetCarModelSourceCity(i);
+		curModel = residentCarModels[i];
+
+		/* JERICHO: a slot that already holds a DIFFERENT imported car is overwritten in
+		 * place - by an agreed-set adoption (chkNetApplyAgreedSet), a peer fold, or the
+		 * local change path. Its pins, palette rows, wheel palette row and hot-load
+		 * geometry belong to the old city, and the new palette upload must not find the
+		 * old row state. Run the SAME release a car change runs before pointing the slot
+		 * at the new car; otherwise the old pins/rows linger and the new model reuses
+		 * whatever was uploaded for the previous one - "wrong colours after a switch".
+		 *
+		 * Only a built IMPORT is rebuilt: JerReleaseCarGeometry deliberately leaves the
+		 * level's own geometry alone (source < 0), and a host slot is not repurposed
+		 * here. */
+		if (curCity >= 0 && (curCity != city || curModel != model))
+		{
+			int released = JerReleaseCarSlot(i);
+
+			printInfo("[carhacks] hot load: slot %d was %s model %d, now %s model %d - released %d resource(s) first\n",
+				i,
+				(curCity >= 0 && curCity < CHK_CAR_CITY_COUNT) ? chkCityName(curCity) : "?",
+				curModel,
+				(city >= 0 && city < CHK_CAR_CITY_COUNT) ? chkCityName(city) : "level",
+				model, released);
+		}
 
 		residentCarModels[i] = model;
 		JerSetCarModelSource(i, city);

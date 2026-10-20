@@ -1426,6 +1426,24 @@ static int SetIndexInList(int* sets, int n, int set)
 	return -1;
 }
 
+// JERICHO: the same, for the pin walk's parallel sets[]/setCity[] arrays. A set NUMBER is
+// per-city: NEWYORK set 1 and MIAMI set 1 are different pages, so merging them by number
+// alone pinned only the first city's copy. That left every later city's set 1 (and any
+// other number two cities share) with no pin, while its polys still baked an index - the
+// readiness gate now reports exactly that, and this is the lookup that keeps them apart.
+static int SetIndexInCityList(const int* sets, const int* cities, int n, int set, int city)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+	{
+		if (sets[i] == set && cities[i] == city)
+			return i;
+	}
+
+	return -1;
+}
+
 // Whether a set is already in a collected list.
 static int SetInList(int* sets, int n, int set)
 {
@@ -1805,6 +1823,7 @@ static unsigned char sPalRowsDone[CIV_CLUT_ROWS];	// JERICHO: which civ_clut row
 							// first call never got its rows; it is now
 							// driven by "needed and not yet done".
 static int sPalUploaded;		// JERICHO: how many CLUT slots it wrote (0 = nothing, the interesting failure)
+static int sPalRowsForgotten;		// JERICHO: rows a slot release gave back, so the next user re-uploads them
 static int sPinSet[CAR_PIN_MAX];		// the set number the CAR asks for
 static int sPinIndex[CAR_PIN_MAX];		// the index its page is loaded at
 // JERICHO: the old `sPinSlot` meant TWO things - the resident slot that owned the pin
@@ -2300,6 +2319,29 @@ int CarSlotResReport(void)
 void JerHotLoadCarTpages(void)
 {
 	LoadImportedTPages();
+}
+
+// JERICHO: give one import-bank civ_clut row BACK to the pool.
+//
+// A row is recycled by CarAllocSetRow (the lowest free row is handed out again), but the
+// upload state is keyed by ROW and used to outlive its owner: a slot released while its
+// rows were marked done left `sPalRowsDone[row]` set, so the next (city,set) that took the
+// row never re-uploaded and drew the previous car's colours. That is the "wrong colours
+// after a car switch" failure. Clearing the flag here makes CarImportPin's
+// "needed and not yet done" test see the row again, and zeroing the row means a draw in
+// between falls back to slot 0 (the page's own CLUT) instead of a stale foreign palette.
+void CarImportPaletteRowForget(int row)
+{
+	if (row < CIV_CLUT_IMPORT_ROW || row >= CIV_CLUT_ROWS)
+		return;
+
+	if (sPalRowsDone[row])
+	{
+		sPalRowsDone[row] = 0;
+		sPalRowsForgotten++;
+	}
+
+	memset(&civ_clut[row][0][0], 0, sizeof(civ_clut[0]));
 }
 
 void CarImportPin(void)
@@ -2997,6 +3039,29 @@ void CarImportDumpState(void)
 			sRemapTo[i], tpagepos[sRemapTo[i] - 100].x, tpagepos[sRemapTo[i] - 100].y, sRemapTo[i] - 100);
 	}
 
+	// JERICHO: the per-slot set -> row -> page map, at exit. This is the gate's audit:
+	// every imported slot that still has a body set without a live pin, a mapped row, a
+	// placed page or an uploaded row is named, and the summary line is what a rig fails on.
+	{
+		int slot, miss = 0, nslots = 0;
+		int verbose = (getenv("JERICHO_DIAG_SLOT_MAP") != NULL);
+
+		for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+		{
+			if (GetCarModelSourceCity(slot) < 0 || sModelSetCount[slot] == 0)
+				continue;
+
+			nslots++;
+			miss += CarImportSlotMapReport(slot, verbose);
+		}
+
+		if (miss > 0)
+			printInfo("cross-city: slotmap: %d body set(s) across %d imported slot(s) are NOT READY\n",
+				miss, nslots);
+		else if (verbose && nslots > 0)
+			printInfo("cross-city: slotmap: all %d imported slot(s) ready\n", nslots);
+	}
+
 	CarImportDumpPageRefs();
 	CarPalRowReport();
 }
@@ -3037,6 +3102,138 @@ static void CarImportPageRect(unsigned int page, int* px, int* py)
  *
  * Returns 0 when the slot has no built model yet, so a caller can tell "not yet"
  * from "built wrong" and leave the former alone. */
+int CarImportSlotMissingSets(int slot, int forDraw, int* missing, int max)
+{
+	int city, k, n = 0;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0)
+		return 0;			/* the level's own car: no import sets to wait for */
+
+	for (k = 0; k < sModelSetCount[slot]; k++)
+	{
+		int set = sModelSet[slot][k];
+		int row = CarPalIndexInCityFor(set, city);
+		int p, pinned = 0, placed = 0, uploaded = 0, ok;
+
+		for (p = 0; p < sPinCount; p++)
+		{
+			if (sPinSet[p] != set || sPinCity[p] != city)
+				continue;
+
+			pinned = 1;
+
+			if (sPinPool[p] >= 0 || sPinTexSlot[p] >= 0)
+				placed = 1;
+
+			break;
+		}
+
+		if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS)
+			uploaded = (sPalRowsDone[row] != 0);
+
+		ok = pinned && row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS;
+
+		if (forDraw)
+			ok = ok && placed && uploaded;
+
+		if (!ok)
+		{
+			if (missing != NULL && n < max)
+				missing[n] = set;
+
+			n++;
+		}
+	}
+
+	return n;
+}
+
+/* JERICHO: the set -> civ_clut row -> pinned page map for ONE imported resident slot.
+ *
+ * This is the opt-in answer to "why is this car's colour/texture wrong": every set its
+ * built model names, the row that set resolved to, the page index the pin holds, whether
+ * that pin is placed (pool or world slot), and whether the row was uploaded. Run with
+ * JERICHO_DIAG_SLOT_MAP=1; the per-slot NOT READY line is always printed when a body set is
+ * missing, so a failed gate is visible even without the lever.
+ *
+ * Returns the number of body sets that are not ready (no pin, no import-bank row, unplaced
+ * page, or unuploaded row). Called on a readiness transition and for every imported slot in
+ * CarImportDumpState. */
+int CarImportSlotMapReport(int slot, int verbose)
+{
+	int city, k, sets = 0, missing = 0;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0)
+		return 0;
+
+	for (k = 0; k < sModelSetCount[slot]; k++)
+	{
+		int set = sModelSet[slot][k];
+		int row = CarPalIndexInCityFor(set, city);
+		int p, pinned = 0, placed = 0, uploaded = 0, page = -1;
+		const char* where = "unplaced";
+		char rowbuf[16], pagebuf[16];
+
+		sets++;
+
+		for (p = 0; p < sPinCount; p++)
+		{
+			if (sPinSet[p] != set || sPinCity[p] != city)
+				continue;
+
+			pinned = 1;
+			page = sPinIndex[p];
+
+			if (sPinPool[p] >= 0)
+				where = "pool";
+			else if (sPinTexSlot[p] >= 0)
+				where = "world";
+
+			if (sPinPool[p] >= 0 || sPinTexSlot[p] >= 0)
+				placed = 1;
+
+			break;
+		}
+
+		if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS)
+			uploaded = (sPalRowsDone[row] != 0);
+
+		snprintf(rowbuf, sizeof(rowbuf), "%d", row);
+		snprintf(pagebuf, sizeof(pagebuf), "%d", page);
+
+		if (!pinned || row < CIV_CLUT_IMPORT_ROW || row >= CIV_CLUT_ROWS || !placed || !uploaded)
+			missing++;
+
+		if (verbose)
+			printInfo("cross-city: slotmap - slot %d (%s model %d): set %d -> civ_clut row %s -> page %s (%s%s; row %s)\n",
+				slot, LevelNames[city], residentCarModels[slot], set,
+				(row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS) ? rowbuf : "UNMAPPED",
+				(pinned && page >= 0) ? pagebuf : "MISSING",
+				where,
+				pinned ? "" : ", no live pin",
+				uploaded ? "uploaded" : "NOT uploaded");
+	}
+
+	if (missing > 0)
+		printInfo("cross-city: slotmap - slot %d (%s model %d): %d of %d body set(s) NOT READY\n",
+			slot, LevelNames[city], residentCarModels[slot], missing, sets);
+	else if (verbose)
+		printInfo("cross-city: slotmap - slot %d (%s model %d): all %d body set(s) ready\n",
+			slot, LevelNames[city], residentCarModels[slot], sets);
+
+	return missing;
+}
+
 int JerCarImportHealth(int slot, int* outPolys, int* outOnPinned, int* outPalUploaded, int* outPalBad)
 {
 	CAR_MODEL* models[2];
@@ -3567,7 +3764,7 @@ int JerReleaseCarSlot(int slot)
 		int reclaimed = CarImportReclaimRows();
 
 		if (reclaimed > 0)
-			printInfo("cross-city: reclaimed %d guest palette row(s) after releasing slot %d\n",
+			printInfo("cross-city: reclaimed %d palette row(s) after releasing slot %d - their contents and upload flags are cleared, so the next (city,set) that takes a row re-uploads it; per-city wheel CLUT ids stay cached (their VRAM rows are in the lower pool's write-once cursor region)\n",
 				reclaimed, slot);
 	}
 
@@ -3778,7 +3975,7 @@ void LoadImportedTPages(void)
 			{
 				int set = (spec + k >= 0 && spec + k < 12) ? specTpages[src][spec + k] : 0;
 
-				int at = (set != 0) ? SetIndexInList(sets, nsets, set) : -1;
+				int at = (set != 0) ? SetIndexInCityList(sets, setCity, nsets, set, src) : -1;
 
 				if (at >= 0)
 					setMask[at] |= CarPinOwnerBit(i);	// taken already: this car owns it too
@@ -3813,7 +4010,7 @@ void LoadImportedTPages(void)
 				for (k = 0; k < count; k++)
 				{
 					int set = CarModelSet(i, k);
-					int at = (set != 0) ? SetIndexInList(sets, nsets, set) : -1;
+					int at = (set != 0) ? SetIndexInCityList(sets, setCity, nsets, set, src) : -1;
 
 					if (at >= 0)
 						setMask[at] |= CarPinOwnerBit(i);
@@ -3851,7 +4048,7 @@ void LoadImportedTPages(void)
 			for (k = 0; k < count; k++)
 			{
 				int set = (count == 6) ? carTpages[src][k] : CarModelSet(i, k);
-				int at = (set != 0) ? SetIndexInList(sets, nsets, set) : -1;
+				int at = (set != 0) ? SetIndexInCityList(sets, setCity, nsets, set, src) : -1;
 
 				if (at >= 0)
 					setMask[at] |= CarPinOwnerBit(i);
@@ -3944,7 +4141,10 @@ void LoadImportedTPages(void)
 		int npalettes;
 		char* buf;
 
-		if (set == 0 || SetInList(sets, i, set))
+		// Every entry is unique by (set, city) - the car and wheel loops use
+		// SetIndexInCityList - so this walk must NOT skip a set number that an earlier
+		// city already contributed: MIAMI set 1 and NEWYORK set 1 are different pages.
+		if (set == 0)
 			continue;
 
 		// JERICHO-DIAG: every candidate, before any guard can hide it - which slot it

@@ -631,24 +631,51 @@ scan (rows `0..7`).
   free row from `sPoolNextRow` (starts at `CIV_CLUT_IMPORT_ROW`). `CarPalIndexInCity` is
   **lookup-only** for guests, so the deferred lump walk and the pin never allocate a row
   nobody reads.
-- **Lifetime:** rows are sticky per `(city, set)` until the level reset
-  (`CarImportCityBandReset` / `CarImportResetState`) — the same lifetime the old
-  per-city band had — so a set keeps its row across a hot-load and a slot reuse. Never
-  freed mid-level.
+- **Lifetime:** rows are sticky per `(city, set)` while a live car names that set. When the
+  last live model naming it goes away, `CarImportReclaimRows` gives the row back to the
+  pool and forgets everything keyed by it — contents, upload flag, colour-column coverage
+  and the bake/collision census (`CarImportPaletteRowForget`) — so the next owner re-uploads
+  instead of wearing the previous car's palette. The deferred palette lump is KEPT after an
+  upload (it used to be NULLed, which made the forget a no-op); it is released at level
+  reset by `CarImportPaletteReset`.
+- **Wheel palette rows (sets 125..127):** their row mapping and contents are reclaimed like
+  any other, but the VRAM CLUT id cached in `sWheelPalClut[city][hub]` deliberately survives
+  a switch. It is allocated from the lower pool's write-once CLUT cursor region
+  (`JerLowerPoolClutCursor` / `JerLowerPoolClutAdvance`), which nothing hands back or
+  reuses, so the id stays valid for the next car of that city. Clearing it would make every
+  switch burn a fresh CLUT row and walk the column to its end.
 - **Capacity:** a 5-city mix is 5 slots × 2–4 sets ≈ **10–20 rows ≤ 24**. The worst case
   (7 slots × 4 = 28) overruns the pool, so exhaustion refuses cleanly: the set falls back
   to the city's first allocated row, or `CIV_CLUT_IMPORT_ROW` — never below row 8, so no
   host-row leak.
-- **Collision-free by construction:** the pool cursor never reuses a row, so two sets can
-  no longer share a row; the exit report's `COLLISION` line becomes a canary rather than a
-  thing that fires.
+- **Collision-free by construction:** a set only ever takes a row that no other live
+  `(city,set)` owns (`CarRowInUse`), and a reclaimed row is handed out only after it has
+  been forgotten, so two live sets cannot share a row; the exit report's `COLLISION` line
+  becomes a canary rather than a thing that fires.
 - **The extra-panels fix is a consequence:** set 6 (and 7, 8, …) get a row of their own,
   so `CarImportPin` re-points that row's slot 0 to the set's *own* page CLUT and the panel
   stops wearing the first page's palette. Sets whose lump carries colour-variant data still
   get those rows filled; sets with none keep slot 0 (the page's own CLUT), which is already
   handled end to end.
 
+**Readiness is a gate, not a hope.** `JerCarSlotState` is the one decision on whether a slot
+can be handed out (cars.h). For an imported slot it now requires more than a built mesh:
+every set the model names must have a live pin for that city (`CarPinRecord`) and a mapped
+import-bank `civ_clut` row (`CarAllocSetRow`), otherwise it answers `JER_CAR_SLOT_NOT_READY`.
+The draw path is one step stricter (`JerCarSlotDrawable`, after `CarImportPin`): the row must
+be uploaded and the page placed. Traffic/player spawn paths already consult
+`JerCarSlotUsable`, so they cannot choose an unready slot; a car already on the road shows
+mp's host-car-1 grey stand-in (extended to single-player) until its slot is drawable, then
+repoints back. One log line per NOT_READY transition names the slot, city, model and sets.
+
+**The dump that explains a failure** is `JERICHO_DIAG_SLOT_MAP=1`: on a readiness transition
+and at exit, every imported resident slot prints `set -> civ_clut row -> pinned page index`
+with `placed` (pool/world/unplaced), `row uploaded/NOT uploaded` and `no live pin` detail.
+The per-slot `slotmap - ... NOT READY` line and the exit
+`slotmap: N body set(s) ... are NOT READY` summary print even without the lever, which is
+what the rig fails on.
+
 **The rig that keeps this honest** is `tools/chk_d1_cities.sh`: nothing else in the tree
 enumerates cities past 3, so a Driver 1 defect could not have been seen at all. It imports
-cities 4–8 and fails on a car that did not load *or* a refused block, which is how the
-five-city case above was found.
+cities 4–11 (including the Euro-43 beta, city 11) and fails on a short page check, a refused
+block, a palette gap *or* a slotmap miss, which is how the five-city case above was found.
