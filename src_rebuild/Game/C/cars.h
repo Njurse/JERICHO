@@ -201,10 +201,14 @@ enum
 	JER_CAR_SLOT_OK = 0,
 	JER_CAR_SLOT_OUT_OF_RANGE,	/* < 0 or >= MAX_CAR_RESIDENT_MODELS */
 	JER_CAR_SLOT_NO_MESH,		/* in range, but nothing was built in that slot */
+	JER_CAR_SLOT_NOT_READY,		/* imported slot: a set its model names has no live pin
+					 * or no mapped import-bank civ_clut row yet */
 };
 
 extern int JerCarSlotState(int slot);
 extern int JerCarSlotUsable(int slot);			/* == (state == JER_CAR_SLOT_OK) */
+extern int JerCarSlotDrawable(int slot);		/* usable AND, for an import, rows uploaded
+							 * and pages placed - checked after CarImportPin */
 extern const char* JerCarSlotRefusal(int slot);		/* NULL when usable, else why not */
 
 #endif

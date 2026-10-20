@@ -3782,14 +3782,16 @@ void DrawCar(CAR_DATA* cp, int view)
 	
 	model = cp->ap.model;
 
-	// JERICHO: no geometry for this slot in this level (its model was never
-	// loaded) -> there is nothing to draw, and the draw path dereferences the
-	// model (the one shared rule, cars.h). Skip the car rather than fault. InitPlayer
-	// clamps an unavailable player car to a resident slot, so this is a backstop.
-	if (!JerCarSlotUsable(model))
+	// JERICHO: no usable geometry for this slot, or an imported slot whose sets are not
+	// pinned/mapped/uploaded after CarImportPin. Drawing it would dereference a model
+	// whose pages are not in VRAM (or read the level's own materials), so refuse here.
+	// InitPlayer clamps an unavailable player car to a resident slot, so this is a
+	// backstop - and the grey stand-in below takes over when one is available.
+	if (!JerCarSlotDrawable(model))
 	{
 		if (jerDiagCarDraw())
-			printInfo("JERICHO-DIAG CARDRAW: SKIP car=%d model=%d (no geometry)\n", cp->id, model);
+			printInfo("JERICHO-DIAG CARDRAW: SKIP car=%d model=%d (%s)\n", cp->id, model,
+				JerCarSlotUsable(model) ? "imported sets not ready" : "no geometry");
 
 		return;
 	}
@@ -4530,6 +4532,48 @@ char GetCarPalIndex(int tpage)
 	return 0;
 }
 
+// JERICHO: ONE log line per NOT_READY transition, not one per caller.
+//
+// JerCarSlotState is consulted by every spawn path (civ_ai, players, carhacks/mp) and by
+// the draw gate; a slot can be asked about many times in a frame. The signature is a hash
+// of the MISSING set list, so the line appears when the answer changes (a new slot becomes
+// unready, or a different set is the one missing) and goes quiet while it stays the same.
+// 0 means "ready", which also clears the memory.
+static unsigned int sSlotNotReadySig[MAX_CAR_RESIDENT_MODELS];
+static unsigned int sSlotDrawNotSig[MAX_CAR_RESIDENT_MODELS];
+
+static unsigned int CarSlotMissingSig(const int* sets, int n, unsigned int sig)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+		sig = sig * 16777619u ^ (unsigned int)sets[i];
+
+	return sig;
+}
+
+static void CarSlotLogNotReady(int slot, int city, const int* sets, int n, int forDraw)
+{
+	char buf[160];
+	int i, len = 0;
+
+	buf[0] = 0;
+
+	for (i = 0; i < n && len < (int)sizeof(buf) - 8; i++)
+		len += snprintf(buf + len, sizeof(buf) - len, "%s%d", (i > 0) ? "," : "", sets[i]);
+
+	printInfo("cross-city: slot %d (%s model %d) is not %s - set(s) [%s] %s\n",
+		slot, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "the level",
+		residentCarModels[slot], forDraw ? "drawable yet" : "ready yet", buf,
+		forDraw ? "have no uploaded palette row or placed page yet"
+			: "have no live pin or mapped palette row yet");
+
+	// JERICHO: the detail behind that line, opt-in with JERICHO_DIAG_SLOT_MAP=1: each set
+	// -> civ_clut row -> pinned page index, with placed/uploaded state. This is the dump
+	// that makes "wrong colours after a spawn/switch" a readable map instead of a guess.
+	CarImportSlotMapReport(slot, (getenv("JERICHO_DIAG_SLOT_MAP") != NULL) ? 1 : 0);
+}
+
 // [D] JERICHO: THE ONE DECISION ON WHETHER A CAR SLOT CAN BE HANDED OUT.
 //
 // See cars.h. Every site that gives a car a model routes through this rather than
@@ -4537,11 +4581,39 @@ char GetCarPalIndex(int tpage)
 // a slightly weaker test than the one next to it.
 int JerCarSlotState(int slot)
 {
+	int missing[16];
+	int n;
+
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return JER_CAR_SLOT_OUT_OF_RANGE;
 
 	if (gCarCleanModelPtr[slot] == NULL)
+	{
+		sSlotNotReadySig[slot] = 0;
+		sSlotDrawNotSig[slot] = 0;
 		return JER_CAR_SLOT_NO_MESH;
+	}
+
+	// JERICHO: a built imported model is not usable just because its mesh exists. Its
+	// polys bake a page INDEX and a civ_clut ROW; until the pin for each set exists and
+	// the row is mapped, drawing it resolves to the level's own materials or to nothing.
+	// Host slots have no import sets and always answer 0 here.
+	n = CarImportSlotMissingSets(slot, 0, missing, 16);
+
+	if (n > 0)
+	{
+		unsigned int sig = CarSlotMissingSig(missing, n, 2166136261u);
+
+		if (sig != sSlotNotReadySig[slot])
+		{
+			sSlotNotReadySig[slot] = sig;
+			CarSlotLogNotReady(slot, GetCarModelSourceCity(slot), missing, n, 0);
+		}
+
+		return JER_CAR_SLOT_NOT_READY;
+	}
+
+	sSlotNotReadySig[slot] = 0;
 
 	return JER_CAR_SLOT_OK;
 }
@@ -4551,12 +4623,48 @@ int JerCarSlotUsable(int slot)
 	return JerCarSlotState(slot) == JER_CAR_SLOT_OK;
 }
 
+// JERICHO: the DRAW-time question, one step stricter than JerCarSlotUsable.
+//
+// CarImportPin runs immediately before the cars are drawn (draw.c, DrawCars), and it is the
+// only thing that uploads an import's palette rows and places its pages. A spawn decision
+// must not require that (the slot is adopted before the first draw), but the draw must:
+// dereferencing a model whose rows are not in VRAM is the garbled-car path this gate exists
+// to stop. Host cars have no import sets and pass both checks.
+int JerCarSlotDrawable(int slot)
+{
+	int missing[16];
+	int n;
+
+	if (JerCarSlotState(slot) != JER_CAR_SLOT_OK)
+		return 0;
+
+	n = CarImportSlotMissingSets(slot, 1, missing, 16);
+
+	if (n > 0)
+	{
+		unsigned int sig = CarSlotMissingSig(missing, n, 2166136261u);
+
+		if (sig != sSlotDrawNotSig[slot])
+		{
+			sSlotDrawNotSig[slot] = sig;
+			CarSlotLogNotReady(slot, GetCarModelSourceCity(slot), missing, n, 1);
+		}
+
+		return 0;
+	}
+
+	sSlotDrawNotSig[slot] = 0;
+
+	return 1;
+}
+
 const char* JerCarSlotRefusal(int slot)
 {
 	switch (JerCarSlotState(slot))
 	{
 	case JER_CAR_SLOT_OUT_OF_RANGE:	return "not a car this level can load";
 	case JER_CAR_SLOT_NO_MESH:	return "no model for it in this level";
+	case JER_CAR_SLOT_NOT_READY:	return "its imported palette/page sets are not ready yet";
 	default:			return NULL;
 	}
 }

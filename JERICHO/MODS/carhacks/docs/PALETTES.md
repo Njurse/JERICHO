@@ -658,7 +658,24 @@ scan (rows `0..7`).
   get those rows filled; sets with none keep slot 0 (the page's own CLUT), which is already
   handled end to end.
 
+**Readiness is a gate, not a hope.** `JerCarSlotState` is the one decision on whether a slot
+can be handed out (cars.h). For an imported slot it now requires more than a built mesh:
+every set the model names must have a live pin for that city (`CarPinRecord`) and a mapped
+import-bank `civ_clut` row (`CarAllocSetRow`), otherwise it answers `JER_CAR_SLOT_NOT_READY`.
+The draw path is one step stricter (`JerCarSlotDrawable`, after `CarImportPin`): the row must
+be uploaded and the page placed. Traffic/player spawn paths already consult
+`JerCarSlotUsable`, so they cannot choose an unready slot; a car already on the road shows
+mp's host-car-1 grey stand-in (extended to single-player) until its slot is drawable, then
+repoints back. One log line per NOT_READY transition names the slot, city, model and sets.
+
+**The dump that explains a failure** is `JERICHO_DIAG_SLOT_MAP=1`: on a readiness transition
+and at exit, every imported resident slot prints `set -> civ_clut row -> pinned page index`
+with `placed` (pool/world/unplaced), `row uploaded/NOT uploaded` and `no live pin` detail.
+The per-slot `slotmap - ... NOT READY` line and the exit
+`slotmap: N body set(s) ... are NOT READY` summary print even without the lever, which is
+what the rig fails on.
+
 **The rig that keeps this honest** is `tools/chk_d1_cities.sh`: nothing else in the tree
 enumerates cities past 3, so a Driver 1 defect could not have been seen at all. It imports
-cities 4–8 and fails on a car that did not load *or* a refused block, which is how the
-five-city case above was found.
+cities 4–11 (including the Euro-43 beta, city 11) and fails on a short page check, a refused
+block, a palette gap *or* a slotmap miss, which is how the five-city case above was found.

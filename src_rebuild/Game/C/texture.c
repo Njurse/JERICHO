@@ -3021,6 +3021,29 @@ void CarImportDumpState(void)
 			sRemapTo[i], tpagepos[sRemapTo[i] - 100].x, tpagepos[sRemapTo[i] - 100].y, sRemapTo[i] - 100);
 	}
 
+	// JERICHO: the per-slot set -> row -> page map, at exit. This is the gate's audit:
+	// every imported slot that still has a body set without a live pin, a mapped row, a
+	// placed page or an uploaded row is named, and the summary line is what a rig fails on.
+	{
+		int slot, miss = 0, nslots = 0;
+		int verbose = (getenv("JERICHO_DIAG_SLOT_MAP") != NULL);
+
+		for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+		{
+			if (GetCarModelSourceCity(slot) < 0 || sModelSetCount[slot] == 0)
+				continue;
+
+			nslots++;
+			miss += CarImportSlotMapReport(slot, verbose);
+		}
+
+		if (miss > 0)
+			printInfo("cross-city: slotmap: %d body set(s) across %d imported slot(s) are NOT READY\n",
+				miss, nslots);
+		else if (verbose && nslots > 0)
+			printInfo("cross-city: slotmap: all %d imported slot(s) ready\n", nslots);
+	}
+
 	CarImportDumpPageRefs();
 	CarPalRowReport();
 }
@@ -3061,6 +3084,138 @@ static void CarImportPageRect(unsigned int page, int* px, int* py)
  *
  * Returns 0 when the slot has no built model yet, so a caller can tell "not yet"
  * from "built wrong" and leave the former alone. */
+int CarImportSlotMissingSets(int slot, int forDraw, int* missing, int max)
+{
+	int city, k, n = 0;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0)
+		return 0;			/* the level's own car: no import sets to wait for */
+
+	for (k = 0; k < sModelSetCount[slot]; k++)
+	{
+		int set = sModelSet[slot][k];
+		int row = CarPalIndexInCityFor(set, city);
+		int p, pinned = 0, placed = 0, uploaded = 0, ok;
+
+		for (p = 0; p < sPinCount; p++)
+		{
+			if (sPinSet[p] != set || sPinCity[p] != city)
+				continue;
+
+			pinned = 1;
+
+			if (sPinPool[p] >= 0 || sPinTexSlot[p] >= 0)
+				placed = 1;
+
+			break;
+		}
+
+		if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS)
+			uploaded = (sPalRowsDone[row] != 0);
+
+		ok = pinned && row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS;
+
+		if (forDraw)
+			ok = ok && placed && uploaded;
+
+		if (!ok)
+		{
+			if (missing != NULL && n < max)
+				missing[n] = set;
+
+			n++;
+		}
+	}
+
+	return n;
+}
+
+/* JERICHO: the set -> civ_clut row -> pinned page map for ONE imported resident slot.
+ *
+ * This is the opt-in answer to "why is this car's colour/texture wrong": every set its
+ * built model names, the row that set resolved to, the page index the pin holds, whether
+ * that pin is placed (pool or world slot), and whether the row was uploaded. Run with
+ * JERICHO_DIAG_SLOT_MAP=1; the per-slot NOT READY line is always printed when a body set is
+ * missing, so a failed gate is visible even without the lever.
+ *
+ * Returns the number of body sets that are not ready (no pin, no import-bank row, unplaced
+ * page, or unuploaded row). Called on a readiness transition and for every imported slot in
+ * CarImportDumpState. */
+int CarImportSlotMapReport(int slot, int verbose)
+{
+	int city, k, sets = 0, missing = 0;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0)
+		return 0;
+
+	for (k = 0; k < sModelSetCount[slot]; k++)
+	{
+		int set = sModelSet[slot][k];
+		int row = CarPalIndexInCityFor(set, city);
+		int p, pinned = 0, placed = 0, uploaded = 0, page = -1;
+		const char* where = "unplaced";
+		char rowbuf[16], pagebuf[16];
+
+		sets++;
+
+		for (p = 0; p < sPinCount; p++)
+		{
+			if (sPinSet[p] != set || sPinCity[p] != city)
+				continue;
+
+			pinned = 1;
+			page = sPinIndex[p];
+
+			if (sPinPool[p] >= 0)
+				where = "pool";
+			else if (sPinTexSlot[p] >= 0)
+				where = "world";
+
+			if (sPinPool[p] >= 0 || sPinTexSlot[p] >= 0)
+				placed = 1;
+
+			break;
+		}
+
+		if (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS)
+			uploaded = (sPalRowsDone[row] != 0);
+
+		snprintf(rowbuf, sizeof(rowbuf), "%d", row);
+		snprintf(pagebuf, sizeof(pagebuf), "%d", page);
+
+		if (!pinned || row < CIV_CLUT_IMPORT_ROW || row >= CIV_CLUT_ROWS || !placed || !uploaded)
+			missing++;
+
+		if (verbose)
+			printInfo("cross-city: slotmap - slot %d (%s model %d): set %d -> civ_clut row %s -> page %s (%s%s; row %s)\n",
+				slot, LevelNames[city], residentCarModels[slot], set,
+				(row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS) ? rowbuf : "UNMAPPED",
+				(pinned && page >= 0) ? pagebuf : "MISSING",
+				where,
+				pinned ? "" : ", no live pin",
+				uploaded ? "uploaded" : "NOT uploaded");
+	}
+
+	if (missing > 0)
+		printInfo("cross-city: slotmap - slot %d (%s model %d): %d of %d body set(s) NOT READY\n",
+			slot, LevelNames[city], residentCarModels[slot], missing, sets);
+	else if (verbose)
+		printInfo("cross-city: slotmap - slot %d (%s model %d): all %d body set(s) ready\n",
+			slot, LevelNames[city], residentCarModels[slot], sets);
+
+	return missing;
+}
+
 int JerCarImportHealth(int slot, int* outPolys, int* outOnPinned, int* outPalUploaded, int* outPalBad)
 {
 	CAR_MODEL* models[2];
