@@ -1730,6 +1730,11 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 	if (city < 0 || city >= CITY_COUNT || page == NULL || size < 4)
 		return;
 
+	/* Driver 1 imports only: a Driver 2 city's fast wheel names row 0, a CAR
+	 * row (RIO's drew green); D2 imports keep their stock wheel rows. */
+	if (city < CITY_D2_COUNT || city >= CITY_D2_COUNT + CITY_D1_COUNT)
+		return;
+
 	imp = &gCarImports[city];
 	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_FAST];
 	npal = *(const int*)page;
