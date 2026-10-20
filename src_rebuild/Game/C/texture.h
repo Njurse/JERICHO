@@ -130,6 +130,10 @@ extern int CarImportApplyPaletteForCity(int city);
 // CarImportPin, the first point the built model's rows exist.
 // Returns 1 when a deferred lump was uploaded, 0 when there was none.
 extern int ProcessImportedPaletteRows(const unsigned char* rowNeeded);
+// JERICHO: a row was given back to the import pool. Clear its upload flag and contents so
+// the next (city,set) that takes the row re-uploads instead of drawing the old car's
+// palette (cars.c's CarImportReclaimRows calls this).
+extern void CarImportPaletteRowForget(int row);
 
 /* JERICHO: how a resident slot's built model reads its materials - the numbers
  * behind carhacks' garbled-import retry. Fills polys / polys-on-a-pinned-page /

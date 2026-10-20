@@ -1805,6 +1805,7 @@ static unsigned char sPalRowsDone[CIV_CLUT_ROWS];	// JERICHO: which civ_clut row
 							// first call never got its rows; it is now
 							// driven by "needed and not yet done".
 static int sPalUploaded;		// JERICHO: how many CLUT slots it wrote (0 = nothing, the interesting failure)
+static int sPalRowsForgotten;		// JERICHO: rows a slot release gave back, so the next user re-uploads them
 static int sPinSet[CAR_PIN_MAX];		// the set number the CAR asks for
 static int sPinIndex[CAR_PIN_MAX];		// the index its page is loaded at
 // JERICHO: the old `sPinSlot` meant TWO things - the resident slot that owned the pin
@@ -2300,6 +2301,29 @@ int CarSlotResReport(void)
 void JerHotLoadCarTpages(void)
 {
 	LoadImportedTPages();
+}
+
+// JERICHO: give one import-bank civ_clut row BACK to the pool.
+//
+// A row is recycled by CarAllocSetRow (the lowest free row is handed out again), but the
+// upload state is keyed by ROW and used to outlive its owner: a slot released while its
+// rows were marked done left `sPalRowsDone[row]` set, so the next (city,set) that took the
+// row never re-uploaded and drew the previous car's colours. That is the "wrong colours
+// after a car switch" failure. Clearing the flag here makes CarImportPin's
+// "needed and not yet done" test see the row again, and zeroing the row means a draw in
+// between falls back to slot 0 (the page's own CLUT) instead of a stale foreign palette.
+void CarImportPaletteRowForget(int row)
+{
+	if (row < CIV_CLUT_IMPORT_ROW || row >= CIV_CLUT_ROWS)
+		return;
+
+	if (sPalRowsDone[row])
+	{
+		sPalRowsDone[row] = 0;
+		sPalRowsForgotten++;
+	}
+
+	memset(&civ_clut[row][0][0], 0, sizeof(civ_clut[0]));
 }
 
 void CarImportPin(void)
@@ -3567,7 +3591,7 @@ int JerReleaseCarSlot(int slot)
 		int reclaimed = CarImportReclaimRows();
 
 		if (reclaimed > 0)
-			printInfo("cross-city: reclaimed %d guest palette row(s) after releasing slot %d\n",
+			printInfo("cross-city: reclaimed %d palette row(s) after releasing slot %d - their contents and upload flags are cleared, so the next (city,set) that takes a row re-uploads it; per-city wheel CLUT ids stay cached (their VRAM rows are in the lower pool's write-once cursor region)\n",
 				reclaimed, slot);
 	}
 

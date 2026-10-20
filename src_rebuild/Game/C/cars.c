@@ -154,6 +154,13 @@ static int sCivClutRowCity[CIV_CLUT_ROWS][CIV_CLUT_ROW_CITIES];
 static int sCivClutRowMaxSlot[CIV_CLUT_ROWS];       // highest slot written in the row
 static int sCivClutTexMaxSlot[CIV_CLUT_ROWS][32];   // ...and per texture_id within it
 
+// JERICHO: how many entries the last widget walk put into each civ_clut row. The import's
+// palette upload uses it to report rows a built model READS but the city's lump has no
+// entries for - those rows stay empty and their polys draw their own page CLUT (slot 0).
+// Nothing is fabricated for them (see the upload loop). Declared up here because
+// CarImportReclaimRows resets it for a row given back to the pool.
+static int sJerRowWritten[CIV_CLUT_ROWS];
+
 // JERICHO: WHICH resident slot baked each civ_clut row, and from which set. The census can
 // say a row offers no colour variants; it cannot say which car reads it, and that is the
 // difference between "some rows are thin" and "the imported special's roof panel is
@@ -381,6 +388,14 @@ int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 	if (hub < 0 || hub > 2)
 		hub = 1;
 
+	// JERICHO: the VRAM CLUT id is cached per (city, hub) for the whole LEVEL, and a row
+	// reclaim does NOT clear it. It is safe to keep: this CLUT lives in the lower pool's
+	// CLUT column, allocated from the write-once cursor region (JerLowerPoolClutCursor /
+	// Advance), which nothing ever hands back or reuses. Clearing the cache would make
+	// every car switch re-upload the same colours into a FRESH row and walk the column to
+	// its end, so the switch would leak space to fix nothing. What a reclaim must clear
+	// is the civ_clut row mapping and its upload state (CarImportPaletteRowForget), which
+	// it does; this id stays valid for the next car of the same city.
 	if (sWheelPalClut[city][hub] != 0)
 		return sWheelPalClut[city][hub];
 
@@ -477,16 +492,28 @@ int CarImportPaletteBlockBase(int city)
 // JERICHO: is any LIVE resident slot's built model naming (city, set)? A guest (city, set)
 // row may be given back only when no live car bakes it - a live car's polys already carry
 // its row as their palette index, so freeing a row still in use would recolour that car.
+//
+// The level's own cars report source city -1, which is the host city for this question:
+// CarAllocSetRow is allowed to give the HOST a pool row too, and those rows were never
+// reclaimed while the host was skipped. Treating -1 as GameLevel is what lets a host-city
+// slot's rows be given back when nothing on the road names them any more.
 static int CarSetNamedByLiveSlot(int city, int set)
 {
 	int slot, i;
 
 	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
 	{
+		int src;
+
 		if (residentCarModels[slot] < 0)
 			continue;
 
-		if (GetCarModelSourceCity(slot) != city)
+		src = GetCarModelSourceCity(slot);
+
+		if (src < 0)
+			src = GameLevel;
+
+		if (src != city)
 			continue;
 
 		for (i = 0; i < CarModelSetsCount(slot); i++)
@@ -498,27 +525,56 @@ static int CarSetNamedByLiveSlot(int city, int set)
 }
 
 // JERICHO: give back every guest (city, set) row no live car names any more, and return how
-// many. Called after a slot is released (JerReleaseCarSlot). Before this the row dictionary
-// was additive-only within a level: a car-change to a new city took fresh rows and gave none
-// back, so cycling across cities exhausted the 24-row pool and the palettes rotted.
+// many. Called after a slot is released (JerReleaseCarSlot) and at allocation time when the
+// pool is full (CarAllocSetRow) - a hot-loading client churns rows faster than slots are
+// released. Before this the row dictionary was additive-only within a level: a car-change to
+// a new city took fresh rows and gave none back, so cycling across cities exhausted the
+// 24-row pool and the palettes rotted.
+//
+// The row itself is RECYCLED (CarAllocSetRow hands out the lowest free row), so everything
+// keyed by that row has to go back with it: its upload flag and contents
+// (CarImportPaletteRowForget), its colour-column coverage and the bake/collision census.
+// Leaving any of those behind is a new car wearing the previous car's palette - the
+// "wrong colours after a switch" report.
 int CarImportReclaimRows(void)
 {
 	int c, s, n = 0;
 
 	for (c = 0; c < CITY_COUNT; c++)
 	{
-		if (c == GameLevel)
-			continue;
-
 		for (s = 1; s < 128; s++)
 		{
+			int row;
+
 			if (sSetRow[c][s] < 0)
 				continue;
 
 			if (CarSetNamedByLiveSlot(c, s))
 				continue;
 
+			row = sSetRow[c][s];
 			sSetRow[c][s] = -1;
+
+			if (row >= 0 && row < CIV_CLUT_ROWS)
+			{
+				int t;
+
+				sCivClutRowMaxSlot[row] = 0;
+
+				for (t = 0; t < 32; t++)
+					sCivClutTexMaxSlot[row][t] = 0;
+
+				sJerRowWritten[row] = 0;
+				sCivClutRowWriters[row] = 0;
+				sBakeRowN[row] = 0;
+
+				// This includes the wheel palette rows (sets 125..127). Their ROW mapping
+				// and contents go back, but sWheelPalClut[city][hub] deliberately stays
+				// cached: see CarImportReserveWheelPalette for why that VRAM id survives a
+				// switch without leaking a CLUT row.
+				CarImportPaletteRowForget(row);
+			}
+
 			n++;
 		}
 	}
@@ -2900,12 +2956,6 @@ static int CarPalIndexInCity(int tpage, int city);
 
 static int sPalDumpCount[CITY_COUNT];	// JERICHO-DIAG PAL: per CITY, so a guest is never crowded out
 
-// JERICHO: how many entries the last walk put into each civ_clut row. The import's palette
-// upload uses it to report rows a built model READS but the city's lump has no entries for -
-// those rows stay empty and their polys draw their own page CLUT (slot 0). Nothing is
-// fabricated for them (see the upload loop).
-static int sJerRowWritten[CIV_CLUT_ROWS];
-
 static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, const unsigned char *rowNeeded)
 {
 	ushort clutValue;
@@ -3338,7 +3388,11 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 
 		if (base < 0)
 		{
-			sImpPalLump[city] = NULL;
+			// No allocated row yet: no built model has named a set for this city, so
+			// nothing reads its lump. KEEP the lump - a later build allocates a row and
+			// the next fresh-row pass must still be able to upload it. (It is released
+			// per level by CarImportPaletteReset, so retaining it does not outlive the
+			// map its bytes point into.)
 			continue;
 		}
 
@@ -3398,7 +3452,12 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 			}
 		}
 
-		sImpPalLump[city] = NULL;
+		// JERICHO: KEEP the lump after the upload. It used to be NULLed here, which made
+		// the deferred table a one-shot: a row freed by a slot release and later re-used
+		// (CarImportPaletteRowForget clears its upload flag) was marked fresh again, but
+		// there was no lump left to read it from - the row silently kept the previous
+		// car's colours. The lump is a pointer into that city's imported data, valid for
+		// the whole level, and CarImportPaletteReset drops it when the level goes.
 		uploaded = city;
 	}
 
