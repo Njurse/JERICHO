@@ -238,6 +238,7 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_TEXINFO	34	// LUMP_TEXTUREINFO - the page lists
 #define CAR_IMPORT_LUMP_WHEELS	200	// JERICHO: optional wheel models (the D1 bake)
 #define CAR_IMPORT_LUMP_SOUNDS	201	// JERICHO: embedded per-model car sounds (the D1 bake)
+#define CAR_IMPORT_LUMP_SIRENS	202	// JERICHO: per-model cop flags (the D1 bake)
 #define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
 #define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
 #define CAR_IMPORT_LUMP_MODELNAMES	12	// LUMP_MODELNAMES (DATA1)
@@ -261,6 +262,7 @@ typedef struct
 	int carWheelsSize;
 	char* carSounds;	// LUMP_CAR_SOUNDS body, or NULL (no embedded car sounds)
 	int carSoundsSize;
+	unsigned carSirenMask;	// bit N = model N is a cop car (LUMP_CAR_SIRENS)
 	char* wheelMem;		// malloc'd copies of the wheel MODELs below
 	MODEL* wheels[CAR_IMPORT_WHEEL_VARIANTS];
 	char* wheelTexMem[CAR_IMPORT_WHEEL_VARIANTS];	// per-model D2 texture-source blocks
@@ -529,6 +531,23 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 	// their own segment. Optional: D2 levels and older D1 bakes simply have none,
 	// and gamesnd keeps the host-city fallback for them.
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_SOUNDS, &imp->carSounds, &imp->carSoundsSize);
+
+	// JERICHO: cop flags from the bake. Optional; an older bank has none, and
+	// CarHasSiren then keeps the host-city behaviour.
+	{
+		char* sirens = NULL;
+		int sirenSize = 0;
+		int s;
+
+		imp->carSirenMask = 0;
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_SIRENS, &sirens, &sirenSize);
+
+		for (s = 0; sirens != NULL && s < CAR_IMPORT_MODEL_SLOTS && s < sirenSize; s++)
+		{
+			if ((unsigned char)sirens[s])
+				imp->carSirenMask |= 1u << s;
+		}
+	}
 
 	// JERICHO: a Driver 1 bake (no DATA2) from before v0.10.9 carries neither
 	// segment, so its cars keep the host's wheels and engine. Say so once.
@@ -880,6 +899,17 @@ static int CarImportSoundEntry(CAR_IMPORT* imp, int model, char** bank, int* siz
 	*bank = imp->carSounds + off;
 	*size = dir + payload;
 	return 1;
+}
+
+// JERICHO: is this imported car a cop? The bake marks the source city's police
+// model in LUMP_CAR_SIRENS; CarHasSiren uses this to give it Driver 2's siren
+// channel instead of the host level's siren.
+int GetCarImportSiren(int city, int model)
+{
+	if (!CarImportCityHeld(city) || model < 0 || model >= CAR_IMPORT_MODEL_SLOTS)
+		return 0;
+
+	return (gCarImports[city].carSirenMask >> model) & 1;
 }
 
 // JERICHO: the embedded car-sound bank a D1 city's car uses, or 0. Driver 1 gave

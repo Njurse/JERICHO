@@ -148,6 +148,45 @@ static int car_d1_generic_block = -1;	// JERICHO: the block holding the shared D
 static int car_sound_ready;
 static int loudhail_time = 0;
 
+// JERICHO: an imported car that the bake marked as a cop gets Driver 2's siren
+// treatment. The imported bank's third sample is the city's siren sample (see
+// add_car_sounds.py --city), so return that sample block; CarHasSiren then
+// drives the same third channel, horn on/off and AI pursuer loop as a D2 cop.
+static int ImportedCarHasSiren(int index)
+{
+	static unsigned reported = 0;
+	int slot;
+
+	if (!car_sound_ready)
+		return 0;
+
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		int city = car_slot_city[slot];
+		int model = car_slot_model[slot];
+
+		if (city < 0 || model < 0)
+			continue;
+
+		if (slot != index && model != index)
+			continue;
+
+		if (!GetCarImportSiren(city, model) || car_slot_sample[slot] < 0)
+			continue;
+
+		if (!(reported & (1u << slot)))
+		{
+			reported |= 1u << slot;
+			printInfo("cross-city: slot %d (%s model %d) uses the imported siren (bank sample %d)\n",
+				slot, LevelNames[city], model, car_slot_sample[slot] * 3 + 2);
+		}
+
+		return M_SHRT_2(SOUND_BANK_CARS, car_slot_sample[slot] * 3 + 2);
+	}
+
+	return 0;
+}
+
 static int copmusic = 0;
 int current_music_id;
 
@@ -190,6 +229,11 @@ void LoadBankFromLump(int bank, int lump)
 // [D] [T]
 int CarHasSiren(int index)
 {
+	int imported = ImportedCarHasSiren(index);
+
+	if (imported)
+		return imported;
+
 	if (index == SPECIAL_CAR_SLOT)
 	{
 		if (GameLevel == 0)

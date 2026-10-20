@@ -139,6 +139,7 @@ char* GetCarImportPalletForCity(int city, int* size);
 // body is a D2 dynamic-bank blob (int num_samples, SAMPLE_DATA[], VAG data);
 // returns 0 when the city has no usable sound segment (the caller falls back).
 int GetCarImportSoundBank(int city, int model, char** bank, int* size);
+int GetCarImportSiren(int city, int model);
 
 // The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
 // walks. texture.c parses it (the TP/TEXINF types the layout needs live there).
