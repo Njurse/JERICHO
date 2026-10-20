@@ -125,7 +125,7 @@ char carTpages[CITY_COUNT][8];    // texture.c:72   [city][palette slot] -> text
 char specTpages[CITY_COUNT][12];  // texture.c:37   [city] -> 6 special bodies x 2 pages
 ```
 
-(`CITY_COUNT` is 9 — CHICAGO/HAVANA/VEGAS/RIO and Driver 1's five car-data cities —
+(`CITY_COUNT` is 11 — CHICAGO/HAVANA/VEGAS/RIO and Driver 1's seven car-data cities —
 since the registry grew; these were `[4][…]` literals.)
 
 `CarPalIndexInCity` (`cars.c:1954`) is nothing more than "which of `carTpages[city][0..7]`
@@ -570,7 +570,7 @@ An empty row is not one thing, and the difference decides whether anything shoul
 that refusal *is* the violation (the guard is what stops an import repainting a local
 car), so `crosscheck.py` no longer files it as a note.
 
-### The bank holds THREE guest cities, and Driver 1 is five of them (measured 2026-10-12)
+### The bank holds THREE guest cities, and Driver 1 has seven of them (measured 2026-10-12)
 
 The other half of the same problem, and the worse half: it takes out whole cities rather
 than panels. `CIV_CLUT_ROWS` is 32 (`cars.h:72`), `CIV_CLUT_IMPORT_ROW` is 8 and a guest
@@ -590,13 +590,14 @@ there is no block at all, so every row the city's cars name resolves to the HOST
 row. That is not a panel wearing the wrong colour; it is a city's entire car list wearing
 the level's colours.
 
-Driver 1 has five car-data cities (MIAMI 4, FRISCO 5, LA 6, NEWYORK 7, NEWCASTLE 8 — the
-same five `DRIVER\D1CARS\<CITY>.LEV` files `carimport.c` loads), so the fifth import
-overruns the bank. Measured on this tree: importing all five at once refuses **FRISCO and
-LA**, and every page check in the same run still reads `N of N polys resolve to a pinned
-imported page` — the cars load perfectly and come out the wrong colour. This is what
-"some of the Driver 1 cars have broken palettes" is: the more cities are mixed, the more
-of them lose their colours at once.
+Driver 1 has seven car-data cities (MIAMI 4, FRISCO 5, LA 6, NEWYORK 7, NEWCASTLE 8, IVIEW 9, TRAIN 10 — the
+same seven `DRIVER\D1CARS\<CITY>.LEV` files `carimport.c` loads), so the bank is already
+oversubscribed. Measured when there were five (2026-10-12): importing all five at once
+refused **FRISCO and LA**, and every page check in the same run still reads `N of N polys
+resolve to a pinned imported page` — the cars load perfectly and come out the wrong colour.
+This is what "some of the Driver 1 cars have broken palettes" is: the more cities are
+mixed, the more of them lose their colours at once. IVIEW and TRAIN make the pressure
+worse — mixing more than three guest cities is still where colours are lost.
 
 **The lump has the rows; the table is what cannot reach them.** For MIAMI:
 

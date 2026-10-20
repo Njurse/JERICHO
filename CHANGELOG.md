@@ -6,6 +6,27 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+## v0.10.13
+
+*Released 2026-10-19.*
+
+> **Critical spawn fix — what you will notice in game.** A failed or still-loading
+> car can no longer leave you with no vehicle. You briefly drive the host city's
+> car 1 in **solid grey** while the real one loads; the camera stays on a real car;
+> and a death or Respawn puts you back on the road instead of spinning the camera
+> or dropping you through the map. This build contains the fix for that
+> critical/game-breaking spawn bug.
+
+- Driver 1 car data now also includes IVIEW and TRAIN, so every Driver 1 level with car geometry is offered in the car lists. Re-run BAKE_D1_CARS (bake version 5).
+- Driver 1 cities keep their fixed order (Miami, Frisco, LA, New York, Newcastle); IVIEW, TRAIN and mod cities are listed after them.
+- TRAIN's untextured car bodies now get a solid colour instead of a missing texture.
+- Fixed green fast wheels on Driver 2 cars driven in another Driver 2 city (e.g. a Rio car in Chicago).
+- Multiplayer: a car that hasn't loaded yet (yours or another player's) shows as the host city's car 1 in solid grey until it loads, instead of an invisible car; the camera no longer spins or follows a car with no body.
+- Respawn now puts you on the nearest road at ground height, and dying no longer drops you through the map.
+- Multiplayer protocol version 13: v0.10.12 and v0.10.13 players can't join each other.
+
+Thanks: Jaret (Njurse).
+
 ## v0.10.12
 
 *Released 2026-10-19.*

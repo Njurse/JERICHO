@@ -11,7 +11,7 @@
  * table in FEmain.c for the same reason. This is the same thing for ours,
  * GENERATED from what the transplant actually baked rather than written out.
  */
-static const unsigned short chkD1CityModels[9] = {
+static const unsigned short chkD1CityModels[11] = {
     0x000,  /* 0 */
     0x000,  /* 1 */
     0x000,  /* 2 */
@@ -21,4 +21,6 @@ static const unsigned short chkD1CityModels[9] = {
     0x71E,  /* 6 LA */
     0xF1E,  /* 7 NEWYORK */
     0x00E,  /* 8 NEWCASTLE */
+    0x71E,  /* 9 IVIEW */
+    0x01E,  /* 10 TRAIN */
 };
