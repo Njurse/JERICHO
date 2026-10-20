@@ -47,6 +47,7 @@
 #include "jer_frontend.h"
 #include "jer_notify.h"
 #include "jer_text.h"
+#include "jer_prompt.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -860,6 +861,9 @@ void jer_update_frontend_tick(int onMainMenu)
 
 	if (gUpdState == UPD_RUNNING && time(NULL) - gUpdStart < JER_UPD_WAIT_S)
 		return;	/* the main menu stays usable meanwhile */
+
+	if (jer_prompt_active())
+		return;	/* a host prompt owns the screen; open the notes after it */
 
 	gUpdDecided = 1;
 	{

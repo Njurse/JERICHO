@@ -12,6 +12,8 @@ is in [changelog.txt](changelog.txt).
 
 Driver 1 wheels look right in every city, plus multiplayer fixes.
 
+- After an update with newer Driver 1 bake tools, JERICHO asks once whether to re-bake your Driver 1 cars, and Yes runs BAKE_D1_CARS for you.
+
 ### Fixes
 
 - Driver 1 cars from every city now use Driver 1 Miami's wheel textures, which fixes black squares and inverted colours on fast wheels.
