@@ -23,6 +23,10 @@ setlocal
 cd /d "%~dp0"
 
 set "T=%~dp0JERICHO\MODS\d1cars\tools"
+rem The dev tree's game folder (src_rebuild\bin\<config>) does not carry the
+rem data-only d1cars module, so fall back to the repo's copy three levels up.
+rem A shipped package has the tools beside the script and takes the first path.
+if not exist "%T%\bake.py" if exist "%~dp0..\..\..\JERICHO\MODS\d1cars\tools\bake.py" set "T=%~dp0..\..\..\JERICHO\MODS\d1cars\tools"
 set "LEV=DRIVER\LEVELS"
 set "D2=DRIVER2\LEVELS"
 set "OUT=DRIVER\D1CARS"

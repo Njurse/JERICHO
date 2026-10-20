@@ -28,6 +28,12 @@ HERE=$(cd -- "$(dirname -- "$0")" && pwd)
 cd "$HERE"
 
 T="$HERE/JERICHO/MODS/d1cars/tools"
+# The dev tree's game folder (src_rebuild/bin/<config>) does not carry the
+# data-only d1cars module, so fall back to the repo's copy three levels up.
+# A shipped package has the tools beside the script and takes the first path.
+if [ ! -f "$T/bake.py" ] && [ -f "$HERE/../../../JERICHO/MODS/d1cars/tools/bake.py" ]; then
+	T="$HERE/../../../JERICHO/MODS/d1cars/tools"
+fi
 LEV="DRIVER/LEVELS"
 D2="DRIVER2/LEVELS"
 OUT="DRIVER/D1CARS"
