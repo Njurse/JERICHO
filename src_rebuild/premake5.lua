@@ -903,8 +903,12 @@ project "JERICHO"
                 -- its folder name and "?" as its version, and the mod store had nothing to
                 -- compare against a repo entry. mod.toml carries no Driver 1 content --
                 -- the exclusion is about the data, not the manifest.
-                table.insert(JER_CMDS, "if not exist \"" .. JER_DEST .. "\" mkdir \"" .. JER_DEST .. "\"")
-                table.insert(JER_CMDS, "copy /Y \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" \"" .. JER_DEST .. "\\mod.toml\" > nul")
+                --
+                -- CI does not fetch the unpublished gaildrv2 submodule, so the source
+                -- manifest may be absent. Guard both commands: d1cars is fetched and
+                -- does come back; gaildrv2 is simply skipped.
+                table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" if not exist \"" .. JER_DEST .. "\" mkdir \"" .. JER_DEST .. "\"")
+                table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" copy /Y \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" \"" .. JER_DEST .. "\\mod.toml\" > nul")
             end
 
             postbuildcommands(JER_CMDS)
@@ -956,8 +960,10 @@ project "JERICHO"
             -- compiled-in module can still report its name, version and author
             if JER_MIRROR_EXCLUDE[JER_MOD] then
                 table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "\"")
-                table.insert(JER_CMDS, "mkdir -p \"" .. JER_DEST .. "\"")
-                table.insert(JER_CMDS, "cp -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" \"" .. JER_DEST .. "/mod.toml\"")
+                -- gaildrv2 is not fetched by CI (unpublished), so its manifest may not
+                -- exist. Only recreate the folder when there is a manifest to put back;
+                -- d1cars is fetched and does come back.
+                table.insert(JER_CMDS, "if [ -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" ]; then mkdir -p \"" .. JER_DEST .. "\" && cp -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" \"" .. JER_DEST .. "/mod.toml\"; fi")
             end
 
             postbuildcommands(JER_CMDS)
