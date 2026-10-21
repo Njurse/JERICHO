@@ -65,13 +65,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The checks run mp's tools and walk the mod manifests, so the three public
-      # mod source repos must be present. Fetch them by name, not `submodules:
+      # The checks run mp's tools and walk the mod manifests, so the public mod
+      # source repos must be present. Fetch them by name, not `submodules:
       # true`: that would also try gaildrv2, whose repository is unpublished.
       - name: Fetch mod submodules
         shell: bash
         run: |
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             echo "::endgroup::"
@@ -205,7 +205,7 @@ jobs:
           # Deliberately NOT `submodules: recursive`. That walks every entry in
           # .gitmodules, and a single unfetchable submodule fails the whole
           # checkout before any build step runs -- which is exactly how this
-          # job spent its entire life failing at step 2. JERICHO/MODS/gaildrv2 and JERICHO/MODS/d1cars
+          # job spent its entire life failing at step 2. JERICHO/MODS/gaildrv2
           # is deliberately out of the picture for builds (its repository is
           # not published), so only the submodules the build needs are fetched,
           # explicitly, in the step below.
@@ -221,14 +221,14 @@ jobs:
         run: |
           # An explicit allow-list rather than `--recursive`: adding a submodule
           # to .gitmodules must not be able to break the build by itself. The
-          # three mod source repos are public and are release mods, so a release
+          # four mod source repos are public and are release mods, so a release
           # must never be built without them.
-          for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
+          for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             echo "::endgroup::"
           done
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
             test -f "$path/mod.toml" || {
               echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
               exit 1
@@ -489,7 +489,7 @@ jobs:
         with:
           # See the Windows job: an explicit allow-list instead of
           # `submodules: recursive`, so an unpublished submodule cannot fail
-          # the checkout. gaildrv2 and d1cars are out of the picture for builds.
+          # the checkout. gaildrv2 is out of the picture for builds.
           submodules: false
           # See the Windows job: without full history and tags, `git describe`
           # falls back to a bare SHA.
@@ -499,14 +499,14 @@ jobs:
       - name: Fetch build submodules
         shell: bash
         run: |
-          # The three mod source repos are release mods: a build that silently
+          # The four mod source repos are release mods: a build that silently
           # skips them is worse than one that fails here.
-          for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
+          for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             echo "::endgroup::"
           done
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
             test -f "$path/mod.toml" || {
               echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
               exit 1

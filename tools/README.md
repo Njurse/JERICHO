@@ -154,10 +154,11 @@ on whichever submodule sorts first.
 
 `JERICHO/MODS/gaildrv2` is deliberately **out of the picture for builds** — its
 repository is not published — so it stays registered in `.gitmodules` for local
-work but is never fetched here. `JERICHO/MODS/d1cars` is also not fetched for
-builds; the packaging step pulls its bake tools from the pinned commit. The rule
-to keep: adding a submodule to `.gitmodules` must not be able to break the build
-by itself. Add a path to that loop only when a build genuinely needs it.
+work but is never fetched here. `JERICHO/MODS/d1cars` is fetched as a release mod;
+its folder is still dropped from the mirror by `JER_MIRROR_EXCLUDE` (so its Driver 1
+data never ships) and the packaging step pulls its bake tools. The rule to keep:
+adding a submodule to `.gitmodules` must not be able to break the build by itself.
+Add a path to that loop only when a build genuinely needs it.
 
 The three public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`) are
 release mods and are fetched by every build. Their pins are advanced separately:
@@ -219,9 +220,10 @@ and the Release configuration applies it in three places so they cannot drift:
   generated registry bakes in (carhacks and mp on, crumple off).
 
 `gaildrv2` and `d1cars` are additionally dropped from every mirror
-(`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`) and are not in the CI
-submodule allow-list, so a release never carries their sources. The three mod
-source repos are mirrored; each submodule's `.git` is stripped on the way in.
+(`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`). `gaildrv2` is not in the CI
+submodule allow-list at all; `d1cars` is fetched as a release mod but its folder is
+dropped and only `mod.toml` is restored, so a released tree reports the module
+without carrying its Driver 1 data.
 
 A **dev** build is unchanged: it compiles and mirrors every installed module, and
 the repo's own `JERICHO/CONFIG/modlist.ini` pins every installed module

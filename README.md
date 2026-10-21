@@ -61,8 +61,9 @@ git submodule update --init JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/c
 ```
 
 `tools/update_mod_submodules.sh` advances those pins to the latest commits (review
-the printed diff, then commit the gitlinks). `d1cars` and `gaildrv2` remain
-separate submodules and are not needed for a normal build.
+the printed diff, then commit the gitlinks). `d1cars` is fetched for release builds
+but its data is excluded from the mirror; `gaildrv2` remains unpublished and is not
+needed for a normal build.
 
 JERICHO is compiled into the game, so it can see the game's data. An external
 module cannot open `player[]` or `car_data[]` itself, because Windows will not

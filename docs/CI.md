@@ -90,12 +90,13 @@ installed module plus the debug options / console (`DEBUG_OPTIONS`,
 `COLLISION_DEBUG`, `CUTSCENE_RECORDER`); it is the build the test rigs run.
 
 CI fetches only the submodules a job actually needs, by name: `src_rebuild/PsyCross`
-plus the three public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`).
-`d1cars` and `gaildrv2` are still not fetched for builds — `d1cars`' bake tools are
-pulled by the packaging step from its pinned commit, and `gaildrv2` is unpublished
-— so a `Release_dev` build here compiles every module present in that checkout.
-The build jobs assert that each of the three mod submodules has a `mod.toml`, so a
-release cannot silently ship without one.
+plus the four public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`,
+`d1cars`). `gaildrv2` is still not fetched for builds — its repository is
+unpublished — so a `Release_dev` build here compiles every module present in that
+checkout. `d1cars` is compiled in but its folder is excluded from the mirror by
+`JER_MIRROR_EXCLUDE`, so none of its Driver 1 data ships; its bake tools are pulled
+by the packaging step. The build jobs assert that each of the four mod submodules
+has a `mod.toml`, so a release cannot silently ship without one.
 
 The sources for `mp`, `carhacks` and `crumple` live in their own repositories
 (`Njurse/JERICHO-Mod-MP`, `Njurse/JERICHO-Mod-carhacks`,

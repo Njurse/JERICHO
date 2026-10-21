@@ -848,22 +848,19 @@ project "JERICHO"
         table.insert(jer_mirrored_mods, path.getname(JER_DIR))
     end
 
-    -- Modules that are NOT mirrored into the build at all.
+    -- Modules whose FOLDER is not mirrored into the build.
     --
-    -- d1cars and gaildrv2 are submodules that CI does not fetch (the allow-list in
-    -- .github/workflows/build.yml fetches PsyCross and the three public mod source
-    -- repos: mp, carhacks and crumple), and this keeps their folder out of the build
-    -- output even when present locally. The recursive xcopy above mirrors
-    -- every folder on disk, so without this the WHOLE submodule lands in
-    -- bin/<cfg>/JERICHO/MODS/ - and d1cars carries Driver 1 car content (shapes as
-    -- .obj/.json, textures, LEV/LCF level data) that must not ride along in a build output
-    -- or in a package made from one. A shipped LAN zip was found carrying 58 d1cars/gaildrv2
-    -- entries for exactly this reason.
+    -- d1cars is fetched by the build now (the allow-list in .github/workflows/build.yml
+    -- fetches PsyCross and the four public mod source repos: mp, carhacks, crumple and
+    -- d1cars), but its folder still must not land in the build output: it carries
+    -- Driver 1 car content (shapes as .obj/.json, textures, LEV/LCF level data) that
+    -- must not ride along in a build output or in a package made from one. gaildrv2 is
+    -- unpublished and is not fetched at all. The recursive xcopy above mirrors every
+    -- folder on disk, so without this the WHOLE submodule lands in bin/<cfg>/JERICHO/MODS/.
+    -- A shipped LAN zip was found carrying 58 d1cars/gaildrv2 entries for exactly this reason.
     --
-    -- Dropping the folder also means modlist.ini must not list these ids: the runtime scans
-    -- MODS/ and logs "modlist references unknown module" for an id with no installed folder
-    -- (jer_system.c), so the two lines are gone from the shipped profile and the note that
-    -- used to live there is in its header comment instead.
+    -- The folder is dropped and then restored with only mod.toml (see below), so the
+    -- compiled-in module still reports its id, version and author; none of its data ships.
     local JER_MIRROR_EXCLUDE = { d1cars = true, gaildrv2 = true }
 
     filter { "system:Windows" }
