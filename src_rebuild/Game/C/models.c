@@ -706,12 +706,20 @@ static int JerPedFindModelName(CAR_IMPORT* imp, const char* name)
 	p = imp->modelNames;
 	end = p + imp->modelNamesSize;
 
-	while (p < end && *p != 0)
+	while (p < end)
 	{
 		if (strcmp(p, name) == 0)
 			return n;
 
-		p += strlen(p) + 1;
+		/* The engine's own FindModelIdxWithName counts EMPTY name slots as
+		 * entries (its walk is `while (*str++)`), and Havana's table has gaps.
+		 * Stopping at the first empty string hid every JERI model. */
+		while (p < end && *p != 0)
+			p++;
+
+		if (p < end)
+			p++;
+
 		n++;
 	}
 
@@ -739,8 +747,16 @@ static int JerPedModelBlob(CAR_IMPORT* imp, int index, MODEL** out, int* outSize
 
 		size = *(int*)cur;
 
-		if (size <= 0 || cur + 4 + size > imp->models + imp->modelsSize)
+		if (size < 0 || cur + 4 + size > imp->models + imp->modelsSize)
 			return 0;
+
+		if (size == 0)
+		{
+			/* An empty model slot. The table has gaps; they still count as model
+			 * indices, so skip the header and keep walking. */
+			cur += 4;
+			continue;
+		}
 
 		if (i == index)
 		{
@@ -863,6 +879,17 @@ int JerPedImportProbe(int city)
 
 	imp = &gCarImports[city];
 
+	{
+		char path[192];
+
+		path[0] = 0;
+		JerCityPath(city, path, sizeof(path), JER_CITY_FILE_LEVEL, 0);
+
+		printInfo("ped import: %s file '%s' names %d models %d first '%s'\n",
+			LevelNames[city], path, imp->modelNamesSize, imp->modelsSize,
+			(imp->modelNames != NULL) ? imp->modelNames : "");
+	}
+
 	if (imp->models == NULL || imp->modelNames == NULL || imp->modelsSize < 4)
 	{
 		printInfo("ped import: %s has no LUMP_MODELS/model-name table\n", LevelNames[city]);
@@ -880,8 +907,13 @@ int JerPedImportProbe(int city)
 			!JerPedModelBlob(imp, sJerPedModelIndex[i], &src, &size) ||
 			src == NULL || src->poly_block <= 0 || src->num_polys <= 0)
 		{
-			printInfo("ped import: %s model %s is missing or unusable\n",
-				LevelNames[city], sJerPedModelNames[i]);
+			printInfo("ped import: %s model %s is missing or unusable (idx %d size %d"
+				" instance %d poly %d polys %d verts %d)\n",
+				LevelNames[city], sJerPedModelNames[i], sJerPedModelIndex[i], size,
+				(src != NULL) ? (int)src->instance_number : -1,
+				(src != NULL) ? src->poly_block : -1,
+				(src != NULL) ? (int)src->num_polys : -1,
+				(src != NULL) ? (int)src->num_vertices : -1);
 			return 0;
 		}
 	}
