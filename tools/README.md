@@ -9,6 +9,21 @@ Repo-wide maintenance tools. Mod-specific tooling lives next to its mod
 | `dmp_fault.py` | Read a minidump and print the exception plus the faulting module and RVA |
 | `map_lookup.py` | Turn that RVA into a function name using a build's `.map` file |
 | `doccheck.py` | Check the documentation: links resolve, every engine event is in `events.md`, every doc is reachable from `docs/README.md`, and the counted claims match the code |
+| `update_mod_submodules.sh` | Advance the `mp`, `carhacks` and `crumple` submodule pins to their repositories' `main`, printing the gitlink diff to review and commit |
+
+## Updating the mod source pins
+
+`JERICHO/MODS/mp`, `carhacks` and `crumple` are git submodules. Their sources
+change in their own repositories; JERICHO keeps a pinned commit so a build and a
+release are reproducible. After a mod repo changes:
+
+```sh
+sh tools/update_mod_submodules.sh
+```
+
+Review the printed status and submodule log, then stage the three paths and
+commit. The helper never commits: a pin is a reviewed change. Pushing a mod repo
+on its own does not alter what JERICHO builds.
 
 ## Checking the documentation
 
@@ -126,7 +141,7 @@ Three things about it are deliberate, and each is easy to undo by accident.
 each path the build actually needs:
 
 ```bash
-for path in src_rebuild/PsyCross; do
+for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
   git submodule update --init --depth=1 "$path"
 done
 ```
@@ -139,9 +154,15 @@ on whichever submodule sorts first.
 
 `JERICHO/MODS/gaildrv2` is deliberately **out of the picture for builds** — its
 repository is not published — so it stays registered in `.gitmodules` for local
-work but is never fetched here. The rule to keep: adding a submodule to
-`.gitmodules` must not be able to break the build by itself. Add a path to that
-loop only when a build genuinely needs it.
+work but is never fetched here. `JERICHO/MODS/d1cars` is also not fetched for
+builds; the packaging step pulls its bake tools from the pinned commit. The rule
+to keep: adding a submodule to `.gitmodules` must not be able to break the build
+by itself. Add a path to that loop only when a build genuinely needs it.
+
+The three public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`) are
+release mods and are fetched by every build. Their pins are advanced separately:
+run `tools/update_mod_submodules.sh`, review the submodule log it prints, and
+commit the resulting gitlinks. Pushing a mod repo alone does not update JERICHO.
 
 ### Each configuration links twice
 
@@ -199,7 +220,8 @@ and the Release configuration applies it in three places so they cannot drift:
 
 `gaildrv2` and `d1cars` are additionally dropped from every mirror
 (`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`) and are not in the CI
-submodule allow-list, so a release never carries them at all.
+submodule allow-list, so a release never carries their sources. The three mod
+source repos are mirrored; each submodule's `.git` is stripped on the way in.
 
 A **dev** build is unchanged: it compiles and mirrors every installed module, and
 the repo's own `JERICHO/CONFIG/modlist.ini` pins every installed module

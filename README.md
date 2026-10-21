@@ -50,6 +50,20 @@ process.
 The `runtime = "dll"` key is the current marker; the words this README uses are
 **compiled-in** and **external**.
 
+`mp`, `carhacks` and `crumple` are git submodules whose sources live in their own
+repositories ([JERICHO-Mod-MP](https://github.com/Njurse/JERICHO-Mod-MP),
+[JERICHO-Mod-carhacks](https://github.com/Njurse/JERICHO-Mod-carhacks),
+[Jericho-Mod-CRUMPLE](https://github.com/Njurse/Jericho-Mod-CRUMPLE)). A fresh
+clone needs them explicitly:
+
+```sh
+git submodule update --init JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple
+```
+
+`tools/update_mod_submodules.sh` advances those pins to the latest commits (review
+the printed diff, then commit the gitlinks). `d1cars` and `gaildrv2` remain
+separate submodules and are not needed for a normal build.
+
 JERICHO is compiled into the game, so it can see the game's data. An external
 module cannot open `player[]` or `car_data[]` itself, because Windows will not
 let a separate library import those data globals; it can only do what an event
