@@ -1607,20 +1607,24 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 			return base + cJerichoVNumbers[5];
 
 		case LHIP:
-			return vJerichoLegList + cJerichoLegVNumbers[0];
+			if (cTannerVNumbers[LHIP] != -1)
+				return vTannerList + cTannerVNumbers[LHIP];
+			return NULL;
 		case LKNEE:
-			return vJerichoLegList + cJerichoLegVNumbers[1];
+			return vJerichoLegList + cJerichoLegVNumbers[0];
 		case LFOOT:
+			return vJerichoLegList + cJerichoLegVNumbers[1];
+		case LTOE:
 			return vJerichoLegList + cJerichoLegVNumbers[2];
 		case RHIP:
-			return vJerichoLegList + cJerichoLegVNumbers[3];
+			return NULL;
 		case RKNEE:
-			return vJerichoLegList + cJerichoLegVNumbers[4];
+			return vJerichoLegList + cJerichoLegVNumbers[3];
 		case RFOOT:
+			return vJerichoLegList + cJerichoLegVNumbers[4];
+		case RTOE:
 			return vJerichoLegList + cJerichoLegVNumbers[5];
 
-		case LTOE:
-		case RTOE:
 		case LFINGERS:
 		case RFINGERS:
 			return NULL;
@@ -1680,16 +1684,7 @@ void newRotateBones(LPPEDESTRIAN pDrawingPed, BONE* poBone)
 			_svBone[0].vy = pBone->vOffset.vy;
 			_svBone[0].vz = pBone->vOffset.vz;
 
-			if (pDrawingPed->pedType == OTHER_MODEL)
-			{
-				/* Jericho stands in the skeleton's own rest pose: no inherited
-				 * joint rotations from the motion frame, so the baked parts are
-				 * not folded by Tanner's walk cycle. */
-				_svBone[1].vx = 0;
-				_svBone[1].vy = 0;
-				_svBone[1].vz = 0;
-			}
-			else if (bReverseYRotation == 0 || pBone->pParent->id != ROOT)
+			if (bReverseYRotation == 0 || pBone->pParent->id != ROOT)
 			{
 				_svBone[1].vx = -pBone->pParent->pvRotation->vx;
 				_svBone[1].vy = pBone->pParent->pvRotation->vy;
@@ -1936,16 +1931,17 @@ void SetSkelModelPointers(int type)
 		Skel[RELBOW].pModel = &pmJerichoModels[4];
 		Skel[RHAND].pModel = &pmJerichoModels[5];
 
-		/* Jericho's own parts. The baked legs are the Tanner thigh/calf/foot
-		 * copies, bound to the hip/knee/foot slots. */
-		Skel[LHIP].pModel = pmJerichoLegModels[0] ? &pmJerichoLegModels[0] : NULL;
-		Skel[LKNEE].pModel = pmJerichoLegModels[1] ? &pmJerichoLegModels[1] : NULL;
-		Skel[LFOOT].pModel = pmJerichoLegModels[2] ? &pmJerichoLegModels[2] : NULL;
-		Skel[RHIP].pModel = pmJerichoLegModels[3] ? &pmJerichoLegModels[3] : NULL;
-		Skel[RKNEE].pModel = pmJerichoLegModels[4] ? &pmJerichoLegModels[4] : NULL;
-		Skel[RFOOT].pModel = pmJerichoLegModels[5] ? &pmJerichoLegModels[5] : NULL;
-		Skel[LTOE].pModel = NULL;
-		Skel[RTOE].pModel = NULL;
+		/* Match the engine's static Tanner leg bindings: the hip joints draw the
+		 * resident HIPS mesh, and the thigh/calf/foot models hang off
+		 * LKNEE/LFOOT/LTOE (and the right-side equivalents). */
+		Skel[LHIP].pModel = &pmTannerModels[15];	/* HIPS */
+		Skel[RHIP].pModel = NULL;
+		Skel[LKNEE].pModel = pmJerichoLegModels[0] ? &pmJerichoLegModels[0] : &pmTannerModels[11];
+		Skel[LFOOT].pModel = pmJerichoLegModels[1] ? &pmJerichoLegModels[1] : &pmTannerModels[12];
+		Skel[LTOE].pModel = pmJerichoLegModels[2] ? &pmJerichoLegModels[2] : &pmTannerModels[7];
+		Skel[RKNEE].pModel = pmJerichoLegModels[3] ? &pmJerichoLegModels[3] : &pmTannerModels[5];
+		Skel[RFOOT].pModel = pmJerichoLegModels[4] ? &pmJerichoLegModels[4] : &pmTannerModels[6];
+		Skel[RTOE].pModel = pmJerichoLegModels[5] ? &pmJerichoLegModels[5] : &pmTannerModels[13];
 		Skel[LFINGERS].pModel = NULL;
 		Skel[RFINGERS].pModel = NULL;
 
