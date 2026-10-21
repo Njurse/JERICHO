@@ -851,8 +851,9 @@ project "JERICHO"
     -- Modules that are NOT mirrored into the build at all.
     --
     -- d1cars and gaildrv2 are submodules that CI does not fetch (the allow-list in
-    -- .github/workflows/build.yml fetches only PsyCross), and this keeps their folder out
-    -- of the build output even when present locally. The recursive xcopy above mirrors
+    -- .github/workflows/build.yml fetches PsyCross and the three public mod source
+    -- repos: mp, carhacks and crumple), and this keeps their folder out of the build
+    -- output even when present locally. The recursive xcopy above mirrors
     -- every folder on disk, so without this the WHOLE submodule lands in
     -- bin/<cfg>/JERICHO/MODS/ - and d1cars carries Driver 1 car content (shapes as
     -- .obj/.json, textures, LEV/LCF level data) that must not ride along in a build output
@@ -878,6 +879,12 @@ project "JERICHO"
                 -- A runtime addon's <id>.dll IS game data and is left alone.
                 "if exist \"" .. JER_DEST .. "\\obj\" rd /S /Q \"" .. JER_DEST .. "\\obj\"",
                 "if exist \"" .. JER_DEST .. "\\lib\" rd /S /Q \"" .. JER_DEST .. "\\lib\"",
+                -- A mod sourced from its own repository carries a .git gitfile. It is
+                -- neither source nor game data, and shipping it would leak a path into
+                -- the parent checkout. rd handles a real directory (a mod cloned in
+                -- place); del handles the gitfile.
+                "if exist \"" .. JER_DEST .. "\\.git\\\" rd /S /Q \"" .. JER_DEST .. "\\.git\"",
+                "if exist \"" .. JER_DEST .. "\\.git\" del /Q /F \"" .. JER_DEST .. "\\.git\"",
                 -- by EXTENSION, not by name. The artefacts are mod_<id>.lib/.pdb/.idb
                 -- for a compiled-in mod and <id>.pdb/.exp/.idb for a DLL addon, and
                 -- matching those names one at a time is exactly how one gets left
@@ -939,7 +946,9 @@ project "JERICHO"
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
             local JER_DEST = "%{cfg.buildtarget.directory}/JERICHO/MODS/" .. JER_MOD
             local JER_CMDS = {
-                "rm -rf \"" .. JER_DEST .. "/tools\" \"" .. JER_DEST .. "/obj\" \"" .. JER_DEST .. "/lib\"",
+                -- .git is the submodule's gitfile (or a full directory for an
+                -- in-place clone), never part of a mod.
+                "rm -rf \"" .. JER_DEST .. "/tools\" \"" .. JER_DEST .. "/obj\" \"" .. JER_DEST .. "/lib\" \"" .. JER_DEST .. "/.git\"",
                 -- by extension, as on Windows: a static library is .a here and the rest
                 -- are linker/debug output. A runtime addon's <id>.so is game data.
                 "rm -f \"" .. JER_DEST .. "\"/*.a \"" .. JER_DEST .. "\"/*.lib \"" .. JER_DEST .. "\"/*.o \"" .. JER_DEST .. "\"/*.pdb \"" .. JER_DEST .. "\"/*.exp \"" .. JER_DEST .. "\"/*.idb",

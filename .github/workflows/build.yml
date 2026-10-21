@@ -65,6 +65,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The checks run mp's tools and walk the mod manifests, so the three public
+      # mod source repos must be present. Fetch them by name, not `submodules:
+      # true`: that would also try gaildrv2, whose repository is unpublished.
+      - name: Fetch mod submodules
+        shell: bash
+        run: |
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
+            echo "::group::submodule $path"
+            git submodule update --init --depth=1 "$path"
+            echo "::endgroup::"
+          done
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -208,11 +220,19 @@ jobs:
         shell: bash
         run: |
           # An explicit allow-list rather than `--recursive`: adding a submodule
-          # to .gitmodules must not be able to break the build by itself.
-          for path in src_rebuild/PsyCross; do
+          # to .gitmodules must not be able to break the build by itself. The
+          # three mod source repos are public and are release mods, so a release
+          # must never be built without them.
+          for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             echo "::endgroup::"
+          done
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
+            test -f "$path/mod.toml" || {
+              echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
+              exit 1
+            }
           done
 
       - name: Download dependencies
@@ -435,6 +455,13 @@ jobs:
                 throw "refusing to package the master server: it is our infrastructure, not the player's"
             }
 
+            # A mod submodule's .git is a gitfile (a path into the parent's
+            # .git/modules), not game data. The mirror strips it; this is the belt
+            # for a stale bin/ left over from an earlier build.
+            Get-ChildItem "$bin/JERICHO/MODS" -Recurse -Force -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -eq '.git' } |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
             Compress-Archive -Path "$bin/*" -DestinationPath "JERICHO_${cfg}_win64.zip" -Force
           }
 
@@ -472,10 +499,18 @@ jobs:
       - name: Fetch build submodules
         shell: bash
         run: |
-          for path in src_rebuild/PsyCross; do
+          # The three mod source repos are release mods: a build that silently
+          # skips them is worse than one that fails here.
+          for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             echo "::endgroup::"
+          done
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
+            test -f "$path/mod.toml" || {
+              echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
+              exit 1
+            }
           done
 
       - name: Install dependencies
@@ -631,6 +666,10 @@ jobs:
                 echo "::error::car-data bank in the package payload: $banks"
                 exit 1
             fi
+            # A mod submodule's .git file is not game data; the mirror strips it and
+            # this catches a stale bin/ left over from an earlier build.
+            find "$d/JERICHO/MODS" -name .git -exec rm -rf {} + 2>/dev/null || true
+
             ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" \
                 --exclude=FontTool --exclude=gen_exports --exclude='lib*.a' \
                 --exclude=DRIVER --exclude=DRIVER2 --exclude='JERICHO/CONFIG/modlist.ini' * )

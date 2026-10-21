@@ -89,9 +89,23 @@ build, which pre-includes just the release mods (`JERICHO_RELEASE_MODS` in
 installed module plus the debug options / console (`DEBUG_OPTIONS`,
 `COLLISION_DEBUG`, `CUTSCENE_RECORDER`); it is the build the test rigs run.
 
-CI deliberately does not fetch the private submodules, so a `Release_dev` build
-here compiles every module present in a fresh checkout and leaves the private
-ones out — the same set the workflow's `submodules` allow-list selects.
+CI fetches only the submodules a job actually needs, by name: `src_rebuild/PsyCross`
+plus the three public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`).
+`d1cars` and `gaildrv2` are still not fetched for builds — `d1cars`' bake tools are
+pulled by the packaging step from its pinned commit, and `gaildrv2` is unpublished
+— so a `Release_dev` build here compiles every module present in that checkout.
+The build jobs assert that each of the three mod submodules has a `mod.toml`, so a
+release cannot silently ship without one.
+
+The sources for `mp`, `carhacks` and `crumple` live in their own repositories
+(`Njurse/JERICHO-Mod-MP`, `Njurse/JERICHO-Mod-carhacks`,
+`Njurse/Jericho-Mod-CRUMPLE`) and are mounted at `JERICHO/MODS/<id>`. Advance the
+pins with `tools/update_mod_submodules.sh`, then commit the new gitlinks; pushing
+a mod repository on its own does not change what JERICHO builds.
+
+The official store feed is `Njurse/JERICHO-Repo-Official`: `mods.json` plus the
+`packages/` zips. It is generated from these sources and published separately
+from CI.
 `SHA256SUMS` lists every archive's SHA256, published beside them so a downloader
 -- the mp remote agent -- can verify an archive against something that did not
 come out of it.
