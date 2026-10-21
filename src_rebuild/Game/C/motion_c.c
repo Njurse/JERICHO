@@ -572,12 +572,6 @@ SVECTOR vJerichoList[102];
 short cJerichoLegVNumbers[6];
 SVECTOR vJerichoLegList[256];
 
-/* HIPS + the two Tanner hand models. Their vertices are cached independently so
- * the hand bones never depend on cTannerVNumbers having been populated while
- * the Jericho skeleton had those bones empty. */
-short cJerichoAuxVNumbers[3];
-SVECTOR vJerichoAuxList[256];
-
 int vStored = 0;
 
 // [D] [T]
@@ -1032,16 +1026,17 @@ void StoreVertexLists(void)
 		}
 	}
 
-	/* Legs/feet: resident Tanner parts. These are the exact models the native
-	 * Tanner skeleton drives, so their origins already match the leg bones. */
+	/* Legs/feet: baked copies if present, otherwise the resident Tanner parts.
+	 * This is a separate snapshot from vTannerList because the bone slots used by
+	 * the Jericho skeleton are not the static Tanner leg slots. */
 	{
-		static const int host[6] = { 11, 12, 7, 5, 6, 13 };
+		static const int fallback[6] = { 11, 12, 7, 5, 6, 13 };
 
 		counter = 0;
 
 		for (i = 0; i < 6; i++)
 		{
-			pModel = pmTannerModels[host[i]];
+			pModel = pmJerichoLegModels[0] ? pmJerichoLegModels[i] : pmTannerModels[fallback[i]];
 
 			if (pModel == NULL)
 			{
@@ -1052,39 +1047,6 @@ void StoreVertexLists(void)
 			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
 			cJerichoLegVNumbers[i] = counter;
 			destVerts = &vJerichoLegList[counter];
-
-			for (j = 0; j < pModel->num_vertices; j++)
-			{
-				destVerts->vx = srcVerts->vx;
-				destVerts->vy = srcVerts->vy;
-				destVerts->vz = srcVerts->vz;
-
-				srcVerts++;
-				destVerts++;
-				counter++;
-			}
-		}
-	}
-
-	/* HIPS + hands. */
-	{
-		static const int host[3] = { 15, 10, 4 };
-
-		counter = 0;
-
-		for (i = 0; i < 3; i++)
-		{
-			pModel = pmTannerModels[host[i]];
-
-			if (pModel == NULL)
-			{
-				cJerichoAuxVNumbers[i] = -1;
-				continue;
-			}
-
-			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
-			cJerichoAuxVNumbers[i] = counter;
-			destVerts = &vJerichoAuxList[counter];
 
 			for (j = 0; j < pModel->num_vertices; j++)
 			{
@@ -1645,13 +1607,15 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 			return base + cJerichoVNumbers[5];
 
 		case LHIP:
-			return vJerichoAuxList + cJerichoAuxVNumbers[0];
+			if (cTannerVNumbers[LHIP] != -1)
+				return vTannerList + cTannerVNumbers[LHIP];
+			return NULL;
 		case LKNEE:
 			return vJerichoLegList + cJerichoLegVNumbers[0];
 		case LFOOT:
 			return vJerichoLegList + cJerichoLegVNumbers[1];
 		case LTOE:
-			return vJerichoLegList + cJerichoLegVNumbers[5];
+			return vJerichoLegList + cJerichoLegVNumbers[2];
 		case RHIP:
 			return NULL;
 		case RKNEE:
@@ -1659,12 +1623,11 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 		case RFOOT:
 			return vJerichoLegList + cJerichoLegVNumbers[4];
 		case RTOE:
-			return vJerichoLegList + cJerichoLegVNumbers[2];
+			return vJerichoLegList + cJerichoLegVNumbers[5];
 
 		case LFINGERS:
-			return vJerichoAuxList + cJerichoAuxVNumbers[1];
 		case RFINGERS:
-			return vJerichoAuxList + cJerichoAuxVNumbers[2];
+			return NULL;
 
 		default:
 			return NULL;
@@ -1968,19 +1931,19 @@ void SetSkelModelPointers(int type)
 		Skel[RELBOW].pModel = &pmJerichoModels[4];
 		Skel[RHAND].pModel = &pmJerichoModels[5];
 
-		/* Use the resident Tanner limb models directly. Their origins are already
-		 * the bone pivots the static skeleton expects, so legs/feet/hands line up
-		 * without re-origining the baked copies. */
+		/* Match the engine's static Tanner leg bindings: the hip joints draw the
+		 * resident HIPS mesh, and the thigh/calf/foot models hang off
+		 * LKNEE/LFOOT/LTOE (and the right-side equivalents). */
 		Skel[LHIP].pModel = &pmTannerModels[15];	/* HIPS */
 		Skel[RHIP].pModel = NULL;
-		Skel[LKNEE].pModel = &pmTannerModels[11];	/* THIGH_LEFT */
-		Skel[LFOOT].pModel = &pmTannerModels[12];	/* CALF_LEFT */
-		Skel[LTOE].pModel = &pmTannerModels[13];	/* engine L toe = FOOT_RIGHT */
-		Skel[RKNEE].pModel = &pmTannerModels[5];	/* THIGH_RIGHT */
-		Skel[RFOOT].pModel = &pmTannerModels[6];	/* CALF_RIGHT */
-		Skel[RTOE].pModel = &pmTannerModels[7];	/* engine R toe = FOOT_LEFT */
-		Skel[LFINGERS].pModel = &pmTannerModels[10];	/* HAND_LEFT */
-		Skel[RFINGERS].pModel = &pmTannerModels[4];	/* HAND_RIGHT */
+		Skel[LKNEE].pModel = pmJerichoLegModels[0] ? &pmJerichoLegModels[0] : &pmTannerModels[11];
+		Skel[LFOOT].pModel = pmJerichoLegModels[1] ? &pmJerichoLegModels[1] : &pmTannerModels[12];
+		Skel[LTOE].pModel = pmJerichoLegModels[2] ? &pmJerichoLegModels[2] : &pmTannerModels[7];
+		Skel[RKNEE].pModel = pmJerichoLegModels[3] ? &pmJerichoLegModels[3] : &pmTannerModels[5];
+		Skel[RFOOT].pModel = pmJerichoLegModels[4] ? &pmJerichoLegModels[4] : &pmTannerModels[6];
+		Skel[RTOE].pModel = pmJerichoLegModels[5] ? &pmJerichoLegModels[5] : &pmTannerModels[13];
+		Skel[LFINGERS].pModel = NULL;
+		Skel[RFINGERS].pModel = NULL;
 
 		bodyShiftValue = BODY_OFFSET + JERICHO_BODY_OFFSET;
 		torsoShiftValue = TORSO_OFFSET + JERICHO_TORSO_OFFSET;

@@ -1320,8 +1320,8 @@ int JerPedImportBaked(int city)
 		}
 	}
 
-	/* The legs keep their own Tanner texture (set 2), which JMPPED stores as a
-	 * compressed permanent page and the runtime pins in the lower-half pool. */
+	/* The legs are retextured to the torso's suit set/id at bake time, so they
+	 * follow the same remap and pinned page as the torso. */
 
 	sJerPedSetCount = 0;
 
