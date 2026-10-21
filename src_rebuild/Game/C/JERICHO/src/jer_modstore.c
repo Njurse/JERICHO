@@ -1414,6 +1414,7 @@ static char gLabelRepoItem[64];
 
 static void StoreDrawWrapped(int x, int y, int width, const char* text, int maxLines, int r, int g, int b);
 static int StoreJobRunning(void);
+static int StoreCountUpdates(void);
 static const char* StoreStateText(int state);
 /* the menu's row actions, defined with the menus further down; the test lever
  * drives them so the real Cross / Left-Right path is what gets exercised */
@@ -2359,6 +2360,23 @@ static int ModsNextPage(void* ud)
 	return 1;
 }
 
+/* Left/Right on the page row: previous/next, wrapping at the ends. One row
+ * carries both directions, so the page controls cost no table space. */
+static int ModsPageAdjust(void* ud, int dir)
+{
+	int count = jer_modstore_module_count();
+	int pages = (count + MODS_ROWS_MAX - 1) / MODS_ROWS_MAX;
+
+	(void)ud;
+
+	if (pages < 1)
+		pages = 1;
+
+	gModsPage = (gModsPage + dir + pages) % pages;
+	jer_frontend_refresh();
+	return 1;
+}
+
 static int ModsCompile(void* ud)
 {
 	(void)ud;
@@ -2502,6 +2520,23 @@ static int RepoNextPage(void* ud)
 	return 1;
 }
 
+/* Left/Right on the repo page row: previous/next, wrapping at the ends. */
+static int RepoPageAdjust(void* ud, int dir)
+{
+	int count = jer_modstore_item_count();
+	int rows = (gRepoPageRows > 0) ? gRepoPageRows : REPO_ROWS_MAX;
+	int pages = (count + rows - 1) / rows;
+
+	(void)ud;
+
+	if (pages < 1)
+		pages = 1;
+
+	gRepoPage = (gRepoPage + dir + pages) % pages;
+	jer_frontend_refresh();
+	return 1;
+}
+
 /* ------------------------------------------------------------------ */
 /* Building the rows                                                   */
 /* ------------------------------------------------------------------ */
@@ -2548,9 +2583,10 @@ static void ModsMenuEnter(void* ud)
 		JER_FE_ITEM* it = &gModsItems[n++];
 
 		memset(it, 0, sizeof(*it));
-		snprintf(gLabelMore, sizeof(gLabelMore), "More mods  (%d/%d)", gModsPage + 1, pages);
+		snprintf(gLabelMore, sizeof(gLabelMore), "Page %d/%d  (< >)", gModsPage + 1, pages);
 		it->label = gLabelMore;
 		it->on_activate = ModsNextPage;
+		it->on_adjust = ModsPageAdjust;
 		it->submenu = -1;
 	}
 
@@ -2689,9 +2725,10 @@ static void RepoMenuEnter(void* ud)
 		JER_FE_ITEM* it = &gRepoItems[n++];
 
 		memset(it, 0, sizeof(*it));
-		snprintf(gLabelMore, sizeof(gLabelMore), "More mods  (%d/%d)", gRepoPage + 1, pages);
+		snprintf(gLabelMore, sizeof(gLabelMore), "Page %d/%d  (< >)", gRepoPage + 1, pages);
 		it->label = gLabelMore;
 		it->on_activate = RepoNextPage;
+		it->on_adjust = RepoPageAdjust;
 		it->submenu = -1;
 	}
 
