@@ -8,6 +8,7 @@ is in [changelog.txt](changelog.txt).
 
 - Multiplayer: getting out of your car and back into it (or using Change car while on foot) no longer leaves a second copy of the vehicle on other players' screens. The machine that saw you get out now reuses the body you left instead of creating a new one.
 - Test Mode's quiet world no longer deletes a player's parked car when they get out; it only clears traffic and police.
+- Multiplayer: another player's police car now shows its flashing lightbar on your screen. The carstate carries the owner's siren state, because the engine only lights a cop bar for AI pursuers. The siren sound is still local-only.
 
 ### Changes
 
