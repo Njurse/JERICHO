@@ -1871,7 +1871,15 @@ void SetSkelModelPointers(int type)
 		Skel[LHAND].pModel = &pmJerichoModels[3];
 		Skel[RELBOW].pModel = &pmJerichoModels[4];
 		Skel[RHAND].pModel = &pmJerichoModels[5];
-		Skel[LHIP].pModel = NULL;
+
+		/* Jericho has no leg geometry. Reuse Tanner's legs and feet so the
+		 * skeleton is complete and the walk cycle has something to draw. */
+		Skel[LHIP].pModel = &pmTannerModels[11];	/* THIGH_LEFT */
+		Skel[LKNEE].pModel = &pmTannerModels[12];	/* CALF_LEFT */
+		Skel[LFOOT].pModel = &pmTannerModels[7];	/* FOOT_LEFT */
+		Skel[RHIP].pModel = &pmTannerModels[5];		/* THIGH_RIGHT */
+		Skel[RKNEE].pModel = &pmTannerModels[6];	/* CALF_RIGHT */
+		Skel[RFOOT].pModel = &pmTannerModels[13];	/* FOOT_RIGHT */
 
 		bodyShiftValue = BODY_OFFSET + JERICHO_BODY_OFFSET;
 		torsoShiftValue = TORSO_OFFSET + JERICHO_TORSO_OFFSET;
