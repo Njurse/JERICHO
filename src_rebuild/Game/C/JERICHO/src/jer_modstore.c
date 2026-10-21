@@ -95,7 +95,7 @@ void jer_mods_open_screen(void);
  * no token. Preconfigured because a store nobody can point anywhere is not a
  * store; repo2..repo8 in CONFIG/modstore.ini add more. */
 #define STORE_OFFICIAL_NAME	"official"
-#define STORE_OFFICIAL_URL	"https://raw.githubusercontent.com/Njurse/JERICHO-mods/main/mods.json"
+#define STORE_OFFICIAL_URL	"https://raw.githubusercontent.com/Njurse/JERICHO-Repo-Official/main/mods.json"
 
 /* Job kinds */
 enum

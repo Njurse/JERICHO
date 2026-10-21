@@ -14,6 +14,16 @@ Pages, `raw.githubusercontent.com`, an S3 bucket, or a folder on this PC.
 
 ---
 
+## The official repo
+
+JERICHO's built-in feed is
+`https://raw.githubusercontent.com/Njurse/JERICHO-Repo-Official/main/mods.json`.
+It lists `mp`, `carhacks`, `crumple`, `d1cars` and `JerAI`, with the packages in
+`packages/`. The sources live in their own repositories
+(`Njurse/JERICHO-Mod-MP`, `Njurse/JERICHO-Mod-carhacks`,
+`Njurse/Jericho-Mod-CRUMPLE`, `Njurse/JERICHO-D1`, and `JERICHO/MODS/JerAI` in the
+main tree). See that repository's README for the publish steps.
+
 ## 1. The index: `mods.json`
 
 ```json
@@ -21,7 +31,7 @@ Pages, `raw.githubusercontent.com`, an S3 bucket, or a folder on this PC.
   "schema": 1,
   "id": "official",
   "name": "JERICHO Mods",
-  "homepage": "https://github.com/Njurse/JERICHO-mods",
+  "homepage": "https://github.com/Njurse/JERICHO-Repo-Official",
 
   "mods": [
     {

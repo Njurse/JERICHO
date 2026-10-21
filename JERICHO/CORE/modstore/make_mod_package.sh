@@ -82,6 +82,10 @@ MDESC=$(toml_get "$SRC/mod.toml" description)
 MREQ=$(toml_get "$SRC/mod.toml" requires)
 MMIN=$(toml_get "$SRC/mod.toml" min_jericho)
 MIFACE=$(toml_get "$SRC/mod.toml" interface)
+MDEFAULT=$(toml_get "$SRC/mod.toml" default-enabled)
+# Only a JSON boolean is valid here; anything else is left out rather than
+# emitting a malformed index entry.
+case "$MDEFAULT" in true|false) ;; *) MDEFAULT= ;; esac
 
 BASENAME=$(basename "$SRC")
 [ "$BASENAME" = "$MID" ] || die "the folder is '$BASENAME' but its mod.toml says id = \"$MID\" - they must match, because the store installs to MODS/<id>/"
@@ -100,6 +104,9 @@ cp -R "$SRC" "$TMP/JERICHO/MODS/$MID" || die "cannot copy $SRC"
 # behind, and they are big: packing them took testmode from 9 KB to 268 KB with
 # 86 files nobody needs. --keep-build ships the folder exactly as it is.
 STAGED="$TMP/JERICHO/MODS/$MID"
+# A source checkout's .git (a file for a submodule, a directory for an in-place
+# clone) is never part of a mod package.
+rm -rf "$STAGED/.git"
 if [ "$KEEP_BUILD" = 0 ]; then
 	rm -rf "$STAGED/obj" "$STAGED/lib"
 	find "$STAGED" -type f \( -name '*.pdb' -o -name '*.ilk' -o -name '*.exp' -o -name '*.o' \) -delete 2>/dev/null || true
@@ -180,6 +187,7 @@ fi
 	# the interface the package was built against: a core on another one refuses it
 	# at activation, so the index says it up front and the store can hide the row
 	[ -z "$MIFACE" ] || printf '    "interface": %s,\n' "$MIFACE"
+	[ -z "$MDEFAULT" ] || printf '    "default_enabled": %s,\n' "$MDEFAULT"
 	printf '    "size": %s\n' "$SIZE"
 	printf '  }'
 } > "$OUT/$MID-$MVER.entry.json"
