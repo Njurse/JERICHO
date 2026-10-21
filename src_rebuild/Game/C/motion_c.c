@@ -1626,7 +1626,12 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 			return vJerichoLegList + cJerichoLegVNumbers[5];
 
 		case LFINGERS:
+			if (cTannerVNumbers[LFINGERS] != -1)
+				return vTannerList + cTannerVNumbers[LFINGERS];
+			return NULL;
 		case RFINGERS:
+			if (cTannerVNumbers[RFINGERS] != -1)
+				return vTannerList + cTannerVNumbers[RFINGERS];
 			return NULL;
 
 		default:
@@ -1942,8 +1947,8 @@ void SetSkelModelPointers(int type)
 		Skel[RKNEE].pModel = pmJerichoLegModels[3] ? &pmJerichoLegModels[3] : &pmTannerModels[5];
 		Skel[RFOOT].pModel = pmJerichoLegModels[4] ? &pmJerichoLegModels[4] : &pmTannerModels[6];
 		Skel[RTOE].pModel = pmJerichoLegModels[5] ? &pmJerichoLegModels[5] : &pmTannerModels[13];
-		Skel[LFINGERS].pModel = NULL;
-		Skel[RFINGERS].pModel = NULL;
+		Skel[LFINGERS].pModel = &pmTannerModels[10];	/* HAND_LEFT */
+		Skel[RFINGERS].pModel = &pmTannerModels[4];	/* HAND_RIGHT */
 
 		bodyShiftValue = BODY_OFFSET + JERICHO_BODY_OFFSET;
 		torsoShiftValue = TORSO_OFFSET + JERICHO_TORSO_OFFSET;
