@@ -675,6 +675,8 @@ int JerLoadCarImportForCity(int city)
  * level's own models.
  * ------------------------------------------------------------------------- */
 #define JER_PED_IMPORT_MODELS	6
+#define JER_PED_LEG_MODELS	6
+#define JER_PED_BAKED_MODELS	(JER_PED_IMPORT_MODELS + JER_PED_LEG_MODELS)
 
 static const char* const sJerPedModelNames[JER_PED_IMPORT_MODELS] =
 {
@@ -1149,9 +1151,9 @@ int JerPedImportBaked(int city)
 	unsigned char* file;
 	unsigned char* p;
 	unsigned char* end;
-	unsigned char* blobs[JER_PED_IMPORT_MODELS];
-	int sizes[JER_PED_IMPORT_MODELS];
-	MODEL* built[JER_PED_IMPORT_MODELS];
+	unsigned char* blobs[JER_PED_BAKED_MODELS];
+	int sizes[JER_PED_BAKED_MODELS];
+	MODEL* built[JER_PED_BAKED_MODELS];
 	unsigned int version, count, pageCount;
 	int total = 0;
 	int i, k;
@@ -1203,14 +1205,14 @@ int JerPedImportBaked(int city)
 	version = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
 	count = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
 
-	if (version != 1 || count != JER_PED_IMPORT_MODELS || p + 4 > end)
+	if (version != 2 || count != JER_PED_BAKED_MODELS || p + 4 > end)
 	{
 		printInfo("ped import: JMPPED.LEV version %u has %u models\n", version, count);
 		free(file);
 		return 0;
 	}
 
-	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
 	{
 		unsigned int size;
 
@@ -1246,7 +1248,7 @@ int JerPedImportBaked(int city)
 
 	cur = mem;
 
-	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
 	{
 		MODEL* m;
 
@@ -1266,7 +1268,7 @@ int JerPedImportBaked(int city)
 #endif
 	}
 
-	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
 	{
 		MODEL* m = built[i];
 		int parent = m->instance_number;
@@ -1274,10 +1276,10 @@ int JerPedImportBaked(int city)
 		if (parent < 0)
 			continue;
 
-		if (parent >= JER_PED_IMPORT_MODELS)
+		if (parent >= JER_PED_BAKED_MODELS)
 		{
-			printInfo("ped import: baked %s names parent %d outside the six\n",
-				sJerPedModelNames[i], parent);
+			printInfo("ped import: baked model %d names parent %d outside the bake\n",
+				i, parent);
 			free(mem);
 			goto fail;
 		}
@@ -1305,13 +1307,14 @@ int JerPedImportBaked(int city)
 		m->instance_number = -1;
 	}
 
-	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
 	{
-		sJerPedModelIndex[i] = i;
+		if (i < JER_PED_IMPORT_MODELS)
+			sJerPedModelIndex[i] = i;
 
 		if (built[i]->poly_block <= 0 || built[i]->num_polys <= 0)
 		{
-			printInfo("ped import: baked %s has no polygon data\n", sJerPedModelNames[i]);
+			printInfo("ped import: baked model %d has no polygon data\n", i);
 			free(mem);
 			goto fail;
 		}
@@ -1366,6 +1369,9 @@ int JerPedImportBaked(int city)
 	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
 		pmJerichoModels[i] = built[i];
 
+	for (i = 0; i < JER_PED_LEG_MODELS; i++)
+		pmJerichoLegModels[i] = built[JER_PED_IMPORT_MODELS + i];
+
 	if (sJerPedMem != NULL)
 		free(sJerPedMem);
 
@@ -1379,7 +1385,7 @@ int JerPedImportBaked(int city)
 	sJerPedReady = 1;
 
 	printInfo("ped import: baked JMPPED.LEV loaded (%d models, %u pages) for %s\n",
-		JER_PED_IMPORT_MODELS, pageCount, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "any level");
+		JER_PED_BAKED_MODELS, pageCount, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "any level");
 
 	free(file);
 	return 1;
@@ -1585,6 +1591,9 @@ void JerPedImportReset(void)
 
 	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
 		sJerPedModels[i] = NULL;
+
+	for (i = 0; i < JER_PED_LEG_MODELS; i++)
+		pmJerichoLegModels[i] = NULL;
 }
 
 

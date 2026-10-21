@@ -50,6 +50,7 @@ typedef struct SEATED_PEDESTRIANS
 
 MODEL* pmTannerModels[17] = { 0 };
 MODEL* pmJerichoModels[6] = { 0 };
+MODEL* pmJerichoLegModels[6] = { 0 };
 
 void PedDoNothing(LPPEDESTRIAN pPed);
 void PedUserWalker(LPPEDESTRIAN pPed);
