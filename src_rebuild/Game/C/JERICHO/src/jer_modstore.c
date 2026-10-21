@@ -2820,11 +2820,11 @@ static void RepoMenuEnter(void* ud)
 	}
 
 	gRepoMenu.item_count = n;
-	/* The controls FOLLOW the list rather than being pinned to the bottom edge.
-	 * The repo browser is often shorter than the band, and pinning the controls
-	 * left a large void between the last mod row and Refresh/Reload/Back. The
-	 * selected-mod description now lives in the footer below them. */
-	gRepoMenu.bottom_items = 0;
+	/* The controls stay PINNED to the bottom edge: their position must not move
+	 * with the mod list. The table is clipped to the band above them; a short
+	 * list leaves empty space, and the description/hint is drawn there only when
+	 * it fits above the controls. */
+	gRepoMenu.bottom_items = controls;
 }
 
 /* Register both menus if the registry does not hold them. The registry is wiped
@@ -3063,13 +3063,14 @@ static void StoreDrawRepoTable(void)
 		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 64), top - 34, "NOTE", 255, 176, 64);
 	}
 
-	/* The highlighted entry's description, in the footer below the controls. The
-	 * repo table is often shorter than the band, so the description is where the
-	 * old pinned-control layout left a void; with a full page there is no room
-	 * and it is simply skipped. */
+	/* The highlighted entry's description, under the table but clipped to the
+	 * band above the PINNED controls. The controls never move with the list; a
+	 * page with no room for the description simply omits it rather than drawing
+	 * over Refresh/Reload/Back. */
 	{
 		int sel = jer_frontend_selected() - gRepoModFirstRow;
 		const JER_MODSTORE_ITEM* it = NULL;
+		int controlsTop = gRepoMenu.row_bottom - gRepoMenu.bottom_items * gRepoMenu.row_step;
 		int lx = 0, ly = 0, lw = 0, lh = 0;
 
 		if (sel >= 0 && sel < gRepoRows)
@@ -3077,9 +3078,9 @@ static void StoreDrawRepoTable(void)
 
 		/* the rect first: the fit test needs its numbers, and asking before the
 		 * call meant the guard tested zeros and always passed */
-		if (gRepoMenu.item_count > 0 &&
-			jer_frontend_row_rect(gRepoMenu.item_count - 1, &lx, &ly, &lw, &lh) &&
-			ly + lh + 8 + 56 <= 470)
+		if (gRepoRows > 0 &&
+			jer_frontend_row_rect(gRepoModFirstRow + gRepoRows - 1, &lx, &ly, &lw, &lh) &&
+			ly + lh + 8 + 56 <= controlsTop)
 		{
 			if (it != NULL && it->description != NULL && it->description[0] != 0)
 				StoreDrawWrapped(StoreTextX(lx, lw, 2), ly + lh + 8, 470, it->description, 2, 150, 150, 150);
