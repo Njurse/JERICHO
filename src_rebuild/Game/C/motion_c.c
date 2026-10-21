@@ -1883,6 +1883,24 @@ void SetSkelModelPointers(int type)
 
 		bodyShiftValue = BODY_OFFSET + JERICHO_BODY_OFFSET;
 		torsoShiftValue = TORSO_OFFSET + JERICHO_TORSO_OFFSET;
+
+		{
+			static int reportedType = -2;
+			static MODEL* reportedLeg = NULL;
+
+			if (reportedType != type || reportedLeg != pmJerichoLegModels[0])
+			{
+				reportedType = type;
+				reportedLeg = pmJerichoLegModels[0];
+
+				printInfo("skeleton: Jericho torso=%p head=%p arms=%p/%p/%p/%p legs=%s bodyShift=%d torsoShift=%d\n",
+					(void*)pmJerichoModels[0], (void*)pmJerichoModels[1],
+					(void*)pmJerichoModels[2], (void*)pmJerichoModels[3],
+					(void*)pmJerichoModels[4], (void*)pmJerichoModels[5],
+					pmJerichoLegModels[0] ? "baked" : "Tanner",
+					bodyShiftValue, torsoShiftValue);
+			}
+		}
 	}
 	else
 	{

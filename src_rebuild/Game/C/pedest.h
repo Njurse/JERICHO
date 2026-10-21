@@ -10,6 +10,8 @@ extern SVECTOR tannerLookAngle;
 extern MODEL* pmTannerModels[17];
 extern MODEL* pmJerichoModels[6];
 extern MODEL* pmJerichoLegModels[6];
+extern int JerPedSkeletonGeneration(void);
+extern void JerPedSkeletonInvalidate(void);
 
 /* JERICHO: append the imported Jericho models' CLUT pairs to the live palette
  * table without resetting cached teams. 0 = pair table or CLUT strip full. */

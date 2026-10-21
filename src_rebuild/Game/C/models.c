@@ -1569,6 +1569,7 @@ void JerPedImportReset(void)
 	int i;
 
 	JerPedReleasePins();
+	JerPedSkeletonInvalidate();
 
 	if (sJerPedMem != NULL)
 	{

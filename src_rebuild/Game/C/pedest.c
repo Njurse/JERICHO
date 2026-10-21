@@ -52,6 +52,18 @@ MODEL* pmTannerModels[17] = { 0 };
 MODEL* pmJerichoModels[6] = { 0 };
 MODEL* pmJerichoLegModels[6] = { 0 };
 
+int gJerPedSkeletonGeneration = 1;
+
+int JerPedSkeletonGeneration(void)
+{
+	return gJerPedSkeletonGeneration;
+}
+
+void JerPedSkeletonInvalidate(void)
+{
+	gJerPedSkeletonGeneration++;
+}
+
 void PedDoNothing(LPPEDESTRIAN pPed);
 void PedUserWalker(LPPEDESTRIAN pPed);
 void PedUserRunner(LPPEDESTRIAN pPed);
@@ -572,6 +584,7 @@ int JerPedInstallModels(void)
 
 	StoreVertexLists();
 	SetSkelModelPointers(OTHER_MODEL);
+	gJerPedSkeletonGeneration++;
 
 	return 1;
 }
