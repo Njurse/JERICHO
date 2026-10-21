@@ -143,6 +143,7 @@ int JerPedImportReady(void);
 int JerPedTextureSetCount(void);
 int JerPedTextureSet(int index);
 void JerPedImportReset(void);
+int JerPedAreaPage(int city, int set, int dstSet);
 
 char* GetCarImportPallet(int* size);
 char* GetCarImportPalletForCity(int city, int* size);

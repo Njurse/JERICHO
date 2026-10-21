@@ -2910,6 +2910,7 @@ static int JerPedPinOffset(int city, int set, int* offset, int* size)
 
 	if (city < 0 || city >= CITY_COUNT)
 		return 0;
+
 	for (i = 0; i < gCarImportPerms[city].count; i++)
 	{
 		if (gCarImportPerms[city].set[i] == set)
@@ -2920,6 +2921,24 @@ static int JerPedPinOffset(int city, int set, int* offset, int* size)
 		}
 
 		off += (gCarImportPerms[city].bytes[i] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+	}
+
+	/* Pedestrian pages (the JERI models use these) are not in the car perm
+	 * list; the special list follows it in the same page-data region. */
+	for (i = 0; i < gCarImportSpecs[city].count; i++)
+	{
+		if (gCarImportSpecs[city].set[i] == set)
+		{
+			*offset = off;
+			*size = gCarImportSpecs[city].bytes[i];
+
+			printInfo("ped import: %s set %d is a special/pedestrian page (+%d, %d bytes)\n",
+				LevelNames[city], set, off, *size);
+
+			return (*size > 0);
+		}
+
+		off += (gCarImportSpecs[city].bytes[i] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
 	}
 
 	return 0;
@@ -2943,7 +2962,17 @@ int JerPedPinTpages(int city, const int* sets, int count)
 
 		if (!JerPedPinOffset(city, sets[i], &offset, &size))
 		{
-			printInfo("ped import: %s set %d is not in its page list - refusing\n",
+			/* Not a permanent/special page: the JERI models use streamed AREA
+			 * pages. Read that page from Havana's spool and place it now. */
+			dst = CarImportPinDstSet(sets[i]);
+
+			if (JerPedAreaPage(city, sets[i], dst))
+			{
+				sJerPedPinsRecorded++;
+				continue;
+			}
+
+			printInfo("ped import: %s set %d is in neither page list nor an area page - refusing\n",
 				LevelNames[city], sets[i]);
 			sJerPedPinFailed = 1;
 			continue;
@@ -3001,9 +3030,102 @@ int JerPedPinsReady(void)
 	return (sJerPedPinsRecorded > 0 && !sJerPedPinFailed);
 }
 
+/* Diagnostic: what the city's two page lists actually contain. */
+void JerPedPageListsReport(int city)
+{
+	int i;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return;
+
+	CarImportPageListsForCity(city);
+
+	printInfo("ped import: %s permanent pages:", LevelNames[city]);
+	for (i = 0; i < gCarImportPerms[city].count; i++)
+		printInfo(" %d/%d", gCarImportPerms[city].set[i], gCarImportPerms[city].bytes[i]);
+
+	printInfo("\nped import: %s special/pedestrian pages:", LevelNames[city]);
+	for (i = 0; i < gCarImportSpecs[city].count; i++)
+		printInfo(" %d/%d", gCarImportSpecs[city].set[i], gCarImportSpecs[city].bytes[i]);
+
+	printInfo("\n");
+}
+
+static int sJerPedAreaPool[16];
+static int sJerPedAreaClutY[16];
+static int sJerPedAreaClutRows[16];
+static int sJerPedAreaPoolCount;
+
+/* Upload one streamed AREA page into the lower-half pool. The page data is the
+ * spool's 17-sector unit: an int CLUT count, the CLUT rows, then the compressed
+ * 64x256 image. LoadTPageAndCluts writes texture_pages/dstSet and its CLUTs. */
+int JerPedUploadAreaPage(int set, int dstSet, char* buf)
+{
+	RECT16 tpage, clut;
+	int pool, npal, rows, used, startY;
+
+	if (buf == NULL)
+		return 0;
+
+	npal = *(int*)buf;
+
+	if (npal <= 0 || npal > 32)
+		return 0;
+
+	rows = CarClutRowsFor(npal);
+
+	if (JerLowerPoolClutRowsFree() < rows)
+		return 0;
+
+	pool = JerLowerPoolPageAlloc();
+
+	if (pool < 0)
+		return 0;
+
+	JerLowerPoolPageRect(pool, &tpage);
+	JerLowerPoolClutCursor(&clut);
+	startY = clut.y;
+
+	sCarPageUploading = 1;
+
+	if (!LoadTPageAndCluts(&tpage, &clut, dstSet, buf))
+	{
+		sCarPageUploading = 0;
+		JerLowerPoolPageFree(pool);
+		return 0;
+	}
+
+	sCarPageUploading = 0;
+	used = CarClutRowsUsed(960, startY, clut.x, clut.y);
+	JerLowerPoolClutAdvance((used > rows) ? used : rows);
+
+	if (sJerPedAreaPoolCount < 16)
+	{
+		sJerPedAreaPool[sJerPedAreaPoolCount] = pool;
+		sJerPedAreaClutY[sJerPedAreaPoolCount] = startY;
+		sJerPedAreaClutRows[sJerPedAreaPoolCount] = (used > rows) ? used : rows;
+		sJerPedAreaPoolCount++;
+	}
+
+	printInfo("ped import: set %d -> page set %d from an area page (%d CLUTs, %d row(s))\n",
+		set, dstSet, npal, rows);
+
+	return 1;
+}
+
 void JerPedReleasePins(void)
 {
 	int i;
+
+	for (i = sJerPedAreaPoolCount - 1; i >= 0; i--)
+	{
+		JerLowerPoolPageFree(sJerPedAreaPool[i]);
+
+		if (sJerPedAreaClutRows[i] > 0)
+			CarClutFreeGive(&sPinClutFree, sJerPedAreaClutY[i], sJerPedAreaClutRows[i]);
+	}
+
+	sJerPedAreaPoolCount = 0;
 
 	for (i = sPinCount - 1; i >= 0; i--)
 	{

@@ -896,6 +896,8 @@ int JerPedImportProbe(int city)
 		return 0;
 	}
 
+	JerPedPageListsReport(city);
+
 	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
 	{
 		MODEL* src = NULL;
@@ -1142,6 +1144,115 @@ int JerPedTextureSet(int index)
 		return 0;
 
 	return sJerPedSet[index];
+}
+
+/* The JERI texture sets are not in Havana's permanent or special page lists.
+ * They are streamed AREA pages: each area has a list of page numbers and its
+ * page data starts at gfx_offset, 17 sectors per page. Read the page from the
+ * full Havana level file and upload it into the lower-half pool. */
+int JerPedAreaPage(int city, int set, int dstSet)
+{
+	CAR_IMPORT* imp;
+	char* spool = NULL;
+	int spoolSize = 0;
+	char* ptr;
+	char* areas;
+	char* pages;
+	char path[192];
+	FILE* fp;
+	char* buf;
+	int musicSize, nareas, a, i;
+	int sector = -1;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	imp = &gCarImports[city];
+
+	if (imp->data2 == NULL)
+		return 0;
+
+	if (!FindLumpSegment(imp->data2 + 8, imp->data2Size - 8, 26, &spool, &spoolSize) ||
+		spool == NULL || spoolSize < 8)
+		return 0;
+
+	ptr = spool + 4;
+	musicSize = *(int*)ptr;
+	ptr += 4 + musicSize;
+
+	if (ptr + 4 > spool + spoolSize)
+		return 0;
+
+	nareas = *(int*)ptr;
+	ptr += 4;
+
+	if (nareas <= 0 || ptr + nareas * 16 > spool + spoolSize)
+		return 0;
+
+	areas = ptr;
+	ptr += nareas * 16;
+
+	if (ptr + nareas * 16 > spool + spoolSize)
+		return 0;
+
+	pages = ptr;
+
+	for (a = 0; a < nareas && sector < 0; a++)
+	{
+		unsigned short gfx = *(unsigned short*)(areas + a * 16);
+		unsigned char ntpages = *(unsigned char*)(areas + a * 16 + 10);
+
+		for (i = 0; i < ntpages; i++)
+		{
+			if ((unsigned char)pages[a * 16 + i] == set)
+			{
+				sector = (int)gfx + i * 17;
+				break;
+			}
+		}
+	}
+
+	if (sector < 0)
+		return 0;
+
+	if (!JerCityPath(city, path, sizeof(path), JER_CITY_FILE_LEVEL, 0))
+		return 0;
+
+	fp = fopen(path, "rb");
+
+	if (fp == NULL)
+		return 0;
+
+	buf = (char*)malloc(17 * CDSECTOR_SIZE);
+
+	if (buf == NULL)
+	{
+		fclose(fp);
+		return 0;
+	}
+
+	if (fseek(fp, (long)sector * CDSECTOR_SIZE, SEEK_SET) != 0 ||
+		fread(buf, 1, 17 * CDSECTOR_SIZE, fp) != 17 * CDSECTOR_SIZE)
+	{
+		fclose(fp);
+		free(buf);
+		return 0;
+	}
+
+	fclose(fp);
+
+	if (!JerPedUploadAreaPage(set, dstSet, buf))
+	{
+		free(buf);
+		return 0;
+	}
+
+	free(buf);
+
+	printInfo("ped import: %s set %d read from area page sector %d\n",
+		LevelNames[city], set, sector);
+
+	return 1;
 }
 
 /* A level boundary or session teardown. The imported pointers are cleared only

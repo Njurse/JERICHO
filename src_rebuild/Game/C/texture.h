@@ -58,6 +58,11 @@ extern void JerHotLoadCarTpages(void);
 extern int JerPedPinTpages(int city, const int* sets, int count);
 extern int JerPedPinsReady(void);
 extern void JerPedReleasePins(void);
+extern void JerPedPageListsReport(int city);
+
+/* Upload one streamed AREA page (17 sectors: CLUT count + CLUTs + compressed
+ * 64x256 image) into a lower-half pool page and a stable CLUT band. */
+extern int JerPedUploadAreaPage(int set, int dstSet, char* buf);
 
 /* JERICHO: parse one city's page lists, for a city read in MID-LEVEL. The level-load
  * parse covers only the cities held then, and without this a later city's sets are "not
