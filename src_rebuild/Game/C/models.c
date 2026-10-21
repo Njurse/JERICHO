@@ -1143,6 +1143,39 @@ int JerPedBakedAvailable(void)
 	return memcmp(magic, "JMPPED\0\0", 8) == 0;
 }
 
+static void JerPedCopyTextureIds(MODEL* dst, MODEL* src)
+{
+	char* d;
+	char* s;
+	int i;
+
+	if (dst == NULL || src == NULL || dst->poly_block == 0 || src->poly_block == 0)
+		return;
+
+	d = (char*)dst + dst->poly_block;
+	s = (char*)src + src->poly_block;
+
+	for (i = 0; i < dst->num_polys && i < src->num_polys; i++)
+	{
+		int dt = (u_char)*d & 0x1f;
+		int st = (u_char)*s & 0x1f;
+		int dstep = (dt < 56) ? PolySizes[dt] : 0;
+		int sstep = (st < 56) ? PolySizes[st] : 0;
+
+		if (dstep <= 0 || sstep <= 0)
+			break;
+
+		if (JerPedIsTexturedPoly(dt) && JerPedIsTexturedPoly(st))
+		{
+			d[1] = s[1];
+			d[2] = s[2];
+		}
+
+		d += dstep;
+		s += sstep;
+	}
+}
+
 /* Load the self-contained bake. The file stores six MODEL-relative blobs and
  * two raw 64x256 pages; no Havana level file or spool decoding is involved. */
 int JerPedImportBaked(int city)
@@ -1318,6 +1351,17 @@ int JerPedImportBaked(int city)
 			free(mem);
 			goto fail;
 		}
+	}
+
+	/* The legs are Tanner geometry. Take the CURRENT level's Tanner texture
+	 * set/id so they always sample the resident Tanner pages (and therefore
+	 * the player palette), regardless of which level the bake came from. */
+	{
+		static const int hostLegs[JER_PED_LEG_MODELS] = { 11, 12, 7, 5, 6, 13 };
+		int j;
+
+		for (j = 0; j < JER_PED_LEG_MODELS; j++)
+			JerPedCopyTextureIds(built[JER_PED_IMPORT_MODELS + j], pmTannerModels[hostLegs[j]]);
 	}
 
 	sJerPedSetCount = 0;
