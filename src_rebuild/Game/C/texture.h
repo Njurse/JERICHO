@@ -63,7 +63,7 @@ extern void JerPedPageListsReport(int city);
 /* Upload one streamed AREA page (17 sectors: CLUT count + CLUTs + compressed
  * 64x256 image) into a lower-half pool page and a stable CLUT band. */
 extern int JerPedUploadAreaPage(int set, int dstSet, char* buf);
-extern int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned char* cluts, const unsigned char* image);
+extern int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned char* cluts, const unsigned char* image, int compressed);
 extern int CarImportPinDstSet(int set);
 
 /* JERICHO: parse one city's page lists, for a city read in MID-LEVEL. The level-load

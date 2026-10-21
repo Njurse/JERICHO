@@ -3113,13 +3113,74 @@ int JerPedUploadAreaPage(int set, int dstSet, char* buf)
 	return 1;
 }
 
-int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned char* cluts, const unsigned char* image)
+int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned char* cluts, const unsigned char* image, int compressed)
 {
 	RECT16 tpage, clut;
 	int pool, rows, i;
 	unsigned int* clutptr;
 
-	if (cluts == NULL || image == NULL || npalettes <= 0 || npalettes > 128 || dstSet < 0 || dstSet >= 128)
+	if (dstSet < 0 || dstSet >= 128)
+		return 0;
+
+	/* A permanent page from the archive: the engine's own LoadTPageAndCluts
+	 * layout (ncluts, CLUT rows, compressed 64x256 image). */
+	if (compressed)
+	{
+		int npal;
+
+		if (image == NULL)
+			return 0;
+
+		npal = *(int*)image;
+
+		if (npal <= 0 || npal > 128 || JerLowerPoolClutRowsFree() < npal)
+		{
+			printInfo("ped import: baked set %d needs %d CLUT rows, none free\n", set, npal);
+			return 0;
+		}
+
+		pool = JerLowerPoolPageAlloc();
+
+		if (pool < 0)
+		{
+			printInfo("ped import: baked set %d has no lower-half page\n", set);
+			return 0;
+		}
+
+		JerLowerPoolPageRect(pool, &tpage);
+		JerLowerPoolClutCursor(&clut);
+
+		tpage.w = 64;
+		tpage.h = 256;
+		clut.w = 16;
+		clut.h = 1;
+
+		sCarPageUploading = 1;
+		if (!LoadTPageAndCluts(&tpage, &clut, dstSet, (char*)image))
+		{
+			sCarPageUploading = 0;
+			JerLowerPoolPageFree(pool);
+			return 0;
+		}
+		sCarPageUploading = 0;
+
+		JerLowerPoolClutAdvance(npal);
+
+		if (sJerPedAreaPoolCount < 16)
+		{
+			sJerPedAreaPool[sJerPedAreaPoolCount] = pool;
+			sJerPedAreaClutY[sJerPedAreaPoolCount] = clut.y - npal;
+			sJerPedAreaClutRows[sJerPedAreaPoolCount] = npal;
+			sJerPedAreaPoolCount++;
+		}
+
+		printInfo("ped import: baked set %d -> page set %d (%d CLUTs compressed, page %d,%d)\n",
+			set, dstSet, npal, tpage.x, tpage.y);
+
+		return 1;
+	}
+
+	if (cluts == NULL || image == NULL || npalettes <= 0 || npalettes > 128)
 		return 0;
 
 	rows = CarClutRowsFor(npalettes);

@@ -1143,41 +1143,8 @@ int JerPedBakedAvailable(void)
 	return memcmp(magic, "JMPPED\0\0", 8) == 0;
 }
 
-static void JerPedCopyTextureIds(MODEL* dst, MODEL* src)
-{
-	char* d;
-	char* s;
-	int i;
-
-	if (dst == NULL || src == NULL || dst->poly_block == 0 || src->poly_block == 0)
-		return;
-
-	d = (char*)dst + dst->poly_block;
-	s = (char*)src + src->poly_block;
-
-	for (i = 0; i < dst->num_polys && i < src->num_polys; i++)
-	{
-		int dt = (u_char)*d & 0x1f;
-		int st = (u_char)*s & 0x1f;
-		int dstep = (dt < 56) ? PolySizes[dt] : 0;
-		int sstep = (st < 56) ? PolySizes[st] : 0;
-
-		if (dstep <= 0 || sstep <= 0)
-			break;
-
-		if (JerPedIsTexturedPoly(dt) && JerPedIsTexturedPoly(st))
-		{
-			d[1] = s[1];
-			d[2] = s[2];
-		}
-
-		d += dstep;
-		s += sstep;
-	}
-}
-
-/* Load the self-contained bake. The file stores six MODEL-relative blobs and
- * two raw 64x256 pages; no Havana level file or spool decoding is involved. */
+/* Load the self-contained bake. The file stores twelve MODEL-relative blobs and
+ * three texture pages (two raw area pages and one compressed permanent page). */
 int JerPedImportBaked(int city)
 {
 	FILE* f;
@@ -1238,7 +1205,7 @@ int JerPedImportBaked(int city)
 	version = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
 	count = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
 
-	if (version != 2 || count != JER_PED_BAKED_MODELS || p + 4 > end)
+	if (version != 3 || count != JER_PED_BAKED_MODELS || p + 4 > end)
 	{
 		printInfo("ped import: JMPPED.LEV version %u has %u models\n", version, count);
 		free(file);
@@ -1372,18 +1339,19 @@ int JerPedImportBaked(int city)
 
 	for (i = 0; i < (int)pageCount; i++)
 	{
-		unsigned int set, npal, clutLen, imageLen;
+		unsigned int set, npal, clutLen, imageLen, flags;
 		const unsigned char* cluts;
 		const unsigned char* image;
 		int dst;
 
-		if (p + 16 > end)
+		if (p + 20 > end)
 			break;
 
 		set = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
 		npal = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
 		clutLen = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
 		imageLen = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
+		flags = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
 
 		if (p + clutLen + imageLen > end)
 			break;
@@ -1392,7 +1360,7 @@ int JerPedImportBaked(int city)
 		image = p + clutLen;
 		dst = CarImportPinDstSet((int)set);
 
-		if (!JerPedUploadBakedPage((int)set, dst, (int)npal, cluts, image))
+		if (!JerPedUploadBakedPage((int)set, dst, (int)npal, cluts, image, (int)(flags & 1)))
 		{
 			free(mem);
 			JerPedReleasePins();
