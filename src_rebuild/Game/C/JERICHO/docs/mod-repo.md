@@ -36,12 +36,12 @@ main tree). See that repository's README for the publish steps.
   "mods": [
     {
       "id": "d1cars",
-      "name": "Driver 1 Cars",
-      "version": "0.2.0",
+      "name": "BAKE Car Toolkit",
+      "version": "0.2.1",
       "author": "Jaret Ludvik",
       "description": "Driver 1 traffic car shapes as a fifth car-data source.",
 
-      "file": "d1cars-0.2.0.zip",
+      "file": "d1cars-0.2.1.zip",
       "sha256": "6b94e786c6c7c724581dbc4947b88590273185c4afc4e055e5152299fe204283",
       "size": 23456,
 
