@@ -489,6 +489,7 @@ static const JER_FE_MENU* gFeMenus[JER_FE_MAX_MENUS];
 static int gFeMenuCount;
 static int gFeMainEntry = -1;		// menu index the Multiplayer entry opens
 static int gFeNeedSetup;		// rebuild the current module menu screen
+static int gFePendingSelect = -1;	// row a refresh should land on (see jer_frontend_refresh_at)
 static int gFeMenuEnterFrame;		// suppress module-menu input on the frame it appears
 					// (the pad state handed to that first frame can be stale,
 					//  which auto-confirmed a row)
@@ -4702,6 +4703,17 @@ void jer_frontend_set_main_entry(const char* id)
 
 void jer_frontend_refresh(void)
 {
+	gFePendingSelect = -1;
+	gFeNeedSetup = 1;
+	bRedrawFrontend = 1;
+}
+
+/* Refresh and land the rebuilt menu on `index`. Used by a control whose row
+ * index moves when the menu rebuilds: jer_frontend_refresh() forces the setup
+ * path, which otherwise puts the cursor back on the top row. */
+void jer_frontend_refresh_at(int index)
+{
+	gFePendingSelect = index;
 	gFeNeedSetup = 1;
 	bRedrawFrontend = 1;
 }
@@ -5025,15 +5037,21 @@ int JerFrontendMenuScreen(int bSetup)
 		 * row every frame and the cursor gets stuck there */
 		if (bSetup)
 		{
-			/* BACKING OUT lands on the row the player left this menu by. The
-			 * engine hands that row down in pNewButton (a Back press carries the
-			 * button off the nav stack); a FRESH entry has none, and so does a row
-			 * that no longer exists - a live roster that shrank, a menu whose
-			 * items changed - because a stale index would leave the highlight
-			 * nowhere. Either way, the top row. */
+			/* A refresh may name the row it should land on: a page row's index
+			 * moves when a page is shorter, and an ordinary refresh would put
+			 * the cursor back on the top row. Backing out is the other case:
+			 * pNewButton carries the row off the nav stack. Anything else
+			 * starts at the top. */
 			int cur = 0;
 
-			if (pNewButton != NULL && pNewButton >= pCurrScreen->buttons &&
+			if (gFePendingSelect >= 0)
+			{
+				if (gFePendingSelect < n)
+					cur = gFePendingSelect;
+
+				gFePendingSelect = -1;
+			}
+			else if (pNewButton != NULL && pNewButton >= pCurrScreen->buttons &&
 				pNewButton < pCurrScreen->buttons + n)
 			{
 				cur = (int)(pNewButton - pCurrScreen->buttons);
@@ -5041,6 +5059,7 @@ int JerFrontendMenuScreen(int bSetup)
 
 			pNewButton = NULL;
 			pCurrButton = &pCurrScreen->buttons[cur];
+			currSelIndex = cur;
 		}
 		else
 		{

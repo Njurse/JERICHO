@@ -164,6 +164,13 @@ int  jer_frontend_list_top(void);
  * the cursor. */
 int  jer_frontend_selected(void);
 
+/* Module-side: as jer_frontend_refresh(), but the rebuilt menu selects row
+ * `index` instead of resetting to the top. A menu whose cursor must stay on a
+ * control whose row index moves when its rows are rebuilt (a page row whose
+ * page length changed) calls this after changing the page. Out of range falls
+ * back to the top row, and an ordinary jer_frontend_refresh() clears it. */
+void jer_frontend_refresh_at(int index);
+
 /* Module-side: navigate to a registered menu (by index) or a raw frontend
  * screen index (e.g. for a stock screen a module wants to return to). */
 void jer_frontend_open(int menuIndex);

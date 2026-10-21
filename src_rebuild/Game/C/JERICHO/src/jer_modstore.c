@@ -2352,28 +2352,53 @@ static int ModsRowAdjust(void* ud, int dir)
 	return 1;
 }
 
+static int ModsPages(int count)
+{
+	int pages = (count + MODS_ROWS_MAX - 1) / MODS_ROWS_MAX;
+
+	return (pages < 1) ? 1 : pages;
+}
+
+/* The page row follows the mod rows, so its index is the mod-row count on the
+ * new page. The controls follow it; the menu builder uses the same count. */
+static int ModsPageRowFor(int page, int count)
+{
+	int start = page * MODS_ROWS_MAX;
+	int rows = count - start;
+
+	if (rows > MODS_ROWS_MAX)
+		rows = MODS_ROWS_MAX;
+	if (rows < 0)
+		rows = 0;
+
+	return rows;
+}
+
 static int ModsNextPage(void* ud)
 {
+	int count = jer_modstore_module_count();
+	int pages = ModsPages(count);
+
 	(void)ud;
-	gModsPage++;
-	jer_frontend_refresh();
+
+	gModsPage = (gModsPage + 1) % pages;
+	jer_frontend_refresh_at(ModsPageRowFor(gModsPage, count));
 	return 1;
 }
 
 /* Left/Right on the page row: previous/next, wrapping at the ends. One row
- * carries both directions, so the page controls cost no table space. */
+ * carries both directions, so the page controls cost no table space. The
+ * refresh lands the cursor on the page row again: the row index moves when a
+ * page is shorter, and a plain refresh would snap it to the top row. */
 static int ModsPageAdjust(void* ud, int dir)
 {
 	int count = jer_modstore_module_count();
-	int pages = (count + MODS_ROWS_MAX - 1) / MODS_ROWS_MAX;
+	int pages = ModsPages(count);
 
 	(void)ud;
 
-	if (pages < 1)
-		pages = 1;
-
 	gModsPage = (gModsPage + dir + pages) % pages;
-	jer_frontend_refresh();
+	jer_frontend_refresh_at(ModsPageRowFor(gModsPage, count));
 	return 1;
 }
 
@@ -2512,28 +2537,60 @@ static int RepoRefresh(void* ud)
 	return 1;
 }
 
-static int RepoNextPage(void* ud)
+static int RepoPages(int count)
 {
-	(void)ud;
-	gRepoPage++;
-	jer_frontend_refresh();
-	return 1;
-}
-
-/* Left/Right on the repo page row: previous/next, wrapping at the ends. */
-static int RepoPageAdjust(void* ud, int dir)
-{
-	int count = jer_modstore_item_count();
 	int rows = (gRepoPageRows > 0) ? gRepoPageRows : REPO_ROWS_MAX;
 	int pages = (count + rows - 1) / rows;
 
+	return (pages < 1) ? 1 : pages;
+}
+
+/* The page row follows the repo rows and the mod rows: repoN + rows. */
+static int RepoPageRowFor(int page, int count, int repoN)
+{
+	int rows = (gRepoPageRows > 0) ? gRepoPageRows : REPO_ROWS_MAX;
+	int start = page * rows;
+	int n = count - start;
+
+	if (n > rows)
+		n = rows;
+	if (n < 0)
+		n = 0;
+
+	return repoN + n;
+}
+
+static int RepoNextPage(void* ud)
+{
+	int count = jer_modstore_item_count();
+	int repoN = jer_modstore_repo_count();
+	int pages = RepoPages(count);
+
 	(void)ud;
 
-	if (pages < 1)
-		pages = 1;
+	if (repoN < 1)
+		repoN = 1;
+
+	gRepoPage = (gRepoPage + 1) % pages;
+	jer_frontend_refresh_at(RepoPageRowFor(gRepoPage, count, repoN));
+	return 1;
+}
+
+/* Left/Right on the repo page row: previous/next, wrapping at the ends. Keep
+ * the cursor on the page row: its index moves with the last page's length. */
+static int RepoPageAdjust(void* ud, int dir)
+{
+	int count = jer_modstore_item_count();
+	int repoN = jer_modstore_repo_count();
+	int pages = RepoPages(count);
+
+	(void)ud;
+
+	if (repoN < 1)
+		repoN = 1;
 
 	gRepoPage = (gRepoPage + dir + pages) % pages;
-	jer_frontend_refresh();
+	jer_frontend_refresh_at(RepoPageRowFor(gRepoPage, count, repoN));
 	return 1;
 }
 
@@ -2662,7 +2719,7 @@ static void RepoMenuEnter(void* ud)
 		repoN = 1;
 
 	/* The row budget: the menu holds JER_FE_MAX_ITEMS, and the repos, the pager
-	 * and the pinned controls all come out of it before the mods get a row. With
+	 * and the controls all come out of it before the mods get a row. With
 	 * three repos configured that leaves six mod rows, which is still a page. */
 	controls = 3;		/* Refresh, Reload repos, Back */
 	budget = JER_FE_MAX_ITEMS - repoN - controls - 1;
@@ -2763,7 +2820,11 @@ static void RepoMenuEnter(void* ud)
 	}
 
 	gRepoMenu.item_count = n;
-	gRepoMenu.bottom_items = controls;
+	/* The controls FOLLOW the list rather than being pinned to the bottom edge.
+	 * The repo browser is often shorter than the band, and pinning the controls
+	 * left a large void between the last mod row and Refresh/Reload/Back. The
+	 * selected-mod description now lives in the footer below them. */
+	gRepoMenu.bottom_items = 0;
 }
 
 /* Register both menus if the registry does not hold them. The registry is wiped
@@ -3002,25 +3063,29 @@ static void StoreDrawRepoTable(void)
 		jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 64), top - 34, "NOTE", 255, 176, 64);
 	}
 
-	/* the highlighted entry's description, under the table: the index has carried
-	 * one all along and nothing showed it */
-	if (gRepoRows > 0)
+	/* The highlighted entry's description, in the footer below the controls. The
+	 * repo table is often shorter than the band, so the description is where the
+	 * old pinned-control layout left a void; with a full page there is no room
+	 * and it is simply skipped. */
 	{
 		int sel = jer_frontend_selected() - gRepoModFirstRow;
+		const JER_MODSTORE_ITEM* it = NULL;
+		int lx = 0, ly = 0, lw = 0, lh = 0;
 
 		if (sel >= 0 && sel < gRepoRows)
-		{
-			const JER_MODSTORE_ITEM* it = jer_modstore_item(gRepoPage * gRepoPageRows + sel);
-			int lx = 0, ly = 0, lw = 0, lh = 0;
+			it = jer_modstore_item(gRepoPage * gRepoPageRows + sel);
 
-			/* the rect first: the fit test needs its numbers, and asking before the
-			 * call meant the guard tested zeros and always passed */
-			if (jer_frontend_row_rect(gRepoModFirstRow + gRepoRows - 1, &lx, &ly, &lw, &lh) &&
-				it != NULL && it->description != NULL && it->description[0] != 0 &&
-				ly + lh + 56 <= 470)
-			{
+		/* the rect first: the fit test needs its numbers, and asking before the
+		 * call meant the guard tested zeros and always passed */
+		if (gRepoMenu.item_count > 0 &&
+			jer_frontend_row_rect(gRepoMenu.item_count - 1, &lx, &ly, &lw, &lh) &&
+			ly + lh + 8 + 56 <= 470)
+		{
+			if (it != NULL && it->description != NULL && it->description[0] != 0)
 				StoreDrawWrapped(StoreTextX(lx, lw, 2), ly + lh + 8, 470, it->description, 2, 150, 150, 150);
-			}
+			else
+				StoreDrawWrapped(StoreTextX(lx, lw, 2), ly + lh + 8, 470,
+					"Select a mod to see its description.", 2, 150, 150, 150);
 		}
 	}
 
