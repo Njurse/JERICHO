@@ -236,6 +236,73 @@ function New-Package {
             Copy-Item (Join-Path $packLan $u) $stage -Force
         }
 
+        # The rest of the CI Package payload. The stage is curated from data/,
+        # the exe and the JERICHO mirror, so the tool directories the mirror
+        # strips have to be added here explicitly.
+        Remove-Item (Join-Path $stage 'DRIVER') -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $stage 'DRIVER2') -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $stage 'JERICHO\CONFIG\modlist.ini') -Force -ErrorAction SilentlyContinue
+
+        $cfgIni = Join-Path $stage 'config.ini'
+        if (Test-Path $cfgIni) {
+            Move-Item $cfgIni (Join-Path $stage 'config.default.ini') -Force
+        }
+
+        # Driver 1 bake tooling, from the checked-out d1cars submodule. Copy
+        # only tracked tools: the working tree may carry local experiments.
+        $d1repo = Join-Path $RepoRoot 'JERICHO\MODS\d1cars'
+        $d1dst  = Join-Path $stage 'JERICHO\MODS\d1cars\tools'
+        New-Item -ItemType Directory -Force -Path $d1dst | Out-Null
+        $d1tracked = & git -C $d1repo ls-files 'tools/*.py'
+        if ($LASTEXITCODE -ne 0) { throw "cannot list the d1cars tools" }
+        foreach ($rel in $d1tracked) {
+            Copy-Item (Join-Path $d1repo $rel) (Join-Path $d1dst (Split-Path -Leaf $rel)) -Force
+        }
+        Copy-Item (Join-Path $d1repo 'tools\README.md') (Join-Path $stage 'JERICHO\MODS\d1cars') -Force
+        foreach ($bake in 'BAKE_D1_CARS.bat', 'BAKE_D1_CARS.sh') {
+            Copy-Item (Join-Path $packLan $bake) $stage -Force
+        }
+
+        # The store helper and the config merger, both at the package root.
+        Copy-Item (Join-Path $RepoRoot 'JERICHO\CORE\modstore\modstore.bat') $stage -Force
+        Copy-Item (Join-Path $RepoRoot 'JERICHO\CORE\modstore\modstore.sh') $stage -Force
+        Copy-Item (Join-Path $packLan 'merge_config.ps1') $stage -Force
+
+        # The dedicated server, and only the dedicated server. The master
+        # discovery service is shared infrastructure and must never ship.
+        $mpTools = Join-Path $RepoRoot 'JERICHO\MODS\mp\tools'
+        $mpDst   = Join-Path $stage 'JERICHO\MODS\mp\tools'
+        $srvDst  = Join-Path $mpDst 'servers'
+        New-Item -ItemType Directory -Force -Path $srvDst | Out-Null
+        Copy-Item (Join-Path $mpTools 'mp_test.py') $mpDst -Force
+        Copy-Item (Join-Path $mpTools 'player_id.py') $mpDst -Force
+        Copy-Item (Join-Path $mpTools 'servers\*.py') $srvDst -Force
+        Copy-Item (Join-Path $mpTools 'servers\*.md') $srvDst -Force
+        Copy-Item (Join-Path $mpTools 'servers\run.bat') $srvDst -Force
+        Copy-Item (Join-Path $mpTools 'servers\run.sh') $srvDst -Force
+        Copy-Item (Join-Path $mpTools 'servers\dediserver') $srvDst -Recurse -Force
+        Get-ChildItem $mpDst -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path (Join-Path $srvDst 'masterserver')) {
+            throw "refusing to package the master server: it is our infrastructure"
+        }
+
+        # Keep the crash-symbol files the CI package keeps, when they exist.
+        foreach ($symbol in @("$exe.pdb", "$exe.map")) {
+            $src = Join-Path $bin $symbol
+            if (Test-Path $src) { Copy-Item $src $stage -Force }
+        }
+
+        # A local merge can leave empty `*~HEAD` placeholder directories in
+        # JERICHO/MODS. A CI checkout never has them, so a package must not.
+        Get-ChildItem (Join-Path $stage 'JERICHO\MODS') -Directory -Filter '*~HEAD' -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force
+
+        # A mod submodule's .git is a gitfile, never game data.
+        Get-ChildItem $stage -Recurse -Force -Filter '.git' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq '.git' } |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
         $zip = Join-Path $OutPath "JERICHO_${cfg}_win64.zip"
         Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
         Remove-Item $stage -Recurse -Force
