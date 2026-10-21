@@ -126,11 +126,11 @@ CRUMPLE_PARAMS gCrumpleParams =
 	1,			// falloffSmooth       0 = linear, 1 = squared
 
 	// structure
-	4096,		// cabinResistance     rigid at the cabin
+	3500,		// cabinResistance     rigid at the cabin
 	128,		// noseResistance       soft at the AABB extremes
 	2048,		// resistanceInfluence  how much resistance limits movement
 	2048,		// cabinSize           central ~half of the AABB stays rigid
-	6144,		// globalScale         master deformation multiplier (1.0x)
+	7680,		// globalScale         master deformation multiplier (1.0x)
 
 	// mass / health
 	384,		// massFactorMin       light-vs-heavy clamp (0.094x)
