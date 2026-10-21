@@ -1170,11 +1170,22 @@ int JerPedAreaPage(int city, int set, int dstSet)
 	imp = &gCarImports[city];
 
 	if (imp->data2 == NULL)
+	{
+		printInfo("ped import: %s has no DATA2 for area pages\n", LevelNames[city]);
 		return 0;
+	}
+
+	printInfo("ped import: %s DATA2 %d bytes for area-page lookup\n",
+		LevelNames[city], imp->data2Size);
 
 	if (!FindLumpSegment(imp->data2 + 8, imp->data2Size - 8, 26, &spool, &spoolSize) ||
 		spool == NULL || spoolSize < 8)
+	{
+		printInfo("ped import: %s has no LUMP_SPOOLINFO for area pages\n", LevelNames[city]);
 		return 0;
+	}
+
+	printInfo("ped import: %s spool info %d bytes\n", LevelNames[city], spoolSize);
 
 	ptr = spool + 4;
 	musicSize = *(int*)ptr;
@@ -1187,13 +1198,20 @@ int JerPedAreaPage(int city, int set, int dstSet)
 	ptr += 4;
 
 	if (nareas <= 0 || ptr + nareas * 16 > spool + spoolSize)
+	{
+		printInfo("ped import: %s spool area count %d is out of range\n",
+			LevelNames[city], nareas);
 		return 0;
+	}
 
 	areas = ptr;
 	ptr += nareas * 16;
 
 	if (ptr + nareas * 16 > spool + spoolSize)
+	{
+		printInfo("ped import: %s spool area page table is short\n", LevelNames[city]);
 		return 0;
+	}
 
 	pages = ptr;
 
@@ -1213,7 +1231,11 @@ int JerPedAreaPage(int city, int set, int dstSet)
 	}
 
 	if (sector < 0)
+	{
+		printInfo("ped import: %s area lists have no page %d (areas %d)\n",
+			LevelNames[city], set, nareas);
 		return 0;
+	}
 
 	if (!JerCityPath(city, path, sizeof(path), JER_CITY_FILE_LEVEL, 0))
 		return 0;
@@ -1221,7 +1243,10 @@ int JerPedAreaPage(int city, int set, int dstSet)
 	fp = fopen(path, "rb");
 
 	if (fp == NULL)
+	{
+		printInfo("ped import: cannot open %s for area page %d\n", path, set);
 		return 0;
+	}
 
 	buf = (char*)malloc(17 * CDSECTOR_SIZE);
 
@@ -1234,6 +1259,8 @@ int JerPedAreaPage(int city, int set, int dstSet)
 	if (fseek(fp, (long)sector * CDSECTOR_SIZE, SEEK_SET) != 0 ||
 		fread(buf, 1, 17 * CDSECTOR_SIZE, fp) != 17 * CDSECTOR_SIZE)
 	{
+		printInfo("ped import: cannot read area page %d at sector %d of %s\n",
+			set, sector, path);
 		fclose(fp);
 		free(buf);
 		return 0;
@@ -1243,6 +1270,8 @@ int JerPedAreaPage(int city, int set, int dstSet)
 
 	if (!JerPedUploadAreaPage(set, dstSet, buf))
 	{
+		printInfo("ped import: %s set %d area page upload failed (sector %d)\n",
+			LevelNames[city], set, sector);
 		free(buf);
 		return 0;
 	}
