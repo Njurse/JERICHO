@@ -51,6 +51,7 @@ typedef struct SEATED_PEDESTRIANS
 MODEL* pmTannerModels[17] = { 0 };
 MODEL* pmJerichoModels[6] = { 0 };
 MODEL* pmJerichoLegModels[6] = { 0 };
+MODEL* pmJerichoHandModels[2] = { 0 };
 
 int gJerPedSkeletonGeneration = 1;
 

@@ -572,6 +572,10 @@ SVECTOR vJerichoList[102];
 short cJerichoLegVNumbers[6];
 SVECTOR vJerichoLegList[256];
 
+/* Baked Tanner hand copies (HAND_LEFT/RIGHT). */
+short cJerichoHandVNumbers[2];
+SVECTOR vJerichoHandList[128];
+
 int vStored = 0;
 
 // [D] [T]
@@ -1047,6 +1051,37 @@ void StoreVertexLists(void)
 			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
 			cJerichoLegVNumbers[i] = counter;
 			destVerts = &vJerichoLegList[counter];
+
+			for (j = 0; j < pModel->num_vertices; j++)
+			{
+				destVerts->vx = srcVerts->vx;
+				destVerts->vy = srcVerts->vy;
+				destVerts->vz = srcVerts->vz;
+
+				srcVerts++;
+				destVerts++;
+				counter++;
+			}
+		}
+	}
+
+	/* Hands: baked Tanner copies when present, resident Tanner otherwise. */
+	{
+		counter = 0;
+
+		for (i = 0; i < 2; i++)
+		{
+			pModel = pmJerichoHandModels[i] ? pmJerichoHandModels[i] : pmTannerModels[i == 0 ? 10 : 4];
+
+			if (pModel == NULL)
+			{
+				cJerichoHandVNumbers[i] = -1;
+				continue;
+			}
+
+			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
+			cJerichoHandVNumbers[i] = counter;
+			destVerts = &vJerichoHandList[counter];
 
 			for (j = 0; j < pModel->num_vertices; j++)
 			{
@@ -1626,8 +1661,9 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 			return vJerichoLegList + cJerichoLegVNumbers[5];
 
 		case LFINGERS:
+			return vJerichoHandList + cJerichoHandVNumbers[0];
 		case RFINGERS:
-			return NULL;
+			return vJerichoHandList + cJerichoHandVNumbers[1];
 
 		default:
 			return NULL;
@@ -1942,8 +1978,8 @@ void SetSkelModelPointers(int type)
 		Skel[RKNEE].pModel = pmJerichoLegModels[3] ? &pmJerichoLegModels[3] : &pmTannerModels[5];
 		Skel[RFOOT].pModel = pmJerichoLegModels[4] ? &pmJerichoLegModels[4] : &pmTannerModels[6];
 		Skel[RTOE].pModel = pmJerichoLegModels[5] ? &pmJerichoLegModels[5] : &pmTannerModels[13];
-		Skel[LFINGERS].pModel = NULL;
-		Skel[RFINGERS].pModel = NULL;
+		Skel[LFINGERS].pModel = pmJerichoHandModels[0] ? &pmJerichoHandModels[0] : &pmTannerModels[10];
+		Skel[RFINGERS].pModel = pmJerichoHandModels[1] ? &pmJerichoHandModels[1] : &pmTannerModels[4];
 
 		bodyShiftValue = BODY_OFFSET + JERICHO_BODY_OFFSET;
 		torsoShiftValue = TORSO_OFFSET + JERICHO_TORSO_OFFSET;

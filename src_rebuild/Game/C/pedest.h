@@ -10,6 +10,7 @@ extern SVECTOR tannerLookAngle;
 extern MODEL* pmTannerModels[17];
 extern MODEL* pmJerichoModels[6];
 extern MODEL* pmJerichoLegModels[6];
+extern MODEL* pmJerichoHandModels[2];
 extern int JerPedSkeletonGeneration(void);
 extern void JerPedSkeletonInvalidate(void);
 

@@ -676,7 +676,8 @@ int JerLoadCarImportForCity(int city)
  * ------------------------------------------------------------------------- */
 #define JER_PED_IMPORT_MODELS	6
 #define JER_PED_LEG_MODELS	6
-#define JER_PED_BAKED_MODELS	(JER_PED_IMPORT_MODELS + JER_PED_LEG_MODELS)
+#define JER_PED_HAND_MODELS	2
+#define JER_PED_BAKED_MODELS	(JER_PED_IMPORT_MODELS + JER_PED_LEG_MODELS + JER_PED_HAND_MODELS)
 
 static const char* const sJerPedModelNames[JER_PED_IMPORT_MODELS] =
 {
@@ -1376,6 +1377,9 @@ int JerPedImportBaked(int city)
 	for (i = 0; i < JER_PED_LEG_MODELS; i++)
 		pmJerichoLegModels[i] = built[JER_PED_IMPORT_MODELS + i];
 
+	for (i = 0; i < JER_PED_HAND_MODELS; i++)
+		pmJerichoHandModels[i] = built[JER_PED_IMPORT_MODELS + JER_PED_LEG_MODELS + i];
+
 	if (sJerPedMem != NULL)
 		free(sJerPedMem);
 
@@ -1599,6 +1603,9 @@ void JerPedImportReset(void)
 
 	for (i = 0; i < JER_PED_LEG_MODELS; i++)
 		pmJerichoLegModels[i] = NULL;
+
+	for (i = 0; i < JER_PED_HAND_MODELS; i++)
+		pmJerichoHandModels[i] = NULL;
 }
 
 
