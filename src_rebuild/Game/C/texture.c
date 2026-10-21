@@ -2764,6 +2764,16 @@ void CarImportPin(void)
 			// the pin must re-point to THAT row - refusing left the baked row 8 reading a
 			// civ_clut column nothing wrote (the "corrupted colours" on a set the city has
 			// no table entry for). The two must agree, or the bake and the pin disagree.
+			// A page only the wheels name (MIAMI's wheel art in another D1 city's
+			// bake) has no car row; the wheels read its CLUTs through their own
+			// reserved rows, so it must not land on the block base row - that is
+			// the city's first CAR row, and its body would draw in wheel colours.
+			if (row < 0 && CarImportIsWheelSet(sPinCity[i], sPinSet[i]))
+			{
+				free(buf);
+				continue;
+			}
+
 			if (row < 0)
 			{
 				int base = CarImportPaletteBlockBase(sPinCity[i]);
@@ -4072,7 +4082,10 @@ void LoadImportedTPages(void)
 				(const unsigned char*)buf + 4 + wheelRow * 32);
 
 			if (wheelClut != 0)
+			{
 				CarImportSetWheelPaletteClut(sc, set, wheelClut, 0);
+				CarImportReserveFastWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow);
+			}
 		}
 
 		free(buf);

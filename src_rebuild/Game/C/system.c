@@ -31,7 +31,7 @@ char gDataFolder[32] = "DRIVER2\\";
 char gD1DataFolder[32] = "DRIVER\\";
 
 /* JERICHO: how many compile-time (stock) rows the city tables have - Driver 2's
- * four plus Driver 1's five. The runtime banks start here; see JerGetCityDataRoot
+ * four plus Driver 1's seven. The runtime banks start here; see JerGetCityDataRoot
  * and the registry below. */
 #define JER_CITY_STOCK_COUNT	(CITY_D2_COUNT + CITY_D1_COUNT)
 
@@ -55,7 +55,7 @@ const char* JerGetCityDataRoot(int city)
 
 /* ---- JERICHO: the runtime city registry ---------------------------------
  *
- * See system.h for the contract. Rows 0..JER_CITY_STOCK_COUNT-1 are the stock nine
+ * See system.h for the contract. Rows 0..JER_CITY_STOCK_COUNT-1 are the stock eleven
  * and are always usable. The CITY_CUSTOM_MAX rows after them are arbitrary
  * car-data banks, filled from JERICHO/CONFIG/cities.ini.
  *
@@ -161,7 +161,7 @@ int JerCityRegistered(int city)
 		return 0;
 
 	/* A row is usable when its two required entries are there. That is the whole
-	 * test: the stock nine always are, a bank's are set by registration only. */
+	 * test: the stock eleven always are, a bank's are set by registration only. */
 	return (LevelNames[city] != NULL && LevelFiles[city] != NULL);
 }
 
@@ -652,6 +652,11 @@ char* LevelNames[CITY_COUNT] = {
 	/* Driver 1's cheat-only level: its geometry is the credits drive, kept in
 	 * CREDITS.LEV, so that is where its car data is read from (tools/bake.py). */
 	"NEWCASTLE",
+	/* The two remaining Driver 1 levels with car geometry of their own: the
+	 * attract/interface view and the train yard. They are car-data sources like
+	 * the five above, not playable maps. */
+	"IVIEW",
+	"TRAIN",
 	/* JERICHO: the CITY_CUSTOM_MAX rows after this are the runtime bank slots and
 	 * are NULL until JerCityRegistryInit registers one - see system.h. */
 };
@@ -668,6 +673,8 @@ char* LevelFiles[CITY_COUNT] = {
 	"D1CARS\\LA.LEV",
 	"D1CARS\\NEWYORK.LEV",
 	"D1CARS\\NEWCASTLE.LEV",
+	"D1CARS\\IVIEW.LEV",
+	"D1CARS\\TRAIN.LEV",
 	/* ...then the runtime bank slots, NULL until registered. */
 };
 

@@ -241,7 +241,7 @@ Chicago and another in Rio ([`VEHICLES.md`](docs/VEHICLES.md)).
 So carhacks names a car as a pair, `carid.h`:
 
 ```
-(city, model)      city 0..8 = CHICAGO/HAVANA/VEGAS/RIO + Driver 1's MIAMI/FRISCO/LA/NEWYORK/NEWCASTLE
+(city, model)      city 0..10 = CHICAGO/HAVANA/VEGAS/RIO + Driver 1's MIAMI/FRISCO/LA/NEWYORK/NEWCASTLE/IVIEW/TRAIN
                    model 0..12
 CHK_CITY_NATIVE    "the level's own city" — no import implied
 CHK_MODEL_NONE     "no car"
@@ -359,15 +359,15 @@ change applies on the next level; nothing is cached.
 | key | default | meaning |
 |---|---|---|
 | `import` | — | `slot:city:model, ...` — the import set. `import = 4:0:8, 5:1:9` puts `city 0 CHICAGO model 8` into slot 4 and `city 1 HAVANA model 9` into slot 5 |
-| `source_city` | `-1` | make the whole level read its car data from this city instead (`0..8`); `-1` = the level's own |
+| `source_city` | `-1` | make the whole level read its car data from this city instead (`0..10`); `-1` = the level's own |
 | `car_list` | — | `8,9,10` — replace the last slots of the level's frontend car list with these model numbers |
 | `traffic_model`, `traffic_slot` | — | put a foreign model into a civilian slot so ambient traffic uses it |
 | `mp_agree_imports` | `1` | in a session, let the host's import set win for everyone |
 | `spawn_imports` | `0` | **measurement lever**: place one car per imported city ahead of the player, once per level |
 | `spawn_spacing` | `1500` | the gap between those placed cars, in world units — the default suits a long body (bus, fire truck, semi); echoed on the spawn summary line so a run records the value |
 
-Cities are `0..8` = CHICAGO, HAVANA, VEGAS, RIO, then Driver 1's five car-data cities
-(MIAMI, FRISCO, LA, NEWYORK, NEWCASTLE — the `CITY_COUNT` registry). Models are `0..12`.
+Cities are `0..10` = CHICAGO, HAVANA, VEGAS, RIO, then Driver 1's seven car-data cities
+(MIAMI, FRISCO, LA, NEWYORK, NEWCASTLE, IVIEW, TRAIN — the `CITY_COUNT` registry). Models are `0..12`.
 
 ---
 

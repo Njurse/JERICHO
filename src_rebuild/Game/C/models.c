@@ -1624,6 +1624,79 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 	return best;
 }
 
+// The tyre row is derived from the CLEAN sprite, and its background index is
+// transparent there. The FAST sprite on the same page has its own background
+// index, which that row can leave opaque (MIAMI's: a black square around the
+// blur). A host whose FASTWHEEL polys are semi-transparent (CHICAGO) hid it by
+// blending; HAVANA's are opaque and drew it. Give the fast variant a copy of the
+// tyre row with its background cleared to 0x0000 (transparent).
+void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow)
+{
+	CAR_IMPORT* imp;
+	JER_WHEEL_TEX* wt;
+	static unsigned char* sUnpacked = NULL;
+	unsigned short row[16];
+	int npal, cu[4], cv[4], votes[16] = { 0 }, i, bg = 0, clut;
+
+	if (city < 0 || city >= CITY_COUNT || page == NULL || size < 4)
+		return;
+
+	/* Driver 1 imports only: a Driver 2 city's fast wheel names row 0, a CAR
+	 * row (RIO's drew green); D2 imports keep their stock wheel rows. */
+	if (city < CITY_D2_COUNT || city >= CITY_D2_COUNT + CITY_D1_COUNT)
+		return;
+
+	imp = &gCarImports[city];
+	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_FAST];
+	npal = *(const int*)page;
+
+	if (!wt->present || imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] <= 0 ||
+		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] != sourceSet ||
+		npal <= 0 || npal > 32 || size <= 4 + npal * 32 || tyreRow < 0 || tyreRow >= npal)
+		return;
+
+	if (wt->u0 < 0 || wt->v0 < 0 || wt->u1 > 256 || wt->v1 > 256 || wt->u1 <= wt->u0 || wt->v1 <= wt->v0)
+		return;
+
+	if (sUnpacked == NULL)
+		sUnpacked = (unsigned char*)malloc(0x10000);
+
+	if (sUnpacked == NULL)
+		return;
+
+	memset(sUnpacked, 0, 0x10000);
+	decomp_asm((char*)sUnpacked, (char*)page + 4 + npal * 32);
+
+	cu[0] = wt->u0; cu[1] = wt->u1 - 1; cu[2] = wt->u0; cu[3] = wt->u1 - 1;
+	cv[0] = wt->v0; cv[1] = wt->v0; cv[2] = wt->v1 - 1; cv[3] = wt->v1 - 1;
+
+	for (i = 0; i < 4; i++)
+	{
+		unsigned char cb = sUnpacked[cv[i] * 128 + (cu[i] >> 1)];
+		votes[(cu[i] & 1) ? (cb >> 4) : (cb & 15)]++;
+	}
+
+	for (i = 1; i < 16; i++)
+		if (votes[i] > votes[bg])
+			bg = i;
+
+	/* The fast face names its own row (MIAMI's FASTWHEEL: 8). The clean
+	 * sprite's tyre row (6) painted it colour-inverted. */
+	if (wt->clut >= 0 && wt->clut < npal)
+		tyreRow = wt->clut;
+
+	memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
+
+	printInfo("cross-city: %s fast wheel sprite (%d,%d)-(%d,%d) row %d, background index %d is %04x - cleared in a fast-only row\n",
+		LevelNames[city], wt->u0, wt->v0, wt->u1, wt->v1, tyreRow, bg, row[bg]);
+
+	row[bg] = 0;
+	clut = CarImportReserveWheelPalette(city, 2, (const unsigned char*)row);
+
+	if (clut != 0)
+		wt->reservedClut = clut;
+}
+
 // A texture-only copy of a Driver 2 named wheel model. The renderer uses the
 // host wheel MESH and this model only for its texture records and UVs, so the
 // vertices and normals are deliberately dropped; the poly stream is copied and

@@ -646,7 +646,7 @@ int chkCityRegistered(int city)
 /* Is this city's car data HERE, on this install?
  *
  * Driver 2's own cities always are: their data is the level's own. Everything else
- * is a car-data source read from another folder - Driver 1's five under DRIVER\,
+ * is a car-data source read from another folder - Driver 1's seven under DRIVER\,
  * and any runtime bank the config named - and the ENGINE's city registry already
  * answers for all of them: JerCityRegistered() is true only for a row whose file
  * actually opened, and the bank rows are re-probed before every car list and every

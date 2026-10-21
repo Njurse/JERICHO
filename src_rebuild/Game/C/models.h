@@ -76,6 +76,7 @@ void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub);
 int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors);
 int CarImportWheelPaletteRow(int city, int cluts);
 int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub);
+void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow);
 
 // The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
 // maps these to the page it pins; the MODEL carries the remapped draw index.

@@ -47,7 +47,7 @@ extern char gDataFolder[32];
  * gDataFolder; the rows after them are the Driver 1 car-data cities and read from
  * gD1DataFolder. Keep CITY_COUNT in step with those three tables.
  *
- * JERICHO: CITY_COUNT IS A CAPACITY, NOT A COUNT. The stock nine rows are filled
+ * JERICHO: CITY_COUNT IS A CAPACITY, NOT A COUNT. The stock eleven rows are filled
  * at compile time; the CITY_CUSTOM_MAX rows after them are filled at RUNTIME by
  * JerCityRegistryInit() from JERICHO/CONFIG/cities.ini - one arbitrary car-data
  * bank per row - and stay NULL until a bank is installed there. Every [CITY_COUNT]
@@ -60,7 +60,7 @@ extern char gDataFolder[32];
  *   - never index LevelNames/LevelFiles/CosmeticFiles on an unregistered row.
  *     They are NULL there and a `%s` of that is a crash: use JerBuildCityPath. */
 #define CITY_D2_COUNT 4
-#define CITY_D1_COUNT 5
+#define CITY_D1_COUNT 7
 #define CITY_CUSTOM_MAX 16
 #define CITY_COUNT    (CITY_D2_COUNT + CITY_D1_COUNT + CITY_CUSTOM_MAX)
 
@@ -79,12 +79,12 @@ extern const char* JerGetCityDataRoot(int city);
  * arbitrary (sub)folder-relative paths, and every city-indexed path carhacks
  * already walks works on it unchanged.
  *
- * A registered bank is a CAR-DATA SOURCE, exactly like Driver 1's five: importable,
+ * A registered bank is a CAR-DATA SOURCE, exactly like Driver 1's seven: importable,
  * never played - no GameLevel, no frontend city row, no spool, no loading screen. */
 #define JER_CITY_FILE_LEVEL     0	/* the car-data .LEV (LUMP_CAR_MODELS etc.) */
 #define JER_CITY_FILE_COSMETIC  1	/* the .LCF beside it (optional; may be none) */
 
-/* How many cities this install has: the stock nine plus the banks whose files are
+/* How many cities this install has: the stock eleven plus the banks whose files are
  * present. THE COUNT TO LOOP TO for anything a player can see. */
 int JerCityCount(void);
 /* First row a bank can occupy (the stock rows are 0..this-1). */

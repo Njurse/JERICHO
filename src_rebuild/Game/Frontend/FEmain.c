@@ -442,6 +442,7 @@ static void JerichoDrawCredits(void);
 extern "C" {
 #endif
 void jer_update_frontend_tick(int onMainMenu);
+void jer_rebake_frontend_tick(int onMainMenu);	/* jer_rebake.c: ask to re-bake a stale D1 bake */
 int jer_build_is_dev(void);
 void jer_modstore_frontend_tick(int onMainMenu);	/* jer_modstore.c: polls the store's helper */
 void jer_modstore_open_menu(void);	/* jer_modstore.c: open the Mods table menu */
@@ -1260,7 +1261,7 @@ void DrawScreen(PSXSCREEN *pScr)
 			len = FEStringWidth(G_LTXT(GTXT_NO));
 			FEPrintString(G_LTXT(GTXT_NO), 320 + quitLen / 4 - len/2, 288, 0, 128, 128, bQuitToSystemSel ? 128 : 0);
 		}
-				else if (jer_prompt_active())
+		else if (jer_prompt_active())
 		{
 			/* a host prompt takes the screen: the screen's own buttons are NOT drawn.
 			 * The prompt itself is painted from the per-frame hook below, not here --
@@ -1496,10 +1497,13 @@ void LoadBackgroundFile(char* name)
  * ------------------------------------------------------------------ */
 #define JER_PROMPT_WRAP_MAX	4
 #define JER_PROMPT_LINE_LEN	192
-#define JER_PROMPT_WIDTH	470
+#define JER_PROMPT_WIDTH	544	/* 640 less a 48px margin each side */
 #define JER_PROMPT_SCALE	150
 #define JER_PROMPT_LINE_H	26
-#define JER_PROMPT_ANSWERS_Y	300
+#define JER_PROMPT_LEFT_X	48	/* question: left-aligned, like the other FE pages */
+#define JER_PROMPT_TEXT_Y	200	/* first question line; wrapped lines grow downwards */
+#define JER_PROMPT_RIGHT_X	592	/* answers end here: bottom-right, where BACK sits */
+#define JER_PROMPT_ANSWERS_Y	440
 #define JER_PROMPT_GAP		48
 
 static int JerichoWrapText(const char* text, int maxWidth, char lines[JER_PROMPT_WRAP_MAX][JER_PROMPT_LINE_LEN])
@@ -1571,19 +1575,19 @@ static void JerichoDrawPrompt(void)
 
 	count = JerichoWrapText(question, JER_PROMPT_WIDTH, lines);
 
-	/* anchored at the bottom of the question area, so more lines grow upwards */
-	y = JER_PROMPT_ANSWERS_Y - 26 - (count > 0 ? (count - 1) * JER_PROMPT_LINE_H : 0);
+	/* Jaret's FE rule: the text on the left, wrapped; the options bottom-right */
+	y = JER_PROMPT_TEXT_Y;
 
 	for (i = 0; i < count; i++)
 	{
-		jer_text_draw_centred(JER_TEXT_FE, JER_PROMPT_SCALE, 320, y + i * JER_PROMPT_LINE_H,
+		jer_text_draw_at(JER_TEXT_FE, JER_PROMPT_SCALE, JER_PROMPT_LEFT_X, y + i * JER_PROMPT_LINE_H,
 			lines[i], 235, 235, 235);
 	}
 
 	wy = jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, "Yes");
 	wn = jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, "No");
 
-	x = 320 - (wy + JER_PROMPT_GAP + wn) / 2;
+	x = JER_PROMPT_RIGHT_X - (wy + JER_PROMPT_GAP + wn);
 
 	/* one line per prompt, the first frame it is drawn: where the layout ended
 	 * up is exactly what is wrong when a prompt looks wrong, and guessing it from
@@ -2840,6 +2844,7 @@ void State_FrontEnd(void* param)
 	/* JERICHO: the update check (JERICHO/src/jer_update.c) -- decides once, on
 	 * the main menu, and draws the changelog on its own screen. */
 	jer_update_frontend_tick(pCurrScreen == &PsxScreens[0] && ScreenDepth == 0);
+	jer_rebake_frontend_tick(pCurrScreen == &PsxScreens[0] && ScreenDepth == 0);
 
 	/* JERICHO: the mod store (JERICHO/src/jer_modstore.c) -- polls a running
 	 * install/remove/index job and draws its own tables. Runs every frontend

@@ -27,7 +27,7 @@ pad" below - those env vars drive the *state*, not the buttons).
 The roster row sits **directly below** the car row. The stock screen can only ever
 show the level's own list (`carNumLookup[GameLevel]`, `FEmain.c`); this one browses
 any city the registry has — CHICAGO/HAVANA/VEGAS/RIO and Driver 1's car-data cities
-(MIAMI/FRISCO/LA/NEWYORK/NEWCASTLE), `CHK_CITY_COUNT` in all.
+(MIAMI/FRISCO/LA/NEWYORK/NEWCASTLE/IVIEW/TRAIN), `CHK_CITY_COUNT` in all.
 
 ## Why a menu instead of editing the screen
 
@@ -178,9 +178,9 @@ navigate the frontend either, so the harness walks and picks for you:
 | env | meaning |
 |---|---|
 | `CHK_FORCE_MENU=1` | walk to the stock car screen (sets `GameType`/`NumPlayers`/`GameLevel`) so the intercept fires |
-| `CHK_FORCE_ROSTER_CITY=0..8` | pick this city's roster (`CHK_CITY_COUNT` = 9) |
+| `CHK_FORCE_ROSTER_CITY=0..10` | pick this city's roster (`CHK_CITY_COUNT` = 11) |
 | `CHK_FORCE_CAR=n` | pick the car at 0-based index `n` in that roster |
-| `CHK_FORCE_LEVEL=0..8` | the level to start (default 0) |
+| `CHK_FORCE_LEVEL=0..10` | the level to start (default 0) |
 
 Measured (Release_dev, `-nointro`):
 

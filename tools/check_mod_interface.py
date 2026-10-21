@@ -87,16 +87,41 @@ def registry(root, quiet):
     return blocks
 
 
+def submodule_paths(root):
+    """Paths registered in .gitmodules, normalised for comparison with MODS entries."""
+    paths = set()
+    gitmodules = os.path.join(root, ".gitmodules")
+
+    if not os.path.isfile(gitmodules):
+        return paths
+
+    for line in read(gitmodules).splitlines():
+        line = line.strip()
+        if line.startswith("path"):
+            value = line.split("=", 1)[1].strip()
+            paths.add(os.path.normpath(value))
+
+    return paths
+
+
 def check_manifests(root, sdk, quiet):
     mods_dir = os.path.join(root, "JERICHO", "MODS")
     if not os.path.isdir(mods_dir):
         err(mods_dir, "no MODS folder")
         return 0
 
+    subs = submodule_paths(root)
     seen = 0
     for name in sorted(os.listdir(mods_dir)):
         manifest = os.path.join(mods_dir, name, "mod.toml")
         if not os.path.isfile(manifest):
+            continue
+
+        # A submodule is its own repository: its manifest is versioned there and
+        # the parent checkout cannot update it. CI deliberately does not fetch
+        # every submodule, so checking it here would make a local run fail where
+        # CI passes (d1cars is the one that has no `interface`).
+        if os.path.normpath(os.path.join("JERICHO", "MODS", name)) in subs:
             continue
 
         seen += 1

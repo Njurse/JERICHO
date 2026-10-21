@@ -29,7 +29,7 @@ city_N = NAME, <car-data file>[, <colours file>]
 
 | field | meaning |
 |---|---|
-| `city_N` | the bank's **city index is fixed**: `9 + N`. The stock nine are `0..8` — Driver 2's four (CHICAGO, HAVANA, VEGAS, RIO) then Driver 1's five car-data cities (MIAMI, FRISCO, LA, NEWYORK, NEWCASTLE). |
+| `city_N` | the bank's **city index is fixed**: `11 + N`. The stock eleven are `0..10` — Driver 2's four (CHICAGO, HAVANA, VEGAS, RIO) then Driver 1's seven car-data cities (MIAMI, FRISCO, LA, NEWYORK, NEWCASTLE, IVIEW, TRAIN). |
 | `NAME` | what logs and menus show. A bank is *not* playable, so it never becomes a `GameLevel`. |
 | car-data file | the `.LEV` carrying `LUMP_CAR_MODELS`, `LUMP_PALLET` and `LUMP_TEXTUREINFO` — the same shape a city's level file has. |
 | colours file | optional `.LCF` (3120 bytes). Absent = the cars keep the cosmetics derived from their model. |
@@ -89,8 +89,8 @@ why a copied model's texture ids need no rewrite — are in
 
 | call | answers |
 |---|---|
-| `JerCityCount()` | how many city rows are in play (stock nine + assigned bank rows). The bound to *loop* to. |
-| `JerCityFirstCustom()` | 9 — the first row a bank can occupy. |
+| `JerCityCount()` | how many city rows are in play (stock eleven + assigned bank rows). The bound to *loop* to. |
+| `JerCityFirstCustom()` | 11 — the first row a bank can occupy. |
 | `JerCityRegistered(city)` | 1 when the row has a name and a car-data file. |
 | `JerCityName(city)` / `JerCityFile(city, kind)` | the name and the configured relative path ("" when none). |
 | `JerCityPath(city, out, size, kind)` | the openable path, or 0 for an unregistered row. |
@@ -126,12 +126,12 @@ holes are normal (see above).
 
 ## Traps worth knowing
 
-* **`CITY_COUNT` is a capacity, not a count** (`system.h`): 25 rows, of which the
+* **`CITY_COUNT` is a capacity, not a count** (`system.h`): 27 rows, of which the
   last 16 are bank slots. Ask `JerCityCount()` for the count. Every per-city
   engine table (`gCarImports`, `carTpages`, `specTpages`, `CarAvailability`, …)
   is sized for the capacity.
 * **The frontend city menu is still the stock four.** A bank is a car-data
-  source, like Driver 1's five: it is offered in the car list and the mp picker,
+  source, like Driver 1's seven: it is offered in the car list and the mp picker,
   never as a place to drive.
 * **VRAM**: importing a bank costs texture pages exactly like importing a Driver
   1 city. Check `JERICHO-VRAM` / `-vramview` before adding several.

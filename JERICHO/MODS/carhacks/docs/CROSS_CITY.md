@@ -79,7 +79,7 @@ is registered at runtime from `JERICHO/CONFIG/cities.ini`:
 city_0 = BCCHI, ..\BetterCars\BCCHI.LEV, ..\BetterCars\BCCHI.LCF
 ```
 
-`city_N` owns city index `9 + N`, the index is fixed for the process, and the paths
+`city_N` owns city index `11 + N`, the index is fixed for the process, and the paths
 are relative to the game's data folder (`..` allowed, so a pack beside `DRIVER2\`
 works). A bank is registered only when its `.LEV` is on disk, and the list is
 re-scanned before every car list and every level load — install the files and it
