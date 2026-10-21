@@ -566,6 +566,12 @@ SVECTOR vTannerList[210];
 short cJerichoVNumbers[7];
 SVECTOR vJerichoList[102];
 
+/* Baked (or fallback Tanner) leg/foot source vertices. The legs live on
+ * different bones than the six JERI upper-body models, so they need their own
+ * snapshot: using vTannerList here feeds the wrong limbs into the baked models. */
+short cJerichoLegVNumbers[6];
+SVECTOR vJerichoLegList[256];
+
 int vStored = 0;
 
 // [D] [T]
@@ -1017,6 +1023,41 @@ void StoreVertexLists(void)
 			srcVerts++;
 			destVerts++;
 			counter++;
+		}
+	}
+
+	/* Legs/feet: baked copies if present, otherwise the resident Tanner parts.
+	 * This is a separate snapshot from vTannerList because the bone slots used by
+	 * the Jericho skeleton are not the static Tanner leg slots. */
+	{
+		static const int fallback[6] = { 11, 12, 7, 5, 6, 13 };
+
+		counter = 0;
+
+		for (i = 0; i < 6; i++)
+		{
+			pModel = pmJerichoLegModels[0] ? pmJerichoLegModels[i] : pmTannerModels[fallback[i]];
+
+			if (pModel == NULL)
+			{
+				cJerichoLegVNumbers[i] = -1;
+				continue;
+			}
+
+			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
+			cJerichoLegVNumbers[i] = counter;
+			destVerts = &vJerichoLegList[counter];
+
+			for (j = 0; j < pModel->num_vertices; j++)
+			{
+				destVerts->vx = srcVerts->vx;
+				destVerts->vy = srcVerts->vy;
+				destVerts->vz = srcVerts->vz;
+
+				srcVerts++;
+				destVerts++;
+				counter++;
+			}
 		}
 	}
 
@@ -1538,7 +1579,7 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 // [D] [T]
 SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 {
-	int startVertex;
+	SVECTOR* base;
 
 	if (pDrawingPed->pedType != OTHER_MODEL)
 	{
@@ -1548,31 +1589,45 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 		return NULL;
 	}
 
+	base = vJerichoList;
+
 	switch (boneId)
 	{
 		case JOINT_1:
-			startVertex = cJerichoVNumbers[0];
-			break;
+			return base + cJerichoVNumbers[0];
 		case HEAD:
-			startVertex = cJerichoVNumbers[1];
-			break;
+			return base + cJerichoVNumbers[1];
 		case LELBOW:
-			startVertex = cJerichoVNumbers[2];
-			break;
+			return base + cJerichoVNumbers[2];
 		case LHAND:
-			startVertex = cJerichoVNumbers[3];
-			break;
+			return base + cJerichoVNumbers[3];
 		case RELBOW:
-			startVertex = cJerichoVNumbers[4];
-			break;
+			return base + cJerichoVNumbers[4];
 		case RHAND:
-			startVertex = cJerichoVNumbers[5];
-			break;
-		default:
-			return vTannerList + cTannerVNumbers[boneId & 127];
-	}
+			return base + cJerichoVNumbers[5];
 
-	return vJerichoList + startVertex;
+		case LHIP:
+			return vJerichoLegList + cJerichoLegVNumbers[0];
+		case LKNEE:
+			return vJerichoLegList + cJerichoLegVNumbers[1];
+		case LFOOT:
+			return vJerichoLegList + cJerichoLegVNumbers[2];
+		case RHIP:
+			return vJerichoLegList + cJerichoLegVNumbers[3];
+		case RKNEE:
+			return vJerichoLegList + cJerichoLegVNumbers[4];
+		case RFOOT:
+			return vJerichoLegList + cJerichoLegVNumbers[5];
+
+		case LTOE:
+		case RTOE:
+		case LFINGERS:
+		case RFINGERS:
+			return NULL;
+
+		default:
+			return NULL;
+	}
 }
 
 // [D] [T]
