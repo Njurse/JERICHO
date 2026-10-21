@@ -1322,7 +1322,7 @@ int JerPedImportBaked(int city)
 
 	sJerPedSetCount = 0;
 
-	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
 		JerPedCollectModelSets(built[i]);
 
 	if (sJerPedSetCount <= 0)
@@ -1331,7 +1331,7 @@ int JerPedImportBaked(int city)
 		goto fail;
 	}
 
-	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
 		JerPedRemapModelSets(built[i]);
 
 	for (i = 0; i < (int)pageCount; i++)
