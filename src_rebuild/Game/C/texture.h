@@ -52,6 +52,13 @@ extern void LoadImportedTPages(void);
  * CarImportPin places the pages. */
 extern void JerHotLoadCarTpages(void);
 
+/* JERICHO ped import: record the JERI models' source sets as pool-only pins, place
+ * them, and report whether every page and CLUT band landed. Release gives the ped
+ * pins back (shared car pins survive). */
+extern int JerPedPinTpages(int city, const int* sets, int count);
+extern int JerPedPinsReady(void);
+extern void JerPedReleasePins(void);
+
 /* JERICHO: parse one city's page lists, for a city read in MID-LEVEL. The level-load
  * parse covers only the cities held then, and without this a later city's sets are "not
  * in its page list" - their baked index stays empty and the car draws another page. */

@@ -131,6 +131,19 @@ unsigned JerCityCarModels(int city);
 // data is read, so an unheld import offers no cars at all. A no-op when held.
 int JerLoadCarImportForCity(int city);
 
+// JERICHO: is Old Havana's model table available and does it contain all six
+// JERI_* models? This is the frontend/selection preflight and does not touch VRAM.
+int JerPedImportProbe(int city);
+
+// JERICHO: copy those six models into a level-lifetime block. Returns 1 when all
+// six are self-contained copies; 0 leaves the previous import untouched.
+int JerPedImportBuild(int city);
+MODEL* JerPedModel(int index);
+int JerPedImportReady(void);
+int JerPedTextureSetCount(void);
+int JerPedTextureSet(int index);
+void JerPedImportReset(void);
+
 char* GetCarImportPallet(int* size);
 char* GetCarImportPalletForCity(int city, int* size);
 

@@ -7,6 +7,8 @@
 #include "cosmetic.h"
 #include "gamesnd.h"	// JERICHO: imported cars get their own engine/idle sounds
 #include "texture.h"	// JERICHO: CarImportResetState (cross-city per-level reset)
+#include "pedest.h"	// JERICHO: pmJerichoModels, the imported on-foot character
+#include "motion_c.h"	// JERICHO: StoreVertexLists after a ped model import
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "../ASM/compres.h"	// decomp_asm: the wheel page image, for its CLUT row
@@ -656,6 +658,493 @@ int JerLoadCarImportForCity(int city)
 
 	return LoadCarImport(city, &gCarImports[city]);
 }
+
+/* ---------------------------------------------------------------------------
+ * JERICHO: on-foot character import
+ *
+ * The six JERI_* models are ordinary named models in Old Havana's LUMP_MODELS,
+ * and the city's model table/names are already held by the SAME CAR_IMPORT the
+ * car importer reads (LoadCarImport finds LUMP_MODELS in DATA2 and
+ * LUMP_MODELNAMES in DATA1). So the ped import does not need a second file
+ * reader: it finds the six names in that table and copies the model blobs into
+ * a block this file owns.
+ *
+ * This block MUST NOT point into the held city buffer: chkImportReleaseAll and
+ * InitCarImport free it, and pmJerichoModels would then be dangling. The copy
+ * relocates every pointer into the copy, exactly as ProcessMDSLump does for the
+ * level's own models.
+ * ------------------------------------------------------------------------- */
+#define JER_PED_IMPORT_MODELS	6
+
+static const char* const sJerPedModelNames[JER_PED_IMPORT_MODELS] =
+{
+	"JERI_TORSO", "JERI_HEAD", "JERI_U_ARM_LEFT",
+	"JERI_L_ARM_LEFT", "JERI_U_ARM_RIGHT", "JERI_L_ARM_RIGHT"
+};
+
+static int sJerPedModelIndex[JER_PED_IMPORT_MODELS];
+static int sJerPedProbeCity = -1;
+static int sJerPedProbeOk;
+
+static char* sJerPedMem;		/* level-lifetime copy of the six model blobs */
+static int sJerPedMemSize;
+static MODEL* sJerPedModels[JER_PED_IMPORT_MODELS];
+static int sJerPedReady;
+static int sJerPedBuiltCity = -1;
+static int sJerPedSet[64];		/* SOURCE-city sets, before CarSetRemap */
+static int sJerPedSetCount;
+
+static int JerPedFindModelName(CAR_IMPORT* imp, const char* name)
+{
+	char* p;
+	char* end;
+	int n = 0;
+
+	if (imp == NULL || imp->modelNames == NULL || imp->modelNamesSize <= 0)
+		return -1;
+
+	p = imp->modelNames;
+	end = p + imp->modelNamesSize;
+
+	while (p < end && *p != 0)
+	{
+		if (strcmp(p, name) == 0)
+			return n;
+
+		p += strlen(p) + 1;
+		n++;
+	}
+
+	return -1;
+}
+
+/* One entry of LUMP_MODELS: [int size][MODEL data]. */
+static int JerPedModelBlob(CAR_IMPORT* imp, int index, MODEL** out, int* outSize)
+{
+	char* cur;
+	int count, i;
+
+	if (imp == NULL || imp->models == NULL || imp->modelsSize < 4 || index < 0)
+		return 0;
+
+	count = *(int*)imp->models;
+	cur = imp->models + 4;
+
+	for (i = 0; i < count; i++)
+	{
+		int size;
+
+		if (cur + 4 > imp->models + imp->modelsSize)
+			return 0;
+
+		size = *(int*)cur;
+
+		if (size <= 0 || cur + 4 + size > imp->models + imp->modelsSize)
+			return 0;
+
+		if (i == index)
+		{
+			*out = (MODEL*)(cur + 4);
+			*outSize = size;
+			return 1;
+		}
+
+		cur += 4 + size;
+	}
+
+	return 0;
+}
+
+/* The textured poly types, walked exactly as PolySizes expects. */
+static int JerPedIsTexturedPoly(int type)
+{
+	return type == 4 || type == 5 || type == 6 || type == 7 ||
+		type == 20 || type == 21 || type == 22 || type == 23;
+}
+
+static void JerPedCollectModelSets(MODEL* m)
+{
+	char* p;
+	int i;
+
+	if (m == NULL || m->poly_block == 0 || m->num_polys <= 0)
+		return;
+
+	p = (char*)m + m->poly_block;
+
+	for (i = 0; i < m->num_polys; i++)
+	{
+		int type = (u_char)*p & 0x1f;
+		int step = (type >= 0 && type < 56) ? PolySizes[type] : 0;
+
+		if (step <= 0)
+			return;
+
+		if (JerPedIsTexturedPoly(type))
+		{
+			int set = (u_char)p[1];
+
+			if (set != 0 && set != 255)
+			{
+				int k, seen = 0;
+
+				for (k = 0; k < sJerPedSetCount; k++)
+				{
+					if (sJerPedSet[k] == set)
+					{
+						seen = 1;
+						break;
+					}
+				}
+
+				if (!seen && sJerPedSetCount < (int)(sizeof(sJerPedSet) / sizeof(sJerPedSet[0])))
+					sJerPedSet[sJerPedSetCount++] = set;
+			}
+		}
+
+		p += step;
+	}
+}
+
+/* Rewrite the copied model's texture-set bytes through the SAME remap the car
+ * and wheel imports use. A host-owned set number gets a free destination index
+ * and the pin fills that index; leaving the source number would sample the
+ * host's page. */
+static void JerPedRemapModelSets(MODEL* m)
+{
+	char* p;
+	int i;
+
+	if (m == NULL || m->poly_block == 0 || m->num_polys <= 0)
+		return;
+
+	p = (char*)m + m->poly_block;
+
+	CarSetRemapEnable(1);
+
+	for (i = 0; i < m->num_polys; i++)
+	{
+		int type = (u_char)*p & 0x1f;
+		int step = (type >= 0 && type < 56) ? PolySizes[type] : 0;
+
+		if (step <= 0)
+			break;
+
+		if (JerPedIsTexturedPoly(type))
+			p[1] = (char)(u_char)CarSetRemap((u_char)p[1]);
+
+		p += step;
+	}
+
+	CarSetRemapEnable(0);
+}
+
+/* Preflight: is the city's model table held, and are all six Jericho models in
+ * it with usable geometry? No VRAM is touched here, so the frontend can ask. */
+int JerPedImportProbe(int city)
+{
+	CAR_IMPORT* imp;
+	int i;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	if (sJerPedProbeCity == city)
+		return sJerPedProbeOk;
+
+	sJerPedProbeCity = city;
+	sJerPedProbeOk = 0;
+
+	if (!JerLoadCarImportForCity(city))
+	{
+		printInfo("ped import: %s data is not available\n", LevelNames[city]);
+		return 0;
+	}
+
+	imp = &gCarImports[city];
+
+	if (imp->models == NULL || imp->modelNames == NULL || imp->modelsSize < 4)
+	{
+		printInfo("ped import: %s has no LUMP_MODELS/model-name table\n", LevelNames[city]);
+		return 0;
+	}
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	{
+		MODEL* src = NULL;
+		int size = 0;
+
+		sJerPedModelIndex[i] = JerPedFindModelName(imp, sJerPedModelNames[i]);
+
+		if (sJerPedModelIndex[i] < 0 ||
+			!JerPedModelBlob(imp, sJerPedModelIndex[i], &src, &size) ||
+			src == NULL || src->poly_block <= 0 || src->num_polys <= 0)
+		{
+			printInfo("ped import: %s model %s is missing or unusable\n",
+				LevelNames[city], sJerPedModelNames[i]);
+			return 0;
+		}
+	}
+
+	sJerPedProbeOk = 1;
+
+	printInfo("ped import: %s holds all six JERI models (first index %d)\n",
+		LevelNames[city], sJerPedModelIndex[0]);
+
+	return 1;
+}
+
+/* Copy the six model blobs out of the held city buffer into a block this file
+ * owns. Every offset is relocated into the copy; a model that is an INSTANCE of
+ * a parent outside the six is refused, because its vertices would otherwise
+ * point into a buffer the car-import teardown can free. */
+int JerPedImportBuild(int city)
+{
+	CAR_IMPORT* imp;
+	MODEL* src[JER_PED_IMPORT_MODELS];
+	MODEL* built[JER_PED_IMPORT_MODELS];
+	int size[JER_PED_IMPORT_MODELS];
+	int total = 0;
+	int i, k;
+	char* mem;
+	char* cur;
+
+	if (sJerPedReady && sJerPedBuiltCity == city)
+		return 1;
+
+	if (!JerPedImportProbe(city))
+		return 0;
+
+	imp = &gCarImports[city];
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	{
+		if (!JerPedModelBlob(imp, sJerPedModelIndex[i], &src[i], &size[i]) ||
+			src[i] == NULL || size[i] < (int)sizeof(MODEL))
+		{
+			printInfo("ped import: could not locate %s in %s\n",
+				sJerPedModelNames[i], LevelNames[city]);
+			return 0;
+		}
+
+		total += (size[i] + 3) & ~3;
+	}
+
+	mem = (char*)malloc(total);
+
+	if (mem == NULL)
+	{
+		printInfo("ped import: no memory for %d bytes of %s ped models\n", total, LevelNames[city]);
+		return 0;
+	}
+
+	cur = mem;
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	{
+		MODEL* m;
+
+		built[i] = (MODEL*)cur;
+		memcpy(cur, src[i], size[i]);
+		cur += (size[i] + 3) & ~3;
+
+		m = built[i];
+
+		/* On PC the offsets stay MODEL-relative (MODEL_RELOCATE_POINTERS is 0);
+		 * on PSX they are made absolute. Keep both layouts correct so the copy is
+		 * self-contained on either build. */
+#if MODEL_RELOCATE_POINTERS
+		m->vertices += (int)m;
+		m->normals += (int)m;
+		m->point_normals += (int)m;
+		m->poly_block += (int)m;
+
+		if (m->collision_block != 0)
+			m->collision_block += (int)m;
+#endif
+	}
+
+	/* A DAM-style instance (instance_number names another model) is made
+	 * self-contained by pointing its vertex/normal fields at the COPY of its
+	 * parent. The parent must be one of the six; anything else would leave an
+	 * address in the city buffer that teardown frees. */
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	{
+		MODEL* m = built[i];
+		int parentIndex = m->instance_number;
+
+		if (parentIndex < 0)
+			continue;
+
+		for (k = 0; k < JER_PED_IMPORT_MODELS; k++)
+		{
+			if (sJerPedModelIndex[k] == parentIndex)
+				break;
+		}
+
+		if (k >= JER_PED_IMPORT_MODELS)
+		{
+			printInfo("ped import: %s is an instance of model %d, which is not one of the six - refusing\n",
+				sJerPedModelNames[i], parentIndex);
+			free(mem);
+			return 0;
+		}
+
+#if MODEL_RELOCATE_POINTERS
+		m->vertices = (int)((char*)built[k] + built[k]->vertices) - (int)m;
+		m->normals = (int)((char*)built[k] + built[k]->normals) - (int)m;
+		m->point_normals = (int)((char*)built[k] + built[k]->point_normals) - (int)m;
+
+		if (built[k]->collision_block != 0)
+			m->collision_block = (int)((char*)built[k] + built[k]->collision_block) - (int)m;
+		else
+			m->collision_block = 0;
+#else
+		m->vertices = (int)((char*)built[k] - (char*)m) + built[k]->vertices;
+		m->normals = (int)((char*)built[k] - (char*)m) + built[k]->normals;
+		m->point_normals = (int)((char*)built[k] - (char*)m) + built[k]->point_normals;
+
+		if (built[k]->collision_block != 0)
+			m->collision_block = (int)((char*)built[k] - (char*)m) + built[k]->collision_block;
+		else
+			m->collision_block = 0;
+#endif
+
+		m->instance_number = -1;
+	}
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	{
+		if (built[i]->poly_block <= 0 || built[i]->num_polys <= 0)
+		{
+			printInfo("ped import: %s has no usable polygon data after the copy\n",
+				sJerPedModelNames[i]);
+			free(mem);
+			return 0;
+		}
+	}
+
+	/* The texture sets the six models actually paint with. Record the SOURCE
+	 * numbers first, then rewrite the copies through the host-vs-import remap. */
+	sJerPedSetCount = 0;
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		JerPedCollectModelSets(built[i]);
+
+	if (sJerPedSetCount <= 0)
+	{
+		printInfo("ped import: the JERI models name no texture sets - refusing\n");
+		free(mem);
+		return 0;
+	}
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		JerPedRemapModelSets(built[i]);
+
+	{
+		char line[160];
+		int n = 0;
+
+		line[0] = 0;
+
+		for (i = 0; i < sJerPedSetCount && n < (int)sizeof(line) - 8; i++)
+			n += snprintf(line + n, sizeof(line) - n, " %d", sJerPedSet[i]);
+
+		printInfo("ped import: %s JERI texture sets:%s\n", LevelNames[city], line);
+	}
+
+	if (!JerPedPinTpages(city, sJerPedSet, sJerPedSetCount))
+	{
+		printInfo("ped import: %s pages could not be pinned - refusing the import\n",
+			LevelNames[city]);
+		JerPedReleasePins();
+		sJerPedSetCount = 0;
+		free(mem);
+		return 0;
+	}
+
+	/* All six copies and all their pages are ready. Publish the pointers; the
+	 * caller decides when to install them (StoreVertexLists + SetSkel...). */
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		pmJerichoModels[i] = built[i];
+
+	if (sJerPedMem != NULL)
+		free(sJerPedMem);
+
+	sJerPedMem = mem;
+	sJerPedMemSize = total;
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		sJerPedModels[i] = built[i];
+
+	sJerPedBuiltCity = city;
+	sJerPedReady = 1;
+
+	printInfo("ped import: copied %d bytes of %s JERI models (first %p)\n",
+		total, LevelNames[city], (void*)sJerPedModels[0]);
+
+	return 1;
+}
+
+MODEL* JerPedModel(int index)
+{
+	if (index < 0 || index >= JER_PED_IMPORT_MODELS)
+		return NULL;
+
+	return sJerPedModels[index];
+}
+
+int JerPedImportReady(void)
+{
+	return sJerPedReady;
+}
+
+int JerPedTextureSetCount(void)
+{
+	return sJerPedSetCount;
+}
+
+int JerPedTextureSet(int index)
+{
+	if (index < 0 || index >= sJerPedSetCount)
+		return 0;
+
+	return sJerPedSet[index];
+}
+
+/* A level boundary or session teardown. The imported pointers are cleared only
+ * when they are OUR copies; a level that owns the models natively (Havana) keeps
+ * its pointers until InitTanner replaces them. */
+void JerPedImportReset(void)
+{
+	int i;
+
+	JerPedReleasePins();
+
+	if (sJerPedMem != NULL)
+	{
+		for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		{
+			if (pmJerichoModels[i] == sJerPedModels[i])
+				pmJerichoModels[i] = NULL;
+		}
+
+		free(sJerPedMem);
+	}
+
+	sJerPedMem = NULL;
+	sJerPedMemSize = 0;
+	sJerPedReady = 0;
+	sJerPedBuiltCity = -1;
+	sJerPedSetCount = 0;
+	sJerPedProbeCity = -1;
+	sJerPedProbeOk = 0;
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		sJerPedModels[i] = NULL;
+}
+
+
 
 // Load the foreign car data the module asked for. Called from
 // SetupResidentModels once the resident models and their sources are final, so

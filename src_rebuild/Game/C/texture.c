@@ -1791,6 +1791,7 @@ int CarImportPinDstSet(int set)
 // pins/palette tables when its last car is released - is TODO(#14); this headroom is
 // the safe stopgap, not the cure. The hard ceiling is JER_POOL_PAGES.
 #define CAR_PIN_MAX 30
+#define JER_PED_PIN_OWNER 30		/* the pin-owner bit used by the imported on-foot character */
 
 // JERICHO: the pool must be able to hold EVERY pin. That is what makes the world-side
 // fallback in CarPageFindSlot unreachable rather than merely unlikely: a pin takes a lower
@@ -1851,6 +1852,11 @@ static int sPinPreferred[CAR_PIN_MAX];		// the rectangle the REPLACED car's page
 static int sPinClutY[CAR_PIN_MAX];		// JERICHO: first row of this pin's CLUT band in the lower
 						// half pool column (always starting at x=960), -1 = none
 static int sPinClutRows[CAR_PIN_MAX];		// its height in whole rows
+static int sPinPoolOnly[CAR_PIN_MAX];		// JERICHO: this pin must live in the lower half pool;
+						// no world-page fallback
+static int sPinForcePool;			// set while recording a pool-only pin
+static int sJerPedPinsRecorded;
+static int sJerPedPinFailed;
 static CAR_CLUT_FREE sPinClutFree;		// JERICHO: bands given back by released pins (carpinref.h)
 static int sPinClutStarted;			// the first band has been taken this level (for the log)
 static int sPinClutReused;			// bands served from the free list
@@ -2034,6 +2040,7 @@ static void CarPinRecord(int set, int index, int offset, int size, int preferred
 	sPinPreferred[sPinCount] = preferred;
 	sPinClutY[sPinCount] = -1;		// no CLUT band until it is placed
 	sPinClutRows[sPinCount] = 0;
+	sPinPoolOnly[sPinCount] = sPinForcePool;
 	sPinCount++;
 }
 
@@ -2548,6 +2555,14 @@ void CarImportPin(void)
 		// index to return.
 		pool = JerLowerPoolPageAlloc();
 
+		if (pool < 0 && sPinPoolOnly[i])
+		{
+			/* JERICHO: a ped pin is not allowed to take a world rectangle. Leave it
+			 * unplaced; the import readiness check refuses the character. */
+			sJerPinPoolFull++;
+			continue;
+		}
+
 		if (pool >= 0)
 		{
 			JerLowerPoolPageRect(pool, &tpage);
@@ -2877,6 +2892,158 @@ static int CarImportAnyHeld(void)
 			return 1;
 
 	return 0;
+}
+
+/* JERICHO: the ped import's texture pins.
+ *
+ * Same table and the same CarImportPin placement as an imported car, but the
+ * pins are owned by a dedicated owner bit and are required to land in the lower
+ * half pool. A ped page that would have to evict a world rectangle is left
+ * unplaced, and the import is refused rather than letting the world show the
+ * character's texture.
+ */
+static void CarPinRemoveAt(int i);
+
+static int JerPedPinOffset(int city, int set, int* offset, int* size)
+{
+	int i, off = 0;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+	for (i = 0; i < gCarImportPerms[city].count; i++)
+	{
+		if (gCarImportPerms[city].set[i] == set)
+		{
+			*offset = off;
+			*size = gCarImportPerms[city].bytes[i];
+			return (*size > 0);
+		}
+
+		off += (gCarImportPerms[city].bytes[i] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+	}
+
+	return 0;
+}
+
+int JerPedPinTpages(int city, const int* sets, int count)
+{
+	int i, p, offset = 0, size = 0;
+
+	if (city < 0 || city >= CITY_COUNT || sets == NULL || count <= 0)
+		return 0;
+
+	CarImportPageListsForCity(city);
+
+	sJerPedPinsRecorded = 0;
+	sJerPedPinFailed = 0;
+
+	for (i = 0; i < count; i++)
+	{
+		int dst;
+
+		if (!JerPedPinOffset(city, sets[i], &offset, &size))
+		{
+			printInfo("ped import: %s set %d is not in its page list - refusing\n",
+				LevelNames[city], sets[i]);
+			sJerPedPinFailed = 1;
+			continue;
+		}
+
+		dst = CarImportPinDstSet(sets[i]);
+
+		sPinForcePool = 1;
+		CarPinRecord(sets[i], dst, offset, size, -1, city, CarPinOwnerBit(JER_PED_PIN_OWNER));
+		sPinForcePool = 0;
+
+		sJerPedPinsRecorded++;
+	}
+
+	CarImportPin();
+
+	for (p = 0; p < sPinCount; p++)
+	{
+		if (!CarPinOwnersHas(sPinOwners[p], JER_PED_PIN_OWNER))
+			continue;
+
+		if (sPinPoolOnly[p] ? (sPinPool[p] < 0) : (sPinPool[p] < 0 && sPinTexSlot[p] < 0))
+		{
+			printInfo("ped import: %s set %d could not be placed in the lower half pool\n",
+				LevelNames[sPinCity[p]], sPinSet[p]);
+			sJerPedPinFailed = 1;
+		}
+
+		if (sPinClutY[p] < 0)
+		{
+			printInfo("ped import: %s set %d has no CLUT band\n",
+				LevelNames[sPinCity[p]], sPinSet[p]);
+			sJerPedPinFailed = 1;
+		}
+	}
+
+	for (i = 0; i < sPinDroppedKept; i++)
+	{
+		if (sPinDroppedOwners[i] & CarPinOwnerBit(JER_PED_PIN_OWNER))
+		{
+			printInfo("ped import: %s set %d was dropped from the pin table\n",
+				LevelNames[sPinDroppedCity[i]], sPinDroppedSet[i]);
+			sJerPedPinFailed = 1;
+		}
+	}
+
+	if (sJerPedPinsRecorded != count)
+		sJerPedPinFailed = 1;
+
+	return (sJerPedPinsRecorded == count && !sJerPedPinFailed);
+}
+
+int JerPedPinsReady(void)
+{
+	return (sJerPedPinsRecorded > 0 && !sJerPedPinFailed);
+}
+
+void JerPedReleasePins(void)
+{
+	int i;
+
+	for (i = sPinCount - 1; i >= 0; i--)
+	{
+		if (!CarPinOwnersHas(sPinOwners[i], JER_PED_PIN_OWNER))
+			continue;
+
+		sPinOwners[i] &= ~CarPinOwnerBit(JER_PED_PIN_OWNER);
+
+		if (sPinOwners[i] != 0)
+			continue;
+
+		if (sPinPool[i] >= 0)
+			JerLowerPoolPageFree(sPinPool[i]);
+
+		if (sPinClutY[i] >= 0 && sPinClutRows[i] > 0)
+			CarClutFreeGive(&sPinClutFree, sPinClutY[i], sPinClutRows[i]);
+
+		CarPinRemoveAt(i);
+	}
+
+	for (i = sPinDroppedKept - 1; i >= 0; i--)
+	{
+		if (sPinDroppedOwners[i] & CarPinOwnerBit(JER_PED_PIN_OWNER))
+		{
+			sPinDroppedOwners[i] &= ~CarPinOwnerBit(JER_PED_PIN_OWNER);
+
+			if (sPinDroppedOwners[i] == 0)
+			{
+				int n = sPinDroppedKept;
+
+				CarPinArrayRemove(sPinDroppedSet, n, i);
+				CarPinArrayRemove(sPinDroppedCity, n, i);
+				CarPinArrayRemove(sPinDroppedOwners, n, i);
+				sPinDroppedKept = n - 1;
+			}
+		}
+	}
+
+	sJerPedPinsRecorded = 0;
+	sJerPedPinFailed = 0;
 }
 
 void CarImportDumpState(void)
@@ -3511,6 +3678,7 @@ static void CarPinRemoveAt(int i)
 	CarPinArrayRemove(sPinPreferred, n, i);
 	CarPinArrayRemove(sPinClutY, n, i);
 	CarPinArrayRemove(sPinClutRows, n, i);
+	CarPinArrayRemove(sPinPoolOnly, n, i);
 
 	sPinCount = n - 1;
 }
@@ -3784,6 +3952,8 @@ int JerReleaseCarSlot(int slot)
 void JerReleaseAllCrossCity(void)
 {
 	int slot, city;
+
+	JerPedImportReset();
 
 	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
 	{

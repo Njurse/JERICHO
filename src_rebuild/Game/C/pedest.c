@@ -447,6 +447,134 @@ int jer_ped_palette_team_colour(JER_COLOUR colour, int strength)
 	return gPedPalTeams++;
 }
 
+// JERICHO-HOOK: add the CLUT pairs named by the imported Jericho models to the
+// live palette table WITHOUT resetting it. Existing cached teams keep their rows;
+// each new recolourable pair gets a row per existing team. The head is skipped
+// for the same reason Tanner's is: it is drawn separately and keeps skin.
+//
+// Returns 0 when the pair table or the CLUT strip is full, so the caller can
+// refuse the character import rather than promise a colour it cannot apply.
+int jer_ped_palette_extend_jericho(void)
+{
+	int mi;
+
+	for (mi = 0; mi < 6; mi++)
+	{
+		MODEL* m;
+		PL_POLYFT4* polys;
+		int j;
+
+		if (mi == 1)		/* JERI_HEAD: drawn by DoCivHead, keeps skin */
+			continue;
+
+		m = pmJerichoModels[mi];
+
+		if (m == NULL)
+			continue;
+
+		polys = GET_MODEL_DATA(PL_POLYFT4, m, poly_block);
+
+		for (j = m->num_polys; j > 0; j--)
+		{
+			u_char ptype = polys->id & 31;
+
+			if (ptype == 11 || ptype == 21 || ptype == 23)
+			{
+				int set = polys->texture_set;
+				int id = polys->texture_id;
+				int k;
+
+				for (k = 0; k < gPedPalPairCount; k++)
+				{
+					if (gPedPalPairs[k].set == set && gPedPalPairs[k].id == id)
+						break;
+				}
+
+				if (k == gPedPalPairCount)
+				{
+					RECT16 src;
+					u_short entries[16];
+					u_short rows[JER_PED_PAL_MAX_TEAMS];
+					int t;
+
+					if (gPedPalPairCount >= PED_PAL_MAX_PAIRS)
+					{
+						jer_log("ped palette: pair table full adding JERI model %d\n", mi);
+						return 0;
+					}
+
+					for (t = 0; t < gPedPalTeams; t++)
+						rows[t] = 0;
+
+					/* Read the stock row after the page pin, so this is the
+					 * imported page's CLUT, not the host's. */
+					src.x = (short)((texture_cluts[set][id] & 0x3f) * 16);
+					src.y = (short)((texture_cluts[set][id] >> 6) & 0x3ff);
+					src.w = 16;
+					src.h = 1;
+
+					StoreImage(&src, (u_long*)entries);
+
+					gPedPalPairs[k].set = (u_char)set;
+					gPedPalPairs[k].id = (u_char)id;
+					gPedPalPairs[k].stock = texture_cluts[set][id];
+					memset(gPedPalPairs[k].row, 0, sizeof(gPedPalPairs[k].row));
+					gPedPalPairs[k].recolour = (u_char)PedPalRowIsOutfit(entries);
+
+					if (gPedPalPairs[k].recolour)
+					{
+						for (t = 0; t < gPedPalTeams; t++)
+						{
+							rows[t] = JerichoMakeClutRow(gPedPalPairs[k].stock,
+								gPedPalKey[t][0], gPedPalKey[t][1], gPedPalKey[t][2],
+								gPedPalKey[t][3], gPedPalKey[t][4]);
+
+							if (rows[t] == 0)
+							{
+								jer_log("ped palette: no CLUT row extending pair set=%d id=%d for team %d\n",
+									set, id, t);
+								return 0;
+							}
+						}
+					}
+
+					for (t = 0; t < gPedPalTeams; t++)
+						gPedPalPairs[k].row[t] = rows[t];
+
+					gPedPalPairCount++;
+				}
+			}
+
+			polys = (PL_POLYFT4*)((char*)polys + PolySizes[ptype]);
+		}
+	}
+
+	return 1;
+}
+
+/* JERICHO: install the imported six models into the live skeleton pipeline.
+ * Refuses unless every one is present, so SetSkelModelPointers can never be
+ * called with a NULL pModel. StoreVertexLists runs BEFORE the rebind because the
+ * draw reads cJerichoVNumbers/vJerichoList, not the model blobs directly. */
+int JerPedInstallModels(void)
+{
+	int i;
+
+	for (i = 0; i < 6; i++)
+	{
+		if (pmJerichoModels[i] == NULL)
+			return 0;
+	}
+
+	if (!jer_ped_palette_extend_jericho())
+		return 0;
+
+	StoreVertexLists();
+	SetSkelModelPointers(OTHER_MODEL);
+
+	return 1;
+}
+
 // The (r,g,b) form of the same call. It only unpacks into the colour type, so
 // there is ONE implementation and ONE cache; new code should use the _colour
 // form. Kept because cainescrossfire (and older callers) use it.
@@ -542,6 +670,8 @@ void jer_ped_palette_leave(void)
 // [D] [T]
 void InitTanner(void)
 {
+	JerPedImportReset();
+
 	pmTannerModels[0] = FindModelPtrWithName("TORSO");
 	pmTannerModels[1] = FindModelPtrWithName("HEAD");
 	pmTannerModels[2] = FindModelPtrWithName("U_ARM_RIGHT");
