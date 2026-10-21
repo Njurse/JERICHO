@@ -130,11 +130,30 @@ extern int CarImportApplyPaletteForCity(int city);
 // CarImportPin, the first point the built model's rows exist.
 // Returns 1 when a deferred lump was uploaded, 0 when there was none.
 extern int ProcessImportedPaletteRows(const unsigned char* rowNeeded);
+// JERICHO: a row was given back to the import pool. Clear its upload flag and contents so
+// the next (city,set) that takes the row re-uploads instead of drawing the old car's
+// palette (cars.c's CarImportReclaimRows calls this).
+extern void CarImportPaletteRowForget(int row);
 
 /* JERICHO: how a resident slot's built model reads its materials - the numbers
  * behind carhacks' garbled-import retry. Fills polys / polys-on-a-pinned-page /
  * uploaded palette rows; returns 0 when the slot has no model built yet. */
 extern int JerCarImportHealth(int slot, int* outPolys, int* outOnPinned, int* outPalUploaded, int* outPalBad);
+
+/* JERICHO: how far a resident slot's imported model is from being drawable.
+ *
+ * A model's polys bake a page INDEX and a civ_clut ROW at build time. Until the pin that
+ * owns that page exists (CarPinRecord) and the row exists (CarAllocSetRow), those polys
+ * resolve to nothing or to the level's own materials. `forDraw` additionally requires the
+ * two things only CarImportPin does: the row uploaded and the page placed.
+ *
+ * Returns the number of the model's sets that are not ready; copies up to `max` of them
+ * into `missing` when it is not NULL. 0 = ready. Host slots always return 0. */
+extern int CarImportSlotMissingSets(int slot, int forDraw, int* missing, int max);
+/* JERICHO: the opt-in set -> civ_clut row -> pin/page map for one imported slot. Prints the
+ * detail when verbose, always prints a NOT READY line when a body set is missing, and
+ * returns how many are missing. JERICHO_DIAG_SLOT_MAP=1 turns the detail on. */
+extern int CarImportSlotMapReport(int slot, int verbose);
 extern void load_civ_palettes(RECT16 *cluts); // 0x0001A094
 
 extern void IncrementClutNum(RECT16 *clut); // 0x00080DDC

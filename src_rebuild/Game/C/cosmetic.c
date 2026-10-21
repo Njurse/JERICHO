@@ -549,6 +549,10 @@ void AddCopCarLight(CAR_DATA *cp)
 
 			size = *coplife >> 1;
 
+			/* TODO: temporary color override for D1-exported police light verification.
+			 * Comment this out once the positions/colors look right. */
+			/* red   = 255; blue = 0; green = 0;   // force solid red for testing */
+
 			// switch colours if needed
 			if (lightCity == 1 || lightCity == 3 || lightCity == 2 && side == 0)
 			{

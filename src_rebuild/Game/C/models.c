@@ -238,6 +238,7 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_TEXINFO	34	// LUMP_TEXTUREINFO - the page lists
 #define CAR_IMPORT_LUMP_WHEELS	200	// JERICHO: optional wheel models (the D1 bake)
 #define CAR_IMPORT_LUMP_SOUNDS	201	// JERICHO: embedded per-model car sounds (the D1 bake)
+#define CAR_IMPORT_LUMP_SIRENS	202	// JERICHO: per-model cop flags (the D1 bake)
 #define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
 #define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
 #define CAR_IMPORT_LUMP_MODELNAMES	12	// LUMP_MODELNAMES (DATA1)
@@ -261,6 +262,7 @@ typedef struct
 	int carWheelsSize;
 	char* carSounds;	// LUMP_CAR_SOUNDS body, or NULL (no embedded car sounds)
 	int carSoundsSize;
+	unsigned carSirenMask;	// bit N = model N is a cop car (LUMP_CAR_SIRENS)
 	char* wheelMem;		// malloc'd copies of the wheel MODELs below
 	MODEL* wheels[CAR_IMPORT_WHEEL_VARIANTS];
 	char* wheelTexMem[CAR_IMPORT_WHEEL_VARIANTS];	// per-model D2 texture-source blocks
@@ -530,6 +532,23 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 	// and gamesnd keeps the host-city fallback for them.
 	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_SOUNDS, &imp->carSounds, &imp->carSoundsSize);
 
+	// JERICHO: cop flags from the bake. Optional; an older bank has none, and
+	// CarHasSiren then keeps the host-city behaviour.
+	{
+		char* sirens = NULL;
+		int sirenSize = 0;
+		int s;
+
+		imp->carSirenMask = 0;
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_SIRENS, &sirens, &sirenSize);
+
+		for (s = 0; sirens != NULL && s < CAR_IMPORT_MODEL_SLOTS && s < sirenSize; s++)
+		{
+			if ((unsigned char)sirens[s])
+				imp->carSirenMask |= 1u << s;
+		}
+	}
+
 	// JERICHO: a Driver 1 bake (no DATA2) from before v0.10.9 carries neither
 	// segment, so its cars keep the host's wheels and engine. Say so once.
 	if (imp->data2 == NULL && (imp->carWheels == NULL || imp->carSounds == NULL))
@@ -645,6 +664,39 @@ int JerLoadCarImportForCity(int city)
 void InitCarImport(void)
 {
 	int i, city;
+	int wanted = 0, all_held = 1;
+
+	// JERICHO: a RESTART of the same level does not re-read the level file, so
+	// ProcessCarModelLump does not run again -- and that is what records the page
+	// pins the deferred palette upload rides on. Clearing the import state here
+	// therefore drops the palette rows with nothing left to put them back: the
+	// car keeps its geometry but loses its colours. If every source the restart
+	// asked for is already held, leave the level's import alone. A genuinely
+	// different source set (or a fresh level) falls through to the full reset.
+	if (!NewLevel && gCarImportCity >= 0)
+	{
+		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		{
+			int src = GetCarModelSourceCity(i);
+
+			if (src < 0 || src >= CITY_COUNT || residentCarModels[i] == -1)
+				continue;
+
+			wanted = 1;
+
+			if (!CarImportCityHeld(src))
+			{
+				all_held = 0;
+				break;
+			}
+		}
+
+		if (wanted && all_held)
+		{
+			printInfo("cross-city: restart of the same level - keeping the held car import and its palettes\n");
+			return;
+		}
+	}
 
 	// JERICHO: a new level starts from a clean cross-city slate. This runs BEFORE the
 	// level's car models are built, so the per-slot set lists buildNewCarFromModel
@@ -811,6 +863,16 @@ static int CarImportSoundEntry(CAR_IMPORT* imp, int model, char** bank, int* siz
 {
 	int off, n, i, dir, payload;
 
+	// A Driver 2 city has no embedded D1 sound bank at all: cross-city imports of a
+	// D2 city (RIO into CHICAGO, RIO into RIO's slot 5) are held and have car data,
+	// but carSounds is NULL. Indexing the per-model table before this check read
+	// address 8 + model*4 (0x2C for model 9) and crashed on the sound load. An
+	// out-of-range model is the same class of caller bug.
+	if (imp == NULL || imp->carSounds == NULL ||
+		imp->carSoundsSize < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int) ||
+		model < 0 || model >= CAR_IMPORT_MODEL_SLOTS)
+		return 0;
+
 	off = ((int*)(imp->carSounds + 8))[model];
 
 	if (off < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int) ||
@@ -849,6 +911,17 @@ static int CarImportSoundEntry(CAR_IMPORT* imp, int model, char** bank, int* siz
 	return 1;
 }
 
+// JERICHO: is this imported car a cop? The bake marks the source city's police
+// model in LUMP_CAR_SIRENS; CarHasSiren uses this to give it Driver 2's siren
+// channel instead of the host level's siren.
+int GetCarImportSiren(int city, int model)
+{
+	if (!CarImportCityHeld(city) || model < 0 || model >= CAR_IMPORT_MODEL_SLOTS)
+		return 0;
+
+	return (gCarImports[city].carSirenMask >> model) & 1;
+}
+
 // JERICHO: the embedded car-sound bank a D1 city's car uses, or 0. Driver 1 gave
 // EVERY car the same generic engine and idle, so the model number is not used to
 // pick the bank: every car gets the city's one generic engine + idle pair (below).
@@ -858,8 +931,6 @@ int GetCarImportSoundBank(int city, int model, char** bank, int* size)
 	CAR_IMPORT* imp;
 	char* b;
 	int sz, m;
-
-	(void)model;
 
 	if (bank)
 		*bank = NULL;
@@ -871,6 +942,24 @@ int GetCarImportSoundBank(int city, int model, char** bank, int* size)
 		return 0;
 
 	imp = &gCarImports[city];
+
+	// Per-model bank: the bake writes engine/idle/horn for every model, and the
+	// engine now loads each imported model's own bank so its third sample is the
+	// per-slot horn (or the cop siren). Old banks without per-model entries fall
+	// through to the generic composed pair below.
+	{
+		char* mb = NULL;
+		int msz = 0;
+
+		if (CarImportSoundEntry(imp, model, &mb, &msz))
+		{
+			if (bank)
+				*bank = mb;
+			if (size)
+				*size = msz;
+			return 1;
+		}
+	}
 
 	if (imp->carSounds == NULL ||
 		imp->carSoundsSize < 8 + CAR_IMPORT_MODEL_SLOTS * (int)sizeof(int))

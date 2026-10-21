@@ -443,6 +443,7 @@ extern "C" {
 #endif
 void jer_update_frontend_tick(int onMainMenu);
 void jer_rebake_frontend_tick(int onMainMenu);	/* jer_rebake.c: ask to re-bake a stale D1 bake */
+int jer_update_screen_active(void);		/* jer_update.c: the update notes own the screen */
 int jer_build_is_dev(void);
 void jer_modstore_frontend_tick(int onMainMenu);	/* jer_modstore.c: polls the store's helper */
 void jer_modstore_open_menu(void);	/* jer_modstore.c: open the Mods table menu */
@@ -2880,7 +2881,9 @@ void State_FrontEnd(void* param)
 		idleArgs.suppress = 0;
 		jer_fire(JER_EVENT_FRONTEND_IDLE, &idleArgs);
 
-		if (idleArgs.suppress)
+		/* JERICHO: the update screen is not idle time -- hold the clock so the
+		 * attract demo cannot start a level from under it. */
+		if (idleArgs.suppress || jer_update_screen_active())
 			idle_timer = VSync(-1);
 	}
 
@@ -3455,7 +3458,14 @@ int CarSelectScreen(int bSetup)
 	{
 		/* JERICHO: SQUARE cycles the player's car palette (the six colour variants;
 		 * the preview picture cannot show it, so a notice names it). The spawn reads
-		 * defaultPlayerPalette; mp saves it to mp.ini [mp] palette. */
+		 * defaultPlayerPalette; mp saves it to mp.ini [mp] palette.
+		 *
+		 * The six steps are the engine's six civ_clut slots: 0 is the page's own
+		 * CLUT and 1..5 are variants. Stock D2 fills 1..5; a Driver 1 car fills
+		 * only 1..4, so its last step clamps to the fourth and the two highest
+		 * steps repeat. Kept global on purpose: this point in the frontend does
+		 * not know the selected car's source city, and the same duplicate already
+		 * exists for a stock D2 car whose row has fewer than five variants. */
 		extern u_char defaultPlayerPalette;
 		char msg[48];
 

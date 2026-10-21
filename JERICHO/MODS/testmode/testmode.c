@@ -144,9 +144,20 @@ static void TestmodeQuietHold(void)
 	 * in the scene before the first frame, and they stay. PingOutCar is the
 	 * engine's own removal - it clears the CAR_DATA and sets CONTROL_TYPE_NONE -
 	 * so this is idempotent and self-healing. Only the first MAX_CARS entries are
-	 * cars at all; the last two are the Tanner and camera collision boxes. */
+	 * cars at all; the last two are the Tanner and camera collision boxes.
+	 *
+	 * NOT the PLAYER pool, though. A player who gets out leaves their car as
+	 * CONTROL_TYPE_CIV_AI so it can be walked back to (the engine's own get-out
+	 * path does it, and mp relies on it), and this sweep used to delete it on the
+	 * next frame: "the car disappeared when the player exited". The player slots
+	 * are not traffic, whatever their control type says. (A player who abandons a
+	 * civilian car they borrowed from the TRAFFIC pool is still swept - that pool
+	 * is what "quiet" is about.) */
 	for (i = 0; i < MAX_CARS; i++)
 	{
+		if (i < JER_SLOT_MANAGED_FIRST)
+			continue;
+
 		if (car_data[i].controlType == CONTROL_TYPE_CIV_AI)
 		{
 			PingOutCar(&car_data[i]);
