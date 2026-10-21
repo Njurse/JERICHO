@@ -1872,19 +1872,16 @@ void SetSkelModelPointers(int type)
 		Skel[RELBOW].pModel = &pmJerichoModels[4];
 		Skel[RHAND].pModel = &pmJerichoModels[5];
 
-		/* Match the engine's static Tanner leg/hand bindings. The skeleton's
-		 * leg chain starts at LKNEE/RKNEE (the hips draw no model), and the
-		 * fingers bones stay empty because Jericho's lower-arm models include
-		 * the hand. Binding thighs to LHIP/RHIP is what put the legs and feet
-		 * in the wrong places. */
-		Skel[LHIP].pModel = NULL;
-		Skel[RHIP].pModel = NULL;
-		Skel[LKNEE].pModel = pmJerichoLegModels[0] ? &pmJerichoLegModels[0] : &pmTannerModels[11];
-		Skel[LFOOT].pModel = pmJerichoLegModels[1] ? &pmJerichoLegModels[1] : &pmTannerModels[12];
-		Skel[LTOE].pModel = pmJerichoLegModels[5] ? &pmJerichoLegModels[5] : &pmTannerModels[13];
-		Skel[RKNEE].pModel = pmJerichoLegModels[3] ? &pmJerichoLegModels[3] : &pmTannerModels[5];
-		Skel[RFOOT].pModel = pmJerichoLegModels[4] ? &pmJerichoLegModels[4] : &pmTannerModels[6];
-		Skel[RTOE].pModel = pmJerichoLegModels[2] ? &pmJerichoLegModels[2] : &pmTannerModels[7];
+		/* Jericho's own parts. The legs are the baked Tanner thigh/calf/foot
+		 * copies, bound to the requested hip/knee/foot slots. */
+		Skel[LHIP].pModel = pmJerichoLegModels[0] ? &pmJerichoLegModels[0] : &pmTannerModels[11];
+		Skel[LKNEE].pModel = pmJerichoLegModels[1] ? &pmJerichoLegModels[1] : &pmTannerModels[12];
+		Skel[LFOOT].pModel = pmJerichoLegModels[2] ? &pmJerichoLegModels[2] : &pmTannerModels[7];
+		Skel[RHIP].pModel = pmJerichoLegModels[3] ? &pmJerichoLegModels[3] : &pmTannerModels[5];
+		Skel[RKNEE].pModel = pmJerichoLegModels[4] ? &pmJerichoLegModels[4] : &pmTannerModels[6];
+		Skel[RFOOT].pModel = pmJerichoLegModels[5] ? &pmJerichoLegModels[5] : &pmTannerModels[13];
+		Skel[LTOE].pModel = NULL;
+		Skel[RTOE].pModel = NULL;
 		Skel[LFINGERS].pModel = NULL;
 		Skel[RFINGERS].pModel = NULL;
 

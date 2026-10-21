@@ -1353,20 +1353,12 @@ int JerPedImportBaked(int city)
 		}
 	}
 
-	/* The legs are Tanner geometry. Take the CURRENT level's Tanner texture
-	 * set/id so they always sample the resident Tanner pages (and therefore
-	 * the player palette), regardless of which level the bake came from. */
-	{
-		static const int hostLegs[JER_PED_LEG_MODELS] = { 11, 12, 7, 5, 6, 13 };
-		int j;
-
-		for (j = 0; j < JER_PED_LEG_MODELS; j++)
-			JerPedCopyTextureIds(built[JER_PED_IMPORT_MODELS + j], pmTannerModels[hostLegs[j]]);
-	}
+	/* The legs are retextured to the torso's suit set/id at bake time, so they
+	 * follow the same remap and pinned page as the torso. */
 
 	sJerPedSetCount = 0;
 
-	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
 		JerPedCollectModelSets(built[i]);
 
 	if (sJerPedSetCount <= 0)
@@ -1375,7 +1367,7 @@ int JerPedImportBaked(int city)
 		goto fail;
 	}
 
-	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
 		JerPedRemapModelSets(built[i]);
 
 	for (i = 0; i < (int)pageCount; i++)
