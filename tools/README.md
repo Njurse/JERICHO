@@ -9,6 +9,7 @@ Repo-wide maintenance tools. Mod-specific tooling lives next to its mod
 | `dmp_fault.py` | Read a minidump and print the exception plus the faulting module and RVA |
 | `map_lookup.py` | Turn that RVA into a function name using a build's `.map` file |
 | `doccheck.py` | Check the documentation: links resolve, every engine event is in `events.md`, every doc is reachable from `docs/README.md`, and the counted claims match the code |
+| `check_release_mods.py` | Assert `JERICHO_RELEASE_MODS` has manifests and matches the generated Release registry, so a release cannot silently omit a named mod |
 | `update_mod_submodules.sh` | Advance the `mp`, `carhacks` and `crumple` submodule pins to their repositories' `main`, printing the gitlink diff to review and commit |
 
 ## Updating the mod source pins
