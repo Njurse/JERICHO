@@ -3113,6 +3113,72 @@ int JerPedUploadAreaPage(int set, int dstSet, char* buf)
 	return 1;
 }
 
+int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned char* cluts, const unsigned char* image)
+{
+	RECT16 tpage, clut;
+	int pool, rows, i;
+	unsigned int* clutptr;
+
+	if (cluts == NULL || image == NULL || npalettes <= 0 || npalettes > 128 || dstSet < 0 || dstSet >= 128)
+		return 0;
+
+	rows = CarClutRowsFor(npalettes);
+
+	if (JerLowerPoolClutRowsFree() < rows)
+	{
+		printInfo("ped import: baked set %d needs %d CLUT rows, none free\n", set, rows);
+		return 0;
+	}
+
+	pool = JerLowerPoolPageAlloc();
+
+	if (pool < 0)
+	{
+		printInfo("ped import: baked set %d has no lower-half page\n", set);
+		return 0;
+	}
+
+	JerLowerPoolPageRect(pool, &tpage);
+	JerLowerPoolClutCursor(&clut);
+
+	tpage.w = 64;
+	tpage.h = 256;
+	clut.w = 64;
+	clut.h = rows;
+
+	sCarPageUploading = 1;
+	LoadImage(&tpage, (u_long*)image);
+	LoadImage(&clut, (u_long*)cluts);
+	sCarPageUploading = 0;
+
+	texture_pages[dstSet] = getTPage(0, 0, tpage.x, tpage.y);
+
+	clutptr = (unsigned int*)texture_cluts[dstSet];
+
+	for (i = 0; i < npalettes; i += 4)
+	{
+		clutptr[0] = getClut(clut.x + 16, clut.y) << 16 | getClut(clut.x, clut.y);
+		clutptr[1] = getClut(clut.x + 48, clut.y) << 16 | getClut(clut.x + 32, clut.y);
+		clutptr += 2;
+		clut.y++;
+	}
+
+	JerLowerPoolClutAdvance(rows);
+
+	if (sJerPedAreaPoolCount < 16)
+	{
+		sJerPedAreaPool[sJerPedAreaPoolCount] = pool;
+		sJerPedAreaClutY[sJerPedAreaPoolCount] = clut.y - rows;
+		sJerPedAreaClutRows[sJerPedAreaPoolCount] = rows;
+		sJerPedAreaPoolCount++;
+	}
+
+	printInfo("ped import: baked set %d -> page set %d (%d CLUTs, %d row(s), page %d,%d)\n",
+		set, dstSet, npalettes, rows, tpage.x, tpage.y);
+
+	return 1;
+}
+
 void JerPedReleasePins(void)
 {
 	int i;

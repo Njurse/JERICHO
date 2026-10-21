@@ -1120,6 +1120,275 @@ int JerPedImportBuild(int city)
 	return 1;
 }
 
+int JerPedBakedAvailable(void)
+{
+	FILE* f;
+	char magic[8];
+
+	f = fopen("DRIVER2\\LEVELS\\JMPPED.LEV", "rb");
+
+	if (f == NULL)
+		return 0;
+
+	if (fread(magic, 1, 8, f) != 8)
+	{
+		fclose(f);
+		return 0;
+	}
+
+	fclose(f);
+
+	return memcmp(magic, "JMPPED\0\0", 8) == 0;
+}
+
+/* Load the self-contained bake. The file stores six MODEL-relative blobs and
+ * two raw 64x256 pages; no Havana level file or spool decoding is involved. */
+int JerPedImportBaked(int city)
+{
+	FILE* f;
+	unsigned char* file;
+	unsigned char* p;
+	unsigned char* end;
+	unsigned char* blobs[JER_PED_IMPORT_MODELS];
+	int sizes[JER_PED_IMPORT_MODELS];
+	MODEL* built[JER_PED_IMPORT_MODELS];
+	unsigned int version, count, pageCount;
+	int total = 0;
+	int i, k;
+	long len;
+	char* mem;
+	char* cur;
+
+	if (sJerPedReady)
+		return 1;
+
+	f = fopen("DRIVER2\\LEVELS\\JMPPED.LEV", "rb");
+
+	if (f == NULL)
+	{
+		printInfo("ped import: JMPPED.LEV is missing (bake with tools/bake_jmpped.py)\n");
+		return 0;
+	}
+
+	fseek(f, 0, SEEK_END);
+	len = ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+	if (len < 24)
+	{
+		fclose(f);
+		return 0;
+	}
+
+	file = (unsigned char*)malloc(len);
+
+	if (file == NULL || fread(file, 1, len, f) != (size_t)len)
+	{
+		fclose(f);
+		free(file);
+		return 0;
+	}
+
+	fclose(f);
+	end = file + len;
+
+	if (memcmp(file, "JMPPED\0\0", 8) != 0)
+	{
+		printInfo("ped import: JMPPED.LEV has a bad magic\n");
+		free(file);
+		return 0;
+	}
+
+	p = file + 8;
+	version = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
+	count = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
+
+	if (version != 1 || count != JER_PED_IMPORT_MODELS || p + 4 > end)
+	{
+		printInfo("ped import: JMPPED.LEV version %u has %u models\n", version, count);
+		free(file);
+		return 0;
+	}
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	{
+		unsigned int size;
+
+		if (p + 4 > end)
+			goto fail;
+
+		size = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
+
+		if (size < sizeof(MODEL) || p + size > end)
+		{
+			printInfo("ped import: JMPPED.LEV model %d is short (%u)\n", i, size);
+			goto fail;
+		}
+
+		blobs[i] = p;
+		sizes[i] = (int)size;
+		p += size;
+		total += (size + 3) & ~3;
+	}
+
+	if (p + 4 > end)
+		goto fail;
+
+	pageCount = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
+
+	if (pageCount < 2)
+		goto fail;
+
+	mem = (char*)malloc(total);
+
+	if (mem == NULL)
+		goto fail;
+
+	cur = mem;
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	{
+		MODEL* m;
+
+		built[i] = (MODEL*)cur;
+		memcpy(cur, blobs[i], sizes[i]);
+		cur += (sizes[i] + 3) & ~3;
+		m = built[i];
+
+#if MODEL_RELOCATE_POINTERS
+		m->vertices += (int)m;
+		m->normals += (int)m;
+		m->point_normals += (int)m;
+		m->poly_block += (int)m;
+
+		if (m->collision_block != 0)
+			m->collision_block += (int)m;
+#endif
+	}
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	{
+		MODEL* m = built[i];
+		int parent = m->instance_number;
+
+		if (parent < 0)
+			continue;
+
+		if (parent >= JER_PED_IMPORT_MODELS)
+		{
+			printInfo("ped import: baked %s names parent %d outside the six\n",
+				sJerPedModelNames[i], parent);
+			free(mem);
+			goto fail;
+		}
+
+#if MODEL_RELOCATE_POINTERS
+		m->vertices = (int)((char*)built[parent] + built[parent]->vertices) - (int)m;
+		m->normals = (int)((char*)built[parent] + built[parent]->normals) - (int)m;
+		m->point_normals = (int)((char*)built[parent] + built[parent]->point_normals) - (int)m;
+
+		if (built[parent]->collision_block != 0)
+			m->collision_block = (int)((char*)built[parent] + built[parent]->collision_block) - (int)m;
+		else
+			m->collision_block = 0;
+#else
+		m->vertices = (int)((char*)built[parent] - (char*)m) + built[parent]->vertices;
+		m->normals = (int)((char*)built[parent] - (char*)m) + built[parent]->normals;
+		m->point_normals = (int)((char*)built[parent] - (char*)m) + built[parent]->point_normals;
+
+		if (built[parent]->collision_block != 0)
+			m->collision_block = (int)((char*)built[parent] - (char*)m) + built[parent]->collision_block;
+		else
+			m->collision_block = 0;
+#endif
+
+		m->instance_number = -1;
+	}
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+	{
+		sJerPedModelIndex[i] = i;
+
+		if (built[i]->poly_block <= 0 || built[i]->num_polys <= 0)
+		{
+			printInfo("ped import: baked %s has no polygon data\n", sJerPedModelNames[i]);
+			free(mem);
+			goto fail;
+		}
+	}
+
+	sJerPedSetCount = 0;
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		JerPedCollectModelSets(built[i]);
+
+	if (sJerPedSetCount <= 0)
+	{
+		free(mem);
+		goto fail;
+	}
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		JerPedRemapModelSets(built[i]);
+
+	for (i = 0; i < (int)pageCount; i++)
+	{
+		unsigned int set, npal, clutLen, imageLen;
+		const unsigned char* cluts;
+		const unsigned char* image;
+		int dst;
+
+		if (p + 16 > end)
+			break;
+
+		set = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
+		npal = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
+		clutLen = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
+		imageLen = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
+
+		if (p + clutLen + imageLen > end)
+			break;
+
+		cluts = p;
+		image = p + clutLen;
+		dst = CarImportPinDstSet((int)set);
+
+		if (!JerPedUploadBakedPage((int)set, dst, (int)npal, cluts, image))
+		{
+			free(mem);
+			JerPedReleasePins();
+			goto fail;
+		}
+
+		p += clutLen + imageLen;
+	}
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		pmJerichoModels[i] = built[i];
+
+	if (sJerPedMem != NULL)
+		free(sJerPedMem);
+
+	sJerPedMem = mem;
+	sJerPedMemSize = total;
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		sJerPedModels[i] = built[i];
+
+	sJerPedBuiltCity = city;
+	sJerPedReady = 1;
+
+	printInfo("ped import: baked JMPPED.LEV loaded (%d models, %u pages) for %s\n",
+		JER_PED_IMPORT_MODELS, pageCount, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "any level");
+
+	free(file);
+	return 1;
+
+fail:
+	free(file);
+	return 0;
+}
+
 MODEL* JerPedModel(int index)
 {
 	if (index < 0 || index >= JER_PED_IMPORT_MODELS)
@@ -1163,11 +1432,13 @@ int JerPedAreaPage(int city, int set, int dstSet)
 	char* buf;
 	int musicSize, nareas, a, i;
 	int sector = -1;
+	int spoolBase;
 
 	if (city < 0 || city >= CITY_COUNT)
 		return 0;
 
 	imp = &gCarImports[city];
+	spoolBase = citylumps[city][CITYLUMP_SPOOL].x;
 
 	if (imp->data2 == NULL)
 	{
@@ -1256,11 +1527,11 @@ int JerPedAreaPage(int city, int set, int dstSet)
 		return 0;
 	}
 
-	if (fseek(fp, (long)sector * CDSECTOR_SIZE, SEEK_SET) != 0 ||
+	if (fseek(fp, (long)spoolBase + (long)sector * CDSECTOR_SIZE, SEEK_SET) != 0 ||
 		fread(buf, 1, 17 * CDSECTOR_SIZE, fp) != 17 * CDSECTOR_SIZE)
 	{
-		printInfo("ped import: cannot read area page %d at sector %d of %s\n",
-			set, sector, path);
+		printInfo("ped import: cannot read area page %d at sector %d of %s (spool base %d)\n",
+			set, sector, path, spoolBase);
 		fclose(fp);
 		free(buf);
 		return 0;

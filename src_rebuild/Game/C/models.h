@@ -138,6 +138,8 @@ int JerPedImportProbe(int city);
 // JERICHO: copy those six models into a level-lifetime block. Returns 1 when all
 // six are self-contained copies; 0 leaves the previous import untouched.
 int JerPedImportBuild(int city);
+int JerPedImportBaked(int city);
+int JerPedBakedAvailable(void);
 MODEL* JerPedModel(int index);
 int JerPedImportReady(void);
 int JerPedTextureSetCount(void);
