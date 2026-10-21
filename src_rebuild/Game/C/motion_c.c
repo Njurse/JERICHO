@@ -1102,7 +1102,7 @@ void StoreVertexLists(void)
 #define BODY_OFFSET 8
 #define TORSO_OFFSET -2
 
-#define JERICHO_BODY_OFFSET 6
+#define JERICHO_BODY_OFFSET 8
 #define JERICHO_TORSO_OFFSET -5
 
 int bodyShiftEnabled = 1;
