@@ -29,6 +29,11 @@ rem ============================================================================
 setlocal
 cd /d "%~dp0"
 
+rem --from-game: the game started this (it has closed itself) -- reopen it when the
+rem bake finishes. A manual run never passes the flag, so it never reopens.
+set "FROM_GAME="
+if /i "%~1"=="--from-game" set "FROM_GAME=1"
+
 set "T=%~dp0JERICHO\MODS\d1cars\tools"
 rem The dev tree's game folder (src_rebuild\bin\<config>) does not carry the
 rem data-only d1cars module, so fall back to the repo's copy three levels up.
@@ -172,6 +177,7 @@ if "%BETA%"=="1" if exist "%OUT%\BETAMIAMI.LEV" (
 	echo   Start the game and the seven retail Driver 1 cities will be offered.
 	echo   ^(Put the Euro Demo 43's LEVELS and SOUND in EURO43\ and re-run for Beta Miami.^)
 )
+if "%FROM_GAME%"=="1" goto :reopen
 pause
 exit /b 0
 
@@ -196,5 +202,13 @@ exit /b 0
 :fail
 echo.
 echo BAKE_D1_CARS: FAILED -- nothing was changed in a way you cannot re-run.
+if "%FROM_GAME%"=="1" goto :reopen
 pause
 exit /b 1
+
+rem Called when the game started this bake: bring the game back up rather than
+rem leave the player on a closed install. The first exe found wins.
+:reopen
+if exist "%~dp0JERICHO.exe" start "" "%~dp0JERICHO.exe" & exit /b 0
+if exist "%~dp0JERICHO_dev.exe" start "" "%~dp0JERICHO_dev.exe"
+exit /b 0

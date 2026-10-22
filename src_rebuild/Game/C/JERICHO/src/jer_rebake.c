@@ -36,6 +36,7 @@ static char sRebakeScript[RB_PATH_MAX];
  * after it has already run, so jer_modstore.c calls jer_rebake_rearm() then. */
 static int sRebakeAsked;
 static int sRebakeSettled;
+static int sRebakeAccepted;	/* the player answered Yes: never re-ask this run */
 
 static int RbFileInt(const char* path, const char* afterKey)
 {
@@ -155,6 +156,10 @@ static void RbYes(void)
 		jer_log("[rebake] " RB_SCRIPT " is not beside the game; run it from your JERICHO folder\n");
 		return;
 	}
+
+	/* Accepted: a later re-arm (a mod install) must not ask again this run. */
+	sRebakeAccepted = 1;
+
 #if defined(_WIN32)
 	{
 		char cmd[RB_PATH_MAX + 64];
@@ -163,12 +168,13 @@ static void RbYes(void)
 
 		memset(&si, 0, sizeof(si));
 		si.cb = sizeof(si);
-		snprintf(cmd, sizeof(cmd), "cmd.exe /c \"\"%s\"\"", sRebakeScript);
+		snprintf(cmd, sizeof(cmd), "cmd.exe /c \"\"%s\" --from-game\"", sRebakeScript);
 		if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
 		{
 			CloseHandle(pi.hThread);
 			CloseHandle(pi.hProcess);
-			jer_log("[rebake] started %s\n", sRebakeScript);
+			jer_log("[rebake] started %s --from-game; the game closes and reopens after\n", sRebakeScript);
+			exit(0);	/* the engine's own way out (atexit finalises the log) */
 		}
 		else
 			jer_log("[rebake] could not start %s\n", sRebakeScript);
@@ -187,11 +193,14 @@ static void RbYes(void)
 			if (lf != NULL)
 				dup2(fileno(stdout), 2);
 			freopen("/dev/null", "r", stdin);	/* the script's closing read returns at once */
-			execl("/bin/sh", "sh", sRebakeScript, (char*)NULL);
+			execl("/bin/sh", "sh", sRebakeScript, "--from-game", (char*)NULL);
 			_exit(127);
 		}
-		jer_log(pid > 0 ? "[rebake] started %s (log: JERICHO/CONFIG/rebake.log)\n"
+		jer_log(pid > 0 ? "[rebake] started %s --from-game (log: JERICHO/CONFIG/rebake.log); the game closes and reopens after\n"
 			: "[rebake] could not start %s\n", sRebakeScript);
+
+		if (pid > 0)
+			exit(0);
 	}
 #endif
 }
@@ -240,6 +249,11 @@ void jer_rebake_frontend_tick(int onMainMenu)
  * have brought newer bake tooling, so allow the question again. */
 void jer_rebake_rearm(void)
 {
+	/* A mod install can bring newer bake tooling, but never re-ask a player who
+	 * already said Yes this run -- that was the "asked twice" report. */
+	if (sRebakeAccepted)
+		return;
+
 	sRebakeAsked = 0;
 	sRebakeSettled = 0;
 }

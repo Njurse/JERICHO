@@ -34,6 +34,24 @@ set -eu
 HERE=$(cd -- "$(dirname -- "$0")" && pwd)
 cd "$HERE"
 
+# --from-game: the game started this (it has closed itself) -- reopen it when the
+# bake finishes. A manual run never passes the flag, so it never reopens.
+FROM_GAME=0
+if [ "${1:-}" = "--from-game" ]; then FROM_GAME=1; fi
+
+reopen_game() {
+	if [ "$FROM_GAME" != 1 ]; then return 0; fi
+	echo
+	echo "  Reopening JERICHO ..."
+	for exe in "$HERE/JERICHO.exe" "$HERE/JERICHO_dev.exe"; do
+		if [ -f "$exe" ] && [ -x "$exe" ]; then
+			"$exe" >/dev/null 2>&1 &
+			break
+		fi
+	done
+	return 0
+}
+
 T="$HERE/JERICHO/MODS/d1cars/tools"
 # The dev tree's game folder (src_rebuild/bin/<config>) does not carry the
 # data-only d1cars module, so fall back to the repo's copy three levels up.
@@ -51,6 +69,7 @@ fail() {
 	echo
 	echo "BAKE_D1_CARS: FAILED -- $1"
 	echo "Nothing was changed in a way you cannot re-run."
+	reopen_game
 	exit 1
 }
 
@@ -179,3 +198,4 @@ else
 	echo "  Start the game and the seven retail Driver 1 cities will be offered."
 	echo "  (Put the Euro Demo 43's LEVELS and SOUND in EURO43/ and re-run for Beta Miami.)"
 fi
+reopen_game
