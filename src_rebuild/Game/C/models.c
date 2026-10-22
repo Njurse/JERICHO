@@ -1569,6 +1569,13 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 	imp = &gCarImports[city];
 	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
 
+	/* D1 baked cities have no D2-style wheelTex metadata for DAM/FAST.
+	 * Fall back to the measured table row instead of bailing. -1 is the
+	 * caller's "use CarImportWheelPaletteRow()" sentinel; 0 would select
+	 * page row 0, which is not a wheel row. */
+	if (city >= CITY_D2_COUNT && !wt->present)
+		return -1;
+
 	if (!wt->present)
 		return -1;
 
@@ -1731,17 +1738,39 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		return;
 
 	/* Driver 1 imports only: a Driver 2 city's fast wheel names row 0, a CAR
-	 * row (RIO's drew green); D2 imports keep their stock wheel rows. */
-	if (city < CITY_D2_COUNT || city >= CITY_D2_COUNT + CITY_D1_COUNT)
+	 * row (RIO's drew green); D2 imports keep their stock wheel rows. This
+	 * includes the runtime banks (city >= JER_CITY_STOCK_COUNT), e.g. the
+	 * Euro-43 beta at city 11. */
+	if (city < CITY_D2_COUNT)
 		return;
 
 	imp = &gCarImports[city];
 	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_FAST];
 	npal = *(const int*)page;
 
+	/* A D1 bake has no D2-style wheelTex metadata for FASTWHEEL. Use the
+	 * tyre row that was already derived for the clean wheel instead of
+	 * leaving the fast wheel on the host palette. */
 	if (!wt->present || imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] <= 0 ||
-		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] != sourceSet ||
-		npal <= 0 || npal > 32 || size <= 4 + npal * 32 || tyreRow < 0 || tyreRow >= npal)
+		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] != sourceSet)
+	{
+		if (npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
+			tyreRow >= 0 && tyreRow < npal)
+		{
+			memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
+			clut = CarImportReserveWheelPalette(city, 0, (const unsigned char*)row);
+
+			if (clut != 0)
+			{
+				CarImportSetWheelPaletteClut(city, sourceSet, clut, 0);
+				wt->reservedClut = clut;
+			}
+		}
+
+		return;
+	}
+
+	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32 || tyreRow < 0 || tyreRow >= npal)
 		return;
 
 	if (wt->u0 < 0 || wt->v0 < 0 || wt->u1 > 256 || wt->v1 > 256 || wt->u1 <= wt->u0 || wt->v1 <= wt->v0)

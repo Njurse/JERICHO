@@ -4037,17 +4037,19 @@ void LoadImportedTPages(void)
 			// and an unplaced page leaves texture_pages/texture_cluts at the DUMMY,
 			// which sits inside a live page, so the car showed another page's pixels.
 			int count = CarModelSetCount(i);
+			int useTable = 0;
 
 			if (count <= 0)
 			{
 				// Walk found nothing (or the model was not built yet): keep the old
 				// whole-list behaviour rather than import nothing at all.
 				count = 6;
+				useTable = 1;
 			}
 
 			for (k = 0; k < count; k++)
 			{
-				int set = (count == 6) ? carTpages[src][k] : CarModelSet(i, k);
+				int set = useTable ? carTpages[src][k] : CarModelSet(i, k);
 				int at = (set != 0) ? SetIndexInCityList(sets, setCity, nsets, set, src) : -1;
 
 				if (at >= 0)
