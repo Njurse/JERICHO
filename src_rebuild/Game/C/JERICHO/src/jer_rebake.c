@@ -2,14 +2,16 @@
  *
  * Ported from feature/mod-store (77be5b84) without the store: an update that
  * ships a BAKE_D1_CARS script with a higher BAKE_VERSION than the one stamped in
- * DRIVER/D1CARS/BAKE_VERSION leaves the cars baked by the old tooling. On the
- * first main-menu frame we compare the two and raise a jer_prompt. An unstamped
- * bake counts as version 0 (older); no bake at all asks nothing.
+ * JERICHO/MODS/carhacks/D1CARS/BAKE_VERSION leaves the cars baked by the old
+ * tooling. On the first main-menu frame we compare the two and raise a
+ * jer_prompt. An unstamped bake counts as version 0 (older); no bake at all asks
+ * nothing.
  *
  * Yes starts the BAKE_D1_CARS script beside the game (the script cds to its own
- * folder and writes DRIVER/D1CARS there). Windows: a console window running
- * BAKE_D1_CARS.bat. Linux: sh BAKE_D1_CARS.sh in the background, output to
- * JERICHO/CONFIG/rebake.log. The new bake is read next time the game starts. */
+ * folder and writes JERICHO/MODS/carhacks/D1CARS there). Windows: a console
+ * window running BAKE_D1_CARS.bat. Linux: sh BAKE_D1_CARS.sh in the background,
+ * output to JERICHO/CONFIG/rebake.log. The new bake is read next time the game
+ * starts. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +25,7 @@
 #include "../include/jericho.h"
 #include "../include/jer_prompt.h"
 #include "../include/jer_frontend.h"
+#include "../include/jer_modstore.h"	/* the startup mod-update check runs first */
 
 #define RB_PATH_MAX 1024
 
@@ -121,11 +124,21 @@ static int RbBakedVersion(void)
 	char path[RB_PATH_MAX + 16];
 	int v;
 
+	/* carhacks owns the baked car data: JERICHO/MODS/carhacks/D1CARS */
+	snprintf(dir, sizeof(dir), "%s/MODS/carhacks/D1CARS", jer_root_dir());
+	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
+	v = RbFileInt(path, NULL);
+	if (v >= 0)
+		return v;
+
+	/* A bake from before the move lived beside DRIVER2. Report it too, so an
+	 * update from that build still offers the re-bake (into the new folder). */
 	snprintf(dir, sizeof(dir), "%s/../DRIVER/D1CARS", jer_root_dir());
 	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
 	v = RbFileInt(path, NULL);
 	if (v >= 0)
 		return v;
+
 	return RbDirHasEntries(dir) ? 0 : -1;
 }
 
@@ -187,6 +200,16 @@ void jer_rebake_frontend_tick(int onMainMenu)
 
 	if (asked)
 		return;
+
+	/* The store's startup update question comes first, and may still be fetching
+	 * the repo index or applying an update. Do not raise "re-bake your D1 cars?"
+	 * on top of it: an update can bring the newer bake tooling this is about to
+	 * ask about. */
+	if (jer_modstore_startup_update_pending())
+	{
+		settled = 0;
+		return;
+	}
 
 	/* let the updater have its say first: its notes page owns the screen, and a
 	 * prompt over it is two screens at once. Ask after a few quiet main-menu

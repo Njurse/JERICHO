@@ -134,6 +134,9 @@ rem Build output is not part of a mod: obj\ and lib\ are what the compiler leave
 rem behind, and packing them took testmode from 9 KB to 268 KB with 86 files
 rem nobody needs. --keep-build ships the folder exactly as it is.
 if "%KEEP_BUILD%"=="1" goto staged_ok
+rem carhacks owns the BAKED Driver 1 car data: generated from the player's own
+rem copyrighted files, never redistributed.
+if exist "%STAGE%\JERICHO\MODS\!MID!\D1CARS" rmdir /s /q "%STAGE%\JERICHO\MODS\!MID!\D1CARS"
 if exist "%STAGE%\JERICHO\MODS\!MID!\obj" rmdir /s /q "%STAGE%\JERICHO\MODS\!MID!\obj"
 if exist "%STAGE%\JERICHO\MODS\!MID!\lib" rmdir /s /q "%STAGE%\JERICHO\MODS\!MID!\lib"
 del /q /s "%STAGE%\JERICHO\MODS\!MID!\*.pdb" >nul 2>nul

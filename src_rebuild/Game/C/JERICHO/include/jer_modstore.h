@@ -117,6 +117,13 @@ void jer_modstore_frontend_tick(int onMainMenu);
  * keeps running meanwhile: the helper is a child process, never a block. */
 int jer_modstore_busy(void);
 
+/* Non-zero until the STARTUP mod-update check has finished. It may be fetching
+ * the repo's index, showing "update your mods?" or applying the updates.
+ * jer_rebake.c waits on this, so the mod question is asked before the Driver 1
+ * re-bake question: an update can carry newer bake tooling. The check raises a
+ * prompt ONLY when something installed actually has an update. */
+int jer_modstore_startup_update_pending(void);
+
 /* The last thing the store has to say (a job's result, or why it refused). */
 const char* jer_modstore_status(void);
 

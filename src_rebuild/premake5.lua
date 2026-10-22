@@ -863,6 +863,13 @@ project "JERICHO"
     -- compiled-in module still reports its id, version and author; none of its data ships.
     local JER_MIRROR_EXCLUDE = { d1cars = true, gaildrv2 = true }
 
+    -- Subfolders of a mod that are generated at PLAY time and must never be
+    -- mirrored. carhacks owns the baked Driver 1 car data (BAKE_D1_CARS writes
+    -- JERICHO/MODS/carhacks/D1CARS): those LEV/LCF files are derived from the
+    -- player's copyrighted Driver 1 files, so a local bake must not ride out in
+    -- a build output or a package made from one.
+    local JER_MIRROR_STRIP = { carhacks = { "D1CARS" } }
+
     filter { "system:Windows" }
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
             local JER_DEST = "%{cfg.buildtarget.directory}JERICHO\\MODS\\" .. JER_MOD
@@ -892,6 +899,11 @@ project "JERICHO"
                 "if exist \"" .. JER_DEST .. "\\*.exp\" del /Q \"" .. JER_DEST .. "\\*.exp\"",
                 "if exist \"" .. JER_DEST .. "\\*.idb\" del /Q \"" .. JER_DEST .. "\\*.idb\"",
             }
+
+            -- generated car data (see JER_MIRROR_STRIP): never part of a mod
+            for _, JER_SUB in ipairs(JER_MIRROR_STRIP[JER_MOD] or {}) do
+                table.insert(JER_CMDS, "if exist \"" .. JER_DEST .. "\\" .. JER_SUB .. "\" rd /S /Q \"" .. JER_DEST .. "\\" .. JER_SUB .. "\"")
+            end
 
             -- and, for the private/not-built modules, the whole folder - see the note on
             -- JER_MIRROR_EXCLUDE. Last, so it also removes anything the rules above left.
@@ -954,6 +966,11 @@ project "JERICHO"
                 -- are linker/debug output. A runtime addon's <id>.so is game data.
                 "rm -f \"" .. JER_DEST .. "\"/*.a \"" .. JER_DEST .. "\"/*.lib \"" .. JER_DEST .. "\"/*.o \"" .. JER_DEST .. "\"/*.pdb \"" .. JER_DEST .. "\"/*.exp \"" .. JER_DEST .. "\"/*.idb",
             }
+
+            -- generated car data (see JER_MIRROR_STRIP): never part of a mod
+            for _, JER_SUB in ipairs(JER_MIRROR_STRIP[JER_MOD] or {}) do
+                table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "/" .. JER_SUB .. "\"")
+            end
 
             -- the private/not-built modules come out of the mirror entirely - same reason
             -- as on Windows, see JER_MIRROR_EXCLUDE above - but their MANIFEST stays, so a

@@ -10,6 +10,9 @@
 
   What it does, in the same order and with the same layout as CI:
 
+    0. advance the four core mod submodules (mp, carhacks, crumple, d1cars) to
+       the latest commit of their own branch, so the release carries the current
+       mods rather than the pinned gitlinks
     1. (re)generate the project files with premake (vs2019 locally)
     2. build Release and Release_dev for x64, each with the two-pass
        exports.def recipe CI uses -- see the note below
@@ -105,6 +108,31 @@ function Get-MSBuild {
     $cmd = Get-Command msbuild -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
     Fail "MSBuild not found. Install Visual Studio with the C++ workload, or run from a Developer prompt."
+}
+
+# --- 0. latest core mods ---------------------------------------------------
+function Update-ModSubmodules {
+    Step "Advancing the core mod submodules to the latest of their branch"
+
+    # Same rule as CI: a release carries the LATEST core mods, not whatever
+    # gitlink the parent tree pinned. `--remote` uses the `branch =` recorded in
+    # .gitmodules (d1cars tracks betamiami, the others main).
+    $paths = @('JERICHO/MODS/mp', 'JERICHO/MODS/carhacks',
+               'JERICHO/MODS/crumple', 'JERICHO/MODS/d1cars')
+    foreach ($p in $paths) {
+        & git -C $RepoRoot submodule update --init --remote -- $p
+        if ($LASTEXITCODE -ne 0) { Fail "could not advance $p." }
+        if (-not (Test-Path (Join-Path $RepoRoot "$p/mod.toml"))) {
+            Fail "$p/mod.toml is missing after the update."
+        }
+        $sha = (& git -C (Join-Path $RepoRoot $p) rev-parse --short HEAD)
+        Write-Host "    $p at $sha"
+    }
+
+    $dirty = (& git -C $RepoRoot status --porcelain -- $paths)
+    if ($dirty) {
+        Warn "the advanced mods differ from the committed gitlinks -- the build version will report as dirty."
+    }
 }
 
 # --- 1. project files ------------------------------------------------------
@@ -242,6 +270,10 @@ function New-Package {
         Remove-Item (Join-Path $stage 'DRIVER') -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $stage 'DRIVER2') -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $stage 'JERICHO\CONFIG\modlist.ini') -Force -ErrorAction SilentlyContinue
+        # carhacks owns the BAKED Driver 1 car data; it is generated from the
+        # player's own copy and must never ride out in a package (the mirror
+        # strips it too, this is the belt for a stale bin\).
+        Remove-Item (Join-Path $stage 'JERICHO\MODS\carhacks\D1CARS') -Recurse -Force -ErrorAction SilentlyContinue
 
         $cfgIni = Join-Path $stage 'config.ini'
         if (Test-Path $cfgIni) {
@@ -259,9 +291,12 @@ function New-Package {
             Copy-Item (Join-Path $d1repo $rel) (Join-Path $d1dst (Split-Path -Leaf $rel)) -Force
         }
         Copy-Item (Join-Path $d1repo 'tools\README.md') (Join-Path $stage 'JERICHO\MODS\d1cars') -Force
+        # The bake scripts come from the REPO ROOT (the canonical copies), and the
+        # registrar they run ships beside them so Beta Miami can be registered.
         foreach ($bake in 'BAKE_D1_CARS.bat', 'BAKE_D1_CARS.sh') {
-            Copy-Item (Join-Path $packLan $bake) $stage -Force
+            Copy-Item (Join-Path $RepoRoot $bake) $stage -Force
         }
+        Copy-Item (Join-Path $RepoRoot 'tools\d1city_register.py') $stage -Force
 
         # The store helper and the config merger, both at the package root.
         Copy-Item (Join-Path $RepoRoot 'JERICHO\CORE\modstore\modstore.bat') $stage -Force
@@ -412,6 +447,7 @@ Write-Host "JERICHO release -- repo $Repo, tag $Tag, configs $($Configuration -j
 if (-not $SkipBuild) {
     $msbuild = Get-MSBuild
     Write-Host "    msbuild: $msbuild"
+    Update-ModSubmodules
     New-ProjectFiles
     Invoke-Build -MsBuild $msbuild
 } else {

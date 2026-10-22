@@ -198,6 +198,12 @@ static struct
 	int  bakePrompt;	/* ask about a stale Driver 1 bake once per session */
 } gStore;
 
+/* The startup mod-update check and its Yes action (see
+ * jer_modstore_frontend_tick and jer_modstore_startup_update_pending). Declared
+ * here because the public predicate reads them. */
+static int  gStartupUpdate;		/* 0 = unchecked, 1 = fetching the index, 2 = done */
+static int  gUpdateAll;			/* the prompt was answered Yes: apply updates in turn */
+
 /* ------------------------------------------------------------------ */
 /* Small helpers                                                       */
 /* ------------------------------------------------------------------ */
@@ -1208,7 +1214,19 @@ static int StoreBakedVersion(void)
 	char dir[STORE_PATH_MAX];
 	int v;
 
-	/* <install>/JERICHO is the root, so the game data sits one level up */
+	/* <install>/JERICHO is the root, so the baked car data sits in the game's
+	 * own tree: JERICHO/MODS/carhacks/D1CARS (carhacks owns it - the blobs are
+	 * its modded LEVs, not part of the player's Driver 1 disc). */
+	snprintf(dir, sizeof(dir), "%s/MODS/carhacks/D1CARS", gStore.root);
+	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
+
+	v = StoreFileInt(path, NULL);
+	if (v >= 0)
+		return v;
+
+	/* A bake from a build before the move lived in DRIVER/D1CARS. Still report
+	 * it (unstamped if it has no stamp), so an update sees an old bake and asks
+	 * for a re-bake into the new folder instead of treating it as "no bake". */
 	snprintf(dir, sizeof(dir), "%s/../DRIVER/D1CARS", gStore.root);
 	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
 
@@ -2110,6 +2128,11 @@ int jer_modstore_busy(void)
 	return StoreJobRunning();
 }
 
+int jer_modstore_startup_update_pending(void)
+{
+	return gStartupUpdate != 2 || gUpdateAll;
+}
+
 const char* jer_modstore_status(void)
 {
 	if (gStore.status[0] == 0)
@@ -3002,6 +3025,78 @@ static int StoreCountUpdates(void)
 	return n;
 }
 
+/* An update the store can actually apply. REPLACED is included: the release's copy
+ * overwrote what the store installed, so the repo's version is an update, not a
+ * reinstall of something newer. */
+static int StoreIsUpdateRow(const JER_MODSTORE_ITEM* it)
+{
+	return it != NULL && it->canInstall &&
+		(it->state == JER_MODSTORE_ST_UPDATE || it->state == JER_MODSTORE_ST_REPLACED);
+}
+
+static int StoreCountInstallableUpdates(void)
+{
+	int i, n = 0;
+
+	for (i = 0; i < jer_modstore_item_count(); i++)
+		if (StoreIsUpdateRow(jer_modstore_item(i)))
+			n++;
+
+	return n;
+}
+
+static const char* StoreNextUpdateId(void)
+{
+	int i;
+
+	for (i = 0; i < jer_modstore_item_count(); i++)
+	{
+		const JER_MODSTORE_ITEM* it = jer_modstore_item(i);
+
+		if (StoreIsUpdateRow(it))
+			return it->id;
+	}
+
+	return NULL;
+}
+
+/* "Update 3 mods now? carhacks, crumple, d1cars" - the question is short enough
+ * for the prompt box, and names what is about to change. */
+static void StoreBuildUpdateQuestion(int n)
+{
+	char names[110];
+	int i, used = 0, listed = 0;
+
+	names[0] = 0;
+	for (i = 0; i < jer_modstore_item_count() && listed < 3; i++)
+	{
+		const JER_MODSTORE_ITEM* it = jer_modstore_item(i);
+		int wrote;
+
+		if (!StoreIsUpdateRow(it))
+			continue;
+
+		wrote = snprintf(names + used, sizeof(names) - used, "%s%s",
+			listed ? ", " : "", it->id);
+		if (wrote > 0)
+			used += wrote;
+		if (used >= (int)sizeof(names))
+			used = (int)sizeof(names) - 1;
+		listed++;
+	}
+
+	if (n > listed)
+		snprintf(names + used, sizeof(names) - used, " and %d more", n - listed);
+
+	snprintf(gPromptText, sizeof(gPromptText),
+		"Update %d installed mod%s now? %s", n, n == 1 ? "" : "s", names);
+}
+
+static void StoreUpdateAllYes(void)
+{
+	gUpdateAll = 1;
+}
+
 static const char* StoreStateText(int state)
 {
 	switch (state)
@@ -3342,6 +3437,56 @@ void jer_modstore_frontend_tick(int onMainMenu)
 		}
 	}
 
+	/* ---- startup mod-update check -------------------------------------
+	 *
+	 * Ask BEFORE the Driver 1 re-bake prompt, and only when the repo really
+	 * offers an update for something installed: an update can carry newer bake
+	 * tooling, so re-baking first would use the tools this question is about to
+	 * replace. jer_rebake.c waits on jer_modstore_startup_update_pending(), so
+	 * the order holds whichever tick FEmain calls first.
+	 *
+	 * The index is refreshed first: "no update" from a days-old cache is the one
+	 * wrong answer. The helper runs in the background, so the menu stays live.
+	 */
+	if (gUpdateAll && !StoreJobRunning())
+	{
+		const char* id = StoreNextUpdateId();
+
+		if (id != NULL)
+		{
+			if (jer_modstore_install(id) != JER_MODSTORE_OK)
+				gUpdateAll = 0;		/* the reason is already in status/notify */
+		}
+		else
+		{
+			gUpdateAll = 0;
+			jer_notify("Mods updated. Restart JERICHO to use them.", 1, 6);
+		}
+	}
+
+	if (gStartupUpdate != 2 && !StoreJobRunning() && onMainMenu && !jer_screen_active() &&
+		!jer_prompt_active() && gStore.testLever == STORE_TEST_NONE)
+	{
+		if (gStartupUpdate == 0)
+		{
+			int r = jer_modstore_refresh();
+
+			gStartupUpdate = (r == JER_MODSTORE_OK || r == JER_MODSTORE_BUSY) ? 1 : 2;
+		}
+		else
+		{
+			int n = StoreCountInstallableUpdates();
+
+			gStartupUpdate = 2;
+			if (n > 0)
+			{
+				StoreBuildUpdateQuestion(n);
+				jer_log("[modstore] startup: %d mod update(s) available\n", n);
+				jer_prompt_begin(gPromptText, StoreUpdateAllYes);
+			}
+		}
+	}
+
 	/* A Driver 1 bake older than the tooling beside it: ask ONCE, and only while
 	 * the MAIN MENU is up with no presentation screen in front of it. Otherwise
 	 * the question lands on top of the update changelog or a compile screen - both
@@ -3349,7 +3494,8 @@ void jer_modstore_frontend_tick(int onMainMenu)
 	 * them is unreadable. The flag stays set until it is actually asked, so
 	 * waiting for the menu costs nothing. Asking only when a bake EXISTS is
 	 * deliberate: a player with no Driver 1 data has nothing to re-bake. */
-	if (gStore.bakePrompt && !StoreJobRunning() && onMainMenu && !jer_screen_active())
+	if (gStore.bakePrompt && gStartupUpdate == 2 && !gUpdateAll && !StoreJobRunning() &&
+		onMainMenu && !jer_screen_active())
 	{
 		if (!StoreBakeStale())
 		{

@@ -161,10 +161,14 @@ data never ships) and the packaging step pulls its bake tools. The rule to keep:
 adding a submodule to `.gitmodules` must not be able to break the build by itself.
 Add a path to that loop only when a build genuinely needs it.
 
-The three public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`) are
-release mods and are fetched by every build. Their pins are advanced separately:
-run `tools/update_mod_submodules.sh`, review the submodule log it prints, and
-commit the resulting gitlinks. Pushing a mod repo alone does not update JERICHO.
+The four public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`,
+`d1cars`) are release mods and are fetched by every build. Every build and release
+advances each to the latest commit of its tracking branch (`.gitmodules`
+`branch =`; d1cars tracks `betamiami`, the rest `main`), so a mod fix pushed after
+the last gitlink bump still reaches the next download without a JERICHO commit.
+`tools/update_mod_submodules.sh` makes the same advance in the working tree and
+prints the pins for review/commit; pushing a mod repo alone does not change the
+recorded pin, but it DOES change what the next release builds.
 
 ### Each configuration links twice
 
@@ -224,7 +228,10 @@ and the Release configuration applies it in three places so they cannot drift:
 (`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`). `gaildrv2` is not in the CI
 submodule allow-list at all; `d1cars` is fetched as a release mod but its folder is
 dropped and only `mod.toml` is restored, so a released tree reports the module
-without carrying its Driver 1 data.
+without carrying its Driver 1 data. The baked Driver 1 car data lives in
+`JERICHO/MODS/carhacks/D1CARS` (carhacks owns it); a generated folder is stripped
+from every mirror too (`JER_MIRROR_STRIP`), because it is derived from the player's
+own copyrighted Driver 1 files.
 
 A **dev** build is unchanged: it compiles and mirrors every installed module, and
 the repo's own `JERICHO/CONFIG/modlist.ini` pins every installed module

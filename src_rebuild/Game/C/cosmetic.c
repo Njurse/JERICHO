@@ -16,8 +16,9 @@ char* CosmeticFiles[CITY_COUNT] = {
 	"LEVELS\\HAVANA.LCF",
 	"LEVELS\\VEGAS.LCF",
 	"LEVELS\\RIO.LCF",
-	/* JERICHO: the Driver 1 car-data cities' colours, under DRIVER\ - beside the
-	 * car data they belong to, and out of the way of the real Driver 1 levels. */
+	/* JERICHO: the Driver 1 car-data cities' colours, under carhacks' D1CARS
+	 * folder - beside the car data they belong to, and out of the way of the real
+	 * Driver 1 levels. Resolved under gD1DataFolder (JERICHO\MODS\carhacks\). */
 	"D1CARS\\MIAMI.LCF",
 	"D1CARS\\FRISCO.LCF",
 	"D1CARS\\LA.LCF",

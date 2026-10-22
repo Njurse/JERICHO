@@ -563,7 +563,7 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 		if (!staleD1Warned)
 		{
 			staleD1Warned = 1;
-			jer_error("DRIVER/D1CARS is out of date: re-run BAKE_D1_CARS for Driver 1 wheels and sounds");
+			jer_error("JERICHO/MODS/carhacks/D1CARS is out of date: re-run BAKE_D1_CARS for Driver 1 wheels and sounds");
 		}
 	}
 

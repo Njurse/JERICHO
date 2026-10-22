@@ -107,6 +107,9 @@ STAGED="$TMP/JERICHO/MODS/$MID"
 # A source checkout's .git (a file for a submodule, a directory for an in-place
 # clone) is never part of a mod package.
 rm -rf "$STAGED/.git"
+# carhacks owns the BAKED Driver 1 car data. It is generated from the player's
+# own copyrighted Driver 1 files and must never be redistributed.
+rm -rf "$STAGED/D1CARS"
 if [ "$KEEP_BUILD" = 0 ]; then
 	rm -rf "$STAGED/obj" "$STAGED/lib"
 	find "$STAGED" -type f \( -name '*.pdb' -o -name '*.ilk' -o -name '*.exp' -o -name '*.o' \) -delete 2>/dev/null || true

@@ -71,7 +71,7 @@ extern const char* JerGetCityDataRoot(int city);
  *
  * WHY THIS EXISTS: a city index used to be a row of the three compile-time tables
  * above, so the engine could only open a car-data file it had been compiled to
- * name ("LEVELS\\CHICAGO.LEV", "D1CARS\\MIAMI.LEV", ...). carhacks' cross-city
+ * name ("LEVELS\\CHICAGO.LEV", "JERICHO\\MODS\\carhacks\\D1CARS\\MIAMI.LEV", ...). carhacks' cross-city
  * import is policy ("slot 5 = city 2, model 7") and is already index-based, so a
  * bank that is not one of those compiled names could not be offered at all - the
  * engine would never open the filename. Rows CITY_D2_COUNT+... are that gap

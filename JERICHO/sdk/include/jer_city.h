@@ -6,7 +6,7 @@
  * WHY. A city index used to be a compile-time row of the engine's three tables
  * (LevelNames / LevelFiles / CosmeticFiles), which meant the engine could only
  * ever open a car-data file it had been compiled to name: LEVELS\CHICAGO.LEV,
- * D1CARS\MIAMI.LEV and the rest. carhacks' cross-city import is POLICY - "resident
+ * JERICHO\MODS\carhacks\D1CARS\MIAMI.LEV and the rest. carhacks' cross-city import is POLICY - "resident
  * slot 5 = city 2, model 7" - and is already index-based, so a car-data bank that
  * is not one of those compiled names could not be offered at all: nothing would
  * ever open the file, whatever the config said.

@@ -4,7 +4,7 @@
 three tables (`LevelNames`, `LevelFiles`, `CosmeticFiles`, `system.c:151` /
 `cosmetic.c:14` at the time of writing). The engine could therefore only ever
 open a car-data file it had been **compiled** to name — `LEVELS\CHICAGO.LEV`,
-`D1CARS\MIAMI.LEV` and nothing else. carhacks' cross-city import is *policy*
+`JERICHO\MODS\carhacks\D1CARS\MIAMI.LEV` and nothing else. carhacks' cross-city import is *policy*
 ("resident slot 5 = city 2, model 7") and is already index-based, so a bank of
 cars that is not one of those names could not be offered at all: nothing would
 ever open the file, whatever the config said.
