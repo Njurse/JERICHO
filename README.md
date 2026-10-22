@@ -368,9 +368,11 @@ parametric explosion-FX library, with its own arenas.
 
 ### Car Hacks (`carhacks`) — every vehicle, from any city *(compiled-in)*
 
-Unlocks the extra vehicles the frontend hides and loads another city's vehicles
-into a level's resident slots — a Chicago school bus in Havana, a Rio truck in
-Vegas. [README](JERICHO/MODS/carhacks/README.md)
+
+Loads another city's vehicles into a level's resident slots — a Chicago school
+bus in Havana, a Rio truck in Vegas. carhacks ships with BAKE, a powerful tool
+set that converts both retail and beta demo Driver 1 vehicles into the native
+Driver 2 LEV format the game expects. [README](JERICHO/MODS/carhacks/README.md)
 
 An import brings the car's whole presentation with it, not just its body:
 engine, idle and horn samples come from the source city's bank (Driver 1 cars
