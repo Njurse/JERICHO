@@ -121,8 +121,9 @@ if [ "$BETA" = 1 ]; then
 fi
 
 # BAKE_VERSION: bump when the bake gains something the game reads. 8 moved the
-# output into carhacks and made the EURO-43 beta read the demo's MIAMI.LEV.
-BAKE_VERSION=8
+# output into carhacks and made the EURO-43 beta read the demo's MIAMI.LEV;
+# 9 retuned the beta engine/idle loop rates, which are stamped into the bank.
+BAKE_VERSION=9
 if [ -d "$OUT" ] && [ "$(cat "$OUT/BAKE_VERSION" 2>/dev/null)" != "$BAKE_VERSION" ]; then
 	echo "Your existing $OUT is from an older bake (no D1 wheels/sounds, pre-Miami wheels, unpacked palette rows, or the old DRIVER/D1CARS location) -- rebuilding it."
 	echo

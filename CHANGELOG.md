@@ -4,6 +4,20 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.11.4
+
+*Released 2026-10-22.*
+
+### Changes
+
+- Beta Miami's engine and idle loops are retuned: the engine now plays at 80% of the Euro-43 sample's own rate (was 85%) and the idle at 75% (was 53%), so the imported car sits properly under the retail traffic. The two knobs remain `BETA_ENGINE_PITCH` / `BETA_IDLE_PITCH` in `add_car_sounds.py`.
+- Driver 1 car data is now baked at BAKE_VERSION 9. Existing bakes prompt for a rebuild (or `BAKE_D1_CARS` does it directly), because the sound rates are stamped into each model's bank and a BAKE_VERSION 8 bake still carries the old pitch.
+- New `d1cars/tools/driveby.py` preview: one pool car with its wheels turning, three seconds of the beta idle, then six gears of the beta engine at the exact rates the bake writes. `--engine-pitch` / `--idle-pitch` audition a value before changing the constants; Space replays, Esc quits.
+
+### Fixes
+
+- The `mp` pack's `BAKE_D1_CARS` copy is in sync with the shipped script again, including the post-bake relaunch (`--from-game`) added in 0.11.3.
+
 ## v0.11.3
 
 *Released 2026-10-22.*

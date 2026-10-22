@@ -99,8 +99,9 @@ if exist "EURO43\LEVELS\MIAMI.LEV" (
 if "%BETA%"=="1" set "CITIES=%CITIES%,BETAMIAMI"
 
 rem BAKE_VERSION: bump when the bake gains something the game reads. 8 moved the
-rem output into carhacks and made the EURO-43 beta read the demo's MIAMI.LEV.
-set "BAKE_VERSION=8"
+rem output into carhacks and made the EURO-43 beta read the demo's MIAMI.LEV;
+rem 9 retuned the beta engine/idle loop rates, which are stamped into the bank.
+set "BAKE_VERSION=9"
 set "HAVE_VERSION="
 if exist "%OUT%\BAKE_VERSION" set /p HAVE_VERSION=<"%OUT%\BAKE_VERSION"
 if exist "%OUT%" if not "%HAVE_VERSION%"=="%BAKE_VERSION%" (
