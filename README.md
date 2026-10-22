@@ -16,6 +16,8 @@ live in `JERICHO/CONFIG/<modid>.ini`.*
 
 | I want to… | Start here |
 |---|---|
+| Install JERICHO | [Prebuilt downloads](#prebuilt-downloads) |
+| Install a module | [Installing and enabling modules](#installing-and-enabling-modules) |
 | Run a build | [Building and running](#building-and-running) |
 | Write an external module | [`HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) |
 | Look up an event | [`events.md`](src_rebuild/Game/C/JERICHO/docs/events.md) |
@@ -297,6 +299,11 @@ each in both the clean `Release` configuration and the full `Release_dev` one,
 packed with the runtime libraries, the `data/` tree and the `JERICHO/` tree the
 runtime reads. See [`docs/CI.md`](docs/CI.md).
 
+To install, unpack an archive into a folder and put your own `DRIVER2/` game data
+beside the executable (`JERICHO.exe` on Windows, `jericho` on Linux) — the game
+data is not redistributed. Unpacking over an existing folder upgrades it in
+place and keeps your `config.ini`.
+
 **Staying up to date.** At start the game asks GitHub once (in the background,
 never holding up boot) whether a newer `vX.Y.Z` release exists, and if so shows
 its changes before the main menu with three choices: *Update JERICHO (Restart)*
@@ -306,6 +313,8 @@ to `1` to turn them back on). The alpha pre-release never counts, and a build pa
 a release (alpha or your own) compares as that release. Archives ship
 `config.default.ini`, never `config.ini`, so unpacking one over an install keeps your
 settings; the game creates `config.ini` from the default when there is none.
+
+![The in-game update screen, showing the new release's notes](readme_images/auto_update_service.png)
 
 ### Linux and other platforms
 
@@ -343,7 +352,7 @@ a fuller `README.md` in its own folder under [`JERICHO/MODS/`](JERICHO/MODS/).
 Impact-driven vertex deformation and wheel damage layered on the stock
 damaged-model system. [README](JERICHO/MODS/crumple/README.md)
 
-![CRUMPLE's Crumple Debug submenu](readme_images/addon_crumple_debug_example.png)
+![CRUMPLE deformation after a crash](readme_images/addon_crumple_demonstration.png)
 
 ### Caine's Crossfire (`cainescrossfire`) — car combat *(compiled-in)*
 
@@ -352,8 +361,6 @@ parametric explosion-FX library, with its own arenas.
 [README](JERICHO/MODS/cainescrossfire/README.md)
 
 ![Caine's Crossfire car-combat gamemode](readme_images/addon_cainescrossfire_gamemode_example.png)
-
-![A custom explosion effect driven by the FX hooks](readme_images/addon_custom_effects_example.png)
 
 ![Killing an opponent in car combat](readme_images/addon_cainescrossfire_killing_opponent.png)
 
@@ -365,15 +372,19 @@ Unlocks the extra vehicles the frontend hides and loads another city's vehicles
 into a level's resident slots — a Chicago school bus in Havana, a Rio truck in
 Vegas. [README](JERICHO/MODS/carhacks/README.md)
 
-![A Rio car driven in Chicago](readme_images/addon_carhacks_rio2_chicago_example.png)
+An import brings the car's whole presentation with it, not just its body:
+engine, idle and horn samples come from the source city's bank (Driver 1 cars
+use their embedded bank), a car the bake marks as a cop keeps its own siren,
+imported wheels wear their own texture, and the cosmetic record keeps the car's
+own lightbar pattern plus its headlight, brake-light and indicator positions.
+
+![A cross-city car driven in Chicago](readme_images/addon_carhacks_demonstration_3.png)
 
 ![A cross-city car example (Havana)](readme_images/addon_carhacks_2_havana_example.png?v=2)
 
-![A foreign car driven on a level it does not belong to](readme_images/addon_carhacks_demonstration_updated_2.png)
-
 ![Several cities' cars in one level](readme_images/addon_carhacks_demonstration.png)
 
-![A cross-city import placed on the ground, next to the level's own traffic](readme_images/addon_carhacks_demonstration_scene_1_2.png)
+![A cross-city import placed on the ground, next to the level's own traffic](readme_images/addon_carhacks_demonstration_2.png)
 
 ![Driver 1 cars imported into a multiplayer match](readme_images/addon_carhacks_d1cars_multiplayer_demonstration.png)
 
@@ -421,6 +432,8 @@ LAN multiplayer: host/join with UDP discovery, real frontend menus and
 synchronized play. [README](JERICHO/MODS/mp/README.md)
 
 ![A multiplayer match in progress](readme_images/addon_mp_wow.png)
+
+![A multiplayer session with in-game chat](readme_images/jericho_mp_preview.png)
 
 ### Test Mode (`testmode`) — the asset-test harness *(compiled-in)*
 
