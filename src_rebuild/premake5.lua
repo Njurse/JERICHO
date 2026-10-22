@@ -468,6 +468,7 @@ workspace "JERICHO"
 	filter "configurations:Release_dev"
         defines {
             "NDEBUG",
+            "JER_DEV_BUILD",
         }
         symbols "On"
         
