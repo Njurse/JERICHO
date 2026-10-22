@@ -4,6 +4,22 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## Unreleased
+
+### Crumple
+
+- New **Crush Multiplier** row below Buddha Mode: 1.0x to 10.0x in 0.5x steps. It
+  applies to the car you are currently in (the value is stored per car), scales body
+  deformation and its safety caps — not dent radius or wheel damage — and affects
+  impacts recorded after the change. The corruption guard now tolerates the much
+  larger displacement a 10x crush produces.
+
+### Multiplayer
+
+- A player car's **body-crush multiplier** now rides the carstate, so every machine
+  deforms that car the same way. This is a wire change (protocol 17): update every
+  client and the dedicated server together.
+
 ## v0.11.5
 
 *Released 2026-10-22.*

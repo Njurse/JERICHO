@@ -43,7 +43,7 @@ of the space is unclaimed for exactly that):
 | +10 .. +19 | `sandbox` | `+10` |
 | +20 .. +29 | `cainescrossfire` | — |
 | +30 .. +39 | `carhacks` | — |
-| +40 .. +49 | **core contracts** | `+40..+43` — the live car query |
+| +40 .. +49 | **core contracts** | `+40..+46` — the live car query, the per-car crush multiplier |
 | +50 .. +59 | `mp` | — |
 | +60 .. +69 | `d1cars` | — |
 | +70 .. +79 | `JerAI` | — |
@@ -63,6 +63,7 @@ another mod's header and no mod links to another mod's symbols.
 | header | asked by | answered by |
 |---|---|---|
 | `jer_carquery.h` | `mp`, `sandbox` | `carhacks` |
+| `jer_crumple.h` | `mp` | `crumple` |
 
 A new contract belongs in `Game/C/JERICHO/include/` (already on every mod's
 include path), mirrored into `JERICHO/sdk/include/`, with its ids inside the core
