@@ -37,12 +37,18 @@ cd "$HERE"
 # --from-game: the game started this (it has closed itself) -- reopen it when the
 # bake finishes. A manual run never passes the flag, so it never reopens.
 FROM_GAME=0
-if [ "${1:-}" = "--from-game" ]; then FROM_GAME=1; fi
+GAME_EXE=""
+if [ "${1:-}" = "--from-game" ]; then FROM_GAME=1; GAME_EXE="${2:-}"; fi
 
 reopen_game() {
 	if [ "$FROM_GAME" != 1 ]; then return 0; fi
 	echo
 	echo "  Reopening JERICHO ..."
+	# Prefer the exe the game passed (works even when this script is not beside it).
+	if [ -n "$GAME_EXE" ] && [ -x "$GAME_EXE" ]; then
+		"$GAME_EXE" >/dev/null 2>&1 &
+		return 0
+	fi
 	for exe in "$HERE/JERICHO.exe" "$HERE/JERICHO_dev.exe"; do
 		if [ -f "$exe" ] && [ -x "$exe" ]; then
 			"$exe" >/dev/null 2>&1 &

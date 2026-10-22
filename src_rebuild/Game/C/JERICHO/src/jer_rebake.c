@@ -149,8 +149,29 @@ static int RbBakedVersion(void)
 	return RbDirHasEntries(dir) ? 0 : -1;
 }
 
+/* The running exe, so the script can relaunch THIS game even where the script
+ * does not sit beside it (the dev tree keeps BAKE_D1_CARS at the repo root). */
+static void RbExePath(char* out, int outSize)
+{
+	out[0] = 0;
+#if defined(_WIN32)
+	if (GetModuleFileNameA(NULL, out, outSize) == 0)
+		out[0] = 0;
+#else
+	{
+		ssize_t k = readlink("/proc/self/exe", out, outSize - 1);
+		if (k > 0)
+			out[k] = 0;
+		else
+			out[0] = 0;
+	}
+#endif
+}
+
 static void RbYes(void)
 {
+	char gameExe[RB_PATH_MAX];
+
 	if (sRebakeScript[0] == 0)
 	{
 		jer_log("[rebake] " RB_SCRIPT " is not beside the game; run it from your JERICHO folder\n");
@@ -160,15 +181,19 @@ static void RbYes(void)
 	/* Accepted: a later re-arm (a mod install) must not ask again this run. */
 	sRebakeAccepted = 1;
 
+	RbExePath(gameExe, sizeof(gameExe));
+
 #if defined(_WIN32)
 	{
-		char cmd[RB_PATH_MAX + 64];
+		char cmd[RB_PATH_MAX * 2 + 64];
 		STARTUPINFOA si;
 		PROCESS_INFORMATION pi;
 
 		memset(&si, 0, sizeof(si));
 		si.cb = sizeof(si);
-		snprintf(cmd, sizeof(cmd), "cmd.exe /c \"\"%s\" --from-game\"", sRebakeScript);
+		/* --from-game: the script bakes, then relaunches the exe passed after it.
+		 * A manual run never passes the flag, so it never restarts the game. */
+		snprintf(cmd, sizeof(cmd), "cmd.exe /c \"\"%s\" --from-game \"%s\"\"", sRebakeScript, gameExe);
 		if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
 		{
 			CloseHandle(pi.hThread);
@@ -193,7 +218,7 @@ static void RbYes(void)
 			if (lf != NULL)
 				dup2(fileno(stdout), 2);
 			freopen("/dev/null", "r", stdin);	/* the script's closing read returns at once */
-			execl("/bin/sh", "sh", sRebakeScript, "--from-game", (char*)NULL);
+			execl("/bin/sh", "sh", sRebakeScript, "--from-game", gameExe, (char*)NULL);
 			_exit(127);
 		}
 		jer_log(pid > 0 ? "[rebake] started %s --from-game (log: JERICHO/CONFIG/rebake.log); the game closes and reopens after\n"

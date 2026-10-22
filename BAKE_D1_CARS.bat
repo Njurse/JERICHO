@@ -32,7 +32,9 @@ cd /d "%~dp0"
 rem --from-game: the game started this (it has closed itself) -- reopen it when the
 rem bake finishes. A manual run never passes the flag, so it never reopens.
 set "FROM_GAME="
+set "GAME_EXE="
 if /i "%~1"=="--from-game" set "FROM_GAME=1"
+if /i "%~1"=="--from-game" set "GAME_EXE=%~2"
 
 set "T=%~dp0JERICHO\MODS\d1cars\tools"
 rem The dev tree's game folder (src_rebuild\bin\<config>) does not carry the
@@ -209,6 +211,16 @@ exit /b 1
 rem Called when the game started this bake: bring the game back up rather than
 rem leave the player on a closed install. The first exe found wins.
 :reopen
-if exist "%~dp0JERICHO.exe" start "" "%~dp0JERICHO.exe" & exit /b 0
+rem Prefer the exe the game passed (works even when this script is not beside it).
+if not "%GAME_EXE%"=="" (
+	if exist "%GAME_EXE%" (
+		start "" "%GAME_EXE%"
+		exit /b 0
+	)
+)
+if exist "%~dp0JERICHO.exe" (
+	start "" "%~dp0JERICHO.exe"
+	exit /b 0
+)
 if exist "%~dp0JERICHO_dev.exe" start "" "%~dp0JERICHO_dev.exe"
 exit /b 0
