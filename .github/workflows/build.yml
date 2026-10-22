@@ -414,8 +414,12 @@ jobs:
             New-Item -ItemType Directory -Force -Path $d1dst | Out-Null
             Copy-Item "$env:RUNNER_TEMP/d1cars/tools/*.py" $d1dst -Force
             Copy-Item "$env:RUNNER_TEMP/d1cars/tools/README.md" "$bin/JERICHO/MODS/d1cars/" -Force
-            Copy-Item "JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.bat" "$bin/" -Force
-            Copy-Item "JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.sh" "$bin/" -Force
+            # The bake scripts are taken from the repo root, not the mp
+            # pack_lan copy: the root is the canonical script, and a re-cut
+            # must sample it rather than an older duplicate. The pack_lan
+            # copies are still synced for the LAN package.
+            Copy-Item "BAKE_D1_CARS.bat" "$bin/" -Force
+            Copy-Item "BAKE_D1_CARS.sh" "$bin/" -Force
             # The updater, both spellings so a player on either OS has one. It
             # fetches the latest RELEASE (never the alpha pre-release), verifies the
             # checksum, and copies over the install while leaving CONFIG/ and DRIVER/
@@ -619,8 +623,8 @@ jobs:
             mkdir -p "$d/JERICHO/MODS/d1cars/tools"
             cp "$RUNNER_TEMP/d1cars/tools/"*.py "$d/JERICHO/MODS/d1cars/tools/"
             cp "$RUNNER_TEMP/d1cars/tools/README.md" "$d/JERICHO/MODS/d1cars/"
-            cp JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.bat "$d/"
-            cp JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.sh "$d/"
+            cp BAKE_D1_CARS.bat "$d/"
+            cp BAKE_D1_CARS.sh "$d/"
             chmod +x "$d/BAKE_D1_CARS.sh"
             # The updater, both spellings, same reasoning as the bake scripts above.
             cp JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat "$d/"

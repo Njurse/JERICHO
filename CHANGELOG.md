@@ -32,6 +32,7 @@ is in [changelog.txt](changelog.txt).
 - Driver 1: DAMWHEEL now uses its own CLUT row (row 5 on Miami) instead of the clean tyre row; the fast wheel keeps its separately cleared row.
 - Driver 1: IVIEW's cop siren and the Beta Miami cop siren are wired, and only Beta Miami slots 1 and 3 keep their special horns - the rest use the D1 traffic horn. D1 police lightbars sit slightly higher; IVIEW slot 1 and the Beta Miami cop use solid red bars.
 - Hubcaps reappear after repair/respawn: the lost-hubcap bits are cleared and the imported hubcap CLUT is re-bound.
+- The packaged `BAKE_D1_CARS` now uses the current script, so it bakes Beta Miami from `EURO43/` along with the seven Driver 1 cities instead of silently stopping at the old seven-city list.
 
 ## v0.10.13
 
