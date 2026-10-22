@@ -13,6 +13,11 @@ is in [changelog.txt](changelog.txt).
   deformation and its safety caps — not dent radius or wheel damage — and affects
   impacts recorded after the change. The corruption guard now tolerates the much
   larger displacement a 10x crush produces.
+- The base body deformation is retuned to read as damaged as the wheels: a wider dent
+  radius (`dentRadiusPct` 700 → 900), a deeper per-impact push (`maxDisplacementPct`
+  800 → 950), a higher total cap (`compoundCapPct` 2000 → 2400), and more depth on
+  oblique pole/edge hits (`contactDeepen` 326 → 650). Parameters only — the
+  deformation path is unchanged.
 
 ### Multiplayer
 
