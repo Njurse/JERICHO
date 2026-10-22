@@ -170,8 +170,11 @@ static void JerRuntimeDentFallback(CAR_DATA* cp, MODEL* clean, const VECTOR* wor
 	out = gTempCarVertDump[cp->id];
 
 	/* cumulative damage is the only reliable strength an imported car has:
-	 * its zone table is not the host model's, so do not read tempDamage. */
-	strength = cp->totalDamage >> 4;
+	 * its zone table is not the host model's, so do not read tempDamage.
+	 * Concave response: sqrt reaches the 4096 ceiling at 8192 damage, so
+	 * light hits dent sooner. The cap below is unchanged - this only changes
+	 * how quickly the response approaches it. */
+	strength = SquareRoot0((u_int)cp->totalDamage * 2048);
 	if (strength > 4096)
 		strength = 4096;
 
@@ -203,9 +206,9 @@ static void JerRuntimeDentFallback(CAR_DATA* cp, MODEL* clean, const VECTOR* wor
 	}
 
 	half = MAX(MAX(maxX - minX, maxZ - minZ) / 2, 1);
-	radius = MAX(half / 2, 32);
+	radius = MAX(half / 2, 48);
 	radius2 = radius * radius;
-	cap = MAX(half / 6, 16);
+	cap = MAX(half / 4, 24);
 
 	for (i = 0; i < n; i++)
 	{

@@ -4,7 +4,9 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
-## Unreleased
+## v0.11
+
+*Released 2026-10-21.*
 
 - Multiplayer: getting out of your car and back into it (or using Change car while on foot) no longer leaves a second copy of the vehicle on other players' screens. The machine that saw you get out now reuses the body you left instead of creating a new one.
 - Test Mode's quiet world no longer deletes a player's parked car when they get out; it only clears traffic and police.
@@ -12,7 +14,8 @@ is in [changelog.txt](changelog.txt).
 
 ### Changes
 
-- Driver 1 car data is now baked at BAKE_VERSION 6: the palette carries only the rows a city's models actually name, and an older DRIVER/D1CARS is rebuilt. Re-run `BAKE_D1_CARS` (or `.sh`) once after updating.
+- Driver 1 car data is now baked at BAKE_VERSION 7: the palette carries only the rows a city's models actually name, an older DRIVER/D1CARS is rebuilt, and the Beta Miami cop/buick are pinned to models 8 and 3. Re-run `BAKE_D1_CARS` (or `.sh`) once after updating.
+- Crumple: lighter impacts dent sooner and hard hits cave deeper; the wheels now lean and steer more while translating less, and wheel damage resists more. Cars without a baked damaged model get a stable per-car runtime dent fallback.
 
 ### Fixes
 
@@ -22,6 +25,9 @@ is in [changelog.txt](changelog.txt).
 - Driver 1: an imported car is no longer handed out or drawn until every set it names has a live page pin and a mapped palette row; while a car on the road is in that window, single-player shows the same host-city car 1 in grey as multiplayer.
 - Driver 1: fixed two different cities' same-numbered sets being merged into one page pin (only the first city's copy was pinned), and unused source palette rows no longer overwrite a compacted row a model reads.
 - Fixed a crash when starting a level with a cross-city car from a Driver 2 city (e.g. RIO model 9): the level's embedded D1 sound bank is optional, and a missing one now falls back to the host city's sound.
+- Driver 1: DAMWHEEL now uses its own CLUT row (row 5 on Miami) instead of the clean tyre row; the fast wheel keeps its separately cleared row.
+- Driver 1: IVIEW's cop siren and the Beta Miami cop siren are wired, and only Beta Miami slots 1 and 3 keep their special horns - the rest use the D1 traffic horn. D1 police lightbars sit slightly higher; IVIEW slot 1 and the Beta Miami cop use solid red bars.
+- Hubcaps reappear after repair/respawn: the lost-hubcap bits are cleared and the imported hubcap CLUT is re-bound.
 
 ## v0.10.13
 
