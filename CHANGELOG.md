@@ -6,6 +6,8 @@ is in [changelog.txt](changelog.txt).
 
 ## v0.11
 
+**DRIVER BETA VEHICLES CAN NOW BE BAKED - PUT THE LEVELS AND SOUND FOLDERS FROM EURO DEMO 43 IN `EURO43/` AND RUN THE TOOL TO BAKE THEM INTO carhacks.**
+
 *Released 2026-10-21.*
 
 - Multiplayer: getting out of your car and back into it (or using Change car while on foot) no longer leaves a second copy of the vehicle on other players' screens. The machine that saw you get out now reuses the body you left instead of creating a new one.
@@ -20,8 +22,8 @@ is in [changelog.txt](changelog.txt).
 ### Fixes
 
 - Multiplayer: a late joiner no longer appears stacked on the host. The joining client used to move its own car next to the first peer it heard from, which also stopped the road placement from running at all; placement now happens before the first state is sent, and it is map-wide on a full-city Take a Ride.
-- Multiplayer: a join can no longer take, rebuild or reset a car another player is driving, or one they are standing next to on foot. The late-join seat scan now refuses every owned slot — including the parked body behind `leftCarSlot1` — and logs the refusal.
-- Driver 1: changing cars — or a client adopting the session's set — no longer reuses a palette row still uploaded from the previous car. A reclaimed row is forgotten and re-uploaded, so the new car gets its own colours instead of the old one's.
+- Multiplayer: a join can no longer take, rebuild or reset a car another player is driving, or one they are standing next to on foot. The late-join seat scan now refuses every owned slot - including the parked body behind `leftCarSlot1` - and logs the refusal.
+- Driver 1: changing cars - or a client adopting the session's set - no longer reuses a palette row still uploaded from the previous car. A reclaimed row is forgotten and re-uploaded, so the new car gets its own colours instead of the old one's.
 - Driver 1: an imported car is no longer handed out or drawn until every set it names has a live page pin and a mapped palette row; while a car on the road is in that window, single-player shows the same host-city car 1 in grey as multiplayer.
 - Driver 1: fixed two different cities' same-numbered sets being merged into one page pin (only the first city's copy was pinned), and unused source palette rows no longer overwrite a compacted row a model reads.
 - Fixed a crash when starting a level with a cross-city car from a Driver 2 city (e.g. RIO model 9): the level's embedded D1 sound bank is optional, and a missing one now falls back to the host city's sound.
