@@ -4,6 +4,20 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.11.3
+
+*Released 2026-10-22.*
+
+### Changes
+
+- A vehicle whose city is not installed now draws a white/light-grey checkerboard stand-in body instead of the host city's car 1 in solid grey — in multiplayer while a peer's car is loading, and in single-player while an imported car is being rebuilt. The stand-in is its own bank and is hidden from the car menu by default in a release (`show_placeholder` shows it).
+- Re-baking stale Driver 1 cars now asks once, and answering Yes closes the game, bakes, then relaunches it. A manually run `BAKE_D1_CARS` does not restart the game.
+
+### Fixes
+
+- The Driver 1 re-bake question no longer appears twice when a mod install re-arms it.
+- An in-game re-bake now reopens the exact exe that started it (the dev tree included); before, the reopen only worked when the script sat beside the game.
+
 ## v0.11.0
 
 **THE JERICHO MOD STORE / MOD REPO IS NOW AVAILABLE.**
