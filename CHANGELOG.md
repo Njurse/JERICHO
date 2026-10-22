@@ -22,7 +22,7 @@ is in [changelog.txt](changelog.txt).
 - Beta Miami is registered automatically from the baked file, after the seven retail Driver 1 cities: a bake already on disk appears without editing `cities.ini`. An older bake still gets the re-bake prompt.
 - Driver 1 car data is now baked at BAKE_VERSION 8: it is written INSIDE carhacks (`JERICHO/MODS/carhacks/D1CARS/`, where the game now reads it) instead of `DRIVER/D1CARS/`, and the Euro-43 beta is read from the demo's own `EURO43/LEVELS/MIAMI.LEV`. The palette carries only the rows a city's models actually name, an older bake is rebuilt, and the Beta Miami cop/buick are pinned to models 8 and 3. Re-run `BAKE_D1_CARS` (or `.sh`) once after updating.
 - `BAKE_D1_CARS` now bakes Beta Miami only when the Euro Demo 43 is present (and says so when it finds it); without `EURO43/`, the seven retail Driver 1 cities still bake instead of the script stopping at Beta Miami.
-- Crumple: lighter impacts dent sooner and hard hits cave deeper; the wheels now lean and steer more while translating less, and wheel damage resists more. Cars without a baked damaged model get a stable per-car runtime dent fallback.
+- Crumple: lighter impacts dent sooner and hard hits cave deeper; the wheels now lean and steer more while translating less, and wheel damage resists more. Cars without a baked damaged model (the Driver 1 imports) are deformed by CRUMPLE when it is on; with CRUMPLE off they keep the standard clean body.
 
 ### Fixes
 
@@ -36,6 +36,9 @@ is in [changelog.txt](changelog.txt).
 - Driver 1: IVIEW's cop siren and the Beta Miami cop siren are wired, and only Beta Miami slots 1 and 3 keep their special horns - the rest use the D1 traffic horn. D1 police lightbars sit slightly higher; IVIEW slot 1 and the Beta Miami cop use solid red bars.
 - Hubcaps reappear after repair/respawn: the lost-hubcap bits are cleared and the imported hubcap CLUT is re-bound.
 - The packaged `BAKE_D1_CARS` now uses the current script, so it bakes Beta Miami from `EURO43/` along with the seven Driver 1 cities instead of silently stopping at the old seven-city list.
+- The Driver 1 re-bake question is asked once per session: the mod store had a second, identical prompt, so answering one left the other waiting.
+- carhacks' car-select menu replaces the stock vehicle-select screen again after leaving an online match. The session leaves `GameType`/`NumPlayers` in a multiplayer state; the menu now crosses that transition instead of treating it as split-screen or a mission pick.
+- Driver 1 cars no longer get a synthetic engine dent when CRUMPLE is off. They lack a baked damaged model, so they keep the clean body; CRUMPLE, when enabled, owns their deformation.
 
 ## v0.10.13
 

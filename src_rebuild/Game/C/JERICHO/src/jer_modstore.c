@@ -25,6 +25,7 @@
 #include "jer_frontend.h"
 #include "jer_notify.h"
 #include "jer_prompt.h"
+#include "jer_rebake.h"	/* the one Driver 1 re-bake prompt; re-armed after an install */
 #include "jer_screen.h"	/* jer_screen_active: never prompt over a presentation screen */
 #include "jer_text.h"
 
@@ -195,7 +196,6 @@ static struct
 	char testId[STORE_ID_MAX];
 	int  testStage;
 	int  drawLogged;
-	int  bakePrompt;	/* ask about a stale Driver 1 bake once per session */
 } gStore;
 
 /* The startup mod-update check and its Yes action (see
@@ -1999,10 +1999,10 @@ static void StoreJobFinish(void)
 				}
 			}
 
-			/* an install can carry newer Driver 1 bake tooling, so ask before the
-			 * cars are left baked by the previous one */
+			/* an install can carry newer Driver 1 bake tooling: re-arm the ONE
+			 * re-bake prompt so it asks again in this session */
 			if (ok)
-				gStore.bakePrompt = 1;
+				jer_rebake_rearm();
 
 			StoreRecordsLoad();
 			gStore.itemsDirty = 1;
@@ -2111,7 +2111,6 @@ void jer_modstore_init(const char* rootDir)
 	}
 
 	gStore.ready = 1;
-	gStore.bakePrompt = 1;	/* the update may have brought newer bake tooling */
 
 	jer_log("[modstore] initialised: %d repo(s), %d install record(s), helper %s\n",
 		gStore.repoCount, gStore.recordCount,
@@ -2447,12 +2446,6 @@ static void StoreInstallYes(void)
 static void StoreRemoveYes(void)
 {
 	jer_modstore_remove(gPendingId);
-}
-
-/* "re-bake them now": the same job the menu can start, run from the prompt. */
-static void StoreRebakeYes(void)
-{
-	jer_modstore_rebake();
 }
 
 static int RepoRowActivate(void* ud)
@@ -3487,34 +3480,11 @@ void jer_modstore_frontend_tick(int onMainMenu)
 		}
 	}
 
-	/* A Driver 1 bake older than the tooling beside it: ask ONCE, and only while
-	 * the MAIN MENU is up with no presentation screen in front of it. Otherwise
-	 * the question lands on top of the update changelog or a compile screen - both
-	 * of which are the store's own presentation screens, and a prompt over one of
-	 * them is unreadable. The flag stays set until it is actually asked, so
-	 * waiting for the menu costs nothing. Asking only when a bake EXISTS is
-	 * deliberate: a player with no Driver 1 data has nothing to re-bake. */
-	if (gStore.bakePrompt && gStartupUpdate == 2 && !gUpdateAll && !StoreJobRunning() &&
-		onMainMenu && !jer_screen_active())
-	{
-		if (!StoreBakeStale())
-		{
-			gStore.bakePrompt = 0;			/* nothing to ask about */
-		}
-		else
-		{
-			jer_log("[modstore] the Driver 1 bake is older than the tooling (baked %d, expected %d)\n",
-				StoreBakedVersion(), StoreToolingBakeVersion());
-
-			/* a test-lever run must not raise this: it is a headless check, and the
-			 * prompt would be answered by whatever the pad happens to read, which
-			 * starts a real bake in the middle of a test */
-			gStore.bakePrompt = 0;			/* asked once, at the menu */
-
-			if (gStore.testLever == STORE_TEST_NONE)
-				jer_prompt_begin("Your Driver 1 cars were baked with older tooling. Re-bake them now?", StoreRebakeYes);
-		}
-	}
+	/* The Driver 1 re-bake question is asked by jer_rebake.c, ONCE, and it waits
+	 * for this startup update check to finish. It used to have a twin here, so
+	 * answering one prompt still left the other to answer - do not add a second
+	 * prompt path. A mod install re-arms the one in jer_rebake.c
+	 * (jer_rebake_rearm) so newer bake tooling can still be noticed mid-session. */
 
 	/* after DrawScreen (FEmain.c calls this next to the updater's own tick), which
 	 * is where a module's text belongs -- JER_EVENT_FRAME fires before the box. */

@@ -26,10 +26,16 @@
 #include "../include/jer_prompt.h"
 #include "../include/jer_frontend.h"
 #include "../include/jer_modstore.h"	/* the startup mod-update check runs first */
+#include "../include/jer_rebake.h"	/* the re-arm hook jer_modstore.c calls */
 
 #define RB_PATH_MAX 1024
 
 static char sRebakeScript[RB_PATH_MAX];
+
+/* The prompt is one-shot per run. A mod install can bring newer bake tooling
+ * after it has already run, so jer_modstore.c calls jer_rebake_rearm() then. */
+static int sRebakeAsked;
+static int sRebakeSettled;
 
 static int RbFileInt(const char* path, const char* afterKey)
 {
@@ -193,12 +199,10 @@ static void RbYes(void)
 /* Frontend, once per frame on the main menu. Asks at most once per run. */
 void jer_rebake_frontend_tick(int onMainMenu)
 {
-	static int asked = 0;
-	static int settled = 0;
 	int upd = jer_frontend_find("jericho.update");
 	int baked, wanted;
 
-	if (asked)
+	if (sRebakeAsked)
 		return;
 
 	/* The store's startup update question comes first, and may still be fetching
@@ -207,7 +211,7 @@ void jer_rebake_frontend_tick(int onMainMenu)
 	 * ask about. */
 	if (jer_modstore_startup_update_pending())
 	{
-		settled = 0;
+		sRebakeSettled = 0;
 		return;
 	}
 
@@ -216,12 +220,12 @@ void jer_rebake_frontend_tick(int onMainMenu)
 	 * frames, i.e. once the player is back on the main menu. */
 	if (!onMainMenu || jer_prompt_active() || (upd >= 0 && jer_frontend_current_menu() == upd))
 	{
-		settled = 0;
+		sRebakeSettled = 0;
 		return;
 	}
-	if (++settled < 30)
+	if (++sRebakeSettled < 30)
 		return;
-	asked = 1;
+	sRebakeAsked = 1;
 
 	baked = RbBakedVersion();
 	wanted = RbToolingVersion();
@@ -230,4 +234,12 @@ void jer_rebake_frontend_tick(int onMainMenu)
 
 	jer_log("[rebake] Driver 1 bake is older than the tooling (baked %d, expected %d)\n", baked, wanted);
 	jer_prompt_begin("Your Driver 1 cars were baked with older tooling. Re-bake them now?", RbYes);
+}
+
+/* The one-shot prompt already ran (or the player declined). A mod install may
+ * have brought newer bake tooling, so allow the question again. */
+void jer_rebake_rearm(void)
+{
+	sRebakeAsked = 0;
+	sRebakeSettled = 0;
 }
