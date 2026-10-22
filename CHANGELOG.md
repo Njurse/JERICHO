@@ -4,6 +4,43 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.11.5
+
+*Released 2026-10-22.*
+
+### Multiplayer
+
+- A player's lost hubcaps now show on every machine. The carstate carries the owner's
+  hubcap bits, and they are re-applied when a peer's car is rebuilt. This is a wire
+  change (protocol 16): update every client and the dedicated server together.
+- A car change keeps **one resident slot per player** and replaces the car in place.
+  Together with the resident pool growing from 12 to 16 slots, this gives eight guest
+  import slots for an eight-player session instead of four, and removes the
+  `no spare resident slot` exhaustion under concurrent changes.
+- A guest city's palette rows, texture pins and import buffer are released as soon as
+  its last live car goes, so another city can take them. A load that still cannot fit
+  keeps retrying instead of leaving the peer looking like the level's own car.
+- The car re-announce heartbeat is now jittered (45–150 frames) and is re-armed a few
+  frames after a car change, a join, a peer's pick or a reload. Late joiners and
+  machines that missed a packet recover without a one-shot message.
+- **Reload all cars** now releases and re-reads every imported car's assets — pins,
+  pool pages, palette rows, geometry and the city buffers — then rebuilds every
+  imported vehicle.
+- Addon channel relays keep the original sender's player id. Before this, every
+  relayed car pick arrived as player 0 on a dedicated-server client and was discarded.
+- The multiplayer core suite — `mp`, `carhacks`, `d1cars` — is mandatory and first in
+  the load order. A join rewrites the client's module order; optional modules such as
+  `crumple` load afterwards.
+- Dedicated servers can require that core suite with `core_mods` while still allowing
+  optional modules, and the shipped example preconfigures it.
+
+### Crumple
+
+- New **Player Crumple** toggle at the top of Crumple Debug. Switching it off scopes
+  CRUMPLE out of only your car: the engine's stock dent blend runs, and wheel bend,
+  damage, physics and wheel drawing report stock values. Other players, traffic and AI
+  keep full crumple. Existing damage is not repaired automatically.
+
 ## v0.11.4
 
 *Released 2026-10-22.*
