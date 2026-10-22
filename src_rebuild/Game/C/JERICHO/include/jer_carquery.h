@@ -30,6 +30,7 @@
 #define JER_CARQ_LOAD	(JER_EVENT_MODULE_CUSTOM + 41)	/* "make (city,model) available" */
 #define JER_CARQ_CHOSEN	(JER_EVENT_MODULE_CUSTOM + 42)	/* "this is what we drive now" */
 #define JER_CARQ_SLOTS	(JER_EVENT_MODULE_CUSTOM + 43)	/* "which slots may this city offer?" */
+#define JER_CARQ_STANDIN	(JER_EVENT_MODULE_CUSTOM + 44)	/* "give me a stand-in body slot" */
 
 /* Handlers fill the result field of the struct and return
  * JER_RESULT_CONTINUE; the caller reads it. */
@@ -110,5 +111,14 @@ typedef struct JER_CARQ_CHOSEN_ARGS
 	int  model;	/* in: model number */
 	int  changed;	/* in: 1 = driving it now, 0 = the switch did not happen */
 } JER_CARQ_CHOSEN_ARGS;
+
+/* JER_CARQ_STANDIN -> ARGS.slot = a resident slot holding the stand-in body (the
+ * placeholder car), or -1 when none can be placed. Asked by mp when a peer's
+ * vehicle has no mesh yet; the body is DRAWN, never chosen, so nothing here tells
+ * the session anything. */
+typedef struct JER_CARQ_STANDIN_ARGS
+{
+	int slot;	/* out: resident slot for the stand-in body, -1 = none */
+} JER_CARQ_STANDIN_ARGS;
 
 #endif /* JER_CARQUERY_H */
