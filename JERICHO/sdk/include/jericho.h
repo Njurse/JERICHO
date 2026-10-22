@@ -494,6 +494,17 @@ int jer_manager_set_enabled(const char* rootDir, const char* id, int enabled);
 /* Move a module up/down in the load order; persists. Returns 0 on ok. */
 int jer_manager_move(const char* rootDir, const char* id, int direction);
 
+/* The multiplayer core suite, in mandatory load order: mp, carhacks, d1cars.
+ * Everything else is optional and follows in the player's own order. */
+int jer_manager_core_count(void);
+const char* jer_manager_core_id(int i);
+
+/* Move the core suite to the front of modlist.ini and enable it, preserving the
+ * relative order of every other entry. 1 = the file changed, 0 = already right or
+ * no file, -1 = write error. Safe to call at any time; the new order applies at the
+ * NEXT boot (modules are loaded once), which is why a join reports it. */
+int jer_manager_normalize_core(const char* rootDir);
+
 /* ------------------------------------------------------------------ */
 /* Module inventory (for the frontend Mods manager)                    */
 /* ------------------------------------------------------------------ */
