@@ -72,14 +72,20 @@ jobs:
       # --remote deliberately: a release carries the LATEST core mods, not the
       # commit the parent tree happens to pin. A mod fix pushed after the last
       # gitlink bump must reach the next build without a second JERICHO commit.
+      # Fetch the branch by name and check out FETCH_HEAD rather than
+      # `submodule update --remote`: the init above is a SHALLOW clone of the
+      # pinned commit, so the branch ref `--remote` looks for does not exist.
       - name: Fetch mod submodules
         shell: bash
         run: |
           for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
-            git submodule update --remote --depth=1 "$path"
-            echo "    $path at $(git -C "$path" rev-parse --short HEAD)"
+            branch=$(git config -f .gitmodules --get "submodule.$path.branch")
+            [ -n "$branch" ] || branch=HEAD
+            git -C "$path" fetch --quiet --depth=1 origin "$branch"
+            git -C "$path" checkout --quiet --detach FETCH_HEAD
+            echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
             echo "::endgroup::"
           done
 
@@ -238,13 +244,18 @@ jobs:
           # PsyCross is pinned (its branch is a feature branch the build expects).
           # The four CORE MODS are advanced to the latest commit of their own
           # tracking branch (see `branch =` in .gitmodules): a release carries the
-          # current mods, not whatever gitlink the parent tree pinned.
+          # current mods, not whatever gitlink the parent tree pinned. Fetch the
+          # branch by name: the init is a shallow clone of the pinned commit, so
+          # `submodule update --remote` cannot find the branch ref.
           git submodule update --init --depth=1 src_rebuild/PsyCross
           for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
-            git submodule update --remote --depth=1 "$path"
-            echo "    $path at $(git -C "$path" rev-parse --short HEAD)"
+            branch=$(git config -f .gitmodules --get "submodule.$path.branch")
+            [ -n "$branch" ] || branch=HEAD
+            git -C "$path" fetch --quiet --depth=1 origin "$branch"
+            git -C "$path" checkout --quiet --detach FETCH_HEAD
+            echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
             echo "::endgroup::"
           done
           for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
@@ -529,13 +540,18 @@ jobs:
           # The four mod source repos are release mods: a build that silently
           # skips them is worse than one that fails here. Advance each to the
           # latest commit of its own branch (.gitmodules `branch =`), so a build
-          # carries the current mods rather than the pinned gitlink.
+          # carries the current mods rather than the pinned gitlink. Fetch the
+          # branch by name: the init is a shallow clone of the pinned commit, so
+          # `submodule update --remote` cannot find the branch ref.
           git submodule update --init --depth=1 src_rebuild/PsyCross
           for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
-            git submodule update --remote --depth=1 "$path"
-            echo "    $path at $(git -C "$path" rev-parse --short HEAD)"
+            branch=$(git config -f .gitmodules --get "submodule.$path.branch")
+            [ -n "$branch" ] || branch=HEAD
+            git -C "$path" fetch --quiet --depth=1 origin "$branch"
+            git -C "$path" checkout --quiet --detach FETCH_HEAD
+            echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
             echo "::endgroup::"
           done
           for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do

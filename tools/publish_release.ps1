@@ -120,13 +120,27 @@ function Update-ModSubmodules {
     $paths = @('JERICHO/MODS/mp', 'JERICHO/MODS/carhacks',
                'JERICHO/MODS/crumple', 'JERICHO/MODS/d1cars')
     foreach ($p in $paths) {
-        & git -C $RepoRoot submodule update --init --remote -- $p
-        if ($LASTEXITCODE -ne 0) { Fail "could not advance $p." }
+        & git -C $RepoRoot submodule update --init -- $p
+        if ($LASTEXITCODE -ne 0) { Fail "could not initialise $p." }
+
+        # Fetch the branch by NAME. `submodule update --remote` also works in a
+        # normal clone, but a checkout that was initialised shallow (CI, or a
+        # submodule fetched at one commit) has no refs/remotes/origin/<branch>
+        # for it to find.
+        $branch = (& git -C $RepoRoot config -f .gitmodules --get "submodule.$p.branch")
+        if (-not $branch) { $branch = 'HEAD' }
+
+        & git -C (Join-Path $RepoRoot $p) fetch --quiet origin $branch
+        if ($LASTEXITCODE -ne 0) { Fail "could not fetch $p ($branch)." }
+
+        & git -C (Join-Path $RepoRoot $p) checkout --quiet --detach FETCH_HEAD
+        if ($LASTEXITCODE -ne 0) { Fail "could not check out $p ($branch)." }
+
         if (-not (Test-Path (Join-Path $RepoRoot "$p/mod.toml"))) {
             Fail "$p/mod.toml is missing after the update."
         }
         $sha = (& git -C (Join-Path $RepoRoot $p) rev-parse --short HEAD)
-        Write-Host "    $p at $sha"
+        Write-Host "    $p at $sha ($branch)"
     }
 
     $dirty = (& git -C $RepoRoot status --porcelain -- $paths)

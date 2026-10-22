@@ -35,12 +35,16 @@ PATHS="JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d
 
 for path in $PATHS; do
 	echo "== $path"
-	git submodule update --init --remote -- "$path"
+	git submodule update --init -- "$path"
+	branch=$(git config -f .gitmodules --get "submodule.$path.branch")
+	[ -n "$branch" ] || branch=HEAD
+	git -C "$path" fetch --quiet origin "$branch"
+	git -C "$path" checkout --quiet --detach FETCH_HEAD
 	[ -f "$path/mod.toml" ] || {
 		echo "update_mod_submodules: $path/mod.toml is missing after the update" >&2
 		exit 1
 	}
-	echo "   at $(git -C "$path" rev-parse --short HEAD) ($(git -C "$path" rev-parse --abbrev-ref HEAD))"
+	echo "   at $(git -C "$path" rev-parse --short HEAD) ($branch)"
 done
 
 echo
