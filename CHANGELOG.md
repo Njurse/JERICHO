@@ -18,6 +18,9 @@ is in [changelog.txt](changelog.txt).
   800 → 950), a higher total cap (`compoundCapPct` 2000 → 2400), and more depth on
   oblique pole/edge hits (`contactDeepen` 326 → 650). Parameters only — the
   deformation path is unchanged.
+- The stretched-vertex guards (the per-vertex clamp and the `cars.c` canary) now share
+  one 4096-unit threshold, so a deliberate 10x crush no longer trips the canary and
+  silently rebuilds the car's mesh.
 
 ### Multiplayer
 

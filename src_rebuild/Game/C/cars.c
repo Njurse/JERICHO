@@ -1647,7 +1647,9 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 						int dy = dumpV[i].vy - cleanV[i].vy;
 						int dz = dumpV[i].vz - cleanV[i].vz;
 
-						if (dx > 2000 || dx < -2000 || dy > 2000 || dy < -2000 || dz > 2000 || dz < -2000)
+						if (dx > JER_STRETCH_VERT || dx < -JER_STRETCH_VERT ||
+							dy > JER_STRETCH_VERT || dy < -JER_STRETCH_VERT ||
+							dz > JER_STRETCH_VERT || dz < -JER_STRETCH_VERT)
 						{
 							jer_log("[cars] STRETCHED VERTEX: car %d model %d vertex %d dump(%d,%d,%d) clean(%d,%d,%d) - rebuilding its mesh\n",
 								cp->id, cp->ap.model, i,
@@ -1655,7 +1657,8 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 								cleanV[i].vx, cleanV[i].vy, cleanV[i].vz);
 							sLastFrame[cp->id] = CameraCnt;
 
-							/* JERICHO: no dent moves a vertex 2000 units, so the dump is
+							/* JERICHO: no dent moves a vertex this far (the same
+							 * threshold DentCarDirectional clamps to), so the dump is
 							 * another model's (or garbage): rebuild it the way a respawn
 							 * does instead of drawing a broken car until then. Damage
 							 * state is kept. */

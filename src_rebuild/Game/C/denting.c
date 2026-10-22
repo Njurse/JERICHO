@@ -18,14 +18,6 @@
 #include "handling.h"
 #include "jer_math.h"
 
-/* A working vertex this far from its clean position is not a dent, it is corruption
- * (the same threshold the STRETCHED VERTEX canary in cars.c uses). */
-/* A vertex this far from the clean model is corrupt, not dented. The per-car
- * crush multiplier (crumple.c) can legitimately push bodywork several thousand
- * units at 10x, so the edge is generous; it still catches the wild write that
- * used to stretch a car across the map. */
-#define JER_STRETCH_VERT	16384
-
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
 
