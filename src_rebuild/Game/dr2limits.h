@@ -74,13 +74,19 @@
  * seven distinct cars on the field at once (the player plus six contestants).
  * With 12 the module has six slots of its own.
  *
- * Kept at 12 for now. 12 -> 16 was tried for a sixteen-player mp lobby (sixteen
- * players can each pick a different car, and a model that is not resident cannot
- * be built at all), but the raise was landing in the same breath as the capacity
- * work and cross-city imports started showing palette/texture faults, so it is a
- * FOLLOW-UP with its own VRAM measurement rather than part of this change: 16
- * players simply share the resident set and some drive duplicates. */
-#define MAX_CAR_RESIDENT_MODELS	12			// use all permanently loaded car models available
+ * 16 for the eight-player mp scope with a distinct imported car per player. Slots
+ * 0..4 keep their normal meaning, SPECIAL_CAR_SLOT (pinned at 11) holds the level's
+ * special, mp claims 5/6 for its extra models, and carhacks gets 7..10 + 12..15 -
+ * eight guest import slots, one per player. That is the whole point of the raise:
+ * a model that is not resident cannot be built, so a car change would otherwise
+ * fall back to the level's own car of the same number.
+ *
+ * The old 12 -> 16 attempt was pulled because it rode along with the capacity work
+ * and cross-city imports were showing palette/texture faults in the same window.
+ * Those have since been fixed on their own terms (per-(city,set) palette rows, the
+ * per-slot hot-load poly arena, per-city unload), and this raise is measured against
+ * the three-guest-city texture budget (24 palette rows / 30 pool pages). */
+#define MAX_CAR_RESIDENT_MODELS	16			// use all permanently loaded car models available
 #else
 #define MAX_CAR_RESIDENT_MODELS	5
 #endif

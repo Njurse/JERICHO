@@ -2265,6 +2265,13 @@ char* GetCarImportCosmetics(int slot)
 // must hand its resources back. JER_HOT_CAR_BLOCKS blocks fit the pool by construction.
 #define JER_HOT_CAR_BLOCKS		(JER_HOT_CAR_POOL_BYTES / JER_HOT_CAR_BLOCK_BYTES)
 
+/* The eight-player guest-import budget: 16 resident models - 5 domestic - 2 mp spares
+ * (5/6) - 1 special (11) = 8 hot-load blocks. A player whose car cannot get a block is
+ * left drawn as the level's own car, so this is a build error, not a runtime surprise. */
+#if JER_HOT_CAR_BLOCKS < 8
+#error "the hot-load pool must cover the eight guest import slots"
+#endif
+
 static char* gJerHotCarPool;
 static int   gJerHotCarSize;
 static int   gJerHotCarUsed;					// blocks in use, for the log line

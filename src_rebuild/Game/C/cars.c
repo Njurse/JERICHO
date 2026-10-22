@@ -792,6 +792,12 @@ CAR_POLY* gJerCarPolyBase = carPolyBuffer;
 int gJerCarPolyCap = MAX_CAR_POLYS;
 
 #define JER_HOT_POLY_BLOCKS		8
+/* Same eight-slot budget as models.c's JER_HOT_CAR_BLOCKS: a hot load needs both a
+ * geometry block and a poly block, so a shortfall here is just as invisible as the
+ * other (the car builds 0 polys and is not drawn). */
+#if JER_HOT_POLY_BLOCKS < 8
+#error "the hot-load poly arena must cover the eight guest import slots"
+#endif
 #define JER_HOT_POLY_PER_BLOCK	((MAX_CAR_POLYS / 4))	/* 1200: three builds of a ~250-poly car */
 /* One spare entry per block, exactly as the level arena has (carPolyBuffer[MAX_CAR_POLYS + 1]):
  * the build loop tests the cap BEFORE a GT4/FT4 iteration, and such a poly adds TWO records,

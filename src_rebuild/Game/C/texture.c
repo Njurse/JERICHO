@@ -1854,6 +1854,11 @@ int CarImportPinDstSet(int set)
 // pins/palette tables when its last car is released - is TODO(#14); this headroom is
 // the safe stopgap, not the cure. The hard ceiling is JER_POOL_PAGES.
 #define CAR_PIN_MAX 30
+/* A pin's owners are a 32-bit mask; every resident slot must fit in it or a released
+ * car's page would stay owned by a bit that does not exist. */
+#if CAR_PIN_OWNERS_MAX < MAX_CAR_RESIDENT_MODELS
+#error "CAR_PIN_OWNERS_MAX must cover every resident model slot"
+#endif
 
 // JERICHO: the pool must be able to hold EVERY pin. That is what makes the world-side
 // fallback in CarPageFindSlot unreachable rather than merely unlikely: a pin takes a lower
