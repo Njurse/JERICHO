@@ -479,6 +479,11 @@ static int JerCityApplyKey(int slot)
 	/* a city_N key is authoritative for this row */
 	JerCityModuleOwned[slot] = 0;
 
+	/* The parser fills only the fields present, so clear the table first: a 2-field
+	 * "NAME, LEVEL" would otherwise read the previous entry's LCF out of fields[2]
+	 * (the stack is reused) and hand this bank another row's colours file. */
+	memset(fields, 0, sizeof(fields));
+
 	if (JerCityParseEntry(value, fields) < 2)
 	{
 		if (JerKeyState[slot] != 3)
