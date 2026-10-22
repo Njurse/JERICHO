@@ -552,9 +552,10 @@ void AddCopCarLight(CAR_DATA *cp)
 			col.g = 90;
 			v1.vy = car_cos->policeLight.vy + car_cos->cog.vy;
 
-			/* D1 lightbars sit a touch low on the transplanted bodies. */
+			/* D1 lightbars sit a touch low on the transplanted bodies; nudge
+			 * them up slightly (tunable). */
 			if (d1Bar)
-				v1.vy -= 8;
+				v1.vy -= 4;
 
 			if (gNight != 0)
 				col.g = 50;
