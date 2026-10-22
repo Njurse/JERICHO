@@ -336,6 +336,69 @@ int JerLowerPoolClutRowsUsed(void)		{ return sJerLowerPoolClutUsed; }
 int JerLowerPoolClutRowsFree(void)		{ return JER_VRAM_TOTAL_ROWS - sJerLowerPoolClutY; }
 int JerLowerPoolClutDropped(void)		{ return sJerLowerPoolClutDropped; }
 
+// JERICHO: a white/light-grey checkerboard fallback for a car whose body texture
+// never resolved. A dropped or unplaced set keeps the init-time dummy (960,0)/
+// (960,16) - inside a live host page - and draws that page's pixels. Upload one
+// 4-bit checker page plus a two-colour CLUT into the lower half pool instead, and
+// hand the words back for InitTexture's dummy to use. The pool layout is
+// deterministic (this always takes page 0 and the first CLUT row), so the words
+// stay stable across levels even though the pool itself is reset per level.
+static u_short sJerCheckerTpage;
+static u_short sJerCheckerClut;
+
+static void JerUploadCheckerFallback(void)
+{
+	RECT16 pageRect, clutRect;
+	u_short clut[16];
+	u_short* page;
+	int slot, tx, ty, i;
+
+	sJerCheckerTpage = 0;
+	sJerCheckerClut = 0;
+
+	slot = JerLowerPoolPageAlloc();
+	if (slot < 0)
+	{
+		printInfo("cross-city: checker fallback skipped - lower half pool has no free page\n");
+		return;
+	}
+
+	JerLowerPoolPageRect(slot, &pageRect);
+
+	JerLowerPoolClutCursor(&clutRect);
+	JerLowerPoolClutAdvance(1);
+
+	// 16-entry CLUT: 0 = white, 1 = light grey; the rest stay white.
+	for (i = 0; i < 16; i++)
+		clut[i] = (i == 1) ? (u_short)0x5AD6 : (u_short)0x7FFF;
+
+	// 64x256 4-bit page, 16x16-texel checker squares. One halfword per texel, the
+	// 4-bit index in the LOW nibble (the shape LoadImage uploads for a page).
+	page = (u_short*)malloc((size_t)pageRect.w * pageRect.h * sizeof(u_short));
+	if (page == NULL)
+	{
+		JerLowerPoolPageFree(slot);
+		return;
+	}
+
+	for (ty = 0; ty < pageRect.h; ty++)
+	{
+		for (tx = 0; tx < pageRect.w; tx++)
+			page[ty * pageRect.w + tx] = (u_short)(((tx / 16) + (ty / 16)) & 1);
+	}
+
+	LoadImage(&pageRect, (u_long*)page);
+	LoadImage(&clutRect, (u_long*)clut);
+
+	free(page);
+
+	sJerCheckerTpage = GetTPage(0, 0, pageRect.x, pageRect.y);
+	sJerCheckerClut = GetClut(clutRect.x, clutRect.y);
+
+	printInfo("cross-city: checker fallback at page %04x clut %04x\n",
+		sJerCheckerTpage, sJerCheckerClut);
+}
+
 // JERICHO: read or write a CLUT row IN PLACE, at the address a CLUT id already names.
 //
 // A live palette editor needs exactly this and nothing else. An in-place write costs NO
@@ -3828,6 +3891,10 @@ void CarImportResetState(void)
 	// half (or refuse them).
 	JerLowerPoolReset();
 
+	// ...and the checker fallback is re-uploaded right after the reset, so it always
+	// owns pool page 0 + the first CLUT row before any import pin takes a page.
+	JerUploadCheckerFallback();
+
 	// JERICHO: the guest palette blocks are per level too - a city keeps the block it
 	// was handed for the whole level (see CarImportCityBand), so a new level starts
 	// with every block free again.
@@ -4545,13 +4612,16 @@ void LoadPermanentTPages(int *sector)
 	// its car sets can be registered below.
 	ParseImportedTextureInfo();
 
+	// JERICHO: a set that never gets pinned reads these init-time dummy values, so make
+	// the dummy the checker fallback when one was uploaded (a dropped/unplaced page, or a
+	// car with no texture at all, then shows the checker instead of a live host page's pixels).
 	for (tloop = 0; tloop < 128; tloop++)
-		texture_pages[tloop] = GetTPage(0, 0, 960, 0);
+		texture_pages[tloop] = (sJerCheckerTpage != 0) ? sJerCheckerTpage : GetTPage(0, 0, 960, 0);
 
 	for (tloop = 0; tloop < 128; tloop++)
 	{
 		for (tset = 0; tset < 32; tset++)
-			texture_cluts[tloop][tset] = GetClut(960, 16);
+			texture_cluts[tloop][tset] = (sJerCheckerClut != 0) ? sJerCheckerClut : GetClut(960, 16);
 	}
 
 	slotsused = 0;
