@@ -104,7 +104,18 @@ int JerReleaseCarGeometry(int slot);
 // pool. Called when no map is loaded (the frontend, after leaving a session) - a level load does
 // the same work through InitCarImport, so this exists for the case where no level will come along
 // to clean up. Returns how many city buffers were freed.
-int JerReleaseCarImport(void);char* GetCarImportCosmetics(int slot);
+int JerReleaseCarImport(void);
+
+// JERICHO: give ONE imported city back when no resident slot names it any more. Clears its
+// page lists, palette rows/CLUT bands and deferred lump, frees its buffer, and repairs the
+// single-city cache. A later pick from that city reloads it on demand. Returns 1 if freed.
+int JerReleaseCarImportForCity(int city);
+
+// ...and every held city in that state. Called after a slot release / hot load and before
+// the fold allocates a new city's resources. Returns how many were freed.
+int JerReleaseUnusedCarImports(void);
+
+char* GetCarImportCosmetics(int slot);
 
 // Which city the level is importing from (-1 = none), and that city's car
 // palettes. cars.c needs both: a foreign vehicle's texture pages must map to the

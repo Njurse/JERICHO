@@ -173,6 +173,7 @@ extern int CarImportCityRowAt(int city, int k); // JERICHO: the k-th of those ro
 extern int CarImportReclaimRows(void); // JERICHO: free guest (city,set) rows no live car names; returns how many (cars.c)
 extern int CarPalIndexInCityFor(int tpage, int city); // JERICHO: the same, given the city (cars.c)
 extern void CarImportPaletteReset(void); // JERICHO: forget a level's deferred palette work (cars.c)
+extern void CarImportForgetCityPalette(int city); // JERICHO: give one guest city's palette rows/CLUT bands back (cars.c)
 extern void CarImportCityBandReset(void); // JERICHO: free every guest city's palette block (cars.c)
 
 /* Cross-city car data: which city's LEVELS\<CITY> folder the CARMODEL_* files

@@ -807,6 +807,76 @@ int CarImportCityHeld(int city)
 	return (city >= 0 && city < CITY_COUNT && gCarImports[city].region != NULL);
 }
 
+/* JERICHO: does any LIVE resident slot still read this city's car data? The engine's
+ * resident array is the authority: chkImportReleaseSlot and chkImportHotLoad write the
+ * slot's source before this is asked, so a city whose last slot was just released is
+ * already invisible here. The host city (source < 0) is never an import. */
+static int CarImportCityInUse(int city)
+{
+	int slot;
+
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		if (residentCarModels[slot] >= 0 && GetCarModelSourceCity(slot) == city)
+			return 1;
+	}
+
+	return 0;
+}
+
+/* JERICHO: unload ONE guest city. The ordering is the point: the page lists/palette rows
+ * and the deferred lump are pointers INTO gCarImports[city], so they must go before the
+ * buffer is freed. Freeing the CLUT band and the (city,set) rows is what makes the city
+ * reloadable when the texture column would otherwise be full. */
+int JerReleaseCarImportForCity(int city)
+{
+	int i;
+
+	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
+		return 0;
+
+	if (gCarImports[city].region == NULL)
+		return 0;
+
+	if (CarImportCityInUse(city))
+		return 0;
+
+	CarImportForgetCity(city);
+	FreeCarImport(&gCarImports[city]);
+
+	if (gCarImportCity == city)
+	{
+		gCarImportCity = -1;
+
+		for (i = 0; i < CITY_COUNT; i++)
+		{
+			if (gCarImports[i].region != NULL)
+			{
+				gCarImportCity = i;
+				break;
+			}
+		}
+	}
+
+	printInfo("cross-city: released %s - no live car names it, so its palette rows, pages and buffer are free for another city\n",
+		JerCityName(city));
+
+	return 1;
+}
+
+int JerReleaseUnusedCarImports(void)
+{
+	int city, n = 0;
+
+	for (city = 0; city < CITY_COUNT; city++)
+	{
+		if (CarImportCityHeld(city) && !CarImportCityInUse(city))
+			n += JerReleaseCarImportForCity(city);
+	}
+
+	return n;
+}
+
 // The models `city`'s car data ACTUALLY carries, as a bitmask: bit N = model N.
 // 0 when the city is not held.
 //

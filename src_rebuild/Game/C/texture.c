@@ -180,6 +180,11 @@ static int sJerLowerPoolClutY = JER_VRAM_HALF_Y;	// next free row of the bottom 
 static int sJerLowerPoolClutUsed;					// rows handed out
 static int sJerLowerPoolClutDropped;				// asks that found no room
 
+/* Bands given back by a released pin OR a released city palette table. Declared here,
+ * before the pool allocator, because the reserve/release pair below is the one place
+ * both kinds of claim meet. (carpinref.h: first fit, split/merge, whole rows.) */
+static CAR_CLUT_FREE sPinClutFree;
+
 // Drop every pool claim. A level load calls this, so one level's imports cannot make
 // the next level's look pre-used.
 void JerLowerPoolReset(void)
@@ -189,6 +194,9 @@ void JerLowerPoolReset(void)
 	sJerLowerPoolClutY = JER_VRAM_HALF_Y;
 	sJerLowerPoolClutUsed = 0;
 	sJerLowerPoolClutDropped = 0;
+
+	/* The bands were rows of the column this reset just emptied. */
+	CarClutFreeReset(&sPinClutFree);
 }
 
 // Where lower half pool page `slot` lives. This is the rectangle a caller uploads into, and what
@@ -332,8 +340,69 @@ void JerLowerPoolClutAdvance(int rows)
 
 int JerLowerPoolPagesUsed(void)			{ return sJerLowerPoolPagesUsed; }
 int JerLowerPoolPagesFree(void)			{ return JER_POOL_PAGES - sJerLowerPoolPagesUsed; }
-int JerLowerPoolClutRowsUsed(void)		{ return sJerLowerPoolClutUsed; }
-int JerLowerPoolClutRowsFree(void)		{ return JER_VRAM_TOTAL_ROWS - sJerLowerPoolClutY; }
+
+/* Reserve a contiguous band of `rows` in the bottom CLUT column: a band released by a
+ * pin or an unloaded city first, then the untouched tail of the watermark. Returns the
+ * first row and writes the exclusive end to `limitY`, or -1 when neither has room.
+ * This is the allocation a CITY's palette table needs (it knows an upper bound before
+ * walking), and it is what lets an unloaded city's rows be handed to the next city. */
+int JerLowerPoolClutReserve(int rows, int* limitY)
+{
+	int y;
+
+	if (rows <= 0)
+		return -1;
+
+	y = CarClutFreeTake(&sPinClutFree, rows);
+
+	if (y >= 0)
+	{
+		if (limitY != NULL)
+			*limitY = y + rows;
+
+		return y;
+	}
+
+	if (sJerLowerPoolClutY + rows <= JER_VRAM_TOTAL_ROWS)
+	{
+		y = sJerLowerPoolClutY;
+		JerLowerPoolClutAdvance(rows);
+
+		if (limitY != NULL)
+			*limitY = y + rows;
+
+		return y;
+	}
+
+	return -1;
+}
+
+/* Give a band back. A city palette table and a pin band are both whole rows in the same
+ * column, so they share the free list and a later taker can reuse either. */
+void JerLowerPoolClutRelease(int y, int rows)
+{
+	if (y < JER_VRAM_HALF_Y || rows <= 0 || y + rows > JER_VRAM_TOTAL_ROWS)
+		return;
+
+	CarClutFreeGive(&sPinClutFree, y, rows);
+}
+
+/* Rows that are really free = the untouched tail above the watermark PLUS every band
+ * given back. The old count only looked at the watermark, so a reclaimed band still read
+ * as "used" and the report could not show the city unload doing anything. */
+int JerLowerPoolClutRowsFree(void)
+{
+	int freeRows = (JER_VRAM_TOTAL_ROWS - sJerLowerPoolClutY) + CarClutFreeRows(&sPinClutFree);
+
+	return (freeRows > JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y)
+		? JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y : freeRows;
+}
+
+int JerLowerPoolClutRowsUsed(void)
+{
+	return (JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y) - JerLowerPoolClutRowsFree();
+}
+
 int JerLowerPoolClutDropped(void)		{ return sJerLowerPoolClutDropped; }
 
 // JERICHO: a white/light-grey checkerboard fallback for a car whose body texture
@@ -1919,7 +1988,6 @@ static int sPinPreferred[CAR_PIN_MAX];		// the rectangle the REPLACED car's page
 static int sPinClutY[CAR_PIN_MAX];		// JERICHO: first row of this pin's CLUT band in the lower
 						// half pool column (always starting at x=960), -1 = none
 static int sPinClutRows[CAR_PIN_MAX];		// its height in whole rows
-static CAR_CLUT_FREE sPinClutFree;		// JERICHO: bands given back by released pins (carpinref.h)
 static int sPinClutStarted;			// the first band has been taken this level (for the log)
 static int sPinClutReused;			// bands served from the free list
 static int sPinClutReclaimed;			// rows given back by released pins
@@ -2523,7 +2591,7 @@ void CarImportPin(void)
 			// again later is not re-uploaded (and does not consume a second lower half pool row).
 			memcpy(sPalRowsDone, rowNeeded, sizeof(sPalRowsDone));
 
-			ProcessImportedPaletteRows(fresh);
+			ProcessImportedPaletteRows(sPalRowsDone);
 
 			// JERICHO: re-run the census NOW. LoadPermanentTPages reports the CLUT column
 			// during the level load, which is before this upload - so it would keep saying
@@ -3849,10 +3917,49 @@ int JerReleaseCarSlot(int slot)
 // page lists and the deferred palette lumps (pointers INTO the import buffer). Those are
 // exactly the state that outlives a level, and reading them with no map loaded is the reported
 // access violation when a player leaves and rejoins with a car from another city.
+/* JERICHO: forget ONE city's cross-city state when its last live car goes. The caller
+ * (models.c) has already proved no resident slot names it, and gives the import buffer
+ * back immediately after this - so every pointer into that buffer must go here: the parsed
+ * page lists, the deferred palette lump and the pin-dropped records. The palette rows,
+ * wheel CLUT ids and lower-pool CLUT band are cars.c's; it releases them in one place. */
+void CarImportForgetCity(int city)
+{
+	int i;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return;
+
+	gCarImportPerms[city].count = 0;
+	gCarImportSpecs[city].count = 0;
+	gCarImportTexParsed[city] = 0;
+
+	/* A dropped pin's set/city are the only records left pointing at this city's page
+	 * list. Remove them as a group; the parallel-array helper keeps them aligned. */
+	for (i = 0; i < sPinDroppedKept; )
+	{
+		int n = sPinDroppedKept;
+
+		if (sPinDroppedCity[i] != city)
+		{
+			i++;
+			continue;
+		}
+
+		CarPinArrayRemove(sPinDroppedSet, n, i);
+		CarPinArrayRemove(sPinDroppedCity, n, i);
+		CarPinArrayRemove(sPinDroppedOwners, n, i);
+		sPinDroppedKept = n - 1;
+	}
+
+	CarImportForgetCityPalette(city);
+
+	printInfo("cross-city: %s city state forgotten - page lists, deferred palette lump, pin-dropped records and palette rows released; reloadable on demand\n",
+		LevelNames[city]);
+}
+
 void JerReleaseAllCrossCity(void)
 {
 	int slot, city;
-
 	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
 	{
 		if (sCarSlotRes[slot].used)

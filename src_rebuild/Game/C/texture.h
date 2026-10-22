@@ -89,7 +89,7 @@ extern int  CarModelSetUsed(int set);
 // ownership, the CLUT cursor and the per-slot set lists. Called from InitCarImport,
 // which runs before the level's car models are built.
 extern void CarImportResetState(void);
-
+extern void CarImportForgetCity(int city);	// one city's page lists/palette state, for an unload
 // JERICHO cross-city UNLOAD (texture.c):
 //  - JerReleaseCarSlot(slot): give back one slot's pins, pool pages, baked index and geometry, so
 //    the slot can be used again. Returns what was given back. Anything still driving that slot
@@ -201,6 +201,8 @@ int  JerLowerPoolPageHolds(int slot, int page);
 int  JerLowerPoolPageOwned(int x, int y);
 void JerLowerPoolClutCursor(RECT16 *out);	// walk it (IncrementClutNum), then Advance
 void JerLowerPoolClutAdvance(int rows);
+int  JerLowerPoolClutReserve(int rows, int* limitY);	// contiguous band, or -1
+void JerLowerPoolClutRelease(int y, int rows);		// give a band back to the free list
 int  JerLowerPoolPagesUsed(void);
 int  JerLowerPoolPagesFree(void);
 int  JerLowerPoolClutRowsUsed(void);
