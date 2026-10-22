@@ -550,8 +550,6 @@ void GlobalTimeStep(void)
 							jerArgs.wheelMask = 0xF;
 
 							jer_fire(JER_EVENT_COLLISION, &jerArgs);
-							JerRecordFallbackImpact(cp, (VECTOR*)collisionpoint);
-							JerRecordFallbackImpact(c1, (VECTOR*)collisionpoint);
 						}
 
 						if (howHard > 0x32000)

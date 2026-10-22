@@ -22,23 +22,6 @@
  * (the same threshold the STRETCHED VERTEX canary in cars.c uses). */
 #define JER_STRETCH_VERT	2000
 
-/* JERICHO: the last collision point PER CAR. The stock fallback below must not
- * use gCrumpleLastCollisionPoint: that is one global last-hit point, shared by
- * every car and overwritten by every scrape, so a car dented while another was
- * hit rebuilt its mesh around a different point each pass (the jagged
- * oscillation). Snapshot the point at collision time and keep it until the car
- * is rebuilt. */
-VECTOR gJerFallbackImpactPoint[MAX_CARS];
-int gJerFallbackImpactActive[MAX_CARS];
-
-void JerRecordFallbackImpact(CAR_DATA* cp, const VECTOR* point)
-{
-	if (cp == NULL || point == NULL || cp->id < 0 || cp->id >= MAX_CARS)
-		return;
-
-	gJerFallbackImpactPoint[cp->id] = *point;
-	gJerFallbackImpactActive[cp->id] = 1;
-}
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
 
@@ -91,56 +74,6 @@ void InitialiseDenting(void)
 	InitHubcap();
 }
 
-/* Does this model have a real baked damaged mesh? The D1 bake's damaged block
- * carries the clean polys and a COPY of the clean vertices, so num_polys is
- * not a usable test - comparing the vertices is. Cached per (clean, damaged)
- * pointer because car-model slots are reassigned at runtime. */
-static int JerDamagedModelHasBakedDelta(int model)
-{
-	static MODEL* sClean[MAX_CAR_RESIDENT_MODELS];
-	static MODEL* sDam[MAX_CAR_RESIDENT_MODELS];
-	static int sResult[MAX_CAR_RESIDENT_MODELS];
-	MODEL* clean;
-	MODEL* dam;
-	SVECTOR* cv;
-	SVECTOR* dv;
-	int n, i;
-
-	if (model < 0 || model >= MAX_CAR_RESIDENT_MODELS)
-		return 0;
-
-	clean = gCarCleanModelPtr[model];
-	dam = gCarDamModelPtr[model];
-
-	if (clean == NULL || dam == NULL)
-		return 0;
-
-	if (sClean[model] == clean && sDam[model] == dam)
-		return sResult[model];
-
-	sResult[model] = 0;
-	sClean[model] = clean;
-	sDam[model] = dam;
-
-	n = MIN(clean->num_vertices, dam->num_vertices);
-	cv = GET_MODEL_DATA(SVECTOR, clean, vertices);
-	dv = GET_MODEL_DATA(SVECTOR, dam, vertices);
-
-	if (cv == NULL || dv == NULL || n <= 0)
-		return 0;
-
-	for (i = 0; i < n; i++)
-	{
-		if (cv[i].vx != dv[i].vx || cv[i].vy != dv[i].vy || cv[i].vz != dv[i].vz)
-		{
-			sResult[model] = 1;
-			break;
-		}
-	}
-
-	return sResult[model];
-}
-
 // [D] [T]
 
 void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
@@ -154,7 +87,6 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 	MODEL *pCleanModel;
 	int model;
 	int Poly;
-	int baked;
 
 	short tempDamage[256];
 	memset((u_char*)tempDamage, 0, sizeof(tempDamage));
@@ -166,7 +98,6 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 	cp->ap.qw = 0;
 
 	pCleanModel = gCarCleanModelPtr[model];
-	baked = JerDamagedModelHasBakedDelta(model);
 
 	// collect vertices from zones
 	if (pCleanModel != NULL) 
@@ -207,13 +138,9 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 		jerArgs.handled = 0;
 		jer_fire(JER_EVENT_DENT_PASS, &jerArgs);
 
-		// no module owns the deformation (crumple off): a real baked damaged
-		// model keeps the stock blend. A car with NO baked damaged mesh (the D1
-		// bake's damaged block carries the clean vertices and no polys) keeps its
-		// clean body - the standard behaviour. It used to get a synthetic runtime
-		// dent here, which is why imported Driver 1 cars still dented with crumple
-		// turned off.
-		if (jerArgs.handled == 0 && baked)
+		// no module owns the deformation (crumple off): stock REDRIVER2 blend
+		// of the clean and damaged meshes, weighted by the per-vertex dent
+		if (jerArgs.handled == 0 && gCarDamModelPtr[model] != NULL)
 		{
 			SVECTOR* DamVertPtr = GET_MODEL_DATA(SVECTOR, gCarDamModelPtr[model], vertices);
 			SVECTOR* CleanVertPtr = GET_MODEL_DATA(SVECTOR, pCleanModel, vertices);
@@ -316,9 +243,6 @@ void CreateDentableCar(CAR_DATA *cp)
 	SVECTOR *src;
 	int vcount;
 	int model;
-
-	if (cp->id >= 0 && cp->id < MAX_CARS)
-		gJerFallbackImpactActive[cp->id] = 0;
 
 	// JERICHO-HOOK: reset per-car damage state -> modules (crumple package);
 	// zone damage below is preserved when gDontResetCarDamage is set,
