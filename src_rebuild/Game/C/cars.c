@@ -582,6 +582,46 @@ int CarImportReclaimRows(void)
 	return n;
 }
 
+/* JERICHO: put a rebuilt player car's hubcaps back. LoseHubcap sets a bit in
+ * ap.flags for each wheel whose hubcap came off, and nothing else ever clears
+ * it - so a repaired or respawned car kept drawing the damaged wheel (and its
+ * bare rim) for the rest of its life. Clear those bits, then re-bind the
+ * imported hubcap CLUT the page loader reserved, and restore the flying
+ * hubcap model pointer if it went missing. */
+void CarReapplyHubcapState(int slot)
+{
+	CAR_DATA* cp;
+	int city, v, k, n;
+	unsigned char sets[8];
+
+	if (slot < 0 || slot >= MAX_CARS)
+		return;
+
+	cp = &car_data[slot];
+
+	/* bits 0..3 are the four wheels' "hubcap lost" flags */
+	cp->ap.flags &= ~0x0f;
+
+	city = GetCarModelSourceCity(cp->ap.model);
+
+	if (city >= 0 && city < CITY_COUNT && sWheelPalClut[city][1] != 0)
+	{
+		for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+		{
+			n = GetCarImportWheelSets(city, v, sets, 8);
+
+			for (k = 0; k < n; k++)
+				CarImportSetWheelPaletteClut(city, sets[k], sWheelPalClut[city][1], 1);
+		}
+
+		printInfo("cross-city: %s slot %d hubcap palette re-applied (clut %04x)\n",
+			LevelNames[city], slot, sWheelPalClut[city][1]);
+	}
+
+	if (gHubcapModelPtr == NULL)
+		gHubcapModelPtr = FindModelPtrWithName("HUBCAP1");
+}
+
 static int CarPalIndexInCity(int tpage, int city);
 
 // JERICHO: the palette row map, printed at exit beside the page check. First which

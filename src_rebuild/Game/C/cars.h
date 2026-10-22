@@ -54,6 +54,11 @@ extern MODEL *gCleanWheelModelPtr;
 extern MODEL *gFastWheelModelPtr;
 extern MODEL *gDamWheelModelPtr;
 
+/* JERICHO: after a player car is rebuilt (respawn/repair), put its hubcap
+ * appearance back: clear the lost-hubcap bits and re-bind the imported hubcap
+ * CLUT. See the definition in cars.c. */
+extern void CarReapplyHubcapState(int slot);
+
 /* JERICHO: apply the source-city set remap to one wheel model and collapse it to
  * the four rim quads the engine draws. Factored out of MangleWheelModels so an
  * IMPORTED wheel (cars.h/models.c) goes through the exact same transform as the
