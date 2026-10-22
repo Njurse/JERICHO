@@ -58,6 +58,9 @@ extern MODEL *gDamWheelModelPtr;
  * appearance back: clear the lost-hubcap bits and re-bind the imported hubcap
  * CLUT. See the definition in cars.c. */
 extern void CarReapplyHubcapState(int slot);
+/* JERICHO: apply an OWNER's hubcap state to a car rebuilt for a remote player.
+ * `lost` is the low nibble of the owner's ap.flags (bit N = wheel N lost its hubcap). */
+extern void CarApplyHubcapState(int slot, int lost);
 
 /* JERICHO: apply the source-city set remap to one wheel model and collapse it to
  * the four rim quads the engine draws. Factored out of MangleWheelModels so an

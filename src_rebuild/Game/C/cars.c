@@ -615,6 +615,15 @@ int CarImportReclaimRows(void)
  * hubcap model pointer if it went missing. */
 void CarReapplyHubcapState(int slot)
 {
+	CarApplyHubcapState(slot, 0);
+}
+
+/* JERICHO: set the four "hubcap lost" bits and re-bind the imported hubcap CLUT /
+ * model. The owner of a car is the authority for this appearance state: mp sends the
+ * low nibble of ap.flags in the carstate and every peer applies it here, so a hubcap
+ * knocked off on one machine is missing on all of them. */
+void CarApplyHubcapState(int slot, int lost)
+{
 	CAR_DATA* cp;
 	int city, v, k, n;
 	unsigned char sets[8];
@@ -625,7 +634,7 @@ void CarReapplyHubcapState(int slot)
 	cp = &car_data[slot];
 
 	/* bits 0..3 are the four wheels' "hubcap lost" flags */
-	cp->ap.flags &= ~0x0f;
+	cp->ap.flags = (u_char)((cp->ap.flags & ~0x0f) | (lost & 0x0f));
 
 	city = GetCarModelSourceCity(cp->ap.model);
 
@@ -638,9 +647,6 @@ void CarReapplyHubcapState(int slot)
 			for (k = 0; k < n; k++)
 				CarImportSetWheelPaletteClut(city, sets[k], sWheelPalClut[city][1], 1);
 		}
-
-		printInfo("cross-city: %s slot %d hubcap palette re-applied (clut %04x)\n",
-			LevelNames[city], slot, sWheelPalClut[city][1]);
 	}
 
 	if (gHubcapModelPtr == NULL)
