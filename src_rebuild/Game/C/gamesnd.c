@@ -172,7 +172,7 @@ static int ImportedCarHasSiren(int index)
 		if (!car_slot_imported[slot])
 			continue;
 
-		if (slot != index && model != index)
+		if (slot != index)
 			continue;
 
 		if (!GetCarImportSiren(city, model) || car_slot_sample[slot] < 0)

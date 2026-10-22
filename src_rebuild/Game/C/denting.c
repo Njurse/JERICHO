@@ -21,6 +21,24 @@
 /* A working vertex this far from its clean position is not a dent, it is corruption
  * (the same threshold the STRETCHED VERTEX canary in cars.c uses). */
 #define JER_STRETCH_VERT	2000
+
+/* JERICHO: the last collision point PER CAR. The stock fallback below must not
+ * use gCrumpleLastCollisionPoint: that is one global last-hit point, shared by
+ * every car and overwritten by every scrape, so a car dented while another was
+ * hit rebuilt its mesh around a different point each pass (the jagged
+ * oscillation). Snapshot the point at collision time and keep it until the car
+ * is rebuilt. */
+VECTOR gJerFallbackImpactPoint[MAX_CARS];
+int gJerFallbackImpactActive[MAX_CARS];
+
+void JerRecordFallbackImpact(CAR_DATA* cp, const VECTOR* point)
+{
+	if (cp == NULL || point == NULL || cp->id < 0 || cp->id >= MAX_CARS)
+		return;
+
+	gJerFallbackImpactPoint[cp->id] = *point;
+	gJerFallbackImpactActive[cp->id] = 1;
+}
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
 
@@ -73,6 +91,172 @@ void InitialiseDenting(void)
 	InitHubcap();
 }
 
+/* Does this model have a real baked damaged mesh? The D1 bake's damaged block
+ * carries the clean polys and a COPY of the clean vertices, so num_polys is
+ * not a usable test - comparing the vertices is. Cached per (clean, damaged)
+ * pointer because car-model slots are reassigned at runtime. */
+static int JerDamagedModelHasBakedDelta(int model)
+{
+	static MODEL* sClean[MAX_CAR_RESIDENT_MODELS];
+	static MODEL* sDam[MAX_CAR_RESIDENT_MODELS];
+	static int sResult[MAX_CAR_RESIDENT_MODELS];
+	MODEL* clean;
+	MODEL* dam;
+	SVECTOR* cv;
+	SVECTOR* dv;
+	int n, i;
+
+	if (model < 0 || model >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	clean = gCarCleanModelPtr[model];
+	dam = gCarDamModelPtr[model];
+
+	if (clean == NULL || dam == NULL)
+		return 0;
+
+	if (sClean[model] == clean && sDam[model] == dam)
+		return sResult[model];
+
+	sResult[model] = 0;
+	sClean[model] = clean;
+	sDam[model] = dam;
+
+	n = MIN(clean->num_vertices, dam->num_vertices);
+	cv = GET_MODEL_DATA(SVECTOR, clean, vertices);
+	dv = GET_MODEL_DATA(SVECTOR, dam, vertices);
+
+	if (cv == NULL || dv == NULL || n <= 0)
+		return 0;
+
+	for (i = 0; i < n; i++)
+	{
+		if (cv[i].vx != dv[i].vx || cv[i].vy != dv[i].vy || cv[i].vz != dv[i].vz)
+		{
+			sResult[model] = 1;
+			break;
+		}
+	}
+
+	return sResult[model];
+}
+
+/* JERICHO: a runtime dent for cars whose damaged model carries no baked
+ * deformation. The D1 bake's damaged block has the clean vertices but no
+ * polygons, so the stock clean->damaged blend below is a no-op for those cars
+ * (and it is skipped entirely when gCarDamModelPtr is NULL). Deform the clean
+ * mesh toward the last collision point instead: nearby vertices cave inward
+ * with a radial falloff, bounded by a fraction of the car's own size. CRUMPLE,
+ * when active, sets the dent-pass `handled` flag and this never runs. */
+static void JerRuntimeDentFallback(CAR_DATA* cp, MODEL* clean, const VECTOR* worldPoint)
+{
+	SVECTOR* cleanV;
+	SVECTOR* out;
+	const VECTOR* impact;
+	int n, i;
+	int lx, ly, lz;
+	int minX, minY, minZ, maxX, maxY, maxZ;
+	int half, radius, radius2, cap, strength;
+	int dx, dy, dz, d2, m, falloff, disp;
+
+	cleanV = GET_MODEL_DATA(SVECTOR, clean, vertices);
+	if (cleanV == NULL)
+		return;
+
+	n = MIN(clean->num_vertices, MAX_DENTING_VERTS);
+	if (n <= 0)
+		return;
+
+	out = gTempCarVertDump[cp->id];
+
+	/* cumulative damage is the only reliable strength an imported car has:
+	 * its zone table is not the host model's, so do not read tempDamage. */
+	strength = cp->totalDamage >> 4;
+	if (strength > 4096)
+		strength = 4096;
+
+	/* world -> car-local: subtract the translation, then the transpose rotation */
+	impact = worldPoint;
+	if (cp->id >= 0 && cp->id < MAX_CARS && gJerFallbackImpactActive[cp->id])
+		impact = &gJerFallbackImpactPoint[cp->id];
+
+	dx = impact->vx - cp->hd.where.t[0];
+	dy = impact->vy - cp->hd.where.t[1];
+	dz = impact->vz - cp->hd.where.t[2];
+
+	lx = FIXEDH(dx * cp->hd.where.m[0][0] + dy * cp->hd.where.m[1][0] + dz * cp->hd.where.m[2][0]);
+	ly = FIXEDH(dx * cp->hd.where.m[0][1] + dy * cp->hd.where.m[1][1] + dz * cp->hd.where.m[2][1]);
+	lz = FIXEDH(dx * cp->hd.where.m[0][2] + dy * cp->hd.where.m[1][2] + dz * cp->hd.where.m[2][2]);
+
+	minX = maxX = cleanV[0].vx;
+	minY = maxY = cleanV[0].vy;
+	minZ = maxZ = cleanV[0].vz;
+
+	for (i = 1; i < n; i++)
+	{
+		if (cleanV[i].vx < minX) minX = cleanV[i].vx;
+		else if (cleanV[i].vx > maxX) maxX = cleanV[i].vx;
+		if (cleanV[i].vy < minY) minY = cleanV[i].vy;
+		else if (cleanV[i].vy > maxY) maxY = cleanV[i].vy;
+		if (cleanV[i].vz < minZ) minZ = cleanV[i].vz;
+		else if (cleanV[i].vz > maxZ) maxZ = cleanV[i].vz;
+	}
+
+	half = MAX(MAX(maxX - minX, maxZ - minZ) / 2, 1);
+	radius = MAX(half / 2, 32);
+	radius2 = radius * radius;
+	cap = MAX(half / 6, 16);
+
+	for (i = 0; i < n; i++)
+	{
+		/* repaired / no damage: leave the clean mesh, exactly as the stock
+		 * blend would with zero weights. */
+		if (strength <= 0)
+		{
+			out[i] = cleanV[i];
+			continue;
+		}
+
+		dx = lx - cleanV[i].vx;
+		dy = ly - cleanV[i].vy;
+		dz = lz - cleanV[i].vz;
+		d2 = dx * dx + dy * dy + dz * dz;
+
+		if (d2 > radius2)
+		{
+			out[i] = cleanV[i];
+			continue;
+		}
+
+		/* max-component magnitude, to keep the direction bounded without a
+		 * square root (the same conservative approximation CRUMPLE uses for
+		 * a degenerate normal). */
+		m = dx < 0 ? -dx : dx;
+		if (dy < 0) { if (-dy > m) m = -dy; }
+		else if (dy > m) m = dy;
+		if (dz < 0) { if (-dz > m) m = -dz; }
+		else if (dz > m) m = dz;
+
+		if (m == 0)
+		{
+			out[i] = cleanV[i];
+			continue;
+		}
+
+		falloff = 4096 - (d2 * 4096 / radius2);
+		disp = (cap * strength / 4096) * falloff / 4096;
+
+		if (disp < 0)
+			disp = 0;
+		else if (disp > cap)
+			disp = cap;
+
+		out[i].vx = cleanV[i].vx + (dx * disp) / m;
+		out[i].vy = cleanV[i].vy + (dy * disp) / m;
+		out[i].vz = cleanV[i].vz + (dz * disp) / m;
+	}
+}
+
 // [D] [T]
 
 void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
@@ -86,6 +270,7 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 	MODEL *pCleanModel;
 	int model;
 	int Poly;
+	int baked;
 
 	short tempDamage[256];
 	memset((u_char*)tempDamage, 0, sizeof(tempDamage));
@@ -97,6 +282,7 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 	cp->ap.qw = 0;
 
 	pCleanModel = gCarCleanModelPtr[model];
+	baked = JerDamagedModelHasBakedDelta(model);
 
 	// collect vertices from zones
 	if (pCleanModel != NULL) 
@@ -137,19 +323,27 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 		jerArgs.handled = 0;
 		jer_fire(JER_EVENT_DENT_PASS, &jerArgs);
 
-		// no module owns the deformation (crumple off): stock REDRIVER2 blend
-		// of the clean and damaged meshes, weighted by the per-vertex dent
-		if (jerArgs.handled == 0 && gCarDamModelPtr[model] != NULL)
+		// no module owns the deformation (crumple off): a real baked damaged
+		// model keeps the stock blend; a missing or synthetic one (the D1 bake
+		// writes a damaged block with no polys) gets the runtime fallback.
+		if (jerArgs.handled == 0)
 		{
-			SVECTOR* DamVertPtr = GET_MODEL_DATA(SVECTOR, gCarDamModelPtr[model], vertices);
-			SVECTOR* CleanVertPtr = GET_MODEL_DATA(SVECTOR, pCleanModel, vertices);
-			int numVerts = MIN(pCleanModel->num_vertices, MAX_DENTING_VERTS);
-
-			for (VertNo = 0; VertNo < numVerts; VertNo++, DamVertPtr++, CleanVertPtr++)
+			if (baked)
 			{
-				gTempCarVertDump[cp->id][VertNo].vx = CleanVertPtr->vx + FIXEDH((DamVertPtr->vx - CleanVertPtr->vx) * tempDamage[VertNo] / 2);
-				gTempCarVertDump[cp->id][VertNo].vy = CleanVertPtr->vy + FIXEDH((DamVertPtr->vy - CleanVertPtr->vy) * tempDamage[VertNo] / 2);
-				gTempCarVertDump[cp->id][VertNo].vz = CleanVertPtr->vz + FIXEDH((DamVertPtr->vz - CleanVertPtr->vz) * tempDamage[VertNo] / 2);
+				SVECTOR* DamVertPtr = GET_MODEL_DATA(SVECTOR, gCarDamModelPtr[model], vertices);
+				SVECTOR* CleanVertPtr = GET_MODEL_DATA(SVECTOR, pCleanModel, vertices);
+				int numVerts = MIN(pCleanModel->num_vertices, MAX_DENTING_VERTS);
+
+				for (VertNo = 0; VertNo < numVerts; VertNo++, DamVertPtr++, CleanVertPtr++)
+				{
+					gTempCarVertDump[cp->id][VertNo].vx = CleanVertPtr->vx + FIXEDH((DamVertPtr->vx - CleanVertPtr->vx) * tempDamage[VertNo] / 2);
+					gTempCarVertDump[cp->id][VertNo].vy = CleanVertPtr->vy + FIXEDH((DamVertPtr->vy - CleanVertPtr->vy) * tempDamage[VertNo] / 2);
+					gTempCarVertDump[cp->id][VertNo].vz = CleanVertPtr->vz + FIXEDH((DamVertPtr->vz - CleanVertPtr->vz) * tempDamage[VertNo] / 2);
+				}
+			}
+			else
+			{
+				JerRuntimeDentFallback(cp, pCleanModel, &collisionpoint);
 			}
 		}
 
@@ -242,6 +436,9 @@ void CreateDentableCar(CAR_DATA *cp)
 	SVECTOR *src;
 	int vcount;
 	int model;
+
+	if (cp->id >= 0 && cp->id < MAX_CARS)
+		gJerFallbackImpactActive[cp->id] = 0;
 
 	// JERICHO-HOOK: reset per-car damage state -> modules (crumple package);
 	// zone damage below is preserved when gDontResetCarDamage is set,

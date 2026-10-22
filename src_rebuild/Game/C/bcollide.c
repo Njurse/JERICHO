@@ -15,6 +15,7 @@
 #include "handling.h"
 #include "camera.h"
 #include "objanim.h"
+#include "denting.h"	// JERICHO: per-car fallback impact point
 
 #include "system.h"
 #include "cutscene.h"
@@ -1032,6 +1033,7 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 					jerArgs.wheelMask = 0xF;
 
 					jer_fire(JER_EVENT_COLLISION, &jerArgs);
+					JerRecordFallbackImpact(cp, &collisionResult.hit);
 				}
 
 				displacement = FIXEDH(lever[0] * collisionResult.surfNormal.vx + lever[1] * collisionResult.surfNormal.vy + lever[2] * collisionResult.surfNormal.vz);

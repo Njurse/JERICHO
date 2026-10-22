@@ -7,6 +7,7 @@ extern void LoadDenting(int level); // 0x0003B1F0
 
 extern void DentCar(CAR_DATA *cp); // 0x0003A310
 extern void CreateDentableCar(CAR_DATA *cp); // 0x0003A6E4
+extern void JerRecordFallbackImpact(CAR_DATA* cp, const VECTOR* point);
 
 extern void InitHubcap(); // 0x0003A874
 extern void HandlePlayerHubcaps(int playerId);

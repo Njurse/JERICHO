@@ -195,7 +195,7 @@ static int sClutClampCount;
 
 // JERICHO: the one reserved VRAM CLUT id for each city's D2 wheel palette.
 // Declared before CarPalRowClear, which resets it per level.
-static u_short sWheelPalClut[CITY_COUNT][3];	// [city][0 = tyre/whole wheel, 1 = hubcap, 2 = fast]
+static u_short sWheelPalClut[CITY_COUNT][4];	// [city][0 = tyre/whole wheel, 1 = hubcap, 2 = fast, 3 = damaged]
 
 static void CarPalRowNote(int row, int city)
 {
@@ -275,6 +275,7 @@ static signed char sSetRow[CITY_COUNT][128];	// city -> set -> civ_clut row, -1 
 #define CAR_IMPORT_WHEEL_PAL_SET 127
 #define CAR_IMPORT_WHEEL_HUB_PAL_SET 126	// the D2 hubcap (WHLBOTH) row, when it differs from the tyre's
 #define CAR_IMPORT_WHEEL_FAST_PAL_SET 125	// the tyre row with the FAST sprite's background cleared
+#define CAR_IMPORT_WHEEL_DAM_PAL_SET 124	// the damaged wheel's own face row (MIAMI: 5, clean is 6)
 
 // JERICHO: is civ_clut row `row` already owned by some (city, set)?
 static int CarRowInUse(int row)
@@ -385,7 +386,7 @@ int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 	if (city < 0 || city >= CITY_COUNT || colors == NULL)
 		return 0;
 
-	if (hub < 0 || hub > 2)
+	if (hub < 0 || hub > 3)
 		hub = 1;
 
 	// JERICHO: the VRAM CLUT id is cached per (city, hub) for the whole LEVEL, and a row
@@ -400,6 +401,7 @@ int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 		return sWheelPalClut[city][hub];
 
 	row = CarAllocSetRow(hub == 2 ? CAR_IMPORT_WHEEL_FAST_PAL_SET :
+		hub == 3 ? CAR_IMPORT_WHEEL_DAM_PAL_SET :
 		hub ? CAR_IMPORT_WHEEL_HUB_PAL_SET : CAR_IMPORT_WHEEL_PAL_SET, city);
 
 	if (row < 0)
@@ -431,7 +433,7 @@ int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 	sWheelPalClut[city][hub] = clut;
 
 	printInfo("cross-city: %s wheel %s palette reserved in civ_clut row %d (clut %04x)\n",
-		LevelNames[city], hub == 2 ? "fast tyre" : hub ? "hubcap" : "tyre", row, clut);
+		LevelNames[city], hub == 3 ? "damaged tyre" : hub == 2 ? "fast tyre" : hub ? "hubcap" : "tyre", row, clut);
 
 	return clut;
 }
@@ -568,7 +570,7 @@ int CarImportReclaimRows(void)
 				sCivClutRowWriters[row] = 0;
 				sBakeRowN[row] = 0;
 
-				// This includes the wheel palette rows (sets 125..127). Their ROW mapping
+				// This includes the wheel palette rows (sets 124..127). Their ROW mapping
 				// and contents go back, but sWheelPalClut[city][hub] deliberately stays
 				// cached: see CarImportReserveWheelPalette for why that VRAM id survives a
 				// switch without leaking a CLUT row.

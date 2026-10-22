@@ -1815,6 +1815,60 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		wt->reservedClut = clut;
 }
 
+// The damaged wheel's face names its OWN CLUT row, which need not be the clean
+// tyre's: MIAMI's DAMWHEEL is row 5 while the clean wheel is row 6. The clean
+// palette reservation sets every variant that names the page to row 6, so the
+// damaged wheel needs its own row or it draws the clean wheel's colours.
+void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow)
+{
+	CAR_IMPORT* imp;
+	JER_WHEEL_TEX* wt;
+	unsigned short row[16];
+	int npal, clut;
+
+	if (city < 0 || city >= CITY_COUNT || page == NULL || size < 4)
+		return;
+
+	/* Driver 1 imports only, the same rule as the fast wheel. */
+	if (city < CITY_D2_COUNT)
+		return;
+
+	imp = &gCarImports[city];
+	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED];
+	npal = *(const int*)page;
+
+	if (wt->present && imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] > 0 &&
+		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] == sourceSet &&
+		npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
+		wt->clut >= 0 && wt->clut < npal)
+	{
+		memcpy(row, page + 4 + wt->clut * 32, sizeof(row));
+		clut = CarImportReserveWheelPalette(city, 3, (const unsigned char*)row);
+
+		if (clut != 0)
+			wt->reservedClut = clut;
+
+		printInfo("cross-city: %s damaged wheel palette row %d reserved (clut %04x)\n",
+			LevelNames[city], wt->clut, clut);
+		return;
+	}
+
+	/* No usable DAMWHEEL metadata: use the tyre row already derived for the
+	 * clean wheel, as the fast-wheel fallback does. */
+	if (npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
+		tyreRow >= 0 && tyreRow < npal)
+	{
+		memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
+		clut = CarImportReserveWheelPalette(city, 3, (const unsigned char*)row);
+
+		if (clut != 0)
+			wt->reservedClut = clut;
+
+		printInfo("cross-city: %s damaged wheel palette fell back to tyre row %d (clut %04x)\n",
+			LevelNames[city], tyreRow, clut);
+	}
+}
+
 // A texture-only copy of a Driver 2 named wheel model. The renderer uses the
 // host wheel MESH and this model only for its texture records and UVs, so the
 // vertices and normals are deliberately dropped; the poly stream is copied and
