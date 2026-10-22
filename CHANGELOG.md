@@ -4,7 +4,7 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
-## v0.11
+## v0.11.0
 
 **THE JERICHO MOD STORE / MOD REPO IS NOW AVAILABLE.**
 
