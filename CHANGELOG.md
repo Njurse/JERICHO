@@ -19,6 +19,7 @@ is in [changelog.txt](changelog.txt).
 ### Changes
 
 - Releases now build the core mods (`mp`, `carhacks`, `crumple`, `d1cars`) from the latest commit of their own repositories, and an update replaces them: only `CONFIG/`, `config.ini`, `DRIVER/`, `DRIVER2/` and modules you added yourself are preserved. A download is never behind a mod fix.
+- Beta Miami is registered automatically from the baked file, after the seven retail Driver 1 cities: a bake already on disk appears without editing `cities.ini`. An older bake still gets the re-bake prompt.
 - Driver 1 car data is now baked at BAKE_VERSION 8: it is written INSIDE carhacks (`JERICHO/MODS/carhacks/D1CARS/`, where the game now reads it) instead of `DRIVER/D1CARS/`, and the Euro-43 beta is read from the demo's own `EURO43/LEVELS/MIAMI.LEV`. The palette carries only the rows a city's models actually name, an older bake is rebuilt, and the Beta Miami cop/buick are pinned to models 8 and 3. Re-run `BAKE_D1_CARS` (or `.sh`) once after updating.
 - `BAKE_D1_CARS` now bakes Beta Miami only when the Euro Demo 43 is present (and says so when it finds it); without `EURO43/`, the seven retail Driver 1 cities still bake instead of the script stopping at Beta Miami.
 - Crumple: lighter impacts dent sooner and hard hits cave deeper; the wheels now lean and steer more while translating less, and wheel damage resists more. Cars without a baked damaged model get a stable per-car runtime dent fallback.

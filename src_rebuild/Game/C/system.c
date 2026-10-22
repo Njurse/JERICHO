@@ -82,6 +82,12 @@ static char JerCustomName[CITY_CUSTOM_MAX][JER_CUSTOM_NAME_LEN];
 static char JerCustomLev[CITY_CUSTOM_MAX][JER_CUSTOM_PATH_LEN];
 static char JerCustomLcf[CITY_CUSTOM_MAX][JER_CUSTOM_PATH_LEN];
 
+/* Which bank rows were registered by a MODULE rather than by a city_N key.
+ * A module bank is not in cities.ini, so the config refresh must not read the
+ * missing key as "the bank is gone": it re-probes the file and keeps the row
+ * while it is there. A city_N key for the same slot takes ownership instead. */
+static signed char JerCityModuleOwned[CITY_CUSTOM_MAX];
+
 /* One past the highest bank row ever assigned (-1 = none). The sweep bound: a hole
  * below it is still a hole. */
 static int JerCustomHigh = -1;
@@ -303,7 +309,10 @@ int JerCityRegister(const char* name, const char* levFile, const char* lcfFile)
 			int city = JER_CITY_STOCK_COUNT + i;
 
 			if (LevelNames[city] != NULL && strcmp(LevelNames[city], name) == 0)
+			{
 				JerCitySetRow(city, NULL, NULL, NULL);
+				JerCityModuleOwned[i] = 0;
+			}
 		}
 
 		return -1;
@@ -316,13 +325,25 @@ int JerCityRegister(const char* name, const char* levFile, const char* lcfFile)
 		int city = JER_CITY_STOCK_COUNT + i;
 
 		if (LevelNames[city] != NULL && strcmp(LevelNames[city], name) == 0)
-			return JerRegisterCitySlot(i, name, levFile, lcfFile);
+		{
+			int r = JerRegisterCitySlot(i, name, levFile, lcfFile);
+
+			if (r >= 0)
+				JerCityModuleOwned[i] = 1;
+			return r;
+		}
 	}
 
 	for (i = 0; i < CITY_CUSTOM_MAX; i++)
 	{
 		if (!JerCityRegistered(JER_CITY_STOCK_COUNT + i))
-			return JerRegisterCitySlot(i, name, levFile, lcfFile);
+		{
+			int r = JerRegisterCitySlot(i, name, levFile, lcfFile);
+
+			if (r >= 0)
+				JerCityModuleOwned[i] = 1;
+			return r;
+		}
 	}
 
 	printInfo("city registry: no free row for bank %s - %d banks are the maximum\n",
@@ -427,6 +448,23 @@ static int JerCityApplyKey(int slot)
 
 	if (value == NULL || value[0] == 0)
 	{
+		/* A MODULE registered this row (carhacks' Beta Miami); it is not in
+		 * cities.ini. Re-probe the file and keep the row while it is there - a
+		 * missing key is not a missing bank. A city_N key below takes ownership
+		 * if one exists. */
+		if (JerCityModuleOwned[slot])
+		{
+			r = JerRegisterCitySlot(slot, JerCityName(city),
+				JerCityFile(city, JER_CITY_FILE_LEVEL),
+				JerCityFile(city, JER_CITY_FILE_COSMETIC));
+
+			if (r < 0)
+				JerCityModuleOwned[slot] = 0;
+
+			JerKeyState[slot] = (r >= 0) ? 1 : 0;
+			return (r >= 0);
+		}
+
 		if (was)
 		{
 			printInfo("city registry: %s (city %d) is no longer in cities.ini - removing it\n",
@@ -437,6 +475,9 @@ static int JerCityApplyKey(int slot)
 		JerKeyState[slot] = 0;
 		return 0;
 	}
+
+	/* a city_N key is authoritative for this row */
+	JerCityModuleOwned[slot] = 0;
 
 	if (JerCityParseEntry(value, fields) < 2)
 	{

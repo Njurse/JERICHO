@@ -115,6 +115,13 @@ int JerCityPath(int city, char* out, int outSize, int kind, int arenaVariant);
  * presence probe, so it is exactly the file the loader will later read. */
 int JerCityFileExists(int city, int kind);
 
+/* Register a bank from a MODULE (path relative to the game's data folder, the
+ * same spelling a city_N key uses). The row is module-owned: a later config
+ * refresh re-probes its file instead of clearing it for having no city_N key.
+ * A city_N key for that slot takes ownership instead. Answers the city index,
+ * or -1 when the file is not on disk / no row is free. */
+int JerCityRegister(const char* name, const char* levFile, const char* lcfFile);
+
 /* Read JERICHO/CONFIG/cities.ini and register every bank whose files are present.
  * Idempotent; called once at boot from JerCityRegistryBoot, and safe to call from
  * a module. Answers the number of registered banks. */

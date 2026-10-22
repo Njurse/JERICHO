@@ -87,7 +87,9 @@ int JerCityFileExists(int city, int kind);
 /* Register a bank from a module (normally the config does it). Answers its city
  * index - the first free bank row - or -1 when there is no free row or the .LEV is
  * not on disk. The strings are copied. A NULL `levFile` unregisters the bank of
- * that name. */
+ * that name. A module-registered row is module-owned: it has no `city_N` key, and
+ * the config refresh re-probes its file instead of clearing it. A `city_N` key for
+ * the same slot takes ownership instead. */
 int JerCityRegister(const char* name, const char* levFile, const char* lcfFile);
 
 /* Re-read the config and re-probe the disk. Called by the engine before every car

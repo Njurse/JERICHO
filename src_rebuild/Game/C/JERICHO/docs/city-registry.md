@@ -58,6 +58,16 @@ the registry's own presence probe all go through it.
   that is not registered has NULL table entries, and `JerCityPath` refuses it, so
   no `NULL` can reach a `%s`.
 
+## Module-owned banks
+
+A module may register a bank itself with `JerCityRegister(...)`. carhacks does
+this for Beta Miami (`JERICHO/MODS/carhacks/D1CARS/BETAMIAMI.LEV`), so a bake is
+offered automatically without a `cities.ini` edit. Such a row is **module-owned**:
+it has no `city_N` key, and the config refresh re-probes its file instead of
+clearing it. A `city_N` key for the same slot takes ownership instead, and
+`JerCityRegister(name, NULL, NULL)` removes a module row. It takes the first free
+bank index, so it appears after the stock eleven cities.
+
 ## What a bank must actually contain
 
 The car-model block is the engine's own `LUMP_CAR_MODELS` layout: a count, then
