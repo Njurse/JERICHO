@@ -197,8 +197,7 @@ int jer_manager_set_enabled(const char* rootDir, const char* id, int enabled)
 }
 
 int jer_manager_move(const char* rootDir, const char* id, int direction)
-{
-	JER_MODLIST_STATE st;
+{	JER_MODLIST_STATE st;
 	int i;
 
 	if (jer_manager_read(rootDir, &st) != 0)
@@ -241,4 +240,109 @@ int jer_manager_move(const char* rootDir, const char* id, int direction)
 	}
 
 	return -1;
+}
+
+/* ------------------------------------------------------------------ */
+/* The multiplayer CORE suite                                          */
+/*                                                                     */
+/* mp, carhacks and d1cars are one product: a session cannot agree on  */
+/* cars without all three, and the tests (and the dedicated server's   */
+/* preconfiguration) assume this order. They are MANDATORY and come    */
+/* first in the load order; everything else is optional and keeps the  */
+/* player's own order after them.                                      */
+/*                                                                     */
+/* The list lives here, not in mod.toml, because the ORDER is a product */
+/* decision and the engine must be able to enforce it even when a      */
+/* modlist.ini is missing (a release ships none).                      */
+/* ------------------------------------------------------------------ */
+
+static const char* const jerCoreOrder[] = { "mp", "carhacks", "d1cars" };
+
+int jer_manager_core_count(void)
+{
+	return (int)(sizeof(jerCoreOrder) / sizeof(jerCoreOrder[0]));
+}
+
+const char* jer_manager_core_id(int i)
+{
+	if (i < 0 || i >= jer_manager_core_count())
+		return NULL;
+
+	return jerCoreOrder[i];
+}
+
+static int jerManagerCoreIndex(const char* id)
+{
+	int i;
+
+	for (i = 0; i < jer_manager_core_count(); i++)
+	{
+		if (strcmp(jerCoreOrder[i], id) == 0)
+			return i;
+	}
+
+	return -1;
+}
+
+/* Rewrite modlist.ini with the core suite first and enabled, preserving the
+ * relative order of every other entry. Returns 1 when the file changed, 0 when it
+ * was already right (or there is no file to normalise), -1 on a write error.
+ *
+ * No file is CREATED: a release ships without one, where every module falls back to
+ * its mod.toml default. Writing one there would pin every module at once and change
+ * what an install runs. The activation pass still orders the core suite in memory. */
+int jer_manager_normalize_core(const char* rootDir)
+{
+	JER_MODLIST_STATE st, out;
+	int i, c, n = 0, changed = 0;
+
+	if (rootDir == NULL || jer_manager_read(rootDir, &st) != 0 || st.count <= 0)
+		return 0;
+
+	memset(&out, 0, sizeof(out));
+
+	for (c = 0; c < jer_manager_core_count(); c++)
+	{
+		for (i = 0; i < st.count; i++)
+		{
+			if (strcmp(st.items[i].id, jerCoreOrder[c]) != 0)
+				continue;
+
+			snprintf(out.items[n].id, sizeof(out.items[n].id), "%s", st.items[i].id);
+			out.items[n].enabled = 1;
+			n++;
+			break;
+		}
+	}
+
+	for (i = 0; i < st.count; i++)
+	{
+		if (jerManagerCoreIndex(st.items[i].id) >= 0)
+			continue;
+
+		out.items[n] = st.items[i];
+		n++;
+	}
+
+	out.count = n;
+
+	if (n != st.count)
+		changed = 1;
+	else
+	{
+		for (i = 0; i < n; i++)
+		{
+			if (out.items[i].enabled != st.items[i].enabled ||
+				strcmp(out.items[i].id, st.items[i].id) != 0)
+			{
+				changed = 1;
+				break;
+			}
+		}
+	}
+
+	if (!changed)
+		return 0;
+
+	return (jer_manager_write(rootDir, &out) == 0) ? 1 : -1;
 }

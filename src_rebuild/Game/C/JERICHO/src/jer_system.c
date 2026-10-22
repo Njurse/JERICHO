@@ -688,7 +688,20 @@ static void jerActivateModules(const char* rootDir)
 	 * Resolve the load order: modlist.ini entries first (in file order),
 	 * then any modules not mentioned (enabled by default, in scan
 	 * order). Modules listed with enabled=0 are skipped.
+	 *
+	 * THE CORE SUITE IS NORMALISED FIRST. mp, carhacks and d1cars are one product
+	 * (see jer_manager.c): they are mandatory and first. Rewriting the file here
+	 * means the order survives a later hand edit, and the order the player sees in
+	 * Options -> JERICHO is the order the engine actually uses.
 	 */
+	if (!gDisableAllModules)
+	{
+		int moved = jer_manager_normalize_core(rootDir);
+
+		if (moved > 0)
+			jerLog("[jericho] core modules moved to the front of modlist.ini: mp, carhacks, d1cars\n");
+	}
+
 	if (jer_manager_read(rootDir, &modlist) != 0)
 	{
 		jerLog("[jericho] warning: could not read %s/%s/modlist.ini — defaulting to all-enabled\n", rootDir, JER_CONFIG_PATH);
@@ -790,6 +803,58 @@ static void jerActivateModules(const char* rootDir)
 				}
 			}
 		}
+	}
+
+	/* MANDATORY CORE, FIRST IN LINE. The suite is enforced in memory as well as in
+	 * modlist.ini: a release ships no modlist, and a player can hand-edit one. An
+	 * installed core module is enabled whether or not the file said so, and it goes
+	 * ahead of every optional module. A core module that is not installed is simply
+	 * absent (d1cars is a separate download); it does not create a phantom entry. */
+	if (!gDisableAllModules)
+	{
+		const char* ordered[JER_MAX_MODULES];
+		int n = 0, c;
+
+		for (c = 0; c < jer_manager_core_count(); c++)
+		{
+			const char* id = jer_manager_core_id(c);
+			JER_MODULE* m = (id != NULL) ? jerFindModule(id) : NULL;
+
+			if (m == NULL || m->entry == NULL)
+				continue;
+
+			if (!m->enabled)
+			{
+				m->enabled = 1;
+				jerLog("[jericho] core module \"%s\" is mandatory - enabled\n", m->id);
+			}
+
+			ordered[n++] = m->id;
+		}
+
+		for (i = 0; i < orderCount; i++)
+		{
+			int core = 0;
+
+			for (c = 0; c < jer_manager_core_count(); c++)
+			{
+				const char* id = jer_manager_core_id(c);
+
+				if (id != NULL && strcmp(order[i], id) == 0)
+				{
+					core = 1;
+					break;
+				}
+			}
+
+			if (!core)
+				ordered[n++] = order[i];
+		}
+
+		orderCount = n;
+
+		for (i = 0; i < orderCount; i++)
+			order[i] = ordered[i];
 	}
 
 	/* activate in order */
