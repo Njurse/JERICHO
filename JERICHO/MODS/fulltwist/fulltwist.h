@@ -23,7 +23,7 @@
 #include "dr2limits.h"		/* MAX_CARS, MAX_CAR_RESIDENT_MODELS */
 
 #define FT_MOD_ID          "fulltwist"
-#define FT_VERSION         "0.3.4"
+#define FT_VERSION         "0.4.0"
 
 /* The impact value at which the tumble rate reaches its configured maximum.
  * Measured scenery impacts sit around 22k (nudge), 78k-114k (ordinary) and
@@ -50,6 +50,15 @@
 
 /* Frames of the extra camera settle-back applied after a tumble ends. */
 #define FT_CAMERA_SNAP_FRAMES   8
+
+/* Body-ground contact hysteresis. A real penetration (pen > 0) enters the
+ * contact; the car keeps it while the lowest hull vertex is still within
+ * FT_BODY_TOUCH_TOL world units of the road. A body resting on the road settles
+ * at pen ~ 0 between steps, so an exact > 0 test would drop the contact (and its
+ * grip) every other frame. FT_BODY_TOUCH_RANGE is the stock 500-unit sanity
+ * limit used by the body probe. */
+#define FT_BODY_TOUCH_TOL       48
+#define FT_BODY_TOUCH_RANGE     500
 
 /* One cached hull per resident model slot. The mesh itself is not stored --
  * only the copied vertices (already placed in the where-local frame) and the
@@ -104,6 +113,8 @@ typedef struct FULLTWIST_CONFIG
 	int carCarLaunch;		/* 0..200 % car-car contact impulse */
 	int carCarTumble;		/* 0..200 % car-car roll/pitch assist */
 	int bodyKick;			/* 0..200 body-landing assist strength */
+	int bodyFriction;		/* 0..100 % body-ground grip (kills the slide) */
+	int bodyHinge;			/* 0..200 % contact-pivot hinge on the body */
 	int scenery3d;		/* 1 = 3D hull/scenery override of the 2D check */
 	int playerOnly;		/* 1 = only player car / cars hit by the player */
 	int debugLog;		/* 1 = recorder lines in the JERICHO log */
@@ -149,6 +160,7 @@ typedef struct FULLTWIST_CAR
 	int upsideFrames;			/* consecutive steps with m[1][1] < 100 */
 	int tumbled;				/* fulltwist has started a tumble on this car */
 	int bodyContact;			/* lowest hull vertex is on the road */
+	int bodyTouching;			/* hull is still resting on the road (hysteresis) */
 	unsigned int bodyContactFrame;	/* frame of the last body-contact impulse */
 	unsigned int wallSnagFrame;	/* frame of the last world-wall snag */
 	int freeSpinFrames;			/* remaining frames of the free-spin state */
@@ -223,6 +235,7 @@ int ftDotLocal(int x, int y, int z, const int* axis);
 void ftHandleCar(CAR_DATA* car, CAR_DATA* other,
 				 const VECTOR* point, const VECTOR* normal,
 				 int hard, int impulseSign);
+void ftBodyFriction(CAR_DATA* cp, const SVECTOR* local);
 
 /* fulltwist_test.c */
 void ftTestTick(CAR_DATA* cp);

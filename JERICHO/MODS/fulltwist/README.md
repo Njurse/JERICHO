@@ -41,8 +41,13 @@ response the engine already computes.
 - Restores a **wall bounce** slider (`wall_bounce`, 100 = stock restitution) in
   place of the old absorb-on-snag path, and scales the stock car-car recoil
   (`car_car_impulse`) so a shunt does not launch traffic.
-- Keeps the **rollover catch** as a tunable for the arcade presets; Free Physics
-  turns it off and lets the car settle where the physics puts it.
+- Keeps the **rollover catch** as a tunable; Free Physics turns it off and
+  lets the car settle where the physics puts it.
+- Grips the **body on the ground** (`body_friction` and `body_hinge`, both
+  100 %): while the lowest hull vertex is on the road, the contact-point slide
+  is turned into a pivot about that point (the car hinges and tumbles over it)
+  and the remainder is removed from the linear velocity, so a car on its roof
+  or side no longer keeps sliding.
 
 ## Where it hooks
 
@@ -122,6 +127,8 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `car_car_launch` | 80 | car-car contact impulse, 0–200 % |
 | `car_car_tumble` | 100 | car-car roll/pitch assist, 0–200 % |
 | `body_kick` | 50 | body-landing assist, 0–200, clamped to the angular clamp |
+| `body_friction` | 100 | 0–100 % of the leftover contact-point slide removed from the body's linear velocity |
+| `body_hinge` | 100 | 0–200 % of the contact-point slide turned into a rotation about the contact |
 | `scenery3d` | 1 | enable the hull/scenery override |
 | `player_only` | 1 | 1 = player car only; traffic keeps the stock physics |
 | `debug_log` | 0 | recorder lines in the JERICHO log |
@@ -131,7 +138,8 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `test_rollover` | 0 | rotate the player 90° about its long axis and shove it |
 | `test_horn` | 0 | fire the horn cannon roll at level start |
 
-The defaults above are the legacy/Arcade values. **Free Physics** sets
+The defaults above are the **Free Physics** values. Free Physics is the only
+shipped preset and sets
 `free_spin=1`, `angular_damping=16`, `cancel_extra_damping=100`,
 `keep_spin_at_rest=1`, `free_spin_window=120`, `hold_camera=1`,
 `camera_snap=75`, `camera_release=1`, `camera_release_av=800000`,
@@ -139,12 +147,14 @@ The defaults above are the legacy/Arcade values. **Free Physics** sets
 `hull_contact=0`,
 `hull_footprint=1`, `scenery_mode=1`, `wall_snag=0`, `wall_bounce=100`,
 `car_car_impulse=50`, `car_car_launch=0`, `car_car_tumble=50`, `body_kick=0`,
+`body_friction=100`, `body_hinge=100`,
 `damping=0`, `rollover_damping=0`, `rollover_catch=0`, `spin_retention=0`,
 `ground_kick=25`, `window=180`, `trip=20`, `launch=40`.
 
-Presets: **Cinematic**, **Arcade**, **Free Physics**, **Off**. Any hand
-adjustment switches the preset to **Custom**. Free Physics is used when the ini
-has no `preset` key and by **Reset to Defaults**.
+Presets: **Free Physics**, **Off**. Free Physics is used when the ini has no
+`preset` key and by **Reset to Defaults**; a legacy `preset = 0` (Cinematic) or
+`preset = 1` (Arcade) is folded into Free Physics on load, so every player gets
+the same tuning. Any hand adjustment switches the preset to **Custom**.
 
 ## Test levers
 
@@ -189,6 +199,7 @@ Turn `debug_log` on and the log carries:
 [fulltwist] free spin car=... damp=... cancel=... extra=... av=(...)
 [fulltwist] tire damp car=... frame=... yawK=... avY=...
 [fulltwist] body contact car=... point=(...) groundY=... vy=... rate=... free=...
+[fulltwist] body friction car=... local=(...) slip=... dv=(...) dw=(...) hinge=... friction=...
 [fulltwist] rollover catch car=... up=... ux=... uz=... catchK=...
 [fulltwist] test rollover rotate car=... frame=... up=... impulse_at=...
 [fulltwist] test rollover impulse car=... frame=... lateral=... rate=...
@@ -209,8 +220,8 @@ with the relevant `test_* = 1` in the ini.
 
 - The engine treats `hd.where.m[1][1] < 100` for ~180 frames as an upside-down
   death (`mission.c`). Free Physics sets `rollover_damping`/`rollover_catch` to
-  0, so a car that comes to rest on its roof can end there; the arcade presets
-  keep the uprighting assist.
+  0, so a car that comes to rest on its roof can end there; the rollover catch
+  keeps the uprighting assist when it is tuned back on.
 - The scenery collision event is fired **after** `bcollide.c` negates
   `collisionResult.hit.vy` (`bcollide.c:942`). The override runs before that
   negation and is read-only; `ftHandleCar` un-negates the event point for

@@ -49,10 +49,11 @@ static void ftLabelPreset(void* ud, char* out, int max)
 
 static int ftCyclePreset(void* ud, int dir)
 {
-	/* Skip Custom: it is the "hand-tuned" state, not a destination. */
+	/* Free Physics is the only shipped preset; Off is the other stop. Custom
+	 * is the hand-tuned state the sliders switch to, never a cycle entry. */
 	static const int cycle[] =
 	{
-		FT_PRESET_CINEMATIC, FT_PRESET_ARCADE, FT_PRESET_FREE_PHYSICS, FT_PRESET_OFF
+		FT_PRESET_FREE_PHYSICS, FT_PRESET_OFF
 	};
 	int i, next = 0;
 
@@ -579,6 +580,36 @@ static int ftAdjBodyKick(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void ftLabelBodyFriction(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Body friction: %d%%", gFullTwist.cfg.bodyFriction);
+}
+
+static int ftAdjBodyFriction(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.bodyFriction = jer_clamp_int(gFullTwist.cfg.bodyFriction + dir * 10, 0, 100);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelBodyHinge(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Body hinge: %d%%", gFullTwist.cfg.bodyHinge);
+}
+
+static int ftAdjBodyHinge(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.bodyHinge = jer_clamp_int(gFullTwist.cfg.bodyHinge + dir * 10, 0, 200);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void ftLabelPlayerOnly(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -785,6 +816,8 @@ static const JER_PAUSE_MENU_ITEM ftPhysicsItems[] =
 	{ NULL, ftLabelCarCarLaunch,    ftAdjCarCarLaunch,    NULL, NULL, 1 },
 	{ NULL, ftLabelCarCarTumble,    ftAdjCarCarTumble,    NULL, NULL, 1 },
 	{ NULL, ftLabelBodyKick,        ftAdjBodyKick,        NULL, NULL, 1 },
+	{ NULL, ftLabelBodyFriction,    ftAdjBodyFriction,    NULL, NULL, 1 },
+	{ NULL, ftLabelBodyHinge,       ftAdjBodyHinge,       NULL, NULL, 1 },
 };
 
 static const JER_PAUSE_MENU ftPhysicsMenu =

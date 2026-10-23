@@ -443,13 +443,26 @@ static int ftOnCarStep(void* ud, void* args)
 		SVECTOR bodyLocal;
 		int groundY;
 		int bodyOnGround = 0;
+		int touching = 0;
 
 		if (hull != NULL && ftHullLowest(hull, cp, &bodyPoint, &groundY, &bodyLocal))
 		{
 			int pen = groundY - bodyPoint.vy;
 			int vy = cp->st.n.linearVelocity[1];
+			int upNow = cp->hd.where.m[1][1];
+			int uprightOnWheels = (ftWheelMask(cp) != 0) && (upNow > 2048);
 
-			bodyOnGround = (pen > 0 && pen < 500 && vy < 0);
+			bodyOnGround = (pen > 0 && pen < FT_BODY_TOUCH_RANGE && vy < 0);
+
+			/* The grip keeps the contact while the hull is still resting on
+			 * the road: a body at rest settles at pen ~ 0, where the strict
+			 * > 0 landing test above would drop it every other step. A car
+			 * that is upright with its wheels down is held by the tires, not
+			 * by the body, so it is not a body contact. */
+			touching = !uprightOnWheels &&
+					   pen < FT_BODY_TOUCH_RANGE &&
+					   (pen > 0 ||
+						(st->bodyTouching && pen > -FT_BODY_TOUCH_TOL));
 
 			if (bodyOnGround && !st->bodyContact)
 			{
@@ -500,13 +513,21 @@ static int ftOnCarStep(void* ud, void* args)
 						groundY, up, vy, pen, rate, roll, pitch, st->freeSpinFrames);
 				}
 			}
+
+			/* Live body-ground grip: continuous, unlike the one-shot landing
+			 * kick above. The contact point is the same lowest hull vertex,
+			 * so the friction's reaction pivots the body about it. */
+			if (touching)
+				ftBodyFriction(cp, &bodyLocal);
 		}
 
+		st->bodyTouching = touching;
 		st->bodyContact = bodyOnGround;
 	}
 	else
 	{
 		st->bodyContact = 0;
+		st->bodyTouching = 0;
 	}
 
 	st->airborne = air;

@@ -34,6 +34,14 @@ is in [changelog.txt](changelog.txt).
   default on); the settle-back lerp is suspended for the tumble.
 - Player-only patch: FULL TWIST now only touches player cars; traffic keeps the
   stock damping, torque and collision response (`player_only`, default on).
+- Free Physics is now the only shipped preset. Legacy `preset = 0` (Cinematic)
+  and `preset = 1` (Arcade) ini values load as Free Physics, so every player
+  gets the same tuning; the preset cycle is Free Physics <-> Off.
+- Body-ground grip: `body_friction` (default 100 %) and `body_hinge` (default
+  100 %) act at the lowest hull vertex while the body is on the road. The hinge
+  turns the contact-point slide into a pivot about the contact, so the car
+  tumbles over the point it snags on, and the friction removes the rest of the
+  slide. This fixes the roof/side body still feeling slidey.
 - Camera snap: `camera_snap` (default 75 %) adds a share of the remaining angle
   per frame for eight frames after a tumble, so the view comes back in quickly.
 - Camera release: `camera_release` (default on) ends the heading hold as soon

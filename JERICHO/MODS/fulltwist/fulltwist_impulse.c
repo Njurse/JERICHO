@@ -167,6 +167,127 @@ void ftHornRoll(CAR_DATA* cp)
 }
 
 /* ------------------------------------------------------------------ */
+/* Body-ground grip                                                    */
+/* ------------------------------------------------------------------ */
+
+static int ftClampRate(int v)
+{
+	if (v > FT_AV_CLAMP)
+		return FT_AV_CLAMP;
+	if (v < -FT_AV_CLAMP)
+		return -FT_AV_CLAMP;
+	return v;
+}
+
+/* Friction at the body's ground contact. The stock 12-point path only removes
+ * a small share of the contact velocity, so a car resting on its roof or side
+ * keeps sliding. This applies a friction impulse at the lowest hull vertex:
+ *
+ *   - `body_hinge` % of the contact-point tangential velocity is turned into
+ *     the rotation -(r x v_c)/|r|^2, which pivots the body about the contact
+ *     (the car hinges/tumbles over the point it is snagging on);
+ *   - `body_friction` % of what is left is removed from the linear velocity,
+ *     which is the grip that kills the slide.
+ *
+ * r is the world lever in model units; v_c is v + w x r in the engine's 12.12
+ * velocity frame, the same form handling.c uses for a point velocity. */
+void ftBodyFriction(CAR_DATA* cp, const SVECTOR* local)
+{
+	FULLTWIST_CONFIG* c;
+	int rx, ry, rz;
+	int rr;
+	int vx, vz;
+	int wx, wy, wz;
+	int cvx, cvz;
+	int slip;
+	int dwx = 0, dwy = 0, dwz = 0;
+	int dvx = 0, dvz = 0;
+
+	if (!gFullTwist.cfg.enabled || cp == NULL || local == NULL)
+		return;
+
+	if (!ftIsTumbleCar(cp))
+		return;
+
+	c = &gFullTwist.cfg;
+
+	/* Player-only patch: traffic keeps the stock ground response. */
+	if (c->playerOnly && !ftIsPlayerCar(cp))
+		return;
+
+	if (c->bodyFriction <= 0 && c->bodyHinge <= 0)
+		return;
+
+	/* Lever from the collision-body centre to the contact, world units. */
+	rx = (int)(((long long)cp->hd.where.m[0][0] * local->vx +
+				(long long)cp->hd.where.m[0][1] * local->vy +
+				(long long)cp->hd.where.m[0][2] * local->vz) >> 12);
+	ry = (int)(((long long)cp->hd.where.m[1][0] * local->vx +
+				(long long)cp->hd.where.m[1][1] * local->vy +
+				(long long)cp->hd.where.m[1][2] * local->vz) >> 12);
+	rz = (int)(((long long)cp->hd.where.m[2][0] * local->vx +
+				(long long)cp->hd.where.m[2][1] * local->vy +
+				(long long)cp->hd.where.m[2][2] * local->vz) >> 12);
+
+	wx = cp->st.n.angularVelocity[0];
+	wy = cp->st.n.angularVelocity[1];
+	wz = cp->st.n.angularVelocity[2];
+	vx = cp->st.n.linearVelocity[0];
+	vz = cp->st.n.linearVelocity[2];
+
+	/* Horizontal contact-point velocity. */
+	cvx = vx + (int)(((long long)wy * rz - (long long)wz * ry) >> 12);
+	cvz = vz + (int)(((long long)wx * ry - (long long)wy * rx) >> 12);
+	slip = ftAbs(cvx) + ftAbs(cvz);
+
+	/* Hinge about the contact. dW = -(r x v_c)/|r|^2 * 4096, the angular
+	 * velocity that cancels the contact-point tangential velocity. The
+	 * vertical part of v_c is left to the stock normal impulse. */
+	rr = rx * rx + ry * ry + rz * rz;
+
+	if (c->bodyHinge > 0 && rr > 0)
+	{
+		long long k = (long long)c->bodyHinge * 4096 / 100;
+		long long crx = -(long long)ry * cvz;
+		long long cry = -((long long)rz * cvx - (long long)rx * cvz);
+		long long crz = (long long)ry * cvx;
+
+		dwx = ftClampRate((int)(crx * k / rr));
+		dwy = ftClampRate((int)(cry * k / rr));
+		dwz = ftClampRate((int)(crz * k / rr));
+
+		cp->st.n.angularVelocity[0] = ftClampRate(cp->st.n.angularVelocity[0] + dwx);
+		cp->st.n.angularVelocity[1] = ftClampRate(cp->st.n.angularVelocity[1] + dwy);
+		cp->st.n.angularVelocity[2] = ftClampRate(cp->st.n.angularVelocity[2] + dwz);
+
+		/* Recompute what is still moving at the contact. */
+		wx = cp->st.n.angularVelocity[0];
+		wy = cp->st.n.angularVelocity[1];
+		wz = cp->st.n.angularVelocity[2];
+
+		cvx = vx + (int)(((long long)wy * rz - (long long)wz * ry) >> 12);
+		cvz = vz + (int)(((long long)wx * ry - (long long)wy * rx) >> 12);
+	}
+
+	/* Linear grip: remove the leftover slide. */
+	if (c->bodyFriction > 0)
+	{
+		dvx = (int)(((long long)cvx * c->bodyFriction) / 100);
+		dvz = (int)(((long long)cvz * c->bodyFriction) / 100);
+
+		cp->st.n.linearVelocity[0] -= dvx;
+		cp->st.n.linearVelocity[2] -= dvz;
+	}
+
+	if (c->debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 5) == 0)
+	{
+		FT_LOG("[fulltwist] body friction car=%d frame=%u local=(%d,%d,%d) slip=%d dv=(%d,%d) dw=(%d,%d,%d) hinge=%d friction=%d\n",
+			(int)cp->id, gFullTwist.frame, local->vx, local->vy, local->vz,
+			slip, dvx, dvz, dwx, dwy, dwz, c->bodyHinge, c->bodyFriction);
+	}
+}
+
+/* ------------------------------------------------------------------ */
 /* Collision response                                                 */
 /* ------------------------------------------------------------------ */
 

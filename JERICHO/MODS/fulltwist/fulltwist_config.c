@@ -3,7 +3,8 @@
  *
  * The ini keys, clamps and presets live here so the event code and the pause
  * menu share one definition. `JERICHO/CONFIG/fulltwist.ini` is the persistent
- * store; the defaults are also the Arcade preset.
+ * store; the defaults are also the Free Physics preset, the only one that
+ * ships.
  */
 
 #include "driver2.h"
@@ -14,22 +15,22 @@
 
 #define FT_DEF_INTENSITY	100
 #define FT_DEF_MIN_IMPACT	72000
-#define FT_DEF_OFF_CENTER	30
+#define FT_DEF_OFF_CENTER	20
 #define FT_DEF_MAX_RATE		4000000
-#define FT_DEF_GROUND_KICK	50
-#define FT_DEF_WALL_SNAG	45
-#define FT_DEF_DAMPING		25
-#define FT_DEF_WINDOW		120
+#define FT_DEF_GROUND_KICK	25
+#define FT_DEF_WALL_SNAG	0
+#define FT_DEF_DAMPING		0
+#define FT_DEF_WINDOW		180
 #define FT_DEF_TRIP			20
-#define FT_DEF_LAUNCH		80
-#define FT_DEF_ROLLOVER_DAMPING	45
-#define FT_DEF_ROLLOVER_CATCH	50
-#define FT_DEF_SPIN_RETENTION	50
-#define FT_DEF_FREE_SPIN		0
-#define FT_DEF_ANGULAR_DAMPING	128
-#define FT_DEF_CANCEL_EXTRA		0
-#define FT_DEF_KEEP_SPIN		0
-#define FT_DEF_FREE_SPIN_WINDOW	90
+#define FT_DEF_LAUNCH		40
+#define FT_DEF_ROLLOVER_DAMPING	0
+#define FT_DEF_ROLLOVER_CATCH	0
+#define FT_DEF_SPIN_RETENTION	0
+#define FT_DEF_FREE_SPIN		1
+#define FT_DEF_ANGULAR_DAMPING	16
+#define FT_DEF_CANCEL_EXTRA		100
+#define FT_DEF_KEEP_SPIN		1
+#define FT_DEF_FREE_SPIN_WINDOW	120
 #define FT_DEF_HOLD_CAMERA		1
 #define FT_DEF_CAMERA_SNAP		75
 #define FT_DEF_CAMERA_RELEASE	1
@@ -38,12 +39,15 @@
 #define FT_DEF_HORN_ROLL_RATE	3000000
 #define FT_DEF_HORN_ROLL_LAUNCH	15000
 #define FT_DEF_HULL_CONTACT		0
-#define FT_DEF_HULL_FOOTPRINT	0
-#define FT_DEF_SCENERY_MODE		0
-#define FT_DEF_WALL_BOUNCE		0
-#define FT_DEF_CAR_CAR_IMPULSE	100
-#define FT_DEF_CAR_CAR_TUMBLE	100
-#define FT_DEF_BODY_KICK		FT_DEF_GROUND_KICK
+#define FT_DEF_HULL_FOOTPRINT	1
+#define FT_DEF_SCENERY_MODE		1
+#define FT_DEF_WALL_BOUNCE		100
+#define FT_DEF_CAR_CAR_IMPULSE	50
+#define FT_DEF_CAR_CAR_LAUNCH	0
+#define FT_DEF_CAR_CAR_TUMBLE	50
+#define FT_DEF_BODY_KICK		0
+#define FT_DEF_BODY_FRICTION	100
+#define FT_DEF_BODY_HINGE		100
 
 void ftClampConfig(void)
 {
@@ -83,6 +87,8 @@ void ftClampConfig(void)
 	c->carCarLaunch = jer_clamp_int(c->carCarLaunch, 0, 200);
 	c->carCarTumble = jer_clamp_int(c->carCarTumble, 0, 200);
 	c->bodyKick = jer_clamp_int(c->bodyKick, 0, 200);
+	c->bodyFriction = jer_clamp_int(c->bodyFriction, 0, 100);
+	c->bodyHinge = jer_clamp_int(c->bodyHinge, 0, 200);
 	c->scenery3d = c->scenery3d ? 1 : 0;
 	c->playerOnly = c->playerOnly ? 1 : 0;
 	c->debugLog = c->debugLog ? 1 : 0;
@@ -130,9 +136,11 @@ void ftLoadConfig(void)
 	c->sceneryMode = jer_config_get_bool(FT_MOD_ID, "scenery_mode", FT_DEF_SCENERY_MODE);
 	c->wallBounce = jer_config_get_int(FT_MOD_ID, "wall_bounce", FT_DEF_WALL_BOUNCE);
 	c->carCarImpulse = jer_config_get_int(FT_MOD_ID, "car_car_impulse", FT_DEF_CAR_CAR_IMPULSE);
-	c->carCarLaunch = jer_config_get_int(FT_MOD_ID, "car_car_launch", c->launch);
+	c->carCarLaunch = jer_config_get_int(FT_MOD_ID, "car_car_launch", FT_DEF_CAR_CAR_LAUNCH);
 	c->carCarTumble = jer_config_get_int(FT_MOD_ID, "car_car_tumble", FT_DEF_CAR_CAR_TUMBLE);
 	c->bodyKick = jer_config_get_int(FT_MOD_ID, "body_kick", FT_DEF_BODY_KICK);
+	c->bodyFriction = jer_config_get_int(FT_MOD_ID, "body_friction", FT_DEF_BODY_FRICTION);
+	c->bodyHinge = jer_config_get_int(FT_MOD_ID, "body_hinge", FT_DEF_BODY_HINGE);
 	c->scenery3d = jer_config_get_bool(FT_MOD_ID, "scenery3d", 1);
 	c->playerOnly = jer_config_get_bool(FT_MOD_ID, "player_only", 1);
 	c->debugLog = jer_config_get_bool(FT_MOD_ID, "debug_log", 0);
@@ -144,6 +152,13 @@ void ftLoadConfig(void)
 	c->testRolloverSide = jer_config_get_int(FT_MOD_ID, "test_rollover_side", 1);
 	c->preset = jer_config_get_int(FT_MOD_ID, "preset", FT_PRESET_FREE_PHYSICS);
 
+	/* Cinematic and Arcade are retired: Free Physics is the only tuning the
+	 * addon ships. An existing ini that still selects a legacy preset is
+	 * folded into Free Physics on load, so every player gets the same body.
+	 * Off and Custom keep their saved values. */
+	if (c->preset == FT_PRESET_CINEMATIC || c->preset == FT_PRESET_ARCADE)
+		c->preset = FT_PRESET_FREE_PHYSICS;
+
 	ftClampConfig();
 }
 
@@ -153,82 +168,9 @@ void ftApplyPreset(void)
 
 	switch (c->preset)
 	{
-	case FT_PRESET_CINEMATIC:
-		c->enabled = 1;
-		c->intensity = 140;
-		c->minImpact = 104000;
-		c->offCenter = 40;
-		c->maxRate = 4000000;
-		c->groundKick = 40;
-		c->damping = 35;
-		c->window = 150;
-		c->trip = 15;
-		c->launch = 30;
-		c->rolloverDamping = 45;
-		c->rolloverCatch = 50;
-		c->spinRetention = 50;
-		c->freeSpin = 0;
-		c->angularDamping = 128;
-		c->cancelExtraDamping = 0;
-		c->keepSpinAtRest = 0;
-		c->freeSpinWindow = 90;
-		c->hullContact = 0;
-		c->hullFootprint = 0;
-		c->sceneryMode = 0;
-		c->wallBounce = 0;
-		c->carCarImpulse = 100;
-		c->carCarLaunch = 30;
-		c->carCarTumble = 100;
-		c->bodyKick = 40;
-		c->holdCamera = 1;
-		c->cameraSnap = 75;
-		c->playerOnly = 1;
-		c->cameraRelease = 1;
-		c->cameraReleaseAv = 800000;
-		c->hornRoll = 1;
-		c->hornRollRate = 3000000;
-		c->hornRollLaunch = 15000;
-		c->scenery3d = 1;
-		break;
-
-	case FT_PRESET_ARCADE:
-		c->enabled = 1;
-		c->intensity = FT_DEF_INTENSITY;
-		c->minImpact = FT_DEF_MIN_IMPACT;
-		c->offCenter = FT_DEF_OFF_CENTER;
-		c->maxRate = FT_DEF_MAX_RATE;
-		c->groundKick = FT_DEF_GROUND_KICK;
-		c->damping = FT_DEF_DAMPING;
-		c->window = FT_DEF_WINDOW;
-		c->trip = FT_DEF_TRIP;
-		c->launch = FT_DEF_LAUNCH;
-		c->rolloverDamping = FT_DEF_ROLLOVER_DAMPING;
-		c->rolloverCatch = FT_DEF_ROLLOVER_CATCH;
-		c->spinRetention = FT_DEF_SPIN_RETENTION;
-		c->freeSpin = 0;
-		c->angularDamping = 128;
-		c->cancelExtraDamping = 0;
-		c->keepSpinAtRest = 0;
-		c->freeSpinWindow = 90;
-		c->hullContact = 0;
-		c->hullFootprint = 0;
-		c->sceneryMode = 0;
-		c->wallBounce = 0;
-		c->carCarImpulse = 100;
-		c->carCarLaunch = FT_DEF_LAUNCH;
-		c->carCarTumble = 100;
-		c->bodyKick = FT_DEF_GROUND_KICK;
-		c->holdCamera = 1;
-		c->cameraSnap = 75;
-		c->playerOnly = 1;
-		c->cameraRelease = 1;
-		c->cameraReleaseAv = 800000;
-		c->hornRoll = 1;
-		c->hornRollRate = 3000000;
-		c->hornRollLaunch = 15000;
-		c->scenery3d = 1;
-		break;
-
+	/* Cinematic and Arcade are retired. Their numeric ids still exist so an
+	 * old ini loads, but ftLoadConfig folds them into Free Physics; there is
+	 * no body here to select. */
 	case FT_PRESET_FREE_PHYSICS:
 		c->enabled = 1;
 		c->intensity = 100;
@@ -257,6 +199,8 @@ void ftApplyPreset(void)
 		c->carCarLaunch = 0;
 		c->carCarTumble = 50;
 		c->bodyKick = 0;
+		c->bodyFriction = FT_DEF_BODY_FRICTION;
+		c->bodyHinge = FT_DEF_BODY_HINGE;
 		c->holdCamera = 1;
 		c->cameraSnap = 75;
 		c->playerOnly = 1;
@@ -320,6 +264,8 @@ void ftSaveConfig(void)
 	jer_config_set_int(FT_MOD_ID, "car_car_launch", c->carCarLaunch);
 	jer_config_set_int(FT_MOD_ID, "car_car_tumble", c->carCarTumble);
 	jer_config_set_int(FT_MOD_ID, "body_kick", c->bodyKick);
+	jer_config_set_int(FT_MOD_ID, "body_friction", c->bodyFriction);
+	jer_config_set_int(FT_MOD_ID, "body_hinge", c->bodyHinge);
 	jer_config_set_bool(FT_MOD_ID, "scenery3d", c->scenery3d);
 	jer_config_set_bool(FT_MOD_ID, "player_only", c->playerOnly);
 	jer_config_set_bool(FT_MOD_ID, "debug_log", c->debugLog);
