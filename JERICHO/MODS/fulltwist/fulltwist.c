@@ -667,6 +667,48 @@ static int ftOnCarTorque(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* Keep the chase camera's heading offset still while its car tumbles. The
+ * engine's settle-back lerp normally chases baseDir + gCameraAngle; gripOrbit
+ * skips that lerp for this frame, so the offset the camera had when the tumble
+ * began is held until the car settles. */
+static int ftOnCameraLook(void* ud, void* args)
+{
+	JER_ARGS_CAMERA_LOOK* a = (JER_ARGS_CAMERA_LOOK*)args;
+	PLAYER* lp;
+	FULLTWIST_CAR* st;
+	int carId;
+
+	(void)ud;
+
+	if (!gFullTwist.cfg.enabled || !gFullTwist.cfg.holdCamera ||
+		a == NULL || a->player == NULL)
+		return JER_RESULT_CONTINUE;
+
+	lp = (PLAYER*)a->player;
+	carId = (int)lp->cameraCarId;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return JER_RESULT_CONTINUE;
+
+	if (!ftIsTumbleCar(&car_data[carId]))
+		return JER_RESULT_CONTINUE;
+
+	st = &gFullTwist.cars[carId];
+
+	if (st->tumbleFrames > 0 || ftFreeSpinActive(&car_data[carId]))
+	{
+		a->gripOrbit = 1;
+
+		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)carId) % 10) == 0)
+		{
+			FT_LOG("[fulltwist] camera hold car=%d frame=%u tumble=%d free=%d\n",
+				carId, gFullTwist.frame, st->tumbleFrames, st->freeSpinFrames);
+		}
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
 static int ftOnResetCar(void* ud, void* args)
 {
 	JER_ARGS_RESET_CAR* a = (JER_ARGS_RESET_CAR*)args;
@@ -710,6 +752,7 @@ JER_MODULE_ENTRY(jer_module_fulltwist_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_COLLISION, ftOnCollision, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, ftOnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, ftOnCarTorque, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA_LOOK, ftOnCameraLook, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_PHYSICS_PARAMS, ftOnPhysicsParams, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, ftOnWallRestitution, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, ftOnResetCar, NULL, 0);

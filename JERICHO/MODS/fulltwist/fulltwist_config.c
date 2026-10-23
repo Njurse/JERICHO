@@ -30,6 +30,7 @@
 #define FT_DEF_CANCEL_EXTRA		0
 #define FT_DEF_KEEP_SPIN		0
 #define FT_DEF_FREE_SPIN_WINDOW	90
+#define FT_DEF_HOLD_CAMERA		1
 #define FT_DEF_HULL_CONTACT		0
 #define FT_DEF_HULL_FOOTPRINT	0
 #define FT_DEF_SCENERY_MODE		0
@@ -61,6 +62,7 @@ void ftClampConfig(void)
 	c->cancelExtraDamping = jer_clamp_int(c->cancelExtraDamping, 0, 100);
 	c->keepSpinAtRest = c->keepSpinAtRest ? 1 : 0;
 	c->freeSpinWindow = jer_clamp_int(c->freeSpinWindow, 0, 300);
+	c->holdCamera = c->holdCamera ? 1 : 0;
 	c->hullContact = c->hullContact ? 1 : 0;
 	c->hullFootprint = c->hullFootprint ? 1 : 0;
 	c->sceneryMode = c->sceneryMode ? 1 : 0;
@@ -103,6 +105,7 @@ void ftLoadConfig(void)
 	c->cancelExtraDamping = jer_config_get_int(FT_MOD_ID, "cancel_extra_damping", FT_DEF_CANCEL_EXTRA);
 	c->keepSpinAtRest = jer_config_get_bool(FT_MOD_ID, "keep_spin_at_rest", FT_DEF_KEEP_SPIN);
 	c->freeSpinWindow = jer_config_get_int(FT_MOD_ID, "free_spin_window", FT_DEF_FREE_SPIN_WINDOW);
+	c->holdCamera = jer_config_get_bool(FT_MOD_ID, "hold_camera", FT_DEF_HOLD_CAMERA);
 	c->hullContact = jer_config_get_bool(FT_MOD_ID, "hull_contact", FT_DEF_HULL_CONTACT);
 	c->hullFootprint = jer_config_get_bool(FT_MOD_ID, "hull_footprint", FT_DEF_HULL_FOOTPRINT);
 	c->sceneryMode = jer_config_get_bool(FT_MOD_ID, "scenery_mode", FT_DEF_SCENERY_MODE);
@@ -157,6 +160,7 @@ void ftApplyPreset(void)
 		c->carCarLaunch = 30;
 		c->carCarTumble = 100;
 		c->bodyKick = 40;
+		c->holdCamera = 1;
 		c->scenery3d = 1;
 		break;
 
@@ -187,6 +191,7 @@ void ftApplyPreset(void)
 		c->carCarLaunch = FT_DEF_LAUNCH;
 		c->carCarTumble = 100;
 		c->bodyKick = FT_DEF_GROUND_KICK;
+		c->holdCamera = 1;
 		c->scenery3d = 1;
 		break;
 
@@ -218,6 +223,7 @@ void ftApplyPreset(void)
 		c->carCarLaunch = 0;
 		c->carCarTumble = 50;
 		c->bodyKick = 0;
+		c->holdCamera = 1;
 		c->scenery3d = 1;
 		break;
 
@@ -258,6 +264,7 @@ void ftSaveConfig(void)
 	jer_config_set_int(FT_MOD_ID, "cancel_extra_damping", c->cancelExtraDamping);
 	jer_config_set_bool(FT_MOD_ID, "keep_spin_at_rest", c->keepSpinAtRest);
 	jer_config_set_int(FT_MOD_ID, "free_spin_window", c->freeSpinWindow);
+	jer_config_set_bool(FT_MOD_ID, "hold_camera", c->holdCamera);
 	jer_config_set_bool(FT_MOD_ID, "hull_contact", c->hullContact);
 	jer_config_set_bool(FT_MOD_ID, "hull_footprint", c->hullFootprint);
 	jer_config_set_bool(FT_MOD_ID, "scenery_mode", c->sceneryMode);

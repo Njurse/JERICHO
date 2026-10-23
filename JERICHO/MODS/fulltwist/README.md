@@ -9,6 +9,9 @@ response the engine already computes.
   resting on their body: the stock angular damping is lowered, the engine's
   lift-triggered `-avel/8` is cancelled, and the stopped-car spin kill is
   bypassed while the window lasts. Untouched traffic keeps the stock damping.
+- Holds the chase camera's heading offset while the car tumbles
+  (`hold_camera`, default on): the engine's settle-back lerp is suspended so
+  the camera does not chase the spin.
 - Adds one roll/pitch angular impulse from the **mesh hull** of the car, not a
   box heuristic: the contact point, lever and impulse angle come from the clean
   body mesh.
@@ -93,6 +96,7 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `cancel_extra_damping` | 0 | 0–100 %, cancel the engine's lift `-avel/8` |
 | `keep_spin_at_rest` | 0 | 1 = keep `hd.speed` off zero while free-spinning |
 | `free_spin_window` | 90 | frames the free-spin state stays active |
+| `hold_camera` | 1 | hold the chase camera heading offset while the car tumbles |
 | `hull_contact` | 0 | 1 = log/use the hull lever for FULL TWIST's assist (never rewrites the engine point) |
 | `hull_footprint` | 0 | 1 = use the projected hull footprint as a planar gate |
 | `scenery_mode` | 0 | 0 = severity assist, 1 = hull-led (launch `r x J` only) |
@@ -110,7 +114,7 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 
 The defaults above are the legacy/Arcade values. **Free Physics** sets
 `free_spin=1`, `angular_damping=16`, `cancel_extra_damping=100`,
-`keep_spin_at_rest=1`, `free_spin_window=120`, `hull_contact=0`,
+`keep_spin_at_rest=1`, `free_spin_window=120`, `hold_camera=1`, `hull_contact=0`,
 `hull_footprint=1`, `scenery_mode=1`, `wall_snag=0`, `wall_bounce=100`,
 `car_car_impulse=50`, `car_car_launch=0`, `car_car_tumble=50`, `body_kick=0`,
 `damping=0`, `rollover_damping=0`, `rollover_catch=0`, `spin_retention=0`,
@@ -146,6 +150,7 @@ Turn `debug_log` on and the log carries:
 [fulltwist] hull ready slot=... verts=... size=(...) footprint=...
 [fulltwist] hull skipped slot=... (reason)
 [fulltwist] hull pending slot=... (model changed; colBox fallback)
+[fulltwist] camera hold car=... frame=... tumble=... free=...
 [fulltwist] hit frame=N car=... mode=... torque=(pitch,yaw,roll) rollMix=...
             pitchMix=... rate=... launch=... hull=1 inertia=(...) contact=(...)
 [fulltwist] scenery lever car=... stock=(...) hull=(...) hullY=(...) buildingY=(...)
@@ -205,6 +210,10 @@ with the relevant `test_* = 1` in the ini.
   requires `JerCarSlotUsable` before touching a car.
 - The car-car normal scale is skipped unless the other car is a real, resident
   model (`JerCarSlotUsable`); the skip is logged as `car-car scale skip`.
+- The tumble camera hold sets `JER_EVENT_CAMERA_LOOK.gripOrbit`, which suspends
+  the engine's settle-back lerp on `PLAYER.cameraAngle`; it resumes when the
+  tumble window/free-spin state ends. Any module that also grips the orbit keeps
+  it gripped.
 - The vehicle deformation/import features still own their own collision logic;
   FULL TWIST only writes `st.n.angularVelocity`, `st.n.linearVelocity` and
   `hd.aacc`.

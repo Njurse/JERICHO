@@ -23,7 +23,7 @@
 #include "dr2limits.h"		/* MAX_CARS, MAX_CAR_RESIDENT_MODELS */
 
 #define FT_MOD_ID          "fulltwist"
-#define FT_VERSION         "0.3.1"
+#define FT_VERSION         "0.3.2"
 
 /* The impact value at which the tumble rate reaches its configured maximum.
  * Measured scenery impacts sit around 22k (nudge), 78k-114k (ordinary) and
@@ -86,6 +86,7 @@ typedef struct FULLTWIST_CONFIG
 	int cancelExtraDamping;	/* 0..100 % of the lift (-avel/8) damping to cancel */
 	int keepSpinAtRest;		/* 1 = keep hd.speed off zero while free-spinning */
 	int freeSpinWindow;		/* frames the free-spin state stays active */
+	int holdCamera;			/* 1 = freeze the chase camera heading while tumbling */
 	int hullContact;		/* 1 = use the hull contact for the scenery lever */
 	int hullFootprint;		/* 1 = use the projected hull footprint as a gate */
 	int sceneryMode;		/* 0 = heuristic assist, 1 = hull-led assist */

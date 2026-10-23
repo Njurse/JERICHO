@@ -348,6 +348,22 @@ static int ftAdjFreeSpinWindow(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void ftLabelHoldCamera(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Hold tumble camera: %s", gFullTwist.cfg.holdCamera ? "ON" : "OFF");
+}
+
+static int ftToggleHoldCamera(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gFullTwist.cfg.holdCamera = !gFullTwist.cfg.holdCamera;
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void ftLabelHullContact(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -648,6 +664,7 @@ static const JER_PAUSE_MENU_ITEM ftPhysicsItems[] =
 	{ NULL, ftLabelCancelExtra,     ftAdjCancelExtra,     NULL, NULL, 1 },
 	{ NULL, ftLabelKeepSpin,        ftToggleKeepSpin,     NULL, NULL, 0 },
 	{ NULL, ftLabelFreeSpinWindow,  ftAdjFreeSpinWindow,  NULL, NULL, 1 },
+	{ NULL, ftLabelHoldCamera,      ftToggleHoldCamera,   NULL, NULL, 0 },
 	{ NULL, ftLabelHullContact,     ftToggleHullContact,  NULL, NULL, 0 },
 	{ NULL, ftLabelHullFootprint,   ftToggleHullFootprint,NULL, NULL, 0 },
 	{ NULL, ftLabelSceneryMode,     ftToggleSceneryMode,  NULL, NULL, 0 },

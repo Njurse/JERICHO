@@ -30,6 +30,8 @@ is in [changelog.txt](changelog.txt).
   longer launches traffic.
 - Guard the car-car normal scale against non-resident/culled cars and add the
   `test_smash` lever.
+- Hold the chase camera's heading offset while the car tumbles (`hold_camera`,
+  default on); the settle-back lerp is suspended for the tumble.
 - Fixed the scenery collision point's Y frame (the engine negates `hit.vy`
   before the event) and clamped the body-landing assist to the angular clamp.
 - Free Physics is the default when the module is enabled and sets `hull_contact`
