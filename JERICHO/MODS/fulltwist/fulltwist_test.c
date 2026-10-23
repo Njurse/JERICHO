@@ -160,7 +160,7 @@ static void ftRolloverImpulse(CAR_DATA* cp)
 	st->tumbled = 1;
 	st->settleFrames = 0;
 	st->tumbleStrength = 4096;
-	st->tumbleRollShare = 4096;
+	st->tumbleRollShare = (rollRate >= 0) ? 4096 : -4096;
 	st->tumblePitchShare = 0;
 	st->tumbleRate = rollRate;
 	st->landed = 0;

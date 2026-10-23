@@ -330,8 +330,16 @@ static int ftOnCarStep(void* ud, void* args)
 								   (long long)bodyLocal.vz * jy) >> 12);
 				int roll = (int)(((long long)bodyLocal.vx * jy -
 								  (long long)bodyLocal.vy * jx) >> 12);
+				int av0 = cp->st.n.angularVelocity[0];
+				int av2 = cp->st.n.angularVelocity[2];
+				int avMag = (av0 < 0 ? -av0 : av0) + (av2 < 0 ? -av2 : av2);
 
-				ftAddLocalRate(cp, roll, pitch);
+				/* A car that is already tumbling should keep its spin. The
+				 * landing torque is only there to start a tumble from a body
+				 * drop, not to fight an established roll. */
+				if (avMag < 1500000)
+					ftAddLocalRate(cp, roll, pitch);
+
 				st->bodyContactFrame = gFullTwist.frame;
 
 				if (gFullTwist.cfg.debugLog)
