@@ -16,9 +16,14 @@ response the engine already computes.
   the spin instead of letting it grow.
 - Holds the chase camera's heading offset while the car tumbles
   (`hold_camera`, default on): the engine's settle-back lerp is suspended so
-  the camera does not chase the spin. Once the tumble ends, `camera_snap`
-  (default 75 %) adds a share of the remaining angle per frame so the camera
-  comes back in quickly.
+  the camera does not chase the spin. `camera_release` (default on) ends the
+  hold as soon as the car is back on its wheels, upright and the spin sum is
+  below `camera_release_av` (default 800000), so the camera locks on while the
+  car is still rolling. `camera_snap` (default 75 %) then adds a share of the
+  remaining angle per frame so the view comes back in quickly.
+- A **horn cannon roll** (`horn_roll`, default on): a horn press gives the main
+  player's car a high roll rate (`horn_roll_rate`, 3M) with a low launch
+  (`horn_roll_launch`, 15000), so it rolls instead of being thrown.
 - Adds one roll/pitch angular impulse from the **mesh hull** of the car, not a
   box heuristic: the contact point, lever and impulse angle come from the clean
   body mesh.
@@ -105,6 +110,11 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `free_spin_window` | 90 | frames the free-spin state stays active |
 | `hold_camera` | 1 | hold the chase camera heading offset while the car tumbles |
 | `camera_snap` | 75 | 0–100 %, extra share of the settle-back per frame after a tumble |
+| `camera_release` | 1 | 1 = release the heading hold when the car settles on its wheels |
+| `camera_release_av` | 800000 | angular-velocity sum below which the car counts as settled |
+| `horn_roll` | 1 | 1 = a horn press gives a cannon roll |
+| `horn_roll_rate` | 3000000 | roll rate for the cannon roll |
+| `horn_roll_launch` | 15000 | upward launch for the cannon roll |
 | `hull_contact` | 0 | 1 = log/use the hull lever for FULL TWIST's assist (never rewrites the engine point) |
 | `hull_footprint` | 0 | 1 = use the projected hull footprint as a planar gate |
 | `scenery_mode` | 0 | 0 = severity assist, 1 = hull-led (launch `r x J` only) |
@@ -119,11 +129,14 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `test_crash` | 0 | spawn an oncoming car and drive both together |
 | `test_smash` | 0 | spawn a car beside the player and shove them together |
 | `test_rollover` | 0 | rotate the player 90° about its long axis and shove it |
+| `test_horn` | 0 | fire the horn cannon roll at level start |
 
 The defaults above are the legacy/Arcade values. **Free Physics** sets
 `free_spin=1`, `angular_damping=16`, `cancel_extra_damping=100`,
 `keep_spin_at_rest=1`, `free_spin_window=120`, `hold_camera=1`,
-`camera_snap=75`, `hull_contact=0`,
+`camera_snap=75`, `camera_release=1`, `camera_release_av=800000`,
+`horn_roll=1`, `horn_roll_rate=3000000`, `horn_roll_launch=15000`,
+`hull_contact=0`,
 `hull_footprint=1`, `scenery_mode=1`, `wall_snag=0`, `wall_bounce=100`,
 `car_car_impulse=50`, `car_car_launch=0`, `car_car_tumble=50`, `body_kick=0`,
 `damping=0`, `rollover_damping=0`, `rollover_catch=0`, `spin_retention=0`,
@@ -135,7 +148,8 @@ has no `preset` key and by **Reset to Defaults**.
 
 ## Test levers
 
-`FULL TWIST -> Debug -> Test Kick / Test Crash / Test Smash / Test Rollover`, or
+`FULL TWIST -> Debug -> Test Kick / Test Crash / Test Smash / Test Rollover /
+Test Horn`, or
 the matching ini keys for a `-frames` run:
 
 - **Test Kick** applies a known roll/pitch rate and upward launch. Use it to
@@ -161,6 +175,9 @@ Turn `debug_log` on and the log carries:
 [fulltwist] hull pending slot=... (model changed; colBox fallback)
 [fulltwist] camera hold car=... frame=... tumble=... free=...
 [fulltwist] camera snap car=... frame=... delta=... left=...
+[fulltwist] camera release car=... frame=... av=... releaseAv=...
+[fulltwist] horn roll car=... frame=... rate=... launch=...
+[fulltwist] test horn car=... frame=...
 [fulltwist] hit frame=N car=... mode=... torque=(pitch,yaw,roll) rollMix=...
             pitchMix=... rate=... launch=... hull=1 inertia=(...) contact=(...)
 [fulltwist] scenery lever car=... stock=(...) hull=(...) hullY=(...) buildingY=(...)

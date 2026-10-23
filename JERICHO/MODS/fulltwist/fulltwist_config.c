@@ -32,6 +32,11 @@
 #define FT_DEF_FREE_SPIN_WINDOW	90
 #define FT_DEF_HOLD_CAMERA		1
 #define FT_DEF_CAMERA_SNAP		75
+#define FT_DEF_CAMERA_RELEASE	1
+#define FT_DEF_CAMERA_RELEASE_AV	800000
+#define FT_DEF_HORN_ROLL		1
+#define FT_DEF_HORN_ROLL_RATE	3000000
+#define FT_DEF_HORN_ROLL_LAUNCH	15000
 #define FT_DEF_HULL_CONTACT		0
 #define FT_DEF_HULL_FOOTPRINT	0
 #define FT_DEF_SCENERY_MODE		0
@@ -65,6 +70,11 @@ void ftClampConfig(void)
 	c->freeSpinWindow = jer_clamp_int(c->freeSpinWindow, 0, 300);
 	c->holdCamera = c->holdCamera ? 1 : 0;
 	c->cameraSnap = jer_clamp_int(c->cameraSnap, 0, 100);
+	c->cameraRelease = c->cameraRelease ? 1 : 0;
+	c->cameraReleaseAv = jer_clamp_int(c->cameraReleaseAv, 0, 8000000);
+	c->hornRoll = c->hornRoll ? 1 : 0;
+	c->hornRollRate = jer_clamp_int(c->hornRollRate, 0, 8000000);
+	c->hornRollLaunch = jer_clamp_int(c->hornRollLaunch, 0, 200000);
 	c->hullContact = c->hullContact ? 1 : 0;
 	c->hullFootprint = c->hullFootprint ? 1 : 0;
 	c->sceneryMode = c->sceneryMode ? 1 : 0;
@@ -80,6 +90,7 @@ void ftClampConfig(void)
 	c->testCrash = c->testCrash ? 1 : 0;
 	c->testSmash = c->testSmash ? 1 : 0;
 	c->testRollover = c->testRollover ? 1 : 0;
+	c->testHorn = c->testHorn ? 1 : 0;
 	c->testRolloverSide = (c->testRolloverSide < 0) ? -1 : 1;
 	c->preset = jer_clamp_int(c->preset, FT_PRESET_CINEMATIC, FT_PRESET_FREE_PHYSICS);
 }
@@ -109,6 +120,11 @@ void ftLoadConfig(void)
 	c->freeSpinWindow = jer_config_get_int(FT_MOD_ID, "free_spin_window", FT_DEF_FREE_SPIN_WINDOW);
 	c->holdCamera = jer_config_get_bool(FT_MOD_ID, "hold_camera", FT_DEF_HOLD_CAMERA);
 	c->cameraSnap = jer_config_get_int(FT_MOD_ID, "camera_snap", FT_DEF_CAMERA_SNAP);
+	c->cameraRelease = jer_config_get_bool(FT_MOD_ID, "camera_release", FT_DEF_CAMERA_RELEASE);
+	c->cameraReleaseAv = jer_config_get_int(FT_MOD_ID, "camera_release_av", FT_DEF_CAMERA_RELEASE_AV);
+	c->hornRoll = jer_config_get_bool(FT_MOD_ID, "horn_roll", FT_DEF_HORN_ROLL);
+	c->hornRollRate = jer_config_get_int(FT_MOD_ID, "horn_roll_rate", FT_DEF_HORN_ROLL_RATE);
+	c->hornRollLaunch = jer_config_get_int(FT_MOD_ID, "horn_roll_launch", FT_DEF_HORN_ROLL_LAUNCH);
 	c->hullContact = jer_config_get_bool(FT_MOD_ID, "hull_contact", FT_DEF_HULL_CONTACT);
 	c->hullFootprint = jer_config_get_bool(FT_MOD_ID, "hull_footprint", FT_DEF_HULL_FOOTPRINT);
 	c->sceneryMode = jer_config_get_bool(FT_MOD_ID, "scenery_mode", FT_DEF_SCENERY_MODE);
@@ -124,6 +140,7 @@ void ftLoadConfig(void)
 	c->testCrash = jer_config_get_bool(FT_MOD_ID, "test_crash", 0);
 	c->testSmash = jer_config_get_bool(FT_MOD_ID, "test_smash", 0);
 	c->testRollover = jer_config_get_bool(FT_MOD_ID, "test_rollover", 0);
+	c->testHorn = jer_config_get_bool(FT_MOD_ID, "test_horn", 0);
 	c->testRolloverSide = jer_config_get_int(FT_MOD_ID, "test_rollover_side", 1);
 	c->preset = jer_config_get_int(FT_MOD_ID, "preset", FT_PRESET_FREE_PHYSICS);
 
@@ -166,6 +183,11 @@ void ftApplyPreset(void)
 		c->holdCamera = 1;
 		c->cameraSnap = 75;
 		c->playerOnly = 1;
+		c->cameraRelease = 1;
+		c->cameraReleaseAv = 800000;
+		c->hornRoll = 1;
+		c->hornRollRate = 3000000;
+		c->hornRollLaunch = 15000;
 		c->scenery3d = 1;
 		break;
 
@@ -199,6 +221,11 @@ void ftApplyPreset(void)
 		c->holdCamera = 1;
 		c->cameraSnap = 75;
 		c->playerOnly = 1;
+		c->cameraRelease = 1;
+		c->cameraReleaseAv = 800000;
+		c->hornRoll = 1;
+		c->hornRollRate = 3000000;
+		c->hornRollLaunch = 15000;
 		c->scenery3d = 1;
 		break;
 
@@ -233,6 +260,11 @@ void ftApplyPreset(void)
 		c->holdCamera = 1;
 		c->cameraSnap = 75;
 		c->playerOnly = 1;
+		c->cameraRelease = 1;
+		c->cameraReleaseAv = 800000;
+		c->hornRoll = 1;
+		c->hornRollRate = 3000000;
+		c->hornRollLaunch = 15000;
 		c->scenery3d = 1;
 		break;
 
@@ -275,6 +307,11 @@ void ftSaveConfig(void)
 	jer_config_set_int(FT_MOD_ID, "free_spin_window", c->freeSpinWindow);
 	jer_config_set_bool(FT_MOD_ID, "hold_camera", c->holdCamera);
 	jer_config_set_int(FT_MOD_ID, "camera_snap", c->cameraSnap);
+	jer_config_set_bool(FT_MOD_ID, "camera_release", c->cameraRelease);
+	jer_config_set_int(FT_MOD_ID, "camera_release_av", c->cameraReleaseAv);
+	jer_config_set_bool(FT_MOD_ID, "horn_roll", c->hornRoll);
+	jer_config_set_int(FT_MOD_ID, "horn_roll_rate", c->hornRollRate);
+	jer_config_set_int(FT_MOD_ID, "horn_roll_launch", c->hornRollLaunch);
 	jer_config_set_bool(FT_MOD_ID, "hull_contact", c->hullContact);
 	jer_config_set_bool(FT_MOD_ID, "hull_footprint", c->hullFootprint);
 	jer_config_set_bool(FT_MOD_ID, "scenery_mode", c->sceneryMode);
@@ -290,6 +327,7 @@ void ftSaveConfig(void)
 	jer_config_set_bool(FT_MOD_ID, "test_crash", c->testCrash);
 	jer_config_set_bool(FT_MOD_ID, "test_smash", c->testSmash);
 	jer_config_set_bool(FT_MOD_ID, "test_rollover", c->testRollover);
+	jer_config_set_bool(FT_MOD_ID, "test_horn", c->testHorn);
 	jer_config_set_int(FT_MOD_ID, "test_rollover_side", c->testRolloverSide);
 	jer_config_set_int(FT_MOD_ID, "preset", c->preset);
 }

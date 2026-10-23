@@ -242,6 +242,27 @@ void ftTestTick(CAR_DATA* cp)
 	if (cp == NULL || !ftIsPlayerCar(cp))
 		return;
 
+	if (gFullTwist.cfg.testHorn && !gFullTwist.testHornDone)
+	{
+		if (!gFullTwist.testHornScheduled)
+		{
+			gFullTwist.testHornScheduled = 1;
+			gFullTwist.testHornAtFrame = gFullTwist.frame + FT_TEST_KICK_DELAY;
+		}
+		else if (gFullTwist.frame >= gFullTwist.testHornAtFrame)
+		{
+			gFullTwist.testHornPending = 1;
+			gFullTwist.testHornDone = 1;
+		}
+	}
+
+	if (gFullTwist.testHornPending)
+	{
+		gFullTwist.testHornPending = 0;
+		ftHornRoll(cp);
+		FT_LOG("[fulltwist] test horn car=%d frame=%u\n", (int)cp->id, gFullTwist.frame);
+	}
+
 	if (gFullTwist.cfg.testCrash && !gFullTwist.testCrashDone)
 	{
 		if (!gFullTwist.testCrashScheduled)

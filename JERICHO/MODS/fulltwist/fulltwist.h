@@ -23,7 +23,7 @@
 #include "dr2limits.h"		/* MAX_CARS, MAX_CAR_RESIDENT_MODELS */
 
 #define FT_MOD_ID          "fulltwist"
-#define FT_VERSION         "0.3.3"
+#define FT_VERSION         "0.3.4"
 
 /* The impact value at which the tumble rate reaches its configured maximum.
  * Measured scenery impacts sit around 22k (nudge), 78k-114k (ordinary) and
@@ -91,6 +91,11 @@ typedef struct FULLTWIST_CONFIG
 	int freeSpinWindow;		/* frames the free-spin state stays active */
 	int holdCamera;			/* 1 = freeze the chase camera heading while tumbling */
 	int cameraSnap;			/* 0..100: extra settle-back per frame after a tumble */
+	int cameraRelease;		/* 1 = release the hold as soon as the car settles */
+	int cameraReleaseAv;	/* angular-velocity sum that counts as settled */
+	int hornRoll;			/* 1 = a horn press gives a cannon roll */
+	int hornRollRate;		/* roll rate for the cannon roll */
+	int hornRollLaunch;		/* upward launch for the cannon roll */
 	int hullContact;		/* 1 = use the hull contact for the scenery lever */
 	int hullFootprint;		/* 1 = use the projected hull footprint as a gate */
 	int sceneryMode;		/* 0 = heuristic assist, 1 = hull-led assist */
@@ -106,6 +111,7 @@ typedef struct FULLTWIST_CONFIG
 	int testCrash;		/* 1 = spawn an oncoming car and collide head-on */
 	int testSmash;		/* 1 = spawn a car beside the player and shove them together */
 	int testRollover;	/* 1 = apply the rollover test impulse */
+	int testHorn;		/* 1 = fire the horn cannon roll at level start */
 	int testRolloverSide;	/* -1/1: side the rollover test pushes toward */
 	int preset;
 } FULLTWIST_CONFIG;
@@ -149,6 +155,7 @@ typedef struct FULLTWIST_CAR
 	unsigned int wallHitFrame;	/* frame of the last scenery hit (restitution) */
 	int cameraHeld;				/* the camera hold was active last frame */
 	int cameraSnapFrames;		/* frames of the fast settle-back still to apply */
+	int hornHeld;				/* the horn was held on the previous step */
 	int contactMask;			/* last wheel susCompression mask */
 	int logTick;				/* log throttle */
 	int rolloverCount;			/* up-vector sign crossings in the current test */
@@ -179,6 +186,10 @@ typedef struct FULLTWIST_STATE
 	unsigned int testRolloverAtFrame;
 	int testRolloverHolding;
 	unsigned int testRolloverImpulseAtFrame;
+	int testHornPending;
+	int testHornDone;
+	int testHornScheduled;
+	unsigned int testHornAtFrame;
 	FULLTWIST_CONFIG cfg;
 	int hullsDirty;			/* a resident model changed since the last build */
 	int hullsBuilt;			/* the level-start prebuild has run */
@@ -206,6 +217,7 @@ int ftIsTumbleCar(const CAR_DATA* cp);
 int ftWheelMask(const CAR_DATA* cp);
 int ftFreeSpinActive(const CAR_DATA* cp);
 void ftAddLocalRate(CAR_DATA* cp, int roll, int pitch);
+void ftHornRoll(CAR_DATA* cp);
 void ftGetAxes(const CAR_DATA* cp, int* ax, int* ay, int* az);
 int ftDotLocal(int x, int y, int z, const int* axis);
 void ftHandleCar(CAR_DATA* car, CAR_DATA* other,

@@ -36,6 +36,13 @@ is in [changelog.txt](changelog.txt).
   stock damping, torque and collision response (`player_only`, default on).
 - Camera snap: `camera_snap` (default 75 %) adds a share of the remaining angle
   per frame for eight frames after a tumble, so the view comes back in quickly.
+- Camera release: `camera_release` (default on) ends the heading hold as soon
+  as the car is back on its wheels, upright and the spin sum is below
+  `camera_release_av` (default 800000), so the camera locks on while the car is
+  still rolling.
+- Horn cannon roll: `horn_roll` (default on) turns a horn press into a high
+  roll rate (`horn_roll_rate`) with a low launch (`horn_roll_launch`).
+- Added the `test_horn` lever for a headless cannon roll.
 - Spin fix: cancel the engine's lift damping only when ConvertTorque applied it
   and only on roll/pitch; restore stock yaw damping while the wheels are down so
   the tires stabilize the spin instead of letting it accelerate.

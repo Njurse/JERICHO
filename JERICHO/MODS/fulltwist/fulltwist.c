@@ -37,6 +37,7 @@
 #include "jer_events.h"
 #include "cars.h"		/* JerCarSlotUsable for the car-car scale guard */
 #include "camera.h"		/* gCameraAngle for the post-tumble snap-back */
+#include "players.h"		/* MainPlayer for the horn cannon roll */
 #include "fulltwist.h"
 
 #include <string.h>
@@ -267,6 +268,20 @@ static int ftOnCarStep(void* ud, void* args)
 	/* Player-only patch: traffic keeps the stock step. */
 	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
 		return JER_RESULT_CONTINUE;
+
+	/* Horn cannon roll: one roll per horn press on the main player's car. The
+	 * horn state is the stock MainPlayer.horn.on bit set in handling.c. */
+	if (ftIsPlayerCar(cp) &&
+		((int)MainPlayer.playerCarId == (int)cp->id ||
+		 (int)MainPlayer.cameraCarId == (int)cp->id))
+	{
+		int horn = MainPlayer.horn.on ? 1 : 0;
+
+		if (gFullTwist.cfg.hornRoll && horn && !st->hornHeld)
+			ftHornRoll(cp);
+
+		st->hornHeld = horn;
+	}
 
 	/* GlobalTimeStep zeroes angular velocity for a car whose hd.speed is 0,
 	 * later in the same frame. A tumbling car is not "stopped" even when its
@@ -711,6 +726,40 @@ static int ftOnCarTorque(void* ud, void* args)
  * engine's settle-back lerp normally chases baseDir + gCameraAngle; gripOrbit
  * skips that lerp for this frame, so the offset the camera had when the tumble
  * began is held until the car settles. */
+/* The hold exists to stop the camera chasing a spinning car. Once the car is
+ * back on its wheels, upright, and the spin has fallen below camera_release_av,
+ * there is nothing left to chase: release the hold so the snap-back and the
+ * normal heading lock happen while the car is still rolling. Returns the
+ * angular-velocity sum through outAv for the log. */
+static int ftCameraSettling(const CAR_DATA* cp, int* outAv)
+{
+	int up, ax, ay, az, av;
+
+	if (outAv != NULL)
+		*outAv = 0;
+
+	if (!gFullTwist.cfg.cameraRelease)
+		return 0;
+
+	if (ftWheelMask(cp) == 0)
+		return 0;
+
+	up = cp->hd.where.m[1][1];
+
+	if (up <= 0)
+		return 0;
+
+	ax = cp->st.n.angularVelocity[0]; if (ax < 0) ax = -ax;
+	ay = cp->st.n.angularVelocity[1]; if (ay < 0) ay = -ay;
+	az = cp->st.n.angularVelocity[2]; if (az < 0) az = -az;
+	av = ax + ay + az;
+
+	if (outAv != NULL)
+		*outAv = av;
+
+	return av <= gFullTwist.cfg.cameraReleaseAv;
+}
+
 static int ftOnCameraLook(void* ud, void* args)
 {
 	JER_ARGS_CAMERA_LOOK* a = (JER_ARGS_CAMERA_LOOK*)args;
@@ -735,23 +784,36 @@ static int ftOnCameraLook(void* ud, void* args)
 
 	st = &gFullTwist.cars[carId];
 
-	if (st->tumbleFrames > 0 || ftFreeSpinActive(&car_data[carId]))
 	{
-		a->gripOrbit = 1;
-		st->cameraHeld = 1;
-		st->cameraSnapFrames = 0;
+		int hold = (st->tumbleFrames > 0 || ftFreeSpinActive(&car_data[carId]));
+		int av = 0;
+		int settling = hold && ftCameraSettling(&car_data[carId], &av);
 
-		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)carId) % 10) == 0)
+		if (hold && !settling)
 		{
-			FT_LOG("[fulltwist] camera hold car=%d frame=%u tumble=%d free=%d\n",
-				carId, gFullTwist.frame, st->tumbleFrames, st->freeSpinFrames);
+			a->gripOrbit = 1;
+			st->cameraHeld = 1;
+			st->cameraSnapFrames = 0;
+
+			if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)carId) % 10) == 0)
+			{
+				FT_LOG("[fulltwist] camera hold car=%d frame=%u tumble=%d free=%d\n",
+					carId, gFullTwist.frame, st->tumbleFrames, st->freeSpinFrames);
+			}
 		}
-	}
-	else if (st->cameraHeld)
-	{
-		/* The tumble just ended: start the fast settle-back window. */
-		st->cameraHeld = 0;
-		st->cameraSnapFrames = FT_CAMERA_SNAP_FRAMES;
+		else if (st->cameraHeld)
+		{
+			/* The tumble ended, or the car settled on its wheels while the
+			 * window was still open: start the fast settle-back now. */
+			st->cameraHeld = 0;
+			st->cameraSnapFrames = FT_CAMERA_SNAP_FRAMES;
+
+			if (settling && gFullTwist.cfg.debugLog)
+			{
+				FT_LOG("[fulltwist] camera release car=%d frame=%u av=%d releaseAv=%d\n",
+					carId, gFullTwist.frame, av, gFullTwist.cfg.cameraReleaseAv);
+			}
+		}
 	}
 
 	return JER_RESULT_CONTINUE;

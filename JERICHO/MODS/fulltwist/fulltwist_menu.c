@@ -379,6 +379,83 @@ static int ftAdjCameraSnap(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void ftLabelCameraRelease(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Camera release: %s", gFullTwist.cfg.cameraRelease ? "ON" : "OFF");
+}
+
+static int ftToggleCameraRelease(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gFullTwist.cfg.cameraRelease = !gFullTwist.cfg.cameraRelease;
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelCameraReleaseAv(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Release AV: %d", gFullTwist.cfg.cameraReleaseAv);
+}
+
+static int ftAdjCameraReleaseAv(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.cameraReleaseAv = jer_clamp_int(gFullTwist.cfg.cameraReleaseAv + dir * 100000, 0, 8000000);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelHornRoll(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Horn cannon roll: %s", gFullTwist.cfg.hornRoll ? "ON" : "OFF");
+}
+
+static int ftToggleHornRoll(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gFullTwist.cfg.hornRoll = !gFullTwist.cfg.hornRoll;
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelHornRollRate(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Horn roll rate: %d", gFullTwist.cfg.hornRollRate);
+}
+
+static int ftAdjHornRollRate(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.hornRollRate = jer_clamp_int(gFullTwist.cfg.hornRollRate + dir * 250000, 0, 8000000);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelHornLaunch(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Horn launch: %d", gFullTwist.cfg.hornRollLaunch);
+}
+
+static int ftAdjHornLaunch(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.hornRollLaunch = jer_clamp_int(gFullTwist.cfg.hornRollLaunch + dir * 5000, 0, 200000);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void ftLabelHullContact(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -599,6 +676,19 @@ static int ftTestRolloverAction(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static int ftTestHornAction(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	gFullTwist.cfg.testHorn = 1;
+	gFullTwist.testHornPending = 0;
+	gFullTwist.testHornDone = 0;
+	gFullTwist.testHornScheduled = 0;
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void ftLabelRolloverSide(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -660,6 +750,7 @@ static const JER_PAUSE_MENU_ITEM ftDebugItems[] =
 	{ "Test Crash", NULL, ftTestCrashAction, NULL, NULL, 0 },
 	{ "Test Smash", NULL, ftTestSmashAction, NULL, NULL, 0 },
 	{ "Test Rollover", NULL, ftTestRolloverAction, NULL, NULL, 0 },
+	{ "Test Horn", NULL, ftTestHornAction, NULL, NULL, 0 },
 	{ NULL, ftLabelRolloverSide, ftToggleRolloverSide, NULL, NULL, 0 },
 	{ NULL, ftLabelDebug, ftToggleDebug, NULL, NULL, 0 },
 };
@@ -681,6 +772,11 @@ static const JER_PAUSE_MENU_ITEM ftPhysicsItems[] =
 	{ NULL, ftLabelFreeSpinWindow,  ftAdjFreeSpinWindow,  NULL, NULL, 1 },
 	{ NULL, ftLabelHoldCamera,      ftToggleHoldCamera,   NULL, NULL, 0 },
 	{ NULL, ftLabelCameraSnap,      ftAdjCameraSnap,      NULL, NULL, 1 },
+	{ NULL, ftLabelCameraRelease,   ftToggleCameraRelease,NULL, NULL, 0 },
+	{ NULL, ftLabelCameraReleaseAv, ftAdjCameraReleaseAv, NULL, NULL, 1 },
+	{ NULL, ftLabelHornRoll,        ftToggleHornRoll,     NULL, NULL, 0 },
+	{ NULL, ftLabelHornRollRate,    ftAdjHornRollRate,    NULL, NULL, 1 },
+	{ NULL, ftLabelHornLaunch,      ftAdjHornLaunch,      NULL, NULL, 1 },
 	{ NULL, ftLabelHullContact,     ftToggleHullContact,  NULL, NULL, 0 },
 	{ NULL, ftLabelHullFootprint,   ftToggleHullFootprint,NULL, NULL, 0 },
 	{ NULL, ftLabelSceneryMode,     ftToggleSceneryMode,  NULL, NULL, 0 },

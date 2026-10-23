@@ -135,6 +135,37 @@ void ftAddLocalRate(CAR_DATA* cp, int roll, int pitch)
 	}
 }
 
+/* Horn cannon roll: a high roll rate with a low launch, so the car rolls in
+ * place instead of being thrown. The camera hold/free-spin windows open for
+ * the roll, then the normal settle-release takes over. */
+void ftHornRoll(CAR_DATA* cp)
+{
+	FULLTWIST_CAR* st;
+	int rate, launch;
+
+	if (!ftIsTumbleCar(cp))
+		return;
+
+	st = &gFullTwist.cars[(int)cp->id];
+	rate = gFullTwist.cfg.hornRollRate;
+	launch = gFullTwist.cfg.hornRollLaunch;
+
+	if (rate > 0)
+		ftAddLocalRate(cp, -rate, 0);
+
+	if (launch > 0)
+		cp->st.n.linearVelocity[1] += launch;
+
+	st->tumbleFrames = gFullTwist.cfg.window;
+	st->freeSpinFrames = gFullTwist.cfg.freeSpinWindow;
+
+	if (gFullTwist.cfg.debugLog)
+	{
+		FT_LOG("[fulltwist] horn roll car=%d frame=%u rate=%d launch=%d\n",
+			(int)cp->id, gFullTwist.frame, rate, launch);
+	}
+}
+
 /* ------------------------------------------------------------------ */
 /* Collision response                                                 */
 /* ------------------------------------------------------------------ */
