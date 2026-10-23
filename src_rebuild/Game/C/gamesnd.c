@@ -263,7 +263,8 @@ void LoadBankFromLump(int bank, int lump)
 }
 
 /* The stock cop-siren bank for a Driver 2 city. The four D2 cities do not map
- * one-to-one: Chicago and Vegas share a siren, Havana has one, Rio has one. */
+ * one-to-one: Chicago and Vegas share a siren, Havana has one, Rio has one.
+ * Full contract: JERICHO/MODS/carhacks/docs/SIRENS.md */
 static int CopSirenBankForCity(int city)
 {
 	if (city & 2)
