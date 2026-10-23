@@ -353,10 +353,14 @@ int CarHasSiren(int slot)
 		int city = GetCarModelSourceCity(slot);
 
 		/* A Driver 2 import keeps the source city's cop siren. Only model 0
-		 * (the police car) has one. */
+		 * (the police car) has one. Before a level's sounds are loaded there
+		 * is no bank to index, matching the D1/custom path's ready check. */
 		if (city >= 0 && city < CITY_D2_COUNT && !car_slot_imported[slot])
 		{
 			int sample;
+
+			if (!car_sound_ready)
+				return 0;
 
 			if (residentCarModels[slot] != 0)
 				return 0;
