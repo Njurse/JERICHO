@@ -133,6 +133,9 @@ char phrase_top = 0;
 
 static othercarsound siren_noise[MAX_SIREN_NOISES];
 static int siren_noise_sample[MAX_SIREN_NOISES];	// packed CarHasSiren value; 0 = music/none
+static unsigned car_zero_siren_reported;	// one-shot log for a flagged car with no siren sample
+static unsigned imported_siren_reported;	// one-shot log for an imported slot using a siren
+static unsigned civilian_import_reported;	// one-shot log for a suppressed civilian-import siren
 static othercarsound car_noise[MAX_CAR_NOISES];
 
 /* JERICHO cross-city imports: the SOUND_BANK_CARS sample block each resident
@@ -189,7 +192,6 @@ void SoundLogCarSample(const char* kind, int slot, int sample)
 // an imported slot - that fallback is only for native/D2 slots.
 static int ImportedCarHasSiren(int slot)
 {
-	static unsigned reported = 0;
 	int city, model;
 
 	if (!car_sound_ready)
@@ -210,9 +212,9 @@ static int ImportedCarHasSiren(int slot)
 	if (!GetCarImportSiren(city, model) || car_slot_sample[slot] < 0)
 		return 0;
 
-	if (!(reported & (1u << slot)))
+	if (!(imported_siren_reported & (1u << slot)))
 	{
-		reported |= 1u << slot;
+		imported_siren_reported |= 1u << slot;
 		printInfo("cross-city: slot %d (%s model %d) uses the imported siren (bank sample %d)\n",
 			slot, LevelNames[city], model, car_slot_sample[slot] * 3 + 2);
 	}
@@ -295,16 +297,15 @@ int CarHasSiren(int slot)
 	 * for a civilian import instead of falling through to the stock siren. */
 	if (GetCarModelSourceCity(slot) >= CITY_D2_COUNT || car_slot_imported[slot])
 	{
-		static unsigned reported = 0;
 		int city = GetCarModelSourceCity(slot);
 		int imported = ImportedCarHasSiren(slot);
 
 		/* This is the exact case the old fall-through turned into a siren. It is
 		 * a civilian in its own city, so say once that the stock model-0 siren
 		 * was suppressed rather than silently returning 0. */
-		if (imported == 0 && residentCarModels[slot] == 0 && !(reported & (1u << slot)))
+		if (imported == 0 && residentCarModels[slot] == 0 && !(civilian_import_reported & (1u << slot)))
 		{
-			reported |= 1u << slot;
+			civilian_import_reported |= 1u << slot;
 			printInfo("gamesnd: slot %d (%s model 0) is a civilian import - no siren\n",
 				slot, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?");
 		}
@@ -908,6 +909,9 @@ void LoadLevelSFX(int missionNum)
 	car_sound_ready = 0;
 	car_sound_checkpoint_ready = 0;
 	car_sound_rebuilding = 0;
+	car_zero_siren_reported = 0;
+	imported_siren_reported = 0;
+	civilian_import_reported = 0;
 	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 	{
 		car_slot_sample[i] = -1;
@@ -1862,31 +1866,52 @@ void DoDopplerSFX(void)
 			for (j = 0; j < MAX_SIREN_NOISES; j++)
 			{
 				int siren;
+				int sample;
+
 				if (siren_noise[j].in_use != 0)
 					continue;
 
 				siren = car_data[car].controlType != CONTROL_TYPE_CIV_AI;
 
+				if (siren)
+				{
+					sample = CarHasSiren(car_data[car].ap.model);
+
+					/* A forced-siren cutscene car can reach this loop without a
+					 * siren sample (CarHasSiren 0). Starting bank 0 / sample 0
+					 * would play an unrelated sound; leave the car silent and
+					 * say so once per level. */
+					if (sample == 0)
+					{
+						if (!(car_zero_siren_reported & (1u << car)))
+						{
+							car_zero_siren_reported |= 1u << car;
+							printInfo("gamesnd: car %d (slot %d) is flagged for a siren but has no siren sample - skipping\n",
+								car, car_data[car].ap.model);
+						}
+
+						break;
+					}
+				}
+				else
+					sample = 0;
+
 				siren_noise[j].in_use = 1;
 				siren_noise[j].stopped = 0;
 				siren_noise[j].car = car;
 				siren_noise[j].idle = siren == 0;
+				siren_noise_sample[j] = sample;
 
 				if (siren)
 				{
-					int siren;
-					siren = CarHasSiren(car_data[car].ap.model);
-					siren_noise_sample[j] = siren;
-
-					siren_noise[j].chan = Start3DTrackingSound(-1, (siren & 0xff00) >> 8, siren & 0xff,
+					siren_noise[j].chan = Start3DTrackingSound(-1, (sample & 0xff00) >> 8, sample & 0xff,
 						(VECTOR*)car_data[car].hd.where.t,
 						(LONGVECTOR3*)car_data[car].st.n.linearVelocity);
-					SoundLogCarSample("siren", car_data[car].ap.model, siren & 0xff);
+					SoundLogCarSample("siren", car_data[car].ap.model, sample & 0xff);
 				}
 				else
 				{
 					// play music
-					siren_noise_sample[j] = 0;
 					siren_noise[j].chan = Start3DTrackingSound(-1, SOUND_BANK_ENVIRONMENT, 5,
 						(VECTOR*)car_data[car].hd.where.t,
 						(LONGVECTOR3*)car_data[car].st.n.linearVelocity);
