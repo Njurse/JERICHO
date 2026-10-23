@@ -45,10 +45,30 @@ FULLTWIST_STATE gFullTwist;
 /* Events                                                             */
 /* ------------------------------------------------------------------ */
 
+/* A level start invalidates every cached hull. The first JER_EVENT_FRAME after
+ * it rebuilds them, before any collision can ask for one. */
+static int ftOnGameStart(void* ud, void* args)
+{
+	(void)ud;
+	(void)args;
+
+	memset(gFullTwist.hulls, 0, sizeof(gFullTwist.hulls));
+	gFullTwist.hullsDirty = 1;
+	gFullTwist.hullsBuilt = 0;
+
+	return JER_RESULT_CONTINUE;
+}
+
 static int ftOnFrame(void* ud, void* args)
 {
 	(void)ud;
 	(void)args;
+
+	/* Prebuild every resident hull at the top of the frame, never inside a
+	 * collision callback. A model swap marks hullsDirty and gets rebuilt here
+	 * on the next frame; the contact that saw the swap falls back to colBox. */
+	if (!gFullTwist.hullsBuilt || gFullTwist.hullsDirty)
+		ftHullBuildAll();
 
 	if (gFullTwist.cfg.debugLog && gFullTwist.collisionsThisFrame > 0)
 	{
@@ -120,6 +140,35 @@ static int ftOnCollision(void* ud, void* args)
 	if (ftIsTumbleCar(car1))
 		ftHandleCar(car1, car0, point, normal, a->howHard, 1);
 
+	if (car1 == NULL)
+	{
+		gFullTwist.cars[(int)car0->id].wallHitFrame = gFullTwist.frame;
+	}
+	else if (normal != NULL && gFullTwist.cfg.carCarImpulse < 100)
+	{
+		int pairInScope = !gFullTwist.cfg.playerOnly ||
+						  ftIsPlayerCar(car0) || ftIsPlayerCar(car1);
+
+		/* The engine computes the stock car-car impulse and torque from this
+		 * same normal immediately after the event. Scaling it here reduces the
+		 * recoil in the frame it happens, without a one-frame governor. */
+		if (pairInScope)
+		{
+			int scale = gFullTwist.cfg.carCarImpulse;
+
+			normal->vx = (int)(((long long)normal->vx * scale) / 100);
+			normal->vy = (int)(((long long)normal->vy * scale) / 100);
+			normal->vz = (int)(((long long)normal->vz * scale) / 100);
+
+			if (gFullTwist.cfg.debugLog)
+			{
+				FT_LOG("[fulltwist] car-car recoil car0=%d car1=%d scale=%d%% normal=(%d,%d,%d)\n",
+					(int)car0->id, (int)car1->id, scale,
+					normal->vx, normal->vy, normal->vz);
+			}
+		}
+	}
+
 	return JER_RESULT_CONTINUE;
 }
 
@@ -130,8 +179,7 @@ static int ftOnWallRestitution(void* ud, void* args)
 
 	(void)ud;
 
-	if (!gFullTwist.cfg.enabled || gFullTwist.cfg.wallSnag <= 0 ||
-		a == NULL || a->car == NULL)
+	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
 		return JER_RESULT_CONTINUE;
 
 	cp = (CAR_DATA*)a->car;
@@ -139,8 +187,35 @@ static int ftOnWallRestitution(void* ud, void* args)
 	if (!ftIsTumbleCar(cp))
 		return JER_RESULT_CONTINUE;
 
-	if (gFullTwist.cars[(int)cp->id].wallSnagFrame == gFullTwist.frame)
-		a->result = 0;	/* cancel the normal bounce; tangential drag is already applied */
+	/* 100 % = stock bounce, 0 = the wall absorbs the normal component. The
+	 * engine's low-restitution branch also skips the stock wall spin, so this
+	 * is the knob the Free Physics preset sets to 100 and the arcade presets
+	 * keep at 0. */
+	if (gFullTwist.cars[(int)cp->id].wallHitFrame == gFullTwist.frame)
+		a->result = gFullTwist.cfg.wallBounce * 4096 / 100;
+
+	return JER_RESULT_CONTINUE;
+}
+
+/* The exposed part of the stock angular settle. The lift-triggered -avel/8 is
+ * not exposed, so ftOnCarTorque cancels it after ConvertTorqueToAngularAcceleration.
+ * Only cars in the free-spin state are touched, so another physics module's
+ * angularDamping survives on every other car. */
+static int ftOnPhysicsParams(void* ud, void* args)
+{
+	JER_ARGS_PHYSICS_PARAMS* a = (JER_ARGS_PHYSICS_PARAMS*)args;
+	CAR_DATA* cp;
+
+	(void)ud;
+
+	if (!gFullTwist.cfg.enabled || !gFullTwist.cfg.freeSpin ||
+		a == NULL || a->car == NULL)
+		return JER_RESULT_CONTINUE;
+
+	cp = (CAR_DATA*)a->car;
+
+	if (ftFreeSpinActive(cp))
+		a->angularDamping = gFullTwist.cfg.angularDamping;
 
 	return JER_RESULT_CONTINUE;
 }
@@ -163,6 +238,16 @@ static int ftOnCarStep(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	st = &gFullTwist.cars[(int)cp->id];
+
+	/* GlobalTimeStep zeroes angular velocity for a car whose hd.speed is 0,
+	 * later in the same frame. A tumbling car is not "stopped" even when its
+	 * linear speed is tiny, so keep hd.speed off zero while the free-spin
+	 * window is open. CAR_STEP fires before that branch. */
+	if (gFullTwist.cfg.freeSpin && gFullTwist.cfg.keepSpinAtRest &&
+		ftFreeSpinActive(cp) && cp->hd.speed == 0)
+	{
+		cp->hd.speed = 1;
+	}
 
 	/* Build/cache the mesh hull once for the player. A collision would do
 	 * this too, but this makes a headless test kick show the hull's measured
@@ -304,8 +389,10 @@ static int ftOnCarStep(void* ud, void* args)
 
 	/* Roof/side landing: the wheel kick above only sees compressed wheels.
 	 * If the lowest hull vertex is on the road, use that point as the pivot
-	 * and turn the vertical impact into roll/pitch instead of losing it. */
-	if (st->tumbled && st->tumbleFrames > 0)
+	 * and turn the vertical impact into roll/pitch instead of losing it. The
+	 * probe also runs for free-spin cars so bodyContact stays a live grounded
+	 * signal for the damping cancellation in ftOnCarTorque. */
+	if (st->tumbled || ftFreeSpinActive(cp))
 	{
 		FULLTWIST_HULL* hull = ftHullForCar(cp);
 		VECTOR bodyPoint;
@@ -322,40 +409,74 @@ static int ftOnCarStep(void* ud, void* args)
 
 			if (bodyOnGround && !st->bodyContact)
 			{
-				int rate = (int)(-(long long)vy * gFullTwist.cfg.groundKick * 32);
-				int jx = (int)(((long long)cp->hd.where.m[1][0] * rate) >> 12);
-				int jy = (int)(((long long)cp->hd.where.m[1][1] * rate) >> 12);
-				int jz = (int)(((long long)cp->hd.where.m[1][2] * rate) >> 12);
-				int pitch = (int)(((long long)bodyLocal.vy * jz -
-								   (long long)bodyLocal.vz * jy) >> 12);
-				int roll = (int)(((long long)bodyLocal.vx * jy -
-								  (long long)bodyLocal.vy * jx) >> 12);
-				int av0 = cp->st.n.angularVelocity[0];
-				int av2 = cp->st.n.angularVelocity[2];
-				int avMag = (av0 < 0 ? -av0 : av0) + (av2 < 0 ? -av2 : av2);
+				int rate = 0;
+				int pitch = 0;
+				int roll = 0;
 
-				/* A car that is already tumbling should keep its spin. The
-				 * landing torque is only there to start a tumble from a body
-				 * drop, not to fight an established roll. */
-				if (avMag < 1500000)
-					ftAddLocalRate(cp, roll, pitch);
+				/* The hull-landing assist is a tuning lever, not part of the
+				 * free-spin model. Clamp the raw rate so a fast roof landing
+				 * cannot inject hundreds of millions before ftAddLocalRate's
+				 * per-component clamp. */
+				if (st->tumbled && st->tumbleFrames > 0 && gFullTwist.cfg.bodyKick > 0)
+				{
+					int jx, jy, jz;
+					int av0 = cp->st.n.angularVelocity[0];
+					int av2 = cp->st.n.angularVelocity[2];
+					int avMag = (av0 < 0 ? -av0 : av0) + (av2 < 0 ? -av2 : av2);
+
+					rate = (int)(-(long long)vy * gFullTwist.cfg.bodyKick * 32);
+
+					if (rate > FT_AV_CLAMP)
+						rate = FT_AV_CLAMP;
+					else if (rate < -FT_AV_CLAMP)
+						rate = -FT_AV_CLAMP;
+
+					jx = (int)(((long long)cp->hd.where.m[1][0] * rate) >> 12);
+					jy = (int)(((long long)cp->hd.where.m[1][1] * rate) >> 12);
+					jz = (int)(((long long)cp->hd.where.m[1][2] * rate) >> 12);
+
+					pitch = (int)(((long long)bodyLocal.vy * jz -
+								   (long long)bodyLocal.vz * jy) >> 12);
+					roll = (int)(((long long)bodyLocal.vx * jy -
+								  (long long)bodyLocal.vy * jx) >> 12);
+
+					/* A car that is already tumbling should keep its spin. The
+					 * landing torque is only there to start a tumble from a
+					 * body drop, not to fight an established roll. */
+					if (avMag < 1500000)
+						ftAddLocalRate(cp, roll, pitch);
+				}
 
 				st->bodyContactFrame = gFullTwist.frame;
 
 				if (gFullTwist.cfg.debugLog)
 				{
-					FT_LOG("[fulltwist] body contact car=%d frame=%u point=(%d,%d,%d) groundY=%d up=%d vy=%d pen=%d rate=%d roll=%d pitch=%d\n",
+					FT_LOG("[fulltwist] body contact car=%d frame=%u point=(%d,%d,%d) groundY=%d up=%d vy=%d pen=%d rate=%d roll=%d pitch=%d free=%d\n",
 						(int)cp->id, gFullTwist.frame, bodyPoint.vx, bodyPoint.vy, bodyPoint.vz,
-						groundY, up, vy, pen, rate, roll, pitch);
+						groundY, up, vy, pen, rate, roll, pitch, st->freeSpinFrames);
 				}
 			}
 		}
 
 		st->bodyContact = bodyOnGround;
 	}
+	else
+	{
+		st->bodyContact = 0;
+	}
 
 	st->airborne = air;
 	st->contactMask = mask;
+
+	/* Keep the free-spin state alive while the car is in the air or resting
+	 * on its body, and let it decay once the car is back on its wheels. */
+	if (gFullTwist.cfg.freeSpin)
+	{
+		if (air || st->bodyContact)
+			st->freeSpinFrames = gFullTwist.cfg.freeSpinWindow;
+		else if (st->freeSpinFrames > 0)
+			st->freeSpinFrames--;
+	}
 
 	if (air)
 		st->airFrames++;
@@ -406,6 +527,7 @@ static int ftOnCarTorque(void* ud, void* args)
 	CAR_DATA* cp;
 	FULLTWIST_CAR* st;
 	int k = 0;
+	int i;
 
 	(void)ud;
 
@@ -419,9 +541,10 @@ static int ftOnCarTorque(void* ud, void* args)
 
 	st = &gFullTwist.cars[(int)cp->id];
 
-	/* Fulltwist torque only belongs to a car it has actually tumbled. This
-	 * keeps the near-upright catch off normal traffic during the load window. */
-	if (!st->tumbled)
+	/* Fulltwist torque only belongs to a car it has actually tumbled, or to a
+	 * free-spinning car that needs the stock lift damping cancelled. This keeps
+	 * the near-upright catch off normal traffic during the load window. */
+	if (!st->tumbled && !ftFreeSpinActive(cp))
 		return JER_RESULT_CONTINUE;
 
 	/* The rollover test holds the 90-degree pose for one second before the
@@ -431,11 +554,31 @@ static int ftOnCarTorque(void* ud, void* args)
 
 	int up = cp->hd.where.m[1][1];
 	int aup = (up < 0) ? -up : up;
-	int grounded = (cp->wasOnGround != 0) || (ftWheelMask(cp) != 0);
+	int grounded = (ftWheelMask(cp) != 0) || (st->bodyContact != 0);
 	int applyDamping = 0;
 	int applyCatch = 0;
 	int applyRetention = 0;
 	int catchK = 0;
+
+	/* ConvertTorqueToAngularAcceleration just applied the lift-triggered
+	 * -avel/8 (wheelforces.c) after the configured -avel * angularDamping.
+	 * Adding the lift term back leaves only the angular_damping the physics
+	 * hook selected, which is the whole point of the free-spin mode. */
+	if (ftFreeSpinActive(cp) && grounded && gFullTwist.cfg.cancelExtraDamping > 0)
+	{
+		int cancelK = gFullTwist.cfg.cancelExtraDamping;
+
+		for (i = 0; i < 3; i++)
+			cp->hd.aacc[i] += (int)(((long long)cp->st.n.angularVelocity[i] * cancelK) / 800);
+
+		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 10) == 0)
+		{
+			FT_LOG("[fulltwist] free spin car=%d frame=%u damp=%d cancel=%d av=(%d,%d,%d)\n",
+				(int)cp->id, gFullTwist.frame, gFullTwist.cfg.angularDamping,
+				cancelK, cp->st.n.angularVelocity[0], cp->st.n.angularVelocity[1],
+				cp->st.n.angularVelocity[2]);
+		}
+	}
 
 	if (st->tumbleFrames > 0)
 	{
@@ -448,7 +591,7 @@ static int ftOnCarTorque(void* ud, void* args)
 		if (gFullTwist.cfg.spinRetention > 0)
 			applyRetention = 1;
 	}
-	else
+	else if (st->tumbled)
 	{
 		/* The tumble window is over, but a car on its side or roof can keep
 		 * spinning on the stock damping alone. Damp the spin; do not upright
@@ -548,10 +691,12 @@ JER_MODULE_ENTRY(jer_module_fulltwist_entry)(JERICHO_CONTEXT* ctx)
 		"",
 		JERICHO_SDK_VERSION);
 
+	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, ftOnGameStart, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, ftOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_COLLISION, ftOnCollision, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, ftOnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, ftOnCarTorque, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_PHYSICS_PARAMS, ftOnPhysicsParams, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, ftOnWallRestitution, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, ftOnResetCar, NULL, 0);
 

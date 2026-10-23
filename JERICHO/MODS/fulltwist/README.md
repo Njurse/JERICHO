@@ -5,27 +5,36 @@ response the engine already computes.
 
 ## What it does
 
+- Adds a **free-spin** state for cars that have been hit, are airborne, or are
+  resting on their body: the stock angular damping is lowered, the engine's
+  lift-triggered `-avel/8` is cancelled, and the stopped-car spin kill is
+  bypassed while the window lasts. Untouched traffic keeps the stock damping.
 - Adds one roll/pitch angular impulse from the **mesh hull** of the car, not a
   box heuristic: the contact point, lever and impulse angle come from the clean
   body mesh.
 - Splits the impulse between roll and pitch by the hull's axis inertias
   (`hy^2 + hz^2` for pitch, `hx^2 + hz^2` for roll), then lets the stock
   quaternion integrator, suspension and ground contacts carry the tumble.
-- Adds a **rollover catch**: once the tumble window closes, a car on its side or
-  roof gets extra damping and a bounded uprighting torque while it is still in
-  ground contact, instead of spinning on the stock damping alone.
-- Offers a **3D scenery override** of the engine's 2D `CarBuildingCollision`
-  check. A car whose hull does not vertically overlap a `BUILDING_BOX` is not
-  treated as a wall hit; a real hit gets its contact point moved to the hull
-  support. This is the ceiling/underside false-positive fix.
+- Offers a **hull scenery override** of the engine's 2D `CarBuildingCollision`
+  check. The hull's world-projected XZ footprint gates false 2D hits, and a real
+  hit gets its contact point moved to the hull contact so the stock lever is the
+  body, not the fixed `carY + 41` point. This is also the ceiling/underside
+  false-positive fix.
+- Restores a **wall bounce** slider (`wall_bounce`, 100 = stock restitution) in
+  place of the old absorb-on-snag path, and scales the stock car-car recoil
+  (`car_car_impulse`) so a shunt does not launch traffic.
+- Keeps the **rollover catch** as a tunable for the arcade presets; Free Physics
+  turns it off and lets the car settle where the physics puts it.
 
 ## Where it hooks
 
 | Hook | Engine site | What FULL TWIST uses it for |
 |---|---|---|
 | `JER_EVENT_COLLISION` | `GlobalTimeStep` (`handling.c`) for car-vs-car; `CarBuildingCollision` (`bcollide.c`) for car-vs-world | impact point, surface normal, `howHard`, both cars |
-| `JER_EVENT_CAR_STEP` | top of `StepOneCar` (`wheelforces.c`) | wheel mask, uprightness, airborne/landing detection, test levers |
-| `JER_EVENT_CAR_TORQUE` | after `ConvertTorqueToAngularAcceleration` (`wheelforces.c`) | tumble damping and the rollover catch |
+| `JER_EVENT_CAR_STEP` | top of `StepOneCar` (`wheelforces.c`) | wheel mask, uprightness, airborne/landing detection, free-spin window, test levers |
+| `JER_EVENT_CAR_TORQUE` | after `ConvertTorqueToAngularAcceleration` (`wheelforces.c`) | tumble damping, the rollover catch, and the lift `-avel/8` cancellation |
+| `JER_EVENT_GET_PHYSICS_PARAMS` | top of `StepOneCar` (`wheelforces.c`) | lower the base `angularDamping` for free-spin cars only |
+| `JER_EVENT_GET_WALL_RESTITUTION` | `CarBuildingCollision` (`bcollide.c`) | `wall_bounce` (100 % = stock restitution) |
 | `JER_EVENT_FRAME` | `GlobalTimeStep` | frame counter, per-frame latch reset |
 | `JER_EVENT_RESET_CAR` | damage/reset path | clear per-car tumble state |
 | `JER_OVERRIDE_SLOT_SCENERY_COLLISION` | `CarBuildingCollision` (`bcollide.c`) | reject a false 2D scenery hit or replace its contact point |
@@ -70,18 +79,42 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `damping` | 25 | extra roll/pitch damping while tumbling, 0–100 % |
 | `rollover_damping` | 45 | extra damping after the window while on the side/roof |
 | `rollover_catch` | 50 | uprighting torque while on the side/roof and grounded |
+| `spin_retention` | 50 | legacy offset of the stock 128 damping while tumbling |
 | `window` | 120 | frames the tumble response stays active |
 | `trip` | 20 | share redirected into roll/pitch when the physical torque is mostly yaw |
-| `launch` | 80 | contact impulse along the collision normal, 0–200 % |
-| `scenery3d` | 1 | enable the 3D hull/scenery override |
+| `launch` | 80 | **scenery** contact impulse along the normal, 0–200 % |
+| `wall_snag` | 45 | tangential velocity removed on a wall hit, 0–100 % |
+| `wall_bounce` | 0 | wall restitution, 0–100 % (100 = stock bounce) |
+| `free_spin` | 0 | 1 = lower the stock damping for cars in the free-spin state |
+| `angular_damping` | 128 | 0–128, damping used for free-spin cars (stock 128) |
+| `cancel_extra_damping` | 0 | 0–100 %, cancel the engine's lift `-avel/8` |
+| `keep_spin_at_rest` | 0 | 1 = keep `hd.speed` off zero while free-spinning |
+| `free_spin_window` | 90 | frames the free-spin state stays active |
+| `hull_contact` | 0 | 1 = use the hull contact for the scenery lever |
+| `hull_footprint` | 0 | 1 = use the projected hull footprint as a planar gate |
+| `scenery_mode` | 0 | 0 = severity assist, 1 = hull-led (launch `r x J` only) |
+| `car_car_impulse` | 100 | 0–100 % of the stock car-car impulse and torque |
+| `car_car_launch` | 80 | car-car contact impulse, 0–200 % |
+| `car_car_tumble` | 100 | car-car roll/pitch assist, 0–200 % |
+| `body_kick` | 50 | body-landing assist, 0–200, clamped to the angular clamp |
+| `scenery3d` | 1 | enable the hull/scenery override |
 | `player_only` | 0 | 1 = only the player car / cars hit by the player |
 | `debug_log` | 0 | recorder lines in the JERICHO log |
 | `test_kick` | 0 | deterministic settle kick at level start |
 | `test_crash` | 0 | spawn an oncoming car and drive both together |
 | `test_rollover` | 0 | rotate the player 90° about its long axis and shove it |
 
-Presets: **Cinematic**, **Arcade**, **Off**. Any hand adjustment switches the
-preset to **Custom**.
+The defaults above are the legacy/Arcade values. **Free Physics** sets
+`free_spin=1`, `angular_damping=16`, `cancel_extra_damping=100`,
+`keep_spin_at_rest=1`, `free_spin_window=120`, `hull_contact=1`,
+`hull_footprint=1`, `scenery_mode=1`, `wall_snag=0`, `wall_bounce=100`,
+`car_car_impulse=50`, `car_car_launch=0`, `car_car_tumble=50`, `body_kick=0`,
+`damping=0`, `rollover_damping=0`, `rollover_catch=0`, `spin_retention=0`,
+`ground_kick=25`, `window=180`, `trip=20`, `launch=40`.
+
+Presets: **Cinematic**, **Arcade**, **Free Physics**, **Off**. Any hand
+adjustment switches the preset to **Custom**. Free Physics is used when the ini
+has no `preset` key and by **Reset to Defaults**.
 
 ## Test levers
 
@@ -106,9 +139,13 @@ Turn `debug_log` on and the log carries:
 ```
 [fulltwist] hull slot=0 ... size=(...) cog=(...) colBox=(...) footprint=15
 [fulltwist] hit frame=N car=... mode=... torque=(pitch,yaw,roll) rollMix=...
-            pitchMix=... rate=... hull=1 inertia=(...) contact=(...)
-[fulltwist] scenery hull car=... hullY=(...) buildingY=(...) point=(...)
+            pitchMix=... rate=... launch=... hull=1 inertia=(...) contact=(...)
+[fulltwist] scenery contact car=... stock=(...) hull=(...) hullY=(...) buildingY=(...)
+[fulltwist] scenery reject car=... hullY=(...) buildingY=(...) point=(...)
 [fulltwist] scenery skip car=... hullY=(...) buildingY=(...)
+[fulltwist] car-car recoil car0=... car1=... scale=...% normal=(...)
+[fulltwist] free spin car=... damp=... cancel=... av=(...)
+[fulltwist] body contact car=... point=(...) groundY=... vy=... rate=... free=...
 [fulltwist] rollover catch car=... up=... ux=... uz=... catchK=...
 [fulltwist] test rollover rotate car=... frame=... up=... impulse_at=...
 [fulltwist] test rollover impulse car=... frame=... lateral=... rate=...
@@ -128,14 +165,26 @@ with the relevant `test_* = 1` in the ini.
 ## Notes / risks
 
 - The engine treats `hd.where.m[1][1] < 100` for ~180 frames as an upside-down
-  death (`mission.c`). The catch is what keeps a tumble from ending there; tune
-  `rollover_damping` / `rollover_catch` rather than editing `mission.c`.
+  death (`mission.c`). Free Physics sets `rollover_damping`/`rollover_catch` to
+  0, so a car that comes to rest on its roof can end there; the arcade presets
+  keep the uprighting assist.
+- The scenery collision event is fired **after** `bcollide.c` negates
+  `collisionResult.hit.vy` (`bcollide.c:942`). The override runs before that
+  negation, so it writes the hull contact in world-up Y; `ftHandleCar`
+  un-negates the event point for scenery hits. Do not mix the two conventions.
+- The car-car recoil scale writes the engine's shared collision normal in place
+  at the end of `ftOnCollision`. The engine uses that normal for the stock
+  impulse and torque immediately afterwards. FULL TWIST is listed after crumple
+  in `JERICHO/CONFIG/modlist.ini`, so crumple's dent snapshot sees the original;
+  a collision handler registered after FULL TWIST would see the scaled normal.
+- `angular_damping` is applied only to cars in the free-spin state, so another
+  physics module's value (cainescrossfire uses 512) survives on every other car.
 - The hull is built from `gCarCleanModelPtr[slot]` and cached per resident slot
   by model pointer + vertex count. A level change or a hot import that swaps the
   model rebuilds it on the next query.
-- The scenery override is conservative: it only rejects a hit when the hull and
-  the building box do not overlap vertically. A real hit keeps the stock wall
-  normal and only moves the contact point.
+- The scenery gate is conservative: it rejects only when the projected hull and
+  the building box do not overlap in XZ (with the engine's +15 car margin) or
+  vertically. A real hit keeps the stock normal and only moves the contact point.
 - The vehicle deformation/import features still own their own collision logic;
   FULL TWIST only writes `st.n.angularVelocity`, `st.n.linearVelocity` and
   `hd.aacc`.

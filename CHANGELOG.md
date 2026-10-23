@@ -6,6 +6,23 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### Full Twist
+
+- New **Free Physics** preset: cars that are hit, airborne, or resting on their
+  body keep their rotation. It lowers the stock `angularDamping`, cancels the
+  engine's lift `-avel/8`, and bypasses the stopped-car spin kill; untouched
+  traffic keeps stock damping.
+- Scenery collisions now use the car's convex hull: the world-projected XZ
+  footprint gates false 2D hits and the stock contact point is replaced by the
+  hull contact, so the wall torque uses the real lever instead of `carY + 41`.
+- Added `wall_bounce` (100 % = stock restitution) so cars can bounce off scenery,
+  and `car_car_impulse` / `car_car_launch` / `car_car_tumble` so a shunt no
+  longer launches traffic.
+- Fixed the scenery collision point's Y frame (the engine negates `hit.vy`
+  before the event) and clamped the body-landing assist to the angular clamp.
+- Free Physics is the default when the module is enabled; `fulltwist` remains
+  off in the shipped profile.
+
 ### Crumple
 
 - New **Crush Multiplier** row below Buddha Mode: 1.0x to 10.0x in 0.5x steps. It

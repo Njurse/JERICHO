@@ -1,10 +1,10 @@
 id = "fulltwist"
 name = "FULL TWIST"
-version = "0.2.0"
+version = "0.3.0"
 # the JERICHO interface (SDK) this mod is built against
 interface = 2
 author = "JERICHO"
-description = "Driv3r-style tumbles from severe off-center collisions: mesh-hull impulse angles, a latched roll/pitch response, rollover catch, and a 3D scenery-collision override."
+description = "Free-physics tumbles: cars keep their spin after a hit, scenery torque uses the convex hull contact, walls bounce, and car-car recoil is tamed."
 dependencies = []
 # OFF out of the box: a physics-feel experiment that no release ships until it
 # has been played. Turn it on in Options -> JERICHO.

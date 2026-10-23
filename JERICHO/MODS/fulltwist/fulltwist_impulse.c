@@ -64,8 +64,23 @@ int ftWheelMask(const CAR_DATA* cp)
 	return mask;
 }
 
+/* Free spin is a state, not a player privilege: a car that was just hit, is
+ * airborne, or is resting on its body keeps its angular velocity while the
+ * window lasts. Untouched traffic therefore keeps the stock damping. */
+int ftFreeSpinActive(const CAR_DATA* cp)
+{
+	FULLTWIST_CAR* st;
+
+	if (!gFullTwist.cfg.enabled || !gFullTwist.cfg.freeSpin || !ftIsTumbleCar(cp))
+		return 0;
+
+	st = &gFullTwist.cars[(int)cp->id];
+
+	return (st->freeSpinFrames > 0 || st->airborne || st->bodyContact) ? 1 : 0;
+}
+
 /* Column i of hd.where.m is the world-space local axis i. */
-static void ftGetAxes(const CAR_DATA* cp, int* ax, int* ay, int* az)
+void ftGetAxes(const CAR_DATA* cp, int* ax, int* ay, int* az)
 {
 	ax[0] = cp->hd.where.m[0][0];
 	ax[1] = cp->hd.where.m[1][0];
@@ -80,7 +95,7 @@ static void ftGetAxes(const CAR_DATA* cp, int* ax, int* ay, int* az)
 	az[2] = cp->hd.where.m[2][2];
 }
 
-static int ftDotLocal(int x, int y, int z, const int* axis)
+int ftDotLocal(int x, int y, int z, const int* axis)
 {
 	return (int)(((long long)x * axis[0] +
 				  (long long)y * axis[1] +
@@ -145,6 +160,7 @@ void ftHandleCar(CAR_DATA* car, CAR_DATA* other,
 	int span, sev, totalStrength, applyStrength;
 	int rate, rollRate, pitchRate;
 	int launch;
+	int launchCfg;
 	int firstThisFrame;
 	int mode;
 
@@ -167,7 +183,10 @@ void ftHandleCar(CAR_DATA* car, CAR_DATA* other,
 	ftGetAxes(car, ax, ay, az);
 
 	rx = point->vx - car->hd.where.t[0];
-	ry = point->vy - car->hd.where.t[1];
+	/* bcollide.c negates hit.vy before it fires the scenery event. The override
+	 * and every other user of the point are in world-up space, so bring the
+	 * scenery point back before the local lever and hull queries use it. */
+	ry = ((other != NULL) ? point->vy : -point->vy) - car->hd.where.t[1];
 	rz = point->vz - car->hd.where.t[2];
 
 	lx = ftDotLocal(rx, ry, rz, ax);
@@ -342,10 +361,18 @@ void ftHandleCar(CAR_DATA* car, CAR_DATA* other,
 		rate = (int)((long long)rate * inertiaScale / 4096);
 	}
 
+	/* Car-car gets its own assist scale: the stock recoil is already reduced
+	 * by car_car_impulse, so the mod's tumble share is tunable separately. */
+	if (other != NULL)
+		rate = (int)((long long)rate * gFullTwist.cfg.carCarTumble / 100);
+
 	rollRate = (int)((long long)rate * rollMix / 4096);
 	pitchRate = (int)((long long)rate * pitchMix / 4096);
 
-	ftAddLocalRate(car, rollRate, pitchRate);
+	/* scenery_mode = 1 is hull-led: the launch impulse's r x J term is the only
+	 * extra torque, so the stock hull lever is not double-counted. */
+	if (!(other == NULL && gFullTwist.cfg.sceneryMode))
+		ftAddLocalRate(car, rollRate, pitchRate);
 
 	if (firstThisFrame)
 	{
@@ -370,15 +397,18 @@ void ftHandleCar(CAR_DATA* car, CAR_DATA* other,
 	 * tumble. The linear part is deliberately modest; the angular rate above
 	 * is what does the tumbling. */
 	launch = 0;
+	launchCfg = (other != NULL) ? gFullTwist.cfg.carCarLaunch : gFullTwist.cfg.launch;
 
-	if (firstThisFrame && gFullTwist.cfg.launch > 0)
+	if (firstThisFrame && launchCfg > 0)
 	{
 		int imp = (int)((long long)FT_LAUNCH_BASE * totalStrength / 4096 *
-						gFullTwist.cfg.launch / 100);
+						launchCfg / 100);
 
 		if (imp > 0)
 		{
-			int lift = (ftWheelMask(car) != 0) ? imp / 4 : 0;
+			/* The car-car pop is horizontal only: a vertical lift on a traffic
+			 * car is what makes a routine shunt look like a launch. */
+			int lift = (other == NULL && ftWheelMask(car) != 0) ? imp / 4 : 0;
 			int fx = (normal->vx * impulseSign * imp) >> 12;
 			int fy = ((normal->vy * impulseSign * imp) >> 12) + lift;
 			int fz = (normal->vz * impulseSign * imp) >> 12;
@@ -414,4 +444,9 @@ void ftHandleCar(CAR_DATA* car, CAR_DATA* other,
 			(int)tx, (int)ty, (int)tz, rollMix, pitchMix, rate, launch, totalStrength,
 			usedHull, hx, hy, hz, lx, ly, lz);
 	}
+
+	/* A handled impact starts the free-spin window. The window is extended by
+	 * the airborne/body-contact paths in ftOnCarStep. */
+	if (gFullTwist.cfg.freeSpin && gFullTwist.cfg.freeSpinWindow > 0)
+		st->freeSpinFrames = gFullTwist.cfg.freeSpinWindow;
 }

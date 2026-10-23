@@ -3,7 +3,7 @@
  *
  * Every adjustment writes through ftSaveConfig(), so the ini and the menu never
  * disagree. A hand adjustment switches the preset to Custom; Reset to Defaults
- * returns to the Arcade defaults.
+ * returns to the Free Physics defaults.
  */
 
 #include "driver2.h"
@@ -14,7 +14,14 @@
 
 #include <stdio.h>
 
-static const char* const ftPresetNames[] = { "Cinematic", "Arcade", "Off", "Custom" };
+static const char* const ftPresetNames[] =
+{
+	"Cinematic",
+	"Arcade",
+	"Off",
+	"Custom",
+	"Free Physics"
+};
 
 static void ftLabelEnabled(void* ud, char* out, int max)
 {
@@ -37,15 +44,30 @@ static int ftToggleEnabled(void* ud, int dir)
 static void ftLabelPreset(void* ud, char* out, int max)
 {
 	(void)ud;
-	snprintf(out, max, "Preset: %s", ftPresetNames[jer_clamp_int(gFullTwist.cfg.preset, 0, 3)]);
+	snprintf(out, max, "Preset: %s", ftPresetNames[jer_clamp_int(gFullTwist.cfg.preset, 0, 4)]);
 }
 
 static int ftCyclePreset(void* ud, int dir)
 {
-	(void)ud;
-	(void)dir;
+	/* Skip Custom: it is the "hand-tuned" state, not a destination. */
+	static const int cycle[] =
+	{
+		FT_PRESET_CINEMATIC, FT_PRESET_ARCADE, FT_PRESET_FREE_PHYSICS, FT_PRESET_OFF
+	};
+	int i, next = 0;
 
-	gFullTwist.cfg.preset = (gFullTwist.cfg.preset + 1) % 3;
+	(void)ud;
+
+	for (i = 0; i < (int)(sizeof(cycle) / sizeof(cycle[0])); i++)
+	{
+		if (cycle[i] == gFullTwist.cfg.preset)
+		{
+			next = (i + 1) % (int)(sizeof(cycle) / sizeof(cycle[0]));
+			break;
+		}
+	}
+
+	gFullTwist.cfg.preset = cycle[next];
 	ftApplyPreset();
 	ftSaveConfig();
 
@@ -190,7 +212,7 @@ static int ftAdjTrip(void* ud, int dir)
 static void ftLabelLaunch(void* ud, char* out, int max)
 {
 	(void)ud;
-	snprintf(out, max, "Contact impulse: %d%%", gFullTwist.cfg.launch);
+	snprintf(out, max, "Scenery launch: %d%%", gFullTwist.cfg.launch);
 }
 
 static int ftAdjLaunch(void* ud, int dir)
@@ -242,6 +264,208 @@ static int ftAdjSpinRetention(void* ud, int dir)
 {
 	(void)ud;
 	gFullTwist.cfg.spinRetention = jer_clamp_int(gFullTwist.cfg.spinRetention + dir * 5, 0, 100);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+/* ---- free spin / physics ------------------------------------------- */
+
+static void ftLabelFreeSpin(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Free spin: %s", gFullTwist.cfg.freeSpin ? "ON" : "OFF");
+}
+
+static int ftToggleFreeSpin(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gFullTwist.cfg.freeSpin = !gFullTwist.cfg.freeSpin;
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelAngularDamping(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Angular damping: %d", gFullTwist.cfg.angularDamping);
+}
+
+static int ftAdjAngularDamping(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.angularDamping = jer_clamp_int(gFullTwist.cfg.angularDamping + dir * 8, 0, 128);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelCancelExtra(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Cancel lift damping: %d%%", gFullTwist.cfg.cancelExtraDamping);
+}
+
+static int ftAdjCancelExtra(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.cancelExtraDamping = jer_clamp_int(gFullTwist.cfg.cancelExtraDamping + dir * 10, 0, 100);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelKeepSpin(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Keep spin at rest: %s", gFullTwist.cfg.keepSpinAtRest ? "ON" : "OFF");
+}
+
+static int ftToggleKeepSpin(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gFullTwist.cfg.keepSpinAtRest = !gFullTwist.cfg.keepSpinAtRest;
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelFreeSpinWindow(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Free spin window: %d", gFullTwist.cfg.freeSpinWindow);
+}
+
+static int ftAdjFreeSpinWindow(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.freeSpinWindow = jer_clamp_int(gFullTwist.cfg.freeSpinWindow + dir * 15, 0, 300);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelHullContact(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Hull contact assist: %s", gFullTwist.cfg.hullContact ? "ON" : "OFF");
+}
+
+static int ftToggleHullContact(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gFullTwist.cfg.hullContact = !gFullTwist.cfg.hullContact;
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelHullFootprint(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Hull footprint: %s", gFullTwist.cfg.hullFootprint ? "ON" : "OFF");
+}
+
+static int ftToggleHullFootprint(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gFullTwist.cfg.hullFootprint = !gFullTwist.cfg.hullFootprint;
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelSceneryMode(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Scenery mode: %s", gFullTwist.cfg.sceneryMode ? "Hull" : "Assist");
+}
+
+static int ftToggleSceneryMode(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	gFullTwist.cfg.sceneryMode = !gFullTwist.cfg.sceneryMode;
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelWallBounce(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Wall bounce: %d%%", gFullTwist.cfg.wallBounce);
+}
+
+static int ftAdjWallBounce(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.wallBounce = jer_clamp_int(gFullTwist.cfg.wallBounce + dir * 5, 0, 100);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelCarCarImpulse(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Car-car impulse: %d%%", gFullTwist.cfg.carCarImpulse);
+}
+
+static int ftAdjCarCarImpulse(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.carCarImpulse = jer_clamp_int(gFullTwist.cfg.carCarImpulse + dir * 5, 0, 100);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelCarCarLaunch(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Car-car launch: %d%%", gFullTwist.cfg.carCarLaunch);
+}
+
+static int ftAdjCarCarLaunch(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.carCarLaunch = jer_clamp_int(gFullTwist.cfg.carCarLaunch + dir * 10, 0, 200);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelCarCarTumble(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Car-car tumble: %d%%", gFullTwist.cfg.carCarTumble);
+}
+
+static int ftAdjCarCarTumble(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.carCarTumble = jer_clamp_int(gFullTwist.cfg.carCarTumble + dir * 10, 0, 200);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelBodyKick(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Body kick: %d%%", gFullTwist.cfg.bodyKick);
+}
+
+static int ftAdjBodyKick(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.bodyKick = jer_clamp_int(gFullTwist.cfg.bodyKick + dir * 10, 0, 200);
 	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
 	ftSaveConfig();
 	return JER_PAUSE_QUIT_NONE;
@@ -322,6 +546,17 @@ static int ftTestCrashAction(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static int ftTestSmashAction(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	gFullTwist.testSmashPending = 1;
+	gFullTwist.testSmashDone = 1;
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static int ftTestRolloverAction(void* ud, int dir)
 {
 	(void)ud;
@@ -356,7 +591,7 @@ static int ftResetDefaults(void* ud, int dir)
 	(void)ud;
 	(void)dir;
 
-	gFullTwist.cfg.preset = FT_PRESET_ARCADE;
+	gFullTwist.cfg.preset = FT_PRESET_FREE_PHYSICS;
 	ftApplyPreset();
 	ftSaveConfig();
 
@@ -392,6 +627,7 @@ static const JER_PAUSE_MENU_ITEM ftDebugItems[] =
 {
 	{ "Test Kick", NULL, ftTestKickAction, NULL, NULL, 0 },
 	{ "Test Crash", NULL, ftTestCrashAction, NULL, NULL, 0 },
+	{ "Test Smash", NULL, ftTestSmashAction, NULL, NULL, 0 },
 	{ "Test Rollover", NULL, ftTestRolloverAction, NULL, NULL, 0 },
 	{ NULL, ftLabelRolloverSide, ftToggleRolloverSide, NULL, NULL, 0 },
 	{ NULL, ftLabelDebug, ftToggleDebug, NULL, NULL, 0 },
@@ -405,10 +641,36 @@ static const JER_PAUSE_MENU ftDebugMenu =
 	"fulltwist.debug"
 };
 
+static const JER_PAUSE_MENU_ITEM ftPhysicsItems[] =
+{
+	{ NULL, ftLabelFreeSpin,        ftToggleFreeSpin,     NULL, NULL, 0 },
+	{ NULL, ftLabelAngularDamping,  ftAdjAngularDamping,  NULL, NULL, 1 },
+	{ NULL, ftLabelCancelExtra,     ftAdjCancelExtra,     NULL, NULL, 1 },
+	{ NULL, ftLabelKeepSpin,        ftToggleKeepSpin,     NULL, NULL, 0 },
+	{ NULL, ftLabelFreeSpinWindow,  ftAdjFreeSpinWindow,  NULL, NULL, 1 },
+	{ NULL, ftLabelHullContact,     ftToggleHullContact,  NULL, NULL, 0 },
+	{ NULL, ftLabelHullFootprint,   ftToggleHullFootprint,NULL, NULL, 0 },
+	{ NULL, ftLabelSceneryMode,     ftToggleSceneryMode,  NULL, NULL, 0 },
+	{ NULL, ftLabelWallBounce,      ftAdjWallBounce,      NULL, NULL, 1 },
+	{ NULL, ftLabelCarCarImpulse,   ftAdjCarCarImpulse,   NULL, NULL, 1 },
+	{ NULL, ftLabelCarCarLaunch,    ftAdjCarCarLaunch,    NULL, NULL, 1 },
+	{ NULL, ftLabelCarCarTumble,    ftAdjCarCarTumble,    NULL, NULL, 1 },
+	{ NULL, ftLabelBodyKick,        ftAdjBodyKick,        NULL, NULL, 1 },
+};
+
+static const JER_PAUSE_MENU ftPhysicsMenu =
+{
+	"Physics",
+	ftPhysicsItems,
+	(int)(sizeof(ftPhysicsItems) / sizeof(ftPhysicsItems[0])),
+	"fulltwist.physics"
+};
+
 static const JER_PAUSE_MENU_ITEM ftMainItems[] =
 {
 	{ NULL, ftLabelEnabled,   ftToggleEnabled,   NULL, NULL, 0 },
 	{ NULL, ftLabelPreset,    ftCyclePreset,     NULL, NULL, 0 },
+	{ "Physics",              NULL,              NULL, NULL, &ftPhysicsMenu, 0 },
 	{ "Tuning",               NULL,              NULL, NULL, &ftTuningMenu, 0 },
 	{ "Debug",                NULL,              NULL, NULL, &ftDebugMenu, 0 },
 	{ NULL, ftLabelPlayerOnly, ftTogglePlayerOnly, NULL, NULL, 0 },

@@ -95,8 +95,69 @@ static void ftSpawnCrashCar(CAR_DATA* player)
 		fwdX, fwdZ, vx, vz);
 }
 
-static void ftRolloverTest(CAR_DATA* cp)
+/* Spawn a car beside the player, park it, and apply the roll-test shove
+ * toward it. Both cars are flagged as colliding, so the engine resolves the
+ * first car-car contact on the next RK step. This is the deterministic
+ * car-car smash lever. */
+static void ftSmashTest(CAR_DATA* player)
 {
+	CAR_DATA* other;
+	LONGVECTOR4 pos;
+	static char padId = 0;
+	int sideX, sideZ;
+	int dist = 220;
+	int sign = 1;
+
+	if (player == NULL || player->ap.carCos == NULL)
+		return;
+
+	other = ftFindFreeCar();
+
+	if (other == NULL)
+	{
+		FT_LOG("[fulltwist] test smash: no free CAR_DATA slot\n");
+		return;
+	}
+
+	sideX = player->hd.where.m[0][0] * sign;
+	sideZ = player->hd.where.m[2][0] * sign;
+
+	pos[0] = player->hd.where.t[0] + (int)(((long long)sideX * dist) >> 12);
+	pos[1] = player->hd.where.t[1];
+	pos[2] = player->hd.where.t[2] + (int)(((long long)sideZ * dist) >> 12);
+	pos[3] = 0;
+
+	if (!InitCar(other, player->hd.direction, &pos, CONTROL_TYPE_CUTSCENE,
+				 player->ap.model, player->ap.palette & 255, &padId))
+	{
+		FT_LOG("[fulltwist] test smash: InitCar refused slot %d\n", (int)other->id);
+		return;
+	}
+
+	/* Park it; the player is shoved into it by the roll-test force. */
+	other->st.n.linearVelocity[0] = 0;
+	other->st.n.linearVelocity[1] = 0;
+	other->st.n.linearVelocity[2] = 0;
+	other->st.n.angularVelocity[0] = 0;
+	other->st.n.angularVelocity[1] = 0;
+	other->st.n.angularVelocity[2] = 0;
+	other->hd.speed = 0;
+
+	player->hd.mayBeColliding |= 1u << other->id;
+	other->hd.mayBeColliding |= 1u << player->id;
+
+	/* The roll-test shove, aimed at the parked car. */
+	player->st.n.linearVelocity[0] += (int)(((long long)sideX * FT_TEST_ROLLOVER_FORCE) >> 12);
+	player->st.n.linearVelocity[2] += (int)(((long long)sideZ * FT_TEST_ROLLOVER_FORCE) >> 12);
+	ftAddLocalRate(player, -sign * FT_TEST_ROLLOVER_RATE, 0);
+	player->hd.speed = 20;
+
+	FT_LOG("[fulltwist] test smash player=%d other=%d pos=(%d,%d,%d) side=%d force=%d rate=%d\n",
+		(int)player->id, (int)other->id, pos[0], pos[1], pos[2], sign,
+		FT_TEST_ROLLOVER_FORCE, -sign * FT_TEST_ROLLOVER_RATE);
+}
+
+static void ftRolloverTest(CAR_DATA* cp){
 	FULLTWIST_CAR* st;
 	int up;
 	int side = (gFullTwist.cfg.testRolloverSide < 0) ? -1 : 1;
@@ -199,6 +260,26 @@ void ftTestTick(CAR_DATA* cp)
 	{
 		gFullTwist.testCrashPending = 0;
 		ftSpawnCrashCar(cp);
+	}
+
+	if (gFullTwist.cfg.testSmash && !gFullTwist.testSmashDone)
+	{
+		if (!gFullTwist.testSmashScheduled)
+		{
+			gFullTwist.testSmashScheduled = 1;
+			gFullTwist.testSmashAtFrame = gFullTwist.frame + FT_TEST_KICK_DELAY;
+		}
+		else if (gFullTwist.frame >= gFullTwist.testSmashAtFrame)
+		{
+			gFullTwist.testSmashPending = 1;
+			gFullTwist.testSmashDone = 1;
+		}
+	}
+
+	if (gFullTwist.testSmashPending)
+	{
+		gFullTwist.testSmashPending = 0;
+		ftSmashTest(cp);
 	}
 
 	if (gFullTwist.cfg.testRollover && !gFullTwist.testRolloverDone)
