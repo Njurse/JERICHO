@@ -35,6 +35,7 @@
 #include "driver2.h"
 #include "jericho.h"
 #include "jer_events.h"
+#include "cars.h"		/* JerCarSlotUsable for the car-car scale guard */
 #include "fulltwist.h"
 
 #include <string.h>
@@ -148,14 +149,22 @@ static int ftOnCollision(void* ud, void* args)
 	{
 		int pairInScope = !gFullTwist.cfg.playerOnly ||
 						  ftIsPlayerCar(car0) || ftIsPlayerCar(car1);
+		int otherUsable = ftIsTumbleCar(car1) &&
+						  car1->ap.carCos != NULL &&
+						  JerCarSlotUsable(car1->ap.model);
+		int scale = gFullTwist.cfg.carCarImpulse;
+
+		if (scale < 0)
+			scale = 0;
+		else if (scale > 100)
+			scale = 100;
 
 		/* The engine computes the stock car-car impulse and torque from this
-		 * same normal immediately after the event. Scaling it here reduces the
-		 * recoil in the frame it happens, without a one-frame governor. */
-		if (pairInScope)
+		 * same normal immediately after the event. Scale it only for a real,
+		 * resident pair; a cutscene/camera/culled car keeps the stock
+		 * response. */
+		if (pairInScope && otherUsable && scale < 100)
 		{
-			int scale = gFullTwist.cfg.carCarImpulse;
-
 			normal->vx = (int)(((long long)normal->vx * scale) / 100);
 			normal->vy = (int)(((long long)normal->vy * scale) / 100);
 			normal->vz = (int)(((long long)normal->vz * scale) / 100);
@@ -166,6 +175,11 @@ static int ftOnCollision(void* ud, void* args)
 					(int)car0->id, (int)car1->id, scale,
 					normal->vx, normal->vy, normal->vz);
 			}
+		}
+		else if (gFullTwist.cfg.debugLog)
+		{
+			FT_LOG("[fulltwist] car-car scale skip car0=%d car1=%d pair=%d usable=%d scale=%d\n",
+				(int)car0->id, (int)car1->id, pairInScope, otherUsable, scale);
 		}
 	}
 

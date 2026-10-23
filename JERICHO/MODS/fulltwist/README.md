@@ -16,10 +16,13 @@ response the engine already computes.
   (`hy^2 + hz^2` for pitch, `hx^2 + hz^2` for roll), then lets the stock
   quaternion integrator, suspension and ground contacts carry the tumble.
 - Offers a **hull scenery override** of the engine's 2D `CarBuildingCollision`
-  check. The hull's world-projected XZ footprint gates false 2D hits, and a real
-  hit gets its contact point moved to the hull contact so the stock lever is the
-  body, not the fixed `carY + 41` point. This is also the ceiling/underside
-  false-positive fix.
+  check. The hull's world-projected XZ footprint gates false 2D hits. The
+  engine's contact point is never rewritten; the hull contact is logged and
+  used only for FULL TWIST's own torque assist. This is also the
+  ceiling/underside false-positive fix.
+- Prebuilds every resident convex hull at the top of the frame after a level
+  start or a model swap. Collision callbacks never build a hull; if one is not
+  ready they fall back to the colBox.
 - Restores a **wall bounce** slider (`wall_bounce`, 100 = stock restitution) in
   place of the old absorb-on-snag path, and scales the stock car-car recoil
   (`car_car_impulse`) so a shunt does not launch traffic.
@@ -35,9 +38,9 @@ response the engine already computes.
 | `JER_EVENT_CAR_TORQUE` | after `ConvertTorqueToAngularAcceleration` (`wheelforces.c`) | tumble damping, the rollover catch, and the lift `-avel/8` cancellation |
 | `JER_EVENT_GET_PHYSICS_PARAMS` | top of `StepOneCar` (`wheelforces.c`) | lower the base `angularDamping` for free-spin cars only |
 | `JER_EVENT_GET_WALL_RESTITUTION` | `CarBuildingCollision` (`bcollide.c`) | `wall_bounce` (100 % = stock restitution) |
-| `JER_EVENT_FRAME` | `GlobalTimeStep` | frame counter, per-frame latch reset |
+| `JER_EVENT_FRAME` | `GlobalTimeStep` | frame counter, per-frame latch reset, hull prebuild |
 | `JER_EVENT_RESET_CAR` | damage/reset path | clear per-car tumble state |
-| `JER_OVERRIDE_SLOT_SCENERY_COLLISION` | `CarBuildingCollision` (`bcollide.c`) | reject a false 2D scenery hit or replace its contact point |
+| `JER_OVERRIDE_SLOT_SCENERY_COLLISION` | `CarBuildingCollision` (`bcollide.c`) | reject a false 2D scenery hit; never rewrites the point |
 
 The module is compiled in (no `runtime = "dll"`). It needs the game's config
 store and pause-menu API, which are linked into the exe but not the runtime DLL
@@ -50,7 +53,7 @@ surface.
 | `fulltwist.c` | entry point and the event handlers |
 | `fulltwist_config.c` | defaults, clamps, presets, ini load/save |
 | `fulltwist_menu.c` | the FULL TWIST pause page |
-| `fulltwist_hull.c` | clean-mesh hull, XZ convex footprint, 3D scenery test |
+| `fulltwist_hull.c` | prebuilt clean-mesh hull, projected XZ footprint, read-only scenery gate |
 | `fulltwist_impulse.c` | contact/lever/torque/impulse math |
 | `fulltwist_test.c` | deterministic crash and rollover levers |
 
@@ -90,7 +93,7 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `cancel_extra_damping` | 0 | 0–100 %, cancel the engine's lift `-avel/8` |
 | `keep_spin_at_rest` | 0 | 1 = keep `hd.speed` off zero while free-spinning |
 | `free_spin_window` | 90 | frames the free-spin state stays active |
-| `hull_contact` | 0 | 1 = use the hull contact for the scenery lever |
+| `hull_contact` | 0 | 1 = log/use the hull lever for FULL TWIST's assist (never rewrites the engine point) |
 | `hull_footprint` | 0 | 1 = use the projected hull footprint as a planar gate |
 | `scenery_mode` | 0 | 0 = severity assist, 1 = hull-led (launch `r x J` only) |
 | `car_car_impulse` | 100 | 0–100 % of the stock car-car impulse and torque |
@@ -102,11 +105,12 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `debug_log` | 0 | recorder lines in the JERICHO log |
 | `test_kick` | 0 | deterministic settle kick at level start |
 | `test_crash` | 0 | spawn an oncoming car and drive both together |
+| `test_smash` | 0 | spawn a car beside the player and shove them together |
 | `test_rollover` | 0 | rotate the player 90° about its long axis and shove it |
 
 The defaults above are the legacy/Arcade values. **Free Physics** sets
 `free_spin=1`, `angular_damping=16`, `cancel_extra_damping=100`,
-`keep_spin_at_rest=1`, `free_spin_window=120`, `hull_contact=1`,
+`keep_spin_at_rest=1`, `free_spin_window=120`, `hull_contact=0`,
 `hull_footprint=1`, `scenery_mode=1`, `wall_snag=0`, `wall_bounce=100`,
 `car_car_impulse=50`, `car_car_launch=0`, `car_car_tumble=50`, `body_kick=0`,
 `damping=0`, `rollover_damping=0`, `rollover_catch=0`, `spin_retention=0`,
@@ -118,13 +122,15 @@ has no `preset` key and by **Reset to Defaults**.
 
 ## Test levers
 
-`FULL TWIST -> Debug -> Test Kick / Test Crash / Test Rollover`, or the matching
-ini keys for a `-frames` run:
+`FULL TWIST -> Debug -> Test Kick / Test Crash / Test Smash / Test Rollover`, or
+the matching ini keys for a `-frames` run:
 
 - **Test Kick** applies a known roll/pitch rate and upward launch. Use it to
   compare settling on flat ground, after a jump, or after roof/side contact.
 - **Test Crash** spawns a car about 420 units ahead of the player, facing back,
   and gives both a closing velocity. It exercises the car-car hull path.
+- **Test Smash** spawns a car beside the player, parks it, and applies the
+  roll-test shove toward it. It exercises the car-car contact path.
 - **Test Rollover** turns the car's heading 90° (yaw, not roll), holds that
   pose for one second (30 frames at the 30 Hz sim step), then applies a lateral
   impulse perpendicular to the car's direction — 8× the old test shove
@@ -137,13 +143,17 @@ ini keys for a `-frames` run:
 Turn `debug_log` on and the log carries:
 
 ```
-[fulltwist] hull slot=0 ... size=(...) cog=(...) colBox=(...) footprint=15
+[fulltwist] hull ready slot=... verts=... size=(...) footprint=...
+[fulltwist] hull skipped slot=... (reason)
+[fulltwist] hull pending slot=... (model changed; colBox fallback)
 [fulltwist] hit frame=N car=... mode=... torque=(pitch,yaw,roll) rollMix=...
             pitchMix=... rate=... launch=... hull=1 inertia=(...) contact=(...)
-[fulltwist] scenery contact car=... stock=(...) hull=(...) hullY=(...) buildingY=(...)
+[fulltwist] scenery lever car=... stock=(...) hull=(...) hullY=(...) buildingY=(...)
+[fulltwist] scenery response car=... point=(...) hullContact=... footprint=...
 [fulltwist] scenery reject car=... hullY=(...) buildingY=(...) point=(...)
 [fulltwist] scenery skip car=... hullY=(...) buildingY=(...)
 [fulltwist] car-car recoil car0=... car1=... scale=...% normal=(...)
+[fulltwist] car-car scale skip car0=... car1=... pair=... usable=... scale=...
 [fulltwist] free spin car=... damp=... cancel=... av=(...)
 [fulltwist] body contact car=... point=(...) groundY=... vy=... rate=... free=...
 [fulltwist] rollover catch car=... up=... ux=... uz=... catchK=...
@@ -170,8 +180,8 @@ with the relevant `test_* = 1` in the ini.
   keep the uprighting assist.
 - The scenery collision event is fired **after** `bcollide.c` negates
   `collisionResult.hit.vy` (`bcollide.c:942`). The override runs before that
-  negation, so it writes the hull contact in world-up Y; `ftHandleCar`
-  un-negates the event point for scenery hits. Do not mix the two conventions.
+  negation and is read-only; `ftHandleCar` un-negates the event point for
+  scenery hits. Do not mix the two conventions.
 - The car-car recoil scale writes the engine's shared collision normal in place
   at the end of `ftOnCollision`. The engine uses that normal for the stock
   impulse and torque immediately afterwards. FULL TWIST is listed after crumple
@@ -179,12 +189,22 @@ with the relevant `test_* = 1` in the ini.
   a collision handler registered after FULL TWIST would see the scaled normal.
 - `angular_damping` is applied only to cars in the free-spin state, so another
   physics module's value (cainescrossfire uses 512) survives on every other car.
-- The hull is built from `gCarCleanModelPtr[slot]` and cached per resident slot
-  by model pointer + vertex count. A level change or a hot import that swaps the
-  model rebuilds it on the next query.
+- Every resident hull is built from `gCarCleanModelPtr[slot]` at the frame top
+  after a level start or a model swap. A swap marks the slot dirty and rebuilds
+  at the next frame; the contact that saw the swap falls back to the colBox.
 - The scenery gate is conservative: it rejects only when the projected hull and
   the building box do not overlap in XZ (with the engine's +15 car margin) or
-  vertically. A real hit keeps the stock normal and only moves the contact point.
+  vertically. A real hit keeps the engine's stock point and normal; the hull
+  contact is only logged and used for FULL TWIST's own torque.
+- Rewriting `args->point` was removed in `438fe59a` because it crashed after
+  repeated wall hits; FULL TWIST must never do it again. `hull_contact` is an
+  assist-only log/lever switch and defaults to 0.
+- A live traffic car can have no cosmetics (a model that is not built or was
+  released mid-level). The engine now skips it in the car-car box build, step,
+  revs, scenery test and damage paths; the skip is logged once. FULL TWIST also
+  requires `JerCarSlotUsable` before touching a car.
+- The car-car normal scale is skipped unless the other car is a real, resident
+  model (`JerCarSlotUsable`); the skip is logged as `car-car scale skip`.
 - The vehicle deformation/import features still own their own collision logic;
   FULL TWIST only writes `st.n.angularVelocity`, `st.n.linearVelocity` and
   `hd.aacc`.

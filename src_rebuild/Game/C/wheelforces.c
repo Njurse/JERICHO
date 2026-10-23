@@ -713,6 +713,11 @@ void StepOneCar(CAR_DATA* cp)
 	if (cp->controlType == CONTROL_TYPE_NONE)
 		return;
 
+	/* A live car with no cosmetics has no cPoints/colBox to step. The
+	 * collision setup skips such traffic cars; do not dereference carCos. */
+	if (cp->ap.carCos == NULL)
+		return;
+
 	SurfacePtr = NULL;
 	_cl.aggressive = handlingType[cp->hndType].aggressiveBraking;
 	_cl.extraangulardamping = 0;

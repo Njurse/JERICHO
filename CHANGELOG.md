@@ -6,22 +6,34 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### Engine
+
+- A live traffic car can have no cosmetics (a model that is not built or was
+  released mid-level). The car-car box build, step, revs, scenery test and
+  damage paths now skip it and log once instead of dereferencing a null mesh;
+  stale `mayBeColliding` bits are cleared. This is the Havana traffic-car crash.
+
 ### Full Twist
 
 - New **Free Physics** preset: cars that are hit, airborne, or resting on their
   body keep their rotation. It lowers the stock `angularDamping`, cancels the
   engine's lift `-avel/8`, and bypasses the stopped-car spin kill; untouched
   traffic keeps stock damping.
-- Scenery collisions now use the car's convex hull: the world-projected XZ
-  footprint gates false 2D hits and the stock contact point is replaced by the
-  hull contact, so the wall torque uses the real lever instead of `carY + 41`.
+- Scenery collisions use the car's convex hull for the vertical gate and the
+  world-projected XZ footprint. The engine's contact point is never rewritten;
+  the hull contact is logged and used only for FULL TWIST's own torque.
+- Prebuild every resident convex hull at the top of the frame after a level
+  start or model swap; collisions never build a hull and fall back to the
+  colBox when one is not ready.
 - Added `wall_bounce` (100 % = stock restitution) so cars can bounce off scenery,
   and `car_car_impulse` / `car_car_launch` / `car_car_tumble` so a shunt no
   longer launches traffic.
+- Guard the car-car normal scale against non-resident/culled cars and add the
+  `test_smash` lever.
 - Fixed the scenery collision point's Y frame (the engine negates `hit.vy`
   before the event) and clamped the body-landing assist to the angular clamp.
-- Free Physics is the default when the module is enabled; `fulltwist` remains
-  off in the shipped profile.
+- Free Physics is the default when the module is enabled and sets `hull_contact`
+  to 0; `fulltwist` remains off in the shipped profile.
 
 ### Crumple
 

@@ -10,6 +10,7 @@
 #include "driver2.h"
 #include "jericho.h"
 #include "jer_math.h"
+#include "cars.h"		/* JerCarSlotUsable for the null-mesh guard */
 #include "fulltwist.h"
 
 #define FT_LAUNCH_BASE			120000	/* raw contact impulse at full severity */
@@ -165,6 +166,12 @@ void ftHandleCar(CAR_DATA* car, CAR_DATA* other,
 	int mode;
 
 	if (!ftIsTumbleCar(car) || point == NULL || normal == NULL || car->ap.carCos == NULL)
+		return;
+
+	/* A live traffic car can have a null clean mesh while its resident slot is
+	 * still live. The engine now skips those cars; this is the module-side
+	 * guard so FULL TWIST never applies a hull/impulse to a stale slot. */
+	if (!JerCarSlotUsable(car->ap.model))
 		return;
 
 	if (gFullTwist.cfg.playerOnly &&

@@ -545,6 +545,9 @@ void DamageCar(CAR_DATA *cp, CDATA2D *cd, CRET2D *collisionResult, int strikeVel
 	int dx, dz;
 	int lbody;
 
+	if (cp == NULL || cp->ap.carCos == NULL)
+		return;
+
 	player_id = GetPlayerId(cp);
 
 	lbody = cp->ap.carCos->colBox.vz / 2;
@@ -661,6 +664,10 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 	}
 
 	collided = 0;
+
+	if (cp->ap.carCos == NULL)
+		return 0;
+
 	car_cos = cp->ap.carCos;
 
 	player_id = GetPlayerId(cp);
