@@ -5,13 +5,20 @@ response the engine already computes.
 
 ## What it does
 
-- Adds a **free-spin** state for cars that have been hit, are airborne, or are
-  resting on their body: the stock angular damping is lowered, the engine's
-  lift-triggered `-avel/8` is cancelled, and the stopped-car spin kill is
-  bypassed while the window lasts. Untouched traffic keeps the stock damping.
+- Adds a **player-only patch** (`player_only`, default on): FULL TWIST only
+  touches player cars. Traffic and every other non-player car keep the stock
+  damping, torque, free-spin state and collision response.
+- Adds a **free-spin** state for the player car after a hit, while airborne, or
+  while resting on its body: the stock angular damping is lowered, the engine's
+  lift-triggered `-avel/8` is cancelled only when ConvertTorque actually applied
+  it, and the stopped-car spin kill is bypassed while the window lasts. Yaw
+  keeps the stock damping whenever the wheels are down, so the tires stabilize
+  the spin instead of letting it grow.
 - Holds the chase camera's heading offset while the car tumbles
   (`hold_camera`, default on): the engine's settle-back lerp is suspended so
-  the camera does not chase the spin.
+  the camera does not chase the spin. Once the tumble ends, `camera_snap`
+  (default 75 %) adds a share of the remaining angle per frame so the camera
+  comes back in quickly.
 - Adds one roll/pitch angular impulse from the **mesh hull** of the car, not a
   box heuristic: the contact point, lever and impulse angle come from the clean
   body mesh.
@@ -93,10 +100,11 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `wall_bounce` | 0 | wall restitution, 0–100 % (100 = stock bounce) |
 | `free_spin` | 0 | 1 = lower the stock damping for cars in the free-spin state |
 | `angular_damping` | 128 | 0–128, damping used for free-spin cars (stock 128) |
-| `cancel_extra_damping` | 0 | 0–100 %, cancel the engine's lift `-avel/8` |
+| `cancel_extra_damping` | 0 | 0–100 %, cancel the engine's lift `-avel/8` when it was applied (roll/pitch only) |
 | `keep_spin_at_rest` | 0 | 1 = keep `hd.speed` off zero while free-spinning |
 | `free_spin_window` | 90 | frames the free-spin state stays active |
 | `hold_camera` | 1 | hold the chase camera heading offset while the car tumbles |
+| `camera_snap` | 75 | 0–100 %, extra share of the settle-back per frame after a tumble |
 | `hull_contact` | 0 | 1 = log/use the hull lever for FULL TWIST's assist (never rewrites the engine point) |
 | `hull_footprint` | 0 | 1 = use the projected hull footprint as a planar gate |
 | `scenery_mode` | 0 | 0 = severity assist, 1 = hull-led (launch `r x J` only) |
@@ -105,7 +113,7 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `car_car_tumble` | 100 | car-car roll/pitch assist, 0–200 % |
 | `body_kick` | 50 | body-landing assist, 0–200, clamped to the angular clamp |
 | `scenery3d` | 1 | enable the hull/scenery override |
-| `player_only` | 0 | 1 = only the player car / cars hit by the player |
+| `player_only` | 1 | 1 = player car only; traffic keeps the stock physics |
 | `debug_log` | 0 | recorder lines in the JERICHO log |
 | `test_kick` | 0 | deterministic settle kick at level start |
 | `test_crash` | 0 | spawn an oncoming car and drive both together |
@@ -114,7 +122,8 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 
 The defaults above are the legacy/Arcade values. **Free Physics** sets
 `free_spin=1`, `angular_damping=16`, `cancel_extra_damping=100`,
-`keep_spin_at_rest=1`, `free_spin_window=120`, `hold_camera=1`, `hull_contact=0`,
+`keep_spin_at_rest=1`, `free_spin_window=120`, `hold_camera=1`,
+`camera_snap=75`, `hull_contact=0`,
 `hull_footprint=1`, `scenery_mode=1`, `wall_snag=0`, `wall_bounce=100`,
 `car_car_impulse=50`, `car_car_launch=0`, `car_car_tumble=50`, `body_kick=0`,
 `damping=0`, `rollover_damping=0`, `rollover_catch=0`, `spin_retention=0`,
@@ -151,6 +160,7 @@ Turn `debug_log` on and the log carries:
 [fulltwist] hull skipped slot=... (reason)
 [fulltwist] hull pending slot=... (model changed; colBox fallback)
 [fulltwist] camera hold car=... frame=... tumble=... free=...
+[fulltwist] camera snap car=... frame=... delta=... left=...
 [fulltwist] hit frame=N car=... mode=... torque=(pitch,yaw,roll) rollMix=...
             pitchMix=... rate=... launch=... hull=1 inertia=(...) contact=(...)
 [fulltwist] scenery lever car=... stock=(...) hull=(...) hullY=(...) buildingY=(...)
@@ -159,7 +169,8 @@ Turn `debug_log` on and the log carries:
 [fulltwist] scenery skip car=... hullY=(...) buildingY=(...)
 [fulltwist] car-car recoil car0=... car1=... scale=...% normal=(...)
 [fulltwist] car-car scale skip car0=... car1=... pair=... usable=... scale=...
-[fulltwist] free spin car=... damp=... cancel=... av=(...)
+[fulltwist] free spin car=... damp=... cancel=... extra=... av=(...)
+[fulltwist] tire damp car=... frame=... yawK=... avY=...
 [fulltwist] body contact car=... point=(...) groundY=... vy=... rate=... free=...
 [fulltwist] rollover catch car=... up=... ux=... uz=... catchK=...
 [fulltwist] test rollover rotate car=... frame=... up=... impulse_at=...
@@ -214,6 +225,14 @@ with the relevant `test_* = 1` in the ini.
   the engine's settle-back lerp on `PLAYER.cameraAngle`; it resumes when the
   tumble window/free-spin state ends. Any module that also grips the orbit keeps
   it gripped.
+- The camera snap runs on `JER_EVENT_CAMERA` and moves `PLAYER.cameraAngle`
+  toward `baseDir + gCameraAngle` by `camera_snap` % for 8 frames after the
+  hold ends; it is additive to the engine's own 1/8 settle-back.
+- The free-spin cancellation reads `JER_ARGS_CAR_TORQUE.extraDamping`, set only
+  when ConvertTorque applied the lift `-avel/8`. Roll/pitch are cancelled; yaw
+  keeps the body damping, and the stock yaw damping is restored while the wheels
+  are down.
+- `player_only = 1` is the default; set it to 0 only for an all-cars sandbox.
 - The vehicle deformation/import features still own their own collision logic;
   FULL TWIST only writes `st.n.angularVelocity`, `st.n.linearVelocity` and
   `hd.aacc`.

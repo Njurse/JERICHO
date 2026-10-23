@@ -1000,6 +1000,7 @@ void StepOneCar(CAR_DATA* cp)
 
 		jerArgs.car = cp;
 		jerArgs.yawTorque = 0;
+		jerArgs.extraDamping = _cl.extraangulardamping;
 		jer_fire(JER_EVENT_CAR_TORQUE, &jerArgs);
 		cp->hd.aacc[1] += jerArgs.yawTorque;
 	}

@@ -17,8 +17,8 @@ is in [changelog.txt](changelog.txt).
 
 - New **Free Physics** preset: cars that are hit, airborne, or resting on their
   body keep their rotation. It lowers the stock `angularDamping`, cancels the
-  engine's lift `-avel/8`, and bypasses the stopped-car spin kill; untouched
-  traffic keeps stock damping.
+  engine's lift `-avel/8`, and bypasses the stopped-car spin kill; traffic keeps
+  the stock physics.
 - Scenery collisions use the car's convex hull for the vertical gate and the
   world-projected XZ footprint. The engine's contact point is never rewritten;
   the hull contact is logged and used only for FULL TWIST's own torque.
@@ -32,6 +32,14 @@ is in [changelog.txt](changelog.txt).
   `test_smash` lever.
 - Hold the chase camera's heading offset while the car tumbles (`hold_camera`,
   default on); the settle-back lerp is suspended for the tumble.
+- Player-only patch: FULL TWIST now only touches player cars; traffic keeps the
+  stock damping, torque and collision response (`player_only`, default on).
+- Camera snap: `camera_snap` (default 75 %) adds a share of the remaining angle
+  per frame for eight frames after a tumble, so the view comes back in quickly.
+- Spin fix: cancel the engine's lift damping only when ConvertTorque applied it
+  and only on roll/pitch; restore stock yaw damping while the wheels are down so
+  the tires stabilize the spin instead of letting it accelerate.
+- Engine: `JER_ARGS_CAR_TORQUE.extraDamping` exposes the lift damping flag.
 - Fixed the scenery collision point's Y frame (the engine negates `hit.vy`
   before the event) and clamped the body-landing assist to the angular clamp.
 - Free Physics is the default when the module is enabled and sets `hull_contact`

@@ -23,7 +23,7 @@
 #include "dr2limits.h"		/* MAX_CARS, MAX_CAR_RESIDENT_MODELS */
 
 #define FT_MOD_ID          "fulltwist"
-#define FT_VERSION         "0.3.2"
+#define FT_VERSION         "0.3.3"
 
 /* The impact value at which the tumble rate reaches its configured maximum.
  * Measured scenery impacts sit around 22k (nudge), 78k-114k (ordinary) and
@@ -47,6 +47,9 @@
 #define FT_TEST_ROLLOVER_WAIT   30
 #define FT_TEST_ROLLOVER_FORCE  1200000		/* 8 * the old 150000 shove */
 #define FT_TEST_ROLLOVER_RATE   7200000		/* 8 * the old 900000 rate */
+
+/* Frames of the extra camera settle-back applied after a tumble ends. */
+#define FT_CAMERA_SNAP_FRAMES   8
 
 /* One cached hull per resident model slot. The mesh itself is not stored --
  * only the copied vertices (already placed in the where-local frame) and the
@@ -87,6 +90,7 @@ typedef struct FULLTWIST_CONFIG
 	int keepSpinAtRest;		/* 1 = keep hd.speed off zero while free-spinning */
 	int freeSpinWindow;		/* frames the free-spin state stays active */
 	int holdCamera;			/* 1 = freeze the chase camera heading while tumbling */
+	int cameraSnap;			/* 0..100: extra settle-back per frame after a tumble */
 	int hullContact;		/* 1 = use the hull contact for the scenery lever */
 	int hullFootprint;		/* 1 = use the projected hull footprint as a gate */
 	int sceneryMode;		/* 0 = heuristic assist, 1 = hull-led assist */
@@ -143,6 +147,8 @@ typedef struct FULLTWIST_CAR
 	unsigned int wallSnagFrame;	/* frame of the last world-wall snag */
 	int freeSpinFrames;			/* remaining frames of the free-spin state */
 	unsigned int wallHitFrame;	/* frame of the last scenery hit (restitution) */
+	int cameraHeld;				/* the camera hold was active last frame */
+	int cameraSnapFrames;		/* frames of the fast settle-back still to apply */
 	int contactMask;			/* last wheel susCompression mask */
 	int logTick;				/* log throttle */
 	int rolloverCount;			/* up-vector sign crossings in the current test */

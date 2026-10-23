@@ -36,6 +36,7 @@
 #include "jericho.h"
 #include "jer_events.h"
 #include "cars.h"		/* JerCarSlotUsable for the car-car scale guard */
+#include "camera.h"		/* gCameraAngle for the post-tumble snap-back */
 #include "fulltwist.h"
 
 #include <string.h>
@@ -105,6 +106,13 @@ static int ftOnCollision(void* ud, void* args)
 	if (!ftIsTumbleCar(car0))
 		return JER_RESULT_CONTINUE;
 
+	/* Player-only patch: a traffic/player pair goes through the player car,
+	 * never through the traffic car. Traffic-traffic is ignored entirely. */
+	if (gFullTwist.cfg.playerOnly &&
+		!ftIsPlayerCar(car0) &&
+		!(car1 != NULL && ftIsPlayerCar(car1)))
+		return JER_RESULT_CONTINUE;
+
 	gFullTwist.collisionsThisFrame++;
 
 	/* Stock: car0 gets -normal, car1 gets +normal. A world hit has no
@@ -148,7 +156,7 @@ static int ftOnCollision(void* ud, void* args)
 	else if (normal != NULL && gFullTwist.cfg.carCarImpulse < 100)
 	{
 		int pairInScope = !gFullTwist.cfg.playerOnly ||
-						  ftIsPlayerCar(car0) || ftIsPlayerCar(car1);
+						  (ftIsPlayerCar(car0) && ftIsPlayerCar(car1));
 		int otherUsable = ftIsTumbleCar(car1) &&
 						  car1->ap.carCos != NULL &&
 						  JerCarSlotUsable(car1->ap.model);
@@ -228,6 +236,9 @@ static int ftOnPhysicsParams(void* ud, void* args)
 
 	cp = (CAR_DATA*)a->car;
 
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
+		return JER_RESULT_CONTINUE;
+
 	if (ftFreeSpinActive(cp))
 		a->angularDamping = gFullTwist.cfg.angularDamping;
 
@@ -252,6 +263,10 @@ static int ftOnCarStep(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	st = &gFullTwist.cars[(int)cp->id];
+
+	/* Player-only patch: traffic keeps the stock step. */
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
+		return JER_RESULT_CONTINUE;
 
 	/* GlobalTimeStep zeroes angular velocity for a car whose hd.speed is 0,
 	 * later in the same frame. A tumbling car is not "stopped" even when its
@@ -541,7 +556,6 @@ static int ftOnCarTorque(void* ud, void* args)
 	CAR_DATA* cp;
 	FULLTWIST_CAR* st;
 	int k = 0;
-	int i;
 
 	(void)ud;
 
@@ -554,6 +568,10 @@ static int ftOnCarTorque(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	st = &gFullTwist.cars[(int)cp->id];
+
+	/* Player-only patch: traffic keeps the stock torque. */
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
+		return JER_RESULT_CONTINUE;
 
 	/* Fulltwist torque only belongs to a car it has actually tumbled, or to a
 	 * free-spinning car that needs the stock lift damping cancelled. This keeps
@@ -574,23 +592,45 @@ static int ftOnCarTorque(void* ud, void* args)
 	int applyRetention = 0;
 	int catchK = 0;
 
-	/* ConvertTorqueToAngularAcceleration just applied the lift-triggered
-	 * -avel/8 (wheelforces.c) after the configured -avel * angularDamping.
-	 * Adding the lift term back leaves only the angular_damping the physics
-	 * hook selected, which is the whole point of the free-spin mode. */
-	if (ftFreeSpinActive(cp) && grounded && gFullTwist.cfg.cancelExtraDamping > 0)
+	/* ConvertTorqueToAngularAcceleration applies the lift -avel/8 only when
+	 * the body has ground contact (extraDamping). Cancel that term only when
+	 * it was actually applied, and only on roll/pitch: yaw keeps the body
+	 * damping so the car cannot feed its own spin. The old code cancelled all
+	 * three axes whenever the car looked grounded, which added energy on any
+	 * frame where the engine had not applied the lift term. */
+	if (ftFreeSpinActive(cp) && gFullTwist.cfg.cancelExtraDamping > 0 && a->extraDamping)
 	{
 		int cancelK = gFullTwist.cfg.cancelExtraDamping;
 
-		for (i = 0; i < 3; i++)
-			cp->hd.aacc[i] += (int)(((long long)cp->st.n.angularVelocity[i] * cancelK) / 800);
+		cp->hd.aacc[0] += (int)(((long long)cp->st.n.angularVelocity[0] * cancelK) / 800);
+		cp->hd.aacc[2] += (int)(((long long)cp->st.n.angularVelocity[2] * cancelK) / 800);
 
 		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 10) == 0)
 		{
-			FT_LOG("[fulltwist] free spin car=%d frame=%u damp=%d cancel=%d av=(%d,%d,%d)\n",
+			FT_LOG("[fulltwist] free spin car=%d frame=%u damp=%d cancel=%d extra=%d av=(%d,%d,%d)\n",
 				(int)cp->id, gFullTwist.frame, gFullTwist.cfg.angularDamping,
-				cancelK, cp->st.n.angularVelocity[0], cp->st.n.angularVelocity[1],
-				cp->st.n.angularVelocity[2]);
+				cancelK, a->extraDamping, cp->st.n.angularVelocity[0],
+				cp->st.n.angularVelocity[1], cp->st.n.angularVelocity[2]);
+		}
+	}
+
+	/* The tires stabilize yaw whenever the wheels are down. The free-spin
+	 * physics hook lowered angularDamping for every axis; add the yaw share
+	 * back so the stock yaw damping (and the tire forces) settle the spin
+	 * instead of letting it grow. */
+	if (ftFreeSpinActive(cp) && ftWheelMask(cp) != 0)
+	{
+		int yawK = 128 - gFullTwist.cfg.angularDamping;
+
+		if (yawK > 0)
+		{
+			cp->hd.aacc[1] += (int)(((long long)cp->st.n.angularVelocity[1] * yawK) / 4096);
+
+			if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 10) == 0)
+			{
+				FT_LOG("[fulltwist] tire damp car=%d frame=%u yawK=%d avY=%d\n",
+					(int)cp->id, gFullTwist.frame, yawK, cp->st.n.angularVelocity[1]);
+			}
 		}
 	}
 
@@ -698,12 +738,70 @@ static int ftOnCameraLook(void* ud, void* args)
 	if (st->tumbleFrames > 0 || ftFreeSpinActive(&car_data[carId]))
 	{
 		a->gripOrbit = 1;
+		st->cameraHeld = 1;
+		st->cameraSnapFrames = 0;
 
 		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)carId) % 10) == 0)
 		{
 			FT_LOG("[fulltwist] camera hold car=%d frame=%u tumble=%d free=%d\n",
 				carId, gFullTwist.frame, st->tumbleFrames, st->freeSpinFrames);
 		}
+	}
+	else if (st->cameraHeld)
+	{
+		/* The tumble just ended: start the fast settle-back window. */
+		st->cameraHeld = 0;
+		st->cameraSnapFrames = FT_CAMERA_SNAP_FRAMES;
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+/* The engine's settle-back lerp resumes as soon as the tumble hold ends, but
+ * at one eighth of the remaining angle per frame. While the snap window is
+ * open, add a configurable share of the remaining angle so the camera comes
+ * back in quickly instead of drifting in over half a second. */
+static int ftOnCamera(void* ud, void* args)
+{
+	JER_ARGS_CAMERA* a = (JER_ARGS_CAMERA*)args;
+	PLAYER* lp;
+	FULLTWIST_CAR* st;
+	int carId;
+	int target;
+	int delta;
+
+	(void)ud;
+
+	if (!gFullTwist.cfg.enabled || !gFullTwist.cfg.holdCamera ||
+		gFullTwist.cfg.cameraSnap <= 0 || a == NULL || a->player == NULL || !a->inCar)
+		return JER_RESULT_CONTINUE;
+
+	lp = (PLAYER*)a->player;
+	carId = (int)lp->cameraCarId;
+
+	if (carId < 0 || carId >= MAX_CARS)
+		return JER_RESULT_CONTINUE;
+
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(&car_data[carId]))
+		return JER_RESULT_CONTINUE;
+
+	st = &gFullTwist.cars[carId];
+
+	if (st->cameraSnapFrames <= 0)
+		return JER_RESULT_CONTINUE;
+
+	target = (a->baseDir + gCameraAngle) & 0xfff;
+	delta = ((target - lp->cameraAngle + 2048) & 0xfff) - 2048;
+
+	lp->cameraAngle = (lp->cameraAngle +
+		(int)(((long long)delta * gFullTwist.cfg.cameraSnap) / 100)) & 0xfff;
+	st->cameraSnapFrames--;
+
+	if (gFullTwist.cfg.debugLog &&
+		(st->cameraSnapFrames == FT_CAMERA_SNAP_FRAMES - 1 || st->cameraSnapFrames == 0))
+	{
+		FT_LOG("[fulltwist] camera snap car=%d frame=%u delta=%d left=%d\n",
+			carId, gFullTwist.frame, delta, st->cameraSnapFrames);
 	}
 
 	return JER_RESULT_CONTINUE;
@@ -753,6 +851,7 @@ JER_MODULE_ENTRY(jer_module_fulltwist_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, ftOnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, ftOnCarTorque, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA_LOOK, ftOnCameraLook, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, ftOnCamera, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_PHYSICS_PARAMS, ftOnPhysicsParams, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, ftOnWallRestitution, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, ftOnResetCar, NULL, 0);

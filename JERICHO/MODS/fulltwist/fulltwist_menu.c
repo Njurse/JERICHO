@@ -364,6 +364,21 @@ static int ftToggleHoldCamera(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void ftLabelCameraSnap(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Camera snap: %d%%", gFullTwist.cfg.cameraSnap);
+}
+
+static int ftAdjCameraSnap(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.cameraSnap = jer_clamp_int(gFullTwist.cfg.cameraSnap + dir * 10, 0, 100);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void ftLabelHullContact(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -665,6 +680,7 @@ static const JER_PAUSE_MENU_ITEM ftPhysicsItems[] =
 	{ NULL, ftLabelKeepSpin,        ftToggleKeepSpin,     NULL, NULL, 0 },
 	{ NULL, ftLabelFreeSpinWindow,  ftAdjFreeSpinWindow,  NULL, NULL, 1 },
 	{ NULL, ftLabelHoldCamera,      ftToggleHoldCamera,   NULL, NULL, 0 },
+	{ NULL, ftLabelCameraSnap,      ftAdjCameraSnap,      NULL, NULL, 1 },
 	{ NULL, ftLabelHullContact,     ftToggleHullContact,  NULL, NULL, 0 },
 	{ NULL, ftLabelHullFootprint,   ftToggleHullFootprint,NULL, NULL, 0 },
 	{ NULL, ftLabelSceneryMode,     ftToggleSceneryMode,  NULL, NULL, 0 },

@@ -75,6 +75,10 @@ int ftFreeSpinActive(const CAR_DATA* cp)
 	if (!gFullTwist.cfg.enabled || !gFullTwist.cfg.freeSpin || !ftIsTumbleCar(cp))
 		return 0;
 
+	/* Player-only patch: traffic keeps the stock damping/physics. */
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
+		return 0;
+
 	st = &gFullTwist.cars[(int)cp->id];
 
 	return (st->freeSpinFrames > 0 || st->airborne || st->bodyContact) ? 1 : 0;
@@ -174,9 +178,9 @@ void ftHandleCar(CAR_DATA* car, CAR_DATA* other,
 	if (!JerCarSlotUsable(car->ap.model))
 		return;
 
-	if (gFullTwist.cfg.playerOnly &&
-		!ftIsPlayerCar(car) &&
-		!ftIsPlayerCar(other))
+	/* Player-only patch: only the player's car takes the FULL TWIST impulse;
+	 * traffic and other non-player cars keep the stock response. */
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(car))
 		return;
 
 	st = &gFullTwist.cars[(int)car->id];
