@@ -82,7 +82,7 @@ static int jerModuleForced(const char* id)
 	return -1;
 }
 static JER_MODULE* gCurrentModule;	/* module whose entry is running */
-static void* gOverrideSlots[JER_OVERRIDE_SLOTS];
+static void* gOverrideSlots[JER_OVERRIDE_SLOT_COUNT];
 static JERICHO_CONTEXT gCtx;
 static int gCtxBuilt;
 static void (*gLogger)(const char* msg);
@@ -448,7 +448,7 @@ static void jerCtxOverride(JERICHO_CONTEXT* ctx, int slot, void* fn)
 {
 	(void)ctx;
 
-	if (slot < 0 || slot >= JER_OVERRIDE_SLOTS)
+	if (slot < 0 || slot >= JER_OVERRIDE_SLOT_COUNT)
 		return;
 
 	gOverrideSlots[slot] = fn;
@@ -710,7 +710,13 @@ static void jerActivateModules(const char* rootDir)
 
 	/* module-provided pause menus / frontend menus / presentation screens
 	 * re-register during activation: clear the registries first so a Mods-menu
-	 * reload doesn't accumulate duplicates */
+	 * reload doesn't accumulate duplicates.
+	 *
+	 * The override slots are cleared for the same reason: a module that is
+	 * disabled on reload would otherwise leave its handler installed, and the
+	 * engine would keep calling a function whose module no longer runs. Every
+	 * enabled module re-installs its slots in its entry. */
+	memset(gOverrideSlots, 0, sizeof(gOverrideSlots));
 	jer_pause_menu_reset();
 	jer_frontend_reset();
 	jer_screen_reset();
@@ -855,6 +861,39 @@ static void jerActivateModules(const char* rootDir)
 
 		for (i = 0; i < orderCount; i++)
 			order[i] = ordered[i];
+	}
+
+	/* A duplicate modlist line used to put the same module in the order twice,
+	 * which activated it twice: two pause-menu pages and two copies of every
+	 * hook (the FULL TWIST duplicate). Deduplicate the final order, first
+	 * occurrence wins, so the class is fixed whether the duplicate came from
+	 * modlist.ini, a forced module, or the unlisted-default pass. */
+	{
+		int unique = 0;
+
+		for (i = 0; i < orderCount; i++)
+		{
+			int duplicate = 0;
+
+			for (j = 0; j < unique; j++)
+			{
+				if (strcmp(order[i], order[j]) == 0)
+				{
+					duplicate = 1;
+					break;
+				}
+			}
+
+			if (duplicate)
+			{
+				jerLog("[jericho] modlist: duplicate entry \"%s\" ignored\n", order[i]);
+				continue;
+			}
+
+			order[unique++] = order[i];
+		}
+
+		orderCount = unique;
 	}
 
 	/* activate in order */
@@ -1149,7 +1188,7 @@ void jer_override(int slot, void* fn)
 
 void* jer_get_override(int slot)
 {
-	if (slot < 0 || slot >= JER_OVERRIDE_SLOTS)
+	if (slot < 0 || slot >= JER_OVERRIDE_SLOT_COUNT)
 		return NULL;
 
 	return gOverrideSlots[slot];

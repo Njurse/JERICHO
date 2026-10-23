@@ -1693,7 +1693,7 @@ void StepGame(void)
 		// JERICHO-HOOK: the world step is an override slot, so modules can
 		// time-scale or replace it (default = the builtin StepSim).
 		{
-			void (*stepSim)(void) = (void (*)(void))jer_get_override(JER_OVERRIDE_SLOT_SIM);
+			void (*stepSim)(void) = (void (*)(void))jer_get_override(JER_OVERRIDE_SLOT_STEP_SIM);
 
 			if (stepSim != NULL)
 				stepSim();

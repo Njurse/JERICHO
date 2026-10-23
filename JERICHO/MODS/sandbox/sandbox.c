@@ -4,7 +4,7 @@
  *
  * Demonstrates the full module surface with ZERO vanilla edits:
  *   - hooks   : JER_EVENT_FRAME, JER_EVENT_DRAW_OVERLAY, JER_EVENT_PAUSE_MENU
- *   - override: JER_OVERRIDE_SLOT_SIM (the world step) for time-scale
+ *   - override: JER_OVERRIDE_SLOT_STEP_SIM (the world step) for time-scale
  *   - globals : externs into the game (car_data, player[], InitCar)
  */
 #include "jericho.h"
@@ -3046,8 +3046,8 @@ JER_MODULE_ENTRY(jer_module_sandbox_entry)(JERICHO_CONTEXT* ctx)
 		"",					/* dependencies */
 		JERICHO_SDK_VERSION);	/* SDK this module was built against */
 
-	gOriginalStepSim = (void (*)(void))jer_get_override(JER_OVERRIDE_SLOT_SIM);
-	ctx->jer_override(ctx, JER_OVERRIDE_SLOT_SIM, (void*)SandboxStepSim);
+	gOriginalStepSim = (void (*)(void))jer_get_override(JER_OVERRIDE_SLOT_STEP_SIM);
+	ctx->jer_override(ctx, JER_OVERRIDE_SLOT_STEP_SIM, (void*)SandboxStepSim);
 
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, SandboxOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAMERA_LOOK, SandboxOnCameraLook, NULL, 0);

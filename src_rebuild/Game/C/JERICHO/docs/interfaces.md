@@ -53,6 +53,39 @@ of the space is unclaimed for exactly that):
 Ids are declared next to the mod that owns them, or in a contract header when the
 id is part of a contract. `check_mod_interface.py` fails on a duplicate.
 
+## Naming conventions
+
+New API names should follow these rules; the existing surface mostly does.
+
+- Events are `JER_EVENT_<DOMAIN>_<THING>`: `CAR_*`/`PED_*`/`FRONTEND_*`/`NET_*`
+  name the domain, `GET_*` is a query, `DRAW_*` is a drawing hook.
+- An event's argument struct is `JER_ARGS_<EVENT SUFFIX>` — the suffix must match
+  the event exactly, so `JER_EVENT_CAR_PAD` carries `JER_ARGS_CAR_PAD`.
+- Override slots name the **behaviour**, not its payload:
+  `JER_OVERRIDE_SLOT_<BEHAVIOUR>`, and its handler type is
+  `JER_<BEHAVIOUR>_FN`. The answer belongs in the args struct (for example
+  `handled`), not in a return code that overloads `JER_RESULT_CONTINUE/STOP`
+  (those mean "dispatch to later handlers / stop dispatching", not "skip the
+  stock response").
+- Capacity constants are `<THING>_COUNT`, not a plural that reads like a list.
+
+## Naming debt (not renamed)
+
+These existing names are misleading, but an event id rename is an ABI change:
+it requires a `JERICHO_SDK_VERSION` bump, updating every `mod.toml` `interface`
+and rebuilding/releasing every module. They are recorded here so a future
+version bump can fix them deliberately rather than by drive-by edit.
+
+| current | why it is weak | better name if the interface is bumped |
+|---|---|---|
+| `JER_EVENT_GET_BUDDHA` | internal jargon; unguessable | `JER_EVENT_GET_DAMAGE_CLAMP` |
+| `JER_EVENT_CAR_VS_CAR` | sounds like a collision notification; it is a damage-value modifier in `DamageCar3D` | `JER_EVENT_CAR_HIT_DAMAGE` |
+| `JER_EVENT_MAP` | ambiguous; it is the fullscreen map's input/draw phases, beside `DRAW_MAP` | `JER_EVENT_FULLSCREEN_MAP` |
+| `JER_EVENT_FRONTEND` | too broad; it is only the Take-a-Ride city confirm | `JER_EVENT_FRONTEND_CITY_CONFIRM` |
+| `JER_EVENT_EXPLOSION_COLLIDE` | a query named like a notification | `JER_EVENT_EXPLOSION_CAN_HIT` |
+| `JER_EVENT_CAR_ENGINE` | reads like the sound hooks; it is thrust + steering | `JER_EVENT_CAR_CONTROLS` |
+| `JER_EVENT_CAR_AVAILABILITY`, `JER_EVENT_CAR_DATA_SOURCE`, `JER_EVENT_NET_PLAYERS` | queries without the `GET_` prefix | `JER_EVENT_GET_*` |
+
 ## Contracts
 
 A contract is a **core** header of custom events: ids and argument structs, asked
