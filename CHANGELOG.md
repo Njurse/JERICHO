@@ -34,6 +34,9 @@ is in [changelog.txt](changelog.txt).
   suppressed for genuine siren cars. Bank rebuilds stop and re-issue active player
   and AI sirens, so a civilian horn cannot become a siren and a cop siren cannot
   become a horn.
+- A Driver 2 cop car imported from another city now uses that city's siren sample
+  instead of the host level's. Driver 2 cars were the remaining gap; D1 cops
+  already used their baked per-model siren.
 
 ### Multiplayer
 

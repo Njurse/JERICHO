@@ -152,6 +152,7 @@ static int car_slot_city[MAX_CAR_RESIDENT_MODELS];
 static int car_slot_model[MAX_CAR_RESIDENT_MODELS];
 static int car_slot_imported[MAX_CAR_RESIDENT_MODELS];	// 1 = slot owns an imported per-model bank
 static int car_slot_appended[MAX_CAR_RESIDENT_MODELS];	// 1 = slot's block was appended AFTER the level checkpoint
+static int cop_siren_sample[CITY_D2_COUNT];	// source D2 city -> SOUND_BANK_VOICES siren sample; -1 = not loaded
 static int car_sound_ready;
 static int car_sound_checkpoint_ready;	// the post-special bank checkpoint can be restored
 static int car_sound_rebuilding;	// a rebuild is re-loading the live slots (no recursion)
@@ -261,6 +262,58 @@ void LoadBankFromLump(int bank, int lump)
 		printWarning("WARNING: sound bank lump %d is not valid!\n", lump);
 }
 
+/* The stock cop-siren bank for a Driver 2 city. The four D2 cities do not map
+ * one-to-one: Chicago and Vegas share a siren, Havana has one, Rio has one. */
+static int CopSirenBankForCity(int city)
+{
+	if (city & 2)
+		return SBK_COP_SIREN_START + (city & 1) * 2;
+
+	return SBK_COP_SIREN_START + (city & 3);
+}
+
+/* JERICHO: a D2 car imported from another city keeps that city's cop siren.
+ * The host city's siren is sample 0 of SOUND_BANK_VOICES; append the source
+ * city's bank after the voice banks have loaded and record where it landed.
+ * Idempotent: cities sharing a bank reuse the first city's sample. */
+static void LoadImportedCopSiren(int city)
+{
+	int bank, before, after, i;
+
+	if (city < 0 || city >= CITY_D2_COUNT || city == GameLevel)
+		return;
+
+	if (cop_siren_sample[city] >= 0)
+		return;
+
+	bank = CopSirenBankForCity(city);
+
+	for (i = 0; i < CITY_D2_COUNT; i++)
+	{
+		if (cop_siren_sample[i] >= 0 && CopSirenBankForCity(i) == bank)
+		{
+			cop_siren_sample[city] = cop_siren_sample[i];
+			return;
+		}
+	}
+
+	before = GetSoundBankSampleCount(SOUND_BANK_VOICES);
+	LoadBankFromLump(SOUND_BANK_VOICES, bank);
+	after = GetSoundBankSampleCount(SOUND_BANK_VOICES);
+
+	if (after <= before)
+	{
+		cop_siren_sample[city] = -1;
+		printWarning("gamesnd: %s cop siren bank %d could not be loaded\n", LevelNames[city], bank);
+		return;
+	}
+
+	cop_siren_sample[city] = before;
+
+	printInfo("gamesnd: %s cop siren -> SOUND_BANK_VOICES sample %d (bank %d)\n",
+		LevelNames[city], before, bank);
+}
+
 // [D] [T]
 /* `slot` is a resident car-slot index - the value carried in cp->ap.model -
  * not the car-model number stored in residentCarModels[]. The result is a
@@ -295,6 +348,27 @@ int CarHasSiren(int slot)
 	 * stock "model 0 is the D2 cop" rule does not apply: the bake's siren mask is
 	 * the only authority. Returning the imported answer directly also returns 0
 	 * for a civilian import instead of falling through to the stock siren. */
+	{
+		int city = GetCarModelSourceCity(slot);
+
+		/* A Driver 2 import keeps the source city's cop siren. Only model 0
+		 * (the police car) has one. */
+		if (city >= 0 && city < CITY_D2_COUNT && !car_slot_imported[slot])
+		{
+			int sample;
+
+			if (residentCarModels[slot] != 0)
+				return 0;
+
+			sample = cop_siren_sample[city];
+
+			if (sample < 0)
+				sample = 0;		/* bank load failed: host city siren */
+
+			return M_SHRT_2(SOUND_BANK_VOICES, sample);
+		}
+	}
+
 	if (GetCarModelSourceCity(slot) >= CITY_D2_COUNT || car_slot_imported[slot])
 	{
 		int city = GetCarModelSourceCity(slot);
@@ -763,6 +837,9 @@ void LoadCarSoundForSlot(int slot)
 	if (city < 0)
 		city = GameLevel;
 
+	if (model == 0 && city >= 0 && city < CITY_D2_COUNT)
+		LoadImportedCopSiren(city);
+
 	if (car_slot_sample[slot] >= 0 &&
 		car_slot_city[slot] == city && car_slot_model[slot] == model)
 		return;
@@ -912,6 +989,10 @@ void LoadLevelSFX(int missionNum)
 	car_zero_siren_reported = 0;
 	imported_siren_reported = 0;
 	civilian_import_reported = 0;
+
+	for (i = 0; i < CITY_D2_COUNT; i++)
+		cop_siren_sample[i] = -1;
+
 	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 	{
 		car_slot_sample[i] = -1;
@@ -948,10 +1029,11 @@ void LoadLevelSFX(int missionNum)
 	LoadBankFromLump(SOUND_BANK_SFX, SBK_ID_SFX);
 	LoadBankFromLump(SOUND_BANK_TANNER, SBK_ID_TANNER );
 
-	if (GameLevel & 2)
-		LoadBankFromLump(SOUND_BANK_VOICES, SBK_COP_SIREN_START + (GameLevel & 1) * 2);
-	else
-		LoadBankFromLump(SOUND_BANK_VOICES, SBK_COP_SIREN_START + (GameLevel & 3));
+	if (GameLevel >= 0 && GameLevel < CITY_D2_COUNT)
+	{
+		LoadBankFromLump(SOUND_BANK_VOICES, CopSirenBankForCity(GameLevel));
+		cop_siren_sample[GameLevel] = 0;
+	}
 
 	// Load cop voices except those missions
 	if (missionNum - 1U > 3 && missionNum != 6 && missionNum != 7 &&
@@ -974,6 +1056,15 @@ void LoadLevelSFX(int missionNum)
 			LoadBankFromLump(SOUND_BANK_VOICES, SBK_COP_PHRASES_START + (GameLevel & 3) * 4 + (GameLevel & 3));
 			LoadBankFromLump(SOUND_BANK_VOICES, SBK_COP_PHRASES_START + (GameLevel & 3) * 5 + cop_bank);
 		}
+	}
+
+	// JERICHO: D2 cops imported from another city keep that city's siren.
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+	{
+		int city = GetCarModelSourceCity(i);
+
+		if (city >= 0 && city < CITY_D2_COUNT && residentCarModels[i] == 0)
+			LoadImportedCopSiren(city);
 	}
 
 	ShowLoading();
