@@ -17,12 +17,14 @@
 #define FT_DEF_OFF_CENTER	30
 #define FT_DEF_MAX_RATE		4000000
 #define FT_DEF_GROUND_KICK	50
+#define FT_DEF_WALL_SNAG	45
 #define FT_DEF_DAMPING		25
 #define FT_DEF_WINDOW		120
 #define FT_DEF_TRIP			20
 #define FT_DEF_LAUNCH		80
 #define FT_DEF_ROLLOVER_DAMPING	45
 #define FT_DEF_ROLLOVER_CATCH	50
+#define FT_DEF_SPIN_RETENTION	50
 
 void ftClampConfig(void)
 {
@@ -34,12 +36,14 @@ void ftClampConfig(void)
 	c->offCenter = jer_clamp_int(c->offCenter, 0, 200);
 	c->maxRate = jer_clamp_int(c->maxRate, 0, 4000000);
 	c->groundKick = jer_clamp_int(c->groundKick, 0, 200);
+	c->wallSnag = jer_clamp_int(c->wallSnag, 0, 100);
 	c->damping = jer_clamp_int(c->damping, 0, 100);
 	c->window = jer_clamp_int(c->window, 0, 300);
 	c->trip = jer_clamp_int(c->trip, 0, 100);
 	c->launch = jer_clamp_int(c->launch, 0, 200);
 	c->rolloverDamping = jer_clamp_int(c->rolloverDamping, 0, 100);
 	c->rolloverCatch = jer_clamp_int(c->rolloverCatch, 0, 100);
+	c->spinRetention = jer_clamp_int(c->spinRetention, 0, 100);
 	c->scenery3d = c->scenery3d ? 1 : 0;
 	c->playerOnly = c->playerOnly ? 1 : 0;
 	c->debugLog = c->debugLog ? 1 : 0;
@@ -60,12 +64,14 @@ void ftLoadConfig(void)
 	c->offCenter = jer_config_get_int(FT_MOD_ID, "off_center", FT_DEF_OFF_CENTER);
 	c->maxRate = jer_config_get_int(FT_MOD_ID, "max_rate", FT_DEF_MAX_RATE);
 	c->groundKick = jer_config_get_int(FT_MOD_ID, "ground_kick", FT_DEF_GROUND_KICK);
+	c->wallSnag = jer_config_get_int(FT_MOD_ID, "wall_snag", FT_DEF_WALL_SNAG);
 	c->damping = jer_config_get_int(FT_MOD_ID, "damping", FT_DEF_DAMPING);
 	c->window = jer_config_get_int(FT_MOD_ID, "window", FT_DEF_WINDOW);
 	c->trip = jer_config_get_int(FT_MOD_ID, "trip", FT_DEF_TRIP);
 	c->launch = jer_config_get_int(FT_MOD_ID, "launch", FT_DEF_LAUNCH);
 	c->rolloverDamping = jer_config_get_int(FT_MOD_ID, "rollover_damping", FT_DEF_ROLLOVER_DAMPING);
 	c->rolloverCatch = jer_config_get_int(FT_MOD_ID, "rollover_catch", FT_DEF_ROLLOVER_CATCH);
+	c->spinRetention = jer_config_get_int(FT_MOD_ID, "spin_retention", FT_DEF_SPIN_RETENTION);
 	c->scenery3d = jer_config_get_bool(FT_MOD_ID, "scenery3d", 1);
 	c->playerOnly = jer_config_get_bool(FT_MOD_ID, "player_only", 0);
 	c->debugLog = jer_config_get_bool(FT_MOD_ID, "debug_log", 0);
@@ -136,12 +142,14 @@ void ftSaveConfig(void)
 	jer_config_set_int(FT_MOD_ID, "off_center", c->offCenter);
 	jer_config_set_int(FT_MOD_ID, "max_rate", c->maxRate);
 	jer_config_set_int(FT_MOD_ID, "ground_kick", c->groundKick);
+	jer_config_set_int(FT_MOD_ID, "wall_snag", c->wallSnag);
 	jer_config_set_int(FT_MOD_ID, "damping", c->damping);
 	jer_config_set_int(FT_MOD_ID, "window", c->window);
 	jer_config_set_int(FT_MOD_ID, "trip", c->trip);
 	jer_config_set_int(FT_MOD_ID, "launch", c->launch);
 	jer_config_set_int(FT_MOD_ID, "rollover_damping", c->rolloverDamping);
 	jer_config_set_int(FT_MOD_ID, "rollover_catch", c->rolloverCatch);
+	jer_config_set_int(FT_MOD_ID, "spin_retention", c->spinRetention);
 	jer_config_set_bool(FT_MOD_ID, "scenery3d", c->scenery3d);
 	jer_config_set_bool(FT_MOD_ID, "player_only", c->playerOnly);
 	jer_config_set_bool(FT_MOD_ID, "debug_log", c->debugLog);

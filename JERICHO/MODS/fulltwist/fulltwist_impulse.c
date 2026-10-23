@@ -351,10 +351,12 @@ void ftHandleCar(CAR_DATA* car, CAR_DATA* other,
 	{
 		st->latchFrame = gFullTwist.frame;
 		st->settleFrames = 0;
+		st->peakAv = 0;
 	}
 
 	st->latchHard = hard;
 	st->tumbleFrames = gFullTwist.cfg.window;
+	st->tumbled = 1;
 	st->tumbleStrength = totalStrength;
 	st->tumbleRollShare = rollMix;
 	st->tumblePitchShare = pitchMix;

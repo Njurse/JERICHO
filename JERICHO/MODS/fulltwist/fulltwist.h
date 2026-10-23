@@ -70,12 +70,14 @@ typedef struct FULLTWIST_CONFIG
 	int offCenter;		/* 0..200 % lever offset threshold */
 	int maxRate;		/* raw angular-velocity impulse at full severity */
 	int groundKick;		/* 0..200 % of the impact tumble, once per landing */
+	int wallSnag;		/* 0..100 % tangential velocity removed on a wall hit */
 	int damping;		/* 0..100 % extra roll/pitch damping while tumbling */
 	int window;			/* frames the tumble response stays active */
 	int trip;			/* 0..100 % of the impulse redirected into roll/pitch */
 	int launch;			/* 0..200 % upward pop on a severe grounded hit */
 	int rolloverDamping;	/* 0..100 % extra damping while on the side/roof */
 	int rolloverCatch;		/* 0..100 % uprighting torque on the ground */
+	int spinRetention;		/* 0..100 % offset of the stock angular damping */
 	int scenery3d;		/* 1 = 3D hull/scenery override of the 2D check */
 	int playerOnly;		/* 1 = only player car / cars hit by the player */
 	int debugLog;		/* 1 = recorder lines in the JERICHO log */
@@ -116,10 +118,15 @@ typedef struct FULLTWIST_CAR
 	int airborne;				/* previous step had no compressed wheel */
 	int airFrames;				/* consecutive airborne steps */
 	int upsideFrames;			/* consecutive steps with m[1][1] < 100 */
+	int tumbled;				/* fulltwist has started a tumble on this car */
+	int bodyContact;			/* lowest hull vertex is on the road */
+	unsigned int bodyContactFrame;	/* frame of the last body-contact impulse */
+	unsigned int wallSnagFrame;	/* frame of the last world-wall snag */
 	int contactMask;			/* last wheel susCompression mask */
 	int logTick;				/* log throttle */
 	int rolloverCount;			/* up-vector sign crossings in the current test */
 	int upSign;				/* sign of the last up-vector sample */
+	int peakAv;				/* largest |angularVelocity| component seen */
 } FULLTWIST_CAR;
 
 typedef struct FULLTWIST_STATE
@@ -177,6 +184,8 @@ FULLTWIST_HULL* ftHullForCar(const CAR_DATA* cp);
 int ftHullSupport(const FULLTWIST_HULL* hull, int nx, int ny, int nz, SVECTOR* out);
 int ftHullContact(const FULLTWIST_HULL* hull, int px, int py, int pz,
 				  int nx, int ny, int nz, SVECTOR* out);
+int ftHullLowest(const FULLTWIST_HULL* hull, const CAR_DATA* cp,
+				 VECTOR* out, int* groundY, SVECTOR* localOut);
 void ftOnSceneryCollision(JER_ARGS_SCENERY_COLLISION* args);
 
 #endif /* FULLTWIST_H */

@@ -92,8 +92,55 @@ static int ftOnCollision(void* ud, void* args)
 
 	ftHandleCar(car0, car1, point, normal, a->howHard, sign0);
 
+	/* World hit: remove part of the tangential velocity as well. The engine's
+	 * wall-restitution query (below) then cancels the normal component and
+	 * skips the stock wall spin, so the body snags instead of sliding. */
+	if (car1 == NULL && normal != NULL && gFullTwist.cfg.wallSnag > 0)
+	{
+		FULLTWIST_CAR* st0 = &gFullTwist.cars[(int)car0->id];
+		int nx = normal->vx;
+		int nz = normal->vz;
+		int vx = car0->st.n.linearVelocity[0];
+		int vz = car0->st.n.linearVelocity[2];
+		int vn = (int)(((long long)vx * nx + (long long)vz * nz) >> 12);
+		int tx = vx - (int)(((long long)nx * vn) >> 12);
+		int tz = vz - (int)(((long long)nz * vn) >> 12);
+
+		car0->st.n.linearVelocity[0] -= (int)(((long long)tx * gFullTwist.cfg.wallSnag) / 100);
+		car0->st.n.linearVelocity[2] -= (int)(((long long)tz * gFullTwist.cfg.wallSnag) / 100);
+		st0->wallSnagFrame = gFullTwist.frame;
+
+		if (gFullTwist.cfg.debugLog)
+		{
+			FT_LOG("[fulltwist] wall snag car=%d frame=%u vt=(%d,%d) drop=%d%%\n",
+				(int)car0->id, gFullTwist.frame, tx, tz, gFullTwist.cfg.wallSnag);
+		}
+	}
+
 	if (ftIsTumbleCar(car1))
 		ftHandleCar(car1, car0, point, normal, a->howHard, 1);
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int ftOnWallRestitution(void* ud, void* args)
+{
+	JER_ARGS_WALL_RESTITUTION* a = (JER_ARGS_WALL_RESTITUTION*)args;
+	CAR_DATA* cp;
+
+	(void)ud;
+
+	if (!gFullTwist.cfg.enabled || gFullTwist.cfg.wallSnag <= 0 ||
+		a == NULL || a->car == NULL)
+		return JER_RESULT_CONTINUE;
+
+	cp = (CAR_DATA*)a->car;
+
+	if (!ftIsTumbleCar(cp))
+		return JER_RESULT_CONTINUE;
+
+	if (gFullTwist.cars[(int)cp->id].wallSnagFrame == gFullTwist.frame)
+		a->result = 0;	/* cancel the normal bounce; tangential drag is already applied */
 
 	return JER_RESULT_CONTINUE;
 }
@@ -170,6 +217,7 @@ static int ftOnCarStep(void* ud, void* args)
 			cp->st.n.linearVelocity[1] += launch;
 
 		st->tumbleFrames = (gFullTwist.cfg.window > 0) ? gFullTwist.cfg.window : 120;
+		st->tumbled = 1;
 		st->settleFrames = 0;
 		st->tumbleStrength = 4096;
 		st->tumbleRollShare = 3072;
@@ -177,6 +225,7 @@ static int ftOnCarStep(void* ud, void* args)
 		st->tumbleRate = rate;
 		st->landed = 0;
 		st->latchFrame = gFullTwist.frame;
+		st->peakAv = 0;
 
 		gFullTwist.testKickPending = 0;
 
@@ -190,6 +239,29 @@ static int ftOnCarStep(void* ud, void* args)
 	/* Count how many times the up vector crosses the horizon while the test
 	 * or a tumble is active. Multiple crossings are multiple rollovers. */
 	up = cp->hd.where.m[1][1];
+
+	if (st->tumbleFrames > 0 || gFullTwist.testRolloverHolding)
+	{
+		int av0 = cp->st.n.angularVelocity[0];
+		int av1 = cp->st.n.angularVelocity[1];
+		int av2 = cp->st.n.angularVelocity[2];
+		int peak = (av0 < 0) ? -av0 : av0;
+		int oldPeak = st->peakAv;
+
+		if (av1 < 0) av1 = -av1;
+		if (av2 < 0) av2 = -av2;
+		if (av1 > peak) peak = av1;
+		if (av2 > peak) peak = av2;
+
+		if (peak > st->peakAv)
+			st->peakAv = peak;
+
+		if (gFullTwist.cfg.debugLog && oldPeak < FT_AV_CLAMP && st->peakAv >= FT_AV_CLAMP)
+		{
+			FT_LOG("[fulltwist] av at clamp car=%d frame=%u peak=%d\n",
+				(int)cp->id, gFullTwist.frame, st->peakAv);
+		}
+	}
 
 	if ((st->tumbleFrames > 0 || gFullTwist.testRolloverHolding) && up != 0)
 	{
@@ -230,6 +302,50 @@ static int ftOnCarStep(void* ud, void* args)
 		}
 	}
 
+	/* Roof/side landing: the wheel kick above only sees compressed wheels.
+	 * If the lowest hull vertex is on the road, use that point as the pivot
+	 * and turn the vertical impact into roll/pitch instead of losing it. */
+	if (st->tumbled && st->tumbleFrames > 0)
+	{
+		FULLTWIST_HULL* hull = ftHullForCar(cp);
+		VECTOR bodyPoint;
+		SVECTOR bodyLocal;
+		int groundY;
+		int bodyOnGround = 0;
+
+		if (hull != NULL && ftHullLowest(hull, cp, &bodyPoint, &groundY, &bodyLocal))
+		{
+			int pen = groundY - bodyPoint.vy;
+			int vy = cp->st.n.linearVelocity[1];
+
+			bodyOnGround = (pen > 0 && pen < 500 && vy < 0);
+
+			if (bodyOnGround && !st->bodyContact)
+			{
+				int rate = (int)(-(long long)vy * gFullTwist.cfg.groundKick * 32);
+				int jx = (int)(((long long)cp->hd.where.m[1][0] * rate) >> 12);
+				int jy = (int)(((long long)cp->hd.where.m[1][1] * rate) >> 12);
+				int jz = (int)(((long long)cp->hd.where.m[1][2] * rate) >> 12);
+				int pitch = (int)(((long long)bodyLocal.vy * jz -
+								   (long long)bodyLocal.vz * jy) >> 12);
+				int roll = (int)(((long long)bodyLocal.vx * jy -
+								  (long long)bodyLocal.vy * jx) >> 12);
+
+				ftAddLocalRate(cp, roll, pitch);
+				st->bodyContactFrame = gFullTwist.frame;
+
+				if (gFullTwist.cfg.debugLog)
+				{
+					FT_LOG("[fulltwist] body contact car=%d frame=%u point=(%d,%d,%d) groundY=%d up=%d vy=%d pen=%d rate=%d roll=%d pitch=%d\n",
+						(int)cp->id, gFullTwist.frame, bodyPoint.vx, bodyPoint.vy, bodyPoint.vz,
+						groundY, up, vy, pen, rate, roll, pitch);
+				}
+			}
+		}
+
+		st->bodyContact = bodyOnGround;
+	}
+
 	st->airborne = air;
 	st->contactMask = mask;
 
@@ -252,9 +368,10 @@ static int ftOnCarStep(void* ud, void* args)
 		{
 			if (gFullTwist.cfg.debugLog)
 			{
-				FT_LOG("[fulltwist] settled car=%d frame=%u frames=%d strength=%d upside=%d rolls=%d\n",
+				FT_LOG("[fulltwist] settled car=%d frame=%u frames=%d strength=%d upside=%d rolls=%d peakAv=%d atClamp=%d\n",
 					(int)cp->id, gFullTwist.frame, st->settleFrames,
-					st->tumbleStrength, st->upsideFrames, st->rolloverCount);
+					st->tumbleStrength, st->upsideFrames, st->rolloverCount,
+					st->peakAv, (st->peakAv >= FT_AV_CLAMP) ? 1 : 0);
 			}
 
 			st->landed = 0;
@@ -280,7 +397,7 @@ static int ftOnCarTorque(void* ud, void* args)
 	JER_ARGS_CAR_TORQUE* a = (JER_ARGS_CAR_TORQUE*)args;
 	CAR_DATA* cp;
 	FULLTWIST_CAR* st;
-	int k;
+	int k = 0;
 
 	(void)ud;
 
@@ -294,6 +411,11 @@ static int ftOnCarTorque(void* ud, void* args)
 
 	st = &gFullTwist.cars[(int)cp->id];
 
+	/* Fulltwist torque only belongs to a car it has actually tumbled. This
+	 * keeps the near-upright catch off normal traffic during the load window. */
+	if (!st->tumbled)
+		return JER_RESULT_CONTINUE;
+
 	/* The rollover test holds the 90-degree pose for one second before the
 	 * impulse; do not let the rollover catch right it during that hold. */
 	if (gFullTwist.testRolloverHolding)
@@ -304,6 +426,7 @@ static int ftOnCarTorque(void* ud, void* args)
 	int grounded = (cp->wasOnGround != 0) || (ftWheelMask(cp) != 0);
 	int applyDamping = 0;
 	int applyCatch = 0;
+	int applyRetention = 0;
 	int catchK = 0;
 
 	if (st->tumbleFrames > 0)
@@ -314,22 +437,14 @@ static int ftOnCarTorque(void* ud, void* args)
 			k = gFullTwist.cfg.damping * 4;	/* 0..400 */
 		}
 
-		/* A ground contact during a tumble is the body landing. Let the
-		 * catch assist at half strength instead of waiting for the whole
-		 * window to expire; airborne frames still get no catch. */
-		if (gFullTwist.cfg.rolloverCatch > 0 && grounded && aup < 3000)
-		{
-			applyCatch = 1;
-			catchK = gFullTwist.cfg.rolloverCatch * 180;
-		}
+		if (gFullTwist.cfg.spinRetention > 0)
+			applyRetention = 1;
 	}
 	else
 	{
 		/* The tumble window is over, but a car on its side or roof can keep
-		 * spinning on the stock damping alone. Catch it while it is still in
-		 * contact; a rollover with no wheel compression still needs the body
-		 * damping, so the ground condition is the car's own settle state, not
-		 * the wheel mask alone. */
+		 * spinning on the stock damping alone. Damp the spin; do not upright
+		 * it -- a car resting on its side/end should stay there. */
 		if (gFullTwist.cfg.rolloverDamping > 0 &&
 			(st->upsideFrames > 0 || aup < 2500) && grounded)
 		{
@@ -337,20 +452,31 @@ static int ftOnCarTorque(void* ud, void* args)
 			k = gFullTwist.cfg.rolloverDamping * 8;	/* 0..800 */
 		}
 
-		if (gFullTwist.cfg.rolloverCatch > 0 && grounded && aup < 2500)
+		if (gFullTwist.cfg.rolloverCatch > 0 && grounded && aup > 3000)
 		{
 			applyCatch = 1;
-			catchK = gFullTwist.cfg.rolloverCatch * 200;
+			catchK = gFullTwist.cfg.rolloverCatch * 40;
 		}
 	}
 
-	if (!applyDamping && !applyCatch)
+	if (!applyDamping && !applyCatch && !applyRetention)
 		return JER_RESULT_CONTINUE;
 
-	if (applyDamping)
+	if (applyDamping && st->bodyContactFrame != gFullTwist.frame)
 	{
 		cp->hd.aacc[0] -= (int)(((long long)cp->st.n.angularVelocity[0] * k) >> 12);
 		cp->hd.aacc[2] -= (int)(((long long)cp->st.n.angularVelocity[2] * k) >> 12);
+	}
+
+	/* Offset part of the stock -avel * angularDamping (128) so the tumble
+	 * retains its twist. This is only active while the tumble window is
+	 * open; the settle path above owns the final damping. */
+	if (applyRetention)
+	{
+		int retainK = gFullTwist.cfg.spinRetention * 128 / 100;
+
+		cp->hd.aacc[0] += (int)(((long long)cp->st.n.angularVelocity[0] * retainK) >> 12);
+		cp->hd.aacc[2] += (int)(((long long)cp->st.n.angularVelocity[2] * retainK) >> 12);
 	}
 
 	/* The damping stops the spin; it does not put the car back on its
@@ -418,6 +544,7 @@ JER_MODULE_ENTRY(jer_module_fulltwist_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_COLLISION, ftOnCollision, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_STEP, ftOnCarStep, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_TORQUE, ftOnCarTorque, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, ftOnWallRestitution, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, ftOnResetCar, NULL, 0);
 
 	/* The 3D scenery check. A NULL slot is stock; on a handled hit the engine

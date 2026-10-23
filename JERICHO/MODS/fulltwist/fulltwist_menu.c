@@ -127,6 +127,21 @@ static int ftAdjGroundKick(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void ftLabelWallSnag(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Wall snag: %d%%", gFullTwist.cfg.wallSnag);
+}
+
+static int ftAdjWallSnag(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.wallSnag = jer_clamp_int(gFullTwist.cfg.wallSnag + dir * 5, 0, 100);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void ftLabelDamping(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -212,6 +227,21 @@ static int ftAdjRolloverCatch(void* ud, int dir)
 {
 	(void)ud;
 	gFullTwist.cfg.rolloverCatch = jer_clamp_int(gFullTwist.cfg.rolloverCatch + dir * 5, 0, 100);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelSpinRetention(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Spin retention: %d%%", gFullTwist.cfg.spinRetention);
+}
+
+static int ftAdjSpinRetention(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.spinRetention = jer_clamp_int(gFullTwist.cfg.spinRetention + dir * 5, 0, 100);
 	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
 	ftSaveConfig();
 	return JER_PAUSE_QUIT_NONE;
@@ -340,12 +370,14 @@ static const JER_PAUSE_MENU_ITEM ftTuningItems[] =
 	{ NULL, ftLabelOffCenter,  ftAdjOffCenter,  NULL, NULL, 1 },
 	{ NULL, ftLabelMaxRate,    ftAdjMaxRate,    NULL, NULL, 1 },
 	{ NULL, ftLabelGroundKick, ftAdjGroundKick, NULL, NULL, 1 },
+	{ NULL, ftLabelWallSnag, ftAdjWallSnag, NULL, NULL, 1 },
 	{ NULL, ftLabelDamping,    ftAdjDamping,    NULL, NULL, 1 },
 	{ NULL, ftLabelWindow,     ftAdjWindow,     NULL, NULL, 1 },
 	{ NULL, ftLabelTrip,       ftAdjTrip,       NULL, NULL, 1 },
 	{ NULL, ftLabelLaunch,     ftAdjLaunch,     NULL, NULL, 1 },
 	{ NULL, ftLabelRolloverDamping, ftAdjRolloverDamping, NULL, NULL, 1 },
 	{ NULL, ftLabelRolloverCatch, ftAdjRolloverCatch, NULL, NULL, 1 },
+	{ NULL, ftLabelSpinRetention, ftAdjSpinRetention, NULL, NULL, 1 },
 };
 
 static const JER_PAUSE_MENU ftTuningMenu =

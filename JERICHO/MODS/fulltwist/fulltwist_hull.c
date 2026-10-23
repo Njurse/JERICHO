@@ -18,6 +18,7 @@
 #include "driver2.h"
 #include "jericho.h"
 #include "cars.h"
+#include "dr2roads.h"
 #include "fulltwist.h"
 
 #include <stdlib.h>	/* qsort */
@@ -298,6 +299,59 @@ int ftHullContact(const FULLTWIST_HULL* hull, int px, int py, int pz,
 	return 1;
 }
 
+/* Lowest hull vertex in world space, for roof/side landings. The hull is
+ * stored where-local about the collision-body centre, so the draw matrix is
+ * enough to put the vertex back into the world. groundY is MapHeight at that
+ * XZ; the caller compares it with out->vy to decide whether the body is on
+ * the road. */
+int ftHullLowest(const FULLTWIST_HULL* hull, const CAR_DATA* cp,
+				 VECTOR* out, int* groundY, SVECTOR* localOut)
+{
+	int i;
+	int best = -1;
+	int bestY = 0;
+
+	if (hull == NULL || cp == NULL || out == NULL || hull->count <= 0)
+		return 0;
+
+	for (i = 0; i < hull->count; i++)
+	{
+		const SVECTOR* v = &hull->verts[i];
+		int wx = cp->hd.where.t[0] +
+			(int)(((long long)cp->hd.where.m[0][0] * v->vx +
+				   (long long)cp->hd.where.m[0][1] * v->vy +
+				   (long long)cp->hd.where.m[0][2] * v->vz) >> 12);
+		int wy = cp->hd.where.t[1] +
+			(int)(((long long)cp->hd.where.m[1][0] * v->vx +
+				   (long long)cp->hd.where.m[1][1] * v->vy +
+				   (long long)cp->hd.where.m[1][2] * v->vz) >> 12);
+		int wz = cp->hd.where.t[2] +
+			(int)(((long long)cp->hd.where.m[2][0] * v->vx +
+				   (long long)cp->hd.where.m[2][1] * v->vy +
+				   (long long)cp->hd.where.m[2][2] * v->vz) >> 12);
+
+		if (best < 0 || wy < bestY)
+		{
+			best = i;
+			bestY = wy;
+			out->vx = wx;
+			out->vy = wy;
+			out->vz = wz;
+
+			if (localOut != NULL)
+				*localOut = *v;
+		}
+	}
+
+	if (best < 0)
+		return 0;
+
+	if (groundY != NULL)
+		*groundY = MapHeight(out);
+
+	return 1;
+}
+
 /*
  * JER_OVERRIDE_SLOT_SCENERY_COLLISION handler.
  *
@@ -385,37 +439,11 @@ void ftOnSceneryCollision(JER_ARGS_SCENERY_COLLISION* args)
 		return;
 	}
 
-	/* A real hit: move the point onto the hull's support along the building
-	 * normal. The stock normal is kept -- it is the wall face, not the car. */
-	if (point != NULL && normal != NULL)
-	{
-		int lx = (int)(((long long)normal->vx * m[0][0] +
-						(long long)normal->vy * m[1][0] +
-						(long long)normal->vz * m[2][0]) >> 12);
-		int ly = (int)(((long long)normal->vx * m[0][1] +
-						(long long)normal->vy * m[1][1] +
-						(long long)normal->vz * m[2][1]) >> 12);
-		int lz = (int)(((long long)normal->vx * m[0][2] +
-						(long long)normal->vy * m[1][2] +
-						(long long)normal->vz * m[2][2]) >> 12);
-		SVECTOR contact;
-
-		if (ftHullSupport(hull, lx, ly, lz, &contact))
-		{
-			point->vx = cp->hd.where.t[0] +
-				(int)(((long long)m[0][0] * contact.vx +
-					   (long long)m[0][1] * contact.vy +
-					   (long long)m[0][2] * contact.vz) >> 12);
-			point->vy = cp->hd.where.t[1] +
-				(int)(((long long)m[1][0] * contact.vx +
-					   (long long)m[1][1] * contact.vy +
-					   (long long)m[1][2] * contact.vz) >> 12);
-			point->vz = cp->hd.where.t[2] +
-				(int)(((long long)m[2][0] * contact.vx +
-					   (long long)m[2][1] * contact.vy +
-					   (long long)m[2][2] * contact.vz) >> 12);
-		}
-	}
+	/* A real hit: leave the engine's collision point and normal untouched.
+	 * The stock response (damage, sparks, sound, velocity) is already correct;
+	 * rewriting the point into hull space was putting the response outside the
+	 * engine's expected contact frame and crashing after repeated wall hits.
+	 * The hull is used only to reject the false vertical-span hits above. */
 
 	if (gFullTwist.cfg.debugLog)
 	{

@@ -112,6 +112,7 @@ static void ftRolloverTest(CAR_DATA* cp)
 	gFullTwist.testRolloverImpulseAtFrame = gFullTwist.frame + FT_TEST_ROLLOVER_WAIT;
 
 	st->tumbleFrames = 0;
+	st->tumbled = 1;
 	st->settleFrames = 0;
 	st->tumbleStrength = 4096;
 	st->tumbleRollShare = 4096;
@@ -120,6 +121,7 @@ static void ftRolloverTest(CAR_DATA* cp)
 	st->landed = 0;
 	st->latchFrame = gFullTwist.frame;
 	st->rolloverCount = 0;
+	st->peakAv = 0;
 
 	up = cp->hd.where.m[1][1];
 	st->upSign = (up >= 0) ? 1 : -1;
@@ -155,6 +157,7 @@ static void ftRolloverImpulse(CAR_DATA* cp)
 	ftAddLocalRate(cp, rollRate, 0);
 
 	st->tumbleFrames = (gFullTwist.cfg.window > 0) ? gFullTwist.cfg.window : 120;
+	st->tumbled = 1;
 	st->settleFrames = 0;
 	st->tumbleStrength = 4096;
 	st->tumbleRollShare = 4096;
@@ -162,6 +165,7 @@ static void ftRolloverImpulse(CAR_DATA* cp)
 	st->tumbleRate = rollRate;
 	st->landed = 0;
 	st->latchFrame = gFullTwist.frame;
+	st->peakAv = 0;
 
 	up = cp->hd.where.m[1][1];
 
