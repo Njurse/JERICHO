@@ -1047,7 +1047,7 @@ int LoadSoundBankDynamic(char *address, int length, int dbank)
 
 	num_samples = *(int *)address;
 
-	if (num_samples < 0 || lsbTabs.count[dbank] + num_samples > MAX_SOUND_BANK_SAMPLES)
+	if (num_samples < 0 || !SoundBankHasRoom(dbank, num_samples))
 	{
 		printWarning("WARNING: sound bank %d is full (%d of %d samples, need %d)\n",
 			dbank, lsbTabs.count[dbank], MAX_SOUND_BANK_SAMPLES, num_samples);
@@ -1083,6 +1083,19 @@ int GetSoundBankSampleCount(int bank)
 		return 0;
 
 	return lsbTabs.count[bank];
+}
+
+int SoundBankHasRoom(int bank, int samples)
+{
+	if (bank < 0 || bank >= LSB_BANK_COUNT || samples < 0)
+		return 0;
+
+	return lsbTabs.count[bank] + samples <= MAX_SOUND_BANK_SAMPLES;
+}
+
+int GetSoundBankCapacity(void)
+{
+	return MAX_SOUND_BANK_SAMPLES;
 }
 
 void AlignSoundBankSamples(int bank, int multiple)

@@ -22,6 +22,19 @@ is in [changelog.txt](changelog.txt).
   one 4096-unit threshold, so a deliberate 10x crush no longer trips the canary and
   silently rebuilds the car's mesh.
 
+### Cars
+
+- Engine, idle and horn sounds now keep switching correctly for as long as a level
+  lasts. Imported car sound banks are reclaimed when the bank would fill instead of
+  accumulating one per change and eventually falling back to another vehicle's
+  samples, and a car's bank is resolved by its resident slot rather than a
+  coincidentally equal model number.
+- A civilian imported car no longer acquires the stock model-0 siren (and the
+  horn-toggle/cop-light behaviour that came with it), and horn one-shots are
+  suppressed for genuine siren cars. Bank rebuilds stop and re-issue active player
+  and AI sirens, so a civilian horn cannot become a siren and a cop siren cannot
+  become a horn.
+
 ### Multiplayer
 
 - A player car's **body-crush multiplier** now rides the carstate, so every machine

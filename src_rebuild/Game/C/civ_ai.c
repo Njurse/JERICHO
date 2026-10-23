@@ -3049,6 +3049,21 @@ void SetUpCivCollFlags(void)
 
 				for (i = 0; i < 2; i++) 
 				{
+					/* A cop's third sample is its siren; its siren loop is
+					 * DoDopplerSFX's job. Reclaim any horn channel this car
+					 * already holds rather than playing that sample as a horn. */
+					if (CarHasSiren(cp0->ap.model) != 0)
+					{
+						if (hornchanflag[i] != 0)
+						{
+							StopChannel(hornchanflag[i]);
+							hornchanflag[i] = 0;
+							horncarflag[i] = NULL;
+						}
+
+						continue;
+					}
+
 					if (hornchanflag[i] == 0)
 					{
 						int sample;
@@ -3062,9 +3077,12 @@ void SetUpCivCollFlags(void)
 						// out); the index guard keeps an imported/D1 bank that carries
 						// no horn sample from reading past the loaded car samples
 						if (sample >= 0 && sample * 3 + 2 < GetSoundBankSampleCount(SOUND_BANK_CARS))
+						{
 							Start3DTrackingSound(hornchanflag[i], SOUND_BANK_CARS, sample * 3 + 2,
 								(VECTOR*)cp0->hd.where.t,
 								(LONGVECTOR3*)cp0->st.n.linearVelocity);
+							SoundLogCarSample("horn", cp0->ap.model, sample * 3 + 2);
+						}
 
 						SetChannelVolume(hornchanflag[i], -2000, 0);
 

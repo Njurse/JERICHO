@@ -3859,6 +3859,14 @@ void DealWithHorn(char* hr, int i)
 
 	car = &car_data[player[i].playerCarId];
 
+	/* A siren car's third channel is its siren loop, not a horn. Never let a
+	 * stale request start or stop that channel through the horn path. */
+	if (CarHasSiren(car->ap.model) != 0)
+	{
+		*hr = 0;
+		return;
+	}
+
 	if (*hr == 0)
 		return;
 
@@ -3877,6 +3885,7 @@ void DealWithHorn(char* hr, int i)
 			car->hd.where.t[1],
 			car->hd.where.t[2], -10000,
 			4096);
+		SoundLogCarSample("horn", car->ap.model, sample * 3 + 2);
 
 		if (NumPlayers > 1 && NoPlayerControl == 0)
 		{

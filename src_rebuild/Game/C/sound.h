@@ -83,6 +83,15 @@ extern int LoadSoundBankDynamic(char *address, int length, int dbank); // 0x0007
  * one from the resident slot index. */
 extern int GetSoundBankSampleCount(int bank);
 
+/* Could `samples` more samples be appended to dynamic bank `bank`? The
+ * capacity is fixed; gamesnd asks before appending an imported car bank so it
+ * can reclaim the appended region first instead of failing the load. */
+extern int SoundBankHasRoom(int bank, int samples);
+
+/* Fixed sample capacity of every dynamic bank; used by gamesnd's level-load
+ * check that one 3-sample bank per resident slot still fits. */
+extern int GetSoundBankCapacity(void);
+
 /* Append zero-length metadata entries until the bank's sample count is a
  * multiple of `multiple`. A car bank's sample block is addressed as block*3
  * (engine, idle, horn), so an imported bank must start on a 3-sample boundary

@@ -81,8 +81,18 @@ extern SPEECH_QUEUE gSpeechQueue;
 
 extern void LoadBankFromLump(int bank, int lump); // 0x00052460
 
-extern int CarHasSiren(int index); // 0x000522EC
-extern int GetCarBankSample(int model); // 0x0004D690
+/* Both take a resident car-slot index (the value in cp->ap.model), NOT the
+ * car-model number in residentCarModels[]. GetCarBankSample returns the
+ * SOUND_BANK_CARS block for that car's engine/idle/horn. CarHasSiren returns a
+ * packed (bank, sample) SIREN value, or 0 when the slot has none; it is not the
+ * car bank's generic third sample, and an imported slot returns 0 unless the
+ * bake marked it as a cop. */
+extern int CarHasSiren(int slot); // 0x000522EC
+extern int GetCarBankSample(int slot); // 0x0004D690
+
+/* JERICHO-DIAG: log a horn/siren sample start. Inert unless JERICHO_DIAG_SIREN
+ * is set; the car stress harness uses it to detect horn/siren contamination. */
+extern void SoundLogCarSample(const char* kind, int slot, int sample);
 
 /* Give resident `slot` the car sound bank its imported model needs, and record
  * the SOUND_BANK_CARS block for GetCarBankSample. Called at level load for the

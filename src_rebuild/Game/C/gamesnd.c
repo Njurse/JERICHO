@@ -1,5 +1,7 @@
 
 
+#include <stdlib.h>
+
 #include "driver2.h"
 #include "jericho.h"	// JERICHO-HOOK: mod runtime
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
@@ -130,6 +132,7 @@ static char cop_bank = 0;
 char phrase_top = 0;
 
 static othercarsound siren_noise[MAX_SIREN_NOISES];
+static int siren_noise_sample[MAX_SIREN_NOISES];	// packed CarHasSiren value; 0 = music/none
 static othercarsound car_noise[MAX_CAR_NOISES];
 
 /* JERICHO cross-city imports: the SOUND_BANK_CARS sample block each resident
@@ -145,50 +148,76 @@ static int car_slot_sample[MAX_CAR_RESIDENT_MODELS];
 static int car_slot_city[MAX_CAR_RESIDENT_MODELS];
 static int car_slot_model[MAX_CAR_RESIDENT_MODELS];
 static int car_slot_imported[MAX_CAR_RESIDENT_MODELS];	// 1 = slot owns an imported per-model bank
-static int car_d1_generic_block = -1;	// JERICHO: the block holding the shared D1 engine/idle, once loaded
+static int car_slot_appended[MAX_CAR_RESIDENT_MODELS];	// 1 = slot's block was appended AFTER the level checkpoint
 static int car_sound_ready;
+static int car_sound_checkpoint_ready;	// the post-special bank checkpoint can be restored
+static int car_sound_rebuilding;	// a rebuild is re-loading the live slots (no recursion)
 static int loudhail_time = 0;
+
+/* JERICHO-DIAG: one line per horn/siren sample actually started, so the car
+ * stress harness can prove the same car never uses one sample for both. Off
+ * unless JERICHO_DIAG_SIREN is set; normal runs pay one getenv call. */
+void SoundLogCarSample(const char* kind, int slot, int sample)
+{
+	int city;
+	int model;
+
+	if (getenv("JERICHO_DIAG_SIREN") == NULL)
+		return;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	city = GetCarModelSourceCity(slot);
+	if (city < 0 || city >= CITY_COUNT)
+		city = GameLevel;
+	if (city < 0 || city >= CITY_COUNT)
+		city = 0;
+
+	model = residentCarModels[slot];
+
+	printInfo("gamesnd: %s: slot %d (%s model %d) sample %d\n",
+		kind, slot, LevelNames[city], model, sample);
+}
 
 // JERICHO: an imported car that the bake marked as a cop gets Driver 2's siren
 // treatment. The imported bank's third sample is the city's siren sample (see
-// add_car_sounds.py --city), so return that sample block; CarHasSiren then
-// drives the same third channel, horn on/off and AI pursuer loop as a D2 cop.
-static int ImportedCarHasSiren(int index)
+// add_car_sounds.py --city), so return a packed (SOUND_BANK_CARS, sample) siren
+// value; CarHasSiren then drives the same third channel, horn on/off and AI
+// pursuer loop as a D2 cop. It returns 0 for EVERY import the bake did not mark
+// (a civilian), and a caller must not fall back to the stock model-0 rule for
+// an imported slot - that fallback is only for native/D2 slots.
+static int ImportedCarHasSiren(int slot)
 {
 	static unsigned reported = 0;
-	int slot;
+	int city, model;
 
 	if (!car_sound_ready)
 		return 0;
 
-	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	if (!car_slot_imported[slot])
+		return 0;
+
+	city = car_slot_city[slot];
+	model = car_slot_model[slot];
+
+	if (city < 0 || model < 0)
+		return 0;
+
+	if (!GetCarImportSiren(city, model) || car_slot_sample[slot] < 0)
+		return 0;
+
+	if (!(reported & (1u << slot)))
 	{
-		int city = car_slot_city[slot];
-		int model = car_slot_model[slot];
-
-		if (city < 0 || model < 0)
-			continue;
-
-		if (!car_slot_imported[slot])
-			continue;
-
-		if (slot != index)
-			continue;
-
-		if (!GetCarImportSiren(city, model) || car_slot_sample[slot] < 0)
-			continue;
-
-		if (!(reported & (1u << slot)))
-		{
-			reported |= 1u << slot;
-			printInfo("cross-city: slot %d (%s model %d) uses the imported siren (bank sample %d)\n",
-				slot, LevelNames[city], model, car_slot_sample[slot] * 3 + 2);
-		}
-
-		return M_SHRT_2(SOUND_BANK_CARS, car_slot_sample[slot] * 3 + 2);
+		reported |= 1u << slot;
+		printInfo("cross-city: slot %d (%s model %d) uses the imported siren (bank sample %d)\n",
+			slot, LevelNames[city], model, car_slot_sample[slot] * 3 + 2);
 	}
 
-	return 0;
+	return M_SHRT_2(SOUND_BANK_CARS, car_slot_sample[slot] * 3 + 2);
 }
 
 static int copmusic = 0;
@@ -231,14 +260,15 @@ void LoadBankFromLump(int bank, int lump)
 }
 
 // [D] [T]
-int CarHasSiren(int index)
+/* `slot` is a resident car-slot index - the value carried in cp->ap.model -
+ * not the car-model number stored in residentCarModels[]. The result is a
+ * packed (bank, sample) SIREN, not the car bank's generic third sample. */
+int CarHasSiren(int slot)
 {
-	int imported = ImportedCarHasSiren(index);
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
 
-	if (imported)
-		return imported;
-
-	if (index == SPECIAL_CAR_SLOT)
+	if (slot == SPECIAL_CAR_SLOT)
 	{
 		if (GameLevel == 0)
 		{
@@ -255,9 +285,34 @@ int CarHasSiren(int index)
 			if (residentCarModels[SPECIAL_CAR_SLOT] == 10)
 				return M_SHRT_2(SOUND_BANK_SFX, 12);
 		}
+
+		return M_SHRT_2((residentCarModels[SPECIAL_CAR_SLOT] == 0) ? SOUND_BANK_VOICES : 0, 0);
 	}
 
-	return M_SHRT_2((residentCarModels[index] == 0) ? SOUND_BANK_VOICES : 0, 0);
+	/* A Driver 1/custom import keeps its SOURCE city's model numbering, so the
+	 * stock "model 0 is the D2 cop" rule does not apply: the bake's siren mask is
+	 * the only authority. Returning the imported answer directly also returns 0
+	 * for a civilian import instead of falling through to the stock siren. */
+	if (GetCarModelSourceCity(slot) >= CITY_D2_COUNT || car_slot_imported[slot])
+	{
+		static unsigned reported = 0;
+		int city = GetCarModelSourceCity(slot);
+		int imported = ImportedCarHasSiren(slot);
+
+		/* This is the exact case the old fall-through turned into a siren. It is
+		 * a civilian in its own city, so say once that the stock model-0 siren
+		 * was suppressed rather than silently returning 0. */
+		if (imported == 0 && residentCarModels[slot] == 0 && !(reported & (1u << slot)))
+		{
+			reported |= 1u << slot;
+			printInfo("gamesnd: slot %d (%s model 0) is a civilian import - no siren\n",
+				slot, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?");
+		}
+
+		return imported;
+	}
+
+	return M_SHRT_2((residentCarModels[slot] == 0) ? SOUND_BANK_VOICES : 0, 0);
 }
 
 // [D] [T]
@@ -328,21 +383,11 @@ int ResidentModelsBodge(void)
 }
 
 // [A]
-int GetCarBankSample(int model)
+int GetCarBankSample(int slot)
 {
 	int bankStartSample;
-	int slot;
 
-	// An imported model can sit in a different resident slot; the per-model bank
-	// is recorded on that slot, so find it before the stock slot-index formula.
-	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
-	{
-		if (car_slot_imported[slot] && car_slot_model[slot] == model &&
-			car_slot_sample[slot] >= 0)
-			return car_slot_sample[slot];
-	}
-
-	if (model == SPECIAL_CAR_SLOT)
+	if (slot == SPECIAL_CAR_SLOT)
 	{
 #if MAX_CAR_RESIDENT_MODELS > 5
 		bankStartSample = ResidentModelsBodge() + 1;
@@ -350,17 +395,17 @@ int GetCarBankSample(int model)
 		bankStartSample = ResidentModelsBodge();
 #endif
 	}
-	else if (car_sound_ready && model >= 0 && model < MAX_CAR_RESIDENT_MODELS &&
-		car_slot_sample[model] >= 0)
+	else if (car_sound_ready && slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS &&
+		car_slot_sample[slot] >= 0)
 	{
 		// A bank appended after the stock ones: its block was recorded when it
 		// was loaded, so it cannot be derived from the slot index.
-		bankStartSample = car_slot_sample[model];
+		bankStartSample = car_slot_sample[slot];
 	}
-	else if (model < 3)
-		bankStartSample = model;
+	else if (slot < 3)
+		bankStartSample = slot;
 	else
-		bankStartSample = model - 1;
+		bankStartSample = slot - 1;
 
 	return bankStartSample;
 }
@@ -470,6 +515,65 @@ static void RestartCarNoiseForSlot(int slot)
 	}
 }
 
+/* A slot's bank just changed under a live siren. Stop the AI siren entry that
+ * belongs to that resident slot and let DoDopplerSFX() re-issue it; for a local
+ * player whose car is on the slot, stop/restart the per-player siren channel
+ * now with the new packed sample. DoDopplerSFX's sample comparison is the
+ * safety net when this runs before ap.model has been re-pointed. */
+static void RestartSirenForSlot(int slot)
+{
+	int i;
+
+	for (i = 0; i < MAX_SIREN_NOISES; i++)
+	{
+		int car = siren_noise[i].car;
+
+		if (siren_noise[i].stopped != 0 || car < 0 || car >= MAX_CARS)
+			continue;
+
+		if (car_data[car].ap.model != slot)
+			continue;
+
+		if (siren_noise[i].chan >= 0)
+		{
+			StopChannel(siren_noise[i].chan);
+			UnlockChannel(siren_noise[i].chan);
+		}
+
+		siren_noise[i].chan = -1;
+		siren_noise[i].car = MAX_CARS;
+		siren_noise[i].in_use = 0;
+		siren_noise[i].stopped = 1;
+		siren_noise_sample[i] = 0;
+	}
+
+	for (i = 0; i < NumPlayers; i++)
+	{
+		int carId = player[i].playerCarId;
+		int siren;
+		int chan;
+
+		if (player[i].playerType != PLAYER_TYPE_CAR || carId < 0 || carId >= MAX_CARS)
+			continue;
+
+		if (car_data[carId].ap.model != slot)
+			continue;
+
+		chan = i * 3 + 2;
+		siren = CarHasSiren(slot);
+
+		StopChannel(chan);
+
+		if (siren)
+		{
+			CAR_DATA* cp = &car_data[carId];
+
+			Start3DSoundVolPitch(chan, (siren & 0xff00) >> 8, siren & 0xff,
+				cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -10000, 129);
+		}
+	}
+}
+
 /* Try a city's embedded (Driver 1 bake) bank for `slot` before the host-city
  * fallback. The blob is already a D2 dynamic bank, so this only has to align,
  * load and record the block. Returns 1 when it took over the slot. */
@@ -517,13 +621,109 @@ static int LoadEmbeddedCarSoundForSlot(int slot)
 	car_slot_city[slot] = city;
 	car_slot_model[slot] = model;
 	car_slot_imported[slot] = 1;
-	car_d1_generic_block = car_slot_sample[slot];
 
 	printInfo("gamesnd: resident slot %d uses the imported model bank (%s model %d) -> block %d\n",
 		slot, LevelNames[city], model, car_slot_sample[slot]);
 
 	RestartCarNoiseForSlot(slot);
 	return 1;
+}
+
+/* JERICHO: the player engine/idle channels play a block recorded at start-up;
+ * a rebuild can move that block, so re-issue them from the cars on the road. */
+static void RestartPlayerCarSoundsForRebuild(void)
+{
+	int i;
+
+	for (i = 0; i < NumPlayers; i++)
+	{
+		PLAYER* p = &player[i];
+		int carId = p->playerCarId;
+
+		if (p->playerType != PLAYER_TYPE_CAR || carId < 0 || carId >= MAX_CARS)
+			continue;
+
+		StartPlayerCarSounds(i, car_data[carId].ap.model, (VECTOR*)car_data[carId].hd.where.t);
+	}
+}
+
+/* A bank rebuild can move every appended block, so an AI siren entry that
+ * survives it would point at whatever now occupies the old SPU address. Free
+ * them all; DoDopplerSFX() rebuilds the ones whose car still qualifies. */
+static void ClearSirenNoises(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_SIREN_NOISES; i++)
+	{
+		if (siren_noise[i].stopped == 0 && siren_noise[i].chan >= 0)
+		{
+			StopChannel(siren_noise[i].chan);
+			UnlockChannel(siren_noise[i].chan);
+		}
+
+		siren_noise[i].chan = -1;
+		siren_noise[i].car = MAX_CARS;
+		siren_noise[i].in_use = 0;
+		siren_noise[i].stopped = 1;
+		siren_noise_sample[i] = 0;
+	}
+}
+
+/* JERICHO: reclaim the blocks imported slots appended after the level's own
+ * banks. A level can change cars indefinitely, and appending a fresh 3-sample
+ * bank on every change eventually fills SOUND_BANK_CARS; that made the slot
+ * fall back to the stock slot-index formula and play another vehicle's engine.
+ *
+ * Rewinding to the checkpoint the level saved (after its own and special
+ * banks) drops every appended block, then the live slots are loaded again from
+ * their CURRENT resident model/source. The result is one block per live slot,
+ * which the capacity invariant in sound.h guarantees fits. */
+static void RebuildImportedCarSoundBanks(void)
+{
+	int reload[MAX_CAR_RESIDENT_MODELS];
+	int n = 0;
+	int i, slot;
+
+	if (!car_sound_checkpoint_ready || car_sound_rebuilding)
+		return;
+
+	/* Snapshot before clearing: re-loading by slot also covers any spare slot
+	 * a hot load touched, not just the range LoadExtraCarSoundBanks walks. */
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		if (car_slot_appended[slot])
+			reload[n++] = slot;
+	}
+
+	car_sound_rebuilding = 1;
+
+	/* Back to the level's own and special banks, then drop the mappings that
+	 * pointed into the appended region. */
+	LoadSoundBankDynamic(NULL, 2, SOUND_BANK_CARS);	// addr = memtop
+	LoadSoundBankDynamic(NULL, 4, SOUND_BANK_CARS);	// count = banktop
+
+	for (i = 0; i < n; i++)
+	{
+		slot = reload[i];
+
+		car_slot_sample[slot] = -1;
+		car_slot_city[slot] = -1;
+		car_slot_model[slot] = -1;
+		car_slot_imported[slot] = 0;
+		car_slot_appended[slot] = 0;
+	}
+
+	for (i = 0; i < n; i++)
+		LoadCarSoundForSlot(reload[i]);
+
+	RestartPlayerCarSoundsForRebuild();
+	ClearSirenNoises();
+
+	car_sound_rebuilding = 0;
+
+	printInfo("gamesnd: rebuilt %d imported car sound block(s) - bank now holds %d sample(s)\n",
+		n, GetSoundBankSampleCount(SOUND_BANK_CARS));
 }
 
 /* Give `slot` a car sound bank of its own and record the SOUND_BANK_CARS sample
@@ -536,6 +736,8 @@ static int LoadEmbeddedCarSoundForSlot(int slot)
 void LoadCarSoundForSlot(int slot)
 {
 	int city, model, before, after;
+	int old_sample, old_city, old_model, old_imported, old_appended;
+	int rewound = 0;
 
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || slot == SPECIAL_CAR_SLOT)
 		return;
@@ -543,16 +745,15 @@ void LoadCarSoundForSlot(int slot)
 	if (!car_sound_ready)
 		return;
 
-	// A Driver 1 city's synthetic LEV carries its own engine/idle bank.
-	if (LoadEmbeddedCarSoundForSlot(slot))
-		return;
-
+	// The slot's CURRENT car, before any reclaim work: an unchanged mapping is
+	// a no-op.
 	model = residentCarModels[slot];
 
 	if (model < 0 || model >= CAR_MODEL_LUMP_ENTRIES)
 	{
 		car_slot_sample[slot] = -1;
 		car_slot_imported[slot] = 0;
+		car_slot_appended[slot] = 0;
 		return;
 	}
 
@@ -567,7 +768,41 @@ void LoadCarSoundForSlot(int slot)
 
 	// A car's samples are addressed as block*3, so the appended bank must start
 	// on a 3-sample boundary. The level's special banks need not end on one.
+	// Align BEFORE the room check: the padding is part of what has to fit.
 	AlignSoundBankSamples(SOUND_BANK_CARS, 3);
+
+	// Every imported car bank is three samples. If one more would fill the
+	// bank, reclaim the appended blocks first. One block per live slot fits,
+	// so this is what keeps a long session switching correctly.
+	if (car_sound_checkpoint_ready && !car_sound_rebuilding &&
+		!SoundBankHasRoom(SOUND_BANK_CARS, 3))
+	{
+		RebuildImportedCarSoundBanks();
+		rewound = 1;
+
+		// The rebuild reloads the live slots itself; if this one was among
+		// them its new mapping is already here.
+		if (car_slot_sample[slot] >= 0 &&
+			car_slot_city[slot] == city && car_slot_model[slot] == model)
+			return;
+	}
+
+	/* What the slot had before this attempt. A failed load keeps it only when
+	 * no rebuild has rewound the bank underneath it (a rewound block would be
+	 * stale, and the stock formula is the safe fallback there). */
+	old_sample = car_slot_sample[slot];
+	old_city = car_slot_city[slot];
+	old_model = car_slot_model[slot];
+	old_imported = car_slot_imported[slot];
+	old_appended = car_slot_appended[slot];
+
+	// A Driver 1 city's synthetic LEV carries its own engine/idle bank.
+	if (LoadEmbeddedCarSoundForSlot(slot))
+	{
+		car_slot_appended[slot] = 1;
+		RestartSirenForSlot(slot);
+		return;
+	}
 
 	before = GetSoundBankSampleCount(SOUND_BANK_CARS);
 
@@ -575,6 +810,7 @@ void LoadCarSoundForSlot(int slot)
 	// the stock formula rather than keep pointing at its previous car's samples
 	car_slot_sample[slot] = -1;
 	car_slot_imported[slot] = 0;
+	car_slot_appended[slot] = 0;
 
 	LoadBankFromLump(SOUND_BANK_CARS, MapCarIndexToBank(slot));
 
@@ -582,6 +818,34 @@ void LoadCarSoundForSlot(int slot)
 
 	if (after <= before)
 	{
+		// One reclaim-and-retry. Marking the slot as appended makes the rebuild
+		// reload it too, so the retry is the rebuild's own LoadCarSoundForSlot.
+		if (!rewound && !car_sound_rebuilding && car_sound_checkpoint_ready)
+		{
+			car_slot_appended[slot] = 1;
+			RebuildImportedCarSoundBanks();
+
+			if (car_slot_sample[slot] >= 0 &&
+				car_slot_city[slot] == city && car_slot_model[slot] == model)
+				return;
+
+			// The bank has been rewound: the old block is no longer valid.
+			rewound = 1;
+		}
+
+		if (!rewound && !car_sound_rebuilding && old_sample >= 0)
+		{
+			car_slot_sample[slot] = old_sample;
+			car_slot_city[slot] = old_city;
+			car_slot_model[slot] = old_model;
+			car_slot_imported[slot] = old_imported;
+			car_slot_appended[slot] = old_appended;
+
+			printWarning("gamesnd: no car sound bank for resident slot %d (%s model %d) - keeping block %d\n",
+				slot, LevelNames[city], model, old_sample);
+			return;
+		}
+
 		printWarning("gamesnd: no car sound bank for resident slot %d (%s model %d)\n",
 			slot, LevelNames[city], model);
 		return;
@@ -591,11 +855,13 @@ void LoadCarSoundForSlot(int slot)
 	car_slot_city[slot] = city;
 	car_slot_model[slot] = model;
 	car_slot_imported[slot] = 0;
+	car_slot_appended[slot] = 1;
 
 	printInfo("gamesnd: resident slot %d (%s model %d) -> car sound block %d\n",
 		slot, LevelNames[city], model, car_slot_sample[slot]);
 
 	RestartCarNoiseForSlot(slot);
+	RestartSirenForSlot(slot);
 }
 
 #if MAX_CAR_RESIDENT_MODELS > 5
@@ -640,15 +906,17 @@ void LoadLevelSFX(int missionNum)
 	// level's imports recorded so GetCarBankSample cannot point at a block that
 	// this level has not loaded.
 	car_sound_ready = 0;
+	car_sound_checkpoint_ready = 0;
+	car_sound_rebuilding = 0;
 	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 	{
 		car_slot_sample[i] = -1;
 		car_slot_city[i] = -1;
 		car_slot_model[i] = -1;
 		car_slot_imported[i] = 0;
+		car_slot_appended[i] = 0;
 	}
 
-	car_d1_generic_block = -1;
 	car_sound_ready = 1;
 
 	cop_bank = missionNum % 4 + 1;
@@ -866,11 +1134,36 @@ void LoadLevelSFX(int missionNum)
 		gDoCopSpeech = 1;
 	}
 
+	// JERICHO: the bank state a level's own cars and special vehicles leave
+	// behind. Imported slots append after this point, and a level can change
+	// cars many times; when the appended blocks would fill the bank, this is
+	// where they are rewound to so only ONE block per live slot is held.
+	// Nothing else consumes memtop/banktop, so overwriting the earlier save
+	// (which sits before the special banks) is safe.
+	LoadSoundBankDynamic(NULL, 1, SOUND_BANK_CARS);	// save memtop
+	LoadSoundBankDynamic(NULL, 3, SOUND_BANK_CARS);	// save banktop
+
 #if MAX_CAR_RESIDENT_MODELS > 5
+	/* One 3-sample block must fit for every possible appended slot, on top of
+	 * the 7 blocks the level itself holds (slots 0,1,2,4 plus up to three
+	 * special banks). At 16 slots that is 18 blocks / 54 samples, inside the
+	 * 64-sample bank. A future slot raise that breaks this would make a
+	 * rebuild unable to represent the live set, so say so at level load. */
+	{
+		int needed = (7 + (MAX_CAR_RESIDENT_MODELS - 5)) * 3;
+
+		if (needed > GetSoundBankCapacity())
+			printWarning("gamesnd: SOUND_BANK_CARS holds %d samples but %d resident slots need %d - imported car sounds cannot all fit\n",
+				GetSoundBankCapacity(), MAX_CAR_RESIDENT_MODELS, needed);
+	}
+
 	// Imported slots' banks are appended after the level's own and special
 	// banks, so their stock block arithmetic above is left exactly as it was.
 	LoadExtraCarSoundBanks();
 #endif
+
+	// From here on an append can be reclaimed against the checkpoint above.
+	car_sound_checkpoint_ready = 1;
 }
 
 int TimeSinceLastSpeech = 0;
@@ -893,11 +1186,20 @@ void StartPlayerCarSounds(int playerId, int model, VECTOR* pos)
 	channel = playerId * 3 + 1;	
 	Start3DSoundVolPitch(channel, SOUND_BANK_CARS, carSampleId * 3 + 1, pos->vx, pos->vy, pos->vz, -10000, 4096);
 
+	channel = playerId * 3 + 2;
+
 	if (siren)
 	{
-		channel = playerId * 3 + 2;
 		// SOUND_BANK_SFX or SOUND_BANK_VOICES
 		Start3DSoundVolPitch(channel, (siren & 0xff00) >> 8, siren & 0xff, pos->vx, pos->vy, pos->vz, -10000, 129);
+		SoundLogCarSample("siren", model, siren & 0xff);
+	}
+	else
+	{
+		/* This is the player's siren loop (and the same index carries the
+		 * horn one-shot). A car with no siren must not leave the previous
+		 * car's siren playing after a change. */
+		StopChannel(channel);
 	}
 
 	if (NumPlayers > 1 && NoPlayerControl == 0)
@@ -1362,6 +1664,7 @@ void InitDopplerSFX(void)
 		siren_noise[i].car = MAX_CARS;
 		siren_noise[i].in_use = 0;
 		siren_noise[i].stopped = 1;
+		siren_noise_sample[i] = 0;
 	}
 
 	for (i = 0; i < MAX_CAR_NOISES; i++)
@@ -1497,6 +1800,34 @@ void DoDopplerSFX(void)
 			sirens++;
 	}
 
+	/* A live siren entry whose packed sample changed (the slot was re-banked, or
+	 * the car became/stopped being a cop) must be re-issued. Free the entry but
+	 * leave the car's bit in car_flags, so the start loop below starts it again
+	 * with the new sample instead of keeping the old SPU data. */
+	for (i = 0; i < MAX_SIREN_NOISES; i++)
+	{
+		int car = siren_noise[i].car;
+		int current;
+
+		if (siren_noise[i].stopped != 0 || car < 0 || car >= MAX_CARS)
+			continue;
+
+		current = (car_data[car].controlType != CONTROL_TYPE_CIV_AI)
+			? CarHasSiren(car_data[car].ap.model) : 0;
+
+		if (current == siren_noise_sample[i])
+			continue;
+
+		StopChannel(siren_noise[i].chan);
+		UnlockChannel(siren_noise[i].chan);
+
+		siren_noise[i].chan = -1;
+		siren_noise[i].car = MAX_CARS;
+		siren_noise[i].in_use = 0;
+		siren_noise[i].stopped = 1;
+		siren_noise_sample[i] = 0;
+	}
+
 	// stop unused siren noises
 	for (i = 0; i < MAX_SIREN_NOISES; i++)
 	{
@@ -1516,6 +1847,7 @@ void DoDopplerSFX(void)
 			siren_noise[i].chan = -1;
 			siren_noise[i].car = MAX_CARS;
 			siren_noise[i].stopped = 1;
+			siren_noise_sample[i] = 0;
 		}
 	}
 
@@ -1544,14 +1876,17 @@ void DoDopplerSFX(void)
 				{
 					int siren;
 					siren = CarHasSiren(car_data[car].ap.model);
+					siren_noise_sample[j] = siren;
 
 					siren_noise[j].chan = Start3DTrackingSound(-1, (siren & 0xff00) >> 8, siren & 0xff,
 						(VECTOR*)car_data[car].hd.where.t,
 						(LONGVECTOR3*)car_data[car].st.n.linearVelocity);
+					SoundLogCarSample("siren", car_data[car].ap.model, siren & 0xff);
 				}
 				else
 				{
 					// play music
+					siren_noise_sample[j] = 0;
 					siren_noise[j].chan = Start3DTrackingSound(-1, SOUND_BANK_ENVIRONMENT, 5,
 						(VECTOR*)car_data[car].hd.where.t,
 						(LONGVECTOR3*)car_data[car].st.n.linearVelocity);
@@ -2987,6 +3322,11 @@ void LeadHorn(CAR_DATA* cp)
 	if (horn_time == UINT_MAX)
 		return;
 
+	/* A siren car's third sample is its siren, not a horn. Cops are heard
+	 * through DoDopplerSFX's siren loop, so never play it as a lead horn. */
+	if (CarHasSiren(cp->ap.model) != 0)
+		return;
+
 	// [A] do not horn if too far from camera
 	dx = cp->hd.where.t[0] - camera_position.vx >> 8;
 	dz = cp->hd.where.t[2] - camera_position.vz >> 8;
@@ -3006,6 +3346,7 @@ void LeadHorn(CAR_DATA* cp)
 		Start3DTrackingSound(-1, SOUND_BANK_CARS, carBank * 3 + 2, 
 			(VECTOR*)cp->hd.where.t, 
 			(LONGVECTOR3*)cp->st.n.linearVelocity);
+		SoundLogCarSample("horn", cp->ap.model, carBank * 3 + 2);
 
 		horn_time = 0;
 	}
