@@ -175,7 +175,7 @@ echo BAKE_D1_CARS: done. %OUT% now holds:
 dir /b "%OUT%"
 echo.
 if "%BETA%"=="1" if exist "%OUT%\BETAMIAMI.LEV" (
-	echo   Beta Miami is in. Go enjoy your favourite yellow Buick GX.
+	echo   Beta Miami is in. Go enjoy your favorite Yellow Buick GSX.
 ) else (
 	echo   Start the game and the seven retail Driver 1 cities will be offered.
 	echo   ^(Put the Euro Demo 43's LEVELS and SOUND in EURO43\ and re-run for Beta Miami.^)

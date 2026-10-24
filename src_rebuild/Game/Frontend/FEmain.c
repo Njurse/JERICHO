@@ -434,6 +434,7 @@ int JerFrontendMenuScreen(int bSetup);	// JERICHO-HOOK: module frontend menus
 static int gJerichoOptionsButtonAdded;
 static int gJerichoModsNeedSetup;	// a page change needs the buttons rebuilt
 static int gJerichoCreditsOpen;	// the mods screen is showing its Credits page
+static int gJerichoCreditsPending;	// ...opened by the Mods menu, so entry must not clear it
 static void JerichoDrawCredits(void);
 
 // JERICHO: the update check lives in the runtime (jer_update.c), which is built
@@ -5696,7 +5697,16 @@ int JerichoModsScreen(int bSetup)
 	 * menu returns to whatever this screen would have returned to: the same trick
 	 * the update screen uses (jer_update.c). */
 	if (bSetup)
-		gJerichoCreditsOpen = 0;
+	{
+		/* A fresh entry opens on the mods list. The Credits action, though,
+		 * arrives BY entering this screen (jer_mods_open_credits): the flag it
+		 * set has to survive the setup call, or the page it asked for is
+		 * cleared before its first frame. */
+		if (gJerichoCreditsPending)
+			gJerichoCreditsPending = 0;
+		else
+			gJerichoCreditsOpen = 0;
+	}
 
 	if (gJerichoCreditsOpen)
 		return JerichoCreditsPage(bSetup);
@@ -5735,14 +5745,17 @@ void jer_mods_request_compile(void)
 	jer_prompt_begin("Compile the deep mods? JERICHO must restart afterwards.", jer_compile_request);
 }
 
-/* Open the Credits page. It is a page of THIS screen, so push this screen and let
- * its handler draw the page; Back or Triangle clears the flag, and the stub above
- * then hands the screen back to the Mods menu. */
+/* Open the Credits page. It is a page of THIS screen, so open it in place of the
+ * Mods menu (jer_frontend_replace): Back then re-opens the menu in the same slot,
+ * and the nav stack still returns to whatever opened the Mods screen. The
+ * pending flag tells the setup call that follows this entry to keep the page
+ * flag instead of clearing it as a fresh entry would. */
 void jer_mods_open_credits(void)
 {
 	gJerichoCreditsOpen = 1;
+	gJerichoCreditsPending = 1;
 	gJerichoModsNeedSetup = 1;
-	jer_frontend_goto(JERICHO_MODS_SCREEN);
+	jer_frontend_replace(JERICHO_MODS_SCREEN);
 	bRedrawFrontend = 1;
 }
 
