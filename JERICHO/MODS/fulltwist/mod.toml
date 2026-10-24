@@ -12,5 +12,7 @@ default-enabled = false
 # COMPILED-IN (deep) module: no `runtime = "dll"`.
 # It uses the game's config store and pause-menu API, which are linked into the
 # exe but are not part of the runtime DLL import surface (same model as crumple
-# and collisiondevil). It ships with the game build, alongside the crumple work.
+# and collisiondevil). A Release build does NOT pre-include it: FULL TWIST is
+# distributed through the official mod repo, and Release_dev still compiles it
+# in for development.
 

@@ -15,6 +15,9 @@ is in [changelog.txt](changelog.txt).
 
 ### Full Twist
 
+- FULL TWIST is no longer pre-included in the Release build. It is a deep
+  (compiled-in) module distributed through the official mod repo; `Release_dev`
+  still compiles it in for development.
 - New **Free Physics** preset: cars that are hit, airborne, or resting on their
   body keep their rotation. It lowers the stock `angularDamping`, cancels the
   engine's lift `-avel/8`, and bypasses the stopped-car spin kill; traffic keeps

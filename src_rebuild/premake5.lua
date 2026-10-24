@@ -73,7 +73,10 @@ JERICHO_RELEASE_MODS = {
 	crumple    = true,	-- vehicle deformation + wheel-damage physics
 	mp         = true,	-- LAN multiplayer (owns the take-a-ride Single Player / Multiplayer prompt)
 	d1cars     = true,	-- Driver 1 car shapes/cosmetics: the five D1 car-data cities
-	fulltwist  = true,	-- body-ground grip/tumble physics; optional, default off
+	-- fulltwist is deliberately NOT here. It is a deep (compiled-in) module
+	-- distributed through the official mod repo, not bundled with a release:
+	-- players who want it install it from Options -> JERICHO -> Mods -> Mod Repo.
+	-- Release_dev still compiles it in for development.
 }
 
 -- true when id is pre-included in a release build.
