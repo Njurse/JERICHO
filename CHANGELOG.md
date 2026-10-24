@@ -4,6 +4,23 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## Unreleased
+
+### Multiplayer (mp 0.16.0)
+
+- **Choose your on-foot character.** `Player Options` now offers `Preferred
+  Character` alongside `Player Color`: Tanner or Jericho. The pick is applied
+  on foot, validated against what the current level can actually draw, and
+  synchronised through the host (`JPCL`, the roster and `JPPD`). Jericho uses
+  the shipped `JMPPED.LEV` bake or Havana's streamed pages; if neither is
+  available the player (or a remote stand-in) stays Tanner instead of drawing
+  a broken skeleton.
+- The mp wire protocol is **18** (was 17): the preferred character rides the
+  spare identity bytes in `MP_COLOR_ENTRY`, `MP_ROSTER_ENTRY` and
+  `MP_PEDSTATE_ENTRY`, so a late joiner learns it before the first pose.
+- The build driver copies `JMPPED.LEV` to `DRIVER2/LEVELS/` after building
+  `mp`, so a fresh checkout has the bake where the engine expects it.
+
 ## v0.11.8
 
 *Released 2026-10-24.*

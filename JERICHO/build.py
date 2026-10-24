@@ -539,6 +539,41 @@ def copy_addons(ctx):
     return 0
 
 
+def copy_mod_assets(ctx):
+    """Copy the compiled-in modules' runtime assets beside the exe.
+
+    JMPPED.LEV is the self-contained Jericho pedestrian bake. The engine looks
+    for it at DRIVER2/LEVELS/JMPPED.LEV, so a fresh build must place it there:
+    the mod's tools/ folder is not the runtime layout. A missing bake is not a
+    build failure -- the engine falls back to Havana's streamed pages.
+    """
+    src = os.path.join(mods_dir(ctx.src), "mp", "tools", "JMPPED.LEV")
+
+    if not os.path.isfile(src):
+        return 0
+
+    targets = [os.path.join(ctx.src, "bin", ctx.config, "DRIVER2", "LEVELS")]
+
+    # A runtime JERICHO beside the exe: the game root is its parent. The repo's
+    # own JERICHO is NOT a runtime layout -- copying there would create a stray
+    # DRIVER2/ tree at the repository root.
+    if (ctx.runtime and os.path.basename(ctx.runtime) == "JERICHO" and
+            os.path.abspath(ctx.runtime) != jericho_dir(ctx.src)):
+        targets.append(os.path.join(os.path.dirname(ctx.runtime),
+                                    "DRIVER2", "LEVELS"))
+
+    for target in targets:
+        if ctx.dry_run:
+            print("[build] (dry-run) copy %s -> %s" %
+                  (src, os.path.join(target, "JMPPED.LEV")), flush=True)
+            continue
+
+        os.makedirs(target, exist_ok=True)
+        shutil.copy2(src, os.path.join(target, "JMPPED.LEV"))
+
+    return 0
+
+
 # --------------------------------------------------------------------------
 # commands
 # --------------------------------------------------------------------------
@@ -550,7 +585,10 @@ def do_game(ctx, step, mod_id):
     if step == "mod":
         if not mod_id:
             raise SystemExit("build.py: 'game mod' needs a module id")
-        return b.build_deep_mod(ctx, mod_id)
+        rc = b.build_deep_mod(ctx, mod_id)
+        if rc:
+            return rc
+        return copy_mod_assets(ctx) if mod_id == "mp" else 0
     if step == "exe":
         return b.build_exe(ctx)
     if step == "exports":
@@ -564,6 +602,9 @@ def do_game(ctx, step, mod_id):
             rc = b.build_deep_mod(ctx, mid)
             if rc:
                 return rc
+        rc = copy_mod_assets(ctx)
+        if rc:
+            return rc
         return b.build_exe(ctx)
     raise SystemExit("build.py: unknown game step %r "
                      "(premake|mod <id>|exe|exports|all)" % step)
