@@ -1,10 +1,10 @@
 id = "collisiondevil"
-name = "COLLISIONDEVIL"
+name = "Thrill Driver"
 version = "0.1.0"
 # the JERICHO interface (SDK) this mod is built against
 interface = 2
 author = "JERICHO"
-description = "Arcade handling overhaul: derived speed boost, brake-tap powerslides, render-only visual drama, and a clean 2-page pause menu."
+description = "Thrill Driver arcade handling overhaul: derived speed boost, brake-tap powerslides, render-only visual drama, and a clean 2-page pause menu."
 dependencies = []
 # OFF out of the box (2026-10-12): a dev/experiment module that no release ships.
 # Nothing should be switched on for somebody who has not asked for it; turn it on
