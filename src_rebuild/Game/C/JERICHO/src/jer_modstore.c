@@ -2898,7 +2898,6 @@ static void RepoMenuEnter(void* ud)
 		it->label = "Refresh";
 		it->on_activate = RepoRefresh;
 		it->submenu = -1;
-		controls++;
 	}
 
 	{
@@ -2908,7 +2907,6 @@ static void RepoMenuEnter(void* ud)
 		it->label = "Reload repos";	/* re-read CONFIG/modstore.ini */
 		it->on_activate = RepoReload;
 		it->submenu = -1;
-		controls++;
 	}
 
 	{
@@ -2918,7 +2916,6 @@ static void RepoMenuEnter(void* ud)
 		it->label = "Back";
 		it->is_back = 1;
 		it->submenu = -1;
-		controls++;
 	}
 
 	gRepoMenu.item_count = n;
