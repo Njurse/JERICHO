@@ -2,14 +2,16 @@
  *
  * Ported from feature/mod-store (77be5b84) without the store: an update that
  * ships a BAKE_D1_CARS script with a higher BAKE_VERSION than the one stamped in
- * DRIVER/D1CARS/BAKE_VERSION leaves the cars baked by the old tooling. On the
- * first main-menu frame we compare the two and raise a jer_prompt. An unstamped
- * bake counts as version 0 (older); no bake at all asks nothing.
+ * JERICHO/MODS/carhacks/D1CARS/BAKE_VERSION leaves the cars baked by the old
+ * tooling. On the first main-menu frame we compare the two and raise a
+ * jer_prompt. An unstamped bake counts as version 0 (older); no bake at all asks
+ * nothing.
  *
  * Yes starts the BAKE_D1_CARS script beside the game (the script cds to its own
- * folder and writes DRIVER/D1CARS there). Windows: a console window running
- * BAKE_D1_CARS.bat. Linux: sh BAKE_D1_CARS.sh in the background, output to
- * JERICHO/CONFIG/rebake.log. The new bake is read next time the game starts. */
+ * folder and writes JERICHO/MODS/carhacks/D1CARS there). Windows: a console
+ * window running BAKE_D1_CARS.bat. Linux: sh BAKE_D1_CARS.sh in the background,
+ * output to JERICHO/CONFIG/rebake.log. The new bake is read next time the game
+ * starts. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,10 +25,18 @@
 #include "../include/jericho.h"
 #include "../include/jer_prompt.h"
 #include "../include/jer_frontend.h"
+#include "../include/jer_modstore.h"	/* the startup mod-update check runs first */
+#include "../include/jer_rebake.h"	/* the re-arm hook jer_modstore.c calls */
 
 #define RB_PATH_MAX 1024
 
 static char sRebakeScript[RB_PATH_MAX];
+
+/* The prompt is one-shot per run. A mod install can bring newer bake tooling
+ * after it has already run, so jer_modstore.c calls jer_rebake_rearm() then. */
+static int sRebakeAsked;
+static int sRebakeSettled;
+static int sRebakeAccepted;	/* the player answered Yes: never re-ask this run */
 
 static int RbFileInt(const char* path, const char* afterKey)
 {
@@ -121,35 +131,75 @@ static int RbBakedVersion(void)
 	char path[RB_PATH_MAX + 16];
 	int v;
 
+	/* carhacks owns the baked car data: JERICHO/MODS/carhacks/D1CARS */
+	snprintf(dir, sizeof(dir), "%s/MODS/carhacks/D1CARS", jer_root_dir());
+	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
+	v = RbFileInt(path, NULL);
+	if (v >= 0)
+		return v;
+
+	/* A bake from before the move lived beside DRIVER2. Report it too, so an
+	 * update from that build still offers the re-bake (into the new folder). */
 	snprintf(dir, sizeof(dir), "%s/../DRIVER/D1CARS", jer_root_dir());
 	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
 	v = RbFileInt(path, NULL);
 	if (v >= 0)
 		return v;
+
 	return RbDirHasEntries(dir) ? 0 : -1;
+}
+
+/* The running exe, so the script can relaunch THIS game even where the script
+ * does not sit beside it (the dev tree keeps BAKE_D1_CARS at the repo root). */
+static void RbExePath(char* out, int outSize)
+{
+	out[0] = 0;
+#if defined(_WIN32)
+	if (GetModuleFileNameA(NULL, out, outSize) == 0)
+		out[0] = 0;
+#else
+	{
+		ssize_t k = readlink("/proc/self/exe", out, outSize - 1);
+		if (k > 0)
+			out[k] = 0;
+		else
+			out[0] = 0;
+	}
+#endif
 }
 
 static void RbYes(void)
 {
+	char gameExe[RB_PATH_MAX];
+
 	if (sRebakeScript[0] == 0)
 	{
 		jer_log("[rebake] " RB_SCRIPT " is not beside the game; run it from your JERICHO folder\n");
 		return;
 	}
+
+	/* Accepted: a later re-arm (a mod install) must not ask again this run. */
+	sRebakeAccepted = 1;
+
+	RbExePath(gameExe, sizeof(gameExe));
+
 #if defined(_WIN32)
 	{
-		char cmd[RB_PATH_MAX + 64];
+		char cmd[RB_PATH_MAX * 2 + 64];
 		STARTUPINFOA si;
 		PROCESS_INFORMATION pi;
 
 		memset(&si, 0, sizeof(si));
 		si.cb = sizeof(si);
-		snprintf(cmd, sizeof(cmd), "cmd.exe /c \"\"%s\"\"", sRebakeScript);
+		/* --from-game: the script bakes, then relaunches the exe passed after it.
+		 * A manual run never passes the flag, so it never restarts the game. */
+		snprintf(cmd, sizeof(cmd), "cmd.exe /c \"\"%s\" --from-game \"%s\"\"", sRebakeScript, gameExe);
 		if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
 		{
 			CloseHandle(pi.hThread);
 			CloseHandle(pi.hProcess);
-			jer_log("[rebake] started %s\n", sRebakeScript);
+			jer_log("[rebake] started %s --from-game; the game closes and reopens after\n", sRebakeScript);
+			exit(0);	/* the engine's own way out (atexit finalises the log) */
 		}
 		else
 			jer_log("[rebake] could not start %s\n", sRebakeScript);
@@ -168,11 +218,14 @@ static void RbYes(void)
 			if (lf != NULL)
 				dup2(fileno(stdout), 2);
 			freopen("/dev/null", "r", stdin);	/* the script's closing read returns at once */
-			execl("/bin/sh", "sh", sRebakeScript, (char*)NULL);
+			execl("/bin/sh", "sh", sRebakeScript, "--from-game", gameExe, (char*)NULL);
 			_exit(127);
 		}
-		jer_log(pid > 0 ? "[rebake] started %s (log: JERICHO/CONFIG/rebake.log)\n"
+		jer_log(pid > 0 ? "[rebake] started %s --from-game (log: JERICHO/CONFIG/rebake.log); the game closes and reopens after\n"
 			: "[rebake] could not start %s\n", sRebakeScript);
+
+		if (pid > 0)
+			exit(0);
 	}
 #endif
 }
@@ -180,25 +233,33 @@ static void RbYes(void)
 /* Frontend, once per frame on the main menu. Asks at most once per run. */
 void jer_rebake_frontend_tick(int onMainMenu)
 {
-	static int asked = 0;
-	static int settled = 0;
 	int upd = jer_frontend_find("jericho.update");
 	int baked, wanted;
 
-	if (asked)
+	if (sRebakeAsked)
 		return;
+
+	/* The store's startup update question comes first, and may still be fetching
+	 * the repo index or applying an update. Do not raise "re-bake your D1 cars?"
+	 * on top of it: an update can bring the newer bake tooling this is about to
+	 * ask about. */
+	if (jer_modstore_startup_update_pending())
+	{
+		sRebakeSettled = 0;
+		return;
+	}
 
 	/* let the updater have its say first: its notes page owns the screen, and a
 	 * prompt over it is two screens at once. Ask after a few quiet main-menu
 	 * frames, i.e. once the player is back on the main menu. */
 	if (!onMainMenu || jer_prompt_active() || (upd >= 0 && jer_frontend_current_menu() == upd))
 	{
-		settled = 0;
+		sRebakeSettled = 0;
 		return;
 	}
-	if (++settled < 30)
+	if (++sRebakeSettled < 30)
 		return;
-	asked = 1;
+	sRebakeAsked = 1;
 
 	baked = RbBakedVersion();
 	wanted = RbToolingVersion();
@@ -207,4 +268,17 @@ void jer_rebake_frontend_tick(int onMainMenu)
 
 	jer_log("[rebake] Driver 1 bake is older than the tooling (baked %d, expected %d)\n", baked, wanted);
 	jer_prompt_begin("Your Driver 1 cars were baked with older tooling. Re-bake them now?", RbYes);
+}
+
+/* The one-shot prompt already ran (or the player declined). A mod install may
+ * have brought newer bake tooling, so allow the question again. */
+void jer_rebake_rearm(void)
+{
+	/* A mod install can bring newer bake tooling, but never re-ask a player who
+	 * already said Yes this run -- that was the "asked twice" report. */
+	if (sRebakeAccepted)
+		return;
+
+	sRebakeAsked = 0;
+	sRebakeSettled = 0;
 }

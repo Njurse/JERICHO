@@ -97,6 +97,18 @@ src_rebuild/tools/gen_exports/     maps the linker map to exports.def
   other city.
 - [`ped-animation.md`](ped-animation.md), [`ped-palette.md`](ped-palette.md),
   [`screens.md`](screens.md), [`module-activation.md`](module-activation.md).
+- [`mod-repo.md`](mod-repo.md) — **the mod store**: how to host a repo (one
+  `mods.json` plus a package per mod), the index and package format, the hash and
+  version rules the store enforces, and the five-minute local test recipe
+  (`JERICHO/CORE/modstore/test`).
+- [`interfaces.md`](interfaces.md) — **the mod interface**: the SDK version a
+  manifest declares and what forces a bump, the custom-event id registry (who owns
+  which `JER_EVENT_MODULE_CUSTOM + n`), the core contract headers, and the
+  manifest and index keys a mod or a repo may rely on.
+- [`modding.md`](modding.md) — **publishing a mod in five commands**: package it,
+  rebuild the index, validate it, serve it, publish it. Plus the scaffold for a
+  self-contained repo with a CI workflow, and the rules that keep a repo
+  installable (never hand-edit a hash; bump the version every time).
 
 ## Building the game
 
@@ -121,31 +133,33 @@ msbuild build/JERICHO.sln /p:Configuration=Release /p:Platform=x64
 JERICHO\build_mods.bat
 ```
 
-or the **Compile Mods** button in the Mods menu (Windows `Release_dev` only; Release
-hides it). This runs
+or the **Compile Mods** button in the Mods menu (shown whenever a source tree
+and the build shim are present, so a shipped package hides it). This runs
 `premake5_mods.lua` (generates one DLL project per `runtime = "dll"`
 addon), builds them against the game's import library, and copies the DLLs
 next to the exe. Reloading the Mods screen activates them. No exe rebuild.
 
 ## Building deep mods (game-side)
 
-Deep mods (no `runtime = "dll"`) are compiled **into** the exe, so they cannot
-be rebuilt while the game is running. **Compile Mods** therefore asks first:
+Deep mods (no `runtime = "dll"`) are compiled **into** the exe. Installing one
+from the mod repo asks whether to rebuild when you leave the repo browser;
+**Compile Mods** in the Mods menu is the manual path, and both ask first:
 
-- **Yes** builds the runtime addons immediately (above) and records that the
-  deep mods need a rebuild (`JERICHO/CONFIG/needs-build`), then tells the player
-  to restart.
-- On the **next boot**, JERICHO runs the deep build *before the frontend menu*
-  and shows a progress screen — `Compiling JERICHO addons...` / `CRUMPLE [3/9]`
-  — driven by `JERICHO/build_game.bat` (premake, then one MSBuild step per deep
-  module, then the exe), with everything it prints in
-  `JERICHO/CONFIG/build.log`.
-
-The exe the game is running from is locked, so it is moved to `<exe>.old` first
-and the freshly linked exe lands under the normal name — hence "restart to run
-them"; the stale `.old` goes away on the boot after that. Booting is the one
-moment a rebuild can happen at all, which is why it is deferred rather than
-done in place. The heading and the `[i/n]` line are drawn by the presentation
+- **Yes** closes the game. A detached helper (`JERICHO/build_restart.bat`,
+  started before the exit) waits for the process, moves the exe to `<exe>.old`,
+  builds the runtime addons, then runs `JERICHO/build_game.bat` (premake, one
+  MSBuild step per deep module, then the exe) in a console of its own — the long
+  compiler output goes to `JERICHO/CONFIG/build.log`. On success it starts the
+  new exe, so the player comes back with the mods in it. On failure it restores
+  the old exe, starts it, and leaves `CONFIG/build-failed` for the next boot to
+  report.
+- Where there is no source tree/toolchain (a shipped install, another platform)
+  the deferred path is used instead: the runtime addons build immediately,
+  `JERICHO/CONFIG/needs-build` records the deep rebuild, and the next boot runs
+  it before the frontend menu, showing a progress screen — `Compiling JERICHO
+  addons...` / `CRUMPLE [3/9]`. That boot-time build runs from the live image, so
+  it still needs the restart after it; it moves the running exe to `<exe>.old`
+  and the freshly linked exe lands under the normal name. The heading and the `[i/n]` line are drawn by the presentation
 screen in [screens.md](screens.md).
 
 ## The runtime

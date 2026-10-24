@@ -28,7 +28,7 @@ require "premake_modules/jericho_mods"
 
 -- True when <id>'s mod.toml marks it as a runtime DLL addon.
 function jericho_is_dll_addon(id)
-	local toml = io.open("../JERICHO/MODS/" .. id .. "/mod.toml", "r")
+	local toml = io.open(jericho_mod_dir(id) .. "/mod.toml", "r")
 
 	if toml then
 		local line = toml:read("*l")
@@ -73,6 +73,10 @@ JERICHO_RELEASE_MODS = {
 	crumple    = true,	-- vehicle deformation + wheel-damage physics
 	mp         = true,	-- LAN multiplayer (owns the take-a-ride Single Player / Multiplayer prompt)
 	d1cars     = true,	-- Driver 1 car shapes/cosmetics: the five D1 car-data cities
+	-- fulltwist is deliberately NOT here. It is a deep (compiled-in) module
+	-- distributed through the official mod repo, not bundled with a release:
+	-- players who want it install it from Options -> JERICHO -> Mods -> Mod Repo.
+	-- Release_dev still compiles it in for development.
 }
 
 -- true when id is pre-included in a release build.
@@ -468,6 +472,7 @@ workspace "JERICHO"
 	filter "configurations:Release_dev"
         defines {
             "NDEBUG",
+            "JER_DEV_BUILD",
         }
         symbols "On"
         
@@ -523,6 +528,8 @@ project "JERICHO_runtime"
 for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
 	filter {}	-- reset any leaked filter (old premake leaks across project())
 
+	local JER_DIR = jericho_mod_dir(JER_MOD)
+
 	project ("mod_" .. JER_MOD)
 		kind "StaticLib"
 		language "c++"
@@ -535,14 +542,14 @@ for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
 		}
 
 		files {
-			("../JERICHO/MODS/" .. JER_MOD .. "/**.c"),
-			("../JERICHO/MODS/" .. JER_MOD .. "/**.h"),
+			(JER_DIR .. "/**.c"),
+			(JER_DIR .. "/**.h"),
 		}
 
 		includedirs {
-			("../JERICHO/MODS/" .. JER_MOD),
-			("../JERICHO/MODS"),  -- sibling module roots: a source in a subfolder (ai/,
-			                      -- weapons/) includes its own module header by plain name
+			JER_DIR,
+			(JER_DIR .. "/.."),  -- sibling module roots: a source in a subfolder (ai/,
+			                     -- weapons/) includes its own module header by plain name
 		}
 
 		-- A mod's compiled output belongs WITH the mod, not in bin/<cfg> next to the
@@ -557,8 +564,8 @@ for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
 		-- the C runtime. bin/<cfg> never separated x86 from x64 either, which is how
 		-- an x86 library poisons an x64 link (LNK4272). The mirror below drops this
 		-- output again on its way into bin/ - build artefacts are not game data.
-		targetdir ("../JERICHO/MODS/" .. JER_MOD .. "/lib/%{cfg.buildcfg}/%{cfg.platform}")
-		objdir ("../JERICHO/MODS/" .. JER_MOD .. "/obj/%{cfg.buildcfg}")
+		targetdir (JER_DIR .. "/lib/%{cfg.buildcfg}/%{cfg.platform}")
+		objdir (JER_DIR .. "/obj/%{cfg.buildcfg}")
 
 		filter "system:Windows"
 			disablewarnings { "4996", "4244", "4018", "4267", "4101", "4013" }
@@ -816,6 +823,14 @@ project "JERICHO"
             "xcopy /Y /D \"..\\..\\JERICHO\\CONFIG\\modlist.ini\" \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\\modlist.ini\"",
             "copy /Y \"..\\..\\JERICHO\\build_mods.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.bat\"",
             "copy /Y \"..\\..\\JERICHO\\build_game.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.bat\"",
+            "copy /Y \"..\\..\\JERICHO\\build_restart.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_restart.bat\"",
+            "copy /Y \"..\\..\\JERICHO\\build_restart.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_restart.sh\"",
+            -- the shared cross-platform driver + its POSIX twins travel with
+            -- the runtime JERICHO so the in-game Compile Mods flow finds them
+            -- next to the exe (build_game.bat forwards to build.py).
+            "copy /Y \"..\\..\\JERICHO\\build.py\" \"%{cfg.buildtarget.directory}JERICHO\\build.py\"",
+            "copy /Y \"..\\..\\JERICHO\\build_game.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.sh\"",
+            "copy /Y \"..\\..\\JERICHO\\build_mods.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.sh\"",
             -- The updater, at the build's ROOT next to the exe, so a locally built
             -- install carries exactly what a downloaded one does. The packaging step
             -- used to be the only thing that placed these, which meant bin/<cfg> - the
@@ -823,6 +838,12 @@ project "JERICHO"
             -- the packages carry both: whichever OS the folder is copied to, one fits.
             "copy /Y \"..\\..\\JERICHO\\MODS\\mp\\tools\\pack_lan\\update_jericho.bat\" \"%{cfg.buildtarget.directory}update_jericho.bat\"",
             "copy /Y \"..\\..\\JERICHO\\MODS\\mp\\tools\\pack_lan\\update_jericho.sh\" \"%{cfg.buildtarget.directory}update_jericho.sh\"",
+            -- The MOD STORE's helper, same reasoning as the updater above: the store
+            -- cannot install without it, and it only sat next to the exe because
+            -- someone copied it by hand - so a clean build (and CI) produced a game
+            -- whose Mod Repo screen could download nothing. Both spellings.
+            "copy /Y \"..\\..\\JERICHO\\CORE\\modstore\\modstore.bat\" \"%{cfg.buildtarget.directory}modstore.bat\"",
+            "copy /Y \"..\\..\\JERICHO\\CORE\\modstore\\modstore.sh\" \"%{cfg.buildtarget.directory}modstore.sh\"",
         }
 
     -- The TOOLS are deliberately NOT mirrored. They are source, not game data: the
@@ -842,22 +863,27 @@ project "JERICHO"
         table.insert(jer_mirrored_mods, path.getname(JER_DIR))
     end
 
-    -- Modules that are NOT mirrored into the build at all.
+    -- Modules whose FOLDER is not mirrored into the build.
     --
-    -- d1cars and gaildrv2 are submodules that CI does not fetch (the allow-list in
-    -- .github/workflows/build.yml fetches only PsyCross), and this keeps their folder out
-    -- of the build output even when present locally. The recursive xcopy above mirrors
-    -- every folder on disk, so without this the WHOLE submodule lands in
-    -- bin/<cfg>/JERICHO/MODS/ - and d1cars carries Driver 1 car content (shapes as
-    -- .obj/.json, textures, LEV/LCF level data) that must not ride along in a build output
-    -- or in a package made from one. A shipped LAN zip was found carrying 58 d1cars/gaildrv2
-    -- entries for exactly this reason.
+    -- d1cars is fetched by the build now (the allow-list in .github/workflows/build.yml
+    -- fetches PsyCross and the four public mod source repos: mp, carhacks, crumple and
+    -- d1cars), but its folder still must not land in the build output: it carries
+    -- Driver 1 car content (shapes as .obj/.json, textures, LEV/LCF level data) that
+    -- must not ride along in a build output or in a package made from one. gaildrv2 is
+    -- unpublished and is not fetched at all. The recursive xcopy above mirrors every
+    -- folder on disk, so without this the WHOLE submodule lands in bin/<cfg>/JERICHO/MODS/.
+    -- A shipped LAN zip was found carrying 58 d1cars/gaildrv2 entries for exactly this reason.
     --
-    -- Dropping the folder also means modlist.ini must not list these ids: the runtime scans
-    -- MODS/ and logs "modlist references unknown module" for an id with no installed folder
-    -- (jer_system.c), so the two lines are gone from the shipped profile and the note that
-    -- used to live there is in its header comment instead.
+    -- The folder is dropped and then restored with only mod.toml (see below), so the
+    -- compiled-in module still reports its id, version and author; none of its data ships.
     local JER_MIRROR_EXCLUDE = { d1cars = true, gaildrv2 = true }
+
+    -- Subfolders of a mod that are generated at PLAY time and must never be
+    -- mirrored. carhacks owns the baked Driver 1 car data (BAKE_D1_CARS writes
+    -- JERICHO/MODS/carhacks/D1CARS): those LEV/LCF files are derived from the
+    -- player's copyrighted Driver 1 files, so a local bake must not ride out in
+    -- a build output or a package made from one.
+    local JER_MIRROR_STRIP = { carhacks = { "D1CARS" } }
 
     filter { "system:Windows" }
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
@@ -872,6 +898,12 @@ project "JERICHO"
                 -- A runtime addon's <id>.dll IS game data and is left alone.
                 "if exist \"" .. JER_DEST .. "\\obj\" rd /S /Q \"" .. JER_DEST .. "\\obj\"",
                 "if exist \"" .. JER_DEST .. "\\lib\" rd /S /Q \"" .. JER_DEST .. "\\lib\"",
+                -- A mod sourced from its own repository carries a .git gitfile. It is
+                -- neither source nor game data, and shipping it would leak a path into
+                -- the parent checkout. rd handles a real directory (a mod cloned in
+                -- place); del handles the gitfile.
+                "if exist \"" .. JER_DEST .. "\\.git\\\" rd /S /Q \"" .. JER_DEST .. "\\.git\"",
+                "if exist \"" .. JER_DEST .. "\\.git\" del /Q /F \"" .. JER_DEST .. "\\.git\"",
                 -- by EXTENSION, not by name. The artefacts are mod_<id>.lib/.pdb/.idb
                 -- for a compiled-in mod and <id>.pdb/.exp/.idb for a DLL addon, and
                 -- matching those names one at a time is exactly how one gets left
@@ -883,10 +915,27 @@ project "JERICHO"
                 "if exist \"" .. JER_DEST .. "\\*.idb\" del /Q \"" .. JER_DEST .. "\\*.idb\"",
             }
 
+            -- generated car data (see JER_MIRROR_STRIP): never part of a mod
+            for _, JER_SUB in ipairs(JER_MIRROR_STRIP[JER_MOD] or {}) do
+                table.insert(JER_CMDS, "if exist \"" .. JER_DEST .. "\\" .. JER_SUB .. "\" rd /S /Q \"" .. JER_DEST .. "\\" .. JER_SUB .. "\"")
+            end
+
             -- and, for the private/not-built modules, the whole folder - see the note on
             -- JER_MIRROR_EXCLUDE. Last, so it also removes anything the rules above left.
             if JER_MIRROR_EXCLUDE[JER_MOD] then
                 table.insert(JER_CMDS, "if exist \"" .. JER_DEST .. "\" rd /S /Q \"" .. JER_DEST .. "\"")
+
+                -- ...but the MANIFEST comes back. The module is compiled into the exe,
+                -- so the game lists it either way; without a mod.toml it could only report
+                -- its folder name and "?" as its version, and the mod store had nothing to
+                -- compare against a repo entry. mod.toml carries no Driver 1 content --
+                -- the exclusion is about the data, not the manifest.
+                --
+                -- CI does not fetch the unpublished gaildrv2 submodule, so the source
+                -- manifest may be absent. Guard both commands: d1cars is fetched and
+                -- does come back; gaildrv2 is simply skipped.
+                table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" if not exist \"" .. JER_DEST .. "\" mkdir \"" .. JER_DEST .. "\"")
+                table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" copy /Y \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" \"" .. JER_DEST .. "\\mod.toml\" > nul")
             end
 
             postbuildcommands(JER_CMDS)
@@ -913,6 +962,17 @@ project "JERICHO"
             "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
             "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat \"%{cfg.buildtarget.directory}/update_jericho.bat\"",
             "chmod +x \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
+            -- the mod store's helper, next to the exe too - see the Windows block
+            "cp -f ../../JERICHO/CORE/modstore/modstore.sh \"%{cfg.buildtarget.directory}/modstore.sh\"",
+            "cp -f ../../JERICHO/CORE/modstore/modstore.bat \"%{cfg.buildtarget.directory}/modstore.bat\"",
+            "chmod +x \"%{cfg.buildtarget.directory}/modstore.sh\"",
+            -- the shared cross-platform driver + the .sh/.bat entry points travel
+            -- with the runtime JERICHO (the in-game Compile Mods flow runs
+            -- build_game.sh -> build.py). Both spellings are carried, so a
+            -- folder copied to Windows works there too.
+            "cp -f ../../JERICHO/build.py ../../JERICHO/build_game.sh ../../JERICHO/build_mods.sh ../../JERICHO/build_restart.sh \"%{cfg.buildtarget.directory}/JERICHO/\"",
+            "cp -f ../../JERICHO/build_game.bat ../../JERICHO/build_mods.bat ../../JERICHO/build_restart.bat \"%{cfg.buildtarget.directory}/JERICHO/\"",
+            "chmod +x \"%{cfg.buildtarget.directory}/JERICHO/build_game.sh\" \"%{cfg.buildtarget.directory}/JERICHO/build_mods.sh\" \"%{cfg.buildtarget.directory}/JERICHO/build_restart.sh\"",
         }
 
     -- the same removals as on Windows, after the copy above. A static library is
@@ -921,16 +981,28 @@ project "JERICHO"
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
             local JER_DEST = "%{cfg.buildtarget.directory}/JERICHO/MODS/" .. JER_MOD
             local JER_CMDS = {
-                "rm -rf \"" .. JER_DEST .. "/tools\" \"" .. JER_DEST .. "/obj\" \"" .. JER_DEST .. "/lib\"",
+                -- .git is the submodule's gitfile (or a full directory for an
+                -- in-place clone), never part of a mod.
+                "rm -rf \"" .. JER_DEST .. "/tools\" \"" .. JER_DEST .. "/obj\" \"" .. JER_DEST .. "/lib\" \"" .. JER_DEST .. "/.git\"",
                 -- by extension, as on Windows: a static library is .a here and the rest
                 -- are linker/debug output. A runtime addon's <id>.so is game data.
                 "rm -f \"" .. JER_DEST .. "\"/*.a \"" .. JER_DEST .. "\"/*.lib \"" .. JER_DEST .. "\"/*.o \"" .. JER_DEST .. "\"/*.pdb \"" .. JER_DEST .. "\"/*.exp \"" .. JER_DEST .. "\"/*.idb",
             }
 
+            -- generated car data (see JER_MIRROR_STRIP): never part of a mod
+            for _, JER_SUB in ipairs(JER_MIRROR_STRIP[JER_MOD] or {}) do
+                table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "/" .. JER_SUB .. "\"")
+            end
+
             -- the private/not-built modules come out of the mirror entirely - same reason
-            -- as on Windows, see JER_MIRROR_EXCLUDE above
+            -- as on Windows, see JER_MIRROR_EXCLUDE above - but their MANIFEST stays, so a
+            -- compiled-in module can still report its name, version and author
             if JER_MIRROR_EXCLUDE[JER_MOD] then
                 table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "\"")
+                -- gaildrv2 is not fetched by CI (unpublished), so its manifest may not
+                -- exist. Only recreate the folder when there is a manifest to put back;
+                -- d1cars is fetched and does come back.
+                table.insert(JER_CMDS, "if [ -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" ]; then mkdir -p \"" .. JER_DEST .. "\" && cp -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" \"" .. JER_DEST .. "/mod.toml\"; fi")
             end
 
             postbuildcommands(JER_CMDS)

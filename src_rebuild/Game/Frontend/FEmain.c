@@ -418,29 +418,16 @@ int JerFrontendMenuScreen(int bSetup);	// JERICHO-HOOK: module frontend menus
 #define JERICHO_MODS_SCREEN 41
 // JERICHO-HOOK: module-provided frontend menus live in slots 42..(42+MAX-1)
 #define JERICHO_FE_SCREEN_BASE 42
-// 8 buttons max (PSXSCREEN::buttons[8]): modules + Prev/Next + Compile + Back.
-// Windows dev builds show a Compile Mods button, so one less module fits per page.
-// A RELEASE build (JERICHO_RELEASE_MODS) hides the button -- players get the
-// modules a release ships; compiling modules is a modder's tool (Release_dev).
-#if defined(_WIN32) && !defined(JERICHO_RELEASE_MODS)
-#define JERICHO_FE_HAS_COMPILE_MODS 1
-#endif
 
-#if defined(JERICHO_FE_HAS_COMPILE_MODS)
-#define JERICHO_MODS_MODULES_PER_PAGE 4
-#else
-#define JERICHO_MODS_MODULES_PER_PAGE 5
-#endif
 
 // JERICHO-HOOK: safety cap on the boot presentation-screen loop (jer_screen.h):
 // a screen whose on_update never reports finished must not hang the frontend.
 #define JER_SCREEN_BOOT_MAX_FRAMES 100000
 
 static int gJerichoOptionsButtonAdded;
-static int gJerichoModsPage;		// paginated mod list: current page
 static int gJerichoModsNeedSetup;	// a page change needs the buttons rebuilt
-static int gJerichoModsPrompted;	// a host prompt was up on the mods screen
 static int gJerichoCreditsOpen;	// the mods screen is showing its Credits page
+static int gJerichoCreditsPending;	// ...opened by the Mods menu, so entry must not clear it
 static void JerichoDrawCredits(void);
 
 // JERICHO: the update check lives in the runtime (jer_update.c), which is built
@@ -452,6 +439,20 @@ void jer_update_frontend_tick(int onMainMenu);
 void jer_rebake_frontend_tick(int onMainMenu);	/* jer_rebake.c: ask to re-bake a stale D1 bake */
 int jer_update_screen_active(void);		/* jer_update.c: the update notes own the screen */
 int jer_build_is_dev(void);
+void jer_modstore_frontend_tick(int onMainMenu);	/* jer_modstore.c: polls the store's helper */
+void jer_modstore_open_menu(void);	/* jer_modstore.c: open the Mods table menu */
+/* The three host-side actions the Mods menu calls back into. Declared HERE, with
+ * C linkage, so the definitions further down inherit it: jer_modstore.c is
+ * compiled against their plain names. */
+int  jer_mods_compile_available(void);
+void jer_mods_request_compile(void);
+void jer_mods_open_credits(void);
+/* Open the Mods screen the way the Options button does (a dev/test entry). */
+void jer_mods_open_screen(void);
+/* Quit the game from a host action (the rebuild prompt's Yes): the engine's own
+ * quit path unwinds the frontend, closes the log and releases the audio device
+ * before the detached build replaces the exe. */
+void jer_frontend_quit(void);
 void jer_frontend_dim_rect(int x, int y, int w, int h, int shade);
 #ifdef __cplusplus
 }
@@ -486,6 +487,7 @@ static const JER_FE_MENU* gFeMenus[JER_FE_MAX_MENUS];
 static int gFeMenuCount;
 static int gFeMainEntry = -1;		// menu index the Multiplayer entry opens
 static int gFeNeedSetup;		// rebuild the current module menu screen
+static int gFePendingSelect = -1;	// row a refresh should land on (see jer_frontend_refresh_at)
 static int gFeMenuEnterFrame;		// suppress module-menu input on the frame it appears
 					// (the pad state handed to that first frame can be stale,
 					//  which auto-confirmed a row)
@@ -1261,9 +1263,10 @@ void DrawScreen(PSXSCREEN *pScr)
 		}
 		else if (jer_prompt_active())
 		{
-			/* a host prompt takes the screen: the question wrapped on the left, the
-			 * answers bottom-right, and the screen's own buttons NOT drawn */
-			JerichoDrawPrompt();
+			/* a host prompt takes the screen: the screen's own buttons are NOT drawn.
+			 * The prompt itself is painted from the per-frame hook below, not here --
+			 * a module menu draws on its own path and would otherwise leave an active
+			 * prompt invisible while it still ate the pad. */
 		}
 		else
 		{
@@ -2842,6 +2845,19 @@ void State_FrontEnd(void* param)
 	 * the main menu, and draws the changelog on its own screen. */
 	jer_update_frontend_tick(pCurrScreen == &PsxScreens[0] && ScreenDepth == 0);
 	jer_rebake_frontend_tick(pCurrScreen == &PsxScreens[0] && ScreenDepth == 0);
+
+	/* JERICHO: the mod store (JERICHO/src/jer_modstore.c) -- polls a running
+	 * install/remove/index job and draws its own tables. Runs every frontend
+	 * frame, like the updater above: a job is a child process, never a block. */
+	/* ...and it is told whether the MAIN MENU is up, for the same reason the updater
+	 * is: the store's prompt must not be raised over the changelog screen. */
+	jer_modstore_frontend_tick(pCurrScreen == &PsxScreens[0] && ScreenDepth == 0);
+
+	/* A host prompt is drawn here rather than on the screen path: it must be
+	 * visible whatever is behind it (a stock screen OR a module menu), and it has
+	 * already suppressed the screen's own buttons. */
+	if (jer_prompt_active())
+		JerichoDrawPrompt();
 
 	/* JERICHO: the Credits page draws its lines over the screen, like a module menu */
 	if (gJerichoCreditsOpen && pCurrScreen == &PsxScreens[JERICHO_MODS_SCREEN])
@@ -4685,6 +4701,17 @@ void jer_frontend_set_main_entry(const char* id)
 
 void jer_frontend_refresh(void)
 {
+	gFePendingSelect = -1;
+	gFeNeedSetup = 1;
+	bRedrawFrontend = 1;
+}
+
+/* Refresh and land the rebuilt menu on `index`. Used by a control whose row
+ * index moves when the menu rebuilds: jer_frontend_refresh() forces the setup
+ * path, which otherwise puts the cursor back on the top row. */
+void jer_frontend_refresh_at(int index)
+{
+	gFePendingSelect = index;
 	gFeNeedSetup = 1;
 	bRedrawFrontend = 1;
 }
@@ -4702,7 +4729,10 @@ void jer_frontend_refresh(void)
 #define JER_FE_ROW_DX		334	/* the stock box's left edge, in draw space */
 #define JER_FE_ROW_DW		256	/* and its width */
 #define JER_FE_SCREEN_W		640	/* the frontend's draw width */
-#define JER_FE_ROW_STEP		36
+/* The stock frontend list pitch: FEscreens.inc steps its rows by 41 px
+ * (200, 241, 281, 322, 362, 402). Module menus use that by default; the
+ * modstore tables override row_step when they need a tighter table. */
+#define JER_FE_ROW_STEP		41
 #define JER_FE_ROW_TOP		190
 #define JER_FE_ROW_BOTTOM	462
 #define JER_FE_ROW_MIN_TOP	40
@@ -4733,6 +4763,14 @@ static int jerFrontendRowTop(int count, int step, int limit, int wanted)
 		top = JER_FE_ROW_MIN_TOP;
 
 	return top;
+}
+
+/* Which row the engine is highlighting right now. A module that draws its own
+ * row content needs this to show something ABOUT the row under the cursor
+ * (a description, say) rather than about row 0. */
+int jer_frontend_selected(void)
+{
+	return currSelIndex;
 }
 
 int jer_frontend_list_top(void)
@@ -5000,15 +5038,21 @@ int JerFrontendMenuScreen(int bSetup)
 		 * row every frame and the cursor gets stuck there */
 		if (bSetup)
 		{
-			/* BACKING OUT lands on the row the player left this menu by. The
-			 * engine hands that row down in pNewButton (a Back press carries the
-			 * button off the nav stack); a FRESH entry has none, and so does a row
-			 * that no longer exists - a live roster that shrank, a menu whose
-			 * items changed - because a stale index would leave the highlight
-			 * nowhere. Either way, the top row. */
+			/* A refresh may name the row it should land on: a page row's index
+			 * moves when a page is shorter, and an ordinary refresh would put
+			 * the cursor back on the top row. Backing out is the other case:
+			 * pNewButton carries the row off the nav stack. Anything else
+			 * starts at the top. */
 			int cur = 0;
 
-			if (pNewButton != NULL && pNewButton >= pCurrScreen->buttons &&
+			if (gFePendingSelect >= 0)
+			{
+				if (gFePendingSelect < n)
+					cur = gFePendingSelect;
+
+				gFePendingSelect = -1;
+			}
+			else if (pNewButton != NULL && pNewButton >= pCurrScreen->buttons &&
 				pNewButton < pCurrScreen->buttons + n)
 			{
 				cur = (int)(pNewButton - pCurrScreen->buttons);
@@ -5016,6 +5060,7 @@ int JerFrontendMenuScreen(int bSetup)
 
 			pNewButton = NULL;
 			pCurrButton = &pCurrScreen->buttons[cur];
+			currSelIndex = cur;
 		}
 		else
 		{
@@ -5516,8 +5561,6 @@ int MiniCarsOnOffScreen(int bSetup)
 // here (pre-session, so re-activating the runtime is safe) instead of the
 // in-game pause menu. Cross = toggle, Left/Right = move load order,
 // up/down navigates, Back returns.
-static void jer_mods_rebuild_button_names(void);
-
 /* JERICHO: the Credits page. The mods screen's Credits button turns the screen
  * into this page: the same background, one BACK button bottom-right, and two
  * columns of lines centred over it in the frontend's face. Names come from README.md's
@@ -5644,388 +5687,89 @@ static int JerichoCreditsPage(int bSetup)
 
 int JerichoModsScreen(int bSetup)
 {
-	JER_MODULE_INFO mods[JER_MAX_MODULES];
-	int count;
-	int pageCount;
-	int pageStart;
-	int shown;
-	int hasPrev;
-	int hasNext;
-	int hasCompile;		// Compile Mods button (Windows only)
-	/* Button index map (0-based). The vertical list is laid out top-to-bottom as
-	 * modules..., Prev, Next, Compile, Credits, Back; each button's u/d is derived
-	 * from that chain (see the walk in the setup block) and the per-frame cross
-	 * handling below uses the same indices instead of recomputing them. */
-	int idxPrev;
-	int idxNext;
-	int compileIdx;
-	int creditsIdx;
-	int backIdx;
-	int topShift;	// how far the whole list is lifted so the last row still fits
-	int i;
-
-	/* a fresh entry always opens on the mods list; the Credits page is its own mode */
+	/* JERICHO: the Mods list is a registered frontend menu now -- "jericho.mods",
+	 * built and drawn in Game/C/JERICHO/src/jer_modstore.c as a real table (name /
+	 * version / state / source), with the mod repo browser behind it.
+	 *
+	 * This screen survives for two reasons: it is what the Options screen's button
+	 * targets (BTN_NEXT_SCREEN), and it hosts the Credits page. It lays out no
+	 * buttons of its own -- it hands its PLACE to the menu, so backing out of the
+	 * menu returns to whatever this screen would have returned to: the same trick
+	 * the update screen uses (jer_update.c). */
 	if (bSetup)
-		gJerichoCreditsOpen = 0;
+	{
+		/* A fresh entry opens on the mods list. The Credits action, though,
+		 * arrives BY entering this screen (jer_mods_open_credits): the flag it
+		 * set has to survive the setup call, or the page it asked for is
+		 * cleared before its first frame. */
+		if (gJerichoCreditsPending)
+			gJerichoCreditsPending = 0;
+		else
+			gJerichoCreditsOpen = 0;
+	}
 
 	if (gJerichoCreditsOpen)
-		return JerichoCreditsPage(0);
+		return JerichoCreditsPage(bSetup);
 
-	count = jer_module_list(mods, JER_MAX_MODULES);
+	if (bSetup)
+		jer_log("[mods] the Mods screen handed over to the jericho.mods table\n");
 
-	pageCount = (count + JERICHO_MODS_MODULES_PER_PAGE - 1) / JERICHO_MODS_MODULES_PER_PAGE;
-
-	if (pageCount == 0)
-		pageCount = 1;
-
-	if (gJerichoModsPage >= pageCount)
-		gJerichoModsPage = pageCount - 1;
-
-	pageStart = gJerichoModsPage * JERICHO_MODS_MODULES_PER_PAGE;
-	shown = count - pageStart;
-
-	if (shown > JERICHO_MODS_MODULES_PER_PAGE)
-		shown = JERICHO_MODS_MODULES_PER_PAGE;
-
-	hasPrev = gJerichoModsPage > 0;
-	hasNext = gJerichoModsPage + 1 < pageCount;
-
-	hasCompile = 0;		// Compile Mods button (Windows dev builds only)
-#if defined(JERICHO_FE_HAS_COMPILE_MODS)
-	hasCompile = 1;
-#endif
-
-	/* The hand-computed u/d offsets this screen used to carry were off by one
-	 * whenever the page had no Prev (i.e. the first page): down from Next
-	 * skipped Compile and up from Compile landed on Back. Derive the map once. */
-	idxPrev = shown;								// only used when hasPrev
-	idxNext = shown + (hasPrev ? 1 : 0);			// only used when hasNext
-	compileIdx = shown + (hasPrev ? 1 : 0) + (hasNext ? 1 : 0);
-	creditsIdx = compileIdx + (hasCompile ? 1 : 0);
-	backIdx = creditsIdx + 1;
-
-	/* Rows run from y=180: the module list steps 36 (the stock frontend metric) and
-	 * the action rows step 30. With Credits above Back the tallest page now reaches
-	 * past 462, the bottom the stock screens keep to, so lift the whole list by the
-	 * overshoot rather than let the last row run off the screen. */
-	topShift = 462 - (180 + (backIdx + 1) * 30 + 8);
-
-	if (topShift > 0)
-		topShift = 0;
-
-	if (180 + topShift < 40)
-		topShift = 40 - 180;
-
-	/* Layout the screen on entry (bSetup) and again after a page change
-	 * (gJerichoModsNeedSetup): the engine only calls setup when the screen
-	 * is entered, so paging must rebuild the buttons itself. */
-	if (bSetup || gJerichoModsNeedSetup)
-	{
-		PSXBUTTON* btn;
-		int numButtons = shown;		// module buttons first
-		int chain[JERICHO_MODS_MODULES_PER_PAGE + 6];
-		int chainCount = 0;
-		int c;
-
-		gJerichoModsNeedSetup = 0;
-
-		pCurrScreen->numButtons = backIdx + 1;
-
-		for (i = 0; i < shown; i++)
-		{
-			btn = &pCurrScreen->buttons[i];
-
-			/* explicit layout (screen 41 is a template copy): a vertical list */
-			btn->x = 167;
-			btn->y = 180 + i * 36;
-			btn->w = 256;
-			btn->h = 36;
-			btn->s_x = 370;
-			btn->s_y = 180 + i * 36;
-
-			snprintf(btn->Name, sizeof(btn->Name), "%s [%s]", mods[pageStart + i].name,
-				mods[pageStart + i].refusal != NULL ? "BLOCKED" : (mods[pageStart + i].enabled ? "ON" : "OFF"));
-
-			/* u/d are 1-based button indices (0 = no move); they are filled in
-			 * from the vertical chain walk at the end of this block */
-			btn->u = 0;
-			btn->d = 0;
-			btn->l = 0;
-			btn->r = 0;
-			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
-			btn->var = -1;
-		}
-
-		if (hasPrev)
-		{
-			btn = &pCurrScreen->buttons[numButtons++];
-
-			btn->x = 167;
-			btn->y = 180 + numButtons * 30 + 8;
-			btn->w = 256;
-			btn->h = 26;
-			btn->s_x = 370;
-			btn->s_y = 180 + numButtons * 30 + 8;
-
-			sprintf(btn->Name, "< Prev Page");
-
-			btn->u = 0;
-			btn->d = 0;
-			btn->l = 0;
-			btn->r = 0;
-			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
-			btn->var = -1;
-		}
-
-		if (hasNext)
-		{
-			btn = &pCurrScreen->buttons[numButtons++];
-
-			btn->x = 167;
-			btn->y = 180 + numButtons * 30 + 8;
-			btn->w = 256;
-			btn->h = 26;
-			btn->s_x = 370;
-			btn->s_y = 180 + numButtons * 30 + 8;
-
-			sprintf(btn->Name, "Next Page >");
-
-			btn->u = 0;
-			btn->d = 0;
-			btn->l = 0;
-			btn->r = 0;
-			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
-			btn->var = -1;
-		}
-
-		if (hasCompile)
-		{
-			btn = &pCurrScreen->buttons[numButtons++];
-
-			btn->x = 167;
-			btn->y = 180 + numButtons * 30 + 8;
-			btn->w = 256;
-			btn->h = 26;
-			btn->s_x = 370;
-			btn->s_y = 180 + numButtons * 30 + 8;
-
-			sprintf(btn->Name, "Compile Mods");
-
-			btn->u = 0;
-			btn->d = 0;
-			btn->l = 0;
-			btn->r = 0;
-			btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
-			btn->var = -1;
-		}
-
-		/* JERICHO: Credits - opens the Credits page (JerichoCreditsPage) on this
-		 * same screen, with its own BACK to this list. */
-		btn = &pCurrScreen->buttons[creditsIdx];
-
-		btn->x = 167;
-		btn->y = 180 + (creditsIdx + 1) * 30 + 8;
-		btn->w = 256;
-		btn->h = 26;
-		btn->s_x = 370;
-		btn->s_y = 180 + (creditsIdx + 1) * 30 + 8;
-
-		sprintf(btn->Name, "Credits");
-
-		btn->u = 0;
-		btn->d = 0;
-		btn->l = 0;
-		btn->r = 0;
-		btn->action = FE_MAKEVAR(BTN_NEXT_SCREEN, JERICHO_MODS_SCREEN);
-		btn->var = -1;
-
-		btn = &pCurrScreen->buttons[backIdx];
-
-		btn->x = 167;
-		btn->y = 180 + (backIdx + 1) * 30 + 8;
-		btn->w = 256;
-		btn->h = 26;
-		btn->s_x = 370;
-		btn->s_y = 180 + (backIdx + 1) * 30 + 8;
-
-		sprintf(btn->Name, "Back");
-
-		btn->u = 0;
-		btn->d = 0;
-		btn->l = 0;
-		btn->r = 0;
-		btn->action = FE_MAKEVAR(BTN_PREVIOUS_SCREEN, 0);
-		btn->var = -1;
-
-		/* lift the whole list so the last row still fits (see topShift above) */
-		if (topShift != 0)
-		{
-			for (i = 0; i < backIdx + 1; i++)
-			{
-				pCurrScreen->buttons[i].y += (short)topShift;
-				pCurrScreen->buttons[i].s_y += (short)topShift;
-			}
-		}
-
-		/* Derive every button's up/down from the vertical chain so the whole
-		 * list is reachable and wraps: modules..., Prev, Next, Compile, Credits, Back.
-		 * Up/down are 1-based button ids (0 = no move). */
-		for (i = 0; i < shown; i++)
-			chain[chainCount++] = i;
-
-		if (hasPrev && chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
-			chain[chainCount++] = idxPrev;
-		if (hasNext && chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
-			chain[chainCount++] = idxNext;
-		if (hasCompile && chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
-			chain[chainCount++] = compileIdx;
-		if (chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
-			chain[chainCount++] = creditsIdx;
-		if (chainCount < (int)(sizeof(chain) / sizeof(chain[0])))
-			chain[chainCount++] = backIdx;
-
-		for (c = 0; c < chainCount; c++)
-		{
-			int up = chain[(c + chainCount - 1) % chainCount];
-			int dn = chain[(c + 1) % chainCount];
-
-			pCurrScreen->buttons[chain[c]].u = (u_char)(up + 1);
-			pCurrScreen->buttons[chain[c]].d = (u_char)(dn + 1);
-		}
-
-		pCurrButton = &pCurrScreen->buttons[0];
-
-		if (bSetup)
-		{
-			/* JERICHO: the version readout. A release keeps the build in its log
-			 * but stamps nothing on screen, so this is where a player can see
-			 * which build they are running - version, commit and build stamp -
-			 * down the left, where the runtime console already draws. */
-			jer_console_log("JERICHO " JERICHO_BUILD_INFO_FMT, JERICHO_BUILD_INFO_ARGS);
-
-			return 1;
-		}
-	}
-
-	/* per-frame: claim cross (toggle/page) and left/right (reorder) on module
-	 * buttons; everything else (up/down nav, Back cross) goes to the engine */
-	/* JERICHO-HOOK: a host prompt (jer_prompt.h) owns the pad while it is up.
-	 * Returning non-zero ("handled") is what makes the frontend skip its own
-	 * button/navigation handling for this press — the prompt is fed in
-	 * State_FrontEnd, before the screen is asked. */
-	if (jer_prompt_active())
-	{
-		gJerichoModsPrompted = 1;
-		return 1;
-	}
-
-	/* the prompt has closed: re-read the module list, since its Yes may have
-	 * rebuilt (and reloaded) the runtime addons */
-	if (gJerichoModsPrompted)
-	{
-		gJerichoModsPrompted = 0;
-		gJerichoModsNeedSetup = 1;
-		bRedrawFrontend = 1;
-	}
-
-	if (pCurrButton != NULL && pCurrScreen != NULL)
-	{
-		int idx = (int)(pCurrButton - pCurrScreen->buttons);
-
-		if (idx >= 0 && idx < shown)
-		{
-			if (feNewPad & MPAD_CROSS)
-			{
-				FESound(2);
-				jer_manager_set_enabled(jer_root_dir(), mods[pageStart + idx].id, mods[pageStart + idx].enabled ? 0 : 1);
-				jer_manager_reload(jer_root_dir());
-				jer_mods_rebuild_button_names();
-				bRedrawFrontend = 1;
-				return 1;
-			}
-
-			if (feNewPad & (MPAD_D_LEFT | MPAD_D_RIGHT))
-			{
-				FESound(2);
-				jer_manager_move(jer_root_dir(), mods[pageStart + idx].id, (feNewPad & MPAD_D_LEFT) ? -1 : 1);
-				jer_manager_reload(jer_root_dir());
-				jer_mods_rebuild_button_names();
-				bRedrawFrontend = 1;
-				return 1;
-			}
-		}
-		else if (hasPrev && idx == idxPrev)
-		{
-			if (feNewPad & MPAD_CROSS)
-			{
-				FESound(2);
-				gJerichoModsPage--;
-				gJerichoModsNeedSetup = 1;
-				bRedrawFrontend = 1;
-				return 1;
-			}
-		}
-		else if (hasNext && idx == idxNext)
-		{
-			if (feNewPad & MPAD_CROSS)
-			{
-				FESound(2);
-				gJerichoModsPage++;
-				gJerichoModsNeedSetup = 1;
-				bRedrawFrontend = 1;
-				return 1;
-			}
-		}
-#if defined(JERICHO_FE_HAS_COMPILE_MODS)
-		/* Compile Mods: build every installed module into a DLL, then reload
-		 * so freshly compiled (or newly dropped) mods appear immediately */
-		else if (idx == compileIdx)
-		{
-			if (feNewPad & MPAD_CROSS)
-			{
-				FESound(2);
-
-				/* JERICHO-HOOK: ask first. Yes builds the runtime DLL addons
-				 * immediately and defers the deep mods to a restart, since they
-				 * relink the exe the game is running from. */
-				jer_prompt_begin("Compile the deep mods in your folder? JERICHO must restart to do this.", jer_compile_request);
-
-				bRedrawFrontend = 1;
-				return 1;
-			}
-		}
-#endif
-		else if (idx == creditsIdx)
-		{
-			/* JERICHO: open the Credits page (JerichoCreditsPage) */
-			if (feNewPad & MPAD_CROSS)
-			{
-				FESound(2);
-				gJerichoCreditsOpen = 1;
-				gJerichoModsNeedSetup = 1;
-				return JerichoCreditsPage(0), 1;
-			}
-		}
-	}
-
-	return 0;
+	jer_modstore_open_menu();
+	return 1;
 }
 
-// JERICHO-HOOK: refresh the mods screen button labels after a toggle/reorder.
-// Re-queries the module list so ordering and state changes show up too.
-static void jer_mods_rebuild_button_names(void)
+/* ------------------------------------------------------------------- */
+/* The Mods menu's host-side actions                                     */
+/*                                                                      */
+/* They live here rather than in jer_modstore.c because they are the     */
+/* FRONTEND's own business: the dev-only compile gate, the compile       */
+/* prompt, the Credits page. The menu asks and does not care how.        */
+/* ------------------------------------------------------------------- */
+
+/* Non-zero when this install can run an in-game build: a src_rebuild tree and
+ * the build_game shim are reachable from the exe. A shipped package has
+ * neither, so the Mods menu row and the modstore rebuild prompt stay hidden
+ * there; a Release built from a source checkout keeps them. */
+int jer_mods_compile_available(void)
 {
-	JER_MODULE_INFO mods[JER_MAX_MODULES];
-	int count = jer_module_list(mods, JER_MAX_MODULES);
-	int pageStart = gJerichoModsPage * JERICHO_MODS_MODULES_PER_PAGE;
-	int shown = count - pageStart;
-	int i;
+	return jer_build_can_compile();
+}
 
-	if (shown > JERICHO_MODS_MODULES_PER_PAGE)
-		shown = JERICHO_MODS_MODULES_PER_PAGE;
+/* Ask, then hand the deep mods to the build (jer_compile.c): its Yes action
+ * exits the game, builds, and starts the new exe. */
+void jer_mods_request_compile(void)
+{
+	jer_prompt_begin("Compile the deep mods? JERICHO closes, rebuilds and restarts.", jer_compile_request);
+}
 
-	for (i = 0; i < shown; i++)
-		snprintf(pCurrScreen->buttons[i].Name, sizeof(pCurrScreen->buttons[i].Name), "%s [%s]", mods[pageStart + i].name, mods[pageStart + i].enabled ? "ON" : "OFF");
+/* Open the Credits page. It is a page of THIS screen, so open it in place of the
+ * Mods menu (jer_frontend_replace): Back then re-opens the menu in the same slot,
+ * and the nav stack still returns to whatever opened the Mods screen. The
+ * pending flag tells the setup call that follows this entry to keep the page
+ * flag instead of clearing it as a fresh entry would. */
+void jer_mods_open_credits(void)
+{
+	gJerichoCreditsOpen = 1;
+	gJerichoCreditsPending = 1;
+	gJerichoModsNeedSetup = 1;
+	jer_frontend_replace(JERICHO_MODS_SCREEN);
+	bRedrawFrontend = 1;
+}
+
+/* Enter the Mods screen exactly as its frontend button does. Used by the store's
+ * test lever to prove the hand-over path without a pad. */
+void jer_mods_open_screen(void)
+{
+	jer_frontend_goto(JERICHO_MODS_SCREEN);
+}
+
+/* Leave the game because a host action asked to (the mod store's rebuild
+ * prompt): bQuitToSystem == 2 is the engine's own "quit to system" answer, so
+ * the frontend unwinds and State_NONE ends the main loop. */
+void jer_frontend_quit(void)
+{
+	bQuitToSystem = 2;
+	jer_log("[jericho] quit requested to rebuild the game\n");
 }
 
 // [D] [T]

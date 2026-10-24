@@ -9,6 +9,22 @@ Repo-wide maintenance tools. Mod-specific tooling lives next to its mod
 | `dmp_fault.py` | Read a minidump and print the exception plus the faulting module and RVA |
 | `map_lookup.py` | Turn that RVA into a function name using a build's `.map` file |
 | `doccheck.py` | Check the documentation: links resolve, every engine event is in `events.md`, every doc is reachable from `docs/README.md`, and the counted claims match the code |
+| `check_release_mods.py` | Assert `JERICHO_RELEASE_MODS` has manifests and matches the generated Release registry, so a release cannot silently omit a named mod |
+| `update_mod_submodules.sh` | Advance the `mp`, `carhacks` and `crumple` submodule pins to their repositories' `main`, printing the gitlink diff to review and commit |
+
+## Updating the mod source pins
+
+`JERICHO/MODS/mp`, `carhacks` and `crumple` are git submodules. Their sources
+change in their own repositories; JERICHO keeps a pinned commit so a build and a
+release are reproducible. After a mod repo changes:
+
+```sh
+sh tools/update_mod_submodules.sh
+```
+
+Review the printed status and submodule log, then stage the three paths and
+commit. The helper never commits: a pin is a reviewed change. Pushing a mod repo
+on its own does not alter what JERICHO builds.
 
 ## Checking the documentation
 
@@ -126,7 +142,7 @@ Three things about it are deliberate, and each is easy to undo by accident.
 each path the build actually needs:
 
 ```bash
-for path in src_rebuild/PsyCross; do
+for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
   git submodule update --init --depth=1 "$path"
 done
 ```
@@ -139,9 +155,20 @@ on whichever submodule sorts first.
 
 `JERICHO/MODS/gaildrv2` is deliberately **out of the picture for builds** — its
 repository is not published — so it stays registered in `.gitmodules` for local
-work but is never fetched here. The rule to keep: adding a submodule to
-`.gitmodules` must not be able to break the build by itself. Add a path to that
-loop only when a build genuinely needs it.
+work but is never fetched here. `JERICHO/MODS/d1cars` is fetched as a release mod;
+its folder is still dropped from the mirror by `JER_MIRROR_EXCLUDE` (so its Driver 1
+data never ships) and the packaging step pulls its bake tools. The rule to keep:
+adding a submodule to `.gitmodules` must not be able to break the build by itself.
+Add a path to that loop only when a build genuinely needs it.
+
+The four public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`,
+`d1cars`) are release mods and are fetched by every build. Every build and release
+advances each to the latest commit of its tracking branch (`.gitmodules`
+`branch =`; d1cars tracks `betamiami`, the rest `main`), so a mod fix pushed after
+the last gitlink bump still reaches the next download without a JERICHO commit.
+`tools/update_mod_submodules.sh` makes the same advance in the working tree and
+prints the pins for review/commit; pushing a mod repo alone does not change the
+recorded pin, but it DOES change what the next release builds.
 
 ### Each configuration links twice
 
@@ -198,8 +225,13 @@ and the Release configuration applies it in three places so they cannot drift:
   generated registry bakes in (carhacks and mp on, crumple off).
 
 `gaildrv2` and `d1cars` are additionally dropped from every mirror
-(`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`) and are not in the CI
-submodule allow-list, so a release never carries them at all.
+(`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`). `gaildrv2` is not in the CI
+submodule allow-list at all; `d1cars` is fetched as a release mod but its folder is
+dropped and only `mod.toml` is restored, so a released tree reports the module
+without carrying its Driver 1 data. The baked Driver 1 car data lives in
+`JERICHO/MODS/carhacks/D1CARS` (carhacks owns it); a generated folder is stripped
+from every mirror too (`JER_MIRROR_STRIP`), because it is derived from the player's
+own copyrighted Driver 1 files.
 
 A **dev** build is unchanged: it compiles and mirrors every installed module, and
 the repo's own `JERICHO/CONFIG/modlist.ini` pins every installed module

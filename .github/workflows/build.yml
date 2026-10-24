@@ -65,6 +65,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The checks run mp's tools and walk the mod manifests, so the public mod
+      # source repos must be present. Fetch them by name, not `submodules:
+      # true`: that would also try gaildrv2, whose repository is unpublished.
+      #
+      # --remote deliberately: a release carries the LATEST core mods, not the
+      # commit the parent tree happens to pin. A mod fix pushed after the last
+      # gitlink bump must reach the next build without a second JERICHO commit.
+      # Fetch the branch by name and check out FETCH_HEAD rather than
+      # `submodule update --remote`: the init above is a SHALLOW clone of the
+      # pinned commit, so the branch ref `--remote` looks for does not exist.
+      - name: Fetch mod submodules
+        shell: bash
+        run: |
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
+            echo "::group::submodule $path"
+            git submodule update --init --depth=1 "$path"
+            branch=$(git config -f .gitmodules --get "submodule.$path.branch")
+            [ -n "$branch" ] || branch=HEAD
+            git -C "$path" fetch --quiet --depth=1 origin "$branch"
+            git -C "$path" checkout --quiet --detach FETCH_HEAD
+            echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
+            echo "::endgroup::"
+          done
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -73,8 +97,67 @@ jobs:
       - name: Docs are consistent (links, events, indexed, counted claims)
         run: python tools/doccheck.py
 
+      # The Release configuration compiles from the generated registry. A release
+      # set that names a mod the registry does not would ship without it.
+      - name: Release mods (set, manifests and generated registry agree)
+        run: python3 tools/check_release_mods.py
+
+      # The mod interface is what lets a mod be built and released on its own, so
+      # it is checked on every push: each manifest's `interface` against the
+      # engine's JERICHO_SDK_VERSION, no two mods claiming the same custom event
+      # id, ids inside the block their owner was given, and no mod including
+      # another mod's path. Then the SAME checks run against a planted-fault tree,
+      # so a checker that has quietly stopped checking fails here.
+      - name: Mod interface (manifests, custom ids, no cross-mod includes)
+        run: |
+          set -e
+          python3 tools/check_mod_interface.py
+          rm -rf /tmp/iface-faults
+          mkdir -p /tmp/iface-faults/JERICHO/MODS/a /tmp/iface-faults/JERICHO/MODS/b
+          mkdir -p /tmp/iface-faults/src_rebuild/Game/C/JERICHO/include
+          mkdir -p /tmp/iface-faults/src_rebuild/Game/C/JERICHO/docs
+          echo '#define JERICHO_SDK_VERSION 2' > /tmp/iface-faults/src_rebuild/Game/C/JERICHO/include/jericho.h
+          cp src_rebuild/Game/C/JERICHO/docs/interfaces.md /tmp/iface-faults/src_rebuild/Game/C/JERICHO/docs/
+          echo 'id = "a"' > /tmp/iface-faults/JERICHO/MODS/a/mod.toml
+          echo 'interface = 2' >> /tmp/iface-faults/JERICHO/MODS/a/mod.toml
+          echo '#define A_EVENT (JER_EVENT_MODULE_CUSTOM + 7)' > /tmp/iface-faults/JERICHO/MODS/a/a.c
+          echo '#include "../b/b.h"' >> /tmp/iface-faults/JERICHO/MODS/a/a.c
+          echo 'id = "b"' > /tmp/iface-faults/JERICHO/MODS/b/mod.toml
+          echo 'interface = 3' >> /tmp/iface-faults/JERICHO/MODS/b/mod.toml
+          echo '#define B_EVENT (JER_EVENT_MODULE_CUSTOM + 7)' > /tmp/iface-faults/JERICHO/MODS/b/b.c
+          # it must FAIL, and it must fail for the reason we think
+          if python3 tools/check_mod_interface.py --root /tmp/iface-faults; then
+            echo 'check_mod_interface accepted a planted-fault tree' >&2
+            exit 1
+          fi
+          python3 tools/check_mod_interface.py --root /tmp/iface-faults | grep -q 'is already taken by'
+          rm -rf /tmp/iface-faults
       - name: No debug switch changes behaviour
         run: python JERICHO/MODS/mp/tools/check_debug_independence.py
+
+      # The mod store's installer and publishing tools are shell + Python and need
+      # no game assets, so they run here in full: the installer's own 32-assertion
+      # suite (checksum refusal, foreign and traversal ids, overwrite-only install,
+      # deferred removal), then a package -> index -> validate round trip. A store
+      # bug is otherwise only visible from inside the game.
+      - name: mod store (installer suite, then package -> index -> validate)
+        run: |
+          set -e
+          sh JERICHO/CORE/modstore/test/verify.sh
+          rm -rf /tmp/modstore-ci
+          sh JERICHO/CORE/modstore/gen_mods_json.sh --out /tmp/modstore-ci testmode
+          python3 JERICHO/CORE/modstore/check_mod_repo.py /tmp/modstore-ci/mods.json
+          # the checker must FAIL on a corrupted hash, or it is not a check
+          python3 - <<'PY'
+          import json
+          d = json.load(open("/tmp/modstore-ci/mods.json"))
+          d["mods"][0]["sha256"] = "0" * 64
+          json.dump(d, open("/tmp/modstore-ci/mods-bad.json", "w"), indent=2)
+          PY
+          if python3 JERICHO/CORE/modstore/check_mod_repo.py /tmp/modstore-ci/mods-bad.json --quiet; then
+            echo "check_mod_repo accepted a corrupted hash" >&2
+            exit 1
+          fi
 
       # The server-side tools are pure Python and need no game assets, so unlike
       # the rigs below they really run here: the wire-mirror guard (which caught a
@@ -139,7 +222,7 @@ jobs:
           # Deliberately NOT `submodules: recursive`. That walks every entry in
           # .gitmodules, and a single unfetchable submodule fails the whole
           # checkout before any build step runs -- which is exactly how this
-          # job spent its entire life failing at step 2. JERICHO/MODS/gaildrv2 and JERICHO/MODS/d1cars
+          # job spent its entire life failing at step 2. JERICHO/MODS/gaildrv2
           # is deliberately out of the picture for builds (its repository is
           # not published), so only the submodules the build needs are fetched,
           # explicitly, in the step below.
@@ -154,11 +237,32 @@ jobs:
         shell: bash
         run: |
           # An explicit allow-list rather than `--recursive`: adding a submodule
-          # to .gitmodules must not be able to break the build by itself.
-          for path in src_rebuild/PsyCross; do
+          # to .gitmodules must not be able to break the build by itself. The
+          # four mod source repos are public and are release mods, so a release
+          # must never be built without them.
+          #
+          # PsyCross is pinned (its branch is a feature branch the build expects).
+          # The four CORE MODS are advanced to the latest commit of their own
+          # tracking branch (see `branch =` in .gitmodules): a release carries the
+          # current mods, not whatever gitlink the parent tree pinned. Fetch the
+          # branch by name: the init is a shallow clone of the pinned commit, so
+          # `submodule update --remote` cannot find the branch ref.
+          git submodule update --init --depth=1 src_rebuild/PsyCross
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
+            branch=$(git config -f .gitmodules --get "submodule.$path.branch")
+            [ -n "$branch" ] || branch=HEAD
+            git -C "$path" fetch --quiet --depth=1 origin "$branch"
+            git -C "$path" checkout --quiet --detach FETCH_HEAD
+            echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
             echo "::endgroup::"
+          done
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
+            test -f "$path/mod.toml" || {
+              echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
+              exit 1
+            }
           done
 
       - name: Download dependencies
@@ -256,19 +360,14 @@ jobs:
         run: |
           # Driver 1 bake tooling. JERICHO ships the WAY to bake, never the baked
           # data -- that is derived from Driver 1's copyrighted files. The tools
-          # live in the d1cars submodule, whose folder the dev mirror EXCLUDES
-          # (JER_MIRROR_EXCLUDE) and the build never fetches, so they are pulled
-          # from that repo for packaging only. The URL comes from .gitmodules, so
-          # it cannot drift from the submodule entry.
-          $d1url = (git config -f .gitmodules --get submodule.JERICHO/MODS/d1cars.url)
-          # Check out the commit the submodule PINS, not the repo's default branch:
-          # cloning the default branch shipped stale tools (no add_car_sounds.py,
-          # a bake.py without the wheel lump) in v0.10.9.
-          $d1sha = (git ls-tree HEAD JERICHO/MODS/d1cars).Split()[2]
-          git init --quiet "$env:RUNNER_TEMP/d1cars"
-          git -C "$env:RUNNER_TEMP/d1cars" fetch --quiet --depth 1 "$d1url" $d1sha
-          git -C "$env:RUNNER_TEMP/d1cars" checkout --quiet FETCH_HEAD
-          if (-not (Test-Path "$env:RUNNER_TEMP/d1cars/tools/add_car_sounds.py")) { throw "d1cars $d1sha has no tools/add_car_sounds.py" }
+          # live in the d1cars submodule, which the fetch step advanced to the
+          # latest commit of its own branch (branch = betamiami). Its folder is
+          # stripped from the build mirror (JER_MIRROR_EXCLUDE), so the tools are
+          # copied out of the checkout here, for packaging only.
+          $d1src = "JERICHO/MODS/d1cars/tools"
+          foreach ($need in @('bake.py', 'd1pool.py', 'cosmetics1.py', 'add_car_sounds.py', 'euro43.py')) {
+            if (-not (Test-Path "$d1src/$need")) { throw "the d1cars checkout has no tools/$need" }
+          }
 
           foreach ($cfg in @('Release', 'Release_dev')) {
             $bin = "src_rebuild/bin/$cfg"
@@ -298,23 +397,29 @@ jobs:
               Where-Object { $_.Extension -in @('.lib', '.exp', '.a', '.obj', '.idb') } |
               Remove-Item -Force -ErrorAction SilentlyContinue
 
-            # Three things a release must never carry.
+            # Four things a release must never carry.
             #
             # 1. CONFIG/modlist.ini -- the player's module toggles. An archive cannot
             #    ask before replacing it, so a release ships none and each module runs
             #    from its mod.toml default. (A Release build deletes it already; this
             #    is the belt to that brace, in case a stale bin is packaged.)
-            # 2. DRIVER/ -- the Driver 1 car data. JERICHO ships the WAY to bake it,
-            #    never the data: that is derived from Driver 1's copyrighted files, and
-            #    the player bakes their own with the tooling this package carries.
+            # 2. DRIVER/ -- the Driver 1 game data. JERICHO ships the WAY to bake the
+            #    car files, never the baked data: that is derived from Driver 1's
+            #    copyrighted files, and the player bakes their own with the tooling
+            #    this package carries.
             # 3. DRIVER2/ -- the game data (levels, models, cutscenes). The repo's
             #    copy is placeholder data, and the real files are the player's own
             #    Driver 2 data, which they drop in beside the exe.
+            # 4. JERICHO/MODS/carhacks/D1CARS/ -- the BAKED Driver 1 car data, which
+            #    carhacks owns. Same rule as DRIVER/: generated from the player's own
+            #    copy, never shipped. The build mirror strips it (JER_MIRROR_STRIP);
+            #    this is the belt for a stale bin/ left from an earlier build.
             Remove-Item "$bin/JERICHO/CONFIG/modlist.ini" -Force -ErrorAction SilentlyContinue
+            Remove-Item "$bin/JERICHO/MODS/carhacks/D1CARS" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/DRIVER" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/DRIVER2" -Recurse -Force -ErrorAction SilentlyContinue
 
-            # 4. Car-data BANKS -- BetterCars-style car packs (BC*.LEV / BC*.LCF) and
+            # 5. Car-data BANKS -- BetterCars-style car packs (BC*.LEV / BC*.LCF) and
             #    the *.sparse.bak a local bankfill leaves. Third-party car ART, the
             #    same rule as DRIVER/: a package ships the tools that complete and read
             #    a bank, never the banks. An install may hold them beside DRIVER2\; a
@@ -329,14 +434,21 @@ jobs:
 
             # The bake tools, and both bake scripts at the package root beside the
             # exe. A player drops their own Driver 1 data into DRIVER\ and runs
-            # BAKE_D1_CARS.bat (or .sh) once; carhacks offers the five cities from
-            # then on. See docs/CI.md.
+            # BAKE_D1_CARS.bat (or .sh) once; carhacks then offers the Driver 1
+            # cities, including the EURO-43 beta. See docs/CI.md.
             $d1dst = "$bin/JERICHO/MODS/d1cars/tools"
             New-Item -ItemType Directory -Force -Path $d1dst | Out-Null
-            Copy-Item "$env:RUNNER_TEMP/d1cars/tools/*.py" $d1dst -Force
-            Copy-Item "$env:RUNNER_TEMP/d1cars/tools/README.md" "$bin/JERICHO/MODS/d1cars/" -Force
-            Copy-Item "JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.bat" "$bin/" -Force
-            Copy-Item "JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.sh" "$bin/" -Force
+            Copy-Item "$d1src/*.py" $d1dst -Force
+            Copy-Item "$d1src/README.md" "$bin/JERICHO/MODS/d1cars/" -Force
+            # The bake scripts are taken from the repo root, not the mp
+            # pack_lan copy: the root is the canonical script, and a re-cut
+            # must sample it rather than an older duplicate. The pack_lan
+            # copies are still synced for the LAN package.
+            Copy-Item "BAKE_D1_CARS.bat" "$bin/" -Force
+            Copy-Item "BAKE_D1_CARS.sh" "$bin/" -Force
+            # Registers the baked Beta Miami bank in JERICHO/CONFIG/cities.ini; the
+            # bake script runs it as its last step, so it ships at the package root.
+            Copy-Item "tools/d1city_register.py" "$bin/" -Force
             # The updater, both spellings so a player on either OS has one. It
             # fetches the latest RELEASE (never the alpha pre-release), verifies the
             # checksum, and copies over the install while leaving CONFIG/ and DRIVER/
@@ -344,6 +456,12 @@ jobs:
             # work out which files are yours".
             Copy-Item "JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat" "$bin/" -Force
             Copy-Item "JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh" "$bin/" -Force
+
+            # The MOD STORE's helper, both spellings: the Mod Repo screen cannot
+            # install anything without it, so a package that lacks it ships a game
+            # whose store is dead. The local build stages them via premake too.
+            Copy-Item "JERICHO/CORE/modstore/modstore.bat" "$bin/" -Force
+            Copy-Item "JERICHO/CORE/modstore/modstore.sh" "$bin/" -Force
             Copy-Item "JERICHO/MODS/mp/tools/pack_lan/merge_config.ps1" "$bin/" -Force
 
             # 5. The DEDICATED SERVER -- and ONLY the dedicated server.
@@ -375,6 +493,13 @@ jobs:
                 throw "refusing to package the master server: it is our infrastructure, not the player's"
             }
 
+            # A mod submodule's .git is a gitfile (a path into the parent's
+            # .git/modules), not game data. The mirror strips it; this is the belt
+            # for a stale bin/ left over from an earlier build.
+            Get-ChildItem "$bin/JERICHO/MODS" -Recurse -Force -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -eq '.git' } |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
             Compress-Archive -Path "$bin/*" -DestinationPath "JERICHO_${cfg}_win64.zip" -Force
           }
 
@@ -402,7 +527,7 @@ jobs:
         with:
           # See the Windows job: an explicit allow-list instead of
           # `submodules: recursive`, so an unpublished submodule cannot fail
-          # the checkout. gaildrv2 and d1cars are out of the picture for builds.
+          # the checkout. gaildrv2 is out of the picture for builds.
           submodules: false
           # See the Windows job: without full history and tags, `git describe`
           # falls back to a bare SHA.
@@ -412,10 +537,28 @@ jobs:
       - name: Fetch build submodules
         shell: bash
         run: |
-          for path in src_rebuild/PsyCross; do
+          # The four mod source repos are release mods: a build that silently
+          # skips them is worse than one that fails here. Advance each to the
+          # latest commit of its own branch (.gitmodules `branch =`), so a build
+          # carries the current mods rather than the pinned gitlink. Fetch the
+          # branch by name: the init is a shallow clone of the pinned commit, so
+          # `submodule update --remote` cannot find the branch ref.
+          git submodule update --init --depth=1 src_rebuild/PsyCross
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
+            branch=$(git config -f .gitmodules --get "submodule.$path.branch")
+            [ -n "$branch" ] || branch=HEAD
+            git -C "$path" fetch --quiet --depth=1 origin "$branch"
+            git -C "$path" checkout --quiet --detach FETCH_HEAD
+            echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
             echo "::endgroup::"
+          done
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
+            test -f "$path/mod.toml" || {
+              echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
+              exit 1
+            }
           done
 
       - name: Install dependencies
@@ -491,18 +634,28 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: JERICHO build toolkit (addons, shims, SDK)
+        run: |
+          set -e
+          bash -n JERICHO/build_game.sh JERICHO/build_mods.sh JERICHO/build_restart.sh
+          python3 JERICHO/build.py game premake --dry-run
+          python3 JERICHO/build.py mods --dry-run
+          python3 JERICHO/build.py mods
+          test -f JERICHO/MODS/example/example.so
+          test ! -f JERICHO/MODS/example/libexample.so
+          JERICHO/sdk/build_mods.sh example
+          test -f JERICHO/sdk/example/example.so
+
       - name: Package
         run: |
-          # Driver 1 bake tooling: see the Windows job. Fetched from the d1cars
-          # submodule's repo (the dev mirror excludes the folder; the build never
-          # fetches it), for packaging only.
-          d1url=$(git config -f .gitmodules --get submodule.JERICHO/MODS/d1cars.url)
-          # the PINNED submodule commit, not the default branch (see the Windows job)
-          d1sha=$(git ls-tree HEAD JERICHO/MODS/d1cars | awk '{print $3}')
-          git init --quiet "$RUNNER_TEMP/d1cars"
-          git -C "$RUNNER_TEMP/d1cars" fetch --quiet --depth 1 "$d1url" "$d1sha"
-          git -C "$RUNNER_TEMP/d1cars" checkout --quiet FETCH_HEAD
-          test -f "$RUNNER_TEMP/d1cars/tools/add_car_sounds.py" || { echo "d1cars $d1sha has no tools/add_car_sounds.py"; exit 1; }
+          # Driver 1 bake tooling: see the Windows job. The d1cars submodule was
+          # advanced to the latest commit of its branch by the fetch step; use
+          # that checkout (its folder is excluded from the build mirror, so the
+          # tools would otherwise never reach the package).
+          d1src=JERICHO/MODS/d1cars/tools
+          for f in bake.py d1pool.py cosmetics1.py add_car_sounds.py euro43.py; do
+            test -f "$d1src/$f" || { echo "::error::the d1cars checkout has no tools/$f"; exit 1; }
+          done
 
           for cfg in Release Release_dev; do
             d="src_rebuild/bin/$cfg"
@@ -517,16 +670,22 @@ jobs:
             # The bake tools, and both bake scripts at the package root (as on
             # Windows). chmod so BAKE_D1_CARS.sh arrives runnable.
             mkdir -p "$d/JERICHO/MODS/d1cars/tools"
-            cp "$RUNNER_TEMP/d1cars/tools/"*.py "$d/JERICHO/MODS/d1cars/tools/"
-            cp "$RUNNER_TEMP/d1cars/tools/README.md" "$d/JERICHO/MODS/d1cars/"
-            cp JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.bat "$d/"
-            cp JERICHO/MODS/mp/tools/pack_lan/BAKE_D1_CARS.sh "$d/"
+            cp "$d1src/"*.py "$d/JERICHO/MODS/d1cars/tools/"
+            cp "$d1src/README.md" "$d/JERICHO/MODS/d1cars/"
+            cp BAKE_D1_CARS.bat "$d/"
+            cp BAKE_D1_CARS.sh "$d/"
+            # Registers the baked Beta Miami bank in JERICHO/CONFIG/cities.ini.
+            cp tools/d1city_register.py "$d/"
             chmod +x "$d/BAKE_D1_CARS.sh"
             # The updater, both spellings, same reasoning as the bake scripts above.
             cp JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat "$d/"
             cp JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh "$d/"
             cp JERICHO/MODS/mp/tools/pack_lan/merge_config.ps1 "$d/"
             chmod +x "$d/update_jericho.sh"
+            # The mod store's helper, both spellings - the store is dead without it.
+            cp JERICHO/CORE/modstore/modstore.bat "$d/"
+            cp JERICHO/CORE/modstore/modstore.sh "$d/"
+            chmod +x "$d/modstore.sh"
             # The DEDICATED SERVER, and only it -- the same payload as the Windows
             # job stages, same reasoning (the master discovery service is shared
             # infrastructure and is not shipped). Staged by hand because the mirror
@@ -548,11 +707,13 @@ jobs:
             # Three things a release must never carry: CONFIG/modlist.ini (the player's
             # module toggles -- an archive cannot ask before replacing them, so a
             # release ships none and each module runs from its mod.toml default),
-            # DRIVER/ (the Driver 1 car data -- JERICHO ships the WAY to bake it, never
-            # the data, which is derived from Driver 1's copyrighted files), and
-            # DRIVER2/ (the game data -- the repo copy is placeholders; the real files
-            # are the player's own Driver 2 data).
+            # DRIVER/ (the Driver 1 game data -- JERICHO ships the WAY to bake the car
+            # files, never the data, which is derived from Driver 1's copyrighted
+            # files), DRIVER2/ (the game data -- the repo copy is placeholders; the real
+            # files are the player's own Driver 2 data), and carhacks/D1CARS/ (the BAKED
+            # Driver 1 car data, generated from the player's own copy).
             rm -f "$d/JERICHO/CONFIG/modlist.ini"
+            rm -rf "$d/JERICHO/MODS/carhacks/D1CARS"
             rm -rf "$d/DRIVER"
             rm -rf "$d/DRIVER2"
 
@@ -567,6 +728,10 @@ jobs:
                 echo "::error::car-data bank in the package payload: $banks"
                 exit 1
             fi
+            # A mod submodule's .git file is not game data; the mirror strips it and
+            # this catches a stale bin/ left over from an earlier build.
+            find "$d/JERICHO/MODS" -name .git -exec rm -rf {} + 2>/dev/null || true
+
             ( cd "$d" && tar -czf "$GITHUB_WORKSPACE/JERICHO_${cfg}_linux-x64.tar.gz" \
                 --exclude=FontTool --exclude=gen_exports --exclude='lib*.a' \
                 --exclude=DRIVER --exclude=DRIVER2 --exclude='JERICHO/CONFIG/modlist.ini' * )

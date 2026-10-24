@@ -1,0 +1,89 @@
+name: publish mod repo
+
+# Packages every mod in MODS/, rebuilds mods.json, validates it, and publishes
+# both as a release. The index ends up at
+#
+#   https://github.com/<owner>/<repo>/releases/latest/download/mods.json
+#
+# which is the URL to put in CONFIG/modstore.ini (or hand to a player).
+#
+# This file is a template: `new_mod_repo.sh` copies it into a new repo. It needs
+# the tools/ folder the scaffold creates (gen_mods_json.sh, check_mod_repo.py),
+# so a repo is self-contained and no JERICHO install is needed to publish.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to publish as (e.g. v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the tag
+        id: tag
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          if [ -z "$TAG" ]; then
+            echo "no tag - push a v* tag or pass one in" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the index this release adds to
+        # The baseline the version checks compare against is what players can
+        # install RIGHT NOW - the published mods.json - not a copy in the repo
+        # that may be stale by several releases.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p previous
+          gh release download --pattern mods.json --dir previous 2>/dev/null \
+            || echo "no published index yet - this is the first release"
+
+      - name: Package, index and validate
+        # publish.sh refuses an index that goes backwards against the published
+        # one, or whose hashes do not match the packages it just built. Nothing
+        # is published from a repo that fails that check.
+        run: |
+          EXTRA=""
+          if [ -f previous/mods.json ]; then
+            EXTRA="--previous previous/mods.json"
+          fi
+          chmod +x publish.sh tools/*.sh tools/*.py
+          ./publish.sh $EXTRA --url "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+
+          # keep every old package: a player on an older version asks for the
+          # older file, so the release is added to, never rebuilt from scratch
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/*.zip out/mods.json --clobber
+          else
+            gh release create "$TAG" out/*.zip out/mods.json \
+              --title "$TAG" \
+              --notes "Packages and index generated from MODS/ at $GITHUB_SHA." \
+              --latest
+          fi
+
+      - name: Where the index is
+        run: |
+          echo "index: ${{ github.server_url }}/${{ github.repository }}/releases/latest/download/mods.json"
+          echo "put that in JERICHO/CONFIG/modstore.ini as:  repo = <that URL>"

@@ -18,9 +18,6 @@
 #include "handling.h"
 #include "jer_math.h"
 
-/* A working vertex this far from its clean position is not a dent, it is corruption
- * (the same threshold the STRETCHED VERTEX canary in cars.c uses). */
-#define JER_STRETCH_VERT	2000
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
 

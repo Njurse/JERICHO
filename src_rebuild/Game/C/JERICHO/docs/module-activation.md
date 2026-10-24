@@ -54,6 +54,30 @@ Every boot writes the resolution to `JERICHO.log`:
 the single check that catches this class of surprise. `JERICHO/CONFIG/modlist.ini`
 therefore lists **every** installed module explicitly.
 
+## The multiplayer core suite
+
+`mp`, `carhacks` and `d1cars` are one product, not three independent options: a
+session cannot agree on cars without all three. They are **mandatory and first in
+the load order**; every other module is optional and keeps the player's own order
+behind them (`crumple` is the shipped example of an optional module).
+
+- `jer_manager.c` owns the list (`jerCoreOrder`) and `jer_manager_normalize_core()`
+  rewrites `modlist.ini` with the core first and enabled, preserving the relative
+  order of everything else.
+- `jerActivateModules` enforces the same order in memory, so it still holds when a
+  release ships no `modlist.ini` and a player hand-edits one. An installed core
+  module is enabled whether the file said so or not; a missing one (d1cars is a
+  separate download) is simply absent.
+- **A join applies it.** `MpHandleWelcome` calls `jer_manager_normalize_core()` on
+  the joining client and says when the file changed: the modules already loaded in
+  that process cannot move, so the *next* boot uses the new order.
+- The dedicated server's `core_mods` is the same idea on the wire: every client
+  must have the core suite enabled, while optional modules may ride along. See
+  `tools/servers/dediserver/README.md` ("Mod lists").
+
+`-nomods` still outranks all of it (the core is mandatory for a session, not for a
+diagnostic boot).
+
 ## Dependencies (`mod.toml` `dependencies`)
 
 A module declares what it needs in its own manifest:

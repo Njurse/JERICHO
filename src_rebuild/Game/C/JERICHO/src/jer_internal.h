@@ -68,6 +68,10 @@ typedef struct JER_MODULE
 	int activated;			/* entry ran this cycle */
 	int metadataSet;		/* module registered metadata via ctx */
 	int sdkVersion;			/* from ctx->jer_register_module */
+	int interfaceVersion;	/* mod.toml `interface`: the SDK version this mod was BUILT
+							 * against. 0 = the manifest does not say (old mods). Checked
+							 * before activation so a mod from another build is refused
+							 * with a reason instead of half-working. */
 	int valid;				/* passes SDK + dependency validation */
 	char refusal[96];		/* WHY valid==0, in player-facing words - empty when fine.
 					 * This is what the notice and the Mods screen say, so a
@@ -93,6 +97,9 @@ int jer_loader_scan(const char* rootDir, JER_MODULE* table, int max);
  * generated registry cannot carry them, so without this a deep module's manifest was
  * never read and its dependency check could never fire. Returns 1 when a list was
  * found. */
+/* name/version/author from the module's own mod.toml (see jer_loader_read_meta) */
+int jer_loader_read_meta(const char* rootDir, const char* id,
+	char* name, int nameMax, char* version, int versionMax, char* author, int authorMax);
 int jer_loader_read_deps(const char* rootDir, const char* id, char* out, int max);
 
 /* The same, for `incompatible`. Read from the manifest for every module, deep or

@@ -1693,7 +1693,7 @@ void StepGame(void)
 		// JERICHO-HOOK: the world step is an override slot, so modules can
 		// time-scale or replace it (default = the builtin StepSim).
 		{
-			void (*stepSim)(void) = (void (*)(void))jer_get_override(JER_OVERRIDE_SLOT_SIM);
+			void (*stepSim)(void) = (void (*)(void))jer_get_override(JER_OVERRIDE_SLOT_STEP_SIM);
 
 			if (stepSim != NULL)
 				stepSim();
@@ -3859,6 +3859,14 @@ void DealWithHorn(char* hr, int i)
 
 	car = &car_data[player[i].playerCarId];
 
+	/* A siren car's third channel is its siren loop, not a horn. Never let a
+	 * stale request start or stop that channel through the horn path. */
+	if (CarHasSiren(car->ap.model) != 0)
+	{
+		*hr = 0;
+		return;
+	}
+
 	if (*hr == 0)
 		return;
 
@@ -3877,6 +3885,7 @@ void DealWithHorn(char* hr, int i)
 			car->hd.where.t[1],
 			car->hd.where.t[2], -10000,
 			4096);
+		SoundLogCarSample("horn", car->ap.model, sample * 3 + 2);
 
 		if (NumPlayers > 1 && NoPlayerControl == 0)
 		{

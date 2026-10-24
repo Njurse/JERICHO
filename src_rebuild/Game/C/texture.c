@@ -180,6 +180,11 @@ static int sJerLowerPoolClutY = JER_VRAM_HALF_Y;	// next free row of the bottom 
 static int sJerLowerPoolClutUsed;					// rows handed out
 static int sJerLowerPoolClutDropped;				// asks that found no room
 
+/* Bands given back by a released pin OR a released city palette table. Declared here,
+ * before the pool allocator, because the reserve/release pair below is the one place
+ * both kinds of claim meet. (carpinref.h: first fit, split/merge, whole rows.) */
+static CAR_CLUT_FREE sPinClutFree;
+
 // Drop every pool claim. A level load calls this, so one level's imports cannot make
 // the next level's look pre-used.
 void JerLowerPoolReset(void)
@@ -189,6 +194,9 @@ void JerLowerPoolReset(void)
 	sJerLowerPoolClutY = JER_VRAM_HALF_Y;
 	sJerLowerPoolClutUsed = 0;
 	sJerLowerPoolClutDropped = 0;
+
+	/* The bands were rows of the column this reset just emptied. */
+	CarClutFreeReset(&sPinClutFree);
 }
 
 // Where lower half pool page `slot` lives. This is the rectangle a caller uploads into, and what
@@ -332,9 +340,133 @@ void JerLowerPoolClutAdvance(int rows)
 
 int JerLowerPoolPagesUsed(void)			{ return sJerLowerPoolPagesUsed; }
 int JerLowerPoolPagesFree(void)			{ return JER_POOL_PAGES - sJerLowerPoolPagesUsed; }
-int JerLowerPoolClutRowsUsed(void)		{ return sJerLowerPoolClutUsed; }
-int JerLowerPoolClutRowsFree(void)		{ return JER_VRAM_TOTAL_ROWS - sJerLowerPoolClutY; }
+
+/* Reserve a contiguous band of `rows` in the bottom CLUT column: a band released by a
+ * pin or an unloaded city first, then the untouched tail of the watermark. Returns the
+ * first row and writes the exclusive end to `limitY`, or -1 when neither has room.
+ * This is the allocation a CITY's palette table needs (it knows an upper bound before
+ * walking), and it is what lets an unloaded city's rows be handed to the next city. */
+int JerLowerPoolClutReserve(int rows, int* limitY)
+{
+	int y;
+
+	if (rows <= 0)
+		return -1;
+
+	y = CarClutFreeTake(&sPinClutFree, rows);
+
+	if (y >= 0)
+	{
+		if (limitY != NULL)
+			*limitY = y + rows;
+
+		return y;
+	}
+
+	if (sJerLowerPoolClutY + rows <= JER_VRAM_TOTAL_ROWS)
+	{
+		y = sJerLowerPoolClutY;
+		JerLowerPoolClutAdvance(rows);
+
+		if (limitY != NULL)
+			*limitY = y + rows;
+
+		return y;
+	}
+
+	return -1;
+}
+
+/* Give a band back. A city palette table and a pin band are both whole rows in the same
+ * column, so they share the free list and a later taker can reuse either. */
+void JerLowerPoolClutRelease(int y, int rows)
+{
+	if (y < JER_VRAM_HALF_Y || rows <= 0 || y + rows > JER_VRAM_TOTAL_ROWS)
+		return;
+
+	CarClutFreeGive(&sPinClutFree, y, rows);
+}
+
+/* Rows that are really free = the untouched tail above the watermark PLUS every band
+ * given back. The old count only looked at the watermark, so a reclaimed band still read
+ * as "used" and the report could not show the city unload doing anything. */
+int JerLowerPoolClutRowsFree(void)
+{
+	int freeRows = (JER_VRAM_TOTAL_ROWS - sJerLowerPoolClutY) + CarClutFreeRows(&sPinClutFree);
+
+	return (freeRows > JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y)
+		? JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y : freeRows;
+}
+
+int JerLowerPoolClutRowsUsed(void)
+{
+	return (JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y) - JerLowerPoolClutRowsFree();
+}
+
 int JerLowerPoolClutDropped(void)		{ return sJerLowerPoolClutDropped; }
+
+// JERICHO: a white/light-grey checkerboard fallback for a car whose body texture
+// never resolved. A dropped or unplaced set keeps the init-time dummy (960,0)/
+// (960,16) - inside a live host page - and draws that page's pixels. Upload one
+// 4-bit checker page plus a two-colour CLUT into the lower half pool instead, and
+// hand the words back for InitTexture's dummy to use. The pool layout is
+// deterministic (this always takes page 0 and the first CLUT row), so the words
+// stay stable across levels even though the pool itself is reset per level.
+static u_short sJerCheckerTpage;
+static u_short sJerCheckerClut;
+
+static void JerUploadCheckerFallback(void)
+{
+	RECT16 pageRect, clutRect;
+	u_short clut[16];
+	u_short* page;
+	int slot, tx, ty, i;
+
+	sJerCheckerTpage = 0;
+	sJerCheckerClut = 0;
+
+	slot = JerLowerPoolPageAlloc();
+	if (slot < 0)
+	{
+		printInfo("cross-city: checker fallback skipped - lower half pool has no free page\n");
+		return;
+	}
+
+	JerLowerPoolPageRect(slot, &pageRect);
+
+	JerLowerPoolClutCursor(&clutRect);
+	JerLowerPoolClutAdvance(1);
+
+	// 16-entry CLUT: 0 = white, 1 = light grey; the rest stay white.
+	for (i = 0; i < 16; i++)
+		clut[i] = (i == 1) ? (u_short)0x5AD6 : (u_short)0x7FFF;
+
+	// 64x256 4-bit page, 16x16-texel checker squares. One halfword per texel, the
+	// 4-bit index in the LOW nibble (the shape LoadImage uploads for a page).
+	page = (u_short*)malloc((size_t)pageRect.w * pageRect.h * sizeof(u_short));
+	if (page == NULL)
+	{
+		JerLowerPoolPageFree(slot);
+		return;
+	}
+
+	for (ty = 0; ty < pageRect.h; ty++)
+	{
+		for (tx = 0; tx < pageRect.w; tx++)
+			page[ty * pageRect.w + tx] = (u_short)(((tx / 16) + (ty / 16)) & 1);
+	}
+
+	LoadImage(&pageRect, (u_long*)page);
+	LoadImage(&clutRect, (u_long*)clut);
+
+	free(page);
+
+	sJerCheckerTpage = GetTPage(0, 0, pageRect.x, pageRect.y);
+	sJerCheckerClut = GetClut(clutRect.x, clutRect.y);
+
+	printInfo("cross-city: checker fallback at page %04x clut %04x\n",
+		sJerCheckerTpage, sJerCheckerClut);
+}
 
 // JERICHO: read or write a CLUT row IN PLACE, at the address a CLUT id already names.
 //
@@ -1792,6 +1924,11 @@ int CarImportPinDstSet(int set)
 // the safe stopgap, not the cure. The hard ceiling is JER_POOL_PAGES.
 #define CAR_PIN_MAX 30
 #define JER_PED_PIN_OWNER 30		/* the pin-owner bit used by the imported on-foot character */
+/* A pin's owners are a 32-bit mask; every resident slot must fit in it or a released
+ * car's page would stay owned by a bit that does not exist. */
+#if CAR_PIN_OWNERS_MAX < MAX_CAR_RESIDENT_MODELS
+#error "CAR_PIN_OWNERS_MAX must cover every resident model slot"
+#endif
 
 // JERICHO: the pool must be able to hold EVERY pin. That is what makes the world-side
 // fallback in CarPageFindSlot unreachable rather than merely unlikely: a pin takes a lower
@@ -1857,7 +1994,6 @@ static int sPinPoolOnly[CAR_PIN_MAX];		// JERICHO: this pin must live in the low
 static int sPinForcePool;			// set while recording a pool-only pin
 static int sJerPedPinsRecorded;
 static int sJerPedPinFailed;
-static CAR_CLUT_FREE sPinClutFree;		// JERICHO: bands given back by released pins (carpinref.h)
 static int sPinClutStarted;			// the first band has been taken this level (for the log)
 static int sPinClutReused;			// bands served from the free list
 static int sPinClutReclaimed;			// rows given back by released pins
@@ -2462,7 +2598,7 @@ void CarImportPin(void)
 			// again later is not re-uploaded (and does not consume a second lower half pool row).
 			memcpy(sPalRowsDone, rowNeeded, sizeof(sPalRowsDone));
 
-			ProcessImportedPaletteRows(fresh);
+			ProcessImportedPaletteRows(sPalRowsDone);
 
 			// JERICHO: re-run the census NOW. LoadPermanentTPages reports the CLUT column
 			// during the level load, which is before this upload - so it would keep saying
@@ -4198,10 +4334,49 @@ int JerReleaseCarSlot(int slot)
 // page lists and the deferred palette lumps (pointers INTO the import buffer). Those are
 // exactly the state that outlives a level, and reading them with no map loaded is the reported
 // access violation when a player leaves and rejoins with a car from another city.
+/* JERICHO: forget ONE city's cross-city state when its last live car goes. The caller
+ * (models.c) has already proved no resident slot names it, and gives the import buffer
+ * back immediately after this - so every pointer into that buffer must go here: the parsed
+ * page lists, the deferred palette lump and the pin-dropped records. The palette rows,
+ * wheel CLUT ids and lower-pool CLUT band are cars.c's; it releases them in one place. */
+void CarImportForgetCity(int city)
+{
+	int i;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return;
+
+	gCarImportPerms[city].count = 0;
+	gCarImportSpecs[city].count = 0;
+	gCarImportTexParsed[city] = 0;
+
+	/* A dropped pin's set/city are the only records left pointing at this city's page
+	 * list. Remove them as a group; the parallel-array helper keeps them aligned. */
+	for (i = 0; i < sPinDroppedKept; )
+	{
+		int n = sPinDroppedKept;
+
+		if (sPinDroppedCity[i] != city)
+		{
+			i++;
+			continue;
+		}
+
+		CarPinArrayRemove(sPinDroppedSet, n, i);
+		CarPinArrayRemove(sPinDroppedCity, n, i);
+		CarPinArrayRemove(sPinDroppedOwners, n, i);
+		sPinDroppedKept = n - 1;
+	}
+
+	CarImportForgetCityPalette(city);
+
+	printInfo("cross-city: %s city state forgotten - page lists, deferred palette lump, pin-dropped records and palette rows released; reloadable on demand\n",
+		LevelNames[city]);
+}
+
 void JerReleaseAllCrossCity(void)
 {
 	int slot, city;
-
 	JerPedImportReset();
 
 	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
@@ -4246,6 +4421,10 @@ void CarImportResetState(void)
 	// would fill up across a session and quietly push later imports back into the base
 	// half (or refuse them).
 	JerLowerPoolReset();
+
+	// ...and the checker fallback is re-uploaded right after the reset, so it always
+	// owns pool page 0 + the first CLUT row before any import pin takes a page.
+	JerUploadCheckerFallback();
 
 	// JERICHO: the guest palette blocks are per level too - a city keeps the block it
 	// was handed for the whole level (see CarImportCityBand), so a new level starts
@@ -4456,17 +4635,19 @@ void LoadImportedTPages(void)
 			// and an unplaced page leaves texture_pages/texture_cluts at the DUMMY,
 			// which sits inside a live page, so the car showed another page's pixels.
 			int count = CarModelSetCount(i);
+			int useTable = 0;
 
 			if (count <= 0)
 			{
 				// Walk found nothing (or the model was not built yet): keep the old
 				// whole-list behaviour rather than import nothing at all.
 				count = 6;
+				useTable = 1;
 			}
 
 			for (k = 0; k < count; k++)
 			{
-				int set = (count == 6) ? carTpages[src][k] : CarModelSet(i, k);
+				int set = useTable ? carTpages[src][k] : CarModelSet(i, k);
 				int at = (set != 0) ? SetIndexInCityList(sets, setCity, nsets, set, src) : -1;
 
 				if (at >= 0)
@@ -4703,6 +4884,7 @@ void LoadImportedTPages(void)
 			if (wheelClut != 0)
 			{
 				CarImportSetWheelPaletteClut(sc, set, wheelClut, 0);
+				CarImportReserveDamagedWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow);
 				CarImportReserveFastWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow);
 			}
 		}
@@ -4961,13 +5143,16 @@ void LoadPermanentTPages(int *sector)
 	// its car sets can be registered below.
 	ParseImportedTextureInfo();
 
+	// JERICHO: a set that never gets pinned reads these init-time dummy values, so make
+	// the dummy the checker fallback when one was uploaded (a dropped/unplaced page, or a
+	// car with no texture at all, then shows the checker instead of a live host page's pixels).
 	for (tloop = 0; tloop < 128; tloop++)
-		texture_pages[tloop] = GetTPage(0, 0, 960, 0);
+		texture_pages[tloop] = (sJerCheckerTpage != 0) ? sJerCheckerTpage : GetTPage(0, 0, 960, 0);
 
 	for (tloop = 0; tloop < 128; tloop++)
 	{
 		for (tset = 0; tset < 32; tset++)
-			texture_cluts[tloop][tset] = GetClut(960, 16);
+			texture_cluts[tloop][tset] = (sJerCheckerClut != 0) ? sJerCheckerClut : GetClut(960, 16);
 	}
 
 	slotsused = 0;

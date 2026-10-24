@@ -493,6 +493,7 @@ typedef struct JER_ARGS_CAR_TORQUE
 {
 	void* car;		/* CAR_DATA* */
 	int yawTorque;		/* in/out: added to cp->hd.aacc[1] */
+	int extraDamping;	/* in: 1 = ConvertTorque applied the lift -avel/8 */
 } JER_ARGS_CAR_TORQUE;
 
 /* JER_EVENT_CAR_DRAW — fired in DrawCar before the body matrix is built.

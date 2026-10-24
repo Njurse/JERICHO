@@ -54,6 +54,14 @@ extern MODEL *gCleanWheelModelPtr;
 extern MODEL *gFastWheelModelPtr;
 extern MODEL *gDamWheelModelPtr;
 
+/* JERICHO: after a player car is rebuilt (respawn/repair), put its hubcap
+ * appearance back: clear the lost-hubcap bits and re-bind the imported hubcap
+ * CLUT. See the definition in cars.c. */
+extern void CarReapplyHubcapState(int slot);
+/* JERICHO: apply an OWNER's hubcap state to a car rebuilt for a remote player.
+ * `lost` is the low nibble of the owner's ap.flags (bit N = wheel N lost its hubcap). */
+extern void CarApplyHubcapState(int slot, int lost);
+
 /* JERICHO: apply the source-city set remap to one wheel model and collapse it to
  * the four rim quads the engine draws. Factored out of MangleWheelModels so an
  * IMPORTED wheel (cars.h/models.c) goes through the exact same transform as the
@@ -168,6 +176,7 @@ extern int CarImportCityRowAt(int city, int k); // JERICHO: the k-th of those ro
 extern int CarImportReclaimRows(void); // JERICHO: free guest (city,set) rows no live car names; returns how many (cars.c)
 extern int CarPalIndexInCityFor(int tpage, int city); // JERICHO: the same, given the city (cars.c)
 extern void CarImportPaletteReset(void); // JERICHO: forget a level's deferred palette work (cars.c)
+extern void CarImportForgetCityPalette(int city); // JERICHO: give one guest city's palette rows/CLUT bands back (cars.c)
 extern void CarImportCityBandReset(void); // JERICHO: free every guest city's palette block (cars.c)
 
 /* Cross-city car data: which city's LEVELS\<CITY> folder the CARMODEL_* files

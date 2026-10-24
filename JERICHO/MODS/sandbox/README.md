@@ -75,7 +75,7 @@ and they are driven by carhacks when it is installed:
 
 The roster is listed whether or not those cars are resident here yet, because
 choosing one that is not **is** the request that brings it in: `Spawn Car` asks
-carhacks to import it first (the same `MP_CARQ_LOAD` request mp's Change car
+carhacks to import it first (the same `JER_CARQ_LOAD` request mp's Change car
 makes) and only says so when it genuinely cannot be loaded. A car from another
 city — Driver 1's included — therefore spawns exactly like a domestic one. (The
 rows used to offer only what was already resident, which made every foreign city

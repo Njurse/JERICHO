@@ -10,6 +10,9 @@
 
   What it does, in the same order and with the same layout as CI:
 
+    0. advance the four core mod submodules (mp, carhacks, crumple, d1cars) to
+       the latest commit of their own branch, so the release carries the current
+       mods rather than the pinned gitlinks
     1. (re)generate the project files with premake (vs2019 locally)
     2. build Release and Release_dev for x64, each with the two-pass
        exports.def recipe CI uses -- see the note below
@@ -105,6 +108,45 @@ function Get-MSBuild {
     $cmd = Get-Command msbuild -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
     Fail "MSBuild not found. Install Visual Studio with the C++ workload, or run from a Developer prompt."
+}
+
+# --- 0. latest core mods ---------------------------------------------------
+function Update-ModSubmodules {
+    Step "Advancing the core mod submodules to the latest of their branch"
+
+    # Same rule as CI: a release carries the LATEST core mods, not whatever
+    # gitlink the parent tree pinned. `--remote` uses the `branch =` recorded in
+    # .gitmodules (d1cars tracks betamiami, the others main).
+    $paths = @('JERICHO/MODS/mp', 'JERICHO/MODS/carhacks',
+               'JERICHO/MODS/crumple', 'JERICHO/MODS/d1cars')
+    foreach ($p in $paths) {
+        & git -C $RepoRoot submodule update --init -- $p
+        if ($LASTEXITCODE -ne 0) { Fail "could not initialise $p." }
+
+        # Fetch the branch by NAME. `submodule update --remote` also works in a
+        # normal clone, but a checkout that was initialised shallow (CI, or a
+        # submodule fetched at one commit) has no refs/remotes/origin/<branch>
+        # for it to find.
+        $branch = (& git -C $RepoRoot config -f .gitmodules --get "submodule.$p.branch")
+        if (-not $branch) { $branch = 'HEAD' }
+
+        & git -C (Join-Path $RepoRoot $p) fetch --quiet origin $branch
+        if ($LASTEXITCODE -ne 0) { Fail "could not fetch $p ($branch)." }
+
+        & git -C (Join-Path $RepoRoot $p) checkout --quiet --detach FETCH_HEAD
+        if ($LASTEXITCODE -ne 0) { Fail "could not check out $p ($branch)." }
+
+        if (-not (Test-Path (Join-Path $RepoRoot "$p/mod.toml"))) {
+            Fail "$p/mod.toml is missing after the update."
+        }
+        $sha = (& git -C (Join-Path $RepoRoot $p) rev-parse --short HEAD)
+        Write-Host "    $p at $sha ($branch)"
+    }
+
+    $dirty = (& git -C $RepoRoot status --porcelain -- $paths)
+    if ($dirty) {
+        Warn "the advanced mods differ from the committed gitlinks -- the build version will report as dirty."
+    }
 }
 
 # --- 1. project files ------------------------------------------------------
@@ -236,6 +278,80 @@ function New-Package {
             Copy-Item (Join-Path $packLan $u) $stage -Force
         }
 
+        # The rest of the CI Package payload. The stage is curated from data/,
+        # the exe and the JERICHO mirror, so the tool directories the mirror
+        # strips have to be added here explicitly.
+        Remove-Item (Join-Path $stage 'DRIVER') -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $stage 'DRIVER2') -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $stage 'JERICHO\CONFIG\modlist.ini') -Force -ErrorAction SilentlyContinue
+        # carhacks owns the BAKED Driver 1 car data; it is generated from the
+        # player's own copy and must never ride out in a package (the mirror
+        # strips it too, this is the belt for a stale bin\).
+        Remove-Item (Join-Path $stage 'JERICHO\MODS\carhacks\D1CARS') -Recurse -Force -ErrorAction SilentlyContinue
+
+        $cfgIni = Join-Path $stage 'config.ini'
+        if (Test-Path $cfgIni) {
+            Move-Item $cfgIni (Join-Path $stage 'config.default.ini') -Force
+        }
+
+        # Driver 1 bake tooling, from the checked-out d1cars submodule. Copy
+        # only tracked tools: the working tree may carry local experiments.
+        $d1repo = Join-Path $RepoRoot 'JERICHO\MODS\d1cars'
+        $d1dst  = Join-Path $stage 'JERICHO\MODS\d1cars\tools'
+        New-Item -ItemType Directory -Force -Path $d1dst | Out-Null
+        $d1tracked = & git -C $d1repo ls-files 'tools/*.py'
+        if ($LASTEXITCODE -ne 0) { throw "cannot list the d1cars tools" }
+        foreach ($rel in $d1tracked) {
+            Copy-Item (Join-Path $d1repo $rel) (Join-Path $d1dst (Split-Path -Leaf $rel)) -Force
+        }
+        Copy-Item (Join-Path $d1repo 'tools\README.md') (Join-Path $stage 'JERICHO\MODS\d1cars') -Force
+        # The bake scripts come from the REPO ROOT (the canonical copies), and the
+        # registrar they run ships beside them so Beta Miami can be registered.
+        foreach ($bake in 'BAKE_D1_CARS.bat', 'BAKE_D1_CARS.sh') {
+            Copy-Item (Join-Path $RepoRoot $bake) $stage -Force
+        }
+        Copy-Item (Join-Path $RepoRoot 'tools\d1city_register.py') $stage -Force
+
+        # The store helper and the config merger, both at the package root.
+        Copy-Item (Join-Path $RepoRoot 'JERICHO\CORE\modstore\modstore.bat') $stage -Force
+        Copy-Item (Join-Path $RepoRoot 'JERICHO\CORE\modstore\modstore.sh') $stage -Force
+        Copy-Item (Join-Path $packLan 'merge_config.ps1') $stage -Force
+
+        # The dedicated server, and only the dedicated server. The master
+        # discovery service is shared infrastructure and must never ship.
+        $mpTools = Join-Path $RepoRoot 'JERICHO\MODS\mp\tools'
+        $mpDst   = Join-Path $stage 'JERICHO\MODS\mp\tools'
+        $srvDst  = Join-Path $mpDst 'servers'
+        New-Item -ItemType Directory -Force -Path $srvDst | Out-Null
+        Copy-Item (Join-Path $mpTools 'mp_test.py') $mpDst -Force
+        Copy-Item (Join-Path $mpTools 'player_id.py') $mpDst -Force
+        Copy-Item (Join-Path $mpTools 'servers\*.py') $srvDst -Force
+        Copy-Item (Join-Path $mpTools 'servers\*.md') $srvDst -Force
+        Copy-Item (Join-Path $mpTools 'servers\run.bat') $srvDst -Force
+        Copy-Item (Join-Path $mpTools 'servers\run.sh') $srvDst -Force
+        Copy-Item (Join-Path $mpTools 'servers\dediserver') $srvDst -Recurse -Force
+        Get-ChildItem $mpDst -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path (Join-Path $srvDst 'masterserver')) {
+            throw "refusing to package the master server: it is our infrastructure"
+        }
+
+        # Keep the crash-symbol files the CI package keeps, when they exist.
+        foreach ($symbol in @("$exe.pdb", "$exe.map")) {
+            $src = Join-Path $bin $symbol
+            if (Test-Path $src) { Copy-Item $src $stage -Force }
+        }
+
+        # A local merge can leave empty `*~HEAD` placeholder directories in
+        # JERICHO/MODS. A CI checkout never has them, so a package must not.
+        Get-ChildItem (Join-Path $stage 'JERICHO\MODS') -Directory -Filter '*~HEAD' -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force
+
+        # A mod submodule's .git is a gitfile, never game data.
+        Get-ChildItem $stage -Recurse -Force -Filter '.git' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq '.git' } |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
         $zip = Join-Path $OutPath "JERICHO_${cfg}_win64.zip"
         Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
         Remove-Item $stage -Recurse -Force
@@ -345,6 +461,7 @@ Write-Host "JERICHO release -- repo $Repo, tag $Tag, configs $($Configuration -j
 if (-not $SkipBuild) {
     $msbuild = Get-MSBuild
     Write-Host "    msbuild: $msbuild"
+    Update-ModSubmodules
     New-ProjectFiles
     Invoke-Build -MsBuild $msbuild
 } else {

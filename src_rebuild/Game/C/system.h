@@ -71,7 +71,7 @@ extern const char* JerGetCityDataRoot(int city);
  *
  * WHY THIS EXISTS: a city index used to be a row of the three compile-time tables
  * above, so the engine could only open a car-data file it had been compiled to
- * name ("LEVELS\\CHICAGO.LEV", "D1CARS\\MIAMI.LEV", ...). carhacks' cross-city
+ * name ("LEVELS\\CHICAGO.LEV", "JERICHO\\MODS\\carhacks\\D1CARS\\MIAMI.LEV", ...). carhacks' cross-city
  * import is policy ("slot 5 = city 2, model 7") and is already index-based, so a
  * bank that is not one of those compiled names could not be offered at all - the
  * engine would never open the filename. Rows CITY_D2_COUNT+... are that gap
@@ -114,6 +114,13 @@ int JerCityPath(int city, char* out, int outSize, int kind, int arenaVariant);
 /* The same path, opened: 1 when it exists, 0 otherwise. Used by the registry's own
  * presence probe, so it is exactly the file the loader will later read. */
 int JerCityFileExists(int city, int kind);
+
+/* Register a bank from a MODULE (path relative to the game's data folder, the
+ * same spelling a city_N key uses). The row is module-owned: a later config
+ * refresh re-probes its file instead of clearing it for having no city_N key.
+ * A city_N key for that slot takes ownership instead. Answers the city index,
+ * or -1 when the file is not on disk / no row is free. */
+int JerCityRegister(const char* name, const char* levFile, const char* lcfFile);
 
 /* Read JERICHO/CONFIG/cities.ini and register every bank whose files are present.
  * Idempotent; called once at boot from JerCityRegistryBoot, and safe to call from

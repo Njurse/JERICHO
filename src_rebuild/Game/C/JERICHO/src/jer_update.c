@@ -347,7 +347,10 @@ static const char* UpdString(const char* p, char* out, size_t n)
 	return p;
 }
 
-/* "0.10.4..." / "v0.10.4..." -> 3 ints and the remainder. 0 if not a version. */
+/* "0.10.4..." / "v0.10.4..." -> 3 ints and the remainder. 0 if not a version.
+ * A missing component is 0, so "v0.11" is 0.11.0: release tags have used both
+ * vX.Y and vX.Y.Z, and the old parser rejected the two-part form outright, so
+ * an older client never saw a v0.11 update. */
 static int UpdParseVer(const char* s, int v[3], const char** rest)
 {
 	int i;
@@ -356,15 +359,22 @@ static int UpdParseVer(const char* s, int v[3], const char** rest)
 		s++;
 	for (i = 0; i < 3; i++)
 	{
+		v[i] = 0;
+
+		if (i > 0)
+		{
+			if (*s != '.')
+			{
+				if (rest)
+					*rest = s;
+				return 1;
+			}
+			s++;
+		}
+
 		if (*s < '0' || *s > '9')
 			return 0;
 		v[i] = (int)strtol(s, (char**)&s, 10);
-		if (i < 2)
-		{
-			if (*s != '.')
-				return 0;
-			s++;
-		}
 	}
 	if (rest)
 		*rest = s;

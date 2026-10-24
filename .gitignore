@@ -81,3 +81,8 @@ _mp_previous.next/
 
 # Local dev comms bot. Holds a Telegram bot token - never commit it.
 tmp/tgbot/
+
+# mod store: the generated test repo (make_test_repo.sh output) and any
+# package the publish tool builds locally
+JERICHO/CORE/modstore/test/repo/
+JERICHO/CORE/modstore/out/

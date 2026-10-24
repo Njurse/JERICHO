@@ -6,7 +6,7 @@
  * WHY. A city index used to be a compile-time row of the engine's three tables
  * (LevelNames / LevelFiles / CosmeticFiles), which meant the engine could only
  * ever open a car-data file it had been compiled to name: LEVELS\CHICAGO.LEV,
- * D1CARS\MIAMI.LEV and the rest. carhacks' cross-city import is POLICY - "resident
+ * JERICHO\MODS\carhacks\D1CARS\MIAMI.LEV and the rest. carhacks' cross-city import is POLICY - "resident
  * slot 5 = city 2, model 7" - and is already index-based, so a car-data bank that
  * is not one of those compiled names could not be offered at all: nothing would
  * ever open the file, whatever the config said.
@@ -87,7 +87,9 @@ int JerCityFileExists(int city, int kind);
 /* Register a bank from a module (normally the config does it). Answers its city
  * index - the first free bank row - or -1 when there is no free row or the .LEV is
  * not on disk. The strings are copied. A NULL `levFile` unregisters the bank of
- * that name. */
+ * that name. A module-registered row is module-owned: it has no `city_N` key, and
+ * the config refresh re-probes its file instead of clearing it. A `city_N` key for
+ * the same slot takes ownership instead. */
 int JerCityRegister(const char* name, const char* levFile, const char* lcfFile);
 
 /* Re-read the config and re-probe the disk. Called by the engine before every car

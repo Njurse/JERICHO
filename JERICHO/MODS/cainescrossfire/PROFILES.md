@@ -136,7 +136,7 @@ This is the one place that states the capacity a battleground has for distinct c
 is not a CC setting — it is the engine's, and carhacks' `docs/CROSS_CITY.md` covers the
 VRAM side of it in depth. Everywhere else that needs a number should point here.
 
-**Resident car slots: `MAX_CAR_RESIDENT_MODELS` = 12** (`src_rebuild/Game/dr2limits.h`),
+**Resident car slots: `MAX_CAR_RESIDENT_MODELS` = 16** (`src_rebuild/Game/dr2limits.h`),
 with `SPECIAL_CAR_SLOT` **pinned at 11** — not `MAX_CAR_RESIDENT_MODELS - 1` any more. It
 is a MODEL number compared against `cp->ap.model` (the Vegas ambulance, mission 33's limo)
 and names the slot the special model is spooled into, so it must not follow a capacity
@@ -145,12 +145,12 @@ change: it was 11 only because the pool used to be 12 long. Slots above it are s
 | slots | who holds them |
 |---|---|
 | 0..4 | the level's own civilian models — **never repurposed** (stealing one is what made the level's cars look wrong) |
-| 5..10 | free: the module's budget — **six** cars |
+| 5..10, 12..15 | free: the module's budget — **ten** cars (mp claims 5/6; carhacks imports into 7..10 + 12..15) |
 | 11 | the special vehicle (`SPECIAL_CAR_SLOT`) |
 
 A native profile does not need a free slot at all: it reuses the resident slot that
 already holds its model number. So an arena can field the level's own cars (in the
-civilian slots they already occupy) **plus six more**, and a roster car whose model is
+civilian slots they already occupy) **plus ten more**, and a roster car whose model is
 already resident costs nothing.
 
 **Guest cities: 3** — that is, every city that can be one (there are four, and the

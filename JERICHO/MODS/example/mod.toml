@@ -1,6 +1,8 @@
 id = "example"
 name = "Example Module"
 version = "0.1.0"
+# the JERICHO interface (SDK) this mod is built against
+interface = 2
 author = "DeepSeek"
 description = "JERICHO smoke-test: logs at boot and fires a custom event every 60 frames."
 dependencies = []

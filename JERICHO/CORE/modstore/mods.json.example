@@ -1,0 +1,52 @@
+{
+  "_comment": [
+    "A JERICHO mod repo index. One file, one HTTP GET, no API, no rate limit.",
+    "Host it anywhere that serves JSON: a release asset, raw.githubusercontent,",
+    "any static host. The store reads it, lists the mods, and installs the ones",
+    "the player picks. The full schema is documented in",
+    "src_rebuild/Game/C/JERICHO/docs/mod-repo.md."
+  ],
+
+  "schema": 1,
+  "id": "official",
+  "name": "JERICHO Mods",
+  "homepage": "https://github.com/Njurse/JERICHO-Repo-Official",
+
+  "mods": [
+    {
+      "id": "testmod",
+      "name": "Test Mod",
+      "version": "0.1.0",
+      "author": "JERICHO",
+      "description": "A do-nothing addon used to prove the store's fetch, verify and install path end to end.",
+
+      "file": "https://example.invalid/jericho-mods/testmod-0.1.0.zip",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 12345,
+
+      "requires": [],
+      "interface": 2,
+      "min_jericho": "0.10.0",
+      "default_enabled": true
+    },
+    {
+      "id": "d1cars",
+      "name": "Driver 1 Cars",
+      "version": "0.2.0",
+      "author": "Jaret Ludvik",
+      "description": "Driver 1 traffic car shapes as a fifth car-data source. Ships the module and the bake tools only - the car data is baked from the player's own Driver 1 copy.",
+
+      "file": "https://example.invalid/jericho-mods/d1cars-0.2.0.zip",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "size": 23456,
+
+      "requires": ["carhacks"],
+      "interface": 2,
+      "min_jericho": "0.10.9",
+      "default_enabled": false,
+
+      "_comment": "bake_version: compare against DRIVER/D1CARS/BAKE_VERSION and the shipped tooling; a mismatch is what prompts the re-bake.",
+      "bake_version": 2
+    }
+  ]
+}

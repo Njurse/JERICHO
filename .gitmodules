@@ -7,3 +7,16 @@
 [submodule "JERICHO/MODS/d1cars"]
 	path = JERICHO/MODS/d1cars
 	url = https://github.com/Njurse/JERICHO-D1.git
+	branch = betamiami
+[submodule "JERICHO/MODS/mp"]
+	path = JERICHO/MODS/mp
+	url = https://github.com/Njurse/JERICHO-Mod-MP.git
+	branch = main
+[submodule "JERICHO/MODS/carhacks"]
+	path = JERICHO/MODS/carhacks
+	url = https://github.com/Njurse/JERICHO-Mod-carhacks.git
+	branch = main
+[submodule "JERICHO/MODS/crumple"]
+	path = JERICHO/MODS/crumple
+	url = https://github.com/Njurse/Jericho-Mod-CRUMPLE.git
+	branch = main

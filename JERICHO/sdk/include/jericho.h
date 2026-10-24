@@ -15,9 +15,28 @@
  *     data into a DLL without dllimport, so these are compiled in by
  *     premake's auto-scan (see docs/JERICHO/README.md).
  *
- * ABI: this header is the contract. Bump JERICHO_SDK_VERSION on any change
- * that breaks module compatibility; the runtime refuses mismatched modules
- * with a clear reason.
+ * ABI: this header is the contract. JERICHO_SDK_VERSION is that contract's
+ * version, and a module's manifest says which one it was built against
+ * (`interface = N` in mod.toml). MISMATCHES ARE REFUSED WITH A REASON, twice:
+ *
+ *   - at load, for a loadable addon whose registered sdkVersion differs
+ *     (jer_system.c), and
+ *   - before activation, from the manifest, which is what catches a bundled
+ *     mod from another build (the one case the load check cannot see).
+ *
+ * BUMP IT WHEN A MOD COULD BREAK, which is any of:
+ *   - an event id is added, removed or renumbered, or a JER_ARGS_* struct's
+ *     fields change order/size (a module casts through them),
+ *   - a contract header's ids or structs change (see docs/interfaces.md),
+ *   - MOD_CONTEXT / JERICHO_CONTEXT gains, loses or reorders a member, or
+ *     jer_register_module's signature changes.
+ *
+ * Do NOT bump for a comment, a new engine-internal hook no module can see, or a
+ * doc change. The bump is not free: every module must be rebuilt, and every
+ * published package must be re-released with the new `interface` value.
+ *
+ * The custom-event id registry (who owns which JER_EVENT_MODULE_CUSTOM + n) and
+ * the full list of what a mod may rely on live in docs/interfaces.md.
  */
 #ifndef JERICHO_JERICHO_H
 #define JERICHO_JERICHO_H
@@ -307,12 +326,63 @@ typedef int (*JER_HOOK_FN)(void* userdata, void* args);
  */
 enum
 {
-	JER_OVERRIDE_SLOTS = 8,
+	JER_OVERRIDE_SLOT_COUNT = 8,
 
 	/* Slot meanings (engine-defined): */
-	JER_OVERRIDE_SLOT_SIM = 0	/* the world step (StepSim) -- modules may
+	JER_OVERRIDE_SLOT_STEP_SIM = 0,	/* the world step (StepSim) -- modules may
 								   time-scale or replace it */
+
+	JER_OVERRIDE_SLOT_SCENERY_COLLISION = 1,	/* CarBuildingCollision (bcollide.c):
+								   the car-vs-static-world check for
+								   BUILDING_BOXes (buildings, bridges,
+								   overhangs, smashables). A handler may
+								   reject a false 2D hit or replace its
+								   point/normal; see
+								   JER_ARGS_SCENERY_COLLISION */
+
+	/* Legacy spellings, kept so modules built against the old header still
+	 * compile. Use the canonical names in new code. */
+	JER_OVERRIDE_SLOTS = JER_OVERRIDE_SLOT_COUNT,
+	JER_OVERRIDE_SLOT_SIM = JER_OVERRIDE_SLOT_STEP_SIM
 };
+
+/*
+ * Arguments for JER_OVERRIDE_SLOT_SCENERY_COLLISION.
+ *
+ * The engine calls this after bcollide.c's 2D XZ test and the coarse vertical
+ * gate have produced a hit, and before any error correction, damage or impulse.
+ * `point` and `normal` are VECTOR* in world space and are IN/OUT: a handler may
+ * replace them, and the stock response then uses the replacement. Set
+ * `handled = 1` to claim the hit: the engine restores the car's pre-collision
+ * position and skips its whole response. That is how a module rejects a false
+ * ceiling/underside contact -- there is no separate "skip" flag because a
+ * module that rejects a hit and one that replaces the response are the same
+ * hand-off.
+ *
+ * `building` is the engine's BUILDING_BOX: the collision box of any static
+ * scenery object (a building, bridge, overhang or smashable), not necessarily
+ * a literal building. `car` is CAR_DATA*. Both are void* so this header keeps
+ * no game-type dependency.
+ */
+typedef struct JER_ARGS_SCENERY_COLLISION
+{
+	void* car;		/* CAR_DATA* that hit the scenery */
+	void* building;		/* BUILDING_BOX* -- pos/xsize/zsize/theta/height */
+	int flags;		/* CollisionCheckFlag_* passed to CarBuildingCollision */
+	void* point;		/* VECTOR* -- in/out world contact point */
+	void* normal;		/* VECTOR* -- in/out world surface normal */
+	int penetration;	/* in: collision depth from bFindCollisionPoint */
+	int handled;		/* out: 1 = module consumed/rejected; stock skips */
+} JER_ARGS_SCENERY_COLLISION;
+
+/*
+ * The override slot's function type. It returns nothing: the answer is carried
+ * in JER_ARGS_SCENERY_COLLISION.handled, which keeps "reject this false hit"
+ * and "I have replaced the response" one hand-off instead of overloading
+ * JER_RESULT_STOP (that value means "stop dispatching to further handlers").
+ * A NULL slot is the stock behaviour.
+ */
+typedef void (*JER_SCENERY_COLLISION_FN)(JER_ARGS_SCENERY_COLLISION* args);
 
 /* Opaque host context handed to every module. */
 typedef struct JERICHO_CONTEXT JERICHO_CONTEXT;
@@ -475,6 +545,17 @@ int jer_manager_set_enabled(const char* rootDir, const char* id, int enabled);
 /* Move a module up/down in the load order; persists. Returns 0 on ok. */
 int jer_manager_move(const char* rootDir, const char* id, int direction);
 
+/* The multiplayer core suite, in mandatory load order: mp, carhacks, d1cars.
+ * Everything else is optional and follows in the player's own order. */
+int jer_manager_core_count(void);
+const char* jer_manager_core_id(int i);
+
+/* Move the core suite to the front of modlist.ini and enable it, preserving the
+ * relative order of every other entry. 1 = the file changed, 0 = already right or
+ * no file, -1 = write error. Safe to call at any time; the new order applies at the
+ * NEXT boot (modules are loaded once), which is why a join reports it. */
+int jer_manager_normalize_core(const char* rootDir);
+
 /* ------------------------------------------------------------------ */
 /* Module inventory (for the frontend Mods manager)                    */
 /* ------------------------------------------------------------------ */
@@ -566,12 +647,23 @@ void jer_build_finish(void);
 int jer_compile_mods(void);
 
 /*
- * Host-side: what "Compile Mods" does once the player confirms. Builds the
- * runtime "dll" addons right away (they load without a restart) and requests
- * the deep-mod rebuild, which can only happen at the next boot because it
- * relinks the exe. Safe to use as a jer_prompt.h Yes action.
+ * Host-side: what "Compile Mods" does once the player confirms -- and what the
+ * mod store calls from its exit prompt. Closes the game and lets a detached
+ * helper rebuild it (runtime "dll" addons and the deep modules), then starts the
+ * new exe, so the player comes back with the mods in it. Where there is no
+ * helper/toolchain (a shipped install, another platform), it builds the runtime
+ * addons now and defers the deep rebuild to the next boot. Safe to use as a
+ * jer_prompt.h Yes action.
  */
 void jer_compile_request(void);
+
+/*
+ * Host-side: 1 when this install can run an in-game build -- a src_rebuild
+ * tree and the build_game shim are reachable from the exe. A shipped package
+ * has neither, which keeps "Compile Mods" out of a player's menu. Used by the
+ * frontend's Compile Mods availability check.
+ */
+int jer_build_can_compile(void);
 
 #ifdef __cplusplus
 }

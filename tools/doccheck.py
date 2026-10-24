@@ -19,12 +19,15 @@ Exits non-zero if anything fails, so it can be wired into a check later. It prin
 every failure it finds rather than stopping at the first, because fixing these one
 run at a time is the slow way.
 
-Only TRACKED files are examined, and that is deliberate: bin/Release and
-bin/Release_dev carry untracked mirror copies of the docs from the last build, so a
-filesystem walk matches stale text and reports a corrected claim as uncorrected.
-`git ls-files` excludes them for free.
+Only TRACKED files are examined for links and claims, and that is deliberate:
+bin/Release and bin/Release_dev carry untracked mirror copies of the docs from the
+last build, so a filesystem walk matches stale text and reports a corrected claim
+as uncorrected. `git ls-files` excludes them for free. The one exception is the
+index check for documented mod folders: two of them are submodules, which
+`git ls-files` does not descend into, so those folders are walked on disk.
 """
 
+import glob
 import os
 import re
 import subprocess
@@ -100,12 +103,12 @@ def submodule_paths():
     """The submodules' paths, from .gitmodules.
 
     A link INTO a submodule cannot be resolved from a clone that has not
-    initialised it, and the checks job deliberately does not: two of the three
-    submodules are not published (gaildrv2 and d1cars are private), which is why
-    the build jobs fetch the submodules they need by name instead of using
-    `submodules: recursive`. Failing these links would make the job red for a file
-    that IS tracked one level down, and would push the docs into not linking the
-    submodules at all - which is worse than not verifying them here."""
+    initialised it. The checks job fetches the three public mod source repos
+    (mp, carhacks, crumple) but deliberately not gaildrv2 (unpublished) or
+    d1cars (its bake tools are fetched only for packaging), so links into those
+    two still cannot be verified here. Failing them would make the job red for a
+    file that IS tracked one level down, and would push the docs into not linking
+    the submodules at all - which is worse than not verifying them here."""
     paths = []
     for line in read(".gitmodules").splitlines():
         line = line.strip()
@@ -151,7 +154,10 @@ def check_index():
     linked = set(links_in(index))
     folders = set(os.path.dirname(p) for p in linked)
     for mod in ("cainescrossfire", "carhacks", "mp"):
-        for doc in git_ls("JERICHO/MODS/%s/*.md" % mod):
+        # Walk the folder rather than git ls-files: carhacks and mp are
+        # submodules, whose files the parent index does not list.
+        for full in glob.glob(os.path.join(ROOT, "JERICHO", "MODS", mod, "*.md")):
+            doc = os.path.relpath(full, ROOT).replace(os.sep, "/")
             if doc not in linked and os.path.dirname(doc) not in folders:
                 fail("index", "%s is not linked from %s" % (doc, index))
 

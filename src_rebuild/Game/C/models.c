@@ -565,7 +565,7 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 		if (!staleD1Warned)
 		{
 			staleD1Warned = 1;
-			jer_error("DRIVER/D1CARS is out of date: re-run BAKE_D1_CARS for Driver 1 wheels and sounds");
+			jer_error("JERICHO/MODS/carhacks/D1CARS is out of date: re-run BAKE_D1_CARS for Driver 1 wheels and sounds");
 		}
 	}
 
@@ -1760,6 +1760,76 @@ int CarImportCityHeld(int city)
 	return (city >= 0 && city < CITY_COUNT && gCarImports[city].region != NULL);
 }
 
+/* JERICHO: does any LIVE resident slot still read this city's car data? The engine's
+ * resident array is the authority: chkImportReleaseSlot and chkImportHotLoad write the
+ * slot's source before this is asked, so a city whose last slot was just released is
+ * already invisible here. The host city (source < 0) is never an import. */
+static int CarImportCityInUse(int city)
+{
+	int slot;
+
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		if (residentCarModels[slot] >= 0 && GetCarModelSourceCity(slot) == city)
+			return 1;
+	}
+
+	return 0;
+}
+
+/* JERICHO: unload ONE guest city. The ordering is the point: the page lists/palette rows
+ * and the deferred lump are pointers INTO gCarImports[city], so they must go before the
+ * buffer is freed. Freeing the CLUT band and the (city,set) rows is what makes the city
+ * reloadable when the texture column would otherwise be full. */
+int JerReleaseCarImportForCity(int city)
+{
+	int i;
+
+	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
+		return 0;
+
+	if (gCarImports[city].region == NULL)
+		return 0;
+
+	if (CarImportCityInUse(city))
+		return 0;
+
+	CarImportForgetCity(city);
+	FreeCarImport(&gCarImports[city]);
+
+	if (gCarImportCity == city)
+	{
+		gCarImportCity = -1;
+
+		for (i = 0; i < CITY_COUNT; i++)
+		{
+			if (gCarImports[i].region != NULL)
+			{
+				gCarImportCity = i;
+				break;
+			}
+		}
+	}
+
+	printInfo("cross-city: released %s - no live car names it, so its palette rows, pages and buffer are free for another city\n",
+		JerCityName(city));
+
+	return 1;
+}
+
+int JerReleaseUnusedCarImports(void)
+{
+	int city, n = 0;
+
+	for (city = 0; city < CITY_COUNT; city++)
+	{
+		if (CarImportCityHeld(city) && !CarImportCityInUse(city))
+			n += JerReleaseCarImportForCity(city);
+	}
+
+	return n;
+}
+
 // The models `city`'s car data ACTUALLY carries, as a bitmask: bit N = model N.
 // 0 when the city is not held.
 //
@@ -2522,6 +2592,13 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 	imp = &gCarImports[city];
 	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
 
+	/* D1 baked cities have no D2-style wheelTex metadata for DAM/FAST.
+	 * Fall back to the measured table row instead of bailing. -1 is the
+	 * caller's "use CarImportWheelPaletteRow()" sentinel; 0 would select
+	 * page row 0, which is not a wheel row. */
+	if (city >= CITY_D2_COUNT && !wt->present)
+		return -1;
+
 	if (!wt->present)
 		return -1;
 
@@ -2684,17 +2761,39 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		return;
 
 	/* Driver 1 imports only: a Driver 2 city's fast wheel names row 0, a CAR
-	 * row (RIO's drew green); D2 imports keep their stock wheel rows. */
-	if (city < CITY_D2_COUNT || city >= CITY_D2_COUNT + CITY_D1_COUNT)
+	 * row (RIO's drew green); D2 imports keep their stock wheel rows. This
+	 * includes the runtime banks (city >= JER_CITY_STOCK_COUNT), e.g. the
+	 * Euro-43 beta at city 11. */
+	if (city < CITY_D2_COUNT)
 		return;
 
 	imp = &gCarImports[city];
 	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_FAST];
 	npal = *(const int*)page;
 
+	/* A D1 bake has no D2-style wheelTex metadata for FASTWHEEL. Use the
+	 * tyre row that was already derived for the clean wheel instead of
+	 * leaving the fast wheel on the host palette. */
 	if (!wt->present || imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] <= 0 ||
-		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] != sourceSet ||
-		npal <= 0 || npal > 32 || size <= 4 + npal * 32 || tyreRow < 0 || tyreRow >= npal)
+		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] != sourceSet)
+	{
+		if (npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
+			tyreRow >= 0 && tyreRow < npal)
+		{
+			memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
+			clut = CarImportReserveWheelPalette(city, 0, (const unsigned char*)row);
+
+			if (clut != 0)
+			{
+				CarImportSetWheelPaletteClut(city, sourceSet, clut, 0);
+				wt->reservedClut = clut;
+			}
+		}
+
+		return;
+	}
+
+	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32 || tyreRow < 0 || tyreRow >= npal)
 		return;
 
 	if (wt->u0 < 0 || wt->v0 < 0 || wt->u1 > 256 || wt->v1 > 256 || wt->u1 <= wt->u0 || wt->v1 <= wt->v0)
@@ -2737,6 +2836,60 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 
 	if (clut != 0)
 		wt->reservedClut = clut;
+}
+
+// The damaged wheel's face names its OWN CLUT row, which need not be the clean
+// tyre's: MIAMI's DAMWHEEL is row 5 while the clean wheel is row 6. The clean
+// palette reservation sets every variant that names the page to row 6, so the
+// damaged wheel needs its own row or it draws the clean wheel's colours.
+void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow)
+{
+	CAR_IMPORT* imp;
+	JER_WHEEL_TEX* wt;
+	unsigned short row[16];
+	int npal, clut;
+
+	if (city < 0 || city >= CITY_COUNT || page == NULL || size < 4)
+		return;
+
+	/* Driver 1 imports only, the same rule as the fast wheel. */
+	if (city < CITY_D2_COUNT)
+		return;
+
+	imp = &gCarImports[city];
+	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED];
+	npal = *(const int*)page;
+
+	if (wt->present && imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] > 0 &&
+		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] == sourceSet &&
+		npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
+		wt->clut >= 0 && wt->clut < npal)
+	{
+		memcpy(row, page + 4 + wt->clut * 32, sizeof(row));
+		clut = CarImportReserveWheelPalette(city, 3, (const unsigned char*)row);
+
+		if (clut != 0)
+			wt->reservedClut = clut;
+
+		printInfo("cross-city: %s damaged wheel palette row %d reserved (clut %04x)\n",
+			LevelNames[city], wt->clut, clut);
+		return;
+	}
+
+	/* No usable DAMWHEEL metadata: use the tyre row already derived for the
+	 * clean wheel, as the fast-wheel fallback does. */
+	if (npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
+		tyreRow >= 0 && tyreRow < npal)
+	{
+		memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
+		clut = CarImportReserveWheelPalette(city, 3, (const unsigned char*)row);
+
+		if (clut != 0)
+			wt->reservedClut = clut;
+
+		printInfo("cross-city: %s damaged wheel palette fell back to tyre row %d (clut %04x)\n",
+			LevelNames[city], tyreRow, clut);
+	}
 }
 
 // A texture-only copy of a Driver 2 named wheel model. The renderer uses the
@@ -3134,6 +3287,13 @@ char* GetCarImportCosmetics(int slot)
 // released a slot, wrong now that a peer leaving (or the local player leaving the session)
 // must hand its resources back. JER_HOT_CAR_BLOCKS blocks fit the pool by construction.
 #define JER_HOT_CAR_BLOCKS		(JER_HOT_CAR_POOL_BYTES / JER_HOT_CAR_BLOCK_BYTES)
+
+/* The eight-player guest-import budget: 16 resident models - 5 domestic - 2 mp spares
+ * (5/6) - 1 special (11) = 8 hot-load blocks. A player whose car cannot get a block is
+ * left drawn as the level's own car, so this is a build error, not a runtime surprise. */
+#if JER_HOT_CAR_BLOCKS < 8
+#error "the hot-load pool must cover the eight guest import slots"
+#endif
 
 static char* gJerHotCarPool;
 static int   gJerHotCarSize;

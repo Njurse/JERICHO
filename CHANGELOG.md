@@ -4,23 +4,248 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
-## Unreleased
+## v0.11.8
 
-- Multiplayer: getting out of your car and back into it (or using Change car while on foot) no longer leaves a second copy of the vehicle on other players' screens. The machine that saw you get out now reuses the body you left instead of creating a new one.
-- Test Mode's quiet world no longer deletes a player's parked car when they get out; it only clears traffic and police.
+*Released 2026-10-24.*
+
+### Build toolkit
+
+- The Linux release now ships the proper JERICHO mod build toolkit alongside
+  Windows. `JERICHO/build.py`, `build_game.sh`, `build_mods.sh` and
+  `build_restart.sh` sit beside the executable, the addon build produces
+  `<id>.so` libraries, and **Compile Mods** works in-game on Linux, including
+  the rebuild offered after installing a compiled-in mod from the Mod Repo.
+- The Windows entry points are now thin shims over the same driver, so both
+  platforms use one build path. The Linux setup script and the standalone
+  addon SDK gained their POSIX entry points.
+- The in-game rebuild includes a compiled-in mod installed next to the
+  executable (the runtime `JERICHO/MODS` folder), so a mod downloaded from the
+  Mod Repo is the copy that gets compiled.
+
+### Mods
+
+- **Compile Mods** is back in the JERICHO config menu whenever a source tree
+  and the build shim are present, including a Release built from a checkout.
+  A shipped package still hides it.
+- The Mod Repo table no longer leaves a gap in the middle: the three controls
+  (Refresh, Reload repos, Back) are counted once, so the last mod rows stay in
+  the list.
+- Module frontend menus now use the vanilla 41 px row pitch, so the
+  lower-right options are no longer slightly crowded.
+
+### Full Twist
+
+- FULL TWIST remains available from the official Mod Repo on both platforms.
+  It is still not bundled in a Release; installing it offers the rebuild.
+
+## v0.11.7
+
+*Released 2026-10-23.*
+
+### Engine
+
+- A live traffic car can have no cosmetics (a model that is not built or was
+  released mid-level). The car-car box build, step, revs, scenery test and
+  damage paths now skip it and log once instead of dereferencing a null mesh;
+  stale `mayBeColliding` bits are cleared. This is the Havana traffic-car crash.
+
+### Mods
+
+- Installing a compiled-in mod from the mod repo now asks whether to recompile
+  the game when you leave the repo browser, instead of leaving the mod inert
+  until you find **Compile Mods** yourself. **Yes** closes the game, rebuilds
+  it (runtime addons and deep modules) and starts it again, so the mod is live
+  on the next launch instead of needing two restarts. A build with the
+  toolchain is required (a source checkout or `Release_dev`).
+
+### Full Twist
+
+- FULL TWIST is no longer pre-included in the Release build. It is a deep
+  (compiled-in) module distributed through the official mod repo; `Release_dev`
+  still compiles it in for development.
+- New **Free Physics** preset: cars that are hit, airborne, or resting on their
+  body keep their rotation. It lowers the stock `angularDamping`, cancels the
+  engine's lift `-avel/8`, and bypasses the stopped-car spin kill; traffic keeps
+  the stock physics.
+- Scenery collisions use the car's convex hull for the vertical gate and the
+  world-projected XZ footprint. The engine's contact point is never rewritten;
+  the hull contact is logged and used only for FULL TWIST's own torque.
+- Prebuild every resident convex hull at the top of the frame after a level
+  start or model swap; collisions never build a hull and fall back to the
+  colBox when one is not ready.
+- Added `wall_bounce` (100 % = stock restitution) so cars can bounce off scenery,
+  and `car_car_impulse` / `car_car_launch` / `car_car_tumble` so a shunt no
+  longer launches traffic.
+- Guard the car-car normal scale against non-resident/culled cars and add the
+  `test_smash` lever.
+- Hold the chase camera's heading offset while the car tumbles (`hold_camera`,
+  default on); the settle-back lerp is suspended for the tumble.
+- Player-only patch: FULL TWIST now only touches player cars; traffic keeps the
+  stock damping, torque and collision response (`player_only`, default on).
+- Free Physics is now the only shipped preset. Legacy `preset = 0` (Cinematic)
+  and `preset = 1` (Arcade) ini values load as Free Physics, so every player
+  gets the same tuning; the preset cycle is Free Physics <-> Off.
+- Body-ground grip: `body_friction` (default 100 %) and `body_hinge` (default
+  100 %) act at the lowest hull vertex while the body is on the road. The hinge
+  turns the contact-point slide into a pivot about the contact, so the car
+  tumbles over the point it snags on, and the friction removes the rest of the
+  slide. This fixes the roof/side body still feeling slidey.
+- Camera snap: `camera_snap` (default 75 %) adds a share of the remaining angle
+  per frame for eight frames after a tumble, so the view comes back in quickly.
+- Camera release: `camera_release` (default on) ends the heading hold as soon
+  as the car is back on its wheels, upright and the spin sum is below
+  `camera_release_av` (default 800000), so the camera locks on while the car is
+  still rolling.
+- Horn cannon roll: `horn_roll` (default on) turns a horn press into a high
+  roll rate (`horn_roll_rate`) with a low launch (`horn_roll_launch`).
+- Added the `test_horn` lever for a headless cannon roll.
+- Spin fix: cancel the engine's lift damping only when ConvertTorque applied it
+  and only on roll/pitch; restore stock yaw damping while the wheels are down so
+  the tires stabilize the spin instead of letting it accelerate.
+- Engine: `JER_ARGS_CAR_TORQUE.extraDamping` exposes the lift damping flag.
+- Fixed the scenery collision point's Y frame (the engine negates `hit.vy`
+  before the event) and clamped the body-landing assist to the angular clamp.
+- Free Physics is the default when the module is enabled and sets `hull_contact`
+  to 0; `fulltwist` remains off in the shipped profile.
+
+### Crumple
+
+- New **Crush Multiplier** row below Buddha Mode: 1.0x to 10.0x in 0.5x steps. It
+  applies to the car you are currently in (the value is stored per car), scales body
+  deformation and its safety caps — not dent radius or wheel damage — and affects
+  impacts recorded after the change. The corruption guard now tolerates the much
+  larger displacement a 10x crush produces.
+- The base body deformation is retuned to read as damaged as the wheels: a wider dent
+  radius (`dentRadiusPct` 700 → 900), a deeper per-impact push (`maxDisplacementPct`
+  800 → 950), a higher total cap (`compoundCapPct` 2000 → 2400), and more depth on
+  oblique pole/edge hits (`contactDeepen` 326 → 650). Parameters only — the
+  deformation path is unchanged.
+- The stretched-vertex guards (the per-vertex clamp and the `cars.c` canary) now share
+  one 4096-unit threshold, so a deliberate 10x crush no longer trips the canary and
+  silently rebuilds the car's mesh.
+
+### Cars
+
+- Engine, idle and horn sounds now keep switching correctly for as long as a level
+  lasts. Imported car sound banks are reclaimed when the bank would fill instead of
+  accumulating one per change and eventually falling back to another vehicle's
+  samples, and a car's bank is resolved by its resident slot rather than a
+  coincidentally equal model number.
+- A civilian imported car no longer acquires the stock model-0 siren (and the
+  horn-toggle/cop-light behaviour that came with it), and horn one-shots are
+  suppressed for genuine siren cars. Bank rebuilds stop and re-issue active player
+  and AI sirens, so a civilian horn cannot become a siren and a cop siren cannot
+  become a horn.
+- A Driver 2 cop car imported from another city now uses that city's siren sample
+  instead of the host level's. Driver 2 cars were the remaining gap; D1 cops
+  already used their baked per-model siren.
+
+### Multiplayer
+
+- A player car's **body-crush multiplier** now rides the carstate, so every machine
+  deforms that car the same way. This is a wire change (protocol 17): update every
+  client and the dedicated server together.
+
+## v0.11.5
+
+*Released 2026-10-22.*
+
+### Multiplayer
+
+- A player's lost hubcaps now show on every machine. The carstate carries the owner's
+  hubcap bits, and they are re-applied when a peer's car is rebuilt. This is a wire
+  change (protocol 16): update every client and the dedicated server together.
+- A car change keeps **one resident slot per player** and replaces the car in place.
+  Together with the resident pool growing from 12 to 16 slots, this gives eight guest
+  import slots for an eight-player session instead of four, and removes the
+  `no spare resident slot` exhaustion under concurrent changes.
+- A guest city's palette rows, texture pins and import buffer are released as soon as
+  its last live car goes, so another city can take them. A load that still cannot fit
+  keeps retrying instead of leaving the peer looking like the level's own car.
+- The car re-announce heartbeat is now jittered (45–150 frames) and is re-armed a few
+  frames after a car change, a join, a peer's pick or a reload. Late joiners and
+  machines that missed a packet recover without a one-shot message.
+- **Reload all cars** now releases and re-reads every imported car's assets — pins,
+  pool pages, palette rows, geometry and the city buffers — then rebuilds every
+  imported vehicle.
+- Addon channel relays keep the original sender's player id. Before this, every
+  relayed car pick arrived as player 0 on a dedicated-server client and was discarded.
+- The multiplayer core suite — `mp`, `carhacks`, `d1cars` — is mandatory and first in
+  the load order. A join rewrites the client's module order; optional modules such as
+  `crumple` load afterwards.
+- Dedicated servers can require that core suite with `core_mods` while still allowing
+  optional modules, and the shipped example preconfigures it.
+
+### Crumple
+
+- New **Player Crumple** toggle at the top of Crumple Debug. Switching it off scopes
+  CRUMPLE out of only your car: the engine's stock dent blend runs, and wheel bend,
+  damage, physics and wheel drawing report stock values. Other players, traffic and AI
+  keep full crumple. Existing damage is not repaired automatically.
+
+## v0.11.4
+
+*Released 2026-10-22.*
 
 ### Changes
 
-- Driver 1 car data is now baked at BAKE_VERSION 6: the palette carries only the rows a city's models actually name, and an older DRIVER/D1CARS is rebuilt. Re-run `BAKE_D1_CARS` (or `.sh`) once after updating.
+- Beta Miami's engine and idle loops are retuned: the engine now plays at 80% of the Euro-43 sample's own rate (was 85%) and the idle at 75% (was 53%), so the imported car sits properly under the retail traffic. The two knobs remain `BETA_ENGINE_PITCH` / `BETA_IDLE_PITCH` in `add_car_sounds.py`.
+- Driver 1 car data is now baked at BAKE_VERSION 9. Existing bakes prompt for a rebuild (or `BAKE_D1_CARS` does it directly), because the sound rates are stamped into each model's bank and a BAKE_VERSION 8 bake still carries the old pitch.
+- New `d1cars/tools/driveby.py` preview: one pool car with its wheels turning, three seconds of the beta idle, then six gears of the beta engine at the exact rates the bake writes. `--engine-pitch` / `--idle-pitch` audition a value before changing the constants; Space replays, Esc quits.
+
+### Fixes
+
+- The `mp` pack's `BAKE_D1_CARS` copy is in sync with the shipped script again, including the post-bake relaunch (`--from-game`) added in 0.11.3.
+
+## v0.11.3
+
+*Released 2026-10-22.*
+
+### Changes
+
+- A vehicle whose city is not installed now draws a white/light-grey checkerboard stand-in body instead of the host city's car 1 in solid grey — in multiplayer while a peer's car is loading, and in single-player while an imported car is being rebuilt. The stand-in is its own bank and is hidden from the car menu by default in a release (`show_placeholder` shows it).
+- Re-baking stale Driver 1 cars now asks once, and answering Yes closes the game, bakes, then relaunches it. A manually run `BAKE_D1_CARS` does not restart the game.
+
+### Fixes
+
+- The Driver 1 re-bake question no longer appears twice when a mod install re-arms it.
+- An in-game re-bake now reopens the exact exe that started it (the dev tree included); before, the reopen only worked when the script sat beside the game.
+
+## v0.11.0
+
+**THE JERICHO MOD STORE / MOD REPO IS NOW AVAILABLE.**
+
+**DRIVER BETA VEHICLES CAN NOW BE BAKED - PUT THE LEVELS AND SOUND FOLDERS FROM EURO DEMO 43 IN `EURO43/` AND RUN THE TOOL TO BAKE THEM INTO carhacks.**
+
+*Released 2026-10-21.*
+
+- Multiplayer: getting out of your car and back into it (or using Change car while on foot) no longer leaves a second copy of the vehicle on other players' screens. The machine that saw you get out now reuses the body you left instead of creating a new one.
+- Test Mode's quiet world no longer deletes a player's parked car when they get out; it only clears traffic and police.
+- Multiplayer: another player's police car now shows its flashing lightbar on your screen. The carstate carries the owner's siren state, because the engine only lights a cop bar for AI pursuers. The siren sound is still local-only.
+
+### Changes
+
+- Releases now build the core mods (`mp`, `carhacks`, `crumple`, `d1cars`) from the latest commit of their own repositories, and an update replaces them: only `CONFIG/`, `config.ini`, `DRIVER/`, `DRIVER2/` and modules you added yourself are preserved. A download is never behind a mod fix.
+- Beta Miami is registered automatically from the baked file, after the seven retail Driver 1 cities: a bake already on disk appears without editing `cities.ini`. An older bake still gets the re-bake prompt.
+- Driver 1 car data is now baked at BAKE_VERSION 8: it is written INSIDE carhacks (`JERICHO/MODS/carhacks/D1CARS/`, where the game now reads it) instead of `DRIVER/D1CARS/`, and the Euro-43 beta is read from the demo's own `EURO43/LEVELS/MIAMI.LEV`. The palette carries only the rows a city's models actually name, an older bake is rebuilt, and the Beta Miami cop/buick are pinned to models 8 and 3. Re-run `BAKE_D1_CARS` (or `.sh`) once after updating.
+- `BAKE_D1_CARS` now bakes Beta Miami only when the Euro Demo 43 is present (and says so when it finds it); without `EURO43/`, the seven retail Driver 1 cities still bake instead of the script stopping at Beta Miami.
+- Crumple: lighter impacts dent sooner and hard hits cave deeper; the wheels now lean and steer more while translating less, and wheel damage resists more. Cars without a baked damaged model (the Driver 1 imports) are deformed by CRUMPLE when it is on; with CRUMPLE off they keep the standard clean body.
 
 ### Fixes
 
 - Multiplayer: a late joiner no longer appears stacked on the host. The joining client used to move its own car next to the first peer it heard from, which also stopped the road placement from running at all; placement now happens before the first state is sent, and it is map-wide on a full-city Take a Ride.
-- Multiplayer: a join can no longer take, rebuild or reset a car another player is driving, or one they are standing next to on foot. The late-join seat scan now refuses every owned slot — including the parked body behind `leftCarSlot1` — and logs the refusal.
-- Driver 1: changing cars — or a client adopting the session's set — no longer reuses a palette row still uploaded from the previous car. A reclaimed row is forgotten and re-uploaded, so the new car gets its own colours instead of the old one's.
+- Multiplayer: a join can no longer take, rebuild or reset a car another player is driving, or one they are standing next to on foot. The late-join seat scan now refuses every owned slot - including the parked body behind `leftCarSlot1` - and logs the refusal.
+- Driver 1: changing cars - or a client adopting the session's set - no longer reuses a palette row still uploaded from the previous car. A reclaimed row is forgotten and re-uploaded, so the new car gets its own colours instead of the old one's.
 - Driver 1: an imported car is no longer handed out or drawn until every set it names has a live page pin and a mapped palette row; while a car on the road is in that window, single-player shows the same host-city car 1 in grey as multiplayer.
 - Driver 1: fixed two different cities' same-numbered sets being merged into one page pin (only the first city's copy was pinned), and unused source palette rows no longer overwrite a compacted row a model reads.
 - Fixed a crash when starting a level with a cross-city car from a Driver 2 city (e.g. RIO model 9): the level's embedded D1 sound bank is optional, and a missing one now falls back to the host city's sound.
+- Driver 1: DAMWHEEL now uses its own CLUT row (row 5 on Miami) instead of the clean tyre row; the fast wheel keeps its separately cleared row.
+- Driver 1: IVIEW's cop siren and the Beta Miami cop siren are wired, and only Beta Miami slots 1 and 3 keep their special horns - the rest use the D1 traffic horn. D1 police lightbars sit slightly higher; IVIEW slot 1 and the Beta Miami cop use solid red bars.
+- Hubcaps reappear after repair/respawn: the lost-hubcap bits are cleared and the imported hubcap CLUT is re-bound.
+- The packaged `BAKE_D1_CARS` now uses the current script, so it bakes Beta Miami from `EURO43/` along with the seven Driver 1 cities instead of silently stopping at the old seven-city list.
+- The Driver 1 re-bake question is asked once per session: the mod store had a second, identical prompt, so answering one left the other waiting.
+- carhacks' car-select menu replaces the stock vehicle-select screen again after leaving an online match. The session leaves `GameType`/`NumPlayers` in a multiplayer state; the menu now crosses that transition instead of treating it as split-screen or a mission pick.
+- Driver 1 cars no longer get a synthetic engine dent when CRUMPLE is off. They lack a baked damaged model, so they keep the clean body; CRUMPLE, when enabled, owns their deformation.
 
 ## v0.10.13
 

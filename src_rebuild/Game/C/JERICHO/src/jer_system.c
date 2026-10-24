@@ -17,6 +17,7 @@
 #include "jer_frontend.h"
 #include "jer_screen.h"
 #include "jer_console.h"	/* jer_console_log: mod conflicts print to the console */
+#include "jer_modstore.h"	/* the mod store: init before the module scan (see jer_init) */
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -81,7 +82,7 @@ static int jerModuleForced(const char* id)
 	return -1;
 }
 static JER_MODULE* gCurrentModule;	/* module whose entry is running */
-static void* gOverrideSlots[JER_OVERRIDE_SLOTS];
+static void* gOverrideSlots[JER_OVERRIDE_SLOT_COUNT];
 static JERICHO_CONTEXT gCtx;
 static int gCtxBuilt;
 static void (*gLogger)(const char* msg);
@@ -349,6 +350,12 @@ static void jerSnapshotModules(const char* rootDir)
 		/* ...and the same for `incompatible`, which the registry cannot carry either. */
 		jer_loader_read_incompat(rootDir, m->id, m->incompat, sizeof(m->incompat));
 
+		/* ...and the manifest's name, version and author. Without this a deep mod
+		 * reported its folder name as its name and "?" as its version, which left
+		 * the store's SOURCE/version columns and any repo comparison blind. */
+		jer_loader_read_meta(rootDir, m->id, m->name, sizeof(m->name),
+			m->version, sizeof(m->version), m->author, sizeof(m->author));
+
 		gModuleCount++;
 	}
 
@@ -441,7 +448,7 @@ static void jerCtxOverride(JERICHO_CONTEXT* ctx, int slot, void* fn)
 {
 	(void)ctx;
 
-	if (slot < 0 || slot >= JER_OVERRIDE_SLOTS)
+	if (slot < 0 || slot >= JER_OVERRIDE_SLOT_COUNT)
 		return;
 
 	gOverrideSlots[slot] = fn;
@@ -496,6 +503,14 @@ static void jerCtxRegisterModule(JERICHO_CONTEXT* ctx,
 
 	if (author != NULL)
 		snprintf(m->author, sizeof(m->author), "%s", author);
+
+	/* ...and then the MANIFEST wins for all three, exactly as it does for
+	 * dependencies just below. A module that hardcodes "0.1.0" in its entry used to
+	 * shadow the version it actually ships as -- mp's mod.toml said 0.12.0 while the
+	 * module table, the inventory and the mod store's SOURCE column all said 0.1.0.
+	 * mod.toml is the record; the registration call is the fallback. */
+	jer_loader_read_meta(jer_root_dir(), id, m->name, sizeof(m->name),
+		m->version, sizeof(m->version), m->author, sizeof(m->author));
 
 	if (description != NULL)
 		snprintf(m->description, sizeof(m->description), "%s", description);
@@ -673,7 +688,20 @@ static void jerActivateModules(const char* rootDir)
 	 * Resolve the load order: modlist.ini entries first (in file order),
 	 * then any modules not mentioned (enabled by default, in scan
 	 * order). Modules listed with enabled=0 are skipped.
+	 *
+	 * THE CORE SUITE IS NORMALISED FIRST. mp, carhacks and d1cars are one product
+	 * (see jer_manager.c): they are mandatory and first. Rewriting the file here
+	 * means the order survives a later hand edit, and the order the player sees in
+	 * Options -> JERICHO is the order the engine actually uses.
 	 */
+	if (!gDisableAllModules)
+	{
+		int moved = jer_manager_normalize_core(rootDir);
+
+		if (moved > 0)
+			jerLog("[jericho] core modules moved to the front of modlist.ini: mp, carhacks, d1cars\n");
+	}
+
 	if (jer_manager_read(rootDir, &modlist) != 0)
 	{
 		jerLog("[jericho] warning: could not read %s/%s/modlist.ini — defaulting to all-enabled\n", rootDir, JER_CONFIG_PATH);
@@ -682,7 +710,13 @@ static void jerActivateModules(const char* rootDir)
 
 	/* module-provided pause menus / frontend menus / presentation screens
 	 * re-register during activation: clear the registries first so a Mods-menu
-	 * reload doesn't accumulate duplicates */
+	 * reload doesn't accumulate duplicates.
+	 *
+	 * The override slots are cleared for the same reason: a module that is
+	 * disabled on reload would otherwise leave its handler installed, and the
+	 * engine would keep calling a function whose module no longer runs. Every
+	 * enabled module re-installs its slots in its entry. */
+	memset(gOverrideSlots, 0, sizeof(gOverrideSlots));
 	jer_pause_menu_reset();
 	jer_frontend_reset();
 	jer_screen_reset();
@@ -777,6 +811,91 @@ static void jerActivateModules(const char* rootDir)
 		}
 	}
 
+	/* MANDATORY CORE, FIRST IN LINE. The suite is enforced in memory as well as in
+	 * modlist.ini: a release ships no modlist, and a player can hand-edit one. An
+	 * installed core module is enabled whether or not the file said so, and it goes
+	 * ahead of every optional module. A core module that is not installed is simply
+	 * absent (d1cars is a separate download); it does not create a phantom entry. */
+	if (!gDisableAllModules)
+	{
+		const char* ordered[JER_MAX_MODULES];
+		int n = 0, c;
+
+		for (c = 0; c < jer_manager_core_count(); c++)
+		{
+			const char* id = jer_manager_core_id(c);
+			JER_MODULE* m = (id != NULL) ? jerFindModule(id) : NULL;
+
+			if (m == NULL || m->entry == NULL)
+				continue;
+
+			if (!m->enabled)
+			{
+				m->enabled = 1;
+				jerLog("[jericho] core module \"%s\" is mandatory - enabled\n", m->id);
+			}
+
+			ordered[n++] = m->id;
+		}
+
+		for (i = 0; i < orderCount; i++)
+		{
+			int core = 0;
+
+			for (c = 0; c < jer_manager_core_count(); c++)
+			{
+				const char* id = jer_manager_core_id(c);
+
+				if (id != NULL && strcmp(order[i], id) == 0)
+				{
+					core = 1;
+					break;
+				}
+			}
+
+			if (!core)
+				ordered[n++] = order[i];
+		}
+
+		orderCount = n;
+
+		for (i = 0; i < orderCount; i++)
+			order[i] = ordered[i];
+	}
+
+	/* A duplicate modlist line used to put the same module in the order twice,
+	 * which activated it twice: two pause-menu pages and two copies of every
+	 * hook (the FULL TWIST duplicate). Deduplicate the final order, first
+	 * occurrence wins, so the class is fixed whether the duplicate came from
+	 * modlist.ini, a forced module, or the unlisted-default pass. */
+	{
+		int unique = 0;
+
+		for (i = 0; i < orderCount; i++)
+		{
+			int duplicate = 0;
+
+			for (j = 0; j < unique; j++)
+			{
+				if (strcmp(order[i], order[j]) == 0)
+				{
+					duplicate = 1;
+					break;
+				}
+			}
+
+			if (duplicate)
+			{
+				jerLog("[jericho] modlist: duplicate entry \"%s\" ignored\n", order[i]);
+				continue;
+			}
+
+			order[unique++] = order[i];
+		}
+
+		orderCount = unique;
+	}
+
 	/* activate in order */
 	for (i = 0; i < orderCount; i++)
 	{
@@ -823,6 +942,27 @@ static void jerActivateModules(const char* rootDir)
 			 * the reason also stays on the Mods screen, which is where it gets
 			 * fixed. It used to be a screen toast that the next modlist reload
 			 * re-popped. */
+			jer_console_log("%s", m->refusal);
+			complaints++;
+
+			m->valid = 0;
+			continue;
+		}
+
+		/* The manifest's own declaration, checked before activation. This is what
+		 * catches a mod from ANOTHER BUILD: the sdkVersion check above only sees
+		 * modules that got as far as registering, and a bundled mod always
+		 * compiles against the header beside it -- so without this a mod built
+		 * for interface 2 in a core at 3 activates and misbehaves quietly. */
+		if (m->interfaceVersion != 0 && m->interfaceVersion != JERICHO_SDK_VERSION)
+		{
+			snprintf(m->refusal, sizeof(m->refusal),
+				"%s was built for JERICHO interface v%d; this build is v%d. Reinstall or update the mod.",
+				m->name[0] != 0 ? m->name : m->id, m->interfaceVersion, JERICHO_SDK_VERSION);
+
+			jerLog("[jericho] module \"%s\" declares interface v%d but host is v%d - DISABLED\n",
+				m->id, m->interfaceVersion, JERICHO_SDK_VERSION);
+
 			jer_console_log("%s", m->refusal);
 			complaints++;
 
@@ -1004,6 +1144,12 @@ void jer_init(const char* rootDir)
 	/* persistent module config lives under <root>/CONFIG/ */
 	jer_config_init(rootDir);
 
+	/* the mod store: its own config, its records, and the cached repo index.
+	 * BEFORE jerSnapshotModules, deliberately -- a mod the store was asked to
+	 * remove (or one a core update replaced) must be settled before the loader
+	 * looks at MODS/, or this boot would load a half-removed folder. */
+	jer_modstore_init(rootDir);
+
 	/* the update check: spawns one curl and returns at once (jer_update.c) */
 	jer_update_start();
 
@@ -1042,7 +1188,7 @@ void jer_override(int slot, void* fn)
 
 void* jer_get_override(int slot)
 {
-	if (slot < 0 || slot >= JER_OVERRIDE_SLOTS)
+	if (slot < 0 || slot >= JER_OVERRIDE_SLOT_COUNT)
 		return NULL;
 
 	return gOverrideSlots[slot];

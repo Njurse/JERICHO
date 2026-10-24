@@ -195,7 +195,16 @@ static int sClutClampCount;
 
 // JERICHO: the one reserved VRAM CLUT id for each city's D2 wheel palette.
 // Declared before CarPalRowClear, which resets it per level.
-static u_short sWheelPalClut[CITY_COUNT][3];	// [city][0 = tyre/whole wheel, 1 = hubcap, 2 = fast]
+static u_short sWheelPalClut[CITY_COUNT][4];	// [city][0 = tyre/whole wheel, 1 = hubcap, 2 = fast, 3 = damaged]
+static int sWheelPalRow[CITY_COUNT][4];		// the lower-pool row each cached id lives in, -1 = base strip
+
+/* JERICHO: the lower-pool CLUT band a city's palette TABLE owns (rows 512..), and its
+ * size. One band per held city, reused for every re-upload of that city's rows and given
+ * back when the city is unloaded (CarImportForgetCityPalette). Without this the upload
+ * walked the cursor forward on every fresh row and the column reached 1024 with no city
+ * ever giving a row back. */
+static int sImpPalClutY[CITY_COUNT];
+static int sImpPalClutRows[CITY_COUNT];
 
 static void CarPalRowNote(int row, int city)
 {
@@ -220,6 +229,7 @@ static void CarPalRowClear(void)
 		sCivClutRowWriters[r] = 0;
 
 	memset(sWheelPalClut, 0, sizeof(sWheelPalClut));
+	memset(sWheelPalRow, 0xFF, sizeof(sWheelPalRow));	/* all -1: nothing reserved */
 
 	// The colour-column coverage goes with the writers: a new level re-uploads the rows it
 	// needs, so a stale maximum would let the draw pick a column this level never filled.
@@ -275,6 +285,7 @@ static signed char sSetRow[CITY_COUNT][128];	// city -> set -> civ_clut row, -1 
 #define CAR_IMPORT_WHEEL_PAL_SET 127
 #define CAR_IMPORT_WHEEL_HUB_PAL_SET 126	// the D2 hubcap (WHLBOTH) row, when it differs from the tyre's
 #define CAR_IMPORT_WHEEL_FAST_PAL_SET 125	// the tyre row with the FAST sprite's background cleared
+#define CAR_IMPORT_WHEEL_DAM_PAL_SET 124	// the damaged wheel's own face row (MIAMI: 5, clean is 6)
 
 // JERICHO: is civ_clut row `row` already owned by some (city, set)?
 static int CarRowInUse(int row)
@@ -385,7 +396,7 @@ int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 	if (city < 0 || city >= CITY_COUNT || colors == NULL)
 		return 0;
 
-	if (hub < 0 || hub > 2)
+	if (hub < 0 || hub > 3)
 		hub = 1;
 
 	// JERICHO: the VRAM CLUT id is cached per (city, hub) for the whole LEVEL, and a row
@@ -400,6 +411,7 @@ int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 		return sWheelPalClut[city][hub];
 
 	row = CarAllocSetRow(hub == 2 ? CAR_IMPORT_WHEEL_FAST_PAL_SET :
+		hub == 3 ? CAR_IMPORT_WHEEL_DAM_PAL_SET :
 		hub ? CAR_IMPORT_WHEEL_HUB_PAL_SET : CAR_IMPORT_WHEEL_PAL_SET, city);
 
 	if (row < 0)
@@ -407,21 +419,29 @@ int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 
 	/* The import's own row, in the lower half pool's CLUT column (y >= 512),
 	 * not at the host level's clutpos: the wheel's CLUT is then the same in
-	 * every host city and no host CLUT can land on it. */
-	if (JerLowerPoolClutRowsFree() > 0)
+	 * every host city and no host CLUT can land on it. The row is TRACKED so a
+	 * city unload can hand it back; the cached id is cleared with the city. */
 	{
 		RECT16 pc;
+		int y = JerLowerPoolClutReserve(1, NULL);
 
-		JerLowerPoolClutCursor(&pc);
-		LoadImage(&pc, (u_long*)colors);
-		clut = GetClut(pc.x, pc.y);
-		JerLowerPoolClutAdvance(1);
-	}
-	else
-	{
-		LoadImage(&clutpos, (u_long*)colors);
-		clut = GetClut(clutpos.x, clutpos.y);
-		IncrementClutNum(&clutpos);
+		if (y >= 0)
+		{
+			pc.x = 960;
+			pc.y = (short)y;
+			pc.w = 16;
+			pc.h = 1;
+			LoadImage(&pc, (u_long*)colors);
+			clut = GetClut(pc.x, pc.y);
+			sWheelPalRow[city][hub] = y;
+		}
+		else
+		{
+			LoadImage(&clutpos, (u_long*)colors);
+			clut = GetClut(clutpos.x, clutpos.y);
+			IncrementClutNum(&clutpos);
+			sWheelPalRow[city][hub] = -1;
+		}
 	}
 
 	for (i = 0; i < 6; i++)
@@ -431,7 +451,7 @@ int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors)
 	sWheelPalClut[city][hub] = clut;
 
 	printInfo("cross-city: %s wheel %s palette reserved in civ_clut row %d (clut %04x)\n",
-		LevelNames[city], hub == 2 ? "fast tyre" : hub ? "hubcap" : "tyre", row, clut);
+		LevelNames[city], hub == 3 ? "damaged tyre" : hub == 2 ? "fast tyre" : hub ? "hubcap" : "tyre", row, clut);
 
 	return clut;
 }
@@ -536,6 +556,35 @@ static int CarSetNamedByLiveSlot(int city, int set)
 // (CarImportPaletteRowForget), its colour-column coverage and the bake/collision census.
 // Leaving any of those behind is a new car wearing the previous car's palette - the
 // "wrong colours after a switch" report.
+/* Give ONE (city,set) row back to the pool and forget everything keyed by that row. The
+ * row is recycled by CarAllocSetRow, so leaving any of this behind means the next owner
+ * wears the previous car's colours. Kept as one helper because both the live-slot reclaim
+ * and a city unload do exactly this. */
+static void CarForgetSetRow(int c, int s)
+{
+	int row = sSetRow[c][s];
+	int t;
+
+	sSetRow[c][s] = -1;
+
+	if (row < 0 || row >= CIV_CLUT_ROWS)
+		return;
+
+	sCivClutRowMaxSlot[row] = 0;
+
+	for (t = 0; t < 32; t++)
+		sCivClutTexMaxSlot[row][t] = 0;
+
+	sJerRowWritten[row] = 0;
+	sCivClutRowWriters[row] = 0;
+	sBakeRowN[row] = 0;
+
+	/* This includes the wheel palette rows (sets 124..127). Their ROW mapping and
+	 * contents go back; the cached wheel CLUT id is cleared by a CITY unload, not by a
+	 * switch within the same city (see CarImportForgetCityPalette). */
+	CarImportPaletteRowForget(row);
+}
+
 int CarImportReclaimRows(void)
 {
 	int c, s, n = 0;
@@ -544,42 +593,64 @@ int CarImportReclaimRows(void)
 	{
 		for (s = 1; s < 128; s++)
 		{
-			int row;
-
 			if (sSetRow[c][s] < 0)
 				continue;
 
 			if (CarSetNamedByLiveSlot(c, s))
 				continue;
 
-			row = sSetRow[c][s];
-			sSetRow[c][s] = -1;
-
-			if (row >= 0 && row < CIV_CLUT_ROWS)
-			{
-				int t;
-
-				sCivClutRowMaxSlot[row] = 0;
-
-				for (t = 0; t < 32; t++)
-					sCivClutTexMaxSlot[row][t] = 0;
-
-				sJerRowWritten[row] = 0;
-				sCivClutRowWriters[row] = 0;
-				sBakeRowN[row] = 0;
-
-				// This includes the wheel palette rows (sets 125..127). Their ROW mapping
-				// and contents go back, but sWheelPalClut[city][hub] deliberately stays
-				// cached: see CarImportReserveWheelPalette for why that VRAM id survives a
-				// switch without leaking a CLUT row.
-				CarImportPaletteRowForget(row);
-			}
-
+			CarForgetSetRow(c, s);
 			n++;
 		}
 	}
 
 	return n;
+}
+
+/* JERICHO: put a rebuilt player car's hubcaps back. LoseHubcap sets a bit in
+ * ap.flags for each wheel whose hubcap came off, and nothing else ever clears
+ * it - so a repaired or respawned car kept drawing the damaged wheel (and its
+ * bare rim) for the rest of its life. Clear those bits, then re-bind the
+ * imported hubcap CLUT the page loader reserved, and restore the flying
+ * hubcap model pointer if it went missing. */
+void CarReapplyHubcapState(int slot)
+{
+	CarApplyHubcapState(slot, 0);
+}
+
+/* JERICHO: set the four "hubcap lost" bits and re-bind the imported hubcap CLUT /
+ * model. The owner of a car is the authority for this appearance state: mp sends the
+ * low nibble of ap.flags in the carstate and every peer applies it here, so a hubcap
+ * knocked off on one machine is missing on all of them. */
+void CarApplyHubcapState(int slot, int lost)
+{
+	CAR_DATA* cp;
+	int city, v, k, n;
+	unsigned char sets[8];
+
+	if (slot < 0 || slot >= MAX_CARS)
+		return;
+
+	cp = &car_data[slot];
+
+	/* bits 0..3 are the four wheels' "hubcap lost" flags */
+	cp->ap.flags = (u_char)((cp->ap.flags & ~0x0f) | (lost & 0x0f));
+
+	city = GetCarModelSourceCity(cp->ap.model);
+
+	if (city >= 0 && city < CITY_COUNT && sWheelPalClut[city][1] != 0)
+	{
+		for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+		{
+			n = GetCarImportWheelSets(city, v, sets, 8);
+
+			for (k = 0; k < n; k++)
+				CarImportSetWheelPaletteClut(city, sets[k], sWheelPalClut[city][1], 1);
+		}
+	}
+
+	if (gHubcapModelPtr == NULL)
+		gHubcapModelPtr = FindModelPtrWithName("HUBCAP1");
 }
 
 static int CarPalIndexInCity(int tpage, int city);
@@ -750,6 +821,12 @@ CAR_POLY* gJerCarPolyBase = carPolyBuffer;
 int gJerCarPolyCap = MAX_CAR_POLYS;
 
 #define JER_HOT_POLY_BLOCKS		8
+/* Same eight-slot budget as models.c's JER_HOT_CAR_BLOCKS: a hot load needs both a
+ * geometry block and a poly block, so a shortfall here is just as invisible as the
+ * other (the car builds 0 polys and is not drawn). */
+#if JER_HOT_POLY_BLOCKS < 8
+#error "the hot-load poly arena must cover the eight guest import slots"
+#endif
 #define JER_HOT_POLY_PER_BLOCK	((MAX_CAR_POLYS / 4))	/* 1200: three builds of a ~250-poly car */
 /* One spare entry per block, exactly as the level arena has (carPolyBuffer[MAX_CAR_POLYS + 1]):
  * the build loop tests the cap BEFORE a GT4/FT4 iteration, and such a poly adds TWO records,
@@ -1570,7 +1647,9 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 						int dy = dumpV[i].vy - cleanV[i].vy;
 						int dz = dumpV[i].vz - cleanV[i].vz;
 
-						if (dx > 2000 || dx < -2000 || dy > 2000 || dy < -2000 || dz > 2000 || dz < -2000)
+						if (dx > JER_STRETCH_VERT || dx < -JER_STRETCH_VERT ||
+							dy > JER_STRETCH_VERT || dy < -JER_STRETCH_VERT ||
+							dz > JER_STRETCH_VERT || dz < -JER_STRETCH_VERT)
 						{
 							jer_log("[cars] STRETCHED VERTEX: car %d model %d vertex %d dump(%d,%d,%d) clean(%d,%d,%d) - rebuilding its mesh\n",
 								cp->id, cp->ap.model, i,
@@ -1578,7 +1657,8 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 								cleanV[i].vx, cleanV[i].vy, cleanV[i].vz);
 							sLastFrame[cp->id] = CameraCnt;
 
-							/* JERICHO: no dent moves a vertex 2000 units, so the dump is
+							/* JERICHO: no dent moves a vertex this far (the same
+							 * threshold DentCarDirectional clamps to), so the dump is
 							 * another model's (or garbage): rebuild it the way a respawn
 							 * does instead of drawing a broken car until then. Damage
 							 * state is kept. */
@@ -2986,13 +3066,62 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 	RECT16 importClut;
 	RECT16 *dst = &clutpos;
 	int importRow0 = 0, importX0 = 0;
+	int importLimitY = 0;
+	int importReserved = 0;
+
+	/* The header is read before the band is chosen: its CLUT count bounds the rows this
+	 * city's table can occupy. */
+	total_cluts = *(int*)lump_ptr;
+
+	if (total_cluts == 0)
+		return;
 
 	if (CarImportCityHeld(city) && city != GameLevel)
 	{
-		JerLowerPoolClutCursor(&importClut);
+		int wantRows = (total_cluts + 3) / 4 + 8;
+
+		if (wantRows < 8)
+			wantRows = 8;
+
+		if (wantRows > 96)
+			wantRows = 96;
+
+		/* ONE band per city, reused on every fresh-row pass. The old walk advanced the
+		 * cursor each time, so a city that gained a set later took a second band and the
+		 * first one was never given back: measured, the column reached 1024/0. */
+		if (sImpPalClutY[city] < 0 || sImpPalClutRows[city] < wantRows)
+		{
+			if (sImpPalClutY[city] >= 0)
+				JerLowerPoolClutRelease(sImpPalClutY[city], sImpPalClutRows[city]);
+
+			sImpPalClutY[city] = JerLowerPoolClutReserve(wantRows, NULL);
+			sImpPalClutRows[city] = (sImpPalClutY[city] >= 0) ? wantRows : 0;
+		}
+
+		if (sImpPalClutY[city] >= 0)
+		{
+			importClut.x = 960;
+			importClut.y = (short)sImpPalClutY[city];
+			importClut.w = 16;
+			importClut.h = 1;
+
+			importRow0 = importClut.y;
+			importX0 = importClut.x;
+			importLimitY = importClut.y + sImpPalClutRows[city];
+			importReserved = sImpPalClutRows[city];
+		}
+		else
+		{
+			/* No contiguous band: walk whatever tail is left, and let the per-entry
+			 * out-of-room test fall back to the page's own CLUT when that runs out. */
+			JerLowerPoolClutCursor(&importClut);
+
+			importRow0 = importClut.y;
+			importX0 = importClut.x;
+			importLimitY = JER_VRAM_TOTAL_ROWS;
+		}
+
 		dst = &importClut;
-		importRow0 = importClut.y;
-		importX0 = importClut.x;
 	}
 
 	const int rowStart = dst->y;	// to report how many COLUMN ROWS this load consumed
@@ -3167,7 +3296,8 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 			// pool's OWN, so there is nothing to protect and the check becomes the literal
 			// one: is there a row left at all.
 			int outOfRoom = (dst == &clutpos) ? (clutpos.y > CAR_CLUT_IMPORT_LIMIT)
-											 : (dst->y + 4 > JER_VRAM_TOTAL_ROWS);
+											 : (importLimitY > 0 ? (dst->y + 1 > importLimitY)
+																 : (dst->y + 4 > JER_VRAM_TOTAL_ROWS));
 
 			if (CarImportCityHeld(city) && city != GameLevel && outOfRoom)
 			{
@@ -3312,11 +3442,24 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		}
 	}
 
-	// JERICHO: commit the rows the guest walk actually used. IncrementClutNum wraps
-	// x 960 -> 1024 to x = 960 and y++, so the ending position says how many whole rows it
-	// took, plus one if it stopped mid-row.
+	// JERICHO: commit the rows the guest walk actually used. With a reserved band, the
+	// band stays this city's until it is unloaded: a later fresh-row pass starts at the
+	// SAME base and re-walks every needed row (ProcessImportedPaletteRows passes the
+	// accumulated mask), so the civ_clut ids never point at a second copy.
 	if (dst != &clutpos)
-		JerLowerPoolClutAdvance((dst->y - importRow0) + ((dst->x > importX0) ? 1 : 0));
+	{
+		int used = (dst->y - importRow0) + ((dst->x > importX0) ? 1 : 0);
+
+		if (importReserved > 0)
+		{
+			if (used > importReserved)
+				used = importReserved;
+		}
+		else
+		{
+			JerLowerPoolClutAdvance(used);
+		}
+	}
 
 	// JERICHO: always report, not only when something was skipped. This is the number
 	// that decides whether the CLUT column fits: the import's whole-table load is what
@@ -3332,6 +3475,57 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 // the built model says which rows it draws from.
 static char* sImpPalLump[CITY_COUNT];
 static int sImpPalSize[CITY_COUNT];
+
+/* JERICHO: give ONE guest city's palette state back - every (city,set) row, its lower-pool
+ * CLUT band, its wheel-palette rows and the deferred lump pointer. Called when the last
+ * live car of that city goes away, before its import buffer is freed (the lump points into
+ * it). The city is reloadable afterwards: CarImportPageListsForCity and the palette upload
+ * run again on demand.
+ *
+ * Forcing the rows is safe because the caller has already proved no resident slot names
+ * this city; CarImportReclaimRows' live-slot test would just be true-for-nothing here. */
+void CarImportForgetCityPalette(int city)
+{
+	int s, hub, rows = 0;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return;
+
+	for (s = 1; s < 128; s++)
+	{
+		if (sSetRow[city][s] < 0)
+			continue;
+
+		CarForgetSetRow(city, s);
+		rows++;
+	}
+
+	if (sImpPalClutY[city] >= 0)
+	{
+		JerLowerPoolClutRelease(sImpPalClutY[city], sImpPalClutRows[city]);
+
+		printInfo("cross-city: %s palette table gave back its CLUT band (rows %d..%d) to the lower pool\n",
+			LevelNames[city], sImpPalClutY[city], sImpPalClutY[city] + sImpPalClutRows[city] - 1);
+
+		sImpPalClutY[city] = -1;
+		sImpPalClutRows[city] = 0;
+	}
+
+	for (hub = 0; hub < 4; hub++)
+	{
+		if (sWheelPalRow[city][hub] >= 0)
+			JerLowerPoolClutRelease(sWheelPalRow[city][hub], 1);
+
+		sWheelPalRow[city][hub] = -1;
+		sWheelPalClut[city][hub] = 0;
+	}
+
+	sImpPalLump[city] = NULL;
+	sImpPalSize[city] = 0;
+
+	printInfo("cross-city: %s palette state forgotten - %d (city,set) row(s) and its cached wheel CLUT ids released\n",
+		LevelNames[city], rows);
+}
 
 // JERICHO: the host path, and the entry point every existing caller uses.
 //
@@ -3495,6 +3689,10 @@ void CarImportPaletteReset(void)
 
 		sImpPalLump[c] = NULL;
 		sImpPalSize[c] = 0;
+
+		/* The pool was reset before this runs; the bands are gone with it. */
+		sImpPalClutY[c] = -1;
+		sImpPalClutRows[c] = 0;
 	}
 
 	CarPalRowClear();

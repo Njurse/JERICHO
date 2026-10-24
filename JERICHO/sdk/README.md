@@ -1,8 +1,8 @@
 # JERICHO Addon SDK
 
-A standalone, self-contained kit for writing JERICHO addons for REDRIVER2.
+A standalone, self-contained kit for writing JERICHO addons.
 No game source, no PsyCross, no SDL2/OpenAL/JPEG — just this folder, a C
-compiler, and the JERICHO API.
+compiler, Python 3, and the JERICHO API.
 
 ## What's inside
 
@@ -34,7 +34,8 @@ sdk/
     jer_texture.h     custom texture injection (images and raw pages)
   lib/x64/Release/
     JERICHO.lib     import library for the game exe's exported symbols
-  build_mods.bat      compiles one addon folder into a DLL
+  build_mods.bat      shim: compile one addon folder into a DLL (Windows)
+  build_mods.sh       shim: the same, producing a .so (Linux)
   example/            a minimal working addon (copy it to start)
 ```
 
@@ -106,15 +107,30 @@ The entry symbol is always `jer_module_<id>_entry` — the folder name, the
 ## Building
 
 ```
-build_mods.bat myaddon
+build_mods.bat myaddon            (Windows)
+./build_mods.sh myaddon           (Linux)
 ```
 
-Requires Visual Studio 2019/2022 with the C++ toolset (found automatically
-via vswhere). Produces `myaddon\myaddon.dll`.
+Both shims are thin wrappers over the shared cross-platform build driver,
+`build.py` — the same driver the game's own build tree uses (see
+`src_rebuild/Game/C/JERICHO/docs/build.md`). The driver sits next to the shim
+when the SDK is shipped standalone, and one level up in the repo. It needs
+Python 3 on `PATH`.
+
+- **Windows** needs Visual Studio 2019/2022 with the C++ toolset (found via
+  vswhere) and the SDK's import library `lib/x64/Release/JERICHO.lib`, so the
+  addon can call game functions and read game globals.
+- **Linux** needs only a C compiler (`cc`). There is **no import library**: the
+  addon links with undefined symbols allowed and resolves the game's symbols
+  from the `-Wl,--export-dynamic` exe at `dlopen` time.
+
+Produces `myaddon\myaddon.dll` (Windows) or `myaddon/myaddon.so` (Linux).
+For distribution, copy `JERICHO/build.py` into this folder so the SDK stays
+self-contained.
 
 ## Installing
 
-Copy the built DLL next to the addon's `mod.toml` in the game's
+Copy the built DLL/`.so` next to the addon's `mod.toml` in the game's
 `JERICHO\MODS\<id>\` folder, then enable it in the game under
 **Options → JERICHO** (or add `id = 1` to `JERICHO\CONFIG\modlist.ini`).
 No rebuild of the game — ever. Toggling, reordering and per-module settings
@@ -123,5 +139,5 @@ all happen at runtime and persist in `JERICHO\CONFIG\`.
 ## Platform notes
 
 - Windows: runtime loading via `LoadLibrary` (this SDK builds x64 DLLs).
-- Linux: the same pipeline uses `dlopen`; build with the game's mods build.
+- Linux: runtime loading via `dlopen`; `./build_mods.sh` builds the `.so`.
 - Emscripten/Android: no runtime loading — addons are ignored (logged).

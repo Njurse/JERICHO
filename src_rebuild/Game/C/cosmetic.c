@@ -16,8 +16,9 @@ char* CosmeticFiles[CITY_COUNT] = {
 	"LEVELS\\HAVANA.LCF",
 	"LEVELS\\VEGAS.LCF",
 	"LEVELS\\RIO.LCF",
-	/* JERICHO: the Driver 1 car-data cities' colours, under DRIVER\ - beside the
-	 * car data they belong to, and out of the way of the real Driver 1 levels. */
+	/* JERICHO: the Driver 1 car-data cities' colours, under carhacks' D1CARS
+	 * folder - beside the car data they belong to, and out of the way of the real
+	 * Driver 1 levels. Resolved under gD1DataFolder (JERICHO\MODS\carhacks\). */
 	"D1CARS\\MIAMI.LCF",
 	"D1CARS\\FRISCO.LCF",
 	"D1CARS\\LA.LCF",
@@ -473,6 +474,8 @@ void AddCopCarLight(CAR_DATA *cp)
 	SVECTOR v1;
 	CVECTOR col;
 	int lightCity;
+	int srcCity, srcModel;
+	int forceRed, d1Bar;
 
 	coplife = &cp->ap.coplife;
 
@@ -492,7 +495,17 @@ void AddCopCarLight(CAR_DATA *cp)
 	// colours on GameLevel, so a cop car imported from another city (carhacks / d1cars
 	// cross-city loads) flashed in the host city's pattern. Its source city decides now;
 	// a level's own cars report -1 and keep the stock look.
-	lightCity = GetCarModelSourceCity(cp->ap.model);
+	srcCity = GetCarModelSourceCity(cp->ap.model);
+	srcModel = (cp->ap.model >= 0 && cp->ap.model < MAX_CAR_RESIDENT_MODELS) ?
+		residentCarModels[cp->ap.model] : -1;
+
+	/* D1 lightbars sit a touch low on the transplanted bodies. */
+	d1Bar = (srcCity >= CITY_D2_COUNT);
+
+	/* IVIEW slot 1 and the BETAMIAMI cop (model 8) are solid red for testing. */
+	forceRed = ((srcCity == 9 && srcModel == 1) || (srcCity == 11 && srcModel == 8));
+
+	lightCity = srcCity;
 	if (lightCity < 0 || lightCity > 3)
 		lightCity = GameLevel;
 
@@ -539,6 +552,11 @@ void AddCopCarLight(CAR_DATA *cp)
 			col.g = 90;
 			v1.vy = car_cos->policeLight.vy + car_cos->cog.vy;
 
+			/* D1 lightbars sit a touch low on the transplanted bodies; nudge
+			 * them up slightly (tunable). */
+			if (d1Bar)
+				v1.vy -= 4;
+
 			if (gNight != 0)
 				col.g = 50;
 
@@ -549,8 +567,14 @@ void AddCopCarLight(CAR_DATA *cp)
 
 			size = *coplife >> 1;
 
+			/* IVIEW slot 1 and BETAMIAMI model 8: both halves solid red. */
+			if (forceRed)
+			{
+				col.r = 255;
+				col.b = col.g;
+			}
 			// switch colours if needed
-			if (lightCity == 1 || lightCity == 3 || lightCity == 2 && side == 0)
+			else if (lightCity == 1 || lightCity == 3 || (lightCity == 2 && side == 0))
 			{
 				col.b = 255;
 				col.r = col.g;

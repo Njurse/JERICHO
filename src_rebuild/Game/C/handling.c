@@ -1026,6 +1026,7 @@ void CheckCarToCarCollisions(void)
 	BOUND_BOX* bb, *bb1, *bb2;
 	CAR_DATA* cp;
 	SVECTOR* colBox;
+	static unsigned int noCosLogged = 0;
 
 	if (ghost_mode == 1)
 		return;
@@ -1041,6 +1042,33 @@ void CheckCarToCarCollisions(void)
 		{
 			bb->y1 = INT_MAX;
 			
+			cp++;
+			bb++;
+			loop1++;
+			continue;
+		}
+
+		/* A live traffic car can sit in car_data with no cosmetics: the civ
+		 * collision setup already skips those, but this box build used to
+		 * dereference carCos unconditionally. Skip it and drop stale pair
+		 * bits so the RK pass cannot hand it to CarCarCollision3. */
+		if (cp->ap.carCos == NULL)
+		{
+			int k;
+
+			if ((noCosLogged & (1u << loop1)) == 0)
+			{
+				noCosLogged |= 1u << loop1;
+				printInfo("[handling] car slot %d is live but has no cosmetics - car-car collision skipped\n", loop1);
+			}
+
+			cp->hd.mayBeColliding = 0;
+
+			for (k = 0; k < MAX_CARS; k++)
+				car_data[k].hd.mayBeColliding &= ~(1u << loop1);
+
+			bb->y1 = INT_MAX;
+
 			cp++;
 			bb++;
 			loop1++;

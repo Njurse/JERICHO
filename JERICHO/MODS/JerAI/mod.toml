@@ -7,7 +7,9 @@
 # A* / occupancy-grid code from.
 id = "JerAI"
 name = "JerAI"
-version = "0.1.0"
+version = "0.1.1"
+# the JERICHO interface (SDK) this mod is built against
+interface = 2
 author = "Jaret Ludvik"
 description = "General-purpose AI driver for the player's car: A* pathfinding over an engine occupancy grid, road-graph extraction, joyride/random-wander behaviors, in-game debug visualization and a small control menu."
 dependencies = []

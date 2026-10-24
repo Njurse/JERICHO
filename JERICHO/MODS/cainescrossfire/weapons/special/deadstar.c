@@ -63,6 +63,11 @@ void cd2SpecialDashPct(int carId, int* speedPct, int* accelPct)
 // tracks the car, exactly as LeadHorn does.
 static void cd2DeadstarHorn(CAR_DATA* cp)
 {
+	// An imported cop's third sample is its siren, not a horn. Leave that
+	// channel alone rather than firing the siren from the weapon path.
+	if (CarHasSiren(cp->ap.model) != 0)
+		return;
+
 	if (gDashChannel < 0)
 	{
 		gDashChannel = cd2TakeVoice();

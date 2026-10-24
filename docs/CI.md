@@ -31,15 +31,19 @@ Each build is packaged with everything needed to run:
   at all (`jer_texture: cannot read .../CORE/jericho_background.tga`, then the menu draws
   on `texture 0`), and a CI checkout is exactly where an untracked file goes missing.
 - the **Driver 1 bake tooling** — `BAKE_D1_CARS.bat` and `BAKE_D1_CARS.sh` at the
-  package root, plus `JERICHO/MODS/d1cars/tools`. JERICHO ships the *way* to bake
-  the seven Driver 1 car-data cities (MIAMI, FRISCO, LA, NEWYORK, NEWCASTLE, IVIEW, TRAIN), never
-  the baked data: those files are derived from Driver 1's copyrighted content, so
-  the player bakes them from their own copy (put it in `DRIVER/`, run the script
-  once — it writes `DRIVER/D1CARS/`, and carhacks offers the cities from then on).
+  package root, `d1city_register.py` beside them, and `JERICHO/MODS/d1cars/tools`.
+  JERICHO ships the *way* to bake the Driver 1 car-data cities (MIAMI, FRISCO, LA,
+  NEWYORK, NEWCASTLE, IVIEW, TRAIN and the Euro-43 beta, BETAMIAMI), never the baked
+  data: those files are derived from Driver 1's copyrighted content, so the player
+  bakes them from their own copy (put it in `DRIVER/`, and the Euro-43 `LEVELS`/
+  `SOUND` folders in `EURO43/`; run the script once — it writes
+  `JERICHO/MODS/carhacks/D1CARS/` and registers Beta Miami, and carhacks offers the
+  cities from then on). carhacks owns that folder: it is generated, gitignored in the
+  mod, and stripped from every package (`JER_MIRROR_STRIP`).
   The tools live in the `d1cars` submodule, whose folder is excluded from the build
-  mirror (`JER_MIRROR_EXCLUDE`), so the packaging step fetches them from that repo
-  by the URL in `.gitmodules`, for packaging only. A build with no baked data is
-  simply one whose seven Driver 1 cities are not offered.
+  mirror (`JER_MIRROR_EXCLUDE`), so the packaging step copies them from the
+  checkout. A build with no baked data is simply one whose Driver 1 cities are not
+  offered.
 - **not** car-data *banks* — the BetterCars-style packs (`BC*.LEV` / `BC*.LCF`, a
   `BetterCars/` folder) and the `*.sparse.bak` a local `bankfill.py` fill leaves
   behind. Same rule as `DRIVER/`: a package ships the tools that complete and read a
@@ -89,9 +93,28 @@ build, which pre-includes just the release mods (`JERICHO_RELEASE_MODS` in
 installed module plus the debug options / console (`DEBUG_OPTIONS`,
 `COLLISION_DEBUG`, `CUTSCENE_RECORDER`); it is the build the test rigs run.
 
-CI deliberately does not fetch the private submodules, so a `Release_dev` build
-here compiles every module present in a fresh checkout and leaves the private
-ones out — the same set the workflow's `submodules` allow-list selects.
+CI fetches only the submodules a job actually needs, by name: `src_rebuild/PsyCross`
+plus the four public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`,
+`d1cars`). `gaildrv2` is still not fetched for builds — its repository is
+unpublished — so a `Release_dev` build here compiles every module present in that
+checkout. `d1cars` is compiled in but its folder is excluded from the mirror by
+`JER_MIRROR_EXCLUDE`, so none of its Driver 1 data ships; its bake tools are pulled
+by the packaging step. The build jobs assert that each of the four mod submodules
+has a `mod.toml`, so a release cannot silently ship without one.
+
+The sources for `mp`, `carhacks`, `crumple` and `d1cars` live in their own repositories
+(`Njurse/JERICHO-Mod-MP`, `Njurse/JERICHO-Mod-carhacks`,
+`Njurse/Jericho-Mod-CRUMPLE`, `Njurse/JERICHO-D1`) and are mounted at
+`JERICHO/MODS/<id>`. Every build advances each to the latest commit of its tracking
+branch (`branch =` in `.gitmodules`: d1cars tracks `betamiami`, the others `main`), so
+a release carries the current core mods even when the committed gitlinks are older,
+and the updater replaces them on download (only `CONFIG/` and the player's own files
+are preserved). `tools/update_mod_submodules.sh` makes the same advance and prints the
+pins to commit; it is a review/record step, not a build gate.
+
+The official store feed is `Njurse/JERICHO-Repo-Official`: `mods.json` plus the
+`packages/` zips. It is generated from these sources and published separately
+from CI.
 `SHA256SUMS` lists every archive's SHA256, published beside them so a downloader
 -- the mp remote agent -- can verify an archive against something that did not
 come out of it.

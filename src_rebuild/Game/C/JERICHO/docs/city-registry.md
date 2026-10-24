@@ -4,7 +4,7 @@
 three tables (`LevelNames`, `LevelFiles`, `CosmeticFiles`, `system.c:151` /
 `cosmetic.c:14` at the time of writing). The engine could therefore only ever
 open a car-data file it had been **compiled** to name — `LEVELS\CHICAGO.LEV`,
-`D1CARS\MIAMI.LEV` and nothing else. carhacks' cross-city import is *policy*
+`JERICHO\MODS\carhacks\D1CARS\MIAMI.LEV` and nothing else. carhacks' cross-city import is *policy*
 ("resident slot 5 = city 2, model 7") and is already index-based, so a bank of
 cars that is not one of those names could not be offered at all: nothing would
 ever open the file, whatever the config said.
@@ -57,6 +57,16 @@ the registry's own presence probe all go through it.
   `JerCityCount()` and skip every row where `JerCityRegistered()` is 0. A row
   that is not registered has NULL table entries, and `JerCityPath` refuses it, so
   no `NULL` can reach a `%s`.
+
+## Module-owned banks
+
+A module may register a bank itself with `JerCityRegister(...)`. carhacks does
+this for Beta Miami (`JERICHO/MODS/carhacks/D1CARS/BETAMIAMI.LEV`), so a bake is
+offered automatically without a `cities.ini` edit. Such a row is **module-owned**:
+it has no `city_N` key, and the config refresh re-probes its file instead of
+clearing it. A `city_N` key for the same slot takes ownership instead, and
+`JerCityRegister(name, NULL, NULL)` removes a module row. It takes the first free
+bank index, so it appears after the stock eleven cities.
 
 ## What a bank must actually contain
 
