@@ -8,9 +8,10 @@ typedef struct SEATED_PEDESTRIANS* SEATEDPTR;
 extern SVECTOR tannerLookAngle;
 
 extern MODEL* pmTannerModels[17];
-extern MODEL* pmJerichoModels[6];
-extern MODEL* pmJerichoLegModels[6];
-extern MODEL* pmJerichoHandModels[2];
+#define JER_PED_MAX_ENTRIES 8
+extern MODEL* pmJerichoModels[JER_PED_MAX_ENTRIES][6];
+extern MODEL* pmJerichoLegModels[JER_PED_MAX_ENTRIES][6];
+extern MODEL* pmJerichoHandModels[JER_PED_MAX_ENTRIES][2];
 extern int JerPedSkeletonGeneration(void);
 extern void JerPedSkeletonInvalidate(void);
 

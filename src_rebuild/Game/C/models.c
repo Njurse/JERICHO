@@ -692,6 +692,8 @@ static int sJerPedProbeOk;
 static char* sJerPedMem;		/* level-lifetime copy of the six model blobs */
 static int sJerPedMemSize;
 static MODEL* sJerPedModels[JER_PED_IMPORT_MODELS];
+static int sJerPedEntryCount;
+static char sJerPedEntryNames[JER_PED_MAX_ENTRIES][64];
 static int sJerPedReady;
 static int sJerPedBuiltCity = -1;
 static int sJerPedSet[64];		/* SOURCE-city sets, before CarSetRemap */
@@ -1103,7 +1105,7 @@ int JerPedImportBuild(int city)
 	/* All six copies and all their pages are ready. Publish the pointers; the
 	 * caller decides when to install them (StoreVertexLists + SetSkel...). */
 	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
-		pmJerichoModels[i] = built[i];
+		pmJerichoModels[0][i] = built[i];
 
 	if (sJerPedMem != NULL)
 		free(sJerPedMem);
@@ -1116,6 +1118,9 @@ int JerPedImportBuild(int city)
 
 	sJerPedBuiltCity = city;
 	sJerPedReady = 1;
+	sJerPedEntryCount = 1;
+	strncpy(sJerPedEntryNames[0], "Jericho", sizeof(sJerPedEntryNames[0]) - 1);
+	sJerPedEntryNames[0][sizeof(sJerPedEntryNames[0]) - 1] = 0;
 
 	printInfo("ped import: copied %d bytes of %s JERI models (first %p)\n",
 		total, LevelNames[city], (void*)sJerPedModels[0]);
@@ -1146,6 +1151,305 @@ int JerPedBakedAvailable(void)
 
 /* Load the self-contained bake. The file stores twelve MODEL-relative blobs and
  * three texture pages (two raw area pages and one compressed permanent page). */
+typedef struct JER_PED_V5_PAGE
+{
+	int set;
+	int npal;
+	int clutLen;
+	int imageLen;
+	int flags;
+	const unsigned char* clut;
+	const unsigned char* image;
+} JER_PED_V5_PAGE;
+
+/* v5 archive: entry table, each entry carrying its own 14 model blobs and page
+ * records. The models are copied into one block; page pointers live in `file`
+ * until every page has been uploaded. */
+static int JerPedImportBakedV5(unsigned char* file, long len, int city)
+{
+	unsigned char* p = file + 16;
+	unsigned char* end = file + len;
+	const unsigned char* pp;
+	const unsigned char* pageEnd;
+	unsigned char* blobs[JER_PED_MAX_ENTRIES][JER_PED_BAKED_MODELS];
+	int sizes[JER_PED_MAX_ENTRIES][JER_PED_BAKED_MODELS];
+	char names[JER_PED_MAX_ENTRIES][64];
+	JER_PED_V5_PAGE pages[JER_PED_MAX_ENTRIES * 16];
+	MODEL* built[JER_PED_MAX_ENTRIES][JER_PED_BAKED_MODELS];
+	int entryCount, pageTotal = 0, total = 0;
+	int e, slot, i, k;
+	char* mem = NULL;
+	char* cur;
+	unsigned int version, count;
+
+	version = p[-8] | p[-7] << 8 | p[-6] << 16 | (unsigned)p[-5] << 24;
+	count = p[-4] | p[-3] << 8 | p[-2] << 16 | (unsigned)p[-1] << 24;
+
+	if (version != 5)
+	{
+		printInfo("ped import: v5 parser got version %u\n", version);
+		goto fail;
+	}
+
+	entryCount = (int)count;
+
+	if (entryCount < 1 || entryCount > JER_PED_MAX_ENTRIES)
+	{
+		printInfo("ped import: v5 archive has %d entries (max %d)\n",
+			entryCount, JER_PED_MAX_ENTRIES);
+		goto fail;
+	}
+
+	for (e = 0; e < entryCount; e++)
+	{
+		unsigned int nameLen, modelCount, pageCount;
+
+		pp = p;
+		if (pp + 4 > end) goto fail;
+		nameLen = pp[0] | pp[1] << 8 | pp[2] << 16 | (unsigned)pp[3] << 24;
+		pp += 4;
+
+		if (nameLen == 0 || nameLen >= sizeof(names[e]) || pp + nameLen > end)
+			goto fail;
+		memcpy(names[e], pp, nameLen);
+		names[e][nameLen] = 0;
+		pp += nameLen;
+
+		if (pp + 4 > end) goto fail;
+		modelCount = pp[0] | pp[1] << 8 | pp[2] << 16 | (unsigned)pp[3] << 24;
+		pp += 4;
+		if (modelCount != JER_PED_BAKED_MODELS)
+			goto fail;
+
+		for (slot = 0; slot < JER_PED_BAKED_MODELS; slot++)
+		{
+			unsigned int size;
+
+			if (pp + 4 > end) goto fail;
+			size = pp[0] | pp[1] << 8 | pp[2] << 16 | (unsigned)pp[3] << 24;
+			pp += 4;
+			if (size < sizeof(MODEL) || pp + size > end)
+				goto fail;
+
+			blobs[e][slot] = (unsigned char*)pp;
+			sizes[e][slot] = (int)size;
+			pp += size;
+			total += (size + 3) & ~3;
+		}
+
+		if (pp + 4 > end) goto fail;
+		pageCount = pp[0] | pp[1] << 8 | pp[2] << 16 | (unsigned)pp[3] << 24;
+		pp += 4;
+		if (pageCount > 16 || pageTotal + (int)pageCount > (int)(sizeof(pages) / sizeof(pages[0])))
+			goto fail;
+
+		for (i = 0; i < (int)pageCount; i++)
+		{
+			unsigned int set, npal, clutLen, imageLen, flags;
+
+			if (pp + 20 > end) goto fail;
+			set = pp[0] | pp[1] << 8 | pp[2] << 16 | (unsigned)pp[3] << 24; pp += 4;
+			npal = pp[0] | pp[1] << 8 | pp[2] << 16 | (unsigned)pp[3] << 24; pp += 4;
+			clutLen = pp[0] | pp[1] << 8 | pp[2] << 16 | (unsigned)pp[3] << 24; pp += 4;
+			imageLen = pp[0] | pp[1] << 8 | pp[2] << 16 | (unsigned)pp[3] << 24; pp += 4;
+			flags = pp[0] | pp[1] << 8 | pp[2] << 16 | (unsigned)pp[3] << 24; pp += 4;
+			pageEnd = pp + clutLen + imageLen;
+			if (pageEnd > end) goto fail;
+			pages[pageTotal].set = (int)set;
+			pages[pageTotal].npal = (int)npal;
+			pages[pageTotal].clutLen = (int)clutLen;
+			pages[pageTotal].imageLen = (int)imageLen;
+			pages[pageTotal].flags = (int)flags;
+			pages[pageTotal].clut = pp;
+			pages[pageTotal].image = pp + clutLen;
+			pageTotal++;
+			pp = pageEnd;
+		}
+
+		p = (unsigned char*)pp;
+	}
+
+	if (p != end)
+		goto fail;
+
+	mem = (char*)malloc(total);
+	if (mem == NULL)
+		goto fail;
+
+	cur = mem;
+
+	for (e = 0; e < entryCount; e++)
+	{
+		for (slot = 0; slot < JER_PED_BAKED_MODELS; slot++)
+		{
+			MODEL* m;
+
+			built[e][slot] = (MODEL*)cur;
+			memcpy(cur, blobs[e][slot], sizes[e][slot]);
+			cur += (sizes[e][slot] + 3) & ~3;
+			m = built[e][slot];
+
+#if MODEL_RELOCATE_POINTERS
+			m->vertices += (int)m;
+			m->normals += (int)m;
+			m->point_normals += (int)m;
+			m->poly_block += (int)m;
+
+			if (m->collision_block != 0)
+				m->collision_block += (int)m;
+#endif
+		}
+	}
+
+	for (e = 0; e < entryCount; e++)
+	{
+		for (slot = 0; slot < JER_PED_BAKED_MODELS; slot++)
+		{
+			MODEL* m = built[e][slot];
+			int parent = m->instance_number;
+
+			if (parent < 0)
+				continue;
+
+			if (parent >= JER_PED_BAKED_MODELS)
+			{
+				printInfo("ped import: entry %d model %d names parent %d outside the bake\n",
+					e, slot, parent);
+				goto fail;
+			}
+
+#if MODEL_RELOCATE_POINTERS
+			m->vertices = (int)((char*)built[e][parent] + built[e][parent]->vertices) - (int)m;
+			m->normals = (int)((char*)built[e][parent] + built[e][parent]->normals) - (int)m;
+			m->point_normals = (int)((char*)built[e][parent] + built[e][parent]->point_normals) - (int)m;
+
+			if (built[e][parent]->collision_block != 0)
+				m->collision_block = (int)((char*)built[e][parent] + built[e][parent]->collision_block) - (int)m;
+			else
+				m->collision_block = 0;
+#else
+			m->vertices = (int)((char*)built[e][parent] - (char*)m) + built[e][parent]->vertices;
+			m->normals = (int)((char*)built[e][parent] - (char*)m) + built[e][parent]->normals;
+			m->point_normals = (int)((char*)built[e][parent] - (char*)m) + built[e][parent]->point_normals;
+
+			if (built[e][parent]->collision_block != 0)
+				m->collision_block = (int)((char*)built[e][parent] - (char*)m) + built[e][parent]->collision_block;
+			else
+				m->collision_block = 0;
+#endif
+
+			m->instance_number = -1;
+		}
+	}
+
+	for (e = 0; e < entryCount; e++)
+	{
+		for (slot = 0; slot < JER_PED_BAKED_MODELS; slot++)
+		{
+			if (built[e][slot]->poly_block <= 0 || built[e][slot]->num_polys <= 0)
+			{
+				printInfo("ped import: entry %d model %d has no polygon data\n", e, slot);
+				goto fail;
+			}
+		}
+	}
+
+	sJerPedSetCount = 0;
+
+	for (e = 0; e < entryCount; e++)
+		for (slot = 0; slot < JER_PED_BAKED_MODELS; slot++)
+			JerPedCollectModelSets(built[e][slot]);
+
+	if (sJerPedSetCount <= 0)
+		goto fail;
+
+	for (e = 0; e < entryCount; e++)
+		for (slot = 0; slot < JER_PED_BAKED_MODELS; slot++)
+			JerPedRemapModelSets(built[e][slot]);
+
+	for (i = 0; i < pageTotal; i++)
+	{
+		int dst = CarImportPinDstSet(pages[i].set);
+
+		if (!JerPedUploadBakedPage(pages[i].set, dst, pages[i].npal,
+			pages[i].clut, pages[i].image, pages[i].flags & 1))
+		{
+			printInfo("ped import: v5 page set %d could not be uploaded\n", pages[i].set);
+			JerPedReleasePins();
+			sJerPedSetCount = 0;
+			goto fail;
+		}
+	}
+
+	for (e = 0; e < entryCount; e++)
+	{
+		for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+			pmJerichoModels[e][i] = built[e][i];
+
+		for (i = 0; i < JER_PED_LEG_MODELS; i++)
+			pmJerichoLegModels[e][i] = built[e][JER_PED_IMPORT_MODELS + i];
+
+		for (i = 0; i < JER_PED_HAND_MODELS; i++)
+			pmJerichoHandModels[e][i] = built[e][JER_PED_IMPORT_MODELS + JER_PED_LEG_MODELS + i];
+	}
+
+	if (sJerPedMem != NULL)
+		free(sJerPedMem);
+
+	sJerPedMem = mem;
+	sJerPedMemSize = total;
+
+	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+		sJerPedModels[i] = built[0][i];
+
+	sJerPedEntryCount = entryCount;
+	for (e = 0; e < entryCount; e++)
+	{
+		strncpy(sJerPedEntryNames[e], names[e], sizeof(sJerPedEntryNames[e]) - 1);
+		sJerPedEntryNames[e][sizeof(sJerPedEntryNames[e]) - 1] = 0;
+	}
+
+	sJerPedBuiltCity = city;
+	sJerPedReady = 1;
+
+	printInfo("ped import: baked JMPPED.LEV v5 loaded (%d entries, %d models, %d pages) for %s\n",
+		entryCount, entryCount * JER_PED_BAKED_MODELS, pageTotal,
+		(city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "any level");
+
+	free(file);
+	return 1;
+
+fail:
+	if (mem != NULL)
+		free(mem);
+	free(file);
+	return 0;
+}
+
+int JerPedEntryCount(void)
+{
+	return sJerPedEntryCount;
+}
+
+const char* JerPedEntryName(int entry)
+{
+	if (entry < 0 || entry >= sJerPedEntryCount)
+		return "";
+	return sJerPedEntryNames[entry];
+}
+
+MODEL* JerPedModelForEntry(int entry, int slot)
+{
+	if (entry < 0 || entry >= sJerPedEntryCount || slot < 0 || slot >= JER_PED_BAKED_MODELS)
+		return NULL;
+
+	if (slot < JER_PED_IMPORT_MODELS)
+		return pmJerichoModels[entry][slot];
+	if (slot < JER_PED_IMPORT_MODELS + JER_PED_LEG_MODELS)
+		return pmJerichoLegModels[entry][slot - JER_PED_IMPORT_MODELS];
+	return pmJerichoHandModels[entry][slot - JER_PED_IMPORT_MODELS - JER_PED_LEG_MODELS];
+}
+
 int JerPedImportBaked(int city)
 {
 	FILE* f;
@@ -1205,6 +1509,9 @@ int JerPedImportBaked(int city)
 	p = file + 8;
 	version = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
 	count = p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; p += 4;
+
+	if (version == 5)
+		return JerPedImportBakedV5(file, len, city);
 
 	if (version != 3 || count != JER_PED_BAKED_MODELS || p + 4 > end)
 	{
@@ -1372,13 +1679,13 @@ int JerPedImportBaked(int city)
 	}
 
 	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
-		pmJerichoModels[i] = built[i];
+		pmJerichoModels[0][i] = built[i];
 
 	for (i = 0; i < JER_PED_LEG_MODELS; i++)
-		pmJerichoLegModels[i] = built[JER_PED_IMPORT_MODELS + i];
+		pmJerichoLegModels[0][i] = built[JER_PED_IMPORT_MODELS + i];
 
 	for (i = 0; i < JER_PED_HAND_MODELS; i++)
-		pmJerichoHandModels[i] = built[JER_PED_IMPORT_MODELS + JER_PED_LEG_MODELS + i];
+		pmJerichoHandModels[0][i] = built[JER_PED_IMPORT_MODELS + JER_PED_LEG_MODELS + i];
 
 	if (sJerPedMem != NULL)
 		free(sJerPedMem);
@@ -1391,6 +1698,9 @@ int JerPedImportBaked(int city)
 
 	sJerPedBuiltCity = city;
 	sJerPedReady = 1;
+	sJerPedEntryCount = 1;
+	strncpy(sJerPedEntryNames[0], "Jericho", sizeof(sJerPedEntryNames[0]) - 1);
+	sJerPedEntryNames[0][sizeof(sJerPedEntryNames[0]) - 1] = 0;
 
 	printInfo("ped import: baked JMPPED.LEV loaded (%d models, %u pages) for %s\n",
 		JER_PED_BAKED_MODELS, pageCount, (city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "any level");
@@ -1574,7 +1884,7 @@ int JerPedAreaPage(int city, int set, int dstSet)
  * its pointers until InitTanner replaces them. */
 void JerPedImportReset(void)
 {
-	int i;
+	int i, e;
 
 	JerPedReleasePins();
 	JerPedSkeletonInvalidate();
@@ -1583,8 +1893,8 @@ void JerPedImportReset(void)
 	{
 		for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
 		{
-			if (pmJerichoModels[i] == sJerPedModels[i])
-				pmJerichoModels[i] = NULL;
+			if (pmJerichoModels[0][i] == sJerPedModels[i])
+				pmJerichoModels[0][i] = NULL;
 		}
 
 		free(sJerPedMem);
@@ -1597,15 +1907,33 @@ void JerPedImportReset(void)
 	sJerPedSetCount = 0;
 	sJerPedProbeCity = -1;
 	sJerPedProbeOk = 0;
+	sJerPedEntryCount = 0;
+
+	for (e = 0; e < JER_PED_MAX_ENTRIES; e++)
+	{
+		sJerPedEntryNames[e][0] = 0;
+
+		if (e == 0)
+			continue;
+
+		for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
+			pmJerichoModels[e][i] = NULL;
+
+		for (i = 0; i < JER_PED_LEG_MODELS; i++)
+			pmJerichoLegModels[e][i] = NULL;
+
+		for (i = 0; i < JER_PED_HAND_MODELS; i++)
+			pmJerichoHandModels[e][i] = NULL;
+	}
 
 	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
 		sJerPedModels[i] = NULL;
 
 	for (i = 0; i < JER_PED_LEG_MODELS; i++)
-		pmJerichoLegModels[i] = NULL;
+		pmJerichoLegModels[0][i] = NULL;
 
 	for (i = 0; i < JER_PED_HAND_MODELS; i++)
-		pmJerichoHandModels[i] = NULL;
+		pmJerichoHandModels[0][i] = NULL;
 }
 
 

@@ -980,6 +980,7 @@ typedef struct PEDESTRIAN
 	char seat_index;
 	u_char pallet;
 	char type;
+	signed char pedEntry;	/* JMPPED v5 character entry; 0 = baseline */
 } *LPPEDESTRIAN;
 
 typedef struct PEDESTRIAN_ROADS

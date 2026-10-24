@@ -190,3 +190,8 @@ extern MODEL* FindModelPtrWithName(char *name); // 0x0005D40C
 extern int FindModelIdxWithName(char *name); // 0x0005D4C4
 
 #endif
+
+/* JMPPED v5: the baked archive can carry several selectable characters. */
+int JerPedEntryCount(void);
+const char* JerPedEntryName(int entry);
+MODEL* JerPedModelForEntry(int entry, int slot);

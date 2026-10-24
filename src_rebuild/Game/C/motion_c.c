@@ -563,18 +563,18 @@ int ThisMotion;
 short cTannerVNumbers[24];
 SVECTOR vTannerList[210];
 
-short cJerichoVNumbers[7];
-SVECTOR vJerichoList[102];
+short cJerichoVNumbers[JER_PED_MAX_ENTRIES][7];
+SVECTOR vJerichoList[JER_PED_MAX_ENTRIES][512];
 
 /* Baked (or fallback Tanner) leg/foot source vertices. The legs live on
  * different bones than the six JERI upper-body models, so they need their own
  * snapshot: using vTannerList here feeds the wrong limbs into the baked models. */
-short cJerichoLegVNumbers[6];
-SVECTOR vJerichoLegList[256];
+short cJerichoLegVNumbers[JER_PED_MAX_ENTRIES][6];
+SVECTOR vJerichoLegList[JER_PED_MAX_ENTRIES][512];
 
 /* Baked Tanner hand copies (HAND_LEFT/RIGHT). */
-short cJerichoHandVNumbers[2];
-SVECTOR vJerichoHandList[128];
+short cJerichoHandVNumbers[JER_PED_MAX_ENTRIES][2];
+SVECTOR vJerichoHandList[JER_PED_MAX_ENTRIES][256];
 
 int vStored = 0;
 
@@ -953,8 +953,11 @@ void DrawBodySprite(LPPEDESTRIAN pDrawingPed, int boneId, VERTTYPE v1[2], VERTTY
 }
 
 // [D] [T]
-void StoreVertexLists(void)
+void StoreVertexLists(int entry)
 {
+	if (entry < 0 || entry >= JER_PED_MAX_ENTRIES)
+		entry = 0;
+
 	BONE* pBone;
 	SVECTOR* destVerts;
 	SVECTOR* srcVerts;
@@ -1003,20 +1006,20 @@ void StoreVertexLists(void)
 	counter = 0;
 	for (i = 0; i < 6; i++)
 	{
-		pModel = pmJerichoModels[i];
+		pModel = pmJerichoModels[entry][i];
 
 		if (pModel == NULL)
 		{
-			cJerichoVNumbers[i] = -1;
+			cJerichoVNumbers[entry][i] = -1;
 			continue;
 		}
 
 		srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
 
 		// store start index
-		cJerichoVNumbers[i] = counter;
+		cJerichoVNumbers[entry][i] = counter;
 
-		destVerts = &vJerichoList[counter];
+		destVerts = &vJerichoList[entry][counter];
 
 		for (j = 0; j < pModel->num_vertices; j++)
 		{
@@ -1040,17 +1043,17 @@ void StoreVertexLists(void)
 
 		for (i = 0; i < 6; i++)
 		{
-			pModel = pmJerichoLegModels[0] ? pmJerichoLegModels[i] : pmTannerModels[fallback[i]];
+			pModel = pmJerichoLegModels[entry][0] ? pmJerichoLegModels[entry][i] : pmTannerModels[fallback[i]];
 
 			if (pModel == NULL)
 			{
-				cJerichoLegVNumbers[i] = -1;
+				cJerichoLegVNumbers[entry][i] = -1;
 				continue;
 			}
 
 			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
-			cJerichoLegVNumbers[i] = counter;
-			destVerts = &vJerichoLegList[counter];
+			cJerichoLegVNumbers[entry][i] = counter;
+			destVerts = &vJerichoLegList[entry][counter];
 
 			for (j = 0; j < pModel->num_vertices; j++)
 			{
@@ -1071,17 +1074,17 @@ void StoreVertexLists(void)
 
 		for (i = 0; i < 2; i++)
 		{
-			pModel = pmJerichoHandModels[i] ? pmJerichoHandModels[i] : pmTannerModels[i == 0 ? 10 : 4];
+			pModel = pmJerichoHandModels[entry][i] ? pmJerichoHandModels[entry][i] : pmTannerModels[i == 0 ? 10 : 4];
 
 			if (pModel == NULL)
 			{
-				cJerichoHandVNumbers[i] = -1;
+				cJerichoHandVNumbers[entry][i] = -1;
 				continue;
 			}
 
 			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
-			cJerichoHandVNumbers[i] = counter;
-			destVerts = &vJerichoHandList[counter];
+			cJerichoHandVNumbers[entry][i] = counter;
+			destVerts = &vJerichoHandList[entry][counter];
 
 			for (j = 0; j < pModel->num_vertices; j++)
 			{
@@ -1615,6 +1618,10 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 {
 	SVECTOR* base;
+	int entry = pDrawingPed->pedEntry;
+
+	if (entry < 0 || entry >= JER_PED_MAX_ENTRIES)
+		entry = 0;
 
 	if (pDrawingPed->pedType != OTHER_MODEL)
 	{
@@ -1624,46 +1631,46 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 		return NULL;
 	}
 
-	base = vJerichoList;
+	base = vJerichoList[entry];
 
 	switch (boneId)
 	{
 		case JOINT_1:
-			return base + cJerichoVNumbers[0];
+			return base + cJerichoVNumbers[entry][0];
 		case HEAD:
-			return base + cJerichoVNumbers[1];
+			return base + cJerichoVNumbers[entry][1];
 		case LELBOW:
-			return base + cJerichoVNumbers[2];
+			return base + cJerichoVNumbers[entry][2];
 		case LHAND:
-			return base + cJerichoVNumbers[3];
+			return base + cJerichoVNumbers[entry][3];
 		case RELBOW:
-			return base + cJerichoVNumbers[4];
+			return base + cJerichoVNumbers[entry][4];
 		case RHAND:
-			return base + cJerichoVNumbers[5];
+			return base + cJerichoVNumbers[entry][5];
 
 		case LHIP:
 			if (cTannerVNumbers[LHIP] != -1)
 				return vTannerList + cTannerVNumbers[LHIP];
 			return NULL;
 		case LKNEE:
-			return vJerichoLegList + cJerichoLegVNumbers[0];
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][0];
 		case LFOOT:
-			return vJerichoLegList + cJerichoLegVNumbers[1];
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][1];
 		case LTOE:
-			return vJerichoLegList + cJerichoLegVNumbers[2];
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][2];
 		case RHIP:
 			return NULL;
 		case RKNEE:
-			return vJerichoLegList + cJerichoLegVNumbers[3];
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][3];
 		case RFOOT:
-			return vJerichoLegList + cJerichoLegVNumbers[4];
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][4];
 		case RTOE:
-			return vJerichoLegList + cJerichoLegVNumbers[5];
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][5];
 
 		case LFINGERS:
-			return vJerichoHandList + cJerichoHandVNumbers[0];
+			return vJerichoHandList[entry] + cJerichoHandVNumbers[entry][0];
 		case RFINGERS:
-			return vJerichoHandList + cJerichoHandVNumbers[1];
+			return vJerichoHandList[entry] + cJerichoHandVNumbers[entry][1];
 
 		default:
 			return NULL;
@@ -1956,30 +1963,33 @@ void DrawCiv(LPPEDESTRIAN pPed)
 }
 
 // [D] [T]
-void SetSkelModelPointers(int type)
+void SetSkelModelPointersForEntry(int type, int entry)
 {
+	if (entry < 0 || entry >= JER_PED_MAX_ENTRIES)
+		entry = 0;
+
 	if (type == OTHER_MODEL)
 	{
-		Skel[JOINT_1].pModel = &pmJerichoModels[0];
-		Skel[HEAD].pModel = &pmJerichoModels[1];
-		Skel[LELBOW].pModel = &pmJerichoModels[2];
-		Skel[LHAND].pModel = &pmJerichoModels[3];
-		Skel[RELBOW].pModel = &pmJerichoModels[4];
-		Skel[RHAND].pModel = &pmJerichoModels[5];
+		Skel[JOINT_1].pModel = &pmJerichoModels[entry][0];
+		Skel[HEAD].pModel = &pmJerichoModels[entry][1];
+		Skel[LELBOW].pModel = &pmJerichoModels[entry][2];
+		Skel[LHAND].pModel = &pmJerichoModels[entry][3];
+		Skel[RELBOW].pModel = &pmJerichoModels[entry][4];
+		Skel[RHAND].pModel = &pmJerichoModels[entry][5];
 
 		/* Match the engine's static Tanner leg bindings: the hip joints draw the
 		 * resident HIPS mesh, and the thigh/calf/foot models hang off
 		 * LKNEE/LFOOT/LTOE (and the right-side equivalents). */
 		Skel[LHIP].pModel = &pmTannerModels[15];	/* HIPS */
 		Skel[RHIP].pModel = NULL;
-		Skel[LKNEE].pModel = pmJerichoLegModels[0] ? &pmJerichoLegModels[0] : &pmTannerModels[11];
-		Skel[LFOOT].pModel = pmJerichoLegModels[1] ? &pmJerichoLegModels[1] : &pmTannerModels[12];
-		Skel[LTOE].pModel = pmJerichoLegModels[2] ? &pmJerichoLegModels[2] : &pmTannerModels[7];
-		Skel[RKNEE].pModel = pmJerichoLegModels[3] ? &pmJerichoLegModels[3] : &pmTannerModels[5];
-		Skel[RFOOT].pModel = pmJerichoLegModels[4] ? &pmJerichoLegModels[4] : &pmTannerModels[6];
-		Skel[RTOE].pModel = pmJerichoLegModels[5] ? &pmJerichoLegModels[5] : &pmTannerModels[13];
-		Skel[LFINGERS].pModel = pmJerichoHandModels[0] ? &pmJerichoHandModels[0] : &pmTannerModels[10];
-		Skel[RFINGERS].pModel = pmJerichoHandModels[1] ? &pmJerichoHandModels[1] : &pmTannerModels[4];
+		Skel[LKNEE].pModel = pmJerichoLegModels[entry][0] ? &pmJerichoLegModels[entry][0] : &pmTannerModels[11];
+		Skel[LFOOT].pModel = pmJerichoLegModels[entry][1] ? &pmJerichoLegModels[entry][1] : &pmTannerModels[12];
+		Skel[LTOE].pModel = pmJerichoLegModels[entry][2] ? &pmJerichoLegModels[entry][2] : &pmTannerModels[7];
+		Skel[RKNEE].pModel = pmJerichoLegModels[entry][3] ? &pmJerichoLegModels[entry][3] : &pmTannerModels[5];
+		Skel[RFOOT].pModel = pmJerichoLegModels[entry][4] ? &pmJerichoLegModels[entry][4] : &pmTannerModels[6];
+		Skel[RTOE].pModel = pmJerichoLegModels[entry][5] ? &pmJerichoLegModels[entry][5] : &pmTannerModels[13];
+		Skel[LFINGERS].pModel = pmJerichoHandModels[entry][0] ? &pmJerichoHandModels[entry][0] : &pmTannerModels[10];
+		Skel[RFINGERS].pModel = pmJerichoHandModels[entry][1] ? &pmJerichoHandModels[entry][1] : &pmTannerModels[4];
 
 		bodyShiftValue = BODY_OFFSET + JERICHO_BODY_OFFSET;
 		torsoShiftValue = TORSO_OFFSET + JERICHO_TORSO_OFFSET;
@@ -1987,17 +1997,20 @@ void SetSkelModelPointers(int type)
 		{
 			static int reportedType = -2;
 			static MODEL* reportedLeg = NULL;
+			static int reportedEntry = -1;
 
-			if (reportedType != type || reportedLeg != pmJerichoLegModels[0])
+			if (reportedType != type || reportedLeg != pmJerichoLegModels[entry][0] || reportedEntry != entry)
 			{
 				reportedType = type;
-				reportedLeg = pmJerichoLegModels[0];
+				reportedEntry = entry;
+				reportedLeg = pmJerichoLegModels[entry][0];
 
-				printInfo("skeleton: Jericho torso=%p head=%p arms=%p/%p/%p/%p legs=%s bodyShift=%d torsoShift=%d\n",
-					(void*)pmJerichoModels[0], (void*)pmJerichoModels[1],
-					(void*)pmJerichoModels[2], (void*)pmJerichoModels[3],
-					(void*)pmJerichoModels[4], (void*)pmJerichoModels[5],
-					pmJerichoLegModels[0] ? "baked" : "Tanner",
+				printInfo("skeleton: entry %d torso=%p head=%p arms=%p/%p/%p/%p legs=%s bodyShift=%d torsoShift=%d\n",
+					entry,
+					(void*)pmJerichoModels[entry][0], (void*)pmJerichoModels[entry][1],
+					(void*)pmJerichoModels[entry][2], (void*)pmJerichoModels[entry][3],
+					(void*)pmJerichoModels[entry][4], (void*)pmJerichoModels[entry][5],
+					pmJerichoLegModels[entry][0] ? "baked" : "Tanner",
 					bodyShiftValue, torsoShiftValue);
 			}
 		}
@@ -2018,6 +2031,12 @@ void SetSkelModelPointers(int type)
 }
 
 
+void SetSkelModelPointers(int type)
+{
+	SetSkelModelPointersForEntry(type, 0);
+}
+
+
 int iCurrBone = 0;
 
 // [D] [T]
@@ -2029,7 +2048,7 @@ void DrawTanner(LPPEDESTRIAN pPed)
 
 	bDoingShadow = 0;
 
-	SetSkelModelPointers(pPed->pedType);
+	SetSkelModelPointersForEntry(pPed->pedType, pPed->pedEntry);
 	SetupTannerSkeleton(pPed);
 
 	// JERICHO-HOOK: the pose hook — the ONLY window where a per-bone
@@ -2097,7 +2116,7 @@ int DrawCharacter(LPPEDESTRIAN pPed)
 	CVECTOR cv;
 	VECTOR pos;
 
-	SetSkelModelPointers(pPed->pedType);
+	SetSkelModelPointersForEntry(pPed->pedType, pPed->pedEntry);
 	SetupTannerSkeleton(pPed);
 
 	newRotateBones(pPed, &Skel[LOWERBACK]);

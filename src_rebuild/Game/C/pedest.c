@@ -49,9 +49,9 @@ typedef struct SEATED_PEDESTRIANS
 } *SEATEDPTR;
 
 MODEL* pmTannerModels[17] = { 0 };
-MODEL* pmJerichoModels[6] = { 0 };
-MODEL* pmJerichoLegModels[6] = { 0 };
-MODEL* pmJerichoHandModels[2] = { 0 };
+MODEL* pmJerichoModels[JER_PED_MAX_ENTRIES][6] = { 0 };
+MODEL* pmJerichoLegModels[JER_PED_MAX_ENTRIES][6] = { 0 };
+MODEL* pmJerichoHandModels[JER_PED_MAX_ENTRIES][2] = { 0 };
 
 int gJerPedSkeletonGeneration = 1;
 
@@ -481,7 +481,7 @@ int jer_ped_palette_extend_jericho(void)
 		if (mi == 1)		/* JERI_HEAD: drawn by DoCivHead, keeps skin */
 			continue;
 
-		m = pmJerichoModels[mi];
+		m = pmJerichoModels[0][mi];
 
 		if (m == NULL)
 			continue;
@@ -572,19 +572,32 @@ int jer_ped_palette_extend_jericho(void)
  * draw reads cJerichoVNumbers/vJerichoList, not the model blobs directly. */
 int JerPedInstallModels(void)
 {
-	int i;
+	int i, e, entries = 0;
 
-	for (i = 0; i < 6; i++)
+	for (e = 0; e < JER_PED_MAX_ENTRIES; e++)
 	{
-		if (pmJerichoModels[i] == NULL)
-			return 0;
+		if (pmJerichoModels[e][0] != NULL)
+			entries = e + 1;
 	}
+
+	if (entries == 0)
+		return 0;
 
 	if (!jer_ped_palette_extend_jericho())
 		return 0;
 
-	StoreVertexLists();
-	SetSkelModelPointers(OTHER_MODEL);
+	for (e = 0; e < entries; e++)
+	{
+		for (i = 0; i < 6; i++)
+		{
+			if (pmJerichoModels[e][i] == NULL)
+				return 0;
+		}
+
+		StoreVertexLists(e);
+	}
+
+	SetSkelModelPointersForEntry(OTHER_MODEL, 0);
 	gJerPedSkeletonGeneration++;
 
 	return 1;
@@ -705,17 +718,17 @@ void InitTanner(void)
 	pmTannerModels[15] = FindModelPtrWithName("HIPS");
 	pmTannerModels[16] = FindModelPtrWithName("BAG");
 
-	pmJerichoModels[0] = FindModelPtrWithName("JERI_TORSO");
-	pmJerichoModels[1] = FindModelPtrWithName("JERI_HEAD");
-	pmJerichoModels[2] = FindModelPtrWithName("JERI_U_ARM_LEFT");
-	pmJerichoModels[3] = FindModelPtrWithName("JERI_L_ARM_LEFT");
-	pmJerichoModels[4] = FindModelPtrWithName("JERI_U_ARM_RIGHT");
-	pmJerichoModels[5] = FindModelPtrWithName("JERI_L_ARM_RIGHT");
+	pmJerichoModels[0][0] = FindModelPtrWithName("JERI_TORSO");
+	pmJerichoModels[0][1] = FindModelPtrWithName("JERI_HEAD");
+	pmJerichoModels[0][2] = FindModelPtrWithName("JERI_U_ARM_LEFT");
+	pmJerichoModels[0][3] = FindModelPtrWithName("JERI_L_ARM_LEFT");
+	pmJerichoModels[0][4] = FindModelPtrWithName("JERI_U_ARM_RIGHT");
+	pmJerichoModels[0][5] = FindModelPtrWithName("JERI_L_ARM_RIGHT");
 
 	jer_ped_palette_init();
 
 	SetSkelModelPointers(TANNER_MODEL);
-	StoreVertexLists();
+	StoreVertexLists(0);
 
 	numTannerPeds = 0;
 	bKillTanner = 0;
@@ -905,6 +918,7 @@ LPPEDESTRIAN CreatePedestrian(void)
 
 		pNewPed->pPrev = NULL;
 		pNewPed->pNext = pUsedPeds;
+		pNewPed->pedEntry = 0;
 
 		num_pedestrians++;
 		pUsedPeds = pNewPed;
