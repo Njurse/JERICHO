@@ -212,6 +212,18 @@ static const char* jerBuildRunner(void)
 	return (strcmp(jer_host_script_ext(), "sh") == 0) ? "sh " : "";
 }
 
+/* 1 when this install can run an in-game build: a src_rebuild tree and the
+ * build_game shim are reachable from the exe. A shipped package has neither,
+ * which is what keeps "Compile Mods" out of a player's menu. */
+int jer_build_can_compile(void)
+{
+	char srcDir[JER_BUILD_PATH];
+	char shim[JER_BUILD_PATH];
+
+	return jerBuildFindSrcDir(srcDir, sizeof(srcDir)) &&
+		jerBuildFindShim(srcDir, "build_game", shim, sizeof(shim));
+}
+
 /* ------------------------------------------------------------------ */
 /* The detached one-restart helper                                     */
 /* ------------------------------------------------------------------ */

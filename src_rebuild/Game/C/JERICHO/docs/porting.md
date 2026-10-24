@@ -8,7 +8,7 @@ places:
 |---|---|---|
 | **Runtime host layer** — load a module binary, scan a folder, run a child process, find the exe | `src_rebuild/Game/C/JERICHO/src/jer_host.{h,c}` | add one back-end block |
 | **Build back-end** — generate project files, invoke the compiler, name the addon artifact | `JERICHO/build.py` | add one `Backend` subclass |
-| **Who may compile in-game** — the Mods-menu row and the mod-store rebuild prompt | `src_rebuild/Game/Frontend/FEmain.c` (`JERICHO_FE_HAS_COMPILE_MODS`) | define it for the platform's dev builds |
+| **Who may compile in-game** — the Mods-menu row and the mod-store rebuild prompt | `jer_build_can_compile()` (`jer_compile.c`) + `jer_mods_compile_available()` (`FEmain.c`) | ship a source tree + build shim; the runtime check decides |
 
 Everything on the **module loading and Compile Mods path** — the loader, the
 module manager, the compile driver — is written against those interfaces and
@@ -106,11 +106,11 @@ Two platform spellings matter in the back-end:
 
 ## 3. In-game compiling
 
-A platform that ships the toolchain should define
-`JERICHO_FE_HAS_COMPILE_MODS` for its **dev** builds (not Release). That is
-what makes `jer_mods_compile_available()` true, which in turn shows the Mods
-menu's **Compile Mods** row and the mod-store prompt after a compiled-in mod is
-installed. Linux dev builds define it alongside Windows now.
+`jer_mods_compile_available()` asks `jer_build_can_compile()` whether a
+`src_rebuild` tree and the `build_game` shim are reachable from the exe. A
+source checkout (dev or Release) therefore shows the Mods menu's **Compile
+Mods** row and the mod-store rebuild prompt; a shipped package has neither and
+shows neither.
 
 The detached helper is `JERICHO/build_restart.bat` on Windows and
 `build_restart.sh` on POSIX (selected by `jer_host_script_ext`). It waits for

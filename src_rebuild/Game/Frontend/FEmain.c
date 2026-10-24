@@ -418,15 +418,6 @@ int JerFrontendMenuScreen(int bSetup);	// JERICHO-HOOK: module frontend menus
 #define JERICHO_MODS_SCREEN 41
 // JERICHO-HOOK: module-provided frontend menus live in slots 42..(42+MAX-1)
 #define JERICHO_FE_SCREEN_BASE 42
-// 8 buttons max (PSXSCREEN::buttons[8]): modules + Prev/Next + Compile + Back.
-// Desktop dev builds show a Compile Mods button, so one less module fits per page.
-// A RELEASE build (JERICHO_RELEASE_MODS) hides the button -- players get the
-// modules a release ships; compiling modules is a modder's tool (Release_dev).
-// Emscripten/Android have no desktop toolchain or dynamic loader to drive, so
-// the row stays hidden there even in a dev build.
-#if !defined(JERICHO_RELEASE_MODS) && !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
-#define JERICHO_FE_HAS_COMPILE_MODS 1
-#endif
 
 
 // JERICHO-HOOK: safety cap on the boot presentation-screen loop (jer_screen.h):
@@ -5732,16 +5723,13 @@ int JerichoModsScreen(int bSetup)
 /* prompt, the Credits page. The menu asks and does not care how.        */
 /* ------------------------------------------------------------------- */
 
-/* Non-zero when this build carries "Compile Mods" (a Windows dev build). A
- * release build hides it: players get the modules a release ships, and compiling
- * them is a modder's tool. */
+/* Non-zero when this install can run an in-game build: a src_rebuild tree and
+ * the build_game shim are reachable from the exe. A shipped package has
+ * neither, so the Mods menu row and the modstore rebuild prompt stay hidden
+ * there; a Release built from a source checkout keeps them. */
 int jer_mods_compile_available(void)
 {
-#if defined(JERICHO_FE_HAS_COMPILE_MODS)
-	return 1;
-#else
-	return 0;
-#endif
+	return jer_build_can_compile();
 }
 
 /* Ask, then hand the deep mods to the build (jer_compile.c): its Yes action

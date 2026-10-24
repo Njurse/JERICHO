@@ -251,8 +251,8 @@ shared library (`.dll` on Windows, `.so` on Linux):
 JERICHO\build_mods.bat
 ```
 
-Or press **Compile Mods** in the game (Options → JERICHO; Windows `Release_dev`
-builds only — the Release build hides the button). Either way the script
+Or press **Compile Mods** in the game (Options → JERICHO; shown when a source
+tree and the build shim are present, so a shipped package hides it). Either way the script
 generates the module solution
 ([`premake5_mods.lua`](src_rebuild/premake5_mods.lua) → one project per
 `runtime = "dll"` folder), builds it against the exported symbols, and copies

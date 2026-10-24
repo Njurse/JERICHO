@@ -657,6 +657,14 @@ int jer_compile_mods(void);
  */
 void jer_compile_request(void);
 
+/*
+ * Host-side: 1 when this install can run an in-game build -- a src_rebuild
+ * tree and the build_game shim are reachable from the exe. A shipped package
+ * has neither, which keeps "Compile Mods" out of a player's menu. Used by the
+ * frontend's Compile Mods availability check.
+ */
+int jer_build_can_compile(void);
+
 #ifdef __cplusplus
 }
 #endif
