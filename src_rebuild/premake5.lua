@@ -28,7 +28,7 @@ require "premake_modules/jericho_mods"
 
 -- True when <id>'s mod.toml marks it as a runtime DLL addon.
 function jericho_is_dll_addon(id)
-	local toml = io.open("../JERICHO/MODS/" .. id .. "/mod.toml", "r")
+	local toml = io.open(jericho_mod_dir(id) .. "/mod.toml", "r")
 
 	if toml then
 		local line = toml:read("*l")
@@ -528,6 +528,8 @@ project "JERICHO_runtime"
 for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
 	filter {}	-- reset any leaked filter (old premake leaks across project())
 
+	local JER_DIR = jericho_mod_dir(JER_MOD)
+
 	project ("mod_" .. JER_MOD)
 		kind "StaticLib"
 		language "c++"
@@ -540,14 +542,14 @@ for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
 		}
 
 		files {
-			("../JERICHO/MODS/" .. JER_MOD .. "/**.c"),
-			("../JERICHO/MODS/" .. JER_MOD .. "/**.h"),
+			(JER_DIR .. "/**.c"),
+			(JER_DIR .. "/**.h"),
 		}
 
 		includedirs {
-			("../JERICHO/MODS/" .. JER_MOD),
-			("../JERICHO/MODS"),  -- sibling module roots: a source in a subfolder (ai/,
-			                      -- weapons/) includes its own module header by plain name
+			JER_DIR,
+			(JER_DIR .. "/.."),  -- sibling module roots: a source in a subfolder (ai/,
+			                     -- weapons/) includes its own module header by plain name
 		}
 
 		-- A mod's compiled output belongs WITH the mod, not in bin/<cfg> next to the
@@ -562,8 +564,8 @@ for _, JER_MOD in ipairs(JERICHO_COMPILED_MODS) do
 		-- the C runtime. bin/<cfg> never separated x86 from x64 either, which is how
 		-- an x86 library poisons an x64 link (LNK4272). The mirror below drops this
 		-- output again on its way into bin/ - build artefacts are not game data.
-		targetdir ("../JERICHO/MODS/" .. JER_MOD .. "/lib/%{cfg.buildcfg}/%{cfg.platform}")
-		objdir ("../JERICHO/MODS/" .. JER_MOD .. "/obj/%{cfg.buildcfg}")
+		targetdir (JER_DIR .. "/lib/%{cfg.buildcfg}/%{cfg.platform}")
+		objdir (JER_DIR .. "/obj/%{cfg.buildcfg}")
 
 		filter "system:Windows"
 			disablewarnings { "4996", "4244", "4018", "4267", "4101", "4013" }
@@ -822,6 +824,13 @@ project "JERICHO"
             "copy /Y \"..\\..\\JERICHO\\build_mods.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.bat\"",
             "copy /Y \"..\\..\\JERICHO\\build_game.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.bat\"",
             "copy /Y \"..\\..\\JERICHO\\build_restart.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_restart.bat\"",
+            "copy /Y \"..\\..\\JERICHO\\build_restart.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_restart.sh\"",
+            -- the shared cross-platform driver + its POSIX twins travel with
+            -- the runtime JERICHO so the in-game Compile Mods flow finds them
+            -- next to the exe (build_game.bat forwards to build.py).
+            "copy /Y \"..\\..\\JERICHO\\build.py\" \"%{cfg.buildtarget.directory}JERICHO\\build.py\"",
+            "copy /Y \"..\\..\\JERICHO\\build_game.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.sh\"",
+            "copy /Y \"..\\..\\JERICHO\\build_mods.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.sh\"",
             -- The updater, at the build's ROOT next to the exe, so a locally built
             -- install carries exactly what a downloaded one does. The packaging step
             -- used to be the only thing that placed these, which meant bin/<cfg> - the
@@ -957,6 +966,13 @@ project "JERICHO"
             "cp -f ../../JERICHO/CORE/modstore/modstore.sh \"%{cfg.buildtarget.directory}/modstore.sh\"",
             "cp -f ../../JERICHO/CORE/modstore/modstore.bat \"%{cfg.buildtarget.directory}/modstore.bat\"",
             "chmod +x \"%{cfg.buildtarget.directory}/modstore.sh\"",
+            -- the shared cross-platform driver + the .sh/.bat entry points travel
+            -- with the runtime JERICHO (the in-game Compile Mods flow runs
+            -- build_game.sh -> build.py). Both spellings are carried, so a
+            -- folder copied to Windows works there too.
+            "cp -f ../../JERICHO/build.py ../../JERICHO/build_game.sh ../../JERICHO/build_mods.sh ../../JERICHO/build_restart.sh \"%{cfg.buildtarget.directory}/JERICHO/\"",
+            "cp -f ../../JERICHO/build_game.bat ../../JERICHO/build_mods.bat ../../JERICHO/build_restart.bat \"%{cfg.buildtarget.directory}/JERICHO/\"",
+            "chmod +x \"%{cfg.buildtarget.directory}/JERICHO/build_game.sh\" \"%{cfg.buildtarget.directory}/JERICHO/build_mods.sh\" \"%{cfg.buildtarget.directory}/JERICHO/build_restart.sh\"",
         }
 
     -- the same removals as on Windows, after the copy above. A static library is

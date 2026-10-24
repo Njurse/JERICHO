@@ -634,6 +634,18 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: JERICHO build toolkit (addons, shims, SDK)
+        run: |
+          set -e
+          bash -n JERICHO/build_game.sh JERICHO/build_mods.sh JERICHO/build_restart.sh
+          python3 JERICHO/build.py game premake --dry-run
+          python3 JERICHO/build.py mods --dry-run
+          python3 JERICHO/build.py mods
+          test -f JERICHO/MODS/example/example.so
+          test ! -f JERICHO/MODS/example/libexample.so
+          JERICHO/sdk/build_mods.sh example
+          test -f JERICHO/sdk/example/example.so
+
       - name: Package
         run: |
           # Driver 1 bake tooling: see the Windows job. The d1cars submodule was
