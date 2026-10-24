@@ -24,9 +24,9 @@
 #include "jer_config.h"
 #include "jer_math.h"
 
-THRILL DRIVER_CONFIG gCdCfg;
-static THRILL DRIVER_DRIFT  gDrift[MAX_CARS];
-static THRILL DRIVER_VISUAL gVisual[MAX_CARS];
+THRILLDRIVER_CONFIG gCdCfg;
+static THRILLDRIVER_DRIFT  gDrift[MAX_CARS];
+static THRILLDRIVER_VISUAL gVisual[MAX_CARS];
 
 static const char* const kPresetNames[] = { "Burnout 3", "Paradise", "Custom" };
 
@@ -148,8 +148,8 @@ static int cdOnCarStep(void* ud, void* args)
     if (!gCdCfg.enabled || cp->id < 0 || cp->id >= MAX_CARS)
         return JER_RESULT_CONTINUE;
 
-    THRILL DRIVER_DRIFT* d = &gDrift[cp->id];
-    THRILL DRIVER_VISUAL* v = &gVisual[cp->id];
+    THRILLDRIVER_DRIFT* d = &gDrift[cp->id];
+    THRILLDRIVER_VISUAL* v = &gVisual[cp->id];
 
     int steer = cp->wheel_angle;
     int braking = cp->thrust < 0;
@@ -284,7 +284,7 @@ static int cdOnCarDraw(void* ud, void* args)
     if (!gCdCfg.enabled || cp->id < 0 || cp->id >= MAX_CARS)
         return JER_RESULT_CONTINUE;
 
-    THRILL DRIVER_VISUAL* v = &gVisual[cp->id];
+    THRILLDRIVER_VISUAL* v = &gVisual[cp->id];
     if (v->pitch) _RotMatrixX(m, (short)v->pitch);
     if (v->roll)  _RotMatrixZ(m, (short)v->roll);
     return JER_RESULT_CONTINUE;
