@@ -406,10 +406,23 @@ hooks in this table are actually live, and which modules are running them.
 
 ## Override slots
 
-`MOD_CONTEXT::jer_override` swaps engine function-pointer slots. Currently
-one slot is consumed by the engine: `JER_OVERRIDE_SLOT_SIM` (the world step,
-`StepSim`) — the sandbox module uses it for time-scale. The remaining slots
-are reserved for future whole-behavior replacement.
+`MOD_CONTEXT::jer_override` swaps engine function-pointer slots. The capacity is
+`JER_OVERRIDE_SLOT_COUNT`; the old `JER_OVERRIDE_SLOTS` spelling is kept as an
+alias for source compatibility. Slots currently in use:
+
+- `JER_OVERRIDE_SLOT_STEP_SIM` (0) — the world step (`StepSim`); the sandbox
+  module uses it for time-scale. The old `JER_OVERRIDE_SLOT_SIM` spelling is an
+  alias.
+- `JER_OVERRIDE_SLOT_SCENERY_COLLISION` (1) — `CarBuildingCollision`
+  (`bcollide.c`), the car-vs-static-world check for `BUILDING_BOX`es
+  (buildings, bridges, overhangs, smashables). The handler is
+  `JER_SCENERY_COLLISION_FN` and its arguments are
+  `JER_ARGS_SCENERY_COLLISION`: it may replace the in/out world `point`/`normal`,
+  or set `handled = 1` to reject the hit and skip the stock response. A NULL slot
+  is stock. `fulltwist` uses this to reject false ceiling/underside contacts with
+  the car's mesh hull.
+
+The remaining slots are reserved for future whole-behavior replacement.
 
 ## Persistent config
 

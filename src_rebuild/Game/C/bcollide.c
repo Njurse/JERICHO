@@ -545,6 +545,9 @@ void DamageCar(CAR_DATA *cp, CDATA2D *cd, CRET2D *collisionResult, int strikeVel
 	int dx, dz;
 	int lbody;
 
+	if (cp == NULL || cp->ap.carCos == NULL)
+		return;
+
 	player_id = GetPlayerId(cp);
 
 	lbody = cp->ap.carCos->colBox.vz / 2;
@@ -661,6 +664,10 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 	}
 
 	collided = 0;
+
+	if (cp->ap.carCos == NULL)
+		return 0;
+
 	car_cos = cp->ap.carCos;
 
 	player_id = GetPlayerId(cp);
@@ -861,6 +868,38 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 			collisionResult.surfNormal.vz = -collisionResult.surfNormal.vz;
 
 			collisionResult.hit.vy = cp->hd.where.t[1] + 41;
+
+			/* JERICHO: let a module override the 2D scenery check. It sees the
+			 * final world contact/normal and may replace them; handled = 1
+			 * means it consumed the hit (the false ceiling/underside case),
+			 * so the stock response is skipped and the predictive position
+			 * offset is restored. No handler = stock. */
+			{
+				JER_SCENERY_COLLISION_FN sceneryHit =
+					(JER_SCENERY_COLLISION_FN)jer_get_override(JER_OVERRIDE_SLOT_SCENERY_COLLISION);
+
+				if (sceneryHit != NULL)
+				{
+					JER_ARGS_SCENERY_COLLISION args;
+
+					args.car = cp;
+					args.building = building;
+					args.flags = flags;
+					args.point = &collisionResult.hit;
+					args.normal = &collisionResult.surfNormal;
+					args.penetration = collisionResult.penetration;
+					args.handled = 0;
+
+					sceneryHit(&args);
+
+					if (args.handled)
+					{
+						cp->hd.where.t[0] = tempwhere.vx;
+						cp->hd.where.t[2] = tempwhere.vz;
+						return 0;
+					}
+				}
+			}
 
 			// perform error correction
 			if((model->flags2 & MODEL_FLAG_SMASHABLE) == 0 || gInGameCutsceneActive == 0 || cd[0].isCameraOrTanner)

@@ -206,7 +206,8 @@ difference is who is speaking.
   pause menus" section). The engine collects everything under a "JERICHO
   Addons" container in the pause screen — no per-module code in `pause.c`.
 - **Replace whole behaviors** — `ctx->jer_override(ctx, SLOT, fn)`
-  swaps an engine function-pointer slot (`JER_OVERRIDE_SLOT_SIM` today);
+  swaps an engine function-pointer slot (`JER_OVERRIDE_SLOT_STEP_SIM` and
+  `JER_OVERRIDE_SLOT_SCENERY_COLLISION` today);
   `jer_get_override(slot)` returns the previous one so a module can chain.
 - **Persist settings** — `jer_config_get_int/set_int/...` from
   `jer_config.h`. Each module owns `JERICHO/CONFIG/<modid>.ini`. d2pl writes

@@ -1,0 +1,16 @@
+id = "fulltwist"
+name = "FULL TWIST"
+version = "0.4.0"
+# the JERICHO interface (SDK) this mod is built against
+interface = 2
+author = "JERICHO"
+description = "Free-physics tumbles: cars keep their spin after a hit, scenery torque uses the convex hull contact, walls bounce, and car-car recoil is tamed."
+dependencies = []
+# OFF out of the box: a physics-feel experiment that no release ships until it
+# has been played. Turn it on in Options -> JERICHO.
+default-enabled = false
+# COMPILED-IN (deep) module: no `runtime = "dll"`.
+# It uses the game's config store and pause-menu API, which are linked into the
+# exe but are not part of the runtime DLL import surface (same model as crumple
+# and collisiondevil). It ships with the game build, alongside the crumple work.
+

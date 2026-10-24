@@ -620,6 +620,12 @@ void CheckScenaryCollisions(CAR_DATA *cp)
 	int sphereSq;
 	int dx, dz;
 	
+	/* A live traffic car with no cosmetics has no colBox/cog to test. The
+	 * car-car and civ collision setup already skip it; keep
+	 * CarBuildingCollision/DamageCar off the null mesh too. */
+	if (cp->ap.carCos == NULL)
+		return;
+
 	if (cp->controlType == CONTROL_TYPE_CAMERACOLLIDER || cp->ap.carCos == NULL)
 		lbody = 360;
 	else

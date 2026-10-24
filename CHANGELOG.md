@@ -6,6 +6,60 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### Engine
+
+- A live traffic car can have no cosmetics (a model that is not built or was
+  released mid-level). The car-car box build, step, revs, scenery test and
+  damage paths now skip it and log once instead of dereferencing a null mesh;
+  stale `mayBeColliding` bits are cleared. This is the Havana traffic-car crash.
+
+### Full Twist
+
+- New **Free Physics** preset: cars that are hit, airborne, or resting on their
+  body keep their rotation. It lowers the stock `angularDamping`, cancels the
+  engine's lift `-avel/8`, and bypasses the stopped-car spin kill; traffic keeps
+  the stock physics.
+- Scenery collisions use the car's convex hull for the vertical gate and the
+  world-projected XZ footprint. The engine's contact point is never rewritten;
+  the hull contact is logged and used only for FULL TWIST's own torque.
+- Prebuild every resident convex hull at the top of the frame after a level
+  start or model swap; collisions never build a hull and fall back to the
+  colBox when one is not ready.
+- Added `wall_bounce` (100 % = stock restitution) so cars can bounce off scenery,
+  and `car_car_impulse` / `car_car_launch` / `car_car_tumble` so a shunt no
+  longer launches traffic.
+- Guard the car-car normal scale against non-resident/culled cars and add the
+  `test_smash` lever.
+- Hold the chase camera's heading offset while the car tumbles (`hold_camera`,
+  default on); the settle-back lerp is suspended for the tumble.
+- Player-only patch: FULL TWIST now only touches player cars; traffic keeps the
+  stock damping, torque and collision response (`player_only`, default on).
+- Free Physics is now the only shipped preset. Legacy `preset = 0` (Cinematic)
+  and `preset = 1` (Arcade) ini values load as Free Physics, so every player
+  gets the same tuning; the preset cycle is Free Physics <-> Off.
+- Body-ground grip: `body_friction` (default 100 %) and `body_hinge` (default
+  100 %) act at the lowest hull vertex while the body is on the road. The hinge
+  turns the contact-point slide into a pivot about the contact, so the car
+  tumbles over the point it snags on, and the friction removes the rest of the
+  slide. This fixes the roof/side body still feeling slidey.
+- Camera snap: `camera_snap` (default 75 %) adds a share of the remaining angle
+  per frame for eight frames after a tumble, so the view comes back in quickly.
+- Camera release: `camera_release` (default on) ends the heading hold as soon
+  as the car is back on its wheels, upright and the spin sum is below
+  `camera_release_av` (default 800000), so the camera locks on while the car is
+  still rolling.
+- Horn cannon roll: `horn_roll` (default on) turns a horn press into a high
+  roll rate (`horn_roll_rate`) with a low launch (`horn_roll_launch`).
+- Added the `test_horn` lever for a headless cannon roll.
+- Spin fix: cancel the engine's lift damping only when ConvertTorque applied it
+  and only on roll/pitch; restore stock yaw damping while the wheels are down so
+  the tires stabilize the spin instead of letting it accelerate.
+- Engine: `JER_ARGS_CAR_TORQUE.extraDamping` exposes the lift damping flag.
+- Fixed the scenery collision point's Y frame (the engine negates `hit.vy`
+  before the event) and clamped the body-landing assist to the angular clamp.
+- Free Physics is the default when the module is enabled and sets `hull_contact`
+  to 0; `fulltwist` remains off in the shipped profile.
+
 ### Crumple
 
 - New **Crush Multiplier** row below Buddha Mode: 1.0x to 10.0x in 0.5x steps. It

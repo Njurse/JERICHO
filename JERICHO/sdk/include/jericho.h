@@ -326,12 +326,63 @@ typedef int (*JER_HOOK_FN)(void* userdata, void* args);
  */
 enum
 {
-	JER_OVERRIDE_SLOTS = 8,
+	JER_OVERRIDE_SLOT_COUNT = 8,
 
 	/* Slot meanings (engine-defined): */
-	JER_OVERRIDE_SLOT_SIM = 0	/* the world step (StepSim) -- modules may
+	JER_OVERRIDE_SLOT_STEP_SIM = 0,	/* the world step (StepSim) -- modules may
 								   time-scale or replace it */
+
+	JER_OVERRIDE_SLOT_SCENERY_COLLISION = 1,	/* CarBuildingCollision (bcollide.c):
+								   the car-vs-static-world check for
+								   BUILDING_BOXes (buildings, bridges,
+								   overhangs, smashables). A handler may
+								   reject a false 2D hit or replace its
+								   point/normal; see
+								   JER_ARGS_SCENERY_COLLISION */
+
+	/* Legacy spellings, kept so modules built against the old header still
+	 * compile. Use the canonical names in new code. */
+	JER_OVERRIDE_SLOTS = JER_OVERRIDE_SLOT_COUNT,
+	JER_OVERRIDE_SLOT_SIM = JER_OVERRIDE_SLOT_STEP_SIM
 };
+
+/*
+ * Arguments for JER_OVERRIDE_SLOT_SCENERY_COLLISION.
+ *
+ * The engine calls this after bcollide.c's 2D XZ test and the coarse vertical
+ * gate have produced a hit, and before any error correction, damage or impulse.
+ * `point` and `normal` are VECTOR* in world space and are IN/OUT: a handler may
+ * replace them, and the stock response then uses the replacement. Set
+ * `handled = 1` to claim the hit: the engine restores the car's pre-collision
+ * position and skips its whole response. That is how a module rejects a false
+ * ceiling/underside contact -- there is no separate "skip" flag because a
+ * module that rejects a hit and one that replaces the response are the same
+ * hand-off.
+ *
+ * `building` is the engine's BUILDING_BOX: the collision box of any static
+ * scenery object (a building, bridge, overhang or smashable), not necessarily
+ * a literal building. `car` is CAR_DATA*. Both are void* so this header keeps
+ * no game-type dependency.
+ */
+typedef struct JER_ARGS_SCENERY_COLLISION
+{
+	void* car;		/* CAR_DATA* that hit the scenery */
+	void* building;		/* BUILDING_BOX* -- pos/xsize/zsize/theta/height */
+	int flags;		/* CollisionCheckFlag_* passed to CarBuildingCollision */
+	void* point;		/* VECTOR* -- in/out world contact point */
+	void* normal;		/* VECTOR* -- in/out world surface normal */
+	int penetration;	/* in: collision depth from bFindCollisionPoint */
+	int handled;		/* out: 1 = module consumed/rejected; stock skips */
+} JER_ARGS_SCENERY_COLLISION;
+
+/*
+ * The override slot's function type. It returns nothing: the answer is carried
+ * in JER_ARGS_SCENERY_COLLISION.handled, which keeps "reject this false hit"
+ * and "I have replaced the response" one hand-off instead of overloading
+ * JER_RESULT_STOP (that value means "stop dispatching to further handlers").
+ * A NULL slot is the stock behaviour.
+ */
+typedef void (*JER_SCENERY_COLLISION_FN)(JER_ARGS_SCENERY_COLLISION* args);
 
 /* Opaque host context handed to every module. */
 typedef struct JERICHO_CONTEXT JERICHO_CONTEXT;

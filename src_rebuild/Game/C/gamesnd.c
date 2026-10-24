@@ -1497,6 +1497,9 @@ void ControlCarRevs(CAR_DATA* cp)
 	int revDrop;
 	short oldRevs, newRevs, desiredRevs;
 
+	if (cp == NULL || cp->ap.carCos == NULL)
+		return;
+
 	acc = cp->thrust;
 	spin = cp->wheelspin;
 	oldRevs = cp->hd.revs;
