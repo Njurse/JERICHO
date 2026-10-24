@@ -647,10 +647,13 @@ void jer_build_finish(void);
 int jer_compile_mods(void);
 
 /*
- * Host-side: what "Compile Mods" does once the player confirms. Builds the
- * runtime "dll" addons right away (they load without a restart) and requests
- * the deep-mod rebuild, which can only happen at the next boot because it
- * relinks the exe. Safe to use as a jer_prompt.h Yes action.
+ * Host-side: what "Compile Mods" does once the player confirms -- and what the
+ * mod store calls from its exit prompt. Closes the game and lets a detached
+ * helper rebuild it (runtime "dll" addons and the deep modules), then starts the
+ * new exe, so the player comes back with the mods in it. Where there is no
+ * helper/toolchain (a shipped install, another platform), it builds the runtime
+ * addons now and defers the deep rebuild to the next boot. Safe to use as a
+ * jer_prompt.h Yes action.
  */
 void jer_compile_request(void);
 
