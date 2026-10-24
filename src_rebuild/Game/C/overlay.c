@@ -186,7 +186,7 @@ extern unsigned int gHiresFontTexture;
 // them in the same place. Both DrawPercentageBar and DrawProximityBar use this.
 static void DrawBarTag(PERCENTAGE_BAR *bar, int min_x, int max_x, int min_y)
 {
-	int lift = 11;
+	int lift = 7;
 
 #ifndef PSX
 	if (gHiresFontTexture)
