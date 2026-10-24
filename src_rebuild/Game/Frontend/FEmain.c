@@ -4729,7 +4729,10 @@ void jer_frontend_refresh_at(int index)
 #define JER_FE_ROW_DX		334	/* the stock box's left edge, in draw space */
 #define JER_FE_ROW_DW		256	/* and its width */
 #define JER_FE_SCREEN_W		640	/* the frontend's draw width */
-#define JER_FE_ROW_STEP		36
+/* The stock frontend list pitch: FEscreens.inc steps its rows by 41 px
+ * (200, 241, 281, 322, 362, 402). Module menus use that by default; the
+ * modstore tables override row_step when they need a tighter table. */
+#define JER_FE_ROW_STEP		41
 #define JER_FE_ROW_TOP		190
 #define JER_FE_ROW_BOTTOM	462
 #define JER_FE_ROW_MIN_TOP	40
