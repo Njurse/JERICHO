@@ -4,6 +4,40 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.11.8
+
+*Released 2026-10-24.*
+
+### Build toolkit
+
+- The Linux release now ships the proper JERICHO mod build toolkit alongside
+  Windows. `JERICHO/build.py`, `build_game.sh`, `build_mods.sh` and
+  `build_restart.sh` sit beside the executable, the addon build produces
+  `<id>.so` libraries, and **Compile Mods** works in-game on Linux, including
+  the rebuild offered after installing a compiled-in mod from the Mod Repo.
+- The Windows entry points are now thin shims over the same driver, so both
+  platforms use one build path. The Linux setup script and the standalone
+  addon SDK gained their POSIX entry points.
+- The in-game rebuild includes a compiled-in mod installed next to the
+  executable (the runtime `JERICHO/MODS` folder), so a mod downloaded from the
+  Mod Repo is the copy that gets compiled.
+
+### Mods
+
+- **Compile Mods** is back in the JERICHO config menu whenever a source tree
+  and the build shim are present, including a Release built from a checkout.
+  A shipped package still hides it.
+- The Mod Repo table no longer leaves a gap in the middle: the three controls
+  (Refresh, Reload repos, Back) are counted once, so the last mod rows stay in
+  the list.
+- Module frontend menus now use the vanilla 41 px row pitch, so the
+  lower-right options are no longer slightly crowded.
+
+### Full Twist
+
+- FULL TWIST remains available from the official Mod Repo on both platforms.
+  It is still not bundled in a Release; installing it offers the rebuild.
+
 ## v0.11.7
 
 *Released 2026-10-23.*
