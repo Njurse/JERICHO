@@ -821,6 +821,7 @@ project "JERICHO"
             "xcopy /Y /D \"..\\..\\JERICHO\\CONFIG\\modlist.ini\" \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\\modlist.ini\"",
             "copy /Y \"..\\..\\JERICHO\\build_mods.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.bat\"",
             "copy /Y \"..\\..\\JERICHO\\build_game.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.bat\"",
+            "copy /Y \"..\\..\\JERICHO\\build_restart.bat\" \"%{cfg.buildtarget.directory}JERICHO\\build_restart.bat\"",
             -- The updater, at the build's ROOT next to the exe, so a locally built
             -- install carries exactly what a downloaded one does. The packaging step
             -- used to be the only thing that placed these, which meant bin/<cfg> - the

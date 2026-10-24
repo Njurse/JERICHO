@@ -13,6 +13,14 @@ is in [changelog.txt](changelog.txt).
   damage paths now skip it and log once instead of dereferencing a null mesh;
   stale `mayBeColliding` bits are cleared. This is the Havana traffic-car crash.
 
+### Mods
+
+- Installing a compiled-in mod from the mod repo now asks whether to recompile
+  the game when you leave the repo browser, instead of leaving the mod inert
+  until you find **Compile Mods** yourself. **Yes** closes the game, rebuilds
+  it (runtime addons and deep modules) and starts it again, so the mod is live
+  on the next launch instead of needing two restarts.
+
 ### Full Twist
 
 - FULL TWIST is no longer pre-included in the Release build. It is a deep

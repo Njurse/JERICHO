@@ -303,7 +303,7 @@ cmd_install() {
 	if [ -n "$_runtime" ]; then
 		finish 1 "installed $_name $_version into MODS/$OP_ID"
 	else
-		finish 1 "installed $_name $_version into MODS/$OP_ID (a compiled-in mod: run Compile Mods)"
+		finish 1 "installed $_name $_version into MODS/$OP_ID (a compiled-in mod: JERICHO offers to recompile when you leave the repo)"
 	fi
 }
 

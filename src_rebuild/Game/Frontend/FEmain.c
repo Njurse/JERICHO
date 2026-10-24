@@ -456,6 +456,10 @@ void jer_mods_request_compile(void);
 void jer_mods_open_credits(void);
 /* Open the Mods screen the way the Options button does (a dev/test entry). */
 void jer_mods_open_screen(void);
+/* Quit the game from a host action (the rebuild prompt's Yes): the engine's own
+ * quit path unwinds the frontend, closes the log and releases the audio device
+ * before the detached build replaces the exe. */
+void jer_frontend_quit(void);
 void jer_frontend_dim_rect(int x, int y, int w, int h, int shade);
 #ifdef __cplusplus
 }
@@ -5739,10 +5743,10 @@ int jer_mods_compile_available(void)
 }
 
 /* Ask, then hand the deep mods to the build (jer_compile.c): its Yes action
- * compiles them and asks for the restart they need. */
+ * exits the game, builds, and starts the new exe. */
 void jer_mods_request_compile(void)
 {
-	jer_prompt_begin("Compile the deep mods? JERICHO must restart afterwards.", jer_compile_request);
+	jer_prompt_begin("Compile the deep mods? JERICHO closes, rebuilds and restarts.", jer_compile_request);
 }
 
 /* Open the Credits page. It is a page of THIS screen, so open it in place of the
@@ -5764,6 +5768,15 @@ void jer_mods_open_credits(void)
 void jer_mods_open_screen(void)
 {
 	jer_frontend_goto(JERICHO_MODS_SCREEN);
+}
+
+/* Leave the game because a host action asked to (the mod store's rebuild
+ * prompt): bQuitToSystem == 2 is the engine's own "quit to system" answer, so
+ * the frontend unwinds and State_NONE ends the main loop. */
+void jer_frontend_quit(void)
+{
+	bQuitToSystem = 2;
+	jer_log("[jericho] quit requested to rebuild the game\n");
 }
 
 // [D] [T]

@@ -245,7 +245,7 @@ echo   "when": "%DATE% %TIME%">> "%RECORDS%\!OPID!.json"
 echo }>> "%RECORDS%\!OPID!.json"
 
 if "!MRUN!"=="" (
-	call :finish 1 "installed !MNAME! !MVER! into MODS\!OPID! (a compiled-in mod: run Compile Mods)"
+	call :finish 1 "installed !MNAME! !MVER! into MODS\!OPID! (a compiled-in mod: JERICHO offers to recompile when you leave the repo)"
 	goto end
 )
 call :finish 1 "installed !MNAME! !MVER! into MODS\!OPID!"

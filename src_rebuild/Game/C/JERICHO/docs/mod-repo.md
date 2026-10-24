@@ -4,6 +4,13 @@ The mod store (Options → JERICHO → Mods → **Mod Repo**) installs, updates 
 removes ONE mod at a time. It never touches the game exe: it downloads a package,
 verifies it, and unpacks it into `JERICHO/MODS/<id>/`.
 
+A **compiled-in** module (one whose `mod.toml` has no `runtime = "dll"`) is not
+in the running exe just because its folder is installed — premake generates the
+module registry at build time. So after installing one the store asks whether to
+recompile the game when you **leave the repo browser**; **Yes** closes the game,
+rebuilds it and starts it again (the same path as **Compile Mods**), **No**
+leaves it for later.
+
 A **repo** is nothing more than:
 
 1. one **`mods.json`** listing what you offer, and
@@ -168,6 +175,8 @@ Other test levers, for a headless run with `-nointro`:
 | `install[:id]` | fetch, then install a mod (the named one, or the first) |
 | `remove:id` | remove a mod the store installed; the delete waits for the game to exit |
 | `menu` | walk screen 41 → table menu → repo browser, then toggle and reorder a row |
+| `recompile` | pretend a compiled-in mod was just installed, enter and leave the repo browser, then log the recompile prompt |
+| `rebuild` | answer that prompt's **Yes** (the game exits and hands the build off; use only where a rebuild is wanted) |
 
 ## 5. The rules a repo should respect
 
