@@ -4,7 +4,9 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
-## Unreleased
+## v0.11.7
+
+*Released 2026-10-23.*
 
 ### Engine
 
@@ -19,7 +21,8 @@ is in [changelog.txt](changelog.txt).
   the game when you leave the repo browser, instead of leaving the mod inert
   until you find **Compile Mods** yourself. **Yes** closes the game, rebuilds
   it (runtime addons and deep modules) and starts it again, so the mod is live
-  on the next launch instead of needing two restarts.
+  on the next launch instead of needing two restarts. A build with the
+  toolchain is required (a source checkout or `Release_dev`).
 
 ### Full Twist
 
