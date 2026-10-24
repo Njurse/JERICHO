@@ -1,10 +1,10 @@
-// COLLISIONDEVIL — new handling model (Paradise-oriented).
+// THRILL DRIVER — new handling model (Paradise-oriented).
 // Drift is a self-limiting state: mild rear grip loss + short initiation yaw
 // that fades and is countered once the car is already rotating.
 // No continuous thruster, no inverted damping, hard floors on grip and yaw rate.
 
-#ifndef COLLISIONDEVIL_H
-#define COLLISIONDEVIL_H
+#ifndef THRILLDRIVER_H
+#define THRILLDRIVER_H
 
 // --------------------------- tunables ------------------------------------
 
@@ -62,7 +62,7 @@ enum {
 
 // --------------------------- state ---------------------------------------
 
-typedef struct COLLISIONDEVIL_CONFIG {
+typedef struct THRILLDRIVER_CONFIG {
     int enabled;
     int aggression;
     int eagerness;
@@ -70,22 +70,22 @@ typedef struct COLLISIONDEVIL_CONFIG {
     int boost;
     int preset;
     int fovPull;
-} COLLISIONDEVIL_CONFIG;
+} THRILLDRIVER_CONFIG;
 
-typedef struct COLLISIONDEVIL_DRIFT {
+typedef struct THRILLDRIVER_DRIFT {
     int intensity;          // 0..4096 smoothed target
     int direction;          // +1 / -1
     int handbrake;          // 1 if currently handbrake-driven
     int hbFrames;           // frames handbrake has been held this slide
     int lastYawRate;        // previous frame |angularVelocity[1]| for fade
-} COLLISIONDEVIL_DRIFT;
+} THRILLDRIVER_DRIFT;
 
-typedef struct COLLISIONDEVIL_VISUAL {
+typedef struct THRILLDRIVER_VISUAL {
     int roll;
     int pitch;
     int yaw;
-} COLLISIONDEVIL_VISUAL;
+} THRILLDRIVER_VISUAL;
 
-extern COLLISIONDEVIL_CONFIG gCdCfg;
+extern THRILLDRIVER_CONFIG gCdCfg;
 
 #endif

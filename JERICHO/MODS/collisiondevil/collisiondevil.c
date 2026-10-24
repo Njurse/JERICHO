@@ -1,5 +1,5 @@
 /*
- * collisiondevil.c — new handling model.
+ * thrilldriver.c — new handling model.
  *
  * Philosophy:
  *   - Drift intensity is a smoothed 0..4096 value driven by inputs.
@@ -24,9 +24,9 @@
 #include "jer_config.h"
 #include "jer_math.h"
 
-COLLISIONDEVIL_CONFIG gCdCfg;
-static COLLISIONDEVIL_DRIFT  gDrift[MAX_CARS];
-static COLLISIONDEVIL_VISUAL gVisual[MAX_CARS];
+THRILLDRIVER_CONFIG gCdCfg;
+static THRILLDRIVER_DRIFT  gDrift[MAX_CARS];
+static THRILLDRIVER_VISUAL gVisual[MAX_CARS];
 
 static const char* const kPresetNames[] = { "Burnout 3", "Paradise", "Custom" };
 
@@ -148,8 +148,8 @@ static int cdOnCarStep(void* ud, void* args)
     if (!gCdCfg.enabled || cp->id < 0 || cp->id >= MAX_CARS)
         return JER_RESULT_CONTINUE;
 
-    COLLISIONDEVIL_DRIFT* d = &gDrift[cp->id];
-    COLLISIONDEVIL_VISUAL* v = &gVisual[cp->id];
+    THRILLDRIVER_DRIFT* d = &gDrift[cp->id];
+    THRILLDRIVER_VISUAL* v = &gVisual[cp->id];
 
     int steer = cp->wheel_angle;
     int braking = cp->thrust < 0;
@@ -284,7 +284,7 @@ static int cdOnCarDraw(void* ud, void* args)
     if (!gCdCfg.enabled || cp->id < 0 || cp->id >= MAX_CARS)
         return JER_RESULT_CONTINUE;
 
-    COLLISIONDEVIL_VISUAL* v = &gVisual[cp->id];
+    THRILLDRIVER_VISUAL* v = &gVisual[cp->id];
     if (v->pitch) _RotMatrixX(m, (short)v->pitch);
     if (v->roll)  _RotMatrixZ(m, (short)v->roll);
     return JER_RESULT_CONTINUE;
@@ -377,7 +377,7 @@ static const JER_PAUSE_MENU_ITEM cdMainItems[] = {
     { NULL, cdLabelPreset,     cdCyclePreset,   NULL, NULL, 1 },
     { "Visual Theater", NULL, NULL, NULL, &cdVisualMenu, 0 },
 };
-static const JER_PAUSE_MENU cdMainMenu = { "COLLISIONDEVIL", cdMainItems, 6 };
+static const JER_PAUSE_MENU cdMainMenu = { "THRILL DRIVER", cdMainItems, 6 };
 
 // ---------------------------------------------------------------------------
 // Entry
@@ -390,10 +390,10 @@ JER_MODULE_ENTRY(jer_module_collisiondevil_entry)(JERICHO_CONTEXT* ctx)
 
     ctx->jer_register_module(ctx,
         "collisiondevil",
-        "COLLISIONDEVIL",
+        "THRILL DRIVER",
         "0.3.0",
         "JERICHO",
-        "New handling model: self-limiting Paradise-style drifts. Mild grip drop, fading yaw initiation, no runaway spins.",
+        "THRILL DRIVER arcade handling: self-limiting Paradise-style drifts. Mild grip drop, fading yaw initiation, no runaway spins.",
         "",
         JERICHO_SDK_VERSION);
 
@@ -408,5 +408,5 @@ JER_MODULE_ENTRY(jer_module_collisiondevil_entry)(JERICHO_CONTEXT* ctx)
     ctx->jer_register_hook(ctx, JER_EVENT_CAMERA, cdOnCamera, NULL, 0);
 
     jer_pause_menu_register(&cdMainMenu);
-    ctx->jer_log(ctx, "[collisiondevil] new handling model registered\n");
+    ctx->jer_log(ctx, "[THRILL DRIVER] new handling model registered\n");
 }

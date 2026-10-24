@@ -1,4 +1,4 @@
-# COLLISIONDEVIL
+# THRILL DRIVER
 
 An arcade handling overhaul for REDRIVER2, built as a JERICHO deep mod.
 It re-shapes the stock Driver 2 physics into a "rocket-powered skateboard on
@@ -33,7 +33,7 @@ car with zero per-car config:
 
 ## The pause menu (2 pages)
 
-- **Page 1 — COLLISIONDEVIL**: Module Toggle, Arcade Aggression, Drift
+- **Page 1 — THRILL DRIVER**: Module Toggle, Arcade Aggression, Drift
   Eagerness, Boost Intensity, Handling Preset (Burnout 3 / Paradise / Custom),
   and the Visual Theater submenu.
 - **Page 2 — Visual Theater**: Visual Drama, Camera FOV Pull, Reset to

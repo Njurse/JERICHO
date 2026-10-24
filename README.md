@@ -403,9 +403,9 @@ cursor and an overlay menu that keeps the world running while it is open.
 A modern dual-stick third-person camera plus an overridable weapon system.
 *(Development is currently paused.)* [readme](JERICHO/MODS/d2pl/readme.md)
 
-### COLLISIONDEVIL (`collisiondevil`) — arcade handling *(compiled-in)*
+### Thrill Driver (`collisiondevil`) — arcade handling *(compiled-in)*
 
-An arcade handling overhaul that derives every value from existing chassis
+A high-energy arcade handling overhaul that derives every value from existing chassis
 stats. [README](JERICHO/MODS/collisiondevil/README.md)
 
 ### JerAI (`JerAI`) — an A\* AI driver for the player's car *(compiled-in)*
