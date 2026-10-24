@@ -36,7 +36,7 @@ Each mod documents itself in its own folder.
 | crumple | [`README.md`](../JERICHO/MODS/crumple/README.md), [`crumple.md`](../JERICHO/MODS/crumple/crumple.md) (car deformation model) |
 | d2pl | [`readme.md`](../JERICHO/MODS/d2pl/readme.md) |
 | sandbox | [`README.md`](../JERICHO/MODS/sandbox/README.md) |
-| collisiondevil | [`README.md`](../JERICHO/MODS/collisiondevil/README.md) |
+| Thrill Driver (`collisiondevil`) | [`README.md`](../JERICHO/MODS/collisiondevil/README.md) |
 | antfarm | [`readme.md`](../JERICHO/MODS/antfarm/readme.md) (what it is + how to use it), [`ARCHITECTURE.md`](../JERICHO/MODS/antfarm/ARCHITECTURE.md) (**internals: every hook, the cut state machine, the archetype table and each camera model's maths, the trail cam, shot planning, region/area streaming and the recovery, audio, config, testing**) |
 | levelhacks | [`README.md`](../JERICHO/MODS/levelhacks/README.md) — **DISABLED** and out of the shipped set: mp owns the take-a-ride Singleplayer/Multiplayer prompt now |
 | example | [`README.md`](../JERICHO/MODS/example/README.md) |
