@@ -12,21 +12,10 @@
  * frontend can show "not compiled"; activation skips it.
  */
 #include "jer_internal.h"
+#include "jer_host.h"
 
 #include <stdio.h>
 #include <string.h>
-
-#if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#elif defined(__unix__) && !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
-#include <dlfcn.h>
-#include <dirent.h>
-#include <sys/stat.h>
-#else
-/* emscripten / android: no runtime loading — the loader is a stub */
-#define JER_NO_RUNTIME_LOADING 1
-#endif
 
 #define JER_MODTOML "mod.toml"
 
@@ -355,52 +344,39 @@ static int jerValidId(const char* id)
 static int jerLoadBinary(const char* rootDir, const char* id, void** outHandle, JER_MODULE_ENTRY* outEntry)
 {
 	char path[640];
+	char leaf[128];
 	char sym[96];
-	void* handle;
+	void* handle = NULL;
 	void* entry = NULL;
-
-	(void)snprintf(path, sizeof(path), "%s/MODS/%s/%s%s", rootDir, id, id,
-#if defined(_WIN32)
-		".dll"
-#elif defined(__unix__) && !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
-		".so"
-#else
-		".bin"
-#endif
-	);
+	int variant;
 
 	snprintf(sym, sizeof(sym), "jer_module_%s_entry", id);
 
-#if defined(_WIN32)
-	handle = (void*)LoadLibraryA(path);
-
-	if (handle != NULL)
-		entry = (void*)GetProcAddress((HMODULE)handle, sym);
-#elif defined(JER_NO_RUNTIME_LOADING)
-	handle = NULL;
-#else
-	handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
-
-	if (handle != NULL)
+	/* Walk the platform's on-disk names (<id>.dll, <id>.so, lib<id>.so, ...).
+	 * The first one that loads and resolves the entry symbol wins. */
+	for (variant = 0; jer_host_lib_variant(id, variant, leaf, sizeof(leaf)); variant++)
 	{
-		entry = dlsym(handle, sym);
+		snprintf(path, sizeof(path), "%s/MODS/%s/%s", rootDir, id, leaf);
 
-		if (entry == NULL)
-			fprintf(stderr, "[jericho] warning: %s loaded but symbol %s missing: %s\n", path, sym, dlerror());
+		handle = jer_host_lib_open(path);
+
+		if (handle == NULL)
+			continue;
+
+		entry = jer_host_lib_sym(handle, sym);
+
+		if (entry != NULL)
+			break;
+
+		fprintf(stderr, "[jericho] warning: %s loaded but symbol %s missing: %s\n",
+			path, sym, jer_host_last_error());
+
+		jer_host_lib_close(handle);
+		handle = NULL;
 	}
-#endif
 
 	if (handle == NULL || entry == NULL)
 	{
-		if (handle != NULL)
-		{
-#if defined(_WIN32)
-			FreeLibrary((HMODULE)handle);
-#elif !defined(JER_NO_RUNTIME_LOADING)
-			dlclose(handle);
-#endif
-		}
-
 		*outHandle = NULL;
 		*outEntry = NULL;
 		return 0;
@@ -415,123 +391,67 @@ static int jerLoadBinary(const char* rootDir, const char* id, void** outHandle, 
 /* Directory scan                                                      */
 /* ------------------------------------------------------------------ */
 
+typedef struct
+{
+	const char* rootDir;
+	JER_MODULE* table;
+	int max;
+	int count;
+} JER_LOAD_SCAN;
+
+static void jerLoadScanEntry(const char* name, int isDir, void* user)
+{
+	JER_LOAD_SCAN* s = (JER_LOAD_SCAN*)user;
+	JER_MODULE* m;
+	char modtoml[640];
+
+	if (!isDir || s->count >= s->max)
+		return;
+	if (name[0] == '.')
+		return;
+	if (!jerValidId(name))
+		return;	/* id must match [A-Za-z_][A-Za-z0-9_]* */
+
+	snprintf(modtoml, sizeof(modtoml), "%s/MODS/%s/%s", s->rootDir, name, JER_MODTOML);
+
+	if (!jer_host_file_exists(modtoml))
+		return;	/* not a module folder */
+
+	m = &s->table[s->count];
+	memset(m, 0, sizeof(*m));
+	m->valid = 1;
+	snprintf(m->id, sizeof(m->id), "%s", name);
+	snprintf(m->name, sizeof(m->name), "%s", name);
+	snprintf(m->version, sizeof(m->version), "?");
+	jerParseModToml(modtoml, m);
+
+	if (!jerLoadBinary(s->rootDir, m->id, &m->handle, &m->entry))
+	{
+		m->handle = NULL;
+		m->entry = NULL;
+	}
+
+	s->count++;
+}
+
 int jer_loader_scan(const char* rootDir, JER_MODULE* table, int max)
 {
-	int count = 0;
+	char mods[640];
+	JER_LOAD_SCAN scan;
 
 	if (rootDir == NULL || rootDir[0] == 0 || table == NULL || max <= 0)
 		return 0;
 
-#if defined(_WIN32)
-	{
-		char pattern[640];
-		WIN32_FIND_DATAA fd;
-		HANDLE hFind;
+	snprintf(mods, sizeof(mods), "%s/MODS", rootDir);
 
-		snprintf(pattern, sizeof(pattern), "%s/MODS/*", rootDir);
-		hFind = FindFirstFileA(pattern, &fd);
+	scan.rootDir = rootDir;
+	scan.table = table;
+	scan.max = max;
+	scan.count = 0;
 
-		if (hFind == INVALID_HANDLE_VALUE)
-			return 0;
+	jer_host_dir_scan(mods, jerLoadScanEntry, &scan);
 
-		do
-		{
-			JER_MODULE* m;
-			char modtoml[640];
-
-			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-				continue;
-			if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0)
-				continue;
-			if (!jerValidId(fd.cFileName))
-				continue;	/* id must match [A-Za-z_][A-Za-z0-9_]* */
-			if (count >= max)
-				break;
-
-			snprintf(modtoml, sizeof(modtoml), "%s/MODS/%s/%s", rootDir, fd.cFileName, JER_MODTOML);
-			{
-				FILE* t = fopen(modtoml, "rb");
-
-				if (t == NULL)
-					continue;
-
-				fclose(t);
-			}
-
-			m = &table[count];
-			memset(m, 0, sizeof(*m));
-			m->valid = 1;
-			snprintf(m->id, sizeof(m->id), "%s", fd.cFileName);
-			snprintf(m->name, sizeof(m->name), "%s", fd.cFileName);
-			snprintf(m->version, sizeof(m->version), "?");
-			jerParseModToml(modtoml, m);
-
-			if (!jerLoadBinary(rootDir, m->id, &m->handle, &m->entry))
-			{
-				m->handle = NULL;
-				m->entry = NULL;
-			}
-
-			count++;
-		} while (FindNextFileA(hFind, &fd) != 0);
-
-		FindClose(hFind);
-	}
-#elif defined(JER_NO_RUNTIME_LOADING)
-	(void)rootDir;	/* stub: no runtime loading on this platform */
-#else
-	{
-		char dirPath[640];
-		DIR* d;
-		struct dirent* de;
-
-		snprintf(dirPath, sizeof(dirPath), "%s/MODS", rootDir);
-		d = opendir(dirPath);
-
-		if (d == NULL)
-			return 0;
-
-		while ((de = readdir(d)) != NULL)
-		{
-			JER_MODULE* m;
-			char modtoml[640];
-			struct stat st;
-
-			if (de->d_name[0] == '.')
-				continue;
-			if (!jerValidId(de->d_name))
-				continue;	/* id must match [A-Za-z_][A-Za-z0-9_]* */
-
-			snprintf(modtoml, sizeof(modtoml), "%s/MODS/%s/%s", rootDir, de->d_name, JER_MODTOML);
-
-			if (stat(modtoml, &st) != 0)
-				continue;	/* not a module folder */
-
-			if (count >= max)
-				break;
-
-			m = &table[count];
-			memset(m, 0, sizeof(*m));
-			m->valid = 1;
-			snprintf(m->id, sizeof(m->id), "%s", de->d_name);
-			snprintf(m->name, sizeof(m->name), "%s", de->d_name);
-			snprintf(m->version, sizeof(m->version), "?");
-			jerParseModToml(modtoml, m);
-
-			if (!jerLoadBinary(rootDir, m->id, &m->handle, &m->entry))
-			{
-				m->handle = NULL;
-				m->entry = NULL;
-			}
-
-			count++;
-		}
-
-		closedir(d);
-	}
-#endif
-
-	return count;
+	return scan.count;
 }
 
 /*
@@ -539,72 +459,65 @@ int jer_loader_scan(const char* rootDir, JER_MODULE* table, int max)
  * (mod.toml without runtime = "dll"). Same directory scan as jer_loader_scan
  * but it never loads anything, so it is safe to call before/after activation.
  */
+typedef struct
+{
+	const char* rootDir;
+	JER_DEEP_MOD* out;
+	int max;
+	int count;
+} JER_DEEP_SCAN;
+
+static void jerDeepScanEntry(const char* name, int isDir, void* user)
+{
+	JER_DEEP_SCAN* s = (JER_DEEP_SCAN*)user;
+	JER_MODULE m;
+	char modtoml[640];
+
+	if (!isDir || s->count >= s->max)
+		return;
+	if (name[0] == '.')
+		return;
+	if (!jerValidId(name))
+		return;
+
+	snprintf(modtoml, sizeof(modtoml), "%s/MODS/%s/%s", s->rootDir, name, JER_MODTOML);
+
+	if (!jer_host_file_exists(modtoml))
+		return;
+
+	memset(&m, 0, sizeof(m));
+	snprintf(m.id, sizeof(m.id), "%s", name);
+	snprintf(m.name, sizeof(m.name), "%s", name);
+	snprintf(m.version, sizeof(m.version), "?");
+	jerParseModToml(modtoml, &m);
+
+	if (m.isDllAddon)
+		return;	/* loadable addon: no rebuild needed */
+
+	snprintf(s->out[s->count].id, sizeof(s->out[s->count].id), "%s", m.id);
+	snprintf(s->out[s->count].name, sizeof(s->out[s->count].name), "%s", m.name);
+	s->count++;
+}
+
 int jer_deep_mod_list(JER_DEEP_MOD* out, int max)
 {
 	const char* rootDir = jer_root_dir();
-	int count = 0;
+	char mods[640];
+	JER_DEEP_SCAN scan;
 
 	if (rootDir == NULL || rootDir[0] == 0 || out == NULL || max <= 0)
 		return 0;
 
-#if defined(_WIN32)
-	{
-		char pattern[640];
-		WIN32_FIND_DATAA fd;
-		HANDLE hFind;
+	snprintf(mods, sizeof(mods), "%s/MODS", rootDir);
 
-		snprintf(pattern, sizeof(pattern), "%s/MODS/*", rootDir);
-		hFind = FindFirstFileA(pattern, &fd);
+	scan.rootDir = rootDir;
+	scan.out = out;
+	scan.max = max;
+	scan.count = 0;
 
-		if (hFind == INVALID_HANDLE_VALUE)
-			return 0;
+	jer_host_dir_scan(mods, jerDeepScanEntry, &scan);
 
-		do
-		{
-			JER_MODULE m;
-			char modtoml[640];
-
-			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-				continue;
-			if (fd.cFileName[0] == '.')
-				continue;
-			if (!jerValidId(fd.cFileName))
-				continue;
-			if (count >= max)
-				break;
-
-			snprintf(modtoml, sizeof(modtoml), "%s/MODS/%s/%s", rootDir, fd.cFileName, JER_MODTOML);
-
-			{
-				FILE* t = fopen(modtoml, "rb");
-
-				if (t == NULL)
-					continue;	/* not a module folder */
-
-				fclose(t);
-			}
-
-			memset(&m, 0, sizeof(m));
-			snprintf(m.id, sizeof(m.id), "%s", fd.cFileName);
-			snprintf(m.name, sizeof(m.name), "%s", fd.cFileName);
-			jerParseModToml(modtoml, &m);
-
-			if (m.isDllAddon)
-				continue;	/* loadable addon: no rebuild needed */
-
-			snprintf(out[count].id, sizeof(out[count].id), "%s", m.id);
-			snprintf(out[count].name, sizeof(out[count].name), "%s", m.name);
-			count++;
-		} while (FindNextFileA(hFind, &fd) != 0);
-
-		FindClose(hFind);
-	}
-#else
-	/* the deep build is a Windows/MSBuild flow; nothing to list elsewhere */
-	(void)rootDir;
-#endif
-
-	return count;
+	return scan.count;
 }
 
 void jer_loader_unload(JER_MODULE* table, int count)
@@ -618,11 +531,7 @@ void jer_loader_unload(JER_MODULE* table, int count)
 	{
 		if (table[i].handle != NULL)
 		{
-#if defined(_WIN32)
-			FreeLibrary((HMODULE)table[i].handle);
-#elif !defined(JER_NO_RUNTIME_LOADING)
-			dlclose(table[i].handle);
-#endif
+			jer_host_lib_close(table[i].handle);
 			table[i].handle = NULL;
 			table[i].entry = NULL;
 		}

@@ -1,36 +1,43 @@
 /*
  * jer_compile.c — host-side build helpers.
  *
- * Two builds live here:
+ * Three builds live here:
  *
  *   jer_compile_mods()      the fast one. Compiles every runtime "dll" addon
- *                           into a loadable DLL (JERICHO/build_mods.bat). The
- *                           game exe is never touched, so this is immediate.
+ *                           into a loadable binary (JERICHO/build_mods.<ext>).
+ *                           The game exe is never touched, so this is quick.
  *
  *   jer_build_begin/finish  the boot-time one (the fallback). Rebuilds the game
- *                           exe with the DEEP mods (premake + MSBuild, one step
- *                           per module), so the player sees "Compiling JERICHO
- *                           addons..." / "<name> [i/n]" on a presentation
- *                           screen instead of a frozen window. It runs from the
- *                           live image, so the exe is moved aside (Windows locks
- *                           a running image) and the new one lands under the
- *                           normal name -- a restart is still needed.
+ *                           exe with the DEEP mods (premake + the compiler, one
+ *                           step per module), so the player sees "Compiling
+ *                           JERICHO addons..." / "<name> [i/n]" on a
+ *                           presentation screen instead of a frozen window. On
+ *                           Windows the running exe is moved aside first (the
+ *                           OS locks a running image); on POSIX the linker
+ *                           relinks it in place. Either way the *new* build only
+ *                           runs on the next start.
  *
- *   jer_build_launch_restart  the normal one. Starts <root>/build_restart.bat
+ *   jer_build_launch_restart  the normal one. Starts <root>/build_restart.<ext>
  *                           detached, then the game quits: the helper waits for
  *                           this process (image, log and audio released), builds
  *                           both kinds, and starts the new exe. One restart, the
  *                           game coming back by itself.
  *
- * Windows only: this is where the WinAPI lives so game files never see
- * windows.h (the frontend defines its own LoadImage and would collide).
+ * Platform-neutral: every OS operation goes through jer_host (jer_host.h), so
+ * this file has no platform branches and includes no host SDK header (which
+ * matters — the frontend defines its own LoadImage and would collide with
+ * <windows.h>). Each step runs the same shim (JERICHO/build_game.bat on
+ * Windows, build_game.sh elsewhere), which forwards to the shared
+ * cross-platform driver JERICHO/build.py.
  */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "jericho.h"
 #include "jer_config.h"
 #include "jer_screen.h"
+#include "jer_host.h"
 
 /* ------------------------------------------------------------------ */
 /* The pending-build marker (plain file, so it survives a restart)     */
@@ -39,6 +46,10 @@
 #define JER_BUILD_MARKER "needs-build"
 #define JER_BUILD_FAILED "build-failed"
 #define JER_BUILD_LOG "build.log"
+
+#define JER_BUILD_MAX_MODS 32
+#define JER_BUILD_CMDLINE 4096
+#define JER_BUILD_PATH 1024
 
 /* The frontend owns the engine's quit path (FEmain.c). Requesting it here lets a
  * rebuild leave the process BEFORE the helper touches the exe: the image, the
@@ -51,14 +62,11 @@ void jer_frontend_quit(void);
 }
 #endif
 
-/* Defined in the Windows block below; 0 where there is no detached build. */
-int jer_build_launch_restart(void);
-
 static void jerBuildPath(char* out, int max, const char* leaf)
 {
 	const char* root = jer_root_dir();
 
-	snprintf(out, max, "%s/%s/%s",
+	snprintf(out, (size_t)max, "%s/%s/%s",
 		(root != NULL && root[0] != 0) ? root : "JERICHO", JER_CONFIG_PATH, leaf);
 }
 
@@ -105,17 +113,173 @@ void jer_build_clear_pending(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Finding the tree, the shims and the exe                            */
+/* ------------------------------------------------------------------ */
 
-#if defined(_WIN32)
+/* the last '/' or '\\' in s, or NULL (handles both separators so a Windows
+ * exe path and a POSIX one are treated the same) */
+static const char* jerLastSep(const char* s)
+{
+	const char* a = strrchr(s, '/');
+	const char* b = strrchr(s, '\\');
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+	if (a == NULL)
+		return b;
+	if (b == NULL)
+		return a;
 
-#define JER_BUILD_MAX_MODS 32
-#define JER_BUILD_CMDLINE 4096
+	return (a > b) ? a : b;
+}
 
-/* Steps the build walks through, one child process each. */
-enum { JER_STEP_PREMAKE = 0, JER_STEP_FIRST_MOD = 1 };
+/* Walk up from the running exe looking for the premake tree (src_rebuild): the
+ * exe sits in <tree>/bin/<config>/, so this is three levels up in the dev
+ * tree. Returns 0 when the game runs from a tree with no sources (a shipped
+ * install), which simply means there is nothing to compile. */
+static int jerBuildFindSrcDir(char* out, int max)
+{
+	char dir[JER_BUILD_PATH];
+	char* slash;
+	int depth;
+
+	if (!jer_host_exe_path(dir, sizeof(dir)))
+		return 0;
+
+	slash = (char*)jerLastSep(dir);
+
+	if (slash == NULL)
+		return 0;
+
+	*slash = 0;		/* <...>/bin/<config> */
+
+	for (depth = 0; depth < 6; depth++)
+	{
+		char probe[JER_BUILD_PATH];
+
+		snprintf(probe, sizeof(probe), "%s/premake5.lua", dir);
+
+		if (jer_host_file_exists(probe))
+		{
+			snprintf(out, (size_t)max, "%s", dir);
+			return 1;
+		}
+
+		slash = (char*)jerLastSep(dir);
+
+		if (slash == NULL || slash == dir)	/* root */
+			break;
+
+		*slash = 0;
+	}
+
+	return 0;
+}
+
+/* The build shim: next to the exe when the game ships with one, otherwise in
+ * the repo (JERICHO/ next to src_rebuild/). `base` is "build_game",
+ * "build_mods" or "build_restart"; the extension comes from the host
+ * (.bat / .sh). */
+static int jerBuildFindShim(const char* srcDir, const char* base, char* out, int max)
+{
+	const char* ext = jer_host_script_ext();
+	char dir[JER_BUILD_PATH];
+	char* slash;
+
+	/* 1) the runtime JERICHO next to the exe */
+	if (jer_host_exe_path(dir, sizeof(dir)))
+	{
+		slash = (char*)jerLastSep(dir);
+
+		if (slash != NULL)
+		{
+			*slash = 0;
+			snprintf(out, (size_t)max, "%s/JERICHO/%s.%s", dir, base, ext);
+
+			if (jer_host_file_exists(out))
+				return 1;
+		}
+	}
+
+	/* 2) the repo: srcDir is <repo>/src_rebuild, so the shim is one up */
+	snprintf(out, (size_t)max, "%s/../JERICHO/%s.%s", srcDir, base, ext);
+
+	return jer_host_file_exists(out);
+}
+
+/* POSIX shims are launched through `sh` so a missing executable bit cannot
+ * stop a build. Windows runs the .bat directly through cmd.exe. */
+static const char* jerBuildRunner(void)
+{
+	return (strcmp(jer_host_script_ext(), "sh") == 0) ? "sh " : "";
+}
+
+/* ------------------------------------------------------------------ */
+/* The detached one-restart helper                                     */
+/* ------------------------------------------------------------------ */
+
+/* "Yes" to a rebuild: the exe cannot relink itself while it is running on
+ * Windows, and the new image needs a fresh process on every platform, so the
+ * game asks to quit and a detached helper takes over. It is started BEFORE the
+ * exit and waits for this PID to disappear (so the image, the log and the
+ * audio device are released), then builds and starts the new exe. Returns 0
+ * when there is no helper/tree here, which leaves the caller on the deferred
+ * boot-build path. */
+int jer_build_launch_restart(void)
+{
+	char srcDir[JER_BUILD_PATH];
+	char restart[JER_BUILD_PATH];
+	char exePath[JER_BUILD_PATH];
+	char cmdline[JER_BUILD_CMDLINE];
+	JER_DEEP_MOD mods[JER_BUILD_MAX_MODS];
+	JER_HOST_PROC* proc;
+	int count, i, used;
+
+	if (!jerBuildFindSrcDir(srcDir, sizeof(srcDir)) ||
+		!jerBuildFindShim(srcDir, "build_restart", restart, sizeof(restart)))
+	{
+		jer_log("[compile] no src_rebuild tree / JERICHO/build_restart.%s - cannot rebuild from here\n",
+			jer_host_script_ext());
+		return 0;
+	}
+
+	if (!jer_host_exe_path(exePath, sizeof(exePath)))
+		return 0;
+
+	count = jer_deep_mod_list(mods, JER_BUILD_MAX_MODS);
+
+	used = snprintf(cmdline, sizeof(cmdline), "%s\"%s\" %ld \"%s\" \"%s\" \"%s\"",
+		jerBuildRunner(), restart, jer_host_pid(), srcDir,
+		BUILD_CONFIGURATION_STRING, exePath);
+
+	for (i = 0; i < count && used > 0 && used < (int)sizeof(cmdline) - 64; i++)
+		used += snprintf(cmdline + used, sizeof(cmdline) - (size_t)used,
+			" %s", mods[i].id);
+
+	if (used < 0 || used >= (int)sizeof(cmdline) - 4)
+	{
+		jer_log("[compile] the rebuild command line is too long\n");
+		return 0;
+	}
+
+	proc = jer_host_spawn(cmdline, NULL);
+
+	if (proc == NULL)
+	{
+		jer_log("[compile] cannot start the rebuild helper (%s)\n", jer_host_last_error());
+		return 0;
+	}
+
+	/* do NOT poll or free-wait here: the helper outlives this process. The
+	 * bookkeeping is released immediately; the child keeps running. */
+	jer_host_proc_free(proc);
+
+	jer_log("[compile] rebuild helper started for pid %ld (%d deep module(s)); exiting to build\n",
+		jer_host_pid(), count);
+	return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* The stepped boot-time build (the fallback)                          */
+/* ------------------------------------------------------------------ */
 
 static struct
 {
@@ -128,210 +292,15 @@ static struct
 
 	JER_DEEP_MOD mods[JER_BUILD_MAX_MODS];
 
-	char srcDir[MAX_PATH];	/* the src_rebuild tree (premake5.lua lives here) */
-	char config[64];		/* e.g. Release_dev (BUILD_CONFIGURATION_STRING) */
-	char batPath[MAX_PATH];	/* JERICHO/build_game.bat */
-	char logPath[640];		/* JERICHO/CONFIG/build.log */
-	char exePath[MAX_PATH];	/* the running exe */
-	char exeOld[MAX_PATH];	/* ...moved here while it is relinked */
+	char srcDir[JER_BUILD_PATH];	/* the src_rebuild tree (premake5.lua lives here) */
+	char config[64];				/* e.g. Release_dev (BUILD_CONFIGURATION_STRING) */
+	char shimPath[JER_BUILD_PATH];	/* JERICHO/build_game.bat | .sh */
+	char logPath[640];				/* JERICHO/CONFIG/build.log */
+	char exePath[JER_BUILD_PATH];	/* the running exe */
+	char exeOld[JER_BUILD_PATH];	/* ...moved here while it is relinked */
 
-	PROCESS_INFORMATION pi;
-	int running;
+	JER_HOST_PROC* proc;			/* the current step's child, or NULL */
 } gBuild;
-
-static int jerBuildFileExists(const char* path)
-{
-	FILE* f = fopen(path, "rb");
-
-	if (f == NULL)
-		return 0;
-
-	fclose(f);
-	return 1;
-}
-
-/* Walk up from the running exe looking for the premake tree (src_rebuild): the
- * exe sits in <tree>/bin/<config>/, so this is three levels up in the dev
- * tree. Returns 0 when the game is running from a tree that has no sources
- * (a shipped install), which simply means there is nothing to compile. */
-static int jerBuildFindSrcDir(char* out, int max)
-{
-	char dir[MAX_PATH];
-	char* slash;
-	int depth;
-
-	if (GetModuleFileNameA(NULL, dir, sizeof(dir)) == 0)
-		return 0;
-
-	slash = strrchr(dir, '\\');
-
-	if (slash == NULL)
-		return 0;
-
-	*slash = 0;		/* <...>/bin/<config> */
-
-	for (depth = 0; depth < 6; depth++)
-	{
-		char probe[MAX_PATH];
-
-		snprintf(probe, sizeof(probe), "%s\\premake5.lua", dir);
-
-		if (jerBuildFileExists(probe))
-		{
-			snprintf(out, max, "%s", dir);
-			return 1;
-		}
-
-		slash = strrchr(dir, '\\');
-
-		if (slash == NULL || slash == dir + 2)	/* "C:" — stop at the root */
-			break;
-
-		*slash = 0;
-	}
-
-	return 0;
-}
-
-/* The build script: next to the exe when the game ships with one, otherwise
- * in the repo (JERICHO/ next to src_rebuild/). `src` is the tree the caller
- * found, so this does not depend on gBuild having been prepared. */
-static int jerBuildFindBat(char* out, int max, const char* src)
-{
-	char dir[MAX_PATH];
-	char* slash;
-
-	/* 1) the runtime JERICHO next to the exe */
-	if (GetModuleFileNameA(NULL, dir, sizeof(dir)) != 0)
-	{
-		slash = strrchr(dir, '\\');
-
-		if (slash != NULL)
-		{
-			*slash = 0;
-			snprintf(out, max, "%s\\JERICHO\\build_game.bat", dir);
-
-			if (jerBuildFileExists(out))
-				return 1;
-		}
-	}
-
-	/* 2) the repo: <srcDir>/../JERICHO/build_game.bat */
-	{
-		char repo[MAX_PATH];
-
-		snprintf(repo, sizeof(repo), "%s", src != NULL ? src : "");
-		slash = strrchr(repo, '\\');
-
-		if (slash == NULL)
-			return 0;
-
-		*slash = 0;
-		snprintf(out, max, "%s\\JERICHO\\build_game.bat", repo);
-
-		/* srcDir is <repo>/src_rebuild */
-		return jerBuildFileExists(out);
-	}
-}
-
-/* build_restart.bat sits beside build_game.bat: the same two locations the build
- * script itself is looked for in, so a runtime JERICHO and a repo checkout both
- * work. */
-static int jerBuildFindRestart(char* out, int max, const char* src)
-{
-	char bat[MAX_PATH];
-	char* slash;
-	size_t dirLen;
-	const char* leaf = "build_restart.bat";
-
-	if (!jerBuildFindBat(bat, sizeof(bat), src))
-		return 0;
-
-	slash = strrchr(bat, '\\');
-
-	if (slash == NULL)
-		return 0;
-
-	dirLen = (size_t)(slash - bat) + 1;
-
-	if ((int)(dirLen + strlen(leaf) + 1) > max)
-		return 0;
-
-	memcpy(out, bat, dirLen);
-	snprintf(out + dirLen, (size_t)max - dirLen, "%s", leaf);
-
-	return jerBuildFileExists(out);
-}
-
-/* "Yes" to a rebuild: the exe cannot relink itself, so the game asks to quit and
- * a detached helper takes over. It is started BEFORE the exit and waits for this
- * PID to disappear (so the image, the log and the audio device are released),
- * then builds and starts the new exe. Returns 0 when there is no helper/tree
- * here, which leaves the caller on the deferred boot-build path. */
-int jer_build_launch_restart(void)
-{
-	char srcDir[MAX_PATH];
-	char restart[MAX_PATH];
-	char exePath[MAX_PATH];
-	char cmdline[JER_BUILD_CMDLINE];
-	JER_DEEP_MOD mods[JER_BUILD_MAX_MODS];
-	int count, i, used;
-	STARTUPINFOA si;
-	PROCESS_INFORMATION pi;
-	DWORD flags;
-
-	if (!jerBuildFindSrcDir(srcDir, sizeof(srcDir)) ||
-		!jerBuildFindRestart(restart, sizeof(restart), srcDir))
-	{
-		jer_log("[compile] no src_rebuild tree / JERICHO/build_restart.bat - cannot rebuild from here\n");
-		return 0;
-	}
-
-	if (GetModuleFileNameA(NULL, exePath, sizeof(exePath)) == 0)
-		return 0;
-
-	count = jer_deep_mod_list(mods, JER_BUILD_MAX_MODS);
-
-	used = snprintf(cmdline, sizeof(cmdline), "cmd.exe /c \"\"%s\" %lu \"%s\" \"%s\" \"%s\"",
-		restart, (unsigned long)GetCurrentProcessId(), srcDir,
-		BUILD_CONFIGURATION_STRING, exePath);
-
-	for (i = 0; i < count && used > 0 && used < (int)sizeof(cmdline) - 64; i++)
-		used += snprintf(cmdline + used, sizeof(cmdline) - (size_t)used, " %s", mods[i].id);
-
-	if (used < 0 || used >= (int)sizeof(cmdline) - 4)
-	{
-		jer_log("[compile] the rebuild command line is too long\n");
-		return 0;
-	}
-
-	snprintf(cmdline + used, sizeof(cmdline) - (size_t)used, "\"");	/* close cmd /c's quote */
-
-	memset(&si, 0, sizeof(si));
-	si.cb = sizeof(si);
-
-	memset(&pi, 0, sizeof(pi));
-
-	/* A console of its own, like the Driver 1 re-bake: the player sees that the
-	 * game is working rather than a silent exit, and the script keeps the long
-	 * MSBuild output in CONFIG/build.log. Its own process group: a Ctrl-C aimed
-	 * at the game's console must not cancel the build replacing the image. */
-	flags = CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP;
-
-	if (!CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, flags,
-		NULL, NULL, &si, &pi))
-	{
-		jer_log("[compile] cannot start the rebuild helper (err %lu)\n", GetLastError());
-		return 0;
-	}
-
-	CloseHandle(pi.hThread);
-	CloseHandle(pi.hProcess);
-
-	jer_log("[compile] rebuild helper started for pid %lu (%d deep module(s)); exiting to build\n",
-		(unsigned long)GetCurrentProcessId(), count);
-	return 1;
-}
 
 static void jerBuildBody(void* ud, char* out, int max)
 {
@@ -339,148 +308,113 @@ static void jerBuildBody(void* ud, char* out, int max)
 
 	if (!gBuild.attempted)
 	{
-		snprintf(out, max, "Preparing...");
+		snprintf(out, (size_t)max, "Preparing...");
 		return;
 	}
 
 	if (gBuild.failed)
 	{
-		snprintf(out, max, "Build failed - see JERICHO\\%s\\%s", JER_CONFIG_PATH, JER_BUILD_LOG);
+		snprintf(out, (size_t)max, "Build failed - see JERICHO/%s/%s", JER_CONFIG_PATH, JER_BUILD_LOG);
 		return;
 	}
 
 	if (gBuild.step <= 0)
-		snprintf(out, max, "Scanning modules... [0/%d]", gBuild.count);
+		snprintf(out, (size_t)max, "Scanning modules... [0/%d]", gBuild.count);
 	else if (gBuild.step <= gBuild.count)
-		snprintf(out, max, "%s [%d/%d]", gBuild.mods[gBuild.step - 1].name, gBuild.step, gBuild.count);
+		snprintf(out, (size_t)max, "%s [%d/%d]", gBuild.mods[gBuild.step - 1].name, gBuild.step, gBuild.count);
 	else if (gBuild.step == gBuild.count + 1)
-		snprintf(out, max, "Linking the game [%d/%d]", gBuild.count, gBuild.count);
+		snprintf(out, (size_t)max, "Linking the game [%d/%d]", gBuild.count, gBuild.count);
 	else
-		snprintf(out, max, "Done");
+		snprintf(out, (size_t)max, "Done");
 }
 
-/* Launch one step of JERICHO/build_game.bat, appending its output to
- * CONFIG/build.log. One child per step is what makes "<name> [i/n]" exact:
- * no MSBuild output parsing, we simply know which step is running. */
+/* Launch one step of the build shim, appending its output to CONFIG/build.log.
+ * One child per step is what makes "<name> [i/n]" exact: no compiler output
+ * parsing, we simply know which step is running. */
 static int jerBuildSpawnStep(void)
 {
 	char cmdline[JER_BUILD_CMDLINE];
-	STARTUPINFOA si;
-	SECURITY_ATTRIBUTES sa;
-	HANDLE hLog;
-	HANDLE hNul = INVALID_HANDLE_VALUE;
-	DWORD flags;
 
-	if (gBuild.step == gBuild.count + 1 && !gBuild.renamed)
+	if (gBuild.step == gBuild.count + 1 && !gBuild.renamed &&
+		jer_host_exe_locks_while_running())
 	{
 		/* Windows locks the running image, so the linker cannot overwrite it.
 		 * Move it aside; the fresh exe then lands under the normal name and is
-		 * what runs next time. The stale .old is deleted on the next boot. */
-		DeleteFileA(gBuild.exeOld);
+		 * what runs next time. The stale .old is deleted on the next boot.
+		 * (On POSIX the linker relinks in place, so none of this happens.) */
+		remove(gBuild.exeOld);
 
-		if (MoveFileA(gBuild.exePath, gBuild.exeOld))
+		if (rename(gBuild.exePath, gBuild.exeOld) == 0)
 			gBuild.renamed = 1;
 		else
 			jer_error("JERICHO: could not move the running exe aside - the build will fail");
 	}
 
 	if (gBuild.step <= 0)
-		snprintf(cmdline, sizeof(cmdline), "cmd.exe /c \"\"%s\" \"%s\" \"%s\" premake\"",
-			gBuild.batPath, gBuild.srcDir, gBuild.config);
+		snprintf(cmdline, sizeof(cmdline), "%s\"%s\" \"%s\" \"%s\" premake",
+			jerBuildRunner(), gBuild.shimPath, gBuild.srcDir, gBuild.config);
 	else if (gBuild.step <= gBuild.count)
-		snprintf(cmdline, sizeof(cmdline), "cmd.exe /c \"\"%s\" \"%s\" \"%s\" mod %s\"",
-			gBuild.batPath, gBuild.srcDir, gBuild.config, gBuild.mods[gBuild.step - 1].id);
+		snprintf(cmdline, sizeof(cmdline), "%s\"%s\" \"%s\" \"%s\" mod %s",
+			jerBuildRunner(), gBuild.shimPath, gBuild.srcDir, gBuild.config,
+			gBuild.mods[gBuild.step - 1].id);
 	else
-		snprintf(cmdline, sizeof(cmdline), "cmd.exe /c \"\"%s\" \"%s\" \"%s\" exe\"",
-			gBuild.batPath, gBuild.srcDir, gBuild.config);
+		snprintf(cmdline, sizeof(cmdline), "%s\"%s\" \"%s\" \"%s\" exe",
+			jerBuildRunner(), gBuild.shimPath, gBuild.srcDir, gBuild.config);
 
-	memset(&sa, 0, sizeof(sa));
-	sa.nLength = sizeof(sa);
-	sa.bInheritHandle = TRUE;
+	gBuild.proc = jer_host_spawn(cmdline, gBuild.logPath);
 
-	hLog = CreateFileA(gBuild.logPath, FILE_APPEND_DATA,
-		FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-
-	memset(&si, 0, sizeof(si));
-	si.cb = sizeof(si);
-
-	if (hLog != INVALID_HANDLE_VALUE)
+	if (gBuild.proc == NULL)
 	{
-		si.dwFlags = STARTF_USESTDHANDLES;
-		si.hStdOutput = hLog;
-		si.hStdError = hLog;
-
-		/* cmd.exe must not inherit the game's stdin (or none at all): it can
-		 * block on it and then the step would never finish. Give it NUL. */
-		hNul = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-			&sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-		si.hStdInput = hNul;
-	}
-
-	memset(&gBuild.pi, 0, sizeof(gBuild.pi));
-
-	flags = CREATE_NO_WINDOW;
-
-	if (!CreateProcessA(NULL, cmdline, NULL, NULL, hLog != INVALID_HANDLE_VALUE, flags,
-		NULL, NULL, &si, &gBuild.pi))
-	{
-		if (hLog != INVALID_HANDLE_VALUE)
-			CloseHandle(hLog);
-
-		jer_log("[build] cannot run step %d (err %lu)\n", gBuild.step, GetLastError());
+		jer_log("[build] cannot run step %d (%s)\n", gBuild.step, jer_host_last_error());
 		return 0;
 	}
 
-	if (hLog != INVALID_HANDLE_VALUE)
-		CloseHandle(hLog);
-
-	if (hNul != INVALID_HANDLE_VALUE)
-		CloseHandle(hNul);
-
-	gBuild.running = 1;
 	return 1;
 }
 
 /* 1 = the child finished (code set), 0 = still building */
 static int jerBuildChildDone(int* code)
 {
-	DWORD rc = 1;
+	int r;
 
-	if (!gBuild.running)
+	if (gBuild.proc == NULL)
 	{
 		*code = -1;
 		return 1;
 	}
 
-	if (WaitForSingleObject(gBuild.pi.hProcess, 0) != WAIT_OBJECT_0)
+	r = jer_host_proc_poll(gBuild.proc, code);
+
+	if (r == 0)
 		return 0;
 
-	if (!GetExitCodeProcess(gBuild.pi.hProcess, &rc))
-		rc = 1;
+	if (r < 0)
+		*code = -1;
 
-	CloseHandle(gBuild.pi.hThread);
-	CloseHandle(gBuild.pi.hProcess);
-	gBuild.running = 0;
-	*code = (int)rc;
 	return 1;
 }
 
 /* 1 = the running exe was moved aside and a newer one has landed in its place,
- * i.e. the link succeeded even though the step reported a failure. */
+ * i.e. the link succeeded even though the step reported a failure. Only ever
+ * true on a platform that moves the exe aside (Windows). */
 static int jerBuildExeRebuilt(void)
 {
-	WIN32_FILE_ATTRIBUTE_DATA fresh, old;
+	long long fresh, old;
 
 	if (!gBuild.renamed)
 		return 0;
 
-	if (!GetFileAttributesExA(gBuild.exePath, GetFileExInfoStandard, &fresh))
+	fresh = jer_host_file_mtime(gBuild.exePath);
+
+	if (fresh == 0)
 		return 0;
 
-	if (!GetFileAttributesExA(gBuild.exeOld, GetFileExInfoStandard, &old))
+	old = jer_host_file_mtime(gBuild.exeOld);
+
+	if (old == 0)
 		return 0;
 
-	return CompareFileTime(&fresh.ftLastWriteTime, &old.ftLastWriteTime) > 0;
+	return fresh > old;
 }
 
 /* One frame of the compile screen: advance the build by one step when the
@@ -494,7 +428,7 @@ static int jerBuildTick(void* ud)
 	if (!gBuild.attempted || gBuild.done || gBuild.failed)
 		return 1;
 
-	if (!gBuild.running)
+	if (gBuild.proc == NULL)
 	{
 		if (gBuild.step > gBuild.count + 1)
 		{
@@ -515,11 +449,15 @@ static int jerBuildTick(void* ud)
 	if (!jerBuildChildDone(&code))
 		return 0;
 
+	jer_host_proc_free(gBuild.proc);
+	gBuild.proc = NULL;
+
 	if (code != 0)
 	{
 		/* The exe step also mirrors JERICHO/MODS next to the exe, which cannot
-		 * work while this process has the module DLLs loaded. The link itself
-		 * comes first: if the exe was rebuilt, the build did its job. */
+		 * work while this process has the module binaries loaded (Windows).
+		 * The link itself comes first: if the exe was rebuilt, the build did
+		 * its job. */
 		if (gBuild.step == gBuild.count + 1 && jerBuildExeRebuilt())
 		{
 			jer_log("[build] the exe was relinked (step exit %d was the MODS mirror, which is skipped while the game runs)\n", code);
@@ -549,30 +487,35 @@ static const JER_SCREEN jerBuildScreen =
 
 int jer_build_begin(void)
 {
-	char exePath[MAX_PATH];
-	char exeOld[MAX_PATH];
+	char exePath[JER_BUILD_PATH];
+	char exeOld[JER_BUILD_PATH];
 
-	GetModuleFileNameA(NULL, exePath, sizeof(exePath));
-	snprintf(exeOld, sizeof(exeOld), "%s.old", exePath);
+	memset(exePath, 0, sizeof(exePath));
+	memset(exeOld, 0, sizeof(exeOld));
 
-	/* A previous boot-time build moved the then-running exe aside. It is
-	 * nobody's now (this process runs from the fresh one), so drop it — but only
-	 * once the normal exe is really there, or we would delete the last good
-	 * image after a build whose *link* failed. */
-	if (jerBuildFileExists(exePath))
-		DeleteFileA(exeOld);
+	if (jer_host_exe_path(exePath, sizeof(exePath)))
+	{
+		snprintf(exeOld, sizeof(exeOld), "%s.old", exePath);
 
-	/* The detached rebuild (build_restart.bat) leaves this when it could not
-	 * relink: it restored the previous exe, so this boot is where the player
-	 * learns why the game came back unchanged. */
+		/* A previous boot-time build moved the then-running exe aside. It is
+		 * nobody's now (this process runs from the fresh one), so drop it — but
+		 * only once the normal exe is really there, or we would delete the last
+		 * good image after a build whose *link* failed. */
+		if (jer_host_file_exists(exePath))
+			remove(exeOld);
+	}
+
+	/* The detached rebuild leaves this when it could not relink: it restored
+	 * the previous exe, so this boot is where the player learns why the game
+	 * came back unchanged. */
 	{
 		char failed[640];
 
 		jerBuildPath(failed, sizeof(failed), JER_BUILD_FAILED);
 
-		if (jerBuildFileExists(failed))
+		if (jer_host_file_exists(failed))
 		{
-			DeleteFileA(failed);
+			remove(failed);
 			jer_log("[build] the in-game rebuild failed - see JERICHO/%s/%s\n", JER_CONFIG_PATH, JER_BUILD_LOG);
 			jer_error("JERICHO: the rebuild failed - see JERICHO\\%s\\%s", JER_CONFIG_PATH, JER_BUILD_LOG);
 		}
@@ -591,14 +534,14 @@ int jer_build_begin(void)
 	jerBuildPath(gBuild.logPath, sizeof(gBuild.logPath), JER_BUILD_LOG);
 	snprintf(gBuild.config, sizeof(gBuild.config), "%s", BUILD_CONFIGURATION_STRING);
 
-	DeleteFileA(gBuild.logPath);
+	remove(gBuild.logPath);
 
-	jer_log("[build] ---- deep-mod build requested ----\n");
+	jer_log("[build] ---- deep-mod build requested (host %s) ----\n", jer_host_name());
 
 	if (!jerBuildFindSrcDir(gBuild.srcDir, sizeof(gBuild.srcDir)) ||
-		!jerBuildFindBat(gBuild.batPath, sizeof(gBuild.batPath), gBuild.srcDir))
+		!jerBuildFindShim(gBuild.srcDir, "build_game", gBuild.shimPath, sizeof(gBuild.shimPath)))
 	{
-		jer_log("[build] no src_rebuild tree / JERICHO/build_game.bat found - cannot build here\n");
+		jer_log("[build] no src_rebuild tree / JERICHO/build_game.%s found - cannot build here\n", jer_host_script_ext());
 		gBuild.attempted = 1;
 		gBuild.failed = 1;
 		return 1;
@@ -651,9 +594,9 @@ void jer_build_finish(void)
 
 		/* the exe may still be sitting aside (the link is what failed). Put it
 		 * back rather than leaving the install with no exe at all. */
-		if (gBuild.renamed && !jerBuildFileExists(gBuild.exePath))
+		if (gBuild.renamed && !jer_host_file_exists(gBuild.exePath))
 		{
-			if (MoveFileA(gBuild.exeOld, gBuild.exePath))
+			if (rename(gBuild.exeOld, gBuild.exePath) == 0)
 				jer_log("[build] restored the previous exe\n");
 			else
 				jer_log("[build] WARNING: the previous exe is at %s\n", gBuild.exeOld);
@@ -679,63 +622,52 @@ void jer_build_finish(void)
 	jer_error("JERICHO: deep mods compiled - restart to run them");
 }
 
-#else
-/* The deep build is a Windows/MSBuild flow. */
-int jer_build_begin(void)
-{
-	return 0;
-}
-
-void jer_build_finish(void)
-{
-}
-
-int jer_build_launch_restart(void)
-{
-	return 0;
-}
-#endif
-
 /* ------------------------------------------------------------------ */
-/* Addons: compile every runtime "dll" module into a loadable DLL      */
+/* Addons: compile every runtime "dll" module into a loadable binary   */
 /* ------------------------------------------------------------------ */
-
-#if defined(_WIN32)
 
 int jer_compile_mods(void)
 {
-	char cmdline[512];
-	STARTUPINFOA si;
-	PROCESS_INFORMATION pi;
-	DWORD code = 1;
+	char src[JER_BUILD_PATH];
+	char shim[JER_BUILD_PATH];
+	char cmdline[JER_BUILD_CMDLINE];
+	JER_HOST_PROC* proc;
+	int code = 1;
 
-	/* CreateProcess cannot launch a .bat directly — go through cmd.exe.
-	 * CREATE_NO_WINDOW keeps the console from flashing during the build.
-	 * The game resolves JERICHO/ relative to its working directory (same
-	 * convention as jer_init's root), so a relative path is correct. */
-	snprintf(cmdline, sizeof(cmdline), "cmd.exe /c JERICHO\\build_mods.bat");
-
-	memset(&si, 0, sizeof(si));
-	si.cb = sizeof(si);
-	memset(&pi, 0, sizeof(pi));
-
-	if (CreateProcessA(NULL, cmdline, NULL, NULL, FALSE,
-		CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+	if (jerBuildFindSrcDir(src, sizeof(src)) &&
+		jerBuildFindShim(src, "build_mods", shim, sizeof(shim)))
 	{
-		WaitForSingleObject(pi.hProcess, INFINITE);
-		GetExitCodeProcess(pi.hProcess, &code);
-		CloseHandle(pi.hThread);
-		CloseHandle(pi.hProcess);
+		/* the shim beside the exe or in the repo */
 	}
+	else
+	{
+		snprintf(shim, sizeof(shim), "JERICHO/build_mods.%s", jer_host_script_ext());
+	}
+
+	snprintf(cmdline, sizeof(cmdline), "%s\"%s\"", jerBuildRunner(), shim);
+
+	proc = jer_host_spawn(cmdline, NULL);
+
+	if (proc == NULL)
+	{
+		jer_log("[compile] cannot run %s (%s)\n", shim, jer_host_last_error());
+		return 0;
+	}
+
+	/* The caller is the blocking Compile Mods prompt, so wait here — but poll
+	 * with a sleep so the game's core is not pegged while the build runs. */
+	for (;;)
+	{
+		if (jer_host_proc_poll(proc, &code) != 0)
+			break;
+
+		jer_host_sleep_ms(50);
+	}
+
+	jer_host_proc_free(proc);
 
 	return (code == 0) ? 1 : 0;
 }
-#else
-int jer_compile_mods(void)
-{
-	return 0;	/* runtime loading is Windows/Linux-desktop only */
-}
-#endif
 
 /*
  * What "Compile Mods" does once the player confirms (see jer_prompt.h) -- and

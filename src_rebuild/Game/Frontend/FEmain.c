@@ -419,10 +419,12 @@ int JerFrontendMenuScreen(int bSetup);	// JERICHO-HOOK: module frontend menus
 // JERICHO-HOOK: module-provided frontend menus live in slots 42..(42+MAX-1)
 #define JERICHO_FE_SCREEN_BASE 42
 // 8 buttons max (PSXSCREEN::buttons[8]): modules + Prev/Next + Compile + Back.
-// Windows dev builds show a Compile Mods button, so one less module fits per page.
+// Desktop dev builds show a Compile Mods button, so one less module fits per page.
 // A RELEASE build (JERICHO_RELEASE_MODS) hides the button -- players get the
 // modules a release ships; compiling modules is a modder's tool (Release_dev).
-#if defined(_WIN32) && !defined(JERICHO_RELEASE_MODS)
+// Emscripten/Android have no desktop toolchain or dynamic loader to drive, so
+// the row stays hidden there even in a dev build.
+#if !defined(JERICHO_RELEASE_MODS) && !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
 #define JERICHO_FE_HAS_COMPILE_MODS 1
 #endif
 

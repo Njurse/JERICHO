@@ -21,6 +21,8 @@ its SDK mirrors); `docs/JERICHO/` holds pointers only.
 | [`screens.md`](../src_rebuild/Game/C/JERICHO/docs/screens.md) | presentation screens: `jer_screen.h` (register/show/tick, the boot loop) and the host-owned `jer_prompt.h` yes/no prompt |
 | [`ped-palette.md`](../src_rebuild/Game/C/JERICHO/docs/ped-palette.md) | giving one Tanner instance its own colours: the measured palette footprint (1 page, 2 CLUT entries) and the `texture_cluts` bracket that makes it per-instance |
 | [`sdk/README.md`](../JERICHO/sdk/README.md) | the addon SDK: headers, building, installing, platform notes |
+| [`build.md`](../src_rebuild/Game/C/JERICHO/docs/build.md) | **the cross-platform build driver** — `build.py`, the .bat/.sh shims, the two backends, and the FULL TWIST repo-install acceptance test |
+| [`porting.md`](../src_rebuild/Game/C/JERICHO/docs/porting.md) | **porting JERICHO** — the `jer_host` runtime layer, a `build.py` backend, and the in-game compile gate |
 
 ## Mods
 
