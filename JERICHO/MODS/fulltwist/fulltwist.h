@@ -23,12 +23,18 @@
 #include "dr2limits.h"		/* MAX_CARS, MAX_CAR_RESIDENT_MODELS */
 
 #define FT_MOD_ID          "fulltwist"
-#define FT_VERSION         "0.4.2"
+#define FT_VERSION         "0.4.3"
 
 /* FULL TWIST lets a car rest on its roof/side four times as long as the stock
  * rule before the engine forces the damage cap (mission.c: 180 frames). This
  * gives the rollover catch time to right the car instead of totaling it. */
 #define FT_UPSIDE_DOWN_FRAMES  720
+
+/* COG gravity torque on body contact: the contact normal at the lowest hull
+ * vertex acts on a lever from the centre of gravity. This is the tipping
+ * torque that makes a car which barely clears a roll keep falling; it is not
+ * an uprighting assist and is zero when the COG is over the contact. */
+#define FT_BODY_GRAVITY_TORQUE  32768
 
 /* The impact value at which the tumble rate reaches its configured maximum.
  * Measured scenery impacts sit around 22k (nudge), 78k-114k (ordinary) and
@@ -119,6 +125,7 @@ typedef struct FULLTWIST_CONFIG
 	int bodyKick;			/* 0..200 body-landing assist strength */
 	int bodyFriction;		/* 0..100 % body-ground spin damping */
 	int bodyHinge;			/* 0..200 % contact-pivot hinge on the body */
+	int bodyGravity;		/* 0..200 % COG gravity torque on body contact */
 	int scenery3d;		/* 1 = 3D hull/scenery override of the 2D check */
 	int playerOnly;		/* 1 = only player car / cars hit by the player */
 	int debugLog;		/* 1 = recorder lines in the JERICHO log */
@@ -167,6 +174,8 @@ typedef struct FULLTWIST_CAR
 	int tumbled;				/* fulltwist has started a tumble on this car */
 	int bodyContact;			/* lowest hull vertex is on the road */
 	int bodyTouching;			/* hull is still resting on the road (hysteresis) */
+	SVECTOR bodyContactLocal;	/* where-local lowest vertex for the last body contact */
+	int bodyContactLocalValid;	/* 1 = bodyContactLocal is current */
 	unsigned int bodyContactFrame;	/* frame of the last body-contact impulse */
 	unsigned int wallSnagFrame;	/* frame of the last world-wall snag */
 	int freeSpinFrames;			/* remaining frames of the free-spin state */

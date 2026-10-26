@@ -44,7 +44,11 @@ response the engine already computes.
 - **No scripted uprighting.** Free Physics lets the car settle where its
   momentum and the ground contact put it; `rollover_catch` is accepted as a
   deprecated no-op so old inis still load.
-- Grips the **body on the ground** (`body_hinge` 100 %): while the lowest hull
+- **COG gravity torque** (`body_gravity`, 100 %): while the hull is on the
+  road in a side/partial pose, the contact normal acts through the lever from
+  the centre of gravity. A car that barely clears a roll keeps falling; one
+  that does not falls back. It is not an uprighting torque and is excluded in
+  the fully upright and fully inverted poses.
   vertex is on the road, the contact-point slide is turned into a pivot about
   that point (the car hinges and tumbles over it). The car's linear momentum is
   left alone; `body_friction` now damps the contact spin (roll/pitch) instead
@@ -130,6 +134,7 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `body_kick` | 50 | body-landing assist, 0–200, clamped to the angular clamp |
 | `body_friction` | 100 | 0–100 % body-ground spin damping (roll/pitch); never removes linear velocity |
 | `body_hinge` | 100 | 0–200 % of the contact-point slide turned into a rotation about the contact |
+| `body_gravity` | 100 | 0–200 % COG gravity torque at body contact; zero in fully upright/inverted poses |
 | `scenery3d` | 1 | enable the hull/scenery override |
 | `player_only` | 1 | 1 = player car only; traffic keeps the stock physics |
 | `debug_log` | 0 | recorder lines in the JERICHO log |
@@ -148,7 +153,7 @@ shipped preset and sets
 `hull_contact=0`,
 `hull_footprint=1`, `scenery_mode=1`, `wall_snag=0`, `wall_bounce=100`,
 `car_car_impulse=50`, `car_car_launch=0`, `car_car_tumble=50`, `body_kick=0`,
-`body_friction=100`, `body_hinge=100`,
+`body_friction=100`, `body_hinge=100`, `body_gravity=100`,
 `damping=0`, `rollover_damping=50`, `spin_retention=0`,
 `ground_kick=25`, `window=180`, `trip=20`, `launch=40`.
 
@@ -202,6 +207,7 @@ Turn `debug_log` on and the log carries:
 [fulltwist] body contact car=... point=(...) groundY=... vy=... rate=... free=...
 [fulltwist] body hinge car=... local=(...) slip=... dw=(...) hinge=...
 [fulltwist] body spin damp car=... frame=... k=... av=(...)
+[fulltwist] body gravity car=... up=... r=(...) a=(...) g=...
 [fulltwist] test rollover rotate car=... frame=... up=... impulse_at=...
 [fulltwist] test rollover impulse car=... frame=... lateral=... rate=...
 [fulltwist] rollover count car=... count=... up=...

@@ -6,6 +6,15 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### FULL TWIST (fulltwist 0.4.3)
+
+- **Body-contact tipping follows the centre of gravity.** `body_gravity`
+  applies the contact normal through the lever from the COG while the car is on
+  its side or partially tipped: a car that barely clears a roll keeps falling,
+  while one that does not falls back. It is not an uprighting torque, and it is
+  disabled in the fully upright and fully inverted poses, so a parked roof rest
+  still stays put.
+
 ### FULL TWIST (fulltwist 0.4.2)
 
 - **Removed the scripted rollover catch and inverted-pose nudge.** Nothing

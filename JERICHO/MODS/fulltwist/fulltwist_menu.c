@@ -595,6 +595,21 @@ static int ftAdjBodyHinge(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static void ftLabelBodyGravity(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Body gravity: %d%%", gFullTwist.cfg.bodyGravity);
+}
+
+static int ftAdjBodyGravity(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.bodyGravity = jer_clamp_int(gFullTwist.cfg.bodyGravity + dir * 10, 0, 200);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static void ftLabelPlayerOnly(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -814,6 +829,7 @@ static const JER_PAUSE_MENU_ITEM ftPhysicsItems[] =
 	{ NULL, ftLabelBodyKick,        ftAdjBodyKick,        NULL, NULL, 1 },
 	{ NULL, ftLabelBodyFriction,    ftAdjBodyFriction,    NULL, NULL, 1 },
 	{ NULL, ftLabelBodyHinge,       ftAdjBodyHinge,       NULL, NULL, 1 },
+	{ NULL, ftLabelBodyGravity,     ftAdjBodyGravity,     NULL, NULL, 1 },
 };
 
 static const JER_PAUSE_MENU ftPhysicsMenu =

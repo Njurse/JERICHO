@@ -47,6 +47,7 @@
 #define FT_DEF_BODY_KICK		0
 #define FT_DEF_BODY_FRICTION	40
 #define FT_DEF_BODY_HINGE		68
+#define FT_DEF_BODY_GRAVITY		100
 
 void ftClampConfig(void)
 {
@@ -87,6 +88,7 @@ void ftClampConfig(void)
 	c->bodyKick = jer_clamp_int(c->bodyKick, 0, 200);
 	c->bodyFriction = jer_clamp_int(c->bodyFriction, 0, 100);
 	c->bodyHinge = jer_clamp_int(c->bodyHinge, 0, 200);
+	c->bodyGravity = jer_clamp_int(c->bodyGravity, 0, 200);
 	c->scenery3d = c->scenery3d ? 1 : 0;
 	c->playerOnly = c->playerOnly ? 1 : 0;
 	c->debugLog = c->debugLog ? 1 : 0;
@@ -146,6 +148,7 @@ void ftLoadConfig(void)
 	c->bodyKick = jer_config_get_int(FT_MOD_ID, "body_kick", FT_DEF_BODY_KICK);
 	c->bodyFriction = jer_config_get_int(FT_MOD_ID, "body_friction", FT_DEF_BODY_FRICTION);
 	c->bodyHinge = jer_config_get_int(FT_MOD_ID, "body_hinge", FT_DEF_BODY_HINGE);
+	c->bodyGravity = jer_config_get_int(FT_MOD_ID, "body_gravity", FT_DEF_BODY_GRAVITY);
 	c->scenery3d = jer_config_get_bool(FT_MOD_ID, "scenery3d", 1);
 	c->playerOnly = jer_config_get_bool(FT_MOD_ID, "player_only", 1);
 	c->debugLog = jer_config_get_bool(FT_MOD_ID, "debug_log", 0);
@@ -206,6 +209,7 @@ void ftApplyPreset(void)
 		c->bodyKick = 0;
 		c->bodyFriction = FT_DEF_BODY_FRICTION;
 		c->bodyHinge = FT_DEF_BODY_HINGE;
+		c->bodyGravity = FT_DEF_BODY_GRAVITY;
 		c->holdCamera = 1;
 		c->cameraSnap = 75;
 		c->playerOnly = 1;
@@ -270,6 +274,7 @@ void ftSaveConfig(void)
 	jer_config_set_int(FT_MOD_ID, "body_kick", c->bodyKick);
 	jer_config_set_int(FT_MOD_ID, "body_friction", c->bodyFriction);
 	jer_config_set_int(FT_MOD_ID, "body_hinge", c->bodyHinge);
+	jer_config_set_int(FT_MOD_ID, "body_gravity", c->bodyGravity);
 	jer_config_set_bool(FT_MOD_ID, "scenery3d", c->scenery3d);
 	jer_config_set_bool(FT_MOD_ID, "player_only", c->playerOnly);
 	jer_config_set_bool(FT_MOD_ID, "debug_log", c->debugLog);

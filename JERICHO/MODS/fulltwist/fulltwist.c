@@ -482,6 +482,8 @@ static int ftOnCarStep(void* ud, void* args)
 			int upNow = cp->hd.where.m[1][1];
 			int uprightOnWheels = (ftWheelMask(cp) != 0) && (upNow > 2048);
 
+			st->bodyContactLocalValid = 0;
+
 			bodyOnGround = (pen > 0 && pen < FT_BODY_TOUCH_RANGE && vy < 0);
 
 			/* The grip keeps the contact while the hull is still resting on
@@ -548,7 +550,11 @@ static int ftOnCarStep(void* ud, void* args)
 			 * kick above. The contact point is the same lowest hull vertex,
 			 * so the friction's reaction pivots the body about it. */
 			if (touching)
+			{
+				st->bodyContactLocal = bodyLocal;
+				st->bodyContactLocalValid = 1;
 				ftBodyFriction(cp, &bodyLocal);
+			}
 		}
 
 		st->bodyTouching = touching;
@@ -558,6 +564,7 @@ static int ftOnCarStep(void* ud, void* args)
 	{
 		st->bodyContact = 0;
 		st->bodyTouching = 0;
+		st->bodyContactLocalValid = 0;
 	}
 
 	st->airborne = (air && !st->bodyTouching) ? 1 : 0;
@@ -684,11 +691,19 @@ static int ftOnCarTorque(void* ud, void* args)
 	if (gFullTwist.testRolloverHolding)
 		return JER_RESULT_CONTINUE;
 
+	int up = cp->hd.where.m[1][1];
+	int aup = (up < 0) ? -up : up;
 	int grounded = (ftWheelMask(cp) != 0) || (st->bodyContact != 0);
 	int applyDamping = 0;
 	int applyRetention = 0;
 	int applyBodyDamp = 0;
+	int applyGravity = 0;
 	int bodyK = 0;
+	int gravityX = 0;
+	int gravityZ = 0;
+	int gravityRx = 0;
+	int gravityRz = 0;
+	int gravityK = 0;
 
 	/* ConvertTorqueToAngularAcceleration applies the lift -avel/8 only when
 	 * the body has ground contact (extraDamping). Cancel that term only when
@@ -766,7 +781,33 @@ static int ftOnCarTorque(void* ud, void* args)
 		bodyK = gFullTwist.cfg.bodyFriction * 8;	/* 0..800 */
 	}
 
-	if (!applyDamping && !applyRetention && !applyBodyDamp)
+	/* COG gravity torque. The ground normal at the body contact acts through
+	 * the lever from the centre of gravity: torque = r x (0,N,0). It is not an
+	 * uprighting assist and has no preferred direction; it simply accelerates
+	 * the fall the car's centre of gravity is already on. Fully upright and
+	 * fully inverted poses are excluded so a parked roof rest is left alone. */
+	if (gFullTwist.cfg.bodyGravity > 0 && st->bodyTouching &&
+		st->bodyContactLocalValid && aup < 3000)
+	{
+		int lx = st->bodyContactLocal.vx;
+		int ly = st->bodyContactLocal.vy;
+		int lz = st->bodyContactLocal.vz;
+		int rx = (int)(((long long)cp->hd.where.m[0][0] * lx +
+						(long long)cp->hd.where.m[0][1] * ly +
+						(long long)cp->hd.where.m[0][2] * lz) >> 12);
+		int rz = (int)(((long long)cp->hd.where.m[2][0] * lx +
+						(long long)cp->hd.where.m[2][1] * ly +
+						(long long)cp->hd.where.m[2][2] * lz) >> 12);
+
+		gravityK = gFullTwist.cfg.bodyGravity * FT_BODY_GRAVITY_TORQUE / 100;
+		gravityRx = rx;
+		gravityRz = rz;
+		gravityX = (int)(((long long)(-rz) * gravityK) >> 12);
+		gravityZ = (int)(((long long)rx * gravityK) >> 12);
+		applyGravity = 1;
+	}
+
+	if (!applyDamping && !applyRetention && !applyBodyDamp && !applyGravity)
 		return JER_RESULT_CONTINUE;
 
 	if (applyDamping && st->bodyContactFrame != gFullTwist.frame)
@@ -785,6 +826,19 @@ static int ftOnCarTorque(void* ud, void* args)
 			FT_LOG("[fulltwist] body spin damp car=%d frame=%u k=%d av=(%d,%d)\n",
 				(int)cp->id, gFullTwist.frame, bodyK,
 				cp->st.n.angularVelocity[0], cp->st.n.angularVelocity[2]);
+		}
+	}
+
+	if (applyGravity)
+	{
+		cp->hd.aacc[0] += gravityX;
+		cp->hd.aacc[2] += gravityZ;
+
+		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 5) == 0)
+		{
+			FT_LOG("[fulltwist] body gravity car=%d frame=%u up=%d r=(%d,%d) a=(%d,%d) g=%d\n",
+				(int)cp->id, gFullTwist.frame, up,
+				gravityRx, gravityRz, gravityX, gravityZ, gravityK);
 		}
 	}
 
