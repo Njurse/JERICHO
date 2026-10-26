@@ -355,6 +355,10 @@ jobs:
             Write-Host "::endgroup::"
           }
 
+      - name: Fake-host harness (host API)
+        shell: cmd
+        run: JERICHO\sdk\test\build_test.bat
+
       - name: Package
         shell: pwsh
         run: |
@@ -633,6 +637,11 @@ jobs:
             fi
             echo "::endgroup::"
           done
+
+      - name: Host API export (Linux)
+        run: |
+          nm -D src_rebuild/bin/Release/jericho | grep -w jer_host_api
+          nm -D src_rebuild/bin/Release_dev/JERICHO_dev | grep -w jer_host_api
 
       - name: JERICHO build toolkit (addons, shims, SDK)
         run: |

@@ -86,3 +86,4 @@ tmp/tgbot/
 # package the publish tool builds locally
 JERICHO/CORE/modstore/test/repo/
 JERICHO/CORE/modstore/out/
+JERICHO/sdk/test/*.exe
