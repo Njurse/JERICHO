@@ -6,9 +6,9 @@
 Four things it refuses to let drift:
 
   1. A mod.toml whose `interface` is missing or disagrees with
-     JERICHO_SDK_VERSION in the engine's jericho.h. A mod built against another
-     interface is refused at activation, so a stale manifest is a mod that ships
-     broken.
+     JERICHO_SDK_VERSION in the engine's jericho.h (3 on the 0.12 line). A mod
+     built against another interface is refused at activation, so a stale
+     manifest is a mod that ships broken.
   2. Two mods defining the same custom event id
      (`JER_EVENT_MODULE_CUSTOM + n`). Nothing in the build catches this, and the
      result is two mods silently cross-wired through jer_fire.

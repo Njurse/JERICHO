@@ -11,8 +11,11 @@ between the game and a mod. A mod declares the one it was **built against**:
 
 ```toml
 # mod.toml
-interface = 2
+interface = 3
 ```
+
+0.12 is a clean-break SDK line: every module and package is interface 3, and
+addons use the versioned host API table (`jer_host_api.h`).
 
 It is an **exact** match, not a minimum, and it is checked twice:
 
