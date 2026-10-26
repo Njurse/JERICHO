@@ -16,6 +16,7 @@
 #include "driver2.h"
 #include "jericho.h"
 #include "cars.h"
+#include "handling.h"	/* RebuildCarMatrix for the rest-flip lever */
 #include "civ_ai.h"	/* InitCar, reservedSlots */
 #include "fulltwist.h"
 
@@ -237,6 +238,83 @@ static void ftRolloverImpulse(CAR_DATA* cp)
 		cp->st.n.angularVelocity[2], st->tumbleFrames);
 }
 
+/* Park the player upside down on its roof with no motion. This is the
+ * deterministic rest case for the settle/catch path: it removes the collision
+ * impulse and airborne phase, so the log shows whether the catch is doing the
+ * work or something else is keeping the car afloat. */
+static void ftRestFlipTest(CAR_DATA* cp)
+{
+	FULLTWIST_CAR* st;
+	FULLTWIST_HULL* hull;
+	VECTOR point;
+	SVECTOR local;
+	int groundY;
+	int up;
+
+	if (cp == NULL || cp->ap.carCos == NULL)
+		return;
+
+	st = &gFullTwist.cars[(int)cp->id];
+
+	/* 180 degrees about world Z keeps the heading and flips the up vector. */
+	cp->st.n.orientation[0] = 0;
+	cp->st.n.orientation[1] = 0;
+	cp->st.n.orientation[2] = 4096;
+	cp->st.n.orientation[3] = 0;
+
+	cp->st.n.fposition[0] = cp->hd.where.t[0] << 4;
+	cp->st.n.fposition[1] = cp->hd.where.t[1] << 4;
+	cp->st.n.fposition[2] = cp->hd.where.t[2] << 4;
+
+	cp->st.n.linearVelocity[0] = 0;
+	cp->st.n.linearVelocity[1] = 0;
+	cp->st.n.linearVelocity[2] = 0;
+	cp->st.n.angularVelocity[0] = 0;
+	cp->st.n.angularVelocity[1] = 0;
+	cp->st.n.angularVelocity[2] = 0;
+	cp->hd.speed = 0;
+	cp->hd.acc[0] = 0;
+	cp->hd.acc[1] = 0;
+	cp->hd.acc[2] = 0;
+	cp->hd.aacc[0] = 0;
+	cp->hd.aacc[1] = 0;
+	cp->hd.aacc[2] = 0;
+
+	RebuildCarMatrix(&cp->st, cp);
+
+	/* Put the lowest hull vertex exactly on the road so the car starts
+	 * resting on its roof instead of dropping or penetrating. */
+	hull = ftHullForCar(cp);
+
+	if (hull != NULL && ftHullLowest(hull, cp, &point, &groundY, &local))
+	{
+		cp->st.n.fposition[1] += (groundY - point.vy) << 4;
+		RebuildCarMatrix(&cp->st, cp);
+	}
+
+	st->tumbled = 1;
+	st->tumbleFrames = 0;
+	st->freeSpinFrames = 0;
+	st->bodyContact = 0;
+	st->bodyTouching = 1;
+	st->airborne = 0;
+	st->landed = 0;
+	st->upsideFrames = 0;
+	st->upSign = -1;
+	st->peakAv = 0;
+	st->latchFrame = gFullTwist.frame;
+
+	gFullTwist.testRolloverHolding = 0;
+	gFullTwist.restFlipActive = 1;
+	gFullTwist.restFlipStartFrame = gFullTwist.frame;
+
+	up = cp->hd.where.m[1][1];
+
+	FT_LOG("[fulltwist] test rest flip car=%d frame=%u up=%d pos=(%d,%d,%d)\n",
+		(int)cp->id, gFullTwist.frame, up,
+		cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2]);
+}
+
 void ftTestTick(CAR_DATA* cp)
 {
 	if (cp == NULL || !ftIsPlayerCar(cp))
@@ -321,6 +399,26 @@ void ftTestTick(CAR_DATA* cp)
 	{
 		gFullTwist.testRolloverPending = 0;
 		ftRolloverTest(cp);
+	}
+
+	if (gFullTwist.cfg.testRestFlip && !gFullTwist.testRestFlipDone)
+	{
+		if (!gFullTwist.testRestFlipScheduled)
+		{
+			gFullTwist.testRestFlipScheduled = 1;
+			gFullTwist.testRestFlipAtFrame = gFullTwist.frame + FT_TEST_KICK_DELAY;
+		}
+		else if (gFullTwist.frame >= gFullTwist.testRestFlipAtFrame)
+		{
+			gFullTwist.testRestFlipPending = 1;
+			gFullTwist.testRestFlipDone = 1;
+		}
+	}
+
+	if (gFullTwist.testRestFlipPending)
+	{
+		gFullTwist.testRestFlipPending = 0;
+		ftRestFlipTest(cp);
 	}
 
 	if (gFullTwist.testRolloverHolding &&

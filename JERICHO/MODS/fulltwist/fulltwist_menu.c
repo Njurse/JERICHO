@@ -240,21 +240,6 @@ static int ftAdjRolloverDamping(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
-static void ftLabelRolloverCatch(void* ud, char* out, int max)
-{
-	(void)ud;
-	snprintf(out, max, "Rollover catch: %d%%", gFullTwist.cfg.rolloverCatch);
-}
-
-static int ftAdjRolloverCatch(void* ud, int dir)
-{
-	(void)ud;
-	gFullTwist.cfg.rolloverCatch = jer_clamp_int(gFullTwist.cfg.rolloverCatch + dir * 5, 0, 100);
-	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
-	ftSaveConfig();
-	return JER_PAUSE_QUIT_NONE;
-}
-
 static void ftLabelSpinRetention(void* ud, char* out, int max)
 {
 	(void)ud;
@@ -707,6 +692,17 @@ static int ftTestRolloverAction(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static int ftTestRestFlipAction(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	gFullTwist.testRestFlipPending = 1;
+	gFullTwist.testRestFlipDone = 1;
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static int ftTestHornAction(void* ud, int dir)
 {
 	(void)ud;
@@ -763,7 +759,6 @@ static const JER_PAUSE_MENU_ITEM ftTuningItems[] =
 	{ NULL, ftLabelTrip,       ftAdjTrip,       NULL, NULL, 1 },
 	{ NULL, ftLabelLaunch,     ftAdjLaunch,     NULL, NULL, 1 },
 	{ NULL, ftLabelRolloverDamping, ftAdjRolloverDamping, NULL, NULL, 1 },
-	{ NULL, ftLabelRolloverCatch, ftAdjRolloverCatch, NULL, NULL, 1 },
 	{ NULL, ftLabelSpinRetention, ftAdjSpinRetention, NULL, NULL, 1 },
 };
 
@@ -781,6 +776,7 @@ static const JER_PAUSE_MENU_ITEM ftDebugItems[] =
 	{ "Test Crash", NULL, ftTestCrashAction, NULL, NULL, 0 },
 	{ "Test Smash", NULL, ftTestSmashAction, NULL, NULL, 0 },
 	{ "Test Rollover", NULL, ftTestRolloverAction, NULL, NULL, 0 },
+	{ "Test Rest Flip", NULL, ftTestRestFlipAction, NULL, NULL, 0 },
 	{ "Test Horn", NULL, ftTestHornAction, NULL, NULL, 0 },
 	{ NULL, ftLabelRolloverSide, ftToggleRolloverSide, NULL, NULL, 0 },
 	{ NULL, ftLabelDebug, ftToggleDebug, NULL, NULL, 0 },

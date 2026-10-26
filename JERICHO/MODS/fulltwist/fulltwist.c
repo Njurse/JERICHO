@@ -36,6 +36,7 @@
 #include "jericho.h"
 #include "jer_events.h"
 #include "cars.h"		/* JerCarSlotUsable for the car-car scale guard */
+#include "handling.h"	/* RebuildCarMatrix for the bounded righting step */
 #include "camera.h"		/* gCameraAngle for the post-tumble snap-back */
 #include "players.h"		/* MainPlayer for the horn cannon roll */
 #include "fulltwist.h"
@@ -587,6 +588,36 @@ static int ftOnCarStep(void* ud, void* args)
 	else
 		st->upsideFrames = 0;
 
+	/* JERICHO test lever: report the parked-on-roof settle path. The upright
+	 * transition is logged even without debug_log so the frames-to-upright is
+	 * always available from a -frames run. */
+	if (gFullTwist.restFlipActive && ftIsPlayerCar(cp))
+	{
+		unsigned int elapsed = gFullTwist.frame - gFullTwist.restFlipStartFrame;
+		int logUp = cp->hd.where.m[1][1];
+
+		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 5) == 0)
+		{
+			FT_LOG("[fulltwist] rest flip car=%d frame=%u up=%d av=(%d,%d) mask=%x body=%d elapsed=%u\n",
+				(int)cp->id, gFullTwist.frame, logUp,
+				cp->st.n.angularVelocity[0], cp->st.n.angularVelocity[2],
+				mask, st->bodyContact, elapsed);
+		}
+
+		if (logUp > 3000 && mask != 0)
+		{
+			FT_LOG("[fulltwist] rest flip upright car=%d frame=%u frames=%u\n",
+				(int)cp->id, gFullTwist.frame, elapsed);
+			gFullTwist.restFlipActive = 0;
+		}
+		else if (elapsed > 600)
+		{
+			FT_LOG("[fulltwist] rest flip timeout car=%d frame=%u up=%d mask=%x\n",
+				(int)cp->id, gFullTwist.frame, logUp, mask);
+			gFullTwist.restFlipActive = 0;
+		}
+	}
+
 	if (st->tumbleFrames > 0)
 	{
 		st->settleFrames++;
@@ -644,25 +675,20 @@ static int ftOnCarTorque(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	/* Fulltwist torque only belongs to a car it has actually tumbled, or to a
-	 * free-spinning car that needs the stock lift damping cancelled. This keeps
-	 * the near-upright catch off normal traffic during the load window. */
+	 * free-spinning car that needs the stock lift damping cancelled. */
 	if (!st->tumbled && !ftFreeSpinActive(cp))
 		return JER_RESULT_CONTINUE;
 
 	/* The rollover test holds the 90-degree pose for one second before the
-	 * impulse; do not let the rollover catch right it during that hold. */
+	 * impulse; do not let the settle damping fight that hold. */
 	if (gFullTwist.testRolloverHolding)
 		return JER_RESULT_CONTINUE;
 
-	int up = cp->hd.where.m[1][1];
-	int aup = (up < 0) ? -up : up;
 	int grounded = (ftWheelMask(cp) != 0) || (st->bodyContact != 0);
 	int applyDamping = 0;
-	int applyCatch = 0;
 	int applyRetention = 0;
 	int applyBodyDamp = 0;
 	int bodyK = 0;
-	int catchK = 0;
 
 	/* ConvertTorqueToAngularAcceleration applies the lift -avel/8 only when
 	 * the body has ground contact (extraDamping). Cancel that term only when
@@ -728,15 +754,6 @@ static int ftOnCarTorque(void* ud, void* args)
 			applyDamping = 1;
 			k = gFullTwist.cfg.rolloverDamping * 8;	/* 0..800 */
 		}
-
-		/* `up` is signed: a car on its side or roof is below 3000, while an
-		 * upright one is near +4096. Using abs(up) here missed the on-its-side
-		 * case entirely. */
-		if (gFullTwist.cfg.rolloverCatch > 0 && grounded && up < 3000)
-		{
-			applyCatch = 1;
-			catchK = gFullTwist.cfg.rolloverCatch * 400;
-		}
 	}
 
 	/* Body spin scrub: while the hull is resting on the road, body_friction
@@ -749,17 +766,7 @@ static int ftOnCarTorque(void* ud, void* args)
 		bodyK = gFullTwist.cfg.bodyFriction * 8;	/* 0..800 */
 	}
 
-	if (applyCatch)
-	{
-		/* The uprighting torque has to win. Roll/pitch damping applied at the
-		 * same time was cancelling it frame for frame, which is why a nearly
-		 * inverted car could sit there rocking forever. Let the catch rotate
-		 * the car; damping resumes once it is upright (applyCatch stops). */
-		applyDamping = 0;
-		applyBodyDamp = 0;
-	}
-
-	if (!applyDamping && !applyCatch && !applyRetention && !applyBodyDamp)
+	if (!applyDamping && !applyRetention && !applyBodyDamp)
 		return JER_RESULT_CONTINUE;
 
 	if (applyDamping && st->bodyContactFrame != gFullTwist.frame)
@@ -792,39 +799,9 @@ static int ftOnCarTorque(void* ud, void* args)
 		cp->hd.aacc[2] += (int)(((long long)cp->st.n.angularVelocity[2] * retainK) >> 12);
 	}
 
-	/* The damping stops the spin; it does not put the car back on its
-	 * wheels. Add a torque that rotates the world-space local-up vector
-	 * toward world up: +Z roll for an up vector leaning +X, -X pitch for
-	 * one leaning +Z. */
-	if (applyCatch)
-	{
-		int ux = cp->hd.where.m[0][1];
-		int uz = cp->hd.where.m[2][1];
-		int uxAbs = (ux < 0) ? -ux : ux;
-		int uzAbs = (uz < 0) ? -uz : uz;
-
-		/* Perfectly inverted: both horizontal components are zero, so the
-		 * uprighting torque has no direction to push and the car can balance
-		 * on its roof forever. Pick a side deterministically (car id parity)
-		 * so the catch has something to work with. */
-		if (up < -3000 && uxAbs < 128 && uzAbs < 128)
-		{
-			if (cp->id & 1)
-				ux = 4096;
-			else
-				uz = 4096;
-		}
-
-		cp->hd.aacc[0] += (int)(-((long long)uz * catchK) >> 12);
-		cp->hd.aacc[2] += (int)(((long long)ux * catchK) >> 12);
-
-		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 5) == 0)
-		{
-			FT_LOG("[fulltwist] rollover catch car=%d frame=%u up=%d ux=%d uz=%d k=%d catchK=%d av=(%d,%d)\n",
-				(int)cp->id, gFullTwist.frame, up, ux, uz, k, catchK,
-				cp->st.n.angularVelocity[0], cp->st.n.angularVelocity[2]);
-		}
-	}
+	/* Damping is the only settle force here. Nothing rotates the body toward
+	 * upright: a car at rest on its roof stays there, and one with enough
+	 * momentum finishes the roll on its own. */
 
 	return JER_RESULT_CONTINUE;
 }

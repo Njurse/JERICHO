@@ -24,7 +24,6 @@
 #define FT_DEF_TRIP			20
 #define FT_DEF_LAUNCH		40
 #define FT_DEF_ROLLOVER_DAMPING	50
-#define FT_DEF_ROLLOVER_CATCH	50
 #define FT_DEF_SPIN_RETENTION	0
 #define FT_DEF_FREE_SPIN		1
 #define FT_DEF_ANGULAR_DAMPING	6
@@ -65,7 +64,6 @@ void ftClampConfig(void)
 	c->trip = jer_clamp_int(c->trip, 0, 100);
 	c->launch = jer_clamp_int(c->launch, 0, 200);
 	c->rolloverDamping = jer_clamp_int(c->rolloverDamping, 0, 100);
-	c->rolloverCatch = jer_clamp_int(c->rolloverCatch, 0, 100);
 	c->spinRetention = jer_clamp_int(c->spinRetention, 0, 100);
 	c->freeSpin = c->freeSpin ? 1 : 0;
 	c->angularDamping = jer_clamp_int(c->angularDamping, 0, 128);
@@ -96,6 +94,7 @@ void ftClampConfig(void)
 	c->testCrash = c->testCrash ? 1 : 0;
 	c->testSmash = c->testSmash ? 1 : 0;
 	c->testRollover = c->testRollover ? 1 : 0;
+	c->testRestFlip = c->testRestFlip ? 1 : 0;
 	c->testHorn = c->testHorn ? 1 : 0;
 	c->testRolloverSide = (c->testRolloverSide < 0) ? -1 : 1;
 	c->preset = jer_clamp_int(c->preset, FT_PRESET_CINEMATIC, FT_PRESET_FREE_PHYSICS);
@@ -117,7 +116,13 @@ void ftLoadConfig(void)
 	c->trip = jer_config_get_int(FT_MOD_ID, "trip", FT_DEF_TRIP);
 	c->launch = jer_config_get_int(FT_MOD_ID, "launch", FT_DEF_LAUNCH);
 	c->rolloverDamping = jer_config_get_int(FT_MOD_ID, "rollover_damping", FT_DEF_ROLLOVER_DAMPING);
-	c->rolloverCatch = jer_config_get_int(FT_MOD_ID, "rollover_catch", FT_DEF_ROLLOVER_CATCH);
+	{
+		/* Deprecated no-op: rollover_catch used to scale a scripted uprighting
+		 * assist. The key is still read so an old ini loads cleanly, but it no
+		 * longer changes the physics. */
+		int deprecatedRolloverCatch = jer_config_get_int(FT_MOD_ID, "rollover_catch", 0);
+		(void)deprecatedRolloverCatch;
+	}
 	c->spinRetention = jer_config_get_int(FT_MOD_ID, "spin_retention", FT_DEF_SPIN_RETENTION);
 	c->freeSpin = jer_config_get_bool(FT_MOD_ID, "free_spin", FT_DEF_FREE_SPIN);
 	c->angularDamping = jer_config_get_int(FT_MOD_ID, "angular_damping", FT_DEF_ANGULAR_DAMPING);
@@ -148,6 +153,7 @@ void ftLoadConfig(void)
 	c->testCrash = jer_config_get_bool(FT_MOD_ID, "test_crash", 0);
 	c->testSmash = jer_config_get_bool(FT_MOD_ID, "test_smash", 0);
 	c->testRollover = jer_config_get_bool(FT_MOD_ID, "test_rollover", 0);
+	c->testRestFlip = jer_config_get_bool(FT_MOD_ID, "test_rest_flip", 0);
 	c->testHorn = jer_config_get_bool(FT_MOD_ID, "test_horn", 0);
 	c->testRolloverSide = jer_config_get_int(FT_MOD_ID, "test_rollover_side", 1);
 	c->preset = jer_config_get_int(FT_MOD_ID, "preset", FT_PRESET_FREE_PHYSICS);
@@ -184,7 +190,6 @@ void ftApplyPreset(void)
 		c->trip = 20;
 		c->launch = 40;
 		c->rolloverDamping = 50;
-		c->rolloverCatch = 50;
 		c->spinRetention = 0;
 		c->freeSpin = 1;
 		c->angularDamping = 16;
@@ -242,7 +247,6 @@ void ftSaveConfig(void)
 	jer_config_set_int(FT_MOD_ID, "trip", c->trip);
 	jer_config_set_int(FT_MOD_ID, "launch", c->launch);
 	jer_config_set_int(FT_MOD_ID, "rollover_damping", c->rolloverDamping);
-	jer_config_set_int(FT_MOD_ID, "rollover_catch", c->rolloverCatch);
 	jer_config_set_int(FT_MOD_ID, "spin_retention", c->spinRetention);
 	jer_config_set_bool(FT_MOD_ID, "free_spin", c->freeSpin);
 	jer_config_set_int(FT_MOD_ID, "angular_damping", c->angularDamping);
@@ -273,6 +277,7 @@ void ftSaveConfig(void)
 	jer_config_set_bool(FT_MOD_ID, "test_crash", c->testCrash);
 	jer_config_set_bool(FT_MOD_ID, "test_smash", c->testSmash);
 	jer_config_set_bool(FT_MOD_ID, "test_rollover", c->testRollover);
+	jer_config_set_bool(FT_MOD_ID, "test_rest_flip", c->testRestFlip);
 	jer_config_set_bool(FT_MOD_ID, "test_horn", c->testHorn);
 	jer_config_set_int(FT_MOD_ID, "test_rollover_side", c->testRolloverSide);
 	jer_config_set_int(FT_MOD_ID, "preset", c->preset);

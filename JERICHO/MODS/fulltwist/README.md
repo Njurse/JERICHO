@@ -41,8 +41,9 @@ response the engine already computes.
 - Restores a **wall bounce** slider (`wall_bounce`, 100 = stock restitution) in
   place of the old absorb-on-snag path, and scales the stock car-car recoil
   (`car_car_impulse`) so a shunt does not launch traffic.
-- Keeps the **rollover catch** as a tunable; Free Physics turns it off and
-  lets the car settle where the physics puts it.
+- **No scripted uprighting.** Free Physics lets the car settle where its
+  momentum and the ground contact put it; `rollover_catch` is accepted as a
+  deprecated no-op so old inis still load.
 - Grips the **body on the ground** (`body_hinge` 100 %): while the lowest hull
   vertex is on the road, the contact-point slide is turned into a pivot about
   that point (the car hinges and tumbles over it). The car's linear momentum is
@@ -55,7 +56,7 @@ response the engine already computes.
 |---|---|---|
 | `JER_EVENT_COLLISION` | `GlobalTimeStep` (`handling.c`) for car-vs-car; `CarBuildingCollision` (`bcollide.c`) for car-vs-world | impact point, surface normal, `howHard`, both cars |
 | `JER_EVENT_CAR_STEP` | top of `StepOneCar` (`wheelforces.c`) | wheel mask, uprightness, airborne/landing detection, free-spin window, test levers |
-| `JER_EVENT_CAR_TORQUE` | after `ConvertTorqueToAngularAcceleration` (`wheelforces.c`) | tumble damping, the rollover catch, and the lift `-avel/8` cancellation |
+| `JER_EVENT_CAR_TORQUE` | after `ConvertTorqueToAngularAcceleration` (`wheelforces.c`) | tumble damping, body spin damping, and the lift `-avel/8` cancellation |
 | `JER_EVENT_GET_PHYSICS_PARAMS` | top of `StepOneCar` (`wheelforces.c`) | lower the base `angularDamping` for free-spin cars only |
 | `JER_EVENT_GET_WALL_RESTITUTION` | `CarBuildingCollision` (`bcollide.c`) | `wall_bounce` (100 % = stock restitution) |
 | `JER_EVENT_FRAME` | `GlobalTimeStep` | frame counter, per-frame latch reset, hull prebuild |
@@ -102,7 +103,6 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `ground_kick` | 50 | share of the tumble re-applied once on the first wheel contact |
 | `damping` | 25 | extra roll/pitch damping while tumbling, 0–100 % |
 | `rollover_damping` | 50 | extra damping after the window while on the side/roof |
-| `rollover_catch` | 50 | uprighting torque while on the side/roof and grounded |
 | `spin_retention` | 50 | legacy offset of the stock 128 damping while tumbling |
 | `window` | 120 | frames the tumble response stays active |
 | `trip` | 20 | share redirected into roll/pitch when the physical torque is mostly yaw |
@@ -149,7 +149,7 @@ shipped preset and sets
 `hull_footprint=1`, `scenery_mode=1`, `wall_snag=0`, `wall_bounce=100`,
 `car_car_impulse=50`, `car_car_launch=0`, `car_car_tumble=50`, `body_kick=0`,
 `body_friction=100`, `body_hinge=100`,
-`damping=0`, `rollover_damping=50`, `rollover_catch=50`, `spin_retention=0`,
+`damping=0`, `rollover_damping=50`, `spin_retention=0`,
 `ground_kick=25`, `window=180`, `trip=20`, `launch=40`.
 
 Presets: **Free Physics**, **Off**. Free Physics is used when the ini has no
@@ -202,7 +202,6 @@ Turn `debug_log` on and the log carries:
 [fulltwist] body contact car=... point=(...) groundY=... vy=... rate=... free=...
 [fulltwist] body hinge car=... local=(...) slip=... dw=(...) hinge=...
 [fulltwist] body spin damp car=... frame=... k=... av=(...)
-[fulltwist] rollover catch car=... up=... ux=... uz=... catchK=...
 [fulltwist] test rollover rotate car=... frame=... up=... impulse_at=...
 [fulltwist] test rollover impulse car=... frame=... lateral=... rate=...
 [fulltwist] rollover count car=... count=... up=...
@@ -222,9 +221,10 @@ with the relevant `test_* = 1` in the ini.
 
 - The engine treats `hd.where.m[1][1] < 100` for 180 frames as an upside-down
   death (`mission.c`). FULL TWIST answers `JER_EVENT_GET_UPSIDE_DOWN_FRAMES`
-  with 720 frames (4x) while enabled, and the Free Physics preset now ships
-  `rollover_damping=50` / `rollover_catch=50`, so a car on its roof is given
-  time and a strong righting assist instead of totalling. The wheel/body
+  with 720 frames (4x) while enabled, and the Free Physics preset ships
+  `rollover_damping=50`. There is no uprighting catch: a car that comes to rest
+  on its roof stays there, and a car with enough momentum finishes its roll on
+  its own. `rollover_catch` remains a deprecated no-op key. The wheel/body
   contact hysteresis decides what is genuinely airborne: a roof slide no
   longer refreshes the free-spin window on a single contact-free frame.
 - The scenery collision event is fired **after** `bcollide.c` negates

@@ -6,6 +6,15 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### FULL TWIST (fulltwist 0.4.2)
+
+- **Removed the scripted rollover catch and inverted-pose nudge.** Nothing
+  applies a righting torque or rotation to finish a turn. The car settles only
+  from body spin damping, rollover damping and the free-spin/free-wheel gating.
+  A car that comes to rest on its roof stays there; the 720-frame window is
+  recovery time, not an auto-right. `rollover_catch` is now a deprecated no-op
+  key, so old inis still load.
+
 ### FULL TWIST (fulltwist 0.4.1)
 
 - **A flipped player car is no longer totalled on the stock 180-frame timer

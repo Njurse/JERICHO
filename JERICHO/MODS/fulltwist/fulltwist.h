@@ -23,7 +23,7 @@
 #include "dr2limits.h"		/* MAX_CARS, MAX_CAR_RESIDENT_MODELS */
 
 #define FT_MOD_ID          "fulltwist"
-#define FT_VERSION         "0.4.1"
+#define FT_VERSION         "0.4.2"
 
 /* FULL TWIST lets a car rest on its roof/side four times as long as the stock
  * rule before the engine forces the damage cap (mission.c: 180 frames). This
@@ -96,7 +96,6 @@ typedef struct FULLTWIST_CONFIG
 	int trip;			/* 0..100 % of the impulse redirected into roll/pitch */
 	int launch;			/* 0..200 % upward pop on a severe grounded hit */
 	int rolloverDamping;	/* 0..100 % extra damping while on the side/roof */
-	int rolloverCatch;		/* 0..100 % uprighting torque on the ground */
 	int spinRetention;		/* 0..100 % offset of the stock angular damping */
 	int freeSpin;			/* 1 = remove the stock angular damping while active */
 	int angularDamping;		/* 0..128: stock damping used for free-spin cars */
@@ -127,6 +126,7 @@ typedef struct FULLTWIST_CONFIG
 	int testCrash;		/* 1 = spawn an oncoming car and collide head-on */
 	int testSmash;		/* 1 = spawn a car beside the player and shove them together */
 	int testRollover;	/* 1 = apply the rollover test impulse */
+	int testRestFlip;	/* 1 = park the player car upside down for settle measurement */
 	int testHorn;		/* 1 = fire the horn cannon roll at level start */
 	int testRolloverSide;	/* -1/1: side the rollover test pushes toward */
 	int preset;
@@ -163,6 +163,7 @@ typedef struct FULLTWIST_CAR
 	int airborne;				/* previous step had no compressed wheel */
 	int airFrames;				/* consecutive airborne steps */
 	int upsideFrames;			/* consecutive steps with m[1][1] < 100 */
+	int catchCooldown;			/* frames until the next uprighting impulse */
 	int tumbled;				/* fulltwist has started a tumble on this car */
 	int bodyContact;			/* lowest hull vertex is on the road */
 	int bodyTouching;			/* hull is still resting on the road (hysteresis) */
@@ -203,6 +204,12 @@ typedef struct FULLTWIST_STATE
 	unsigned int testRolloverAtFrame;
 	int testRolloverHolding;
 	unsigned int testRolloverImpulseAtFrame;
+	int testRestFlipPending;
+	int testRestFlipDone;
+	int testRestFlipScheduled;
+	unsigned int testRestFlipAtFrame;
+	int restFlipActive;
+	unsigned int restFlipStartFrame;
 	int testHornPending;
 	int testHornDone;
 	int testHornScheduled;
