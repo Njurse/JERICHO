@@ -922,4 +922,19 @@ typedef struct JER_ARGS_FRONTEND_ENTRY
 	int  openMenu;		/* out: >= 0 = open this registered module menu */
 } JER_ARGS_FRONTEND_ENTRY;
 
+/* JER_EVENT_GET_UPSIDE_DOWN_FRAMES — query fired in HandleGameOver
+ * (mission.c) every frame a player car is upside down
+ * (hd.where.m[1][1] < 100). `frames` is the number of consecutive upside-down
+ * frames the engine allows before it forces the car to its damage cap; stock is
+ * 180. A module may extend (or shorten) it, e.g. FULL TWIST sets 720 (4x) while
+ * enabled. With no handler, or a handler that leaves it alone, the stock rule
+ * is unchanged. The counter itself is PLAYER.upsideDown; the engine clamps
+ * `frames` to 1..65535 because that field is a u_short. */
+typedef struct JER_ARGS_UPSIDE_DOWN
+{
+	void* car;		/* in: CAR_DATA* for the upside-down player car */
+	int playerId;	/* in: player slot that owns it */
+	int frames;		/* in/out: allowed consecutive upside-down frames, 180 = stock */
+} JER_ARGS_UPSIDE_DOWN;
+
 #endif /* JERICHO_JER_EVENTS_H */

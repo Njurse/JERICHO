@@ -195,6 +195,35 @@ static int ftOnCollision(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* FULL TWIST keeps a flipped car alive four times longer than the stock
+ * rule. mission.c asks every frame a player car is upside down; leaving the
+ * value alone (or disabling the module) keeps the stock 180 frames. */
+static int ftOnUpsideDownFrames(void* ud, void* args)
+{
+	JER_ARGS_UPSIDE_DOWN* a = (JER_ARGS_UPSIDE_DOWN*)args;
+	CAR_DATA* cp;
+
+	(void)ud;
+
+	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
+		return JER_RESULT_CONTINUE;
+
+	cp = (CAR_DATA*)a->car;
+
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
+		return JER_RESULT_CONTINUE;
+
+	a->frames = FT_UPSIDE_DOWN_FRAMES;
+
+	if (gFullTwist.cfg.debugLog && (gFullTwist.frame % 30) == 0)
+	{
+		FT_LOG("[fulltwist] upside-down limit car=%d player=%d frames=%d\n",
+			(int)cp->id, a->playerId, a->frames);
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
 static int ftOnWallRestitution(void* ud, void* args)
 {
 	JER_ARGS_WALL_RESTITUTION* a = (JER_ARGS_WALL_RESTITUTION*)args;
@@ -530,20 +559,25 @@ static int ftOnCarStep(void* ud, void* args)
 		st->bodyTouching = 0;
 	}
 
-	st->airborne = air;
+	st->airborne = (air && !st->bodyTouching) ? 1 : 0;
 	st->contactMask = mask;
 
-	/* Keep the free-spin state alive while the car is in the air or resting
-	 * on its body, and let it decay once the car is back on its wheels. */
+	/* Keep the free-spin state alive only while the car is genuinely in the
+	 * air (no wheel compression AND no body contact, with the hysteresis the
+	 * body probe uses); a car sliding/bouncing on its roof has mask == 0 but
+	 * is not airborne. Using bodyContact here let one contact-free frame
+	 * refresh the window forever. */
 	if (gFullTwist.cfg.freeSpin)
 	{
-		if (air || st->bodyContact)
+		if (air && !st->bodyTouching)
 			st->freeSpinFrames = gFullTwist.cfg.freeSpinWindow;
+		else if (mask != 0 && up > 2048)
+			st->freeSpinFrames = 0;
 		else if (st->freeSpinFrames > 0)
 			st->freeSpinFrames--;
 	}
 
-	if (air)
+	if (st->airborne)
 		st->airFrames++;
 	else
 		st->airFrames = 0;
@@ -626,6 +660,8 @@ static int ftOnCarTorque(void* ud, void* args)
 	int applyDamping = 0;
 	int applyCatch = 0;
 	int applyRetention = 0;
+	int applyBodyDamp = 0;
+	int bodyK = 0;
 	int catchK = 0;
 
 	/* ConvertTorqueToAngularAcceleration applies the lift -avel/8 only when
@@ -683,30 +719,66 @@ static int ftOnCarTorque(void* ud, void* args)
 	}
 	else if (st->tumbled)
 	{
-		/* The tumble window is over, but a car on its side or roof can keep
-		 * spinning on the stock damping alone. Damp the spin; do not upright
-		 * it -- a car resting on its side/end should stay there. */
-		if (gFullTwist.cfg.rolloverDamping > 0 &&
-			(st->upsideFrames > 0 || aup < 2500) && grounded)
+		/* The tumble window is over: a tumbled car on the ground gets its
+		 * roll/pitch spin damped in every orientation, not only while it is
+		 * already tilted. Stopping damping as it passes upright was what let
+		 * the righting motion rock back and forth. */
+		if (gFullTwist.cfg.rolloverDamping > 0 && grounded)
 		{
 			applyDamping = 1;
 			k = gFullTwist.cfg.rolloverDamping * 8;	/* 0..800 */
 		}
 
-		if (gFullTwist.cfg.rolloverCatch > 0 && grounded && aup > 3000)
+		/* `up` is signed: a car on its side or roof is below 3000, while an
+		 * upright one is near +4096. Using abs(up) here missed the on-its-side
+		 * case entirely. */
+		if (gFullTwist.cfg.rolloverCatch > 0 && grounded && up < 3000)
 		{
 			applyCatch = 1;
-			catchK = gFullTwist.cfg.rolloverCatch * 40;
+			catchK = gFullTwist.cfg.rolloverCatch * 400;
 		}
 	}
 
-	if (!applyDamping && !applyCatch && !applyRetention)
+	/* Body spin scrub: while the hull is resting on the road, body_friction
+	 * damps roll/pitch so the car stops rolling on its roof/side. This writes
+	 * only the angular channel; the body hinge deliberately leaves the car's
+	 * linear momentum alone (collision impulses still push it). */
+	if (gFullTwist.cfg.bodyFriction > 0 && st->bodyContact)
+	{
+		applyBodyDamp = 1;
+		bodyK = gFullTwist.cfg.bodyFriction * 8;	/* 0..800 */
+	}
+
+	if (applyCatch)
+	{
+		/* The uprighting torque has to win. Roll/pitch damping applied at the
+		 * same time was cancelling it frame for frame, which is why a nearly
+		 * inverted car could sit there rocking forever. Let the catch rotate
+		 * the car; damping resumes once it is upright (applyCatch stops). */
+		applyDamping = 0;
+		applyBodyDamp = 0;
+	}
+
+	if (!applyDamping && !applyCatch && !applyRetention && !applyBodyDamp)
 		return JER_RESULT_CONTINUE;
 
 	if (applyDamping && st->bodyContactFrame != gFullTwist.frame)
 	{
 		cp->hd.aacc[0] -= (int)(((long long)cp->st.n.angularVelocity[0] * k) >> 12);
 		cp->hd.aacc[2] -= (int)(((long long)cp->st.n.angularVelocity[2] * k) >> 12);
+	}
+
+	if (applyBodyDamp)
+	{
+		cp->hd.aacc[0] -= (int)(((long long)cp->st.n.angularVelocity[0] * bodyK) >> 12);
+		cp->hd.aacc[2] -= (int)(((long long)cp->st.n.angularVelocity[2] * bodyK) >> 12);
+
+		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 5) == 0)
+		{
+			FT_LOG("[fulltwist] body spin damp car=%d frame=%u k=%d av=(%d,%d)\n",
+				(int)cp->id, gFullTwist.frame, bodyK,
+				cp->st.n.angularVelocity[0], cp->st.n.angularVelocity[2]);
+		}
 	}
 
 	/* Offset part of the stock -avel * angularDamping (128) so the tumble
@@ -728,6 +800,20 @@ static int ftOnCarTorque(void* ud, void* args)
 	{
 		int ux = cp->hd.where.m[0][1];
 		int uz = cp->hd.where.m[2][1];
+		int uxAbs = (ux < 0) ? -ux : ux;
+		int uzAbs = (uz < 0) ? -uz : uz;
+
+		/* Perfectly inverted: both horizontal components are zero, so the
+		 * uprighting torque has no direction to push and the car can balance
+		 * on its roof forever. Pick a side deterministically (car id parity)
+		 * so the catch has something to work with. */
+		if (up < -3000 && uxAbs < 128 && uzAbs < 128)
+		{
+			if (cp->id & 1)
+				ux = 4096;
+			else
+				uz = 4096;
+		}
 
 		cp->hd.aacc[0] += (int)(-((long long)uz * catchK) >> 12);
 		cp->hd.aacc[2] += (int)(((long long)ux * catchK) >> 12);
@@ -938,6 +1024,7 @@ JER_MODULE_ENTRY(jer_module_fulltwist_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_PHYSICS_PARAMS, ftOnPhysicsParams, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, ftOnWallRestitution, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, ftOnResetCar, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_UPSIDE_DOWN_FRAMES, ftOnUpsideDownFrames, NULL, 0);
 
 	/* The 3D scenery check. A NULL slot is stock; on a handled hit the engine
 	 * restores the predictive position offset and skips its response. */

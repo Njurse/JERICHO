@@ -299,6 +299,12 @@ enum
 				   rather than under it (see
 				   JER_ARGS_FRONTEND_DRAW) */
 
+	JER_EVENT_GET_UPSIDE_DOWN_FRAMES,	/* query: consecutive frames a player
+					   car may rest upside down before the stock
+					   forced total, fired in HandleGameOver
+					   (mission.c). `frames` is in/out, 180 =
+					   stock (see JER_ARGS_UPSIDE_DOWN) */
+
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
 

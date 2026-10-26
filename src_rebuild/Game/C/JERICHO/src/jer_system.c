@@ -598,6 +598,7 @@ static const char* jerEventName(int event)
 	case JER_EVENT_FRONTEND_IDLE:	return "FRONTEND_IDLE";
 	case JER_EVENT_CAR_PEER_DRAW:	return "CAR_PEER_DRAW";
 	case JER_EVENT_CAR_DAMAGE_FX:	return "CAR_DAMAGE_FX";
+	case JER_EVENT_GET_UPSIDE_DOWN_FRAMES:	return "GET_UPSIDE_DOWN_FRAMES";
 	default:
 		if (event >= JER_EVENT_MODULE_CUSTOM)
 		{

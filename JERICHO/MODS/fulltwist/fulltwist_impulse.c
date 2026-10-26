@@ -65,9 +65,10 @@ int ftWheelMask(const CAR_DATA* cp)
 	return mask;
 }
 
-/* Free spin is a state, not a player privilege: a car that was just hit, is
- * airborne, or is resting on its body keeps its angular velocity while the
- * window lasts. Untouched traffic therefore keeps the stock damping. */
+/* Free spin is a state, not a player privilege: a car that was just hit or is
+ * airborne keeps its angular velocity while the window lasts. A car resting on
+ * its body does NOT refresh it -- that is what made a roof/side rest spin
+ * forever instead of settling. Untouched traffic keeps the stock damping. */
 int ftFreeSpinActive(const CAR_DATA* cp)
 {
 	FULLTWIST_CAR* st;
@@ -81,7 +82,7 @@ int ftFreeSpinActive(const CAR_DATA* cp)
 
 	st = &gFullTwist.cars[(int)cp->id];
 
-	return (st->freeSpinFrames > 0 || st->airborne || st->bodyContact) ? 1 : 0;
+	return (st->freeSpinFrames > 0 || st->airborne) ? 1 : 0;
 }
 
 /* Column i of hd.where.m is the world-space local axis i. */
@@ -179,21 +180,25 @@ static int ftClampRate(int v)
 	return v;
 }
 
-/* Friction at the body's ground contact. The stock 12-point path only removes
+/* Hinge at the body's ground contact. The stock 12-point path only removes
  * a small share of the contact velocity, so a car resting on its roof or side
- * keeps sliding. This applies a friction impulse at the lowest hull vertex:
+ * keeps sliding. This pivots the body about the lowest hull vertex:
  *
  *   - `body_hinge` % of the contact-point tangential velocity is turned into
  *     the rotation -(r x v_c)/|r|^2, which pivots the body about the contact
- *     (the car hinges/tumbles over the point it is snagging on);
- *   - `body_friction` % of what is left is removed from the linear velocity,
- *     which is the grip that kills the slide.
+ *     (the car hinges/tumbles over the point it is snagging on).
+ *
+ * The car's own linear velocity is deliberately NOT written here. A hinge
+ * pivots the body; it does not eat its momentum. Collision impulses still
+ * change linear velocity through ftHandleCar and the stock response, and the
+ * spin scrub in ftOnCarTorque damps the rotation separately.
  *
  * r is the world lever in model units; v_c is v + w x r in the engine's 12.12
  * velocity frame, the same form handling.c uses for a point velocity. */
 void ftBodyFriction(CAR_DATA* cp, const SVECTOR* local)
 {
 	FULLTWIST_CONFIG* c;
+	FULLTWIST_CAR* st;
 	int rx, ry, rz;
 	int rr;
 	int vx, vz;
@@ -201,7 +206,6 @@ void ftBodyFriction(CAR_DATA* cp, const SVECTOR* local)
 	int cvx, cvz;
 	int slip;
 	int dwx = 0, dwy = 0, dwz = 0;
-	int dvx = 0, dvz = 0;
 
 	if (!gFullTwist.cfg.enabled || cp == NULL || local == NULL)
 		return;
@@ -215,7 +219,16 @@ void ftBodyFriction(CAR_DATA* cp, const SVECTOR* local)
 	if (c->playerOnly && !ftIsPlayerCar(cp))
 		return;
 
-	if (c->bodyFriction <= 0 && c->bodyHinge <= 0)
+	if (c->bodyHinge <= 0)
+		return;
+
+	/* The hinge is the initial snag/tumble pivot, not a permanent slide-to-
+	 * spin converter. Once the tumble and free-spin windows are over, leave
+	 * the grounded car to body spin damping and the rollover catch; otherwise
+	 * a roof slide keeps feeding its own roll forever. */
+	st = &gFullTwist.cars[(int)cp->id];
+
+	if (st->tumbleFrames <= 0 && st->freeSpinFrames <= 0)
 		return;
 
 	/* Lever from the collision-body centre to the contact, world units. */
@@ -259,31 +272,13 @@ void ftBodyFriction(CAR_DATA* cp, const SVECTOR* local)
 		cp->st.n.angularVelocity[0] = ftClampRate(cp->st.n.angularVelocity[0] + dwx);
 		cp->st.n.angularVelocity[1] = ftClampRate(cp->st.n.angularVelocity[1] + dwy);
 		cp->st.n.angularVelocity[2] = ftClampRate(cp->st.n.angularVelocity[2] + dwz);
-
-		/* Recompute what is still moving at the contact. */
-		wx = cp->st.n.angularVelocity[0];
-		wy = cp->st.n.angularVelocity[1];
-		wz = cp->st.n.angularVelocity[2];
-
-		cvx = vx + (int)(((long long)wy * rz - (long long)wz * ry) >> 12);
-		cvz = vz + (int)(((long long)wx * ry - (long long)wy * rx) >> 12);
-	}
-
-	/* Linear grip: remove the leftover slide. */
-	if (c->bodyFriction > 0)
-	{
-		dvx = (int)(((long long)cvx * c->bodyFriction) / 100);
-		dvz = (int)(((long long)cvz * c->bodyFriction) / 100);
-
-		cp->st.n.linearVelocity[0] -= dvx;
-		cp->st.n.linearVelocity[2] -= dvz;
 	}
 
 	if (c->debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 5) == 0)
 	{
-		FT_LOG("[fulltwist] body friction car=%d frame=%u local=(%d,%d,%d) slip=%d dv=(%d,%d) dw=(%d,%d,%d) hinge=%d friction=%d\n",
+		FT_LOG("[fulltwist] body hinge car=%d frame=%u local=(%d,%d,%d) slip=%d dw=(%d,%d,%d) hinge=%d\n",
 			(int)cp->id, gFullTwist.frame, local->vx, local->vy, local->vz,
-			slip, dvx, dvz, dwx, dwy, dwz, c->bodyHinge, c->bodyFriction);
+			slip, dwx, dwy, dwz, c->bodyHinge);
 	}
 }
 

@@ -583,7 +583,7 @@ static int ftAdjBodyKick(void* ud, int dir)
 static void ftLabelBodyFriction(void* ud, char* out, int max)
 {
 	(void)ud;
-	snprintf(out, max, "Body friction: %d%%", gFullTwist.cfg.bodyFriction);
+	snprintf(out, max, "Body spin damp: %d%%", gFullTwist.cfg.bodyFriction);
 }
 
 static int ftAdjBodyFriction(void* ud, int dir)

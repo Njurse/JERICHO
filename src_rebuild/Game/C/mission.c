@@ -3063,9 +3063,28 @@ int HandleGameOver(void)
 
 				if (cp->hd.where.m[1][1] < 100)
 				{
+					JER_ARGS_UPSIDE_DOWN jerFlip;
+					int limit = 180;	/* stock consecutive upside-down frames */
+
+					/* JERICHO-HOOK: let a module extend the window (FULL
+					 * TWIST uses 720 = 4x while enabled). No handler leaves
+					 * the stock 180 untouched. PLAYER.upsideDown is a
+					 * u_short, so clamp the answer to what it can hold. */
+					jerFlip.car = cp;
+					jerFlip.playerId = player_id;
+					jerFlip.frames = limit;
+					jer_fire(JER_EVENT_GET_UPSIDE_DOWN_FRAMES, &jerFlip);
+
+					limit = jerFlip.frames;
+
+					if (limit < 1)
+						limit = 1;
+					else if (limit > 65535)
+						limit = 65535;
+
 					lp->upsideDown++;
 
-					if (lp->upsideDown > 180)
+					if (lp->upsideDown > limit)
 					{
 						cp->totalDamage = MaxPlayerDamage[player_id];
 

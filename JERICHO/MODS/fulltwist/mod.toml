@@ -1,6 +1,6 @@
 id = "fulltwist"
 name = "FULL TWIST"
-version = "0.4.0"
+version = "0.4.1"
 # the JERICHO interface (SDK) this mod is built against
 interface = 3
 author = "JERICHO"

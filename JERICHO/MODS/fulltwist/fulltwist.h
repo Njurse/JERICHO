@@ -23,12 +23,17 @@
 #include "dr2limits.h"		/* MAX_CARS, MAX_CAR_RESIDENT_MODELS */
 
 #define FT_MOD_ID          "fulltwist"
-#define FT_VERSION         "0.4.0"
+#define FT_VERSION         "0.4.1"
+
+/* FULL TWIST lets a car rest on its roof/side four times as long as the stock
+ * rule before the engine forces the damage cap (mission.c: 180 frames). This
+ * gives the rollover catch time to right the car instead of totaling it. */
+#define FT_UPSIDE_DOWN_FRAMES  720
 
 /* The impact value at which the tumble rate reaches its configured maximum.
  * Measured scenery impacts sit around 22k (nudge), 78k-114k (ordinary) and
  * 290k (violent); 350k leaves headroom for the worst car-vs-car hits. */
-#define FT_FULL_IMPACT     350000
+#define FT_FULL_IMPACT     290000
 
 /* The integrator clamps angular velocity to +/-0x800000. Keep our writes
  * inside the same envelope so a collision cannot push a component past the
@@ -40,7 +45,7 @@
 #define FT_TEST_KICK_DELAY 120
 
 /* Debug kick launch, independent of the contact-impulse slider. */
-#define FT_TEST_LAUNCH     380000
+#define FT_TEST_LAUNCH     880000
 
 /* Rollover test: the car is rotated 90 degrees, held for one second at the
  * 30 Hz sim rate, then given a lateral impulse 8x the old test shove. */
@@ -113,7 +118,7 @@ typedef struct FULLTWIST_CONFIG
 	int carCarLaunch;		/* 0..200 % car-car contact impulse */
 	int carCarTumble;		/* 0..200 % car-car roll/pitch assist */
 	int bodyKick;			/* 0..200 body-landing assist strength */
-	int bodyFriction;		/* 0..100 % body-ground grip (kills the slide) */
+	int bodyFriction;		/* 0..100 % body-ground spin damping */
 	int bodyHinge;			/* 0..200 % contact-pivot hinge on the body */
 	int scenery3d;		/* 1 = 3D hull/scenery override of the 2D check */
 	int playerOnly;		/* 1 = only player car / cars hit by the player */

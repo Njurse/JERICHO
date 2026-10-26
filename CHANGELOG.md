@@ -6,6 +6,22 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### FULL TWIST (fulltwist 0.4.1)
+
+- **A flipped player car is no longer totalled on the stock 180-frame timer
+  while FULL TWIST is enabled.** The module answers the new
+  `JER_EVENT_GET_UPSIDE_DOWN_FRAMES` query with 720 frames (4x); with the
+  module off the engine keeps its stock 180.
+- **Body contact no longer eats the car's linear momentum.** The hull hinge
+  writes only angular velocity; `body_friction` is now a body-ground spin
+  damper. Collision impulses (walls, car-car, the launch pop) still push the
+  car linearly, and the car keeps that momentum through a hinge.
+- **Cars settle back onto their tires reliably.** Free spin is no longer
+  refreshed by roof/side body contact and ends as soon as the car is upright
+  on compressed wheels; rollover damping/catch ship at 50/50; the catch covers
+  side/roof poses and gives a perfectly inverted car a deterministic nudge.
+  Damping no longer cancels the catch while it is righting the car.
+
 ### Multiplayer (mp 0.16.0)
 
 - **Choose your on-foot character.** `Player Options` now offers `Preferred
@@ -20,6 +36,17 @@ is in [changelog.txt](changelog.txt).
   `MP_PEDSTATE_ENTRY`, so a late joiner learns it before the first pose.
 - The build driver copies `JMPPED.LEV` to `DRIVER2/LEVELS/` after building
   `mp`, so a fresh checkout has the bake where the engine expects it.
+- **Preferred Character works in single player.** A solo level now imports
+  `JMPPED.LEV` on demand and applies the stored character when the player is on
+  foot; cycling `Player Options → Preferred Character` lists every archive
+  entry, and a Tanner run loads no ped pages. `MP_TEST_PED_MODEL` and
+  `MP_TEST_ONFOOT` now work outside a session.
+- **The JMPPED baker accepts real Blender exports.** A UV within two pixels of
+  its crop is clipped instead of refusing the bake (the Jericho Driv3r glasses
+  are like this), extra-material crops such as `Glasses`/`Material.001` are
+  applied alongside part crops, and a non-black texel is no longer folded onto
+  the palette's pure-black transparent entry — it takes the next available
+  shade. A changed `model_textured.obj` re-splits and re-bakes every part.
 
 ## v0.11.8
 

@@ -17,37 +17,37 @@
 #define FT_DEF_MIN_IMPACT	72000
 #define FT_DEF_OFF_CENTER	20
 #define FT_DEF_MAX_RATE		4000000
-#define FT_DEF_GROUND_KICK	25
+#define FT_DEF_GROUND_KICK	7
 #define FT_DEF_WALL_SNAG	0
 #define FT_DEF_DAMPING		0
 #define FT_DEF_WINDOW		180
 #define FT_DEF_TRIP			20
 #define FT_DEF_LAUNCH		40
-#define FT_DEF_ROLLOVER_DAMPING	0
-#define FT_DEF_ROLLOVER_CATCH	0
+#define FT_DEF_ROLLOVER_DAMPING	50
+#define FT_DEF_ROLLOVER_CATCH	50
 #define FT_DEF_SPIN_RETENTION	0
 #define FT_DEF_FREE_SPIN		1
-#define FT_DEF_ANGULAR_DAMPING	16
+#define FT_DEF_ANGULAR_DAMPING	6
 #define FT_DEF_CANCEL_EXTRA		100
 #define FT_DEF_KEEP_SPIN		1
 #define FT_DEF_FREE_SPIN_WINDOW	120
 #define FT_DEF_HOLD_CAMERA		1
-#define FT_DEF_CAMERA_SNAP		75
+#define FT_DEF_CAMERA_SNAP		250
 #define FT_DEF_CAMERA_RELEASE	1
-#define FT_DEF_CAMERA_RELEASE_AV	800000
+#define FT_DEF_CAMERA_RELEASE_AV	1800000
 #define FT_DEF_HORN_ROLL		1
 #define FT_DEF_HORN_ROLL_RATE	3000000
 #define FT_DEF_HORN_ROLL_LAUNCH	15000
 #define FT_DEF_HULL_CONTACT		0
 #define FT_DEF_HULL_FOOTPRINT	1
 #define FT_DEF_SCENERY_MODE		1
-#define FT_DEF_WALL_BOUNCE		100
+#define FT_DEF_WALL_BOUNCE		35
 #define FT_DEF_CAR_CAR_IMPULSE	50
 #define FT_DEF_CAR_CAR_LAUNCH	0
 #define FT_DEF_CAR_CAR_TUMBLE	50
 #define FT_DEF_BODY_KICK		0
-#define FT_DEF_BODY_FRICTION	100
-#define FT_DEF_BODY_HINGE		100
+#define FT_DEF_BODY_FRICTION	40
+#define FT_DEF_BODY_HINGE		68
 
 void ftClampConfig(void)
 {
@@ -183,8 +183,8 @@ void ftApplyPreset(void)
 		c->window = 180;
 		c->trip = 20;
 		c->launch = 40;
-		c->rolloverDamping = 0;
-		c->rolloverCatch = 0;
+		c->rolloverDamping = 50;
+		c->rolloverCatch = 50;
 		c->spinRetention = 0;
 		c->freeSpin = 1;
 		c->angularDamping = 16;
