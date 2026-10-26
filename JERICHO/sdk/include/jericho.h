@@ -69,7 +69,10 @@ extern "C" {
 #define JERICHO_BUILD_INFO_FMT "%s (%s, built %s)"
 #define JERICHO_BUILD_INFO_ARGS JERICHO_BUILD_VERSION, JERICHO_GIT_HASH, JERICHO_BUILD_TIME
 
-#define JERICHO_SDK_VERSION 2
+/* Interface 3 (JERICHO 0.12): a clean-break SDK release. Addons move to the
+ * versioned host API table (jer_host_api.h); every module and published
+ * package must be rebuilt/re-released against this value. */
+#define JERICHO_SDK_VERSION 3
 
 /* Maximum number of compiled-in modules (registry + modlist capacity). */
 #define JER_MAX_MODULES 32
