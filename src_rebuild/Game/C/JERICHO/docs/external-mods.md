@@ -33,7 +33,7 @@ compiled in for convenience, but that is a tooling choice, not an API barrier.
 |---|---|---|
 | `example`, `debugorbit` | already `runtime = "dll"` | none; they are the fixtures. |
 | `fulltwist` | external (`runtime = "dll"`, pilot) | done: car matrix/transform, `hd.aacc` torque, wheel state, cosmetic/model metadata, main-player and camera state moved onto the host API. |
-| `yarisbounce` | next, render-only | model/car drawing and the clean-model pointer via the host API. |
+| `yarisbounce` | external (`runtime = "dll"`) | done: clean-model vertices plus the per-car draw buffer, frame counter and raw D-pad through the host API; body and wheel squash are render-only. |
 | `collisiondevil` | next, physics-only | camera default and a physics/state setter view. |
 | `antfarm` | later | car spawn/damage, scene streaming, camera and sound. |
 | `d2pl` | later | render model, camera position/base angle, pedestrian state. |
@@ -79,7 +79,6 @@ module, not once per use.
 | `mp` | F: `CellEmpty`, `DrawPlayerDot`, `EnablePause`, `GetSurfaceIndex`, `InitCar`, `MapHeight`, `Start3DSoundVolPitch`, `ratan2`; G: `GameType`, `MainPlayer`, `MaxPlayerDamage`, `NumPlayers`, `active_car_list`, `camera_position`, `car_data`, `num_active_cars`, `pPed`, `player`, `residentCarModels` |
 | `sandbox` | F: `DrawCarWheels`, `InitCar`, `MapHeight`, `RCOS`, `RSIN`, `RenderModel`; G: `car_data`, `gCarCleanModelPtr`, `modelpointers`, `player`, `residentCarModels` |
 | `testmode` | G: `NumPlayers`, `car_data`, `pPed`, `player` |
-| `yarisbounce` | F: `RSIN`; G: `gCarCleanModelPtr` |
 
 ## API additions implied by the table
 

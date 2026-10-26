@@ -17,7 +17,6 @@ void jer_module_levelhacks_entry(JERICHO_CONTEXT* ctx);
 void jer_module_mp_entry(JERICHO_CONTEXT* ctx);
 void jer_module_sandbox_entry(JERICHO_CONTEXT* ctx);
 void jer_module_testmode_entry(JERICHO_CONTEXT* ctx);
-void jer_module_yarisbounce_entry(JERICHO_CONTEXT* ctx);
 
 #ifdef JERICHO_RELEASE_MODS
 extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
@@ -42,9 +41,8 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "mp", jer_module_mp_entry, 1 },
 	{ "sandbox", jer_module_sandbox_entry, 0 },
 	{ "testmode", jer_module_testmode_entry, 0 },
-	{ "yarisbounce", jer_module_yarisbounce_entry, 0 },
 };
-extern const int jer_registry_module_count = 14;
+extern const int jer_registry_module_count = 13;
 #endif
 #ifdef __cplusplus
 }

@@ -193,6 +193,7 @@ typedef struct JER_HOST_CAR_API
 					  const JER_VEC* velocity, const JER_VEC* angularVelocity);
 	int  (*set_speed)(void* car, int speed);
 	int  (*mark_collision)(void* car, int otherId);
+	int  (*draw_vertices)(void* car, JER_SVEC** out, int* capacity);
 } JER_HOST_CAR_API;
 
 typedef struct JER_HOST_PLAYER_API
@@ -206,6 +207,7 @@ typedef struct JER_HOST_PLAYER_API
 	int  (*set_camera_angle)(void* player, int angle);
 	int  (*set_horn)(void* player, int on);
 	int  (*pad)(int playerId, int* out, int max);	/* raw PAD words */
+	int  (*pad_direct)(int playerId);	/* raw Pads[].direct word */
 	void* (*main)(void);			/* the local MainPlayer token */
 } JER_HOST_PLAYER_API;
 
@@ -254,6 +256,7 @@ typedef struct JER_HOST_GAME_API
 	int  (*cops_allowed)(void);
 	int  (*max_player_damage)(void);
 	int  (*pedestrian_felony)(void);
+	int  (*frame)(void);
 } JER_HOST_GAME_API;
 
 typedef struct JER_HOST_UI_API

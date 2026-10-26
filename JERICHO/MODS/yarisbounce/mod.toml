@@ -10,3 +10,5 @@ dependencies = []
 # Nothing should be switched on for somebody who has not asked for it; turn it on
 # in Options -> JERICHO.
 default-enabled = false
+# External addon: built with the standalone SDK against interface 3.
+runtime = "dll"

@@ -142,6 +142,11 @@ if exist "%STAGE%\JERICHO\MODS\!MID!\lib" rmdir /s /q "%STAGE%\JERICHO\MODS\!MID
 del /q /s "%STAGE%\JERICHO\MODS\!MID!\*.pdb" >nul 2>nul
 del /q /s "%STAGE%\JERICHO\MODS\!MID!\*.ilk" >nul 2>nul
 del /q /s "%STAGE%\JERICHO\MODS\!MID!\*.exp" >nul 2>nul
+rem SDK addons build a root-level <id>.lib/<source>.obj; those are build output,
+rem not game data. Keep the DLL and source, drop the linker/compiler residue.
+del /q "%STAGE%\JERICHO\MODS\!MID!\*.lib" >nul 2>nul
+del /q "%STAGE%\JERICHO\MODS\!MID!\*.obj" >nul 2>nul
+del /q "%STAGE%\JERICHO\MODS\!MID!\*.idb" >nul 2>nul
 :staged_ok
 
 if exist "%OUT%\%PKG%" del /q "%OUT%\%PKG%"

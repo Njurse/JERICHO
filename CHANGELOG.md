@@ -6,6 +6,23 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### External addons and host API (interface 3)
+
+- **FULL TWIST and Yaris Bounce now build as `runtime = "dll"` addons.** They
+  link only `JER_HOST_API`; no engine header or engine data global is imported.
+  Build them with `JERICHO/sdk/build_mods.bat <mod>` and install the DLL without
+  rebuilding the game.
+- **Append-only host growth:** car matrix/transform, angular-accel injection,
+  wheel state, cosmetic info, per-car draw vertices, motion/speed/collision
+  setters, `player.pad_direct`/`main`, `camera.set_base_angle`, `game.frame`,
+  and model cosmetic info. Existing state structs and event payloads are
+  unchanged; the interface stays 3.
+- **`jer_host_helpers.h`** wraps the common host calls (car/model state, draw
+  buffer, config, frame, raw pad) so an addon stays self-contained.
+- **Store packages:** FULL TWIST 0.4.3 and Yaris Bounce 1.0.0 are built as
+  interface-3 packages; the package generator drops root-level SDK `.lib`/`.obj`
+  residue as well as the existing `obj/`/`lib/` folders.
+
 ### FULL TWIST (fulltwist 0.4.3)
 
 - **Body-contact tipping follows the centre of gravity.** `body_gravity`

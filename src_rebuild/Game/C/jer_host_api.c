@@ -9,6 +9,7 @@
 #define JERICHO_HOST_BUILD 1
 
 #include "driver2.h"
+#include "main.h"
 #include "jericho.h"
 #include "jer_events.h"
 #include "jer_config.h"
@@ -495,6 +496,19 @@ static int hostCarMarkCollision(void* car, int otherId)
 	return 1;
 }
 
+static int hostCarDrawVertices(void* car, JER_SVEC** out, int* capacity)
+{
+	CAR_DATA* cp = (CAR_DATA*)car;
+
+	if (cp == NULL || out == NULL || capacity == NULL ||
+		cp->id < 0 || cp->id >= MAX_CARS)
+		return 0;
+
+	*out = (JER_SVEC*)gTempCarVertDump[cp->id];
+	*capacity = MAX_DENTING_VERTS;
+	return 1;
+}
+
 static const JER_HOST_CAR_API gCar =
 {
 	sizeof(JER_HOST_CAR_API), JER_HOST_API_VERSION,
@@ -505,7 +519,8 @@ static const JER_HOST_CAR_API gCar =
 	hostCarActiveSlots,
 	hostCarGetMatrix, hostCarRebuildMatrix, hostCarAddAngularAccel,
 	hostCarWheelState, hostCarCosmeticInfo,
-	hostCarSetMotion, hostCarSetSpeed, hostCarMarkCollision
+	hostCarSetMotion, hostCarSetSpeed, hostCarMarkCollision,
+	hostCarDrawVertices
 };
 
 /* ------------------------------------------------------------------ */
@@ -601,12 +616,20 @@ static void* hostPlayerMain(void)
 	return &MainPlayer;
 }
 
+static int hostPlayerPadDirect(int playerId)
+{
+	if (playerId < 0 || playerId >= 2)
+		return 0;
+
+	return Pads[playerId].direct;
+}
+
 static const JER_HOST_PLAYER_API gPlayer =
 {
 	sizeof(JER_HOST_PLAYER_API), JER_HOST_API_VERSION,
 	hostPlayerCount, hostPlayerAt, hostPlayerGetState, hostPlayerFelony,
 	hostPlayerSetCameraAngle, hostPlayerSetHorn, hostPlayerPad,
-	hostPlayerMain
+	hostPlayerPadDirect, hostPlayerMain
 };
 
 /* ------------------------------------------------------------------ */
@@ -807,11 +830,17 @@ static int hostGamePedestrianFelony(void)
 	return pedestrianFelony;
 }
 
+static int hostGameFrame(void)
+{
+	return FrameCnt;
+}
+
 static const JER_HOST_GAME_API gGame =
 {
 	sizeof(JER_HOST_GAME_API), JER_HOST_API_VERSION,
 	hostGameLevel, hostGameType, hostGameNumPlayers,
-	hostGameCopsAllowed, hostGameMaxPlayerDamage, hostGamePedestrianFelony
+	hostGameCopsAllowed, hostGameMaxPlayerDamage, hostGamePedestrianFelony,
+	hostGameFrame
 };
 
 /* ------------------------------------------------------------------ */
