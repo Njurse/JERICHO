@@ -4,7 +4,7 @@
  * The test kick in fulltwist.c exercises settling without a collision. These
  * levers make the actual paths reachable from a headless run:
  *
- *   test_crash    spawn a car down the road facing the player, give both a
+ *   test_crash    spawn a car down the road facing the owner, give both a
  *                 closing velocity, and let the car-car path hit the hull
  *   test_rollover start from the normal upright heading, wait one second, then
  *                 apply a lateral impulse and a matching roll rate
@@ -13,129 +13,166 @@
  * menu asks for them.
  */
 
-#include "driver2.h"
 #include "jericho.h"
-#include "cars.h"
-#include "handling.h"	/* RebuildCarMatrix for the rest-flip lever */
-#include "civ_ai.h"	/* InitCar, reservedSlots */
+#include "jer_events.h"
+#include "fulltwist_host.h"
 #include "fulltwist.h"
 
-static CAR_DATA* ftFindFreeCar(void)
+static int ftFindFreeCarSlot(const JER_HOST_API* api)
 {
 	int i;
 
+	if (api == NULL || api->car == NULL)
+		return -1;
+
 	for (i = 0; i < MAX_CARS; i++)
 	{
-		if (car_data[i].controlType == CONTROL_TYPE_NONE && reservedSlots[i] == 0)
-			return &car_data[i];
+		void* token = api->car->at(i);
+		JER_CAR_STATE state;
+
+		if (token == NULL || !api->car->get_state(token, &state))
+			continue;
+
+		if (state.controlType == CONTROL_TYPE_NONE)
+			return i;
 	}
 
-	return NULL;
+	return -1;
 }
 
-static void ftSpawnCrashCar(CAR_DATA* player)
+static void ftSpawnCrashCar(CAR_DATA* owner)
 {
-	CAR_DATA* other;
-	LONGVECTOR4 pos;
-	static char padId = 0;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA otherView;
+	CAR_DATA* other = &otherView;
+	JER_VEC pos;
+	JER_SVEC orientation;
+	void* otherToken;
+	int slot;
 	int fwdX, fwdZ;
 	int dist = 420;
 	int vx, vz;
 	int dir;
 
-	if (player == NULL || player->ap.carCos == NULL)
+	if (owner == NULL || owner->ap.carCos == NULL || api == NULL || api->car == NULL)
 		return;
 
-	other = ftFindFreeCar();
+	slot = ftFindFreeCarSlot(api);
 
-	if (other == NULL)
+	if (slot < 0)
 	{
-		FT_LOG("[fulltwist] test crash: no free CAR_DATA slot\n");
+		FT_LOG("[fulltwist] test crash: no free car slot\n");
 		return;
 	}
 
 	/* The forward axis is the matrix's third column. */
-	fwdX = player->hd.where.m[0][2];
-	fwdZ = player->hd.where.m[2][2];
+	fwdX = owner->hd.where.m[0][2];
+	fwdZ = owner->hd.where.m[2][2];
 
 	if (fwdX == 0 && fwdZ == 0)
 		fwdZ = 4096;
 
-	pos[0] = player->hd.where.t[0] + (int)(((long long)fwdX * dist) >> 12);
-	pos[1] = player->hd.where.t[1];
-	pos[2] = player->hd.where.t[2] + (int)(((long long)fwdZ * dist) >> 12);
-	pos[3] = 0;
+	pos.x = owner->hd.where.t[0] + (int)(((long long)fwdX * dist) >> 12);
+	pos.y = owner->hd.where.t[1];
+	pos.z = owner->hd.where.t[2] + (int)(((long long)fwdZ * dist) >> 12);
+	pos.pad = 0;
 
-	dir = (player->hd.direction + 2048) & 0xfff;
+	dir = (owner->hd.direction + 2048) & 0xfff;
+	orientation.x = 0;
+	orientation.y = (short)dir;
+	orientation.z = 0;
+	orientation.pad = 0;
 
-	if (!InitCar(other, dir, &pos, CONTROL_TYPE_CUTSCENE,
-				 player->ap.model, player->ap.palette & 255, &padId))
+	if (!api->car->init(slot, owner->ap.model, &pos, &orientation))
 	{
-		FT_LOG("[fulltwist] test crash: InitCar refused slot %d\n", (int)other->id);
+		FT_LOG("[fulltwist] test crash: car.init refused slot %d\n", slot);
 		return;
 	}
+
+	otherToken = api->car->at(slot);
+	ftCarLoad(api, otherToken, other);
+	if (other->token == NULL)
+		other->token = otherToken;
 
 	/* Close on each other. linearVelocity is 12.12 fixed point (where.t is
 	 * linearVelocity >> 12), so this is about 40 world units/frame each. */
 	vx = (int)(((long long)fwdX * 160000) >> 12);
 	vz = (int)(((long long)fwdZ * 160000) >> 12);
 
-	player->st.n.linearVelocity[0] += vx;
-	player->st.n.linearVelocity[2] += vz;
-	player->hd.speed = 20;
+	owner->st.n.linearVelocity[0] += vx;
+	owner->st.n.linearVelocity[2] += vz;
+	owner->hd.speed = 20;
+	ftCarFlush(api, owner->token, owner);
 
 	other->st.n.linearVelocity[0] -= vx;
 	other->st.n.linearVelocity[2] -= vz;
 	other->hd.speed = 20;
+	ftCarFlush(api, otherToken, other);
 
-	player->hd.mayBeColliding |= 1u << other->id;
-	other->hd.mayBeColliding |= 1u << player->id;
+	if (api->car->mark_collision != NULL)
+	{
+		api->car->mark_collision(owner->token, other->id);
+		api->car->mark_collision(otherToken, owner->id);
+	}
 
-	FT_LOG("[fulltwist] test crash player=%d other=%d pos=(%d,%d,%d) fwd=(%d,%d) vel=(%d,%d)\n",
-		(int)player->id, (int)other->id, pos[0], pos[1], pos[2],
+	FT_LOG("[fulltwist] test crash owner=%d other=%d pos=(%d,%d,%d) fwd=(%d,%d) vel=(%d,%d)\n",
+		(int)owner->id, (int)other->id, pos.x, pos.y, pos.z,
 		fwdX, fwdZ, vx, vz);
 }
 
-/* Spawn a car beside the player, park it, and apply the roll-test shove
+/* Spawn a car beside the owner, park it, and apply the roll-test shove
  * toward it. Both cars are flagged as colliding, so the engine resolves the
  * first car-car contact on the next RK step. This is the deterministic
  * car-car smash lever. */
-static void ftSmashTest(CAR_DATA* player)
+static void ftSmashTest(CAR_DATA* owner)
 {
-	CAR_DATA* other;
-	LONGVECTOR4 pos;
-	static char padId = 0;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA otherView;
+	CAR_DATA* other = &otherView;
+	JER_VEC pos;
+	JER_SVEC orientation;
+	void* otherToken;
+	int slot;
 	int sideX, sideZ;
 	int dist = 220;
 	int sign = 1;
 
-	if (player == NULL || player->ap.carCos == NULL)
+	if (owner == NULL || owner->ap.carCos == NULL || api == NULL || api->car == NULL)
 		return;
 
-	other = ftFindFreeCar();
+	slot = ftFindFreeCarSlot(api);
 
-	if (other == NULL)
+	if (slot < 0)
 	{
-		FT_LOG("[fulltwist] test smash: no free CAR_DATA slot\n");
+		FT_LOG("[fulltwist] test smash: no free car slot\n");
 		return;
 	}
 
-	sideX = player->hd.where.m[0][0] * sign;
-	sideZ = player->hd.where.m[2][0] * sign;
+	sideX = owner->hd.where.m[0][0] * sign;
+	sideZ = owner->hd.where.m[2][0] * sign;
 
-	pos[0] = player->hd.where.t[0] + (int)(((long long)sideX * dist) >> 12);
-	pos[1] = player->hd.where.t[1];
-	pos[2] = player->hd.where.t[2] + (int)(((long long)sideZ * dist) >> 12);
-	pos[3] = 0;
+	pos.x = owner->hd.where.t[0] + (int)(((long long)sideX * dist) >> 12);
+	pos.y = owner->hd.where.t[1];
+	pos.z = owner->hd.where.t[2] + (int)(((long long)sideZ * dist) >> 12);
+	pos.pad = 0;
 
-	if (!InitCar(other, player->hd.direction, &pos, CONTROL_TYPE_CUTSCENE,
-				 player->ap.model, player->ap.palette & 255, &padId))
+	orientation.x = 0;
+	orientation.y = (short)owner->hd.direction;
+	orientation.z = 0;
+	orientation.pad = 0;
+
+	if (!api->car->init(slot, owner->ap.model, &pos, &orientation))
 	{
-		FT_LOG("[fulltwist] test smash: InitCar refused slot %d\n", (int)other->id);
+		FT_LOG("[fulltwist] test smash: car.init refused slot %d\n", slot);
 		return;
 	}
 
-	/* Park it; the player is shoved into it by the roll-test force. */
+	otherToken = api->car->at(slot);
+	ftCarLoad(api, otherToken, other);
+	if (other->token == NULL)
+		other->token = otherToken;
+
+	/* Park it; the owner is shoved into it by the roll-test force. */
 	other->st.n.linearVelocity[0] = 0;
 	other->st.n.linearVelocity[1] = 0;
 	other->st.n.linearVelocity[2] = 0;
@@ -143,18 +180,22 @@ static void ftSmashTest(CAR_DATA* player)
 	other->st.n.angularVelocity[1] = 0;
 	other->st.n.angularVelocity[2] = 0;
 	other->hd.speed = 0;
+	ftCarFlush(api, otherToken, other);
 
-	player->hd.mayBeColliding |= 1u << other->id;
-	other->hd.mayBeColliding |= 1u << player->id;
+	if (api->car->mark_collision != NULL)
+	{
+		api->car->mark_collision(owner->token, other->id);
+		api->car->mark_collision(otherToken, owner->id);
+	}
 
 	/* The roll-test shove, aimed at the parked car. */
-	player->st.n.linearVelocity[0] += (int)(((long long)sideX * FT_TEST_ROLLOVER_FORCE) >> 12);
-	player->st.n.linearVelocity[2] += (int)(((long long)sideZ * FT_TEST_ROLLOVER_FORCE) >> 12);
-	ftAddLocalRate(player, -sign * FT_TEST_ROLLOVER_RATE, 0);
-	player->hd.speed = 20;
+	owner->st.n.linearVelocity[0] += (int)(((long long)sideX * FT_TEST_ROLLOVER_FORCE) >> 12);
+	owner->st.n.linearVelocity[2] += (int)(((long long)sideZ * FT_TEST_ROLLOVER_FORCE) >> 12);
+	ftAddLocalRate(owner, -sign * FT_TEST_ROLLOVER_RATE, 0);
+	owner->hd.speed = 20;
 
-	FT_LOG("[fulltwist] test smash player=%d other=%d pos=(%d,%d,%d) side=%d force=%d rate=%d\n",
-		(int)player->id, (int)other->id, pos[0], pos[1], pos[2], sign,
+	FT_LOG("[fulltwist] test smash owner=%d other=%d pos=(%d,%d,%d) side=%d force=%d rate=%d\n",
+		(int)owner->id, (int)other->id, pos.x, pos.y, pos.z, sign,
 		FT_TEST_ROLLOVER_FORCE, -sign * FT_TEST_ROLLOVER_RATE);
 }
 
@@ -238,7 +279,7 @@ static void ftRolloverImpulse(CAR_DATA* cp)
 		cp->st.n.angularVelocity[2], st->tumbleFrames);
 }
 
-/* Park the player upside down on its roof with no motion. This is the
+/* Park the owner upside down on its roof with no motion. This is the
  * deterministic rest case for the settle/catch path: it removes the collision
  * impulse and airborne phase, so the log shows whether the catch is doing the
  * work or something else is keeping the car afloat. */
@@ -280,7 +321,8 @@ static void ftRestFlipTest(CAR_DATA* cp)
 	cp->hd.aacc[1] = 0;
 	cp->hd.aacc[2] = 0;
 
-	RebuildCarMatrix(&cp->st, cp);
+	ftCarRebuild(ftHost(), cp);
+	ftCarLoad(ftHost(), cp->token, cp);
 
 	/* Put the lowest hull vertex exactly on the road so the car starts
 	 * resting on its roof instead of dropping or penetrating. */
@@ -289,7 +331,8 @@ static void ftRestFlipTest(CAR_DATA* cp)
 	if (hull != NULL && ftHullLowest(hull, cp, &point, &groundY, &local))
 	{
 		cp->st.n.fposition[1] += (groundY - point.vy) << 4;
-		RebuildCarMatrix(&cp->st, cp);
+		ftCarRebuild(ftHost(), cp);
+		ftCarLoad(ftHost(), cp->token, cp);
 	}
 
 	st->tumbled = 1;

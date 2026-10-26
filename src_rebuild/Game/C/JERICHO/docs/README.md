@@ -109,6 +109,10 @@ src_rebuild/tools/gen_exports/     maps the linker map to exports.def
   rebuild the index, validate it, serve it, publish it. Plus the scaffold for a
   self-contained repo with a CI workflow, and the rules that keep a repo
   installable (never hand-edit a hash; bump the version every time).
+- [`external-mods.md`](external-mods.md) — **the compiled-in/external boundary**:
+  which modules must stay deep, the per-module host-API gap table from
+  `tools/check_mod_api.py --gap`, and the append-only API additions needed to
+  move the other modules out of the exe.
 
 ## Building the game
 

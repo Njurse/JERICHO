@@ -99,6 +99,37 @@ typedef struct JER_CAMERA_STATE
 	JER_VEC position;			/* camera_position */
 } JER_CAMERA_STATE;
 
+typedef struct JER_MATRIX
+{
+	unsigned int size;
+	int m[3][3];			/* 12.12 car rotation matrix */
+	JER_VEC t;			/* world translation */
+} JER_MATRIX;
+
+typedef struct JER_WHEEL_STATE
+{
+	unsigned int size;
+	int compression;		/* susCompression */
+	int locked;
+	int onGrass;
+	int surface;
+} JER_WHEEL_STATE;
+
+typedef struct JER_COSMETIC_INFO
+{
+	unsigned int size;
+	JER_VEC cog;
+	JER_VEC colBox;
+	int mass;
+	int twistRateX;
+	int twistRateY;
+	int twistRateZ;
+	int cbYoffset;
+	int susCoeff;
+	int traction;
+	int wheelSize;
+} JER_COSMETIC_INFO;
+
 typedef struct JER_HOST_ROAD_INFO
 {
 	int surfId;				/* < 0 = no surface here */
@@ -153,6 +184,15 @@ typedef struct JER_HOST_CAR_API
 	int  (*road_info)(int x, int y, int z, JER_HOST_ROAD_INFO* out);
 	int  (*cell_empty)(const JER_VEC* position, int flags);
 	int  (*active_slots)(int* out, int max);
+	int  (*get_matrix)(void* car, JER_MATRIX* out);
+	int  (*rebuild_matrix)(void* car);
+	int  (*add_angular_accel)(void* car, const JER_VEC* aacc);
+	int  (*wheel_state)(void* car, int wheel, JER_WHEEL_STATE* out);
+	int  (*cosmetic_info)(void* car, JER_COSMETIC_INFO* out);
+	int  (*set_motion)(void* car, const JER_VEC* position, const JER_QUAT* orientation,
+					  const JER_VEC* velocity, const JER_VEC* angularVelocity);
+	int  (*set_speed)(void* car, int speed);
+	int  (*mark_collision)(void* car, int otherId);
 } JER_HOST_CAR_API;
 
 typedef struct JER_HOST_PLAYER_API
@@ -166,6 +206,7 @@ typedef struct JER_HOST_PLAYER_API
 	int  (*set_camera_angle)(void* player, int angle);
 	int  (*set_horn)(void* player, int on);
 	int  (*pad)(int playerId, int* out, int max);	/* raw PAD words */
+	void* (*main)(void);			/* the local MainPlayer token */
 } JER_HOST_PLAYER_API;
 
 typedef struct JER_HOST_CAMERA_API
@@ -175,6 +216,7 @@ typedef struct JER_HOST_CAMERA_API
 	int  (*get_state)(JER_CAMERA_STATE* out);
 	int  (*angle)(void);
 	void (*set_angle)(int angle);
+	void (*set_base_angle)(int angle);
 } JER_HOST_CAMERA_API;
 
 typedef struct JER_HOST_MODEL_API
@@ -187,6 +229,7 @@ typedef struct JER_HOST_MODEL_API
 	void* (*cosmetic)(int slot);			/* CAR_COSMETICS* */
 	const JER_SVEC* (*vertices)(void* model);	/* model vertex array (SVECTOR layout) */
 	int  (*vertex_count)(void* model);
+	int  (*cosmetic_info)(int slot, JER_COSMETIC_INFO* out);
 } JER_HOST_MODEL_API;
 
 typedef struct JER_HOST_WORLD_API

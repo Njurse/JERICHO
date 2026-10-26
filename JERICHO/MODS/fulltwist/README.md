@@ -68,9 +68,9 @@ response the engine already computes.
 | `JER_EVENT_GET_UPSIDE_DOWN_FRAMES` | `HandleGameOver` (`mission.c`) | raise the engine's upside-down total window from 180 to 720 frames while enabled |
 | `JER_OVERRIDE_SLOT_SCENERY_COLLISION` | `CarBuildingCollision` (`bcollide.c`) | reject a false 2D scenery hit; never rewrites the point |
 
-The module is compiled in (no `runtime = "dll"`). It needs the game's config
-store and pause-menu API, which are linked into the exe but not the runtime DLL
-surface.
+The module is an external `runtime = "dll"` addon. It links only the host API
+(no engine headers and no engine data globals), so it can be rebuilt with
+`JERICHO/sdk/build_mods.bat fulltwist` and installed without rebuilding the game.
 
 ## Files
 

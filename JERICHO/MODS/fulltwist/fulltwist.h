@@ -20,7 +20,8 @@
 #define FULLTWIST_H
 
 #include "jericho.h"
-#include "dr2limits.h"		/* MAX_CARS, MAX_CAR_RESIDENT_MODELS */
+#include "jer_events.h"
+#include "ft_types.h"		/* local CAR_DATA/MAX_CARS view, no engine header */
 
 #define FT_MOD_ID          "fulltwist"
 #define FT_VERSION         "0.4.3"

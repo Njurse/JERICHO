@@ -15,11 +15,9 @@
  * vertex list means the test does not need to walk every body vertex.
  */
 
-#include "driver2.h"
 #include "jericho.h"
-#include "cars.h"
-#include "cosmetic.h"	/* car_cosmetics[] for the preemptive hull build */
-#include "dr2roads.h"
+#include "jer_events.h"
+#include "fulltwist_host.h"
 #include "fulltwist.h"
 
 #include <stdlib.h>	/* qsort */
@@ -82,9 +80,10 @@ static int ftConvexFootprint(SVECTOR* pts, int n, SVECTOR* out)
 	return (k < 0) ? 0 : k;
 }
 
-static void ftHullBuild(FULLTWIST_HULL* hull, int slot, MODEL* mdl, CAR_COSMETICS* cos)
+static void ftHullBuild(const JER_HOST_API* api, FULLTWIST_HULL* hull, int slot,
+						void* mdl, const JER_COSMETIC_INFO* cos)
 {
-	SVECTOR* src;
+	const JER_SVEC* src;
 	SVECTOR pts[FT_HULL_MAX_VERTS];
 	SVECTOR out[FT_HULL_MAX_VERTS * 2];
 	int n, i, k;
@@ -97,10 +96,10 @@ static void ftHullBuild(FULLTWIST_HULL* hull, int slot, MODEL* mdl, CAR_COSMETIC
 	hull->slot = slot;
 	hull->ready = 0;
 
-	if (mdl == NULL)
+	if (api == NULL || api->model == NULL || mdl == NULL)
 		return;
 
-	n = mdl->num_vertices;
+	n = api->model->vertex_count(mdl);
 	hull->modelVerts = n;
 
 	if (n > FT_HULL_MAX_VERTS)
@@ -113,27 +112,27 @@ static void ftHullBuild(FULLTWIST_HULL* hull, int slot, MODEL* mdl, CAR_COSMETIC
 	if (n <= 0)
 		return;
 
-	src = GET_MODEL_DATA(SVECTOR, mdl, vertices);
+	src = api->model->vertices(mdl);
 
 	if (src == NULL)
 		return;
 
-	cogX = (cos != NULL) ? cos->cog.vx : 0;
-	cogY = (cos != NULL) ? cos->cog.vy : 0;
-	cogZ = (cos != NULL) ? cos->cog.vz : 0;
+	cogX = (cos != NULL) ? cos->cog.x : 0;
+	cogY = (cos != NULL) ? cos->cog.y : 0;
+	cogZ = (cos != NULL) ? cos->cog.z : 0;
 
-	minX = maxX = src[0].vx;
-	minY = maxY = src[0].vy;
-	minZ = maxZ = src[0].vz;
+	minX = maxX = src[0].x;
+	minY = maxY = src[0].y;
+	minZ = maxZ = src[0].z;
 
 	for (i = 1; i < n; i++)
 	{
-		if (src[i].vx < minX) minX = src[i].vx;
-		if (src[i].vx > maxX) maxX = src[i].vx;
-		if (src[i].vy < minY) minY = src[i].vy;
-		if (src[i].vy > maxY) maxY = src[i].vy;
-		if (src[i].vz < minZ) minZ = src[i].vz;
-		if (src[i].vz > maxZ) maxZ = src[i].vz;
+		if (src[i].x < minX) minX = src[i].x;
+		if (src[i].x > maxX) maxX = src[i].x;
+		if (src[i].y < minY) minY = src[i].y;
+		if (src[i].y > maxY) maxY = src[i].y;
+		if (src[i].z < minZ) minZ = src[i].z;
+		if (src[i].z > maxZ) maxZ = src[i].z;
 	}
 
 	cx = (minX + maxX) / 2;
@@ -145,9 +144,9 @@ static void ftHullBuild(FULLTWIST_HULL* hull, int slot, MODEL* mdl, CAR_COSMETIC
 	{
 		SVECTOR p;
 
-		p.vx = (short)(src[i].vx - cx - cogX);
-		p.vy = (short)(src[i].vy - cy - cogY);
-		p.vz = (short)(src[i].vz - cz - cogZ);
+		p.vx = (short)(src[i].x - cx - cogX);
+		p.vy = (short)(src[i].y - cy - cogY);
+		p.vz = (short)(src[i].z - cz - cogZ);
 		p.pad = 0;
 
 		hull->verts[i] = p;
@@ -194,19 +193,21 @@ static void ftHullBuild(FULLTWIST_HULL* hull, int slot, MODEL* mdl, CAR_COSMETIC
 	FT_LOG("[fulltwist] hull slot=%d model=%p verts=%d size=(%d,%d,%d) centre=(%d,%d,%d) cog=(%d,%d,%d) colBox=(%d,%d,%d) footprint=%d\n",
 		slot, (void*)mdl, hull->count, hull->hx * 2, hull->hy * 2, hull->hz * 2,
 		cx, cy, cz, cogX, cogY, cogZ,
-		(cos != NULL) ? cos->colBox.vx : 0,
-		(cos != NULL) ? cos->colBox.vy : 0,
-		(cos != NULL) ? cos->colBox.vz : 0,
+		(cos != NULL) ? cos->colBox.x : 0,
+		(cos != NULL) ? cos->colBox.y : 0,
+		(cos != NULL) ? cos->colBox.z : 0,
 		hull->hullCount);
 }
 
 FULLTWIST_HULL* ftHullForCar(const CAR_DATA* cp)
 {
+	const JER_HOST_API* api = ftHost();
 	int slot;
-	MODEL* mdl;
+	void* mdl;
+	int modelVerts;
 	FULLTWIST_HULL* hull;
 
-	if (cp == NULL)
+	if (cp == NULL || api == NULL || api->model == NULL)
 		return NULL;
 
 	slot = cp->ap.model;
@@ -214,17 +215,18 @@ FULLTWIST_HULL* ftHullForCar(const CAR_DATA* cp)
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return NULL;
 
-	if (!JerCarSlotUsable(slot))
+	if (!ftCarSlotUsable(api, slot))
 		return NULL;
 
-	mdl = gCarCleanModelPtr[slot];
+	mdl = api->model->clean(slot);
 
 	if (mdl == NULL)
 		return NULL;
 
+	modelVerts = api->model->vertex_count(mdl);
 	hull = &gFullTwist.hulls[slot];
 
-	if (hull->model == mdl && hull->modelVerts == mdl->num_vertices)
+	if (hull->model == mdl && hull->modelVerts == modelVerts)
 		return (hull->ready && hull->count > 0) ? hull : NULL;
 
 	/* A resident model changed since the prebuild. Never build from a
@@ -242,14 +244,18 @@ FULLTWIST_HULL* ftHullForCar(const CAR_DATA* cp)
  * ever calls ftHullBuild. */
 void ftHullBuildAll(void)
 {
+	const JER_HOST_API* api = ftHost();
 	int slot;
 
 	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
 	{
 		FULLTWIST_HULL* hull = &gFullTwist.hulls[slot];
-		MODEL* mdl;
+		JER_COSMETIC_INFO cos;
+		void* mdl;
+		int modelVerts;
+		int hasCos = 0;
 
-		if (!JerCarSlotUsable(slot))
+		if (!ftCarSlotUsable(api, slot))
 		{
 			FT_LOG("[fulltwist] hull skipped slot=%d (slot not usable)\n", slot);
 			memset(hull, 0, sizeof(*hull));
@@ -258,7 +264,7 @@ void ftHullBuildAll(void)
 			continue;
 		}
 
-		mdl = gCarCleanModelPtr[slot];
+		mdl = (api != NULL && api->model != NULL) ? api->model->clean(slot) : NULL;
 
 		if (mdl == NULL)
 		{
@@ -269,10 +275,15 @@ void ftHullBuildAll(void)
 			continue;
 		}
 
-		if (hull->model == mdl && hull->modelVerts == mdl->num_vertices && hull->ready)
+		modelVerts = api->model->vertex_count(mdl);
+
+		if (hull->model == mdl && hull->modelVerts == modelVerts && hull->ready)
 			continue;
 
-		ftHullBuild(hull, slot, mdl, &car_cosmetics[slot]);
+		if (api->model->cosmetic_info != NULL)
+			hasCos = api->model->cosmetic_info(slot, &cos);
+
+		ftHullBuild(api, hull, slot, mdl, hasCos ? &cos : NULL);
 
 		if (hull->ready)
 		{
@@ -282,7 +293,7 @@ void ftHullBuildAll(void)
 		else
 		{
 			FT_LOG("[fulltwist] hull skipped slot=%d (build failed, model verts=%d)\n",
-				slot, mdl->num_vertices);
+				slot, modelVerts);
 		}
 	}
 
@@ -424,7 +435,18 @@ int ftHullLowest(const FULLTWIST_HULL* hull, const CAR_DATA* cp,
 		return 0;
 
 	if (groundY != NULL)
-		*groundY = MapHeight(out);
+	{
+		const JER_HOST_API* api = ftHost();
+		JER_VEC q;
+
+		q.x = out->vx;
+		q.y = out->vy;
+		q.z = out->vz;
+		q.pad = 0;
+
+		if (api != NULL && api->car != NULL && api->car->map_height != NULL)
+			*groundY = api->car->map_height(&q);
+	}
 
 	return 1;
 }
@@ -559,8 +581,8 @@ int ftHullFootprintOverlapsBuilding(const FULLTWIST_HULL* hull, const CAR_DATA* 
 	if (n > FT_HULL_MAX_VERTS)
 		n = FT_HULL_MAX_VERTS;
 
-	as = RSIN(building->theta);
-	ac = RCOS(building->theta);
+	as = FT_RSIN(building->theta);
+	ac = FT_RCOS(building->theta);
 	hw = building->xsize + margin;
 	hh = building->zsize + margin;
 

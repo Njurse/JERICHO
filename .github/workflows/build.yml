@@ -132,6 +132,31 @@ jobs:
           fi
           python3 tools/check_mod_interface.py --root /tmp/iface-faults | grep -q 'is already taken by'
           rm -rf /tmp/iface-faults
+
+      # A runtime DLL must be installable without compiling the game. That means
+      # SDK headers and its own folder only; reaching an engine header or a data
+      # global is a gap in the host API, not something the addon may paper over.
+      - name: Runtime DLLs use only the host API
+        run: |
+          set -e
+          python3 tools/check_mod_api.py
+          rm -rf /tmp/apifaults
+          mkdir -p /tmp/apifaults/JERICHO/MODS/bad
+          mkdir -p /tmp/apifaults/JERICHO/sdk/include
+          mkdir -p /tmp/apifaults/src_rebuild/Game/C/JERICHO/include
+          cp JERICHO/sdk/include/*.h /tmp/apifaults/JERICHO/sdk/include/
+          cp src_rebuild/Game/C/JERICHO/include/jer_host_api.h /tmp/apifaults/src_rebuild/Game/C/JERICHO/include/
+          cp src_rebuild/Game/C/JERICHO/include/jericho.h /tmp/apifaults/src_rebuild/Game/C/JERICHO/include/
+          echo 'id = "bad"' > /tmp/apifaults/JERICHO/MODS/bad/mod.toml
+          echo 'runtime = "dll"' >> /tmp/apifaults/JERICHO/MODS/bad/mod.toml
+          echo '#include "driver2.h"' > /tmp/apifaults/JERICHO/MODS/bad/bad.c
+          if python3 tools/check_mod_api.py --root /tmp/apifaults; then
+            echo 'check_mod_api accepted a runtime DLL that includes driver2.h' >&2
+            exit 1
+          fi
+          python3 tools/check_mod_api.py --root /tmp/apifaults | grep -q 'driver2.h'
+          rm -rf /tmp/apifaults
+
       - name: No debug switch changes behaviour
         run: python JERICHO/MODS/mp/tools/check_debug_independence.py
 

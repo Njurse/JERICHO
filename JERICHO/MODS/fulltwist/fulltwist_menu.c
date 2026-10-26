@@ -6,10 +6,10 @@
  * returns to the Free Physics defaults.
  */
 
-#include "driver2.h"
 #include "jericho.h"
 #include "jer_pause_menu.h"
 #include "jer_math.h"
+#include "fulltwist_host.h"
 #include "fulltwist.h"
 
 #include <stdio.h>
@@ -862,5 +862,8 @@ static const JER_PAUSE_MENU ftMainMenu =
 
 void ftRegisterMenu(void)
 {
-	jer_pause_menu_register(&ftMainMenu);
+	const JER_HOST_API* api = ftHost();
+
+	if (api != NULL && api->ui != NULL && api->ui->pause_menu_register != NULL)
+		api->ui->pause_menu_register(&ftMainMenu);
 }

@@ -28,6 +28,7 @@
 #include "civ_ai.h"
 #include "pad.h"
 #include "dr2roads.h"
+#include "handling.h"
 #include "map.h"
 #include "models.h"
 #include "objcoll.h"
@@ -347,6 +348,153 @@ static int hostCarActiveSlots(int* out, int max)
 	return n;
 }
 
+/* Camera-side and physics-side views a compiled-in module used to reach
+ * through CAR_DATA. Kept behind opaque car tokens and in/out structs. */
+static int hostCarGetMatrix(void* car, JER_MATRIX* out)
+{
+	CAR_DATA* cp = (CAR_DATA*)car;
+	int i, j;
+
+	if (cp == NULL || out == NULL)
+		return 0;
+
+	memset(out, 0, sizeof(*out));
+	out->size = sizeof(*out);
+
+	for (i = 0; i < 3; i++)
+		for (j = 0; j < 3; j++)
+			out->m[i][j] = cp->hd.where.m[i][j];
+
+	hostSetVec(&out->t, cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2]);
+	return 1;
+}
+
+static int hostCarRebuildMatrix(void* car)
+{
+	CAR_DATA* cp = (CAR_DATA*)car;
+
+	if (cp == NULL)
+		return 0;
+
+	RebuildCarMatrix(&cp->st, cp);
+	return 1;
+}
+
+static int hostCarAddAngularAccel(void* car, const JER_VEC* aacc)
+{
+	CAR_DATA* cp = (CAR_DATA*)car;
+
+	if (cp == NULL || aacc == NULL)
+		return 0;
+
+	cp->hd.aacc[0] += aacc->x;
+	cp->hd.aacc[1] += aacc->y;
+	cp->hd.aacc[2] += aacc->z;
+	return 1;
+}
+
+static int hostCarWheelState(void* car, int wheel, JER_WHEEL_STATE* out)
+{
+	CAR_DATA* cp = (CAR_DATA*)car;
+
+	if (cp == NULL || out == NULL || wheel < 0 || wheel >= 4)
+		return 0;
+
+	memset(out, 0, sizeof(*out));
+	out->size = sizeof(*out);
+	out->compression = cp->hd.wheel[wheel].susCompression;
+	out->locked = cp->hd.wheel[wheel].locked;
+	out->onGrass = cp->hd.wheel[wheel].onGrass;
+	out->surface = cp->hd.wheel[wheel].surface;
+	return 1;
+}
+
+static int hostCarCosmeticInfo(void* car, JER_COSMETIC_INFO* out)
+{
+	CAR_DATA* cp = (CAR_DATA*)car;
+	CAR_COSMETICS* cos;
+
+	if (cp == NULL || out == NULL || cp->ap.carCos == NULL)
+		return 0;
+
+	cos = cp->ap.carCos;
+	memset(out, 0, sizeof(*out));
+	out->size = sizeof(*out);
+	hostSetVec(&out->cog, cos->cog.vx, cos->cog.vy, cos->cog.vz);
+	hostSetVec(&out->colBox, cos->colBox.vx, cos->colBox.vy, cos->colBox.vz);
+	out->mass = cos->mass;
+	out->twistRateX = cos->twistRateX;
+	out->twistRateY = cos->twistRateY;
+	out->twistRateZ = cos->twistRateZ;
+	out->cbYoffset = cos->cbYoffset;
+	out->susCoeff = cos->susCoeff;
+	out->traction = cos->traction;
+	out->wheelSize = cos->wheelSize;
+	return 1;
+}
+
+static int hostCarSetMotion(void* car, const JER_VEC* position, const JER_QUAT* orientation,
+							const JER_VEC* velocity, const JER_VEC* angularVelocity)
+{
+	CAR_DATA* cp = (CAR_DATA*)car;
+
+	if (cp == NULL)
+		return 0;
+
+	if (position != NULL)
+	{
+		cp->st.n.fposition[0] = position->x;
+		cp->st.n.fposition[1] = position->y;
+		cp->st.n.fposition[2] = position->z;
+	}
+
+	if (orientation != NULL)
+	{
+		cp->st.n.orientation[0] = orientation->x;
+		cp->st.n.orientation[1] = orientation->y;
+		cp->st.n.orientation[2] = orientation->z;
+		cp->st.n.orientation[3] = orientation->w;
+	}
+
+	if (velocity != NULL)
+	{
+		cp->st.n.linearVelocity[0] = velocity->x;
+		cp->st.n.linearVelocity[1] = velocity->y;
+		cp->st.n.linearVelocity[2] = velocity->z;
+	}
+
+	if (angularVelocity != NULL)
+	{
+		cp->st.n.angularVelocity[0] = angularVelocity->x;
+		cp->st.n.angularVelocity[1] = angularVelocity->y;
+		cp->st.n.angularVelocity[2] = angularVelocity->z;
+	}
+
+	return 1;
+}
+
+static int hostCarSetSpeed(void* car, int speed)
+{
+	CAR_DATA* cp = (CAR_DATA*)car;
+
+	if (cp == NULL)
+		return 0;
+
+	cp->hd.speed = speed;
+	return 1;
+}
+
+static int hostCarMarkCollision(void* car, int otherId)
+{
+	CAR_DATA* cp = (CAR_DATA*)car;
+
+	if (cp == NULL || otherId < 0 || otherId >= MAX_CARS)
+		return 0;
+
+	cp->hd.mayBeColliding |= (1u << otherId);
+	return 1;
+}
+
 static const JER_HOST_CAR_API gCar =
 {
 	sizeof(JER_HOST_CAR_API), JER_HOST_API_VERSION,
@@ -354,7 +502,10 @@ static const JER_HOST_CAR_API gCar =
 	hostCarGetState, hostCarSetState, hostCarWheelMask,
 	hostCarModel, hostCarCosmetic, hostCarModelIndex,
 	hostCarInit, hostCarMapHeight, hostCarRoadInfo, hostCarCellEmpty,
-	hostCarActiveSlots
+	hostCarActiveSlots,
+	hostCarGetMatrix, hostCarRebuildMatrix, hostCarAddAngularAccel,
+	hostCarWheelState, hostCarCosmeticInfo,
+	hostCarSetMotion, hostCarSetSpeed, hostCarMarkCollision
 };
 
 /* ------------------------------------------------------------------ */
@@ -445,11 +596,17 @@ static int hostPlayerPad(int playerId, int* out, int max)
 	return (max > 1) ? 2 : 1;
 }
 
+static void* hostPlayerMain(void)
+{
+	return &MainPlayer;
+}
+
 static const JER_HOST_PLAYER_API gPlayer =
 {
 	sizeof(JER_HOST_PLAYER_API), JER_HOST_API_VERSION,
 	hostPlayerCount, hostPlayerAt, hostPlayerGetState, hostPlayerFelony,
-	hostPlayerSetCameraAngle, hostPlayerSetHorn, hostPlayerPad
+	hostPlayerSetCameraAngle, hostPlayerSetHorn, hostPlayerPad,
+	hostPlayerMain
 };
 
 /* ------------------------------------------------------------------ */
@@ -481,10 +638,16 @@ static void hostCameraSetAngle(int angle)
 	gCameraAngle = angle;
 }
 
+static void hostCameraSetBaseAngle(int angle)
+{
+	gCameraAngle = angle;
+}
+
 static const JER_HOST_CAMERA_API gCamera =
 {
 	sizeof(JER_HOST_CAMERA_API), JER_HOST_API_VERSION,
-	hostCameraGetState, hostCameraAngle, hostCameraSetAngle
+	hostCameraGetState, hostCameraAngle, hostCameraSetAngle,
+	hostCameraSetBaseAngle
 };
 
 /* ------------------------------------------------------------------ */
@@ -533,11 +696,34 @@ static int hostModelVertexCount(void* model)
 	return (int)((MODEL*)model)->num_vertices;
 }
 
+static int hostModelCosmeticInfo(int slot, JER_COSMETIC_INFO* out)
+{
+	CAR_COSMETICS* cos;
+
+	if (out == NULL || slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	cos = &car_cosmetics[slot];
+	memset(out, 0, sizeof(*out));
+	out->size = sizeof(*out);
+	hostSetVec(&out->cog, cos->cog.vx, cos->cog.vy, cos->cog.vz);
+	hostSetVec(&out->colBox, cos->colBox.vx, cos->colBox.vy, cos->colBox.vz);
+	out->mass = cos->mass;
+	out->twistRateX = cos->twistRateX;
+	out->twistRateY = cos->twistRateY;
+	out->twistRateZ = cos->twistRateZ;
+	out->cbYoffset = cos->cbYoffset;
+	out->susCoeff = cos->susCoeff;
+	out->traction = cos->traction;
+	out->wheelSize = cos->wheelSize;
+	return 1;
+}
+
 static const JER_HOST_MODEL_API gModel =
 {
 	sizeof(JER_HOST_MODEL_API), JER_HOST_API_VERSION,
 	hostModelClean, hostModelDamaged, hostModelLow, hostModelCosmetic,
-	hostModelVertices, hostModelVertexCount
+	hostModelVertices, hostModelVertexCount, hostModelCosmeticInfo
 };
 
 /* ------------------------------------------------------------------ */

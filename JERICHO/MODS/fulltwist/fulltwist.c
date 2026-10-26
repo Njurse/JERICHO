@@ -32,13 +32,9 @@
  * contact/impulse math are split out so this file stays event wiring.
  */
 
-#include "driver2.h"
 #include "jericho.h"
 #include "jer_events.h"
-#include "cars.h"		/* JerCarSlotUsable for the car-car scale guard */
-#include "handling.h"	/* RebuildCarMatrix for the bounded righting step */
-#include "camera.h"		/* gCameraAngle for the post-tumble snap-back */
-#include "players.h"		/* MainPlayer for the horn cannon roll */
+#include "fulltwist_host.h"
 #include "fulltwist.h"
 
 #include <string.h>
@@ -89,6 +85,9 @@ static int ftOnFrame(void* ud, void* args)
 static int ftOnCollision(void* ud, void* args)
 {
 	JER_ARGS_COLLISION* a = (JER_ARGS_COLLISION*)args;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA v0;
+	CAR_DATA v1;
 	CAR_DATA* car0;
 	CAR_DATA* car1;
 	VECTOR* point;
@@ -100,8 +99,16 @@ static int ftOnCollision(void* ud, void* args)
 	if (!gFullTwist.cfg.enabled || a == NULL || a->car0 == NULL)
 		return JER_RESULT_CONTINUE;
 
-	car0 = (CAR_DATA*)a->car0;
-	car1 = (CAR_DATA*)a->car1;
+	ftCarLoad(api, a->car0, &v0);
+	car0 = &v0;
+	car1 = NULL;
+
+	if (a->car1 != NULL)
+	{
+		ftCarLoad(api, a->car1, &v1);
+		car1 = &v1;
+	}
+
 	point = (VECTOR*)a->point;
 	normal = (VECTOR*)a->normal;
 
@@ -161,7 +168,7 @@ static int ftOnCollision(void* ud, void* args)
 						  (ftIsPlayerCar(car0) && ftIsPlayerCar(car1));
 		int otherUsable = ftIsTumbleCar(car1) &&
 						  car1->ap.carCos != NULL &&
-						  JerCarSlotUsable(car1->ap.model);
+						  ftCarSlotUsable(api, car1->ap.model);
 		int scale = gFullTwist.cfg.carCarImpulse;
 
 		if (scale < 0)
@@ -193,6 +200,10 @@ static int ftOnCollision(void* ud, void* args)
 		}
 	}
 
+	ftCarFlush(api, a->car0, car0);
+	if (car1 != NULL)
+		ftCarFlush(api, a->car1, car1);
+
 	return JER_RESULT_CONTINUE;
 }
 
@@ -202,14 +213,16 @@ static int ftOnCollision(void* ud, void* args)
 static int ftOnUpsideDownFrames(void* ud, void* args)
 {
 	JER_ARGS_UPSIDE_DOWN* a = (JER_ARGS_UPSIDE_DOWN*)args;
-	CAR_DATA* cp;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 
 	(void)ud;
 
 	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
 		return JER_RESULT_CONTINUE;
 
-	cp = (CAR_DATA*)a->car;
+	ftCarLoad(api, a->car, cp);
 
 	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
 		return JER_RESULT_CONTINUE;
@@ -228,14 +241,16 @@ static int ftOnUpsideDownFrames(void* ud, void* args)
 static int ftOnWallRestitution(void* ud, void* args)
 {
 	JER_ARGS_WALL_RESTITUTION* a = (JER_ARGS_WALL_RESTITUTION*)args;
-	CAR_DATA* cp;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 
 	(void)ud;
 
 	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
 		return JER_RESULT_CONTINUE;
 
-	cp = (CAR_DATA*)a->car;
+	ftCarLoad(api, a->car, cp);
 
 	if (!ftIsTumbleCar(cp))
 		return JER_RESULT_CONTINUE;
@@ -257,7 +272,9 @@ static int ftOnWallRestitution(void* ud, void* args)
 static int ftOnPhysicsParams(void* ud, void* args)
 {
 	JER_ARGS_PHYSICS_PARAMS* a = (JER_ARGS_PHYSICS_PARAMS*)args;
-	CAR_DATA* cp;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 
 	(void)ud;
 
@@ -265,7 +282,7 @@ static int ftOnPhysicsParams(void* ud, void* args)
 		a == NULL || a->car == NULL)
 		return JER_RESULT_CONTINUE;
 
-	cp = (CAR_DATA*)a->car;
+	ftCarLoad(api, a->car, cp);
 
 	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
 		return JER_RESULT_CONTINUE;
@@ -279,7 +296,9 @@ static int ftOnPhysicsParams(void* ud, void* args)
 static int ftOnCarStep(void* ud, void* args)
 {
 	JER_ARGS_CAR_STEP* a = (JER_ARGS_CAR_STEP*)args;
-	CAR_DATA* cp;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 	FULLTWIST_CAR* st;
 	int mask, air, up;
 
@@ -288,7 +307,7 @@ static int ftOnCarStep(void* ud, void* args)
 	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
 		return JER_RESULT_CONTINUE;
 
-	cp = (CAR_DATA*)a->car;
+	ftCarLoad(api, a->car, cp);
 
 	if (!ftIsTumbleCar(cp))
 		return JER_RESULT_CONTINUE;
@@ -299,18 +318,22 @@ static int ftOnCarStep(void* ud, void* args)
 	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
 		return JER_RESULT_CONTINUE;
 
-	/* Horn cannon roll: one roll per horn press on the main player's car. The
-	 * horn state is the stock MainPlayer.horn.on bit set in handling.c. */
-	if (ftIsPlayerCar(cp) &&
-		((int)MainPlayer.playerCarId == (int)cp->id ||
-		 (int)MainPlayer.cameraCarId == (int)cp->id))
+	/* Horn cannon roll: one roll per horn press on the main player's car. */
+	if (ftIsPlayerCar(cp))
 	{
-		int horn = MainPlayer.horn.on ? 1 : 0;
+		JER_PLAYER_STATE ps;
 
-		if (gFullTwist.cfg.hornRoll && horn && !st->hornHeld)
-			ftHornRoll(cp);
+		if (ftMainPlayerState(api, &ps) &&
+			((int)ps.playerCarId == (int)cp->id ||
+			 (int)ps.cameraCarId == (int)cp->id))
+		{
+			int horn = ps.horn ? 1 : 0;
 
-		st->hornHeld = horn;
+			if (gFullTwist.cfg.hornRoll && horn && !st->hornHeld)
+				ftHornRoll(cp);
+
+			st->hornHeld = horn;
+		}
 	}
 
 	/* GlobalTimeStep zeroes angular velocity for a car whose hd.speed is 0,
@@ -655,17 +678,35 @@ static int ftOnCarStep(void* ud, void* args)
 			st->tumbleFrames, st->airFrames, st->upsideFrames);
 	}
 
+	ftCarFlush(api, a->car, cp);
+
 	return JER_RESULT_CONTINUE;
 }
 
 static int ftOnCarTorque(void* ud, void* args)
 {
 	JER_ARGS_CAR_TORQUE* a = (JER_ARGS_CAR_TORQUE*)args;
-	CAR_DATA* cp;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 	FULLTWIST_CAR* st;
 	int k = 0;
 
 	(void)ud;
+
+	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
+		return JER_RESULT_CONTINUE;
+
+	ftCarLoad(api, a->car, cp);
+
+	if (!ftIsTumbleCar(cp))
+		return JER_RESULT_CONTINUE;
+
+	/* Player-only patch: traffic keeps the stock torque path. */
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
+		return JER_RESULT_CONTINUE;
+
+	st = &gFullTwist.cars[(int)cp->id];
 
 	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
 		return JER_RESULT_CONTINUE;
@@ -901,31 +942,38 @@ static int ftCameraSettling(const CAR_DATA* cp, int* outAv)
 static int ftOnCameraLook(void* ud, void* args)
 {
 	JER_ARGS_CAMERA_LOOK* a = (JER_ARGS_CAMERA_LOOK*)args;
-	PLAYER* lp;
+	const JER_HOST_API* api = ftHost();
+	JER_PLAYER_STATE ps;
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 	FULLTWIST_CAR* st;
 	int carId;
 
 	(void)ud;
 
 	if (!gFullTwist.cfg.enabled || !gFullTwist.cfg.holdCamera ||
-		a == NULL || a->player == NULL)
+		a == NULL || a->player == NULL || api == NULL || api->player == NULL)
 		return JER_RESULT_CONTINUE;
 
-	lp = (PLAYER*)a->player;
-	carId = (int)lp->cameraCarId;
+	if (!api->player->get_state(a->player, &ps))
+		return JER_RESULT_CONTINUE;
+
+	carId = ps.cameraCarId;
 
 	if (carId < 0 || carId >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
-	if (!ftIsTumbleCar(&car_data[carId]))
+	ftCarLoadSlot(api, carId, cp, NULL);
+
+	if (!ftIsTumbleCar(cp))
 		return JER_RESULT_CONTINUE;
 
 	st = &gFullTwist.cars[carId];
 
 	{
-		int hold = (st->tumbleFrames > 0 || ftFreeSpinActive(&car_data[carId]));
+		int hold = (st->tumbleFrames > 0 || ftFreeSpinActive(cp));
 		int av = 0;
-		int settling = hold && ftCameraSettling(&car_data[carId], &av);
+		int settling = hold && ftCameraSettling(cp, &av);
 
 		if (hold && !settling)
 		{
@@ -964,25 +1012,35 @@ static int ftOnCameraLook(void* ud, void* args)
 static int ftOnCamera(void* ud, void* args)
 {
 	JER_ARGS_CAMERA* a = (JER_ARGS_CAMERA*)args;
-	PLAYER* lp;
+	const JER_HOST_API* api = ftHost();
+	JER_PLAYER_STATE ps;
+	JER_CAMERA_STATE cs;
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 	FULLTWIST_CAR* st;
 	int carId;
 	int target;
 	int delta;
+	int angle;
 
 	(void)ud;
 
 	if (!gFullTwist.cfg.enabled || !gFullTwist.cfg.holdCamera ||
-		gFullTwist.cfg.cameraSnap <= 0 || a == NULL || a->player == NULL || !a->inCar)
+		gFullTwist.cfg.cameraSnap <= 0 || a == NULL || a->player == NULL || !a->inCar ||
+		api == NULL || api->player == NULL || api->camera == NULL)
 		return JER_RESULT_CONTINUE;
 
-	lp = (PLAYER*)a->player;
-	carId = (int)lp->cameraCarId;
+	if (!api->player->get_state(a->player, &ps))
+		return JER_RESULT_CONTINUE;
+
+	carId = ps.cameraCarId;
 
 	if (carId < 0 || carId >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
-	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(&car_data[carId]))
+	ftCarLoadSlot(api, carId, cp, NULL);
+
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
 		return JER_RESULT_CONTINUE;
 
 	st = &gFullTwist.cars[carId];
@@ -990,11 +1048,16 @@ static int ftOnCamera(void* ud, void* args)
 	if (st->cameraSnapFrames <= 0)
 		return JER_RESULT_CONTINUE;
 
-	target = (a->baseDir + gCameraAngle) & 0xfff;
-	delta = ((target - lp->cameraAngle + 2048) & 0xfff) - 2048;
+	if (!api->camera->get_state(&cs))
+		return JER_RESULT_CONTINUE;
 
-	lp->cameraAngle = (lp->cameraAngle +
+	target = (a->baseDir + cs.baseAngle) & 0xfff;
+	delta = ((target - ps.cameraAngle + 2048) & 0xfff) - 2048;
+
+	angle = (ps.cameraAngle +
 		(int)(((long long)delta * gFullTwist.cfg.cameraSnap) / 100)) & 0xfff;
+
+	api->player->set_camera_angle(a->player, angle);
 	st->cameraSnapFrames--;
 
 	if (gFullTwist.cfg.debugLog &&
