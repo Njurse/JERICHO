@@ -6,6 +6,8 @@
  * addon has no import-library dependency on the game exe.
  */
 
+#define JERICHO_HOST_BUILD 1
+
 #include "driver2.h"
 #include "jericho.h"
 #include "jer_events.h"
@@ -394,8 +396,23 @@ static int hostPlayerGetState(void* token, JER_PLAYER_STATE* out)
 	return 1;
 }
 
-static int hostPlayerSetCameraAngle(void* token, int angle)
+static int hostPlayerFelony(void* token)
 {
+	PLAYER* p = (PLAYER*)token;
+
+	if (p == NULL)
+		return 0;
+
+	if (p->playerCarId < 0)
+		return pedestrianFelony;
+
+	if (p->playerCarId >= MAX_CARS)
+		return 0;
+
+	return car_data[(int)p->playerCarId].felonyRating;
+}
+
+static int hostPlayerSetCameraAngle(void* token, int angle){
 	PLAYER* p = (PLAYER*)token;
 
 	if (p == NULL)
@@ -431,7 +448,7 @@ static int hostPlayerPad(int playerId, int* out, int max)
 static const JER_HOST_PLAYER_API gPlayer =
 {
 	sizeof(JER_HOST_PLAYER_API), JER_HOST_API_VERSION,
-	hostPlayerCount, hostPlayerAt, hostPlayerGetState,
+	hostPlayerCount, hostPlayerAt, hostPlayerGetState, hostPlayerFelony,
 	hostPlayerSetCameraAngle, hostPlayerSetHorn, hostPlayerPad
 };
 
@@ -717,11 +734,19 @@ static const JER_HOST_API gHostApi =
 	&gWorld, &gGame, &gUi, &gDebug
 };
 
+/* Keep the resolver alive through /OPT:REF and put it in the linker map, so
+ * the two-pass exports.def exports it. */
+void* volatile gJerHostApiKeepalive = (void*)&jer_host_api;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 const JER_HOST_API* jer_host_api(void)
 {
 	return &gHostApi;
 }
 
-/* Keep the resolver alive through /OPT:REF and put it in the linker map, so
- * the two-pass exports.def exports it. */
-void* volatile gJerHostApiKeepalive = (void*)&jer_host_api;
+#ifdef __cplusplus
+}
+#endif

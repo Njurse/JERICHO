@@ -162,6 +162,7 @@ typedef struct JER_HOST_PLAYER_API
 	int  (*count)(void);
 	void* (*at)(int playerId);			/* opaque PLAYER token */
 	int  (*get_state)(void* player, JER_PLAYER_STATE* out);
+	int  (*felony)(void* player);			/* car felony rating, or pedestrianFelony */
 	int  (*set_camera_angle)(void* player, int angle);
 	int  (*set_horn)(void* player, int on);
 	int  (*pad)(int playerId, int* out, int max);	/* raw PAD words */
@@ -254,8 +255,17 @@ typedef struct JER_HOST_API
 	const JER_HOST_DEBUG_API* debug;
 } JER_HOST_API;
 
-/* The host implementation. This is the only symbol an addon needs. */
-const JER_HOST_API* jer_host_api(void);
+/* The host implementation. This is the only symbol an addon needs.
+ * JERICHO_HOST_BUILD is defined by the host translation unit only. */
+#if defined(JERICHO_HOST_BUILD) && defined(_WIN32)
+#define JER_HOST_API_EXPORT __declspec(dllexport)
+#elif defined(JERICHO_HOST_BUILD) && defined(__GNUC__)
+#define JER_HOST_API_EXPORT __attribute__((visibility("default")))
+#else
+#define JER_HOST_API_EXPORT
+#endif
+
+JER_HOST_API_EXPORT const JER_HOST_API* jer_host_api(void);
 
 /* Resolve the table at runtime. The addon links no game symbols, so this works
  * in any exe name/config and on both platforms. */
