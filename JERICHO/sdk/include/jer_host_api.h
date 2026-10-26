@@ -164,6 +164,7 @@ typedef struct JER_HOST_PLAYER_API
 	int  (*get_state)(void* player, JER_PLAYER_STATE* out);
 	int  (*set_camera_angle)(void* player, int angle);
 	int  (*set_horn)(void* player, int on);
+	int  (*pad)(int playerId, int* out, int max);	/* raw PAD words */
 } JER_HOST_PLAYER_API;
 
 typedef struct JER_HOST_CAMERA_API
@@ -195,7 +196,8 @@ typedef struct JER_HOST_WORLD_API
 	int  (*units_across_halved)(void);
 	int  (*num_roads)(int kind);			/* 0 straight, 1 curve, 2 junction */
 	int  (*region)(void);
-	int  (*spool_to)(int region);
+	int  (*region_of)(int x, int z);
+	int  (*spool_to)(int x, int z);
 } JER_HOST_WORLD_API;
 
 typedef struct JER_HOST_GAME_API
@@ -223,7 +225,7 @@ typedef struct JER_HOST_UI_API
 	void (*frontend_register_menu)(const void* menu);
 	void (*text_draw_at)(int x, int y, const char* text, int colour, int scale);
 	int  (*text_width)(const char* text, int scale);
-	int  (*sound_lock)(void);
+	int  (*sound_lock)(int channel);
 	void (*sound_unlock)(int voice);
 } JER_HOST_UI_API;
 
