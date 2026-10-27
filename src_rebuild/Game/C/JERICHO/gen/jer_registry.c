@@ -23,8 +23,9 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "carhacks", jer_module_carhacks_entry, 1 },
 	{ "crumple", jer_module_crumple_entry, 0 },
 	{ "mp", jer_module_mp_entry, 1 },
+	{ "pedhacks", jer_module_pedhacks_entry, 1 },
 };
-extern const int jer_registry_module_count = 3;
+extern const int jer_registry_module_count = 4;
 #else
 extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "JerAI", jer_module_JerAI_entry, 0 },

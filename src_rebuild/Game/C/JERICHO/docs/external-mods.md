@@ -200,3 +200,27 @@ probe/load/reset/ready, baked import, entry enumeration, model/page
 availability, palette selection, character install/select and player-ped
 state. The engine service is the only layer allowed to touch page/model/VRAM
 internals; `mp` must not include `models.h` or `pedest.h` for JMPPED.
+
+### Parity target against carhacks
+
+`carhacks` is the reference for a complete compiled-in asset module. It owns the
+feature layer while the engine keeps the primitive services:
+
+| Concern | carhacks owner | pedhacks target |
+| --- | --- | --- |
+| Feature toggles/config | `carhacks.c` | pedhacks: pedestrian options, archive enable/refusal policy |
+| Asset/import policy | `carimport.c` | pedhacks: v3/v5 archive state, entry table, install/select policy |
+| Selection UI | `carselect.c` | pedhacks: character selection/availability surface |
+| Network advert/sync | `net.c`, `mplive.c` | stays in mp (protocol IDs, remote stand-ins, ownership/sync) |
+| Spawn/placement | `spawn.c` | stays in mp for player peds; engine service for `player[].pPed` |
+| Authoring tools | `carhacks/tools/` | BAKE `tools/ped/` (car tools remain `tools/car/`) |
+| Engine primitives | `InitCarImport`, `JerHotLoadCarModel`, `CarImportApplyPaletteForCity`, `CarSlotResReport` | engine service: `JerPedImport*`, page pin/upload/pool, model/skeleton binding, `pmJerichoModels` |
+
+Therefore pedhacks still needs to own: archive parser/state/entry table, the
+lifecycle/refusal policy, character availability/install/select, and the
+pedestrian selection surface. Engine service remains responsible for low-level
+model allocation, page pin/upload/pool, skeleton generation and resident-model
+binding. mp remains responsible for protocol IDs, remote stand-ins, ownership
+and multiplayer sync. The JMPPED authoring toolkit is moving to BAKE under
+`tools/ped/`, alongside the existing car tools under `tools/car/`; the
+pedhacks runtime stays in the main repo.
