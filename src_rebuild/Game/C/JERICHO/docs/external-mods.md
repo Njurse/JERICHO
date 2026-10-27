@@ -156,7 +156,9 @@ structs, append-only, never raw engine globals or engine structs.
 
 ## JMPPED ownership boundary (pedhacks extraction)
 
-The JMPPED system is currently split across four places. The target boundary is:
+The JMPPED system is currently split across four places. The target boundary is
+also the load boundary: the core order is `carhacks -> bake -> pedhacks -> mp`,
+so the asset module is available before the multiplayer consumer.
 
 | Layer | Owns | Must not own |
 | --- | --- | --- |

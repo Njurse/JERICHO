@@ -39,8 +39,8 @@ Because MSVC cannot import game *data* globals into a DLL without
 from DLL addons.
 
 The in-repo deep mods (crumple, carhacks, cainescrossfire, collisiondevil,
-d2pl, sandbox, antfarm, JerAI, levelhacks, testmode, mp, yarisbounce,
-gaildrv2, bake) work exactly as before: build the game and they are
+d2pl, sandbox, antfarm, JerAI, levelhacks, testmode, mp, pedhacks,
+yarisbounce, gaildrv2, bake) work exactly as before: build the game and they are
 linked in, managed at runtime through the same Mods menu. Only `debugorbit`
 and `example` declare `runtime = "dll"`, so they are the two in-repo
 external modules.

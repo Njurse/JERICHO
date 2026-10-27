@@ -100,6 +100,7 @@ another mod's header and no mod links to another mod's symbols.
 |---|---|---|
 | `jer_carquery.h` | `mp`, `sandbox` | `carhacks` |
 | `jer_crumple.h` | `mp` | `crumple` |
+| `jer_ped_archive.h` | `mp` | `pedhacks` |
 
 A new contract belongs in `Game/C/JERICHO/include/` (already on every mod's
 include path), mirrored into `JERICHO/sdk/include/`, with its ids inside the core

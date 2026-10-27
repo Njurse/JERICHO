@@ -692,7 +692,7 @@ static void jerActivateModules(const char* rootDir)
 	 * then any modules not mentioned (enabled by default, in scan
 	 * order). Modules listed with enabled=0 are skipped.
 	 *
-	 * THE CORE SUITE IS NORMALISED FIRST. carhacks, bake and mp are one product
+	 * THE CORE SUITE IS NORMALISED FIRST. carhacks, bake, pedhacks and mp are one product
 	 * (see jer_manager.c): they are mandatory and first. Rewriting the file here
 	 * means the order survives a later hand edit, and the order the player sees in
 	 * Options -> JERICHO is the order the engine actually uses.
@@ -702,7 +702,7 @@ static void jerActivateModules(const char* rootDir)
 		int moved = jer_manager_normalize_core(rootDir);
 
 		if (moved > 0)
-			jerLog("[jericho] core modules moved to the front of modlist.ini: carhacks, bake, mp\n");
+			jerLog("[jericho] core modules moved to the front of modlist.ini: carhacks, bake, pedhacks, mp\n");
 	}
 
 	if (jer_manager_read(rootDir, &modlist) != 0)
@@ -831,7 +831,7 @@ static void jerActivateModules(const char* rootDir)
 
 			if (m == NULL || m->entry == NULL)
 			{
-				/* The core suite (carhacks, bake, mp) is mandatory. A release
+				/* The core suite (carhacks, bake, pedhacks, mp) is mandatory. A release
 				 * with a missing core DLL must not quietly run a partial suite;
 				 * optional addons are refused below and the failure is named. */
 				jerLog("[jericho] core module \"%s\" is missing or has no entry - optional addons will be refused\n",
