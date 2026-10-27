@@ -9,7 +9,7 @@ Repo-wide maintenance tools. Mod-specific tooling lives next to its mod
 | `dmp_fault.py` | Read a minidump and print the exception plus the faulting module and RVA |
 | `map_lookup.py` | Turn that RVA into a function name using a build's `.map` file |
 | `doccheck.py` | Check the documentation: links resolve, every engine event is in `events.md`, every doc is reachable from `docs/README.md`, and the counted claims match the code |
-| `check_release_mods.py` | Assert `JERICHO_RELEASE_MODS` has manifests and matches the generated Release registry, so a release cannot silently omit a named mod |
+| `check_release_mods.py` | Assert `JERICHO_RELEASE_MODS` has manifests and that every compiled-in release mod is in the generated Release registry; runtime DLL addons are manifest-only, so they must not be in the table. A release cannot silently omit a named mod |
 | `check_mod_api.py` | Keep runtime DLL addons on the host API: refuse engine headers/globals in `runtime = "dll"` modules; `--gap` prints the direct-engine use of compiled-in modules |
 | `check_host_api_abi.py` | Lock `jer_host_api.h` to append-only growth: a field or function may not be removed, renamed, reordered or retyped; new entries must be appended |
 | `update_mod_submodules.sh` | Advance the `mp`, `carhacks` and `crumple` submodule pins to their repositories' `main`, printing the gitlink diff to review and commit |
