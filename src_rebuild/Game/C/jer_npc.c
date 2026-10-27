@@ -240,6 +240,19 @@ void jer_npc_set_speed(JerNpc* n, int speed)
 	pPed->speed = (char)speed;
 }
 
+void jer_npc_set_reverse_anim(JerNpc* n, int on)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
+
+	if (pPed == NULL)
+		return;
+
+	if (on)
+		pPed->flags |= 4;
+	else
+		pPed->flags &= ~4;
+}
+
 int jer_npc_speed(const JerNpc* n)
 {
 	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;

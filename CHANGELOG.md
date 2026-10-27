@@ -25,6 +25,17 @@ is in [changelog.txt](changelog.txt).
 - **`JERICHO/MODS/d2pl/HOLDTYPES.md`:** a guide to adding holdtypes, weapons,
   sounds and custom animations, and the known limits (spine pitch, backpedal
   clip, left-hand IK, real SFX).
+- **Backpedal while aiming:** with aim held and the stick more than ~100°
+  off the view, Tanner keeps facing the aim and walks backwards (the stock
+  walk-back with the walk frames reversed) instead of turning round. Toggle
+  it in the pause page. New SDK setter `jer_npc_set_reverse_anim`.
+- **On Foot pause page** (Pause > JERICHO Addons > D2PL ON FOOT): weapon
+  (left/right cycles), ammo, holdtype, aiming, twist limits, backpedal state
+  and threshold, the `D2PL_TEST_AIM` lever, a gun-sound card with a mute
+  switch, and a controls card.
+- **Fix:** d2pl passed the address of a local to `jer_npc_face` /
+  `jer_npc_set_speed`, which treat `JerNpc*` as the ped itself, so the
+  writes landed on the stack instead of the ped.
 
 ### External addons and host API (interface 3)
 

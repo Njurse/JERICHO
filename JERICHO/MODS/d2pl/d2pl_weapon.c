@@ -79,19 +79,26 @@ static int gMarker[3] = { 0, 0, 0 };
 /* ------------------------------------------------------------------ */
 
 /* Debug/test lever: hold aim without a pad, for an unattended -frames run.
- * Set D2PL_TEST_AIM=1. */
+ * Seeded once from D2PL_TEST_AIM=1; the pause menu flips it at runtime. */
+int gD2plTestAim = -1;
+int gD2plSfxMute = 0;
+
 static int D2plTestAim(void)
 {
-	static int forced = -1;
-
-	if (forced < 0)
+	if (gD2plTestAim < 0)
 	{
 		const char* env = getenv("D2PL_TEST_AIM");
 
-		forced = (env != 0 && env[0] != 0 && env[0] != '0') ? 1 : 0;
+		gD2plTestAim = (env != 0 && env[0] != 0 && env[0] != '0') ? 1 : 0;
 	}
 
-	return forced;
+	return gD2plTestAim;
+}
+
+static void D2plSfx(int sfx)
+{
+	if (sfx >= 0 && !gD2plSfxMute)
+		jer_sound_menu_play(sfx);
 }
 
 static int D2plMainOnFoot(const JER_HOST_API* api, JER_PLAYER_STATE* ps)
@@ -129,8 +136,7 @@ static void D2plFireShot(const D2plWeaponDef* def, D2plWeaponState* w)
 	if (def->clipSize > 0)
 		w->clip--;
 
-	if (def->fireSfx >= 0)
-		jer_sound_menu_play(def->fireSfx);
+	D2plSfx(def->fireSfx);
 
 	if (D2plAimPoint(aim))
 	{
@@ -180,11 +186,9 @@ void D2plWeaponUpdate(void)
 		/* R2 press: next weapon (a reload in progress is dropped) */
 		if ((pressed & D2PL_MPAD_R2) != 0)
 		{
-			w->reloading = 0;
-			gWeapon = (gWeapon + 1) % D2PL_WEAPON_COUNT;
+			D2plWeaponCycle(1);
 			def = &gWeaponDefs[gWeapon];
 			w = &gWeapons[gWeapon];
-			w->credit = 0;
 
 			if (api->ui != 0 && api->ui->hud_message != 0)
 				api->ui->hud_message(def->name, 45);
@@ -205,8 +209,7 @@ void D2plWeaponUpdate(void)
 		{
 			w->reloading = def->reloadFrames;
 
-			if (def->reloadSfx >= 0)
-				jer_sound_menu_play(def->reloadSfx);
+			D2plSfx(def->reloadSfx);
 		}
 
 		canFire = gD2plAiming && w->reloading == 0 &&
@@ -310,6 +313,31 @@ void D2plWeaponUpdate(void)
 
 		gMarkerTimer--;
 	}
+}
+
+/* Pause-menu readouts and the R2 cycle (a reload in progress is dropped). */
+const char* D2plWeaponName(void)
+{
+	return gWeaponDefs[gWeapon].name;
+}
+
+void D2plWeaponAmmoText(char* out, int max)
+{
+	const D2plWeaponState* w = &gWeapons[gWeapon];
+
+	if (gWeaponDefs[gWeapon].clipSize == 0)
+		snprintf(out, max, "endless");
+	else if (w->reloading > 0)
+		snprintf(out, max, "reloading");
+	else
+		snprintf(out, max, "%d / %d", w->clip, w->reserve);
+}
+
+void D2plWeaponCycle(int dir)
+{
+	gWeapons[gWeapon].reloading = 0;
+	gWeapon = (gWeapon + (dir < 0 ? D2PL_WEAPON_COUNT - 1 : 1)) % D2PL_WEAPON_COUNT;
+	gWeapons[gWeapon].credit = 0;
 }
 
 /* ------------------------------------------------------------------ */

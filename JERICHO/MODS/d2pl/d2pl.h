@@ -64,11 +64,18 @@
 #define D2PL_TORSO_LIMIT		796		/* ~70 degrees of spine */
 #define D2PL_HEAD_LIMIT		512
 
-/* Backpedal while aiming (Parallel Lines). 0 until a backward clip exists. */
+/* Backpedal while aiming (Parallel Lines): the stock walk-back with the
+ * walk frames played in reverse. Compile-time default; the pause menu
+ * toggles it at runtime (gD2plBackpedalOn). */
 #ifndef D2PL_BACKPEDAL
-#define D2PL_BACKPEDAL		0
+#define D2PL_BACKPEDAL		1
 #endif
-#define D2PL_BACKPEDAL_ANGLE	1140	/* ~100 degrees */
+#define D2PL_BACKPEDAL_ANGLE	1140	/* ~100 degrees off the view */
+#define D2PL_BACKPEDAL_SPEED_MIN	10	/* stock walk-back speed */
+#define D2PL_BACKPEDAL_SPEED_MAX	20
+
+#define D2PL_MPAD_TRIANGLE	0x0010	/* TANNER_PAD_ACTION: car entry */
+#define D2PL_MPAD_L3		0x0200	/* TANNER_PAD_ACTION_DED */
 
 typedef struct D2plSettings
 {
@@ -95,6 +102,11 @@ extern int gD2plCamValid;
 extern int gD2plHand[3];		/* RHAND world position (render frame) */
 extern int gD2plHandValid;
 
+extern int gD2plBackpedalOn;		/* runtime toggle, pause menu */
+extern int gD2plBackpedalActive;	/* the local player is backing up now */
+extern int gD2plSfxMute;			/* placeholder gun SFX muted */
+extern int gD2plTestAim;			/* D2PL_TEST_AIM lever: aim held without a pad */
+
 extern void* gD2plPlayerPed0;	/* the local player's ped, captured from PED_MOVE */
 
 /* --- hook handlers ------------------------------------------------- */
@@ -109,6 +121,12 @@ int D2plOnOverlay(void* userdata, void* args);
 int D2plOnGameStart(void* userdata, void* args);
 
 void D2plInit(void);
+void D2plMenuRegister(void);		/* d2pl_menu.c */
+
+/* weapon readouts for the pause menu (d2pl_weapon.c) */
+const char* D2plWeaponName(void);
+void D2plWeaponAmmoText(char* out, int max);
+void D2plWeaponCycle(int dir);
 
 /* --- shared helpers ------------------------------------------------- */
 int D2plSin(int angle);					/* 4096-scaled */

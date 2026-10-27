@@ -116,10 +116,17 @@ are the starting points.
 - **Pitch**: the twist is yaw only. The arm IK does follow the aim pitch, but
   the spine doesn't lean. Next step: share the aim pitch between `LOWERBACK`
   and `JOINT_1` (`vx`) in the aim branch.
-- **Backpedal**: `D2PL_BACKPEDAL` (compile flag, default 0) keeps the body
-  facing the aim and backs up when the stick is more than ~100° from the view.
-  It's off because the stock run clip has no backward cycle (the legs
-  moonwalk). Turn it on once a backpedal leg clip is wired in.
+- **Backpedal**: on by default (`D2PL_BACKPEDAL` 1, runtime toggle in the
+  pause page). While aiming with the stick more than ~100° off the view,
+  PED_INPUT sends the stock walk-back (`GOBACK`, `SetupBack`) instead of
+  forward, PED_MOVE keeps the body facing the aim and backs up at speed
+  -10 to -20 (stick scaled), and `jer_npc_set_reverse_anim` sets ped flag 4
+  so `AnimatePed` plays the walk frames in reverse. d2pl clears the bit only
+  when it set it: on stopping, releasing aim, turning forward, entering a car
+  or pressing the car-entry button (the engine uses the same bit for the
+  door animation). Known hitch: the reverse wraps at frame 15 but the forward
+  cycle at 16, so one frame per loop repeats. A real backpedal clip would
+  remove it; that needs a leg-clip swap (`jer_npc_set_action`).
 - **Hips**: the whole body still turns as one (`pPed->dir`). A hips-versus-
   upper-body split beyond the spine twist needs the root yaw separated from
   `LOWERBACK`.

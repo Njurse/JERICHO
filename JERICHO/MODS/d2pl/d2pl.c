@@ -12,6 +12,7 @@ JER_MODULE_ENTRY(jer_module_d2pl_entry)(JERICHO_CONTEXT* ctx)
 	D2plInit();
 	D2plHoldtypeInit();
 	D2plWeaponInit();
+	D2plMenuRegister();
 
 	ctx->jer_register_module(ctx,
 		D2PL_MOD_ID,
