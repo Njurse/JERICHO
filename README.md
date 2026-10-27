@@ -398,10 +398,11 @@ cursor and an overlay menu that keeps the world running while it is open.
 
 ![Sandbox's custom overlay menu](readme_images/addon_sandbox_custom_menu_example.png)
 
-### Driver 2 Parallel Lines (`d2pl`) — camera + weapons *(compiled-in)*
+### Driver 2 Parallel Lines (`d2pl`) — on-foot movement + aim pose *(compiled-in)*
 
-A modern dual-stick third-person camera plus an overridable weapon system.
-*(Development is currently paused.)* [readme](JERICHO/MODS/d2pl/readme.md)
+Camera-relative on-foot movement, dual-stick/mouse look, an aim arm pose that
+points at the camera aim point, a laser sight and a debug pistol.
+[README](JERICHO/MODS/d2pl/README.md)
 
 ### COLLISIONDEVIL (`collisiondevil`) — arcade handling *(compiled-in)*
 

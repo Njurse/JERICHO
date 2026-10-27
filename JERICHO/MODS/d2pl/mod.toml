@@ -1,9 +1,11 @@
 id = "d2pl"
 name = "Driver 2 Parallel Lines"
-version = "1.0.0"
+version = "1.1.0"
 # the JERICHO interface (SDK) this mod is built against
 interface = 3
-author = "DeepSeek"
-description = "Modern dual-stick camera (free-look orbit, GTA-style framing, FOV override) + overridable weapon system with aim/fire/ammo/laser/impact markers."
-dependencies = ""
+author = "JERICHO"
+description = "Camera-relative on-foot movement, aim arm pose, laser sight and a debug pistol."
+dependencies = []
 default-enabled = false
+# host API generation this module expects (see jer_host_api.h)
+host_api = 1

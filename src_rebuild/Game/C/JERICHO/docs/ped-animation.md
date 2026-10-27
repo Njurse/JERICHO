@@ -209,9 +209,9 @@ composes the chain as:
   STOCK per-bone rotations for the current `frame1`; a PED_POSE write
   overrides them for that frame. Because they point into the SHARED
   per-type motion buffer, a module must snapshot + restore them when it
-  stops posing (see the d2pl `gPoseSaved` pattern), or the walk cycle
-  keeps the twist.
+  stops posing (d2pl's `d2pl_pose.c` does this with `gSavedRots` /
+  `gSavedValid`), or the walk cycle keeps the twist.
 
-Diagnostic: the `[d2pl] bone:` log (d2pl_weapon.c, PED_POSE) prints
-`pedDir / aim / diff / JOINT1 rot / HEAD rot` every 90 frames while
-aiming, so the relative chain is observable end-to-end.
+Diagnostic: the one-shot `[d2pl] aim pose:` log (d2pl_pose.c,
+PED_SKELETON phase 0) prints the shoulder, the camera aim point, the
+reach, and the two arm segment lengths the first time the pose runs.

@@ -1,9 +1,13 @@
-# onfoot — hook and API notes
+# d2pl — hook and API notes
 
-Working notes for the on-foot ped addon. Two goals: keep the addon a **runtime
-DLL** (no game rebuild), and shrink the event surface it has to register.
+Working notes for Driver 2 Parallel Lines (d2pl), the on-foot ped module.
+Two goals: keep the addon a **runtime DLL** (no game rebuild), and shrink the
+event surface it has to register.
 
-## Hooks this addon uses today
+This module replaced the old camera/weapon d2pl. That implementation is in git
+history; only the on-foot path was carried forward.
+
+## Hooks d2pl uses today
 
 | Hook | Why |
 |---|---|
@@ -15,6 +19,7 @@ DLL** (no game rebuild), and shrink the event surface it has to register.
 | `JER_EVENT_PED_SKELETON` | phase 0 arm pose; phase 1 hand position for the laser |
 | `JER_EVENT_FRAME` | mouse poll, weapon tick (aim/fire/reload), laser, marker |
 | `JER_EVENT_DRAW_OVERLAY` | ammo readout |
+| `JER_EVENT_GAME_START` | forget the previous level's ped pointer and saved rotations |
 
 ## Redundant / combinable hooks
 
@@ -33,8 +38,8 @@ are listed roughly in order of how much they would simplify a ped addon.
    pad/sticks and is where you decide a heading; `PED_MOVE` fires a few lines
    later and is the only place a speed/dir write survives. Adding `dir` and
    `speed` to the `PED_MOVE` args (in/out) would make it a complete movement
-   event and let `PED_INPUT` stay a pure pad filter. This addon currently
-   caches the stick in `PED_INPUT` and writes in `PED_MOVE`.
+   event and let `PED_INPUT` stay a pure pad filter. d2pl caches the stick in
+   `PED_INPUT` and writes in `PED_MOVE`.
 
 3. **`CAMERA` + `CAMERA_LOOK`** — `CAMERA_LOOK` fires in `TurnHead` (input),
    `CAMERA` at the end of `InitCamera` (placement). They are two phases of the
@@ -51,14 +56,14 @@ are listed roughly in order of how much they would simplify a ped addon.
    per-car, per-frame, different sites. One `CAR_STEP` with a stage id (and
    `pad`/`torque`/`draw` sub-structs) would be a much smaller contract.
 
-6. **`GAME_START` / `INIT` / `LEVEL_LAUNCH` / `FRONTEND_ENTERED`** — the
-   addon only needs one "a level is starting" signal; several are registered
-   in different modules just to reset the same state.
+6. **`GAME_START` / `INIT` / `LEVEL_LAUNCH` / `FRONTEND_ENTERED`** — d2pl only
+   needs one "a level is starting" signal; several are registered in different
+   modules just to reset the same state.
 
 ## What keeps this from being a "clean" DLL
 
-The addon is compiled in today. These are the gaps that would have to close
-before it could move to a pure DLL addon:
+d2pl is compiled in today. These are the gaps that would have to close before
+it could move to a pure DLL addon:
 
 1. **Ped heading + speed.** The event args do not carry writable movement
    values, and a DLL cannot deref `PEDESTRIAN`. The DLL version called the
@@ -81,9 +86,9 @@ before it could move to a pure DLL addon:
 
 4. **`-onfoot` / module-side boots.** The engine only sets `gBootOnFoot`; a
    module has to perform the swap. A DLL cannot read that global or call
-   `ActivatePlayerPedestrian` / `ChangeCarPlayerToPed`. `onfoot_boot.c`
-   therefore does it in the compiled-in build. **Ask:** a `game->on_foot_requested()`
-   + `player->go_on_foot()` pair.
+   `ActivatePlayerPedestrian` / `ChangeCarPlayerToPed`. `d2pl_boot.c`
+   therefore does it in the compiled-in build. **Ask:** a
+   `game->on_foot_requested()` + `player->go_on_foot()` pair.
 
 Smaller gaps, not blockers:
 

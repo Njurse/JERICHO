@@ -1,4 +1,4 @@
-/* onfoot_boot.c — the -onfoot spawn swap (compiled-in builds only).
+/* d2pl_boot.c — the -onfoot spawn swap (compiled-in builds only).
  *
  * The engine's -onfoot flag is only a request: it sets gBootOnFoot and waits
  * for a module to perform the swap (the engine cannot spawn the ped before the
@@ -21,7 +21,7 @@
 
 extern int gBootOnFoot;
 
-void OnfootBootTick(void)
+void D2plBootTick(void)
 {
 	PLAYER* lp;
 	CAR_DATA* cp;
@@ -51,12 +51,12 @@ void OnfootBootTick(void)
 
 	gBootOnFoot = 0;
 
-	jer_log("[onfoot] -onfoot: player switched to the ped\n");
+	jer_log("[d2pl] -onfoot: player switched to the ped\n");
 }
 
 #else
 
-void OnfootBootTick(void)
+void D2plBootTick(void)
 {
 }
 

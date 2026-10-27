@@ -1,11 +1,14 @@
-# onfoot — on-foot ped addon
+# d2pl — Driver 2 Parallel Lines
 
-Camera-relative on-foot movement, an aim arm pose that points at the aim
-point, a laser sight and a baked-in debug pistol.
+Driver 2 Parallel Lines (d2pl) is the on-foot ped module: camera-relative
+movement, dual-stick/mouse look, an aim arm pose that points at the aim point,
+a laser sight and a baked-in debug pistol.
 
-It is a **compiled-in module** today (no `runtime` key in `mod.toml`).
-[`API_NOTES.md`](API_NOTES.md) lists the hook-consolidation ideas and the host
-API gaps that still stop it being a pure DLL addon.
+This is the module that replaced the previous camera/weapon d2pl
+implementation; that code remains in git history. It is **compiled in** today
+(no `runtime` key in `mod.toml`). [`API_NOTES.md`](API_NOTES.md) lists the
+hook-consolidation ideas and the host API gaps that still stop it being a pure
+DLL addon.
 
 ## What it does
 
@@ -27,12 +30,12 @@ API gaps that still stop it being a pure DLL addon.
 
 ## Files
 
-- `onfoot.h` — shared state, tuning, pad bits, hook declarations
-- `onfoot_cam.c` — look, movement, aim camera, mouse poll
-- `onfoot_pose.c` — aim point, arm pose, torso/neck aim rotation
-- `onfoot_weapon.c` — debug pistol, laser, ammo HUD
-- `onfoot_boot.c` — the `-onfoot` spawn swap (compiled-in only)
-- `onfoot_mod.c` — module entry and hook registration
+- `d2pl.h` — shared state, tuning, pad bits, hook declarations
+- `d2pl_cam.c` — look, movement, aim camera, mouse poll
+- `d2pl_pose.c` — aim point, arm pose, torso/neck aim rotation
+- `d2pl_weapon.c` — debug pistol, laser, ammo HUD
+- `d2pl_boot.c` — the `-onfoot` spawn swap (compiled-in only)
+- `d2pl.c` — module entry and hook registration
 
 ## Build
 
@@ -40,22 +43,22 @@ API gaps that still stop it being a pure DLL addon.
 JERICHO\build_game.bat          (or: python JERICHO\build.py game all)
 ```
 
-`onfoot` is linked into the exe; enable it in Options → JERICHO (it is off by
-default) or force it for one boot with `-mod onfoot`.
+`d2pl` is linked into the exe; enable it in Options → JERICHO (it is off by
+default) or force it for one boot with `-mod d2pl`.
 
 ## Test
 
 ```
-JERICHO_dev.exe -nointro -nofmv -level 0 -onfoot -frames 300 -mod onfoot
+JERICHO_dev.exe -nointro -nofmv -level 0 -onfoot -frames 300 -mod d2pl
 ```
 
-`-onfoot` is implemented by this module (`onfoot_boot.c`): it activates the
-ped and removes the spawn car. Add `ONFOOT_TEST_AIM=1` to hold aim without a
-pad, which exercises the arm pose and the laser. The boot log then carries a
+`-onfoot` is implemented by this module (`d2pl_boot.c`): it activates the ped
+and removes the spawn car. Add `D2PL_TEST_AIM=1` to hold aim without a pad,
+which exercises the arm pose and the laser. The boot log then carries a
 one-shot line when the pose runs:
 
 ```
-[onfoot] aim pose: shoulder=(...) aim=(...) reach=... arm=.../...
+[d2pl] aim pose: shoulder=(...) aim=(...) reach=... arm=.../...
 ```
 
 ## Debug notes
