@@ -72,7 +72,8 @@ JERICHO_RELEASE_MODS = {
 	carhacks   = true,	-- vehicle unlock + cross-city car imports (imported by mp)
 	crumple    = true,	-- vehicle deformation + wheel-damage physics
 	mp         = true,	-- LAN multiplayer (owns the take-a-ride Single Player / Multiplayer prompt)
-	d1cars     = true,	-- Driver 1 car shapes/cosmetics: the five D1 car-data cities
+	bake     = true,	-- Driver 1 car shapes/cosmetics: the five D1 car-data cities
+	pedhacks   = true,	-- JMPPED pedestrian asset pipeline (archive lifecycle + contract)
 	-- fulltwist is deliberately NOT here. It is a deep (compiled-in) module
 	-- distributed through the official mod repo, not bundled with a release:
 	-- players who want it install it from Options -> JERICHO -> Mods -> Mod Repo.
@@ -865,18 +866,18 @@ project "JERICHO"
 
     -- Modules whose FOLDER is not mirrored into the build.
     --
-    -- d1cars is fetched by the build now (the allow-list in .github/workflows/build.yml
+    -- bake is fetched by the build now (the allow-list in .github/workflows/build.yml
     -- fetches PsyCross and the four public mod source repos: mp, carhacks, crumple and
-    -- d1cars), but its folder still must not land in the build output: it carries
+    -- bake), but its folder still must not land in the build output: it carries
     -- Driver 1 car content (shapes as .obj/.json, textures, LEV/LCF level data) that
     -- must not ride along in a build output or in a package made from one. gaildrv2 is
     -- unpublished and is not fetched at all. The recursive xcopy above mirrors every
     -- folder on disk, so without this the WHOLE submodule lands in bin/<cfg>/JERICHO/MODS/.
-    -- A shipped LAN zip was found carrying 58 d1cars/gaildrv2 entries for exactly this reason.
+    -- A shipped LAN zip was found carrying 58 bake/gaildrv2 entries for exactly this reason.
     --
     -- The folder is dropped and then restored with only mod.toml (see below), so the
     -- compiled-in module still reports its id, version and author; none of its data ships.
-    local JER_MIRROR_EXCLUDE = { d1cars = true, gaildrv2 = true }
+    local JER_MIRROR_EXCLUDE = { bake = true, gaildrv2 = true }
 
     -- Subfolders of a mod that are generated at PLAY time and must never be
     -- mirrored. carhacks owns the baked Driver 1 car data (BAKE_D1_CARS writes
@@ -932,10 +933,14 @@ project "JERICHO"
                 -- the exclusion is about the data, not the manifest.
                 --
                 -- CI does not fetch the unpublished gaildrv2 submodule, so the source
-                -- manifest may be absent. Guard both commands: d1cars is fetched and
+                -- manifest may be absent. Guard both commands: bake is fetched and
                 -- does come back; gaildrv2 is simply skipped.
                 table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" if not exist \"" .. JER_DEST .. "\" mkdir \"" .. JER_DEST .. "\"")
                 table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" copy /Y \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" \"" .. JER_DEST .. "\\mod.toml\" > nul")
+                -- A runtime addon in an excluded folder still needs its DLL: bake
+                -- is now an external runtime unit while its tools/data stay out of
+                -- the mirror. Copy only the loadable unit, never the folder.
+                table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\" .. JER_MOD .. ".dll\" copy /Y \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\" .. JER_MOD .. ".dll\" \"" .. JER_DEST .. "\\" .. JER_MOD .. ".dll\" > nul")
             end
 
             postbuildcommands(JER_CMDS)
@@ -1001,7 +1006,7 @@ project "JERICHO"
                 table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "\"")
                 -- gaildrv2 is not fetched by CI (unpublished), so its manifest may not
                 -- exist. Only recreate the folder when there is a manifest to put back;
-                -- d1cars is fetched and does come back.
+                -- bake is fetched and does come back.
                 table.insert(JER_CMDS, "if [ -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" ]; then mkdir -p \"" .. JER_DEST .. "\" && cp -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" \"" .. JER_DEST .. "/mod.toml\"; fi")
             end
 

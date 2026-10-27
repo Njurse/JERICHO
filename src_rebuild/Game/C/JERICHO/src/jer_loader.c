@@ -200,6 +200,17 @@ static void jerParseModToml(const char* path, JER_MODULE* m)
 			jerTomlValue(val, norm, sizeof(norm));
 			m->interfaceVersion = atoi(norm);
 		}
+		else if (strcmp(key, "host_api") == 0)
+		{
+			/* the JER_HOST_API generation the addon was built against. 0 is
+			 * accepted for manifests older than this key; a newer generation is
+			 * refused in jer_system.c before the module entry can call a function
+			 * the host does not have. */
+			char norm[16];
+
+			jerTomlValue(val, norm, sizeof(norm));
+			m->hostApiVersion = atoi(norm);
+		}
 		/* `requires` is the spelling a REPO INDEX uses for the same idea (see
 		 * mods.json.example), so a manifest that copies an index entry reads the way
 		 * it was written instead of being silently ignored. */

@@ -245,7 +245,7 @@ int jer_manager_move(const char* rootDir, const char* id, int direction)
 /* ------------------------------------------------------------------ */
 /* The multiplayer CORE suite                                          */
 /*                                                                     */
-/* mp, carhacks and d1cars are one product: a session cannot agree on  */
+/* carhacks, bake and mp are one product: a session cannot agree on  */
 /* cars without all three, and the tests (and the dedicated server's   */
 /* preconfiguration) assume this order. They are MANDATORY and come    */
 /* first in the load order; everything else is optional and keeps the  */
@@ -256,7 +256,7 @@ int jer_manager_move(const char* rootDir, const char* id, int direction)
 /* modlist.ini is missing (a release ships none).                      */
 /* ------------------------------------------------------------------ */
 
-static const char* const jerCoreOrder[] = { "mp", "carhacks", "d1cars" };
+static const char* const jerCoreOrder[] = { "carhacks", "bake", "mp" };
 
 int jer_manager_core_count(void)
 {

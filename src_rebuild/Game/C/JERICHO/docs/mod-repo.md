@@ -25,7 +25,7 @@ Pages, `raw.githubusercontent.com`, an S3 bucket, or a folder on this PC.
 
 JERICHO's built-in feed is
 `https://raw.githubusercontent.com/Njurse/JERICHO-Repo-Official/main/mods.json`.
-It lists `mp`, `carhacks`, `crumple`, `d1cars` and `JerAI`, with the packages in
+It lists `mp`, `carhacks`, `crumple`, `bake` and `JerAI`, with the packages in
 `packages/`. The sources live in their own repositories
 (`Njurse/JERICHO-Mod-MP`, `Njurse/JERICHO-Mod-carhacks`,
 `Njurse/Jericho-Mod-CRUMPLE`, `Njurse/JERICHO-D1`, and `JERICHO/MODS/JerAI` in the
@@ -42,13 +42,13 @@ main tree). See that repository's README for the publish steps.
 
   "mods": [
     {
-      "id": "d1cars",
+      "id": "bake",
       "name": "BAKE Car Toolkit",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "author": "Jaret Ludvik",
       "description": "Driver 1 traffic car shapes as a fifth car-data source.",
 
-      "file": "d1cars-0.2.1.zip",
+      "file": "bake-0.3.0.zip",
       "sha256": "6b94e786c6c7c724581dbc4947b88590273185c4afc4e055e5152299fe204283",
       "size": 23456,
 
@@ -73,7 +73,9 @@ makes the browser more useful.
 | `size` | bytes; informational |
 | `requires` | comma list of mod ids that must be installed first; the row is refused with `needs <id>` |
 | `min_jericho` | the row reads `needs newer` and refuses on an older core |
-| `bake_version` | for `d1cars`: a Driver 1 bake older than this prompts a re-bake |
+| `bake_version` | for `bake`: a Driver 1 bake older than this prompts a re-bake |
+| `interface` | exact JERICHO SDK/interface the package was built against; the loader refuses an exact mismatch |
+| `host_api` | optional host API generation the package expects; a newer generation is refused before the module entry runs |
 
 ## 2. The package
 
@@ -82,10 +84,10 @@ A zip (or `.tar.gz`) whose root is **either** `MODS/<id>/` **or**
 its `id` has to equal the index entry's `id`.
 
 ```
-d1cars-0.2.0.zip
-└── JERICHO/MODS/d1cars/
+bake-0.3.0.zip
+└── JERICHO/MODS/bake/
     ├── mod.toml          id, name, version, author, description, runtime, dependencies
-    └── d1cars.dll        the addon (runtime = "dll"), or a compiled-in mod's sources
+    └── bake.dll        the addon (runtime = "dll"), or a compiled-in mod's sources
 ```
 
 Installs are **overwrite-only**: files the package does not carry are left
@@ -106,8 +108,8 @@ the real hash of the exact file. Do not type it — one command packages the mod
 and prints the whole entry:
 
 ```sh
-sh JERICHO/CORE/modstore/make_mod_package.sh d1cars --out out
-# -> out/d1cars-0.2.0.zip + out/d1cars-0.2.0.entry.json (sha256 + size computed)
+sh JERICHO/CORE/modstore/make_mod_package.sh bake --out out
+# -> out/bake-0.3.0.zip + out/bake-0.2.0.entry.json (sha256 + size computed)
 ```
 
 or, to package every mod and rebuild the index in one go:
@@ -119,9 +121,9 @@ sh JERICHO/CORE/modstore/gen_mods_json.sh --out out
 If you are writing an entry by hand for some other reason:
 
 ```sh
-sha256sum   d1cars-0.2.0.zip          # Linux / macOS / git-bash
-certutil -hashfile d1cars-0.2.0.zip SHA256   # Windows cmd
-wc -c < d1cars-0.2.0.zip              # size in bytes
+sha256sum   bake-0.3.0.zip          # Linux / macOS / git-bash
+certutil -hashfile bake-0.3.0.zip SHA256   # Windows cmd
+wc -c < bake-0.3.0.zip              # size in bytes
 ```
 
 and then run the validator over the result — it recomputes both from the file:

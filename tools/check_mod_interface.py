@@ -120,7 +120,7 @@ def check_manifests(root, sdk, quiet):
         # A submodule is its own repository: its manifest is versioned there and
         # the parent checkout cannot update it. CI deliberately does not fetch
         # every submodule, so checking it here would make a local run fail where
-        # CI passes (d1cars is the one that has no `interface`).
+        # CI passes (bake is the one that has no `interface`).
         if os.path.normpath(os.path.join("JERICHO", "MODS", name)) in subs:
             continue
 

@@ -36,6 +36,13 @@
 #include "mission.h"
 #include "felony.h"
 #include "cosmetic.h"
+#include "texture.h"
+#include "system.h"
+
+/* Frontend car-list tables: the store/availability view a module needs without
+ * importing the engine data globals. */
+extern int CarAvailability[CITY_COUNT][10];
+extern char carNumLookup[CITY_COUNT][10];
 
 #include <string.h>
 
@@ -938,6 +945,140 @@ static const JER_HOST_DEBUG_API gDebug =
 	hostDebugLine, hostDebugLineDepth
 };
 
+/* Car data / import / car list                                       */
+/* ------------------------------------------------------------------ */
+
+#define HOST_CARLIST_SLOTS 10
+
+static int hostCardataModelSource(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return -1;
+
+	return GetCarModelSourceCity(slot);
+}
+
+static void hostCardataSetModelSource(int slot, int city)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	JerSetCarModelSource(slot, city);
+}
+
+static int hostCardataResidentModel(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return -1;
+
+	return residentCarModels[slot];
+}
+
+static void hostCardataSetResidentModel(int slot, int model)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return;
+
+	residentCarModels[slot] = model;
+}
+
+static int hostCardataPaletteCount(int city, int model)
+{
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	return CarModelPaletteCount(city, model);
+}
+
+static int hostCardataHotLoadModel(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	return JerHotLoadCarModel(slot);
+}
+
+static int hostCardataHotLoadCosmetics(int slot)
+{
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	return JerHotLoadCarCosmetics(slot);
+}
+
+static int hostCardataApplyPalette(int city)
+{
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	return CarImportApplyPaletteForCity(city);
+}
+
+static int hostCardataReleaseImports(void)
+{
+	return JerReleaseUnusedCarImports();
+}
+
+static int hostCardataSlotResReport(void)
+{
+	return CarSlotResReport();
+}
+
+static void hostCardataInitImport(void)
+{
+	InitCarImport();
+}
+
+static void hostCardataInitImportMidLevel(void)
+{
+	InitCarImportMidLevel();
+}
+
+static int hostCardataAvailability(int city, int slot)
+{
+	if (city < 0 || city >= CITY_COUNT || slot < 0 || slot >= HOST_CARLIST_SLOTS)
+		return 0;
+
+	return CarAvailability[city][slot];
+}
+
+static void hostCardataSetAvailability(int city, int slot, int available)
+{
+	if (city < 0 || city >= CITY_COUNT || slot < 0 || slot >= HOST_CARLIST_SLOTS)
+		return;
+
+	CarAvailability[city][slot] = available != 0;
+}
+
+static int hostCardataListModel(int city, int slot)
+{
+	if (city < 0 || city >= CITY_COUNT || slot < 0 || slot >= HOST_CARLIST_SLOTS)
+		return 0;
+
+	return (int)(signed char)carNumLookup[city][slot];
+}
+
+static void hostCardataSetListModel(int city, int slot, int model)
+{
+	if (city < 0 || city >= CITY_COUNT || slot < 0 || slot >= HOST_CARLIST_SLOTS)
+		return;
+
+	carNumLookup[city][slot] = (char)model;
+}
+
+static const JER_HOST_CARDATA_API gCardata =
+{
+	sizeof(JER_HOST_CARDATA_API), JER_HOST_API_VERSION,
+	hostCardataModelSource, hostCardataSetModelSource,
+	hostCardataResidentModel, hostCardataSetResidentModel,
+	hostCardataPaletteCount, hostCardataHotLoadModel,
+	hostCardataHotLoadCosmetics, hostCardataApplyPalette,
+	hostCardataReleaseImports, hostCardataSlotResReport,
+	hostCardataInitImport, hostCardataInitImportMidLevel,
+	hostCardataAvailability, hostCardataSetAvailability,
+	hostCardataListModel, hostCardataSetListModel
+};
+
 /* ------------------------------------------------------------------ */
 /* The root table and the one exported symbol                          */
 /* ------------------------------------------------------------------ */
@@ -946,7 +1087,7 @@ static const JER_HOST_API gHostApi =
 {
 	sizeof(JER_HOST_API), JER_HOST_API_VERSION, JER_HOST_ABI_V1,
 	&gCore, &gConfig, &gCar, &gPlayer, &gCamera, &gModel,
-	&gWorld, &gGame, &gUi, &gDebug
+	&gWorld, &gGame, &gUi, &gDebug, &gCardata
 };
 
 /* Keep the resolver alive through /OPT:REF and put it in the linker map, so

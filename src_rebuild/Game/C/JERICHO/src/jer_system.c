@@ -11,6 +11,7 @@
  * no exe rebuild.
  */
 #include "jericho.h"
+#include "jer_host_api.h"
 #include "jer_internal.h"
 #include "jer_config.h"
 #include "jer_pause_menu.h"
@@ -683,6 +684,7 @@ static void jerActivateModules(const char* rootDir)
 	int orderCount = 0;
 	int active = 0;
 	int complaints = 0;	/* refusals raised this pass (see the tail of the fn) */
+	int coreMissing = 0;	/* a mandatory core addon had no entry */
 	int i, j;
 
 	/*
@@ -690,7 +692,7 @@ static void jerActivateModules(const char* rootDir)
 	 * then any modules not mentioned (enabled by default, in scan
 	 * order). Modules listed with enabled=0 are skipped.
 	 *
-	 * THE CORE SUITE IS NORMALISED FIRST. mp, carhacks and d1cars are one product
+	 * THE CORE SUITE IS NORMALISED FIRST. carhacks, bake and mp are one product
 	 * (see jer_manager.c): they are mandatory and first. Rewriting the file here
 	 * means the order survives a later hand edit, and the order the player sees in
 	 * Options -> JERICHO is the order the engine actually uses.
@@ -700,7 +702,7 @@ static void jerActivateModules(const char* rootDir)
 		int moved = jer_manager_normalize_core(rootDir);
 
 		if (moved > 0)
-			jerLog("[jericho] core modules moved to the front of modlist.ini: mp, carhacks, d1cars\n");
+			jerLog("[jericho] core modules moved to the front of modlist.ini: carhacks, bake, mp\n");
 	}
 
 	if (jer_manager_read(rootDir, &modlist) != 0)
@@ -816,7 +818,7 @@ static void jerActivateModules(const char* rootDir)
 	 * modlist.ini: a release ships no modlist, and a player can hand-edit one. An
 	 * installed core module is enabled whether or not the file said so, and it goes
 	 * ahead of every optional module. A core module that is not installed is simply
-	 * absent (d1cars is a separate download); it does not create a phantom entry. */
+	 * absent (bake is a separate download); it does not create a phantom entry. */
 	if (!gDisableAllModules)
 	{
 		const char* ordered[JER_MAX_MODULES];
@@ -828,7 +830,17 @@ static void jerActivateModules(const char* rootDir)
 			JER_MODULE* m = (id != NULL) ? jerFindModule(id) : NULL;
 
 			if (m == NULL || m->entry == NULL)
+			{
+				/* The core suite (carhacks, bake, mp) is mandatory. A release
+				 * with a missing core DLL must not quietly run a partial suite;
+				 * optional addons are refused below and the failure is named. */
+				jerLog("[jericho] core module \"%s\" is missing or has no entry - optional addons will be refused\n",
+					id != NULL ? id : "?");
+				jer_console_log("JERICHO core addon %s is missing; optional addons are disabled.",
+					id != NULL ? id : "?");
+				coreMissing = 1;
 				continue;
+			}
 
 			if (!m->enabled)
 			{
@@ -929,6 +941,37 @@ static void jerActivateModules(const char* rootDir)
 		if (!m->activated)
 			continue;
 
+		/* Fail closed when a core addon is missing: a partial core suite must
+		 * not be papered over by optional addons whose contracts assume it. */
+		if (coreMissing)
+		{
+			int isCore = 0;
+			int c;
+
+			for (c = 0; c < jer_manager_core_count(); c++)
+			{
+				const char* id = jer_manager_core_id(c);
+
+				if (id != NULL && strcmp(id, m->id) == 0)
+				{
+					isCore = 1;
+					break;
+				}
+			}
+
+			if (!isCore)
+			{
+				snprintf(m->refusal, sizeof(m->refusal),
+					"%s needs the JERICHO core suite, which is missing or incomplete.",
+					m->name[0] != 0 ? m->name : m->id);
+				jerLog("[jericho] module \"%s\" refused: core suite incomplete\n", m->id);
+				jer_console_log("%s", m->refusal);
+				complaints++;
+				m->valid = 0;
+				continue;
+			}
+		}
+
 		if (m->sdkVersion != 0 && m->sdkVersion != JERICHO_SDK_VERSION)
 		{
 			snprintf(m->refusal, sizeof(m->refusal), "%s needs a newer JERICHO (it wants SDK v%d, this build is v%d).",
@@ -963,6 +1006,26 @@ static void jerActivateModules(const char* rootDir)
 
 			jerLog("[jericho] module \"%s\" declares interface v%d but host is v%d - DISABLED\n",
 				m->id, m->interfaceVersion, JERICHO_SDK_VERSION);
+
+			jer_console_log("%s", m->refusal);
+			complaints++;
+
+			m->valid = 0;
+			continue;
+		}
+
+		/* A runtime addon built against a newer host table must be refused
+		 * BEFORE its entry runs: the subtable-size check in jerHostApiGet()
+		 * then returns NULL instead of allowing a read past the host's table. */
+		if (m->hostApiVersion > (int)JER_HOST_API_GENERATION)
+		{
+			snprintf(m->refusal, sizeof(m->refusal),
+				"%s needs host API v%d; this build has v%d. Update JERICHO or install an older mod.",
+				m->name[0] != 0 ? m->name : m->id, m->hostApiVersion,
+				(int)JER_HOST_API_GENERATION);
+
+			jerLog("[jericho] module \"%s\" needs host API v%d but host is v%d - DISABLED\n",
+				m->id, m->hostApiVersion, (int)JER_HOST_API_GENERATION);
 
 			jer_console_log("%s", m->refusal);
 			complaints++;

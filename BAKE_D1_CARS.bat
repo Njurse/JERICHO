@@ -36,11 +36,11 @@ set "GAME_EXE="
 if /i "%~1"=="--from-game" set "FROM_GAME=1"
 if /i "%~1"=="--from-game" set "GAME_EXE=%~2"
 
-set "T=%~dp0JERICHO\MODS\d1cars\tools"
+set "T=%~dp0JERICHO\MODS\bake\tools"
 rem The dev tree's game folder (src_rebuild\bin\<config>) does not carry the
-rem data-only d1cars module, so fall back to the repo's copy three levels up.
+rem data-only bake module, so fall back to the repo's copy three levels up.
 rem A shipped package has the tools beside the script and takes the first path.
-if not exist "%T%\bake.py" if exist "%~dp0..\..\..\JERICHO\MODS\d1cars\tools\bake.py" set "T=%~dp0..\..\..\JERICHO\MODS\d1cars\tools"
+if not exist "%T%\bake.py" if exist "%~dp0..\..\..\JERICHO\MODS\bake\tools\bake.py" set "T=%~dp0..\..\..\JERICHO\MODS\bake\tools"
 set "LEV=DRIVER\LEVELS"
 set "D2=DRIVER2\LEVELS"
 set "OUT=JERICHO\MODS\carhacks\D1CARS"
@@ -52,7 +52,7 @@ echo.
 
 if not exist "%T%\bake.py" (
 	echo   FAILED: "%T%\bake.py" is missing.
-	echo   This package was built without the d1cars tools, so there is nothing to
+	echo   This package was built without the bake tools, so there is nothing to
 	echo   bake with. Re-download the package, or run the tools from the repo.
 	goto :fail
 )

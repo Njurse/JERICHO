@@ -58,12 +58,12 @@ reopen_game() {
 	return 0
 }
 
-T="$HERE/JERICHO/MODS/d1cars/tools"
+T="$HERE/JERICHO/MODS/bake/tools"
 # The dev tree's game folder (src_rebuild/bin/<config>) does not carry the
-# data-only d1cars module, so fall back to the repo's copy three levels up.
+# data-only bake module, so fall back to the repo's copy three levels up.
 # A shipped package has the tools beside the script and takes the first path.
-if [ ! -f "$T/bake.py" ] && [ -f "$HERE/../../../JERICHO/MODS/d1cars/tools/bake.py" ]; then
-	T="$HERE/../../../JERICHO/MODS/d1cars/tools"
+if [ ! -f "$T/bake.py" ] && [ -f "$HERE/../../../JERICHO/MODS/bake/tools/bake.py" ]; then
+	T="$HERE/../../../JERICHO/MODS/bake/tools"
 fi
 LEV="DRIVER/LEVELS"
 D2="DRIVER2/LEVELS"
@@ -83,7 +83,7 @@ echo "BAKE_D1_CARS: baking Driver 1 car data into $OUT"
 echo
 
 if [ ! -f "$T/bake.py" ]; then
-	fail "\"$T/bake.py\" is missing. This package was built without the d1cars tools, so there is nothing to bake with. Re-download the package, or run the tools from the repo."
+	fail "\"$T/bake.py\" is missing. This package was built without the bake tools, so there is nothing to bake with. Re-download the package, or run the tools from the repo."
 fi
 
 if [ ! -d "$LEV" ]; then

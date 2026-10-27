@@ -1,0 +1,11 @@
+id = "pedhacks"
+name = "Pedestrian Hacks"
+version = "0.1.0"
+# the JERICHO interface (SDK) this mod is built against
+interface = 3
+author = "JERICHO"
+description = "JMPPED pedestrian asset pipeline: archive lifecycle, character entries, model/page/palette installation. Decouples pedestrian assets from levels and from multiplayer."
+dependencies = []
+default-enabled = true
+# Compiled-in asset module. The runtime contract is interface 3; the Python
+# authoring tools and JMPPED.LEV archive remain offline/data artifacts.

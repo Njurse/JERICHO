@@ -37,8 +37,10 @@ PROBLEMS: list[str] = []
 
 # The core suite stays compiled in. This is the boundary the external-mod
 # conversion must not cross: these modules own engine data/flow that is not a
-# stable addon surface.
-CORE_MODULES = {"mp", "carhacks", "d1cars"}
+# stable addon surface. bake is still a mandatory core addon, but its runtime
+# unit is now an external DLL; the checker treats it like the other runtime
+# addons.
+CORE_MODULES = {"mp", "carhacks"}
 
 # Engine headers that a runtime addon must not include. The scanner also builds
 # this from the tree; the hints keep the planted-fault CI test working when the

@@ -11,6 +11,7 @@ Repo-wide maintenance tools. Mod-specific tooling lives next to its mod
 | `doccheck.py` | Check the documentation: links resolve, every engine event is in `events.md`, every doc is reachable from `docs/README.md`, and the counted claims match the code |
 | `check_release_mods.py` | Assert `JERICHO_RELEASE_MODS` has manifests and matches the generated Release registry, so a release cannot silently omit a named mod |
 | `check_mod_api.py` | Keep runtime DLL addons on the host API: refuse engine headers/globals in `runtime = "dll"` modules; `--gap` prints the direct-engine use of compiled-in modules |
+| `check_host_api_abi.py` | Lock `jer_host_api.h` to append-only growth: a field or function may not be removed, renamed, reordered or retyped; new entries must be appended |
 | `update_mod_submodules.sh` | Advance the `mp`, `carhacks` and `crumple` submodule pins to their repositories' `main`, printing the gitlink diff to review and commit |
 
 ## Updating the mod source pins

@@ -27,6 +27,11 @@ extern "C" {
 #endif
 
 #define JER_HOST_API_VERSION 1u
+/* Bump when a host subtable gains a function/field. Addons may declare
+ * `host_api = N` in mod.toml; the loader refuses a manifest from a newer
+ * generation with a player-facing message. The `size` check below is the
+ * real append-only guard (an addon never reads past the host's table). */
+#define JER_HOST_API_GENERATION 2u
 /* "JH01": bump whenever a view/field this header defines changes. */
 #define JER_HOST_ABI_V1 0x4A483031u
 
@@ -284,6 +289,31 @@ typedef struct JER_HOST_DEBUG_API
 	void (*line_depth)(const JER_VEC* a, const JER_VEC* b, const JER_CVEC* colour);
 } JER_HOST_DEBUG_API;
 
+/* Car-data source / import / car-list surface. Opaque slot and city numbers
+ * only; the engine keeps ownership of the loaded model, cosmetics, palette and
+ * VRAM pages. */
+typedef struct JER_HOST_CARDATA_API
+{
+	unsigned int size;
+	unsigned int version;
+	int  (*model_source)(int slot);				/* source city for a resident slot, -1 = level's own */
+	void (*set_model_source)(int slot, int city);
+	int  (*resident_model)(int slot);			/* residentCarModels[slot] */
+	void (*set_resident_model)(int slot, int model);
+	int  (*palette_count)(int city, int model);
+	int  (*hot_load_model)(int slot);
+	int  (*hot_load_cosmetics)(int slot);
+	int  (*apply_palette)(int city);
+	int  (*release_imports)(void);
+	int  (*slot_res_report)(void);
+	void (*init_import)(void);					/* level-start import */
+	void (*init_import_mid_level)(void);		/* import after the level is live */
+	int  (*availability)(int city, int slot);	/* CarAvailability[city][slot] */
+	void (*set_availability)(int city, int slot, int available);
+	int  (*list_model)(int city, int slot);		/* carNumLookup[city][slot] */
+	void (*set_list_model)(int city, int slot, int model);
+} JER_HOST_CARDATA_API;
+
 typedef struct JER_HOST_API
 {
 	unsigned int size;
@@ -299,6 +329,7 @@ typedef struct JER_HOST_API
 	const JER_HOST_GAME_API* game;
 	const JER_HOST_UI_API* ui;
 	const JER_HOST_DEBUG_API* debug;
+	const JER_HOST_CARDATA_API* cardata;
 } JER_HOST_API;
 
 /* The host implementation. This is the only symbol an addon needs.
@@ -320,6 +351,13 @@ JER_HOST_API_EXPORT const JER_HOST_API* jer_host_api(void);
 #else
 #define JER_HOST_INLINE static inline
 #endif
+
+/* A subtable may only be used by an addon when the host published at least the
+ * size this addon was compiled against. This is the append-only compatibility
+ * check: a newer addon on an older host gets NULL instead of reading past the
+ * host's table and crashing. */
+#define JER_HOST_SUBTABLE_OK(tbl, type) \
+	((tbl) != 0 && (tbl)->size >= (unsigned int)sizeof(type))
 
 JER_HOST_INLINE const JER_HOST_API* jerHostApiGet(void)
 {
@@ -344,6 +382,19 @@ JER_HOST_INLINE const JER_HOST_API* jerHostApiGet(void)
 
 	if (cached == 0 || cached->size < sizeof(JER_HOST_API) ||
 		cached->version != JER_HOST_API_VERSION || cached->abi != JER_HOST_ABI_V1)
+		return 0;
+
+	if (!JER_HOST_SUBTABLE_OK(cached->core, JER_HOST_CORE_API) ||
+		!JER_HOST_SUBTABLE_OK(cached->config, JER_HOST_CONFIG_API) ||
+		!JER_HOST_SUBTABLE_OK(cached->car, JER_HOST_CAR_API) ||
+		!JER_HOST_SUBTABLE_OK(cached->player, JER_HOST_PLAYER_API) ||
+		!JER_HOST_SUBTABLE_OK(cached->camera, JER_HOST_CAMERA_API) ||
+		!JER_HOST_SUBTABLE_OK(cached->model, JER_HOST_MODEL_API) ||
+		!JER_HOST_SUBTABLE_OK(cached->world, JER_HOST_WORLD_API) ||
+		!JER_HOST_SUBTABLE_OK(cached->game, JER_HOST_GAME_API) ||
+		!JER_HOST_SUBTABLE_OK(cached->ui, JER_HOST_UI_API) ||
+		!JER_HOST_SUBTABLE_OK(cached->debug, JER_HOST_DEBUG_API) ||
+		!JER_HOST_SUBTABLE_OK(cached->cardata, JER_HOST_CARDATA_API))
 		return 0;
 
 	return cached;

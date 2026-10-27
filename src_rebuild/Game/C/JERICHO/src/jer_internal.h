@@ -72,6 +72,10 @@ typedef struct JER_MODULE
 							 * against. 0 = the manifest does not say (old mods). Checked
 							 * before activation so a mod from another build is refused
 							 * with a reason instead of half-working. */
+	int hostApiVersion;		/* mod.toml `host_api`: the JER_HOST_API generation the
+							 * addon expects. 0 = pre-generation manifest (accepted);
+							 * a value newer than JER_HOST_API_GENERATION is refused
+							 * before its entry can dereference a missing function. */
 	int valid;				/* passes SDK + dependency validation */
 	char refusal[96];		/* WHY valid==0, in player-facing words - empty when fine.
 					 * This is what the notice and the Mods screen say, so a

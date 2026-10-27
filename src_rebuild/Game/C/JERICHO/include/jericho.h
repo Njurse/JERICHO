@@ -554,7 +554,7 @@ int jer_manager_set_enabled(const char* rootDir, const char* id, int enabled);
 /* Move a module up/down in the load order; persists. Returns 0 on ok. */
 int jer_manager_move(const char* rootDir, const char* id, int direction);
 
-/* The multiplayer core suite, in mandatory load order: mp, carhacks, d1cars.
+/* The multiplayer core suite, in mandatory load order: carhacks, bake, mp.
  * Everything else is optional and follows in the player's own order. */
 int jer_manager_core_count(void);
 const char* jer_manager_core_id(int i);

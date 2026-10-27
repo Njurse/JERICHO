@@ -1246,7 +1246,7 @@ static int StoreBakedVersion(void)
 	return StoreDirHasEntries(dir) ? 0 : -1;
 }
 
-/* The version the repo's own d1cars entry asks for (a release that changes the
+/* The version the repo's own bake entry asks for (a release that changes the
  * bake data without touching the script bumps this instead). */
 static int StoreIndexBakeVersion(const char* id)
 {
@@ -1261,7 +1261,7 @@ static int StoreIndexBakeVersion(const char* id)
 }
 
 /* 1 when this machine has a Driver 1 bake older than what the shipped tooling (or
- * the repo's d1cars entry) expects. That is the only case worth asking about. */
+ * the repo's bake entry) expects. That is the only case worth asking about. */
 static int StoreBakeStale(void)
 {
 	int baked = StoreBakedVersion();
@@ -1271,7 +1271,7 @@ static int StoreBakeStale(void)
 	if (baked < 0)
 		return 0;			/* nothing baked: nothing to re-bake */
 
-	fromIndex = StoreIndexBakeVersion("d1cars");
+	fromIndex = StoreIndexBakeVersion("bake");
 	if (fromIndex > wanted)
 		wanted = fromIndex;
 
@@ -2440,6 +2440,10 @@ static int ModsRowActivate(void* ud)
 	if (!jer_modstore_module_at(idx, &mod) || mod.id == NULL)
 		return 1;
 
+	/* Core addons are mandatory: the state is CORE, not OFF/ON. */
+	if (mod.core)
+		return 1;
+
 	jer_manager_set_enabled(jer_root_dir(), mod.id, mod.enabled ? 0 : 1);
 	jer_manager_reload(jer_root_dir());
 	StoreAfterReload();
@@ -2452,6 +2456,11 @@ static int ModsRowAdjust(void* ud, int dir)
 	JER_MODSTORE_MODULE mod;
 
 	if (!jer_modstore_module_at(idx, &mod) || mod.id == NULL)
+		return 1;
+
+	/* The core suite's order is fixed (carhacks first); never reorder it from
+	 * the list. */
+	if (mod.core)
 		return 1;
 
 	jer_manager_move(jer_root_dir(), mod.id, dir > 0 ? 1 : -1);
@@ -3065,6 +3074,8 @@ static void ModsDrawTable(void)
 
 		if (mod.refusal != NULL)
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "BLOCKED", 255, 128, 128);
+		else if (mod.core)
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "CORE", 255, 200, 64);
 		else if (mod.enabled)
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "ON", 128, 255, 128);
 		else
@@ -3136,7 +3147,7 @@ static const char* StoreNextUpdateId(void)
 	return NULL;
 }
 
-/* "Update 3 mods now? carhacks, crumple, d1cars" - the question is short enough
+/* "Update 3 mods now? carhacks, crumple, bake" - the question is short enough
  * for the prompt box, and names what is about to change. */
 static void StoreBuildUpdateQuestion(int n)
 {
@@ -3470,6 +3481,21 @@ int jer_modstore_module_at(int index, JER_MODSTORE_MODULE* out)
 	out->name = info[index].name;
 	out->version = info[index].version;
 	out->enabled = info[index].enabled;
+	out->core = 0;
+	{
+		int c;
+
+		for (c = 0; c < jer_manager_core_count(); c++)
+		{
+			const char* coreId = jer_manager_core_id(c);
+
+			if (coreId != NULL && strcmp(coreId, info[index].id) == 0)
+			{
+				out->core = 1;
+				break;
+			}
+		}
+	}
 	out->refusal = info[index].refusal;
 	out->fromStore = (rec != NULL);
 	out->storeVersion = (rec != NULL) ? rec->version : NULL;

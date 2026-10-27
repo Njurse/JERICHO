@@ -364,7 +364,7 @@ cmd_remove() {
 # -------------------------------------------------------------------- rebake
 cmd_rebake() {
 	OP=rebake
-	OP_ID=d1cars
+	OP_ID=bake
 	need_tmp
 
 	_script=

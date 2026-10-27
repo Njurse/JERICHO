@@ -89,6 +89,7 @@ typedef struct JER_MODSTORE_MODULE
 	const char* name;
 	const char* version;		/* the version the folder carries */
 	int enabled;
+	int core;					/* mandatory core addon: shown as CORE, not togglable */
 	const char* refusal;		/* non-NULL when this boot refused it */
 	int fromStore;				/* the store installed what is here today */
 	const char* storeVersion;	/* the version the store installed, or NULL */

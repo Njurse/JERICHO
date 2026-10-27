@@ -22,10 +22,66 @@ not become an ABI surface:
 |---|---|
 | `mp` | Owns the network session, car state sync, host flow and engine input/timing. |
 | `carhacks` | Owns vehicle availability, cross-city imports, texture/VRAM pages and the car query contract. |
-| `d1cars` | Owns the Driver 1 bake unit and its car-data source. Kept with `carhacks`; the planned BAKE rename is a separate submodule-coordinated change. |
+
+`bake` is still a mandatory core addon, but its runtime unit is now an external
+DLL (`runtime = "dll"`); its BAKE tools and baked data stay outside the runtime.
+It has no direct-engine symbols today.
 
 Everything else is a conversion candidate. Development harnesses may also stay
 compiled in for convenience, but that is a tooling choice, not an API barrier.
+
+### Core addon gaps (exact, interface 3 / host API generation 1)
+
+`python3 tools/check_mod_api.py --gap` reports these direct-engine uses for the
+three modules that still stay compiled in:
+
+| Module | Functions | Globals |
+|---|---|---|
+| `mp` | `CellEmpty`, `DrawPlayerDot`, `EnablePause`, `GetSurfaceIndex`, `InitCar`, `MapHeight`, `Start3DSoundVolPitch`, `ratan2` | `GameType`, `MainPlayer`, `MaxPlayerDamage`, `NumPlayers`, `active_car_list`, `camera_position`, `car_data`, `num_active_cars`, `player`, `residentCarModels` |
+| `carhacks` | `InitCar` | `GameType`, `NumPlayers`, `car_data`, `gCarCleanModelPtr`, `player`, `residentCarModels` |
+| `bake` | none | none |
+
+The `bake` runtime unit is still a scaffold; its BAKE pipeline is offline
+tooling/data and its direct-engine surface is empty today.
+
+### Update semantics (core and optional addons)
+
+- **Install is checksum-verified and gated before it touches `MODS/`.** The
+  store checks the package id against `mod.toml`, the exact `interface` value,
+  the SHA-256, and (when present) `host_api`. A package from a newer host API
+  generation is refused with `needs host API vN; this build has vM`.
+- **Versions are X.Y.Z and the repo only moves forward.** A newer repo version
+  is an update, an equal version is "installed", and an older repo version is
+  never offered as a downgrade. A compiled-in/replaced folder is reported as
+  `replaced by the release` and can be reinstalled over.
+- **Core addons are mandatory and shown as CORE** (light red) in the Mods table.
+  They cannot be toggled off or reordered; `carhacks` is forced first, then
+  `bake`, then `mp`. A missing or invalid core addon marks the core suite
+  incomplete and refuses optional addons that assume it; it never silently
+  runs a partial stack.
+- **Rollback is staged, not destructive.** The package is unpacked and
+  validated before an overwrite; the previous installed folder is retained for
+  the next successful boot, and the install record keeps the last known-good
+  version/hash. If the new core addon is refused, the previous folder is the
+  recovery path. Automatic in-game rollback is a later loader feature, not
+  something an addon update performs on its own.
+- **Independent updates stop at the host API.** An addon that stays within
+  interface 3 / host API generation 1 can be updated from the store without a
+  game release. A change that needs a new host function or event still needs a
+  game release and a new generation/interface.
+
+### Runtime units vs data/tooling
+
+- **Only runtime code becomes a DLL.** `bake.dll` is the runtime unit
+  (currently a scaffold); `carhacks.dll` will be the runtime importer/selector.
+  Their `tools/` directories and `D1CARS` baked data stay data/tooling: the
+  build mirror strips tools from the runtime tree, and the package generator
+  never ships `carhacks/D1CARS` (it is generated from the player's own Driver 1
+  files). The offline BAKE pipeline remains a separate tool artifact.
+- **The DLLs never own the baked/generated car data.** They call the host
+  cardata surface to set/read model source, resident slots, availability and the
+  frontend car list; the engine owns the loaded model, cosmetics, palette and
+  VRAM pages.
 
 ## Candidate order
 

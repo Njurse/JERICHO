@@ -78,7 +78,7 @@ jobs:
       - name: Fetch mod submodules
         shell: bash
         run: |
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             branch=$(git config -f .gitmodules --get "submodule.$path.branch")
@@ -140,6 +140,7 @@ jobs:
         run: |
           set -e
           python3 tools/check_mod_api.py
+          python3 tools/check_host_api_abi.py
           rm -rf /tmp/apifaults
           mkdir -p /tmp/apifaults/JERICHO/MODS/bad
           mkdir -p /tmp/apifaults/JERICHO/sdk/include
@@ -273,7 +274,7 @@ jobs:
           # branch by name: the init is a shallow clone of the pinned commit, so
           # `submodule update --remote` cannot find the branch ref.
           git submodule update --init --depth=1 src_rebuild/PsyCross
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             branch=$(git config -f .gitmodules --get "submodule.$path.branch")
@@ -283,7 +284,7 @@ jobs:
             echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
             echo "::endgroup::"
           done
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             test -f "$path/mod.toml" || {
               echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
               exit 1
@@ -389,13 +390,13 @@ jobs:
         run: |
           # Driver 1 bake tooling. JERICHO ships the WAY to bake, never the baked
           # data -- that is derived from Driver 1's copyrighted files. The tools
-          # live in the d1cars submodule, which the fetch step advanced to the
+          # live in the bake submodule, which the fetch step advanced to the
           # latest commit of its own branch (branch = betamiami). Its folder is
           # stripped from the build mirror (JER_MIRROR_EXCLUDE), so the tools are
           # copied out of the checkout here, for packaging only.
-          $d1src = "JERICHO/MODS/d1cars/tools"
+          $d1src = "JERICHO/MODS/bake/tools"
           foreach ($need in @('bake.py', 'd1pool.py', 'cosmetics1.py', 'add_car_sounds.py', 'euro43.py')) {
-            if (-not (Test-Path "$d1src/$need")) { throw "the d1cars checkout has no tools/$need" }
+            if (-not (Test-Path "$d1src/$need")) { throw "the bake checkout has no tools/$need" }
           }
 
           foreach ($cfg in @('Release', 'Release_dev')) {
@@ -465,10 +466,10 @@ jobs:
             # exe. A player drops their own Driver 1 data into DRIVER\ and runs
             # BAKE_D1_CARS.bat (or .sh) once; carhacks then offers the Driver 1
             # cities, including the EURO-43 beta. See docs/CI.md.
-            $d1dst = "$bin/JERICHO/MODS/d1cars/tools"
+            $d1dst = "$bin/JERICHO/MODS/bake/tools"
             New-Item -ItemType Directory -Force -Path $d1dst | Out-Null
             Copy-Item "$d1src/*.py" $d1dst -Force
-            Copy-Item "$d1src/README.md" "$bin/JERICHO/MODS/d1cars/" -Force
+            Copy-Item "$d1src/README.md" "$bin/JERICHO/MODS/bake/" -Force
             # The bake scripts are taken from the repo root, not the mp
             # pack_lan copy: the root is the canonical script, and a re-cut
             # must sample it rather than an older duplicate. The pack_lan
@@ -573,7 +574,7 @@ jobs:
           # branch by name: the init is a shallow clone of the pinned commit, so
           # `submodule update --remote` cannot find the branch ref.
           git submodule update --init --depth=1 src_rebuild/PsyCross
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             branch=$(git config -f .gitmodules --get "submodule.$path.branch")
@@ -583,7 +584,7 @@ jobs:
             echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
             echo "::endgroup::"
           done
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             test -f "$path/mod.toml" || {
               echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
               exit 1
@@ -682,13 +683,13 @@ jobs:
 
       - name: Package
         run: |
-          # Driver 1 bake tooling: see the Windows job. The d1cars submodule was
+          # Driver 1 bake tooling: see the Windows job. The bake submodule was
           # advanced to the latest commit of its branch by the fetch step; use
           # that checkout (its folder is excluded from the build mirror, so the
           # tools would otherwise never reach the package).
-          d1src=JERICHO/MODS/d1cars/tools
+          d1src=JERICHO/MODS/bake/tools
           for f in bake.py d1pool.py cosmetics1.py add_car_sounds.py euro43.py; do
-            test -f "$d1src/$f" || { echo "::error::the d1cars checkout has no tools/$f"; exit 1; }
+            test -f "$d1src/$f" || { echo "::error::the bake checkout has no tools/$f"; exit 1; }
           done
 
           for cfg in Release Release_dev; do
@@ -703,9 +704,9 @@ jobs:
             # keeps JERICHO.pdb/.map for crash triage; there is no equivalent here.
             # The bake tools, and both bake scripts at the package root (as on
             # Windows). chmod so BAKE_D1_CARS.sh arrives runnable.
-            mkdir -p "$d/JERICHO/MODS/d1cars/tools"
-            cp "$d1src/"*.py "$d/JERICHO/MODS/d1cars/tools/"
-            cp "$d1src/README.md" "$d/JERICHO/MODS/d1cars/"
+            mkdir -p "$d/JERICHO/MODS/bake/tools"
+            cp "$d1src/"*.py "$d/JERICHO/MODS/bake/tools/"
+            cp "$d1src/README.md" "$d/JERICHO/MODS/bake/"
             cp BAKE_D1_CARS.bat "$d/"
             cp BAKE_D1_CARS.sh "$d/"
             # Registers the baked Beta Miami bank in JERICHO/CONFIG/cities.ini.
@@ -893,7 +894,7 @@ jobs:
               frontend hides and loads another city's vehicles into a level.
             - **Impact damage** (`crumple`) - body deformation and wheel damage on top
               of the stock damaged-model system.
-            - **Driver 1 car shapes** (`d1cars`) - bake them once from your own copy of
+            - **Driver 1 car shapes** (`bake`) - bake them once from your own copy of
               Driver 1 with `BAKE_D1_CARS.bat` / `BAKE_D1_CARS.sh`.
             - **Staying current** - `update_jericho.bat` / `update_jericho.sh` beside
               the game refresh this install from the newest release, keeping your

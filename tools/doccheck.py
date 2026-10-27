@@ -105,7 +105,7 @@ def submodule_paths():
     A link INTO a submodule cannot be resolved from a clone that has not
     initialised it. The checks job fetches the three public mod source repos
     (mp, carhacks, crumple) but deliberately not gaildrv2 (unpublished) or
-    d1cars (its bake tools are fetched only for packaging), so links into those
+    bake (its bake tools are fetched only for packaging), so links into those
     two still cannot be verified here. Failing them would make the job red for a
     file that IS tracked one level down, and would push the docs into not linking
     the submodules at all - which is worse than not verifying them here."""
