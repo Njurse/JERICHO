@@ -47,6 +47,11 @@ is in [changelog.txt](changelog.txt).
   `DOWN`. No ped reaction yet.
 - **Pause page:** live torso-twist and backpedal-threshold controls, a hits
   readout, and "Reset to defaults".
+- **No more 180° torso:** tighter spine/neck clamps, the body turns in place
+  toward the aim when standing, backpedal kicks in at 80°, and the arm IK
+  fades out past the clamps. Pistol and rifle now have distinct idle and aim
+  holds.
+- **Lower-left HUD:** weapon, ammo and the last hit position.
 - **Fix:** d2pl passed the address of a local to `jer_npc_face` /
   `jer_npc_set_speed`, which treat `JerNpc*` as the ped itself, so the
   writes landed on the stack instead of the ped.

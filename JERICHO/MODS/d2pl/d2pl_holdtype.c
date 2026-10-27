@@ -63,34 +63,37 @@ void D2plHoldtypeInit(void)
 	h.name = "none";
 	D2plHoldtypeRegister(&h);
 
-	/* D2PL_HOLD_PISTOL: one-handed, arm locked on the aim; idle hold keeps
-	 * the gun low and forward */
+	/* D2PL_HOLD_PISTOL: one-handed. Idle: the arm hangs low at the side,
+	 * mostly the stock swing (a light weight). Aim: the arm locks on the
+	 * target, a modest spine twist, the left arm free. */
 	memset(&h, 0, sizeof(h));
 	h.name = "pistol";
 	h.mask = D2PL_UPPER_MASK;
 	h.aimIk = 1;
 	h.idleIk = 1;
-	h.idlePitch = 600;		/* ~53 degrees below horizontal */
-	h.idleWeight = 1400;	/* /4096: a soft raise, the walk cycle still shows */
+	h.idlePitch = 910;		/* ~80 degrees: pointing at the ground */
+	h.idleWeight = 1000;	/* /4096: the walk cycle still shows */
 	h.torsoLimit = D2PL_TORSO_LIMIT;
 	h.headLimit = D2PL_HEAD_LIMIT;
 	h.allowBackpedal = 1;
 	h.pitchLimit = D2PL_PITCH_LIMIT;
 	D2plHoldtypeRegister(&h);
 
-	/* D2PL_HOLD_RIFLE: the machine gun. Two-handed: the left arm reaches for
-	 * a fore-grip ahead of the right hand; a stiffer idle, a wider twist */
+	/* D2PL_HOLD_RIFLE: two-handed. Idle: carried across the body, muzzle
+	 * low-forward, both hands on it (a firm weight). Aim: shouldered, the
+	 * support hand on the fore-grip, a stiffer (smaller) twist so the body
+	 * turns sooner, and more lean with the elevation. */
 	memset(&h, 0, sizeof(h));
 	h.name = "rifle";
 	h.mask = D2PL_UPPER_MASK | D2PL_LEFT_ARM_MASK;
 	h.aimIk = 1;
 	h.idleIk = 1;
-	h.idlePitch = 400;
-	h.idleWeight = 2600;
-	h.torsoLimit = D2PL_TORSO_LIMIT + 200;
-	h.headLimit = D2PL_HEAD_LIMIT;
+	h.idlePitch = 455;		/* ~40 degrees down */
+	h.idleWeight = 3000;
+	h.torsoLimit = D2PL_TORSO_LIMIT - 57;	/* ~35 degrees */
+	h.headLimit = D2PL_HEAD_LIMIT - 57;		/* ~25 degrees */
 	h.allowBackpedal = 1;
-	h.pitchLimit = D2PL_PITCH_LIMIT;
+	h.pitchLimit = D2PL_PITCH_LIMIT + 114;
 	h.twoHand = 1;
 	h.gripForward = 45;		/* ~a forearm ahead of the trigger hand */
 	h.gripElbow[0] = 0;

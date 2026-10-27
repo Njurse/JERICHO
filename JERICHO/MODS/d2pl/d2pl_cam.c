@@ -406,6 +406,28 @@ int D2plOnPedMove(void* userdata, void* args)
 		if (gRunSpeed[pad] < 1)
 			gRunSpeed[pad] = 0;
 
+		/* aiming while standing: turn the whole body toward the aim once
+		 * the twist passes D2PL_TURN_START, so the spine never has to
+		 * carry more than its clamp (no 180-degree torso) */
+		if (pad == 0 && gD2plAiming)
+		{
+			const JER_HOST_API* api = jerHostApiGet();
+			JER_PLAYER_STATE ps;
+
+			if (api != 0 && api->player != 0 && api->player->get_state != 0 &&
+				api->player->main != 0 && api->player->get_state(api->player->main(), &ps))
+			{
+				int diff = jer_anim_aim_diff(ps.dir & 0xfff, (gD2plViewHeading + 2048) & 0xfff);
+
+				if (abs(diff) > D2PL_TURN_START)
+				{
+					int step = jer_clamp_int(diff, -D2PL_TURN_RATE, D2PL_TURN_RATE);
+
+					jer_npc_face(ped, (ps.dir - step) & 0xfff);
+				}
+			}
+		}
+
 		return JER_RESULT_CONTINUE;
 	}
 

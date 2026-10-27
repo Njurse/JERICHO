@@ -26,7 +26,8 @@
 #include "d2pl.h"
 #include "jer_anim.h"
 #include "jer_math.h"
-#include "jer_npc.h"		/* jer_npc_owned: tell the player from an owned NPC */
+#include "jer_npc.h"
+#include <stdlib.h>		/* jer_npc_owned: tell the player from an owned NPC */
 
 #include <math.h>
 #include <string.h>
@@ -392,7 +393,7 @@ static void PoseArm(void* skel, int rootYaw, const float d[3], float w)
  * of the right hand along the aim, then add the holdtype's elbow bend so
  * the straight reach folds into a support arm. Positions are last frame's
  * (render frame), which is close enough at walking pace. */
-static void PoseSupportArm(void* skel, int rootYaw, const D2plHoldtype* h, const float aimDir[3])
+static void PoseSupportArm(void* skel, int rootYaw, const D2plHoldtype* h, const float aimDir[3], float w)
 {
 	JER_BONE_ROT* el;
 	float d[3];
@@ -407,15 +408,15 @@ static void PoseSupportArm(void* skel, int rootYaw, const D2plHoldtype* h, const
 	if (V3Norm(d) < 4.0f)
 		return;
 
-	PoseArmSide(skel, rootYaw, d, 1.0f, JER_LIMB_LSHOULDER, JER_LIMB_LELBOW, JER_LIMB_LHAND);
+	PoseArmSide(skel, rootYaw, d, w, JER_LIMB_LSHOULDER, JER_LIMB_LELBOW, JER_LIMB_LHAND);
 
 	el = jer_anim_bone_rotation(skel, JER_LIMB_LELBOW);
 
 	if (el != 0)
 	{
-		el->vx = (short)((el->vx + h->gripElbow[0]) & 0xfff);
-		el->vy = (short)((el->vy + h->gripElbow[1]) & 0xfff);
-		el->vz = (short)((el->vz + h->gripElbow[2]) & 0xfff);
+		el->vx = (short)((el->vx + (int)(h->gripElbow[0] * w)) & 0xfff);
+		el->vy = (short)((el->vy + (int)(h->gripElbow[1] * w)) & 0xfff);
+		el->vz = (short)((el->vz + (int)(h->gripElbow[2] * w)) & 0xfff);
 	}
 }
 
@@ -456,6 +457,7 @@ int D2plOnPedPose(void* userdata, void* args)
 	JER_BONE_ROT* head;
 	int bodyYaw, aimYaw, diff, torso, neck, psDir, rootYaw;
 	int active;
+	float ikW = 1.0f;
 
 	(void)userdata;
 
@@ -512,6 +514,17 @@ int D2plOnPedPose(void* userdata, void* args)
 		torso = jer_clamp_int(diff, -h->torsoLimit, h->torsoLimit);
 		neck = jer_clamp_int(diff - torso, -h->headLimit, h->headLimit);
 
+		/* past both clamps the shoulder would have to swing the arm out
+		 * sideways: fade the aim IK out instead (the body is turning) */
+		{
+			int excess = abs(diff) - (h->torsoLimit + h->headLimit);
+
+			if (excess > 0)
+				ikW = 1.0f - (float)excess / 341.0f;
+			if (ikW < 0.0f)
+				ikW = 0.0f;
+		}
+
 		if (joint1 != 0 && (h->mask & (1u << JER_LIMB_JOINT_1)))
 			joint1->vy = (short)((joint1->vy + torso) & 0xfff);
 
@@ -543,12 +556,12 @@ int D2plOnPedPose(void* userdata, void* args)
 			d[1] = (float)(aim[1] - gShoulderWorld[1]);
 			d[2] = (float)(aim[2] - gShoulderWorld[2]);
 
-			if (V3Norm(d) > 16.0f)
+			if (V3Norm(d) > 16.0f && ikW > 0.0f)
 			{
-				PoseArm(a->skel, rootYaw, d, 1.0f);
+				PoseArm(a->skel, rootYaw, d, ikW);
 
 				if (h->twoHand && (h->mask & (1u << JER_LIMB_LSHOULDER)))
-					PoseSupportArm(a->skel, rootYaw, h, d);
+					PoseSupportArm(a->skel, rootYaw, h, d, ikW);
 			}
 		}
 	}
@@ -565,6 +578,10 @@ int D2plOnPedPose(void* userdata, void* args)
 		d[2] = cosf(yaw) * cosf(pitch);
 
 		PoseArm(a->skel, rootYaw, d, (float)h->idleWeight / 4096.0f);
+
+		/* rifle carry: the support hand stays on the fore-grip */
+		if (h->twoHand && (h->mask & (1u << JER_LIMB_LSHOULDER)))
+			PoseSupportArm(a->skel, rootYaw, h, d, (float)h->idleWeight / 4096.0f);
 	}
 
 	if (h->poseHook != 0)

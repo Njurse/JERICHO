@@ -63,8 +63,14 @@
 #define D2PL_AIM_RANGE		30000
 
 /* Torso / neck limits for the aim twist (PSX angle units). */
-#define D2PL_TORSO_LIMIT		796		/* ~70 degrees of spine */
-#define D2PL_HEAD_LIMIT		512
+#define D2PL_TORSO_LIMIT		455		/* ~40 degrees of spine */
+#define D2PL_HEAD_LIMIT		341		/* ~30 degrees of neck */
+
+/* Standing aim: the body turns in place once the twist passes TURN_START,
+ * at up to TURN_RATE per frame. Past the clamps the arm IK fades out so the
+ * arms never point sideways off a twisted torso. */
+#define D2PL_TURN_START		228		/* ~20 degrees */
+#define D2PL_TURN_RATE		160		/* ~14 degrees a frame */
 
 /* Spine pitch: the torso takes a share of the aim elevation (JOINT_1 vx).
  * D2PL_PITCH_SIGN flips it if the lean comes out backwards in game. */
@@ -80,7 +86,7 @@
 #ifndef D2PL_BACKPEDAL
 #define D2PL_BACKPEDAL		1
 #endif
-#define D2PL_BACKPEDAL_ANGLE	1140	/* ~100 degrees off the view */
+#define D2PL_BACKPEDAL_ANGLE	910		/* ~80 degrees off the view */
 #define D2PL_PED_HEALTH		100	/* damage stub */
 #define D2PL_BACKPEDAL_SPEED_MIN	10	/* stock walk-back speed */
 #define D2PL_BACKPEDAL_SPEED_MAX	20
@@ -119,7 +125,8 @@ extern int gD2plSfxMute;			/* placeholder gun SFX muted */
 extern int gD2plTestAim;
 extern int gD2plBackpedalAngle;		/* runtime, starts at D2PL_BACKPEDAL_ANGLE */
 extern int gD2plHitCount;			/* damage stub: hits this session */
-extern int gD2plLastHitHealth;		/* the last ped hit, -1 = none yet */			/* D2PL_TEST_AIM lever: aim held without a pad */
+extern int gD2plLastHitHealth;
+extern int gD2plLastHitPos[3];		/* world, render frame (y down) */		/* the last ped hit, -1 = none yet */			/* D2PL_TEST_AIM lever: aim held without a pad */
 
 extern void* gD2plPlayerPed0;	/* the local player's ped, captured from PED_MOVE */
 

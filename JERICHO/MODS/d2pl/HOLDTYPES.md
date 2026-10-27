@@ -58,6 +58,20 @@ The pose applies the holdtype of the **equipped weapon**
 (`D2plActiveHoldtype()`): the aim branch while L1 is held, the idle-hold branch
 otherwise.
 
+**Keeping the twist sane.** The clamps are tight (pistol: spine 40°, neck
+30°; rifle: 35° and 25°). Standing and aiming, the whole body turns toward the
+aim once the twist passes 20° (`D2PL_TURN_START`, up to 14° a frame). Moving
+and aiming more than 80° off the view backpedals instead. Past both clamps
+the aim IK fades out, so the arms never stick out sideways from a twisted
+torso.
+
+**The built-ins.** *pistol*: one hand, the arm hangs low at the side when
+idle (light blend), the arm locks on the target when aiming, the left arm
+stays free. *rifle*: two hands, carried across the body with the muzzle
+low-forward when idle (firm blend), shouldered with the support hand on the
+fore-grip when aiming, a smaller twist so the body turns sooner, and more
+lean.
+
 ## Weapons
 
 `gWeaponDefs[]` in `d2pl_weapon.c`: one row per weapon.
@@ -80,8 +94,9 @@ otherwise.
   the HUD shows `HIT n%` or `DOWN`. Nothing reacts yet: a knockdown or
   death needs an engine ped action.
 - In game: **L1** aims, **R1** fires, **X** reloads, and **Select** cycles
-  PISTOL → MG → DEBUG (R2 stays the stock look-right). The HUD shows the
-  weapon name and ammo.
+  PISTOL → MG → DEBUG (R2 stays the stock look-right). Select is **Space** on the keyboard and
+  **Back/View** on a controller by default. The small lower-left HUD shows
+  the weapon, the ammo and the last hit (world x y z and the ped's HP %).
 
 ## Sounds
 

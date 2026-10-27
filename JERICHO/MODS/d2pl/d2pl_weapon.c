@@ -132,6 +132,7 @@ static D2plHit gHits[D2PL_HIT_SLOTS];
 static int gHitNext = 0;
 int gD2plHitCount = 0;
 int gD2plLastHitHealth = -1;
+int gD2plLastHitPos[3] = { 0, 0, 0 };
 
 static int D2plDamagePed(void* ped, int damage)
 {
@@ -208,6 +209,9 @@ static void D2plHitScan(const D2plWeaponDef* def, const int aim[3])
 
 			gD2plHitCount++;
 			gD2plLastHitHealth = hp;
+			gD2plLastHitPos[0] = p[0];
+			gD2plLastHitPos[1] = p[1];
+			gD2plLastHitPos[2] = p[2];
 			gMarker[0] = p[0];
 			gMarker[1] = p[1];
 			gMarker[2] = p[2];
@@ -470,7 +474,7 @@ int D2plOnOverlay(void* userdata, void* args)
 {
 	const JER_HOST_API* api = jerHostApiGet();
 	JER_PLAYER_STATE ps;
-	char text[32];
+	char text[48];
 
 	(void)userdata;
 	(void)args;
@@ -481,14 +485,22 @@ int D2plOnOverlay(void* userdata, void* args)
 	if (api->ui == 0 || api->ui->text_draw_at == 0)
 		return JER_RESULT_CONTINUE;
 
-	if (gWeaponDefs[gWeapon].clipSize == 0)
-		sprintf(text, "%s [INF]", gWeaponDefs[gWeapon].name);
-	else if (gWeapons[gWeapon].reloading > 0)
-		sprintf(text, "%s [RELOAD]", gWeaponDefs[gWeapon].name);
-	else
-		sprintf(text, "%s [%d/%d]", gWeaponDefs[gWeapon].name,
-			gWeapons[gWeapon].clip, gWeapons[gWeapon].reserve);
-	api->ui->text_draw_at(20, 210, text, 0xFFFFFF, 1);
+	/* lower-left, small: weapon, ammo, last hit (world, y up) */
+	{
+		char ammo[24];
+
+		D2plWeaponAmmoText(ammo, sizeof(ammo));
+		snprintf(text, sizeof(text), "%s  %s", gWeaponDefs[gWeapon].name, ammo);
+		api->ui->text_draw_at(8, 196, text, 0xFFFFFF, 1);
+
+		if (gD2plLastHitHealth < 0)
+			snprintf(text, sizeof(text), "HIT  none");
+		else
+			snprintf(text, sizeof(text), "HIT  %d %d %d  %d%%",
+				gD2plLastHitPos[0], -gD2plLastHitPos[1], gD2plLastHitPos[2],
+				gD2plLastHitHealth * 100 / D2PL_PED_HEALTH);
+		api->ui->text_draw_at(8, 208, text, 0xC0C0C0, 1);
+	}
 
 	return JER_RESULT_CONTINUE;
 }
