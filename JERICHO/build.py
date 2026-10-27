@@ -544,10 +544,16 @@ def copy_mod_assets(ctx):
 
     JMPPED.LEV is the self-contained Jericho pedestrian bake. The engine looks
     for it at DRIVER2/LEVELS/JMPPED.LEV, so a fresh build must place it there:
-    the mod's tools/ folder is not the runtime layout. A missing bake is not a
+    the module's tools/ folder is not the runtime layout. A missing bake is not a
     build failure -- the engine falls back to Havana's streamed pages.
+
+    The archive now lives in BAKE's ped suite. Keep the old mp path as a
+    transition fallback for trees that have not updated the submodules yet.
     """
-    src = os.path.join(mods_dir(ctx.src), "mp", "tools", "JMPPED.LEV")
+    src = os.path.join(mods_dir(ctx.src), "bake", "tools", "ped", "JMPPED.LEV")
+
+    if not os.path.isfile(src):
+        src = os.path.join(mods_dir(ctx.src), "mp", "tools", "JMPPED.LEV")
 
     if not os.path.isfile(src):
         return 0
