@@ -153,3 +153,48 @@ module, not once per use.
 
 The rule is the same as the existing host API: opaque tokens and in/out state
 structs, append-only, never raw engine globals or engine structs.
+
+## JMPPED ownership boundary (pedhacks extraction)
+
+The JMPPED system is currently split across four places. The target boundary is:
+
+| Layer | Owns | Must not own |
+| --- | --- | --- |
+| `pedhacks` (compiled-in) | Archive lifecycle and refusal state, v3/v5 format parsing, entry table/names, per-entry availability policy, character install/select orchestration | Engine model/page allocation, raw `pmJerichoModels`, `player[]` |
+| Engine service | `CAR_IMPORT` model lookup/blob reads, model materialisation/rebuild, texture page pin/upload/pool lifetime, skeleton generation and resident-model binding, player-ped rebind/draw primitives | JMPPED archive format decisions, character choice |
+| `mp` | Character-selection UI, wire IDs, remote stand-ins, ownership/sync, fallback choice | Archive parsing, page/model installation, direct `models.h`/`pedest.h` JMPPED access |
+
+The audit points that force this split:
+
+- `models.c`: `sJerPedModelNames`, `sJerPedModelIndex`, `sJerPedProbeCity`,
+  `sJerPedProbeOk`, `sJerPedMem`, `sJerPedMemSize`, `sJerPedModels`,
+  `sJerPedEntryCount`, `sJerPedEntryNames`, `sJerPedReady`, `sJerPedBuiltCity`,
+  `sJerPedSet`, `sJerPedSetCount`; parser helpers `JerPedFindModelName`,
+  `JerPedModelBlob`, `JerPedIsTexturedPoly`, `JerPedCollectModelSets`,
+  `JerPedRemapModelSets`; lifecycle `JerPedImportProbe`, `JerPedImportBuild`,
+  `JerPedImportBaked`, `JerPedImportBakedV5`, `JerPedImportReady`,
+  `JerPedImportReset`, `JerPedBakedAvailable`; enumeration `JerPedEntryCount`,
+  `JerPedEntryName`, `JerPedModelForEntry`.
+- `texture.c`: `sJerPedPinsRecorded`, `sJerPedPinFailed`, `sJerPedAreaPool`,
+  `sJerPedAreaClutY`, `sJerPedAreaClutRows`, `sJerPedAreaPoolCount`;
+  `JerPedPinOffset`, `JerPedPinTpages`, `JerPedPinsReady`,
+  `JerPedPageListsReport`, `JerPedUploadAreaPage`, `JerPedUploadBakedPage`,
+  `JerPedReleasePins`.
+- `pedest.c`: `pmJerichoModels`, `gJerPedSkeletonGeneration`,
+  `JerPedSkeletonGeneration`, `JerPedSkeletonInvalidate`,
+  `JerPedInstallModels`, and the `InitTanner` JERI_* rebind/reset.
+- `players.c`: no JMPPED archive state; `player[].pPed` binding is engine
+  service, not pedhacks.
+- `mp_session.c`: `sMpJerPedInstalledLevel`, `sMpJerPedImportFailed`,
+  `sMpJerPedImportLevel`, `sMpJerPedBakedFailed`,
+  `MpEnsureJerichoInstalled`, `MpEnsureJerichoImported`,
+  `MpPedArchiveReset`, `MpPedArchiveEnsure`; these lifecycle states move to
+  pedhacks. `MpPedModelCount/Name/Selectable/Effective`,
+  `MpApplyLocalPedModel`, `MpSetPedModel`, protocol IDs and sync stay in mp and
+  consume the contract.
+
+The contract must expose opaque archive/entry handles plus in/out state for
+probe/load/reset/ready, baked import, entry enumeration, model/page
+availability, palette selection, character install/select and player-ped
+state. The engine service is the only layer allowed to touch page/model/VRAM
+internals; `mp` must not include `models.h` or `pedest.h` for JMPPED.

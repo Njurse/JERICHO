@@ -19,6 +19,51 @@
 extern "C" {
 #endif
 
+#define JER_PED_ARCHIVE_API_VERSION 1u
+
+typedef struct JER_PED_ARCHIVE JER_PED_ARCHIVE;	/* opaque singleton handle */
+
+typedef struct JER_PED_ARCHIVE_STATE
+{
+	unsigned int size;
+	unsigned int version;
+	int baked_available;
+	int ready;
+	int entry_count;
+	int installed;
+} JER_PED_ARCHIVE_STATE;
+
+typedef struct JER_PED_ARCHIVE_ENTRY
+{
+	unsigned int size;
+	unsigned int version;
+	int index;
+	const char* name;
+	int model_count;
+	int available;
+} JER_PED_ARCHIVE_ENTRY;
+
+typedef struct JER_PED_ARCHIVE_MODEL_STATE
+{
+	unsigned int size;
+	unsigned int version;
+	int entry;
+	int slot;
+	int present;
+	int installed;
+	int ready;
+} JER_PED_ARCHIVE_MODEL_STATE;
+
+typedef struct JER_PED_ARCHIVE_PLAYER_STATE
+{
+	unsigned int size;
+	unsigned int version;
+	int player_index;
+	int on_foot;
+	int entry;
+	int ped_type;
+} JER_PED_ARCHIVE_PLAYER_STATE;
+
 int jer_ped_archive_baked_available(void);
 int jer_ped_archive_probe(int city);
 int jer_ped_archive_import_baked(int city);
@@ -31,7 +76,20 @@ int jer_ped_archive_entry_count(void);
 const char* jer_ped_archive_entry_name(int entry);
 int jer_ped_archive_model_for_entry(int entry, int slot);	/* 1 = model present */
 int jer_ped_archive_model_installed(int slot);			/* 1 = Jericho resident slot present */
+int jer_ped_archive_entry_available(int entry, int city);	/* models + pages ready */
+int jer_ped_archive_ensure(int city);				/* import + install for this level */
+void jer_ped_archive_forget(void);				/* level restart: drop cached state */
+void jer_ped_archive_retry(void);				/* explicit re-selection: clear refusal */
 int jer_ped_archive_skeleton_generation(void);
+
+const JER_PED_ARCHIVE* jer_ped_archive_current(void);
+int jer_ped_archive_state(const JER_PED_ARCHIVE* archive, JER_PED_ARCHIVE_STATE* out);
+int jer_ped_archive_entry_at(const JER_PED_ARCHIVE* archive, int index, JER_PED_ARCHIVE_ENTRY* out);
+int jer_ped_archive_model_state(const JER_PED_ARCHIVE* archive, int entry, int slot, int city,
+				JER_PED_ARCHIVE_MODEL_STATE* out);
+int jer_ped_archive_player_state(const JER_PED_ARCHIVE* archive, JER_PED_ARCHIVE_PLAYER_STATE* out);
+int jer_ped_archive_select_palette(const JER_PED_ARCHIVE* archive, int handle);
+int jer_ped_archive_install(const JER_PED_ARCHIVE* archive, int entry, int city);
 
 #ifdef __cplusplus
 }
