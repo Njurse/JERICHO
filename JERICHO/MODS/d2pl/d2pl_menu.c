@@ -191,8 +191,10 @@ static const JER_PAUSE_MENU_ITEM gControlsItems[] =
 	{ "L1: aim",                  NULL, NULL, NULL, NULL, 0 },
 	{ "R1: fire",                 NULL, NULL, NULL, NULL, 0 },
 	{ "X (tap): reload",          NULL, NULL, NULL, NULL, 0 },
-	{ "Select: next weapon",      NULL, NULL, NULL, NULL, 0 },
+	{ "L2: next weapon",          NULL, NULL, NULL, NULL, 0 },
 	{ "Aim + stick back: backpedal", NULL, NULL, NULL, NULL, 0 },
+	{ "On foot only; in a car the shoulders are stock", NULL, NULL, NULL, NULL, 0 },
+	{ "Mouse aim/fire, wheel swap and rebinding: later", NULL, NULL, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU gControlsMenu =

@@ -134,15 +134,19 @@ void jer_sound_load_requested_banks(void)
 	if (!gJerMenuBankWanted)
 		return;
 
+	/* Only the four JER_MENU_SFX_* samples are needed. Loading the whole
+	 * frontend lump overflowed the in-game SFX bank, which refused it
+	 * outright, so every jer_sound_menu_play was silently a no-op. */
 	before = GetSoundBankSampleCount(SOUND_BANK_SFX);
-	LoadBankFromLump(SOUND_BANK_SFX, SBK_ID_MENU);
+	gJerMenuBankCount = LoadBankFromLumpMax(SOUND_BANK_SFX, SBK_ID_MENU, JER_MENU_SFX_COUNT);
 
-	/* a full bank refuses the load and leaves the count alone */
-	if (GetSoundBankSampleCount(SOUND_BANK_SFX) > before)
-	{
+	if (gJerMenuBankCount > 0)
 		gJerMenuBankBase = before;
-		gJerMenuBankCount = GetSoundBankSampleCount(SOUND_BANK_SFX) - before;
-	}
+	else
+		gJerMenuBankCount = 0;
+
+	jer_log("[jer_sound] menu samples in game: %d at SFX %d (bank held %d of %d)\n",
+		gJerMenuBankCount, gJerMenuBankBase, before, GetSoundBankCapacity());
 }
 
 int jer_sound_menu_play(int sample)

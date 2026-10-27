@@ -323,6 +323,11 @@ int D2plOnPedInput(void* userdata, void* args)
 	if (pad == 0)
 		gD2plAiming = (a->pad & D2PL_MPAD_L1) != 0;
 
+	/* On foot the shoulders belong to d2pl (L1 aim, R1 fire, L2 weapon
+	 * cycle; the weapon code reads the pad itself), so stock Tanner never
+	 * sees them. In a car this hook returned above, so driving is untouched. */
+	a->pad &= ~(D2PL_MPAD_L1 | D2PL_MPAD_R1 | D2PL_MPAD_L2);
+
 	mag = abs(sx) + abs(sy);
 
 	/* Car entry reads flag 4 for the door side: hand the bit back before

@@ -8,7 +8,8 @@
  *   L1          aim
  *   R1          fire (while aiming)
  *   X (Cross)   reload
- *   Select      next weapon (press; R2 stays the stock look-right)
+ *   L2          next weapon (press)
+ *   (on foot d2pl strips L1/R1/L2 from stock Tanner; mouse is deferred)
  *
  * There is still no damage model and no gun mesh: a shot is the aim-point
  * marker plus the fire sound. Sounds are placeholders: the frontend menu
@@ -309,7 +310,7 @@ void D2plWeaponUpdate(void)
 		D2plWeaponState* w = &gWeapons[gWeapon];
 		int canFire;
 
-		/* Select press: next weapon (R2 is the stock look-right) */
+		/* L2 press: next weapon */
 		if ((pressed & D2PL_MPAD_CYCLE) != 0)
 		{
 			D2plWeaponCycle(1);
@@ -441,7 +442,7 @@ void D2plWeaponUpdate(void)
 	}
 }
 
-/* Pause-menu readouts and the Select cycle (a reload in progress is dropped). */
+/* Pause-menu readouts and the L2 cycle (a reload in progress is dropped). */
 const char* D2plWeaponName(void)
 {
 	return gWeaponDefs[gWeapon].name;

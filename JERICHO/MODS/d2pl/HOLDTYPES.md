@@ -93,10 +93,15 @@ lean.
   (the engine's civilians have no health), the marker jumps onto the hit and
   the HUD shows `HIT n%` or `DOWN`. Nothing reacts yet: a knockdown or
   death needs an engine ped action.
-- In game: **L1** aims, **R1** fires, **X** reloads, and **Select** cycles
-  PISTOL → MG → DEBUG (R2 stays the stock look-right). Select is **Space** on the keyboard and
-  **Back/View** on a controller by default. The small lower-left HUD shows
-  the weapon, the ammo and the last hit (world x y z and the ped's HP %).
+- In game, on foot: **L1** aims, **R1** fires, **X** reloads, and **L2**
+  cycles PISTOL → MG → DEBUG. On foot d2pl owns L1, R1 and L2 (stock Tanner
+  never sees them); in a car they keep their stock meaning. The small
+  lower-left HUD shows the weapon, the ammo and the last hit (world x y z and
+  the ped's HP %).[^mouse]
+
+[^mouse]: Controller first. Mouse aiming, mouse-wheel / other-button weapon
+    swapping, mouse-button firing and configurable (rebindable) buttons are
+    deferred, not designed yet.
 
 ## Sounds
 

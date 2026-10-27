@@ -8,6 +8,15 @@ is in [changelog.txt](changelog.txt).
 
 ### On foot (d2pl 1.2.0)
 
+- **On-foot shoulder buttons:** L1 aims, R1 fires and L2 now cycles weapons
+  (was Select). On foot d2pl takes these three away from stock Tanner; in a
+  car they are unchanged. Mouse aim/fire, wheel swapping and rebinding are
+  deferred (footnote in HOLDTYPES.md, row in the pause Controls card).
+- **Fire and reload sounds are audible.** The placeholder path asked for the
+  whole frontend menu bank in game, which overflowed the in-game SFX bank;
+  the load was refused, so every placeholder play was silently skipped. Only
+  the four menu samples are loaded now (new `LoadBankFromLumpMax`), and the
+  log reports `[jer_sound] menu samples in game: N at SFX B`.
 - **The aim arm no longer crinkles.** The right arm is now posed with
   rotations (two-bone IK at the aim point) before the skeleton is built.
   Previously it moved bone positions after the meshes had been posed, which

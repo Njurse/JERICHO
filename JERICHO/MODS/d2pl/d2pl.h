@@ -30,7 +30,7 @@
 #define D2PL_MPAD_L1		0x0004
 #define D2PL_MPAD_R1		0x0008
 #define D2PL_MPAD_SELECT	0x0100
-#define D2PL_MPAD_CYCLE		D2PL_MPAD_SELECT	/* weapon cycle */
+#define D2PL_MPAD_CYCLE		D2PL_MPAD_L2	/* weapon cycle (on foot) */
 #define D2PL_MPAD_CROSS	0x0040
 #define D2PL_MPAD_D_UP	0x1000
 #define D2PL_MPAD_D_RIGHT	0x2000
