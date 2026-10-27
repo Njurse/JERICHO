@@ -1,0 +1,11 @@
+id = "onfoot"
+name = "On Foot"
+version = "0.18.0"
+# the JERICHO interface (SDK) this mod is built against
+interface = 3
+author = "JERICHO"
+description = "Camera-relative on-foot movement, aim arm pose, laser sight and a debug pistol."
+dependencies = []
+default-enabled = false
+# host API generation this module expects (see jer_host_api.h)
+host_api = 1
