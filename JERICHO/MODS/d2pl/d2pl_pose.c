@@ -295,6 +295,8 @@ static float gPredictLocal[3];		/* RELBOW offset in the root-yaw-free frame */
 static int gPredictValid = 0;
 static int gPredictPsDir = 0;
 
+static int gLShoulderWorld[3];		/* left shoulder, last frame (render) */
+static int gLShoulderValid = 0;
 static int gShoulderWorld[3];
 static int gShoulderValid = 0;
 
@@ -364,8 +366,10 @@ static int ShoulderFrameLocal(void* skel, D2plM3 out)
 	return 1;
 }
 
-/* d: unit world direction for the arm (render frame, y down) */
-static void PoseArm(void* skel, int rootYaw, const float d[3], float w)
+/* d: unit world direction for the arm (render frame, y down). Both
+ * shoulders hang off JOINT_1, so the parent frame is shared. */
+static void PoseArmSide(void* skel, int rootYaw, const float d[3], float w,
+	int shoulder, int elbow, int hand)
 {
 	D2plM3 frame, ry;
 
@@ -375,8 +379,44 @@ static void PoseArm(void* skel, int rootYaw, const float d[3], float w)
 	M3RotY(D2PL_ANG2RAD(rootYaw), ry);
 	M3Mul(ry, frame, frame);
 
-	AimSegment(skel, JER_LIMB_RSHOULDER, JER_LIMB_RELBOW, frame, d, w);
-	AimSegment(skel, JER_LIMB_RELBOW, JER_LIMB_RHAND, frame, d, w);
+	AimSegment(skel, shoulder, elbow, frame, d, w);
+	AimSegment(skel, elbow, hand, frame, d, w);
+}
+
+static void PoseArm(void* skel, int rootYaw, const float d[3], float w)
+{
+	PoseArmSide(skel, rootYaw, d, w, JER_LIMB_RSHOULDER, JER_LIMB_RELBOW, JER_LIMB_RHAND);
+}
+
+/* Two-handed hold: point the left arm at a fore-grip `gripForward` ahead
+ * of the right hand along the aim, then add the holdtype's elbow bend so
+ * the straight reach folds into a support arm. Positions are last frame's
+ * (render frame), which is close enough at walking pace. */
+static void PoseSupportArm(void* skel, int rootYaw, const D2plHoldtype* h, const float aimDir[3])
+{
+	JER_BONE_ROT* el;
+	float d[3];
+
+	if (!gLShoulderValid || !gD2plHandValid)
+		return;
+
+	d[0] = gD2plHand[0] + aimDir[0] * h->gripForward - gLShoulderWorld[0];
+	d[1] = gD2plHand[1] + aimDir[1] * h->gripForward - gLShoulderWorld[1];
+	d[2] = gD2plHand[2] + aimDir[2] * h->gripForward - gLShoulderWorld[2];
+
+	if (V3Norm(d) < 4.0f)
+		return;
+
+	PoseArmSide(skel, rootYaw, d, 1.0f, JER_LIMB_LSHOULDER, JER_LIMB_LELBOW, JER_LIMB_LHAND);
+
+	el = jer_anim_bone_rotation(skel, JER_LIMB_LELBOW);
+
+	if (el != 0)
+	{
+		el->vx = (short)((el->vx + h->gripElbow[0]) & 0xfff);
+		el->vy = (short)((el->vy + h->gripElbow[1]) & 0xfff);
+		el->vz = (short)((el->vz + h->gripElbow[2]) & 0xfff);
+	}
 }
 
 static void PredictElbow(void* skel)
@@ -477,6 +517,18 @@ int D2plOnPedPose(void* userdata, void* args)
 
 		if (head != 0 && (h->mask & (1u << JER_LIMB_HEAD)))
 			head->vy = (short)((head->vy + neck) & 0xfff);
+
+		/* spine pitch: lean with the aim elevation. camera_angle.vx is
+		 * negative looking up; signed and clamped per holdtype. */
+		if (joint1 != 0 && h->pitchLimit > 0 && gD2plCamValid &&
+			(h->mask & (1u << JER_LIMB_JOINT_1)))
+		{
+			int camPitch = ((gD2plCamAngle[0] + 2048) & 0xfff) - 2048;
+			int lean = jer_clamp_int(camPitch * D2PL_PITCH_SHARE / 4096,
+				-h->pitchLimit, h->pitchLimit);
+
+			joint1->vx = (short)((joint1->vx + D2PL_PITCH_SIGN * lean) & 0xfff);
+		}
 	}
 
 	if (gD2plAiming && h->aimIk && gShoulderValid)
@@ -492,7 +544,12 @@ int D2plOnPedPose(void* userdata, void* args)
 			d[2] = (float)(aim[2] - gShoulderWorld[2]);
 
 			if (V3Norm(d) > 16.0f)
+			{
 				PoseArm(a->skel, rootYaw, d, 1.0f);
+
+				if (h->twoHand && (h->mask & (1u << JER_LIMB_LSHOULDER)))
+					PoseSupportArm(a->skel, rootYaw, h, d);
+			}
 		}
 	}
 	else if (!gD2plAiming && h->idleIk && h->idleWeight > 0)
@@ -596,6 +653,12 @@ int D2plOnPedSkeleton(void* userdata, void* args)
 		gD2plHand[1] = jp[base + 1] + pp[1];
 		gD2plHand[2] = jp[base + 2] + pp[2];
 		gD2plHandValid = 1;
+
+		base = JER_LIMB_LSHOULDER * 4;
+		gLShoulderWorld[0] = jp[base + 0] + pp[0];
+		gLShoulderWorld[1] = jp[base + 1] + pp[1];
+		gLShoulderWorld[2] = jp[base + 2] + pp[2];
+		gLShoulderValid = 1;
 	}
 
 	return JER_RESULT_CONTINUE;

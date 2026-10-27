@@ -46,6 +46,8 @@ A holdtype (`D2plHoldtype`, `d2pl.h`) says how the upper body carries a weapon:
 | `idleIk`, `idlePitch`, `idleWeight` | weapon out, not aiming: blend the arm toward forward-and-down by `idlePitch`, `idleWeight`/4096 of the way |
 | `torsoLimit`, `headLimit` | the aim yaw twist: the spine (`JOINT_1`) takes up to `torsoLimit`, the neck the rest up to `headLimit`. Both are added to the clip's own rotation |
 | `allowBackpedal` | lets the backpedal hook run for this holdtype |
+| `pitchLimit` | spine pitch: `JOINT_1.vx` takes `D2PL_PITCH_SHARE`/4096 of the aim elevation, clamped to this. `D2PL_PITCH_SIGN` flips it |
+| `twoHand`, `gripForward`, `gripElbow[3]` | two-handed hold: while aiming, the left arm points at a fore-grip `gripForward` world units ahead of the right hand along the aim, then `gripElbow` (x, y, z) is added to `LELBOW` to fold the reach into a support arm. Needs the left-arm bits in `mask`. The rifle uses 45 and (0, 0, 200); tune in game |
 | `poseHook`, `poseUser` | your code, run last in `PED_POSE` (see "Custom animation") |
 
 Add one by calling `D2plHoldtypeRegister(&h)` in `D2plHoldtypeInit` (or from
@@ -69,14 +71,29 @@ otherwise.
   (`roundsPerSec` while held, credit-based so it averages exactly at the 30 Hz
   tick), `D2PL_FIRE_EVERY_FRAME`.
 - `clipSize = 0` means endless ammo and no reload.
-- A shot is `D2plFireShot`: ammo, sound, the impact marker. Damage, tracers and
-  hit tests go there.
-- In game: **L1** aims, **R1** fires, **X** reloads, and **R2** cycles
-  PISTOL → MG → DEBUG. The HUD shows the weapon name and ammo.
+- A shot is `D2plFireShot`: ammo, sound, the impact marker, then the hit test.
+- **Damage stub**: `D2plHitScan` walks the shot from the right hand toward the
+  aim point (up to 8000 units, in 120-unit steps) and asks
+  `jer_npc_nearest` for a non-player ped within 120 units. The first hit takes
+  the weapon's `damage` (pistol 25, MG 10, debug 2) from a d2pl-side 100 HP
+  (the engine's civilians have no health), the marker jumps onto the hit and
+  the HUD shows `HIT n%` or `DOWN`. Nothing reacts yet: a knockdown or
+  death needs an engine ped action.
+- In game: **L1** aims, **R1** fires, **X** reloads, and **Select** cycles
+  PISTOL → MG → DEBUG (R2 stays the stock look-right). The HUD shows the
+  weapon name and ammo.
 
 ## Sounds
 
-These are placeholders for now. `D2plWeaponInit` calls
+**Optional WAVs.** If `MODS/d2pl/sounds/<name>.wav` exists it plays instead
+of the placeholder (`jer_sound_mod_wav_play`, desktop only, master volume,
+non-positional; the repo copy `JERICHO/MODS/d2pl/sounds/` is checked first in
+a dev build). Names: `pistol_fire`, `pistol_reload`, `mg_fire`, `mg_reload`,
+`debug_fire`. A missing file is looked for once, then the FE sound plays.
+These are loose mod files, not LEV-bank assets; how game-ready gun sounds
+should live in the LEV banks is still to be decided.
+
+**Placeholders.** `D2plWeaponInit` calls
 `jer_sound_request_menu_bank()`. After that, every level load appends the
 frontend menu bank (`VOICES2.BLK` lump `SBK_ID_MENU`) to the SFX bank, before
 the car-sound memtop is saved, so car imports can't overwrite it.
@@ -113,9 +130,8 @@ are the starting points.
 
 ## Known limits / next steps
 
-- **Pitch**: the twist is yaw only. The arm IK does follow the aim pitch, but
-  the spine doesn't lean. Next step: share the aim pitch between `LOWERBACK`
-  and `JOINT_1` (`vx`) in the aim branch.
+- **Pitch**: the spine leans with the aim (`pitchLimit`) on `JOINT_1` only;
+  the sign is unverified in game (`D2PL_PITCH_SIGN`).
 - **Backpedal**: on by default (`D2PL_BACKPEDAL` 1, runtime toggle in the
   pause page). While aiming with the stick more than ~100° off the view,
   PED_INPUT sends the stock walk-back (`GOBACK`, `SetupBack`) instead of
@@ -130,9 +146,8 @@ are the starting points.
 - **Hips**: the whole body still turns as one (`pPed->dir`). A hips-versus-
   upper-body split beyond the spine twist needs the root yaw separated from
   `LOWERBACK`.
-- **Left hand**: there's no left-arm IK yet, so the rifle is held one-handed.
-  Add a second `PoseArm` for `LSHOULDER`/`LELBOW` that targets a point on the
-  weapon.
+- **Left hand**: the support arm is aim-and-bend, not true two-bone IK, and
+  uses last frame's positions, so it can lag a frame at speed.
 - **Root yaw**: the IK learns the offset between the host's player `dir` and
   the ped root yaw from the engine's own result (logged once as `[d2pl] root
   yaw offset measured`). If the arm ever points the wrong way, check that line.

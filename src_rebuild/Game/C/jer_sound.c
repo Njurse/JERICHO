@@ -152,3 +152,139 @@ int jer_sound_menu_play(int sample)
 
 	return FESound(gJerMenuBankBase + sample);
 }
+
+/* ------------------------------------------------------------------ */
+/* Loose mod-folder WAVs (jer_sound_mod_wav_play)                       */
+/* ------------------------------------------------------------------ */
+
+#ifndef PSX
+#include "../utils/audio_source/snd_al_source.h"
+#include "../utils/audio_source/snd_wav_cache.h"
+#include "AL/al.h"
+
+#define JER_WAV_CACHE	16
+#define JER_WAV_VOICES	4
+
+typedef struct JerWavEntry
+{
+	char key[64];				/* "<modId>/<name>" */
+	int missing;				/* looked once, not there */
+	CSoundSource_WaveCache* wav;
+	CSoundSource_OpenALCache* al;
+} JerWavEntry;
+
+static JerWavEntry gJerWav[JER_WAV_CACHE];
+static int gJerWavCount = 0;
+static ALuint gJerWavVoice[JER_WAV_VOICES];
+static int gJerWavVoicesUp = 0;
+static int gJerWavNext = 0;
+
+static int JerWavExists(const char* path)
+{
+	FILE* f = fopen(path, "rb");
+
+	if (f == NULL)
+		return 0;
+
+	fclose(f);
+	return 1;
+}
+
+static JerWavEntry* JerWavFind(const char* modId, const char* name)
+{
+	char key[64], rel[160], path[400];
+	const char* root = jer_root_dir();
+	JerWavEntry* e;
+	int i;
+
+	snprintf(key, sizeof(key), "%s/%s", modId, name);
+
+	for (i = 0; i < gJerWavCount; i++)
+	{
+		if (strcmp(gJerWav[i].key, key) == 0)
+			return &gJerWav[i];
+	}
+
+	if (gJerWavCount >= JER_WAV_CACHE || root == NULL)
+		return NULL;
+
+	e = &gJerWav[gJerWavCount++];
+	memset(e, 0, sizeof(*e));
+	snprintf(e->key, sizeof(e->key), "%s", key);
+
+	/* the repo's MODS tree first (dev build), then the shipped mirror */
+	snprintf(rel, sizeof(rel), "MODS/%s/sounds/%s.wav", modId, name);
+	snprintf(path, sizeof(path), "%s/../../../../JERICHO/%s", root, rel);
+
+	if (!JerWavExists(path))
+		snprintf(path, sizeof(path), "%s/%s", root, rel);
+
+	e->missing = 1;
+
+	if (JerWavExists(path))
+	{
+		e->wav = new CSoundSource_WaveCache();
+
+		if (e->wav->Load(path))
+		{
+			e->al = new CSoundSource_OpenALCache(e->wav);
+			e->missing = 0;
+			jer_log("[jer_sound] mod wav %s\n", path);
+		}
+		else
+		{
+			delete e->wav;
+			e->wav = NULL;
+			jer_log("[jer_sound] mod wav %s: unreadable\n", path);
+		}
+	}
+
+	return e;
+}
+
+int jer_sound_mod_wav_play(const char* modId, const char* name)
+{
+	JerWavEntry* e;
+	ALuint src;
+
+	if (modId == NULL || name == NULL)
+		return 0;
+
+	e = JerWavFind(modId, name);
+
+	if (e == NULL || e->missing || e->al == NULL)
+		return 0;
+
+	if (!gJerWavVoicesUp)
+	{
+		int i;
+
+		alGenSources(JER_WAV_VOICES, gJerWavVoice);
+
+		for (i = 0; i < JER_WAV_VOICES; i++)
+		{
+			alSourcei(gJerWavVoice[i], AL_LOOPING, 0);
+			alSourcei(gJerWavVoice[i], AL_SOURCE_RELATIVE, AL_TRUE);
+		}
+
+		gJerWavVoicesUp = 1;
+	}
+
+	src = gJerWavVoice[gJerWavNext];
+	gJerWavNext = (gJerWavNext + 1) % JER_WAV_VOICES;
+
+	alSourceStop(src);
+	alSourcei(src, AL_BUFFER, e->al->m_alBuffer);
+	alSourcef(src, AL_GAIN, (float)((10000 + gMasterVolume) / 79) / 128.0f);
+	alSourcePlay(src);
+
+	return 1;
+}
+#else
+int jer_sound_mod_wav_play(const char* modId, const char* name)
+{
+	(void)modId;
+	(void)name;
+	return 0;
+}
+#endif

@@ -84,6 +84,13 @@ void jer_sound_request_menu_bank(void);
  * Returns the channel, or -1 when the bank is not resident or no voice. */
 int jer_sound_menu_play(int sample);
 
+/* Play <root>/MODS/<modId>/sounds/<name>.wav (the repo copy first, as textures)
+ * once, non-positional, at the master volume. A loose mod-folder file, not a LEV
+ * bank: optional assets a module can fall back from. Returns 1 when it played, 0
+ * when the file is absent or unreadable (cached: a missing file costs one look).
+ * Desktop builds only; always 0 on PSX. */
+int jer_sound_mod_wav_play(const char* modId, const char* name);
+
 /* engine-side: LoadLevelSFX calls this before saving the memtop */
 void jer_sound_load_requested_banks(void);
 

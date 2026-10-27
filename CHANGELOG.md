@@ -33,6 +33,20 @@ is in [changelog.txt](changelog.txt).
   (left/right cycles), ammo, holdtype, aiming, twist limits, backpedal state
   and threshold, the `D2PL_TEST_AIM` lever, a gun-sound card with a mute
   switch, and a controls card.
+- **Weapon cycle moved to Select** (R2 is the stock look-right). The pause
+  Controls card and `HOLDTYPES.md` say so.
+- **Two-handed rifle grip:** the MG's left arm reaches for a fore-grip ahead
+  of the right hand while aiming, with a tunable elbow bend.
+- **Spine pitch:** the torso leans with the aim elevation, clamped per
+  holdtype.
+- **Optional gun WAVs:** `MODS/d2pl/sounds/<name>.wav` plays when present
+  (new `jer_sound_mod_wav_play`); the FE accept/back placeholders stay as the
+  fallback.
+- **Damage stub:** shots hit-test along the aim (new `jer_npc_nearest`) and
+  take light d2pl-side damage from the ped hit; the HUD shows `HIT n%` or
+  `DOWN`. No ped reaction yet.
+- **Pause page:** live torso-twist and backpedal-threshold controls, a hits
+  readout, and "Reset to defaults".
 - **Fix:** d2pl passed the address of a local to `jer_npc_face` /
   `jer_npc_set_speed`, which treat `JerNpc*` as the ped itself, so the
   writes landed on the stack instead of the ped.

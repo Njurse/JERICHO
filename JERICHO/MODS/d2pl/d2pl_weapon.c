@@ -8,7 +8,7 @@
  *   L1          aim
  *   R1          fire (while aiming)
  *   X (Cross)   reload
- *   R2          next weapon (press)
+ *   Select      next weapon (press; R2 stays the stock look-right)
  *
  * There is still no damage model and no gun mesh: a shot is the aim-point
  * marker plus the fire sound. Sounds are placeholders: the frontend menu
@@ -19,6 +19,8 @@
 #include "d2pl.h"
 #include "jer_math.h"
 #include "jer_sound.h"
+#include "jer_npc.h"
+#include <math.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,8 +45,11 @@ typedef struct D2plWeaponDef
 	int clipSize;			/* 0 = endless */
 	int reserve;
 	int reloadFrames;
-	int fireSfx;			/* JER_MENU_SFX_* placeholder, -1 = silent */
+	int fireSfx;			/* JER_MENU_SFX_* fallback, -1 = silent */
 	int reloadSfx;
+	const char* fireWav;	/* MODS/d2pl/sounds/<name>.wav when present */
+	const char* reloadWav;
+	int damage;				/* per hit, of D2PL_PED_HEALTH */
 } D2plWeaponDef;
 
 typedef struct D2plWeaponState
@@ -56,9 +61,12 @@ typedef struct D2plWeaponState
 } D2plWeaponState;
 
 static const D2plWeaponDef gWeaponDefs[] = {
-	{ "PISTOL",	D2PL_HOLD_PISTOL, D2PL_FIRE_SEMI,		0, 12, 60,  45, JER_MENU_SFX_ACCEPT, JER_MENU_SFX_BACK },
-	{ "MG",		D2PL_HOLD_RIFLE,  D2PL_FIRE_AUTO,		6, 30, 120, 60, JER_MENU_SFX_ACCEPT, JER_MENU_SFX_BACK },
-	{ "DEBUG",	D2PL_HOLD_PISTOL, D2PL_FIRE_EVERY_FRAME, 0, 0,  0,   0,  JER_MENU_SFX_ACCEPT, -1 },
+	{ "PISTOL",	D2PL_HOLD_PISTOL, D2PL_FIRE_SEMI,		0, 12, 60,  45, JER_MENU_SFX_ACCEPT, JER_MENU_SFX_BACK,
+		"pistol_fire", "pistol_reload", 25 },
+	{ "MG",		D2PL_HOLD_RIFLE,  D2PL_FIRE_AUTO,		6, 30, 120, 60, JER_MENU_SFX_ACCEPT, JER_MENU_SFX_BACK,
+		"mg_fire", "mg_reload", 10 },
+	{ "DEBUG",	D2PL_HOLD_PISTOL, D2PL_FIRE_EVERY_FRAME, 0, 0,  0,   0,  JER_MENU_SFX_ACCEPT, -1,
+		"debug_fire", 0, 2 },
 };
 
 #define D2PL_WEAPON_COUNT ((int)(sizeof(gWeaponDefs) / sizeof(gWeaponDefs[0])))
@@ -95,10 +103,123 @@ static int D2plTestAim(void)
 	return gD2plTestAim;
 }
 
-static void D2plSfx(int sfx)
+/* a mod-folder WAV when there is one, else the FE placeholder */
+static void D2plSfx(const char* wav, int sfx)
 {
-	if (sfx >= 0 && !gD2plSfxMute)
+	if (gD2plSfxMute)
+		return;
+
+	if (wav != 0 && jer_sound_mod_wav_play(D2PL_MOD_ID, wav))
+		return;
+
+	if (sfx >= 0)
 		jer_sound_menu_play(sfx);
+}
+
+/* --- damage stub: light, per-ped hit points kept here (the engine's
+ * civilians have no health). A downed ped is just reported. */
+#define D2PL_HIT_SLOTS	16
+#define D2PL_HIT_RADIUS	120
+#define D2PL_HIT_RANGE	8000
+
+typedef struct D2plHit
+{
+	void* ped;
+	int health;
+} D2plHit;
+
+static D2plHit gHits[D2PL_HIT_SLOTS];
+static int gHitNext = 0;
+int gD2plHitCount = 0;
+int gD2plLastHitHealth = -1;
+
+static int D2plDamagePed(void* ped, int damage)
+{
+	int i;
+	D2plHit* h = 0;
+
+	for (i = 0; i < D2PL_HIT_SLOTS; i++)
+	{
+		if (gHits[i].ped == ped)
+			h = &gHits[i];
+	}
+
+	if (h == 0)
+	{
+		h = &gHits[gHitNext];
+		gHitNext = (gHitNext + 1) % D2PL_HIT_SLOTS;
+		h->ped = ped;
+		h->health = D2PL_PED_HEALTH;
+	}
+
+	h->health -= damage;
+
+	if (h->health < 0)
+		h->health = 0;
+
+	return h->health;
+}
+
+/* walk the shot from the hand toward the aim point; the first ped inside
+ * D2PL_HIT_RADIUS takes the hit and the marker moves onto it */
+static void D2plHitScan(const D2plWeaponDef* def, const int aim[3])
+{
+	const JER_HOST_API* api = jerHostApiGet();
+	int from[3], d[3], len, full, steps, i;
+
+	if (!gD2plHandValid)
+		return;
+
+	from[0] = gD2plHand[0];
+	from[1] = gD2plHand[1];
+	from[2] = gD2plHand[2];
+
+	d[0] = aim[0] - from[0];
+	d[1] = aim[1] - from[1];
+	d[2] = aim[2] - from[2];
+	len = (int)sqrtf((float)d[0] * d[0] + (float)d[1] * d[1] + (float)d[2] * d[2]);
+
+	if (len < 1)
+		return;
+
+	full = len;
+
+	if (len > D2PL_HIT_RANGE)
+		len = D2PL_HIT_RANGE;
+
+	steps = len / D2PL_HIT_RADIUS;
+
+	for (i = 1; i <= steps; i++)
+	{
+		float t = (float)(i * D2PL_HIT_RADIUS) / (float)full;
+		int p[3];
+		JerNpc* n;
+
+		p[0] = from[0] + (int)(d[0] * t);
+		p[1] = from[1] + (int)(d[1] * t);
+		p[2] = from[2] + (int)(d[2] * t);
+
+		n = jer_npc_nearest(p[0], p[1], p[2], D2PL_HIT_RADIUS);
+
+		if (n != 0)
+		{
+			char msg[32];
+			int hp = D2plDamagePed((void*)n, def->damage);
+
+			gD2plHitCount++;
+			gD2plLastHitHealth = hp;
+			gMarker[0] = p[0];
+			gMarker[1] = p[1];
+			gMarker[2] = p[2];
+
+			sprintf(msg, hp > 0 ? "HIT %d%%" : "DOWN", hp * 100 / D2PL_PED_HEALTH);
+
+			if (api != 0 && api->ui != 0 && api->ui->hud_message != 0)
+				api->ui->hud_message(msg, 20);
+
+			return;
+		}
+	}
 }
 
 static int D2plMainOnFoot(const JER_HOST_API* api, JER_PLAYER_STATE* ps)
@@ -136,7 +257,7 @@ static void D2plFireShot(const D2plWeaponDef* def, D2plWeaponState* w)
 	if (def->clipSize > 0)
 		w->clip--;
 
-	D2plSfx(def->fireSfx);
+	D2plSfx(def->fireWav, def->fireSfx);
 
 	if (D2plAimPoint(aim))
 	{
@@ -144,6 +265,7 @@ static void D2plFireShot(const D2plWeaponDef* def, D2plWeaponState* w)
 		gMarker[1] = aim[1];
 		gMarker[2] = aim[2];
 		gMarkerTimer = 20;
+		D2plHitScan(def, aim);
 	}
 }
 
@@ -183,8 +305,8 @@ void D2plWeaponUpdate(void)
 		D2plWeaponState* w = &gWeapons[gWeapon];
 		int canFire;
 
-		/* R2 press: next weapon (a reload in progress is dropped) */
-		if ((pressed & D2PL_MPAD_R2) != 0)
+		/* Select press: next weapon (R2 is the stock look-right) */
+		if ((pressed & D2PL_MPAD_CYCLE) != 0)
 		{
 			D2plWeaponCycle(1);
 			def = &gWeaponDefs[gWeapon];
@@ -209,7 +331,7 @@ void D2plWeaponUpdate(void)
 		{
 			w->reloading = def->reloadFrames;
 
-			D2plSfx(def->reloadSfx);
+			D2plSfx(def->reloadWav, def->reloadSfx);
 		}
 
 		canFire = gD2plAiming && w->reloading == 0 &&
@@ -315,7 +437,7 @@ void D2plWeaponUpdate(void)
 	}
 }
 
-/* Pause-menu readouts and the R2 cycle (a reload in progress is dropped). */
+/* Pause-menu readouts and the Select cycle (a reload in progress is dropped). */
 const char* D2plWeaponName(void)
 {
 	return gWeaponDefs[gWeapon].name;

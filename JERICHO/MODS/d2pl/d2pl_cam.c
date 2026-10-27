@@ -34,6 +34,7 @@ D2plSettings gS = {
 int gD2plAiming = 0;
 int gD2plBackpedalOn = D2PL_BACKPEDAL;
 int gD2plBackpedalActive = 0;
+int gD2plBackpedalAngle = D2PL_BACKPEDAL_ANGLE;
 
 static int gBackpedal[2] = { 0, 0 };	/* PED_INPUT chose walk-back this frame */
 static void* gReversePed = 0;			/* ped whose flag 4 d2pl set, or 0 */
@@ -355,7 +356,7 @@ int D2plOnPedInput(void* userdata, void* args)
 	gBackpedal[pad] = pad == 0 && gD2plBackpedalOn && gD2plAiming &&
 		!(a->pad & (D2PL_MPAD_TRIANGLE | D2PL_MPAD_L3)) &&
 		D2plHoldtypeGet(D2plActiveHoldtype())->allowBackpedal &&
-		abs(jer_anim_aim_diff(desired, gD2plViewHeading)) > D2PL_BACKPEDAL_ANGLE;
+		abs(jer_anim_aim_diff(desired, gD2plViewHeading)) > gD2plBackpedalAngle;
 
 	a->pad &= ~(D2PL_PAD_GOFORWARD | D2PL_PAD_GOBACK |
 		D2PL_PAD_TURNLEFT | D2PL_PAD_TURNRIGHT);

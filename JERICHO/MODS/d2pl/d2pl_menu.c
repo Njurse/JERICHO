@@ -8,6 +8,7 @@
 
 #include "d2pl.h"
 #include "jer_pause_menu.h"
+#include "jer_math.h"
 
 #include <stdio.h>
 
@@ -59,8 +60,39 @@ static void LblTwist(void* ud, char* out, int max)
 	const D2plHoldtype* h = D2plHoldtypeGet(D2plActiveHoldtype());
 
 	(void)ud;
-	snprintf(out, max, "Twist limit: torso %d, head %d deg",
-		D2PL_DEG(h->torsoLimit), D2PL_DEG(h->headLimit));
+	snprintf(out, max, "Torso twist: < %d deg >", D2PL_DEG(h->torsoLimit));
+}
+
+/* left/right: +-5 degrees on the EQUIPPED weapon's holdtype, 0..135 */
+static int ActTwist(void* ud, int dir)
+{
+	D2plHoldtype* h = D2plHoldtypeEdit(D2plActiveHoldtype());
+
+	(void)ud;
+
+	if (h != 0 && h->mask != 0)
+		h->torsoLimit = jer_clamp_int(h->torsoLimit + (dir < 0 ? -57 : 57), 0, 1536);
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void LblHeadPitch(void* ud, char* out, int max)
+{
+	const D2plHoldtype* h = D2plHoldtypeGet(D2plActiveHoldtype());
+
+	(void)ud;
+	snprintf(out, max, "Head %d, lean %d deg", D2PL_DEG(h->headLimit), D2PL_DEG(h->pitchLimit));
+}
+
+static void LblHits(void* ud, char* out, int max)
+{
+	(void)ud;
+
+	if (gD2plLastHitHealth < 0)
+		snprintf(out, max, "Hits: none yet");
+	else
+		snprintf(out, max, "Hits: %d, last ped %d%%", gD2plHitCount,
+			gD2plLastHitHealth * 100 / D2PL_PED_HEALTH);
 }
 
 /* --- settings ----------------------------------------------------- */
@@ -94,7 +126,34 @@ static int ActBackpedal(void* ud, int dir)
 static void LblBackAngle(void* ud, char* out, int max)
 {
 	(void)ud;
-	snprintf(out, max, "Backpedal past: %d deg off view", D2PL_DEG(D2PL_BACKPEDAL_ANGLE));
+	snprintf(out, max, "Backpedal past: < %d deg >", D2PL_DEG(gD2plBackpedalAngle));
+}
+
+/* left/right: +-5 degrees, 45..170 */
+static int ActBackAngle(void* ud, int dir)
+{
+	(void)ud;
+	gD2plBackpedalAngle = jer_clamp_int(gD2plBackpedalAngle + (dir < 0 ? -57 : 57), 512, 1934);
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static int ActReset(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	D2plSettingsReset();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+/* the built-in holdtypes are re-registered (a module-added holdtype would
+ * need registering again; d2pl has none). */
+void D2plSettingsReset(void)
+{
+	D2plHoldtypeInit();
+	gD2plBackpedalOn = D2PL_BACKPEDAL;
+	gD2plBackpedalAngle = D2PL_BACKPEDAL_ANGLE;
+	gD2plSfxMute = 0;
+	gD2plTestAim = -1;		/* re-read D2PL_TEST_AIM on the next frame */
 }
 
 static void LblSfx(void* ud, char* out, int max)
@@ -132,7 +191,7 @@ static const JER_PAUSE_MENU_ITEM gControlsItems[] =
 	{ "L1: aim",                  NULL, NULL, NULL, NULL, 0 },
 	{ "R1: fire",                 NULL, NULL, NULL, NULL, 0 },
 	{ "X (tap): reload",          NULL, NULL, NULL, NULL, 0 },
-	{ "R2: next weapon",          NULL, NULL, NULL, NULL, 0 },
+	{ "Select: next weapon",      NULL, NULL, NULL, NULL, 0 },
 	{ "Aim + stick back: backpedal", NULL, NULL, NULL, NULL, 0 },
 };
 
@@ -146,9 +205,9 @@ static const JER_PAUSE_MENU gControlsMenu =
 
 static const JER_PAUSE_MENU_ITEM gSfxItems[] =
 {
-	{ "Placeholder sounds until gun SFX", NULL, NULL, NULL, NULL, 0 },
-	{ "Fire: FE accept",          NULL, NULL, NULL, NULL, 0 },
-	{ "Reload: FE back",          NULL, NULL, NULL, NULL, 0 },
+	{ "WAVs: MODS/d2pl/sounds/",  NULL, NULL, NULL, NULL, 0 },
+	{ "No WAV: fire = FE accept", NULL, NULL, NULL, NULL, 0 },
+	{ "No WAV: reload = FE back", NULL, NULL, NULL, NULL, 0 },
 	{ NULL, LblSfx, ActSfx, NULL, NULL, 1 },
 };
 
@@ -166,12 +225,15 @@ static const JER_PAUSE_MENU_ITEM gMainItems[] =
 	{ NULL, LblAmmo,      NULL,         NULL, NULL, 0 },
 	{ NULL, LblHold,      NULL,         NULL, NULL, 0 },
 	{ NULL, LblAiming,    NULL,         NULL, NULL, 0 },
-	{ NULL, LblTwist,     NULL,         NULL, NULL, 0 },
+	{ NULL, LblHits,      NULL,         NULL, NULL, 0 },
+	{ NULL, LblTwist,     ActTwist,     NULL, NULL, 1 },
+	{ NULL, LblHeadPitch, NULL,         NULL, NULL, 0 },
 	{ NULL, LblBackpedal, ActBackpedal, NULL, NULL, 1 },
-	{ NULL, LblBackAngle, NULL,         NULL, NULL, 0 },
+	{ NULL, LblBackAngle, ActBackAngle, NULL, NULL, 1 },
 	{ NULL, LblTestAim,   ActTestAim,   NULL, NULL, 1 },
 	{ "Gun sounds",       NULL, NULL,   NULL, &gSfxMenu, 0 },
 	{ "Controls",         NULL, NULL,   NULL, &gControlsMenu, 0 },
+	{ "Reset to defaults", NULL, ActReset, NULL, NULL, 0 },
 };
 
 static const JER_PAUSE_MENU gMainMenu =

@@ -29,6 +29,8 @@
 #define D2PL_MPAD_R2		0x0002
 #define D2PL_MPAD_L1		0x0004
 #define D2PL_MPAD_R1		0x0008
+#define D2PL_MPAD_SELECT	0x0100
+#define D2PL_MPAD_CYCLE		D2PL_MPAD_SELECT	/* weapon cycle */
 #define D2PL_MPAD_CROSS	0x0040
 #define D2PL_MPAD_D_UP	0x1000
 #define D2PL_MPAD_D_RIGHT	0x2000
@@ -64,6 +66,14 @@
 #define D2PL_TORSO_LIMIT		796		/* ~70 degrees of spine */
 #define D2PL_HEAD_LIMIT		512
 
+/* Spine pitch: the torso takes a share of the aim elevation (JOINT_1 vx).
+ * D2PL_PITCH_SIGN flips it if the lean comes out backwards in game. */
+#define D2PL_PITCH_LIMIT		400		/* ~35 degrees */
+#define D2PL_PITCH_SHARE		2048	/* /4096 of the camera pitch */
+#ifndef D2PL_PITCH_SIGN
+#define D2PL_PITCH_SIGN		1
+#endif
+
 /* Backpedal while aiming (Parallel Lines): the stock walk-back with the
  * walk frames played in reverse. Compile-time default; the pause menu
  * toggles it at runtime (gD2plBackpedalOn). */
@@ -71,6 +81,7 @@
 #define D2PL_BACKPEDAL		1
 #endif
 #define D2PL_BACKPEDAL_ANGLE	1140	/* ~100 degrees off the view */
+#define D2PL_PED_HEALTH		100	/* damage stub */
 #define D2PL_BACKPEDAL_SPEED_MIN	10	/* stock walk-back speed */
 #define D2PL_BACKPEDAL_SPEED_MAX	20
 
@@ -105,7 +116,10 @@ extern int gD2plHandValid;
 extern int gD2plBackpedalOn;		/* runtime toggle, pause menu */
 extern int gD2plBackpedalActive;	/* the local player is backing up now */
 extern int gD2plSfxMute;			/* placeholder gun SFX muted */
-extern int gD2plTestAim;			/* D2PL_TEST_AIM lever: aim held without a pad */
+extern int gD2plTestAim;
+extern int gD2plBackpedalAngle;		/* runtime, starts at D2PL_BACKPEDAL_ANGLE */
+extern int gD2plHitCount;			/* damage stub: hits this session */
+extern int gD2plLastHitHealth;		/* the last ped hit, -1 = none yet */			/* D2PL_TEST_AIM lever: aim held without a pad */
 
 extern void* gD2plPlayerPed0;	/* the local player's ped, captured from PED_MOVE */
 
@@ -127,6 +141,7 @@ void D2plMenuRegister(void);		/* d2pl_menu.c */
 const char* D2plWeaponName(void);
 void D2plWeaponAmmoText(char* out, int max);
 void D2plWeaponCycle(int dir);
+void D2plSettingsReset(void);		/* pause menu "Reset to defaults" */
 
 /* --- shared helpers ------------------------------------------------- */
 int D2plSin(int angle);					/* 4096-scaled */
@@ -161,11 +176,16 @@ typedef struct D2plHoldtype
 	int torsoLimit;			/* aim twist, PSX units */
 	int headLimit;
 	int allowBackpedal;		/* see D2PL_BACKPEDAL in d2pl_cam.c */
+	int pitchLimit;			/* aim elevation into the spine (JOINT_1 vx), PSX units */
+	int twoHand;			/* 1: left arm reaches for the fore-grip while aiming */
+	int gripForward;		/* fore-grip: world units from the right hand along the aim */
+	int gripElbow[3];		/* added to LELBOW (x, y, z) to bend the support arm */
 	D2plPoseHook poseHook;	/* NULL = none */
 	void* poseUser;
 } D2plHoldtype;
 
 void D2plHoldtypeInit(void);
+D2plHoldtype* D2plHoldtypeEdit(int id);		/* live tuning (pause menu), NULL on a bad id */
 int D2plHoldtypeRegister(const D2plHoldtype* h);	/* returns the id or -1 */
 const D2plHoldtype* D2plHoldtypeGet(int id);		/* bad id -> "none" */
 int D2plHoldtypeFind(const char* name);

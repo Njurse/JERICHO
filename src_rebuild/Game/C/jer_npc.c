@@ -253,6 +253,38 @@ void jer_npc_set_reverse_anim(JerNpc* n, int on)
 		pPed->flags &= ~4;
 }
 
+JerNpc* jer_npc_nearest(int x, int y, int z, int radius)
+{
+	LPPEDESTRIAN pPed, best = NULL;
+	int bestD = 0x7fffffff;
+
+	for (pPed = pUsedPeds; pPed != NULL; pPed = pPed->pNext)
+	{
+		int dx, dy, dz, d;
+
+		if (pPed->padId >= 0 || pPed->pedType == TANNER_MODEL)
+			continue;	/* a player, or a player-model ped */
+
+		dx = pPed->position.vx - x;
+		dy = -pPed->position.vy - y;	/* ped y is up-positive */
+		dz = pPed->position.vz - z;
+
+		if (dx < -radius || dx > radius || dz < -radius || dz > radius ||
+			dy < -2 * radius || dy > 2 * radius)
+			continue;
+
+		d = dx * dx + dz * dz;
+
+		if (d <= radius * radius && d < bestD)
+		{
+			bestD = d;
+			best = pPed;
+		}
+	}
+
+	return (JerNpc*)best;
+}
+
 int jer_npc_speed(const JerNpc* n)
 {
 	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;

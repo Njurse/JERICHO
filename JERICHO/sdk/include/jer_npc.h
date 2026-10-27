@@ -70,6 +70,11 @@ void jer_npc_set_speed(JerNpc* n, int speed);
  * for a car door, so a caller that sets it must clear only what it set. */
 void jer_npc_set_reverse_anim(JerNpc* n, int on);
 
+/* the nearest non-player ped to world (x, y, z) -- y in the RENDER frame (down
+ * is positive, as camera and skeleton positions are) -- within `radius` on the
+ * ground plane and 2*radius vertically, or NULL. For hit tests. */
+JerNpc* jer_npc_nearest(int x, int y, int z, int radius);
+
 /* walk toward a world point at the given speed (turns + runs; the module
  * should poll or re-issue each frame while chasing) */
 void jer_npc_move_to(JerNpc* n, int x, int z, int speed);
