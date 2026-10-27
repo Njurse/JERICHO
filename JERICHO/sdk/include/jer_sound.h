@@ -67,6 +67,26 @@ int jer_sound_channel_busy(int channel);
 /* How many voices are currently locked (the engine's included), for logs/tests. */
 int jer_sound_locked_count(void);
 
+/* ---- frontend (menu) samples in game -----------------------------------
+ * The FE menu bank (VOICES2.BLK lump 0) is only resident in the frontend. A
+ * module that wants those samples in game (placeholder SFX, say) asks for
+ * them once at init; every following level load appends the menu bank to the
+ * SFX bank, BEFORE the car-sound memtop is saved, so car imports never rewind
+ * over it. Nothing is loaded unless a module asked. */
+#define JER_MENU_SFX_BACK	0	/* Triangle / back */
+#define JER_MENU_SFX_MOVE	1	/* cursor step */
+#define JER_MENU_SFX_ACCEPT	2	/* Cross / accept */
+#define JER_MENU_SFX_MOVE2	3	/* cursor step, other direction */
+
+void jer_sound_request_menu_bank(void);
+
+/* Play a menu sample (JER_MENU_SFX_*) on a free voice, non-positional.
+ * Returns the channel, or -1 when the bank is not resident or no voice. */
+int jer_sound_menu_play(int sample);
+
+/* engine-side: LoadLevelSFX calls this before saving the memtop */
+void jer_sound_load_requested_banks(void);
+
 #ifdef __cplusplus
 }
 #endif

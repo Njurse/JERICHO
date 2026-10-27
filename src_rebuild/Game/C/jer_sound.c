@@ -15,6 +15,7 @@
 #include "sound.h"		/* channels[], CHAN_LOCKED, LockChannel/UnlockChannel */
 #include "jericho.h"
 #include "jer_sound.h"
+#include "gamesnd.h"	/* LoadBankFromLump, SOUND_BANK_SFX, SBK_ID_MENU */
 
 int jer_sound_locked_count(void)
 {
@@ -110,4 +111,44 @@ int jer_sound_channel_busy(int channel)
 		return 0;
 
 	return (channels[channel].time != 0) ? 1 : 0;
+}
+
+/* ---- frontend samples in game (see jer_sound.h) ---------------------- */
+
+static int gJerMenuBankWanted = 0;
+static int gJerMenuBankBase = -1;
+static int gJerMenuBankCount = 0;
+
+void jer_sound_request_menu_bank(void)
+{
+	gJerMenuBankWanted = 1;
+}
+
+void jer_sound_load_requested_banks(void)
+{
+	int before;
+
+	gJerMenuBankBase = -1;
+	gJerMenuBankCount = 0;
+
+	if (!gJerMenuBankWanted)
+		return;
+
+	before = GetSoundBankSampleCount(SOUND_BANK_SFX);
+	LoadBankFromLump(SOUND_BANK_SFX, SBK_ID_MENU);
+
+	/* a full bank refuses the load and leaves the count alone */
+	if (GetSoundBankSampleCount(SOUND_BANK_SFX) > before)
+	{
+		gJerMenuBankBase = before;
+		gJerMenuBankCount = GetSoundBankSampleCount(SOUND_BANK_SFX) - before;
+	}
+}
+
+int jer_sound_menu_play(int sample)
+{
+	if (gJerMenuBankBase < 0 || sample < 0 || sample >= gJerMenuBankCount)
+		return -1;
+
+	return FESound(gJerMenuBankBase + sample);
 }

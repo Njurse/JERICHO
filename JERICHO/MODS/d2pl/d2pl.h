@@ -21,7 +21,7 @@
 #include "jer_host_api.h"
 
 #define D2PL_MOD_ID "d2pl"
-#define D2PL_VERSION "1.1.0"
+#define D2PL_VERSION "1.2.0"
 
 /* Pad bits (the same values as pad.h; kept local so the addon needs no
  * engine headers). */
@@ -63,6 +63,12 @@
 /* Torso / neck limits for the aim twist (PSX angle units). */
 #define D2PL_TORSO_LIMIT		796		/* ~70 degrees of spine */
 #define D2PL_HEAD_LIMIT		512
+
+/* Backpedal while aiming (Parallel Lines). 0 until a backward clip exists. */
+#ifndef D2PL_BACKPEDAL
+#define D2PL_BACKPEDAL		0
+#endif
+#define D2PL_BACKPEDAL_ANGLE	1140	/* ~100 degrees */
 
 typedef struct D2plSettings
 {
@@ -110,9 +116,46 @@ int D2plCos(int angle);
 int D2plAtan2(int y, int x);				/* 0..4095 */
 int D2plAimPoint(int out[3]);				/* 0 when the camera is not known yet */
 
+/* --- holdtypes (d2pl_holdtype.c) --------------------------------- */
+#define D2PL_MAX_HOLDTYPES	16
+
+enum
+{
+	D2PL_HOLD_NONE = 0,	/* registered first, in this order */
+	D2PL_HOLD_PISTOL = 1,
+	D2PL_HOLD_RIFLE = 2
+};
+
+/* Optional per-holdtype pose hook: runs in PED_POSE after the twist and IK
+ * have been written, with the same skeleton. This is where a keyframe
+ * override or a custom clip sampler plugs in (write jer_anim_bone_rotation
+ * values only for bones in `mask`). */
+typedef void (*D2plPoseHook)(void* skel, int aiming, void* user);
+
+typedef struct D2plHoldtype
+{
+	const char* name;
+	unsigned int mask;		/* bit per JER_LIMB_* the holdtype may write */
+	int aimIk;				/* 1: right arm IK at the aim point while aiming */
+	int idleIk;				/* 1: idle hold (weapon out, not aiming) */
+	int idlePitch;			/* idle arm angle below horizontal, PSX units */
+	int idleWeight;			/* 0..4096: blend from the stock arm to the idle hold */
+	int torsoLimit;			/* aim twist, PSX units */
+	int headLimit;
+	int allowBackpedal;		/* see D2PL_BACKPEDAL in d2pl_cam.c */
+	D2plPoseHook poseHook;	/* NULL = none */
+	void* poseUser;
+} D2plHoldtype;
+
+void D2plHoldtypeInit(void);
+int D2plHoldtypeRegister(const D2plHoldtype* h);	/* returns the id or -1 */
+const D2plHoldtype* D2plHoldtypeGet(int id);		/* bad id -> "none" */
+int D2plHoldtypeFind(const char* name);
+
 /* --- weapon (d2pl_weapon.c) -------------------------------------- */
 void D2plWeaponInit(void);
 void D2plWeaponUpdate(void);
+int D2plActiveHoldtype(void);		/* the equipped weapon's holdtype id */
 
 /* --- -onfoot spawn swap (d2pl_boot.c) ---------------------------- */
 void D2plBootTick(void);

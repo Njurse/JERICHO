@@ -6,6 +6,26 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### On foot (d2pl 1.2.0)
+
+- **The aim arm no longer crinkles.** The right arm is now posed with
+  rotations (two-bone IK at the aim point) before the skeleton is built.
+  Previously it moved bone positions after the meshes had been posed, which
+  folded the forearm and hand.
+- **Holdtype base:** each weapon names a holdtype (aim IK, idle hold, spine/neck
+  twist limits, bone mask, pose hook). The torso/neck twist is now added on
+  top of the clip instead of replacing it, and an equipped weapon holds the
+  arm low and forward when not aiming.
+- **Three test weapons**, cycled with R2: a pistol (one shot per R1 press), a
+  machine gun (6 rounds a second while held) and a debug gun (fires every frame
+  while held, endless ammo). The HUD shows the weapon and its ammo.
+- **Placeholder gun sounds:** the frontend menu bank can now be kept resident
+  in game (`jer_sound_request_menu_bank` / `jer_sound_menu_play`). Accept is the
+  fire sound and back is the reload sound.
+- **`JERICHO/MODS/d2pl/HOLDTYPES.md`:** a guide to adding holdtypes, weapons,
+  sounds and custom animations, and the known limits (spine pitch, backpedal
+  clip, left-hand IK, real SFX).
+
 ### External addons and host API (interface 3)
 
 - **FULL TWIST and Yaris Bounce now build as `runtime = "dll"` addons.** They

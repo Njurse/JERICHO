@@ -7,6 +7,7 @@
  */
 
 #include "d2pl.h"
+#include "jer_anim.h"
 #include "jer_math.h"
 #include "jer_npc.h"
 
@@ -385,6 +386,23 @@ int D2plOnPedMove(void* userdata, void* args)
 		gRunSpeed[pad] = target;
 	else
 		gRunSpeed[pad] += delta / D2PL_SPEED_LERP;
+
+#if D2PL_BACKPEDAL
+	/* Parallel Lines backpedal: aiming and moving more than ~100 degrees
+	 * away from the view, keep facing the aim and back up instead of
+	 * turning round. OFF by default: the stock run clip has no backward
+	 * cycle, so the legs moonwalk until a backpedal clip is wired in
+	 * (HOLDTYPES.md, "Backpedal"). */
+	if (pad == 0 && gD2plAiming &&
+		D2plHoldtypeGet(D2plActiveHoldtype())->allowBackpedal &&
+		abs(jer_anim_aim_diff(gDesired[pad], gD2plViewHeading)) > D2PL_BACKPEDAL_ANGLE)
+	{
+		jer_npc_face(&ped, (gD2plViewHeading + 2048) & 0xfff);
+		jer_npc_set_speed(&ped, -gRunSpeed[pad] / 2);
+
+		return JER_RESULT_CONTINUE;
+	}
+#endif
 
 	jer_npc_set_speed(&ped, gRunSpeed[pad]);
 

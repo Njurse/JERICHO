@@ -10,6 +10,7 @@
 JER_MODULE_ENTRY(jer_module_d2pl_entry)(JERICHO_CONTEXT* ctx)
 {
 	D2plInit();
+	D2plHoldtypeInit();
 	D2plWeaponInit();
 
 	ctx->jer_register_module(ctx,
@@ -17,7 +18,7 @@ JER_MODULE_ENTRY(jer_module_d2pl_entry)(JERICHO_CONTEXT* ctx)
 		"On Foot",
 		D2PL_VERSION,
 		"JERICHO",
-		"Camera-relative on-foot movement, aim arm pose, laser sight and a debug pistol.",
+		"Camera-relative on-foot movement, holdtype aim pose, laser sight and three test weapons.",
 		"",
 		JERICHO_SDK_VERSION);
 
