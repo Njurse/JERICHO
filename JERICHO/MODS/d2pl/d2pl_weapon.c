@@ -1,38 +1,83 @@
-/* d2pl_weapon.c — the baked-in debug pistol, its laser and the HUD.
+/* d2pl_weapon.c — the test weapons, their laser and the HUD.
  *
- * This is deliberately a *debug* weapon: 12 rounds, semi-auto, no damage
- * model and no hand mesh (the shipped data has no pistol MODEL, and the
- * addon cannot call the game's model renderer through the host API). It
- * exists to exercise the aim pose and the laser sight:
+ * Three weapons, each a D2plWeaponDef row naming a holdtype and a fire mode:
+ *   pistol      semi-auto: one shot per R1 press
+ *   machine gun automatic: 6 rounds a second while R1 is held
+ *   debug gun   every frame while R1 is held, endless ammo (for testing)
  *
  *   L1          aim
- *   R1          fire (semi-auto, while aiming)
+ *   R1          fire (while aiming)
  *   X (Cross)   reload
+ *   Select      next weapon (press; R2 stays the stock look-right)
  *
- * The laser is the d2pl-style depth-sorted line from the right hand to the
- * camera-centre aim point; the debug X marks the last shot.
+ * There is still no damage model and no gun mesh: a shot is the aim-point
+ * marker plus the fire sound. Sounds are placeholders: the frontend menu
+ * samples, loaded in game through jer_sound_request_menu_bank (accept = fire,
+ * back = reload). See HOLDTYPES.md.
  */
 
 #include "d2pl.h"
 #include "jer_math.h"
+#include "jer_sound.h"
+#include "jer_npc.h"
+#include <math.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 
 #define D2PL_LASER_ENABLED	1
 
-typedef struct D2plPistol
+#define D2PL_TICK_HZ		30		/* JER_EVENT_FRAME rate (game logic) */
+
+enum
+{
+	D2PL_FIRE_SEMI = 0,		/* one shot per trigger press */
+	D2PL_FIRE_AUTO,			/* roundsPerSec while held */
+	D2PL_FIRE_EVERY_FRAME	/* one shot every tick while held */
+};
+
+typedef struct D2plWeaponDef
+{
+	const char* name;
+	int holdtype;			/* D2PL_HOLD_* or a registered id */
+	int fireMode;			/* D2PL_FIRE_* */
+	int roundsPerSec;		/* AUTO only */
+	int clipSize;			/* 0 = endless */
+	int reserve;
+	int reloadFrames;
+	int fireSfx;			/* JER_MENU_SFX_* fallback, -1 = silent */
+	int reloadSfx;
+	const char* fireWav;	/* MODS/d2pl/sounds/<name>.wav when present */
+	const char* reloadWav;
+	int damage;				/* per hit, of D2PL_PED_HEALTH */
+} D2plWeaponDef;
+
+typedef struct D2plWeaponState
 {
 	int clip;
 	int reserve;
-	int clipSize;
-	int fireRate;		/* frames between shots */
-	int reloadTime;		/* frames a reload takes */
-	int cooldown;
+	int credit;				/* AUTO: += roundsPerSec per tick, fire at D2PL_TICK_HZ */
 	int reloading;
-} D2plPistol;
+} D2plWeaponState;
 
-static D2plPistol gPistol = { 12, 60, 12, 6, 45, 0, 0 };
+static const D2plWeaponDef gWeaponDefs[] = {
+	{ "PISTOL",	D2PL_HOLD_PISTOL, D2PL_FIRE_SEMI,		0, 12, 60,  45, JER_MENU_SFX_ACCEPT, JER_MENU_SFX_BACK,
+		"pistol_fire", "pistol_reload", 25 },
+	{ "MG",		D2PL_HOLD_RIFLE,  D2PL_FIRE_AUTO,		6, 30, 120, 60, JER_MENU_SFX_ACCEPT, JER_MENU_SFX_BACK,
+		"mg_fire", "mg_reload", 10 },
+	{ "DEBUG",	D2PL_HOLD_PISTOL, D2PL_FIRE_EVERY_FRAME, 0, 0,  0,   0,  JER_MENU_SFX_ACCEPT, -1,
+		"debug_fire", 0, 2 },
+};
+
+#define D2PL_WEAPON_COUNT ((int)(sizeof(gWeaponDefs) / sizeof(gWeaponDefs[0])))
+
+static D2plWeaponState gWeapons[D2PL_WEAPON_COUNT];
+static int gWeapon = 0;
+
+int D2plActiveHoldtype(void)
+{
+	return gWeaponDefs[gWeapon].holdtype;
+}
 
 static int gMarkerTimer = 0;
 static int gMarker[3] = { 0, 0, 0 };
@@ -42,19 +87,139 @@ static int gMarker[3] = { 0, 0, 0 };
 /* ------------------------------------------------------------------ */
 
 /* Debug/test lever: hold aim without a pad, for an unattended -frames run.
- * Set D2PL_TEST_AIM=1. */
+ * Seeded once from D2PL_TEST_AIM=1; the pause menu flips it at runtime. */
+int gD2plTestAim = -1;
+int gD2plSfxMute = 0;
+
 static int D2plTestAim(void)
 {
-	static int forced = -1;
-
-	if (forced < 0)
+	if (gD2plTestAim < 0)
 	{
 		const char* env = getenv("D2PL_TEST_AIM");
 
-		forced = (env != 0 && env[0] != 0 && env[0] != '0') ? 1 : 0;
+		gD2plTestAim = (env != 0 && env[0] != 0 && env[0] != '0') ? 1 : 0;
 	}
 
-	return forced;
+	return gD2plTestAim;
+}
+
+/* a mod-folder WAV when there is one, else the FE placeholder */
+static void D2plSfx(const char* wav, int sfx)
+{
+	if (gD2plSfxMute)
+		return;
+
+	if (wav != 0 && jer_sound_mod_wav_play(D2PL_MOD_ID, wav))
+		return;
+
+	if (sfx >= 0)
+		jer_sound_menu_play(sfx);
+}
+
+/* --- damage stub: light, per-ped hit points kept here (the engine's
+ * civilians have no health). A downed ped is just reported. */
+#define D2PL_HIT_SLOTS	16
+#define D2PL_HIT_RADIUS	120
+#define D2PL_HIT_RANGE	8000
+
+typedef struct D2plHit
+{
+	void* ped;
+	int health;
+} D2plHit;
+
+static D2plHit gHits[D2PL_HIT_SLOTS];
+static int gHitNext = 0;
+int gD2plHitCount = 0;
+int gD2plLastHitHealth = -1;
+
+static int D2plDamagePed(void* ped, int damage)
+{
+	int i;
+	D2plHit* h = 0;
+
+	for (i = 0; i < D2PL_HIT_SLOTS; i++)
+	{
+		if (gHits[i].ped == ped)
+			h = &gHits[i];
+	}
+
+	if (h == 0)
+	{
+		h = &gHits[gHitNext];
+		gHitNext = (gHitNext + 1) % D2PL_HIT_SLOTS;
+		h->ped = ped;
+		h->health = D2PL_PED_HEALTH;
+	}
+
+	h->health -= damage;
+
+	if (h->health < 0)
+		h->health = 0;
+
+	return h->health;
+}
+
+/* walk the shot from the hand toward the aim point; the first ped inside
+ * D2PL_HIT_RADIUS takes the hit and the marker moves onto it */
+static void D2plHitScan(const D2plWeaponDef* def, const int aim[3])
+{
+	const JER_HOST_API* api = jerHostApiGet();
+	int from[3], d[3], len, full, steps, i;
+
+	if (!gD2plHandValid)
+		return;
+
+	from[0] = gD2plHand[0];
+	from[1] = gD2plHand[1];
+	from[2] = gD2plHand[2];
+
+	d[0] = aim[0] - from[0];
+	d[1] = aim[1] - from[1];
+	d[2] = aim[2] - from[2];
+	len = (int)sqrtf((float)d[0] * d[0] + (float)d[1] * d[1] + (float)d[2] * d[2]);
+
+	if (len < 1)
+		return;
+
+	full = len;
+
+	if (len > D2PL_HIT_RANGE)
+		len = D2PL_HIT_RANGE;
+
+	steps = len / D2PL_HIT_RADIUS;
+
+	for (i = 1; i <= steps; i++)
+	{
+		float t = (float)(i * D2PL_HIT_RADIUS) / (float)full;
+		int p[3];
+		JerNpc* n;
+
+		p[0] = from[0] + (int)(d[0] * t);
+		p[1] = from[1] + (int)(d[1] * t);
+		p[2] = from[2] + (int)(d[2] * t);
+
+		n = jer_npc_nearest(p[0], p[1], p[2], D2PL_HIT_RADIUS);
+
+		if (n != 0)
+		{
+			char msg[32];
+			int hp = D2plDamagePed((void*)n, def->damage);
+
+			gD2plHitCount++;
+			gD2plLastHitHealth = hp;
+			gMarker[0] = p[0];
+			gMarker[1] = p[1];
+			gMarker[2] = p[2];
+
+			sprintf(msg, hp > 0 ? "HIT %d%%" : "DOWN", hp * 100 / D2PL_PED_HEALTH);
+
+			if (api != 0 && api->ui != 0 && api->ui->hud_message != 0)
+				api->ui->hud_message(msg, 20);
+
+			return;
+		}
+	}
 }
 
 static int D2plMainOnFoot(const JER_HOST_API* api, JER_PLAYER_STATE* ps)
@@ -69,19 +234,38 @@ static int D2plMainOnFoot(const JER_HOST_API* api, JER_PLAYER_STATE* ps)
 	return ps->playerCarId < 0;
 }
 
-static void D2plFinishReload(void)
+static void D2plFinishReload(const D2plWeaponDef* def, D2plWeaponState* w)
 {
-	int need = gPistol.clipSize - gPistol.clip;
+	int need = def->clipSize - w->clip;
 
-	if (gPistol.reserve >= need)
+	if (w->reserve >= need)
 	{
-		gPistol.reserve -= need;
-		gPistol.clip = gPistol.clipSize;
+		w->reserve -= need;
+		w->clip = def->clipSize;
 	}
 	else
 	{
-		gPistol.clip += gPistol.reserve;
-		gPistol.reserve = 0;
+		w->clip += w->reserve;
+		w->reserve = 0;
+	}
+}
+
+static void D2plFireShot(const D2plWeaponDef* def, D2plWeaponState* w)
+{
+	int aim[3];
+
+	if (def->clipSize > 0)
+		w->clip--;
+
+	D2plSfx(def->fireWav, def->fireSfx);
+
+	if (D2plAimPoint(aim))
+	{
+		gMarker[0] = aim[0];
+		gMarker[1] = aim[1];
+		gMarker[2] = aim[2];
+		gMarkerTimer = 20;
+		D2plHitScan(def, aim);
 	}
 }
 
@@ -116,37 +300,74 @@ void D2plWeaponUpdate(void)
 
 	gD2plAiming = D2plTestAim() || ((held & D2PL_MPAD_L1) != 0);
 
-	if (gPistol.cooldown > 0)
-		gPistol.cooldown--;
-
-	if (gPistol.reloading > 0)
 	{
-		gPistol.reloading--;
+		const D2plWeaponDef* def = &gWeaponDefs[gWeapon];
+		D2plWeaponState* w = &gWeapons[gWeapon];
+		int canFire;
 
-		if (gPistol.reloading == 0)
-			D2plFinishReload();
-	}
-
-	/* reload: X is the stock run button on foot, so use only its press
-	 * edge and leave the held bit to the engine's movement */
-	if ((pressed & D2PL_MPAD_CROSS) != 0 && gPistol.reloading == 0 &&
-		gPistol.clip < gPistol.clipSize && gPistol.reserve > 0)
-	{
-		gPistol.reloading = gPistol.reloadTime;
-	}
-
-	if (gD2plAiming && (pressed & D2PL_MPAD_R1) != 0 &&
-		gPistol.cooldown == 0 && gPistol.reloading == 0 && gPistol.clip > 0)
-	{
-		gPistol.clip--;
-		gPistol.cooldown = gPistol.fireRate;
-
-		if (D2plAimPoint(aim))
+		/* Select press: next weapon (R2 is the stock look-right) */
+		if ((pressed & D2PL_MPAD_CYCLE) != 0)
 		{
-			gMarker[0] = aim[0];
-			gMarker[1] = aim[1];
-			gMarker[2] = aim[2];
-			gMarkerTimer = 20;
+			D2plWeaponCycle(1);
+			def = &gWeaponDefs[gWeapon];
+			w = &gWeapons[gWeapon];
+
+			if (api->ui != 0 && api->ui->hud_message != 0)
+				api->ui->hud_message(def->name, 45);
+		}
+
+		if (w->reloading > 0)
+		{
+			w->reloading--;
+
+			if (w->reloading == 0)
+				D2plFinishReload(def, w);
+		}
+
+		/* reload: X is the stock run button on foot, so use only its press
+		 * edge and leave the held bit to the engine's movement */
+		if ((pressed & D2PL_MPAD_CROSS) != 0 && def->clipSize > 0 &&
+			w->reloading == 0 && w->clip < def->clipSize && w->reserve > 0)
+		{
+			w->reloading = def->reloadFrames;
+
+			D2plSfx(def->reloadWav, def->reloadSfx);
+		}
+
+		canFire = gD2plAiming && w->reloading == 0 &&
+			(def->clipSize == 0 || w->clip > 0);
+
+		switch (def->fireMode)
+		{
+			case D2PL_FIRE_SEMI:
+				if (canFire && (pressed & D2PL_MPAD_R1) != 0)
+					D2plFireShot(def, w);
+				break;
+
+			case D2PL_FIRE_AUTO:
+				/* the first shot leaves on the press, then one every
+				 * D2PL_TICK_HZ / roundsPerSec ticks, exactly on average */
+				if (canFire && (held & D2PL_MPAD_R1) != 0)
+				{
+					if ((pressed & D2PL_MPAD_R1) != 0)
+						w->credit = D2PL_TICK_HZ;
+					else
+						w->credit += def->roundsPerSec;
+
+					if (w->credit >= D2PL_TICK_HZ)
+					{
+						w->credit -= D2PL_TICK_HZ;
+						D2plFireShot(def, w);
+					}
+				}
+				else
+					w->credit = 0;
+				break;
+
+			case D2PL_FIRE_EVERY_FRAME:
+				if (canFire && (held & D2PL_MPAD_R1) != 0)
+					D2plFireShot(def, w);
+				break;
 		}
 	}
 
@@ -216,6 +437,31 @@ void D2plWeaponUpdate(void)
 	}
 }
 
+/* Pause-menu readouts and the Select cycle (a reload in progress is dropped). */
+const char* D2plWeaponName(void)
+{
+	return gWeaponDefs[gWeapon].name;
+}
+
+void D2plWeaponAmmoText(char* out, int max)
+{
+	const D2plWeaponState* w = &gWeapons[gWeapon];
+
+	if (gWeaponDefs[gWeapon].clipSize == 0)
+		snprintf(out, max, "endless");
+	else if (w->reloading > 0)
+		snprintf(out, max, "reloading");
+	else
+		snprintf(out, max, "%d / %d", w->clip, w->reserve);
+}
+
+void D2plWeaponCycle(int dir)
+{
+	gWeapons[gWeapon].reloading = 0;
+	gWeapon = (gWeapon + (dir < 0 ? D2PL_WEAPON_COUNT - 1 : 1)) % D2PL_WEAPON_COUNT;
+	gWeapons[gWeapon].credit = 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* JER_EVENT_DRAW_OVERLAY — ammo readout                               */
 /* ------------------------------------------------------------------ */
@@ -235,7 +481,13 @@ int D2plOnOverlay(void* userdata, void* args)
 	if (api->ui == 0 || api->ui->text_draw_at == 0)
 		return JER_RESULT_CONTINUE;
 
-	sprintf(text, "[%d/%d]", gPistol.clip, gPistol.reserve);
+	if (gWeaponDefs[gWeapon].clipSize == 0)
+		sprintf(text, "%s [INF]", gWeaponDefs[gWeapon].name);
+	else if (gWeapons[gWeapon].reloading > 0)
+		sprintf(text, "%s [RELOAD]", gWeaponDefs[gWeapon].name);
+	else
+		sprintf(text, "%s [%d/%d]", gWeaponDefs[gWeapon].name,
+			gWeapons[gWeapon].clip, gWeapons[gWeapon].reserve);
 	api->ui->text_draw_at(20, 210, text, 0xFFFFFF, 1);
 
 	return JER_RESULT_CONTINUE;
@@ -247,11 +499,20 @@ int D2plOnOverlay(void* userdata, void* args)
 
 void D2plWeaponInit(void)
 {
-	gPistol.clip = gPistol.clipSize;
-	gPistol.reserve = 60;
-	gPistol.cooldown = 0;
-	gPistol.reloading = 0;
+	int i;
 
+	for (i = 0; i < D2PL_WEAPON_COUNT; i++)
+	{
+		gWeapons[i].clip = gWeaponDefs[i].clipSize;
+		gWeapons[i].reserve = gWeaponDefs[i].reserve;
+		gWeapons[i].credit = 0;
+		gWeapons[i].reloading = 0;
+	}
+
+	gWeapon = 0;
 	gMarkerTimer = 0;
 	gMarker[0] = gMarker[1] = gMarker[2] = 0;
+
+	/* placeholder SFX: keep the FE menu samples resident in game */
+	jer_sound_request_menu_bank();
 }

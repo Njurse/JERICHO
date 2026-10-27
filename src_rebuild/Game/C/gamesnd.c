@@ -6,6 +6,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "gamesnd.h"
+#include "jer_sound.h"
 
 #include "sound.h"
 #include "system.h"
@@ -1240,6 +1241,10 @@ void LoadLevelSFX(int missionNum)
 	// where they are rewound to so only ONE block per live slot is held.
 	// Nothing else consumes memtop/banktop, so overwriting the earlier save
 	// (which sits before the special banks) is safe.
+	// JERICHO: module-requested extra banks (the FE menu samples) go in
+	// before the memtop save, so a car import rewind never overwrites them.
+	jer_sound_load_requested_banks();
+
 	LoadSoundBankDynamic(NULL, 1, SOUND_BANK_CARS);	// save memtop
 	LoadSoundBankDynamic(NULL, 3, SOUND_BANK_CARS);	// save banktop
 

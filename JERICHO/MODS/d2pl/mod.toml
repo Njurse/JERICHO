@@ -1,10 +1,10 @@
 id = "d2pl"
 name = "Driver 2 Parallel Lines"
-version = "1.1.0"
+version = "1.2.0"
 # the JERICHO interface (SDK) this mod is built against
 interface = 3
 author = "JERICHO"
-description = "Camera-relative on-foot movement, aim arm pose, laser sight and a debug pistol."
+description = "Camera-relative on-foot movement, holdtype aim pose, laser sight and three test weapons."
 dependencies = []
 default-enabled = false
 # host API generation this module expects (see jer_host_api.h)

@@ -7,6 +7,7 @@
  */
 
 #include "d2pl.h"
+#include "jer_anim.h"
 #include "jer_math.h"
 #include "jer_npc.h"
 
@@ -31,6 +32,23 @@ D2plSettings gS = {
 };
 
 int gD2plAiming = 0;
+int gD2plBackpedalOn = D2PL_BACKPEDAL;
+int gD2plBackpedalActive = 0;
+int gD2plBackpedalAngle = D2PL_BACKPEDAL_ANGLE;
+
+static int gBackpedal[2] = { 0, 0 };	/* PED_INPUT chose walk-back this frame */
+static void* gReversePed = 0;			/* ped whose flag 4 d2pl set, or 0 */
+
+/* Clear the reverse-frames bit only if d2pl set it: the engine uses the
+ * same bit for the car-door animation and must keep its own. */
+static void D2plReleaseReverse(void)
+{
+	if (gReversePed != 0)
+		jer_npc_set_reverse_anim((JerNpc*)gReversePed, 0);
+
+	gReversePed = 0;
+	gD2plBackpedalActive = 0;
+}
 int gD2plLookPitch = 0;
 int gD2plLookPitchTarget = 0;
 int gD2plViewHeading = 0;
@@ -280,8 +298,16 @@ int D2plOnPedInput(void* userdata, void* args)
 	if (!gS.cameraEnabled)
 		return JER_RESULT_CONTINUE;
 
+	ps.padid = -1;
+
 	if (!api->player->get_state(a->player, &ps) || ps.playerCarId >= 0)
+	{
+		if (ps.padid == 0 || ps.padid == 1)
+			gBackpedal[ps.padid] = 0;
+		D2plReleaseReverse();
+
 		return JER_RESULT_CONTINUE;
+	}
 
 	pad = ps.padid;
 
@@ -299,9 +325,18 @@ int D2plOnPedInput(void* userdata, void* args)
 
 	mag = abs(sx) + abs(sy);
 
+	/* Car entry reads flag 4 for the door side: hand the bit back before
+	 * the engine sees the action press. */
+	if (a->pad & (D2PL_MPAD_TRIANGLE | D2PL_MPAD_L3))
+	{
+		gBackpedal[pad] = 0;
+		D2plReleaseReverse();
+	}
+
 	if (mag <= D2PL_MOVE_DEADZONE)
 	{
 		gMoveActive[pad] = 0;
+		gBackpedal[pad] = 0;
 
 		return JER_RESULT_CONTINUE;		/* stock D-pad/keyboard handling */
 	}
@@ -314,11 +349,18 @@ int D2plOnPedInput(void* userdata, void* args)
 
 	gDesired[pad] = desired;
 
-	/* Always run forward: the direction is driven by jer_npc_face in
+	/* Run forward along the stick, or -- aiming with the stick more than
+	 * ~100 degrees off the view -- take the stock walk-back (SetupBack) and
+	 * keep facing the aim. The direction is driven by jer_npc_face in
 	 * PED_MOVE, so the stock turn bits must not fight it. */
+	gBackpedal[pad] = pad == 0 && gD2plBackpedalOn && gD2plAiming &&
+		!(a->pad & (D2PL_MPAD_TRIANGLE | D2PL_MPAD_L3)) &&
+		D2plHoldtypeGet(D2plActiveHoldtype())->allowBackpedal &&
+		abs(jer_anim_aim_diff(desired, gD2plViewHeading)) > gD2plBackpedalAngle;
+
 	a->pad &= ~(D2PL_PAD_GOFORWARD | D2PL_PAD_GOBACK |
 		D2PL_PAD_TURNLEFT | D2PL_PAD_TURNRIGHT);
-	a->pad |= D2PL_PAD_GOFORWARD;
+	a->pad |= gBackpedal[pad] ? D2PL_PAD_GOBACK : D2PL_PAD_GOFORWARD;
 
 	return JER_RESULT_CONTINUE;
 }
@@ -330,7 +372,7 @@ int D2plOnPedInput(void* userdata, void* args)
 int D2plOnPedMove(void* userdata, void* args)
 {
 	JER_ARGS_PED_MOVE* a = (JER_ARGS_PED_MOVE*)args;
-	JerNpc ped;
+	JerNpc* ped;
 	int pad, m, target, delta;
 
 	(void)userdata;
@@ -349,7 +391,11 @@ int D2plOnPedMove(void* userdata, void* args)
 	if (!gS.cameraEnabled)
 		return JER_RESULT_CONTINUE;
 
-	ped.ped = a->ped;
+	/* JerNpc* IS the ped pointer (jer_npc.c casts it straight back). */
+	ped = (JerNpc*)a->ped;
+
+	if (pad == 0 && (!gMoveActive[pad] || !gBackpedal[pad]))
+		D2plReleaseReverse();
 
 	if (!gMoveActive[pad])
 	{
@@ -365,7 +411,7 @@ int D2plOnPedMove(void* userdata, void* args)
 
 	/* The ped moves along dir.vy - 2048, so a MOVEMENT heading h needs
 	 * dir.vy = h + 2048. */
-	jer_npc_face(&ped, (gDesired[pad] + 2048) & 0xfff);
+	jer_npc_face(ped, (gDesired[pad] + 2048) & 0xfff);
 
 	m = abs(gStickX[pad]);
 
@@ -386,7 +432,21 @@ int D2plOnPedMove(void* userdata, void* args)
 	else
 		gRunSpeed[pad] += delta / D2PL_SPEED_LERP;
 
-	jer_npc_set_speed(&ped, gRunSpeed[pad]);
+	if (gBackpedal[pad])
+	{
+		/* face the aim, back up at the stock walk-back pace, scaled a
+		 * little by the stick; flag 4 plays the walk frames in reverse. */
+		jer_npc_face(ped, (gD2plViewHeading + 2048) & 0xfff);
+		jer_npc_set_speed(ped, -(D2PL_BACKPEDAL_SPEED_MIN +
+			gRunSpeed[pad] * (D2PL_BACKPEDAL_SPEED_MAX - D2PL_BACKPEDAL_SPEED_MIN) / D2PL_RUN_SPEED));
+		jer_npc_set_reverse_anim(ped, 1);
+		gReversePed = a->ped;
+		gD2plBackpedalActive = 1;
+
+		return JER_RESULT_CONTINUE;
+	}
+
+	jer_npc_set_speed(ped, gRunSpeed[pad]);
 
 	return JER_RESULT_CONTINUE;
 }

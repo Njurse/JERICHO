@@ -6,6 +6,51 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### On foot (d2pl 1.2.0)
+
+- **The aim arm no longer crinkles.** The right arm is now posed with
+  rotations (two-bone IK at the aim point) before the skeleton is built.
+  Previously it moved bone positions after the meshes had been posed, which
+  folded the forearm and hand.
+- **Holdtype base:** each weapon names a holdtype (aim IK, idle hold, spine/neck
+  twist limits, bone mask, pose hook). The torso/neck twist is now added on
+  top of the clip instead of replacing it, and an equipped weapon holds the
+  arm low and forward when not aiming.
+- **Three test weapons**, cycled with R2: a pistol (one shot per R1 press), a
+  machine gun (6 rounds a second while held) and a debug gun (fires every frame
+  while held, endless ammo). The HUD shows the weapon and its ammo.
+- **Placeholder gun sounds:** the frontend menu bank can now be kept resident
+  in game (`jer_sound_request_menu_bank` / `jer_sound_menu_play`). Accept is the
+  fire sound and back is the reload sound.
+- **`JERICHO/MODS/d2pl/HOLDTYPES.md`:** a guide to adding holdtypes, weapons,
+  sounds and custom animations, and the known limits (spine pitch, backpedal
+  clip, left-hand IK, real SFX).
+- **Backpedal while aiming:** with aim held and the stick more than ~100°
+  off the view, Tanner keeps facing the aim and walks backwards (the stock
+  walk-back with the walk frames reversed) instead of turning round. Toggle
+  it in the pause page. New SDK setter `jer_npc_set_reverse_anim`.
+- **On Foot pause page** (Pause > JERICHO Addons > D2PL ON FOOT): weapon
+  (left/right cycles), ammo, holdtype, aiming, twist limits, backpedal state
+  and threshold, the `D2PL_TEST_AIM` lever, a gun-sound card with a mute
+  switch, and a controls card.
+- **Weapon cycle moved to Select** (R2 is the stock look-right). The pause
+  Controls card and `HOLDTYPES.md` say so.
+- **Two-handed rifle grip:** the MG's left arm reaches for a fore-grip ahead
+  of the right hand while aiming, with a tunable elbow bend.
+- **Spine pitch:** the torso leans with the aim elevation, clamped per
+  holdtype.
+- **Optional gun WAVs:** `MODS/d2pl/sounds/<name>.wav` plays when present
+  (new `jer_sound_mod_wav_play`); the FE accept/back placeholders stay as the
+  fallback.
+- **Damage stub:** shots hit-test along the aim (new `jer_npc_nearest`) and
+  take light d2pl-side damage from the ped hit; the HUD shows `HIT n%` or
+  `DOWN`. No ped reaction yet.
+- **Pause page:** live torso-twist and backpedal-threshold controls, a hits
+  readout, and "Reset to defaults".
+- **Fix:** d2pl passed the address of a local to `jer_npc_face` /
+  `jer_npc_set_speed`, which treat `JerNpc*` as the ped itself, so the
+  writes landed on the stack instead of the ped.
+
 ### External addons and host API (interface 3)
 
 - **FULL TWIST and Yaris Bounce now build as `runtime = "dll"` addons.** They
