@@ -58,12 +58,12 @@ reopen_game() {
 	return 0
 }
 
-T="$HERE/JERICHO/MODS/bake/tools"
+T="$HERE/JERICHO/MODS/bake/tools/car"
 # The dev tree's game folder (src_rebuild/bin/<config>) does not carry the
 # data-only bake module, so fall back to the repo's copy three levels up.
 # A shipped package has the tools beside the script and takes the first path.
-if [ ! -f "$T/bake.py" ] && [ -f "$HERE/../../../JERICHO/MODS/bake/tools/bake.py" ]; then
-	T="$HERE/../../../JERICHO/MODS/bake/tools"
+if [ ! -f "$T/bake.py" ] && [ -f "$HERE/../../../JERICHO/MODS/bake/tools/car/bake.py" ]; then
+	T="$HERE/../../../JERICHO/MODS/bake/tools/car"
 fi
 LEV="DRIVER/LEVELS"
 D2="DRIVER2/LEVELS"

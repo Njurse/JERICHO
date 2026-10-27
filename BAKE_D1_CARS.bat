@@ -36,11 +36,11 @@ set "GAME_EXE="
 if /i "%~1"=="--from-game" set "FROM_GAME=1"
 if /i "%~1"=="--from-game" set "GAME_EXE=%~2"
 
-set "T=%~dp0JERICHO\MODS\bake\tools"
+set "T=%~dp0JERICHO\MODS\bake\tools\car"
 rem The dev tree's game folder (src_rebuild\bin\<config>) does not carry the
 rem data-only bake module, so fall back to the repo's copy three levels up.
 rem A shipped package has the tools beside the script and takes the first path.
-if not exist "%T%\bake.py" if exist "%~dp0..\..\..\JERICHO\MODS\bake\tools\bake.py" set "T=%~dp0..\..\..\JERICHO\MODS\bake\tools"
+if not exist "%T%\bake.py" if exist "%~dp0..\..\..\JERICHO\MODS\bake\tools\car\bake.py" set "T=%~dp0..\..\..\JERICHO\MODS\bake\tools\car"
 set "LEV=DRIVER\LEVELS"
 set "D2=DRIVER2\LEVELS"
 set "OUT=JERICHO\MODS\carhacks\D1CARS"
