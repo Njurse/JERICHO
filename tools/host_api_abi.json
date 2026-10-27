@@ -1,0 +1,879 @@
+{
+  "header": "JERICHO/sdk/include/jer_host_api.h",
+  "structs": {
+    "JER_CAMERA_STATE": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "angle",
+        "type": "int angle"
+      },
+      {
+        "name": "baseAngle",
+        "type": "int baseAngle"
+      },
+      {
+        "name": "defaultScrZ",
+        "type": "int defaultScrZ"
+      },
+      {
+        "name": "position",
+        "type": "JER_VEC position"
+      }
+    ],
+    "JER_CAR_STATE": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "carId",
+        "type": "int carId"
+      },
+      {
+        "name": "position",
+        "type": "JER_VEC position"
+      },
+      {
+        "name": "orientation",
+        "type": "JER_QUAT orientation"
+      },
+      {
+        "name": "velocity",
+        "type": "JER_VEC velocity"
+      },
+      {
+        "name": "angularVelocity",
+        "type": "JER_VEC angularVelocity"
+      },
+      {
+        "name": "speed",
+        "type": "int speed"
+      },
+      {
+        "name": "wheelSpeed",
+        "type": "int wheelSpeed"
+      },
+      {
+        "name": "wheelMask",
+        "type": "int wheelMask"
+      },
+      {
+        "name": "controlType",
+        "type": "int controlType"
+      },
+      {
+        "name": "controlFlags",
+        "type": "int controlFlags"
+      },
+      {
+        "name": "model",
+        "type": "int model"
+      },
+      {
+        "name": "palette",
+        "type": "int palette"
+      },
+      {
+        "name": "damage",
+        "type": "int damage"
+      },
+      {
+        "name": "playerId",
+        "type": "int playerId"
+      },
+      {
+        "name": "wheelAngle",
+        "type": "JER_SVEC wheelAngle"
+      },
+      {
+        "name": "thrust",
+        "type": "int thrust"
+      },
+      {
+        "name": "revs",
+        "type": "int revs"
+      },
+      {
+        "name": "gear",
+        "type": "int gear"
+      }
+    ],
+    "JER_COSMETIC_INFO": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "cog",
+        "type": "JER_VEC cog"
+      },
+      {
+        "name": "colBox",
+        "type": "JER_VEC colBox"
+      },
+      {
+        "name": "mass",
+        "type": "int mass"
+      },
+      {
+        "name": "twistRateX",
+        "type": "int twistRateX"
+      },
+      {
+        "name": "twistRateY",
+        "type": "int twistRateY"
+      },
+      {
+        "name": "twistRateZ",
+        "type": "int twistRateZ"
+      },
+      {
+        "name": "cbYoffset",
+        "type": "int cbYoffset"
+      },
+      {
+        "name": "susCoeff",
+        "type": "int susCoeff"
+      },
+      {
+        "name": "traction",
+        "type": "int traction"
+      },
+      {
+        "name": "wheelSize",
+        "type": "int wheelSize"
+      }
+    ],
+    "JER_CVEC": [
+      {
+        "name": "r",
+        "type": "unsigned char"
+      },
+      {
+        "name": "g",
+        "type": "unsigned char"
+      },
+      {
+        "name": "b",
+        "type": "unsigned char"
+      },
+      {
+        "name": "code",
+        "type": "unsigned char"
+      }
+    ],
+    "JER_HOST_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "abi",
+        "type": "unsigned int abi"
+      },
+      {
+        "name": "core",
+        "type": "const JER_HOST_CORE_API* core"
+      },
+      {
+        "name": "config",
+        "type": "const JER_HOST_CONFIG_API* config"
+      },
+      {
+        "name": "car",
+        "type": "const JER_HOST_CAR_API* car"
+      },
+      {
+        "name": "player",
+        "type": "const JER_HOST_PLAYER_API* player"
+      },
+      {
+        "name": "camera",
+        "type": "const JER_HOST_CAMERA_API* camera"
+      },
+      {
+        "name": "model",
+        "type": "const JER_HOST_MODEL_API* model"
+      },
+      {
+        "name": "world",
+        "type": "const JER_HOST_WORLD_API* world"
+      },
+      {
+        "name": "game",
+        "type": "const JER_HOST_GAME_API* game"
+      },
+      {
+        "name": "ui",
+        "type": "const JER_HOST_UI_API* ui"
+      },
+      {
+        "name": "debug",
+        "type": "const JER_HOST_DEBUG_API* debug"
+      },
+      {
+        "name": "cardata",
+        "type": "const JER_HOST_CARDATA_API* cardata"
+      }
+    ],
+    "JER_HOST_CAMERA_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "get_state",
+        "type": "int (*get_state)(JER_CAMERA_STATE* out)"
+      },
+      {
+        "name": "angle",
+        "type": "int (*angle)(void)"
+      },
+      {
+        "name": "set_angle",
+        "type": "void (*set_angle)(int angle)"
+      },
+      {
+        "name": "set_base_angle",
+        "type": "void (*set_base_angle)(int angle)"
+      }
+    ],
+    "JER_HOST_CARDATA_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "model_source",
+        "type": "int (*model_source)(int slot)"
+      },
+      {
+        "name": "set_model_source",
+        "type": "void (*set_model_source)(int slot, int city)"
+      },
+      {
+        "name": "resident_model",
+        "type": "int (*resident_model)(int slot)"
+      },
+      {
+        "name": "set_resident_model",
+        "type": "void (*set_resident_model)(int slot, int model)"
+      },
+      {
+        "name": "palette_count",
+        "type": "int (*palette_count)(int city, int model)"
+      },
+      {
+        "name": "hot_load_model",
+        "type": "int (*hot_load_model)(int slot)"
+      },
+      {
+        "name": "hot_load_cosmetics",
+        "type": "int (*hot_load_cosmetics)(int slot)"
+      },
+      {
+        "name": "apply_palette",
+        "type": "int (*apply_palette)(int city)"
+      },
+      {
+        "name": "release_imports",
+        "type": "int (*release_imports)(void)"
+      },
+      {
+        "name": "slot_res_report",
+        "type": "int (*slot_res_report)(void)"
+      },
+      {
+        "name": "init_import",
+        "type": "void (*init_import)(void)"
+      },
+      {
+        "name": "init_import_mid_level",
+        "type": "void (*init_import_mid_level)(void)"
+      },
+      {
+        "name": "availability",
+        "type": "int (*availability)(int city, int slot)"
+      },
+      {
+        "name": "set_availability",
+        "type": "void (*set_availability)(int city, int slot, int available)"
+      },
+      {
+        "name": "list_model",
+        "type": "int (*list_model)(int city, int slot)"
+      },
+      {
+        "name": "set_list_model",
+        "type": "void (*set_list_model)(int city, int slot, int model)"
+      }
+    ],
+    "JER_HOST_CAR_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "count",
+        "type": "int (*count)(void)"
+      },
+      {
+        "name": "at",
+        "type": "void* (*at)(int slot)"
+      },
+      {
+        "name": "slot_usable",
+        "type": "int (*slot_usable)(int slot)"
+      },
+      {
+        "name": "get_state",
+        "type": "int (*get_state)(void* car, JER_CAR_STATE* out)"
+      },
+      {
+        "name": "set_state",
+        "type": "int (*set_state)(void* car, const JER_CAR_STATE* in)"
+      },
+      {
+        "name": "wheel_mask",
+        "type": "int (*wheel_mask)(void* car)"
+      },
+      {
+        "name": "model",
+        "type": "void* (*model)(void* car)"
+      },
+      {
+        "name": "cosmetic",
+        "type": "void* (*cosmetic)(void* car)"
+      },
+      {
+        "name": "model_index",
+        "type": "int (*model_index)(void* car)"
+      },
+      {
+        "name": "init",
+        "type": "int (*init)(int slot, int model, const JER_VEC* position, const JER_SVEC* orientation)"
+      },
+      {
+        "name": "map_height",
+        "type": "int (*map_height)(const JER_VEC* position)"
+      },
+      {
+        "name": "road_info",
+        "type": "int (*road_info)(int x, int y, int z, JER_HOST_ROAD_INFO* out)"
+      },
+      {
+        "name": "cell_empty",
+        "type": "int (*cell_empty)(const JER_VEC* position, int flags)"
+      },
+      {
+        "name": "active_slots",
+        "type": "int (*active_slots)(int* out, int max)"
+      },
+      {
+        "name": "get_matrix",
+        "type": "int (*get_matrix)(void* car, JER_MATRIX* out)"
+      },
+      {
+        "name": "rebuild_matrix",
+        "type": "int (*rebuild_matrix)(void* car)"
+      },
+      {
+        "name": "add_angular_accel",
+        "type": "int (*add_angular_accel)(void* car, const JER_VEC* aacc)"
+      },
+      {
+        "name": "wheel_state",
+        "type": "int (*wheel_state)(void* car, int wheel, JER_WHEEL_STATE* out)"
+      },
+      {
+        "name": "cosmetic_info",
+        "type": "int (*cosmetic_info)(void* car, JER_COSMETIC_INFO* out)"
+      },
+      {
+        "name": "set_motion",
+        "type": "int (*set_motion)(void* car, const JER_VEC* position, const JER_QUAT* orientation, const JER_VEC* velocity, const JER_VEC* angularVelocity)"
+      },
+      {
+        "name": "set_speed",
+        "type": "int (*set_speed)(void* car, int speed)"
+      },
+      {
+        "name": "mark_collision",
+        "type": "int (*mark_collision)(void* car, int otherId)"
+      },
+      {
+        "name": "draw_vertices",
+        "type": "int (*draw_vertices)(void* car, JER_SVEC** out, int* capacity)"
+      }
+    ],
+    "JER_HOST_CONFIG_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "get_int",
+        "type": "int (*get_int)(const char* mod, const char* key, int def)"
+      },
+      {
+        "name": "set_int",
+        "type": "void (*set_int)(const char* mod, const char* key, int value)"
+      },
+      {
+        "name": "get_bool",
+        "type": "int (*get_bool)(const char* mod, const char* key, int def)"
+      },
+      {
+        "name": "set_bool",
+        "type": "void (*set_bool)(const char* mod, const char* key, int value)"
+      },
+      {
+        "name": "get_str",
+        "type": "const char* (*get_str)(const char* mod, const char* key, const char* def)"
+      },
+      {
+        "name": "set_str",
+        "type": "void (*set_str)(const char* mod, const char* key, const char* value)"
+      }
+    ],
+    "JER_HOST_CORE_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "log",
+        "type": "void (*log)(const char* fmt, ...)"
+      },
+      {
+        "name": "fire",
+        "type": "int (*fire)(int event, void* args)"
+      },
+      {
+        "name": "override",
+        "type": "void (*override)(int slot, void* fn)"
+      }
+    ],
+    "JER_HOST_DEBUG_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "line",
+        "type": "void (*line)(const JER_VEC* a, const JER_VEC* b, int colour)"
+      },
+      {
+        "name": "line_depth",
+        "type": "void (*line_depth)(const JER_VEC* a, const JER_VEC* b, const JER_CVEC* colour)"
+      }
+    ],
+    "JER_HOST_GAME_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "level",
+        "type": "int (*level)(void)"
+      },
+      {
+        "name": "game_type",
+        "type": "int (*game_type)(void)"
+      },
+      {
+        "name": "num_players",
+        "type": "int (*num_players)(void)"
+      },
+      {
+        "name": "cops_allowed",
+        "type": "int (*cops_allowed)(void)"
+      },
+      {
+        "name": "max_player_damage",
+        "type": "int (*max_player_damage)(void)"
+      },
+      {
+        "name": "pedestrian_felony",
+        "type": "int (*pedestrian_felony)(void)"
+      },
+      {
+        "name": "frame",
+        "type": "int (*frame)(void)"
+      }
+    ],
+    "JER_HOST_MODEL_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "clean",
+        "type": "void* (*clean)(int slot)"
+      },
+      {
+        "name": "damaged",
+        "type": "void* (*damaged)(int slot)"
+      },
+      {
+        "name": "low",
+        "type": "void* (*low)(int slot)"
+      },
+      {
+        "name": "cosmetic",
+        "type": "void* (*cosmetic)(int slot)"
+      },
+      {
+        "name": "vertices",
+        "type": "const JER_SVEC* (*vertices)(void* model)"
+      },
+      {
+        "name": "vertex_count",
+        "type": "int (*vertex_count)(void* model)"
+      },
+      {
+        "name": "cosmetic_info",
+        "type": "int (*cosmetic_info)(int slot, JER_COSMETIC_INFO* out)"
+      }
+    ],
+    "JER_HOST_PLAYER_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "count",
+        "type": "int (*count)(void)"
+      },
+      {
+        "name": "at",
+        "type": "void* (*at)(int playerId)"
+      },
+      {
+        "name": "get_state",
+        "type": "int (*get_state)(void* player, JER_PLAYER_STATE* out)"
+      },
+      {
+        "name": "felony",
+        "type": "int (*felony)(void* player)"
+      },
+      {
+        "name": "set_camera_angle",
+        "type": "int (*set_camera_angle)(void* player, int angle)"
+      },
+      {
+        "name": "set_horn",
+        "type": "int (*set_horn)(void* player, int on)"
+      },
+      {
+        "name": "pad",
+        "type": "int (*pad)(int playerId, int* out, int max)"
+      },
+      {
+        "name": "pad_direct",
+        "type": "int (*pad_direct)(int playerId)"
+      },
+      {
+        "name": "main",
+        "type": "void* (*main)(void)"
+      }
+    ],
+    "JER_HOST_ROAD_INFO": [
+      {
+        "name": "surfId",
+        "type": "int surfId"
+      },
+      {
+        "name": "kind",
+        "type": "int kind"
+      },
+      {
+        "name": "numLanes",
+        "type": "int numLanes"
+      },
+      {
+        "name": "speedLimit",
+        "type": "int speedLimit"
+      },
+      {
+        "name": "laneDirs",
+        "type": "unsigned char laneDirs"
+      },
+      {
+        "name": "aiLanes",
+        "type": "unsigned char aiLanes"
+      },
+      {
+        "name": "connect",
+        "type": "int connect[4]"
+      }
+    ],
+    "JER_HOST_UI_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "hud_message",
+        "type": "void (*hud_message)(const char* text, int frames)"
+      },
+      {
+        "name": "hud_message_segs",
+        "type": "void (*hud_message_segs)(const void* segs, int count, int frames)"
+      },
+      {
+        "name": "hud_clear",
+        "type": "void (*hud_clear)(void)"
+      },
+      {
+        "name": "console_log",
+        "type": "void (*console_log)(const char* fmt, ...)"
+      },
+      {
+        "name": "notify",
+        "type": "void (*notify)(const char* text, int kind, int seconds)"
+      },
+      {
+        "name": "pause_menu_register",
+        "type": "void (*pause_menu_register)(const void* menu)"
+      },
+      {
+        "name": "frontend_register_menu",
+        "type": "void (*frontend_register_menu)(const void* menu)"
+      },
+      {
+        "name": "text_draw_at",
+        "type": "void (*text_draw_at)(int x, int y, const char* text, int colour, int scale)"
+      },
+      {
+        "name": "text_width",
+        "type": "int (*text_width)(const char* text, int scale)"
+      },
+      {
+        "name": "sound_lock",
+        "type": "int (*sound_lock)(int channel)"
+      },
+      {
+        "name": "sound_unlock",
+        "type": "void (*sound_unlock)(int voice)"
+      }
+    ],
+    "JER_HOST_WORLD_API": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "version",
+        "type": "unsigned int version"
+      },
+      {
+        "name": "cells_across",
+        "type": "int (*cells_across)(void)"
+      },
+      {
+        "name": "units_across_halved",
+        "type": "int (*units_across_halved)(void)"
+      },
+      {
+        "name": "num_roads",
+        "type": "int (*num_roads)(int kind)"
+      },
+      {
+        "name": "region",
+        "type": "int (*region)(void)"
+      },
+      {
+        "name": "region_of",
+        "type": "int (*region_of)(int x, int z)"
+      },
+      {
+        "name": "spool_to",
+        "type": "int (*spool_to)(int x, int z)"
+      }
+    ],
+    "JER_MATRIX": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "m",
+        "type": "int m[3][3]"
+      },
+      {
+        "name": "t",
+        "type": "JER_VEC t"
+      }
+    ],
+    "JER_PLAYER_STATE": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "playerId",
+        "type": "int playerId"
+      },
+      {
+        "name": "playerCarId",
+        "type": "int playerCarId"
+      },
+      {
+        "name": "cameraCarId",
+        "type": "int cameraCarId"
+      },
+      {
+        "name": "cameraAngle",
+        "type": "int cameraAngle"
+      },
+      {
+        "name": "targetCarId",
+        "type": "int targetCarId"
+      },
+      {
+        "name": "padid",
+        "type": "int padid"
+      },
+      {
+        "name": "playerType",
+        "type": "int playerType"
+      },
+      {
+        "name": "horn",
+        "type": "int horn"
+      },
+      {
+        "name": "position",
+        "type": "JER_VEC position"
+      },
+      {
+        "name": "dir",
+        "type": "int dir"
+      }
+    ],
+    "JER_QUAT": [
+      {
+        "name": "x",
+        "type": "int"
+      },
+      {
+        "name": "y",
+        "type": "int"
+      },
+      {
+        "name": "z",
+        "type": "int"
+      },
+      {
+        "name": "w",
+        "type": "int"
+      }
+    ],
+    "JER_SVEC": [
+      {
+        "name": "x",
+        "type": "short"
+      },
+      {
+        "name": "y",
+        "type": "short"
+      },
+      {
+        "name": "z",
+        "type": "short"
+      },
+      {
+        "name": "pad",
+        "type": "short"
+      }
+    ],
+    "JER_VEC": [
+      {
+        "name": "x",
+        "type": "int"
+      },
+      {
+        "name": "y",
+        "type": "int"
+      },
+      {
+        "name": "z",
+        "type": "int"
+      },
+      {
+        "name": "pad",
+        "type": "int"
+      }
+    ],
+    "JER_WHEEL_STATE": [
+      {
+        "name": "size",
+        "type": "unsigned int size"
+      },
+      {
+        "name": "compression",
+        "type": "int compression"
+      },
+      {
+        "name": "locked",
+        "type": "int locked"
+      },
+      {
+        "name": "onGrass",
+        "type": "int onGrass"
+      },
+      {
+        "name": "surface",
+        "type": "int surface"
+      }
+    ]
+  }
+}
