@@ -18,6 +18,9 @@
 #include "handling.h"
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
+#include "jer_hud.h"		// JERICHO: jer_hud_player_health
+
+#define JER_HUD_HEALTH_DEFAULT_MAX	100
 
 COLOUR_BAND felonyColour[3] =
 {
@@ -38,6 +41,19 @@ COLOUR_BAND damageColour[2] =
 	{ { 0, 255, 0, 0 }, 0, 0 },
 	{ { 255, 0, 0, 0 }, 4096, 0 }
 };
+
+// JERICHO: the player's health bar -- the damage bar's colouring inverted.
+// Value is health (full = 4096): below ~30% the band flashes dark/bright red
+// (flags 2 = the stock flash), above it fades red -> green.
+COLOUR_BAND playerHealthColour[3] =
+{
+	{ { 90, 0, 0, 0 }, 0, 0 },
+	{ { 255, 0, 0, 0 }, 1229, 2 },
+	{ { 0, 255, 0, 0 }, 4096, 0 }
+};
+
+PERCENTAGE_BAR PlayerHealthBar;
+static int sPlayerHealthStamp = 0;
 
 PERCENTAGE_BAR PlayerDamageBar;
 PERCENTAGE_BAR Player2DamageBar;
@@ -92,6 +108,13 @@ void InitOverlays(void)
 
 	PlayerDamageBar.active = 1;
 
+	// JERICHO: health, half height, under the damage bar (jer_hud_player_health)
+	InitPercentageBar(&PlayerHealthBar, JER_HUD_HEALTH_DEFAULT_MAX, playerHealthColour, NULL);
+	PlayerHealthBar.xpos = gOverlayXPos;
+	PlayerHealthBar.ypos = 24 + PERCENTAGE_BAR_HEIGHT + 3;
+	PlayerHealthBar.height = PERCENTAGE_BAR_HEIGHT / 2;
+	PlayerHealthBar.active = 0;
+
 	if (NumPlayers > 1)
 	{
 		InitPercentageBar(&Player2DamageBar, MaxPlayerDamage[1], playerDamageColour, G_LTXT(GTXT_Damage));
@@ -132,6 +155,24 @@ void InitOverlays(void)
 	}
 
 
+}
+
+// JERICHO: see jer_hud.h
+void jer_hud_player_health(int value, int max)
+{
+	if (max <= 0)
+	{
+		PlayerHealthBar.active = 0;
+		return;
+	}
+
+	if (value < 0)
+		value = 0;
+
+	PlayerHealthBar.max = max;
+	PlayerHealthBar.position = value > max ? max : value;
+	PlayerHealthBar.active = 1;
+	sPlayerHealthStamp = CameraCnt;
 }
 
 // [D] [T]
@@ -759,6 +800,7 @@ void DisplayOverlays(void)
 
 		// set up
 		PlayerDamageBar.xpos = gOverlayXPos;
+		PlayerHealthBar.xpos = gOverlayXPos;
 		Player2DamageBar.xpos = gOverlayXPos;
 		FelonyBar.xpos = gOverlayXPos;
 		DamageBar.xpos = gOverlayXOppPos;
@@ -807,6 +849,15 @@ void DisplayOverlays(void)
 			DrawPercentageBar(&PlayerDamageBar);
 			DrawPercentageBar(&Player2DamageBar);
 		}
+
+		// JERICHO: the health bar goes stale if its module stops refreshing it
+		if (PlayerHealthBar.active && (CameraCnt - sPlayerHealthStamp > 3 || CameraCnt < sPlayerHealthStamp))
+			PlayerHealthBar.active = 0;
+
+		DrawPercentageBar(&PlayerHealthBar);
+
+		FelonyBar.ypos = PlayerHealthBar.active ? 54 : 46;
+		ProxyBar.ypos = FelonyBar.ypos;
 
 		if (!gPlayerImmune || ActiveCheats.cheat4)
 		{

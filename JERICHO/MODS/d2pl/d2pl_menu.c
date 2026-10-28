@@ -184,13 +184,73 @@ static int ActTestAim(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+/* --- test ped (debug) -------------------------------------------- */
+
+static int ActTpSpawn(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	D2plTestPedSpawn();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static int ActTpDespawn(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+	D2plTestPedDespawn();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void LblTpBehaviour(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Behaviour: < %s >", D2plTestPedBehaviourName());
+}
+
+static int ActTpBehaviour(void* ud, int dir)
+{
+	(void)ud;
+	D2plTestPedSetBehaviour(D2plTestPedBehaviour() + (dir < 0 ? -1 : 1));
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void LblTpHealth(void* ud, char* out, int max)
+{
+	int hp = D2plTestPedHealth();
+
+	(void)ud;
+
+	if (hp < 0)
+		snprintf(out, max, "Test ped: none");
+	else
+		snprintf(out, max, "Test ped HP: %d / %d", hp, D2PL_PED_HEALTH);
+}
+
+static const JER_PAUSE_MENU_ITEM gTestPedItems[] =
+{
+	{ "Spawn / respawn (Tanner)", NULL, ActTpSpawn,   NULL, NULL, 0 },
+	{ NULL, LblTpBehaviour,       ActTpBehaviour,     NULL, NULL, 1 },
+	{ NULL, LblTpHealth,          NULL,               NULL, NULL, 0 },
+	{ "Despawn",                  NULL, ActTpDespawn, NULL, NULL, 0 },
+	{ "Env: D2PL_TEST_PED=stand|follow|attack", NULL, NULL, NULL, NULL, 0 },
+};
+
+static const JER_PAUSE_MENU gTestPedMenu =
+{
+	"Test ped (debug)",
+	gTestPedItems,
+	(int)(sizeof(gTestPedItems) / sizeof(gTestPedItems[0])),
+	"d2pl.testped"
+};
+
 /* --- cards -------------------------------------------------------- */
 
 static const JER_PAUSE_MENU_ITEM gControlsItems[] =
 {
 	{ "L1: aim",                  NULL, NULL, NULL, NULL, 0 },
 	{ "R1: fire",                 NULL, NULL, NULL, NULL, 0 },
-	{ "X (tap): reload",          NULL, NULL, NULL, NULL, 0 },
+	{ "O key: reload",            NULL, NULL, NULL, NULL, 0 },
 	{ "L2: next weapon",          NULL, NULL, NULL, NULL, 0 },
 	{ "Stick / arrows back: backpedal", NULL, NULL, NULL, NULL, 0 },
 	{ "On foot only; in a car the shoulders are stock", NULL, NULL, NULL, NULL, 0 },
@@ -233,6 +293,7 @@ static const JER_PAUSE_MENU_ITEM gMainItems[] =
 	{ NULL, LblBackpedal, ActBackpedal, NULL, NULL, 1 },
 	{ NULL, LblBackAngle, ActBackAngle, NULL, NULL, 1 },
 	{ NULL, LblTestAim,   ActTestAim,   NULL, NULL, 1 },
+	{ "Test ped (debug)", NULL, NULL,   NULL, &gTestPedMenu, 0 },
 	{ "Gun sounds",       NULL, NULL,   NULL, &gSfxMenu, 0 },
 	{ "Controls",         NULL, NULL,   NULL, &gControlsMenu, 0 },
 	{ "Reset to defaults", NULL, ActReset, NULL, NULL, 0 },
