@@ -4,7 +4,9 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
-## Unreleased
+## v0.12.0
+
+*Released 2026-10-27.*
 
 ### On foot (d2pl 1.2.0)
 
@@ -34,10 +36,15 @@ is in [changelog.txt](changelog.txt).
 - **`JERICHO/MODS/d2pl/HOLDTYPES.md`:** a guide to adding holdtypes, weapons,
   sounds and custom animations, and the known limits (spine pitch, backpedal
   clip, left-hand IK, real SFX).
-- **Backpedal while aiming:** with aim held and the stick more than ~100°
-  off the view, Tanner keeps facing the aim and walks backwards (the stock
-  walk-back with the walk frames reversed) instead of turning round. Toggle
-  it in the pause page. New SDK setter `jer_npc_set_reverse_anim`.
+- **Backpedal at run speed:** any backward input (left stick or directional
+  arrows) keeps Tanner facing the view and backs him up at run speed with the
+  RUN clip reversed, instead of turning round or taking the slow stock
+  walk-back. It triggers in a cone around straight-back, tunable in the pause
+  page. New SDK setter `jer_npc_set_reverse_anim`.
+- **Conventional aim and look:** mouse look is 1:1 on both axes, the right
+  stick uses one shared response curve with the same max rate on yaw and
+  pitch, pitch holds where you leave it, and aiming halves the look rate.
+  Directional-arrow movement is camera-relative too.
 - **On Foot pause page** (Pause > JERICHO Addons > D2PL ON FOOT): weapon
   (left/right cycles), ammo, holdtype, aiming, twist limits, backpedal state
   and threshold, the `D2PL_TEST_AIM` lever, a gun-sound card with a mute
