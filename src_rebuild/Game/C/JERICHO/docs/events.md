@@ -33,8 +33,8 @@ world streamer / making a region resident (`jer_map.h`, see
 | `JER_EVENT_GAME_START` | `JER_ARGS_GAME_START` | `State_GameInit` (`main.c:843`) | a level is starting (fresh / restart / next) — modules reset transient state; notification, no handler = nothing. Carries `JER_ARGS_GAME_START { seed }`: the debug `-seed` run seed, or 0, so a module can make itself reproducible under test |
 | `JER_EVENT_CAMERA_LOOK` | `JER_ARGS_CAMERA_LOOK` | `TurnHead` | right-stick look input, before the stock look handling |
 | `JER_EVENT_PED_INPUT` | `JER_ARGS_PED_INPUT` | ped control loop | rewrite the on-foot pad before it drives Tanner |
-| `JER_EVENT_PED_MOVE` | `JER_ARGS_PED_MOVE` | `AnimatePed` (`pedest.c:638`) | player ped is about to move — the one point where a `pPed->speed` write survives the runner's per-frame re-arm; only a `TANNER_MODEL` ped with `padId >= 0`; no handler = stock speed |
-| `JER_EVENT_PED_POSE` | `JER_ARGS_PED_POSE` | `DrawTanner` (`motion_c.c:1696`) | per-bone ROTATION window between `SetupTannerSkeleton` and `newRotateBones` (player ped only); module mutates `*Skel[i].pvRotation`; no handler = stock motion pose |
+| `JER_EVENT_PED_MOVE` | `JER_ARGS_PED_MOVE` | `AnimatePed` (`pedest.c:638`) | player ped is about to move — the one point where a `pPed->speed` write survives the runner's per-frame re-arm; gated on the JERICHO ped ownership rule (`padId >= 0` for the player, or `jer_npc_owned`), not on a model id; no handler = stock speed |
+| `JER_EVENT_PED_POSE` | `JER_ARGS_PED_POSE` | `DrawTanner`/`DrawCharacter` (`motion_c.c`) | per-bone ROTATION window between `SetupTannerSkeleton` and `newRotateBones` (player ped or an owned ped); module mutates `*Skel[i].pvRotation`; `dir` = the DRAWN ped's `dir.vy` (under mp not the PED_MOVE ped); main pass only (`DrawCharacter` clears `bDoingShadow` first); no handler = stock motion pose |
 | `JER_EVENT_FRONTEND` | `JER_ARGS_FRONTEND` | `JerichoFrontendCityConfirm` (`FEmain.c`), called from `CutSceneCitySelectScreen` and from `HandleKeyPress` on the Take-a-Ride city screen | take-a-ride city confirm — module may rewrite `gameLevel`/`gameType`/`numPlayers`, or set `defer = 1` to run its own start over the frozen frontend (the stock screen switch is then skipped); no handler = stock flow |
 | `JER_EVENT_FRONTEND_MAIN_MENU` | `JER_ARGS_FRONTEND_ENTRY` | `MainScreen` (`FEmain.c`) | fired once per row while the title screen is built — rename (`label`), redirect to a module menu (`openMenu`), `disabled`, `hidden`; the engine always applies the struct; no handler = stock rows |
 | `JER_EVENT_FRONTEND_ENTERED` | — | `State_InitFrontEnd` (`glaunch.c:325`) | the game (re)entered the frontend — modules drop per-run gameplay state (a forced car, live weapons, looped sounds) so nothing lingers or plays in the menus; no args, no handler = nothing |
@@ -143,27 +143,39 @@ reads the (possibly updated) fields back. No handler = stock behavior.
 - **`JER_EVENT_PED_INPUT`** fires right before `ProcessTannerPad` with the
   pad that is about to drive the on-foot player. The module can rewrite the
   pad bits (or write `lp->dir` directly, as d2pl does for camera-relative
-  movement). No handler = stock pad handling.
+  movement). `stickX` is in/out as well: the host feeds its final value to
+  `ProcessTannerPad` as the analog steer, so a module that owns the heading
+  zeroes it — otherwise the stock TURNLEFT/TURNRIGHT is re-added behind the
+  module, even when the stick is inside the movement deadzone. `cameraYaw`
+  is the camera's forward heading (0..4095), not the raw signed
+  `camera_angle.vy`. No handler = stock pad handling.
 - **`JER_EVENT_PED_SKELETON`** fires twice per player-ped draw from
-  `newShowTanner`: phase 0 before the bone accumulation (override
-  `Skel[i].vCurrPos` to pose the arm), phase 1 after (read `vJPos` for
-  world-space joint positions and draw extra meshes). `shadow` is set when
-  the pass is for the shadow, so modules can skip there.
+  `newShowTanner` (reached from both `DrawTanner` and `DrawCharacter`):
+  phase 0 before the bone accumulation (override `Skel[i].vCurrPos` to pose
+  the arm), phase 1 after (read `vJPos` for world-space joint positions and
+  draw extra meshes). Gated on the JERICHO ownership rule — the player's ped
+  (`padId >= 0`, any player model) or a module-owned ped — not on a model id.
+  `shadow` is set when the pass is for the shadow, so modules can skip there.
+  Under mp/pedhacks the drawn ped can be a different pointer from the ped
+  `PED_MOVE` reports; identify the pose target from the draw hooks, not from
+  `PED_MOVE`.
 - **`JER_EVENT_PED_MOVE`** fires inside `AnimatePed` right before the
-  player ped's position is advanced (`pedest.c:638`), for a `TANNER_MODEL`
-  ped with `padId >= 0`. `ProcessTannerPad` and the runner re-arm `speed =
-  MAXRUNSPEED` every frame, so this is the one point where a `pPed->speed`
-  write survives the advance — a module scales the run speed here (e.g. from
-  the analog deflection magnitude, lerped for stand-start momentum). No
-  handler = stock speed.
-- **`JER_EVENT_PED_POSE`** fires in `DrawTanner` between
-  `SetupTannerSkeleton` and `newRotateBones` (`motion_c.c:1696`), player ped
-  only. `args->skel` is the engine's `BONE* Skel[]`; each
+  player ped's position is advanced (`pedest.c:638`), for the player's ped
+  (`padId >= 0`, any player model) or a module-owned ped. `ProcessTannerPad`
+  and the runner re-arm `speed = MAXRUNSPEED` every frame, so this is the one
+  point where a `pPed->speed` write survives the advance — a module scales
+  the run speed here (e.g. from the analog deflection magnitude, lerped for
+  stand-start momentum). No handler = stock speed.
+- **`JER_EVENT_PED_POSE`** fires in `DrawTanner` **and** `DrawCharacter`
+  between `SetupTannerSkeleton` and `newRotateBones`, for the player's ped or
+  a module-owned ped (no model check, so mp's `OTHER_MODEL` character is
+  covered). `args->skel` is the engine's `BONE* Skel[]`; each
   `Skel[i].pvRotation` points into the raw motion-frame bytes that
   `newRotateBones` reads immediately after the hook, so a rotation write here
   is that frame's last word on the bone (the `PED_SKELETON` phase-0 hook
-  remains the position channel). Use the `jer_anim.h` helpers to resolve
-  bones.
+  remains the position channel). `args->dir` is the DRAWN ped's `dir.vy`
+  (0..4095); under mp/pedhacks it can differ from the movement ped's facing,
+  so derive pose yaw from it. Use the `jer_anim.h` helpers to resolve bones.
 
 ## The car handling events (collisiondevil uses these)
 

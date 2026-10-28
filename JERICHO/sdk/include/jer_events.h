@@ -280,12 +280,16 @@ typedef struct JER_ARGS_CAMERA_LOOK
 /* JER_EVENT_PED_INPUT — fired in the ped-input loop right before
  * ProcessTannerPad(), after the engine synthesized D-pad bits from the left
  * stick. A module may rewrite pad (in/out) to implement camera-relative
- * movement: combine stickX/stickY with cameraYaw to produce movement. */
+ * movement: combine stickX/stickY with cameraYaw to produce movement.
+ * stickX is in/out too: its final value is fed to ProcessTannerPad as the
+ * analog steer, so a module that owns the heading writes 0 to stop the stock
+ * TURNLEFT/TURNRIGHT from being re-added behind it. */
 typedef struct JER_ARGS_PED_INPUT
 {
 	void* player;		/* PLAYER* whose pad is being processed */
 	int pad;		/* in/out: tannerPad bits (TANNER_PAD_*) */
-	int stickX;		/* in: left-stick X analog, signed -128..127 */
+	int stickX;		/* in/out: left-stick X analog, signed -128..127;
+				   the host feeds the final value to ProcessTannerPad */
 	int stickY;		/* in: left-stick Y analog, signed -128..127 */
 	int cameraYaw;		/* in: current camera facing, 0..4095 (PSX angle) */
 } JER_ARGS_PED_INPUT;
@@ -310,10 +314,19 @@ typedef struct JER_ARGS_PED_MOVE
  * immediately after the hook — a write made here is the last word on that
  * frame's bone rotation (PED_SKELETON phase-0 remains the POSITION
  * channel). Use the jer_anim helpers (jer_anim.h) to resolve bones. */
+/* PED_POSE fires on BOTH skeleton draw paths (DrawTanner and DrawCharacter),
+ * main pass only, for the player's ped (padId >= 0: TANNER_MODEL or mp's
+ * OTHER_MODEL character) or a jer_npc_owned ped - never for ambient peds and
+ * not gated on a model id. Under mp the DRAWN ped can be a different pointer
+ * from the PED_MOVE ped: identify the pose target from this hook. */
 typedef struct JER_ARGS_PED_POSE
 {
-	void* ped;		/* LPPEDESTRIAN being drawn */
+	void* ped;		/* LPPEDESTRIAN being drawn (the DRAWN ped) */
 	void* skel;		/* BONE* Skel[] (index with JER_LIMB_*) */
+	int dir;		/* the DRAWN ped's dir.vy (0..4095); may differ from
+				   the PED_MOVE/movement ped under mp/pedhacks */
+	int isTanner;	/* 1: TANNER_MODEL skeleton; 0: another model (mp's
+				   OTHER_MODEL character) - use a reduced, yaw-only pose */
 } JER_ARGS_PED_POSE;
 
 /* JER_EVENT_FRONTEND — fired in the frontend's take-a-ride CITY CONFIRM: both

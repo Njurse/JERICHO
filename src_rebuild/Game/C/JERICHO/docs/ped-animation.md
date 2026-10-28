@@ -143,7 +143,8 @@ per-bone rotations where they actually take effect.
 - Movement speed: `JER_EVENT_PED_MOVE` (survives; the negative-speed branch
   gives the backpedal for free).
 - Movement direction / tank overrides: `JER_EVENT_PED_INPUT` (rewrite the
-  pad bits + `lp->dir`).
+  pad bits + `lp->dir`; `stickX` is in/out and zeroing it also suppresses the
+  stock analog steer `ProcessTannerPad` would otherwise add).
 - Head: `head_rot` (or `JER_EVENT_CAMERA_LOOK` suppress).
 
 ### The all-bone API (`jer_anim.h`)
@@ -183,10 +184,18 @@ and queried by `jer_npc_owned()` — which also checks `pUsedPeds`, so a ped the
 engine destroyed behind our back never matches a recycled slot. Ambient
 pedestrians never fire these hooks, so the engine pays nothing for them.
 
-A module's own ped normally has `padId = -1` (a mounted crew member, say); it is
-poseable purely by virtue of this gate, and the shadow pass is filterable via
-`JER_ARGS_PED_SKELETON.shadow`. Only `TANNER_MODEL` peds have a skeleton at all
-— the sprite models are drawn as sprites and have nothing to pose.
+The gate is the JERICHO ownership rule, **not a model id**: the player's ped
+(`padId >= 0`, whether `TANNER_MODEL` or `OTHER_MODEL` — mp's custom character)
+and any `jer_npc_owned` ped. A module's own ped normally has `padId = -1` (a
+mounted crew member, say); it is poseable purely by virtue of this gate, and
+the shadow pass is filterable via `JER_ARGS_PED_SKELETON.shadow`.
+`PED_POSE` fires on both draw paths (`DrawTanner` and `DrawCharacter`); the
+sprite-model civilians are drawn as sprites and have no skeleton to pose.
+
+Under mp/pedhacks the **drawn** player ped can be a different pointer from the
+movement ped (`MainPlayer.pPed` / the ped PED_MOVE reports). A module that
+wants to pose the player should identify the draw ped from these hooks (the
+first drawn ped that is not `jer_npc_owned`), not from PED_MOVE.
 
 ## 7. Relative transforms (what the numbers mean)
 
@@ -200,8 +209,9 @@ composes the chain as:
   (the AnimatePed forward branch moves along `RSIN(dir.vy - 2048)`).
 - Each bone's `pvRotation` is that bone's OWN yaw RELATIVE TO ITS PARENT
   (in the same 4096/360 angle scale). Writing `JOINT_1.vy = diff` where
-  `diff = (bodyYaw - aimYaw) & 0xfff` (normalized to -2048..2048 by
-  `jer_anim_aim_diff`) rotates the whole upper body (torso + arms + head,
+  `diff = jer_anim_aim_diff(aimYaw, bodyYaw)` (= aimYaw - bodyYaw,
+  normalized to -2048..2048; d2pl uses bodyYaw = PED_POSE.dir - 2048, so
+  positive = aim right, 0 = straight ahead) rotates the whole upper body (torso + arms + head,
   via the NECK chain) by exactly that much off the body heading.
 - `vOffset`/`vCurrPos` are parent->child POSITION deltas in the ped's
   local frame (render frame, Y down). The phase-0 arm pose writes these.
@@ -212,6 +222,9 @@ composes the chain as:
   stops posing (d2pl's `d2pl_pose.c` does this with `gSavedRots` /
   `gSavedValid`), or the walk cycle keeps the twist.
 
-Diagnostic: the one-shot `[d2pl] aim pose:` log (d2pl_pose.c,
+Diagnostic: `D2PL_POSE_DIAG=1` prints one `[d2pl] pose:` line (drawn
+ped, move ped, PED_POSE.dir, torso/neck twist, hand-valid + hand position)
+from PED_SKELETON phase 1, proving the pose and the laser hand cache ran.
+Also: the one-shot `[d2pl] aim pose:` log (d2pl_pose.c,
 PED_SKELETON phase 0) prints the shoulder, the camera aim point, the
 reach, and the two arm segment lengths the first time the pose runs.

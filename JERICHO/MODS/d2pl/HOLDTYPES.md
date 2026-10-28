@@ -136,7 +136,10 @@ There are two levels:
 - **Keyframe overrides**: set a holdtype `poseHook`. It runs in `PED_POSE` after
   the twist and IK, with the skeleton. Write `jer_anim_bone_rotation(skel, limb)`
   for bones in your `mask`. This covers a fixed grip, a reload gesture driven
-  by the weapon's `reloading` counter, or a recoil kick on fire.
+  by the weapon's `reloading` counter, or a recoil kick on fire. (A built-in
+  fire kick already exists: `gD2plRecoil`, applied in `D2plOnPedPose` as an
+  arm buckle + torso recoil, pistol vs rifle constants `D2PL_BUCKLE_*` /
+  `D2PL_RECOIL_*` in `d2pl_pose.c`.)
 - **Custom clips**: a clip is per-bone rotations over time. Store it as
   `JER_BONE_ROT frames[N][JER_LIMB_COUNT]` and sample it in a pose hook, using
   your own frame counter (or `api->game->frame()`). Blend per bone toward the

@@ -114,6 +114,17 @@ int jer_npc_leave_car(JerNpc* n);
  * back reports 0 rather than posing whatever slot got recycled. */
 int jer_npc_owned(const void* ped);
 
+/* ---- world FX ------------------------------------------------------------
+ * jer_fx_impact: a rudimentary bullet impact at (x, y, z) in the RENDER frame
+ * (y down, the frame car positions and the PED_SKELETON joints use): the
+ * car-collision sparks (+ debris for a world hit) and a small black smoke puff
+ * as the dark impact mark. (vx, vz) is the spark/debris push, car-velocity
+ * scale (tens). Particles come from the engine's shared smoke/debris pools,
+ * so a burst may be partly dropped when they are full. */
+#define JER_FX_IMPACT_WORLD	0
+#define JER_FX_IMPACT_PED	1
+void jer_fx_impact(int x, int y, int z, int vx, int vz, int kind);
+
 #ifdef __cplusplus
 }
 #endif

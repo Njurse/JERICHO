@@ -10,6 +10,7 @@
 #include "civ_ai.h"
 #include "dr2roads.h"
 #include "replays.h"	/* MAX_PLACED_PEDS */
+#include "debris.h"		/* Setup_Sparks / Setup_Debris / Setup_Smoke (jer_fx_impact) */
 
 /* A parked ped's state function: it does nothing, so the ped neither walks nor
  * advances its animation. It is installed into BOTH state slots, so whichever
@@ -453,4 +454,31 @@ void jer_npc_set_orient(JerNpc* n, int pitch, int yaw, int roll)
 	pPed->dir.vx = (short)(pitch & 0xfff);
 	pPed->dir.vy = (short)(yaw & 0xfff);
 	pPed->dir.vz = (short)(roll & 0xfff);
+}
+/* ---------------------------------------------------------------------------
+ * jer_fx_impact (see jer_npc.h): a bullet-style impact built from the same
+ * particle calls a car collision uses (bcollide.c: Setup_Sparks + Setup_Debris)
+ * plus a small black smoke puff as the dark impact mark. */
+void jer_fx_impact(int x, int y, int z, int vx, int vz, int kind)
+{
+	VECTOR pos, vel, drift;
+
+	pos.vx = x;
+	pos.vy = y;
+	pos.vz = z;
+	pos.pad = 0;
+
+	vel.vx = vx;
+	vel.vy = -17;		/* the car-collision spark lift (bcollide.c) */
+	vel.vz = vz;
+	vel.pad = 0;
+
+	drift.vx = drift.vy = drift.vz = drift.pad = 0;
+
+	Setup_Sparks(&pos, &vel, kind == JER_FX_IMPACT_PED ? 3 : 6, 0);
+
+	if (kind != JER_FX_IMPACT_PED)
+		Setup_Debris(&pos, &vel, 4, 0);
+
+	Setup_Smoke(&pos, 20, kind == JER_FX_IMPACT_PED ? 80 : 140, SMOKE_BLACK, 0, &drift, 0);
 }

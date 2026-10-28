@@ -418,17 +418,33 @@ int D2plOnPedMove(void* userdata, void* args)
 		{
 			const JER_HOST_API* api = jerHostApiGet();
 			JER_PLAYER_STATE ps;
+			int body = -1;
 
-			if (api != 0 && api->player != 0 && api->player->get_state != 0 &&
+			/* the body facing (visual convention, = ped dir - 2048) comes
+			 * from the DRAWN ped when the pose has seen it, else from the
+			 * player state (already the visual facing on foot) */
+			if (gD2plDrawDirValid)
+				body = (gD2plDrawDir - 2048) & 0xfff;
+			else if (api != 0 && api->player != 0 && api->player->get_state != 0 &&
 				api->player->main != 0 && api->player->get_state(api->player->main(), &ps))
+				body = ps.dir & 0xfff;
+
+			if (body >= 0)
 			{
-				int diff = jer_anim_aim_diff(ps.dir & 0xfff, (gD2plViewHeading + 2048) & 0xfff);
+				/* positive = the aim is to the right of the body */
+				int diff = jer_anim_aim_diff(gD2plViewHeading, body);
 
 				if (abs(diff) > D2PL_TURN_START)
 				{
 					int step = jer_clamp_int(diff, -D2PL_TURN_RATE, D2PL_TURN_RATE);
+					int raw = (body + step + 2048) & 0xfff;	/* raw ped dir */
 
-					jer_npc_face(ped, (ps.dir - step) & 0xfff);
+					jer_npc_face(ped, raw);
+
+					/* mp: the drawn character is a separate ped */
+					/* never face the drawn mp ped directly (crumpled OTHER_MODEL) */
+
+					gD2plDrawDir = raw;
 				}
 			}
 		}
@@ -567,6 +583,8 @@ void D2plInit(void)
 	gD2plHand[0] = gD2plHand[1] = gD2plHand[2] = 0;
 	gD2plHandValid = 0;
 	gD2plPlayerPed0 = 0;
+	gD2plDrawPed0 = 0;
+	gD2plDrawDirValid = 0;
 
 	for (i = 0; i < 2; i++)
 	{

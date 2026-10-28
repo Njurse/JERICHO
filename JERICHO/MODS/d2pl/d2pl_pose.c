@@ -21,6 +21,10 @@
  *   3. the holdtype's own pose hook (keyframe override / custom clip).
  * PED_SKELETON is read-only now: phase 0 caches the shoulder and measures
  * the root yaw, phase 1 caches the muzzle for the laser.
+ *
+ * Both hooks follow the DRAWN player ped (gD2plDrawPed0, see D2plIsDrawPed),
+ * not the PED_MOVE ped: under mp they are different pointers. The body
+ * facing is the drawn ped's own JER_ARGS_PED_POSE.dir.
  */
 
 #include "d2pl.h"
@@ -49,6 +53,9 @@ static int gSavedValid = 0;
 /* one-shot diagnostic so an unattended run can prove the aim pose ran */
 static int gAimPoseLogged = 0;
 
+static int gShoulderValid = 0;	/* shoulder/hand caches (see the root-yaw state below) */
+static int gLShoulderValid = 0;
+
 /* ------------------------------------------------------------------ */
 /* Aim point — the camera-centre ray                                   */
 /* ------------------------------------------------------------------ */
@@ -75,23 +82,86 @@ int D2plAimPoint(int out[3])
 	return 1;
 }
 
-static int D2plIsPlayerPed(void* ped)
+/* The DRAWN player ped. Under mp the character that is drawn (OTHER_MODEL)
+ * is a different pointer from the PED_MOVE ped, so the pose target is
+ * learned from the draw hooks themselves: the first ped they report that is
+ * not jer_npc_owned (the hooks fire only for the player and owned NPCs). */
+void* gD2plDrawPed0 = 0;
+int gD2plDrawDir = 0;
+int gD2plDrawDirValid = 0;
+static int gDrawMiss = 0;		/* ticks since the draw ped was last seen */
+
+#define D2PL_DRAW_RELEARN	30	/* ~1 s unseen: learn it again */
+
+static int D2plIsDrawPed(void* ped)
 {
 	if (ped == 0)
 		return 0;
 
-	if (gD2plPlayerPed0 == 0)
+	/* the movement ped, when it is drawn itself (single player), always
+	 * wins over a guess */
+	if (ped == gD2plPlayerPed0 && ped != gD2plDrawPed0)
 	{
-		/* PED_MOVE does not fire for an idle ped, so learn the player's ped
-		 * from the draw hooks. PED_POSE/PED_SKELETON fire for the player and
-		 * for module-owned NPCs; the latter answer jer_npc_owned() true. */
+		jer_log("[d2pl] draw ped -> move ped %p (was %p)\n", ped, gD2plDrawPed0);
+		gD2plDrawPed0 = ped;
+	}
+
+	if (gD2plDrawPed0 == 0)
+	{
 		if (jer_npc_owned(ped))
 			return 0;
 
-		gD2plPlayerPed0 = ped;
+		gD2plDrawPed0 = ped;
+		jer_log("[d2pl] draw ped %p (move ped %p)\n", ped, gD2plPlayerPed0);
 	}
 
-	return ped == gD2plPlayerPed0;
+	if (ped != gD2plDrawPed0)
+		return 0;
+
+	gDrawMiss = 0;
+	return 1;
+}
+
+/* JER_EVENT_FRAME: a draw ped that stopped being drawn (character swap,
+ * respawn) is re-learned - first by trying the PED_MOVE ped, then from the
+ * next non-owned ped the draw hooks report */
+void D2plDrawPedTick(void)
+{
+	if (gD2plDrawPed0 == 0 || ++gDrawMiss < D2PL_DRAW_RELEARN)
+		return;
+
+	gDrawMiss = 0;
+	gD2plDrawDirValid = 0;
+	gD2plHandValid = 0;
+	gD2plDrawPed0 = (gD2plDrawPed0 != gD2plPlayerPed0) ? gD2plPlayerPed0 : 0;
+}
+
+/* D2PL_POSE_DIAG=1: up to four [d2pl] pose: lines proving the pose + hand cache ran */
+static int gPoseDiag = -1;
+static int gPoseDiagDone = 0;
+static int gDiagTorso = 0;
+static int gDiagNeck = 0;
+static int gDiagAim = 0;
+
+static int D2plPoseDiag(void)
+{
+	if (gPoseDiag < 0)
+	{
+		const char* env = getenv("D2PL_POSE_DIAG");
+
+		gPoseDiag = (env != 0 && env[0] != 0 && env[0] != '0') ? 1 : 0;
+	}
+
+	/* a few samples ~2 s apart: the first frame's camera is not settled */
+	if (!gPoseDiag || gPoseDiagDone >= 4)
+		return 0;
+
+	{
+		const JER_HOST_API* api = jerHostApiGet();
+		int f = (api != 0 && api->game != 0 && api->game->frame != 0) ? api->game->frame() : 0;
+
+		return (f % 60) == 0;
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -133,10 +203,18 @@ int D2plOnGameStart(void* userdata, void* args)
 	(void)args;
 
 	gD2plPlayerPed0 = 0;
+	gD2plDrawPed0 = 0;
+	gD2plDrawDirValid = 0;
+	gDrawMiss = 0;
 	gD2plCamValid = 0;
 	gD2plAiming = 0;
+	gD2plHandValid = 0;
+	gD2plRecoil = 0;
 	gSavedValid = 0;
 	gAimPoseLogged = 0;
+	gPoseDiagDone = 0;
+	gShoulderValid = 0;
+	gLShoulderValid = 0;
 
 	return JER_RESULT_CONTINUE;
 }
@@ -297,9 +375,7 @@ static int gPredictValid = 0;
 static int gPredictPsDir = 0;
 
 static int gLShoulderWorld[3];		/* left shoulder, last frame (render) */
-static int gLShoulderValid = 0;
 static int gShoulderWorld[3];
-static int gShoulderValid = 0;
 
 /* ------------------------------------------------------------------ */
 /* Two-bone arm (shoulder -> elbow -> hand) as rotations                */
@@ -369,8 +445,8 @@ static int ShoulderFrameLocal(void* skel, D2plM3 out)
 
 /* d: unit world direction for the arm (render frame, y down). Both
  * shoulders hang off JOINT_1, so the parent frame is shared. */
-static void PoseArmSide(void* skel, int rootYaw, const float d[3], float w,
-	int shoulder, int elbow, int hand)
+static void PoseArmSide2(void* skel, int rootYaw, const float dUpper[3],
+	const float dFore[3], float w, int shoulder, int elbow, int hand)
 {
 	D2plM3 frame, ry;
 
@@ -380,13 +456,52 @@ static void PoseArmSide(void* skel, int rootYaw, const float d[3], float w,
 	M3RotY(D2PL_ANG2RAD(rootYaw), ry);
 	M3Mul(ry, frame, frame);
 
-	AimSegment(skel, shoulder, elbow, frame, d, w);
-	AimSegment(skel, elbow, hand, frame, d, w);
+	AimSegment(skel, shoulder, elbow, frame, dUpper, w);
+	AimSegment(skel, elbow, hand, frame, dFore, w);
 }
 
-static void PoseArm(void* skel, int rootYaw, const float d[3], float w)
+static void PoseArmSide(void* skel, int rootYaw, const float d[3], float w,
+	int shoulder, int elbow, int hand)
 {
-	PoseArmSide(skel, rootYaw, d, w, JER_LIMB_RSHOULDER, JER_LIMB_RELBOW, JER_LIMB_RHAND);
+	PoseArmSide2(skel, rootYaw, d, d, w, shoulder, elbow, hand);
+}
+
+/* Fire feedback, per holdtype class (PSX units / fractions of the aim ray).
+ * The arm buckle splits the straight aim arm: the upper arm drops a little
+ * and the forearm climbs (muzzle flip), so the elbow gives under the shot.
+ * The torso recoil leans the spine back and twists the weapon-hand (right)
+ * shoulder back, i.e. a small positive (rightward) yaw. */
+#define D2PL_BUCKLE_FORE_PISTOL		0.30f	/* forearm climb, of the unit ray */
+#define D2PL_BUCKLE_UPPER_PISTOL	0.08f	/* upper arm drop */
+#define D2PL_BUCKLE_FORE_RIFLE		0.14f
+#define D2PL_BUCKLE_UPPER_RIFLE		0.04f
+#define D2PL_RECOIL_LEAN_PISTOL		40		/* spine pitch back */
+#define D2PL_RECOIL_YAW_PISTOL		34		/* weapon-hand shoulder back */
+#define D2PL_RECOIL_LEAN_RIFLE		64		/* shoulder-stocked: more torso */
+#define D2PL_RECOIL_YAW_RIFLE		48
+
+static void PoseArm(void* skel, int rootYaw, const float d[3], float w, float recoil, int rifle)
+{
+	float up[3], fore[3];
+
+	if (recoil <= 0.0f)
+	{
+		PoseArmSide(skel, rootYaw, d, w, JER_LIMB_RSHOULDER, JER_LIMB_RELBOW, JER_LIMB_RHAND);
+		return;
+	}
+
+	/* render y is down: climb = -y */
+	up[0] = d[0];
+	up[1] = d[1] + recoil * (rifle ? D2PL_BUCKLE_UPPER_RIFLE : D2PL_BUCKLE_UPPER_PISTOL);
+	up[2] = d[2];
+	V3Norm(up);
+
+	fore[0] = d[0];
+	fore[1] = d[1] - recoil * (rifle ? D2PL_BUCKLE_FORE_RIFLE : D2PL_BUCKLE_FORE_PISTOL);
+	fore[2] = d[2];
+	V3Norm(fore);
+
+	PoseArmSide2(skel, rootYaw, up, fore, w, JER_LIMB_RSHOULDER, JER_LIMB_RELBOW, JER_LIMB_RHAND);
 }
 
 /* Two-handed hold: point the left arm at a fore-grip `gripForward` ahead
@@ -450,25 +565,109 @@ static void PredictElbow(void* skel)
 int D2plOnPedPose(void* userdata, void* args)
 {
 	JER_ARGS_PED_POSE* a = (JER_ARGS_PED_POSE*)args;
-	const JER_HOST_API* api = jerHostApiGet();
 	const D2plHoldtype* h;
-	JER_PLAYER_STATE ps;
 	JER_BONE_ROT* joint1;
 	JER_BONE_ROT* head;
 	int bodyYaw, aimYaw, diff, torso, neck, psDir, rootYaw;
-	int active;
+	int active, rifle;
 	float ikW = 1.0f;
+	float recoil = 0.0f;
 
 	(void)userdata;
 
 	if (a == 0 || a->ped == 0 || a->skel == 0)
 		return JER_RESULT_CONTINUE;
 
-	/* local player only: PED_POSE also fires for owned NPCs */
-	if (!D2plIsPlayerPed(a->ped))
+	/* the local player's DRAWN ped only: PED_POSE also fires for owned NPCs */
+	if (!D2plIsDrawPed(a->ped))
 		return JER_RESULT_CONTINUE;
 
+	/* Pose mode. The full Tanner path (pitch lean, matrix arm IK, idle
+	 * carry IK, holdtype keyframe hooks) assumes Tanner's rest pose and
+	 * folds mp's OTHER_MODEL character. Non-Tanner models get a REDUCED
+	 * pose: yaw-only twist on JOINT_1/HEAD while aiming, plus a small yaw
+	 * recoil kick - pure vy offsets, bounded by the holdtype clamps.
+	 * D2PL_POSE_IK=0: no bone writes; =2: force the full path everywhere. */
+	{
+		static int poseIk = -1;
+
+		if (poseIk < 0)
+		{
+			const char* env = getenv("D2PL_POSE_IK");
+
+			poseIk = (env != 0 && env[0] >= '0' && env[0] <= '2') ? env[0] - '0' : 1;
+		}
+
+		gD2plDrawDir = a->dir & 0xfff;
+		gD2plDrawDirValid = 1;
+
+		if (poseIk == 0)
+			return JER_RESULT_CONTINUE;
+
+		if (poseIk == 1 && !a->isTanner)
+		{
+			const D2plHoldtype* hr = D2plHoldtypeGet(D2plActiveHoldtype());
+			JER_BONE_ROT* j1 = jer_anim_bone_rotation(a->skel, JER_LIMB_JOINT_1);
+			JER_BONE_ROT* hd = jer_anim_bone_rotation(a->skel, JER_LIMB_HEAD);
+			int aimY, d, t, n;
+
+			if (!gD2plAiming || hr == 0)
+				return JER_RESULT_CONTINUE;
+
+			aimY = gD2plCamValid ? ((-gD2plCamAngle[1]) & 0xfff) : gD2plViewHeading;
+			d = jer_anim_aim_diff(aimY, (a->dir - 2048) & 0xfff);
+			t = jer_clamp_int(d, -hr->torsoLimit, hr->torsoLimit);
+			n = jer_clamp_int(d - t, -hr->headLimit, hr->headLimit);
+
+			if (gD2plRecoil > 0)
+				t += gD2plRecoil * D2PL_RECOIL_YAW_PISTOL / 4096;
+
+			gDiagTorso = t;
+			gDiagNeck = n;
+			gDiagAim = aimY;
+
+			if (j1 != 0)
+				j1->vy = (short)((j1->vy + t) & 0xfff);
+			if (hd != 0)
+				hd->vy = (short)((hd->vy + n) & 0xfff);
+
+			/* Weapon arm only: shoulder + elbow re-aimed with AimSegment,
+			 * which measures each segment from THIS model's own rest offsets
+			 * (RestDir reads the skeleton's pvOrigPos), so it carries no
+			 * Tanner assumptions. Legs, hips and spine pitch are never
+			 * touched. The root yaw is the documented ped dir - 2048 +
+			 * 2048 convention, not the Tanner-calibrated measurement. */
+			if (hr->aimIk && gShoulderValid)
+			{
+				int aim[3];
+
+				if (D2plAimPoint(aim))
+				{
+					float dv[3], w = 1.0f;
+					int excess = abs(d) - (hr->torsoLimit + hr->headLimit);
+					float rc = gD2plRecoil > 0 ? (float)gD2plRecoil / 4096.0f : 0.0f;
+
+					if (excess > 0)
+						w = 1.0f - (float)excess / 341.0f;
+
+					dv[0] = (float)(aim[0] - gShoulderWorld[0]);
+					dv[1] = (float)(aim[1] - gShoulderWorld[1]);
+					dv[2] = (float)(aim[2] - gShoulderWorld[2]);
+
+					if (w > 0.0f && V3Norm(dv) > 16.0f)
+						PoseArm(a->skel, a->dir & 0xfff, dv, w, rc, 0);
+				}
+			}
+
+			return JER_RESULT_CONTINUE;
+		}
+	}
+
 	h = D2plHoldtypeGet(D2plActiveHoldtype());
+	rifle = D2plActiveHoldtype() == D2PL_HOLD_RIFLE || h->twoHand;
+
+	if (gD2plAiming && gD2plRecoil > 0)
+		recoil = (float)gD2plRecoil / 4096.0f;
 	active = (gD2plAiming && h->aimIk) || (!gD2plAiming && h->idleIk) ||
 		(gD2plAiming && h->torsoLimit > 0) || h->poseHook != 0;
 
@@ -480,14 +679,11 @@ int D2plOnPedPose(void* userdata, void* args)
 		gSavedValid = 0;
 	}
 
-	psDir = 0;
-
-	if (api != 0 && api->player != 0 && api->player->get_state != 0 &&
-		api->player->get_state(api->player->main(), &ps))
-	{
-		/* the player dir on foot is the VISUAL facing (ped dir - 2048) */
-		psDir = ps.dir & 0xfff;
-	}
+	/* the body facing is the DRAWN ped's own dir (under mp it is not the
+	 * movement ped), in the visual convention: ped dir - 2048 */
+	gD2plDrawDir = a->dir & 0xfff;
+	gD2plDrawDirValid = 1;
+	psDir = (a->dir - 2048) & 0xfff;
 
 	if (!active)
 	{
@@ -508,11 +704,16 @@ int D2plOnPedPose(void* userdata, void* args)
 		bodyYaw = psDir;
 		aimYaw = gD2plCamValid ? ((-gD2plCamAngle[1]) & 0xfff) : gD2plViewHeading;
 
-		/* d2pl's convention: compare the body dir with aimYaw - 2048; the
-		 * result is the shortest signed twist, split spine first, then neck */
-		diff = jer_anim_aim_diff(bodyYaw, (aimYaw - 2048) & 0xfff);
+		/* twist toward the aim: aimYaw and bodyYaw share the visual
+		 * convention, so the shortest signed aim - body is the twist
+		 * (positive = turn right, 0 aiming straight ahead), split spine
+		 * first, then neck */
+		diff = jer_anim_aim_diff(aimYaw, bodyYaw);
 		torso = jer_clamp_int(diff, -h->torsoLimit, h->torsoLimit);
 		neck = jer_clamp_int(diff - torso, -h->headLimit, h->headLimit);
+		gDiagTorso = torso;
+		gDiagNeck = neck;
+		gDiagAim = aimYaw;
 
 		/* past both clamps the shoulder would have to swing the arm out
 		 * sideways: fade the aim IK out instead (the body is turning) */
@@ -542,6 +743,17 @@ int D2plOnPedPose(void* userdata, void* args)
 
 			joint1->vx = (short)((joint1->vx + D2PL_PITCH_SIGN * lean) & 0xfff);
 		}
+
+		/* torso recoil: lean back (the same sign as aiming up) and twist the
+		 * weapon-hand shoulder back; the arm IK below still finds the aim */
+		if (joint1 != 0 && recoil > 0.0f && (h->mask & (1u << JER_LIMB_JOINT_1)))
+		{
+			int lean = (int)(recoil * (rifle ? D2PL_RECOIL_LEAN_RIFLE : D2PL_RECOIL_LEAN_PISTOL));
+			int yaw = (int)(recoil * (rifle ? D2PL_RECOIL_YAW_RIFLE : D2PL_RECOIL_YAW_PISTOL));
+
+			joint1->vx = (short)((joint1->vx - D2PL_PITCH_SIGN * lean) & 0xfff);
+			joint1->vy = (short)((joint1->vy + yaw) & 0xfff);
+		}
 	}
 
 	if (gD2plAiming && h->aimIk && gShoulderValid)
@@ -558,7 +770,7 @@ int D2plOnPedPose(void* userdata, void* args)
 
 			if (V3Norm(d) > 16.0f && ikW > 0.0f)
 			{
-				PoseArm(a->skel, rootYaw, d, ikW);
+				PoseArm(a->skel, rootYaw, d, ikW, recoil, rifle);
 
 				if (h->twoHand && (h->mask & (1u << JER_LIMB_LSHOULDER)))
 					PoseSupportArm(a->skel, rootYaw, h, d, ikW);
@@ -577,7 +789,7 @@ int D2plOnPedPose(void* userdata, void* args)
 		d[1] = sinf(pitch);			/* render y is down */
 		d[2] = cosf(yaw) * cosf(pitch);
 
-		PoseArm(a->skel, rootYaw, d, (float)h->idleWeight / 4096.0f);
+		PoseArm(a->skel, rootYaw, d, (float)h->idleWeight / 4096.0f, 0.0f, rifle);
 
 		/* rifle carry: the support hand stays on the fore-grip */
 		if (h->twoHand && (h->mask & (1u << JER_LIMB_LSHOULDER)))
@@ -608,7 +820,7 @@ int D2plOnPedSkeleton(void* userdata, void* args)
 	if (a == 0 || a->ped == 0 || a->skel == 0)
 		return JER_RESULT_CONTINUE;
 
-	if (!D2plIsPlayerPed(a->ped))
+	if (!D2plIsDrawPed(a->ped))
 		return JER_RESULT_CONTINUE;
 
 	/* the shadow pass draws the same skeleton */
@@ -676,6 +888,15 @@ int D2plOnPedSkeleton(void* userdata, void* args)
 		gLShoulderWorld[1] = jp[base + 1] + pp[1];
 		gLShoulderWorld[2] = jp[base + 2] + pp[2];
 		gLShoulderValid = 1;
+
+		if (D2plPoseDiag())
+		{
+			gPoseDiagDone++;
+			jer_log("[d2pl] pose: ped=%p move=%p dir=%d torso=%d neck=%d hand=%d (%d,%d,%d) aiming=%d aim=%d view=%d\n",
+				a->ped, gD2plPlayerPed0, gD2plDrawDir, gDiagTorso, gDiagNeck,
+				gD2plHandValid, gD2plHand[0], gD2plHand[1], gD2plHand[2], gD2plAiming,
+				gDiagAim, gD2plViewHeading);
+		}
 	}
 
 	return JER_RESULT_CONTINUE;

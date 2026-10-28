@@ -128,7 +128,17 @@ extern int gD2plHitCount;			/* damage stub: hits this session */
 extern int gD2plLastHitHealth;
 extern int gD2plLastHitPos[3];		/* world, render frame (y down) */		/* the last ped hit, -1 = none yet */			/* D2PL_TEST_AIM lever: aim held without a pad */
 
-extern void* gD2plPlayerPed0;	/* the local player's ped, captured from PED_MOVE */
+extern void* gD2plPlayerPed0;	/* the local player's MOVEMENT ped, captured from PED_MOVE */
+extern void* gD2plDrawPed0;		/* the local player's DRAWN ped (PED_POSE/PED_SKELETON);
+					   differs from gD2plPlayerPed0 under mp (OTHER_MODEL) */
+extern int gD2plDrawDir;		/* the drawn ped's raw dir.vy (JER_ARGS_PED_POSE.dir) */
+extern int gD2plDrawDirValid;
+
+/* fire feedback: 0..4096, kicked by a shot, decays per tick (d2pl_weapon.c),
+ * read by the pose (arm buckle + torso recoil from the weapon-hand side) */
+extern int gD2plRecoil;
+
+void D2plDrawPedTick(void);		/* d2pl_pose.c: per-tick re-learn of the draw ped */
 
 /* --- hook handlers ------------------------------------------------- */
 int D2plOnLook(void* userdata, void* args);

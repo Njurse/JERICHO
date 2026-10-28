@@ -11,8 +11,9 @@
  *   L2          next weapon (press)
  *   (on foot d2pl strips L1/R1/L2 from stock Tanner; mouse is deferred)
  *
- * There is still no damage model and no gun mesh: a shot is the aim-point
- * marker plus the fire sound. Sounds are placeholders: the frontend menu
+ * There is still no gun mesh: a shot is the hit-scan (damage stub), the
+ * aim-point marker, jer_fx_impact sparks + black puff where it lands on a ped
+ * or the ground, a short recoil pulse for the pose, and the fire sound. Sounds are placeholders: the frontend menu
  * samples, loaded in game through jer_sound_request_menu_bank (accept = fire,
  * back = reload). See HOLDTYPES.md.
  */
@@ -129,6 +130,30 @@ typedef struct D2plHit
 	int health;
 } D2plHit;
 
+/* fire feedback, per weapon class: the kick a shot gives gD2plRecoil and
+ * how fast it bleeds off per tick (/8). Pistol: a sharp one-shot pulse;
+ * MG: a softer kick that each round refreshes while the trigger is held. */
+#define D2PL_RECOIL_PISTOL	4096
+#define D2PL_RECOIL_RIFLE	2600
+#define D2PL_RECOIL_DECAY	5		/* keep 5/8 per tick: ~4 ticks visible */
+
+int gD2plRecoil = 0;
+
+/* impact FX: the car-collision sparks/debris plus a black smoke puff
+ * (jer_fx_impact), pushed back along the shot */
+static void D2plImpactFx(const int p[3], const int d[3], int len, int kind)
+{
+	int vx = 0, vz = 0;
+
+	if (len > 0)
+	{
+		vx = -d[0] * 24 / len;
+		vz = -d[2] * 24 / len;
+	}
+
+	jer_fx_impact(p[0], p[1], p[2], vx, vz, kind);
+}
+
 static D2plHit gHits[D2PL_HIT_SLOTS];
 static int gHitNext = 0;
 int gD2plHitCount = 0;
@@ -222,7 +247,37 @@ static void D2plHitScan(const D2plWeaponDef* def, const int aim[3])
 			if (api != 0 && api->ui != 0 && api->ui->hud_message != 0)
 				api->ui->hud_message(msg, 20);
 
+			D2plImpactFx(p, d, full, JER_FX_IMPACT_PED);
+			gMarkerTimer = 20;
+
 			return;
+		}
+
+		/* the ground stops the shot: impact FX + the marker there.
+		 * map_height is up-positive; the shot is in the render frame. */
+		if (api != 0 && api->car != 0 && api->car->map_height != 0)
+		{
+			JER_VEC q;
+			int ground;
+
+			q.x = p[0];
+			q.y = -p[1];
+			q.z = p[2];
+			q.pad = 0;
+
+			ground = -api->car->map_height(&q);
+
+			if (p[1] >= ground)
+			{
+				p[1] = ground - 8;
+				gMarker[0] = p[0];
+				gMarker[1] = p[1];
+				gMarker[2] = p[2];
+				gMarkerTimer = 20;
+
+				D2plImpactFx(p, d, full, JER_FX_IMPACT_WORLD);
+				return;
+			}
 		}
 	}
 }
@@ -264,6 +319,15 @@ static void D2plFireShot(const D2plWeaponDef* def, D2plWeaponState* w)
 
 	D2plSfx(def->fireWav, def->fireSfx);
 
+	/* fire feedback for the pose: pistol pulses to full, the rifle hold
+	 * refreshes a softer kick each round */
+	{
+		int kick = def->holdtype == D2PL_HOLD_RIFLE ? D2PL_RECOIL_RIFLE : D2PL_RECOIL_PISTOL;
+
+		if (gD2plRecoil < kick)
+			gD2plRecoil = kick;
+	}
+
 	if (D2plAimPoint(aim))
 	{
 		gMarker[0] = aim[0];
@@ -287,11 +351,19 @@ void D2plWeaponUpdate(void)
 	int pressed = 0;
 	int aim[3];
 
+	/* recoil bleeds off at the tick rate, firing or not */
+	gD2plRecoil = gD2plRecoil * D2PL_RECOIL_DECAY / 8;
+
+	if (gD2plRecoil < 64)
+		gD2plRecoil = 0;
+
 	if (!D2plMainOnFoot(api, &ps))
 	{
 		gD2plAiming = 0;
 		return;
 	}
+
+	D2plDrawPedTick();
 
 	if (api->player->pad != 0 && ps.padid >= 0 && ps.padid <= 1)
 	{
@@ -403,7 +475,8 @@ void D2plWeaponUpdate(void)
 		api->debug->line_depth(&from, &to, &col);
 	}
 
-	/* impact marker: a small black X for a few frames */
+	/* impact marker: a small black X for a few frames (alongside the
+	 * jer_fx_impact sparks + black puff on a ped or ground hit) */
 	if (gMarkerTimer > 0)
 	{
 		JER_VEC c;
@@ -524,6 +597,7 @@ void D2plWeaponInit(void)
 
 	gWeapon = 0;
 	gMarkerTimer = 0;
+	gD2plRecoil = 0;
 	gMarker[0] = gMarker[1] = gMarker[2] = 0;
 
 	/* placeholder SFX: keep the FE menu samples resident in game */

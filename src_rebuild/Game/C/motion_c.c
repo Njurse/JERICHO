@@ -1323,7 +1323,7 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 	// offsets below are accumulated. Fires for the player ped AND for any ped
 	// a module owns (jer_npc_owned) - e.g. a mounted crew member, which has
 	// padId -1 - but never for ambient pedestrians.
-	if (pDrawingPed->pedType == TANNER_MODEL && (pDrawingPed->padId >= 0 || jer_npc_owned(pDrawingPed)))
+	if (pDrawingPed->padId >= 0 || jer_npc_owned(pDrawingPed))
 	{
 		JER_ARGS_PED_SKELETON jerSkel;
 
@@ -1401,7 +1401,7 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 	// joint offsets (vJPos[RHAND] = hand position) and draw extra meshes
 	// attached to them (e.g. a weapon in Tanner's hand). Same ownership rule
 	// as phase 0: player ped + module-owned peds.
-	if (pDrawingPed->pedType == TANNER_MODEL && (pDrawingPed->padId >= 0 || jer_npc_owned(pDrawingPed)))
+	if (pDrawingPed->padId >= 0 || jer_npc_owned(pDrawingPed))
 	{
 		JER_ARGS_PED_SKELETON jerSkel;
 
@@ -2039,6 +2039,42 @@ void SetSkelModelPointers(int type)
 
 int iCurrBone = 0;
 
+/* JERICHO-HOOK: the pose pass is gated on the shared ped ownership rule
+ * (the player's ped or a module-owned ped), not on a model id. The player
+ * may be TANNER_MODEL, the other player model (mp's character), or an
+ * owned NPC; all of them have the same skeleton channel. */
+static void JerPedPoseHook(LPPEDESTRIAN pPed)
+{
+	if (pPed->padId >= 0 || jer_npc_owned(pPed))
+	{
+		/* JERICHO: pvRotation points straight into the shared animation
+		 * data (pPed->motion). Give the pose pass a private per-draw copy so
+		 * a mod's rotation writes can never corrupt the clip (the cause of
+		 * the accumulating pancake pose); SetupTannerSkeleton re-points the
+		 * bones at the clip every draw. */
+		static SVECTOR jerPoseRot[NUM_BONES];
+		int jb;
+		JER_ARGS_PED_POSE jerPose;
+
+		for (jb = 0; jb < NUM_BONES; jb++)
+		{
+			if (Skel[jb].pvRotation == NULL)
+				continue;
+			jerPoseRot[jb].vx = Skel[jb].pvRotation->vx;
+			jerPoseRot[jb].vy = Skel[jb].pvRotation->vy;
+			jerPoseRot[jb].vz = Skel[jb].pvRotation->vz;
+			jerPoseRot[jb].pad = 0;
+			Skel[jb].pvRotation = &jerPoseRot[jb];
+		}
+
+		jerPose.ped = pPed;
+		jerPose.skel = Skel;
+		jerPose.dir = pPed->dir.vy;
+		jerPose.isTanner = (pPed->pedType == TANNER_MODEL);
+		jer_fire(JER_EVENT_PED_POSE, &jerPose);
+	}
+}
+
 // [D] [T]
 void DrawTanner(LPPEDESTRIAN pPed)
 {
@@ -2053,16 +2089,8 @@ void DrawTanner(LPPEDESTRIAN pPed)
 
 	// JERICHO-HOOK: the pose hook — the ONLY window where a per-bone
 	// ROTATION write (mutating *Skel[i].pvRotation, read by
-	// newRotateBones right below) takes effect. Fires for the player ped
-	// and for module-owned peds (jer_npc_owned), same rule as PED_SKELETON.
-	if (pPed->pedType == TANNER_MODEL && (pPed->padId >= 0 || jer_npc_owned(pPed)))
-	{
-		JER_ARGS_PED_POSE jerPose;
-
-		jerPose.ped = pPed;
-		jerPose.skel = Skel;
-		jer_fire(JER_EVENT_PED_POSE, &jerPose);
-	}
+	// newRotateBones right below) takes effect.
+	JerPedPoseHook(pPed);
 
 	newRotateBones(pPed, &Skel[LOWERBACK]);
 
@@ -2116,8 +2144,16 @@ int DrawCharacter(LPPEDESTRIAN pPed)
 	CVECTOR cv;
 	VECTOR pos;
 
+	/* JERICHO: this is the main (non-shadow) pass, same as DrawTanner; a
+	 * shadow flag left set by an earlier draw must not reach the PED_SKELETON
+	 * phases newShowTanner fires below (jerSkel.shadow) */
+	bDoingShadow = 0;
+
 	SetSkelModelPointersForEntry(pPed->pedType, pPed->pedEntry);
 	SetupTannerSkeleton(pPed);
+
+	/* the other player model / custom character draws through here */
+	JerPedPoseHook(pPed);
 
 	newRotateBones(pPed, &Skel[LOWERBACK]);
 
