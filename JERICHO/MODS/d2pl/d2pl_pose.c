@@ -208,6 +208,7 @@ int D2plOnGameStart(void* userdata, void* args)
 	gDrawMiss = 0;
 	gD2plCamValid = 0;
 	gD2plAiming = 0;
+	gD2plLookPitch = 0;
 	gD2plHandValid = 0;
 	gD2plRecoil = 0;
 	gSavedValid = 0;

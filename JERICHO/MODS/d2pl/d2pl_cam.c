@@ -26,8 +26,8 @@ D2plSettings gS = {
 	1,		/* cameraEnabled */
 	1,		/* joyCamera */
 	16,		/* sensX */
-	12,		/* sensY */
-	1,		/* invertY */
+	16,		/* sensY */
+	0,		/* invertY: 0 = push up looks up (conventional) */
 	1		/* shoulder: right */
 };
 
@@ -50,7 +50,6 @@ static void D2plReleaseReverse(void)
 	gD2plBackpedalActive = 0;
 }
 int gD2plLookPitch = 0;
-int gD2plLookPitchTarget = 0;
 int gD2plViewHeading = 0;
 
 int gD2plCamPos[3] = { 0, 0, 0 };
@@ -63,7 +62,6 @@ int gD2plHandValid = 0;
 void* gD2plPlayerPed0 = 0;
 
 /* movement state, per pad (two local players at most) */
-static int gYawSpeed = 0;
 static int gMoveActive[2] = { 0, 0 };
 static int gStickX[2] = { 0, 0 };
 static int gStickY[2] = { 0, 0 };
@@ -187,6 +185,22 @@ int D2plOnFrame(void* userdata, void* args)
 /* JER_EVENT_CAMERA_LOOK — right stick + mouse orbit                   */
 /* ------------------------------------------------------------------ */
 
+/* Right-stick response curve: deadzoned magnitude 0..4096, squared, sign
+ * preserved. Fine control near centre (aiming), fast at the edge. */
+static int D2plStickCurve(int raw)
+{
+	int mag = abs(raw);
+	int m, c;
+
+	if (mag <= D2PL_LOOK_DEADZONE)
+		return 0;
+
+	m = (mag - D2PL_LOOK_DEADZONE) * 4096 / (127 - D2PL_LOOK_DEADZONE);
+	c = (m * m) >> 12;
+
+	return raw < 0 ? -c : c;
+}
+
 int D2plOnLook(void* userdata, void* args)
 {
 	JER_ARGS_CAMERA_LOOK* a = (JER_ARGS_CAMERA_LOOK*)args;
@@ -212,69 +226,55 @@ int D2plOnLook(void* userdata, void* args)
 		(abs(sx) > D2PL_LOOK_DEADZONE || abs(sy) > D2PL_LOOK_DEADZONE);
 	mouseLook = (gMouseActive > 0) && (gMouseDX != 0 || gMouseDY != 0);
 
+	/* Conventional shooter look:
+	 *   - mouse is position control: 1:1 per count on BOTH axes;
+	 *   - stick is rate control: one shared curve, same max rate on both axes;
+	 *   - pitch holds where you leave it (no auto-centre);
+	 *   - aiming (ADS) slows the look by D2PL_AIM_LOOK_SCALE. */
 	if (stickLook || mouseLook)
 	{
 		int yawDelta = 0;
+		int pitchDelta = 0;
+		int aimScale = gD2plAiming ? D2PL_AIM_LOOK_SCALE : 1;
+		int vdir = gS.invertY ? -1 : 1;		/* +1 = push up looks up */
 
 		a->suppress = 1;		/* skip the stock L2/R2 look */
 		a->gripOrbit = 1;		/* the addon owns the orbit this frame */
 
 		if (stickLook)
 		{
-			int yawMax = (D2PL_YAW_RATE * gS.sensX) / 64;
-			int pitchRate = (D2PL_PITCH_RATE * gS.sensY) / 64;
-			int vert = gS.invertY ? -sy : sy;
+			int cx = D2plStickCurve(sx);
+			int cy = D2plStickCurve(sy);
 
-			gYawSpeed = jer_lerp_int(gYawSpeed, (sx * yawMax) / 127, 10);
-			yawDelta += gYawSpeed;
-
-			/* stick up (negative) = look up = negative camera_angle.vx */
-			gD2plLookPitchTarget = jer_clamp_int(
-				(vert * pitchRate) / 128, -D2PL_PITCH_MAX, D2PL_PITCH_MAX);
-		}
-		else
-		{
-			gYawSpeed -= gYawSpeed / 8;
+			yawDelta += (cx * gS.sensX * D2PL_STICK_RATE_MAX) /
+				(4096 * D2PL_STICK_BASE * aimScale);
+			pitchDelta += (cy * gS.sensY * D2PL_STICK_RATE_MAX) /
+				(4096 * D2PL_STICK_BASE * aimScale);
 		}
 
 		if (mouseLook)
 		{
-			int pitchRate = (D2PL_PITCH_RATE * gS.sensY) / 64;
-
-			yawDelta += (gMouseDX * gS.sensX) / 4;
-			gD2plLookPitchTarget = jer_clamp_int(
-				gD2plLookPitchTarget + (gMouseDY * pitchRate) / 64,
-				-D2PL_PITCH_MAX, D2PL_PITCH_MAX);
+			yawDelta += (gMouseDX * gS.sensX) / (D2PL_MOUSE_SCALE * aimScale);
+			pitchDelta += (gMouseDY * gS.sensY) / (D2PL_MOUSE_SCALE * aimScale);
 
 			gMouseDX = 0;
 			gMouseDY = 0;
 		}
 
+		gD2plLookPitch = jer_clamp_int(
+			gD2plLookPitch + vdir * pitchDelta, -D2PL_LOOK_PITCH_MAX, D2PL_LOOK_PITCH_MAX);
+
 		if (yawDelta != 0 && api->player->set_camera_angle != 0)
 			api->player->set_camera_angle(a->player, (ps.cameraAngle + yawDelta) & 0xfff);
 	}
-	else
+	else if (gD2plAiming)
 	{
-		/* released: let the momentum decay. The engine's own settle-back
-		 * lerp turns the camera behind the ped again. While aiming, hold
-		 * the orbit and the pitch so the shot does not drift. */
-		gYawSpeed -= gYawSpeed / 8;
-
-		if (abs(gYawSpeed) < 8)
-			gYawSpeed = 0;
-
-		if (gD2plAiming)
-		{
-			a->suppress = 1;
-			a->gripOrbit = 1;
-		}
-		else
-		{
-			gD2plLookPitchTarget = jer_lerp_int(gD2plLookPitchTarget, 0, 8);
-		}
+		/* aiming: hold the orbit and the pitch so the shot does not drift */
+		a->suppress = 1;
+		a->gripOrbit = 1;
 	}
-
-	gD2plLookPitch = jer_lerp_int(gD2plLookPitch, gD2plLookPitchTarget, 6);
+	/* released and not aiming: the engine may ease the yaw back behind the
+	 * ped (the chase cam); the pitch stays where the player left it. */
 
 	return JER_RESULT_CONTINUE;
 }
@@ -317,9 +317,6 @@ int D2plOnPedInput(void* userdata, void* args)
 	sx = a->stickX;
 	sy = a->stickY;
 
-	gStickX[pad] = sx;
-	gStickY[pad] = sy;
-
 	if (pad == 0)
 		gD2plAiming = (a->pad & D2PL_MPAD_L1) != 0;
 
@@ -340,13 +337,33 @@ int D2plOnPedInput(void* userdata, void* args)
 
 	if (mag <= D2PL_MOVE_DEADZONE)
 	{
-		gMoveActive[pad] = 0;
-		gBackpedal[pad] = 0;
+		/* Left stick centred: the directional arrows (and the keyboard
+		 * arrows, which map to the same pad bits) are also camera-relative.
+		 * Synthesise an equivalent stick so both paths share one curve. */
+		int dx = 0, dy = 0;
 
-		return JER_RESULT_CONTINUE;		/* stock D-pad/keyboard handling */
+		if (a->pad & D2PL_MPAD_D_UP)    dy -= 127;
+		if (a->pad & D2PL_MPAD_D_DOWN)  dy += 127;
+		if (a->pad & D2PL_MPAD_D_LEFT)  dx -= 127;
+		if (a->pad & D2PL_MPAD_D_RIGHT) dx += 127;
+
+		if (dx == 0 && dy == 0)
+		{
+			gMoveActive[pad] = 0;
+			gBackpedal[pad] = 0;
+
+			return JER_RESULT_CONTINUE;		/* stock D-pad/keyboard handling */
+		}
+
+		sx = dx;
+		sy = dy;
 	}
 
 	gMoveActive[pad] = 1;
+
+	/* record the EFFECTIVE input (stick or arrows) for the analog speed */
+	gStickX[pad] = sx;
+	gStickY[pad] = sy;
 
 	/* The movement frame is the camera view. stick up = 0, right = 1024. */
 	stickHeading = D2plAtan2(D2PL_STICK_X * sx, -D2PL_STICK_Y * sy);
@@ -354,18 +371,25 @@ int D2plOnPedInput(void* userdata, void* args)
 
 	gDesired[pad] = desired;
 
-	/* Run forward along the stick, or -- aiming with the stick more than
-	 * ~100 degrees off the view -- take the stock walk-back (SetupBack) and
-	 * keep facing the aim. The direction is driven by jer_npc_face in
-	 * PED_MOVE, so the stock turn bits must not fight it. */
-	gBackpedal[pad] = pad == 0 && gD2plBackpedalOn && gD2plAiming &&
-		!(a->pad & (D2PL_MPAD_TRIANGLE | D2PL_MPAD_L3)) &&
-		D2plHoldtypeGet(D2plActiveHoldtype())->allowBackpedal &&
-		abs(jer_anim_aim_diff(desired, gD2plViewHeading)) > gD2plBackpedalAngle;
+	/* Backpedal cone: input within +-gD2plBackpedalAngle of straight back
+	 * (heading 2048 in the view frame) backs the ped up at run speed with
+	 * the run clip reversed, facing the view. Outside the cone the ped
+	 * turns and runs forward along `desired`. */
+	{
+		int backOff = (stickHeading & 0xfff) - 2048;
 
+		gBackpedal[pad] = pad == 0 && gD2plBackpedalOn &&
+			!(a->pad & (D2PL_MPAD_TRIANGLE | D2PL_MPAD_L3)) &&
+			D2plHoldtypeGet(D2plActiveHoldtype())->allowBackpedal &&
+			abs(backOff) < gD2plBackpedalAngle;
+	}
+
+	/* Both forward and backpedal use the RUN clip (backpedal plays it in
+	 * reverse via flag 4 in PED_MOVE), so the engine always gets GOFORWARD.
+	 * The stock turn bits are cleared so they never fight jer_npc_face. */
 	a->pad &= ~(D2PL_PAD_GOFORWARD | D2PL_PAD_GOBACK |
 		D2PL_PAD_TURNLEFT | D2PL_PAD_TURNRIGHT);
-	a->pad |= gBackpedal[pad] ? D2PL_PAD_GOBACK : D2PL_PAD_GOFORWARD;
+	a->pad |= D2PL_PAD_GOFORWARD;
 
 	return JER_RESULT_CONTINUE;
 }
@@ -477,11 +501,11 @@ int D2plOnPedMove(void* userdata, void* args)
 
 	if (gBackpedal[pad])
 	{
-		/* face the aim, back up at the stock walk-back pace, scaled a
-		 * little by the stick; flag 4 plays the walk frames in reverse. */
+		/* Face the view and back up at run speed: flag 4 plays the RUN clip
+		 * in reverse (AnimatePed decrements frame1), so this is a fast
+		 * backpedal instead of the stock slow walk-back. */
 		jer_npc_face(ped, (gD2plViewHeading + 2048) & 0xfff);
-		jer_npc_set_speed(ped, -(D2PL_BACKPEDAL_SPEED_MIN +
-			gRunSpeed[pad] * (D2PL_BACKPEDAL_SPEED_MAX - D2PL_BACKPEDAL_SPEED_MIN) / D2PL_RUN_SPEED));
+		jer_npc_set_speed(ped, -gRunSpeed[pad]);
 		jer_npc_set_reverse_anim(ped, 1);
 		gReversePed = a->ped;
 		gD2plBackpedalActive = 1;
@@ -570,9 +594,7 @@ void D2plInit(void)
 
 	gD2plAiming = 0;
 	gD2plLookPitch = 0;
-	gD2plLookPitchTarget = 0;
 	gD2plViewHeading = 0;
-	gYawSpeed = 0;
 	gMouseDX = 0;
 	gMouseDY = 0;
 	gMouseActive = 0;

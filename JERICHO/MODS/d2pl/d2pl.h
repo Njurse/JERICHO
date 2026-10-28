@@ -48,9 +48,14 @@
 #define D2PL_RUN_SPEED		40		/* the engine's SetupRunner speed */
 #define D2PL_SPEED_LERP		8
 
-#define D2PL_PITCH_MAX		680		/* ~60 degrees each way */
-#define D2PL_YAW_RATE			(128)	/* * sensX / 64 */
-#define D2PL_PITCH_RATE		(1600)	/* * sensY / 64, /128 of stick */
+/* Look (PSX angle units: 4096 = one turn). Mouse and the right stick share
+ * one per-axis sensitivity; these curves are what make it feel like a
+ * conventional shooter rather than the old yaw/pitch rate mismatch. */
+#define D2PL_LOOK_PITCH_MAX	1000	/* ~88 degrees each way */
+#define D2PL_STICK_BASE		16		/* sens value that equals the stock rate */
+#define D2PL_STICK_RATE_MAX	72		/* full-deflection stick rate, units/frame (~190 deg/s at 30 Hz) */
+#define D2PL_MOUSE_SCALE	16		/* mouse units per count = sens / MOUSE_SCALE */
+#define D2PL_AIM_LOOK_SCALE	2		/* look rate divided by this while aiming (ADS slowdown) */
 
 /* Flip these if a pad reports the axes the other way round. */
 #define D2PL_STICK_X			1
@@ -86,10 +91,8 @@
 #ifndef D2PL_BACKPEDAL
 #define D2PL_BACKPEDAL		1
 #endif
-#define D2PL_BACKPEDAL_ANGLE	910		/* ~80 degrees off the view */
+#define D2PL_BACKPEDAL_ANGLE	910		/* backpedal cone half-angle (~80 deg off straight back) */
 #define D2PL_PED_HEALTH		100	/* damage stub */
-#define D2PL_BACKPEDAL_SPEED_MIN	10	/* stock walk-back speed */
-#define D2PL_BACKPEDAL_SPEED_MAX	20
 
 #define D2PL_MPAD_TRIANGLE	0x0010	/* TANNER_PAD_ACTION: car entry */
 #define D2PL_MPAD_L3		0x0200	/* TANNER_PAD_ACTION_DED */
@@ -108,8 +111,7 @@ extern D2plSettings gS;
 
 /* --- shared state (owned by d2pl_cam.c) -------------------------- */
 extern int gD2plAiming;			/* local player is holding aim */
-extern int gD2plLookPitch;		/* camera_angle.vx offset (negative = up) */
-extern int gD2plLookPitchTarget;
+extern int gD2plLookPitch;		/* camera_angle.vx offset, holds where left (negative = up) */
 extern int gD2plViewHeading;	/* latest view yaw, 0..4095 */
 
 extern int gD2plCamPos[3];		/* camera_position from the CAMERA hook (render frame) */
