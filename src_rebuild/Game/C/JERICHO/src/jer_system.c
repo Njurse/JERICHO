@@ -13,6 +13,7 @@
 #include "jericho.h"
 #include "jer_host_api.h"
 #include "jer_internal.h"
+#include "jer_required_mods.h"	/* compile-time: the submodule mods must be here */
 #include "jer_config.h"
 #include "jer_pause_menu.h"
 #include "jer_frontend.h"

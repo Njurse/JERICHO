@@ -26,6 +26,36 @@ newoption {
 -- No mod list is maintained anywhere: both pipelines auto-scan.
 require "premake_modules/jericho_mods"
 
+-- ---------------------------------------------------------------------------
+-- A mod that is not there must never turn into a smaller game.
+--
+-- mp, carhacks and crumple are submodules. When one is not fetched, its folder
+-- is missing or empty, jericho_scan_mods() simply returns fewer ids, and the
+-- build succeeds -- with a registry, a mirror and an exe that quietly lack a
+-- chunk of the game. That is a hard error here instead, naming the command
+-- that fixes it. Other mods are deliberately absent from this list: gaildrv2
+-- (its repo is not published, so CI cannot fetch it) and d1cars are allowed to
+-- be missing, and degrade the way they always have.
+--
+-- jer_required_mods.h repeats the check at COMPILE time, so an IDE or msbuild
+-- run that skips premake still cannot produce a smaller game.
+local JERICHO_REQUIRED_MODS = { "mp", "carhacks", "crumple" }
+
+for _, req in ipairs(JERICHO_REQUIRED_MODS) do
+	local path = string.format("../JERICHO/MODS/%s/mod.toml", req)
+	local manifest = io.open(path, "r")
+
+	if not manifest then
+		error(string.format(
+			"%s is a submodule and was not fetched; run:\n" ..
+			"    git submodule update --init JERICHO/MODS/%s\n" ..
+			"the game does not build without it (a missing mod must not silently " ..
+			"build a smaller game)", req, req), 0)
+	end
+
+	manifest:close()
+end
+
 -- True when <id>'s mod.toml marks it as a runtime DLL addon.
 function jericho_is_dll_addon(id)
 	local toml = io.open(jericho_mod_dir(id) .. "/mod.toml", "r")
