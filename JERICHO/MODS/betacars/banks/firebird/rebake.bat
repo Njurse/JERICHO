@@ -9,6 +9,16 @@ rem The bake writes to a scratch folder and is then copied in: baking with -o
 rem pointing AT the bank folder rewrites the manifest mid-read and silently
 rem produces an empty bank (20480 bytes, 0 cars).
 setlocal
+
+rem pass "flip" to bake with the mesh mirrored in Y. The Firebird source OBJ is
+rem Y-up like the engine, so it bakes as authored; the flag exists because a
+rem foreign (Blender) mesh may need it. rebake.bat flip also reverses the
+rem winding, which a Y mirror requires or the car is inside out.
+rem  mode is optional:  flipy (default) mirrors Y only, flip does Y + winding,
+rem  noflip bakes as the OBJ stands.
+set "FLIP=--flip-y"
+if /i "%~1"=="flip" set "FLIP=--flip-y --flip-winding"
+if /i "%~1"=="noflip" set "FLIP="
 set BANK=%~dp0
 set BANK=%BANK:~0,-1%
 set CAR=%BANK%\..\..\..\bake\tools\car
@@ -19,7 +29,7 @@ set MIRROR=%ROOT%\src_rebuild\bin\Release_dev\JERICHO\MODS\betacars\banks\firebi
 
 if exist "%OUT%" rmdir /s /q "%OUT%"
 echo baking %BANK%\bank.json
-python "%CAR%\carbank_bake.py" "%BANK%\bank.json" -o "%OUT%" --scale 1 --default-page 1:0
+python "%CAR%\carbank_bake.py" "%BANK%\bank.json" -o "%OUT%" --scale 265 --default-page 1:0 %FLIP%
 if errorlevel 1 goto fail
 if not exist "%OUT%\FIREBIRD.LEV" goto fail
 

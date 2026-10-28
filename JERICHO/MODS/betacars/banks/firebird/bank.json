@@ -7,17 +7,13 @@
  "declare": {
   "cars": {
    "1_BASE2": {
-    "clean": "work/cars/1_BASE2/clean.obj",
-    "damaged": "work/cars/1_BASE2/damaged.obj",
-    "low": "work/cars/1_BASE2/low.obj",
+    "clean": "firebird.obj",
+    "damaged": "firebird.obj",
+    "low": "firebird_low.obj",
     "pages": [
      {
       "png": "work/pages/page1.png",
       "set": 1
-     },
-     {
-      "png": "work/pages/page65.png",
-      "set": 65
      }
     ],
     "wheels": {
