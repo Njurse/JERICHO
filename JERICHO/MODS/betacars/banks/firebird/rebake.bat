@@ -19,7 +19,7 @@ set MIRROR=%ROOT%\src_rebuild\bin\Release_dev\JERICHO\MODS\betacars\banks\firebi
 
 if exist "%OUT%" rmdir /s /q "%OUT%"
 echo baking %BANK%\bank.json
-python "%CAR%\carbank_bake.py" "%BANK%\bank.json" -o "%OUT%" --scale 1 --default-page 1:0 --flip-y --flip-winding
+python "%CAR%\carbank_bake.py" "%BANK%\bank.json" -o "%OUT%" --scale 1 --default-page 1:0
 if errorlevel 1 goto fail
 if not exist "%OUT%\FIREBIRD.LEV" goto fail
 

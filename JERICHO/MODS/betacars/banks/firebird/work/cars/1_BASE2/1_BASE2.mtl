@@ -1,0 +1,60 @@
+newmtl flat
+Kd 0.501961 0.501961 0.501961
+illum 1
+
+newmtl set1_id0
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id0
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id1
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id12
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id13
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id16
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id2
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id21
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id22
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id23
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id24
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id5
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id8
+Kd 0.800000 0.800000 0.800000
+illum 1
+
+newmtl set65_id9
+Kd 0.800000 0.800000 0.800000
+illum 1
+
