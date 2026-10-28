@@ -7,7 +7,7 @@
  *
  *   L1          aim
  *   R1          fire (while aiming)
- *   X (Cross)   reload
+ *   O / Circle reload (was Cross, which is also run/forward on foot)
  *   L2          next weapon (press)
  *   (on foot d2pl strips L1/R1/L2 from stock Tanner; mouse is deferred)
  *
@@ -118,17 +118,11 @@ static void D2plSfx(const char* wav, int sfx)
 		jer_sound_menu_play(sfx);
 }
 
-/* --- damage stub: light, per-ped hit points kept here (the engine's
- * civilians have no health). A downed ped is just reported. */
+/* --- hit scan. Health lives in jer_npc (jer_npc_health / jer_npc_damage)
+ * and deaths in d2pl_health.c (D2plDamage). */
 #define D2PL_HIT_SLOTS	16
 #define D2PL_HIT_RADIUS	120
 #define D2PL_HIT_RANGE	8000
-
-typedef struct D2plHit
-{
-	void* ped;
-	int health;
-} D2plHit;
 
 /* fire feedback, per weapon class: the kick a shot gives gD2plRecoil and
  * how fast it bleeds off per tick (/8). Pistol: a sharp one-shot pulse;
@@ -154,38 +148,9 @@ static void D2plImpactFx(const int p[3], const int d[3], int len, int kind)
 	jer_fx_impact(p[0], p[1], p[2], vx, vz, kind);
 }
 
-static D2plHit gHits[D2PL_HIT_SLOTS];
-static int gHitNext = 0;
 int gD2plHitCount = 0;
 int gD2plLastHitHealth = -1;
 int gD2plLastHitPos[3] = { 0, 0, 0 };
-
-static int D2plDamagePed(void* ped, int damage)
-{
-	int i;
-	D2plHit* h = 0;
-
-	for (i = 0; i < D2PL_HIT_SLOTS; i++)
-	{
-		if (gHits[i].ped == ped)
-			h = &gHits[i];
-	}
-
-	if (h == 0)
-	{
-		h = &gHits[gHitNext];
-		gHitNext = (gHitNext + 1) % D2PL_HIT_SLOTS;
-		h->ped = ped;
-		h->health = D2PL_PED_HEALTH;
-	}
-
-	h->health -= damage;
-
-	if (h->health < 0)
-		h->health = 0;
-
-	return h->health;
-}
 
 /* walk the shot from the hand toward the aim point; the first ped inside
  * D2PL_HIT_RADIUS takes the hit and the marker moves onto it */
@@ -230,8 +195,10 @@ static void D2plHitScan(const D2plWeaponDef* def, const int aim[3])
 
 		if (n != 0)
 		{
-			char msg[32];
-			int hp = D2plDamagePed((void*)n, def->damage);
+			int hp;
+
+			gD2plAimedPed = (void*)n;
+			hp = D2plDamage((void*)n, def->damage);
 
 			gD2plHitCount++;
 			gD2plLastHitHealth = hp;
@@ -242,11 +209,8 @@ static void D2plHitScan(const D2plWeaponDef* def, const int aim[3])
 			gMarker[1] = p[1];
 			gMarker[2] = p[2];
 
-			sprintf(msg, hp > 0 ? "HIT %d%%" : "DOWN", hp * 100 / D2PL_PED_HEALTH);
-
-			if (api != 0 && api->ui != 0 && api->ui->hud_message != 0)
-				api->ui->hud_message(msg, 20);
-
+			/* the target readout (d2pl_health.c) shows the health now;
+			 * a death goes to the jer console */
 			D2plImpactFx(p, d, full, JER_FX_IMPACT_PED);
 			gMarkerTimer = 20;
 
@@ -360,6 +324,7 @@ void D2plWeaponUpdate(void)
 	if (!D2plMainOnFoot(api, &ps))
 	{
 		gD2plAiming = 0;
+		D2plHealthTick(0);
 		return;
 	}
 
@@ -375,7 +340,7 @@ void D2plWeaponUpdate(void)
 			pressed = pads[1];
 	}
 
-	gD2plAiming = D2plTestAim() || ((held & D2PL_MPAD_L1) != 0);
+	gD2plAiming = !D2plPlayerDead() && (D2plTestAim() || ((held & D2PL_MPAD_L1) != 0));
 
 	{
 		const D2plWeaponDef* def = &gWeaponDefs[gWeapon];
@@ -401,9 +366,9 @@ void D2plWeaponUpdate(void)
 				D2plFinishReload(def, w);
 		}
 
-		/* reload: X is the stock run button on foot, so use only its press
-		 * edge and leave the held bit to the engine's movement */
-		if ((pressed & D2PL_MPAD_CROSS) != 0 && def->clipSize > 0 &&
+		/* reload: keyboard O (press edge). Cross used to reload, but it is
+		 * also the stock run/forward button on foot. */
+		if ((D2plReloadKeyPressed() || (pressed & D2PL_MPAD_CIRCLE) != 0) && def->clipSize > 0 &&
 			w->reloading == 0 && w->clip < def->clipSize && w->reserve > 0)
 		{
 			w->reloading = def->reloadFrames;
@@ -475,6 +440,8 @@ void D2plWeaponUpdate(void)
 		api->debug->line_depth(&from, &to, &col);
 	}
 
+	D2plHealthTick(1);
+
 	/* impact marker: a small black X for a few frames (alongside the
 	 * jer_fx_impact sparks + black puff on a ped or ground hit) */
 	if (gMarkerTimer > 0)
@@ -513,6 +480,11 @@ void D2plWeaponUpdate(void)
 
 		gMarkerTimer--;
 	}
+}
+
+void D2plSfxFire(void)
+{
+	D2plSfx(gWeaponDefs[0].fireWav, gWeaponDefs[0].fireSfx);
 }
 
 /* Pause-menu readouts and the L2 cycle (a reload in progress is dropped). */

@@ -92,7 +92,7 @@
 #define D2PL_BACKPEDAL		1
 #endif
 #define D2PL_BACKPEDAL_ANGLE	910		/* backpedal cone half-angle (~80 deg off straight back) */
-#define D2PL_PED_HEALTH		100	/* damage stub */
+#define D2PL_PED_HEALTH		100	/* = JER_NPC_HEALTH_DEFAULT */
 
 #define D2PL_MPAD_TRIANGLE	0x0010	/* TANNER_PAD_ACTION: car entry */
 #define D2PL_MPAD_L3		0x0200	/* TANNER_PAD_ACTION_DED */
@@ -213,6 +213,41 @@ int D2plHoldtypeFind(const char* name);
 void D2plWeaponInit(void);
 void D2plWeaponUpdate(void);
 int D2plActiveHoldtype(void);		/* the equipped weapon's holdtype id */
+
+/* --- health, target readout, deaths, test ped (d2pl_health.c) ---- */
+enum
+{
+	D2PL_TP_STAND = 0,		/* idle, facing the player */
+	D2PL_TP_FOLLOW,			/* keep close to the player */
+	D2PL_TP_ATTACK,			/* pistol: wander + aim + shoot in range, pursue out of it */
+	D2PL_TP_COUNT
+};
+
+void D2plHealthTick(int onFoot);		/* JER_EVENT_FRAME, after the weapon */
+void D2plHealthReset(void);			/* JER_EVENT_GAME_START */
+int  D2plDamage(void* ped, int amount);	/* any ped incl. the player; fires the death once */
+int  D2plPlayerDead(void);			/* 1 during the "You died." respawn delay */
+const char* D2plPedName(void* ped, char* buf, int max);	/* placeholder names */
+void D2plHealthColour(int value, int max, int* r, int* g, int* b);
+int  D2plReloadKeyPressed(void);		/* keyboard O, press edge */
+
+int  D2plTestPedSpawn(void);			/* debug: (re)spawn the Tanner test ped */
+void D2plTestPedDespawn(void);
+void D2plTestPedSetBehaviour(int b);	/* D2PL_TP_* */
+int  D2plTestPedBehaviour(void);
+const char* D2plTestPedBehaviourName(void);
+int  D2plTestPedHealth(void);			/* -1 = none */
+
+void D2plSfxFire(void);				/* d2pl_weapon.c: the pistol fire sound */
+
+#ifndef D2PL_MPAD_CIRCLE
+#define D2PL_MPAD_CIRCLE	0x0020	/* O / Circle: reload */
+#endif
+extern void* gD2plAimedPed;			/* set on hit-scan */
+int  D2plPedHealth(void* ped);
+void D2plPedSetHealth(void* ped, int health);
+void D2plPedDie(void* ped);
+int  D2plSpawnDebugPed(int behavior);		/* D2PL_TP_*; Tanner, model 0 */
 
 /* --- -onfoot spawn swap (d2pl_boot.c) ---------------------------- */
 void D2plBootTick(void);
