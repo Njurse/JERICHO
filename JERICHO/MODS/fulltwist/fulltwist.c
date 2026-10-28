@@ -554,8 +554,16 @@ static int ftOnCarStep(void* ud, void* args)
 
 					/* A car that is already tumbling should keep its spin. The
 					 * landing torque is only there to start a tumble from a
-					 * body drop, not to fight an established roll. */
-					if (avMag < 1500000)
+					 * body drop, not to fight an established roll - and a car
+					 * that is merely RESTING on its body must get nothing at
+					 * all. Without the downward-velocity test a parked car
+					 * (or one settling on the spawn frame) was still pressed
+					 * into a roll: measured as "rollover count car=0
+					 * frame=133 up=-275" with no collision anywhere in the log,
+					 * i.e. the player's car flipped itself while sitting still.
+					 * A real drop arrives with vy well under -200; a resting
+					 * body reads a few units either side of zero. */
+					if (avMag < 1500000 && bodyLocal.vy < -200)
 						ftAddLocalRate(cp, roll, pitch);
 				}
 
