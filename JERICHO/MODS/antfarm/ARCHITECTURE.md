@@ -68,6 +68,7 @@ static void AntFarmSuspend(void)      /* hand back, but stay WANTED */
 |---|---|---|
 | The pause menu opens | `AntFarmOnPauseMenu` (`JER_PAUSE_OPEN`) | suspend — the pause menu needs the camera and the player's car back |
 | A cutscene, a replay, or the game-over screen | `AntFarmOnFrame`'s active guard | suspend — the engine drives the screen |
+| A live multiplayer session (`jer_net_is_active()`) | `AntFarmOnFrame`'s active guard | suspend — mp owns the camera, the player and the sim; the mode stays wanted and re-engages when the session ends |
 | A level (re)start | `AntFarmOnGameStart` | `savedPlayerCarControlType = 0` first (so the hand-back cannot write the old level's car state into the new one), then suspend |
 
 `pendingEnable` is the **want**, and it is what the auto-enable path re-reads:
@@ -75,7 +76,7 @@ static void AntFarmSuspend(void)      /* hand back, but stay WANTED */
 ```c
 if (s.pendingEnable && !s.active && pauseflag == 0 && AntFarmMapReady() &&
     !game_over && !gInGameCutsceneActive && !quick_replay &&
-    NumPlayers == 1 && !NoPlayerControl)
+    NumPlayers == 1 && !NoPlayerControl && !jer_net_is_active())
 {
     AntFarmSetActive(1);      /* clears pendingEnable on success */
 }
@@ -101,7 +102,11 @@ That is why the pause-menu row reads `(s.active || s.pendingEnable) ? ON : OFF`
 
 1. refuse unless the game is in a playable single-player state (`game_over`,
    `gInGameCutsceneActive`, `quick_replay`, `NumPlayers != 1`,
-   `NoPlayerControl`, `!AntFarmMapReady()` are all rejected);
+   `NoPlayerControl`, `!AntFarmMapReady()` are all rejected) **and no
+   multiplayer session is live** (`jer_net_is_active()`). The mp gate is
+   runtime, not manifest: mp is a core, default-enabled module, so
+   `incompatible = ["mp"]` would refuse Ant Farm on every boot. The module
+   stands down only while a session is up, and re-engages after it ends;
 2. save every global listed in §1;
 3. take them (§1);
 4. seed the camera from `AntFarmPickNearArea()` (the nearest usable straight to
@@ -766,6 +771,12 @@ generate time).
 * **`MAP_CELL_SIZE` / `MAP_REGION_SIZE` are level-header fields and are zero in
   the frontend** — every region/cell divide must go through the
   `jer_map_ready()` guard.
+* **The mp gate is runtime, not manifest.** mp is a core, default-enabled
+  module, so `incompatible = ["mp"]` in `mod.toml` would refuse Ant Farm on
+  every boot. The module checks `jer_net_is_active()` instead: in
+  `AntFarmSetActive`, in the frame hook's auto-enable and active guard, and
+  around `AntFarmOnGameStart`'s traffic pre-seed (a match's level start is not
+  ours to spawn into).
 * **A style's index in `antStyleDefs[]` must match `ANTFARM_STYLE_*`** in
   `antfarm.h`.
 * **`item_count` must match the pause-menu rows.**

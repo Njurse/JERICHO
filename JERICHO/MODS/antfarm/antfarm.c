@@ -61,6 +61,7 @@
 #include "felony.h"	/* GetPlayerFelony */
 #include "map.h"	/* units_across_halved, units_down_halved, current_region, regions_across */
 #include "jer_map.h"	/* shared region maths / residency / force (see map-streaming.md) */
+#include "jer_net.h"	/* jer_net_is_active - stand down during an mp session */
 #include "spool.h"	/* spoolinfo_offsets, regions_unpacked */
 #include "pres.h"	/* SetTextColour, PrintString (overlay captions) */
 
@@ -2312,8 +2313,9 @@ static int AntFarmOnGameStart(void* userdata, void* args)
 
 	/* Pre-seed the new level's traffic at once (when the screensaver is wanted),
 	 * so the world is already alive and a car-subject shot has something to
-	 * frame. Skipped when the mode is off, so plain play is untouched. */
-	if (s.active || s.pendingEnable)
+	 * frame. Skipped when the mode is off, and skipped in a live mp session -
+	 * spawning civilian traffic there is mp's business, not ours. */
+	if (!jer_net_is_active() && (s.active || s.pendingEnable))
 		AntFarmPreseedTraffic(maxCivCars);
 
 	return JER_RESULT_CONTINUE;
@@ -3148,6 +3150,18 @@ static void AntFarmSetActive(int on)
 
 	if (on)
 	{
+		/* A live multiplayer session owns the camera, the player and the sim; the
+		 * screensaver must never take them over under a match. This is a RUNTIME
+		 * gate, not a manifest one: mp is a core, default-enabled module, so
+		 * `incompatible = ["mp"]` would disable Ant Farm permanently. A paused /
+		 * finished session (jer_net_is_active() == 0) leaves it free to run. */
+		if (jer_net_is_active())
+		{
+			s.ctx->jer_log(s.ctx,
+				"[antfarm] refused: a multiplayer session is live\n");
+			return;
+		}
+
 		if (game_over || gInGameCutsceneActive || quick_replay ||
 			NumPlayers != 1 || NoPlayerControl || !AntFarmMapReady())
 		{
@@ -3393,10 +3407,12 @@ static int AntFarmOnFrame(void* userdata, void* args)
 	/* A config-enabled screensaver turns itself on as soon as the game is in
 	 * a playable single-player state. This used to sit BELOW the !active
 	 * early-return below, so it could never run — "enabled = 1" did nothing
-	 * and the mode only ever started from F9 / the pause menu. */
+	 * and the mode only ever started from F9 / the pause menu.
+	 * A live mp session is not ours to take over, so it also keeps the mode
+	 * wanted-but-off until the session ends (mp is core and always present). */
 	if (s.pendingEnable && !s.active && pauseflag == 0 && AntFarmMapReady() &&
 		!game_over && !gInGameCutsceneActive && !quick_replay &&
-		NumPlayers == 1 && !NoPlayerControl)
+		NumPlayers == 1 && !NoPlayerControl && !jer_net_is_active())
 	{
 		AntFarmSetActive(1);
 
@@ -3407,12 +3423,13 @@ static int AntFarmOnFrame(void* userdata, void* args)
 	if (!s.active)
 		return JER_RESULT_CONTINUE;
 
-	if (gInGameCutsceneActive || quick_replay || game_over)
+	if (gInGameCutsceneActive || quick_replay || game_over || jer_net_is_active())
 	{
 		/* The engine is driving the screen (a cutscene, a replay, the game-over
-		 * screen) and needs the camera and the player's car back. Hand them back,
-		 * but stay wanted: the screensaver re-engages when the game is playable
-		 * again - "on" means on, a cutscene must not switch it off. */
+		 * screen) or an mp session needs the camera and the player's car back.
+		 * Suspend, but stay wanted: the screensaver re-engages when the game is
+		 * playable again - "on" means on, neither a cutscene nor a match must
+		 * switch it off. */
 		AntFarmSuspend();
 		return JER_RESULT_CONTINUE;
 	}

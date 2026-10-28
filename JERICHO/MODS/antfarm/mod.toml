@@ -8,10 +8,11 @@ description = "Passive city observer / idle screensaver: tours the map with 17 c
 dependencies = []
 default-enabled = false
 
-# Ant Farm drives the CAMERA itself (its whole point is to tour the map on its own
-# rigs), so it cannot share a session with a mod that also owns the camera and the
-# car. mp does. Measured, not guessed: with both enabled a pair run dumped an access
-# violation and the on-foot stand-in's height read 1918 instead of ~-130. Ant Farm is
-# the one that stands down (`incompatible` refusing the DECLARING mod), and the reason
-# is raised as a player-facing error naming Multiplayer.
-incompatible = ["mp"]
+# Ant Farm drives the CAMERA itself and pins the player's car, so it cannot share
+# a live session with mp. That is a RUNTIME gate, not a manifest one: mp is a
+# core, default-enabled module (it owns the Single Player / Multiplayer prompt),
+# so `incompatible = ["mp"]` would refuse Ant Farm on every boot and there would
+# be no single-player left to run it in. Instead the module checks
+# jer_net_is_active() itself: it stands down while a multiplayer session is live
+# and re-engages when the session ends.
+incompatible = []

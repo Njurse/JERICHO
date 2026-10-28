@@ -150,17 +150,19 @@ Ant Farm is compiled *into* the exe (it is not a runtime DLL), so code changes
 need a rebuild of the game, not just a file copy.
 
 With `enabled = 1` in its config the mode turns itself on as soon as a
-playable single-player session is running — no keypress needed.
+playable single-player session is running — no keypress needed. A live
+multiplayer session keeps it off (see the caveats), and it re-engages on its
+own once that session ends.
 
 ## Usage
 
 - **F9** (keyboard, PC) — toggle the screensaver during gameplay.
 - **Pause -> Modules -> Ant Farm** — toggle, plus a row per camera archetype
   and an adjuster for the cut interval.
-- **While it is ON it is enforced**: a pause, a cutscene, a replay or a level
-  restart only *suspends* it (the game is handed back for as long as the
-  engine needs it) and it re-engages by itself. Nothing switches it off
-  silently — only F9 / the menu row do.
+- **While it is ON it is enforced**: a pause, a cutscene, a replay, a level
+  restart or a live multiplayer session only *suspends* it (the game is handed
+  back for as long as the engine or mp needs it) and it re-engages by itself.
+  Nothing switches it off silently — only F9 / the menu row do.
 - **START / opening the pause menu** — *suspends* the screensaver: the game
   (and the player's car) is handed back so the pause menu and its camera
   behave normally, and the mode re-engages on its own when the pause closes.
@@ -210,8 +212,11 @@ by the menu, so it only appears if you put it there.
 ## Caveats
 
 - Aimed at **single-player free drive** (take-a-drive / survival). It refuses
-  to engage during cutscenes, replays or multi-player, and auto-exits if a
-  cutscene or replay starts while it is running.
+  to engage during cutscenes, replays or a live multiplayer session, and
+  suspends if one starts while it is running (it re-engages when the engine or
+  the session is done). mp being installed is fine — the check is
+  `jer_net_is_active()`, not the manifest, because mp is a core,
+  default-enabled module.
 - The player's car is **pinned to the camera focus** while the mode runs:
   teleported there each frame (so region streaming/streaming follows the
   action), hidden (`CONTROL_TYPE_NONE` + slot reserved so traffic can't reuse
