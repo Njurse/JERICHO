@@ -16,9 +16,9 @@ rem foreign (Blender) mesh may need it. rebake.bat flip also reverses the
 rem winding, which a Y mirror requires or the car is inside out.
 rem  mode is optional:  flipy (default) mirrors Y only, flip does Y + winding,
 rem  noflip bakes as the OBJ stands.
-set "FLIP=--flip-y"
-if /i "%~1"=="flip" set "FLIP=--flip-y --flip-winding"
-if /i "%~1"=="noflip" set "FLIP="
+set "FLIP=--flip-normals"
+if /i "%~1"=="flip" set "FLIP=--flip-y --flip-winding --flip-normals"
+if /i "%~1"=="flipy" set "FLIP=--flip-y --flip-normals"
 set BANK=%~dp0
 set BANK=%BANK:~0,-1%
 set CAR=%BANK%\..\..\..\bake\tools\car
