@@ -12,6 +12,7 @@
 #include "pad.h"
 #include "jericho.h"
 #include "jer_events.h"
+#include "jer_npc.h"	/* jer_npc_owned: the shared player/owned-ped hook gate */
 #include "civ_ai.h"
 #include "glaunch.h"
 #include "cutscene.h"
@@ -1202,8 +1203,11 @@ void AnimatePed(LPPEDESTRIAN pPed)
 
 	// JERICHO-HOOK: the module's final word on the run speed before the
 	// position advances — ProcessTannerPad and the runner re-armed
-	// MAXRUNSPEED above, so only a write made HERE survives the advance
-	if (pPed->pedType == TANNER_MODEL && pPed->padId >= 0)
+	// MAXRUNSPEED above, so only a write made HERE survives the advance.
+	// Gate on the JERICHO ped ownership rule (the player's ped or a
+	// module-owned ped), NOT on a model id: the player can be the other
+	// player model (mp's custom character) and still be driven here.
+	if (pPed->padId >= 0 || jer_npc_owned(pPed))
 	{
 		JER_ARGS_PED_MOVE jerMove;
 
@@ -1360,7 +1364,7 @@ void CopStand(LPPEDESTRIAN pPed)
 	v.vz = pPed->position.vz - MainPlayer.pos[2];
 
 	pPed->frame1 = 0;
-	pPed->dir.vy = 1024 - ratan2(v.vz, v.vx);
+	pPed->dir.vy = (1024 - ratan2(v.vz, v.vx)) & 0xfff;
 }
 
 int iAllowWatch = 0;
@@ -1403,7 +1407,7 @@ void PedDoNothing(LPPEDESTRIAN pPed)
 		if (pPed->doing_turn < -tannerTurnMax)
 			pPed->doing_turn = -tannerTurnMax;
 
-		pPed->dir.vy = pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep;
+		pPed->dir.vy = (pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep) & 0xfff;
 
 		if (pPed->frame1 == 0)
 			pPed->frame1 = 15;
@@ -1421,7 +1425,7 @@ void PedDoNothing(LPPEDESTRIAN pPed)
 		if (pPed->doing_turn > tannerTurnMax)
 			pPed->doing_turn = tannerTurnMax;
 
-		pPed->dir.vy = pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep;
+		pPed->dir.vy = (pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep) & 0xfff;
 
 		if (pPed->frame1 > 14)
 			pPed->frame1 = 0;
@@ -1454,9 +1458,9 @@ void PedDoNothing(LPPEDESTRIAN pPed)
 		if (pPed->doing_turn != 0)
 		{
 			if (pPed->doing_turn < 0)
-				pPed->dir.vy = pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep;
+				pPed->dir.vy = (pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep) & 0xfff;
 			else
-				pPed->dir.vy = pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep;
+				pPed->dir.vy = (pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep) & 0xfff;
 		}
 	}
 
@@ -1513,7 +1517,7 @@ void PedUserRunner(LPPEDESTRIAN pPed)
 			pPed->doing_turn = -tannerTurnMax;
 
 		pPed->head_rot = 0;
-		pPed->dir.vy = pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep;
+		pPed->dir.vy = (pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep) & 0xfff;
 	}
 	else if (tannerPad & TANNER_PAD_TURNLEFT)
 	{
@@ -1526,7 +1530,7 @@ void PedUserRunner(LPPEDESTRIAN pPed)
 			pPed->doing_turn = tannerTurnMax;
 
 		pPed->head_rot = 0;
-		pPed->dir.vy = pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep;
+		pPed->dir.vy = (pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep) & 0xfff;
 	}
 	else
 	{
@@ -1551,7 +1555,7 @@ void PedUserRunner(LPPEDESTRIAN pPed)
 				pPed->doing_turn = 0;
 		}
 
-		pPed->dir.vy = pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep;
+		pPed->dir.vy = (pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep) & 0xfff;
 	}
 
 	AnimatePed(pPed);
@@ -1581,13 +1585,13 @@ void PedUserWalker(LPPEDESTRIAN pPed)
 	if (tannerPad & TANNER_PAD_TURNRIGHT)
 	{
 		pPed->head_rot = 0;
-		pPed->dir.vy += 20;
+		pPed->dir.vy = (pPed->dir.vy + 20) & 0xfff;
 	}
 
 	if (tannerPad & TANNER_PAD_TURNLEFT)
 	{
 		pPed->head_rot = 0;
-		pPed->dir.vy -= 20;
+		pPed->dir.vy = (pPed->dir.vy - 20) & 0xfff;
 	}
 
 	AnimatePed(pPed);
@@ -1682,7 +1686,7 @@ void PedGetOutCar(LPPEDESTRIAN pPed)
 		pPed->speed = 0;
 		pPed->fpAgitatedState = NULL;
 		pPed->flags &= ~0x10;
-		pPed->dir.vy = carToGetIn->hd.direction - 2048;
+		pPed->dir.vy = (carToGetIn->hd.direction - 2048) & 0xfff;
 
 		bReverseYRotation = 0;
 	}
@@ -1711,9 +1715,9 @@ void SetupGetOutCar(LPPEDESTRIAN pPed, CAR_DATA* pCar, int side)
 	entrySide = cs * (pCar->hd.where.t[0] - pPed->position.vx) - FIXED(sn * 0x1000) * (pCar->hd.where.t[2] - pPed->position.vz) + 0x800 > -1;
 
 	if (entrySide)
-		pPed->dir.vy = pCar->hd.direction - 1024;
+		pPed->dir.vy = (pCar->hd.direction - 1024) & 0xfff;
 	else
-		pPed->dir.vy = pCar->hd.direction + 1024;
+		pPed->dir.vy = (pCar->hd.direction + 1024) & 0xfff;
 
 	bReverseYRotation = !entrySide;
 
@@ -1761,9 +1765,9 @@ void SetupGetInCar(LPPEDESTRIAN pPed)
 	entrySide = cs * (carToGetIn->hd.where.t[0] - pPed->position.vx) - FIXED(sn * ONE) * (carToGetIn->hd.where.t[2] - pPed->position.vz) + 2048 < 0;
 
 	if (entrySide)
-		pPed->dir.vy = carToGetIn->hd.direction + 1024;
+		pPed->dir.vy = (carToGetIn->hd.direction + 1024) & 0xfff;
 	else
-		pPed->dir.vy = carToGetIn->hd.direction - 1024;
+		pPed->dir.vy = (carToGetIn->hd.direction - 1024) & 0xfff;
 
 	if (pPed->dir.vy > carToGetIn->hd.direction)
 		xOfs = -400;
@@ -2533,7 +2537,7 @@ void CivPedWalk(LPPEDESTRIAN pPed)
 	if ((pPed->flags & 2U) != 0)
 	{
 		pPed->speed = 0;
-		pPed->dir.vy += pPed->head_rot;
+		pPed->dir.vy = (pPed->dir.vy + pPed->head_rot) & 0xfff;
 	}
 	else
 	{
@@ -2581,7 +2585,9 @@ void CivPedWalk(LPPEDESTRIAN pPed)
 
 			if (pPed->finished_turn++ > 8)
 			{
-				pPed->dir.vy = pPed->dir.vy + 512 & 0xfc00;
+				/* snap to the nearest cardinal and stay inside 12 bits:
+				 * (vy + 512) & 0xfc00 can land on 4096 */
+				pPed->dir.vy = ((pPed->dir.vy + 512) & 0xfc00) & 0xfff;
 
 				dir = pPed->dir.vy + 2048 & 0xfff;
 
@@ -3586,7 +3592,7 @@ int ActivatePlayerPedestrian(CAR_DATA* pCar, char* padId, int direction, LONGVEC
 	if (gCurrentMissionNumber == 23 && playerType != TANNER_MODEL)
 	{
 		pedptr->doing_turn = 16;
-		pedptr->dir.vy = (pedptr->dir.vy - (tannerTurnMax + 16) * tannerTurnStep) + 294;
+		pedptr->dir.vy = ((pedptr->dir.vy - (tannerTurnMax + 16) * tannerTurnStep) + 294) & 0xfff;
 	}
 
 	return 1;

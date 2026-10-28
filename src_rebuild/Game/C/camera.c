@@ -636,7 +636,10 @@ void PlaceCameraFollowCar(PLAYER *lp)
 			{
 				angleDelta = DIFF_ANGLES(lp->cameraAngle, baseDir + gCameraAngle); // (((baseDir + gCameraAngle) - lp->cameraAngle) + 2048U & 0xfff) - 2048;
 
-				lp->cameraAngle += (angleDelta >> 3) & 0xfff;
+				/* JERICHO: mask the RESULT, not the delta. Masking a signed
+				 * delta turned -1 into 4095 and added it to an unmasked
+				 * accumulator, which drifted past INT_MAX in a long session. */
+				lp->cameraAngle = (lp->cameraAngle + (angleDelta >> 3)) & 0xfff;
 			}
 		}
 	}

@@ -1945,38 +1945,49 @@ void JerPedImportReset(void)
 void InitCarImport(void)
 {
 	int i, city;
-	int wanted = 0, all_held = 1;
 
-	// JERICHO: a RESTART of the same level does not re-read the level file, so
-	// ProcessCarModelLump does not run again -- and that is what records the page
-	// pins the deferred palette upload rides on. Clearing the import state here
-	// therefore drops the palette rows with nothing left to put them back: the
-	// car keeps its geometry but loses its colours. If every source the restart
-	// asked for is already held, leave the level's import alone. A genuinely
-	// different source set (or a fresh level) falls through to the full reset.
-	if (!NewLevel && gCarImportCity >= 0)
+	// JERICHO: a level RE-ENTRY (NewLevel == 0) is not a new level. Restart, retry,
+	// quick replay and film director all take this path, and none of them re-reads the
+	// level file: ProcessCarModelLump does not run, so the built car geometry survives.
+	// Tearing the import state down here (CarImportResetState + FreeCarImport) would
+	// free the page pins, the set remap and the deferred palette rows those built
+	// models still draw with -- the imported car comes back wearing the level's
+	// materials. So a re-entry NEVER resets: it keeps every held city and only loads a
+	// city the set names that is not held yet, exactly like the mid-level path.
+	// INVARIANT: only a fresh level (NewLevel != 0) may release import state.
+	if (!NewLevel)
 	{
+		int held = 0, named = 0;
+
 		for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 		{
 			int src = GetCarModelSourceCity(i);
 
-			if (src < 0 || src >= CITY_COUNT || residentCarModels[i] == -1)
-				continue;
-
-			wanted = 1;
-
-			if (!CarImportCityHeld(src))
-			{
-				all_held = 0;
-				break;
-			}
+			if (src >= 0 && src < CITY_COUNT && residentCarModels[i] != -1)
+				named = 1;
 		}
 
-		if (wanted && all_held)
+		for (city = 0; city < CITY_COUNT; city++)
 		{
-			printInfo("cross-city: restart of the same level - keeping the held car import and its palettes\n");
-			return;
+			if (gCarImports[city].region != NULL)
+				held++;
 		}
+
+		// The runtime banks may have appeared/disappeared since boot, so re-scan before
+		// resolving a newly named city. Safe here: nothing is freed on this path.
+		JerCityRegistryRefresh();
+
+		// Loads only the cities the set names that are not held yet; never disturbs the
+		// live per-slot set lists, pins or palette rows.
+		InitCarImportMidLevel();
+
+		if (held > 0 || named)
+		{
+			printInfo("cross-city: re-entry (NewLevel=0) - keeping %d held car-data city/cities, %s; nothing is freed\n",
+				held, named ? "the set still names an import" : "the set names no import");
+		}
+
+		return;
 	}
 
 	// JERICHO: a new level starts from a clean cross-city slate. This runs BEFORE the

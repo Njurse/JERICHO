@@ -1295,11 +1295,19 @@ void StepSim(void)
 			 * on foot */
 			jerPad.stickX = Pads[stream].mapanalog[2];	/* left-stick X */
 			jerPad.stickY = Pads[stream].mapanalog[3];	/* left-stick Y */
-			jerPad.cameraYaw = camera_angle.vy;
+			/* camera_angle.vy is the engine's signed view angle; the event
+			 * documents a 0..4095 camera FACING, so hand it the forward
+			 * heading (-vy), not the raw signed value */
+			jerPad.cameraYaw = (-camera_angle.vy) & 0xfff;
 
 			jer_fire(JER_EVENT_PED_INPUT, &jerPad);
 
 			t0 = jerPad.pad;
+			/* stickX is in/out: modules that own the on-foot heading zero
+			 * it so ProcessTannerPad does not re-add analog steering (which
+			 * turns dir.vy behind the module's back, even with the stick
+			 * inside the movement deadzone) */
+			t1 = (char)jerPad.stickX;
 		}
 
 		ProcessTannerPad(pl->pPed, t0, t1, t2);
@@ -1918,6 +1926,13 @@ int gMultiStep = 0;
 	// without driving the pause menu. -1 = never. Pair with -frames M where M > N.
 	int gRestartFrame = -1;
 
+	// JERICHO: debug/test - the other two same-level re-entries the pause menu offers,
+	// on gameplay frame N. They take the SAME NewLevel == 0 path as -restart
+	// (glaunch.c State_GameComplete), but through GAMEMODE_REPLAY / GAMEMODE_DIRECTOR,
+	// so the car/ped lifecycle can be exercised for each without a pad. -1 = never.
+	int gQuickReplayFrame = -1;
+	int gDirectorFrame = -1;
+
 	// JERICHO: debug/test - the same, for FRONTEND frames. -shot counts gameplay frames
 	// (gRunFrames), which never advance while the menus are up, so a menu can only be
 	// captured with this. Set by -shotfront <frame>; consumed in FEmain.c.
@@ -2299,6 +2314,23 @@ void DrawGame(void)
 		gRestartFrame = -1;
 		printInfo("JERICHO-RESTART: requesting GAMEMODE_RESTART on frame %d\n", gRunFrames);
 		EndGame(GAMEMODE_RESTART);
+	}
+
+	// JERICHO: -quickreplay / -director <frame> -- the other two pause-menu endings.
+	// Each re-enters the SAME level (NewLevel == 0), which is the lifecycle these
+	// levers exist to prove.
+	if (gQuickReplayFrame >= 0 && gRunFrames >= gQuickReplayFrame)
+	{
+		gQuickReplayFrame = -1;
+		printInfo("JERICHO-QUICKREPLAY: requesting GAMEMODE_REPLAY on frame %d\n", gRunFrames);
+		EndGame(GAMEMODE_REPLAY);
+	}
+
+	if (gDirectorFrame >= 0 && gRunFrames >= gDirectorFrame)
+	{
+		gDirectorFrame = -1;
+		printInfo("JERICHO-DIRECTOR: requesting GAMEMODE_DIRECTOR on frame %d\n", gRunFrames);
+		EndGame(GAMEMODE_DIRECTOR);
 	}
 #endif
 
@@ -2904,6 +2936,20 @@ int redriver2_main(int argc, char** argv)
 			// lifecycle can be tested headlessly. Pair with -frames M > N.
 			if (i + 1 < argc)
 				gRestartFrame = atoi(argv[++i]);
+		}
+		else if (!strcmp(argv[i], "-quickreplay"))
+		{
+			// JERICHO: request GAMEMODE_REPLAY on gameplay frame N (the pause menu's
+			// Quick Replay), a same-level re-entry. Pair with -frames M > N.
+			if (i + 1 < argc)
+				gQuickReplayFrame = atoi(argv[++i]);
+		}
+		else if (!strcmp(argv[i], "-director"))
+		{
+			// JERICHO: request GAMEMODE_DIRECTOR on gameplay frame N (the pause menu's
+			// Film Director), a same-level re-entry. Pair with -frames M > N.
+			if (i + 1 < argc)
+				gDirectorFrame = atoi(argv[++i]);
 		}
 		else if (!strcmp(argv[i], "-seed"))
 		{
