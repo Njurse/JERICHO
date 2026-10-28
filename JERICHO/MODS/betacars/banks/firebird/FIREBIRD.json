@@ -1,0 +1,107 @@
+{
+ "version": 1,
+ "tool": "basebank",
+ "game": "D2",
+ "city": "FIREBIRD",
+ "source_city": "CHICAGO",
+ "source_model": 1,
+ "destination_slot": 1,
+ "city_index": 0,
+ "cell_size": 2048,
+ "source": {
+  "path": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\FIREBIRD.LEV"
+ },
+ "models": [
+  {
+   "id": "1_BASE2",
+   "model": 1,
+   "sets": [
+    1
+   ],
+   "variants": {
+    "clean": {
+     "raw": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\models\\1_1_BASE2_clean.bin"
+    },
+    "damaged": {
+     "raw": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\models\\1_1_BASE2_damaged.bin"
+    },
+    "low": {
+     "raw": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\models\\1_1_BASE2_low.bin"
+    }
+   }
+  }
+ ],
+ "texture_sets": [
+  1,
+  65
+ ],
+ "wheel_sets": [],
+ "pages": [
+  {
+   "set": 1,
+   "size": 33060,
+   "ncluts": 30,
+   "bin": "pages/PAGE_1.bin",
+   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\pages/PAGE_1.png"
+  },
+  {
+   "set": 65,
+   "size": 27452,
+   "ncluts": 29,
+   "bin": "pages/PAGE_65.bin",
+   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\pages/PAGE_65.png"
+  }
+ ],
+ "palette_sets": [
+  1,
+  65
+ ],
+ "raw": {
+  "textureinfo": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\textureinfo.bin",
+  "pallet": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\pallet.bin",
+  "texturenames": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\texturenames.bin",
+  "modelnames": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\modelnames.bin"
+ },
+ "lcf": "source.LCF",
+ "cosmetics": "cosmetics.json",
+ "bank_order": [
+  {
+   "slot": 1,
+   "car": "1_BASE2"
+  }
+ ],
+ "warnings": [],
+ "bank": {
+  "city": "FIREBIRD",
+  "lev": "FIREBIRD.LEV",
+  "lcf": "FIREBIRD.LCF",
+  "size": 104448,
+  "order": [
+   {
+    "slot": 1,
+    "car": "FIREBIRD_model1"
+   }
+  ],
+  "included_sets": [
+   1,
+   65
+  ],
+  "pages": [
+   {
+    "set": 1,
+    "size": 30960
+   },
+   {
+    "set": 65,
+    "size": 27452
+   }
+  ],
+  "palette_records": 155,
+  "page_base": 43008,
+  "warnings": [],
+  "checks": {
+   "ok": true,
+   "problems": []
+  }
+ }
+}

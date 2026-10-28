@@ -14,11 +14,13 @@ rem pass "flip" to bake with the mesh mirrored in Y. The Firebird source OBJ is
 rem Y-up like the engine, so it bakes as authored; the flag exists because a
 rem foreign (Blender) mesh may need it. rebake.bat flip also reverses the
 rem winding, which a Y mirror requires or the car is inside out.
-rem  mode is optional:  flipy (default) mirrors Y only, flip does Y + winding,
-rem  noflip bakes as the OBJ stands.
-set "FLIP=--flip-normals"
-if /i "%~1"=="flip" set "FLIP=--flip-y --flip-winding --flip-normals"
-if /i "%~1"=="flipy" set "FLIP=--flip-y --flip-normals"
+rem  The mesh is exported -Y up, the engine's own convention, so NO Y mirror.
+rem  What it does need is the WINDING reversed: with the authored order the
+rem  outer shell gets culled and the car reads inside out. Modes: flip (mirror
+rem  Y as well), flipy (mirror only), normals (also negate the normal tables).
+set "FLIP=--flip-winding"
+if /i "%~1"=="flip" set "FLIP=--flip-y --flip-winding"
+if /i "%~1"=="flipy" set "FLIP=--flip-y --flip-winding"
 set BANK=%~dp0
 set BANK=%BANK:~0,-1%
 set CAR=%BANK%\..\..\..\bake\tools\car
