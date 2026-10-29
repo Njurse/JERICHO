@@ -90,7 +90,7 @@
    "car": "1_BASE2"
   }
  ],
- "page_base": 53248,
+ "page_base": 61440,
  "pages": [
   {
    "set": 1,
@@ -106,13 +106,12 @@
   }
  ],
  "palette_records": 3,
- "size": 157696,
+ "size": 165888,
  "warnings": [
-  "sound model 1 engine: normalised peak 32014 -> 29490 (x0.92)",
-  "sound model 1 idle: normalised peak 31032 -> 29490 (x0.95)",
-  "sound model 1 idle: trimmed from 1.46s to 1.30s to fit 8192 bytes (the SPU has no room for more)",
-  "sound model 1 horn/siren: normalised peak 31462 -> 29490 (x0.94)",
-  "sound model 1: 16064 bytes (engine 5792, idle 8192, third 2080), rate fields 44200/44200/44200"
+  "sound model 1 engine: normalised peak 32531 -> 29490 (x0.91)",
+  "sound model 1 idle: normalised peak 31701 -> 29490 (x0.93)",
+  "sound model 1 horn/siren: normalised peak 31142 -> 29490 (x0.95)",
+  "sound model 1: 24784 bytes (engine 8384, idle 13392, third 3008), rate fields 16000/16000/16000"
  ],
  "wheels": [
   {
