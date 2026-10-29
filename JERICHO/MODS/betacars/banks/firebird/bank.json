@@ -74,7 +74,8 @@
     "slot": 1
    }
   ],
-  "schema": 1
+  "schema": 1,
+  "palette_from_pages": true
  },
  "included_sets": [
   1,
