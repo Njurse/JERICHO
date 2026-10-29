@@ -36,6 +36,7 @@
      "engine": {
       "wav": "sounds/engine.wav",
       "level": 0.999,
+      "rms": 0.34,
       "force": false,
       "normalise": true,
       "gain_db": 0.0,
@@ -49,6 +50,7 @@
      "idle": {
       "wav": "sounds/idle.wav",
       "level": 0.999,
+      "rms": 0.34,
       "force": false,
       "normalise": true,
       "gain_db": 0.0,
@@ -62,6 +64,7 @@
      "horn": {
       "wav": "sounds/unused/horn.wav",
       "level": 0.999,
+      "rms": 0.34,
       "force": false,
       "normalise": true,
       "gain_db": 0.0,
@@ -78,7 +81,8 @@
      "loop_from": 0.0,
      "peak": 0.999,
      "max_rate": 16000,
-     "sample_bytes": 16384
+     "sample_bytes": 16384,
+     "rms": 0.34
     },
     "textures": {
      "1": "textures/firebird.png",
@@ -142,6 +146,8 @@
  "palette_records": 3,
  "size": 165888,
  "warnings": [
+  "sound model 1 engine: levelled x0.692 (-3.2 dB) - peak 32517 -> 22516, rms 49% -> 34% of full scale (retail's own samples are 29-39% rms)",
+  "sound model 1 engine: crest factor 2.0 (retail 2.6-3.4) - the source has been limited, so it will sound squashed",
   "sound model 1: 24784 bytes (engine 8384, idle 13392, third 3008), rate fields 16000/16000/16000"
  ],
  "wheels": [

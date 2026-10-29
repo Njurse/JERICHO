@@ -166,6 +166,7 @@
      "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\engine.wav",
      "loop": true,
      "level": 0.999,
+     "rms": 0.34,
      "rate": null,
      "rate_pct": 100,
      "max_rate": 16000,
@@ -181,6 +182,7 @@
      "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\idle.wav",
      "loop": true,
      "level": 0.999,
+     "rms": 0.34,
      "rate": null,
      "rate_pct": 100,
      "max_rate": 16000,
@@ -196,6 +198,7 @@
      "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\unused\\horn.wav",
      "loop": false,
      "level": 0.999,
+     "rms": 0.34,
      "rate": null,
      "rate_pct": 100,
      "max_rate": 16000,
@@ -208,6 +211,7 @@
      "fade_out": 0.0
     },
     "peak": 0.999,
+    "rms": 0.34,
     "max_rate": 16000,
     "sample_bytes": 16384
    }
