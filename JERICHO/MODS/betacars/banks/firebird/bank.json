@@ -14,11 +14,19 @@
      {
       "png": "work/pages/page1.png",
       "set": 1
+     },
+     {
+      "png": "work/pages/page2.png",
+      "set": 2
+     },
+     {
+      "png": "work/pages/page3.png",
+      "set": 3
      }
     ],
     "wheels": {
-     "clean": "work/wheels/clean.png",
-     "fast": "work/wheels/fast.png"
+     "clean": "textures/wheelclean.png",
+     "fast": "textures/wheelfast.png"
     }
    }
   },
