@@ -100,8 +100,6 @@
  "palette_records": 3,
  "size": 165888,
  "warnings": [
-  "sound model 1 idle: normalised peak 31701 -> 32734 (x1.03); rms 10996 (34% of full scale, retail is 29-39%)",
-  "sound model 1 horn/siren: normalised peak 31142 -> 32734 (x1.05); rms 11826 (36% of full scale, retail is 29-39%)",
   "sound model 1: 24784 bytes (engine 8384, idle 13392, third 3008), rate fields 16000/16000/16000"
  ],
  "wheels": [
