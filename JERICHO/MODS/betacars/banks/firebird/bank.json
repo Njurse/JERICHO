@@ -10,27 +10,6 @@
     "clean": "firebird.obj",
     "damaged": "firebird.obj",
     "low": "firebird_low.obj",
-    "pages": [
-     {
-      "png": "work/pages/page1.png",
-      "set": 1,
-      "source": "textures/firebird.png"
-     },
-     {
-      "png": "work/pages/page2.png",
-      "set": 2,
-      "source": "work/pages/page2.png",
-      "transparent": "auto",
-      "transparent_chroma": 128
-     },
-     {
-      "png": "work/pages/page3.png",
-      "set": 3,
-      "source": "work/pages/page3.png",
-      "transparent": "auto",
-      "transparent_chroma": 128
-     }
-    ],
     "wheels": {
      "clean": {
       "island": [
@@ -58,6 +37,19 @@
      "idle": "sounds/idle.wav",
      "horn": "sounds/unused/horn.wav",
      "cop": false
+    },
+    "textures": {
+     "1": "textures/firebird.png",
+     "2": {
+      "png": "work/pages/page2.png",
+      "transparent": "auto",
+      "transparent_chroma": 128
+     },
+     "3": {
+      "png": "work/pages/page3.png",
+      "transparent": "auto",
+      "transparent_chroma": 128
+     }
     }
    }
   },
@@ -108,9 +100,8 @@
  "palette_records": 3,
  "size": 165888,
  "warnings": [
-  "sound model 1 engine: normalised peak 32531 -> 29490 (x0.91)",
-  "sound model 1 idle: normalised peak 31701 -> 29490 (x0.93)",
-  "sound model 1 horn/siren: normalised peak 31142 -> 29490 (x0.95)",
+  "sound model 1 idle: normalised peak 31701 -> 32734 (x1.03); rms 10996 (34% of full scale, retail is 29-39%)",
+  "sound model 1 horn/siren: normalised peak 31142 -> 32734 (x1.05); rms 11826 (36% of full scale, retail is 29-39%)",
   "sound model 1: 24784 bytes (engine 8384, idle 13392, third 3008), rate fields 16000/16000/16000"
  ],
  "wheels": [
