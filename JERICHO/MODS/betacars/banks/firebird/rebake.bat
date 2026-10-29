@@ -25,13 +25,20 @@ rem                    culled.
 rem    --flip-normals  negates the stored normal tables; bake stores them INWARD.
 rem
 rem  After baking:  play_chicago.bat        (or: play_chicago.bat test 250)
-rem  If a page changed, run the page step FIRST. The wheel backdrops have to be
-rem  TRANSPARENT - the engine's marker is a CLUT entry of 0x0000, so a pink sky
-rem  left alone draws as an opaque square round the wheel:
-rem    python ..\..\..\bake\tools\car\carbank_page.py textures\firebird.png --set 1 --bank .
-rem    python ..\..\..\bake\tools\car\carbank_page.py work\pages\page2.png --set 2 --bank . --transparent auto --transparent-tolerance 96
-rem    python ..\..\..\bake\tools\car\carbank_page.py work\pages\page3.png --set 3 --bank . --transparent auto --transparent-tolerance 96
-rem ============================================================================
+rem  The pages and the palette are re-derived by the bake itself: a page whose
+rem  bank.json entry names a "source" is re-baked whenever that image or its
+rem  bake options change, and the wheel backdrops are keyed transparent there
+rem  (the engine's marker is a CLUT entry of 0x0000, so a pink sky left alone
+rem  draws as an opaque square round the wheel).
+rem
+rem    python ..\..\..\bake\tools\car\carbank_bake.py bank.json --check
+rem        is anything stale? (pages, palette, declared sources)
+rem    python ..\..\..\bake\tools\car\carbank_bake.py bank.json --audit f800f8
+rem        where does a colour still live? (page, texels, palette index)
+rem    python ..\..\..\bake\tools\car\carbank_palette.py bank.json --from-pages
+rem        rebuild the palette rows from the pages' own colours
+rem    python ..\..\..\bake\tools\car\carbank_page.py <image> --set N --bank .
+rem        bake ONE page by hand (--transparent/--protect/--palette/--report)
 setlocal
 
 set "MODE=%~1"

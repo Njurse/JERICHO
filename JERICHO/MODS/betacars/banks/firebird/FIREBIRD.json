@@ -43,9 +43,41 @@
   {
    "set": 1,
    "size": 33060,
-   "ncluts": 30,
+   "ncluts": 1,
    "bin": "pages/PAGE_1.bin",
-   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\pages/PAGE_1.png"
+   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\pages/PAGE_1.png",
+   "source": {
+    "image": "firebird.png",
+    "transparent": null,
+    "tolerance": 0,
+    "sha256": "6a5d182f3488ea51dc9a9abc22d0457ae041d30c5e29685d7502de22377ff7a2"
+   }
+  },
+  {
+   "set": 2,
+   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\work\\pages\\page2.png",
+   "size": 33060,
+   "ncluts": 1,
+   "bin": "pages/PAGE_2.bin",
+   "source": {
+    "image": "page2.png",
+    "transparent": "auto",
+    "tolerance": 96,
+    "sha256": "162243e84412bf380f90673c9efc6fd79d0f4c407669bb6bafd1744b02170f06"
+   }
+  },
+  {
+   "set": 3,
+   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\work\\pages\\page3.png",
+   "size": 33060,
+   "ncluts": 1,
+   "bin": "pages/PAGE_3.bin",
+   "source": {
+    "image": "page3.png",
+    "transparent": "auto",
+    "tolerance": 96,
+    "sha256": "d1842c416dd1880c0783c25cbaf0127185d2a4afa1dad31244fdbd928ee40812"
+   }
   },
   {
    "set": 65,
@@ -53,16 +85,6 @@
    "ncluts": 29,
    "bin": "pages/PAGE_65.bin",
    "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\pages/PAGE_65.png"
-  },
-  {
-   "set": 2,
-   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\work\\pages\\page2.png",
-   "size": 33060
-  },
-  {
-   "set": 3,
-   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\work\\pages\\page3.png",
-   "size": 33060
   }
  ],
  "palette_sets": [
@@ -139,5 +161,27 @@
     60
    ]
   }
- ]
+ ],
+ "sounds": {
+  "models": [
+   {
+    "model": 1,
+    "engine": {
+     "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\engine.wav",
+     "rate_pct": 100,
+     "loop": false
+    },
+    "idle": {
+     "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\idle.wav",
+     "rate_pct": 100,
+     "loop": false
+    },
+    "third": {
+     "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\unused\\horn.wav",
+     "loop": false
+    }
+   }
+  ],
+  "sirens": []
+ }
 }

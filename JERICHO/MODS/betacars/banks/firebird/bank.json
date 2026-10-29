@@ -13,28 +13,51 @@
     "pages": [
      {
       "png": "work/pages/page1.png",
-      "set": 1
+      "set": 1,
+      "source": "textures/firebird.png"
      },
      {
       "png": "work/pages/page2.png",
-      "set": 2
+      "set": 2,
+      "source": "work/pages/page2.png",
+      "transparent": "auto",
+      "transparent_tolerance": 96
      },
      {
       "png": "work/pages/page3.png",
-      "set": 3
+      "set": 3,
+      "source": "work/pages/page3.png",
+      "transparent": "auto",
+      "transparent_tolerance": 96
      }
     ],
     "wheels": {
      "clean": {
-      "island": [0, 0, 60, 60],
+      "island": [
+       0,
+       0,
+       60,
+       60
+      ],
       "png": "textures/wheelclean.png",
       "set": 2
      },
      "fast": {
-      "island": [0, 0, 60, 60],
+      "island": [
+       0,
+       0,
+       60,
+       60
+      ],
       "png": "textures/wheelfast.png",
       "set": 3
      }
+    },
+    "sounds": {
+     "engine": "sounds/engine.wav",
+     "idle": "sounds/idle.wav",
+     "horn": "sounds/unused/horn.wav",
+     "cop": false
     }
    }
   },
@@ -53,15 +76,67 @@
   ],
   "schema": 1
  },
- "included_sets": [],
+ "included_sets": [
+  1,
+  2,
+  3
+ ],
  "lcf": "FIREBIRD.LCF",
  "lev": "FIREBIRD.LEV",
- "order": [],
- "page_base": 20480,
- "pages": [],
- "palette_records": 0,
- "size": 20480,
+ "order": [
+  {
+   "slot": 1,
+   "car": "1_BASE2"
+  }
+ ],
+ "page_base": 53248,
+ "pages": [
+  {
+   "set": 1,
+   "size": 33060
+  },
+  {
+   "set": 2,
+   "size": 33060
+  },
+  {
+   "set": 3,
+   "size": 33060
+  }
+ ],
+ "palette_records": 3,
+ "size": 157696,
  "warnings": [
-  "no texture sets resolved; the bank will have no pages"
- ]
+  "sound model 1 idle: trimmed from 1.46s to 1.30s to fit 8192 bytes (the SPU has no room for more)",
+  "sound model 1: 16064 bytes (engine 5792, idle 8192, third 2080) at 11025/11025/11025 Hz"
+ ],
+ "wheels": [
+  {
+   "variant": "clean",
+   "set": 2,
+   "island": [
+    0,
+    0,
+    60,
+    60
+   ]
+  },
+  null,
+  {
+   "variant": "fast",
+   "set": 3,
+   "island": [
+    0,
+    0,
+    60,
+    60
+   ]
+  }
+ ],
+ "sounds": {
+  "models": [
+   1
+  ],
+  "sirens": []
+ }
 }
