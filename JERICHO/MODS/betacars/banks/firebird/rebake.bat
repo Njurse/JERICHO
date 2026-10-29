@@ -80,7 +80,8 @@ goto usage
 set "BANK=%~dp0"
 set "BANK=%BANK:~0,-1%"
 set "CAR=%BANK%\..\..\..\bake\tools\car"
-set "OUT=%BANK%\.out"
+rem everything the bake generates lands in build\ (bank.json: "build_dir")
+set "OUT=%BANK%\build"
 
 for %%I in ("%BANK%\..\..\..\..\..") do set "ROOT=%%~fI"
 set "MIRROR=%ROOT%\src_rebuild\bin\Release_dev\JERICHO\MODS\betacars\banks\firebird"
@@ -88,26 +89,78 @@ set "MIRROR=%ROOT%\src_rebuild\bin\Release_dev\JERICHO\MODS\betacars\banks\fireb
 if not exist "%BANK%\bank.json" goto no_bank
 if not exist "%CAR%\carbank_bake.py" goto no_tools
 
-rem the bake writes to a scratch folder and is copied in afterwards: baking with
-rem -o pointing AT the bank folder rewrites the manifest mid-read and silently
-rem produces an empty bank (20480 bytes, 0 cars)
-if exist "%OUT%" rmdir /s /q "%OUT%"
+rem the bake writes into build\ and the result is copied in afterwards: baking
+rem with -o pointing AT the bank folder overwrites the LEV it reads from and
+rem silently produces an empty bank (20480 bytes, 0 cars). build\ is kept
+rem between bakes (pages/ and models/ are reused when nothing changed); delete
+rem it any time for a clean bake. Only the old LEV/LCF go, so a failed bake
+rem cannot install a stale one.
+if not exist "%OUT%" mkdir "%OUT%"
+if exist "%OUT%\FIREBIRD.LEV" del /q "%OUT%\FIREBIRD.LEV"
+if exist "%OUT%\FIREBIRD.LCF" del /q "%OUT%\FIREBIRD.LCF"
 
-echo mode  : %MODE%   [%FLIP%]
-echo baking: %BANK%\bank.json
-python "%CAR%\carbank_bake.py" "%BANK%\bank.json" -o "%OUT%" --scale 265 --default-page 1:0 %FLIP%
-if errorlevel 1 goto fail
-if not exist "%OUT%\FIREBIRD.LEV" goto fail
+set "LOG=%OUT%\rebake.log"
+echo.
+echo  ==== Firebird rebake ===================================================
+echo   mode : %MODE%   [%FLIP%]
+echo   bank : %BANK%\bank.json
+echo   log  : %LOG%
+echo  ------------------------------------------------------------------------
+echo   baking...
+python "%CAR%\carbank_bake.py" "%BANK%\bank.json" -o "%OUT%" --scale 265 --default-page 1:0 %FLIP% > "%LOG%" 2>&1
+set "BAKERC=%ERRORLEVEL%"
 
-echo installing
+rem show only what matters: sound notes, other warnings, and the summary.
+rem the per-material import chatter stays in rebake.log
+echo.
+echo   sounds:
+findstr /i /c:"sound model" "%LOG%" >nul && (for /f "usebackq delims=" %%L in (`findstr /i /c:"sound model" "%LOG%"`) do echo     %%L) || echo     (no sound notes)
+echo   other warnings:
+findstr /i "warning" "%LOG%" | findstr /v /i /c:"sound model" >nul && (for /f "usebackq delims=" %%L in (`findstr /i "warning" "%LOG%" ^| findstr /v /i /c:"sound model"`) do echo     %%L) || echo     (none)
+echo.
+if not "%BAKERC%"=="0" goto bake_failed
+if not exist "%OUT%\FIREBIRD.LEV" goto bake_failed
+for /f "usebackq delims=" %%L in (`findstr /i /c:"bank ok" "%LOG%"`) do echo   %%L
+
+echo   installing to repo + game mirror...
 copy /Y "%OUT%\FIREBIRD.LEV" "%BANK%" >nul || goto fail
 copy /Y "%OUT%\FIREBIRD.LCF" "%BANK%" >nul || goto fail
 copy /Y "%OUT%\FIREBIRD.LEV" "%MIRROR%" >nul || goto fail
 copy /Y "%OUT%\FIREBIRD.LCF" "%MIRROR%" >nul || goto fail
-rmdir /s /q "%OUT%"
-
-echo done. next:  play_chicago.bat        (or: play_chicago.bat test 250)
+echo.
+echo  ==== BAKE OK - installed ===============================================
+echo.
+echo   Take a Ride in the Firebird:
+echo     0  Chicago      1  Havana      2  Las Vegas      3  Rio
+echo     4  exit         (exits by itself after 10 seconds)
+echo.
+choice /c 01234 /n /t 10 /d 4 /m "  select 0-4: "
+set "PICK=%ERRORLEVEL%"
+set "CITY="
+if "%PICK%"=="1" set "CITY=chicago"
+if "%PICK%"=="2" set "CITY=havana"
+if "%PICK%"=="3" set "CITY=lasvegas"
+if "%PICK%"=="4" set "CITY=rio"
+if "%CITY%"=="" (
+    echo   exit - not launching.
+    exit /b 0
+)
+set "EXEDIR=%ROOT%\src_rebuild\bin\Release_dev"
+if not exist "%EXEDIR%\JERICHO_dev.exe" (
+    echo FAILED: no game at %EXEDIR%\JERICHO_dev.exe
+    exit /b 1
+)
+echo   launching Take a Ride in %CITY%...
+pushd "%EXEDIR%"
+start "" "JERICHO_dev.exe" -nointro -level %CITY% -car 1 -gamemode takeadrive -weather none -time day
+popd
 exit /b 0
+
+:bake_failed
+echo  ==== BAKE FAILED - nothing was installed ===============================
+echo   last lines of the log:
+powershell -NoProfile -Command "Get-Content -LiteralPath '%LOG%' -Tail 8 | ForEach-Object { '    ' + $_ }"
+exit /b 1
 
 :usage
 echo.

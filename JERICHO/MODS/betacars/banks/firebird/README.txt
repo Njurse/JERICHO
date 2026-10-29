@@ -1,53 +1,63 @@
-FIREBIRD — one car, rebuilt from art
+FIREBIRD - one car, rebuilt from art
 ====================================
 
 A Driver 2 car-data bank for one car (model slot 1), rebuilt from the sources in
 this folder. `bank.json` is the DECLARATION: it names the art, and the bake works
-everything else out. `FIREBIRD.LEV` is the result — the loadable bank the game
-reads.
+everything else out. `FIREBIRD.LEV` is the result - the loadable bank the game
+reads. The bake never writes bank.json.
 
 One command:
 
-    rebake.bat              bake, verify, and install into bin\Release_dev
-    rebake.bat test 250     bake, then drive it headlessly for 250 frames
+    rebake.bat              bake, verify, install into bin\Release_dev, then
+                            0-3 = Take a Ride (Chicago/Havana/Vegas/Rio), 4 = exit
     rebake.bat help         every other mode, and the tools' own switches
+    play_chicago.bat        drive the installed bank in Chicago
 
 What is what:
 
-  bank.json              THE DECLARATION — sources, wheels, sounds, page bakes
-  FIREBIRD.LEV/.LCF      the built bank + cosmetics (output; installed by rebake)
-  FIREBIRD.json          the manifest the build writes back (output)
-  firebird.obj           the car's geometry (author art)
-  firebird_low.obj       low-detail geometry
-  firebird.mtl           material names, which is how polys find their page
-  textures/              page art for sets 1-3 and the wheel sprites
-    firebird.png           set 1, the body
-    page2.png, page3.png   sets 2 and 3, the wheel pages (backdrop keyed)
-    wheelclean.png         the wheel sprite composited into set 2
-    wheelfast.png          the fast wheel sprite, set 3
-  sounds/                engine.wav, idle.wav, horn.wav (unused/ holds the raw takes)
-  pages/                 the baked pages and their PNG previews (output)
-  models/                the baked car blocks (output)
-  palette.json/.png      the palette rows and a swatch view (output-ish)
-  raw/, cosmos/, source/ the donor material this bank was started from
-  work/                  scratch: extracted pages, temporary bakes (gitignored)
+  bank.json              THE DECLARATION - sources, wheels, sounds, page bakes,
+                         and "donor_dir"/"build_dir" (the layout below)
+  FIREBIRD.LEV/.LCF      the built bank + cosmetics (installed here and in the
+                         game mirror by rebake; cities.ini points here)
+  cities.ini             the [cities] line for this bank
+  art/                   author art the declaration names
+    firebird.obj/.mtl      the car's geometry; material names find the page
+    firebird_low.obj/.mtl  low-detail geometry
+    textures/              firebird.png (set 1, body), page2/page3.png (wheel
+                           pages, backdrop keyed), wheelclean/wheelfast.png
+  sounds/                engine.wav, idle.wav, horn.wav - nothing else
+  donor/                 what the bank was started from (CHICAGO model 1):
+                         FIREBIRD.json donor manifest, source.LCF (HANDLING
+                         lives here: model 1 at offset 288), cosmetics.json,
+                         donor LEV/LCF, raw lumps, donor palette
+  build/                 everything the bake writes: pages/, models/, the
+                         rebuilt palette, FIREBIRD.json, FIREBIRD.report.json
+                         (checks, warnings, sizes), rebake.log. Gitignored -
+                         delete it any time for a clean bake.
+  authoring/             takes, Audacity projects, blend, videos, tim2view,
+                         original source objs/TIMs. The bake never reads it.
+  work/                  scratch (gitignored)
 
 The rules the bake enforces, in one line each:
 
   - A page's image, `transparent` key, tolerance and palette come from
     `bank.json`; a page whose source changed is re-baked, otherwise reused.
-  - A declared page or wheel sprite may not live under work/ or pages/ — those
-    are what the bake writes, so a source there is a previous bake's output.
+  - A declared page or wheel sprite may not live under work/, pages/ or build/
+    - those are what the bake writes.
   - A wheel's island is CARVED from the declared sprite: the sprite's see-through
     texels become the page's transparent index, and whatever the page art had
     there is replaced.
   - Declare all three wheel variants; an undeclared one draws the host's wheel.
   - Sounds are 3 samples per car (engine, idle, horn-or-siren), levelled by
     loudness, loop points searched, and pitched for the game's own request.
-    docs/SOUNDS.md has the numbers — bitrate, rate, duration, budgets.
+    docs/SOUNDS.md has the numbers - bitrate, rate, duration, budgets.
+
+Handling: there is no handling block in bank.json yet. The bake copies the
+236-byte record for model 1 from donor/source.LCF unchanged; patch that (keep a
+backup) and rebake, then check with cosmetics1.py --dump FIREBIRD.LCF.
 
 Docs: JERICHO/MODS/bake/docs/SOUNDS.md (sounds), tools/car/bank-schema.md (the
-full declaration schema).
+full declaration schema and the folder layout).
 
 Install as an importable city:
 

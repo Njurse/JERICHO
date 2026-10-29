@@ -1,0 +1,31 @@
+{
+ "version": 1,
+ "tool": "basebank",
+ "game": "D2",
+ "city": "FIREBIRD",
+ "source_city": "CHICAGO",
+ "source_model": 1,
+ "destination_slot": 1,
+ "city_index": 0,
+ "cell_size": 2048,
+ "texture_sets": [
+  1,
+  65
+ ],
+ "wheel_sets": [
+  2,
+  3
+ ],
+ "palette_sets": [
+  1,
+  65
+ ],
+ "raw": {
+  "textureinfo": "textureinfo.bin",
+  "pallet": "pallet.bin",
+  "texturenames": "texturenames.bin",
+  "modelnames": "modelnames.bin"
+ },
+ "lcf": "source.LCF",
+ "cosmetics": "cosmetics.json"
+}
