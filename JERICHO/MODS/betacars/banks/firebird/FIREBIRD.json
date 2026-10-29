@@ -116,5 +116,28 @@
    "ok": true,
    "problems": []
   }
- }
+ },
+ "wheels": [
+  {
+   "variant": "clean",
+   "set": 2,
+   "island": [
+    0,
+    0,
+    60,
+    60
+   ]
+  },
+  null,
+  {
+   "variant": "fast",
+   "set": 3,
+   "island": [
+    0,
+    0,
+    60,
+    60
+   ]
+  }
+ ]
 }
