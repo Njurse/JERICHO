@@ -25,8 +25,12 @@ rem                    culled.
 rem    --flip-normals  negates the stored normal tables; bake stores them INWARD.
 rem
 rem  After baking:  play_chicago.bat        (or: play_chicago.bat test 250)
-rem  If the atlas changed, run the page step first:
+rem  If a page changed, run the page step FIRST. The wheel backdrops have to be
+rem  TRANSPARENT - the engine's marker is a CLUT entry of 0x0000, so a pink sky
+rem  left alone draws as an opaque square round the wheel:
 rem    python ..\..\..\bake\tools\car\carbank_page.py textures\firebird.png --set 1 --bank .
+rem    python ..\..\..\bake\tools\car\carbank_page.py work\pages\page2.png --set 2 --bank . --transparent auto --transparent-tolerance 96
+rem    python ..\..\..\bake\tools\car\carbank_page.py work\pages\page3.png --set 3 --bank . --transparent auto --transparent-tolerance 96
 rem ============================================================================
 setlocal
 
