@@ -2,51 +2,57 @@
 rem ============================================================================
 rem  rebake.bat [mode]        -  bake the Firebird bank and install it
 rem
-rem  Bakes bank.json into FIREBIRD.LEV/.LCF and copies the result into the repo
-rem  folder AND the game's mirror (src_rebuild\bin\Release_dev\...). The game
-rem  reads the mirror, so installing to only one of the two is why a bake can
-rem  "not show up".
+rem  Bakes bank.json into FIREBIRD.LEV/.LCF and copies it into the repo folder
+rem  AND the game's mirror (src_rebuild\bin\Release_dev\...). The game reads the
+rem  mirror, so installing to only one of the two is why a bake can appear to
+rem  do nothing.
 rem
-rem  Modes (default: full):
-rem    full      mirror Y, reverse the winding, negate the normal tables
-rem    plain     no transform at all - the OBJ exactly as it stands
-rem    flipy     mirror Y only
-rem    winding   reverse the winding only (for an inside-out car)
+rem  Modes (default: flipy):
+rem    flipy     negate Y only            - upright, faces as authored
+rem    full      negate Y and Z           - a 180-degree rotation about X
+rem    winding   reverse the winding only
 rem    normals   negate the normal tables only
+rem    flipfull  negate Y, reverse winding, negate normals (the old "full")
+rem    plain     no transform at all
 rem
-rem  What the three switches do, because they are easy to confuse:
-rem    --flip-y        negates every vertex's Y. Decides whether the car is
-rem                    upright or upside down.
-rem    --flip-winding  reverses each face's vertex order. Decides which side of
-rem                    a polygon is culled, i.e. inside-out or not.
-rem    --flip-normals  negates the stored normal tables. bake stores them
-rem                    INWARD, so a mesh from another tool can shade from the
-rem                    wrong side while the shape is correct.
+rem  The switches, because they are easy to confuse:
+rem    --flip-y        negates every vertex's Y. Decides upright vs upside down.
+rem    --flip-z        negates Z as well; Y+Z is a ROTATION about X (handedness
+rem                    kept), while either alone is a MIRROR and mirrors turn a
+rem                    model inside out.
+rem    --flip-winding  reverses each face's vertex order. Decides which side is
+rem                    culled.
+rem    --flip-normals  negates the stored normal tables; bake stores them INWARD.
 rem
-rem  After baking: play_chicago.bat takes a ride in CHICAGO in the Firebird.
+rem  After baking:  play_chicago.bat        (or: play_chicago.bat test 250)
 rem  If the atlas changed, run the page step first:
 rem    python ..\..\..\bake\tools\car\carbank_page.py textures\firebird.png --set 1 --bank .
 rem ============================================================================
 setlocal
 
 set "MODE=%~1"
-if "%MODE%"=="" set "MODE=full"
+if "%MODE%"=="" set "MODE=flipy"
 
-if /i "%MODE%"=="help"   goto usage
-if /i "%MODE%"=="-h"     goto usage
-if /i "%MODE%"=="--help" goto usage
-if /i "%MODE%"=="/?"     goto usage
+if /i "%MODE%"=="help"    goto usage
+if /i "%MODE%"=="-h"      goto usage
+if /i "%MODE%"=="--help"  goto usage
+if /i "%MODE%"=="/?"      goto usage
 
-set "FLIP=--flip-y --flip-winding --flip-normals"
-if /i "%MODE%"=="plain"   set "FLIP="
-if /i "%MODE%"=="flipy"   set "FLIP=--flip-y"
-if /i "%MODE%"=="winding" set "FLIP=--flip-winding"
-if /i "%MODE%"=="normals" set "FLIP=--flip-normals"
-if /i "%MODE%"=="full"    goto mode_ok
+set "FLIP=--flip-y"
+if /i "%MODE%"=="plain"    set "FLIP="
+if /i "%MODE%"=="full"     set "FLIP=--flip-y --flip-z"
+if /i "%MODE%"=="winding"  set "FLIP=--flip-winding"
+if /i "%MODE%"=="normals"  set "FLIP=--flip-normals"
+if /i "%MODE%"=="flipfull" set "FLIP=--flip-y --flip-winding --flip-normals"
 
-rem anything else is a typo: say so instead of silently baking the default
+if /i "%MODE%"=="flipy"    goto mode_ok
+if /i "%MODE%"=="plain"    goto mode_ok
+if /i "%MODE%"=="full"     goto mode_ok
+if /i "%MODE%"=="winding"  goto mode_ok
+if /i "%MODE%"=="normals"  goto mode_ok
+if /i "%MODE%"=="flipfull" goto mode_ok
+
 echo rebake: unknown mode "%MODE%"
-echo.
 goto usage
 
 :mode_ok
@@ -84,14 +90,14 @@ exit /b 0
 
 :usage
 echo.
-echo   rebake.bat [mode]
+echo   rebake.bat [mode]        (default: flipy)
 echo.
-echo   mode   what it bakes
-echo     full      mirror Y, reverse the winding, negate the normals (default)
+echo     flipy     negate Y only            upright, faces as authored
+echo     full      negate Y and Z           180-degree rotation about X
+echo     winding   reverse the winding only
+echo     normals   negate the normal tables only
+echo     flipfull  Y + winding + normals    the old "full"
 echo     plain     no transform at all
-echo     flipy     mirror Y only              - car upside down? this is the one
-echo     winding   reverse the winding only   - car inside out? this is the one
-echo     normals   negate the normals only    - right shape, wrong shading?
 echo.
 echo   Installs into the repo folder and the game mirror both.
 exit /b 2
