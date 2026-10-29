@@ -35,7 +35,10 @@
   1,
   65
  ],
- "wheel_sets": [],
+ "wheel_sets": [
+  2,
+  3
+ ],
  "pages": [
   {
    "set": 1,
@@ -50,6 +53,16 @@
    "ncluts": 29,
    "bin": "pages/PAGE_65.bin",
    "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\pages/PAGE_65.png"
+  },
+  {
+   "set": 2,
+   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\work\\pages\\page2.png",
+   "size": 33060
+  },
+  {
+   "set": 3,
+   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\work\\pages\\page3.png",
+   "size": 33060
   }
  ],
  "palette_sets": [
