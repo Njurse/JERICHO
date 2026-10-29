@@ -50,6 +50,7 @@
     "image": "firebird.png",
     "transparent": null,
     "tolerance": 0,
+    "chroma": null,
     "sha256": "6a5d182f3488ea51dc9a9abc22d0457ae041d30c5e29685d7502de22377ff7a2"
    }
   },
@@ -62,7 +63,8 @@
    "source": {
     "image": "page2.png",
     "transparent": "auto",
-    "tolerance": 96,
+    "tolerance": 0,
+    "chroma": 128,
     "sha256": "162243e84412bf380f90673c9efc6fd79d0f4c407669bb6bafd1744b02170f06"
    }
   },
@@ -75,7 +77,8 @@
    "source": {
     "image": "page3.png",
     "transparent": "auto",
-    "tolerance": 96,
+    "tolerance": 0,
+    "chroma": 128,
     "sha256": "d1842c416dd1880c0783c25cbaf0127185d2a4afa1dad31244fdbd928ee40812"
    }
   },
@@ -169,12 +172,14 @@
     "engine": {
      "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\engine.wav",
      "rate_pct": 100,
-     "loop": false
+     "loop_from": null,
+     "loop": true
     },
     "idle": {
      "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\idle.wav",
      "rate_pct": 100,
-     "loop": false
+     "loop_from": null,
+     "loop": true
     },
     "third": {
      "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\unused\\horn.wav",

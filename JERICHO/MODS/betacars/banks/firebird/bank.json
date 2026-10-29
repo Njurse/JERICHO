@@ -21,14 +21,14 @@
       "set": 2,
       "source": "work/pages/page2.png",
       "transparent": "auto",
-      "transparent_tolerance": 96
+      "transparent_chroma": 128
      },
      {
       "png": "work/pages/page3.png",
       "set": 3,
       "source": "work/pages/page3.png",
       "transparent": "auto",
-      "transparent_tolerance": 96
+      "transparent_chroma": 128
      }
     ],
     "wheels": {
@@ -107,8 +107,11 @@
  "palette_records": 3,
  "size": 157696,
  "warnings": [
+  "sound model 1 engine: normalised peak 32014 -> 29490 (x0.92)",
+  "sound model 1 idle: normalised peak 31032 -> 29490 (x0.95)",
   "sound model 1 idle: trimmed from 1.46s to 1.30s to fit 8192 bytes (the SPU has no room for more)",
-  "sound model 1: 16064 bytes (engine 5792, idle 8192, third 2080) at 11025/11025/11025 Hz"
+  "sound model 1 horn/siren: normalised peak 31462 -> 29490 (x0.94)",
+  "sound model 1: 16064 bytes (engine 5792, idle 8192, third 2080), rate fields 44200/44200/44200"
  ],
  "wheels": [
   {
