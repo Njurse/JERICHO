@@ -25,16 +25,22 @@ rem                    culled.
 rem    --flip-normals  negates the stored normal tables; bake stores them INWARD.
 rem
 rem  After baking:  play_chicago.bat        (or: play_chicago.bat test 250)
-rem  The pages and the palette are re-derived by the bake itself: a page whose
-rem  bank.json entry names a "source" is re-baked whenever that image or its
-rem  bake options change, and the wheel backdrops are keyed transparent there
-rem  (the engine's marker is a CLUT entry of 0x0000, so a pink sky left alone
-rem  draws as an opaque square round the wheel).
+rem  The pages and the palette are re-derived by the bake itself: a page is
+rem  re-baked whenever anything it was baked from changes - its image, its
+rem  transparent key/tolerance, its palette, or one of the wheel sprites that get
+rem  composited into it. The backdrop is keyed SH there (the engine's marker is a
+rem  CLUT entry of 0x0000, so a pink sky left alone draws as an opaque square
+rem  round the wheel), and the wheel island is carved from the sprite declared in
+rem  bank.json - not inherited from the page art.
 rem
 rem    python ..\..\..\bake\tools\car\carbank_bake.py bank.json --check
 rem        is anything stale? (pages, palette, declared sources)
 rem    python ..\..\..\bake\tools\car\carbank_bake.py bank.json --audit f800f8
-rem        where does a colour still live? (page, texels, palette index)
+rem        where does a colour still live? (page texels, palette entries, and
+rem        whether a car poly samples it)
+rem    python ..\..\..\bake\tools\car\carbank_bake.py bank.json --force-pages
+rem        re-bake every page even when nothing it came from changed (use after
+rem        changing the bake itself)
 rem    python ..\..\..\bake\tools\car\carbank_bake.py bank.json --complete --dry-run
 rem        which sound knobs is this bank leaving to the bake? (add them
 rem        with --complete - the numbers written are the ones used, so
