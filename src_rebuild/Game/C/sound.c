@@ -957,6 +957,56 @@ void UnlockChannel(int c)
 	channels[c].flags &= ~CHAN_LOCKED;
 }
 
+// JERICHO diag (JERICHO_SOUND_DIAG=1): the level of a bank as it is loaded,
+// measured on the raw VAG payload - the same units the mixer gets. The level's
+// own car banks and an imported one both come through here, so an imported
+// sample can be compared with the game's own.
+static void sound_level_diag(int dbank, char* address, int length)
+{
+	static int budget = -1;
+	SAMPLE_DATA* sd;
+	const short* pcm;
+	int num, payload_len, n, i, peak;
+	long long sumsq;
+
+	if (budget < 0)
+	{
+		const char* e = getenv("JERICHO_SOUND_DIAG");
+		budget = (e && *e && *e != '0') ? 120 : 0;
+	}
+
+	if (budget <= 0 || address == NULL || length < (int)sizeof(int) + (int)sizeof(SAMPLE_DATA))
+		return;
+
+	num = *(int*)address;
+
+	if (num <= 0 || num > MAX_SOUND_BANK_SAMPLES)
+		return;
+
+	payload_len = length - (int)sizeof(int) - num * (int)sizeof(SAMPLE_DATA);
+
+	if (payload_len <= 0)
+		return;
+
+	sd = (SAMPLE_DATA*)(address + sizeof(int));
+	pcm = (const short*)(address + sizeof(int) + num * sizeof(SAMPLE_DATA));
+	n = payload_len / 2;
+	peak = 0;
+	sumsq = 0;
+
+	for (i = 0; i < n; i++)
+	{
+		int v = pcm[i] < 0 ? -pcm[i] : pcm[i];
+		if (v > peak) peak = v;
+		sumsq += (long long)(v * v) >> 8;
+	}
+
+	budget--;
+	printInfo("sound level: bank %d samples %d payload %d rate %d loop %d peak %d (%.0f%%) rms %.0f\n",
+		dbank, num, payload_len, sd[0].samplerate, sd[0].loop,
+		peak, peak * 100.0f / 32767.0f, n ? sqrtf((float)sumsq * 256.0f / n) : 0.0f);
+}
+
 // [D] [T]
 int LoadSoundBank(char *address, int length, int bank)
 {
@@ -968,6 +1018,8 @@ int LoadSoundBank(char *address, int length, int bank)
 	spuaddress = bankaddr[bank];
 
 	num_samples = *(int *)address;
+
+	sound_level_diag(bank, address, length);
 
 	if (num_samples < 0 || num_samples > MAX_SOUND_BANK_SAMPLES)
 	{
@@ -1059,6 +1111,8 @@ int LoadSoundBankDynamic(char *address, int length, int dbank)
 	}
 
 	num_samples = *(int *)address;
+
+	sound_level_diag(dbank, address, length);
 
 	if (num_samples < 0 || !SoundBankHasRoom(dbank, num_samples))
 	{

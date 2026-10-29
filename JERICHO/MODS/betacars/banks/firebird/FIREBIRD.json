@@ -81,13 +81,6 @@
     "chroma": 128,
     "sha256": "d1842c416dd1880c0783c25cbaf0127185d2a4afa1dad31244fdbd928ee40812"
    }
-  },
-  {
-   "set": 65,
-   "size": 27452,
-   "ncluts": 29,
-   "bin": "pages/PAGE_65.bin",
-   "png": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\pages/PAGE_65.png"
   }
  ],
  "palette_sets": [
