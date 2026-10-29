@@ -1,0 +1,83 @@
+{
+ "city": "FIREBIRD",
+ "lev": "work/out/FIREBIRD.LEV",
+ "lcf": "work/out/FIREBIRD.LCF",
+ "size": 165888,
+ "order": [
+  {
+   "slot": 1,
+   "car": "1_BASE2"
+  }
+ ],
+ "included_sets": [
+  1,
+  2,
+  3
+ ],
+ "pages": [
+  {
+   "set": 1,
+   "size": 33060
+  },
+  {
+   "set": 2,
+   "size": 33060
+  },
+  {
+   "set": 3,
+   "size": 33060
+  }
+ ],
+ "wheels": [
+  {
+   "variant": "clean",
+   "set": 2,
+   "island": [
+    0,
+    0,
+    60,
+    60
+   ]
+  },
+  {
+   "variant": "damaged",
+   "set": 2,
+   "island": [
+    0,
+    0,
+    60,
+    60
+   ]
+  },
+  {
+   "variant": "fast",
+   "set": 3,
+   "island": [
+    0,
+    0,
+    60,
+    60
+   ]
+  }
+ ],
+ "sounds": {
+  "models": [
+   1
+  ],
+  "sirens": []
+ },
+ "palette_records": 3,
+ "page_base": 61440,
+ "warnings": [
+  "sound model 1 engine: levelled x0.692 (-3.2 dB) - peak 32517 -> 22516, rms 49% -> 34% of full scale (retail's own samples are 29-39% rms)",
+  "sound model 1 engine: crest factor 2.0 (retail 2.6-3.4) - the source has been limited, so it will sound squashed",
+  "sound model 1 engine: loop 1092..14672 (0.849s); the join drops from 2011 to 25",
+  "sound model 1 engine: pitch x2.00 - declared rate 16000 Hz plays at 32000 Hz when the game asks 0.37",
+  "sound model 1 idle: loop 952..23380 (1.402s); the join drops from 2480 to 441",
+  "sound model 1: 24752 bytes - engine 8384 B rms 34% crest 2.0 field 32000 loop seam 228; idle 13360 B rms 32% crest 3.0 field 16000 loop seam 415; third 3008 B rms 34% crest 2.8 field 16000"
+ ],
+ "checks": {
+  "ok": true,
+  "problems": []
+ }
+}

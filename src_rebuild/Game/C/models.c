@@ -3075,8 +3075,20 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 
 		bestScore = (int)(bestRatio * 100.0 + 0.5);
 
-		printInfo("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d) background index %d -> row %d (smoothness %d%%)\n",
-			LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, bg, best, bestScore);
+		if (best < 0)
+		{
+			/* Nothing in this page keys the sprite's background, so the caller
+			 * keeps the host row and the sprite draws its backdrop as a square.
+			 * That is the "pink box round the wheel" symptom, and it has to say
+			 * so: the derived row used to be reported as -1 and nothing else. */
+			printWarning("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d): NO palette row clears its background index %d (page has %d rows) - the sprite will draw its backdrop; re-bake the page with its backdrop keyed\n",
+				LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, bg, npal);
+		}
+		else
+		{
+			printInfo("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d) background index %d -> row %d (smoothness %d%%)\n",
+				LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, bg, best, bestScore);
+		}
 	}
 
 	return best;

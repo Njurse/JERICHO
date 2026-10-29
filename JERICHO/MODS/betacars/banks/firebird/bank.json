@@ -21,6 +21,16 @@
       "png": "textures/wheelclean.png",
       "set": 2
      },
+     "damaged": {
+      "island": [
+       0,
+       0,
+       60,
+       60
+      ],
+      "png": "textures/wheelclean.png",
+      "set": 2
+     },
      "fast": {
       "island": [
        0,
@@ -42,10 +52,11 @@
       "gain_db": 0.0,
       "rate": null,
       "rate_pct": 100,
-      "loop": true,
+      "loop": "auto",
       "loop_from": 0.0,
       "trim": null,
-      "fade_out": 0.0
+      "fade_out": 0.0,
+      "pitch": 2.0
      },
      "idle": {
       "wav": "sounds/idle.wav",
@@ -56,7 +67,7 @@
       "gain_db": 0.0,
       "rate": null,
       "rate_pct": 100,
-      "loop": true,
+      "loop": "auto",
       "loop_from": 0.0,
       "trim": null,
       "fade_out": 0.0
@@ -87,12 +98,12 @@
     "textures": {
      "1": "textures/firebird.png",
      "2": {
-      "png": "work/pages/page2.png",
+      "png": "textures/page2.png",
       "transparent": "auto",
       "transparent_chroma": 128
      },
      "3": {
-      "png": "work/pages/page3.png",
+      "png": "textures/page3.png",
       "transparent": "auto",
       "transparent_chroma": 128
      }
@@ -148,7 +159,10 @@
  "warnings": [
   "sound model 1 engine: levelled x0.692 (-3.2 dB) - peak 32517 -> 22516, rms 49% -> 34% of full scale (retail's own samples are 29-39% rms)",
   "sound model 1 engine: crest factor 2.0 (retail 2.6-3.4) - the source has been limited, so it will sound squashed",
-  "sound model 1: 24784 bytes (engine 8384, idle 13392, third 3008), rate fields 16000/16000/16000"
+  "sound model 1 engine: loop 1092..14672 (0.849s); the join drops from 2011 to 25",
+  "sound model 1 engine: pitch x2.00 - declared rate 16000 Hz plays at 32000 Hz when the game asks 0.37",
+  "sound model 1 idle: loop 952..23380 (1.402s); the join drops from 2480 to 441",
+  "sound model 1: 24752 bytes - engine 8384 B rms 34% crest 2.0 field 32000 loop seam 228; idle 13360 B rms 32% crest 3.0 field 16000 loop seam 415; third 3008 B rms 34% crest 2.8 field 16000"
  ],
  "wheels": [
   {
@@ -161,7 +175,16 @@
     60
    ]
   },
-  null,
+  {
+   "variant": "damaged",
+   "set": 2,
+   "island": [
+    0,
+    0,
+    60,
+    60
+   ]
+  },
   {
    "variant": "fast",
    "set": 3,
