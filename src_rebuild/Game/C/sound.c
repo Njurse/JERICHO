@@ -505,6 +505,19 @@ int CompleteSoundSetup(int channel, int bank, int sample, int pitch, int proximi
 
 	chan->attr.mask =  SPU_VOICE_VOLL | SPU_VOICE_VOLR | SPU_VOICE_VOLMODEL | SPU_VOICE_VOLMODER | SPU_VOICE_PITCH | SPU_VOICE_WDSA;
 	chan->attr.addr = samp->address;
+
+	/* JERICHO: a looping sample needs its loop START too. The mask above never
+	 * asked for SPU_VOICE_LSAX, so loop_addr stayed 0 and the backend's
+	 * `loopStart += voice->attr.loop_addr - voice->attr.addr` went hugely
+	 * negative, which threw the derived loop points away and left the whole
+	 * buffer looping from its first sample - the attack included, once per
+	 * cycle. The sample's own loop point comes from the VAG loop-start marker;
+	 * this is what lets it be used. */
+	if (samp->loop)
+	{
+		chan->attr.mask |= SPU_VOICE_LSAX;
+		chan->attr.loop_addr = samp->address;
+	}
 	chan->attr.pitch = MIN(rate / 44100, 16383);
 	chan->time = (samp->length / bpf) * 2 + 2;
 
