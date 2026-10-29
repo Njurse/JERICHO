@@ -139,7 +139,7 @@
    "car": "1_BASE2"
   }
  ],
- "page_base": 61440,
+ "page_base": 65536,
  "pages": [
   {
    "set": 1,
@@ -155,14 +155,16 @@
   }
  ],
  "palette_records": 3,
- "size": 165888,
+ "size": 169984,
  "warnings": [
   "sound model 1 engine: levelled x0.489 (-6.2 dB) - peak 32517 -> 15894, rms 49% -> 24% of full scale (retail's own samples are 29-39% rms)",
   "sound model 1 engine: crest factor 2.0 (retail 2.6-3.4) - the source has been limited, so it will sound squashed",
   "sound model 1 engine: loop 1092..14672 (0.849s); the join drops from 1420 to 18",
   "sound model 1 idle: levelled x0.738 (-2.6 dB) - peak 31706 -> 23414, rms 32% -> 24% of full scale (retail's own samples are 29-39% rms)",
   "sound model 1 idle: loop 952..23380 (1.402s); the join drops from 1831 to 325",
-  "sound model 1: 24752 bytes - engine 8384 B rms 24% crest 2.0 field 16000 loop seam 141; idle 13360 B rms 24% crest 3.0 field 16000 loop seam 585; third 3008 B rms 34% crest 2.8 field 16000"
+  "sound model 1 horn/siren: the source is clipped already - 2 sample(s) at full scale, longest run 1 - no level can undo that",
+  "sound model 1 horn/siren: levelled x0.886 (-1.1 dB) - peak 32767 -> 29026, rms 38% -> 34% of full scale (retail's own samples are 29-39% rms)",
+  "sound model 1: 28064 bytes - engine 8384 B 1.05s rms 24% crest 2.0 field 16000 loop seam 141; idle 13360 B 1.67s rms 24% crest 3.0 field 16000 loop seam 585; third 6320 B 1.58s rms 34% crest 2.8 field 8000"
  ],
  "wheels": [
   {
