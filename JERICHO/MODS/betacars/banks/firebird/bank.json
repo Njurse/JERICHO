@@ -33,10 +33,52 @@
      }
     },
     "sounds": {
-     "engine": "sounds/engine.wav",
-     "idle": "sounds/idle.wav",
-     "horn": "sounds/unused/horn.wav",
-     "cop": false
+     "engine": {
+      "wav": "sounds/engine.wav",
+      "level": 0.999,
+      "force": false,
+      "normalise": true,
+      "gain_db": 0.0,
+      "rate": null,
+      "rate_pct": 100,
+      "loop": true,
+      "loop_from": 0.0,
+      "trim": null,
+      "fade_out": 0.0
+     },
+     "idle": {
+      "wav": "sounds/idle.wav",
+      "level": 0.999,
+      "force": false,
+      "normalise": true,
+      "gain_db": 0.0,
+      "rate": null,
+      "rate_pct": 100,
+      "loop": true,
+      "loop_from": 0.0,
+      "trim": null,
+      "fade_out": 0.0
+     },
+     "horn": {
+      "wav": "sounds/unused/horn.wav",
+      "level": 0.999,
+      "force": false,
+      "normalise": true,
+      "gain_db": 0.0,
+      "rate": null,
+      "rate_pct": 100,
+      "loop": false,
+      "loop_from": 0.0,
+      "trim": null,
+      "fade_out": 0.0
+     },
+     "cop": false,
+     "engine_pct": 100,
+     "idle_pct": 100,
+     "loop_from": 0.0,
+     "peak": 0.999,
+     "max_rate": 16000,
+     "sample_bytes": 16384
     },
     "textures": {
      "1": "textures/firebird.png",

@@ -35,6 +35,10 @@ rem    python ..\..\..\bake\tools\car\carbank_bake.py bank.json --check
 rem        is anything stale? (pages, palette, declared sources)
 rem    python ..\..\..\bake\tools\car\carbank_bake.py bank.json --audit f800f8
 rem        where does a colour still live? (page, texels, palette index)
+rem    python ..\..\..\bake\tools\car\carbank_bake.py bank.json --complete --dry-run
+rem        which sound knobs is this bank leaving to the bake? (add them
+rem        with --complete - the numbers written are the ones used, so
+rem        the bank still bakes byte for byte the same)
 rem    python ..\..\..\bake\tools\car\carbank_palette.py bank.json --from-pages
 rem        rebuild the palette rows from the pages' own colours
 rem    python ..\..\..\bake\tools\car\carbank_page.py <image> --set N --bank .

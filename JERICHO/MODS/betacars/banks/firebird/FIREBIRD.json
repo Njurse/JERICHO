@@ -164,20 +164,52 @@
     "model": 1,
     "engine": {
      "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\engine.wav",
+     "loop": true,
+     "level": 0.999,
+     "rate": null,
      "rate_pct": 100,
-     "loop_from": null,
-     "loop": true
+     "max_rate": 16000,
+     "sample_bytes": 16384,
+     "loop_from": 0.0,
+     "force": false,
+     "normalise": true,
+     "gain_db": 0.0,
+     "trim": null,
+     "fade_out": 0.0
     },
     "idle": {
      "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\idle.wav",
+     "loop": true,
+     "level": 0.999,
+     "rate": null,
      "rate_pct": 100,
-     "loop_from": null,
-     "loop": true
+     "max_rate": 16000,
+     "sample_bytes": 16384,
+     "loop_from": 0.0,
+     "force": false,
+     "normalise": true,
+     "gain_db": 0.0,
+     "trim": null,
+     "fade_out": 0.0
     },
     "third": {
      "wav": "C:\\Users\\Jaret\\Documents\\Projects\\REDRIVER2\\JERICHO\\MODS\\betacars\\banks\\firebird\\sounds\\unused\\horn.wav",
-     "loop": false
-    }
+     "loop": false,
+     "level": 0.999,
+     "rate": null,
+     "rate_pct": 100,
+     "max_rate": 16000,
+     "sample_bytes": 16384,
+     "loop_from": 0.0,
+     "force": false,
+     "normalise": true,
+     "gain_db": 0.0,
+     "trim": null,
+     "fade_out": 0.0
+    },
+    "peak": 0.999,
+    "max_rate": 16000,
+    "sample_bytes": 16384
    }
   ],
   "sirens": []
