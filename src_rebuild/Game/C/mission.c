@@ -38,6 +38,7 @@
 #include <stdint.h>
 #include <SDL.h>
 #endif // PSX
+extern u_char defaultPlayerPalette;	// JERICHO: main.c - the player's chosen colour column
 
 char* MissionName[37] =
 {
@@ -641,7 +642,17 @@ void LoadMission(int missionnum)
 		printInfo("cross-city: mission player car - wantedCar[0]=%d header=%d -> using %d\n",
 			wantedCar[0], MissionHeader->playerCarModel, PlayerStartInfo[0]->model);
 
-		PlayerStartInfo[0]->palette = MissionHeader->playerCarColour;
+		// JERICHO: an explicitly chosen car keeps the player's chosen colour too
+		// (defaultPlayerPalette, SQUARE on car select / mp.ini). The mission's colour
+		// is a column of ITS car's palette and lands on an arbitrary paint - or a
+		// clamped one - on a car the mission never had in mind.
+		if (wantedCar[0] != -1)
+			PlayerStartInfo[0]->palette = defaultPlayerPalette;
+		else
+			PlayerStartInfo[0]->palette = MissionHeader->playerCarColour;
+
+		printInfo("cross-city: mission player colour - header=%d -> using %d\n",
+			MissionHeader->playerCarColour, PlayerStartInfo[0]->palette);
 	}
 
 	if (MissionHeader->maxDamage != 0) 

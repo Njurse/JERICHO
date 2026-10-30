@@ -23,12 +23,12 @@
      },
      "damaged": {
       "island": [
-       0,
-       0,
        60,
+       0,
+       120,
        60
       ],
-      "png": "art/textures/wheelclean.png",
+      "png": "art/textures/wheeldam.png",
       "set": 2
      },
      "fast": {
@@ -97,7 +97,8 @@
      "rms": 0.34
     },
     "textures": {
-     "1": "art/textures/firebird.png",
+     "1": { "png": "art/textures/firebird.png", "protect": ["ebebe8", "4b0a08"],
+            "paints": { "yellow": "e0c020", "red": "c02020", "green": "20a040", "grey": "909090" } },
      "2": {
       "png": "art/textures/page2.png",
       "transparent": "auto",

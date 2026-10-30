@@ -132,10 +132,29 @@ echo  ==== BAKE OK - installed ===============================================
 echo.
 echo   Take a Ride in the Firebird:
 echo     0  Chicago      1  Havana      2  Las Vegas      3  Rio
-echo     4  exit         (exits by itself after 10 seconds)
+echo     4  preview      5  exit        (exits by itself after 10 seconds)
 echo.
-choice /c 01234 /n /t 10 /d 4 /m "  select 0-4: "
+rem slow-spinning preview of the art + idle/gears/coast sound loop while you
+rem choose (bake\tools\car\preview_car.py; skips itself if pygame/PyOpenGL are
+rem missing). It closes when you answer, on Esc, or after 12 seconds.
+set "STOPF=%OUT%\preview.stop"
+if exist "%STOPF%" del /q "%STOPF%"
+if not "%NOPREVIEW%"=="1" if exist "%CAR%\preview_car.py" start "" /b python "%CAR%\preview_car.py" "%BANK%\bank.json" --timeout 12 --stop-file "%STOPF%"
+:menu
+choice /c 012345 /n /t 10 /d 5 /m "  select 0-5: "
 set "PICK=%ERRORLEVEL%"
+type nul > "%STOPF%"
+if "%PICK%"=="5" (
+    rem 4 = preview: unlimited, in its own window; the menu comes straight back
+    echo   preview opened in its own window - it outlives this bat.
+    rem own window (start, no /b, no /wait): not tied to this console, so it
+    rem stays open after the bat goes back to the menu, launches or exits
+    start "Firebird preview" python "%CAR%\preview_car.py" "%BANK%\bank.json"
+    echo.
+    echo     0  Chicago      1  Havana      2  Las Vegas      3  Rio
+    echo     4  preview      5  exit
+    goto menu
+)
 set "CITY="
 if "%PICK%"=="1" set "CITY=chicago"
 if "%PICK%"=="2" set "CITY=havana"

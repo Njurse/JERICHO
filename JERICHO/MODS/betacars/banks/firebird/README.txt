@@ -52,6 +52,13 @@ The rules the bake enforces, in one line each:
     loudness, loop points searched, and pitched for the game's own request.
     docs/SOUNDS.md has the numbers - bitrate, rate, duration, budgets.
 
+Colours / paints: texture "1" in bank.json is the body page (16 colours max -
+the bake quantises it). "protect" keeps the headlight white and taillight red
+from being merged into the body. "paints" adds colour variants: column 0 is the
+art as painted (blue), then yellow, red, green, grey (columns 1-4). Only the
+body blues are recoloured; lights, glass/trim darks and transparency stay put.
+Change a hex value and rebake. Full rules: bank-schema.md, "Paints".
+
 Handling: there is no handling block in bank.json yet. The bake copies the
 236-byte record for model 1 from donor/source.LCF unchanged; patch that (keep a
 backup) and rebake, then check with cosmetics1.py --dump FIREBIRD.LCF.
@@ -64,3 +71,16 @@ Install as an importable city:
   1. Put this folder where cities.ini can reach it.
   2. Add its line under [cities] in JERICHO/CONFIG/cities.ini (city_N is index 11+N).
   3. Import it with  import = <resident slot>:<city index>:<model>
+
+PREVIEW (bake\tools\car\preview_car.py)
+  After a good rebake, a small window spins the clean OBJ slowly and loops:
+  idle ~2s -> gears 1-4 (clean wheel, fast wheel once up to speed) -> coast
+  to idle on the damaged wheel. It closes when you answer, on Esc, or after 12s.
+  End menu: 0-3 Take a Ride (Chicago/Havana/Vegas/Rio), 4 preview (stays open
+  until Esc, then back to the menu), 5 or the 10s timeout exits.
+  Engine pitch slides continuously through 4 gears with their own ratios. Needs pygame-ce + PyOpenGL (+ numpy for engine pitch); without
+  them it prints a note and the bake carries on. set NOPREVIEW=1 to skip.
+  By hand: python ..\..\..\bake\tools\car\preview_car.py bank.json
+           [--mute] [--flip-y] [--shot DIR]   (--shot saves PNG frames)
+  Shows authoring art, not the 16-colour baked pages; paint columns are not
+  shown yet.
