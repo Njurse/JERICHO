@@ -85,7 +85,7 @@ int jer_hud_active(void);
  *
  * Panels sharing an anchor stack downward in slot order. Returns the slot used,
  * or -1 for a bad slot or empty text. */
-#define JER_HUD_PANEL_MAX	4
+#define JER_HUD_PANEL_MAX	6
 
 #define JER_HUD_ANCHOR_TOP_LEFT		0
 #define JER_HUD_ANCHOR_TOP_CENTRE	1
@@ -105,6 +105,14 @@ int jer_hud_panel_bar(int slot, int anchor, int value, int max, int r, int g, in
 
 /* Engine-internal: draw the active messages and age the queue. Called once per
  * frame from DrawGame, next to the pause menu. Modules do not call this. */
+/* The local player's HEALTH bar: a half-height meter right under the stock
+ * damage bar, coloured as the damage bar inverted (full = green, sliding to
+ * red, flashing red below ~30%). Call it every frame it should show, with
+ * max <= 0 to hide it; it also hides itself when not refreshed for a few
+ * frames, so a module that stops calling it leaves no stale bar. The felony /
+ * proximity bars move down a row while it is up. Drawn by overlay.c. */
+void jer_hud_player_health(int value, int max);
+
 void jer_hud_draw(void);
 
 #ifdef __cplusplus

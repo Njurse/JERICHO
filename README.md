@@ -1,6 +1,6 @@
 # JERICHO
 
-Just an Event Relay for In-engine Callbacks, Handlers and Opt-ins.
+Just an Engine Runtime for In-game Callbacks, Handlers and Opt-ins.
 
 JERICHO is a mod host built into a fork of [OpenDriver2/REDRIVER2](REDRIVER2.md),
 a source-level reimplementation of Driver 2. It is not a library you drop onto

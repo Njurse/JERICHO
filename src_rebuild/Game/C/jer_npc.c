@@ -4,6 +4,8 @@
 
 #include "jer_npc.h"
 
+#include <string.h>	/* memset (health table) */
+
 #include "driver2.h"
 #include "pedest.h"
 #include "motion_c.h"	/* SetupPedMotionData */
@@ -206,6 +208,11 @@ JerNpc* jer_npc_spawn(int x, int z)
 	/* owned: this ped becomes eligible for the JERICHO ped-pose hooks */
 	jer_npc_own_add(pPed);
 
+	/* every jer NPC starts at full health (a reused pool slot does not
+	 * inherit the previous occupant's) */
+	jer_npc_health_forget(pPed);
+	jer_npc_set_health(pPed, JER_NPC_HEALTH_DEFAULT, JER_NPC_HEALTH_DEFAULT);
+
 	return (JerNpc*)pPed;
 }
 
@@ -216,6 +223,7 @@ void jer_npc_despawn(JerNpc* n)
 	if (pPed != NULL)
 	{
 		jer_npc_own_remove(pPed);
+		jer_npc_health_forget(pPed);
 		DestroyPedestrian(pPed);
 	}
 }
@@ -263,11 +271,14 @@ JerNpc* jer_npc_nearest(int x, int y, int z, int radius)
 	{
 		int dx, dy, dz, d;
 
-		if (pPed->padId >= 0 || pPed->pedType == TANNER_MODEL)
-			continue;	/* a player, or a player-model ped */
+		if (pPed->padId >= 0)
+			continue;	/* a player */
+
+		if (pPed->pedType == TANNER_MODEL && !jer_npc_owned(pPed))
+			continue;	/* an unowned player-model ped */
 
 		dx = pPed->position.vx - x;
-		dy = -pPed->position.vy - y;	/* ped y is up-positive */
+		dy = pPed->position.vy - y;	/* position.vy is already the render (y-down) frame */
 		dz = pPed->position.vz - z;
 
 		if (dx < -radius || dx > radius || dz < -radius || dz > radius ||
@@ -284,6 +295,161 @@ JerNpc* jer_npc_nearest(int x, int y, int z, int radius)
 	}
 
 	return (JerNpc*)best;
+}
+
+/* ---------------------------------------------------------------------------
+ * health: see jer_npc.h
+ * ------------------------------------------------------------------------- */
+#define JER_NPC_HEALTH_SLOTS	64
+
+typedef struct JerNpcHealth
+{
+	LPPEDESTRIAN ped;
+	int health;
+	int max;
+} JerNpcHealth;
+
+static JerNpcHealth jer_npc_hp[JER_NPC_HEALTH_SLOTS];
+static int jer_npc_hp_next = 0;
+
+static JerNpcHealth* jer_npc_hp_find(const void* ped, int create)
+{
+	JerNpcHealth* freeSlot = NULL;
+	JerNpcHealth* h;
+	int i;
+
+	if (ped == NULL)
+		return NULL;
+
+	for (i = 0; i < JER_NPC_HEALTH_SLOTS; i++)
+	{
+		h = &jer_npc_hp[i];
+
+		if (h->ped == NULL)
+		{
+			if (freeSlot == NULL)
+				freeSlot = h;
+			continue;
+		}
+
+		if (h->ped == (LPPEDESTRIAN)ped)
+			return h;
+	}
+
+	if (!create)
+		return NULL;
+
+	if (freeSlot == NULL)
+	{
+		/* full: drop entries whose ped the engine has destroyed, then
+		 * fall back to overwriting round-robin */
+		for (i = 0; i < JER_NPC_HEALTH_SLOTS; i++)
+		{
+			h = &jer_npc_hp[i];
+
+			if (h->ped->padId < 0 && !jer_npc_ped_alive(h->ped))
+			{
+				h->ped = NULL;
+				if (freeSlot == NULL)
+					freeSlot = h;
+			}
+		}
+
+		if (freeSlot == NULL)
+		{
+			freeSlot = &jer_npc_hp[jer_npc_hp_next];
+			jer_npc_hp_next = (jer_npc_hp_next + 1) % JER_NPC_HEALTH_SLOTS;
+		}
+	}
+
+	freeSlot->ped = (LPPEDESTRIAN)ped;
+	freeSlot->health = JER_NPC_HEALTH_DEFAULT;
+	freeSlot->max = JER_NPC_HEALTH_DEFAULT;
+
+	return freeSlot;
+}
+
+int jer_npc_health(const void* ped)
+{
+	JerNpcHealth* h = jer_npc_hp_find(ped, 0);
+
+	if (ped == NULL)
+		return 0;
+
+	return h ? h->health : JER_NPC_HEALTH_DEFAULT;
+}
+
+int jer_npc_health_max(const void* ped)
+{
+	JerNpcHealth* h = jer_npc_hp_find(ped, 0);
+
+	if (ped == NULL)
+		return 0;
+
+	return h ? h->max : JER_NPC_HEALTH_DEFAULT;
+}
+
+void jer_npc_set_health(void* ped, int health, int max)
+{
+	JerNpcHealth* h = jer_npc_hp_find(ped, 1);
+
+	if (h == NULL)
+		return;
+
+	if (max > 0)
+		h->max = max;
+
+	if (health < 0)
+		health = 0;
+	if (health > h->max)
+		health = h->max;
+
+	h->health = health;
+}
+
+int jer_npc_damage(void* ped, int amount)
+{
+	JerNpcHealth* h = jer_npc_hp_find(ped, 1);
+
+	if (h == NULL)
+		return 0;
+
+	h->health -= amount;
+
+	if (h->health < 0)
+		h->health = 0;
+	if (h->health > h->max)
+		h->health = h->max;
+
+	return h->health;
+}
+
+void jer_npc_health_forget(const void* ped)
+{
+	JerNpcHealth* h = jer_npc_hp_find(ped, 0);
+
+	if (h != NULL)
+		h->ped = NULL;
+}
+
+void jer_npc_health_reset_all(void)
+{
+	memset(jer_npc_hp, 0, sizeof(jer_npc_hp));
+	jer_npc_hp_next = 0;
+}
+
+int jer_npc_get_pos(const JerNpc* n, int out[3])
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
+
+	if (pPed == NULL || out == NULL)
+		return 0;
+
+	out[0] = pPed->position.vx;
+	out[1] = pPed->position.vy;
+	out[2] = pPed->position.vz;
+
+	return 1;
 }
 
 int jer_npc_speed(const JerNpc* n)

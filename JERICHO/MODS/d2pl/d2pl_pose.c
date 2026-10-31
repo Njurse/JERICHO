@@ -202,6 +202,7 @@ int D2plOnGameStart(void* userdata, void* args)
 	(void)userdata;
 	(void)args;
 
+	D2plHealthReset();
 	gD2plPlayerPed0 = 0;
 	gD2plDrawPed0 = 0;
 	gD2plDrawDirValid = 0;
