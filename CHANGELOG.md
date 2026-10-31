@@ -8,6 +8,24 @@ is in [changelog.txt](changelog.txt).
 
 *Released 2026-10-27.*
 
+### Fixes
+
+- **In-game text is no longer drawn too high.** The long-standing offset
+  where HQ font text sat roughly 10px above where it belonged is fixed: the
+  glyph baseline is a fixed 14 again instead of being scaled (`pres.c`), and
+  bar captions use the stock 11px lift for every font (`overlay.c`).
+
+### Hosting your own sessions (mp)
+
+- The host maps its port on the router with UPnP, so players can host their
+  own multiplayer sessions without manual port forwarding.
+
+### Build toolkit (BAKE)
+
+- Wheel texture overrides, per-car `handling.json`, 256x256 pages, winding
+  and preview fixes, and a fully rebakeable `exportd2` package. Details in
+  [BAKE docs/PATCH_NOTES.md](JERICHO/MODS/bake/docs/PATCH_NOTES.md).
+
 ### On foot (d2pl 1.2.0)
 
 - **On-foot shoulder buttons:** L1 aims, R1 fires and L2 now cycles weapons

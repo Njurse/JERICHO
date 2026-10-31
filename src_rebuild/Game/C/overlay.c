@@ -184,21 +184,14 @@ extern unsigned int gHiresFontTexture;
 // The bar's caption. `lift` is how far above the bar's top edge the text sits:
 // 11 just clears the bar in the PSX font; the HQ glyphs sit higher, so 7 puts
 // them in the same place. Both DrawPercentageBar and DrawProximityBar use this.
-static void DrawBarTag(PERCENTAGE_BAR *bar, int min_x, int max_x, int min_y)
+static void DrawBarTag(PERCENTAGE_BAR* bar, int min_x, int max_x, int min_y)
 {
-	int lift = 11;
-
-#ifndef PSX
-	if (gHiresFontTexture)
-		lift = 7;
-#endif
-
 	SetTextColour(128, 128, 64);
 
 	if (bar->flags & 0x1)
-		PrintStringRightAligned(bar->tag, max_x - 8, min_y - lift);
+		PrintStringRightAligned(bar->tag, max_x - 8, min_y - 11);
 	else
-		PrintString(bar->tag, min_x + 8, min_y - lift);
+		PrintString(bar->tag, min_x + 8, min_y - 11);
 }
 
 // [D] [T]
