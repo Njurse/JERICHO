@@ -152,7 +152,7 @@ extern void add_seated(SEATEDPTR seatedptr, int seat_index); // 0x000718C8
  * the CLUT address into each primitive, so nothing leaks to other pedestrians.
  */
 
-#define PED_PAL_MAX_PAIRS 8
+#define PED_PAL_MAX_PAIRS 48	/* Tanner (2) + every JMPPED entry's torso/arms/legs/hands pages */
 
 typedef struct
 {
@@ -469,23 +469,49 @@ int jer_ped_palette_team_colour(JER_COLOUR colour, int strength)
 //
 // Returns 0 when the pair table or the CLUT strip is full, so the caller can
 // refuse the character import rather than promise a colour it cannot apply.
+static int jer_ped_palette_extend_model(MODEL* m, int mi);
+
 int jer_ped_palette_extend_jericho(void)
 {
-	int mi;
+	int e, mi;
 
-	for (mi = 0; mi < 6; mi++)
+	/* Every JMPPED entry, and its baked legs + hands too: those polys carry the
+	 * entry's own page sets, so a pair left out here is a part that never takes
+	 * the team colour (the "only the hips tint" / "everything but the hips" bug). */
+	for (e = 0; e < JER_PED_MAX_ENTRIES; e++)
 	{
-		MODEL* m;
+		if (pmJerichoModels[e][0] == NULL)
+			continue;
+
+		for (mi = 0; mi < 6; mi++)
+		{
+			if (mi == 1)		/* JERI_HEAD: drawn by DoCivHead, keeps skin */
+				continue;
+			if (!jer_ped_palette_extend_model(pmJerichoModels[e][mi], mi))
+				return 0;
+		}
+
+		for (mi = 0; mi < 6; mi++)
+			if (!jer_ped_palette_extend_model(pmJerichoLegModels[e][mi], 6 + mi))
+				return 0;
+
+		for (mi = 0; mi < 2; mi++)
+			if (!jer_ped_palette_extend_model(pmJerichoHandModels[e][mi], 12 + mi))
+				return 0;
+	}
+
+	return 1;
+}
+
+static int jer_ped_palette_extend_model(MODEL* m, int mi)
+{
+	{
 		PL_POLYFT4* polys;
 		int j;
 
-		if (mi == 1)		/* JERI_HEAD: drawn by DoCivHead, keeps skin */
-			continue;
-
-		m = pmJerichoModels[0][mi];
 
 		if (m == NULL)
-			continue;
+			return 1;
 
 		polys = GET_MODEL_DATA(PL_POLYFT4, m, poly_block);
 
@@ -514,8 +540,8 @@ int jer_ped_palette_extend_jericho(void)
 
 					if (gPedPalPairCount >= PED_PAL_MAX_PAIRS)
 					{
-						jer_log("ped palette: pair table full adding JERI model %d\n", mi);
-						return 0;
+						jer_log("ped palette: pair table full at part %d - left stock colour\n", mi);
+						return 1;	/* non-fatal: that part just keeps its stock colour */
 					}
 
 					for (t = 0; t < gPedPalTeams; t++)
