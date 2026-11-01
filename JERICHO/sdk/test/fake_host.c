@@ -36,14 +36,50 @@ static const JER_HOST_CORE_API gCore =
 	mockLog, mockFire, mockOverride
 };
 
-static const JER_HOST_API gApi =
+static int mockCarCount(void)
 {
-	sizeof(JER_HOST_API), JER_HOST_API_VERSION, JER_HOST_ABI_V1,
-	&gCore, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
+	return 0;
+}
+
+/* jerHostApiGet() refuses a table whose subtables are missing or smaller than the
+ * addon expects, so every subtable must be published with its size (function
+ * pointers left NULL except the ones test_addon calls). */
+static JER_HOST_CONFIG_API gConfig;
+static JER_HOST_CAR_API gCar;
+static JER_HOST_PLAYER_API gPlayer;
+static JER_HOST_CAMERA_API gCamera;
+static JER_HOST_MODEL_API gModel;
+static JER_HOST_WORLD_API gWorld;
+static JER_HOST_GAME_API gGame;
+static JER_HOST_UI_API gUi;
+static JER_HOST_DEBUG_API gDebug;
+static JER_HOST_CARDATA_API gCardata;
+static JER_HOST_API gApi;
+
+#define FAKE_SUBTABLE(var, type) \
+	((var).size = (unsigned int)sizeof(type), (var).version = JER_HOST_API_VERSION, &(var))
 
 const JER_HOST_API* jer_host_api(void)
 {
+	if (gApi.size == 0)
+	{
+		gCar.count = mockCarCount;
+		gApi.version = JER_HOST_API_VERSION;
+		gApi.abi = JER_HOST_ABI_V1;
+		gApi.core = &gCore;
+		gApi.config = FAKE_SUBTABLE(gConfig, JER_HOST_CONFIG_API);
+		gApi.car = FAKE_SUBTABLE(gCar, JER_HOST_CAR_API);
+		gApi.player = FAKE_SUBTABLE(gPlayer, JER_HOST_PLAYER_API);
+		gApi.camera = FAKE_SUBTABLE(gCamera, JER_HOST_CAMERA_API);
+		gApi.model = FAKE_SUBTABLE(gModel, JER_HOST_MODEL_API);
+		gApi.world = FAKE_SUBTABLE(gWorld, JER_HOST_WORLD_API);
+		gApi.game = FAKE_SUBTABLE(gGame, JER_HOST_GAME_API);
+		gApi.ui = FAKE_SUBTABLE(gUi, JER_HOST_UI_API);
+		gApi.debug = FAKE_SUBTABLE(gDebug, JER_HOST_DEBUG_API);
+		gApi.cardata = FAKE_SUBTABLE(gCardata, JER_HOST_CARDATA_API);
+		gApi.size = (unsigned int)sizeof(JER_HOST_API);
+	}
+
 	return &gApi;
 }
 

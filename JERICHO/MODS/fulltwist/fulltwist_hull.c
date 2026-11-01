@@ -15,6 +15,7 @@
  * vertex list means the test does not need to walk every body vertex.
  */
 
+#include <string.h>
 #include "jericho.h"
 #include "jer_events.h"
 #include "fulltwist_host.h"
