@@ -142,7 +142,7 @@ static int sCivClutRowWriters[CIV_CLUT_ROWS];
 // beside the refusal that enforces it.
 #define CIV_CLUT_GUEST_CITIES	((CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) / CIV_CLUT_BLOCK_ROWS)
 
-#define CIV_CLUT_ROW_CITIES	(CIV_CLUT_GUEST_CITIES + 1)
+#define CIV_CLUT_ROW_CITIES	CITY_COUNT	/* JERICHO: no 3-guest cap - any city may write a row */
 static int sCivClutRowCity[CIV_CLUT_ROWS][CIV_CLUT_ROW_CITIES];
 
 // JERICHO: and WHICH COLOUR COLUMN of each row was actually filled. A spawned car picks
@@ -300,6 +300,29 @@ static int CarRowInUse(int row)
 	return 0;
 }
 
+// JERICHO: one line - how many shared civ_clut rows each city holds right now.
+void CarImportPaletteUsageReport(void)
+{
+	char line[512];
+	int c, r, n, used = 0, len = 0;
+
+	line[0] = 0;
+	for (c = 0; c < CITY_COUNT; c++)
+	{
+		n = 0;
+		for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
+		{
+			int s;
+			for (s = 1; s < 128; s++)
+				if (sSetRow[c][s] == r) { n++; break; }
+		}
+		if (n && len < (int)sizeof(line) - 40)
+			len += sprintf(line + len, " %s=%d", LevelNames[c] ? LevelNames[c] : "?", n);
+		used += n;
+	}
+	printInfo("cross-city: palette rows %d/%d used:%s\n", used, CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW, line);
+}
+
 void CarImportCityBandReset(void)
 {
 	int c, s;
@@ -377,6 +400,20 @@ static int CarAllocSetRow(int set, int city)
 			said = 1;
 			printInfo("cross-city: palette pool exhausted (%d shared rows) - later sets fall back to their city's first row\n",
 				CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW);
+		}
+	}
+
+	/* JERICHO: loud, every time (rate-limited), with per-city usage - the fallback paints
+	 * this car in another palette's colours, which must never be silent. */
+	{
+		static int loud;
+
+		if (loud < 32)
+		{
+			loud++;
+			printWarning("PALETTE POOL FULL: %s set %d gets NO civ_clut row - WRONG COLOURS (fallback)\n",
+				LevelNames[city], set);
+			CarImportPaletteUsageReport();
 		}
 	}
 

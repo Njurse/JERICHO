@@ -2608,6 +2608,7 @@ void CarImportPin(void)
 
 			printInfo("cross-city: palette rows needed %d, newly uploaded %d (the rest were already in VRAM)\n",
 				sPalUploaded, nfresh);
+			CarImportPaletteUsageReport();
 		}
 	}
 
