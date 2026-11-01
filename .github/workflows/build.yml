@@ -160,7 +160,7 @@ jobs:
           rm -rf /tmp/apifaults
 
       - name: No debug switch changes behaviour
-        run: python JERICHO/MODS/mp/tools/check_debug_independence.py
+        run: python JERICHO/MODS/bake/tools/ped/check_debug_independence.py
 
       # The mod store's installer and publishing tools are shell + Python and need
       # no game assets, so they run here in full: the installer's own 32-assertion

@@ -27,7 +27,7 @@ if not errorlevel 1 (
 	exit /b 1
 )
 
-cl /nologo /TP /I..\include fake_host.c /Fe:fake_host.exe
+cl /nologo /TP /DJERICHO_HOST_BUILD /I..\include fake_host.c /Fe:fake_host.exe
 if errorlevel 1 exit /b 1
 
 fake_host.exe test_addon.dll

@@ -6,6 +6,7 @@
  * the host API. No engine header and no engine data global is touched.
  */
 
+#include <string.h>
 #include "jericho.h"
 #include "jer_events.h"
 #include "jer_host_api.h"
