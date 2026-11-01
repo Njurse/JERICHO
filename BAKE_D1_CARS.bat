@@ -57,13 +57,6 @@ if not exist "%T%\bake.py" (
 	goto :fail
 )
 
-if not exist "%LEV%" (
-	echo   FAILED: no "%LEV%".
-	echo   Put your Driver 1 game data in DRIVER\ first -- the layout the game
-	echo   uses, so that DRIVER\LEVELS\*.LEV exists.
-	goto :fail
-)
-
 if not exist "%D2%" (
 	echo   FAILED: no "%D2%".
 	echo   The bake measures its wheels and ride height against Driver 2's own
@@ -80,6 +73,21 @@ if errorlevel 1 (
 	echo   Install Python 3 from python.org ^(tick "Add python.exe to PATH"^), then
 	echo   run this again.
 	goto :fail
+)
+
+rem Peds first: DRIVER2\LEVELS\JMPPED.LEV (stock Tanner + Jericho) is built from
+rem YOUR Driver 2 HAVANA.LEV -- JERICHO does not ship the Jericho model. This
+rem needs no Driver 1 data, so it runs even when the cars are skipped.
+set "PT=%~dp0JERICHO\MODS\bake\tools\ped"
+if not exist "%PT%\jmpped_player.py" if exist "%~dp0..\..\..\JERICHO\MODS\bake\tools\ped\jmpped_player.py" set "PT=%~dp0..\..\..\JERICHO\MODS\bake\tools\ped"
+echo [peds] building %D2%\JMPPED.LEV from your Driver 2 data ...
+%PY% "%PT%\jmpped_player.py" --levels "%D2%" || goto :fail
+echo.
+
+if not exist "%LEV%" (
+	echo   No "%LEV%" -- skipping the Driver 1 cars. Put your Driver 1 game data
+	echo   in DRIVER\ ^(so DRIVER\LEVELS\*.LEV exists^) and re-run to bake them.
+	goto :finish
 )
 
 rem Euro Demo 43 is optional. Detect it once, and let the player see that we found
@@ -100,8 +108,9 @@ if "%BETA%"=="1" set "CITIES=%CITIES%,BETAMIAMI"
 
 rem BAKE_VERSION: bump when the bake gains something the game reads. 8 moved the
 rem output into carhacks and made the EURO-43 beta read the demo's MIAMI.LEV;
-rem 9 retuned the beta engine/idle loop rates, which are stamped into the bank.
-set "BAKE_VERSION=9"
+rem 9 retuned the beta engine/idle loop rates, which are stamped into the bank;
+rem 10 also builds DRIVER2\LEVELS\JMPPED.LEV (Jericho) from the player's game.
+set "BAKE_VERSION=10"
 set "HAVE_VERSION="
 if exist "%OUT%\BAKE_VERSION" set /p HAVE_VERSION=<"%OUT%\BAKE_VERSION"
 if exist "%OUT%" if not "%HAVE_VERSION%"=="%BAKE_VERSION%" (
@@ -180,6 +189,7 @@ if "%BETA%"=="1" if exist "%OUT%\BETAMIAMI.LEV" (
 	echo   Start the game and the seven retail Driver 1 cities will be offered.
 	echo   ^(Put the Euro Demo 43's LEVELS and SOUND in EURO43\ and re-run for Beta Miami.^)
 )
+:finish
 if "%FROM_GAME%"=="1" goto :reopen
 pause
 exit /b 0

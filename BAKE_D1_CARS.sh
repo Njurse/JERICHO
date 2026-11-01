@@ -86,10 +86,6 @@ if [ ! -f "$T/bake.py" ]; then
 	fail "\"$T/bake.py\" is missing. This package was built without the bake tools, so there is nothing to bake with. Re-download the package, or run the tools from the repo."
 fi
 
-if [ ! -d "$LEV" ]; then
-	fail "no \"$LEV\". Put your Driver 1 game data in DRIVER/ first -- the layout the game uses, so that DRIVER/LEVELS/*.LEV exists."
-fi
-
 if [ ! -d "$D2" ]; then
 	fail "no \"$D2\". The bake measures its wheels and ride height against Driver 2's own car files, so DRIVER2/ has to be the real game data too."
 fi
@@ -100,6 +96,24 @@ for cand in python3 python; do
 done
 if [ -z "$PY" ]; then
 	fail "no python on PATH. Install Python 3, then run this again."
+fi
+
+# Peds first: DRIVER2/LEVELS/JMPPED.LEV (stock Tanner + Jericho) is built from
+# YOUR Driver 2 HAVANA.LEV -- JERICHO does not ship the Jericho model. This
+# needs no Driver 1 data, so it runs even when the cars are skipped.
+PT="$HERE/JERICHO/MODS/bake/tools/ped"
+if [ ! -f "$PT/jmpped_player.py" ] && [ -f "$HERE/../../../JERICHO/MODS/bake/tools/ped/jmpped_player.py" ]; then
+	PT="$HERE/../../../JERICHO/MODS/bake/tools/ped"
+fi
+echo "[peds] building $D2/JMPPED.LEV from your Driver 2 data ..."
+"$PY" "$PT/jmpped_player.py" --levels "$D2" || fail "the JMPPED ped bake failed (see above)."
+echo
+
+if [ ! -d "$LEV" ]; then
+	echo "  No \"$LEV\" -- skipping the Driver 1 cars. Put your Driver 1 game data in"
+	echo "  DRIVER/ (so DRIVER/LEVELS/*.LEV exists) and re-run to bake them."
+	reopen_game
+	exit 0
 fi
 
 # Euro Demo 43 is optional. Detect it once, and let the player see that we found
@@ -122,8 +136,9 @@ fi
 
 # BAKE_VERSION: bump when the bake gains something the game reads. 8 moved the
 # output into carhacks and made the EURO-43 beta read the demo's MIAMI.LEV;
-# 9 retuned the beta engine/idle loop rates, which are stamped into the bank.
-BAKE_VERSION=9
+# 9 retuned the beta engine/idle loop rates, which are stamped into the bank;
+# 10 also builds DRIVER2/LEVELS/JMPPED.LEV (Jericho) from the player's game.
+BAKE_VERSION=10
 if [ -d "$OUT" ] && [ "$(cat "$OUT/BAKE_VERSION" 2>/dev/null)" != "$BAKE_VERSION" ]; then
 	echo "Your existing $OUT is from an older bake (no D1 wheels/sounds, pre-Miami wheels, unpacked palette rows, or the old DRIVER/D1CARS location) -- rebuilding it."
 	echo
