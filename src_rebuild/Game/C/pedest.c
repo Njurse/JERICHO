@@ -1276,7 +1276,10 @@ void AnimatePed(LPPEDESTRIAN pPed)
 		}
 	}
 
-	if (pPed->pedType != CIVILIAN)
+	// [JERICHO] a module stand-in (padId < 0, e.g. mp's remote on-foot player)
+	// is nobody's player: ABS(-1) wrote its pose into player[1], which in MP is
+	// the first remote player's CAR slot. Skip the write for those.
+	if (pPed->pedType != CIVILIAN && !(pPed->padId < 0 && jer_npc_owned(pPed)))
 	{
 		int padId;
 		padId = ABS(pPed->padId);
