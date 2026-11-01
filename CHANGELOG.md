@@ -20,7 +20,7 @@ is in [changelog.txt](changelog.txt).
 ### Car bank tooling (BAKE)
 
 - Car bank scripts renamed so their names say what they do, plus a
-  `BANK_WIZARD.bat` hub and per-bank `wizard.bat` / `preview.bat`
+  `make_wizard.bat` hub (bank tools now `make_new_bank.py` / `make_write_scripts.py`) and per-bank `wizard.bat` / `preview.bat`
   (pick a slot, endless preview). See BAKE `docs/PATCH_NOTES.md`.
 
 ### Fixes
