@@ -80,8 +80,21 @@ end
 
 -- Deep (compiled-in) modules: every installed mod that is NOT a DLL addon.
 JERICHO_COMPILED_MODS = {}
+-- Optional out-of-tree mods: their own repos, not part of the superproject and
+-- NOT compiled even when the folder is present, unless opted in with
+-- JERICHO_WITH_<ID>=1 (e.g. JERICHO_WITH_D2PL=1). d2pl is not release-ready.
+-- Re-add later with: git submodule add <url> JERICHO/MODS/d2pl
+JERICHO_OPTIONAL_MODS = { d2pl = true }
+
+local function jericho_optional_enabled(id)
+	local v = os.getenv("JERICHO_WITH_" .. id:upper())
+	return v ~= nil and v ~= "" and v ~= "0"
+end
+
 for _, id in ipairs(jericho_scan_mods()) do
-	if not jericho_is_dll_addon(id) then
+	if JERICHO_OPTIONAL_MODS[id] and not jericho_optional_enabled(id) then
+		print("JERICHO: skipping optional mod " .. id .. " (set JERICHO_WITH_" .. id:upper() .. "=1 to build it)")
+	elseif not jericho_is_dll_addon(id) then
 		table.insert(JERICHO_COMPILED_MODS, id)
 	end
 end

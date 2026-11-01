@@ -87,3 +87,6 @@ tmp/tgbot/
 JERICHO/CORE/modstore/test/repo/
 JERICHO/CORE/modstore/out/
 JERICHO/sdk/test/*.exe
+
+# d2pl lives in its own repo (not release-ready); optional, see premake5.lua
+/JERICHO/MODS/d2pl/
