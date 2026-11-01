@@ -402,7 +402,7 @@ cursor and an overlay menu that keeps the world running while it is open.
 
 Camera-relative on-foot movement, dual-stick/mouse look, an aim arm pose that
 points at the camera aim point, a laser sight and a debug pistol.
-[README](JERICHO/MODS/d2pl/README.md)
+README in the d2pl repo (optional out-of-tree mod)
 
 ### COLLISIONDEVIL (`collisiondevil`) — arcade handling *(compiled-in)*
 

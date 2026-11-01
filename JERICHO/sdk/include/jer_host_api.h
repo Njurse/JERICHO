@@ -20,6 +20,10 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+/* glibc hides RTLD_DEFAULT without _GNU_SOURCE; its value is fixed. */
+#ifndef RTLD_DEFAULT
+#define RTLD_DEFAULT ((void*)0)
+#endif
 #endif
 
 #ifdef __cplusplus

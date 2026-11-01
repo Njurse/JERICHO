@@ -81,11 +81,12 @@ jobs:
           for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
-            branch=$(git config -f .gitmodules --get "submodule.$path.branch")
-            [ -n "$branch" ] || branch=HEAD
-            git -C "$path" fetch --quiet --depth=1 origin "$branch"
-            git -C "$path" checkout --quiet --detach FETCH_HEAD
-            echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
+            # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
+            # branch (bake@betamiami) compiled bake in and broke the Release link.
+            sha=$(git rev-parse "HEAD:$path")
+            git -C "$path" fetch --quiet --depth=1 origin "$sha"
+            git -C "$path" checkout --quiet --detach "$sha"
+            echo "    $path at $(git -C "$path" rev-parse --short HEAD) (pinned)"
             echo "::endgroup::"
           done
 
@@ -277,11 +278,12 @@ jobs:
           for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
-            branch=$(git config -f .gitmodules --get "submodule.$path.branch")
-            [ -n "$branch" ] || branch=HEAD
-            git -C "$path" fetch --quiet --depth=1 origin "$branch"
-            git -C "$path" checkout --quiet --detach FETCH_HEAD
-            echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
+            # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
+            # branch (bake@betamiami) compiled bake in and broke the Release link.
+            sha=$(git rev-parse "HEAD:$path")
+            git -C "$path" fetch --quiet --depth=1 origin "$sha"
+            git -C "$path" checkout --quiet --detach "$sha"
+            echo "    $path at $(git -C "$path" rev-parse --short HEAD) (pinned)"
             echo "::endgroup::"
           done
           for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
@@ -577,11 +579,12 @@ jobs:
           for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
-            branch=$(git config -f .gitmodules --get "submodule.$path.branch")
-            [ -n "$branch" ] || branch=HEAD
-            git -C "$path" fetch --quiet --depth=1 origin "$branch"
-            git -C "$path" checkout --quiet --detach FETCH_HEAD
-            echo "    $path at $(git -C "$path" rev-parse --short HEAD) ($branch)"
+            # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
+            # branch (bake@betamiami) compiled bake in and broke the Release link.
+            sha=$(git rev-parse "HEAD:$path")
+            git -C "$path" fetch --quiet --depth=1 origin "$sha"
+            git -C "$path" checkout --quiet --detach "$sha"
+            echo "    $path at $(git -C "$path" rev-parse --short HEAD) (pinned)"
             echo "::endgroup::"
           done
           for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do

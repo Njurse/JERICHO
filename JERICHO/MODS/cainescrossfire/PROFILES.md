@@ -153,7 +153,7 @@ already holds its model number. So an arena can field the level's own cars (in t
 civilian slots they already occupy) **plus ten more**, and a roster car whose model is
 already resident costs nothing.
 
-**Guest cities: 3** — that is, every city that can be one (there are four, and the
+**Guest cities: 15** palette bands (128-row CIV_CLUT); in practice 3 — that is, every city that can be one (there are four, and the
 level's own is not a guest). `models.c` keeps one `CAR_IMPORT` per city (`gCarImports[4]`,
 `.region == NULL` when not held) and `InitCarImport` loads every city the placed slots ask
 for. A foreign profile is placed into a free slot with **its own city** recorded as that
