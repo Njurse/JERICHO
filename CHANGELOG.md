@@ -8,6 +8,21 @@ is in [changelog.txt](changelog.txt).
 
 *Released 2026-10-27.*
 
+### First-launch bake prompt
+
+- **The game asks to bake on first start.** When there is no readable
+  `DRIVER2/LEVELS/JMPPED.LEV` and/or no baked Driver 1 cars, the main menu
+  explains that cars and peds (Tanner/Jericho) are built from your own game
+  files and offers **Continue** (runs the bake, the game restarts) or **No**
+  (skip this time). Set `first_bake_prompt=0` in `JERICHO/CONFIG/rebake.ini`
+  (written on the first No) to stop being asked.
+
+### Car bank tooling (BAKE)
+
+- Car bank scripts renamed so their names say what they do, plus a
+  `BANK_WIZARD.bat` hub and per-bank `wizard.bat` / `preview.bat`
+  (pick a slot, endless preview). See BAKE `docs/PATCH_NOTES.md`.
+
 ### Fixes
 
 - **In-game text is no longer drawn too high.** The long-standing offset

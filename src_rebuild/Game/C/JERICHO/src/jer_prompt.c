@@ -15,11 +15,26 @@
 
 static int gPromptOpen = 0;
 static int gPromptYes = 1;			/* highlight starts on Yes */
-static char gPromptQuestion[160] = "";
+static char gPromptQuestion[400] = "";
+static char gPromptYesLabel[24] = "Yes";
+static char gPromptNoLabel[24] = "No";
 static JER_PROMPT_ON_YES gPromptOnYes = NULL;
+static JER_PROMPT_ON_YES gPromptOnNo = NULL;
 
 int jer_prompt_begin(const char* question, JER_PROMPT_ON_YES on_yes)
 {
+	return jer_prompt_begin_ex(question, NULL, NULL, on_yes, NULL);
+}
+
+const char* jer_prompt_yes_label(void) { return gPromptYesLabel; }
+const char* jer_prompt_no_label(void) { return gPromptNoLabel; }
+
+int jer_prompt_begin_ex(const char* question, const char* yes_label, const char* no_label,
+	JER_PROMPT_ON_YES on_yes, JER_PROMPT_ON_YES on_no)
+{
+	snprintf(gPromptYesLabel, sizeof(gPromptYesLabel), "%s", yes_label ? yes_label : "Yes");
+	snprintf(gPromptNoLabel, sizeof(gPromptNoLabel), "%s", no_label ? no_label : "No");
+	gPromptOnNo = on_no;
 	snprintf(gPromptQuestion, sizeof(gPromptQuestion), "%s",
 		(question != NULL && question[0] != 0) ? question : "Are you sure?");
 
@@ -49,6 +64,7 @@ void jer_prompt_close(void)
 {
 	gPromptOpen = 0;
 	gPromptOnYes = NULL;
+	gPromptOnNo = NULL;
 	gPromptQuestion[0] = 0;
 }
 
@@ -64,7 +80,11 @@ int jer_prompt_tick(int prev, int next, int confirm, int cancel)
 
 	if (cancel)
 	{
+		JER_PROMPT_ON_YES noAct = gPromptOnNo;
+
 		jer_prompt_close();
+		if (noAct != NULL)
+			noAct();
 		return JER_PROMPT_NO;
 	}
 
@@ -76,11 +96,14 @@ int jer_prompt_tick(int prev, int next, int confirm, int cancel)
 	/* take the action before closing: the action may raise its own notice */
 	{
 		JER_PROMPT_ON_YES act = gPromptOnYes;
+		JER_PROMPT_ON_YES noAct = gPromptOnNo;
 
 		jer_prompt_close();
 
 		if (answer == JER_PROMPT_YES && act != NULL)
 			act();
+		else if (answer == JER_PROMPT_NO && noAct != NULL)
+			noAct();
 	}
 
 	return answer;

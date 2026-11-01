@@ -1495,7 +1495,7 @@ void LoadBackgroundFile(char* name)
  * clips it rather than wrapping it). The block is anchored at the BOTTOM, so a
  * two- or three-line question grows upwards and never runs into the answers.
  * ------------------------------------------------------------------ */
-#define JER_PROMPT_WRAP_MAX	4
+#define JER_PROMPT_WRAP_MAX	6
 #define JER_PROMPT_LINE_LEN	192
 #define JER_PROMPT_WIDTH	544	/* 640 less a 48px margin each side */
 #define JER_PROMPT_SCALE	150
@@ -1584,8 +1584,8 @@ static void JerichoDrawPrompt(void)
 			lines[i], 235, 235, 235);
 	}
 
-	wy = jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, "Yes");
-	wn = jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, "No");
+	wy = jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, jer_prompt_yes_label());
+	wn = jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, jer_prompt_no_label());
 
 	x = JER_PROMPT_RIGHT_X - (wy + JER_PROMPT_GAP + wn);
 
@@ -1609,10 +1609,10 @@ static void JerichoDrawPrompt(void)
 		}
 	}
 
-	jer_text_draw_at(JER_TEXT_FE, JER_PROMPT_SCALE, x, JER_PROMPT_ANSWERS_Y, "Yes",
+	jer_text_draw_at(JER_TEXT_FE, JER_PROMPT_SCALE, x, JER_PROMPT_ANSWERS_Y, jer_prompt_yes_label(),
 		yesSel ? 255 : 130, yesSel ? 215 : 130, yesSel ? 60 : 130);
 
-	jer_text_draw_at(JER_TEXT_FE, JER_PROMPT_SCALE, x + wy + JER_PROMPT_GAP, JER_PROMPT_ANSWERS_Y, "No",
+	jer_text_draw_at(JER_TEXT_FE, JER_PROMPT_SCALE, x + wy + JER_PROMPT_GAP, JER_PROMPT_ANSWERS_Y, jer_prompt_no_label(),
 		yesSel ? 130 : 255, yesSel ? 130 : 215, yesSel ? 130 : 60);
 }
 
