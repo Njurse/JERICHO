@@ -81,7 +81,10 @@ rem needs no Driver 1 data, so it runs even when the cars are skipped.
 set "PT=%~dp0JERICHO\MODS\bake\tools\ped"
 if not exist "%PT%\jmpped_player.py" if exist "%~dp0..\..\..\JERICHO\MODS\bake\tools\ped\jmpped_player.py" set "PT=%~dp0..\..\..\JERICHO\MODS\bake\tools\ped"
 echo [peds] building %D2%\JMPPED.LEV from your Driver 2 data ...
-%PY% "%PT%\jmpped_player.py" --levels "%D2%" || goto :fail
+set "PEDS="
+if exist "%~dp0JERICHO\MODS\mp\peds" set "PEDS=--characters "%~dp0JERICHO\MODS\mp\peds""
+if exist "%~dp0peds" set "PEDS=--characters "%~dp0peds""
+%PY% "%PT%\jmpped_player.py" --levels "%D2%" %PEDS% || goto :fail
 echo.
 
 if not exist "%LEV%" (

@@ -106,7 +106,9 @@ if [ ! -f "$PT/jmpped_player.py" ] && [ -f "$HERE/../../../JERICHO/MODS/bake/too
 	PT="$HERE/../../../JERICHO/MODS/bake/tools/ped"
 fi
 echo "[peds] building $D2/JMPPED.LEV from your Driver 2 data ..."
-"$PY" "$PT/jmpped_player.py" --levels "$D2" || fail "the JMPPED ped bake failed (see above)."
+PEDS=""
+for d in "$HERE/JERICHO/MODS/mp/peds" "$HERE/peds"; do [ -d "$d" ] && PEDS="$d"; done
+"$PY" "$PT/jmpped_player.py" --levels "$D2" ${PEDS:+--characters "$PEDS"} || fail "the JMPPED ped bake failed (see above)."
 echo
 
 if [ ! -d "$LEV" ]; then
