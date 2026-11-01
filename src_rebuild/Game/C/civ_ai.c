@@ -1597,8 +1597,16 @@ int InitCivState(CAR_DATA * cp, EXTRA_CIV_DATA * extraData)
 }
 
 // [D] [T]
+// JERICHO: a slot a module owns (mp: a player's car, driven or parked empty for re-entry)
+// must never be pinged out - not by distance (CheckPingOut), not by a roadblock or spawn
+// cull, not by the stationary-car request. Nonzero = keep. Modules own the marks.
+unsigned char gJerCarNoPingOut[MAX_CARS];
+
 int PingOutCar(CAR_DATA * cp)
 {
+	if (cp >= car_data && cp < &car_data[MAX_CARS] && gJerCarNoPingOut[cp - car_data])
+		return 0;
+
 	testNumPingedOut++;
 
 	if (cp->controlType == CONTROL_TYPE_CIV_AI)

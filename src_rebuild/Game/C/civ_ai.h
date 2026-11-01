@@ -38,6 +38,7 @@ extern int PingInCivCar(int minPingInDist); // 0x00028DB4
 extern void CreateRoadblock(); // 0x0002BCF4
 
 extern int PingOutCar(CAR_DATA *cp); // 0x0002CF80
+extern unsigned char gJerCarNoPingOut[MAX_CARS];	// JERICHO: nonzero = PingOutCar refuses this slot (module-owned car)
 extern int PingOutAllSpecialCivCars(); // 0x000282E8
 extern int PingOutAllCivCarsAndCopCars(); // 0x0002840C
 extern int CheckPingOut(CAR_DATA *cp); // 0x00028554
