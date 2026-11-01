@@ -53,6 +53,7 @@ MODEL* pmTannerModels[17] = { 0 };
 MODEL* pmJerichoModels[JER_PED_MAX_ENTRIES][6] = { 0 };
 MODEL* pmJerichoLegModels[JER_PED_MAX_ENTRIES][6] = { 0 };
 MODEL* pmJerichoHandModels[JER_PED_MAX_ENTRIES][2] = { 0 };
+MODEL* pmJerichoHipsModels[JER_PED_MAX_ENTRIES] = { 0 };
 
 int gJerPedSkeletonGeneration = 1;
 
@@ -498,6 +499,9 @@ int jer_ped_palette_extend_jericho(void)
 		for (mi = 0; mi < 2; mi++)
 			if (!jer_ped_palette_extend_model(pmJerichoHandModels[e][mi], 12 + mi))
 				return 0;
+
+		if (!jer_ped_palette_extend_model(pmJerichoHipsModels[e], 14))
+			return 0;
 	}
 
 	return 1;

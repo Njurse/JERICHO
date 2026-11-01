@@ -12,6 +12,7 @@ extern MODEL* pmTannerModels[17];
 extern MODEL* pmJerichoModels[JER_PED_MAX_ENTRIES][6];
 extern MODEL* pmJerichoLegModels[JER_PED_MAX_ENTRIES][6];
 extern MODEL* pmJerichoHandModels[JER_PED_MAX_ENTRIES][2];
+extern MODEL* pmJerichoHipsModels[JER_PED_MAX_ENTRIES];
 extern int JerPedSkeletonGeneration(void);
 extern void JerPedSkeletonInvalidate(void);
 

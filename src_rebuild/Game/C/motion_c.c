@@ -572,6 +572,10 @@ SVECTOR vJerichoList[JER_PED_MAX_ENTRIES][512];
 short cJerichoLegVNumbers[JER_PED_MAX_ENTRIES][6];
 SVECTOR vJerichoLegList[JER_PED_MAX_ENTRIES][512];
 
+/* Baked per-entry HIPS (optional v5 slot 14). */
+short cJerichoHipsVNumber[JER_PED_MAX_ENTRIES];
+SVECTOR vJerichoHipsList[JER_PED_MAX_ENTRIES][128];
+
 /* Baked Tanner hand copies (HAND_LEFT/RIGHT). */
 short cJerichoHandVNumbers[JER_PED_MAX_ENTRIES][2];
 SVECTOR vJerichoHandList[JER_PED_MAX_ENTRIES][256];
@@ -1066,6 +1070,25 @@ void StoreVertexLists(int entry)
 				counter++;
 			}
 		}
+	}
+
+	/* Hips: the entry's own baked HIPS when the archive carries slot 14. */
+	cJerichoHipsVNumber[entry] = -1;
+	if (pmJerichoHipsModels[entry] != NULL && pmJerichoHipsModels[entry]->num_vertices <= 128)
+	{
+		pModel = pmJerichoHipsModels[entry];
+		srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
+		destVerts = vJerichoHipsList[entry];
+
+		for (j = 0; j < pModel->num_vertices; j++)
+		{
+			destVerts->vx = srcVerts->vx;
+			destVerts->vy = srcVerts->vy;
+			destVerts->vz = srcVerts->vz;
+			srcVerts++;
+			destVerts++;
+		}
+		cJerichoHipsVNumber[entry] = 0;
 	}
 
 	/* Hands: baked Tanner copies when present, resident Tanner otherwise. */
@@ -1649,6 +1672,8 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 			return base + cJerichoVNumbers[entry][5];
 
 		case LHIP:
+			if (cJerichoHipsVNumber[entry] != -1)
+				return vJerichoHipsList[entry];
 			if (cTannerVNumbers[LHIP] != -1)
 				return vTannerList + cTannerVNumbers[LHIP];
 			return NULL;
@@ -1656,16 +1681,16 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][0];
 		case LFOOT:
 			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][1];
-		case LTOE:
-			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][2];
+		case LTOE:	/* crossed like stock Tanner: LTOE draws FOOT_RIGHT */
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][5];
 		case RHIP:
 			return NULL;
 		case RKNEE:
 			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][3];
 		case RFOOT:
 			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][4];
-		case RTOE:
-			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][5];
+		case RTOE:	/* crossed like stock Tanner: RTOE draws FOOT_LEFT */
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][2];
 
 		case LFINGERS:
 			return vJerichoHandList[entry] + cJerichoHandVNumbers[entry][0];
@@ -1983,14 +2008,17 @@ void SetSkelModelPointersForEntry(int type, int entry)
 		/* No Tanner HIPS under a JMPPED character: it is Tanner's mesh on Tanner's
 		 * page/CLUT, so it showed as a stray segment, clipped through the seat on
 		 * car entry, and tinted apart from the rest of the body. */
-		Skel[LHIP].pModel = NULL;
+		Skel[LHIP].pModel = pmJerichoHipsModels[entry] ? &pmJerichoHipsModels[entry] : NULL;
 		Skel[RHIP].pModel = NULL;
 		Skel[LKNEE].pModel = pmJerichoLegModels[entry][0] ? &pmJerichoLegModels[entry][0] : &pmTannerModels[11];
 		Skel[LFOOT].pModel = pmJerichoLegModels[entry][1] ? &pmJerichoLegModels[entry][1] : &pmTannerModels[12];
-		Skel[LTOE].pModel = pmJerichoLegModels[entry][2] ? &pmJerichoLegModels[entry][2] : &pmTannerModels[7];
+		/* Toes cross over exactly like the static Tanner bindings (LTOE=pm[13]
+		 * FOOT_RIGHT, RTOE=pm[7] FOOT_LEFT); archive leg slot 2 is FOOT_LEFT and 5
+		 * is FOOT_RIGHT. */
+		Skel[LTOE].pModel = pmJerichoLegModels[entry][5] ? &pmJerichoLegModels[entry][5] : &pmTannerModels[13];
 		Skel[RKNEE].pModel = pmJerichoLegModels[entry][3] ? &pmJerichoLegModels[entry][3] : &pmTannerModels[5];
 		Skel[RFOOT].pModel = pmJerichoLegModels[entry][4] ? &pmJerichoLegModels[entry][4] : &pmTannerModels[6];
-		Skel[RTOE].pModel = pmJerichoLegModels[entry][5] ? &pmJerichoLegModels[entry][5] : &pmTannerModels[13];
+		Skel[RTOE].pModel = pmJerichoLegModels[entry][2] ? &pmJerichoLegModels[entry][2] : &pmTannerModels[7];
 		Skel[LFINGERS].pModel = pmJerichoHandModels[entry][0] ? &pmJerichoHandModels[entry][0] : &pmTannerModels[10];
 		Skel[RFINGERS].pModel = pmJerichoHandModels[entry][1] ? &pmJerichoHandModels[entry][1] : &pmTannerModels[4];
 
