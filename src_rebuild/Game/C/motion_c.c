@@ -1980,7 +1980,10 @@ void SetSkelModelPointersForEntry(int type, int entry)
 		/* Match the engine's static Tanner leg bindings: the hip joints draw the
 		 * resident HIPS mesh, and the thigh/calf/foot models hang off
 		 * LKNEE/LFOOT/LTOE (and the right-side equivalents). */
-		Skel[LHIP].pModel = &pmTannerModels[15];	/* HIPS */
+		/* No Tanner HIPS under a JMPPED character: it is Tanner's mesh on Tanner's
+		 * page/CLUT, so it showed as a stray segment, clipped through the seat on
+		 * car entry, and tinted apart from the rest of the body. */
+		Skel[LHIP].pModel = NULL;
 		Skel[RHIP].pModel = NULL;
 		Skel[LKNEE].pModel = pmJerichoLegModels[entry][0] ? &pmJerichoLegModels[entry][0] : &pmTannerModels[11];
 		Skel[LFOOT].pModel = pmJerichoLegModels[entry][1] ? &pmJerichoLegModels[entry][1] : &pmTannerModels[12];
@@ -2024,6 +2027,19 @@ void SetSkelModelPointersForEntry(int type, int entry)
 		Skel[RELBOW].pModel = &pmTannerModels[2];
 		Skel[RHAND].pModel = &pmTannerModels[3];
 		Skel[LHIP].pModel = &pmTannerModels[15]; // [A] Tanner looks better with no model here but let's keep it
+
+		/* Restore the static Tanner legs/hands: a JMPPED character drawn earlier in
+		 * the frame leaves its baked parts bound here, and Tanner's vertex list
+		 * cannot drive them (the hit-or-miss Tanner / garbled car entry). */
+		Skel[RHIP].pModel = NULL;
+		Skel[LKNEE].pModel = &pmTannerModels[11];
+		Skel[LFOOT].pModel = &pmTannerModels[12];
+		Skel[LTOE].pModel = &pmTannerModels[13];
+		Skel[RKNEE].pModel = &pmTannerModels[5];
+		Skel[RFOOT].pModel = &pmTannerModels[6];
+		Skel[RTOE].pModel = &pmTannerModels[7];
+		Skel[LFINGERS].pModel = &pmTannerModels[10];
+		Skel[RFINGERS].pModel = &pmTannerModels[4];
 
 		bodyShiftValue = BODY_OFFSET;
 		torsoShiftValue = TORSO_OFFSET;
