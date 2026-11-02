@@ -31,7 +31,7 @@
 #define JER_CARQ_CHOSEN	(JER_EVENT_MODULE_CUSTOM + 42)	/* "this is what we drive now" */
 #define JER_CARQ_SLOTS	(JER_EVENT_MODULE_CUSTOM + 43)	/* "which slots may this city offer?" */
 #define JER_CARQ_STANDIN	(JER_EVENT_MODULE_CUSTOM + 44)	/* "give me a stand-in body slot" */
-#define JER_CARQ_CITYWIRE	(JER_EVENT_MODULE_CUSTOM + 45)	/* "spell this city for the wire / read it back" */
+#define JER_CARQ_CITYWIRE	(JER_EVENT_MODULE_CUSTOM + 47)	/* "spell this city for the wire / read it back" */
 
 /* Handlers fill the result field of the struct and return
  * JER_RESULT_CONTINUE; the caller reads it. */
