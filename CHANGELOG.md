@@ -4,6 +4,14 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.2
+
+*Released 2026-11-01.*
+
+### Dedicated server
+
+- **Map votes can leave the multiplayer maps.** `!vote city <city>` switches to the full single-player city, and `!vote city <city> mp [0|1]` or `!vote mp [0|1]` picks one of the city's multiplayer maps. The dedi config gains `map_mode`. Server owners: pull mp and rebuild the dedi.
+
 ## v0.13.1
 
 *Released 2026-11-01.*
