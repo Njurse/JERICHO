@@ -31,6 +31,7 @@
 #define JER_CARQ_CHOSEN	(JER_EVENT_MODULE_CUSTOM + 42)	/* "this is what we drive now" */
 #define JER_CARQ_SLOTS	(JER_EVENT_MODULE_CUSTOM + 43)	/* "which slots may this city offer?" */
 #define JER_CARQ_STANDIN	(JER_EVENT_MODULE_CUSTOM + 44)	/* "give me a stand-in body slot" */
+#define JER_CARQ_CITYWIRE	(JER_EVENT_MODULE_CUSTOM + 45)	/* "spell this city for the wire / read it back" */
 
 /* Handlers fill the result field of the struct and return
  * JER_RESULT_CONTINUE; the caller reads it. */
@@ -120,5 +121,39 @@ typedef struct JER_CARQ_STANDIN_ARGS
 {
 	int slot;	/* out: resident slot for the stand-in body, -1 = none */
 } JER_CARQ_STANDIN_ARGS;
+
+/* JER_CARQ_CITYWIRE - the session-wide spelling of a car's CITY on any wire.
+ *
+ * A city INDEX is only stable for the stock rows (0..10: Driver 2's four, Driver 1's
+ * seven). Runtime banks (rows 11+, cities.ini or carhacks' pack auto-register) land
+ * on whatever row was free on THAT machine, so the same index names different banks
+ * on two machines with different packs. On the wire a bank is therefore spelled by
+ * a code derived from its NAME:
+ *
+ *   0x00..0x0A   a stock city, by index (unchanged)
+ *   0x80..0xFE   a runtime bank: JER_CITY_WIRE_CODE_FIRST + hash(name) % 127
+ *   0xFF         the session's / level's own city (unchanged)
+ *   0x7F         a city the sender could not spell (treat as not held)
+ *
+ * toWire = 1: in `city` (local index, -1 = the level's own), out `wire`.
+ * toWire = 0: in `wire`, out `city` = the LOCAL index of the bank with that code, or
+ *             the wire value itself (>= CITY_COUNT, so never a usable row) when this
+ *             machine does not hold it or the code is ambiguous in this session.
+ *             Passing such a value back through toWire returns it unchanged, so a
+ *             relay (a host re-sending a roster, a dedicated server with no carhacks)
+ *             forwards the original spelling instead of losing it.
+ * `handled` = 1 when a handler answered; with no handler the caller keeps the
+ * legacy raw-index behaviour. */
+#define JER_CITY_WIRE_CODE_FIRST	0x80
+#define JER_CITY_WIRE_CODE_LAST		0xFE
+#define JER_CITY_WIRE_UNSPELLABLE	0x7F
+
+typedef struct JER_CARQ_CITYWIRE_ARGS
+{
+	int toWire;	/* in */
+	int city;	/* in (toWire) / out (!toWire) */
+	int wire;	/* out (toWire) / in (!toWire) */
+	int handled;	/* out */
+} JER_CARQ_CITYWIRE_ARGS;
 
 #endif /* JER_CARQUERY_H */
