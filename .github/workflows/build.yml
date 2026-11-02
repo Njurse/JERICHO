@@ -477,6 +477,11 @@ jobs:
             Remove-Item "$bin/JERICHO/MODS/carhacks/D1CARS" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/DRIVER" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/DRIVER2" -Recurse -Force -ErrorAction SilentlyContinue
+            # Store-only addons: optional content from the mod store, never in the base pack
+            foreach ($opt in @('fulltwist')) {
+              Remove-Item "$bin/JERICHO/MODS/$opt" -Recurse -Force -ErrorAction SilentlyContinue
+              if (Test-Path "$bin/JERICHO/MODS/$opt") { throw "$opt is store-only but is still in $bin" }
+            }
 
             # 5. Car-data BANKS -- BetterCars-style car packs (BC*.LEV / BC*.LCF) and
             #    the *.sparse.bak a local bankfill leaves. Third-party car ART, the
@@ -794,6 +799,10 @@ jobs:
             rm -rf "$d/JERICHO/MODS/carhacks/D1CARS"
             rm -rf "$d/DRIVER"
             rm -rf "$d/DRIVER2"
+            # Store-only addons: optional content from the mod store, never in the base pack
+            for opt in fulltwist; do
+              rm -rf "$d/JERICHO/MODS/$opt"
+            done
 
             # ...and a fourth: car-data BANKS (BetterCars-style BC*.LEV/BC*.LCF, and the
             # *.sparse.bak a local bankfill leaves). Third-party car art, same rule as
