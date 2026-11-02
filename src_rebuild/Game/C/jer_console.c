@@ -76,6 +76,11 @@ extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, st
  * the gap the default 0.275f text has. This nudges it back to roughly that. */
 #define JER_CONSOLE_TRACKING		0.75f
 
+/* pres.c now adds a FIXED 14 px glyph baseline (it used to scale it, 14 * 0.138 = 2 px
+ * at this size), which pushed every console row and the chat input ~12 px DOWN, the
+ * input row off the bottom of the screen. Lift the HQ console text back by that much. */
+#define JER_CONSOLE_HQ_LIFT		12
+
 /* Frontend: the FE draws in its own (larger) coordinate space and font. */
 #define JER_CONSOLE_FE_X		32
 #define JER_CONSOLE_FE_SCALE		2048	/* half of the FE's standard 4096 */
@@ -567,7 +572,7 @@ static void jerConsoleDrawRow(const JER_CONSOLE_ROW* row, int frontend, int y, i
 			x = FEPrintStringSized(tmp, x, y, JER_CONSOLE_FE_SCALE, 0,
 				gFontColour.r, gFontColour.g, gFontColour.b);
 		else if (gHiresFontTexture)
-			x = PrintStringHiresScaledSpaced(tmp, x, y, JER_CONSOLE_TEXT_SCALE, JER_CONSOLE_TRACKING);
+			x = PrintStringHiresScaledSpaced(tmp, x, y - JER_CONSOLE_HQ_LIFT, JER_CONSOLE_TEXT_SCALE, JER_CONSOLE_TRACKING);
 		else
 			x = PrintString(tmp, x, y);
 	}
@@ -597,7 +602,7 @@ static void jerConsoleDrawInput(int frontend)
 	if (frontend)
 		FEPrintStringSized((char*)shown, x, JER_CONSOLE_FE_INPUT_Y, JER_CONSOLE_FE_SCALE, 0, r, g, b);
 	else if (gHiresFontTexture)
-		PrintStringHiresScaledSpaced((char*)shown, x, JER_CONSOLE_INPUT_Y, JER_CONSOLE_TEXT_SCALE, JER_CONSOLE_TRACKING);
+		PrintStringHiresScaledSpaced((char*)shown, x, JER_CONSOLE_INPUT_Y - JER_CONSOLE_HQ_LIFT, JER_CONSOLE_TEXT_SCALE, JER_CONSOLE_TRACKING);
 	else
 		PrintString((char*)shown, x, JER_CONSOLE_INPUT_Y);
 }

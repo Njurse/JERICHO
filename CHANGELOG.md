@@ -4,6 +4,15 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.1
+
+*Released 2026-11-01.*
+
+### Fixes
+
+- **Chat is back where it belongs.** The 0.13.0 text baseline fix pushed the in-game console and the chat entry line about 12px down, with the entry nearly off the bottom of the screen. They sit where they did before.
+- **Dedicated servers accept 0.13 clients.** The dedi still expected mod interface 2 and refused every 0.13 client as a version mismatch. Server owners: pull mp and rebuild the dedi.
+
 ## v0.13.0
 
 *Released 2026-11-01.*
