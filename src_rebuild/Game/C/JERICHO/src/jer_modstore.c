@@ -1285,7 +1285,7 @@ static int StoreBakeStale(void)
  * inventory. This is where the ownership rules live: a bundled mod the release
  * ships is updatable, never downgradable, and after a core update it reads as
  * REPLACED rather than as "installed". */
-static void StoreRowState(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int noteMax)
+static void StoreRowStateBase(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int noteMax)
 {
 	STORE_RECORD* rec = StoreFindRecord(m->id);
 	JER_MODULE_INFO info[JER_MAX_MODULES];
@@ -1412,6 +1412,40 @@ static void StoreRowState(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int n
 
 	it->state = JER_MODSTORE_ST_INSTALLED;
 	it->canInstall = 0;
+}
+
+/* A compiled-in mod (no DLL of its own) is linked into the exe, so a store
+ * update only changes its source folder. A build that cannot recompile (every
+ * Release download) would install files it never runs: point at a JERICHO
+ * update instead, and keep the row out of "Update N mods now?" (canInstall). */
+static void StoreRowState(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int noteMax)
+{
+	STORE_RECORD* rec;
+	char dll[STORE_PATH_MAX];
+	FILE* f;
+	int compiledIn;
+
+	StoreRowStateBase(m, it, note, noteMax);
+	if (!it->canInstall || it->state == JER_MODSTORE_ST_AVAILABLE || jer_mods_compile_available())
+		return;
+	if (it->state != JER_MODSTORE_ST_UPDATE && it->state != JER_MODSTORE_ST_REPLACED)
+		return;
+
+	rec = StoreFindRecord(m->id);
+#if defined(_WIN32)
+	snprintf(dll, sizeof(dll), "%s/%s/%s.dll", gStore.modsDir, m->id, m->id);
+#else
+	snprintf(dll, sizeof(dll), "%s/%s/%s.so", gStore.modsDir, m->id, m->id);
+#endif
+	f = fopen(dll, "rb");
+	compiledIn = (rec != NULL) ? (rec->runtime[0] == 0) : (f == NULL);
+	if (f != NULL)
+		fclose(f);
+	if (!compiledIn)
+		return;
+
+	it->canInstall = 0;
+	snprintf(note, (size_t)noteMax, "built into the game: update JERICHO to get %s %s", m->id, m->version);
 }
 
 static void StoreItemsBuild(void)
