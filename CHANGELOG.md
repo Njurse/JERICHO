@@ -10,11 +10,13 @@ is in [changelog.txt](changelog.txt).
 
 ### Cars
 
-- **Car packs work by just enabling them.** carhacks (0.2.7) now registers every enabled mod's `banks/*/bank.json` as a car bank on its own, so packs such as Hallgarth's Cars 0.1.2 need no `cities.ini` edit. BAKE writes correct `..\JERICHO\MODS\<mod>\banks\...` paths for packs that still ship a `cities.ini`.
+- **Turn on a car pack and it just works.** Download something like Hallgarth's Cars from the mod store, enable it, and the cars show up — no hand-editing config files.
+- **New packs BAKE makes get the right install paths** if anyone still sets them up the old manual way.
 
 ### Multiplayer
 
-- **Custom cars show as the right car for everyone.** Pack cars now travel by bank name instead of by a slot number that differs between machines with different packs installed. A player without the pack sees a stand-in, never a wrong car. Protocol is now 21 (mp 0.18.0): everyone must be on v0.13.4. Server owners: pull mp and run `update-dedi.sh`.
+- **Friends with different car packs see the right cars.** If they don't have your pack, they get a stand-in instead of the wrong vehicle.
+- **Everyone needs this update to play together.** Older builds can't join. If you run the dedicated server, update it with the usual `update-dedi.sh` after you pull.
 
 ## v0.13.3
 
