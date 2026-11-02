@@ -20,3 +20,7 @@
 	path = JERICHO/MODS/crumple
 	url = https://github.com/Njurse/Jericho-Mod-CRUMPLE.git
 	branch = main
+[submodule "JERICHO/MODS/antfarm"]
+	path = JERICHO/MODS/antfarm
+	url = https://github.com/Njurse/JERICHO-Mod-Antfarm.git
+	branch = 0.12

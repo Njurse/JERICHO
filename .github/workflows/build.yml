@@ -78,7 +78,7 @@ jobs:
       - name: Fetch mod submodules
         shell: bash
         run: |
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
@@ -275,7 +275,7 @@ jobs:
           # branch by name: the init is a shallow clone of the pinned commit, so
           # `submodule update --remote` cannot find the branch ref.
           git submodule update --init --depth=1 src_rebuild/PsyCross
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
@@ -286,7 +286,7 @@ jobs:
             echo "    $path at $(git -C "$path" rev-parse --short HEAD) (pinned)"
             echo "::endgroup::"
           done
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
             test -f "$path/mod.toml" || {
               echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
               exit 1
@@ -386,6 +386,33 @@ jobs:
       - name: Fake-host harness (host API)
         shell: cmd
         run: JERICHO\sdk\test\build_test.bat
+
+      # Runtime addons (runtime = "dll": bake, fulltwist, yarisbounce, ...). The
+      # solution build above makes the exe only; without bake.dll the core suite
+      # is incomplete and the loader refuses every store addon (FULL TWIST
+      # included). build.py lands them in bin/Release; Release_dev ships them too.
+      - name: Build runtime addon DLLs
+        shell: pwsh
+        run: |
+          python JERICHO/build.py mods
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem "JERICHO/MODS/*/*.dll" | ForEach-Object {
+            $id = $_.Directory.Name
+            if ($_.BaseName -ne $id) { return }
+            foreach ($cfg in @('Release', 'Release_dev')) {
+              $dst = "src_rebuild/bin/$cfg/JERICHO/MODS/$id"
+              New-Item -ItemType Directory -Force -Path $dst | Out-Null
+              Copy-Item $_.FullName $dst -Force
+            }
+          }
+
+      - name: Guard bake.dll present
+        shell: pwsh
+        run: |
+          foreach ($cfg in @('Release', 'Release_dev')) {
+            $dll = "src_rebuild/bin/$cfg/JERICHO/MODS/bake/bake.dll"
+            if (-not (Test-Path $dll)) { throw "$dll missing - the core suite would refuse every addon" }
+          }
 
       - name: Package
         shell: pwsh
@@ -576,7 +603,7 @@ jobs:
           # branch by name: the init is a shallow clone of the pinned commit, so
           # `submodule update --remote` cannot find the branch ref.
           git submodule update --init --depth=1 src_rebuild/PsyCross
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
@@ -587,7 +614,7 @@ jobs:
             echo "    $path at $(git -C "$path" rev-parse --short HEAD) (pinned)"
             echo "::endgroup::"
           done
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
             test -f "$path/mod.toml" || {
               echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
               exit 1
@@ -683,6 +710,19 @@ jobs:
           test ! -f JERICHO/MODS/example/libexample.so
           JERICHO/sdk/build_mods.sh example
           test -f JERICHO/sdk/example/example.so
+          # ship the addons in BOTH packages (build.py lands them in bin/Release only);
+          # bake.so missing means the core suite refuses every store addon
+          for so in JERICHO/MODS/*/*.so; do
+            id=$(basename "$(dirname "$so")")
+            [ "$(basename "$so" .so)" = "$id" ] || continue
+            for cfg in Release Release_dev; do
+              mkdir -p "src_rebuild/bin/$cfg/JERICHO/MODS/$id"
+              cp "$so" "src_rebuild/bin/$cfg/JERICHO/MODS/$id/"
+            done
+          done
+          for cfg in Release Release_dev; do
+            test -f "src_rebuild/bin/$cfg/JERICHO/MODS/bake/bake.so" || { echo "::error::bin/$cfg has no bake.so - the core suite would refuse every addon"; exit 1; }
+          done
 
       - name: Package
         run: |
