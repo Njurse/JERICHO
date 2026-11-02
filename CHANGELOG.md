@@ -4,183 +4,53 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
-## v0.12.0
+## v0.13.0
 
-*Released 2026-10-27.*
+*Released 2026-11-01.*
 
-### First-launch bake prompt
+### You can now host your own game!
 
-- **The game asks to bake on first start.** When there is no readable
-  `DRIVER2/LEVELS/JMPPED.LEV` and/or no baked Driver 1 cars, the main menu
-  explains that cars and peds (Tanner/Jericho) are built from your own game
-  files and offers **Continue** (runs the bake, the game restarts) or **No**
-  (skip this time). Set `first_bake_prompt=0` in `JERICHO/CONFIG/rebake.ini`
-  (written on the first No) to stop being asked.
+- **Host Game works.** The Online menu now hosts a listen session in place of "Coming Soon". The game binds to all interfaces, tries UPnP to open the port on your router, and lists the game on the master server when one is set.
+- **The host can see how to reach the game.** The host menu and pause panel show the join IP:port and the master-listing status: register ACK, whether your own row is in the list, and whether the master is reachable.
+- **Quieter LAN console.** Master reachability probes (bare connects with no data) are now dropped silently. They no longer spam "accepted/DROPPED" or dump diagnostics.
 
-### Car bank tooling (BAKE)
+### Multiplayer Protocol and Bug Updates
 
-- Car bank scripts renamed so their names say what they do, plus a
-  `make_wizard.bat` hub (bank tools now `make_new_bank.py` / `make_write_scripts.py`) and per-bank `wizard.bat` / `preview.bat`
-  (pick a slot, endless preview). See BAKE `docs/PATCH_NOTES.md`.
+- **Protocol 20.** A roster entry now carries the car a player left (32 bytes). **Dedicated servers must update** to the matching mp build. The master server is unchanged.
+- Entering another player's parked car now seats you in that car instead of spawning a copy. On-foot sync is also fixed, and late packets can no longer move a stand-in backwards.
+- In a session, dying, failing a mission or getting busted always respawns you. Parked player cars are never pinged out.
+- If someone is in your parked car when you respawn on foot, you get a fresh car of the same model. Nobody gets kicked out.
+- Custom on-foot characters (JMPPED): they draw their own hips and toes the way stock Tanner does. Team tint now covers every character's parts. Stray hips and leg/hand bleed between characters are fixed. The jerichod3 and tannerd3 characters now ship with the game, and the first-launch ped bake imports custom characters from `MODS/mp/peds`.
+
+### Huge BAKE Toolkit Updates
+
+- **The game asks to bake on first start.** When there is no readable `DRIVER2/LEVELS/JMPPED.LEV` and/or no baked Driver 1 cars, the main menu explains that cars and peds (Tanner/Jericho) are built from your own game files and offers **Continue** (runs the bake, the game restarts) or **No** (skip this time). Set `first_bake_prompt=0` in `JERICHO/CONFIG/rebake.ini` (written on the first No) to stop being asked.
+- **Auto re-bake builds `JMPPED.LEV` (Jericho) from your own game.** (BAKE_VERSION 10.)
+- **Fixes the BETAMIAMI level-start crash.** Baked car sounds keep their ADPCM loop/end flags.
+- The BETAMIAMI gate checks textured polygons only, which fixes the euro43 beta bake failure. The sound step is faster.
+- `BAKE_D1_CARS` launchers are copied into `bin`. LAN packaging uses the `MODS/bake/tools` car/ped tools.
+
+### Extended Palette Limit
+
+- `civ_clut` goes up to 128 rows, so 4+ cities fit. Running out now gives a loud fallback and per-city row usage.
 
 ### Fixes
 
-- **In-game text is no longer drawn too high.** The long-standing offset
-  where HQ font text sat roughly 10px above where it belonged is fixed: the
-  glyph baseline is a fixed 14 again instead of being scaled (`pres.c`), and
-  bar captions use the stock 11px lift for every font (`overlay.c`).
+- **In-game text is no longer drawn too high.** HQ font text used to sit roughly 10px above where it belonged. That long-standing offset is fixed: the glyph baseline is a fixed 14 again instead of being scaled, and bar captions use the stock 11px lift for every font.
 
-### Hosting your own sessions (mp)
+### Packaging
 
-- The host maps its port on the router with UPnP, so players can host their
-  own multiplayer sessions without manual port forwarding.
+- Release packages ship the runtime addon DLLs/SOs that store addons need.
+- FULL TWIST, HallgarthCars (Firebird bank) and Antfarm are store-only. They are not in the core packages.
+- The exe reports version 0.13.
 
-### Build toolkit (BAKE)
+### Store
 
-- Wheel texture overrides, per-car `handling.json`, 256x256 pages, winding
-  and preview fixes, and a fully rebakeable `exportd2` package. Details in
-  [BAKE docs/PATCH_NOTES.md](JERICHO/MODS/bake/docs/PATCH_NOTES.md).
+- Multiplayer, CarHacks and Crumple are republished for mod interface 3. Older index entries showed "needs newer" on 0.13.
 
-### On foot (d2pl 1.2.0)
+---
 
-- **On-foot shoulder buttons:** L1 aims, R1 fires and L2 now cycles weapons
-  (was Select). On foot d2pl takes these three away from stock Tanner; in a
-  car they are unchanged. Mouse aim/fire, wheel swapping and rebinding are
-  deferred (footnote in HOLDTYPES.md, row in the pause Controls card).
-- **Fire and reload sounds are audible.** The placeholder path asked for the
-  whole frontend menu bank in game, which overflowed the in-game SFX bank;
-  the load was refused, so every placeholder play was silently skipped. Only
-  the four menu samples are loaded now (new `LoadBankFromLumpMax`), and the
-  log reports `[jer_sound] menu samples in game: N at SFX B`.
-- **The aim arm no longer crinkles.** The right arm is now posed with
-  rotations (two-bone IK at the aim point) before the skeleton is built.
-  Previously it moved bone positions after the meshes had been posed, which
-  folded the forearm and hand.
-- **Holdtype base:** each weapon names a holdtype (aim IK, idle hold, spine/neck
-  twist limits, bone mask, pose hook). The torso/neck twist is now added on
-  top of the clip instead of replacing it, and an equipped weapon holds the
-  arm low and forward when not aiming.
-- **Three test weapons**, cycled with R2: a pistol (one shot per R1 press), a
-  machine gun (6 rounds a second while held) and a debug gun (fires every frame
-  while held, endless ammo). The HUD shows the weapon and its ammo.
-- **Placeholder gun sounds:** the frontend menu bank can now be kept resident
-  in game (`jer_sound_request_menu_bank` / `jer_sound_menu_play`). Accept is the
-  fire sound and back is the reload sound.
-- **`JERICHO/MODS/d2pl/HOLDTYPES.md`:** a guide to adding holdtypes, weapons,
-  sounds and custom animations, and the known limits (spine pitch, backpedal
-  clip, left-hand IK, real SFX).
-- **Backpedal at run speed:** any backward input (left stick or directional
-  arrows) keeps Tanner facing the view and backs him up at run speed with the
-  RUN clip reversed, instead of turning round or taking the slow stock
-  walk-back. It triggers in a cone around straight-back, tunable in the pause
-  page. New SDK setter `jer_npc_set_reverse_anim`.
-- **Conventional aim and look:** mouse look is 1:1 on both axes, the right
-  stick uses one shared response curve with the same max rate on yaw and
-  pitch, pitch holds where you leave it, and aiming halves the look rate.
-  Directional-arrow movement is camera-relative too.
-- **On Foot pause page** (Pause > JERICHO Addons > D2PL ON FOOT): weapon
-  (left/right cycles), ammo, holdtype, aiming, twist limits, backpedal state
-  and threshold, the `D2PL_TEST_AIM` lever, a gun-sound card with a mute
-  switch, and a controls card.
-- **Weapon cycle moved to Select** (R2 is the stock look-right). The pause
-  Controls card and `HOLDTYPES.md` say so.
-- **Two-handed rifle grip:** the MG's left arm reaches for a fore-grip ahead
-  of the right hand while aiming, with a tunable elbow bend.
-- **Spine pitch:** the torso leans with the aim elevation, clamped per
-  holdtype.
-- **Optional gun WAVs:** `MODS/d2pl/sounds/<name>.wav` plays when present
-  (new `jer_sound_mod_wav_play`); the FE accept/back placeholders stay as the
-  fallback.
-- **Damage stub:** shots hit-test along the aim (new `jer_npc_nearest`) and
-  take light d2pl-side damage from the ped hit; the HUD shows `HIT n%` or
-  `DOWN`. No ped reaction yet.
-- **Pause page:** live torso-twist and backpedal-threshold controls, a hits
-  readout, and "Reset to defaults".
-- **No more 180° torso:** tighter spine/neck clamps, the body turns in place
-  toward the aim when standing, backpedal kicks in at 80°, and the arm IK
-  fades out past the clamps. Pistol and rifle now have distinct idle and aim
-  holds.
-- **Lower-left HUD:** weapon, ammo and the last hit position.
-- **Fix:** d2pl passed the address of a local to `jer_npc_face` /
-  `jer_npc_set_speed`, which treat `JerNpc*` as the ped itself, so the
-  writes landed on the stack instead of the ped.
-
-### External addons and host API (interface 3)
-
-- **FULL TWIST and Yaris Bounce now build as `runtime = "dll"` addons.** They
-  link only `JER_HOST_API`; no engine header or engine data global is imported.
-  Build them with `JERICHO/sdk/build_mods.bat <mod>` and install the DLL without
-  rebuilding the game.
-- **Append-only host growth:** car matrix/transform, angular-accel injection,
-  wheel state, cosmetic info, per-car draw vertices, motion/speed/collision
-  setters, `player.pad_direct`/`main`, `camera.set_base_angle`, `game.frame`,
-  and model cosmetic info. Existing state structs and event payloads are
-  unchanged; the interface stays 3.
-- **`jer_host_helpers.h`** wraps the common host calls (car/model state, draw
-  buffer, config, frame, raw pad) so an addon stays self-contained.
-- **Store packages:** FULL TWIST 0.4.3 and Yaris Bounce 1.0.0 are built as
-  interface-3 packages; the package generator drops root-level SDK `.lib`/`.obj`
-  residue as well as the existing `obj/`/`lib/` folders.
-
-### FULL TWIST (fulltwist 0.4.3)
-
-- **Body-contact tipping follows the centre of gravity.** `body_gravity`
-  applies the contact normal through the lever from the COG while the car is on
-  its side or partially tipped: a car that barely clears a roll keeps falling,
-  while one that does not falls back. It is not an uprighting torque, and it is
-  disabled in the fully upright and fully inverted poses, so a parked roof rest
-  still stays put.
-
-### FULL TWIST (fulltwist 0.4.2)
-
-- **Removed the scripted rollover catch and inverted-pose nudge.** Nothing
-  applies a righting torque or rotation to finish a turn. The car settles only
-  from body spin damping, rollover damping and the free-spin/free-wheel gating.
-  A car that comes to rest on its roof stays there; the 720-frame window is
-  recovery time, not an auto-right. `rollover_catch` is now a deprecated no-op
-  key, so old inis still load.
-
-### FULL TWIST (fulltwist 0.4.1)
-
-- **A flipped player car is no longer totalled on the stock 180-frame timer
-  while FULL TWIST is enabled.** The module answers the new
-  `JER_EVENT_GET_UPSIDE_DOWN_FRAMES` query with 720 frames (4x); with the
-  module off the engine keeps its stock 180.
-- **Body contact no longer eats the car's linear momentum.** The hull hinge
-  writes only angular velocity; `body_friction` is now a body-ground spin
-  damper. Collision impulses (walls, car-car, the launch pop) still push the
-  car linearly, and the car keeps that momentum through a hinge.
-- **Cars settle back onto their tires reliably.** Free spin is no longer
-  refreshed by roof/side body contact and ends as soon as the car is upright
-  on compressed wheels; rollover damping/catch ship at 50/50; the catch covers
-  side/roof poses and gives a perfectly inverted car a deterministic nudge.
-  Damping no longer cancels the catch while it is righting the car.
-
-### Multiplayer (mp 0.16.0)
-
-- **Choose your on-foot character.** `Player Options` now offers `Preferred
-  Character` alongside `Player Color`: Tanner or Jericho. The pick is applied
-  on foot, validated against what the current level can actually draw, and
-  synchronised through the host (`JPCL`, the roster and `JPPD`). Jericho uses
-  the shipped `JMPPED.LEV` bake or Havana's streamed pages; if neither is
-  available the player (or a remote stand-in) stays Tanner instead of drawing
-  a broken skeleton.
-- The mp wire protocol is **18** (was 17): the preferred character rides the
-  spare identity bytes in `MP_COLOR_ENTRY`, `MP_ROSTER_ENTRY` and
-  `MP_PEDSTATE_ENTRY`, so a late joiner learns it before the first pose.
-- The build driver copies `JMPPED.LEV` to `DRIVER2/LEVELS/` after building
-  `mp`, so a fresh checkout has the bake where the engine expects it.
-- **Preferred Character works in single player.** A solo level now imports
-  `JMPPED.LEV` on demand and applies the stored character when the player is on
-  foot; cycling `Player Options → Preferred Character` lists every archive
-  entry, and a Tanner run loads no ped pages. `MP_TEST_PED_MODEL` and
-  `MP_TEST_ONFOOT` now work outside a session.
-- **The JMPPED baker accepts real Blender exports.** A UV within two pixels of
-  its crop is clipped instead of refusing the bake (the Jericho Driv3r glasses
-  are like this), extra-material crops such as `Glasses`/`Material.001` are
-  applied alongside part crops, and a non-black texel is no longer folded onto
-  the palette's pure-black transparent entry — it takes the next available
-  shade. A changed `model_textured.obj` re-splits and re-bakes every part.
+JERICHO by Jaret (Njurse). **Special thanks:** Commando52Colton.
 
 ## v0.11.8
 
