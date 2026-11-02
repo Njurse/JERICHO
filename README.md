@@ -22,6 +22,25 @@ live in `JERICHO/CONFIG/<modid>.ini`.*
 | Write an external module | [`HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) |
 | Look up an event | [`events.md`](src_rebuild/Game/C/JERICHO/docs/events.md) |
 
+## Install in 4 steps
+
+More detail: [Prebuilt downloads](#prebuilt-downloads) and the [REDRIVER2 installation wiki](https://github.com/OpenDriver2/REDRIVER2/wiki/Installation-instructions).
+
+1. **Download the right file** from the latest release (Assets section):
+   - Windows: `JERICHO_Release_win64.zip`
+   - Linux: `JERICHO_Release_linux-x64.tar.gz`
+   - Skip anything named `Release_dev` — that's a developer build.
+2. **Unpack it into its own folder** (anywhere; nothing gets installed).
+3. **Add your own Driver 2 game data.** Copy the `DRIVER2` folder from your Driver 2 (PS1) disc into the JERICHO folder, next to `JERICHO.exe` / `jericho`. JERICHO doesn't include the game data, so it won't run without it.
+   - Optional: to get cutscene videos, convert them from your discs with `install/conv.bat` (Windows) or `install/conv.sh` (Linux). To skip them, start the game with `-nofmv`.
+4. **Run** `JERICHO.exe` (Windows) or `./jericho` (Linux).
+
+**Updating:** when the game says there's a new version, click *Update JERICHO (Restart)*. You can also run `update_jericho.bat` / `update_jericho.sh` yourself. Updating keeps your `config.ini`, `JERICHO/CONFIG/` and any mods you added.
+
+**Multiplayer:** everybody needs the **same version**. If a server won't let you join, update first (see above) and try again.
+
+**Mods:** turn them on or off under *Options → JERICHO*. The four built-in ones (mp, carhacks, crumple, bake) come with the Release download.
+
 ## Stock means behavioral, not byte-for-byte
 
 A build with no modules runs no mod code. That is the whole of it. It is **not**

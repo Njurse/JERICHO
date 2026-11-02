@@ -4,6 +4,18 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.3
+
+*Released 2026-11-02.*
+
+### Fixes
+
+- **On-foot players collide with walls and smashable props again.** Since v0.11.6 Tanner (and remote on-foot players in mp) walked through buildings, walls and smashables and only hit cars; the camera's wall clamp was skipped the same way.
+
+### Docs
+
+- **A short "Install in 4 steps" section** at the top of the README and the release page: which download to pick, where your `DRIVER2` data goes, how updating works, and that multiplayer needs everyone on the same version.
+
 ## v0.13.2
 
 *Released 2026-11-01.*

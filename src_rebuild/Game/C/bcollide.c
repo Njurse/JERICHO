@@ -665,7 +665,11 @@ int CarBuildingCollision(CAR_DATA *cp, BUILDING_BOX *building, CELL_OBJECT *cop,
 
 	collided = 0;
 
-	if (cp->ap.carCos == NULL)
+	/* Tanner's and the camera's colliders never carry cosmetics (TannerCollision
+	 * ClearMem's car_data[TANNER_COLLIDER_CARID]); only a real car needs them. */
+	if (cp->ap.carCos == NULL &&
+		cp->controlType != CONTROL_TYPE_TANNERCOLLIDER &&
+		cp->controlType != CONTROL_TYPE_CAMERACOLLIDER)
 		return 0;
 
 	car_cos = cp->ap.carCos;

@@ -623,7 +623,9 @@ void CheckScenaryCollisions(CAR_DATA *cp)
 	/* A live traffic car with no cosmetics has no colBox/cog to test. The
 	 * car-car and civ collision setup already skip it; keep
 	 * CarBuildingCollision/DamageCar off the null mesh too. */
-	if (cp->ap.carCos == NULL)
+	if (cp->ap.carCos == NULL &&
+		cp->controlType != CONTROL_TYPE_TANNERCOLLIDER &&
+		cp->controlType != CONTROL_TYPE_CAMERACOLLIDER)
 		return;
 
 	if (cp->controlType == CONTROL_TYPE_CAMERACOLLIDER || cp->ap.carCos == NULL)
