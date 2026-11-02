@@ -879,6 +879,10 @@ project "JERICHO"
             "copy /Y \"..\\..\\JERICHO\\build.py\" \"%{cfg.buildtarget.directory}JERICHO\\build.py\"",
             "copy /Y \"..\\..\\JERICHO\\build_game.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.sh\"",
             "copy /Y \"..\\..\\JERICHO\\build_mods.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.sh\"",
+            -- the Driver 1 car/ped bake launchers at the build root, as CI packs them;
+            -- a stale copy here still pointed at the retired MODS\d1cars\tools.
+            "copy /Y \"..\\..\\BAKE_D1_CARS.bat\" \"%{cfg.buildtarget.directory}BAKE_D1_CARS.bat\"",
+            "copy /Y \"..\\..\\BAKE_D1_CARS.sh\" \"%{cfg.buildtarget.directory}BAKE_D1_CARS.sh\"",
             -- The updater, at the build's ROOT next to the exe, so a locally built
             -- install carries exactly what a downloaded one does. The packaging step
             -- used to be the only thing that placed these, which meant bin/<cfg> - the
@@ -1014,6 +1018,7 @@ project "JERICHO"
             "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
             "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat \"%{cfg.buildtarget.directory}/update_jericho.bat\"",
             "chmod +x \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
+            "cp -f ../../BAKE_D1_CARS.sh ../../BAKE_D1_CARS.bat \"%{cfg.buildtarget.directory}/\" && chmod +x \"%{cfg.buildtarget.directory}/BAKE_D1_CARS.sh\"",
             -- the mod store's helper, next to the exe too - see the Windows block
             "cp -f ../../JERICHO/CORE/modstore/modstore.sh \"%{cfg.buildtarget.directory}/modstore.sh\"",
             "cp -f ../../JERICHO/CORE/modstore/modstore.bat \"%{cfg.buildtarget.directory}/modstore.bat\"",
