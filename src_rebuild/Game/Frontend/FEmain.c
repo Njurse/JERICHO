@@ -5570,8 +5570,10 @@ static const char* const kJerichoCreditsLeft[] = {	/* JERICHO, and thanks */
 	"Created by Jaret (Njurse)",
 	"",
 	"Special thanks",
-	"Commando52Colton - Valuable advice",
-	"on palettes, texture paging, mission script research",
+	"Commando52Colton - palette advice, cut beta",
+	"assets, mission hex + texture paging help,",
+	"Hallgarth's Firebird assets, and a sharp eye",
+	"for the tiniest graphical bugs",
 };
 
 static const char* const kJerichoCreditsRight[] = {	/* the engine underneath */

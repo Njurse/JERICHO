@@ -467,8 +467,9 @@ frames. [README](JERICHO/MODS/example/README.md)
 
 **JERICHO and this fork — Jaret ([Njurse](https://github.com/Njurse)).**
 
-**Special thanks:** **Commando52Colton** — advice on palette and texture paging,
-mission script research.
+**Special thanks:** **Commando52Colton** — palette advice, hard-to-find cut beta
+assets, help with mission hex structure and vehicle texture paging, the assets
+for Hallgarth's Firebird, and ongoing help spotting the tiniest graphical bugs.
 
 This project stands on **REDRIVER2**, the reverse-engineered Driver 2 rewrite it
 is forked from, and the engine underneath is the work of its authors: **SoapyMan**
