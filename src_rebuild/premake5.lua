@@ -296,9 +296,13 @@ local function jer_version_defines()
    -- leading "v" the release tags carry is stripped, so the binary says "0.10.2".
    -- --match "v*": only RELEASE tags name a version; a checkpoint/... tag must
    -- never become the window title (it once read "checkpoint/getrdun-...").
-   local desc = git("git describe --tags --match \"v*\" --always --dirty"):gsub("^v", "")
+   -- JERICHO_BASE_VERSION pins the version a branch is working toward, so the
+   -- exe reads it even before a matching v* tag exists. An exact v* tag on HEAD
+   -- still wins (release builds keep naming themselves after their tag).
+   local JERICHO_BASE_VERSION = "0.13"
+   local desc = git("git describe --tags --exact-match --match \"v*\" HEAD"):gsub("^v", "")
    if desc == "" then
-      desc = "0.9.0"
+      desc = JERICHO_BASE_VERSION
    end
    defines { ("JERICHO_BUILD_VERSION=\"%s\""):format(desc) }
 
