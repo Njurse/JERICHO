@@ -398,7 +398,7 @@ jobs:
           # copied out of the checkout here, for packaging only.
           $d1src = "JERICHO/MODS/bake/tools"
           foreach ($need in @('bake.py', 'd1pool.py', 'cosmetics1.py', 'add_car_sounds.py', 'euro43.py')) {
-            if (-not (Test-Path "$d1src/$need")) { throw "the bake checkout has no tools/$need" }
+            if (-not (Test-Path "$d1src/car/$need")) { throw "the bake checkout has no tools/car/$need" }
           }
 
           foreach ($cfg in @('Release', 'Release_dev')) {
@@ -470,7 +470,7 @@ jobs:
             # cities, including the EURO-43 beta. See docs/CI.md.
             $d1dst = "$bin/JERICHO/MODS/bake/tools"
             New-Item -ItemType Directory -Force -Path $d1dst | Out-Null
-            Copy-Item "$d1src/*.py" $d1dst -Force
+            Copy-Item "$d1src/*" $d1dst -Recurse -Force
             Copy-Item "$d1src/README.md" "$bin/JERICHO/MODS/bake/" -Force
             # The bake scripts are taken from the repo root, not the mp
             # pack_lan copy: the root is the canonical script, and a re-cut
@@ -692,7 +692,7 @@ jobs:
           # tools would otherwise never reach the package).
           d1src=JERICHO/MODS/bake/tools
           for f in bake.py d1pool.py cosmetics1.py add_car_sounds.py euro43.py; do
-            test -f "$d1src/$f" || { echo "::error::the bake checkout has no tools/$f"; exit 1; }
+            test -f "$d1src/car/$f" || { echo "::error::the bake checkout has no tools/car/$f"; exit 1; }
           done
 
           for cfg in Release Release_dev; do
@@ -708,7 +708,7 @@ jobs:
             # The bake tools, and both bake scripts at the package root (as on
             # Windows). chmod so BAKE_D1_CARS.sh arrives runnable.
             mkdir -p "$d/JERICHO/MODS/bake/tools"
-            cp "$d1src/"*.py "$d/JERICHO/MODS/bake/tools/"
+            cp -R "$d1src/." "$d/JERICHO/MODS/bake/tools/"
             cp "$d1src/README.md" "$d/JERICHO/MODS/bake/"
             cp BAKE_D1_CARS.bat "$d/"
             cp BAKE_D1_CARS.sh "$d/"
