@@ -4,6 +4,18 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.4
+
+*Released 2026-11-02.*
+
+### Cars
+
+- **Car packs work by just enabling them.** carhacks (0.2.7) now registers every enabled mod's `banks/*/bank.json` as a car bank on its own, so packs such as Hallgarth's Cars 0.1.2 need no `cities.ini` edit. BAKE writes correct `..\JERICHO\MODS\<mod>\banks\...` paths for packs that still ship a `cities.ini`.
+
+### Multiplayer
+
+- **Custom cars show as the right car for everyone.** Pack cars now travel by bank name instead of by a slot number that differs between machines with different packs installed. A player without the pack sees a stand-in, never a wrong car. Protocol is now 21 (mp 0.18.0): everyone must be on v0.13.4. Server owners: pull mp and run `update-dedi.sh`.
+
 ## v0.13.3
 
 *Released 2026-11-02.*
