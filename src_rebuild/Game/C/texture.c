@@ -9,6 +9,14 @@
 #include "ASM/compres.h"
 #include "carpinref.h"	// JERICHO: pin owners, CLUT bands, table removal (pure, tested off-engine)
 
+#ifndef PSX
+#include "PsyX/PsyX_render.h"
+// cars.h keeps its own copy of the VRAM size (the lower pool's bounds); fail the build if it
+// ever disagrees with PsyCross's buffer.
+static_assert(JER_VRAM_TOTAL_ROWS == VRAM_HEIGHT, "cars.h JER_VRAM_TOTAL_ROWS must equal PsyX VRAM_HEIGHT");
+static_assert(JER_VRAM_HALF_Y == VRAM_STOCK_HEIGHT, "cars.h JER_VRAM_HALF_Y must equal PsyX VRAM_STOCK_HEIGHT");
+#endif
+
 SXYPAIR tpagepos[20] =
 {
 	{ 640, 0 },
