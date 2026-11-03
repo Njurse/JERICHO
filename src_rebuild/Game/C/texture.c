@@ -3237,10 +3237,13 @@ void JerPedPageListsReport(int city)
 	printInfo("\n");
 }
 
-static int sJerPedAreaPool[16];
-static int sJerPedAreaClutY[16];
-static int sJerPedAreaClutRows[16];
-static int sJerPedAreaDst[16];	/* D3: the set number the page took, given back on release */
+/* One entry per lower-pool page a ped page holds, so the table can never be shorter than
+ * the pool: a page past the 16th used to be allocated but never recorded (or released). */
+#define JER_PED_AREA_MAX	JER_POOL_PAGES
+static int sJerPedAreaPool[JER_PED_AREA_MAX];
+static int sJerPedAreaClutY[JER_PED_AREA_MAX];
+static int sJerPedAreaClutRows[JER_PED_AREA_MAX];
+static int sJerPedAreaDst[JER_PED_AREA_MAX];	/* D3: the set number the page took, given back on release */
 static int sJerPedAreaPoolCount;
 
 /* Upload one streamed AREA page into the lower-half pool. The page data is the
@@ -3286,7 +3289,7 @@ int JerPedUploadAreaPage(int set, int dstSet, char* buf)
 	used = CarClutRowsUsed(960, startY, clut.x, clut.y);
 	JerLowerPoolClutAdvance((used > rows) ? used : rows);
 
-	if (sJerPedAreaPoolCount < 16)
+	if (sJerPedAreaPoolCount < JER_PED_AREA_MAX)
 	{
 		sJerPedAreaPool[sJerPedAreaPoolCount] = pool;
 		sJerPedAreaClutY[sJerPedAreaPoolCount] = startY;
@@ -3378,7 +3381,7 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 
 		JerLowerPoolClutAdvance(rows);
 
-		if (sJerPedAreaPoolCount < 16)
+		if (sJerPedAreaPoolCount < JER_PED_AREA_MAX)
 		{
 			sJerPedAreaPool[sJerPedAreaPoolCount] = pool;
 			sJerPedAreaClutY[sJerPedAreaPoolCount] = startY;
@@ -3447,7 +3450,7 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 
 	JerLowerPoolClutAdvance(rows);
 
-	if (sJerPedAreaPoolCount < 16)
+	if (sJerPedAreaPoolCount < JER_PED_AREA_MAX)
 	{
 		sJerPedAreaPool[sJerPedAreaPoolCount] = pool;
 		sJerPedAreaClutY[sJerPedAreaPoolCount] = clut.y - rows;
