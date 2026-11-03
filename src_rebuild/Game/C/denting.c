@@ -185,11 +185,15 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 	// update polygon UVs
 	if (pCleanModel != NULL) 
 	{
+		// JERICHO: the UV dump holds MAX_DENTING_UVS polys per car and the damage
+		// levels MAX_DAMAGE_LEVELS per model; an imported model can have more.
+		int numUVs = MIN(MIN((int)pCleanModel->num_polys, MAX_DENTING_UVS), MAX_DAMAGE_LEVELS);
+
 		dentptr = gTempHDCarUVDump[cp->id];
 
 		// reset UV coordinates
 		
-		for (Poly = 0; Poly < pCleanModel->num_polys; Poly++)
+		for (Poly = 0; Poly < numUVs; Poly++)
 		{
 			dentptr->u3 = 0;
 			dentptr++;
@@ -218,7 +222,7 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 		DamPtr = gHDCarDamageLevels[model];
 		dentptr = gTempHDCarUVDump[cp->id];
 
-		for (Poly = 0; Poly < pCleanModel->num_polys; Poly++, DamPtr++, dentptr++)
+		for (Poly = 0; Poly < numUVs; Poly++, DamPtr++, dentptr++)
 		{
 			// calculate the UV offset with strange XORs
 			if(dentptr->u3 > 0)
