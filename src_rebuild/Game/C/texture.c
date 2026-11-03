@@ -3301,7 +3301,7 @@ int JerPedUploadAreaPage(int set, int dstSet, char* buf)
 	return 1;
 }
 
-int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned char* cluts, const unsigned char* image, int compressed)
+int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned char* cluts, int clutLen, const unsigned char* image, int imageLen, int compressed)
 {
 	RECT16 tpage, clut;
 	int pool, rows, i;
@@ -3314,16 +3314,35 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 	 * layout (ncluts, CLUT rows, compressed 64x256 image). */
 	if (compressed)
 	{
-		int npal;
+		int npal, used, startY;
 
-		if (image == NULL)
+		if (image == NULL || imageLen < 4)
 			return 0;
 
 		npal = *(int*)image;
 
-		if (npal <= 0 || npal > 128 || JerLowerPoolClutRowsFree() < npal)
+		/* texture_cluts[] holds 32 palettes per set; LoadTPageAndCluts packs
+		 * four palettes per 64-wide row. */
+		if (npal <= 0 || npal > 32)
 		{
-			printInfo("ped import: baked set %d needs %d CLUT rows, none free\n", set, npal);
+			printInfo("ped import: baked set %d claims %d CLUTs (max 32)\n", set, npal);
+			return 0;
+		}
+
+		rows = CarClutRowsFor(npal);
+
+		if (JerLowerPoolClutRowsFree() < rows)
+		{
+			printInfo("ped import: baked set %d needs %d CLUT rows, none free\n", set, rows);
+			return 0;
+		}
+
+		/* D2: the CLUTs and the compressed image must end inside imageLen - checked
+		 * (dry run of the bounded decomp) before a page or CLUT row is taken. */
+		if (imageLen < 4 + npal * 32 ||
+			decomp_asm_n((char*)_other_buffer, (char*)image + 4 + npal * 32, imageLen - 4 - npal * 32) == NULL)
+		{
+			printInfo("ped import: baked set %d page is %d bytes, short for %d CLUTs and its image\n", set, imageLen, npal);
 			return 0;
 		}
 
@@ -3337,6 +3356,7 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 
 		JerLowerPoolPageRect(pool, &tpage);
 		JerLowerPoolClutCursor(&clut);
+		startY = clut.y;
 
 		tpage.w = 64;
 		tpage.h = 256;
@@ -3344,7 +3364,7 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 		clut.h = 1;
 
 		sCarPageUploading = 1;
-		if (!LoadTPageAndCluts(&tpage, &clut, dstSet, (char*)image))
+		if (!LoadTPageAndClutsN(&tpage, &clut, dstSet, (char*)image, imageLen))
 		{
 			sCarPageUploading = 0;
 			JerLowerPoolPageFree(pool);
@@ -3352,13 +3372,17 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 		}
 		sCarPageUploading = 0;
 
-		JerLowerPoolClutAdvance(npal);
+		used = CarClutRowsUsed(960, startY, clut.x, clut.y);
+		if (used > rows)
+			rows = used;
+
+		JerLowerPoolClutAdvance(rows);
 
 		if (sJerPedAreaPoolCount < 16)
 		{
 			sJerPedAreaPool[sJerPedAreaPoolCount] = pool;
-			sJerPedAreaClutY[sJerPedAreaPoolCount] = clut.y - npal;
-			sJerPedAreaClutRows[sJerPedAreaPoolCount] = npal;
+			sJerPedAreaClutY[sJerPedAreaPoolCount] = startY;
+			sJerPedAreaClutRows[sJerPedAreaPoolCount] = rows;
 			sJerPedAreaDst[sJerPedAreaPoolCount] = dstSet;
 			sJerPedAreaPoolCount++;
 		}
@@ -3369,10 +3393,18 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 		return 1;
 	}
 
-	if (cluts == NULL || image == NULL || npalettes <= 0 || npalettes > 128)
+	if (cluts == NULL || image == NULL || npalettes <= 0 || npalettes > 32)
 		return 0;
 
 	rows = CarClutRowsFor(npalettes);
+
+	/* D2: LoadImage below reads a whole 64x256 page and `rows` 64-wide CLUT rows. */
+	if (imageLen < 64 * 256 * 2 || clutLen < rows * 64 * 2)
+	{
+		printInfo("ped import: baked set %d raw page is %d/%d bytes (image/CLUT), needs %d/%d\n",
+			set, imageLen, clutLen, 64 * 256 * 2, rows * 64 * 2);
+		return 0;
+	}
 
 	if (JerLowerPoolClutRowsFree() < rows)
 	{

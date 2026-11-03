@@ -1377,7 +1377,7 @@ static int JerPedImportBakedV5(unsigned char* file, long len, int city)
 		int dst = CarImportPinDstSet(pages[i].set, city);
 
 		if (!JerPedUploadBakedPage(pages[i].set, dst, pages[i].npal,
-			pages[i].clut, pages[i].image, pages[i].flags & 1))
+			pages[i].clut, pages[i].clutLen, pages[i].image, pages[i].imageLen, pages[i].flags & 1))
 		{
 			printInfo("ped import: v5 page set %d could not be uploaded\n", pages[i].set);
 			JerPedReleasePins();
@@ -1675,7 +1675,7 @@ int JerPedImportBaked(int city)
 		image = p + clutLen;
 		dst = CarImportPinDstSet((int)set, city);
 
-		if (!JerPedUploadBakedPage((int)set, dst, (int)npal, cluts, image, (int)(flags & 1)))
+		if (!JerPedUploadBakedPage((int)set, dst, (int)npal, cluts, (int)clutLen, image, (int)imageLen, (int)(flags & 1)))
 		{
 			free(mem);
 			JerPedReleasePins();
