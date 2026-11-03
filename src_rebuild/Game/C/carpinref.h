@@ -282,10 +282,11 @@ static inline int CarClutRowsUsed(int firstX, int startY, int endX, int endY)
  * The baked index (remap / reservation) of a set
  * ------------------------------------------------------------------------- */
 
-/* May the remap/reservation for source set `set` be given back? Only when no pin left in the
- * table still pages that set in (the remap is keyed by set number alone, so ANY city's pin
- * counts) and no other imported slot's model still names it (its polys baked that index). */
-static inline int CarRemapReleasable(int set, const int* pinSet, int npins, int namedByOtherSlot)
+/* May the remap/reservation for source set `set` of `city` be given back? Only when no pin left
+ * in the table still pages that set of THAT city in (the remap is keyed by (city, set): another
+ * city's pin of the same number has an index of its own - D3) and no other imported slot's model
+ * of that city still names it (its polys baked that index). */
+static inline int CarRemapReleasable(int set, int city, const int* pinSet, const int* pinCity, int npins, int namedByOtherSlot)
 {
 	int i;
 
@@ -294,7 +295,7 @@ static inline int CarRemapReleasable(int set, const int* pinSet, int npins, int 
 
 	for (i = 0; i < npins; i++)
 	{
-		if (pinSet[i] == set)
+		if (pinSet[i] == set && pinCity[i] == city)
 			return 0;
 	}
 

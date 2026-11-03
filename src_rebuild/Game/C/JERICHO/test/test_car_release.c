@@ -298,11 +298,13 @@ static void test_clut_free_list(void)
 static void test_remap_releasable(void)
 {
 	int pins[3] = { 20, 35, 77 };
+	int cities[3] = { 1, 1, 2 };
 
-	CHECK(!CarRemapReleasable(35, pins, 3, 0));	/* a remaining pin still pages it in */
-	CHECK(CarRemapReleasable(36, pins, 3, 0));
-	CHECK(!CarRemapReleasable(36, pins, 3, 1));	/* another imported model names it */
-	CHECK(CarRemapReleasable(36, pins, 0, 0));
+	CHECK(!CarRemapReleasable(35, 1, pins, cities, 3, 0));	/* a remaining pin still pages it in */
+	CHECK(CarRemapReleasable(36, 1, pins, cities, 3, 0));
+	CHECK(!CarRemapReleasable(36, 1, pins, cities, 3, 1));	/* another imported model names it */
+	CHECK(CarRemapReleasable(36, 1, pins, cities, 0, 0));
+	CHECK(CarRemapReleasable(35, 2, pins, cities, 3, 0));	/* D3: only city 1 pages set 35 in */
 }
 
 /* ------------------------------------------------------------------ */

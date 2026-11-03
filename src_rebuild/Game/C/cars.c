@@ -2729,7 +2729,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 	// behaviour for the host and for anything unaffected by imports.
 	int srcCity = (index >= 0) ? GetCarModelSourceCity(index) : -1;
 
-	CarSetRemapEnable(imported);
+	CarSetRemapEnable(imported, srcCity);
 
 	int newNumPolys;
 	int i, pass;

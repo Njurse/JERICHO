@@ -64,7 +64,7 @@ extern void JerPedPageListsReport(int city);
  * 64x256 image) into a lower-half pool page and a stable CLUT band. */
 extern int JerPedUploadAreaPage(int set, int dstSet, char* buf);
 extern int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned char* cluts, const unsigned char* image, int compressed);
-extern int CarImportPinDstSet(int set);
+extern int CarImportPinDstSet(int set, int city);
 
 /* JERICHO: parse one city's page lists, for a city read in MID-LEVEL. The level-load
  * parse covers only the cities held then, and without this a later city's sets are "not
@@ -127,7 +127,7 @@ extern int CarSetRemap(int set);
 // JERICHO: arm/disarm the remap for the car being converted. Must be on only for an
 // imported car - a host car whose set number collides with a remapped one needs its
 // own page, not the imported city's.
-extern void CarSetRemapEnable(int on);
+extern void CarSetRemapEnable(int on, int city);
 
 // JERICHO-HOOK: merge a cross-city import's car palettes (civ_clut) so its
 // vehicles read their own colours. No-op unless a module asked for an import.
