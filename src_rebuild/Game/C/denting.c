@@ -288,21 +288,21 @@ void CreateDentableCar(CAR_DATA *cp)
 		{
 			while (vcount-- != -1)
 				*dst++ = *src++;
+		}
 
-			/* the same budget question for the dents, whose table is a separate one */
-			if (srcModel->num_polys > MAX_DENTING_UVS)
-			{
-				jer_log("[denting] CreateDentableCar: resident model %d has %d polys, over the "
-					"%d-UV denting budget - only the first %d are reset\n",
-					model, srcModel->num_polys, MAX_DENTING_UVS, MAX_DENTING_UVS);
-			}
-			else
-			{
-				for (count = 0; count < srcModel->num_polys; count++)
-				{
-					gTempHDCarUVDump[cp->id][count].u3 = 0;
-				}
-			}
+		/* the same budget question for the dents, whose table is a separate one. The
+		 * UV reset does not depend on the vertex copy: the dump is per car slot and
+		 * still holds the previous occupant's damage either way. */
+		if (srcModel->num_polys > MAX_DENTING_UVS)
+		{
+			jer_log("[denting] CreateDentableCar: resident model %d has %d polys, over the "
+				"%d-UV denting budget - only the first %d are reset\n",
+				model, srcModel->num_polys, MAX_DENTING_UVS, MAX_DENTING_UVS);
+		}
+
+		for (count = 0; count < MIN((int)srcModel->num_polys, MAX_DENTING_UVS); count++)
+		{
+			gTempHDCarUVDump[cp->id][count].u3 = 0;
 		}
 	}
 	else
@@ -314,18 +314,16 @@ void CreateDentableCar(CAR_DATA *cp)
 	if (srcModel != NULL)
 	{
 		/* same budget question as the detailed table above */
-		if (srcModel->num_polys > MAX_DENTING_UVS)
+		if (srcModel->num_polys > MAX_DENTING_LOD_UVS)
 		{
 			jer_log("[denting] CreateDentableCar: low-detail model %d has %d polys, over the "
 				"%d-UV denting budget - only the first %d are reset\n",
-				model, srcModel->num_polys, MAX_DENTING_UVS, MAX_DENTING_UVS);
+				model, srcModel->num_polys, MAX_DENTING_LOD_UVS, MAX_DENTING_LOD_UVS);
 		}
-		else
+
+		for (count = 0; count < MIN((int)srcModel->num_polys, MAX_DENTING_LOD_UVS); count++)
 		{
-			for (count = 0; count < srcModel->num_polys; count++)
-			{
-				gTempLDCarUVDump[cp->id][count].u3 = 0;
-			}
+			gTempLDCarUVDump[cp->id][count].u3 = 0;
 		}
 	}
 	else
