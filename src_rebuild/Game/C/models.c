@@ -2518,6 +2518,56 @@ int ReadCarImportFileForCity(int city, int offset, void* dst, int len)
 // differs - but it must actually CARRY the model this slot asks for, or the slot
 // would be left with no geometry at all (which is a dereference waiting to
 // happen, see the gCarCleanModelPtr guard in CreateDentableCar).
+// The readers (ProcessCarModelLump, JerHotLoadCarModel) take a MODEL at
+// carModels + 4 + 160 + ofs and copy poly_block (clean/low) or normals (damaged)
+// bytes from it, so the header and both copy lengths must lie inside the lump.
+static int CarImportModelFits(const char* lump, int size, int ofs)
+{
+	const MODEL* m;
+	int base = 4 + 160 + ofs;
+
+	if (ofs < 0 || base + (int)sizeof(MODEL) > size)
+		return 0;
+
+	m = (const MODEL*)(lump + base);
+
+	if (m->poly_block < (int)sizeof(MODEL) || m->poly_block > size - base)
+		return 0;
+
+	if (m->normals < 0 || m->normals > size - base)
+		return 0;
+
+	return 1;
+}
+
+// buildNewCarFromModel walks num_polys polys of a clean/low model straight from the
+// lump (PolySizes[type & 0x1f] each), so that walk must end inside the lump too.
+static int CarImportPolysFit(const char* lump, int size, int ofs)
+{
+	const MODEL* m = (const MODEL*)(lump + 4 + 160 + ofs);
+	const char* p = (const char*)m + m->poly_block;
+	const char* end = lump + size;
+	int i, step;
+
+	for (i = 0; i < m->num_polys; i++)
+	{
+		if (p >= end)
+			return 0;
+
+		step = PolySizes[(u_char)*p & 0x1f];
+
+		if (step <= 0)
+			break;	// the builder does not move past it either
+
+		if (step > end - p)
+			return 0;
+
+		p += step;
+	}
+
+	return 1;
+}
+
 char* GetCarImportModels(int slot)
 {
 	int model;
@@ -2576,6 +2626,17 @@ char* GetCarImportModels(int slot)
 
 	if (offsets[2] <= offsets[1] || offsets[2] >= imp->carModelsSize)
 		return NULL;
+
+	if (!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[0]) ||
+		!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[1]) ||
+		!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[2]) ||
+		!CarImportPolysFit(imp->carModels, imp->carModelsSize, offsets[0]) ||
+		!CarImportPolysFit(imp->carModels, imp->carModelsSize, offsets[2]))
+	{
+		printInfo("cross-city: %s model %d has geometry outside its %d-byte lump - not used\n",
+			LevelNames[city], model, imp->carModelsSize);
+		return NULL;
+	}
 
 	return imp->carModels;
 }
