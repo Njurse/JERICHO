@@ -3734,8 +3734,17 @@ void CarImportDumpState(void)
 
 	for (i = 0; i < sRemapCount; i++)
 	{
+		int k = sRemapTo[i] - 100;
+
+		// tpagepos has 20 entries; re-indexes run to 127
+		if (k < 0 || k >= (int)(sizeof(tpagepos) / sizeof(tpagepos[0])))
+		{
+			printInfo("cross-city:   imported index %d has no slot rect\n", sRemapTo[i]);
+			continue;
+		}
+
 		printInfo("cross-city:   imported index %d sits at slot rect (%d,%d) - shared with slot %d\n",
-			sRemapTo[i], tpagepos[sRemapTo[i] - 100].x, tpagepos[sRemapTo[i] - 100].y, sRemapTo[i] - 100);
+			sRemapTo[i], tpagepos[k].x, tpagepos[k].y, k);
 	}
 
 	// JERICHO: the per-slot set -> row -> page map, at exit. This is the gate's audit:
