@@ -3275,6 +3275,11 @@ int JerPedUploadAreaPage(int set, int dstSet, char* buf)
 	if (JerLowerPoolClutRowsFree() < rows)
 		return 0;
 
+	/* the compressed image must end inside the 17-sector unit models.c read - checked
+	 * (dry run of the bounded decomp) before a page is taken */
+	if (decomp_asm_n((char*)_other_buffer, buf + 4 + npal * 32, 17 * CDSECTOR_SIZE - 4 - npal * 32) == NULL)
+		return 0;
+
 	pool = JerLowerPoolPageAlloc();
 
 	if (pool < 0)
