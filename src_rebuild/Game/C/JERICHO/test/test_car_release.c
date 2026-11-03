@@ -307,6 +307,15 @@ static void test_remap_releasable(void)
 	CHECK(CarRemapReleasable(35, 2, pins, cities, 3, 0));	/* D3: only city 1 pages set 35 in */
 }
 
+static void test_page_entry_fits(void)
+{
+	CHECK(!CarPageEntryFits(40, 32));				/* D1: CLUTs alone need 1028 */
+	CHECK(!CarPageEntryFits(4 + 32 * 32, 32));			/* CLUTs but no image */
+	CHECK(CarPageEntryFits(4 + 32 * 32 + CAR_PAGE_IMAGE_MIN_BYTES, 32));
+	CHECK(!CarPageEntryFits(100000, 0));
+	CHECK(!CarPageEntryFits(100000, 33));
+}
+
 /* ------------------------------------------------------------------ */
 /* a small simulation of the engine's release, refcounts end to end    */
 /* ------------------------------------------------------------------ */
@@ -463,6 +472,7 @@ int main(void)
 	test_clut_rows();
 	test_clut_free_list();
 	test_remap_releasable();
+	test_page_entry_fits();
 	test_simulation();
 
 	printf("%d check(s), %d failed\n", gChecks, gFails);

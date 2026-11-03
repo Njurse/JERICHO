@@ -2987,7 +2987,9 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 			return -1;
 
 		memset(sUnpacked, 0, 0x10000);
-		decomp_asm((char*)sUnpacked, (char*)page + 4 + npal * 32);
+		if (decomp_asm_n((char*)sUnpacked, (char*)page + 4 + npal * 32, size - 4 - npal * 32) == NULL)
+			return -1;
+
 		pix = sUnpacked;
 	}
 
@@ -3168,7 +3170,8 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		return;
 
 	memset(sUnpacked, 0, 0x10000);
-	decomp_asm((char*)sUnpacked, (char*)page + 4 + npal * 32);
+	if (decomp_asm_n((char*)sUnpacked, (char*)page + 4 + npal * 32, size - 4 - npal * 32) == NULL)
+		return;
 
 	cu[0] = wt->u0; cu[1] = wt->u1 - 1; cu[2] = wt->u0; cu[3] = wt->u1 - 1;
 	cv[0] = wt->v0; cv[1] = wt->v0; cv[2] = wt->v1 - 1; cv[3] = wt->v1 - 1;

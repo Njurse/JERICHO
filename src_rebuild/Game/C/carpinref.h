@@ -278,6 +278,21 @@ static inline int CarClutRowsUsed(int firstX, int startY, int endX, int endY)
 	return (rows > 0) ? rows : 0;
 }
 
+/* D1: does a page entry of `size` bytes hold everything LoadTPageAndCluts reads from it - the
+ * leading CLUT count, `npal` 32-byte CLUTs, and a compressed image? The image decompresses to
+ * 0x8000 bytes, and decomp_asm's densest token (a run: 2 bytes -> 130 pixels) needs 253 of them,
+ * so no real page is shorter than 506 bytes of image. An entry that is shorter would be read
+ * past its end (the CLUT walk, then decomp_asm). */
+#define CAR_PAGE_IMAGE_MIN_BYTES	506
+
+static inline int CarPageEntryFits(int size, int npal)
+{
+	if (npal <= 0 || npal > 32)
+		return 0;
+
+	return size >= 4 + npal * 32 + CAR_PAGE_IMAGE_MIN_BYTES;
+}
+
 /* ---------------------------------------------------------------------------
  * The baked index (remap / reservation) of a set
  * ------------------------------------------------------------------------- */

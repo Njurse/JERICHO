@@ -196,6 +196,7 @@ extern void jer_clut_report(const char* why);
 extern void IncrementTPageNum(RECT16 *tpage); // 0x00080528
 
 extern int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress); // 0x00080E14
+extern int LoadTPageAndClutsN(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress, int len);	// bounded: 0 if the entry is short
 
 extern int Find_TexID(MODEL *model, int t_id); // 0x000805EC
 extern TEXINF* GetTEXINFName(char *name, int *tpagenum, int *texturenum); // 0x00080F3C

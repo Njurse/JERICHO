@@ -998,6 +998,14 @@ int CarPageSlotOwned(int slot)
 
 int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress)
 {
+	return LoadTPageAndClutsN(tpage, cluts, tpage2send, tpageaddress, -1);
+}
+
+// JERICHO: LoadTPageAndCluts on a buffer of `len` bytes (len < 0 = the stock, unbounded
+// path). An imported entry is refused (0) if its CLUTs or its compressed image would
+// read past the buffer.
+int LoadTPageAndClutsN(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress, int len)
+{
 	int npalettes;
 	int i;
 	RECT16 temptpage;
@@ -1009,8 +1017,14 @@ int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpagea
 	if (!sCarPageUploading && CarPageRectOwned(tpage->x, tpage->y))
 		return 0;
 
+	if (len >= 0 && len < 4)
+		return 0;
+
 	npalettes = *(int *)tpageaddress;
 	tpageaddress += 4;
+
+	if (len >= 0 && (npalettes < 0 || npalettes > (len - 4) / 32))
+		return 0;
 
 	for (i = 0; i < npalettes; i++)
 	{
@@ -1027,7 +1041,14 @@ int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpagea
 	temptpage.w = tpage->w;
 	temptpage.h = 256;
 
-	decomp_asm((char*)_other_buffer, tpageaddress);
+	if (len < 0)
+		decomp_asm((char*)_other_buffer, tpageaddress);
+	else if (decomp_asm_n((char*)_other_buffer, tpageaddress, len - 4 - npalettes * 32) == NULL)
+	{
+		printInfo("JERICHO-WARN: texture page %d: compressed image runs past its %d-byte entry - not uploaded\n", tpage2send, len);
+		return 0;
+	}
+
 	LoadImage(&temptpage, (u_long*)_other_buffer);
 
 	texture_pages[tpage2send] = GetTPage(0, 0, tpage->x, tpage->y);
@@ -2841,10 +2862,13 @@ void CarImportPin(void)
 			int rows = CarClutRowsFor(npal);
 			int bandY = -1, fromPool = 0, used;
 
-			if (npal <= 0 || npal > 32)
+			// D1: the compressed image must also end inside the entry (a dry run of the
+			// bounded decomp) - refused here, before any band or slot is taken for it.
+			if (!CarPageEntryFits(sPinSize[i], npal) ||
+				decomp_asm_n((char*)_other_buffer, buf + 4 + npal * 32, sPinSize[i] - 4 - npal * 32) == NULL)
 			{
-				printInfo("cross-city: %s set %d left unplaced - its entry says %d CLUT rows (corrupt?)\n",
-					LevelNames[sPinCity[i]], sPinSet[i], npal);
+				printInfo("cross-city: %s set %d left unplaced - its entry says %d CLUT rows in %d bytes (corrupt?)\n",
+					LevelNames[sPinCity[i]], sPinSet[i], npal, sPinSize[i]);
 
 				free(buf);
 
@@ -2927,7 +2951,7 @@ void CarImportPin(void)
 			// rectangle owned so the engine's own uploads to it are refused from here on.
 			sCarPageUploading = 1;
 			sPinReloads++;	// counts re-uploads, i.e. how often the engine took a page back
-			LoadTPageAndCluts(&tpage, &clut, sPinIndex[i], buf);
+			LoadTPageAndClutsN(&tpage, &clut, sPinIndex[i], buf, sPinSize[i]);
 			sCarPageUploading = 0;
 
 			// Commit what the walk really used, in whole rows. It is `rows` by construction
@@ -5028,7 +5052,7 @@ void LoadImportedTPages(void)
 		/* Reserve the wheel page's last CLUT row in the JERICHO half before the
 		 * page buffer is released. A later page upload can take the page's own
 		 * CLUT, but not this civ_clut row. */
-		if (npalettes > 0 && npalettes <= 32 && CarImportIsWheelSet(sc, set))
+		if (CarPageEntryFits(size, npalettes) && CarImportIsWheelSet(sc, set))
 		{
 			int tableRow = CarImportWheelPaletteRow(sc, npalettes);
 			int hubRow = CarImportDeriveWheelPaletteRow(sc, set, (const unsigned char*)buf, size, 1);
@@ -5069,9 +5093,9 @@ void LoadImportedTPages(void)
 
 		free(buf);
 
-		if (npalettes <= 0 || npalettes > 32)
+		if (!CarPageEntryFits(size, npalettes))
 		{
-			printInfo("cross-city: %s set %d looks corrupt (%d clut rows) - skipped\n", LevelNames[sc], set, npalettes);
+			printInfo("cross-city: %s set %d looks corrupt (%d clut rows in %d bytes) - skipped\n", LevelNames[sc], set, npalettes, size);
 			continue;
 		}
 
