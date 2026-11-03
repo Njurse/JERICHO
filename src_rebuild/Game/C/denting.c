@@ -98,7 +98,7 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 	// collect vertices from zones
 	if (pCleanModel != NULL) 
 	{
-		for (VertNo = 0; VertNo < pCleanModel->num_vertices; VertNo++)
+		for (VertNo = 0; VertNo < MIN(pCleanModel->num_vertices, MAX_DENTING_VERTS); VertNo++)
 			tempDamage[VertNo] = 0;
 
 		for (Zone = 0; Zone < NUM_DAMAGE_ZONES; Zone++)
@@ -158,7 +158,7 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 		{
 			SVECTOR* cleanV = GET_MODEL_DATA(SVECTOR, pCleanModel, vertices);
 			SVECTOR* workV = gTempCarVertDump[cp->id];
-			int n = pCleanModel->num_vertices;
+			int n = MIN(pCleanModel->num_vertices, MAX_DENTING_VERTS);
 			int vi;
 
 			if (cleanV != NULL)
