@@ -98,7 +98,7 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 	// collect vertices from zones
 	if (pCleanModel != NULL) 
 	{
-		for (VertNo = 0; VertNo < pCleanModel->num_vertices; VertNo++)
+		for (VertNo = 0; VertNo < MIN(pCleanModel->num_vertices, MAX_DENTING_VERTS); VertNo++)
 			tempDamage[VertNo] = 0;
 
 		for (Zone = 0; Zone < NUM_DAMAGE_ZONES; Zone++)
@@ -158,7 +158,7 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 		{
 			SVECTOR* cleanV = GET_MODEL_DATA(SVECTOR, pCleanModel, vertices);
 			SVECTOR* workV = gTempCarVertDump[cp->id];
-			int n = pCleanModel->num_vertices;
+			int n = MIN(pCleanModel->num_vertices, MAX_DENTING_VERTS);
 			int vi;
 
 			if (cleanV != NULL)
@@ -185,11 +185,15 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 	// update polygon UVs
 	if (pCleanModel != NULL) 
 	{
+		// JERICHO: the UV dump holds MAX_DENTING_UVS polys per car and the damage
+		// levels MAX_DAMAGE_LEVELS per model; an imported model can have more.
+		int numUVs = MIN(MIN((int)pCleanModel->num_polys, MAX_DENTING_UVS), MAX_DAMAGE_LEVELS);
+
 		dentptr = gTempHDCarUVDump[cp->id];
 
 		// reset UV coordinates
 		
-		for (Poly = 0; Poly < pCleanModel->num_polys; Poly++)
+		for (Poly = 0; Poly < numUVs; Poly++)
 		{
 			dentptr->u3 = 0;
 			dentptr++;
@@ -218,7 +222,7 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 		DamPtr = gHDCarDamageLevels[model];
 		dentptr = gTempHDCarUVDump[cp->id];
 
-		for (Poly = 0; Poly < pCleanModel->num_polys; Poly++, DamPtr++, dentptr++)
+		for (Poly = 0; Poly < numUVs; Poly++, DamPtr++, dentptr++)
 		{
 			// calculate the UV offset with strange XORs
 			if(dentptr->u3 > 0)
@@ -284,21 +288,21 @@ void CreateDentableCar(CAR_DATA *cp)
 		{
 			while (vcount-- != -1)
 				*dst++ = *src++;
+		}
 
-			/* the same budget question for the dents, whose table is a separate one */
-			if (srcModel->num_polys > MAX_DENTING_UVS)
-			{
-				jer_log("[denting] CreateDentableCar: resident model %d has %d polys, over the "
-					"%d-UV denting budget - only the first %d are reset\n",
-					model, srcModel->num_polys, MAX_DENTING_UVS, MAX_DENTING_UVS);
-			}
-			else
-			{
-				for (count = 0; count < srcModel->num_polys; count++)
-				{
-					gTempHDCarUVDump[cp->id][count].u3 = 0;
-				}
-			}
+		/* the same budget question for the dents, whose table is a separate one. The
+		 * UV reset does not depend on the vertex copy: the dump is per car slot and
+		 * still holds the previous occupant's damage either way. */
+		if (srcModel->num_polys > MAX_DENTING_UVS)
+		{
+			jer_log("[denting] CreateDentableCar: resident model %d has %d polys, over the "
+				"%d-UV denting budget - only the first %d are reset\n",
+				model, srcModel->num_polys, MAX_DENTING_UVS, MAX_DENTING_UVS);
+		}
+
+		for (count = 0; count < MIN((int)srcModel->num_polys, MAX_DENTING_UVS); count++)
+		{
+			gTempHDCarUVDump[cp->id][count].u3 = 0;
 		}
 	}
 	else
@@ -310,18 +314,16 @@ void CreateDentableCar(CAR_DATA *cp)
 	if (srcModel != NULL)
 	{
 		/* same budget question as the detailed table above */
-		if (srcModel->num_polys > MAX_DENTING_UVS)
+		if (srcModel->num_polys > MAX_DENTING_LOD_UVS)
 		{
 			jer_log("[denting] CreateDentableCar: low-detail model %d has %d polys, over the "
 				"%d-UV denting budget - only the first %d are reset\n",
-				model, srcModel->num_polys, MAX_DENTING_UVS, MAX_DENTING_UVS);
+				model, srcModel->num_polys, MAX_DENTING_LOD_UVS, MAX_DENTING_LOD_UVS);
 		}
-		else
+
+		for (count = 0; count < MIN((int)srcModel->num_polys, MAX_DENTING_LOD_UVS); count++)
 		{
-			for (count = 0; count < srcModel->num_polys; count++)
-			{
-				gTempLDCarUVDump[cp->id][count].u3 = 0;
-			}
+			gTempLDCarUVDump[cp->id][count].u3 = 0;
 		}
 	}
 	else
