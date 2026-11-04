@@ -15,8 +15,6 @@
 # entries in .gitmodules: bake tracks betamiami, the others main). This script
 # is for keeping the committed pins in step with what a release actually builds,
 # and for reviewing the change.
-#
-# gaildrv2 is deliberately not touched here: its repository is not published.
 # ---------------------------------------------------------------------------
 set -eu
 

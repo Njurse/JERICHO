@@ -33,9 +33,9 @@ require "premake_modules/jericho_mods"
 -- is missing or empty, jericho_scan_mods() simply returns fewer ids, and the
 -- build succeeds -- with a registry, a mirror and an exe that quietly lack a
 -- chunk of the game. That is a hard error here instead, naming the command
--- that fixes it. Other mods are deliberately absent from this list: gaildrv2
--- (its repo is not published, so CI cannot fetch it) and d1cars are allowed to
--- be missing, and degrade the way they always have.
+-- that fixes it. gaildrv2 is not on this list: it is no longer a submodule
+-- (hibernated). d1cars is allowed to be missing and degrades the way it
+-- always has.
 --
 -- jer_required_mods.h repeats the check at COMPILE time, so an IDE or msbuild
 -- run that skips premake still cannot produce a smaller game.
@@ -921,10 +921,12 @@ project "JERICHO"
     -- fetches PsyCross and the four public mod source repos: mp, carhacks, crumple and
     -- bake), but its folder still must not land in the build output: it carries
     -- Driver 1 car content (shapes as .obj/.json, textures, LEV/LCF level data) that
-    -- must not ride along in a build output or in a package made from one. gaildrv2 is
-    -- unpublished and is not fetched at all. The recursive xcopy above mirrors every
-    -- folder on disk, so without this the WHOLE submodule lands in bin/<cfg>/JERICHO/MODS/.
-    -- A shipped LAN zip was found carrying 58 bake/gaildrv2 entries for exactly this reason.
+    -- must not ride along in a build output or in a package made from one. gaildrv2
+    -- is no longer a submodule (hibernated); the exclude key stays so a local
+    -- checkout dropped at JERICHO/MODS/gaildrv2 is not mirrored. The recursive
+    -- xcopy above mirrors every folder on disk, so without this the WHOLE folder
+    -- lands in bin/<cfg>/JERICHO/MODS/. A shipped LAN zip was found carrying 58
+    -- bake/gaildrv2 entries for exactly this reason.
     --
     -- The folder is dropped and then restored with only mod.toml (see below), so the
     -- compiled-in module still reports its id, version and author; none of its data ships.
@@ -983,9 +985,9 @@ project "JERICHO"
                 -- compare against a repo entry. mod.toml carries no Driver 1 content --
                 -- the exclusion is about the data, not the manifest.
                 --
-                -- CI does not fetch the unpublished gaildrv2 submodule, so the source
-                -- manifest may be absent. Guard both commands: bake is fetched and
-                -- does come back; gaildrv2 is simply skipped.
+                -- The manifest may be absent (gaildrv2 is not in this tree). Guard
+                -- both commands: bake is fetched and does come back; a missing
+                -- mod.toml is skipped.
                 table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" if not exist \"" .. JER_DEST .. "\" mkdir \"" .. JER_DEST .. "\"")
                 table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" copy /Y \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" \"" .. JER_DEST .. "\\mod.toml\" > nul")
                 -- A runtime addon in an excluded folder still needs its DLL: bake
@@ -1056,9 +1058,8 @@ project "JERICHO"
             -- compiled-in module can still report its name, version and author
             if JER_MIRROR_EXCLUDE[JER_MOD] then
                 table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "\"")
-                -- gaildrv2 is not fetched by CI (unpublished), so its manifest may not
-                -- exist. Only recreate the folder when there is a manifest to put back;
-                -- bake is fetched and does come back.
+                -- Only recreate the folder when there is a manifest to put back.
+                -- bake is fetched and does come back; gaildrv2 is not in this tree.
                 table.insert(JER_CMDS, "if [ -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" ]; then mkdir -p \"" .. JER_DEST .. "\" && cp -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" \"" .. JER_DEST .. "/mod.toml\"; fi")
             end
 
