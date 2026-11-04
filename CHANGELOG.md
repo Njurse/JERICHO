@@ -4,11 +4,21 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
-## Unreleased
+## v0.13.7
+
+*Released 2026-11-04.*
+
+### Mods
+
+- **CarHacks, pedhacks and multiplayer load before anything you added.** Those three come up first and stay on. The BAKE Toolkit and CRUMPLE come next, and each keeps the on/off choice you already made. BAKE is still optional: leaving it off, or not having it, does not block the others and does not stop you joining. Store addons and data packs keep their own order after that.
 
 ### World textures
 
 - **Pause, then Reload world textures, puts the level's pages back.** A custom car bank, carhacks or a bake can leave the wrong texture page or palette in the world's VRAM, and that used to stay until you restarted. The command is on the pause menu (including multiplayer and cutscenes). It re-reads the level's own pages and palette rows, and asks the area you are in to stream its pages again. Cars kept in the lower half of texture memory stay there. One that had taken a world slot is moved off it. The same restore runs when that car is released, which previously only forgot the claim and left the pixels.
+
+### Multiplayer
+
+- **Invulnerability and immunity hold in an online match.** Immunity stands down cops that are already chasing, including on a multiplayer map that always asks for at least one. Invulnerability refuses the hit before the car is dented. When the host turns that rule on, it covers every car, not only the one you are driving. Your own pause toggles still apply on your machine when the host has left the rule off.
 
 ## v0.13.6
 
