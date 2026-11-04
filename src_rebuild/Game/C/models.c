@@ -834,7 +834,7 @@ static void JerPedCollectModelSets(MODEL* m)
  * and wheel imports use. A host-owned set number gets a free destination index
  * and the pin fills that index; leaving the source number would sample the
  * host's page. */
-static void JerPedRemapModelSets(MODEL* m)
+static void JerPedRemapModelSets(MODEL* m, int city)
 {
 	char* p;
 	int i;
@@ -844,7 +844,7 @@ static void JerPedRemapModelSets(MODEL* m)
 
 	p = (char*)m + m->poly_block;
 
-	CarSetRemapEnable(1);
+	CarSetRemapEnable(1, city);
 
 	for (i = 0; i < m->num_polys; i++)
 	{
@@ -860,7 +860,7 @@ static void JerPedRemapModelSets(MODEL* m)
 		p += step;
 	}
 
-	CarSetRemapEnable(0);
+	CarSetRemapEnable(0, -1);
 }
 
 /* Preflight: is the city's model table held, and are all six Jericho models in
@@ -1081,7 +1081,7 @@ int JerPedImportBuild(int city)
 	}
 
 	for (i = 0; i < JER_PED_IMPORT_MODELS; i++)
-		JerPedRemapModelSets(built[i]);
+		JerPedRemapModelSets(built[i], city);
 
 	{
 		char line[160];
@@ -1370,14 +1370,14 @@ static int JerPedImportBakedV5(unsigned char* file, long len, int city)
 
 	for (e = 0; e < entryCount; e++)
 		for (slot = 0; slot < nm[e]; slot++)
-			JerPedRemapModelSets(built[e][slot]);
+			JerPedRemapModelSets(built[e][slot], city);
 
 	for (i = 0; i < pageTotal; i++)
 	{
-		int dst = CarImportPinDstSet(pages[i].set);
+		int dst = CarImportPinDstSet(pages[i].set, city);
 
 		if (!JerPedUploadBakedPage(pages[i].set, dst, pages[i].npal,
-			pages[i].clut, pages[i].image, pages[i].flags & 1))
+			pages[i].clut, pages[i].clutLen, pages[i].image, pages[i].imageLen, pages[i].flags & 1))
 		{
 			printInfo("ped import: v5 page set %d could not be uploaded\n", pages[i].set);
 			JerPedReleasePins();
@@ -1650,7 +1650,7 @@ int JerPedImportBaked(int city)
 	}
 
 	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
-		JerPedRemapModelSets(built[i]);
+		JerPedRemapModelSets(built[i], city);
 
 	for (i = 0; i < (int)pageCount; i++)
 	{
@@ -1673,9 +1673,9 @@ int JerPedImportBaked(int city)
 
 		cluts = p;
 		image = p + clutLen;
-		dst = CarImportPinDstSet((int)set);
+		dst = CarImportPinDstSet((int)set, city);
 
-		if (!JerPedUploadBakedPage((int)set, dst, (int)npal, cluts, image, (int)(flags & 1)))
+		if (!JerPedUploadBakedPage((int)set, dst, (int)npal, cluts, (int)clutLen, image, (int)imageLen, (int)(flags & 1)))
 		{
 			free(mem);
 			JerPedReleasePins();
@@ -2518,6 +2518,56 @@ int ReadCarImportFileForCity(int city, int offset, void* dst, int len)
 // differs - but it must actually CARRY the model this slot asks for, or the slot
 // would be left with no geometry at all (which is a dereference waiting to
 // happen, see the gCarCleanModelPtr guard in CreateDentableCar).
+// The readers (ProcessCarModelLump, JerHotLoadCarModel) take a MODEL at
+// carModels + 4 + 160 + ofs and copy poly_block (clean/low) or normals (damaged)
+// bytes from it, so the header and both copy lengths must lie inside the lump.
+static int CarImportModelFits(const char* lump, int size, int ofs)
+{
+	const MODEL* m;
+	int base = 4 + 160 + ofs;
+
+	if (ofs < 0 || base + (int)sizeof(MODEL) > size)
+		return 0;
+
+	m = (const MODEL*)(lump + base);
+
+	if (m->poly_block < (int)sizeof(MODEL) || m->poly_block > size - base)
+		return 0;
+
+	if (m->normals < 0 || m->normals > size - base)
+		return 0;
+
+	return 1;
+}
+
+// buildNewCarFromModel walks num_polys polys of a clean/low model straight from the
+// lump (PolySizes[type & 0x1f] each), so that walk must end inside the lump too.
+static int CarImportPolysFit(const char* lump, int size, int ofs)
+{
+	const MODEL* m = (const MODEL*)(lump + 4 + 160 + ofs);
+	const char* p = (const char*)m + m->poly_block;
+	const char* end = lump + size;
+	int i, step;
+
+	for (i = 0; i < m->num_polys; i++)
+	{
+		if (p >= end)
+			return 0;
+
+		step = PolySizes[(u_char)*p & 0x1f];
+
+		if (step <= 0)
+			break;	// the builder does not move past it either
+
+		if (step > end - p)
+			return 0;
+
+		p += step;
+	}
+
+	return 1;
+}
+
 char* GetCarImportModels(int slot)
 {
 	int model;
@@ -2577,6 +2627,17 @@ char* GetCarImportModels(int slot)
 	if (offsets[2] <= offsets[1] || offsets[2] >= imp->carModelsSize)
 		return NULL;
 
+	if (!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[0]) ||
+		!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[1]) ||
+		!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[2]) ||
+		!CarImportPolysFit(imp->carModels, imp->carModelsSize, offsets[0]) ||
+		!CarImportPolysFit(imp->carModels, imp->carModelsSize, offsets[2]))
+	{
+		printInfo("cross-city: %s model %d has geometry outside its %d-byte lump - not used\n",
+			LevelNames[city], model, imp->carModelsSize);
+		return NULL;
+	}
+
 	return imp->carModels;
 }
 
@@ -2598,7 +2659,7 @@ char* GetCarImportModels(int slot)
 // built, so the builder runs from ProcessCarModelLump / the hot-load path, NOT
 // from the file read.
 
-static void RemapWheelSets(MODEL* m)
+static void RemapWheelSets(MODEL* m, int city)
 {
 	char* p;
 	int i;
@@ -2608,7 +2669,7 @@ static void RemapWheelSets(MODEL* m)
 
 	p = (char*)m + m->poly_block;
 
-	CarSetRemapEnable(1);
+	CarSetRemapEnable(1, city);
 
 	for (i = 0; i < m->num_polys; i++)
 	{
@@ -2624,7 +2685,7 @@ static void RemapWheelSets(MODEL* m)
 		p += step;
 	}
 
-	CarSetRemapEnable(0);
+	CarSetRemapEnable(0, -1);
 }
 
 // The wheel's SOURCE-CITY set numbers, before RemapWheelSets rewrites them.
@@ -2794,9 +2855,9 @@ static void BuildCarImportWheels(int city)
 		WheelPolyRect(&p[2], &wt->u0, &wt->v0, &wt->u1, &wt->v1);
 		WheelPolyRect(&p[4], &wt->hubU0, &wt->hubV0, &wt->hubU1, &wt->hubV1);
 
-		CarSetRemapEnable(1);
+		CarSetRemapEnable(1, city);
 		wt->set = CarSetRemap(p[2].texture_set);
-		CarSetRemapEnable(0);
+		CarSetRemapEnable(0, -1);
 
 		wt->clut = p[2].texture_id;
 		wt->hubClut = p[4].texture_id;	// the page loader puts the wheel row here
@@ -2987,7 +3048,9 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 			return -1;
 
 		memset(sUnpacked, 0, 0x10000);
-		decomp_asm((char*)sUnpacked, (char*)page + 4 + npal * 32);
+		if (decomp_asm_n((char*)sUnpacked, (char*)page + 4 + npal * 32, size - 4 - npal * 32) == NULL)
+			return -1;
+
 		pix = sUnpacked;
 	}
 
@@ -3168,7 +3231,8 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		return;
 
 	memset(sUnpacked, 0, 0x10000);
-	decomp_asm((char*)sUnpacked, (char*)page + 4 + npal * 32);
+	if (decomp_asm_n((char*)sUnpacked, (char*)page + 4 + npal * 32, size - 4 - npal * 32) == NULL)
+		return;
 
 	cu[0] = wt->u0; cu[1] = wt->u1 - 1; cu[2] = wt->u0; cu[3] = wt->u1 - 1;
 	cv[0] = wt->v0; cv[1] = wt->v0; cv[2] = wt->v1 - 1; cv[3] = wt->v1 - 1;
@@ -3413,10 +3477,10 @@ static int BuildD2WheelTextureRects(int city)
 		int cleanSource = cleanSet;
 		int damSource = damSet;
 
-		CarSetRemapEnable(1);
+		CarSetRemapEnable(1, city);
 		cleanSet = CarSetRemap(cleanSource);
 		damSet = CarSetRemap(damSource);
-		CarSetRemapEnable(0);
+		CarSetRemapEnable(0, -1);
 
 		/* SOURCE sets for the pin walk, not the remapped draw indices. */
 		imp->wheelSet[CAR_IMPORT_WHEEL_CLEAN][0] = (unsigned char)cleanSource;
@@ -3568,7 +3632,7 @@ static void BuildD2WheelTextureSources(int city)
 				if (m != NULL)
 				{
 					imp->wheelSetCount[v] = CollectWheelSets(m, imp->wheelSet[v], 8);
-					RemapWheelSets(m);
+					RemapWheelSets(m, city);
 					imp->wheels[v] = m;
 					imp->wheelTexMem[v] = (char*)m;
 				}

@@ -1643,7 +1643,8 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 			ppads = gTempCarVertDump[cp->id];
 			count = num_norms;// +1;
 
-			while (count >= 0)
+			// JERICHO: three dump entries per pass; stop at the end of this car's dump (#32)
+			while (count >= 0 && ppads + 3 <= gTempCarVertDump[cp->id] + MAX_DENTING_VERTS)
 			{
 				gte_ldv3(&norms[0], &norms[1], &norms[2]);
 				gte_ncct();
@@ -1673,7 +1674,7 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 			{
 				SVECTOR* cleanV = GET_MODEL_DATA(SVECTOR, model, vertices);
 				SVECTOR* dumpV = gTempCarVertDump[cp->id];
-				int n = model->num_vertices;
+				int n = MIN(model->num_vertices, MAX_DENTING_VERTS);
 				int i;
 
 				if (cleanV != NULL)
@@ -2729,7 +2730,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 	// behaviour for the host and for anything unaffected by imports.
 	int srcCity = (index >= 0) ? GetCarModelSourceCity(index) : -1;
 
-	CarSetRemapEnable(imported);
+	CarSetRemapEnable(imported, srcCity);
 
 	int newNumPolys;
 	int i, pass;
