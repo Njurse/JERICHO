@@ -11,6 +11,7 @@
 #include "mission.h"
 #include "felony.h"
 #include "players.h"	// MainPlayer (the felony gate below)
+#include "cars.h"		// car_data (JerCarDamageBlocked matches the local player's car)
 #include "wheelforces.h"
 #include "handling.h"
 #include "camera.h"
