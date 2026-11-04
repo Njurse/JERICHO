@@ -10,7 +10,6 @@ void jer_module_cainescrossfire_entry(JERICHO_CONTEXT* ctx);
 void jer_module_carhacks_entry(JERICHO_CONTEXT* ctx);
 void jer_module_collisiondevil_entry(JERICHO_CONTEXT* ctx);
 void jer_module_crumple_entry(JERICHO_CONTEXT* ctx);
-void jer_module_gaildrv2_entry(JERICHO_CONTEXT* ctx);
 void jer_module_levelhacks_entry(JERICHO_CONTEXT* ctx);
 void jer_module_mp_entry(JERICHO_CONTEXT* ctx);
 void jer_module_pedhacks_entry(JERICHO_CONTEXT* ctx);
@@ -33,14 +32,13 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "carhacks", jer_module_carhacks_entry, 1 },
 	{ "collisiondevil", jer_module_collisiondevil_entry, 0 },
 	{ "crumple", jer_module_crumple_entry, 0 },
-	{ "gaildrv2", jer_module_gaildrv2_entry, 0 },
 	{ "levelhacks", jer_module_levelhacks_entry, 0 },
 	{ "mp", jer_module_mp_entry, 1 },
 	{ "pedhacks", jer_module_pedhacks_entry, 1 },
 	{ "sandbox", jer_module_sandbox_entry, 0 },
 	{ "testmode", jer_module_testmode_entry, 0 },
 };
-extern const int jer_registry_module_count = 12;
+extern const int jer_registry_module_count = 11;
 #endif
 #ifdef __cplusplus
 }

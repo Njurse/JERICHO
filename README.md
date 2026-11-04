@@ -83,8 +83,9 @@ git submodule update --init JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/c
 
 `tools/update_mod_submodules.sh` advances those pins to the latest commits (review
 the printed diff, then commit the gitlinks). `d1cars` is fetched for release builds
-but its data is excluded from the mirror; `gaildrv2` remains unpublished and is not
-needed for a normal build.
+but its data is excluded from the mirror. `gaildrv2` is hibernated at
+[JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2) and is not
+a submodule of this tree.
 
 JERICHO is compiled into the game, so it can see the game's data. An external
 module cannot open `player[]` or `car_data[]` itself, because Windows will not
@@ -472,10 +473,10 @@ elevation. [README](JERICHO/MODS/debugorbit/README.md)
 Squash-and-stretch the car body's vertex copy as it drives, drawn without
 touching physics or collision. [JERICHO/MODS/yarisbounce/](JERICHO/MODS/yarisbounce/)
 
-### GAILDRV2 (`gaildrv2`) — the machine-learning bridge *(compiled-in)*
+### GAILDRV2 (`gaildrv2`) — the machine-learning bridge *(hibernated)*
 
-A JERICHO ↔ ML bridge: it exports game state over TCP as compact binary and
-applies agent actions. [README](JERICHO/MODS/gaildrv2/README.md)
+No longer a submodule of this tree. The bridge lives at
+[JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2).
 
 ### Example (`example`) — the smoke test *(external)*
 

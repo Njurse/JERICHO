@@ -96,7 +96,7 @@ tooling/data and its direct-engine surface is empty today.
 | `cainescrossfire` | later, largest | render/FX/sound, car damage, model rebuild, player/camera state. |
 | `JerAI` | later | road/cell/cop graph, model pointers, matrix table, car/player state. |
 | `crumple` | later, contract-based | job/car damage path and body geometry; its `jer_crumple` contract already exists. |
-| `sandbox`, `testmode`, `levelhacks`, `gaildrv2` | keep compiled-in for now | dev/private harnesses; no external need demonstrated. |
+| `sandbox`, `testmode`, `levelhacks` | keep compiled-in for now | dev/private harnesses; no external need demonstrated. `gaildrv2` is hibernated at https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 and is not in this tree. |
 
 ## Host API v1 coverage
 
@@ -130,7 +130,6 @@ module, not once per use.
 | `collisiondevil` | G: `gCameraDefaultScrZ` |
 | `crumple` | F: `RCOS`, `RSIN`; G: `MainPlayer`, `car_data`, `gCarCleanModelPtr` |
 | `d2pl` | F: `MapHeight`, `RCOS`, `RSIN`, `RenderModel`, `ratan2`; G: `camera_position`, `car_data`, `gCameraAngle`, `gCameraDefaultScrZ`, `pPed`, `player` |
-| `gaildrv2` | F: `GetPlayerFelony`, `GetSurfaceIndex`, `RCOS`, `RSIN`, `ratan2`; G: `GameType`, `MaxPlayerDamage`, `car_data`, `gCurrentMissionNumber`, `player` |
 | `levelhacks` | G: `GameType`, `NumPlayers` |
 | `mp` | F: `CellEmpty`, `DrawPlayerDot`, `EnablePause`, `GetSurfaceIndex`, `InitCar`, `MapHeight`, `Start3DSoundVolPitch`, `ratan2`; G: `GameType`, `MainPlayer`, `MaxPlayerDamage`, `NumPlayers`, `active_car_list`, `camera_position`, `car_data`, `num_active_cars`, `pPed`, `player`, `residentCarModels` |
 | `sandbox` | F: `DrawCarWheels`, `InitCar`, `MapHeight`, `RCOS`, `RSIN`, `RenderModel`; G: `car_data`, `gCarCleanModelPtr`, `modelpointers`, `player`, `residentCarModels` |

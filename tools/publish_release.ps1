@@ -242,11 +242,9 @@ function New-Package {
         if (Test-Path (Join-Path $bin 'JERICHO')) {
             Copy-Item (Join-Path $bin 'JERICHO') $stage -Recurse -Force
 
-            # gaildrv2 is out of the picture for builds: CI never fetches its
-            # submodule, so a CI payload carries an EMPTY JERICHO/MODS/gaildrv2
-            # and no JERICHO/CONFIG/gaildrv2.ini. This tree does have the source
-            # on disk, so without this the local release would ship a module the
-            # release does not run. Drop both to match.
+            # gaildrv2 is not a submodule of this tree. A local checkout of the
+            # hibernated repo, or a leftover gaildrv2.ini, must not ship.
+            # Drop both if they are present.
             $gd = Join-Path $stage 'JERICHO\MODS\gaildrv2'
             if (Test-Path $gd) { Remove-Item $gd -Recurse -Force }
             $gi = Join-Path $stage 'JERICHO\CONFIG\gaildrv2.ini'
@@ -288,6 +286,13 @@ function New-Package {
         # player's own copy and must never ride out in a package (the mirror
         # strips it too, this is the belt for a stale bin\).
         Remove-Item (Join-Path $stage 'JERICHO\MODS\carhacks\D1CARS') -Recurse -Force -ErrorAction SilentlyContinue
+        # Same store-only strip as the CI pack step: fulltwist, Hallgarth's Cars,
+        # and antfarm must not ship in the base pack.
+        foreach ($opt in @('fulltwist', 'hallgarthcars', 'antfarm')) {
+            $optDir = Join-Path $stage "JERICHO\MODS\$opt"
+            if (Test-Path $optDir) { Remove-Item $optDir -Recurse -Force }
+            if (Test-Path $optDir) { throw "$opt is store-only but is still in $stage\JERICHO\MODS" }
+        }
 
         $cfgIni = Join-Path $stage 'config.ini'
         if (Test-Path $cfgIni) {
