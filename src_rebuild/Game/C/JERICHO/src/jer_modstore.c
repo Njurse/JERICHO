@@ -1414,10 +1414,78 @@ static void StoreRowStateBase(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, i
 	it->canInstall = 0;
 }
 
+/* A data pack (hallgarthcars: mod.toml, banks/, no runtime and no sources)
+ * spells `runtime` empty, the same way a compiled-in mod does. It is not linked
+ * into the exe. Treating it as compiled-in cleared canInstall, so a newer store
+ * version never made the "Update N mods now?" prompt. */
+static int StoreIsDir(const char* path)
+{
+#if defined(_WIN32)
+	DWORD a = GetFileAttributesA(path);
+
+	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY) != 0;
+#else
+	struct stat st;
+
+	return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+#endif
+}
+
+static int StoreRootHasSource(const char* dir)
+{
+#if defined(_WIN32)
+	char pattern[STORE_PATH_MAX];
+	WIN32_FIND_DATAA fd;
+	HANDLE h;
+
+	snprintf(pattern, sizeof(pattern), "%s\\*.c", dir);
+	h = FindFirstFileA(pattern, &fd);
+	if (h == INVALID_HANDLE_VALUE)
+		return 0;
+	FindClose(h);
+	return 1;
+#else
+	DIR* d = opendir(dir);
+	struct dirent* e;
+
+	if (d == NULL)
+		return 0;
+	while ((e = readdir(d)) != NULL)
+	{
+		size_t n = strlen(e->d_name);
+
+		if (n > 2 && strcmp(e->d_name + n - 2, ".c") == 0)
+		{
+			closedir(d);
+			return 1;
+		}
+	}
+	closedir(d);
+	return 0;
+#endif
+}
+
+static int StoreIsDataPack(const char* id)
+{
+	char root[STORE_PATH_MAX];
+	char banks[STORE_PATH_MAX];
+
+	if (id == NULL || id[0] == 0)
+		return 0;
+
+	snprintf(root, sizeof(root), "%s/%s", gStore.modsDir, id);
+	snprintf(banks, sizeof(banks), "%s/banks", root);
+	if (!StoreIsDir(banks))
+		return 0;
+
+	return !StoreRootHasSource(root);
+}
+
 /* A compiled-in mod (no DLL of its own) is linked into the exe, so a store
  * update only changes its source folder. A build that cannot recompile (every
  * Release download) would install files it never runs: point at a JERICHO
- * update instead, and keep the row out of "Update N mods now?" (canInstall). */
+ * update instead, and keep the row out of "Update N mods now?" (canInstall).
+ * A data pack is not that case. */
 static void StoreRowState(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int noteMax)
 {
 	STORE_RECORD* rec;
@@ -1438,7 +1506,10 @@ static void StoreRowState(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int n
 	snprintf(dll, sizeof(dll), "%s/%s/%s.so", gStore.modsDir, m->id, m->id);
 #endif
 	f = fopen(dll, "rb");
-	compiledIn = (rec != NULL) ? (rec->runtime[0] == 0) : (f == NULL);
+	if (StoreIsDataPack(m->id))
+		compiledIn = 0;
+	else
+		compiledIn = (rec != NULL) ? (rec->runtime[0] == 0) : (f == NULL);
 	if (f != NULL)
 		fclose(f);
 	if (!compiledIn)
@@ -2117,8 +2188,10 @@ static void StoreJobFinish(void)
 				STORE_RECORD* rec = (gStore.jobId[0] != 0) ? StoreFindRecord(gStore.jobId) : NULL;
 
 				/* `runtime` empty = a compiled-in mod: the folder is installed,
-				 * but the module is in the exe only after a rebuild */
-				if (rec != NULL && rec->runtime[0] == 0)
+				 * but the module is in the exe only after a rebuild. A data
+				 * pack (banks/, no sources) uses the same empty runtime and
+				 * is already live once the files land. */
+				if (rec != NULL && rec->runtime[0] == 0 && !StoreIsDataPack(gStore.jobId))
 				{
 					gCompileAsk = 1;
 					jer_log("[modstore] installed compiled-in mod %s: will offer the rebuild on exit\n",
