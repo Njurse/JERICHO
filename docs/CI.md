@@ -95,9 +95,9 @@ installed module plus the debug options / console (`DEBUG_OPTIONS`,
 
 CI fetches only the submodules a job actually needs, by name: `src_rebuild/PsyCross`
 plus the four public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`,
-`bake`). `gaildrv2` is still not fetched for builds — its repository is
-unpublished — so a `Release_dev` build here compiles every module present in that
-checkout. `bake` is compiled in but its folder is excluded from the mirror by
+`bake`). `gaildrv2` is not a submodule of this tree — it is hibernated at
+https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 — so a `Release_dev` build here
+compiles every module present in that checkout. `bake` is compiled in but its folder is excluded from the mirror by
 `JER_MIRROR_EXCLUDE`, so none of its Driver 1 data ships; its bake tools are pulled
 by the packaging step. The build jobs assert that each of the four mod submodules
 has a `mod.toml`, so a release cannot silently ship without one.

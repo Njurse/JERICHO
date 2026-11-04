@@ -11,9 +11,9 @@
  * COMPILE time, so an IDE or a plain msbuild run that never regenerates the
  * project files still cannot produce a smaller game.
  *
- * Deliberately NOT listed: gaildrv2 (its repository is not published, so CI
- * cannot fetch it) and d1cars -- both are allowed to be absent and degrade the
- * way they always have.
+ * Deliberately NOT listed: gaildrv2 (removed from this superproject; hibernated)
+ * and d1cars -- both are allowed to be absent and degrade the way they always
+ * have.
  *
  * The paths are relative to this file (src/), five levels below the repo root:
  * src -> JERICHO -> C -> Game -> src_rebuild -> <root>.

@@ -67,7 +67,8 @@ jobs:
 
       # The checks run mp's tools and walk the mod manifests, so the public mod
       # source repos must be present. Fetch them by name, not `submodules:
-      # true`: that would also try gaildrv2, whose repository is unpublished.
+      # true`: the step below checks out each pinned gitlink, not every
+      # .gitmodules entry. gaildrv2 is no longer a submodule.
       #
       # --remote deliberately: a release carries the LATEST core mods, not the
       # commit the parent tree happens to pin. A mod fix pushed after the last
@@ -246,13 +247,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Deliberately NOT `submodules: recursive`. That walks every entry in
-          # .gitmodules, and a single unfetchable submodule fails the whole
-          # checkout before any build step runs -- which is exactly how this
-          # job spent its entire life failing at step 2. JERICHO/MODS/gaildrv2
-          # is deliberately out of the picture for builds (its repository is
-          # not published), so only the submodules the build needs are fetched,
-          # explicitly, in the step below.
+          # Deliberately NOT `submodules: recursive`. An allow-list in the step
+          # below fetches only the submodules this build needs, so one
+          # unfetchable entry cannot fail the checkout. gaildrv2 used to be
+          # that entry; it is no longer a submodule (hibernated).
           submodules: false
           # Full history and tags. With a shallow clone `git describe` finds no
           # reachable tag and silently falls back to a bare SHA, so the version a
@@ -590,8 +588,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           # See the Windows job: an explicit allow-list instead of
-          # `submodules: recursive`, so an unpublished submodule cannot fail
-          # the checkout. gaildrv2 is out of the picture for builds.
+          # `submodules: recursive`. gaildrv2 is no longer a submodule.
           submodules: false
           # See the Windows job: without full history and tags, `git describe`
           # falls back to a bare SHA.

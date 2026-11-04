@@ -10,9 +10,11 @@ out. The superproject records a commit ("pin") for each one in the index, and
 | `carhacks` | `Njurse/JERICHO-Mod-carhacks` | `main` |
 | `crumple` | `Njurse/Jericho-Mod-CRUMPLE` | `main` |
 | `bake` (Driver 1 tooling) | `Njurse/JERICHO-D1` | `betamiami` |
-| `gaildrv2` | `Njurse/gailredriver2` | — (not published) |
+| `antfarm` | `Njurse/JERICHO-Mod-Antfarm` | `0.12` |
 
-The rest (`antfarm`, `cainescrossfire`, `d2pl`, `JerAI`, `sandbox`, …) are
+`gaildrv2` is hibernated at https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 and is not a submodule of this tree.
+
+The rest (`cainescrossfire`, `d2pl`, `JerAI`, `sandbox`, …) are
 ordinary folders tracked by this repository.
 
 ## Fetching them
@@ -37,8 +39,7 @@ stops, twice over:
 * `src/jer_required_mods.h` raises the same `#error` at compile time, so an IDE
   or a plain `msbuild` run cannot skip it.
 
-`gaildrv2` and `d1cars` are deliberately **not** on that list: they may be
-absent and degrade the way they always have.
+`gaildrv2` is not on that list: it is hibernated and is not part of this tree.
 
 ## Conventions
 
