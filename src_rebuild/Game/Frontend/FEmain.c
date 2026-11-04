@@ -4882,9 +4882,16 @@ int jer_frontend_current_menu(void)
  * such RAW: the page for model N is the file beside that city's .LEV,
  * "<stem>.portraits/<N>.raw", exactly 0x8000 bytes. An optional "<N>.clut" is
  * 16 little-endian RGB555 colours (32 bytes) and replaces the CARBACK portrait
- * CLUT for this draw. */
+ * CLUT for this draw.
+ *
+ * A city with no page and no stock CCARS slot (Driver 1, a bank, or a model
+ * the ten-slot lookup does not name) draws one shared page instead of a blank
+ * icon. It lives in the carhacks mod, authored for the same CARBACK CLUT:
+ * <gD1DataFolder>assets/portraits/CARHACKS/fallback.raw. Cities 0-3 keep their
+ * slot art when the override is absent. That path never reaches the fallback. */
 #define JER_FE_PORTRAIT_PAGE	0x8000
 #define JER_FE_PORTRAIT_CLUT	32
+#define JER_FE_PORTRAIT_FALLBACK	"assets\\portraits\\CARHACKS\\fallback.raw"
 
 static const char* JerFeLastSlash(const char* s)
 {
@@ -5116,6 +5123,96 @@ static int JerFeShowPortrait(int city, int model)
 
 	return 1;
 }
+
+/* The openable shared fallback. gD1DataFolder is the carhacks root
+ * (JERICHO\MODS\carhacks\), the same root the Driver 1 LEVs hang off. */
+static int JerFeFallbackPath(char* out, int outSize)
+{
+	const char* root = gD1DataFolder;
+	int n;
+	char slash;
+
+	if (out == NULL || outSize <= 0)
+		return 0;
+
+	out[0] = 0;
+
+	if (root == NULL || root[0] == 0)
+		root = "JERICHO\\MODS\\carhacks\\";
+
+	slash = root[strlen(root) - 1];
+	n = snprintf(out, (size_t)outSize, "%s%s%s",
+		root,
+		(slash == '/' || slash == '\\') ? "" : "\\",
+		JER_FE_PORTRAIT_FALLBACK);
+
+	if (n < 0 || n >= outSize)
+	{
+		out[0] = 0;
+		return 0;
+	}
+
+	FS_FixPathSlashes(out);
+	return 1;
+}
+
+/* 1 when the shared CARHACKS page was drawn. No private CLUT: the page is
+ * indexed for the CARBACK portrait colours, same as an omitted <model>.clut. */
+static int JerFeShowFallback(int city, int model)
+{
+	char raw[256];
+	long size = 0;
+	static int loggedCity = -2;
+	static int loggedModel = -2;
+	int announce;
+
+	if (!JerFeFallbackPath(raw, (int)sizeof(raw)))
+		return 0;
+
+	announce = (loggedCity != city || loggedModel != model);
+
+	if (!JerFeFileSize(raw, &size))
+	{
+		if (announce)
+		{
+			printInfo("[frontend] portrait: %s model %d no art, fallback missing (%s)\n",
+				JerCityName(city), model, raw);
+			loggedCity = city;
+			loggedModel = model;
+		}
+
+		return 0;
+	}
+
+	if (size != JER_FE_PORTRAIT_PAGE)
+	{
+		if (announce)
+		{
+			printInfo("[frontend] portrait: %s model %d fallback ignored %s (%ld bytes, want %d)\n",
+				JerCityName(city), model, raw, size, JER_FE_PORTRAIT_PAGE);
+			loggedCity = city;
+			loggedModel = model;
+		}
+
+		return 0;
+	}
+
+	if (!JerFeReadExact(raw, (void*)_frontend_buffer, JER_FE_PORTRAIT_PAGE))
+		return 0;
+
+	LoadBackgroundFile("DATA\\CARS\\CARBACK.RAW");
+	JerFeUploadPortraitPage((void*)_frontend_buffer);
+
+	if (announce)
+	{
+		printInfo("[frontend] portrait: %s model %d fallback <- %s\n",
+			JerCityName(city), model, raw);
+		loggedCity = city;
+		loggedModel = model;
+	}
+
+	return 1;
+}
 #endif
 
 /* The single handler every module menu slot uses; the slot index selects the
@@ -5146,6 +5243,8 @@ int JerFrontendMenuScreen(int bSetup)
 		/* the optional car icon (JER_FE_MENU.get_preview). A per-model page
 		 * beside the city's .LEV wins (banks and Driver 1 have no CCARS.RAW).
 		 * Otherwise a Driver 2 city still shows that model's stock slot.
+		 * Anything left with no picture (a Driver 1 city, a bank, a model the
+		 * ten-slot lookup does not name) draws the shared CARHACKS fallback.
 		 * bDrawExtra is cleared first so a menu with no preview leaves no
 		 * icon behind. */
 		bDrawExtra = 0;
@@ -5155,6 +5254,7 @@ int JerFrontendMenuScreen(int bSetup)
 			int pvCity = -1, pvModel = -1;
 			int sel;
 			int drewPortrait = 0;
+			int drewStock = 0;
 
 			menu->get_preview(menu->userdata, &pvCity, &pvModel);
 
@@ -5163,7 +5263,7 @@ int JerFrontendMenuScreen(int bSetup)
 				drewPortrait = JerFeShowPortrait(pvCity, pvModel);
 #endif
 
-			if (!drewPortrait && pvCity >= 0 && pvCity < 4)
+			if (!drewPortrait && pvCity >= 0 && pvCity < CITY_D2_COUNT)
 			{
 				for (sel = 0; sel < 10; sel++)
 				{
@@ -5187,8 +5287,15 @@ int JerFrontendMenuScreen(int bSetup)
 
 					/* the stock car-select icon, at its usual place */
 					SetupExtraPoly(gfxNames[pvCity], sel, 0);
+					drewStock = 1;
 				}
 			}
+
+#ifndef PSX
+			/* Stock slot art already won. Do not cover it with the fallback. */
+			if (!drewPortrait && !drewStock && pvCity >= 0 && pvModel >= 0)
+				JerFeShowFallback(pvCity, pvModel);
+#endif
 		}
 
 		n = menu->item_count;
