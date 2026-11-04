@@ -18,7 +18,11 @@
  * player's own HAVANA.LEV) and/or no baked Driver 1 cars -- the same prompt
  * explains why baking is needed and offers Continue / No. No only skips this
  * launch; first_bake_prompt=0 in JERICHO/CONFIG/rebake.ini (written on the
- * first No) stops it asking. The version re-bake question is unaffected. */
+ * first No) stops it asking. The version re-bake question is unaffected.
+ *
+ * Both questions say where the files go: Driver 1 in DRIVER/, and the
+ * 16 Dec 1998 proto (the one with the Buick GSX) as LEVELS/ and SOUND/
+ * in EURO43/, which is what the bake reads for those cars. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -175,9 +179,14 @@ static void RbExePath(char* out, int outSize)
 #endif
 }
 
-static void RbYes(void)
+void jer_rebake_start(void)
 {
 	char gameExe[RB_PATH_MAX];
+
+	/* The prompt tick is what normally remembers the script. Bake on the options
+	 * menu can run before that tick, so look it up here too. Same function. */
+	if (sRebakeScript[0] == 0)
+		RbToolingVersion();
 
 	if (sRebakeScript[0] == 0)
 	{
@@ -336,10 +345,11 @@ void jer_rebake_frontend_tick(int onMainMenu)
 		{
 			jer_log("[rebake] first launch: peds %s, Driver 1 cars %s\n",
 				pedsOk ? "ok" : "missing", carsOk ? "ok" : "missing");
-			jer_prompt_begin_ex("First start: cars and peds need baking. It builds the Driver 1 cars "
-				"and Tanner/Jericho from YOUR game files, so none ship with JERICHO; the game restarts "
-				"after. No skips it for now. first_bake_prompt=0 in CONFIG/rebake.ini stops this.",
-				"Continue", "No", RbYes, RbFirstNo);
+			jer_prompt_begin_ex("First start: cars and peds need baking from your files (none ship with JERICHO). "
+				"The game restarts after. Drop Driver 1 files in DRIVER/. "
+				"The 16 Dec 1998 Buick GSX proto: put LEVELS/ and SOUND/ in EURO43/. "
+				"No skips this time. first_bake_prompt=0 in CONFIG/rebake.ini stops asking.",
+				"Continue", "No", jer_rebake_start, RbFirstNo);
 			return;
 		}
 	}
@@ -348,7 +358,9 @@ void jer_rebake_frontend_tick(int onMainMenu)
 		return;
 
 	jer_log("[rebake] Driver 1 bake is older than the tooling (baked %d, expected %d)\n", baked, wanted);
-	jer_prompt_begin("Your Driver 1 cars were baked with older tooling. Re-bake them now?", RbYes);
+	jer_prompt_begin("Your Driver 1 cars were baked with older tooling. Re-bake them now? "
+		"Drop Driver 1 files in DRIVER/. "
+		"The 16 Dec 1998 Buick GSX proto: put LEVELS/ and SOUND/ in EURO43/.", jer_rebake_start);
 }
 
 /* The one-shot prompt already ran (or the player declined). A mod install may

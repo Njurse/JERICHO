@@ -2503,9 +2503,28 @@ static int ModsRowAdjust(void* ud, int dir)
 	return 1;
 }
 
+/* Browse, Bake, Credits and Back are always there. Compile Mods is not, on a
+ * shipped build. A page row appears only when the list does not fit, and the
+ * whole menu is JER_FE_MAX_ITEMS, so the list gives up a row before the array
+ * is overrun. */
+static int ModsFitStride(int count)
+{
+	int fixed = 4;
+	int cap = MODS_ROWS_MAX;
+
+	if (jer_mods_compile_available())
+		fixed++;
+
+	while (cap > 1 && cap + (count > cap ? 1 : 0) + fixed > JER_FE_MAX_ITEMS)
+		cap--;
+
+	return cap;
+}
+
 static int ModsPages(int count)
 {
-	int pages = (count + MODS_ROWS_MAX - 1) / MODS_ROWS_MAX;
+	int stride = ModsFitStride(count);
+	int pages = (count + stride - 1) / stride;
 
 	return (pages < 1) ? 1 : pages;
 }
@@ -2514,11 +2533,12 @@ static int ModsPages(int count)
  * new page. The controls follow it; the menu builder uses the same count. */
 static int ModsPageRowFor(int page, int count)
 {
-	int start = page * MODS_ROWS_MAX;
+	int stride = ModsFitStride(count);
+	int start = page * stride;
 	int rows = count - start;
 
-	if (rows > MODS_ROWS_MAX)
-		rows = MODS_ROWS_MAX;
+	if (rows > stride)
+		rows = stride;
 	if (rows < 0)
 		rows = 0;
 
@@ -2557,6 +2577,16 @@ static int ModsCompile(void* ud)
 {
 	(void)ud;
 	jer_mods_request_compile();
+	return 1;
+}
+
+/* The same bake the startup questions start (jer_rebake_start): not a new
+ * pipeline. Asking first matches Compile Mods, because Yes closes the game. */
+static int ModsBake(void* ud)
+{
+	(void)ud;
+	jer_prompt_begin("Bake cars and peds from your files? JERICHO closes, bakes and restarts.",
+		jer_rebake_start);
 	return 1;
 }
 
@@ -2751,18 +2781,16 @@ static void ModsMenuEnter(void* ud)
 
 	(void)ud;
 
-	pages = (count + MODS_ROWS_MAX - 1) / MODS_ROWS_MAX;
-	if (pages < 1)
-		pages = 1;
+	pages = ModsPages(count);
 	if (gModsPage >= pages)
 		gModsPage = pages - 1;
 	if (gModsPage < 0)
 		gModsPage = 0;
 
-	start = gModsPage * MODS_ROWS_MAX;
+	start = gModsPage * ModsFitStride(count);
 	rows = count - start;
-	if (rows > MODS_ROWS_MAX)
-		rows = MODS_ROWS_MAX;
+	if (rows > ModsFitStride(count))
+		rows = ModsFitStride(count);
 	if (rows < 0)
 		rows = 0;
 
@@ -2824,6 +2852,16 @@ static void ModsMenuEnter(void* ud)
 		memset(it, 0, sizeof(*it));
 		it->label = "Compile Mods";
 		it->on_activate = ModsCompile;
+		it->submenu = -1;
+		controls++;
+	}
+
+	{
+		JER_FE_ITEM* it = &gModsItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Bake";
+		it->on_activate = ModsBake;
 		it->submenu = -1;
 		controls++;
 	}
@@ -3098,7 +3136,7 @@ static void ModsDrawTable(void)
 				x, w, top, rx, ry, rw, rh,
 				StoreTextX(rx, rw, 2), StoreTextX(rx, rw, 50), StoreTextX(rx, rw, 64), StoreTextX(rx, rw, 80));
 		}
-		if (!jer_modstore_module_at(gModsPage * MODS_ROWS_MAX + i, &mod))
+		if (!jer_modstore_module_at(gModsPage * ModsFitStride(jer_modstore_module_count()) + i, &mod))
 			continue;
 
 		jer_text_draw_at(JER_TEXT_FE, 120, StoreTextX(rx, rw, 2), ry + 3,

@@ -4,6 +4,33 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.5
+
+*Released 2026-11-03.*
+
+**Most of this release is plumbing.** Custom car packs and online sessions are checked so a pack that does not fit is refused instead of crashing the game, and one player cannot overwrite another player's car. The one new thing to click is Bake, under Options, then JERICHO.
+
+### Baking
+
+- **The bake questions say where your files go.** On first start, and again when your Driver 1 cars were baked with older tooling, the game tells you to drop your Driver 1 files in `DRIVER/`. If you have the 16 Dec 1998 proto with the Buick GSX, put its `LEVELS/` and `SOUND/` in `EURO43/` so the bake can pull those cars.
+- **Options, then JERICHO, has a Bake button.** It asks first. Yes runs the same bake those questions run: the game closes, bakes from your files, and comes back.
+
+### Your car packs
+
+- **A damaged car pack is turned away instead of crashing the game.** Imported models, texture pages and baked pedestrian pages are checked against the pack's own file size before the game reads them. A pack that does not fit is skipped with a line in the log, not read past its end.
+- **A car with more detail than the damage system can hold no longer corrupts the next car.** Denting and lighting now stop at the car's own budget.
+- **Baked pedestrian pages are given back when a city unloads.** A short page is refused before it takes a pool slot, and every page a city pins is recorded, so pages no longer leak until the next level.
+
+### Multiplayer
+
+- **Players cannot rewrite each other's cars.** The car table and the agreed car set are accepted from the host only.
+- **All 16 seats are counted.** The carhacks tables were sized for 8 players, so players 8-15 had their picks dropped; they now match the 16-seat session.
+- **The dedicated server keeps honest traffic flowing through a join or leave.** It checks a client's traffic against the roster it last sent that client. Forged slots still drop. Server owners: pull mp and rebuild the dedi with `update-dedi.sh`.
+
+### Fixes
+
+- **The replay records the car you are actually driving.** A stale post-start car override was removed; mission loading already applies it.
+
 ## v0.13.4
 
 *Released 2026-11-02.*
