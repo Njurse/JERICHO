@@ -1081,7 +1081,12 @@ void ControlNumberOfCops(void)
 		numWantedCops++;
 	}
 
-	if (numWantedCops < gMinimumCops)
+	/* Immunity (the cheat, and the host rule that forces the same flag) means
+	 * nobody is sent. A multiplayer map floors gMinimumCops at 1 so a chase can
+	 * start at all; that floor must not keep a cop on an immune player. */
+	if (gPlayerImmune)
+		numWantedCops = 0;
+	else if (numWantedCops < gMinimumCops)
 		numWantedCops = gMinimumCops;
 
 	if (numWantedCops > maxCopCars)
@@ -1173,6 +1178,15 @@ void ControlCops(void)
 #endif
 
 	playerFelony = GetPlayerFelony(&MainPlayer);
+
+	/* Same rule as single player, applied where the pursuit is actually armed.
+	 * Zeroing the rating at the end of the frame is not enough: cops already
+	 * chasing keep chasing, and the multiplayer minimum keeps requesting more. */
+	if (gPlayerImmune)
+	{
+		*playerFelony = 0;
+		ReleasePursuingCopsToTraffic();
+	}
 
 	gCopData.autoBatterPlayerTrigger = 2048;
 

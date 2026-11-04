@@ -6,6 +6,7 @@ extern char* MissionName[37];
 extern int GameLevel;
 extern int gInvincibleCar;
 extern int gPlayerImmune;
+extern int gInvulnerableWorld;
 extern unsigned char NumPlayers;
 extern char NewLevel;
 extern GAMETYPE GameType;
