@@ -8,7 +8,12 @@ is in [changelog.txt](changelog.txt).
 
 *Released 2026-11-03.*
 
-**Most of this release is plumbing.** There is nothing new to learn or click: the work is in the pipes that custom car packs and online sessions run through, so a pack that does not fit is refused instead of crashing the game, and one player cannot overwrite another player's car.
+**Most of this release is plumbing.** Custom car packs and online sessions are checked so a pack that does not fit is refused instead of crashing the game, and one player cannot overwrite another player's car. The one new thing to click is Bake, under Options, then JERICHO.
+
+### Baking
+
+- **The bake questions say where your files go.** On first start, and again when your Driver 1 cars were baked with older tooling, the game tells you to drop your Driver 1 files in `DRIVER/`. If you have the 16 Dec 1998 proto with the Buick GSX, put its `LEVELS/` and `SOUND/` in `EURO43/` so the bake can pull those cars.
+- **Options, then JERICHO, has a Bake button.** It asks first. Yes runs the same bake those questions run: the game closes, bakes from your files, and comes back.
 
 ### Your car packs
 
