@@ -8,6 +8,10 @@ is in [changelog.txt](changelog.txt).
 
 *Released 2026-11-04.*
 
+### Baking
+
+- **Driver 1 car bakes keep their colours, their size, and a Driver 2 loudness, and a new bank's cities.ini line points at the install.** Each sprite keeps its own palette row, including leftover page sprites, and the body stays on the PAGE_1 row. The preview uses one scale, so the car and its wheels match. Imported sounds play in the right sample order and sit with stock traffic. `make_new_bank` writes the cities.ini paths as `..\JERICHO\MODS\<mod>\banks\<dir>`, the folder the bank ships in, instead of a path beside a developer build.
+
 ### Mods
 
 - **CarHacks, pedhacks and multiplayer load before anything you added.** Those three come up first and stay on. The BAKE Toolkit and CRUMPLE come next, and each keeps the on/off choice you already made. BAKE is still optional: leaving it off, or not having it, does not block the others and does not stop you joining. Store addons and data packs keep their own order after that.
