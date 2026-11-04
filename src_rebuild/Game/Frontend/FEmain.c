@@ -38,6 +38,7 @@ void PsyX_TakeScreenshot(void);
 #include "C/state.h"
 
 #include <stdlib.h>	// JERICHO-HOOK: getenv/atoi — the frontend press test lever only
+#include <string.h>	// JERICHO: the car-select portrait path is built beside the .LEV
 
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (mods manager frontend)
 #include "../C/jer_events.h"	// JERICHO-HOOK: event argument structs
@@ -4874,6 +4875,249 @@ int jer_frontend_current_menu(void)
 	return idx;
 }
 
+#ifndef PSX
+/* One stock car-select portrait page. SetupExtraPoly uploads offset*0x8000 of
+ * a city's CCARS/HCARS/VCARS/RCARS.RAW as a 4bpp 256x256 page and shows the top
+ * 219 rows (sprite 255x219, CLUT at (960,256) from CARBACK.RAW). A bank has no
+ * such RAW: the page for model N is the file beside that city's .LEV,
+ * "<stem>.portraits/<N>.raw", exactly 0x8000 bytes. An optional "<N>.clut" is
+ * 16 little-endian RGB555 colours (32 bytes) and replaces the CARBACK portrait
+ * CLUT for this draw. */
+#define JER_FE_PORTRAIT_PAGE	0x8000
+#define JER_FE_PORTRAIT_CLUT	32
+
+static const char* JerFeLastSlash(const char* s)
+{
+	const char* slash = NULL;
+	const char* p;
+
+	for (p = s; *p != 0; p++)
+	{
+		if (*p == '/' || *p == '\\')
+			slash = p;
+	}
+
+	return slash;
+}
+
+/* Build the openable portrait paths for (city, model). Answers 1 when `raw`
+ * holds a path (the file may still be absent). `clut` may be NULL. */
+static int JerFePortraitPaths(int city, int model, char* raw, int rawSize, char* clut, int clutSize)
+{
+	char lev[192];
+	const char* slash;
+	const char* name;
+	const char* dot;
+	int dirLen;
+	int stemLen;
+	int n;
+
+	if (raw == NULL || rawSize <= 0)
+		return 0;
+
+	raw[0] = 0;
+
+	if (clut != NULL && clutSize > 0)
+		clut[0] = 0;
+
+	if (city < 0 || model < 0 || !JerCityRegistered(city))
+		return 0;
+
+	if (!JerCityPath(city, lev, (int)sizeof(lev), JER_CITY_FILE_LEVEL, 0))
+		return 0;
+
+	slash = JerFeLastSlash(lev);
+	name = (slash != NULL) ? slash + 1 : lev;
+	dot = strrchr(name, '.');
+	stemLen = (dot != NULL && dot != name) ? (int)(dot - name) : (int)strlen(name);
+	dirLen = (slash != NULL) ? (int)(slash - lev) : 0;
+
+	n = snprintf(raw, (size_t)rawSize, "%.*s%s%.*s.portraits/%d.raw",
+		dirLen, lev, (dirLen > 0) ? "/" : "", stemLen, name, model);
+
+	if (n < 0 || n >= rawSize)
+	{
+		raw[0] = 0;
+		return 0;
+	}
+
+	FS_FixPathSlashes(raw);
+
+	if (clut != NULL && clutSize > 0)
+	{
+		n = snprintf(clut, (size_t)clutSize, "%.*s%s%.*s.portraits/%d.clut",
+			dirLen, lev, (dirLen > 0) ? "/" : "", stemLen, name, model);
+
+		if (n < 0 || n >= clutSize)
+			clut[0] = 0;
+		else
+			FS_FixPathSlashes(clut);
+	}
+
+	return 1;
+}
+
+/* 1 when `path` exists. Writes its size when `out` is not NULL. */
+static int JerFeFileSize(const char* path, long* out)
+{
+	FILE* f;
+	long n;
+
+	if (path == NULL || path[0] == 0)
+		return 0;
+
+	f = fopen(path, "rb");
+
+	if (f == NULL)
+		return 0;
+
+	if (fseek(f, 0, SEEK_END) != 0)
+	{
+		fclose(f);
+		return 0;
+	}
+
+	n = ftell(f);
+	fclose(f);
+
+	if (n < 0)
+		return 0;
+
+	if (out != NULL)
+		*out = n;
+
+	return 1;
+}
+
+static int JerFeReadExact(const char* path, void* dst, int bytes)
+{
+	FILE* f;
+	size_t got;
+
+	f = fopen(path, "rb");
+
+	if (f == NULL)
+		return 0;
+
+	got = fread(dst, 1, (size_t)bytes, f);
+	fclose(f);
+	return got == (size_t)bytes;
+}
+
+/* Same upload SetupExtraPoly does for one slot: VRAM (896,256) 64x219, sprite
+ * 255x219, CLUT (960,256). The page bytes are already in `page`. */
+static void JerFeUploadPortraitPage(const void* page)
+{
+	RECT16 rect = extraRect;
+
+	rect.x = 896;
+	rect.y = 256;
+	rect.w = 64;
+	rect.h = 219;
+
+	LoadImage(&rect, (u_long*)page);
+	DrawSync(0);
+	VSync(0);
+
+	if (bDrawExtra == 0)
+	{
+		setSprt(&extraSprt);
+		setPolyFT3(&extraDummy);
+
+		setXY0(&extraSprt, 100, 226);
+		setRGB0(&extraSprt, 128, 128, 128);
+		setUV0(&extraSprt, 0, 0);
+		setWH(&extraSprt, 255, 219);
+		setClut(&extraSprt, 960, 256);
+
+		setXY3(&extraDummy, -1, -1, -1, -1, -1, -1);
+		setTPage(&extraDummy, 0, 0, 896, 256);
+	}
+
+	bDrawExtra = 1;
+
+	/* The city picture is no longer what _frontend_buffer holds. Leaving the
+	 * car screen reloads it (TimeOfDaySelectScreen checks loaded[0] == -1). */
+	loaded[0] = -1;
+	loaded[1] = -1;
+}
+
+/* 1 when a per-model portrait was drawn. 0 when there is no file (the caller
+ * falls back to the stock slot art) or the file is the wrong size. */
+static int JerFeShowPortrait(int city, int model)
+{
+	char raw[256];
+	char clutPath[256];
+	long size;
+	static int loggedCity = -2;
+	static int loggedModel = -2;
+	int announce;
+
+	if (!JerFePortraitPaths(city, model, raw, (int)sizeof(raw), clutPath, (int)sizeof(clutPath)))
+		return 0;
+
+	if (!JerFeFileSize(raw, &size))
+		return 0;
+
+	announce = (loggedCity != city || loggedModel != model);
+
+	if (size != JER_FE_PORTRAIT_PAGE)
+	{
+		if (announce)
+		{
+			printInfo("[frontend] portrait: %s model %d ignored %s (%ld bytes, want %d)\n",
+				JerCityName(city), model, raw, size, JER_FE_PORTRAIT_PAGE);
+			loggedCity = city;
+			loggedModel = model;
+		}
+
+		return 0;
+	}
+
+	if (!JerFeReadExact(raw, (void*)_frontend_buffer, JER_FE_PORTRAIT_PAGE))
+		return 0;
+
+	/* CARBACK supplies the portrait CLUT. Load it before a private clut, and
+	 * it uses _other_buffer, so the page just read into _frontend_buffer stays. */
+	LoadBackgroundFile("DATA\\CARS\\CARBACK.RAW");
+
+	if (clutPath[0] != 0 && JerFeFileSize(clutPath, &size))
+	{
+		u_long clutRow[JER_FE_PORTRAIT_CLUT / 4];
+
+		if (size == JER_FE_PORTRAIT_CLUT &&
+			JerFeReadExact(clutPath, clutRow, JER_FE_PORTRAIT_CLUT))
+		{
+			RECT16 crect;
+
+			crect.x = 960;
+			crect.y = 256;
+			crect.w = 16;
+			crect.h = 1;
+			LoadImage(&crect, clutRow);
+			DrawSync(0);
+		}
+		else if (announce)
+		{
+			printInfo("[frontend] portrait: %s model %d clut %s ignored (%ld bytes, want %d)\n",
+				JerCityName(city), model, clutPath, size, JER_FE_PORTRAIT_CLUT);
+		}
+	}
+
+	JerFeUploadPortraitPage((void*)_frontend_buffer);
+
+	if (announce)
+	{
+		printInfo("[frontend] portrait: %s model %d <- %s\n",
+			JerCityName(city), model, raw);
+		loggedCity = city;
+		loggedModel = model;
+	}
+
+	return 1;
+}
+#endif
+
 /* The single handler every module menu slot uses; the slot index selects the
  * registered menu. Lays the items out as native buttons and reports input. */
 int JerFrontendMenuScreen(int bSetup)
@@ -4899,19 +5143,27 @@ int JerFrontendMenuScreen(int bSetup)
 		if (menu->on_enter != NULL)
 			menu->on_enter(menu->userdata);
 
-		/* the optional car icon (JER_FE_MENU.get_preview): resolve the model
-		 * to its car-select image slot and show it. bDrawExtra is cleared
-		 * first so a menu with no preview leaves no icon behind. */
+		/* the optional car icon (JER_FE_MENU.get_preview). A per-model page
+		 * beside the city's .LEV wins (banks and Driver 1 have no CCARS.RAW).
+		 * Otherwise a Driver 2 city still shows that model's stock slot.
+		 * bDrawExtra is cleared first so a menu with no preview leaves no
+		 * icon behind. */
 		bDrawExtra = 0;
 
 		if (menu->get_preview != NULL)
 		{
 			int pvCity = -1, pvModel = -1;
 			int sel;
+			int drewPortrait = 0;
 
 			menu->get_preview(menu->userdata, &pvCity, &pvModel);
 
-			if (pvCity >= 0 && pvCity < 4)
+#ifndef PSX
+			if (pvCity >= 0)
+				drewPortrait = JerFeShowPortrait(pvCity, pvModel);
+#endif
+
+			if (!drewPortrait && pvCity >= 0 && pvCity < 4)
 			{
 				for (sel = 0; sel < 10; sel++)
 				{
