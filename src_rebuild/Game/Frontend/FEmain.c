@@ -1493,10 +1493,11 @@ void LoadBackgroundFile(char* name)
  *
  * The question itself is wrapped with jer_text_width, because a single centred
  * line of a long question runs off the screen (and the frontend's own drawing
- * clips it rather than wrapping it). The block is anchored at the BOTTOM, so a
- * two- or three-line question grows upwards and never runs into the answers.
+ * clips it rather than wrapping it). An embedded newline is a paragraph break
+ * and starts the next line. Lines grow downwards from JER_PROMPT_TEXT_Y and
+ * stay above the answers, which remain bottom-right.
  * ------------------------------------------------------------------ */
-#define JER_PROMPT_WRAP_MAX	6
+#define JER_PROMPT_WRAP_MAX	8
 #define JER_PROMPT_LINE_LEN	192
 #define JER_PROMPT_WIDTH	544	/* 640 less a 48px margin each side */
 #define JER_PROMPT_SCALE	150
@@ -1514,11 +1515,28 @@ static int JerichoWrapText(const char* text, int maxWidth, char lines[JER_PROMPT
 
 	while (p != NULL && *p != 0 && count < JER_PROMPT_WRAP_MAX)
 	{
-		size_t len = strlen(p);
+		const char* brk = p;
+		size_t len;
 		size_t take;
+		int hard;
 
+		/* a newline ends the paragraph; word wrap still applies inside it */
+		while (*brk != 0 && *brk != '\n' && *brk != '\r')
+			brk++;
+		hard = (*brk == '\n' || *brk == '\r');
+
+		len = (size_t)(brk - p);
 		if (len > JER_PROMPT_LINE_LEN - 1)
 			len = JER_PROMPT_LINE_LEN - 1;
+
+		if (len == 0)
+		{
+			if (*p == '\r')
+				p++;
+			if (*p == '\n')
+				p++;
+			continue;
+		}
 
 		memcpy(lines[count], p, len);
 		lines[count][len] = 0;
@@ -1532,7 +1550,7 @@ static int JerichoWrapText(const char* text, int maxWidth, char lines[JER_PROMPT
 		}
 
 		/* cut mid-word? back up to the space before it */
-		if (take > 0 && p[take] != 0 && p[take] != ' ')
+		if (take > 0 && take < len && p[take] != ' ')
 		{
 			size_t back = take;
 
@@ -1549,11 +1567,28 @@ static int JerichoWrapText(const char* text, int maxWidth, char lines[JER_PROMPT
 		while (take > 0 && lines[count][take - 1] == ' ')
 			lines[count][--take] = 0;
 
+		/* one glyph wider than the line must still advance, or this loops */
+		if (take == 0)
+		{
+			lines[count][0] = p[0];
+			lines[count][1] = 0;
+			take = 1;
+		}
+
 		count++;
 
 		p += take;
 		while (*p == ' ')
 			p++;
+
+		/* swallow the newline only once this paragraph is finished */
+		if (hard && p == brk)
+		{
+			if (*p == '\r')
+				p++;
+			if (*p == '\n')
+				p++;
+		}
 	}
 
 	return count;
