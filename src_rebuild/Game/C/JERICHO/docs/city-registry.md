@@ -107,10 +107,21 @@ A page dropped beside the `.LEV` the registry opens is used instead, keyed by
 The file is exactly 32768 bytes (256×256 at 4bpp). The frontend shows the top 219
 rows as a 255×219 sprite and takes the colours from `DATA\CARS\CARBACK.RAW`,
 unless `<model>.clut` (32 bytes, 16 little-endian RGB555) sits beside the page —
-that replaces the portrait CLUT at VRAM `(960,256)` for the draw. A missing file
-leaves the old behaviour: Driver 2 cities 0–3 keep their slot art, everything
-else stays blank. The stock car screen (missions) is unchanged; the module menu
-is the one that asks for a city and a model.
+that replaces the portrait CLUT at VRAM `(960,256)` for the draw. Omit the
+`.clut` when the indices were packed for that stock CLUT.
+
+A missing file on Driver 2 cities 0–3 still draws that model's stock slot.
+Everywhere else (a Driver 1 city, a bank, or a model the ten-slot lookup does
+not name) draws one shared page, indexed for the same CLUT:
+
+```
+JERICHO\MODS\carhacks\assets\portraits\CARHACKS\fallback.raw
+```
+
+That is `<gD1DataFolder>assets\portraits\CARHACKS\fallback.raw`. The stock
+mission car screen is unchanged; the module menu is the one that asks for a
+city and a model. Miami's pages and the screenshot encoder are in carhacks
+`docs/PORTRAITS.md`.
 
 **A sparse bank can be completed.** Copying the missing models out of the host
 city's own level file (byte for byte, plus the page sets and palette rows they
