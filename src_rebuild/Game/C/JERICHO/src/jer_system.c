@@ -320,9 +320,90 @@ static JER_MODULE* jerFindModule(const char* id)
 	return NULL;
 }
 
+/* Release mods that are not join requirements. They load after
+ * jerCoreOrder and before store addons and data packs. bake stays out of
+ * jerCoreOrder: that list force-enables and fail-closes, and a client must
+ * be able to join with bake disabled. crumple ships in the release set and
+ * stays togglable. Same prefix as JERICHO_TABLE_ORDER in premake5.lua. */
+static const char* const jerSuiteAfterCore[] = { "bake", "crumple" };
+
+static int jerSuiteAfterCoreCount(void)
+{
+	return (int)(sizeof(jerSuiteAfterCore) / sizeof(jerSuiteAfterCore[0]));
+}
+
+static int jerIsSuiteAfterCore(const char* id)
+{
+	int i;
+
+	if (id == NULL)
+		return 0;
+
+	for (i = 0; i < jerSuiteAfterCoreCount(); i++)
+	{
+		if (strcmp(jerSuiteAfterCore[i], id) == 0)
+			return 1;
+	}
+
+	return 0;
+}
+
+/* Pull one installed id to `dest`, shifting the modules in between up by
+ * one so their relative order survives. Returns the next dest. A missing
+ * id leaves dest unchanged. */
+static int jerMoveIdTo(int dest, const char* id)
+{
+	int i;
+
+	if (id == NULL || dest < 0 || dest >= gModuleCount)
+		return dest;
+
+	for (i = dest; i < gModuleCount; i++)
+	{
+		JER_MODULE tmp;
+
+		if (gModules[i].id[0] == 0 || strcmp(gModules[i].id, id) != 0)
+			continue;
+
+		if (i != dest)
+		{
+			tmp = gModules[i];
+			memmove(&gModules[dest + 1], &gModules[dest],
+				(size_t)(i - dest) * sizeof(gModules[0]));
+			gModules[dest] = tmp;
+		}
+
+		return dest + 1;
+	}
+
+	return dest;
+}
+
+/* The registry is alphabetical (jericho_scan_mods sorts folder names) and
+ * the DLL/data-pack scan is directory order, appended after every compiled
+ * module. That left pedhacks and mp at the end of the release table
+ * (carhacks, crumple, mp, pedhacks) and a runtime addon such as bake after
+ * the optional compiled mods. Missing ids are skipped. Nothing here
+ * force-enables or fail-closes; jerActivateModules still does that, and
+ * only for jerCoreOrder. */
+static void jerPlaceSuiteFirst(void)
+{
+	int dest = 0;
+	int c;
+
+	for (c = 0; c < jer_manager_core_count(); c++)
+		dest = jerMoveIdTo(dest, jer_manager_core_id(c));
+
+	for (c = 0; c < jerSuiteAfterCoreCount(); c++)
+		dest = jerMoveIdTo(dest, jerSuiteAfterCore[c]);
+}
+
 /* (Re)fill the module table: compiled-in modules from the generated
  * registry first, then runtime-loaded DLL addons from the loader that
- * aren't already compiled in. Called at boot and on manager reload. */
+ * aren't already compiled in. Called at boot and on manager reload.
+ * The merged table is then pulled into suite order (see jerPlaceSuiteFirst)
+ * so alphabetical registry order and folder scan order cannot put
+ * pedhacks or mp after an optional addon. */
 static void jerSnapshotModules(const char* rootDir)
 {
 	JER_MODULE loaded[JER_MAX_MODULES];
@@ -386,6 +467,8 @@ static void jerSnapshotModules(const char* rootDir)
 
 		gModules[gModuleCount++] = loaded[i];
 	}
+
+	jerPlaceSuiteFirst();
 }
 
 /* ------------------------------------------------------------------ */
@@ -704,7 +787,7 @@ static void jerActivateModules(const char* rootDir)
 		int moved = jer_manager_normalize_core(rootDir);
 
 		if (moved > 0)
-			jerLog("[jericho] core modules moved to the front of modlist.ini: carhacks, pedhacks, mp\n");
+			jerLog("[jericho] module order normalised: carhacks, pedhacks, mp, then bake, crumple\n");
 	}
 
 	if (jer_manager_read(rootDir, &modlist) != 0)
@@ -820,7 +903,8 @@ static void jerActivateModules(const char* rootDir)
 	 * modlist.ini: a release ships no modlist, and a player can hand-edit one. An
 	 * installed core module is enabled whether or not the file said so, and it goes
 	 * ahead of every optional module. A core module that is not installed is simply
-	 * absent (bake is a separate download); it does not create a phantom entry. */
+	 * absent; it does not create a phantom entry. bake is optional tooling and is
+	 * not part of this set. */
 	if (!gDisableAllModules)
 	{
 		const char* ordered[JER_MAX_MODULES];
@@ -853,9 +937,25 @@ static void jerActivateModules(const char* rootDir)
 			ordered[n++] = m->id;
 		}
 
+		/* bake and crumple stay optional (no force-enable, no fail-closed)
+		 * but an enabled one still initializes before store addons and data
+		 * packs. Alphabetical modlist/scan order had been leaving pedhacks
+		 * and mp after those. */
+		for (c = 0; c < jerSuiteAfterCoreCount(); c++)
+		{
+			for (i = 0; i < orderCount; i++)
+			{
+				if (strcmp(order[i], jerSuiteAfterCore[c]) == 0)
+				{
+					ordered[n++] = order[i];
+					break;
+				}
+			}
+		}
+
 		for (i = 0; i < orderCount; i++)
 		{
-			int core = 0;
+			int earlier = 0;
 
 			for (c = 0; c < jer_manager_core_count(); c++)
 			{
@@ -863,12 +963,15 @@ static void jerActivateModules(const char* rootDir)
 
 				if (id != NULL && strcmp(order[i], id) == 0)
 				{
-					core = 1;
+					earlier = 1;
 					break;
 				}
 			}
 
-			if (!core)
+			if (!earlier && jerIsSuiteAfterCore(order[i]))
+				earlier = 1;
+
+			if (!earlier)
 				ordered[n++] = order[i];
 		}
 

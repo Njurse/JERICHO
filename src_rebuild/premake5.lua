@@ -164,6 +164,42 @@ local function jericho_mod_default_enabled(m)
 	return defaultEnabled
 end
 
+-- Table order for jer_registry.c. The scan in jericho_scan_mods() is
+-- alphabetical, which put the release rows out as carhacks, crumple, mp,
+-- pedhacks — mp and pedhacks last. This prefix matches jerCoreOrder in
+-- jer_manager.c (carhacks, pedhacks, mp) and then the other release mods.
+-- bake is a runtime DLL, so it is not in the compiled list; the name is
+-- here so the prefix stays the same list the runtime uses. Anything not
+-- named keeps its scan order behind the prefix.
+local JERICHO_TABLE_ORDER = { "carhacks", "pedhacks", "mp", "bake", "crumple" }
+
+local function jericho_order_mods(mods)
+	local head = {}
+	local tail = {}
+	local seen = {}
+
+	for _, id in ipairs(JERICHO_TABLE_ORDER) do
+		for _, m in ipairs(mods) do
+			if m == id and not seen[m] then
+				table.insert(head, m)
+				seen[m] = true
+			end
+		end
+	end
+
+	for _, m in ipairs(mods) do
+		if not seen[m] then
+			table.insert(tail, m)
+		end
+	end
+
+	for _, m in ipairs(tail) do
+		table.insert(head, m)
+	end
+
+	return head
+end
+
 -- Write one registry table + its count for the given module set.
 local function jericho_write_registry_table(f, mods)
 	f:write("extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {\n")
@@ -207,9 +243,12 @@ local function jericho_generate_registry(mods)
 	-- pre-included modules; every other build carries them all. The DEFINE is set
 	-- on the Release configuration of the game project, and the JERICHO project
 	-- links the same subset, so the table and the link always agree.
+	-- Declarations stay in scan order. The tables are suite-first: alphabetical
+	-- scan order is not the load order.
+	local ordered = jericho_order_mods(mods)
 	local releaseMods = {}
 
-	for _, m in ipairs(mods) do
+	for _, m in ipairs(ordered) do
 		if jericho_is_release_mod(m) then
 			table.insert(releaseMods, m)
 		end
@@ -218,7 +257,7 @@ local function jericho_generate_registry(mods)
 	f:write("#ifdef JERICHO_RELEASE_MODS\n")
 	jericho_write_registry_table(f, releaseMods)
 	f:write("#else\n")
-	jericho_write_registry_table(f, mods)
+	jericho_write_registry_table(f, ordered)
 	f:write("#endif\n")
 	f:write("#ifdef __cplusplus\n}\n#endif\n")
 	f:close()
