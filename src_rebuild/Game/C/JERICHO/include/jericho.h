@@ -555,8 +555,9 @@ int jer_manager_set_enabled(const char* rootDir, const char* id, int enabled);
 int jer_manager_move(const char* rootDir, const char* id, int direction);
 
 /* The multiplayer core suite, in mandatory load order: carhacks, pedhacks, mp.
- * bake is optional tooling and is not in this list. Everything else follows
- * in the player's own order. */
+ * bake is optional tooling and is not in this list. bake and crumple, when
+ * present, are placed next and keep their enabled flag. Everything else
+ * follows in the player's own order. */
 int jer_manager_core_count(void);
 const char* jer_manager_core_id(int i);
 

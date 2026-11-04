@@ -264,6 +264,26 @@ int jer_manager_move(const char* rootDir, const char* id, int direction)
 
 static const char* const jerCoreOrder[] = { "carhacks", "pedhacks", "mp" };
 
+/* Release mods that stay optional. Same ids as jerSuiteAfterCore in
+ * jer_system.c and the tail of JERICHO_TABLE_ORDER in premake5.lua.
+ * Placed after the mandatory suite so a hand-edited modlist cannot leave
+ * pedhacks or mp behind a store addon. Enabled flags are preserved:
+ * bake must stay join-optional. */
+static const char* const jerReleaseAfterCore[] = { "bake", "crumple" };
+
+static int jerManagerReleaseAfterIndex(const char* id)
+{
+	int i;
+
+	for (i = 0; i < (int)(sizeof(jerReleaseAfterCore) / sizeof(jerReleaseAfterCore[0])); i++)
+	{
+		if (strcmp(jerReleaseAfterCore[i], id) == 0)
+			return i;
+	}
+
+	return -1;
+}
+
 int jer_manager_core_count(void)
 {
 	return (int)(sizeof(jerCoreOrder) / sizeof(jerCoreOrder[0]));
@@ -290,13 +310,14 @@ static int jerManagerCoreIndex(const char* id)
 	return -1;
 }
 
-/* Rewrite modlist.ini with the core suite first and enabled, preserving the
- * relative order of every other entry. Returns 1 when the file changed, 0 when it
- * was already right (or there is no file to normalise), -1 on a write error.
+/* Rewrite modlist.ini with the mandatory suite first and enabled, then bake
+ * and crumple (enabled flag preserved), then every other entry in its
+ * relative order. Returns 1 when the file changed, 0 when it was already
+ * right (or there is no file to normalise), -1 on a write error.
  *
  * No file is CREATED: a release ships without one, where every module falls back to
  * its mod.toml default. Writing one there would pin every module at once and change
- * what an install runs. The activation pass still orders the core suite in memory. */
+ * what an install runs. The activation pass still orders the suite in memory. */
 int jer_manager_normalize_core(const char* rootDir)
 {
 	JER_MODLIST_STATE st, out;
@@ -321,9 +342,24 @@ int jer_manager_normalize_core(const char* rootDir)
 		}
 	}
 
+	for (c = 0; c < (int)(sizeof(jerReleaseAfterCore) / sizeof(jerReleaseAfterCore[0])); c++)
+	{
+		for (i = 0; i < st.count; i++)
+		{
+			if (strcmp(st.items[i].id, jerReleaseAfterCore[c]) != 0)
+				continue;
+
+			out.items[n] = st.items[i];
+			n++;
+			break;
+		}
+	}
+
 	for (i = 0; i < st.count; i++)
 	{
 		if (jerManagerCoreIndex(st.items[i].id) >= 0)
+			continue;
+		if (jerManagerReleaseAfterIndex(st.items[i].id) >= 0)
 			continue;
 
 		out.items[n] = st.items[i];
