@@ -99,6 +99,9 @@ GAMETYPE StoredGameType;
 int GameLevel = 0;
 int gInvincibleCar = 0;
 int gPlayerImmune = 0;
+/* Host session rule (mp copies ruleInvuln here). 1 = no car takes damage.
+ * Distinct from gInvincibleCar, which is the local player's own cheat. */
+int gInvulnerableWorld = 0;
 u_char NumPlayers = 1;
 char NewLevel = 1;
 GAMETYPE GameType = GAME_MISSION;

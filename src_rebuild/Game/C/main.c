@@ -3583,6 +3583,23 @@ void UpdatePlayerInformation(void)
 			gDieWithFade = 1;
 		}
 	}
+
+	/* Host rule: damage must not survive the frame on any car. The per-player
+	 * clear above only covers the local driver, which is the whole of single
+	 * player and not an online match. */
+	if (gInvulnerableWorld)
+	{
+		for (i = 0; i < MAX_CARS; i++)
+		{
+			cp = &car_data[i];
+
+			if (cp->controlType == CONTROL_TYPE_NONE)
+				continue;
+
+			cp->totalDamage = 0;
+			ClearMem((char*)cp->ap.damage, sizeof(cp->ap.damage));
+		}
+	}
 }
 
 int CurrentPlayerView = 0;
