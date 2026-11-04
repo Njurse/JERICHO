@@ -13,4 +13,8 @@ void jer_rebake_frontend_tick(int onMainMenu);
 /* Let the next quiet main-menu frame ask again (one-shot per run otherwise). */
 void jer_rebake_rearm(void);
 
+/* What Yes on those questions does: run BAKE_D1_CARS --from-game and exit so
+ * the script can relaunch the game. Options -> JERICHO -> Bake calls this too. */
+void jer_rebake_start(void);
+
 #endif /* JER_REBAKE_H */
