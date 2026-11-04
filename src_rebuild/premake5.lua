@@ -330,16 +330,22 @@ local function jer_version_defines()
       return (s:gsub("%s+$", ""))
    end
 
-   -- The APP version. A tag when the build sits exactly on one, otherwise
-   -- "<tag>-<n>-g<hash>", or a bare hash for a checkout with no tags at all. The
-   -- leading "v" the release tags carry is stripped, so the binary says "0.10.2".
+   -- The APP version. An exact v* tag on HEAD wins unchanged: the leading "v"
+   -- is stripped, so a release build says "0.13.7", not "v0.13.7". Off the tag,
+   -- git describe supplies "<tag>-<n>-g<hash>" and "-dirty" when the tree
+   -- differs -- the form CI logs and the frontend already parse
+   -- ("0.13.7-4-gabcdef12"). A checkout with no v* tags falls back to
+   -- JERICHO_BASE_VERSION (the next line after the latest release), not a bare
+   -- hash and not a shortened "0.13".
    -- --match "v*": only RELEASE tags name a version; a checkpoint/... tag must
    -- never become the window title (it once read "checkpoint/getrdun-...").
-   -- JERICHO_BASE_VERSION pins the version a branch is working toward, so the
-   -- exe reads it even before a matching v* tag exists. An exact v* tag on HEAD
-   -- still wins (release builds keep naming themselves after their tag).
-   local JERICHO_BASE_VERSION = "0.13"
+   -- Stamped when premake generates the project, not at compile time. Re-run
+   -- premake after a commit or tag or the exe keeps the previous string.
+   local JERICHO_BASE_VERSION = "0.13.8"
    local desc = git("git describe --tags --exact-match --match \"v*\" HEAD"):gsub("^v", "")
+   if desc == "" then
+      desc = git("git describe --tags --match \"v*\" --dirty"):gsub("^v", "")
+   end
    if desc == "" then
       desc = JERICHO_BASE_VERSION
    end
