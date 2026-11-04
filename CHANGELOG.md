@@ -4,6 +4,12 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## Unreleased
+
+### World textures
+
+- **Pause, then Reload world textures, puts the level's pages back.** A custom car bank, carhacks or a bake can leave the wrong texture page or palette in the world's VRAM, and that used to stay until you restarted. The command is on the pause menu (including multiplayer and cutscenes). It re-reads the level's own pages and palette rows, and asks the area you are in to stream its pages again. Cars kept in the lower half of texture memory stay there. One that had taken a world slot is moved off it. The same restore runs when that car is released, which previously only forgot the claim and left the pixels.
+
 ## v0.13.6
 
 *Released 2026-11-03.*

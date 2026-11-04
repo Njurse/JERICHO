@@ -227,6 +227,12 @@ int  JerLowerPoolClutDropped(void);
 extern void ProcessTextureInfo(char *lump_ptr); // 0x00081080
 extern void LoadPermanentTPages(int *sector); // 0x00080688
 
+/* Re-upload the level's own texture pages and CLUTs after something else has
+ * written world VRAM (a custom bank, an import that took a world slot, a bake).
+ * Returns how many resident pages were uploaded plus how many streamed slots
+ * were queued. 0 when no level pages are loaded. See JerReloadWorldVram. */
+extern int JerReloadWorldVram(void);
+
 extern void ReloadIcons(); // 0x00081118
 
 #ifndef PSX
