@@ -86,6 +86,32 @@ Banks also have no `M<CITY>.LEV` arena variant — only Driver 2's own four citi
 do — and no `LEVELS\<CITY>` override folder, so per-car `CARMODEL_*` overrides do
 not apply to them.
 
+## Car-select portrait
+
+Stock Driver 2 portraits are not in the `.LEV`. They are loose pages in
+`DATA\CARS\CCARS.RAW` / `HCARS.RAW` / `VCARS.RAW` / `RCARS.RAW` (one `0x8000`-byte
+4bpp page per frontend slot, drawn by `SetupExtraPoly` in `FEmain.c`). A bank and
+a Driver 1 city have no such file, so the car-select menu used to leave their
+icon blank.
+
+A page dropped beside the `.LEV` the registry opens is used instead, keyed by
+**model number**:
+
+```
+<directory of the .LEV>/<LEV stem>.portraits/<model>.raw
+```
+
+`DRIVER2\LEVELS\BCCHI.LEV` → `DRIVER2\LEVELS\BCCHI.portraits\10.raw` for model 10.
+`JERICHO\MODS\carhacks\D1CARS\MIAMI.LEV` → `...\D1CARS\MIAMI.portraits\1.raw`.
+
+The file is exactly 32768 bytes (256×256 at 4bpp). The frontend shows the top 219
+rows as a 255×219 sprite and takes the colours from `DATA\CARS\CARBACK.RAW`,
+unless `<model>.clut` (32 bytes, 16 little-endian RGB555) sits beside the page —
+that replaces the portrait CLUT at VRAM `(960,256)` for the draw. A missing file
+leaves the old behaviour: Driver 2 cities 0–3 keep their slot art, everything
+else stays blank. The stock car screen (missions) is unchanged; the module menu
+is the one that asks for a city and a model.
+
 **A sparse bank can be completed.** Copying the missing models out of the host
 city's own level file (byte for byte, plus the page sets and palette rows they
 need) is `JERICHO/MODS/carhacks/tools/bankfill.py`; run its `--report` first to see
