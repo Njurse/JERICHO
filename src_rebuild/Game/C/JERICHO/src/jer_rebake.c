@@ -179,9 +179,14 @@ static void RbExePath(char* out, int outSize)
 #endif
 }
 
-static void RbYes(void)
+void jer_rebake_start(void)
 {
 	char gameExe[RB_PATH_MAX];
+
+	/* The prompt tick is what normally remembers the script. Bake on the options
+	 * menu can run before that tick, so look it up here too. Same function. */
+	if (sRebakeScript[0] == 0)
+		RbToolingVersion();
 
 	if (sRebakeScript[0] == 0)
 	{
@@ -344,7 +349,7 @@ void jer_rebake_frontend_tick(int onMainMenu)
 				"The game restarts after. Drop Driver 1 files in DRIVER/. "
 				"The 16 Dec 1998 Buick GSX proto: put LEVELS/ and SOUND/ in EURO43/. "
 				"No skips this time. first_bake_prompt=0 in CONFIG/rebake.ini stops asking.",
-				"Continue", "No", RbYes, RbFirstNo);
+				"Continue", "No", jer_rebake_start, RbFirstNo);
 			return;
 		}
 	}
@@ -355,7 +360,7 @@ void jer_rebake_frontend_tick(int onMainMenu)
 	jer_log("[rebake] Driver 1 bake is older than the tooling (baked %d, expected %d)\n", baked, wanted);
 	jer_prompt_begin("Your Driver 1 cars were baked with older tooling. Re-bake them now? "
 		"Drop Driver 1 files in DRIVER/. "
-		"The 16 Dec 1998 Buick GSX proto: put LEVELS/ and SOUND/ in EURO43/.", RbYes);
+		"The 16 Dec 1998 Buick GSX proto: put LEVELS/ and SOUND/ in EURO43/.", jer_rebake_start);
 }
 
 /* The one-shot prompt already ran (or the player declined). A mod install may
