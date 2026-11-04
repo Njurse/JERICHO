@@ -317,4 +317,36 @@ static inline int CarRemapReleasable(int set, int city, const int* pinSet, const
 	return 1;
 }
 
+/* ---------------------------------------------------------------------------
+ * World VRAM reload
+ *
+ * A level's own pages are uploaded once (LoadPermanentTPages). An import that
+ * cannot stay in the lower half pool can sit on one of those rectangles, and
+ * giving the claim back does not put the level's pixels back. The reload has
+ * to know which pins are on a world slot and which slots the spool owns.
+ *
+ * JER_WORLD_SLOTS is the engine's tpageslots bound (TPAGE_SLOTS in texture.h).
+ * ------------------------------------------------------------------------- */
+
+#define JER_WORLD_SLOTS	19
+
+/* A lower-half pool pin is not on a world rectangle. A pin with a real
+ * tpagepos[] index is, and the level's page cannot be written back under it. */
+static inline int jer_world_reload_detach_pin(int poolSlot, int texSlot)
+{
+	return poolSlot < 0 && texSlot >= 0 && texSlot < JER_WORLD_SLOTS;
+}
+
+/* Resident pages are slots [0, residentCount). The spool's world pages are the
+ * rest of the 19. */
+static inline int jer_world_reload_resident_slot(int slot, int residentCount)
+{
+	return slot >= 0 && slot < residentCount && slot < JER_WORLD_SLOTS;
+}
+
+static inline int jer_world_reload_stream_slot(int slot, int residentCount)
+{
+	return slot >= residentCount && slot >= 0 && slot < JER_WORLD_SLOTS;
+}
+
 #endif /* CARPINREF_H */

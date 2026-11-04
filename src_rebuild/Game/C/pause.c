@@ -18,6 +18,7 @@
 #include "platform.h"
 #include "loadsave.h"
 #include "cutrecorder.h"
+#include "texture.h"		/* JerReloadWorldVram: put the level's pages back */
 
 #define REPLAY_NAME_LEN		16
 #define SCORE_NAME_LEN		5
@@ -338,6 +339,15 @@ MENU_HEADER YesNoRestartHeader =
 MENU_HEADER YesNoQuitHeader =
 { G_LTXT_ID(GTXT_AreYouSure), { 0, 0, 0, 0 }, 0u, YesNoQuitItems };
 
+/* The level's texture pages are uploaded once. A custom bank, carhacks or a
+ * bake can leave the wrong page or CLUT in those rectangles, and nothing
+ * re-reads the file until this. */
+static void ReloadWorldTextures(int direction)
+{
+	(void)direction;
+	JerReloadWorldVram();
+}
+
 MENU_ITEM MainPauseItems[] =
 {
 	{ G_LTXT_ID(GTXT_Continue), 1u, 2u, NULL, MENU_QUIT_CONTINUE, NULL },
@@ -350,6 +360,7 @@ MENU_ITEM MainPauseItems[] =
 #if (defined(_DEBUG) || defined(DEBUG_OPTIONS)) && !defined(JERICHO_RELEASE_MODS)
 	{ "Debug Options", PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &DebugOptionsHeader },
 #endif
+	{ "Reload world textures", PAUSE_TYPE_FUNC, 2u, (pauseFunc)&ReloadWorldTextures, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_Exit), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoQuitHeader },
 	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
 };
@@ -361,6 +372,7 @@ MENU_ITEM MultiplayerPauseItems[] =
 	{ G_LTXT_ID(GTXT_SfxVolume), PAUSE_TYPE_SFXVOLUME | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&SfxVolume, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_MusicVolume), PAUSE_TYPE_MUSICVOLUME | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&MusicVolume, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_QuickReplay),1u,2u,NULL,MENU_QUIT_QUICKREPLAY,NULL},
+	{ "Reload world textures", PAUSE_TYPE_FUNC, 2u, (pauseFunc)&ReloadWorldTextures, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_Exit), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoQuitHeader },
 	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
 };
@@ -375,6 +387,7 @@ MENU_ITEM CutscenePauseItems[] =
 #if (defined(_DEBUG) || defined(DEBUG_OPTIONS)) && !defined(JERICHO_RELEASE_MODS)
 	{ "Debug Options", PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &DebugOptionsHeader },
 #endif
+	{ "Reload world textures", PAUSE_TYPE_FUNC, 2u, (pauseFunc)&ReloadWorldTextures, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_Exit), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoQuitHeader },
 	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
 };

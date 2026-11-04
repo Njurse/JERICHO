@@ -8,6 +8,8 @@
 #include "objanim.h"
 #include "ASM/compres.h"
 #include "carpinref.h"	// JERICHO: pin owners, CLUT bands, table removal (pure, tested off-engine)
+#include "spool.h"		// JERICHO: LoadInAreaTSets / StartSpooling, to put streamed world pages back
+#include "jer_console.h"	// JERICHO: tell the player when world VRAM no longer matches the level
 
 #ifndef PSX
 #include "PsyX/PsyX_render.h"
@@ -949,6 +951,32 @@ extern int FrameCnt;			// JERICHO: frame clock for the imported-page claim pool
 
 static int sCarPageClaimFrame[19];
 static int sCarPageGiveBacks;		// world uploads that reclaimed a stale claim
+
+/* JERICHO: what LoadPermanentTPages put in the world, so it can be put back.
+ * Permanent pages and the host palette rows are read once from the level file.
+ * A later upload into those rectangles (a custom bank, a pin that missed the
+ * lower half pool) is not undone by clearing a claim: the pixels stay until
+ * something reads the file again. Streamed slots are the spool's; they come
+ * back only when they are asked for again. */
+static int sWorldReloadReady;
+static int sWorldPageSector = -1;
+static int sWorldSpecPage1 = -1;
+static int sWorldSpecPage2 = -1;
+static RECT16 sWorldClutBeforePal;
+static RECT16 sWorldClutAtPages;
+static RECT16 sWorldTpageAtPages;
+static int sWorldOrigCount;
+static u_char sWorldOrigSet[TPAGE_SLOTS];
+static int sWorldDirtyLogged;
+static int sWorldSlotTaken;
+static int sWorldStreamPending;
+static int sWorldReloading;
+
+static_assert(TPAGE_SLOTS == JER_WORLD_SLOTS, "world reload helpers use TPAGE_SLOTS");
+
+extern int LoadedArea;			/* map.c: the area whose pages are on screen */
+extern int tsetcounter;			/* spool.c */
+extern int tsetpos;
 
 // JERICHO: is this VRAM rectangle one an imported page owns? Exported so the spool's
 // own upload paths can respect it too - they write texture_pages[] and call LoadImage
@@ -2540,6 +2568,10 @@ void CarImportPaletteRowForget(int row)
 	memset(&civ_clut[row][0][0], 0, sizeof(civ_clut[0]));
 }
 
+static void WorldVramNoteIfDirty(void);
+static int WorldQueueStreamed(void);
+static void WorldRestoreSlotsAfterRelease(const int* slots, int n);
+
 void CarImportPin(void)
 {
 	int i;
@@ -2992,6 +3024,7 @@ void CarImportPin(void)
 			tpageloaded[sPinIndex[i]] = (u_char)slot;
 
 			sPinTexSlot[i] = slot;
+			sWorldSlotTaken++;
 		}
 
 		// JERICHO: buildNewCarFromModel caches each set's palette-0 CLUT into its
@@ -3056,6 +3089,11 @@ void CarImportPin(void)
 
 		free(buf);
 	}
+
+	if (sWorldStreamPending)
+		WorldQueueStreamed();
+
+	WorldVramNoteIfDirty();
 }
 
 // JERICHO: report where the imported sets' pages actually ended up, by decoding the
@@ -4379,6 +4417,8 @@ int JerReleaseCarSlot(int slot)
 	int freed[CAR_PIN_MAX];
 	int i, k, f, nfreed, nsets = 0, nrows = 0, nidxs = 0, released = 0;
 	int shared = 0, pages = 0, bandRows = 0, indices = 0;
+	int restoreSlots[TPAGE_SLOTS];
+	int nrestore = 0;
 
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return 0;
@@ -4398,10 +4438,17 @@ int JerReleaseCarSlot(int slot)
 			pages++;
 		}
 
-		/* a world-slot pin (pool was full): hand the rectangle back to the world now
-		 * rather than when its claim goes stale */
-		if (sPinTexSlot[i] >= 0 && sPinTexSlot[i] < 19 && tpageslots[sPinTexSlot[i]] == sPinIndex[i])
+		/* a world-slot pin (pool was full): drop the claim now. The pixels and the
+		 * slot id stay wrong until WorldRestoreSlotsAfterRelease re-reads the level
+		 * page (resident) or asks the spool again (streamed). Clearing the claim
+		 * alone left the car's texture on the building. */
+		if (sPinTexSlot[i] >= 0 && sPinTexSlot[i] < TPAGE_SLOTS && tpageslots[sPinTexSlot[i]] == sPinIndex[i])
+		{
 			sCarPageClaimFrame[sPinTexSlot[i]] = 0;
+
+			if (nrestore < TPAGE_SLOTS)
+				restoreSlots[nrestore++] = sPinTexSlot[i];
+		}
 
 		if (sPinClutY[i] >= 0 && sPinClutRows[i] > 0)
 		{
@@ -4580,6 +4627,9 @@ int JerReleaseCarSlot(int slot)
 	if (released > 0 || shared > 0)
 		printInfo("cross-city: released slot %d - %d pool page(s), %d CLUT row(s), %d baked index(es) given back; %d page(s) kept (another car still names them)\n",
 			slot, pages, bandRows, indices, shared);
+
+	if (nrestore > 0)
+		WorldRestoreSlotsAfterRelease(restoreSlots, nrestore);
 
 	return released;
 }
@@ -5398,6 +5448,16 @@ void LoadPermanentTPages(int *sector)
 	// init tpage and cluts
 	MaxSpecCluts = 0;
 
+	/* JERICHO: remember where these pages live in the level file before *sector
+	 * advances. A reload reads the same span back. Not ready until the snapshot
+	 * at the bottom of this function has the slot ids. */
+	sWorldReloadReady = 0;
+	sWorldDirtyLogged = 0;
+	sWorldSlotTaken = 0;
+	sWorldStreamPending = 0;
+	sWorldPageSector = (sector != NULL) ? *sector : -1;
+	sWorldOrigCount = 0;
+
 	// JERICHO-HOOK: read the imported city's page lists (no-op with no import) so
 	// its car sets can be registered below.
 	ParseImportedTextureInfo();
@@ -5436,6 +5496,7 @@ void LoadPermanentTPages(int *sector)
 	fontclutpos = clutpos;
 	
 	IncrementClutNum(&clutpos);
+	sWorldClutBeforePal = clutpos;
 	ProcessPalletLump(palette_lump, palette_lump_size);
 	JERICHO_PAL_DIAG("host palettes");
 	ProcessImportedPalette();	// JERICHO-HOOK: a cross-city import's own palettes
@@ -5443,6 +5504,12 @@ void LoadPermanentTPages(int *sector)
 
 	load_civ_palettes(&clutpos);
 	JERICHO_PAL_DIAG("load_civ_palettes");
+
+	/* The permanent-page walk starts from these cursors. A reload replays it
+	 * with copies, so the global cursors (and every CLUT allocated after this)
+	 * stay where the rest of the session left them. */
+	sWorldClutAtPages = clutpos;
+	sWorldTpageAtPages = tpage;
 
 	tpagebuffer = (char*)mallocptr;
 	nsectors = 0;
@@ -5493,6 +5560,8 @@ void LoadPermanentTPages(int *sector)
 
 	carTpages[GameLevel][6] = page1;
 	carTpages[GameLevel][7] = page2;
+	sWorldSpecPage1 = page1;
+	sWorldSpecPage2 = page2;
 
 	if (nspecpages != 0)
 	{
@@ -5624,6 +5693,443 @@ void LoadPermanentTPages(int *sector)
 	// table above are committed a little later in a level's life (sky, font, CD icon), so
 	// they are counted here from their constants rather than waited for.
 	VramAccountReport();
+
+	/* JERICHO: the resident slots this load actually filled. Streamed slots
+	 * (slotsused..18) change as the player drives, so they are not recorded;
+	 * a reload asks the spool for the current area instead. */
+	sWorldOrigCount = slotsused;
+
+	if (sWorldOrigCount > TPAGE_SLOTS)
+		sWorldOrigCount = TPAGE_SLOTS;
+
+	for (i = 0; i < sWorldOrigCount; i++)
+		sWorldOrigSet[i] = tpageslots[i];
+
+	sWorldReloadReady = (permlist != NULL && sWorldPageSector >= 0 && (nperms > 0 || nspecpages > 0)) ? 1 : 0;
+}
+
+/* The same sector stride LoadPermanentTPages uses, so a reload walks the same bytes. */
+static int WorldPageStride(int bytes)
+{
+	if (bytes < 0)
+		return 0;
+
+	return (bytes + (CDSECTOR_SIZE - 1)) & -CDSECTOR_SIZE;
+}
+
+static int WorldPageBlockBytes(void)
+{
+	int i, n = 0;
+
+	if (permlist == NULL || nperms < 0)
+		return 0;
+
+	for (i = 0; i < nperms; i++)
+		n += WorldPageStride(permlist[i].y);
+
+	if (speclist != NULL && nspecpages > 0)
+	{
+		for (i = 0; i < nspecpages; i++)
+			n += WorldPageStride(speclist[i].y);
+	}
+
+	return n;
+}
+
+static char* WorldReadPageBlock(int* outBytes)
+{
+	int bytes, sectors;
+	char* buf;
+
+	*outBytes = 0;
+	bytes = WorldPageBlockBytes();
+
+	if (bytes <= 0 || sWorldPageSector < 0)
+		return NULL;
+
+	buf = (char*)malloc((size_t)bytes);
+
+	if (buf == NULL)
+		return NULL;
+
+	sectors = bytes / CDSECTOR_SIZE;
+
+	if (sectors <= 0)
+	{
+		free(buf);
+		return NULL;
+	}
+
+	loadsectors(buf, sWorldPageSector, sectors);
+	*outBytes = bytes;
+	return buf;
+}
+
+/* Advance the local cursors the way LoadTPageAndCluts would have, without writing.
+ * Used when a rectangle is still an import's and must not be overwritten. */
+static void WorldSkipPageAdvance(RECT16* page, RECT16* clut, char* entry)
+{
+	int npal = *(int*)entry;
+	int i;
+
+	if (npal < 0)
+		npal = 0;
+
+	if (npal > 32)
+		npal = 32;
+
+	for (i = 0; i < npal; i++)
+		IncrementClutNum(clut);
+
+	IncrementTPageNum(page);
+}
+
+static int WorldUploadResidentEntry(RECT16* page, RECT16* clut, int slot, int set, char* entry)
+{
+	if (slot < 0 || slot >= TPAGE_SLOTS)
+	{
+		WorldSkipPageAdvance(page, clut, entry);
+		return 0;
+	}
+
+	if (slot < sWorldOrigCount && (u_char)set != sWorldOrigSet[slot])
+	{
+		printInfo("JERICHO-VRAM: slot %d file set %d, level load recorded %d\n",
+			slot, set, sWorldOrigSet[slot]);
+	}
+
+	if (CarPageRectOwned(page->x, page->y))
+	{
+		printInfo("JERICHO-VRAM: slot %d still held by an imported page - set %d left in place\n",
+			slot, set);
+		WorldSkipPageAdvance(page, clut, entry);
+		return 0;
+	}
+
+	update_slotinfo(set, slot, page);
+
+	if (!LoadTPageAndCluts(page, clut, set, entry))
+	{
+		/* Returned before writing: the cursors did not move. Keep the walk aligned. */
+		printInfo("JERICHO-VRAM: set %d did not upload into slot %d\n", set, slot);
+		WorldSkipPageAdvance(page, clut, entry);
+		return 0;
+	}
+
+	return 1;
+}
+
+/* Replay the permanent pages and the special-car pages LoadPermanentTPages
+ * uploaded, into the same rectangles and CLUT rows. Local cursor copies: the
+ * live clutpos is whatever later allocations have walked to. */
+static int WorldReplayPages(char* buf, int bytes)
+{
+	char* p = buf;
+	char* end = buf + bytes;
+	RECT16 page = sWorldTpageAtPages;
+	RECT16 clut = sWorldClutAtPages;
+	int i, uploaded = 0, slot = 0;
+
+	page.w = 64;
+	page.h = 256;
+	clut.w = 16;
+	clut.h = 1;
+
+	for (i = 0; i < nperms && permlist != NULL; i++)
+	{
+		int stride = WorldPageStride(permlist[i].y);
+		int set = permlist[i].x;
+
+		if (stride <= 0 || p + stride > end)
+		{
+			printInfo("JERICHO-VRAM: permanent page %d runs past the texture block - stopped\n", i);
+			return uploaded;
+		}
+
+		if (WorldUploadResidentEntry(&page, &clut, slot, set, p))
+			uploaded++;
+
+		p += stride;
+		slot++;
+	}
+
+	if (speclist != NULL)
+	{
+		for (i = 0; i < nspecpages; i++)
+		{
+			int stride = WorldPageStride(speclist[i].y);
+			int set = speclist[i].x;
+
+			if (stride <= 0 || p + stride > end)
+			{
+				printInfo("JERICHO-VRAM: special page %d runs past the texture block - stopped\n", i);
+				return uploaded;
+			}
+
+			if (set == sWorldSpecPage1 || set == sWorldSpecPage2)
+			{
+				if (WorldUploadResidentEntry(&page, &clut, slot, set, p))
+					uploaded++;
+
+				slot++;
+			}
+
+			p += stride;
+		}
+	}
+
+	return uploaded;
+}
+
+static void WorldReplayHostPalettes(void)
+{
+	RECT16 live;
+
+	if (palette_lump == NULL || palette_lump_size <= 0)
+		return;
+
+	/* Same start the level load used, then put the cursor back. The walk writes
+	 * the host's civ_clut rows and the CLUT pixels those ids name. It does not
+	 * touch a guest city's table: that lives in the lower half pool. */
+	live = clutpos;
+	clutpos = sWorldClutBeforePal;
+	ProcessPalletLump(palette_lump, palette_lump_size);
+	clutpos = live;
+}
+
+static void WorldReapplyTims(void)
+{
+#ifndef PSX
+	extern int gContentOverride;
+	int s;
+
+	if (!gContentOverride)
+		return;
+
+	for (s = 0; s < sWorldOrigCount && s < TPAGE_SLOTS; s++)
+		LoadTPageFromTIMs((int)sWorldOrigSet[s]);
+#else
+	(void)0;
+#endif
+}
+
+static int WorldResidentMismatches(void)
+{
+	int i, n = 0;
+
+	if (!sWorldReloadReady)
+		return 0;
+
+	for (i = 0; i < sWorldOrigCount && i < TPAGE_SLOTS; i++)
+	{
+		if (tpageslots[i] != sWorldOrigSet[i])
+			n++;
+	}
+
+	return n;
+}
+
+static void WorldVramNoteIfDirty(void)
+{
+	int n;
+
+	if (sWorldReloading || !sWorldReloadReady)
+		return;
+
+	n = WorldResidentMismatches();
+
+	if (n <= 0)
+	{
+		sWorldDirtyLogged = 0;
+		return;
+	}
+
+	if (sWorldDirtyLogged)
+		return;
+
+	sWorldDirtyLogged = 1;
+	printInfo("JERICHO-VRAM: world pages no longer match level load (%d resident slot(s), %d world-slot placement(s)). Pause and choose \"Reload world textures\".\n",
+		n, sWorldSlotTaken);
+	jer_console_log("world textures wrong - pause, Reload world textures");
+}
+
+/* Drop import pins that are sitting on a world slot so the level's page can
+ * be written there. Pool pins stay. A detached pin is placed again by
+ * CarImportPin, which asks the lower half pool first. */
+static int WorldDetachSlotPins(void)
+{
+	int i, n = 0;
+
+	for (i = 0; i < sPinCount; i++)
+	{
+		int slot, idx;
+
+		if (!jer_world_reload_detach_pin(sPinPool[i], sPinTexSlot[i]))
+			continue;
+
+		slot = sPinTexSlot[i];
+		idx = sPinIndex[i];
+		sCarPageClaimFrame[slot] = 0;
+		sPinTexSlot[i] = -1;
+
+		if (idx >= 0 && idx < 128)
+			tpageloaded[idx] = 0;
+
+		n++;
+	}
+
+	if (n == 0)
+		return 0;
+
+	for (i = 0; i < sPinCount; i++)
+	{
+		int idx = sPinIndex[i];
+		int p, placed = 0;
+
+		if (idx < 0 || idx >= 128)
+			continue;
+
+		for (p = 0; p < sPinCount; p++)
+		{
+			if (sPinIndex[p] == idx && (sPinPool[p] >= 0 || sPinTexSlot[p] >= 0))
+			{
+				placed = 1;
+				break;
+			}
+		}
+
+		if (placed || HostUsesTPage(idx))
+			continue;
+
+		texture_pages[idx] = (sJerCheckerTpage != 0) ? sJerCheckerTpage : GetTPage(0, 0, 960, 0);
+
+		for (p = 0; p < 32; p++)
+			texture_cluts[idx][p] = (sJerCheckerClut != 0) ? sJerCheckerClut : GetClut(960, 16);
+	}
+
+	return n;
+}
+
+static int WorldQueueStreamed(void)
+{
+	int slot, n = 0;
+
+	if (!sWorldReloadReady || LoadedArea < 0)
+		return 0;
+
+	if (spoolactive || tsetcounter != 0 || tsetpos != 0)
+	{
+		sWorldStreamPending = 1;
+		printInfo("JERICHO-VRAM: streamed world pages will reload when the spool is idle\n");
+		return 0;
+	}
+
+	for (slot = 0; slot < TPAGE_SLOTS; slot++)
+	{
+		int held;
+
+		if (!jer_world_reload_stream_slot(slot, sWorldOrigCount))
+			continue;
+
+		held = tpageslots[slot];
+
+		if (held != 0xFF && held < 128)
+			tpageloaded[held] = 0;
+
+		tpageslots[slot] = 0xFF;
+		n++;
+	}
+
+	sWorldStreamPending = 0;
+	LoadInAreaTSets(LoadedArea);
+	StartSpooling();
+	return n;
+}
+
+static int WorldReplayResidentPages(void)
+{
+	char* buf;
+	int bytes = 0;
+	int pages;
+
+	buf = WorldReadPageBlock(&bytes);
+
+	if (buf == NULL)
+	{
+		printInfo("JERICHO-VRAM: could not re-read the level's texture pages\n");
+		return 0;
+	}
+
+	pages = WorldReplayPages(buf, bytes);
+	free(buf);
+	WorldReapplyTims();
+	return pages;
+}
+
+static void WorldRestoreSlotsAfterRelease(const int* slots, int n)
+{
+	int i, resident = 0, stream = 0;
+
+	if (!sWorldReloadReady || sWorldReloading || slots == NULL || n <= 0)
+		return;
+
+	for (i = 0; i < n; i++)
+	{
+		if (jer_world_reload_resident_slot(slots[i], sWorldOrigCount))
+			resident = 1;
+		else if (jer_world_reload_stream_slot(slots[i], sWorldOrigCount))
+			stream = 1;
+	}
+
+	sWorldReloading = 1;
+
+	if (resident)
+	{
+		int pages = WorldReplayResidentPages();
+
+		printInfo("JERICHO-VRAM: pin release put %d resident page(s) back\n", pages);
+	}
+
+	if (stream)
+		WorldQueueStreamed();
+
+	sWorldReloading = 0;
+
+	if (WorldResidentMismatches() == 0)
+		sWorldDirtyLogged = 0;
+}
+
+int JerReloadWorldVram(void)
+{
+	int pages = 0, detached = 0, streamed = 0, mismatched, taken;
+
+	if (!sWorldReloadReady || permlist == NULL)
+	{
+		printInfo("JERICHO-VRAM: reload skipped - no level texture pages are loaded\n");
+		return 0;
+	}
+
+	if (sWorldReloading)
+		return 0;
+
+	sWorldReloading = 1;
+	mismatched = WorldResidentMismatches();
+	taken = sWorldSlotTaken;
+
+	detached = WorldDetachSlotPins();
+	WorldReplayHostPalettes();
+	pages = WorldReplayResidentPages();
+	streamed = WorldQueueStreamed();
+
+	sWorldSlotTaken = 0;
+	sWorldDirtyLogged = (WorldResidentMismatches() == 0) ? 0 : 1;
+	sWorldReloading = 0;
+
+	printInfo("JERICHO-VRAM: reloaded world assets - %d resident page(s), %d streamed slot(s) queued, %d import pin(s) moved off world slots, %d resident slot(s) had differed (%d world-slot placement(s)). Host palette CLUTs rewritten. Lower-half pool left in place.\n",
+		pages, streamed, detached, mismatched, taken);
+	jer_console_log("world textures reloaded");
+
+	return pages + streamed;
 }
 
 // [D] [T]
