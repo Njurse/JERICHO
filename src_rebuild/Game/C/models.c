@@ -2540,6 +2540,34 @@ static int CarImportModelFits(const char* lump, int size, int ofs)
 	return 1;
 }
 
+/* D1 damaged models are a header plus their own vertices. GetCarModel copies
+ * `normals` bytes and never reads poly_block — that field still names the clean
+ * model's polys and can sit past this block (Hallgarth Firebird / HALLCHCG
+ * 0.1.4: damaged is Firebird_high.obj, poly_block is the clean offset, 36 bytes
+ * past the lump). Requiring poly_block in-lump made GetCarImportModels reject
+ * the whole car, so a start had nothing to build and a respawn did nothing. */
+static int CarImportDamagedFits(const char* lump, int size, int ofs)
+{
+	const MODEL* m;
+	int base = 4 + 160 + ofs;
+
+	if (ofs < 0 || base + (int)sizeof(MODEL) > size)
+		return 0;
+
+	m = (const MODEL*)(lump + base);
+
+	if (m->normals < (int)sizeof(MODEL) || m->normals > size - base)
+		return 0;
+
+	if (m->vertices < (int)sizeof(MODEL) || m->vertices >= m->normals)
+		return 0;
+
+	if (m->num_vertices <= 0)
+		return 0;
+
+	return 1;
+}
+
 // buildNewCarFromModel walks num_polys polys of a clean/low model straight from the
 // lump (PolySizes[type & 0x1f] each), so that walk must end inside the lump too.
 static int CarImportPolysFit(const char* lump, int size, int ofs)
@@ -2628,7 +2656,7 @@ char* GetCarImportModels(int slot)
 		return NULL;
 
 	if (!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[0]) ||
-		!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[1]) ||
+		!CarImportDamagedFits(imp->carModels, imp->carModelsSize, offsets[1]) ||
 		!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[2]) ||
 		!CarImportPolysFit(imp->carModels, imp->carModelsSize, offsets[0]) ||
 		!CarImportPolysFit(imp->carModels, imp->carModelsSize, offsets[2]))
