@@ -304,10 +304,40 @@ int bFindCollisionTime(CDATA2D *cd, CRET2D *collisionResult)
 	return time;
 }
 
+/* gInvincibleCar is the local cheat: the cars this machine's players drive.
+ * gInvulnerableWorld is the host's session rule, enforced on every machine:
+ * no car takes damage. Either one refuses the hit before it is recorded. */
+static int JerCarDamageBlocked(CAR_DATA* cp)
+{
+	int i;
+
+	if (cp == NULL)
+		return 1;
+
+	if (gInvulnerableWorld)
+		return 1;
+
+	if (!gInvincibleCar)
+		return 0;
+
+	for (i = 0; i < (int)NumPlayers; i++)
+	{
+		if (player[i].playerType == PLAYER_TYPE_CAR &&
+		    player[i].playerCarId >= 0 &&
+		    cp == &car_data[player[i].playerCarId])
+			return 1;
+	}
+
+	return 0;
+}
+
 // [D] [T]
 void ApplyDamage(CAR_DATA *cp, char region, int value, char fakeDamage)
 {
 	short *pRegion;
+
+	if (JerCarDamageBlocked(cp))
+		return;
 
 	if (cp->controlType == CONTROL_TYPE_PLAYER || cp->controlType == CONTROL_TYPE_LEAD_AI)
 		value *= FIXEDH(gPlayerDamageFactor);
