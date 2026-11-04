@@ -6,14 +6,38 @@ is in [changelog.txt](changelog.txt).
 
 ## v0.13.6
 
-**The download is the core game.** Multiplayer, CarHacks, CRUMPLE and the BAKE Toolkit come with it.
+*Released 2026-11-03.*
 
-### What's in the pack
+### Emergency
 
-- **The core pack is four mods.** MP, CarHacks, CRUMPLE and the BAKE Toolkit. That is what the Release download carries.
-- **Hallgarth's Cars is mod-store only.** Download it from the store and turn it on. It is not in the base pack.
-- **FULL TWIST and Antfarm stay off the base pack.** Antfarm is still available as a screensaver submodule for people building it themselves. It is not fetched as a core release mod, and it is not shipped as a folder in the zip.
-- **gaildrv2 has left this tree.** The machine-learning bridge is hibernated at [JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2).
+- **BAKE Toolkit is no longer required to join online or a dedicated server.** It was force-enabled via `jerCoreOrder`.
+- **Hallgarth Firebird (HALLCHCG) loads and respawns.** The damaged LOD fit check accepts a Driver 1 style header plus vertices, and bank-city lighting is clamped so HALLCHCG as a GameLevel does not crash.
+- **The mod store prompts updates for data packs again.** An empty runtime was treated as compiled-in and hid the hallgarthcars 0.1.4 update.
+- **The core pack is MP, CarHacks, CRUMPLE and the BAKE Toolkit.** Hallgarth's Cars is store-only. gaildrv2 is hibernated out of the tree ([JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2)).
+- **Dedicated server owners:** if your core mod list still required bake or d1cars, pull and run `update-dedi.sh`.
+
+**Most of this release is plumbing.** Custom car packs and online sessions are checked so a pack that does not fit is refused instead of crashing the game, and one player cannot overwrite another player's car. The one new thing to click is Bake, under Options, then JERICHO.
+
+### Baking
+
+- **The bake questions say where your files go.** On first start, and again when your Driver 1 cars were baked with older tooling, the game tells you to drop your Driver 1 files in `DRIVER/`. If you have the 16 Dec 1998 proto with the Buick GSX, put its `LEVELS/` and `SOUND/` in `EURO43/` so the bake can pull those cars.
+- **Options, then JERICHO, has a Bake button.** It asks first. Yes runs the same bake those questions run: the game closes, bakes from your files, and comes back.
+
+### Your car packs
+
+- **A damaged car pack is turned away instead of crashing the game.** Imported models, texture pages and baked pedestrian pages are checked against the pack's own file size before the game reads them. A pack that does not fit is skipped with a line in the log, not read past its end.
+- **A car with more detail than the damage system can hold no longer corrupts the next car.** Denting and lighting now stop at the car's own budget.
+- **Baked pedestrian pages are given back when a city unloads.** A short page is refused before it takes a pool slot, and every page a city pins is recorded, so pages no longer leak until the next level.
+
+### Multiplayer
+
+- **Players cannot rewrite each other's cars.** The car table and the agreed car set are accepted from the host only.
+- **All 16 seats are counted.** The carhacks tables were sized for 8 players, so players 8-15 had their picks dropped; they now match the 16-seat session.
+- **The dedicated server keeps honest traffic flowing through a join or leave.** It checks a client's traffic against the roster it last sent that client. Forged slots still drop. Server owners: pull mp and rebuild the dedi with `update-dedi.sh`.
+
+### Fixes
+
+- **The replay records the car you are actually driving.** A stale post-start car override was removed; mission loading already applies it.
 
 ## v0.13.5
 

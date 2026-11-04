@@ -1581,15 +1581,25 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 	CVECTOR c0, c1, c2;
 	u_int GT3rgb;
 
-	if (gTimeOfDay == TIME_NIGHT)
+	/* day_/night_ vectors and colours are the four Driver 2 cities. A runtime
+	 * bank (HALLCHCG and the rest) is a legal GameLevel for its cars and is not
+	 * a map: indexing [4] with it is the access violation on the first lit car. */
 	{
-		lightsourcevector = night_vectors[GameLevel];
-		colour = night_colours[GameLevel];
-	}
-	else
-	{
-		lightsourcevector = day_vectors[GameLevel];
-		colour = day_colours[GameLevel];
+		int lightCity = GameLevel;
+
+		if (lightCity < 0 || lightCity > 3)
+			lightCity = 0;
+
+		if (gTimeOfDay == TIME_NIGHT)
+		{
+			lightsourcevector = night_vectors[lightCity];
+			colour = night_colours[lightCity];
+		}
+		else
+		{
+			lightsourcevector = day_vectors[lightCity];
+			colour = day_colours[lightCity];
+		}
 	}
 
 	InvertMatrix(&cp->hd.where, &scratchPadMat);

@@ -245,18 +245,24 @@ int jer_manager_move(const char* rootDir, const char* id, int direction)
 /* ------------------------------------------------------------------ */
 /* The multiplayer CORE suite                                          */
 /*                                                                     */
-/* carhacks, bake, pedhacks and mp are one product: a session cannot agree on  */
-/* cars without all three, and the tests (and the dedicated server's   */
-/* preconfiguration) assume this order. They are MANDATORY and come    */
+/* carhacks, pedhacks and mp are one product: a session cannot agree   */
+/* on cars and pedestrians without them. They are MANDATORY and come   */
 /* first in the load order; everything else is optional and keeps the  */
 /* player's own order after them.                                      */
+/*                                                                     */
+/* bake (BAKE Toolkit, formerly d1cars) is NOT in this list. It is     */
+/* offline tooling — Driver 1 shapes and the JMPPED archive — and a    */
+/* client must be able to join with it disabled. Putting it here       */
+/* force-enabled it, rewrote modlist.ini on join, and made a missing   */
+/* bake refuse every optional addon. The dedicated server's mod check  */
+/* ignores the same ids (dedi/core.py).                                */
 /*                                                                     */
 /* The list lives here, not in mod.toml, because the ORDER is a product */
 /* decision and the engine must be able to enforce it even when a      */
 /* modlist.ini is missing (a release ships none).                      */
 /* ------------------------------------------------------------------ */
 
-static const char* const jerCoreOrder[] = { "carhacks", "bake", "pedhacks", "mp" };
+static const char* const jerCoreOrder[] = { "carhacks", "pedhacks", "mp" };
 
 int jer_manager_core_count(void)
 {
