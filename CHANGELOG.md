@@ -4,6 +4,17 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.6
+
+**The download is the core game.** Multiplayer, CarHacks, CRUMPLE and the BAKE Toolkit come with it.
+
+### What's in the pack
+
+- **The core pack is four mods.** MP, CarHacks, CRUMPLE and the BAKE Toolkit. That is what the Release download carries.
+- **Hallgarth's Cars is mod-store only.** Download it from the store and turn it on. It is not in the base pack.
+- **FULL TWIST and Antfarm stay off the base pack.** Antfarm is still available as a screensaver submodule for people building it themselves. It is not fetched as a core release mod, and it is not shipped as a folder in the zip.
+- **gaildrv2 has left this tree.** The machine-learning bridge is hibernated at [JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2).
+
 ## v0.13.5
 
 *Released 2026-11-03.*

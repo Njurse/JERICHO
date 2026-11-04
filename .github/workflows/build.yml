@@ -79,7 +79,7 @@ jobs:
       - name: Fetch mod submodules
         shell: bash
         run: |
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
@@ -267,13 +267,13 @@ jobs:
           # must never be built without them.
           #
           # PsyCross is pinned (its branch is a feature branch the build expects).
-          # The four CORE MODS are advanced to the latest commit of their own
-          # tracking branch (see `branch =` in .gitmodules): a release carries the
-          # current mods, not whatever gitlink the parent tree pinned. Fetch the
-          # branch by name: the init is a shallow clone of the pinned commit, so
-          # `submodule update --remote` cannot find the branch ref.
+          # The four CORE MODS are mp, carhacks, crumple and bake. antfarm stays a
+          # submodule for local screensaver builds and is not fetched here.
+          # The four are checked out at the pinned gitlink: the init is a shallow
+          # clone of that commit, so `submodule update --remote` cannot find the
+          # branch ref.
           git submodule update --init --depth=1 src_rebuild/PsyCross
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
@@ -284,7 +284,7 @@ jobs:
             echo "    $path at $(git -C "$path" rev-parse --short HEAD) (pinned)"
             echo "::endgroup::"
           done
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             test -f "$path/mod.toml" || {
               echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
               exit 1
@@ -475,10 +475,12 @@ jobs:
             Remove-Item "$bin/JERICHO/MODS/carhacks/D1CARS" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/DRIVER" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/DRIVER2" -Recurse -Force -ErrorAction SilentlyContinue
-            # Store-only addons: optional content from the mod store, never in the base pack
-            foreach ($opt in @('fulltwist')) {
+            # Store-only: never in the Release/base pack. fulltwist, Hallgarth's
+            # Cars, and antfarm (screensaver submodule) are downloaded from the
+            # mod store. Drop the folder, then fail if it is still there.
+            foreach ($opt in @('fulltwist', 'hallgarthcars', 'antfarm')) {
               Remove-Item "$bin/JERICHO/MODS/$opt" -Recurse -Force -ErrorAction SilentlyContinue
-              if (Test-Path "$bin/JERICHO/MODS/$opt") { throw "$opt is store-only but is still in $bin" }
+              if (Test-Path "$bin/JERICHO/MODS/$opt") { throw "$opt is store-only but is still in $bin/JERICHO/MODS" }
             }
 
             # 5. Car-data BANKS -- BetterCars-style car packs (BC*.LEV / BC*.LCF) and
@@ -598,14 +600,13 @@ jobs:
       - name: Fetch build submodules
         shell: bash
         run: |
-          # The four mod source repos are release mods: a build that silently
-          # skips them is worse than one that fails here. Advance each to the
-          # latest commit of its own branch (.gitmodules `branch =`), so a build
-          # carries the current mods rather than the pinned gitlink. Fetch the
-          # branch by name: the init is a shallow clone of the pinned commit, so
-          # `submodule update --remote` cannot find the branch ref.
+          # The four CORE MODS are mp, carhacks, crumple and bake. A build that
+          # silently skips one is worse than one that fails here. antfarm is not
+          # fetched: it stays a submodule for local screensaver builds.
+          # Check out the pinned gitlink. The init is a shallow clone of that
+          # commit, so `submodule update --remote` cannot find the branch ref.
           git submodule update --init --depth=1 src_rebuild/PsyCross
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             echo "::group::submodule $path"
             git submodule update --init --depth=1 "$path"
             # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
@@ -616,7 +617,7 @@ jobs:
             echo "    $path at $(git -C "$path" rev-parse --short HEAD) (pinned)"
             echo "::endgroup::"
           done
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
+          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
             test -f "$path/mod.toml" || {
               echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
               exit 1
@@ -796,9 +797,14 @@ jobs:
             rm -rf "$d/JERICHO/MODS/carhacks/D1CARS"
             rm -rf "$d/DRIVER"
             rm -rf "$d/DRIVER2"
-            # Store-only addons: optional content from the mod store, never in the base pack
-            for opt in fulltwist; do
+            # Store-only: never in the Release/base pack. Same three as Windows.
+            # Drop the folder, then fail if it is still under JERICHO/MODS.
+            for opt in fulltwist hallgarthcars antfarm; do
               rm -rf "$d/JERICHO/MODS/$opt"
+              if [ -e "$d/JERICHO/MODS/$opt" ]; then
+                echo "::error::$opt is store-only but is still in $d/JERICHO/MODS"
+                exit 1
+              fi
             done
 
             # ...and a fourth: car-data BANKS (BetterCars-style BC*.LEV/BC*.LCF, and the

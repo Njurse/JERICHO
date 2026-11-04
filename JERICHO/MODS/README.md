@@ -10,7 +10,7 @@ out. The superproject records a commit ("pin") for each one in the index, and
 | `carhacks` | `Njurse/JERICHO-Mod-carhacks` | `main` |
 | `crumple` | `Njurse/Jericho-Mod-CRUMPLE` | `main` |
 | `bake` (Driver 1 tooling) | `Njurse/JERICHO-D1` | `betamiami` |
-| `antfarm` | `Njurse/JERICHO-Mod-Antfarm` | `0.12` |
+| `antfarm` | `Njurse/JERICHO-Mod-Antfarm` | `0.12` (screensaver; not a core release mod) |
 
 `gaildrv2` is hibernated at https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 and is not a submodule of this tree.
 

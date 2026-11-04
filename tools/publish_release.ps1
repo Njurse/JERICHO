@@ -286,6 +286,13 @@ function New-Package {
         # player's own copy and must never ride out in a package (the mirror
         # strips it too, this is the belt for a stale bin\).
         Remove-Item (Join-Path $stage 'JERICHO\MODS\carhacks\D1CARS') -Recurse -Force -ErrorAction SilentlyContinue
+        # Same store-only strip as the CI pack step: fulltwist, Hallgarth's Cars,
+        # and antfarm must not ship in the base pack.
+        foreach ($opt in @('fulltwist', 'hallgarthcars', 'antfarm')) {
+            $optDir = Join-Path $stage "JERICHO\MODS\$opt"
+            if (Test-Path $optDir) { Remove-Item $optDir -Recurse -Force }
+            if (Test-Path $optDir) { throw "$opt is store-only but is still in $stage\JERICHO\MODS" }
+        }
 
         $cfgIni = Join-Path $stage 'config.ini'
         if (Test-Path $cfgIni) {
