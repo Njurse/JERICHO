@@ -20,6 +20,10 @@ is in [changelog.txt](changelog.txt).
 
 - **Invulnerability and immunity hold in an online match.** Immunity stands down cops that are already chasing, including on a multiplayer map that always asks for at least one. Invulnerability refuses the hit before the car is dented. When the host turns that rule on, it covers every car, not only the one you are driving. Your own pause toggles still apply on your machine when the host has left the rule off.
 
+### Baking
+
+- **The bake installs Pillow for you.** If Pillow is missing, `BAKE_D1_CARS.bat` / `.sh` now installs it into the Python the bake uses before running any step, instead of stopping partway through with `No module named 'PIL'`. If the install cannot be done, the script prints the exact command to run by hand.
+
 ## v0.13.6
 
 *Released 2026-11-03.*

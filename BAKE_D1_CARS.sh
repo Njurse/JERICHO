@@ -26,8 +26,9 @@
 #  Re-run it after updating JERICHO if the game says D1CARS is out of date
 #  (bakes from before v0.10.9 lack the D1 wheels and sounds). Re-running is safe.
 #
-#  NEEDS: python3 on PATH; your Driver 2 data in DRIVER2/ (the wheel geometry
-#  and ride height are derived from Driver 2's own car files, not guessed).
+#  NEEDS: Python 3 on PATH (Pillow is installed automatically if it is
+#  missing); your Driver 2 data in DRIVER2/ (the wheel geometry and ride
+#  height are derived from Driver 2's own car files, not guessed).
 # ============================================================================
 set -eu
 
@@ -96,6 +97,16 @@ for cand in python3 python; do
 done
 if [ -z "$PY" ]; then
 	fail "no python on PATH. Install Python 3, then run this again."
+fi
+
+# Python packages: Pillow is imported lazily while a texture crop with more
+# than sixteen colours is quantised, so check it up front and install it for
+# the player instead of failing halfway through a bake. The helper ships with
+# the tools; an older package without it runs exactly as before.
+DEPS="$T/../require_deps.py"
+if [ -f "$DEPS" ]; then
+	echo "[deps] checking the Python packages the bake needs ..."
+	"$PY" "$DEPS" || fail "could not set up the Python packages the bake needs (see above)."
 fi
 
 # Peds first: DRIVER2/LEVELS/JMPPED.LEV (stock Tanner + Jericho) is built from
