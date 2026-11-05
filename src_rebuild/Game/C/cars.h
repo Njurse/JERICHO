@@ -163,9 +163,12 @@ extern int CivClutTexMaxSlot(int row, int texid);
 
 // JERICHO: how many body palettes (ap.palette values) resident slot `slot` really has, and
 // `palette` made valid for it (out of range -> 0, the model's own colours). A civilian body
-// (model 0..4) from a Driver 2 city has 6; everything else -- specials, cops, every Driver 1
-// car -- has 1. Every car switch passes the wanted palette through the clamp, so a palette
-// cycled on one car never reaches a car that does not have it.
+// (model 0..4) from a Driver 2 city has 6. A Driver 1 car-data body on the bake's compliant
+// models (1..4 and 8..12) has 6 as well: traffic is remapped onto those slots, and the
+// lump's palette 0..4 fills civ_clut columns 1..5. Driver 2 specials, the D1 gap models
+// 5..7, and a baked bank's model above 4 stay at 1. Every car switch passes the wanted
+// palette through the clamp, so a palette cycled on one car never reaches a car that
+// does not have it.
 extern int CarSlotPaletteCount(int slot);
 extern int CarModelPaletteCount(int city, int model);	// the same, by (absolute city, model): a car select
 extern int CarSlotClampPalette(int slot, int palette);

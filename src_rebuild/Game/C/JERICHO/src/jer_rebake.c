@@ -361,7 +361,9 @@ void jer_rebake_frontend_tick(int onMainMenu)
 		return;
 
 	jer_log("[rebake] Driver 1 bake is older than the tooling (baked %d, expected %d)\n", baked, wanted);
-	jer_prompt_begin("Re-bake Driver 1 cars with the current tooling?\n"
+	jer_prompt_begin("Re-bake Driver 1 cars to pick up body colours?\n"
+		"An older bake left those shades out of the palette,\n"
+		"so the paint swap cannot show them.\n"
 		"Drop Driver 1 files in DRIVER/.\n"
 		"If you have the 16 Dec 1998 proto with the Buick GSX,\n"
 		"put LEVELS/ and SOUND/ in EURO43/\n"

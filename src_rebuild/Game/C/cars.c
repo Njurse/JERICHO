@@ -705,17 +705,47 @@ int CivClutRowMaxSlot(int row)
 	return sCivClutRowMaxSlot[row];
 }
 
-// JERICHO: body palettes per resident slot (cars.h). The same rule the spawners use (civ_ai
-// picks 0..5 only for models 0..4; carhacks spawn.c likewise), plus: a Driver 1 car is
-// single-palette whatever its model number says. A palette past what a slot has is not
-// caught by CarClutVariant for the host's own rows, and after a hot swap those rows can
-// still hold the PREVIOUS car's colour columns - that is the broken-colours report.
+// JERICHO: body palettes per resident slot (cars.h).
+//
+// Driver 2: civilian bodies 0..4 have the six civ_clut columns. Specials do not.
+// A palette past what a HOST row recorded is not caught by CarClutVariant, and after
+// a hot swap those rows can still hold the previous car's columns.
+//
+// Driver 1 car-data cities are not that case. bake.py lays every traffic body on
+// D2_COMPLIANT_MODELS (1, 2, 3, 4, 8, 9, 10, 11, 12). Models 8..12 are still traffic,
+// not Driver 2 specials. The source LUMP_PALLET already stores palette 0..3/0..4 on
+// the texture id the mesh names, and BAKE#9 adds unused page recolours into the same
+// columns (ProcessPalletLump stores palette k at civ slot k+1; slot 0 is the page
+// CLUT). Those cars are drawn from the import bank, which CarClutVariant does clamp,
+// so a column the lump never wrote repeats the last real one instead of a neighbour's.
+// Treating the whole city as one paint is what made the car-select left/right (and
+// Square's defaultPlayerPalette, after InitCar) do nothing on a Miami traffic car.
 int CarModelPaletteCount(int city, int model)
 {
-	if (city >= CITY_D2_COUNT && city < CITY_D2_COUNT + CITY_D1_COUNT)
+	if (model < 0 || model >= CAR_MODEL_LUMP_ENTRIES)
 		return 1;
 
-	return (model >= 0 && model <= 4) ? 6 : 1;
+	/* -1 is the level's own city (GetCarModelSourceCity). */
+	if (city < 0)
+		city = GameLevel;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 1;
+
+	if (city < CITY_D2_COUNT)
+		return (model <= 4) ? 6 : 1;
+
+	/* MIAMI..TRAIN. Model 0 is the cop slot the bake leaves empty. 5..7 are the
+	 * gap no Driver 2 city holds, so the bake never writes them. */
+	if (city < CITY_D2_COUNT + CITY_D1_COUNT)
+	{
+		if ((model >= 1 && model <= 4) || (model >= 8 && model <= 12))
+			return 6;
+
+		return 1;
+	}
+
+	return (model <= 4) ? 6 : 1;
 }
 
 int CarSlotPaletteCount(int slot)
