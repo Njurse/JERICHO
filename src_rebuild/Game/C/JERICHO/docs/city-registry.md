@@ -86,6 +86,61 @@ Banks also have no `M<CITY>.LEV` arena variant — only Driver 2's own four citi
 do — and no `LEVELS\<CITY>` override folder, so per-car `CARMODEL_*` overrides do
 not apply to them.
 
+## Car-select portrait
+
+Stock Driver 2 portraits are not in the `.LEV`. They are loose pages in
+`DATA\CARS\CCARS.RAW` / `HCARS.RAW` / `VCARS.RAW` / `RCARS.RAW` (one `0x8000`-byte
+4bpp page per frontend slot, drawn by `SetupExtraPoly` in `FEmain.c`). A bank and
+a Driver 1 city have no such file, so the car-select menu used to leave their
+icon blank.
+
+The menu asks for a city and a **model number** (the in-game model, not the
+dense roster cursor). The frontend looks beside the `.LEV` the registry opens,
+in this order:
+
+1. `<directory of the .LEV>/<LEV stem>.RAW`, page at offset `model * 0x8000`,
+   when that file exists and the page is not all zero. A car-bank bake writes
+   this next to `<stem>.LEV` / `<stem>.LCF`. It is the same page size as one
+   slot of `CCARS.RAW`. It is not a lump in the LEV. Stock `CCARS.RAW` is
+   indexed by the roster cursor; this file is indexed by the model, because
+   that is the number the menu already passes.
+2. `<LEV stem>.portraits/<model>.raw` — the loose page. The bake still writes
+   it, and a hand-dropped folder still works.
+3. Driver 2 cities 0–3: that model's stock slot in `CCARS` / `HCARS` / `VCARS` /
+   `RCARS`.
+4. Everywhere else, one shared page (below).
+
+```
+DRIVER2\LEVELS\BCCHI.LEV → BCCHI.RAW page 10, else BCCHI.portraits\10.raw
+JERICHO\MODS\carhacks\D1CARS\MIAMI.LEV → MIAMI.portraits\1.raw
+```
+
+Miami has no `MIAMI.RAW`. Those pages stay in `MIAMI.portraits\<model>.raw`
+(model 1 is the cop, which is roster slot 0). Do not rename them. A missing
+RAW is the normal case and the loose files still load.
+
+Each page is exactly 32768 bytes (256×256 at 4bpp). The frontend shows the top
+219 rows as a 255×219 sprite and takes the colours from `DATA\CARS\CARBACK.RAW`,
+unless `<model>.clut` (32 bytes, 16 little-endian RGB555) sits in the portraits
+folder — that replaces the portrait CLUT at VRAM `(960,256)` for the draw,
+whichever pixel source won. The RAW does not carry CLUTs. Omit the `.clut`
+when the indices were packed for that stock CLUT.
+
+An all-zero page in the RAW counts as missing, so the loose file and then the
+stock slot or the shared page still run. A missing file on Driver 2 cities 0–3
+still draws that model's stock slot. Everywhere else (a Driver 1 city, a bank,
+or a model the ten-slot lookup does not name) draws one shared page, indexed
+for the same CLUT:
+
+```
+JERICHO\MODS\carhacks\assets\portraits\CARHACKS\fallback.raw
+```
+
+That is `<gD1DataFolder>assets\portraits\CARHACKS\fallback.raw`. The stock
+mission car screen is unchanged; the module menu is the one that asks for a
+city and a model. Miami's pages and the screenshot encoder are in carhacks
+`docs/PORTRAITS.md`.
+
 **A sparse bank can be completed.** Copying the missing models out of the host
 city's own level file (byte for byte, plus the page sets and palette rows they
 need) is `JERICHO/MODS/carhacks/tools/bankfill.py`; run its `--report` first to see

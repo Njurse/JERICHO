@@ -264,11 +264,16 @@ runtime addon's `<id>.dll` is game data and no rule there touches it.
 
 ## The version
 
-`JERICHO_BUILD_VERSION` comes from `git describe --tags --match 'v*' --always --dirty`
-(`premake5.lua`), so a release is versioned by its tag. Release tags are spelled
-`v0.9.0` because the workflow triggers on `v*` — the repo's older REDRIVER2 tags
-carry no prefix at all — and premake strips that leading `v`, so the binary and
-the boot log say `0.9.0`, not `v0.9.0`.
+`JERICHO_BUILD_VERSION` is chosen in `premake5.lua` (`jer_version_defines`) and
+stamped into the generated project. Re-run premake after a commit or tag — a
+rebuild alone keeps the previous string.
+
+An exact `v*` tag on HEAD wins: premake strips the leading `v`, so the binary
+and the boot log say `0.13.9`, not `v0.13.9`. Off the tag, the build reports
+`JERICHO_BASE_VERSION` in `premake5.lua` (`0.13.9`) — this line — not `0.13.8`
+from the previous release. Release tags are spelled `v0.9.0` because the
+workflow triggers on `v*` — the repo's older REDRIVER2 tags carry no prefix
+at all.
 
 The string is hashed into mp's build identity (`gameBuild` in `mp_proto.h`), so
 two peers on different builds refuse each other. That is the point of bumping it.

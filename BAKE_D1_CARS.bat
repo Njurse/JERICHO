@@ -123,12 +123,14 @@ if "%BETA%"=="1" set "CITIES=%CITIES%,BETAMIAMI"
 rem BAKE_VERSION: bump when the bake gains something the game reads. 8 moved the
 rem output into carhacks and made the EURO-43 beta read the demo's MIAMI.LEV;
 rem 9 retuned the beta engine/idle loop rates, which are stamped into the bank;
-rem 10 also builds DRIVER2\LEVELS\JMPPED.LEV (Jericho) from the player's game.
-set "BAKE_VERSION=10"
+rem 10 also builds DRIVER2\LEVELS\JMPPED.LEV (Jericho) from the player's game;
+rem 11 writes unused body-colour CLUT rows into LUMP_PALLET (civ slots 1..5).
+rem A bank from 10 or earlier still has only the colours the source lump named.
+set "BAKE_VERSION=11"
 set "HAVE_VERSION="
 if exist "%OUT%\BAKE_VERSION" set /p HAVE_VERSION=<"%OUT%\BAKE_VERSION"
 if exist "%OUT%" if not "%HAVE_VERSION%"=="%BAKE_VERSION%" (
-	echo Your existing %OUT% is from an older bake ^(no D1 wheels/sounds, pre-Miami wheels, unpacked palette rows, or the old DRIVER\D1CARS location^) -- rebuilding it.
+	echo Your existing %OUT% is from an older bake ^(extra body colours were left out of the palette, or an earlier wheels/sound/layout bake^) -- rebuilding it.
 	echo.
 )
 if not exist "%OUT%" if exist "DRIVER\D1CARS" (

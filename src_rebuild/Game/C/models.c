@@ -552,21 +552,14 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 	}
 
 	// JERICHO: a Driver 1 bake (no DATA2) from before v0.10.9 carries neither
-	// segment, so its cars keep the host's wheels and engine. Say so once.
+	// segment, so its cars keep the host's wheels and engine. Log it. The
+	// player-facing jer_error toast was noise on every stale bank.
 	if (imp->data2 == NULL && (imp->carWheels == NULL || imp->carSounds == NULL))
 	{
-		static int staleD1Warned = 0;
-
 		printWarning("carimport: %s is an old Driver 1 bake (no %s%s%s) - re-run BAKE_D1_CARS for D1 wheels and sounds\n",
 			levPath, imp->carWheels == NULL ? "wheels" : "",
 			imp->carWheels == NULL && imp->carSounds == NULL ? ", " : "",
 			imp->carSounds == NULL ? "sounds" : "");
-
-		if (!staleD1Warned)
-		{
-			staleD1Warned = 1;
-			jer_error("JERICHO/MODS/carhacks/D1CARS is out of date: re-run BAKE_D1_CARS for Driver 1 wheels and sounds");
-		}
 	}
 
 	// JERICHO: a real Driver 2 level's named wheel models. DATA2 holds

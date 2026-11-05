@@ -191,7 +191,10 @@ int InitCar(CAR_DATA* cp, int direction, LONGVECTOR4* startPos, unsigned char co
 			else
 			{
 				cp->controlFlags = ((EXTRA_CIV_DATA*)extraData)->controlFlags;
-				cp->ap.palette = ((EXTRA_CIV_DATA*)extraData)->palette;
+				/* The argument above is 0; the colour the spawner chose lives here.
+				 * Clamp it, or a Driver 1 body whose count is now 6 still accepts a
+				 * column this slot does not have. */
+				cp->ap.palette = (char)CarSlotClampPalette(model, ((EXTRA_CIV_DATA*)extraData)->palette);
 			}
 
 			InitCivState(cp, (EXTRA_CIV_DATA*)extraData);
@@ -2329,22 +2332,33 @@ int PingInCivCar(int minPingInDist)
 	}
 #endif
 
-	// select car color palette
-	if (residentCarModels[model] == 0 || residentCarModels[model] > 4)
+	// select car color palette.
+	// Model 0 is the police body: one colour, even though a Driver 2 civilian count
+	// includes it. Every other body uses CarSlotPaletteCount. A Driver 2 special is
+	// 1, and a Driver 1 traffic body on models 8..12 is 6, so it is not stuck on the
+	// page CLUT. n == 6 keeps the old rolls (% 5 beside the player, % 6 otherwise).
 	{
-		civDat.palette = 0;
-	}
-	else if (MainPlayer.playerType == PLAYER_TYPE_CAR && car_data[MainPlayer.playerCarId].ap.model == model)
-	{
-		civDat.palette = Random2(0) % 5; // [A] was % 4; use previously unused palette slot
+		int nPal = CarSlotPaletteCount(model);
 
-		// if player got the same color we better select other
-		if (car_data[MainPlayer.playerCarId].ap.palette <= civDat.palette)
-			civDat.palette++;
-	}
-	else
-	{
-		civDat.palette = Random2(0) % 6; // [A] was % 5; use previously unused palette slot
+		if (residentCarModels[model] == 0 || nPal <= 1)
+		{
+			civDat.palette = 0;
+		}
+		else if (MainPlayer.playerType == PLAYER_TYPE_CAR && car_data[MainPlayer.playerCarId].ap.model == model)
+		{
+			civDat.palette = Random2(0) % (nPal - 1); // [A] was % 4; use previously unused palette slot
+
+			// if player got the same color we better select other
+			if (car_data[MainPlayer.playerCarId].ap.palette <= civDat.palette)
+				civDat.palette++;
+
+			if (civDat.palette >= nPal)
+				civDat.palette = 0;
+		}
+		else
+		{
+			civDat.palette = Random2(0) % nPal; // [A] was % 5; use previously unused palette slot
+		}
 	}
 
 	lbody = car_cosmetics[model].colBox.vz;

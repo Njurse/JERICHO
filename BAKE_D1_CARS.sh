@@ -150,10 +150,12 @@ fi
 # BAKE_VERSION: bump when the bake gains something the game reads. 8 moved the
 # output into carhacks and made the EURO-43 beta read the demo's MIAMI.LEV;
 # 9 retuned the beta engine/idle loop rates, which are stamped into the bank;
-# 10 also builds DRIVER2/LEVELS/JMPPED.LEV (Jericho) from the player's game.
-BAKE_VERSION=10
+# 10 also builds DRIVER2/LEVELS/JMPPED.LEV (Jericho) from the player's game;
+# 11 writes unused body-colour CLUT rows into LUMP_PALLET (civ slots 1..5).
+# A bank from 10 or earlier still has only the colours the source lump named.
+BAKE_VERSION=11
 if [ -d "$OUT" ] && [ "$(cat "$OUT/BAKE_VERSION" 2>/dev/null)" != "$BAKE_VERSION" ]; then
-	echo "Your existing $OUT is from an older bake (no D1 wheels/sounds, pre-Miami wheels, unpacked palette rows, or the old DRIVER/D1CARS location) -- rebuilding it."
+	echo "Your existing $OUT is from an older bake (extra body colours were left out of the palette, or an earlier wheels/sound/layout bake) -- rebuilding it."
 	echo
 elif [ ! -d "$OUT" ] && [ -d "DRIVER/D1CARS" ]; then
 	echo "Found your old bake in DRIVER/D1CARS -- rebuilding it inside carhacks, where the game now reads it."

@@ -38,6 +38,7 @@ void PsyX_TakeScreenshot(void);
 #include "C/state.h"
 
 #include <stdlib.h>	// JERICHO-HOOK: getenv/atoi — the frontend press test lever only
+#include <string.h>	// JERICHO: the car-select portrait path is built beside the .LEV
 
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (mods manager frontend)
 #include "../C/jer_events.h"	// JERICHO-HOOK: event argument structs
@@ -1492,10 +1493,11 @@ void LoadBackgroundFile(char* name)
  *
  * The question itself is wrapped with jer_text_width, because a single centred
  * line of a long question runs off the screen (and the frontend's own drawing
- * clips it rather than wrapping it). The block is anchored at the BOTTOM, so a
- * two- or three-line question grows upwards and never runs into the answers.
+ * clips it rather than wrapping it). An embedded newline is a paragraph break
+ * and starts the next line. Lines grow downwards from JER_PROMPT_TEXT_Y and
+ * stay above the answers, which remain bottom-right.
  * ------------------------------------------------------------------ */
-#define JER_PROMPT_WRAP_MAX	6
+#define JER_PROMPT_WRAP_MAX	8
 #define JER_PROMPT_LINE_LEN	192
 #define JER_PROMPT_WIDTH	544	/* 640 less a 48px margin each side */
 #define JER_PROMPT_SCALE	150
@@ -1513,11 +1515,28 @@ static int JerichoWrapText(const char* text, int maxWidth, char lines[JER_PROMPT
 
 	while (p != NULL && *p != 0 && count < JER_PROMPT_WRAP_MAX)
 	{
-		size_t len = strlen(p);
+		const char* brk = p;
+		size_t len;
 		size_t take;
+		int hard;
 
+		/* a newline ends the paragraph; word wrap still applies inside it */
+		while (*brk != 0 && *brk != '\n' && *brk != '\r')
+			brk++;
+		hard = (*brk == '\n' || *brk == '\r');
+
+		len = (size_t)(brk - p);
 		if (len > JER_PROMPT_LINE_LEN - 1)
 			len = JER_PROMPT_LINE_LEN - 1;
+
+		if (len == 0)
+		{
+			if (*p == '\r')
+				p++;
+			if (*p == '\n')
+				p++;
+			continue;
+		}
 
 		memcpy(lines[count], p, len);
 		lines[count][len] = 0;
@@ -1531,7 +1550,7 @@ static int JerichoWrapText(const char* text, int maxWidth, char lines[JER_PROMPT
 		}
 
 		/* cut mid-word? back up to the space before it */
-		if (take > 0 && p[take] != 0 && p[take] != ' ')
+		if (take > 0 && take < len && p[take] != ' ')
 		{
 			size_t back = take;
 
@@ -1548,11 +1567,28 @@ static int JerichoWrapText(const char* text, int maxWidth, char lines[JER_PROMPT
 		while (take > 0 && lines[count][take - 1] == ' ')
 			lines[count][--take] = 0;
 
+		/* one glyph wider than the line must still advance, or this loops */
+		if (take == 0)
+		{
+			lines[count][0] = p[0];
+			lines[count][1] = 0;
+			take = 1;
+		}
+
 		count++;
 
 		p += take;
 		while (*p == ' ')
 			p++;
+
+		/* swallow the newline only once this paragraph is finished */
+		if (hard && p == brk)
+		{
+			if (*p == '\r')
+				p++;
+			if (*p == '\n')
+				p++;
+		}
 	}
 
 	return count;
@@ -4874,6 +4910,447 @@ int jer_frontend_current_menu(void)
 	return idx;
 }
 
+#ifndef PSX
+/* One stock car-select portrait page. SetupExtraPoly uploads offset*0x8000 of
+ * a city's CCARS/HCARS/VCARS/RCARS.RAW as a 4bpp 256x256 page and shows the top
+ * 219 rows (sprite 255x219, CLUT at (960,256) from CARBACK.RAW). That offset
+ * is the dense roster cursor. A bank's pages are not in the LEV and are not
+ * indexed that way.
+ *
+ * The bake writes one sibling RAW beside the .LEV the registry opens,
+ * "<stem>.RAW", pages of 0x8000. Page N is at offset N*0x8000, where N is the
+ * in-game model the menu asks for (the bank's order slot), not the roster
+ * cursor. An all-zero page is empty. The loose file
+ * "<stem>.portraits/<N>.raw" is the fallback when the RAW is missing or that
+ * page is empty. An optional "<N>.clut" is 16 little-endian RGB555 colours
+ * (32 bytes) and replaces the CARBACK portrait CLUT for this draw, whichever
+ * page source won. The RAW does not carry CLUTs.
+ *
+ * A city with no page and no stock CCARS slot (Driver 1, a bank, or a model
+ * the ten-slot lookup does not name) draws one shared page instead of a blank
+ * icon. It lives in the carhacks mod, authored for the same CARBACK CLUT:
+ * <gD1DataFolder>assets/portraits/CARHACKS/fallback.raw. Cities 0-3 keep their
+ * slot art when the override is absent. That path never reaches the fallback. */
+#define JER_FE_PORTRAIT_PAGE	0x8000
+#define JER_FE_PORTRAIT_CLUT	32
+#define JER_FE_PORTRAIT_FALLBACK	"assets\\portraits\\CARHACKS\\fallback.raw"
+
+static const char* JerFeLastSlash(const char* s)
+{
+	const char* slash = NULL;
+	const char* p;
+
+	for (p = s; *p != 0; p++)
+	{
+		if (*p == '/' || *p == '\\')
+			slash = p;
+	}
+
+	return slash;
+}
+
+/* Build the openable portrait paths for (city, model). Answers 1 when `raw`
+ * holds the loose page path (the file may still be absent). `clut` and
+ * `packed` may be NULL. `packed` is "<stem>.RAW" beside the .LEV. */
+static int JerFePortraitPaths(int city, int model, char* raw, int rawSize, char* clut, int clutSize, char* packed, int packedSize)
+{
+	char lev[192];
+	const char* slash;
+	const char* name;
+	const char* dot;
+	int dirLen;
+	int stemLen;
+	int n;
+
+	if (raw == NULL || rawSize <= 0)
+		return 0;
+
+	raw[0] = 0;
+
+	if (clut != NULL && clutSize > 0)
+		clut[0] = 0;
+
+	if (packed != NULL && packedSize > 0)
+		packed[0] = 0;
+
+	if (city < 0 || model < 0 || !JerCityRegistered(city))
+		return 0;
+
+	if (!JerCityPath(city, lev, (int)sizeof(lev), JER_CITY_FILE_LEVEL, 0))
+		return 0;
+
+	slash = JerFeLastSlash(lev);
+	name = (slash != NULL) ? slash + 1 : lev;
+	dot = strrchr(name, '.');
+	stemLen = (dot != NULL && dot != name) ? (int)(dot - name) : (int)strlen(name);
+	dirLen = (slash != NULL) ? (int)(slash - lev) : 0;
+
+	n = snprintf(raw, (size_t)rawSize, "%.*s%s%.*s.portraits/%d.raw",
+		dirLen, lev, (dirLen > 0) ? "/" : "", stemLen, name, model);
+
+	if (n < 0 || n >= rawSize)
+	{
+		raw[0] = 0;
+		return 0;
+	}
+
+	FS_FixPathSlashes(raw);
+
+	if (clut != NULL && clutSize > 0)
+	{
+		n = snprintf(clut, (size_t)clutSize, "%.*s%s%.*s.portraits/%d.clut",
+			dirLen, lev, (dirLen > 0) ? "/" : "", stemLen, name, model);
+
+		if (n < 0 || n >= clutSize)
+			clut[0] = 0;
+		else
+			FS_FixPathSlashes(clut);
+	}
+
+	if (packed != NULL && packedSize > 0)
+	{
+		n = snprintf(packed, (size_t)packedSize, "%.*s%s%.*s.RAW",
+			dirLen, lev, (dirLen > 0) ? "/" : "", stemLen, name);
+
+		if (n < 0 || n >= packedSize)
+			packed[0] = 0;
+		else
+			FS_FixPathSlashes(packed);
+	}
+
+	return 1;
+}
+
+/* 1 when `path` exists. Writes its size when `out` is not NULL. */
+static int JerFeFileSize(const char* path, long* out)
+{
+	FILE* f;
+	long n;
+
+	if (path == NULL || path[0] == 0)
+		return 0;
+
+	f = fopen(path, "rb");
+
+	if (f == NULL)
+		return 0;
+
+	if (fseek(f, 0, SEEK_END) != 0)
+	{
+		fclose(f);
+		return 0;
+	}
+
+	n = ftell(f);
+	fclose(f);
+
+	if (n < 0)
+		return 0;
+
+	if (out != NULL)
+		*out = n;
+
+	return 1;
+}
+
+static int JerFeReadExact(const char* path, void* dst, int bytes)
+{
+	FILE* f;
+	size_t got;
+
+	f = fopen(path, "rb");
+
+	if (f == NULL)
+		return 0;
+
+	got = fread(dst, 1, (size_t)bytes, f);
+	fclose(f);
+	return got == (size_t)bytes;
+}
+
+/* Same upload SetupExtraPoly does for one slot: VRAM (896,256) 64x219, sprite
+ * 255x219, CLUT (960,256). The page bytes are already in `page`. */
+static void JerFeUploadPortraitPage(const void* page)
+{
+	RECT16 rect = extraRect;
+
+	rect.x = 896;
+	rect.y = 256;
+	rect.w = 64;
+	rect.h = 219;
+
+	LoadImage(&rect, (u_long*)page);
+	DrawSync(0);
+	VSync(0);
+
+	if (bDrawExtra == 0)
+	{
+		setSprt(&extraSprt);
+		setPolyFT3(&extraDummy);
+
+		setXY0(&extraSprt, 100, 226);
+		setRGB0(&extraSprt, 128, 128, 128);
+		setUV0(&extraSprt, 0, 0);
+		setWH(&extraSprt, 255, 219);
+		setClut(&extraSprt, 960, 256);
+
+		setXY3(&extraDummy, -1, -1, -1, -1, -1, -1);
+		setTPage(&extraDummy, 0, 0, 896, 256);
+	}
+
+	bDrawExtra = 1;
+
+	/* The city picture is no longer what _frontend_buffer holds. Leaving the
+	 * car screen reloads it (TimeOfDaySelectScreen checks loaded[0] == -1). */
+	loaded[0] = -1;
+	loaded[1] = -1;
+}
+
+/* 1 when every byte of the page is 0. A packed RAW uses that as "no portrait"
+ * so a gap between model slots does not hide the loose file. */
+static int JerFePageEmpty(const unsigned char* page)
+{
+	int i;
+
+	for (i = 0; i < JER_FE_PORTRAIT_PAGE; i++)
+	{
+		if (page[i] != 0)
+			return 0;
+	}
+
+	return 1;
+}
+
+/* 1 when <stem>.RAW contains a non-empty page for this model. The bytes land
+ * in `dst`. A missing file, a page past the end, or an all-zero page is 0 so
+ * the caller can use the loose portraits folder. */
+static int JerFeReadPackedPage(const char* path, int model, void* dst)
+{
+	FILE* f;
+	long size;
+	long off;
+	size_t got;
+
+	/* 31 keeps model*0x8000 inside a signed 32-bit long. Banks use 0..12. */
+	if (path == NULL || path[0] == 0 || model < 0 || model > 31)
+		return 0;
+
+	if (!JerFeFileSize(path, &size))
+		return 0;
+
+	off = (long)model * (long)JER_FE_PORTRAIT_PAGE;
+
+	if (off < 0 || size < off + (long)JER_FE_PORTRAIT_PAGE)
+		return 0;
+
+	f = fopen(path, "rb");
+
+	if (f == NULL)
+		return 0;
+
+	if (fseek(f, off, SEEK_SET) != 0)
+	{
+		fclose(f);
+		return 0;
+	}
+
+	got = fread(dst, 1, (size_t)JER_FE_PORTRAIT_PAGE, f);
+	fclose(f);
+
+	if (got != (size_t)JER_FE_PORTRAIT_PAGE)
+		return 0;
+
+	if (JerFePageEmpty((const unsigned char*)dst))
+		return 0;
+
+	return 1;
+}
+
+/* CARBACK has already loaded the stock portrait CLUT. A private clut replaces
+ * it. A missing file leaves the stock colours, which is the normal case. */
+static void JerFeApplyPortraitClut(const char* clutPath, int announce, int city, int model)
+{
+	long size;
+	u_long clutRow[JER_FE_PORTRAIT_CLUT / 4];
+	RECT16 crect;
+
+	if (clutPath == NULL || clutPath[0] == 0 || !JerFeFileSize(clutPath, &size))
+		return;
+
+	if (size == JER_FE_PORTRAIT_CLUT &&
+		JerFeReadExact(clutPath, clutRow, JER_FE_PORTRAIT_CLUT))
+	{
+		crect.x = 960;
+		crect.y = 256;
+		crect.w = 16;
+		crect.h = 1;
+		LoadImage(&crect, clutRow);
+		DrawSync(0);
+		return;
+	}
+
+	if (announce)
+	{
+		printInfo("[frontend] portrait: %s model %d clut %s ignored (%ld bytes, want %d)\n",
+			JerCityName(city), model, clutPath, size, JER_FE_PORTRAIT_CLUT);
+	}
+}
+
+/* 1 when a per-model portrait was drawn. 0 when there is no page (the caller
+ * falls back to the stock slot art) or the loose file is the wrong size.
+ * The sibling RAW wins when its page for this model is present and not empty. */
+static int JerFeShowPortrait(int city, int model)
+{
+	char raw[256];
+	char clutPath[256];
+	char packed[256];
+	long size;
+	static int loggedCity = -2;
+	static int loggedModel = -2;
+	int announce;
+	int fromPacked;
+
+	if (!JerFePortraitPaths(city, model, raw, (int)sizeof(raw), clutPath, (int)sizeof(clutPath), packed, (int)sizeof(packed)))
+		return 0;
+
+	announce = (loggedCity != city || loggedModel != model);
+	fromPacked = JerFeReadPackedPage(packed, model, (void*)_frontend_buffer);
+
+	if (!fromPacked)
+	{
+		if (!JerFeFileSize(raw, &size))
+			return 0;
+
+		if (size != JER_FE_PORTRAIT_PAGE)
+		{
+			if (announce)
+			{
+				printInfo("[frontend] portrait: %s model %d ignored %s (%ld bytes, want %d)\n",
+					JerCityName(city), model, raw, size, JER_FE_PORTRAIT_PAGE);
+				loggedCity = city;
+				loggedModel = model;
+			}
+
+			return 0;
+		}
+
+		if (!JerFeReadExact(raw, (void*)_frontend_buffer, JER_FE_PORTRAIT_PAGE))
+			return 0;
+	}
+
+	/* CARBACK supplies the portrait CLUT. Load it before a private clut, and
+	 * it uses _other_buffer, so the page just read into _frontend_buffer stays. */
+	LoadBackgroundFile("DATA\\CARS\\CARBACK.RAW");
+	JerFeApplyPortraitClut(clutPath, announce, city, model);
+	JerFeUploadPortraitPage((void*)_frontend_buffer);
+
+	if (announce)
+	{
+		if (fromPacked)
+			printInfo("[frontend] portrait: %s model %d <- %s page %d\n",
+				JerCityName(city), model, packed, model);
+		else
+			printInfo("[frontend] portrait: %s model %d <- %s\n",
+				JerCityName(city), model, raw);
+
+		loggedCity = city;
+		loggedModel = model;
+	}
+
+	return 1;
+}
+
+/* The openable shared fallback. gD1DataFolder is the carhacks root
+ * (JERICHO\MODS\carhacks\), the same root the Driver 1 LEVs hang off. */
+static int JerFeFallbackPath(char* out, int outSize)
+{
+	const char* root = gD1DataFolder;
+	int n;
+	char slash;
+
+	if (out == NULL || outSize <= 0)
+		return 0;
+
+	out[0] = 0;
+
+	if (root == NULL || root[0] == 0)
+		root = "JERICHO\\MODS\\carhacks\\";
+
+	slash = root[strlen(root) - 1];
+	n = snprintf(out, (size_t)outSize, "%s%s%s",
+		root,
+		(slash == '/' || slash == '\\') ? "" : "\\",
+		JER_FE_PORTRAIT_FALLBACK);
+
+	if (n < 0 || n >= outSize)
+	{
+		out[0] = 0;
+		return 0;
+	}
+
+	FS_FixPathSlashes(out);
+	return 1;
+}
+
+/* 1 when the shared CARHACKS page was drawn. No private CLUT: the page is
+ * indexed for the CARBACK portrait colours, same as an omitted <model>.clut. */
+static int JerFeShowFallback(int city, int model)
+{
+	char raw[256];
+	long size = 0;
+	static int loggedCity = -2;
+	static int loggedModel = -2;
+	int announce;
+
+	if (!JerFeFallbackPath(raw, (int)sizeof(raw)))
+		return 0;
+
+	announce = (loggedCity != city || loggedModel != model);
+
+	if (!JerFeFileSize(raw, &size))
+	{
+		if (announce)
+		{
+			printInfo("[frontend] portrait: %s model %d no art, fallback missing (%s)\n",
+				JerCityName(city), model, raw);
+			loggedCity = city;
+			loggedModel = model;
+		}
+
+		return 0;
+	}
+
+	if (size != JER_FE_PORTRAIT_PAGE)
+	{
+		if (announce)
+		{
+			printInfo("[frontend] portrait: %s model %d fallback ignored %s (%ld bytes, want %d)\n",
+				JerCityName(city), model, raw, size, JER_FE_PORTRAIT_PAGE);
+			loggedCity = city;
+			loggedModel = model;
+		}
+
+		return 0;
+	}
+
+	if (!JerFeReadExact(raw, (void*)_frontend_buffer, JER_FE_PORTRAIT_PAGE))
+		return 0;
+
+	LoadBackgroundFile("DATA\\CARS\\CARBACK.RAW");
+	JerFeUploadPortraitPage((void*)_frontend_buffer);
+
+	if (announce)
+	{
+		printInfo("[frontend] portrait: %s model %d fallback <- %s\n",
+			JerCityName(city), model, raw);
+		loggedCity = city;
+		loggedModel = model;
+	}
+
+	return 1;
+}
+#endif
+
 /* The single handler every module menu slot uses; the slot index selects the
  * registered menu. Lays the items out as native buttons and reports input. */
 int JerFrontendMenuScreen(int bSetup)
@@ -4899,19 +5376,31 @@ int JerFrontendMenuScreen(int bSetup)
 		if (menu->on_enter != NULL)
 			menu->on_enter(menu->userdata);
 
-		/* the optional car icon (JER_FE_MENU.get_preview): resolve the model
-		 * to its car-select image slot and show it. bDrawExtra is cleared
-		 * first so a menu with no preview leaves no icon behind. */
+		/* the optional car icon (JER_FE_MENU.get_preview). A non-empty page in
+		 * the sibling <stem>.RAW beside the city's .LEV wins (index is the
+		 * model). Otherwise the loose <stem>.portraits/<model>.raw. Otherwise
+		 * a Driver 2 city still shows that model's stock slot. Anything left
+		 * with no picture (a Driver 1 city, a bank, a model the ten-slot
+		 * lookup does not name) draws the shared CARHACKS fallback.
+		 * bDrawExtra is cleared first so a menu with no preview leaves no
+		 * icon behind. */
 		bDrawExtra = 0;
 
 		if (menu->get_preview != NULL)
 		{
 			int pvCity = -1, pvModel = -1;
 			int sel;
+			int drewPortrait = 0;
+			int drewStock = 0;
 
 			menu->get_preview(menu->userdata, &pvCity, &pvModel);
 
-			if (pvCity >= 0 && pvCity < 4)
+#ifndef PSX
+			if (pvCity >= 0)
+				drewPortrait = JerFeShowPortrait(pvCity, pvModel);
+#endif
+
+			if (!drewPortrait && pvCity >= 0 && pvCity < CITY_D2_COUNT)
 			{
 				for (sel = 0; sel < 10; sel++)
 				{
@@ -4935,8 +5424,15 @@ int JerFrontendMenuScreen(int bSetup)
 
 					/* the stock car-select icon, at its usual place */
 					SetupExtraPoly(gfxNames[pvCity], sel, 0);
+					drewStock = 1;
 				}
 			}
+
+#ifndef PSX
+			/* Stock slot art already won. Do not cover it with the fallback. */
+			if (!drewPortrait && !drewStock && pvCity >= 0 && pvModel >= 0)
+				JerFeShowFallback(pvCity, pvModel);
+#endif
 		}
 
 		n = menu->item_count;
@@ -5573,7 +6069,8 @@ static const char* const kJerichoCreditsLeft[] = {	/* JERICHO, and thanks */
 	"Commando52Colton - palette advice, cut beta",
 	"assets, mission hex + texture paging help,",
 	"Hallgarth's Firebird assets, and a sharp eye",
-	"for the tiniest graphical bugs",
+	"for the tiniest graphical bugs, and",
+	"high-quality Driver 1 vehicle portraits",
 };
 
 static const char* const kJerichoCreditsRight[] = {	/* the engine underneath */

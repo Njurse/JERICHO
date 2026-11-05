@@ -310,8 +310,9 @@ end
 -- that reports it gets these - JERICHO_runtime (its boot banner) and the exe (the
 -- frontend's version readout, which must not fall back to "unknown").
 local function jer_version_defines()
-   -- deterministic JERICHO build version: git describe when available,
-   -- otherwise a plain literal (each exe release = a new JERICHO version).
+   -- deterministic JERICHO build version: the exact v* tag when HEAD sits on
+   -- one, otherwise JERICHO_BASE_VERSION (each exe release = a new JERICHO
+   -- version).
    --
    -- Release tags are spelled v0.9.0 so that GitHub Actions publishes them --
    -- the workflow triggers on `v*` and the repo's older REDRIVER2 tags carry
@@ -330,15 +331,17 @@ local function jer_version_defines()
       return (s:gsub("%s+$", ""))
    end
 
-   -- The APP version. A tag when the build sits exactly on one, otherwise
-   -- "<tag>-<n>-g<hash>", or a bare hash for a checkout with no tags at all. The
-   -- leading "v" the release tags carry is stripped, so the binary says "0.10.2".
+   -- The APP version. An exact v* tag on HEAD wins unchanged: the leading "v"
+   -- is stripped, so a release build says "0.13.9", not "v0.13.9".
+   -- Off the tag, the build reports JERICHO_BASE_VERSION. That is this line
+   -- (0.13.9), not the previous release (0.13.8) and not a shortened name from
+   -- an older tag. Once HEAD is the v0.13.9 tag, the exact-match path names
+   -- the release and this fallback is unused.
    -- --match "v*": only RELEASE tags name a version; a checkpoint/... tag must
    -- never become the window title (it once read "checkpoint/getrdun-...").
-   -- JERICHO_BASE_VERSION pins the version a branch is working toward, so the
-   -- exe reads it even before a matching v* tag exists. An exact v* tag on HEAD
-   -- still wins (release builds keep naming themselves after their tag).
-   local JERICHO_BASE_VERSION = "0.13"
+   -- Stamped when premake generates the project, not at compile time. Re-run
+   -- premake after a commit or tag or the exe keeps the previous string.
+   local JERICHO_BASE_VERSION = "0.13.9"
    local desc = git("git describe --tags --exact-match --match \"v*\" HEAD"):gsub("^v", "")
    if desc == "" then
       desc = JERICHO_BASE_VERSION

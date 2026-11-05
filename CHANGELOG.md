@@ -4,9 +4,64 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.9
+
+*Released 2026-11-05.*
+
+### Paint
+
+- **Driver 1 traffic and the other baked bodies cycle their extra body paints.** Models 1–4 and 8–12 step those colours. A bank from before this does not have the extra rows: the main menu asks you to bake again (BAKE_VERSION 11). Until you do, a step the bake never wrote repeats the last colour that is there.
+
+### Multiplayer
+
+- **Super Turbo is on the pause menu's Multiplayer page.** It reads On or Off, and the choice stays on your machine (`mp.ini`). It is not a host rule, and it does not change anyone else's car.
+
+### Pause
+
+- **Reload world textures asks you to bake again.** The pause row is still there. Choosing it shows Bake again / Reload is off for a moment. It does not reload the level's textures.
+
+### Version
+
+- **The game reports 0.13.9.**
+
+## v0.13.8
+
+*Released 2026-11-05.*
+
+### Car select
+
+- **A custom car has a portrait beside the city.** The menu looks next to that city's level: the sibling `<stem>.RAW` first, then a loose page in `<stem>.portraits/`, then the shared CarHacks picture. Chicago, Havana, Vegas and Rio still show their own slot when that car has no custom page.
+- **Bake accepts a portrait as PNG, TGA or BMP.** A picture whose colours already match the car-select palette is packed as it is. Anything else is dithered onto the CARBACK colours. A finished `.raw` is still copied unchanged.
+- **The credits thank Commando52Colton** for the high-quality Driver 1 vehicle portraits.
+
+### Paint
+
+- **Square cycles the extra Driver 1 body colours.** Shades that used to sit unused on the page now fill the colour-swap slots. Square still steps Palette 1/6 through 6/6. Name the rows with `textures.<set>.body_rows` when you want particular ones. The game asks you to bake again (BAKE_VERSION 11) because a bank from before that still omits those rows.
+
+### Multiplayer
+
+- **JMP Options has Super Turbo, on or off.** On multiplies the thrust of the car you are driving by 10. The choice is saved in `mp.ini` on your machine. The host's session rules leave it alone, and so do other cars. The force is clamped so it cannot wrap into reverse, and a stock car tops out at about 6.7×.
+
+### Baking
+
+- **Demo Havana cars stay retail size.** They already match a retail car, so a bake no longer shrinks them with the Driver 1 scale, in the city or in the preview. Bake again from the demo level; a bank already shrunk by the old scale stays that size. Demo Havana's cop is in the car list, and so is the cop on a bank that keeps it as the first model. That car used to be skipped.
+
+### Fixes
+
+- **Driver 1 paint swap moves.** Traffic and the other baked bodies (models 1–4 and 8–12) were still treated as one colour, so left/right on the car-select palette and Square's Palette n/6 landed back on the page colour. They now step the six civ colours. An older bank does not contain the extra page shades: the main menu asks you to re-bake. Until you do, a step the bake never wrote repeats the last colour that is there.
+- **An old Driver 1 bake no longer pops a red error.** The warning stays in the log.
+
+### Version
+
+- **The game reports 0.13.8** until this release is tagged.
+
 ## v0.13.7
 
 *Released 2026-11-04.*
+
+### Baking
+
+- **Driver 1 car bakes keep their colours, their size, and a Driver 2 loudness, and a new bank's cities.ini line points at the install.** Each sprite keeps its own palette row, including leftover page sprites, and the body stays on the PAGE_1 row. The preview uses one scale, so the car and its wheels match. Imported sounds play in the right sample order and sit with stock traffic. `make_new_bank` writes the cities.ini paths as `..\JERICHO\MODS\<mod>\banks\<dir>`, the folder the bank ships in, instead of a path beside a developer build.
 
 ### Mods
 
