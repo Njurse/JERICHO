@@ -210,6 +210,11 @@ static int RbPageBlank(const char* path, int model)
 	return !any;
 }
 
+/* Forward decl: RbMiamiPortraitMissing (and the ped check below) call this
+ * before the definition later in the file. GCC rejects an implicit then
+ * static definition; MSVC was more forgiving. */
+static int RbLevReadable(const char* path);
+
 /* Cars are already baked, the Miami source PNG is in the package, and the
  * sibling RAW the menu opens was never written. Encoding that file does not
  * change BAKE_VERSION and does not rebuild the LEV. */
