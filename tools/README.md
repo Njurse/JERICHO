@@ -269,12 +269,12 @@ stamped into the generated project. Re-run premake after a commit or tag — a
 rebuild alone keeps the previous string.
 
 An exact `v*` tag on HEAD wins: premake strips the leading `v`, so the binary
-and the boot log say `0.13.7`, not `v0.13.7`. Off the tag it is
-`git describe --tags --match 'v*' --dirty` with that same strip
-(`0.13.7-4-gabcdef12`, plus `-dirty` when the tree differs). Release tags are
-spelled `v0.9.0` because the workflow triggers on `v*` — the repo's older
-REDRIVER2 tags carry no prefix at all. A checkout with no `v*` tags falls back
-to `JERICHO_BASE_VERSION` in `premake5.lua`.
+and the boot log say `0.13.7`, not `v0.13.7`. There is no `v0.13.8` tag yet.
+Off the tag, the build reports `JERICHO_BASE_VERSION` in `premake5.lua`
+(`0.13.8`) — the staging line until that tag exists — not a shortened `0.13`
+and not `0.13.7` from the previous release. Release tags are spelled `v0.9.0`
+because the workflow triggers on `v*` — the repo's older REDRIVER2 tags carry
+no prefix at all.
 
 The string is hashed into mp's build identity (`gameBuild` in `mp_proto.h`), so
 two peers on different builds refuse each other. That is the point of bumping it.
