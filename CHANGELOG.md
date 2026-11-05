@@ -4,6 +4,36 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.8
+
+*Released 2026-11-05.*
+
+### Car select
+
+- **A custom car has a portrait beside the city.** The menu looks next to that city's level: the sibling `<stem>.RAW` first, then a loose page in `<stem>.portraits/`, then the shared CarHacks picture. Chicago, Havana, Vegas and Rio still show their own slot when that car has no custom page.
+- **Bake accepts a portrait as PNG, TGA or BMP.** A picture whose colours already match the car-select palette is packed as it is. Anything else is dithered onto the CARBACK colours. A finished `.raw` is still copied unchanged.
+- **The credits thank Commando52Colton** for the high-quality Driver 1 vehicle portraits.
+
+### Paint
+
+- **Square cycles the extra Driver 1 body colours.** Shades that used to sit unused on the page now fill the colour-swap slots. Square still steps Palette 1/6 through 6/6. Name the rows with `textures.<set>.body_rows` when you want particular ones, and bake those cars again.
+
+### Multiplayer
+
+- **JMP Options has Super Turbo, on or off.** On multiplies the thrust of the car you are driving by 10. The choice is saved in `mp.ini` on your machine. The host's session rules leave it alone, and so do other cars. The force is clamped so it cannot wrap into reverse, and a stock car tops out at about 6.7×.
+
+### Baking
+
+- **Demo Havana cars stay retail size.** They already match a retail car, so a bake no longer shrinks them with the Driver 1 scale, in the city or in the preview. Bake again from the demo level; a bank already shrunk by the old scale stays that size. Demo Havana's cop is in the car list, and so is the cop on a bank that keeps it as the first model. That car used to be skipped.
+
+### Fixes
+
+- **An old Driver 1 bake no longer pops a red error.** The warning stays in the log.
+
+### Version
+
+- **The game reports 0.13.8** until this release is tagged.
+
 ## v0.13.7
 
 *Released 2026-11-04.*
