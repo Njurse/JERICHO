@@ -282,11 +282,11 @@ function New-Package {
         Remove-Item (Join-Path $stage 'DRIVER') -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $stage 'DRIVER2') -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $stage 'JERICHO\CONFIG\modlist.ini') -Force -ErrorAction SilentlyContinue
-        # carhacks owns the BAKED Driver 1 car data. LEV/LCF must not ride out
-        # in a package. Authored *.portraits pages stay. The mirror strips the
-        # generated files too; this is the belt for a stale bin\.
-        & python (Join-Path $RepoRoot 'd1_portraits.py') strip --d1cars (Join-Path $stage 'JERICHO\MODS\carhacks\D1CARS')
-        if ($LASTEXITCODE -ne 0) { throw "d1_portraits.py strip failed" }
+        # carhacks owns the BAKED Driver 1 car data; it is generated from the
+        # player's own copy and must never ride out in a package (the mirror
+        # strips it too, this is the belt for a stale bin\). Portrait inputs
+        # stay under assets\portraits. The bake writes MIAMI.RAW locally.
+        Remove-Item (Join-Path $stage 'JERICHO\MODS\carhacks\D1CARS') -Recurse -Force -ErrorAction SilentlyContinue
         # Same store-only strip as the CI pack step: fulltwist, Hallgarth's Cars,
         # and antfarm must not ship in the base pack.
         foreach ($opt in @('fulltwist', 'hallgarthcars', 'antfarm')) {

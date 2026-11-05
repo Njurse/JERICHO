@@ -107,14 +107,10 @@ STAGED="$TMP/JERICHO/MODS/$MID"
 # A source checkout's .git (a file for a submodule, a directory for an in-place
 # clone) is never part of a mod package.
 rm -rf "$STAGED/.git"
-# carhacks owns the BAKED Driver 1 car data. LEV/LCF are generated from the
-# player's own copyrighted Driver 1 files and must never be redistributed.
-# Authored D1CARS/<CITY>.portraits pages are not generated; strip keeps them.
-if [ -f "$ROOT/d1_portraits.py" ]; then
-	python3 "$ROOT/d1_portraits.py" strip --d1cars "$STAGED/D1CARS" || die "could not strip baked D1CARS files"
-else
-	rm -rf "$STAGED/D1CARS"
-fi
+# carhacks owns the BAKED Driver 1 car data. It is generated from the player's
+# own copyrighted Driver 1 files and must never be redistributed. The portrait
+# inputs stay under assets/portraits; the bake writes MIAMI.RAW on their machine.
+rm -rf "$STAGED/D1CARS"
 if [ "$KEEP_BUILD" = 0 ]; then
 	rm -rf "$STAGED/obj" "$STAGED/lib"
 	find "$STAGED" -type f \( -name '*.pdb' -o -name '*.ilk' -o -name '*.exp' -o -name '*.o' \) -delete 2>/dev/null || true

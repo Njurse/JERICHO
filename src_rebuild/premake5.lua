@@ -976,11 +976,11 @@ project "JERICHO"
     local JER_MIRROR_EXCLUDE = { bake = true, gaildrv2 = true }
 
     -- Subfolders of a mod that are generated at PLAY time and must never be
-    -- mirrored whole. carhacks owns the baked Driver 1 car data (BAKE_D1_CARS
-    -- writes JERICHO/MODS/carhacks/D1CARS): the LEV/LCF files are derived from
-    -- the player's copyrighted Driver 1 files, so a local bake must not ride
-    -- out in a build output or a package made from one. D1CARS is not deleted
-    -- outright: d1_portraits.py strip keeps authored <CITY>.portraits pages.
+    -- mirrored. carhacks owns the baked Driver 1 car data (BAKE_D1_CARS writes
+    -- JERICHO/MODS/carhacks/D1CARS): the LEV/LCF, and the MIAMI.RAW the portrait
+    -- step writes beside them, come from the player's own bake. A package
+    -- ships the PNG inputs under assets/portraits and the encoder, not this
+    -- folder.
     local JER_MIRROR_STRIP = { carhacks = { "D1CARS" } }
 
     filter { "system:Windows" }
@@ -1013,14 +1013,9 @@ project "JERICHO"
                 "if exist \"" .. JER_DEST .. "\\*.idb\" del /Q \"" .. JER_DEST .. "\\*.idb\"",
             }
 
-            -- generated car data (see JER_MIRROR_STRIP). D1CARS keeps its
-            -- authored portrait folders; everything else in it is a bake.
+            -- generated car data (see JER_MIRROR_STRIP): never part of a mod
             for _, JER_SUB in ipairs(JER_MIRROR_STRIP[JER_MOD] or {}) do
-                if JER_SUB == "D1CARS" then
-                    table.insert(JER_CMDS, "python \"..\\..\\d1_portraits.py\" strip --d1cars \"" .. JER_DEST .. "\\D1CARS\"")
-                else
-                    table.insert(JER_CMDS, "if exist \"" .. JER_DEST .. "\\" .. JER_SUB .. "\" rd /S /Q \"" .. JER_DEST .. "\\" .. JER_SUB .. "\"")
-                end
+                table.insert(JER_CMDS, "if exist \"" .. JER_DEST .. "\\" .. JER_SUB .. "\" rd /S /Q \"" .. JER_DEST .. "\\" .. JER_SUB .. "\"")
             end
 
             -- and, for the private/not-built modules, the whole folder - see the note on
@@ -1097,14 +1092,9 @@ project "JERICHO"
                 "rm -f \"" .. JER_DEST .. "\"/*.a \"" .. JER_DEST .. "\"/*.lib \"" .. JER_DEST .. "\"/*.o \"" .. JER_DEST .. "\"/*.pdb \"" .. JER_DEST .. "\"/*.exp \"" .. JER_DEST .. "\"/*.idb",
             }
 
-            -- generated car data (see JER_MIRROR_STRIP). D1CARS keeps its
-            -- authored portrait folders; everything else in it is a bake.
+            -- generated car data (see JER_MIRROR_STRIP): never part of a mod
             for _, JER_SUB in ipairs(JER_MIRROR_STRIP[JER_MOD] or {}) do
-                if JER_SUB == "D1CARS" then
-                    table.insert(JER_CMDS, "python3 \"../../d1_portraits.py\" strip --d1cars \"" .. JER_DEST .. "/D1CARS\"")
-                else
-                    table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "/" .. JER_SUB .. "\"")
-                end
+                table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "/" .. JER_SUB .. "\"")
             end
 
             -- the private/not-built modules come out of the mirror entirely - same reason

@@ -76,10 +76,9 @@ tooling/data and its direct-engine surface is empty today.
   (currently a scaffold); `carhacks.dll` will be the runtime importer/selector.
   Their `tools/` directories and `D1CARS` baked data stay data/tooling: the
   build mirror strips tools from the runtime tree, and the package generator
-  never ships `carhacks/D1CARS` LEV/LCF (generated from the player's own
-  Driver 1 files). Authored `D1CARS/<CITY>.portraits/` pages are kept
-  (`d1_portraits.py strip`). The offline BAKE pipeline remains a separate
-  tool artifact.
+  never ships `carhacks/D1CARS` (it is generated from the player's own Driver 1
+  files, and the sibling `MIAMI.RAW` is written there by the bake). The
+  offline BAKE pipeline remains a separate tool artifact.
 - **The DLLs never own the baked/generated car data.** They call the host
   cardata surface to set/read model source, resident slots, availability and the
   frontend car list; the engine owns the loaded model, cosmetics, palette and

@@ -12,7 +12,7 @@ is in [changelog.txt](changelog.txt).
 
 ### Car select
 
-- **Miami's portraits are in the download.** They were packed under `assets/portraits/MIAMI/portraits/`, and the menu looks beside the city's level (`D1CARS/MIAMI.portraits/<model>.raw`). A release was deleting that whole folder with the baked car data. The portrait pages stay, and the menu also reads the authored copy. Models 1, 2, 3, 4, 8, 9 and 10 are the seven Miami cars.
+- **Miami's car-select pictures are encoded when you bake.** The source images stay in the download. The bake packs them into `D1CARS/MIAMI.RAW`, one page per model at model × 32768 (models 1, 2, 3, 4, 8, 9 and 10). The menu already looks at that file first. A bank that already has the cars and no `MIAMI.RAW` is asked to add the pictures. The cars are not baked again, and `BAKE_VERSION` does not change.
 
 ## v0.13.9
 

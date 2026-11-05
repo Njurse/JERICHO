@@ -1,126 +1,156 @@
 #!/usr/bin/env python3
-"""Driver 1 car-select portraits: keep them, and put them beside the LEV.
+"""Pack Driver 1 car-select portraits into the sibling RAW the menu opens.
 
-Authored pages (Commando's Miami set, and any later city done the same way):
+The city bake does not have a per-car ``handling.json``. Miami's pictures
+are the authored ``MCARS.RAW_<n>.RAW.png`` files under
+``assets/portraits/MIAMI/portraits/``. Page ``n`` is source-car ``n``, and
+``bake.destination_slots`` lays those source cars on
+``D2_COMPLIANT_MODELS`` in that order (cop on model 1, then 2, 3, 4, 8, 9,
+10). A missing page stays a hole: later cars do not slide down.
 
-    JERICHO/MODS/carhacks/assets/portraits/<CITY>/portraits/<model>.raw
+Each PNG, TGA, or BMP goes through ``portrait.encode_path`` (the same
+packer a ``handling.json`` ``portrait`` uses). A mode-P image already on
+the CARBACK portrait CLUT keeps its indices. Anything else is remapped
+onto that CLUT. A pre-packed ``.raw`` of exactly ``0x8000`` bytes is
+copied. ``fourbpp.rgb555`` is not used.
 
-The menu opens the page beside the city's level, not that authoring folder:
+The bytes are written by ``bankjson._write_portrait_raw``:
 
-    JERICHO/MODS/carhacks/D1CARS/<CITY>.portraits/<model>.raw
+    D1CARS/<CITY>.RAW
+    page at offset model * 0x8000
 
-CARHACKS/ is the shared fallback (assets/portraits/CARHACKS/fallback.raw).
-It is not a city and is not copied into D1CARS.
-
-A release must not ship baked LEV/LCF (those are derived from the player's
-Driver 1 files). It must ship the authored *.portraits directories. `strip`
-deletes everything else in a D1CARS folder. `install` copies missing pages
-into the bake output so a rebake does not leave the menu on the fallback.
+Slots with no picture, including the gaps below the highest model, are
+zero. The frontend treats an all-zero page as empty and still falls
+through to ``<stem>.portraits/<model>.raw``, then the shared fallback.
+This step does not write those loose pages, and it does not touch a LEV.
 """
 
 import argparse
 import os
-import shutil
+import re
 import sys
 
-PAGE_BYTES = 0x8000
-CLUT_BYTES = 32
-# The shared fallback lives here. It is not a Driver 1 city.
-SHARED_DIR = "CARHACKS"
+PAGE = 0x8000
+# MCARS.RAW_<n>.RAW.png — page n of the Driver 1 car-select raw, source order.
+MCARS_PNG = re.compile(r"^MCARS\.RAW_(\d+)\.RAW\.png$", re.IGNORECASE)
 
 
-def _city_dirs(carhacks):
-    root = os.path.join(carhacks, "assets", "portraits")
-    if not os.path.isdir(root):
-        return
-    for name in sorted(os.listdir(root)):
-        if name == SHARED_DIR:
-            continue
-        src = os.path.join(root, name, "portraits")
-        if os.path.isdir(src):
-            yield name, src
+def _tools_car(carhacks):
+    """The bake car tools that ship beside this tree, or in a package."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(os.path.dirname(carhacks), "bake", "tools", "car"),
+        os.path.join(here, "JERICHO", "MODS", "bake", "tools", "car"),
+    ]
+    for path in candidates:
+        if os.path.isfile(os.path.join(path, "portrait.py")):
+            return path
+    return candidates[0]
 
 
-def _keep_file(name):
-    lower = name.lower()
-    if lower.endswith(".raw"):
-        return PAGE_BYTES
-    if lower.endswith(".clut"):
-        return CLUT_BYTES
-    return None
+def _load_tools(carhacks):
+    car = _tools_car(carhacks)
+    if car not in sys.path:
+        sys.path.insert(0, car)
+    import bake
+    import bankjson
+    import portrait
+    return bake, bankjson, portrait
 
 
-def install(carhacks, out, overwrite=False):
-    """Copy authored pages into `<out>/<CITY>.portraits/`.
+def load_page(path, portrait):
+    """One authored file -> one 32768-byte page, via the bake packer."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".png", ".tga", ".bmp"):
+        return portrait.encode_path(path)
+    if ext == ".raw":
+        with open(path, "rb") as handle:
+            page = handle.read()
+        if len(page) != PAGE:
+            raise portrait.PortraitError(
+                "%s is %d bytes; a pre-packed portrait is exactly %d"
+                % (os.path.basename(path), len(page), PAGE))
+        return page
+    raise portrait.PortraitError(
+        "%s is not a PNG, TGA, BMP, or a %d-byte raw page"
+        % (os.path.basename(path), PAGE))
 
-    An existing file is left alone unless `overwrite` is set, so a page
-    someone replaced by hand is not clobbered by the next bake. A file that
-    is not a 32768-byte page or a 32-byte CLUT is not a portrait and is
-    skipped (the PNGs next to the raws are the authoring sources).
 
-    Returns the destination paths that were written.
+def miami_source_pages(carhacks, bake, portrait):
+    """``{model: page}`` for the Miami PNGs that are actually on disk.
+
+    Page index ``n`` maps through ``destination_slots`` of source slots
+    ``0..n`` only when every page up to ``n`` is present. A hole does not
+    renumber the cars after it: model is ``D2_COMPLIANT_MODELS[n]``.
     """
-    written = []
-    for city, src in _city_dirs(carhacks):
-        dest_dir = os.path.join(out, city + ".portraits")
-        os.makedirs(dest_dir, exist_ok=True)
-        for name in sorted(os.listdir(src)):
-            want = _keep_file(name)
-            if want is None:
-                continue
-            src_path = os.path.join(src, name)
-            if not os.path.isfile(src_path) or os.path.getsize(src_path) != want:
-                continue
-            dest = os.path.join(dest_dir, name)
-            if os.path.exists(dest) and not overwrite:
-                continue
-            shutil.copyfile(src_path, dest)
-            written.append(dest)
-    return written
+    src = os.path.join(carhacks, "assets", "portraits", "MIAMI", "portraits")
+    if not os.path.isdir(src):
+        return {}
+
+    found = {}
+    for name in os.listdir(src):
+        match = MCARS_PNG.match(name)
+        if match:
+            found[int(match.group(1))] = os.path.join(src, name)
+
+    pages = {}
+    compliant = bake.D2_COMPLIANT_MODELS
+    for index, path in sorted(found.items()):
+        if index < 0 or index >= len(compliant):
+            raise portrait.PortraitError(
+                "MCARS page %d has no Driver 2 model "
+                "(the city bake only has %d compliant slots)"
+                % (index, len(compliant)))
+        # The city bake's destination for source slot ``index`` when the
+        # source list is 0..index with nothing missing before it. Checked
+        # against destination_slots so a pin change cannot drift silently.
+        placed = bake.destination_slots("MIAMI", list(range(index + 1)))
+        model = placed[index]
+        if model != compliant[index]:
+            raise portrait.PortraitError(
+                "MIAMI source %d maps to model %d, not compliant slot %d"
+                % (index, model, compliant[index]))
+        pages[model] = load_page(path, portrait)
+    return pages
 
 
-def strip(d1cars):
-    """Delete generated bake products inside `d1cars`. Keep `*.portraits`.
+def write_raw(out_dir, stem, pages, bankjson):
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, stem + ".RAW")
+    if not pages:
+        return path
+    bankjson._write_portrait_raw(path, pages)
+    return path
 
-    Returns the names removed. A missing directory is not an error: a clean
-    tree has nothing baked.
+
+def pack(carhacks, out):
+    """Encode Miami's authored images into ``<out>/MIAMI.RAW``.
+
+    Returns ``(path, {model: page})``. No PNG and no pages writes nothing
+    and does not create an empty RAW.
     """
-    removed = []
-    if not os.path.isdir(d1cars):
-        return removed
-    for name in sorted(os.listdir(d1cars)):
-        if name.endswith(".portraits"):
-            continue
-        path = os.path.join(d1cars, name)
-        if os.path.isdir(path) and not os.path.islink(path):
-            shutil.rmtree(path)
-        else:
-            os.remove(path)
-        removed.append(name)
-    return removed
+    bake, bankjson, portrait = _load_tools(carhacks)
+    pages = miami_source_pages(carhacks, bake, portrait)
+    if not pages:
+        return None, {}
+    path = write_raw(out, "MIAMI", pages, bankjson)
+    print("portrait: %s (%d bytes, models %s)"
+          % (path, os.path.getsize(path),
+             ", ".join(str(m) for m in sorted(pages))))
+    return path, pages
 
 
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
-
-    inst = sub.add_parser("install", help="copy authored pages beside the bake output")
-    inst.add_argument("--carhacks", required=True)
-    inst.add_argument("--out", required=True)
-    inst.add_argument("--overwrite", action="store_true")
-
-    st = sub.add_parser("strip", help="drop generated D1CARS files, keep *.portraits")
-    st.add_argument("--d1cars", required=True)
-
+    cmd = sub.add_parser("pack", help="encode authored Miami pages into MIAMI.RAW")
+    cmd.add_argument("--carhacks", required=True)
+    cmd.add_argument("--out", required=True)
     args = parser.parse_args(argv)
-    if args.cmd == "install":
-        written = install(args.carhacks, args.out, overwrite=args.overwrite)
-        for path in written:
-            print("portrait: %s" % path)
-        return 0
-    removed = strip(args.d1cars)
-    for name in removed:
-        print("stripped: %s" % name)
+    path, pages = pack(args.carhacks, args.out)
+    if path is None:
+        print("portrait: no Miami source images under %s" % args.carhacks)
+        return 1
     return 0
 
 
