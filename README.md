@@ -489,7 +489,8 @@ frames. [README](JERICHO/MODS/example/README.md)
 
 **Special thanks:** **Commando52Colton** — palette advice, hard-to-find cut beta
 assets, help with mission hex structure and vehicle texture paging, the assets
-for Hallgarth's Firebird, and ongoing help spotting the tiniest graphical bugs.
+for Hallgarth's Firebird, ongoing help spotting the tiniest graphical bugs, and
+high-quality Driver 1 vehicle portraits.
 
 This project stands on **REDRIVER2**, the reverse-engineered Driver 2 rewrite it
 is forked from, and the engine underneath is the work of its authors: **SoapyMan**

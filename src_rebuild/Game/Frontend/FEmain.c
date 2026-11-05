@@ -6069,7 +6069,8 @@ static const char* const kJerichoCreditsLeft[] = {	/* JERICHO, and thanks */
 	"Commando52Colton - palette advice, cut beta",
 	"assets, mission hex + texture paging help,",
 	"Hallgarth's Firebird assets, and a sharp eye",
-	"for the tiniest graphical bugs",
+	"for the tiniest graphical bugs, and",
+	"high-quality Driver 1 vehicle portraits",
 };
 
 static const char* const kJerichoCreditsRight[] = {	/* the engine underneath */
