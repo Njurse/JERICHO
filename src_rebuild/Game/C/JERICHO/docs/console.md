@@ -193,6 +193,11 @@ world's baseline exactly). That is the 120 + 30 frame life, visible in pixels.
 ## Related
 
 The bar captions (`Damage` / `Felony` / `Proximity`, see `DrawBarTag` in
-`overlay.c`) are lifted `11px` above their bar in the PSX font, but only `7px`
-under the HQ font — the HQ glyphs are drawn a few pixels above the nominal `y`, so
-the PSX-tuned lift would leave a visible gap.
+`overlay.c`) use the stock `11px` lift above their bar for both fonts: `pres.c`
+adds the HQ font's baked ascent to `y` scaled with the glyphs, so HQ text starts
+at the same top edge as the PSX font.
+
+The in-game rows are half size, so that ascent correction is about `7px`.
+`jer_console.c`'s `JER_CONSOLE_HQ_LIFT` removes `5px` of it because the rows were
+laid out when the scaled printer applied only about `2px` — the lift keeps the
+console and the chat input exactly where they have always sat.

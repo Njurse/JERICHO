@@ -338,16 +338,16 @@ MENU_HEADER YesNoRestartHeader =
 MENU_HEADER YesNoQuitHeader =
 { G_LTXT_ID(GTXT_AreYouSure), { 0, 0, 0, 0 }, 0u, YesNoQuitItems };
 
-/* TEMPORARY: do not reload VRAM from the pause menu. The row stays on every
- * pause list; activating it asks the player to bake again through the pause
- * menu's own message box (the same path Save Replay uses). show counts down
- * once per 30 Hz frame in DrawPauseMenus, so 60 is about two seconds. */
-static void ReloadWorldTextures(int direction)
+/* TEMPORARY: do not reload VRAM from the pause menu. Until that is fixed, the
+ * row reloads the imported car assets instead -- carhacks' "Reload all cars",
+ * the other half of the same "that looks wrong" report. It releases and
+ * rebuilds every imported slot (pins, pages, palette rows, geometry). */
+extern int chkImportReloadAll(void);
+
+static void ReloadCarAssets(int direction)
 {
 	(void)direction;
-	gDisplayedMessage.header = "Bake again";
-	gDisplayedMessage.text = "Reload is off";
-	gDisplayedMessage.show = 60;
+	chkImportReloadAll();
 }
 
 MENU_ITEM MainPauseItems[] =
@@ -362,7 +362,7 @@ MENU_ITEM MainPauseItems[] =
 #if (defined(_DEBUG) || defined(DEBUG_OPTIONS)) && !defined(JERICHO_RELEASE_MODS)
 	{ "Debug Options", PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &DebugOptionsHeader },
 #endif
-	{ "Reload world textures", PAUSE_TYPE_FUNC, 2u, (pauseFunc)&ReloadWorldTextures, MENU_QUIT_NONE, NULL },
+	{ "Reload car assets", PAUSE_TYPE_FUNC, 2u, (pauseFunc)&ReloadCarAssets, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_Exit), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoQuitHeader },
 	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
 };
@@ -374,7 +374,7 @@ MENU_ITEM MultiplayerPauseItems[] =
 	{ G_LTXT_ID(GTXT_SfxVolume), PAUSE_TYPE_SFXVOLUME | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&SfxVolume, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_MusicVolume), PAUSE_TYPE_MUSICVOLUME | PAUSE_TYPE_DIRFUNC, 2u, (pauseFunc)&MusicVolume, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_QuickReplay),1u,2u,NULL,MENU_QUIT_QUICKREPLAY,NULL},
-	{ "Reload world textures", PAUSE_TYPE_FUNC, 2u, (pauseFunc)&ReloadWorldTextures, MENU_QUIT_NONE, NULL },
+	{ "Reload car assets", PAUSE_TYPE_FUNC, 2u, (pauseFunc)&ReloadCarAssets, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_Exit), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoQuitHeader },
 	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
 };
@@ -389,7 +389,7 @@ MENU_ITEM CutscenePauseItems[] =
 #if (defined(_DEBUG) || defined(DEBUG_OPTIONS)) && !defined(JERICHO_RELEASE_MODS)
 	{ "Debug Options", PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &DebugOptionsHeader },
 #endif
-	{ "Reload world textures", PAUSE_TYPE_FUNC, 2u, (pauseFunc)&ReloadWorldTextures, MENU_QUIT_NONE, NULL },
+	{ "Reload car assets", PAUSE_TYPE_FUNC, 2u, (pauseFunc)&ReloadCarAssets, MENU_QUIT_NONE, NULL },
 	{ G_LTXT_ID(GTXT_Exit), PAUSE_TYPE_SUBMENU, 2u, NULL, MENU_QUIT_NONE, &YesNoQuitHeader },
 	{ NULL, PAUSE_TYPE_ENDITEMS, 0u, NULL, MENU_QUIT_NONE, NULL }
 };

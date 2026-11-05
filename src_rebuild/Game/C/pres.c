@@ -137,11 +137,19 @@ void SetHiresDigitsTexture(int enabled)
 	current->primptr += sizeof(DR_PSYX_TEX);
 }
 
+/* The HQ font is baked taller than it is drawn: at the default 0.275 scale a
+ * capital's baked ascent is ~14 px, which is the offset that turns the engine's
+ * top-of-line y into stb's baseline. That offset is proportional to the glyph
+ * size, so a half-size row (the console's 0.138) needs half of it -- an absolute
+ * 14 pushed every smaller HQ surface below its own line. */
+#define HIRES_FONT_DEFAULT_SCALE	0.275f
+#define HIRES_FONT_BASELINE			14.0f	/* at HIRES_FONT_DEFAULT_SCALE */
+
 void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, FONT_QUAD* q, float scale);
 
 void GetHiresBakedQuad(int char_index, float* xpos, float* ypos, FONT_QUAD* q)
 {
-	GetHiresBakedQuadScaled(char_index, xpos, ypos, q, 0.275f);
+	GetHiresBakedQuadScaled(char_index, xpos, ypos, q, HIRES_FONT_DEFAULT_SCALE);
 }
 
 void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, FONT_QUAD* q, float scale)
@@ -164,8 +172,9 @@ void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, FONT_QUAD
 	q->s1 = s_x * 255.0f * ipw;
 	q->t1 = s_y * 255.0f * iph;
 
-	// Restore the original fixed baseline. Scaling it was shifting every HQ glyph up ~10px.
-	q->y0 += 14.0f;
+	/* A top-of-line correction for the font's baked ascent: it is part of the
+	 * glyph size, so it scales with it. */
+	q->y0 += HIRES_FONT_BASELINE * (scale / HIRES_FONT_DEFAULT_SCALE);
 
 	*xpos += b->xadvance * scale;
 }

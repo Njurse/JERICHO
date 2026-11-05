@@ -76,10 +76,11 @@ extern void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, st
  * the gap the default 0.275f text has. This nudges it back to roughly that. */
 #define JER_CONSOLE_TRACKING		0.75f
 
-/* pres.c now adds a FIXED 14 px glyph baseline (it used to scale it, 14 * 0.138 = 2 px
- * at this size), which pushed every console row and the chat input ~12 px DOWN, the
- * input row off the bottom of the screen. Lift the HQ console text back by that much. */
-#define JER_CONSOLE_HQ_LIFT		12
+/* pres.c's glyph baseline is the font's baked ascent, so it scales with the
+ * glyph size: ~14 px at the default 0.275, ~7 px at this 0.138. The console's
+ * rows were laid out when the scaled printer applied ~2 px (the old 14 * scale),
+ * so lift the HQ text by the difference to keep the rows where they belong. */
+#define JER_CONSOLE_HQ_LIFT		5
 
 /* Frontend: the FE draws in its own (larger) coordinate space and font. */
 #define JER_CONSOLE_FE_X		32
