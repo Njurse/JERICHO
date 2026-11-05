@@ -21,7 +21,7 @@ response the engine already computes.
   below `camera_release_av` (default 800000), so the camera locks on while the
   car is still rolling. `camera_snap` (default 75 %) then adds a share of the
   remaining angle per frame so the view comes back in quickly.
-- A **horn cannon roll** (`horn_roll`, default on): a horn press gives the main
+- A **horn cannon roll** (`horn_roll`, default off): a horn press gives the main
   player's car a high roll rate (`horn_roll_rate`, 3M) with a low launch
   (`horn_roll_launch`, 15000), so it rolls instead of being thrown.
 - Adds one roll/pitch angular impulse from the **mesh hull** of the car, not a
@@ -122,7 +122,7 @@ impact the same frame top up only the difference. Weaker repeats are ignored.
 | `camera_snap` | 75 | 0–100 %, extra share of the settle-back per frame after a tumble |
 | `camera_release` | 1 | 1 = release the heading hold when the car settles on its wheels |
 | `camera_release_av` | 800000 | angular-velocity sum below which the car counts as settled |
-| `horn_roll` | 1 | 1 = a horn press gives a cannon roll |
+| `horn_roll` | 0 | 1 = a horn press gives a cannon roll (opt-in) |
 | `horn_roll_rate` | 3000000 | roll rate for the cannon roll |
 | `horn_roll_launch` | 15000 | upward launch for the cannon roll |
 | `hull_contact` | 0 | 1 = log/use the hull lever for FULL TWIST's assist (never rewrites the engine point) |
@@ -149,7 +149,7 @@ shipped preset and sets
 `free_spin=1`, `angular_damping=16`, `cancel_extra_damping=100`,
 `keep_spin_at_rest=1`, `free_spin_window=120`, `hold_camera=1`,
 `camera_snap=75`, `camera_release=1`, `camera_release_av=800000`,
-`horn_roll=1`, `horn_roll_rate=3000000`, `horn_roll_launch=15000`,
+`horn_roll=0`, `horn_roll_rate=3000000`, `horn_roll_launch=15000`,
 `hull_contact=0`,
 `hull_footprint=1`, `scenery_mode=1`, `wall_snag=0`, `wall_bounce=100`,
 `car_car_impulse=50`, `car_car_launch=0`, `car_car_tumble=50`, `body_kick=0`,

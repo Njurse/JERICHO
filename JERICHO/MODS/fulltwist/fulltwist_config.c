@@ -62,7 +62,7 @@ static void ftCfgSetBool(const char* mod, const char* key, int value)
 #define FT_DEF_CAMERA_SNAP		250
 #define FT_DEF_CAMERA_RELEASE	1
 #define FT_DEF_CAMERA_RELEASE_AV	1800000
-#define FT_DEF_HORN_ROLL		1
+#define FT_DEF_HORN_ROLL		0
 #define FT_DEF_HORN_ROLL_RATE	3000000
 #define FT_DEF_HORN_ROLL_LAUNCH	15000
 #define FT_DEF_HULL_CONTACT		0
@@ -243,7 +243,7 @@ void ftApplyPreset(void)
 		c->playerOnly = 1;
 		c->cameraRelease = 1;
 		c->cameraReleaseAv = 800000;
-		c->hornRoll = 1;
+		c->hornRoll = 0;
 		c->hornRollRate = 3000000;
 		c->hornRollLaunch = 15000;
 		c->scenery3d = 1;

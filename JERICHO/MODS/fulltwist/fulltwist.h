@@ -24,7 +24,7 @@
 #include "ft_types.h"		/* local CAR_DATA/MAX_CARS view, no engine header */
 
 #define FT_MOD_ID          "fulltwist"
-#define FT_VERSION         "0.4.3"
+#define FT_VERSION         "0.4.4"
 
 /* FULL TWIST lets a car rest on its roof/side four times as long as the stock
  * rule before the engine forces the damage cap (mission.c: 180 frames). This
@@ -113,7 +113,7 @@ typedef struct FULLTWIST_CONFIG
 	int cameraSnap;			/* 0..100: extra settle-back per frame after a tumble */
 	int cameraRelease;		/* 1 = release the hold as soon as the car settles */
 	int cameraReleaseAv;	/* angular-velocity sum that counts as settled */
-	int hornRoll;			/* 1 = a horn press gives a cannon roll */
+	int hornRoll;			/* 1 = a horn press gives a cannon roll (default off) */
 	int hornRollRate;		/* roll rate for the cannon roll */
 	int hornRollLaunch;		/* upward launch for the cannon roll */
 	int hullContact;		/* 1 = use the hull contact for the scenery lever */

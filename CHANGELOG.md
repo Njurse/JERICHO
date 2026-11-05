@@ -6,6 +6,10 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### Full Twist
+
+- **Horn cannon roll is off until you turn it on.** A fresh config, a missing `horn_roll` key, Free Physics, and Reset to Defaults no longer enable it. An existing `fulltwist.ini` that already saved `horn_roll=1` is left alone.
+
 ### Paint
 
 - **Pause and car-select offer only the paints a car actually has.** A Miami traffic body whose bake filled four colour columns no longer shows Palette 5/6 and 6/6 as phantom steps; Square and the pause Palette row both read `CarModelPaletteCount` / `CarSlotPaletteCount`, which prefer the loaded civ_clut census over a hard-coded six.
