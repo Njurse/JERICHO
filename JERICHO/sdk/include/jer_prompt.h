@@ -37,6 +37,15 @@ typedef void (*JER_PROMPT_ON_YES)(void);
  * owns the wording. Returns non-zero when it is now up. */
 int jer_prompt_begin(const char* question, JER_PROMPT_ON_YES on_yes);
 
+/* Same, with custom answer labels (NULL = "Yes"/"No") and an action for No
+ * (run on No or Circle; NULL = nothing). */
+int jer_prompt_begin_ex(const char* question, const char* yes_label, const char* no_label,
+	JER_PROMPT_ON_YES on_yes, JER_PROMPT_ON_YES on_no);
+
+/* The answer labels for the drawing side ("Yes"/"No" unless begin_ex set them). */
+const char* jer_prompt_yes_label(void);
+const char* jer_prompt_no_label(void);
+
 /* Engine, once per frontend frame: feed the prompt the pad and act on the
  * answer. The four flags are already-decoded booleans, so the engine keeps its
  * own pad makes. Returns the result (JER_PROMPT_NONE while it is still open). */

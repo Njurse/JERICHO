@@ -19,10 +19,11 @@ extern void ProcessMotionLump(char *lump_ptr, int lump_size); // 0x00069A38
 extern void SetupPedMotionData(LPPEDESTRIAN pPed); // 0x00069AB8
 extern void SetupPedestrian(LPPEDESTRIAN pedptr); // 0x00069B6C
 
-extern void StoreVertexLists(); // 0x0006594C
+extern void StoreVertexLists(int entry); // 0x0006594C
 
 extern void DrawCiv(LPPEDESTRIAN pPed); // 0x000670CC
 extern void SetSkelModelPointers(int type); // 0x00069AD8
+extern void SetSkelModelPointersForEntry(int type, int entry);
 
 extern void DrawTanner(LPPEDESTRIAN pPed); // 0x000678D0
 extern int DrawCharacter(LPPEDESTRIAN pPed); // 0x00067D44

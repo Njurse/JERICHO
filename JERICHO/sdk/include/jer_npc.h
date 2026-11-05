@@ -65,6 +65,17 @@ void jer_npc_face(JerNpc* n, int heading);
  * ped must already be in a run/walk state) */
 void jer_npc_set_speed(JerNpc* n, int speed);
 
+/* play the ped's walk/run frames backwards (PEDESTRIAN flag 4, the stock
+ * walk-back and car-door reverse bit). The engine also sets this bit itself
+ * for a car door, so a caller that sets it must clear only what it set. */
+void jer_npc_set_reverse_anim(JerNpc* n, int on);
+
+/* the nearest non-player ped to world (x, y, z) -- y in the RENDER frame (down
+ * is positive, as camera and skeleton positions are) -- within `radius` on the
+ * ground plane and 2*radius vertically, or NULL. For hit tests. A module-owned
+ * player-model ped (a JMPPed stand-in, a test ped) counts; the players do not. */
+JerNpc* jer_npc_nearest(int x, int y, int z, int radius);
+
 /* walk toward a world point at the given speed (turns + runs; the module
  * should poll or re-issue each frame while chasing) */
 void jer_npc_move_to(JerNpc* n, int x, int z, int speed);
@@ -88,6 +99,28 @@ void jer_npc_tick(JerNpc* n);
 /* query: the ped's current speed (for decision making) */
 int jer_npc_speed(const JerNpc* n);
 
+/* query: the ped's position in the engine/RENDER frame (y down, as the
+ * PED_SKELETON joints and camera use; the ped origin sits ~130 above the
+ * ground). Returns 0 on NULL. */
+int jer_npc_get_pos(const JerNpc* n, int out[3]);
+
+/* ---- health ---------------------------------------------------------------
+ * Every jer NPC carries a health value so modules can track damage: a ped
+ * spawned through this API starts at JER_NPC_HEALTH_DEFAULT / DEFAULT, and any
+ * other ped (an ambient civilian, the player's own ped) is tracked lazily from
+ * its first write and reads as full until then. Values are kept in a small
+ * table keyed by the ped pointer; an entry whose (non-player) ped has left the
+ * engine's live list is dropped, so a recycled slot starts full again. The
+ * engine itself never reads these -- killing / knocking down is the module's
+ * call. `ped` is a JerNpc* or the raw ped pointer a hook handed you. */
+#define JER_NPC_HEALTH_DEFAULT	100
+int  jer_npc_health(const void* ped);			/* 0 for NULL */
+int  jer_npc_health_max(const void* ped);		/* 0 for NULL */
+void jer_npc_set_health(void* ped, int health, int max);	/* max <= 0 keeps the current max */
+int  jer_npc_damage(void* ped, int amount);		/* returns the health left (>= 0) */
+void jer_npc_health_forget(const void* ped);	/* back to "untracked, full" */
+void jer_npc_health_reset_all(void);
+
 /* STUB for the future police AI: have the ped's driver (if any) bail out
  * of its car onto the street. Returns 0 when unimplemented/not possible. */
 int jer_npc_leave_car(JerNpc* n);
@@ -103,6 +136,17 @@ int jer_npc_leave_car(JerNpc* n);
  * verifies the ped is still live, so a ped the engine destroyed behind our
  * back reports 0 rather than posing whatever slot got recycled. */
 int jer_npc_owned(const void* ped);
+
+/* ---- world FX ------------------------------------------------------------
+ * jer_fx_impact: a rudimentary bullet impact at (x, y, z) in the RENDER frame
+ * (y down, the frame car positions and the PED_SKELETON joints use): the
+ * car-collision sparks (+ debris for a world hit) and a small black smoke puff
+ * as the dark impact mark. (vx, vz) is the spark/debris push, car-velocity
+ * scale (tens). Particles come from the engine's shared smoke/debris pools,
+ * so a burst may be partly dropped when they are full. */
+#define JER_FX_IMPACT_WORLD	0
+#define JER_FX_IMPACT_PED	1
+void jer_fx_impact(int x, int y, int z, int vx, int vz, int kind);
 
 #ifdef __cplusplus
 }

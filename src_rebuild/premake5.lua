@@ -26,6 +26,36 @@ newoption {
 -- No mod list is maintained anywhere: both pipelines auto-scan.
 require "premake_modules/jericho_mods"
 
+-- ---------------------------------------------------------------------------
+-- A mod that is not there must never turn into a smaller game.
+--
+-- mp, carhacks and crumple are submodules. When one is not fetched, its folder
+-- is missing or empty, jericho_scan_mods() simply returns fewer ids, and the
+-- build succeeds -- with a registry, a mirror and an exe that quietly lack a
+-- chunk of the game. That is a hard error here instead, naming the command
+-- that fixes it. gaildrv2 is not on this list: it is no longer a submodule
+-- (hibernated). d1cars is allowed to be missing and degrades the way it
+-- always has.
+--
+-- jer_required_mods.h repeats the check at COMPILE time, so an IDE or msbuild
+-- run that skips premake still cannot produce a smaller game.
+local JERICHO_REQUIRED_MODS = { "mp", "carhacks", "crumple" }
+
+for _, req in ipairs(JERICHO_REQUIRED_MODS) do
+	local path = string.format("../JERICHO/MODS/%s/mod.toml", req)
+	local manifest = io.open(path, "r")
+
+	if not manifest then
+		error(string.format(
+			"%s is a submodule and was not fetched; run:\n" ..
+			"    git submodule update --init JERICHO/MODS/%s\n" ..
+			"the game does not build without it (a missing mod must not silently " ..
+			"build a smaller game)", req, req), 0)
+	end
+
+	manifest:close()
+end
+
 -- True when <id>'s mod.toml marks it as a runtime DLL addon.
 function jericho_is_dll_addon(id)
 	local toml = io.open(jericho_mod_dir(id) .. "/mod.toml", "r")
@@ -50,8 +80,21 @@ end
 
 -- Deep (compiled-in) modules: every installed mod that is NOT a DLL addon.
 JERICHO_COMPILED_MODS = {}
+-- Optional out-of-tree mods: their own repos, not part of the superproject and
+-- NOT compiled even when the folder is present, unless opted in with
+-- JERICHO_WITH_<ID>=1 (e.g. JERICHO_WITH_D2PL=1). d2pl is not release-ready.
+-- Re-add later with: git submodule add <url> JERICHO/MODS/d2pl
+JERICHO_OPTIONAL_MODS = { d2pl = true }
+
+local function jericho_optional_enabled(id)
+	local v = os.getenv("JERICHO_WITH_" .. id:upper())
+	return v ~= nil and v ~= "" and v ~= "0"
+end
+
 for _, id in ipairs(jericho_scan_mods()) do
-	if not jericho_is_dll_addon(id) then
+	if JERICHO_OPTIONAL_MODS[id] and not jericho_optional_enabled(id) then
+		print("JERICHO: skipping optional mod " .. id .. " (set JERICHO_WITH_" .. id:upper() .. "=1 to build it)")
+	elseif not jericho_is_dll_addon(id) then
 		table.insert(JERICHO_COMPILED_MODS, id)
 	end
 end
@@ -72,7 +115,8 @@ JERICHO_RELEASE_MODS = {
 	carhacks   = true,	-- vehicle unlock + cross-city car imports (imported by mp)
 	crumple    = true,	-- vehicle deformation + wheel-damage physics
 	mp         = true,	-- LAN multiplayer (owns the take-a-ride Single Player / Multiplayer prompt)
-	d1cars     = true,	-- Driver 1 car shapes/cosmetics: the five D1 car-data cities
+	bake     = true,	-- Driver 1 car shapes/cosmetics: the five D1 car-data cities
+	pedhacks   = true,	-- JMPPED pedestrian asset pipeline (archive lifecycle + contract)
 	-- fulltwist is deliberately NOT here. It is a deep (compiled-in) module
 	-- distributed through the official mod repo, not bundled with a release:
 	-- players who want it install it from Options -> JERICHO -> Mods -> Mod Repo.
@@ -120,6 +164,42 @@ local function jericho_mod_default_enabled(m)
 	return defaultEnabled
 end
 
+-- Table order for jer_registry.c. The scan in jericho_scan_mods() is
+-- alphabetical, which put the release rows out as carhacks, crumple, mp,
+-- pedhacks — mp and pedhacks last. This prefix matches jerCoreOrder in
+-- jer_manager.c (carhacks, pedhacks, mp) and then the other release mods.
+-- bake is a runtime DLL, so it is not in the compiled list; the name is
+-- here so the prefix stays the same list the runtime uses. Anything not
+-- named keeps its scan order behind the prefix.
+local JERICHO_TABLE_ORDER = { "carhacks", "pedhacks", "mp", "bake", "crumple" }
+
+local function jericho_order_mods(mods)
+	local head = {}
+	local tail = {}
+	local seen = {}
+
+	for _, id in ipairs(JERICHO_TABLE_ORDER) do
+		for _, m in ipairs(mods) do
+			if m == id and not seen[m] then
+				table.insert(head, m)
+				seen[m] = true
+			end
+		end
+	end
+
+	for _, m in ipairs(mods) do
+		if not seen[m] then
+			table.insert(tail, m)
+		end
+	end
+
+	for _, m in ipairs(tail) do
+		table.insert(head, m)
+	end
+
+	return head
+end
+
 -- Write one registry table + its count for the given module set.
 local function jericho_write_registry_table(f, mods)
 	f:write("extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {\n")
@@ -163,9 +243,12 @@ local function jericho_generate_registry(mods)
 	-- pre-included modules; every other build carries them all. The DEFINE is set
 	-- on the Release configuration of the game project, and the JERICHO project
 	-- links the same subset, so the table and the link always agree.
+	-- Declarations stay in scan order. The tables are suite-first: alphabetical
+	-- scan order is not the load order.
+	local ordered = jericho_order_mods(mods)
 	local releaseMods = {}
 
-	for _, m in ipairs(mods) do
+	for _, m in ipairs(ordered) do
 		if jericho_is_release_mod(m) then
 			table.insert(releaseMods, m)
 		end
@@ -174,7 +257,7 @@ local function jericho_generate_registry(mods)
 	f:write("#ifdef JERICHO_RELEASE_MODS\n")
 	jericho_write_registry_table(f, releaseMods)
 	f:write("#else\n")
-	jericho_write_registry_table(f, mods)
+	jericho_write_registry_table(f, ordered)
 	f:write("#endif\n")
 	f:write("#ifdef __cplusplus\n}\n#endif\n")
 	f:close()
@@ -252,9 +335,13 @@ local function jer_version_defines()
    -- leading "v" the release tags carry is stripped, so the binary says "0.10.2".
    -- --match "v*": only RELEASE tags name a version; a checkpoint/... tag must
    -- never become the window title (it once read "checkpoint/getrdun-...").
-   local desc = git("git describe --tags --match \"v*\" --always --dirty"):gsub("^v", "")
+   -- JERICHO_BASE_VERSION pins the version a branch is working toward, so the
+   -- exe reads it even before a matching v* tag exists. An exact v* tag on HEAD
+   -- still wins (release builds keep naming themselves after their tag).
+   local JERICHO_BASE_VERSION = "0.13"
+   local desc = git("git describe --tags --exact-match --match \"v*\" HEAD"):gsub("^v", "")
    if desc == "" then
-      desc = "0.9.0"
+      desc = JERICHO_BASE_VERSION
    end
    defines { ("JERICHO_BUILD_VERSION=\"%s\""):format(desc) }
 
@@ -831,6 +918,10 @@ project "JERICHO"
             "copy /Y \"..\\..\\JERICHO\\build.py\" \"%{cfg.buildtarget.directory}JERICHO\\build.py\"",
             "copy /Y \"..\\..\\JERICHO\\build_game.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.sh\"",
             "copy /Y \"..\\..\\JERICHO\\build_mods.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.sh\"",
+            -- the Driver 1 car/ped bake launchers at the build root, as CI packs them;
+            -- a stale copy here still pointed at the retired MODS\d1cars\tools.
+            "copy /Y \"..\\..\\BAKE_D1_CARS.bat\" \"%{cfg.buildtarget.directory}BAKE_D1_CARS.bat\"",
+            "copy /Y \"..\\..\\BAKE_D1_CARS.sh\" \"%{cfg.buildtarget.directory}BAKE_D1_CARS.sh\"",
             -- The updater, at the build's ROOT next to the exe, so a locally built
             -- install carries exactly what a downloaded one does. The packaging step
             -- used to be the only thing that placed these, which meant bin/<cfg> - the
@@ -865,18 +956,20 @@ project "JERICHO"
 
     -- Modules whose FOLDER is not mirrored into the build.
     --
-    -- d1cars is fetched by the build now (the allow-list in .github/workflows/build.yml
+    -- bake is fetched by the build now (the allow-list in .github/workflows/build.yml
     -- fetches PsyCross and the four public mod source repos: mp, carhacks, crumple and
-    -- d1cars), but its folder still must not land in the build output: it carries
+    -- bake), but its folder still must not land in the build output: it carries
     -- Driver 1 car content (shapes as .obj/.json, textures, LEV/LCF level data) that
-    -- must not ride along in a build output or in a package made from one. gaildrv2 is
-    -- unpublished and is not fetched at all. The recursive xcopy above mirrors every
-    -- folder on disk, so without this the WHOLE submodule lands in bin/<cfg>/JERICHO/MODS/.
-    -- A shipped LAN zip was found carrying 58 d1cars/gaildrv2 entries for exactly this reason.
+    -- must not ride along in a build output or in a package made from one. gaildrv2
+    -- is no longer a submodule (hibernated); the exclude key stays so a local
+    -- checkout dropped at JERICHO/MODS/gaildrv2 is not mirrored. The recursive
+    -- xcopy above mirrors every folder on disk, so without this the WHOLE folder
+    -- lands in bin/<cfg>/JERICHO/MODS/. A shipped LAN zip was found carrying 58
+    -- bake/gaildrv2 entries for exactly this reason.
     --
     -- The folder is dropped and then restored with only mod.toml (see below), so the
     -- compiled-in module still reports its id, version and author; none of its data ships.
-    local JER_MIRROR_EXCLUDE = { d1cars = true, gaildrv2 = true }
+    local JER_MIRROR_EXCLUDE = { bake = true, gaildrv2 = true }
 
     -- Subfolders of a mod that are generated at PLAY time and must never be
     -- mirrored. carhacks owns the baked Driver 1 car data (BAKE_D1_CARS writes
@@ -931,11 +1024,15 @@ project "JERICHO"
                 -- compare against a repo entry. mod.toml carries no Driver 1 content --
                 -- the exclusion is about the data, not the manifest.
                 --
-                -- CI does not fetch the unpublished gaildrv2 submodule, so the source
-                -- manifest may be absent. Guard both commands: d1cars is fetched and
-                -- does come back; gaildrv2 is simply skipped.
+                -- The manifest may be absent (gaildrv2 is not in this tree). Guard
+                -- both commands: bake is fetched and does come back; a missing
+                -- mod.toml is skipped.
                 table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" if not exist \"" .. JER_DEST .. "\" mkdir \"" .. JER_DEST .. "\"")
                 table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" copy /Y \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\mod.toml\" \"" .. JER_DEST .. "\\mod.toml\" > nul")
+                -- A runtime addon in an excluded folder still needs its DLL: bake
+                -- is now an external runtime unit while its tools/data stay out of
+                -- the mirror. Copy only the loadable unit, never the folder.
+                table.insert(JER_CMDS, "if exist \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\" .. JER_MOD .. ".dll\" copy /Y \"..\\..\\JERICHO\\MODS\\" .. JER_MOD .. "\\" .. JER_MOD .. ".dll\" \"" .. JER_DEST .. "\\" .. JER_MOD .. ".dll\" > nul")
             end
 
             postbuildcommands(JER_CMDS)
@@ -962,6 +1059,7 @@ project "JERICHO"
             "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
             "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat \"%{cfg.buildtarget.directory}/update_jericho.bat\"",
             "chmod +x \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
+            "cp -f ../../BAKE_D1_CARS.sh ../../BAKE_D1_CARS.bat \"%{cfg.buildtarget.directory}/\" && chmod +x \"%{cfg.buildtarget.directory}/BAKE_D1_CARS.sh\"",
             -- the mod store's helper, next to the exe too - see the Windows block
             "cp -f ../../JERICHO/CORE/modstore/modstore.sh \"%{cfg.buildtarget.directory}/modstore.sh\"",
             "cp -f ../../JERICHO/CORE/modstore/modstore.bat \"%{cfg.buildtarget.directory}/modstore.bat\"",
@@ -999,9 +1097,8 @@ project "JERICHO"
             -- compiled-in module can still report its name, version and author
             if JER_MIRROR_EXCLUDE[JER_MOD] then
                 table.insert(JER_CMDS, "rm -rf \"" .. JER_DEST .. "\"")
-                -- gaildrv2 is not fetched by CI (unpublished), so its manifest may not
-                -- exist. Only recreate the folder when there is a manifest to put back;
-                -- d1cars is fetched and does come back.
+                -- Only recreate the folder when there is a manifest to put back.
+                -- bake is fetched and does come back; gaildrv2 is not in this tree.
                 table.insert(JER_CMDS, "if [ -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" ]; then mkdir -p \"" .. JER_DEST .. "\" && cp -f \"../../JERICHO/MODS/" .. JER_MOD .. "/mod.toml\" \"" .. JER_DEST .. "/mod.toml\"; fi")
             end
 

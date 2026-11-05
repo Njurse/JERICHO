@@ -850,29 +850,6 @@ void State_GameInit(void* param)
 		jer_fire(JER_EVENT_GAME_START, &jerStart);
 	}
 
-	// JERICHO: the last word on the player's car.
-	//
-	// A module gets its say during SetupResidentModels, inside LoadMission - which runs
-	// BEFORE the mission header is applied to PlayerStartInfo. So an explicit choice
-	// (cross-city player_model, or -car) was silently replaced by the level's own car,
-	// which is why the player kept ending up in a domestic vehicle while the special
-	// slot, which reads residentCarModels[SPECIAL_CAR_SLOT] instead, worked.
-	//
-	// Re-applied here, immediately before the level runs, so no earlier writer can
-	// overwrite it. Nothing changes when wantedCar is left at -1.
-	{
-		int pc;
-
-		for (pc = 0; pc < 2; pc++)
-		{
-			if (wantedCar[pc] != -1 && PlayerStartInfo[pc] != NULL)
-			{
-				PlayerStartInfo[pc]->model = wantedCar[pc];
-				printInfo("JERICHO: player %d car forced to model %d (wantedCar)\n", pc, wantedCar[pc]);
-			}
-		}
-	}
-
 	for (i = 0; i < 5; i++)
 	{
 		ReadControllers();
@@ -1295,11 +1272,19 @@ void StepSim(void)
 			 * on foot */
 			jerPad.stickX = Pads[stream].mapanalog[2];	/* left-stick X */
 			jerPad.stickY = Pads[stream].mapanalog[3];	/* left-stick Y */
-			jerPad.cameraYaw = camera_angle.vy;
+			/* camera_angle.vy is the engine's signed view angle; the event
+			 * documents a 0..4095 camera FACING, so hand it the forward
+			 * heading (-vy), not the raw signed value */
+			jerPad.cameraYaw = (-camera_angle.vy) & 0xfff;
 
 			jer_fire(JER_EVENT_PED_INPUT, &jerPad);
 
 			t0 = jerPad.pad;
+			/* stickX is in/out: modules that own the on-foot heading zero
+			 * it so ProcessTannerPad does not re-add analog steering (which
+			 * turns dir.vy behind the module's back, even with the stick
+			 * inside the movement deadzone) */
+			t1 = (char)jerPad.stickX;
 		}
 
 		ProcessTannerPad(pl->pPed, t0, t1, t2);
@@ -1918,6 +1903,13 @@ int gMultiStep = 0;
 	// without driving the pause menu. -1 = never. Pair with -frames M where M > N.
 	int gRestartFrame = -1;
 
+	// JERICHO: debug/test - the other two same-level re-entries the pause menu offers,
+	// on gameplay frame N. They take the SAME NewLevel == 0 path as -restart
+	// (glaunch.c State_GameComplete), but through GAMEMODE_REPLAY / GAMEMODE_DIRECTOR,
+	// so the car/ped lifecycle can be exercised for each without a pad. -1 = never.
+	int gQuickReplayFrame = -1;
+	int gDirectorFrame = -1;
+
 	// JERICHO: debug/test - the same, for FRONTEND frames. -shot counts gameplay frames
 	// (gRunFrames), which never advance while the menus are up, so a menu can only be
 	// captured with this. Set by -shotfront <frame>; consumed in FEmain.c.
@@ -2299,6 +2291,23 @@ void DrawGame(void)
 		gRestartFrame = -1;
 		printInfo("JERICHO-RESTART: requesting GAMEMODE_RESTART on frame %d\n", gRunFrames);
 		EndGame(GAMEMODE_RESTART);
+	}
+
+	// JERICHO: -quickreplay / -director <frame> -- the other two pause-menu endings.
+	// Each re-enters the SAME level (NewLevel == 0), which is the lifecycle these
+	// levers exist to prove.
+	if (gQuickReplayFrame >= 0 && gRunFrames >= gQuickReplayFrame)
+	{
+		gQuickReplayFrame = -1;
+		printInfo("JERICHO-QUICKREPLAY: requesting GAMEMODE_REPLAY on frame %d\n", gRunFrames);
+		EndGame(GAMEMODE_REPLAY);
+	}
+
+	if (gDirectorFrame >= 0 && gRunFrames >= gDirectorFrame)
+	{
+		gDirectorFrame = -1;
+		printInfo("JERICHO-DIRECTOR: requesting GAMEMODE_DIRECTOR on frame %d\n", gRunFrames);
+		EndGame(GAMEMODE_DIRECTOR);
 	}
 #endif
 
@@ -2904,6 +2913,20 @@ int redriver2_main(int argc, char** argv)
 			// lifecycle can be tested headlessly. Pair with -frames M > N.
 			if (i + 1 < argc)
 				gRestartFrame = atoi(argv[++i]);
+		}
+		else if (!strcmp(argv[i], "-quickreplay"))
+		{
+			// JERICHO: request GAMEMODE_REPLAY on gameplay frame N (the pause menu's
+			// Quick Replay), a same-level re-entry. Pair with -frames M > N.
+			if (i + 1 < argc)
+				gQuickReplayFrame = atoi(argv[++i]);
+		}
+		else if (!strcmp(argv[i], "-director"))
+		{
+			// JERICHO: request GAMEMODE_DIRECTOR on gameplay frame N (the pause menu's
+			// Film Director), a same-level re-entry. Pair with -frames M > N.
+			if (i + 1 < argc)
+				gDirectorFrame = atoi(argv[++i]);
 		}
 		else if (!strcmp(argv[i], "-seed"))
 		{
@@ -3558,6 +3581,23 @@ void UpdatePlayerInformation(void)
 			cp->hd.where.t[1] < -750 && gDieWithFade == 0)
 		{
 			gDieWithFade = 1;
+		}
+	}
+
+	/* Host rule: damage must not survive the frame on any car. The per-player
+	 * clear above only covers the local driver, which is the whole of single
+	 * player and not an online match. */
+	if (gInvulnerableWorld)
+	{
+		for (i = 0; i < MAX_CARS; i++)
+		{
+			cp = &car_data[i];
+
+			if (cp->controlType == CONTROL_TYPE_NONE)
+				continue;
+
+			cp->totalDamage = 0;
+			ClearMem((char*)cp->ap.damage, sizeof(cp->ap.damage));
 		}
 	}
 }

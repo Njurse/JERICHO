@@ -278,14 +278,30 @@ static inline int CarClutRowsUsed(int firstX, int startY, int endX, int endY)
 	return (rows > 0) ? rows : 0;
 }
 
+/* D1: does a page entry of `size` bytes hold everything LoadTPageAndCluts reads from it - the
+ * leading CLUT count, `npal` 32-byte CLUTs, and a compressed image? The image decompresses to
+ * 0x8000 bytes, and decomp_asm's densest token (a run: 2 bytes -> 130 pixels) needs 253 of them,
+ * so no real page is shorter than 506 bytes of image. An entry that is shorter would be read
+ * past its end (the CLUT walk, then decomp_asm). */
+#define CAR_PAGE_IMAGE_MIN_BYTES	506
+
+static inline int CarPageEntryFits(int size, int npal)
+{
+	if (npal <= 0 || npal > 32)
+		return 0;
+
+	return size >= 4 + npal * 32 + CAR_PAGE_IMAGE_MIN_BYTES;
+}
+
 /* ---------------------------------------------------------------------------
  * The baked index (remap / reservation) of a set
  * ------------------------------------------------------------------------- */
 
-/* May the remap/reservation for source set `set` be given back? Only when no pin left in the
- * table still pages that set in (the remap is keyed by set number alone, so ANY city's pin
- * counts) and no other imported slot's model still names it (its polys baked that index). */
-static inline int CarRemapReleasable(int set, const int* pinSet, int npins, int namedByOtherSlot)
+/* May the remap/reservation for source set `set` of `city` be given back? Only when no pin left
+ * in the table still pages that set of THAT city in (the remap is keyed by (city, set): another
+ * city's pin of the same number has an index of its own - D3) and no other imported slot's model
+ * of that city still names it (its polys baked that index). */
+static inline int CarRemapReleasable(int set, int city, const int* pinSet, const int* pinCity, int npins, int namedByOtherSlot)
 {
 	int i;
 
@@ -294,11 +310,43 @@ static inline int CarRemapReleasable(int set, const int* pinSet, int npins, int 
 
 	for (i = 0; i < npins; i++)
 	{
-		if (pinSet[i] == set)
+		if (pinSet[i] == set && pinCity[i] == city)
 			return 0;
 	}
 
 	return 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * World VRAM reload
+ *
+ * A level's own pages are uploaded once (LoadPermanentTPages). An import that
+ * cannot stay in the lower half pool can sit on one of those rectangles, and
+ * giving the claim back does not put the level's pixels back. The reload has
+ * to know which pins are on a world slot and which slots the spool owns.
+ *
+ * JER_WORLD_SLOTS is the engine's tpageslots bound (TPAGE_SLOTS in texture.h).
+ * ------------------------------------------------------------------------- */
+
+#define JER_WORLD_SLOTS	19
+
+/* A lower-half pool pin is not on a world rectangle. A pin with a real
+ * tpagepos[] index is, and the level's page cannot be written back under it. */
+static inline int jer_world_reload_detach_pin(int poolSlot, int texSlot)
+{
+	return poolSlot < 0 && texSlot >= 0 && texSlot < JER_WORLD_SLOTS;
+}
+
+/* Resident pages are slots [0, residentCount). The spool's world pages are the
+ * rest of the 19. */
+static inline int jer_world_reload_resident_slot(int slot, int residentCount)
+{
+	return slot >= 0 && slot < residentCount && slot < JER_WORLD_SLOTS;
+}
+
+static inline int jer_world_reload_stream_slot(int slot, int residentCount)
+{
+	return slot >= residentCount && slot >= 0 && slot < JER_WORLD_SLOTS;
 }
 
 #endif /* CARPINREF_H */

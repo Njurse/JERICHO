@@ -103,12 +103,11 @@ def submodule_paths():
     """The submodules' paths, from .gitmodules.
 
     A link INTO a submodule cannot be resolved from a clone that has not
-    initialised it. The checks job fetches the three public mod source repos
-    (mp, carhacks, crumple) but deliberately not gaildrv2 (unpublished) or
-    d1cars (its bake tools are fetched only for packaging), so links into those
-    two still cannot be verified here. Failing them would make the job red for a
-    file that IS tracked one level down, and would push the docs into not linking
-    the submodules at all - which is worse than not verifying them here."""
+    initialised it. Links into those paths are skipped here. Failing them would
+    make the job red for a file that IS tracked one level down, and would push
+    the docs into not linking the submodules at all - which is worse than not
+    verifying them here. gaildrv2 is not a submodule, so a link to its old path
+    is checked like any other missing file."""
     paths = []
     for line in read(".gitmodules").splitlines():
         line = line.strip()

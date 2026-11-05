@@ -563,8 +563,22 @@ int ThisMotion;
 short cTannerVNumbers[24];
 SVECTOR vTannerList[210];
 
-short cJerichoVNumbers[7];
-SVECTOR vJerichoList[102];
+short cJerichoVNumbers[JER_PED_MAX_ENTRIES][7];
+SVECTOR vJerichoList[JER_PED_MAX_ENTRIES][512];
+
+/* Baked (or fallback Tanner) leg/foot source vertices. The legs live on
+ * different bones than the six JERI upper-body models, so they need their own
+ * snapshot: using vTannerList here feeds the wrong limbs into the baked models. */
+short cJerichoLegVNumbers[JER_PED_MAX_ENTRIES][6];
+SVECTOR vJerichoLegList[JER_PED_MAX_ENTRIES][512];
+
+/* Baked per-entry HIPS (optional v5 slot 14). */
+short cJerichoHipsVNumber[JER_PED_MAX_ENTRIES];
+SVECTOR vJerichoHipsList[JER_PED_MAX_ENTRIES][128];
+
+/* Baked Tanner hand copies (HAND_LEFT/RIGHT). */
+short cJerichoHandVNumbers[JER_PED_MAX_ENTRIES][2];
+SVECTOR vJerichoHandList[JER_PED_MAX_ENTRIES][256];
 
 int vStored = 0;
 
@@ -943,8 +957,11 @@ void DrawBodySprite(LPPEDESTRIAN pDrawingPed, int boneId, VERTTYPE v1[2], VERTTY
 }
 
 // [D] [T]
-void StoreVertexLists(void)
+void StoreVertexLists(int entry)
 {
+	if (entry < 0 || entry >= JER_PED_MAX_ENTRIES)
+		entry = 0;
+
 	BONE* pBone;
 	SVECTOR* destVerts;
 	SVECTOR* srcVerts;
@@ -993,20 +1010,20 @@ void StoreVertexLists(void)
 	counter = 0;
 	for (i = 0; i < 6; i++)
 	{
-		pModel = pmJerichoModels[i];
+		pModel = pmJerichoModels[entry][i];
 
 		if (pModel == NULL)
 		{
-			cJerichoVNumbers[i] = -1;
+			cJerichoVNumbers[entry][i] = -1;
 			continue;
 		}
 
 		srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
 
 		// store start index
-		cJerichoVNumbers[i] = counter;
+		cJerichoVNumbers[entry][i] = counter;
 
-		destVerts = &vJerichoList[counter];
+		destVerts = &vJerichoList[entry][counter];
 
 		for (j = 0; j < pModel->num_vertices; j++)
 		{
@@ -1020,13 +1037,98 @@ void StoreVertexLists(void)
 		}
 	}
 
+	/* Legs/feet: baked copies if present, otherwise the resident Tanner parts.
+	 * This is a separate snapshot from vTannerList because the bone slots used by
+	 * the Jericho skeleton are not the static Tanner leg slots. */
+	{
+		static const int fallback[6] = { 11, 12, 7, 5, 6, 13 };
+
+		counter = 0;
+
+		for (i = 0; i < 6; i++)
+		{
+			pModel = pmJerichoLegModels[entry][0] ? pmJerichoLegModels[entry][i] : pmTannerModels[fallback[i]];
+
+			if (pModel == NULL)
+			{
+				cJerichoLegVNumbers[entry][i] = -1;
+				continue;
+			}
+
+			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
+			cJerichoLegVNumbers[entry][i] = counter;
+			destVerts = &vJerichoLegList[entry][counter];
+
+			for (j = 0; j < pModel->num_vertices; j++)
+			{
+				destVerts->vx = srcVerts->vx;
+				destVerts->vy = srcVerts->vy;
+				destVerts->vz = srcVerts->vz;
+
+				srcVerts++;
+				destVerts++;
+				counter++;
+			}
+		}
+	}
+
+	/* Hips: the entry's own baked HIPS when the archive carries slot 14. */
+	cJerichoHipsVNumber[entry] = -1;
+	if (pmJerichoHipsModels[entry] != NULL && pmJerichoHipsModels[entry]->num_vertices <= 128)
+	{
+		pModel = pmJerichoHipsModels[entry];
+		srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
+		destVerts = vJerichoHipsList[entry];
+
+		for (j = 0; j < pModel->num_vertices; j++)
+		{
+			destVerts->vx = srcVerts->vx;
+			destVerts->vy = srcVerts->vy;
+			destVerts->vz = srcVerts->vz;
+			srcVerts++;
+			destVerts++;
+		}
+		cJerichoHipsVNumber[entry] = 0;
+	}
+
+	/* Hands: baked Tanner copies when present, resident Tanner otherwise. */
+	{
+		counter = 0;
+
+		for (i = 0; i < 2; i++)
+		{
+			pModel = pmJerichoHandModels[entry][i] ? pmJerichoHandModels[entry][i] : pmTannerModels[i == 0 ? 10 : 4];
+
+			if (pModel == NULL)
+			{
+				cJerichoHandVNumbers[entry][i] = -1;
+				continue;
+			}
+
+			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
+			cJerichoHandVNumbers[entry][i] = counter;
+			destVerts = &vJerichoHandList[entry][counter];
+
+			for (j = 0; j < pModel->num_vertices; j++)
+			{
+				destVerts->vx = srcVerts->vx;
+				destVerts->vy = srcVerts->vy;
+				destVerts->vz = srcVerts->vz;
+
+				srcVerts++;
+				destVerts++;
+				counter++;
+			}
+		}
+	}
+
 	vStored = 1;
 }
 
 #define BODY_OFFSET 8
 #define TORSO_OFFSET -2
 
-#define JERICHO_BODY_OFFSET 6
+#define JERICHO_BODY_OFFSET 8
 #define JERICHO_TORSO_OFFSET -5
 
 int bodyShiftEnabled = 1;
@@ -1244,7 +1346,7 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 	// offsets below are accumulated. Fires for the player ped AND for any ped
 	// a module owns (jer_npc_owned) - e.g. a mounted crew member, which has
 	// padId -1 - but never for ambient pedestrians.
-	if (pDrawingPed->pedType == TANNER_MODEL && (pDrawingPed->padId >= 0 || jer_npc_owned(pDrawingPed)))
+	if (pDrawingPed->padId >= 0 || jer_npc_owned(pDrawingPed))
 	{
 		JER_ARGS_PED_SKELETON jerSkel;
 
@@ -1322,7 +1424,7 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 	// joint offsets (vJPos[RHAND] = hand position) and draw extra meshes
 	// attached to them (e.g. a weapon in Tanner's hand). Same ownership rule
 	// as phase 0: player ped + module-owned peds.
-	if (pDrawingPed->pedType == TANNER_MODEL && (pDrawingPed->padId >= 0 || jer_npc_owned(pDrawingPed)))
+	if (pDrawingPed->padId >= 0 || jer_npc_owned(pDrawingPed))
 	{
 		JER_ARGS_PED_SKELETON jerSkel;
 
@@ -1538,7 +1640,11 @@ void newShowTanner(LPPEDESTRIAN pDrawingPed)
 // [D] [T]
 SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 {
-	int startVertex;
+	SVECTOR* base;
+	int entry = pDrawingPed->pedEntry;
+
+	if (entry < 0 || entry >= JER_PED_MAX_ENTRIES)
+		entry = 0;
 
 	if (pDrawingPed->pedType != OTHER_MODEL)
 	{
@@ -1548,31 +1654,52 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 		return NULL;
 	}
 
+	base = vJerichoList[entry];
+
 	switch (boneId)
 	{
 		case JOINT_1:
-			startVertex = cJerichoVNumbers[0];
-			break;
+			return base + cJerichoVNumbers[entry][0];
 		case HEAD:
-			startVertex = cJerichoVNumbers[1];
-			break;
+			return base + cJerichoVNumbers[entry][1];
 		case LELBOW:
-			startVertex = cJerichoVNumbers[2];
-			break;
+			return base + cJerichoVNumbers[entry][2];
 		case LHAND:
-			startVertex = cJerichoVNumbers[3];
-			break;
+			return base + cJerichoVNumbers[entry][3];
 		case RELBOW:
-			startVertex = cJerichoVNumbers[4];
-			break;
+			return base + cJerichoVNumbers[entry][4];
 		case RHAND:
-			startVertex = cJerichoVNumbers[5];
-			break;
-		default:
-			return vTannerList + cTannerVNumbers[boneId & 127];
-	}
+			return base + cJerichoVNumbers[entry][5];
 
-	return vJerichoList + startVertex;
+		case LHIP:
+			if (cJerichoHipsVNumber[entry] != -1)
+				return vJerichoHipsList[entry];
+			if (cTannerVNumbers[LHIP] != -1)
+				return vTannerList + cTannerVNumbers[LHIP];
+			return NULL;
+		case LKNEE:
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][0];
+		case LFOOT:
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][1];
+		case LTOE:	/* crossed like stock Tanner: LTOE draws FOOT_RIGHT */
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][5];
+		case RHIP:
+			return NULL;
+		case RKNEE:
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][3];
+		case RFOOT:
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][4];
+		case RTOE:	/* crossed like stock Tanner: RTOE draws FOOT_LEFT */
+			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][2];
+
+		case LFINGERS:
+			return vJerichoHandList[entry] + cJerichoHandVNumbers[entry][0];
+		case RFINGERS:
+			return vJerichoHandList[entry] + cJerichoHandVNumbers[entry][1];
+
+		default:
+			return NULL;
+	}
 }
 
 // [D] [T]
@@ -1861,20 +1988,63 @@ void DrawCiv(LPPEDESTRIAN pPed)
 }
 
 // [D] [T]
-void SetSkelModelPointers(int type)
+void SetSkelModelPointersForEntry(int type, int entry)
 {
+	if (entry < 0 || entry >= JER_PED_MAX_ENTRIES)
+		entry = 0;
+
 	if (type == OTHER_MODEL)
 	{
-		Skel[JOINT_1].pModel = &pmJerichoModels[0];
-		Skel[HEAD].pModel = &pmJerichoModels[1];
-		Skel[LELBOW].pModel = &pmJerichoModels[2];
-		Skel[LHAND].pModel = &pmJerichoModels[3];
-		Skel[RELBOW].pModel = &pmJerichoModels[4];
-		Skel[RHAND].pModel = &pmJerichoModels[5];
-		Skel[LHIP].pModel = NULL;
+		Skel[JOINT_1].pModel = &pmJerichoModels[entry][0];
+		Skel[HEAD].pModel = &pmJerichoModels[entry][1];
+		Skel[LELBOW].pModel = &pmJerichoModels[entry][2];
+		Skel[LHAND].pModel = &pmJerichoModels[entry][3];
+		Skel[RELBOW].pModel = &pmJerichoModels[entry][4];
+		Skel[RHAND].pModel = &pmJerichoModels[entry][5];
+
+		/* Match the engine's static Tanner leg bindings: the hip joints draw the
+		 * resident HIPS mesh, and the thigh/calf/foot models hang off
+		 * LKNEE/LFOOT/LTOE (and the right-side equivalents). */
+		/* No Tanner HIPS under a JMPPED character: it is Tanner's mesh on Tanner's
+		 * page/CLUT, so it showed as a stray segment, clipped through the seat on
+		 * car entry, and tinted apart from the rest of the body. */
+		Skel[LHIP].pModel = pmJerichoHipsModels[entry] ? &pmJerichoHipsModels[entry] : NULL;
+		Skel[RHIP].pModel = NULL;
+		Skel[LKNEE].pModel = pmJerichoLegModels[entry][0] ? &pmJerichoLegModels[entry][0] : &pmTannerModels[11];
+		Skel[LFOOT].pModel = pmJerichoLegModels[entry][1] ? &pmJerichoLegModels[entry][1] : &pmTannerModels[12];
+		/* Toes cross over exactly like the static Tanner bindings (LTOE=pm[13]
+		 * FOOT_RIGHT, RTOE=pm[7] FOOT_LEFT); archive leg slot 2 is FOOT_LEFT and 5
+		 * is FOOT_RIGHT. */
+		Skel[LTOE].pModel = pmJerichoLegModels[entry][5] ? &pmJerichoLegModels[entry][5] : &pmTannerModels[13];
+		Skel[RKNEE].pModel = pmJerichoLegModels[entry][3] ? &pmJerichoLegModels[entry][3] : &pmTannerModels[5];
+		Skel[RFOOT].pModel = pmJerichoLegModels[entry][4] ? &pmJerichoLegModels[entry][4] : &pmTannerModels[6];
+		Skel[RTOE].pModel = pmJerichoLegModels[entry][2] ? &pmJerichoLegModels[entry][2] : &pmTannerModels[7];
+		Skel[LFINGERS].pModel = pmJerichoHandModels[entry][0] ? &pmJerichoHandModels[entry][0] : &pmTannerModels[10];
+		Skel[RFINGERS].pModel = pmJerichoHandModels[entry][1] ? &pmJerichoHandModels[entry][1] : &pmTannerModels[4];
 
 		bodyShiftValue = BODY_OFFSET + JERICHO_BODY_OFFSET;
 		torsoShiftValue = TORSO_OFFSET + JERICHO_TORSO_OFFSET;
+
+		{
+			static int reportedType = -2;
+			static MODEL* reportedLeg = NULL;
+			static int reportedEntry = -1;
+
+			if (reportedType != type || reportedLeg != pmJerichoLegModels[entry][0] || reportedEntry != entry)
+			{
+				reportedType = type;
+				reportedEntry = entry;
+				reportedLeg = pmJerichoLegModels[entry][0];
+
+				printInfo("skeleton: entry %d torso=%p head=%p arms=%p/%p/%p/%p legs=%s bodyShift=%d torsoShift=%d\n",
+					entry,
+					(void*)pmJerichoModels[entry][0], (void*)pmJerichoModels[entry][1],
+					(void*)pmJerichoModels[entry][2], (void*)pmJerichoModels[entry][3],
+					(void*)pmJerichoModels[entry][4], (void*)pmJerichoModels[entry][5],
+					pmJerichoLegModels[entry][0] ? "baked" : "Tanner",
+					bodyShiftValue, torsoShiftValue);
+			}
+		}
 	}
 	else
 	{
@@ -1886,13 +2056,68 @@ void SetSkelModelPointers(int type)
 		Skel[RHAND].pModel = &pmTannerModels[3];
 		Skel[LHIP].pModel = &pmTannerModels[15]; // [A] Tanner looks better with no model here but let's keep it
 
+		/* Restore the static Tanner legs/hands: a JMPPED character drawn earlier in
+		 * the frame leaves its baked parts bound here, and Tanner's vertex list
+		 * cannot drive them (the hit-or-miss Tanner / garbled car entry). */
+		Skel[RHIP].pModel = NULL;
+		Skel[LKNEE].pModel = &pmTannerModels[11];
+		Skel[LFOOT].pModel = &pmTannerModels[12];
+		Skel[LTOE].pModel = &pmTannerModels[13];
+		Skel[RKNEE].pModel = &pmTannerModels[5];
+		Skel[RFOOT].pModel = &pmTannerModels[6];
+		Skel[RTOE].pModel = &pmTannerModels[7];
+		Skel[LFINGERS].pModel = &pmTannerModels[10];
+		Skel[RFINGERS].pModel = &pmTannerModels[4];
+
 		bodyShiftValue = BODY_OFFSET;
 		torsoShiftValue = TORSO_OFFSET;
 	}
 }
 
 
+void SetSkelModelPointers(int type)
+{
+	SetSkelModelPointersForEntry(type, 0);
+}
+
+
 int iCurrBone = 0;
+
+/* JERICHO-HOOK: the pose pass is gated on the shared ped ownership rule
+ * (the player's ped or a module-owned ped), not on a model id. The player
+ * may be TANNER_MODEL, the other player model (mp's character), or an
+ * owned NPC; all of them have the same skeleton channel. */
+static void JerPedPoseHook(LPPEDESTRIAN pPed)
+{
+	if (pPed->padId >= 0 || jer_npc_owned(pPed))
+	{
+		/* JERICHO: pvRotation points straight into the shared animation
+		 * data (pPed->motion). Give the pose pass a private per-draw copy so
+		 * a mod's rotation writes can never corrupt the clip (the cause of
+		 * the accumulating pancake pose); SetupTannerSkeleton re-points the
+		 * bones at the clip every draw. */
+		static SVECTOR jerPoseRot[NUM_BONES];
+		int jb;
+		JER_ARGS_PED_POSE jerPose;
+
+		for (jb = 0; jb < NUM_BONES; jb++)
+		{
+			if (Skel[jb].pvRotation == NULL)
+				continue;
+			jerPoseRot[jb].vx = Skel[jb].pvRotation->vx;
+			jerPoseRot[jb].vy = Skel[jb].pvRotation->vy;
+			jerPoseRot[jb].vz = Skel[jb].pvRotation->vz;
+			jerPoseRot[jb].pad = 0;
+			Skel[jb].pvRotation = &jerPoseRot[jb];
+		}
+
+		jerPose.ped = pPed;
+		jerPose.skel = Skel;
+		jerPose.dir = pPed->dir.vy;
+		jerPose.isTanner = (pPed->pedType == TANNER_MODEL);
+		jer_fire(JER_EVENT_PED_POSE, &jerPose);
+	}
+}
 
 // [D] [T]
 void DrawTanner(LPPEDESTRIAN pPed)
@@ -1903,21 +2128,13 @@ void DrawTanner(LPPEDESTRIAN pPed)
 
 	bDoingShadow = 0;
 
-	SetSkelModelPointers(pPed->pedType);
+	SetSkelModelPointersForEntry(pPed->pedType, pPed->pedEntry);
 	SetupTannerSkeleton(pPed);
 
 	// JERICHO-HOOK: the pose hook — the ONLY window where a per-bone
 	// ROTATION write (mutating *Skel[i].pvRotation, read by
-	// newRotateBones right below) takes effect. Fires for the player ped
-	// and for module-owned peds (jer_npc_owned), same rule as PED_SKELETON.
-	if (pPed->pedType == TANNER_MODEL && (pPed->padId >= 0 || jer_npc_owned(pPed)))
-	{
-		JER_ARGS_PED_POSE jerPose;
-
-		jerPose.ped = pPed;
-		jerPose.skel = Skel;
-		jer_fire(JER_EVENT_PED_POSE, &jerPose);
-	}
+	// newRotateBones right below) takes effect.
+	JerPedPoseHook(pPed);
 
 	newRotateBones(pPed, &Skel[LOWERBACK]);
 
@@ -1971,8 +2188,16 @@ int DrawCharacter(LPPEDESTRIAN pPed)
 	CVECTOR cv;
 	VECTOR pos;
 
-	SetSkelModelPointers(pPed->pedType);
+	/* JERICHO: this is the main (non-shadow) pass, same as DrawTanner; a
+	 * shadow flag left set by an earlier draw must not reach the PED_SKELETON
+	 * phases newShowTanner fires below (jerSkel.shadow) */
+	bDoingShadow = 0;
+
+	SetSkelModelPointersForEntry(pPed->pedType, pPed->pedEntry);
 	SetupTannerSkeleton(pPed);
+
+	/* the other player model / custom character draws through here */
+	JerPedPoseHook(pPed);
 
 	newRotateBones(pPed, &Skel[LOWERBACK]);
 

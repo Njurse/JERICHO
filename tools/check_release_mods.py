@@ -3,19 +3,26 @@
 
     python3 tools/check_release_mods.py
 
-`JERICHO_RELEASE_MODS` in `src_rebuild/premake5.lua` is what a Release build
-compiles in. The registry that build uses is generated into
-`src_rebuild/Game/C/JERICHO/gen/jer_registry.c` by the same premake run. If the
-set names a mod the registry does not, the release silently ships without it --
-the runtime only reports `enabled but no compiled binary found` when someone
-enables it.
+`JERICHO_RELEASE_MODS` in `src_rebuild/premake5.lua` names what a Release build
+carries. The registry that build uses is generated into
+`src_rebuild/Game/C/JERICHO/gen/jer_registry.c` by the same premake run, and it
+holds only the COMPILED-IN modules. A runtime DLL addon (`runtime = "dll"`,
+e.g. `bake`) is loaded from `JERICHO/MODS/<id>/<id>.dll` at boot and has no
+registry entry: it is in the release set so the Release-only mirror keeps its
+folder, not so it can be linked into the exe.
+
+If the set names a compiled-in mod the registry does not, the release silently
+ships without it -- the runtime only reports `enabled but no compiled binary
+found` when someone enables it.
 
 This check refuses three drifts:
 
   1. a release id with no `JERICHO/MODS/<id>/mod.toml`;
-  2. a release id absent from the generated `#ifdef JERICHO_RELEASE_MODS` table;
-  3. an id in that table that the release set does not name, or a count that
-     disagrees with either side.
+  2. a COMPILED-IN release id absent from the generated
+     `#ifdef JERICHO_RELEASE_MODS` table;
+  3. an id in that table that is not a compiled-in release id (including a
+     runtime DLL that should not be linked), or a count that disagrees with
+     either side.
 
 Exit: 0 clean, 1 problems.
 """
@@ -60,6 +67,20 @@ def release_registry(text):
     return ids, (int(count.group(1)) if count is not None else None)
 
 
+def is_runtime_dll(mod):
+    """True when JERICHO/MODS/<mod>/mod.toml declares runtime = "dll"."""
+    path = os.path.join(ROOT, "JERICHO", "MODS", mod, "mod.toml")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.split("#", 1)[0]
+                if re.match(r'^\s*runtime\s*=\s*"dll"', line):
+                    return True
+    except OSError:
+        return False
+    return False
+
+
 def main():
     premake = read(PREMAKE)
     registry = read(REGISTRY)
@@ -79,28 +100,43 @@ def main():
         print("check_release_mods: the release section is missing from jer_registry.c", file=sys.stderr)
         return 1
 
-    wanted_set = set(wanted)
     have_set = set(have)
     problems = []
 
+    # A runtime DLL addon is in JERICHO_RELEASE_MODS so the Release-only mirror
+    # keeps its folder; it is loaded from disk at boot and is NOT linked into
+    # the exe, so the generated registry must not name it. Only compiled-in
+    # release mods belong in the registry table and its count.
+    compiled_set = set()
+    runtime_set = set()
+
     for mod in wanted:
-        if not os.path.isfile(os.path.join(ROOT, "JERICHO", "MODS", mod, "mod.toml")):
+        manifest = os.path.join(ROOT, "JERICHO", "MODS", mod, "mod.toml")
+        if not os.path.isfile(manifest):
             problems.append("%s: JERICHO/MODS/%s/mod.toml is missing" % (mod, mod))
+            continue
+        if is_runtime_dll(mod):
+            runtime_set.add(mod)
+        else:
+            compiled_set.add(mod)
 
-    for mod in sorted(wanted_set - have_set):
-        problems.append("%s: in JERICHO_RELEASE_MODS but not in the generated release registry" % mod)
+    for mod in sorted(compiled_set - have_set):
+        problems.append("%s: compiled-in release mod, but absent from the generated release registry" % mod)
 
-    for mod in sorted(have_set - wanted_set):
-        problems.append("%s: in the generated release registry but not in JERICHO_RELEASE_MODS" % mod)
+    for mod in sorted(have_set - compiled_set):
+        if mod in runtime_set:
+            problems.append("%s: runtime DLL addon must not be in the generated release registry" % mod)
+        else:
+            problems.append("%s: in the generated release registry but not a compiled-in release mod" % mod)
 
     if count is None:
         problems.append("the generated release registry has no jer_registry_module_count")
     else:
         if count != len(have):
             problems.append("release registry says %d modules but lists %d" % (count, len(have)))
-        if count != len(wanted_set):
-            problems.append("release registry says %d modules but JERICHO_RELEASE_MODS names %d"
-                            % (count, len(wanted_set)))
+        if count != len(compiled_set):
+            problems.append("release registry says %d modules but JERICHO_RELEASE_MODS has %d compiled-in mod(s)"
+                            % (count, len(compiled_set)))
 
     if problems:
         for problem in problems:
@@ -109,8 +145,8 @@ def main():
         print("check_release_mods: %d problem(s)" % len(problems))
         return 1
 
-    print("check_release_mods: clean (%d release mod(s): %s)"
-          % (len(wanted), ", ".join(wanted)))
+    print("check_release_mods: clean (%d release mod(s): %s; %d compiled in, %d runtime DLL)"
+          % (len(wanted), ", ".join(wanted), len(compiled_set), len(runtime_set)))
     return 0
 
 

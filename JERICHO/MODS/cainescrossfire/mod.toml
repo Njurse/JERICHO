@@ -2,7 +2,7 @@ id = "cainescrossfire"
 name = "Caine's Crossfire"
 version = "0.6.0"
 # the JERICHO interface (SDK) this mod is built against
-interface = 2
+interface = 3
 author = "JERICHO"
 description = "Twisted Metal: Black style car combat: point-mass handling, Tight Turn pivot, TMB buttons, momentum-absorbing walls, totaled-car wreck effects, engine presentation tuners, weapon prototype."
 dependencies = ["carhacks"]

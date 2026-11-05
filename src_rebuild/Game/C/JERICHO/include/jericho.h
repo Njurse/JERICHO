@@ -69,7 +69,10 @@ extern "C" {
 #define JERICHO_BUILD_INFO_FMT "%s (%s, built %s)"
 #define JERICHO_BUILD_INFO_ARGS JERICHO_BUILD_VERSION, JERICHO_GIT_HASH, JERICHO_BUILD_TIME
 
-#define JERICHO_SDK_VERSION 2
+/* Interface 3 (JERICHO 0.12): a clean-break SDK release. Addons move to the
+ * versioned host API table (jer_host_api.h); every module and published
+ * package must be rebuilt/re-released against this value. */
+#define JERICHO_SDK_VERSION 3
 
 /* Maximum number of compiled-in modules (registry + modlist capacity). */
 #define JER_MAX_MODULES 32
@@ -295,6 +298,12 @@ enum
 				   anything drawn lands on top of the menu
 				   rather than under it (see
 				   JER_ARGS_FRONTEND_DRAW) */
+
+	JER_EVENT_GET_UPSIDE_DOWN_FRAMES,	/* query: consecutive frames a player
+					   car may rest upside down before the stock
+					   forced total, fired in HandleGameOver
+					   (mission.c). `frames` is in/out, 180 =
+					   stock (see JER_ARGS_UPSIDE_DOWN) */
 
 	JER_EVENT_MODULE_CUSTOM = 1000	/* modules define custom ids from here */
 };
@@ -545,8 +554,10 @@ int jer_manager_set_enabled(const char* rootDir, const char* id, int enabled);
 /* Move a module up/down in the load order; persists. Returns 0 on ok. */
 int jer_manager_move(const char* rootDir, const char* id, int direction);
 
-/* The multiplayer core suite, in mandatory load order: mp, carhacks, d1cars.
- * Everything else is optional and follows in the player's own order. */
+/* The multiplayer core suite, in mandatory load order: carhacks, pedhacks, mp.
+ * bake is optional tooling and is not in this list. bake and crumple, when
+ * present, are placed next and keep their enabled flag. Everything else
+ * follows in the player's own order. */
 int jer_manager_core_count(void);
 const char* jer_manager_core_id(int i);
 

@@ -2,7 +2,7 @@
 > (`src_rebuild/Game/C/JERICHO/docs/`). The copies under `docs/JERICHO/` are
 > short pointers to this directory.
 
-# JERICHO — Just an Event Relay for In-engine Callbacks, Handlers and Opt-ins
+# JERICHO — Just an Engine Runtime for In-game Callbacks, Handlers and Opt-ins
 
 JERICHO is a tiny, platform-neutral C/C++ API that turns REDRIVER2 into a
 **host** for mods. There are two kinds of mods, and they are handled very
@@ -39,8 +39,8 @@ Because MSVC cannot import game *data* globals into a DLL without
 from DLL addons.
 
 The in-repo deep mods (crumple, carhacks, cainescrossfire, collisiondevil,
-d2pl, sandbox, antfarm, JerAI, levelhacks, testmode, mp, yarisbounce,
-gaildrv2, d1cars) work exactly as before: build the game and they are
+d2pl, sandbox, antfarm, JerAI, levelhacks, testmode, mp, pedhacks,
+yarisbounce, bake) work exactly as before: build the game and they are
 linked in, managed at runtime through the same Mods menu. Only `debugorbit`
 and `example` declare `runtime = "dll"`, so they are the two in-repo
 external modules.
@@ -109,6 +109,10 @@ src_rebuild/tools/gen_exports/     maps the linker map to exports.def
   rebuild the index, validate it, serve it, publish it. Plus the scaffold for a
   self-contained repo with a CI workflow, and the rules that keep a repo
   installable (never hand-edit a hash; bump the version every time).
+- [`external-mods.md`](external-mods.md) — **the compiled-in/external boundary**:
+  which modules must stay deep, the per-module host-API gap table from
+  `tools/check_mod_api.py --gap`, and the append-only API additions needed to
+  move the other modules out of the exe.
 
 ## Building the game
 

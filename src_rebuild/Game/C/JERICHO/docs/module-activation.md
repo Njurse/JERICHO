@@ -56,17 +56,18 @@ therefore lists **every** installed module explicitly.
 
 ## The multiplayer core suite
 
-`mp`, `carhacks` and `d1cars` are one product, not three independent options: a
-session cannot agree on cars without all three. They are **mandatory and first in
-the load order**; every other module is optional and keeps the player's own order
-behind them (`crumple` is the shipped example of an optional module).
+`carhacks`, `bake`, `pedhacks` and `mp` are one product, not four independent
+options: a session cannot agree on cars and pedestrians without all four. They
+are **mandatory and first in the load order**; every other module is optional and
+keeps the player's own order behind them (`crumple` is the shipped example of an
+optional module).
 
 - `jer_manager.c` owns the list (`jerCoreOrder`) and `jer_manager_normalize_core()`
   rewrites `modlist.ini` with the core first and enabled, preserving the relative
   order of everything else.
 - `jerActivateModules` enforces the same order in memory, so it still holds when a
   release ships no `modlist.ini` and a player hand-edits one. An installed core
-  module is enabled whether the file said so or not; a missing one (d1cars is a
+  module is enabled whether the file said so or not; a missing one (bake is a
   separate download) is simply absent.
 - **A join applies it.** `MpHandleWelcome` calls `jer_manager_normalize_core()` on
   the joining client and says when the file changed: the modules already loaded in

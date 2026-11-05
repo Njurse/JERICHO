@@ -11,8 +11,11 @@ between the game and a mod. A mod declares the one it was **built against**:
 
 ```toml
 # mod.toml
-interface = 2
+interface = 3
 ```
+
+0.12 is a clean-break SDK line: every module and package is interface 3, and
+addons use the versioned host API table (`jer_host_api.h`).
 
 It is an **exact** match, not a minimum, and it is checked twice:
 
@@ -45,7 +48,7 @@ of the space is unclaimed for exactly that):
 | +30 .. +39 | `carhacks` | — |
 | +40 .. +49 | **core contracts** | `+40..+46` — the live car query, the per-car crush multiplier |
 | +50 .. +59 | `mp` | — |
-| +60 .. +69 | `d1cars` | — |
+| +60 .. +69 | `bake` | — |
 | +70 .. +79 | `JerAI` | — |
 | +80 .. +89 | `antfarm` | — |
 | +90 .. +99 | unclaimed — ask before using | — |
@@ -97,6 +100,7 @@ another mod's header and no mod links to another mod's symbols.
 |---|---|---|
 | `jer_carquery.h` | `mp`, `sandbox` | `carhacks` |
 | `jer_crumple.h` | `mp` | `crumple` |
+| `jer_ped_archive.h` | `mp` | `pedhacks` |
 
 A new contract belongs in `Game/C/JERICHO/include/` (already on every mod's
 include path), mirrored into `JERICHO/sdk/include/`, with its ids inside the core

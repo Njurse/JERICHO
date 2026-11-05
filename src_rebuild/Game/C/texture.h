@@ -52,6 +52,20 @@ extern void LoadImportedTPages(void);
  * CarImportPin places the pages. */
 extern void JerHotLoadCarTpages(void);
 
+/* JERICHO ped import: record the JERI models' source sets as pool-only pins, place
+ * them, and report whether every page and CLUT band landed. Release gives the ped
+ * pins back (shared car pins survive). */
+extern int JerPedPinTpages(int city, const int* sets, int count);
+extern int JerPedPinsReady(void);
+extern void JerPedReleasePins(void);
+extern void JerPedPageListsReport(int city);
+
+/* Upload one streamed AREA page (17 sectors: CLUT count + CLUTs + compressed
+ * 64x256 image) into a lower-half pool page and a stable CLUT band. */
+extern int JerPedUploadAreaPage(int set, int dstSet, char* buf);
+extern int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned char* cluts, int clutLen, const unsigned char* image, int imageLen, int compressed);
+extern int CarImportPinDstSet(int set, int city);
+
 /* JERICHO: parse one city's page lists, for a city read in MID-LEVEL. The level-load
  * parse covers only the cities held then, and without this a later city's sets are "not
  * in its page list" - their baked index stays empty and the car draws another page. */
@@ -113,7 +127,7 @@ extern int CarSetRemap(int set);
 // JERICHO: arm/disarm the remap for the car being converted. Must be on only for an
 // imported car - a host car whose set number collides with a remapped one needs its
 // own page, not the imported city's.
-extern void CarSetRemapEnable(int on);
+extern void CarSetRemapEnable(int on, int city);
 
 // JERICHO-HOOK: merge a cross-city import's car palettes (civ_clut) so its
 // vehicles read their own colours. No-op unless a module asked for an import.
@@ -182,6 +196,7 @@ extern void jer_clut_report(const char* why);
 extern void IncrementTPageNum(RECT16 *tpage); // 0x00080528
 
 extern int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress); // 0x00080E14
+extern int LoadTPageAndClutsN(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress, int len);	// bounded: 0 if the entry is short
 
 extern int Find_TexID(MODEL *model, int t_id); // 0x000805EC
 extern TEXINF* GetTEXINFName(char *name, int *tpagenum, int *texturenum); // 0x00080F3C
@@ -211,6 +226,12 @@ int  JerLowerPoolClutDropped(void);
 
 extern void ProcessTextureInfo(char *lump_ptr); // 0x00081080
 extern void LoadPermanentTPages(int *sector); // 0x00080688
+
+/* Re-upload the level's own texture pages and CLUTs after something else has
+ * written world VRAM (a custom bank, an import that took a world slot, a bake).
+ * Returns how many resident pages were uploaded plus how many streamed slots
+ * were queued. 0 when no level pages are loaded. See JerReloadWorldVram. */
+extern int JerReloadWorldVram(void);
 
 extern void ReloadIcons(); // 0x00081118
 

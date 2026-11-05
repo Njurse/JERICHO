@@ -8,7 +8,22 @@ typedef struct SEATED_PEDESTRIANS* SEATEDPTR;
 extern SVECTOR tannerLookAngle;
 
 extern MODEL* pmTannerModels[17];
-extern MODEL* pmJerichoModels[6];
+#define JER_PED_MAX_ENTRIES 8
+extern MODEL* pmJerichoModels[JER_PED_MAX_ENTRIES][6];
+extern MODEL* pmJerichoLegModels[JER_PED_MAX_ENTRIES][6];
+extern MODEL* pmJerichoHandModels[JER_PED_MAX_ENTRIES][2];
+extern MODEL* pmJerichoHipsModels[JER_PED_MAX_ENTRIES];
+extern int JerPedSkeletonGeneration(void);
+extern void JerPedSkeletonInvalidate(void);
+
+/* JERICHO: append the imported Jericho models' CLUT pairs to the live palette
+ * table without resetting cached teams. 0 = pair table or CLUT strip full. */
+extern int jer_ped_palette_extend_jericho(void);
+
+/* JERICHO: install the six imported models into the live skeleton pipeline.
+ * Returns 0 unless all six pointers are non-NULL and the palette extension
+ * succeeds; calls StoreVertexLists before SetSkelModelPointers. */
+extern int JerPedInstallModels(void);
 
 extern SEATEDPTR seated_pedestrian;
 extern int bKillTanner;

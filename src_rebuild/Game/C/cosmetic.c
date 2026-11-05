@@ -57,7 +57,7 @@ void LoadCustomCarCosmetics(CAR_COSMETICS* dest, int modelNumber)
 #endif
 
 // [D] [T]
-// JERICHO: a car ported from Driver 1 (d1cars, cities 4..) is made left/right
+// JERICHO: a car ported from Driver 1 (bake, cities 4..) is made left/right
 // symmetric as it loads. The bake re-proportions its wheels and COG from a Driver 2
 // donor; a lateral offset there (a body or donor box not centred on x, rounding)
 // leaves an axle's two wheels at different |x|, y or z, or the COG off the centre
@@ -94,7 +94,7 @@ static void JerSymmetrizeD1Cosmetics(CAR_COSMETICS* cc, int slot, int model)
 	}
 
 	if (cc->cog.vx != 0 || worst != 0)
-		printInfo("d1cars: symmetrized city %d model %d (slot %d): L/R wheel mismatch up to %d, cog x %d -> 0\n",
+		printInfo("bake: symmetrized city %d model %d (slot %d): L/R wheel mismatch up to %d, cog x %d -> 0\n",
 			city, model, slot, worst, cc->cog.vx);
 
 	cc->cog.vx = 0;
@@ -492,7 +492,7 @@ void AddCopCarLight(CAR_DATA *cp)
 	car_cos = cp->ap.carCos;
 
 	// JERICHO: the light bar is the CAR'S, not the level's. Stock keyed the layout and
-	// colours on GameLevel, so a cop car imported from another city (carhacks / d1cars
+	// colours on GameLevel, so a cop car imported from another city (carhacks / bake
 	// cross-city loads) flashed in the host city's pattern. Its source city decides now;
 	// a level's own cars report -1 and keep the stock look.
 	srcCity = GetCarModelSourceCity(cp->ap.model);

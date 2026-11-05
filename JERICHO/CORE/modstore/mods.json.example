@@ -30,13 +30,13 @@
       "default_enabled": true
     },
     {
-      "id": "d1cars",
+      "id": "bake",
       "name": "Driver 1 Cars",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": "Jaret Ludvik",
       "description": "Driver 1 traffic car shapes as a fifth car-data source. Ships the module and the bake tools only - the car data is baked from the player's own Driver 1 copy.",
 
-      "file": "https://example.invalid/jericho-mods/d1cars-0.2.0.zip",
+      "file": "https://example.invalid/jericho-mods/bake-0.3.0.zip",
       "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
       "size": 23456,
 

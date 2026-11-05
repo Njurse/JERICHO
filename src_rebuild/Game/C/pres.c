@@ -164,7 +164,8 @@ void GetHiresBakedQuadScaled(int char_index, float* xpos, float* ypos, FONT_QUAD
 	q->s1 = s_x * 255.0f * ipw;
 	q->t1 = s_y * 255.0f * iph;
 
-	q->y0 += 14.0f * scale;
+	// Restore the original fixed baseline. Scaling it was shifting every HQ glyph up ~10px.
+	q->y0 += 14.0f;
 
 	*xpos += b->xadvance * scale;
 }

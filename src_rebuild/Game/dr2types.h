@@ -980,6 +980,7 @@ typedef struct PEDESTRIAN
 	char seat_index;
 	u_char pallet;
 	char type;
+	signed char pedEntry;	/* JMPPED v5 character entry; 0 = baseline */
 } *LPPEDESTRIAN;
 
 typedef struct PEDESTRIAN_ROADS
@@ -1289,7 +1290,9 @@ typedef struct _PLAYER
 	int headTarget;
 	int viewChange;
 	u_char dying;
-	u_char upsideDown;
+	/* JERICHO: a module may extend the upside-down window past 255 frames
+	 * (FULL TWIST uses 720 = 4x the stock 180), so this cannot be u_char. */
+	u_short upsideDown;
 	char onGrass;
 	char targetCarId;
 	char cameraView;

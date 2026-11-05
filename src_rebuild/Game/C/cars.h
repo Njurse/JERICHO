@@ -83,7 +83,9 @@ extern char RightLight;
 // where `i` is the index into carTpages[city][0..7], so a city's rows span its whole
 // block even though only the rows its polgyons name carry data (measured: 2 of them).
 // Hence 8 + 8 per guest city - three guests fit in 32.
-#define CIV_CLUT_ROWS		32
+// JERICHO: raised to 128 (120 shared pool rows, body + wheel) so 4+ cities fit; rows are
+// allocated per (city,set), not per block, and a row id is u_char/signed char safe (<= 127).
+#define CIV_CLUT_ROWS		128
 #define CIV_CLUT_IMPORT_ROW	8
 #define CIV_CLUT_BLOCK_ROWS	8			// the height of one city's block (carTpages' range)
 
@@ -178,6 +180,7 @@ extern int CarPalIndexInCityFor(int tpage, int city); // JERICHO: the same, give
 extern void CarImportPaletteReset(void); // JERICHO: forget a level's deferred palette work (cars.c)
 extern void CarImportForgetCityPalette(int city); // JERICHO: give one guest city's palette rows/CLUT bands back (cars.c)
 extern void CarImportCityBandReset(void); // JERICHO: free every guest city's palette block (cars.c)
+extern void CarImportPaletteUsageReport(void); // JERICHO: one-line per-city civ_clut row usage (cars.c)
 
 /* Cross-city car data: which city's LEVELS\<CITY> folder the CARMODEL_* files
  * (.MDL/.COS/.DEN) are read from. -1 = the level's own city (stock). A module

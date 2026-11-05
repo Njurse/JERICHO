@@ -9,7 +9,9 @@ Repo-wide maintenance tools. Mod-specific tooling lives next to its mod
 | `dmp_fault.py` | Read a minidump and print the exception plus the faulting module and RVA |
 | `map_lookup.py` | Turn that RVA into a function name using a build's `.map` file |
 | `doccheck.py` | Check the documentation: links resolve, every engine event is in `events.md`, every doc is reachable from `docs/README.md`, and the counted claims match the code |
-| `check_release_mods.py` | Assert `JERICHO_RELEASE_MODS` has manifests and matches the generated Release registry, so a release cannot silently omit a named mod |
+| `check_release_mods.py` | Assert `JERICHO_RELEASE_MODS` has manifests and that every compiled-in release mod is in the generated Release registry; runtime DLL addons are manifest-only, so they must not be in the table. A release cannot silently omit a named mod |
+| `check_mod_api.py` | Keep runtime DLL addons on the host API: refuse engine headers/globals in `runtime = "dll"` modules; `--gap` prints the direct-engine use of compiled-in modules |
+| `check_host_api_abi.py` | Lock `jer_host_api.h` to append-only growth: a field or function may not be removed, renamed, reordered or retyped; new entries must be appended |
 | `update_mod_submodules.sh` | Advance the `mp`, `carhacks` and `crumple` submodule pins to their repositories' `main`, printing the gitlink diff to review and commit |
 
 ## Updating the mod source pins
@@ -149,13 +151,10 @@ done
 
 `submodules: recursive` walks *every* entry in `.gitmodules`, and a single
 unfetchable one fails the whole checkout before any build step runs. That is
-exactly how both platforms spent their entire history failing at step 2, with
-`fatal: repository 'https://github.com/Njurse/gailredriver2.git/' not found`
-on whichever submodule sorts first.
-
-`JERICHO/MODS/gaildrv2` is deliberately **out of the picture for builds** — its
-repository is not published — so it stays registered in `.gitmodules` for local
-work but is never fetched here. `JERICHO/MODS/d1cars` is fetched as a release mod;
+how both platforms used to fail at step 2, with
+`fatal: repository 'https://github.com/Njurse/gailredriver2.git/' not found`.
+`gaildrv2` is no longer a submodule; it is hibernated at
+https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2. `JERICHO/MODS/d1cars` is fetched as a release mod;
 its folder is still dropped from the mirror by `JER_MIRROR_EXCLUDE` (so its Driver 1
 data never ships) and the packaging step pulls its bake tools. The rule to keep:
 adding a submodule to `.gitmodules` must not be able to break the build by itself.
@@ -225,8 +224,9 @@ and the Release configuration applies it in three places so they cannot drift:
   generated registry bakes in (carhacks and mp on, crumple off).
 
 `gaildrv2` and `d1cars` are additionally dropped from every mirror
-(`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`). `gaildrv2` is not in the CI
-submodule allow-list at all; `d1cars` is fetched as a release mod but its folder is
+(`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`). `gaildrv2` is not a
+submodule of this tree; the exclude key stays so a local checkout at that path
+is not mirrored. `d1cars` is fetched as a release mod but its folder is
 dropped and only `mod.toml` is restored, so a released tree reports the module
 without carrying its Driver 1 data. The baked Driver 1 car data lives in
 `JERICHO/MODS/carhacks/D1CARS` (carhacks owns it); a generated folder is stripped
@@ -239,8 +239,9 @@ explicitly — the three shipped ones on, the rest off, so nothing runs
 unannounced (absence used to mean "silently on"). Local development is free to
 differ; the frontend's Options → JERICHO rewrites the file on toggle.
 
-So a locally built `Release` and a CI `Release` agree (three modules, no
-`gaildrv2`); it is `Release_dev` that differs, carrying every module.
+So a locally built `Release` and a CI `Release` agree (three modules; `gaildrv2`
+is not in this tree); it is `Release_dev` that differs, carrying every module
+that is present.
 
 ### Where a deep module's compiled output lives
 

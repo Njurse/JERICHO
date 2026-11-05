@@ -12,6 +12,7 @@
 #include "pad.h"
 #include "jericho.h"
 #include "jer_events.h"
+#include "jer_npc.h"	/* jer_npc_owned: the shared player/owned-ped hook gate */
 #include "civ_ai.h"
 #include "glaunch.h"
 #include "cutscene.h"
@@ -49,7 +50,22 @@ typedef struct SEATED_PEDESTRIANS
 } *SEATEDPTR;
 
 MODEL* pmTannerModels[17] = { 0 };
-MODEL* pmJerichoModels[6] = { 0 };
+MODEL* pmJerichoModels[JER_PED_MAX_ENTRIES][6] = { 0 };
+MODEL* pmJerichoLegModels[JER_PED_MAX_ENTRIES][6] = { 0 };
+MODEL* pmJerichoHandModels[JER_PED_MAX_ENTRIES][2] = { 0 };
+MODEL* pmJerichoHipsModels[JER_PED_MAX_ENTRIES] = { 0 };
+
+int gJerPedSkeletonGeneration = 1;
+
+int JerPedSkeletonGeneration(void)
+{
+	return gJerPedSkeletonGeneration;
+}
+
+void JerPedSkeletonInvalidate(void)
+{
+	gJerPedSkeletonGeneration++;
+}
 
 void PedDoNothing(LPPEDESTRIAN pPed);
 void PedUserWalker(LPPEDESTRIAN pPed);
@@ -137,7 +153,7 @@ extern void add_seated(SEATEDPTR seatedptr, int seat_index); // 0x000718C8
  * the CLUT address into each primitive, so nothing leaks to other pedestrians.
  */
 
-#define PED_PAL_MAX_PAIRS 8
+#define PED_PAL_MAX_PAIRS 48	/* Tanner (2) + every JMPPED entry's torso/arms/legs/hands pages */
 
 typedef struct
 {
@@ -447,6 +463,177 @@ int jer_ped_palette_team_colour(JER_COLOUR colour, int strength)
 	return gPedPalTeams++;
 }
 
+// JERICHO-HOOK: add the CLUT pairs named by the imported Jericho models to the
+// live palette table WITHOUT resetting it. Existing cached teams keep their rows;
+// each new recolourable pair gets a row per existing team. The head is skipped
+// for the same reason Tanner's is: it is drawn separately and keeps skin.
+//
+// Returns 0 when the pair table or the CLUT strip is full, so the caller can
+// refuse the character import rather than promise a colour it cannot apply.
+static int jer_ped_palette_extend_model(MODEL* m, int mi);
+
+int jer_ped_palette_extend_jericho(void)
+{
+	int e, mi;
+
+	/* Every JMPPED entry, and its baked legs + hands too: those polys carry the
+	 * entry's own page sets, so a pair left out here is a part that never takes
+	 * the team colour (the "only the hips tint" / "everything but the hips" bug). */
+	for (e = 0; e < JER_PED_MAX_ENTRIES; e++)
+	{
+		if (pmJerichoModels[e][0] == NULL)
+			continue;
+
+		for (mi = 0; mi < 6; mi++)
+		{
+			if (mi == 1)		/* JERI_HEAD: drawn by DoCivHead, keeps skin */
+				continue;
+			if (!jer_ped_palette_extend_model(pmJerichoModels[e][mi], mi))
+				return 0;
+		}
+
+		for (mi = 0; mi < 6; mi++)
+			if (!jer_ped_palette_extend_model(pmJerichoLegModels[e][mi], 6 + mi))
+				return 0;
+
+		for (mi = 0; mi < 2; mi++)
+			if (!jer_ped_palette_extend_model(pmJerichoHandModels[e][mi], 12 + mi))
+				return 0;
+
+		if (!jer_ped_palette_extend_model(pmJerichoHipsModels[e], 14))
+			return 0;
+	}
+
+	return 1;
+}
+
+static int jer_ped_palette_extend_model(MODEL* m, int mi)
+{
+	{
+		PL_POLYFT4* polys;
+		int j;
+
+
+		if (m == NULL)
+			return 1;
+
+		polys = GET_MODEL_DATA(PL_POLYFT4, m, poly_block);
+
+		for (j = m->num_polys; j > 0; j--)
+		{
+			u_char ptype = polys->id & 31;
+
+			if (ptype == 11 || ptype == 21 || ptype == 23)
+			{
+				int set = polys->texture_set;
+				int id = polys->texture_id;
+				int k;
+
+				for (k = 0; k < gPedPalPairCount; k++)
+				{
+					if (gPedPalPairs[k].set == set && gPedPalPairs[k].id == id)
+						break;
+				}
+
+				if (k == gPedPalPairCount)
+				{
+					RECT16 src;
+					u_short entries[16];
+					u_short rows[JER_PED_PAL_MAX_TEAMS];
+					int t;
+
+					if (gPedPalPairCount >= PED_PAL_MAX_PAIRS)
+					{
+						jer_log("ped palette: pair table full at part %d - left stock colour\n", mi);
+						return 1;	/* non-fatal: that part just keeps its stock colour */
+					}
+
+					for (t = 0; t < gPedPalTeams; t++)
+						rows[t] = 0;
+
+					/* Read the stock row after the page pin, so this is the
+					 * imported page's CLUT, not the host's. */
+					src.x = (short)((texture_cluts[set][id] & 0x3f) * 16);
+					src.y = (short)((texture_cluts[set][id] >> 6) & 0x3ff);
+					src.w = 16;
+					src.h = 1;
+
+					StoreImage(&src, (u_long*)entries);
+
+					gPedPalPairs[k].set = (u_char)set;
+					gPedPalPairs[k].id = (u_char)id;
+					gPedPalPairs[k].stock = texture_cluts[set][id];
+					memset(gPedPalPairs[k].row, 0, sizeof(gPedPalPairs[k].row));
+					gPedPalPairs[k].recolour = (u_char)PedPalRowIsOutfit(entries);
+
+					if (gPedPalPairs[k].recolour)
+					{
+						for (t = 0; t < gPedPalTeams; t++)
+						{
+							rows[t] = JerichoMakeClutRow(gPedPalPairs[k].stock,
+								gPedPalKey[t][0], gPedPalKey[t][1], gPedPalKey[t][2],
+								gPedPalKey[t][3], gPedPalKey[t][4]);
+
+							if (rows[t] == 0)
+							{
+								jer_log("ped palette: no CLUT row extending pair set=%d id=%d for team %d\n",
+									set, id, t);
+								return 0;
+							}
+						}
+					}
+
+					for (t = 0; t < gPedPalTeams; t++)
+						gPedPalPairs[k].row[t] = rows[t];
+
+					gPedPalPairCount++;
+				}
+			}
+
+			polys = (PL_POLYFT4*)((char*)polys + PolySizes[ptype]);
+		}
+	}
+
+	return 1;
+}
+
+/* JERICHO: install the imported six models into the live skeleton pipeline.
+ * Refuses unless every one is present, so SetSkelModelPointers can never be
+ * called with a NULL pModel. StoreVertexLists runs BEFORE the rebind because the
+ * draw reads cJerichoVNumbers/vJerichoList, not the model blobs directly. */
+int JerPedInstallModels(void)
+{
+	int i, e, entries = 0;
+
+	for (e = 0; e < JER_PED_MAX_ENTRIES; e++)
+	{
+		if (pmJerichoModels[e][0] != NULL)
+			entries = e + 1;
+	}
+
+	if (entries == 0)
+		return 0;
+
+	if (!jer_ped_palette_extend_jericho())
+		return 0;
+
+	for (e = 0; e < entries; e++)
+	{
+		for (i = 0; i < 6; i++)
+		{
+			if (pmJerichoModels[e][i] == NULL)
+				return 0;
+		}
+
+		StoreVertexLists(e);
+	}
+
+	SetSkelModelPointersForEntry(OTHER_MODEL, 0);
+	gJerPedSkeletonGeneration++;
+
+	return 1;
+}
+
 // The (r,g,b) form of the same call. It only unpacks into the colour type, so
 // there is ONE implementation and ONE cache; new code should use the _colour
 // form. Kept because cainescrossfire (and older callers) use it.
@@ -542,6 +729,8 @@ void jer_ped_palette_leave(void)
 // [D] [T]
 void InitTanner(void)
 {
+	JerPedImportReset();
+
 	pmTannerModels[0] = FindModelPtrWithName("TORSO");
 	pmTannerModels[1] = FindModelPtrWithName("HEAD");
 	pmTannerModels[2] = FindModelPtrWithName("U_ARM_RIGHT");
@@ -560,17 +749,17 @@ void InitTanner(void)
 	pmTannerModels[15] = FindModelPtrWithName("HIPS");
 	pmTannerModels[16] = FindModelPtrWithName("BAG");
 
-	pmJerichoModels[0] = FindModelPtrWithName("JERI_TORSO");
-	pmJerichoModels[1] = FindModelPtrWithName("JERI_HEAD");
-	pmJerichoModels[2] = FindModelPtrWithName("JERI_U_ARM_LEFT");
-	pmJerichoModels[3] = FindModelPtrWithName("JERI_L_ARM_LEFT");
-	pmJerichoModels[4] = FindModelPtrWithName("JERI_U_ARM_RIGHT");
-	pmJerichoModels[5] = FindModelPtrWithName("JERI_L_ARM_RIGHT");
+	pmJerichoModels[0][0] = FindModelPtrWithName("JERI_TORSO");
+	pmJerichoModels[0][1] = FindModelPtrWithName("JERI_HEAD");
+	pmJerichoModels[0][2] = FindModelPtrWithName("JERI_U_ARM_LEFT");
+	pmJerichoModels[0][3] = FindModelPtrWithName("JERI_L_ARM_LEFT");
+	pmJerichoModels[0][4] = FindModelPtrWithName("JERI_U_ARM_RIGHT");
+	pmJerichoModels[0][5] = FindModelPtrWithName("JERI_L_ARM_RIGHT");
 
 	jer_ped_palette_init();
 
 	SetSkelModelPointers(TANNER_MODEL);
-	StoreVertexLists();
+	StoreVertexLists(0);
 
 	numTannerPeds = 0;
 	bKillTanner = 0;
@@ -760,6 +949,7 @@ LPPEDESTRIAN CreatePedestrian(void)
 
 		pNewPed->pPrev = NULL;
 		pNewPed->pNext = pUsedPeds;
+		pNewPed->pedEntry = 0;
 
 		num_pedestrians++;
 		pUsedPeds = pNewPed;
@@ -1043,8 +1233,11 @@ void AnimatePed(LPPEDESTRIAN pPed)
 
 	// JERICHO-HOOK: the module's final word on the run speed before the
 	// position advances — ProcessTannerPad and the runner re-armed
-	// MAXRUNSPEED above, so only a write made HERE survives the advance
-	if (pPed->pedType == TANNER_MODEL && pPed->padId >= 0)
+	// MAXRUNSPEED above, so only a write made HERE survives the advance.
+	// Gate on the JERICHO ped ownership rule (the player's ped or a
+	// module-owned ped), NOT on a model id: the player can be the other
+	// player model (mp's custom character) and still be driven here.
+	if (pPed->padId >= 0 || jer_npc_owned(pPed))
 	{
 		JER_ARGS_PED_MOVE jerMove;
 
@@ -1113,7 +1306,10 @@ void AnimatePed(LPPEDESTRIAN pPed)
 		}
 	}
 
-	if (pPed->pedType != CIVILIAN)
+	// [JERICHO] a module stand-in (padId < 0, e.g. mp's remote on-foot player)
+	// is nobody's player: ABS(-1) wrote its pose into player[1], which in MP is
+	// the first remote player's CAR slot. Skip the write for those.
+	if (pPed->pedType != CIVILIAN && !(pPed->padId < 0 && jer_npc_owned(pPed)))
 	{
 		int padId;
 		padId = ABS(pPed->padId);
@@ -1201,7 +1397,7 @@ void CopStand(LPPEDESTRIAN pPed)
 	v.vz = pPed->position.vz - MainPlayer.pos[2];
 
 	pPed->frame1 = 0;
-	pPed->dir.vy = 1024 - ratan2(v.vz, v.vx);
+	pPed->dir.vy = (1024 - ratan2(v.vz, v.vx)) & 0xfff;
 }
 
 int iAllowWatch = 0;
@@ -1244,7 +1440,7 @@ void PedDoNothing(LPPEDESTRIAN pPed)
 		if (pPed->doing_turn < -tannerTurnMax)
 			pPed->doing_turn = -tannerTurnMax;
 
-		pPed->dir.vy = pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep;
+		pPed->dir.vy = (pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep) & 0xfff;
 
 		if (pPed->frame1 == 0)
 			pPed->frame1 = 15;
@@ -1262,7 +1458,7 @@ void PedDoNothing(LPPEDESTRIAN pPed)
 		if (pPed->doing_turn > tannerTurnMax)
 			pPed->doing_turn = tannerTurnMax;
 
-		pPed->dir.vy = pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep;
+		pPed->dir.vy = (pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep) & 0xfff;
 
 		if (pPed->frame1 > 14)
 			pPed->frame1 = 0;
@@ -1295,9 +1491,9 @@ void PedDoNothing(LPPEDESTRIAN pPed)
 		if (pPed->doing_turn != 0)
 		{
 			if (pPed->doing_turn < 0)
-				pPed->dir.vy = pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep;
+				pPed->dir.vy = (pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep) & 0xfff;
 			else
-				pPed->dir.vy = pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep;
+				pPed->dir.vy = (pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep) & 0xfff;
 		}
 	}
 
@@ -1354,7 +1550,7 @@ void PedUserRunner(LPPEDESTRIAN pPed)
 			pPed->doing_turn = -tannerTurnMax;
 
 		pPed->head_rot = 0;
-		pPed->dir.vy = pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep;
+		pPed->dir.vy = (pPed->dir.vy + 64 - (pPed->doing_turn + tannerTurnMax) * tannerTurnStep) & 0xfff;
 	}
 	else if (tannerPad & TANNER_PAD_TURNLEFT)
 	{
@@ -1367,7 +1563,7 @@ void PedUserRunner(LPPEDESTRIAN pPed)
 			pPed->doing_turn = tannerTurnMax;
 
 		pPed->head_rot = 0;
-		pPed->dir.vy = pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep;
+		pPed->dir.vy = (pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep) & 0xfff;
 	}
 	else
 	{
@@ -1392,7 +1588,7 @@ void PedUserRunner(LPPEDESTRIAN pPed)
 				pPed->doing_turn = 0;
 		}
 
-		pPed->dir.vy = pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep;
+		pPed->dir.vy = (pPed->dir.vy - 64 + (tannerTurnMax - pPed->doing_turn) * tannerTurnStep) & 0xfff;
 	}
 
 	AnimatePed(pPed);
@@ -1422,13 +1618,13 @@ void PedUserWalker(LPPEDESTRIAN pPed)
 	if (tannerPad & TANNER_PAD_TURNRIGHT)
 	{
 		pPed->head_rot = 0;
-		pPed->dir.vy += 20;
+		pPed->dir.vy = (pPed->dir.vy + 20) & 0xfff;
 	}
 
 	if (tannerPad & TANNER_PAD_TURNLEFT)
 	{
 		pPed->head_rot = 0;
-		pPed->dir.vy -= 20;
+		pPed->dir.vy = (pPed->dir.vy - 20) & 0xfff;
 	}
 
 	AnimatePed(pPed);
@@ -1523,7 +1719,7 @@ void PedGetOutCar(LPPEDESTRIAN pPed)
 		pPed->speed = 0;
 		pPed->fpAgitatedState = NULL;
 		pPed->flags &= ~0x10;
-		pPed->dir.vy = carToGetIn->hd.direction - 2048;
+		pPed->dir.vy = (carToGetIn->hd.direction - 2048) & 0xfff;
 
 		bReverseYRotation = 0;
 	}
@@ -1552,9 +1748,9 @@ void SetupGetOutCar(LPPEDESTRIAN pPed, CAR_DATA* pCar, int side)
 	entrySide = cs * (pCar->hd.where.t[0] - pPed->position.vx) - FIXED(sn * 0x1000) * (pCar->hd.where.t[2] - pPed->position.vz) + 0x800 > -1;
 
 	if (entrySide)
-		pPed->dir.vy = pCar->hd.direction - 1024;
+		pPed->dir.vy = (pCar->hd.direction - 1024) & 0xfff;
 	else
-		pPed->dir.vy = pCar->hd.direction + 1024;
+		pPed->dir.vy = (pCar->hd.direction + 1024) & 0xfff;
 
 	bReverseYRotation = !entrySide;
 
@@ -1602,9 +1798,9 @@ void SetupGetInCar(LPPEDESTRIAN pPed)
 	entrySide = cs * (carToGetIn->hd.where.t[0] - pPed->position.vx) - FIXED(sn * ONE) * (carToGetIn->hd.where.t[2] - pPed->position.vz) + 2048 < 0;
 
 	if (entrySide)
-		pPed->dir.vy = carToGetIn->hd.direction + 1024;
+		pPed->dir.vy = (carToGetIn->hd.direction + 1024) & 0xfff;
 	else
-		pPed->dir.vy = carToGetIn->hd.direction - 1024;
+		pPed->dir.vy = (carToGetIn->hd.direction - 1024) & 0xfff;
 
 	if (pPed->dir.vy > carToGetIn->hd.direction)
 		xOfs = -400;
@@ -2374,7 +2570,7 @@ void CivPedWalk(LPPEDESTRIAN pPed)
 	if ((pPed->flags & 2U) != 0)
 	{
 		pPed->speed = 0;
-		pPed->dir.vy += pPed->head_rot;
+		pPed->dir.vy = (pPed->dir.vy + pPed->head_rot) & 0xfff;
 	}
 	else
 	{
@@ -2422,7 +2618,9 @@ void CivPedWalk(LPPEDESTRIAN pPed)
 
 			if (pPed->finished_turn++ > 8)
 			{
-				pPed->dir.vy = pPed->dir.vy + 512 & 0xfc00;
+				/* snap to the nearest cardinal and stay inside 12 bits:
+				 * (vy + 512) & 0xfc00 can land on 4096 */
+				pPed->dir.vy = ((pPed->dir.vy + 512) & 0xfc00) & 0xfff;
 
 				dir = pPed->dir.vy + 2048 & 0xfff;
 
@@ -3427,7 +3625,7 @@ int ActivatePlayerPedestrian(CAR_DATA* pCar, char* padId, int direction, LONGVEC
 	if (gCurrentMissionNumber == 23 && playerType != TANNER_MODEL)
 	{
 		pedptr->doing_turn = 16;
-		pedptr->dir.vy = (pedptr->dir.vy - (tannerTurnMax + 16) * tannerTurnStep) + 294;
+		pedptr->dir.vy = ((pedptr->dir.vy - (tannerTurnMax + 16) * tannerTurnStep) + 294) & 0xfff;
 	}
 
 	return 1;

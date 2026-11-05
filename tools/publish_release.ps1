@@ -10,7 +10,7 @@
 
   What it does, in the same order and with the same layout as CI:
 
-    0. advance the four core mod submodules (mp, carhacks, crumple, d1cars) to
+    0. advance the four core mod submodules (mp, carhacks, crumple, bake) to
        the latest commit of their own branch, so the release carries the current
        mods rather than the pinned gitlinks
     1. (re)generate the project files with premake (vs2019 locally)
@@ -116,9 +116,9 @@ function Update-ModSubmodules {
 
     # Same rule as CI: a release carries the LATEST core mods, not whatever
     # gitlink the parent tree pinned. `--remote` uses the `branch =` recorded in
-    # .gitmodules (d1cars tracks betamiami, the others main).
+    # .gitmodules (bake tracks betamiami, the others main).
     $paths = @('JERICHO/MODS/mp', 'JERICHO/MODS/carhacks',
-               'JERICHO/MODS/crumple', 'JERICHO/MODS/d1cars')
+               'JERICHO/MODS/crumple', 'JERICHO/MODS/bake')
     foreach ($p in $paths) {
         & git -C $RepoRoot submodule update --init -- $p
         if ($LASTEXITCODE -ne 0) { Fail "could not initialise $p." }
@@ -242,11 +242,9 @@ function New-Package {
         if (Test-Path (Join-Path $bin 'JERICHO')) {
             Copy-Item (Join-Path $bin 'JERICHO') $stage -Recurse -Force
 
-            # gaildrv2 is out of the picture for builds: CI never fetches its
-            # submodule, so a CI payload carries an EMPTY JERICHO/MODS/gaildrv2
-            # and no JERICHO/CONFIG/gaildrv2.ini. This tree does have the source
-            # on disk, so without this the local release would ship a module the
-            # release does not run. Drop both to match.
+            # gaildrv2 is not a submodule of this tree. A local checkout of the
+            # hibernated repo, or a leftover gaildrv2.ini, must not ship.
+            # Drop both if they are present.
             $gd = Join-Path $stage 'JERICHO\MODS\gaildrv2'
             if (Test-Path $gd) { Remove-Item $gd -Recurse -Force }
             $gi = Join-Path $stage 'JERICHO\CONFIG\gaildrv2.ini'
@@ -288,23 +286,30 @@ function New-Package {
         # player's own copy and must never ride out in a package (the mirror
         # strips it too, this is the belt for a stale bin\).
         Remove-Item (Join-Path $stage 'JERICHO\MODS\carhacks\D1CARS') -Recurse -Force -ErrorAction SilentlyContinue
+        # Same store-only strip as the CI pack step: fulltwist, Hallgarth's Cars,
+        # and antfarm must not ship in the base pack.
+        foreach ($opt in @('fulltwist', 'hallgarthcars', 'antfarm')) {
+            $optDir = Join-Path $stage "JERICHO\MODS\$opt"
+            if (Test-Path $optDir) { Remove-Item $optDir -Recurse -Force }
+            if (Test-Path $optDir) { throw "$opt is store-only but is still in $stage\JERICHO\MODS" }
+        }
 
         $cfgIni = Join-Path $stage 'config.ini'
         if (Test-Path $cfgIni) {
             Move-Item $cfgIni (Join-Path $stage 'config.default.ini') -Force
         }
 
-        # Driver 1 bake tooling, from the checked-out d1cars submodule. Copy
+        # Driver 1 bake tooling, from the checked-out bake submodule. Copy
         # only tracked tools: the working tree may carry local experiments.
-        $d1repo = Join-Path $RepoRoot 'JERICHO\MODS\d1cars'
-        $d1dst  = Join-Path $stage 'JERICHO\MODS\d1cars\tools'
+        $d1repo = Join-Path $RepoRoot 'JERICHO\MODS\bake'
+        $d1dst  = Join-Path $stage 'JERICHO\MODS\bake\tools'
         New-Item -ItemType Directory -Force -Path $d1dst | Out-Null
         $d1tracked = & git -C $d1repo ls-files 'tools/*.py'
-        if ($LASTEXITCODE -ne 0) { throw "cannot list the d1cars tools" }
+        if ($LASTEXITCODE -ne 0) { throw "cannot list the bake tools" }
         foreach ($rel in $d1tracked) {
             Copy-Item (Join-Path $d1repo $rel) (Join-Path $d1dst (Split-Path -Leaf $rel)) -Force
         }
-        Copy-Item (Join-Path $d1repo 'tools\README.md') (Join-Path $stage 'JERICHO\MODS\d1cars') -Force
+        Copy-Item (Join-Path $d1repo 'tools\README.md') (Join-Path $stage 'JERICHO\MODS\bake') -Force
         # The bake scripts come from the REPO ROOT (the canonical copies), and the
         # registrar they run ships beside them so Beta Miami can be registered.
         foreach ($bake in 'BAKE_D1_CARS.bat', 'BAKE_D1_CARS.sh') {

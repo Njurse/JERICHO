@@ -4,6 +4,179 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.7
+
+*Released 2026-11-04.*
+
+### Mods
+
+- **CarHacks, pedhacks and multiplayer load before anything you added.** Those three come up first and stay on. The BAKE Toolkit and CRUMPLE come next, and each keeps the on/off choice you already made. BAKE is still optional: leaving it off, or not having it, does not block the others and does not stop you joining. Store addons and data packs keep their own order after that.
+
+### World textures
+
+- **Pause, then Reload world textures, puts the level's pages back.** A custom car bank, carhacks or a bake can leave the wrong texture page or palette in the world's VRAM, and that used to stay until you restarted. The command is on the pause menu (including multiplayer and cutscenes). It re-reads the level's own pages and palette rows, and asks the area you are in to stream its pages again. Cars kept in the lower half of texture memory stay there. One that had taken a world slot is moved off it. The same restore runs when that car is released, which previously only forgot the claim and left the pixels.
+
+### Multiplayer
+
+- **Invulnerability and immunity hold in an online match.** Immunity stands down cops that are already chasing, including on a multiplayer map that always asks for at least one. Invulnerability refuses the hit before the car is dented. When the host turns that rule on, it covers every car, not only the one you are driving. Your own pause toggles still apply on your machine when the host has left the rule off.
+
+### Baking
+
+- **The bake installs Pillow for you.** If Pillow is missing, `BAKE_D1_CARS.bat` / `.sh` now installs it into the Python the bake uses before running any step, instead of stopping partway through with `No module named 'PIL'`. If the install cannot be done, the script prints the exact command to run by hand.
+
+## v0.13.6
+
+*Released 2026-11-03.*
+
+### Emergency
+
+- **BAKE Toolkit is no longer required to join online or a dedicated server.** It was force-enabled via `jerCoreOrder`.
+- **Hallgarth Firebird (HALLCHCG) loads and respawns.** The damaged LOD fit check accepts a Driver 1 style header plus vertices, and bank-city lighting is clamped so HALLCHCG as a GameLevel does not crash.
+- **The mod store prompts updates for data packs again.** An empty runtime was treated as compiled-in and hid the hallgarthcars 0.1.4 update.
+- **The core pack is MP, CarHacks, CRUMPLE and the BAKE Toolkit.** Hallgarth's Cars is store-only. gaildrv2 is hibernated out of the tree ([JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2)).
+- **Dedicated server owners:** if your core mod list still required bake or d1cars, pull and run `update-dedi.sh`.
+
+**Most of this release is plumbing.** Custom car packs and online sessions are checked so a pack that does not fit is refused instead of crashing the game, and one player cannot overwrite another player's car. The one new thing to click is Bake, under Options, then JERICHO.
+
+### Baking
+
+- **The bake questions say where your files go.** On first start, and again when your Driver 1 cars were baked with older tooling, the game tells you to drop your Driver 1 files in `DRIVER/`. If you have the 16 Dec 1998 proto with the Buick GSX, put its `LEVELS/` and `SOUND/` in `EURO43/` so the bake can pull those cars.
+- **Options, then JERICHO, has a Bake button.** It asks first. Yes runs the same bake those questions run: the game closes, bakes from your files, and comes back.
+
+### Your car packs
+
+- **A damaged car pack is turned away instead of crashing the game.** Imported models, texture pages and baked pedestrian pages are checked against the pack's own file size before the game reads them. A pack that does not fit is skipped with a line in the log, not read past its end.
+- **A car with more detail than the damage system can hold no longer corrupts the next car.** Denting and lighting now stop at the car's own budget.
+- **Baked pedestrian pages are given back when a city unloads.** A short page is refused before it takes a pool slot, and every page a city pins is recorded, so pages no longer leak until the next level.
+
+### Multiplayer
+
+- **Players cannot rewrite each other's cars.** The car table and the agreed car set are accepted from the host only.
+- **All 16 seats are counted.** The carhacks tables were sized for 8 players, so players 8-15 had their picks dropped; they now match the 16-seat session.
+- **The dedicated server keeps honest traffic flowing through a join or leave.** It checks a client's traffic against the roster it last sent that client. Forged slots still drop. Server owners: pull mp and rebuild the dedi with `update-dedi.sh`.
+
+### Fixes
+
+- **The replay records the car you are actually driving.** A stale post-start car override was removed; mission loading already applies it.
+
+## v0.13.5
+
+*Released 2026-11-03.*
+
+**Most of this release is plumbing.** Custom car packs and online sessions are checked so a pack that does not fit is refused instead of crashing the game, and one player cannot overwrite another player's car. The one new thing to click is Bake, under Options, then JERICHO.
+
+### Baking
+
+- **The bake questions say where your files go.** On first start, and again when your Driver 1 cars were baked with older tooling, the game tells you to drop your Driver 1 files in `DRIVER/`. If you have the 16 Dec 1998 proto with the Buick GSX, put its `LEVELS/` and `SOUND/` in `EURO43/` so the bake can pull those cars.
+- **Options, then JERICHO, has a Bake button.** It asks first. Yes runs the same bake those questions run: the game closes, bakes from your files, and comes back.
+
+### Your car packs
+
+- **A damaged car pack is turned away instead of crashing the game.** Imported models, texture pages and baked pedestrian pages are checked against the pack's own file size before the game reads them. A pack that does not fit is skipped with a line in the log, not read past its end.
+- **A car with more detail than the damage system can hold no longer corrupts the next car.** Denting and lighting now stop at the car's own budget.
+- **Baked pedestrian pages are given back when a city unloads.** A short page is refused before it takes a pool slot, and every page a city pins is recorded, so pages no longer leak until the next level.
+
+### Multiplayer
+
+- **Players cannot rewrite each other's cars.** The car table and the agreed car set are accepted from the host only.
+- **All 16 seats are counted.** The carhacks tables were sized for 8 players, so players 8-15 had their picks dropped; they now match the 16-seat session.
+- **The dedicated server keeps honest traffic flowing through a join or leave.** It checks a client's traffic against the roster it last sent that client. Forged slots still drop. Server owners: pull mp and rebuild the dedi with `update-dedi.sh`.
+
+### Fixes
+
+- **The replay records the car you are actually driving.** A stale post-start car override was removed; mission loading already applies it.
+
+## v0.13.4
+
+*Released 2026-11-02.*
+
+### Cars
+
+- **Turn on a car pack and it just works.** Download something like Hallgarth's Cars from the mod store, enable it, and the cars show up — no hand-editing config files.
+- **New packs BAKE makes get the right install paths** if anyone still sets them up the old manual way.
+
+### Multiplayer
+
+- **Friends with different car packs see the right cars.** If they don't have your pack, they get a stand-in instead of the wrong vehicle.
+- **Everyone needs this update to play together.** Older builds can't join. If you run the dedicated server, update it with the usual `update-dedi.sh` after you pull.
+
+## v0.13.3
+
+*Released 2026-11-02.*
+
+### Fixes
+
+- **On-foot players collide with walls and smashable props again.** Since v0.11.6 Tanner (and remote on-foot players in mp) walked through buildings, walls and smashables and only hit cars; the camera's wall clamp was skipped the same way.
+
+### Docs
+
+- **A short "Install in 4 steps" section** at the top of the README and the release page: which download to pick, where your `DRIVER2` data goes, how updating works, and that multiplayer needs everyone on the same version.
+
+## v0.13.2
+
+*Released 2026-11-01.*
+
+### Dedicated server
+
+- **Map votes can leave the multiplayer maps.** `!vote city <city>` switches to the full single-player city, and `!vote city <city> mp [0|1]` or `!vote mp [0|1]` picks one of the city's multiplayer maps. The dedi config gains `map_mode`. Server owners: pull mp and rebuild the dedi.
+
+## v0.13.1
+
+*Released 2026-11-01.*
+
+### Fixes
+
+- **Chat is back where it belongs.** The 0.13.0 text baseline fix pushed the in-game console and the chat entry line about 12px down, with the entry nearly off the bottom of the screen. They sit where they did before.
+- **Dedicated servers accept 0.13 clients.** The dedi still expected mod interface 2 and refused every 0.13 client as a version mismatch. Server owners: pull mp and rebuild the dedi.
+
+## v0.13.0
+
+*Released 2026-11-01.*
+
+### You can now host your own game!
+
+- **Host Game works.** The Online menu now hosts a listen session in place of "Coming Soon". The game binds to all interfaces, tries UPnP to open the port on your router, and lists the game on the master server when one is set.
+- **The host can see how to reach the game.** The host menu and pause panel show the join IP:port and the master-listing status: register ACK, whether your own row is in the list, and whether the master is reachable.
+- **Quieter LAN console.** Master reachability probes (bare connects with no data) are now dropped silently. They no longer spam "accepted/DROPPED" or dump diagnostics.
+
+### Multiplayer Protocol and Bug Updates
+
+- **Protocol 20.** A roster entry now carries the car a player left (32 bytes). **Dedicated servers must update** to the matching mp build. The master server is unchanged.
+- Entering another player's parked car now seats you in that car instead of spawning a copy. On-foot sync is also fixed, and late packets can no longer move a stand-in backwards.
+- In a session, dying, failing a mission or getting busted always respawns you. Parked player cars are never pinged out.
+- If someone is in your parked car when you respawn on foot, you get a fresh car of the same model. Nobody gets kicked out.
+- Custom on-foot characters (JMPPED): they draw their own hips and toes the way stock Tanner does. Team tint now covers every character's parts. Stray hips and leg/hand bleed between characters are fixed. The jerichod3 and tannerd3 characters now ship with the game, and the first-launch ped bake imports custom characters from `MODS/mp/peds`.
+
+### Huge BAKE Toolkit Updates
+
+- **The game asks to bake on first start.** When there is no readable `DRIVER2/LEVELS/JMPPED.LEV` and/or no baked Driver 1 cars, the main menu explains that cars and peds (Tanner/Jericho) are built from your own game files and offers **Continue** (runs the bake, the game restarts) or **No** (skip this time). Set `first_bake_prompt=0` in `JERICHO/CONFIG/rebake.ini` (written on the first No) to stop being asked.
+- **Auto re-bake builds `JMPPED.LEV` (Jericho) from your own game.** (BAKE_VERSION 10.)
+- **Fixes the BETAMIAMI level-start crash.** Baked car sounds keep their ADPCM loop/end flags.
+- The BETAMIAMI gate checks textured polygons only, which fixes the euro43 beta bake failure. The sound step is faster.
+- `BAKE_D1_CARS` launchers are copied into `bin`. LAN packaging uses the `MODS/bake/tools` car/ped tools.
+
+### Extended Palette Limit
+
+- `civ_clut` goes up to 128 rows, so 4+ cities fit. Running out now gives a loud fallback and per-city row usage.
+
+### Fixes
+
+- **In-game text is no longer drawn too high.** HQ font text used to sit roughly 10px above where it belonged. That long-standing offset is fixed: the glyph baseline is a fixed 14 again instead of being scaled, and bar captions use the stock 11px lift for every font.
+
+### Packaging
+
+- Release packages ship the runtime addon DLLs/SOs that store addons need.
+- FULL TWIST, HallgarthCars (Firebird bank) and Antfarm are store-only. They are not in the core packages.
+- The exe reports version 0.13.
+
+### Store
+
+- Multiplayer, CarHacks and Crumple are republished for mod interface 3. Older index entries showed "needs newer" on 0.13.
+
+---
+
+JERICHO by Jaret (Njurse). **Special thanks:** Commando52Colton.
+
 ## v0.11.8
 
 *Released 2026-10-24.*

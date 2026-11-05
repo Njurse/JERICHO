@@ -11,9 +11,10 @@
                          warning (for checking an index whose zips live on a
                          release host)
     --interface <n>      also require every entry's "interface" to be n: the SDK
-                         version the packages were built against. A package on
-                         another interface is refused by the loader at activation,
-                         so a mismatch here is a broken release, not a warning
+                         version the packages were built against. On the 0.12
+                         line, pass --interface 3. A package on another interface
+                         is refused by the loader at activation, so a mismatch
+                         here is a broken release, not a warning
     --quiet              only print problems
 
 Why this exists: the store trusts the index completely and correctly -- it

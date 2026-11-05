@@ -113,6 +113,9 @@ rm -rf "$STAGED/D1CARS"
 if [ "$KEEP_BUILD" = 0 ]; then
 	rm -rf "$STAGED/obj" "$STAGED/lib"
 	find "$STAGED" -type f \( -name '*.pdb' -o -name '*.ilk' -o -name '*.exp' -o -name '*.o' \) -delete 2>/dev/null || true
+	# SDK addons leave a root-level <id>.lib and <source>.obj next to the DLL;
+	# those are build output, not game data.
+	find "$STAGED" -maxdepth 1 -type f \( -name '*.lib' -o -name '*.obj' -o -name '*.idb' \) -delete 2>/dev/null || true
 fi
 
 rm -f "$OUT/$PKG"

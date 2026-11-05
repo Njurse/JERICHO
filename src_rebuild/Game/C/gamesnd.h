@@ -80,6 +80,7 @@ extern char force_siren[8];
 extern SPEECH_QUEUE gSpeechQueue;
 
 extern void LoadBankFromLump(int bank, int lump); // 0x00052460
+extern int LoadBankFromLumpMax(int bank, int lump, int maxSamples);
 
 /* Both take a resident car-slot index (the value in cp->ap.model), NOT the
  * car-model number in residentCarModels[]. GetCarBankSample returns the

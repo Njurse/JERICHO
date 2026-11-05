@@ -142,7 +142,7 @@ static int sCivClutRowWriters[CIV_CLUT_ROWS];
 // beside the refusal that enforces it.
 #define CIV_CLUT_GUEST_CITIES	((CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW) / CIV_CLUT_BLOCK_ROWS)
 
-#define CIV_CLUT_ROW_CITIES	(CIV_CLUT_GUEST_CITIES + 1)
+#define CIV_CLUT_ROW_CITIES	CITY_COUNT	/* JERICHO: no 3-guest cap - any city may write a row */
 static int sCivClutRowCity[CIV_CLUT_ROWS][CIV_CLUT_ROW_CITIES];
 
 // JERICHO: and WHICH COLOUR COLUMN of each row was actually filled. A spawned car picks
@@ -300,6 +300,29 @@ static int CarRowInUse(int row)
 	return 0;
 }
 
+// JERICHO: one line - how many shared civ_clut rows each city holds right now.
+void CarImportPaletteUsageReport(void)
+{
+	char line[512];
+	int c, r, n, used = 0, len = 0;
+
+	line[0] = 0;
+	for (c = 0; c < CITY_COUNT; c++)
+	{
+		n = 0;
+		for (r = CIV_CLUT_IMPORT_ROW; r < CIV_CLUT_ROWS; r++)
+		{
+			int s;
+			for (s = 1; s < 128; s++)
+				if (sSetRow[c][s] == r) { n++; break; }
+		}
+		if (n && len < (int)sizeof(line) - 40)
+			len += sprintf(line + len, " %s=%d", LevelNames[c] ? LevelNames[c] : "?", n);
+		used += n;
+	}
+	printInfo("cross-city: palette rows %d/%d used:%s\n", used, CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW, line);
+}
+
 void CarImportCityBandReset(void)
 {
 	int c, s;
@@ -377,6 +400,20 @@ static int CarAllocSetRow(int set, int city)
 			said = 1;
 			printInfo("cross-city: palette pool exhausted (%d shared rows) - later sets fall back to their city's first row\n",
 				CIV_CLUT_ROWS - CIV_CLUT_IMPORT_ROW);
+		}
+	}
+
+	/* JERICHO: loud, every time (rate-limited), with per-city usage - the fallback paints
+	 * this car in another palette's colours, which must never be silent. */
+	{
+		static int loud;
+
+		if (loud < 32)
+		{
+			loud++;
+			printWarning("PALETTE POOL FULL: %s set %d gets NO civ_clut row - WRONG COLOURS (fallback)\n",
+				LevelNames[city], set);
+			CarImportPaletteUsageReport();
 		}
 	}
 
@@ -1544,15 +1581,25 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 	CVECTOR c0, c1, c2;
 	u_int GT3rgb;
 
-	if (gTimeOfDay == TIME_NIGHT)
+	/* day_/night_ vectors and colours are the four Driver 2 cities. A runtime
+	 * bank (HALLCHCG and the rest) is a legal GameLevel for its cars and is not
+	 * a map: indexing [4] with it is the access violation on the first lit car. */
 	{
-		lightsourcevector = night_vectors[GameLevel];
-		colour = night_colours[GameLevel];
-	}
-	else
-	{
-		lightsourcevector = day_vectors[GameLevel];
-		colour = day_colours[GameLevel];
+		int lightCity = GameLevel;
+
+		if (lightCity < 0 || lightCity > 3)
+			lightCity = 0;
+
+		if (gTimeOfDay == TIME_NIGHT)
+		{
+			lightsourcevector = night_vectors[lightCity];
+			colour = night_colours[lightCity];
+		}
+		else
+		{
+			lightsourcevector = day_vectors[lightCity];
+			colour = day_colours[lightCity];
+		}
 	}
 
 	InvertMatrix(&cp->hd.where, &scratchPadMat);
@@ -1606,7 +1653,8 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 			ppads = gTempCarVertDump[cp->id];
 			count = num_norms;// +1;
 
-			while (count >= 0)
+			// JERICHO: three dump entries per pass; stop at the end of this car's dump (#32)
+			while (count >= 0 && ppads + 3 <= gTempCarVertDump[cp->id] + MAX_DENTING_VERTS)
 			{
 				gte_ldv3(&norms[0], &norms[1], &norms[2]);
 				gte_ncct();
@@ -1636,7 +1684,7 @@ void ComputeCarLightingLevels(CAR_DATA* cp, char detail)
 			{
 				SVECTOR* cleanV = GET_MODEL_DATA(SVECTOR, model, vertices);
 				SVECTOR* dumpV = gTempCarVertDump[cp->id];
-				int n = model->num_vertices;
+				int n = MIN(model->num_vertices, MAX_DENTING_VERTS);
 				int i;
 
 				if (cleanV != NULL)
@@ -2692,7 +2740,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 	// behaviour for the host and for anything unaffected by imports.
 	int srcCity = (index >= 0) ? GetCarModelSourceCity(index) : -1;
 
-	CarSetRemapEnable(imported);
+	CarSetRemapEnable(imported, srcCity);
 
 	int newNumPolys;
 	int i, pass;

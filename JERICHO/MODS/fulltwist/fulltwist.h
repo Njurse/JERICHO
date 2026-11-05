@@ -20,15 +20,27 @@
 #define FULLTWIST_H
 
 #include "jericho.h"
-#include "dr2limits.h"		/* MAX_CARS, MAX_CAR_RESIDENT_MODELS */
+#include "jer_events.h"
+#include "ft_types.h"		/* local CAR_DATA/MAX_CARS view, no engine header */
 
 #define FT_MOD_ID          "fulltwist"
-#define FT_VERSION         "0.4.0"
+#define FT_VERSION         "0.4.3"
+
+/* FULL TWIST lets a car rest on its roof/side four times as long as the stock
+ * rule before the engine forces the damage cap (mission.c: 180 frames). This
+ * gives the rollover catch time to right the car instead of totaling it. */
+#define FT_UPSIDE_DOWN_FRAMES  720
+
+/* COG gravity torque on body contact: the contact normal at the lowest hull
+ * vertex acts on a lever from the centre of gravity. This is the tipping
+ * torque that makes a car which barely clears a roll keep falling; it is not
+ * an uprighting assist and is zero when the COG is over the contact. */
+#define FT_BODY_GRAVITY_TORQUE  32768
 
 /* The impact value at which the tumble rate reaches its configured maximum.
  * Measured scenery impacts sit around 22k (nudge), 78k-114k (ordinary) and
  * 290k (violent); 350k leaves headroom for the worst car-vs-car hits. */
-#define FT_FULL_IMPACT     350000
+#define FT_FULL_IMPACT     290000
 
 /* The integrator clamps angular velocity to +/-0x800000. Keep our writes
  * inside the same envelope so a collision cannot push a component past the
@@ -40,7 +52,7 @@
 #define FT_TEST_KICK_DELAY 120
 
 /* Debug kick launch, independent of the contact-impulse slider. */
-#define FT_TEST_LAUNCH     380000
+#define FT_TEST_LAUNCH     880000
 
 /* Rollover test: the car is rotated 90 degrees, held for one second at the
  * 30 Hz sim rate, then given a lateral impulse 8x the old test shove. */
@@ -91,7 +103,6 @@ typedef struct FULLTWIST_CONFIG
 	int trip;			/* 0..100 % of the impulse redirected into roll/pitch */
 	int launch;			/* 0..200 % upward pop on a severe grounded hit */
 	int rolloverDamping;	/* 0..100 % extra damping while on the side/roof */
-	int rolloverCatch;		/* 0..100 % uprighting torque on the ground */
 	int spinRetention;		/* 0..100 % offset of the stock angular damping */
 	int freeSpin;			/* 1 = remove the stock angular damping while active */
 	int angularDamping;		/* 0..128: stock damping used for free-spin cars */
@@ -113,8 +124,9 @@ typedef struct FULLTWIST_CONFIG
 	int carCarLaunch;		/* 0..200 % car-car contact impulse */
 	int carCarTumble;		/* 0..200 % car-car roll/pitch assist */
 	int bodyKick;			/* 0..200 body-landing assist strength */
-	int bodyFriction;		/* 0..100 % body-ground grip (kills the slide) */
+	int bodyFriction;		/* 0..100 % body-ground spin damping */
 	int bodyHinge;			/* 0..200 % contact-pivot hinge on the body */
+	int bodyGravity;		/* 0..200 % COG gravity torque on body contact */
 	int scenery3d;		/* 1 = 3D hull/scenery override of the 2D check */
 	int playerOnly;		/* 1 = only player car / cars hit by the player */
 	int debugLog;		/* 1 = recorder lines in the JERICHO log */
@@ -122,6 +134,7 @@ typedef struct FULLTWIST_CONFIG
 	int testCrash;		/* 1 = spawn an oncoming car and collide head-on */
 	int testSmash;		/* 1 = spawn a car beside the player and shove them together */
 	int testRollover;	/* 1 = apply the rollover test impulse */
+	int testRestFlip;	/* 1 = park the player car upside down for settle measurement */
 	int testHorn;		/* 1 = fire the horn cannon roll at level start */
 	int testRolloverSide;	/* -1/1: side the rollover test pushes toward */
 	int preset;
@@ -158,9 +171,12 @@ typedef struct FULLTWIST_CAR
 	int airborne;				/* previous step had no compressed wheel */
 	int airFrames;				/* consecutive airborne steps */
 	int upsideFrames;			/* consecutive steps with m[1][1] < 100 */
+	int catchCooldown;			/* frames until the next uprighting impulse */
 	int tumbled;				/* fulltwist has started a tumble on this car */
 	int bodyContact;			/* lowest hull vertex is on the road */
 	int bodyTouching;			/* hull is still resting on the road (hysteresis) */
+	SVECTOR bodyContactLocal;	/* where-local lowest vertex for the last body contact */
+	int bodyContactLocalValid;	/* 1 = bodyContactLocal is current */
 	unsigned int bodyContactFrame;	/* frame of the last body-contact impulse */
 	unsigned int wallSnagFrame;	/* frame of the last world-wall snag */
 	int freeSpinFrames;			/* remaining frames of the free-spin state */
@@ -198,6 +214,12 @@ typedef struct FULLTWIST_STATE
 	unsigned int testRolloverAtFrame;
 	int testRolloverHolding;
 	unsigned int testRolloverImpulseAtFrame;
+	int testRestFlipPending;
+	int testRestFlipDone;
+	int testRestFlipScheduled;
+	unsigned int testRestFlipAtFrame;
+	int restFlipActive;
+	unsigned int restFlipStartFrame;
 	int testHornPending;
 	int testHornDone;
 	int testHornScheduled;

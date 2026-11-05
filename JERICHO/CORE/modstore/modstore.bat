@@ -303,7 +303,7 @@ goto end
 rem ----------------------------------------------------------------- rebake
 :cmd_rebake
 set "OP=rebake"
-set "OPID=d1cars"
+set "OPID=bake"
 if not exist "!BAKE!" set "BAKE=%ROOT%\JERICHO\MODS\mp\tools\pack_lan\BAKE_D1_CARS.bat"
 if not exist "!BAKE!" (
 	call :failmsg "BAKE_D1_CARS.bat is not beside the game, so the cars cannot be baked"

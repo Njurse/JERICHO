@@ -6,6 +6,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "gamesnd.h"
+#include "jer_sound.h"
 
 #include "sound.h"
 #include "system.h"
@@ -236,6 +237,16 @@ tunnelinfo tunnels;
 // [D] [T]
 void LoadBankFromLump(int bank, int lump)
 {
+	LoadBankFromLumpMax(bank, lump, -1);
+}
+
+/* JERICHO: as LoadBankFromLump, but take at most maxSamples (-1 = all) and
+ * clamp to the room left in the bank, so a module can borrow the first few
+ * samples of a lump into a nearly-full bank. Sample addresses are relative,
+ * so trimming the header count keeps the leading samples valid. Returns the
+ * number of samples loaded. */
+int LoadBankFromLumpMax(int bank, int lump, int maxSamples)
+{
 	static u_int blockLimit[73] = { 0 };
 
 	int size;
@@ -250,16 +261,30 @@ void LoadBankFromLump(int bank, int lump)
 	if(size <= 0)
 	{
 		printWarning("WARNING: sound bank lump %d is not valid!\n", lump);
-		return;
+		return 0;
 	}
 	
 	LoadfileSeg(name, (char*)_sbank_buffer, blockLimit[lump], size);
 	if (size > 0 && blockLimit[lump] && blockLimit[lump + 1]) // [A]
 	{
-		LoadSoundBankDynamic((char*)_sbank_buffer, size, bank);
+		if (maxSamples >= 0)
+		{
+			int* count = (int*)_sbank_buffer;
+			int room = GetSoundBankCapacity() - GetSoundBankSampleCount(bank);
+
+			if (maxSamples > room)
+				maxSamples = room;
+			if (*count > maxSamples)
+				*count = maxSamples;
+			if (*count <= 0)
+				return 0;
+		}
+
+		return LoadSoundBankDynamic((char*)_sbank_buffer, size, bank);
 	}
-	else
-		printWarning("WARNING: sound bank lump %d is not valid!\n", lump);
+
+	printWarning("WARNING: sound bank lump %d is not valid!\n", lump);
+	return 0;
 }
 
 /* The stock cop-siren bank for a Driver 2 city. The four D2 cities do not map
@@ -1240,6 +1265,10 @@ void LoadLevelSFX(int missionNum)
 	// where they are rewound to so only ONE block per live slot is held.
 	// Nothing else consumes memtop/banktop, so overwriting the earlier save
 	// (which sits before the special banks) is safe.
+	// JERICHO: module-requested extra banks (the FE menu samples) go in
+	// before the memtop save, so a car import rewind never overwrites them.
+	jer_sound_load_requested_banks();
+
 	LoadSoundBankDynamic(NULL, 1, SOUND_BANK_CARS);	// save memtop
 	LoadSoundBankDynamic(NULL, 3, SOUND_BANK_CARS);	// save banktop
 

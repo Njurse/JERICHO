@@ -38,6 +38,7 @@
 #include <stdint.h>
 #include <SDL.h>
 #endif // PSX
+extern u_char defaultPlayerPalette;	// JERICHO: main.c - the player's chosen colour column
 
 char* MissionName[37] =
 {
@@ -98,6 +99,9 @@ GAMETYPE StoredGameType;
 int GameLevel = 0;
 int gInvincibleCar = 0;
 int gPlayerImmune = 0;
+/* Host session rule (mp copies ruleInvuln here). 1 = no car takes damage.
+ * Distinct from gInvincibleCar, which is the local player's own cheat. */
+int gInvulnerableWorld = 0;
 u_char NumPlayers = 1;
 char NewLevel = 1;
 GAMETYPE GameType = GAME_MISSION;
@@ -641,7 +645,17 @@ void LoadMission(int missionnum)
 		printInfo("cross-city: mission player car - wantedCar[0]=%d header=%d -> using %d\n",
 			wantedCar[0], MissionHeader->playerCarModel, PlayerStartInfo[0]->model);
 
-		PlayerStartInfo[0]->palette = MissionHeader->playerCarColour;
+		// JERICHO: an explicitly chosen car keeps the player's chosen colour too
+		// (defaultPlayerPalette, SQUARE on car select / mp.ini). The mission's colour
+		// is a column of ITS car's palette and lands on an arbitrary paint - or a
+		// clamped one - on a car the mission never had in mind.
+		if (wantedCar[0] != -1)
+			PlayerStartInfo[0]->palette = defaultPlayerPalette;
+		else
+			PlayerStartInfo[0]->palette = MissionHeader->playerCarColour;
+
+		printInfo("cross-city: mission player colour - header=%d -> using %d\n",
+			MissionHeader->playerCarColour, PlayerStartInfo[0]->palette);
 	}
 
 	if (MissionHeader->maxDamage != 0) 
@@ -3063,9 +3077,28 @@ int HandleGameOver(void)
 
 				if (cp->hd.where.m[1][1] < 100)
 				{
+					JER_ARGS_UPSIDE_DOWN jerFlip;
+					int limit = 180;	/* stock consecutive upside-down frames */
+
+					/* JERICHO-HOOK: let a module extend the window (FULL
+					 * TWIST uses 720 = 4x while enabled). No handler leaves
+					 * the stock 180 untouched. PLAYER.upsideDown is a
+					 * u_short, so clamp the answer to what it can hold. */
+					jerFlip.car = cp;
+					jerFlip.playerId = player_id;
+					jerFlip.frames = limit;
+					jer_fire(JER_EVENT_GET_UPSIDE_DOWN_FRAMES, &jerFlip);
+
+					limit = jerFlip.frames;
+
+					if (limit < 1)
+						limit = 1;
+					else if (limit > 65535)
+						limit = 65535;
+
 					lp->upsideDown++;
 
-					if (lp->upsideDown > 180)
+					if (lp->upsideDown > limit)
 					{
 						cp->totalDamage = MaxPlayerDamage[player_id];
 

@@ -129,7 +129,42 @@ void InitCamera(PLAYER *lp)
 {
 	if (events.cameraEvent == NULL) 
 	{
-		paddCamera = (lp->padid >= 0) ? Pads[lp->padid].mapped : 0;
+		paddCamera = (lp->padid >= 0) ? Pads[lp->padid].mapped : 0;
+
+		/* JERICHO: debug/test - hold a look direction so a screenshot can be
+		 * taken from the side instead of from behind. The engine's own look
+		 * path is what reads paddCamera, so this is the same code a player
+		 * drives; it costs one getenv on the first frame and does nothing at
+		 * all when the variable is unset.
+		 *   JERICHO_TEST_LOOK=L2 | R2   hold that look button
+		 *   JERICHO_TEST_LOOK_FROM=N    from the first frame
+		 */
+		{
+			static int lookParsed = 0;
+			static int lookBits = 0;
+			static int lookFrom = 30;
+
+			if (!lookParsed)
+			{
+				const char* want = getenv("JERICHO_TEST_LOOK");
+				const char* from = getenv("JERICHO_TEST_LOOK_FROM");
+
+				lookParsed = 1;
+
+				if (want && want[0])
+				{
+					lookBits = (want[0] == 'R' || want[0] == 'r')
+						? CAMERA_PAD_LOOK_RIGHT : CAMERA_PAD_LOOK_LEFT;
+				}
+
+				if (from && from[0])
+					lookFrom = atoi(from);
+			}
+
+			if (lookBits != 0)
+
+				paddCamera |= lookBits;
+		}
 
 		if (NoPlayerControl != 0 || gInGameCutsceneActive != 0)
 		{
@@ -636,7 +671,10 @@ void PlaceCameraFollowCar(PLAYER *lp)
 			{
 				angleDelta = DIFF_ANGLES(lp->cameraAngle, baseDir + gCameraAngle); // (((baseDir + gCameraAngle) - lp->cameraAngle) + 2048U & 0xfff) - 2048;
 
-				lp->cameraAngle += (angleDelta >> 3) & 0xfff;
+				/* JERICHO: mask the RESULT, not the delta. Masking a signed
+				 * delta turned -1 into 4095 and added it to an unmasked
+				 * accumulator, which drifted past INT_MAX in a long session. */
+				lp->cameraAngle = (lp->cameraAngle + (angleDelta >> 3)) & 0xfff;
 			}
 		}
 	}

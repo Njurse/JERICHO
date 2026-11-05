@@ -1246,7 +1246,7 @@ static int StoreBakedVersion(void)
 	return StoreDirHasEntries(dir) ? 0 : -1;
 }
 
-/* The version the repo's own d1cars entry asks for (a release that changes the
+/* The version the repo's own bake entry asks for (a release that changes the
  * bake data without touching the script bumps this instead). */
 static int StoreIndexBakeVersion(const char* id)
 {
@@ -1261,7 +1261,7 @@ static int StoreIndexBakeVersion(const char* id)
 }
 
 /* 1 when this machine has a Driver 1 bake older than what the shipped tooling (or
- * the repo's d1cars entry) expects. That is the only case worth asking about. */
+ * the repo's bake entry) expects. That is the only case worth asking about. */
 static int StoreBakeStale(void)
 {
 	int baked = StoreBakedVersion();
@@ -1271,7 +1271,7 @@ static int StoreBakeStale(void)
 	if (baked < 0)
 		return 0;			/* nothing baked: nothing to re-bake */
 
-	fromIndex = StoreIndexBakeVersion("d1cars");
+	fromIndex = StoreIndexBakeVersion("bake");
 	if (fromIndex > wanted)
 		wanted = fromIndex;
 
@@ -1285,7 +1285,7 @@ static int StoreBakeStale(void)
  * inventory. This is where the ownership rules live: a bundled mod the release
  * ships is updatable, never downgradable, and after a core update it reads as
  * REPLACED rather than as "installed". */
-static void StoreRowState(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int noteMax)
+static void StoreRowStateBase(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int noteMax)
 {
 	STORE_RECORD* rec = StoreFindRecord(m->id);
 	JER_MODULE_INFO info[JER_MAX_MODULES];
@@ -1412,6 +1412,111 @@ static void StoreRowState(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int n
 
 	it->state = JER_MODSTORE_ST_INSTALLED;
 	it->canInstall = 0;
+}
+
+/* A data pack (hallgarthcars: mod.toml, banks/, no runtime and no sources)
+ * spells `runtime` empty, the same way a compiled-in mod does. It is not linked
+ * into the exe. Treating it as compiled-in cleared canInstall, so a newer store
+ * version never made the "Update N mods now?" prompt. */
+static int StoreIsDir(const char* path)
+{
+#if defined(_WIN32)
+	DWORD a = GetFileAttributesA(path);
+
+	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY) != 0;
+#else
+	struct stat st;
+
+	return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+#endif
+}
+
+static int StoreRootHasSource(const char* dir)
+{
+#if defined(_WIN32)
+	char pattern[STORE_PATH_MAX];
+	WIN32_FIND_DATAA fd;
+	HANDLE h;
+
+	snprintf(pattern, sizeof(pattern), "%s\\*.c", dir);
+	h = FindFirstFileA(pattern, &fd);
+	if (h == INVALID_HANDLE_VALUE)
+		return 0;
+	FindClose(h);
+	return 1;
+#else
+	DIR* d = opendir(dir);
+	struct dirent* e;
+
+	if (d == NULL)
+		return 0;
+	while ((e = readdir(d)) != NULL)
+	{
+		size_t n = strlen(e->d_name);
+
+		if (n > 2 && strcmp(e->d_name + n - 2, ".c") == 0)
+		{
+			closedir(d);
+			return 1;
+		}
+	}
+	closedir(d);
+	return 0;
+#endif
+}
+
+static int StoreIsDataPack(const char* id)
+{
+	char root[STORE_PATH_MAX];
+	char banks[STORE_PATH_MAX];
+
+	if (id == NULL || id[0] == 0)
+		return 0;
+
+	snprintf(root, sizeof(root), "%s/%s", gStore.modsDir, id);
+	snprintf(banks, sizeof(banks), "%s/banks", root);
+	if (!StoreIsDir(banks))
+		return 0;
+
+	return !StoreRootHasSource(root);
+}
+
+/* A compiled-in mod (no DLL of its own) is linked into the exe, so a store
+ * update only changes its source folder. A build that cannot recompile (every
+ * Release download) would install files it never runs: point at a JERICHO
+ * update instead, and keep the row out of "Update N mods now?" (canInstall).
+ * A data pack is not that case. */
+static void StoreRowState(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, int noteMax)
+{
+	STORE_RECORD* rec;
+	char dll[STORE_PATH_MAX];
+	FILE* f;
+	int compiledIn;
+
+	StoreRowStateBase(m, it, note, noteMax);
+	if (!it->canInstall || it->state == JER_MODSTORE_ST_AVAILABLE || jer_mods_compile_available())
+		return;
+	if (it->state != JER_MODSTORE_ST_UPDATE && it->state != JER_MODSTORE_ST_REPLACED)
+		return;
+
+	rec = StoreFindRecord(m->id);
+#if defined(_WIN32)
+	snprintf(dll, sizeof(dll), "%s/%s/%s.dll", gStore.modsDir, m->id, m->id);
+#else
+	snprintf(dll, sizeof(dll), "%s/%s/%s.so", gStore.modsDir, m->id, m->id);
+#endif
+	f = fopen(dll, "rb");
+	if (StoreIsDataPack(m->id))
+		compiledIn = 0;
+	else
+		compiledIn = (rec != NULL) ? (rec->runtime[0] == 0) : (f == NULL);
+	if (f != NULL)
+		fclose(f);
+	if (!compiledIn)
+		return;
+
+	it->canInstall = 0;
+	snprintf(note, (size_t)noteMax, "built into the game: update JERICHO to get %s %s", m->id, m->version);
 }
 
 static void StoreItemsBuild(void)
@@ -2083,8 +2188,10 @@ static void StoreJobFinish(void)
 				STORE_RECORD* rec = (gStore.jobId[0] != 0) ? StoreFindRecord(gStore.jobId) : NULL;
 
 				/* `runtime` empty = a compiled-in mod: the folder is installed,
-				 * but the module is in the exe only after a rebuild */
-				if (rec != NULL && rec->runtime[0] == 0)
+				 * but the module is in the exe only after a rebuild. A data
+				 * pack (banks/, no sources) uses the same empty runtime and
+				 * is already live once the files land. */
+				if (rec != NULL && rec->runtime[0] == 0 && !StoreIsDataPack(gStore.jobId))
 				{
 					gCompileAsk = 1;
 					jer_log("[modstore] installed compiled-in mod %s: will offer the rebuild on exit\n",
@@ -2440,6 +2547,10 @@ static int ModsRowActivate(void* ud)
 	if (!jer_modstore_module_at(idx, &mod) || mod.id == NULL)
 		return 1;
 
+	/* Core addons are mandatory: the state is CORE, not OFF/ON. */
+	if (mod.core)
+		return 1;
+
 	jer_manager_set_enabled(jer_root_dir(), mod.id, mod.enabled ? 0 : 1);
 	jer_manager_reload(jer_root_dir());
 	StoreAfterReload();
@@ -2454,15 +2565,39 @@ static int ModsRowAdjust(void* ud, int dir)
 	if (!jer_modstore_module_at(idx, &mod) || mod.id == NULL)
 		return 1;
 
+	/* The core suite's order is fixed (carhacks first); never reorder it from
+	 * the list. */
+	if (mod.core)
+		return 1;
+
 	jer_manager_move(jer_root_dir(), mod.id, dir > 0 ? 1 : -1);
 	jer_manager_reload(jer_root_dir());
 	StoreAfterReload();
 	return 1;
 }
 
+/* Browse, Bake, Credits and Back are always there. Compile Mods is not, on a
+ * shipped build. A page row appears only when the list does not fit, and the
+ * whole menu is JER_FE_MAX_ITEMS, so the list gives up a row before the array
+ * is overrun. */
+static int ModsFitStride(int count)
+{
+	int fixed = 4;
+	int cap = MODS_ROWS_MAX;
+
+	if (jer_mods_compile_available())
+		fixed++;
+
+	while (cap > 1 && cap + (count > cap ? 1 : 0) + fixed > JER_FE_MAX_ITEMS)
+		cap--;
+
+	return cap;
+}
+
 static int ModsPages(int count)
 {
-	int pages = (count + MODS_ROWS_MAX - 1) / MODS_ROWS_MAX;
+	int stride = ModsFitStride(count);
+	int pages = (count + stride - 1) / stride;
 
 	return (pages < 1) ? 1 : pages;
 }
@@ -2471,11 +2606,12 @@ static int ModsPages(int count)
  * new page. The controls follow it; the menu builder uses the same count. */
 static int ModsPageRowFor(int page, int count)
 {
-	int start = page * MODS_ROWS_MAX;
+	int stride = ModsFitStride(count);
+	int start = page * stride;
 	int rows = count - start;
 
-	if (rows > MODS_ROWS_MAX)
-		rows = MODS_ROWS_MAX;
+	if (rows > stride)
+		rows = stride;
 	if (rows < 0)
 		rows = 0;
 
@@ -2514,6 +2650,16 @@ static int ModsCompile(void* ud)
 {
 	(void)ud;
 	jer_mods_request_compile();
+	return 1;
+}
+
+/* The same bake the startup questions start (jer_rebake_start): not a new
+ * pipeline. Asking first matches Compile Mods, because Yes closes the game. */
+static int ModsBake(void* ud)
+{
+	(void)ud;
+	jer_prompt_begin("Bake cars and peds from your files? JERICHO closes, bakes and restarts.",
+		jer_rebake_start);
 	return 1;
 }
 
@@ -2708,18 +2854,16 @@ static void ModsMenuEnter(void* ud)
 
 	(void)ud;
 
-	pages = (count + MODS_ROWS_MAX - 1) / MODS_ROWS_MAX;
-	if (pages < 1)
-		pages = 1;
+	pages = ModsPages(count);
 	if (gModsPage >= pages)
 		gModsPage = pages - 1;
 	if (gModsPage < 0)
 		gModsPage = 0;
 
-	start = gModsPage * MODS_ROWS_MAX;
+	start = gModsPage * ModsFitStride(count);
 	rows = count - start;
-	if (rows > MODS_ROWS_MAX)
-		rows = MODS_ROWS_MAX;
+	if (rows > ModsFitStride(count))
+		rows = ModsFitStride(count);
 	if (rows < 0)
 		rows = 0;
 
@@ -2781,6 +2925,16 @@ static void ModsMenuEnter(void* ud)
 		memset(it, 0, sizeof(*it));
 		it->label = "Compile Mods";
 		it->on_activate = ModsCompile;
+		it->submenu = -1;
+		controls++;
+	}
+
+	{
+		JER_FE_ITEM* it = &gModsItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Bake";
+		it->on_activate = ModsBake;
 		it->submenu = -1;
 		controls++;
 	}
@@ -3055,7 +3209,7 @@ static void ModsDrawTable(void)
 				x, w, top, rx, ry, rw, rh,
 				StoreTextX(rx, rw, 2), StoreTextX(rx, rw, 50), StoreTextX(rx, rw, 64), StoreTextX(rx, rw, 80));
 		}
-		if (!jer_modstore_module_at(gModsPage * MODS_ROWS_MAX + i, &mod))
+		if (!jer_modstore_module_at(gModsPage * ModsFitStride(jer_modstore_module_count()) + i, &mod))
 			continue;
 
 		jer_text_draw_at(JER_TEXT_FE, 120, StoreTextX(rx, rw, 2), ry + 3,
@@ -3065,6 +3219,8 @@ static void ModsDrawTable(void)
 
 		if (mod.refusal != NULL)
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "BLOCKED", 255, 128, 128);
+		else if (mod.core)
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "CORE", 255, 200, 64);
 		else if (mod.enabled)
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "ON", 128, 255, 128);
 		else
@@ -3136,7 +3292,7 @@ static const char* StoreNextUpdateId(void)
 	return NULL;
 }
 
-/* "Update 3 mods now? carhacks, crumple, d1cars" - the question is short enough
+/* "Update 3 mods now? carhacks, crumple, bake" - the question is short enough
  * for the prompt box, and names what is about to change. */
 static void StoreBuildUpdateQuestion(int n)
 {
@@ -3470,6 +3626,21 @@ int jer_modstore_module_at(int index, JER_MODSTORE_MODULE* out)
 	out->name = info[index].name;
 	out->version = info[index].version;
 	out->enabled = info[index].enabled;
+	out->core = 0;
+	{
+		int c;
+
+		for (c = 0; c < jer_manager_core_count(); c++)
+		{
+			const char* coreId = jer_manager_core_id(c);
+
+			if (coreId != NULL && strcmp(coreId, info[index].id) == 0)
+			{
+				out->core = 1;
+				break;
+			}
+		}
+	}
 	out->refusal = info[index].refusal;
 	out->fromStore = (rec != NULL);
 	out->storeVersion = (rec != NULL) ? rec->version : NULL;

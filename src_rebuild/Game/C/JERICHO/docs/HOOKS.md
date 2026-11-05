@@ -349,7 +349,7 @@ rewrite in `wheelforces.c` computes the same front/rear directions, every new
 physics default (`GRAVITY_FORCE`, `angularDamping 128`, `springRate 230`,
 `springDamping 100`) equals the stock constant, and `bcollide.c`'s wall-restitution
 branch falls through to the stock impulse when no module answers. And the modules a
-release ships (carhacks, crumple, mp, d1cars) never write `thrust`, `wheel_angle`,
+release ships (carhacks, crumple, mp, bake) never write `thrust`, `wheel_angle`,
 `frontFS`/`rearFS`, `aacc` or a cosmetics field — so "the handling model is bugged"
 can be ruled out by measurement before anything is tuned.
 

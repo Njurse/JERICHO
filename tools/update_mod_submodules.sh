@@ -12,11 +12,9 @@
 # NOTE: releases no longer depend on those pins. CI and
 # tools/publish_release.ps1 both run `git submodule update --remote` before
 # building, so a build carries the LATEST commit of each branch (the `branch =`
-# entries in .gitmodules: d1cars tracks betamiami, the others main). This script
+# entries in .gitmodules: bake tracks betamiami, the others main). This script
 # is for keeping the committed pins in step with what a release actually builds,
 # and for reviewing the change.
-#
-# gaildrv2 is deliberately not touched here: its repository is not published.
 # ---------------------------------------------------------------------------
 set -eu
 
@@ -31,7 +29,7 @@ cd "$ROOT"
 	exit 1
 }
 
-PATHS="JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/d1cars"
+PATHS="JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake"
 
 for path in $PATHS; do
 	echo "== $path"

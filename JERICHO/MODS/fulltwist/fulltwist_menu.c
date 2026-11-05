@@ -6,10 +6,10 @@
  * returns to the Free Physics defaults.
  */
 
-#include "driver2.h"
 #include "jericho.h"
 #include "jer_pause_menu.h"
 #include "jer_math.h"
+#include "fulltwist_host.h"
 #include "fulltwist.h"
 
 #include <stdio.h>
@@ -235,21 +235,6 @@ static int ftAdjRolloverDamping(void* ud, int dir)
 {
 	(void)ud;
 	gFullTwist.cfg.rolloverDamping = jer_clamp_int(gFullTwist.cfg.rolloverDamping + dir * 5, 0, 100);
-	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
-	ftSaveConfig();
-	return JER_PAUSE_QUIT_NONE;
-}
-
-static void ftLabelRolloverCatch(void* ud, char* out, int max)
-{
-	(void)ud;
-	snprintf(out, max, "Rollover catch: %d%%", gFullTwist.cfg.rolloverCatch);
-}
-
-static int ftAdjRolloverCatch(void* ud, int dir)
-{
-	(void)ud;
-	gFullTwist.cfg.rolloverCatch = jer_clamp_int(gFullTwist.cfg.rolloverCatch + dir * 5, 0, 100);
 	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
 	ftSaveConfig();
 	return JER_PAUSE_QUIT_NONE;
@@ -583,7 +568,7 @@ static int ftAdjBodyKick(void* ud, int dir)
 static void ftLabelBodyFriction(void* ud, char* out, int max)
 {
 	(void)ud;
-	snprintf(out, max, "Body friction: %d%%", gFullTwist.cfg.bodyFriction);
+	snprintf(out, max, "Body spin damp: %d%%", gFullTwist.cfg.bodyFriction);
 }
 
 static int ftAdjBodyFriction(void* ud, int dir)
@@ -605,6 +590,21 @@ static int ftAdjBodyHinge(void* ud, int dir)
 {
 	(void)ud;
 	gFullTwist.cfg.bodyHinge = jer_clamp_int(gFullTwist.cfg.bodyHinge + dir * 10, 0, 200);
+	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
+	ftSaveConfig();
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void ftLabelBodyGravity(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Body gravity: %d%%", gFullTwist.cfg.bodyGravity);
+}
+
+static int ftAdjBodyGravity(void* ud, int dir)
+{
+	(void)ud;
+	gFullTwist.cfg.bodyGravity = jer_clamp_int(gFullTwist.cfg.bodyGravity + dir * 10, 0, 200);
 	gFullTwist.cfg.preset = FT_PRESET_CUSTOM;
 	ftSaveConfig();
 	return JER_PAUSE_QUIT_NONE;
@@ -707,6 +707,17 @@ static int ftTestRolloverAction(void* ud, int dir)
 	return JER_PAUSE_QUIT_NONE;
 }
 
+static int ftTestRestFlipAction(void* ud, int dir)
+{
+	(void)ud;
+	(void)dir;
+
+	gFullTwist.testRestFlipPending = 1;
+	gFullTwist.testRestFlipDone = 1;
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
 static int ftTestHornAction(void* ud, int dir)
 {
 	(void)ud;
@@ -763,7 +774,6 @@ static const JER_PAUSE_MENU_ITEM ftTuningItems[] =
 	{ NULL, ftLabelTrip,       ftAdjTrip,       NULL, NULL, 1 },
 	{ NULL, ftLabelLaunch,     ftAdjLaunch,     NULL, NULL, 1 },
 	{ NULL, ftLabelRolloverDamping, ftAdjRolloverDamping, NULL, NULL, 1 },
-	{ NULL, ftLabelRolloverCatch, ftAdjRolloverCatch, NULL, NULL, 1 },
 	{ NULL, ftLabelSpinRetention, ftAdjSpinRetention, NULL, NULL, 1 },
 };
 
@@ -781,6 +791,7 @@ static const JER_PAUSE_MENU_ITEM ftDebugItems[] =
 	{ "Test Crash", NULL, ftTestCrashAction, NULL, NULL, 0 },
 	{ "Test Smash", NULL, ftTestSmashAction, NULL, NULL, 0 },
 	{ "Test Rollover", NULL, ftTestRolloverAction, NULL, NULL, 0 },
+	{ "Test Rest Flip", NULL, ftTestRestFlipAction, NULL, NULL, 0 },
 	{ "Test Horn", NULL, ftTestHornAction, NULL, NULL, 0 },
 	{ NULL, ftLabelRolloverSide, ftToggleRolloverSide, NULL, NULL, 0 },
 	{ NULL, ftLabelDebug, ftToggleDebug, NULL, NULL, 0 },
@@ -818,6 +829,7 @@ static const JER_PAUSE_MENU_ITEM ftPhysicsItems[] =
 	{ NULL, ftLabelBodyKick,        ftAdjBodyKick,        NULL, NULL, 1 },
 	{ NULL, ftLabelBodyFriction,    ftAdjBodyFriction,    NULL, NULL, 1 },
 	{ NULL, ftLabelBodyHinge,       ftAdjBodyHinge,       NULL, NULL, 1 },
+	{ NULL, ftLabelBodyGravity,     ftAdjBodyGravity,     NULL, NULL, 1 },
 };
 
 static const JER_PAUSE_MENU ftPhysicsMenu =
@@ -850,5 +862,8 @@ static const JER_PAUSE_MENU ftMainMenu =
 
 void ftRegisterMenu(void)
 {
-	jer_pause_menu_register(&ftMainMenu);
+	const JER_HOST_API* api = ftHost();
+
+	if (api != NULL && api->ui != NULL && api->ui->pause_menu_register != NULL)
+		api->ui->pause_menu_register(&ftMainMenu);
 }

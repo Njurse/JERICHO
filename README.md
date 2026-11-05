@@ -1,6 +1,6 @@
 # JERICHO
 
-Just an Event Relay for In-engine Callbacks, Handlers and Opt-ins.
+Just an Engine Runtime for In-game Callbacks, Handlers and Opt-ins.
 
 JERICHO is a mod host built into a fork of [OpenDriver2/REDRIVER2](REDRIVER2.md),
 a source-level reimplementation of Driver 2. It is not a library you drop onto
@@ -21,6 +21,25 @@ live in `JERICHO/CONFIG/<modid>.ini`.*
 | Run a build | [Building and running](#building-and-running) |
 | Write an external module | [`HOOKS.md`](src_rebuild/Game/C/JERICHO/docs/HOOKS.md) |
 | Look up an event | [`events.md`](src_rebuild/Game/C/JERICHO/docs/events.md) |
+
+## Install in 4 steps
+
+More detail: [Prebuilt downloads](#prebuilt-downloads) and the [REDRIVER2 installation wiki](https://github.com/OpenDriver2/REDRIVER2/wiki/Installation-instructions).
+
+1. **Download the right file** from the latest release (Assets section):
+   - Windows: `JERICHO_Release_win64.zip`
+   - Linux: `JERICHO_Release_linux-x64.tar.gz`
+   - Skip anything named `Release_dev` — that's a developer build.
+2. **Unpack it into its own folder** (anywhere; nothing gets installed).
+3. **Add your own Driver 2 game data.** Copy the `DRIVER2` folder from your Driver 2 (PS1) disc into the JERICHO folder, next to `JERICHO.exe` / `jericho`. JERICHO doesn't include the game data, so it won't run without it.
+   - Optional: to get cutscene videos, convert them from your discs with `install/conv.bat` (Windows) or `install/conv.sh` (Linux). To skip them, start the game with `-nofmv`.
+4. **Run** `JERICHO.exe` (Windows) or `./jericho` (Linux).
+
+**Updating:** when the game says there's a new version, click *Update JERICHO (Restart)*. You can also run `update_jericho.bat` / `update_jericho.sh` yourself. Updating keeps your `config.ini`, `JERICHO/CONFIG/` and any mods you added.
+
+**Multiplayer:** everybody needs the **same version**. If a server won't let you join, update first (see above) and try again.
+
+**Mods:** turn them on or off under *Options → JERICHO*. The four built-in ones (mp, carhacks, crumple, bake) come with the Release download.
 
 ## Stock means behavioral, not byte-for-byte
 
@@ -64,8 +83,9 @@ git submodule update --init JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/c
 
 `tools/update_mod_submodules.sh` advances those pins to the latest commits (review
 the printed diff, then commit the gitlinks). `d1cars` is fetched for release builds
-but its data is excluded from the mirror; `gaildrv2` remains unpublished and is not
-needed for a normal build.
+but its data is excluded from the mirror. `gaildrv2` is hibernated at
+[JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2) and is not
+a submodule of this tree.
 
 JERICHO is compiled into the game, so it can see the game's data. An external
 module cannot open `player[]` or `car_data[]` itself, because Windows will not
@@ -398,10 +418,11 @@ cursor and an overlay menu that keeps the world running while it is open.
 
 ![Sandbox's custom overlay menu](readme_images/addon_sandbox_custom_menu_example.png)
 
-### Driver 2 Parallel Lines (`d2pl`) — camera + weapons *(compiled-in)*
+### Driver 2 Parallel Lines (`d2pl`) — on-foot movement + aim pose *(compiled-in)*
 
-A modern dual-stick third-person camera plus an overridable weapon system.
-*(Development is currently paused.)* [readme](JERICHO/MODS/d2pl/readme.md)
+Camera-relative on-foot movement, dual-stick/mouse look, an aim arm pose that
+points at the camera aim point, a laser sight and a debug pistol.
+README in the d2pl repo (optional out-of-tree mod)
 
 ### Thrill Driver (`collisiondevil`) — arcade handling *(compiled-in)*
 
@@ -452,10 +473,10 @@ elevation. [README](JERICHO/MODS/debugorbit/README.md)
 Squash-and-stretch the car body's vertex copy as it drives, drawn without
 touching physics or collision. [JERICHO/MODS/yarisbounce/](JERICHO/MODS/yarisbounce/)
 
-### GAILDRV2 (`gaildrv2`) — the machine-learning bridge *(compiled-in)*
+### GAILDRV2 (`gaildrv2`) — the machine-learning bridge *(hibernated)*
 
-A JERICHO ↔ ML bridge: it exports game state over TCP as compact binary and
-applies agent actions. [README](JERICHO/MODS/gaildrv2/README.md)
+No longer a submodule of this tree. The bridge lives at
+[JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2).
 
 ### Example (`example`) — the smoke test *(external)*
 
@@ -466,8 +487,9 @@ frames. [README](JERICHO/MODS/example/README.md)
 
 **JERICHO and this fork — Jaret ([Njurse](https://github.com/Njurse)).**
 
-**Special thanks:** **Commando52Colton** — advice on palette and texture paging,
-mission script research.
+**Special thanks:** **Commando52Colton** — palette advice, hard-to-find cut beta
+assets, help with mission hex structure and vehicle texture paging, the assets
+for Hallgarth's Firebird, and ongoing help spotting the tiniest graphical bugs.
 
 This project stands on **REDRIVER2**, the reverse-engineered Driver 2 rewrite it
 is forked from, and the engine underneath is the work of its authors: **SoapyMan**

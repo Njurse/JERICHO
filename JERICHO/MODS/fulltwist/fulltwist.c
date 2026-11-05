@@ -32,12 +32,9 @@
  * contact/impulse math are split out so this file stays event wiring.
  */
 
-#include "driver2.h"
 #include "jericho.h"
 #include "jer_events.h"
-#include "cars.h"		/* JerCarSlotUsable for the car-car scale guard */
-#include "camera.h"		/* gCameraAngle for the post-tumble snap-back */
-#include "players.h"		/* MainPlayer for the horn cannon roll */
+#include "fulltwist_host.h"
 #include "fulltwist.h"
 
 #include <string.h>
@@ -88,6 +85,9 @@ static int ftOnFrame(void* ud, void* args)
 static int ftOnCollision(void* ud, void* args)
 {
 	JER_ARGS_COLLISION* a = (JER_ARGS_COLLISION*)args;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA v0;
+	CAR_DATA v1;
 	CAR_DATA* car0;
 	CAR_DATA* car1;
 	VECTOR* point;
@@ -99,8 +99,16 @@ static int ftOnCollision(void* ud, void* args)
 	if (!gFullTwist.cfg.enabled || a == NULL || a->car0 == NULL)
 		return JER_RESULT_CONTINUE;
 
-	car0 = (CAR_DATA*)a->car0;
-	car1 = (CAR_DATA*)a->car1;
+	ftCarLoad(api, a->car0, &v0);
+	car0 = &v0;
+	car1 = NULL;
+
+	if (a->car1 != NULL)
+	{
+		ftCarLoad(api, a->car1, &v1);
+		car1 = &v1;
+	}
+
 	point = (VECTOR*)a->point;
 	normal = (VECTOR*)a->normal;
 
@@ -160,7 +168,7 @@ static int ftOnCollision(void* ud, void* args)
 						  (ftIsPlayerCar(car0) && ftIsPlayerCar(car1));
 		int otherUsable = ftIsTumbleCar(car1) &&
 						  car1->ap.carCos != NULL &&
-						  JerCarSlotUsable(car1->ap.model);
+						  ftCarSlotUsable(api, car1->ap.model);
 		int scale = gFullTwist.cfg.carCarImpulse;
 
 		if (scale < 0)
@@ -192,20 +200,57 @@ static int ftOnCollision(void* ud, void* args)
 		}
 	}
 
+	ftCarFlush(api, a->car0, car0);
+	if (car1 != NULL)
+		ftCarFlush(api, a->car1, car1);
+
 	return JER_RESULT_CONTINUE;
 }
 
-static int ftOnWallRestitution(void* ud, void* args)
+/* FULL TWIST keeps a flipped car alive four times longer than the stock
+ * rule. mission.c asks every frame a player car is upside down; leaving the
+ * value alone (or disabling the module) keeps the stock 180 frames. */
+static int ftOnUpsideDownFrames(void* ud, void* args)
 {
-	JER_ARGS_WALL_RESTITUTION* a = (JER_ARGS_WALL_RESTITUTION*)args;
-	CAR_DATA* cp;
+	JER_ARGS_UPSIDE_DOWN* a = (JER_ARGS_UPSIDE_DOWN*)args;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 
 	(void)ud;
 
 	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
 		return JER_RESULT_CONTINUE;
 
-	cp = (CAR_DATA*)a->car;
+	ftCarLoad(api, a->car, cp);
+
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
+		return JER_RESULT_CONTINUE;
+
+	a->frames = FT_UPSIDE_DOWN_FRAMES;
+
+	if (gFullTwist.cfg.debugLog && (gFullTwist.frame % 30) == 0)
+	{
+		FT_LOG("[fulltwist] upside-down limit car=%d player=%d frames=%d\n",
+			(int)cp->id, a->playerId, a->frames);
+	}
+
+	return JER_RESULT_CONTINUE;
+}
+
+static int ftOnWallRestitution(void* ud, void* args)
+{
+	JER_ARGS_WALL_RESTITUTION* a = (JER_ARGS_WALL_RESTITUTION*)args;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
+
+	(void)ud;
+
+	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
+		return JER_RESULT_CONTINUE;
+
+	ftCarLoad(api, a->car, cp);
 
 	if (!ftIsTumbleCar(cp))
 		return JER_RESULT_CONTINUE;
@@ -227,7 +272,9 @@ static int ftOnWallRestitution(void* ud, void* args)
 static int ftOnPhysicsParams(void* ud, void* args)
 {
 	JER_ARGS_PHYSICS_PARAMS* a = (JER_ARGS_PHYSICS_PARAMS*)args;
-	CAR_DATA* cp;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 
 	(void)ud;
 
@@ -235,7 +282,7 @@ static int ftOnPhysicsParams(void* ud, void* args)
 		a == NULL || a->car == NULL)
 		return JER_RESULT_CONTINUE;
 
-	cp = (CAR_DATA*)a->car;
+	ftCarLoad(api, a->car, cp);
 
 	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
 		return JER_RESULT_CONTINUE;
@@ -249,7 +296,9 @@ static int ftOnPhysicsParams(void* ud, void* args)
 static int ftOnCarStep(void* ud, void* args)
 {
 	JER_ARGS_CAR_STEP* a = (JER_ARGS_CAR_STEP*)args;
-	CAR_DATA* cp;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 	FULLTWIST_CAR* st;
 	int mask, air, up;
 
@@ -258,7 +307,7 @@ static int ftOnCarStep(void* ud, void* args)
 	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
 		return JER_RESULT_CONTINUE;
 
-	cp = (CAR_DATA*)a->car;
+	ftCarLoad(api, a->car, cp);
 
 	if (!ftIsTumbleCar(cp))
 		return JER_RESULT_CONTINUE;
@@ -269,18 +318,22 @@ static int ftOnCarStep(void* ud, void* args)
 	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
 		return JER_RESULT_CONTINUE;
 
-	/* Horn cannon roll: one roll per horn press on the main player's car. The
-	 * horn state is the stock MainPlayer.horn.on bit set in handling.c. */
-	if (ftIsPlayerCar(cp) &&
-		((int)MainPlayer.playerCarId == (int)cp->id ||
-		 (int)MainPlayer.cameraCarId == (int)cp->id))
+	/* Horn cannon roll: one roll per horn press on the main player's car. */
+	if (ftIsPlayerCar(cp))
 	{
-		int horn = MainPlayer.horn.on ? 1 : 0;
+		JER_PLAYER_STATE ps;
 
-		if (gFullTwist.cfg.hornRoll && horn && !st->hornHeld)
-			ftHornRoll(cp);
+		if (ftMainPlayerState(api, &ps) &&
+			((int)ps.playerCarId == (int)cp->id ||
+			 (int)ps.cameraCarId == (int)cp->id))
+		{
+			int horn = ps.horn ? 1 : 0;
 
-		st->hornHeld = horn;
+			if (gFullTwist.cfg.hornRoll && horn && !st->hornHeld)
+				ftHornRoll(cp);
+
+			st->hornHeld = horn;
+		}
 	}
 
 	/* GlobalTimeStep zeroes angular velocity for a car whose hd.speed is 0,
@@ -452,6 +505,8 @@ static int ftOnCarStep(void* ud, void* args)
 			int upNow = cp->hd.where.m[1][1];
 			int uprightOnWheels = (ftWheelMask(cp) != 0) && (upNow > 2048);
 
+			st->bodyContactLocalValid = 0;
+
 			bodyOnGround = (pen > 0 && pen < FT_BODY_TOUCH_RANGE && vy < 0);
 
 			/* The grip keeps the contact while the hull is still resting on
@@ -499,8 +554,16 @@ static int ftOnCarStep(void* ud, void* args)
 
 					/* A car that is already tumbling should keep its spin. The
 					 * landing torque is only there to start a tumble from a
-					 * body drop, not to fight an established roll. */
-					if (avMag < 1500000)
+					 * body drop, not to fight an established roll - and a car
+					 * that is merely RESTING on its body must get nothing at
+					 * all. Without the downward-velocity test a parked car
+					 * (or one settling on the spawn frame) was still pressed
+					 * into a roll: measured as "rollover count car=0
+					 * frame=133 up=-275" with no collision anywhere in the log,
+					 * i.e. the player's car flipped itself while sitting still.
+					 * A real drop arrives with vy well under -200; a resting
+					 * body reads a few units either side of zero. */
+					if (avMag < 1500000 && bodyLocal.vy < -200)
 						ftAddLocalRate(cp, roll, pitch);
 				}
 
@@ -518,7 +581,11 @@ static int ftOnCarStep(void* ud, void* args)
 			 * kick above. The contact point is the same lowest hull vertex,
 			 * so the friction's reaction pivots the body about it. */
 			if (touching)
+			{
+				st->bodyContactLocal = bodyLocal;
+				st->bodyContactLocalValid = 1;
 				ftBodyFriction(cp, &bodyLocal);
+			}
 		}
 
 		st->bodyTouching = touching;
@@ -528,22 +595,28 @@ static int ftOnCarStep(void* ud, void* args)
 	{
 		st->bodyContact = 0;
 		st->bodyTouching = 0;
+		st->bodyContactLocalValid = 0;
 	}
 
-	st->airborne = air;
+	st->airborne = (air && !st->bodyTouching) ? 1 : 0;
 	st->contactMask = mask;
 
-	/* Keep the free-spin state alive while the car is in the air or resting
-	 * on its body, and let it decay once the car is back on its wheels. */
+	/* Keep the free-spin state alive only while the car is genuinely in the
+	 * air (no wheel compression AND no body contact, with the hysteresis the
+	 * body probe uses); a car sliding/bouncing on its roof has mask == 0 but
+	 * is not airborne. Using bodyContact here let one contact-free frame
+	 * refresh the window forever. */
 	if (gFullTwist.cfg.freeSpin)
 	{
-		if (air || st->bodyContact)
+		if (air && !st->bodyTouching)
 			st->freeSpinFrames = gFullTwist.cfg.freeSpinWindow;
+		else if (mask != 0 && up > 2048)
+			st->freeSpinFrames = 0;
 		else if (st->freeSpinFrames > 0)
 			st->freeSpinFrames--;
 	}
 
-	if (air)
+	if (st->airborne)
 		st->airFrames++;
 	else
 		st->airFrames = 0;
@@ -552,6 +625,36 @@ static int ftOnCarStep(void* ud, void* args)
 		st->upsideFrames++;
 	else
 		st->upsideFrames = 0;
+
+	/* JERICHO test lever: report the parked-on-roof settle path. The upright
+	 * transition is logged even without debug_log so the frames-to-upright is
+	 * always available from a -frames run. */
+	if (gFullTwist.restFlipActive && ftIsPlayerCar(cp))
+	{
+		unsigned int elapsed = gFullTwist.frame - gFullTwist.restFlipStartFrame;
+		int logUp = cp->hd.where.m[1][1];
+
+		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 5) == 0)
+		{
+			FT_LOG("[fulltwist] rest flip car=%d frame=%u up=%d av=(%d,%d) mask=%x body=%d elapsed=%u\n",
+				(int)cp->id, gFullTwist.frame, logUp,
+				cp->st.n.angularVelocity[0], cp->st.n.angularVelocity[2],
+				mask, st->bodyContact, elapsed);
+		}
+
+		if (logUp > 3000 && mask != 0)
+		{
+			FT_LOG("[fulltwist] rest flip upright car=%d frame=%u frames=%u\n",
+				(int)cp->id, gFullTwist.frame, elapsed);
+			gFullTwist.restFlipActive = 0;
+		}
+		else if (elapsed > 600)
+		{
+			FT_LOG("[fulltwist] rest flip timeout car=%d frame=%u up=%d mask=%x\n",
+				(int)cp->id, gFullTwist.frame, logUp, mask);
+			gFullTwist.restFlipActive = 0;
+		}
+	}
 
 	if (st->tumbleFrames > 0)
 	{
@@ -583,17 +686,35 @@ static int ftOnCarStep(void* ud, void* args)
 			st->tumbleFrames, st->airFrames, st->upsideFrames);
 	}
 
+	ftCarFlush(api, a->car, cp);
+
 	return JER_RESULT_CONTINUE;
 }
 
 static int ftOnCarTorque(void* ud, void* args)
 {
 	JER_ARGS_CAR_TORQUE* a = (JER_ARGS_CAR_TORQUE*)args;
-	CAR_DATA* cp;
+	const JER_HOST_API* api = ftHost();
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 	FULLTWIST_CAR* st;
 	int k = 0;
 
 	(void)ud;
+
+	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
+		return JER_RESULT_CONTINUE;
+
+	ftCarLoad(api, a->car, cp);
+
+	if (!ftIsTumbleCar(cp))
+		return JER_RESULT_CONTINUE;
+
+	/* Player-only patch: traffic keeps the stock torque path. */
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
+		return JER_RESULT_CONTINUE;
+
+	st = &gFullTwist.cars[(int)cp->id];
 
 	if (!gFullTwist.cfg.enabled || a == NULL || a->car == NULL)
 		return JER_RESULT_CONTINUE;
@@ -610,13 +731,12 @@ static int ftOnCarTorque(void* ud, void* args)
 		return JER_RESULT_CONTINUE;
 
 	/* Fulltwist torque only belongs to a car it has actually tumbled, or to a
-	 * free-spinning car that needs the stock lift damping cancelled. This keeps
-	 * the near-upright catch off normal traffic during the load window. */
+	 * free-spinning car that needs the stock lift damping cancelled. */
 	if (!st->tumbled && !ftFreeSpinActive(cp))
 		return JER_RESULT_CONTINUE;
 
 	/* The rollover test holds the 90-degree pose for one second before the
-	 * impulse; do not let the rollover catch right it during that hold. */
+	 * impulse; do not let the settle damping fight that hold. */
 	if (gFullTwist.testRolloverHolding)
 		return JER_RESULT_CONTINUE;
 
@@ -624,9 +744,15 @@ static int ftOnCarTorque(void* ud, void* args)
 	int aup = (up < 0) ? -up : up;
 	int grounded = (ftWheelMask(cp) != 0) || (st->bodyContact != 0);
 	int applyDamping = 0;
-	int applyCatch = 0;
 	int applyRetention = 0;
-	int catchK = 0;
+	int applyBodyDamp = 0;
+	int applyGravity = 0;
+	int bodyK = 0;
+	int gravityX = 0;
+	int gravityZ = 0;
+	int gravityRx = 0;
+	int gravityRz = 0;
+	int gravityK = 0;
 
 	/* ConvertTorqueToAngularAcceleration applies the lift -avel/8 only when
 	 * the body has ground contact (extraDamping). Cancel that term only when
@@ -683,30 +809,86 @@ static int ftOnCarTorque(void* ud, void* args)
 	}
 	else if (st->tumbled)
 	{
-		/* The tumble window is over, but a car on its side or roof can keep
-		 * spinning on the stock damping alone. Damp the spin; do not upright
-		 * it -- a car resting on its side/end should stay there. */
-		if (gFullTwist.cfg.rolloverDamping > 0 &&
-			(st->upsideFrames > 0 || aup < 2500) && grounded)
+		/* The tumble window is over: a tumbled car on the ground gets its
+		 * roll/pitch spin damped in every orientation, not only while it is
+		 * already tilted. Stopping damping as it passes upright was what let
+		 * the righting motion rock back and forth. */
+		if (gFullTwist.cfg.rolloverDamping > 0 && grounded)
 		{
 			applyDamping = 1;
 			k = gFullTwist.cfg.rolloverDamping * 8;	/* 0..800 */
 		}
-
-		if (gFullTwist.cfg.rolloverCatch > 0 && grounded && aup > 3000)
-		{
-			applyCatch = 1;
-			catchK = gFullTwist.cfg.rolloverCatch * 40;
-		}
 	}
 
-	if (!applyDamping && !applyCatch && !applyRetention)
+	/* Body spin scrub: while the hull is resting on the road, body_friction
+	 * damps roll/pitch so the car stops rolling on its roof/side. This writes
+	 * only the angular channel; the body hinge deliberately leaves the car's
+	 * linear momentum alone (collision impulses still push it). */
+	if (gFullTwist.cfg.bodyFriction > 0 && st->bodyContact)
+	{
+		applyBodyDamp = 1;
+		bodyK = gFullTwist.cfg.bodyFriction * 8;	/* 0..800 */
+	}
+
+	/* COG gravity torque. The ground normal at the body contact acts through
+	 * the lever from the centre of gravity: torque = r x (0,N,0). It is not an
+	 * uprighting assist and has no preferred direction; it simply accelerates
+	 * the fall the car's centre of gravity is already on. Fully upright and
+	 * fully inverted poses are excluded so a parked roof rest is left alone. */
+	if (gFullTwist.cfg.bodyGravity > 0 && st->bodyTouching &&
+		st->bodyContactLocalValid && aup < 3000)
+	{
+		int lx = st->bodyContactLocal.vx;
+		int ly = st->bodyContactLocal.vy;
+		int lz = st->bodyContactLocal.vz;
+		int rx = (int)(((long long)cp->hd.where.m[0][0] * lx +
+						(long long)cp->hd.where.m[0][1] * ly +
+						(long long)cp->hd.where.m[0][2] * lz) >> 12);
+		int rz = (int)(((long long)cp->hd.where.m[2][0] * lx +
+						(long long)cp->hd.where.m[2][1] * ly +
+						(long long)cp->hd.where.m[2][2] * lz) >> 12);
+
+		gravityK = gFullTwist.cfg.bodyGravity * FT_BODY_GRAVITY_TORQUE / 100;
+		gravityRx = rx;
+		gravityRz = rz;
+		gravityX = (int)(((long long)(-rz) * gravityK) >> 12);
+		gravityZ = (int)(((long long)rx * gravityK) >> 12);
+		applyGravity = 1;
+	}
+
+	if (!applyDamping && !applyRetention && !applyBodyDamp && !applyGravity)
 		return JER_RESULT_CONTINUE;
 
 	if (applyDamping && st->bodyContactFrame != gFullTwist.frame)
 	{
 		cp->hd.aacc[0] -= (int)(((long long)cp->st.n.angularVelocity[0] * k) >> 12);
 		cp->hd.aacc[2] -= (int)(((long long)cp->st.n.angularVelocity[2] * k) >> 12);
+	}
+
+	if (applyBodyDamp)
+	{
+		cp->hd.aacc[0] -= (int)(((long long)cp->st.n.angularVelocity[0] * bodyK) >> 12);
+		cp->hd.aacc[2] -= (int)(((long long)cp->st.n.angularVelocity[2] * bodyK) >> 12);
+
+		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 5) == 0)
+		{
+			FT_LOG("[fulltwist] body spin damp car=%d frame=%u k=%d av=(%d,%d)\n",
+				(int)cp->id, gFullTwist.frame, bodyK,
+				cp->st.n.angularVelocity[0], cp->st.n.angularVelocity[2]);
+		}
+	}
+
+	if (applyGravity)
+	{
+		cp->hd.aacc[0] += gravityX;
+		cp->hd.aacc[2] += gravityZ;
+
+		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 5) == 0)
+		{
+			FT_LOG("[fulltwist] body gravity car=%d frame=%u up=%d r=(%d,%d) a=(%d,%d) g=%d\n",
+				(int)cp->id, gFullTwist.frame, up,
+				gravityRx, gravityRz, gravityX, gravityZ, gravityK);
+		}
 	}
 
 	/* Offset part of the stock -avel * angularDamping (128) so the tumble
@@ -720,25 +902,9 @@ static int ftOnCarTorque(void* ud, void* args)
 		cp->hd.aacc[2] += (int)(((long long)cp->st.n.angularVelocity[2] * retainK) >> 12);
 	}
 
-	/* The damping stops the spin; it does not put the car back on its
-	 * wheels. Add a torque that rotates the world-space local-up vector
-	 * toward world up: +Z roll for an up vector leaning +X, -X pitch for
-	 * one leaning +Z. */
-	if (applyCatch)
-	{
-		int ux = cp->hd.where.m[0][1];
-		int uz = cp->hd.where.m[2][1];
-
-		cp->hd.aacc[0] += (int)(-((long long)uz * catchK) >> 12);
-		cp->hd.aacc[2] += (int)(((long long)ux * catchK) >> 12);
-
-		if (gFullTwist.cfg.debugLog && ((gFullTwist.frame + (unsigned int)cp->id) % 5) == 0)
-		{
-			FT_LOG("[fulltwist] rollover catch car=%d frame=%u up=%d ux=%d uz=%d k=%d catchK=%d av=(%d,%d)\n",
-				(int)cp->id, gFullTwist.frame, up, ux, uz, k, catchK,
-				cp->st.n.angularVelocity[0], cp->st.n.angularVelocity[2]);
-		}
-	}
+	/* Damping is the only settle force here. Nothing rotates the body toward
+	 * upright: a car at rest on its roof stays there, and one with enough
+	 * momentum finishes the roll on its own. */
 
 	return JER_RESULT_CONTINUE;
 }
@@ -784,31 +950,38 @@ static int ftCameraSettling(const CAR_DATA* cp, int* outAv)
 static int ftOnCameraLook(void* ud, void* args)
 {
 	JER_ARGS_CAMERA_LOOK* a = (JER_ARGS_CAMERA_LOOK*)args;
-	PLAYER* lp;
+	const JER_HOST_API* api = ftHost();
+	JER_PLAYER_STATE ps;
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 	FULLTWIST_CAR* st;
 	int carId;
 
 	(void)ud;
 
 	if (!gFullTwist.cfg.enabled || !gFullTwist.cfg.holdCamera ||
-		a == NULL || a->player == NULL)
+		a == NULL || a->player == NULL || api == NULL || api->player == NULL)
 		return JER_RESULT_CONTINUE;
 
-	lp = (PLAYER*)a->player;
-	carId = (int)lp->cameraCarId;
+	if (!api->player->get_state(a->player, &ps))
+		return JER_RESULT_CONTINUE;
+
+	carId = ps.cameraCarId;
 
 	if (carId < 0 || carId >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
-	if (!ftIsTumbleCar(&car_data[carId]))
+	ftCarLoadSlot(api, carId, cp, NULL);
+
+	if (!ftIsTumbleCar(cp))
 		return JER_RESULT_CONTINUE;
 
 	st = &gFullTwist.cars[carId];
 
 	{
-		int hold = (st->tumbleFrames > 0 || ftFreeSpinActive(&car_data[carId]));
+		int hold = (st->tumbleFrames > 0 || ftFreeSpinActive(cp));
 		int av = 0;
-		int settling = hold && ftCameraSettling(&car_data[carId], &av);
+		int settling = hold && ftCameraSettling(cp, &av);
 
 		if (hold && !settling)
 		{
@@ -847,25 +1020,35 @@ static int ftOnCameraLook(void* ud, void* args)
 static int ftOnCamera(void* ud, void* args)
 {
 	JER_ARGS_CAMERA* a = (JER_ARGS_CAMERA*)args;
-	PLAYER* lp;
+	const JER_HOST_API* api = ftHost();
+	JER_PLAYER_STATE ps;
+	JER_CAMERA_STATE cs;
+	CAR_DATA view;
+	CAR_DATA* cp = &view;
 	FULLTWIST_CAR* st;
 	int carId;
 	int target;
 	int delta;
+	int angle;
 
 	(void)ud;
 
 	if (!gFullTwist.cfg.enabled || !gFullTwist.cfg.holdCamera ||
-		gFullTwist.cfg.cameraSnap <= 0 || a == NULL || a->player == NULL || !a->inCar)
+		gFullTwist.cfg.cameraSnap <= 0 || a == NULL || a->player == NULL || !a->inCar ||
+		api == NULL || api->player == NULL || api->camera == NULL)
 		return JER_RESULT_CONTINUE;
 
-	lp = (PLAYER*)a->player;
-	carId = (int)lp->cameraCarId;
+	if (!api->player->get_state(a->player, &ps))
+		return JER_RESULT_CONTINUE;
+
+	carId = ps.cameraCarId;
 
 	if (carId < 0 || carId >= MAX_CARS)
 		return JER_RESULT_CONTINUE;
 
-	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(&car_data[carId]))
+	ftCarLoadSlot(api, carId, cp, NULL);
+
+	if (gFullTwist.cfg.playerOnly && !ftIsPlayerCar(cp))
 		return JER_RESULT_CONTINUE;
 
 	st = &gFullTwist.cars[carId];
@@ -873,11 +1056,16 @@ static int ftOnCamera(void* ud, void* args)
 	if (st->cameraSnapFrames <= 0)
 		return JER_RESULT_CONTINUE;
 
-	target = (a->baseDir + gCameraAngle) & 0xfff;
-	delta = ((target - lp->cameraAngle + 2048) & 0xfff) - 2048;
+	if (!api->camera->get_state(&cs))
+		return JER_RESULT_CONTINUE;
 
-	lp->cameraAngle = (lp->cameraAngle +
+	target = (a->baseDir + cs.baseAngle) & 0xfff;
+	delta = ((target - ps.cameraAngle + 2048) & 0xfff) - 2048;
+
+	angle = (ps.cameraAngle +
 		(int)(((long long)delta * gFullTwist.cfg.cameraSnap) / 100)) & 0xfff;
+
+	api->player->set_camera_angle(a->player, angle);
 	st->cameraSnapFrames--;
 
 	if (gFullTwist.cfg.debugLog &&
@@ -938,6 +1126,7 @@ JER_MODULE_ENTRY(jer_module_fulltwist_entry)(JERICHO_CONTEXT* ctx)
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_PHYSICS_PARAMS, ftOnPhysicsParams, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GET_WALL_RESTITUTION, ftOnWallRestitution, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_RESET_CAR, ftOnResetCar, NULL, 0);
+	ctx->jer_register_hook(ctx, JER_EVENT_GET_UPSIDE_DOWN_FRAMES, ftOnUpsideDownFrames, NULL, 0);
 
 	/* The 3D scenery check. A NULL slot is stock; on a handled hit the engine
 	 * restores the predictive position offset and skips its response. */

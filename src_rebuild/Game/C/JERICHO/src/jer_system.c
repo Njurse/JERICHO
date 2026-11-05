@@ -11,7 +11,9 @@
  * no exe rebuild.
  */
 #include "jericho.h"
+#include "jer_host_api.h"
 #include "jer_internal.h"
+#include "jer_required_mods.h"	/* compile-time: the submodule mods must be here */
 #include "jer_config.h"
 #include "jer_pause_menu.h"
 #include "jer_frontend.h"
@@ -318,9 +320,90 @@ static JER_MODULE* jerFindModule(const char* id)
 	return NULL;
 }
 
+/* Release mods that are not join requirements. They load after
+ * jerCoreOrder and before store addons and data packs. bake stays out of
+ * jerCoreOrder: that list force-enables and fail-closes, and a client must
+ * be able to join with bake disabled. crumple ships in the release set and
+ * stays togglable. Same prefix as JERICHO_TABLE_ORDER in premake5.lua. */
+static const char* const jerSuiteAfterCore[] = { "bake", "crumple" };
+
+static int jerSuiteAfterCoreCount(void)
+{
+	return (int)(sizeof(jerSuiteAfterCore) / sizeof(jerSuiteAfterCore[0]));
+}
+
+static int jerIsSuiteAfterCore(const char* id)
+{
+	int i;
+
+	if (id == NULL)
+		return 0;
+
+	for (i = 0; i < jerSuiteAfterCoreCount(); i++)
+	{
+		if (strcmp(jerSuiteAfterCore[i], id) == 0)
+			return 1;
+	}
+
+	return 0;
+}
+
+/* Pull one installed id to `dest`, shifting the modules in between up by
+ * one so their relative order survives. Returns the next dest. A missing
+ * id leaves dest unchanged. */
+static int jerMoveIdTo(int dest, const char* id)
+{
+	int i;
+
+	if (id == NULL || dest < 0 || dest >= gModuleCount)
+		return dest;
+
+	for (i = dest; i < gModuleCount; i++)
+	{
+		JER_MODULE tmp;
+
+		if (gModules[i].id[0] == 0 || strcmp(gModules[i].id, id) != 0)
+			continue;
+
+		if (i != dest)
+		{
+			tmp = gModules[i];
+			memmove(&gModules[dest + 1], &gModules[dest],
+				(size_t)(i - dest) * sizeof(gModules[0]));
+			gModules[dest] = tmp;
+		}
+
+		return dest + 1;
+	}
+
+	return dest;
+}
+
+/* The registry is alphabetical (jericho_scan_mods sorts folder names) and
+ * the DLL/data-pack scan is directory order, appended after every compiled
+ * module. That left pedhacks and mp at the end of the release table
+ * (carhacks, crumple, mp, pedhacks) and a runtime addon such as bake after
+ * the optional compiled mods. Missing ids are skipped. Nothing here
+ * force-enables or fail-closes; jerActivateModules still does that, and
+ * only for jerCoreOrder. */
+static void jerPlaceSuiteFirst(void)
+{
+	int dest = 0;
+	int c;
+
+	for (c = 0; c < jer_manager_core_count(); c++)
+		dest = jerMoveIdTo(dest, jer_manager_core_id(c));
+
+	for (c = 0; c < jerSuiteAfterCoreCount(); c++)
+		dest = jerMoveIdTo(dest, jerSuiteAfterCore[c]);
+}
+
 /* (Re)fill the module table: compiled-in modules from the generated
  * registry first, then runtime-loaded DLL addons from the loader that
- * aren't already compiled in. Called at boot and on manager reload. */
+ * aren't already compiled in. Called at boot and on manager reload.
+ * The merged table is then pulled into suite order (see jerPlaceSuiteFirst)
+ * so alphabetical registry order and folder scan order cannot put
+ * pedhacks or mp after an optional addon. */
 static void jerSnapshotModules(const char* rootDir)
 {
 	JER_MODULE loaded[JER_MAX_MODULES];
@@ -384,6 +467,8 @@ static void jerSnapshotModules(const char* rootDir)
 
 		gModules[gModuleCount++] = loaded[i];
 	}
+
+	jerPlaceSuiteFirst();
 }
 
 /* ------------------------------------------------------------------ */
@@ -598,6 +683,7 @@ static const char* jerEventName(int event)
 	case JER_EVENT_FRONTEND_IDLE:	return "FRONTEND_IDLE";
 	case JER_EVENT_CAR_PEER_DRAW:	return "CAR_PEER_DRAW";
 	case JER_EVENT_CAR_DAMAGE_FX:	return "CAR_DAMAGE_FX";
+	case JER_EVENT_GET_UPSIDE_DOWN_FRAMES:	return "GET_UPSIDE_DOWN_FRAMES";
 	default:
 		if (event >= JER_EVENT_MODULE_CUSTOM)
 		{
@@ -682,6 +768,7 @@ static void jerActivateModules(const char* rootDir)
 	int orderCount = 0;
 	int active = 0;
 	int complaints = 0;	/* refusals raised this pass (see the tail of the fn) */
+	int coreMissing = 0;	/* a mandatory core addon had no entry */
 	int i, j;
 
 	/*
@@ -689,7 +776,8 @@ static void jerActivateModules(const char* rootDir)
 	 * then any modules not mentioned (enabled by default, in scan
 	 * order). Modules listed with enabled=0 are skipped.
 	 *
-	 * THE CORE SUITE IS NORMALISED FIRST. mp, carhacks and d1cars are one product
+	 * THE CORE SUITE IS NORMALISED FIRST. carhacks, pedhacks and mp are one product
+	 * (bake is optional tooling, not part of this list).
 	 * (see jer_manager.c): they are mandatory and first. Rewriting the file here
 	 * means the order survives a later hand edit, and the order the player sees in
 	 * Options -> JERICHO is the order the engine actually uses.
@@ -699,7 +787,7 @@ static void jerActivateModules(const char* rootDir)
 		int moved = jer_manager_normalize_core(rootDir);
 
 		if (moved > 0)
-			jerLog("[jericho] core modules moved to the front of modlist.ini: mp, carhacks, d1cars\n");
+			jerLog("[jericho] module order normalised: carhacks, pedhacks, mp, then bake, crumple\n");
 	}
 
 	if (jer_manager_read(rootDir, &modlist) != 0)
@@ -815,7 +903,8 @@ static void jerActivateModules(const char* rootDir)
 	 * modlist.ini: a release ships no modlist, and a player can hand-edit one. An
 	 * installed core module is enabled whether or not the file said so, and it goes
 	 * ahead of every optional module. A core module that is not installed is simply
-	 * absent (d1cars is a separate download); it does not create a phantom entry. */
+	 * absent; it does not create a phantom entry. bake is optional tooling and is
+	 * not part of this set. */
 	if (!gDisableAllModules)
 	{
 		const char* ordered[JER_MAX_MODULES];
@@ -827,7 +916,17 @@ static void jerActivateModules(const char* rootDir)
 			JER_MODULE* m = (id != NULL) ? jerFindModule(id) : NULL;
 
 			if (m == NULL || m->entry == NULL)
+			{
+				/* The core suite (carhacks, pedhacks, mp) is mandatory. A release
+				 * with a missing core DLL must not quietly run a partial suite;
+				 * optional addons are refused below and the failure is named. */
+				jerLog("[jericho] core module \"%s\" is missing or has no entry - optional addons will be refused\n",
+					id != NULL ? id : "?");
+				jer_console_log("JERICHO core addon %s is missing; optional addons are disabled.",
+					id != NULL ? id : "?");
+				coreMissing = 1;
 				continue;
+			}
 
 			if (!m->enabled)
 			{
@@ -838,9 +937,25 @@ static void jerActivateModules(const char* rootDir)
 			ordered[n++] = m->id;
 		}
 
+		/* bake and crumple stay optional (no force-enable, no fail-closed)
+		 * but an enabled one still initializes before store addons and data
+		 * packs. Alphabetical modlist/scan order had been leaving pedhacks
+		 * and mp after those. */
+		for (c = 0; c < jerSuiteAfterCoreCount(); c++)
+		{
+			for (i = 0; i < orderCount; i++)
+			{
+				if (strcmp(order[i], jerSuiteAfterCore[c]) == 0)
+				{
+					ordered[n++] = order[i];
+					break;
+				}
+			}
+		}
+
 		for (i = 0; i < orderCount; i++)
 		{
-			int core = 0;
+			int earlier = 0;
 
 			for (c = 0; c < jer_manager_core_count(); c++)
 			{
@@ -848,12 +963,15 @@ static void jerActivateModules(const char* rootDir)
 
 				if (id != NULL && strcmp(order[i], id) == 0)
 				{
-					core = 1;
+					earlier = 1;
 					break;
 				}
 			}
 
-			if (!core)
+			if (!earlier && jerIsSuiteAfterCore(order[i]))
+				earlier = 1;
+
+			if (!earlier)
 				ordered[n++] = order[i];
 		}
 
@@ -928,6 +1046,37 @@ static void jerActivateModules(const char* rootDir)
 		if (!m->activated)
 			continue;
 
+		/* Fail closed when a core addon is missing: a partial core suite must
+		 * not be papered over by optional addons whose contracts assume it. */
+		if (coreMissing)
+		{
+			int isCore = 0;
+			int c;
+
+			for (c = 0; c < jer_manager_core_count(); c++)
+			{
+				const char* id = jer_manager_core_id(c);
+
+				if (id != NULL && strcmp(id, m->id) == 0)
+				{
+					isCore = 1;
+					break;
+				}
+			}
+
+			if (!isCore)
+			{
+				snprintf(m->refusal, sizeof(m->refusal),
+					"%s needs the JERICHO core suite, which is missing or incomplete.",
+					m->name[0] != 0 ? m->name : m->id);
+				jerLog("[jericho] module \"%s\" refused: core suite incomplete\n", m->id);
+				jer_console_log("%s", m->refusal);
+				complaints++;
+				m->valid = 0;
+				continue;
+			}
+		}
+
 		if (m->sdkVersion != 0 && m->sdkVersion != JERICHO_SDK_VERSION)
 		{
 			snprintf(m->refusal, sizeof(m->refusal), "%s needs a newer JERICHO (it wants SDK v%d, this build is v%d).",
@@ -962,6 +1111,26 @@ static void jerActivateModules(const char* rootDir)
 
 			jerLog("[jericho] module \"%s\" declares interface v%d but host is v%d - DISABLED\n",
 				m->id, m->interfaceVersion, JERICHO_SDK_VERSION);
+
+			jer_console_log("%s", m->refusal);
+			complaints++;
+
+			m->valid = 0;
+			continue;
+		}
+
+		/* A runtime addon built against a newer host table must be refused
+		 * BEFORE its entry runs: the subtable-size check in jerHostApiGet()
+		 * then returns NULL instead of allowing a read past the host's table. */
+		if (m->hostApiVersion > (int)JER_HOST_API_GENERATION)
+		{
+			snprintf(m->refusal, sizeof(m->refusal),
+				"%s needs host API v%d; this build has v%d. Update JERICHO or install an older mod.",
+				m->name[0] != 0 ? m->name : m->id, m->hostApiVersion,
+				(int)JER_HOST_API_GENERATION);
+
+			jerLog("[jericho] module \"%s\" needs host API v%d but host is v%d - DISABLED\n",
+				m->id, m->hostApiVersion, (int)JER_HOST_API_GENERATION);
 
 			jer_console_log("%s", m->refusal);
 			complaints++;

@@ -8,6 +8,16 @@
 #include "objanim.h"
 #include "ASM/compres.h"
 #include "carpinref.h"	// JERICHO: pin owners, CLUT bands, table removal (pure, tested off-engine)
+#include "spool.h"		// JERICHO: LoadInAreaTSets / StartSpooling, to put streamed world pages back
+#include "jer_console.h"	// JERICHO: tell the player when world VRAM no longer matches the level
+
+#ifndef PSX
+#include "PsyX/PsyX_render.h"
+// cars.h keeps its own copy of the VRAM size (the lower pool's bounds); fail the build if it
+// ever disagrees with PsyCross's buffer.
+static_assert(JER_VRAM_TOTAL_ROWS == VRAM_HEIGHT, "cars.h JER_VRAM_TOTAL_ROWS must equal PsyX VRAM_HEIGHT");
+static_assert(JER_VRAM_HALF_Y == VRAM_STOCK_HEIGHT, "cars.h JER_VRAM_HALF_Y must equal PsyX VRAM_STOCK_HEIGHT");
+#endif
 
 SXYPAIR tpagepos[20] =
 {
@@ -942,6 +952,32 @@ extern int FrameCnt;			// JERICHO: frame clock for the imported-page claim pool
 static int sCarPageClaimFrame[19];
 static int sCarPageGiveBacks;		// world uploads that reclaimed a stale claim
 
+/* JERICHO: what LoadPermanentTPages put in the world, so it can be put back.
+ * Permanent pages and the host palette rows are read once from the level file.
+ * A later upload into those rectangles (a custom bank, a pin that missed the
+ * lower half pool) is not undone by clearing a claim: the pixels stay until
+ * something reads the file again. Streamed slots are the spool's; they come
+ * back only when they are asked for again. */
+static int sWorldReloadReady;
+static int sWorldPageSector = -1;
+static int sWorldSpecPage1 = -1;
+static int sWorldSpecPage2 = -1;
+static RECT16 sWorldClutBeforePal;
+static RECT16 sWorldClutAtPages;
+static RECT16 sWorldTpageAtPages;
+static int sWorldOrigCount;
+static u_char sWorldOrigSet[TPAGE_SLOTS];
+static int sWorldDirtyLogged;
+static int sWorldSlotTaken;
+static int sWorldStreamPending;
+static int sWorldReloading;
+
+static_assert(TPAGE_SLOTS == JER_WORLD_SLOTS, "world reload helpers use TPAGE_SLOTS");
+
+extern int LoadedArea;			/* map.c: the area whose pages are on screen */
+extern int tsetcounter;			/* spool.c */
+extern int tsetpos;
+
 // JERICHO: is this VRAM rectangle one an imported page owns? Exported so the spool's
 // own upload paths can respect it too - they write texture_pages[] and call LoadImage
 // directly, bypassing the LoadTPageAndCluts guard entirely, which is how the host's
@@ -998,6 +1034,14 @@ int CarPageSlotOwned(int slot)
 
 int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress)
 {
+	return LoadTPageAndClutsN(tpage, cluts, tpage2send, tpageaddress, -1);
+}
+
+// JERICHO: LoadTPageAndCluts on a buffer of `len` bytes (len < 0 = the stock, unbounded
+// path). An imported entry is refused (0) if its CLUTs or its compressed image would
+// read past the buffer.
+int LoadTPageAndClutsN(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpageaddress, int len)
+{
 	int npalettes;
 	int i;
 	RECT16 temptpage;
@@ -1009,8 +1053,14 @@ int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpagea
 	if (!sCarPageUploading && CarPageRectOwned(tpage->x, tpage->y))
 		return 0;
 
+	if (len >= 0 && len < 4)
+		return 0;
+
 	npalettes = *(int *)tpageaddress;
 	tpageaddress += 4;
+
+	if (len >= 0 && (npalettes < 0 || npalettes > (len - 4) / 32))
+		return 0;
 
 	for (i = 0; i < npalettes; i++)
 	{
@@ -1027,7 +1077,14 @@ int LoadTPageAndCluts(RECT16 *tpage, RECT16 *cluts, int tpage2send, char *tpagea
 	temptpage.w = tpage->w;
 	temptpage.h = 256;
 
-	decomp_asm((char*)_other_buffer, tpageaddress);
+	if (len < 0)
+		decomp_asm((char*)_other_buffer, tpageaddress);
+	else if (decomp_asm_n((char*)_other_buffer, tpageaddress, len - 4 - npalettes * 32) == NULL)
+	{
+		printInfo("JERICHO-WARN: texture page %d: compressed image runs past its %d-byte entry - not uploaded\n", tpage2send, len);
+		return 0;
+	}
+
 	LoadImage(&temptpage, (u_long*)_other_buffer);
 
 	texture_pages[tpage2send] = GetTPage(0, 0, tpage->x, tpage->y);
@@ -1739,7 +1796,14 @@ static int HostUsesTPage(int tpage)
 
 static int sRemapFrom[CAR_REMAP_MAX];
 static int sRemapTo[CAR_REMAP_MAX];
+static int sRemapCity[CAR_REMAP_MAX];	// JERICHO (D3): the SOURCE CITY the entry is for - see CarImportDstSetCore
 static int sRemapCount;
+
+// JERICHO (D3): which source city an import index belongs to, as city + 1 (0 = no import
+// holds it, so the zero-initialised table is already "all free").
+// A set number means one page per CITY, so two guest cities that both name set 20 must not
+// both write texture_pages[20]: the second one is given an index of its own.
+static int sIndexCity[128];
 
 // Set while an imported vehicle's polys are being converted, so CarSetRemap only
 // applies to THAT car. It has to be per-car: the remap maps e.g. 54 -> 110 because
@@ -1748,10 +1812,12 @@ static int sRemapCount;
 // 54, so a global remap would have retextured host cars with the imported city's
 // pages - the same class of bug as the civ_clut clobber.
 static int sCarSetRemapActive;
+static int sCarSetRemapCity;		// JERICHO (D3): the source city of the car being converted
 
-void CarSetRemapEnable(int on)
+void CarSetRemapEnable(int on, int city)
 {
 	sCarSetRemapActive = on;
+	sCarSetRemapCity = city;
 }
 
 // Translate a source-city set number to the index its page was loaded at. Identity
@@ -1765,7 +1831,7 @@ void CarSetRemapEnable(int on)
 // special body's third set was baked as the host's index 1 while the pin filled index
 // 110: measured, 48 of 254 polys read the host's page (704,0) instead of the imported one.
 int CarImportDstSet(int set);	// defined below, once the free-index allocator is in scope
-int CarImportPinDstSet(int set);	// the same decision, for the pin (outside the build)
+int CarImportPinDstSet(int set, int city);	// the same decision, for the pin (outside the build)
 
 int CarSetRemap(int set)
 {
@@ -1806,7 +1872,7 @@ static int FindFreeSetIndex(void)
 
 	for (i = 110; i < 128; i++)
 	{
-		if (tpageloaded[i] != 0 || SetIndexReserved(i))
+		if (tpageloaded[i] != 0 || SetIndexReserved(i) || sIndexCity[i] != 0)
 			continue;
 
 		// JERICHO: never hand an import an index the HOST draws with.
@@ -1831,13 +1897,13 @@ static int FindFreeSetIndex(void)
 // after the build has finished, and the first cut of this had the guard here - so the
 // pin's lookup returned the set unchanged, recorded index 1 while the polys had baked
 // 110, and the 32 polys that name set 1 kept reading the host's page.
-static int CarImportDstSetCore(int set)
+static int CarImportDstSetCore(int set, int city)
 {
 	int i, free;
 
 	for (i = 0; i < sRemapCount; i++)
 	{
-		if (sRemapFrom[i] == set)
+		if (sRemapFrom[i] == set && sRemapCity[i] == city)
 			return sRemapTo[i];
 	}
 
@@ -1860,8 +1926,21 @@ static int CarImportDstSetCore(int set)
 	// JERICHO: the test is HostUsesTPage - "does the host draw with this set at all?" -
 	// not the old "is it one of the 19 resolved slots, or one of the host's car pages".
 	// See HostUsesTPage for what the narrow version cost (repainted pedestrians).
-	if (!HostUsesTPage(set))
+	//
+	// JERICHO (D3): ...and only for ONE guest city. The decision used to be keyed by the set
+	// number alone, so two guest cities naming the same set (common: the civilian lists
+	// overlap) got the same index and both pins wrote texture_pages[that index] - last
+	// writer won, and once one city's car was released the other drew a freed pool page.
+	// The first city to name a free number keeps it; any other city is re-indexed exactly
+	// like a host-used set.
+	if (set < 0 || set >= 128)
 		return set;
+
+	if (!HostUsesTPage(set) && (sIndexCity[set] == 0 || sIndexCity[set] == city + 1))
+	{
+		sIndexCity[set] = city + 1;
+		return set;
+	}
 
 	free = FindFreeSetIndex();
 
@@ -1870,13 +1949,15 @@ static int CarImportDstSetCore(int set)
 
 	sRemapFrom[sRemapCount] = set;
 	sRemapTo[sRemapCount] = free;
+	sRemapCity[sRemapCount] = city;
 	sRemapCount++;
+	sIndexCity[free] = city + 1;
 
 	if (sReservedCount < CAR_REMAP_MAX)
 		sReservedSet[sReservedCount++] = free;	// keep the next set out of it
 
-	printInfo("cross-city: set %d is the level's own - re-indexed to %d for the imported car (decided once, so the bake and the pin agree)\n",
-		set, free);
+	printInfo("cross-city: set %d (city %d) is the level's or another city's - re-indexed to %d for the imported car (decided once, so the bake and the pin agree)\n",
+		set, city, free);
 
 	return free;
 }
@@ -1884,14 +1965,14 @@ static int CarImportDstSetCore(int set)
 // What the imported car's polys are baked with, and what the pin fills.
 int CarImportDstSet(int set)
 {
-	return sCarSetRemapActive ? CarImportDstSetCore(set) : set;
+	return sCarSetRemapActive ? CarImportDstSetCore(set, sCarSetRemapCity) : set;
 }
 
 // For the pin, which runs outside the build: the mapping is the same one the build used,
 // so the page it fills is the page the polys read.
-int CarImportPinDstSet(int set)
+int CarImportPinDstSet(int set, int city)
 {
-	return CarImportDstSetCore(set);
+	return CarImportDstSetCore(set, city);
 }
 
 
@@ -1923,6 +2004,7 @@ int CarImportPinDstSet(int set)
 // pins/palette tables when its last car is released - is TODO(#14); this headroom is
 // the safe stopgap, not the cure. The hard ceiling is JER_POOL_PAGES.
 #define CAR_PIN_MAX 30
+#define JER_PED_PIN_OWNER 30		/* the pin-owner bit used by the imported on-foot character */
 /* A pin's owners are a 32-bit mask; every resident slot must fit in it or a released
  * car's page would stay owned by a bit that does not exist. */
 #if CAR_PIN_OWNERS_MAX < MAX_CAR_RESIDENT_MODELS
@@ -1988,6 +2070,11 @@ static int sPinPreferred[CAR_PIN_MAX];		// the rectangle the REPLACED car's page
 static int sPinClutY[CAR_PIN_MAX];		// JERICHO: first row of this pin's CLUT band in the lower
 						// half pool column (always starting at x=960), -1 = none
 static int sPinClutRows[CAR_PIN_MAX];		// its height in whole rows
+static int sPinPoolOnly[CAR_PIN_MAX];		// JERICHO: this pin must live in the lower half pool;
+						// no world-page fallback
+static int sPinForcePool;			// set while recording a pool-only pin
+static int sJerPedPinsRecorded;
+static int sJerPedPinFailed;
 static int sPinClutStarted;			// the first band has been taken this level (for the log)
 static int sPinClutReused;			// bands served from the free list
 static int sPinClutReclaimed;			// rows given back by released pins
@@ -2170,6 +2257,7 @@ static void CarPinRecord(int set, int index, int offset, int size, int preferred
 	sPinPreferred[sPinCount] = preferred;
 	sPinClutY[sPinCount] = -1;		// no CLUT band until it is placed
 	sPinClutRows[sPinCount] = 0;
+	sPinPoolOnly[sPinCount] = sPinForcePool;
 	sPinCount++;
 }
 
@@ -2480,6 +2568,10 @@ void CarImportPaletteRowForget(int row)
 	memset(&civ_clut[row][0][0], 0, sizeof(civ_clut[0]));
 }
 
+static void WorldVramNoteIfDirty(void);
+static int WorldQueueStreamed(void);
+static void WorldRestoreSlotsAfterRelease(const int* slots, int n);
+
 void CarImportPin(void)
 {
 	int i;
@@ -2601,6 +2693,7 @@ void CarImportPin(void)
 
 			printInfo("cross-city: palette rows needed %d, newly uploaded %d (the rest were already in VRAM)\n",
 				sPalUploaded, nfresh);
+			CarImportPaletteUsageReport();
 		}
 	}
 
@@ -2683,6 +2776,14 @@ void CarImportPin(void)
 		// tpagepos[] INDEX and the rectangle is derived from it, so a lower half pool page has no
 		// index to return.
 		pool = JerLowerPoolPageAlloc();
+
+		if (pool < 0 && sPinPoolOnly[i])
+		{
+			/* JERICHO: a ped pin is not allowed to take a world rectangle. Leave it
+			 * unplaced; the import readiness check refuses the character. */
+			sJerPinPoolFull++;
+			continue;
+		}
 
 		if (pool >= 0)
 		{
@@ -2801,10 +2902,13 @@ void CarImportPin(void)
 			int rows = CarClutRowsFor(npal);
 			int bandY = -1, fromPool = 0, used;
 
-			if (npal <= 0 || npal > 32)
+			// D1: the compressed image must also end inside the entry (a dry run of the
+			// bounded decomp) - refused here, before any band or slot is taken for it.
+			if (!CarPageEntryFits(sPinSize[i], npal) ||
+				decomp_asm_n((char*)_other_buffer, buf + 4 + npal * 32, sPinSize[i] - 4 - npal * 32) == NULL)
 			{
-				printInfo("cross-city: %s set %d left unplaced - its entry says %d CLUT rows (corrupt?)\n",
-					LevelNames[sPinCity[i]], sPinSet[i], npal);
+				printInfo("cross-city: %s set %d left unplaced - its entry says %d CLUT rows in %d bytes (corrupt?)\n",
+					LevelNames[sPinCity[i]], sPinSet[i], npal, sPinSize[i]);
 
 				free(buf);
 
@@ -2887,7 +2991,7 @@ void CarImportPin(void)
 			// rectangle owned so the engine's own uploads to it are refused from here on.
 			sCarPageUploading = 1;
 			sPinReloads++;	// counts re-uploads, i.e. how often the engine took a page back
-			LoadTPageAndCluts(&tpage, &clut, sPinIndex[i], buf);
+			LoadTPageAndClutsN(&tpage, &clut, sPinIndex[i], buf, sPinSize[i]);
 			sCarPageUploading = 0;
 
 			// Commit what the walk really used, in whole rows. It is `rows` by construction
@@ -2920,6 +3024,7 @@ void CarImportPin(void)
 			tpageloaded[sPinIndex[i]] = (u_char)slot;
 
 			sPinTexSlot[i] = slot;
+			sWorldSlotTaken++;
 		}
 
 		// JERICHO: buildNewCarFromModel caches each set's palette-0 CLUT into its
@@ -2984,6 +3089,11 @@ void CarImportPin(void)
 
 		free(buf);
 	}
+
+	if (sWorldStreamPending)
+		WorldQueueStreamed();
+
+	WorldVramNoteIfDirty();
 }
 
 // JERICHO: report where the imported sets' pages actually ended up, by decoding the
@@ -3013,6 +3123,513 @@ static int CarImportAnyHeld(void)
 			return 1;
 
 	return 0;
+}
+
+/* JERICHO: the ped import's texture pins.
+ *
+ * Same table and the same CarImportPin placement as an imported car, but the
+ * pins are owned by a dedicated owner bit and are required to land in the lower
+ * half pool. A ped page that would have to evict a world rectangle is left
+ * unplaced, and the import is refused rather than letting the world show the
+ * character's texture.
+ */
+static void CarPinRemoveAt(int i);
+static void CarPinIndexFreed(int idx);	/* D3, defined with the slot release */
+
+static int JerPedPinOffset(int city, int set, int* offset, int* size)
+{
+	int i, off = 0;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	for (i = 0; i < gCarImportPerms[city].count; i++)
+	{
+		if (gCarImportPerms[city].set[i] == set)
+		{
+			*offset = off;
+			*size = gCarImportPerms[city].bytes[i];
+			return (*size > 0);
+		}
+
+		off += (gCarImportPerms[city].bytes[i] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+	}
+
+	/* Pedestrian pages (the JERI models use these) are not in the car perm
+	 * list; the special list follows it in the same page-data region. */
+	for (i = 0; i < gCarImportSpecs[city].count; i++)
+	{
+		if (gCarImportSpecs[city].set[i] == set)
+		{
+			*offset = off;
+			*size = gCarImportSpecs[city].bytes[i];
+
+			printInfo("ped import: %s set %d is a special/pedestrian page (+%d, %d bytes)\n",
+				LevelNames[city], set, off, *size);
+
+			return (*size > 0);
+		}
+
+		off += (gCarImportSpecs[city].bytes[i] + CDSECTOR_SIZE - 1) & -CDSECTOR_SIZE;
+	}
+
+	return 0;
+}
+
+int JerPedPinTpages(int city, const int* sets, int count)
+{
+	int i, p, offset = 0, size = 0;
+
+	if (city < 0 || city >= CITY_COUNT || sets == NULL || count <= 0)
+		return 0;
+
+	CarImportPageListsForCity(city);
+
+	sJerPedPinsRecorded = 0;
+	sJerPedPinFailed = 0;
+
+	for (i = 0; i < count; i++)
+	{
+		int dst;
+
+		if (!JerPedPinOffset(city, sets[i], &offset, &size))
+		{
+			/* Not a permanent/special page: the JERI models use streamed AREA
+			 * pages. Read that page from Havana's spool and place it now. */
+			dst = CarImportPinDstSet(sets[i], city);
+
+			if (JerPedAreaPage(city, sets[i], dst))
+			{
+				sJerPedPinsRecorded++;
+				continue;
+			}
+
+			printInfo("ped import: %s set %d is in neither page list nor an area page - refusing\n",
+				LevelNames[city], sets[i]);
+			sJerPedPinFailed = 1;
+			continue;
+		}
+
+		dst = CarImportPinDstSet(sets[i], city);
+
+		sPinForcePool = 1;
+		CarPinRecord(sets[i], dst, offset, size, -1, city, CarPinOwnerBit(JER_PED_PIN_OWNER));
+		sPinForcePool = 0;
+
+		sJerPedPinsRecorded++;
+	}
+
+	CarImportPin();
+
+	for (p = 0; p < sPinCount; p++)
+	{
+		if (!CarPinOwnersHas(sPinOwners[p], JER_PED_PIN_OWNER))
+			continue;
+
+		if (sPinPoolOnly[p] ? (sPinPool[p] < 0) : (sPinPool[p] < 0 && sPinTexSlot[p] < 0))
+		{
+			printInfo("ped import: %s set %d could not be placed in the lower half pool\n",
+				LevelNames[sPinCity[p]], sPinSet[p]);
+			sJerPedPinFailed = 1;
+		}
+
+		if (sPinClutY[p] < 0)
+		{
+			printInfo("ped import: %s set %d has no CLUT band\n",
+				LevelNames[sPinCity[p]], sPinSet[p]);
+			sJerPedPinFailed = 1;
+		}
+	}
+
+	for (i = 0; i < sPinDroppedKept; i++)
+	{
+		if (sPinDroppedOwners[i] & CarPinOwnerBit(JER_PED_PIN_OWNER))
+		{
+			printInfo("ped import: %s set %d was dropped from the pin table\n",
+				LevelNames[sPinDroppedCity[i]], sPinDroppedSet[i]);
+			sJerPedPinFailed = 1;
+		}
+	}
+
+	if (sJerPedPinsRecorded != count)
+		sJerPedPinFailed = 1;
+
+	return (sJerPedPinsRecorded == count && !sJerPedPinFailed);
+}
+
+int JerPedPinsReady(void)
+{
+	return (sJerPedPinsRecorded > 0 && !sJerPedPinFailed);
+}
+
+/* Diagnostic: what the city's two page lists actually contain. */
+void JerPedPageListsReport(int city)
+{
+	int i;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return;
+
+	CarImportPageListsForCity(city);
+
+	printInfo("ped import: %s permanent pages:", LevelNames[city]);
+	for (i = 0; i < gCarImportPerms[city].count; i++)
+		printInfo(" %d/%d", gCarImportPerms[city].set[i], gCarImportPerms[city].bytes[i]);
+
+	printInfo("\nped import: %s special/pedestrian pages:", LevelNames[city]);
+	for (i = 0; i < gCarImportSpecs[city].count; i++)
+		printInfo(" %d/%d", gCarImportSpecs[city].set[i], gCarImportSpecs[city].bytes[i]);
+
+	printInfo("\n");
+}
+
+/* One entry per lower-pool page a ped page holds, so the table can never be shorter than
+ * the pool: a page past the 16th used to be allocated but never recorded (or released). */
+#define JER_PED_AREA_MAX	JER_POOL_PAGES
+static int sJerPedAreaPool[JER_PED_AREA_MAX];
+static int sJerPedAreaClutY[JER_PED_AREA_MAX];
+static int sJerPedAreaClutRows[JER_PED_AREA_MAX];
+static int sJerPedAreaDst[JER_PED_AREA_MAX];	/* D3: the set number the page took, given back on release */
+static int sJerPedAreaPoolCount;
+
+/* Upload one streamed AREA page into the lower-half pool. The page data is the
+ * spool's 17-sector unit: an int CLUT count, the CLUT rows, then the compressed
+ * 64x256 image. LoadTPageAndCluts writes texture_pages/dstSet and its CLUTs. */
+int JerPedUploadAreaPage(int set, int dstSet, char* buf)
+{
+	RECT16 tpage, clut;
+	int pool, npal, rows, used, startY;
+
+	if (buf == NULL)
+		return 0;
+
+	npal = *(int*)buf;
+
+	if (npal <= 0 || npal > 32)
+		return 0;
+
+	rows = CarClutRowsFor(npal);
+
+	if (JerLowerPoolClutRowsFree() < rows)
+		return 0;
+
+	/* the compressed image must end inside the 17-sector unit models.c read - checked
+	 * (dry run of the bounded decomp) before a page is taken */
+	if (decomp_asm_n((char*)_other_buffer, buf + 4 + npal * 32, 17 * CDSECTOR_SIZE - 4 - npal * 32) == NULL)
+		return 0;
+
+	pool = JerLowerPoolPageAlloc();
+
+	if (pool < 0)
+		return 0;
+
+	JerLowerPoolPageRect(pool, &tpage);
+	JerLowerPoolClutCursor(&clut);
+	startY = clut.y;
+
+	sCarPageUploading = 1;
+
+	if (!LoadTPageAndCluts(&tpage, &clut, dstSet, buf))
+	{
+		sCarPageUploading = 0;
+		JerLowerPoolPageFree(pool);
+		return 0;
+	}
+
+	sCarPageUploading = 0;
+	used = CarClutRowsUsed(960, startY, clut.x, clut.y);
+	JerLowerPoolClutAdvance((used > rows) ? used : rows);
+
+	if (sJerPedAreaPoolCount < JER_PED_AREA_MAX)
+	{
+		sJerPedAreaPool[sJerPedAreaPoolCount] = pool;
+		sJerPedAreaClutY[sJerPedAreaPoolCount] = startY;
+		sJerPedAreaClutRows[sJerPedAreaPoolCount] = (used > rows) ? used : rows;
+		sJerPedAreaDst[sJerPedAreaPoolCount] = dstSet;
+		sJerPedAreaPoolCount++;
+	}
+
+	printInfo("ped import: set %d -> page set %d from an area page (%d CLUTs, %d row(s))\n",
+		set, dstSet, npal, rows);
+
+	return 1;
+}
+
+int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned char* cluts, int clutLen, const unsigned char* image, int imageLen, int compressed)
+{
+	RECT16 tpage, clut;
+	int pool, rows, i;
+	unsigned int* clutptr;
+
+	if (dstSet < 0 || dstSet >= 128)
+		return 0;
+
+	/* A permanent page from the archive: the engine's own LoadTPageAndCluts
+	 * layout (ncluts, CLUT rows, compressed 64x256 image). */
+	if (compressed)
+	{
+		int npal, used, startY;
+
+		if (image == NULL || imageLen < 4)
+			return 0;
+
+		npal = *(int*)image;
+
+		/* texture_cluts[] holds 32 palettes per set; LoadTPageAndCluts packs
+		 * four palettes per 64-wide row. */
+		if (npal <= 0 || npal > 32)
+		{
+			printInfo("ped import: baked set %d claims %d CLUTs (max 32)\n", set, npal);
+			return 0;
+		}
+
+		rows = CarClutRowsFor(npal);
+
+		if (JerLowerPoolClutRowsFree() < rows)
+		{
+			printInfo("ped import: baked set %d needs %d CLUT rows, none free\n", set, rows);
+			return 0;
+		}
+
+		/* D2: the CLUTs and the compressed image must end inside imageLen - checked
+		 * (dry run of the bounded decomp) before a page or CLUT row is taken. */
+		if (imageLen < 4 + npal * 32 ||
+			decomp_asm_n((char*)_other_buffer, (char*)image + 4 + npal * 32, imageLen - 4 - npal * 32) == NULL)
+		{
+			printInfo("ped import: baked set %d page is %d bytes, short for %d CLUTs and its image\n", set, imageLen, npal);
+			return 0;
+		}
+
+		pool = JerLowerPoolPageAlloc();
+
+		if (pool < 0)
+		{
+			printInfo("ped import: baked set %d has no lower-half page\n", set);
+			return 0;
+		}
+
+		JerLowerPoolPageRect(pool, &tpage);
+		JerLowerPoolClutCursor(&clut);
+		startY = clut.y;
+
+		tpage.w = 64;
+		tpage.h = 256;
+		clut.w = 16;
+		clut.h = 1;
+
+		sCarPageUploading = 1;
+		if (!LoadTPageAndClutsN(&tpage, &clut, dstSet, (char*)image, imageLen))
+		{
+			sCarPageUploading = 0;
+			JerLowerPoolPageFree(pool);
+			return 0;
+		}
+		sCarPageUploading = 0;
+
+		used = CarClutRowsUsed(960, startY, clut.x, clut.y);
+		if (used > rows)
+			rows = used;
+
+		JerLowerPoolClutAdvance(rows);
+
+		if (sJerPedAreaPoolCount < JER_PED_AREA_MAX)
+		{
+			sJerPedAreaPool[sJerPedAreaPoolCount] = pool;
+			sJerPedAreaClutY[sJerPedAreaPoolCount] = startY;
+			sJerPedAreaClutRows[sJerPedAreaPoolCount] = rows;
+			sJerPedAreaDst[sJerPedAreaPoolCount] = dstSet;
+			sJerPedAreaPoolCount++;
+		}
+
+		printInfo("ped import: baked set %d -> page set %d (%d CLUTs compressed, page %d,%d)\n",
+			set, dstSet, npal, tpage.x, tpage.y);
+
+		return 1;
+	}
+
+	if (cluts == NULL || image == NULL || npalettes <= 0 || npalettes > 32)
+		return 0;
+
+	rows = CarClutRowsFor(npalettes);
+
+	/* D2: LoadImage below reads a whole 64x256 page and `rows` 64-wide CLUT rows. */
+	if (imageLen < 64 * 256 * 2 || clutLen < rows * 64 * 2)
+	{
+		printInfo("ped import: baked set %d raw page is %d/%d bytes (image/CLUT), needs %d/%d\n",
+			set, imageLen, clutLen, 64 * 256 * 2, rows * 64 * 2);
+		return 0;
+	}
+
+	if (JerLowerPoolClutRowsFree() < rows)
+	{
+		printInfo("ped import: baked set %d needs %d CLUT rows, none free\n", set, rows);
+		return 0;
+	}
+
+	pool = JerLowerPoolPageAlloc();
+
+	if (pool < 0)
+	{
+		printInfo("ped import: baked set %d has no lower-half page\n", set);
+		return 0;
+	}
+
+	JerLowerPoolPageRect(pool, &tpage);
+	JerLowerPoolClutCursor(&clut);
+
+	tpage.w = 64;
+	tpage.h = 256;
+	clut.w = 64;
+	clut.h = rows;
+
+	sCarPageUploading = 1;
+	LoadImage(&tpage, (u_long*)image);
+	LoadImage(&clut, (u_long*)cluts);
+	sCarPageUploading = 0;
+
+	texture_pages[dstSet] = getTPage(0, 0, tpage.x, tpage.y);
+
+	clutptr = (unsigned int*)texture_cluts[dstSet];
+
+	for (i = 0; i < npalettes; i += 4)
+	{
+		clutptr[0] = getClut(clut.x + 16, clut.y) << 16 | getClut(clut.x, clut.y);
+		clutptr[1] = getClut(clut.x + 48, clut.y) << 16 | getClut(clut.x + 32, clut.y);
+		clutptr += 2;
+		clut.y++;
+	}
+
+	JerLowerPoolClutAdvance(rows);
+
+	if (sJerPedAreaPoolCount < JER_PED_AREA_MAX)
+	{
+		sJerPedAreaPool[sJerPedAreaPoolCount] = pool;
+		sJerPedAreaClutY[sJerPedAreaPoolCount] = clut.y - rows;
+		sJerPedAreaClutRows[sJerPedAreaPoolCount] = rows;
+		sJerPedAreaDst[sJerPedAreaPoolCount] = dstSet;
+		sJerPedAreaPoolCount++;
+	}
+
+	printInfo("ped import: baked set %d -> page set %d (%d CLUTs, %d row(s), page %d,%d)\n",
+		set, dstSet, npalettes, rows, tpage.x, tpage.y);
+
+	return 1;
+}
+
+/* D3: give back the set number a released ped page held for `city`, as JerReleaseCarSlot
+ * does for cars - unless a pin still draws from it. A re-indexed number also drops its
+ * remap entry and reservation. */
+static void JerPedIndexGiveBack(int idx, int city)
+{
+	int k, r;
+
+	if (idx < 0 || idx >= 128 || city < 0 || sIndexCity[idx] != city + 1)
+		return;
+
+	for (k = 0; k < sPinCount; k++)
+	{
+		if (sPinIndex[k] == idx)
+			return;
+	}
+
+	for (r = 0; r < sRemapCount; r++)
+	{
+		if (sRemapTo[r] != idx || sRemapCity[r] != city)
+			continue;
+
+		for (k = 0; k < sReservedCount; k++)
+		{
+			if (sReservedSet[k] != idx)
+				continue;
+
+			for (; k < sReservedCount - 1; k++)
+				sReservedSet[k] = sReservedSet[k + 1];
+
+			sReservedCount--;
+			break;
+		}
+
+		for (k = r; k < sRemapCount - 1; k++)
+		{
+			sRemapFrom[k] = sRemapFrom[k + 1];
+			sRemapTo[k] = sRemapTo[k + 1];
+			sRemapCity[k] = sRemapCity[k + 1];
+		}
+
+		sRemapCount--;
+		break;
+	}
+
+	sIndexCity[idx] = 0;
+}
+
+void JerPedReleasePins(void)
+{
+	int i;
+
+	for (i = sJerPedAreaPoolCount - 1; i >= 0; i--)
+	{
+		JerLowerPoolPageFree(sJerPedAreaPool[i]);
+
+		if (sJerPedAreaClutRows[i] > 0)
+			CarClutFreeGive(&sPinClutFree, sJerPedAreaClutY[i], sJerPedAreaClutRows[i]);
+
+		{
+			int dst = sJerPedAreaDst[i];
+
+			if (dst >= 0 && dst < 128)
+				JerPedIndexGiveBack(dst, sIndexCity[dst] - 1);
+		}
+	}
+
+	sJerPedAreaPoolCount = 0;
+
+	for (i = sPinCount - 1; i >= 0; i--)
+	{
+		if (!CarPinOwnersHas(sPinOwners[i], JER_PED_PIN_OWNER))
+			continue;
+
+		sPinOwners[i] &= ~CarPinOwnerBit(JER_PED_PIN_OWNER);
+
+		if (sPinOwners[i] != 0)
+			continue;
+
+		if (sPinPool[i] >= 0)
+			JerLowerPoolPageFree(sPinPool[i]);
+
+		if (sPinClutY[i] >= 0 && sPinClutRows[i] > 0)
+			CarClutFreeGive(&sPinClutFree, sPinClutY[i], sPinClutRows[i]);
+
+		{
+			int idx = sPinIndex[i];
+			int city = sPinCity[i];
+
+			CarPinRemoveAt(i);
+			CarPinIndexFreed(idx);	/* D3 */
+			JerPedIndexGiveBack(idx, city);
+		}
+	}
+
+	for (i = sPinDroppedKept - 1; i >= 0; i--)
+	{
+		if (sPinDroppedOwners[i] & CarPinOwnerBit(JER_PED_PIN_OWNER))
+		{
+			sPinDroppedOwners[i] &= ~CarPinOwnerBit(JER_PED_PIN_OWNER);
+
+			if (sPinDroppedOwners[i] == 0)
+			{
+				int n = sPinDroppedKept;
+
+				CarPinArrayRemove(sPinDroppedSet, n, i);
+				CarPinArrayRemove(sPinDroppedCity, n, i);
+				CarPinArrayRemove(sPinDroppedOwners, n, i);
+				sPinDroppedKept = n - 1;
+			}
+		}
+	}
+
+	sJerPedPinsRecorded = 0;
+	sJerPedPinFailed = 0;
 }
 
 void CarImportDumpState(void)
@@ -3171,8 +3788,17 @@ void CarImportDumpState(void)
 
 	for (i = 0; i < sRemapCount; i++)
 	{
+		int k = sRemapTo[i] - 100;
+
+		// tpagepos has 20 entries; re-indexes run to 127
+		if (k < 0 || k >= (int)(sizeof(tpagepos) / sizeof(tpagepos[0])))
+		{
+			printInfo("cross-city:   imported index %d has no slot rect\n", sRemapTo[i]);
+			continue;
+		}
+
 		printInfo("cross-city:   imported index %d sits at slot rect (%d,%d) - shared with slot %d\n",
-			sRemapTo[i], tpagepos[sRemapTo[i] - 100].x, tpagepos[sRemapTo[i] - 100].y, sRemapTo[i] - 100);
+			sRemapTo[i], tpagepos[k].x, tpagepos[k].y, k);
 	}
 
 	// JERICHO: the per-slot set -> row -> page map, at exit. This is the gate's audit:
@@ -3647,6 +4273,7 @@ static void CarPinRemoveAt(int i)
 	CarPinArrayRemove(sPinPreferred, n, i);
 	CarPinArrayRemove(sPinClutY, n, i);
 	CarPinArrayRemove(sPinClutRows, n, i);
+	CarPinArrayRemove(sPinPoolOnly, n, i);
 
 	sPinCount = n - 1;
 }
@@ -3666,10 +4293,11 @@ static int CarPinCivRow(int i)
 	return (row >= CIV_CLUT_IMPORT_ROW && row < CIV_CLUT_ROWS) ? row : -1;
 }
 
-// JERICHO: does an imported slot OTHER than `except` still name source set `set` - in the
-// sets its polys name, or as one of its special body's two pages? Its polys baked the set's
-// index, so the remap/reservation must outlive the slot being released.
-static int CarSetNamedByOtherImport(int set, int except)
+// JERICHO: does an imported slot OTHER than `except` still name source set `set` of `city` -
+// in the sets its polys name, or as one of its special body's two pages? Its polys baked the
+// set's index, so the remap/reservation must outlive the slot being released. (D3: another
+// city's slot naming the same number baked a DIFFERENT index, so it does not count.)
+static int CarSetNamedByOtherImport(int set, int city, int except)
 {
 	int s, k;
 
@@ -3682,7 +4310,7 @@ static int CarSetNamedByOtherImport(int set, int except)
 
 		src = GetCarModelSourceCity(s);
 
-		if (src < 0)
+		if (src < 0 || src != city)
 			continue;
 
 		for (k = 0; k < sModelSetCount[s]; k++)
@@ -3706,6 +4334,56 @@ static int CarSetNamedByOtherImport(int set, int except)
 	}
 
 	return 0;
+}
+
+// JERICHO (D3): pin(s) at texture_pages[idx] were just given back. Car draw is indirect
+// (CAR_TPAGE_OF reads texture_pages[] at draw time), so the entry must not keep naming the
+// freed pool page or rectangle:
+//  - no pin left on the index: point it at the checker fallback, the same dummy InitTexture
+//    gives an index nothing filled;
+//  - a pin still shares the index (only when the free index window ran out): the entry may
+//    hold the freed pin's page (last writer), so make the survivor upload again - its pool
+//    page is given back (CarImportPin takes a page and re-uploads, keeping its CLUT band),
+//    or its world slot is marked not loaded.
+// An index the HOST draws with is left alone: it is not the import's to reset.
+static void CarPinIndexFreed(int idx)
+{
+	int p, j, shared = 0;
+
+	if (idx < 0 || idx >= 128)
+		return;
+
+	for (p = 0; p < sPinCount; p++)
+	{
+		if (sPinIndex[p] != idx)
+			continue;
+
+		shared++;
+
+		if (sPinPool[p] >= 0)
+		{
+			JerLowerPoolPageFree(sPinPool[p]);
+			sPinPool[p] = -1;
+		}
+		else if (sPinTexSlot[p] >= 0)
+		{
+			tpageloaded[idx] = 0;
+		}
+	}
+
+	if (shared > 0)
+	{
+		printInfo("cross-city: index %d was shared - %d remaining pin(s) re-upload their page\n", idx, shared);
+		return;
+	}
+
+	if (HostUsesTPage(idx))
+		return;
+
+	texture_pages[idx] = (sJerCheckerTpage != 0) ? sJerCheckerTpage : GetTPage(0, 0, 960, 0);
+
+	for (j = 0; j < 32; j++)
+		texture_cluts[idx][j] = (sJerCheckerClut != 0) ? sJerCheckerClut : GetClut(960, 16);
 }
 
 // JERICHO cross-city UNLOAD, for ONE slot: give back what ONLY that slot holds, so it can be
@@ -3733,10 +4411,14 @@ static int CarSetNamedByOtherImport(int set, int except)
 int JerReleaseCarSlot(int slot)
 {
 	int sets[CAR_PIN_MAX + CAR_DROP_MAX];
+	int setCities[CAR_PIN_MAX + CAR_DROP_MAX];	// D3: the city of each - a set number is per city
+	int idxs[CAR_PIN_MAX];
 	int rows[CAR_PIN_MAX];
 	int freed[CAR_PIN_MAX];
-	int i, k, f, nfreed, nsets = 0, nrows = 0, released = 0;
+	int i, k, f, nfreed, nsets = 0, nrows = 0, nidxs = 0, released = 0;
 	int shared = 0, pages = 0, bandRows = 0, indices = 0;
+	int restoreSlots[TPAGE_SLOTS];
+	int nrestore = 0;
 
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return 0;
@@ -3756,10 +4438,17 @@ int JerReleaseCarSlot(int slot)
 			pages++;
 		}
 
-		/* a world-slot pin (pool was full): hand the rectangle back to the world now
-		 * rather than when its claim goes stale */
-		if (sPinTexSlot[i] >= 0 && sPinTexSlot[i] < 19 && tpageslots[sPinTexSlot[i]] == sPinIndex[i])
+		/* a world-slot pin (pool was full): drop the claim now. The pixels and the
+		 * slot id stay wrong until WorldRestoreSlotsAfterRelease re-reads the level
+		 * page (resident) or asks the spool again (streamed). Clearing the claim
+		 * alone left the car's texture on the building. */
+		if (sPinTexSlot[i] >= 0 && sPinTexSlot[i] < TPAGE_SLOTS && tpageslots[sPinTexSlot[i]] == sPinIndex[i])
+		{
 			sCarPageClaimFrame[sPinTexSlot[i]] = 0;
+
+			if (nrestore < TPAGE_SLOTS)
+				restoreSlots[nrestore++] = sPinTexSlot[i];
+		}
 
 		if (sPinClutY[i] >= 0 && sPinClutRows[i] > 0)
 		{
@@ -3777,11 +4466,21 @@ int JerReleaseCarSlot(int slot)
 		}
 
 		if (nsets < CAR_PIN_MAX + CAR_DROP_MAX)
+		{
+			setCities[nsets] = sPinCity[i];
 			sets[nsets++] = sPinSet[i];
+		}
+
+		if (nidxs < CAR_PIN_MAX)
+			idxs[nidxs++] = sPinIndex[i];
 
 		released++;
 		CarPinRemoveAt(i);
 	}
+
+	/* D3: the freed pins' indices must not keep naming the pages just given back */
+	for (f = 0; f < nidxs; f++)
+		CarPinIndexFreed(idxs[f]);
 
 	/* ...and the sets it had DROPPED (table full): same rule */
 	nfreed = CarPinDropOwner(sPinDroppedOwners, sPinDroppedKept, slot, freed, CAR_DROP_MAX, NULL);
@@ -3793,7 +4492,10 @@ int JerReleaseCarSlot(int slot)
 		i = freed[f];
 
 		if (nsets < CAR_PIN_MAX + CAR_DROP_MAX)
+		{
+			setCities[nsets] = sPinDroppedCity[i];
 			sets[nsets++] = sPinDroppedSet[i];
+		}
 
 		CarPinArrayRemove(sPinDroppedSet, n, i);
 		CarPinArrayRemove(sPinDroppedCity, n, i);
@@ -3803,27 +4505,30 @@ int JerReleaseCarSlot(int slot)
 
 	/* 2. the baked index each of those sets was given (and its reservation, which exists
 	 * precisely so the next import does not take the same index) - only once nothing left
-	 * uses it: no remaining pin of ANY city (the remap is keyed by set number alone), no
-	 * remaining dropped set, no other imported model naming it */
+	 * uses it: no remaining pin of THAT city (the remap is keyed by (city, set) - D3), no
+	 * remaining dropped set, no other imported model of that city naming it */
 	for (i = 0; i < nsets; i++)
 	{
-		int r, other = CarSetNamedByOtherImport(sets[i], slot);
+		int r, found = 0, other = CarSetNamedByOtherImport(sets[i], setCities[i], slot);
 
 		for (k = 0; k < sPinDroppedKept && !other; k++)
 		{
-			if (sPinDroppedSet[k] == sets[i])
+			if (sPinDroppedSet[k] == sets[i] && sPinDroppedCity[k] == setCities[i])
 				other = 1;
 		}
 
-		if (!CarRemapReleasable(sets[i], sPinSet, sPinCount, other))
+		if (!CarRemapReleasable(sets[i], setCities[i], sPinSet, sPinCity, sPinCount, other))
 			continue;
 
 		for (r = 0; r < sRemapCount; r++)
 		{
 			int t;
 
-			if (sRemapFrom[r] != sets[i])
+			if (sRemapFrom[r] != sets[i] || sRemapCity[r] != setCities[i])
 				continue;
+
+			found = 1;
+			sIndexCity[sRemapTo[r]] = 0;
 
 			/* drop the reservation this set's index holds */
 			for (t = 0; t < sReservedCount; t++)
@@ -3842,12 +4547,27 @@ int JerReleaseCarSlot(int slot)
 			{
 				sRemapFrom[k] = sRemapFrom[k + 1];
 				sRemapTo[k] = sRemapTo[k + 1];
+				sRemapCity[k] = sRemapCity[k + 1];
 			}
 
 			sRemapCount--;
 			indices++;
 			released++;
 			break;
+		}
+
+		/* D3: a set the city kept its own number for - free that number for another city,
+		 * once no pin is left on it */
+		if (!found && sets[i] >= 0 && sets[i] < 128 && sIndexCity[sets[i]] == setCities[i] + 1)
+		{
+			for (k = 0; k < sPinCount; k++)
+			{
+				if (sPinIndex[k] == sets[i])
+					break;
+			}
+
+			if (k == sPinCount)
+				sIndexCity[sets[i]] = 0;
 		}
 	}
 
@@ -3908,6 +4628,9 @@ int JerReleaseCarSlot(int slot)
 		printInfo("cross-city: released slot %d - %d pool page(s), %d CLUT row(s), %d baked index(es) given back; %d page(s) kept (another car still names them)\n",
 			slot, pages, bandRows, indices, shared);
 
+	if (nrestore > 0)
+		WorldRestoreSlotsAfterRelease(restoreSlots, nrestore);
+
 	return released;
 }
 
@@ -3960,6 +4683,8 @@ void CarImportForgetCity(int city)
 void JerReleaseAllCrossCity(void)
 {
 	int slot, city;
+	JerPedImportReset();
+
 	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
 	{
 		if (sCarSlotRes[slot].used)
@@ -3993,6 +4718,9 @@ void CarImportResetState(void)
 	memset(sCarSlotRes, 0, sizeof(sCarSlotRes));
 	sRemapCount = 0;
 	sReservedCount = 0;
+
+	memset(sIndexCity, 0, sizeof(sIndexCity));	/* D3: no import index is held by any city */
+
 	sPinEvictions = 0;
 	sPinUnusedTakes = 0;
 	sPinReloads = 0;
@@ -4344,7 +5072,7 @@ void LoadImportedTPages(void)
 		// called it - so the index the polys were baked with is the index filled below.
 		// Making the choice twice is what left a special body's third set baked as the
 		// host's index while the pin filled a different one.
-		dstSet = CarImportPinDstSet(set);
+		dstSet = CarImportPinDstSet(set, sc);
 
 		if (dstSet != set)
 		{
@@ -4431,7 +5159,7 @@ void LoadImportedTPages(void)
 		/* Reserve the wheel page's last CLUT row in the JERICHO half before the
 		 * page buffer is released. A later page upload can take the page's own
 		 * CLUT, but not this civ_clut row. */
-		if (npalettes > 0 && npalettes <= 32 && CarImportIsWheelSet(sc, set))
+		if (CarPageEntryFits(size, npalettes) && CarImportIsWheelSet(sc, set))
 		{
 			int tableRow = CarImportWheelPaletteRow(sc, npalettes);
 			int hubRow = CarImportDeriveWheelPaletteRow(sc, set, (const unsigned char*)buf, size, 1);
@@ -4472,9 +5200,9 @@ void LoadImportedTPages(void)
 
 		free(buf);
 
-		if (npalettes <= 0 || npalettes > 32)
+		if (!CarPageEntryFits(size, npalettes))
 		{
-			printInfo("cross-city: %s set %d looks corrupt (%d clut rows) - skipped\n", LevelNames[sc], set, npalettes);
+			printInfo("cross-city: %s set %d looks corrupt (%d clut rows in %d bytes) - skipped\n", LevelNames[sc], set, npalettes, size);
 			continue;
 		}
 
@@ -4720,6 +5448,16 @@ void LoadPermanentTPages(int *sector)
 	// init tpage and cluts
 	MaxSpecCluts = 0;
 
+	/* JERICHO: remember where these pages live in the level file before *sector
+	 * advances. A reload reads the same span back. Not ready until the snapshot
+	 * at the bottom of this function has the slot ids. */
+	sWorldReloadReady = 0;
+	sWorldDirtyLogged = 0;
+	sWorldSlotTaken = 0;
+	sWorldStreamPending = 0;
+	sWorldPageSector = (sector != NULL) ? *sector : -1;
+	sWorldOrigCount = 0;
+
 	// JERICHO-HOOK: read the imported city's page lists (no-op with no import) so
 	// its car sets can be registered below.
 	ParseImportedTextureInfo();
@@ -4758,6 +5496,7 @@ void LoadPermanentTPages(int *sector)
 	fontclutpos = clutpos;
 	
 	IncrementClutNum(&clutpos);
+	sWorldClutBeforePal = clutpos;
 	ProcessPalletLump(palette_lump, palette_lump_size);
 	JERICHO_PAL_DIAG("host palettes");
 	ProcessImportedPalette();	// JERICHO-HOOK: a cross-city import's own palettes
@@ -4765,6 +5504,12 @@ void LoadPermanentTPages(int *sector)
 
 	load_civ_palettes(&clutpos);
 	JERICHO_PAL_DIAG("load_civ_palettes");
+
+	/* The permanent-page walk starts from these cursors. A reload replays it
+	 * with copies, so the global cursors (and every CLUT allocated after this)
+	 * stay where the rest of the session left them. */
+	sWorldClutAtPages = clutpos;
+	sWorldTpageAtPages = tpage;
 
 	tpagebuffer = (char*)mallocptr;
 	nsectors = 0;
@@ -4815,6 +5560,8 @@ void LoadPermanentTPages(int *sector)
 
 	carTpages[GameLevel][6] = page1;
 	carTpages[GameLevel][7] = page2;
+	sWorldSpecPage1 = page1;
+	sWorldSpecPage2 = page2;
 
 	if (nspecpages != 0)
 	{
@@ -4946,6 +5693,443 @@ void LoadPermanentTPages(int *sector)
 	// table above are committed a little later in a level's life (sky, font, CD icon), so
 	// they are counted here from their constants rather than waited for.
 	VramAccountReport();
+
+	/* JERICHO: the resident slots this load actually filled. Streamed slots
+	 * (slotsused..18) change as the player drives, so they are not recorded;
+	 * a reload asks the spool for the current area instead. */
+	sWorldOrigCount = slotsused;
+
+	if (sWorldOrigCount > TPAGE_SLOTS)
+		sWorldOrigCount = TPAGE_SLOTS;
+
+	for (i = 0; i < sWorldOrigCount; i++)
+		sWorldOrigSet[i] = tpageslots[i];
+
+	sWorldReloadReady = (permlist != NULL && sWorldPageSector >= 0 && (nperms > 0 || nspecpages > 0)) ? 1 : 0;
+}
+
+/* The same sector stride LoadPermanentTPages uses, so a reload walks the same bytes. */
+static int WorldPageStride(int bytes)
+{
+	if (bytes < 0)
+		return 0;
+
+	return (bytes + (CDSECTOR_SIZE - 1)) & -CDSECTOR_SIZE;
+}
+
+static int WorldPageBlockBytes(void)
+{
+	int i, n = 0;
+
+	if (permlist == NULL || nperms < 0)
+		return 0;
+
+	for (i = 0; i < nperms; i++)
+		n += WorldPageStride(permlist[i].y);
+
+	if (speclist != NULL && nspecpages > 0)
+	{
+		for (i = 0; i < nspecpages; i++)
+			n += WorldPageStride(speclist[i].y);
+	}
+
+	return n;
+}
+
+static char* WorldReadPageBlock(int* outBytes)
+{
+	int bytes, sectors;
+	char* buf;
+
+	*outBytes = 0;
+	bytes = WorldPageBlockBytes();
+
+	if (bytes <= 0 || sWorldPageSector < 0)
+		return NULL;
+
+	buf = (char*)malloc((size_t)bytes);
+
+	if (buf == NULL)
+		return NULL;
+
+	sectors = bytes / CDSECTOR_SIZE;
+
+	if (sectors <= 0)
+	{
+		free(buf);
+		return NULL;
+	}
+
+	loadsectors(buf, sWorldPageSector, sectors);
+	*outBytes = bytes;
+	return buf;
+}
+
+/* Advance the local cursors the way LoadTPageAndCluts would have, without writing.
+ * Used when a rectangle is still an import's and must not be overwritten. */
+static void WorldSkipPageAdvance(RECT16* page, RECT16* clut, char* entry)
+{
+	int npal = *(int*)entry;
+	int i;
+
+	if (npal < 0)
+		npal = 0;
+
+	if (npal > 32)
+		npal = 32;
+
+	for (i = 0; i < npal; i++)
+		IncrementClutNum(clut);
+
+	IncrementTPageNum(page);
+}
+
+static int WorldUploadResidentEntry(RECT16* page, RECT16* clut, int slot, int set, char* entry)
+{
+	if (slot < 0 || slot >= TPAGE_SLOTS)
+	{
+		WorldSkipPageAdvance(page, clut, entry);
+		return 0;
+	}
+
+	if (slot < sWorldOrigCount && (u_char)set != sWorldOrigSet[slot])
+	{
+		printInfo("JERICHO-VRAM: slot %d file set %d, level load recorded %d\n",
+			slot, set, sWorldOrigSet[slot]);
+	}
+
+	if (CarPageRectOwned(page->x, page->y))
+	{
+		printInfo("JERICHO-VRAM: slot %d still held by an imported page - set %d left in place\n",
+			slot, set);
+		WorldSkipPageAdvance(page, clut, entry);
+		return 0;
+	}
+
+	update_slotinfo(set, slot, page);
+
+	if (!LoadTPageAndCluts(page, clut, set, entry))
+	{
+		/* Returned before writing: the cursors did not move. Keep the walk aligned. */
+		printInfo("JERICHO-VRAM: set %d did not upload into slot %d\n", set, slot);
+		WorldSkipPageAdvance(page, clut, entry);
+		return 0;
+	}
+
+	return 1;
+}
+
+/* Replay the permanent pages and the special-car pages LoadPermanentTPages
+ * uploaded, into the same rectangles and CLUT rows. Local cursor copies: the
+ * live clutpos is whatever later allocations have walked to. */
+static int WorldReplayPages(char* buf, int bytes)
+{
+	char* p = buf;
+	char* end = buf + bytes;
+	RECT16 page = sWorldTpageAtPages;
+	RECT16 clut = sWorldClutAtPages;
+	int i, uploaded = 0, slot = 0;
+
+	page.w = 64;
+	page.h = 256;
+	clut.w = 16;
+	clut.h = 1;
+
+	for (i = 0; i < nperms && permlist != NULL; i++)
+	{
+		int stride = WorldPageStride(permlist[i].y);
+		int set = permlist[i].x;
+
+		if (stride <= 0 || p + stride > end)
+		{
+			printInfo("JERICHO-VRAM: permanent page %d runs past the texture block - stopped\n", i);
+			return uploaded;
+		}
+
+		if (WorldUploadResidentEntry(&page, &clut, slot, set, p))
+			uploaded++;
+
+		p += stride;
+		slot++;
+	}
+
+	if (speclist != NULL)
+	{
+		for (i = 0; i < nspecpages; i++)
+		{
+			int stride = WorldPageStride(speclist[i].y);
+			int set = speclist[i].x;
+
+			if (stride <= 0 || p + stride > end)
+			{
+				printInfo("JERICHO-VRAM: special page %d runs past the texture block - stopped\n", i);
+				return uploaded;
+			}
+
+			if (set == sWorldSpecPage1 || set == sWorldSpecPage2)
+			{
+				if (WorldUploadResidentEntry(&page, &clut, slot, set, p))
+					uploaded++;
+
+				slot++;
+			}
+
+			p += stride;
+		}
+	}
+
+	return uploaded;
+}
+
+static void WorldReplayHostPalettes(void)
+{
+	RECT16 live;
+
+	if (palette_lump == NULL || palette_lump_size <= 0)
+		return;
+
+	/* Same start the level load used, then put the cursor back. The walk writes
+	 * the host's civ_clut rows and the CLUT pixels those ids name. It does not
+	 * touch a guest city's table: that lives in the lower half pool. */
+	live = clutpos;
+	clutpos = sWorldClutBeforePal;
+	ProcessPalletLump(palette_lump, palette_lump_size);
+	clutpos = live;
+}
+
+static void WorldReapplyTims(void)
+{
+#ifndef PSX
+	extern int gContentOverride;
+	int s;
+
+	if (!gContentOverride)
+		return;
+
+	for (s = 0; s < sWorldOrigCount && s < TPAGE_SLOTS; s++)
+		LoadTPageFromTIMs((int)sWorldOrigSet[s]);
+#else
+	(void)0;
+#endif
+}
+
+static int WorldResidentMismatches(void)
+{
+	int i, n = 0;
+
+	if (!sWorldReloadReady)
+		return 0;
+
+	for (i = 0; i < sWorldOrigCount && i < TPAGE_SLOTS; i++)
+	{
+		if (tpageslots[i] != sWorldOrigSet[i])
+			n++;
+	}
+
+	return n;
+}
+
+static void WorldVramNoteIfDirty(void)
+{
+	int n;
+
+	if (sWorldReloading || !sWorldReloadReady)
+		return;
+
+	n = WorldResidentMismatches();
+
+	if (n <= 0)
+	{
+		sWorldDirtyLogged = 0;
+		return;
+	}
+
+	if (sWorldDirtyLogged)
+		return;
+
+	sWorldDirtyLogged = 1;
+	printInfo("JERICHO-VRAM: world pages no longer match level load (%d resident slot(s), %d world-slot placement(s)). Pause and choose \"Reload world textures\".\n",
+		n, sWorldSlotTaken);
+	jer_console_log("world textures wrong - pause, Reload world textures");
+}
+
+/* Drop import pins that are sitting on a world slot so the level's page can
+ * be written there. Pool pins stay. A detached pin is placed again by
+ * CarImportPin, which asks the lower half pool first. */
+static int WorldDetachSlotPins(void)
+{
+	int i, n = 0;
+
+	for (i = 0; i < sPinCount; i++)
+	{
+		int slot, idx;
+
+		if (!jer_world_reload_detach_pin(sPinPool[i], sPinTexSlot[i]))
+			continue;
+
+		slot = sPinTexSlot[i];
+		idx = sPinIndex[i];
+		sCarPageClaimFrame[slot] = 0;
+		sPinTexSlot[i] = -1;
+
+		if (idx >= 0 && idx < 128)
+			tpageloaded[idx] = 0;
+
+		n++;
+	}
+
+	if (n == 0)
+		return 0;
+
+	for (i = 0; i < sPinCount; i++)
+	{
+		int idx = sPinIndex[i];
+		int p, placed = 0;
+
+		if (idx < 0 || idx >= 128)
+			continue;
+
+		for (p = 0; p < sPinCount; p++)
+		{
+			if (sPinIndex[p] == idx && (sPinPool[p] >= 0 || sPinTexSlot[p] >= 0))
+			{
+				placed = 1;
+				break;
+			}
+		}
+
+		if (placed || HostUsesTPage(idx))
+			continue;
+
+		texture_pages[idx] = (sJerCheckerTpage != 0) ? sJerCheckerTpage : GetTPage(0, 0, 960, 0);
+
+		for (p = 0; p < 32; p++)
+			texture_cluts[idx][p] = (sJerCheckerClut != 0) ? sJerCheckerClut : GetClut(960, 16);
+	}
+
+	return n;
+}
+
+static int WorldQueueStreamed(void)
+{
+	int slot, n = 0;
+
+	if (!sWorldReloadReady || LoadedArea < 0)
+		return 0;
+
+	if (spoolactive || tsetcounter != 0 || tsetpos != 0)
+	{
+		sWorldStreamPending = 1;
+		printInfo("JERICHO-VRAM: streamed world pages will reload when the spool is idle\n");
+		return 0;
+	}
+
+	for (slot = 0; slot < TPAGE_SLOTS; slot++)
+	{
+		int held;
+
+		if (!jer_world_reload_stream_slot(slot, sWorldOrigCount))
+			continue;
+
+		held = tpageslots[slot];
+
+		if (held != 0xFF && held < 128)
+			tpageloaded[held] = 0;
+
+		tpageslots[slot] = 0xFF;
+		n++;
+	}
+
+	sWorldStreamPending = 0;
+	LoadInAreaTSets(LoadedArea);
+	StartSpooling();
+	return n;
+}
+
+static int WorldReplayResidentPages(void)
+{
+	char* buf;
+	int bytes = 0;
+	int pages;
+
+	buf = WorldReadPageBlock(&bytes);
+
+	if (buf == NULL)
+	{
+		printInfo("JERICHO-VRAM: could not re-read the level's texture pages\n");
+		return 0;
+	}
+
+	pages = WorldReplayPages(buf, bytes);
+	free(buf);
+	WorldReapplyTims();
+	return pages;
+}
+
+static void WorldRestoreSlotsAfterRelease(const int* slots, int n)
+{
+	int i, resident = 0, stream = 0;
+
+	if (!sWorldReloadReady || sWorldReloading || slots == NULL || n <= 0)
+		return;
+
+	for (i = 0; i < n; i++)
+	{
+		if (jer_world_reload_resident_slot(slots[i], sWorldOrigCount))
+			resident = 1;
+		else if (jer_world_reload_stream_slot(slots[i], sWorldOrigCount))
+			stream = 1;
+	}
+
+	sWorldReloading = 1;
+
+	if (resident)
+	{
+		int pages = WorldReplayResidentPages();
+
+		printInfo("JERICHO-VRAM: pin release put %d resident page(s) back\n", pages);
+	}
+
+	if (stream)
+		WorldQueueStreamed();
+
+	sWorldReloading = 0;
+
+	if (WorldResidentMismatches() == 0)
+		sWorldDirtyLogged = 0;
+}
+
+int JerReloadWorldVram(void)
+{
+	int pages = 0, detached = 0, streamed = 0, mismatched, taken;
+
+	if (!sWorldReloadReady || permlist == NULL)
+	{
+		printInfo("JERICHO-VRAM: reload skipped - no level texture pages are loaded\n");
+		return 0;
+	}
+
+	if (sWorldReloading)
+		return 0;
+
+	sWorldReloading = 1;
+	mismatched = WorldResidentMismatches();
+	taken = sWorldSlotTaken;
+
+	detached = WorldDetachSlotPins();
+	WorldReplayHostPalettes();
+	pages = WorldReplayResidentPages();
+	streamed = WorldQueueStreamed();
+
+	sWorldSlotTaken = 0;
+	sWorldDirtyLogged = (WorldResidentMismatches() == 0) ? 0 : 1;
+	sWorldReloading = 0;
+
+	printInfo("JERICHO-VRAM: reloaded world assets - %d resident page(s), %d streamed slot(s) queued, %d import pin(s) moved off world slots, %d resident slot(s) had differed (%d world-slot placement(s)). Host palette CLUTs rewritten. Lower-half pool left in place.\n",
+		pages, streamed, detached, mismatched, taken);
+	jer_console_log("world textures reloaded");
+
+	return pages + streamed;
 }
 
 // [D] [T]

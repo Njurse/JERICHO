@@ -4,12 +4,15 @@
 
 #include "jer_npc.h"
 
+#include <string.h>	/* memset (health table) */
+
 #include "driver2.h"
 #include "pedest.h"
 #include "motion_c.h"	/* SetupPedMotionData */
 #include "civ_ai.h"
 #include "dr2roads.h"
 #include "replays.h"	/* MAX_PLACED_PEDS */
+#include "debris.h"		/* Setup_Sparks / Setup_Debris / Setup_Smoke (jer_fx_impact) */
 
 /* A parked ped's state function: it does nothing, so the ped neither walks nor
  * advances its animation. It is installed into BOTH state slots, so whichever
@@ -205,6 +208,11 @@ JerNpc* jer_npc_spawn(int x, int z)
 	/* owned: this ped becomes eligible for the JERICHO ped-pose hooks */
 	jer_npc_own_add(pPed);
 
+	/* every jer NPC starts at full health (a reused pool slot does not
+	 * inherit the previous occupant's) */
+	jer_npc_health_forget(pPed);
+	jer_npc_set_health(pPed, JER_NPC_HEALTH_DEFAULT, JER_NPC_HEALTH_DEFAULT);
+
 	return (JerNpc*)pPed;
 }
 
@@ -215,6 +223,7 @@ void jer_npc_despawn(JerNpc* n)
 	if (pPed != NULL)
 	{
 		jer_npc_own_remove(pPed);
+		jer_npc_health_forget(pPed);
 		DestroyPedestrian(pPed);
 	}
 }
@@ -238,6 +247,209 @@ void jer_npc_set_speed(JerNpc* n, int speed)
 		return;
 
 	pPed->speed = (char)speed;
+}
+
+void jer_npc_set_reverse_anim(JerNpc* n, int on)
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
+
+	if (pPed == NULL)
+		return;
+
+	if (on)
+		pPed->flags |= 4;
+	else
+		pPed->flags &= ~4;
+}
+
+JerNpc* jer_npc_nearest(int x, int y, int z, int radius)
+{
+	LPPEDESTRIAN pPed, best = NULL;
+	int bestD = 0x7fffffff;
+
+	for (pPed = pUsedPeds; pPed != NULL; pPed = pPed->pNext)
+	{
+		int dx, dy, dz, d;
+
+		if (pPed->padId >= 0)
+			continue;	/* a player */
+
+		if (pPed->pedType == TANNER_MODEL && !jer_npc_owned(pPed))
+			continue;	/* an unowned player-model ped */
+
+		dx = pPed->position.vx - x;
+		dy = pPed->position.vy - y;	/* position.vy is already the render (y-down) frame */
+		dz = pPed->position.vz - z;
+
+		if (dx < -radius || dx > radius || dz < -radius || dz > radius ||
+			dy < -2 * radius || dy > 2 * radius)
+			continue;
+
+		d = dx * dx + dz * dz;
+
+		if (d <= radius * radius && d < bestD)
+		{
+			bestD = d;
+			best = pPed;
+		}
+	}
+
+	return (JerNpc*)best;
+}
+
+/* ---------------------------------------------------------------------------
+ * health: see jer_npc.h
+ * ------------------------------------------------------------------------- */
+#define JER_NPC_HEALTH_SLOTS	64
+
+typedef struct JerNpcHealth
+{
+	LPPEDESTRIAN ped;
+	int health;
+	int max;
+} JerNpcHealth;
+
+static JerNpcHealth jer_npc_hp[JER_NPC_HEALTH_SLOTS];
+static int jer_npc_hp_next = 0;
+
+static JerNpcHealth* jer_npc_hp_find(const void* ped, int create)
+{
+	JerNpcHealth* freeSlot = NULL;
+	JerNpcHealth* h;
+	int i;
+
+	if (ped == NULL)
+		return NULL;
+
+	for (i = 0; i < JER_NPC_HEALTH_SLOTS; i++)
+	{
+		h = &jer_npc_hp[i];
+
+		if (h->ped == NULL)
+		{
+			if (freeSlot == NULL)
+				freeSlot = h;
+			continue;
+		}
+
+		if (h->ped == (LPPEDESTRIAN)ped)
+			return h;
+	}
+
+	if (!create)
+		return NULL;
+
+	if (freeSlot == NULL)
+	{
+		/* full: drop entries whose ped the engine has destroyed, then
+		 * fall back to overwriting round-robin */
+		for (i = 0; i < JER_NPC_HEALTH_SLOTS; i++)
+		{
+			h = &jer_npc_hp[i];
+
+			if (h->ped->padId < 0 && !jer_npc_ped_alive(h->ped))
+			{
+				h->ped = NULL;
+				if (freeSlot == NULL)
+					freeSlot = h;
+			}
+		}
+
+		if (freeSlot == NULL)
+		{
+			freeSlot = &jer_npc_hp[jer_npc_hp_next];
+			jer_npc_hp_next = (jer_npc_hp_next + 1) % JER_NPC_HEALTH_SLOTS;
+		}
+	}
+
+	freeSlot->ped = (LPPEDESTRIAN)ped;
+	freeSlot->health = JER_NPC_HEALTH_DEFAULT;
+	freeSlot->max = JER_NPC_HEALTH_DEFAULT;
+
+	return freeSlot;
+}
+
+int jer_npc_health(const void* ped)
+{
+	JerNpcHealth* h = jer_npc_hp_find(ped, 0);
+
+	if (ped == NULL)
+		return 0;
+
+	return h ? h->health : JER_NPC_HEALTH_DEFAULT;
+}
+
+int jer_npc_health_max(const void* ped)
+{
+	JerNpcHealth* h = jer_npc_hp_find(ped, 0);
+
+	if (ped == NULL)
+		return 0;
+
+	return h ? h->max : JER_NPC_HEALTH_DEFAULT;
+}
+
+void jer_npc_set_health(void* ped, int health, int max)
+{
+	JerNpcHealth* h = jer_npc_hp_find(ped, 1);
+
+	if (h == NULL)
+		return;
+
+	if (max > 0)
+		h->max = max;
+
+	if (health < 0)
+		health = 0;
+	if (health > h->max)
+		health = h->max;
+
+	h->health = health;
+}
+
+int jer_npc_damage(void* ped, int amount)
+{
+	JerNpcHealth* h = jer_npc_hp_find(ped, 1);
+
+	if (h == NULL)
+		return 0;
+
+	h->health -= amount;
+
+	if (h->health < 0)
+		h->health = 0;
+	if (h->health > h->max)
+		h->health = h->max;
+
+	return h->health;
+}
+
+void jer_npc_health_forget(const void* ped)
+{
+	JerNpcHealth* h = jer_npc_hp_find(ped, 0);
+
+	if (h != NULL)
+		h->ped = NULL;
+}
+
+void jer_npc_health_reset_all(void)
+{
+	memset(jer_npc_hp, 0, sizeof(jer_npc_hp));
+	jer_npc_hp_next = 0;
+}
+
+int jer_npc_get_pos(const JerNpc* n, int out[3])
+{
+	LPPEDESTRIAN pPed = (LPPEDESTRIAN)n;
+
+	if (pPed == NULL || out == NULL)
+		return 0;
+
+	out[0] = pPed->position.vx;
+	out[1] = pPed->position.vy;
+	out[2] = pPed->position.vz;
+
+	return 1;
 }
 
 int jer_npc_speed(const JerNpc* n)
@@ -408,4 +620,31 @@ void jer_npc_set_orient(JerNpc* n, int pitch, int yaw, int roll)
 	pPed->dir.vx = (short)(pitch & 0xfff);
 	pPed->dir.vy = (short)(yaw & 0xfff);
 	pPed->dir.vz = (short)(roll & 0xfff);
+}
+/* ---------------------------------------------------------------------------
+ * jer_fx_impact (see jer_npc.h): a bullet-style impact built from the same
+ * particle calls a car collision uses (bcollide.c: Setup_Sparks + Setup_Debris)
+ * plus a small black smoke puff as the dark impact mark. */
+void jer_fx_impact(int x, int y, int z, int vx, int vz, int kind)
+{
+	VECTOR pos, vel, drift;
+
+	pos.vx = x;
+	pos.vy = y;
+	pos.vz = z;
+	pos.pad = 0;
+
+	vel.vx = vx;
+	vel.vy = -17;		/* the car-collision spark lift (bcollide.c) */
+	vel.vz = vz;
+	vel.pad = 0;
+
+	drift.vx = drift.vy = drift.vz = drift.pad = 0;
+
+	Setup_Sparks(&pos, &vel, kind == JER_FX_IMPACT_PED ? 3 : 6, 0);
+
+	if (kind != JER_FX_IMPACT_PED)
+		Setup_Debris(&pos, &vel, 4, 0);
+
+	Setup_Smoke(&pos, 20, kind == JER_FX_IMPACT_PED ? 80 : 140, SMOKE_BLACK, 0, &drift, 0);
 }
