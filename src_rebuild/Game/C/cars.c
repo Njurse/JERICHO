@@ -707,25 +707,51 @@ int CivClutRowMaxSlot(int row)
 
 // JERICHO: body palettes per resident slot (cars.h).
 //
-// Driver 2: civilian bodies 0..4 have the six civ_clut columns. Specials do not.
-// A palette past what a HOST row recorded is not caught by CarClutVariant, and after
-// a hot swap those rows can still hold the previous car's columns.
+// Prefer the columns ProcessPalletLump actually filled for the rows this car
+// was built against (sBakeRow* + sCivClutRowMaxSlot). Slot 0 is the page CLUT;
+// lump palette k lands at column k+1, so a car whose lump stopped at palette 3
+// has max column 4 and offers 5 steps (0..4). A stale bake that wrote nothing
+// beyond the page CLUT is 1 — pause and the frontend must not invent five
+// phantom colours on top.
 //
-// Driver 1 car-data cities are not that case. bake.py lays every traffic body on
-// D2_COMPLIANT_MODELS (1, 2, 3, 4, 8, 9, 10, 11, 12). Models 8..12 are still traffic,
-// not Driver 2 specials. The source LUMP_PALLET already stores palette 0..3/0..4 on
-// the texture id the mesh names, and BAKE#9 adds unused page recolours into the same
-// columns (ProcessPalletLump stores palette k at civ slot k+1; slot 0 is the page
-// CLUT). Those cars are drawn from the import bank, which CarClutVariant does clamp,
-// so a column the lump never wrote repeats the last real one instead of a neighbour's.
-// Treating the whole city as one paint is what made the car-select left/right (and
-// Square's defaultPlayerPalette, after InitCar) do nothing on a Miami traffic car.
-int CarModelPaletteCount(int city, int model)
+// When no build census exists yet (frontend before any car is built), fall back
+// to the model-class capacity: Driver 2 civ bodies 0..4 and Driver 1 traffic on
+// the bake's compliant models (1..4, 8..12) can use up to six columns; specials
+// and the D1 gap stay at 1. Callers that already have a loaded car go through
+// CarSlotPaletteCount, which reads the census first.
+static int CarPaletteCountFromLoadedSlot(int slot)
+{
+	int r, i, maxS = -1, noted = 0;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return -1;
+
+	for (r = 0; r < CIV_CLUT_ROWS; r++)
+	{
+		for (i = 0; i < sBakeRowN[r]; i++)
+		{
+			if (sBakeRowSlot[r][i] != slot)
+				continue;
+
+			noted = 1;
+
+			if (sCivClutRowMaxSlot[r] > maxS)
+				maxS = sCivClutRowMaxSlot[r];
+		}
+	}
+
+	if (!noted)
+		return -1;
+
+	/* maxS is the highest column written (0..5). Palette indices are 0..maxS. */
+	return maxS + 1;
+}
+
+static int CarModelPaletteCapacity(int city, int model)
 {
 	if (model < 0 || model >= CAR_MODEL_LUMP_ENTRIES)
 		return 1;
 
-	/* -1 is the level's own city (GetCarModelSourceCity). */
 	if (city < 0)
 		city = GameLevel;
 
@@ -735,8 +761,7 @@ int CarModelPaletteCount(int city, int model)
 	if (city < CITY_D2_COUNT)
 		return (model <= 4) ? 6 : 1;
 
-	/* MIAMI..TRAIN. Model 0 is the cop slot the bake leaves empty. 5..7 are the
-	 * gap no Driver 2 city holds, so the bake never writes them. */
+	/* MIAMI..TRAIN. Model 0 is the empty cop slot. 5..7 are the D1 gap. */
 	if (city < CITY_D2_COUNT + CITY_D1_COUNT)
 	{
 		if ((model >= 1 && model <= 4) || (model >= 8 && model <= 12))
@@ -748,10 +773,48 @@ int CarModelPaletteCount(int city, int model)
 	return (model <= 4) ? 6 : 1;
 }
 
+int CarModelPaletteCount(int city, int model)
+{
+	int slot, n;
+
+	if (model < 0 || model >= CAR_MODEL_LUMP_ENTRIES)
+		return 1;
+
+	if (city < 0)
+		city = GameLevel;
+
+	if (city < 0 || city >= CITY_COUNT)
+		return 1;
+
+	/* A resident slot already built for this (city, model) knows the real columns. */
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		if (residentCarModels[slot] != model)
+			continue;
+
+		if (GetCarModelSourceCity(slot) != city)
+			continue;
+
+		n = CarPaletteCountFromLoadedSlot(slot);
+
+		if (n > 0)
+			return n;
+	}
+
+	return CarModelPaletteCapacity(city, model);
+}
+
 int CarSlotPaletteCount(int slot)
 {
+	int n;
+
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return 1;
+
+	n = CarPaletteCountFromLoadedSlot(slot);
+
+	if (n > 0)
+		return n;
 
 	return CarModelPaletteCount(GetCarModelSourceCity(slot), residentCarModels[slot]);
 }

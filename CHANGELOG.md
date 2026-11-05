@@ -8,6 +8,8 @@ is in [changelog.txt](changelog.txt).
 
 ### Paint
 
+- **Pause and car-select offer only the paints a car actually has.** A Miami traffic body whose bake filled four colour columns no longer shows Palette 5/6 and 6/6 as phantom steps; Square and the pause Palette row both read `CarModelPaletteCount` / `CarSlotPaletteCount`, which prefer the loaded civ_clut census over a hard-coded six.
+
 - **Driver 1 body colours show on the flat panels.** Those cars are drawn as flat textured panels. The paint column was only applied to the gouraud panels, so Palette n/6 and Square left a Miami traffic car on the page colour. Flat panels now use the same column. A bank from before the extra rows were written still repeats the last colour it has until you bake again.
 
 ### Car select
