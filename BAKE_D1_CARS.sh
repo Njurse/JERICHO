@@ -20,8 +20,10 @@
 #    3. Play. carhacks offers the cities from then on.
 #
 #  The baked blobs live INSIDE carhacks: they are its modded level data, not
-#  part of your Driver 1 disc, and the game reads them from there. The folder is
-#  generated, gitignored, and never part of a release.
+#  part of your Driver 1 disc, and the game reads them from there. The LEV/LCF
+#  files are generated and are not part of a release. The car-select portraits
+#  in D1CARS/<CITY>.portraits are authored art and are. This script copies any
+#  that are missing from assets/portraits/<CITY>/portraits/.
 #
 #  Re-run it after updating JERICHO if the game says D1CARS is out of date
 #  (bakes from before v0.10.9 lack the D1 wheels and sounds). Re-running is safe.
@@ -213,6 +215,14 @@ else
 fi
 
 echo "$BAKE_VERSION" > "$OUT/BAKE_VERSION"
+
+# Authored car-select pages. The menu reads D1CARS/<CITY>.portraits/<model>.raw
+# beside the LEV this bake just wrote. A release already ships those pages;
+# copying here restores one a previous run deleted, and does not replace a
+# page that is already there.
+if [ -f "$HERE/d1_portraits.py" ]; then
+	"$PY" "$HERE/d1_portraits.py" install --carhacks "$HERE/JERICHO/MODS/carhacks" --out "$OUT" || fail "could not install car-select portraits"
+fi
 
 echo
 echo "BAKE_D1_CARS: done. $OUT now holds:"

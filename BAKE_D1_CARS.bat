@@ -17,8 +17,10 @@ rem    2. Run this script once. It writes JERICHO\MODS\carhacks\D1CARS\.
 rem    3. Play. carhacks offers the cities from then on.
 rem
 rem  The baked blobs live INSIDE carhacks: they are its modded level data, not
-rem  part of your Driver 1 disc, and the game reads them from there. The folder is
-rem  generated, gitignored, and never part of a release.
+rem  part of your Driver 1 disc, and the game reads them from there. The LEV/LCF
+rem  files are generated and are not part of a release. The car-select portraits
+rem  in D1CARS\<CITY>.portraits are authored art and are. This script copies any
+rem  that are missing from assets\portraits\<CITY>\portraits\.
 rem
 rem  Re-run it after updating JERICHO if the game says D1CARS is out of date
 rem  (bakes from before v0.10.9 lack the D1 wheels and sounds). Re-running is safe.
@@ -183,6 +185,12 @@ if "%BETA%"=="1" (
 )
 
 >"%OUT%\BAKE_VERSION" echo %BAKE_VERSION%
+
+rem Authored car-select pages. The menu reads D1CARS\<CITY>.portraits\<model>.raw
+rem beside the LEV this bake just wrote. Does not replace a page already there.
+if exist "%~dp0d1_portraits.py" (
+	%PY% "%~dp0d1_portraits.py" install --carhacks "%~dp0JERICHO\MODS\carhacks" --out "%OUT%" || goto :fail
+)
 
 echo.
 echo BAKE_D1_CARS: done. %OUT% now holds:

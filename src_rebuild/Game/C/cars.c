@@ -1097,7 +1097,7 @@ void plotCarPolyB3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *p
 // poly's clut is a civ_clut INDEX resolved at draw time, exactly like a GT poly's.
 static u_short CarClutLookup(plotCarGlobals* pg, int ci, int palette);
 
-void plotCarPolyFT3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *pg)
+void plotCarPolyFT3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *pg, int palette)
 {
 	int indices;
 	int ofse;
@@ -1145,7 +1145,14 @@ void plotCarPolyFT3(int numTris, CAR_POLY *src, SVECTOR *vlist, plotCarGlobals *
 			// imported page's CLUTs finally reach VRAM, which is long after the bake. Using
 			// the baked word directly is what drew an imported car's underside from the
 			// GetClut(960,16) dummy - the "the bottom of the imported car is corrupted" report.
-			*(u_int*)&prim->u0 = CarClutLookup(pg, src->clut_uv0 >> 0x10, 0) << 0x10 | ((src->clut_uv0 & 0xffff) + ofse);
+			//
+			// The column is the car's paint, the same value the GT body uses. Driver 1's
+			// panels are FT3/FT4 (bake tools/car/d1pool.py), and this pass is where they
+			// are drawn. Forcing column 0 left every one of those bodies on the page CLUT,
+			// so the car-select Palette n/6 row and Square changed nothing on a Miami
+			// traffic car. A panel whose row has no extra column still clamps to slot 0
+			// (CarClutVariant), which is what a stock underside with one CLUT already did.
+			*(u_int*)&prim->u0 = CarClutLookup(pg, src->clut_uv0 >> 0x10, palette) << 0x10 | ((src->clut_uv0 & 0xffff) + ofse);
 			// JERICHO: same for the tpage word - a carry here would dent the poly onto another
 			// texture page. Mask the tpage id, keep the uv carry.
 			*(u_int*)&prim->u1 = CAR_TPAGE_OF(pg, src->tpage_uv1) | ((src->tpage_uv1 & 0xffff) + ofse);
@@ -2611,7 +2618,7 @@ void plotNewCarModel(CAR_MODEL* car, int palette, int flatColor)
 
 	// draw car bottom
 	_pg.ot = (OTTYPE*)(current->ot + 16);
-	plotCarPolyFT3(car->numFT3, car->pFT3, car->vlist, &_pg);
+	plotCarPolyFT3(car->numFT3, car->pFT3, car->vlist, &_pg, palette);
 
 	// draw car body
 	_pg.ot = (OTTYPE*)(current->ot + 4);

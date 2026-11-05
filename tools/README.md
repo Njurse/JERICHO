@@ -229,9 +229,10 @@ submodule of this tree; the exclude key stays so a local checkout at that path
 is not mirrored. `d1cars` is fetched as a release mod but its folder is
 dropped and only `mod.toml` is restored, so a released tree reports the module
 without carrying its Driver 1 data. The baked Driver 1 car data lives in
-`JERICHO/MODS/carhacks/D1CARS` (carhacks owns it); a generated folder is stripped
-from every mirror too (`JER_MIRROR_STRIP`), because it is derived from the player's
-own copyrighted Driver 1 files.
+`JERICHO/MODS/carhacks/D1CARS` (carhacks owns it). Generated LEV/LCF files are
+stripped from every mirror (`d1_portraits.py strip`, run as `JER_MIRROR_STRIP`),
+because they are derived from the player's own copyrighted Driver 1 files.
+Authored `D1CARS/<CITY>.portraits/` pages are not generated and stay.
 
 A **dev** build is unchanged: it compiles and mirrors every installed module, and
 the repo's own `JERICHO/CONFIG/modlist.ini` pins every installed module
