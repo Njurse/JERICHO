@@ -282,10 +282,11 @@ function New-Package {
         Remove-Item (Join-Path $stage 'DRIVER') -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $stage 'DRIVER2') -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $stage 'JERICHO\CONFIG\modlist.ini') -Force -ErrorAction SilentlyContinue
-        # carhacks owns the BAKED Driver 1 car data; it is generated from the
-        # player's own copy and must never ride out in a package (the mirror
-        # strips it too, this is the belt for a stale bin\).
-        Remove-Item (Join-Path $stage 'JERICHO\MODS\carhacks\D1CARS') -Recurse -Force -ErrorAction SilentlyContinue
+        # carhacks owns the BAKED Driver 1 car data. LEV/LCF must not ride out
+        # in a package. Authored *.portraits pages stay. The mirror strips the
+        # generated files too; this is the belt for a stale bin\.
+        & python (Join-Path $RepoRoot 'd1_portraits.py') strip --d1cars (Join-Path $stage 'JERICHO\MODS\carhacks\D1CARS')
+        if ($LASTEXITCODE -ne 0) { throw "d1_portraits.py strip failed" }
         # Same store-only strip as the CI pack step: fulltwist, Hallgarth's Cars,
         # and antfarm must not ship in the base pack.
         foreach ($opt in @('fulltwist', 'hallgarthcars', 'antfarm')) {
@@ -312,7 +313,7 @@ function New-Package {
         Copy-Item (Join-Path $d1repo 'tools\README.md') (Join-Path $stage 'JERICHO\MODS\bake') -Force
         # The bake scripts come from the REPO ROOT (the canonical copies), and the
         # registrar they run ships beside them so Beta Miami can be registered.
-        foreach ($bake in 'BAKE_D1_CARS.bat', 'BAKE_D1_CARS.sh') {
+        foreach ($bake in 'BAKE_D1_CARS.bat', 'BAKE_D1_CARS.sh', 'd1_portraits.py') {
             Copy-Item (Join-Path $RepoRoot $bake) $stage -Force
         }
         Copy-Item (Join-Path $RepoRoot 'tools\d1city_register.py') $stage -Force

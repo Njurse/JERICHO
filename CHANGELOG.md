@@ -4,6 +4,16 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## Unreleased
+
+### Paint
+
+- **Driver 1 body colours show on the flat panels.** Those cars are drawn as flat textured panels. The paint column was only applied to the gouraud panels, so Palette n/6 and Square left a Miami traffic car on the page colour. Flat panels now use the same column. A bank from before the extra rows were written still repeats the last colour it has until you bake again.
+
+### Car select
+
+- **Miami's portraits are in the download.** They were packed under `assets/portraits/MIAMI/portraits/`, and the menu looks beside the city's level (`D1CARS/MIAMI.portraits/<model>.raw`). A release was deleting that whole folder with the baked car data. The portrait pages stay, and the menu also reads the authored copy. Models 1, 2, 3, 4, 8, 9 and 10 are the seven Miami cars.
+
 ## v0.13.9
 
 *Released 2026-11-05.*

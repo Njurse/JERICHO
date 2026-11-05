@@ -105,10 +105,15 @@ in this order:
    indexed by the roster cursor; this file is indexed by the model, because
    that is the number the menu already passes.
 2. `<LEV stem>.portraits/<model>.raw` — the loose page. The bake still writes
-   it, and a hand-dropped folder still works.
+   it, and a hand-dropped folder still works. A release keeps this folder
+   when it strips the generated LEV/LCF (`d1_portraits.py strip`).
 3. Driver 2 cities 0–3: that model's stock slot in `CCARS` / `HCARS` / `VCARS` /
    `RCARS`.
-4. Everywhere else, one shared page (below).
+4. `<gD1DataFolder>assets/portraits/<CITY>/portraits/<model>.raw` — the authored
+   page. Miami's are `assets/portraits/MIAMI/portraits/<model>.raw` (models
+   1, 2, 3, 4, 8, 9, 10). Same bytes as the loose page. This is what is left
+   when `D1CARS/<CITY>.portraits` was not installed.
+5. Everywhere else, one shared page (below).
 
 ```
 DRIVER2\LEVELS\BCCHI.LEV → BCCHI.RAW page 10, else BCCHI.portraits\10.raw
