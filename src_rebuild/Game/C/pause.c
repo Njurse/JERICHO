@@ -18,7 +18,6 @@
 #include "platform.h"
 #include "loadsave.h"
 #include "cutrecorder.h"
-#include "texture.h"		/* JerReloadWorldVram: put the level's pages back */
 
 #define REPLAY_NAME_LEN		16
 #define SCORE_NAME_LEN		5
@@ -339,13 +338,16 @@ MENU_HEADER YesNoRestartHeader =
 MENU_HEADER YesNoQuitHeader =
 { G_LTXT_ID(GTXT_AreYouSure), { 0, 0, 0, 0 }, 0u, YesNoQuitItems };
 
-/* The level's texture pages are uploaded once. A custom bank, carhacks or a
- * bake can leave the wrong page or CLUT in those rectangles, and nothing
- * re-reads the file until this. */
+/* TEMPORARY: do not reload VRAM from the pause menu. The row stays on every
+ * pause list; activating it asks the player to bake again through the pause
+ * menu's own message box (the same path Save Replay uses). show counts down
+ * once per 30 Hz frame in DrawPauseMenus, so 60 is about two seconds. */
 static void ReloadWorldTextures(int direction)
 {
 	(void)direction;
-	JerReloadWorldVram();
+	gDisplayedMessage.header = "Bake again";
+	gDisplayedMessage.text = "Reload is off";
+	gDisplayedMessage.show = 60;
 }
 
 MENU_ITEM MainPauseItems[] =
