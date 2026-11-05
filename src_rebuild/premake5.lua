@@ -310,8 +310,9 @@ end
 -- that reports it gets these - JERICHO_runtime (its boot banner) and the exe (the
 -- frontend's version readout, which must not fall back to "unknown").
 local function jer_version_defines()
-   -- deterministic JERICHO build version: git describe when available,
-   -- otherwise a plain literal (each exe release = a new JERICHO version).
+   -- deterministic JERICHO build version: the exact v* tag when HEAD sits on
+   -- one, otherwise JERICHO_BASE_VERSION (each exe release = a new JERICHO
+   -- version).
    --
    -- Release tags are spelled v0.9.0 so that GitHub Actions publishes them --
    -- the workflow triggers on `v*` and the repo's older REDRIVER2 tags carry
@@ -331,21 +332,18 @@ local function jer_version_defines()
    end
 
    -- The APP version. An exact v* tag on HEAD wins unchanged: the leading "v"
-   -- is stripped, so a release build says "0.13.7", not "v0.13.7". Off the tag,
-   -- git describe supplies "<tag>-<n>-g<hash>" and "-dirty" when the tree
-   -- differs -- the form CI logs and the frontend already parse
-   -- ("0.13.7-4-gabcdef12"). A checkout with no v* tags falls back to
-   -- JERICHO_BASE_VERSION (the next line after the latest release), not a bare
-   -- hash and not a shortened "0.13".
+   -- is stripped, so a release build says "0.13.7", not "v0.13.7".
+   -- 0.13.8 is the staging line until v0.13.8 is tagged. There is no such tag
+   -- yet, so an off-tag build must not report a shortened "0.13" (the previous
+   -- pin) or "0.13.7" (what `git describe` would name from the last release).
+   -- It reports JERICHO_BASE_VERSION instead. Once HEAD is the v0.13.8 tag,
+   -- the exact-match path names the release and this fallback is unused.
    -- --match "v*": only RELEASE tags name a version; a checkpoint/... tag must
    -- never become the window title (it once read "checkpoint/getrdun-...").
    -- Stamped when premake generates the project, not at compile time. Re-run
    -- premake after a commit or tag or the exe keeps the previous string.
    local JERICHO_BASE_VERSION = "0.13.8"
    local desc = git("git describe --tags --exact-match --match \"v*\" HEAD"):gsub("^v", "")
-   if desc == "" then
-      desc = git("git describe --tags --match \"v*\" --dirty"):gsub("^v", "")
-   end
    if desc == "" then
       desc = JERICHO_BASE_VERSION
    end
