@@ -104,11 +104,22 @@ in this order:
    slot of `CCARS.RAW`. It is not a lump in the LEV. Stock `CCARS.RAW` is
    indexed by the roster cursor; this file is indexed by the model, because
    that is the number the menu already passes.
-2. `<LEV stem>.portraits/<model>.raw` — the loose page. The bake still writes
-   it, and a hand-dropped folder still works.
+2. `<LEV stem>.portraits/<model>.raw` — the loose page. A car-bank bake still
+   writes it, and a hand-dropped folder still works. It is the fallback when
+   the sibling RAW is missing or that page is all zero.
 3. Driver 2 cities 0–3: that model's stock slot in `CCARS` / `HCARS` / `VCARS` /
    `RCARS`.
 4. Everywhere else, one shared page (below).
+
+`BAKE_D1_CARS` encodes Miami's authored
+`assets/portraits/MIAMI/portraits/MCARS.RAW_<n>.RAW.png` through the bake
+portrait packer and writes `D1CARS/MIAMI.RAW`. Page `n` is source car `n`.
+The city bake lays those cars on models 1, 2, 3, 4, 8, 9, 10, and the page
+sits at `model * 0x8000`. Slots with no picture, including 0 and 5–7, are
+zero. A mode-P PNG already on the car-select CLUT keeps its indices. The
+package ships those PNGs and `portrait.py`. It does not ship `D1CARS`. A
+bank whose cars are already current and whose `MIAMI.RAW` is missing is
+asked to encode the pictures only; `BAKE_VERSION` stays put.
 
 ```
 DRIVER2\LEVELS\BCCHI.LEV → BCCHI.RAW page 10, else BCCHI.portraits\10.raw

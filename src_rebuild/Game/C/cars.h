@@ -162,13 +162,12 @@ extern int CivClutRowMaxSlot(int row);
 extern int CivClutTexMaxSlot(int row, int texid);
 
 // JERICHO: how many body palettes (ap.palette values) resident slot `slot` really has, and
-// `palette` made valid for it (out of range -> 0, the model's own colours). A civilian body
-// (model 0..4) from a Driver 2 city has 6. A Driver 1 car-data body on the bake's compliant
-// models (1..4 and 8..12) has 6 as well: traffic is remapped onto those slots, and the
-// lump's palette 0..4 fills civ_clut columns 1..5. Driver 2 specials, the D1 gap models
-// 5..7, and a baked bank's model above 4 stay at 1. Every car switch passes the wanted
-// palette through the clamp, so a palette cycled on one car never reaches a car that
-// does not have it.
+// `palette` made valid for it (out of range -> 0, the model's own colours). When the car
+// has been built, this is the highest civ_clut column ProcessPalletLump filled for its
+// rows, plus one (column 0 is the page CLUT). A stale or short bake can be 1. Before any
+// build census exists, the model-class capacity is used (up to 6 for Driver 2 civ bodies
+// and Driver 1 traffic on models 1..4 / 8..12; 1 for specials and the D1 gap). Pause, the
+// frontend Square cycle, and carhacks car-select all go through these helpers.
 extern int CarSlotPaletteCount(int slot);
 extern int CarModelPaletteCount(int city, int model);	// the same, by (absolute city, model): a car select
 extern int CarSlotClampPalette(int slot, int palette);

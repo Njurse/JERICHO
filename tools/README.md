@@ -231,7 +231,8 @@ dropped and only `mod.toml` is restored, so a released tree reports the module
 without carrying its Driver 1 data. The baked Driver 1 car data lives in
 `JERICHO/MODS/carhacks/D1CARS` (carhacks owns it); a generated folder is stripped
 from every mirror too (`JER_MIRROR_STRIP`), because it is derived from the player's
-own copyrighted Driver 1 files.
+own copyrighted Driver 1 files. `MIAMI.RAW` is written there by the bake from
+the PNGs under `assets/portraits`, and it is stripped with the rest of the folder.
 
 A **dev** build is unchanged: it compiles and mirrors every installed module, and
 the repo's own `JERICHO/CONFIG/modlist.ini` pins every installed module

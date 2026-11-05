@@ -925,6 +925,7 @@ project "JERICHO"
             -- a stale copy here still pointed at the retired MODS\d1cars\tools.
             "copy /Y \"..\\..\\BAKE_D1_CARS.bat\" \"%{cfg.buildtarget.directory}BAKE_D1_CARS.bat\"",
             "copy /Y \"..\\..\\BAKE_D1_CARS.sh\" \"%{cfg.buildtarget.directory}BAKE_D1_CARS.sh\"",
+            "copy /Y \"..\\..\\d1_portraits.py\" \"%{cfg.buildtarget.directory}d1_portraits.py\"",
             -- The updater, at the build's ROOT next to the exe, so a locally built
             -- install carries exactly what a downloaded one does. The packaging step
             -- used to be the only thing that placed these, which meant bin/<cfg> - the
@@ -976,9 +977,10 @@ project "JERICHO"
 
     -- Subfolders of a mod that are generated at PLAY time and must never be
     -- mirrored. carhacks owns the baked Driver 1 car data (BAKE_D1_CARS writes
-    -- JERICHO/MODS/carhacks/D1CARS): those LEV/LCF files are derived from the
-    -- player's copyrighted Driver 1 files, so a local bake must not ride out in
-    -- a build output or a package made from one.
+    -- JERICHO/MODS/carhacks/D1CARS): the LEV/LCF, and the MIAMI.RAW the portrait
+    -- step writes beside them, come from the player's own bake. A package
+    -- ships the PNG inputs under assets/portraits and the encoder, not this
+    -- folder.
     local JER_MIRROR_STRIP = { carhacks = { "D1CARS" } }
 
     filter { "system:Windows" }
@@ -1062,7 +1064,7 @@ project "JERICHO"
             "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.sh \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
             "cp -f ../../JERICHO/MODS/mp/tools/pack_lan/update_jericho.bat \"%{cfg.buildtarget.directory}/update_jericho.bat\"",
             "chmod +x \"%{cfg.buildtarget.directory}/update_jericho.sh\"",
-            "cp -f ../../BAKE_D1_CARS.sh ../../BAKE_D1_CARS.bat \"%{cfg.buildtarget.directory}/\" && chmod +x \"%{cfg.buildtarget.directory}/BAKE_D1_CARS.sh\"",
+            "cp -f ../../BAKE_D1_CARS.sh ../../BAKE_D1_CARS.bat ../../d1_portraits.py \"%{cfg.buildtarget.directory}/\" && chmod +x \"%{cfg.buildtarget.directory}/BAKE_D1_CARS.sh\"",
             -- the mod store's helper, next to the exe too - see the Windows block
             "cp -f ../../JERICHO/CORE/modstore/modstore.sh \"%{cfg.buildtarget.directory}/modstore.sh\"",
             "cp -f ../../JERICHO/CORE/modstore/modstore.bat \"%{cfg.buildtarget.directory}/modstore.bat\"",

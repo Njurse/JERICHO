@@ -33,6 +33,7 @@ void PsyX_TakeScreenshot(void);
 #include "C/fmvplay.h"
 #include "C/gamesnd.h"
 #include "C/scores.h"
+#include "C/cars.h"	/* CarModelPaletteCount for Square */
 #include "C/loadsave.h"
 #include "C/spool.h"
 #include "C/state.h"
@@ -3491,21 +3492,35 @@ int CarSelectScreen(int bSetup)
 #ifndef PSX
 	else if (feNewPad & MPAD_SQUARE)
 	{
-		/* JERICHO: SQUARE cycles the player's car palette (the six colour variants;
-		 * the preview picture cannot show it, so a notice names it). The spawn reads
-		 * defaultPlayerPalette; mp saves it to mp.ini [mp] palette.
-		 *
-		 * The six steps are the engine's six civ_clut slots: 0 is the page's own
-		 * CLUT and 1..5 are variants. Stock D2 fills 1..5; a Driver 1 car fills
-		 * only 1..4, so its last step clamps to the fourth and the two highest
-		 * steps repeat. Kept global on purpose: this point in the frontend does
-		 * not know the selected car's source city, and the same duplicate already
-		 * exists for a stock D2 car whose row has fewer than five variants. */
+		/* JERICHO: SQUARE cycles defaultPlayerPalette for the SELECTED car.
+		 * Count comes from CarModelPaletteCount (actual loaded columns when the
+		 * car has been built; otherwise the model-class capacity). Pause / mp
+		 * and carhacks car-select use the same helper, so the notice never
+		 * offers phantom steps a stale or short bake does not have. */
 		extern u_char defaultPlayerPalette;
 		char msg[48];
+		int model = (int)(signed char)carNumLookup[GameLevel][carSelection];
+		int n = CarModelPaletteCount(GameLevel, model);
+		int cur;
 
-		defaultPlayerPalette = (u_char)((defaultPlayerPalette + 1) % 6);
-		snprintf(msg, sizeof(msg), "Palette %d/6", defaultPlayerPalette + 1);
+		if (n < 1)
+			n = 1;
+
+		cur = (int)defaultPlayerPalette;
+		if (cur < 0 || cur >= n)
+			cur = 0;
+
+		if (n == 1)
+		{
+			defaultPlayerPalette = 0;
+			snprintf(msg, sizeof(msg), "Palette 1/1");
+		}
+		else
+		{
+			defaultPlayerPalette = (u_char)((cur + 1) % n);
+			snprintf(msg, sizeof(msg), "Palette %d/%d", (int)defaultPlayerPalette + 1, n);
+		}
+
 		jer_notify(msg, 0, 2);
 		FESound(3);
 	}

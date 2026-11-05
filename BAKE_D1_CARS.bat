@@ -17,8 +17,10 @@ rem    2. Run this script once. It writes JERICHO\MODS\carhacks\D1CARS\.
 rem    3. Play. carhacks offers the cities from then on.
 rem
 rem  The baked blobs live INSIDE carhacks: they are its modded level data, not
-rem  part of your Driver 1 disc, and the game reads them from there. The folder is
-rem  generated, gitignored, and never part of a release.
+rem  part of your Driver 1 disc, and the game reads them from there. The LEV/LCF
+rem  are generated and are not part of a release. After the cities are written,
+rem  Miami's car-select PNGs are encoded into D1CARS\MIAMI.RAW. --portraits-only
+rem  does that step and leaves an existing bake's LEV/LCF alone.
 rem
 rem  Re-run it after updating JERICHO if the game says D1CARS is out of date
 rem  (bakes from before v0.10.9 lack the D1 wheels and sounds). Re-running is safe.
@@ -34,8 +36,11 @@ rem --from-game: the game started this (it has closed itself) -- reopen it when 
 rem bake finishes. A manual run never passes the flag, so it never reopens.
 set "FROM_GAME="
 set "GAME_EXE="
+set "PORTRAITS_ONLY="
 if /i "%~1"=="--from-game" set "FROM_GAME=1"
 if /i "%~1"=="--from-game" set "GAME_EXE=%~2"
+if /i "%~1"=="--portraits-only" set "PORTRAITS_ONLY=1"
+if /i "%~3"=="--portraits-only" set "PORTRAITS_ONLY=1"
 
 set "T=%~dp0JERICHO\MODS\bake\tools\car"
 rem The dev tree's game folder (src_rebuild\bin\<config>) does not carry the
@@ -58,13 +63,6 @@ if not exist "%T%\bake.py" (
 	goto :fail
 )
 
-if not exist "%D2%" (
-	echo   FAILED: no "%D2%".
-	echo   The bake measures its wheels and ride height against Driver 2's own
-	echo   car files, so DRIVER2\ has to be the real game data too.
-	goto :fail
-)
-
 set "PY=python"
 %PY% --version >nul 2>nul
 if errorlevel 1 set "PY=py -3"
@@ -84,6 +82,24 @@ set "DEPS=%T%\..\require_deps.py"
 if exist "%DEPS%" (
 	echo [deps] checking the Python packages the bake needs ...
 	%PY% "%DEPS%" || goto :fail
+)
+
+rem Pictures only. An existing bake is missing MIAMI.RAW. Do not rebuild the cars.
+if "%PORTRAITS_ONLY%"=="1" (
+	if not exist "%~dp0d1_portraits.py" (
+		echo   FAILED: d1_portraits.py is not beside this script.
+		goto :fail
+	)
+	%PY% "%~dp0d1_portraits.py" pack --carhacks "%~dp0JERICHO\MODS\carhacks" --out "%OUT%" || goto :fail
+	echo BAKE_D1_CARS: car-select pictures written. The cars were not rebuilt.
+	goto :finish
+)
+
+if not exist "%D2%" (
+	echo   FAILED: no "%D2%".
+	echo   The bake measures its wheels and ride height against Driver 2's own
+	echo   car files, so DRIVER2\ has to be the real game data too.
+	goto :fail
 )
 
 rem Peds first: DRIVER2\LEVELS\JMPPED.LEV (stock Tanner + Jericho) is built from
@@ -194,6 +210,11 @@ if "%BETA%"=="1" (
 )
 
 >"%OUT%\BAKE_VERSION" echo %BAKE_VERSION%
+
+rem Sibling MIAMI.RAW. The menu reads page model*0x8000 of that file first.
+if exist "%~dp0d1_portraits.py" (
+	%PY% "%~dp0d1_portraits.py" pack --carhacks "%~dp0JERICHO\MODS\carhacks" --out "%OUT%" || goto :fail
+)
 
 echo.
 echo BAKE_D1_CARS: done. %OUT% now holds:

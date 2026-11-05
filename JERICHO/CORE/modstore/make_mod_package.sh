@@ -108,7 +108,8 @@ STAGED="$TMP/JERICHO/MODS/$MID"
 # clone) is never part of a mod package.
 rm -rf "$STAGED/.git"
 # carhacks owns the BAKED Driver 1 car data. It is generated from the player's
-# own copyrighted Driver 1 files and must never be redistributed.
+# own copyrighted Driver 1 files and must never be redistributed. The portrait
+# inputs stay under assets/portraits; the bake writes MIAMI.RAW on their machine.
 rm -rf "$STAGED/D1CARS"
 if [ "$KEEP_BUILD" = 0 ]; then
 	rm -rf "$STAGED/obj" "$STAGED/lib"

@@ -104,6 +104,11 @@ jobs:
       - name: Release mods (set, manifests and generated registry agree)
         run: python3 tools/check_release_mods.py
 
+      - name: Miami portraits encode into the sibling RAW
+        run: |
+          python3 -m pip install --user Pillow
+          python3 tools/test_d1_portraits.py
+
       # The mod interface is what lets a mod be built and released on its own, so
       # it is checked on every push: each manifest's `interface` against the
       # engine's JERICHO_SDK_VERSION, no two mods claiming the same custom event
@@ -469,8 +474,9 @@ jobs:
             #    Driver 2 data, which they drop in beside the exe.
             # 4. JERICHO/MODS/carhacks/D1CARS/ -- the BAKED Driver 1 car data, which
             #    carhacks owns. Same rule as DRIVER/: generated from the player's own
-            #    copy, never shipped. The build mirror strips it (JER_MIRROR_STRIP);
-            #    this is the belt for a stale bin/ left from an earlier build.
+            #    copy, never shipped. Portrait INPUTS stay in assets/portraits.
+            #    The bake writes MIAMI.RAW beside the LEV. The build mirror strips
+            #    D1CARS (JER_MIRROR_STRIP); this is the belt for a stale bin/.
             Remove-Item "$bin/JERICHO/CONFIG/modlist.ini" -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/JERICHO/MODS/carhacks/D1CARS" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/DRIVER" -Recurse -Force -ErrorAction SilentlyContinue
@@ -510,6 +516,7 @@ jobs:
             # copies are still synced for the LAN package.
             Copy-Item "BAKE_D1_CARS.bat" "$bin/" -Force
             Copy-Item "BAKE_D1_CARS.sh" "$bin/" -Force
+            Copy-Item "d1_portraits.py" "$bin/" -Force
             # Registers the baked Beta Miami bank in JERICHO/CONFIG/cities.ini; the
             # bake script runs it as its last step, so it ships at the package root.
             Copy-Item "tools/d1city_register.py" "$bin/" -Force
@@ -755,6 +762,7 @@ jobs:
             cp "$d1src/README.md" "$d/JERICHO/MODS/bake/"
             cp BAKE_D1_CARS.bat "$d/"
             cp BAKE_D1_CARS.sh "$d/"
+            cp d1_portraits.py "$d/"
             # Registers the baked Beta Miami bank in JERICHO/CONFIG/cities.ini.
             cp tools/d1city_register.py "$d/"
             chmod +x "$d/BAKE_D1_CARS.sh"
@@ -791,8 +799,8 @@ jobs:
             # DRIVER/ (the Driver 1 game data -- JERICHO ships the WAY to bake the car
             # files, never the data, which is derived from Driver 1's copyrighted
             # files), DRIVER2/ (the game data -- the repo copy is placeholders; the real
-            # files are the player's own Driver 2 data), and carhacks/D1CARS/ (the BAKED
-            # Driver 1 car data, generated from the player's own copy).
+            # files are the player's own Driver 2 data), and carhacks/D1CARS/
+            # (the baked Driver 1 car data, including a MIAMI.RAW from a local bake).
             rm -f "$d/JERICHO/CONFIG/modlist.ini"
             rm -rf "$d/JERICHO/MODS/carhacks/D1CARS"
             rm -rf "$d/DRIVER"

@@ -4,6 +4,18 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## Unreleased
+
+### Paint
+
+- **Pause and car-select offer only the paints a car actually has.** A Miami traffic body whose bake filled four colour columns no longer shows Palette 5/6 and 6/6 as phantom steps; Square and the pause Palette row both read `CarModelPaletteCount` / `CarSlotPaletteCount`, which prefer the loaded civ_clut census over a hard-coded six.
+
+- **Driver 1 body colours show on the flat panels.** Those cars are drawn as flat textured panels. The paint column was only applied to the gouraud panels, so Palette n/6 and Square left a Miami traffic car on the page colour. Flat panels now use the same column. A bank from before the extra rows were written still repeats the last colour it has until you bake again.
+
+### Car select
+
+- **Miami's car-select pictures are encoded when you bake.** The source images stay in the download. The bake packs them into `D1CARS/MIAMI.RAW`, one page per model at model × 32768 (models 1, 2, 3, 4, 8, 9 and 10). The menu already looks at that file first. A bank that already has the cars and no `MIAMI.RAW` is asked to add the pictures. The cars are not baked again, and `BAKE_VERSION` does not change.
+
 ## v0.13.9
 
 *Released 2026-11-05.*
