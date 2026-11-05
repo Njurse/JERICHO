@@ -16,7 +16,7 @@ is in [changelog.txt](changelog.txt).
 
 ### Paint
 
-- **Square cycles the extra Driver 1 body colours.** Shades that used to sit unused on the page now fill the colour-swap slots. Square still steps Palette 1/6 through 6/6. Name the rows with `textures.<set>.body_rows` when you want particular ones, and bake those cars again.
+- **Square cycles the extra Driver 1 body colours.** Shades that used to sit unused on the page now fill the colour-swap slots. Square still steps Palette 1/6 through 6/6. Name the rows with `textures.<set>.body_rows` when you want particular ones. The game asks you to bake again (BAKE_VERSION 11) because a bank from before that still omits those rows.
 
 ### Multiplayer
 
@@ -28,6 +28,7 @@ is in [changelog.txt](changelog.txt).
 
 ### Fixes
 
+- **Driver 1 paint swap moves.** Traffic and the other baked bodies (models 1–4 and 8–12) were still treated as one colour, so left/right on the car-select palette and Square's Palette n/6 landed back on the page colour. They now step the six civ colours. An older bank does not contain the extra page shades: the main menu asks you to re-bake. Until you do, a step the bake never wrote repeats the last colour that is there.
 - **An old Driver 1 bake no longer pops a red error.** The warning stays in the log.
 
 ### Version
