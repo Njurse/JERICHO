@@ -4,6 +4,26 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.9
+
+*Released 2026-11-05.*
+
+### Paint
+
+- **Driver 1 traffic and the other baked bodies cycle their extra body paints.** Models 1–4 and 8–12 step those colours. A bank from before this does not have the extra rows: the main menu asks you to bake again (BAKE_VERSION 11). Until you do, a step the bake never wrote repeats the last colour that is there.
+
+### Multiplayer
+
+- **Super Turbo is on the pause menu's Multiplayer page.** It reads On or Off, and the choice stays on your machine (`mp.ini`). It is not a host rule, and it does not change anyone else's car.
+
+### Pause
+
+- **Reload world textures asks you to bake again.** The pause row is still there. Choosing it shows Bake again / Reload is off for a moment. It does not reload the level's textures.
+
+### Version
+
+- **The game reports 0.13.9.**
+
 ## v0.13.8
 
 *Released 2026-11-05.*
