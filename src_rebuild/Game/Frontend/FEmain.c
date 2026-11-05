@@ -4930,16 +4930,7 @@ int jer_frontend_current_menu(void)
  * the ten-slot lookup does not name) draws one shared page instead of a blank
  * icon. It lives in the carhacks mod, authored for the same CARBACK CLUT:
  * <gD1DataFolder>assets/portraits/CARHACKS/fallback.raw. Cities 0-3 keep their
- * slot art when the override is absent. That path never reaches the fallback.
- *
- * A Driver 1 city also has authored pages that are not produced by the bake:
- * <gD1DataFolder>assets/portraits/<CITY>/portraits/<model>.raw. Those are the
- * same bytes as D1CARS/<CITY>.portraits/<model>.raw. The release keeps the
- * D1CARS copy; this path is the one that is still there when that folder was
- * stripped or the player has not baked yet. It is tried after the beside-LEV
- * pages miss and after a Driver 2 city's stock slot, and before the shared
- * fallback. CARHACKS is not a city name, so the fallback file is not picked
- * up here. */
+ * slot art when the override is absent. That path never reaches the fallback. */
 #define JER_FE_PORTRAIT_PAGE	0x8000
 #define JER_FE_PORTRAIT_CLUT	32
 #define JER_FE_PORTRAIT_FALLBACK	"assets\\portraits\\CARHACKS\\fallback.raw"
@@ -5269,74 +5260,6 @@ static int JerFeShowPortrait(int city, int model)
 	return 1;
 }
 
-/* Authored city pages that ship with carhacks, not with the baked LEV.
- * 1 when that page was drawn. */
-static int JerFeShowAuthored(int city, int model)
-{
-	const char* name;
-	const char* root;
-	char raw[256];
-	char clutPath[256];
-	char slash;
-	int n;
-	long size = 0;
-	static int loggedCity = -2;
-	static int loggedModel = -2;
-	int announce;
-
-	name = JerCityName(city);
-
-	if (name == NULL || name[0] == 0 || model < 0)
-		return 0;
-
-	root = gD1DataFolder;
-
-	if (root == NULL || root[0] == 0)
-		root = "JERICHO\\MODS\\carhacks\\";
-
-	slash = root[strlen(root) - 1];
-	n = snprintf(raw, sizeof(raw), "%s%sassets\\portraits\\%s\\portraits\\%d.raw",
-		root,
-		(slash == '/' || slash == '\\') ? "" : "\\",
-		name, model);
-
-	if (n < 0 || n >= (int)sizeof(raw))
-		return 0;
-
-	FS_FixPathSlashes(raw);
-	announce = (loggedCity != city || loggedModel != model);
-
-	if (!JerFeFileSize(raw, &size) || size != JER_FE_PORTRAIT_PAGE)
-		return 0;
-
-	if (!JerFeReadExact(raw, (void*)_frontend_buffer, JER_FE_PORTRAIT_PAGE))
-		return 0;
-
-	n = snprintf(clutPath, sizeof(clutPath), "%s%sassets\\portraits\\%s\\portraits\\%d.clut",
-		root,
-		(slash == '/' || slash == '\\') ? "" : "\\",
-		name, model);
-
-	if (n < 0 || n >= (int)sizeof(clutPath))
-		clutPath[0] = 0;
-	else
-		FS_FixPathSlashes(clutPath);
-
-	LoadBackgroundFile("DATA\\CARS\\CARBACK.RAW");
-	JerFeApplyPortraitClut(clutPath, announce, city, model);
-	JerFeUploadPortraitPage((void*)_frontend_buffer);
-
-	if (announce)
-	{
-		printInfo("[frontend] portrait: %s model %d authored <- %s\n",
-			name, model, raw);
-		loggedCity = city;
-		loggedModel = model;
-	}
-
-	return 1;
-}
-
 /* The openable shared fallback. gD1DataFolder is the carhacks root
  * (JERICHO\MODS\carhacks\), the same root the Driver 1 LEVs hang off. */
 static int JerFeFallbackPath(char* out, int outSize)
@@ -5457,8 +5380,8 @@ int JerFrontendMenuScreen(int bSetup)
 		 * the sibling <stem>.RAW beside the city's .LEV wins (index is the
 		 * model). Otherwise the loose <stem>.portraits/<model>.raw. Otherwise
 		 * a Driver 2 city still shows that model's stock slot. Anything left
-		 * looks for the authored page under carhacks assets/portraits/<CITY>,
-		 * then the shared CARHACKS fallback.
+		 * with no picture (a Driver 1 city, a bank, a model the ten-slot
+		 * lookup does not name) draws the shared CARHACKS fallback.
 		 * bDrawExtra is cleared first so a menu with no preview leaves no
 		 * icon behind. */
 		bDrawExtra = 0;
@@ -5506,11 +5429,8 @@ int JerFrontendMenuScreen(int bSetup)
 			}
 
 #ifndef PSX
-			/* Stock slot art already won. Do not cover it. An authored city
-			 * page (assets/portraits/<CITY>/portraits/<model>.raw) still beats
-			 * the shared CARHACKS fallback. */
-			if (!drewPortrait && !drewStock && pvCity >= 0 && pvModel >= 0 &&
-				!JerFeShowAuthored(pvCity, pvModel))
+			/* Stock slot art already won. Do not cover it with the fallback. */
+			if (!drewPortrait && !drewStock && pvCity >= 0 && pvModel >= 0)
 				JerFeShowFallback(pvCity, pvModel);
 #endif
 		}

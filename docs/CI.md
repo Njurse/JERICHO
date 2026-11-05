@@ -38,11 +38,11 @@ Each build is packaged with everything needed to run:
   bakes them from their own copy (put it in `DRIVER/`, and the Euro-43 `LEVELS`/
   `SOUND` folders in `EURO43/`; run the script once — it writes
   `JERICHO/MODS/carhacks/D1CARS/` and registers Beta Miami, and carhacks offers the
-  cities from then on). carhacks owns that folder. The generated LEV/LCF and
-  `BAKE_VERSION` are gitignored in the mod and stripped from every package
-  (`d1_portraits.py strip`, which is what `JER_MIRROR_STRIP` runs). The
-  authored `D1CARS/<CITY>.portraits/` pages are not generated and stay in
-  the package; the same bytes also sit in `assets/portraits/<CITY>/portraits/`.
+  cities from then on). carhacks owns that folder: it is generated, gitignored in the
+  mod, and stripped from every package (`JER_MIRROR_STRIP`). The Miami car-select
+  PNGs ship under `assets/portraits/MIAMI/portraits/`. The bake encodes them into
+  `D1CARS/MIAMI.RAW` (page at `model * 0x8000`). That RAW is bake output and is
+  not in the package.
   The tools live in the `bake` submodule, whose folder is excluded from the build
   mirror (`JER_MIRROR_EXCLUDE`), so the packaging step copies them from the
   checkout. A build with no baked data is simply one whose Driver 1 cities are not

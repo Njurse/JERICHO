@@ -43,6 +43,7 @@
 #define RB_PATH_MAX 1024
 
 static char sRebakeScript[RB_PATH_MAX];
+static int sRebakePortraitsOnly;	/* encode MIAMI.RAW; do not rebuild the cars */
 
 /* The prompt is one-shot per run. A mod install can bring newer bake tooling
  * after it has already run, so jer_modstore.c calls jer_rebake_rearm() then. */
@@ -161,6 +162,81 @@ static int RbBakedVersion(void)
 	return RbDirHasEntries(dir) ? 0 : -1;
 }
 
+/* 1 when the page at model*0x8000 is missing or all zero. That is the
+ * sibling RAW the menu reads first. A BAKE_VERSION 11 bank has the cars
+ * and does not have this file. */
+static int RbPageBlank(const char* path, int model)
+{
+	FILE* f;
+	unsigned char buf[256];
+	long need;
+	int left, n, i, any;
+
+	if (model < 0)
+		return 1;
+
+	need = ((long)model + 1L) * 0x8000L;
+	f = fopen(path, "rb");
+	if (f == NULL)
+		return 1;
+	if (fseek(f, 0, SEEK_END) != 0 || ftell(f) < need ||
+		fseek(f, (long)model * 0x8000L, SEEK_SET) != 0)
+	{
+		fclose(f);
+		return 1;
+	}
+
+	any = 0;
+	left = 0x8000;
+	while (left > 0 && !any)
+	{
+		n = left > (int)sizeof(buf) ? (int)sizeof(buf) : left;
+		if ((int)fread(buf, 1, (size_t)n, f) != n)
+		{
+			fclose(f);
+			return 1;
+		}
+		for (i = 0; i < n; i++)
+		{
+			if (buf[i] != 0)
+			{
+				any = 1;
+				break;
+			}
+		}
+		left -= n;
+	}
+	fclose(f);
+	return !any;
+}
+
+/* Cars are already baked, the Miami source PNG is in the package, and the
+ * sibling RAW the menu opens was never written. Encoding that file does not
+ * change BAKE_VERSION and does not rebuild the LEV. */
+static int RbMiamiPortraitMissing(void)
+{
+	char path[RB_PATH_MAX];
+	char raw[RB_PATH_MAX];
+
+	snprintf(path, sizeof(path),
+		"%s/MODS/carhacks/assets/portraits/MIAMI/portraits/MCARS.RAW_0.RAW.png",
+		jer_root_dir());
+	{
+		FILE* f = fopen(path, "rb");
+
+		if (f == NULL)
+			return 0;
+		fclose(f);
+	}
+
+	snprintf(path, sizeof(path), "%s/MODS/carhacks/D1CARS/MIAMI.LEV", jer_root_dir());
+	if (!RbLevReadable(path))
+		return 0;
+
+	snprintf(raw, sizeof(raw), "%s/MODS/carhacks/D1CARS/MIAMI.RAW", jer_root_dir());
+	return RbPageBlank(raw, 1);
+}
+
 /* The running exe, so the script can relaunch THIS game even where the script
  * does not sit beside it (the dev tree keeps BAKE_D1_CARS at the repo root). */
 static void RbExePath(char* out, int outSize)
@@ -180,9 +256,21 @@ static void RbExePath(char* out, int outSize)
 #endif
 }
 
+static void RbStartPortraits(void)
+{
+	sRebakePortraitsOnly = 1;
+	jer_rebake_start();
+}
+
 void jer_rebake_start(void)
 {
 	char gameExe[RB_PATH_MAX];
+	int portraitsOnly = sRebakePortraitsOnly;
+
+	/* The options-menu Bake button calls this directly. Only the portrait
+	 * prompt sets the flag, and it is consumed here so the next bake is a
+	 * full one. */
+	sRebakePortraitsOnly = 0;
 
 	/* The prompt tick is what normally remembers the script. Bake on the options
 	 * menu can run before that tick, so look it up here too. Same function. */
@@ -210,7 +298,8 @@ void jer_rebake_start(void)
 		si.cb = sizeof(si);
 		/* --from-game: the script bakes, then relaunches the exe passed after it.
 		 * A manual run never passes the flag, so it never restarts the game. */
-		snprintf(cmd, sizeof(cmd), "cmd.exe /c \"\"%s\" --from-game \"%s\"\"", sRebakeScript, gameExe);
+		snprintf(cmd, sizeof(cmd), "cmd.exe /c \"\"%s\" --from-game \"%s\"%s\"",
+			sRebakeScript, gameExe, portraitsOnly ? " --portraits-only" : "");
 		if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
 		{
 			CloseHandle(pi.hThread);
@@ -235,7 +324,10 @@ void jer_rebake_start(void)
 			if (lf != NULL)
 				dup2(fileno(stdout), 2);
 			freopen("/dev/null", "r", stdin);	/* the script's closing read returns at once */
-			execl("/bin/sh", "sh", sRebakeScript, "--from-game", gameExe, (char*)NULL);
+			if (portraitsOnly)
+				execl("/bin/sh", "sh", sRebakeScript, "--from-game", gameExe, "--portraits-only", (char*)NULL);
+			else
+				execl("/bin/sh", "sh", sRebakeScript, "--from-game", gameExe, (char*)NULL);
 			_exit(127);
 		}
 		jer_log(pid > 0 ? "[rebake] started %s --from-game (log: JERICHO/CONFIG/rebake.log); the game closes and reopens after\n"
@@ -358,7 +450,22 @@ void jer_rebake_frontend_tick(int onMainMenu)
 	}
 
 	if (baked < 0 || wanted < 0 || baked >= wanted)
+	{
+		/* The cars are current. BAKE_VERSION does not know about MIAMI.RAW,
+		 * so a version-11 bank is not stale as a car bank. The pictures are
+		 * a separate file. Encoding them does not rebuild the LEV. */
+		if (baked >= 0 && RbMiamiPortraitMissing())
+		{
+			jer_log("[rebake] Driver 1 cars are current; MIAMI.RAW is missing\n");
+			jer_prompt_begin("Add Driver 1 car-select pictures?\n"
+				"The cars stay as they are.\n"
+				"The pictures are encoded into MIAMI.RAW\n"
+				"beside the baked level.",
+				RbStartPortraits);
+		}
 		return;
+	}
+	sRebakePortraitsOnly = 0;
 
 	jer_log("[rebake] Driver 1 bake is older than the tooling (baked %d, expected %d)\n", baked, wanted);
 	jer_prompt_begin("Re-bake Driver 1 cars to pick up body colours?\n"

@@ -21,9 +21,10 @@
 #
 #  The baked blobs live INSIDE carhacks: they are its modded level data, not
 #  part of your Driver 1 disc, and the game reads them from there. The LEV/LCF
-#  files are generated and are not part of a release. The car-select portraits
-#  in D1CARS/<CITY>.portraits are authored art and are. This script copies any
-#  that are missing from assets/portraits/<CITY>/portraits/.
+#  are generated and are not part of a release. After the cities are written,
+#  Miami's car-select PNGs are encoded into D1CARS/MIAMI.RAW (one page per
+#  model, at model * 32768). --portraits-only does that step and leaves an
+#  existing bake's LEV/LCF alone.
 #
 #  Re-run it after updating JERICHO if the game says D1CARS is out of date
 #  (bakes from before v0.10.9 lack the D1 wheels and sounds). Re-running is safe.
@@ -40,7 +41,14 @@ cd "$HERE"
 # bake finishes. A manual run never passes the flag, so it never reopens.
 FROM_GAME=0
 GAME_EXE=""
-if [ "${1:-}" = "--from-game" ]; then FROM_GAME=1; GAME_EXE="${2:-}"; fi
+PORTRAITS_ONLY=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--from-game) FROM_GAME=1; GAME_EXE="${2:-}"; shift 2 ;;
+		--portraits-only) PORTRAITS_ONLY=1; shift ;;
+		*) shift ;;
+	esac
+done
 
 reopen_game() {
 	if [ "$FROM_GAME" != 1 ]; then return 0; fi
@@ -88,16 +96,27 @@ if [ ! -f "$T/bake.py" ]; then
 	fail "\"$T/bake.py\" is missing. This package was built without the bake tools, so there is nothing to bake with. Re-download the package, or run the tools from the repo."
 fi
 
-if [ ! -d "$D2" ]; then
-	fail "no \"$D2\". The bake measures its wheels and ride height against Driver 2's own car files, so DRIVER2/ has to be the real game data too."
-fi
-
 PY=""
 for cand in python3 python; do
 	if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
 done
 if [ -z "$PY" ]; then
 	fail "no python on PATH. Install Python 3, then run this again."
+fi
+
+# Pictures only. A bank already at the current BAKE_VERSION is missing
+# MIAMI.RAW; encoding it does not rebuild the cars and does not need DRIVER/.
+if [ "$PORTRAITS_ONLY" = 1 ]; then
+	if [ ! -f "$HERE/d1_portraits.py" ]; then
+		fail "d1_portraits.py is not beside this script."
+	fi
+	"$PY" "$HERE/d1_portraits.py" pack --carhacks "$HERE/JERICHO/MODS/carhacks" --out "$OUT" || fail "could not encode car-select portraits"
+	reopen_game
+	exit 0
+fi
+
+if [ ! -d "$D2" ]; then
+	fail "no \"$D2\". The bake measures its wheels and ride height against Driver 2's own car files, so DRIVER2/ has to be the real game data too."
 fi
 
 # Peds first: DRIVER2/LEVELS/JMPPED.LEV (stock Tanner + Jericho) is built from
@@ -216,12 +235,10 @@ fi
 
 echo "$BAKE_VERSION" > "$OUT/BAKE_VERSION"
 
-# Authored car-select pages. The menu reads D1CARS/<CITY>.portraits/<model>.raw
-# beside the LEV this bake just wrote. A release already ships those pages;
-# copying here restores one a previous run deleted, and does not replace a
-# page that is already there.
+# Sibling MIAMI.RAW. The menu reads page model*0x8000 of that file first.
+# Encoding does not rewrite the LEV just written above.
 if [ -f "$HERE/d1_portraits.py" ]; then
-	"$PY" "$HERE/d1_portraits.py" install --carhacks "$HERE/JERICHO/MODS/carhacks" --out "$OUT" || fail "could not install car-select portraits"
+	"$PY" "$HERE/d1_portraits.py" pack --carhacks "$HERE/JERICHO/MODS/carhacks" --out "$OUT" || fail "could not encode car-select portraits"
 fi
 
 echo
