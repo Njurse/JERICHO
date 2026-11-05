@@ -4,21 +4,32 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
-## Unreleased
+## v0.13.10
 
-### Full Twist
-
-- **Horn cannon roll is off until you turn it on.** A fresh config, a missing `horn_roll` key, Free Physics, and Reset to Defaults no longer enable it. An existing `fulltwist.ini` that already saved `horn_roll=1` is left alone.
+*Released 2026-11-05.*
 
 ### Paint
 
-- **Pause and car-select offer only the paints a car actually has.** A Miami traffic body whose bake filled four colour columns no longer shows Palette 5/6 and 6/6 as phantom steps; Square and the pause Palette row both read `CarModelPaletteCount` / `CarSlotPaletteCount`, which prefer the loaded civ_clut census over a hard-coded six.
-
-- **Driver 1 body colours show on the flat panels.** Those cars are drawn as flat textured panels. The paint column was only applied to the gouraud panels, so Palette n/6 and Square left a Miami traffic car on the page colour. Flat panels now use the same column. A bank from before the extra rows were written still repeats the last colour it has until you bake again.
+- **Driver 1 body colours show on flat panels.** Those cars are drawn as flat textured panels. The paint column was only applied to the gouraud panels, so Palette n/6 and Square left a Miami traffic car on the page colour. Flat panels now use the same column. A bank from before the extra rows were written still repeats the last colour it has until you bake again.
+- **Pause and car-select show the real number of paints** for the selected car. They no longer offer phantom 5/6–6/6 steps on a short or stale bake.
 
 ### Car select
 
-- **Miami's car-select pictures are encoded when you bake.** The source images stay in the download. The bake packs them into `D1CARS/MIAMI.RAW`, one page per model at model × 32768 (models 1, 2, 3, 4, 8, 9 and 10). The menu already looks at that file first. A bank that already has the cars and no `MIAMI.RAW` is asked to add the pictures. The cars are not baked again, and `BAKE_VERSION` does not change.
+- **Miami's car-select pictures are encoded when you bake.** The source images stay in the download. The bake packs them into `D1CARS/MIAMI.RAW`. A bank that already has the cars and no `MIAMI.RAW` can add the pictures with `BAKE_D1_CARS --portraits-only` without rebuilding the cars.
+
+### Bake
+
+- **The bake installs Pillow for you** when it is missing, instead of failing mid-run with `No module named 'PIL'`.
+
+### Name
+
+- **CollisionDevil is branded Thrill Driver** in the pause menu and module text (same module id). HUD bar labels use the tighter DrawBarTag spacing.
+
+### Version
+
+- **The game reports 0.13.10.**
+
+## Unreleased
 
 ## v0.13.9
 

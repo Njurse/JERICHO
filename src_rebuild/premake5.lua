@@ -332,16 +332,16 @@ local function jer_version_defines()
    end
 
    -- The APP version. An exact v* tag on HEAD wins unchanged: the leading "v"
-   -- is stripped, so a release build says "0.13.9", not "v0.13.9".
+   -- is stripped, so a release build says "0.13.10", not "v0.13.10".
    -- Off the tag, the build reports JERICHO_BASE_VERSION. That is this line
-   -- (0.13.9), not the previous release (0.13.8) and not a shortened name from
-   -- an older tag. Once HEAD is the v0.13.9 tag, the exact-match path names
+   -- (0.13.10), not the previous release (0.13.9) and not a shortened name from
+   -- an older tag. Once HEAD is the v0.13.10 tag, the exact-match path names
    -- the release and this fallback is unused.
    -- --match "v*": only RELEASE tags name a version; a checkpoint/... tag must
    -- never become the window title (it once read "checkpoint/getrdun-...").
    -- Stamped when premake generates the project, not at compile time. Re-run
    -- premake after a commit or tag or the exe keeps the previous string.
-   local JERICHO_BASE_VERSION = "0.13.9"
+   local JERICHO_BASE_VERSION = "0.13.10"
    local desc = git("git describe --tags --exact-match --match \"v*\" HEAD"):gsub("^v", "")
    if desc == "" then
       desc = JERICHO_BASE_VERSION

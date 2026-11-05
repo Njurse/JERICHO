@@ -270,8 +270,8 @@ stamped into the generated project. Re-run premake after a commit or tag — a
 rebuild alone keeps the previous string.
 
 An exact `v*` tag on HEAD wins: premake strips the leading `v`, so the binary
-and the boot log say `0.13.9`, not `v0.13.9`. Off the tag, the build reports
-`JERICHO_BASE_VERSION` in `premake5.lua` (`0.13.9`) — this line — not `0.13.8`
+and the boot log say `0.13.10`, not `v0.13.10`. Off the tag, the build reports
+`JERICHO_BASE_VERSION` in `premake5.lua` (`0.13.10`) — this line — not `0.13.8`
 from the previous release. Release tags are spelled `v0.9.0` because the
 workflow triggers on `v*` — the repo's older REDRIVER2 tags carry no prefix
 at all.
