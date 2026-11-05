@@ -4,6 +4,29 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.13.11
+
+*Released 2026-11-05.*
+
+**Emergency patch.** 0.13.10 re-introduced the text offset that 0.12.0 fixed: half-size in-game text sat below its line, and the Damage / Felony / Proximity captions dropped into their bars. Everything else in 0.13.10 is unchanged.
+
+### Text
+
+- **Half-size in-game text sits on its line again.** The HQ font's baseline now scales with the glyph size, so the console, the multiplayer player panel, the sandbox menus and other half-size text are no longer pushed a few pixels downward. Default-size HUD text is unchanged, and the console and chat input sit exactly where they were.
+- **Damage, Felony and Proximity captions sit above their bars again.** They use the stock 11 px lift; the tighter spacing from 0.13.10 put them in the bar.
+
+### Pause
+
+- **"Reload world textures" is now "Reload car assets".** It reloads every imported car slot through carhacks (the same work as the mp menu's Reload all cars). The world-texture reload is still off.
+
+### Multiplayer
+
+- **Super Turbo reads "Super Turbo: On / Off"** without the angle brackets.
+
+### Version
+
+- **The game reports 0.13.11.**
+
 ## v0.13.10
 
 *Released 2026-11-05.*
