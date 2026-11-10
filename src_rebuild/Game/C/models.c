@@ -2288,6 +2288,65 @@ int GetCarImportSiren(int city, int model)
 	return (gCarImports[city].carSirenMask >> model) & 1;
 }
 
+// JERICHO: which of `city`'s models are POLICE cars, bit N = model N. The engine's
+// own two rules, in one place:
+//   - a Driver 2 city (rows 0..CITY_D2_COUNT-1): model 0, the police body. That is
+//     FEmain.c's carNumLookup (model 0 in every D2 city's list), the one-colour cop
+//     body in civ_ai.c, and CarHasSiren's model-0 siren (gamesnd.c).
+//   - any other city (Driver 1, a car mod's bank): the bake's LUMP_CAR_SIRENS flags,
+//     written from the bank's `sounds.cop` (bank.json, bake/tools/car/bank-schema.md)
+//     -- the same flags CarHasSiren gives the imported siren. The city's car data is
+//     read first when it is not held, exactly as JerCityCarModels does, so a
+//     frontend roster can ask before anything is picked. An older bank with no
+//     flags has no police car.
+unsigned JerCityPoliceModels(int city)
+{
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	if (city < CITY_D2_COUNT)
+		return 1u;
+
+	if (!JerCityRegistered(city))
+		return 0;
+
+	if (!CarImportCityHeld(city) && !JerLoadCarImportForCity(city))
+		return 0;
+
+	return gCarImports[city].carSirenMask;
+}
+
+int JerCarIsPolice(int city, int model)
+{
+	if (model < 0 || model >= 32)
+		return 0;
+
+	return (JerCityPoliceModels(city) >> model) & 1;
+}
+
+// JERICHO: is the car in resident slot `slot` (cp->ap.model) a police car? The
+// slot's own source city answers (GetCarModelSourceCity); -1 is the level's own
+// car, which keeps Driver 2's model-0 rule (CarHasSiren's native case).
+int JerCarSlotIsPolice(int slot)
+{
+	int model, city;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	model = residentCarModels[slot];
+
+	if (model < 0)
+		return 0;
+
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0)
+		return model == 0;
+
+	return JerCarIsPolice(city, model);
+}
+
 // JERICHO: the embedded car-sound bank a D1 city's car uses, or 0. Driver 1 gave
 // EVERY car the same generic engine and idle, so the model number is not used to
 // pick the bank: every car gets the city's one generic engine + idle pair (below).
