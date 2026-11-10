@@ -14,6 +14,11 @@ extern int map_z_shift;
  * screen-relative cursor maps 1:1 to world space */
 extern int gUseRotatedMap;
 
+/* JERICHO-HOOK: non-zero = the map (overhead or multiplayer) shows the red/blue
+ * felony flash whatever the felony. A module sets it while it wants it and
+ * clears it after; the engine never writes it. */
+extern int gJerMapForceFlash;
+
 extern void InitOverheadMap(); // 0x000197BC
 extern void ProcessOverlayLump(char *lump_ptr, int lump_size); // 0x00016AE8
 

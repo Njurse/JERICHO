@@ -3418,19 +3418,41 @@ void HandleMission(void)
 
 		// JERICHO: the small multiplayer maps are mission type 0x10 (no felony bar). With
 		// cops opened for an mp map (InitialiseMission, above) a felony can be raised there,
-		// so show the bar for it after all - the driver needs to see the pursuit.
+		// so show the bar for it after all - the driver needs to see the pursuit. Only
+		// when the cops are on: see the per-frame gate below.
 		if (gMultiplayerLevels)
 		{
 			static int saidFelony;
 
-			FelonyBar.active = 1;
+			FelonyBar.active = (CopsAllowed != 0);
 
 			if (!saidFelony)
 			{
 				saidFelony = 1;
-				printInfo("JERICHO: mp map (region %d, mission type 0x%02X) - felony bar forced active\n",
-					MissionHeader->region, MissionHeader->type & 0x30);
+				printInfo("JERICHO: mp map (region %d, mission type 0x%02X) - felony bar %s\n",
+					MissionHeader->region, MissionHeader->type & 0x30,
+					CopsAllowed ? "forced active" : "off (no cops)");
 			}
+		}
+	}
+
+	// JERICHO: an mp map follows the session's cop rule EVERY frame, not the level's
+	// opinion at load. InitialiseMission opens cops for any mp map (so InitCops runs);
+	// a module that turns them off (the MP module's MpSessionRulesTick writes
+	// CopsAllowed each frame) used to leave the bar forced on above, so misc felonies
+	// and collisions kept raising a felony nobody could act on: the bar, the map's
+	// felony flash and the cop chatter all ran with cops off. No cops: no bar and no
+	// felony (players.c already zeroes pedestrianFelony the same way).
+	if (gMultiplayerLevels)
+	{
+		FelonyBar.active = (CopsAllowed != 0);
+
+		if (CopsAllowed == 0)
+		{
+			requestCopCar = 0;	/* a ping-in asked for during the level's first frames */
+
+			if (MainPlayer.playerCarId >= 0 && MainPlayer.playerCarId < MAX_CARS)
+				car_data[MainPlayer.playerCarId].felonyRating = 0;
 		}
 	}
 

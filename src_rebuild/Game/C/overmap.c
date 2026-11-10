@@ -90,6 +90,10 @@ static unsigned short MapTPage = 0;
 
 int gUseRotatedMap = 0;
 
+/* JERICHO-HOOK: a module (a timer mode's chase) can ask for the felony flash
+ * without a felony; see overmap.h */
+int gJerMapForceFlash = 0;
+
 int gMapXOffset = 249;
 int gMapYOffset = 181;
 
@@ -797,7 +801,26 @@ void DrawSightCone(COP_SIGHT_DATA *pCopSightData, VECTOR *pPosition, int directi
 
 	} while (angle < 4096);
 
-	WorldToOverheadMapPositions(vertex, vertex, 9, 0, 0);
+	// JERICHO-HOOK: flags 0x20 = the multiplayer map (DrawMultiplayerMap), the
+	// same placement DrawTargetBlip uses for 0x20; otherwise the overhead map
+	if (flags & 0x20)
+	{
+		int v;
+
+		for (v = 0; v < 9; v++)
+		{
+			WorldToMultiplayerMap(&vertex[v], &vertex[v]);
+			vertex[v].vx += gMapXOffset;
+			vertex[v].vz += gMapYOffset;
+		}
+
+		// a cop off this map's 64x64 square is not drawn on it
+		if (vertex[0].vx < gMapXOffset || vertex[0].vx >= gMapXOffset + MAP_SIZE_W ||
+			vertex[0].vz < gMapYOffset || vertex[0].vz >= gMapYOffset + 64)
+			return;
+	}
+	else
+		WorldToOverheadMapPositions(vertex, vertex, 9, 0, 0);
 
 	pVertex = vertex + 1;
 
@@ -944,8 +967,17 @@ void InitOverheadMap(void)
 }
 
 
+static void FlashMapRect(int r, int g, int b, int h);
+
 // [D] [T]
 void FlashOverheadMap(int r, int g, int b)
+{
+	FlashMapRect(r, g, b, MAP_SIZE_H);
+}
+
+// JERICHO: FlashOverheadMap with the height a parameter -- the multiplayer map
+// is 64 tall (DrawMultiplayerMap), the overhead map MAP_SIZE_H
+static void FlashMapRect(int r, int g, int b, int h)
 {
 	TILE *prim;
 	POLY_FT3 *null;
@@ -961,7 +993,7 @@ void FlashOverheadMap(int r, int g, int b)
 	prim->x0 = gMapXOffset;
 	prim->y0 = gMapYOffset;
 	prim->w = MAP_SIZE_W;
-	prim->h = MAP_SIZE_H;
+	prim->h = h;
 
 
 	addPrim(current->ot + 1, prim);
@@ -1056,6 +1088,36 @@ void DrawMultiplayerMap(void)
 		}
 	}
 
+
+	// JERICHO: the felony flash and the cop sight cones, as DrawOverheadMap draws
+	// them. Every multiplayer level used to skip both (DrawOverheadMap returns
+	// into this function before reaching them). Added after the blips and before
+	// the map image: an OT slot draws its LAST-added prim first, so these sit on
+	// the map and under the blips, as on the overhead map.
+	{
+		static u_char mpTab[] = {
+			255, 240, 170, 120,
+			80, 55, 38, 23,
+			13,  10,  0,  0,
+			0,  0,  0,  0,
+		};
+		CAR_DATA* cp;
+		short* felony;
+
+		felony = MainPlayer.playerCarId < 0 ? &pedestrianFelony : &car_data[MainPlayer.playerCarId].felonyRating;
+
+		if (gJerMapForceFlash || (player_position_known > 0 && *felony > FELONY_PURSUIT_MIN_VALUE))
+			FlashMapRect(mpTab[CameraCnt & 0xf], 0, mpTab[CameraCnt + 8U & 0xf], 64);
+
+		cp = car_data;
+		do {
+			if (cp->controlType == CONTROL_TYPE_PURSUER_AI && cp->ai.p.dying == 0 || (cp->controlFlags & CONTROL_FLAG_COP))
+				DrawSightCone(&copSightData, (VECTOR *)cp->hd.where.t, cp->hd.direction,
+					0x20 | (cp->controlType == CONTROL_TYPE_PURSUER_AI));
+
+			cp++;
+		} while (cp < &car_data[MAX_CARS]);
+	}
 
 	draw_box(yPos, 64);
 
@@ -1170,9 +1232,11 @@ void DrawOverheadMap(void)
 	{
 		playerFelony = GetPlayerFelony(&MainPlayer);
 
-		if (*playerFelony > FELONY_PURSUIT_MIN_VALUE)
+		if (*playerFelony > FELONY_PURSUIT_MIN_VALUE || gJerMapForceFlash)
 			FlashOverheadMap(ptab[CameraCnt & 0xf], 0, ptab[CameraCnt + 8U & 0xf]);
 	}
+	else if (gJerMapForceFlash)	// JERICHO-HOOK: see overmap.h
+		FlashOverheadMap(ptab[CameraCnt & 0xf], 0, ptab[CameraCnt + 8U & 0xf]);
 	else 
 	{
 		if (player_position_known == -1)
