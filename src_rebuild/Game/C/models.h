@@ -169,6 +169,15 @@ char* GetCarImportPalletForCity(int city, int* size);
 int GetCarImportSoundBank(int city, int model, char** bank, int* size);
 int GetCarImportSiren(int city, int model);
 
+// JERICHO: police cars. JerCityPoliceModels: bit N = `city`'s model N is a police
+// car (Driver 2: model 0; any other city: the bake's LUMP_CAR_SIRENS flags, which a
+// bank sets with `sounds.cop`). Loads the city's car data when it is not held, as
+// JerCityCarModels does. JerCarIsPolice is one bit of it; JerCarSlotIsPolice asks
+// for the car in a resident slot (cp->ap.model), from that slot's source city.
+unsigned JerCityPoliceModels(int city);
+int JerCarIsPolice(int city, int model);
+int JerCarSlotIsPolice(int slot);
+
 // The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
 // walks. texture.c parses it (the TP/TEXINF types the layout needs live there).
 char* GetCarImportTextureInfo(int* size);

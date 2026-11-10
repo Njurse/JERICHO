@@ -94,6 +94,11 @@ int gUseRotatedMap = 0;
  * without a felony; see overmap.h */
 int gJerMapForceFlash = 0;
 
+/* JERICHO-HOOK: bit N = car_data[N] draws a cop sight cone on the maps although
+ * the engine does not run it as a cop (a module's player-driven cop: a remote
+ * player's police car, a Cops n Robbers cop). See overmap.h. */
+unsigned gJerMapCopCars = 0;
+
 int gMapXOffset = 249;
 int gMapYOffset = 181;
 
@@ -935,6 +940,8 @@ void InitOverheadMap(void)
 	int c, d;
 	int tpage;
 
+	gJerMapCopCars = 0;	// JERICHO-HOOK: a new level's cars are not last level's cops
+
 	if (NumPlayers > 1)
 		gMapYOffset = (SCREEN_H - MAP_SIZE_H) / 2 - 2;
 	else
@@ -1111,7 +1118,8 @@ void DrawMultiplayerMap(void)
 
 		cp = car_data;
 		do {
-			if (cp->controlType == CONTROL_TYPE_PURSUER_AI && cp->ai.p.dying == 0 || (cp->controlFlags & CONTROL_FLAG_COP))
+			if (cp->controlType == CONTROL_TYPE_PURSUER_AI && cp->ai.p.dying == 0 || (cp->controlFlags & CONTROL_FLAG_COP) ||
+				(cp->controlType != CONTROL_TYPE_NONE && (gJerMapCopCars >> (cp - car_data) & 1u)))
 				DrawSightCone(&copSightData, (VECTOR *)cp->hd.where.t, cp->hd.direction,
 					0x20 | (cp->controlType == CONTROL_TYPE_PURSUER_AI));
 
@@ -1303,7 +1311,8 @@ void DrawOverheadMap(void)
 	// draw cop sight
 	cp = car_data;
 	do {
-		if (cp->controlType == CONTROL_TYPE_PURSUER_AI && cp->ai.p.dying == 0 || (cp->controlFlags & CONTROL_FLAG_COP))
+		if (cp->controlType == CONTROL_TYPE_PURSUER_AI && cp->ai.p.dying == 0 || (cp->controlFlags & CONTROL_FLAG_COP) ||
+			(cp->controlType != CONTROL_TYPE_NONE && (gJerMapCopCars >> (cp - car_data) & 1u)))	// JERICHO-HOOK: see overmap.h
 			DrawSightCone(&copSightData, (VECTOR *)cp->hd.where.t, cp->hd.direction, cp->controlType == CONTROL_TYPE_PURSUER_AI);
 
 		cp++;
