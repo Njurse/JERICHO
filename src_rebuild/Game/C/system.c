@@ -637,21 +637,6 @@ int JerCityRegistryInit(void)
 
 	banks = JerCityRegistryRefresh();
 
-	/* Beta Miami is a bank, not a stock row: offer it whenever the bake found
-	 * carries a valid BETAMIAMI.LEV, with no cities.ini row or carhacks needed.
-	 * Spelled exactly as carhacks (ChkRegisterBetaBank) and BAKE_D1_CARS spell it,
-	 * so all three land on the same row; JerD1Remap points the spelling at the
-	 * folder the bake was found in. A city_N key for it still owns its row. */
-	if (jer_d1cars_has("BETAMIAMI"))
-	{
-		int beta = JerCityRegister("BETAMIAMI",
-			"..\\JERICHO\\MODS\\carhacks\\D1CARS\\BETAMIAMI.LEV",
-			"..\\JERICHO\\MODS\\carhacks\\D1CARS\\BETAMIAMI.LCF");
-
-		if (beta >= 0)
-			printInfo("city registry: Beta Miami is city %d (%sD1CARS)\n", beta, gD1DataFolder);
-	}
-
 	if (banks > 0)
 		printInfo("city registry: %d bank(s) registered, %d city index(es) in all (city %d is the first bank)\n",
 			banks, JerCityCount(), JER_CITY_STOCK_COUNT);
