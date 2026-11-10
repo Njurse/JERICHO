@@ -166,6 +166,14 @@ the same page, and downloaders kept taking it by mistake; the note names both ar
 so the choice is unambiguous. It is a note, not a separation — the four archives are
 still published together.
 
+## Attribution check
+
+A second workflow, `.github/workflows/no-cursor-attribution.yml`, runs the
+job `no-cursor-attribution` on every push and pull request. It scans commit
+author, committer, trailers and the message body only (not diffs) via
+`tools/ci/no_cursor_attribution.sh`. The job name is stable so it can be a
+required check.
+
 ## Getting a binary
 
 - **Latest tagged release:** the repo's *Releases* page. Pushing a tag is how a

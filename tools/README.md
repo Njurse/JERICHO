@@ -13,6 +13,7 @@ Repo-wide maintenance tools. Mod-specific tooling lives next to its mod
 | `check_mod_api.py` | Keep runtime DLL addons on the host API: refuse engine headers/globals in `runtime = "dll"` modules; `--gap` prints the direct-engine use of compiled-in modules |
 | `check_host_api_abi.py` | Lock `jer_host_api.h` to append-only growth: a field or function may not be removed, renamed, reordered or retyped; new entries must be appended |
 | `update_mod_submodules.sh` | Advance the `mp`, `carhacks` and `crumple` submodule pins to their repositories' `main`, printing the gitlink diff to review and commit |
+| `ci/no_cursor_attribution.sh` | Fail if a commit's author, committer, trailers or message credit a banned coding agent. Used by `.github/workflows/no-cursor-attribution.yml` and `.githooks/` |
 
 ## Updating the mod source pins
 
