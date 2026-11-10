@@ -1,5 +1,6 @@
 #include "driver2.h"
 #include "models.h"
+#include "wheel_ext.h"
 #include "system.h"
 #include "spool.h"
 #include "mission.h"
@@ -246,6 +247,10 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_MODELNAMES	12	// LUMP_MODELNAMES (DATA1)
 #define CAR_IMPORT_MODEL_SLOTS	13	// LUMP_CAR_MODELS is a fixed 13-entry table
 
+typedef char wheel_ext_slots_match_import[(WHEEL_EXT_SLOTS == CAR_IMPORT_MODEL_SLOTS) ? 1 : -1];
+typedef char wheel_model_header_is_36[(sizeof(MODEL) == 36) ? 1 : -1];
+typedef char wheel_ft4_is_20[(sizeof(POLYFT4) == 20) ? 1 : -1];
+
 extern int PolySizes[56];		// draw.c: the poly-stream walk
 
 typedef struct
@@ -279,6 +284,12 @@ typedef struct
 	char* textureNames;	// LUMP_TEXTURENAMES body in region
 	int textureNamesSize;
 	JER_WHEEL_TEX wheelTex[CAR_IMPORT_WHEEL_VARIANTS];	// D2 TEXINF wheel sprites
+	/* Per model slot (0..12). present == 0 means "use wheelTex[kind]". A bank
+	 * with no WHLX trailer leaves these zero, so every lookup is the v1 wheel. */
+	JER_WHEEL_TEX wheelSlotTex[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS];
+	unsigned char wheelSlotSet[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS][8];
+	int wheelSlotSetCount[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS];
+	int wheelExtDone;	// 1 once the trailer was accepted or rejected
 	int pageBase;		// byte offset of this file's permanent page data
 } CAR_IMPORT;
 
@@ -2781,6 +2792,185 @@ static void WheelPolyRect(const POLYFT4* p, int* u0, int* v0, int* u1, int* v1)
 	*v1 += 1;
 }
 
+// First byte past the MODEL at `off`, the same walk the bake uses to find where
+// the v1 payload ends. A model that does not fit returns `off` and does not
+// move that end.
+static int WheelImportModelEnd(const unsigned char* body, int size, int off, void* user)
+{
+	const MODEL* src;
+	int npol, polyAt, i, p;
+
+	(void)user;
+
+	if (body == NULL || off < 0 || size < 0 || off + (int)sizeof(MODEL) > size)
+		return off;
+
+	src = (const MODEL*)(body + off);
+	npol = src->num_polys;
+	polyAt = src->poly_block;
+	p = off + polyAt;
+
+	for (i = 0; i < npol; i++)
+	{
+		int type, step;
+
+		if (p < 0 || p >= size)
+			break;
+
+		type = body[p] & 0x1f;
+		step = (type < 56) ? PolySizes[type] : 0;
+
+		if (step <= 0)
+			break;
+
+		p += step;
+	}
+
+	return p;
+}
+
+// The checks BuildCarImportWheels applies to one v1 wheel, as a yes/no. A
+// trailer offset that fails any of them rejects the whole trailer.
+static int WheelRecordAccept(const char* body, int size, int off, int city,
+	JER_WHEEL_TEX* wt, unsigned char* sets, int* setCount, const char** why)
+{
+	MODEL* src;
+	POLYFT4* p;
+	int k;
+
+	if (off < 0 || off + (int)sizeof(MODEL) > size)
+	{
+		if (why != NULL)
+			*why = "a model offset is outside the segment";
+
+		return 0;
+	}
+
+	src = (MODEL*)(body + off);
+
+	if (src->num_polys < 8 || src->num_polys > 24 || src->poly_block <= (int)sizeof(MODEL) ||
+		src->poly_block + src->num_polys * (int)sizeof(POLYFT4) > size - off)
+	{
+		if (why != NULL)
+			*why = "a model header is unusable";
+
+		return 0;
+	}
+
+	p = (POLYFT4*)((char*)src + src->poly_block);
+
+	for (k = 0; k < 8; k++)
+	{
+		if ((p[k].id & 0x1f) != 21)
+		{
+			if (why != NULL)
+				*why = "a model is not an 8-quad FT4 wheel";
+
+			return 0;
+		}
+	}
+
+	*setCount = CollectWheelSets(src, sets, 8);
+
+	if (*setCount <= 0)
+	{
+		if (why != NULL)
+			*why = "a model names no texture set";
+
+		return 0;
+	}
+
+	memset(wt, 0, sizeof(*wt));
+	WheelPolyRect(&p[2], &wt->u0, &wt->v0, &wt->u1, &wt->v1);
+	WheelPolyRect(&p[4], &wt->hubU0, &wt->hubV0, &wt->hubU1, &wt->hubV1);
+
+	CarSetRemapEnable(1, city);
+	wt->set = CarSetRemap(p[2].texture_set);
+	CarSetRemapEnable(0, -1);
+
+	wt->clut = p[2].texture_id;
+	wt->hubClut = p[4].texture_id;
+
+	if (wt->set <= 0 || wt->set >= 128)
+	{
+		if (why != NULL)
+			*why = "a texture_set is outside 1..127";
+
+		*setCount = 0;
+		memset(wt, 0, sizeof(*wt));
+		return 0;
+	}
+
+	wt->present = 1;
+	return 1;
+}
+
+static void ClearSlotWheels(CAR_IMPORT* imp)
+{
+	memset(imp->wheelSlotTex, 0, sizeof(imp->wheelSlotTex));
+	memset(imp->wheelSlotSet, 0, sizeof(imp->wheelSlotSet));
+	memset(imp->wheelSlotSetCount, 0, sizeof(imp->wheelSlotSetCount));
+}
+
+// WHLX, if the segment has one. Any failure drops every per-slot wheel and
+// leaves the v1 records already stored on imp->wheelTex. Logged once per city.
+static void ApplyWheelExtension(int city, CAR_IMPORT* imp)
+{
+	int end, rc, slot, kind, owned;
+	int offsets[CAR_IMPORT_MODEL_SLOTS * CAR_IMPORT_WHEEL_VARIANTS];
+	const char* why = NULL;
+
+	end = WheelExtV1End((const unsigned char*)imp->carWheels, imp->carWheelsSize,
+		WheelImportModelEnd, NULL);
+
+	if (end < 0 || imp->wheelExtDone)
+		return;
+
+	imp->wheelExtDone = 1;
+	rc = WheelExtRead((const unsigned char*)imp->carWheels, imp->carWheelsSize,
+		end, offsets, &why);
+
+	if (rc == 0)
+		return;
+
+	if (rc < 0)
+	{
+		printInfo("cross-city: %s wheel extension ignored (%s) - every car keeps the bank default\n",
+			LevelNames[city], why != NULL ? why : "unusable");
+		return;
+	}
+
+	ClearSlotWheels(imp);
+	owned = 0;
+
+	for (slot = 0; slot < CAR_IMPORT_MODEL_SLOTS; slot++)
+	{
+		for (kind = 0; kind < CAR_IMPORT_WHEEL_VARIANTS; kind++)
+		{
+			int off = offsets[slot * CAR_IMPORT_WHEEL_VARIANTS + kind];
+
+			if (off == -1)
+				continue;
+
+			if (!WheelRecordAccept(imp->carWheels, imp->carWheelsSize, off, city,
+				&imp->wheelSlotTex[slot][kind], imp->wheelSlotSet[slot][kind],
+				&imp->wheelSlotSetCount[slot][kind], &why))
+			{
+				ClearSlotWheels(imp);
+				printInfo("cross-city: %s wheel extension ignored (%s) - every car keeps the bank default\n",
+					LevelNames[city], why != NULL ? why : "unusable");
+				return;
+			}
+
+			owned++;
+		}
+	}
+
+	if (owned > 0)
+		printInfo("cross-city: %s per-car wheels: %d kind(s) name their own model (the rest use the bank default)\n",
+			LevelNames[city], owned);
+}
+
 // JERICHO: a D1 car keeps the HOST wheel models (CLEANWHEEL/FASTWHEEL/DAMWHEEL)
 // and takes only its wheel TEXTURE from LUMP_CAR_WHEELS: the record is read in
 // place for its page, its face rect (polys 2/3, the quads MangleWheelModel keeps
@@ -2894,6 +3084,8 @@ static void BuildCarImportWheels(int city)
 		imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].present ? "yes" : "host",
 		imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].present ? "yes" : "host",
 		imp->wheelTex[CAR_IMPORT_WHEEL_FAST].present ? "yes" : "host");
+
+	ApplyWheelExtension(city, imp);
 }
 
 MODEL* GetCarImportWheel(int city, int kind)
@@ -2902,6 +3094,41 @@ MODEL* GetCarImportWheel(int city, int kind)
 		return NULL;
 
 	return gCarImports[city].wheels[kind];
+}
+
+int CarImportWheelSlot(int residentSlot)
+{
+	int model;
+
+	if (residentSlot < 0 || residentSlot >= MAX_CAR_RESIDENT_MODELS)
+		return -1;
+
+	model = residentCarModels[residentSlot];
+
+	if (model == 13)
+	{
+		// same derivation the builders use for the lump's SPECIAL sentinel
+		model = 10 - (residentCarModels[0] + residentCarModels[1] + residentCarModels[2]);
+
+		if (model < 1)
+			model = 1;
+		else if (model > 4)
+			model = 4;
+	}
+
+	if (model < 0 || model >= CAR_IMPORT_MODEL_SLOTS)
+		return -1;
+
+	return model;
+}
+
+MODEL* GetCarImportWheelForModel(int city, int model, int kind)
+{
+	/* Per-car wheels are rects on the host mesh. The MODEL* stays the
+	 * city-level texture model (a D2 named wheel, or NULL for a D1 bake). */
+	(void)model;
+
+	return GetCarImportWheel(city, kind);
 }
 
 int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out)
@@ -2915,22 +3142,110 @@ int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out)
 	return out->present;
 }
 
+int GetCarImportWheelTexForModel(int city, int model, int kind, JER_WHEEL_TEX* out)
+{
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
+		out == NULL)
+		return 0;
+
+	if (model >= 0 && model < CAR_IMPORT_MODEL_SLOTS &&
+		gCarImports[city].wheelSlotTex[model][kind].present)
+	{
+		*out = gCarImports[city].wheelSlotTex[model][kind];
+		return 1;
+	}
+
+	*out = gCarImports[city].wheelTex[kind];
+
+	return out->present;
+}
+
 // The page loader knows how many CLUT rows the source wheel page really has.
 // The WHLBOTH (hubcap) palette is the page's last row; record it for the wheel
 // structs that name this source set.
+//
+// which: 0 = the first source set, 1 = the last, 2 = any set in the list.
+static int SlotWheelSetMatch(const CAR_IMPORT* imp, int slot, int kind, int sourceSet, int which)
+{
+	int n, k;
+
+	if (slot < 0 || slot >= CAR_IMPORT_MODEL_SLOTS ||
+		kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS)
+		return 0;
+
+	if (!imp->wheelSlotTex[slot][kind].present)
+		return 0;
+
+	n = imp->wheelSlotSetCount[slot][kind];
+
+	if (n <= 0)
+		return 0;
+
+	if (which == 0)
+		return imp->wheelSlotSet[slot][kind][0] == sourceSet;
+
+	if (which == 1)
+		return imp->wheelSlotSet[slot][kind][n - 1] == sourceSet;
+
+	for (k = 0; k < n; k++)
+		if (imp->wheelSlotSet[slot][kind][k] == sourceSet)
+			return 1;
+
+	return 0;
+}
+
+static JER_WHEEL_TEX* FindSlotWheelTex(CAR_IMPORT* imp, int kind, int sourceSet, int which)
+{
+	int slot;
+
+	for (slot = 0; slot < CAR_IMPORT_MODEL_SLOTS; slot++)
+		if (SlotWheelSetMatch(imp, slot, kind, sourceSet, which))
+			return &imp->wheelSlotTex[slot][kind];
+
+	return NULL;
+}
+
+static int AnySlotWheelPresent(const CAR_IMPORT* imp)
+{
+	int slot, kind;
+
+	for (slot = 0; slot < CAR_IMPORT_MODEL_SLOTS; slot++)
+		for (kind = 0; kind < CAR_IMPORT_WHEEL_VARIANTS; kind++)
+			if (imp->wheelSlotTex[slot][kind].present)
+				return 1;
+
+	return 0;
+}
+
+static void StampSlotWheelClut(CAR_IMPORT* imp, int kind, int sourceSet, int clut)
+{
+	int slot;
+
+	for (slot = 0; slot < CAR_IMPORT_MODEL_SLOTS; slot++)
+		if (SlotWheelSetMatch(imp, slot, kind, sourceSet, 0))
+			imp->wheelSlotTex[slot][kind].reservedClut = clut;
+}
+
 void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts)
 {
-	int v;
+	int v, slot;
+	CAR_IMPORT* imp;
+	int row;
 
 	if (city < 0 || city >= CITY_COUNT || cluts <= 0)
 		return;
 
+	imp = &gCarImports[city];
+	row = (cluts > 32) ? 31 : cluts - 1;
+
 	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
 	{
-		CAR_IMPORT* imp = &gCarImports[city];
-
 		if (imp->wheelSetCount[v] > 0 && imp->wheelSet[v][0] == sourceSet)
-			imp->wheelTex[v].hubClut = (cluts > 32) ? 31 : cluts - 1;
+			imp->wheelTex[v].hubClut = row;
+
+		for (slot = 0; slot < CAR_IMPORT_MODEL_SLOTS; slot++)
+			if (SlotWheelSetMatch(imp, slot, v, sourceSet, 0))
+				imp->wheelSlotTex[slot][v].hubClut = row;
 	}
 }
 
@@ -2947,6 +3262,11 @@ int CarImportIsWheelSet(int city, int sourceSet)
 			if (gCarImports[city].wheelSet[v][k] == sourceSet)
 				return 1;
 	}
+
+	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+		for (k = 0; k < CAR_IMPORT_MODEL_SLOTS; k++)
+			if (SlotWheelSetMatch(&gCarImports[city], k, v, sourceSet, 2))
+				return 1;
 
 	return 0;
 }
@@ -2969,6 +3289,20 @@ void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub)
 				else
 					gCarImports[city].wheelTex[v].reservedClut = clut;
 			}
+		}
+	}
+
+	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	{
+		for (k = 0; k < CAR_IMPORT_MODEL_SLOTS; k++)
+		{
+			if (!SlotWheelSetMatch(&gCarImports[city], k, v, sourceSet, 2))
+				continue;
+
+			if (hub)
+				gCarImports[city].wheelSlotTex[k][v].reservedHubClut = clut;
+			else
+				gCarImports[city].wheelSlotTex[k][v].reservedClut = clut;
 		}
 	}
 }
@@ -3024,24 +3358,33 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 	imp = &gCarImports[city];
 	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
 
-	/* D1 baked cities have no D2-style wheelTex metadata for DAM/FAST.
-	 * Fall back to the measured table row instead of bailing. -1 is the
-	 * caller's "use CarImportWheelPaletteRow()" sentinel; 0 would select
-	 * page row 0, which is not a wheel row. */
-	if (city >= CITY_D2_COUNT && !wt->present)
-		return -1;
-
-	if (!wt->present)
+	/* No wheel rect at all: the caller keeps the measured table. -1 is that
+	 * sentinel; 0 would select page row 0, which is not a wheel row. A bank
+	 * with no trailer has no slot wheels, so this is the same bail as before. */
+	if (!wt->present && !AnySlotWheelPresent(imp))
 		return -1;
 
 	/* hub: the WHLBOTH hubcap rect (on the damaged variant's last source set),
-	 * else the WHLCLEAN tyre rect (on the clean set). */
+	 * else the WHLCLEAN tyre rect (on the clean set). A per-slot wheel that
+	 * owns this page uses its own rect; the city default is unchanged. */
 	dam = hub;
 
-	if (imp->wheelSetCount[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN] <= 0 ||
-		imp->wheelSet[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN]
-			[imp->wheelSetCount[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN] - 1] != sourceSet)
-		return -1;
+	{
+		int kind = dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN;
+		int n = imp->wheelSetCount[kind];
+		int cityMatch = wt->present && n > 0 &&
+			imp->wheelSet[kind][n - 1] == sourceSet;
+
+		if (!cityMatch)
+		{
+			const JER_WHEEL_TEX* slotWt = FindSlotWheelTex(imp, kind, sourceSet, 1);
+
+			if (slotWt == NULL)
+				return -1;
+
+			wt = slotWt;
+		}
+	}
 
 	if (dam)
 	{
@@ -3219,24 +3562,36 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 
 	/* A D1 bake has no D2-style wheelTex metadata for FASTWHEEL. Use the
 	 * tyre row that was already derived for the clean wheel instead of
-	 * leaving the fast wheel on the host palette. */
-	if (!wt->present || imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] <= 0 ||
-		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] != sourceSet)
+	 * leaving the fast wheel on the host palette. A per-slot fast wheel that
+	 * names this page takes the detailed path instead of that fallback. */
 	{
-		if (npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
-			tyreRow >= 0 && tyreRow < npal)
+		int cityMatch = wt->present &&
+			imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] > 0 &&
+			imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] == sourceSet;
+		JER_WHEEL_TEX* slotWt = NULL;
+
+		if (!cityMatch)
+			slotWt = FindSlotWheelTex(imp, CAR_IMPORT_WHEEL_FAST, sourceSet, 0);
+
+		if (slotWt != NULL)
+			wt = slotWt;
+		else if (!cityMatch)
 		{
-			memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
-			clut = CarImportReserveWheelPalette(city, 0, (const unsigned char*)row);
-
-			if (clut != 0)
+			if (npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
+				tyreRow >= 0 && tyreRow < npal)
 			{
-				CarImportSetWheelPaletteClut(city, sourceSet, clut, 0);
-				wt->reservedClut = clut;
-			}
-		}
+				memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
+				clut = CarImportReserveWheelPalette(city, 0, (const unsigned char*)row);
 
-		return;
+				if (clut != 0)
+				{
+					CarImportSetWheelPaletteClut(city, sourceSet, clut, 0);
+					wt->reservedClut = clut;
+				}
+			}
+
+			return;
+		}
 	}
 
 	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32 || tyreRow < 0 || tyreRow >= npal)
@@ -3282,7 +3637,10 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 	clut = CarImportReserveWheelPalette(city, 2, (const unsigned char*)row);
 
 	if (clut != 0)
+	{
 		wt->reservedClut = clut;
+		StampSlotWheelClut(imp, CAR_IMPORT_WHEEL_FAST, sourceSet, clut);
+	}
 }
 
 // The damaged wheel's face names its OWN CLUT row, which need not be the clean
@@ -3307,20 +3665,36 @@ void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned
 	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED];
 	npal = *(const int*)page;
 
-	if (wt->present && imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] > 0 &&
-		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] == sourceSet &&
-		npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
-		wt->clut >= 0 && wt->clut < npal)
 	{
-		memcpy(row, page + 4 + wt->clut * 32, sizeof(row));
-		clut = CarImportReserveWheelPalette(city, 3, (const unsigned char*)row);
+		int cityMatch = wt->present &&
+			imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] > 0 &&
+			imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] == sourceSet;
+		JER_WHEEL_TEX* slotWt = NULL;
 
-		if (clut != 0)
-			wt->reservedClut = clut;
+		if (!cityMatch)
+			slotWt = FindSlotWheelTex(imp, CAR_IMPORT_WHEEL_DAMAGED, sourceSet, 0);
 
-		printInfo("cross-city: %s damaged wheel palette row %d reserved (clut %04x)\n",
-			LevelNames[city], wt->clut, clut);
-		return;
+		if (slotWt != NULL)
+			wt = slotWt;
+
+		if ((cityMatch || slotWt != NULL) &&
+			wt->present &&
+			npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
+			wt->clut >= 0 && wt->clut < npal)
+		{
+			memcpy(row, page + 4 + wt->clut * 32, sizeof(row));
+			clut = CarImportReserveWheelPalette(city, 3, (const unsigned char*)row);
+
+			if (clut != 0)
+			{
+				wt->reservedClut = clut;
+				StampSlotWheelClut(imp, CAR_IMPORT_WHEEL_DAMAGED, sourceSet, clut);
+			}
+
+			printInfo("cross-city: %s damaged wheel palette row %d reserved (clut %04x)\n",
+				LevelNames[city], wt->clut, clut);
+			return;
+		}
 	}
 
 	/* No usable DAMWHEEL metadata: use the tyre row already derived for the
@@ -3676,19 +4050,61 @@ static void BuildD2WheelTextureSources(int city)
 // uses. Returns the count, or 0 for an absent wheel.
 int GetCarImportWheelSets(int city, int kind, unsigned char* out, int max)
 {
-	int i, n;
+	CAR_IMPORT* imp;
+	int i, n, slot, k, dropped = 0;
 
 	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
 		out == NULL || max <= 0)
 		return 0;
 
-	n = gCarImports[city].wheelSetCount[kind];
+	imp = &gCarImports[city];
+	n = imp->wheelSetCount[kind];
 
 	if (n > max)
 		n = max;
 
 	for (i = 0; i < n; i++)
-		out[i] = gCarImports[city].wheelSet[kind][i];
+		out[i] = imp->wheelSet[kind][i];
+
+	for (slot = 0; slot < CAR_IMPORT_MODEL_SLOTS; slot++)
+	{
+		int sn = imp->wheelSlotSetCount[slot][kind];
+
+		for (k = 0; k < sn; k++)
+		{
+			unsigned char set = imp->wheelSlotSet[slot][kind][k];
+			int seen = 0;
+
+			for (i = 0; i < n; i++)
+			{
+				if (out[i] == set)
+				{
+					seen = 1;
+					break;
+				}
+			}
+
+			if (seen)
+				continue;
+
+			if (n < max)
+				out[n++] = set;
+			else
+				dropped = 1;
+		}
+	}
+
+	if (dropped)
+	{
+		static int logged;
+
+		if (!logged)
+		{
+			logged = 1;
+			printInfo("cross-city: %s per-car wheel sets do not fit the %d-entry list - a later wheel page is not named for pinning\n",
+				LevelNames[city], max);
+		}
+	}
 
 	return n;
 }
