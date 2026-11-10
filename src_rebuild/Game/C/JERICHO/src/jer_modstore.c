@@ -1175,87 +1175,14 @@ static int StoreToolingBakeVersion(void)
 	return -1;
 }
 
-/* Is there anything in this folder? Used for "a bake exists but predates the
- * stamp", which is a real state on machines baked before BAKE_VERSION existed. */
-static int StoreDirHasEntries(const char* path)
-{
-#if defined(_WIN32)
-	{
-		char pattern[STORE_PATH_MAX + 8];
-		WIN32_FIND_DATAA fd;
-		HANDLE hFind;
-		int found = 0;
-
-		snprintf(pattern, sizeof(pattern), "%s/*", path);
-		hFind = FindFirstFileA(pattern, &fd);
-		if (hFind == INVALID_HANDLE_VALUE)
-			return 0;
-
-		do
-		{
-			if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0)
-				continue;
-			found = 1;
-			break;
-		}
-		while (FindNextFileA(hFind, &fd));
-
-		FindClose(hFind);
-		return found;
-	}
-#else
-	{
-		DIR* d = opendir(path);
-		struct dirent* e;
-		int found = 0;
-
-		if (d == NULL)
-			return 0;
-
-		while ((e = readdir(d)) != NULL)
-		{
-			if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
-				continue;
-			found = 1;
-			break;
-		}
-		closedir(d);
-		return found;
-	}
-#endif
-}
-
-/* What is baked on THIS machine. -1 = no bake at all (nothing to report), 0 = a
- * bake from before the stamp existed (so older than any tooling that has one). */
+/* What is baked on THIS machine: the bake jer_d1cars.c found from the LEV files
+ * (carhacks/D1CARS, the jericho.ini d1cars_path, the legacy DRIVER/D1CARS or a
+ * sibling install), the same one the engine loads the cars from. -1 = no valid
+ * LEV anywhere (nothing to report), 0 = a valid bake from before the stamp
+ * existed (so older than any tooling that has one). */
 static int StoreBakedVersion(void)
 {
-	char path[STORE_PATH_MAX];
-	char dir[STORE_PATH_MAX];
-	int v;
-
-	/* <install>/JERICHO is the root, so the baked car data sits in the game's
-	 * own tree: JERICHO/MODS/carhacks/D1CARS (carhacks owns it - the blobs are
-	 * its modded LEVs, not part of the player's Driver 1 disc). */
-	snprintf(dir, sizeof(dir), "%s/MODS/carhacks/D1CARS", gStore.root);
-	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
-
-	v = StoreFileInt(path, NULL);
-	if (v >= 0)
-		return v;
-
-	/* A bake from a build before the move lived in DRIVER/D1CARS. Still report
-	 * it (unstamped if it has no stamp), so an update sees an old bake and asks
-	 * for a re-bake into the new folder instead of treating it as "no bake". */
-	snprintf(dir, sizeof(dir), "%s/../DRIVER/D1CARS", gStore.root);
-	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
-
-	v = StoreFileInt(path, NULL);
-	if (v >= 0)
-		return v;
-
-	/* unstamped: a bake from the tooling that predates the version, which is by
-	 * definition older than the tooling beside the game now */
-	return StoreDirHasEntries(dir) ? 0 : -1;
+	return jer_d1cars_baked_version();
 }
 
 /* The version the repo's own bake entry asks for (a release that changes the
