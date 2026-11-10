@@ -186,8 +186,8 @@ every candidate and the one chosen (`[d1cars] ...`).
 
 A bank path spelled for the canonical folder
 (`..\JERICHO\MODS\carhacks\D1CARS\...`, as carhacks and BAKE_D1_CARS write
-Beta Miami) is mapped onto the chosen folder. When that folder has a valid
-`BETAMIAMI.LEV`, the engine registers Beta Miami itself. The re-bake prompt and
+Beta Miami) is mapped onto the chosen folder, so carhacks' own Beta Miami
+registration finds the bake there. The re-bake prompt and
 the mod store judge the chosen bake: "not baked" means no valid LEV anywhere,
 and the version check uses the chosen folder's stamp. Nothing is copied, and
 the only folder a re-bake writes is carhacks'.
