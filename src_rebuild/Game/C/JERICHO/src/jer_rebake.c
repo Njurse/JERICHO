@@ -1,11 +1,13 @@
 /* jer_rebake.c -- after an update, ask once whether to re-bake the Driver 1 cars.
  *
  * Ported from feature/mod-store (77be5b84) without the store: an update that
- * ships a BAKE_D1_CARS script with a higher BAKE_VERSION than the one stamped in
- * JERICHO/MODS/carhacks/D1CARS/BAKE_VERSION leaves the cars baked by the old
- * tooling. On the first main-menu frame we compare the two and raise a
- * jer_prompt. An unstamped bake counts as version 0 (older); no bake at all asks
- * nothing.
+ * ships a BAKE_D1_CARS script with a higher BAKE_VERSION than the one stamped
+ * beside the bake leaves the cars baked by the old tooling. The bake is the one
+ * jer_d1cars.c found from the LEV files (carhacks/D1CARS, the jericho.ini
+ * d1cars_path, the legacy DRIVER/D1CARS or a sibling install), the same one
+ * the engine loads. On the first main-menu frame we compare the two and raise a
+ * jer_prompt. A valid unstamped bake counts as version 0 (older); no valid LEV
+ * at all asks nothing.
  *
  * Yes starts the BAKE_D1_CARS script beside the game (the script cds to its own
  * folder and writes JERICHO/MODS/carhacks/D1CARS there). Windows: a console
@@ -77,40 +79,6 @@ static int RbFileInt(const char* path, const char* afterKey)
 	return *p ? atoi(p) : -1;
 }
 
-static int RbDirHasEntries(const char* path)
-{
-#if defined(_WIN32)
-	char pattern[RB_PATH_MAX + 8];
-	WIN32_FIND_DATAA fd;
-	HANDLE h;
-	int found = 0;
-
-	snprintf(pattern, sizeof(pattern), "%s/*", path);
-	h = FindFirstFileA(pattern, &fd);
-	if (h == INVALID_HANDLE_VALUE)
-		return 0;
-	do
-	{
-		if (strcmp(fd.cFileName, ".") && strcmp(fd.cFileName, "..")) { found = 1; break; }
-	} while (FindNextFileA(h, &fd));
-	FindClose(h);
-	return found;
-#else
-	DIR* d = opendir(path);
-	struct dirent* e;
-	int found = 0;
-
-	if (d == NULL)
-		return 0;
-	while ((e = readdir(d)) != NULL)
-	{
-		if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..")) { found = 1; break; }
-	}
-	closedir(d);
-	return found;
-#endif
-}
-
 #if defined(_WIN32)
 #define RB_SCRIPT "BAKE_D1_CARS.bat"
 #else
@@ -138,28 +106,14 @@ static int RbToolingVersion(void)
 	return RbFileInt(path, "BAKE_VERSION=");
 }
 
+/* What is baked, judged by the LEV files (jer_d1cars.c): the BAKE_VERSION of the
+ * best valid bake in carhacks/D1CARS, the jericho.ini d1cars_path, the legacy
+ * DRIVER/D1CARS or a sibling install - the same folder the engine loads the
+ * cars from. -1 = no valid LEV anywhere, 0 = valid but unstamped. A stamp beside
+ * no readable LEV no longer counts as a bake. */
 static int RbBakedVersion(void)
 {
-	char dir[RB_PATH_MAX];
-	char path[RB_PATH_MAX + 16];
-	int v;
-
-	/* carhacks owns the baked car data: JERICHO/MODS/carhacks/D1CARS */
-	snprintf(dir, sizeof(dir), "%s/MODS/carhacks/D1CARS", jer_root_dir());
-	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
-	v = RbFileInt(path, NULL);
-	if (v >= 0)
-		return v;
-
-	/* A bake from before the move lived beside DRIVER2. Report it too, so an
-	 * update from that build still offers the re-bake (into the new folder). */
-	snprintf(dir, sizeof(dir), "%s/../DRIVER/D1CARS", jer_root_dir());
-	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
-	v = RbFileInt(path, NULL);
-	if (v >= 0)
-		return v;
-
-	return RbDirHasEntries(dir) ? 0 : -1;
+	return jer_d1cars_baked_version();
 }
 
 /* 1 when the page at model*0x8000 is missing or all zero. That is the

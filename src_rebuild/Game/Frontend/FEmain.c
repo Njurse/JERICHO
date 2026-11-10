@@ -5275,11 +5275,12 @@ static int JerFeShowPortrait(int city, int model)
 	return 1;
 }
 
-/* The openable shared fallback. gD1DataFolder is the carhacks root
- * (JERICHO\MODS\carhacks\), the same root the Driver 1 LEVs hang off. */
+/* The openable shared fallback: carhacks' own asset, so always under the
+ * carhacks folder - NOT gD1DataFolder, which follows the Driver 1 bake to
+ * wherever it was found (a legacy DRIVER\D1CARS or a sibling install). */
 static int JerFeFallbackPath(char* out, int outSize)
 {
-	const char* root = gD1DataFolder;
+	const char* root = "JERICHO\\MODS\\carhacks\\";
 	int n;
 	char slash;
 
@@ -5287,9 +5288,6 @@ static int JerFeFallbackPath(char* out, int outSize)
 		return 0;
 
 	out[0] = 0;
-
-	if (root == NULL || root[0] == 0)
-		root = "JERICHO\\MODS\\carhacks\\";
 
 	slash = root[strlen(root) - 1];
 	n = snprintf(out, (size_t)outSize, "%s%s%s",

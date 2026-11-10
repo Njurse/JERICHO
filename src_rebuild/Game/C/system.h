@@ -64,7 +64,15 @@ extern char gDataFolder[32];
 #define CITY_CUSTOM_MAX 16
 #define CITY_COUNT    (CITY_D2_COUNT + CITY_D1_COUNT + CITY_CUSTOM_MAX)
 
-extern char gD1DataFolder[32];
+/* JERICHO: where the Driver 1 car data is READ from - the folder holding D1CARS,
+ * set at startup by JerD1DataFolderInit from the bake jer_d1cars.c found (a
+ * sibling install's relative path is long, hence the size). */
+#define JER_D1_DATA_FOLDER_LEN	160	/* = JER_D1CARS_ROOT_MAX (jer_rebake.h) */
+extern char gD1DataFolder[JER_D1_DATA_FOLDER_LEN];
+
+/* JERICHO: look for the baked Driver 1 cars and point gD1DataFolder at them.
+ * JerCityRegistryInit calls it once; no-op on PSX. */
+void JerD1DataFolderInit(void);
 extern const char* JerGetCityDataRoot(int city);
 
 /* ---- JERICHO: the runtime city registry ---------------------------------
