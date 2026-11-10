@@ -110,6 +110,25 @@ void jer_pause_menu_register(const JER_PAUSE_MENU* menu);
  * happens at build time. */
 int jer_pause_menu_add_items(const char* target, const JER_PAUSE_MENU_ITEM* items, int count);
 
+/* OPEN THE PAUSE STRAIGHT ON ONE PAGE.
+ *
+ * `target` is the page's id (jer_pause_menu.id) or its title, as for
+ * jer_pause_menu_add_items. The pause opens with that page showing, as though the
+ * player had walked Continue -> JERICHO Addons -> page, so a module can bind its
+ * own key to its own settings (JerAI opens its page on L2).
+ *
+ * A page opened this way IS the pause: Triangle or Start on it closes the pause
+ * instead of backing up into menus the player never opened. Its submenus nest and
+ * back out as usual.
+ *
+ * Returns 1 when the pause was asked for. Returns 0 when the pause is already
+ * open or `target` is empty. A target that matches no page opens the root pause
+ * menu and says so in the log.
+ *
+ * Engine-side (pause.c): for COMPILED-IN modules. It is not in the runtime-DLL
+ * host table (jer_host_api.h). */
+int jer_pause_menu_open(const char* target);
+
 /* Reading the contributions back. THE BRIDGE USES THESE when it builds a menu; they
  * are here (rather than engine-side) because the two copies of this header must be
  * identical, and a module has no less right to see what was contributed to it. */

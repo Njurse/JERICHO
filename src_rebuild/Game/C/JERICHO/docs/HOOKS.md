@@ -101,6 +101,9 @@ jer_pause_menu_register(&myMenu);
   `jer_pause_menu_add_items(target, items, count)` — resolved when the menu is
   built, so order does not matter, and the owner's own rows are never
   displaced (carhacks contributes its car actions to mp's car page this way).
+- **Opening your page from a key.** A compiled-in module can call
+  `jer_pause_menu_open(target)` (id or title) to open the pause straight on its
+  page. Triangle or Start on that page closes the pause. JerAI binds it to L2.
 - `crumple`, `d2pl` and `sandbox` are the worked examples — their old
   hardcoded shells were removed from `pause.c`.
 
@@ -145,7 +148,8 @@ jer_hud_message("You killed VASQUEZ", 0);        /* 0 frames = the 3 s default *
   subject exists and clear it when it does not:
   `jer_hud_panel(slot, anchor, text, r, g, b)` with `anchor` one of
   `JER_HUD_ANCHOR_TOP_LEFT` / `_TOP_CENTRE` / `_TOP_RIGHT`. Panels sharing an
-  anchor stack downward in slot order (`JER_HUD_PANEL_MAX` = 4), and
+  anchor stack downward in slot order (`JER_HUD_PANEL_MAX` = 10; the slots are
+  global, so take a free one from the owner table in `jer_hud.h`), and
   `jer_hud_panel_bar(slot, anchor, value, max, r, g, b)` puts a small filled
   **meter** in the same slot — a health bar under a lock-on name.
 - All of it is drawn from the engine's overlay pass (`jer_hud_draw`, next to the

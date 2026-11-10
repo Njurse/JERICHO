@@ -1,222 +1,340 @@
 /*
- * jerai_menu.c -- the in-game control menu.
+ * jerai_menu.c -- JerAI's settings, as a page of the game's own pause menu.
  *
- * A jer_menu list drawn over the game (JER_EVENT_DRAW_OVERLAY) and driven by the
- * PHYSICAL pad read in the frame hook - deliberately not the injected pad, so the
- * player can work the menu while JerAI is driving the car: the car gets the
- * synthetic pad, the menu gets the real one, and they never fight.
+ * The page is registered with jer_pause_menu.h like every other module page
+ * (Continue -> JERICHO Addons -> JerAI), and L2 opens the pause straight on it
+ * (jer_pause_menu_open), only while JerAI is enabled. Triangle or Start on the
+ * page closes the pause again; the Evade settings are a submenu of it.
  *
- * Rows: the behaviors (select one), the four visualization layers (toggle), a
- * one-shot "dump the road graph", and Close. Every change is written straight to
- * the config, so it survives a reload and the .ini always reflects the state.
+ * The pause stops the game, so the car gets no input at all while the page is
+ * open. The one thing left to guard is the key that CLOSED it: Cross on Close,
+ * Triangle or Start would otherwise reach the car on the first frame back (a
+ * Triangle edge leaves the car, a handbrake edge cycles the control mode). Those
+ * keys are stripped from the car pad until they are released
+ * (JerAiMenuPadMask, applied in jerai.c's CAR_PAD hook).
  *
- * Opened/closed with L2 (the look-left shoulder), and only while JerAI is
- * enabled. While it is open the keys it reads (D-pad up/down, Cross, Triangle)
- * are stripped from the live car pad (JerAiMenuPadMask, applied in jerai.c's
- * CAR_PAD hook), so working the menu in Manual does not also steer, accelerate,
- * handbrake or leave the car. A key that closed the menu stays stripped until it
- * is released, so the closing Triangle never reaches the car as a handbrake edge.
- * L2 itself is still the camera's look-left: that is read by the camera, not
- * the car pad, and is out of this module's reach.
+ * Every row writes its value straight to JerAI.ini through jer_config, so a
+ * change survives a reload and the .ini always shows the live state.
+ *
+ * L2 itself is still the camera's look-left (and Caine's Crossfire's gun): the
+ * camera reads it outside the car-pad hook, out of this module's reach.
  */
 
 #include "jerai_internal.h"
 #include "jerai_drive.h"
 #include "jerai_behavior.h"
 
-#include "jer_menu.h"
+#include "jer_pause_menu.h"
 #include "jer_config.h"
 #include "jer_events.h"
 #include "pad.h"
+#include "pause.h"	/* pauseflag */
 
 #include <stdio.h>
 
 #define JERAI_MENU_KEY		MPAD_L2
 
-/* every key the open menu reads: kept off the car while it is open */
-#define JERAI_MENU_PAD_KEYS	(MPAD_D_UP | MPAD_D_DOWN | MPAD_CROSS | MPAD_TRIANGLE)
-#define JERAI_MENU_MAX_ROWS	16
-#define JERAI_MENU_LABEL	48
+/* the page's stable ids (jer_pause_menu_open, jer_pause_menu_add_items) */
+#define JERAI_PAGE_ID		"jerai"
+#define JERAI_EVADE_PAGE_ID	"jerai.evade"
 
-static JerMenu sMenu;
-static char sLabels[JERAI_MENU_MAX_ROWS][JERAI_MENU_LABEL];
-static const char* sItems[JERAI_MENU_MAX_ROWS];
-static int sRows;
-static int sOpen;
-static int sSwallow;	/* menu keys still held since the menu closed: kept off the car */
+/* keys that can close the pause from this page: kept off the car until released */
+#define JERAI_MENU_CLOSE_KEYS	(MPAD_CROSS | MPAD_TRIANGLE | MPAD_START | MPAD_L2)
 
-/* the four layers, in row order after the behaviors */
-static const char* const sLayerKey[4] =
+/* steer_trace when the row is switched on with Cross: the rate the stats tool
+ * suggests (tools/jerai_steer_stats.py) */
+#define JERAI_TRACE_DEFAULT	3
+#define JERAI_TRACE_MAX		30
+
+static int sPauseAsked;	/* we opened the pause and have not seen it close yet */
+static int sSwallow;	/* close keys still held since the pause closed: kept off the car */
+
+static void JerAiSetInt(const char* key, int* field, int value)
 {
-	JERAI_CFG_VIZ_ROAD, JERAI_CFG_VIZ_GRID, JERAI_CFG_VIZ_PATH, JERAI_CFG_VIZ_HUD
-};
-static const char* const sLayerName[4] = { "Road graph", "Grid", "Path", "HUD" };
-
-static int* JerAiLayerField(int i)
-{
-	switch (i)
-	{
-	case 0: return &gJerAi.vizRoad;
-	case 1: return &gJerAi.vizGrid;
-	case 2: return &gJerAi.vizPath;
-	default: return &gJerAi.vizHud;
-	}
+	*field = value;
+	jer_config_set_int("JerAI", key, value);
 }
 
-static void JerAiMenuRebuild(void)
+static const char* JerAiOnOff(int v)
 {
-	int i;
-	int n = JerAiBehaviorCount();
-
-	sRows = 0;
-
-	for (i = 0; i < n && sRows < JERAI_MENU_MAX_ROWS; i++)
-	{
-		snprintf(sLabels[sRows], JERAI_MENU_LABEL, "%s %s",
-			JerAiBehaviorIdAt(i) == gJerAi.mode ? ">" : " ", JerAiBehaviorNameAt(i));
-		sItems[sRows] = sLabels[sRows];
-		sRows++;
-	}
-
-	for (i = 0; i < 4 && sRows < JERAI_MENU_MAX_ROWS; i++)
-	{
-		snprintf(sLabels[sRows], JERAI_MENU_LABEL, "%s: %s",
-			sLayerName[i], *JerAiLayerField(i) ? "ON" : "off");
-		sItems[sRows] = sLabels[sRows];
-		sRows++;
-	}
-
-	snprintf(sLabels[sRows], JERAI_MENU_LABEL, "Immunity: %s", gJerAi.immune ? "ON" : "off");
-	sItems[sRows] = sLabels[sRows];
-	sRows++;
-
-	/* one statement per step: `sItems[sRows++] = sLabels[sRows - 1]` is
-	 * unsequenced, and the build's compilers evaluated it shifted by a row */
-	snprintf(sLabels[sRows], JERAI_MENU_LABEL, "Dump road graph now");
-	sItems[sRows] = sLabels[sRows];
-	sRows++;
-
-	snprintf(sLabels[sRows], JERAI_MENU_LABEL, "Close");
-	sItems[sRows] = sLabels[sRows];
-	sRows++;
+	return v ? "On" : "Off";
 }
 
-/* Close, and keep whatever menu key is still down off the car until it is let go. */
-static void JerAiMenuClose(void)
+static int JerAiClamp(int v, int lo, int hi)
 {
-	if (!sOpen)
-		return;
-
-	sOpen = 0;
-	sSwallow = Pads[0].mapped & JERAI_MENU_PAD_KEYS;
-	jer_menu_end(&sMenu);
+	return v < lo ? lo : (v > hi ? hi : v);
 }
 
-static void JerAiMenuConfirm(int row)
+/* ------------------------------------------------------------------ */
+/* main page rows                                                      */
+/* ------------------------------------------------------------------ */
+
+static int JerAiBehaviorIndex(void)
+{
+	int i, n = JerAiBehaviorCount();
+
+	for (i = 0; i < n; i++)
+	{
+		if (JerAiBehaviorIdAt(i) == gJerAi.mode)
+			return i;
+	}
+
+	return 0;
+}
+
+static void LabelBehavior(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Behavior: < %s >", JerAiBehaviorName(gJerAi.mode));
+}
+
+static int ActBehavior(void* ud, int dir)
 {
 	int n = JerAiBehaviorCount();
+	int i = JerAiBehaviorIndex() + (dir < 0 ? -1 : 1);	/* Cross steps forward */
 
-	if (row < 0 || row >= sRows)
-		return;
+	(void)ud;
 
-	if (row < n)
-	{
-		gJerAi.mode = JerAiBehaviorIdAt(row);
-		jer_config_set_int("JerAI", JERAI_CFG_MODE, gJerAi.mode);
-	}
-	else if (row < n + 4)
-	{
-		int i = row - n;
-		int* field = JerAiLayerField(i);
+	if (n <= 0)
+		return JER_PAUSE_QUIT_NONE;
 
-		*field = !*field;
-		jer_config_set_int("JerAI", sLayerKey[i], *field);
+	i = (i % n + n) % n;
+	JerAiSetInt(JERAI_CFG_MODE, &gJerAi.mode, JerAiBehaviorIdAt(i));
+	JerAiLogState("menu");
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
+#define JERAI_TOGGLE_ROW(fn, text, key, field)					\
+	static void Label##fn(void* ud, char* out, int max)			\
+	{									\
+		(void)ud;							\
+		snprintf(out, max, "%s: %s", text, JerAiOnOff(gJerAi.field));	\
+	}									\
+	static int Act##fn(void* ud, int dir)					\
+	{									\
+		(void)ud; (void)dir;						\
+		JerAiSetInt(key, &gJerAi.field, !gJerAi.field);			\
+		return JER_PAUSE_QUIT_NONE;					\
 	}
-	else if (row == n + 4)
-	{
-		gJerAi.immune = !gJerAi.immune;
-		jer_config_set_int("JerAI", JERAI_CFG_IMMUNE, gJerAi.immune);
-	}
-	else if (row == n + 5)
-	{
-		gJerAi.dumpRequested = 1;
-	}
+
+JERAI_TOGGLE_ROW(Immune, "Immunity", JERAI_CFG_IMMUNE, immune)
+JERAI_TOGGLE_ROW(Follow, "Follow players", JERAI_CFG_FOLLOW, followEnabled)
+JERAI_TOGGLE_ROW(Flee, "Flee players", JERAI_CFG_FLEE, fleeEnabled)
+JERAI_TOGGLE_ROW(Road, "Road view", JERAI_CFG_VIZ_ROAD, vizRoad)
+JERAI_TOGGLE_ROW(Path, "Path view", JERAI_CFG_VIZ_PATH, vizPath)
+JERAI_TOGGLE_ROW(Hud, "HUD lines", JERAI_CFG_VIZ_HUD, vizHud)
+
+static void LabelTrace(void* ud, char* out, int max)
+{
+	(void)ud;
+
+	if (gJerAi.steerTrace > 0)
+		snprintf(out, max, "Steer trace: every %d frame%s", gJerAi.steerTrace,
+			gJerAi.steerTrace == 1 ? "" : "s");
 	else
-	{
-		JerAiMenuClose();
-		return;
-	}
-
-	JerAiMenuRebuild();
+		snprintf(out, max, "Steer trace: Off");
 }
 
-static void JerAiMenuOpenNow(void)
+/* Cross switches it on at the stats tool's rate or off; left/right set the rate */
+static int ActTrace(void* ud, int dir)
 {
-	JerAiMenuRebuild();
-	jer_menu_list(&sMenu, "JerAI", (const char* const*)sItems, sRows);
-	sOpen = 1;
+	int v;
 
-	gJerAi.ctx->jer_log(gJerAi.ctx, "[JerAI] menu open: %d rows (mode=%d road=%d grid=%d path=%d hud=%d)\n",
-		sRows, gJerAi.mode, gJerAi.vizRoad, gJerAi.vizGrid, gJerAi.vizPath, gJerAi.vizHud);
+	(void)ud;
+
+	if (dir == 0)
+		v = gJerAi.steerTrace > 0 ? 0 : JERAI_TRACE_DEFAULT;
+	else
+		v = JerAiClamp(gJerAi.steerTrace + dir, 0, JERAI_TRACE_MAX);
+
+	JerAiSetInt(JERAI_CFG_STEER_TRACE, &gJerAi.steerTrace, v);
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void LabelDump(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, gJerAi.dumpRequested ? "Dump road graph: queued" : "Dump road graph");
+}
+
+static int ActDump(void* ud, int dir)
+{
+	(void)ud; (void)dir;
+	gJerAi.dumpRequested = 1;	/* serviced by the frame hook once the game runs */
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static int ActClose(void* ud, int dir)
+{
+	(void)ud; (void)dir;
+	return JER_PAUSE_QUIT_CONTINUE;
+}
+
+/* ------------------------------------------------------------------ */
+/* Evade settings rows                                                 */
+/* ------------------------------------------------------------------ */
+
+static void LabelPace(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Pace: %+d%% over limit", gJerAi.pacePct);
+}
+
+static int ActPace(void* ud, int dir)
+{
+	(void)ud;
+	JerAiSetInt(JERAI_CFG_PACE_PCT, &gJerAi.pacePct,
+		JerAiClamp(gJerAi.pacePct + (dir < 0 ? -5 : 5), 0, 100));
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void LabelLights(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Red lights: %s", gJerAi.runLights ? "Run" : "Stop");
+}
+
+static int ActLights(void* ud, int dir)
+{
+	(void)ud; (void)dir;
+	JerAiSetInt(JERAI_CFG_RUN_LIGHTS, &gJerAi.runLights, !gJerAi.runLights);
+	return JER_PAUSE_QUIT_NONE;
+}
+
+static void LabelClearance(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Cop clearance: %d", gJerAi.copClearance);
+}
+
+static int ActClearance(void* ud, int dir)
+{
+	(void)ud;
+	JerAiSetInt(JERAI_CFG_COP_CLEARANCE, &gJerAi.copClearance,
+		JerAiClamp(gJerAi.copClearance + (dir < 0 ? -500 : 500), 1000, 20000));
+	return JER_PAUSE_QUIT_NONE;
+}
+
+/* 352 and up is the engine's own lock (jerai.h JERAI_CFG_MAX_STEER), i.e. no cap */
+static void LabelSteer(void* ud, char* out, int max)
+{
+	(void)ud;
+
+	if (gJerAi.maxSteer >= 352)
+		snprintf(out, max, "Max steer: no cap");
+	else
+		snprintf(out, max, "Max steer: %d", gJerAi.maxSteer);
+}
+
+static int ActSteer(void* ud, int dir)
+{
+	int v = gJerAi.maxSteer >= 352 ? 352 : gJerAi.maxSteer;
+
+	(void)ud;
+	v = JerAiClamp(v + (dir < 0 ? -32 : 32), 64, 352);
+	JerAiSetInt(JERAI_CFG_MAX_STEER, &gJerAi.maxSteer, v >= 352 ? 512 : v);	/* 512 = the shipped "no cap" */
+
+	return JER_PAUSE_QUIT_NONE;
+}
+
+/* a readout: the limit of the road under the car, and the cruise Evade makes of it
+ * (jerai_behavior.c: roadLimit * (100 + pace_pct) / 100) */
+static void LabelRoadLimit(void* ud, char* out, int max)
+{
+	(void)ud;
+	snprintf(out, max, "Road limit: %d, cruise %d", gJerAi.roadLimit,
+		gJerAi.roadLimit * (100 + gJerAi.pacePct) / 100);
+}
+
+static int ActBack(void* ud, int dir)
+{
+	(void)ud; (void)dir;
+	return JER_PAUSE_QUIT_BACKMENU;
+}
+
+/* ------------------------------------------------------------------ */
+/* the pages                                                           */
+/* ------------------------------------------------------------------ */
+
+static const JER_PAUSE_MENU_ITEM sEvadeItems[] =
+{
+	{ NULL,   LabelPace,      ActPace,      NULL, NULL, 1 },
+	{ NULL,   LabelLights,    ActLights,    NULL, NULL, 0 },
+	{ NULL,   LabelClearance, ActClearance, NULL, NULL, 1 },
+	{ NULL,   LabelSteer,     ActSteer,     NULL, NULL, 1 },
+	{ NULL,   LabelRoadLimit, NULL,         NULL, NULL, 0 },
+	{ "Back", NULL,           ActBack,      NULL, NULL, 0 },
+};
+
+static const JER_PAUSE_MENU sEvadeMenu =
+{
+	"Evade settings", sEvadeItems, (int)(sizeof(sEvadeItems) / sizeof(sEvadeItems[0])), JERAI_EVADE_PAGE_ID
+};
+
+static const JER_PAUSE_MENU_ITEM sMainItems[] =
+{
+	{ NULL,             LabelBehavior, ActBehavior, NULL, NULL,        1 },
+	{ NULL,             LabelImmune,   ActImmune,   NULL, NULL,        0 },
+	{ NULL,             LabelFollow,   ActFollow,   NULL, NULL,        0 },
+	{ NULL,             LabelFlee,     ActFlee,     NULL, NULL,        0 },
+	{ "Evade settings", NULL,          NULL,        NULL, &sEvadeMenu, 0 },
+	{ NULL,             LabelRoad,     ActRoad,     NULL, NULL,        0 },
+	{ NULL,             LabelPath,     ActPath,     NULL, NULL,        0 },
+	{ NULL,             LabelHud,      ActHud,      NULL, NULL,        0 },
+	{ NULL,             LabelTrace,    ActTrace,    NULL, NULL,        1 },
+	{ NULL,             LabelDump,     ActDump,     NULL, NULL,        0 },
+	{ "Close",          NULL,          ActClose,    NULL, NULL,        0 },
+};
+
+static const JER_PAUSE_MENU sMainMenu =
+{
+	"JerAI", sMainItems, (int)(sizeof(sMainItems) / sizeof(sMainItems[0])), JERAI_PAGE_ID
+};
+
+void JerAiMenuRegister(void)
+{
+	jer_pause_menu_register(&sMainMenu);
+}
+
+/* ------------------------------------------------------------------ */
+/* L2, and the keys that closed the pause                              */
+/* ------------------------------------------------------------------ */
+
+/* the pause we opened has closed: whatever close key is still down stays off the car */
+static void JerAiMenuSyncPause(void)
+{
+	if (sPauseAsked && !pauseflag)
+	{
+		sPauseAsked = 0;
+		sSwallow = Pads[0].mapped & JERAI_MENU_CLOSE_KEYS;
+	}
 }
 
 void JerAiMenuForceOpen(void)
 {
-	JerAiMenuOpenNow();
+	if (jer_pause_menu_open(JERAI_PAGE_ID))
+		sPauseAsked = 1;
 }
 
 void JerAiMenuTick(void)
 {
-	int cur = Pads[0].mapped;
-	int newp = Pads[0].mapnew;
+	JerAiMenuSyncPause();
 
 	/* a released key is no longer swallowed */
-	sSwallow &= cur;
+	sSwallow &= Pads[0].mapped;
 
-	/* the menu belongs to an enabled JerAI: closed (and unopenable) otherwise */
+	/* the page belongs to an enabled JerAI: L2 is left alone otherwise */
 	if (!gJerAi.enabled)
-	{
-		JerAiMenuClose();
-		return;
-	}
-
-	if (newp & JERAI_MENU_KEY)
-	{
-		if (sOpen)
-			JerAiMenuClose();
-		else
-			JerAiMenuOpenNow();
-
-		return;
-	}
-
-	if (!sOpen)
 		return;
 
-	if (newp & MPAD_TRIANGLE)
-	{
-		JerAiMenuClose();
-		return;
-	}
-
-	if (jer_menu_tick(&sMenu, MPAD_D_UP, MPAD_D_DOWN, 0, 0, MPAD_CROSS, cur, newp))
-		JerAiMenuConfirm(sMenu.cursor);
+	if ((Pads[0].mapnew & JERAI_MENU_KEY) && !(sSwallow & JERAI_MENU_KEY))
+		JerAiMenuForceOpen();
 }
 
 unsigned int JerAiMenuPadMask(void)
 {
-	return sOpen ? (unsigned int)JERAI_MENU_PAD_KEYS : (unsigned int)sSwallow;
-}
-
-int JerAiOnDrawOverlay(void* userdata, void* args)
-{
-	(void)userdata;
-	(void)args;
-
-	if (!sOpen)
-		return JER_RESULT_CONTINUE;
-
-	jer_menu_draw(&sMenu, 160, 90);
-
-	return JER_RESULT_CONTINUE;
+	JerAiMenuSyncPause();
+	return (unsigned int)sSwallow;
 }

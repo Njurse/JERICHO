@@ -2,8 +2,8 @@
 
 A COMPILED-IN (deep) JERICHO module that takes the player's car and drives it
 with **A\* pathfinding over an engine occupancy grid**, a modular set of
-behaviors (joyride/random-wander first), **in-game debug visualization** and a
-small **control menu**.
+behaviors (joyride/random-wander first), **in-game debug visualization**, a short
+**HUD readout** in the top-left corner and a **pause-menu settings page** (L2).
 
 It is compiled into the exe (no `runtime = "dll"` in `mod.toml`) because it uses
 the engine's **compiled-in** road graph (`JerRoadInfoAt`) and the depth-sorted
@@ -162,7 +162,8 @@ reach a goal that is not on one. At 0 there is no road preference at all.
 
 ## Measuring the steering loop
 
-The once-a-second `[JerAI] drive` line **cannot show a saw**: it samples 30 frames
+The once-a-second `[JerAI] drive` line (written only while `steer_trace` is on)
+**cannot show a saw**: it samples 30 frames
 apart while the wheel is turned on and off in ones and twos. Set `steer_trace = N`
 and the module instead logs a `[JerAI] steer` line every N frames carrying the pad,
 the heading error, the **damped** error the steer decision actually used, the feeler
@@ -297,7 +298,36 @@ lines):
   in green, within ~6,000 units of the car;
 - `viz_path` — the current A\* plan (red), the goal cross (yellow) and the aim
   line (green);
-- `viz_hud` — a one-line text readout (mode, speed, waypoints, graph size, lines).
+- `viz_hud` — up to four short lines in the top-left corner (see *HUD*).
+
+## HUD
+
+While `viz_hud` is on (the default) and JerAI is enabled, the top-left corner
+shows up to four lines, refreshed three times a second:
+
+1. `JerAI <behavior>` and what it is doing (following, fleeing, leaving cop,
+   CHASED, red light, reversing). Cyan for Joyride, amber for Evade, red while
+   chased. In Manual this is the only line: `JerAI Manual  (L2: settings)`.
+2. `Speed <now> / <target>`, plus Evade's cruise `cap`.
+3. `Route <n> pts, goal <distance>` (`(part)` while the plan is a partial route).
+4. The situation: nearest cop and the road limit (Evade), distance to the car
+   being followed or fled from, or the corner ahead and the grip.
+
+The lines are `jer_hud_panel` slots 6-9 (the owner table is in `jer_hud.h`), not
+the shared 4-line notice queue, so they never push out anyone else's messages and
+are never cut short. Before 0.3.0 this was one ~150-character notice a second, cut
+at 96 characters and fighting mp's lines for the same four rows.
+
+## Log
+
+Quiet by default. JerAI writes its boot lines (`registered`, `run seed`, the road
+graph counts) and then one `[JerAI] state (...)` line whenever the drive changes:
+on/off, behavior, following, fleeing, chased, cop near, reversing out of a wedge.
+
+With `steer_trace` on (see *Measuring the steering loop*) it also writes the
+35-field `[JerAI] drive` line once a second, the `[JerAI] steer` line every N
+frames and the first three pad probes. Before 0.3.0 the drive line was written
+every second whether you wanted it or not.
 
 ## Immunity
 
@@ -308,17 +338,35 @@ threshold, and the frame hook keeps the wanted level at zero
 (`felonyRating`/`copsAreInPursuit`/`CopsCanSeePlayer`/`pedestrianFelony`), so no
 cop sirens chase the test drive. Manual play (`mode = 0`) is left untouched.
 
-## Control menu
+## Settings page (L2)
 
-**L2** opens a small `jer_menu` list over the game (only while JerAI is enabled):
-the behaviors, the four visualization layers, *Immunity*, *Dump road graph now*,
-and *Close*. It reads the PHYSICAL pad (in the frame hook) while the car gets the
-synthetic one, so it works while JerAI is driving. While it is open its keys
-(D-pad up/down, Cross, Triangle) are stripped from the live car pad, so in Manual
-the menu does not also steer, accelerate, handbrake or leave the car; a key that
-closed it stays stripped until released. L2 is still the camera's look-left (and
-Caine's Crossfire's gun): those read the pad outside the car-pad hook. Every
-change is written to the config immediately.
+JerAI's settings are a page of the game's own pause menu (`jer_pause_menu.h`,
+id `jerai`): Continue → JERICHO Addons → JerAI. **L2** opens the pause straight on
+that page (`jer_pause_menu_open`), only while JerAI is enabled. Triangle or Start
+on the page closes the pause; *Close* does too.
+
+| Row | What it does |
+|-----|--------------|
+| Behavior: < Manual / Joyride / Evade > | left/right or Cross |
+| Immunity | `immune` |
+| Follow players | `follow` |
+| Flee players | `flee` |
+| Evade settings | submenu: *Pace* (`pace_pct`, ±5), *Red lights* Run/Stop (`run_lights`), *Cop clearance* (`cop_clearance`, ±500), *Max steer* (`max_steer`, ±32, "no cap" at 352+), *Road limit* (read-only: the limit of the road under the car and the cruise Evade makes of it), *Back* |
+| Road view | `viz_road` |
+| Path view | `viz_path` |
+| HUD lines | `viz_hud` |
+| Steer trace | Cross: off / every 3 frames; left/right: 0-30 (`steer_trace`) |
+| Dump road graph | writes the graph (see *Road-graph dump*) once the game runs again |
+| Close | back to the game |
+
+Every change is written to `JerAI.ini` at once. The pause stops the game, so the
+car gets no input while the page is open; the key that closed it (Cross, Triangle,
+Start, L2) is kept off the car until it is released, so closing never accelerates,
+leaves the car or cycles the control mode. `viz_grid` has no row (it is heavy);
+set it in the ini. L2 is still the camera's look-left (and Caine's Crossfire's
+gun): those read the pad outside the car-pad hook. Before 0.3.0 the menu was a
+bare text list drawn over the game that ran off the bottom of the screen and
+showed `> > Joyride` (the label and the cursor both drew a `>`).
 
 ## Road-graph dump
 
@@ -345,7 +393,7 @@ the working directory:
 | `jerai_behavior.*` | the modular behavior table |
 | `jerai_follow.*` | who the AI chases in multiplayer (the mp host, or the nearest player on a dedicated server) + the clearance; the police Evade keeps clear of |
 | `jerai_viz.c` | debug drawing |
-| `jerai_menu.c` | the control menu |
+| `jerai_menu.c` | the settings page (pause menu) and the L2 key |
 | `tools/follow_host.*` | join a match on localhost as an extra player that follows the host |
 | `tools/jerai_steer_stats.py` | summarise a `steer_trace` log (the steering loop's own numbers) |
 
@@ -365,7 +413,7 @@ See `jerai.h` for the key names and defaults. The car-dynamics knobs:
 | `corner_lookahead` | 6000 | how far ahead the plan is scanned for corners (world units) |
 | `speed_scale` | 100 | overall aggression: the corner target as a percentage |
 | `avoid_dist` | 1200 | start avoiding a car ahead within this range (**capped at `JERAI_AVOID_MAX` = 1200**; a larger value is logged, not silently ignored) |
-| `steer_trace` | 0 | log a compact steering-loop line every N frames (0 = off) - see *Measuring the steering loop* |
+| `steer_trace` | 0 | log a compact steering-loop line every N frames (0 = off); while on, the once-a-second `drive` line is logged too - see *Measuring the steering loop* and *Log* |
 | `yaw_lead` | 4 | steering damper: frames of the car's own yaw the aim leads by. **Lower steers harder**; higher straightens the wheel earlier (the old fixed value was 8, which read as steering far too slowly) |
 
 `brake_gain` is in speed^2 per world unit; 40 swamps the term (the target never

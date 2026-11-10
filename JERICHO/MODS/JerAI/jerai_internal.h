@@ -202,14 +202,20 @@ int JerAiOnDrawWorld(void* userdata, void* args);
 /* lines drawn by the last JerAiOnDrawWorld, for the readout */
 int JerAiVizLines(void);
 
-/* the in-game control menu (jerai_menu.c): reads the PHYSICAL pad and is drawn
- * over the game. */
+/* the settings page (jerai_menu.c): a jer_pause_menu page, registered from the
+ * module entry. JerAiMenuTick watches L2 (the PHYSICAL pad) and opens the pause
+ * on the page; JerAiMenuForceOpen does that directly. */
+void JerAiMenuRegister(void);
 void JerAiMenuTick(void);
 void JerAiMenuForceOpen(void);
 
-/* CAR_PAD_* / MPAD_* bits the live car must not see this frame: the menu's keys
- * while it is open, and any of them still held since it closed. 0 otherwise. */
+/* CAR_PAD_* / MPAD_* bits the live car must not see this frame: the keys that
+ * closed the pause from the page, while they are still held. 0 otherwise. */
 unsigned int JerAiMenuPadMask(void);
-int JerAiOnDrawOverlay(void* userdata, void* args);
+
+/* jerai.c: one log line when the drive's state changes (nothing otherwise), and
+ * the top-left HUD lines (jer_hud_panel slots 6-9, while viz_hud is on) */
+void JerAiLogState(const char* why);
+void JerAiHudUpdate(void);
 
 #endif /* JERAI_INTERNAL_H */

@@ -85,7 +85,16 @@ int jer_hud_active(void);
  *
  * Panels sharing an anchor stack downward in slot order. Returns the slot used,
  * or -1 for a bad slot or empty text. */
-#define JER_HUD_PANEL_MAX	6
+#define JER_HUD_PANEL_MAX	10
+
+/* WHO OWNS WHICH SLOT. Slots are global, so two modules writing the same one
+ * overwrite each other every frame. Take a free one and add it here.
+ *   0, 1  cainescrossfire: lock-on name and its health bar (top right)
+ *   2     free
+ *   3     cainescrossfire: arena editor readout (top left)
+ *   4     free
+ *   5     mp: round clock (top centre)
+ *   6-9   JerAI: its HUD lines (top left) */
 
 #define JER_HUD_ANCHOR_TOP_LEFT		0
 #define JER_HUD_ANCHOR_TOP_CENTRE	1
