@@ -87,6 +87,7 @@ routes around a block rather than squeezing a short gap past a building.
 |----|------|--------------|
 | 0  | Manual  | no pad injection — the car is the player's |
 | 1  | Joyride | picks a random road sample nearby and drives to it, then repeats |
+| 2  | Evade   | wanders at a pace over the road limit and keeps clear of the police; runs flat out once they chase (see *Evade*) |
 
 Adding a behavior is one function (`CAR_DATA* -> pad`) plus one row in
 `jerai_behavior.c`'s table; the menu and config pick it up automatically.
@@ -102,6 +103,11 @@ the host around the map while a match is being tested instead of ramming them;
 follow have something to chase. Its bolt-hole is scored on the occupancy grid,
 so it is a place the car can actually DRIVE to and not a straight line away
 through a building.
+
+On a **dedicated server** there is no host player: no roster row has id 0, so
+`MpGetPlayer(0)` is NULL. There a client follows (or, with `flee_host`, runs from)
+the **nearest** other connected player with a car instead. A listen server always
+has its host row, so nothing changes there.
 
 The session state comes from the SDK (`jer_net_is_active` / `jer_net_is_host`) and
 the cars from the compiled-in `mp` module (`MpGetPlayer(i)->carId`); see
@@ -195,9 +201,41 @@ behaviours it does so with the corner-speed model and the aggression dial bypass
 (`panicFlee` in the driver: `JerAiSpeedTarget` returns the whole top speed), then
 goes back to following or wandering the moment the pursuit ends.
 
-`flee_police` (default 1) turns it off. **It needs `immune = 0`**: immunity pins
-the wanted level at zero, so with the default immunity no pursuit ever starts and
-this can never trigger.
+`flee_police` (default 1) turns it off. **It needs `immune = 0`** - the default
+since 0.2.0: immunity pins the wanted level at zero, so with it on no pursuit ever
+starts and this can never trigger.
+
+## Evade
+
+`mode = 2`. A getaway driver that stays clean until it cannot:
+
+- **Wander at a pace.** The same random road destinations as Joyride, but the
+  target speed is capped at the road's own limit plus `pace_pct` percent. The
+  limit is re-read under the car every frame (`roadLimit`: civ_ai.c
+  `speedLimits[]` for the surface's `ROAD_SPEED_LIMIT`; a junction keeps the last
+  road's).
+- **Keep clear of cops.** A police car - a pursuer, a patrolling civ-AI cop
+  (`CONTROL_FLAG_COP`), or a multiplayer cop player - inside `cop_clearance`
+  world units is a threat: the car leaves for the reachable point furthest from
+  it (the Joyride flee's bolt-hole, `JerAiLocalFleeGoal`), still at the pace,
+  because speeding past a cop is how a pursuit starts. It goes back to wandering
+  once the cop is 1.25x the clearance away.
+- **Lights.** `run_lights = 0` stops for a red - or an amber still more than ~600
+  units off - on the exit the car is entering a junction by, read exactly the way
+  the engine's red-light felony reads it (felony.c: `flags & 1`, the `ExitIdx`
+  matching the road it is on, `junctionLightsPhase[exit & 1]`). Within 900 units
+  it brakes to a stop; further out it coasts. `run_lights = 1` (default) never stops.
+- **Steering cap.** `max_steer` caps the front wheel angle (stop adding lock at
+  the cap). JerAI steers at the regular D-pad rate, which the engine tops out at
+  352, so the default 512 is no cap. It is a bang-bang cap on a digital pad (the
+  wheel settles between the cap and the cap minus one centring step), and it is
+  never applied to the wall-evasion turn or the reverse burst.
+- **Chased.** Once `copsAreInPursuit` / `CopsCanSeePlayer` is set it is the police
+  flee above: flat out, no pace, no lights, longer look-ahead.
+
+The once-a-second drive line carries `evade=` (a cop inside the clearance),
+`cop=` (distance to the nearest police car), `limit=` / `cap=` (road limit and
+the cruise cap) and `light=` (holding for a light).
 
 A closing pursuer covers `replan_move` almost instantly, so the plain "the threat
 moved" trigger used to redraw the bolt-hole every ~12 frames. A destination
@@ -252,7 +290,9 @@ Drawn in `JER_EVENT_DRAW_WORLD` with `Debug_AddLineDepth` (buildings occlude the
 lines):
 
 - `viz_road` — the engine road graph: nodes as crosses (yellow straight / orange
-  curve / green junction) and the `ConnectIdx` edges as blue lines;
+  curve / green junction) and the `ConnectIdx` edges as blue lines. The graph is
+  built once per level as soon as this layer is on (before 0.2.0 only a dump
+  built it, so the layer drew nothing);
 - `viz_grid` — the occupancy grid: blocked samples (walls) in red, road samples
   in green, within ~6,000 units of the car;
 - `viz_path` — the current A\* plan (red), the goal cross (yellow) and the aim
@@ -261,7 +301,8 @@ lines):
 
 ## Immunity
 
-While JerAI is driving (and `immune = 1`, the default) the player's car is
+While JerAI is driving (and `immune = 1`; the default is 0 since 0.2.0, so the
+police can chase) the player's car is
 invulnerable: `JER_EVENT_GET_BUDDHA` clamps its damage below the totaled
 threshold, and the frame hook keeps the wanted level at zero
 (`felonyRating`/`copsAreInPursuit`/`CopsCanSeePlayer`/`pedestrianFelony`), so no
@@ -269,10 +310,15 @@ cop sirens chase the test drive. Manual play (`mode = 0`) is left untouched.
 
 ## Control menu
 
-**L2** opens a small `jer_menu` list over the game: the behaviors, the four
-visualization layers, *Dump road graph now*, and *Close*. It reads the PHYSICAL
-pad (in the frame hook) while the car gets the synthetic one, so it works while
-JerAI is driving. Every change is written to the config immediately.
+**L2** opens a small `jer_menu` list over the game (only while JerAI is enabled):
+the behaviors, the four visualization layers, *Immunity*, *Dump road graph now*,
+and *Close*. It reads the PHYSICAL pad (in the frame hook) while the car gets the
+synthetic one, so it works while JerAI is driving. While it is open its keys
+(D-pad up/down, Cross, Triangle) are stripped from the live car pad, so in Manual
+the menu does not also steer, accelerate, handbrake or leave the car; a key that
+closed it stays stripped until released. L2 is still the camera's look-left (and
+Caine's Crossfire's gun): those read the pad outside the car-pad hook. Every
+change is written to the config immediately.
 
 ## Road-graph dump
 
@@ -297,7 +343,7 @@ the working directory:
 | `jerai_dump.c` | the offline road-graph export |
 | `jerai_drive.*` | pad injection + waypoint following |
 | `jerai_behavior.*` | the modular behavior table |
-| `jerai_follow.*` | who the AI chases in multiplayer (the mp host) + the clearance |
+| `jerai_follow.*` | who the AI chases in multiplayer (the mp host, or the nearest player on a dedicated server) + the clearance; the police Evade keeps clear of |
 | `jerai_viz.c` | debug drawing |
 | `jerai_menu.c` | the control menu |
 | `tools/follow_host.*` | join a match on localhost as an extra player that follows the host |
@@ -340,6 +386,17 @@ The multiplayer-follow knobs (see *Following the host*):
 | `panic_lookahead` | 1600 | added to the aim's look-ahead while chased, to hold speed down a longer line |
 | `flee_car` | -1 | TEST LEVER: a `car_data` index to run from with no session |
 | `offroad_cost` | 90 | extra A* cost for an off-road sample (on-road is 100); 0 = no road preference |
+
+The Evade knobs (see *Evade*):
+
+| key | default | meaning |
+|-----|---------|---------|
+| `cop_clearance` | 6000 | a police car inside this (world units) is a threat to leave; released at 1.25x |
+| `pace_pct` | 25 | cruise pace over the road's own speed limit, in percent (ignored once chased) |
+| `run_lights` | 1 | 1 = never stop at lights; 0 = stop for red/amber unless chased |
+| `max_steer` | 512 | front wheel-angle cap; 352 or more = none (the engine's regular lock) |
+| `top_speed` | 255 | overall speed cap, every behavior |
+| `immune` | 0 | while driving: no damage, wanted level pinned at 0 (blocks every police chase) |
 
 ### Not built, on purpose
 

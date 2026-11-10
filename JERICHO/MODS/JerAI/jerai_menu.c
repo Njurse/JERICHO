@@ -10,8 +10,14 @@
  * one-shot "dump the road graph", and Close. Every change is written straight to
  * the config, so it survives a reload and the .ini always reflects the state.
  *
- * Opened/closed with L2 (the look-left shoulder); the car ignores injected
- * shoulder buttons, so it does not interfere with driving.
+ * Opened/closed with L2 (the look-left shoulder), and only while JerAI is
+ * enabled. While it is open the keys it reads (D-pad up/down, Cross, Triangle)
+ * are stripped from the live car pad (JerAiMenuPadMask, applied in jerai.c's
+ * CAR_PAD hook), so working the menu in Manual does not also steer, accelerate,
+ * handbrake or leave the car. A key that closed the menu stays stripped until it
+ * is released, so the closing Triangle never reaches the car as a handbrake edge.
+ * L2 itself is still the camera's look-left: that is read by the camera, not
+ * the car pad, and is out of this module's reach.
  */
 
 #include "jerai_internal.h"
@@ -26,6 +32,9 @@
 #include <stdio.h>
 
 #define JERAI_MENU_KEY		MPAD_L2
+
+/* every key the open menu reads: kept off the car while it is open */
+#define JERAI_MENU_PAD_KEYS	(MPAD_D_UP | MPAD_D_DOWN | MPAD_CROSS | MPAD_TRIANGLE)
 #define JERAI_MENU_MAX_ROWS	16
 #define JERAI_MENU_LABEL	48
 
@@ -34,6 +43,7 @@ static char sLabels[JERAI_MENU_MAX_ROWS][JERAI_MENU_LABEL];
 static const char* sItems[JERAI_MENU_MAX_ROWS];
 static int sRows;
 static int sOpen;
+static int sSwallow;	/* menu keys still held since the menu closed: kept off the car */
 
 /* the four layers, in row order after the behaviors */
 static const char* const sLayerKey[4] =
@@ -80,11 +90,26 @@ static void JerAiMenuRebuild(void)
 	sItems[sRows] = sLabels[sRows];
 	sRows++;
 
+	/* one statement per step: `sItems[sRows++] = sLabels[sRows - 1]` is
+	 * unsequenced, and the build's compilers evaluated it shifted by a row */
 	snprintf(sLabels[sRows], JERAI_MENU_LABEL, "Dump road graph now");
-	sItems[sRows++] = sLabels[sRows - 1];
+	sItems[sRows] = sLabels[sRows];
+	sRows++;
 
 	snprintf(sLabels[sRows], JERAI_MENU_LABEL, "Close");
-	sItems[sRows++] = sLabels[sRows - 1];
+	sItems[sRows] = sLabels[sRows];
+	sRows++;
+}
+
+/* Close, and keep whatever menu key is still down off the car until it is let go. */
+static void JerAiMenuClose(void)
+{
+	if (!sOpen)
+		return;
+
+	sOpen = 0;
+	sSwallow = Pads[0].mapped & JERAI_MENU_PAD_KEYS;
+	jer_menu_end(&sMenu);
 }
 
 static void JerAiMenuConfirm(int row)
@@ -118,8 +143,7 @@ static void JerAiMenuConfirm(int row)
 	}
 	else
 	{
-		sOpen = 0;
-		jer_menu_end(&sMenu);
+		JerAiMenuClose();
 		return;
 	}
 
@@ -146,17 +170,22 @@ void JerAiMenuTick(void)
 	int cur = Pads[0].mapped;
 	int newp = Pads[0].mapnew;
 
+	/* a released key is no longer swallowed */
+	sSwallow &= cur;
+
+	/* the menu belongs to an enabled JerAI: closed (and unopenable) otherwise */
+	if (!gJerAi.enabled)
+	{
+		JerAiMenuClose();
+		return;
+	}
+
 	if (newp & JERAI_MENU_KEY)
 	{
 		if (sOpen)
-		{
-			sOpen = 0;
-			jer_menu_end(&sMenu);
-		}
+			JerAiMenuClose();
 		else
-		{
 			JerAiMenuOpenNow();
-		}
 
 		return;
 	}
@@ -166,13 +195,17 @@ void JerAiMenuTick(void)
 
 	if (newp & MPAD_TRIANGLE)
 	{
-		sOpen = 0;
-		jer_menu_end(&sMenu);
+		JerAiMenuClose();
 		return;
 	}
 
 	if (jer_menu_tick(&sMenu, MPAD_D_UP, MPAD_D_DOWN, 0, 0, MPAD_CROSS, cur, newp))
 		JerAiMenuConfirm(sMenu.cursor);
+}
+
+unsigned int JerAiMenuPadMask(void)
+{
+	return sOpen ? (unsigned int)JERAI_MENU_PAD_KEYS : (unsigned int)sSwallow;
 }
 
 int JerAiOnDrawOverlay(void* userdata, void* args)
