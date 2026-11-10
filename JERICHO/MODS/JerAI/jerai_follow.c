@@ -230,6 +230,9 @@ int JerAiThreatTarget(CAR_DATA* car, int* x, int* z)
  * a building), are reused as they are.
  *
  * Off by default: a joining AI car still chases. */
+/* the last reason JerAiHostThreatTarget logged, so it says each one once */
+static const char* sHostThreatWhy;
+
 int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 {
 	MP_PLAYER* host;
@@ -253,6 +256,7 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 		if (slot >= 0)
 		{
 			gJerAi.followCarId = slot;	/* a destination, not traffic - see JerAiCarAhead */
+			sHostThreatWhy = NULL;
 
 			if (x != NULL) *x = car_data[slot].hd.where.t[0];
 			if (z != NULL) *z = car_data[slot].hd.where.t[2];
@@ -279,6 +283,7 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 		else
 		{
 			gJerAi.followCarId = slot;	/* a destination, not traffic - see JerAiCarAhead */
+			sHostThreatWhy = NULL;
 
 			if (x != NULL) *x = car_data[slot].hd.where.t[0];
 			if (z != NULL) *z = car_data[slot].hd.where.t[2];
@@ -288,12 +293,14 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 	}
 
 	/* A CLIENT in a live session that cannot name the host is worth one line: it is
-	 * the whole reason the flee silently does nothing. Throttled, and only reachable
-	 * on the client side of a session. */
-	if (gJerAi.ctx != NULL && (gJerAi.tick % 120) == 0)
+	 * the whole reason the flee silently does nothing. Once per reason (a state
+	 * change), not every few seconds; only reachable on the client side. */
+	if (gJerAi.ctx != NULL && why != sHostThreatWhy)
 		gJerAi.ctx->jer_log(gJerAi.ctx,
 			"[JerAI] flee_host is on but cannot run from the host: %s (local player %d)\n",
 			why, jer_net_local_player());
+
+	sHostThreatWhy = why;
 
 	return 0;
 }
