@@ -18,7 +18,9 @@
  *   1. THE MP HOST - when a session is live and WE are not the host. The AI
  *      drives the LOCAL machine's car, so "follow the host" means the client
  *      machine's car chases the host's car. On the host itself there is
- *      nobody to chase, so this answers 0 and the normal wander resumes.
+ *      nobody to chase, so this answers 0 and the normal wander resumes. On a
+ *      DEDICATED server there is no host player (no id 0), so the client
+ *      follows the NEAREST other connected player with a car instead.
  *   2. THE TEST LEVER - `follow_car` names a CAR_DATA index to follow
  *      unconditionally. It exists so the follow logic (approach, clearance,
  *      idle) can be exercised in SINGLE PLAYER, with no session at all.
@@ -66,10 +68,16 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z);
  * car parked down the road is scenery, not a threat. The car to run from is a
  * `CONTROL_TYPE_PURSUER_AI` slot.
  *
- * NOTE: JerAI's `immune` option (on by default) zeroes the wanted state every
- * frame, so with immunity on the police never pursue and this never answers 1.
- * Set `immune = 0` to be chaseable. */
+ * NOTE: JerAI's `immune` option zeroes the wanted state every frame, so with
+ * immunity on the police never pursue and this never answers 1. It is OFF by
+ * default for exactly that reason. */
 int JerAiPoliceThreat(CAR_DATA* car, int* x, int* z);
+
+/* EVADE: the nearest police car (a pursuer, or any CONTROL_FLAG_COP car - a
+ * patrolling cop or a multiplayer cop player) whether or not it is chasing.
+ * Returns 1 when it is inside `radius` and writes its position; *dist2 gets the
+ * squared distance to the nearest one either way (-1 when there is none). */
+int JerAiCopNear(CAR_DATA* car, int radius, int* x, int* z, long long* dist2);
 
 #ifdef __cplusplus
 }

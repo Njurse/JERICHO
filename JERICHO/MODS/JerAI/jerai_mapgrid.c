@@ -13,6 +13,8 @@
 
 #include "jerai_map.h"
 
+#include <math.h>
+
 int JerAiMapValid(const JERAI_MAP* map)
 {
 	return (map != NULL) && map->valid;
@@ -150,4 +152,152 @@ int JerAiMapNearestOpen(const JERAI_MAP* map, int ix, int iz, int* ox, int* oz)
 	}
 
 	return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* polyline geometry (see jerai_map.h): 64-bit throughout               */
+/* ------------------------------------------------------------------ */
+
+long long JerAiDist2(int ax, int az, int bx, int bz)
+{
+	long long dx = (long long)ax - (long long)bx;
+	long long dz = (long long)az - (long long)bz;
+
+	return dx * dx + dz * dz;
+}
+
+static long long JerAiSegLen(long long ax, long long az, long long bx, long long bz)
+{
+	double dx = (double)(bx - ax);
+	double dz = (double)(bz - az);
+
+	return (long long)sqrt(dx * dx + dz * dz);
+}
+
+long long JerAiPathProjectArc(const int* wx, const int* wz, int n, int cx, int cz, long long* crossD2)
+{
+	long long bestD2 = -1, bestArc = 0, arc = 0;
+	int k;
+
+	if (crossD2 != NULL)
+		*crossD2 = -1;
+
+	if (wx == NULL || wz == NULL)
+		return 0;
+
+	for (k = 1; k < n; k++)
+	{
+		long long ax = wx[k - 1], az = wz[k - 1];
+		long long bx = wx[k], bz = wz[k];
+		long long dx = bx - ax, dz = bz - az;
+		long long len2 = dx * dx + dz * dz;
+		long long segLen = JerAiSegLen(ax, az, bx, bz);
+		long long t = 0, px, pz, ex, ez, d2;
+
+		if (len2 > 0)
+		{
+			t = (cx - ax) * dx + (cz - az) * dz;
+
+			if (t < 0) t = 0;
+			if (t > len2) t = len2;
+		}
+
+		px = ax + (len2 > 0 ? dx * t / len2 : 0);
+		pz = az + (len2 > 0 ? dz * t / len2 : 0);
+		ex = cx - px;
+		ez = cz - pz;
+		d2 = ex * ex + ez * ez;
+
+		if (bestD2 < 0 || d2 < bestD2)
+		{
+			bestD2 = d2;
+			bestArc = arc + (len2 > 0 ? segLen * t / len2 : 0);
+		}
+
+		arc += segLen;
+	}
+
+	if (crossD2 != NULL)
+		*crossD2 = bestD2;
+
+	return bestArc;
+}
+
+int JerAiPathAimPoint(const int* wx, const int* wz, int n, int cx, int cz,
+	int fwdX, int fwdZ, long long fromArc, long long lookAhead, int behindCos,
+	int* aimX, int* aimZ, int* segDx, int* segDz)
+{
+	long long arc = 0;
+	long long bestX, bestZ, bestDx = 0, bestDz = 0;
+	int k;
+
+	if (wx == NULL || wz == NULL || n <= 0)
+		return 0;
+
+	bestX = wx[n - 1];
+	bestZ = wz[n - 1];
+
+	for (k = 1; k < n; k++)
+	{
+		long long ax = wx[k - 1], az = wz[k - 1];
+		long long bx = wx[k], bz = wz[k];
+		long long dx = bx - ax, dz = bz - az;
+		long long segLen = JerAiSegLen(ax, az, bx, bz);
+		long long steps, s;
+		int done = 0;
+
+		if (segLen <= 0)
+			continue;
+
+		steps = segLen / 512 + 1;
+
+		for (s = 0; s <= steps; s++)
+		{
+			long long f = segLen * s / steps;
+			long long px = ax + dx * f / segLen;
+			long long pz = az + dz * f / segLen;
+			long long thisArc = arc + f;
+
+			if (thisArc < fromArc)
+				continue;	/* still behind our own projection */
+
+			if (thisArc - fromArc >= lookAhead)
+			{
+				long long rx = px - cx, rz = pz - cz;
+				long long rlen2 = rx * rx + rz * rz;
+
+				if (rlen2 <= 0)
+					done = 1;
+				else
+				{
+					long long cosScaled = ((long long)fwdX * rx + (long long)fwdZ * rz) /
+						(long long)(sqrt((double)rlen2) + 1.0);
+
+					if (cosScaled > behindCos)
+						done = 1;
+				}
+
+				if (done)
+				{
+					bestX = px;
+					bestZ = pz;
+					bestDx = dx;
+					bestDz = dz;
+					break;
+				}
+			}
+		}
+
+		if (done)
+			break;
+
+		arc += segLen;
+	}
+
+	if (aimX != NULL) *aimX = (int)bestX;
+	if (aimZ != NULL) *aimZ = (int)bestZ;
+	if (segDx != NULL) *segDx = (int)bestDx;
+	if (segDz != NULL) *segDz = (int)bestDz;
+
+	return 1;
 }

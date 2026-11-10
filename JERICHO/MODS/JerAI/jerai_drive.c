@@ -24,6 +24,7 @@
 #include "cell.h"		/* Get*PackedCop, CELL_ITERATOR */
 #include "models.h"		/* modelpointers */
 #include "draw.h"		/* matrixtable */
+#include "civ_ai.h"		/* speedLimits, junctionLightsPhase: the road limit and the lights */
 /* GET_MODEL_DATA / COLLISION_PACKET / MODEL_FLAG_* arrive via driver2.h ->
  * dr2types.h -> engine/mdl.h */
 
@@ -110,15 +111,33 @@ static int JerAiAbs(int v)
 	return v < 0 ? -v : v;
 }
 
+int JerAiDriveBuildMap(CAR_DATA* car)
+{
+	if (car == NULL)
+		return 0;
+
+	/* One build per frame: a behavior that re-picks its goal builds the window
+	 * to choose on, and the forced re-plan right after it used to build the
+	 * same window again - 2 x 2,401 engine probes in one frame. */
+	if (gJerAi.mapBuiltAt == gJerAi.tick && JerAiMapValid(&gJerAi.map))
+		return 1;
+
+	if (!JerAiMapBuild(&gJerAi.map, car->hd.where.t[0], car->hd.where.t[1], car->hd.where.t[2]))
+		return 0;
+
+	gJerAi.mapBuiltAt = gJerAi.tick;
+
+	return 1;
+}
+
 int JerAiDrivePlanTo(CAR_DATA* car, int toX, int toZ, int force)
 {
-	int cx, cy, cz, age, stale;
+	int cx, cz, age, stale;
 
 	if (car == NULL)
 		return 0;
 
 	cx = car->hd.where.t[0];
-	cy = car->hd.where.t[1];
 	cz = car->hd.where.t[2];
 
 	age = gJerAi.tick - gJerAi.plannedAt;
@@ -133,7 +152,7 @@ int JerAiDrivePlanTo(CAR_DATA* car, int toX, int toZ, int force)
 
 	/* Rebuild the window around the car and re-plan. A build that fails means
 	 * the world is not there (frontend, between levels): keep any plan we had. */
-	if (!JerAiMapBuild(&gJerAi.map, cx, cy, cz))
+	if (!JerAiDriveBuildMap(car))
 		return gJerAi.havePlan;
 
 	gJerAi.map.turnCost = gJerAi.turnCost;
@@ -150,62 +169,28 @@ int JerAiDrivePlanTo(CAR_DATA* car, int toX, int toZ, int force)
 	return gJerAi.havePlan;
 }
 
-static long JerAiSegLen(long ax, long az, long bx, long bz)
+static long long JerAiSegLen(long long ax, long long az, long long bx, long long bz)
 {
 	double dx = (double)(bx - ax);
 	double dz = (double)(bz - az);
 
-	return (long)sqrt(dx * dx + dz * dz);
+	return (long long)sqrt(dx * dx + dz * dz);
 }
 
 /* Where the car sits ALONG the plan: the arc length to the closest point of the
- * polyline. 0 when there is no plan. */
-static long JerAiProjectArc(int cx, int cz)
+ * polyline. 0 when there is no plan. The math is the pure, 64-bit
+ * JerAiPathProjectArc (jerai_mapgrid.c): with a 32-bit `long` (Windows) the old
+ * inline copy wrapped on any segment past ~1,300 units. */
+static long long JerAiProjectArc(int cx, int cz, long long* crossD2)
 {
-	int n = gJerAi.path.waypoints, k;
-	long bestD2 = -1, bestArc = 0, arc = 0;
-
-	for (k = 1; k < n; k++)
-	{
-		long ax = gJerAi.path.wx[k - 1], az = gJerAi.path.wz[k - 1];
-		long bx = gJerAi.path.wx[k], bz = gJerAi.path.wz[k];
-		long dx = bx - ax, dz = bz - az;
-		long len2 = dx * dx + dz * dz;
-		long segLen = JerAiSegLen(ax, az, bx, bz);
-		long t, px, pz, d2;
-
-		if (len2 > 0)
-		{
-			t = (cx - ax) * dx + (cz - az) * dz;
-			if (t < 0) t = 0;
-			if (t > len2) t = len2;
-		}
-		else
-		{
-			t = 0;
-		}
-
-		px = ax + (len2 > 0 ? dx * t / len2 : 0);
-		pz = az + (len2 > 0 ? dz * t / len2 : 0);
-		d2 = (cx - px) * (cx - px) + (cz - pz) * (cz - pz);
-
-		if (bestD2 < 0 || d2 < bestD2)
-		{
-			bestD2 = d2;
-			bestArc = arc + (len2 > 0 ? segLen * t / len2 : 0);
-		}
-
-		arc += segLen;
-	}
-
-	return bestArc;
+	return JerAiPathProjectArc(gJerAi.path.wx, gJerAi.path.wz, gJerAi.path.waypoints, cx, cz, crossD2);
 }
 
 JERAI_CURVE JerAiScanCurve(int cx, int cz, int horizon)
 {
 	JERAI_CURVE c;
 	int n = gJerAi.path.waypoints, k;
-	long startArc, arc = 0;
+	long long startArc, arc = 0;
 	int sharp = 0, sharpDist = 0, sharpSign = 0, sharpSpan = 0, haveCurrent = 0;
 
 	c.sharp = 0;
@@ -217,22 +202,22 @@ JERAI_CURVE JerAiScanCurve(int cx, int cz, int horizon)
 	if (!gJerAi.havePlan || n < 3)
 		return c;
 
-	startArc = JerAiProjectArc(cx, cz);
+	startArc = JerAiProjectArc(cx, cz, NULL);
 
 	/* At each interior waypoint, the turn is the heading change from the leg in
 	 * to the leg out. Track the biggest within the horizon (so the speed model
 	 * slows for the real corner, not a kink), and the very next one ahead. */
 	for (k = 1; k < n - 1; k++)
 	{
-		long ax = gJerAi.path.wx[k - 1], az = gJerAi.path.wz[k - 1];
-		long bx = gJerAi.path.wx[k], bz = gJerAi.path.wz[k];
-		long ex = gJerAi.path.wx[k + 1], ez = gJerAi.path.wz[k + 1];
-		long legIn = JerAiSegLen(ax, az, bx, bz);
-		long legOut = JerAiSegLen(bx, bz, ex, ez);
+		int ax = gJerAi.path.wx[k - 1], az = gJerAi.path.wz[k - 1];
+		int bx = gJerAi.path.wx[k], bz = gJerAi.path.wz[k];
+		int ex = gJerAi.path.wx[k + 1], ez = gJerAi.path.wz[k + 1];
+		long long legIn = JerAiSegLen(ax, az, bx, bz);
+		long long legOut = JerAiSegLen(bx, bz, ex, ez);
 		int inDir = ratan2(bx - ax, bz - az) & 0xfff;
 		int outDir = ratan2(ex - bx, ez - bz) & 0xfff;
 		int turn = ((outDir - inDir + 2048) & 0xfff) - 2048;
-		long distAhead;
+		long long distAhead;
 
 		arc += legIn;
 		distAhead = arc - startArc;
@@ -298,7 +283,21 @@ static int JerAiSpeedForRadius(int r)
  * speed by the time it reaches the corner: v^2 = vCorner^2 + 2*aBrake*dist.
  * This is the momentum term - slowing only once the corner arrives is exactly
  * how a car ploughs into the outside wall. */
+static int JerAiSpeedTargetRaw(void);
+
+/* The corner/brake model's speed, under the behavior's own cruise cap when it
+ * has one (Evade's pace over the road limit; 0 = no cap). */
 int JerAiSpeedTarget(void)
+{
+	int v = JerAiSpeedTargetRaw();
+
+	if (gJerAi.speedCap > 0 && v > gJerAi.speedCap)
+		v = gJerAi.speedCap;
+
+	return v;
+}
+
+static int JerAiSpeedTargetRaw(void)
 {
 	const JERAI_CURVE* c = &gJerAi.curve;
 	int r, vCorner, vNow;
@@ -367,19 +366,16 @@ static int JerAiGripPct(void)
 int JerAiDriveAim(int* aimX, int* aimZ)
 {
 	CAR_DATA* car = JerAiOwnCar();
-	int n, k;
-	long cx, cz;
-	long bestD2 = -1, bestArc = 0, arc;
-	int dir, fwdX, fwdZ;
-	long bestX, bestZ;
-	long la;
-	long segDx = 0, segDz = 0;	/* the plan segment the aim landed on */
+	int n, cx, cz, dir, fwdX, fwdZ;
+	int bestX = 0, bestZ = 0, segDx = 0, segDz = 0;
+	long long bestD2 = -1, bestArc;
+	long long la;
 
 	if (car == NULL || !gJerAi.havePlan || gJerAi.path.waypoints <= 0)
 		return 0;
 
 	/* a longer look-ahead at speed: smoother, no sawing */
-	la = gJerAi.lookAhead + (long)JerAiAbs(car->hd.speed) * JERAI_AIM_SPEED_GAIN;
+	la = (long long)gJerAi.lookAhead + (long long)JerAiAbs(car->hd.speed) * JERAI_AIM_SPEED_GAIN;
 
 	/* ...and a MUCH longer one while being chased: aiming further down the road
 	 * is what lets the car commit to a line and keep its speed up, instead of
@@ -401,8 +397,8 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 	{
 		int d = gJerAi.aimTest & 0xfff;
 
-		gJerAi.aimX = (int)(cx + 4000L * RSIN(d) / 4096);
-		gJerAi.aimZ = (int)(cz + 4000L * RCOS(d) / 4096);
+		gJerAi.aimX = cx + (int)(4000LL * RSIN(d) / 4096);
+		gJerAi.aimZ = cz + (int)(4000LL * RCOS(d) / 4096);
 
 		if (aimX) *aimX = gJerAi.aimX;
 		if (aimZ) *aimZ = gJerAi.aimZ;
@@ -411,41 +407,7 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 	}
 
 	/* where the car is ALONG the plan: the closest point on the polyline */
-	arc = 0;
-
-	for (k = 1; k < n; k++)
-	{
-		long ax = gJerAi.path.wx[k - 1], az = gJerAi.path.wz[k - 1];
-		long bx = gJerAi.path.wx[k], bz = gJerAi.path.wz[k];
-		long dx = bx - ax, dz = bz - az;
-		long len2 = dx * dx + dz * dz;
-		long segLen = JerAiSegLen(ax, az, bx, bz);
-		long t, px, pz, d2;
-
-		if (len2 > 0)
-		{
-			t = (cx - ax) * dx + (cz - az) * dz;
-
-			if (t < 0) t = 0;
-			if (t > len2) t = len2;
-		}
-		else
-		{
-			t = 0;
-		}
-
-		px = ax + (len2 > 0 ? dx * t / len2 : 0);
-		pz = az + (len2 > 0 ? dz * t / len2 : 0);
-		d2 = (cx - px) * (cx - px) + (cz - pz) * (cz - pz);
-
-		if (bestD2 < 0 || d2 < bestD2)
-		{
-			bestD2 = d2;
-			bestArc = arc + (len2 > 0 ? segLen * t / len2 : 0);
-		}
-
-		arc += segLen;
-	}
+	bestArc = JerAiProjectArc(cx, cz, &bestD2);
 
 	/* cross-track: how far the car sits off the planned line - the term that
 	 * turns a small lateral error into a large bearing error when the look-ahead
@@ -457,97 +419,27 @@ int JerAiDriveAim(int* aimX, int* aimZ)
 	 * Skimming the segment in ~512-unit steps means a point behind the car is
 	 * stepped over rather than aimed at, so the car never turns back for a
 	 * waypoint it has already passed. Falls through to the goal if the whole
-	 * remaining plan is behind - then a turn really is the only way on. */
-	arc = 0;
-	bestX = gJerAi.path.wx[n - 1];
-	bestZ = gJerAi.path.wz[n - 1];
+	 * remaining plan is behind - then a turn really is the only way on. The
+	 * walk is the pure JerAiPathAimPoint (jerai_mapgrid.c, host-tested). */
+	JerAiPathAimPoint(gJerAi.path.wx, gJerAi.path.wz, n, cx, cz, fwdX, fwdZ,
+		bestArc, la, JERAI_AIM_BEHIND_COS, &bestX, &bestZ, &segDx, &segDz);
 
-	for (k = 1; k < n; k++)
-	{
-		long ax = gJerAi.path.wx[k - 1], az = gJerAi.path.wz[k - 1];
-		long bx = gJerAi.path.wx[k], bz = gJerAi.path.wz[k];
-		long dx = bx - ax, dz = bz - az;
-		long segLen = JerAiSegLen(ax, az, bx, bz);
-		long steps, s;
-		int done = 0;
-
-		if (segLen <= 0)
-		{
-			arc += segLen;
-			continue;
-		}
-
-		steps = segLen / 512 + 1;
-
-		for (s = 0; s <= steps; s++)
-		{
-			long f = segLen * s / steps;
-			long px = ax + dx * f / segLen;
-			long pz = az + dz * f / segLen;
-			long thisArc = arc + f;
-
-			if (thisArc < bestArc)
-				continue;	/* still behind our own projection */
-
-			if (thisArc - bestArc >= la)
-			{
-				long rx = px - cx, rz = pz - cz;
-				long rlen2 = rx * rx + rz * rz;
-				long cosScaled;
-
-				if (rlen2 <= 0)
-				{
-					bestX = px;
-					bestZ = pz;
-					segDx = dx;
-					segDz = dz;
-					done = 1;
-				}
-				else
-				{
-					cosScaled = ((long)fwdX * rx + (long)fwdZ * rz) / (long)(sqrt((double)rlen2) + 1.0);
-
-					if (cosScaled > JERAI_AIM_BEHIND_COS)
-					{
-						bestX = px;
-						bestZ = pz;
-						segDx = dx;
-						segDz = dz;
-						done = 1;
-					}
-				}
-
-				if (done)
-					break;
-			}
-		}
-
-		if (done)
-			break;
-
-		arc += segLen;
-	}
-
-	if (aimX) *aimX = (int)bestX;
-	if (aimZ) *aimZ = (int)bestZ;
-	gJerAi.aimX = (int)bestX;
-	gJerAi.aimZ = (int)bestZ;
+	if (aimX) *aimX = bestX;
+	if (aimZ) *aimZ = bestZ;
+	gJerAi.aimX = bestX;
+	gJerAi.aimZ = bestZ;
 
 	/* how far ahead the aim actually landed - the once-a-second log prints it,
 	 * and it is the honest readout for "is it aiming down the road or at its own
 	 * bumper" (a look-ahead the plan cannot satisfy falls back to the goal). */
-	{
-		long ax = bestX - cx, az = bestZ - cz;
+	gJerAi.aimDist = (int)sqrt((double)JerAiDist2(bestX, bestZ, cx, cz) + 0.5);
 
-		gJerAi.aimDist = (int)sqrt((double)(ax * ax + az * az) + 0.5);
-
-		/* the PATH's own direction where the aim sits - the bearing of the plan
-		 * segment that carries it, NOT the bearing from the car to it (that is
-		 * `want`, and using it here would make the readout tautological). With
-		 * aimOff this splits the heading error into "the car is not aligned with
-		 * the path" and "the aim sits off to one side of the car". */
-		gJerAi.aimPathDir = (segDx != 0 || segDz != 0) ? (ratan2(segDx, segDz) & 0xfff) : 0;
-	}
+	/* the PATH's own direction where the aim sits - the bearing of the plan
+	 * segment that carries it, NOT the bearing from the car to it (that is
+	 * `want`, and using it here would make the readout tautological). With
+	 * aimOff this splits the heading error into "the car is not aligned with
+	 * the path" and "the aim sits off to one side of the car". */
+	gJerAi.aimPathDir = (segDx != 0 || segDz != 0) ? (ratan2(segDx, segDz) & 0xfff) : 0;
 
 	return 1;
 }
@@ -563,14 +455,14 @@ int JerAiDriveAim(int* aimX, int* aimZ)
  * squared distance and which side it sits on, for steering around it. */
 #define JERAI_AHEAD_NONE	0x7fffffff
 
-static int JerAiCarAhead(CAR_DATA* car, long* dist2Out, int* relOut)
+static int JerAiCarAhead(CAR_DATA* car, long long* dist2Out, int* relOut)
 {
 	int i;
 	int cx = car->hd.where.t[0];
 	int cz = car->hd.where.t[2];
 	int range = gJerAi.avoidDist;
-	long range2;
-	long bestD2 = -1;
+	long long range2;
+	long long bestD2 = -1;
 	int bestRel = 0;
 
 	if (dist2Out) *dist2Out = -1;
@@ -594,13 +486,13 @@ static int JerAiCarAhead(CAR_DATA* car, long* dist2Out, int* relOut)
 		range = JERAI_AVOID_MAX;
 	}
 
-	range2 = (long)range * range;
+	range2 = (long long)range * range;
 
 	for (i = 0; i < MAX_CARS; i++)
 	{
 		CAR_DATA* o = &car_data[i];
 		int ox, oz, rel;
-		long d2;
+		long long d2;
 
 		if (o == car || o->controlType == CONTROL_TYPE_NONE)
 			continue;
@@ -614,7 +506,9 @@ static int JerAiCarAhead(CAR_DATA* car, long* dist2Out, int* relOut)
 
 		ox = o->hd.where.t[0] - cx;
 		oz = o->hd.where.t[2] - cz;
-		d2 = (long)ox * ox + (long)oz * oz;
+		/* 64-bit: with a 32-bit long a car ~46,000+ units away wrapped NEGATIVE,
+		 * passed this gate and counted as right in front (phantom brake/swerve) */
+		d2 = (long long)ox * ox + (long long)oz * oz;
 
 		if (d2 > range2)
 			continue;
@@ -661,8 +555,8 @@ static int JerAiFeelClear(CAR_DATA* car, int off, int dist, int radius)
 	int dir = (car->hd.direction + off) & 0xfff;
 	VECTOR v;
 
-	v.vx = car->hd.where.t[0] + (int)((long)dist * RSIN(dir) / 4096);
-	v.vz = car->hd.where.t[2] + (int)((long)dist * RCOS(dir) / 4096);
+	v.vx = car->hd.where.t[0] + (int)((long long)dist * RSIN(dir) / 4096);
+	v.vz = car->hd.where.t[2] + (int)((long long)dist * RCOS(dir) / 4096);
 
 	/* OUTSIDE the loaded level is never "clear": CellEmpty reads an out-of-level
 	 * cell as EMPTY, so a feeler beyond the map edge would otherwise wave the car
@@ -788,7 +682,7 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 	int bias = JerAiFeelers(car, &frontBlocked);
 	int diff, spd;
 	int ahead;
-	long aheadD2 = -1;
+	long long aheadD2 = -1;
 	int aheadRel = 0;
 	unsigned int pad = 0;
 
@@ -990,7 +884,7 @@ static unsigned int JerAiSteerPadImpl(CAR_DATA* car, int aimX, int aimZ)
 	{
 		pad &= ~(unsigned int)CAR_PAD_ACCEL;
 
-		if (aheadD2 >= 0 && aheadD2 < 750L * 750L)
+		if (aheadD2 >= 0 && aheadD2 < 750LL * 750LL)
 			pad |= CAR_PAD_BRAKE;
 	}
 
@@ -1043,6 +937,23 @@ unsigned int JerAiDriveSteerPad(CAR_DATA* car, int aimX, int aimZ)
 		gJerAi.lastPad = (int)pad;
 	}
 
+	/* STEERING CAP (Evade's `max_steer`): stop adding lock once the front wheel
+	 * is at the cap. JerAI steers with the regular D-pad rate, which the engine
+	 * tops out at 352 (handling.c), so a cap of 352 or more changes nothing. Not
+	 * applied to the emergency paths (the wall-evasion handbrake turn, the
+	 * reverse burst), which need the whole lock. */
+	if (car != NULL && gJerAi.steerCap > 0 && gJerAi.steerCap < 352 &&
+	    !gJerAi.wantHandbrake && gJerAi.recoverFrames == 0)
+	{
+		if ((pad & CAR_PAD_RIGHT) && car->wheel_angle >= gJerAi.steerCap)
+			pad &= ~(unsigned int)CAR_PAD_RIGHT;
+
+		if ((pad & CAR_PAD_LEFT) && car->wheel_angle <= -gJerAi.steerCap)
+			pad &= ~(unsigned int)CAR_PAD_LEFT;
+
+		gJerAi.lastPad = (int)pad;
+	}
+
 	/* the ACTUAL front wheel angle, read back after the engine applied the pad
 	 * (30 Hz logic, one frame behind). This is the readout that shows the wheel
 	 * being centred between corrections - see JERAI_CFG_STEER_TRACE. */
@@ -1077,9 +988,167 @@ unsigned int JerAiDriveHoldPad(CAR_DATA* car)
 	gJerAi.lastSteerDir = 0;
 	gJerAi.wantHandbrake = 0;
 
+	/* parked on purpose is not wedged: the stop itself must not count toward the
+	 * stuck timer, or pulling away again (a light going green, the followed car
+	 * leaving) starts most of the way to a reverse burst */
+	sStuckFrames = 0;
+	gJerAi.stuckFrames = 0;
+
 	pad = (spd > 8) ? CAR_PAD_BRAKE : 0;
 
 	gJerAi.lastPad = (int)pad;
 
 	return pad;
+}
+
+/* A new level (JER_EVENT_GAME_START): everything here describes the LAST one. */
+void JerAiDriveResetRun(void)
+{
+	int i;
+
+	for (i = 0; i < 5; i++)
+		sFeelHold[i] = 0;
+
+	sBiasApplied = 0;
+	sStuckFrames = 0;
+	sRecoverFrames = 0;
+	sHasMoved = 0;
+
+	gJerAi.havePlan = 0;
+	gJerAi.incomplete = 0;
+	gJerAi.path.waypoints = 0;
+	gJerAi.path.complete = 0;
+	gJerAi.plannedAt = 0;
+	gJerAi.goalX = gJerAi.goalZ = 0;
+	gJerAi.aimX = gJerAi.aimZ = 0;
+	gJerAi.map.valid = 0;
+	gJerAi.mapBuiltAt = -1;
+	gJerAi.prevDir = -1;		/* no last heading: the first frame has no yaw */
+	gJerAi.lastSteerDir = 0;
+	gJerAi.lastDiff = gJerAi.lastBias = gJerAi.lastPred = 0;
+	gJerAi.wantHandbrake = 0;
+	gJerAi.stuckFrames = gJerAi.recoverFrames = 0;
+	gJerAi.forceNewGoal = 0;
+	gJerAi.reposition = 0;
+	gJerAi.tanActive = 0;
+	gJerAi.followCarId = -1;
+	gJerAi.panicFlee = 0;
+	gJerAi.speedCap = 0;
+	gJerAi.steerCap = 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* the road: its speed limit and its traffic lights (Evade)             */
+/* ------------------------------------------------------------------ */
+
+/* The road surface under a world point, probed at the ground there (the same
+ * way the occupancy grid reads JerRoadAt). 0 off the level or off the road. */
+static int JerAiRoadUnder(int x, int z, JER_ROAD_INFO* out)
+{
+	VECTOR v;
+
+	if (x + units_across_halved < 0 || x - units_across_halved >= 0 ||
+	    z + units_down_halved < 0 || z - units_down_halved >= 0)
+		return 0;
+
+	v.vx = x;
+	v.vy = 0;
+	v.vz = z;
+	v.vy = MapHeight(&v);
+
+	return JerRoadInfoAt(x, v.vy, z, out);
+}
+
+int JerAiDriveRoadLimit(CAR_DATA* car, int fallback)
+{
+	JER_ROAD_INFO info;
+	int id;
+
+	if (car == NULL || !JerAiRoadUnder(car->hd.where.t[0], car->hd.where.t[2], &info))
+		return fallback;
+
+	/* a junction carries no lane data (dr2roads.c JerRoadInfoAt): keep the limit
+	 * of the road the car came from */
+	if (info.kind == 2)
+		return fallback;
+
+	/* the civ AI's own table, indexed the way civ_ai.c / felony.c index it */
+	id = info.speedLimit;
+
+	if (id < 0) id = 0;
+	if (id > 2) id = 2;
+
+	return speedLimits[id];
+}
+
+/* The junction-ahead light test, read the way the engine's own red-light felony
+ * reads it (felony.c CheckPlayerMiscFelonies): the junction has lights when
+ * `flags & 1`, the exit the car enters by is the one whose ExitIdx is the road it
+ * is on, and that exit's phase is junctionLightsPhase[exit & 1] - 3 green, 2
+ * amber, 1 red (civ_ai.c TrafficLightCycle). Probes straight down the car's
+ * heading in 300-unit steps out to `range`. */
+int JerAiDriveStopLightAhead(CAR_DATA* car, int range, int* distOut)
+{
+	JER_ROAD_INFO here, ahead;
+	int cx, cz, dir, d, i;
+
+	if (distOut != NULL)
+		*distOut = 0;
+
+	if (car == NULL)
+		return 0;
+
+	cx = car->hd.where.t[0];
+	cz = car->hd.where.t[2];
+	dir = car->hd.direction & 0xfff;
+
+	/* already in the junction (or off the road): never stop half way across */
+	if (!JerAiRoadUnder(cx, cz, &here) || here.kind == 2)
+		return 0;
+
+	for (d = 300; d <= range; d += 300)
+	{
+		int px = cx + (int)((long long)d * RSIN(dir) / 4096);
+		int pz = cz + (int)((long long)d * RCOS(dir) / 4096);
+		int exitId = -1, phase;
+
+		if (!JerAiRoadUnder(px, pz, &ahead))
+			continue;
+
+		if (ahead.kind != 2)
+			continue;	/* still road: keep looking */
+
+		/* the first junction ahead decides: no lights, or not entered from
+		 * this road (a turn across it), is not ours to wait for */
+		if (ahead.surfId < 0 || !(GET_JUNCTION(ahead.surfId)->flags & 1))
+			return 0;
+
+		for (i = 0; i < 4; i++)
+		{
+			if (ahead.connect[i] == here.surfId)
+			{
+				exitId = i;
+				break;
+			}
+		}
+
+		if (exitId < 0)
+			return 0;
+
+		phase = junctionLightsPhase[exitId & 1];
+
+		if (phase == 3)
+			return 0;	/* green */
+
+		/* amber close to the line: go, the way a driver does */
+		if (phase == 2 && d <= 600)
+			return 0;
+
+		if (distOut != NULL)
+			*distOut = d;
+
+		return 1;
+	}
+
+	return 0;
 }

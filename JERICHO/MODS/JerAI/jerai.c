@@ -33,6 +33,7 @@
 #include <intrin.h>	/* __rdtsc, for a per-run RNG seed */
 #endif
 
+#include <stdint.h>	/* uintptr_t, for the clock-less seed */
 #include <stdio.h>
 #include <string.h>
 
@@ -54,7 +55,9 @@ void JerAiRefreshConfig(void)
 {
 	gJerAi.enabled = jer_config_get_int("JerAI", JERAI_CFG_ENABLED, 1);
 	gJerAi.mode = jer_config_get_int("JerAI", JERAI_CFG_MODE, 0);
-	gJerAi.immune = jer_config_get_int("JerAI", JERAI_CFG_IMMUNE, 1);
+	/* OFF by default: immunity zeroes the wanted level every frame, so with it on
+	 * the police never chase and flee_police / Evade's run never fire */
+	gJerAi.immune = jer_config_get_int("JerAI", JERAI_CFG_IMMUNE, 0);
 	gJerAi.followEnabled = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW, 1);
 	gJerAi.followClearance = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW_CLEARANCE, 1500);
 	gJerAi.followCar = jer_config_get_int("JerAI", JERAI_CFG_FOLLOW_CAR, -1);
@@ -202,10 +205,20 @@ static int JerAiOnCarPad(void* userdata, void* args)
 	if (car == NULL || (void*)car != p->car)
 		return JER_RESULT_CONTINUE;
 
+	/* The menu's keys (and any still held since it closed) are the menu's, not
+	 * the car's: without this, working the menu in Manual also accelerated
+	 * (Cross), steered (D-pad), handbraked or left the car (Triangle). */
+	p->pad &= ~(int)JerAiMenuPadMask();
+
 	b = JerAiBehaviorFor(gJerAi.mode);
 
 	if (b == NULL)
 		return JER_RESULT_CONTINUE;	/* Manual */
+
+	/* the wall-evasion handbrake is asked for fresh by this frame's tick: a
+	 * behavior that returns early (no plan / no aim) must not inherit the last
+	 * frame's request and sit there held at thrust 0 */
+	gJerAi.wantHandbrake = 0;
 
 	pad = b->tick(car);
 
@@ -291,6 +304,13 @@ static int JerAiOnFrame(void* userdata, void* args)
 	if (!JerAiMapWorldLoaded())
 		gJerAi.roadBuilt = 0;
 
+	/* the road-graph layer needs the graph: build it once per level when that
+	 * layer is on (it used to be built only by a dump, so the layer - on by
+	 * default - never drew). A failed build retries twice a second, not every
+	 * frame. */
+	if (gJerAi.enabled && gJerAi.vizRoad && !gJerAi.roadBuilt && (gJerAi.tick % 15) == 0)
+		JerAiEnsureRoadGraph();
+
 	/* a dump the menu or the config asked for. Handled before the enabled gate:
 	 * asking for a graph is not a driving behavior. */
 	if (gJerAi.dumpRequested)
@@ -316,7 +336,7 @@ static int JerAiOnFrame(void* userdata, void* args)
 			const JERAI_BEHAVIOR* b = JerAiBehaviorFor(gJerAi.mode);
 
 			gJerAi.ctx->jer_log(gJerAi.ctx,
-				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) la=%d aimd=%d stuck=%d rec=%d vizlines=%d follow=%d fdist=%d flee=%d police=%d\n",
+				"[JerAI] drive mode=%s pos=(%d,%d) speed=%d dir=%d slip=%d yaw=%d tgt=%d grip=%d sharp=%d at=%d wp=%d complete=%d diff=%d bias=%d steer=%d hb=%d pad=%x goal=(%d,%d) aim=(%d,%d) la=%d aimd=%d stuck=%d rec=%d vizlines=%d follow=%d fdist=%d flee=%d police=%d evade=%d cop=%d limit=%d cap=%d light=%d\n",
 				b != NULL ? b->name : "?",
 				car->hd.where.t[0], car->hd.where.t[2], car->hd.speed, car->hd.direction,
 				gJerAi.carState.slip, gJerAi.carState.yawRate,
@@ -327,7 +347,8 @@ static int JerAiOnFrame(void* userdata, void* args)
 				gJerAi.goalX, gJerAi.goalZ, gJerAi.aimX, gJerAi.aimZ,
 				gJerAi.aimLook, gJerAi.aimDist, gJerAi.stuckFrames, gJerAi.recoverFrames,
 				JerAiVizLines(),
-				gJerAi.followActive, gJerAi.followDist, gJerAi.fleeActive, gJerAi.policeActive);
+				gJerAi.followActive, gJerAi.followDist, gJerAi.fleeActive, gJerAi.policeActive,
+				gJerAi.evadeActive, gJerAi.evadeCopDist, gJerAi.roadLimit, gJerAi.speedCap, gJerAi.lightHold);
 
 			if (gJerAi.vizHud)
 			{
@@ -359,7 +380,9 @@ static unsigned int JerAiSeedFromClock(void)
 	return (unsigned int)__rdtsc();
 #else
 	static int marker;
-	return (unsigned int)(unsigned long)&marker;
+	/* uintptr_t, not unsigned long: a pointer does not fit a 32-bit long on
+	 * Win64 (mingw/clang refuse the cast) */
+	return (unsigned int)(uintptr_t)&marker;
 #endif
 }
 
@@ -373,6 +396,13 @@ static int JerAiOnGameStart(void* userdata, void* args)
 	seed = (gs != NULL && gs->seed != 0) ? (unsigned int)gs->seed : JerAiSeedFromClock();
 
 	JerAiRandSeed(seed);
+
+	/* a new level: the plan, the goal and the stuck/feeler state all describe the
+	 * last one (its coordinates, its heading), so start clean. The road graph
+	 * belongs to the level too. */
+	JerAiDriveResetRun();
+	JerAiBehaviorResetRun();
+	gJerAi.roadBuilt = 0;
 
 	gJerAi.ctx->jer_log(gJerAi.ctx, "[JerAI] run seed = %u\n", seed);
 
@@ -423,16 +453,17 @@ JER_MODULE_ENTRY(jer_module_JerAI_entry)(JERICHO_CONTEXT* ctx)
 {
 	memset(&gJerAi, 0, sizeof(gJerAi));
 	gJerAi.ctx = ctx;
-	gJerAi.roadLimit = 56;
+	gJerAi.roadLimit = 56;		/* civ_ai.c speedLimits[0], until Evade reads the road */
+	gJerAi.mapBuiltAt = -1;
 	gJerAi.prevDir = -1;	/* no last heading yet: the first frame has no yaw */
 	JerAiRandSeed(0x12345678u);
 
 	ctx->jer_register_module(ctx,
 		"JerAI",			/* id */
 		"JerAI",			/* name */
-		"0.1.0",			/* version */
+		"0.2.0",			/* version (= mod.toml) */
 		"Jaret Ludvik",			/* author */
-		"General-purpose AI driver for the player's car: A* pathfinding, road-graph extraction, joyride/random-wander behaviors, debug visualization and a control menu.",	/* description */
+		"General-purpose AI driver for the player's car: A* pathfinding, road-graph extraction, joyride/random-wander and cop-evade behaviors, debug visualization and a control menu.",	/* description */
 		"",				/* dependencies */
 		JERICHO_SDK_VERSION);		/* SDK this module was built against */
 
