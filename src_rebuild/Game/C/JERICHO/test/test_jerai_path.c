@@ -9,7 +9,10 @@
  *   gcc -std=c99 -Wall -Wextra -I JERICHO/MODS/JerAI -o /tmp/test_jerai_path \
  *       src_rebuild/Game/C/JERICHO/test/test_jerai_path.c \
  *       JERICHO/MODS/JerAI/jerai_mapgrid.c JERICHO/MODS/JerAI/jerai_star.c \
- *       JERICHO/MODS/JerAI/jerai_local.c && /tmp/test_jerai_path
+ *       JERICHO/MODS/JerAI/jerai_local.c -lm && /tmp/test_jerai_path
+ *
+ *   (and once with a 32-bit `long`, the way Windows has it, so the driver's
+ *   polyline math is proven not to wrap: add -m32, or `zig cc -target x86-linux-gnu`)
  *
  *   (as C++: the module itself is compiled as C++, so the same source must build either way)
  *
@@ -621,6 +624,111 @@ static void test_flee_goal_around_a_corner(void)
 	CHECK(JerAiStarLineClear(&gMap, W(16), W(16), W(16), W(24)) == 0);
 }
 
+/* ------------------------------------------------------------------ */
+/* The driver's polyline math (JerAiPathProjectArc / JerAiPathAimPoint) */
+/* ------------------------------------------------------------------ */
+
+/* The aim's "not behind the car" gate, as jerai_drive.c passes it. */
+#define AIM_BEHIND_COS	(-1450)
+
+static void test_project_long_segments(void)
+{
+	/* A string-pulled plan has segments of thousands of units. With a 32-bit
+	 * `long` the old inline projection wrapped past ~1,300 units: a car half way
+	 * along a 6,000-unit leg read arc 17 and cross-track^2 8.9M. */
+	static const int lens[] = { 1000, 1300, 2000, 6000, 10000, 20000 };
+	int i;
+
+	for (i = 0; i < (int)(sizeof(lens) / sizeof(lens[0])); i++)
+	{
+		int L = lens[i];
+		int wx[2] = { 0, 0 }, wz[2] = { 0, L };
+		long long cross = 0;
+		long long arc = JerAiPathProjectArc(wx, wz, 2, 100, L / 2, &cross);
+
+		CHECK(arc == L / 2);
+		CHECK(cross == 100LL * 100LL);
+	}
+
+	/* far from the origin, as real level coordinates are */
+	{
+		int wx[2] = { 90000, 90000 }, wz[2] = { -120000, -110000 };
+		long long cross = 0;
+		long long arc = JerAiPathProjectArc(wx, wz, 2, 90300, -115000, &cross);
+
+		CHECK(arc == 5000);
+		CHECK(cross == 300LL * 300LL);
+	}
+}
+
+static void test_project_polyline(void)
+{
+	/* two legs: up 4,000 then across 6,000; the car is beside the second */
+	int wx[3] = { 0, 0, 6000 }, wz[3] = { 0, 4000, 4000 };
+	long long cross = 0;
+
+	CHECK(JerAiPathProjectArc(wx, wz, 3, 3000, 4100, &cross) == 7000);
+	CHECK(cross == 100LL * 100LL);
+
+	/* before the start clamps to 0, past the end clamps to the whole length */
+	CHECK(JerAiPathProjectArc(wx, wz, 3, 0, -500, &cross) == 0);
+	CHECK(cross == 500LL * 500LL);
+	CHECK(JerAiPathProjectArc(wx, wz, 3, 9000, 4000, &cross) == 10000);
+	CHECK(cross == 3000LL * 3000LL);
+
+	/* one point is not a line: arc 0, no cross-track */
+	CHECK(JerAiPathProjectArc(wx, wz, 1, 50, 50, &cross) == 0);
+	CHECK(cross == -1);
+	CHECK(JerAiPathProjectArc(NULL, NULL, 3, 0, 0, &cross) == 0);
+}
+
+static void test_aim_point(void)
+{
+	int wx[2] = { 0, 0 }, wz[2] = { 0, 10000 };
+	int ax = -1, az = -1, sdx = -1, sdz = -1;
+	long long arc = JerAiPathProjectArc(wx, wz, 2, 0, 2000, NULL);
+
+	CHECK(arc == 2000);
+
+	/* facing up the plan: the aim sits look_ahead further along, on this leg */
+	CHECK(JerAiPathAimPoint(wx, wz, 2, 0, 2000, 0, 4096, arc, 3000, AIM_BEHIND_COS, &ax, &az, &sdx, &sdz) == 1);
+	CHECK(ax == 0 && az == 5000);
+	CHECK(sdx == 0 && sdz == 10000);
+
+	/* facing away: every point ahead on the plan is behind the car, so the
+	 * fallback is the goal itself, with no segment direction */
+	CHECK(JerAiPathAimPoint(wx, wz, 2, 0, 2000, 0, -4096, arc, 3000, AIM_BEHIND_COS, &ax, &az, &sdx, &sdz) == 1);
+	CHECK(ax == 0 && az == 10000);
+	CHECK(sdx == 0 && sdz == 0);
+
+	/* a look-ahead past the end falls back to the goal too */
+	CHECK(JerAiPathAimPoint(wx, wz, 2, 0, 2000, 0, 4096, arc, 50000, AIM_BEHIND_COS, &ax, &az, NULL, NULL) == 1);
+	CHECK(ax == 0 && az == 10000);
+
+	/* the aim never lands BEHIND the car's own projection on a long leg (the
+	 * Windows symptom: aim behind or beside the car -> full lock) */
+	{
+		int lx[3] = { 0, 0, 8000 }, lz[3] = { 0, 9000, 9000 };
+		long long a2 = JerAiPathProjectArc(lx, lz, 3, 150, 6000, NULL);
+
+		CHECK(a2 == 6000);
+		CHECK(JerAiPathAimPoint(lx, lz, 3, 150, 6000, 0, 4096, a2, 1400, AIM_BEHIND_COS, &ax, &az, &sdx, &sdz) == 1);
+		CHECK(az > 6000 && ax == 0);
+		CHECK(az - 6000 >= 1400 && az - 6000 < 1400 + 512);
+	}
+
+	CHECK(JerAiPathAimPoint(wx, wz, 0, 0, 0, 0, 4096, 0, 0, AIM_BEHIND_COS, &ax, &az, NULL, NULL) == 0);
+}
+
+static void test_dist2_no_wrap(void)
+{
+	/* the phantom-traffic bug: 50,000 units away read as -1.79e9 (i.e. close) */
+	CHECK(JerAiDist2(0, 0, 0, 50000) == 2500000000LL);
+	CHECK(JerAiDist2(0, 0, 0, 46341) > 1200LL * 1200LL);
+	CHECK(JerAiDist2(10, 70000, 0, 0) == 100LL + 4900000000LL);
+	CHECK(JerAiDist2(-150000, 0, 150000, 0) == 90000000000LL);
+}
+
 int main(void)
 {
 	test_queries();
@@ -636,6 +744,10 @@ int main(void)
 	test_local_goal();
 	test_flee_goal();
 	test_flee_goal_around_a_corner();
+	test_project_long_segments();
+	test_project_polyline();
+	test_aim_point();
+	test_dist2_no_wrap();
 
 	printf("%d check(s), %d failed\n", gChecks, gFails);
 

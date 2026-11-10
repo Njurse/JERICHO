@@ -94,6 +94,30 @@ void JerAiMapWorld(const JERAI_MAP* map, int ix, int iz, int* x, int* z);
 /* 1 when a level is loaded, so the world is worth sampling. */
 int  JerAiMapWorldLoaded(void);
 
+/* ------------------------------------------------------------------
+ * PURE polyline geometry for the driver (jerai_mapgrid.c), so the host test can
+ * check it. Everything is 64-bit on purpose: `long` is 32 bits on Windows
+ * (LLP64), and a squared world distance or a dx*t product wraps once a plan
+ * segment is longer than ~1,300 units - which a string-pulled plan routinely is.
+ * ------------------------------------------------------------------ */
+
+/* Squared world distance, never wrapping. */
+long long JerAiDist2(int ax, int az, int bx, int bz);
+
+/* Where (cx, cz) sits ALONG the polyline wx[]/wz[] (n points): the arc length to
+ * the closest point of it. Writes that point's squared cross-track distance to
+ * *crossD2 (-1 when n < 2, i.e. there is no segment to be off). 0 for n < 2. */
+long long JerAiPathProjectArc(const int* wx, const int* wz, int n, int cx, int cz, long long* crossD2);
+
+/* The aim point: walk forward from `fromArc` in ~512-unit steps and take the
+ * first point at least `lookAhead` further along that is not behind the car
+ * (cosine against the heading fwdX/fwdZ, 4096 = 1.0, must exceed behindCos).
+ * Falls back to the last waypoint. Writes the point and the direction of the
+ * segment it sits on (0, 0 for the fallback). Returns 0 only for n <= 0. */
+int  JerAiPathAimPoint(const int* wx, const int* wz, int n, int cx, int cz,
+	int fwdX, int fwdZ, long long fromArc, long long lookAhead, int behindCos,
+	int* aimX, int* aimZ, int* segDx, int* segDz);
+
 #ifdef __cplusplus
 }
 #endif

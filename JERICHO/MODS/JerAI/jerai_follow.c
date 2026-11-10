@@ -19,6 +19,46 @@
 #include "felony.h"	/* CopsCanSeePlayer */
 #include "mp/mp.h"	/* MpGetPlayer, MP_PLAYER - the compiled-in mp module */
 
+/* A DEDICATED server has no player of its own, so no row has id 0 (dediserver
+ * test_plugins.py: "no row for id 0 (the server has no player)") and
+ * MpGetPlayer(0) answers NULL. There, "the host" to chase or run from is the
+ * NEAREST other connected player with a car. A listen server's host row is
+ * always there, so this never runs on one. -1 when nobody qualifies. */
+static int JerAiNearestPeerCar(CAR_DATA* car)
+{
+	int best = -1, i;
+	long long bestD2 = 0;
+
+	if (car == NULL)
+		return -1;
+
+	for (i = 0; i < MP_MAX_PLAYERS; i++)
+	{
+		MP_PLAYER* p = MpGetPlayer(i);
+		long long d2;
+		int slot;
+
+		if (p == NULL || p->isLocal || !p->connected || p->onFoot)
+			continue;
+
+		slot = p->carId;
+
+		if (slot < 0 || slot >= MAX_CARS || &car_data[slot] == car)
+			continue;
+
+		d2 = JerAiDist2(car_data[slot].hd.where.t[0], car_data[slot].hd.where.t[2],
+			car->hd.where.t[0], car->hd.where.t[2]);
+
+		if (best < 0 || d2 < bestD2)
+		{
+			best = slot;
+			bestD2 = d2;
+		}
+	}
+
+	return best;
+}
+
 /* Which CAR_DATA index should be followed right now, or -1 for "nothing".
  *
  * Order matters: the single-player test lever wins, because it is exactly the
@@ -48,9 +88,13 @@ static int JerAiResolveTargetCar(CAR_DATA* car)
 
 		host = MpGetPlayer(0);	/* player id 0 = the host */
 
+		/* No player 0 at all: a dedicated server. Follow the nearest player. */
+		if (host == NULL)
+			return JerAiNearestPeerCar(car);
+
 		/* No car yet (they have not picked), gone, or on foot: nothing to
 		 * drive after this frame. */
-		if (host == NULL || !host->connected || host->onFoot || host->carId < 0)
+		if (!host->connected || host->onFoot || host->carId < 0)
 			return -1;
 
 		slot = host->carId;
@@ -186,6 +230,9 @@ int JerAiThreatTarget(CAR_DATA* car, int* x, int* z)
  * a building), are reused as they are.
  *
  * Off by default: a joining AI car still chases. */
+/* the last reason JerAiHostThreatTarget logged, so it says each one once */
+static const char* sHostThreatWhy;
+
 int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 {
 	MP_PLAYER* host;
@@ -201,8 +248,24 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 
 	host = MpGetPlayer(0);		/* the host's row is id 0 on every machine */
 
+	/* no player 0 at all: a dedicated server - run from the nearest player */
 	if (host == NULL)
-		why = "no host row in the table";
+	{
+		slot = JerAiNearestPeerCar(car);
+
+		if (slot >= 0)
+		{
+			gJerAi.followCarId = slot;	/* a destination, not traffic - see JerAiCarAhead */
+			sHostThreatWhy = NULL;
+
+			if (x != NULL) *x = car_data[slot].hd.where.t[0];
+			if (z != NULL) *z = car_data[slot].hd.where.t[2];
+
+			return 1;
+		}
+
+		why = "dedicated server and no other player has a car";
+	}
 	else if (host->isLocal)
 		why = "the host row is this machine";
 	else if (!host->connected)
@@ -220,6 +283,7 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 		else
 		{
 			gJerAi.followCarId = slot;	/* a destination, not traffic - see JerAiCarAhead */
+			sHostThreatWhy = NULL;
 
 			if (x != NULL) *x = car_data[slot].hd.where.t[0];
 			if (z != NULL) *z = car_data[slot].hd.where.t[2];
@@ -229,12 +293,14 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 	}
 
 	/* A CLIENT in a live session that cannot name the host is worth one line: it is
-	 * the whole reason the flee silently does nothing. Throttled, and only reachable
-	 * on the client side of a session. */
-	if (gJerAi.ctx != NULL && (gJerAi.tick % 120) == 0)
+	 * the whole reason the flee silently does nothing. Once per reason (a state
+	 * change), not every few seconds; only reachable on the client side. */
+	if (gJerAi.ctx != NULL && why != sHostThreatWhy)
 		gJerAi.ctx->jer_log(gJerAi.ctx,
 			"[JerAI] flee_host is on but cannot run from the host: %s (local player %d)\n",
 			why, jer_net_local_player());
+
+	sHostThreatWhy = why;
 
 	return 0;
 }
@@ -280,6 +346,58 @@ int JerAiPoliceThreat(CAR_DATA* car, int* x, int* z)
 		return 0;
 
 	gJerAi.followCarId = best;	/* a destination, not traffic - see JerAiCarAhead */
+
+	if (x != NULL) *x = car_data[best].hd.where.t[0];
+	if (z != NULL) *z = car_data[best].hd.where.t[2];
+
+	return 1;
+}
+
+/* Evade's threat: the nearest police car inside `radius`, pursuing or not. A
+ * police car is a pursuer (CONTROL_TYPE_PURSUER_AI) or any car flagged
+ * CONTROL_FLAG_COP - a patrolling civ-AI cop car, or a multiplayer cop player.
+ * Writes its position and squared distance (even when it is outside `radius`,
+ * for the readout, as long as there is one). */
+int JerAiCopNear(CAR_DATA* car, int radius, int* x, int* z, long long* dist2)
+{
+	int best = -1, i;
+	long long bestD2 = 0;
+
+	if (dist2 != NULL)
+		*dist2 = -1;
+
+	if (car == NULL)
+		return 0;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		CAR_DATA* o = &car_data[i];
+		long long d2;
+
+		if (o == car || o->controlType == CONTROL_TYPE_NONE)
+			continue;
+
+		if (o->controlType != CONTROL_TYPE_PURSUER_AI && (o->controlFlags & CONTROL_FLAG_COP) == 0)
+			continue;
+
+		d2 = JerAiDist2(o->hd.where.t[0], o->hd.where.t[2], car->hd.where.t[0], car->hd.where.t[2]);
+
+		if (best < 0 || d2 < bestD2)
+		{
+			best = i;
+			bestD2 = d2;
+		}
+	}
+
+	if (best < 0)
+		return 0;
+
+	if (dist2 != NULL) *dist2 = bestD2;
+
+	if (radius <= 0 || bestD2 > (long long)radius * radius)
+		return 0;
+
+	gJerAi.followCarId = best;	/* a threat, not traffic - see JerAiCarAhead */
 
 	if (x != NULL) *x = car_data[best].hd.where.t[0];
 	if (z != NULL) *z = car_data[best].hd.where.t[2];

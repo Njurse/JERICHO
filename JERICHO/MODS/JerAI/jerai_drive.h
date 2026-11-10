@@ -24,6 +24,23 @@
  * usable plan exists (complete or not). */
 int JerAiDrivePlanTo(CAR_DATA* car, int toX, int toZ, int force);
 
+/* Build the occupancy window around the car, at most once per frame (a second
+ * call on the same tick reuses the first build). Returns 1 when it is valid. */
+int JerAiDriveBuildMap(CAR_DATA* car);
+
+/* Forget the per-level driving state (plan, stuck/feeler/slew state, last
+ * heading). Called on JER_EVENT_GAME_START. */
+void JerAiDriveResetRun(void);
+
+/* The road's own speed limit under the car (civ_ai.c speedLimits[]), or
+ * `fallback` on a junction / off the road. Engine speed units (hd.speed). */
+int JerAiDriveRoadLimit(CAR_DATA* car, int fallback);
+
+/* 1 when the next junction straight ahead (within `range` world units) has
+ * traffic lights that are red - or amber and still far enough off to stop for -
+ * on the exit the car is entering by; writes the distance to it. */
+int JerAiDriveStopLightAhead(CAR_DATA* car, int range, int* distOut);
+
 /* The point to steer at this frame: the furthest waypoint within the
  * look-ahead. Returns 1 and writes it, or 0 when there is no plan. */
 int JerAiDriveAim(int* aimX, int* aimZ);

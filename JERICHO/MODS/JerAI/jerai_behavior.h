@@ -15,6 +15,7 @@
 /* Behavior ids (also the config `mode` value and the menu order). */
 #define JERAI_MODE_MANUAL	0	/* no pad injection: the car is the player's */
 #define JERAI_MODE_JOYRIDE	1	/* drive around at random, on the streets */
+#define JERAI_MODE_EVADE	2	/* wander at a pace, keep clear of the police */
 
 typedef struct JERAI_BEHAVIOR
 {
@@ -33,5 +34,8 @@ const char* JerAiBehaviorNameAt(int index);
 
 /* The display name for a mode id (falls back to "Manual"). */
 const char* JerAiBehaviorName(int mode);
+
+/* Forget the per-level goal/threat state (called on JER_EVENT_GAME_START). */
+void JerAiBehaviorResetRun(void);
 
 #endif /* JERAI_BEHAVIOR_H */

@@ -23,13 +23,18 @@
 /* the active behavior (see jerai_behavior.h). Manual = 0. */
 #define JERAI_CFG_MODE              "mode"
 
-/* joyride: pace above the road's traffic limit, in percent (25 = +25%) */
+/* evade: cruise pace above the road's own speed limit (civ_ai.c speedLimits[]
+ * for the surface under the car), in percent (25 = +25%). Not applied once the
+ * police are actually chasing - then it is flat out. */
 #define JERAI_CFG_PACE_PCT          "pace_pct"
 
-/* evade: civ-AI speed cap (u_char maxSpeed, 0..255; 255 = flat out) */
+/* every behavior: the overall speed cap (u_char maxSpeed scale, 0..255;
+ * 255 = flat out) */
 #define JERAI_CFG_TOP_SPEED         "top_speed"
 
-/* free-flowing: 1 = never park, never stop at lights/yields */
+/* evade: 1 = never stop at traffic lights. 0 = stop for a red (or an amber
+ * still more than ~600 units off) on the exit the car is entering by, read the
+ * way the engine's red-light felony reads it (felony.c) - unless being chased. */
 #define JERAI_CFG_RUN_LIGHTS        "run_lights"
 
 /* how often a route is refreshed, in ms */
@@ -49,10 +54,15 @@
 /* The hard cap on `avoid_dist`, in world units. See JERAI_CFG_AVOID_DIST. */
 #define JERAI_AVOID_MAX             1200
 
-/* evade trigger: a cop closer than this (world units) counts as a threat */
+/* evade: a police car (pursuer, patrolling cop, MP cop player) closer than this
+ * (world units) is a threat to leave; released at 1.25x, so the edge does not
+ * flicker */
 #define JERAI_CFG_COP_CLEARANCE     "cop_clearance"
 
-/* steering lock used by direct-steer behaviors (game units, civ maxSteer = 512) */
+/* evade: a cap on the front wheel angle (wheel_angle units). JerAI steers at the
+ * regular D-pad rate, which the engine tops out at 352 (handling.c), so the
+ * default 512 is NO cap; e.g. 200 gives a gentler line. Never applied to the
+ * emergency wall-evasion turn or the reverse burst. */
 #define JERAI_CFG_MAX_STEER         "max_steer"
 
 /* the corner-speed model: a lateral-g budget (bigger = the car carries more
@@ -92,11 +102,13 @@
 
 /* while JerAI is driving: make the player's car immune (no damage totals it,
  * via JER_EVENT_GET_BUDDHA) and keep the wanted level at zero, so the car is not
- * destroyed and no cop sirens chase the test drive (1 = on). */
+ * destroyed and no cop sirens chase the test drive (1 = on). OFF by default (0):
+ * with it on no pursuit ever starts, so flee_police and Evade's run are inert. */
 #define JERAI_CFG_IMMUNE            "immune"
 
 /* MULTIPLAYER: while a session is live (and this machine is NOT the host),
- * retarget the joyride behavior at the HOST's car, so the AI car tails the host
+ * retarget the joyride behavior at the HOST's car (on a dedicated server, which
+ * has no host player, the NEAREST other player's car), so the AI car tails the host
  * around the map and holds a clearance instead of driving into them. 0 keeps
  * the plain random wander (1 = on). See jerai_follow.c. */
 #define JERAI_CFG_FOLLOW            "follow"
@@ -132,8 +144,8 @@
 /* Police: when the engine says the cops are after us (a pursuit is running or one
  * has line of sight), drop everything - follow included - and run from the nearest
  * police car FLAT OUT, then resume what we were doing once they are gone. 0 = off.
- * Needs `immune = 0`, because immunity keeps the wanted level at zero and so no
- * pursuit ever starts. */
+ * Needs `immune = 0` (the default), because immunity keeps the wanted level at
+ * zero and so no pursuit ever starts. */
 #define JERAI_CFG_FLEE_POLICE       "flee_police"
 
 /* debug: override the aim with a FIXED heading (game units, -1 = off). Used to

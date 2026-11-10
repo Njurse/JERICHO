@@ -48,13 +48,9 @@ static void JerAiCross(int x, int y, int z, int r, CVECTOR& col)
 	JerAiSeg(x, y, z - r, x, y, z + r, col);
 }
 
-static long JerAiDist2(int ax, int az, int bx, int bz)
-{
-	long dx = ax - bx;
-	long dz = az - bz;
-
-	return dx * dx + dz * dz;
-}
+/* distances are JerAiDist2 (jerai_mapgrid.c): 64-bit, because a 32-bit `long`
+ * (Windows) wrapped on a big map and let far edges past the gates below, where
+ * they ate the engine's 512-line cap */
 
 /* ---- the engine road graph ---------------------------------------- */
 
@@ -65,8 +61,8 @@ static void JerAiDrawRoad(CAR_DATA* car)
 	int cx = car->hd.where.t[0];
 	int cz = car->hd.where.t[2];
 	int i;
-	const long edgeR2 = 13000L * 13000L;
-	const long nodeR2 = 7000L * 7000L;
+	const long long edgeR2 = 13000LL * 13000LL;
+	const long long nodeR2 = 7000LL * 7000LL;
 
 	for (i = 0; i < gJerAi.road.edgeCount; i++)
 	{
@@ -100,7 +96,7 @@ static void JerAiDrawGrid(CAR_DATA* car)
 	int y = gJerAi.map.centreY + 40;
 	int cx = car->hd.where.t[0];
 	int cz = car->hd.where.t[2];
-	const long r2 = 6000L * 6000L;
+	const long long r2 = 6000LL * 6000LL;
 	int ix, iz;
 
 	/* stride 2: a sample every ~1024 units is plenty to read a wall line */

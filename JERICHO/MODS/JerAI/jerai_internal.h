@@ -80,15 +80,15 @@ typedef struct JERAI_STATE
 	int	steerTrace;		/* log a compact steering-loop line every N frames (0 = off) */
 	int	lastPred;		/* the damped heading error the steer decision used */
 	int	lastWheel;		/* the front wheel angle AFTER the pad was applied (handling.c) */
-	int	pacePct;		/* joyride pace above the road limit (%) */
+	int	pacePct;		/* Evade: cruise pace above the road limit (%) */
 	int	topSpeed;		/* flat-out speed cap (0..255) */
-	int	runLights;		/* 1 = never park, never stop at lights/yields */
+	int	runLights;		/* Evade: 1 = never stop at lights; 0 = stop for red/amber unless chased */
 	int	replanMs;		/* route refresh period */
 	int	replanMove;		/* goal drift (world units) that forces a replan */
 	int	lookAhead;		/* steer at the first waypoint at least this far out */
 	int	avoidDist;		/* start slowing for a car ahead within this range */
-	int	copClearance;		/* a cop closer than this counts as a threat */
-	int	maxSteer;		/* steering lock for direct-steer behaviors */
+	int	copClearance;		/* Evade: a cop closer than this counts as a threat */
+	int	maxSteer;		/* Evade: wheel-angle cap (352+ = none, see jerai.h) */
 
 	/* visualization layers */
 	int	vizGrid;
@@ -154,8 +154,19 @@ typedef struct JERAI_STATE
 	JERAI_ROAD_GRAPH road;
 	int	roadBuilt;
 
-	/* recaptured road limit, for the joyride pace boost */
+	/* the road's own speed limit where the car is (civ_ai.c speedLimits[] for
+	 * the surface's ROAD_SPEED_LIMIT id), re-read by Evade every frame; the
+	 * cruise pace is this plus pace_pct */
 	int	roadLimit;
+
+	/* EVADE (jerai_behavior.c): keep clear of the police */
+	int	speedCap;		/* cruise cap on the target speed, 0 = none (JerAiSpeedTarget) */
+	int	steerCap;		/* wheel-angle cap on the steering pad, 0 = none */
+	int	evadeActive;		/* last frame: a cop was inside cop_clearance */
+	int	lightHold;		/* last frame: stopped for a light */
+	int	evadeCopDist;		/* last frame: distance to the nearest cop (clamped), 0 = none */
+
+	int	mapBuiltAt;		/* tick of the last occupancy build (one per frame) */
 } JERAI_STATE;
 
 /* One instance, defined in jerai.c, shared by every engine-side file. The game
@@ -191,10 +202,20 @@ int JerAiOnDrawWorld(void* userdata, void* args);
 /* lines drawn by the last JerAiOnDrawWorld, for the readout */
 int JerAiVizLines(void);
 
-/* the in-game control menu (jerai_menu.c): reads the PHYSICAL pad and is drawn
- * over the game. */
+/* the settings page (jerai_menu.c): a jer_pause_menu page, registered from the
+ * module entry. JerAiMenuTick watches L2 (the PHYSICAL pad) and opens the pause
+ * on the page; JerAiMenuForceOpen does that directly. */
+void JerAiMenuRegister(void);
 void JerAiMenuTick(void);
 void JerAiMenuForceOpen(void);
-int JerAiOnDrawOverlay(void* userdata, void* args);
+
+/* CAR_PAD_* / MPAD_* bits the live car must not see this frame: the keys that
+ * closed the pause from the page, while they are still held. 0 otherwise. */
+unsigned int JerAiMenuPadMask(void);
+
+/* jerai.c: one log line when the drive's state changes (nothing otherwise), and
+ * the top-left HUD lines (jer_hud_panel slots 6-9, while viz_hud is on) */
+void JerAiLogState(const char* why);
+void JerAiHudUpdate(void);
 
 #endif /* JERAI_INTERNAL_H */
