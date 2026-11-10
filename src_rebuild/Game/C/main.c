@@ -3,6 +3,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_hud.h"	// JERICHO-HOOK: on-screen HUD messages
+#include "jer_arrow.h"	// JERICHO-HOOK: module target arrows (stock Draw3DTarget)
 #include "jer_console.h"	// JERICHO-HOOK: unified status console stream
 #include "jer_texture.h"	// JERICHO-HOOK: custom texture injection (reload/free)
 #include "jer_car_palette.h"	// JERICHO-HOOK: per-instance car colour (inert table)
@@ -3756,6 +3757,11 @@ void RenderGame2(int view)
 	}
 
 	DrawAllTheCars(view);
+
+	// JERICHO-HOOK: the target arrows modules registered with jer_arrow_at /
+	// jer_arrow_on_car, after the cars so an arrow follows this frame's car
+	// position. No slot set = nothing drawn.
+	jer_arrow_draw();
 
 	// JERICHO-HOOK: module world-space extras (projectiles, pickups) draw
 	// here, mid-render with the camera matrices live, into the real OT.

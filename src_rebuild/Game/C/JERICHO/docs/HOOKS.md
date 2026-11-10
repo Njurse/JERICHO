@@ -177,6 +177,47 @@ difference is who is speaking.
   height of the in-game one, so the engine steps frontend rows by 36 px and
   in-game rows by 12 px.
 
+### Pointing at something — `jer_arrow`
+
+```c
+#include "jer_arrow.h"
+
+jer_arrow_on_car(0, &car_data[slot]);   /* the stock bouncing arrow follows that car */
+jer_arrow_at(1, x, y, z);               /* ...or sits above a fixed world point      */
+jer_arrow_clear(0);                     /* gone; jer_arrow_clear_all() drops every slot */
+```
+
+- This is the game's own mission arrow (`Draw3DTarget(pos, 0x1)` in `targets.c`),
+  not the 2D map arrow. The **engine draws it** every view, in the world pass
+  right after the cars (`main.c`, just before `JER_EVENT_DRAW_WORLD`), until the
+  slot is cleared — set it once, like a HUD panel. `JER_ARROW_MAX` (8) slots.
+- Coordinates are the raw game frame (`CAR_DATA hd.where.t[]`, y negative up).
+  **y is used**: the arrow is drawn just above the point you give, so pass its
+  real height.
+- A car slot follows the car each frame and clears itself when the pointer is
+  NULL, outside `car_data[]`, or the car has left the world. Deciding *which*
+  car (and not marking the viewer's own) is the module's call.
+- The engine drops every slot on the way out of a level and on the frontend
+  entry. Never call these from a frontend hook.
+
+### Calm or pursuit music — `jer_music_force`
+
+```c
+#include "jer_music.h"
+
+jer_music_force(JER_MUSIC_PURSUIT);   /* or JER_MUSIC_CALM; JER_MUSIC_AUTO releases */
+```
+
+- Every level song has a calm part and a cop/pursuit part, switched by
+  `FunkUpDaBGMTunez` (`gamesnd.c`) from cop AI and some mission starts. While a
+  force is set those calls are **remembered but not applied**, so a chase cannot
+  flip the track back underneath a mode; `JER_MUSIC_AUTO` restores the part the
+  engine last asked for. `jer_music_forced()` reads the current force.
+- With no force set nothing changes — stock felony pursuit music is untouched.
+- The engine releases the force itself on level exit (`State_GameComplete`) and
+  on the frontend entry, so a mode can never leave pursuit stuck in the menus.
+  Re-apply it after a level restart if you still want it.
+
 ## What a module can do
 
 - **React to events** — see `events.md` for the full table. The engine

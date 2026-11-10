@@ -5,6 +5,8 @@
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_texture.h"	// JERICHO-HOOK: custom texture injection (reload)
 #include "jer_sound.h"		// JERICHO-HOOK: release module-held SFX voices on the menu return
+#include "jer_music.h"		// JERICHO-HOOK: release a module music force on level exit / menu return
+#include "jer_arrow.h"		// JERICHO-HOOK: drop module target arrows on level exit / menu return
 
 #include "system.h"
 #include "main.h"
@@ -375,6 +377,11 @@ void State_InitFrontEnd(void* param)
 	 * would be refused. See jer_sound_release_all. */
 	jer_sound_release_all();
 
+	// ...and anything a module pinned for the match: the music force and the
+	// target arrows (a CAR_DATA* from the last level must never be drawn).
+	jer_music_force(JER_MUSIC_AUTO);
+	jer_arrow_clear_all();
+
 	// jer_texture: the menus are a natural moment to pick up re-edited art.
 	jer_texture_reload_all();
 }
@@ -668,6 +675,12 @@ void State_GameComplete(void* param)
 	StopPadVibration(1);
 	StopAllChannels();
 	FreeXM();
+
+	// JERICHO-HOOK: leaving the level - drop a module's music force and target
+	// arrows here too, so a restart or the next level starts on the engine's own
+	// track with no arrow left on a car slot that is about to be reused.
+	jer_music_force(JER_MUSIC_AUTO);
+	jer_arrow_clear_all();
 
 	if (XAPrepared())
 	{

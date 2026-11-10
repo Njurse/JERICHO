@@ -7,6 +7,7 @@
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "gamesnd.h"
 #include "jer_sound.h"
+#include "jer_music.h"
 
 #include "sound.h"
 #include "system.h"
@@ -2477,8 +2478,52 @@ void JerichoSpeak(void)
 	}
 }
 
+// JERICHO: jer_music_force state. sMusicForce pins the track; sEngineFunk is
+// what the engine itself last asked for, restored when the force is released.
+static int sMusicForce = JER_MUSIC_AUTO;
+static int sEngineFunk = 0;
+
+static void ApplyBGMFunk(int funk);
+
 // [D] [T]
 void FunkUpDaBGMTunez(int funk)
+{
+	sEngineFunk = funk;
+
+	// JERICHO-HOOK: a module holds the track (jer_music_force); cop AI and
+	// mission code must not switch it back underneath the mode.
+	if (sMusicForce != JER_MUSIC_AUTO)
+		return;
+
+	ApplyBGMFunk(funk);
+}
+
+void jer_music_force(int mode)
+{
+	int was = sMusicForce;
+
+	if (mode != JER_MUSIC_CALM && mode != JER_MUSIC_PURSUIT)
+		mode = JER_MUSIC_AUTO;
+
+	sMusicForce = mode;
+
+	if (mode == JER_MUSIC_CALM)
+		ApplyBGMFunk(0);
+	else if (mode == JER_MUSIC_PURSUIT)
+		ApplyBGMFunk(1);
+	else if (was != JER_MUSIC_AUTO)
+		ApplyBGMFunk(sEngineFunk);	// released: back to the engine's own choice
+	// AUTO -> AUTO touches nothing, so the engine's release calls are inert
+	// when no module ever forced the music.
+}
+
+int jer_music_forced(void)
+{
+	return sMusicForce;
+}
+
+// The stock FunkUpDaBGMTunez body.
+static void ApplyBGMFunk(int funk)
 {
 	if (funk == 0)
 	{
@@ -2676,6 +2721,7 @@ void InitMusic(int musicnum)
 	}
 
 	copmusic = 0;
+	sEngineFunk = 0;	// JERICHO: a new song starts calm, as copmusic does
 
 	AllocateReverb(3, 16384);
 
