@@ -359,6 +359,122 @@ void jer_config_set_str(const char* mod, const char* key, const char* value)
 	jerConfigSaveMod(mod);
 }
 
+/* One key in <root>/CONFIG/<mod>.ini, changed IN PLACE: every other line of
+ * the file -- comments, blank lines, keys this store never read -- is kept
+ * byte for byte. jer_config_set_* rewrites the whole file from the cache, which
+ * drops the comments a hand-documented file (modstore.ini, rebake.ini) ships
+ * with; a player's answer to a prompt must not cost them their notes. The first
+ * `key = ...` line is replaced (a later duplicate is left as it was); no such
+ * line appends one. The cache is updated too, so get_* reads the new value. */
+int jer_config_set_line(const char* mod, const char* key, const char* value)
+{
+	char path[512];
+	static char buf[65536];
+	char outLine[JER_CONFIG_LINE_LEN];
+	size_t n = 0;
+	int done = 0;
+	FILE* f;
+
+	if (!gInitDone || gRootDir[0] == 0 || mod == NULL || mod[0] == 0 || key == NULL || key[0] == 0)
+		return 0;
+	if (value == NULL)
+		value = "";
+
+	jerConfigEnsureDir();
+	snprintf(path, sizeof(path), "%s/%s/%s.ini", gRootDir, JER_CONFIG_PATH, mod);
+	snprintf(outLine, sizeof(outLine), "%s=%s", key, value);
+
+	f = fopen(path, "rb");
+	if (f != NULL)
+	{
+		n = fread(buf, 1, sizeof(buf) - 1, f);
+		if (!feof(f))
+		{
+			/* bigger than we can hold: refuse rather than truncate the file */
+			fclose(f);
+			jer_log("[config] %s is too big to edit in place; %s not saved\n", path, key);
+			return 0;
+		}
+		fclose(f);
+	}
+	buf[n] = 0;
+
+	f = fopen(path, "wb");
+	if (f == NULL)
+		return 0;
+
+	{
+		const char* p = buf;
+
+		while (*p != 0)
+		{
+			const char* eol = strchr(p, '\n');
+			size_t len = eol != NULL ? (size_t)(eol - p) + 1 : strlen(p);
+
+			if (!done)
+			{
+				char line[JER_CONFIG_LINE_LEN];
+				size_t cl = len < sizeof(line) - 1 ? len : sizeof(line) - 1;
+				char* eq;
+
+				memcpy(line, p, cl);
+				line[cl] = 0;
+				eq = strchr(line, '=');
+				if (eq != NULL && line[0] != '#' && line[0] != ';')
+				{
+					*eq = 0;
+					if (strcmp(jerTrim(line), key) == 0)
+					{
+						/* keep the line's own ending (CRLF from a Windows editor) */
+						int crlf = (len >= 2 && p[len - 2] == '\r');
+
+						fputs(outLine, f);
+						fputs(eol != NULL ? (crlf ? "\r\n" : "\n") : "\n", f);
+						done = 1;
+						p += len;
+						continue;
+					}
+				}
+			}
+
+			fwrite(p, 1, len, f);
+			p += len;
+		}
+	}
+
+	if (!done)
+	{
+		/* a new line in the file's own style (CRLF when it already has one) */
+		const char* nl = strstr(buf, "\r\n") != NULL ? "\r\n" : "\n";
+
+		if (n > 0 && buf[n - 1] != '\n')
+			fputs(nl, f);
+		fputs(outLine, f);
+		fputs(nl, f);
+	}
+	fclose(f);
+
+	/* the cache, without jerConfigSaveMod (that is the whole-file rewrite) */
+	jerConfigLoadMod(mod);
+	{
+		int i = jerConfigFind(mod, key);
+
+		if (i >= 0)
+			snprintf(gEntries[i].val, sizeof(gEntries[i].val), "%s", value);
+		else if (gEntryCount < JER_CONFIG_MAX_ENTRIES)
+		{
+			JER_CONFIG_ENTRY* e = &gEntries[gEntryCount];
+
+			snprintf(e->mod, sizeof(e->mod), "%s", mod);
+			snprintf(e->key, sizeof(e->key), "%s", key);
+			snprintf(e->val, sizeof(e->val), "%s", value);
+			gEntryCount++;
+		}
+	}
+
+	return 1;
+}
+
 #else /* PSX: no filesystem — everything returns the default */
 
 int jer_config_init(const char* rootDir)
@@ -412,6 +528,14 @@ void jer_config_set_str(const char* mod, const char* key, const char* value)
 void jer_config_clear(const char* mod)
 {
 	(void)mod;
+}
+
+int jer_config_set_line(const char* mod, const char* key, const char* value)
+{
+	(void)mod;
+	(void)key;
+	(void)value;
+	return 0;
 }
 
 #endif /* PSX */

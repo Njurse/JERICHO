@@ -125,6 +125,12 @@ int jer_modstore_busy(void);
  * prompt ONLY when something installed actually has an update. */
 int jer_modstore_startup_update_pending(void);
 
+/* Non-zero when this run never asks that question at all (a store test run),
+ * so jer_rebake.c's boot hold does not wait for it. The player's "Don't ask
+ * again" (CONFIG/modstore.ini startup_update_prompt=0) is not this: then the
+ * check is simply finished at boot and _pending() reads 0. */
+int jer_modstore_startup_update_off(void);
+
 /* The last thing the store has to say (a job's result, or why it refused). */
 const char* jer_modstore_status(void);
 
