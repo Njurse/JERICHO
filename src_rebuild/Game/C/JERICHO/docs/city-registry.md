@@ -147,7 +147,9 @@ for the same CLUT:
 JERICHO\MODS\carhacks\assets\portraits\CARHACKS\fallback.raw
 ```
 
-That is `<gD1DataFolder>assets\portraits\CARHACKS\fallback.raw`. The stock
+That is carhacks' own asset, so it is always read from the carhacks folder,
+even when the Driver 1 LEVs were found somewhere else (see "Where the Driver 1
+cars are read from" below). The stock
 mission car screen is unchanged; the module menu is the one that asks for a
 city and a model. Miami's pages and the screenshot encoder are in carhacks
 `docs/PORTRAITS.md`.
@@ -158,6 +160,37 @@ need) is `JERICHO/MODS/carhacks/tools/bankfill.py`; run its `--report` first to 
 what a bank lacks and `--verify` after writing. The rules it follows — including
 why a copied model's texture ids need no rewrite — are in
 [`BANKFILL.md`](../../../../../JERICHO/MODS/carhacks/docs/BANKFILL.md).
+
+## Where the Driver 1 cars are read from
+
+The seven stock Driver 1 rows (and Beta Miami) read `D1CARS\<CITY>.LEV` under
+`gD1DataFolder`. A bake writes `JERICHO\MODS\carhacks\D1CARS`, but the engine
+reads from wherever a valid bake already is. At startup `JerD1DataFolderInit`
+(system.c) asks `jer_d1cars_scan` (src/jer_d1cars.c, declared in
+jer_rebake.h), which looks in this order:
+
+1. `JERICHO\MODS\carhacks\D1CARS` (where a bake writes)
+2. `d1cars_path` in `JERICHO\CONFIG\jericho.ini`: optional and unset by
+   default. It names a shared folder that holds `D1CARS`, or the `D1CARS`
+   folder itself, either absolute or relative to the game folder. The engine
+   reads it and never writes it.
+3. `DRIVER\D1CARS` (bakes from before the move to carhacks)
+4. `<folder beside this install>\JERICHO\MODS\carhacks\D1CARS` (another
+   JERICHO install, such as `JERICHO Release`)
+
+A LEV counts only when the car importer could read it: the citylump table,
+DATA1 inside the file, and a `LUMP_CAR_MODELS` segment with at least one
+model. The newest `BAKE_VERSION` wins (a valid, unstamped bake counts as 0),
+then the most valid LEVs, then the earliest place in the list. The log names
+every candidate and the one chosen (`[d1cars] ...`).
+
+A bank path spelled for the canonical folder
+(`..\JERICHO\MODS\carhacks\D1CARS\...`, as carhacks and BAKE_D1_CARS write
+Beta Miami) is mapped onto the chosen folder, so carhacks' own Beta Miami
+registration finds the bake there. The re-bake prompt and
+the mod store judge the chosen bake: "not baked" means no valid LEV anywhere,
+and the version check uses the chosen folder's stamp. Nothing is copied, and
+the only folder a re-bake writes is carhacks'.
 
 ## The API
 
