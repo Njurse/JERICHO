@@ -30,6 +30,7 @@ extern int PrintStringRightAligned(char *pString, int x, int y); // 0x00074B8C
 extern void PrintStringCentred(char *pString, short y); // 0x00074BD8
 extern int PrintString(char *string, int x, int y); // 0x00073EA0
 extern short PrintDigit(int x, int y, char *string); // 0x00074140
+extern int PrintDigitScaled(int x, int y, char *string, int scale);	// JERICHO: PrintDigit at scale/16 (HUD clocks)
 extern int PrintStringFeature(char *string, int x, int y, int w, int h, int transparent); // 0x00074D34
 extern int PrintStringHiresScaled(char* string, int x, int y, float scale);	// sandbox menu
 extern int PrintStringHiresScaledSpaced(char* string, int x, int y, float scale, float extra);	// jer_console tracking

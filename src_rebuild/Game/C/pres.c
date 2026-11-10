@@ -870,6 +870,109 @@ short PrintDigit(int x, int y, char *string)
 	return width;
 }
 
+// JERICHO: PrintDigit at a scale, for HUD clocks smaller (or larger) than the
+// mission timer. 16 = PrintDigit's own size. Same glyphs ("0-9", ':' and '/'),
+// same fixed advance (16 px, 8 for ':') and the same top-aligned rows as
+// PrintDigit, drawn as POLY_FT4 quads like PrintScaledString (which is
+// centre-only and has no ':'). Returns the x after the last glyph, like
+// PrintDigit, so the ".FF" part can follow it with PrintString.
+int PrintDigitScaled(int x, int y, char *string, int scale)
+{
+	FONT_DIGIT* pDigit;
+	POLY_FT4* font;
+	char chr;
+	int index, fixedWidth, x16, gx, gw, gh;
+	u_char vOff, h;
+
+	if (scale == 16)
+		return PrintDigit(x, y, string);
+
+	if (scale < 1)
+		scale = 1;
+
+#ifdef HIRES_FONTS
+	SetHiresDigitsTexture(0);
+#endif
+
+	font = (POLY_FT4*)current->primptr;
+	x16 = x * 16;
+
+	while ((chr = *string++) != 0)
+	{
+		if (chr == ':')
+			index = 11;
+		else if (chr == '/')
+			index = 10;
+		else
+			index = chr - '0' & 0xff;
+
+		fixedWidth = (chr == ':') ? 8 : 16;
+
+		if (index > 11)
+		{
+			x16 += fixedWidth * scale;	// not a digit glyph: keep the advance
+			continue;
+		}
+
+		pDigit = &fontDigit[index];
+
+		if (index < 6)
+		{
+			vOff = 0;
+			h = 28;
+		}
+		else
+		{
+			vOff = 28;
+			h = 31;
+		}
+
+		gx = (x16 + (fixedWidth - pDigit->width) * scale / 2) / 16;
+		gw = (pDigit->width * scale + 8) / 16;
+		gh = (h * scale + 8) / 16;
+
+		setPolyFT4(font);
+		setSemiTrans(font, 1);
+		setRGB0(font, gFontColour.r, gFontColour.g, gFontColour.b);
+
+		font->x0 = gx;
+		font->y0 = y;
+		font->x1 = gx + gw;
+		font->y1 = y;
+		font->x2 = gx;
+		font->y2 = y + gh;
+		font->x3 = gx + gw;
+		font->y3 = y + gh;
+
+#ifdef HIRES_FONTS
+		if (gHiresDigitsTexture)
+		{
+			setUVWH(font, pDigit->xOffset, vOff, pDigit->width, h);
+		}
+		else
+#endif
+		{
+			setUVWH(font, digit_texture.coords.u0 + pDigit->xOffset, digit_texture.coords.v0 + vOff, pDigit->width, h);
+		}
+
+		font->clut = digit_texture.clutid;
+		font->tpage = digit_texture.tpageid;
+
+		addPrim(current->ot, font);
+		font++;
+
+		x16 += fixedWidth * scale;
+	}
+
+	current->primptr = (char*)font;
+
+#ifdef HIRES_FONTS
+	SetHiresDigitsTexture(1);
+#endif
+
+	return (x16 + 15) / 16;
+}
+
 // [D] [T]
 int PrintStringFeature(char *string, int x, int y, int w, int h, int transparent)
 {
