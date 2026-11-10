@@ -5950,7 +5950,6 @@ static void WorldVramNoteIfDirty(void)
 	sWorldDirtyLogged = 1;
 	printInfo("JERICHO-VRAM: world pages no longer match level load (%d resident slot(s), %d world-slot placement(s)). Pause and choose \"Reload world textures\".\n",
 		n, sWorldSlotTaken);
-	jer_console_log("world textures wrong - pause, Reload world textures");
 }
 
 /* Drop import pins that are sitting on a world slot so the level's page can
