@@ -28,6 +28,7 @@
 #include "jer_rebake.h"	/* the one Driver 1 re-bake prompt; re-armed after an install */
 #include "jer_screen.h"	/* jer_screen_active: never prompt over a presentation screen */
 #include "jer_text.h"
+#include "jer_internal.h"	/* jer_config_set_line: one key, the file's comments kept */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -203,6 +204,12 @@ static struct
  * here because the public predicate reads them. */
 static int  gStartupUpdate;		/* 0 = unchecked, 1 = fetching the index, 2 = done */
 static int  gUpdateAll;			/* the prompt was answered Yes: apply updates in turn */
+
+/* CONFIG/modstore.ini startup_update_prompt (default 1 = ask) */
+static int StoreStartupPromptOn(void)
+{
+	return jer_config_get_int("modstore", "startup_update_prompt", 1) != 0;
+}
 
 /* A compiled-in mod is not in the running exe just because its folder landed in
  * MODS/: premake generates the module registry from that folder at build time.
@@ -695,7 +702,12 @@ static void StoreWriteIniTemplate(void)
 		";\n"
 		"; A repo is a URL to a mods.json. The packages it names are downloaded from\n"
 		"; the URLs it gives; a package named with no URL is looked for next to the\n"
-		"; index. See JERICHO/CORE/modstore/ and docs/mod-repo.md for the format.\n");
+		"; index. See JERICHO/CORE/modstore/ and docs/mod-repo.md for the format.\n"
+		";\n"
+		"; startup_update_prompt: 1 = at startup, ask to update installed mods that\n"
+		"; have an update; 0 = never ask (\"Don't ask again\"). Mods -> Browse Mod Repo\n"
+		"; still lists and installs updates.\n"
+		"startup_update_prompt=1\n");
 
 	fclose(f);
 	jer_log("[modstore] wrote a starter %s\n", path);
@@ -2313,6 +2325,28 @@ void jer_modstore_init(const char* rootDir)
 	{
 		jer_log("[modstore] modstore.sh/.bat must sit beside the game exe for installs to work\n");
 	}
+
+	/* The startup update check, started HERE rather than on the first main-menu
+	 * frame: the index fetch is a background child, so it runs while the game
+	 * loads, and the frontend (held hidden by jer_rebake_boot_hold until this is
+	 * settled) usually finds the answer already in. Off ("Don't ask again"):
+	 * finished before it starts. A store test run never asks (frontend tick). */
+	if (gStartupUpdate == 0 && gStore.testLever == STORE_TEST_NONE)
+	{
+		if (!StoreStartupPromptOn())
+		{
+			gStartupUpdate = 2;
+			jer_log("[modstore] startup update question is off (CONFIG/modstore.ini startup_update_prompt=0)\n");
+		}
+		else
+		{
+			int r = jer_modstore_refresh();
+
+			gStartupUpdate = (r == JER_MODSTORE_OK || r == JER_MODSTORE_BUSY) ? 1 : 2;
+			jer_log("[modstore] startup: %s\n", gStartupUpdate == 1
+				? "fetching the repo index at boot" : "no index fetch (no helper or no repo); not asking");
+		}
+	}
 }
 
 int jer_modstore_busy(void)
@@ -2323,6 +2357,11 @@ int jer_modstore_busy(void)
 int jer_modstore_startup_update_pending(void)
 {
 	return gStartupUpdate != 2 || gUpdateAll;
+}
+
+int jer_modstore_startup_update_off(void)
+{
+	return gStore.testLever != STORE_TEST_NONE;
 }
 
 const char* jer_modstore_status(void)
@@ -3329,6 +3368,19 @@ static void StoreUpdateAllYes(void)
 	gUpdateAll = 1;
 }
 
+/* "Don't ask again" on the startup update question. In place, so the file's
+ * comments and the player's repo lines stay as they are. */
+static void StoreUpdateNeverAsk(void)
+{
+	if (jer_config_set_line("modstore", "startup_update_prompt", "0"))
+	{
+		jer_log("[modstore] startup update question off (CONFIG/modstore.ini startup_update_prompt=0)\n");
+		jer_notify("Mod update prompt off. Mods -> Browse Mod Repo shows updates.", 1, 6);
+	}
+	else
+		jer_log("[modstore] could not write startup_update_prompt=0 to CONFIG/modstore.ini\n");
+}
+
 static const char* StoreStateText(int state)
 {
 	switch (state)
@@ -3729,7 +3781,8 @@ void jer_modstore_frontend_tick(int onMainMenu)
 			{
 				StoreBuildUpdateQuestion(n);
 				jer_log("[modstore] startup: %d mod update(s) available\n", n);
-				jer_prompt_begin(gPromptText, StoreUpdateAllYes);
+				jer_prompt_begin3(gPromptText, NULL, NULL, "Don't ask again",
+					StoreUpdateAllYes, NULL, StoreUpdateNeverAsk);
 			}
 		}
 	}

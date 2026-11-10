@@ -439,6 +439,8 @@ extern "C" {
 #endif
 void jer_update_frontend_tick(int onMainMenu);
 void jer_rebake_frontend_tick(int onMainMenu);	/* jer_rebake.c: ask to re-bake a stale D1 bake */
+int jer_rebake_boot_hold(void);	/* jer_rebake.c: startup questions unsettled -- keep the menu hidden */
+int jer_modstore_busy(void);	/* jer_modstore.c: a store job (the boot index fetch) is running */
 int jer_update_screen_active(void);		/* jer_update.c: the update notes own the screen */
 int jer_build_is_dev(void);
 void jer_modstore_frontend_tick(int onMainMenu);	/* jer_modstore.c: polls the store's helper */
@@ -1263,9 +1265,11 @@ void DrawScreen(PSXSCREEN *pScr)
 			len = FEStringWidth(G_LTXT(GTXT_NO));
 			FEPrintString(G_LTXT(GTXT_NO), 320 + quitLen / 4 - len/2, 288, 0, 128, 128, bQuitToSystemSel ? 128 : 0);
 		}
-		else if (jer_prompt_active())
+		else if (jer_prompt_active() || jer_rebake_boot_hold())
 		{
 			/* a host prompt takes the screen: the screen's own buttons are NOT drawn.
+			 * Nor while the boot's startup questions are unsettled (jer_rebake.h):
+			 * the menu must not flash up before the question that replaces it.
 			 * The prompt itself is painted from the per-frame hook below, not here --
 			 * a module menu draws on its own path and would otherwise leave an active
 			 * prompt invisible while it still ate the pad. */
@@ -1599,12 +1603,14 @@ static void JerichoDrawPrompt(void)
 {
 	static char lines[JER_PROMPT_WRAP_MAX][JER_PROMPT_LINE_LEN];
 	const char* question = jer_prompt_question();
-	int yesSel = jer_prompt_selected_yes();
+	const char* third = jer_prompt_third_label();
+	int sel = jer_prompt_selected();
 	int count;
 	int i;
 	int y;
 	int wy;
 	int wn;
+	int wt;
 	int x;
 
 	if (question == NULL)
@@ -1624,7 +1630,13 @@ static void JerichoDrawPrompt(void)
 	wy = jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, jer_prompt_yes_label());
 	wn = jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, jer_prompt_no_label());
 
-	x = JER_PROMPT_RIGHT_X - (wy + JER_PROMPT_GAP + wn);
+	/* a third answer ("Don't ask again") sits after No, the row still ending
+	 * bottom-right */
+	if (third == NULL || third[0] == 0)
+		third = NULL;
+	wt = third != NULL ? jer_text_width(JER_TEXT_FE, JER_PROMPT_SCALE, third) : 0;
+
+	x = JER_PROMPT_RIGHT_X - (wy + JER_PROMPT_GAP + wn + (third != NULL ? JER_PROMPT_GAP + wt : 0));
 
 	/* one line per prompt, the first frame it is drawn: where the layout ended
 	 * up is exactly what is wrong when a prompt looks wrong, and guessing it from
@@ -1647,10 +1659,39 @@ static void JerichoDrawPrompt(void)
 	}
 
 	jer_text_draw_at(JER_TEXT_FE, JER_PROMPT_SCALE, x, JER_PROMPT_ANSWERS_Y, jer_prompt_yes_label(),
-		yesSel ? 255 : 130, yesSel ? 215 : 130, yesSel ? 60 : 130);
+		sel == 0 ? 255 : 130, sel == 0 ? 215 : 130, sel == 0 ? 60 : 130);
 
 	jer_text_draw_at(JER_TEXT_FE, JER_PROMPT_SCALE, x + wy + JER_PROMPT_GAP, JER_PROMPT_ANSWERS_Y, jer_prompt_no_label(),
-		yesSel ? 130 : 255, yesSel ? 130 : 215, yesSel ? 130 : 60);
+		sel == 1 ? 255 : 130, sel == 1 ? 215 : 130, sel == 1 ? 60 : 130);
+
+	if (third != NULL)
+	{
+		jer_text_draw_at(JER_TEXT_FE, JER_PROMPT_SCALE, x + wy + JER_PROMPT_GAP + wn + JER_PROMPT_GAP,
+			JER_PROMPT_ANSWERS_Y, third,
+			sel == 2 ? 255 : 130, sel == 2 ? 215 : 130, sel == 2 ? 60 : 130);
+	}
+}
+
+/* The boot hold (jer_rebake_boot_hold): black over the menu while the startup
+ * questions are settled, the same backdrop and OT slot as a presentation screen
+ * (JerichoDrawScreen), so a prompt's text at ot+1 sits on it. A slow index fetch
+ * gets a line after a second, so a long hold does not read as a hang. */
+static void JerichoDrawBootHold(void)
+{
+	static POLY_F4 holdBack;	/* static: the OT holds the pointer until EndFrame */
+	static int heldFrames;
+
+	setPolyF4(&holdBack);
+	setRGB0(&holdBack, 0, 0, 0);
+	setXYWH(&holdBack, 0, 0, 640, 512);
+	addPrim(current->ot + 2, &holdBack);
+
+	if (jer_prompt_active())
+		return;
+
+	if (++heldFrames > 60 && jer_modstore_busy())
+		jer_text_draw_at(JER_TEXT_FE, 100, JER_PROMPT_LEFT_X, JER_PROMPT_ANSWERS_Y,
+			"Checking for mod updates...", 150, 150, 150);
 }
 
 /* One frame of the active screen. Returns 1 if a screen was drawn. */
@@ -2783,6 +2824,8 @@ static void JerichoDrawNotices(void)
 // [D] [T]
 void State_FrontEnd(void* param)
 {
+	int bootHold;
+
 	// JERICHO-HOOK: -frames applies to frontend runs too, so they self-terminate and
 	// leave a complete log rather than needing a kill. See JerichoFrameTick in main.c.
 	extern void JerichoFrameTick(void);
@@ -2837,6 +2880,13 @@ void State_FrontEnd(void* param)
 		feNewPad = 0;
 	}
 
+	// JERICHO-HOOK: the boot hold (jer_rebake.h). One answer for the whole frame
+	// -- buttons, pad, backdrop -- so a release mid-frame cannot half-draw it.
+	// The menu is hidden, so it must not take a press it is not showing.
+	bootHold = jer_rebake_boot_hold();
+	if (bootHold)
+		feNewPad = 0;
+
 	if (HandleKeyPress())
 	{
 		if (pNewScreen != NULL)
@@ -2870,7 +2920,7 @@ void State_FrontEnd(void* param)
 	 *
 	 * ...unless a host prompt (jer_prompt.h) is up: it owns the screen, and a
 	 * question with a module's table painted through it is not a prompt. */
-	if (!jer_prompt_active())
+	if (!jer_prompt_active() && !bootHold)
 	{
 		JER_ARGS_FRONTEND_DRAW drawArgs;
 
@@ -2889,6 +2939,9 @@ void State_FrontEnd(void* param)
 	/* ...and it is told whether the MAIN MENU is up, for the same reason the updater
 	 * is: the store's prompt must not be raised over the changelog screen. */
 	jer_modstore_frontend_tick(pCurrScreen == &PsxScreens[0] && ScreenDepth == 0);
+
+	if (bootHold)
+		JerichoDrawBootHold();
 
 	/* A host prompt is drawn here rather than on the screen path: it must be
 	 * visible whatever is behind it (a stock screen OR a module menu), and it has
@@ -2919,7 +2972,7 @@ void State_FrontEnd(void* param)
 
 		/* JERICHO: the update screen is not idle time -- hold the clock so the
 		 * attract demo cannot start a level from under it. */
-		if (idleArgs.suppress || jer_update_screen_active())
+		if (idleArgs.suppress || jer_update_screen_active() || bootHold)
 			idle_timer = VSync(-1);
 	}
 
