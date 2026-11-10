@@ -283,6 +283,16 @@ jer_music_force(JER_MUSIC_PURSUIT);   /* or JER_MUSIC_CALM; JER_MUSIC_AUTO relea
   `jer_sound_ensure(&channel)` is the one-call form for a cached `-1` channel
   (acquire, re-lock after a level change, or give up gracefully). A refused lock
   still yields a voice to play on — never treat it as "no sound".
+- **Load a sound lump for a later level** — `jer_sound_request_lump(bank, lump,
+  maxSamples)` in `jer_sound.h`. Mission-only banks (`SOUND_BANK_MISSION`, a
+  `SBK_ID_MISSION_*` lump) are not loaded in Take a Ride or multiplayer; a module
+  that needs one of those samples asks once at init. Every following level load
+  appends the lump to `bank` before the car-import memtop is saved, so a later
+  car import cannot rewind over it. `maxSamples` is as `LoadBankFromLumpMax`
+  (`-1` = the whole lump). The slot returned by the request is how you read the
+  sample indices after the load: `jer_sound_lump_base(slot)` and
+  `jer_sound_lump_count(slot)`. The menu-bank helper (`jer_sound_request_menu_bank`)
+  is the same path, specialised to the four FE samples.
 - **Give the voice back when the player leaves the game** — a voice locked with
   `jer_sound_lock` survives a level change (`ResetSound` clears the locks at the next
   level's start) but NOT the return to the menus, so a module that caches a channel
