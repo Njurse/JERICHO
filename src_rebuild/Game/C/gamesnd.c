@@ -155,9 +155,16 @@ static int car_slot_model[MAX_CAR_RESIDENT_MODELS];
 static int car_slot_imported[MAX_CAR_RESIDENT_MODELS];	// 1 = slot owns an imported per-model bank
 static int car_slot_appended[MAX_CAR_RESIDENT_MODELS];	// 1 = slot's block was appended AFTER the level checkpoint
 static int cop_siren_sample[CITY_D2_COUNT];	// source D2 city -> SOUND_BANK_VOICES siren sample; -1 = not loaded
+/* JERICHO: police radio lines by voice city (JerPoliceVoiceCity): the
+ * SOUND_BANK_VOICES sample the city's 17 phrases start at (heading clips, then
+ * chatter - phrase p is base + p - 1). The host's are base 1, after its siren.
+ * -1 = not loaded, -2 = tried and could not load (no retry until a reset). */
+static int cop_phrase_base[CITY_COUNT];
+static int voices_checkpoint_count = -1;	// SOUND_BANK_VOICES count at the memtop save; -1 = none yet
 static int car_sound_ready;
 static int car_sound_checkpoint_ready;	// the post-special bank checkpoint can be restored
 static int car_sound_rebuilding;	// a rebuild is re-loading the live slots (no recursion)
+#define CAR_IMPORT_POLICE_VOICE_COUNT_GS	17	// one city's radio lines: 6 heading clips + 11 chatter (models.c)
 static int loudhail_time = 0;
 
 /* JERICHO-DIAG: one line per horn/siren sample actually started, so the car
@@ -246,10 +253,29 @@ void LoadBankFromLump(int bank, int lump)
  * samples of a lump into a nearly-full bank. Sample addresses are relative,
  * so trimming the header count keeps the leading samples valid. Returns the
  * number of samples loaded. */
+static u_int blockLimit[73] = { 0 };	// VOICES2.BLK's lump offset table
+
+/* JERICHO: the byte size of VOICES2.BLK lump `lump`, or 0 when it is not valid.
+ * Lets an optional bank's SPU cost be checked before it is loaded. */
+static int BankLumpSize(int lump)
+{
+	int size;
+
+	if (lump < 0 || lump + 1 >= (int)(sizeof(blockLimit) / sizeof(blockLimit[0])))
+		return 0;
+
+	if (blockLimit[1] == 0)
+		LoadfileSeg("SOUND\\VOICES2.BLK", (char*)blockLimit, 0, sizeof(blockLimit));
+
+	if (!blockLimit[lump] || !blockLimit[lump + 1])
+		return 0;
+
+	size = blockLimit[lump + 1] - blockLimit[lump];
+	return size > 0 ? size : 0;
+}
+
 int LoadBankFromLumpMax(int bank, int lump, int maxSamples)
 {
-	static u_int blockLimit[73] = { 0 };
-
 	int size;
 	char* name;
 
@@ -339,6 +365,180 @@ static void LoadImportedCopSiren(int city)
 
 	printInfo("gamesnd: %s cop siren -> SOUND_BANK_VOICES sample %d (bank %d)\n",
 		LevelNames[city], before, bank);
+}
+
+/* The two stock VOICES2.BLK phrase lumps a Driver 2 city's cops speak: the
+ * heading clips, then the mission's chatter set (cop_bank). Chicago and Vegas
+ * share theirs, as they share a siren. This is LoadLevelSFX's own formula. */
+static void CopPhraseLumpsForCity(int city, int* dir, int* chat)
+{
+	if (city & 2)
+	{
+		*dir = SBK_COP_PHRASES_START + (city & 1) * 8 + (city & 1) * 2;
+		*chat = SBK_COP_PHRASES_START + (city & 1) * 10 + cop_bank;
+	}
+	else
+	{
+		*dir = SBK_COP_PHRASES_START + (city & 3) * 4 + (city & 3);
+		*chat = SBK_COP_PHRASES_START + (city & 3) * 5 + cop_bank;
+	}
+}
+
+/* JERICHO: a cop car from another city speaks that city's radio lines. Append
+ * voice city `city`'s 17 phrases to SOUND_BANK_VOICES and record where they
+ * start: a Driver 2 city's two stock phrase lumps, or a Driver 1 / bank city's
+ * baked LUMP_POLICE_VOICES (models.c GetCarImportPoliceVoices). Several cities
+ * can be resident at once; each costs 17 of the bank's samples and its payload
+ * in SPU memory, and both are checked BEFORE anything is loaded, so a full bank
+ * or SPU region leaves the car on the host city's lines instead of overrunning.
+ * Idempotent; cities sharing lumps reuse the first city's samples. */
+static void LoadImportedCopPhrases(int city)
+{
+	int before, got, bytes, i;
+	const char* how;
+
+	if (city < 0 || city >= CITY_COUNT || city == GameLevel)
+		return;
+
+	if (cop_phrase_base[city] != -1)
+		return;
+
+	cop_phrase_base[city] = -2;
+
+	if (!SoundBankHasRoom(SOUND_BANK_VOICES, CAR_IMPORT_POLICE_VOICE_COUNT_GS))
+	{
+		printWarning("gamesnd: %s police radio lines not loaded - SOUND_BANK_VOICES is full (%d samples)\n",
+			LevelNames[city], GetSoundBankSampleCount(SOUND_BANK_VOICES));
+		return;
+	}
+
+	if (city < CITY_D2_COUNT)
+	{
+		int dir, chat, dirSize, chatSize;
+
+		CopPhraseLumpsForCity(city, &dir, &chat);
+
+		for (i = 0; i < CITY_D2_COUNT; i++)
+		{
+			int d2, c2;
+
+			if (i == city || cop_phrase_base[i] < 0)
+				continue;
+
+			CopPhraseLumpsForCity(i, &d2, &c2);
+
+			if (d2 == dir && c2 == chat)
+			{
+				cop_phrase_base[city] = cop_phrase_base[i];
+				return;
+			}
+		}
+
+		dirSize = BankLumpSize(dir);
+		chatSize = BankLumpSize(chat);
+		bytes = dirSize + chatSize;
+
+		if (dirSize <= 0 || chatSize <= 0 || bytes > SoundBankSpuRoom())
+		{
+			printWarning("gamesnd: %s police radio lines not loaded - lumps %d/%d need %d bytes, %d SPU bytes left\n",
+				LevelNames[city], dir, chat, bytes, SoundBankSpuRoom());
+			return;
+		}
+
+		before = GetSoundBankSampleCount(SOUND_BANK_VOICES);
+		got = LoadBankFromLumpMax(SOUND_BANK_VOICES, dir, -1);
+		got += LoadBankFromLumpMax(SOUND_BANK_VOICES, chat, -1);
+		how = "stock phrase banks";
+	}
+	else
+	{
+		char* body = NULL;
+
+		if (!GetCarImportPoliceVoices(city, &body, &bytes))
+			return;
+
+		if (bytes - (4 + CAR_IMPORT_POLICE_VOICE_COUNT_GS * 16) > SoundBankSpuRoom())
+		{
+			printWarning("gamesnd: %s police radio lines not loaded - need %d bytes, %d SPU bytes left\n",
+				LevelNames[city], bytes, SoundBankSpuRoom());
+			return;
+		}
+
+		before = GetSoundBankSampleCount(SOUND_BANK_VOICES);
+		got = LoadSoundBankDynamic(body, bytes, SOUND_BANK_VOICES);
+		how = "baked LUMP_POLICE_VOICES";
+	}
+
+	if (got < CAR_IMPORT_POLICE_VOICE_COUNT_GS)
+	{
+		printWarning("gamesnd: %s police radio lines: only %d of %d samples loaded - keeping the host city's lines\n",
+			LevelNames[city], got, CAR_IMPORT_POLICE_VOICE_COUNT_GS);
+		return;
+	}
+
+	cop_phrase_base[city] = before;
+
+	printInfo("gamesnd: %s police radio lines -> SOUND_BANK_VOICES samples %d..%d (%s)\n",
+		LevelNames[city], before, before + got - 1, how);
+}
+
+/* JERICHO: make sure the cop car in resident `slot` has its own city's radio
+ * lines resident. A host-city car, a civilian, or a level that loaded no cop
+ * speech of its own needs nothing. */
+static void LoadCopPhrasesForSlot(int slot)
+{
+	int src, city;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || residentCarModels[slot] < 0)
+		return;
+
+	if (GameLevel < 0 || GameLevel >= CITY_D2_COUNT || cop_phrase_base[GameLevel] < 0)
+		return;
+
+	src = GetCarModelSourceCity(slot);
+
+	if (src < 0 || src == GameLevel || !JerCarSlotIsPolice(slot))
+		return;
+
+	city = JerPoliceVoiceCity(src);
+
+	if (city < 0)
+	{
+		printInfo("gamesnd: slot %d (%s cop) has no baked police radio lines (own bank or Driver 1 Miami) - host city's lines\n",
+			slot, LevelNames[src] ? LevelNames[src] : "?");
+		return;
+	}
+
+	LoadImportedCopPhrases(city);
+}
+
+int GetCopPhraseSample(int slot, int phrase)
+{
+	int base = -1;
+
+	if (phrase < 1 || !car_sound_ready || GameLevel < 0 || GameLevel >= CITY_D2_COUNT)
+		return -1;
+
+	if (slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS && residentCarModels[slot] >= 0)
+	{
+		int src = GetCarModelSourceCity(slot);
+
+		if (src >= 0 && src != GameLevel)
+		{
+			int city = JerPoliceVoiceCity(src);
+
+			if (city >= 0 && city < CITY_COUNT)
+				base = cop_phrase_base[city];
+		}
+	}
+
+	if (base < 0)
+		base = cop_phrase_base[GameLevel];
+
+	if (base < 0)
+		return -1;
+
+	return base + phrase - 1;
 }
 
 // [D] [T]
@@ -809,6 +1009,26 @@ static void RebuildImportedCarSoundBanks(void)
 	LoadSoundBankDynamic(NULL, 2, SOUND_BANK_CARS);	// addr = memtop
 	LoadSoundBankDynamic(NULL, 4, SOUND_BANK_CARS);	// count = banktop
 
+	/* The same rewind reclaimed the SPU memory of SOUND_BANK_VOICES appends
+	 * made after the checkpoint (hot-loaded cops' sirens and radio lines):
+	 * drop them too, and load them again below for the live slots. */
+	if (voices_checkpoint_count >= 0)
+	{
+		LoadSoundBankDynamic(NULL, 4, SOUND_BANK_VOICES);
+
+		for (i = 0; i < CITY_D2_COUNT; i++)
+		{
+			if (cop_siren_sample[i] >= voices_checkpoint_count)
+				cop_siren_sample[i] = -1;
+		}
+
+		for (i = 0; i < CITY_COUNT; i++)
+		{
+			if (cop_phrase_base[i] >= voices_checkpoint_count || cop_phrase_base[i] == -2)
+				cop_phrase_base[i] = -1;
+		}
+	}
+
 	for (i = 0; i < n; i++)
 	{
 		slot = reload[i];
@@ -822,6 +1042,18 @@ static void RebuildImportedCarSoundBanks(void)
 
 	for (i = 0; i < n; i++)
 		LoadCarSoundForSlot(reload[i]);
+
+	/* Sirens and radio lines for every live cop slot, not only the reloaded
+	 * ones: a slot that kept its car block may still have lost its voices. */
+	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+	{
+		int city = GetCarModelSourceCity(slot);
+
+		if (city >= 0 && city < CITY_D2_COUNT && residentCarModels[slot] == 0)
+			LoadImportedCopSiren(city);
+
+		LoadCopPhrasesForSlot(slot);
+	}
 
 	RestartPlayerCarSoundsForRebuild();
 	ClearSirenNoises();
@@ -870,6 +1102,8 @@ void LoadCarSoundForSlot(int slot)
 
 	if (model == 0 && city >= 0 && city < CITY_D2_COUNT)
 		LoadImportedCopSiren(city);
+
+	LoadCopPhrasesForSlot(slot);
 
 	if (car_slot_sample[slot] >= 0 &&
 		car_slot_city[slot] == city && car_slot_model[slot] == model)
@@ -1024,6 +1258,11 @@ void LoadLevelSFX(int missionNum)
 	for (i = 0; i < CITY_D2_COUNT; i++)
 		cop_siren_sample[i] = -1;
 
+	for (i = 0; i < CITY_COUNT; i++)
+		cop_phrase_base[i] = -1;
+
+	voices_checkpoint_count = -1;
+
 	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
 	{
 		car_slot_sample[i] = -1;
@@ -1077,16 +1316,18 @@ void LoadLevelSFX(int missionNum)
 	{
 		// first bank - directions
 		// second bank - 
-		if (GameLevel & 2)
-		{
-			LoadBankFromLump(SOUND_BANK_VOICES, SBK_COP_PHRASES_START + (GameLevel & 1) * 8 + (GameLevel & 1) * 2);
-			LoadBankFromLump(SOUND_BANK_VOICES, SBK_COP_PHRASES_START + (GameLevel & 1) * 10 + cop_bank);
-		}
-		else
-		{
-			LoadBankFromLump(SOUND_BANK_VOICES, SBK_COP_PHRASES_START + (GameLevel & 3) * 4 + (GameLevel & 3));
-			LoadBankFromLump(SOUND_BANK_VOICES, SBK_COP_PHRASES_START + (GameLevel & 3) * 5 + cop_bank);
-		}
+		int dir, chat, before, got;
+
+		before = GetSoundBankSampleCount(SOUND_BANK_VOICES);
+
+		CopPhraseLumpsForCity(GameLevel, &dir, &chat);
+		got = LoadBankFromLumpMax(SOUND_BANK_VOICES, dir, -1);
+		got += LoadBankFromLumpMax(SOUND_BANK_VOICES, chat, -1);
+
+		// JERICHO: where the host's own lines start (1, after its siren), so a
+		// cop car from another city can be given ITS lines instead.
+		if (GameLevel >= 0 && GameLevel < CITY_D2_COUNT && got >= CAR_IMPORT_POLICE_VOICE_COUNT_GS)
+			cop_phrase_base[GameLevel] = before;
 	}
 
 	// JERICHO: D2 cops imported from another city keep that city's siren.
@@ -1096,6 +1337,9 @@ void LoadLevelSFX(int missionNum)
 
 		if (city >= 0 && city < CITY_D2_COUNT && residentCarModels[i] == 0)
 			LoadImportedCopSiren(city);
+
+		// ...and speak that city's radio lines (a Driver 1 cop: Miami's).
+		LoadCopPhrasesForSlot(i);
 	}
 
 	ShowLoading();
@@ -1272,6 +1516,14 @@ void LoadLevelSFX(int missionNum)
 
 	LoadSoundBankDynamic(NULL, 1, SOUND_BANK_CARS);	// save memtop
 	LoadSoundBankDynamic(NULL, 3, SOUND_BANK_CARS);	// save banktop
+
+	// JERICHO: memtop is ONE SPU address for every bank, so a rewind also
+	// reclaims the SPU memory of any siren or radio lines appended to
+	// SOUND_BANK_VOICES after this point. Save its count too, so a rebuild drops
+	// those mappings with their memory instead of leaving them pointing at car
+	// samples written over them.
+	LoadSoundBankDynamic(NULL, 3, SOUND_BANK_VOICES);
+	voices_checkpoint_count = GetSoundBankSampleCount(SOUND_BANK_VOICES);
 
 #if MAX_CAR_RESIDENT_MODELS > 5
 	/* One 3-sample block must fit for every possible appended slot, on top of

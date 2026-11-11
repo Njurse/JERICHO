@@ -241,6 +241,8 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_WHEELS	200	// JERICHO: optional wheel models (the D1 bake)
 #define CAR_IMPORT_LUMP_SOUNDS	201	// JERICHO: embedded per-model car sounds (the D1 bake)
 #define CAR_IMPORT_LUMP_SIRENS	202	// JERICHO: per-model cop flags (the D1 bake)
+#define CAR_IMPORT_LUMP_POLICE_VOICES	203	// JERICHO: the city's police radio lines (bake declare.police_voices)
+#define CAR_IMPORT_POLICE_VOICE_COUNT	17	// 6 directions + 11 chatter, the order D2's two phrase banks load in
 #define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
 #define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
 #define CAR_IMPORT_LUMP_MODELNAMES	12	// LUMP_MODELNAMES (DATA1)
@@ -265,6 +267,8 @@ typedef struct
 	char* carSounds;	// LUMP_CAR_SOUNDS body, or NULL (no embedded car sounds)
 	int carSoundsSize;
 	unsigned carSirenMask;	// bit N = model N is a cop car (LUMP_CAR_SIRENS)
+	char* policeVoices;	// LUMP_POLICE_VOICES body, or NULL (no baked police lines)
+	int policeVoicesSize;
 	char* wheelMem;		// malloc'd copies of the wheel MODELs below
 	MODEL* wheels[CAR_IMPORT_WHEEL_VARIANTS];
 	char* wheelTexMem[CAR_IMPORT_WHEEL_VARIANTS];	// per-model D2 texture-source blocks
@@ -550,6 +554,11 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 				imp->carSirenMask |= 1u << s;
 		}
 	}
+
+	// JERICHO: the city's police radio lines, a dynamic sound bank the bake writes
+	// from bank.json's declare.police_voices. Optional: no shipped bank has it yet,
+	// and gamesnd then keeps the host city's lines (GetCarImportPoliceVoices).
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_POLICE_VOICES, &imp->policeVoices, &imp->policeVoicesSize);
 
 	// JERICHO: a Driver 1 bake (no DATA2) from before v0.10.9 carries neither
 	// segment, so its cars keep the host's wheels and engine. Log it. The
@@ -2345,6 +2354,85 @@ int JerCarSlotIsPolice(int slot)
 		return model == 0;
 
 	return JerCarIsPolice(city, model);
+}
+
+// JERICHO: `city`'s baked police radio lines (LUMP_POLICE_VOICES, 203), or 0 when
+// the city is not held or has no valid segment. The body is a D2 dynamic bank
+// (int num_samples, SAMPLE_DATA[num_samples], payload) of exactly
+// CAR_IMPORT_POLICE_VOICE_COUNT samples - the six heading clips then the eleven
+// chatter lines, the same order the host's two phrase banks occupy in
+// SOUND_BANK_VOICES - so gamesnd can hand it to LoadSoundBankDynamic unchanged.
+// Every SAMPLE_DATA must lie inside the payload; a short or oversized body is
+// refused rather than read past.
+int GetCarImportPoliceVoices(int city, char** bank, int* size)
+{
+	CAR_IMPORT* imp;
+	int n, i, dir, payload;
+
+	if (!CarImportCityHeld(city))
+		return 0;
+
+	imp = &gCarImports[city];
+
+	if (imp->policeVoices == NULL || imp->policeVoicesSize < 4)
+		return 0;
+
+	n = *(int*)imp->policeVoices;
+
+	if (n != CAR_IMPORT_POLICE_VOICE_COUNT)
+		return 0;
+
+	dir = 4 + n * 16;
+
+	if (dir > imp->policeVoicesSize)
+		return 0;
+
+	payload = 0;
+
+	for (i = 0; i < n; i++)
+	{
+		int a = *(int*)(imp->policeVoices + 4 + i * 16);
+		int length = *(int*)(imp->policeVoices + 8 + i * 16);
+
+		if (a < 0 || length <= 0 || a > imp->policeVoicesSize || length > imp->policeVoicesSize)
+			return 0;
+
+		if (a + length > payload)
+			payload = a + length;
+	}
+
+	if (dir + payload > imp->policeVoicesSize)
+		return 0;
+
+	if (bank)
+		*bank = imp->policeVoices;
+	if (size)
+		*size = dir + payload;
+	return 1;
+}
+
+// JERICHO: which city's baked police lines a cop from `sourceCity` speaks with.
+//   - a Driver 2 city: itself (gamesnd loads its stock phrase banks; no lump).
+//   - any other city (Driver 1, BETAMIAMI, a car mod's bank): its OWN lump 203
+//     when its bank carries one, else Driver 1 Miami's (row CITY_D2_COUNT) - every
+//     Driver 1 cop shares the Miami set - when Miami's car data is held.
+//   - -1 when neither is available: the caller keeps the host city's lines.
+// Only HELD cities are asked: nothing is loaded here just for its voices.
+int JerPoliceVoiceCity(int sourceCity)
+{
+	if (sourceCity < 0 || sourceCity >= CITY_COUNT)
+		return -1;
+
+	if (sourceCity < CITY_D2_COUNT)
+		return sourceCity;
+
+	if (GetCarImportPoliceVoices(sourceCity, NULL, NULL))
+		return sourceCity;
+
+	if (GetCarImportPoliceVoices(CITY_D2_COUNT, NULL, NULL))
+		return CITY_D2_COUNT;
+
+	return -1;
 }
 
 // JERICHO: the embedded car-sound bank a D1 city's car uses, or 0. Driver 1 gave
