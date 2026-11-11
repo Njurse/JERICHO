@@ -1240,6 +1240,40 @@ int Print321Go(int y, int count, int scale)
 	return 160;
 }
 
+// JERICHO: THE HUD TIMER. Every JERICHO clock looks like the mission timer
+// (mdraw.c DrawTimer): "MM:SS" in the digit texture (PrintDigit, here at scale/16
+// through PrintDigitScaled), then ".FF" hundredths in the small font, its baseline
+// on the digits' (DrawTimer's y + 13 at full size). `align` places it: x is the
+// left edge, the right edge, or the centre of the digits. Colour: SetTextColour
+// first -- the caller owns what the colour means (docs/screens.md, HUD timers).
+// ms < 0 draws 00:00.00. Returns the left x, so a label can sit beside it.
+int PrintTimer(int x, int y, int ms, int scale, int align)
+{
+	char mmss[8], frac[8];
+	int dw, fw, end;
+
+	if (scale < 1)
+		scale = 1;
+	if (ms < 0)
+		ms = 0;
+
+	snprintf(mmss, sizeof(mmss), "%02d:%02d", ms / 60000 % 100, ms / 1000 % 60);
+	snprintf(frac, sizeof(frac), ".%02d", ms % 1000 / 10);
+
+	dw = (4 * 16 + 8) * scale / 16;	/* four 16 px digits and an 8 px ':' */
+	fw = StringWidth(frac);
+
+	if (align == PRINT_TIMER_RIGHT)
+		x -= dw + fw;
+	else if (align == PRINT_TIMER_CENTRE)
+		x -= dw / 2;
+
+	end = PrintDigitScaled(x, y, mmss, scale);
+	PrintString(frac, end, y + 28 * scale / 16 - 15);
+
+	return x;
+}
+
 // [D] [T]
 char * GetNextWord(char *string, char *word)
 {

@@ -310,6 +310,26 @@ jer_music_force(JER_MUSIC_PURSUIT);   /* or JER_MUSIC_CALM; JER_MUSIC_AUTO relea
   a little at 4:3, a lot on a wide aspect. `jer_screen_remap_x` is the engine's own
   conversion (the one `sky.c` applies to the GTE-projected sun): pass the projected
   x, get the x to draw at. Y is not affected — the aspect matrix is PAL-only, not AR.
+- **Anchor 2D HUD to the screen's sides** — `jer_screen_edges(&left, &right)`: the
+  framebuffer x of the visible edges, `0`/`320` at 4:3 and wider under widescreen
+  (about `-53`/`373` at 16:9). It is the band `DisplayOverlays` aligns the damage bar
+  and the map to, so a column drawn at `right - 6` sits at the real screen edge
+  instead of inside the 4:3 middle.
+- **HUD timers: one convention** — `pres.h`, `PrintTimer(x, y, ms, scale, align)`.
+  Every JERICHO clock is the mission timer's own look: `MM:SS` in the digit texture
+  plus `.FF` in the small font (`mdraw.c` `DrawTimer`), drawn at `scale`/16 of its
+  size and placed by its left edge, right edge or centre (`PRINT_TIMER_*`). The
+  rules the game modes follow (mp `MpHudTimer*`):
+  - **your own clock** is full size (16) at the top centre, under a one-line title
+    (who is what) at y 4; **other players' clocks** are smaller (10) in a column at
+    the right screen edge (`jer_screen_edges`), each with its name to its left;
+  - **colour says state, and it FADES** (about 0.4 s), never snaps: white
+    (128,128,128, the texture's own) is neutral; grey (72,72,72) is a clock that is
+    not running for you (a frozen hound); cyan is the clock that is running (the
+    fox); red is danger that is yours (holding the bomb). Passing the danger on
+    fades back to white;
+  - extra state (a damage meter) is one small-font line under the clock, never a
+    second clock.
 - **Move somewhere the world has not streamed to** — `jer_map.h`. The engine
   streams the map as a 2×2 window of REGIONS and only pre-loads neighbours, so a
   region you HOP into (a teleport, or a spawn far from the level start) is never
