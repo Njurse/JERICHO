@@ -64,6 +64,29 @@ int jer_screen_remap_x(int x)
 	return x;
 }
 
+void jer_screen_edges(int* left, int* right)
+{
+	int l = 0, r = 320;
+#ifndef PSX
+	JerWideRect vp;
+
+	PsyX_GetPSXWidescreenMappedViewport(&vp);
+
+	/* w is the RIGHT edge (see jer_screen_remap_x). Only ever widen: a probe that
+	 * answers a narrower band (a fade, the frontend) keeps the 4:3 edges. */
+	if (vp.w > vp.x && vp.x < 0 && vp.w > 320)
+	{
+		l = vp.x;
+		r = vp.w;
+	}
+#endif
+
+	if (left != NULL)
+		*left = l;
+	if (right != NULL)
+		*right = r;
+}
+
 void jer_screen_reset(void)
 {
 	memset(gScreens, 0, sizeof(gScreens));

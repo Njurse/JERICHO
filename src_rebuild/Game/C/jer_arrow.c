@@ -5,6 +5,7 @@
 
 #include "driver2.h"
 #include "cars.h"		/* car_data[] */
+#include "cosmetic.h"	/* carCos->colBox: the car's half-extents */
 #include "targets.h"	/* Draw3DTarget, gDraw3DArrowBlue */
 
 #include "JERICHO/include/jer_arrow.h"
@@ -13,6 +14,12 @@
 #define JER_ARROW_POINT	1
 #define JER_ARROW_CAR	2
 
+/* A car arrow sits over the ROOF, not the car's centre: Draw3DTarget lifts it a
+ * fixed 300 (targets.c), which a van or a bus swallows. Add the car's own
+ * half-height (carCos->colBox.vy, the box handling.c builds the body from) and a
+ * small gap, clamped so a broken cosmetics block cannot throw it into the sky. */
+#define JER_ARROW_CAR_GAP	100
+#define JER_ARROW_CAR_LIFT_MAX	700
 typedef struct
 {
 	int kind;
@@ -123,6 +130,18 @@ void jer_arrow_draw(void)
 			tv.vx = cp->hd.where.t[0];
 			tv.vy = -cp->hd.where.t[1];
 			tv.vz = cp->hd.where.t[2];
+
+			if (cp->ap.carCos != NULL)
+			{
+				int lift = cp->ap.carCos->colBox.vy + JER_ARROW_CAR_GAP;
+
+				if (lift < JER_ARROW_CAR_GAP)
+					lift = JER_ARROW_CAR_GAP;
+				if (lift > JER_ARROW_CAR_LIFT_MAX)
+					lift = JER_ARROW_CAR_LIFT_MAX;
+
+				tv.vy -= lift;	/* the same way Draw3DTarget's own 300 goes */
+			}
 		}
 		else
 			continue;
