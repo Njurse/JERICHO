@@ -1160,6 +1160,8 @@ int SoundBankHasRoom(int bank, int samples)
 	return lsbTabs.count[bank] + samples <= MAX_SOUND_BANK_SAMPLES;
 }
 
+#define JER_PC_SPU_LIMIT	(1024 * 1024)	/* = PsyX_SPUAL.cpp SPU_REALMEMSIZE */
+
 /* JERICHO: bytes of SPU sample memory left in the dynamic region the
  * LoadSoundBankDynamic appends go to (bankaddr[1], banksize[1]). The append
  * itself does not check this; a caller adding optional banks mid-level asks
@@ -1167,7 +1169,15 @@ int SoundBankHasRoom(int bank, int samples)
 int SoundBankSpuRoom(void)
 {
 	int addr = lsbTabs.append ? (int)lsbTabs.addr : bankaddr[1];
+#ifdef PSX
 	int room = bankaddr[1] + banksize[1] - addr;
+#else
+	/* The PC SPU (PsyCross PsyX_SPUAL.cpp) holds 2 MiB and warns past 1 MiB
+	 * (SPU_REALMEMSIZE); nothing is allocated after bank 1, and cross-city car
+	 * banks already append past the PSX-sized banksize[1]. Bound by the 1 MiB
+	 * line instead, the same limit the emulator warns at. */
+	int room = JER_PC_SPU_LIMIT - addr;
+#endif
 
 	return room > 0 ? room : 0;
 }

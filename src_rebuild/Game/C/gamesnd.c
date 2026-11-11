@@ -512,11 +512,12 @@ static void LoadCopPhrasesForSlot(int slot)
 	LoadImportedCopPhrases(city);
 }
 
-int GetCopPhraseSample(int slot, int phrase)
+/* The voice city whose lines the car in `slot` actually speaks: its own
+ * (JerPoliceVoiceCity) when those are resident, else the host's; -1 when no
+ * cop lines are loaded at all. */
+static int CopPhraseCityForSlot(int slot)
 {
-	int base = -1;
-
-	if (phrase < 1 || !car_sound_ready || GameLevel < 0 || GameLevel >= CITY_D2_COUNT)
+	if (!car_sound_ready || GameLevel < 0 || GameLevel >= CITY_D2_COUNT)
 		return -1;
 
 	if (slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS && residentCarModels[slot] >= 0)
@@ -527,18 +528,51 @@ int GetCopPhraseSample(int slot, int phrase)
 		{
 			int city = JerPoliceVoiceCity(src);
 
-			if (city >= 0 && city < CITY_COUNT)
-				base = cop_phrase_base[city];
+			if (city >= 0 && city < CITY_COUNT && cop_phrase_base[city] >= 0)
+				return city;
 		}
 	}
 
-	if (base < 0)
-		base = cop_phrase_base[GameLevel];
+	return cop_phrase_base[GameLevel] >= 0 ? GameLevel : -1;
+}
 
-	if (base < 0)
+/* Driver 2's own rule (CopSay): the stock chatter sets carry the heading
+ * inside some lines, so a heading clip follows phrase 10 only for cop banks
+ * 2/3 and phrase 15 only for banks 1/4 (cop_bank = mission % 4 + 1). */
+static int StockCopPhraseWantsHeading(int phrase)
+{
+	if (phrase == 10)
+		return cop_bank == 2 || cop_bank == 3;
+
+	if (phrase == 15)
+		return cop_bank == 1 || cop_bank == 4;
+
+	return 0;
+}
+
+int GetCopPhraseSample(int slot, int phrase)
+{
+	int city = CopPhraseCityForSlot(slot);
+
+	if (phrase < 1 || city < 0)
 		return -1;
 
-	return base + phrase - 1;
+	return cop_phrase_base[city] + phrase - 1;
+}
+
+int CopPhraseWantsHeading(int slot, int phrase)
+{
+	int city = CopPhraseCityForSlot(slot);
+
+	if (city < 0)
+		return 0;
+
+	/* A baked set (Driver 1 / bank lines, LUMP_POLICE_VOICES) has no chatter-set
+	 * variants: its 10 and 15 are "...heading" lead-ins, always followed. */
+	if (city >= CITY_D2_COUNT)
+		return phrase == 10 || phrase == 15;
+
+	return StockCopPhraseWantsHeading(phrase);
 }
 
 // [D] [T]
@@ -1991,32 +2025,11 @@ void CopSay(int phrase, int direction)
 
 	PlaySpeech(&gSpeechQueue, phrase);
 
-	if (phrase == 10)
-	{
-		if (cop_bank == 1)
-			return;
-
-		if (cop_bank != 2 && cop_bank != 3)
-			return;
-
-	}
-	else
-	{
-		if (phrase != 15)
-			return;
-
-		if (cop_bank != 1) 
-		{
-			if (cop_bank == 2)
-				return;
-			
-			if (cop_bank == 3)
-				return;
-
-			if (cop_bank != 4)
-				return;
-		}
-	}
+	// JERICHO: the same rule, one place (StockCopPhraseWantsHeading). The AI's
+	// speech queue always plays the HOST city's lines, so the stock rule is the
+	// right one here; a car speaking baked lines asks CopPhraseWantsHeading.
+	if (!StockCopPhraseWantsHeading(phrase))
+		return;
 
 	PlaySpeech(&gSpeechQueue, direction + 1);
 }
