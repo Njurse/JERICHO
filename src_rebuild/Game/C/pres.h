@@ -39,6 +39,7 @@ extern void PrintStringBoxed(char *string, int ix, int iy); // 0x00074364
 extern void SetCLUT16Flags(ushort clutID, ushort mask, char transparent);
 
 extern int PrintScaledString(int y, char *string, int scale); // 0x000745DC
+extern int Print321Go(int y, int count, int scale);	// JERICHO: the race-start 3-2-1 / GO! for any caller (mp rounds)
 extern char* GetNextWord(char *string, char *word); // 0x00074D54
 
 extern void* DrawButton(u_char button, void *prim, int x, int y); // 0x00074858
