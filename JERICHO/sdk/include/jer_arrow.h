@@ -25,7 +25,9 @@ extern "C" {
 
 #define JER_ARROW_MAX	8	/* arrows a module set can have up at once */
 
-/* Bouncing arrow above the world point (x, y, z). Returns 1, or 0 for a bad slot. */
+/* Bouncing arrow above the world point (x, y, z). Returns 1, or 0 for a bad slot.
+ * (jer_arrow_on_car also lifts the arrow by the car's half-height plus a small gap,
+ * so it clears the roof of a tall vehicle; jer_arrow_at does not.) */
 int jer_arrow_at(int slot, int x, int y, int z);
 
 /* Bouncing arrow that follows `car` (a CAR_DATA*) every frame. A NULL car, a
