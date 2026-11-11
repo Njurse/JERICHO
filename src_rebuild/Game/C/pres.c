@@ -1187,6 +1187,59 @@ int PrintScaledString(int y, char *string, int scale)
 	return x;
 }
 
+// JERICHO: the race start's 3-2-1 for any caller. mdraw.c DrawMission draws it as
+// PrintScaledString(96, "3", 32 - (g321GoDelay & 31)): the digit texture, centred,
+// each digit shrinking from full size (32) over its 32 frames. count 1..99 is that
+// number at `scale` (clamped 1..64); count 0 is "GO!" -- the digit texture has no
+// letters, so it is the in-game hires font at the matching height (5x its default
+// 0.275 at scale 32), centred on the same x and y; with no hires font loaded, the
+// plain font, centred. Colour: SetTextColour first, as for PrintScaledString.
+// Returns the x after the last glyph.
+int Print321Go(int y, int count, int scale)
+{
+	char text[4];
+	char go[] = "GO!";
+
+	if (scale < 1)
+		scale = 1;
+	if (scale > 64)
+		scale = 64;
+
+	if (count > 0)
+	{
+		if (count > 99)
+			count = 99;
+
+		if (count > 9)
+		{
+			text[0] = (char)('0' + count / 10);
+			text[1] = (char)('0' + count % 10);
+			text[2] = 0;
+		}
+		else
+		{
+			text[0] = (char)('0' + count);
+			text[1] = 0;
+		}
+
+		return PrintScaledString(y, text, scale);
+	}
+
+#ifdef HIRES_FONTS
+	if (gHiresFontTexture)
+	{
+		float k = 5.0f * (float)scale / 32.0f;		/* x the default size */
+		int w = (int)(StrighWidthHires(go) * k);
+		int asc = (int)(HIRES_FONT_BASELINE * k);	/* the line's baked ascent at that size */
+
+		return PrintStringHiresScaled(go, 160 - w / 2, y - asc / 2, HIRES_FONT_DEFAULT_SCALE * k);
+	}
+#endif
+
+	PrintStringCentred(go, (short)(y - 7));
+	return 160;
+}
+
 // [D] [T]
 char * GetNextWord(char *string, char *word)
 {

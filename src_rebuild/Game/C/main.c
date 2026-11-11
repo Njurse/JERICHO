@@ -2396,9 +2396,9 @@ int gBootOnFoot = 0;
 
 /* -mp: defined unconditionally (glaunch.c reads it when it computes the
  * take-a-ride mission number); the boot arguments are accepted in every
- * config. gBootMpArena selects which of the two
- * multiplayer maps per city (0 = the take-a-ride default arena, 1 = the
- * second arena; becomes gSubGameNumber). */
+ * config. gBootMpArena selects the multiplayer map, 0..3 (0 = the
+ * take-a-ride default arena, 1 = the second; 2 and 3 are reserved for maps
+ * the stock game does not ship; becomes gSubGameNumber). */
 int gBootMpLevel = 0;
 int gBootMpArena = 0;
 
@@ -3173,12 +3173,13 @@ int redriver2_main(int argc, char** argv)
 			gBootMpLevel = 1;
 			gBootMpArena = 0;
 
-			/* optional arena: -mp 0 | -mp 1 (two multiplayer maps per city) */
+			/* optional arena: -mp 0..3 (mp proto 24 widened the arena id; the
+			 * stock game ships two multiplayer maps per city, 0 and 1) */
 			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
 			{
 				int arena = atoi(argv[i + 1]);
 
-				if (arena == 0 || arena == 1)
+				if (arena >= 0 && arena <= 3)
 				{
 					gBootMpArena = arena;
 					i++;
