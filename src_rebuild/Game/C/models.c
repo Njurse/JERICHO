@@ -2362,8 +2362,12 @@ int JerCarSlotIsPolice(int slot)
 // CAR_IMPORT_POLICE_VOICE_COUNT samples - the six heading clips then the eleven
 // chatter lines, the same order the host's two phrase banks occupy in
 // SOUND_BANK_VOICES - so gamesnd can hand it to LoadSoundBankDynamic unchanged.
-// Every SAMPLE_DATA must lie inside the payload; a short or oversized body is
-// refused rather than read past.
+// Every SAMPLE_DATA must lie inside the payload and start on a 16-byte VAG block;
+// a short or oversized body is refused rather than read past. Slots MAY share
+// an offset (an identical clip stored once): LoadSoundBankDynamic relocates each
+// entry independently and uploads the payload once. Playback stops at the VAG
+// end flag in the data, not at SAMPLE_DATA.length (PsyX_SPUAL.cpp decodeSound),
+// so a SHORTER cut of a clip needs its own copy with its own end flag.
 int GetCarImportPoliceVoices(int city, char** bank, int* size)
 {
 	CAR_IMPORT* imp;
@@ -2394,7 +2398,8 @@ int GetCarImportPoliceVoices(int city, char** bank, int* size)
 		int a = *(int*)(imp->policeVoices + 4 + i * 16);
 		int length = *(int*)(imp->policeVoices + 8 + i * 16);
 
-		if (a < 0 || length <= 0 || a > imp->policeVoicesSize || length > imp->policeVoicesSize)
+		if (a < 0 || length <= 0 || (a & 15) ||
+			a > imp->policeVoicesSize || length > imp->policeVoicesSize)
 			return 0;
 
 		if (a + length > payload)
