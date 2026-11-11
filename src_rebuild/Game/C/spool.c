@@ -2127,7 +2127,11 @@ void SpecialStartNextBlock(void)
 	DrawSyncCallback(NULL);
 
 	// if previous state blocks are fully loaded, start next state
-	if (specBlocksToLoad == 0)
+	// JERICHO: <= 0, not == 0. A state whose length came out 0 (a missed size
+	// header: lengthLowBlock & co. stay 0) used to request a block, drop to -1 and
+	// never match again - an endless LowSpool walking specmallocptr + n*2048 past
+	// the 2 MiB level heap (the Cops n Robbers crash). Now it just ends the state.
+	if (specBlocksToLoad <= 0)
 	{
 		specialState++;
 		switch (specialState) 
@@ -2226,17 +2230,44 @@ void CheckSpecialSpool(void)
 
 	if (startSpecSpool != -1 && startSpecSpool+400 < CameraCnt) 
 	{
+#ifndef PSX
+		int pass = 0;
+#endif
+
 		while (specSpoolComplete == 0)
 		{
 			SpoolSYNC();
 
+#ifndef PSX
+			// JERICHO: PsyX DrawSync runs the armed callback (SpecialStartNextBlock)
+			// AND returns 0 (PsyCross LIBGPU.C), so the stock line below started TWO
+			// blocks per pass; CleanSpooled then missed its size header
+			// (specBlocksToLoad == 6). Disarm it and start exactly one block, and
+			// only once the queue is empty: a block still queued (the stall that
+			// brought us here) is read first, so its callback sees its own count.
+			DrawSyncCallback(NULL);
+
+			if (spoolcounter == 0)
+				SpecialStartNextBlock();
+
+			// A whole special car is well under 512 blocks; never spin past that.
+			// The half-loaded model stays invalid and this level spools no more.
+			if (++pass > 512)
+			{
+				printWarning("spool: special car spool did not finish in %d passes (state %d, %d block(s) left) - stopped, special cars off for this level\n",
+					pass, specialState, specBlocksToLoad);
+				allowSpecSpooling = 0;
+				break;
+			}
+#else
 			if (DrawSync(1) == 0)
 				SpecialStartNextBlock();
+#endif
 
 			StartSpooling();
 		}
 
-		specModelValid = 1;
+		specModelValid = (specSpoolComplete != 0) ? 1 : 0;
 		specialState = SpecSpool_None;
 		specBlocksToLoad = 0;
 		specSpoolComplete = 0;
