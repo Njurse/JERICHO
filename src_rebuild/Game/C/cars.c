@@ -2225,6 +2225,7 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	SVECTOR wheelVerts[24];	// per-wheel copy for the damage transform
 	int numWheelVerts;
 	int wheelCity = -1;
+	int wheelModel = -1;
 
 #ifdef PSX
 	MATRIX& WheelPos = *(MATRIX*)((u_char*)getScratchAddr(0) + sizeof(MATRIX) * 2);
@@ -2273,13 +2274,18 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		memset(&WheelTexFastRect, 0, sizeof(WheelTexFastRect));
 		memset(&WheelTexDamRect, 0, sizeof(WheelTexDamRect));
 
-		WheelTexClean = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_CLEAN);
-		WheelTexFast = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_FAST);
-		WheelTexDam = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_DAMAGED);
+		/* The trailer's slot is the city's model number, not this resident
+		 * slot. -1 keeps the bank default (and the host wheel, if that is
+		 * absent too). */
+		wheelModel = CarImportWheelSlot(cp->ap.model);
 
-		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_CLEAN, &WheelTexCleanRect);
-		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_FAST, &WheelTexFastRect);
-		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_DAMAGED, &WheelTexDamRect);
+		WheelTexClean = GetCarImportWheelForModel(wheelCity, wheelModel, CAR_IMPORT_WHEEL_CLEAN);
+		WheelTexFast = GetCarImportWheelForModel(wheelCity, wheelModel, CAR_IMPORT_WHEEL_FAST);
+		WheelTexDam = GetCarImportWheelForModel(wheelCity, wheelModel, CAR_IMPORT_WHEEL_DAMAGED);
+
+		GetCarImportWheelTexForModel(wheelCity, wheelModel, CAR_IMPORT_WHEEL_CLEAN, &WheelTexCleanRect);
+		GetCarImportWheelTexForModel(wheelCity, wheelModel, CAR_IMPORT_WHEEL_FAST, &WheelTexFastRect);
+		GetCarImportWheelTexForModel(wheelCity, wheelModel, CAR_IMPORT_WHEEL_DAMAGED, &WheelTexDamRect);
 
 		/* Fail soft: a wheel page that is not resident yet (or was dropped)
 		 * must not leave the wheel on the dummy page. */

@@ -53,6 +53,16 @@ char* GetCarImportModels(int slot);
 #define CAR_IMPORT_WHEEL_VARIANTS	3
 MODEL* GetCarImportWheel(int city, int kind);
 
+/* Resident appearance slot -> the city's LUMP_CAR_MODELS index (0..12). That
+ * is the WHLX per-car wheel table's slot. -1 when this resident slot has no
+ * model in that table (the lookup then keeps the city default). */
+int CarImportWheelSlot(int residentSlot);
+
+/* `model` is CarImportWheelSlot's answer, not the resident slot. A model
+ * outside 0..12, or a slot whose trailer offset for this kind is -1, returns
+ * the city default from GetCarImportWheel. */
+MODEL* GetCarImportWheelForModel(int city, int model, int kind);
+
 // A D2 city's wheel art is a pair of TEXINF details on a permanent page
 // (WHLCLEAN/WHLBOTH; HAVANA calls WHLCLEAN "WHEEL"), not a MODEL. `set` is the
 // destination set after CarSetRemap; the caller puts the HOST wheel mesh's UVs
@@ -70,6 +80,10 @@ typedef struct JER_WHEEL_TEX
 } JER_WHEEL_TEX;
 
 int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out);
+
+/* Same fallback as GetCarImportWheelForModel: the slot's own rect when the
+ * trailer named one, otherwise the city default. */
+int GetCarImportWheelTexForModel(int city, int model, int kind, JER_WHEEL_TEX* out);
 void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts);
 int CarImportIsWheelSet(int city, int sourceSet);
 void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub);
@@ -81,6 +95,9 @@ void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned
 
 // The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
 // maps these to the page it pins; the MODEL carries the remapped draw index.
+// The city default comes first. Sets named only by a per-car wheel follow, so
+// a page that belongs to one slot is still pinned. A bank with no WHLX trailer
+// returns the same list as before.
 int GetCarImportWheelSets(int city, int kind, unsigned char* out, int max);
 
 // JERICHO cross-city HOT LOAD: build resident `slot`'s geometry at RUNTIME from the
