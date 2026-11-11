@@ -1476,6 +1476,18 @@ int UpdateSpoolPC(void)
 		SpoolLumpSize = 16 * 1024 * 1024; // allocate 16 MB of RAM for spoolable data
 		g_CurrentLevelSpoolData = (char*)malloc(16 * 1024 * 1024);
 
+		// JERICHO: a failed allocation used to be read from anyway (NULL - offset +
+		// sector) -- drop the queue instead; the next request tries again.
+		if (g_CurrentLevelSpoolData == NULL)
+		{
+			printWarning("spool: no memory for the level's 16 MB spool data - %d request(s) dropped\n",
+				spoolcounter - spoolpos_reading);
+			spoolcounter = 0;
+			spoolpos_reading = 0;
+			spoolactive = 0;
+			return 1;
+		}
+
 		loadsectors(g_CurrentLevelSpoolData, SpoolLumpOffset / CDSECTOR_SIZE, SpoolLumpSize);
 	}
 
@@ -1512,6 +1524,22 @@ int UpdateSpoolPC(void)
 
 		SPOOL_WARNING("spool type=%s cb=%d sec=%d cnt=%d id=%d\n", nameType, current->func ? 1 : 0, current->sector, current->nsectors, spoolpos_reading);
 #endif // _DEBUG
+
+		// JERICHO: a request must lie inside the 16 MB the level's spool lump was
+		// read into. One that does not was copied from outside the buffer: the
+		// 0.24.0 access violation in UpdateSpool's memcpy (source 0xB5E800) during a
+		// multiplayer placement's spool storm. Skip it and say which one it was.
+		{
+			long long from = (long long)current->sector * CDSECTOR_SIZE - SpoolLumpOffset;
+			long long len = (current->type == 1) ? 17LL * CDSECTOR_SIZE : (long long)current->nsectors * CDSECTOR_SIZE;
+
+			if (from < 0 || from + len > 16LL * 1024 * 1024)
+			{
+				printWarning("spool: request %d (type %d, sector %d, %d sector(s)) is outside the level's spool data (lump at %d) - skipped\n",
+					spoolpos_reading, current->type, current->sector, current->nsectors, SpoolLumpOffset);
+				continue;
+			}
+		}
 
 		// seek to required sector
 		spoolDataPtr = g_CurrentLevelSpoolData - SpoolLumpOffset + current->sector * CDSECTOR_SIZE;
