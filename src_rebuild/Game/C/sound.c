@@ -1160,6 +1160,18 @@ int SoundBankHasRoom(int bank, int samples)
 	return lsbTabs.count[bank] + samples <= MAX_SOUND_BANK_SAMPLES;
 }
 
+/* JERICHO: bytes of SPU sample memory left in the dynamic region the
+ * LoadSoundBankDynamic appends go to (bankaddr[1], banksize[1]). The append
+ * itself does not check this; a caller adding optional banks mid-level asks
+ * first so an extra bank can never be written past the region. */
+int SoundBankSpuRoom(void)
+{
+	int addr = lsbTabs.append ? (int)lsbTabs.addr : bankaddr[1];
+	int room = bankaddr[1] + banksize[1] - addr;
+
+	return room > 0 ? room : 0;
+}
+
 int GetSoundBankCapacity(void)
 {
 	return MAX_SOUND_BANK_SAMPLES;

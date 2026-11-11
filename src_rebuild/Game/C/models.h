@@ -169,6 +169,15 @@ char* GetCarImportPalletForCity(int city, int* size);
 int GetCarImportSoundBank(int city, int model, char** bank, int* size);
 int GetCarImportSiren(int city, int model);
 
+// JERICHO: police radio lines. GetCarImportPoliceVoices: `city`'s baked
+// LUMP_POLICE_VOICES (203) body, a 17-sample dynamic bank (6 heading clips, then 11
+// chatter lines), or 0 when the city is not held or has none. JerPoliceVoiceCity:
+// the city whose lines a cop from `sourceCity` uses - a D2 city is itself; any other
+// city is its own lump 203, else Driver 1 Miami's (CITY_D2_COUNT), else -1 (keep the
+// host city's lines). Neither loads anything.
+int GetCarImportPoliceVoices(int city, char** bank, int* size);
+int JerPoliceVoiceCity(int sourceCity);
+
 // JERICHO: police cars. JerCityPoliceModels: bit N = `city`'s model N is a police
 // car (Driver 2: model 0; any other city: the bake's LUMP_CAR_SIRENS flags, which a
 // bank sets with `sounds.cop`). Loads the city's car data when it is not held, as
